@@ -3,14 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { mockUsers, mockRoommates } from '../../data/mockData';
+import { mockUsers, mockServiceProviders } from '../../data/mockData';
 import { Users, UserX, Shield } from 'lucide-react';
 
 export function MemberManagement() {
   const [users, setUsers] = useState(mockUsers);
 
-  const getUserRoommatesCount = (userId: string) => {
-    return mockRoommates.filter(r => r.userId === userId).length;
+  const getUserServiceProvidersCount = (userId: string) => {
+    return mockServiceProviders.filter(r => r.userId === userId).length;
   };
 
   const handleSuspendUser = (userId: string) => {
@@ -81,7 +81,7 @@ export function MemberManagement() {
                 <TableHead>姓名</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>電話</TableHead>
-                <TableHead>室友數量</TableHead>
+                <TableHead>服務者數量</TableHead>
                 <TableHead>角色</TableHead>
                 <TableHead>狀態</TableHead>
                 <TableHead>操作</TableHead>
@@ -93,7 +93,7 @@ export function MemberManagement() {
                   <TableCell>{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.phone}</TableCell>
-                  <TableCell>{getUserRoommatesCount(user.id)}</TableCell>
+                  <TableCell>{getUserServiceProvidersCount(user.id)}</TableCell>
                   <TableCell>
                     {user.isAdmin ? (
                       <Badge variant="default">管理員</Badge>

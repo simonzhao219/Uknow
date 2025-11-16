@@ -1,12 +1,12 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { mockWithdrawals } from '../../data/mockData';
-import { Clock, CheckCircle, Eye } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Clock, CheckCircle, AlertCircle, Download } from 'lucide-react';
+import { useNotification } from '../notifications/NotificationContext';
 
 export function WithdrawalHistory() {
+  const { showToast } = useNotification();
   const pendingWithdrawals = mockWithdrawals.filter(w => w.status === 'pending');
   const awaitingConfirmation = mockWithdrawals.filter(w => w.status === 'awaiting_confirmation');
   const completedWithdrawals = mockWithdrawals.filter(w => w.status === 'completed').slice(0, 3);
@@ -25,7 +25,7 @@ export function WithdrawalHistory() {
   };
 
   const handleConfirmReceipt = (withdrawalId: string) => {
-    alert('已確認收到匯款！');
+    showToast('已確認收到匯款！');
   };
 
   return (

@@ -6,22 +6,28 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { UserContext } from '../App';
 import { Users, Copy, Share2, UserPlus, TrendingUp, Gift, ChevronDown, ChevronRight } from 'lucide-react';
-import { mockUsers, mockReferrals, mockRoommates } from '../data/mockData';
+import { mockUsers, mockReferrals, mockServiceProviders } from '../data/mockData';
 import { ReferralStats } from './referral/ReferralStats';
-
+import { useNotification } from './notifications/NotificationContext';
 
 export function ReferralManagement() {
   const { user } = useContext(UserContext);
+  const { showToast } = useNotification();
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
 
-  // 根據用戶的服務提供者生成推薦碼組
-  const userRoommates = mockRoommates.filter(r => r.userId === user?.id);
+  // 根據用戶的服務者生成推薦碼組
+  const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
   
-  // 為每個服務提供者生成推薦碼（格式：用戶名縮寫 + 服務提供者ID + 年份）
-  const referralCodes = userRoommates.map(roommate => {
-    const userNameAbbr = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
+  // 為每個服務者生成推薦碼（格式：使用者ID(5碼) + 刊登ID(7碼) = 12碼）
+  const referralCodes = userServiceProviders.map(roommate => {
+    // 從mockUsers找到該用戶的publicUserId
+    const userData = mockUsers.find(u => u.id === user?.id);
+    const userPublicId = userData?.publicUserId || 'XXXXX'; // 預設值
+    const listingPublicId = (roommate as any).publicListingId || 'XXXXXXX'; // 預設值
+    const code = `${userPublicId}${listingPublicId}`; // 12碼推薦碼
+    
     return {
-      code: `${userNameAbbr}${roommate.id}2024`,
+      code: code,
       roommateId: roommate.id,
       roommateName: roommate.name,
       category: roommate.category,
@@ -152,16 +158,16 @@ export function ReferralManagement() {
             我的推薦碼
           </CardTitle>
           <CardDescription>
-            每個服務提供者都有專屬的推薦碼，點選查看該推薦碼的推薦關係
+            每個服務者都有專屬的推薦碼，點選查看該推薦碼的推薦關係
           </CardDescription>
         </CardHeader>
         <CardContent>
           {referralCodes.length === 0 ? (
             <div className="text-center py-8">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">您還沒有服務提供者</p>
+              <p className="text-muted-foreground">您還沒有服務者</p>
               <p className="text-sm text-muted-foreground mt-2">
-                刊登服務提供者後將自動生成推薦碼
+                刊登服務者後將自動生成推薦碼
               </p>
             </div>
           ) : (
@@ -240,7 +246,22 @@ export function ReferralManagement() {
                               variant="outline" 
                               size="sm" 
                               className="mt-3"
-                              onClick={() => navigator.clipboard.writeText(codeInfo.code)}
+                              onClick={() => {
+                                // 使用傳統的 execCommand 方法（更可靠，不受 Clipboard API 權限限制）
+                                const textArea = document.createElement('textarea');
+                                textArea.value = codeInfo.code;
+                                textArea.style.position = 'fixed';
+                                textArea.style.left = '-999999px';
+                                document.body.appendChild(textArea);
+                                textArea.select();
+                                try {
+                                  document.execCommand('copy');
+                                  toast.success('推薦碼已複製到剪貼簿！');
+                                } catch (err) {
+                                  console.error('複製失敗:', err);
+                                }
+                                document.body.removeChild(textArea);
+                              }}
                             >
                               <Copy className="h-4 w-4 mr-2" />
                               複製推薦碼

@@ -6,6 +6,13 @@ import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
+import { 
   CreditCard, 
   AlertCircle, 
   Upload, 
@@ -16,6 +23,9 @@ import {
   CheckCircle,
   Calculator
 } from 'lucide-react';
+import { getInputErrorClass, FieldError } from '../../utils/formHelpers';
+import { useNotification } from '../notifications/NotificationContext';
+import { TAIWAN_BANKS } from '../../utils/constants';
 
 interface WithdrawalProcessProps {
   availableRewards: number;
@@ -24,20 +34,24 @@ interface WithdrawalProcessProps {
 
 interface SavedData {
   idNumber: string;
+  bankCode: string;
   bankAccount: string;
   idCardFront: string | null;
   idCardBack: string | null;
 }
 
 export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProcessProps) {
+  const { showSuccess } = useNotification();
   const [currentStep, setCurrentStep] = useState(1);
   const [amount, setAmount] = useState('');
   const [personalData, setPersonalData] = useState({
     idNumber: '',
+    bankCode: '',
     bankAccount: '',
     idCardFront: null as File | null,
     idCardBack: null as File | null
   });
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [saveData, setSaveData] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -57,6 +71,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
         setPersonalData(prev => ({
           ...prev,
           idNumber: parsed.idNumber || '',
+          bankCode: parsed.bankCode || '',
           bankAccount: parsed.bankAccount || ''
         }));
       } catch (error) {
@@ -87,16 +102,37 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
   const validateStep2 = () => {
     const newErrors: { [key: string]: string } = {};
 
+    // 只接受台灣身分證字號
     if (!personalData.idNumber.trim()) {
-      newErrors.idNumber = '請輸入身分證字號或護照號碼';
-    } else if (personalData.idNumber.length < 8) {
-      newErrors.idNumber = '請輸入有效的身分證字號或護照號碼';
+      newErrors.idNumber = '請輸入身分證字號';
+    } else {
+      // 台灣身分證格式驗證：第一個字母+9個數字
+      const idPattern = /^[A-Z][12]\d{8}$/;
+      if (!idPattern.test(personalData.idNumber)) {
+        newErrors.idNumber = '請輸入有效的台灣身分證字號（例如：A123456789）';
+      }
+    }
+
+    if (!personalData.bankCode.trim()) {
+      newErrors.bankCode = '請選擇收款銀行';
     }
 
     if (!personalData.bankAccount.trim()) {
       newErrors.bankAccount = '請輸入收款銀行帳號';
-    } else if (personalData.bankAccount.length < 10) {
-      newErrors.bankAccount = '請輸入有效的銀行帳號';
+    } else {
+      // 移除連字號後檢查
+      const accountDigits = personalData.bankAccount.replace(/-/g, '');
+      
+      // 檢查是否只包含數字和連字號
+      if (!/^[\d-]+$/.test(personalData.bankAccount)) {
+        newErrors.bankAccount = '銀行帳號只能包含數字和連字號';
+      } else if (accountDigits.length < 10) {
+        newErrors.bankAccount = '銀行帳號至少需要10位數字';
+      } else if (accountDigits.length > 16) {
+        newErrors.bankAccount = '銀行帳號不能超過16位數字';
+      } else if (!/^\d+$/.test(accountDigits)) {
+        newErrors.bankAccount = '請輸入有效的銀行帳號';
+      }
     }
 
     if (!personalData.idCardFront) {
@@ -105,6 +141,10 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
 
     if (!personalData.idCardBack) {
       newErrors.idCardBack = '請上傳身分證反面照片';
+    }
+
+    if (!agreeToTerms) {
+      newErrors.agreeToTerms = '請閱讀並同意服務條款和隱私政策';
     }
 
     setErrors(newErrors);
@@ -151,6 +191,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
       if (saveData) {
         const dataToSave: SavedData = {
           idNumber: personalData.idNumber,
+          bankCode: personalData.bankCode,
           bankAccount: personalData.bankAccount,
           idCardFront: null, // 不儲存檔案
           idCardBack: null
@@ -158,7 +199,20 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
         localStorage.setItem('withdrawalData', JSON.stringify(dataToSave));
       }
 
-      alert(`提領申請已提交！\n提領金額：$${amount}\n手續費：$${fee}\n身分證字號：${personalData.idNumber}\n銀行帳號：${personalData.bankAccount}`);
+      const bankName = TAIWAN_BANKS.find(bank => bank.code === personalData.bankCode)?.name || '未知銀行';
+      
+      showSuccess(
+        '提領申請已成功提交！',
+        `您的Point提領申請已經送出，我們將在3-5個工作天內處理`,
+        [
+          `提領金額：$${amount}`,
+          `手續費：$${fee}`,
+          `收款銀行：${bankName} (${personalData.bankCode})`,
+          `銀行帳號：${personalData.bankAccount}`,
+          '請耐心等待處理完成'
+        ]
+      );
+      
       onCancel(); // 關閉流程
     }
   };
@@ -272,12 +326,9 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="請輸入提領金額"
+                className={getInputErrorClass(!!errors.amount)}
               />
-              {errors.amount && (
-                <Alert variant="destructive">
-                  <AlertDescription>{errors.amount}</AlertDescription>
-                </Alert>
-              )}
+              <FieldError error={errors.amount} />
             </div>
 
             {/* 費用計算 */} {/*
@@ -344,111 +395,133 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
 
             {/* 身分證字號 */}
             <div className="space-y-2">
-              <Label htmlFor="idNumber">身分證字號/護照號碼 *</Label>
+              <Label htmlFor="idNumber">身分證字號 *</Label>
               <Input
                 id="idNumber"
                 value={personalData.idNumber}
-                onChange={(e) => setPersonalData({...personalData, idNumber: e.target.value})}
-                placeholder="A123456789 或護照號碼"
+                onChange={(e) => setPersonalData({...personalData, idNumber: e.target.value.toUpperCase()})}
+                placeholder="A123456789"
+                maxLength={10}
+                className={getInputErrorClass(!!errors.idNumber)}
               />
-              {errors.idNumber && (
-                <Alert variant="destructive">
-                  <AlertDescription>{errors.idNumber}</AlertDescription>
-                </Alert>
-              )}
+              <FieldError error={errors.idNumber} />
             </div>
 
-            {/* 銀行帳號 */}
+            {/* 收款銀行代號 */}
+            <div className="space-y-2">
+              <Label htmlFor="bankCode">收款銀行代號 *</Label>
+              <Select
+                value={personalData.bankCode}
+                onValueChange={(value) => {
+                  setPersonalData({...personalData, bankCode: value});
+                  const newErrors = {...errors};
+                  delete newErrors.bankCode;
+                  setErrors(newErrors);
+                }}
+              >
+                <SelectTrigger className={getInputErrorClass(!!errors.bankCode)}>
+                  <SelectValue placeholder="請選擇銀行">
+                    {personalData.bankCode ? `${personalData.bankCode} - ${TAIWAN_BANKS.find(bank => bank.code === personalData.bankCode)?.name}` : '請選擇銀行'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {TAIWAN_BANKS.map(bank => (
+                    <SelectItem key={bank.code} value={bank.code}>
+                      {bank.code} - {bank.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldError error={errors.bankCode} />
+            </div>
+
+            {/* 收款銀行帳號 */}
             <div className="space-y-2">
               <Label htmlFor="bankAccount">收款銀行帳號 *</Label>
               <Input
                 id="bankAccount"
                 value={personalData.bankAccount}
-                onChange={(e) => setPersonalData({...personalData, bankAccount: e.target.value})}
-                placeholder="123-456-789-012"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // 只允許數字和連字號
+                  if (value === '' || /^[\d-]+$/.test(value)) {
+                    setPersonalData({...personalData, bankAccount: value});
+                    // 清除錯誤
+                    if (errors.bankAccount) {
+                      const newErrors = {...errors};
+                      delete newErrors.bankAccount;
+                      setErrors(newErrors);
+                    }
+                  }
+                }}
+                placeholder="請輸入完整銀行帳號"
+                className={getInputErrorClass(!!errors.bankAccount)}
               />
-              {errors.bankAccount && (
-                <Alert variant="destructive">
-                  <AlertDescription>{errors.bankAccount}</AlertDescription>
-                </Alert>
-              )}
+              <FieldError error={errors.bankAccount} />
             </div>
 
-            {/* 身分證件上傳 */}
-            <div className="space-y-4">
-              <Label>身分證件上傳 *</Label>
-              
-              {/* 身分證正面 */}
-              <div className="space-y-2">
-                <Label className="text-sm">身分證正面照片</Label>
-                {personalData.idCardFront ? (
-                  <div className="flex items-center gap-2 p-3 border rounded border-green-200 bg-green-50">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-800">{personalData.idCardFront.name}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeFile('idCardFront')}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ) : (
-                  <label className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
-                    <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">點擊上傳身分證正面</span>
-                    <span className="text-xs text-muted-foreground mt-1">支援 JPG, PNG 格式，最大 5MB</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload('idCardFront')}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-                {errors.idCardFront && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{errors.idCardFront}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
+            {/* 上傳身分證正面照 */}
+            <div className="space-y-2">
+              <Label>上傳身分證正面照 *</Label>
+              {personalData.idCardFront ? (
+                <div className="flex items-center gap-2 p-3 border rounded border-green-200 bg-green-50">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-800">{personalData.idCardFront.name}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFile('idCardFront')}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
+                  <Upload className="h-6 w-6 text-muted-foreground mb-2" />
+                  <span className="text-sm text-muted-foreground">點擊上傳身分證正面</span>
+                  <span className="text-xs text-muted-foreground mt-1">支援 JPG, PNG 格式，最大 5MB</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload('idCardFront')}
+                    className="hidden"
+                  />
+                </label>
+              )}
+              <FieldError error={errors.idCardFront} />
+            </div>
 
-              {/* 身分證反面 */}
-              <div className="space-y-2">
-                <Label className="text-sm">身分證反面照片</Label>
-                {personalData.idCardBack ? (
-                  <div className="flex items-center gap-2 p-3 border rounded border-green-200 bg-green-50">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-800">{personalData.idCardBack.name}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeFile('idCardBack')}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ) : (
-                  <label className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
-                    <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">點擊上傳身分證反面</span>
-                    <span className="text-xs text-muted-foreground mt-1">支援 JPG, PNG 格式，最大 5MB</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload('idCardBack')}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-                {errors.idCardBack && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{errors.idCardBack}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
+            {/* 上傳身分證背面照 */}
+            <div className="space-y-2">
+              <Label>上傳身分證背面照 *</Label>
+              {personalData.idCardBack ? (
+                <div className="flex items-center gap-2 p-3 border rounded border-green-200 bg-green-50">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-800">{personalData.idCardBack.name}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFile('idCardBack')}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
+                  <Upload className="h-6 w-6 text-muted-foreground mb-2" />
+                  <span className="text-sm text-muted-foreground">點擊上傳身分證背面</span>
+                  <span className="text-xs text-muted-foreground mt-1">支援 JPG, PNG 格式，最大 5MB</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload('idCardBack')}
+                    className="hidden"
+                  />
+                </label>
+              )}
+              <FieldError error={errors.idCardBack} />
             </div>
 
             {/* 儲存資料選項 */}
@@ -467,6 +540,28 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                   (身分證件照片不會被儲存)
                 </p>
               </Label>
+            </div>
+
+            {/* 同意條款 */}
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg">
+                <Checkbox
+                  id="agreeToTerms"
+                  checked={agreeToTerms}
+                  onCheckedChange={(checked) => {
+                    setAgreeToTerms(checked as boolean);
+                    if (checked) {
+                      const newErrors = {...errors};
+                      delete newErrors.agreeToTerms;
+                      setErrors(newErrors);
+                    }
+                  }}
+                />
+                <Label htmlFor="agreeToTerms" className="cursor-pointer text-sm flex-1">
+                  我已閱讀並同意 <a href="#" className="text-blue-600 underline mx-1">服務條款</a> 和 <a href="#" className="text-blue-600 underline mx-1">隱私政策</a>
+                </Label>
+              </div>
+              <FieldError error={errors.agreeToTerms} />
             </div>
 
             {/* 注意事項 */}
@@ -488,7 +583,11 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 上一步
               </Button>
-              <Button onClick={handleSubmit} className="flex-1">
+              <Button 
+                onClick={handleSubmit} 
+                className="flex-1"
+                disabled={!personalData.idNumber || !personalData.bankCode || !personalData.bankAccount || !personalData.idCardFront || !personalData.idCardBack || !agreeToTerms}
+              >
                 提交申請
               </Button>
             </div>

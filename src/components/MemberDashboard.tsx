@@ -1,18 +1,17 @@
 import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
 import { Users, Award, Settings, User, Home, CheckSquare, Gift, Edit } from 'lucide-react';
-import { mockRoommates } from '../data/mockData';
-import { AdBanner } from './AdBanner';
+import { mockServiceProviders } from '../data/mockData';
 
 export function MemberDashboard() {
   const { user } = useContext(UserContext);
 
-  // 找出該用戶的室友刊登
-  const userRoommates = mockRoommates.filter(r => r.userId === user?.id);
+  // 找出該用戶的服務者刊登
+  const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -56,30 +55,6 @@ export function MemberDashboard() {
             <p className="text-sm text-muted-foreground">聯絡電話</p>
             <p className="font-medium">{user?.phone}</p>
           </div>
-          {/* 登入服務顯示 */}
-          <div className="md:col-span-3">
-            <p className="text-sm text-muted-foreground mb-2">登入服務</p>
-            <div className="flex gap-2">
-              {user?.loginServices?.google && (
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  Google
-                </Badge>
-              )}
-              {user?.loginServices?.line && (
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  LINE
-                </Badge>
-              )}
-              {user?.loginServices?.instagram && (
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"></div>
-                  Instagram
-                </Badge>
-              )}
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -89,19 +64,15 @@ export function MemberDashboard() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Settings className="h-5 w-5 text-blue-600" />
-              服務管理
+              刊登管理
             </CardTitle>
             <CardDescription>
               管理已刊登的服務
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">已刊登</span>
-              <Badge variant="secondary">{userRoommates.length} 個</Badge>
-            </div>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/roommates">查看管理</Link>
+              <Link to="/service-providers">查看管理</Link>
             </Button>
           </CardContent>
         </Card>
@@ -117,10 +88,6 @@ export function MemberDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">下線人數</span>
-              <Badge variant="secondary">0 人</Badge>
-            </div>
             <Button asChild variant="outline" className="w-full">
               <Link to="/referrals">推薦管理</Link>
             </Button>
@@ -138,10 +105,6 @@ export function MemberDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">進行中任務</span>
-              <Badge variant="secondary">3 個</Badge>
-            </div>
             <Button asChild variant="outline" className="w-full">
               <Link to="/tasks">任務中心</Link>
             </Button>
@@ -159,19 +122,12 @@ export function MemberDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">可用Point</span>
-              <Badge variant="secondary">{user?.availableRewards || 0} P</Badge>
-            </div>
             <Button asChild variant="outline" className="w-full">
               <Link to="/rewards">Point管理</Link>
             </Button>
           </CardContent>
         </Card>
       </div>
-
-      {/* 廣告區域 */}
-      <AdBanner />
 
       {/* 最近活動 */}
       <Card>
@@ -190,16 +146,16 @@ export function MemberDashboard() {
               <Badge variant="outline">系統通知</Badge>
             </div>
             
-            {userRoommates.length === 0 ? (
+            {userServiceProviders.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">尚未有服務刊登</p>
                 <Button asChild className="mt-4">
-                  <Link to="/roommates/create">立即刊登第一個服務</Link>
+                  <Link to="/service-providers/create">立即刊登第一個服務</Link>
                 </Button>
               </div>
             ) : (
               <div className="text-center py-4">
-                <p className="text-muted-foreground">您已刊登 {userRoommates.length} 個服務</p>
+                <p className="text-muted-foreground">您已刊登 {userServiceProviders.length} 個服務</p>
               </div>
             )}
           </div>

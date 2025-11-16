@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../ui/alert-dialog';
+import { useNotification } from '../notifications/NotificationContext';
 
 interface TaskCompletion {
   id: string;
@@ -32,6 +33,8 @@ interface TaskCompletion {
 }
 
 export function TaskManagement() {
+  const { showSuccess, showWarning } = useNotification();
+  
   // 模擬任務完成紀錄
   const getTaskCompletions = (): TaskCompletion[] => {
     return [
@@ -127,29 +130,46 @@ export function TaskManagement() {
   const [taskCompletions, setTaskCompletions] = useState<TaskCompletion[]>(getTaskCompletions());
 
   const handleApproveTask = (completionId: string) => {
+    const completion = taskCompletions.find(c => c.id === completionId);
+    
     setTaskCompletions(completions =>
-      completions.map(completion =>
-        completion.id === completionId
-          ? { ...completion, status: 'approved' }
-          : completion
+      completions.map(comp =>
+        comp.id === completionId
+          ? { ...comp, status: 'approved' as const }
+          : comp
       )
     );
     
-    const completion = taskCompletions.find(c => c.id === completionId);
-    alert(`已核發任務獎勵\n使用者：${completion?.userName}\n任務：${completion?.taskTitle}\n獎勵：${completion?.rewardAmount} R點\n\n使用者將收到通知並可前往領取獎勵。`);
+    showSuccess(
+      '已核發任務獎勵',
+      `使用者將收到通知並可前往領取獎勵`,
+      [
+        `使用者：${completion?.userName}`,
+        `任務：${completion?.taskTitle}`,
+        `獎勵：${completion?.rewardAmount} P`
+      ]
+    );
   };
 
   const handleRejectTask = (completionId: string) => {
+    const completion = taskCompletions.find(c => c.id === completionId);
+    
     setTaskCompletions(completions =>
-      completions.map(completion =>
-        completion.id === completionId
-          ? { ...completion, status: 'rejected' }
-          : completion
+      completions.map(comp =>
+        comp.id === completionId
+          ? { ...comp, status: 'rejected' as const }
+          : comp
       )
     );
     
-    const completion = taskCompletions.find(c => c.id === completionId);
-    alert(`已拒絕任務申請\n使用者：${completion?.userName}\n任務：${completion?.taskTitle}\n\n使用者將收到拒絕通知。`);
+    showWarning(
+      '已拒絕任務申請',
+      `使用者將收到拒絕通知`,
+      [
+        `使用者：${completion?.userName}`,
+        `任務：${completion?.taskTitle}`
+      ]
+    );
   };
 
   const formatMonth = (monthStr: string) => {
@@ -223,7 +243,7 @@ export function TaskManagement() {
             <div className="text-3xl font-bold text-primary">
               {approvedCompletions.reduce((sum, c) => sum + c.rewardAmount, 0)}
             </div>
-            <p className="text-sm text-muted-foreground">R點</p>
+            <p className="text-sm text-muted-foreground">Point</p>
           </CardContent>
         </Card>
 
@@ -280,7 +300,7 @@ export function TaskManagement() {
                     {new Date(completion.completedDate).toLocaleDateString('zh-TW')}
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium">{completion.rewardAmount} R點</span>
+                    <span className="font-medium">{completion.rewardAmount} P</span>
                   </TableCell>
                   <TableCell>
                     {getStatusBadge(completion.status)}
@@ -393,7 +413,7 @@ export function TaskManagement() {
                                   <br /><br />
                                   任務：{completion.taskTitle}
                                   <br />
-                                  獎勵金額：{completion.rewardAmount} R點
+                                  獎勵金額：{completion.rewardAmount} P
                                   <br /><br />
                                   核發後使用者將收到通知，並可前往任務頁面領取獎勵。
                                 </AlertDialogDescription>
@@ -422,7 +442,7 @@ export function TaskManagement() {
                                   <br /><br />
                                   任務：{completion.taskTitle}
                                   <br />
-                                  獎勵金額：{completion.rewardAmount} R點
+                                  獎勵金額：{completion.rewardAmount} P
                                   <br /><br />
                                   拒絕後使用者將收到通知，此操作無法復原。
                                 </AlertDialogDescription>

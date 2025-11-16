@@ -12,14 +12,31 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import {
-  mockRoommates,
-  serviceCategories,
-  taiwanCities,
-  taiwanRegions,
-  genderOptions,
-} from "../data/mockData";
+import { mockServiceProviders } from "../data/mockData";
 import { AdBanner } from "./AdBanner";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./ui/sheet";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./ui/collapsible";
+import { 
+  NAME_MAX_LENGTH, 
+  NAME_DISPLAY_LENGTH_MOBILE, 
+  NAME_DISPLAY_LENGTH_DESKTOP,
+  SERVICE_CATEGORIES,
+  TAIWAN_CITIES,
+  TAIWAN_REGIONS,
+  GENDER_OPTIONS,
+} from "../utils/constants";
 
 // 基於姓名或職業的性別推測（簡化版）
 const getGenderByName = (name: string) => {
@@ -59,20 +76,6 @@ const cityCoordinates: Record<string, { lat: number; lng: number }> = {
   '金門縣': { lat: 24.4324, lng: 118.3175 },
   '連江縣': { lat: 26.1605, lng: 119.9297 }
 };
-import { ImageWithFallback } from "./figma/ImageWithFallback";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "./ui/sheet";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./ui/collapsible";
 
 export function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -102,8 +105,8 @@ export function HomePage() {
     return R * c;
   };
 
-  const filteredRoommates = useMemo(() => {
-    let filtered = mockRoommates.filter((roommate) => {
+  const filteredServiceProviders = useMemo(() => {
+    let filtered = mockServiceProviders.filter((roommate) => {
       // 服務類別篩選（單選）
       if (selectedCategory && roommate.category !== selectedCategory) {
         return false;
@@ -119,7 +122,7 @@ export function HomePage() {
 
       // 地區篩選邏輯
       if (selectedCities.length > 0) {
-        // 檢查室友的城市是否在選中的城市列表中
+        // 檢查服務者的城市是否在選中的城市列表中
         if (!selectedCities.includes(roommate.city)) {
           return false;
         }
@@ -141,7 +144,7 @@ export function HomePage() {
 
     // 按距離排序（使用城市座標）
     filtered.sort((a, b) => {
-      // 使用室友城市對應的座標，如果沒有對應座標則使用台北市作為預設
+      // 使用服務者城市對應的座標，如果沒有���應座標則使用台北市作為預設
       const aCoords = cityCoordinates[a.city] || cityCoordinates['台北市'];
       const bCoords = cityCoordinates[b.city] || cityCoordinates['台北市'];
       
@@ -170,13 +173,13 @@ export function HomePage() {
       setSelectedCities([...selectedCities, city]);
       // 當選擇縣市時，自動展開該縣市的區域選項並選擇全區
       setOpenCities({ ...openCities, [city]: true });
-      const cityDistricts = taiwanRegions[city] || [];
+      const cityDistricts = TAIWAN_REGIONS[city] || [];
       const allCityDistricts = ['全區', ...cityDistricts];
       setSelectedDistricts([...selectedDistricts, ...allCityDistricts]);
     } else {
       setSelectedCities(selectedCities.filter((c) => c !== city));
       // 取消選擇縣市時，也清除該縣市下的所有區域選擇（包含全區）
-      const cityDistricts = taiwanRegions[city] || [];
+      const cityDistricts = TAIWAN_REGIONS[city] || [];
       const allCityDistricts = ['全區', ...cityDistricts];
       setSelectedDistricts(selectedDistricts.filter((d) => !allCityDistricts.includes(d)));
       setOpenCities({ ...openCities, [city]: false });
@@ -184,7 +187,7 @@ export function HomePage() {
   };
 
   const handleDistrictChange = (city: string, district: string, checked: boolean) => {
-    const cityDistricts = taiwanRegions[city] || [];
+    const cityDistricts = TAIWAN_REGIONS[city] || [];
     
     if (district === '全區') {
       // 如果點擊的是「全區」
@@ -202,7 +205,7 @@ export function HomePage() {
       // 如果點擊的是具體區域
       if (checked) {
         const newDistricts = [...selectedDistricts, district];
-        // 檢查是否該縣市下所有區域都被選中，如果是則同時勾選「全區」
+        // 檢查是否該縣市下所有區域都被選中，如是則同時勾選「全區」
         const selectedCityDistricts = newDistricts.filter(d => cityDistricts.includes(d));
         if (selectedCityDistricts.length === cityDistricts.length) {
           newDistricts.push('全區');
@@ -246,7 +249,7 @@ export function HomePage() {
           找到你需要的專業服務
         </h1>
         <p className="text-muted-foreground">
-          Uknow 連結專業服務提供者與需求者，讓專業技能發揮最大價值
+          Uknow 連結專業服務者與需求者，讓專業技能發揮最大價值
         </p>
       </div>
 
@@ -271,22 +274,23 @@ export function HomePage() {
                   )}
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md">
-                <SheetHeader>
+              <SheetContent className="w-full sm:max-w-md pt-12">
+                <SheetHeader className="pb-4">
                   <SheetTitle>性別篩選</SheetTitle>
                   <SheetDescription>
-                    選擇您偏好的性別來篩選服務提供者
+                    選擇您偏好的性別來篩選服務者
                   </SheetDescription>
                 </SheetHeader>
-                <div className="mt-6 space-y-3">
-                  {genderOptions.map((gender) => (
-                    <div key={gender} className="flex items-center space-x-2">
+                <div className="mt-6 px-4 space-y-4">
+                  {GENDER_OPTIONS.map((gender) => (
+                    <div key={gender} className="flex items-center space-x-3 py-2">
                       <Checkbox
                         id={`mobile-gender-${gender}`}
                         checked={selectedGenders.includes(gender)}
                         onCheckedChange={(checked) => handleGenderChange(gender, checked as boolean)}
+                        className="h-5 w-5"
                       />
-                      <Label htmlFor={`mobile-gender-${gender}`} className="text-sm cursor-pointer">
+                      <Label htmlFor={`mobile-gender-${gender}`} className="text-base cursor-pointer flex-1">
                         {gender}
                       </Label>
                     </div>
@@ -311,29 +315,29 @@ export function HomePage() {
                   )}
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md">
-                <SheetHeader>
+              <SheetContent className="w-full sm:max-w-md pt-12">
+                <SheetHeader className="pb-4">
                   <SheetTitle>服務類別</SheetTitle>
                   <SheetDescription>
-                    選擇您需要的服務類別來篩選服務提供者
+                    選擇您需要的服務類別來篩選服務者
                   </SheetDescription>
                 </SheetHeader>
-                <div className="mt-6 space-y-3 h-full overflow-y-auto">
+                <div className="mt-6 px-4 space-y-3 h-full overflow-y-auto">
                   <RadioGroup 
                     value={selectedCategory} 
                     onValueChange={setSelectedCategory}
-                    className="space-y-2"
+                    className="space-y-3"
                   >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="" id="mobile-category-all" />
-                      <Label htmlFor="mobile-category-all" className="text-sm cursor-pointer">
+                    <div className="flex items-center space-x-3 py-2">
+                      <RadioGroupItem value="" id="mobile-category-all" className="h-5 w-5" />
+                      <Label htmlFor="mobile-category-all" className="text-base cursor-pointer flex-1">
                         全部類別
                       </Label>
                     </div>
-                    {serviceCategories.map((category) => (
-                      <div key={category} className="flex items-center space-x-2">
-                        <RadioGroupItem value={category} id={`mobile-category-${category}`} />
-                        <Label htmlFor={`mobile-category-${category}`} className="text-sm cursor-pointer">
+                    {SERVICE_CATEGORIES.map((category) => (
+                      <div key={category} className="flex items-center space-x-3 py-2">
+                        <RadioGroupItem value={category} id={`mobile-category-${category}`} className="h-5 w-5" />
+                        <Label htmlFor={`mobile-category-${category}`} className="text-base cursor-pointer flex-1">
                           {category}
                         </Label>
                       </div>
@@ -359,26 +363,27 @@ export function HomePage() {
                   )}
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md">
-                <SheetHeader>
+              <SheetContent className="w-full sm:max-w-md pt-12">
+                <SheetHeader className="pb-4">
                   <SheetTitle>服務地區</SheetTitle>
                   <SheetDescription>
-                    選擇您偏好的服務地區來篩選服務提供者
+                    選擇您偏好的服務地區來篩選服務者
                   </SheetDescription>
                 </SheetHeader>
-                <div className="mt-6 space-y-2 h-full overflow-y-auto">
-                  {taiwanCities.map((city) => (
+                <div className="mt-6 px-4 space-y-3 h-full overflow-y-auto">
+                  {TAIWAN_CITIES.map((city) => (
                     <Collapsible
                       key={city}
                       open={openCities[city]}
                       onOpenChange={() => toggleCityOpen(city)}
                     >
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-2">
+                      <div className="space-y-3 py-1">
+                        <div className="flex items-center space-x-3 py-2">
                           <Checkbox
                             id={`mobile-city-${city}`}
                             checked={selectedCities.includes(city)}
                             onCheckedChange={(checked) => handleCityChange(city, checked as boolean)}
+                            className="h-5 w-5"
                           />
                           <CollapsibleTrigger asChild>
                             <Button
@@ -386,7 +391,7 @@ export function HomePage() {
                               size="sm"
                               className="flex items-center justify-between w-full p-0 h-auto font-normal"
                             >
-                              <Label htmlFor={`mobile-city-${city}`} className="text-sm cursor-pointer flex-1 text-left">
+                              <Label htmlFor={`mobile-city-${city}`} className="text-base cursor-pointer flex-1 text-left">
                                 {city}
                               </Label>
                               {selectedCities.includes(city) && (
@@ -397,27 +402,29 @@ export function HomePage() {
                         </div>
                         
                         {selectedCities.includes(city) && (
-                          <CollapsibleContent className="space-y-2 ml-6">
+                          <CollapsibleContent className="space-y-3 ml-8">
                             {/* 全區選項 */}
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-3 py-2">
                               <Checkbox
                                 id={`mobile-district-${city}-all`}
                                 checked={selectedDistricts.includes('全區')}
                                 onCheckedChange={(checked) => handleDistrictChange(city, '全區', checked as boolean)}
+                                className="h-5 w-5"
                               />
-                              <Label htmlFor={`mobile-district-${city}-all`} className="text-sm cursor-pointer font-medium text-primary">
+                              <Label htmlFor={`mobile-district-${city}-all`} className="text-base cursor-pointer font-medium text-primary flex-1">
                                 全區
                               </Label>
                             </div>
                             {/* 具體區域選項 */}
-                            {taiwanRegions[city]?.map((district) => (
-                              <div key={district} className="flex items-center space-x-2">
+                            {TAIWAN_REGIONS[city]?.map((district) => (
+                              <div key={district} className="flex items-center space-x-3 py-2">
                                 <Checkbox
                                   id={`mobile-district-${city}-${district}`}
                                   checked={selectedDistricts.includes(district)}
                                   onCheckedChange={(checked) => handleDistrictChange(city, district, checked as boolean)}
+                                  className="h-5 w-5"
                                 />
-                                <Label htmlFor={`mobile-district-${city}-${district}`} className="text-sm cursor-pointer">
+                                <Label htmlFor={`mobile-district-${city}-${district}`} className="text-base cursor-pointer flex-1">
                                   {district}
                                 </Label>
                               </div>
@@ -438,7 +445,7 @@ export function HomePage() {
               onClick={clearFilters}
               variant="ghost"
               size="sm"
-              className="text-xs"
+              className="text-xs md:hidden"
             >
               清除所有篩選 ({totalFilters})
             </Button>
@@ -470,7 +477,7 @@ export function HomePage() {
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 pl-4 pr-2 pb-2">
               <div className="flex gap-4">
-                {genderOptions.map((gender) => (
+                {GENDER_OPTIONS.map((gender) => (
                   <div key={gender} className="flex items-center space-x-2">
                     <Checkbox
                       id={`desktop-gender-${gender}`}
@@ -520,7 +527,7 @@ export function HomePage() {
                       全部
                     </Label>
                   </div>
-                  {serviceCategories.map((category) => (
+                  {SERVICE_CATEGORIES.map((category) => (
                     <div key={category} className="flex items-center space-x-2">
                       <RadioGroupItem value={category} id={`desktop-category-${category}`} />
                       <Label htmlFor={`desktop-category-${category}`} className="text-sm cursor-pointer">
@@ -556,18 +563,68 @@ export function HomePage() {
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 pl-4 pr-2 pb-2">
               <div className="bg-muted/30 p-4 rounded-lg max-h-48 overflow-y-auto">
-                <div className="grid grid-cols-3 lg:grid-cols-4 gap-3">
-                  {taiwanCities.map((city) => (
-                    <div key={city} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`desktop-city-${city}`}
-                        checked={selectedCities.includes(city)}
-                        onCheckedChange={(checked) => handleCityChange(city, checked as boolean)}
-                      />
-                      <Label htmlFor={`desktop-city-${city}`} className="text-sm cursor-pointer">
-                        {city}
-                      </Label>
-                    </div>
+                <div className="space-y-3">
+                  {TAIWAN_CITIES.map((city) => (
+                    <Collapsible
+                      key={city}
+                      open={openCities[city]}
+                      onOpenChange={() => toggleCityOpen(city)}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`desktop-city-${city}`}
+                            checked={selectedCities.includes(city)}
+                            onCheckedChange={(checked) => handleCityChange(city, checked as boolean)}
+                          />
+                          <CollapsibleTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="flex items-center justify-between w-full p-0 h-auto font-normal"
+                            >
+                              <Label htmlFor={`desktop-city-${city}`} className="text-sm cursor-pointer flex-1 text-left">
+                                {city}
+                              </Label>
+                              {selectedCities.includes(city) && (
+                                <ChevronDown className={`h-4 w-4 transition-transform ${openCities[city] ? 'rotate-180' : ''}`} />
+                              )}
+                            </Button>
+                          </CollapsibleTrigger>
+                        </div>
+                        
+                        {selectedCities.includes(city) && (
+                          <CollapsibleContent className="ml-6">
+                            <div className="grid grid-cols-3 lg:grid-cols-4 gap-2">
+                              {/* 全區選項 */}
+                              <div className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`desktop-district-${city}-all`}
+                                  checked={selectedDistricts.includes('全區')}
+                                  onCheckedChange={(checked) => handleDistrictChange(city, '全區', checked as boolean)}
+                                />
+                                <Label htmlFor={`desktop-district-${city}-all`} className="text-sm cursor-pointer font-medium text-primary">
+                                  全區
+                                </Label>
+                              </div>
+                              {/* 具體區域選項 */}
+                              {TAIWAN_REGIONS[city]?.map((district) => (
+                                <div key={district} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`desktop-district-${city}-${district}`}
+                                    checked={selectedDistricts.includes(district)}
+                                    onCheckedChange={(checked) => handleDistrictChange(city, district, checked as boolean)}
+                                  />
+                                  <Label htmlFor={`desktop-district-${city}-${district}`} className="text-sm cursor-pointer">
+                                    {district}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        )}
+                      </div>
+                    </Collapsible>
                   ))}
                 </div>
               </div>
@@ -578,14 +635,14 @@ export function HomePage() {
         {/* 結果統計 */}
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">
-            找到 {filteredRoommates.length} 位服務提供者（按距離排序）
+            找到 {filteredServiceProviders.length} 位服務者（按距離排序）
           </span>
           {totalFilters > 0 && (
             <Button
               onClick={clearFilters}
               variant="ghost"
               size="sm"
-              className="text-xs md:text-sm px-2"
+              className="hidden md:flex text-xs md:text-sm px-2"
             >
               清除篩選 ({totalFilters})
             </Button>
@@ -593,30 +650,27 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* 廣告區域（在結果前） */}
-      <AdBanner />
-
       {/* 手機版緊湊網格 */}
       <div className="block md:hidden">
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-          {filteredRoommates.map((roommate) => (
-            <MobileRoommateCard key={roommate.id} roommate={roommate} />
+          {filteredServiceProviders.map((roommate) => (
+            <MobileServiceProviderCard key={roommate.id} roommate={roommate} />
           ))}
         </div>
       </div>
 
       {/* 桌面版卡片網格 */}
       <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredRoommates.map((roommate) => (
-          <RoommateCard key={roommate.id} roommate={roommate} />
+        {filteredServiceProviders.map((roommate) => (
+          <ServiceProviderCard key={roommate.id} roommate={roommate} />
         ))}
       </div>
 
       {/* 空狀態顯示 */}
-      {filteredRoommates.length === 0 && (
+      {filteredServiceProviders.length === 0 && (
         <div className="text-center py-12">
           <p className="text-muted-foreground">
-            沒有找到符合條件的服務提供者
+            沒有找到符合條件的服務者
           </p>
           <Button
             onClick={clearFilters}
@@ -632,9 +686,9 @@ export function HomePage() {
 }
 
 // 手機版緊湊網格項目組件
-function MobileRoommateCard({ roommate }: { roommate: any }) {
+function MobileServiceProviderCard({ roommate }: { roommate: any }) {
   return (
-    <Link to={`/roommate/${roommate.id}`} className="block">
+    <Link to={`/service-providers/${roommate.id}`} className="block">
       <div className="relative aspect-square overflow-hidden rounded-lg group">
         <ImageWithFallback
           src={roommate.photos[0]}
@@ -646,12 +700,8 @@ function MobileRoommateCard({ roommate }: { roommate: any }) {
         {/* 左下角姓名 */}
         <div className="absolute bottom-1 left-1">
           <span className="text-white text-xs font-medium drop-shadow-md">
-            {roommate.name.length > 8 ? `${roommate.name.substring(0, 8)}...` : roommate.name}
+            {roommate.name.length > NAME_DISPLAY_LENGTH_MOBILE ? `${roommate.name.substring(0, NAME_DISPLAY_LENGTH_MOBILE)}...` : roommate.name}
           </span>
-        </div>
-        {/* 在線狀態指示器（可選，模擬圖片中的綠色圓點） */}
-        <div className="absolute top-1 left-1">
-          <div className="w-2 h-2 bg-green-400 rounded-full border border-white"></div>
         </div>
       </div>
     </Link>
@@ -659,9 +709,9 @@ function MobileRoommateCard({ roommate }: { roommate: any }) {
 }
 
 // 桌面版完整卡片組件
-function RoommateCard({ roommate }: { roommate: any }) {
+function ServiceProviderCard({ roommate }: { roommate: any }) {
   return (
-    <Link to={`/roommate/${roommate.id}`}>
+    <Link to={`/service-providers/${roommate.id}`}>
       <Card className="hover:shadow-lg transition-shadow cursor-pointer">
         <CardContent className="p-0">
           <div className="aspect-video relative overflow-hidden rounded-t-lg">
@@ -674,7 +724,7 @@ function RoommateCard({ roommate }: { roommate: any }) {
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between">
               <h3 className="font-semibold line-clamp-1">
-                {roommate.name}
+                {roommate.name.length > NAME_DISPLAY_LENGTH_DESKTOP ? `${roommate.name.substring(0, NAME_DISPLAY_LENGTH_DESKTOP)}...` : roommate.name}
               </h3>
               <Badge variant="secondary">
                 {roommate.category}

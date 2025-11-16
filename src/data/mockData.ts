@@ -1,55 +1,12 @@
-// 服務類別清單
-export const serviceCategories = [
-  '美髮', '美容', '按摩', '除毛', '睫毛', '美甲', '紋繡', '刺青', '採耳',
-  '保險', '傳銷', '房仲', '汽車', '財務顧問', '法律顧問', '平面設計師',
-  '室內設計師', '攝影師', '工程師', '會計師', '水電', '健身教練',
-  '各項運動教練', '各類音樂老師', '身心靈老師', '上班族', '學生', '退休', '其他'
-];
+// 從 utils/constants.ts 導入常數
+import { GENDER_OPTIONS } from '../utils/constants';
 
-// 台灣縣市清單
-export const taiwanCities = [
-  '台北市', '新北市', '桃園市', '台中市', '台南市', '高雄市',
-  '基隆市', '新竹市', '嘉義市', '新竹縣', '苗栗縣', '彰化縣',
-  '南投縣', '雲林縣', '嘉義縣', '屏東縣', '宜蘭縣', '花蓮縣',
-  '台東縣', '澎湖縣', '金門縣', '連江縣'
-];
-
-// 性別選項
-export const genderOptions = ['男', '女'];
-
-// 台灣縣市及其鄉鎮區對應表
-export const taiwanRegions: Record<string, string[]> = {
-  '台北市': ['中正區', '大同區', '中山區', '松山區', '大安區', '萬華區', '信義區', '士林區', '北投區', '內湖區', '南港區', '文山區'],
-  '新北市': ['板橋區', '三重區', '中和區', '永和區', '新莊區', '新店區', '樹林區', '鶯歌區', '三峽區', '淡水區', '汐止區', '瑞芳區', '土城區', '蘆洲區', '五股區', '泰山區', '林口區', '深坑區', '石碇區', '坪林區', '三芝區', '石門區', '八里區', '平溪區', '雙溪區', '貢寮區', '金山區', '萬里區', '烏來區'],
-  '桃園市': ['桃園區', '中壢區', '大溪區', '楊梅區', '蘆竹區', '大園區', '龜山區', '八德區', '龍潭區', '平鎮區', '新屋區', '觀音區', '復興區'],
-  '台中市': ['中區', '東區', '南區', '西區', '北區', '西屯區', '南屯區', '北屯區', '豐原區', '東勢區', '大甲區', '清水區', '沙鹿區', '梧棲區', '后里區', '神岡區', '潭子區', '大雅區', '新社區', '石岡區', '外埔區', '大安區', '烏日區', '大肚區', '龍井區', '霧峰區', '太平區', '大里區', '和平區'],
-  '台南市': ['中西區', '東區', '南區', '北區', '安平區', '安南區', '永康區', '歸仁區', '新化區', '左鎮區', '玉井區', '楠西區', '南化區', '仁德區', '關廟區', '龍崎區', '官田區', '麻豆區', '佳里區', '西港區', '七股區', '將軍區', '學甲區', '北門區', '新營區', '後壁區', '白河區', '東山區', '六甲區', '下營區', '柳營區', '鹽水區', '善化區', '大內區', '山上區', '新市區', '安定區'],
-  '高雄市': ['新興區', '前金區', '苓雅區', '鹽埕區', '鼓山區', '旗津區', '前鎮區', '三民區', '楠梓區', '小港區', '左營區', '仁武區', '大社區', '岡山區', '����區', '阿蓮區', '田寮區', '燕巢區', '橋頭區', '梓官區', '彌陀區', '永安區', '湖內區', '鳳山區', '大寮區', '林園區', '鳥松區', '大樹區', '旗山區', '美濃區', '六龜區', '內門區', '杉林區', '甲仙區', '桃源區', '那瑪夏區', '茂林區', '茄萣區'],
-  '基隆市': ['仁愛區', '信義區', '中正區', '中山區', '安樂區', '暖暖區', '七堵區'],
-  '新竹市': ['東區', '北區', '香山區'],
-  '嘉義市': ['東區', '西區'],
-  '新竹縣': ['竹北市', '湖口鄉', '新豐鄉', '新埔鎮', '關西鎮', '芎林鄉', '寶山鄉', '竹東鎮', '五峰鄉', '橫山鄉', '尖石鄉', '北埔鄉', '峨眉鄉'],
-  '苗栗縣': ['苗栗市', '頭份市', '公館鄉', '大湖鄉', '泰安鄉', '銅鑼鄉', '三義鄉', '西湖鄉', '造橋鄉', '頭屋鄉', '南庄鄉', '三灣鄉', '獅潭鄉', '後龍鎮', '通霄鎮', '苑裡鎮', '卓蘭鎮', '竹南鎮'],
-  '彰化縣': ['彰化市', '芬園鄉', '花壇鄉', '秀水鄉', '鹿港鎮', '福興鄉', '線西鄉', '和美鎮', '伸港鄉', '員林市', '社頭鄉', '永靖鄉', '埔心鄉', '溪湖鎮', '大村鄉', '埔鹽鄉', '田中鎮', '北斗鎮', '田尾鄉', '埤頭鄉', '溪州鄉', '竹塘鄉', '二林鎮', '大城鄉', '芳苑鄉', '二水鄉'],
-  '南投縣': ['南投市', '中寮鄉', '草屯鎮', '國姓鄉', '埔里鎮', '仁愛鄉', '名間鄉', '集集鎮', '水里鄉', '魚池鄉', '信義鄉', '竹山鎮', '鹿谷鄉'],
-  '雲林縣': ['斗南鎮', '大埤鄉', '虎尾鎮', '土庫鎮', '褒忠鄉', '東勢鄉', '台西鄉', '崙背鄉', '麥寮鄉', '斗六市', '林內鄉', '古坑鄉', '莿桐鄉', '西螺鎮', '二崙鄉', '北港鎮', '水林鄉', '口湖鄉', '四湖鄉', '元長鄉'],
-  '嘉義縣': ['番路鄉', '梅山鄉', '竹崎鄉', '阿里山鄉', '中埔鄉', '大埔鄉', '水上鄉', '鹿草鄉', '太保市', '朴子市', '東石鄉', '六腳鄉', '新港鄉', '民雄鄉', '大林鎮', '溪口鄉', '義竹鄉', '布袋鎮'],
-  '屏東縣': ['屏東市', '三地門鄉', '霧臺鄉', '瑪家鄉', '九如鄉', '里港鄉', '高樹鄉', '鹽埔鄉', '長治鄉', '麟洛鄉', '竹田鄉', '內埔鄉', '萬丹鄉', '潮州鎮', '泰武鄉', '來義鄉', '萬巒鄉', '崁頂鄉', '新埤鄉', '南州鄉', '林邊鄉', '東港鎮', '琉球鄉', '佳冬鄉', '新園鄉', '枋寮鄉', '枋山鄉', '春日鄉', '獅子鄉', '車城鄉', '牡丹鄉', '恆春鎮', '滿州鄉'],
-  '宜蘭縣': ['宜蘭市', '頭城鎮', '礁溪鄉', '壯圍鄉', '員山鄉', '羅東鎮', '三星鄉', '大同鄉', '五結鄉', '冬山鄉', '蘇澳鎮', '南澳鄉'],
-  '花蓮縣': ['花蓮市', '新城鄉', '秀林鄉', '吉安鄉', '壽豐鄉', '鳳林鎮', '光復鄉', '豐濱鄉', '瑞穗鄉', '萬榮鄉', '玉里鎮', '卓溪鄉', '富里鄉'],
-  '台東縣': ['台東市', '綠島鄉', '蘭嶼鄉', '延平鄉', '卑南鄉', '鹿野鄉', '關山鎮', '海端鄉', '池上鄉', '東河鄉', '成功鎮', '長濱鄉', '太麻里鄉', '金峰鄉', '大武鄉', '達仁鄉'],
-  '澎湖縣': ['馬公市', '西嶼鄉', '望安鄉', '七美鄉', '白沙鄉', '湖西鄉'],
-  '金門縣': ['金沙鎮', '金湖鎮', '金寧鄉', '金城鎮', '烈嶼鄉', '烏坵鄉'],
-  '連江縣': ['南竿鄉', '北竿鄉', '莒光鄉', '東引鄉']
-};
-
-// 為每個室友分配性別（基於ID的簡單邏輯）
+// 為每個服務者分配性別（基於ID的簡單邏輯）
 const assignGender = (id: string) => {
-  const genders = ['男', '女'];
-  return genders[parseInt(id) % 2]; // 簡單交替分配
+  return GENDER_OPTIONS[parseInt(id) % 2]; // 簡單交替分配
 };
 
-// 基於姓名或職業的性別推測（簡化版）
+// 基���姓名或職業的性別推測（簡化版）
 const getGenderByName = (name: string) => {
   // 基於常見的女性名字或職業
   const femaleKeywords = ['Amy', 'Linda', 'Chloe', 'Michelle', 'Emma', 'Sophie', 'Vivian', 'Grace', 'Alice', 'Jenny', 'Sarah', 'Luna', 'Crystal', 'Helen', 'Tina', 'Bella', 'Ruby', 'Iris', 'Nancy', 'Victoria', 'Diana', 'Zoe', 'Kate', 'Melody', '美髮師', '美容師', '美甲師', '睫毛師', '除毛師', '紋繡師'];
@@ -62,10 +19,11 @@ const getGenderByName = (name: string) => {
   return '男'; // 預設為男性
 };
 
-// 模擬室友資料
-export const mockRoommates = [
+// 模擬服務者資料
+export const mockServiceProviders = [
   {
     id: '1',
+    publicListingId: 'aB3xY7k', // 刊登ID (7碼)
     name: '專業美髮師 Amy',
     category: '美髮',
     city: '台北市',
@@ -90,6 +48,7 @@ export const mockRoommates = [
   },
   {
     id: '2',
+    publicListingId: '1Km9pLq', // 刊登ID (7碼)
     name: '健身教練 Jason',
     category: '健身教練',
     city: '台北市',
@@ -112,6 +71,7 @@ export const mockRoommates = [
   },
   {
     id: '3',
+    publicListingId: 'zN5rT8m', // 刊登ID (7碼)
     name: '專業按摩師 Linda',
     category: '按摩',
     city: '新北市',
@@ -131,6 +91,7 @@ export const mockRoommates = [
   },
   {
     id: '4',
+    publicListingId: 'pQ2wE9x', // 刊登ID (7碼)
     name: '美甲師 Chloe',
     category: '美甲',
     city: '台中市',
@@ -151,6 +112,7 @@ export const mockRoommates = [
   },
   {
     id: '5',
+    publicListingId: 'mV7hJ2n', // 刊登ID (7碼)
     name: '攝影師 David',
     category: '攝影師',
     city: '高雄市',
@@ -170,6 +132,7 @@ export const mockRoommates = [
   },
   {
     id: '6',
+    publicListingId: 'hR6tK3w', // 刊登ID (7碼)
     name: '美容師 Michelle',
     category: '美容',
     city: '台北市',
@@ -190,6 +153,7 @@ export const mockRoommates = [
   },
   {
     id: '7',
+    publicListingId: 'fG8yM5p', // 刊登ID (7碼)
     name: '睫毛師 Emma',
     category: '睫毛',
     city: '台北市',
@@ -208,6 +172,7 @@ export const mockRoommates = [
   },
   {
     id: '8',
+    publicListingId: 'nL4vB9q', // 刊登ID (7碼)
     name: '除毛師 Sophie',
     category: '除毛',
     city: '新北市',
@@ -226,6 +191,7 @@ export const mockRoommates = [
   },
   {
     id: '9',
+    publicListingId: 'uJ7sD2r', // 刊登ID (7碼)
     name: '紋繡師 Vivian',
     category: '紋繡',
     city: '台中市',
@@ -244,6 +210,7 @@ export const mockRoommates = [
   },
   {
     id: '10',
+    publicListingId: 'wX1cF6t', // 刊登ID (7碼)
     name: '刺青師 Kevin',
     category: '刺青',
     city: '台北市',
@@ -262,6 +229,7 @@ export const mockRoommates = [
   },
   {
     id: '11',
+    publicListingId: 'eY3nH8v', // 刊登ID (7碼)
     name: '採耳師 Grace',
     category: '採耳',
     city: '台南市',
@@ -280,6 +248,7 @@ export const mockRoommates = [
   },
   {
     id: '12',
+    publicListingId: 'qZ5mK1x', // 刊登ID (7碼)
     name: '保險顧問 Michael',
     category: '保險',
     city: '台北市',
@@ -298,10 +267,11 @@ export const mockRoommates = [
   },
   {
     id: '13',
+    publicListingId: 'iA9pL4y', // 刊登ID (7碼)
     name: '房仲專員 Alice',
     category: '房仲',
     city: '新北市',
-    district: '三重區',
+    district: '���重區',
     description: '大台北地區房屋買賣專家，投資置產諮詢顧問',
     photos: [
       'https://images.unsplash.com/photo-1494790108755-2616b612b890?w=400&h=300&fit=crop'
@@ -316,6 +286,7 @@ export const mockRoommates = [
   },
   {
     id: '14',
+    publicListingId: 'oB2rN7z', // 刊登ID (7碼)
     name: '汽車業務 Peter',
     category: '汽車',
     city: '桃園市',
@@ -334,6 +305,7 @@ export const mockRoommates = [
   },
   {
     id: '15',
+    publicListingId: 'sC6tQ3a', // 刊登ID (7碼)
     name: '財務顧問 Jenny',
     category: '財務顧問',
     city: '台北市',
@@ -352,6 +324,7 @@ export const mockRoommates = [
   },
   {
     id: '16',
+    publicListingId: 'kD8vS5b', // 刊登ID (7碼)
     name: '律師 William',
     category: '法律顧問',
     city: '台北市',
@@ -370,6 +343,7 @@ export const mockRoommates = [
   },
   {
     id: '17',
+    publicListingId: 'gE1wT9c', // 刊登ID (7碼)
     name: '平面設計師 Sarah',
     category: '平面設計師',
     city: '台中市',
@@ -388,6 +362,7 @@ export const mockRoommates = [
   },
   {
     id: '18',
+    publicListingId: 'mF4xU2d', // 刊登ID (7碼)
     name: '室內設計師 Ryan',
     category: '室內設計師',
     city: '台北市',
@@ -406,6 +381,7 @@ export const mockRoommates = [
   },
   {
     id: '19',
+    publicListingId: 'yG7zV6e', // 刊登ID (7碼)
     name: '工程師 Alex',
     category: '工程師',
     city: '新竹市',
@@ -424,6 +400,7 @@ export const mockRoommates = [
   },
   {
     id: '20',
+    publicListingId: 'bH3aW1f', // 刊登ID (7碼)
     name: '會計師 Lisa',
     category: '會計師',
     city: '台北市',
@@ -750,7 +727,7 @@ export const mockRoommates = [
     name: '汽車業務 Jack',
     category: '汽車',
     city: '高雄市',
-    district: '鼓山區',
+    district: '��山區',
     description: '國產車銷售專家，車貸分期專業諮詢',
     photos: [
       'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=300&fit=crop'
@@ -1290,6 +1267,7 @@ export const mockRoommates = [
 export const mockUsers = [
   {
     id: 'user1',
+    publicUserId: 'aB3xY', // 使用者ID (5碼)
     name: '王小明',
     email: 'ming@example.com',
     phone: '0912345678',
@@ -1311,6 +1289,7 @@ export const mockUsers = [
   },
   {
     id: 'user2',
+    publicUserId: '1Km9p', // 使用者ID (5碼)
     name: '李小華',
     email: 'hua@example.com',
     phone: '0923456789',

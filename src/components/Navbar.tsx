@@ -63,9 +63,9 @@ export function Navbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/roommates" className="w-full cursor-pointer">
+                  <Link to="/service-providers" className="w-full cursor-pointer">
                     <Settings className="mr-2 h-4 w-4" />
-                    服務管理
+                    刊登管理
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>

@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Share2, Copy, Gift } from 'lucide-react';
+import { useNotification } from '../notifications/NotificationContext';
 
 interface ReferralCodeCardProps {
   referralCode?: string;
@@ -11,11 +12,24 @@ interface ReferralCodeCardProps {
 
 export function ReferralCodeCard({ referralCode }: ReferralCodeCardProps) {
   const [copiedCode, setCopiedCode] = useState(false);
+  const { showToast } = useNotification();
 
   const copyReferralCode = () => {
-    navigator.clipboard.writeText(referralCode || '');
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+    // 使用傳統的 execCommand 方法（更可靠，不受 Clipboard API 權限限制）
+    const textArea = document.createElement('textarea');
+    textArea.value = referralCode || '';
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch (err) {
+      console.error('複製失敗:', err);
+    }
+    document.body.removeChild(textArea);
   };
 
   const shareReferralLink = () => {
@@ -27,8 +41,20 @@ export function ReferralCodeCard({ referralCode }: ReferralCodeCardProps) {
         url: referralLink
       });
     } else {
-      navigator.clipboard.writeText(referralLink);
-      alert('推薦連結已複製到剪貼簿！');
+      // 使用傳統的 execCommand 方法
+      const textArea = document.createElement('textarea');
+      textArea.value = referralLink;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('推薦連結已複製到剪貼簿！', 'success');
+      } catch (err) {
+        console.error('複製失敗:', err);
+      }
+      document.body.removeChild(textArea);
     }
   };
 
@@ -63,7 +89,7 @@ export function ReferralCodeCard({ referralCode }: ReferralCodeCardProps) {
         <Alert>
           <Gift className="h-4 w-4" />
           <AlertDescription>
-            推薦獎金規則：您推薦的每位用戶成功訂閱服務提供者服務，您將獲得 $10 獎金。
+            推薦獎金規則：您推薦的每位用戶成功訂閱服務者服務，您將獲得 $10 獎金。
             第一代下線的推薦成功，您也可獲得 $10 獎金。
           </AlertDescription>
         </Alert>

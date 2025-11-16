@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { CreditCard, Clock, CheckCircle, XCircle, AlertCircle, Eye } from 'lucide-react';
 import { mockWithdrawals } from '../../data/mockData';
+import { useNotification } from '../notifications/NotificationContext';
 
 interface WithdrawalSectionProps {
   availableRewards: number;
@@ -11,6 +12,7 @@ interface WithdrawalSectionProps {
 }
 
 export function WithdrawalSection({ availableRewards, onStartWithdrawal }: WithdrawalSectionProps) {
+  const { showToast } = useNotification();
   const reservedAmount = 273; // 預留費用
   const actualAvailable = Math.max(0, availableRewards - reservedAmount);
   const maxWithdrawal = Math.floor(actualAvailable / 1000) * 1000;
@@ -47,7 +49,7 @@ export function WithdrawalSection({ availableRewards, onStartWithdrawal }: Withd
   };
 
   const handleConfirmCollection = (withdrawalId: string) => {
-    alert(`確認查收提領申請 ${withdrawalId}`);
+    showToast('已確認查收匯款！', 'success');
     // 這裡可以添加實際的查收確認邏輯
   };
 

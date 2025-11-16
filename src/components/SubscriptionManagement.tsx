@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Label } from './ui/label';
 import { UserContext } from '../App';
 import { Plus, Calendar, CreditCard, Settings, AlertTriangle, RefreshCw } from 'lucide-react';
-import { mockRoommates } from '../data/mockData';
+import { mockServiceProviders } from '../data/mockData';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +29,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from './ui/dialog';
+import { useNotification } from './notifications/NotificationContext';
+import { MONTHLY_PRICE, YEARLY_PRICE } from '../utils/constants';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+// TODO: Backend API 端點規劃
+// GET /make-server-5c6718b9/subscriptions?userId={userId} - 獲取使用者的所有訂閱
+// PUT /make-server-5c6718b9/subscriptions/{subscriptionId}/cancel - 取消訂閱
+// PUT /make-server-5c6718b9/subscriptions/{subscriptionId}/change-plan - 更改訂閱方案
+// PUT /make-server-5c6718b9/subscriptions/{subscriptionId}/reactivate - 重新激活訂閱
 
 interface SubscriptionData {
   id: string;
@@ -42,7 +50,7 @@ interface SubscriptionData {
   nextBillingDate: string;
   suspendedDate?: string;
   unpaidAmount?: number;
-  accumulatedRPoints?: number;
+  accumulatedPoints?: number;
   paymentMethod: {
     type: 'credit_card';
     last4: string;
@@ -54,14 +62,16 @@ interface SubscriptionData {
 
 export function SubscriptionManagement() {
   const { user } = useContext(UserContext);
+  const { showSuccess, showWarning } = useNotification();
   const [reactivationOption, setReactivationOption] = useState<'restart' | 'payback'>('restart');
   const [changePlanTarget, setChangePlanTarget] = useState<'monthly' | 'yearly'>('monthly');
+  const [changePlanDialogOpen, setChangePlanDialogOpen] = useState<string | null>(null);
 
   // 模擬訂閱資料
   const getSubscriptions = (): SubscriptionData[] => {
-    const userRoommates = mockRoommates.filter(r => r.userId === user?.id);
+    const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
     
-    return userRoommates.map(roommate => ({
+    return userServiceProviders.map(roommate => ({
       id: `sub_${roommate.id}`,
       roommateId: roommate.id,
       roommateName: roommate.name,
@@ -76,7 +86,7 @@ export function SubscriptionManagement() {
         new Date(new Date(roommate.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       suspendedDate: roommate.id === '3' ? '2024-06-01' : undefined,
       unpaidAmount: roommate.id === '3' ? 258 : undefined,
-      accumulatedRPoints: roommate.id === '3' ? 1500 : undefined,
+      accumulatedPoints: roommate.id === '3' ? 1500 : undefined,
       paymentMethod: {
         type: 'credit_card',
         last4: roommate.id === '1' ? '4567' : roommate.id === '2' ? '8901' : '2345',
@@ -89,21 +99,82 @@ export function SubscriptionManagement() {
 
   const [subscriptions, setSubscriptions] = useState<SubscriptionData[]>(getSubscriptions());
 
+  // TODO: 頁面載入時從 backend 獲取訂閱資料
+  // useEffect(() => {
+  //   const fetchSubscriptions = async () => {
+  //     try {
+  //       const response = await fetch(
+  //         `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/subscriptions?userId=${user?.id}`,
+  //         {
+  //           headers: {
+  //             'Authorization': `Bearer ${publicAnonKey}`
+  //           }
+  //         }
+  //       );
+  //       const data = await response.json();
+  //       setSubscriptions(data.subscriptions);
+  //     } catch (error) {
+  //       console.error('獲取訂閱資料失敗:', error);
+  //     }
+  //   };
+  //   
+  //   if (user?.id) {
+  //     fetchSubscriptions();
+  //   }
+  // }, [user?.id]);
+
   const activeSubscriptions = subscriptions.filter(s => s.status === 'active');
   const suspendedSubscriptions = subscriptions.filter(s => s.status === 'suspended');
 
   const handleCancelSubscription = (subscriptionId: string) => {
     const subscription = subscriptions.find(s => s.id === subscriptionId);
-    alert(`訂閱已取消\n室友：${subscription?.roommateName}\n取消日期：${new Date().toLocaleDateString('zh-TW')}\n注意：取消後室友將在當期結束時停止顯示`);
+    showWarning(
+      '訂閱已取消',
+      `服務者「${subscription?.roommateName}」的訂閱已成功取消`,
+      [
+        `取消日期：${new Date().toLocaleDateString('zh-TW')}`,
+        '取消後此服務者將在當期結束時停止顯示',
+        '相關推薦 Point 將無法提領',
+        '您可以隨時重新訂閱此服務者'
+      ]
+    );
+    
+    // TODO: 將取消訂閱寫入 backend
+    // try {
+    //   await fetch(
+    //     `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/subscriptions/${subscriptionId}/cancel`,
+    //     {
+    //       method: 'PUT',
+    //       headers: {
+    //         'Authorization': `Bearer ${publicAnonKey}`,
+    //         'Content-Type': 'application/json'
+    //       },
+    //       body: JSON.stringify({
+    //         userId: user?.id,
+    //         cancelDate: new Date().toISOString()
+    //       })
+    //     }
+    //   );
+    // } catch (error) {
+    //   console.error('取消訂閱失敗:', error);
+    // }
   };
 
   const handleChangePlan = (subscriptionId: string, newPlan: 'monthly' | 'yearly') => {
     const subscription = subscriptions.find(s => s.id === subscriptionId);
-    const newPrice = newPlan === 'yearly' ? 1188 : 129;
+    const newPrice = newPlan === 'yearly' ? YEARLY_PRICE : MONTHLY_PRICE;
     const currentPlan = subscription?.plan === 'yearly' ? '年繳' : '月繳';
     const newPlanText = newPlan === 'yearly' ? '年繳' : '月繳';
     
-    alert(`訂閱方案已更改\n室友：${subscription?.roommateName}\n從 ${currentPlan} 更改為 ${newPlanText}\n新價格：$${newPrice}\n變更將在下一個計費週期生效`);
+    showSuccess(
+      '訂閱方案已更改',
+      `服務者「${subscription?.roommateName}」的訂閱方案已成功更改`,
+      [
+        `從 ${currentPlan} 更改為 ${newPlanText}`,
+        `新價格：$${newPlan === 'yearly' ? YEARLY_PRICE.toLocaleString() : MONTHLY_PRICE}/${newPlan === 'yearly' ? '年' : '月'}`,
+        '變更將在下一個計費週期生效'
+      ]
+    );
     
     setSubscriptions(subs => 
       subs.map(s => 
@@ -112,15 +183,54 @@ export function SubscriptionManagement() {
           : s
       )
     );
+    
+    // TODO: 將方案變更寫入 backend
+    // try {
+    //   await fetch(
+    //     `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/subscriptions/${subscriptionId}/change-plan`,
+    //     {
+    //       method: 'PUT',
+    //       headers: {
+    //         'Authorization': `Bearer ${publicAnonKey}`,
+    //         'Content-Type': 'application/json'
+    //       },
+    //       body: JSON.stringify({
+    //         userId: user?.id,
+    //         newPlan: newPlan,
+    //         changeDate: new Date().toISOString()
+    //       })
+    //     }
+    //   );
+    // } catch (error) {
+    //   console.error('更改方案失敗:', error);
+    // }
   };
 
   const handleReactivateSubscription = (subscriptionId: string, option: 'restart' | 'payback') => {
     const subscription = subscriptions.find(s => s.id === subscriptionId);
     
     if (option === 'restart') {
-      alert(`訂閱重新激活成功！\n室友：${subscription?.roommateName}\n選擇：重新開始訂閱\n累積的 ${subscription?.accumulatedRPoints} R點已清零\n新的訂閱週期從今日開始`);
+      showSuccess(
+        '訂閱重新激活成功！',
+        `服務者「${subscription?.roommateName}」的訂閱已重新激活`,
+        [
+          '選擇：重新開始訂閱',
+          `累積的 ${subscription?.accumulatedPoints} P已清零`,
+          '新的訂閱週期從今日開始',
+          `月繳方案：$${MONTHLY_PRICE}/月`
+        ]
+      );
     } else {
-      alert(`訂閱重新激活成功！\n室友：${subscription?.roommateName}\n選擇：補繳欠費\n補繳金額：$${subscription?.unpaidAmount}\n保留累積的 ${subscription?.accumulatedRPoints} R點`);
+      showSuccess(
+        '訂閱重新激活成功！',
+        `服務者「${subscription?.roommateName}」的訂閱已重新激活`,
+        [
+          '選擇：補繳欠費',
+          `補繳金額：$${subscription?.unpaidAmount}`,
+          `保留累積的 ${subscription?.accumulatedPoints} P`,
+          '已恢復原有訂閱週期'
+        ]
+      );
     }
 
     setSubscriptions(subs => 
@@ -130,6 +240,27 @@ export function SubscriptionManagement() {
           : s
       )
     );
+    
+    // TODO: 將重新激活訂閱寫入 backend
+    // try {
+    //   await fetch(
+    //     `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/subscriptions/${subscriptionId}/reactivate`,
+    //     {
+    //       method: 'PUT',
+    //       headers: {
+    //         'Authorization': `Bearer ${publicAnonKey}`,
+    //         'Content-Type': 'application/json'
+    //       },
+    //       body: JSON.stringify({
+    //         userId: user?.id,
+    //         reactivationOption: option,
+    //         reactivationDate: new Date().toISOString()
+    //       })
+    //     }
+    //   );
+    // } catch (error) {
+    //   console.error('重新激活訂閱失敗:', error);
+    // }
   };
 
   return (
@@ -137,47 +268,14 @@ export function SubscriptionManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">訂閱管理</h1>
-          <p className="text-muted-foreground">管理您的室友刊登訂閱與付款設定</p>
+          <p className="text-muted-foreground">管理您的服務者刊登訂閱與付款設定</p>
         </div>
         <Button asChild>
-          <Link to="/roommates/create">
+          <Link to="/service-providers/create">
             <Plus className="h-4 w-4 mr-2" />
-            新增室友訂閱
+            刊登新服務
           </Link>
         </Button>
-      </div>
-
-      {/* 訂閱統計 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">總訂閱數</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">{subscriptions.length}</div>
-            <p className="text-sm text-muted-foreground">已訂閱的室友</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">活躍訂閱</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-green-600">{activeSubscriptions.length}</div>
-            <p className="text-sm text-muted-foreground">正常計費中</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">停用訂閱</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-red-600">{suspendedSubscriptions.length}</div>
-            <p className="text-sm text-muted-foreground">已暫停</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* 停用訂閱警告 */}
@@ -185,7 +283,7 @@ export function SubscriptionManagement() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            您有 {suspendedSubscriptions.length} 個室友訂閱處於停用狀態。停用期間，相關推薦碼產生的R點無法提領。
+            您有 {suspendedSubscriptions.length} 個服務者訂閱處於停用狀態。停用期間，相關推薦碼產生的Point無法提領。
             請重新激活訂閱或聯繫客服了解詳情。
           </AlertDescription>
         </Alert>
@@ -197,12 +295,12 @@ export function SubscriptionManagement() {
           <CardContent className="text-center py-12">
             <h3 className="text-lg font-medium mb-2">尚未有任何訂閱</h3>
             <p className="text-muted-foreground mb-6">
-              開始刊登您的專業服務室友，建立第一個訂閱
+              開始刊登您的專業服務者，建立第一個訂閱
             </p>
             <Button asChild>
-              <Link to="/roommates/create">
+              <Link to="/service-providers/create">
                 <Plus className="h-4 w-4 mr-2" />
-                新增第一個室友
+                新增第一個服務者
               </Link>
             </Button>
           </CardContent>
@@ -237,7 +335,7 @@ export function SubscriptionManagement() {
                         {subscription.status === 'active' && (
                           <>
                             {/* 更改方案 */}
-                            <Dialog>
+                            <Dialog open={changePlanDialogOpen === subscription.id} onOpenChange={(open) => setChangePlanDialogOpen(open ? subscription.id : null)}>
                               <DialogTrigger asChild>
                                 <Button variant="outline" size="sm">
                                   <RefreshCw className="h-4 w-4 mr-1" />
@@ -261,13 +359,13 @@ export function SubscriptionManagement() {
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="monthly">月繳方案 - $129/月</SelectItem>
-                                      <SelectItem value="yearly">年繳方案 - $1188/年 (省$360)</SelectItem>
+                                      <SelectItem value="monthly">月繳方案 - ${MONTHLY_PRICE}/月</SelectItem>
+                                      <SelectItem value="yearly">年繳方案 - ${YEARLY_PRICE.toLocaleString()}/年 (省${MONTHLY_PRICE * 12 - YEARLY_PRICE})</SelectItem>
                                     </SelectContent>
                                   </Select>
                                   
                                   <div className="text-sm text-muted-foreground">
-                                    目前方案：{subscription.plan === 'yearly' ? '年繳 $1188/年' : '月繳 $129/月'}
+                                    目前方案：{subscription.plan === 'yearly' ? `年繳 $${YEARLY_PRICE.toLocaleString()}/年` : `月繳 $${MONTHLY_PRICE}/月`}
                                     <br />
                                     變更將在下一個計費週期生效
                                   </div>
@@ -275,7 +373,10 @@ export function SubscriptionManagement() {
 
                                 <DialogFooter>
                                   <Button 
-                                    onClick={() => handleChangePlan(subscription.id, changePlanTarget)}
+                                    onClick={() => {
+                                      handleChangePlan(subscription.id, changePlanTarget);
+                                      setChangePlanDialogOpen(null);
+                                    }}
                                     className="w-full"
                                     disabled={changePlanTarget === subscription.plan}
                                   >
@@ -297,14 +398,15 @@ export function SubscriptionManagement() {
                                   <AlertDialogTitle>確認取消訂閱</AlertDialogTitle>
                                   <AlertDialogDescription>
                                     您確定要取消「{subscription.roommateName}」的訂閱嗎？
-                                    <br /><br />
+                                  </AlertDialogDescription>
+                                  <div className="text-sm text-muted-foreground">
                                     <strong>注意：</strong>
                                     <ul className="list-disc list-inside mt-2 space-y-1">
-                                      <li>取消後此室友將在當期結束時停止顯示</li>
-                                      <li>相關推薦R點將無法提領</li>
-                                      <li>您可以重新訂閱此室友</li>
+                                      <li>取消後此服務者將在當期結束時停止顯示</li>
+                                      <li>相關推薦Point將無法提領</li>
+                                      <li>您可以重新訂閱此服務者</li>
                                     </ul>
-                                  </AlertDialogDescription>
+                                  </div>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>取消</AlertDialogCancel>
@@ -345,8 +447,8 @@ export function SubscriptionManagement() {
                                           <div className="font-medium">重新開始訂閱</div>
                                           <div className="text-sm text-muted-foreground mt-1">
                                             • 從今日開始新的訂閱週期<br />
-                                            • 放棄累積的 {subscription.accumulatedRPoints} R點<br />
-                                            • 月繳：$129/月
+                                            • 放棄累積的 {subscription.accumulatedPoints} P<br />
+                                            • 月繳：${MONTHLY_PRICE}/月
                                           </div>
                                         </Label>
                                       </div>
@@ -357,10 +459,10 @@ export function SubscriptionManagement() {
                                       <RadioGroupItem value="payback" id="payback" className="mt-1" />
                                       <div className="flex-1">
                                         <Label htmlFor="payback" className="cursor-pointer">
-                                          <div className="font-medium">補繳欠費並保留R點</div>
+                                          <div className="font-medium">補繳欠費並保留Point</div>
                                           <div className="text-sm text-muted-foreground mt-1">
                                             • 補繳停用期間費用：${subscription.unpaidAmount}<br />
-                                            • 保留累積的 {subscription.accumulatedRPoints} R點<br />
+                                            • 保留累積的 {subscription.accumulatedPoints} P<br />
                                             • 恢復原有訂閱週期
                                           </div>
                                         </Label>
@@ -376,7 +478,7 @@ export function SubscriptionManagement() {
                                   className="w-full"
                                 >
                                   {reactivationOption === 'restart' 
-                                    ? '重新開始訂閱 $129' 
+                                    ? `重新開始訂閱 $${MONTHLY_PRICE}` 
                                     : `補繳費用 $${subscription.unpaidAmount}`
                                   }
                                 </Button>
@@ -391,6 +493,13 @@ export function SubscriptionManagement() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
+                          <Settings className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-muted-foreground">方案費用：</span>
+                          <span className="font-medium">
+                            {subscription.plan === 'yearly' ? `$${YEARLY_PRICE.toLocaleString()}/年` : `$${MONTHLY_PRICE}/月`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span className="text-muted-foreground">訂閱週期：</span>
                           <span>{new Date(subscription.startDate).toLocaleDateString('zh-TW')} - {new Date(subscription.endDate).toLocaleDateString('zh-TW')}</span>
@@ -404,24 +513,9 @@ export function SubscriptionManagement() {
                         )}
                         {subscription.suspendedDate && (
                           <div className="text-red-600">
-                            停用期間累積 {subscription.accumulatedRPoints} R點無法提領
+                            停用期間累積 {subscription.accumulatedPoints} P無法提領
                           </div>
                         )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <CreditCard className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">付款方式：</span>
-                          <span>{subscription.paymentMethod.brand} ****{subscription.paymentMethod.last4}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Settings className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">方案費用：</span>
-                          <span className="font-medium">
-                            {subscription.plan === 'yearly' ? '$1188/年' : '$129/月'}
-                          </span>
-                        </div>
                       </div>
                     </div>
                   </div>

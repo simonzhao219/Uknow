@@ -7,8 +7,10 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Bell, Send, Users } from 'lucide-react';
+import { useNotification } from '../notifications/NotificationContext';
 
 export function SystemNotifications() {
+  const { showToast, showWarning } = useNotification();
   const [notification, setNotification] = useState({
     title: '',
     message: '',
@@ -37,11 +39,11 @@ export function SystemNotifications() {
 
   const handleSendNotification = () => {
     if (!notification.title || !notification.message) {
-      alert('請填寫完整的通知內容');
+      showWarning('請填寫完整的通知內容');
       return;
     }
 
-    alert(`通知已發送給：${notification.target === 'all' ? '所有會員' : '特定會員'}`);
+    showToast(`通知已發送給：${notification.target === 'all' ? '所有會員' : '特定會員'}`);
     setNotification({
       title: '',
       message: '',
