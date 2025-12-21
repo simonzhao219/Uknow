@@ -24,6 +24,7 @@ import rewardsV2 from "./rewards_v2.ts";
 import tasksV2 from "./tasks_v2.ts";
 import withdrawalsV2 from "./withdrawals_v2.ts";
 import profileV2 from "./profile_v2.ts";
+import health from "./health.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { testDatabaseConnection } from "./db.ts";
 
@@ -90,13 +91,7 @@ const initializeDatabase = async () => {
 initializeDatabase();
 
 // Health check endpoint
-app.get("/make-server-5c6718b9/health", async (c) => {
-  const dbStatus = await testDatabaseConnection();
-  return c.json({ 
-    status: "ok",
-    database: dbStatus ? "connected" : "disconnected"
-  });
-});
+app.get("/make-server-5c6718b9/health", health);
 
 // Authentication Routes
 app.post("/make-server-5c6718b9/auth/check-email", checkEmail);

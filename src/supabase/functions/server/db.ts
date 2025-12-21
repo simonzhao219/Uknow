@@ -58,7 +58,20 @@ console.log('[Database] ✅ Supabase Client initialized');
  * - Recursive queries (CTE)
  * - Batch operations
  */
-export const sql = postgres(Deno.env.get('DATABASE_URL') || '', {
+
+// ✅ Validate DATABASE_URL before creating client
+const databaseUrl = Deno.env.get('DATABASE_URL') || Deno.env.get('SUPABASE_DB_URL');
+
+if (!databaseUrl) {
+  console.error('[Database] ❌ ERROR: DATABASE_URL is not set!');
+  console.error('[Database] 📝 Please set DATABASE_URL in Supabase Edge Function secrets');
+  console.error('[Database] 📝 Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres');
+  throw new Error('DATABASE_URL environment variable is required');
+}
+
+console.log('[Database] 🔗 Connecting to:', databaseUrl.replace(/:[^:@]+@/, ':****@')); // Hide password in logs
+
+export const sql = postgres(databaseUrl, {
   max: 10,                    // Max connections in pool
   idle_timeout: 20,           // Close idle connections after 20s
   connect_timeout: 10,        // Connection timeout 10s
