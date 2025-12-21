@@ -371,7 +371,7 @@ listingsV2.get('/active', async (c) => {
       .from('listings')
       .select(`
         *,
-        user:users!inner(
+        user:users!user_id(
           id,
           real_name,
           account_status

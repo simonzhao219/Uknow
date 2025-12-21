@@ -105,12 +105,12 @@ authV2.post('/check-email', async (c) => {
     }
     
     return c.json({
-      success: true,
-      data: {
-        exists: false,
-        message: 'Email 可以使用'
-      }
-    });
+        success: true,
+        data: {
+          exists: false,
+          message: 'Email 可以使用'
+        }
+      });
   } catch (error) {
     console.error('[Check Email] Error:', error);
     return c.json({
@@ -291,7 +291,7 @@ authV2.post('/verify-referral-code', async (c) => {
         id,
         code,
         is_active,
-        user:users!inner(real_name)
+        user:users!user_id(real_name)
       `)
       .eq('code', code)
       .eq('is_active', true)
