@@ -21,7 +21,7 @@ import { Separator } from "./ui/separator";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Checkbox } from "./ui/checkbox";
 import { UserContext } from "../App";
-import { mockUsers } from "../data/mockData";
+import { mockUsers } from "../data/mockUsers";
 import { CheckCircle2 } from "lucide-react";
 import { getInputErrorClass, FieldError } from "../utils/formHelpers";
 import { useNotification } from "./notifications/NotificationContext";
@@ -56,7 +56,7 @@ export function RegisterPage() {
   // 檢查用戶是否已登入，如果已登入則跳轉到 dashboard
   useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     }
   }, [user, navigate]);
 
@@ -173,7 +173,7 @@ export function RegisterPage() {
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!formData.name.trim()) newErrors.name = "請輸入真實姓名";
+    if (!formData.name.trim()) newErrors.name = "請輸入身分證上的姓名";
     if (!formData.email.trim()) newErrors.email = "請輸入 Email";
     if (!emailVerified) newErrors.email = "請先驗證 Email";
     if (!formData.phone.trim()) newErrors.phone = "請輸入聯絡電話";
@@ -346,7 +346,7 @@ export function RegisterPage() {
             {/* 註冊表單 */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">真實姓名 * (最多10字)</Label>
+                <Label htmlFor="name">身分證上的姓名 * (申請點數提領需驗證)</Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -358,7 +358,7 @@ export function RegisterPage() {
                       });
                     }
                   }}
-                  placeholder="請輸入真實姓名"
+                  placeholder="請輸入身分證上的姓名"
                   maxLength={10}
                   className={getInputErrorClass(!!errors.name)}
                 />

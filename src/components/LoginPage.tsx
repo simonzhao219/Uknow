@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { UserContext } from '../App';
-import { mockUsers } from '../data/mockData';
+import { mockUsers } from '../data/mockUsers';
 import { FieldError } from '../utils/formHelpers';
 
 export function LoginPage() {
@@ -15,7 +15,7 @@ export function LoginPage() {
   // 檢查用戶是否已登入，如果已登入則跳轉到 dashboard
   useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     }
   }, [user, navigate]);
 
@@ -37,7 +37,7 @@ export function LoginPage() {
 
     setUser(user);
     localStorage.setItem('user', JSON.stringify(user));
-    navigate('/dashboard');
+    navigate('/dashboard', { replace: true });
   };
 
   const handleSocialLogin = (provider: string) => {

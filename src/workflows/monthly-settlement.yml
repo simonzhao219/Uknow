@@ -1,0 +1,66 @@
+name: Monthly Task Settlement
+
+# 每月最後一天 23:59 (UTC+8 = 15:59 UTC) 自動執行
+on:
+  schedule:
+    # 分 時 日 月 星期
+    # 59 15 28-31 * * 表示每月 28-31 日的 15:59 UTC 執行
+    # 配合條件判斷，確保只在月底執行
+    - cron: '59 15 28-31 * *'
+  
+  # 允許手動觸發
+  workflow_dispatch:
+
+jobs:
+  settlement:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check if today is last day of month
+        id: check_date
+        run: |
+          # 取得當前日期
+          TODAY=$(date +%d)
+          TOMORROW=$(date -d "+1 day" +%d)
+          
+          echo "Today: $TODAY"
+          echo "Tomorrow: $TOMORROW"
+          
+          # 如果明天是 01，表示今天是月底
+          if [ "$TOMORROW" = "01" ]; then
+            echo "is_last_day=true" >> $GITHUB_OUTPUT
+            echo "✅ Today is the last day of the month"
+          else
+            echo "is_last_day=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Not the last day, skipping"
+          fi
+
+      - name: Trigger Monthly Settlement
+        if: steps.check_date.outputs.is_last_day == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "🔧 Triggering monthly settlement..."
+          
+          RESPONSE=$(curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ADMIN_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP_STATUS:%{http_code}" \
+            ${{ secrets.SUPABASE_PROJECT_URL }}/functions/v1/make-server-5c6718b9/tasks/admin/settle)
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "Response status: $HTTP_STATUS"
+          echo "Response body: $BODY"
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Monthly settlement completed successfully"
+          else
+            echo "❌ Monthly settlement failed"
+            exit 1
+          fi
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Settlement failed, please check logs"
+          # 可以在這裡加入其他通知機制（Email、Slack 等）

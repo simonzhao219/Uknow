@@ -1,0 +1,11 @@
+[project]
+# 專案配置文件（Supabase CLI 需要）
+
+# Edge Functions 配置
+[functions]
+# 確保部署時不驗證 JWT（因為我們使用自訂的認證邏輯）
+verify_jwt = false
+
+[functions.make-server-5c6718b9]
+# 主要 API 服務器
+verify_jwt = false

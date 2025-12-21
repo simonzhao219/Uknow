@@ -1,167 +1,351 @@
-import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Users, TrendingUp } from 'lucide-react';
+/**
+ * Referral Tree View Component
+ * 
+ * Displays the three-generation referral tree
+ * Shows statistics and member nodes
+ * 
+ * @component ReferralTreeView
+ */
 
-interface ReferralTreeViewProps {
-  firstLevelReferrals: any[];
-  secondLevelReferrals: any[];
-  thirdLevelReferrals: any[];
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { 
+  Users, 
+  CheckCircle2, 
+  XCircle, 
+  TrendingUp,
+  RefreshCw,
+  Loader2
+} from 'lucide-react';
+import { MemberNode } from './MemberNode';
+import { useNotification } from '../notifications/NotificationContext';
+import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import { getAccessToken } from '../../utils/auth';
+
+interface MemberNodeData {
+  userId: string;
+  realName: string;
+  accountStatus: 'Active' | 'Canceled' | 'Grace' | 'Fail' | 'Pending';
+  isActive: boolean;
+  createdAt: string;
+  referrer?: {
+    userId: string;
+    realName: string;
+  };
 }
 
-// 為不同推薦人分配顏色主題
-const getReferrerColorTheme = (referralCode: string, isActive: boolean = true) => {
-  const themes = [
-    { border: 'border-l-blue-500', bg: 'bg-blue-50', textColor: 'text-blue-700' },
-    { border: 'border-l-green-500', bg: 'bg-green-50', textColor: 'text-green-700' },
-    { border: 'border-l-purple-500', bg: 'bg-purple-50', textColor: 'text-purple-700' },
-    { border: 'border-l-orange-500', bg: 'bg-orange-50', textColor: 'text-orange-700' },
-    { border: 'border-l-pink-500', bg: 'bg-pink-50', textColor: 'text-pink-700' },
-    { border: 'border-l-indigo-500', bg: 'bg-indigo-50', textColor: 'text-indigo-700' },
-    { border: 'border-l-red-500', bg: 'bg-red-50', textColor: 'text-red-700' },
-    { border: 'border-l-teal-500', bg: 'bg-teal-50', textColor: 'text-teal-700' },
-  ];
+interface ReferralTreeData {
+  myInfo: {
+    userId: string;
+    realName: string;
+    referralCode: string | null;
+    accountStatus: string;
+  };
+  tree: {
+    firstGeneration: MemberNodeData[];
+    secondGeneration: MemberNodeData[];
+    thirdGeneration: MemberNodeData[];
+  };
+  summary: {
+    totalReferrals: number;
+    activeCount: number;
+    inactiveCount: number;
+    gen1Count: number;
+    gen2Count: number;
+    gen3Count: number;
+  };
+}
+
+export function ReferralTreeView() {
+  const [data, setData] = useState<ReferralTreeData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // 根據推薦碼生成固定的主題索引
-  const themeIndex = referralCode.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % themes.length;
-  const theme = themes[themeIndex];
+  const { showToast } = useNotification();
   
-  if (!isActive) {
-    // 非激活狀態使用反灰效果
-    return {
-      border: 'border-l-gray-300',
-      bg: 'bg-gray-50',
-      textColor: 'text-gray-400',
-      opacity: 'opacity-50'
-    };
+  useEffect(() => {
+    fetchTree();
+  }, []);
+  
+  const fetchTree = async (showRefreshIndicator = false) => {
+    if (showRefreshIndicator) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    
+    try {
+      const token = await getAccessToken();
+      
+      if (!token) {
+        showToast('請先登入', 'error');
+        return;
+      }
+      
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: ReferralTreeData;
+        error?: { message: string };
+      }>(buildApiUrl('/referrals-v2/my-tree'), {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (result.success) {
+        setData(result.data);
+      } else {
+        showToast(result.error?.message || '載入失敗', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to fetch referral tree:', error);
+      showToast('載入推薦樹失敗', 'error');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+  
+  const handleRefresh = () => {
+    fetchTree(true);
+  };
+  
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </CardContent>
+      </Card>
+    );
   }
   
-  return theme;
-};
-
-// 模擬推薦人激活狀態
-const isReferrerActive = (referralCode: string) => {
-  // 模擬某些推薦人處於非激活狀態
-  const inactiveReferrers = ['CHEN2024', 'WANG2024'];
-  return !inactiveReferrers.includes(referralCode);
-};
-
-export function ReferralTreeView({ firstLevelReferrals, secondLevelReferrals, thirdLevelReferrals }: ReferralTreeViewProps) {
-  
-  // 為了演示，我們需要給每個推薦用戶添加推薦碼和狀態
-  const enhanceReferralData = (referrals: any[], level: number) => {
-    return referrals.map((referral, index) => ({
-      ...referral,
-      referralCode: `${['MING', 'CHEN', 'WANG', 'LIU', 'HUANG'][index % 5]}2024`,
-      joinDate: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toLocaleDateString('zh-TW')
-    }));
-  };
-
-  const enhancedFirstLevel = enhanceReferralData(firstLevelReferrals, 1);
-  const enhancedSecondLevel = enhanceReferralData(secondLevelReferrals, 2);
-  const enhancedThirdLevel = enhanceReferralData(thirdLevelReferrals, 3);
-
-  const renderReferralCard = (referral: any, index: number) => {
-    const isActive = isReferrerActive(referral.referralCode);
-    const colorTheme = getReferrerColorTheme(referral.referralCode, isActive);
-    
+  if (!data) {
     return (
-      <div 
-        key={index} 
-        className={`flex items-center justify-between p-4 border rounded-lg transition-all duration-200 ${colorTheme.border} ${colorTheme.bg} ${colorTheme.opacity || ''}`}
-      >
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <p className={`font-medium ${isActive ? '' : 'text-gray-400'}`}>
-              {referral?.name}
-            </p>
-            <div 
-              className={`px-2 py-1 rounded-full text-xs font-medium ${colorTheme.bg} ${colorTheme.textColor} border ${colorTheme.border.replace('border-l-', 'border-')}`}
-            >
-              {referral.referralCode}
-            </div>
-          </div>
-          <p className={`text-sm ${isActive ? 'text-muted-foreground' : 'text-gray-400'}`}>
-            加入時間：{referral.joinDate}
-          </p>
-        </div>
-        
-        {!isActive && (
-          <div className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-            非激活
-          </div>
-        )}
-      </div>
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          無法載入推薦樹
+        </CardContent>
+      </Card>
     );
-  };
-
+  }
+  
+  const { tree, summary } = data;
+  
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* 一等親 */}
+    <div className="space-y-6">
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Referrals */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Users className="h-5 w-5 text-blue-600" />
+              <span>總推薦人數</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-blue-600">
+              {summary.totalReferrals}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              累計推薦會員
+            </p>
+          </CardContent>
+        </Card>
+        
+        {/* Active Count */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <span>有效會員</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-green-600">
+              {summary.activeCount}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              正在訂閱中
+            </p>
+          </CardContent>
+        </Card>
+        
+        {/* Inactive Count */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <XCircle className="h-5 w-5 text-gray-600" />
+              <span>失效會員</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-600">
+              {summary.inactiveCount}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              已停止訂閱
+            </p>
+          </CardContent>
+        </Card>
+        
+        {/* Conversion Rate */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <TrendingUp className="h-5 w-5 text-purple-600" />
+              <span>活躍比例</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-purple-600">
+              {summary.totalReferrals > 0 
+                ? Math.round((summary.activeCount / summary.totalReferrals) * 100)
+                : 0}%
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              有效會員佔比
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* Refresh Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          variant="outline"
+          size="sm"
+        >
+          {isRefreshing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              更新中...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              重新整理
+            </>
+          )}
+        </Button>
+      </div>
+      
+      {/* Referral Tree */}
       <Card>
         <CardHeader>
-          <CardTitle>一等親 ({enhancedFirstLevel.length})</CardTitle>
-          <CardDescription>您直接推薦的用戶</CardDescription>
+          <CardTitle>我的推薦網絡</CardTitle>
+          <CardDescription>
+            顯示您的三代推薦會員，包含已失效的會員節點
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {enhancedFirstLevel.length === 0 ? (
-            <div className="text-center py-8">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">尚未有第一代下線</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                開始分享您的推薦碼吧！
-              </p>
+          <div className="space-y-8">
+            {/* Generation 1 */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Badge className="bg-green-600 text-white">第一代</Badge>
+                <span className="text-sm text-muted-foreground">
+                  直接推薦（{summary.gen1Count} 位會員）
+                </span>
+              </div>
+              
+              {tree.firstGeneration.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground bg-gray-50 rounded-lg">
+                  <Users className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                  <p>尚未推薦任何會員</p>
+                  <p className="text-sm mt-1">分享您的推薦碼給朋友吧！</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tree.firstGeneration.map(member => (
+                    <MemberNode
+                      key={member.userId}
+                      member={member}
+                      generation={1}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-3">
-              {enhancedFirstLevel.map((referral, index) => renderReferralCard(referral, index))}
+            
+            {/* Generation 2 */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Badge className="bg-purple-600 text-white">第二代</Badge>
+                <span className="text-sm text-muted-foreground">
+                  間接推薦（{summary.gen2Count} 位會員）
+                </span>
+              </div>
+              
+              {tree.secondGeneration.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground bg-gray-50 rounded-lg">
+                  <p>尚未有第二代會員</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tree.secondGeneration.map(member => (
+                    <MemberNode
+                      key={member.userId}
+                      member={member}
+                      generation={2}
+                      showReferrer={true}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+            
+            {/* Generation 3 */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Badge className="bg-orange-600 text-white">第三代</Badge>
+                <span className="text-sm text-muted-foreground">
+                  第三層推薦（{summary.gen3Count} 位會員）
+                </span>
+              </div>
+              
+              {tree.thirdGeneration.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground bg-gray-50 rounded-lg">
+                  <p>尚未有第三代會員</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tree.thirdGeneration.map(member => (
+                    <MemberNode
+                      key={member.userId}
+                      member={member}
+                      generation={3}
+                      showReferrer={true}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
-
-      {/* 二等親 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>二等親 ({enhancedSecondLevel.length})</CardTitle>
-          <CardDescription>一等親推薦的用戶</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {enhancedSecondLevel.length === 0 ? (
-            <div className="text-center py-8">
-              <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">尚未有二等親</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                當您的一等親開始推薦時，這裡會顯示他們的推薦人
-              </p>
+      
+      {/* Info Card */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <Users className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-900">
+              <p className="font-medium mb-2">推薦系統說明</p>
+              <ul className="space-y-1 list-disc list-inside">
+                <li>第一代：您直接推薦的會員</li>
+                <li>第二代：您推薦的會員再推薦的會員</li>
+                <li>第三代：第二代會員再推薦的會員</li>
+                <li>失效會員：訂閱到期且未續訂的會員（節點保留）</li>
+                <li>每位有效會員每月可為您帶來獎勵點數</li>
+              </ul>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {enhancedSecondLevel.map((referral, index) => renderReferralCard(referral, index))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 三等親 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>三等親 ({enhancedThirdLevel.length})</CardTitle>
-          <CardDescription>二等親推薦的用戶</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {enhancedThirdLevel.length === 0 ? (
-            <div className="text-center py-8">
-              <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">尚未有三等親</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                當您的二等親開始推薦時，這裡會顯示他們的推薦人
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {enhancedThirdLevel.map((referral, index) => renderReferralCard(referral, index))}
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>

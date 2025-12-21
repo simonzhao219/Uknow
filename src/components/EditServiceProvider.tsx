@@ -10,7 +10,6 @@ import { Checkbox } from './ui/checkbox';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
-import { mockServiceProviders } from '../data/mockData';
 import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
 import { ArrowLeft, Upload, X, Save } from 'lucide-react';
 import {
@@ -23,18 +22,22 @@ import { validateContacts } from '../utils/contactValidation';
 import { NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH } from '../utils/constants';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
+import { createClient } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 export function EditServiceProvider() {
   const { id } = useParams();
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast } = useNotification();
+  const supabase = createClient();
   
   const [formData, setFormData] = useState({
     name: '',
     category: '',
+    gender: '',  // ✅ 新增
     city: '',
-    districts: [] as string[], // 改為陣列支援多選
+    districts: [] as string[],
     description: '',
     photos: [] as string[],
     contacts: {
@@ -46,26 +49,71 @@ export function EditServiceProvider() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
+  const [serviceProvider, setServiceProvider] = useState<any>(null);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
+  // ✅ 从后端 API 获取刊登数据
   useEffect(() => {
-    // 載入服務者資料
-    const roommate = mockServiceProviders.find(r => r.id === id && r.userId === user?.id);
-    if (roommate) {
-      // 由於現有的mockData只有單一區域，我們需要將其轉換為陣列格式
-      // 如果現有資料只有單一區域，預設加上「全區」選項
-      const districts = roommate.district ? ['全區', roommate.district] : ['全區'];
-      
-      setFormData({
-        name: roommate.name,
-        category: roommate.category,
-        city: roommate.city,
-        districts: districts,
-        description: roommate.description,
-        photos: roommate.photos,
-        contacts: roommate.contacts
-      });
-    }
-    setIsLoading(false);
+    if (!id) return;
+    
+    const fetchListing = async () => {
+      setIsLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          showToast('請先登入', 'error');
+          navigate('/login');
+          return;
+        }
+
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('獲取刊登詳情失敗');
+        }
+
+        const data = await response.json();
+        const listing = data.listing;
+        
+        // 验证是否是用户自己的刊登
+        if (listing.userId !== user?.id) {
+          showToast('您無權編輯此刊登', 'error');
+          navigate('/service-providers');
+          return;
+        }
+
+        setServiceProvider(listing);
+        setFormData({
+          name: listing.name,
+          category: listing.category,
+          gender: listing.gender || '',  // ✅ 新增
+          city: listing.city,
+          districts: listing.districts || [],
+          description: listing.description || '',
+          photos: listing.photos || [],
+          contacts: listing.contacts || {
+            instagram: '',
+            line: '',
+            facebook: ''
+          }
+        });
+      } catch (error) {
+        console.error('❌ 獲取刊登詳情失敗:', error);
+        showToast('獲取刊登詳情失敗', 'error');
+        navigate('/service-providers');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchListing();
   }, [id, user?.id]);
 
   const validate = () => {
@@ -73,9 +121,10 @@ export function EditServiceProvider() {
 
     if (!formData.name.trim()) newErrors.name = '請輸入服務者名稱';
     if (!formData.category) newErrors.category = '請選擇服務類別';
+    if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
-    if (formData.photos.length === 0) newErrors.photos = '請至少上傳一張照片';
+    if (formData.photos.length !== 3) newErrors.photos = '必須上傳3張照片';
 
     // 驗證聯絡方式
     const contactErrors = validateContacts(formData.contacts);
@@ -129,21 +178,79 @@ export function EditServiceProvider() {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    
     if (formData.photos.length + files.length > 3) {
-      setErrors({...errors, photos: '最多只能上傳3張照片'});
+      showToast('最多只能上傳3張照片', 'error');
       return;
     }
 
-    // 模擬圖片上傳
-    const newPhotos = files.map((file, index) => 
-      `https://images.unsplash.com/photo-${Date.now() + index}?w=400&h=300&fit=crop`
-    );
+    // 验证格式
+    const ALLOWED_FORMATS = ['image/jpeg', 'image/png', 'image/webp'];
+    const invalidFiles = files.filter(file => !ALLOWED_FORMATS.includes(file.type));
+    if (invalidFiles.length > 0) {
+      showToast('只支援 JPG、PNG、WEBP 格式', 'error');
+      return;
+    }
+
+    // 真正上传照片
+    uploadPhotosToServer(files);
+  };
+
+  const uploadPhotosToServer = async (files: File[]) => {
+    setUploadingPhotos(true);
     
-    setFormData({
-      ...formData,
-      photos: [...formData.photos, ...newPhotos]
-    });
-    setErrors({...errors, photos: ''});
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showToast('請先登入', 'error');
+        navigate('/login');
+        return;
+      }
+
+      const uploadPromises = files.map(async (file) => {
+        const formDataToSend = new FormData();
+        formDataToSend.append('file', file);
+        formDataToSend.append('listingTempId', serviceProvider.id); // 使用刊登 ID
+        
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/upload-photo`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: formDataToSend
+          }
+        );
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || '上傳失敗');
+        }
+        
+        const data = await response.json();
+        return data.photoUrl;
+      });
+      
+      const photoUrls = await Promise.all(uploadPromises);
+      
+      setFormData({
+        ...formData,
+        photos: [...formData.photos, ...photoUrls]
+      });
+
+      const newErrors = { ...errors };
+      delete newErrors.photos;
+      setErrors(newErrors);
+      
+      showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
+      
+    } catch (error: any) {
+      console.error('❌ 照片上傳失敗:', error);
+      showToast(error.message || '照片上傳失敗，請稍後再試', 'error');
+    } finally {
+      setUploadingPhotos(false);
+    }
   };
 
   const removePhoto = (index: number) => {
@@ -151,14 +258,62 @@ export function EditServiceProvider() {
     setFormData({...formData, photos: newPhotos});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validate()) return;
+    if (!validate()) {
+      showToast('請檢查表單欄位', 'error');
+      return;
+    }
 
-    // 模擬儲存成功
-    showToast('服務者資訊已更新！', 'success');
-    navigate('/service-providers');
+    setIsLoading(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showToast('請先登入', 'error');
+        navigate('/login');
+        return;
+      }
+
+      // 调用后端 API 更新刊登
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${serviceProvider.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            category: formData.category,
+            gender: formData.gender,
+            city: formData.city,
+            districts: formData.districts,
+            description: formData.description,
+            photos: formData.photos,
+            contacts: formData.contacts
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || '更新失敗');
+      }
+
+      console.log('✅ 刊登更新成功:', data);
+      showToast('服務者資訊已更新！', 'success');
+      navigate('/service-providers');
+
+    } catch (error: any) {
+      console.error('❌ 更新刊登失敗:', error);
+      showToast(error.message || '更新失敗，請稍後再試', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -169,8 +324,7 @@ export function EditServiceProvider() {
     );
   }
 
-  const roommate = mockServiceProviders.find(r => r.id === id && r.userId === user?.id);
-  if (!roommate) {
+  if (!serviceProvider) {
     return (
       <div className="max-w-2xl mx-auto text-center py-12">
         <h2 className="text-2xl font-bold mb-4">找不到此服務者</h2>
@@ -187,7 +341,7 @@ export function EditServiceProvider() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold">編輯服務者</h1>
-          <p className="text-muted-foreground">修改 {roommate.name} 的資訊</p>
+          <p className="text-muted-foreground">修改 {serviceProvider.name} 的資訊</p>
         </div>
       </div>
 
@@ -231,6 +385,21 @@ export function EditServiceProvider() {
                 </SelectContent>
               </Select>
               <FieldError error={errors.category} />
+            </div>
+
+            {/* ✅ 性别选择器（可编辑） */}
+            <div className="space-y-2">
+              <Label>性別 *</Label>
+              <Select value={formData.gender} onValueChange={(value) => setFormData({...formData, gender: value})}>
+                <SelectTrigger className={getInputErrorClass(!!errors.gender)}>
+                  <SelectValue placeholder="選擇性別" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="男">♂ 男</SelectItem>
+                  <SelectItem value="女">♀ 女</SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldError error={errors.gender} />
             </div>
 
             {/* 服務地區選擇 */}
@@ -354,7 +523,7 @@ export function EditServiceProvider() {
             </div>
 
             <div className="space-y-2">
-              <Label>上傳照片 * (最少1張，最多3張)</Label>
+              <Label>上傳照片 * (必須上傳3張照片)</Label>
               <div className="grid grid-cols-3 gap-4">
                 {formData.photos.map((photo, index) => (
                   <div key={index} className="relative aspect-video rounded-lg overflow-hidden border">
@@ -365,6 +534,7 @@ export function EditServiceProvider() {
                       size="sm"
                       className="absolute top-1 right-1 h-6 w-6 p-0"
                       onClick={() => removePhoto(index)}
+                      disabled={uploadingPhotos}
                     >
                       <X className="h-3 w-3" />
                     </Button>
@@ -372,15 +542,18 @@ export function EditServiceProvider() {
                 ))}
                 
                 {formData.photos.length < 3 && (
-                  <label className="aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
+                  <label className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center ${uploadingPhotos ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-muted-foreground/50'} transition-colors`}>
                     <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">上傳照片</span>
+                    <span className="text-sm text-muted-foreground text-center px-2">
+                      {uploadingPhotos ? '上傳中...' : '上傳照片'}
+                    </span>
                     <input
                       type="file"
                       multiple
                       accept="image/*"
                       onChange={handlePhotoUpload}
                       className="hidden"
+                      disabled={uploadingPhotos}
                     />
                   </label>
                 )}
@@ -447,8 +620,10 @@ export function EditServiceProvider() {
                 disabled={
                   !formData.name.trim() ||
                   !formData.category ||
+                  !formData.gender ||
                   !formData.city ||
                   formData.districts.length === 0 ||
+                  !(formData.photos.length == 3) ||
                   (!formData.contacts.instagram && !formData.contacts.line && !formData.contacts.facebook)
                 }
               >

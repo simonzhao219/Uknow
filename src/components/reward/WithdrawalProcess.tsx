@@ -85,13 +85,13 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
     const newErrors: { [key: string]: string } = {};
 
     if (!amount) {
-      newErrors.amount = '請輸入提領金額';
+      newErrors.amount = '請輸入提領Point';
     } else if (amountNum % 1000 !== 0) {
-      newErrors.amount = '提領金額必須為 1000 的倍數';
+      newErrors.amount = '提領Point必須為 1000 的倍數';
     } else if (amountNum > maxWithdrawal) {
-      newErrors.amount = `提領金額不能超過 $${maxWithdrawal}`;
+      newErrors.amount = `提領Point不能超過 ${maxWithdrawal}P`;
     } else if (amountNum < 1000) {
-      newErrors.amount = '最低提領金額為 $1000';
+      newErrors.amount = '最低提領Point為 1000P';
     }
 
     setErrors(newErrors);
@@ -205,8 +205,8 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
         '提領申請已成功提交！',
         `您的Point提領申請已經送出，我們將在3-5個工作天內處理`,
         [
-          `提領金額：$${amount}`,
-          `手續費：$${fee}`,
+          `提領Point：${amount}P`,
+          `手續費：${fee}P`,
           `收款銀行：${bankName} (${personalData.bankCode})`,
           `銀行帳號：${personalData.bankAccount}`,
           '請耐心等待處理完成'
@@ -252,7 +252,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
           申請Point提領 - 步驟 {currentStep}/2
         </CardTitle>
         <CardDescription>
-          {currentStep === 1 ? '設定提領金額' : '填寫身分驗證資料'}
+          {currentStep === 1 ? '設定提領Point' : '填寫身分驗證資料'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -265,7 +265,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
               1
             </div>
             <span className={`ml-2 text-sm ${currentStep >= 1 ? 'text-foreground' : 'text-muted-foreground'}`}>
-              設定金額
+              設定Point
             </span>
           </div>
           <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -281,7 +281,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
           </div>
         </div>
 
-        {/* 第一階段：金額設定 */}
+        {/* 第一階段：Point設定 */}
         {currentStep === 1 && (
           <div className="space-y-6">
             {/* 可提領資訊 */}
@@ -308,15 +308,15 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                   <span>{actualAvailable}P</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>最大提領金額 (1000倍數)</span>
-                  <span>${maxWithdrawal}</span>
+                  <span>最大提領Point (1000倍數)</span>
+                  <span>{maxWithdrawal}P</span>
                 </div>
               </div>
             </div>
 
-            {/* 提領金額輸入 */}
+            {/* 提領Point輸入 */}
             <div className="space-y-2">
-              <Label htmlFor="amount">提領金額 * (必須為1000的倍數)</Label>
+              <Label htmlFor="amount">提領Point * (必須為1000的倍數)</Label>
               <Input
                 id="amount"
                 type="number"
@@ -325,7 +325,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                 max={maxWithdrawal}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="請輸入提領金額"
+                placeholder="請輸入提領Point"
                 className={getInputErrorClass(!!errors.amount)}
               />
               <FieldError error={errors.amount} />
@@ -337,8 +337,8 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                 <h4 className="font-medium text-blue-900">費用明細</h4>
                 <div className="space-y-1 text-sm text-blue-800">
                   <div className="flex justify-between">
-                    <span>提領金額</span>
-                    <span>${amountNum}</span>
+                    <span>提領Point</span>
+                    <span>{amountNum}P</span>
                   </div>
                   <div className="flex justify-between">
                     <span>手續費</span>
@@ -346,7 +346,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
                   </div>
                   <div className="border-t border-blue-200 pt-1 flex justify-between font-medium">
                     <span>實際入帳</span>
-                    <span>${finalAmount}</span>
+                    <span>{finalAmount}P</span>
                   </div>
                 </div>
               </div>
@@ -356,7 +356,7 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
             <div className="bg-blue-50 p-4 rounded-lg">
               <h4 className="font-medium text-blue-900 mb-2">提領說明</h4>
               <div className="space-y-1 text-sm text-blue-800">
-                <p>• 最低提領金額為 $1,000（必須為1000的倍數）</p>
+                <p>• 最低提領Point為 1,000P（必須為1000的倍數）</p>
                 <p>• 需完成身分驗證流程</p>
                 <p>• 處理時間約 3-5 個工作天</p>
                 <p>• 提領申請送出後無法修改</p>
@@ -383,12 +383,12 @@ export function WithdrawalProcess({ availableRewards, onCancel }: WithdrawalProc
               <h3 className="font-medium mb-2">提領摘要</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">提領金額</span>
-                  <p className="font-medium">${amountNum}</p>
+                  <span className="text-muted-foreground">提領Point</span>
+                  <p className="font-medium">{amountNum}P</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">實際入帳</span>
-                  <p className="font-medium text-green-600">${finalAmount}</p>
+                  <p className="font-medium text-green-600">{finalAmount}P</p>
                 </div>
               </div>
             </div> */}

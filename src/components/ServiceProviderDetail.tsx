@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import {
@@ -16,22 +16,73 @@ import {
   MessageCircle,
   Facebook,
   ExternalLink,
+  Copy,
 } from "lucide-react";
-import { mockServiceProviders } from "../data/mockData";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { ReferralCodeCard } from "./referral/ReferralCodeCard";
 import { UserContext } from "../App";
 import { ReferralGuide } from './referral/ReferralGuide';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { useNotification } from './notifications/NotificationContext';
 
 export function ServiceProviderDetail() {
   const { user } = useContext(UserContext);
+  const { showToast } = useNotification();
   const { id } = useParams();
   const navigate = useNavigate();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // ✅ 添加状态管理
+  const [serviceProvider, setServiceProvider] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  const roommate = mockServiceProviders.find((r) => r.id === id);
+  // ✅ 从后端 API 获取数据
+  useEffect(() => {
+    if (!id) return;
+    
+    const fetchListing = async () => {
+      setLoading(true);
+      setError(false);
+      try {
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`
+            }
+          }
+        );
 
-  if (!roommate) {
+        if (!response.ok) {
+          throw new Error('獲取刊登詳情失敗');
+        }
+
+        const data = await response.json();
+        console.log('詳情頁 - 獲取到的刊登:', data);
+        setServiceProvider(data.listing);
+      } catch (error) {
+        console.error('❌ 獲取刊登詳情失敗:', error);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchListing();
+  }, [id]);
+
+  // ✅ 添加 loading 状态
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto text-center py-12">
+        <p className="text-muted-foreground">載入中...</p>
+      </div>
+    );
+  }
+
+  // ✅ 修改错误状态
+  if (error || !serviceProvider) {
     return (
       <div className="max-w-4xl mx-auto text-center py-12">
         <h2 className="text-2xl font-bold mb-4">
@@ -63,6 +114,23 @@ export function ServiceProviderDetail() {
     }
   };
 
+  const copyLineId = (lineId: string) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = lineId;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      showToast('LINE ID 已複製！', 'success');
+    } catch (err) {
+      console.error('複製失敗:', err);
+      showToast('複製失敗，請重試', 'error');
+    }
+    document.body.removeChild(textArea);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* 返回按鈕 */}
@@ -80,15 +148,15 @@ export function ServiceProviderDetail() {
         <div className="space-y-4">
           <div className="aspect-video rounded-lg overflow-hidden">
             <ImageWithFallback
-              src={roommate.photos[currentImageIndex]}
-              alt={`${roommate.name} - 圖片 ${currentImageIndex + 1}`}
+              src={serviceProvider.photos[currentImageIndex]}
+              alt={`${serviceProvider.name} - 圖片 ${currentImageIndex + 1}`}
               className="w-full h-full object-cover"
             />
           </div>
 
-          {roommate.photos.length > 1 && (
+          {serviceProvider.photos.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {roommate.photos.map((photo, index) => (
+              {serviceProvider.photos.map((photo, index) => (
                 <button
                   key={index}
                   onClick={() => setCurrentImageIndex(index)}
@@ -113,14 +181,25 @@ export function ServiceProviderDetail() {
         <div className="space-y-6">
           <div>
             <div className="flex items-start justify-between mb-4">
-              <h1 className="text-3xl font-bold">
-                {roommate.name}
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold">
+                  {serviceProvider.name}
+                </h1>
+                {/* 🆕 性别 Badge */}
+                {serviceProvider.gender && (
+                  <Badge 
+                    variant="outline" 
+                    className={`text-base ${serviceProvider.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
+                  >
+                    {serviceProvider.gender === '男' ? '♂ 男' : '♀ 女'}
+                  </Badge>
+                )}
+              </div>
               <Badge
                 variant="default"
                 className="text-lg px-3 py-1"
               >
-                {roommate.category}
+                {serviceProvider.category}
               </Badge>
             </div>
 
@@ -128,17 +207,11 @@ export function ServiceProviderDetail() {
               <div className="flex items-center gap-2 text-muted-foreground">
                 <MapPin className="h-5 w-5" />
                 <span>
-                  {roommate.city} {roommate.district}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Calendar className="h-5 w-5" />
-                <span>
-                  入住時間：
-                  {new Date(
-                    roommate.createdAt,
-                  ).toLocaleDateString("zh-TW")}
+                  {serviceProvider.city} {Array.isArray(serviceProvider.districts) 
+                    ? (serviceProvider.districts.includes('全區') 
+                        ? '全區' 
+                        : serviceProvider.districts.join(', '))
+                    : serviceProvider.district || ''}
                 </span>
               </div>
             </div>
@@ -151,7 +224,7 @@ export function ServiceProviderDetail() {
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground leading-relaxed">
-                {roommate.description}
+                {serviceProvider.description}
               </p>
             </CardContent>
           </Card>
@@ -162,60 +235,59 @@ export function ServiceProviderDetail() {
               <CardTitle>聯絡方式</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {roommate.contacts.instagram && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() =>
-                    handleContactClick(
-                      "instagram",
-                      roommate.contacts.instagram,
-                    )
-                  }
-                >
-                  <Instagram className="h-5 w-5 mr-3 text-pink-500" />
-                  <span className="flex-1 text-left">
-                    {roommate.contacts.instagram}
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
-
-              {roommate.contacts.line && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() =>
-                    handleContactClick(
-                      "line",
-                      roommate.contacts.line,
-                    )
-                  }
-                >
-                  <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
-                  <span className="flex-1 text-left">
-                    {roommate.contacts.line}
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
-
-              {roommate.contacts.facebook && (
+              {serviceProvider.contacts.facebook && (
                 <Button
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() =>
                     handleContactClick(
                       "facebook",
-                      roommate.contacts.facebook,
+                      serviceProvider.contacts.facebook,
                     )
                   }
                 >
                   <Facebook className="h-5 w-5 mr-3 text-blue-600" />
                   <span className="flex-1 text-left">
-                    {roommate.contacts.facebook}
+                    {serviceProvider.contacts.facebook}
                   </span>
                   <ExternalLink className="h-4 w-4" />
+                </Button>
+              )}
+              
+              {serviceProvider.contacts.instagram && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    handleContactClick(
+                      "instagram",
+                      serviceProvider.contacts.instagram,
+                    )
+                  }
+                >
+                  <Instagram className="h-5 w-5 mr-3 text-pink-500" />
+                  <span className="flex-1 text-left">
+                    {serviceProvider.contacts.instagram}
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              )}
+
+              {serviceProvider.contacts.line && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    copyLineId(
+                      serviceProvider.contacts.line,
+                    )
+                  }
+                >
+                  <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
+                  <span className="flex-1 text-left">
+                    {serviceProvider.contacts.line}
+                  </span>
+                  <Copy className="h-4 w-4" />
                 </Button>
               )}
             </CardContent>

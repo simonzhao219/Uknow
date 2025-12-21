@@ -4,16 +4,34 @@ import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { UserContext } from '../App';
-import { User, Settings, Award, Users, LogOut, Shield, CreditCard, Target } from 'lucide-react';
+import { User, Settings, Award, Users, LogOut, Shield, Target } from 'lucide-react';
+import { useFeatures } from '../contexts/FeatureContext';
+import { createClient } from '../utils/supabase/client';
 
 export function Navbar() {
   const { user, setUser, isLoggedIn, isAdmin } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
+  const { isFeatureEnabled } = useFeatures();
+  const supabase = createClient();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    console.log('Navbar: Logging out user...');
+    
+    // 1. 登出 Supabase Auth
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Navbar: Error signing out from Supabase:', error);
+    } else {
+      console.log('Navbar: Successfully signed out from Supabase');
+    }
+    
+    // 2. 清除本地狀態和 localStorage
     setUser(null);
     localStorage.removeItem('user');
+    console.log('Navbar: Cleared local user data');
+    
+    // 3. ��航到首頁
     navigate('/');
   };
 
@@ -50,9 +68,6 @@ export function Navbar() {
                 <div className="flex items-center justify-start gap-2 p-2">
                   <div className="flex flex-col space-y-1 leading-none">
                     <p className="font-medium">{user?.name}</p>
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">
-                      {user?.email}
-                    </p>
                   </div>
                 </div>
                 <DropdownMenuSeparator />
@@ -62,36 +77,38 @@ export function Navbar() {
                     會員中心
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/service-providers" className="w-full cursor-pointer">
-                    <Settings className="mr-2 h-4 w-4" />
-                    刊登管理
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/subscriptions" className="w-full cursor-pointer">
-                    <CreditCard className="mr-2 h-4 w-4" />
-                    訂閱管理
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/referrals" className="w-full cursor-pointer">
-                    <Users className="mr-2 h-4 w-4" />
-                    推薦管理
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/tasks" className="w-full cursor-pointer">
-                    <Target className="mr-2 h-4 w-4" />
-                    任務中心
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/rewards" className="w-full cursor-pointer">
-                    <Award className="mr-2 h-4 w-4" />
-                    獎勵回饋
-                  </Link>
-                </DropdownMenuItem>
+                {isFeatureEnabled('serviceProviderManagement') && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/service-providers" className="w-full cursor-pointer">
+                      <Settings className="mr-2 h-4 w-4" />
+                      刊登管理
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isFeatureEnabled('referralManagement') && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/referrals" className="w-full cursor-pointer">
+                      <Users className="mr-2 h-4 w-4" />
+                      推薦管理
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isFeatureEnabled('taskCenter') && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/tasks" className="w-full cursor-pointer">
+                      <Target className="mr-2 h-4 w-4" />
+                      任務中心
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isFeatureEnabled('rewardSystem') && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/rewards" className="w-full cursor-pointer">
+                      <Award className="mr-2 h-4 w-4" />
+                      獎勵回饋
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 {isAdmin && (
                   <>
                     <DropdownMenuSeparator />

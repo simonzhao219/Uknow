@@ -1,210 +1,287 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Calendar, TrendingUp, TrendingDown, Receipt } from 'lucide-react';
+/**
+ * Reward History Component
+ * 
+ * Displays user's reward history with pagination
+ * Shows all issued rewards
+ * 
+ * @component RewardHistory
+ */
 
-interface Transaction {
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { 
+  Gift,
+  Calendar,
+  TrendingUp,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
+import { useNotification } from '../notifications/NotificationContext';
+import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import { getAccessToken } from '../../utils/auth';
+
+interface RewardHistoryItem {
   id: string;
-  type: 'income' | 'expense';
+  type: string;
   amount: number;
   description: string;
-  date: string;
-  balance: number;
+  sourceUserName: string;
+  generation: number | null;
+  monthNumber: number | null;
+  createdAt: Date | string;
 }
 
-// 模擬交易記錄
-const mockTransactions: Transaction[] = [
-  {
-    id: 't1',
-    type: 'income',
-    amount: 50,
-    description: '推薦獎勵 - 王小明註冊成功',
-    date: '2024-01-15',
-    balance: 1850
-  },
-  {
-    id: 't2',
-    type: 'income',
-    amount: 30,
-    description: '二等親獎勵 - 李小華推薦成功',
-    date: '2024-01-20',
-    balance: 1880
-  },
-  {
-    id: 't3',
-    type: 'expense',
-    amount: 1000,
-    description: 'Point提領申請',
-    date: '2024-01-25',
-    balance: 880
-  },
-  {
-    id: 't4',
-    type: 'expense',
-    amount: 15,
-    description: 'Point提領手續費',
-    date: '2024-01-25',
-    balance: 865
-  },
-  {
-    id: 't5',
-    type: 'income',
-    amount: 50,
-    description: '推薦獎勵 - 陳美華註冊成功',
-    date: '2024-02-01',
-    balance: 915
-  },
-  {
-    id: 't6',
-    type: 'income',
-    amount: 20,
-    description: '三等親獎勵 - 張志明推薦成功',
-    date: '2024-02-05',
-    balance: 935
-  },
-  {
-    id: 't7',
-    type: 'income',
-    amount: 100,
-    description: '活動獎勵 - 新春推薦活動',
-    date: '2024-02-10',
-    balance: 1035
-  },
-  {
-    id: 't8',
-    type: 'income',
-    amount: 50,
-    description: '推薦獎勵 - 劉小芳註冊成功',
-    date: '2024-02-15',
-    balance: 1085
-  },
-  {
-    id: 't9',
-    type: 'expense',
-    amount: 273,
-    description: '服務訂閱費用扣除',
-    date: '2024-02-20',
-    balance: 812
-  },
-  {
-    id: 't10',
-    type: 'income',
-    amount: 30,
-    description: '二等親獎勵 - 黃志偉推薦成功',
-    date: '2024-02-25',
-    balance: 842
-  }
-];
+interface RewardHistoryData {
+  history: RewardHistoryItem[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
 
 export function RewardHistory() {
-  const [filterType, setFilterType] = useState('all');
-
-  const filteredTransactions = mockTransactions.filter(transaction => {
-    return filterType === 'all' || transaction.type === filterType;
-  });
-
-  const getTransactionIcon = (type: string) => {
-    return type === 'income' ? (
-      <TrendingUp className="h-4 w-4 text-green-600" />
-    ) : (
-      <TrendingDown className="h-4 w-4 text-red-600" />
+  const [data, setData] = useState<RewardHistoryData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [filterType, setFilterType] = useState<string>('all');
+  
+  const { showToast } = useNotification();
+  
+  const ITEMS_PER_PAGE = 20;
+  
+  useEffect(() => {
+    fetchHistory(currentPage);
+  }, [currentPage, filterType]);
+  
+  const fetchHistory = async (page: number) => {
+    setIsLoading(true);
+    
+    try {
+      const token = await getAccessToken();
+      
+      if (!token) {
+        showToast('請先登入', 'error');
+        return;
+      }
+      
+      const offset = (page - 1) * ITEMS_PER_PAGE;
+      let url = buildApiUrl(`/rewards-v2/history?limit=${ITEMS_PER_PAGE}&offset=${offset}`);
+      
+      if (filterType !== 'all') {
+        url += `&type=${filterType}`;
+      }
+      
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: RewardHistoryData;
+        error?: { message: string };
+      }>(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (result.success) {
+        setData(result.data);
+      } else {
+        showToast(result.error?.message || '載入失敗', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to fetch history:', error);
+      showToast('載入歷史失敗', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+  
+  const handleNextPage = () => {
+    if (data?.pagination.hasMore) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+  
+  const handleFilterChange = (type: string) => {
+    setFilterType(type);
+    setCurrentPage(1); // Reset to first page
+  };
+  
+  if (isLoading && !data) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </CardContent>
+      </Card>
     );
-  };
-
-  const getTransactionColor = (type: string) => {
-    return type === 'income' ? 'text-green-600' : 'text-red-600';
-  };
-
-
-
+  }
+  
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          無法載入獎勵歷史
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  const { history, pagination } = data;
+  const totalPages = Math.ceil(pagination.total / ITEMS_PER_PAGE);
+  
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Receipt className="h-5 w-5" />
-          獎勵明細
-        </CardTitle>
+        <CardTitle>獎勵歷史</CardTitle>
         <CardDescription>
-          查看您的Point收支記錄和餘額變化
+          查看所有已發放的獎勵（共 {pagination.total} 筆）
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* 篩選器 */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger>
-                <SelectValue placeholder="選擇交易類型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部類型</SelectItem>
-                <SelectItem value="income">收入</SelectItem>
-                <SelectItem value="expense">支出</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      <CardContent>
+        {/* Filter Buttons */}
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <Button
+            onClick={() => handleFilterChange('all')}
+            variant={filterType === 'all' ? 'default' : 'outline'}
+            size="sm"
+          >
+            全部
+          </Button>
+          <Button
+            onClick={() => handleFilterChange('referral')}
+            variant={filterType === 'referral' ? 'default' : 'outline'}
+            size="sm"
+          >
+            推薦獎勵
+          </Button>
+          <Button
+            onClick={() => handleFilterChange('task')}
+            variant={filterType === 'task' ? 'default' : 'outline'}
+            size="sm"
+          >
+            任務獎勵
+          </Button>
         </div>
-
-        {/* 交易記錄列表 */}
-        <div className="space-y-3 max-h-96 overflow-y-auto">
-          {filteredTransactions.length === 0 ? (
-            <div className="text-center py-8">
-              <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">沒有符合條件的交易記錄</p>
+        
+        {/* History List */}
+        <div className="space-y-3 mb-6">
+          {history.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Gift className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+              <p>尚未有獎勵記錄</p>
+              <p className="text-sm mt-1">推薦朋友或完成任務即可獲得獎勵</p>
             </div>
           ) : (
-            filteredTransactions.map((transaction) => (
-              <div 
-                key={transaction.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 flex-1">
-                  {getTransactionIcon(transaction.type)}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate mb-1">{transaction.description}</p>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
-                      <span>{transaction.date}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="text-right">
-                  <div className={`font-medium ${getTransactionColor(transaction.type)}`}>
-                    {transaction.type === 'income' ? '+' : '-'}{transaction.amount}P
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    餘額: {transaction.balance}P
-                  </div>
-                </div>
-              </div>
+            history.map((item) => (
+              <HistoryCard key={item.id} item={item} />
             ))
           )}
         </div>
-
-        {/* 統計摘要 */}{/*
-        <div className="border-t pt-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="text-center">
-              <p className="text-muted-foreground">本期收入</p>
-              <p className="font-medium text-green-600">
-                +{filteredTransactions
-                  .filter(t => t.type === 'income')
-                  .reduce((sum, t) => sum + t.amount, 0)}P
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-muted-foreground">本期支出</p>
-              <p className="font-medium text-red-600">
-                -{filteredTransactions
-                  .filter(t => t.type === 'expense')
-                  .reduce((sum, t) => sum + t.amount, 0)}P
-              </p>
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t">
+            <p className="text-sm text-muted-foreground">
+              第 {currentPage} 頁，共 {totalPages} 頁
+            </p>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={handlePrevPage}
+                disabled={currentPage === 1 || isLoading}
+                variant="outline"
+                size="sm"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                上一頁
+              </Button>
+              
+              <Button
+                onClick={handleNextPage}
+                disabled={!pagination.hasMore || isLoading}
+                variant="outline"
+                size="sm"
+              >
+                下一頁
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
           </div>
-        </div>*/}
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// History Card Component
+function HistoryCard({ item }: { item: RewardHistoryItem }) {
+  const generationColors = {
+    1: 'bg-green-100 text-green-800',
+    2: 'bg-purple-100 text-purple-800',
+    3: 'bg-orange-100 text-orange-800'
+  };
+  
+  const isReferralReward = item.type.startsWith('referral_gen');
+  
+  return (
+    <div className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+      <div className="flex items-start gap-4">
+        {/* Icon */}
+        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+          {isReferralReward ? (
+            <TrendingUp className="h-5 w-5 text-blue-600" />
+          ) : (
+            <Gift className="h-5 w-5 text-blue-600" />
+          )}
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="font-medium truncate">
+              {item.description}
+            </p>
+            {item.generation && (
+              <Badge 
+                className={generationColors[item.generation as 1 | 2 | 3]}
+              >
+                第{item.generation}代
+              </Badge>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+            <div className="flex items-center gap-1">
+              <span className="font-medium text-green-600">+{item.amount} 點</span>
+            </div>
+            
+            {item.sourceUserName !== '系統' && (
+              <span className="truncate">來源：{item.sourceUserName}</span>
+            )}
+            
+            <div className="flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              <span>{new Date(item.createdAt).toLocaleDateString('zh-TW')}</span>
+            </div>
+          </div>
+          
+          {item.monthNumber && (
+            <p className="text-xs text-muted-foreground">
+              第 {item.monthNumber} 個月獎勵
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

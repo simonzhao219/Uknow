@@ -10,8 +10,9 @@ import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { ArrowLeft, Save, User, Mail, Phone, ExternalLink, Link2, Unlink, CheckCircle2, Loader2 } from 'lucide-react';
 import { UserContext } from '../App';
-import { mockUsers } from '../data/mockData';
+import { mockUsers } from '../data/mockUsers';
 import { useNotification } from './notifications/NotificationContext';
+import { apiRequest, buildApiUrl, ApiError } from '../utils/apiClient';
 
 interface EditProfileForm {
   name: string;
@@ -73,7 +74,7 @@ export function EditMemberProfile() {
   const handleVerifyEmail = async () => {
     const emailPattern = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
     if (!emailPattern.test(watchedEmail)) {
-      showToast('請輸入有效的電子郵件格式', 'error');
+      showToast('請輸入有效</ emailAddress格式', 'error');
       return;
     }
 
@@ -155,73 +156,60 @@ export function EditMemberProfile() {
     setIsLoading(true);
     
     try {
-      // 檢查 Email 和手機號碼是否已驗證
-      if (!emailVerified) {
-        showToast('請先驗證您的電子郵件', 'error');
-        setIsLoading(false);
-        return;
-      }
-      
-      if (!phoneVerified) {
-        showToast('請先驗證您的聯絡電話', 'error');
-        setIsLoading(false);
-        return;
-      }
-      
-      // 模擬 API 請求
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // 確保至少選擇一個登入服務
-      const hasService = Object.values(data.loginServices).some(service => service);
-      if (!hasService) {
-        showToast('至少需要選擇一個登入服務', 'error');
-        setIsLoading(false);
+      // ✅ 使用统一的 API 请求工具
+      const response = await apiRequest(buildApiUrl('/auth/profile'), {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('更新會員資料失敗:', result);
+        showError(
+          '更新失敗',
+          result.error || '無法更新您的會員資訊，請稍後再試',
+          ['請檢查網路連線狀態', '若問題持續發生，請聯絡客服']
+        );
         return;
       }
 
-      // TODO: 未來整合 Supabase 時，需要調用 API 更新用戶資料
-      // const { error } = await supabase
-      //   .from('users')
-      //   .update({
-      //     name: data.name,
-      //     email: data.email,
-      //     phone: data.phone,
-      //     loginServices: data.loginServices
-      //   })
-      //   .eq('id', user?.id);
+      console.log('會員資料更新成功:', result);
 
-      // 更新用戶資料
-      const updatedUser = {
-        ...user,
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        loginServices: data.loginServices
-      };
-
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      // 更新本地狀態和 localStorage
+      setUser(result);
+      localStorage.setItem('user', JSON.stringify(result));
       
       showSuccess(
         '會員資訊已成功更新',
-        '您的個人資料和登入設定已經更新完成',
+        '您的個人資料已經更新完成',
         ['系統將自動返回會員中心']
       );
       
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (error) {
-      showError(
-        '更新失敗',
-        '無法更新您的會員資訊，請稍後再試',
-        ['請檢查網路連線狀態', '若問題持續發生，請聯絡客服']
-      );
+      console.error('更新會員資料時發生錯誤:', error);
+      
+      if (error instanceof ApiError && error.status === 401) {
+        showError('會話已過期', '請重新登入後再試');
+        navigate('/login');
+      } else {
+        showError(
+          '更新失敗',
+          '無法更新您的會員資訊，請稍後再試',
+          ['請檢查網路連線狀態', '若問題持續發生，請聯絡客服']
+        );
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleServiceToggle = (service: keyof EditProfileForm['loginServices'], checked: boolean) => {
-    // 檢查如果要解除綁定，確保至少保留一個登入方式
+    // 檢查如果���解除綁定，確保至少保留一個登入方式
     if (!checked) {
       const otherServices = Object.entries(watchedServices)
         .filter(([key]) => key !== service)
@@ -278,15 +266,15 @@ export function EditMemberProfile() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">姓名 * (最多10字)</Label>
+              <Label htmlFor="name">身分證上的姓名 * (申請點數提領需驗證)</Label>
               <Input
                 id="name"
                 {...register('name', { 
-                  required: '請輸入姓名',
+                  required: '請輸入您身分證上的姓名',
                   minLength: { value: 2, message: '姓名至少需要2個字元' },
                   maxLength: { value: 10, message: '姓名最多10個字' }
                 })}
-                placeholder="請輸入您的姓名"
+                placeholder="請輸入您身分證上的姓名"
                 maxLength={10}
               />
               <div className="text-right text-sm text-muted-foreground">
@@ -297,88 +285,31 @@ export function EditMemberProfile() {
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 hidden">
               <Label htmlFor="email">電子郵件 *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="email"
-                  type="email"
-                  {...register('email', { 
-                    required: '請輸入電子郵件',
-                    pattern: {
-                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                      message: '請輸入有效的電子郵件格式'
-                    }
-                  })}
-                  placeholder="請輸入您的電子郵件"
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant={emailVerified ? "outline" : "default"}
-                  size="sm"
-                  onClick={handleVerifyEmail}
-                  disabled={isVerifyingEmail || emailVerified}
-                  className="shrink-0"
-                >
-                  {isVerifyingEmail ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                      驗證中
-                    </>
-                  ) : emailVerified ? (
-                    <>
-                      <CheckCircle2 className="h-4 w-4 mr-1 text-green-600" />
-                      已驗證
-                    </>
-                  ) : (
-                    '驗證'
-                  )}
-                </Button>
-              </div>
-              {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
-              )}
+              <Input
+                id="email"
+                type="email"
+                {...register('email')}
+                disabled
+                className="bg-muted cursor-not-allowed"
+              />
+              <p className="text-sm text-muted-foreground">電子郵件無法修改</p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="phone">聯絡電話 *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="phone"
-                  {...register('phone', { 
-                    required: '請輸入聯絡電話',
-                    pattern: {
-                      value: /^09\d{8}$/,
-                      message: '請輸入有效的手機號碼格式 (09xxxxxxxx)'
-                    }
-                  })}
-                  placeholder="09xxxxxxxx"
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant={phoneVerified ? "outline" : "default"}
-                  size="sm"
-                  onClick={handleVerifyPhone}
-                  disabled={isVerifyingPhone || phoneVerified}
-                  className="shrink-0"
-                >
-                  {isVerifyingPhone ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                      驗證中
-                    </>
-                  ) : phoneVerified ? (
-                    <>
-                      <CheckCircle2 className="h-4 w-4 mr-1 text-green-600" />
-                      已驗證
-                    </>
-                  ) : (
-                    '驗證'
-                  )}
-                </Button>
-              </div>
+              <Input
+                id="phone"
+                {...register('phone', { 
+                  required: '請輸入聯絡電話',
+                  pattern: {
+                    value: /^09\d{8}$/,
+                    message: '請輸入有效的手機號碼格式 (09xxxxxxxx)'
+                  }
+                })}
+                placeholder="09xxxxxxxx"
+              />
               {errors.phone && (
                 <p className="text-sm text-destructive">{errors.phone.message}</p>
               )}
@@ -387,7 +318,7 @@ export function EditMemberProfile() {
         </Card>
 
         {/* 登入服務設定 */}
-        <Card>
+        <Card className="hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ExternalLink className="h-5 w-5" />
@@ -438,7 +369,7 @@ export function EditMemberProfile() {
                     className="gap-1"
                   >
                     <Unlink className="h-4 w-4" />
-                    解除綁定
+                    解除定
                   </Button>
                 ) : (
                   <Button
@@ -514,7 +445,7 @@ export function EditMemberProfile() {
           </Button>
           <Button
             type="submit"
-            disabled={isLoading || !watch('name')?.trim() || !watch('email')?.trim() || !watch('phone')?.trim()}
+            disabled={isLoading || !watch('name')?.trim() || !watch('phone')?.trim()}
             className="flex-1"
           >
             {isLoading ? (

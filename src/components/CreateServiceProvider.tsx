@@ -19,8 +19,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { UserContext } from '../App';
-import { mockServiceProviders, mockUsers } from '../data/mockData';
-import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
+import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS, MAX_PHOTO_SIZE, MAX_PHOTO_COUNT, ALLOWED_PHOTO_FORMATS } from '../utils/constants';
 import { ArrowLeft, Upload, X, CreditCard, Calendar, CheckCircle, AlertCircle, Users } from 'lucide-react';
 import {
   Collapsible,
@@ -29,9 +28,11 @@ import {
 } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
 import { validateContacts } from '../utils/contactValidation';
-import { MONTHLY_PRICE, YEARLY_PRICE } from '../utils/constants';
+import { YEARLY_PRICE } from '../utils/constants';
 import { FieldError, getInputErrorClass } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
+import { createClient } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 interface ContactInfo {
   instagram: string;
@@ -42,7 +43,7 @@ interface ContactInfo {
 export function CreateServiceProvider() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
-  const { showSuccess, showError } = useNotification();
+  const { showSuccess, showError, showToast } = useNotification();
   
   const [currentStep, setCurrentStep] = useState(1);
   const [referralCode, setReferralCode] = useState('');
@@ -54,6 +55,7 @@ export function CreateServiceProvider() {
   const [formData, setFormData] = useState({
     name: '',
     category: '',
+    gender: '',           // ✅ 新增
     city: '',
     districts: [] as string[],
     description: '',
@@ -63,12 +65,14 @@ export function CreateServiceProvider() {
       line: '',
       facebook: ''
     },
-    subscriptionPlan: 'monthly',
     agreedToTerms: false
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [listingTempId] = useState(`temp_${Date.now()}`);
+  const supabase = createClient();
 
   // 載入最近使用的推薦碼
   useEffect(() => {
@@ -80,20 +84,7 @@ export function CreateServiceProvider() {
     }
   }, []);
 
-  // 獲取該帳號下所有的推薦碼
-  const getUserReferralCodes = (): string[] => {
-    const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
-    // 新格式：推薦碼 = 使用者ID(5碼) + 刊登ID(7碼) = 12碼
-    return userServiceProviders.map(roommate => {
-      // 從mockUsers找到該用戶的publicUserId
-      const userData = mockUsers.find(u => u.id === user?.id);
-      const userPublicId = userData?.publicUserId || 'XXXXX'; // 預設值
-      const listingPublicId = (roommate as any).publicListingId || 'XXXXXXX'; // 預設值
-      return `${userPublicId}${listingPublicId}`;
-    });
-  };
-
-  // 模擬推薦碼驗證
+  // 真實推薦碼驗證（呼叫後端 API）
   const verifyReferralCode = async (code: string) => {
     if (!code.trim()) {
       setCodeVerified(false);
@@ -103,70 +94,69 @@ export function CreateServiceProvider() {
 
     setIsVerifyingCode(true);
     
-    // 模擬API呼叫延遲
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // 檢查推薦碼長度（應該是12碼）
-    if (code.length !== 12) {
+    // 檢查推薦碼長度（應該是16碼）
+    if (code.length !== 16) {
       setCodeVerified(false);
       setReferrerName("");
-      setErrors({...errors, referralCode: '推薦碼格式錯誤，應為12碼'});
+      setErrors({...errors, referralCode: '推薦碼格式錯誤，應為16碼'});
       setIsVerifyingCode(false);
       return;
     }
     
-    // 檢查是否為該帳號下的推薦碼（大小寫敏感）
-    const userCodes = getUserReferralCodes();
-    if (userCodes.includes(code)) {
-      setCodeVerified(false);
-      setReferrerName("");
-      setErrors({...errors, referralCode: '不能使用自己的推薦碼'});
-      setIsVerifyingCode(false);
-      return;
-    }
-    
-    // 模擬驗證邏輯 - 檢查推薦碼是否存在於資料庫
-    // 推薦碼格式：使用者ID(5碼) + 刊登ID(7碼)
-    // 從所有刊登中查找匹配的推薦碼
-    const allValidCodes: { [key: string]: string } = {};
-    mockServiceProviders.forEach(roommate => {
-      const roommateUser = mockUsers.find(u => u.id === roommate.userId);
-      if (roommateUser && (roommate as any).publicListingId) {
-        const userPublicId = roommateUser.publicUserId || '';
-        const listingPublicId = (roommate as any).publicListingId || '';
-        if (userPublicId && listingPublicId) {
-          const refCode = `${userPublicId}${listingPublicId}`;
-          allValidCodes[refCode] = roommateUser.name;
-        }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setIsVerifyingCode(false);
+        return;
       }
-    });
-    
-    // 大小寫敏感查找
-    if (allValidCodes[code]) {
-      setCodeVerified(true);
-      setReferrerName(allValidCodes[code]);
-      // 保存到本地存儲（保留原始大小寫）
-      localStorage.setItem('lastReferralCode', code);
-      // 清除錯誤訊息
-      const newErrors = { ...errors };
-      delete newErrors.referralCode;
-      setErrors(newErrors);
-    } else {
+      
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/verify-referral-code`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            referralCode: code,
+            currentUserId: user?.id
+          })
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCodeVerified(data.valid);
+        setReferrerName(data.referrerName);
+        localStorage.setItem('lastReferralCode', code);
+        
+        const newErrors = { ...errors };
+        delete newErrors.referralCode;
+        setErrors(newErrors);
+      } else {
+        const errorData = await response.json();
+        setCodeVerified(false);
+        setReferrerName("");
+        setErrors({...errors, referralCode: errorData.error?.message || '推薦碼驗證失敗'});
+      }
+    } catch (error) {
+      console.error('推薦碼驗證錯誤:', error);
       setCodeVerified(false);
       setReferrerName("");
-      setErrors({...errors, referralCode: '推薦碼不存在'});
+      setErrors({...errors, referralCode: '網絡錯誤，請稍後再試'});
+    } finally {
+      setIsVerifyingCode(false);
     }
-    
-    setIsVerifyingCode(false);
   };
 
   // 處理推薦碼輸入
   const handleReferralCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const code = e.target.value; // 移除 .toUpperCase()，保留原始大小寫
+    const code = e.target.value;
     setReferralCode(code);
     
-    // 即時驗證推薦碼
-    if (code.length >= 4) {
+    // 即時驗證推薦（16碼時才驗證）
+    if (code.length >= 16) {
       verifyReferralCode(code);
     } else {
       setCodeVerified(false);
@@ -193,6 +183,7 @@ export function CreateServiceProvider() {
 
     if (!formData.name.trim()) newErrors.name = '請輸入服務者名稱';
     if (!formData.category) newErrors.category = '請選擇服務類別';
+    if (!formData.gender) newErrors.gender = '請選擇性別';  // ✅ 新增
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
     if (formData.photos.length < 3) newErrors.photos = '請至少上傳3張照片';
@@ -200,16 +191,6 @@ export function CreateServiceProvider() {
     // 驗證聯絡方式
     const contactErrors = validateContacts(formData.contacts);
     Object.assign(newErrors, contactErrors);
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const validateStep3 = () => {
-    const newErrors: { [key: string]: string } = {};
-
-    if (!formData.subscriptionPlan) newErrors.subscriptionPlan = '請選擇訂閱方案';
-    // agreedToTerms 驗證已移至步驟 4
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -256,20 +237,85 @@ export function CreateServiceProvider() {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (formData.photos.length + files.length > 3) {
-      setErrors({...errors, photos: '最多只能上傳3張照片'});
+    
+    // 檢查數量
+    if (formData.photos.length + files.length > MAX_PHOTO_COUNT) {
+      showToast(`最多只能上傳${MAX_PHOTO_COUNT}張照片`, 'error');
       return;
     }
-
-    const newPhotos = files.map((file, index) => 
-      `https://images.unsplash.com/photo-${Date.now() + index}?w=400&h=300&fit=crop`
-    );
     
-    setFormData({
-      ...formData,
-      photos: [...formData.photos, ...newPhotos]
-    });
-    setErrors({...errors, photos: ''});
+    // 檢查大小
+    const oversizedFiles = files.filter(file => file.size > MAX_PHOTO_SIZE);
+    if (oversizedFiles.length > 0) {
+      showToast('照片大小不能超過 5MB', 'error');
+      return;
+    }
+    
+    // 檢查格式
+    const invalidFiles = files.filter(file => !ALLOWED_PHOTO_FORMATS.includes(file.type));
+    if (invalidFiles.length > 0) {
+      showToast('只支援 JPG、PNG、WEBP 格式', 'error');
+      return;
+    }
+    
+    // 開始上傳
+    uploadPhotosToServer(files);
+  };
+
+  const uploadPhotosToServer = async (files: File[]) => {
+    setUploadingPhotos(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showToast('請先登入', 'error');
+        return;
+      }
+      
+      const uploadPromises = files.map(async (file) => {
+        const formDataToSend = new FormData();
+        formDataToSend.append('file', file);
+        formDataToSend.append('listingTempId', listingTempId);
+        
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/upload-photo`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: formDataToSend
+          }
+        );
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || '上傳失敗');
+        }
+        
+        const data = await response.json();
+        return data.photoUrl;
+      });
+      
+      const photoUrls = await Promise.all(uploadPromises);
+      
+      setFormData({
+        ...formData,
+        photos: [...formData.photos, ...photoUrls]
+      });
+      
+      const newErrors = { ...errors };
+      delete newErrors.photos;
+      setErrors(newErrors);
+      
+      showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
+      
+    } catch (error) {
+      console.error('照片上傳錯誤:', error);
+      showToast(error instanceof Error ? error.message : '照片上傳失敗，請重試', 'error');
+    } finally {
+      setUploadingPhotos(false);
+    }
   };
 
   const removePhoto = (index: number) => {
@@ -293,9 +339,8 @@ export function CreateServiceProvider() {
       // 沒有推薦碼直接進入下一步
       setCurrentStep(2);
     } else if (currentStep === 2 && validateStep2()) {
+      // 步驟2驗證成功後，直接跳到步驟3（確認付款）
       setCurrentStep(3);
-    } else if (currentStep === 3 && validateStep3()) {
-      setCurrentStep(4);
     }
   };
 
@@ -303,56 +348,60 @@ export function CreateServiceProvider() {
     setIsSubmitting(true);
     
     try {
-      // TODO: 未來串接藍新金流 API
-      // 1. 準備訂單資料
-      const orderData = {
-        userId: user?.id,
-        amount: formData.subscriptionPlan === 'monthly' ? MONTHLY_PRICE : YEARLY_PRICE,
-        subscriptionPlan: formData.subscriptionPlan,
-        referralCode: referralCode || null,
-        listingData: {
-          name: formData.name,
-          category: formData.category,
-          city: formData.city,
-          districts: formData.districts,
-          description: formData.description,
-          photos: formData.photos,
-          contacts: formData.contacts,
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showError('未登入', '請先登入後再試');
+        return;
+      }
+      
+      // 呼叫後端 API 創建刊登（不再傳送 subscriptionPlan）
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/create`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            referralCode: referralCode || 'DEFAULTRCM01',
+            listingData: {
+              name: formData.name,
+              category: formData.category,
+              gender: formData.gender,
+              city: formData.city,
+              districts: formData.districts,
+              description: formData.description,
+              photos: formData.photos,
+              contacts: formData.contacts
+            }
+            // subscriptionPlan 已移除，後端固定為年費
+          })
         }
-      };
-      
-      // 2. 呼叫 Supabase 後端 API
-      // const response = await fetch(`${supabaseUrl}/functions/v1/make-server-5c6718b9/create-payment`, {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //     'Authorization': `Bearer ${supabaseAnonKey}`
-      //   },
-      //   body: JSON.stringify(orderData)
-      // });
-      
-      // 3. 取得藍新流付款網址
-      // const { paymentUrl } = await response.json();
-      
-      // 4. 導向至藍新金流付款頁面
-      // window.location.href = paymentUrl;
-      
-      // 暫時模擬付款成功
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      showSuccess(
-        '付款成功！',
-        '服務者刊登已建立',
-        [
-          `訂閱方案：${formData.subscriptionPlan === 'monthly' ? '月繳方案' : '年繳方案'}`,
-          `付款金額：$${formData.subscriptionPlan === 'monthly' ? MONTHLY_PRICE : YEARLY_PRICE.toLocaleString()}`,
-          '刊登將立即上線'
-        ]
       );
-      navigate('/service-providers');
       
+      if (response.ok) {
+        const data = await response.json();
+        showSuccess(
+          '刊登建立成功！',
+          '您的服務者刊登已成功建立',
+          [
+            `刊登 ID: ${data.publicListingId}`,
+            `您的推薦碼: ${data.referralCode}`,
+            `有效期限: ${new Date(data.activeUntil).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}`
+          ]
+        );
+        navigate('/service-providers');
+      } else {
+        const errorData = await response.json();
+        showError(
+          '刊登建立失敗',
+          errorData.error?.message || '請稍後再試，聯繫客服協處理。'
+        );
+      }
     } catch (error) {
-      console.error('付款處理錯誤:', error);
-      showError('付款處理失敗', '請稍後再試，或聯繫客服協助處理。');
+      console.error('刊登建立錯誤:', error);
+      showError('網絡錯誤', '請檢查網絡連線後再試');
     } finally {
       setIsSubmitting(false);
     }
@@ -371,8 +420,7 @@ export function CreateServiceProvider() {
     switch (currentStep) {
       case 1: return '推薦碼';
       case 2: return '填寫服務者資訊';
-      case 3: return '選擇訂閱方案';
-      case 4: return '確認付款';
+      case 3: return '確認付款';
       default: return '';
     }
   };
@@ -391,14 +439,14 @@ export function CreateServiceProvider() {
 
       {/* 步驟指示器 */}
       <div className="flex items-center justify-center space-x-4">
-        {[1, 2, 3, 4].map((step) => (
+        {[1, 2, 3].map((step) => (
           <div key={step} className="flex items-center">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
               currentStep >= step ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
             }`}>
               {step}
             </div>
-            {step < 4 && <div className={`w-12 h-0.5 mx-2 ${currentStep > step ? 'bg-primary' : 'bg-muted'}`} />}
+            {step < 3 && <div className={`w-12 h-0.5 mx-2 ${currentStep > step ? 'bg-primary' : 'bg-muted'}`} />}
           </div>
         ))}
       </div>
@@ -514,6 +562,21 @@ export function CreateServiceProvider() {
               <FieldError error={errors.category} />
             </div>
 
+            {/* ✅ 新增：性別選擇器 */}
+            <div className="space-y-2">
+              <Label>性別 *</Label>
+              <Select value={formData.gender} onValueChange={(value) => setFormData({...formData, gender: value})}>
+                <SelectTrigger className={getInputErrorClass(!!errors.gender)}>
+                  <SelectValue placeholder="選擇性別" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="男">男</SelectItem>
+                  <SelectItem value="女">女</SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldError error={errors.gender} />
+            </div>
+
             {/* 服務地區選擇 */}
             <div className="space-y-4">
               <div className="space-y-2">
@@ -531,7 +594,7 @@ export function CreateServiceProvider() {
                 <FieldError error={errors.city} />
               </div>
 
-              {/* 服���區域多選 */}
+              {/* 服區域多選 */}
               {formData.city && (
                 <div className="space-y-2">
                   <Label>服務區域 * (可選擇多個區域)</Label>
@@ -652,15 +715,25 @@ export function CreateServiceProvider() {
                 ))}
                 
                 {formData.photos.length < 3 && (
-                  <label className="aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors">
-                    <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">上傳照片</span>
+                  <label className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${uploadingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {uploadingPhotos ? (
+                      <>
+                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent mb-2"></div>
+                        <span className="text-sm text-muted-foreground">上傳中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-6 w-6 text-muted-foreground mb-2" />
+                        <span className="text-sm text-muted-foreground">上傳照片</span>
+                      </>
+                    )}
                     <input
                       type="file"
                       multiple
                       accept="image/*"
                       onChange={handlePhotoUpload}
                       className="hidden"
+                      disabled={uploadingPhotos}
                     />
                   </label>
                 )}
@@ -740,61 +813,8 @@ export function CreateServiceProvider() {
         </Card>
       )}
 
-      {/* 步驟 3: 選擇訂閱方案 */}
+      {/* 步驟 3: 確認付款 */}
       {currentStep === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>選擇訂閱方案</CardTitle>
-            <CardDescription>
-              選擇適合您的訂閱方案
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <RadioGroup value={formData.subscriptionPlan} onValueChange={(value) => setFormData({...formData, subscriptionPlan: value})}>
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2 p-4 border rounded-lg">
-                  <RadioGroupItem value="monthly" id="monthly" />
-                  <div className="flex-1">
-                    <Label htmlFor="monthly" className="cursor-pointer">
-                      <div className="flex items-center justify-between gap-4">
-                        <p className="font-medium">月繳方案</p>
-                        <Badge variant="default">${MONTHLY_PRICE}/月</Badge>
-                      </div>
-                    </Label>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2 p-4 border rounded-lg">
-                  <RadioGroupItem value="yearly" id="yearly" />
-                  <div className="flex-1">
-                    <Label htmlFor="yearly" className="cursor-pointer">
-                      <div className="flex items-center justify-between gap-4">
-                        <p className="font-medium">年繳方案</p>
-                        <Badge variant="default">${YEARLY_PRICE.toLocaleString()}/年</Badge>
-                      </div>
-                    </Label>
-                  </div>
-                </div>
-              </div>
-            </RadioGroup>
-
-            <div className="flex gap-4">
-              <Button variant="outline" onClick={() => setCurrentStep(2)} className="flex-1">
-                上一步
-              </Button>
-              <Button 
-                onClick={handleNext} 
-                className="flex-1"
-              >
-                下一步
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 步驟 4: 確認付款 */}
-      {currentStep === 4 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -835,6 +855,20 @@ export function CreateServiceProvider() {
                   <p className="text-muted-foreground">服務類別</p>
                   <p className="font-medium">{formData.category}</p>
                 </div>
+                {/* 🆕 性别显示 */}
+                {formData.gender && (
+                  <div>
+                    <p className="text-muted-foreground">性別</p>
+                    <p className="font-medium">
+                      <Badge 
+                        variant="outline" 
+                        className={`${formData.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
+                      >
+                        {formData.gender === '男' ? '♂ 男' : '♀ 女'}
+                      </Badge>
+                    </p>
+                  </div>
+                )}
                 <div className="col-span-2">
                   <p className="text-muted-foreground">服務地區</p>
                   <p className="font-medium">{formData.city}</p>
@@ -853,27 +887,17 @@ export function CreateServiceProvider() {
               </div>
             </div>
 
-            {/* 付款摘要 */}
+            {/* 付款摘要 - 固定年費方案 */}
             <div className="bg-muted p-4 rounded-lg space-y-3">
               <h4 className="font-medium">付款摘要</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>訂閱方案</span>
-                  <span>{formData.subscriptionPlan === 'monthly' ? '月繳方案' : '年繳方案'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>費用</span>
-                  <span>${formData.subscriptionPlan === 'monthly' ? MONTHLY_PRICE : (MONTHLY_PRICE * 12).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>優惠</span>
-                  <span className="text-green-600">
-                    {formData.subscriptionPlan === 'yearly' ? `-$${MONTHLY_PRICE * 12 - YEARLY_PRICE}` : '$0'}
-                  </span>
+                  <span>年繳方案（唯一方案）</span>
                 </div>
                 <div className="border-t pt-2 flex justify-between font-medium">
                   <span>總計</span>
-                  <span>${formData.subscriptionPlan === 'monthly' ? MONTHLY_PRICE : YEARLY_PRICE.toLocaleString()}</span>
+                  <span className="text-lg text-primary">${YEARLY_PRICE.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -882,8 +906,7 @@ export function CreateServiceProvider() {
             <Alert>
               <Calendar className="h-4 w-4" />
               <AlertDescription>
-                付款成功後，您的服務者刊登將立即上線。
-                {formData.subscriptionPlan === 'monthly' ? '月繳方案將於每月同日自動續訂。' : '年繳方案將於一年後自動續訂。'}
+                付款成功後，您的服務者刊登將立即上線。年繳方案將於一年後自動續訂。
               </AlertDescription>
             </Alert>
 
@@ -901,11 +924,11 @@ export function CreateServiceProvider() {
             <FieldError error={errors.agreedToTerms} />
 
             <div className="flex gap-4">
-              <Button variant="outline" onClick={() => setCurrentStep(3)} className="flex-1">
+              <Button variant="outline" onClick={() => setCurrentStep(2)} className="flex-1">
                 上一步
               </Button>
               <Button onClick={handleSubmit} className="flex-1" disabled={isSubmitting || !formData.agreedToTerms}>
-                {isSubmitting ? '處理中...' : `確認付款 $${formData.subscriptionPlan === 'monthly' ? MONTHLY_PRICE : YEARLY_PRICE.toLocaleString()}`}
+                {isSubmitting ? '處理中...' : `確認付款 $${YEARLY_PRICE.toLocaleString()}`}
               </Button>
             </div>
           </CardContent>

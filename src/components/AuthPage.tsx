@@ -1,0 +1,593 @@
+import React, { useState, useContext, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { UserContext } from '../App';
+import { createClient } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { useNotification } from './notifications/NotificationContext';
+import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+
+export function AuthPage() {
+  const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isExistingUser, setIsExistingUser] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  const { user, setUser } = useContext(UserContext);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { showToast } = useNotification();
+  const supabase = createClient();
+
+  // 清理舊數據：在進入登入頁面時，主動清除可能存在的問題 session
+  useEffect(() => {
+    const cleanupOldSessions = async () => {
+      try {
+        // 檢查是否有 URL hash（email verification callback）
+        const hash = window.location.hash;
+        
+        // 如果有 hash，可能是舊的 verification link，清除它
+        if (hash && hash.includes('access_token')) {
+          console.log('AuthPage: Found auth hash in URL, cleaning up...');
+          window.location.hash = ''; // 清除 URL hash
+        }
+
+        // 檢查當前 session 狀態
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          console.log('AuthPage: Found existing session, checking if valid...');
+          
+          // 嘗試驗證這個 session 是否有效
+          const response = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+            {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+            }
+          );
+
+          // 如果返回 410 或 404，表示這是一個無效的 session，清除它
+          if (response.status === 410 || response.status === 404) {
+            console.log('AuthPage: Session is invalid (user deleted), cleaning up...');
+            await supabase.auth.signOut();
+            localStorage.removeItem('user');
+            localStorage.removeItem('pendingSession');
+            setUser(null);
+          } else if (response.ok) {
+            // Session 有效，用戶應該已經登入，導向 dashboard
+            console.log('AuthPage: Valid session found, redirecting to dashboard...');
+            const profile = await response.json();
+            
+            if (!profile.needsOnboarding) {
+              setUser(profile);
+              localStorage.setItem('user', JSON.stringify(profile));
+              navigate('/dashboard', { replace: true });
+            } else {
+              // 需要完善資料
+              navigate('/auth/complete-profile', { replace: true });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('AuthPage: Error during cleanup:', error);
+        // 發生錯誤時，保守清除
+        await supabase.auth.signOut();
+        localStorage.removeItem('user');
+        setUser(null);
+      }
+    };
+
+    cleanupOldSessions();
+  }, []); // 只在組件掛載時執行一次
+
+  // 如果已登入，導向 dashboard
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+
+    // 顯示來自其他頁面的提示訊息（例如 AuthCallback 的成功訊息）
+    if (location.state?.message) {
+      showToast(location.state.message, location.state.emailVerified ? 'success' : 'info');
+      // 清除 state，避免重複顯示
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [user, navigate, location, showToast]);
+
+  // 步驟 1：檢查 Email 是否存在
+  const handleCheckEmail = async () => {
+    setErrors({});
+
+    // 驗證 Email 格式
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrors({ email: '請輸入有效的 Email 格式（例如：example@email.com）' });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/check-email`;
+      console.log('Calling API:', apiUrl);
+      console.log('Request body:', { email });
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`,
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Response error:', errorText);
+        throw new Error(`API returned ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      setIsExistingUser(data.exists);
+      setStep(2);
+    } catch (error) {
+      console.error('Error checking email:', error);
+      showToast(`檢查 Email 時發生錯誤：${error instanceof Error ? error.message : '未知錯誤'}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 步驟 2A：登入（已存在的用戶）
+  const handleLogin = async () => {
+    setErrors({});
+
+    if (!password) {
+      setErrors({ password: '請輸入密碼' });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        console.error('Login error:', error);
+        console.error('Login error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name,
+          code: error.code
+        });
+        showToast('Email 或密碼錯誤', 'error');
+        return;
+      }
+
+      console.log('Login successful, session:', data.session ? 'exists' : 'missing');
+      console.log('Access token length:', data.session?.access_token?.length || 0);
+
+      // 取得用戶資料
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        {
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+        }
+      );
+
+      console.log('Profile fetch response status:', response.status);
+
+      if (!response.ok) {
+        console.error('AuthPage: Failed to fetch profile, status:', response.status);
+        const errorText = await response.text();
+        console.error('AuthPage: Error response body:', errorText);
+        
+        // 特殊處理：帳號已被刪除（410）或不存在（404）
+        if (response.status === 410 || response.status === 404) {
+          console.log('AuthPage: User account deleted or not found, cleaning up...');
+          
+          // 清除 session
+          await supabase.auth.signOut();
+          
+          showToast('帳號不存在或已被刪除，請重新註冊', 'error');
+          setStep(1);
+          setEmail('');
+          setPassword('');
+          setIsLoading(false);
+          return;
+        }
+        
+        throw new Error(`Failed to fetch user profile (status: ${response.status})`);
+      }
+
+      const profile = await response.json();
+      console.log('User profile:', profile);
+
+      // 檢查是否需要完善資料
+      if (profile.needsOnboarding) {
+        console.log('User needs to complete profile, redirecting to /auth/complete-profile');
+        // 暫存 session，讓 CompleteProfile 可以使用
+        localStorage.setItem('pendingSession', JSON.stringify(data.session));
+        navigate('/auth/complete-profile');
+        return;
+      }
+
+      setUser(profile);
+      localStorage.setItem('user', JSON.stringify(profile));
+      showToast('登入成功！', 'success');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error during login:', error);
+      showToast('登入失敗，請稍後再試', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 步驟 2B：註冊（新用戶）
+  const handleSignUp = async () => {
+    setErrors({});
+
+    // 驗證密碼
+    const passwordErrors = validatePassword(password, confirmPassword);
+    if (Object.keys(passwordErrors).length > 0) {
+      setErrors(passwordErrors);
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('🔄 Starting signup process...');
+      console.log('Email:', email);
+      console.log('Redirect URL:', `${window.location.origin}/auth/callback`);
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      console.log('✅ Signup response:', data);
+      
+      if (error) {
+        console.error('❌ Sign up error:', error);
+        showToast(error.message, 'error');
+        return;
+      }
+
+      // 檢查是否需要 email 確認
+      if (data?.user) {
+        console.log('📧 User created:', {
+          id: data.user.id,
+          email: data.user.email,
+          email_confirmed_at: data.user.email_confirmed_at,
+          confirmation_sent_at: data.user.confirmation_sent_at,
+        });
+
+        if (!data.user.email_confirmed_at) {
+          console.log('✉️ Email confirmation required, should have sent verification email');
+        } else {
+          console.log('⚠️ Email already confirmed (auto-confirm enabled?)');
+        }
+      }
+
+      // 導向等待驗證頁面
+      navigate('/auth/verify-email', {
+        state: { 
+          email,
+          registrationTime: Date.now(), // 傳遞註冊時間，用於計算初始冷卻
+        },
+      });
+    } catch (error) {
+      console.error('Error during sign up:', error);
+      showToast('註冊失敗，請稍後再試', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 密碼驗證
+  const validatePassword = (pwd: string, confirmPwd: string) => {
+    const errors: { [key: string]: string } = {};
+
+    if (!pwd) {
+      errors.password = '請輸入密碼';
+    } else {
+      const requirements = [];
+      
+      if (pwd.length < 8) {
+        requirements.push('至少 8 個字元');
+      }
+      if (!/[A-Z]/.test(pwd)) {
+        requirements.push('至少一個大寫字母（A-Z）');
+      }
+      if (!/[a-z]/.test(pwd)) {
+        requirements.push('至少一個小寫字母（a-z）');
+      }
+      if (!/[0-9]/.test(pwd)) {
+        requirements.push('至少一個數字（0-9）');
+      }
+      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)) {
+        requirements.push('至少一個符號（如 !@#$%^&*）');
+      }
+
+      if (requirements.length > 0) {
+        errors.password = `密碼需包含：${requirements.join('、')}`;
+      }
+    }
+
+    if (!isExistingUser) {
+      if (!confirmPwd) {
+        errors.confirmPassword = '請再次輸入密碼以確認';
+      } else if (pwd !== confirmPwd) {
+        errors.confirmPassword = '兩次輸入的密碼不一致，請重新確認';
+      }
+    }
+
+    return errors;
+  };
+
+  return (
+    <div className="max-w-md mx-auto mt-12">
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">
+            {step === 1 && '歡迎使用 Uknow'}
+            {step === 2 && isExistingUser && '登入帳號'}
+            {step === 2 && !isExistingUser && '設定密碼'}
+          </CardTitle>
+          <CardDescription>
+            {step === 1 && '請輸入您的 Email'}
+            {step === 2 && isExistingUser && '歡迎回來'}
+            {step === 2 && !isExistingUser && '建立您的新帳號'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 步驟 1：輸入 Email */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCheckEmail()}
+                  placeholder="your@email.com"
+                  className={getInputErrorClass(!!errors.email)}
+                  autoFocus
+                />
+                <FieldError error={errors.email} />
+              </div>
+
+              <Button
+                onClick={handleCheckEmail}
+                disabled={isLoading || !email}
+                className="w-full"
+              >
+                {isLoading ? (
+                  <>
+                    <svg
+                      className="animate-spin h-4 w-4 mr-2"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
+                      />
+                    </svg>
+                    檢查中...
+                  </>
+                ) : (
+                  '繼續'
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* 步驟 2A：登入 */}
+          {step === 2 && isExistingUser && (
+            <div className="space-y-4">
+              {/* 顯示 Email */}
+              <div className="bg-muted p-3 rounded space-y-1">
+                <Label className="text-sm text-muted-foreground">Email</Label>
+                <p>{email}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">密碼</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  placeholder="請輸入密碼"
+                  className={getInputErrorClass(!!errors.password)}
+                  autoFocus
+                />
+                <FieldError error={errors.password} />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStep(1);
+                    setPassword('');
+                    setErrors({});
+                  }}
+                  className="flex-1"
+                >
+                  上一步
+                </Button>
+                <Button
+                  onClick={handleLogin}
+                  disabled={isLoading || !password}
+                  className="flex-1"
+                >
+                  {isLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin h-4 w-4 mr-2"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
+                        />
+                      </svg>
+                      登入中...
+                    </>
+                  ) : (
+                    '登入'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 步驟 2B：註冊（設定密碼） */}
+          {step === 2 && !isExistingUser && (
+            <div className="space-y-4">
+              {/* 顯示 Email */}
+              <div className="bg-muted p-3 rounded space-y-1">
+                <Label className="text-sm text-muted-foreground">Email</Label>
+                <p>{email}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">密碼</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="請輸入密碼"
+                  className={getInputErrorClass(!!errors.password)}
+                  autoFocus
+                />
+                <FieldError error={errors.password} />
+                <div className="bg-muted p-3 rounded text-sm space-y-1">
+                  <p className="font-medium">密碼必須包含：</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                    <li>至少 8 個字元</li>
+                    <li>至少一個大寫字母（A-Z）</li>
+                    <li>至少一個小寫字母（a-z）</li>
+                    <li>至少一個數字（0-9）</li>
+                    <li>至少一個符號（例如：!@#$%^&*）</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">確認密碼</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSignUp()}
+                  placeholder="再次輸入密碼"
+                  className={getInputErrorClass(!!errors.confirmPassword)}
+                />
+                <FieldError error={errors.confirmPassword} />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStep(1);
+                    setPassword('');
+                    setConfirmPassword('');
+                    setErrors({});
+                  }}
+                  className="flex-1"
+                >
+                  上一步
+                </Button>
+                <Button
+                  onClick={handleSignUp}
+                  disabled={isLoading || !password || !confirmPassword}
+                  className="flex-1"
+                >
+                  {isLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin h-4 w-4 mr-2"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
+                        />
+                      </svg>
+                      註冊中...
+                    </>
+                  ) : (
+                    '註冊'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

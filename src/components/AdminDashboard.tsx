@@ -2,8 +2,7 @@ import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { WithdrawalManagement } from './admin/WithdrawalManagement';
 import { MemberManagement } from './admin/MemberManagement';
-import { SystemNotifications } from './admin/SystemNotifications';
-import { TaskManagement } from './admin/TaskManagement';
+import { DataMigrationTool } from './admin/DataMigrationTool';
 
 export function AdminDashboard() {
   return (
@@ -14,27 +13,22 @@ export function AdminDashboard() {
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
-          <TabsTrigger value="tasks">任務獎勵管理</TabsTrigger>
           <TabsTrigger value="members">會員管理</TabsTrigger>
-          <TabsTrigger value="notifications">系統通知</TabsTrigger>
+          <TabsTrigger value="migration">數據遷移</TabsTrigger>
         </TabsList>
 
         <TabsContent value="withdrawals">
           <WithdrawalManagement />
         </TabsContent>
 
-        <TabsContent value="tasks">
-          <TaskManagement />
-        </TabsContent>
-
         <TabsContent value="members">
           <MemberManagement />
         </TabsContent>
 
-        <TabsContent value="notifications">
-          <SystemNotifications />
+        <TabsContent value="migration">
+          <DataMigrationTool />
         </TabsContent>
       </Tabs>
     </div>

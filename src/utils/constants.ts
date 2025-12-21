@@ -11,8 +11,12 @@ export const NAME_DISPLAY_LENGTH_DESKTOP = 10; // 桌面版首頁顯示名稱的
 export const DESCRIPTION_MAX_LENGTH = 200; // 服務介紹的最大長度
 
 // 訂閱方案價格常數
-export const MONTHLY_PRICE = 129; // 月繳方案價格
-export const YEARLY_PRICE = 1188; // 年繳方案價格
+export const YEARLY_PRICE = 1200; // 年繳方案價格（唯一方案）
+
+// 照片上傳常數
+export const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_PHOTO_COUNT = 3; // 最多3張照片
+export const ALLOWED_PHOTO_FORMATS = ['image/jpeg', 'image/png', 'image/webp']; // 允許的照片格式
 
 // ============================================
 // 服務相關常數
@@ -40,7 +44,7 @@ export const SERVICE_CATEGORIES = [
   "攝影師",
   "工程師",
   "會計師",
-  "水電",
+  "��電",
   "健身教練",
   "各項運動教練",
   "各類音樂老師",
@@ -404,7 +408,7 @@ export const TAIWAN_REGIONS: Record<string, string[]> = {
     "萬巒鄉",
     "崁頂鄉",
     "新埤鄉",
-    "南州鄉",
+    "南鄉",
     "林邊鄉",
     "東港鎮",
     "琉球鄉",

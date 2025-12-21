@@ -1,0 +1,356 @@
+// Uknow Platform - PostgreSQL Schema
+// Version: 1.0
+// Last Updated: 2024-12-21
+// Description: Complete database schema for subscription-based referral system
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 1. Users Table - Single Source of Truth (SSOT)
+// ============================================================
+
+model User {
+  id                    String    @id @default(uuid())
+  
+  // Basic Info
+  email                 String    @unique
+  realName              String    @map("real_name")
+  idNumber              String    @unique @map("id_number")
+  birthDate             DateTime  @map("birth_date") @db.Date
+  phone                 String
+  
+  // Account Status (calculated from subscription)
+  accountStatus         String    @default("Pending") @map("account_status")
+  
+  // Financial Info
+  pointBalance          Decimal   @default(0) @map("point_balance") @db.Decimal(10, 2)
+  
+  // Active Referral Code
+  activeReferralCodeId  String?   @map("active_referral_code_id")
+  
+  // Registration Flow
+  registrationStep      Int       @default(0) @map("registration_step")
+  emailVerified         Boolean   @default(false) @map("email_verified")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  subscription          Subscription?
+  referralCodes         ReferralCode[]
+  referralsAsReferrer   ReferralRelationship[] @relation("Referrer")
+  referralsAsReferee    ReferralRelationship[] @relation("Referee")
+  rewardSchedules       RewardSchedule[]
+  rewardHistory         RewardHistory[]
+  withdrawals           Withdrawal[]
+  taskProgress          TaskProgress[]
+  listing               Listing?
+  
+  @@map("users")
+  @@index([accountStatus], name: "idx_users_account_status")
+  @@index([emailVerified], name: "idx_users_email_verified")
+  @@index([pointBalance], name: "idx_users_point_balance")
+  @@index([createdAt(sort: Desc)], name: "idx_users_created_at")
+}
+
+// ============================================================
+// 2. Subscriptions Table - Annual Fee Management
+// ============================================================
+
+model Subscription {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key (One-to-One)
+  userId                String    @unique @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Status (synced with User.accountStatus)
+  status                String    @default("Active")
+  
+  // Period Info
+  startDate             DateTime  @map("start_date") @db.Date
+  endDate               DateTime  @map("end_date") @db.Date
+  gracePeriodEnd        DateTime  @map("grace_period_end") @db.Date
+  
+  // Payment Info
+  paymentDate           DateTime  @map("payment_date") @db.Date
+  amount                Decimal   @db.Decimal(10, 2)
+  paymentTransactionId  String?   @map("payment_transaction_id")
+  
+  // Cancellation Info
+  isCanceled            Boolean   @default(false) @map("is_canceled")
+  canceledAt            DateTime? @map("canceled_at")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("subscriptions")
+  @@index([status], name: "idx_subscriptions_status")
+  @@index([endDate], name: "idx_subscriptions_end_date")
+  @@index([gracePeriodEnd], name: "idx_subscriptions_grace_period_end")
+}
+
+// ============================================================
+// 3. Referral Codes Table - Unique 9-char Codes
+// ============================================================
+
+model ReferralCode {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Code Info (Format: 3 lowercase letters + 6 digits, e.g., abc123456)
+  code                  String    @unique
+  
+  // Status
+  status                String    @default("Active")
+  isActive              Boolean   @default(true) @map("is_active")
+  
+  // Lifecycle
+  activatedAt           DateTime  @default(now()) @map("activated_at")
+  inactivatedAt         DateTime? @map("inactivated_at")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  referralRelationships ReferralRelationship[]
+  
+  @@map("referral_codes")
+  @@index([code], name: "idx_referral_codes_code")
+  @@index([userId, status], name: "idx_referral_codes_user_status")
+  @@index([isActive], name: "idx_referral_codes_is_active")
+}
+
+// ============================================================
+// 4. Referral Relationships Table - 3-Generation Tree
+// ============================================================
+
+model ReferralRelationship {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Keys
+  referrerId            String    @map("referrer_id")
+  referrer              User      @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  
+  refereeId             String    @map("referee_id")
+  referee               User      @relation("Referee", fields: [refereeId], references: [id], onDelete: Cascade)
+  
+  referralCodeId        String    @map("referral_code_id")
+  referralCode          ReferralCode @relation(fields: [referralCodeId], references: [id], onDelete: Cascade)
+  
+  // Hierarchy Info
+  generation            Int       // 1, 2, or 3
+  
+  // Status
+  isActive              Boolean   @default(true) @map("is_active")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("referral_relationships")
+  @@unique([refereeId], name: "unique_referee")
+  @@index([referrerId, generation], name: "idx_referral_relationships_referrer_gen")
+  @@index([isActive], name: "idx_referral_relationships_is_active")
+}
+
+// ============================================================
+// 5. Reward Schedules Table - Monthly Reward Distribution
+// ============================================================
+
+model RewardSchedule {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Reward Info
+  refereeId             String    @map("referee_id")
+  generation            Int       // 1, 2, or 3
+  monthNumber           Int       @map("month_number") // 1-12
+  amount                Decimal   @db.Decimal(10, 2)
+  
+  // Schedule Info
+  scheduledDate         DateTime  @map("scheduled_date") @db.Date
+  status                String    @default("Pending")
+  
+  // Execution Info
+  executedAt            DateTime? @map("executed_at")
+  failureReason         String?   @map("failure_reason")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("reward_schedules")
+  @@unique([userId, refereeId, generation, monthNumber], name: "unique_schedule")
+  @@index([scheduledDate, status], name: "idx_reward_schedules_date_status")
+  @@index([userId, status], name: "idx_reward_schedules_user_status")
+}
+
+// ============================================================
+// 6. Reward History Table - Complete Audit Trail
+// ============================================================
+
+model RewardHistory {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Reward Type
+  type                  String    // "referral", "task_consecutive", "task_monthly_king"
+  
+  // Reward Info
+  amount                Decimal   @db.Decimal(10, 2)
+  description           String
+  
+  // Referral Context (optional, only for referral rewards)
+  refereeId             String?   @map("referee_id")
+  generation            Int?
+  monthNumber           Int?      @map("month_number")
+  
+  // Task Context (optional, only for task rewards)
+  taskType              String?   @map("task_type")
+  taskValue             String?   @map("task_value")
+  
+  // Timestamps
+  issuedAt              DateTime  @default(now()) @map("issued_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  
+  @@map("reward_history")
+  @@index([userId, issuedAt(sort: Desc)], name: "idx_reward_history_user_issued")
+  @@index([type], name: "idx_reward_history_type")
+  @@index([issuedAt(sort: Desc)], name: "idx_reward_history_issued")
+}
+
+// ============================================================
+// 7. Withdrawals Table - Point Withdrawal Management
+// ============================================================
+
+model Withdrawal {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Withdrawal Info
+  amount                Decimal   @db.Decimal(10, 2)
+  status                String    @default("Pending")
+  
+  // Bank Info
+  bankCode              String    @map("bank_code")
+  bankAccount           String    @map("bank_account")
+  accountName           String    @map("account_name")
+  
+  // Processing Info
+  requestedAt           DateTime  @default(now()) @map("requested_at")
+  processedAt           DateTime? @map("processed_at")
+  processorNote         String?   @map("processor_note")
+  transactionId         String?   @map("transaction_id")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("withdrawals")
+  @@index([userId, status], name: "idx_withdrawals_user_status")
+  @@index([status, requestedAt], name: "idx_withdrawals_status_requested")
+}
+
+// ============================================================
+// 8. Task Progress Table - Task Achievement Tracking
+// ============================================================
+
+model TaskProgress {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task Info
+  taskType              String    @map("task_type") // "consecutive_referral" or "monthly_king"
+  
+  // Progress Info
+  currentValue          Int       @default(0) @map("current_value")
+  targetValue           Int       @map("target_value")
+  isCompleted           Boolean   @default(false) @map("is_completed")
+  
+  // Context (for monthly king)
+  monthKey              String?   @map("month_key") // e.g., "2024-12"
+  
+  // Reward Info
+  rewardAmount          Decimal?  @map("reward_amount") @db.Decimal(10, 2)
+  rewardIssuedAt        DateTime? @map("reward_issued_at")
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("task_progress")
+  @@unique([userId, taskType, monthKey], name: "unique_task_progress")
+  @@index([taskType, isCompleted], name: "idx_task_progress_type_completed")
+  @@index([monthKey], name: "idx_task_progress_month_key")
+}
+
+// ============================================================
+// 9. Listings Table - Service Provider Listings
+// ============================================================
+
+model Listing {
+  id                    String    @id @default(uuid())
+  
+  // Foreign Key (One-to-One)
+  userId                String    @unique @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Basic Info
+  name                  String
+  category              String
+  city                  String
+  district              String?
+  gender                String
+  age                   Int
+  
+  // Service Info
+  services              String    // JSON array
+  serviceDistricts      String    @map("service_districts") // JSON array
+  
+  // Contact Info
+  contactMethods        String    @map("contact_methods") // JSON array
+  
+  // Media
+  photos                String    // JSON array
+  
+  // Status
+  isActive              Boolean   @default(true) @map("is_active")
+  
+  // Subscription Info
+  activeUntil           DateTime  @map("active_until") @db.Date
+  
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  @@map("listings")
+  @@index([isActive, city], name: "idx_listings_active_city")
+  @@index([category], name: "idx_listings_category")
+  @@index([activeUntil], name: "idx_listings_active_until")
+}

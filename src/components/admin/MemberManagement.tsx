@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { mockUsers, mockServiceProviders } from '../../data/mockData';
+import { mockServiceProviders } from '../../data/mockServiceProviders';
+import { mockUsers } from '../../data/mockUsers';
 import { Users, UserX, Shield } from 'lucide-react';
 
 export function MemberManagement() {

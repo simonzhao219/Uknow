@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
@@ -8,12 +8,10 @@ import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import {
   MapPin,
-  SlidersHorizontal,
   ChevronDown,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
-import { mockServiceProviders } from "../data/mockData";
-import { AdBanner } from "./AdBanner";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   Sheet,
@@ -37,18 +35,20 @@ import {
   TAIWAN_REGIONS,
   GENDER_OPTIONS,
 } from "../utils/constants";
+import { createClient } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
-// 基於姓名或職業的性別推測（簡化版）
-const getGenderByName = (name: string) => {
-  // 基於常見的女性名字或職業
-  const femaleKeywords = ['Amy', 'Linda', 'Chloe', 'Michelle', 'Emma', 'Sophie', 'Vivian', 'Grace', 'Alice', 'Jenny', 'Sarah', 'Luna', 'Crystal', 'Helen', 'Tina', 'Bella', 'Ruby', 'Iris', 'Nancy', 'Victoria', 'Diana', 'Zoe', 'Kate', 'Melody', '美髮師', '美容師', '美甲師', '睫毛師', '除毛師', '紋繡師'];
-  
-  for (const keyword of femaleKeywords) {
-    if (name.includes(keyword)) {
-      return '女';
-    }
-  }
-  return '男'; // 預設為男性
+// 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
+const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371; // 地球半徑（公里）
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
 // 台灣縣市座標對照表（用於距離計算）
@@ -89,49 +89,80 @@ export function HomePage() {
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
   const [isLocationFilterOpen, setIsLocationFilterOpen] = useState(false);
   
+  // ✅ 数据状态管理
+  const [serviceProviders, setServiceProviders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
   // 模擬用戶位置（台北市政府）
   const userLocation = { lat: 25.0380, lng: 121.5640 };
 
-  // 計算距離的函數（使用 Haversine 公式）
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 6371; // 地球半徑 (km)
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+  // ✅ 获取所有活跃刊登
+  useEffect(() => {
+    fetchAllListings();
+  }, []);
+
+  const fetchAllListings = async () => {
+    setLoading(true);
+    try {
+      // ✅ 使用 V2 API（PostgreSQL + Prisma）
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings-v2/active`
+      );
+
+      if (!response.ok) {
+        throw new Error('獲取刊登列表失敗');
+      }
+
+      const data = await response.json();
+      console.log('首頁 - 獲取到的刊登 (V2):', data);
+      
+      if (data.success) {
+        setServiceProviders(data.listings || []);
+      } else {
+        throw new Error(data.error?.message || '獲取刊登列表失敗');
+      }
+    } catch (error) {
+      console.error('獲取刊登列表失敗:', error);
+      setServiceProviders([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredServiceProviders = useMemo(() => {
-    let filtered = mockServiceProviders.filter((roommate) => {
+    let filtered = serviceProviders.filter((serviceProvider) => {
       // 服務類別篩選（單選）
-      if (selectedCategory && roommate.category !== selectedCategory) {
+      if (selectedCategory && serviceProvider.category !== selectedCategory) {
         return false;
       }
 
-      // 性別篩選（多選）
+      // ✅ 性別篩選（使用后端的 gender 字段）
       if (selectedGenders.length > 0) {
-        const roommateGender = (roommate as any).gender || getGenderByName(roommate.name);
-        if (!selectedGenders.includes(roommateGender)) {
+        if (!serviceProvider.gender || !selectedGenders.includes(serviceProvider.gender)) {
           return false;
         }
       }
 
-      // 地區篩選邏輯
+      // ✅ 地區篩選（适配 districts 数组）
       if (selectedCities.length > 0) {
         // 檢查服務者的城市是否在選中的城市列表中
-        if (!selectedCities.includes(roommate.city)) {
+        if (!selectedCities.includes(serviceProvider.city)) {
           return false;
         }
         
         // 如果有選擇特定區域
         if (selectedDistricts.length > 0) {
-          // 檢查是否選擇了「全區」或者具體的區域
           const hasAllDistricts = selectedDistricts.includes('全區');
-          const hasSpecificDistrict = selectedDistricts.includes(roommate.district);
+          
+          // ✅ 适配后端的 districts 数组格式
+          const listingDistricts = Array.isArray(serviceProvider.districts)
+            ? serviceProvider.districts
+            : [serviceProvider.district || ''];  // 兼容旧格式
+          
+          // 检查是否有交集
+          const hasSpecificDistrict = listingDistricts.some((d: string) => 
+            selectedDistricts.includes(d)
+          );
           
           if (!hasAllDistricts && !hasSpecificDistrict) {
             return false;
@@ -144,7 +175,7 @@ export function HomePage() {
 
     // 按距離排序（使用城市座標）
     filtered.sort((a, b) => {
-      // 使用服務者城市對應的座標，如果沒有���應座標則使用台北市作為預設
+      // 使用服務者城市對應的座標，如果沒有應座標則使用台北作為預設
       const aCoords = cityCoordinates[a.city] || cityCoordinates['台北市'];
       const bCoords = cityCoordinates[b.city] || cityCoordinates['台北市'];
       
@@ -161,6 +192,7 @@ export function HomePage() {
 
     return filtered;
   }, [
+    serviceProviders,
     selectedCategory,
     selectedGenders,
     selectedCities,
@@ -202,7 +234,7 @@ export function HomePage() {
         setSelectedDistricts(selectedDistricts.filter(d => !allCityDistricts.includes(d)));
       }
     } else {
-      // 如果點擊的是具體區域
+      // 如果點擊的具體區域
       if (checked) {
         const newDistricts = [...selectedDistricts, district];
         // 檢查是否該縣市下所有區域都被選中，如是則同時勾選「全區」
@@ -299,7 +331,7 @@ export function HomePage() {
               </SheetContent>
             </Sheet>
 
-            {/* 服務類別篩選按鈕 */}
+            {/* 服務類別篩選按�� */}
             <Sheet>
               <SheetTrigger asChild>
                 <Button
@@ -452,7 +484,7 @@ export function HomePage() {
           )}
         </div>
 
-        {/* 桌面版可折疊篩選區域 */}
+        {/* 桌面可折疊篩選區域 */}
         <div className="hidden md:block space-y-3">
           {/* 性別篩選 */}
           <Collapsible
@@ -631,68 +663,97 @@ export function HomePage() {
             </CollapsibleContent>
           </Collapsible>
         </div>
-
-        {/* 結果統計 */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">
-            找到 {filteredServiceProviders.length} 位服務者（按距離排序）
-          </span>
-          {totalFilters > 0 && (
-            <Button
-              onClick={clearFilters}
-              variant="ghost"
-              size="sm"
-              className="hidden md:flex text-xs md:text-sm px-2"
-            >
-              清除篩選 ({totalFilters})
-            </Button>
-          )}
-        </div>
       </div>
 
-      {/* 手機版緊湊網格 */}
-      <div className="block md:hidden">
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-          {filteredServiceProviders.map((roommate) => (
-            <MobileServiceProviderCard key={roommate.id} roommate={roommate} />
-          ))}
-        </div>
-      </div>
+      {/* 結果顯示區域 */}
+      <div className="space-y-6">
+        {/* 結果統計 - 僅在非載入狀態顯示 */}
+        {!loading && (
+          <div className="mb-4">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">
+                找到 {filteredServiceProviders.length} 位服務者（按距離排序）
+              </span>
+              {totalFilters > 0 && (
+                <Button
+                  onClick={clearFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="hidden md:flex text-xs md:text-sm px-2"
+                >
+                  清除篩選 ({totalFilters})
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
-      {/* 桌面版卡片網格 */}
-      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredServiceProviders.map((roommate) => (
-          <ServiceProviderCard key={roommate.id} roommate={roommate} />
-        ))}
-      </div>
+        {/* ========== 載入中狀態 ========== */}
+        {loading && (
+          <div className="text-center py-16">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">載入服務者資料中...</p>
+          </div>
+        )}
 
-      {/* 空狀態顯示 */}
-      {filteredServiceProviders.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">
-            沒有找到符合條件的服務者
-          </p>
-          <Button
-            onClick={clearFilters}
-            variant="outline"
-            className="mt-4"
-          >
-            清除篩選條件
-          </Button>
-        </div>
-      )}
+        {/* ========== 空狀態顯示（僅在載入完成且無資料時） ========== */}
+        {!loading && filteredServiceProviders.length === 0 && (
+          <div className="text-center py-12">
+            <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground text-lg mb-2">
+              {totalFilters > 0 
+                ? '沒有找到符合條件的服務者' 
+                : '目前沒有可用的服務者'}
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {totalFilters > 0 
+                ? '試試調整篩選條件，或清除所有篩選來查看更多結果' 
+                : '請稍後再來看看，或許會有新的服務者加入'}
+            </p>
+            {totalFilters > 0 && (
+              <Button
+                onClick={clearFilters}
+                variant="outline"
+              >
+                清除所有篩選
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* ========== 正常顯示資料（僅在載入完成且有資料時） ========== */}
+        {!loading && filteredServiceProviders.length > 0 && (
+          <>
+            {/* 手機版緊湊網格 */}
+            <div className="block md:hidden">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {filteredServiceProviders.map((serviceProvider) => (
+                  <MobileServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                ))}
+              </div>
+            </div>
+
+            {/* 桌面版卡片網格 */}
+            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredServiceProviders.map((serviceProvider) => (
+                <ServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 // 手機版緊湊網格項目組件
-function MobileServiceProviderCard({ roommate }: { roommate: any }) {
+function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
   return (
-    <Link to={`/service-providers/${roommate.id}`} className="block">
+    <Link to={`/service-providers/${serviceProvider.id}`} className="block">
       <div className="relative aspect-square overflow-hidden rounded-lg group">
         <ImageWithFallback
-          src={roommate.photos[0]}
-          alt={roommate.name}
+          src={serviceProvider.photos[0]}
+          alt={serviceProvider.name}
           className="w-full h-full object-cover transition-transform group-hover:scale-105"
         />
         {/* 半透明覆蓋層 */}
@@ -700,7 +761,7 @@ function MobileServiceProviderCard({ roommate }: { roommate: any }) {
         {/* 左下角姓名 */}
         <div className="absolute bottom-1 left-1">
           <span className="text-white text-xs font-medium drop-shadow-md">
-            {roommate.name.length > NAME_DISPLAY_LENGTH_MOBILE ? `${roommate.name.substring(0, NAME_DISPLAY_LENGTH_MOBILE)}...` : roommate.name}
+            {serviceProvider.name.length > NAME_DISPLAY_LENGTH_MOBILE ? `${serviceProvider.name.substring(0, NAME_DISPLAY_LENGTH_MOBILE)}...` : serviceProvider.name}
           </span>
         </div>
       </div>
@@ -709,43 +770,78 @@ function MobileServiceProviderCard({ roommate }: { roommate: any }) {
 }
 
 // 桌面版完整卡片組件
-function ServiceProviderCard({ roommate }: { roommate: any }) {
+function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+  // ✅ 适配 districts 数组显示 - 如果有「全區」就只显示全區，否则最多显示前10个
+  const displayDistrict = (() => {
+    if (!Array.isArray(serviceProvider.districts) || serviceProvider.districts.length === 0) {
+      return serviceProvider.district || '';
+    }
+    
+    // 如果包含「全區」，只显示全區
+    if (serviceProvider.districts.includes('全區')) {
+      return '全區';
+    }
+    
+    // 最多显示前10个区
+    const maxDisplay = 10;
+    const districts = serviceProvider.districts.slice(0, maxDisplay);
+    const displayText = districts.join(', ');
+    
+    // 如果超过10个，添加 "..."
+    if (serviceProvider.districts.length > maxDisplay) {
+      return `${displayText}...`;
+    }
+    
+    return displayText;
+  })();
+
   return (
-    <Link to={`/service-providers/${roommate.id}`}>
+    <Link to={`/service-providers/${serviceProvider.id}`}>
       <Card className="hover:shadow-lg transition-shadow cursor-pointer">
         <CardContent className="p-0">
           <div className="aspect-video relative overflow-hidden rounded-t-lg">
             <ImageWithFallback
-              src={roommate.photos[0]}
-              alt={roommate.name}
+              src={serviceProvider.photos[0]}
+              alt={serviceProvider.name}
               className="w-full h-full object-cover"
             />
           </div>
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between">
-              <h3 className="font-semibold line-clamp-1">
-                {roommate.name.length > NAME_DISPLAY_LENGTH_DESKTOP ? `${roommate.name.substring(0, NAME_DISPLAY_LENGTH_DESKTOP)}...` : roommate.name}
-              </h3>
-              <Badge variant="secondary">
-                {roommate.category}
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <h3 className="font-semibold line-clamp-1">
+                  {serviceProvider.name.length > NAME_DISPLAY_LENGTH_DESKTOP ? `${serviceProvider.name.substring(0, NAME_DISPLAY_LENGTH_DESKTOP)}...` : serviceProvider.name}
+                </h3>
+                {/* 🆕 性别 Badge */}
+                {serviceProvider.gender && (
+                  <Badge 
+                    variant="outline" 
+                    className={`text-xs shrink-0 ${serviceProvider.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
+                  >
+                    {serviceProvider.gender === '男' ? '♂ 男' : '♀ 女'}
+                  </Badge>
+                )}
+              </div>
+              <Badge variant="secondary" className="shrink-0">
+                {serviceProvider.category}
               </Badge>
             </div>
 
             <p className="text-sm text-muted-foreground line-clamp-2">
-              {roommate.description.length > 20
-                ? `${roommate.description.substring(0, 20)}...`
-                : roommate.description}
+              {serviceProvider.description.length > 20
+                ? `${serviceProvider.description.substring(0, 20)}...`
+                : serviceProvider.description}
             </p>
 
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" />
               <span>
-                {roommate.city} {roommate.district}
+                {serviceProvider.city} {displayDistrict}
               </span>
             </div>
 
             <div className="flex flex-wrap gap-1">
-              {roommate.tags
+              {serviceProvider.tags && serviceProvider.tags
                 .slice(0, 2)
                 .map((tag: string, index: number) => (
                   <Badge
@@ -756,9 +852,9 @@ function ServiceProviderCard({ roommate }: { roommate: any }) {
                     {tag}
                   </Badge>
                 ))}
-              {roommate.tags.length > 2 && (
+              {serviceProvider.tags && serviceProvider.tags.length > 2 && (
                 <Badge variant="outline" className="text-xs">
-                  +{roommate.tags.length - 2}
+                  +{serviceProvider.tags.length - 2}
                 </Badge>
               )}
             </div>

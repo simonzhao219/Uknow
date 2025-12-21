@@ -12,7 +12,7 @@ interface WithdrawalSectionProps {
 }
 
 export function WithdrawalSection({ availableRewards, onStartWithdrawal }: WithdrawalSectionProps) {
-  const { showToast } = useNotification();
+  const { showToast, showSuccess } = useNotification();
   const reservedAmount = 273; // 預留費用
   const actualAvailable = Math.max(0, availableRewards - reservedAmount);
   const maxWithdrawal = Math.floor(actualAvailable / 1000) * 1000;
@@ -49,7 +49,7 @@ export function WithdrawalSection({ availableRewards, onStartWithdrawal }: Withd
   };
 
   const handleConfirmCollection = (withdrawalId: string) => {
-    showToast('已確認查收匯款！', 'success');
+    showSuccess('已確認查收匯款！');
     // 這裡可以添加實際的查收確認邏輯
   };
 
@@ -87,14 +87,16 @@ export function WithdrawalSection({ availableRewards, onStartWithdrawal }: Withd
         <div>
           <h3 className="font-medium mb-4">申請記錄</h3>
           
-          {mockWithdrawals.length === 0 ? (
+          {mockWithdrawals.filter(w => w.status !== 'completed').length === 0 ? (
             <div className="text-center py-8">
               <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">尚未有提領申請記錄</p>
+              <p className="text-muted-foreground">尚未有進行中的提領申請</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {mockWithdrawals.map((withdrawal) => (
+              {mockWithdrawals
+                .filter(w => w.status !== 'completed')
+                .map((withdrawal) => (
                 <div 
                   key={withdrawal.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -103,7 +105,7 @@ export function WithdrawalSection({ availableRewards, onStartWithdrawal }: Withd
                     {getStatusIcon(withdrawal.status)}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <p className="font-medium">${withdrawal.amount}</p>
+                        <p className="font-medium">{withdrawal.amount}P</p>
                         {getStatusBadge(withdrawal.status)}
                       </div>
                       <div className="text-sm text-muted-foreground space-y-1">
@@ -111,24 +113,11 @@ export function WithdrawalSection({ availableRewards, onStartWithdrawal }: Withd
                         {withdrawal.processedAt && (
                           <p>處理時間：{withdrawal.processedAt}</p>
                         )}
-                        {(withdrawal.status === 'completed' || withdrawal.status === 'awaiting_collection') && (
-                          <p className="text-green-600">
-                            實際入帳：${withdrawal.actualAmount}
-                          </p>
-                        )}
                       </div>
                     </div>
                   </div>
                   
                   <div className="text-right flex flex-col gap-2">
-                    <p className="text-sm text-muted-foreground">
-                      手續費 ${withdrawal.fee}
-                    </p>
-                    {withdrawal.status === 'pending' && (
-                      <p className="text-xs text-muted-foreground">
-                        預計3-5個工作天
-                      </p>
-                    )}
                     {withdrawal.status === 'awaiting_collection' && (
                       <Button 
                         size="sm" 

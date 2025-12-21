@@ -1,0 +1,55 @@
+name: Daily Rewards & Tasks Processing
+
+on:
+  schedule:
+    # 每天 UTC 16:05 執行（台北時間 00:05）
+    - cron: '5 16 * * *'
+  workflow_dispatch: # 允許手動觸發（用於測試或應急處理）
+
+jobs:
+  process-rewards:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 顯示執行時間
+        run: |
+          echo "🕐 當前時間（UTC）: $(date -u)"
+          echo "🕐 台北時間: $(TZ='Asia/Taipei' date)"
+      
+      - name: 處理每日獎勵與任務
+        run: |
+          echo "🚀 開始處理每日獎勵與任務..."
+          
+          response=$(curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s \
+            https://${{ secrets.SUPABASE_PROJECT_ID }}.supabase.co/functions/v1/make-server-5c6718b9/cron/process-daily-rewards)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "📊 HTTP Status: $http_code"
+          echo "📊 Response Body: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ 獎勵處理失敗！HTTP Status: $http_code"
+            echo "❌ Response: $body"
+            exit 1
+          fi
+          
+          echo "✅ 獎勵處理成功完成！"
+      
+      - name: 處理成功通知
+        if: success()
+        run: |
+          echo "✅ 每日獎勵處理成功完成！"
+          echo "📅 處理日期: $(TZ='Asia/Taipei' date +%Y-%m-%d)"
+      
+      - name: 處理失敗通知
+        if: failure()
+        run: |
+          echo "❌ 每日獎勵處理失敗！"
+          echo "📅 失敗日期: $(TZ='Asia/Taipei' date +%Y-%m-%d)"
+          echo "⚠️ 請檢查 Supabase Edge Functions 日誌"
