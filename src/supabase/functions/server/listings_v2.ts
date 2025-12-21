@@ -373,7 +373,7 @@ listingsV2.get('/active', async (c) => {
         *,
         user:users!user_id(
           id,
-          name,
+          real_name,
           account_status
         )
       `)
@@ -389,7 +389,7 @@ listingsV2.get('/active', async (c) => {
     // Transform to match frontend expectations
     const transformedListings = (listings || []).map((listing: any) => ({
       id: listing.id,
-      name: listing.user.name,  // ✅ User's real name (SSOT)
+      name: listing.user.real_name,  // ✅ User's real name (SSOT)
       serviceType: listing.category,
       city: listing.city,
       district: listing.district,
