@@ -291,7 +291,7 @@ authV2.post('/verify-referral-code', async (c) => {
         id,
         code,
         is_active,
-        user:users!user_id(real_name)
+        user:users!user_id(name)
       `)
       .eq('code', code)
       .eq('is_active', true)
@@ -308,7 +308,7 @@ authV2.post('/verify-referral-code', async (c) => {
       success: true,
       data: {
         code: referralCode.code,
-        referrerName: referralCode.user.real_name,
+        referrerName: referralCode.user.name,
         message: '推薦碼驗證成功'
       }
     });
