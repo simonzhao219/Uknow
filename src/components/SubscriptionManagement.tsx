@@ -1,6 +1,6 @@
 import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
@@ -22,7 +22,6 @@ import { YEARLY_PRICE } from '../utils/constants';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { projectId } from '../utils/supabase/info';
 import { createClient } from '../utils/supabase/client';
-import { SubscriptionDashboard } from './subscription/SubscriptionDashboard';
 
 // ============================================
 // 資料介面

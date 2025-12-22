@@ -104,9 +104,13 @@ export function HomePage() {
   const fetchAllListings = async () => {
     setLoading(true);
     try {
-      // ✅ 使用 V2 API（PostgreSQL + Prisma）
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings-v2/active`
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/active`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
       );
 
       if (!response.ok) {
@@ -114,13 +118,8 @@ export function HomePage() {
       }
 
       const data = await response.json();
-      console.log('首頁 - 獲取到的刊登 (V2):', data);
-      
-      if (data.success) {
-        setServiceProviders(data.listings || []);
-      } else {
-        throw new Error(data.error?.message || '獲取刊登列表失敗');
-      }
+      console.log('首頁 - 獲取到的刊登:', data);
+      setServiceProviders(data.listings || []);
     } catch (error) {
       console.error('獲取刊登列表失敗:', error);
       setServiceProviders([]);

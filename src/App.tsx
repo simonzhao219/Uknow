@@ -5,23 +5,18 @@ import { HomePage } from './components/HomePage';
 import { ServiceProviderDetail } from './components/ServiceProviderDetail';
 import { AuthPage } from './components/AuthPage';
 import { EmailVerificationPending } from './components/EmailVerificationPending';
-import { EmailVerificationPending as EmailVerificationPendingV2 } from './components/signup/EmailVerificationPending';
-import { SignupFlow } from './components/signup/SignupFlow';
 import { AuthCallback } from './components/AuthCallback';
 import { CompleteProfile } from './components/CompleteProfile';
 import { MemberDashboard } from './components/MemberDashboard';
 import { ServiceProviderManagement } from './components/ServiceProviderManagement';
 import { CreateServiceProvider } from './components/CreateServiceProvider';
 import { EditServiceProvider } from './components/EditServiceProvider';
-import { ReferralManagementV2 } from './components/ReferralManagementV2';
+import { ReferralManagement } from './components/ReferralManagement';
+import { SubscriptionManagement } from './components/SubscriptionManagement';
 import { TaskDashboard } from './components/TaskDashboard';
-import { RewardManagementV2 } from './components/RewardManagementV2';
-import { TaskManagementV2 } from './components/TaskManagementV2';
-import { WithdrawalManagementV2 } from './components/WithdrawalManagementV2';
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { MemberManagement } from './components/admin/MemberManagement';
-import { WithdrawalManagement as AdminWithdrawalManagement } from './components/admin/WithdrawalManagement';
-import { SystemNotifications } from './components/admin/SystemNotifications';
+import { RewardDashboard } from './components/RewardDashboard';
+import { EditMemberProfile } from './components/EditMemberProfile';
+import { AdminDashboard } from './components/AdminDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from './components/ui/sonner';
@@ -202,12 +197,6 @@ function AppContent() {
                 {/* Authentication Routes */}
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
-                
-                {/* V2 Signup Flow (4 Steps) */}
-                <Route path="/signup" element={<SignupFlow />} />
-                <Route path="/auth/verify-email-v2" element={<EmailVerificationPendingV2 />} />
-                
-                {/* Legacy Auth Routes */}
                 <Route path="/auth/verify-email" element={<EmailVerificationPending />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/auth/complete-profile" element={<CompleteProfile />} />
@@ -235,7 +224,12 @@ function AppContent() {
                 } />
                 <Route path="/referrals" element={
                   <ProtectedRoute featureRequired="referralManagement">
-                    <ReferralManagementV2 />
+                    <ReferralManagement />
+                  </ProtectedRoute>
+                } />
+                <Route path="/subscriptions" element={
+                  <ProtectedRoute>
+                    <SubscriptionManagement />
                   </ProtectedRoute>
                 } />
                 <Route path="/tasks" element={
@@ -245,17 +239,12 @@ function AppContent() {
                 } />
                 <Route path="/rewards" element={
                   <ProtectedRoute featureRequired="rewardSystem">
-                    <RewardManagementV2 />
+                    <RewardDashboard />
                   </ProtectedRoute>
                 } />
-                <Route path="/task-management" element={
-                  <ProtectedRoute featureRequired="taskCenter">
-                    <TaskManagementV2 />
-                  </ProtectedRoute>
-                } />
-                <Route path="/withdrawal-management" element={
-                  <ProtectedRoute featureRequired="withdrawalManagement">
-                    <WithdrawalManagementV2 />
+                <Route path="/profile/edit" element={
+                  <ProtectedRoute>
+                    <EditMemberProfile />
                   </ProtectedRoute>
                 } />
                 
@@ -263,21 +252,6 @@ function AppContent() {
                 <Route path="/admin" element={
                   <AdminRoute>
                     <AdminDashboard />
-                  </AdminRoute>
-                } />
-                <Route path="/admin/members" element={
-                  <AdminRoute>
-                    <MemberManagement />
-                  </AdminRoute>
-                } />
-                <Route path="/admin/withdrawals" element={
-                  <AdminRoute>
-                    <AdminWithdrawalManagement />
-                  </AdminRoute>
-                } />
-                <Route path="/admin/notifications" element={
-                  <AdminRoute>
-                    <SystemNotifications />
                   </AdminRoute>
                 } />
                 

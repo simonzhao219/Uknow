@@ -479,14 +479,9 @@ export async function getUserListings(c: any) {
 }
 
 // ===== API: 獲取所有活躍刊登（首頁用）=====
-/**
- * @deprecated Use /listings-v2/active instead
- * This V1 API uses KV Store and will be removed in future versions
- */
 export async function getAllActiveListings(c: any) {
   try {
-    console.warn('⚠️ DEPRECATED: /listings/active is deprecated. Use /listings-v2/active instead.');
-    console.log('========== 獲取所有活躍刊登 (V1 - DEPRECATED) ==========');
+    console.log('========== 獲取所有活躍刊登 ==========');
     
     // 獲取所有 listing: 開頭的數據
     const allData = await kv.getByPrefix("listing:");

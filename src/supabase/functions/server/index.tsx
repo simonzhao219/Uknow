@@ -1,11 +1,6 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-
-// Version: V2 - Prisma Removed, Supabase Client + Postgres SQL
-// Build: 2024-12-21
-// Architecture: Deno-compatible, no native binaries
-
 import * as kv from "./kv_store.tsx";
 import { checkEmail, signUpUser, registerUser, getUserProfile, checkPhoneAvailability, updateUserProfile, cancelSignup } from "./auth.ts";
 import { verifyReferralCode, uploadListingPhoto, createListing, getUserListings, getAllActiveListings, getListingById, updateListing } from "./listings.ts";
@@ -15,18 +10,7 @@ import subscriptions from "./subscriptions.ts";
 import rewards from "./rewards.ts";
 import tasks from "./tasks.ts";
 import cron from "./cron.ts";
-import authV2 from "./auth_v2.ts";
-import subscriptionsV2 from "./subscriptions_v2.ts";
-import cronV2 from "./cron_v2.ts";
-import referralsV2 from "./referrals_v2.ts";
-import listingsV2 from "./listings_v2.ts";
-import rewardsV2 from "./rewards_v2.ts";
-import tasksV2 from "./tasks_v2.ts";
-import withdrawalsV2 from "./withdrawals_v2.ts";
-import profileV2 from "./profile_v2.ts";
-import health from "./health.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { testDatabaseConnection } from "./db.ts";
 
 const app = new Hono();
 
@@ -74,24 +58,10 @@ const initializeStorage = async () => {
 // Initialize storage on startup
 initializeStorage();
 
-// Initialize database connection
-const initializeDatabase = async () => {
-  try {
-    const isConnected = await testDatabaseConnection();
-    if (isConnected) {
-      console.log('✅ PostgreSQL connection successful');
-    } else {
-      console.error('❌ PostgreSQL connection failed');
-    }
-  } catch (error) {
-    console.error('⚠️ Database initialization error:', error);
-  }
-};
-
-initializeDatabase();
-
 // Health check endpoint
-app.get("/make-server-5c6718b9/health", health);
+app.get("/make-server-5c6718b9/health", (c) => {
+  return c.json({ status: "ok" });
+});
 
 // Authentication Routes
 app.post("/make-server-5c6718b9/auth/check-email", checkEmail);
@@ -116,40 +86,17 @@ app.route("/make-server-5c6718b9/admin", admin);
 
 // Referral Routes
 app.route("/make-server-5c6718b9/referrals", referrals);
-app.route("/make-server-5c6718b9/referrals-v2", referralsV2);
-
-// Listing Routes V2
-app.route("/make-server-5c6718b9/listings-v2", listingsV2);
 
 // Subscription Routes
 app.route("/make-server-5c6718b9/subscriptions", subscriptions);
-app.route("/make-server-5c6718b9/subscriptions-v2", subscriptionsV2);
 
 // Rewards Routes
 app.route("/make-server-5c6718b9/rewards", rewards);
-app.route("/make-server-5c6718b9/rewards-v2", rewardsV2);
 
 // Tasks Routes
 app.route("/make-server-5c6718b9/tasks", tasks);
-app.route("/make-server-5c6718b9/tasks-v2", tasksV2);
-
-// Withdrawals Routes
-app.route("/make-server-5c6718b9/withdrawals-v2", withdrawalsV2);
-
-// Profile Routes
-app.route("/make-server-5c6718b9/profile-v2", profileV2);
 
 // Cron Routes
 app.route("/make-server-5c6718b9/cron", cron);
-app.route("/make-server-5c6718b9/cron-v2", cronV2);
 
-// Auth V2 Routes
-app.route("/make-server-5c6718b9/auth-v2", authV2);
-
-// Export app for Edge Function deployment
-export default app.fetch;
-
-// Start server if running directly (local development)
-if (import.meta.main) {
-  Deno.serve(app.fetch);
-}
+Deno.serve(app.fetch);

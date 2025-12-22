@@ -14,7 +14,6 @@
         'react-resizable-panels@2.1.7': 'react-resizable-panels',
         'react-hook-form@7.55.0': 'react-hook-form',
         'react-day-picker@8.10.1': 'react-day-picker',
-        'postgres@3.4.3': 'postgres',
         'next-themes@0.4.6': 'next-themes',
         'lucide-react@0.487.0': 'lucide-react',
         'input-otp@1.4.2': 'input-otp',

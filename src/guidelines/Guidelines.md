@@ -38,7 +38,7 @@
 3. [ ] 用戶點擊按鈕 → 觸發預期操作
 4. [ ] 用戶等待載入 → 看到載入狀態
 5. [ ] 用戶查看結果 → 看到完整數據
-6. [ ] 用戶���閉/返回 → 正常收起或返回
+6. [ ] 用戶關閉閉/返回 → 正常收起或返回
 
 **⚠️ 如果任何一個步驟無法執行，功能未完成！**
 
@@ -733,7 +733,7 @@ showToast('付款已完成', 'success');  // 應該用 Notification Card
 
 ```
 /components/notifications/
-├���─ NotificationContext.tsx  # Context Provider（統一管理）
+├── NotificationContext.tsx  # Context Provider（統一管理）
 ├── ToastCard.tsx            # Toast 卡片組件
 ├── ToastContainer.tsx       # Toast 容器（處理位置和堆疊）
 └── NotificationCard.tsx     # Notification 卡片組件
