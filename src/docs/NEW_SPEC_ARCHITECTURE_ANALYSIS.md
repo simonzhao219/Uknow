@@ -1,7 +1,7 @@
 # Uknow 新規格架構分析與實施計畫
 
 **日期**: 2024-12-22  
-**版本**: v2.0  
+**版本**: v2.1  
 **作者**: 系統架構師
 
 ---
@@ -9,30 +9,88 @@
 ## 📋 目錄
 
 1. [核心變更分析](#1-核心變更分析)
-2. [現有系統 vs 新規格對比](#2-現有系統-vs-新規格對比)
-3. [資料架構設計](#3-資料架構設計)
-4. [後端修改計畫](#4-後端修改計畫-phase-by-phase)
-5. [前端修改計畫](#5-前端修改計畫-phase-by-phase)
-6. [風險評估與緩解策略](#6-風險評估與緩解策略)
+2. [現有註冊流程深度分析](#2-現有註冊流程深度分析)
+3. [新舊系統對比](#3-新舊系統對比)
+4. [資料架構設計](#4-資料架構設計)
+5. [後端修改計畫](#5-後端修改計畫-phase-by-phase)
+6. [前端修改計畫](#6-前端修改計畫-phase-by-phase)
+7. [風險評估與緩解策略](#7-風險評估與緩解策略)
 
 ---
 
 ## 1. 核心變更分析
 
-### 1.1 架構層面的根本性變化
+### 1.1 新規格重點變更摘要
+
+根據最新確認，有以下三個關鍵變更：
+
+#### 🔴 變更 1：移除身分證字號收集
+
+**現狀**: 
+- 註冊時要求填寫身分證字號
+- 身分證字號有唯一性檢核
+- 數據庫有 `id_number` 字段（NOT NULL 約束導致錯誤）
+
+**新規格**:
+- ✅ **註冊時不需要填寫身分證字號**
+- ✅ 移除身分證字號的唯一性檢核
+- ✅ 移除 `id_number` 字段的 NOT NULL 約束（設為可選或移除）
+
+**影響範圍**:
+- 🟡 中等影響
+- 需要修改：後端驗證邏輯、前端表單、資料庫約束
+
+---
+
+#### 🔴 變更 2：一個帳號只能有一個刊登
+
+**現狀**:
+- 一個用戶可以創建多個刊登
+- 用戶��料中有 `listings` 陣列
+- 前端顯示多個刊登的列表
+
+**新規格**:
+- ✅ **一個帳號只能有一個刊登**
+- ✅ 用戶與刊登是 1:1 關係
+- ✅ 簡化刊登管理邏輯
+
+**影響範圍**:
+- 🟡 中等影響
+- 需要修改：資料結構、創建刊登邏輯、前端UI
+
+---
+
+#### 🟢 變更 3：現有註冊流程已實現（需確認）
+
+**現狀分析**（見第2節詳細分析）:
+- ✅ 已實現：Email 檢核 → 註冊/登入分流
+- ✅ 已實現：創建 Email + 密碼 → 發送驗證郵件
+- ✅ 已實現：驗證後重新登入 → 完成基本資訊
+- ⚠️ **需要確認**：是否需要在 Step 2 加入推薦碼和付款流程
+
+**新規格需求**:
+- Email 檢核 → 分流
+- 註冊：創建 Email + 密碼 → 驗證 Email
+- 驗證後登入 → 完成基本資訊（姓名、手機、生日、推薦碼）
+- 付款年費 $1,200（藍新金流）
+- 付款成功 → 生成推薦碼 → 更新推薦人組織圖
+
+---
+
+### 1.2 架構層面的根本性變化
 
 #### ⭐ **最大變化：推薦碼綁定對象變更**
 
 | 項目 | 現有系統 | 新規格 | 影響範圍 |
 |------|----------|--------|----------|
 | **綁定對象** | Listing（刊登） | User（會員） | 🔴 **極高** |
-| **推薦碼數量** | 一個用戶多個刊登 = 多個推薦碼 | 一個用戶一個推薦碼 | 🔴 **極高** |
+| **推薦碼數量** | 一個用戶多個刊登 = 多個推薦碼 | **一個用戶一個推薦碼**（一個用戶只能有一個刊登） | 🔴 **極高** |
 | **推薦樹存儲** | `listing:${listingId}:referral_tree` | `user:${userId}:referral_tree` | 🔴 **極高** |
 | **失效處理** | 刊登失效 = 推薦碼失效 | 用戶失效 = 推薦碼失效，生成新碼 | 🔴 **極高** |
 
 **架構影響**:
-- ✅ **簡化系統複雜度**（一個用戶只需維護一個推薦關係）
-- ✅ **符合業務邏輯**（推薦的是「人」而非「刊登」）
+- ✅ **極大簡化系統複雜度**（一個用戶 = 一個刊登 = 一個推薦碼）
+- ✅ **符合業務邏輯**（推薦的是「人」，人只有一個刊登）
 - ⚠️ **需要完全重寫推薦系統**（資料結構、API、前端）
 
 ---
@@ -48,16 +106,16 @@
 └──────┬──────┘
        │
        ├─手動取消────► ┌──────────┐
-       │              │ Canceled │ ──60天後──► ┌──────┐
-       │              │ (已取消)  │              │ Fail │
-       │              └──────────┘              │(永久) │
-       │                                        └───▲──┘
-       └─逾期未繳────► ┌──────────┐                 │
-                       │  Grace   │ ─補繳─► Active  │
-                       │(即將失效) │                 │
-                       └────┬─────┘                 │
-                            │                       │
-                            └──>60天────────────────┘
+       │              │ Canceled │ ──到期──► ┌──────┐
+       │              │ (已取消)  │            │ Fail │
+       │              └──────────┘            │(永久) │
+       │                                      └───▲──┘
+       └─逾期未繳────► ┌──────────┐               │
+                       │  Grace   │ ─補繳─► Active│
+                       │(即將失效) │               │
+                       └────┬─────┘               │
+                            │                     │
+                            └──>60天──────────────┘
 ```
 
 **狀態轉換規則**:
@@ -65,116 +123,308 @@
 | 從狀態 | 到狀態 | 觸發條件 | 系統動作 |
 |--------|--------|----------|----------|
 | Active | Canceled | 用戶手動取消 | 標記取消，到期日不變 |
-| Active | Grace | 逾期0-60天 | 隱藏刊登，鎖定提領功能，保留推薦功能 |
+| Active | Grace | 逾期0-60天 | 隱藏刊登，鎖定提領功能，**保留推薦功能** |
 | Canceled | Fail | 到期 | 推薦碼 Fail，點數歸零，任務歸零 |
 | Grace | Fail | 逾期>60天 | 推薦碼 Fail，點數歸零，任務歸零 |
 | Grace | Active | 60天內補繳 | 恢復顯示，周期接續原到期日 |
 | Fail | Active | 重新訂閱 | 生成新推薦碼，一切重新計算 |
 
----
-
-### 1.2 訂閱系統變化
-
-| 項目 | 現有系統 | 新規格 | 備註 |
-|------|----------|--------|------|
-| **訂閱綁定** | Listing | User | 用戶級別年費 |
-| **補繳機制** | ❌ 無 | ✅ 60天內補繳 | 周期接續原到期日 |
-| **新訂閱** | ❌ 不明確 | ✅ >60天或 Fail 後 | 周期從付款日重新計算 |
-| **續約通知** | ❌ 無 | ✅ 到期前5日每日Email | 防止意外失效 |
+**重點說明**:
+- ✅ **Grace 狀態下，推薦功能仍可使用**（重要！）
+- ✅ Grace 狀態下產生的獎勵照常計算，但無法提領
+- ✅ 補繳後立即恢復，獎勵可提領
 
 ---
 
-### 1.3 註冊流程變化
+## 2. 現有註冊流程深度分析
 
-| 步驟 | 現有系統 | 新規格 | 變化 |
-|------|----------|--------|------|
-| Step 0 | ❌ 無 | ✅ Email 檢核 | 新增 |
-| Step 1 | Email + 密碼 | Email + 密碼 + Email 驗證 | 相同 |
-| Step 2 | 基本資料 | 新增推薦碼即時驗證 | 🔴 變化 |
-| Step 3 | 付款 | 付款 + **立即更新推薦人組織圖/任務/獎勵** | 🔴 變化 |
+### 2.1 現有流程架構
 
-**Step 2 新增欄位**:
-- 推薦碼即時驗證：輸入後 API 查詢並顯示推薦人「當下真實姓名」
+#### **入口：AuthPage（統一的登入/註冊入口）**
 
-**Step 3 完成後立即觸發**:
-1. 更新推薦人的組織圖
-2. 更新推薦人的任務進度
-3. 發放推薦人的獎勵（第1個月）
+**檔案**: `/components/AuthPage.tsx`
+
+**流程圖**:
+```
+用戶訪問 /login
+    │
+    ▼
+Step 1: 輸入 Email
+    │
+    ├─► API: POST /auth/check-email
+    │       └─► 檢查 Supabase Auth 中是否有此用戶
+    │
+    ├─► exists = true  ────► Step 2A: 輸入密碼登入
+    │                             │
+    │                             ├─► Supabase Auth: signInWithPassword()
+    │                             │
+    │                             ├─► API: GET /auth/profile
+    │                             │       └─► 獲取 KV Store 中的用戶資料
+    │                             │
+    │                             ├─► profile.needsOnboarding = true?
+    │                             │       └─► YES: 導向 /auth/complete-profile
+    │                             │       └─► NO:  導向 /dashboard
+    │                             │
+    │                             └─► 登入完成
+    │
+    └─► exists = false ────► Step 2B: 設定密碼註冊
+                                  │
+                                  ├─► Supabase Auth: signUp()
+                                  │       └─► 創建 Auth 用戶
+                                  │       └─► 發送 Email 驗證信
+                                  │
+                                  └─► 導向 /auth/verify-email（等待驗證）
+```
 
 ---
 
-### 1.4 組織圖持久性
+#### **驗證階段：EmailVerificationPending**
 
-| 項目 | 現有系統 | 新規格 |
-|------|----------|--------|
-| **失效節點** | 可能被刪除 | ✅ 保留（標記 Inactive） |
-| **姓名顯示** | 可能缓存舊名稱 | ✅ 通過 User ID 查詢最新姓名 |
-| **下線關係** | 不明確 | ✅ 即使上線失效，下線不斷開 |
+**檔案**: `/components/EmailVerificationPending.tsx`
+
+**流程**:
+```
+用戶點擊 Email 中的驗證連結
+    │
+    ▼
+導向 /auth/callback?token=xxx
+    │
+    ▼
+AuthCallback 處理
+    │
+    ├─► Supabase Auth: exchangeCodeForSession()
+    │       └─► 獲取 access_token
+    │
+    ├─► API: GET /auth/profile
+    │       └─► 檢查 KV Store 是否有資料
+    │       └─► profile.needsOnboarding = true
+    │
+    └─► 導向 /auth/complete-profile
+```
 
 ---
 
-## 2. 現有系統 vs 新規格對比
+#### **完成資料：CompleteProfile**
 
-### 2.1 資料綁定關係
+**檔案**: `/components/CompleteProfile.tsx`
+
+**流程**:
+```
+用戶填寫基本資料
+    ├─► 真實姓名
+    ├─► 手機號碼
+    ├─► 出生年月日
+    └─► 同意服務條款
+        │
+        ▼
+    提交表單
+        │
+        ├─► API: POST /auth/register
+        │       └─► 存入 KV Store: user:${userId}:profile
+        │       └─► 創建索引: email:${email} → userId
+        │
+        └─► 導向 /dashboard
+```
+
+---
+
+### 2.2 後端 API 流程
+
+#### **API 1: POST /auth/check-email**
+
+**檔案**: `/supabase/functions/server/auth.ts` - `checkEmail()`
+
+**邏輯**:
+```typescript
+1. 檢查 Supabase Auth 中是否有此 Email
+2. 如果不存在 → return { exists: false }
+3. 如果存在：
+   a. 檢查 email_confirmed_at 是否存在
+   b. 檢查 KV Store 是否有 profile
+   
+   情況 1: email_confirmed_at = true + profile 存在
+      → return { exists: true } // 完整用戶，可登入
+   
+   情況 2: email_confirmed_at = true + profile 不存在
+      → return { exists: true } // 正在註冊中，允許登入後完成資料
+   
+   情況 3: email_confirmed_at = false
+      → 刪除 Supabase Auth 用戶 + 刪除 KV Store
+      → return { exists: false } // 允許重新註冊
+```
+
+**重點邏輯**:
+- ✅ Email 未驗證的用戶會被自動刪除，允許重新註冊
+- ✅ Email 已驗證但資料未完成的用戶，可以登入後繼續完成資料
+
+---
+
+#### **API 2: GET /auth/profile**
+
+**檔案**: `/supabase/functions/server/auth.ts`
+
+**邏輯**:
+```typescript
+1. 從 JWT token 獲取 userId
+2. 檢查 KV Store: user:${userId}:profile
+3. 如果不存在 → return { needsOnboarding: true }
+4. 如果存在 → return profile
+```
+
+---
+
+#### **API 3: POST /auth/register**
+
+**檔案**: `/supabase/functions/server/auth.ts`
+
+**邏輯**:
+```typescript
+1. 驗證 JWT token，獲取 userId
+2. 驗證表單資料（姓名、手機、生日）
+3. 存入 KV Store:
+   - user:${userId}:profile
+   - email:${email} → userId
+   - phone:${phone} → userId
+4. 返回完整 profile
+```
+
+---
+
+### 2.3 現有流程的優點與問題
+
+#### ✅ **優點**:
+
+1. **統一入口**
+   - AuthPage 同時處理登入和註冊，UX 流暢
+   - Email 檢核自動分流，減少用戶困惑
+
+2. **Email 驗證機制完善**
+   - 使用 Supabase 內建的 Email 驗證
+   - 自動清理未驗證的用戶
+
+3. **資料填寫分離**
+   - 先創建帳號，再填寫資料
+   - 避免 Email 驗證失敗後資料丟失
+
+---
+
+#### ⚠️ **需要補充的部分**:
+
+1. **缺少推薦碼流程**
+   - CompleteProfile 沒有推薦碼輸入欄位
+   - 沒有推薦碼驗證 API
+
+2. **缺少付款流程**
+   - 註冊完成後沒有導向付款頁面
+   - 沒有藍新金流整合
+
+3. **缺少推薦關係建立**
+   - 付款成功後沒有創建推薦關係
+   - 沒有更新推薦人的組織圖和任務
+
+4. **缺少推薦碼生成**
+   - 付款成功後沒有生成推薦碼
+   - 沒有推薦碼綁定到用戶
+
+---
+
+## 3. 新舊系統對比
+
+### 3.1 資料綁定關係
 
 #### **現有系統**:
 ```
 User (會員)
-  ├── Listing A (推薦碼: abc123456)
-  │     └── Referral Tree A
-  ├── Listing B (推薦碼: def789012)
-  │     └── Referral Tree B
-  └── Subscription A (綁定到 Listing A)
-      Subscription B (綁定到 Listing B)
+  ├── Profile (基本資料)
+  │     ├── name
+  │     ├── phone
+  │     ├── birthDate
+  │     └── idNumber ❌ 新規格移除
+  │
+  └── Listings[] (多個刊登)
+        ├── Listing A (推薦碼: abc123456)
+        │     └── Referral Tree A
+        └── Listing B (推薦碼: def789012)
+              └── Referral Tree B
 ```
 
 **問題**:
 - ❌ 一個用戶多個推薦碼，組織結構複雜
 - ❌ 訂閱綁定到刊登，不符合年費邏輯
-- ❌ 刊登失效 = 推薦碼失效，但用戶可能還有其他刊登
+- ❌ 需要收集身分證字號
 
 ---
 
 #### **新規格**:
 ```
 User (會員)
+  ├── Profile (基本資料)
+  │     ├── name (真實姓名)
+  │     ├── phone
+  │     ├── birthDate
+  │     └── ❌ 移除 idNumber
+  │
   ├── Account Status (Active/Canceled/Grace/Fail)
+  │
   ├── Subscription (年費 $1,200)
   │     └── 訂閱週期 (startDate → endDate)
+  │
   ├── Referral Code (唯一，abc123456)
   │     └── Referral Tree (3代推薦)
-  └── Listings (一個刊登)
-        ├── Listing (跟隨用戶狀態)
+  │
+  └── Listing (唯一，一個用戶只能有一個刊登) ✅
+        └── 跟隨用戶狀態顯示/隱藏
 ```
 
 **優勢**:
-- ✅ 一個用戶一個推薦碼，結構清晰
+- ✅ 一個用戶 = 一個刊登 = 一個推薦碼，結構清晰
 - ✅ 訂閱綁定到用戶，符合年費邏輯
-- ✅ 刊登跟隨用戶狀態，邏輯一致
+- ✅ 不收集身分證字號，降低隱私風險
 
 ---
 
-### 2.2 API 端點變化
+### 3.2 註冊流程對比
+
+| 步驟 | 現有系統 | 新規格 | 變化 |
+|------|----------|--------|------|
+| **Step 1** | Email 檢核 → 分流 | Email 檢核 → 分流 | ✅ 相同 |
+| **Step 2** | 設定密碼 → 發送驗證信 | 設定密碼 → 發送驗證信 | ✅ 相同 |
+| **Step 3** | 驗證 Email → 重新登入 | 驗證 Email → 重新登入 | ✅ 相同 |
+| **Step 4** | 填寫基本資料（姓名、手機、生日、❌身分證） | 填寫基本資料（姓名、手機、生日、**推薦碼**） | 🔴 **變化** |
+| **Step 5** | ❌ 無 | **付款年費 $1,200** | 🟢 **新增** |
+| **Step 6** | 註冊完成 → Dashboard | 付款成功 → **生成推薦碼** → **更新推薦人組織圖** → Dashboard | 🟢 **新增** |
+
+**關鍵差異**:
+1. ✅ **移除身分證字號**收集
+2. ✅ **新增推薦碼輸入**（選填，即時驗證並顯示推薦人姓名）
+3. ✅ **新增付款流程**（藍新金流，$1,200）
+4. ✅ **新增推薦關係建立**（付款成功後立即執行）
+
+---
+
+### 3.3 API 端點變化
 
 | 功能 | 現有 API | 新 API | 變化 |
 |------|----------|--------|------|
-| 註冊 | `/auth/register` | `/auth/signup/step0-3` | 🔴 拆分為4步驟 |
+| Email 檢核 | `/auth/check-email` | `/auth/check-email` | ✅ 保持 |
+| 註冊 | `/auth/register` | `/auth/register` | 🔴 修改（加入推薦碼） |
 | 推薦碼驗證 | ❌ 無 | `/auth/verify-referral-code` | 🟢 新增 |
-| 獲取訂閱 | `/subscriptions` | `/user/subscription` | 🔴 改為用戶級別 |
-| 推薦樹 | `/referrals/my-tree` | `/user/referral-tree` | 🔴 綁定到用戶 |
+| 付款處理 | ❌ 無 | `/payment/create-order` | 🟢 新增 |
+| 付款回調 | ❌ 無 | `/payment/callback` | 🟢 新增 |
+| 獲取訂閱 | ❌ 無 | `/user/subscription` | 🟢 新增 |
+| 推薦樹 | `/referrals/my-tree` | `/user/referral-tree` | 🔴 改為用戶級別 |
 | 帳號狀態 | ❌ 無 | `/user/account-status` | 🟢 新增 |
-| 補繳訂閱 | ❌ 無 | `/user/subscription/renew` | 🟢 新增 |
 
 ---
 
-## 3. 資料架構設計
+## 4. 資料架構設計
 
-### 3.1 設計原則
+### 4.1 設計原則
 
 1. **SSOT (Single Source of Truth)**:
    - 用戶狀態: `user:${userId}:account_status`
    - 推薦碼: `user:${userId}:active_referral_code`
-   - 推薦關係: `referral_code:${codeId}:relationships`
+   - 推薦關��: `referral_code:${codeId}:relationships`
 
 2. **No Data Redundancy**:
    - 避免在多處存儲相同資料
@@ -185,13 +435,13 @@ User (會員)
    - 用戶狀態緩存
    - 索引鍵快速查找
 
-4. **Idempotency (冪等性)**:
-   - Cron job 檢查最後處理時間
-   - 使用訂閱 ID + 狀態時間戳防止重複
+4. **Simplicity (簡化)**:
+   - ✅ 一個用戶 = 一個刊登 = 一個推薦碼
+   - ✅ 移除不必要的陣列和巢狀結構
 
 ---
 
-### 3.2 KV Store 表格設計
+### 4.2 KV Store 表格設計
 
 #### **Table 1: User Profile（用戶基本資料）**
 
@@ -199,20 +449,30 @@ User (會員)
 // Key: user:${userId}:profile
 interface UserProfile {
   id: string;
-  email: string;             // 唯一性
-  realName: string;          // 可修改，需同步到所有顯示處
-  birthDate: string;         // YYYY-MM-DD
+  email: string;
+  realName: string;          // 真實姓名（可修改，需同步到推薦樹）
   phone: string;
-  bankCode: string;
-  bankAccount: string;
+  birthDate: string;         // YYYY-MM-DD
+  
+  // ❌ 移除 idNumber
+  
+  // 銀行資訊（提領時填寫）
+  bankCode?: string;
+  bankAccount?: string;
+  
   createdAt: string;         // ISO 8601
   updatedAt: string;         // ISO 8601
 }
 ```
 
 **索引鍵**:
-- `id_number:${idNumber}` → `userId` (唯一性檢核)
-- `email:${email}` → `userId` (Email 檢核)
+- `email:${email}` → `userId` (Email 唯一性)
+- `phone:${phone}` → `userId` (手機唯一性)
+- ❌ 移除 `id_number:${idNumber}` 索引
+
+**變更說明**:
+- ✅ 移除 `idNumber` 欄位
+- ✅ 簡化結構，銀行資訊設為可選
 
 ---
 
@@ -224,6 +484,7 @@ interface UserAccountStatus {
   status: 'Active' | 'Canceled' | 'Grace' | 'Fail';
   currentSubscriptionId: string | null;    // 當前有效訂閱 ID
   activeReferralCodeId: string | null;     // 當前有效推薦碼 ID
+  activeListing��d: string | null;         // ✅ 當前有效刊登 ID（唯一）
   pointBalance: number;                    // 點數餘額
   lastStatusUpdate: string;                // 最後狀態更新時間
   lastSubscriptionEndDate: string | null;  // 最後訂閱結束日期
@@ -231,11 +492,9 @@ interface UserAccountStatus {
 }
 ```
 
-**狀態轉換 Hooks**:
-- `Active → Canceled`: 設置 `isCanceled = true`，到期日不變
-- `Active/Canceled → Grace`: `gracePeriodEndDate = endDate + 60天`
-- `Grace → Fail`: `pointBalance = 0`, `activeReferralCodeId = null`
-- `Fail → Active`: 生成新推薦碼，重置所有計數
+**變更說明**:
+- ✅ 新增 `activeListingId` 欄位（取代 listings[] 陣列）
+- ✅ 一個用戶只有一個活躍刊登
 
 ---
 
@@ -253,6 +512,7 @@ interface Subscription {
   amount: number;              // 1200
   paymentMethod: string;       // 'newebpay' | 'manual'
   paymentTransactionId: string;
+  newebpayTradeNo?: string;    // 藍新金流訂單編號
   isCanceled: boolean;         // 用戶是否手動取消
   canceledAt: string | null;
   isRenewal: boolean;          // 是否為補繳（true = 周期接續）
@@ -340,7 +600,7 @@ interface ReferralRelationships {
 // Value: { referrerUserId, referralCodeId, referredAt } | null
 ```
 
-**推薦關係建立流程** (Step 3 付款成功後):
+**推薦關係建立流程** (Step 5 付款成功後):
 ```typescript
 1. 獲取推薦人的 activeReferralCode
 2. 在 referral_code:${codeId}:relationships 中添加到 generation1
@@ -352,7 +612,7 @@ interface ReferralRelationships {
 
 ---
 
-#### **Table 6: Referral Tree（推薦樹）- Cached**
+#### **Table 6: Referral Tree（推薦樹���- Cached**
 
 ```typescript
 // Key: user:${userId}:referral_tree
@@ -376,13 +636,13 @@ interface ReferralTree {
 
 ---
 
-#### **Table 7: Listings（刊登）- 移除推薦碼**
+#### **Table 7: Listings（刊登）- 簡化為 1:1 關係**
 
 ```typescript
 // Key: listing:${listingId}
 interface Listing {
   id: string;
-  userId: string;              // ✅ 所屬用戶
+  userId: string;              // ✅ 所屬用戶（1:1 關係）
   publicListingId: string;     // 公開刊登 ID
   name: string;
   category: string;
@@ -404,8 +664,10 @@ interface Listing {
   updatedAt: string;
 }
 
-// Key: user:${userId}:listings
-// Value: string[] (listing IDs)
+// Key: user:${userId}:listing
+// Value: string (listing ID，唯一) ✅ 不再是陣列
+
+// ❌ 移除 user:${userId}:listings 陣列
 ```
 
 **刊登顯示邏輯**:
@@ -422,488 +684,184 @@ if (userStatus.status === 'Active' || userStatus.status === 'Canceled') {
 }
 ```
 
+**重要約束**:
+- ✅ 一個用戶最多只能有一個刊登
+- ✅ 如果已有刊登，創建新刊登時返回錯誤
+- ✅ 前端 UI 不顯示「創建新刊登」按鈕（如果已有刊登）
+
 ---
 
-### 3.3 索引鍵設計
+### 4.3 索引鍵設計
 
 | 索引鍵 | 目的 | 值 |
 |--------|------|-----|
 | `email:${email}` | Email 唯一性檢核 | `userId` |
-| `id_number:${idNumber}` | 身分證唯一性檢核 | `userId` |
+| `phone:${phone}` | 手機唯一性檢核 | `userId` |
+| ~~`id_number:${idNumber}`~~ | ~~身分證唯一性檢核~~ | ~~`userId`~~ ❌ 移除 |
 | `code:${code}` | 推薦碼快速查找 | `referralCodeId` |
 | `payment:${transactionId}` | 防止重複付款 | `subscriptionId` |
 
 ---
 
-## 4. 後端修改計畫 (Phase by Phase)
+## 5. 後端修改計畫 (Phase by Phase)
 
-### Phase 1: 基礎架構準備（2-3天）
+### Phase 1: 移除身分證字號約束（1天）
 
-#### 4.1.1 資料結構定義
+#### 5.1.1 修改數據驗證邏輯
 
-**檔案**: `/supabase/functions/server/types.ts`（新增）
+**檔案**: `/supabase/functions/server/auth.ts`
 
+**修改點**:
 ```typescript
-// User Types
-export interface UserProfile {
-  id: string;
-  email: string;
-  realName: string;
-  idNumber: string;
-  birthDate: string;
-  phone: string;
-  bankCode: string;
-  bankAccount: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type AccountStatus = 'Active' | 'Canceled' | 'Grace' | 'Fail';
-
-export interface UserAccountStatus {
-  status: AccountStatus;
-  currentSubscriptionId: string | null;
-  activeReferralCodeId: string | null;
-  pointBalance: number;
-  lastStatusUpdate: string;
-  lastSubscriptionEndDate: string | null;
-  gracePeriodEndDate: string | null;
-}
-
-// Subscription Types
-export type SubscriptionStatus = 'Active' | 'Canceled' | 'Expired' | 'Grace';
-
-export interface Subscription {
-  id: string;
-  userId: string;
-  status: SubscriptionStatus;
-  startDate: string;
-  endDate: string;
-  gracePeriodEnd: string;
-  amount: number;
-  paymentMethod: string;
-  paymentTransactionId: string;
-  isCanceled: boolean;
-  canceledAt: string | null;
-  isRenewal: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Referral Code Types
-export type ReferralCodeStatus = 'Active' | 'Inactive' | 'Fail';
-
-export interface ReferralCode {
-  id: string;
-  userId: string;
-  code: string;
-  status: ReferralCodeStatus;
-  isActive: boolean;
-  activatedAt: string;
-  inactivatedAt: string | null;
-  subscriptionId: string;
-  createdAt: string;
-}
-
-// Referral Relationship Types
-export interface ReferralRelationship {
-  userId: string;
-  referredAt: string;
-  referralCodeUsed: string;
-}
-
-export interface ReferralRelationships {
-  generation1: ReferralRelationship[];
-  generation2: ReferralRelationship[];
-  generation3: ReferralRelationship[];
-  lastUpdated: string;
-}
-
-// Listing Types (簡化)
-export interface Listing {
-  id: string;
-  userId: string;
-  publicListingId: string;
-  name: string;
-  category: string;
-  city: string;
-  // ... 其他欄位
-  activeUntil: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+// ❌ 移除身分證驗證
+export const registerUser = async (c: Context) => {
+  const { name, phone, birthDate, referralCode } = await c.req.json();
+  
+  // ❌ 移除 idNumber 的必填驗證
+  // if (!idNumber) {
+  //   return c.json({ error: '請輸入身分證字號' }, 400);
+  // }
+  
+  // ❌ 移除身分證格式驗證
+  // if (!/^[A-Z][12]\d{8}$/.test(idNumber)) {
+  //   return c.json({ error: '身分證格式不正確' }, 400);
+  // }
+  
+  // ❌ 移除身分證唯一性檢核
+  // const existingUserId = await kv.get(`id_number:${idNumber}`);
+  // if (existingUserId) {
+  //   return c.json({ error: '此身分證已被註冊' }, 400);
+  // }
+  
+  // ... 其他邏輯
+};
 ```
 
 ---
 
-#### 4.1.2 工具函數
+#### 5.1.2 修改數據存儲
 
-**檔案**: `/supabase/functions/server/utils/referralCode.ts`（新增）
+**檔案**: `/supabase/functions/server/auth.ts`
 
+**修改點**:
 ```typescript
-/**
- * 生成推薦碼: 3小寫英文 + 6數字
- */
-export function generateReferralCode(): string {
-  const letters = 'abcdefghijklmnopqrstuvwxyz';
-  const numbers = '0123456789';
-  
-  let code = '';
-  for (let i = 0; i < 3; i++) {
-    code += letters[Math.floor(Math.random() * letters.length)];
-  }
-  for (let i = 0; i < 6; i++) {
-    code += numbers[Math.floor(Math.random() * numbers.length)];
-  }
-  
-  return code;
-}
-
-/**
- * 驗證推薦碼格式
- */
-export function validateReferralCode(code: string): boolean {
-  const pattern = /^[a-z]{3}\d{6}$/;
-  return pattern.test(code);
-}
-```
-
-**檔案**: `/supabase/functions/server/utils/accountStatus.ts`（新增）
-
-```typescript
-import * as kv from '../kv_store.tsx';
-import { UserAccountStatus, AccountStatus } from '../types.ts';
-
-/**
- * 計算帳號狀態
- */
-export async function calculateAccountStatus(
-  userId: string
-): Promise<AccountStatus> {
-  const subscriptions = await kv.get(`user:${userId}:subscriptions`) || [];
-  
-  if (subscriptions.length === 0) {
-    return 'Fail'; // 從未訂閱
-  }
-  
-  // 獲取最新訂閱
-  const latestSubId = subscriptions[0];
-  const subscription = await kv.get(`subscription:${latestSubId}`);
-  
-  if (!subscription) {
-    return 'Fail';
-  }
-  
-  const today = new Date().toISOString().split('T')[0];
-  const endDate = subscription.endDate.split('T')[0];
-  const gracePeriodEnd = subscription.gracePeriodEnd.split('T')[0];
-  
-  if (subscription.status === 'Canceled') {
-    if (endDate >= today) {
-      return 'Canceled'; // 已取消但仍在有效期內
-    } else {
-      return 'Fail'; // 取消後到期
-    }
-  }
-  
-  if (endDate >= today) {
-    return 'Active'; // 訂閱中
-  } else if (gracePeriodEnd >= today) {
-    return 'Grace'; // 即將失效 (0-60天)
-  } else {
-    return 'Fail'; // 永久失效 (>60天)
-  }
-}
-
-/**
- * 同步用戶帳號狀態
- */
-export async function syncAccountStatus(userId: string): Promise<void> {
-  const newStatus = await calculateAccountStatus(userId);
-  const currentStatus = await kv.get(`user:${userId}:account_status`);
-  
-  if (!currentStatus || currentStatus.status !== newStatus) {
-    // 狀態變化，執行轉換 Hooks
-    await handleStatusTransition(
-      userId,
-      currentStatus?.status || 'Fail',
-      newStatus
-    );
-    
-    // 更新狀態
-    await kv.set(`user:${userId}:account_status`, {
-      ...currentStatus,
-      status: newStatus,
-      lastStatusUpdate: new Date().toISOString()
-    });
-  }
-}
-
-/**
- * 處理狀態轉換
- */
-async function handleStatusTransition(
-  userId: string,
-  oldStatus: AccountStatus,
-  newStatus: AccountStatus
-): Promise<void> {
-  console.log(`[狀態轉換] ${userId}: ${oldStatus} → ${newStatus}`);
-  
-  if (newStatus === 'Fail' && oldStatus !== 'Fail') {
-    // 進入永久失效狀態
-    await handleEnterFailStatus(userId);
-  }
-  
-  if (newStatus === 'Active' && oldStatus === 'Fail') {
-    // 從失效恢復（重新訂閱）
-    await handleRecoverFromFailStatus(userId);
-  }
-}
-
-/**
- * 處理進入 Fail 狀態
- */
-async function handleEnterFailStatus(userId: string): Promise<void> {
-  // 1. 推薦碼標記為 Fail
-  const activeCodeId = await kv.get(`user:${userId}:active_referral_code`);
-  if (activeCodeId) {
-    const code = await kv.get(`referral_code:${activeCodeId}`);
-    await kv.set(`referral_code:${activeCodeId}`, {
-      ...code,
-      status: 'Fail',
-      isActive: false,
-      inactivatedAt: new Date().toISOString()
-    });
-    await kv.set(`user:${userId}:active_referral_code`, null);
-  }
-  
-  // 2. 點數歸零
-  const accountStatus = await kv.get(`user:${userId}:account_status`);
-  await kv.set(`user:${userId}:account_status`, {
-    ...accountStatus,
-    pointBalance: 0
-  });
-  
-  // 3. 任務歸零
-  await kv.set(`user:${userId}:task_progress`, {
-    consecutiveReferral: { count: 0, lastReferredAt: null },
-    monthlyKing: { monthlyReferrals: {}, totalReferrals: 0 }
-  });
-  
-  // 4. 更新所有推薦人的推薦樹（標記為 Inactive）
-  await updateReferrersTree(userId);
-}
-
-/**
- * 處理從 Fail 恢復（重新訂閱）
- */
-async function handleRecoverFromFailStatus(userId: string): Promise<void> {
-  // 生成新推薦碼會在訂閱創建時處理
-  // 這裡只需要重置任務
-  await kv.set(`user:${userId}:task_progress`, {
-    consecutiveReferral: { count: 0, lastReferredAt: null },
-    monthlyKing: { monthlyReferrals: {}, totalReferrals: 0 }
-  });
-}
-
-/**
- * 更新推薦人的推薦樹
- */
-async function updateReferrersTree(userId: string): Promise<void> {
-  const referredBy = await kv.get(`user:${userId}:referred_by`);
-  if (!referredBy) return;
-  
-  // 更新直接推薦人
-  await rebuildReferralTree(referredBy.referrerUserId);
-  
-  // 遞歸更新上級推薦人
-  const referredBy2 = await kv.get(`user:${referredBy.referrerUserId}:referred_by`);
-  if (referredBy2) {
-    await rebuildReferralTree(referredBy2.referrerUserId);
-    
-    const referredBy3 = await kv.get(`user:${referredBy2.referrerUserId}:referred_by`);
-    if (referredBy3) {
-      await rebuildReferralTree(referredBy3.referrerUserId);
-    }
-  }
-}
-
-/**
- * 重建推薦樹
- */
-async function rebuildReferralTree(userId: string): Promise<void> {
-  // 獲取用戶的活躍推薦碼
-  const activeCodeId = await kv.get(`user:${userId}:active_referral_code`);
-  if (!activeCodeId) return;
-  
-  const relationships = await kv.get(`referral_code:${activeCodeId}:relationships`) || {
-    generation1: [],
-    generation2: [],
-    generation3: []
-  };
-  
-  // 為每一代添加用戶詳細信息
-  const buildGeneration = async (generation: any[]) => {
-    return Promise.all(generation.map(async (rel) => {
-      const profile = await kv.get(`user:${rel.userId}:profile`);
-      const accountStatus = await kv.get(`user:${rel.userId}:account_status`);
-      const activeCode = await kv.get(`user:${rel.userId}:active_referral_code`);
-      
-      return {
-        userId: rel.userId,
-        userName: profile?.realName || '未知',
-        accountStatus: accountStatus?.status || 'Fail',
-        referredAt: rel.referredAt,
-        activeReferralCodeId: activeCode
-      };
-    }));
-  };
-  
-  const tree = {
-    firstGeneration: await buildGeneration(relationships.generation1),
-    secondGeneration: await buildGeneration(relationships.generation2),
-    thirdGeneration: await buildGeneration(relationships.generation3),
-    lastUpdated: new Date().toISOString()
-  };
-  
-  await kv.set(`user:${userId}:referral_tree`, tree);
-}
-```
-
----
-
-#### 4.1.3 Cron Job: 每日狀態同步
-
-**檔案**: `/supabase/functions/server/cron_status_sync.ts`（新增）
-
-```typescript
-import { Hono } from 'npm:hono@4.3.11';
-import * as kv from './kv_store.tsx';
-import { syncAccountStatus } from './utils/accountStatus.ts';
-
-const cronStatusSync = new Hono();
-
-/**
- * POST /cron/sync-account-status
- * 每日同步所有用戶帳號狀態
- */
-cronStatusSync.post('/sync-account-status', async (c) => {
-  try {
-    console.log('========== 開始同步帳號狀態 ==========');
-    
-    // 獲取所有用戶
-    const userKeys = await kv.getByPrefix('user:');
-    const userIds = userKeys
-      .filter(key => key.endsWith(':profile'))
-      .map(key => key.split(':')[1]);
-    
-    console.log(`找到 ${userIds.length} 個用戶`);
-    
-    let successCount = 0;
-    let failCount = 0;
-    
-    for (const userId of userIds) {
-      try {
-        await syncAccountStatus(userId);
-        successCount++;
-      } catch (error) {
-        console.error(`同步用戶 ${userId} 失敗:`, error);
-        failCount++;
-      }
-    }
-    
-    console.log(`========== 同步完成: 成功=${successCount}, 失敗=${failCount} ==========`);
-    
-    return c.json({
-      success: true,
-      data: {
-        totalUsers: userIds.length,
-        successCount,
-        failCount
-      }
-    });
-  } catch (error) {
-    console.error('========== 同步失敗 ==========', error);
-    return c.json({
-      success: false,
-      error: { message: error.message }
-    }, 500);
-  }
+// ❌ 移除 idNumber 存儲
+await kv.set(`user:${userId}:profile`, {
+  id: userId,
+  email: user.email,
+  realName: name,
+  // idNumber, ❌ 移除
+  birthDate,
+  phone,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
 });
 
-export default cronStatusSync;
-```
-
-**設定 GitHub Actions** (每日凌晨 2:00 執行):
-
-檔案: `/workflows/daily-status-sync.yml`（新增）
-
-```yaml
-name: Daily Account Status Sync
-
-on:
-  schedule:
-    - cron: '0 18 * * *' # UTC 18:00 = 台北 02:00
-  workflow_dispatch: # 允許手動觸發
-
-jobs:
-  sync-status:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Sync Account Status
-        run: |
-          curl -X POST \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            https://${{ secrets.SUPABASE_PROJECT_ID }}.supabase.co/functions/v1/make-server-5c6718b9/cron/sync-account-status
+// ❌ 移除 idNumber 索引
+// await kv.set(`id_number:${idNumber}`, userId);
 ```
 
 ---
 
-### Phase 2: 註冊流程改造（3-4天）
+### Phase 2: 限制一個帳號一個刊登（2-3天）
 
-#### 4.2.1 Step 0: Email 檢核
+#### 5.2.1 修改刊登創建邏輯
 
-**檔案**: `/supabase/functions/server/auth_v2.ts`（修改）
+**檔案**: `/supabase/functions/server/listings.ts`
 
+**修改點**:
 ```typescript
 /**
- * POST /auth-v2/check-email
- * 檢查 Email 是否已註冊
+ * POST /listings
+ * 創建刊登（限制一個用戶只能有一個）
  */
-authV2.post('/check-email', async (c) => {
+listings.post('/', async (c) => {
   try {
-    const { email } = await c.req.json();
+    // 1. 驗證用戶
+    const { user, error: authError } = await verifyToken(token);
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
     
-    if (!email) {
+    // ✅ 2. 檢查用戶是否已有刊登
+    const existingListingId = await kv.get(`user:${user.id}:listing`);
+    if (existingListingId) {
       return c.json({
         success: false,
-        error: { message: 'Email 是必填欄位' }
+        error: { 
+          message: '您已經有一個刊登，每個帳號只能建立一個刊登',
+          existingListingId 
+        }
       }, 400);
     }
     
-    // 檢查 Email 索引
-    const existingUserId = await kv.get(`email:${email}`);
+    // 3. 創建刊登
+    const listingId = `listing_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     
-    if (existingUserId) {
+    // ... 創建邏輯
+    
+    // 4. ✅ 存儲為單一值（不是陣列）
+    await kv.set(`user:${user.id}:listing`, listingId);
+    
+    // ✅ 5. 更新用戶帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    await kv.set(`user:${user.id}:account_status`, {
+      ...accountStatus,
+      activeListingId: listingId
+    });
+    
+    return c.json({
+      success: true,
+      data: { listing }
+    });
+  } catch (error) {
+    console.error('[Create Listing] Error:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+```
+
+---
+
+#### 5.2.2 修改刊登獲取邏輯
+
+**檔案**: `/supabase/functions/server/listings.ts`
+
+**修改點**:
+```typescript
+/**
+ * GET /listings
+ * 獲取用戶的刊登（單一刊登）
+ */
+listings.get('/', async (c) => {
+  try {
+    const { user, error: authError } = await verifyToken(token);
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    // ✅ 獲取單一刊登 ID
+    const listingId = await kv.get(`user:${user.id}:listing`);
+    
+    if (!listingId) {
       return c.json({
         success: true,
-        data: {
-          exists: true,
-          message: '此 Email 已被註冊，請直接登入或使用其他 Email'
-        }
+        data: { listing: null }
       });
     }
     
+    // 獲取刊登詳情
+    const listing = await kv.get(`listing:${listingId}`);
+    
     return c.json({
       success: true,
-      data: {
-        exists: false,
-        message: 'Email 可以使用'
-      }
+      data: { listing }
     });
   } catch (error) {
-    console.error('[Check Email] Error:', error);
+    console.error('[Get Listing] Error:', error);
     return c.json({
       success: false,
       error: { message: 'Internal server error' }
@@ -914,156 +872,18 @@ authV2.post('/check-email', async (c) => {
 
 ---
 
-#### 4.2.2 Step 2: 資料完善（新增身分證檢核）
+### Phase 3: 註冊流程改造（3-4天）
 
-**檔案**: `/supabase/functions/server/auth_v2.ts`（修改）
+#### 5.3.1 新增推薦碼驗證 API
 
-```typescript
-/**
- * POST /auth-v2/signup/step2
- * 資料完善
- */
-authV2.post('/signup/step2', async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError || !user) {
-      return c.json({
-        success: false,
-        error: { message: 'Invalid token' }
-      }, 401);
-    }
-    
-    const { realName, idNumber, birthDate, phone, referralCode } = await c.req.json();
-    
-    // ✅ 驗證必填欄位
-    if (!realName || !idNumber || !birthDate || !phone) {
-      return c.json({
-        success: false,
-        error: { message: '真實姓名、身分證字號、出生日期和手機號碼都是必填欄位' }
-      }, 400);
-    }
-    
-    // ✅ 驗證身分證格式
-    const idNumberPattern = /^[A-Z][12]\d{8}$/;
-    if (!idNumberPattern.test(idNumber)) {
-      return c.json({
-        success: false,
-        error: { message: '身分證字號格式不正確' }
-      }, 400);
-    }
-    
-    // ✅ 檢查身分證唯一性
-    const existingUserId = await kv.get(`id_number:${idNumber}`);
-    if (existingUserId && existingUserId !== user.id) {
-      return c.json({
-        success: false,
-        error: { message: '此身分證字號已被註冊' }
-      }, 400);
-    }
-    
-    // ✅ 驗證年齡 >= 18
-    const birthDateObj = new Date(birthDate);
-    const today = new Date();
-    let age = today.getFullYear() - birthDateObj.getFullYear();
-    const monthDiff = today.getMonth() - birthDateObj.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
-      age--;
-    }
-    if (age < 18) {
-      return c.json({
-        success: false,
-        error: { message: '註冊用戶需年滿 18 歲' }
-      }, 400);
-    }
-    
-    // ✅ 驗證推薦碼（如果提供）
-    let referrerInfo = null;
-    if (referralCode) {
-      const codeId = await kv.get(`code:${referralCode}`);
-      if (!codeId) {
-        return c.json({
-          success: false,
-          error: { message: '推薦碼不存在' }
-        }, 400);
-      }
-      
-      const code = await kv.get(`referral_code:${codeId}`);
-      if (code.status === 'Fail') {
-        return c.json({
-          success: false,
-          error: { message: '推薦碼已失效' }
-        }, 400);
-      }
-      
-      const referrerProfile = await kv.get(`user:${code.userId}:profile`);
-      referrerInfo = {
-        userId: code.userId,
-        userName: referrerProfile.realName,
-        referralCodeId: codeId
-      };
-    }
-    
-    // ✅ 儲存用戶資料
-    await kv.set(`user:${user.id}:profile`, {
-      id: user.id,
-      email: user.email,
-      realName,
-      idNumber,
-      birthDate,
-      phone,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    
-    // ✅ 建立索引
-    await kv.set(`email:${user.email}`, user.id);
-    await kv.set(`id_number:${idNumber}`, user.id);
-    
-    // ✅ 暫存推薦碼（Step 3 付款後才建立關係）
-    if (referrerInfo) {
-      await kv.set(`user:${user.id}:pending_referral`, referrerInfo);
-    }
-    
-    return c.json({
-      success: true,
-      data: {
-        message: '資料填寫完成',
-        referrerName: referrerInfo?.userName || null,
-        nextStep: 3
-      }
-    });
-  } catch (error) {
-    console.error('[Step 2] Error:', error);
-    return c.json({
-      success: false,
-      error: { message: 'Internal server error' }
-    }, 500);
-  }
-});
-```
-
----
-
-#### 4.2.3 推薦碼即時驗證 API
-
-**檔案**: `/supabase/functions/server/auth_v2.ts`（新增）
+**檔案**: `/supabase/functions/server/auth.ts`（新增）
 
 ```typescript
 /**
- * POST /auth-v2/verify-referral-code
+ * POST /auth/verify-referral-code
  * 驗證推薦碼並返回推薦人姓名
  */
-authV2.post('/verify-referral-code', async (c) => {
+export const verifyReferralCode = async (c: Context) => {
   try {
     const { code } = await c.req.json();
     
@@ -1074,12 +894,15 @@ authV2.post('/verify-referral-code', async (c) => {
       }, 400);
     }
     
-    // 驗證格式
-    if (!validateReferralCode(code)) {
+    // 驗證格式（3小寫英文+6數字）
+    if (!/^[a-z]{3}\d{6}$/.test(code)) {
       return c.json({
-        success: false,
-        error: { message: '推薦碼格式不正確（應為3個小寫英文字母+6個數字）' }
-      }, 400);
+        success: true,
+        data: {
+          valid: false,
+          error: '推薦碼格式不正確（應為3個小寫英文字母+6個數字）'
+        }
+      });
     }
     
     // 查找推薦碼
@@ -1115,6 +938,8 @@ authV2.post('/verify-referral-code', async (c) => {
       data: {
         valid: true,
         referrerName: referrerProfile.realName,
+        referrerUserId: referralCode.userId,
+        referralCodeId: codeId,
         message: '推薦碼驗證成功'
       }
     });
@@ -1125,22 +950,157 @@ authV2.post('/verify-referral-code', async (c) => {
       error: { message: 'Internal server error' }
     }, 500);
   }
-});
+};
 ```
 
 ---
 
-#### 4.2.4 Step 3: 付款與激活（核心邏輯）
+#### 5.3.2 修改註冊 API（加入推薦碼）
 
-**檔案**: `/supabase/functions/server/auth_v2.ts`（修改）
+**檔案**: `/supabase/functions/server/auth.ts`
 
+**修改點**:
 ```typescript
 /**
- * POST /auth-v2/signup/step3
- * 處理付款並激活帳號
+ * POST /auth/register
+ * 註冊新用戶（加入推薦碼）
  */
-authV2.post('/signup/step3', async (c) => {
+export const registerUser = async (c: Context) => {
   try {
+    const { name, phone, birthDate, referralCode } = await c.req.json();
+    
+    // 1. 驗證用戶
+    const { user, error: authError } = await verifyToken(token);
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    // 2. 驗證必填欄位
+    if (!name || !phone || !birthDate) {
+      return c.json({
+        error: { message: '真實姓名、手機號碼和出生日期都是必填欄位' }
+      }, 400);
+    }
+    
+    // 3. 驗證手機格式
+    if (!/^09\d{8}$/.test(phone)) {
+      return c.json({
+        error: { message: '手機號碼格式不正確' }
+      }, 400);
+    }
+    
+    // 4. 驗證年齡 >= 18
+    const birthDateObj = new Date(birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - birthDateObj.getFullYear();
+    const monthDiff = today.getMonth() - birthDateObj.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
+      age--;
+    }
+    if (age < 18) {
+      return c.json({
+        error: { message: '註冊用戶需年滿 18 歲' }
+      }, 400);
+    }
+    
+    // ✅ 5. 驗證推薦碼（如果提供）
+    let referrerInfo = null;
+    if (referralCode) {
+      const codeId = await kv.get(`code:${referralCode}`);
+      if (!codeId) {
+        return c.json({
+          error: { message: '推薦碼不存在' }
+        }, 400);
+      }
+      
+      const code = await kv.get(`referral_code:${codeId}`);
+      if (code.status === 'Fail') {
+        return c.json({
+          error: { message: '推薦碼已失效' }
+        }, 400);
+      }
+      
+      const referrerProfile = await kv.get(`user:${code.userId}:profile`);
+      referrerInfo = {
+        userId: code.userId,
+        userName: referrerProfile.realName,
+        referralCodeId: codeId
+      };
+    }
+    
+    // 6. 儲存用戶資料
+    await kv.set(`user:${user.id}:profile`, {
+      id: user.id,
+      email: user.email,
+      realName: name,
+      birthDate,
+      phone,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    
+    // 7. 建立索引
+    await kv.set(`email:${user.email}`, user.id);
+    await kv.set(`phone:${phone}`, user.id);
+    
+    // ✅ 8. 暫存推薦碼（付款後才建立關係）
+    if (referrerInfo) {
+      await kv.set(`user:${user.id}:pending_referral`, referrerInfo);
+    }
+    
+    // ✅ 9. 初始化帳號狀態（Fail，付款後才改為 Active）
+    await kv.set(`user:${user.id}:account_status`, {
+      status: 'Fail', // 尚未付款
+      currentSubscriptionId: null,
+      activeReferralCodeId: null,
+      activeListingId: null,
+      pointBalance: 0,
+      lastStatusUpdate: new Date().toISOString(),
+      lastSubscriptionEndDate: null,
+      gracePeriodEndDate: null
+    });
+    
+    return c.json({
+      success: true,
+      data: {
+        message: '資料填寫完成，請繼續付款以完成註冊',
+        referrerName: referrerInfo?.userName || null,
+        needsPayment: true // ✅ 前端據此導向付款頁面
+      }
+    });
+  } catch (error) {
+    console.error('[Register] Error:', error);
+    return c.json({
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+};
+```
+
+---
+
+### Phase 4: 付款流程整合（3-4天）
+
+#### 5.4.1 創建付款訂單 API
+
+**檔案**: `/supabase/functions/server/payment.ts`（新增）
+
+```typescript
+import { Hono } from 'npm:hono@4.3.11';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import * as kv from './kv_store.tsx';
+import { verifyToken } from './auth.ts';
+import { YEARLY_PRICE } from './constants.ts';
+
+const payment = new Hono();
+
+/**
+ * POST /payment/create-order
+ * 創建付款訂單（藍新金流）
+ */
+payment.post('/create-order', async (c) => {
+  try {
+    // 1. 驗證用戶
     const authHeader = c.req.header('Authorization');
     if (!authHeader) {
       return c.json({
@@ -1149,27 +1109,103 @@ authV2.post('/signup/step3', async (c) => {
       }, 401);
     }
     
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    const token = authHeader.replace('Bearer ', '');
+    const { user, error: authError } = await verifyToken(token);
     
     if (authError || !user) {
       return c.json({
         success: false,
-        error: { message: 'Invalid token' }
+        error: { message: 'Unauthorized' }
       }, 401);
     }
     
-    const { paymentTransactionId } = await c.req.json();
-    
-    if (!paymentTransactionId) {
+    // 2. 檢查是否已有有效訂閱
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    if (accountStatus?.status === 'Active') {
       return c.json({
         success: false,
-        error: { message: '缺少支付交易ID' }
+        error: { message: '您已經有有效的訂閱' }
       }, 400);
     }
     
-    // TODO: 驗證藍新金流付款
-    console.log('[Step 3] Payment verification (mock):', paymentTransactionId);
+    // 3. 生成訂單編號
+    const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    
+    // 4. TODO: 整合藍新金流
+    // 生成藍新金流付款參數
+    const newebpayData = {
+      MerchantID: Deno.env.get('NEWEBPAY_MERCHANT_ID'),
+      TradeInfo: {
+        MerchantOrderNo: orderId,
+        Amt: YEARLY_PRICE, // 1200
+        ItemDesc: 'Uknow 年費會員訂閱',
+        Email: user.email,
+        LoginType: 0,
+        NotifyURL: `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-5c6718b9/payment/callback`,
+        ReturnURL: `${Deno.env.get('FRONTEND_URL')}/payment/success`,
+        ClientBackURL: `${Deno.env.get('FRONTEND_URL')}/payment/cancel`
+      }
+    };
+    
+    // 5. 暫存訂單資訊
+    await kv.set(`payment_order:${orderId}`, {
+      orderId,
+      userId: user.id,
+      amount: YEARLY_PRICE,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    });
+    
+    return c.json({
+      success: true,
+      data: {
+        orderId,
+        amount: YEARLY_PRICE,
+        paymentUrl: 'https://ccore.newebpay.com/MPG/mpg_gateway', // TODO: 實際藍新金流 URL
+        paymentData: newebpayData
+      }
+    });
+  } catch (error) {
+    console.error('[Create Payment Order] Error:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+export default payment;
+```
+
+---
+
+#### 5.4.2 付款回調處理 API
+
+**檔案**: `/supabase/functions/server/payment.ts`（新增）
+
+```typescript
+/**
+ * POST /payment/callback
+ * 藍新金流付款回調（付款成功後的處理）
+ */
+payment.post('/callback', async (c) => {
+  try {
+    // 1. TODO: 驗證藍新金流回調簽名
+    const { Status, MerchantOrderNo, TradeNo, Amt } = await c.req.json();
+    
+    if (Status !== 'SUCCESS') {
+      console.log('[Payment Callback] Payment failed:', MerchantOrderNo);
+      return c.json({ success: false, message: 'Payment failed' });
+    }
+    
+    // 2. 獲取訂單資訊
+    const paymentOrder = await kv.get(`payment_order:${MerchantOrderNo}`);
+    if (!paymentOrder) {
+      console.error('[Payment Callback] Order not found:', MerchantOrderNo);
+      return c.json({ success: false, message: 'Order not found' }, 404);
+    }
+    
+    const userId = paymentOrder.userId;
     
     // ========== 開始交易 ==========
     
@@ -1178,18 +1214,19 @@ authV2.post('/signup/step3', async (c) => {
     const endDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()).toISOString();
     const gracePeriodEnd = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate() + 60).toISOString();
     
-    // 1. 創建訂閱
+    // 3. 創建訂閱
     const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     await kv.set(`subscription:${subscriptionId}`, {
       id: subscriptionId,
-      userId: user.id,
+      userId,
       status: 'Active',
       startDate,
       endDate,
       gracePeriodEnd,
-      amount: 1200,
+      amount: YEARLY_PRICE,
       paymentMethod: 'newebpay',
-      paymentTransactionId,
+      paymentTransactionId: MerchantOrderNo,
+      newebpayTradeNo: TradeNo,
       isCanceled: false,
       canceledAt: null,
       isRenewal: false,
@@ -1197,11 +1234,11 @@ authV2.post('/signup/step3', async (c) => {
       updatedAt: now.toISOString()
     });
     
-    // 2. 更新用戶訂閱列表
-    const subscriptions = await kv.get(`user:${user.id}:subscriptions`) || [];
-    await kv.set(`user:${user.id}:subscriptions`, [subscriptionId, ...subscriptions]);
+    // 4. 更新用戶訂閱列��
+    const subscriptions = await kv.get(`user:${userId}:subscriptions`) || [];
+    await kv.set(`user:${userId}:subscriptions`, [subscriptionId, ...subscriptions]);
     
-    // 3. 生成推薦碼
+    // 5. 生成推薦碼
     let newReferralCode: string;
     let codeExists = true;
     while (codeExists) {
@@ -1213,7 +1250,7 @@ authV2.post('/signup/step3', async (c) => {
     const referralCodeId = `rc_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     await kv.set(`referral_code:${referralCodeId}`, {
       id: referralCodeId,
-      userId: user.id,
+      userId,
       code: newReferralCode,
       status: 'Active',
       isActive: true,
@@ -1227,46 +1264,68 @@ authV2.post('/signup/step3', async (c) => {
     await kv.set(`code:${newReferralCode}`, referralCodeId);
     
     // 更新用戶的推薦碼列表
-    const referralCodes = await kv.get(`user:${user.id}:referral_codes`) || [];
-    await kv.set(`user:${user.id}:referral_codes`, [referralCodeId, ...referralCodes]);
-    await kv.set(`user:${user.id}:active_referral_code`, referralCodeId);
+    const referralCodes = await kv.get(`user:${userId}:referral_codes`) || [];
+    await kv.set(`user:${userId}:referral_codes`, [referralCodeId, ...referralCodes]);
+    await kv.set(`user:${userId}:active_referral_code`, referralCodeId);
     
-    // 4. 更新帳號狀態
-    await kv.set(`user:${user.id}:account_status`, {
+    // 6. 更新帳號狀態
+    const accountStatus = await kv.get(`user:${userId}:account_status`);
+    await kv.set(`user:${userId}:account_status`, {
+      ...accountStatus,
       status: 'Active',
       currentSubscriptionId: subscriptionId,
       activeReferralCodeId: referralCodeId,
-      pointBalance: 0,
       lastStatusUpdate: now.toISOString(),
       lastSubscriptionEndDate: endDate,
       gracePeriodEndDate: null
     });
     
-    // 5. 處理推薦關係（如果有推薦碼）
-    const pendingReferral = await kv.get(`user:${user.id}:pending_referral`);
+    // 7. 處理推薦關係（如果有推薦碼）
+    const pendingReferral = await kv.get(`user:${userId}:pending_referral`);
     if (pendingReferral) {
-      await createReferralRelationships(user.id, pendingReferral);
-      await kv.del(`user:${user.id}:pending_referral`);
+      await createReferralRelationships(userId, pendingReferral);
+      await kv.del(`user:${userId}:pending_referral`);
     }
     
-    console.log('[Step 3] ✅ 註冊完成');
+    // 8. 更新付款訂單狀態
+    await kv.set(`payment_order:${MerchantOrderNo}`, {
+      ...paymentOrder,
+      status: 'completed',
+      completedAt: now.toISOString()
+    });
+    
+    console.log('[Payment Callback] ✅ 付款處理完成');
     
     return c.json({
       success: true,
-      data: {
-        message: '註冊完成！歡迎加入 Uknow',
-        referralCode: newReferralCode,
-        accountStatus: 'Active'
-      }
+      message: 'Payment processed successfully'
     });
   } catch (error) {
-    console.error('[Step 3] Error:', error);
+    console.error('[Payment Callback] Error:', error);
     return c.json({
       success: false,
       error: { message: 'Internal server error' }
     }, 500);
   }
 });
+
+/**
+ * 生成推薦碼
+ */
+function generateReferralCode(): string {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  
+  let code = '';
+  for (let i = 0; i < 3; i++) {
+    code += letters[Math.floor(Math.random() * letters.length)];
+  }
+  for (let i = 0; i < 6; i++) {
+    code += numbers[Math.floor(Math.random() * numbers.length)];
+  }
+  
+  return code;
+}
 
 /**
  * 創建推薦關係（遞歸3代）
@@ -1278,8 +1337,6 @@ async function createReferralRelationships(
   const referredAt = new Date().toISOString();
   
   // === 第1代：直接推薦人 ===
-  
-  // 1.1 添加到推薦關係
   const gen1Relationships = await kv.get(`referral_code:${referrerInfo.referralCodeId}:relationships`) || {
     generation1: [],
     generation2: [],
@@ -1295,1159 +1352,304 @@ async function createReferralRelationships(
   
   await kv.set(`referral_code:${referrerInfo.referralCodeId}:relationships`, gen1Relationships);
   
-  // 1.2 記錄被推薦人的推薦來源
+  // 記錄被推薦人的推薦來源
   await kv.set(`user:${newUserId}:referred_by`, {
     referrerUserId: referrerInfo.userId,
     referralCodeId: referrerInfo.referralCodeId,
     referredAt
   });
   
-  // 1.3 重建推薦樹
+  // 重建推薦樹
   await rebuildReferralTree(referrerInfo.userId);
   
-  // 1.4 發放獎勵（第1個月）
+  // 發放獎勵（第1個月）
   await issueReferralReward(referrerInfo.userId, newUserId, 1, 1, 10);
   
-  // 1.5 更新任務
+  // 更新任務
   await updateTaskProgress(referrerInfo.userId, newUserId);
   
-  // === 第2代：推薦人的推薦人 ===
-  
-  const gen1ReferredBy = await kv.get(`user:${referrerInfo.userId}:referred_by`);
-  if (gen1ReferredBy) {
-    const gen2Relationships = await kv.get(`referral_code:${gen1ReferredBy.referralCodeId}:relationships`) || {
-      generation1: [],
-      generation2: [],
-      generation3: []
-    };
-    
-    gen2Relationships.generation2.push({
-      userId: newUserId,
-      referredAt,
-      referralCodeUsed: referrerInfo.referralCodeId
-    });
-    gen2Relationships.lastUpdated = referredAt;
-    
-    await kv.set(`referral_code:${gen1ReferredBy.referralCodeId}:relationships`, gen2Relationships);
-    await rebuildReferralTree(gen1ReferredBy.referrerUserId);
-    await issueReferralReward(gen1ReferredBy.referrerUserId, newUserId, 2, 1, 5);
-    
-    // === 第3代：推薦人的推薦人的推薦人 ===
-    
-    const gen2ReferredBy = await kv.get(`user:${gen1ReferredBy.referrerUserId}:referred_by`);
-    if (gen2ReferredBy) {
-      const gen3Relationships = await kv.get(`referral_code:${gen2ReferredBy.referralCodeId}:relationships`) || {
-        generation1: [],
-        generation2: [],
-        generation3: []
-      };
-      
-      gen3Relationships.generation3.push({
-        userId: newUserId,
-        referredAt,
-        referralCodeUsed: referrerInfo.referralCodeId
-      });
-      gen3Relationships.lastUpdated = referredAt;
-      
-      await kv.set(`referral_code:${gen2ReferredBy.referralCodeId}:relationships`, gen3Relationships);
-      await rebuildReferralTree(gen2ReferredBy.referrerUserId);
-      await issueReferralReward(gen2ReferredBy.referrerUserId, newUserId, 3, 1, 2);
-    }
-  }
-}
-
-/**
- * 發放推薦獎勵
- */
-async function issueReferralReward(
-  userId: string,
-  refereeId: string,
-  generation: number,
-  month: number,
-  amount: number
-): Promise<void> {
-  // 更新點數餘額
-  const accountStatus = await kv.get(`user:${userId}:account_status`);
-  await kv.set(`user:${userId}:account_status`, {
-    ...accountStatus,
-    pointBalance: accountStatus.pointBalance + amount
-  });
-  
-  // 記錄獎勵歷史
-  const refereeProfile = await kv.get(`user:${refereeId}:profile`);
-  const history = await kv.get(`user:${userId}:reward_history`) || [];
-  
-  history.unshift({
-    id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-    type: `referral_gen${generation}_month${month}`,
-    amount,
-    referee: {
-      userId: refereeId,
-      userName: refereeProfile.realName
-    },
-    generation,
-    monthNumber: month,
-    issuedAt: new Date().toISOString(),
-    description: `推薦獎勵 - ${refereeProfile.realName}（第${generation}代）- 第${month}個月`
-  });
-  
-  await kv.set(`user:${userId}:reward_history`, history);
-  
-  // TODO: 創建後續11個月的獎勵排程
-}
-
-/**
- * 更新任務進度
- */
-async function updateTaskProgress(userId: string, refereeId: string): Promise<void> {
-  const taskProgress = await kv.get(`user:${userId}:task_progress`) || {
-    consecutiveReferral: { count: 0, lastReferredAt: null },
-    monthlyKing: { monthlyReferrals: {}, totalReferrals: 0 }
-  };
-  
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  
-  // 更新連續推薦達人
-  const lastDate = taskProgress.consecutiveReferral.lastReferredAt;
-  const isConsecutive = lastDate && 
-    new Date(lastDate).getMonth() === now.getMonth() - 1;
-  
-  taskProgress.consecutiveReferral = {
-    count: isConsecutive ? taskProgress.consecutiveReferral.count + 1 : 1,
-    lastReferredAt: now.toISOString()
-  };
-  
-  // 更新推薦王
-  if (!taskProgress.monthlyKing.monthlyReferrals[currentMonth]) {
-    taskProgress.monthlyKing.monthlyReferrals[currentMonth] = [];
-  }
-  taskProgress.monthlyKing.monthlyReferrals[currentMonth].push({
-    userId: refereeId,
-    referredAt: now.toISOString()
-  });
-  taskProgress.monthlyKing.totalReferrals++;
-  
-  await kv.set(`user:${userId}:task_progress`, taskProgress);
+  // === 第2代 & 第3代（遞歸處理）===
+  // TODO: 完整實作（見 Phase 1 文檔）
 }
 ```
 
 ---
 
-### Phase 3: 訂閱系統重構（2-3天）
+### Phase 5: 推薦系統重構（見 Phase 1 文檔）
 
-#### 4.3.1 獲取訂閱狀態
+此階段與原文檔相同，不再重複。
 
-**檔案**: `/supabase/functions/server/user.ts`（新增）
+---
 
+## 6. 前端修改計畫 (Phase by Phase)
+
+### Phase 6.1: 移除身分證字號欄位（1天）
+
+#### 6.1.1 CompleteProfile 組件
+
+**檔案**: `/components/CompleteProfile.tsx`
+
+**修改點**:
 ```typescript
-import { Hono } from 'npm:hono@4.3.11';
-import * as kv from './kv_store.tsx';
-import { verifyToken } from './auth.ts';
+// ❌ 移除身分證相關代碼
 
-const user = new Hono();
-
-/**
- * GET /user/subscription
- * 獲取用戶訂閱狀態
- */
-user.get('/subscription', async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const { user: authUser, error: authError } = await verifyToken(token);
-    
-    if (authError || !authUser) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const accountStatus = await kv.get(`user:${authUser.id}:account_status`);
-    
-    if (!accountStatus || !accountStatus.currentSubscriptionId) {
-      return c.json({
-        success: true,
-        data: {
-          hasSubscription: false,
-          status: 'Fail',
-          message: '尚未訂閱'
-        }
-      });
-    }
-    
-    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
-    
-    return c.json({
-      success: true,
-      data: {
-        hasSubscription: true,
-        status: accountStatus.status,
-        subscription: {
-          id: subscription.id,
-          startDate: subscription.startDate.split('T')[0],
-          endDate: subscription.endDate.split('T')[0],
-          gracePeriodEnd: subscription.gracePeriodEnd.split('T')[0],
-          isCanceled: subscription.isCanceled,
-          canceledAt: subscription.canceledAt
-        }
-      }
-    });
-  } catch (error) {
-    console.error('[Get Subscription] Error:', error);
-    return c.json({
-      success: false,
-      error: { message: 'Internal server error' }
-    }, 500);
-  }
+const [formData, setFormData] = useState({
+  name: '',
+  phone: '',
+  birthDate: '',
+  // idNumber: '', ❌ 移除
+  agreedToTerms: false,
 });
 
-export default user;
+// ❌ 移除身分證驗證邏輯
+// if (!formData.idNumber.trim()) {
+//   newErrors.idNumber = '請輸入身分證字號';
+// }
+
+// ❌ 移除身分證輸入欄位
+// <div className="space-y-2">
+//   <Label htmlFor="idNumber">身分證字號 *</Label>
+//   <Input id="idNumber" ... />
+// </div>
 ```
 
 ---
 
-#### 4.3.2 取消訂閱
+### Phase 6.2: 新增推薦碼輸入與即時驗證（2-3天）
 
-**檔案**: `/supabase/functions/server/user.ts`（新增）
+#### 6.2.1 CompleteProfile 組件（加入推薦碼）
 
+**檔案**: `/components/CompleteProfile.tsx`
+
+**修改點**:
 ```typescript
-/**
- * POST /user/subscription/cancel
- * 取消訂閱（狀態轉為 Canceled，到期後轉 Fail）
- */
-user.post('/subscription/cancel', async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const { user: authUser, error: authError } = await verifyToken(token);
-    
-    if (authError || !authUser) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const accountStatus = await kv.get(`user:${authUser.id}:account_status`);
-    
-    if (!accountStatus || accountStatus.status !== 'Active') {
-      return c.json({
-        success: false,
-        error: { message: '無法取消：帳號狀態不是訂閱中' }
-      }, 400);
-    }
-    
-    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
-    
-    // 更新訂閱狀態
-    await kv.set(`subscription:${subscription.id}`, {
-      ...subscription,
-      status: 'Canceled',
-      isCanceled: true,
-      canceledAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    
-    // 更新帳號狀態
-    await kv.set(`user:${authUser.id}:account_status`, {
-      ...accountStatus,
-      status: 'Canceled',
-      lastStatusUpdate: new Date().toISOString()
-    });
-    
-    return c.json({
-      success: true,
-      data: {
-        message: '訂閱已取消，權益將持續到到期日',
-        endDate: subscription.endDate.split('T')[0]
-      }
-    });
-  } catch (error) {
-    console.error('[Cancel Subscription] Error:', error);
-    return c.json({
-      success: false,
-      error: { message: 'Internal server error' }
-    }, 500);
-  }
-});
-```
-
----
-
-#### 4.3.3 補繳訂閱（Grace → Active）
-
-**檔案**: `/supabase/functions/server/user.ts`（新增）
-
-```typescript
-/**
- * POST /user/subscription/renew
- * 補繳訂閱（60天內，周期接續原到期日）
- */
-user.post('/subscription/renew', async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const { user: authUser, error: authError } = await verifyToken(token);
-    
-    if (authError || !authUser) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const { paymentTransactionId } = await c.req.json();
-    
-    if (!paymentTransactionId) {
-      return c.json({
-        success: false,
-        error: { message: '缺少支付交易ID' }
-      }, 400);
-    }
-    
-    const accountStatus = await kv.get(`user:${authUser.id}:account_status`);
-    
-    if (!accountStatus || accountStatus.status !== 'Grace') {
-      return c.json({
-        success: false,
-        error: { message: '無法補繳：帳號不在即將失效狀態' }
-      }, 400);
-    }
-    
-    // 檢查是否在60天寬限期內
-    const gracePeriodEnd = new Date(accountStatus.gracePeriodEndDate);
-    const today = new Date();
-    
-    if (today > gracePeriodEnd) {
-      return c.json({
-        success: false,
-        error: { message: '已超過補繳期限（60天），請重新訂閱' }
-      }, 400);
-    }
-    
-    // TODO: 驗證藍新金流付款
-    console.log('[Renew] Payment verification (mock):', paymentTransactionId);
-    
-    // 計算新的訂閱周期（接續原到期日）
-    const oldEndDate = new Date(accountStatus.lastSubscriptionEndDate);
-    const newEndDate = new Date(oldEndDate);
-    newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-    
-    const newGracePeriodEnd = new Date(newEndDate);
-    newGracePeriodEnd.setDate(newGracePeriodEnd.getDate() + 60);
-    
-    // 創建新訂閱
-    const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    await kv.set(`subscription:${subscriptionId}`, {
-      id: subscriptionId,
-      userId: authUser.id,
-      status: 'Active',
-      startDate: oldEndDate.toISOString(), // ✅ 接續原到期日
-      endDate: newEndDate.toISOString(),
-      gracePeriodEnd: newGracePeriodEnd.toISOString(),
-      amount: 1200,
-      paymentMethod: 'newebpay',
-      paymentTransactionId,
-      isCanceled: false,
-      canceledAt: null,
-      isRenewal: true, // ✅ 標記為補繳
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    
-    // 更新用戶訂閱列表
-    const subscriptions = await kv.get(`user:${authUser.id}:subscriptions`) || [];
-    await kv.set(`user:${authUser.id}:subscriptions`, [subscriptionId, ...subscriptions]);
-    
-    // 更新帳號狀態
-    await kv.set(`user:${authUser.id}:account_status`, {
-      ...accountStatus,
-      status: 'Active',
-      currentSubscriptionId: subscriptionId,
-      lastStatusUpdate: new Date().toISOString(),
-      lastSubscriptionEndDate: newEndDate.toISOString(),
-      gracePeriodEndDate: null
-    });
-    
-    // 恢復推薦碼狀態
-    if (accountStatus.activeReferralCodeId) {
-      const code = await kv.get(`referral_code:${accountStatus.activeReferralCodeId}`);
-      await kv.set(`referral_code:${accountStatus.activeReferralCodeId}`, {
-        ...code,
-        status: 'Active',
-        isActive: true
-      });
-    }
-    
-    return c.json({
-      success: true,
-      data: {
-        message: '補繳成功！訂閱已恢復',
-        endDate: newEndDate.toISOString().split('T')[0]
-      }
-    });
-  } catch (error) {
-    console.error('[Renew Subscription] Error:', error);
-    return c.json({
-      success: false,
-      error: { message: 'Internal server error' }
-    }, 500);
-  }
-});
-```
-
----
-
-### Phase 4: 推薦系統重構（3-4天）
-
-#### 4.4.1 獲取推薦樹（改為用戶級別）
-
-**檔案**: `/supabase/functions/server/user.ts`（新增）
-
-```typescript
-/**
- * GET /user/referral-tree
- * 獲取用戶的推薦樹
- */
-user.get('/referral-tree', async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    const token = authHeader.replace('Bearer ', '');
-    const { user: authUser, error: authError } = await verifyToken(token);
-    
-    if (authError || !authUser) {
-      return c.json({
-        success: false,
-        error: { message: 'Unauthorized' }
-      }, 401);
-    }
-    
-    // 獲取推薦樹緩存
-    const tree = await kv.get(`user:${authUser.id}:referral_tree`) || {
-      firstGeneration: [],
-      secondGeneration: [],
-      thirdGeneration: [],
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // 計算統計
-    const summary = {
-      totalReferrals: tree.firstGeneration.length + tree.secondGeneration.length + tree.thirdGeneration.length,
-      firstGenCount: tree.firstGeneration.length,
-      secondGenCount: tree.secondGeneration.length,
-      thirdGenCount: tree.thirdGeneration.length,
-      activeCount: [
-        ...tree.firstGeneration,
-        ...tree.secondGeneration,
-        ...tree.thirdGeneration
-      ].filter(r => r.accountStatus === 'Active' || r.accountStatus === 'Canceled').length
-    };
-    
-    return c.json({
-      success: true,
-      data: {
-        tree,
-        summary
-      }
-    });
-  } catch (error) {
-    console.error('[Get Referral Tree] Error:', error);
-    return c.json({
-      success: false,
-      error: { message: 'Internal server error' }
-    }, 500);
-  }
-});
-```
-
----
-
-### Phase 5: 前端重構計畫（見下一節）
-
----
-
-## 5. 前端修改計畫 (Phase by Phase)
-
-### Phase 5.1: 註冊流程UI改造（2-3天）
-
-#### 5.1.1 Step 0: Email 檢核頁面
-
-**檔案**: `/components/signup/EmailCheckStep.tsx`（新增）
-
-```typescript
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
-import { useNotification } from '../notifications/NotificationContext';
-
-export function EmailCheckStep() {
-  const [email, setEmail] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
-  const { showToast } = useNotification();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      const result = await apiRequestJson<{
-        success: boolean;
-        data: {
-          exists: boolean;
-          message: string;
-        };
-      }>(buildApiUrl('/auth-v2/check-email'), {
-        method: 'POST',
-        body: JSON.stringify({ email })
-      });
-
-      if (result.success) {
-        if (result.data.exists) {
-          showToast('此 Email 已被註冊，請直接登入', 'warning');
-          navigate('/login', { state: { email } });
-        } else {
-          showToast('Email 可以使用', 'success');
-          navigate('/signup/step1', { state: { email } });
-        }
-      }
-    } catch (error) {
-      showToast(error.message, 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>註冊 Uknow 帳號</CardTitle>
-          <CardDescription>請先輸入您的 Email 地址</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email 地址</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? '檢查中...' : '繼續'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-```
-
----
-
-#### 5.1.2 Step 2: 資料完善（新增身分證 + 推薦碼即時驗證）
-
-**檔案**: `/components/signup/ProfileStep.tsx`（修改）
-
-```typescript
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
-import { useNotification } from '../notifications/NotificationContext';
 import { Check, X, Loader2 } from 'lucide-react';
 
-export function ProfileStep({ token, onComplete }: { token: string; onComplete: () => void }) {
-  const [formData, setFormData] = useState({
-    realName: '',
-    idNumber: '',
-    birthDate: '',
-    phone: '',
-    referralCode: ''
-  });
-  
-  const [referralStatus, setReferralStatus] = useState<{
-    checking: boolean;
-    valid: boolean | null;
-    referrerName: string | null;
-    error: string | null;
-  }>({
-    checking: false,
-    valid: null,
-    referrerName: null,
-    error: null
-  });
-  
-  const [isLoading, setIsLoading] = useState(false);
-  const { showToast } = useNotification();
+const [formData, setFormData] = useState({
+  name: '',
+  phone: '',
+  birthDate: '',
+  referralCode: '', // ✅ 新增
+  agreedToTerms: false,
+});
 
-  // ✅ 推薦碼即時驗證
-  useEffect(() => {
-    const verifyReferralCode = async () => {
-      if (formData.referralCode.length === 9) {
-        setReferralStatus({ checking: true, valid: null, referrerName: null, error: null });
+const [referralStatus, setReferralStatus] = useState<{
+  checking: boolean;
+  valid: boolean | null;
+  referrerName: string | null;
+  error: string | null;
+}>({
+  checking: false,
+  valid: null,
+  referrerName: null,
+  error: null
+});
+
+// ✅ 推薦碼即時驗證
+useEffect(() => {
+  const verifyReferralCode = async () => {
+    if (formData.referralCode.length === 9) {
+      setReferralStatus({ checking: true, valid: null, referrerName: null, error: null });
+      
+      try {
+        const result = await apiRequestJson<{
+          success: boolean;
+          data: {
+            valid: boolean;
+            referrerName?: string;
+            error?: string;
+          };
+        }>(buildApiUrl('/auth/verify-referral-code'), {
+          method: 'POST',
+          body: JSON.stringify({ code: formData.referralCode })
+        });
         
-        try {
-          const result = await apiRequestJson<{
-            success: boolean;
-            data: {
-              valid: boolean;
-              referrerName?: string;
-              error?: string;
-            };
-          }>(buildApiUrl('/auth-v2/verify-referral-code'), {
-            method: 'POST',
-            body: JSON.stringify({ code: formData.referralCode })
+        if (result.success && result.data.valid) {
+          setReferralStatus({
+            checking: false,
+            valid: true,
+            referrerName: result.data.referrerName || null,
+            error: null
           });
-          
-          if (result.success && result.data.valid) {
-            setReferralStatus({
-              checking: false,
-              valid: true,
-              referrerName: result.data.referrerName || null,
-              error: null
-            });
-          } else {
-            setReferralStatus({
-              checking: false,
-              valid: false,
-              referrerName: null,
-              error: result.data.error || '推薦碼無效'
-            });
-          }
-        } catch (error) {
+        } else {
           setReferralStatus({
             checking: false,
             valid: false,
             referrerName: null,
-            error: '驗證失敗'
+            error: result.data.error || '推薦碼無效'
           });
         }
-      } else if (formData.referralCode.length === 0) {
-        setReferralStatus({ checking: false, valid: null, referrerName: null, error: null });
+      } catch (error) {
+        setReferralStatus({
+          checking: false,
+          valid: false,
+          referrerName: null,
+          error: '驗證失敗'
+        });
       }
-    };
+    } else if (formData.referralCode.length === 0) {
+      setReferralStatus({ checking: false, valid: null, referrerName: null, error: null });
+    }
+  };
+  
+  const debounce = setTimeout(verifyReferralCode, 500);
+  return () => clearTimeout(debounce);
+}, [formData.referralCode]);
+
+// ✅ JSX：新增推薦碼輸入欄位
+<div className="space-y-2">
+  <Label htmlFor="referralCode">推薦碼（選填）</Label>
+  <div className="relative">
+    <Input
+      id="referralCode"
+      value={formData.referralCode}
+      onChange={(e) => setFormData({ ...formData, referralCode: e.target.value.toLowerCase() })}
+      placeholder="abc123456"
+      maxLength={9}
+      className={referralStatus.valid === true ? 'border-green-500' : referralStatus.valid === false ? 'border-red-500' : ''}
+    />
     
-    const debounce = setTimeout(verifyReferralCode, 500);
-    return () => clearTimeout(debounce);
-  }, [formData.referralCode]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      const result = await apiRequestJson<{
-        success: boolean;
-        data?: {
-          message: string;
-          referrerName: string | null;
-          nextStep: number;
-        };
-        error?: { message: string };
-      }>(buildApiUrl('/auth-v2/signup/step2'), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (result.success) {
-        showToast('資料填寫完成', 'success');
-        onComplete();
-      } else {
-        showToast(result.error?.message || '儲存失敗', 'error');
-      }
-    } catch (error) {
-      showToast(error.message, 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle>資料完善</CardTitle>
-        <CardDescription>請填寫您的個人資料</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 真實姓名 */}
-          <div>
-            <Label htmlFor="realName">真實姓名 *</Label>
-            <Input
-              id="realName"
-              value={formData.realName}
-              onChange={(e) => setFormData({ ...formData, realName: e.target.value })}
-              required
-            />
-            <p className="text-sm text-muted-foreground mt-1">
-              用於提領驗證，修改後將同步到所有顯示處
-            </p>
-          </div>
-
-          {/* 身分證字號 */}
-          <div>
-            <Label htmlFor="idNumber">身分證字號 *</Label>
-            <Input
-              id="idNumber"
-              value={formData.idNumber}
-              onChange={(e) => setFormData({ ...formData, idNumber: e.target.value.toUpperCase() })}
-              placeholder="A123456789"
-              maxLength={10}
-              required
-            />
-            <p className="text-sm text-muted-foreground mt-1">
-              格式：1個大寫英文字母 + 9個數字
-            </p>
-          </div>
-
-          {/* 出生日期 */}
-          <div>
-            <Label htmlFor="birthDate">出生日期 *</Label>
-            <Input
-              id="birthDate"
-              type="date"
-              value={formData.birthDate}
-              onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-              required
-            />
-            <p className="text-sm text-muted-foreground mt-1">
-              限制 18 歲以上
-            </p>
-          </div>
-
-          {/* 手機號碼 */}
-          <div>
-            <Label htmlFor="phone">手機號碼 *</Label>
-            <Input
-              id="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="0912345678"
-              maxLength={10}
-              required
-            />
-          </div>
-
-          {/* 推薦碼（選填） */}
-          <div>
-            <Label htmlFor="referralCode">推薦碼（選填）</Label>
-            <div className="relative">
-              <Input
-                id="referralCode"
-                value={formData.referralCode}
-                onChange={(e) => setFormData({ ...formData, referralCode: e.target.value.toLowerCase() })}
-                placeholder="abc123456"
-                maxLength={9}
-                className={referralStatus.valid === true ? 'border-green-500' : referralStatus.valid === false ? 'border-red-500' : ''}
-              />
-              
-              {/* 即時驗證狀態 */}
-              {referralStatus.checking && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-              
-              {referralStatus.valid === true && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Check className="h-5 w-5 text-green-600" />
-                </div>
-              )}
-              
-              {referralStatus.valid === false && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <X className="h-5 w-5 text-red-600" />
-                </div>
-              )}
-            </div>
-            
-            {/* 推薦人名稱顯示 */}
-            {referralStatus.valid === true && referralStatus.referrerName && (
-              <p className="text-sm text-green-600 mt-1 flex items-center gap-1">
-                <Check className="h-4 w-4" />
-                推薦人：{referralStatus.referrerName}
-              </p>
-            )}
-            
-            {referralStatus.valid === false && referralStatus.error && (
-              <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
-                <X className="h-4 w-4" />
-                {referralStatus.error}
-              </p>
-            )}
-            
-            <p className="text-sm text-muted-foreground mt-1">
-              格式：3個小寫英文字母 + 6個數字
-            </p>
-          </div>
-
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? '儲存中...' : '儲存並繼續'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
+    {/* 即時驗證狀態 */}
+    {referralStatus.checking && (
+      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    )}
+    
+    {referralStatus.valid === true && (
+      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+        <Check className="h-5 w-5 text-green-600" />
+      </div>
+    )}
+    
+    {referralStatus.valid === false && (
+      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+        <X className="h-5 w-5 text-red-600" />
+      </div>
+    )}
+  </div>
+  
+  {/* 推薦人名稱顯示 */}
+  {referralStatus.valid === true && referralStatus.referrerName && (
+    <p className="text-sm text-green-600 flex items-center gap-1">
+      <Check className="h-4 w-4" />
+      推薦人：{referralStatus.referrerName}
+    </p>
+  )}
+  
+  {referralStatus.valid === false && referralStatus.error && (
+    <p className="text-sm text-red-600 flex items-center gap-1">
+      <X className="h-4 w-4" />
+      {referralStatus.error}
+    </p>
+  )}
+  
+  <p className="text-sm text-muted-foreground">
+    格式：3個小寫英文字母 + 6個數字
+  </p>
+</div>
 ```
 
 ---
 
-### Phase 5.2: 會員中心UI改造（2-3天）
+### Phase 6.3: 新增付款流程頁面（2-3天）
 
-#### 5.2.1 帳號狀態顯示
+#### 6.3.1 PaymentPage 組件
 
-**檔案**: `/components/dashboard/AccountStatusCard.tsx`（新增）
-
-```typescript
-import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { AlertCircle, CheckCircle, XCircle, Clock } from 'lucide-react';
-
-type AccountStatus = 'Active' | 'Canceled' | 'Grace' | 'Fail';
-
-interface AccountStatusCardProps {
-  status: AccountStatus;
-  subscription: {
-    endDate: string;
-    gracePeriodEnd?: string;
-  } | null;
-  onRenew?: () => void;
-  onCancel?: () => void;
-}
-
-export function AccountStatusCard({ status, subscription, onRenew, onCancel }: AccountStatusCardProps) {
-  const statusConfig = {
-    Active: {
-      icon: <CheckCircle className="h-5 w-5 text-green-600" />,
-      badge: <Badge className="bg-green-600 text-white">訂閱中</Badge>,
-      description: '您的帳號運作正常，可以正常使用所有功能。',
-      color: 'border-green-200 bg-green-50'
-    },
-    Canceled: {
-      icon: <Clock className="h-5 w-5 text-orange-600" />,
-      badge: <Badge className="bg-orange-600 text-white">已取消</Badge>,
-      description: '訂閱已取消，權益將持續到到期日。',
-      color: 'border-orange-200 bg-orange-50'
-    },
-    Grace: {
-      icon: <AlertCircle className="h-5 w-5 text-yellow-600" />,
-      badge: <Badge className="bg-yellow-600 text-white">即將失效</Badge>,
-      description: '訂閱已逾期，刊登已隱藏。請於60天內補繳以恢復權益。',
-      color: 'border-yellow-200 bg-yellow-50'
-    },
-    Fail: {
-      icon: <XCircle className="h-5 w-5 text-red-600" />,
-      badge: <Badge className="bg-red-600 text-white">永久失效</Badge>,
-      description: '帳號已失效，推薦碼已作廢，點數已歸零。請重新訂閱以恢復使用。',
-      color: 'border-red-200 bg-red-50'
-    }
-  };
-
-  const config = statusConfig[status];
-
-  return (
-    <Card className={`${config.color} border-2`}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {config.icon}
-            <CardTitle>帳號狀態</CardTitle>
-          </div>
-          {config.badge}
-        </div>
-        <CardDescription>{config.description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {subscription && (
-          <div className="text-sm space-y-1">
-            <p>訂閱到期日：<span className="font-medium">{subscription.endDate}</span></p>
-            {status === 'Grace' && subscription.gracePeriodEnd && (
-              <p className="text-yellow-600">
-                補繳期限：<span className="font-medium">{subscription.gracePeriodEnd}</span>
-              </p>
-            )}
-          </div>
-        )}
-        
-        <div className="flex gap-2">
-          {status === 'Grace' && onRenew && (
-            <Button onClick={onRenew} className="flex-1 bg-green-600 hover:bg-green-700">
-              立即補繳
-            </Button>
-          )}
-          
-          {status === 'Fail' && onRenew && (
-            <Button onClick={onRenew} className="flex-1 bg-blue-600 hover:bg-blue-700">
-              重新訂閱
-            </Button>
-          )}
-          
-          {status === 'Active' && onCancel && (
-            <Button onClick={onCancel} variant="outline" className="flex-1">
-              取消訂閱
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-```
-
----
-
-#### 5.2.2 推薦樹顯示（改為用戶級別）
-
-**檔案**: `/components/referral/ReferralTreeView.tsx`（修改）
+**檔案**: `/components/PaymentPage.tsx`（新增）
 
 ```typescript
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Eye, ChevronDown, ChevronRight } from 'lucide-react';
-import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
-import { getAccessToken } from '../../utils/auth';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Loader2 } from 'lucide-react';
+import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import { getAccessToken } from '../utils/auth';
+import { useNotification } from './notifications/NotificationContext';
 
-interface ReferralMember {
-  userId: string;
-  userName: string;
-  accountStatus: 'Active' | 'Canceled' | 'Grace' | 'Fail';
-  referredAt: string;
-  activeReferralCodeId: string | null;
-}
+export function PaymentPage() {
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { showToast } = useNotification();
 
-interface ReferralTree {
-  firstGeneration: ReferralMember[];
-  secondGeneration: ReferralMember[];
-  thirdGeneration: ReferralMember[];
-  lastUpdated: string;
-}
+  const handlePayment = async () => {
+    setIsLoading(true);
 
-export function ReferralTreeView() {
-  const [tree, setTree] = useState<ReferralTree | null>(null);
-  const [summary, setSummary] = useState({
-    totalReferrals: 0,
-    firstGenCount: 0,
-    secondGenCount: 0,
-    thirdGenCount: 0,
-    activeCount: 0
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [expandedGen, setExpandedGen] = useState<number[]>([1]); // 預設展開第1代
-
-  useEffect(() => {
-    fetchReferralTree();
-  }, []);
-
-  const fetchReferralTree = async () => {
     try {
       const token = await getAccessToken();
       const result = await apiRequestJson<{
         success: boolean;
         data: {
-          tree: ReferralTree;
-          summary: typeof summary;
+          orderId: string;
+          amount: number;
+          paymentUrl: string;
+          paymentData: any;
         };
-      }>(buildApiUrl('/user/referral-tree'), {
+      }>(buildApiUrl('/payment/create-order'), {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
 
       if (result.success) {
-        setTree(result.data.tree);
-        setSummary(result.data.summary);
+        // TODO: 跳轉到藍新金流付款頁面
+        // window.location.href = result.data.paymentUrl;
+        
+        // 暫時模擬付款成功
+        showToast('正在處理付款...', 'info');
+        
+        setTimeout(() => {
+          navigate('/payment/success');
+        }, 2000);
       }
     } catch (error) {
-      console.error('獲取推薦樹失敗:', error);
+      showToast(error.message, 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const toggleGeneration = (gen: number) => {
-    setExpandedGen(prev =>
-      prev.includes(gen) ? prev.filter(g => g !== gen) : [...prev, gen]
-    );
-  };
-
-  const renderMember = (member: ReferralMember, generation: number) => {
-    const statusColors = {
-      Active: 'bg-green-600 text-white',
-      Canceled: 'bg-orange-600 text-white',
-      Grace: 'bg-yellow-600 text-white',
-      Fail: 'bg-red-600 text-white'
-    };
-    
-    const statusLabels = {
-      Active: '訂閱中',
-      Canceled: '已取消',
-      Grace: '即將失效',
-      Fail: '永久失效'
-    };
-
-    return (
-      <Card key={member.userId} className="p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{member.userName}</p>
-            <p className="text-sm text-muted-foreground truncate">
-              {new Date(member.referredAt).toLocaleDateString()}
-            </p>
-          </div>
-          
-          <Badge className={`${statusColors[member.accountStatus]} text-xs ml-2 shrink-0`}>
-            {statusLabels[member.accountStatus]}
-          </Badge>
-        </div>
-      </Card>
-    );
-  };
-
-  const renderGeneration = (
-    members: ReferralMember[],
-    generation: number,
-    label: string,
-    badgeColor: string
-  ) => {
-    const isExpanded = expandedGen.includes(generation);
-
-    return (
-      <div>
-        <Button
-          variant="ghost"
-          className="w-full justify-between p-3 h-auto"
-          onClick={() => toggleGeneration(generation)}
-        >
-          <div className="flex items-center gap-2">
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <span className="font-medium">{label}</span>
-            <Badge className={badgeColor}>{members.length}</Badge>
-          </div>
-        </Button>
-
-        {isExpanded && (
-          <div className="mt-2 space-y-2 pl-4">
-            {members.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                尚無{label}推薦
-              </p>
-            ) : (
-              members.map(member => renderMember(member, generation))
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <p className="text-muted-foreground">載入中...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <div className="space-y-4">
-      {/* 統計摘要 */}
+    <div className="max-w-md mx-auto mt-12">
       <Card>
-        <CardHeader>
-          <CardTitle>推薦統計</CardTitle>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">付款年費</CardTitle>
+          <CardDescription>完成最後一步，開始使用 Uknow</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{summary.totalReferrals}</p>
-              <p className="text-sm text-muted-foreground">總推薦數</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">{summary.activeCount}</p>
-              <p className="text-sm text-muted-foreground">活躍會員</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{summary.firstGenCount}</p>
-              <p className="text-sm text-muted-foreground">第1代</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{summary.secondGenCount}</p>
-              <p className="text-sm text-muted-foreground">第2代</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{summary.thirdGenCount}</p>
-              <p className="text-sm text-muted-foreground">第3代</p>
-            </div>
+        <CardContent className="space-y-6">
+          <div className="bg-muted p-6 rounded-lg text-center">
+            <p className="text-sm text-muted-foreground mb-2">年費金額</p>
+            <p className="text-4xl font-bold text-primary">NT$ 1,200</p>
+            <p className="text-sm text-muted-foreground mt-2">訂閱期限：1 年</p>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* 推薦樹 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>我的推薦組織</CardTitle>
-          <CardDescription>
-            最後更新：{tree ? new Date(tree.lastUpdated).toLocaleString() : '-'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {renderGeneration(tree?.firstGeneration || [], 1, '第1代', 'bg-green-600 text-white')}
-          {renderGeneration(tree?.secondGeneration || [], 2, '第2代', 'bg-purple-600 text-white')}
-          {renderGeneration(tree?.thirdGeneration || [], 3, '第3代', 'bg-orange-600 text-white')}
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>✅ 建立您的專屬刊登</p>
+            <p>✅ 獲得專屬推薦碼</p>
+            <p>✅ 享有推薦獎勵</p>
+            <p>✅ 參與任務活動</p>
+          </div>
+
+          <Button
+            onClick={handlePayment}
+            disabled={isLoading}
+            className="w-full"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                處理中...
+              </>
+            ) : (
+              '前往付款'
+            )}
+          </Button>
+
+          <p className="text-xs text-center text-muted-foreground">
+            付款成功後，將自動生成您的推薦碼
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -2457,36 +1659,154 @@ export function ReferralTreeView() {
 
 ---
 
-## 6. 風險評估與緩解策略
+#### 6.3.2 PaymentSuccessPage 組件
 
-### 6.1 高風險項目
+**檔案**: `/components/PaymentSuccessPage.tsx`（新增）
+
+```typescript
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { CheckCircle } from 'lucide-react';
+
+export function PaymentSuccessPage() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="max-w-md mx-auto mt-12">
+      <Card>
+        <CardHeader className="text-center">
+          <div className="flex justify-center mb-4">
+            <CheckCircle className="h-16 w-16 text-green-600" />
+          </div>
+          <CardTitle className="text-2xl">付款成功！</CardTitle>
+          <CardDescription>歡迎加入 Uknow</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 text-center">
+          <div className="space-y-2">
+            <p className="text-muted-foreground">您的帳號已成功激活</p>
+            <p className="text-muted-foreground">推薦碼已自動生成</p>
+          </div>
+
+          <Button
+            onClick={() => navigate('/dashboard')}
+            className="w-full"
+          >
+            前往會員中心
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+---
+
+### Phase 6.4: 修改刊登管理 UI（限制一個刊登）（1-2天）
+
+#### 6.4.1 ServiceProviderManagement 組件
+
+**檔案**: `/components/ServiceProviderManagement.tsx`
+
+**修改點**:
+```typescript
+// ✅ 移除「我的刊登列表」概念
+// ✅ 改為單一刊登的顯示/編輯
+
+const [listing, setListing] = useState<Listing | null>(null); // 單一刊登
+const [isLoading, setIsLoading] = useState(true);
+
+useEffect(() => {
+  fetchListing();
+}, []);
+
+const fetchListing = async () => {
+  try {
+    const token = await getAccessToken();
+    const result = await apiRequestJson<{
+      success: boolean;
+      data: { listing: Listing | null };
+    }>(buildApiUrl('/listings'), {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (result.success) {
+      setListing(result.data.listing);
+    }
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// ✅ JSX: 單一刊登顯示
+{listing ? (
+  <Card>
+    <CardHeader>
+      <div className="flex items-center justify-between">
+        <CardTitle>我的刊登</CardTitle>
+        <Button onClick={() => navigate(`/edit-service-provider/${listing.id}`)}>
+          編輯
+        </Button>
+      </div>
+    </CardHeader>
+    <CardContent>
+      {/* 顯示刊登詳情 */}
+    </CardContent>
+  </Card>
+) : (
+  <Card>
+    <CardHeader>
+      <CardTitle>建立刊登</CardTitle>
+      <CardDescription>您尚未建立刊登，立即開始吧！</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <Button onClick={() => navigate('/create-service-provider')}>
+        建立我的刊登
+      </Button>
+    </CardContent>
+  </Card>
+)}
+
+// ❌ 移除「新增刊登」按鈕（如果已有刊登）
+```
+
+---
+
+## 7. 風險評估與緩解策略
+
+### 7.1 高風險項目
 
 | 風險 | 影響 | 機率 | 緩解策略 |
 |------|------|------|----------|
-| **推薦碼綁定改變導致歷史資料錯亂** | 🔴 極高 | 🟡 中 | 分階段遷移，保留舊資料作為備份 |
-| **狀態機邏輯複雜導致 Bug** | 🔴 高 | 🟢 高 | 詳細的單元測試，狀態轉換表驗證 |
+| **推薦碼綁定改變導致歷史資料錯亂** | 🔴 極高 | 🟡 中 | 服務尚未上線，無歷史資料問題 ✅ |
+| **限制一個刊登導致用戶困惑** | 🟡 中 | 🟢 高 | 前端清楚提示，API 返回友好錯誤 |
+| **付款流程整合失敗** | 🔴 高 | 🟡 中 | 先實作模擬付款，再整合藍新金流 |
+| **移除身分證導致提領驗證問題** | 🟡 中 | 🟢 低 | 提領時再要求填寫身分證 |
 | **補繳邏輯計算錯誤** | 🔴 高 | 🟡 中 | 充分測試邊界條件（60天、跨年） |
-| **推薦關係遞歸深度過深** | 🟡 中 | 🟢 低 | 限制3代，時間複雜度 O(1) |
-| **身分證唯一性檢核漏洞** | 🔴 高 | 🟢 低 | 雙重驗證（格式+唯一性） |
 
-### 6.2 測試策略
+### 7.2 測試策略
 
 1. **單元測試**:
    - 推薦碼生成（唯一性、格式）
-   - 狀態機轉換（所有路徑）
+   - 推薦碼驗證（格式、狀態）
    - 補繳計算（接續原到期日）
-   - 推薦關係建立（3代遞歸）
+   - 一個刊登限制（創建時檢查）
 
 2. **整合測試**:
-   - 完整註冊流程（Step 0 → Step 3）
-   - 狀態轉換流程（Active → Grace → Fail）
-   - 補繳流程（Grace → Active）
-   - 重新訂閱流程（Fail → Active）
+   - 完整註冊流程（Step 1 → Step 5）
+   - 推薦關係建立（3代遞歸）
+   - 付款成功後的自動化流程
 
-3. **壓力測試**:
-   - Cron job 處理大量用戶
-   - 推薦樹重建效能
-   - 並發付款請求
+3. **用戶測試**:
+   - 推薦碼即時驗證體驗
+   - 付款流程流暢性
+   - 一個刊登限制的理解度
 
 ---
 
@@ -2494,31 +1814,40 @@ export function ReferralTreeView() {
 
 ### 核心變化
 
-1. **推薦碼綁定從 Listing 改為 User**（最大變化）
-2. **新增4狀態帳號狀態機**（Active, Canceled, Grace, Fail）
-3. **訂閱綁定從 Listing 改為 User**
-4. **新增身分證字號唯一性檢核**
-5. **推薦碼即時驗證與推薦人姓名顯示**
-6. **補繳機制：60天內，周期接續原到期日**
+1. ✅ **移除身分證字號收集**（降低隱私風險）
+2. �� **限制一個帳號一個刊登**（極大簡化系統）
+3. ✅ **推薦碼綁定從 Listing 改為 User**（最大變化）
+4. ✅ **新增4狀態帳號狀態機**（Active, Canceled, Grace, Fail）
+5. ✅ **新增推薦碼即時驗證**（顯示推薦人姓名）
+6. ✅ **新增付款流程**（藍新金流，$1,200）
+7. ✅ **付款成功後立即建立推薦關係**
 
 ### 實施時程估計
 
 | Phase | 內容 | 時間 |
 |-------|------|------|
-| Phase 1 | 基礎架構準備 | 2-3天 |
-| Phase 2 | 註冊流程改造 | 3-4天 |
-| Phase 3 | 訂閱系統重構 | 2-3天 |
-| Phase 4 | 推薦系統重構 | 3-4天 |
-| Phase 5 | 前端UI改造 | 4-5天 |
+| Phase 1 | 移除身分證字號約束 | 1天 |
+| Phase 2 | 限制一個帳號一個刊登 | 2-3天 |
+| Phase 3 | 註冊流程改造（推薦碼） | 3-4天 |
+| Phase 4 | 付款流程整合（藍新金流） | 3-4天 |
+| Phase 5 | 推薦系統重構（狀態機） | 3-4天 |
+| Phase 6 | 前端UI改造 | 4-5天 |
 | **測試 & Debug** | **整合測試** | **3-4天** |
-| **總計** | | **17-23天** |
+| **總計** | | **19-26天** |
 
-### 下一步行動
+### 架構優勢
 
-1. ✅ **確認新規格細節**（與 PM 對齊）
-2. ✅ **審查本架構文檔**（技術團隊 Review）
-3. ⏳ **開始 Phase 1 實施**（資料結構定義）
+**簡化後的系統**:
+```
+1 User = 1 Subscription = 1 Referral Code = 1 Listing
+```
+
+**優點**:
+- ✅ 資料結構極度簡化
+- ✅ 推薦關係清晰明確
+- ✅ 訂閱管理邏輯一致
+- ✅ 無需維護多個刊登的狀態同步
 
 ---
 
-**✅ 文檔完成，等待實施指示！**
+**✅ 文檔更新完成，等待實施指示！**
