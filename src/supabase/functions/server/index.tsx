@@ -10,6 +10,7 @@ import subscriptions from "./subscriptions.ts";
 import rewards from "./rewards.ts";
 import tasks from "./tasks.ts";
 import cron from "./cron.ts";
+import payment from "./payment.ts"; // ✅ 新增：付款路由
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const app = new Hono();
@@ -98,5 +99,8 @@ app.route("/make-server-5c6718b9/tasks", tasks);
 
 // Cron Routes
 app.route("/make-server-5c6718b9/cron", cron);
+
+// Payment Routes
+app.route("/make-server-5c6718b9/payment", payment); // ✅ 新增：付款路由
 
 Deno.serve(app.fetch);

@@ -2,34 +2,60 @@ import * as kv from "./kv_store.tsx";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { verifyToken } from "./auth.ts";
 import { REWARD_CONFIG, SCHEDULE_STATUS } from "./reward_config.ts";
+import { updateTaskProgress, updateReferralMonthlyLog } from "./task_helpers.ts";
 
 // ===== 工具函數 =====
-const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
-// 生成10碼用戶ID（用於組成推薦碼）
-function generateUserId(): string {
-  let result = '';
-  for (let i = 0; i < 10; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+/**
+ * ✅ 新規格：生成推薦碼（3個小寫英文字母 + 6個數字）
+ * 格式：abc123456
+ * 
+ * @returns 9碼推薦碼
+ */
+function generateReferralCode(): string {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  
+  let code = '';
+  
+  // 3個小寫英文字母
+  for (let i = 0; i < 3; i++) {
+    code += letters.charAt(Math.floor(Math.random() * letters.length));
   }
-  return result;
-}
-
-// 生成6碼刊登ID（用於組成推薦碼）
-function generateListingId(): string {
-  let result = '';
+  
+  // 6個數字
   for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += numbers.charAt(Math.floor(Math.random() * numbers.length));
   }
-  return result;
+  
+  return code;
 }
 
-// 生成推薦碼（用戶ID 10碼 + 刊登ID 6碼 = 16碼）
-function generateReferralCode(publicUserId: string, publicListingId: string): string {
-  const userPart = publicUserId.substring(0, 10);
-  const listingPart = publicListingId.substring(0, 6);
-  return `${userPart}${listingPart}`;
-}
+/**
+ * ❌ 淘汰：舊的推薦碼生成方式（16碼，基於用戶ID+刊登ID）
+ * 保留供歷史數據查詢使用
+ */
+// function generateUserId(): string {
+//   let result = '';
+//   for (let i = 0; i < 10; i++) {
+//     result += chars.charAt(Math.floor(Math.random() * chars.length));
+//   }
+//   return result;
+// }
+
+// function generateListingId(): string {
+//   let result = '';
+//   for (let i = 0; i < 6; i++) {
+//     result += chars.charAt(Math.floor(Math.random() * chars.length));
+//   }
+//   return result;
+// }
+
+// function generateReferralCode(publicUserId: string, publicListingId: string): string {
+//   const userPart = publicUserId.substring(0, 10);
+//   const listingPart = publicListingId.substring(0, 6);
+//   return `${userPart}${listingPart}`;
+// }
 
 // ===== API: 驗證推薦碼 =====
 export async function verifyReferralCode(c: any) {
@@ -38,12 +64,21 @@ export async function verifyReferralCode(c: any) {
     
     console.log(`驗證推薦碼請求: code=${referralCode}, userId=${currentUserId}`);
     
-    // 格式驗證：必須是16碼
-    if (!referralCode || referralCode.length !== 16) {
-      console.log(`推薦碼格誤: 長度=${referralCode?.length}`);
+    // ✅ 新規格：格式驗證（3個小寫英文字母 + 6個數字 = 9碼）
+    if (!referralCode || referralCode.length !== 9) {
+      console.log(`推薦碼格式錯誤: 長度=${referralCode?.length}`);
       return c.json({
         valid: false,
-        error: { message: '推薦碼格式錯誤，應為16碼' }
+        error: { message: '推薦碼格式錯誤，應為9碼（3個小寫英文字母+6個數字）' }
+      }, 400);
+    }
+    
+    // ✅ 驗證推薦碼格式（abc123456）
+    if (!/^[a-z]{3}\d{6}$/.test(referralCode)) {
+      console.log(`推薦碼格式錯誤: ${referralCode}`);
+      return c.json({
+        valid: false,
+        error: { message: '推薦碼格式錯誤，應為3個小寫英文字母+6個數字' }
       }, 400);
     }
     
@@ -51,26 +86,20 @@ export async function verifyReferralCode(c: any) {
     const referralData = await kv.get(`referral_code:${referralCode}`);
     
     if (!referralData) {
-      console.log(`推薦碼不存在: ${referralCode}`);
+      console.log(`推不存在: ${referralCode}`);
       return c.json({
         valid: false,
         error: { message: '推薦碼不存在' }
       }, 404);
     }
     
-    // 檢查是否為用戶自己的推薦碼
-    const currentUserProfile = await kv.get(`user:${currentUserId}:profile`);
-    
-    if (currentUserProfile?.publicUserId) {
-      const referralUserPart = referralCode.substring(0, 10);
-      
-      if (referralUserPart === currentUserProfile.publicUserId) {
-        console.log(`用戶嘗試使用自己的推薦碼: ${referralCode}`);
-        return c.json({
-          valid: false,
-          error: { message: '不能使用自己的推薦碼' }
-        }, 400);
-      }
+    // ✅ 檢查是否為用戶自己的推薦碼
+    if (referralData.userId === currentUserId) {
+      console.log(`用戶嘗試使用自己的推薦碼: ${referralCode}`);
+      return c.json({
+        valid: false,
+        error: { message: '不能使用自己的推薦碼' }
+      }, 400);
     }
     
     console.log(`✅ 推薦碼驗證成功: ${referralCode} -> ${referralData.userName}`);
@@ -199,6 +228,21 @@ export async function createListing(c: any) {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
+    // ===== ✅ 步驟1.5: 檢查用戶是否已有刊登（新規格：一個用戶只能有一個刊登）=====
+    const existingListingId = await kv.get(`user:${user.id}:listing`);
+    if (existingListingId) {
+      console.log(`❌ 用戶已有刊登: ${existingListingId}`);
+      return c.json({
+        success: false,
+        error: {
+          code: 'LISTING_ALREADY_EXISTS',
+          message: '您已經有一個刊登，每個帳號只能建立一個刊登',
+          existingListingId
+        }
+      }, 400);
+    }
+    console.log('✅ 用戶尚未創建刊登，可以繼續');
+    
     // ===== 步驟2: 取得請求資料 =====
     const { referralCode, listingData } = await c.req.json();
     const subscriptionPlan = 'yearly'; // 固定為年費方案
@@ -239,65 +283,32 @@ export async function createListing(c: any) {
       return c.json({ error: { message: '用戶資料不存在' } }, 404);
     }
     
-    console.log(`✅ 用戶資料: name=${userProfile.name}, publicUserId=${userProfile.publicUserId}`);
+    console.log(`✅ 用戶資料: name=${userProfile.name}`);
     
-    // ===== 步驟4: 檢查並生成 Public User ID =====
-    let publicUserId = userProfile.publicUserId;
+    // ❌ 移除步驟4和步驟5不再需要 Public User ID 和 Public Listing ID
+    // 原因：新推薦碼格式不再基於這些 ID
     
-    if (!publicUserId) {
-      // 🔥 第一次創建刊登，生成 Public User ID
-      console.log('🔥 第一次創建刊登，生成 Public User ID...');
-      publicUserId = generateUserId();
-      
-      // 確保唯一性
-      let attempts = 0;
-      while (await kv.get(`public_user_id:${publicUserId}`)) {
-        console.log(`⚠️ Public User ID 衝突，重新生成: ${publicUserId}`);
-        publicUserId = generateUserId();
-        attempts++;
-        if (attempts > 10) {
-          throw new Error('無法生成唯一的 Public User ID');
-        }
-      }
-      
-      // 更新用戶資料
-      userProfile.publicUserId = publicUserId;
-      userProfile.updatedAt = new Date().toISOString();
-      await kv.set(`user:${user.id}:profile`, userProfile);
-      
-      // 建立反向映射
-      await kv.set(`public_user_id:${publicUserId}`, user.id);
-      
-      console.log(`✅ 為用戶 ${user.id} 生成 Public User ID: ${publicUserId}`);
-    } else {
-      console.log(`✅ 用戶已有 Public User ID: ${publicUserId}`);
-    }
-    
-    // ===== 步驟5: 生成 Public Listing ID =====
-    let publicListingId = generateListingId();
-    
-    // 確保唯一性
-    let attempts = 0;
-    while (await kv.get(`listing:${publicListingId}`)) {
-      console.log(`⚠️ Public Listing ID 衝突，重新生成: ${publicListingId}`);
-      publicListingId = generateListingId();
-      attempts++;
-      if (attempts > 10) {
-        throw new Error('無法生成唯一的 Public Listing ID');
-      }
-    }
-    
-    console.log(`✅ 生成 Public Listing ID: ${publicListingId}`);
-    
-    // ===== 步驟6: 生成內部 Listing ID =====
+    // ===== 步驟4: 生成內部 Listing ID =====
     const listingId = `listing_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     console.log(`✅ 生成內部 Listing ID: ${listingId}`);
     
-    // ===== 步驟7: 生成16碼推薦碼 =====
-    const newReferralCode = generateReferralCode(publicUserId, publicListingId);
-    console.log(`✅ 生成推薦碼: ${newReferralCode} (${publicUserId} + ${publicListingId})`);
+    // ===== 步驟5: 生成9碼推薦碼（新規格）=====
+    let newReferralCode = generateReferralCode();
     
-    // ===== 步驟8: 計算訂閱日期 =====
+    // 確保推薦碼唯一性
+    let codeAttempts = 0;
+    while (await kv.get(`referral_code:${newReferralCode}`)) {
+      console.log(`⚠️ 推薦碼衝突，重新生成: ${newReferralCode}`);
+      newReferralCode = generateReferralCode();
+      codeAttempts++;
+      if (codeAttempts > 10) {
+        throw new Error('無法生成唯一的推薦碼');
+      }
+    }
+    
+    console.log(`✅ 生成推薦碼: ${newReferralCode}`);
+    
+    // ===== 步驟6: 計算訂閱日期 =====
     const now = new Date();
     const createdAt = now.toISOString();
     const lastPaymentDate = now.toISOString();
@@ -310,12 +321,12 @@ export async function createListing(c: any) {
     activeUntil.setDate(activeUntil.getDate() - 1);
     activeUntil.setHours(23, 59, 59, 999);
     
-    console.log(`✅ 日期計算:`);
+    console.log(` 日期計算:`);
     console.log(`   創建: ${createdAt}`);
     console.log(`   下次付款: ${nextPaymentDate.toISOString()}`);
     console.log(`   有效期限: ${activeUntil.toISOString()}`);
     
-    // ===== 步驟9: 處理推薦人 =====
+    // ===== 步驟7: 處理推薦人 =====
     let referrerUserId = null;
     let referrerListingId = null;  // 新增：推薦者的刊登 ID
     if (referralCode && referralCode !== 'DEFAULTRCM01') {
@@ -326,15 +337,13 @@ export async function createListing(c: any) {
         console.log(`✅ 推薦人: ${referralData.userName} (${referrerUserId}), 推薦刊登: ${referrerListingId}`);
       }
     } else {
-      console.log('ℹ️ 無推薦人');
+      console.log('ℹ 無推薦人');
     }
     
-    // ===== 步驟10: 組裝刊登資料 =====
+    // ===== 步驟8: 組裝刊登資料 =====
     const listing = {
       id: listingId,
-      publicListingId,
       userId: user.id,
-      userPublicId: publicUserId,
       name: listingData.name,
       category: listingData.category,
       gender: listingData.gender,        // ✅ 新增性別字段
@@ -345,7 +354,7 @@ export async function createListing(c: any) {
       contacts: listingData.contacts,
       subscriptionPlan,
       referrerUserId,
-      referrerListingId,                 // ✅ 新增：推薦者的刊登 ID
+      referrerListingId,                 // ✅ 新增：推薦的刊登 ID
       referralCode: newReferralCode,
       createdAt,
       lastPaymentDate,
@@ -353,20 +362,23 @@ export async function createListing(c: any) {
       activeUntil: activeUntil.toISOString()
     };
     
-    // ===== 步驟11: 儲存到 KV Store =====
+    // ===== 步驟9: 儲存到 KV Store =====
     console.log('💾 開始儲存資料...');
     
-    // 11.1 儲存刊登資料
+    // 9.1 儲存刊登資料
     await kv.set(`listing:${listingId}`, listing);
     console.log(`✅ 儲存刊登: listing:${listingId}`);
     
-    // 11.2 更新用戶的刊登列表
-    const userListings = await kv.get(`user:${user.id}:listings`) || [];
-    userListings.push(listingId);
-    await kv.set(`user:${user.id}:listings`, userListings);
-    console.log(`✅ 更新用戶刊登列表: ${userListings.length} 個刊登`);
+    // 9.2 ✅ 儲存用戶的刊登 ID（新規格：單一值，不是陣列）
+    await kv.set(`user:${user.id}:listing`, listingId);
+    console.log(`✅ 儲存用戶的刊登 ID: user:${user.id}:listing = ${listingId}`);
     
-    // 11.3 儲存推薦碼映射
+    // ❌ 移除舊的陣列儲存方式
+    // const userListings = await kv.get(`user:${user.id}:listings`) || [];
+    // userListings.push(listingId);
+    // await kv.set(`user:${user.id}:listings`, userListings);
+    
+    // 9.3 儲存推薦碼映射
     await kv.set(`referral_code:${newReferralCode}`, {
       listingId,
       userId: user.id,
@@ -374,7 +386,7 @@ export async function createListing(c: any) {
     });
     console.log(`✅ 儲存推薦碼映射: referral_code:${newReferralCode}`);
     
-    // ===== 步驟11.4: 處理推薦獎勵（如果有推薦人）=====
+    // ===== 步驟9.4: 處理推薦獎勵（如果有推薦人）=====
     if (referrerUserId && referrerListingId) {
       try {
         console.log('🎁 開始處理推薦獎勵...');
@@ -391,12 +403,11 @@ export async function createListing(c: any) {
       }
     }
     
-    // ===== 步驟12: 返回成功 =====
+    // ===== 步驟10: 返回成功 =====
     console.log('========== ✅ 刊登創建成功 ==========');
     return c.json({
       success: true,
       listingId,
-      publicListingId,
       referralCode: newReferralCode,
       activeUntil: activeUntil.toISOString(),
       nextPaymentDate: nextPaymentDate.toISOString()
@@ -416,10 +427,10 @@ export async function createListing(c: any) {
   }
 }
 
-// ===== API: 獲取用戶的所有刊登 =====
+// ===== API: 獲取用戶的刊登（新規格：單一刊登）=====
 export async function getUserListings(c: any) {
   try {
-    console.log('========== 獲取用戶刊登列表 ==========');
+    console.log('========== 獲取用戶刊登 ==========');
     
     // JWT 驗證 - 使用統一的 verifyToken 函數
     const authHeader = c.req.header('Authorization');
@@ -439,41 +450,42 @@ export async function getUserListings(c: any) {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 獲取用戶的刊登 ID 列表
-    const listingIds = await kv.get(`user:${user.id}:listings`) || [];
-    console.log(`用戶刊登數量: ${listingIds.length}`);
+    // ✅ 獲取用戶的單一刊登 ID（新規格：不是陣列）
+    const listingId = await kv.get(`user:${user.id}:listing`);
     
-    if (listingIds.length === 0) {
-      return c.json({ success: true, listings: [] });
+    if (!listingId) {
+      console.log('ℹ️ 戶尚未創建刊登');
+      return c.json({ 
+        success: true, 
+        listing: null  // ✅ 返回單一值
+      });
     }
     
-    // 批量讀取刊登詳情
-    const listings = await Promise.all(
-      listingIds.map(async (id: string) => {
-        try {
-          return await kv.get(`listing:${id}`);
-        } catch (error) {
-          console.error(`讀取刊登失敗: ${id}`, error);
-          return null;
-        }
-      })
-    );
+    console.log(`✅ 用戶刊登 ID: ${listingId}`);
     
-    // 過濾掉 null 值
-    const validListings = listings.filter(l => l !== null);
+    // ✅ 讀取刊登詳情
+    const listing = await kv.get(`listing:${listingId}`);
     
-    // 按創建日期降序排序
-    validListings.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    if (!listing) {
+      console.error(`❌ 刊登數據不存在: ${listingId}`);
+      // 資料不一致，清理索引
+      await kv.del(`user:${user.id}:listing`);
+      return c.json({ 
+        success: true, 
+        listing: null 
+      });
+    }
     
-    console.log(`✅ 返回 ${validListings.length} 個刊登`);
-    return c.json({ success: true, listings: validListings });
+    console.log(`✅ 返回刊登: ${listing.name}`);
+    return c.json({ 
+      success: true, 
+      listing  // ✅ 返回單一對象
+    });
     
   } catch (error) {
     console.error('❌ 獲取用戶刊登失敗:', error);
     return c.json({
-      error: { message: '獲取刊登列表失敗', details: error.message }
+      error: { message: '獲取刊登失敗', details: error.message }
     }, 500);
   }
 }
@@ -488,7 +500,7 @@ export async function getAllActiveListings(c: any) {
     console.log(`KV Store 返回數據數量: ${allData.length}`);
     
     // 過濾出完整刊登對象（排除 publicListingId 映射）
-    // listing:listing_xxx ✅ 保留（完整刊登數據，值是對象且有 id 字段）
+    // listing:listing_xxx ✅ 保留完整刊登數據，值是對象且有 id 字段）
     // listing:mV7hJ2 ❌ 跳過（publicListingId 映射，值是字符串）
     const listings = allData.filter((item: any) => {
       return typeof item === 'object' && item !== null && item.id && item.id.startsWith('listing_');
@@ -528,7 +540,7 @@ export async function getAllActiveListings(c: any) {
   } catch (error) {
     console.error('❌ 獲取活躍刊登失敗:', error);
     return c.json({
-      error: { message: '獲取刊登列表失敗', details: error.message }
+      error: { message: '取刊登列表失敗', details: error.message }
     }, 500);
   }
 }
@@ -819,7 +831,7 @@ async function processReferralRewards({
       // 更新推薦月度日誌（用於任務判定，只記錄第1代）
       await updateReferralMonthlyLog(firstGenAncestor.userId, newListing, createdAt);
       
-      // 更新任務進度（只有第1代才計入任務）
+      // 新任務進度（只有第1代才計入任務）
       await updateTaskProgress(firstGenAncestor.userId, createdAt);
     }
     
@@ -847,7 +859,7 @@ async function updateReferralTree(
     thirdGeneration: []
   };
   
-  // ===== 1. 獲取被推薦人用戶名 =====
+  // ===== 1. 獲被推薦人用戶名 =====
   const newUserProfile = await kv.get(`user:${newListing.userId}:profile`);
   const userName = newUserProfile?.name || '未知用戶';
   
@@ -1077,208 +1089,4 @@ async function createRewardSchedules(
   }
   
   console.log(`✅ 創建獎勵排程: user=${userId}, count=${schedules.length}, referee=${referee.userName}-${referee.listingName} (第2~12個月)`);
-}
-
-/**
- * 更新推薦月度日誌
- * 用於任務判定，只記錄第1代推薦
- * 
- * 同時維護：
- * 1. 用戶級別日誌：user:${userId}:referral_monthly_log
- * 2. 全局月度日誌：referral_monthly_log:${monthKey} (用於定時任務掃描)
- */
-async function updateReferralMonthlyLog(
-  userId: string,
-  newListing: any,
-  createdAt: Date
-) {
-  const monthKey = createdAt.toISOString().substring(0, 7); // "2024-12"
-  
-  // ===== 1. 獲取被推薦人完整信息 =====
-  const newUserProfile = await kv.get(`user:${newListing.userId}:profile`);
-  const referee = {
-    userId: newListing.userId,
-    userName: newUserProfile?.name || '未知用戶',
-    listingId: newListing.id,
-    listingName: newListing.name
-  };
-  
-  // ===== 2. 獲取推薦人完整信息（如果存在）=====
-  let referrer = null;
-  if (newListing.referrerUserId && newListing.referrerListingId) {
-    const referrerProfile = await kv.get(`user:${newListing.referrerUserId}:profile`);
-    const referrerListing = await kv.get(`listing:${newListing.referrerListingId}`);
-    
-    if (referrerProfile && referrerListing) {
-      referrer = {
-        userId: newListing.referrerUserId,
-        userName: referrerProfile.name,
-        listingId: newListing.referrerListingId,
-        listingName: referrerListing.name
-      };
-    }
-  }
-  
-  // ===== 3. 更新用戶級別日誌 =====
-  const userLogKey = `user:${userId}:referral_monthly_log`;
-  const userLog = await kv.get(userLogKey) || {};
-  
-  if (!userLog[monthKey]) {
-    userLog[monthKey] = [];
-  }
-  
-  userLog[monthKey].push({
-    listingId: newListing.id,
-    userId: newListing.userId,
-    userName: referee.userName,       // ✅ 新增
-    listingName: referee.listingName, // ✅ 新增
-    referrer,                          // ✅ 新增（可能為 null）
-    createdAt: createdAt.toISOString()
-  });
-  
-  await kv.set(userLogKey, userLog);
-  
-  // ===== 4. 更新全局月度日誌（用於定時任務掃描）=====
-  const globalLogKey = `referral_monthly_log:${monthKey}`;
-  const globalLog = await kv.get(globalLogKey) || {};
-  
-  if (!globalLog[userId]) {
-    globalLog[userId] = [];
-  }
-  
-  globalLog[userId].push({
-    listingId: newListing.id,
-    userId: newListing.userId,
-    userName: referee.userName,       // ✅ 新增
-    listingName: referee.listingName, // ✅ 新增
-    referrer,                          // ✅ 新增
-    createdAt: createdAt.toISOString()
-  });
-  
-  await kv.set(globalLogKey, globalLog);
-  
-  console.log(`✅ 更新月度日誌: user=${userId}, month=${monthKey}, referee=${referee.userName}-${referee.listingName}`);
-}
-
-/**
- * 更新任務進度
- * 只有第1代推薦才計入任務
- */
-async function updateTaskProgress(
-  userId: string,
-  createdAt: Date
-) {
-  const tasksKey = `user:${userId}:tasks`;
-  const tasks = await kv.get(tasksKey) || initializeDefaultTasks();
-  
-  const currentMonth = createdAt.toISOString().substring(0, 7); // "2024-01"
-  const currentDate = createdAt.toISOString().split('T')[0]; // "2024-01-15"
-  
-  // ===== 更新連續推薦任務 =====
-  if (!tasks.consecutiveReferral) {
-    tasks.consecutiveReferral = {
-      id: "task_consecutive",
-      type: "consecutive_referral",
-      title: "連續推薦達人",
-      description: "連續12個月每月至少推薦1位用戶",
-      target: REWARD_CONFIG.TASK_CONSECUTIVE_MONTHS,
-      currentStreak: 0,
-      startMonth: currentMonth,
-      lastActiveMonth: null,
-      monthlyRecord: {},
-      completed: false,
-      reward: REWARD_CONFIG.TASK_CONSECUTIVE_REWARD,
-      lastCheckedAt: null
-    };
-  }
-  
-  const consecutive = tasks.consecutiveReferral;
-  
-  // 檢查是否斷續
-  if (consecutive.lastActiveMonth) {
-    const lastDate = new Date(consecutive.lastActiveMonth + "-01");
-    const currentDateObj = new Date(currentMonth + "-01");
-    const monthsDiff = (currentDateObj.getFullYear() - lastDate.getFullYear()) * 12
-                     + (currentDateObj.getMonth() - lastDate.getMonth());
-    
-    if (monthsDiff > 1) {
-      // 斷續了，重置任務
-      console.log(`⚠️ 連續推薦任務斷續: 上次=${consecutive.lastActiveMonth}, 本次=${currentMonth}`);
-      consecutive.currentStreak = 0;
-      consecutive.startMonth = currentMonth;
-      consecutive.monthlyRecord = {};
-      consecutive.completed = false;
-    }
-  }
-  
-  // 更新本月記錄
-  if (!consecutive.monthlyRecord[currentMonth]) {
-    consecutive.monthlyRecord[currentMonth] = {
-      count: 0,
-      date: currentDate,
-      qualified: false
-    };
-  }
-  
-  consecutive.monthlyRecord[currentMonth].count += 1;
-  consecutive.monthlyRecord[currentMonth].qualified = true;
-  
-  // 如果是本月第一次推薦，連續月數+1
-  if (consecutive.monthlyRecord[currentMonth].count === 1) {
-    consecutive.currentStreak += 1;
-  }
-  
-  consecutive.lastActiveMonth = currentMonth;
-  
-  // ===== 更新推薦王任務 =====
-  if (!tasks.monthlyKing) {
-    tasks.monthlyKing = {
-      id: "task_monthly_king",
-      type: "monthly_king",
-      title: "推薦王",
-      description: "單月推薦10位以上用戶",
-      target: REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
-      currentMonth: currentMonth,
-      currentCount: 0,
-      completed: false,
-      reward: REWARD_CONFIG.TASK_MONTHLY_KING_REWARD,
-      history: []
-    };
-  }
-  
-  const king = tasks.monthlyKing;
-  
-  // 檢查是否換月
-  if (king.currentMonth !== currentMonth) {
-    // 將上個月記錄加入歷史
-    king.history.push({
-      month: king.currentMonth,
-      count: king.currentCount,
-      qualified: king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
-      checkedAt: null // 會在定時任務中更新
-    });
-    
-    // 重置本月
-    king.currentMonth = currentMonth;
-    king.currentCount = 0;
-    king.completed = false;
-  }
-  
-  king.currentCount += 1;
-  
-  tasks.lastUpdated = new Date().toISOString();
-  await kv.set(tasksKey, tasks);
-  
-  console.log(`✅ 更新任務進度: 連續=${consecutive.currentStreak}月, 本月=${king.currentCount}個`);
-}
-
-/**
- * 初始化預設任務
- */
-function initializeDefaultTasks() {
-  return {
-    consecutiveReferral: null,
-    monthlyKing: null,
-    lastUpdated: new Date().toISOString()
-  };
 }

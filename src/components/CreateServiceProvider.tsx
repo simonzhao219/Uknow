@@ -74,6 +74,50 @@ export function CreateServiceProvider() {
   const [listingTempId] = useState(`temp_${Date.now()}`);
   const supabase = createClient();
 
+  // ✅ 檢查用戶是否已有刊登（新規格：一個用戶只能有一個刊登）
+  useEffect(() => {
+    const checkExistingListing = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          showToast('請先登入', 'error');
+          navigate('/login');
+          return;
+        }
+
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/user`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          console.error('檢查刊登失敗');
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.listing) {
+          // 用戶已有刊登，導向編輯頁面
+          console.log('用戶已有刊登，導向編輯頁面');
+          showToast('您已經有一個刊登，每個帳號只能建立一個刊登', 'info');
+          navigate(`/service-providers/edit/${data.listing.id}`, { replace: true });
+        }
+      } catch (error) {
+        console.error('檢查刊登失敗:', error);
+      }
+    };
+    
+    checkExistingListing();
+  }, [user?.id, navigate, showToast, supabase]);
+
   // 載入最近使用的推薦碼
   useEffect(() => {
     const lastReferralCode = localStorage.getItem('lastReferralCode');
@@ -94,11 +138,20 @@ export function CreateServiceProvider() {
 
     setIsVerifyingCode(true);
     
-    // 檢查推薦碼長度（應該是16碼）
-    if (code.length !== 16) {
+    // ✅ 新規格：檢查推薦碼長度（應該是9碼：3個小寫英文字母+6個數字）
+    if (code.length !== 9) {
       setCodeVerified(false);
       setReferrerName("");
-      setErrors({...errors, referralCode: '推薦碼格式錯誤，應為16碼'});
+      setErrors({...errors, referralCode: '推薦碼格式錯誤，應為9碼（3個小寫英文字母+6個數字）'});
+      setIsVerifyingCode(false);
+      return;
+    }
+    
+    // ✅ 新規格：檢查推薦碼格式（abc123456）
+    if (!/^[a-z]{3}\d{6}$/.test(code)) {
+      setCodeVerified(false);
+      setReferrerName("");
+      setErrors({...errors, referralCode: '推薦碼格式錯誤，應為3個小寫英文字母+6個數字'});
       setIsVerifyingCode(false);
       return;
     }
@@ -155,8 +208,8 @@ export function CreateServiceProvider() {
     const code = e.target.value;
     setReferralCode(code);
     
-    // 即時驗證推薦（16碼時才驗證）
-    if (code.length >= 16) {
+    // ✅ 新規格：即時驗證推薦碼（9碼時才驗證）
+    if (code.length >= 9) {
       verifyReferralCode(code);
     } else {
       setCodeVerified(false);
@@ -325,7 +378,7 @@ export function CreateServiceProvider() {
 
   const handleNext = () => {
     if (currentStep === 1) {
-      // 推薦碼步驟：如果有填寫推薦碼，必須驗證成功才能繼續
+      // 推薦碼步驟：如果有填寫推薦碼，必須驗成功才能繼續
       if (referralCode && referralCode.trim()) {
         // 有填寫薦碼，必須驗證成功
         if (!codeVerified) {
@@ -354,9 +407,11 @@ export function CreateServiceProvider() {
         return;
       }
       
-      // 呼叫後端 API 創建刊登（不再傳送 subscriptionPlan）
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/create`,
+      // ✅ 新流程：先創建付款訂單
+      console.log('[Create Listing] 步驟1: 創建付款訂單...');
+      
+      const orderResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payment/create-order`,
         {
           method: 'POST',
           headers: {
@@ -364,7 +419,7 @@ export function CreateServiceProvider() {
             'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({
-            referralCode: referralCode || 'DEFAULTRCM01',
+            referralCode: referralCode || null,
             listingData: {
               name: formData.name,
               category: formData.category,
@@ -375,30 +430,64 @@ export function CreateServiceProvider() {
               photos: formData.photos,
               contacts: formData.contacts
             }
-            // subscriptionPlan 已移除，後端固定為年費
           })
         }
       );
       
-      if (response.ok) {
-        const data = await response.json();
-        showSuccess(
-          '刊登建立成功！',
-          '您的服務者刊登已成功建立',
-          [
-            `刊登 ID: ${data.publicListingId}`,
-            `您的推薦碼: ${data.referralCode}`,
-            `有效期限: ${new Date(data.activeUntil).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}`
-          ]
-        );
-        navigate('/service-providers');
-      } else {
-        const errorData = await response.json();
+      if (!orderResponse.ok) {
+        const errorData = await orderResponse.json();
         showError(
-          '刊登建立失敗',
-          errorData.error?.message || '請稍後再試，聯繫客服協處理。'
+          '訂單創建失敗',
+          errorData.error?.message || '請稍後再試'
         );
+        return;
       }
+      
+      const orderData = await orderResponse.json();
+      const { orderId } = orderData.data;
+      
+      console.log(`[Create Listing] ✅ 訂單已創建: ${orderId}`);
+      console.log('[Create Listing] 步驟2: 模擬付款成功...');
+      
+      // ✅ 模擬付款成功（開發測試用）
+      // TODO: 未來整合藍新金流時，這裡會導向藍新金流付款頁面
+      const paymentResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payment/simulate-success`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ orderId })
+        }
+      );
+      
+      if (!paymentResponse.ok) {
+        const errorData = await paymentResponse.json();
+        showError(
+          '付款處理失敗',
+          errorData.error?.message || '請稍後再試，或聯繫客服協助處理。'
+        );
+        return;
+      }
+      
+      const paymentData = await paymentResponse.json();
+      
+      console.log('[Create Listing] ✅ 付款處理完成');
+      
+      // ✅ 顯示成功訊息
+      showSuccess(
+        '刊登建立成功！',
+        '您的服務者刊登已成功建立',
+        [
+          `刊登 ID: ${paymentData.data.listingId}`,
+          `您的推薦碼: ${paymentData.data.referralCode}`,
+          `有效期限: ${new Date(paymentData.data.activeUntil).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}`
+        ]
+      );
+      
+      navigate('/service-providers');
+      
     } catch (error) {
       console.error('刊登建立錯誤:', error);
       showError('網絡錯誤', '請檢查網絡連線後再試');

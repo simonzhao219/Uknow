@@ -1,444 +1,547 @@
-import { Hono } from 'npm:hono';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
-import { YEARLY_PRICE } from './constants.ts';
+import { verifyToken } from './auth.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const app = new Hono();
+const subscriptions = new Hono();
 
-// ============================================
-// 辅助函数
-// ============================================
+// ===== 常數定義 =====
+const YEARLY_PRICE = 1200; // 年費（新台幣）
+const GRACE_PERIOD_DAYS = 60; // 即將失效期限（60天）
 
 /**
- * 计算两个日期之间的月数差异（精确到小数）
+ * 訂閱狀態枚舉
  */
-function calculateMonthsDiff(startDate: Date, endDate: Date): number {
-  const years = endDate.getFullYear() - startDate.getFullYear();
-  const months = endDate.getMonth() - startDate.getMonth();
-  const days = endDate.getDate() - startDate.getDate();
-  
-  // 基础月数差
-  let totalMonths = years * 12 + months;
-  
-  // 加上天数的比例（假设每月 30 天）
-  totalMonths += days / 30;
-  
-  return totalMonths;
+export enum SubscriptionStatus {
+  ACTIVE = 'active',           // 訂閱中
+  CANCELLED = 'cancelled',     // 已取消（但仍在有效期內）
+  GRACE = 'grace',             // 即將失效（逾期0-60天）
+  EXPIRED = 'expired'          // 永久失效（逾期>60天或取消後到期）
 }
 
 /**
- * 给日期增加指定月数
+ * GET /subscriptions/status
+ * 獲取當前用戶的訂閱狀態
+ * 
+ * 返回：
+ * - status: 訂閱狀態
+ * - activeUntil: 有效期限
+ * - nextPaymentDate: 下次付款日
+ * - daysRemaining: 剩餘天數
+ * - canRenew: 是否可續費
+ * - canMakeup: 是否可補繳
  */
-function addMonths(date: Date, months: number): Date {
-  const result = new Date(date);
-  result.setMonth(result.getMonth() + months);
-  return result;
-}
-
-/**
- * 格式化日期为 YYYY-MM-DD
- */
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
-
-// ============================================
-// API 端点
-// ============================================
-
-/**
- * GET /subscriptions
- * 获取用户的所有订阅（刊登列表）
- */
-app.get('/', async (c) => {
+subscriptions.get('/status', async (c) => {
   try {
-    // 1. 验证用户身份
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ success: false, error: { message: '未提供认证令牌' } }, 401);
+    console.log('========== 獲取訂閱狀態 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
-
+    
+    const token = authHeader.replace('Bearer ', '');
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
-      console.error('❌ 认证失败:', authError);
-      return c.json({ success: false, error: { message: '认证失败' } }, 401);
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
-
-    const userId = user.id;
-    console.log('✅ 用户认证成功:', userId);
-
-    // 2. 获取用户的刊登列表
-    const listingIds = await kv.get(`user:${userId}:listings`) || [];
-    console.log(`📋 用户刊登数量: ${listingIds.length}`);
-
-    if (listingIds.length === 0) {
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的刊登（訂閱綁定到刊登）
+    const userListing = await kv.get(`user:${user.id}:listing`);
+    
+    if (!userListing) {
       return c.json({
         success: true,
         data: {
-          listings: []
+          hasSubscription: false,
+          status: null,
+          message: '尚未訂閱'
         }
       });
     }
-
-    // 3. 获取每个刊登的详细资料
-    const listings = await kv.mget(listingIds.map(id => `listing:${id}`));
     
-    // 过滤掉 null 值并确保日期字段只包含日期部分
-    const validListings = listings
-      .filter(listing => listing !== null)
-      .map(listing => ({
-        ...listing,
-        createdAt: listing.createdAt ? listing.createdAt.split('T')[0] : listing.createdAt,
-        activeUntil: listing.activeUntil ? listing.activeUntil.split('T')[0] : listing.activeUntil,
-        nextPaymentDate: listing.nextPaymentDate ? listing.nextPaymentDate.split('T')[0] : listing.nextPaymentDate,
-        lastPaymentDate: listing.lastPaymentDate ? listing.lastPaymentDate.split('T')[0] : listing.lastPaymentDate,
-        cancelledAt: listing.cancelledAt ? listing.cancelledAt.split('T')[0] : listing.cancelledAt
-      }));
-    
-    console.log(`✅ 成功获取 ${validListings.length} 个刊登`);
-
-    return c.json({
-      success: true,
-      data: {
-        listings: validListings
-      }
-    });
-
-  } catch (error: any) {
-    console.error('💥 获取订阅列表错误:', error);
-    return c.json(
-      {
-        success: false,
-        error: {
-          message: error.message || '获取订阅列表失败'
-        }
-      },
-      500
-    );
-  }
-});
-
-/**
- * PUT /subscriptions/:listingId/cancel
- * 取消订阅
- */
-app.put('/:listingId/cancel', async (c) => {
-  try {
-    const listingId = c.req.param('listingId');
-    
-    // 1. 验证用户身份
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ success: false, error: { message: '未提供认证令牌' } }, 401);
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      console.error('❌ 认证失败:', authError);
-      return c.json({ success: false, error: { message: '认证失败' } }, 401);
-    }
-
-    const userId = user.id;
-
-    // 2. 获取刊登资料
-    const listing = await kv.get(`listing:${listingId}`);
+    const listing = await kv.get(`listing:${userListing.id}`);
     
     if (!listing) {
-      return c.json({ success: false, error: { message: '刊登不存在' } }, 404);
-    }
-
-    // 3. 验证权限
-    if (listing.userId !== userId) {
-      return c.json({ success: false, error: { message: '无权限操作此刊登' } }, 403);
-    }
-
-    // 4. 设置取消标记
-    const body = await c.req.json();
-    listing.cancelledAt = body.cancelDate || new Date().toISOString();
-
-    // 5. 保存更新
-    await kv.set(`listing:${listingId}`, listing);
-
-    console.log(`✅ 订阅已取消: ${listingId}, 将在 ${listing.activeUntil} 到期`);
-
-    return c.json({
-      success: true,
-      message: `订阅已取消，将在 ${listing.activeUntil} 到期`,
-      data: {
-        activeUntil: listing.activeUntil
-      }
-    });
-
-  } catch (error: any) {
-    console.error('💥 取消订阅错误:', error);
-    return c.json(
-      {
-        success: false,
-        error: {
-          message: error.message || '取消订阅失败'
-        }
-      },
-      500
-    );
-  }
-});
-
-/**
- * PUT /subscriptions/:listingId/change-plan
- * 取消訂閱（保留此端點用於取消功能）
- * ⚠️ 不再支持方案變更（只有一個年費方案）
- */
-app.put('/:listingId/change-plan', async (c) => {
-  try {
-    const listingId = c.req.param('listingId');
-    const { action, newPlan } = await c.req.json();
-    
-    // 1. 驗證用戶身份
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ success: false, error: { message: '未提供認證令牌' } }, 401);
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      console.error('❌ 認證失敗:', authError);
-      return c.json({ success: false, error: { message: '認證失敗' } }, 401);
-    }
-
-    const userId = user.id;
-
-    // 2. 獲取刊登資料
-    const listing = await kv.get(`listing:${listingId}`);
-    
-    if (!listing) {
-      return c.json({ success: false, error: { message: '刊登不存在' } }, 404);
-    }
-
-    // 3. 驗證權限
-    if (listing.userId !== userId) {
-      return c.json({ success: false, error: { message: '無權限操作此刊登' } }, 403);
-    }
-
-    // 4. 處理操作
-    if (action === 'cancel') {
-      // ✅ 允許取消訂閱
-      listing.cancelledAt = new Date().toISOString();
-      await kv.set(`listing:${listingId}`, listing);
-
-      console.log(`✅ 訂閱已取消: ${listingId}, 將在 ${listing.activeUntil} 到期`);
-
       return c.json({
-        success: true,
-        message: `訂閱已取消，將在 ${listing.activeUntil} 到期`,
-        data: {
-          cancelledAt: listing.cancelledAt,
-          activeUntil: listing.activeUntil
-        }
-      });
-    } else if (action === 'changePlan') {
-      // ❌ 不允許變更方案（只有一個年費方案）
-      return c.json({ 
-        success: false, 
-        error: { message: '目前只有年費方案，無法變更訂閱方案' } 
-      }, 400);
-    } else {
-      return c.json({ 
-        success: false, 
-        error: { message: '無效的操作類型' } 
-      }, 400);
-    }
-
-  } catch (error: any) {
-    console.error('💥 變更訂閱錯誤:', error);
-    return c.json(
-      {
         success: false,
-        error: {
-          message: error.message || '變更訂閱失敗'
-        }
-      },
-      500
-    );
-  }
-});
-
-/**
- * PUT /subscriptions/:listingId/reactivate
- * 重新激活订阅
- * 新規格：固定付年費，清空點數，立即開始新訂閱
- */
-app.put('/:listingId/reactivate', async (c) => {
-  try {
-    const listingId = c.req.param('listingId');
-    
-    // 1. 验证用户身份
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ success: false, error: { message: '未提供认证令牌' } }, 401);
+        error: { message: '刊登資料不存在' }
+      }, 404);
     }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
     
-    if (authError || !user) {
-      console.error('❌ 认证失败:', authError);
-      return c.json({ success: false, error: { message: '认证失败' } }, 401);
-    }
-
-    const userId = user.id;
-
-    // 2. 获取刊登资料
-    const listing = await kv.get(`listing:${listingId}`);
+    // 3. 計算訂閱狀態
+    const status = calculateSubscriptionStatus(listing);
     
-    if (!listing) {
-      return c.json({ success: false, error: { message: '刊登不存在' } }, 404);
-    }
-
-    // 3. 验证权限
-    if (listing.userId !== userId) {
-      return c.json({ success: false, error: { message: '无权限操作此刊登' } }, 403);
-    }
-
-    const today = new Date();
+    console.log(`📊 訂閱狀態: ${status.status}`);
     
-    // 4. 固定邏輯：清空點數，付年費，開始新訂閱
-    delete listing.frozenPoints;        // 清空凍結點數
-    delete listing.accumulatedPoints;   // 清空累積點數
-    
-    // 設置新的有效期（一年後）
-    const newActiveUntil = new Date(today);
-    newActiveUntil.setFullYear(newActiveUntil.getFullYear() + 1);
-    newActiveUntil.setDate(newActiveUntil.getDate() - 1);
-    
-    // 更新刊登數據
-    listing.activeUntil = formatDate(newActiveUntil);
-    listing.lastPaymentDate = formatDate(today);
-    listing.subscriptionPlan = 'yearly';
-    listing.nextPaymentDate = formatDate(new Date(newActiveUntil.getTime() + 86400000)); // activeUntil + 1 天
-    listing.startDate = formatDate(today);
-    
-    // 移除取消標記
-    delete listing.cancelledAt;
-
-    await kv.set(`listing:${listingId}`, listing);
-
-    console.log(`✅ 订阅已重新激活: ${listingId}, 新有效期: ${listing.activeUntil}`);
-
     return c.json({
       success: true,
-      message: '订阅已重新激活',
       data: {
-        newActiveUntil: listing.activeUntil,
-        price: YEARLY_PRICE,
-        pointsCleared: true
+        hasSubscription: true,
+        ...status
       }
     });
-
-  } catch (error: any) {
-    console.error('💥 重新激活订阅错误:', error);
-    return c.json(
-      {
-        success: false,
-        error: {
-          message: error.message || '重新激活订阅失败'
-        }
-      },
-      500
-    );
+    
+  } catch (error) {
+    console.error('❌ 獲取訂閱狀態失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
   }
 });
 
 /**
- * PUT /subscriptions/:listingId/resume
- * 繼續訂閱（取消「取消訂閱」狀態）
+ * POST /subscriptions/cancel
+ * 取消訂閱（標記為已取消，到期後自動轉為永久失效）
  */
-app.put('/:listingId/resume', async (c) => {
+subscriptions.post('/cancel', async (c) => {
   try {
-    const listingId = c.req.param('listingId');
+    console.log('========== 取消訂閱 ==========');
     
-    // 1. 验证用户身份
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ success: false, error: { message: '未提供认证令牌' } }, 401);
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
-
+    
+    const token = authHeader.replace('Bearer ', '');
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
-      console.error('❌ 认证失败:', authError);
-      return c.json({ success: false, error: { message: '认证失败' } }, 401);
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
-
-    const userId = user.id;
-
-    // 2. 获取刊登资料
-    const listing = await kv.get(`listing:${listingId}`);
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的刊登
+    const userListing = await kv.get(`user:${user.id}:listing`);
+    
+    if (!userListing) {
+      return c.json({
+        success: false,
+        error: { message: '尚未訂閱' }
+      }, 400);
+    }
+    
+    const listing = await kv.get(`listing:${userListing.id}`);
     
     if (!listing) {
-      return c.json({ success: false, error: { message: '刊登不存在' } }, 404);
+      return c.json({
+        success: false,
+        error: { message: '刊登資料不存在' }
+      }, 404);
     }
-
-    // 3. 验证权限
-    if (listing.userId !== userId) {
-      return c.json({ success: false, error: { message: '无权限操作此刊登' } }, 403);
+    
+    // 3. 檢查當前狀態
+    const currentStatus = calculateSubscriptionStatus(listing);
+    
+    if (currentStatus.status === SubscriptionStatus.CANCELLED) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱已經被取消' }
+      }, 400);
     }
-
-    // 4. 移除取消标记
-    delete listing.cancelledAt;
-
-    // 5. 保存更新
-    await kv.set(`listing:${listingId}`, listing);
-
-    console.log(`✅ 订阅已恢复: ${listingId}, 取消标记已删除`);
-
+    
+    if (currentStatus.status === SubscriptionStatus.EXPIRED) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱已失效' }
+      }, 400);
+    }
+    
+    // 4. 標記為已取消
+    const now = new Date().toISOString();
+    listing.cancelledAt = now;
+    listing.updatedAt = now;
+    
+    await kv.set(`listing:${listing.id}`, listing);
+    await kv.set(`user:${user.id}:listing`, listing);
+    
+    console.log(`✅ 訂閱已取消: ${listing.id}`);
+    console.log(`   將在 ${listing.activeUntil} 到期後失效`);
+    
     return c.json({
       success: true,
-      message: '订阅已恢复',
       data: {
+        message: '訂閱已取消',
         activeUntil: listing.activeUntil,
-        plan: listing.plan
+        note: '您的刊登將顯示到期限為止，之後將自動失效'
       }
     });
-
-  } catch (error: any) {
-    console.error('💥 繼續訂閱錯誤:', error);
-    return c.json(
-      {
-        success: false,
-        error: {
-          message: error.message || '繼續訂閱失敗'
-        }
-      },
-      500
-    );
+    
+  } catch (error) {
+    console.error('❌ 取消訂閱失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
   }
 });
 
-export default app;
+/**
+ * POST /subscriptions/renew
+ * 續費訂閱（正常續費或補繳）
+ * 
+ * 說明：
+ * - 訂閱中：正常續費，延長一年
+ * - 已取消：恢復訂閱並延長一年
+ * - 即將失效：補繳，接續原到期日
+ * - 永久失效：不允許續費，需重新訂閱
+ */
+subscriptions.post('/renew', async (c) => {
+  try {
+    console.log('========== 續費訂閱 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的刊登
+    const userListing = await kv.get(`user:${user.id}:listing`);
+    
+    if (!userListing) {
+      return c.json({
+        success: false,
+        error: { message: '尚未訂閱' }
+      }, 400);
+    }
+    
+    const listing = await kv.get(`listing:${userListing.id}`);
+    
+    if (!listing) {
+      return c.json({
+        success: false,
+        error: { message: '刊登資料不存在' }
+      }, 404);
+    }
+    
+    // 3. 檢查當前狀態
+    const currentStatus = calculateSubscriptionStatus(listing);
+    
+    console.log(`📊 當前狀態: ${currentStatus.status}`);
+    
+    // 4. 根據狀態處理續費
+    const now = new Date();
+    let newActiveUntil: Date;
+    let newNextPaymentDate: Date;
+    let renewalType: string;
+    
+    if (currentStatus.status === SubscriptionStatus.EXPIRED) {
+      return c.json({
+        success: false,
+        error: { 
+          message: '訂閱已永久失效，無法續費',
+          note: '請重新訂閱以獲得新的推薦碼'
+        }
+      }, 400);
+    }
+    
+    if (currentStatus.status === SubscriptionStatus.GRACE) {
+      // 補繳：接續原到期日
+      renewalType = '補繳';
+      const originalActiveUntil = new Date(listing.activeUntil);
+      
+      newNextPaymentDate = new Date(originalActiveUntil);
+      newNextPaymentDate.setFullYear(newNextPaymentDate.getFullYear() + 1);
+      newNextPaymentDate.setDate(newNextPaymentDate.getDate() + 1); // 下次付款日
+      
+      newActiveUntil = new Date(newNextPaymentDate);
+      newActiveUntil.setDate(newActiveUntil.getDate() - 1);
+      newActiveUntil.setHours(23, 59, 59, 999);
+      
+      console.log(`  ✅ 補繳模式：接續原到期日 ${listing.activeUntil}`);
+    } else {
+      // 正常續費或已取消後續費：從現在延長一年
+      renewalType = currentStatus.status === SubscriptionStatus.CANCELLED ? '恢復並續費' : '正常續費';
+      
+      newNextPaymentDate = new Date(now);
+      newNextPaymentDate.setFullYear(newNextPaymentDate.getFullYear() + 1);
+      
+      newActiveUntil = new Date(newNextPaymentDate);
+      newActiveUntil.setDate(newActiveUntil.getDate() - 1);
+      newActiveUntil.setHours(23, 59, 59, 999);
+      
+      console.log(`  ✅ ${renewalType}：延長到 ${newActiveUntil.toISOString()}`);
+    }
+    
+    // 5. TODO: 整合藍新金流付款
+    // 這裡應該先創建付款訂單，付款成功後再更新
+    // 目前先模擬付款成功
+    
+    // 6. 更新刊登資料
+    listing.lastPaymentDate = now.toISOString();
+    listing.nextPaymentDate = newNextPaymentDate.toISOString();
+    listing.activeUntil = newActiveUntil.toISOString();
+    listing.cancelledAt = null; // 清除取消標記
+    listing.updatedAt = now.toISOString();
+    
+    await kv.set(`listing:${listing.id}`, listing);
+    await kv.set(`user:${user.id}:listing`, listing);
+    
+    console.log(`✅ 續費成功: ${listing.id}`);
+    console.log(`   類型: ${renewalType}`);
+    console.log(`   新到期日: ${listing.activeUntil}`);
+    
+    return c.json({
+      success: true,
+      data: {
+        message: `${renewalType}成功`,
+        renewalType,
+        lastPaymentDate: listing.lastPaymentDate,
+        nextPaymentDate: listing.nextPaymentDate,
+        activeUntil: listing.activeUntil,
+        amount: YEARLY_PRICE
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ 續費失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+/**
+ * GET /subscriptions/history
+ * 獲取訂閱歷史（付款記錄）
+ */
+subscriptions.get('/history', async (c) => {
+  try {
+    console.log('========== 獲取訂閱歷史 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    // 2. 獲取付款歷史
+    const paymentHistory = await kv.get(`user:${user.id}:payment_history`) || [];
+    
+    return c.json({
+      success: true,
+      data: {
+        payments: paymentHistory
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ 獲取訂閱歷史失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+// ===================================================================
+// 輔助函數
+// ===================================================================
+
+/**
+ * 計算訂閱狀態
+ * 
+ * @param listing - 刊登資料
+ * @returns 訂閱狀態資訊
+ */
+function calculateSubscriptionStatus(listing: any) {
+  const now = new Date();
+  const activeUntil = new Date(listing.activeUntil);
+  const daysRemaining = Math.ceil((activeUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  
+  let status: SubscriptionStatus;
+  let message: string;
+  let canRenew: boolean;
+  let canMakeup: boolean;
+  
+  // 1. 檢查是否已取消
+  if (listing.cancelledAt) {
+    if (daysRemaining > 0) {
+      // 已取消但仍在有效期內
+      status = SubscriptionStatus.CANCELLED;
+      message = `訂閱已取消，將在 ${listing.activeUntil} 到期`;
+      canRenew = true;  // 可以恢復訂閱
+      canMakeup = false;
+    } else {
+      // 已取消且已到期
+      status = SubscriptionStatus.EXPIRED;
+      message = '訂閱已失效（已取消並到期）';
+      canRenew = false;
+      canMakeup = false;
+    }
+  } else {
+    // 2. 檢查是否在有效期內
+    if (daysRemaining > 0) {
+      // 訂閱中
+      status = SubscriptionStatus.ACTIVE;
+      message = `訂閱有效，剩餘 ${daysRemaining} 天`;
+      canRenew = true;  // 可以提前續費
+      canMakeup = false;
+    } else {
+      // 已過期
+      const daysOverdue = Math.abs(daysRemaining);
+      
+      if (daysOverdue <= GRACE_PERIOD_DAYS) {
+        // 即將失效（60天內）
+        status = SubscriptionStatus.GRACE;
+        message = `訂閱已逾期 ${daysOverdue} 天，可補繳恢復`;
+        canRenew = false;
+        canMakeup = true;
+      } else {
+        // 永久失效（超過60天）
+        status = SubscriptionStatus.EXPIRED;
+        message = `訂閱已永久失效（逾期超過 ${GRACE_PERIOD_DAYS} 天）`;
+        canRenew = false;
+        canMakeup = false;
+      }
+    }
+  }
+  
+  return {
+    status,
+    message,
+    activeUntil: listing.activeUntil,
+    nextPaymentDate: listing.nextPaymentDate,
+    lastPaymentDate: listing.lastPaymentDate,
+    daysRemaining,
+    canRenew,
+    canMakeup,
+    isCancelled: !!listing.cancelledAt,
+    cancelledAt: listing.cancelledAt || null
+  };
+}
+
+/**
+ * 檢查並更新訂閱狀態
+ * （由 Cron 定時任務調用）
+ * 
+ * @param userId - 用戶 ID
+ */
+export async function checkAndUpdateSubscriptionStatus(userId: string): Promise<{ status: string }> {
+  console.log(`[Check Subscription] 檢查用戶訂閱狀態: ${userId}`);
+  
+  const userListing = await kv.get(`user:${userId}:listing`);
+  
+  if (!userListing) {
+    console.log(`  ℹ️ 用戶沒有刊登，跳過`);
+    return { status: 'no_listing' };
+  }
+  
+  const listing = await kv.get(`listing:${userListing.id}`);
+  
+  if (!listing) {
+    console.log(`  ⚠️ 刊登資料不存在: ${userListing.id}`);
+    return { status: 'listing_not_found' };
+  }
+  
+  const status = calculateSubscriptionStatus(listing);
+  
+  console.log(`  📊 當前狀態: ${status.status}`);
+  
+  // 如果狀態變為永久失效，需要處理推薦碼失效
+  if (status.status === SubscriptionStatus.EXPIRED && listing.referralCode) {
+    await handleReferralCodeExpiration(userId, listing.id, listing.referralCode);
+  }
+  
+  return { status: status.status };
+}
+
+/**
+ * 處理推薦碼失效
+ * 
+ * @param userId - 用戶 ID
+ * @param listingId - 刊登 ID
+ * @param referralCode - 推薦碼
+ */
+async function handleReferralCodeExpiration(
+  userId: string,
+  listingId: string,
+  referralCode: string
+): Promise<void> {
+  console.log(`[Referral Code Expiration] 處理推薦碼失效: ${referralCode}`);
+  
+  // 1. 標記推薦碼為失效
+  const referralCodeData = await kv.get(`referral_code:${referralCode}`);
+  
+  if (referralCodeData) {
+    referralCodeData.isActive = false;
+    referralCodeData.expiredAt = new Date().toISOString();
+    await kv.set(`referral_code:${referralCode}`, referralCodeData);
+    console.log(`  ✅ 推薦碼已標記為失效`);
+  }
+  
+  // 2. 清空用戶點數（根據規格：永久失效時點數歸零）
+  await kv.set(`user:${userId}:points`, 0);
+  console.log(`  ✅ 用戶點數已清零`);
+  
+  // 3. 清空任務進度
+  await kv.set(`user:${userId}:tasks`, {
+    consecutiveReferral: null,
+    monthlyKing: null,
+    lastUpdated: new Date().toISOString()
+  });
+  console.log(`  ✅ 任務進度已清零`);
+  
+  // 4. 取消所有待發放的獎勵排程
+  const userSchedules = await kv.get(`user:${userId}:reward_schedules`) || [];
+  
+  for (const scheduleId of userSchedules) {
+    const schedule = await kv.get(`reward_schedule:${scheduleId}`);
+    
+    if (schedule && schedule.status === 'pending') {
+      schedule.status = 'cancelled';
+      schedule.completedAt = new Date().toISOString();
+      schedule.cancellationReason = '用戶訂閱已永久失效';
+      await kv.set(`reward_schedule:${scheduleId}`, schedule);
+    }
+  }
+  
+  console.log(`  ✅ 已取消所有待發放的獎勵排程（共 ${userSchedules.length} 筆）`);
+}
+
+export default subscriptions;

@@ -18,26 +18,26 @@ export function ServiceProviderManagement() {
   const handleBack = useBackNavigation();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
-  // ✅ 使用状态管理数据
-  const [serviceProviders, setServiceProviders] = useState<any[]>([]);
+  // ✅ 新規格：單一刊登模式
+  const [listing, setListing] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // ✅ 获取用户的刊登列表
+  // ✅ 獲取用戶的刊登（單一）
   useEffect(() => {
     if (user?.id) {
-      fetchUserListings();
+      fetchUserListing();
     }
   }, [user?.id]);
 
-  const fetchUserListings = async () => {
+  const fetchUserListing = async () => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
         showToast('請先登入', 'error');
-        setServiceProviders([]);
+        setListing(null);
         return;
       }
 
@@ -51,38 +51,32 @@ export function ServiceProviderManagement() {
       );
 
       if (!response.ok) {
-        throw new Error('獲取刊登列表失敗');
+        throw new Error('獲取刊登失敗');
       }
 
       const data = await response.json();
       console.log('管理刊登 - 獲取到的數據:', data);
-      setServiceProviders(data.listings || []);
+      setListing(data.listing || null);  // ✅ 單一對象
     } catch (error) {
-      console.error('獲取刊登列表失敗:', error);
-      showToast('獲取刊登列表失敗，請稍後再試', 'error');
-      setServiceProviders([]);
+      console.error('獲取刊登失敗:', error);
+      showToast('獲取刊登失敗，請稍後再試', 'error');
+      setListing(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ 简化推荐码生成（直接使用后端返回的）
-  const generateReferralCode = (serviceProviderId: string) => {
-    const serviceProvider = serviceProviders.find(r => r.id === serviceProviderId);
-    return serviceProvider?.referralCode || '';
-  };
-
-  // 复制推荐码
-  const handleCopyReferralCode = async (serviceProviderId: string) => {
-    const referralCode = generateReferralCode(serviceProviderId);
+  // ✅ 複製推薦碼（簡化版）
+  const handleCopyReferralCode = async () => {
+    const referralCode = listing?.referralCode;
     
     if (!referralCode) {
-      showToast('無法生成推薦碼', 'error');
+      showToast('無法取得推薦碼', 'error');
       return;
     }
     
     try {
-      // 使用传统的 execCommand 方法（更可靠，不受 Clipboard API 权限限制）
+      // 使用傳統的 execCommand 方法（更可靠，不受 Clipboard API 權限限制）
       const textArea = document.createElement('textarea');
       textArea.value = referralCode;
       textArea.style.position = 'fixed';
@@ -97,7 +91,7 @@ export function ServiceProviderManagement() {
         document.body.removeChild(textArea);
         
         if (successful) {
-          setCopiedId(serviceProviderId);
+          setCopiedId(listing.id);
           showToast('推薦碼已複製到剪貼簿', 'success');
           setTimeout(() => setCopiedId(null), 2000);
         } else {
@@ -127,15 +121,18 @@ export function ServiceProviderManagement() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">刊登管理</h1>
-            <p className="text-muted-foreground">管理您的專業服務刊登</p>
+            <p className="text-muted-foreground">���理您的專業服務刊登</p>
           </div>
         </div>
-        <Button asChild>
-          <Link to="/service-providers/create">
-            <Plus className="h-4 w-4 mr-2" />
-            刊登新服務
-          </Link>
-        </Button>
+        {/* ✅ 只有當用戶沒有刊登時，才顯示「刊登新服務」按鈕 */}
+        {!loading && listing === null && (
+          <Button asChild>
+            <Link to="/service-providers/create">
+              <Plus className="h-4 w-4 mr-2" />
+              刊登新服務
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* 服務者列表 */}
@@ -148,7 +145,7 @@ export function ServiceProviderManagement() {
             </p>
           </CardContent>
         </Card>
-      ) : serviceProviders.length === 0 ? (
+      ) : listing === null ? (
         <Card>
           <CardContent className="text-center py-12">
             <h3 className="text-lg font-medium mb-2">尚未刊登任何服務者</h3>
@@ -165,109 +162,98 @@ export function ServiceProviderManagement() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {serviceProviders.map((serviceProvider) => {
-            // ✅ 数据格式转换
-            const displayDistrict = Array.isArray(serviceProvider.districts)
-              ? serviceProvider.districts[0]
-              : serviceProvider.district || '';
-            
-            // ✅ 判断是否活跃
-            const isActive = new Date(serviceProvider.activeUntil) >= new Date();
+          {/* ✅ 單一對象 */}
+          <Card key={listing.id}>
+            <CardContent className="p-6">
+              <div className="flex flex-col md:flex-row gap-6">
+                {/* 圖片 */}
+                <div className="w-full md:w-48 aspect-video rounded-lg overflow-hidden">
+                  <ImageWithFallback
+                    src={listing.photos[0]}
+                    alt={listing.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
 
-            return (
-            <Card key={serviceProvider.id}>
-              <CardContent className="p-6">
-                <div className="flex flex-col md:flex-row gap-6">
-                  {/* 圖片 */}
-                  <div className="w-full md:w-48 aspect-video rounded-lg overflow-hidden">
-                    <ImageWithFallback
-                      src={serviceProvider.photos[0]}
-                      alt={serviceProvider.name}
-                      className="w-full h-full object-cover"
-                    />
+                {/* 內容 */}
+                <div className="flex-1 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-xl font-semibold">{listing.name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="default">{listing.category}</Badge>
+                        <Badge variant={new Date(listing.activeUntil) >= new Date() ? "secondary" : "outline"}>
+                          {new Date(listing.activeUntil) >= new Date() ? '活躍中' : '已過期'}
+                        </Badge>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/service-providers/${listing.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                      
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/service-providers/edit/${listing.id}`}>
+                          <Edit className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* 內容 */}
-                  <div className="flex-1 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-xl font-semibold">{serviceProvider.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="default">{serviceProvider.category}</Badge>
-                          <Badge variant={isActive ? "secondary" : "outline"}>
-                            {isActive ? '活躍中' : '已過期'}
-                          </Badge>
-                        </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4" />
+                      <span>{listing.city} {Array.isArray(listing.districts) ? listing.districts[0] : listing.district || ''}</span>
+                    </div>
+                    
+                    {new Date(listing.activeUntil) < new Date() && (
+                      <div className="text-sm text-destructive">
+                        有效期限已於 {new Date(listing.activeUntil).toLocaleDateString('zh-TW')} 截止
                       </div>
-                      
+                    )}
+                  </div>
+
+                  <p className="text-muted-foreground line-clamp-2">
+                    {listing.description}
+                  </p>
+
+                  {/* 推荐码区域 */}
+                  <div className="pt-3 border-t">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">推薦碼：</span>
+                        <code className="px-2 py-1 bg-muted rounded text-sm font-mono">
+                          {listing.referralCode}
+                        </code>
+                      </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link to={`/service-providers/${serviceProvider.id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Link>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCopyReferralCode}
+                        >
+                          {copiedId === listing.id ? (
+                            <>
+                              <Check className="h-4 w-4 mr-1" />
+                              已複製
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-4 w-4 mr-1" />
+                              複製
+                            </>
+                          )}
                         </Button>
-                        
-                        <Button variant="outline" size="sm" asChild>
-                          <Link to={`/service-providers/edit/${serviceProvider.id}`}>
-                            <Edit className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <MapPin className="h-4 w-4" />
-                        <span>{serviceProvider.city} {displayDistrict}</span>
-                      </div>
-                      
-                      {!isActive && (
-                        <div className="text-sm text-destructive">
-                          有效期限已於 {new Date(serviceProvider.activeUntil).toLocaleDateString('zh-TW')} 截止
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-muted-foreground line-clamp-2">
-                      {serviceProvider.description}
-                    </p>
-
-                    {/* 推荐码区域 */}
-                    <div className="pt-3 border-t">
-                      <div className="flex items-center justify-between gap-4 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">推薦碼：</span>
-                          <code className="px-2 py-1 bg-muted rounded text-sm font-mono">
-                            {generateReferralCode(serviceProvider.id)}
-                          </code>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleCopyReferralCode(serviceProvider.id)}
-                          >
-                            {copiedId === serviceProvider.id ? (
-                              <>
-                                <Check className="h-4 w-4 mr-1" />
-                                已複製
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-4 w-4 mr-1" />
-                                複製
-                              </>
-                            )}
-                          </Button>
-                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-            );
-          })}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 

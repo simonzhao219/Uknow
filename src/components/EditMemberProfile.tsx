@@ -209,7 +209,7 @@ export function EditMemberProfile() {
   };
 
   const handleServiceToggle = (service: keyof EditProfileForm['loginServices'], checked: boolean) => {
-    // 檢查如果���解除綁定，確保至少保留一個登入方式
+    // 檢查如果���除綁定，確保至少保留一個登入方式
     if (!checked) {
       const otherServices = Object.entries(watchedServices)
         .filter(([key]) => key !== service)
@@ -256,25 +256,20 @@ export function EditMemberProfile() {
         {/* 基本資訊 */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              基本資訊
-            </CardTitle>
-            <CardDescription>
-              更新您的姓名、電子郵件和聯絡電話
-            </CardDescription>
+            <CardTitle>基本資料</CardTitle>
+            <CardDescription>編輯您的個人資料</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">身分證上的姓名 * (申請點數提領需驗證)</Label>
+              <Label htmlFor="name">真實姓名 * (最多10字)</Label>
               <Input
                 id="name"
                 {...register('name', { 
-                  required: '請輸入您身分證上的姓名',
+                  required: '請輸入真實姓名',
                   minLength: { value: 2, message: '姓名至少需要2個字元' },
                   maxLength: { value: 10, message: '姓名最多10個字' }
                 })}
-                placeholder="請輸入您身分證上的姓名"
+                placeholder="請輸入真實姓名"
                 maxLength={10}
               />
               <div className="text-right text-sm text-muted-foreground">

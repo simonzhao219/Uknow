@@ -1,6 +1,7 @@
 import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { REWARD_CONFIG, SCHEDULE_STATUS, TASK_NAMES } from './reward_config.ts';
+import { checkAndUpdateSubscriptionStatus, SubscriptionStatus } from './subscriptions.ts';
 
 const cron = new Hono();
 
@@ -11,7 +12,8 @@ const cron = new Hono();
  * 
  * 功能：
  * 1. 處理推薦獎勵排程（第2~12個月）
- * 2. 結算任務完成狀態（每月1日）
+ * 2. 檢查並更新所有用戶的訂閱狀態
+ * 3. 結算任務完成狀態（每月1日）
  * 
  * 安全：只允許 Service Role Key 調用
  */
@@ -46,7 +48,11 @@ cron.post('/process-daily-rewards', async (c) => {
     console.log('\n🎁 ===== 開始處理推薦獎勵排程 =====');
     const rewardResults = await processDailyRewardSchedules(todayStr);
     
-    // ===== 2. 處理任務結算（只在每月1日執行）=====
+    // ===== 2. 檢查並更新所有用戶的訂閱狀態 ===== 
+    console.log('\n📋 ===== 開始檢查訂閱狀態 =====');
+    const subscriptionResults = await processSubscriptionStatusCheck();
+    
+    // ===== 3. 處理任務結算（只在每月1日執行）=====
     let taskResults;
     if (today.getDate() === 1) {
       console.log('\n🎯 ===== 開始處理任務結算（每月1日）=====');
@@ -250,6 +256,53 @@ async function issueScheduledReward(schedule: any) {
   await kv.set(historyKey, history);
   
   console.log(`      💰 發放獎勵: user=${userId}, amount=${amount}P, referee=${referee.userName}-${referee.listingName} (第${monthNumber}個月)`);
+}
+
+// ===================================================================
+// 訂閱狀態檢查處理
+// ===================================================================
+
+/**
+ * 檢查並更新所有用戶的訂閱狀態
+ * 
+ * 流程：
+ * 1. 從用戶列表索引獲取所有用戶 ID
+ * 2. 逐一檢查每個用戶的訂閱狀態
+ * 3. 更新訂閱狀態
+ */
+async function processSubscriptionStatusCheck() {
+  console.log(`🔄 開始檢查訂閱狀態`);
+  
+  // 1. 從用戶列表索引獲取所有用戶 ID
+  const userIndexKey = `user_list`;
+  const userIds = await kv.get(userIndexKey) || [];
+  
+  console.log(`📊 總用戶數量: ${userIds.length}`);
+  
+  let updatedCount = 0;
+  
+  // 2. 逐一處理每個用戶的訂閱狀態
+  for (const userId of userIds) {
+    try {
+      console.log(`\n📋 處理用戶: ${userId}`);
+      
+      const result = await checkAndUpdateSubscriptionStatus(userId);
+      
+      if (result.status === SubscriptionStatus.UPDATED) {
+        updatedCount++;
+      }
+      
+    } catch (error) {
+      console.error(`❌ 處理用戶訂閱狀態失敗: ${userId}`, error);
+      // 繼續處理下一個用戶
+    }
+  }
+  
+  console.log(`\n✅ 訂閱狀態檢查完成: 更新用戶=${updatedCount}`);
+  
+  return {
+    updatedUserCount: updatedCount
+  };
 }
 
 // ===================================================================
@@ -464,7 +517,7 @@ async function issueTaskReward(userId: string, taskType: string, amount: number)
   
   await kv.set(historyKey, history);
   
-  console.log(`      💰 發放任��獎勵: user=${userId}, type=${taskType}, amount=${amount}P`);
+  console.log(`      💰 發放任獎勵: user=${userId}, type=${taskType}, amount=${amount}P`);
 }
 
 export default cron;

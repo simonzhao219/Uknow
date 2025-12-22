@@ -49,7 +49,7 @@ export function MemberDashboard() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <p className="text-sm text-muted-foreground">身分證上的姓名</p>
+            <p className="text-sm text-muted-foreground">真實姓名</p>
             <p className="font-medium">{user?.name}</p>
           </div>
           <div>
