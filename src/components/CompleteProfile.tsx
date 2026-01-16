@@ -5,21 +5,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
+import { Loader2 } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
 
 export function CompleteProfile() {
   const [formData, setFormData] = useState({
     name: '',
+    nationalId: '',  // ✅ 新增身分證字號欄位
     phone: '',
     birthDate: '',
+    referralCode: '',
     agreedToTerms: false,
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const [verifiedReferralCode, setVerifiedReferralCode] = useState('');
+  const [referrerName, setReferrerName] = useState('');
 
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
@@ -33,6 +42,72 @@ export function CompleteProfile() {
       if (!session) {
         showToast('請先完成 Email 驗證', 'error');
         navigate('/login', { replace: true });
+        return;
+      }
+      
+      // ✅ 1. 檢查是否有 pendingUser（編輯模式）
+      const pendingUserStr = localStorage.getItem('pendingUser');
+      if (pendingUserStr) {
+        try {
+          const pendingUser = JSON.parse(pendingUserStr);
+          console.log('CompleteProfile: Found pendingUser, loading data into form:', pendingUser);
+          
+          // ✅ 自動填入表單（不包含推薦碼，讓用戶重新填寫）
+          setFormData({
+            name: pendingUser.name || '',
+            nationalId: pendingUser.nationalId || '',  // ✅ 新增身分證字號欄位
+            phone: pendingUser.phone || '',
+            birthDate: pendingUser.birthDate || '',
+            referralCode: '',  // ✅ 不帶入推薦碼，讓使用者重填
+            agreedToTerms: false
+          });
+          
+          // ✅ 清除推薦碼驗證狀態
+          setCodeVerified(false);
+          setVerifiedReferralCode('');
+          setReferrerName('');
+          setCodeError('');
+          
+          return; // 編輯模式，不檢查 profile
+        } catch (error) {
+          console.error('CompleteProfile: Error parsing pendingUser:', error);
+          localStorage.removeItem('pendingUser');
+        }
+      }
+      
+      // ✅ 2. 檢查用戶是否已完成資料填寫（非編輯模式）
+      try {
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const profile = await response.json();
+          console.log('CompleteProfile: Loaded profile:', profile);
+          
+          // 檢查是否已完成資料填寫
+          const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
+          const hasPaidMembership = !!profile.referralCode;
+          
+          if (hasCompleteProfile && hasPaidMembership) {
+            // 已完成註冊，導向會員中心
+            console.log('CompleteProfile: User already completed registration, redirecting to dashboard');
+            navigate('/dashboard', { replace: true });
+          } else if (hasCompleteProfile && !hasPaidMembership) {
+            // 已完成資料填寫但未付款，導向付款頁面
+            console.log('CompleteProfile: User already completed profile, redirecting to payment');
+            navigate('/payment/checkout', { replace: true });
+          }
+          // 如果未完成資料填寫，繼續留在此頁面
+        }
+      } catch (error) {
+        console.error('CompleteProfile: Error checking profile:', error);
+        // 發生錯誤時，允許用戶繼續填寫資料
       }
     };
     checkSession();
@@ -46,6 +121,13 @@ export function CompleteProfile() {
       newErrors.name = '請輸入真實姓名';
     } else if (formData.name.length > 10) {
       newErrors.name = '姓名最多 10 個字元';
+    }
+
+    // 身分證字號驗證
+    if (!formData.nationalId.trim()) {
+      newErrors.nationalId = '請輸入身分證字號';
+    } else if (!/^[A-Z][12]\d{8}$/.test(formData.nationalId)) {
+      newErrors.nationalId = '身分證字號格式不正確（格式：A123456789）';
     }
 
     // 手機號碼驗證
@@ -94,6 +176,60 @@ export function CompleteProfile() {
       return;
     }
 
+    // ✅ 如果有輸入推薦碼，必須先驗證
+    if (formData.referralCode.trim()) {
+      // 檢查是否已驗證
+      if (!codeVerified || formData.referralCode !== verifiedReferralCode) {
+        showToast('請先驗證推薦碼', 'warning');
+        setCodeError('請先驗證推薦碼');
+        return;
+      }
+      
+      // ✅ 即使已驗證，點擊下一步時再驗證一次（確保推薦碼仍然有效）
+      setIsLoading(true);
+      try {
+        const result = await apiRequestJson<{ 
+          valid: boolean;
+          referrerName?: string;
+          referrerUserId?: string;
+          error?: { message: string };
+        }>(
+          buildApiUrl('/listings/verify-referral-code'),
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              referralCode: formData.referralCode.toLowerCase().trim(),
+              currentUserId: null
+            }),
+          }
+        );
+
+        if (!result.valid) {
+          showToast(result.error?.message || '推薦碼無效，請重新驗證', 'error');
+          setCodeError(result.error?.message || '推薦碼無效');
+          setCodeVerified(false);
+          setVerifiedReferralCode('');
+          setReferrerName('');
+          setIsLoading(false);
+          return;
+        }
+        
+        // 驗證成功，更新推薦人姓名（可能已變更）
+        if (result.referrerName) {
+          setReferrerName(result.referrerName);
+        }
+      } catch (err: any) {
+        console.error('CompleteProfile: Re-verification error:', err);
+        showToast(err.message || '推薦碼驗證失敗，請稍後再試', 'error');
+        setCodeError(err.message || '推薦碼驗證失敗');
+        setCodeVerified(false);
+        setVerifiedReferralCode('');
+        setReferrerName('');
+        setIsLoading(false);
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -122,8 +258,10 @@ export function CompleteProfile() {
           },
           body: JSON.stringify({
             name: formData.name,
+            nationalId: formData.nationalId,  // ✅ 新增身分證字號欄位
             phone: formData.phone,
             birthDate: formData.birthDate,
+            referralCode: formData.referralCode,
           }),
         }
       );
@@ -139,19 +277,23 @@ export function CompleteProfile() {
       const profile = await response.json();
       console.log('CompleteProfile: Profile created successfully:', profile);
 
-      // 設定用戶狀態
+      // ✅ 1. 保存到 localStorage（給 PaymentCheckout 使用）
+      // ✅ 手動加入推薦人姓名（前端已驗證時獲取）
+      const pendingUserData = {
+        ...profile,
+        referrerName: referrerName || null  // 加入推薦人姓名
+      };
+      localStorage.setItem('pendingUser', JSON.stringify(pendingUserData));
+
+      // ✅ 2. 設置 user 到 UserContext（讓 ProtectedRoute 通過）
       setUser(profile);
       localStorage.setItem('user', JSON.stringify(profile));
 
-      // 顯示成功訊息
-      showSuccess(
-        '註冊成功！',
-        '歡迎加入 Uknow',
-        ['您的帳號已成功建立', '現在可以開始使用所有功能']
-      );
+      // 顯示簡單提示（自動消失，不阻塞）
+      showToast('基本資訊已儲存，請完成付款', 'success');
 
-      // 導向 dashboard
-      navigate('/dashboard', { replace: true });
+      // 導向付款頁面
+      navigate('/payment/checkout', { replace: true });
     } catch (error: any) {
       console.error('CompleteProfile: Error completing profile:', error);
       showToast(error.message || '註冊失敗，請稍後再試', 'error');
@@ -219,6 +361,74 @@ export function CompleteProfile() {
     }
   };
 
+  const verifyReferralCode = async () => {
+    if (!formData.referralCode.trim()) {
+      setCodeError('請輸入推薦碼');
+      return;
+    }
+    
+    if (formData.referralCode === 'DEFAULTRCM01') {
+      setCodeVerified(true);
+      setVerifiedReferralCode(formData.referralCode);
+      setReferrerName('系統預設');
+      showToast('推薦碼驗證成功', 'success');
+      return;
+    }
+    
+    setIsVerifyingCode(true);
+    setCodeError('');
+
+    try {
+      // ✅ 使用統一的 API 請求工具
+      const result = await apiRequestJson<{ 
+        valid: boolean;
+        referrerName?: string;
+        referrerUserId?: string;
+        error?: { message: string };
+      }>(
+        buildApiUrl('/listings/verify-referral-code'),
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            referralCode: formData.referralCode.toLowerCase().trim(),
+            currentUserId: null  // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
+          }),
+        }
+      );
+
+      if (result.valid && result.referrerName) {
+        setCodeVerified(true);
+        setCodeError('');
+        setVerifiedReferralCode(formData.referralCode);  // ✅ 儲存已驗證的推薦碼
+        setReferrerName(result.referrerName);  // ✅ 儲存推薦人姓名
+        showToast('推薦碼驗證成功', 'success');  // ✅ 只顯示簡單訊息
+      } else {
+        setCodeError(result.error?.message || '推薦碼無效');
+        setCodeVerified(false);
+        setVerifiedReferralCode('');
+        setReferrerName('');
+        showToast(result.error?.message || '推薦碼無效', 'error');
+      }
+    } catch (err: any) {
+      console.error('CompleteProfile: Referral code verification error:', err);
+      
+      if (err instanceof ApiError && err.status === 401) {
+        setCodeError('登入已過期，請重新登入');
+        showToast('登入已過期，請重新登入', 'error');
+      } else {
+        setCodeError(err.message || '推薦碼驗證失敗，請稍後再試');
+        showToast(err.message || '推薦碼驗證失敗', 'error');
+      }
+      setCodeVerified(false);
+      setVerifiedReferralCode('');
+      setReferrerName('');
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
+  const isFormValid = !Object.keys(validateForm()).length;
+
   return (
     <div className="max-w-md mx-auto mt-12">
       <Card>
@@ -230,7 +440,7 @@ export function CompleteProfile() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 姓名 */}
             <div className="space-y-2">
-              <Label htmlFor="name">真實姓名 * (最多10字)</Label>
+              <Label htmlFor="name">姓名 *</Label>
               <Input
                 id="name"
                 value={formData.name}
@@ -240,7 +450,7 @@ export function CompleteProfile() {
                     setErrors({ ...errors, name: '' });
                   }
                 }}
-                placeholder="請輸入真實姓名"
+                placeholder="請輸入身分證上的姓名"
                 maxLength={10}
                 className={getInputErrorClass(!!errors.name)}
               />
@@ -250,23 +460,23 @@ export function CompleteProfile() {
               <FieldError error={errors.name} />
             </div>
 
-            {/* 手機號碼 */}
+            {/* 身分證字號 */}
             <div className="space-y-2">
-              <Label htmlFor="phone">手機號碼 *</Label>
+              <Label htmlFor="nationalId">身份證字號 *</Label>
               <Input
-                id="phone"
-                value={formData.phone}
+                id="nationalId"
+                value={formData.nationalId}
                 onChange={(e) => {
-                  setFormData({ ...formData, phone: e.target.value });
-                  setErrors({ ...errors, phone: '' });
+                  setFormData({ ...formData, nationalId: e.target.value });
+                  setErrors({ ...errors, nationalId: '' });
                 }}
-                placeholder="09XXXXXXXX"
+                placeholder="A123456789"
                 maxLength={10}
-                className={getInputErrorClass(!!errors.phone)}
+                className={getInputErrorClass(!!errors.nationalId)}
               />
-              <FieldError error={errors.phone} />
+              <FieldError error={errors.nationalId} />
               <p className="text-sm text-muted-foreground">
-                台灣手機號碼格式：09 開頭，共 10 位數
+                身分證字號格式：A123456789
               </p>
             </div>
 
@@ -297,6 +507,74 @@ export function CompleteProfile() {
                 註冊用戶需年滿 18 歲
               </p>
             </div>
+            
+            {/* 手機號碼 */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">手機號碼 *</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => {
+                  setFormData({ ...formData, phone: e.target.value });
+                  setErrors({ ...errors, phone: '' });
+                }}
+                placeholder="09XXXXXXXX"
+                maxLength={10}
+                className={getInputErrorClass(!!errors.phone)}
+              />
+              <FieldError error={errors.phone} />
+              <p className="text-sm text-muted-foreground">
+                台灣手機號碼格式：09 開頭，共 10 位數
+              </p>
+            </div>
+
+            {/* 推薦碼 */}
+            <div className="space-y-2">
+              <Label htmlFor="referralCode">推薦碼 (選填)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="referralCode"
+                  value={formData.referralCode}
+                  onChange={(e) => {
+                    const newCode = e.target.value;
+                    setFormData({ ...formData, referralCode: newCode });
+                    setCodeError('');
+                    
+                    // ✅ 如果推薦碼改變，清除驗證狀態
+                    if (newCode !== verifiedReferralCode) {
+                      setCodeVerified(false);
+                      setReferrerName('');
+                    }
+                  }}
+                  placeholder="輸入推薦碼"
+                  className={getInputErrorClass(!!codeError)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={verifyReferralCode}
+                  disabled={isVerifyingCode || !formData.referralCode.trim() || (codeVerified && formData.referralCode === verifiedReferralCode)}
+                  className="shrink-0"
+                >
+                  {isVerifyingCode ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                      驗證中
+                    </>
+                  ) : (
+                    '驗證'
+                  )}
+                </Button>
+              </div>
+              <FieldError error={codeError} />
+              
+              {/* ✅ 推薦人姓名顯示 */}
+              {referrerName && (
+                <p className="text-sm text-green-600">
+                  推薦人：{referrerName}
+                </p>
+              )}
+            </div>
 
             {/* 服務條款 */}
             <div className="space-y-2">
@@ -321,40 +599,16 @@ export function CompleteProfile() {
             <Button
               type="submit"
               className="w-full"
-              disabled={
-                isLoading ||
-                !formData.name.trim() ||
-                !formData.phone.trim() ||
-                !formData.birthDate ||
-                !formData.agreedToTerms
-              }
+              disabled={!isFormValid || isLoading}
+              onClick={handleSubmit}
             >
               {isLoading ? (
                 <>
-                  <svg
-                    className="animate-spin h-4 w-4 mr-2"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                    />
-                  </svg>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   處理中...
                 </>
               ) : (
-                '完成註冊'
+                '下一步'
               )}
             </Button>
 

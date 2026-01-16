@@ -178,7 +178,7 @@ export function AuthCallback() {
               profile = await response.json();
               console.log('AuthCallback: Profile data:', { 
                 hasProfile: !!profile, 
-                needsOnboarding: profile.needsOnboarding 
+                registrationStep: profile.registrationStep
               });
               break; // 成功，跳出 retry loop
             } else if (response.status === 401 && attempt < 3) {
@@ -217,18 +217,41 @@ export function AuthCallback() {
           return;
         }
 
-        // 根據是否需要完善資料決定導向
-        if (profile.needsOnboarding) {
-          // 需要完善資料
-          console.log('AuthCallback: User needs to complete profile');
+        // ✅ 修改：根據實際資料完成度決定導向，而非依賴 registrationStep
+        // 1. 檢查是否完成基本資料填寫（name, phone, birthDate）
+        const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
+        
+        // 2. 檢查是否已完成付款（有推薦碼 = 已付款）
+        const hasPaidMembership = !!profile.referralCode;
+        
+        console.log('AuthCallback: Profile check -', {
+          hasCompleteProfile,
+          hasPaidMembership,
+          hasReferralCode: profile.referralCode,
+          hasName: !!profile.name,
+          hasPhone: !!profile.phone,
+          hasBirthDate: !!profile.birthDate
+        });
+        
+        if (!hasCompleteProfile) {
+          // 情況 1：尚未完成基本資料填寫，導向資料填寫頁面
+          console.log('AuthCallback: User needs to complete profile, redirecting to /auth/complete-profile');
           setStatus('success');
           setMessage('Email 驗證成功！正在導向資料填寫頁面...');
           setTimeout(() => {
             navigate('/auth/complete-profile', { replace: true });
           }, 1500);
+        } else if (hasCompleteProfile && !hasPaidMembership) {
+          // 情況 2：已完成資料填寫但未付款，導向付款頁面
+          console.log('AuthCallback: User needs to complete payment, redirecting to /payment/checkout');
+          setStatus('success');
+          setMessage('Email 驗證成功！正在導向付款頁面...');
+          setTimeout(() => {
+            navigate('/payment/checkout', { replace: true });
+          }, 1500);
         } else {
-          // 已完成註冊，直接登入
-          console.log('AuthCallback: User profile complete, redirecting to dashboard');
+          // 情況 3：已完成註冊（資料 + 付款），導向會員中心
+          console.log('AuthCallback: User registration complete, redirecting to dashboard');
           setStatus('success');
           setMessage('驗證成功！正在登入...');
           setTimeout(() => {
@@ -241,7 +264,7 @@ export function AuthCallback() {
         // 即使發生錯誤，也引導用戶到完成資料頁面（容錯處理）
         console.log('AuthCallback: Error occurred, but redirecting to complete profile anyway');
         setStatus('success');
-        setMessage('Email 驗證成功！正在導向資料填寫頁面...');
+        setMessage('Email 驗證成功！在導向資料填寫頁面...');
         setTimeout(() => {
           navigate('/auth/complete-profile', { replace: true });
         }, 1500);

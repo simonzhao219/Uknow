@@ -3,6 +3,14 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as kv from './kv_store.tsx';
 import { verifyToken } from './auth.ts';
 import { updateTaskProgress, updateReferralMonthlyLog } from './task_helpers.ts';
+import { 
+  getTaiwanNow, 
+  getTaiwanToday, 
+  toTaiwanDateString, 
+  toTaiwanISOString,
+  calculateSubscriptionEndDate,
+  createTaiwanDate
+} from './date_utils.ts';
 
 const payment = new Hono();
 
@@ -13,12 +21,13 @@ const YEARLY_PRICE = 1200; // 年費（新台幣）
  * POST /payment/create-order
  * 創建付款訂單
  * 
+ * ✅ Phase 9.4: 修改為不需要 listingData
  * 說明：
  * 1. 驗證用戶身份
  * 2. 檢查是否已有付款訂單（避免重複）
  * 3. 生成訂單編號
- * 4. 暫存訂單資訊
- * 5. 返回付款資訊（目前為模擬，未來整合藍新金流）
+ * 4. ✅ 只暫存用戶 ID 和推薦碼（不需要刊登資料）
+ * 5. 返回付款資訊
  */
 payment.post('/create-order', async (c) => {
   try {
@@ -62,24 +71,21 @@ payment.post('/create-order', async (c) => {
       }, 404);
     }
     
-    // 3. 獲取請求資料
-    const body = await c.req.json();
-    const { listingData, referralCode } = body;
+    // ✅ 3. 從用戶 profile 讀取推薦碼（註冊時填寫的）
+    const referralCode = userProfile.referredByCode || null;
     
-    console.log(`[Create Payment Order] 刊登資料:`, listingData);
-    console.log(`[Create Payment Order] 推薦碼: ${referralCode || '無'}`);
+    console.log(`[Create Payment Order] 推薦碼（來自 profile）: ${referralCode || '無'}`);
     
     // 4. 生成訂單編號
     const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     console.log(`[Create Payment Order] ✅ 生成訂單編號: ${orderId}`);
     
-    // 5. 暫存訂單資訊（包含刊登資料和推薦碼）
+    // 5. ✅ 只暫存用戶 ID 和推薦碼（不需要刊登資料）
     const orderData = {
       orderId,
       userId: user.id,
       amount: YEARLY_PRICE,
       status: 'pending',
-      listingData,
       referralCode: referralCode || null,
       createdAt: new Date().toISOString()
     };
@@ -202,12 +208,16 @@ payment.post('/callback', async (c) => {
 /**
  * 處理付款成功的核心邏輯
  * 
+ * ✅ Phase 9.7: 修正自動創建刊登問題（Bug PHASE9-007）
  * 流程：
  * 1. 獲取訂單資訊
- * 2. 創建刊登（呼叫 listings.ts 的邏輯）
- * 3. 生成推薦碼
- * 4. 建立推薦關係（如果有推薦碼）
- * 5. 更新訂單狀態
+ * 2. 生成推薦碼（綁定到用戶，不綁定到刊登）
+ * 3. ✅ 不創建刊登（由用戶手動創建）
+ * 4. ✅ 創建訂閱資訊（獨立存儲）
+ * 5. ✅ 更新用戶資料（registrationStep = 3 + referralCode）
+ * 6. ✅ 記錄推薦來源
+ * 7. 建立推薦關係（如果有推薦碼）
+ * 8. 更新付款訂單狀態
  */
 async function processPaymentCallback(orderId: string, tradeNo: string) {
   console.log(`[Process Payment] 開始處理付款回調: ${orderId}`);
@@ -233,26 +243,13 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     };
   }
   
-  const { userId, listingData, referralCode } = paymentOrder;
+  const { userId, referralCode } = paymentOrder;
   
   console.log(`[Process Payment] 用戶 ID: ${userId}`);
   console.log(`[Process Payment] 推薦碼: ${referralCode || '無'}`);
   
   try {
-    // 2. 創建刊登（這裡會生成推薦碼）
-    // 注意：這裡直接操作 KV Store，而不是呼叫 HTTP API
-    
-    const userProfile = await kv.get(`user:${userId}:profile`);
-    
-    if (!userProfile) {
-      throw new Error('用戶資料不存在');
-    }
-    
-    // ===== 生成刊登 ID =====
-    const listingId = `listing_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    console.log(`[Process Payment] ✅ 生成刊登 ID: ${listingId}`);
-    
-    // ===== 生成9碼推薦碼 =====
+    // 2. 生成推薦碼
     let newReferralCode = generateReferralCode();
     let codeAttempts = 0;
     while (await kv.get(`referral_code:${newReferralCode}`)) {
@@ -265,107 +262,489 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     }
     console.log(`[Process Payment] ✅ 生成推薦碼: ${newReferralCode}`);
     
-    // ===== 計算訂閱日期 =====
-    const now = new Date();
-    const createdAt = now.toISOString();
+    // 3. ✅ 不創建刊登（由用戶手動創建）
+    const userProfile = await kv.get(`user:${userId}:profile`);
     
-    const nextPaymentDate = new Date(now);
-    nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + 1);
-    
-    const activeUntil = new Date(nextPaymentDate);
-    activeUntil.setDate(activeUntil.getDate() - 1);
-    activeUntil.setHours(23, 59, 59, 999);
-    
-    console.log(`[Process Payment] 訂閱有效期限: ${activeUntil.toISOString()}`);
-    
-    // ===== 處理推薦關係 =====
-    let referrerUserId = null;
-    let referrerListingId = null;
-    
-    if (referralCode && referralCode !== 'DEFAULTRCM01') {
-      console.log(`[Process Payment] 處理推薦關係: ${referralCode}`);
-      
-      const referralData = await kv.get(`referral_code:${referralCode}`);
-      
-      if (referralData) {
-        referrerUserId = referralData.userId;
-        
-        // 獲取推薦人的刊登 ID
-        const referrerListing = await kv.get(`user:${referrerUserId}:listing`);
-        if (referrerListing) {
-          referrerListingId = referrerListing.id;
-        }
-        
-        console.log(`[Process Payment] ✅ 推薦人: ${referrerUserId}`);
-      } else {
-        console.log(`[Process Payment] ⚠️ 推薦碼無效，但繼續創建刊登`);
-      }
+    if (!userProfile) {
+      throw new Error('用資料不存在');
     }
     
-    // ===== 創建刊登資料 =====
-    const listing = {
-      id: listingId,
+    // ===== 計算訂閱日期 =====
+    // ✅ 新規則：
+    // - 起始日 = 付款當日 00:00:00
+    // - 結束日 = 一年後的同一日 - 1天 23:59:59
+    // - 下次扣款日 = 結束日（不是結束日 + 1）
+    // 
+    // 範例：2024/12/31 付款
+    // - 起始日：2024/12/31 00:00:00
+    // - 結束日：2025/12/30 23:59:59
+    // - 下次扣款日：2025/12/30（結束日當天扣款）
+    
+    const now = getTaiwanNow();
+    const createdAt = toTaiwanISOString(now);
+    
+    // 起始日：付款當日 00:00:00（台灣時區）
+    const startDate = getTaiwanToday();
+    
+    // 結束日：一年後的同一日 - 1天 23:59:59（台灣時區）
+    const endDate = calculateSubscriptionEndDate(startDate);
+    
+    // 寬限期結束日：結束日 + 60天 23:59:59
+    const gracePeriodEnd = new Date(endDate.getTime() + (60 * 24 * 60 * 60 * 1000) - 1);
+    
+    // 下次扣款日：結束日當天 00:00:00
+    const nextPaymentDate = new Date(endDate);
+    nextPaymentDate.setHours(0, 0, 0, 0);
+    
+    console.log(`[Process Payment] ✅ 訂閱期間（台灣時區）: ${toTaiwanDateString(startDate)} - ${toTaiwanDateString(endDate)}`);
+    console.log(`[Process Payment] ✅ 下次扣款日（台灣時區）: ${toTaiwanDateString(nextPaymentDate)}`);
+    
+    // ✅ 生成訂閱 ID
+    const subscriptionId = `subscription_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    
+    // ✅ 建立推薦碼索引（綁定到用戶，listingId 初始為 null）
+    await kv.set(`referral_code:${newReferralCode}`, {
+      code: newReferralCode,
       userId: userId,
-      name: listingData.name,
-      category: listingData.category,
-      gender: listingData.gender,
-      city: listingData.city,
-      districts: listingData.districts,
-      description: listingData.description || '',
-      photos: listingData.photos,
-      contacts: listingData.contacts,
-      referralCode: newReferralCode,
-      referrerUserId: referrerUserId,
-      referrerListingId: referrerListingId,
-      subscriptionPlan: 'yearly',
-      lastPaymentDate: createdAt,
-      nextPaymentDate: nextPaymentDate.toISOString(),
-      activeUntil: activeUntil.toISOString(),
-      isActive: true,
+      listingId: null,  // ✅ 初始為 null，等用戶創建刊登時再更新
+      userName: userProfile.name,
+      listingName: null,  // ✅ 初始為 null
+      createdAt: createdAt
+    });
+    
+    console.log(`[Process Payment] ✅ 推薦碼索引創建成功（綁定到用戶）`);
+    
+    // ✅ 創建訂閱記錄（符合新規格）
+    const subscription = {
+      id: subscriptionId,
+      userId: userId,
+      status: 'Active',  // Active | Canceled | Expired | Grace
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      gracePeriodEnd: gracePeriodEnd.toISOString(),
+      amount: YEARLY_PRICE,  // 1200
+      paymentMethod: tradeNo === 'SIMULATED_TRADE_NO' ? 'simulated' : 'newebpay',
+      paymentTransactionId: tradeNo,
+      newebpayTradeNo: tradeNo !== 'SIMULATED_TRADE_NO' ? tradeNo : null,
+      isCanceled: false,
+      canceledAt: null,
+      isRenewal: false,
       createdAt: createdAt,
       updatedAt: createdAt
     };
     
-    // 儲存刊登
-    await kv.set(`listing:${listingId}`, listing);
-    await kv.set(`user:${userId}:listing`, listing);
+    // ✅ 存儲到正確的鍵（subscription:${subscriptionId}）
+    await kv.set(`subscription:${subscriptionId}`, subscription);
     
-    // 建立推薦碼索引
-    await kv.set(`referral_code:${newReferralCode}`, {
-      code: newReferralCode,
-      userId: userId,
-      listingId: listingId,
-      userName: userProfile.name,
-      createdAt: createdAt
-    });
+    console.log(`[Process Payment] ✅ 訂閱記錄創建成功: ${subscriptionId}`);
     
-    console.log(`[Process Payment] ✅ 刊登創建成功: ${listingId}`);
+    // ✅ 添加到用戶的訂閱列表（最新的在前面）
+    const userSubscriptions = await kv.get(`user:${userId}:subscriptions`) || [];
+    userSubscriptions.unshift(subscriptionId);
+    await kv.set(`user:${userId}:subscriptions`, userSubscriptions);
     
-    // ===== 處理推薦關係（如果有推薦人）=====
-    if (referrerUserId && referrerListingId) {
-      console.log(`[Process Payment] 建立推薦關係...`);
+    console.log(`[Process Payment] ✅ 用戶訂閱列表已更新`);
+    
+    // ✅ 創建用戶帳號狀態（SSOT - Single Source of Truth）
+    const accountStatus = {
+      status: 'Active',  // Active | Canceled | Grace | Fail
+      currentSubscriptionId: subscriptionId,
+      activeReferralCodeId: null,  // 稍後設置推薦碼 ID
+      activeListingId: null,  // 用戶創建刊登時設置
+      // ❌ 移除 pointBalance: 0,（違反 SSOT，點數由 user:${userId}:rewards 統一管理）
+      lastStatusUpdate: createdAt,
+      lastSubscriptionEndDate: endDate.toISOString(),
+      gracePeriodEndDate: null  // 僅在 Grace 狀態時有值
+    };
+    
+    await kv.set(`user:${userId}:account_status`, accountStatus);
+    
+    console.log(`[Process Payment] ✅ 用戶帳號狀態創建成功`);
+    
+    // 5. ✅ 更新用戶資料（registrationStep = 3 + referralCode）
+    const updatedProfile = {
+      ...userProfile,
+      registrationStep: 3,
+      referralCode: newReferralCode,  // ✅ 推薦碼存在用戶���料中
+      updatedAt: new Date().toISOString()
+    };
+    
+    await kv.set(`user:${userId}:profile`, updatedProfile);
+    
+    console.log(`[Process Payment] ✅ 用戶資料更新成功`);
+    
+    // 6. ✅ 記錄推薦來源
+    if (referralCode && referralCode !== 'DEFAULTRCM01') {
+      console.log(`========== 🔗 開始處理推薦關係 ==========`);
+      console.log(`[Process Payment] 被推薦人用戶ID: ${userId}`);
+      console.log(`[Process Payment] 使用推薦碼: ${referralCode}`);
       
-      // ✅ Phase 5: 實施完整的推薦關係建立邏輯
-      await createReferralRelationships(
-        userId,
-        listingId,
-        userProfile.name,
-        listingData.name,
-        referrerUserId,
-        referrerListingId,
-        createdAt
-      );
+      const referralData = await kv.get(`referral_code:${referralCode}`);
       
-      console.log(`[Process Payment] ✅ 推薦關係已建立`);
+      if (referralData) {
+        const referrerUserId = referralData.userId;
+        
+        console.log(`[Process Payment] ✅ 找到推薦人用戶ID: ${referrerUserId}`);
+        console.log(`[Process Payment] 推薦人用戶名: ${referralData.userName}`);
+        
+        // ✅ 1. 記錄推薦來源
+        await kv.set(`user:${userId}:referred_by`, {
+          referrerUserId: referrerUserId,
+          referrerListingId: referralData.listingId,  // 可能為 null
+          referrerUserName: referralData.userName,
+          referrerListingName: referralData.listingName,  // 可能為 null
+          referredAt: createdAt,
+          generation: 1 // 第1代
+        });
+        
+        console.log(`[Process Payment] ✅ 推薦來源已記錄: user:${userId}:referred_by`);
+        
+        // ✅ 2. 立即更新推薦人的推薦樹（不需要等創建刊登）
+        console.log(`[Process Payment] 🌲 開始更新推薦人的推薦樹...`);
+        
+        const referralTreeKey = `user:${referrerUserId}:referral_tree`;
+        const referralTree = await kv.get(referralTreeKey) || {
+          firstGeneration: [],
+          secondGeneration: [],
+          thirdGeneration: []
+        };
+        
+        console.log(`[Process Payment] 當前推薦樹: 1代=${referralTree.firstGeneration.length}, 2代=${referralTree.secondGeneration.length}, 3代=${referralTree.thirdGeneration.length}`);
+        
+        // 組裝被推薦人信息（此時還沒有刊登）
+        const newMember = {
+          userId: userId,
+          userName: userProfile.name,
+          userReferralCode: newReferralCode,  // ✅ 被推薦者的推薦碼
+          listingId: null,          // ✅ 付款時還沒有刊登
+          listingName: null,        // ✅ 付款時還沒有刊登
+          serviceType: null,        // ✅ 付款時還沒有刊登
+          city: null,               // ✅ 付款時還沒有刊登
+          activeUntil: endDate.toISOString(),  // 使用訂閱結束日期
+          isActive: true,
+          referrer: null,           // 一代沒有上級推薦人
+          createdAt: createdAt
+        };
+        
+        // 加入到一代推薦
+        referralTree.firstGeneration.push(newMember);
+        referralTree.lastUpdated = createdAt;
+        
+        await kv.set(referralTreeKey, referralTree);
+        
+        console.log(`[Process Payment] ✅ 推薦樹已更新: user:${referrerUserId}:referral_tree`);
+        console.log(`[Process Payment] 新增成員: ${userProfile.name} (userId: ${userId})`);
+        console.log(`[Process Payment] 更新後推薦樹: 1代=${referralTree.firstGeneration.length}`);
+        
+        // ✅ 3. 更新推薦人的推薦統計
+        const statsKey = `user:${referrerUserId}:referral_stats`;
+        const stats = await kv.get(statsKey) || {
+          totalReferrals: 0,
+          firstGenCount: 0,
+          secondGenCount: 0,
+          thirdGenCount: 0
+        };
+        
+        stats.totalReferrals += 1;
+        stats.firstGenCount += 1;
+        stats.lastUpdated = createdAt;
+        
+        await kv.set(statsKey, stats);
+        
+        console.log(`[Process Payment] ✅ 推薦統計已更新: user:${referrerUserId}:referral_stats`);
+        console.log(`[Process Payment] 總推薦數: ${stats.totalReferrals}, 一代: ${stats.firstGenCount}`);
+        
+        // ✅ 4. 遞歸處理二代、三代推薦關係（向上追溯）
+        console.log(`[Process Payment] 🔄 開始處理二代、三代推薦關係...`);
+        
+        // 檢查推薦人是否也有推薦人（二代）
+        const referrerReferredBy = await kv.get(`user:${referrerUserId}:referred_by`);
+        
+        if (referrerReferredBy && referrerReferredBy.referrerUserId) {
+          const gen2ReferrerUserId = referrerReferredBy.referrerUserId;
+          
+          console.log(`[Process Payment] 🔍 找到二代推薦人: ${gen2ReferrerUserId}`);
+          
+          // 獲取推薦人的推薦碼
+          const referrerProfile = await kv.get(`user:${referrerUserId}:profile`);
+          
+          // 更新二代推薦人的推薦樹
+          const gen2TreeKey = `user:${gen2ReferrerUserId}:referral_tree`;
+          const gen2Tree = await kv.get(gen2TreeKey) || {
+            firstGeneration: [],
+            secondGeneration: [],
+            thirdGeneration: []
+          };
+          
+          const gen2Member = {
+            userId: userId,
+            userName: userProfile.name,
+            userReferralCode: newReferralCode,  // ✅ 被推薦者的推薦碼
+            listingId: null,
+            listingName: null,
+            serviceType: null,
+            city: null,
+            activeUntil: endDate.toISOString(),
+            isActive: true,
+            referrer: {  // 二代的推薦人是一代
+              userId: referrerUserId,
+              userName: referralData.userName,
+              userReferralCode: referrerProfile?.referralCode || null,  // ✅ 推薦人的推薦碼
+              listingId: referralData.listingId,
+              listingName: referralData.listingName
+            },
+            createdAt: createdAt
+          };
+          
+          gen2Tree.secondGeneration.push(gen2Member);
+          gen2Tree.lastUpdated = createdAt;
+          
+          await kv.set(gen2TreeKey, gen2Tree);
+          
+          console.log(`[Process Payment] ✅ 二代推薦樹已更新: ${gen2TreeKey}`);
+          console.log(`[Process Payment] 新增二代成員: ${userProfile.name} (通過 ${referralData.userName})`);
+          
+          // 更新二代推薦人的統計
+          const gen2StatsKey = `user:${gen2ReferrerUserId}:referral_stats`;
+          const gen2Stats = await kv.get(gen2StatsKey) || {
+            totalReferrals: 0,
+            firstGenCount: 0,
+            secondGenCount: 0,
+            thirdGenCount: 0
+          };
+          
+          gen2Stats.totalReferrals += 1;
+          gen2Stats.secondGenCount += 1;
+          gen2Stats.lastUpdated = createdAt;
+          
+          await kv.set(gen2StatsKey, gen2Stats);
+          
+          console.log(`[Process Payment] ✅ 二代推薦統計已更新`);
+          
+          // 檢查二代推薦人是否也有推薦人（三代）
+          const gen2ReferredBy = await kv.get(`user:${gen2ReferrerUserId}:referred_by`);
+          
+          if (gen2ReferredBy && gen2ReferredBy.referrerUserId) {
+            const gen3ReferrerUserId = gen2ReferredBy.referrerUserId;
+            
+            console.log(`[Process Payment] 🔍 找到三代推薦人: ${gen3ReferrerUserId}`);
+            
+            // 獲取二代推薦人的推薦碼（用於三代的 referrer 信息）
+            const gen2Profile = await kv.get(`user:${gen2ReferrerUserId}:profile`);
+            
+            // 更新三代推薦人的推薦樹
+            const gen3TreeKey = `user:${gen3ReferrerUserId}:referral_tree`;
+            const gen3Tree = await kv.get(gen3TreeKey) || {
+              firstGeneration: [],
+              secondGeneration: [],
+              thirdGeneration: []
+            };
+            
+            const gen3Member = {
+              userId: userId,
+              userName: userProfile.name,
+              userReferralCode: newReferralCode,  // ✅ 被推薦者的推薦碼
+              listingId: null,
+              listingName: null,
+              serviceType: null,
+              city: null,
+              activeUntil: endDate.toISOString(),
+              isActive: true,
+              referrer: {  // 三代的推薦人是二代
+                userId: gen2ReferrerUserId,
+                userName: referrerReferredBy.referrerUserName,
+                userReferralCode: gen2Profile?.referralCode || null,  // ✅ 推薦人的推薦碼
+                listingId: referrerReferredBy.referrerListingId,
+                listingName: referrerReferredBy.referrerListingName
+              },
+              createdAt: createdAt
+            };
+            
+            gen3Tree.thirdGeneration.push(gen3Member);
+            gen3Tree.lastUpdated = createdAt;
+            
+            await kv.set(gen3TreeKey, gen3Tree);
+            
+            console.log(`[Process Payment] ✅ 三代推薦樹已更新: ${gen3TreeKey}`);
+            console.log(`[Process Payment] 新增三代成員: ${userProfile.name} (通過 ${referrerReferredBy.referrerUserName})`);
+            
+            // 更新三代推薦人的統計
+            const gen3StatsKey = `user:${gen3ReferrerUserId}:referral_stats`;
+            const gen3Stats = await kv.get(gen3StatsKey) || {
+              totalReferrals: 0,
+              firstGenCount: 0,
+              secondGenCount: 0,
+              thirdGenCount: 0
+            };
+            
+            gen3Stats.totalReferrals += 1;
+            gen3Stats.thirdGenCount += 1;
+            gen3Stats.lastUpdated = createdAt;
+            
+            await kv.set(gen3StatsKey, gen3Stats);
+            
+            console.log(`[Process Payment] ✅ 三代推薦統計已更新`);
+          } else {
+            console.log(`[Process Payment] ℹ️ 無三代推薦關係`);
+          }
+        } else {
+          console.log(`[Process Payment] ℹ️ 無二代推薦關係`);
+        }
+        
+        console.log(`========== ✅ 推薦關係處理完成 ==========`);
+        
+        // ========== ✅ Phase 1: 發放上三代的首月獎勵 ==========
+        console.log(`========== 💰 開始發放首月獎勵 ==========`);
+        
+        try {
+          // 發放一代獎勵
+          await issueImmediateReward(
+            referrerUserId,      // 推薦人用戶ID
+            userId,              // 被推薦人用戶ID
+            userProfile.name,    // 被推薦人姓名
+            newReferralCode,     // 被推薦人推薦碼
+            1,                   // 第1代
+            1,                   // 第1個月
+            10                   // 10 Points
+          );
+          console.log(`[Process Payment] ✅ 一代獎勵已發放`);
+          
+          // 發放二代獎勵（如果存在）
+          if (referrerReferredBy && referrerReferredBy.referrerUserId) {
+            await issueImmediateReward(
+              referrerReferredBy.referrerUserId,
+              userId,
+              userProfile.name,
+              newReferralCode,
+              2,
+              1,
+              10
+            );
+            console.log(`[Process Payment] ✅ 二代獎勵已發放`);
+            
+            // 發放三代獎勵（如果存在）
+            const gen2ReferredBy = await kv.get(`user:${referrerReferredBy.referrerUserId}:referred_by`);
+            if (gen2ReferredBy && gen2ReferredBy.referrerUserId) {
+              await issueImmediateReward(
+                gen2ReferredBy.referrerUserId,
+                userId,
+                userProfile.name,
+                newReferralCode,
+                3,
+                1,
+                10
+              );
+              console.log(`[Process Payment] ✅ 三代獎勵已發放`);
+            }
+          }
+          
+          console.log(`========== ✅ 首月獎勵發放完成 ==========`);
+        } catch (error) {
+          console.error(`========== ❌ 首月獎勵發放失敗 ==========`);
+          console.error(error);
+          // 不中斷流程，繼續執行後續步驟
+        }
+        
+        // ========== ✅ Phase 2: 創建後續 11 個月的獎勵排程 ==========
+        console.log(`========== 📅 開始創建後續 11 個月的獎勵排程 ==========`);
+        
+        try {
+          // 創建第 2~12 個月的排程
+          await createRewardSchedules(
+            referrerUserId,      // 推薦人用戶ID
+            userId,              // 被推薦人用戶ID
+            userProfile.name,    // 被推薦人姓名
+            newReferralCode,     // 被推薦人推薦碼
+            1,                   // 第1代
+            endDate              // 訂閱結束日期
+          );
+          console.log(`[Process Payment] ✅ 一代排程已創建`);
+          
+          // 創建第 2~12 個月的排程（如果存在）
+          if (referrerReferredBy && referrerReferredBy.referrerUserId) {
+            await createRewardSchedules(
+              referrerReferredBy.referrerUserId,
+              userId,
+              userProfile.name,
+              newReferralCode,
+              2,
+              endDate
+            );
+            console.log(`[Process Payment] ✅ 二代排程已創建`);
+            
+            // 創建第 2~12 個月的排程（如果存在）
+            const gen2ReferredBy = await kv.get(`user:${referrerReferredBy.referrerUserId}:referred_by`);
+            if (gen2ReferredBy && gen2ReferredBy.referrerUserId) {
+              await createRewardSchedules(
+                gen2ReferredBy.referrerUserId,
+                userId,
+                userProfile.name,
+                newReferralCode,
+                3,
+                endDate
+              );
+              console.log(`[Process Payment] ✅ 三代排程已創建`);
+            }
+          }
+          
+          console.log(`========== ✅ 後續 11 個月的獎勵排程創建完成 ==========`);
+        } catch (error) {
+          console.error(`========== ❌ 後續 11 個月的獎勵排程創建失敗 ==========`);
+          console.error(error);
+          // 不中斷流程，繼續執行後續步驟
+        }
+        
+        // ========== ✅ Phase 4: 更新推薦者的任務進度 ==========
+        console.log(`========== 🎯 開始更新推薦者的任務進度 ==========`);
+        
+        try {
+          // 只有一代推薦才計入任務（連續推薦達人 + 推薦王）
+          // 二代、三代不計入任務
+          
+          // ✅ 1. 更新任務進度
+          await updateTaskProgress(
+            referrerUserId,  // 推薦人用戶ID
+            createdAt        // 付款時間戳
+          );
+          
+          console.log(`[Process Payment] ✅ 推薦者任務進度已更新`);
+          
+          // ✅ 2. 更新月度日誌（新增）
+          await updateReferralMonthlyLog(
+            referrerUserId,  // 推薦人用戶ID
+            {
+              userId: userId,
+              userName: userProfile.name,
+              userReferralCode: newReferralCode,  // ✅ 被推薦人的推薦碼
+              listingId: null,                    // ✅ 付費時還沒有刊登
+              listingName: null,
+              referrer: null                      // ✅ 一代沒有推薦人
+            },
+            createdAt
+          );
+          
+          console.log(`[Process Payment] ✅ 推薦者月度日誌已更新`);
+          console.log(`========== ✅ 推薦者任務進度和月度日誌更新完成 ==========`);
+        } catch (error) {
+          console.error(`========== ❌ 推薦者任務進度更新失敗 ==========`);
+          console.error(error);
+          // 不中斷流程，繼續執行後續步驟
+        }
+        
+      } else {
+        console.log(`[Process Payment] ❌ 推薦碼無效: ${referralCode}`);
+        console.log(`========== ❌ 推薦關係處理失敗 ==========`);
+      }
+    } else {
+      console.log(`[Process Payment] ℹ️ 無推薦碼或使用默認推薦碼，跳過推薦關係處理`);
     }
     
-    // 3. 更新付款訂單狀態
+    // 8. 更新付款訂單狀態
     await kv.set(`payment_order:${orderId}`, {
       ...paymentOrder,
       status: 'completed',
       completedAt: new Date().toISOString(),
       tradeNo: tradeNo,
-      listingId: listingId,
       referralCode: newReferralCode
     });
     
@@ -374,10 +753,9 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     return {
       success: true,
       data: {
-        listingId,
         referralCode: newReferralCode,
-        activeUntil: activeUntil.toISOString(),
-        message: '付款成功，刊登已創建'
+        subscriptionEndDate: endDate.toISOString(),
+        message: '付款成功，請到刊登管理創建您的第一筆刊登'
       }
     };
     
@@ -425,469 +803,160 @@ function generateReferralCode(): string {
 }
 
 /**
- * ✅ Phase 5: 創建推薦關係（完整的三代推薦邏輯）
+ * 立即發放首月獎勵
  * 
- * 說明：
- * 1. 建立第1代推薦關係（新用戶 → 推薦人）
- * 2. 更新推薦人的推薦樹
- * 3. 遞歸處理第2代和第3代
- * 4. 發放第1個月獎勵
- * 5. 創建後續11個月的獎勵排程
- * 6. 更新任務進度
- * 
- * @param newUserId - 新用戶 ID
- * @param newListingId - 新刊登 ID
- * @param newUserName - 新用戶名稱
- * @param newListingName - 新刊登名稱
- * @param referrerUserId - 推薦人用戶 ID
- * @param referrerListingId - 推薦人刊登 ID
- * @param createdAt - 創建時間
+ * @param receiverUserId - 接收獎勵的用戶ID（推薦人）
+ * @param refereeUserId - 被推薦人用戶ID
+ * @param refereeName - 被推薦人姓名
+ * @param refereeCode - 被推薦人推薦碼
+ * @param generation - 第幾代（1/2/3）
+ * @param monthNumber - 第幾個月（始終為 1）
+ * @param amount - 獎勵金額（10P）
  */
-async function createReferralRelationships(
-  newUserId: string,
-  newListingId: string,
-  newUserName: string,
-  newListingName: string,
-  referrerUserId: string,
-  referrerListingId: string,
-  createdAt: string
-): Promise<void> {
-  console.log('[Create Referral Relationships] 開始建立推薦關係...');
-  console.log(`  新用戶: ${newUserId} (${newUserName} - ${newListingName})`);
-  console.log(`  推薦人: ${referrerUserId}`);
-  
-  // ===== 1. 獲取推薦人資料 =====
-  const referrerProfile = await kv.get(`user:${referrerUserId}:profile`);
-  const referrerListing = await kv.get(`listing:${referrerListingId}`);
-  
-  if (!referrerProfile || !referrerListing) {
-    console.error('[Create Referral Relationships] ❌ 推薦人資料不完整');
-    return;
-  }
-  
-  console.log(`  推薦人資料: ${referrerProfile.name} - ${referrerListing.name}`);
-  
-  // ===== 2. 獲取新用戶的刊登資料 =====
-  const newListing = await kv.get(`listing:${newListingId}`);
-  
-  if (!newListing) {
-    console.error('[Create Referral Relationships] ❌ 新刊登資料不存在');
-    return;
-  }
-  
-  // ===== 3. 建立第1代推薦關係 =====
-  console.log('[Create Referral Relationships] 處理第1代推薦關係...');
-  
-  // 3.1 更新推薦人的推薦樹（第1代）
-  const referrerTree = await kv.get(`listing:${referrerListingId}:referral_tree`) || {
-    firstGeneration: [],
-    secondGeneration: [],
-    thirdGeneration: [],
-    lastUpdated: null
-  };
-  
-  // 新增到第1代
-  referrerTree.firstGeneration.push({
-    listingId: newListingId,
-    publicListingId: newListingId, // 暫時使用相同值
-    userId: newUserId,
-    userPublicId: newUserId, // 暫時使用相同值
-    userName: newUserName,
-    listingName: newListingName,
-    category: newListing.category,
-    city: newListing.city,
-    gender: newListing.gender,
-    createdAt: createdAt,
-    activeUntil: newListing.activeUntil
-  });
-  
-  referrerTree.lastUpdated = createdAt;
-  
-  await kv.set(`listing:${referrerListingId}:referral_tree`, referrerTree);
-  
-  console.log(`  ✅ 第1代推薦關係已建立（推薦人: ${referrerUserId}）`);
-  
-  // 3.2 記錄新用戶的推薦來源
-  await kv.set(`user:${newUserId}:referred_by`, {
-    referrerUserId: referrerUserId,
-    referrerListingId: referrerListingId,
-    referrerUserName: referrerProfile.name,
-    referrerListingName: referrerListing.name,
-    referredAt: createdAt,
-    generation: 1 // 第1代
-  });
-  
-  // 3.3 發放第1個月獎勵（第1代：$10）
-  console.log('[Create Referral Relationships] 發放第1代第1個月獎勵...');
-  
-  await issueReferralReward(
-    referrerUserId,
-    newUserId,
-    newUserName,
-    newListingName,
-    1, // 第1代
-    1, // 第1個月
-    10, // $10
-    createdAt
-  );
-  
-  // 3.4 創建後續11個月的獎勵排程
-  await createRewardSchedules(
-    referrerUserId,
-    newUserId,
-    newUserName,
-    newListingName,
-    1, // 第1代
-    10, // $10
-    createdAt
-  );
-  
-  // 3.5 更新任務進度
-  await updateTaskProgress(referrerUserId, newUserId, createdAt);
-  
-  console.log('  ✅ 第1代處理完成');
-  
-  // ===== 4. 處理第2代和第3代（遞歸）=====
-  // 檢查推薦人是否也是被推薦人（即推薦人有上級）
-  const referrerReferredBy = await kv.get(`user:${referrerUserId}:referred_by`);
-  
-  if (referrerReferredBy) {
-    console.log('[Create Referral Relationships] 處理第2代推薦關係...');
-    
-    const gen2ReferrerId = referrerReferredBy.referrerUserId;
-    const gen2ReferrerListingId = referrerReferredBy.referrerListingId;
-    
-    // 獲取第2代推薦人資料
-    const gen2ReferrerProfile = await kv.get(`user:${gen2ReferrerId}:profile`);
-    const gen2ReferrerListing = await kv.get(`listing:${gen2ReferrerListingId}`);
-    
-    if (gen2ReferrerProfile && gen2ReferrerListing) {
-      // 4.1 更新第2代推薦人的推薦樹
-      const gen2Tree = await kv.get(`listing:${gen2ReferrerListingId}:referral_tree`) || {
-        firstGeneration: [],
-        secondGeneration: [],
-        thirdGeneration: [],
-        lastUpdated: null
-      };
-      
-      // 新增到第2代
-      gen2Tree.secondGeneration.push({
-        listingId: newListingId,
-        publicListingId: newListingId,
-        userId: newUserId,
-        userPublicId: newUserId,
-        userName: newUserName,
-        listingName: newListingName,
-        category: newListing.category,
-        city: newListing.city,
-        gender: newListing.gender,
-        createdAt: createdAt,
-        activeUntil: newListing.activeUntil,
-        // ✅ 新增：推薦人信息（第2代需要知道是誰推薦的）
-        referrer: {
-          ownerName: referrerProfile.name,
-          listingName: referrerListing.name
-        }
-      });
-      
-      gen2Tree.lastUpdated = createdAt;
-      
-      await kv.set(`listing:${gen2ReferrerListingId}:referral_tree`, gen2Tree);
-      
-      console.log(`  ✅ 第2代推薦關係已建立（推薦人: ${gen2ReferrerId}）`);
-      
-      // 4.2 發放第2代第1個月獎勵（$5）
-      await issueReferralReward(
-        gen2ReferrerId,
-        newUserId,
-        newUserName,
-        newListingName,
-        2, // 第2代
-        1, // 第1個月
-        5, // $5
-        createdAt,
-        referrerProfile.name,
-        referrerListing.name
-      );
-      
-      // 4.3 創建第2代後續11個月的獎勵排程
-      await createRewardSchedules(
-        gen2ReferrerId,
-        newUserId,
-        newUserName,
-        newListingName,
-        2, // 第2代
-        5, // $5
-        createdAt,
-        referrerProfile.name,
-        referrerListing.name
-      );
-      
-      console.log('  ✅ 第2代處理完成');
-      
-      // ===== 5. 處理第3代 =====
-      const gen2ReferredBy = await kv.get(`user:${gen2ReferrerId}:referred_by`);
-      
-      if (gen2ReferredBy) {
-        console.log('[Create Referral Relationships] 處理第3代推薦關係...');
-        
-        const gen3ReferrerId = gen2ReferredBy.referrerUserId;
-        const gen3ReferrerListingId = gen2ReferredBy.referrerListingId;
-        
-        // 獲取第3代推薦人資料
-        const gen3ReferrerProfile = await kv.get(`user:${gen3ReferrerId}:profile`);
-        const gen3ReferrerListing = await kv.get(`listing:${gen3ReferrerListingId}`);
-        
-        if (gen3ReferrerProfile && gen3ReferrerListing) {
-          // 5.1 更新第3代推薦人的推薦樹
-          const gen3Tree = await kv.get(`listing:${gen3ReferrerListingId}:referral_tree`) || {
-            firstGeneration: [],
-            secondGeneration: [],
-            thirdGeneration: [],
-            lastUpdated: null
-          };
-          
-          // 新增到第3代
-          gen3Tree.thirdGeneration.push({
-            listingId: newListingId,
-            publicListingId: newListingId,
-            userId: newUserId,
-            userPublicId: newUserId,
-            userName: newUserName,
-            listingName: newListingName,
-            category: newListing.category,
-            city: newListing.city,
-            gender: newListing.gender,
-            createdAt: createdAt,
-            activeUntil: newListing.activeUntil,
-            // ✅ 新增：推薦人信息（第3代需要知道是誰推薦的）
-            referrer: {
-              ownerName: gen2ReferrerProfile.name,
-              listingName: gen2ReferrerListing.name
-            }
-          });
-          
-          gen3Tree.lastUpdated = createdAt;
-          
-          await kv.set(`listing:${gen3ReferrerListingId}:referral_tree`, gen3Tree);
-          
-          console.log(`  ✅ 第3代推薦關係已建立（推薦人: ${gen3ReferrerId}）`);
-          
-          // 5.2 發放第3代第1個月獎勵（$3）
-          await issueReferralReward(
-            gen3ReferrerId,
-            newUserId,
-            newUserName,
-            newListingName,
-            3, // 第3代
-            1, // 第1個月
-            3, // $3
-            createdAt,
-            gen2ReferrerProfile.name,
-            gen2ReferrerListing.name
-          );
-          
-          // 5.3 創建第3代後續11個月的獎勵排程
-          await createRewardSchedules(
-            gen3ReferrerId,
-            newUserId,
-            newUserName,
-            newListingName,
-            3, // 第3代
-            3, // $3
-            createdAt,
-            gen2ReferrerProfile.name,
-            gen2ReferrerListing.name
-          );
-          
-          console.log('  ✅ 第3代處理完成');
-        }
-      }
-    }
-  }
-  
-  console.log('[Create Referral Relationships] ✅ 推薦關係建立完成');
-}
-
-/**
- * 發放推薦獎勵（第1個月）
- * 
- * @param receiverUserId - 接收獎勵的用戶 ID
- * @param refereeUserId - 被推薦人用戶 ID
- * @param refereeUserName - 被推薦人用戶名
- * @param refereeListingName - 被推薦人刊登名稱
- * @param generation - 代數（1, 2, 3）
- * @param monthNumber - 月份（1-12）
- * @param amount - 獎勵金額
- * @param issuedAt - 發放時間
- * @param intermediateUserName - 中間推薦人名稱（第2代、第3代需要）
- * @param intermediateListingName - 中間推薦人刊登名稱（第2代、第3代需要）
- */
-async function issueReferralReward(
+async function issueImmediateReward(
   receiverUserId: string,
   refereeUserId: string,
-  refereeUserName: string,
-  refereeListingName: string,
+  refereeName: string,
+  refereeCode: string,
   generation: number,
   monthNumber: number,
-  amount: number,
-  issuedAt: string,
-  intermediateUserName?: string,
-  intermediateListingName?: string
-): Promise<void> {
-  console.log(`[Issue Reward] 發放獎勵: ${receiverUserId}, 第${generation}代, 第${monthNumber}個月, $${amount}`);
+  amount: number
+) {
+  console.log(`💰 發放首月獎勵: 用戶=${receiverUserId}, 第${generation}代, ${amount}P`);
   
-  // 1. 生成獎勵 ID
-  const rewardId = `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-  
-  // 2. 構建獎勵描述
-  let description = '';
-  if (generation === 1) {
-    description = `推薦獎勵 - ${refereeUserName}-${refereeListingName}（第1代）- 第${monthNumber}個月`;
-  } else {
-    description = `推薦獎勵 - ${refereeUserName}-${refereeListingName}（第${generation}代）- 第${monthNumber}個月`;
-  }
-  
-  // 3. 構建獎勵記錄
-  const rewardRecord = {
-    id: rewardId,
-    type: `referral_gen${generation}_month${monthNumber}`,
-    amount: amount,
-    referee: {
-      userId: refereeUserId,
-      userName: refereeUserName,
-      listingId: '', // 這裡可以補充
-      listingName: refereeListingName
-    },
-    generation: generation,
-    monthNumber: monthNumber,
-    issuedAt: issuedAt,
-    description: description
-  };
-  
-  // 如果是第2代或第3代，加入中間推薦人信息
-  if (generation > 1 && intermediateUserName && intermediateListingName) {
-    rewardRecord['referrer'] = {
-      userId: '', // 可以補充
-      userName: intermediateUserName,
-      listingId: '',
-      listingName: intermediateListingName
+  try {
+    // ❌ 移除：不再更新 account_status.pointBalance（違反 SSOT）
+    // 點數統一由 user:${userId}:rewards 管理
+    
+    // ✅ 更新獎勵統計數據（SSOT）
+    const rewardsKey = `user:${receiverUserId}:rewards`;
+    const rewards = await kv.get(rewardsKey) || {
+      availableRewards: 0,
+      pendingRewards: 0,
+      withdrawnRewards: 0,
+      totalEarned: 0
     };
+    
+    rewards.availableRewards += amount;  // 可提領增加
+    rewards.totalEarned += amount;       // 總累積增加
+    rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
+    
+    await kv.set(rewardsKey, rewards);
+    
+    console.log(`   ✅ 獎勵統計已更新: 可提領=${rewards.availableRewards}P, 總累積=${rewards.totalEarned}P`);
+    
+    // 3. 記錄到獎勵歷史
+    const historyKey = `user:${receiverUserId}:reward_history`;
+    const history = await kv.get(historyKey) || [];
+    
+    // ✅ 正確格式：一代推薦-被推薦者姓名-被推薦者推薦碼-第1個月
+    const generationText = generation === 1 ? '一代推薦' : generation === 2 ? '二代推薦' : '三代推薦';
+    const description = `${generationText}-${refereeName}-${refereeCode}-第${monthNumber}個月`;
+    
+    // ✅ 計算交易後餘額
+    const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+    
+    history.unshift({
+      id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      type: `referral_gen${generation}_month${monthNumber}`,
+      amount,
+      balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
+      referee: {
+        userId: refereeUserId,
+        userName: refereeName,
+        userReferralCode: refereeCode  // ✅ 包含被推薦人推薦碼
+      },
+      generation,
+      monthNumber,
+      issuedAt: toTaiwanISOString(getTaiwanNow()),
+      description
+    });
+    
+    // 只保留最近 200 筆
+    if (history.length > 200) {
+      history.length = 200;
+    }
+    
+    await kv.set(historyKey, history);
+    
+    console.log(`   ✅ 獎勵已發放: ${description}`);
+  } catch (error) {
+    console.error(`   ❌ 發放獎勵失敗: ${error.message}`);
+    throw error;
   }
-  
-  // 4. 更新獎勵歷史
-  const history = await kv.get(`user:${receiverUserId}:reward_history`) || [];
-  history.unshift(rewardRecord);
-  await kv.set(`user:${receiverUserId}:reward_history`, history);
-  
-  // 5. 更新點數餘額
-  const pointsKey = `user:${receiverUserId}:points`;
-  const currentPoints = await kv.get(pointsKey) || 0;
-  await kv.set(pointsKey, currentPoints + amount);
-  
-  // 6. 記錄到月度日誌
-  const currentMonth = issuedAt.substring(0, 7); // YYYY-MM
-  const monthlyLogKey = `user:${receiverUserId}:referral_monthly_log`;
-  const monthlyLog = await kv.get(monthlyLogKey) || {};
-  
-  if (!monthlyLog[currentMonth]) {
-    monthlyLog[currentMonth] = [];
-  }
-  
-  monthlyLog[currentMonth].push({
-    listingId: '',
-    userId: refereeUserId,
-    userName: refereeUserName,
-    listingName: refereeListingName,
-    createdAt: issuedAt
-  });
-  
-  await kv.set(monthlyLogKey, monthlyLog);
-  
-  console.log(`  ✅ 獎勵已發放: ${rewardId}, +${amount} 點`);
 }
 
 /**
- * 創建後續11個月的獎勵排程
+ * 創建後續 11 個月的獎勵排程
  * 
- * @param receiverUserId - 接收獎勵的用戶 ID
- * @param refereeUserId - 被推薦人用戶 ID
- * @param refereeUserName - 被推薦人用戶名
- * @param refereeListingName - 被推薦人刊登名稱
- * @param generation - 代數（1, 2, 3）
- * @param monthlyAmount - 每月獎勵金額
- * @param startDate - 開始日期
- * @param intermediateUserName - 中間推薦人名稱（第2代、第3代需要）
- * @param intermediateListingName - 中間推薦人刊登名稱（第2代、第3代需要）
+ * @param receiverUserId - 接收獎勵的用戶ID（推薦人）
+ * @param refereeUserId - 被推薦人用戶ID
+ * @param refereeName - 被推薦人姓名
+ * @param refereeCode - 被推薦人推薦碼
+ * @param generation - 第幾代（1/2/3）
+ * @param subscriptionEndDate - 訂閱結束日期
  */
 async function createRewardSchedules(
   receiverUserId: string,
   refereeUserId: string,
-  refereeUserName: string,
-  refereeListingName: string,
+  refereeName: string,
+  refereeCode: string,
   generation: number,
-  monthlyAmount: number,
-  startDate: string,
-  intermediateUserName?: string,
-  intermediateListingName?: string
-): Promise<void> {
-  console.log(`[Create Reward Schedules] 創建後續11個月的獎勵排程...`);
+  subscriptionEndDate: Date
+) {
+  console.log(`📅 創建獎勵排程: 用戶=${receiverUserId}, 第${generation}代, 共11筆`);
   
-  const start = new Date(startDate);
-  
-  // 創建第2個月到第12個月的排程
-  for (let month = 2; month <= 12; month++) {
-    // 計算排程日期（每個月的1號）
-    const scheduleDate = new Date(start);
-    scheduleDate.setMonth(scheduleDate.getMonth() + (month - 1));
-    scheduleDate.setDate(1);
-    scheduleDate.setHours(0, 0, 0, 0);
+  try {
+    // 計算付款日（訂閱結束日 - 364天）
+    const startDate = new Date(subscriptionEndDate);
+    startDate.setDate(startDate.getDate() - 364);
     
-    const scheduleDateStr = scheduleDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    // 生成排程 ID
-    const scheduleId = `schedule_${Date.now()}_${month}_${Math.random().toString(36).substring(7)}`;
-    
-    // 構建排程記錄
-    const schedule = {
-      id: scheduleId,
-      userId: receiverUserId,
-      referee: {
-        userId: refereeUserId,
-        userName: refereeUserName,
-        listingId: '',
-        listingName: refereeListingName
-      },
-      generation: generation,
-      monthNumber: month,
-      amount: monthlyAmount,
-      scheduledDate: scheduleDateStr,
-      status: 'pending',
-      createdAt: startDate,
-      completedAt: null
-    };
-    
-    // 如果是第2代或第3代，加入中間推薦人信息
-    if (generation > 1 && intermediateUserName && intermediateListingName) {
-      schedule['referrer'] = {
-        userId: '',
-        userName: intermediateUserName,
-        listingId: '',
-        listingName: intermediateListingName
+    // 創建第 2~12 個月的排程
+    for (let month = 2; month <= 12; month++) {
+      // 計算發放日期：付款日 + (month-1) 個月
+      const scheduledDate = new Date(startDate);
+      scheduledDate.setMonth(scheduledDate.getMonth() + (month - 1));
+      const scheduledDateStr = toTaiwanDateString(scheduledDate);  // YYYY-MM-DD
+      
+      // 生成排程 ID
+      const scheduleId = `schedule_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
+      // 創建排程記錄
+      const schedule = {
+        id: scheduleId,
+        userId: receiverUserId,  // 接收獎勵的用戶ID
+        referee: {
+          userId: refereeUserId,
+          userName: refereeName,
+          userReferralCode: refereeCode  // ✅ 包含被推薦人推薦碼
+        },
+        generation,
+        monthNumber: month,
+        amount: 10,
+        scheduledDate: scheduledDateStr,
+        status: 'pending',  // pending | completed | cancelled
+        createdAt: toTaiwanISOString(getTaiwanNow()),
+        completedAt: null,
+        cancellationReason: null
       };
+      
+      // 存儲排程記錄
+      await kv.set(`reward_schedule:${scheduleId}`, schedule);
+      
+      // 添加到日期索引
+      const dateIndexKey = `reward_schedules_by_date:${scheduledDateStr}`;
+      const dateIndex = await kv.get(dateIndexKey) || [];
+      dateIndex.push(scheduleId);
+      await kv.set(dateIndexKey, dateIndex);
+      
+      console.log(`   ✅ 排程已創建: 第${month}個月, 發放日=${scheduledDateStr}`);
     }
     
-    // 儲存排程
-    await kv.set(`reward_schedule:${scheduleId}`, schedule);
-    
-    // 加入到用戶的排程列表
-    const userSchedulesKey = `user:${receiverUserId}:reward_schedules`;
-    const userSchedules = await kv.get(userSchedulesKey) || [];
-    userSchedules.push(scheduleId);
-    await kv.set(userSchedulesKey, userSchedules);
+    console.log(`   ✅ 總計創建 11 筆排程`);
+  } catch (error) {
+    console.error(`   ❌ 創建排程失敗: ${error.message}`);
+    throw error;
   }
-  
-  console.log(`  ✅ 已創建11個月的獎勵排程（第${generation}代）`);
 }
 
 /**

@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
 import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
-import { ArrowLeft, Upload, X, Save } from 'lucide-react';
+import { ArrowLeft, Upload, X, Save, Info } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,7 +29,7 @@ export function EditServiceProvider() {
   const { id } = useParams();
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
-  const { showToast } = useNotification();
+  const { showToast, showInfo } = useNotification();
   const supabase = createClient();
   
   const [formData, setFormData] = useState({
@@ -579,6 +579,31 @@ export function EditServiceProvider() {
                   <FieldError error={errors.instagram} />
                 </div>
                 <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="facebook">Facebook</Label>
+                    <Info 
+                      className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors" 
+                      onClick={() => {
+                        showInfo(
+                          '填寫說明',
+                          '請填入Facebook網址後的字串或粉絲專頁名字，例：『www.facebook.com/Uknow』就輸入Uknow。'
+                        );
+                      }}
+                    />
+                  </div>
+                  <Input
+                    id="facebook"
+                    value={formData.contacts.facebook}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      contacts: {...formData.contacts, facebook: e.target.value}
+                    })}
+                    placeholder="Facebook網址後的字串或粉專名稱"
+                    className={getInputErrorClass(!!errors.facebook)}
+                  />
+                  <FieldError error={errors.facebook} />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="line">LINE ID</Label>
                   <Input
                     id="line"
@@ -591,20 +616,6 @@ export function EditServiceProvider() {
                     className={getInputErrorClass(!!errors.line)}
                   />
                   <FieldError error={errors.line} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="facebook">Facebook</Label>
-                  <Input
-                    id="facebook"
-                    value={formData.contacts.facebook}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contacts: {...formData.contacts, facebook: e.target.value}
-                    })}
-                    placeholder="Facebook 專頁名稱"
-                    className={getInputErrorClass(!!errors.facebook)}
-                  />
-                  <FieldError error={errors.facebook} />
                 </div>
               </div>
               <FieldError error={errors.contacts} />

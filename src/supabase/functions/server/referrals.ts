@@ -4,111 +4,153 @@ import { verifyToken } from './auth.ts';
 
 const referrals = new Hono();
 
+// ===== DEBUG 端點：檢查推薦關係狀態 =====
+referrals.get('/debug/:userId', async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    
+    console.log(`========== 🔍 DEBUG: 檢查用戶推薦關係 ==========`);
+    console.log(`用戶ID: ${userId}`);
+    
+    // 1. 用戶基本資料
+    const profile = await kv.get(`user:${userId}:profile`);
+    console.log('📋 用戶資料:', profile ? {
+      name: profile.name,
+      referralCode: profile.referralCode,
+      referredByCode: profile.referredByCode
+    } : 'null');
+    
+    // 2. 推薦來源
+    const referredBy = await kv.get(`user:${userId}:referred_by`);
+    console.log('🔗 推薦來源 (referred_by):', referredBy);
+    
+    // 3. 推薦樹
+    const referralTree = await kv.get(`user:${userId}:referral_tree`);
+    console.log('🌲 推薦樹 (referral_tree):', referralTree ? {
+      firstGen: referralTree.firstGeneration?.length || 0,
+      secondGen: referralTree.secondGeneration?.length || 0,
+      thirdGen: referralTree.thirdGeneration?.length || 0
+    } : 'null');
+    
+    // 4. 推薦統計
+    const stats = await kv.get(`user:${userId}:referral_stats`);
+    console.log('📊 推薦統計 (stats):', stats);
+    
+    // 5. 推薦碼索引
+    if (profile?.referralCode) {
+      const codeIndex = await kv.get(`referral_code:${profile.referralCode}`);
+      console.log(`🎫 推薦碼索引 (referral_code:${profile.referralCode}):`, codeIndex);
+    }
+    
+    console.log(`========== ✅ DEBUG 完成 ==========`);
+    
+    return c.json({
+      success: true,
+      data: {
+        profile: profile ? {
+          name: profile.name,
+          referralCode: profile.referralCode,
+          referredByCode: profile.referredByCode
+        } : null,
+        referredBy,
+        referralTree,
+        stats,
+        codeIndex: profile?.referralCode ? await kv.get(`referral_code:${profile.referralCode}`) : null
+      }
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    return c.json({
+      success: false,
+      error: { message: error.message }
+    }, 500);
+  }
+});
+
 // GET /referrals/my-tree - 獲取我的推薦樹
 referrals.get('/my-tree', async (c) => {
   try {
-    console.log('========== 獲取推薦樹 ==========');
+    console.log('========== 🌲 開始獲取用戶推薦樹 ==========');
     
-    // 1. 驗證用戶登入
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) {
-      console.error('[my-tree] No Authorization header');
-      return c.json({ error: { message: 'Unauthorized' } }, 401);
-    }
+    // ✅ 1. 驗證用戶
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
     
-    const token = authHeader.replace('Bearer ', '');
-    console.log('[my-tree] Verifying token...');
-    const { user, error: authError } = await verifyToken(token);
-    
-    if (authError || !user) {
-      console.error('[my-tree] Auth error:', authError);
-      return c.json({ error: { message: 'Unauthorized' } }, 401);
-    }
-    
-    console.log(`✅ 用戶認證成功: ${user.id}`);
-    
-    // 2. 獲取用戶的所有刊登 ID
-    const userListingsIds = await kv.get(`user:${user.id}:listings`) || [];
-    
-    if (userListingsIds.length === 0) {
-      console.log('ℹ️ 用戶沒有任何刊登');
+    if (!accessToken) {
+      console.error('[Get My Tree] ❌ 缺少 Authorization header');
       return c.json({
-        success: true,
-        data: {
-          trees: [],
-          summary: {
-            totalReferrals: 0,
-            firstGenCount: 0,
-            secondGenCount: 0,
-            thirdGenCount: 0
-          }
-        }
-      });
+        success: false,
+        error: { message: '未授權：請先登入' }
+      }, 401);
     }
     
-    console.log(`📋 用戶有 ${userListingsIds.length} 個刊登`);
+    const { user, error } = await verifyToken(accessToken);
     
-    // 3. ✅ 使用預計算快取讀取推薦樹（效能優化）
-    const trees = [];
+    if (error || !user) {
+      console.error('[Get My Tree] ❌ 用戶驗證失敗:', error);
+      return c.json({
+        success: false,
+        error: { message: '未授權：請先登入' }
+      }, 401);
+    }
+    
+    console.log(`[Get My Tree] ✅ 用戶驗證成功: ${user.id}`);
+    
+    // ✅ 2. 獲取用戶資料（包含推薦碼）
+    const userProfile = await kv.get(`user:${user.id}:profile`);
+    console.log(`📋 用戶資料:`, userProfile ? {
+      name: userProfile.name,
+      email: userProfile.email,
+      referralCode: userProfile.referralCode
+    } : 'null');
+    
+    const userReferralCode = userProfile?.referralCode || '';
+    
+    if (!userReferralCode) {
+      console.warn(`⚠️ 用戶推薦碼為空！用戶ID: ${user.id}`);
+      console.warn(`⚠️ userProfile 存在: ${!!userProfile}`);
+      console.warn(`⚠️ userProfile.referralCode 值: ${userProfile?.referralCode}`);
+    }
+    
+    console.log(`🎫 用戶推薦碼: ${userReferralCode}`);
+    
+    // ✅ 3. 從用戶推薦樹讀取數據（不再依賴刊登）
+    // 架構變更：推薦碼綁定用戶，推薦樹也應該以用戶為根
+    const referralTreeKey = `user:${user.id}:referral_tree`;
+    const referralTree = await kv.get(referralTreeKey) || {
+      firstGeneration: [],
+      secondGeneration: [],
+      thirdGeneration: []
+    };
+    
+    console.log(`📊 用戶推薦樹: 1代=${referralTree.firstGeneration.length}, 2代=${referralTree.secondGeneration.length}, 3代=${referralTree.thirdGeneration.length}`);
+    
+    // ✅ 4. 格式化推薦樹數據（移除刊登概念，純用戶推薦）
     const today = new Date().toISOString().split('T')[0];
     
-    for (const myListingId of userListingsIds) {
-      // 3.1 讀取刊登基本資訊
-      const myListing = await kv.get(`listing:${myListingId}`);
-      if (!myListing) {
-        console.warn(`⚠️ 找不到刊登: ${myListingId}`);
-        continue;
-      }
-      
-      console.log(`🔍 處理刊登: ${myListingId}`);
-      
-      // 3.2 讀取預計算的推薦樹
-      const referralTree = await kv.get(`listing:${myListingId}:referral_tree`) || {
-        firstGeneration: [],
-        secondGeneration: [],
-        thirdGeneration: []
+    const formatReferralMember = (member: any) => {
+      return {
+        userId: member.userId,
+        userName: member.userName,
+        userReferralCode: member.userReferralCode || null,  // ✅ 被推薦者的推薦碼
+        listingId: member.listingId || null,        // 可能還沒創建刊登
+        listingName: member.listingName || null,    // 可能還沒創建刊登
+        serviceType: member.category || null,
+        city: member.city || null,
+        activeUntil: member.activeUntil || null,
+        isActive: member.activeUntil ? member.activeUntil >= today : false,
+        referrer: member.referrer || null,          // 二代、三代的推薦人信息（包含推薦碼）
+        createdAt: member.createdAt
       };
-      
-      console.log(`  👨👩‍👧 1代: ${referralTree.firstGeneration.length} 個`);
-      console.log(`  👶 2代: ${referralTree.secondGeneration.length} 個`);
-      console.log(`  👶👶 3代: ${referralTree.thirdGeneration.length} 個`);
-      
-      // 3.3 格式化我的刊登資訊
-      const myListingFormatted = {
-        id: myListing.id,
-        name: myListing.name,
-        serviceType: myListing.category,
-        city: myListing.city,
-        referralCode: myListing.referralCode,
-        activeUntil: myListing.activeUntil,
-        isActive: myListing.activeUntil >= today
-      };
-      
-      // 3.4 格式化推薦樹中的刊登資訊（已包含必要資訊，無需額外查詢）
-      const formatTreeListing = (listing: any) => {
-        return {
-          id: listing.listingId,
-          name: listing.listingName,      // ✅ 修正：刊登名稱
-          serviceType: listing.category,
-          city: listing.city,
-          ownerName: listing.userName,    // ✅ 修正：用戶名
-          userId: listing.userId,
-          activeUntil: listing.activeUntil,
-          isActive: listing.activeUntil >= today,
-          referrer: listing.referrer,     // ✅ 新增：推薦人信息（二代、三代有值）
-          photos: [] // 列表顯示不需要照片，減少資料傳輸
-        };
-      };
-      
-      trees.push({
-        myListing: myListingFormatted,
-        firstGeneration: referralTree.firstGeneration.map(formatTreeListing),
-        secondGeneration: referralTree.secondGeneration.map(formatTreeListing),
-        thirdGeneration: referralTree.thirdGeneration.map(formatTreeListing)
-      });
-    }
+    };
     
-    // 4. ✅ 使用預計算的推薦統計（效能優化）
+    // ✅ 5. 組裝返回數據（以用戶為核心，不是刊登）
+    const referralTreeData = {
+      firstGeneration: referralTree.firstGeneration.map(formatReferralMember),
+      secondGeneration: referralTree.secondGeneration.map(formatReferralMember),
+      thirdGeneration: referralTree.thirdGeneration.map(formatReferralMember)
+    };
+    
+    //  6. 使用預計算的推薦統計（效能優化）
     const stats = await kv.get(`user:${user.id}:referral_stats`) || {
       totalReferrals: 0,
       firstGenCount: 0,
@@ -122,8 +164,9 @@ referrals.get('/my-tree', async (c) => {
     return c.json({
       success: true,
       data: {
-        trees,
-        summary: stats
+        userReferralCode,       // ✅ 用戶推薦碼
+        referralTree: referralTreeData,  // ✅ 直接返回推薦樹，不是 trees 數組
+        summary: stats          // ✅ 推薦統計
       }
     });
     

@@ -2,7 +2,8 @@ import * as kv from "./kv_store.tsx";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { verifyToken } from "./auth.ts";
 import { REWARD_CONFIG, SCHEDULE_STATUS } from "./reward_config.ts";
-import { updateTaskProgress, updateReferralMonthlyLog } from "./task_helpers.ts";
+// ❌ 移除：任務系統已改為只與會員繳費有關，不與刊登有關
+// import { updateTaskProgress, updateReferralMonthlyLog } from "./task_helpers.ts";
 
 // ===== 工具函數 =====
 
@@ -86,15 +87,15 @@ export async function verifyReferralCode(c: any) {
     const referralData = await kv.get(`referral_code:${referralCode}`);
     
     if (!referralData) {
-      console.log(`推不存在: ${referralCode}`);
+      console.log(`推薦碼不存在: ${referralCode}`);
       return c.json({
         valid: false,
         error: { message: '推薦碼不存在' }
       }, 404);
     }
     
-    // ✅ 檢查是否為用戶自己的推薦碼
-    if (referralData.userId === currentUserId) {
+    // ✅ 檢查是否為用戶自己的推薦碼（僅在有 currentUserId 時檢查）
+    if (currentUserId && referralData.userId === currentUserId) {
       console.log(`用戶嘗試使用自己的推薦碼: ${referralCode}`);
       return c.json({
         valid: false,
@@ -173,10 +174,15 @@ export async function uploadListingPhoto(c: any) {
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}/${listingTempId}/${Date.now()}.${fileExt}`;
     
+    console.log(`📤 準備上傳: ${fileName}`);
+    
+    // ✅ 將 File 轉換為 ArrayBuffer（Edge Functions 環境需要）
+    const fileBuffer = await file.arrayBuffer();
+    
     // 上傳到 Supabase Storage
     const { data, error } = await supabase.storage
       .from('make-5c6718b9-listings-photos')
-      .upload(fileName, file, {
+      .upload(fileName, fileBuffer, {
         contentType: file.type,
         upsert: false
       });
@@ -186,12 +192,14 @@ export async function uploadListingPhoto(c: any) {
       return c.json({ error: { message: '上傳失敗', details: error.message } }, 500);
     }
     
+    console.log(`✅ 照片上傳成功，路徑: ${data.path}`);
+    
     // 取得公開 URL
     const { data: { publicUrl } } = supabase.storage
       .from('make-5c6718b9-listings-photos')
       .getPublicUrl(fileName);
     
-    console.log(`✅ 照片上傳成功: ${publicUrl}`);
+    console.log(`✅ 公開 URL: ${publicUrl}`);
     return c.json({
       success: true,
       photoUrl: publicUrl
@@ -292,21 +300,69 @@ export async function createListing(c: any) {
     const listingId = `listing_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     console.log(`✅ 生成內部 Listing ID: ${listingId}`);
     
-    // ===== 步驟5: 生成9碼推薦碼（新規格）=====
-    let newReferralCode = generateReferralCode();
+    // ===== ✅ 步驟5: 獲取或生成推薦碼（Phase 9.7: Bug PHASE9-007 修復）=====
+    let newReferralCode = userProfile.referralCode;  // ✅ 優先使用付款時生成的推薦碼
     
-    // 確保推薦碼唯一性
-    let codeAttempts = 0;
-    while (await kv.get(`referral_code:${newReferralCode}`)) {
-      console.log(`⚠️ 推薦碼衝突，重新生成: ${newReferralCode}`);
-      newReferralCode = generateReferralCode();
-      codeAttempts++;
-      if (codeAttempts > 10) {
-        throw new Error('無法生成唯一的推薦碼');
+    if (newReferralCode) {
+      console.log(`✅ 使用已有推薦碼: ${newReferralCode}`);
+      
+      // ✅ 更新推薦碼索引（綁定到刊登）
+      const existingReferralData = await kv.get(`referral_code:${newReferralCode}`);
+      if (existingReferralData) {
+        await kv.set(`referral_code:${newReferralCode}`, {
+          ...existingReferralData,
+          listingId: listingId,       // ✅ 更新 listingId
+          listingName: listingData.name  // ✅ 更新 listingName
+        });
+        console.log(`✅ 更新推薦碼索引: ${newReferralCode} → listingId=${listingId}, listingName=${listingData.name}`);
+      } else {
+        // 如果推薦碼索引不存在，創建新的（容錯處理）
+        await kv.set(`referral_code:${newReferralCode}`, {
+          code: newReferralCode,
+          userId: user.id,
+          listingId: listingId,
+          userName: userProfile.name,
+          listingName: listingData.name,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ 創建推薦碼索引（容錯）: ${newReferralCode}`);
       }
+    } else {
+      // ✅ 兼容舊用戶：如果沒有推薦碼，生成新的
+      console.log(`⚠️ 用戶沒有推薦碼（舊用戶），生成新的`);
+      newReferralCode = generateReferralCode();
+      
+      // 確保推薦碼唯一性
+      let codeAttempts = 0;
+      while (await kv.get(`referral_code:${newReferralCode}`)) {
+        console.log(`⚠️ 推薦碼衝突，重新生成: ${newReferralCode}`);
+        newReferralCode = generateReferralCode();
+        codeAttempts++;
+        if (codeAttempts > 10) {
+          throw new Error('無法生成唯一的推薦碼');
+        }
+      }
+      
+      console.log(`✅ 生成新推薦碼: ${newReferralCode}`);
+      
+      // 創建推薦碼索引
+      await kv.set(`referral_code:${newReferralCode}`, {
+        code: newReferralCode,
+        userId: user.id,
+        listingId: listingId,
+        userName: userProfile.name,
+        listingName: listingData.name,
+        createdAt: new Date().toISOString()
+      });
+      
+      // 更新用戶 profile，保存推薦碼
+      await kv.set(`user:${user.id}:profile`, {
+        ...userProfile,
+        referralCode: newReferralCode,
+        updatedAt: new Date().toISOString()
+      });
+      console.log(`✅ 更新用戶 profile，保存推薦碼: ${newReferralCode}`);
     }
-    
-    console.log(`✅ 生成推薦碼: ${newReferralCode}`);
     
     // ===== 步驟6: 計算訂閱日期 =====
     const now = new Date();
@@ -327,14 +383,22 @@ export async function createListing(c: any) {
     console.log(`   有效期限: ${activeUntil.toISOString()}`);
     
     // ===== 步驟7: 處理推薦人 =====
+    // ✅ 修正：從用戶 profile 中讀取註冊時使用的推薦碼（referredByCode）
     let referrerUserId = null;
-    let referrerListingId = null;  // 新增：推薦者的刊登 ID
-    if (referralCode && referralCode !== 'DEFAULTRCM01') {
-      const referralData = await kv.get(`referral_code:${referralCode}`);
+    let referrerListingId = null;
+    
+    const referredByCode = userProfile.referredByCode;  // ✅ 從用戶 profile 讀取
+    
+    if (referredByCode && referredByCode !== 'DEFAULTRCM01') {
+      console.log(`✅ 用戶註冊時使用的推薦碼: ${referredByCode}`);
+      
+      const referralData = await kv.get(`referral_code:${referredByCode}`);
       if (referralData) {
         referrerUserId = referralData.userId;
-        referrerListingId = referralData.listingId;  // 新增：從推薦碼映射獲取刊登 ID
+        referrerListingId = referralData.listingId;
         console.log(`✅ 推薦人: ${referralData.userName} (${referrerUserId}), 推薦刊登: ${referrerListingId}`);
+      } else {
+        console.log(`⚠️ 推薦碼索引不存在: ${referredByCode}`);
       }
     } else {
       console.log('ℹ 無推薦人');
@@ -378,25 +442,49 @@ export async function createListing(c: any) {
     // userListings.push(listingId);
     // await kv.set(`user:${user.id}:listings`, userListings);
     
+    // ❌ 移除：不需要重複保存推薦碼映射（已在步驟5更新）
     // 9.3 儲存推薦碼映射
-    await kv.set(`referral_code:${newReferralCode}`, {
-      listingId,
-      userId: user.id,
-      userName: userProfile.name
-    });
-    console.log(`✅ 儲存推薦碼映射: referral_code:${newReferralCode}`);
+    // await kv.set(`referral_code:${newReferralCode}`, {
+    //   listingId,
+    //   userId: user.id,
+    //   userName: userProfile.name
+    // });
+    // console.log(`✅ 儲存推薦碼映射: referral_code:${newReferralCode}`);
     
     // ===== 步驟9.4: 處理推薦獎勵（如果有推薦人）=====
-    if (referrerUserId && referrerListingId) {
+    // ✅ 修正：即使推薦人沒有刊登，也應該建立推薦關係
+    if (referrerUserId) {
       try {
         console.log('🎁 開始處理推薦獎勵...');
-        await processReferralRewards({
-          referrerUserId,
-          referrerListingId,
-          newListing: listing,
-          createdAt: now
-        });
-        console.log('✅ 推薦獎勵處理完成');
+        
+        if (referrerListingId) {
+          // 推薦人已有刊登，完整處理推薦獎勵
+          await processReferralRewards({
+            referrerUserId,
+            referrerListingId,
+            newListing: listing,
+            createdAt: now
+          });
+          console.log('✅ 推薦獎勵處理完成（推薦人已有刊登）');
+        } else {
+          // 推薦人還沒創建刊登，只記錄推薦關係和統計
+          console.log('⚠️ 推薦人尚未創建刊登，僅記錄推薦關係');
+          
+          // 記錄推薦來源（已在付款時記錄，這裡再次確認）
+          await kv.set(`user:${user.id}:referred_by`, {
+            referrerUserId: referrerUserId,
+            referrerListingId: null,
+            referrerUserName: userProfile.name,
+            referrerListingName: null,
+            referredAt: now.toISOString(),
+            generation: 1
+          });
+          
+          // 更新推薦統計（即使沒有刊登，也計入統計）
+          await updateReferralStats(referrerUserId, 1);
+          
+          console.log('✅ 推薦關係已記錄（等待推薦人創建刊登後回填）');
+        }
       } catch (rewardError) {
         // 獎勵處理失敗不影響刊登創建
         console.error('⚠️ 推薦獎勵處理失敗（不影響刊登創建）:', rewardError);
@@ -750,6 +838,122 @@ export async function updateListing(c: any) {
   }
 }
 
+// ===== API: 刪除刊登 =====
+export async function deleteListing(c: any) {
+  try {
+    console.log('========== 開始刪除刊登 ==========');
+    
+    // ===== 步驟1: JWT 驗證 =====
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      console.log('❌ 缺少 Authorization header');
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    console.log('[deleteListing] Verifying token...');
+    const { user, error: authError } = await verifyToken(token);
+    
+    if (authError || !user) {
+      console.error('[deleteListing] Auth error:', authError);
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // ===== 步驟2: 獲取刊登 ID =====
+    const { id } = c.req.param();
+    console.log(`刪除刊登 ID: ${id}`);
+    
+    // ===== 步驟3: 驗證刊登存在且屬於該用戶 =====
+    const listing = await kv.get(`listing:${id}`);
+    
+    if (!listing) {
+      console.log(`❌ 刊登不存在: ${id}`);
+      return c.json({ 
+        error: { message: '刊登不存在' } 
+      }, 404);
+    }
+    
+    if (listing.userId !== user.id) {
+      console.log(`❌ 無權刪除此刊登: listing.userId=${listing.userId}, user.id=${user.id}`);
+      return c.json({ 
+        error: { message: '無權刪除此刊登' } 
+      }, 403);
+    }
+    
+    console.log(`✅ 刊登驗證通過: ${listing.name}`);
+    
+    // ===== 步驟4: 刪除 Supabase Storage 中的照片 =====
+    if (listing.photos && listing.photos.length > 0) {
+      console.log(`📸 準備刪除 ${listing.photos.length} 張照片`);
+      
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+      
+      // 從 URL 提取文件路徑
+      const filePaths = listing.photos.map((url: string) => {
+        try {
+          const urlObj = new URL(url);
+          // URL 格式: https://{projectId}.supabase.co/storage/v1/object/public/make-5c6718b9-listings-photos/{userId}/{listingId}/{timestamp}.{ext}
+          const pathMatch = urlObj.pathname.match(/\/make-5c6718b9-listings-photos\/(.+)$/);
+          return pathMatch ? pathMatch[1] : null;
+        } catch (e) {
+          console.error(`❌ 解析照片 URL 失敗: ${url}`, e);
+          return null;
+        }
+      }).filter(Boolean);
+      
+      if (filePaths.length > 0) {
+        const { error: deleteError } = await supabase.storage
+          .from('make-5c6718b9-listings-photos')
+          .remove(filePaths);
+        
+        if (deleteError) {
+          console.error('⚠️ 刪除照片失敗:', deleteError);
+          // 繼續刪除刊登，即使照片刪除失敗
+        } else {
+          console.log(`✅ 已刪除 ${filePaths.length} 張照片`);
+        }
+      }
+    }
+    
+    // ===== 步驟5: 刪除刊登數據 =====
+    await kv.del(`listing:${id}`);
+    console.log(`✅ 已刪除刊登數據: ${id}`);
+    
+    // ===== 步驟6: 從用戶的刊登映射中移除 =====
+    const userListingKey = `user:${user.id}:listing`;
+    const userListingId = await kv.get(userListingKey);
+    
+    if (userListingId === id) {
+      await kv.del(userListingKey);
+      console.log(`✅ 已從用戶映射中移除刊登: user=${user.id}`);
+    }
+    
+    // ⚠️ 注釋：此處不處理推薦樹、獎勵排程等複雜邏輯
+    // 這些數據保留作為歷史記錄，不影響系統運作
+    
+    console.log('========== ✅ 刊登刪除成功 ==========');
+    return c.json({
+      success: true,
+      message: '刊登已成功刪除'
+    });
+    
+  } catch (error) {
+    console.error('========== ❌ 刪除刊登錯誤 ==========');
+    console.error(error);
+    return c.json({
+      error: { 
+        message: '刪除刊登失敗', 
+        details: error.message 
+      }
+    }, 500);
+  }
+}
+
 // ===================================================================
 // 推薦獎勵系統 - 核心處理函數
 // ===================================================================
@@ -757,12 +961,13 @@ export async function updateListing(c: any) {
 /**
  * 處理推薦獎勵的完整流程
  * 
- * ✅ 修復：向上遍歷推薦鏈，更新所有祖先的推薦樹（最多3代）
+ * ✅ 重要架構變更：推薦樹以用戶為根，而不是刊登
+ * 原因：推薦碼綁定到用戶，與刊登無關
  * 
  * 流程：
  * 1. 向上遍歷推薦鏈，找到所有祖先（最多3層）
  * 2. 對每個祖先：
- *    - 更新其推薦樹（把新刊登加入對應的代數）
+ *    - ✅ 更新其用戶推薦樹（user:${userId}:referral_tree）
  *    - 更新其推薦統計
  *    - 發放獎勵（根據代數調整倍率）
  * 3. 只為第1代（直接推薦人）：
@@ -802,7 +1007,7 @@ async function processReferralRewards({
     console.log(`📊 推薦鏈長度: ${ancestors.length}`);
     
     // 2. 對每個祖先：
-    //    - 更新其推薦樹（把新刊登加入對應的代數）
+    //    - ✅ 更新其用戶推薦樹（user:${userId}:referral_tree）
     //    - 更新其推薦統計
     //    - 發放獎勵（根據代數調整倍率）
     for (let i = 0; i < ancestors.length; i++) {
@@ -810,7 +1015,7 @@ async function processReferralRewards({
       const generation = i + 1;
       
       // 更新推薦樹
-      await updateReferralTree(ancestor.listingId, newListing, generation);
+      await updateReferralTree(ancestor.userId, newListing, generation);
       
       // 更新推薦統計
       await updateReferralStats(ancestor.userId, generation);
@@ -822,18 +1027,8 @@ async function processReferralRewards({
       await createRewardSchedules(ancestor.userId, newListing, generation, createdAt);
     }
     
-    // 3. 只為第1代（直接推薦人）：
-    //    - 更新月度日誌
-    //    - 更新任務進度
-    if (ancestors.length > 0) {
-      const firstGenAncestor = ancestors[0];
-      
-      // 更新推薦月度日誌（用於任務判定，只記錄第1代）
-      await updateReferralMonthlyLog(firstGenAncestor.userId, newListing, createdAt);
-      
-      // 新任務進度（只有第1代才計入任務）
-      await updateTaskProgress(firstGenAncestor.userId, createdAt);
-    }
+    // ❌ 移除：任務系統已改為只與會員繳費有關，不與刊登有關
+    // 任務進度和月度日誌的更新已移至 payment.ts (付費成功時)
     
     console.log('✅ 推薦獎勵處理完成');
     
@@ -845,14 +1040,14 @@ async function processReferralRewards({
 
 /**
  * 更新推薦樹（預計算快取）
- * 為根刊登建立/更新完整的推薦樹結構
+ * 為用戶建立/更新完整的推薦樹結構
  */
 async function updateReferralTree(
-  rootListingId: string,
+  userId: string,
   newListing: any,
   generation: number
 ) {
-  const key = `listing:${rootListingId}:referral_tree`;
+  const key = `user:${userId}:referral_tree`;
   const tree = await kv.get(key) || {
     firstGeneration: [],
     secondGeneration: [],
@@ -905,7 +1100,7 @@ async function updateReferralTree(
   tree.lastUpdated = new Date().toISOString();
   await kv.set(key, tree);
   
-  console.log(`✅ 更新推薦樹: ${rootListingId} - 第${generation}代 +1 (${userName}-${newListing.name})`);
+  console.log(`✅ 更新推薦樹: ${userId} - 第${generation}代 +1 (${userName}-${newListing.name})`);
 }
 
 /**
@@ -994,10 +1189,14 @@ async function issueImmediateReward(
   
   const description = `推薦獎勵 - ${referee.userName}-${referee.listingName}（第${generation}代）- 第1個月`;
   
+  // ✅ 計算交易後餘額
+  const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+  
   history.unshift({
     id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     type: `referral_gen${generation}_month1`,
     amount,
+    balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
     referee,           // ✅ 新增：完整的被推薦人信息
     referrer,          // ✅ 新增：完整的推薦人信息（可能為 null）
     generation,        // ✅ 新增：代數

@@ -1,8 +1,9 @@
 # General guidelines
 
-- 每次實作都要自我測試，確保結果與預期一致，測試報告不用寫成文檔。
+- 每次實作都要自我測試，確保結果與預期一致，測試項目和報告不用寫成文檔。
 - 每次都要考慮UI/UX、可維護性、效能做設計。
 - 如果使用到中文，一定要使用「繁體中文」
+- 這個服務還沒上線，所以如果有修改的時候不需要考慮新舊版的兼容、migrate等問題。
 
 ## 功能實作完成驗證清單 ⭐
 
@@ -331,7 +332,7 @@ curl -H "Authorization: Bearer {token}" \
 - [ ] 是否測試了動態路由仍然正常工作？
 
 **文檔記錄：**
-- [ ] 是否在路由文件頂部添加順序規範註釋？
+- [ ] 是否在路由文件頂部添加順序規範註釋���
 - [ ] 是否在動態路由前添加警告註釋？
 
 ### 🚨 常見錯誤案例
@@ -385,7 +386,7 @@ tasks.get('/:taskId', ...)          // ← 動態路由移到最後
 
 ### 📝 路由註釋規範
 
-**在動態路由前添加警告註釋：**
+**��動態路由前添加警告註釋：**
 
 ```typescript
 /**
@@ -818,7 +819,7 @@ showToast('付款已完成', 'success');  // 應該用 Notification Card
 **平板版和桌面版（≥ md）：**
 - ✅ 保持水平佈局（`justify-between`）
 - ✅ 左右兩側分別放置不同層級的信息
-- ✅ 充分利用���平空間
+- ✅ 充分利用平空間
 
 ### 實作範例
 ```tsx
@@ -922,7 +923,7 @@ showToast('付款已完成', 'success');  // 應該用 Notification Card
 
 ---
 
-## 推薦管理卡片設計規範 ⭐
+## ��薦管理卡片設計規範 ⭐
 
 ### 使用場景
 推薦管理頁面中展示被推薦人刊登的卡片組件，需要清晰展示推薦關係並保持簡潔。
@@ -947,7 +948,7 @@ showToast('付款已完成', 'success');  // 應該用 Notification Card
 **第 2 行：理位置 + 服務類別**
 - 格式：`{city} · {serviceType}`
 - 字體：`text-sm truncate mb-1 text-muted-foreground`
-- 範例：`台北市 · 按��服務`
+- 範例：`台北市 · 按服務`
 
 **第 3 行：推薦人資訊（僅二代、三代顯示）**
 - 格式：`{referrerOwnerName}-{referrerListingName}`（**無「推薦人：」前綴，無空格**）
@@ -958,7 +959,7 @@ showToast('付款已完成', 'success');  // 應該用 Notification Card
 
 #### **預覽按鈕（眼睛圖標）** ⭐ 重點
 
-**位置與對齊：**
+**位置與��齊：**
 - ✅ 卡片右側，**垂直對齊卡片水平中線**
 - ✅ CSS：`absolute right-3 top-1/2 -translate-y-1/2`
 - ✅ 說明：不管卡片有幾行文字（直推 2 行、二代/三代 3 行），眼睛都在同一視覺高度
@@ -1560,7 +1561,7 @@ monthDetails.map((record) => (
 - [ ] 是否在創建刊登時一次性獲取所有需要的用戶名、刊登名稱？
 - [ ] 獎勵歷史是否包含 `referee` 和 `referrer` 完整信息？
 - [ ] 獎勵排程是否包含 `referee` 和 `referrer` 完整信息？
-- [ ] 月度日���是否包含 `userName`、`listingName` 和 `referrer` 信息？
+- [ ] 月度日誌是否包含 `userName`、`listingName` 和 `referrer` 信息？
 - [ ] 推薦樹是否包含 `userName`、`listingName` 和 `referrer` 信息？
 
 **API 端點：**

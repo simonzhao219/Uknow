@@ -1,29 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
+import { Footer } from './components/Footer';
 import { HomePage } from './components/HomePage';
 import { ServiceProviderDetail } from './components/ServiceProviderDetail';
 import { AuthPage } from './components/AuthPage';
 import { EmailVerificationPending } from './components/EmailVerificationPending';
 import { AuthCallback } from './components/AuthCallback';
 import { CompleteProfile } from './components/CompleteProfile';
+import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
 import { MemberDashboard } from './components/MemberDashboard';
 import { ServiceProviderManagement } from './components/ServiceProviderManagement';
 import { CreateServiceProvider } from './components/CreateServiceProvider';
 import { EditServiceProvider } from './components/EditServiceProvider';
 import { ReferralManagement } from './components/ReferralManagement';
-import { SubscriptionManagement } from './components/SubscriptionManagement';
 import { TaskDashboard } from './components/TaskDashboard';
 import { RewardDashboard } from './components/RewardDashboard';
-import { EditMemberProfile } from './components/EditMemberProfile';
 import { AdminDashboard } from './components/AdminDashboard';
+import { MarkdownContent } from './components/MarkdownContent';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
+import { RequirePaymentRoute } from './components/RequirePaymentRoute'; // ✅ 新增
 import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
 import { createClient } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info';
+import { termsOfServiceContent } from './content/termsOfService';
+import { listingPlansContent } from './content/listingPlans';
 
 // User context
 export const UserContext = React.createContext<{
@@ -48,12 +52,19 @@ function AppContent() {
   const isLoggedIn = !!user;
 
   useEffect(() => {
+    let isMounted = true; // ✅ 防止組件卸載後更新狀態
+    
     // 從資料庫加載用戶資料
     const loadUserProfile = async () => {
+      if (!isMounted) {
+        console.log('App: Component unmounted, skipping profile load');
+        return;
+      }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (session) {
+        // ✅ 增強檢查：確保 session 有效且包含 access_token
+        if (session && session.access_token) {
           console.log('App: Found active session, loading profile from database');
           
           // 從後端 API 取得用戶資料
@@ -70,18 +81,49 @@ function AppContent() {
             const profile = await response.json();
             console.log('App: Profile loaded from database:', profile);
             
-            // 檢查是否需要完成註冊
-            if (profile.needsOnboarding) {
-              console.log('App: User needs onboarding, profile incomplete');
-              // 如果不在 complete-profile 頁面，則跳轉
-              if (window.location.pathname !== '/auth/complete-profile') {
-                navigate('/auth/complete-profile');
+            if (!isMounted) {
+              console.log('App: Component unmounted during profile load, aborting');
+              return;
+            }
+            
+            // ✅ 新邏輯：實際檢查數據狀態，而非依賴 registrationStep
+            const currentPath = window.location.pathname;
+            
+            // 步驟 1：檢查是否完成「完善個人資料」（name, phone, birthDate）
+            const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
+            
+            // 步驟 2：檢查是否已完成付費（有推薦碼 = 已付費）
+            // 推薦碼在付款成功後生成，所以有推薦碼就代表已完成付費
+            const hasPaidMembership = !!profile.referralCode;
+            
+            console.log('App: Profile check -', {
+              hasCompleteProfile,
+              hasPaidMembership,
+              hasReferralCode: profile.referralCode,
+              hasName: !!profile.name,
+              hasPhone: !!profile.phone,
+              hasBirthDate: !!profile.birthDate,
+              currentPath
+            });
+            
+            // ✅ 簡化邏輯：只設置 user，讓 RequirePaymentRoute 處理付款檢查
+            
+            if (!hasCompleteProfile) {
+              // 情況 1：尚未完成個人資料，不設置 user
+              if (currentPath !== '/auth/complete-profile') {
+                console.log('App: User needs to complete profile, redirecting to /auth/complete-profile');
+                navigate('/auth/complete-profile', { replace: true });
+              } else {
+                console.log('App: User on complete-profile page, not setting user (incomplete profile)');
               }
             } else {
-              // 更新用戶狀態和 localStorage
+              // 情況 2 & 3：已完成個人資料，設置 user（無論是否付款）
+              // RequirePaymentRoute 會檢查付款狀態並決定是否允許訪問
+              console.log('App: User profile complete, setting user');
               setUser(profile);
               localStorage.setItem('user', JSON.stringify(profile));
             }
+            // 如果不符合以上任何情況，不設置 user（保持未登入狀態）
           } else {
             console.error('App: Failed to load profile from database, status:', response.status);
             
@@ -110,7 +152,7 @@ function AppContent() {
               localStorage.removeItem('user');
               setUser(null);
             } else {
-              // 其他錯誤，只清除本地資料
+              // 其他錯誤，清除本地資料
               localStorage.removeItem('user');
               setUser(null);
             }
@@ -179,9 +221,10 @@ function AppContent() {
     });
 
     return () => {
+      isMounted = false; // ✅ 標記組件已卸載
       subscription.unsubscribe();
     };
-  }, [navigate, supabase]);
+  }, []); // ✅ 移除 navigate 和 supabase 依賴，只在首次掛載時執行
 
   return (
     <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin }}>
@@ -204,47 +247,56 @@ function AppContent() {
                 {/* Protected Member Routes */}
                 <Route path="/dashboard" element={
                   <ProtectedRoute>
-                    <MemberDashboard />
+                    <RequirePaymentRoute>
+                      <MemberDashboard />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <ServiceProviderManagement />
+                    <RequirePaymentRoute>
+                      <ServiceProviderManagement />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers/create" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <CreateServiceProvider />
+                    <RequirePaymentRoute>
+                      <CreateServiceProvider />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers/edit/:id" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <EditServiceProvider />
+                    <RequirePaymentRoute>
+                      <EditServiceProvider />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/referrals" element={
                   <ProtectedRoute featureRequired="referralManagement">
-                    <ReferralManagement />
-                  </ProtectedRoute>
-                } />
-                <Route path="/subscriptions" element={
-                  <ProtectedRoute>
-                    <SubscriptionManagement />
+                    <RequirePaymentRoute>
+                      <ReferralManagement />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/tasks" element={
                   <ProtectedRoute featureRequired="taskCenter">
-                    <TaskDashboard />
+                    <RequirePaymentRoute>
+                      <TaskDashboard />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/rewards" element={
                   <ProtectedRoute featureRequired="rewardSystem">
-                    <RewardDashboard />
+                    <RequirePaymentRoute>
+                      <RewardDashboard />
+                    </RequirePaymentRoute>
                   </ProtectedRoute>
                 } />
-                <Route path="/profile/edit" element={
+                <Route path="/payment/checkout" element={
                   <ProtectedRoute>
-                    <EditMemberProfile />
+                    <PaymentCheckout />
                   </ProtectedRoute>
                 } />
                 
@@ -255,9 +307,24 @@ function AppContent() {
                   </AdminRoute>
                 } />
                 
+                {/* Public Content Pages */}
+                <Route path="/terms-of-service" element={
+                  <MarkdownContent 
+                    content={termsOfServiceContent} 
+                    title="服務條款" 
+                  />
+                } />
+                <Route path="/listing-plans" element={
+                  <MarkdownContent 
+                    content={listingPlansContent} 
+                    title="刊登方案" 
+                  />
+                } />
+                
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>
+            <Footer />
           </div>
           <Toaster />
         </NotificationProvider>

@@ -24,12 +24,14 @@ import { UserContext } from "../App";
 import { ReferralGuide } from './referral/ReferralGuide';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
+import { useBackNavigation } from '../hooks/useBackNavigation';
 
 export function ServiceProviderDetail() {
   const { user } = useContext(UserContext);
   const { showToast } = useNotification();
   const { id } = useParams();
   const navigate = useNavigate();
+  const handleBack = useBackNavigation();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
   // ✅ 添加状态管理
@@ -150,7 +152,7 @@ export function ServiceProviderDetail() {
             <ImageWithFallback
               src={serviceProvider.photos[currentImageIndex]}
               alt={`${serviceProvider.name} - 圖片 ${currentImageIndex + 1}`}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
           </div>
 
@@ -223,7 +225,7 @@ export function ServiceProviderDetail() {
               <CardTitle>服務介紹</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground leading-relaxed">
+              <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
                 {serviceProvider.description}
               </p>
             </CardContent>

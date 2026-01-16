@@ -11,7 +11,7 @@
 
 /**
  * 用戶基本資料
- * ❌ 已移除 idNumber 欄位
+ * ✅ Phase 9: 使用 registrationStep 替代 needsOnboarding
  */
 export interface UserProfile {
   id: string;
@@ -29,7 +29,13 @@ export interface UserProfile {
   isAdmin: boolean;
   emailVerified: boolean;
   phoneVerified: boolean;
-  needsOnboarding: boolean;
+  registrationStep: 1 | 2 | 3;   // ✅ 1=基本資訊完成, 2=付款中, 3=註冊完成
+  
+  // ✅ Phase 9: 推薦系統欄位
+  referralCode: string | null;           // 付款後生成的推薦碼
+  referredByCode: string | null;         // 註冊時使用的推薦碼
+  referredByUserId: string | null;       // 推薦人用戶 ID
+  referredByListingId: string | null;    // 推薦人刊登 ID
   
   createdAt: string;             // ISO 8601
   updatedAt: string;             // ISO 8601
@@ -38,17 +44,17 @@ export interface UserProfile {
 /**
  * 帳號狀態類型
  */
-export type AccountStatus = 'Active' | 'Canceled' | 'Grace' | 'Fail';
+export type AccountStatusType = 'Active' | 'Canceled' | 'Grace' | 'Fail';
 
 /**
  * 用戶帳號狀態（SSOT - Single Source of Truth）
  */
-export interface UserAccountStatus {
-  status: AccountStatus;
+export interface AccountStatus {
+  status: AccountStatusType;               // 帳號狀態
   currentSubscriptionId: string | null;    // 當前有效訂閱 ID
   activeReferralCodeId: string | null;     // 當前有效推薦碼 ID
   activeListingId: string | null;          // ✅ 當前有效刊登 ID（唯一）
-  pointBalance: number;                    // 點數餘額
+  // ❌ 移除 pointBalance（違反 SSOT，點數由 user:${userId}:rewards 統一管理）
   lastStatusUpdate: string;                // 最後狀態更新時間
   lastSubscriptionEndDate: string | null;  // 最後訂閱結束日期
   gracePeriodEndDate: string | null;       // 寬限期結束日期（僅 Grace 狀態）
@@ -141,7 +147,7 @@ export interface ReferralRelationships {
 export interface ReferralTreeMember {
   userId: string;
   userName: string;            // ⚠️ 緩存，需定期同步
-  accountStatus: AccountStatus;
+  accountStatus: AccountStatusType;
   referredAt: string;
   activeReferralCodeId: string | null;
 }

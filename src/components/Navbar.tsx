@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { UserContext } from '../App';
-import { User, Settings, Award, Users, LogOut, Shield, Target } from 'lucide-react';
+import { User, Settings, Award, Users, LogOut, Shield, Target, CreditCard } from 'lucide-react';
 import { useFeatures } from '../contexts/FeatureContext';
 import { createClient } from '../utils/supabase/client';
 
@@ -18,21 +18,42 @@ export function Navbar() {
   const handleLogout = async () => {
     console.log('Navbar: Logging out user...');
     
-    // 1. 登出 Supabase Auth
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Navbar: Error signing out from Supabase:', error);
-    } else {
-      console.log('Navbar: Successfully signed out from Supabase');
+    try {
+      // ✅ 1. 先清除本地狀態（避免 UI 閃爍）
+      setUser(null);
+      localStorage.removeItem('user');
+      console.log('Navbar: Cleared local user state');
+      
+      // ✅ 2. 登出 Supabase Auth（等待完成）
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Navbar: Error signing out from Supabase:', error);
+        // ✅ 即使出錯也要清除所有相關資料
+      } else {
+        console.log('Navbar: Successfully signed out from Supabase');
+      }
+      
+      // ✅ 3. 強制清除所有 Supabase auth storage
+      const storageKeys = Object.keys(localStorage);
+      storageKeys.forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key);
+          console.log('Navbar: Cleared storage key:', key);
+        }
+      });
+      
+      // ✅ 4. 短暫延遲確保 session 清除完成，然後導航
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('Navbar: Navigating to home page...');
+      // ✅ 使用 replace: true 避免返回歷史
+      navigate('/', { replace: true });
+      
+    } catch (error) {
+      console.error('Navbar: Unexpected error during logout:', error);
+      // ✅ 即使發生異常，也要確保導航
+      navigate('/', { replace: true });
     }
-    
-    // 2. 清除本地狀態和 localStorage
-    setUser(null);
-    localStorage.removeItem('user');
-    console.log('Navbar: Cleared local user data');
-    
-    // 3. ��航到首頁
-    navigate('/');
   };
 
   return (
@@ -52,7 +73,7 @@ export function Navbar() {
                 <Link to="/login">登入</Link>
               </Button>
               <Button asChild>
-                <Link to="/register">註冊</Link>
+                <Link to="/register">立即刊登</Link>
               </Button>
             </>
           ) : (
@@ -109,6 +130,7 @@ export function Navbar() {
                     </Link>
                   </DropdownMenuItem>
                 )}
+                {/* 移除訂閱管理連結 - 訂閱功能已整合到會員中心 */}
                 {isAdmin && (
                   <>
                     <DropdownMenuSeparator />

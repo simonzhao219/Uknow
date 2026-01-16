@@ -7,7 +7,9 @@ import { RewardHistory } from './reward/RewardHistory';
 import { Button } from './ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
+import { usePageRestoration } from '../hooks/usePageRestoration';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
+import { useNotification } from './notifications/NotificationContext';  // ✅ 新增
 
 interface RewardsData {
   availableRewards: number;
@@ -15,55 +17,103 @@ interface RewardsData {
   withdrawnRewards: number;
   totalEarned: number;
   lastUpdated: string;
+  hasWithdrawnToday: boolean;  // ✅ 新增：今日是否已提領過
+}
+
+interface WithdrawalRecord {
+  id: string;
+  userId: string;
+  amount: number;
+  fee: number;
+  status: 'pending' | 'awaiting_collection' | 'completed' | 'rejected';
+  requestedAt: string;
+  processedAt: string | null;
+  completedAt: string | null;
 }
 
 export function RewardDashboard() {
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
+  usePageRestoration(); // ✅ 处理 Safari bfcache 页面恢复问题
+  const { showError } = useNotification();  // ✅ 新增
   const [showWithdrawalProcess, setShowWithdrawalProcess] = useState(false);
   const [rewardsData, setRewardsData] = useState<RewardsData | null>(null);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);  // ✅ 新增：訂閱狀態
 
-  // 獲取獎勵資料
+  // 獲取獎勵資料和提領記錄
   useEffect(() => {
-    const fetchRewards = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // ✅ 使用統一的 API 請求工具
-        const result = await apiRequestJson<{ success: boolean; data: RewardsData }>(
-          buildApiUrl('/rewards')
-        );
-        
-        if (result.success) {
-          setRewardsData(result.data);
-        } else {
-          throw new Error('獲取獎勵資料失敗');
-        }
-      } catch (err) {
-        console.error('獲取獎勵資料錯誤:', err);
-        
-        if (err instanceof ApiError && err.status === 401) {
-          setError('登入已過期，請重新登入');
-        } else {
-          setError(err instanceof Error ? err.message : '獲取獎勵資料失敗');
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchRewards();
+    fetchData();
   }, []);
 
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // ✅ 並行獲取獎勵資料、提領記錄和訂閱狀態
+      const [rewardsResult, withdrawalsResult, subscriptionResult] = await Promise.all([
+        apiRequestJson<{ success: boolean; data: RewardsData }>(buildApiUrl('/rewards')),
+        apiRequestJson<{ success: boolean; data: { withdrawals: WithdrawalRecord[] } }>(
+          buildApiUrl('/rewards/withdrawals')
+        ),
+        apiRequestJson<{ success: boolean; data: { hasSubscription: boolean; status?: string } }>(
+          buildApiUrl('/subscriptions/status')
+        )
+      ]);
+      
+      if (rewardsResult.success) {
+        setRewardsData(rewardsResult.data);
+      } else {
+        throw new Error('獲取獎勵資料失敗');
+      }
+
+      if (withdrawalsResult.success) {
+        setWithdrawals(withdrawalsResult.data.withdrawals);
+      } else {
+        throw new Error('獲取提領記錄失敗');
+      }
+      
+      // ✅ 設置訂閱狀態
+      if (subscriptionResult.success) {
+        setSubscriptionStatus(subscriptionResult.data.status || null);
+      }
+    } catch (err) {
+      console.error('獲取數據錯誤:', err);
+      
+      if (err instanceof ApiError && err.status === 401) {
+        setError('登入已過期，請重新登入');
+      } else {
+        setError(err instanceof Error ? err.message : '獲取數據失敗');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleStartWithdrawal = () => {
+    // ✅ URL 訪問控制：檢查訂閱狀態
+    if (subscriptionStatus === 'grace' || subscriptionStatus === 'expired') {
+      const message = subscriptionStatus === 'grace'
+        ? '訂閱處於寬限期，無法申請提領。請補繳以恢復服務。'
+        : '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
+      
+      showError('無法申請提領', message);
+      return;
+    }
+    
     setShowWithdrawalProcess(true);
   };
 
   const handleCancelWithdrawal = () => {
     setShowWithdrawalProcess(false);
+  };
+
+  const handleSuccessWithdrawal = () => {
+    setShowWithdrawalProcess(false);
+    fetchData(); // 重新載入數據以更新統計
   };
 
   // 載入狀態
@@ -141,6 +191,8 @@ export function RewardDashboard() {
         
         <WithdrawalProcess 
           availableRewards={rewardsData?.availableRewards || 0}
+          pendingRewards={rewardsData?.pendingRewards || 0}
+          onSuccess={handleSuccessWithdrawal}
           onCancel={handleCancelWithdrawal}
         />
       </div>
@@ -168,13 +220,19 @@ export function RewardDashboard() {
         availableRewards={rewardsData?.availableRewards || 0}
         pendingRewards={rewardsData?.pendingRewards || 0}
         withdrawnRewards={rewardsData?.withdrawnRewards || 0}
-        totalEarned={rewardsData?.totalEarned || 0}
+        totalRewards={rewardsData?.totalEarned || 0}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <WithdrawalSection 
           availableRewards={rewardsData?.availableRewards || 0}
+          pendingRewards={rewardsData?.pendingRewards || 0}
+          withdrawnRewards={rewardsData?.withdrawnRewards || 0}
+          hasWithdrawnToday={rewardsData?.hasWithdrawnToday || false}
+          withdrawals={withdrawals}
           onStartWithdrawal={handleStartWithdrawal}
+          onRefresh={fetchData}
+          subscriptionStatus={subscriptionStatus}  // ✅ 新增：傳遞訂閱狀態
         />
         <RewardHistory />
       </div>

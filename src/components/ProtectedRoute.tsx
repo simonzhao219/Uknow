@@ -13,11 +13,19 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProps) {
-  const { isLoggedIn } = useContext(UserContext);
+  const { isLoggedIn, user } = useContext(UserContext);
   const { isFeatureEnabled } = useFeatures();
   const navigate = useNavigate();
+  
+  console.log('ProtectedRoute: Checking access -', {
+    isLoggedIn,
+    hasUser: !!user,
+    currentPath: window.location.pathname,
+    featureRequired
+  });
 
   if (!isLoggedIn) {
+    console.log('ProtectedRoute: User not logged in, redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 

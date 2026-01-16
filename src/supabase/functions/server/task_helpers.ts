@@ -2,6 +2,12 @@
  * 任務系統輔助函數
  * 
  * 統一管理任務進度更新邏輯，避免重複程式碼
+ * 
+ * ✅ Phase 10: 任務系統優化
+ * - 付費成功時自動更新任務進度
+ * - 任務達成時自動創建待領取獎勵
+ * - 支持推薦王溢出機制（扣除制）
+ * - 支持連續推薦達人循環（完成後重新開始）
  */
 
 import * as kv from './kv_store.tsx';
@@ -84,6 +90,33 @@ export async function updateTaskProgress(
   if (consecutive.monthlyRecord[currentMonth].count === 1) {
     consecutive.currentStreak += 1;
     console.log(`  ✅ 連續推薦任務：連續月數 ${consecutive.currentStreak}/${consecutive.target}`);
+    
+    // ✅ 檢查是否完成任務（12個月）
+    if (consecutive.currentStreak === REWARD_CONFIG.TASK_CONSECUTIVE_MONTHS) {
+      console.log(`  🎉 連續推薦達人任務完成！創建待領取獎勵...`);
+      
+      try {
+        // 創建待領取獎勵
+        await createPendingMissionReward(
+          userId,
+          'consecutive_referral',
+          REWARD_CONFIG.TASK_CONSECUTIVE_REWARD,
+          timestampStr,
+          { streak: consecutive.currentStreak }
+        );
+        
+        // 重置任務（開啟新一輪）
+        consecutive.currentStreak = 0;
+        consecutive.startMonth = currentMonth;
+        consecutive.monthlyRecord = {};
+        consecutive.completed = false;
+        
+        console.log(`  ✅ 連續推薦達人獎勵已創建，任務已重置（開啟新一輪）`);
+      } catch (error) {
+        console.error(`  ❌ 創建連續推薦達人獎勵失敗:`, error);
+        // 不中斷流程
+      }
+    }
   }
   
   consecutive.lastActiveMonth = currentMonth;
@@ -98,6 +131,7 @@ export async function updateTaskProgress(
       target: REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
       currentMonth: currentMonth,
       currentCount: 0,
+      completionsThisMonth: 0,  // ✅ 新增：本月完成次數
       completed: false,
       reward: REWARD_CONFIG.TASK_MONTHLY_KING_REWARD,
       history: []
@@ -112,6 +146,7 @@ export async function updateTaskProgress(
     king.history.push({
       month: king.currentMonth,
       count: king.currentCount,
+      completionsThisMonth: king.completionsThisMonth || 0,  // ✅ 記錄完成次數
       qualified: king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
       checkedAt: null // 會在定時任務中更新
     });
@@ -119,17 +154,48 @@ export async function updateTaskProgress(
     // 重置本月
     king.currentMonth = currentMonth;
     king.currentCount = 0;
+    king.completionsThisMonth = 0;  // ✅ 重置完成次數
     king.completed = false;
   }
   
   king.currentCount += 1;
   console.log(`  ✅ 推薦王任務：本月推薦數 ${king.currentCount}/${king.target}`);
   
+  // ✅ 檢查是否完成任務（10人，支持溢出 - 扣除制）
+  while (king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET) {
+    king.completionsThisMonth = (king.completionsThisMonth || 0) + 1;
+    
+    console.log(`  🎉 推薦王任務完成！第${king.completionsThisMonth}次達成，創建待領取獎勵...`);
+    
+    try {
+      // 創建待領取獎勵
+      await createPendingMissionReward(
+        userId,
+        'monthly_king',
+        REWARD_CONFIG.TASK_MONTHLY_KING_REWARD,
+        timestampStr,
+        { 
+          month: currentMonth, 
+          completionIndex: king.completionsThisMonth 
+        }
+      );
+      
+      // ✅ 扣除制：count -= 10
+      king.currentCount -= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET;
+      
+      console.log(`  ✅ 推薦王獎勵已創建，剩餘計數: ${king.currentCount}`);
+    } catch (error) {
+      console.error(`  ❌ 創建推薦王獎勵失敗:`, error);
+      // 避免無限循環
+      break;
+    }
+  }
+  
   // ===== 3. 保存任務資料 =====
   tasks.lastUpdated = timestampStr;
   await kv.set(tasksKey, tasks);
   
-  console.log('  ✅ 任務進度已更新');
+  console.log('  ✅ 任務進度已更新並保存');
 }
 
 /**
@@ -144,8 +210,78 @@ export function initializeDefaultTasks() {
 }
 
 /**
+ * 創建待領取的任務獎勵
+ * 
+ * @param userId - 用戶 ID
+ * @param type - 任務類型
+ * @param amount - 獎勵金額
+ * @param achievedAt - 完成時間
+ * @param details - 任務詳情
+ */
+export async function createPendingMissionReward(
+  userId: string,
+  type: 'consecutive_referral' | 'monthly_king',
+  amount: number,
+  achievedAt: string,
+  details: any
+): Promise<void> {
+  const rewardId = `mission_reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  
+  console.log(`[Create Pending Mission Reward] 創建待領取任務獎勵: ${rewardId}`);
+  
+  // 獲取當前獎勵數據（用於預計算）
+  const rewardsKey = `user:${userId}:rewards`;
+  const rewards = await kv.get(rewardsKey) || {
+    availableRewards: 0,
+    pendingRewards: 0,
+    withdrawnRewards: 0,
+    totalEarned: 0
+  };
+  
+  // 生成描述
+  let description = '';
+  if (type === 'consecutive_referral') {
+    description = `連續推薦達人 - 完成${details.streak}個月連續推薦`;
+  } else if (type === 'monthly_king') {
+    const monthStr = details.month.substring(0, 7); // "2024-12"
+    description = `推薦王 - ${monthStr}月第${details.completionIndex}次達成`;
+  }
+  
+  // 創建待領取獎勵記錄
+  const pendingReward = {
+    id: rewardId,
+    type,
+    amount,
+    achievedAt,
+    status: 'pending',
+    description,
+    details,
+    // ✅ 預計算領取後的點數變化
+    previewData: {
+      currentAvailable: rewards.availableRewards,
+      currentTotal: rewards.totalEarned,
+      afterAvailable: rewards.availableRewards + amount,
+      afterTotal: rewards.totalEarned + amount
+    }
+  };
+  
+  // 儲存到用戶的待領取獎勵列表
+  const pendingRewardsKey = `user:${userId}:pending_mission_rewards`;
+  const pendingRewards = await kv.get(pendingRewardsKey) || [];
+  
+  pendingRewards.unshift(pendingReward);
+  await kv.set(pendingRewardsKey, pendingRewards);
+  
+  console.log(`  ✅ 待領取任務獎勵已創建: ${rewardId}`);
+  console.log(`  📋 描述: ${description}`);
+  console.log(`  💰 獎勵金額: ${amount}P`);
+}
+
+/**
  * 更新推薦月度日誌
  * 用於任務判定和月度統計
+ * 
+ * ✅ Phase 10: 支持會員數據格式（付費時還沒有刊登）
  * 
  * @param userId - 用戶 ID
  * @param referee - 被推薦人資訊
@@ -156,13 +292,15 @@ export async function updateReferralMonthlyLog(
   referee: {
     userId: string;
     userName: string;
-    listingId: string;
-    listingName: string;
+    userReferralCode?: string;   // ✅ 新增：被推薦人的推薦碼
+    listingId: string | null;     // ✅ 改為可空（付費時還沒有刊登）
+    listingName: string | null;   // ✅ 改為可空
     referrer?: {
       userId: string;
       userName: string;
-      listingId: string;
-      listingName: string;
+      userReferralCode?: string;  // ✅ 新增：推薦人的推薦碼
+      listingId: string | null;
+      listingName: string | null;
     };
   },
   createdAt: Date | string
@@ -182,9 +320,10 @@ export async function updateReferralMonthlyLog(
   }
   
   userLog[monthKey].push({
-    listingId: referee.listingId,
     userId: referee.userId,
     userName: referee.userName,
+    userReferralCode: referee.userReferralCode || null,  // ✅ 新增
+    listingId: referee.listingId,
     listingName: referee.listingName,
     referrer: referee.referrer || null,
     createdAt: timestampStr
@@ -201,9 +340,10 @@ export async function updateReferralMonthlyLog(
   }
   
   globalLog[userId].push({
-    listingId: referee.listingId,
     userId: referee.userId,
     userName: referee.userName,
+    userReferralCode: referee.userReferralCode || null,  // ✅ 新增
+    listingId: referee.listingId,
     listingName: referee.listingName,
     referrer: referee.referrer || null,
     createdAt: timestampStr
@@ -211,5 +351,12 @@ export async function updateReferralMonthlyLog(
   
   await kv.set(globalLogKey, globalLog);
   
-  console.log(`✅ 更新月度日誌: user=${userId}, month=${monthKey}, referee=${referee.userName}-${referee.listingName}`);
+  // ✅ 顯示名稱優先使用推薦碼
+  const displayName = referee.userReferralCode 
+    ? `${referee.userName}-${referee.userReferralCode}`
+    : referee.listingName 
+      ? `${referee.userName}-${referee.listingName}`
+      : referee.userName;
+    
+  console.log(`✅ 更新月度日誌: user=${userId}, month=${monthKey}, referee=${displayName}`);
 }

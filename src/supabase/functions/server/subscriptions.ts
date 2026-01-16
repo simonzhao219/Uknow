@@ -2,6 +2,13 @@ import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { verifyToken } from './auth.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { 
+  getTaiwanNow, 
+  getTaiwanToday, 
+  toTaiwanDateString, 
+  toTaiwanISOString,
+  calculateSubscriptionEndDate
+} from './date_utils.ts';
 
 const subscriptions = new Hono();
 
@@ -55,10 +62,11 @@ subscriptions.get('/status', async (c) => {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 2. 獲取用戶的刊登（訂閱綁定到刊登）
-    const userListing = await kv.get(`user:${user.id}:listing`);
+    // 2. 獲取用戶的帳號狀態（新規格：訂閱綁定到用戶，而非刊登）
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
     
-    if (!userListing) {
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
+      console.log(`ℹ️ 用戶尚未訂閱: ${user.id}`);
       return c.json({
         success: true,
         data: {
@@ -69,25 +77,108 @@ subscriptions.get('/status', async (c) => {
       });
     }
     
-    const listing = await kv.get(`listing:${userListing.id}`);
+    console.log(`📊 帳號狀態: ${accountStatus.status}`);
+    console.log(`📦 當前訂閱 ID: ${accountStatus.currentSubscriptionId}`);
     
-    if (!listing) {
+    // 3. 獲取訂閱詳細資料
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
+    
+    if (!subscription) {
+      console.error(`⚠️ 訂閱資料不存在: ${accountStatus.currentSubscriptionId}`);;
+      
+      // ✅ 回退邏輯：嘗試從舊的鍵讀取（向後兼容）
+      console.log(`🔄 嘗試從舊的訂閱鍵讀取: user:${user.id}:subscription`);
+      const oldSubscription = await kv.get(`user:${user.id}:subscription`);
+      
+      if (oldSubscription) {
+        console.log(`✅ 找到舊的訂閱記錄，開始遷移...`);
+        
+        // 生成新的訂閱 ID
+        const subscriptionId = `subscription_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        
+        // 計算寬限期結束日期（如果舊記錄沒有）
+        const endDate = new Date(oldSubscription.activeUntil);
+        const gracePeriodEnd = new Date(endDate);
+        gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 60);
+        gracePeriodEnd.setHours(23, 59, 59, 999);
+        
+        // 創建新格式的訂閱記錄
+        const newSubscription = {
+          id: subscriptionId,
+          userId: user.id,
+          status: oldSubscription.status === 'active' ? 'Active' : 
+                  oldSubscription.cancelledAt ? 'Canceled' : 'Active',
+          startDate: oldSubscription.startDate,
+          endDate: oldSubscription.activeUntil,
+          gracePeriodEnd: gracePeriodEnd.toISOString(),
+          amount: 1200,
+          paymentMethod: 'legacy',
+          paymentTransactionId: 'LEGACY_' + subscriptionId,
+          isCanceled: !!oldSubscription.cancelledAt,
+          canceledAt: oldSubscription.cancelledAt || null,
+          isRenewal: false,
+          createdAt: oldSubscription.createdAt,
+          updatedAt: new Date().toISOString()
+        };
+        
+        // 存儲新的訂閱記錄
+        await kv.set(`subscription:${subscriptionId}`, newSubscription);
+        
+        // 更新帳號狀態
+        await kv.set(`user:${user.id}:account_status`, {
+          ...accountStatus,
+          currentSubscriptionId: subscriptionId,
+          lastStatusUpdate: new Date().toISOString()
+        });
+        
+        // 添加到用戶訂閱列表
+        const userSubscriptions = await kv.get(`user:${user.id}:subscriptions`) || [];
+        userSubscriptions.unshift(subscriptionId);
+        await kv.set(`user:${user.id}:subscriptions`, userSubscriptions);
+        
+        // 刪除舊的訂閱記錄
+        await kv.del(`user:${user.id}:subscription`);
+        
+        console.log(`✅ 訂閱記錄遷移完成: ${subscriptionId}`);
+        
+        // 使用新的訂閱記錄繼續處理
+        const statusInfo = calculateSubscriptionStatus(newSubscription);
+        
+        return c.json({
+          success: true,
+          data: {
+            hasSubscription: true,
+            ...statusInfo
+          }
+        });
+      }
+      
+      // 如果舊記錄也不存在，返回數據不一致錯誤
+      console.error(`❌ 數據不一致：account_status 存在但找不到任何訂閱記錄`);
+      
+      // 清理不一致的 account_status
+      await kv.del(`user:${user.id}:account_status`);
+      
       return c.json({
-        success: false,
-        error: { message: '刊登資料不存在' }
-      }, 404);
+        success: true,
+        data: {
+          hasSubscription: false,
+          status: null,
+          message: '尚未訂閱'
+        }
+      });
     }
     
-    // 3. 計算訂閱狀態
-    const status = calculateSubscriptionStatus(listing);
+    // 4. 計算訂閱狀態
+    const statusInfo = calculateSubscriptionStatus(subscription);
     
-    console.log(`📊 訂閱狀態: ${status.status}`);
+    console.log(`📊 訂閱狀態: ${statusInfo.status}`);
     
     return c.json({
       success: true,
       data: {
         hasSubscription: true,
-        ...status
+        ...statusInfo
       }
     });
     
@@ -101,8 +192,83 @@ subscriptions.get('/status', async (c) => {
 });
 
 /**
+ * GET /subscriptions/preview-cancel
+ * 預覽取消訂閱後的變化（從後端 SSOT 讀取）
+ */
+subscriptions.get('/preview-cancel', async (c) => {
+  try {
+    console.log('========== 預覽取消訂閱 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
+      return c.json({
+        success: false,
+        error: { message: '尚未訂閱' }
+      }, 400);
+    }
+    
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
+    
+    if (!subscription) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱資料不存在' }
+      }, 404);
+    }
+    
+    // 3. 計算當前狀態
+    const currentStatus = calculateSubscriptionStatus(subscription);
+    
+    // 4. 構建預覽數據
+    const previewData = {
+      currentStatus: currentStatus.status,
+      currentPeriodEnd: subscription.endDate,
+      afterCancelStatus: '已取消',
+      afterCancelNextPeriod: null  // 取消後沒有下個週期
+    };
+    
+    console.log(`✅ 預覽數據:`, previewData);
+    
+    return c.json({
+      success: true,
+      data: previewData
+    });
+    
+  } catch (error) {
+    console.error('❌ 預覽取消訂閱失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+/**
  * POST /subscriptions/cancel
  * 取消訂閱（標記為已取消，到期後自動轉為永久失效）
+ * ✅ 需要身分證驗證
  */
 subscriptions.post('/cancel', async (c) => {
   try {
@@ -128,27 +294,65 @@ subscriptions.post('/cancel', async (c) => {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 2. 獲取用戶的刊登
-    const userListing = await kv.get(`user:${user.id}:listing`);
+    // 2. ✅ 驗證身分證字號
+    const body = await c.req.json();
+    const { idNumber } = body;
     
-    if (!userListing) {
+    if (!idNumber) {
+      return c.json({
+        success: false,
+        error: { message: '請提供身分證字號' }
+      }, 400);
+    }
+    
+    // 驗證身分證格式
+    const idPattern = /^[A-Z][12]\d{8}$/;
+    if (!idPattern.test(idNumber)) {
+      return c.json({
+        success: false,
+        error: { message: '身分證格式不正確' }
+      }, 400);
+    }
+    
+    // 檢查身分證是否與用戶資料匹配
+    const userProfile = await kv.get(`user:${user.id}:profile`);
+    if (!userProfile || !userProfile.nationalId) {
+      return c.json({
+        success: false,
+        error: { message: '用戶尚未完成身分驗證' }
+      }, 400);
+    }
+    
+    if (userProfile.nationalId !== idNumber) {
+      return c.json({
+        success: false,
+        error: { message: '身分證字號不符' }
+      }, 403);
+    }
+    
+    console.log(`✅ 身分證驗證通過: ${idNumber}`);
+    
+    // 3. 獲取用戶的帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
       return c.json({
         success: false,
         error: { message: '尚未訂閱' }
       }, 400);
     }
     
-    const listing = await kv.get(`listing:${userListing.id}`);
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
     
-    if (!listing) {
+    if (!subscription) {
       return c.json({
         success: false,
-        error: { message: '刊登資料不存在' }
+        error: { message: '訂閱資料不存在' }
       }, 404);
     }
     
-    // 3. 檢查當前狀態
-    const currentStatus = calculateSubscriptionStatus(listing);
+    // 4. 檢查當前狀態
+    const currentStatus = calculateSubscriptionStatus(subscription);
     
     if (currentStatus.status === SubscriptionStatus.CANCELLED) {
       return c.json({
@@ -164,23 +368,26 @@ subscriptions.post('/cancel', async (c) => {
       }, 400);
     }
     
-    // 4. 標記為已取消
+    // 5. 標記為已取消
     const now = new Date().toISOString();
-    listing.cancelledAt = now;
-    listing.updatedAt = now;
+    subscription.canceledAt = now;
+    subscription.updatedAt = now;
     
-    await kv.set(`listing:${listing.id}`, listing);
-    await kv.set(`user:${user.id}:listing`, listing);
+    await kv.set(`subscription:${subscription.id}`, subscription);
+    await kv.set(`user:${user.id}:account_status`, {
+      ...accountStatus,
+      status: 'cancelled'
+    });
     
-    console.log(`✅ 訂閱已取消: ${listing.id}`);
-    console.log(`   將在 ${listing.activeUntil} 到期後失效`);
+    console.log(`✅ 訂閱已取消: ${subscription.id}`);
+    console.log(`   將在 ${subscription.activeUntil} 到期後失效`);
     
     return c.json({
       success: true,
       data: {
         message: '訂閱已取消',
-        activeUntil: listing.activeUntil,
-        note: '您的刊登將顯示到期限為止，之後將自動失效'
+        activeUntil: subscription.activeUntil,
+        note: '您的刊登顯示到期限為止，之後將自動失效'
       }
     });
     
@@ -227,34 +434,34 @@ subscriptions.post('/renew', async (c) => {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 2. 獲取用戶的刊登
-    const userListing = await kv.get(`user:${user.id}:listing`);
+    // 2. 獲取用戶的帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
     
-    if (!userListing) {
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
       return c.json({
         success: false,
         error: { message: '尚未訂閱' }
       }, 400);
     }
     
-    const listing = await kv.get(`listing:${userListing.id}`);
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
     
-    if (!listing) {
+    if (!subscription) {
       return c.json({
         success: false,
-        error: { message: '刊登資料不存在' }
+        error: { message: '訂閱資料不存在' }
       }, 404);
     }
     
     // 3. 檢查當前狀態
-    const currentStatus = calculateSubscriptionStatus(listing);
+    const currentStatus = calculateSubscriptionStatus(subscription);
     
     console.log(`📊 當前狀態: ${currentStatus.status}`);
     
-    // 4. 根據狀態處理續費
-    const now = new Date();
-    let newActiveUntil: Date;
-    let newNextPaymentDate: Date;
+    // 4. 根據狀態處理續費（使用台灣時區）
+    const now = getTaiwanNow();
+    let newEndDate: Date;
+    let newStartDate: Date;
     let renewalType: string;
     
     if (currentStatus.status === SubscriptionStatus.EXPIRED) {
@@ -270,63 +477,355 @@ subscriptions.post('/renew', async (c) => {
     if (currentStatus.status === SubscriptionStatus.GRACE) {
       // 補繳：接續原到期日
       renewalType = '補繳';
-      const originalActiveUntil = new Date(listing.activeUntil);
+      const originalEndDate = new Date(subscription.endDate);
       
-      newNextPaymentDate = new Date(originalActiveUntil);
-      newNextPaymentDate.setFullYear(newNextPaymentDate.getFullYear() + 1);
-      newNextPaymentDate.setDate(newNextPaymentDate.getDate() + 1); // 下次付款日
+      // 新週期起始日 = 原結束日 + 1天
+      newStartDate = new Date(originalEndDate.getTime() + (24 * 60 * 60 * 1000));
+      newStartDate.setHours(0, 0, 0, 0);
       
-      newActiveUntil = new Date(newNextPaymentDate);
-      newActiveUntil.setDate(newActiveUntil.getDate() - 1);
-      newActiveUntil.setHours(23, 59, 59, 999);
+      // 新週期結束日 = 新起始日 + 1年 - 1天
+      newEndDate = calculateSubscriptionEndDate(newStartDate);
       
-      console.log(`  ✅ 補繳模式：接續原到期日 ${listing.activeUntil}`);
+      console.log(`  ✅ 補繳模式：接續原到期日 ${toTaiwanDateString(originalEndDate)}`);
     } else {
-      // 正常續費或已取消後續費：從現在延長一年
+      // 正常續費或已取消後續費：從今天開始延長一年
       renewalType = currentStatus.status === SubscriptionStatus.CANCELLED ? '恢復並續費' : '正常續費';
       
-      newNextPaymentDate = new Date(now);
-      newNextPaymentDate.setFullYear(newNextPaymentDate.getFullYear() + 1);
+      // 新週期起始日 = 今天
+      newStartDate = getTaiwanToday();
       
-      newActiveUntil = new Date(newNextPaymentDate);
-      newActiveUntil.setDate(newActiveUntil.getDate() - 1);
-      newActiveUntil.setHours(23, 59, 59, 999);
+      // 新週期結束日 = 今天 + 1年 - 1天
+      newEndDate = calculateSubscriptionEndDate(newStartDate);
       
-      console.log(`  ✅ ${renewalType}：延長到 ${newActiveUntil.toISOString()}`);
+      console.log(`  ✅ ${renewalType}：延長到 ${toTaiwanDateString(newEndDate)}`);
     }
     
     // 5. TODO: 整合藍新金流付款
     // 這裡應該先創建付款訂單，付款成功後再更新
     // 目前先模擬付款成功
     
-    // 6. 更新刊登資料
-    listing.lastPaymentDate = now.toISOString();
-    listing.nextPaymentDate = newNextPaymentDate.toISOString();
-    listing.activeUntil = newActiveUntil.toISOString();
-    listing.cancelledAt = null; // 清除取消標記
-    listing.updatedAt = now.toISOString();
+    // 6. 更新訂閱資料（使用台灣時區）
+    // 計算寬限期結束日 = 結束日 + 60天
+    const gracePeriodEnd = new Date(newEndDate.getTime() + (GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000) - 1);
     
-    await kv.set(`listing:${listing.id}`, listing);
-    await kv.set(`user:${user.id}:listing`, listing);
+    subscription.startDate = toTaiwanISOString(newStartDate);
+    subscription.endDate = toTaiwanISOString(newEndDate);
+    subscription.gracePeriodEnd = toTaiwanISOString(gracePeriodEnd);
+    subscription.lastPaymentDate = toTaiwanISOString(now);
+    subscription.nextPaymentDate = toTaiwanISOString(newEndDate); // 下次扣款日 = 結束日當天
+    subscription.canceledAt = null; // 清除取消標記
+    subscription.updatedAt = toTaiwanISOString(now);
     
-    console.log(`✅ 續費成功: ${listing.id}`);
+    await kv.set(`subscription:${subscription.id}`, subscription);
+    await kv.set(`user:${user.id}:account_status`, {
+      ...accountStatus,
+      status: 'active'
+    });
+    
+    console.log(`✅ 續費成功: ${subscription.id}`);
     console.log(`   類型: ${renewalType}`);
-    console.log(`   新到期日: ${listing.activeUntil}`);
+    console.log(`   新到期日: ${subscription.activeUntil}`);
     
     return c.json({
       success: true,
       data: {
         message: `${renewalType}成功`,
         renewalType,
-        lastPaymentDate: listing.lastPaymentDate,
-        nextPaymentDate: listing.nextPaymentDate,
-        activeUntil: listing.activeUntil,
+        lastPaymentDate: subscription.lastPaymentDate,
+        nextPaymentDate: subscription.nextPaymentDate,
+        activeUntil: subscription.activeUntil,
         amount: YEARLY_PRICE
       }
     });
     
   } catch (error) {
     console.error('❌ 續費失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+/**
+ * POST /subscriptions/resume
+ * 恢復訂閱（從「已取消」狀態恢復）
+ * 
+ * 條件：
+ * - 當前狀態必須是 cancelled
+ * - 訂閱仍在有效期內
+ * 
+ * 動作：
+ * - 清除 canceledAt
+ * - 更新狀態為 active
+ * - 重新設定下次扣款日
+ */
+subscriptions.post('/resume', async (c) => {
+  try {
+    console.log('========== 恢復訂閱 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
+      return c.json({
+        success: false,
+        error: { message: '尚未訂閱' }
+      }, 400);
+    }
+    
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
+    
+    if (!subscription) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱資料不存在' }
+      }, 404);
+    }
+    
+    // 3. 檢查當前狀態
+    const currentStatus = calculateSubscriptionStatus(subscription);
+    
+    if (currentStatus.status !== SubscriptionStatus.CANCELLED) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱未處於「已取消」狀態，無法恢復' }
+      }, 400);
+    }
+    
+    if (currentStatus.daysRemaining <= 0) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱已到期，無法恢復。請開始新訂閱。' }
+      }, 400);
+    }
+    
+    // 4. 清除取消標記，恢復訂閱
+    const now = new Date().toISOString();
+    delete subscription.canceledAt;
+    subscription.updatedAt = now;
+    
+    await kv.set(`subscription:${subscription.id}`, subscription);
+    await kv.set(`user:${user.id}:account_status`, {
+      ...accountStatus,
+      status: 'Active'
+    });
+    
+    console.log(`✅ 訂閱已恢復: ${subscription.id}`);
+    console.log(`   有效期至: ${subscription.endDate}`);
+    
+    return c.json({
+      success: true,
+      data: {
+        message: '訂閱已恢復',
+        activeUntil: subscription.endDate,
+        status: 'active'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ 恢復訂閱失敗:', error);
+    return c.json({
+      success: false,
+      error: { message: 'Internal server error' }
+    }, 500);
+  }
+});
+
+/**
+ * POST /subscriptions/makeup
+ * 補繳（從「即將失效」狀態恢復）
+ * 
+ * 條件：
+ * - 當前狀態必須是 grace
+ * - 在寬限期內（60天內）
+ * 
+ * 動作：
+ * - ⭐ 呼叫金流 API 執行扣款（目前模擬）
+ * - 扣款成功：
+ *   - 更新狀態為 active
+ *   - 更新週期（接續原到期日）
+ *   - 記錄扣款歷史
+ * - 扣款失敗：
+ *   - 返回錯誤原因
+ */
+subscriptions.post('/makeup', async (c) => {
+  try {
+    console.log('========== 補繳訂閱 ==========');
+    
+    // 1. 驗證用戶登入
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    console.log(`✅ 用戶認證成功: ${user.id}`);
+    
+    // 2. 獲取用戶的帳號狀態
+    const accountStatus = await kv.get(`user:${user.id}:account_status`);
+    
+    if (!accountStatus || !accountStatus.currentSubscriptionId) {
+      return c.json({
+        success: false,
+        error: { message: '尚未訂閱' }
+      }, 400);
+    }
+    
+    const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
+    
+    if (!subscription) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱資料不存在' }
+      }, 404);
+    }
+    
+    // 3. 檢查當前狀態
+    const currentStatus = calculateSubscriptionStatus(subscription);
+    
+    if (currentStatus.status !== SubscriptionStatus.GRACE) {
+      return c.json({
+        success: false,
+        error: { message: '訂閱未處於「即將失效」狀態，無法補繳' }
+      }, 400);
+    }
+    
+    // 4. ⭐ 模擬金流扣款（未來整合藍新金流）
+    // TODO: 整合藍新金流定期扣款 API
+    console.log(`🔄 執行補繳扣款...`);
+    
+    // 模擬扣款（90% 成功率）
+    const paymentSuccess = Math.random() > 0.1;
+    
+    if (!paymentSuccess) {
+      console.error(`❌ 補繳扣款失敗`);
+      
+      // 記錄失敗歷史
+      const paymentHistory = await kv.get(`user:${user.id}:payment_history`) || [];
+      paymentHistory.unshift({
+        id: `payment_${Date.now()}`,
+        subscriptionId: subscription.id,
+        amount: YEARLY_PRICE,
+        status: 'failed',
+        paymentMethod: 'newebpay_recurring',
+        error: '信用卡餘額不足',
+        attemptedAt: new Date().toISOString()
+      });
+      
+      if (paymentHistory.length > 100) {
+        paymentHistory.length = 100;
+      }
+      
+      await kv.set(`user:${user.id}:payment_history`, paymentHistory);
+      
+      return c.json({
+        success: false,
+        error: { message: '補繳失敗：信用卡餘額不足' }
+      }, 400);
+    }
+    
+    // 5. 扣款成功，更新訂閱（使用台灣時區）
+    console.log(`✅ 補繳扣款成功`);
+    
+    const now = getTaiwanNow();
+    const originalEndDate = new Date(subscription.endDate);
+    
+    // 計算新週期（接續原到期日）
+    // 新週期起始日 = 原結束日 + 1天 00:00:00
+    const newStartDate = new Date(originalEndDate.getTime() + (24 * 60 * 60 * 1000));
+    newStartDate.setHours(0, 0, 0, 0);
+    
+    // 新週期結束日 = 新起始日 + 1年 - 1天 23:59:59.999
+    const newEndDate = calculateSubscriptionEndDate(newStartDate);
+    
+    // 寬限期結束日 = 結束日 + 60天
+    const gracePeriodEnd = new Date(newEndDate.getTime() + (GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000) - 1);
+    
+    // 更新訂閱資料（使用台灣時區 ISO 字符串）
+    subscription.startDate = toTaiwanISOString(newStartDate);
+    subscription.endDate = toTaiwanISOString(newEndDate);
+    subscription.gracePeriodEnd = toTaiwanISOString(gracePeriodEnd);
+    subscription.lastPaymentDate = toTaiwanISOString(now);
+    subscription.nextPaymentDate = toTaiwanISOString(newEndDate); // 下次扣款日 = 結束日當天
+    subscription.updatedAt = toTaiwanISOString(now);
+    
+    // 清除寬限期標記
+    delete subscription.graceStartedAt;
+    delete subscription.lastPaymentFailedAt;
+    delete subscription.lastPaymentFailureReason;
+    
+    await kv.set(`subscription:${subscription.id}`, subscription);
+    await kv.set(`user:${user.id}:account_status`, {
+      ...accountStatus,
+      status: 'Active'
+    });
+    
+    // 6. 記錄扣款歷史
+    const paymentHistory = await kv.get(`user:${user.id}:payment_history`) || [];
+    paymentHistory.unshift({
+      id: `payment_${Date.now()}`,
+      subscriptionId: subscription.id,
+      amount: YEARLY_PRICE,
+      status: 'success',
+      paymentMethod: 'newebpay_recurring',
+      transactionId: `TXN_${Date.now()}`,
+      paidAt: now.toISOString()
+    });
+    
+    if (paymentHistory.length > 100) {
+      paymentHistory.length = 100;
+    }
+    
+    await kv.set(`user:${user.id}:payment_history`, paymentHistory);
+    
+    console.log(`✅ 補繳成功: ${subscription.id}`);
+    console.log(`   新週期: ${subscription.startDate} ~ ${subscription.endDate}`);
+    
+    return c.json({
+      success: true,
+      data: {
+        message: '補繳成功',
+        activeUntil: subscription.endDate,
+        nextPaymentDate: subscription.nextPaymentDate,
+        amount: YEARLY_PRICE,
+        status: 'active'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ 補繳失敗:', error);
     return c.json({
       success: false,
       error: { message: 'Internal server error' }
@@ -386,25 +885,40 @@ subscriptions.get('/history', async (c) => {
 /**
  * 計算訂閱狀態
  * 
- * @param listing - 刊登資料
+ * @param subscription - 訂閱資料（新規格：從 subscription 表）
  * @returns 訂閱狀態資訊
  */
-function calculateSubscriptionStatus(listing: any) {
-  const now = new Date();
-  const activeUntil = new Date(listing.activeUntil);
-  const daysRemaining = Math.ceil((activeUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+function calculateSubscriptionStatus(subscription: any) {
+  const now = getTaiwanNow();
+  const endDate = new Date(subscription.endDate);
+  const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   
   let status: SubscriptionStatus;
   let message: string;
   let canRenew: boolean;
   let canMakeup: boolean;
   
+  // ✅ 計算下期起訖日（僅 active 狀態）（使用台灣時區）
+  // ✅ 新規則：
+  // - 下次扣款日 = 本期結束日當天（不是 +1）
+  // - 下期起始日 = 本期結束日 + 1天
+  // - 下期結束日 = 下期起始日 + 1年 - 1天
+  // 
+  // 範例：本期結束日 2025/12/30
+  // - 下次扣款日：2025/12/30（當天扣款）
+  // - 下期起始日：2025/12/31
+  // - 下期結束日：2026/12/30
+  
+  let nextPeriodStart: string | null = null;
+  let nextPeriodEnd: string | null = null;
+  let nextPaymentDate: string | null = null;
+  
   // 1. 檢查是否已取消
-  if (listing.cancelledAt) {
+  if (subscription.canceledAt) {
     if (daysRemaining > 0) {
       // 已取消但仍在有效期內
       status = SubscriptionStatus.CANCELLED;
-      message = `訂閱已取消，將在 ${listing.activeUntil} 到期`;
+      message = `訂閱已取消，將在 ${subscription.endDate} 到期`;
       canRenew = true;  // 可以恢復訂閱
       canMakeup = false;
     } else {
@@ -422,18 +936,31 @@ function calculateSubscriptionStatus(listing: any) {
       message = `訂閱有效，剩餘 ${daysRemaining} 天`;
       canRenew = true;  // 可以提前續費
       canMakeup = false;
+      
+      // ✅ 計算下期起訖日（下期開始日 = 本期結束日 + 1天）（使用台灣時區）
+      // 下期起始日 = 本期結束日 + 1天 00:00:00
+      const nextStart = new Date(endDate.getTime() + (24 * 60 * 60 * 1000));
+      nextStart.setHours(0, 0, 0, 0);
+      
+      // 下期結束日 = 下期起始日 + 1年 - 1天 23:59:59.999
+      const nextEnd = calculateSubscriptionEndDate(nextStart);
+      
+      nextPeriodStart = toTaiwanISOString(nextStart);
+      nextPeriodEnd = toTaiwanISOString(nextEnd);
+      nextPaymentDate = toTaiwanISOString(endDate);  // 下次扣款日 = 本期結束日當天
     } else {
       // 已過期
       const daysOverdue = Math.abs(daysRemaining);
+      const gracePeriodEnd = new Date(subscription.gracePeriodEnd);
       
-      if (daysOverdue <= GRACE_PERIOD_DAYS) {
-        // 即將失效（60天內）
+      if (now <= gracePeriodEnd) {
+        // 即將失效（寬限期內）
         status = SubscriptionStatus.GRACE;
         message = `訂閱已逾期 ${daysOverdue} 天，可補繳恢復`;
         canRenew = false;
         canMakeup = true;
       } else {
-        // 永久失效（超過60天）
+        // 永久失效（超過寬限期）
         status = SubscriptionStatus.EXPIRED;
         message = `訂閱已永久失效（逾期超過 ${GRACE_PERIOD_DAYS} 天）`;
         canRenew = false;
@@ -445,14 +972,20 @@ function calculateSubscriptionStatus(listing: any) {
   return {
     status,
     message,
-    activeUntil: listing.activeUntil,
-    nextPaymentDate: listing.nextPaymentDate,
-    lastPaymentDate: listing.lastPaymentDate,
+    // ✅ 本期起訖日
+    currentPeriodStart: subscription.startDate,
+    currentPeriodEnd: subscription.endDate,
+    // ✅ 下期起訖日（僅 active 狀態有值）
+    nextPeriodStart,
+    nextPeriodEnd,
+    // ✅ 下次扣款日（僅 active 狀態有值）
+    nextPaymentDate,
+    // 其他信息
     daysRemaining,
     canRenew,
     canMakeup,
-    isCancelled: !!listing.cancelledAt,
-    cancelledAt: listing.cancelledAt || null
+    isCancelled: !!subscription.canceledAt,
+    cancelledAt: subscription.canceledAt || null
   };
 }
 
@@ -465,27 +998,27 @@ function calculateSubscriptionStatus(listing: any) {
 export async function checkAndUpdateSubscriptionStatus(userId: string): Promise<{ status: string }> {
   console.log(`[Check Subscription] 檢查用戶訂閱狀態: ${userId}`);
   
-  const userListing = await kv.get(`user:${userId}:listing`);
+  const accountStatus = await kv.get(`user:${userId}:account_status`);
   
-  if (!userListing) {
-    console.log(`  ℹ️ 用戶沒有刊登，跳過`);
-    return { status: 'no_listing' };
+  if (!accountStatus || !accountStatus.currentSubscriptionId) {
+    console.log(`  ℹ️ 用戶沒有訂閱，跳過`);
+    return { status: 'no_subscription' };
   }
   
-  const listing = await kv.get(`listing:${userListing.id}`);
+  const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
   
-  if (!listing) {
-    console.log(`  ⚠️ 刊登資料不存在: ${userListing.id}`);
-    return { status: 'listing_not_found' };
+  if (!subscription) {
+    console.log(`  ⚠️ 訂閱資料不存在: ${accountStatus.currentSubscriptionId}`);
+    return { status: 'subscription_not_found' };
   }
   
-  const status = calculateSubscriptionStatus(listing);
+  const status = calculateSubscriptionStatus(subscription);
   
   console.log(`  📊 當前狀態: ${status.status}`);
   
   // 如果狀態變為永久失效，需要處理推薦碼失效
-  if (status.status === SubscriptionStatus.EXPIRED && listing.referralCode) {
-    await handleReferralCodeExpiration(userId, listing.id, listing.referralCode);
+  if (status.status === SubscriptionStatus.EXPIRED && subscription.referralCode) {
+    await handleReferralCodeExpiration(userId, subscription.id, subscription.referralCode);
   }
   
   return { status: status.status };
@@ -515,9 +1048,15 @@ async function handleReferralCodeExpiration(
     console.log(`  ✅ 推薦碼已標記為失效`);
   }
   
-  // 2. 清空用戶點數（根據規格：永久失效時點數歸零）
-  await kv.set(`user:${userId}:points`, 0);
-  console.log(`  ✅ 用戶點數已清零`);
+  // 2. ✅ 清空用戶點數 SSOT（根據規格：永久失效時點數歸零）
+  await kv.set(`user:${userId}:rewards`, {
+    availableRewards: 0,
+    pendingRewards: 0,
+    withdrawnRewards: 0,
+    totalEarned: 0,
+    lastUpdated: new Date().toISOString()
+  });
+  console.log(`  ✅ 用戶點數 SSOT 已清零`);
   
   // 3. 清空任務進度
   await kv.set(`user:${userId}:tasks`, {

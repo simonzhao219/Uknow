@@ -25,26 +25,17 @@ export function AuthPage() {
   const { showToast } = useNotification();
   const supabase = createClient();
 
-  // 清理舊數據：在進入登入頁面時，主動清除可能存在的問題 session
+  // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
   useEffect(() => {
-    const cleanupOldSessions = async () => {
+    const cleanupInvalidSessions = async () => {
       try {
-        // 檢查是否有 URL hash（email verification callback）
-        const hash = window.location.hash;
-        
-        // 如果有 hash，可能是舊的 verification link，清除它
-        if (hash && hash.includes('access_token')) {
-          console.log('AuthPage: Found auth hash in URL, cleaning up...');
-          window.location.hash = ''; // 清除 URL hash
-        }
-
         // 檢查當前 session 狀態
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session) {
-          console.log('AuthPage: Found existing session, checking if valid...');
+          console.log('AuthPage: Found existing session, checking validity...');
           
-          // 嘗試驗證這個 session 是否有效
+          // 驗證 session 是否有效
           const response = await fetch(
             `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
             {
@@ -54,7 +45,7 @@ export function AuthPage() {
             }
           );
 
-          // 如果返回 410 或 404，表示這是一個無效的 session，清除它
+          // ✅ 只處理無效 session，不主動重定向
           if (response.status === 410 || response.status === 404) {
             console.log('AuthPage: Session is invalid (user deleted), cleaning up...');
             await supabase.auth.signOut();
@@ -62,22 +53,13 @@ export function AuthPage() {
             localStorage.removeItem('pendingSession');
             setUser(null);
           } else if (response.ok) {
-            // Session 有效，用戶應該已經登入，導向 dashboard
-            console.log('AuthPage: Valid session found, redirecting to dashboard...');
-            const profile = await response.json();
-            
-            if (!profile.needsOnboarding) {
-              setUser(profile);
-              localStorage.setItem('user', JSON.stringify(profile));
-              navigate('/dashboard', { replace: true });
-            } else {
-              // 需要完善資料
-              navigate('/auth/complete-profile', { replace: true });
-            }
+            // ✅ Session 有效，但不主動重定向
+            // 讓 App.tsx 的全局邏輯處理重定向
+            console.log('AuthPage: Valid session found, letting App.tsx handle redirection');
           }
         }
       } catch (error) {
-        console.error('AuthPage: Error during cleanup:', error);
+        console.error('AuthPage: Error checking session validity:', error);
         // 發生錯誤時，保守清除
         await supabase.auth.signOut();
         localStorage.removeItem('user');
@@ -85,22 +67,25 @@ export function AuthPage() {
       }
     };
 
-    cleanupOldSessions();
+    cleanupInvalidSessions();
   }, []); // 只在組件掛載時執行一次
 
   // 如果已登入，導向 dashboard
   useEffect(() => {
     if (user) {
+      console.log('AuthPage: User is already logged in, redirecting to dashboard');
       navigate('/dashboard', { replace: true });
     }
 
-    // 顯示來自其他頁面的提示訊息（例如 AuthCallback 的成功訊息）
+    // ✅ 顯示來自其他頁面的提示訊息（不處理自動導向）
+    // 導向由 handleLogin 處理（用戶主動登入時）
+    
     if (location.state?.message) {
       showToast(location.state.message, location.state.emailVerified ? 'success' : 'info');
       // 清除 state，避免重複顯示
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [user, navigate, location, showToast]);
+  }, [user, navigate, location, showToast]);  // ← ✅ 加入 user 依賴
 
   // 步驟 1：檢查 Email 是否存在
   const handleCheckEmail = async () => {
@@ -219,20 +204,34 @@ export function AuthPage() {
 
       const profile = await response.json();
       console.log('User profile:', profile);
+      console.log('User registrationStep:', profile.registrationStep);
 
-      // 檢查是否需要完善資料
-      if (profile.needsOnboarding) {
-        console.log('User needs to complete profile, redirecting to /auth/complete-profile');
-        // 暫存 session，讓 CompleteProfile 可以使用
-        localStorage.setItem('pendingSession', JSON.stringify(data.session));
+      // ✅ 根據 registrationStep 決定導向
+      if (!profile.registrationStep || profile.registrationStep === 0) {
+        // 新用戶，尚未填寫基本資料
+        console.log('AuthPage: New user, redirecting to complete profile');
+        showToast('請完善您的個人資料', 'info');
         navigate('/auth/complete-profile');
-        return;
+      } else if (profile.registrationStep === 1 || profile.registrationStep === 2) {
+        // ✅ 已填寫基本資料，設定 user（讓 ProtectedRoute 通過）
+        console.log('AuthPage: User needs to complete payment');
+        setUser(profile);
+        localStorage.setItem('user', JSON.stringify(profile));
+        // ✅ 靜默導向，不顯示 toast（PaymentCheckout 頁面會有說明）
+        navigate('/payment/checkout');
+      } else if (profile.registrationStep === 3) {
+        // 註冊完成，可正常使用
+        console.log('AuthPage: User registration complete, redirecting to dashboard');
+        setUser(profile);  // ✅ 只有完成註冊才設定 user
+        localStorage.setItem('user', JSON.stringify(profile));
+        showToast('登入成功！', 'success');
+        navigate('/dashboard');
+      } else {
+        // 未知狀態，預設導向完善資料
+        console.warn('AuthPage: Unknown registrationStep:', profile.registrationStep);
+        showToast('請完善您的個人資料', 'info');
+        navigate('/auth/complete-profile');
       }
-
-      setUser(profile);
-      localStorage.setItem('user', JSON.stringify(profile));
-      showToast('登入成功！', 'success');
-      navigate('/dashboard');
     } catch (error) {
       console.error('Error during login:', error);
       showToast('登入失敗，請稍後再試', 'error');
@@ -322,7 +321,7 @@ export function AuthPage() {
         requirements.push('至少一個大寫字母（A-Z）');
       }
       if (!/[a-z]/.test(pwd)) {
-        requirements.push('至少一個小寫字母（a-z）');
+        requirements.push('至少一個小寫母（a-z）');
       }
       if (!/[0-9]/.test(pwd)) {
         requirements.push('至少一個數字（0-9）');

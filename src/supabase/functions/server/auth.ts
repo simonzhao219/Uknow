@@ -296,23 +296,79 @@ export const registerUser = async (c: Context) => {
 
     console.log(`[registerUser] Authenticated user: ${user.id}, email: ${user.email}`);
 
-    // 2. 取得表單資料
-    const { name, phone, birthDate } = await c.req.json();
-    console.log(`[registerUser] Form data received - name: ${name}, phone: ${phone}, birthDate: ${birthDate}`);
+    // 2. 取得表單資料（✅ 新增 referralCode 和 nationalId）
+    const { name, nationalId, phone, birthDate, referralCode } = await c.req.json();
+    console.log(`[registerUser] Form data received - name: ${name}, nationalId: ${nationalId}, phone: ${phone}, birthDate: ${birthDate}, referralCode: ${referralCode || '無'}`);
 
     // 3. 驗證必填欄位
-    if (!name || !phone || !birthDate) {
+    if (!name || !nationalId || !phone || !birthDate) {
       console.error('[registerUser] Missing required fields');
-      return c.json({ error: "Name, phone, and birthDate are required" }, 400);
+      return c.json({ error: "Name, nationalId, phone, and birthDate are required" }, 400);
+    }
+    
+    // ✅ 4. 智能推荐码处理（新规格）
+    let referredByUserId = null;
+    let referredByListingId = null;
+    let isAutoReferral = false;  // ✅ 新增：标记是否为系统自动带入的推荐码
+    const DEFAULT_REFERRAL_CODE = 'dud948785';
+    
+    // 确定最终使用的推荐码
+    let finalReferralCode = referralCode;
+    
+    // 1️⃣ 如果用户没有填写推荐码，尝试使用预设推荐码
+    if (!referralCode || referralCode.trim() === '') {
+      console.log(`[registerUser] 用户未填写推荐码，检查预设推荐码 ${DEFAULT_REFERRAL_CODE} 是否存在...`);
+      
+      // 查询预设推荐码是否存在
+      const defaultReferralData = await kv.get(`referral_code:${DEFAULT_REFERRAL_CODE}`);
+      
+      if (defaultReferralData) {
+        console.log(`[registerUser] ✅ 预设推荐码存在，自动使用: ${DEFAULT_REFERRAL_CODE}`);
+        finalReferralCode = DEFAULT_REFERRAL_CODE;
+        isAutoReferral = true;  // ✅ 标记为系统自动带入
+      } else {
+        console.log(`[registerUser] ⚠️ 预设推荐码不存在，不建立推荐关系`);
+        finalReferralCode = null;
+      }
+    } else {
+      console.log(`[registerUser] 用户主动填写了推荐码: ${referralCode}`);
+      isAutoReferral = false;  // ✅ 标记为用户主动填写
+    }
+    
+    // 2️⃣ 如果有推荐码（用户填写或自动使用预设），进行验证
+    if (finalReferralCode && finalReferralCode !== 'DEFAULTRCM01') {
+      console.log(`[registerUser] 验证推荐码: ${finalReferralCode} (${isAutoReferral ? '系统自动' : '用户主动'})`);
+      
+      const referralData = await kv.get(`referral_code:${finalReferralCode}`);
+      
+      if (!referralData) {
+        console.error(`[registerUser] 推荐码无效: ${finalReferralCode}`);
+        return c.json({ error: "推荐码无效" }, 400);
+      }
+      
+      // ✅ 新架构：推荐码绑定到用户，listingId 可以为 null
+      // 推荐码在付款后生成，初始 listingId = null
+      // 只要有 userId 就是有效的推荐码
+      referredByUserId = referralData.userId;
+      referredByListingId = referralData.listingId;  // 可能为 null（用户尚未创建刊登）
+      
+      console.log(`[registerUser] ✅ 推荐码验证成功: ${finalReferralCode}, 推荐人: ${referredByUserId}, 刊登: ${referredByListingId || 'null (未创建刊登)'}, 自动推荐: ${isAutoReferral}`);
     }
 
-    // 4. 驗證手機號碼格式（台灣手機號碼：09 開頭，共 10 位數）
+    // 5. 驗證手機號碼格式（台灣手機號碼：09 開頭，共 10 位數）
     if (!/^09\d{8}$/.test(phone)) {
       console.error(`[registerUser] Invalid phone format: ${phone}`);
       return c.json({ error: "手機號碼格式不正確（格式：09XXXXXXXX）" }, 400);
     }
 
-    // 5. 驗證年齡（需年滿 18 歲）
+    // ✅ 5.5 驗證身分證字號格式（台灣身分證字號：1個英文字母 + 1個數字（性別碼）+ 8個數字）
+    if (!/^[A-Z][12]\d{8}$/.test(nationalId)) {
+      console.error(`[registerUser] Invalid nationalId format: ${nationalId}`);
+      return c.json({ error: "身分證字號格式不正確（格式：A123456789）" }, 400);
+    }
+    console.log(`[registerUser] National ID format validation passed`);
+
+    // 6. 驗證年齡（需年滿 18 歲）
     const birthDateObj = new Date(birthDate);
     const today = new Date();
     let age = today.getFullYear() - birthDateObj.getFullYear();
@@ -326,7 +382,7 @@ export const registerUser = async (c: Context) => {
     }
     console.log(`[registerUser] Age validation passed: ${age} years old`);
 
-    // 6. 檢查手機號碼是否重複
+    // 7. 檢查手機號碼是否重複
     try {
       const allUsers = await kv.getByPrefix("user:");
       const phoneExists = allUsers.some((u: any) => u.phone === phone && u.id !== user.id);
@@ -335,23 +391,37 @@ export const registerUser = async (c: Context) => {
         return c.json({ error: "此手機號碼已被註冊" }, 400);
       }
       console.log('[registerUser] Phone number is unique');
+      
+      // ✅ 7.5 檢查身分證字號是否重複
+      const nationalIdExists = allUsers.some((u: any) => u.nationalId === nationalId && u.id !== user.id);
+      if (nationalIdExists) {
+        console.error(`[registerUser] National ID already exists: ${nationalId}`);
+        return c.json({ error: "此身分證字號已被註冊" }, 400);
+      }
+      console.log('[registerUser] National ID is unique');
     } catch (kvError) {
-      console.log("[registerUser] KV Store error when checking phone, skipping duplicate check:", kvError);
+      console.log("[registerUser] KV Store error when checking phone/nationalId, skipping duplicate check:", kvError);
       // KV Store 不可用，跳過重複檢查（在早期開發階段可以接受）
     }
 
-    // 7. 儲存用戶資料
+    // ✅ 8. 儲存用戶資料（registrationStep = 1，等待付款）
     const profile = {
       id: user.id,
       publicUserId: null,  // 第一次創建刊登時才生成
       email: user.email,
       name,
+      nationalId,  // ✅ 新增身分證字號
       phone,
       birthDate,
       isAdmin: false,
       emailVerified: true,  // Supabase 已驗證
       phoneVerified: true,  // 我們只做格式驗證
-      needsOnboarding: false,  // 已完成註冊流程
+      registrationStep: 1,  // ✅ 新增：Step 1 = 基本資訊完成，等待付款
+      referralCode: null,  // ✅ 新增：付款後才會生成
+      referredByCode: finalReferralCode || null,  // ✅ 新增：推荐码
+      referredByUserId: referredByUserId,  // ✅ 新增：推荐人用户 ID
+      referredByListingId: referredByListingId,  // ✅ 新增：推荐人刊登 ID
+      isAutoReferral: isAutoReferral,  // ✅ 新增：标记是否为系统自动带入的推荐码
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -366,7 +436,7 @@ export const registerUser = async (c: Context) => {
       await kv.set(`user:email:${user.email}`, user.id);
       console.log(`[registerUser] ✅ Saved user:email:${user.email} to KV Store`);
       
-      console.log(`[registerUser] ✅ User registered successfully: ${user.id}`);
+      console.log(`[registerUser] ✅ User registered successfully (Step 1): ${user.id}`);
       
       // 驗證保存是否成功
       const savedProfile = await kv.get(`user:${user.id}:profile`);
@@ -433,11 +503,21 @@ export const getUserProfile = async (c: Context) => {
 
     if (!profile) {
       // 用戶存在於 Auth 但沒有 profile（剛驗證完 email）
-      console.log(`[getUserProfile] ⚠️ No profile found, user needs onboarding`);
+      console.log(`[getUserProfile] ⚠️ No profile found, user needs to complete registration`);
       return c.json({
         id: user.id,
         email: user.email,
-        needsOnboarding: true,  // 需要完善資料
+        registrationStep: 0,  // ✅ 修正：Step 0 = 需要填寫基本資料
+      });
+    }
+
+    // ✅ 新增：檢查 profile 是否包含基本資料（name, phone, birthDate）
+    if (!profile.name || !profile.phone || !profile.birthDate) {
+      console.log(`[getUserProfile] ⚠️ Profile incomplete (missing name/phone/birthDate), user needs to complete basic info`);
+      return c.json({
+        id: user.id,
+        email: user.email,
+        registrationStep: 0,  // Step 0 = 需要填寫基本資料
       });
     }
 
@@ -489,6 +569,81 @@ export const checkPhoneAvailability = async (c: Context) => {
   } catch (error) {
     console.error("Error checking phone:", error);
     return c.json({ error: "Internal server error" }, 500);
+  }
+};
+
+/**
+ * 重置註冊狀態（用於編輯註冊資料）
+ * POST /auth/reset-registration
+ * 
+ * 功能：將用戶的 registrationStep 重置為 0，但保留 email 和 id
+ * 用途：當用戶在付款前想要編輯註冊資料時使用
+ */
+export const resetRegistration = async (c: Context) => {
+  try {
+    console.log('[resetRegistration] Starting registration reset...');
+    
+    // 1. 驗證 access token
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader) {
+      console.error('[resetRegistration] No Authorization header');
+      return c.json({ error: { message: "Authorization header is required" } }, 401);
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { user, error: authError } = await verifyToken(token);
+
+    if (authError || !user) {
+      console.error('[resetRegistration] Token verification failed:', authError);
+      return c.json({ error: { message: "無效的認證 token" } }, 401);
+    }
+
+    console.log(`[resetRegistration] User authenticated: ${user.id}`);
+
+    // 2. 獲取當前用戶的 profile
+    const profileKey = `user:${user.id}:profile`;
+    const currentProfile = await kv.get(profileKey);
+
+    if (!currentProfile) {
+      console.error(`[resetRegistration] Profile not found for user: ${user.id}`);
+      return c.json({ error: { message: "用戶資料不存在" } }, 404);
+    }
+
+    console.log(`[resetRegistration] Current profile found, resetting to step 0`);
+
+    // 3. 創建重置後的 profile（保留 id, email，清除其他資料）
+    const resetProfile = {
+      id: user.id,
+      publicUserId: null,
+      email: user.email,
+      name: null,
+      phone: null,
+      birthDate: null,
+      isAdmin: currentProfile.isAdmin || false,
+      emailVerified: true,
+      phoneVerified: false,
+      registrationStep: 0,  // ✅ 重置為 0（需要重新填寫基本資料）
+      referralCode: null,
+      referredByCode: null,
+      referredByUserId: null,
+      referredByListingId: null,
+      createdAt: currentProfile.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 4. 儲存重置後的 profile
+    await kv.set(profileKey, resetProfile);
+    console.log(`[resetRegistration] ✅ Profile reset to step 0 for user: ${user.id}`);
+
+    return c.json({
+      success: true,
+      message: "註冊狀態已重置，可以重新填寫資料",
+      profile: resetProfile
+    });
+
+  } catch (error) {
+    console.error("[resetRegistration] Unexpected error:", error);
+    return c.json({ error: { message: "Internal server error" } }, 500);
   }
 };
 

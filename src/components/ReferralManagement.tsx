@@ -2,40 +2,45 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { ArrowLeft, Share2, Users, Loader2, Copy } from 'lucide-react';
+import { ArrowLeft, Share2, Users, Loader2, Copy, Check, Bug } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
+import { ReferralDebugger } from './debug/ReferralDebugger';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
+import { usePageRestoration } from '../hooks/usePageRestoration';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 
-interface ReferralListing {
-  id: string;
-  title: string;
-  serviceType: string;
-  city: string;
-  ownerName: string;
+/**
+ * ✅ 推薦成員接口（以用戶為核心，包含推薦碼）
+ */
+interface ReferralMember {
   userId: string;
-  activeUntil: string;
+  userName: string;
+  userReferralCode: string | null;  // ✅ 被推薦者的推薦碼
+  listingId: string | null;        // 可能還沒創建刊登
+  listingName: string | null;      // 可能還沒創建刊登
+  serviceType: string | null;
+  city: string | null;
+  activeUntil: string | null;
   isActive: boolean;
-  photos: string[];
+  referrer?: {                     // 二代、三代的推薦人信息
+    userId: string;
+    userName: string;
+    userReferralCode: string | null;  // ✅ 推薦人的推薦碼
+    listingId: string | null;
+    listingName: string | null;
+  } | null;
+  createdAt: string;
 }
 
-interface MyListing {
-  id: string;
-  title: string;
-  serviceType: string;
-  city: string;
-  referralCode: string;
-  activeUntil: string;
-  isActive: boolean;
-}
-
+/**
+ * ✅ 推薦樹接口（以用戶為根，不再有 myListing）
+ */
 interface ReferralTree {
-  myListing: MyListing;
-  firstGeneration: ReferralListing[];
-  secondGeneration: ReferralListing[];
-  thirdGeneration: ReferralListing[];
+  firstGeneration: ReferralMember[];
+  secondGeneration: ReferralMember[];
+  thirdGeneration: ReferralMember[];
 }
 
 interface ReferralSummary {
@@ -45,18 +50,24 @@ interface ReferralSummary {
   thirdGenCount: number;
 }
 
+/**
+ * ✅ 推薦數據接口（移除 trees 數組）
+ */
 interface ReferralData {
-  trees: ReferralTree[];
+  userReferralCode: string;     // 用戶的推薦碼
+  referralTree: ReferralTree;   // 用戶的推薦樹（單一對象，不是數組）
   summary: ReferralSummary;
 }
 
 export function ReferralManagement() {
   const { showToast } = useNotification();
   const handleBack = useBackNavigation();
+  usePageRestoration(); // ✅ 处理 Safari bfcache 页面恢复问题
   
   const [loading, setLoading] = useState(true);
   const [referralData, setReferralData] = useState<ReferralData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);  // ✅ 新增：追蹤複製狀態
 
   useEffect(() => {
     fetchReferralData();
@@ -76,6 +87,14 @@ export function ReferralManagement() {
       
       if (result.success) {
         console.log('✅ 推薦數據獲取成功:', result.data);
+        console.log('📊 推薦碼:', result.data.userReferralCode);
+        console.log('📊 推薦樹:', {
+          firstGen: result.data.referralTree?.firstGeneration?.length || 0,
+          secondGen: result.data.referralTree?.secondGeneration?.length || 0,
+          thirdGen: result.data.referralTree?.thirdGeneration?.length || 0
+        });
+        console.log('📊 一代成員:', result.data.referralTree?.firstGeneration || []);
+        console.log('📊 統計:', result.data.summary);
         setReferralData(result.data);
       } else {
         throw new Error('獲取推薦數據失敗');
@@ -106,6 +125,7 @@ export function ReferralManagement() {
     try {
       document.execCommand('copy');
       showToast('推薦碼已複製到剪貼簿！', 'success');
+      setCopied(true);
     } catch (err) {
       console.error('複製失敗:', err);
       showToast('複製失敗', 'error');
@@ -197,36 +217,74 @@ export function ReferralManagement() {
         thirdLevelCount={referralData?.summary.thirdGenCount || 0}
       />
 
-      {/* 推薦碼管理 */}
+      {/* ✅ 會員推薦碼卡片 */}
+      {referralData?.userReferralCode && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-purple-600" />
+              我的推薦碼
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3 p-4 border border-purple-200 rounded-lg">
+              <div className="flex-1">
+                <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
+                  {referralData.userReferralCode}
+                </p>
+              </div>
+              <Button
+                onClick={() => {
+                  copyReferralCode(referralData.userReferralCode);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="shrink-0"
+                variant="ghost"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    已複製
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    複製推薦碼
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 推薦樹狀圖 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Share2 className="h-5 w-5" />
-            我的推薦碼
+            <Users className="h-5 w-5" />
+            我的推薦網絡
           </CardTitle>
           <CardDescription>
-            每個刊登都有專屬的推薦碼，點選查看該推薦碼的推薦關係
+            查看透過您的推薦碼註冊的會員
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!referralData || referralData.trees.length === 0 ? (
+          {!referralData || 
+           (referralData.referralTree.firstGeneration.length === 0 && 
+            referralData.referralTree.secondGeneration.length === 0 && 
+            referralData.referralTree.thirdGeneration.length === 0) ? (
             <div className="text-center py-8">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">您還沒有刊登</p>
+              <p className="text-muted-foreground">尚無推薦紀錄</p>
               <p className="text-sm text-muted-foreground mt-2">
-                刊登服務後將自動生成推薦碼
+                分享您的推薦碼，開始建立推薦網絡
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {referralData.trees.map((tree) => (
-                <ReferralTreeView
-                  key={tree.myListing.id}
-                  tree={tree}
-                  onCopyCode={copyReferralCode}
-                />
-              ))}
-            </div>
+            <ReferralTreeView
+              referralTree={referralData.referralTree}
+            />
           )}
         </CardContent>
       </Card>

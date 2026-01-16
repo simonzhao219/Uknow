@@ -2,6 +2,12 @@ import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { REWARD_CONFIG, SCHEDULE_STATUS, TASK_NAMES } from './reward_config.ts';
 import { checkAndUpdateSubscriptionStatus, SubscriptionStatus } from './subscriptions.ts';
+import { 
+  getTaiwanNow, 
+  getTaiwanToday, 
+  toTaiwanDateString, 
+  toTaiwanISOString 
+} from './date_utils.ts';
 
 const cron = new Hono();
 
@@ -12,8 +18,9 @@ const cron = new Hono();
  * 
  * 功能：
  * 1. 處理推薦獎勵排程（第2~12個月）
- * 2. 檢查並更新所有用戶的訂閱狀態
- * 3. 結算任務完成狀態（每月1日）
+ * 2. 檢查訂閱自動扣款
+ * 3. 檢查並更新所有用戶的訂閱狀態
+ * 4. 結算任務完成狀態（每月1日）
  * 
  * 安全：只允許 Service Role Key 調用
  */
@@ -36,23 +43,26 @@ cron.post('/process-daily-rewards', async (c) => {
     
     console.log('✅ 請求授權驗證通過');
     
-    // ===== 獲取今日日期 =====
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0]; // "2025-12-15"
+    // ===== 獲取今日日期（台灣時區）=====
+    const today = getTaiwanToday();
+    const todayStr = toTaiwanDateString(today); // "2025-12-15"
     
-    console.log(`📅 處理日期: ${todayStr}`);
-    console.log(`📅 當前時間: ${new Date().toISOString()}`);
+    console.log(`📅 處理日期（台灣時區）: ${todayStr}`);
+    console.log(`📅 當前時間（台灣時區）: ${toTaiwanISOString(getTaiwanNow())}`);
     
     // ===== 1. 處理推薦獎勵排程 =====
     console.log('\n🎁 ===== 開始處理推薦獎勵排程 =====');
     const rewardResults = await processDailyRewardSchedules(todayStr);
     
-    // ===== 2. 檢查並更新所有用戶的訂閱狀態 ===== 
+    // ===== 2. 檢查訂閱自動扣款 ===== 
+    console.log('\n💳 ===== 開始檢查訂閱自動扣款 =====');
+    const renewalResults = await checkSubscriptionRenewals(todayStr);
+    
+    // ===== 3. 檢查並更新所有用戶的訂閱狀態 ===== 
     console.log('\n📋 ===== 開始檢查訂閱狀態 =====');
     const subscriptionResults = await processSubscriptionStatusCheck();
     
-    // ===== 3. 處理任務結算（只在每月1日執行）=====
+    // ===== 4. 處理任務結算（只在每月1日執行）=====
     let taskResults;
     if (today.getDate() === 1) {
       console.log('\n🎯 ===== 開始處理任務結算（每月1日）=====');
@@ -80,8 +90,9 @@ cron.post('/process-daily-rewards', async (c) => {
       date: todayStr,
       executionTime: `${executionTime}s`,
       rewards: rewardResults,
+      renewals: renewalResults,
       tasks: taskResults,
-      processedAt: new Date().toISOString()
+      processedAt: toTaiwanISOString(getTaiwanNow())
     });
     
   } catch (error) {
@@ -100,7 +111,7 @@ cron.post('/process-daily-rewards', async (c) => {
 // ===================================================================
 
 /**
- * 處理推薦獎勵排程
+ * 推薦獎勵排程
  * 
  * 流程：
  * 1. 從日期索引讀取今日應發放的排程 ID
@@ -152,7 +163,7 @@ async function processDailyRewardSchedules(todayStr: string) {
       if (!sourceListing) {
         console.log(`   ❌ 來源刊登不存在，取消排程`);
         schedule.status = SCHEDULE_STATUS.CANCELLED;
-        schedule.completedAt = new Date().toISOString();
+        schedule.completedAt = toTaiwanISOString(getTaiwanNow());
         schedule.cancellationReason = '來源刊登不存在';
         await kv.set(`reward_schedule:${scheduleId}`, schedule);
         cancelledCount++;
@@ -163,7 +174,7 @@ async function processDailyRewardSchedules(todayStr: string) {
       if (sourceListing.cancelledAt) {
         console.log(`   ❌ 來源刊登已取消（${sourceListing.cancelledAt}），取消排程`);
         schedule.status = SCHEDULE_STATUS.CANCELLED;
-        schedule.completedAt = new Date().toISOString();
+        schedule.completedAt = toTaiwanISOString(getTaiwanNow());
         schedule.cancellationReason = '來源刊登已取消';
         await kv.set(`reward_schedule:${scheduleId}`, schedule);
         cancelledCount++;
@@ -172,10 +183,11 @@ async function processDailyRewardSchedules(todayStr: string) {
       
       // 檢查刊登是否仍在有效期內
       const activeUntil = new Date(sourceListing.activeUntil);
-      if (activeUntil < new Date()) {
+      const now = getTaiwanNow();
+      if (activeUntil < now) {
         console.log(`   ❌ 來源刊登已過期（${sourceListing.activeUntil}），取消排程`);
         schedule.status = SCHEDULE_STATUS.CANCELLED;
-        schedule.completedAt = new Date().toISOString();
+        schedule.completedAt = toTaiwanISOString(now);
         schedule.cancellationReason = '來源刊登已過期';
         await kv.set(`reward_schedule:${scheduleId}`, schedule);
         cancelledCount++;
@@ -188,7 +200,7 @@ async function processDailyRewardSchedules(todayStr: string) {
       
       // 5. 更新排程狀態
       schedule.status = SCHEDULE_STATUS.COMPLETED;
-      schedule.completedAt = new Date().toISOString();
+      schedule.completedAt = toTaiwanISOString(getTaiwanNow());
       await kv.set(`reward_schedule:${scheduleId}`, schedule);
       
       issuedCount++;
@@ -215,7 +227,11 @@ async function processDailyRewardSchedules(todayStr: string) {
 async function issueScheduledReward(schedule: any) {
   const { userId, amount, referee, referrer, generation, monthNumber } = schedule;
   
-  // ===== 1. 更新獎勵餘額 =====
+  // ===== 1. 更新 account_status 的點數餘額 =====
+  // ❌ 移除：不再更新 pointBalance（違反 SSOT）
+  // 點數統一由 user:${userId}:rewards 管理
+  
+  // ===== 2. 更新獎勵資料（SSOT）=====
   const rewardsKey = `user:${userId}:rewards`;
   const rewards = await kv.get(rewardsKey) || {
     availableRewards: 0,
@@ -224,27 +240,35 @@ async function issueScheduledReward(schedule: any) {
     totalEarned: 0
   };
   
-  rewards.availableRewards += amount;
-  rewards.totalEarned += amount;
-  rewards.lastUpdated = new Date().toISOString();
+  rewards.availableRewards += amount;  // 可提領增加
+  rewards.totalEarned += amount;       // 總累積增加
+  rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
   
   await kv.set(rewardsKey, rewards);
   
-  // ===== 2. 記錄獎勵歷史（使用排程中的完整信息）=====
+  console.log(`      ✅ 獎勵統計已更新: 可提領=${rewards.availableRewards}P, 總累積=${rewards.totalEarned}P`);
+  
+  // ===== 3. 記錄獎勵歷史（使用排程中的完整信息）=====
   const historyKey = `user:${userId}:reward_history`;
   const history = await kv.get(historyKey) || [];
   
-  const description = `推薦獎勵 - ${referee.userName}-${referee.listingName}（第${generation}代）- 第${monthNumber}個月`;
+  // ✅ Phase 3: 修正格式 - 一代推薦-被推薦者姓名-被推薦者推薦碼-第X個月
+  const generationText = generation === 1 ? '一代推薦' : generation === 2 ? '二代推薦' : '三代推薦';
+  const description = `${generationText}-${referee.userName}-${referee.userReferralCode}-第${monthNumber}個月`;
+  
+  // ✅ 計算交易後餘額（可提領 + 處理中）
+  const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
   
   history.unshift({
     id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     type: `referral_gen${generation}_month${monthNumber}`,
     amount,
+    balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
     referee,           // ✅ 直接使用排程中的完整信息
     referrer,          // ✅ 直接使用排程中的完整信息
     generation,
     monthNumber,
-    issuedAt: new Date().toISOString(),
+    issuedAt: toTaiwanISOString(getTaiwanNow()),
     description
   });
   
@@ -255,7 +279,152 @@ async function issueScheduledReward(schedule: any) {
   
   await kv.set(historyKey, history);
   
-  console.log(`      💰 發放獎勵: user=${userId}, amount=${amount}P, referee=${referee.userName}-${referee.listingName} (第${monthNumber}個月)`);
+  console.log(`      💰 發放獎勵: user=${userId}, amount=${amount}P, referee=${referee.userName}-${referee.userReferralCode} (第${monthNumber}個月)`);
+}
+
+// ===================================================================
+// 訂閱自動扣款檢查處理
+// ===================================================================
+
+/**
+ * 檢查訂閱自動扣款
+ * 
+ * 流程：
+ * 1. 獲取所有用戶列表
+ * 2. 篩選出需要今天扣款的訂閱（status = 'active' && nextPaymentDate = today）
+ * 3. 呼叫金流 API 執行扣款
+ * 4. 扣款成 → 更新週期
+ * 5. 扣款失敗 → 進入寬限期
+ */
+async function checkSubscriptionRenewals(todayStr: string) {
+  console.log(`🔄 開始檢查訂閱自動扣款: ${todayStr}`);
+  
+  // 1. 獲取所有用戶列表
+  const userIndexKey = `user_list`;
+  const userIds = await kv.get(userIndexKey) || [];
+  
+  console.log(`📊 總用戶數量: ${userIds.length}`);
+  
+  let renewedCount = 0;
+  let failedCount = 0;
+  
+  // 2. 逐一處理每個用戶的訂閱狀態
+  for (const userId of userIds) {
+    try {
+      console.log(`\n📋 處理用戶: ${userId}`);
+      
+      const subscriptionsKey = `user:${userId}:subscriptions`;
+      const subscriptions = await kv.get(subscriptionsKey) || [];
+      
+      for (const subscription of subscriptions) {
+        if (subscription.status === 'active' && subscription.nextPaymentDate === todayStr) {
+          console.log(`   📦 處理訂閱: ${subscription.id}`);
+          console.log(`      用戶: ${userId}`);
+          console.log(`      訂閱類型: ${subscription.type}`);
+          console.log(`      金額: ${subscription.amount}P`);
+          
+          // 3. 呼叫金流 API 執行扣款
+          const paymentResult = await processPayment(subscription);
+          
+          if (paymentResult.success) {
+            // 4. 更新訂閱狀態
+            subscription.status = 'active';
+            subscription.renewedAt = new Date().toISOString();
+            subscription.nextPaymentDate = getNextPaymentDate(subscription);
+            await kv.set(`subscription:${subscription.id}`, subscription);
+            
+            renewedCount++;
+            console.log(`   ✅ 訂閱處理完成`);
+            
+          } else {
+            // 4. 更新訂閱狀態
+            subscription.status = 'failed_renewal';
+            subscription.renewedAt = new Date().toISOString();
+            subscription.failureReason = paymentResult.reason;
+            await kv.set(`subscription:${subscription.id}`, subscription);
+            
+            failedCount++;
+            console.log(`   ❌ 訂閱處理失敗: ${paymentResult.reason}`);
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error(`❌ 處理用戶訂閱狀態失敗: ${userId}`, error);
+      // 繼續處理下一個用戶
+    }
+  }
+  
+  console.log(`\n✅ 訂閱自動扣款檢查完成: 成功=${renewedCount}, 失敗=${failedCount}`);
+  
+  return {
+    processed: userIds.length,
+    renewed: renewedCount,
+    failed: failedCount
+  };
+}
+
+/**
+ * 處理扣款
+ */
+async function processPayment(subscription: any) {
+  const { userId, amount, type } = subscription;
+  
+  // ===== 1. 檢查用戶餘額 =====
+  const rewardsKey = `user:${userId}:rewards`;
+  const rewards = await kv.get(rewardsKey) || {
+    availableRewards: 0,
+    pendingRewards: 0,
+    withdrawnRewards: 0,
+    totalEarned: 0
+  };
+  
+  if (rewards.availableRewards < amount) {
+    return { success: false, reason: '餘額不足' };
+  }
+  
+  // ===== 2. 扣款 =====
+  rewards.availableRewards -= amount;
+  rewards.withdrawnRewards += amount;
+  rewards.lastUpdated = new Date().toISOString();
+  
+  await kv.set(rewardsKey, rewards);
+  
+  // ===== 3. 記錄扣款歷史 =====
+  const historyKey = `user:${userId}:reward_history`;
+  const history = await kv.get(historyKey) || [];
+  
+  // ✅ 計算交易後餘額
+  const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+  
+  history.unshift({
+    id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+    type: `subscription_${type}`,
+    amount: -amount,
+    balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
+    issuedAt: toTaiwanISOString(getTaiwanNow()),
+    description: `訂閱扣款 - ${type}`
+  });
+  
+  // 只保留最近200筆
+  if (history.length > REWARD_CONFIG.REWARD_HISTORY_MAX_COUNT) {
+    history.length = REWARD_CONFIG.REWARD_HISTORY_MAX_COUNT;
+  }
+  
+  await kv.set(historyKey, history);
+  
+  console.log(`      💰 扣款: user=${userId}, type=${type}, amount=${amount}P`);
+  
+  return { success: true };
+}
+
+/**
+ * 獲取下一次扣款日期
+ */
+function getNextPaymentDate(subscription: any) {
+  const nextPaymentDate = new Date(subscription.renewedAt);
+  nextPaymentDate.setMonth(nextPaymentDate.getMonth() + subscription.billingCycle);
+  return nextPaymentDate.toISOString().split('T')[0];
 }
 
 // ===================================================================
@@ -317,7 +486,7 @@ async function processSubscriptionStatusCheck() {
  * 2. 掃描所有用戶的月度日誌
  * 3. 逐一處理每個用戶的任務
  * 4. 檢查連續推薦任務是否達成
- * 5. 檢查推薦王任務是否達成
+ * 5. 檢查推薦王任是否達成
  * 6. 發放任務獎勵
  * 
  * 注意：由於 KV Store 沒有 scan 功能，我們使用全局月度日誌索引
@@ -423,7 +592,7 @@ async function processUserTaskSettlement(
       // 發放獎勵
       await issueTaskReward(userId, 'consecutive_referral', REWARD_CONFIG.TASK_CONSECUTIVE_REWARD);
       consecutive.completed = true;
-      consecutive.completedAt = new Date().toISOString();
+      consecutive.completedAt = toTaiwanISOString(getTaiwanNow());
       
       console.log(`   🎉 用戶 ${userId} 完成連續推薦任務，發放 ${REWARD_CONFIG.TASK_CONSECUTIVE_REWARD}P`);
       
@@ -436,7 +605,7 @@ async function processUserTaskSettlement(
       consecutiveCompleted = true;
     }
     
-    consecutive.lastCheckedAt = new Date().toISOString();
+    consecutive.lastCheckedAt = toTaiwanISOString(getTaiwanNow());
   }
   
   // ===== 結算推薦王任務 =====
@@ -461,8 +630,8 @@ async function processUserTaskSettlement(
         count: king.currentCount,
         qualified: king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
         rewardIssued: king.completed,
-        rewardIssuedAt: king.completed ? new Date().toISOString() : null,
-        checkedAt: new Date().toISOString()
+        rewardIssuedAt: king.completed ? toTaiwanISOString(getTaiwanNow()) : null,
+        checkedAt: toTaiwanISOString(getTaiwanNow())
       });
       
       // 重置本月
@@ -494,7 +663,7 @@ async function issueTaskReward(userId: string, taskType: string, amount: number)
   
   rewards.availableRewards += amount;
   rewards.totalEarned += amount;
-  rewards.lastUpdated = new Date().toISOString();
+  rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
   
   await kv.set(rewardsKey, rewards);
   
@@ -502,11 +671,15 @@ async function issueTaskReward(userId: string, taskType: string, amount: number)
   const historyKey = `user:${userId}:reward_history`;
   const history = await kv.get(historyKey) || [];
   
+  // ✅ 計算交易後餘額
+  const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+  
   history.unshift({
     id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     type: `task_${taskType}`,
     amount,
-    issuedAt: new Date().toISOString(),
+    balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
+    issuedAt: toTaiwanISOString(getTaiwanNow()),
     description: `任務獎勵 - ${TASK_NAMES[taskType] || taskType}`
   });
   

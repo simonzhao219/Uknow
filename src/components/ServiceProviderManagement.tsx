@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { UserContext } from '../App';
-import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft } from 'lucide-react';
+import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft, Trash2 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
@@ -13,10 +13,11 @@ import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
 
 export function ServiceProviderManagement() {
-  const { showToast } = useNotification();
+  const { showToast, showError } = useNotification();
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // ✅ 新規格：單一刊登模式
   const [listing, setListing] = useState<any | null>(null);
@@ -107,6 +108,63 @@ export function ServiceProviderManagement() {
     }
   };
 
+  // ✅ 刪除刊登
+  const handleDeleteListing = async () => {
+    if (!listing) return;
+    
+    // 顯示確認對話框
+    const confirmed = window.confirm(
+      `確定要刪除刊登「${listing.name}」嗎？\n\n此操作無法復原，刊登的所有資料（包括照片）都會被永久刪除。`
+    );
+    
+    if (!confirmed) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        showToast('請先登入', 'error');
+        return;
+      }
+      
+      console.log(`[刪除刊登] 開始刪除: ${listing.id}`);
+      
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${listing.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || '刪除失敗');
+      }
+      
+      const result = await response.json();
+      console.log(`[刪除刊登] ✅ 成功:`, result);
+      
+      showToast('刊登已成功刪除', 'success');
+      
+      // 重新獲取刊登列表（應該會變成 null）
+      await fetchUserListing();
+      
+    } catch (error) {
+      console.error('[刪除刊登] ❌ 錯誤:', error);
+      showError(
+        '刪除失敗',
+        error instanceof Error ? error.message : '刪除刊登時發生錯誤，請稍後再試'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -121,7 +179,7 @@ export function ServiceProviderManagement() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">刊登管理</h1>
-            <p className="text-muted-foreground">���理您的專業服務刊登</p>
+            <p className="text-muted-foreground">管理理您的專業服務刊登</p>
           </div>
         </div>
         {/* ✅ 只有當用戶沒有刊登時，才顯示「刊登新服務」按鈕 */}
@@ -148,16 +206,10 @@ export function ServiceProviderManagement() {
       ) : listing === null ? (
         <Card>
           <CardContent className="text-center py-12">
-            <h3 className="text-lg font-medium mb-2">尚未刊登任何服務者</h3>
+            <h3 className="text-lg font-medium mb-2">尚未刊登服務者</h3>
             <p className="text-muted-foreground mb-6">
-              開始刊登您的專業服務，讓更多人找到您
+              點擊右上角的按鈕刊登您的專業服務，讓更多人找到您
             </p>
-            <Button asChild>
-              <Link to="/service-providers/create">
-                <Plus className="h-4 w-4 mr-2" />
-                刊登第一個服務者
-              </Link>
-            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -200,6 +252,15 @@ export function ServiceProviderManagement() {
                           <Edit className="h-4 w-4" />
                         </Link>
                       </Button>
+                      
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={handleDeleteListing}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
 
@@ -220,36 +281,7 @@ export function ServiceProviderManagement() {
                     {listing.description}
                   </p>
 
-                  {/* 推荐码区域 */}
-                  <div className="pt-3 border-t">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">推薦碼：</span>
-                        <code className="px-2 py-1 bg-muted rounded text-sm font-mono">
-                          {listing.referralCode}
-                        </code>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCopyReferralCode}
-                        >
-                          {copiedId === listing.id ? (
-                            <>
-                              <Check className="h-4 w-4 mr-1" />
-                              已複製
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="h-4 w-4 mr-1" />
-                              複製
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                  {/* 推薦碼區域已移除 */}
                 </div>
               </div>
             </CardContent>
@@ -257,12 +289,7 @@ export function ServiceProviderManagement() {
         </div>
       )}
 
-      {/* 不明顯的訂閱管理連結 */}
-      <div className="flex justify-center pt-8 pb-4">
-        <Button variant="ghost" size="sm" asChild className="text-xs text-muted-foreground hover:text-muted-foreground/80">
-          <Link to="/subscriptions">我的訂閱</Link>
-        </Button>
-      </div>
+      {/* 移除訂閱管理連結 - 訂閱功能已整合到會員中心 */}
     </div>
   );
 }
