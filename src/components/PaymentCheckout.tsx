@@ -659,7 +659,7 @@ export function PaymentCheckout() {
             <div className="space-y-1 text-sm text-muted-foreground">
               <p>姓名：{pendingUser.name}</p>
               <p>生日：{pendingUser.birthDate}</p>
-              <p>身分��字號：{pendingUser.nationalId}</p>
+              <p>身分字號：{pendingUser.nationalId}</p>
               <p>手機：{pendingUser.phone}</p>
               <p>Email：{pendingUser.email}</p>
               {pendingUser.referredByCode && !pendingUser.isAutoReferral && (
@@ -784,7 +784,7 @@ export function PaymentCheckout() {
                   className="w-full"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  重新開啟付款頁面
+                  前往統一金流付款
                 </Button>
 
                 {/* 完成註冊 */}
