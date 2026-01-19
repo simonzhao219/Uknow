@@ -42,7 +42,7 @@ interface RewardRecord {
   generation?: number;
   monthNumber?: number;
   
-  // ��� 新增餘額欄位
+  // 新增餘額欄位
   balance?: number;
 }
 
