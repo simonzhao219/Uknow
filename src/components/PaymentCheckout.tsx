@@ -8,6 +8,9 @@ import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
 
+// ✅ 統一金流付款網址（從環境變數讀取）
+const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
+
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
   
@@ -223,7 +226,7 @@ export function PaymentCheckout() {
     setHasClickedPayment(true);
 
     // 跳轉到統一金流付款頁面（新視窗）
-    const paymentUrl = 'https://sandbox-api.payuni.com.tw/api/period/S03601463/T348om5qur';
+    const paymentUrl = PAYUNI_PAYMENT_URL;
     window.open(paymentUrl, '_blank');
 
     showToast('請在新視窗完成付款，完成後返回此頁面上傳付款截圖', 'info', { duration: 5000 });
@@ -231,7 +234,7 @@ export function PaymentCheckout() {
 
   // ✅ 新增：重新開啟付款頁面
   const handleReopenPayment = () => {
-    const paymentUrl = 'https://sandbox-api.payuni.com.tw/api/period/S03601463/T348om5qur';
+    const paymentUrl = PAYUNI_PAYMENT_URL;
     window.open(paymentUrl, '_blank');
     showToast('已開啟付款頁面', 'info');
   };
@@ -656,7 +659,7 @@ export function PaymentCheckout() {
             <div className="space-y-1 text-sm text-muted-foreground">
               <p>姓名：{pendingUser.name}</p>
               <p>生日：{pendingUser.birthDate}</p>
-              <p>身分證字號：{pendingUser.nationalId}</p>
+              <p>身分��字號：{pendingUser.nationalId}</p>
               <p>手機：{pendingUser.phone}</p>
               <p>Email：{pendingUser.email}</p>
               {pendingUser.referredByCode && !pendingUser.isAutoReferral && (

@@ -3,15 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { mockServiceProviders } from '../../data/mockServiceProviders';
-import { mockUsers } from '../../data/mockUsers';
 import { Users, UserX, Shield } from 'lucide-react';
 
 export function MemberManagement() {
-  const [users, setUsers] = useState(mockUsers);
+  const [users, setUsers] = useState([]);
 
   const getUserServiceProvidersCount = (userId: string) => {
-    return mockServiceProviders.filter(r => r.userId === userId).length;
+    // TODO: Fetch from API
+    return 0;
   };
 
   const handleSuspendUser = (userId: string) => {

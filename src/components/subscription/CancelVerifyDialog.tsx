@@ -38,7 +38,7 @@ export function CancelVerifyDialog({ onConfirm, onBack, onCancel }: CancelVerify
       setError('');
       await onConfirm(idNumber);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '確認取消失���');
+      setError(err instanceof Error ? err.message : '確認取消失');
       setIsSubmitting(false);
     }
   };

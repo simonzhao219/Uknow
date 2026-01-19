@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { UserContext } from '../App';
 import { Users, Award, Settings, User, Home, CheckSquare, Gift, Info, ArrowLeft, Copy, CreditCard, Calendar, Loader2, AlertTriangle, Shield } from 'lucide-react';
-import { mockServiceProviders } from '../data/mockServiceProviders';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
@@ -30,9 +29,6 @@ export function MemberDashboard() {
   // ✅ 加入推薦計畫 Dialog 狀態
   const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
   
-  // 找出該用戶的服務者刊登
-  const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
-
   // ✅ 新增：顯示會員資料修改說明
   const handleShowProfileInfo = () => {
     showInfo(

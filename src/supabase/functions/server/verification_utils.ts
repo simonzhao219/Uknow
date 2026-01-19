@@ -94,7 +94,7 @@ export async function verifyAndRespond(
   userId: string,
   idNumber: string
 ): Promise<Response | null> {
-  // 1. 檢查是否提供��分證字號
+  // 1. 檢查是否提供身分證字號
   if (!idNumber) {
     console.error('❌ 未提供身分證字號');
     return c.json({
