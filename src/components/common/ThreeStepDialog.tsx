@@ -256,7 +256,7 @@ function StepOneCard({
           </button>
           <button
             onClick={onNext}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-[rgb(0,0,0)] text-white rounded-md hover:bg-gray-800 transition-colors flex items-center gap-2"
           >
             {nextButtonText}
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,7 +345,7 @@ function StepTwoCard({
           <button
             onClick={onNext}
             disabled={isLoading || !!error}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 bg-[rgb(0,0,0)] text-white rounded-md hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {nextButtonText}
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

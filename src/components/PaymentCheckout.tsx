@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Loader2, CheckCircle, CreditCard, Edit } from 'lucide-react';
+import { Loader2, CheckCircle, CreditCard, Edit, Upload, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
@@ -12,10 +12,16 @@ export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
   
   const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingUser, setIsCheckingUser] = useState(true); // ✅ 新增：加載狀態
+  const [isCheckingUser, setIsCheckingUser] = useState(true);
   const [pendingUser, setPendingUser] = useState<any>(null);
-  const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null); // ✅ 新增：推薦人資訊
-  const [isLoadingReferrer, setIsLoadingReferrer] = useState(false); // ✅ 新增：推薦人加載狀態
+  const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
+  const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
+  
+  // ✅ 新增：付款流程狀態管理
+  const [hasClickedPayment, setHasClickedPayment] = useState(false);
+  const [uploadedScreenshot, setUploadedScreenshot] = useState<File | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false);
   
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
@@ -85,7 +91,7 @@ export function PaymentCheckout() {
               navigate('/auth/complete-profile', { replace: true });
               return;
             } else if (profile.registrationStep === 3) {
-              // 用戶已完成註冊，不應該在這裡
+              // 用戶完成註冊，不應該在這裡
               console.log('PaymentCheckout: User registration complete (step 3), redirecting to dashboard');
               navigate('/dashboard', { replace: true });
               return;
@@ -128,6 +134,16 @@ export function PaymentCheckout() {
 
     checkPendingUser();
   }, []); // ✅ 移除依賴，只在首次加載時執行
+
+  // ✅ 新增：檢查是否已點擊付款（從 localStorage 讀取）
+  useEffect(() => {
+    if (pendingUser?.id) {
+      const storageKey = `paymentClicked_${pendingUser.id}`;
+      const clicked = localStorage.getItem(storageKey) === 'true';
+      setHasClickedPayment(clicked);
+      console.log('PaymentCheckout: hasClickedPayment from localStorage:', clicked);
+    }
+  }, [pendingUser]);
 
   // ✅ 獲取推薦人資訊
   useEffect(() => {
@@ -192,6 +208,80 @@ export function PaymentCheckout() {
 
     fetchReferrerInfo();
   }, [pendingUser]);
+
+  // ✅ 新增：處理首次點擊付款按鈕（跳轉到統一金流）
+  const handlePaymentButtonClick = () => {
+    if (!pendingUser) {
+      showToast('用戶資料不存在，請重新註冊', 'error');
+      navigate('/auth/complete-profile');
+      return;
+    }
+
+    // 記錄已點擊付款
+    const storageKey = `paymentClicked_${pendingUser.id}`;
+    localStorage.setItem(storageKey, 'true');
+    setHasClickedPayment(true);
+
+    // 跳轉到統一金流付款頁面（新視窗）
+    const paymentUrl = 'https://sandbox-api.payuni.com.tw/api/period/S03601463/T348om5qur';
+    window.open(paymentUrl, '_blank');
+
+    showToast('請在新視窗完成付款，完成後返回此頁面上傳付款截圖', 'info', { duration: 5000 });
+  };
+
+  // ✅ 新增：重新開啟付款頁面
+  const handleReopenPayment = () => {
+    const paymentUrl = 'https://sandbox-api.payuni.com.tw/api/period/S03601463/T348om5qur';
+    window.open(paymentUrl, '_blank');
+    showToast('已開啟付款頁面', 'info');
+  };
+
+  // ✅ 新增：處理截圖選擇
+  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 驗證檔案類型
+    if (!file.type.startsWith('image/')) {
+      showToast('請上傳圖片檔案（JPG、PNG 等）', 'error');
+      return;
+    }
+
+    // 驗證檔案大小（最大 5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('檔案大小不能超過 5MB', 'error');
+      return;
+    }
+
+    // 設置檔案和預覽
+    setUploadedScreenshot(file);
+
+    // 生成預覽圖
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setScreenshotPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    showToast('截圖已選擇', 'success');
+  };
+
+  // ✅ 新增：清除截圖
+  const handleClearScreenshot = () => {
+    setUploadedScreenshot(null);
+    setScreenshotPreview(null);
+  };
+
+  // ✅ 新增：完成註冊（上傳截圖後執行原本的付款邏輯）
+  const handleCompleteRegistration = async () => {
+    if (!uploadedScreenshot) {
+      showToast('請先上傳付款成功截圖', 'error');
+      return;
+    }
+
+    // 執行原本的 handlePayment 邏輯
+    await handlePayment();
+  };
 
   const handlePayment = async () => {
     if (!pendingUser) {
@@ -291,21 +381,13 @@ export function PaymentCheckout() {
         localStorage.setItem('user', JSON.stringify(updatedProfile));
         localStorage.removeItem('pendingUser');
 
-        // 顯示成功訊息（包含推薦碼）
-        showSuccess(
-          '付款成功！',
-          '您的帳號已成功啟用',
-          [
-            `您的推薦碼：${updatedProfile.referralCode || result.data?.referralCode || '生成中'}`,
-            '現在可以開始使用所有功能',
-            '建議您完善刊登資訊以吸引更多客戶'
-          ]
-        );
+        // ✅ 修改：使用輕量級 Toast 通知
+        showToast('註冊成功', 'success');
 
-        // 導向 dashboard
+        // 導向 dashboard（縮短延遲以配合 Toast）
         setTimeout(() => {
           navigate('/dashboard', { replace: true });
-        }, 2000);
+        }, 500);
       } else {
         // 如果無法獲取更新後的資料，使用原有資料並導向
         console.warn('PaymentCheckout: Failed to retrieve updated profile, using cached data');
@@ -320,18 +402,12 @@ export function PaymentCheckout() {
         localStorage.setItem('user', JSON.stringify(fallbackProfile));
         localStorage.removeItem('pendingUser');
 
-        showSuccess(
-          '付款成功！',
-          '您的帳號已成功啟用',
-          [
-            `您的推薦碼：${result.data?.referralCode || '生成中'}`,
-            '現在可以開始使用所有功能'
-          ]
-        );
+        // ✅ 修改：使用輕量級 Toast 通知
+        showToast('註冊成功', 'success');
 
         setTimeout(() => {
           navigate('/dashboard', { replace: true });
-        }, 2000);
+        }, 500);
       }
     } catch (error: any) {
       console.error('PaymentCheckout: Error during payment:', error);
@@ -409,6 +485,119 @@ export function PaymentCheckout() {
     }
   };
 
+  // ✅ 上傳付款截圖
+  const handleUploadScreenshot = async () => {
+    if (!uploadedScreenshot) {
+      showToast('請選擇一張付款截圖', 'error');
+      return;
+    }
+
+    setIsUploadingScreenshot(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        console.error('PaymentCheckout: No session found');
+        showToast('登入狀態已過期，請重新登入', 'error');
+        navigate('/login');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', uploadedScreenshot);
+      formData.append('orderId', pendingUser.orderId);
+
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payment/upload-screenshot`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('PaymentCheckout: Upload screenshot error:', errorData);
+        throw new Error(errorData.error?.message || '上傳截圖失敗');
+      }
+
+      const result = await response.json();
+      console.log('PaymentCheckout: Screenshot uploaded:', result);
+
+      // 3. 獲取完整的用戶資料（包含推薦碼）
+      const profileResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      if (profileResponse.ok) {
+        const updatedProfile = await profileResponse.json();
+        console.log('PaymentCheckout: Updated profile retrieved:', updatedProfile);
+        
+        // 更新用戶狀態
+        setUser(updatedProfile);
+        localStorage.setItem('user', JSON.stringify(updatedProfile));
+        localStorage.removeItem('pendingUser');
+
+        // 顯示成功訊息（包含推薦碼）
+        showSuccess(
+          '付款成功！',
+          '您的帳號已成功啟用',
+          [
+            `您的推薦碼：${updatedProfile.referralCode || result.data?.referralCode || '生成中'}`,
+            '現在可以開始使用所有功能',
+            '建議您完善刊登資訊以吸引更多客戶'
+          ]
+        );
+
+        // 導向 dashboard
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 2000);
+      } else {
+        // 如果無法獲取更新後的資料，使用原有資料並導向
+        console.warn('PaymentCheckout: Failed to retrieve updated profile, using cached data');
+        
+        const fallbackProfile = {
+          ...pendingUser,
+          registrationStep: 3,
+          referralCode: result.data?.referralCode || '生成中',
+        };
+        
+        setUser(fallbackProfile);
+        localStorage.setItem('user', JSON.stringify(fallbackProfile));
+        localStorage.removeItem('pendingUser');
+
+        showSuccess(
+          '付款成功！',
+          '您的帳號已成功啟用',
+          [
+            `您的推薦碼：${result.data?.referralCode || '生成中'}`,
+            '現在可以開始使用所有功能'
+          ]
+        );
+
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 2000);
+      }
+    } catch (error: any) {
+      console.error('PaymentCheckout: Error during upload screenshot:', error);
+      showToast(error.message || '上傳截圖失敗，請稍後再試', 'error');
+    } finally {
+      setIsUploadingScreenshot(false);
+    }
+  };
+
   if (isCheckingUser) {
     return (
       <div className="max-w-md mx-auto mt-12">
@@ -444,10 +633,10 @@ export function PaymentCheckout() {
               <CreditCard className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl">完成年費付款</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-2xl">完成付款</CardTitle>
+          {/*<CardDescription>
             最後一步，付款後即可開始使用 Uknow 平台
-          </CardDescription>
+          </CardDescription>*/}
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 用戶資訊確認 */}
@@ -466,8 +655,9 @@ export function PaymentCheckout() {
             </div>
             <div className="space-y-1 text-sm text-muted-foreground">
               <p>姓名：{pendingUser.name}</p>
-              <p>手機：{pendingUser.phone}</p>
               <p>生日：{pendingUser.birthDate}</p>
+              <p>身分證字號：{pendingUser.nationalId}</p>
+              <p>手機：{pendingUser.phone}</p>
               <p>Email：{pendingUser.email}</p>
               {pendingUser.referredByCode && !pendingUser.isAutoReferral && (
                 <>
@@ -488,65 +678,144 @@ export function PaymentCheckout() {
           {/* 付款金額 */}
           <div className="space-y-2">
             <div className="flex justify-between items-baseline">
-              <span className="text-sm text-muted-foreground">年費（12個月）</span>
+              <span className="text-sm text-muted-foreground">年費</span>
               <div className="text-right">
                 <div className="text-3xl font-bold">NT$ 1,200</div>
-                <div className="text-sm text-muted-foreground">
+                {/* <div className="text-sm text-muted-foreground">
                   平均每月 NT$ 100
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
 
-          {/* 服務說明 */}
-          <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-900">
-              ✨ 付款後您將獲得：
-            </h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• 專屬推薦碼（可獲得推薦獎勵）</li>
-              <li>• 12個月服務刊登服務</li>
-              <li>• 推薦獎勵累積（最多三代）</li>
-            </ul>
-          </div>
+          {/* ✅ 狀態 1：首次進入（未點擊過付款按鈕） */}
+          {!hasClickedPayment && (
+            <div className="space-y-3">
+              <Button
+                onClick={handlePaymentButtonClick}
+                disabled={isLoading}
+                className="w-full"
+                size="lg"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                前往統一金流付款
+              </Button>
 
-          {/* 付款按鈕 */}
-          <div className="space-y-3">
-            <Button
-              onClick={handlePayment}
-              disabled={isLoading}
-              className="w-full"
-              size="lg"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  處理中...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  確認付款 NT$ 1,200
-                </>
-              )}
-            </Button>
+              <Button
+                variant="outline"
+                onClick={handleCancel}
+                disabled={isLoading}
+                className="w-full"
+              >
+                稍後付款
+              </Button>
+            </div>
+          )}
 
-            <Button
-              variant="outline"
-              onClick={handleCancel}
-              disabled={isLoading}
-              className="w-full"
-            >
-              稍後付款
-            </Button>
-          </div>
+          {/* ✅ 狀態 2：返回後（已點擊過付款按鈕） */}
+          {hasClickedPayment && (
+            <div className="space-y-4">
+              {/* 分隔線 */}
+              <div className="border-t pt-4"></div>
 
-          {/* 提示訊息 */}
-          <p className="text-xs text-center text-muted-foreground">
-            點擊「確認付款」後將處理您的付款並啟用帳號
-            <br />
-            （目前為測試模式，不會實際扣款）
-          </p>
+              {/* 上傳付款截圖區域 */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  上傳付款成功截圖
+                </h3>
+
+                {/* 截圖預覽 */}
+                {screenshotPreview ? (
+                  <div className="relative border-2 border-dashed border-primary rounded-lg p-4">
+                    <div className="relative">
+                      <img
+                        src={screenshotPreview}
+                        alt="付款截圖預覽"
+                        className="w-full h-48 object-contain rounded"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="absolute top-2 right-2 bg-background/80 hover:bg-background"
+                        onClick={handleClearScreenshot}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-center text-muted-foreground mt-2">
+                      {uploadedScreenshot?.name}
+                    </p>
+                  </div>
+                ) : (
+                  <label className="block cursor-pointer">
+                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-primary hover:bg-muted/50 transition-colors">
+                      <ImageIcon className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
+                      <p className="text-sm font-medium mb-1">點擊選擇圖片</p>
+                      <p className="text-xs text-muted-foreground">
+                        或拖曳圖片到此處
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        支援 JPG、PNG 格式（最大 5MB）
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScreenshotChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* 分隔線 */}
+              <div className="border-t pt-4"></div>
+
+              {/* 操作按鈕 */}
+              <div className="space-y-3">
+                {/* 重新開啟付款頁面 */}
+                <Button
+                  variant="outline"
+                  onClick={handleReopenPayment}
+                  className="w-full"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  重新開啟付款頁面
+                </Button>
+
+                {/* 完成註冊 */}
+                <Button
+                  onClick={handleCompleteRegistration}
+                  disabled={isLoading || !uploadedScreenshot}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      處理中...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      完成註冊
+                    </>
+                  )}
+                </Button>
+
+                {/* 稍後付款 */}
+                <Button
+                  variant="ghost"
+                  onClick={handleCancel}
+                  disabled={isLoading}
+                  className="w-full"
+                >
+                  稍後付款
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -38,27 +38,45 @@ const initializeStorage = async () => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const bucketName = 'make-5c6718b9-listings-photos';
-    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+    // 初始化刊登照片 bucket
+    const listingsBucketName = 'make-5c6718b9-listings-photos';
+    // 初始化簽名圖片 bucket
+    const signaturesBucketName = 'make-5c6718b9-signatures';
+    
+    // 列出所有 buckets
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error(`⚠️ 無法列出 Storage Buckets:`, listError);
+      return;
+    }
+    
+    // 初始化刊登照片 bucket
+    const listingsBucketExists = buckets?.some(bucket => bucket.name === listingsBucketName);
 
-    if (!bucketExists) {
-      // ✅ 創建公開 bucket（不需要 RLS 策略）
-      const { error: createError } = await supabase.storage.createBucket(bucketName, {
+    if (!listingsBucketExists) {
+      // 創建公開 bucket
+      const { error: createError } = await supabase.storage.createBucket(listingsBucketName, {
         public: true,
         fileSizeLimit: 5242880
       });
       
+      // 處理創建錯誤
       if (createError) {
-        console.error(`❌ 創建 Storage Bucket 失敗:`, createError);
+        // 如果是 409 錯誤（資源已存在），視為成功
+        if (createError.statusCode === '409') {
+          console.log(`✅ Storage Bucket 已存在: ${listingsBucketName}`);
+        } else {
+          console.error(`❌ 創建 Storage Bucket 失敗:`, createError);
+        }
       } else {
-        console.log(`✅ 創建 Storage Bucket: ${bucketName}`);
+        console.log(`✅ 創建 Storage Bucket: ${listingsBucketName}`);
       }
     } else {
-      console.log(`✅ Storage Bucket 已存在: ${bucketName}`);
+      console.log(`✅ Storage Bucket 已存在: ${listingsBucketName}`);
       
-      // ✅ 確保現有 bucket 是公開的
-      const { error: updateError } = await supabase.storage.updateBucket(bucketName, {
+      // 確保現有 bucket 是公開的
+      const { error: updateError } = await supabase.storage.updateBucket(listingsBucketName, {
         public: true,
         fileSizeLimit: 5242880
       });
@@ -66,7 +84,42 @@ const initializeStorage = async () => {
       if (updateError) {
         console.error('⚠️ 更新 Bucket 權限失敗:', updateError);
       } else {
-        console.log(`✅ 更新 Storage Bucket 權限為公開: ${bucketName}`);
+        console.log(`✅ 更新 Storage Bucket 權限為公開: ${listingsBucketName}`);
+      }
+    }
+
+    // 初始化簽名圖片 bucket（私有）
+    const signaturesBucketExists = buckets?.some(bucket => bucket.name === signaturesBucketName);
+
+    if (!signaturesBucketExists) {
+      // 創建私有 bucket
+      const { error: createError } = await supabase.storage.createBucket(signaturesBucketName, {
+        public: false,  // 簽名圖片是私有的
+        fileSizeLimit: 2097152  // 2MB（簽名圖片較小）
+      });
+      
+      if (createError) {
+        if (createError.statusCode === '409') {
+          console.log(`✅ Storage Bucket 已存在: ${signaturesBucketName}`);
+        } else {
+          console.error(`❌ 創建 Storage Bucket 失敗:`, createError);
+        }
+      } else {
+        console.log(`✅ 創建 Storage Bucket: ${signaturesBucketName}`);
+      }
+    } else {
+      console.log(`✅ Storage Bucket 已存在: ${signaturesBucketName}`);
+      
+      // 確保現有 bucket 是私有的
+      const { error: updateError } = await supabase.storage.updateBucket(signaturesBucketName, {
+        public: false,
+        fileSizeLimit: 2097152
+      });
+      
+      if (updateError) {
+        console.error('⚠️ 更新 Bucket 權限失敗:', updateError);
+      } else {
+        console.log(`✅ 更新 Storage Bucket 權限為私有: ${signaturesBucketName}`);
       }
     }
   } catch (error) {

@@ -1,5 +1,5 @@
-import React, { useState, useContext, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -29,10 +29,11 @@ export function CompleteProfile() {
   const [codeError, setCodeError] = useState('');
   const [verifiedReferralCode, setVerifiedReferralCode] = useState('');
   const [referrerName, setReferrerName] = useState('');
+  const hasConfirmedReferralCode = useRef(false);
 
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
-  const { showToast, showSuccess } = useNotification();
+  const { showToast, showSuccess, showNotification } = useNotification();
   const supabase = createClient();
 
   // 檢查是否有 session
@@ -173,6 +174,45 @@ export function CompleteProfile() {
       // 顯示第一個錯誤
       const firstError = Object.values(validationErrors)[0];
       showToast(firstError, 'error');
+      return;
+    }
+
+    // ✅ 推薦碼確認警告（無論有沒有填推薦碼都要顯示）
+    if (!hasConfirmedReferralCode.current) {
+      // 準備警告訊息的詳細資訊
+      const details: string[] = [];
+      
+      if (formData.referralCode.trim() && referrerName) {
+        // 有填推薦碼：顯示推薦碼和推薦人
+        details.push(`推薦碼：${formData.referralCode}`);
+        details.push(`推薦人：${referrerName}`);
+      } else {
+        // 沒有填推薦碼：提示將沒有推薦人
+        details.push('您未填寫推薦碼');
+        details.push('註冊後將無法享有推薦獎勵');
+      }
+      
+      // 顯示警告卡片
+      showNotification({
+        type: 'warning',
+        title: '重要提醒',
+        message: '推薦碼註冊後將永久綁定，無法修改。請再次確認您的推薦碼資訊是否正確。',
+        details,
+        confirmText: '確認無誤，繼續',
+        cancelText: '返回檢查',
+        onConfirm: () => {
+          // 設定已確認，然後重新觸發提交
+          hasConfirmedReferralCode.current = true;
+          // 使用 setTimeout 確保狀態更新後再提交
+          setTimeout(() => {
+            handleSubmit(e);
+          }, 100);
+        },
+        onCancel: () => {
+          // 什麼都不做，停留在當前頁面
+          console.log('User cancelled referral code confirmation');
+        }
+      });
       return;
     }
 
@@ -540,10 +580,11 @@ export function CompleteProfile() {
                     setFormData({ ...formData, referralCode: newCode });
                     setCodeError('');
                     
-                    // ✅ 如果推薦碼改變，清除驗證狀態
+                    // ✅ 如果推薦碼改變，清除驗證狀態和確認狀態
                     if (newCode !== verifiedReferralCode) {
                       setCodeVerified(false);
                       setReferrerName('');
+                      hasConfirmedReferralCode.current = false;
                     }
                   }}
                   placeholder="輸入推薦碼"
@@ -588,8 +629,7 @@ export function CompleteProfile() {
                   }}
                 />
                 <Label htmlFor="terms" className="text-sm cursor-pointer">
-                  我已詳讀並同意 <span className="text-primary">服務條款</span> 和{' '}
-                  <span className="text-primary">隱私政策</span>
+                  我已詳讀並同意 <Link to="/terms-of-service" className="text-primary underline" onClick={(e) => e.stopPropagation()}>服務條款</Link>
                 </Label>
               </div>
               <FieldError error={errors.agreedToTerms} />

@@ -39,7 +39,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
     
     // ===== 步驟1：警告取消影響 =====
     step1: {
-      title: '⚠️ 確認取消訂閱',
+      title: '確認取消訂閱',
       description: '請仔細閱讀以下重要資訊',
       content: (
         <div className="space-y-4">
@@ -49,12 +49,12 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
               ⚠️ 確定要取消訂閱嗎？
             </p>
             <p className="text-sm text-red-700">
-              取消訂閱後，您的刊登將在到期日後自動失效。請仔細考慮以下影響：
+              取消訂閱後，您的刊登將在到期日後自動失效。
             </p>
           </div>
 
           {/* 取消訂閱的影響 */}
-          <div className="bg-muted p-4 rounded-lg space-y-3">
+          {/*<div className="bg-muted p-4 rounded-lg space-y-3">
             <h4 className="font-medium">取消訂閱的影響</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
@@ -74,10 +74,10 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
                 <span>任務進度將被重置</span>
               </li>
             </ul>
-          </div>
+          </div>*/}
 
           {/* 替代方案 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+          {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
             <h4 className="font-medium text-blue-900">替代方案</h4>
             <p className="text-sm text-blue-800">
               如果您只是暫時不需要服務，可以考慮：
@@ -89,7 +89,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
             <div className="mt-3 pt-3 border-t border-blue-200">
               <p className="text-sm text-blue-800">📞 LINE 客服：@uknow</p>
             </div>
-          </div>
+          </div> */}
         </div>
       ),
       nextButtonText: '下一步'
@@ -97,7 +97,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
     
     // ===== 步驟2：預覽狀態變化 =====
     step2: {
-      title: '📊 預覽下個週期的變化',
+      title: '預覽下個週期的變化',
       description: '查看取消訂閱後的帳戶狀態變化',
       apiEndpoint: '/subscriptions/preview-cancel',
       content: (previewData) => {
@@ -123,11 +123,11 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
         return (
           <div className="space-y-4">
             {/* 說明 */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-800">
                 以下是取消訂閱後，您的帳戶狀態在下個週期的變化：
               </p>
-            </div>
+            </div> */}
 
             {/* 訂閱狀態變化 */}
             <div className="border-2 border-red-200 bg-red-50 p-4 rounded-lg space-y-4">
@@ -180,7 +180,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
             </div>
 
             {/* 重要提醒 */}
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+            {/* <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 shrink-0" />
                 <div className="flex-1">
@@ -193,7 +193,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
                   </ul>
                 </div>
               </div>
-            </div>
+            </div>*/}
           </div>
         );
       },
@@ -202,7 +202,7 @@ export function createCancelSubscriptionConfig(subscription: SubscriptionData): 
     
     // ===== 步驟3：身分證驗證 =====
     step3: {
-      title: '🔐 身分驗證',
+      title: '身分驗證',
       description: '請輸入您註冊時使用的身分證字號',
       warningMessage: '點擊「確認取消訂閱」後，您的訂閱將立即被標記為已取消。此操作無法撤銷。',
       confirmButtonText: '確認取消訂閱'

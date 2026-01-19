@@ -703,6 +703,30 @@ rewards.post('/withdraw', async (c) => {
     // 12. ✅ 更新今日提領日期
     await kv.set(lastWithdrawalDateKey, todayStr);
     
+    // 13. ✅ 新增：立即更新獎勵明細（提交申請時）
+    const historyKey = `user:${user.id}:reward_history`;
+    const history = await kv.get(historyKey) || [];
+    
+    // 計算當前餘額（用於顯示）
+    const currentBalance = rewards.availableRewards + rewards.pendingRewards;
+    
+    // ✅ 新增提領申請記錄（負數）- 狀態：pending
+    history.unshift({
+      id: `history_${Date.now()}_withdrawal_${withdrawalId}`,
+      type: 'withdrawal_pending',  // ✅ 新類型：提領申請中
+      amount: -(amount + WITHDRAWAL_FEE),  // ✅ 合併提領金額和手續費（單筆負數）
+      description: `提領申請（${amount}P + 手續費${WITHDRAWAL_FEE}P）`,
+      issuedAt: toTaiwanISOString(now),
+      balance: currentBalance,
+      
+      // ✅ 關聯資訊（方便後續追溯）
+      withdrawalId: withdrawalId,
+      status: 'pending'
+    });
+    
+    await kv.set(historyKey, history);
+    
+    console.log(`✅ 獎勵明細已更新: 新增提領申請記錄（-${amount + WITHDRAWAL_FEE}P）`);
     console.log(`✅ 提領申請創建: id=${withdrawalId}, amount=${amount}P, fee=${WITHDRAWAL_FEE}P`);
     console.log(`💰 更新後餘額: 可提領=${rewards.availableRewards}P, 處理中=${rewards.pendingRewards}P`);
     console.log('========== ✅ 提領申請完成 ==========');
@@ -910,38 +934,50 @@ rewards.post('/withdrawals/:id/confirm', async (c) => {
     await kv.set(rewardsKey, rewards);
     console.log(`💰 獎勵更新: 處理中=${rewards.pendingRewards}P, 已提領=${rewards.withdrawnRewards}P（含手續費）`);
     
-    // 9. 新增單筆獎勵明細（提領點數&手續費）
+    // 9. ✅ 更新獎勵明細記錄狀態（而非新增）
     const historyKey = `user:${user.id}:reward_history`;
     const history = await kv.get(historyKey) || [];
     
     // ✅ 計算交易後餘額
     const balanceAfterWithdrawal = rewards.availableRewards + rewards.pendingRewards;
     
-    // ✅ 單筆明細：包含淨額和手續費的完整信息
-    history.unshift({
-      id: `history_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-      type: 'withdrawal_with_fee',           // ✅ 新類型
-      amount: -totalAmount,                   // -1015P（總扣款）
-      balance: balanceAfterWithdrawal,        // 交易後餘額
-      issuedAt: toTaiwanISOString(now),
-      description: '提領點數&手續費',          // ✅ 合併描述
-      requestedAt: withdrawal.requestedAt,
+    // ✅ 找到對應的提領申請記錄並更新狀態
+    const recordIndex = history.findIndex(
+      (record: any) => record.withdrawalId === withdrawalId
+    );
+    
+    if (recordIndex !== -1) {
+      // 更新現有記錄
+      history[recordIndex].status = 'completed';
+      history[recordIndex].description = `提領完成（${withdrawal.amount}P + 手續費${withdrawal.fee}P）`;
+      history[recordIndex].balance = balanceAfterWithdrawal;
+      history[recordIndex].completedAt = toTaiwanISOString(now);
       
-      // ✅ 新增：詳細金額拆分
-      withdrawalDetails: {
-        netAmount: withdrawal.amount,         // 1000（淨提領額）
-        fee: withdrawal.fee,                  // 15（手續費）
-        totalAmount: totalAmount              // 1015（總額）
-      }
-    });
-    
-    // 保留最近 200 筆
-    if (history.length > 200) {
-      history.length = 200;
+      await kv.set(historyKey, history);
+      
+      console.log(`✅ 獎勵明細已更新: 提領記錄狀態改為 completed（${withdrawal.amount}P + 手續費${withdrawal.fee}P）`);
+    } else {
+      // 容錯處理：如果找不到記錄（不應該發生），新增完成記錄
+      console.warn(`⚠️ 找不到對應的獎勵明細記錄: withdrawalId=${withdrawalId}，將新增完成記錄`);
+      
+      const totalAmount = withdrawal.amount + withdrawal.fee;
+      
+      history.unshift({
+        id: `history_${Date.now()}_withdrawal_completed_${withdrawalId}`,
+        type: 'withdrawal_completed',
+        amount: -totalAmount,
+        description: `提領完成（${withdrawal.amount}P + 手續費${withdrawal.fee}P）`,
+        issuedAt: toTaiwanISOString(now),
+        balance: balanceAfterWithdrawal,
+        withdrawalId: withdrawalId,
+        status: 'completed',
+        completedAt: toTaiwanISOString(now)
+      });
+      
+      await kv.set(historyKey, history);
+      
+      console.log(`✅ 新增提領完成記錄（容錯處理）: -${totalAmount}P`);
     }
-    
-    await kv.set(historyKey, history);
-    console.log(`✅ 新增提領明細（淨額=${withdrawal.amount}P + 手續費=${withdrawal.fee}P，總計=${totalAmount}P）`);
     
     console.log('========== ✅ 確認查收完成 ==========');
     

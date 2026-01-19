@@ -42,6 +42,7 @@ export function RewardDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);  // ✅ 新增：訂閱狀態
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);  // ✅ 新增：獎勵明細刷新觸發器
 
   // 獲取獎勵資料和提領記錄
   useEffect(() => {
@@ -114,6 +115,7 @@ export function RewardDashboard() {
   const handleSuccessWithdrawal = () => {
     setShowWithdrawalProcess(false);
     fetchData(); // 重新載入數據以更新統計
+    setHistoryRefreshTrigger(prev => prev + 1);  // ✅ 新增：觸發獎勵明細刷新
   };
 
   // 載入狀態
@@ -131,7 +133,7 @@ export function RewardDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">獎勵回饋</h1>
-            <p className="text-muted-foreground">管理您的Point和提領申請</p>
+            {/*<p className="text-muted-foreground">管理您的Point和提領申請</p>*/}
           </div>
         </div>
         
@@ -157,7 +159,7 @@ export function RewardDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">獎勵回饋</h1>
-            <p className="text-muted-foreground">管理您的Point和提領申請</p>
+            {/*<p className="text-muted-foreground">管理您的Point和提領申請</p>*/}
           </div>
         </div>
         
@@ -232,9 +234,10 @@ export function RewardDashboard() {
           withdrawals={withdrawals}
           onStartWithdrawal={handleStartWithdrawal}
           onRefresh={fetchData}
-          subscriptionStatus={subscriptionStatus}  // ✅ 新增：傳遞訂閱狀態
+          subscriptionStatus={subscriptionStatus}
+          referralProgramJoined={user?.referralProgramJoined}  // ✅ 新增：傳遞是否加入推薦計畫
         />
-        <RewardHistory />
+        <RewardHistory refreshTrigger={historyRefreshTrigger} />
       </div>
     </div>
   );

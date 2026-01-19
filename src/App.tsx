@@ -9,6 +9,8 @@ import { EmailVerificationPending } from './components/EmailVerificationPending'
 import { AuthCallback } from './components/AuthCallback';
 import { CompleteProfile } from './components/CompleteProfile';
 import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
+import { ForgotPasswordPage } from './components/ForgotPasswordPage';  // ✨ 新增
+import { ResetPasswordPage } from './components/ResetPasswordPage';    // ✨ 新增
 import { MemberDashboard } from './components/MemberDashboard';
 import { ServiceProviderManagement } from './components/ServiceProviderManagement';
 import { CreateServiceProvider } from './components/CreateServiceProvider';
@@ -28,6 +30,8 @@ import { createClient } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info';
 import { termsOfServiceContent } from './content/termsOfService';
 import { listingPlansContent } from './content/listingPlans';
+import { referralRewardRulesContent } from './content/referralRewardRules';
+import { referralRewardContractContent } from './content/referralRewardContract';
 
 // User context
 export const UserContext = React.createContext<{
@@ -230,9 +234,9 @@ function AppContent() {
     <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin }}>
       <FeatureProvider>
         <NotificationProvider>
-          <div className="min-h-screen bg-background">
+          <div className="min-h-screen bg-background flex flex-col">
             <Navbar />
-            <main className="container mx-auto px-4 py-6">
+            <main className="container mx-auto px-4 py-6 flex-1">
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
@@ -241,8 +245,11 @@ function AppContent() {
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
                 <Route path="/auth/verify-email" element={<EmailVerificationPending />} />
+                <Route path="/auth/verify-reset-email" element={<EmailVerificationPending mode="password-reset" />} />  {/* ✨ 新增 */}
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />  {/* ✨ 新增 */}
+                <Route path="/auth/reset-password" element={<ResetPasswordPage />} />  {/* ✨ 新增 */}
                 
                 {/* Protected Member Routes */}
                 <Route path="/dashboard" element={
@@ -318,6 +325,18 @@ function AppContent() {
                   <MarkdownContent 
                     content={listingPlansContent} 
                     title="刊登方案" 
+                  />
+                } />
+                <Route path="/referral-reward-rules" element={
+                  <MarkdownContent 
+                    content={referralRewardRulesContent} 
+                    title="推薦獎勵規則" 
+                  />
+                } />
+                <Route path="/referral-reward-contract" element={
+                  <MarkdownContent 
+                    content={referralRewardContractContent} 
+                    title="推薦獎勵合約" 
                   />
                 } />
                 

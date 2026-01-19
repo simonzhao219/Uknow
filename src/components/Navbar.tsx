@@ -7,6 +7,7 @@ import { UserContext } from '../App';
 import { User, Settings, Award, Users, LogOut, Shield, Target, CreditCard } from 'lucide-react';
 import { useFeatures } from '../contexts/FeatureContext';
 import { createClient } from '../utils/supabase/client';
+import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
 
 export function Navbar() {
   const { user, setUser, isLoggedIn, isAdmin } = useContext(UserContext);
@@ -60,10 +61,7 @@ export function Navbar() {
     <nav className="border-b bg-card">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold">U</span>
-          </div>
-          <span className="text-xl font-semibold">Uknow</span>
+          <img src={logoImage} alt="Uknow Logo" className="h-10 object-contain" />
         </Link>
 
         <div className="flex items-center space-x-4">

@@ -11,6 +11,8 @@ export interface NotificationConfig {
   details?: string[];
   onConfirm?: () => void;
   confirmText?: string;
+  onCancel?: () => void;
+  cancelText?: string;
 }
 
 interface NotificationCardProps extends NotificationConfig {
@@ -63,6 +65,8 @@ export function NotificationCard({
   details,
   onConfirm,
   confirmText = '確認',
+  onCancel,
+  cancelText = '取消',
   onClose,
 }: NotificationCardProps) {
   const style = notificationStyles[type];
@@ -71,6 +75,13 @@ export function NotificationCard({
   const handleConfirm = () => {
     if (onConfirm) {
       onConfirm();
+    }
+    onClose();
+  };
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
     }
     onClose();
   };
@@ -129,7 +140,15 @@ export function NotificationCard({
           </div>
 
           {/* Footer */}
-          <div className="px-6 pb-6 flex justify-end">
+          <div className="px-6 pb-6 flex justify-end gap-2">
+            {onCancel && (
+              <button
+                onClick={handleCancel}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors duration-200"
+              >
+                {cancelText}
+              </button>
+            )}
             <button
               onClick={handleConfirm}
               className={`

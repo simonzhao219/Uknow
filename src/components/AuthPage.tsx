@@ -22,7 +22,7 @@ export function AuthPage() {
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast } = useNotification();
+  const { showToast, showInfo } = useNotification();
   const supabase = createClient();
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
@@ -321,7 +321,7 @@ export function AuthPage() {
         requirements.push('至少一個大寫字母（A-Z）');
       }
       if (!/[a-z]/.test(pwd)) {
-        requirements.push('至少一個小寫母（a-z）');
+        requirements.push('至少一個小寫字母（a-z）');
       }
       if (!/[0-9]/.test(pwd)) {
         requirements.push('至少一個數字（0-9）');
@@ -344,6 +344,19 @@ export function AuthPage() {
     }
 
     return errors;
+  };
+
+  // 忘記密碼處理
+  const handleForgotPassword = () => {
+    showInfo(
+      '需要協助重設密碼？',
+      '為確保您的帳號安全，密碼重設需由客服人員協助。',
+      [
+        '請加入 LINE 官方帳號：@uknow',
+        '告知客服您需要重設密碼',
+        '客服將在確認身份後協助您'
+      ]
+    );
   };
 
   return (
@@ -438,6 +451,17 @@ export function AuthPage() {
                   autoFocus
                 />
                 <FieldError error={errors.password} />
+                
+                {/* ✨ 新增：忘記密碼連結 */}
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    忘記密碼？
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-3">
@@ -499,7 +523,7 @@ export function AuthPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">密碼</Label>
+                <Label htmlFor="password">設定密碼</Label>
                 <Input
                   id="password"
                   type="password"

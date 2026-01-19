@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Award, Settings, User, Home, CheckSquare, Gift, Info, ArrowLeft, Copy, CreditCard, Calendar, Loader2, AlertTriangle } from 'lucide-react';
+import { Users, Award, Settings, User, Home, CheckSquare, Gift, Info, ArrowLeft, Copy, CreditCard, Calendar, Loader2, AlertTriangle, Shield } from 'lucide-react';
 import { mockServiceProviders } from '../data/mockServiceProviders';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
@@ -11,9 +11,10 @@ import { useNotification } from './notifications/NotificationContext';
 import { Badge } from './ui/badge';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { CancelSubscriptionDialog } from './subscription/CancelSubscriptionDialog';
+import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
 
 export function MemberDashboard() {
-  const { user } = useContext(UserContext);
+  const { user, setUser } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
   const { showToast, showSuccess, showError, showWarning, showInfo } = useNotification();
@@ -25,6 +26,9 @@ export function MemberDashboard() {
   
   // ✅ 取消訂閱Dialog狀態
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  
+  // ✅ 加入推薦計畫 Dialog 狀態
+  const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
   
   // 找出該用戶的服務者刊登
   const userServiceProviders = mockServiceProviders.filter(r => r.userId === user?.id);
@@ -238,6 +242,19 @@ export function MemberDashboard() {
     return Math.max(0, 60 - daysPassed);
   };
 
+  // ✅ 加入推薦計畫成功回調
+  const handleJoinReferralSuccess = (referralCode: string, joinedAt: string) => {
+    if (user) {
+      const updatedUser = {
+        ...user,
+        referralProgramJoined: true,
+        referralProgramJoinedAt: joinedAt
+      };
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
@@ -289,18 +306,33 @@ export function MemberDashboard() {
           <div>
             <p className="text-sm text-muted-foreground">我的推薦碼</p>
             <div className="flex items-center gap-2">
-              <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                {user?.referralCode || '未生成'}
-              </p>
-              {user?.referralCode && (
+              {user?.referralProgramJoined ? (
+                // ✅ 已加入推薦計畫 → 顯示推薦碼
+                <>
+                  <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
+                    {user?.referralCode || '未生成'}
+                  </p>
+                  {user?.referralCode && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={handleCopyReferralCode}
+                      title="複製推薦碼"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </>
+              ) : (
+                // ✅ 未加入推薦計畫 → 顯示加入按鈕
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={handleCopyReferralCode}
-                  title="複製推薦碼"
+                  onClick={() => setShowJoinReferralDialog(true)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  size="sm"
                 >
-                  <Copy className="h-4 w-4" />
+                  <Shield className="mr-2 h-4 w-4" />
+                  加入推薦計畫
                 </Button>
               )}
             </div>
@@ -570,6 +602,13 @@ export function MemberDashboard() {
           onConfirm={handleConfirmCancel}
         />
       )}
+
+      {/* ✅ 加入推薦計畫 Dialog */}
+      <JoinReferralProgramDialog
+        open={showJoinReferralDialog}
+        onClose={() => setShowJoinReferralDialog(false)}
+        onSuccess={handleJoinReferralSuccess}
+      />
     </div>
   );
 }

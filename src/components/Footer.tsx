@@ -5,20 +5,20 @@ import { Phone, Mail, MessageCircle, FileText, Package } from 'lucide-react';
 
 export function Footer() {
   return (
-    <footer className="mt-12 border-t bg-muted/30">
+    <footer className="mt-auto border-t bg-muted/30">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* 公司資訊 */}
-          <div className="space-y-3">
+          {/*<div className="space-y-3">
             <h3 className="font-semibold text-lg">關於我們</h3>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">仕捷股份有限公司</p>
               <p>統編：90546663</p>
             </div>
-          </div>
+          </div> */}
 
           {/* 聯絡方式 */}
-          <div className="space-y-3">
+          {/*<div className="space-y-3">
             <h3 className="font-semibold text-lg">聯絡我們</h3>
             <div className="space-y-2 text-sm">
               <a 
@@ -45,10 +45,10 @@ export function Footer() {
                 <span>apparatus30@gmail.com</span>
               </a>
             </div>
-          </div>
+          </div> */}
 
           {/* 快速連結 */}
-          <div className="space-y-3">
+          {/* <div className="space-y-3">
             <h3 className="font-semibold text-lg">快速連結</h3>
             <div className="space-y-2 text-sm">
               <Link 
@@ -66,11 +66,11 @@ export function Footer() {
                 <span>刊登方案</span>
               </Link>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* 版權聲明 */}
-        <div className="pt-6 border-t text-center text-sm text-muted-foreground">
+        <div className="pt-6 text-center text-sm text-muted-foreground">
           <p>© {new Date().getFullYear()} 仕捷股份有限公司 Uknow. All rights reserved.</p>
         </div>
       </div>

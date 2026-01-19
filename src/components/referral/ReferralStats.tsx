@@ -46,9 +46,9 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-blue-600">{totalReferrals}</div>
-          <p className="text-sm text-muted-foreground mt-1">
+          {/*<p className="text-sm text-muted-foreground mt-1">
             所有推薦
-          </p>
+          </p>*/}
         </CardContent>
       </Card>
 
@@ -61,9 +61,9 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">{firstLevelCount}</div>
-          <p className="text-sm text-muted-foreground mt-1">
+          {/*<p className="text-sm text-muted-foreground mt-1">
             直接推薦
-          </p>
+          </p>*/}
         </CardContent>
       </Card>
 
@@ -76,9 +76,9 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-purple-600">{secondLevelCount}</div>
-          <p className="text-sm text-muted-foreground mt-1">
+          {/*<p className="text-sm text-muted-foreground mt-1">
             一代推薦
-          </p>
+          </p>*/}
         </CardContent>
       </Card>
 
@@ -91,9 +91,9 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-orange-600">{thirdLevelCount}</div>
-          <p className="text-sm text-muted-foreground mt-1">
+          {/*<p className="text-sm text-muted-foreground mt-1">
             二代推薦
-          </p>
+          </p>*/}
         </CardContent>
       </Card>
     </div>

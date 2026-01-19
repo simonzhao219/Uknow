@@ -5,11 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { UserContext } from '../App';
 import { mockUsers } from '../data/mockUsers';
 import { FieldError } from '../utils/formHelpers';
+import { useNotification } from './notifications/NotificationContext';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const { user, setUser } = useContext(UserContext);
+  const { showInfo } = useNotification();
   const navigate = useNavigate();
 
   // 檢查用戶是否已登入，如果已登入則跳轉到 dashboard
@@ -43,6 +45,18 @@ export function LoginPage() {
   const handleSocialLogin = (provider: string) => {
     // 模擬社群登入
     handleLogin(provider);
+  };
+
+  const handleForgotPassword = () => {
+    showInfo(
+      '需要協助重設密碼？',
+      '為確保您的帳號安全，密碼重設需由客服人員協助。',
+      [
+        '請加入 LINE 官方帳號：@uknow',
+        '告知客服您需要重設密碼',
+        '客服將在確認身份後協助您'
+      ]
+    );
   };
 
   return (
@@ -102,6 +116,14 @@ export function LoginPage() {
             <Link to="/register" className="text-primary hover:underline ml-1">
               立即註冊
             </Link>
+            <span className="text-muted-foreground mx-2">|</span>
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              className="text-primary hover:underline"
+            >
+              忘記密碼？
+            </button>
           </div>
         </CardContent>
       </Card>

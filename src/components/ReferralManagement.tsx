@@ -147,7 +147,7 @@ export function ReferralManagement() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">推薦管理</h1>
-            <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p>
+            {/* <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p> */}
           </div>
         </div>
         
@@ -177,7 +177,7 @@ export function ReferralManagement() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">推薦管理</h1>
-            <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p>
+            {/* <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p> */}
           </div>
         </div>
         
@@ -206,7 +206,7 @@ export function ReferralManagement() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold">推薦管理</h1>
-          <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p>
+          {/* <p className="text-muted-foreground">管理您的推薦碼與推薦關係</p>*/}
         </div>
       </div>
 
@@ -218,7 +218,7 @@ export function ReferralManagement() {
       />
 
       {/* ✅ 會員推薦碼卡片 */}
-      {referralData?.userReferralCode && (
+      {/*{referralData?.userReferralCode && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -256,7 +256,7 @@ export function ReferralManagement() {
             </div>
           </CardContent>
         </Card>
-      )}
+      )}*/}
 
       {/* 推薦樹狀圖 */}
       <Card>
@@ -265,9 +265,9 @@ export function ReferralManagement() {
             <Users className="h-5 w-5" />
             我的推薦網絡
           </CardTitle>
-          <CardDescription>
+          {/* <CardDescription>
             查看透過您的推薦碼註冊的會員
-          </CardDescription>
+          </CardDescription>*/}
         </CardHeader>
         <CardContent>
           {!referralData || 

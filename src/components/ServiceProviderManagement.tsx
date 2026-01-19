@@ -179,7 +179,7 @@ export function ServiceProviderManagement() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">刊登管理</h1>
-            <p className="text-muted-foreground">管理理您的專業服務刊登</p>
+            {/* <p className="text-muted-foreground">管理理您的專業服務刊登</p> */}
           </div>
         </div>
         {/* ✅ 只有當用戶沒有刊登時，才顯示「刊登新服務」按鈕 */}

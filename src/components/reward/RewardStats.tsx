@@ -40,7 +40,7 @@ export function RewardStats({
   return (
     <div 
       ref={containerRef}
-      className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory md:grid md:grid-cols-2 lg:grid-cols-4 md:overflow-x-visible"
+      className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory md:grid md:grid-cols-2 lg:grid-cols-2 md:overflow-x-visible"
     >
       <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
         <CardHeader className="pb-2 md:pb-3">
@@ -66,7 +66,7 @@ export function RewardStats({
         </CardContent>
       </Card>
 
-      <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
+      {/* <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
         <CardHeader className="pb-2 md:pb-3">
           <CardTitle className="flex items-center gap-1.5 md:gap-2 text-sm md:text-lg">
             <Clock className="h-4 w-4 md:h-5 md:w-5 text-blue-600 shrink-0" />
@@ -88,7 +88,7 @@ export function RewardStats({
         <CardContent>
           <div className="text-2xl md:text-3xl font-bold text-purple-600">{withdrawnRewards}P</div>
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   );
 }

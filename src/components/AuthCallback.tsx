@@ -7,16 +7,19 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from './ui/button';
 
 export function AuthCallback() {
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [message, setMessage] = useState('正在驗證您的 Email...');
   const navigate = useNavigate();
   const supabase = createClient();
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('正在處理驗證...');
 
   useEffect(() => {
     let isProcessing = false;
 
     const handleCallback = async () => {
-      if (isProcessing) return;
+      if (isProcessing) {
+        console.log('AuthCallback: Already processing, skipping duplicate call');
+        return;
+      }
       isProcessing = true;
 
       try {
@@ -24,6 +27,167 @@ export function AuthCallback() {
         console.log('AuthCallback: Current URL:', window.location.href);
         console.log('AuthCallback: Hash:', window.location.hash);
         console.log('AuthCallback: Search params:', window.location.search);
+        
+        // ✅ 新增：檢查是否為密碼重設回調
+        const urlParams = new URLSearchParams(window.location.search);
+        const callbackType = urlParams.get('type');
+        
+        if (callbackType === 'password-reset') {
+          console.log('AuthCallback: Detected password reset callback');
+          
+          // ✅ 完整的 URL 信息
+          console.log('=== URL Debug Info ===');
+          console.log('Full URL:', window.location.href);
+          console.log('Origin:', window.location.origin);
+          console.log('Pathname:', window.location.pathname);
+          console.log('Search:', window.location.search);
+          console.log('Hash:', window.location.hash);
+          console.log('Hash length:', window.location.hash.length);
+          
+          // ✅ 解析所有 query parameters
+          console.log('=== Query Parameters ===');
+          urlParams.forEach((value, key) => {
+            console.log(`  ${key}:`, value.substring(0, 50) + (value.length > 50 ? '...' : ''));
+          });
+          
+          // ✅ 解析 hash parameters（如果有）
+          if (window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            console.log('=== Hash Parameters ===');
+            hashParams.forEach((value, key) => {
+              console.log(`  ${key}:`, value.substring(0, 50) + (value.length > 50 ? '...' : ''));
+            });
+          } else {
+            console.log('=== Hash Parameters ===');
+            console.log('  (none)');
+          }
+          
+          // ✅ 检查 localStorage 中的 Supabase session
+          console.log('=== LocalStorage Session ===');
+          const allKeys = Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('sb-'));
+          if (allKeys.length > 0) {
+            allKeys.forEach(key => {
+              const value = localStorage.getItem(key);
+              console.log(`  ${key}:`, value ? value.substring(0, 100) + '...' : 'null');
+            });
+          } else {
+            console.log('  (no supabase keys found)');
+          }
+          
+          // ✅ 尝试从 query params 获取 code（PKCE flow）
+          const code = urlParams.get('code');
+          const accessToken = urlParams.get('access_token');
+          const refreshToken = urlParams.get('refresh_token');
+          
+          console.log('=== Token Detection ===');
+          console.log('Has code (PKCE):', !!code, code ? `(${code.substring(0, 20)}...)` : '');
+          console.log('Has access_token (Implicit):', !!accessToken, accessToken ? `(${accessToken.substring(0, 20)}...)` : '');
+          console.log('Has refresh_token:', !!refreshToken, refreshToken ? `(${refreshToken.substring(0, 20)}...)` : '');
+          
+          // ✅ 如果有 code，使用 PKCE flow 交换 session
+          if (code) {
+            console.log('AuthCallback: Using PKCE flow to exchange code for session...');
+            
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            
+            if (error) {
+              console.error('AuthCallback: Failed to exchange code:', error);
+              setStatus('error');
+              setMessage('驗證失敗：無法交換授權碼');
+              
+              setTimeout(() => {
+                navigate('/forgot-password', {
+                  replace: true,
+                  state: { message: '驗證連結已失效，請重新申請' }
+                });
+              }, 3000);
+              return;
+            }
+            
+            if (data.session) {
+              console.log('AuthCallback: ✅ PKCE session established for user:', data.session.user.id);
+              setStatus('success');
+              setMessage('驗證成功！正在導向密碼重設頁面...');
+              
+              setTimeout(() => {
+                navigate('/auth/reset-password', { replace: true });
+              }, 1500);
+              return;
+            }
+          }
+          
+          // ✅ 检查 hash 中是否有 error
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const errorCode = hashParams.get('error');
+          const errorDescription = hashParams.get('error_description');
+          
+          if (errorCode) {
+            console.error('AuthCallback: Password reset error in hash:', errorCode, errorDescription);
+            setStatus('error');
+            setMessage(`驗證失敗：${errorDescription || errorCode}`);
+            
+            setTimeout(() => {
+              navigate('/forgot-password', {
+                replace: true,
+                state: { message: '驗證連結已失效，請重新申請' }
+              });
+            }, 3000);
+            return;
+          }
+          
+          // ✅ 等待 Supabase Client 處理 hash 中的 token（延遲 + 重試機制）
+          console.log('AuthCallback: Waiting for Supabase to process hash tokens...');
+          
+          let session = null;
+          let attempts = 0;
+          const maxAttempts = 5;
+          
+          while (!session && attempts < maxAttempts) {
+            attempts++;
+            console.log(`AuthCallback: Attempt ${attempts}/${maxAttempts} to get session...`);
+            
+            await new Promise(resolve => setTimeout(resolve, attempts === 1 ? 500 : 300));
+            
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            session = currentSession;
+            
+            if (session) {
+              console.log('AuthCallback: ✅ Recovery session established for user:', session.user.id);
+              break;
+            }
+          }
+          
+          if (session && session.user) {
+            setStatus('success');
+            setMessage('驗證成功！正在導向密碼重設頁面...');
+            
+            setTimeout(() => {
+              navigate('/auth/reset-password', { replace: true });
+            }, 1500);
+            
+            return;
+          } else {
+            console.error('AuthCallback: ❌ No session for password reset after', attempts, 'attempts');
+            console.error('AuthCallback: Possible reasons:');
+            console.error('  1. Token expired (>1 hour)');
+            console.error('  2. Token already used');
+            console.error('  3. Invalid token');
+            
+            setStatus('error');
+            setMessage('驗證連結已過期或無效');
+            
+            setTimeout(() => {
+              navigate('/forgot-password', {
+                replace: true,
+                state: {
+                  message: '驗證連結已失效（可能已過期或已使用），請重新申請密碼重設',
+                }
+              });
+            }, 3000);
+            
+            return;
+          }
+        }
         
         // 0. 檢查是否已經處理過這個 hash（避免重複處理）
         const currentHash = window.location.hash;

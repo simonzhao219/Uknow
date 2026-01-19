@@ -34,7 +34,7 @@ export function createClaimRewardConfig(reward: PendingMissionReward): ThreeStep
     
     // ===== 步驟1：確認領取 =====
     step1: {
-      title: '⚠️ 確認領取任務獎勵',
+      title: '確認領取任務獎勵',
       description: '請仔細閱讀以下說明後再繼續',
       content: (
         <div className="space-y-4">
@@ -63,8 +63,6 @@ export function createClaimRewardConfig(reward: PendingMissionReward): ThreeStep
                 <ul className="space-y-1 text-sm text-red-800">
                   <li>• 領取後無法撤回</li>
                   <li>• 獎勵將立即加入可提領點數</li>
-                  <li>• 如有問題請聯繫客服</li>
-                  <li className="font-medium text-red-700">• 客服電話：0800-123-456</li>
                 </ul>
               </div>
             </div>

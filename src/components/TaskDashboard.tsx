@@ -307,7 +307,7 @@ export function TaskDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">任務中心</h1>
-            <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
+            {/*<p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>*/}
           </div>
         </div>
         
@@ -336,7 +336,7 @@ export function TaskDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">任務中心</h1>
-            <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
+            {/*<p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>*/}
           </div>
         </div>
       </div>
@@ -588,11 +588,11 @@ export function TaskDashboard() {
               <ul className="text-sm text-muted-foreground space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-orange-600 shrink-0">•</span>
-                  <span>單月每成功推薦 10 位用戶即可獲得 1000P</span>
+                  <span>單月每成功推薦 10 位用戶即可獲得 1000P （可累贈）</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-orange-600 shrink-0">•</span>
-                  <span>只計算第 1 代推薦（直接推薦）</span>
+                  <span>只計算第 1 代（直接推薦）</span>
                 </li>
               </ul>
             </div>

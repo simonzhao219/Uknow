@@ -30,6 +30,7 @@ interface WithdrawalSectionProps {
   onStartWithdrawal: () => void;
   onRefresh: () => void;
   subscriptionStatus?: string | null;  // ✅ 新增：訂閱狀態
+  referralProgramJoined?: boolean;     // ✅ 新增：是否加入推薦計畫
 }
 
 type CollectionStep = null | 'confirm' | 'preview' | 'verify';
@@ -42,7 +43,8 @@ export function WithdrawalSection({
   withdrawals,
   onStartWithdrawal,
   onRefresh,
-  subscriptionStatus
+  subscriptionStatus,
+  referralProgramJoined  // ✅ 新增
 }: WithdrawalSectionProps) {
   const { showToast, showSuccess, showError } = useNotification();
   
@@ -58,13 +60,22 @@ export function WithdrawalSection({
   // ✅ 判斷是否可以提領
   const isInsufficientBalance = availableRewards < MIN_REQUIRED;
   const hasReachedDailyLimit = hasWithdrawnToday;
-  const isSubscriptionInvalid = subscriptionStatus === 'grace' || subscriptionStatus === 'expired';  // ✅ 新增：訂閱狀態無效
+  const isSubscriptionInvalid = subscriptionStatus === 'grace' || subscriptionStatus === 'expired';
+  const hasNotJoinedReferral = !referralProgramJoined;  // ✅ 新增：未加入推薦計畫
   
-  const canWithdraw = !isInsufficientBalance && !hasReachedDailyLimit && !isSubscriptionInvalid;  // ✅ 加入訂閱狀態檢查
+  const canWithdraw = !isInsufficientBalance 
+    && !hasReachedDailyLimit 
+    && !isSubscriptionInvalid
+    && !hasNotJoinedReferral;  // ✅ 新增條件
   
   // ✅ 生成提示訊息
   const getDisabledReason = () => {
-    // ✅ 優先檢查訂閱狀態（最重要的限制）
+    // ✅ 最優先檢查是否加入推薦計畫
+    if (hasNotJoinedReferral) {
+      return '尚未加入推薦計畫，無法申請提領';
+    }
+    
+    // ✅ 檢查訂閱狀態
     if (isSubscriptionInvalid) {
       if (subscriptionStatus === 'grace') {
         return '訂閱處於寬限期，無法申請提領。請補繳以恢復服務。';

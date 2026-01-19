@@ -88,19 +88,19 @@ export function ReferralTreeView({ referralTree }: ReferralTreeViewProps) {
           </div>
           
           {/* 第 2 行：被推薦者的推薦碼 */}
-          <div className="flex items-center gap-2">
+          {/* <div className="flex items-center gap-2">
             <Ticket className={`h-4 w-4 shrink-0 ${!member.isActive ? 'text-gray-400' : 'text-purple-600'}`} />
             <p className={`text-sm font-mono truncate ${!member.isActive ? 'text-gray-400' : 'text-muted-foreground'}`}>
               {member.userReferralCode || '暫無推薦碼'}
             </p>
-          </div>
+          </div> */}
           
           {/* 第 3 行：推薦人資訊（僅二代和三代顯示）*/}
           {level > 1 && member.referrer && (
             <div className="flex items-center gap-2">
               <Users className={`h-4 w-4 shrink-0 ${!member.isActive ? 'text-gray-400' : 'text-green-600'}`} />
               <p className={`text-sm truncate ${!member.isActive ? 'text-gray-400' : 'text-muted-foreground'}`}>
-                {member.referrer.userName} - {member.referrer.userReferralCode || '暫無推薦碼'}
+                {member.referrer.userName} {/* - {member.referrer.userReferralCode || '暫無推薦碼'}*/}
               </p>
             </div>
           )}

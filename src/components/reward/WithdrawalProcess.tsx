@@ -562,14 +562,14 @@ export function WithdrawalProcess({
             </div>
 
             {/* 統計數據變化預覽 */}
-            <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-3">
+            {/* <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-3">
               <h3 className="font-medium text-blue-900 flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
                 統計數據變化預覽
-              </h3>
+              </h3> */}
               
               {/* 可提領Point變化 */}
-              <div className="space-y-2">
+               {/* <div className="space-y-2">
                 <div className="text-sm text-blue-800 font-medium">可提領Point</div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-white p-3 rounded border border-blue-200">
@@ -586,10 +586,10 @@ export function WithdrawalProcess({
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
 
               {/* 處理中Point變化 */}
-              <div className="space-y-2">
+              {/*<div className="space-y-2">
                 <div className="text-sm text-blue-800 font-medium">處理中Point</div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-white p-3 rounded border border-blue-200">
@@ -607,10 +607,10 @@ export function WithdrawalProcess({
                   </div>
                 </div>
               </div>
-            </div>
+            </div> */}
 
             {/* 重要提醒 */}
-            <Alert>
+            {/* <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 <strong>請確認以上資訊：</strong>
@@ -619,7 +619,7 @@ export function WithdrawalProcess({
                   <li>Point將立即從「可提領」轉為「處理中」</li>
                 </ul>
               </AlertDescription>
-            </Alert>
+            </Alert> */}
 
             <div className="flex gap-4">
               <Button variant="outline" onClick={handleBack} className="flex-1">
@@ -824,7 +824,7 @@ export function WithdrawalProcess({
                   }}
                 />
                 <Label htmlFor="agreeToTerms" className="cursor-pointer text-sm flex-1">
-                  我已閱讀並同意 <a href="#" className="text-blue-600 underline mx-1">服務條款</a> 和 <a href="#" className="text-blue-600 underline mx-1">隱私政策</a>
+                  我已閱讀並同意 <a href="/referral-reward-rules" className="text-blue-600 underline mx-1">推薦獎勵規則</a>
                 </Label>
               </div>
               <FieldError error={errors.agreeToTerms} />

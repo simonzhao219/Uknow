@@ -42,48 +42,75 @@ interface RewardRecord {
   generation?: number;
   monthNumber?: number;
   
-  // ✅ 新增餘額欄位
+  // ��� 新增餘額欄位
   balance?: number;
 }
 
-export function RewardHistory() {
+interface RewardHistoryProps {
+  refreshTrigger?: number;  // ✅ 新增：刷新觸發器
+}
+
+export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [history, setHistory] = useState<RewardRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('all');
 
-  // 獲取獎勵歷史
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // ✅ 使用統一的 API 請求工具
-        const result = await apiRequestJson<{ success: boolean; data: { history: RewardRecord[] } }>(
-          buildApiUrl('/rewards/history?limit=50')
-        );
-        
-        if (result.success) {
-          setHistory(result.data.history || []);
-        } else {
-          throw new Error('獲取獎勵歷史失敗');
-        }
-      } catch (err) {
-        console.error('獲取獎勵歷史錯誤:', err);
-        
-        if (err instanceof ApiError && err.status === 401) {
-          setError('登入已過期，請重新登入');
-        } else {
-          setError(err instanceof Error ? err.message : '獲取獎勵歷史失敗');
-        }
-      } finally {
-        setIsLoading(false);
+  // ✅ 提取獲取歷史的邏輯為獨立函數
+  const fetchHistory = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // ✅ 使用統一的 API 請求工具
+      const result = await apiRequestJson<{ success: boolean; data: { history: RewardRecord[] } }>(
+        buildApiUrl('/rewards/history?limit=50')
+      );
+      
+      if (result.success) {
+        setHistory(result.data.history || []);
+      } else {
+        throw new Error('獲取獎勵歷史失敗');
       }
-    };
+    } catch (err) {
+      console.error('獲取獎勵歷史錯誤:', err);
+      
+      if (err instanceof ApiError && err.status === 401) {
+        setError('登入已過期，請重新登入');
+      } else {
+        setError(err instanceof Error ? err.message : '獲取獎勵歷史失敗');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  // 初始載入
+  useEffect(() => {
     fetchHistory();
   }, []);
+  
+  // ✅ 監聽 refreshTrigger 變化並重新獲取數據
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      fetchHistory();
+    }
+  }, [refreshTrigger]);
+
+  // ✅ 新增：格式化明細顯示邏輯
+  const getFormattedDetail = (record: RewardRecord) => {
+    // 特殊處理：提領申請類型（withdrawal_pending）
+    if (record.type === 'withdrawal_pending') {
+      const totalAmount = Math.abs(record.amount);  // 1015
+      const fee = 15;  // 固定手續費
+      const withdrawalAmount = totalAmount - fee;  // 1000
+      
+      return `${withdrawalAmount} P + 手續費 ${fee} P`;  // ✅ 格式化為規格要求
+    }
+    
+    // 其他類型保持原有邏輯
+    return null;  // null 表示使用原有邏輯
+  };
 
   // 篩選獎勵記錄
   const filteredHistory = history.filter(record => {
@@ -99,10 +126,12 @@ export function RewardHistory() {
     }
     
     if (filterType === 'withdrawal') {
-      // ✅ 新增：點數提領篩選（支持新舊格式）
+      // ✅ 新增：點數提領篩選（支持新舊格式 + withdrawal_pending）
       return record.type === 'withdrawal_with_fee' || 
              record.type === 'withdrawal' || 
-             record.type === 'withdrawal_fee';
+             record.type === 'withdrawal_fee' ||
+             record.type === 'withdrawal_pending' ||
+             record.type === 'withdrawal_completed';
     }
     
     return true;
@@ -176,19 +205,22 @@ export function RewardHistory() {
                     let type = '';
                     let detail = '';
                     
+                    // ✅ 特殊處理：提領申請類型（withdrawal_pending）
+                    if (record.type === 'withdrawal_pending') {
+                      type = '提領申請';  // ✅ 固定標題
+                      detail = getFormattedDetail(record) || '—';  // 使用格式化函數
+                    }
                     // ✅ 檢查是否為提領類型（支持新舊格式）
-                    const isWithdrawal = record.type === 'withdrawal_with_fee' || 
-                                        record.type === 'withdrawal' || 
-                                        record.type === 'withdrawal_fee';
-                    
-                    if (isWithdrawal) {
+                    else if (record.type === 'withdrawal_with_fee' || 
+                        record.type === 'withdrawal' || 
+                        record.type === 'withdrawal_fee') {
                       // 提領類型：使用 description 作為標題
                       type = record.description;
                       
                       // ✅ 優先顯示詳細拆分（新記錄 withdrawal_with_fee）
                       if (record.withdrawalDetails) {
                         const { netAmount, fee } = record.withdrawalDetails;
-                        detail = `淨額 ${Math.abs(netAmount).toLocaleString()}P + 手續費 ${fee}P`;
+                        detail = ` ${Math.abs(netAmount).toLocaleString()}P + 手續費 ${fee}P`;
                       } else {
                         // 向後兼容：舊記錄（withdrawal/withdrawal_fee）顯示申請日期
                         detail = record.requestedAt 

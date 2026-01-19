@@ -20,7 +20,11 @@ interface EmailVerificationState {
   resendCount: number;
 }
 
-export function EmailVerificationPending() {
+interface Props {
+  mode?: 'signup' | 'password-reset';  // ✨ 新增 prop
+}
+
+export function EmailVerificationPending({ mode = 'signup' }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useNotification();
@@ -110,26 +114,43 @@ export function EmailVerificationPending() {
     setState((prev) => ({ ...prev, isResending: true }));
 
     try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
+      if (mode === 'signup') {
+        // 原有的註冊驗證信重發邏輯
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
 
-      if (error) {
-        console.error('Resend error:', error);
-        showToast('重新發送失敗，請稍後再試', 'error');
-        setState((prev) => ({ ...prev, isResending: false }));
-        return;
+        if (error) {
+          console.error('Resend error:', error);
+          showToast('重新發送失敗，請稍後再試', 'error');
+          setState((prev) => ({ ...prev, isResending: false }));
+          return;
+        }
+
+        showToast('驗證信已重新寄出！', 'success');
+      } else if (mode === 'password-reset') {
+        // ✨ 新增：密碼重設信重發邏輯
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?type=password-reset`,
+        });
+
+        if (error) {
+          console.error('Resend password reset error:', error);
+          showToast('重新發送失敗，請稍後再試', 'error');
+          setState((prev) => ({ ...prev, isResending: false }));
+          return;
+        }
+
+        showToast('密碼重設信已重新寄出！', 'success');
       }
 
       // 成功重發
       const newResendCount = state.resendCount + 1;
       localStorage.setItem(STORAGE_KEY_RESEND_COUNT, newResendCount.toString());
-
-      showToast('驗證信已重新寄出！', 'success');
 
       setState((prev) => ({
         ...prev,
@@ -157,8 +178,15 @@ export function EmailVerificationPending() {
           <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
             <Mail className="w-8 h-8 text-primary" />
           </div>
-          <CardTitle className="text-2xl">驗證您的 Email</CardTitle>
-          <CardDescription>我們已發送驗證信到您的信箱</CardDescription>
+          <CardTitle className="text-2xl">
+            {mode === 'signup' ? '驗證您的 Email' : '密碼重設驗證'}
+          </CardTitle>
+          <CardDescription>
+            {mode === 'signup'
+              ? '我們已發送驗證信到您的信箱'
+              : '我們已發送密碼重設連結到您的信箱'
+            }
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -169,7 +197,10 @@ export function EmailVerificationPending() {
               <span className="text-primary ml-1">{email}</span>
             </p>
             <p className="text-sm text-muted-foreground">
-              請檢查您的收件匣（或垃圾郵件匣），並點擊驗證連結以繼續註冊流程。
+              {mode === 'signup'
+                ? '請檢查您的收件匣（或垃圾郵件匣），並點擊驗證連結以繼續註冊流程。'
+                : '請檢查您的收件匣（或垃圾郵件匣），並點擊重設連結以設定新密碼。'
+              }
             </p>
           </div>
 

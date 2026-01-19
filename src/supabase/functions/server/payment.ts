@@ -365,7 +365,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     const updatedProfile = {
       ...userProfile,
       registrationStep: 3,
-      referralCode: newReferralCode,  // ✅ 推薦碼存在用戶���料中
+      referralCode: newReferralCode,  // ✅ 推薦碼存在用戶料中
       updatedAt: new Date().toISOString()
     };
     
@@ -529,8 +529,9 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
             
             console.log(`[Process Payment] 🔍 找到三代推薦人: ${gen3ReferrerUserId}`);
             
-            // 獲取二代推薦人的推薦碼（用於三代的 referrer 信息）
-            const gen2Profile = await kv.get(`user:${gen2ReferrerUserId}:profile`);
+            // ✅ 修正：獲取一代推薦人（referrerUserId）的 profile，而非二代
+            // 因為三代的推薦人應該是二代（在三代視角），也就是一代推薦人
+            // referrerProfile 已在 Line 469 獲取，直接使用
             
             // 更新三代推薦人的推薦樹
             const gen3TreeKey = `user:${gen3ReferrerUserId}:referral_tree`;
@@ -550,12 +551,12 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
               city: null,
               activeUntil: endDate.toISOString(),
               isActive: true,
-              referrer: {  // 三代的推薦人是二代
-                userId: gen2ReferrerUserId,
-                userName: referrerReferredBy.referrerUserName,
-                userReferralCode: gen2Profile?.referralCode || null,  // ✅ 推薦人的推薦碼
-                listingId: referrerReferredBy.referrerListingId,
-                listingName: referrerReferredBy.referrerListingName
+              referrer: {  // ✅ 修正：三代的推薦人應該是二代（一代推薦人）
+                userId: referrerUserId,  // ✅ 修正：使用一代推薦人 ID（Tank）
+                userName: referrerProfile?.name || '未知用戶',  // ✅ 修正：使用一代推薦人名字（Tank）
+                userReferralCode: referrerProfile?.referralCode || null,  // ✅ 修正：使用一代推薦人推薦碼
+                listingId: referralData.listingId,  // ✅ 修正：使用一代推薦人刊登 ID
+                listingName: referralData.listingName  // ✅ 修正：使用一代推薦人刊登名稱
               },
               createdAt: createdAt
             };
@@ -566,7 +567,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
             await kv.set(gen3TreeKey, gen3Tree);
             
             console.log(`[Process Payment] ✅ 三代推薦樹已更新: ${gen3TreeKey}`);
-            console.log(`[Process Payment] 新增三代成員: ${userProfile.name} (通過 ${referrerReferredBy.referrerUserName})`);
+            console.log(`[Process Payment] 新增三代成員: ${userProfile.name} (通過 ${referrerProfile?.name || '未知用戶'})`);
             
             // 更新三代推薦人的統計
             const gen3StatsKey = `user:${gen3ReferrerUserId}:referral_stats`;
@@ -850,7 +851,7 @@ async function issueImmediateReward(
     const history = await kv.get(historyKey) || [];
     
     // ✅ 正確格式：一代推薦-被推薦者姓名-被推薦者推薦碼-第1個月
-    const generationText = generation === 1 ? '一代推薦' : generation === 2 ? '二代推薦' : '三代推薦';
+    const generationText = generation === 1 ? '一代' : generation === 2 ? '二代' : '三代';
     const description = `${generationText}-${refereeName}-${refereeCode}-第${monthNumber}個月`;
     
     // ✅ 計算交易後餘額
