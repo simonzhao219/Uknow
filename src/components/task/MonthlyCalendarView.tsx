@@ -170,7 +170,7 @@ export function MonthlyCalendarView({ monthlyProgress, onClose }: MonthlyCalenda
 
                   {/* 第一筆推薦 */}
                   {progress.firstReferral && (
-                    <div className="mt-3 pt-3 border-t">
+                    <div className="mt-3 pt-3 border-t hidden md:block">
                       <UserReferralCard
                         userName={progress.firstReferral.userName}
                         userReferralCode={progress.firstReferral.userReferralCode}

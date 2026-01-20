@@ -2,6 +2,13 @@ import * as kv from "./kv_store.tsx";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { verifyToken } from "./auth.ts";
 import { REWARD_CONFIG, SCHEDULE_STATUS } from "./reward_config.ts";
+import { 
+  getTaiwanNow, 
+  toTaiwanISOString, 
+  toTaiwanDateString,
+  getTaiwanToday,
+  calculateSubscriptionEndDate 
+} from './date_utils.ts';
 // ❌ 移除：任務系統已改為只與會員繳費有關，不與刊登有關
 // import { updateTaskProgress, updateReferralMonthlyLog } from "./task_helpers.ts";
 
@@ -323,7 +330,7 @@ export async function createListing(c: any) {
           listingId: listingId,
           userName: userProfile.name,
           listingName: listingData.name,
-          createdAt: new Date().toISOString()
+          createdAt: toTaiwanISOString(getTaiwanNow())
         });
         console.log(`✅ 創建推薦碼索引（容錯）: ${newReferralCode}`);
       }
@@ -352,22 +359,22 @@ export async function createListing(c: any) {
         listingId: listingId,
         userName: userProfile.name,
         listingName: listingData.name,
-        createdAt: new Date().toISOString()
+        createdAt: toTaiwanISOString(getTaiwanNow())
       });
       
       // 更新用戶 profile，保存推薦碼
       await kv.set(`user:${user.id}:profile`, {
         ...userProfile,
         referralCode: newReferralCode,
-        updatedAt: new Date().toISOString()
+        updatedAt: toTaiwanISOString(getTaiwanNow())
       });
       console.log(`✅ 更新用戶 profile，保存推薦碼: ${newReferralCode}`);
     }
     
     // ===== 步驟6: 計算訂閱日期 =====
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const lastPaymentDate = now.toISOString();
+    const now = getTaiwanNow();
+    const createdAt = toTaiwanISOString(now);
+    const lastPaymentDate = toTaiwanISOString(now);
     
     // 固定年費方案：下次付款日為一年後
     let nextPaymentDate = new Date(now);
@@ -389,7 +396,7 @@ export async function createListing(c: any) {
     
     const referredByCode = userProfile.referredByCode;  // ✅ 從用戶 profile 讀取
     
-    if (referredByCode && referredByCode !== 'DEFAULTRCM01') {
+    if (referredByCode) {
       console.log(`✅ 用戶註冊時使用的推薦碼: ${referredByCode}`);
       
       const referralData = await kv.get(`referral_code:${referredByCode}`);
@@ -451,45 +458,17 @@ export async function createListing(c: any) {
     // });
     // console.log(`✅ 儲存推薦碼映射: referral_code:${newReferralCode}`);
     
-    // ===== 步驟9.4: 處理推薦獎勵（如果有推薦人）=====
-    // ✅ 修正：即使推薦人沒有刊登，也應該建立推薦關係
-    if (referrerUserId) {
-      try {
-        console.log('🎁 開始處理推薦獎勵...');
-        
-        if (referrerListingId) {
-          // 推薦人已有刊登，完整處理推薦獎勵
-          await processReferralRewards({
-            referrerUserId,
-            referrerListingId,
-            newListing: listing,
-            createdAt: now
-          });
-          console.log('✅ 推薦獎勵處理完成（推薦人已有刊登）');
-        } else {
-          // 推薦人還沒創建刊登，只記錄推薦關係和統計
-          console.log('⚠️ 推薦人尚未創建刊登，僅記錄推薦關係');
-          
-          // 記錄推薦來源（已在付款時記錄，這裡再次確認）
-          await kv.set(`user:${user.id}:referred_by`, {
-            referrerUserId: referrerUserId,
-            referrerListingId: null,
-            referrerUserName: userProfile.name,
-            referrerListingName: null,
-            referredAt: now.toISOString(),
-            generation: 1
-          });
-          
-          // 更新推薦統計（即使沒有刊登，也計入統計）
-          await updateReferralStats(referrerUserId, 1);
-          
-          console.log('✅ 推薦關係已記錄（等待推薦人創建刊登後回填）');
-        }
-      } catch (rewardError) {
-        // 獎勵處理失敗不影響刊登創建
-        console.error('⚠️ 推薦獎勵處理失敗（不影響刊登創建）:', rewardError);
-      }
-    }
+    // ===== 步驟9.4: 推薦關係處理 =====
+    // ⚠️ 架構變更：推薦關係只在付款時建立（payment.ts），刊登時不更新
+    // 原因：避免重複更新導致 referral_tree 和 referral_stats 計數不一致
+    // 參考：payment.ts 第 402-595 行已完整處理推薦關係和獎勵發放
+    // 
+    // 說明：
+    // - 付款時已更新推薦人的 referral_tree（一代、二代、三代）
+    // - 付款時已發放上三代的首月獎勵
+    // - 付款時已創建後續 11 個月的獎勵排程
+    // - 刊登創建不應該再次觸發這些邏輯
+    console.log('ℹ️ 推薦關係已在付款時建立，刊登創建不處理推薦邏輯');
     
     // ===== 步驟10: 返回成功 =====
     console.log('========== ✅ 刊登創建成功 ==========');
@@ -959,9 +938,16 @@ export async function deleteListing(c: any) {
 // ===================================================================
 
 /**
+ * @deprecated 已棄用：推薦關係改為只在付款時處理（payment.ts）
+ * 
+ * ⚠️ 重要架構變更：
+ * - 推薦關係只在付款成功時建立（參考 payment.ts 第 402-595 行）
+ * - 刊登創建不再更新 referral_tree 和 referral_stats
+ * - 此函數保留僅供歷史參考，不應再被調用
+ * 
  * 處理推薦獎勵的完整流程
  * 
- * ✅ 重要架構變更：推薦樹以用戶為根，而不是刊登
+ * ✅ 要架構變更：推薦樹以用戶為根，而不是刊登
  * 原因：推薦碼綁定到用戶，與刊登無關
  * 
  * 流程：
@@ -1201,7 +1187,7 @@ async function issueImmediateReward(
     referrer,          // ✅ 新增：完整的推薦人信息（可能為 null）
     generation,        // ✅ 新增：代數
     monthNumber: 1,    // ✅ 新增：月數
-    issuedAt: createdAt.toISOString(),
+    issuedAt: createdAt,  // ✅ 修正：createdAt 已經是 ISO 字符串，不需要再調用 .toISOString()
     description
   });
   

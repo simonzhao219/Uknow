@@ -110,7 +110,7 @@ subscriptions.get('/status', async (c) => {
                   oldSubscription.cancelledAt ? 'Canceled' : 'Active',
           startDate: oldSubscription.startDate,
           endDate: oldSubscription.activeUntil,
-          gracePeriodEnd: gracePeriodEnd.toISOString(),
+          gracePeriodEnd: toTaiwanISOString(gracePeriodEnd),
           amount: 1200,
           paymentMethod: 'legacy',
           paymentTransactionId: 'LEGACY_' + subscriptionId,
@@ -118,7 +118,7 @@ subscriptions.get('/status', async (c) => {
           canceledAt: oldSubscription.cancelledAt || null,
           isRenewal: false,
           createdAt: oldSubscription.createdAt,
-          updatedAt: new Date().toISOString()
+          updatedAt: toTaiwanISOString(getTaiwanNow())
         };
         
         // 存儲新的訂閱記錄
@@ -128,7 +128,7 @@ subscriptions.get('/status', async (c) => {
         await kv.set(`user:${user.id}:account_status`, {
           ...accountStatus,
           currentSubscriptionId: subscriptionId,
-          lastStatusUpdate: new Date().toISOString()
+          lastStatusUpdate: toTaiwanISOString(getTaiwanNow())
         });
         
         // 添加到用戶訂閱列表
@@ -369,7 +369,7 @@ subscriptions.post('/cancel', async (c) => {
     }
     
     // 5. 標記為已取消
-    const now = new Date().toISOString();
+    const now = toTaiwanISOString(getTaiwanNow());
     subscription.canceledAt = now;
     subscription.updatedAt = now;
     
@@ -621,7 +621,7 @@ subscriptions.post('/resume', async (c) => {
     }
     
     // 4. 清除取消標記，恢復訂閱
-    const now = new Date().toISOString();
+    const now = toTaiwanISOString(getTaiwanNow());
     delete subscription.canceledAt;
     subscription.updatedAt = now;
     
@@ -1043,7 +1043,7 @@ async function handleReferralCodeExpiration(
   
   if (referralCodeData) {
     referralCodeData.isActive = false;
-    referralCodeData.expiredAt = new Date().toISOString();
+    referralCodeData.expiredAt = toTaiwanISOString(getTaiwanNow());
     await kv.set(`referral_code:${referralCode}`, referralCodeData);
     console.log(`  ✅ 推薦碼已標記為失效`);
   }
@@ -1054,7 +1054,7 @@ async function handleReferralCodeExpiration(
     pendingRewards: 0,
     withdrawnRewards: 0,
     totalEarned: 0,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: toTaiwanISOString(getTaiwanNow())
   });
   console.log(`  ✅ 用戶點數 SSOT 已清零`);
   
@@ -1062,7 +1062,7 @@ async function handleReferralCodeExpiration(
   await kv.set(`user:${userId}:tasks`, {
     consecutiveReferral: null,
     monthlyKing: null,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: toTaiwanISOString(getTaiwanNow())
   });
   console.log(`  ✅ 任務進度已清零`);
   
@@ -1074,7 +1074,7 @@ async function handleReferralCodeExpiration(
     
     if (schedule && schedule.status === 'pending') {
       schedule.status = 'cancelled';
-      schedule.completedAt = new Date().toISOString();
+      schedule.completedAt = toTaiwanISOString(getTaiwanNow());
       schedule.cancellationReason = '用戶訂閱已永久失效';
       await kv.set(`reward_schedule:${scheduleId}`, schedule);
     }

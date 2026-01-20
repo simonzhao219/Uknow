@@ -374,7 +374,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     console.log(`[Process Payment] ✅ 用戶資料更新成功`);
     
     // 6. ✅ 記錄推薦來源
-    if (referralCode && referralCode !== 'DEFAULTRCM01') {
+    if (referralCode) {
       console.log(`========== 🔗 開始處理推薦關係 ==========`);
       console.log(`[Process Payment] 被推薦人用戶ID: ${userId}`);
       console.log(`[Process Payment] 使用推薦碼: ${referralCode}`);
@@ -436,7 +436,11 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
         console.log(`[Process Payment] 新增成員: ${userProfile.name} (userId: ${userId})`);
         console.log(`[Process Payment] 更新後推薦樹: 1代=${referralTree.firstGeneration.length}`);
         
-        // ✅ 3. 更新推薦人的推薦統計
+        // ✅ 3. 更新推薦人的推薦統計（備份數據，實際統計從 referral_tree 實時計算）
+        // ⚠️ 架構變更說明：
+        // - 實際統計從 referral_tree 實時計算（參考 referrals.ts 第 155-162 行）
+        // - referral_stats 保留作為備份數據，以便未來回滾或比對驗證
+        // - 前端顯示的統計數字永遠從 referral_tree.length 計算，不讀取此 stats
         const statsKey = `user:${referrerUserId}:referral_stats`;
         const stats = await kv.get(statsKey) || {
           totalReferrals: 0,
@@ -451,8 +455,8 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
         
         await kv.set(statsKey, stats);
         
-        console.log(`[Process Payment] ✅ 推薦統計已更新: user:${referrerUserId}:referral_stats`);
-        console.log(`[Process Payment] 總推薦數: ${stats.totalReferrals}, 一代: ${stats.firstGenCount}`);
+        console.log(`[Process Payment] ℹ️ referral_stats 已更新（僅作為備份，實際統計從 referral_tree 計算）`);
+        console.log(`[Process Payment] 備份統計: 總推薦數=${stats.totalReferrals}, 一代=${stats.firstGenCount}`);
         
         // ✅ 4. 遞歸處理二代、三代推薦關係（向上追溯）
         console.log(`[Process Payment] 🔄 開始處理二代、三代推薦關係...`);

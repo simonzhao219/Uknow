@@ -122,7 +122,7 @@ export function JoinReferralProgramDialog({
 
               {/* 2️⃣ 簽名 */}
               <div className="space-y-3">
-                <h3 className="font-medium">簽名確認</h3>
+                <h3 className="font-medium">簽名確認（中文正楷）</h3>
                 <SignaturePad
                   onSignatureChange={setSignatureData}
                   disabled={isSubmitting}

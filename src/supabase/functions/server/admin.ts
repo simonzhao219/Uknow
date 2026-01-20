@@ -2,6 +2,7 @@ import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { createClient } from 'jsr:@supabase/supabase-js@2.49.8';
 import { verifyToken } from './auth.ts';
+import { getTaiwanNow, toTaiwanISOString } from './date_utils.ts';
 
 const admin = new Hono();
 
@@ -27,7 +28,7 @@ admin.get('/features', async (c) => {
       // 首次访问，初始化默认值
       const initialData = {
         features: DEFAULT_FEATURES,
-        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedAt: toTaiwanISOString(getTaiwanNow()),
         lastUpdatedBy: {
           userId: 'system',
           email: 'system@uknow.com.tw',
@@ -67,7 +68,7 @@ admin.get('/features', async (c) => {
       success: true,
       features: DEFAULT_FEATURES,
       metadata: {
-        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedAt: toTaiwanISOString(getTaiwanNow()),
         lastUpdatedBy: {
           userId: 'system',
           email: 'system@uknow.com.tw',

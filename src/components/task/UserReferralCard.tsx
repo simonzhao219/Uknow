@@ -50,12 +50,12 @@ export function UserReferralCard({
       </div>
       
       {/* 推薦碼 */}
-      <div className="flex items-center gap-2 mb-2">
+      {/* <div className="flex items-center gap-2 mb-2">
         <Ticket className="h-4 w-4 text-purple-600 shrink-0" />
         <p className="text-sm font-mono text-muted-foreground truncate">
           {userReferralCode}
         </p>
-      </div>
+      </div> */}
       
       {/* 時間戳 */}
       <div className="flex items-center gap-2">

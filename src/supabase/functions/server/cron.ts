@@ -329,7 +329,7 @@ async function checkSubscriptionRenewals(todayStr: string) {
           if (paymentResult.success) {
             // 4. 更新訂閱狀態
             subscription.status = 'active';
-            subscription.renewedAt = new Date().toISOString();
+            subscription.renewedAt = toTaiwanISOString(getTaiwanNow());
             subscription.nextPaymentDate = getNextPaymentDate(subscription);
             await kv.set(`subscription:${subscription.id}`, subscription);
             
@@ -339,7 +339,7 @@ async function checkSubscriptionRenewals(todayStr: string) {
           } else {
             // 4. 更新訂閱狀態
             subscription.status = 'failed_renewal';
-            subscription.renewedAt = new Date().toISOString();
+            subscription.renewedAt = toTaiwanISOString(getTaiwanNow());
             subscription.failureReason = paymentResult.reason;
             await kv.set(`subscription:${subscription.id}`, subscription);
             
@@ -386,7 +386,7 @@ async function processPayment(subscription: any) {
   // ===== 2. 扣款 =====
   rewards.availableRewards -= amount;
   rewards.withdrawnRewards += amount;
-  rewards.lastUpdated = new Date().toISOString();
+  rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
   
   await kv.set(rewardsKey, rewards);
   
@@ -642,7 +642,7 @@ async function processUserTaskSettlement(
   }
   
   // 儲存更新後的任務資料
-  tasks.lastUpdated = new Date().toISOString();
+  tasks.lastUpdated = toTaiwanISOString(getTaiwanNow());
   await kv.set(tasksKey, tasks);
   
   return { consecutiveCompleted, monthlyKingCompleted };

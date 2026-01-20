@@ -305,10 +305,6 @@ export function CreateServiceProvider() {
       showSuccess(
         '刊登建立成功！',
         '您的服務者刊登已成功建立',
-        [
-          `推薦碼: ${data.referralCode}`,
-          `有效期限: ${new Date(data.activeUntil).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}`
-        ]
       );
       
       navigate('/service-providers');

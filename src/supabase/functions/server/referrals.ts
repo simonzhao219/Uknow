@@ -2,6 +2,12 @@ import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { verifyToken } from './auth.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { 
+  getTaiwanNow, 
+  getTaiwanToday, 
+  toTaiwanDateString, 
+  toTaiwanISOString 
+} from './date_utils.ts';
 
 const referrals = new Hono();
 
@@ -126,7 +132,7 @@ referrals.get('/my-tree', async (c) => {
     console.log(`📊 用戶推薦樹: 1代=${referralTree.firstGeneration.length}, 2代=${referralTree.secondGeneration.length}, 3代=${referralTree.thirdGeneration.length}`);
     
     // ✅ 4. 格式化推薦樹數據（移除刊登概念，純用戶推薦）
-    const today = new Date().toISOString().split('T')[0];
+    const today = toTaiwanDateString(getTaiwanToday());
     
     const formatReferralMember = (member: any) => {
       return {
@@ -151,15 +157,19 @@ referrals.get('/my-tree', async (c) => {
       thirdGeneration: referralTree.thirdGeneration.map(formatReferralMember)
     };
     
-    //  6. 使用預計算的推薦統計（效能優化）
-    const stats = await kv.get(`user:${user.id}:referral_stats`) || {
-      totalReferrals: 0,
-      firstGenCount: 0,
-      secondGenCount: 0,
-      thirdGenCount: 0
+    // ✅ 6. 從推薦樹實時計算統計（SSOT - Single Source of Truth）
+    // 原因：避免 referral_stats 與 referral_tree 不同步導致的數據不一致
+    // 架構變更：推薦關係只在付款時建立（payment.ts），統計永遠從 referral_tree 實時計算
+    const stats = {
+      firstGenCount: referralTree.firstGeneration?.length || 0,
+      secondGenCount: referralTree.secondGeneration?.length || 0,
+      thirdGenCount: referralTree.thirdGeneration?.length || 0,
+      totalReferrals: (referralTree.firstGeneration?.length || 0) + 
+                      (referralTree.secondGeneration?.length || 0) + 
+                      (referralTree.thirdGeneration?.length || 0)
     };
     
-    console.log(`📊 推薦統計: 總計=${stats.totalReferrals}, 1代=${stats.firstGenCount}, 2代=${stats.secondGenCount}, 3代=${stats.thirdGenCount}`);
+    console.log(`📊 推薦統計（實時計算）: 總計=${stats.totalReferrals}, 1代=${stats.firstGenCount}, 2代=${stats.secondGenCount}, 3代=${stats.thirdGenCount}`);
     console.log('========== ✅ 推薦樹獲取完成 ==========');
     
     return c.json({
@@ -318,7 +328,7 @@ referrals.post('/join-program', async (c) => {
     }
 
     // 6️⃣ 更新用戶資料
-    const joinedAt = new Date().toISOString();
+    const joinedAt = toTaiwanISOString(getTaiwanNow());
     const updatedProfile = {
       ...profile,
       referralProgramJoined: true,

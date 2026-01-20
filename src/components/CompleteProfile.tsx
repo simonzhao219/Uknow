@@ -189,7 +189,6 @@ export function CompleteProfile() {
       } else {
         // 沒有填推薦碼：提示將沒有推薦人
         details.push('您未填寫推薦碼');
-        details.push('註冊後將無法享有推薦獎勵');
       }
       
       // 顯示警告卡片
@@ -407,14 +406,6 @@ export function CompleteProfile() {
       return;
     }
     
-    if (formData.referralCode === 'DEFAULTRCM01') {
-      setCodeVerified(true);
-      setVerifiedReferralCode(formData.referralCode);
-      setReferrerName('系統預設');
-      showToast('推薦碼驗證成功', 'success');
-      return;
-    }
-    
     setIsVerifyingCode(true);
     setCodeError('');
 
@@ -576,7 +567,7 @@ export function CompleteProfile() {
                   id="referralCode"
                   value={formData.referralCode}
                   onChange={(e) => {
-                    const newCode = e.target.value;
+                    const newCode = e.target.value.toLowerCase(); // ✅ 立即轉小寫
                     setFormData({ ...formData, referralCode: newCode });
                     setCodeError('');
                     

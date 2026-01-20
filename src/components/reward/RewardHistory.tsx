@@ -261,7 +261,16 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                           
                           {/* 第二行：細節資訊 */}
                           <p className="text-sm text-muted-foreground truncate">
-                            {detail || '—'}
+                            {(() => {
+                              // 如果 detail 不存在，返回 '—'
+                              if (!detail) return '—';
+                              
+                              // 移除推薦碼（格式：-abc123456-）
+                              // 推薦碼格式：3個小寫字母 + 6個數字
+                              const cleanedDetail = detail.replace(/-[a-z]{3}\d{6}-/g, '-');
+                              
+                              return cleanedDetail;
+                            })()}
                           </p>
                           
                           {/* 第三行：入帳日期時間 */}

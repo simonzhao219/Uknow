@@ -1,6 +1,10 @@
 import { Context } from "npm:hono";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import { 
+  getTaiwanNow, 
+  toTaiwanISOString
+} from './date_utils.ts';
 
 // 創建 Supabase Admin Client（用於管理操作）
 const supabaseAdmin = createClient(
@@ -83,7 +87,7 @@ export async function verifyToken(token: string) {
 }
 
 /**
- * 檢查 Email 是否已註冊
+ * 檢查 Email 是否��註冊
  * POST /auth/check-email
  */
 export const checkEmail = async (c: Context) => {
@@ -310,7 +314,7 @@ export const registerUser = async (c: Context) => {
     let referredByUserId = null;
     let referredByListingId = null;
     let isAutoReferral = false;  // ✅ 新增：标记是否为系统自动带入的推荐码
-    const DEFAULT_REFERRAL_CODE = 'dud948785';
+    const DEFAULT_REFERRAL_CODE = 'asa899869';
     
     // 确定最终使用的推荐码
     let finalReferralCode = referralCode;
@@ -336,7 +340,7 @@ export const registerUser = async (c: Context) => {
     }
     
     // 2️⃣ 如果有推荐码（用户填写或自动使用预设），进行验证
-    if (finalReferralCode && finalReferralCode !== 'DEFAULTRCM01') {
+    if (finalReferralCode) {
       console.log(`[registerUser] 验证推荐码: ${finalReferralCode} (${isAutoReferral ? '系统自动' : '用户主动'})`);
       
       const referralData = await kv.get(`referral_code:${finalReferralCode}`);
@@ -368,9 +372,9 @@ export const registerUser = async (c: Context) => {
     }
     console.log(`[registerUser] National ID format validation passed`);
 
-    // 6. 驗證年齡（需年滿 18 歲）
+    // 6. 驗證年齡（需年滿 18 歲）- ✅ 使用台灣時區
     const birthDateObj = new Date(birthDate);
-    const today = new Date();
+    const today = getTaiwanNow();
     let age = today.getFullYear() - birthDateObj.getFullYear();
     const monthDiff = today.getMonth() - birthDateObj.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
@@ -422,8 +426,8 @@ export const registerUser = async (c: Context) => {
       referredByUserId: referredByUserId,  // ✅ 新增：推荐人用户 ID
       referredByListingId: referredByListingId,  // ✅ 新增：推荐人刊登 ID
       isAutoReferral: isAutoReferral,  // ✅ 新增：标记是否为系统自动带入的推荐码
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: toTaiwanISOString(getTaiwanNow()),
+      updatedAt: toTaiwanISOString(getTaiwanNow()),
     };
 
     console.log('[registerUser] Attempting to save profile to KV Store...');
@@ -627,8 +631,8 @@ export const resetRegistration = async (c: Context) => {
       referredByCode: null,
       referredByUserId: null,
       referredByListingId: null,
-      createdAt: currentProfile.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: currentProfile.createdAt || toTaiwanISOString(getTaiwanNow()),
+      updatedAt: toTaiwanISOString(getTaiwanNow()),
     };
 
     // 4. 儲存重置後的 profile
@@ -728,7 +732,7 @@ export const updateUserProfile = async (c: Context) => {
       ...existingProfile,
       name,
       phone,
-      updatedAt: new Date().toISOString(),
+      updatedAt: toTaiwanISOString(getTaiwanNow()),
     };
 
     console.log('[updateUserProfile] Saving updated profile to KV Store...');
