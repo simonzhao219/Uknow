@@ -1,4 +1,4 @@
-import { Hono } from "npm:hono";
+import { Hono } from "npm:hono@4.3.11";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
@@ -11,6 +11,9 @@ import rewards from "./rewards.ts";
 import tasks from "./tasks.ts";
 import cron from "./cron.ts";
 import payment from "./payment.ts"; // ✅ 新增：付款路由
+import dataValidation from "./data_validation.ts"; // ✅ 新增：數據驗證工具
+import dataRepair from "./data_repair.ts"; // ✅ 新增：數據修復工具
+import adminSetup from "./admin_setup.ts"; // ✅ 新增：管理員設置工具
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const app = new Hono();
@@ -175,5 +178,14 @@ app.route("/make-server-5c6718b9/cron", cron);
 
 // Payment Routes
 app.route("/make-server-5c6718b9/payment", payment); // ✅ 新增：付款路由
+
+// Data Validation Routes
+app.route("/make-server-5c6718b9/data-validation", dataValidation); // ✅ 新增：數據驗證工具
+
+// Data Repair Routes
+app.route("/make-server-5c6718b9/data-repair", dataRepair); // ✅ 新增：數據修復工具
+
+// Admin Setup Routes
+app.route("/make-server-5c6718b9/admin-setup", adminSetup); // ✅ 新增：管理員設置工具
 
 Deno.serve(app.fetch);

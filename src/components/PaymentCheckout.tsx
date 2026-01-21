@@ -282,6 +282,12 @@ export function PaymentCheckout() {
       return;
     }
 
+    // ✅ CRITICAL: 防止重複提交
+    if (isLoading) {
+      showToast('處理中，請稍候...', 'warning');
+      return;
+    }
+
     // 執行原本的 handlePayment 邏輯
     await handlePayment();
   };
@@ -290,6 +296,12 @@ export function PaymentCheckout() {
     if (!pendingUser) {
       showToast('用戶資料不存在，請重新註冊', 'error');
       navigate('/auth/complete-profile');
+      return;
+    }
+
+    // ✅ CRITICAL: 防止重複提交
+    if (isLoading) {
+      showToast('處理中，請稍候...', 'warning');
       return;
     }
 
@@ -358,13 +370,48 @@ export function PaymentCheckout() {
       if (!paymentResponse.ok) {
         const errorData = await paymentResponse.json();
         console.error('PaymentCheckout: Payment processing error:', errorData);
+        
+        // ✅ CRITICAL: 處理特定錯誤碼
+        if (errorData.error?.code === 'DUPLICATE_SUBSCRIPTION') {
+          showToast('您已完成付款，無需重複付款', 'warning');
+          // 嘗試獲取最新用戶資料並導航
+          await refreshUserProfileAndNavigate(session);
+          return;
+        }
+        
+        if (errorData.error?.code === 'PAYMENT_IN_PROGRESS') {
+          showToast(errorData.error.message, 'warning');
+          return;
+        }
+        
         throw new Error(errorData.error?.message || '付款處理失敗');
       }
 
       const result = await paymentResponse.json();
       console.log('PaymentCheckout: Payment successful:', result);
+      
+      // ✅ CRITICAL: 檢查是否是重複處理
+      if (result.alreadyProcessed) {
+        console.log('PaymentCheckout: Payment already processed, redirecting...');
+        showToast('付款已完成', 'success');
+        await refreshUserProfileAndNavigate(session);
+        return;
+      }
 
       // 3. 獲取完整的用戶資料（包含推薦碼）
+      await refreshUserProfileAndNavigate(session);
+
+    } catch (error: any) {
+      console.error('PaymentCheckout: Payment error:', error);
+      showToast(error.message || '付款處理失敗，請稍後再試', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // ✅ 新增：統一的用戶資料刷新與導航邏輯
+  const refreshUserProfileAndNavigate = async (session: any) => {
+    try {
       const profileResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
         {
@@ -412,11 +459,9 @@ export function PaymentCheckout() {
           navigate('/dashboard', { replace: true });
         }, 500);
       }
-    } catch (error: any) {
-      console.error('PaymentCheckout: Error during payment:', error);
-      showToast(error.message || '付款處理失敗，請稍後再試', 'error');
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error('PaymentCheckout: Error refreshing user profile:', error);
+      showToast('無法獲取最新用戶資料，請稍後再試', 'error');
     }
   };
 
@@ -546,7 +591,7 @@ export function PaymentCheckout() {
         const updatedProfile = await profileResponse.json();
         console.log('PaymentCheckout: Updated profile retrieved:', updatedProfile);
         
-        // 更新用戶狀態
+        // 更新用���狀態
         setUser(updatedProfile);
         localStorage.setItem('user', JSON.stringify(updatedProfile));
         localStorage.removeItem('pendingUser');

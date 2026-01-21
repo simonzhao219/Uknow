@@ -1,9 +1,9 @@
-import React, { useState, useContext, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useContext, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { UserContext } from '../App';
-import { mockUsers } from '../data/mockUsers';
+// import { mockUsers } from '../data/mockUsers'; // Legacy mock data - no longer used
 import { FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 
@@ -24,27 +24,15 @@ export function LoginPage() {
   const handleLogin = (loginMethod: string, userData?: any) => {
     setError('');
     
-    // 模擬登入邏輯
-    let user;
-    if (loginMethod === 'email') {
-      user = mockUsers.find(u => u.email === email);
-      if (!user) {
-        setError('找不到此 Email 對應的帳號');
-        return;
-      }
-    } else {
-      // 社群媒體登入，使用第一個用戶作為示例
-      user = mockUsers[0];
-    }
-
-    setUser(user);
-    localStorage.setItem('user', JSON.stringify(user));
-    navigate('/dashboard', { replace: true });
+    // Legacy mock login - redirect to real auth page
+    showInfo('請使用註冊/登入頁面進行登入');
+    navigate('/auth/login', { replace: true });
   };
 
   const handleSocialLogin = (provider: string) => {
-    // 模擬社群登入
-    handleLogin(provider);
+    // Redirect to real auth page
+    showInfo('請使用註冊/登入頁面進行登入');
+    navigate('/auth/login', { replace: true });
   };
 
   const handleForgotPassword = () => {

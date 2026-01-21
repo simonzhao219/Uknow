@@ -233,7 +233,9 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     };
   }
   
-  // 檢查訂單是否已處理
+  // ========== ✅ CRITICAL: 冪等性檢查（防止重複處理） ==========
+  
+  // 檢查 1: 訂單是否已處理
   if (paymentOrder.status === 'completed') {
     console.log(`[Process Payment] ⚠️ 訂單已處理過: ${orderId}`);
     return {
@@ -248,7 +250,151 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
   console.log(`[Process Payment] 用戶 ID: ${userId}`);
   console.log(`[Process Payment] 推薦碼: ${referralCode || '無'}`);
   
+  // ========== ✅ CRITICAL: 用戶級別的冪等性檢查 ==========
+  console.log(`[Process Payment] 🔍 執行用戶級別的冪等性檢查...`);
+  
+  // 獲取用戶資料
+  const userProfile = await kv.get(`user:${userId}:profile`);
+  
+  if (!userProfile) {
+    console.error(`[Process Payment] ❌ 用戶資料不存在: ${userId}`);
+    return {
+      success: false,
+      error: { message: '用戶資料不存在' }
+    };
+  }
+  
+  // 檢查 2: 用戶是否已完成付款（registrationStep >= 3）
+  if (userProfile.registrationStep >= 3) {
+    console.error(`[Process Payment] 🚨 用戶已完成付款，拒絕重複處理！`);
+    console.error(`[Process Payment] 用戶: ${userProfile.name} (${userId})`);
+    console.error(`[Process Payment] 當前步驟: ${userProfile.registrationStep}`);
+    console.error(`[Process Payment] 現有推薦碼: ${userProfile.referralCode}`);
+    
+    // 獲取用戶的訂閱信息
+    const userSubscriptions = await kv.get(`user:${userId}:subscriptions`) || [];
+    const latestSubscriptionId = userSubscriptions[0];
+    let subscriptionEndDate = null;
+    
+    if (latestSubscriptionId) {
+      const subscription = await kv.get(`subscription:${latestSubscriptionId}`);
+      if (subscription) {
+        subscriptionEndDate = subscription.endDate;
+      }
+    }
+    
+    return {
+      success: true,
+      message: '用戶已完成付款',
+      alreadyProcessed: true,
+      data: {
+        referralCode: userProfile.referralCode,
+        subscriptionEndDate: subscriptionEndDate
+      }
+    };
+  }
+  
+  // 檢查 3: 用戶是否已有推薦碼（雙重保險）
+  if (userProfile.referralCode) {
+    console.error(`[Process Payment] 🚨 用戶已有推薦碼，拒絕重複處理！`);
+    console.error(`[Process Payment] 用戶: ${userProfile.name} (${userId})`);
+    console.error(`[Process Payment] 現有推薦碼: ${userProfile.referralCode}`);
+    
+    return {
+      success: true,
+      message: '用戶已有推薦碼',
+      alreadyProcessed: true,
+      data: {
+        referralCode: userProfile.referralCode
+      }
+    };
+  }
+  
+  // 檢查 4: 用戶是否已有訂閱（三重保險）
+  const existingSubscriptions = await kv.get(`user:${userId}:subscriptions`) || [];
+  
+  if (existingSubscriptions.length > 0) {
+    console.error(`[Process Payment] 🚨🚨🚨 嚴重錯誤：用戶已有訂閱記錄！`);
+    console.error(`[Process Payment] 用戶: ${userProfile.name} (${userId})`);
+    console.error(`[Process Payment] 訂閱數量: ${existingSubscriptions.length}`);
+    console.error(`[Process Payment] 訂閱列表: ${JSON.stringify(existingSubscriptions)}`);
+    console.error(`[Process Payment] 這可能是重複付款或數據異常，立即拒絕處理！`);
+    
+    // 記錄異常日誌
+    const anomalyLogKey = `payment_anomaly_log:${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    await kv.set(anomalyLogKey, {
+      type: 'DUPLICATE_SUBSCRIPTION_DETECTED',
+      userId: userId,
+      userName: userProfile.name,
+      orderId: orderId,
+      existingSubscriptions: existingSubscriptions,
+      timestamp: toTaiwanISOString(getTaiwanNow())
+    });
+    
+    return {
+      success: false,
+      error: { 
+        code: 'DUPLICATE_SUBSCRIPTION',
+        message: '用戶已有訂閱記錄，請聯繫客服處理',
+        details: `訂閱數量: ${existingSubscriptions.length}`
+      }
+    };
+  }
+  
+  console.log(`[Process Payment] ✅ 冪等性檢查通過，開始處理付款...`);
+  
+  // ========== ✅ 分散式鎖：防止並發處理 ==========
+  const lockKey = `payment_lock:${userId}`;
+  const lockValue = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  const lockTTL = 30000; // 30秒鎖定時間
+  
+  // 檢查鎖是否已存在
+  const existingLock = await kv.get(lockKey);
+  
+  if (existingLock) {
+    const lockAge = Date.now() - existingLock.timestamp;
+    
+    // 如果鎖已過期，強制釋放
+    if (lockAge > lockTTL) {
+      console.log(`[Process Payment] ⚠️ 鎖已過期，強制釋放: ${lockKey}`);
+      await kv.del(lockKey);
+    } else {
+      console.error(`[Process Payment] 🚨 付款處理中，拒絕並發請求！`);
+      console.error(`[Process Payment] 鎖: ${lockKey}, 剩餘時間: ${lockTTL - lockAge}ms`);
+      
+      return {
+        success: false,
+        error: {
+          code: 'PAYMENT_IN_PROGRESS',
+          message: '付款處理中，請稍候...',
+          details: `請等待 ${Math.ceil((lockTTL - lockAge) / 1000)} 秒後再試`
+        }
+      };
+    }
+  }
+  
+  // 獲取鎖
+  await kv.set(lockKey, {
+    value: lockValue,
+    timestamp: Date.now(),
+    userId: userId,
+    orderId: orderId
+  });
+  
+  console.log(`[Process Payment] 🔒 獲取分散式鎖成功: ${lockKey}`);
+  
   try {
+    // ========== 開始處理付款 ==========
+    
+    // 記錄交易日誌 - 開始
+    const transactionLogStartKey = `payment_transaction_log:${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    await kv.set(transactionLogStartKey, {
+      userId: userId,
+      orderId: orderId,
+      action: 'process_payment_start',
+      timestamp: toTaiwanISOString(getTaiwanNow())
+    });
+    
     // 2. 生成推薦碼
     let newReferralCode = generateReferralCode();
     let codeAttempts = 0;
@@ -261,6 +407,16 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
       }
     }
     console.log(`[Process Payment] ✅ 生成推薦碼: ${newReferralCode}`);
+    
+    // 記錄交易日誌 - 生成推薦碼
+    const transactionLogCodeKey = `payment_transaction_log:${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    await kv.set(transactionLogCodeKey, {
+      userId: userId,
+      orderId: orderId,
+      action: 'generate_referral_code',
+      referralCode: newReferralCode,
+      timestamp: toTaiwanISOString(getTaiwanNow())
+    });
     
     // 3. ✅ 不創建刊登（由用戶手動創建）
     const userProfile = await kv.get(`user:${userId}:profile`);
@@ -782,6 +938,10 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
         details: error.message 
       }
     };
+  } finally {
+    // 釋放鎖
+    await kv.del(lockKey);
+    console.log(`[Process Payment] 🔓 釋放分散式鎖: ${lockKey}`);
   }
 }
 

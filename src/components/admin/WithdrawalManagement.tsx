@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Checkbox } from '../ui/checkbox';
-import { mockWithdrawals } from '../../data/mockData';
-import { mockUsers } from '../../data/mockUsers';
 import { Download, Settings, Eye } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -66,7 +64,7 @@ function IdCardDialog({ isOpen, onClose, userName, idNumber, frontImage, backIma
 
 export function WithdrawalManagement() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [withdrawals, setWithdrawals] = useState(mockWithdrawals);
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [idCardDialog, setIdCardDialog] = useState<{
     isOpen: boolean;
     userId: string | null;
@@ -100,13 +98,14 @@ export function WithdrawalManagement() {
   };
 
   const getUserName = (userId: string) => {
-    const user = mockUsers.find(u => u.id === userId);
-    return user?.name || '未知用戶';
+    // TODO: Replace with actual API call to get user data
+    return '用戶';
   };
 
   // 獲取用戶資訊
   const getUserInfo = (userId: string) => {
-    return mockUsers.find(u => u.id === userId);
+    // TODO: Replace with actual API call to get user data
+    return null;
   };
 
   // 獲取狀態文字

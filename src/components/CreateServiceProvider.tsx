@@ -302,10 +302,7 @@ export function CreateServiceProvider() {
       
       console.log('[Create Listing] ✅ 刊登建立完成');
       
-      showSuccess(
-        '刊登建立成功！',
-        '您的服務者刊登已成功建立',
-      );
+      showToast('刊登建立成功！', 'success');
       
       navigate('/service-providers');
       
