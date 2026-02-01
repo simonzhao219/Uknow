@@ -1130,8 +1130,17 @@ async function issueImmediateReward(
 ) {
   const amount = REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH; // 10P
   
-  // ===== 1. 獲取被推薦人完整信息 =====
+  // ✅ Phase 3: 检查是否为测试账号，跳过奖励发放
   const newUserProfile = await kv.get(`user:${newListing.userId}:profile`);
+  const receiverProfile = await kv.get(`user:${userId}:profile`);
+  
+  if (newUserProfile?.isTestAccount || receiverProfile?.isTestAccount) {
+    console.log(`[issueImmediateReward] ⚠️ 跳过测试账号的奖励发放`);
+    console.log(`[issueImmediateReward] 新用户测试: ${newUserProfile?.isTestAccount}, 接收者测试: ${receiverProfile?.isTestAccount}`);
+    return; // ✅ 直接返回，不发放奖励
+  }
+  
+  // ===== 1. 獲取被推薦人完整信息 =====
   const referee = {
     userId: newListing.userId,
     userName: newUserProfile?.name || '未知用戶',
