@@ -178,7 +178,7 @@ payment.post('/callback', async (c) => {
   try {
     console.log('[Payment Callback] 接收到藍新金流回調');
     
-    // TODO: 解密並驗證藍新金流��調資料
+    // TODO: 解密並驗證藍新金流回調資料
     const { Status, MerchantOrderNo, TradeNo } = await c.req.json();
     
     if (Status !== 'SUCCESS') {
@@ -468,7 +468,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
       createdAt: createdAt
     });
     
-    console.log(`[Process Payment] ✅ 推薦碼索引創建成（綁定到用戶）`);
+    console.log(`[Process Payment] ✅ 推薦碼索引創建成��（綁定到用戶）`);
     
     // ✅ 創建訂閱記錄（符合新規格）
     const subscription = {
@@ -713,7 +713,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
               isActive: true,
               referrer: {  // ✅ 修正：三代的推薦人應該是二代（一代推薦人）
                 userId: referrerUserId,  // ✅ 修正：使用一代推薦人 ID（Tank）
-                userName: referrerProfile?.name || '未知用戶',  // ✅ 修正：使用一代推��人名字（Tank）
+                userName: referrerProfile?.name || '未知用戶',  // ✅ 修正：使用一代推薦人名字（Tank）
                 userReferralCode: referrerProfile?.referralCode || null,  // ✅ 修正：使用一代推薦人推薦碼
                 listingId: referralData.listingId,  // ✅ 修正：使用一代推薦人刊登 ID
                 listingName: referralData.listingName  // ✅ 修正：使用一代推薦人刊登名稱
@@ -859,42 +859,33 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
         console.log(`========== 🎯 開始更新推薦者的任務進度 ==========`);
         
         try {
-          // ✅ Phase 3: 检查是否为测试账号，跳过任务更新
-          const refereeProfile = await kv.get(`user:${userId}:profile`);
-          const referrerProfile = await kv.get(`user:${referrerUserId}:profile`);
+          // 只有一代推薦才計入任務（連續推薦達人 + 推薦王）
+          // 二代、三代不計入任務
           
-          if (refereeProfile?.isTestAccount || referrerProfile?.isTestAccount) {
-            console.log(`[Process Payment] ⚠️ 跳过测试账号的任务更新`);
-            console.log(`[Process Payment] 被推薦人测试: ${refereeProfile?.isTestAccount}, 推薦人测试: ${referrerProfile?.isTestAccount}`);
-          } else {
-            // 只有一代推薦才計入任務（連續推薦達人 + 推薦王）
-            // 二代、三代不計入任務
-            
-            // ✅ 1. 更新任務進度
-            await updateTaskProgress(
-              referrerUserId,  // 推薦人用戶ID
-              createdAt        // 付款時間戳
-            );
-            
-            console.log(`[Process Payment] ✅ 推薦者任務進度已更新`);
-            
-            // ✅ 2. 更新月度日誌（新增）
-            await updateReferralMonthlyLog(
-              referrerUserId,  // 推薦人用戶ID
-              {
-                userId: userId,
-                userName: userProfile.name,
-                userReferralCode: newReferralCode,  // ✅ 被推薦人的推薦碼
-                listingId: null,                    // ✅ 付費時還沒有刊登
-                listingName: null,
-                referrer: null                      // ✅ 一代沒有推薦人
-              },
-              createdAt
-            );
-            
-            console.log(`[Process Payment] ✅ 推薦者月度日誌已更新`);
-            console.log(`========== ✅ 推薦者任務進度和月度日誌更新完成 ==========`);
-          }
+          // ✅ 1. 更新任務進度
+          await updateTaskProgress(
+            referrerUserId,  // 推薦人用戶ID
+            createdAt        // 付款時間戳
+          );
+          
+          console.log(`[Process Payment] ✅ 推薦者任務進度已更新`);
+          
+          // ✅ 2. 更新月度日誌（新增）
+          await updateReferralMonthlyLog(
+            referrerUserId,  // 推薦人用戶ID
+            {
+              userId: userId,
+              userName: userProfile.name,
+              userReferralCode: newReferralCode,  // ✅ 被推薦人的推薦碼
+              listingId: null,                    // ✅ 付費時還沒有刊登
+              listingName: null,
+              referrer: null                      // ✅ ��代沒有推薦人
+            },
+            createdAt
+          );
+          
+          console.log(`[Process Payment] ✅ 推薦者月度日誌已更新`);
+          console.log(`========== ✅ 推薦者任務進度和月度日誌更新完成 ==========`);
         } catch (error) {
           console.error(`========== ❌ 推薦者任務進度更新失敗 ==========`);
           console.error(error);
@@ -999,16 +990,6 @@ async function issueImmediateReward(
   console.log(`💰 發放首月獎勵: 用戶=${receiverUserId}, 第${generation}代, ${amount}P`);
   
   try {
-    // ✅ Phase 3: 检查是否为测试账号，跳过奖励发放
-    const refereeProfile = await kv.get(`user:${refereeUserId}:profile`);
-    const receiverProfile = await kv.get(`user:${receiverUserId}:profile`);
-    
-    if (refereeProfile?.isTestAccount || receiverProfile?.isTestAccount) {
-      console.log(`[issueImmediateReward] ⚠️ 跳过测试账号的奖励发放`);
-      console.log(`[issueImmediateReward] 被推薦人测试: ${refereeProfile?.isTestAccount}, 接收者测试: ${receiverProfile?.isTestAccount}`);
-      return; // ✅ 直接返回，不发放奖励
-    }
-    
     // ❌ 移除：不再更新 account_status.pointBalance（違反 SSOT）
     // 點數統一由 user:${userId}:rewards 管理
     

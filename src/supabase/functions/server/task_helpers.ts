@@ -12,7 +12,6 @@
 
 import * as kv from './kv_store.tsx';
 import { REWARD_CONFIG } from './reward_config.ts';
-import { getTaiwanNow, toTaiwanISOString } from './date_utils.ts';
 
 /**
  * 更新任務進度
@@ -149,27 +148,27 @@ export async function updateTaskProgress(
       count: king.currentCount,
       completionsThisMonth: king.completionsThisMonth || 0,  // ✅ 記錄完成次數
       qualified: king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
-      completedAt: timestampStr
+      checkedAt: null // 會在定時任務中更新
     });
     
-    // 重置本月計數
+    // 重置本月
     king.currentMonth = currentMonth;
     king.currentCount = 0;
-    king.completionsThisMonth = 0;  // ✅ 重置本月完成次數
+    king.completionsThisMonth = 0;  // ✅ 重置完成次數
     king.completed = false;
   }
   
-  // 更新計數
   king.currentCount += 1;
   console.log(`  ✅ 推薦王任務：本月推薦數 ${king.currentCount}/${king.target}`);
   
-  // ✅ 檢查是否達標（每達到10次創建一次待領取獎勵）
-  if (king.currentCount % REWARD_CONFIG.TASK_MONTHLY_KING_TARGET === 0) {
-    console.log(`  🎉 推薦王任務達標！創建待領取獎勵...`);
+  // ✅ 檢查是否完成任務（10人，支持溢出 - 扣除制）
+  while (king.currentCount >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET) {
+    king.completionsThisMonth = (king.completionsThisMonth || 0) + 1;
+    
+    console.log(`  🎉 推薦王任務完成！第${king.completionsThisMonth}次達成，創建待領取獎勵...`);
     
     try {
-      king.completionsThisMonth += 1;  // ✅ 本月完成次數+1
-      
+      // 創建待領取獎勵
       await createPendingMissionReward(
         userId,
         'monthly_king',
@@ -177,57 +176,36 @@ export async function updateTaskProgress(
         timestampStr,
         { 
           month: currentMonth, 
-          count: king.currentCount,
-          completionNumber: king.completionsThisMonth  // ✅ 記錄第幾次完成
+          completionIndex: king.completionsThisMonth 
         }
       );
       
-      console.log(`  ✅ 推薦王待領取獎勵已創建（本月第 ${king.completionsThisMonth} 次完成）`);
+      // ✅ 扣除制：count -= 10
+      king.currentCount -= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET;
+      
+      console.log(`  ✅ 推薦王獎勵已創建，剩餘計數: ${king.currentCount}`);
     } catch (error) {
       console.error(`  ❌ 創建推薦王獎勵失敗:`, error);
-      king.completionsThisMonth -= 1;  // ✅ 回滾完成次數
-      // 不中斷流程
+      // 避免無限循環
+      break;
     }
   }
   
-  // 保存任務資料
+  // ===== 3. 保存任務資料 =====
+  tasks.lastUpdated = timestampStr;
   await kv.set(tasksKey, tasks);
   
-  console.log(`[Update Task Progress] ✅ 任務進度已更新`);
+  console.log('  ✅ 任務進度已更新並保存');
 }
 
 /**
- * 初始化默認任務結構
+ * 初始化預設任務
  */
-function initializeDefaultTasks() {
+export function initializeDefaultTasks() {
   return {
-    consecutiveReferral: {
-      id: "task_consecutive",
-      type: "consecutive_referral",
-      title: "連續推薦達人",
-      description: "連續12個月每月至少推薦1位用戶",
-      target: REWARD_CONFIG.TASK_CONSECUTIVE_MONTHS,
-      currentStreak: 0,
-      startMonth: null,
-      lastActiveMonth: null,
-      monthlyRecord: {},
-      completed: false,
-      reward: REWARD_CONFIG.TASK_CONSECUTIVE_REWARD,
-      lastCheckedAt: null
-    },
-    monthlyKing: {
-      id: "task_monthly_king",
-      type: "monthly_king",
-      title: "推薦王",
-      description: "單月推薦10位以上用戶",
-      target: REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
-      currentMonth: null,
-      currentCount: 0,
-      completionsThisMonth: 0,
-      completed: false,
-      reward: REWARD_CONFIG.TASK_MONTHLY_KING_REWARD,
-      history: []
-    }
+    consecutiveReferral: null,
+    monthlyKing: null,
+    lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
   };
 }
 
@@ -235,43 +213,59 @@ function initializeDefaultTasks() {
  * 創建待領取的任務獎勵
  * 
  * @param userId - 用戶 ID
- * @param taskType - 任務類型
+ * @param type - 任務類型
  * @param amount - 獎勵金額
- * @param timestamp - 完成時間戳
- * @param metadata - 額外元數據
+ * @param achievedAt - 完成時間
+ * @param details - 任務詳情
  */
 export async function createPendingMissionReward(
   userId: string,
-  taskType: string,
+  type: 'consecutive_referral' | 'monthly_king',
   amount: number,
-  timestamp: string,
-  metadata: any = {}
+  achievedAt: string,
+  details: any
 ): Promise<void> {
-  console.log(`[Create Pending Mission Reward] 創建待領取任務獎勵: userId=${userId}, type=${taskType}, amount=${amount}P`);
-  
   const rewardId = `mission_reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   
-  // 任務類型描述
-  const taskDescriptions: { [key: string]: string } = {
-    'consecutive_referral': '連續推薦達人',
-    'monthly_king': '推薦王'
+  console.log(`[Create Pending Mission Reward] 創建待領取任務獎勵: ${rewardId}`);
+  
+  // 獲取當前獎勵數據（用於預計算）
+  const rewardsKey = `user:${userId}:rewards`;
+  const rewards = await kv.get(rewardsKey) || {
+    availableRewards: 0,
+    pendingRewards: 0,
+    withdrawnRewards: 0,
+    totalEarned: 0
   };
   
-  const description = taskDescriptions[taskType] || '任務獎勵';
+  // 生成描述
+  let description = '';
+  if (type === 'consecutive_referral') {
+    description = `連續推薦達人 - 完成${details.streak}個月連續推薦`;
+  } else if (type === 'monthly_king') {
+    const monthStr = details.month.substring(0, 7); // "2024-12"
+    description = `推薦王 - ${monthStr}月第${details.completionIndex}次達成`;
+  }
   
+  // 創建待領取獎勵記錄
   const pendingReward = {
     id: rewardId,
-    type: 'mission',
-    taskType: taskType,
-    amount: amount,
-    description: description,
-    metadata: metadata,
-    status: 'pending',  // pending | claimed
-    createdAt: timestamp,
-    claimedAt: null
+    type,
+    amount,
+    achievedAt,
+    status: 'pending',
+    description,
+    details,
+    // ✅ 預計算領取後的點數變化
+    previewData: {
+      currentAvailable: rewards.availableRewards,
+      currentTotal: rewards.totalEarned,
+      afterAvailable: rewards.availableRewards + amount,
+      afterTotal: rewards.totalEarned + amount
+    }
   };
   
-  // 添加到用戶的待領取獎勵列表
+  // 儲存到用戶的待領取獎勵列表
   const pendingRewardsKey = `user:${userId}:pending_mission_rewards`;
   const pendingRewards = await kv.get(pendingRewardsKey) || [];
   
@@ -315,31 +309,76 @@ export async function updateReferralMonthlyLog(
     ? createdAt 
     : createdAt.toISOString();
   
-  const month = timestampStr.substring(0, 7); // "2024-12"
+  const monthKey = timestampStr.substring(0, 7); // "2024-12"
   
-  console.log(`[Update Monthly Log] 更新月度日誌: userId=${userId}, month=${month}`);
+  // ===== 1. 更新用戶的月度日誌 =====
+  const userLogKey = `user:${userId}:referral_monthly_log`;
+  const userLog = await kv.get(userLogKey) || {};
   
-  const logKey = `user:${userId}:referral_monthly_log`;
-  const log = await kv.get(logKey) || {};
-  
-  if (!log[month]) {
-    log[month] = [];
+  if (!userLog[monthKey]) {
+    userLog[monthKey] = [];
   }
   
-  // ✅ 完整記錄（支持會員格式 + 刊登格式）
-  const logEntry = {
+  userLog[monthKey].push({
     userId: referee.userId,
     userName: referee.userName,
-    userReferralCode: referee.userReferralCode || null,  // ✅ 被推薦人推薦碼
-    listingId: referee.listingId,                        // ✅ 可能為 null（付費時）
-    listingName: referee.listingName,                    // ✅ 可能為 null（付費時）
-    referrer: referee.referrer || null,                  // ✅ 推薦人資訊（二代/三代有值）
+    userReferralCode: referee.userReferralCode || null,  // ✅ 新增
+    listingId: referee.listingId,
+    listingName: referee.listingName,
+    referrer: referee.referrer || null,
     createdAt: timestampStr
-  };
+  });
   
-  log[month].push(logEntry);
+  await kv.set(userLogKey, userLog);
   
-  await kv.set(logKey, log);
+  // ===== 2. 更新全局月度日誌索引（用於 Cron 任務結算）=====
+  const globalLogKey = `referral_monthly_log:${monthKey}`;
+  const globalLog = await kv.get(globalLogKey) || {};
   
-  console.log(`[Update Monthly Log] ✅ 月度日誌已更新: ${month}, 總推薦數=${log[month].length}`);
+  if (!globalLog[userId]) {
+    globalLog[userId] = [];
+  }
+  
+  globalLog[userId].push({
+    userId: referee.userId,
+    userName: referee.userName,
+    userReferralCode: referee.userReferralCode || null,  // ✅ 新增
+    listingId: referee.listingId,
+    listingName: referee.listingName,
+    referrer: referee.referrer || null,
+    createdAt: timestampStr
+  });
+  
+  await kv.set(globalLogKey, globalLog);
+  
+  // ✅ 顯示名稱優先使用推薦碼
+  const displayName = referee.userReferralCode 
+    ? `${referee.userName}-${referee.userReferralCode}`
+    : referee.listingName 
+      ? `${referee.userName}-${referee.listingName}`
+      : referee.userName;
+    
+  console.log(`✅ 更新月度日誌: user=${userId}, month=${monthKey}, referee=${displayName}`);
+}
+
+/**
+ * 獲取台灣當前時間
+ */
+function getTaiwanNow(): Date {
+  const now = new Date();
+  const taiwanOffset = 8 * 60 * 60 * 1000; // 台灣時區偏移量（毫秒）
+  return new Date(now.getTime() + taiwanOffset);
+}
+
+/**
+ * 將日期轉換為台灣時區的 ISO 8601 字串
+ */
+function toTaiwanISOString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`;
 }
