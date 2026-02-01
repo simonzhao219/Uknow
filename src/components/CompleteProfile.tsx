@@ -432,7 +432,13 @@ export function CompleteProfile() {
         setCodeError('');
         setVerifiedReferralCode(formData.referralCode);  // ✅ 儲存已驗證的推薦碼
         setReferrerName(result.referrerName);  // ✅ 儲存推薦人姓名
-        showToast('推薦碼驗證成功', 'success');  // ✅ 只顯示簡單訊息
+        
+        // ✅ Phase 2: 检查是否为测试推荐码，显示警告
+        if (result.isTestCode) {
+          showToast('⚠️ 这是测试推荐码，注册的账号将被标记为测试账号', 'warning', { duration: 5000 });
+        } else {
+          showToast('推薦碼驗證成功', 'success');
+        }
       } else {
         setCodeError(result.error?.message || '推薦碼無效');
         setCodeVerified(false);

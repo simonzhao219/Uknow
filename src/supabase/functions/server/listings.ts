@@ -114,7 +114,8 @@ export async function verifyReferralCode(c: any) {
     return c.json({
       valid: true,
       referrerName: referralData.userName,
-      referrerUserId: referralData.userId
+      referrerUserId: referralData.userId,
+      isTestCode: referralData.isTestCode || false  // ✅ Phase 2: 返回测试标记
     });
     
   } catch (error) {

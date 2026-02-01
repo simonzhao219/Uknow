@@ -446,6 +446,17 @@ export const registerUser = async (c: Context) => {
     }
 
     // ✅ 8. 儲存用戶資料（registrationStep = 1，等待付款）
+    // ✅ 检查是否使用测试推荐码，如果是则标记为测试账号
+    let isTestAccount = false;
+    
+    if (finalReferralCode) {
+      const referralData = await kv.get(`referral_code:${finalReferralCode}`);
+      if (referralData && referralData.isTestCode === true) {
+        isTestAccount = true;
+        console.log(`[registerUser] ⚠️ 使用测试推荐码，账号将被标记为测试账号`);
+      }
+    }
+    
     const profile = {
       id: user.id,
       publicUserId: null,  // 第一次創建刊登時才生成
@@ -463,6 +474,7 @@ export const registerUser = async (c: Context) => {
       referredByUserId: referredByUserId,  // ✅ 新增：推荐人用户 ID
       referredByListingId: referredByListingId,  // ✅ 新增：推荐人刊登 ID
       isAutoReferral: isAutoReferral,  // ✅ 新增：标记是否为系统自动带入的推荐码
+      isTestAccount: isTestAccount,  // ✅ Phase 2: 标记是否为测试账号
       createdAt: toTaiwanISOString(getTaiwanNow()),
       updatedAt: toTaiwanISOString(getTaiwanNow()),
     };
