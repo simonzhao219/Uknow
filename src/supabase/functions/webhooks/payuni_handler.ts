@@ -128,36 +128,25 @@ payuniHandler.post('/notify', async (c) => {
         return c.json({ Status: 'FAILED', Message: 'User profile not found' });
       }
       
-      // 檢查是否已激活（冪等性保護）
-      if (profile.referralCode) {
-        console.log('[Webhook PayUni] ⚠️ 用戶已激活，跳過重複處理');
+      // 檢查是否已完成註冊（冪等性保護）
+      if (profile.registrationStep === 3) {
+        console.log('[Webhook PayUni] ⚠️ 用戶已完成註冊，跳過重複處理');
         await kv.set(processedKey, {
           processed: true,
           at: toTaiwanISOString(getTaiwanNow()),
-          status: 'already_activated'
+          status: 'already_completed'
         });
         return c.json({ Status: 'SUCCESS' });
       }
       
-      // 生成推薦碼
-      const referralCode = generateReferralCode();
-      console.log('[Webhook PayUni] 生成推薦碼:', referralCode);
-      
-      // 計算有效期限（一年後）
-      const activeUntil = getTaiwanNow();
-      activeUntil.setFullYear(activeUntil.getFullYear() + 1);
-      
-      // 更新用戶資料
-      profile.referralCode = referralCode;
-      profile.accountStatus = 'Active';
-      profile.activeUntil = toTaiwanISOString(activeUntil);
+      // ✅ 只更新状态，不生成推荐码和奖励
+      profile.registrationStep = 2;  // ← 进入 Step 2（等待用户确认）
+      profile.pendingActivation = true;  // ← 标记为待激活
       profile.paidAt = toTaiwanISOString(getTaiwanNow());
       profile.periodTradeNo = data.PeriodTradeNo;
-      profile.registrationStep = 3;  // ✅ 完成註冊
       
       await kv.set(`user:${order.userId}:profile`, profile);
-      
-      console.log('[Webhook PayUni] ✅ 用戶資料已更新');
+      console.log('[Webhook PayUni] ✅ 用戶狀態已更新為 Step 2（待確認）');
       
       // 更新訂單狀態
       order.status = 'success';

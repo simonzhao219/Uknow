@@ -6,6 +6,9 @@ import {
   toTaiwanISOString
 } from './date_utils.ts';
 
+// 導出 completeRegistration 函數
+export { completeRegistration } from './auth_complete_registration.ts';
+
 // 創建 Supabase Admin Client（用於管理操作）
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",

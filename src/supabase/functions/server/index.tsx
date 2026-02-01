@@ -2,7 +2,7 @@ import { Hono } from "npm:hono@4.3.11";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
-import { checkEmail, signUpUser, registerUser, getUserProfile, checkPhoneAvailability, updateUserProfile, cancelSignup, resetRegistration } from "./auth.ts";
+import { checkEmail, signUpUser, registerUser, getUserProfile, checkPhoneAvailability, updateUserProfile, cancelSignup, resetRegistration, completeRegistration } from "./auth.ts";
 import { verifyReferralCode, uploadListingPhoto, createListing, getUserListings, getAllActiveListings, getListingById, updateListing, deleteListing } from "./listings.ts";
 import admin from "./admin.ts";
 import referrals from "./referrals.ts";
@@ -148,6 +148,7 @@ app.put("/make-server-5c6718b9/auth/profile", updateUserProfile); // 新增：�
 app.post("/make-server-5c6718b9/auth/check-phone", checkPhoneAvailability);
 app.delete("/make-server-5c6718b9/auth/cancel-signup", cancelSignup); // 新增：取消註冊
 app.post("/make-server-5c6718b9/auth/reset-registration", resetRegistration); // 新增：重置註冊
+app.post("/make-server-5c6718b9/auth/complete-registration", completeRegistration); // ✅ 新增：完成註冊
 
 // Listing Routes
 app.post("/make-server-5c6718b9/listings/verify-referral-code", verifyReferralCode);

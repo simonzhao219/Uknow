@@ -1,281 +1,300 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Loader2, CheckCircle, XCircle, AlertCircle, Phone } from 'lucide-react';
-import { UserContext } from '../App';
-import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
+import { Loader2, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import { useNotification } from './notifications/NotificationContext';
+import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+
+type OrderStatus = 'pending' | 'success' | 'failed' | 'unknown';
+
+interface OrderResult {
+  status: OrderStatus;
+  tradeNo: string;
+  errorMessage?: string;
+  errorCode?: string;
+}
 
 export function PaymentResult() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { showToast, showSuccess, showError } = useNotification();
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
+  
   const tradeNo = searchParams.get('tradeNo');
   
-  const [status, setStatus] = useState<'pending' | 'success' | 'failed'>('pending');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isPolling, setIsPolling] = useState(true);
-  const [completedAt, setCompletedAt] = useState<string | null>(null);
-  
-  const { setUser } = useContext(UserContext);
-  const navigate = useNavigate();
-  const { showToast, showSuccess } = useNotification();
-  const supabase = createClient();
-
-  // 輪詢查詢付款結果
-  useEffect(() => {
+  // 查询订单状态
+  const fetchOrderStatus = async () => {
     if (!tradeNo) {
-      showToast('訂單編號不存在', 'error');
-      navigate('/auth/payment-checkout', { replace: true });
+      showToast('缺少訂單編號', 'error');
+      navigate('/payment/checkout');
       return;
     }
-
-    let interval: NodeJS.Timeout;
-
-    const checkPaymentStatus = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          showToast('登入已過期，請重新登入', 'error');
-          navigate('/login');
-          return;
-        }
-
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payuni/result/${tradeNo}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error('查詢失敗');
-        }
-
-        const result = await response.json();
-        
-        console.log('[PaymentResult] Status:', result.data.status);
-
-        if (result.data.status === 'success') {
-          setStatus('success');
-          setCompletedAt(result.data.completedAt);
-          setIsPolling(false);
-          clearInterval(interval);
-        } else if (result.data.status === 'failed') {
-          setStatus('failed');
-          setErrorMessage(result.data.errorMessage || '付款失敗');
-          setIsPolling(false);
-          clearInterval(interval);
-        }
-        // 如果是 pending，繼續輪詢
-        
-      } catch (error: any) {
-        console.error('[PaymentResult] Error:', error);
-        // 不顯示錯誤，繼續輪詢
-      }
-    };
-
-    // 立即執行一次
-    checkPaymentStatus();
-
-    // 每3秒查詢一次
-    interval = setInterval(checkPaymentStatus, 3000);
-
-    // 30秒後停止輪詢（避免無限輪詢）
-    const timeout = setTimeout(() => {
-      if (isPolling) {
-        setIsPolling(false);
-        clearInterval(interval);
-        showToast('查詢超時，請稍後重新整理頁面', 'warning');
-      }
-    }, 30000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [tradeNo]);
-
-  // 完成註冊
-  const handleCompleteRegistration = async () => {
+    
+    setIsLoading(true);
+    
     try {
-      // 獲取最新的用戶資料
-      const { data: { session } } = await supabase.auth.getSession();
+      const result = await apiRequestJson<{
+        success: boolean;
+        order: {
+          status: OrderStatus;
+          tradeNo: string;
+          errorMessage?: string;
+          errorCode?: string;
+        };
+      }>(buildApiUrl(`/payuni/result/${tradeNo}`));
       
-      if (!session) {
-        showToast('登入已過期，請重新登入', 'error');
-        navigate('/login');
-        return;
-      }
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        }
-      );
-
-      if (response.ok) {
-        const profile = await response.json();
-        
-        // 更新用戶狀態
-        setUser(profile);
-        localStorage.setItem('user', JSON.stringify(profile));
-        localStorage.removeItem('pendingUser');
-
-        showToast('註冊成功，歡迎加入 Uknow！', 'success');
-        
-        // 導向會員中心
-        setTimeout(() => {
-          navigate('/dashboard', { replace: true });
-        }, 500);
+      if (result.success) {
+        setOrderResult(result.order);
       } else {
-        showToast('無法獲取用戶資料，請稍後再試', 'error');
+        setOrderResult({ status: 'unknown', tradeNo });
       }
     } catch (error: any) {
-      console.error('[PaymentResult] Complete registration error:', error);
-      showToast(error.message || '操作失敗', 'error');
+      console.error('查詢訂單狀態失敗:', error);
+      showToast('查詢訂單狀態失敗', 'error');
+      setOrderResult({ status: 'unknown', tradeNo });
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  // 聯繫客服
-  const handleContactSupport = () => {
-    showToast('請撥打客服電話或發送郵件', 'info');
-    // TODO: 實際的客服聯繫方式
-  };
-
-  return (
-    <div className="max-w-md mx-auto mt-12">
-      <Card>
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            {status === 'pending' && (
-              <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center">
-                <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
-              </div>
-            )}
-            {status === 'success' && (
-              <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle className="h-8 w-8 text-green-600" />
-              </div>
-            )}
-            {status === 'failed' && (
-              <div className="h-16 w-16 rounded-full bg-red-100 flex items-center justify-center">
-                <XCircle className="h-8 w-8 text-red-600" />
-              </div>
-            )}
-          </div>
-          
-          <CardTitle className="text-2xl">
-            {status === 'pending' && '處理中...'}
-            {status === 'success' && '付款成功'}
-            {status === 'failed' && '付款失敗'}
-          </CardTitle>
-          
-          <CardDescription>
-            {status === 'pending' && '正在確認您的付款狀態，請稍候'}
-            {status === 'success' && '您的帳號已成功啟用'}
-            {status === 'failed' && '付款處理失敗，請聯繫客服協助處理'}
-          </CardDescription>
-        </CardHeader>
+  
+  useEffect(() => {
+    fetchOrderStatus();
+  }, [tradeNo]);
+  
+  // 完成注册
+  const handleCompleteRegistration = async () => {
+    setIsCompleting(true);
+    
+    try {
+      const result = await apiRequestJson<{
+        success: boolean;
+        message: string;
+        data: {
+          referralCode: string;
+          activeUntil: string;
+          accountStatus: string;
+        };
+      }>(
+        buildApiUrl('/auth/complete-registration'),
+        { method: 'POST' }
+      );
+      
+      if (result.success) {
+        showSuccess(
+          '註冊完成！',
+          `您的推薦碼：${result.data.referralCode}`,
+          [
+            `帳號狀態：${result.data.accountStatus}`,
+            `有效期限：${new Date(result.data.activeUntil).toLocaleDateString('zh-TW')}`
+          ]
+        );
         
-        <CardContent className="space-y-6">
-          {/* 訂單編號 */}
-          <div className="p-4 bg-muted rounded-lg space-y-2">
-            <div className="text-sm text-muted-foreground">訂單編號</div>
-            <div className="font-mono text-sm break-all">{tradeNo}</div>
-          </div>
-
-          {/* Pending 狀態 */}
-          {status === 'pending' && (
-            <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-900">
-                <p className="font-medium mb-1">正在處理付款</p>
-                <p className="text-blue-700">
-                  系統正在與統一金流確認您的付款狀態，這可能需要幾秒鐘時間。請勿關閉此頁面。
-                </p>
-              </div>
+        // 更新 localStorage 中的 user
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          user.referralCode = result.data.referralCode;
+          user.accountStatus = result.data.accountStatus;
+          user.registrationStep = 3;
+          localStorage.setItem('user', JSON.stringify(user));
+        }
+        
+        // 导向 Dashboard
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 2000);
+      } else {
+        throw new Error(result.message || '完成註冊失敗');
+      }
+    } catch (error: any) {
+      console.error('完成註冊失敗:', error);
+      showError(
+        '完成註冊失敗',
+        error.message || '請稍後再試，或聯繫客服協助處理'
+      );
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+  
+  // 加载中
+  if (isLoading) {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20">
+        <Card>
+          <CardContent className="pt-6 flex flex-col items-center gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-lg">查詢付款結果中...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  // 付款成功
+  if (orderResult?.status === 'success') {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="h-16 w-16 text-green-600" />
             </div>
-          )}
-
-          {/* Success 狀態 */}
-          {status === 'success' && (
-            <>
-              <div className="flex items-start gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
-                <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
-                <div className="text-sm text-green-900">
-                  <p className="font-medium mb-1">付款成功</p>
-                  <p className="text-green-700">
-                    您的年費已成功繳納，現在可以開始使用 Uknow 平台的所有功能。
+            <CardTitle className="text-2xl">付款成功！</CardTitle>
+            <CardDescription>
+              您的付款已成功處理，請點擊下方按鈕完成註冊
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-sm text-green-800">
+                訂單編號：{orderResult.tradeNo}
+              </p>
+              <p className="text-sm text-green-800 mt-1">
+                付款金額：$1,200
+              </p>
+            </div>
+            
+            <Button
+              onClick={handleCompleteRegistration}
+              disabled={isCompleting}
+              className="w-full"
+              size="lg"
+            >
+              {isCompleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  處理中...
+                </>
+              ) : (
+                '完成註冊'
+              )}
+            </Button>
+            
+            <p className="text-xs text-center text-muted-foreground">
+              點擊「完成註冊」後，系統將為您生成推薦碼並激活帳號
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  // 付款失败
+  if (orderResult?.status === 'failed') {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <XCircle className="h-16 w-16 text-red-600" />
+            </div>
+            <CardTitle className="text-2xl">付款失敗</CardTitle>
+            <CardDescription>
+              很抱歉，您的付款未成功
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {orderResult.errorMessage && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-800 font-medium">
+                  錯誤原因：
+                </p>
+                <p className="text-sm text-red-800 mt-1">
+                  {orderResult.errorMessage}
+                </p>
+                {orderResult.errorCode && (
+                  <p className="text-xs text-red-600 mt-2">
+                    錯誤代碼：{orderResult.errorCode}
                   </p>
-                  {completedAt && (
-                    <p className="text-xs text-green-600 mt-2">
-                      完成時間：{new Date(completedAt).toLocaleString('zh-TW')}
-                    </p>
-                  )}
-                </div>
+                )}
               </div>
-              
+            )}
+            
+            <div className="flex gap-3">
               <Button
-                onClick={handleCompleteRegistration}
-                className="w-full"
+                onClick={() => navigate('/payment/checkout')}
+                className="flex-1"
                 size="lg"
               >
-                完成註冊
+                重新付款
               </Button>
-            </>
-          )}
-
-          {/* Failed 狀態 */}
-          {status === 'failed' && (
-            <>
-              <div className="flex items-start gap-3 p-4 bg-red-50 rounded-lg border border-red-200">
-                <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-                <div className="text-sm text-red-900">
-                  <p className="font-medium mb-1">付款失敗</p>
-                  <p className="text-red-700 mb-2">
-                    {errorMessage || '付款處理過程中發生錯誤'}
-                  </p>
-                  <p className="text-red-700">
-                    請確認您的信用卡資訊是否正確，或聯繫客服協助處理。
-                  </p>
-                </div>
-              </div>
-              
-              <div className="space-y-3">
-                <Button
-                  onClick={handleContactSupport}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Phone className="mr-2 h-4 w-4" />
-                  聯繫客服
-                </Button>
-                
-                <Button
-                  onClick={() => navigate('/auth/payment-checkout', { replace: true })}
-                  variant="ghost"
-                  className="w-full"
-                >
-                  返回付款頁面
-                </Button>
-              </div>
-            </>
-          )}
-
-          {/* 輪詢指示器 */}
-          {isPolling && status === 'pending' && (
-            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>每 3 秒自動查詢...</span>
+              <Button
+                onClick={() => navigate('/contact')}
+                variant="outline"
+                className="flex-1"
+                size="lg"
+              >
+                聯繫客服
+              </Button>
             </div>
-          )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  // 处理中（Webhook 还没收到回调）
+  if (orderResult?.status === 'pending') {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <Clock className="h-16 w-16 text-orange-600" />
+            </div>
+            <CardTitle className="text-2xl">處理中</CardTitle>
+            <CardDescription>
+              您的付款正在處理中，請稍候...
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-sm text-orange-800">
+                訂單編號：{orderResult.tradeNo}
+              </p>
+              <p className="text-sm text-orange-800 mt-2">
+                ⏳ 系統正在確認您的付款，通常需要 1-3 分鐘
+              </p>
+            </div>
+            
+            <Button
+              onClick={fetchOrderStatus}
+              variant="outline"
+              className="w-full"
+              size="lg"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              重新查詢
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  // 未知状态
+  return (
+    <div className="container max-w-2xl mx-auto p-4 pt-20">
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">查詢訂單失敗</CardTitle>
+          <CardDescription>
+            無法查詢到訂單資訊
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={() => navigate('/payment/checkout')}
+            className="w-full"
+            size="lg"
+          >
+            返回付款頁面
+          </Button>
         </CardContent>
       </Card>
     </div>
