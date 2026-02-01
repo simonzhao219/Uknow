@@ -232,6 +232,73 @@ export function PaymentCheckout() {
     showToast('請在新視窗完成付款，完成後返回此頁面上傳付款截圖', 'info', { duration: 5000 });
   };
 
+  // ✅ 新增：PayUni 續期收款付款
+  const handlePayUniPayment = async () => {
+    if (!pendingUser) {
+      showToast('用戶資料不存在，請重新註冊', 'error');
+      navigate('/auth/complete-profile');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // 調用後端 API 準備訂單
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showToast('登入已過期，請重新登入', 'error');
+        navigate('/login');
+        return;
+      }
+
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payuni/prepare`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        // 動態創建表單並提交到 PayUni
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = result.data.apiUrl;
+        
+        const fields = {
+          MerID: result.data.MerID,
+          Version: result.data.Version,
+          EncryptInfo: result.data.EncryptInfo,
+          HashInfo: result.data.HashInfo
+        };
+        
+        Object.entries(fields).forEach(([name, value]) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        });
+        
+        document.body.appendChild(form);
+        console.log('PaymentCheckout: Submitting form to PayUni:', result.data.mode);
+        form.submit();  // 提交後會跳轉到 PayUni
+      } else {
+        showToast(result.error?.message || '準備訂單失敗', 'error');
+      }
+    } catch (error: any) {
+      console.error('PaymentCheckout: PayUni payment error:', error);
+      showToast(error.message || '付款失敗', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ✅ 新增：重新開啟付款頁面
   const handleReopenPayment = () => {
     const paymentUrl = PAYUNI_PAYMENT_URL;
@@ -591,7 +658,7 @@ export function PaymentCheckout() {
         const updatedProfile = await profileResponse.json();
         console.log('PaymentCheckout: Updated profile retrieved:', updatedProfile);
         
-        // 更新用���狀態
+        // 更新用狀態
         setUser(updatedProfile);
         localStorage.setItem('user', JSON.stringify(updatedProfile));
         localStorage.removeItem('pendingUser');
@@ -740,13 +807,22 @@ export function PaymentCheckout() {
           {!hasClickedPayment && (
             <div className="space-y-3">
               <Button
-                onClick={handlePaymentButtonClick}
+                onClick={handlePayUniPayment}
                 disabled={isLoading}
                 className="w-full"
                 size="lg"
               >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                前往統一金流付款
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    處理中...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    前往統一金流付款
+                  </>
+                )}
               </Button>
 
               <Button
@@ -755,7 +831,7 @@ export function PaymentCheckout() {
                 disabled={isLoading}
                 className="w-full"
               >
-                稍後付款
+                稍後付款（測試用）
               </Button>
             </div>
           )}

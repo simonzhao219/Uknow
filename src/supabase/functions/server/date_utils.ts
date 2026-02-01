@@ -139,3 +139,31 @@ export function formatTaiwanDateTime(date: Date | string): string {
   
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
+
+/**
+ * 生成 PayUni 訂單編號（25碼）
+ * 格式：YYYYMMDDHHMMSS(14) + 隨機英數字(11)
+ * 
+ * @returns 25碼訂單編號
+ */
+export function generatePayUniTradeNo(): string {
+  const now = getTaiwanNow();
+  
+  // 時間戳（14碼）
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
+  
+  // 隨機英數字（11碼）
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let random = '';
+  for (let i = 0; i < 11; i++) {
+    random += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  return timestamp + random;  // 總共 25 碼
+}

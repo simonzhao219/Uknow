@@ -31,7 +31,7 @@ export async function getAccessToken(): Promise<string | null> {
     }
     
     if (!session) {
-      console.warn('[auth] 未找到有效的 session');
+      console.info('[auth] 未找到有效的 session');
       return null;
     }
     
