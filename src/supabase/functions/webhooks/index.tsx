@@ -3,7 +3,7 @@ import { cors } from 'npm:hono/cors';
 import { logger } from 'npm:hono/logger';
 
 // Import handlers
-import payuniHandler from 'payuni_handler.ts';
+import payuniHandler from './payuni_handler.ts';
 
 const app = new Hono();
 
