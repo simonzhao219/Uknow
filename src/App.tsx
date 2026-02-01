@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
+import { MaintenanceBanner } from './components/MaintenanceBanner';
 import { HomePage } from './components/HomePage';
 import { ServiceProviderDetail } from './components/ServiceProviderDetail';
 import { AuthPage } from './components/AuthPage';
@@ -236,6 +237,7 @@ function AppContent() {
         <NotificationProvider>
           <div className="min-h-screen bg-background flex flex-col">
             <Navbar />
+            <MaintenanceBanner />
             <main className="container mx-auto px-4 py-6 flex-1">
               <Routes>
                 <Route path="/" element={<HomePage />} />

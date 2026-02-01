@@ -714,6 +714,10 @@
     margin-inline: calc(var(--spacing) * 1);
   }
 
+  .mx-2 {
+    margin-inline: calc(var(--spacing) * 2);
+  }
+
   .mx-auto {
     margin-inline: auto;
   }
@@ -1237,6 +1241,10 @@
 
   .transform {
     transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y);
+  }
+
+  .animate-in {
+    animation: enter var(--tw-duration, .15s) var(--tw-ease, ease);
   }
 
   .animate-pulse {
@@ -2693,6 +2701,11 @@
     transition-duration: .2s;
   }
 
+  .duration-300 {
+    --tw-duration: .3s;
+    transition-duration: .3s;
+  }
+
   .duration-500 {
     --tw-duration: .5s;
     transition-duration: .5s;
@@ -2715,6 +2728,10 @@
 
   .\[https\:\/\/uknow\.com\.tw\/\] {
     https:  / / uknow. com. tw / ;
+  }
+
+  .fade-in {
+    --tw-enter-opacity: 0;
   }
 
   @media (hover: hover) {
@@ -2827,6 +2844,18 @@
   @media (hover: hover) {
     .hover\:bg-background:hover {
       background-color: var(--background);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:bg-black\/5:hover {
+      background-color: #0000000d;
+    }
+
+    @supports (color: color-mix(in lab, red, red)) {
+      .hover\:bg-black\/5:hover {
+        background-color: color-mix(in oklab, var(--color-black) 5%, transparent);
+      }
     }
   }
 
