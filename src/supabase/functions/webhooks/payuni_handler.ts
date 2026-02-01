@@ -87,25 +87,28 @@ payuniHandler.post('/notify', async (c) => {
     const params = new URLSearchParams(decrypted);
     const data = Object.fromEntries(params);
     
-    console.log('[Webhook PayUni] 解密數據:', {
-      Status: data.Status,
-      MerTradeNo: data.MerTradeNo,
-      PeriodTradeNo: data.PeriodTradeNo,
-      ThisPeriod: data.ThisPeriod,
-      TotalTimes: data.TotalTimes
-    });
+    console.log('[Webhook PayUni] 解密數據:', data);
     
-    // 5. 獲取訂單
-    const order = await kv.get(`payuni:order:${data.MerTradeNo}`);
+    // 5. 解析訂單號（去除 _X）
+    const originalTradeNo = data.MerTradeNo.replace(/_\d+$/, '');
+    const periodNumber = data.MerTradeNo.match(/_(\d+)$/)?.[1] || '0';
+    console.log('[Webhook PayUni] 回調訂單號:', data.MerTradeNo);
+    console.log('[Webhook PayUni] 原始訂單號:', originalTradeNo);
+    console.log('[Webhook PayUni] 期數:', periodNumber);
+    
+
+    // 6. 獲取訂單
+    const order = await kv.get(`payuni:order:${originalTradeNo}`);
     if (!order) {
-      console.error('[Webhook PayUni] ❌ 訂單不存在:', data.MerTradeNo);
+      console.error('[Webhook PayUni] ❌ 訂單不存在:', originalTradeNo);
+      console.error('[Webhook PayUni] 已嘗試查找:', data.MerTradeNo);
       return c.json({ Status: 'FAILED', Message: 'Order not found' });
     }
     
     console.log('[Webhook PayUni] 訂單用戶:', order.userId);
     
-    // 6. 冪等性檢查（防止重複處理）
-    const processedKey = `payuni:processed:${data.PeriodOrderNo || data.TradeNo}`;
+    // 7. 冪等性檢查（防止重複處理）
+    const processedKey = `payuni:processed:${data.PeriodTradeNo || data.MerTradeNo}`;;
     const alreadyProcessed = await kv.get(processedKey);
     
     if (alreadyProcessed) {
@@ -113,8 +116,8 @@ payuniHandler.post('/notify', async (c) => {
       return c.json({ Status: 'SUCCESS' });
     }
     
-    // 7. 處理首期付款成功
-    if (data.Status === 'SUCCESS' && data.ThisPeriod === '1') {
+    // 8. 處理首期付款成功（只在第一期 + 用户未激活時處理）
+    if (data.Status === 'SUCCESS' && periodNumber === '1') {
       console.log('[Webhook PayUni] 🎉 首期付款成功');
       
       // 獲取用戶資料
@@ -123,6 +126,17 @@ payuniHandler.post('/notify', async (c) => {
       if (!profile) {
         console.error('[Webhook PayUni] ❌ 用戶資料不存在:', order.userId);
         return c.json({ Status: 'FAILED', Message: 'User profile not found' });
+      }
+      
+      // 檢查是否已激活（冪等性保護）
+      if (profile.referralCode) {
+        console.log('[Webhook PayUni] ⚠️ 用戶已激活，跳過重複處理');
+        await kv.set(processedKey, {
+          processed: true,
+          at: toTaiwanISOString(getTaiwanNow()),
+          status: 'already_activated'
+        });
+        return c.json({ Status: 'SUCCESS' });
       }
       
       // 生成推薦碼
@@ -139,6 +153,7 @@ payuniHandler.post('/notify', async (c) => {
       profile.activeUntil = toTaiwanISOString(activeUntil);
       profile.paidAt = toTaiwanISOString(getTaiwanNow());
       profile.periodTradeNo = data.PeriodTradeNo;
+      profile.registrationStep = 3;  // ✅ 完成註冊
       
       await kv.set(`user:${order.userId}:profile`, profile);
       
@@ -147,32 +162,34 @@ payuniHandler.post('/notify', async (c) => {
       // 更新訂單狀態
       order.status = 'success';
       order.periodTradeNo = data.PeriodTradeNo;
+      order.periodNumber = periodNumber;
       order.paymentData = data;
       order.completedAt = toTaiwanISOString(getTaiwanNow());
-      await kv.set(`payuni:order:${data.MerTradeNo}`, order);
+      await kv.set(`payuni:order:${originalTradeNo}`, order);
       
       console.log('[Webhook PayUni] ✅ 訂單已完成');
       console.log('[Webhook PayUni] ✅ 用戶已激活:', order.userId);
     }
     
-    // 8. 處理付款失敗
+    // 9. 處理付款失敗
     if (data.Status !== 'SUCCESS') {
-      console.error('[Webhook PayUni] ❌ 付款失敗:', data.ResCodeMsg);
+      console.error('[Webhook PayUni] ❌ 付款失敗:', data.Message || data.ResCodeMsg);
       
       order.status = 'failed';
-      order.errorCode = data.ResCode;
-      order.errorMessage = data.ResCodeMsg;
+      order.errorCode = data.ResCode || data.Code;
+      order.errorMessage = data.Message || data.ResCodeMsg;
       order.paymentData = data;
-      await kv.set(`payuni:order:${data.MerTradeNo}`, order);
+      await kv.set(`payuni:order:${originalTradeNo}`, order);
       
       console.log('[Webhook PayUni] ✅ 失敗訂單已記錄');
     }
     
-    // 9. 標記已處理（冪等性保護）
+    // 10. 標記已處理（冪等性保護）
     await kv.set(processedKey, {
       processed: true,
       at: toTaiwanISOString(getTaiwanNow()),
-      status: data.Status
+      status: data.Status,
+      periodNumber
     });
     
     console.log('[Webhook PayUni] ✅ 標記已處理:', processedKey);

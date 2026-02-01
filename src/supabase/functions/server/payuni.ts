@@ -146,8 +146,13 @@ payuni.get('/result/:tradeNo', async (c) => {
     }
     
     // 獲取訂單
-    const order = await kv.get(`payuni:order:${tradeNo}`);
+    const originalTradeNo = tradeNo.replace(/_\d+$/, '');
+    const order = await kv.get(`payuni:order:${originalTradeNo}`);
+    
     if (!order || order.userId !== user.id) {
+      console.error('[PayUni Result] 訂單不存在或不屬於當前用戶');
+      console.error('[PayUni Result] 原始訂單號:', originalTradeNo);
+      console.error('[PayUni Result] 查詢訂單號:', tradeNo);
       return c.json({ success: false, error: { message: '訂單不存在' } }, 404);
     }
     
