@@ -63,7 +63,7 @@ payuni.post('/prepare', async (c) => {
       PeriodDate: periodDate,
       PeriodTimes: 12,
       FType: 'build',
-      NotifyURL: `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payuni/notify`,
+      NotifyURL: `https://${projectId}.supabase.co/functions/v1/webhooks/payuni/notify`,  // ✅ 改為 webhooks
       ReturnURL: `${frontendUrl}/payment/result?tradeNo=${tradeNo}`
     };
     
@@ -111,113 +111,16 @@ payuni.post('/prepare', async (c) => {
 });
 
 // ========================================
-// API 2: 背景通知
-// POST /payuni/notify
+// API 2: 背景通知（已移至 webhooks function）
+// ⚠️ 此端點已廢棄，請使用 /webhooks/payuni/notify
 // ========================================
+// 為了向後兼容，暫時保留此端點並返回提示訊息
 payuni.post('/notify', async (c) => {
-  try {
-    console.log('[PayUni Notify] 收到通知');
-    
-    // 1. 接收通知
-    const body = await c.req.parseBody();
-    const { MerID, EncryptInfo, HashInfo } = body;
-    
-    console.log('[PayUni Notify] MerID:', MerID);
-    
-    // 2. 獲取配置
-    const config = getPayUniConfig();
-    
-    // 3. 驗證Hash
-    const expectedHash = generatePayUniHash(EncryptInfo as string, config.hashKey, config.hashIV);
-    if (HashInfo !== expectedHash) {
-      console.error('[PayUni Notify] Hash驗證失敗');
-      return c.json({ Status: 'FAILED', Message: 'Hash verification failed' });
-    }
-    
-    console.log('[PayUni Notify] ✅ Hash驗證通過');
-    
-    // 4. 解密
-    const decrypted = decryptPayUni(EncryptInfo as string, config.hashKey, config.hashIV);
-    const params = new URLSearchParams(decrypted);
-    const data = Object.fromEntries(params);
-    
-    console.log('[PayUni Notify] 解密數據:', {
-      Status: data.Status,
-      MerTradeNo: data.MerTradeNo,
-      PeriodTradeNo: data.PeriodTradeNo,
-      ThisPeriod: data.ThisPeriod,
-      TotalTimes: data.TotalTimes
-    });
-    
-    // 5. 獲取訂單
-    const order = await kv.get(`payuni:order:${data.MerTradeNo}`);
-    if (!order) {
-      console.error('[PayUni Notify] 訂單不存在:', data.MerTradeNo);
-      return c.json({ Status: 'FAILED', Message: 'Order not found' });
-    }
-    
-    // 6. 冪等性檢查
-    const processedKey = `payuni:processed:${data.PeriodOrderNo}`;
-    const alreadyProcessed = await kv.get(processedKey);
-    if (alreadyProcessed) {
-      console.log('[PayUni Notify] ⚠️ 已處理過，跳過');
-      return c.json({ Status: 'SUCCESS' });
-    }
-    
-    // 7. 處理首期付款成功
-    if (data.Status === 'SUCCESS' && data.ThisPeriod === '1') {
-      console.log('[PayUni Notify] 🎉 首期付款成功');
-      
-      const profile = await kv.get(`user:${order.userId}:profile`);
-      
-      // 生成推薦碼（使用現有函數）
-      const referralCode = generateReferralCode();
-      
-      // 更新用戶資料
-      profile.referralCode = referralCode;
-      profile.accountStatus = 'Active';
-      profile.activeUntil = getTaiwanNow();
-      profile.activeUntil.setFullYear(profile.activeUntil.getFullYear() + 1);
-      profile.activeUntil = toTaiwanISOString(profile.activeUntil);
-      profile.paidAt = toTaiwanISOString(getTaiwanNow());
-      profile.periodTradeNo = data.PeriodTradeNo;
-      
-      await kv.set(`user:${order.userId}:profile`, profile);
-      
-      // 更新訂單
-      order.status = 'success';
-      order.periodTradeNo = data.PeriodTradeNo;
-      order.paymentData = data;
-      order.completedAt = toTaiwanISOString(getTaiwanNow());
-      await kv.set(`payuni:order:${data.MerTradeNo}`, order);
-      
-      console.log('[PayUni Notify] ✅ 用戶已激活:', order.userId);
-    }
-    
-    // 8. 處理失敗
-    if (data.Status !== 'SUCCESS') {
-      console.error('[PayUni Notify] ❌ 付款失敗:', data.ResCodeMsg);
-      
-      order.status = 'failed';
-      order.errorCode = data.ResCode;
-      order.errorMessage = data.ResCodeMsg;
-      order.paymentData = data;
-      await kv.set(`payuni:order:${data.MerTradeNo}`, order);
-    }
-    
-    // 9. 標記已處理
-    await kv.set(processedKey, {
-      processed: true,
-      at: toTaiwanISOString(getTaiwanNow())
-    });
-    
-    // 10. 必須回應SUCCESS
-    return c.json({ Status: 'SUCCESS' });
-    
-  } catch (error: any) {
-    console.error('[PayUni Notify] 錯誤:', error);
-    return c.json({ Status: 'FAILED', Message: error.message });
-  }
+  console.log('[PayUni Notify] ⚠️ 此端點已移至 webhooks function');
+  return c.json({ 
+    Status: 'FAILED', 
+    Message: 'This endpoint has been moved to /webhooks/payuni/notify' 
+  });
 });
 
 // ========================================
