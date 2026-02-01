@@ -671,7 +671,7 @@ export function HomePage() {
           <div className="mb-4">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">
-                找到 {filteredServiceProviders.length} 位服務者（按距離排序）
+                找到 {filteredServiceProviders.length} 位服務者
               </span>
               {totalFilters > 0 && (
                 <Button
