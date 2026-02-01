@@ -741,7 +741,7 @@ subscriptions.post('/makeup', async (c) => {
         status: 'failed',
         paymentMethod: 'newebpay_recurring',
         error: '信用卡餘額不足',
-        attemptedAt: new Date().toISOString()
+        attemptedAt: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
       });
       
       if (paymentHistory.length > 100) {
@@ -859,7 +859,7 @@ subscriptions.get('/history', async (c) => {
       return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
     
-    // 2. 獲取付款歷史
+    // 2. 獲取付款歷��
     const paymentHistory = await kv.get(`user:${user.id}:payment_history`) || [];
     
     return c.json({
@@ -1029,7 +1029,7 @@ export async function checkAndUpdateSubscriptionStatus(userId: string): Promise<
  * 
  * @param userId - 用戶 ID
  * @param listingId - 刊登 ID
- * @param referralCode - 推薦碼
+ * @param referralCode - ���薦碼
  */
 async function handleReferralCodeExpiration(
   userId: string,

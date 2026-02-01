@@ -82,12 +82,12 @@ payment.post('/create-order', async (c) => {
     
     // 5. ✅ 只暫存用戶 ID 和推薦碼（不需要刊登資料）
     const orderData = {
-      orderId,
+      id: orderId,
       userId: user.id,
       amount: YEARLY_PRICE,
       status: 'pending',
       referralCode: referralCode || null,
-      createdAt: new Date().toISOString()
+      createdAt: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     await kv.set(`payment_order:${orderId}`, orderData);
@@ -468,7 +468,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
       createdAt: createdAt
     });
     
-    console.log(`[Process Payment] ✅ 推薦碼索引創建成功（綁定到用戶）`);
+    console.log(`[Process Payment] ✅ 推薦碼索引創建成��（綁定到用戶）`);
     
     // ✅ 創建訂閱記錄（符合新規格）
     const subscription = {
@@ -521,8 +521,8 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     const updatedProfile = {
       ...userProfile,
       registrationStep: 3,
-      referralCode: newReferralCode,  // ✅ 推薦碼存在用戶料中
-      updatedAt: new Date().toISOString()
+      referralCode: newReferralCode,  // ✅ 推薦碼存在用戶資料中
+      updatedAt: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     await kv.set(`user:${userId}:profile`, updatedProfile);
@@ -879,7 +879,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
               userReferralCode: newReferralCode,  // ✅ 被推薦人的推薦碼
               listingId: null,                    // ✅ 付費時還沒有刊登
               listingName: null,
-              referrer: null                      // ✅ 一代沒有推薦人
+              referrer: null                      // ✅ ��代沒有推薦人
             },
             createdAt
           );
@@ -904,7 +904,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     await kv.set(`payment_order:${orderId}`, {
       ...paymentOrder,
       status: 'completed',
-      completedAt: new Date().toISOString(),
+      completedAt: toTaiwanISOString(getTaiwanNow()),  // ✅ 修復：使用台灣時區
       tradeNo: tradeNo,
       referralCode: newReferralCode
     });
@@ -927,7 +927,7 @@ async function processPaymentCallback(orderId: string, tradeNo: string) {
     await kv.set(`payment_order:${orderId}`, {
       ...paymentOrder,
       status: 'failed',
-      failedAt: new Date().toISOString(),
+      failedAt: toTaiwanISOString(getTaiwanNow()),  // ✅ 修復：使用台灣時區
       errorMessage: error.message
     });
     

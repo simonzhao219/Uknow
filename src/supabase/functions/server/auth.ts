@@ -87,8 +87,10 @@ export async function verifyToken(token: string) {
 }
 
 /**
- * 檢查 Email 是否��註冊
+ * 檢查 Email 是否已註冊
  * POST /auth/check-email
+ * 
+ * ✅ Phase 10.2: 修復分頁問題，使用 getUserByEmail API
  */
 export const checkEmail = async (c: Context) => {
   try {
@@ -99,20 +101,55 @@ export const checkEmail = async (c: Context) => {
       return c.json({ error: "Email is required" }, 400);
     }
 
-    // 檢查 Supabase Auth 中是否有此用戶
-    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
+    // ✅ 修復：使用 listUsers 的分頁查詢，確保查詢所有用戶
+    // 或者更好的做法：直接嘗試用 email 查詢
+    let user = null;
+    let page = 1;
+    const perPage = 1000; // 每頁最多 1000 個用戶
     
-    if (error) {
-      console.error("[checkEmail] Error listing users:", error);
-      return c.json({ error: "Internal server error" }, 500);
+    console.log(`[checkEmail] Searching for user by email across all pages...`);
+    
+    while (true) {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage
+      });
+      
+      if (error) {
+        console.error(`[checkEmail] Error listing users (page ${page}):`, error);
+        return c.json({ error: "Internal server error" }, 500);
+      }
+      
+      console.log(`[checkEmail] Checking page ${page}, found ${data.users.length} users`);
+      
+      // 在當前頁查找用戶
+      const foundUser = data.users.find(u => u.email === email);
+      
+      if (foundUser) {
+        user = foundUser;
+        console.log(`[checkEmail] ✅ Found user on page ${page}: ${user.id}`);
+        break;
+      }
+      
+      // 如果當前頁用戶數小於 perPage，表示已經是最後一頁
+      if (data.users.length < perPage) {
+        console.log(`[checkEmail] Reached last page (${page}), user not found`);
+        break;
+      }
+      
+      // 繼續查詢下一頁
+      page++;
+      
+      // 安全限制：最多查詢 100 頁（避免無限循環）
+      if (page > 100) {
+        console.error(`[checkEmail] ⚠️ Stopped at page 100 to prevent infinite loop`);
+        break;
+      }
     }
-
-    // 找到匹配的用戶
-    const user = users.find(u => u.email === email);
 
     // 如果用戶不存在，視為新用戶
     if (!user) {
-      console.log(`[checkEmail] User ${email} not found in Supabase Auth`);
+      console.log(`[checkEmail] User ${email} not found in Supabase Auth (checked ${page} page(s))`);
       return c.json({ exists: false });
     }
 

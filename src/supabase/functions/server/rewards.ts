@@ -39,13 +39,14 @@ rewards.get('/', async (c) => {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 2. 直接讀取預計算的獎勵資料（O(1) 時間複雜度）
-    const rewardsData = await kv.get(`user:${user.id}:rewards`) || {
+    // 2. ✅ 如果不存在，初始化點數數據（預設全為 0）
+    const existingRewards = await kv.get(`user:${user.id}:rewards`);
+    const rewardsData = existingRewards || {
       availableRewards: 0,
       pendingRewards: 0,
       withdrawnRewards: 0,
       totalEarned: 0,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     // 3. ✅ 檢查今日是否已提領過（台灣時區）
@@ -121,7 +122,7 @@ rewards.get('/points-preview', async (c) => {
       pendingRewards: 0,
       withdrawnRewards: 0,
       totalEarned: 0,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     console.log(`💰 SSOT 點數數據 (${rewardsKey}):`);

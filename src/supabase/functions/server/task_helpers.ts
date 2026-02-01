@@ -205,7 +205,7 @@ export function initializeDefaultTasks() {
   return {
     consecutiveReferral: null,
     monthlyKing: null,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
   };
 }
 
@@ -359,4 +359,26 @@ export async function updateReferralMonthlyLog(
       : referee.userName;
     
   console.log(`✅ 更新月度日誌: user=${userId}, month=${monthKey}, referee=${displayName}`);
+}
+
+/**
+ * 獲取台灣當前時間
+ */
+function getTaiwanNow(): Date {
+  const now = new Date();
+  const taiwanOffset = 8 * 60 * 60 * 1000; // 台灣時區偏移量（毫秒）
+  return new Date(now.getTime() + taiwanOffset);
+}
+
+/**
+ * 將日期轉換為台灣時區的 ISO 8601 字串
+ */
+function toTaiwanISOString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`;
 }

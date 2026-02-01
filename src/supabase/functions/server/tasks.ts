@@ -2,6 +2,7 @@ import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
 import { verifyToken } from './auth.ts';
 import { REWARD_CONFIG } from './reward_config.ts';
+import { getTaiwanNow, toTaiwanISOString } from './date_utils.ts';  // ✅ 新增：導入台灣時區工具
 
 const tasks = new Hono();
 
@@ -50,12 +51,80 @@ tasks.get('/', async (c) => {
     
     console.log(`✅ 用戶認證成功: ${user.id}`);
     
-    // 2. 直接讀取預計算的任務資料（O(1) 時間複雜度）
+    // 2. 獲取用戶任務數據（如果不存在，初始化）
     const tasksData = await kv.get(`user:${user.id}:tasks`) || {
       consecutiveReferral: null,
       monthlyKing: null,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
+    
+    // ===== ✅ 新增：主動換月檢測（修復進度條不歸零問題）=====
+    const now = getTaiwanNow();  // ✅ 使用台灣時區
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let tasksUpdated = false;
+    
+    // 檢查推薦王任務是否需要換月
+    if (tasksData.monthlyKing && tasksData.monthlyKing.currentMonth !== currentMonth) {
+      console.log(`⚠️ 檢測到推薦王任務需要換月: ${tasksData.monthlyKing.currentMonth} -> ${currentMonth}`);
+      
+      const king = tasksData.monthlyKing;
+      
+      // 將上個月記錄加入歷史
+      if (!king.history) {
+        king.history = [];
+      }
+      
+      king.history.push({
+        month: king.currentMonth,
+        count: king.currentCount || 0,
+        completionsThisMonth: king.completionsThisMonth || 0,
+        qualified: (king.currentCount || 0) >= REWARD_CONFIG.TASK_MONTHLY_KING_TARGET,
+        checkedAt: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
+      });
+      
+      console.log(`  📊 上個月記錄: 推薦=${king.currentCount}人, 完成=${king.completionsThisMonth}次`);
+      
+      // 重置本月數據
+      king.currentMonth = currentMonth;
+      king.currentCount = 0;
+      king.completionsThisMonth = 0;
+      king.completed = false;
+      
+      console.log(`  ✅ 推薦王任務已歸零: currentMonth=${currentMonth}, currentCount=0`);
+      
+      tasksUpdated = true;
+    }
+    
+    // 檢查連續推薦達人任務是否需要換月（檢查斷續）
+    if (tasksData.consecutiveReferral && tasksData.consecutiveReferral.lastActiveMonth) {
+      const consecutive = tasksData.consecutiveReferral;
+      const lastDate = new Date(consecutive.lastActiveMonth + "-01");
+      const currentDateObj = new Date(currentMonth + "-01");
+      const monthsDiff = (currentDateObj.getFullYear() - lastDate.getFullYear()) * 12
+                       + (currentDateObj.getMonth() - lastDate.getMonth());
+      
+      if (monthsDiff > 1) {
+        console.log(`⚠️ 檢測到連續推薦任務斷續: 上次活躍=${consecutive.lastActiveMonth}, 當前=${currentMonth}, 差距=${monthsDiff}個月`);
+        
+        // 重置任務
+        consecutive.currentStreak = 0;
+        consecutive.startMonth = currentMonth;
+        consecutive.monthlyRecord = {};
+        consecutive.completed = false;
+        
+        console.log(`  ✅ 連續推薦任務已重置（斷續）`);
+        
+        tasksUpdated = true;
+      }
+    }
+    
+    // 如果有更新，保存回 KV Store
+    if (tasksUpdated) {
+      tasksData.lastUpdated = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
+      await kv.set(`user:${user.id}:tasks`, tasksData);
+      console.log(`  💾 任務數據已更新並保存`);
+    }
+    // ===== ✅ 換月檢測結束 =====
     
     // 3. 格式化返回資料
     const tasksList = [];
@@ -80,7 +149,7 @@ tasks.get('/', async (c) => {
         }
       });
     } else {
-      // 如果任務不存在，返回預設的任訊
+      // 如果任務不存在，返回預設的任務資訊
       tasksList.push({
         id: "task_consecutive",
         type: "consecutive_referral",
@@ -120,7 +189,6 @@ tasks.get('/', async (c) => {
       });
     } else {
       // 如果任務不存在，返回預設的任務資訊
-      const currentMonth = new Date().toISOString().substring(0, 7);
       tasksList.push({
         id: "task_monthly_king",
         type: "monthly_king",
@@ -166,7 +234,7 @@ tasks.get('/', async (c) => {
  * - month: 月份字串（格式：YYYY-MM，例如：2024-12）
  * 
  * 返回：
- * - data: 該月份的推薦記錄陣列
+ * - data: 該月��的推薦記錄陣列
  *   - listingId: 刊登 ID
  *   - userId: 被推薦人用戶 ID
  *   - userName: 被推薦人用戶名 ✅
@@ -301,7 +369,7 @@ tasks.get('/monthly-summary', async (c) => {
     
     // 5. 計算從開始月份起的12個月
     const [startYear, startMonthNum] = startMonth.split('-').map(Number);
-    const now = new Date();
+    const now = getTaiwanNow();  // ✅ 使用台灣時區
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     
     const monthlyProgress = [];
@@ -381,7 +449,7 @@ tasks.get('/monthly-summary', async (c) => {
 });
 
 /**
- * GET /tasks/current-month-top - 獲取本月前N筆推薦（推薦王用）
+ * GET /tasks/current-month-top - 獲取本前N筆推薦（推薦王用）
  * 
  * Parameters:
  * - limit: 限制返回數量（預設10，查詢參數）
@@ -420,7 +488,7 @@ tasks.get('/current-month-top', async (c) => {
     console.log(`📊 限制數量: ${limit} 筆`);
     
     // 3. 計算當前月份
-    const now = new Date();
+    const now = getTaiwanNow();  // ✅ 使用台灣時區
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     
     // 4. 獲取月度日誌
@@ -628,7 +696,7 @@ tasks.post('/claim-reward/:id', async (c) => {
       pendingRewards: 0,
       withdrawnRewards: 0,
       totalEarned: 0,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     const oldAvailable = rewardsData.availableRewards || 0;
@@ -636,7 +704,7 @@ tasks.post('/claim-reward/:id', async (c) => {
     
     rewardsData.availableRewards = oldAvailable + reward.amount;
     rewardsData.totalEarned = oldTotal + reward.amount;
-    rewardsData.lastUpdated = new Date().toISOString();
+    rewardsData.lastUpdated = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
     
     await kv.set(rewardsKeySSOT, rewardsData);
     
@@ -646,7 +714,7 @@ tasks.post('/claim-reward/:id', async (c) => {
     
     // 9. 更新獎勵狀態
     pendingRewards[rewardIndex].status = 'claimed';
-    pendingRewards[rewardIndex].claimedAt = new Date().toISOString();
+    pendingRewards[rewardIndex].claimedAt = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
     await kv.set(rewardsKey, pendingRewards);
     
     // 10. 記錄到獎勵歷史
@@ -663,7 +731,7 @@ tasks.post('/claim-reward/:id', async (c) => {
       balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
       description: reward.description,
       details: reward.details,
-      issuedAt: new Date().toISOString(),
+      issuedAt: toTaiwanISOString(getTaiwanNow()),  // ✅ 修復：使用台灣時區
       source: 'mission_claim'
     });
     

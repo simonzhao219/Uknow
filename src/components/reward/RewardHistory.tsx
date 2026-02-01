@@ -42,7 +42,7 @@ interface RewardRecord {
   generation?: number;
   monthNumber?: number;
   
-  // 新增餘額欄位
+  // 新增額欄位
   balance?: number;
 }
 
@@ -55,20 +55,49 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('all');
+  const [offset, setOffset] = useState(0);  // ✅ 新增：當前加載位置
+  const [total, setTotal] = useState(0);  // ✅ 新增：總記錄數
+  const [isLoadingMore, setIsLoadingMore] = useState(false);  // ✅ 新增：加載更多中
 
-  // ✅ 提取獲取歷史的邏輯為獨立函數
-  const fetchHistory = async () => {
+  // ✅ 提取獲取歷史的邏輯為獨立函數，支持追加模式
+  const fetchHistory = async (isLoadMore = false) => {
     try {
-      setIsLoading(true);
-      setError(null);
+      if (isLoadMore) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+        setError(null);
+      }
+      
+      const currentOffset = isLoadMore ? offset : 0;
       
       // ✅ 使用統一的 API 請求工具
-      const result = await apiRequestJson<{ success: boolean; data: { history: RewardRecord[] } }>(
-        buildApiUrl('/rewards/history?limit=50')
+      const result = await apiRequestJson<{ 
+        success: boolean; 
+        data: { 
+          history: RewardRecord[];
+          total: number;
+          limit: number;
+          offset: number;
+        } 
+      }>(
+        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}`)
       );
       
       if (result.success) {
-        setHistory(result.data.history || []);
+        const newHistory = result.data.history || [];
+        
+        if (isLoadMore) {
+          // 追加模式：合併新舊記錄
+          setHistory(prev => [...prev, ...newHistory]);
+        } else {
+          // 初始模式：替換記錄
+          setHistory(newHistory);
+        }
+        
+        // 更新總數和偏移量
+        setTotal(result.data.total || 0);
+        setOffset(currentOffset + newHistory.length);
       } else {
         throw new Error('獲取獎勵歷史失敗');
       }
@@ -82,7 +111,13 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       }
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
+  };
+  
+  // ✅ 新增：加載更多函數
+  const handleLoadMore = () => {
+    fetchHistory(true);
   };
 
   // 初始載入
@@ -93,6 +128,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   // ✅ 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
+      setOffset(0);  // 重置偏移量
       fetchHistory();
     }
   }, [refreshTrigger]);
@@ -228,8 +264,14 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                           : '—';
                       }
                     } else {
+                      // ✅ 優先檢查中文冒號（系統校正等特殊記錄）
+                      if (record.description.includes('：')) {
+                        const colonIndex = record.description.indexOf('：');
+                        type = record.description.substring(0, colonIndex).trim();
+                        detail = record.description.substring(colonIndex + 1).trim();
+                      }
                       // 推薦獎勵格式：「一代推薦-細節」或「任務獎勵 - 細節」
-                      if (record.description.includes(' - ')) {
+                      else if (record.description.includes(' - ')) {
                         const [t, ...d] = record.description.split(' - ');
                         type = t.trim();
                         detail = d.join(' - ').trim();
@@ -298,6 +340,34 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                 </div>
               ))
             )}
+          </div>
+        )}
+        
+        {/* ✅ 新增：已加載筆數顯示 */}
+        {!isLoading && !error && total > 0 && (
+          <div className="text-center text-sm text-muted-foreground">
+            已顯示 {Math.min(history.length, total)} / {total} 筆記錄
+          </div>
+        )}
+        
+        {/* ✅ 新增：加載更多按鈕 */}
+        {!isLoading && !error && offset < total && (
+          <div className="text-center">
+            <Button
+              onClick={handleLoadMore}
+              variant="outline"
+              size="sm"
+              disabled={isLoadingMore}
+            >
+              {isLoadingMore ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  加載中...
+                </>
+              ) : (
+                '加載更多'
+              )}
+            </Button>
           </div>
         )}
       </CardContent>

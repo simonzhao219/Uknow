@@ -8,6 +8,7 @@ import {
   toTaiwanDateString, 
   toTaiwanISOString 
 } from './date_utils.ts';
+import { createPendingMissionReward } from './task_helpers.ts';  // ✅ 新增：導入創建待領取獎勵函數
 
 const cron = new Hono();
 
@@ -589,12 +590,26 @@ async function processUserTaskSettlement(
     
     // 檢查是否達到12個月
     if (consecutive.currentStreak >= REWARD_CONFIG.TASK_CONSECUTIVE_MONTHS && !consecutive.completed) {
-      // 發放獎勵
-      await issueTaskReward(userId, 'consecutive_referral', REWARD_CONFIG.TASK_CONSECUTIVE_REWARD);
-      consecutive.completed = true;
-      consecutive.completedAt = toTaiwanISOString(getTaiwanNow());
+      // ✅ 修改：創建待領取獎勵（而不是直接發放）
+      console.log(`   🎉 用戶 ${userId} 完成連續推薦任務，創建待領取獎勵 ${REWARD_CONFIG.TASK_CONSECUTIVE_REWARD}P`);
       
-      console.log(`   🎉 用戶 ${userId} 完成連續推薦任務，發放 ${REWARD_CONFIG.TASK_CONSECUTIVE_REWARD}P`);
+      try {
+        await createPendingMissionReward(
+          userId,
+          'consecutive_referral',
+          REWARD_CONFIG.TASK_CONSECUTIVE_REWARD,
+          toTaiwanISOString(getTaiwanNow()),
+          { streak: consecutive.currentStreak }
+        );
+        
+        consecutive.completed = true;
+        consecutive.completedAt = toTaiwanISOString(getTaiwanNow());
+        
+        console.log(`   ✅ 連續推薦達人待領取獎勵已創建`);
+      } catch (error) {
+        console.error(`   ❌ 創建連續推薦達人獎勵失敗:`, error);
+        // 不標記為完成，下次 Cron 會重試
+      }
       
       // 重置任務，開始新一輪
       consecutive.currentStreak = 0;
@@ -649,7 +664,9 @@ async function processUserTaskSettlement(
 }
 
 /**
- * 發放任務獎勵
+ * 發放任務獎勵（僅供推薦王使用，直接發放到可提領點數）
+ * 
+ * ⚠️ 注意：連續推薦達人已改為創建待領取獎勵，不使用此函數
  */
 async function issueTaskReward(userId: string, taskType: string, amount: number) {
   // 1. 更新獎勵餘額
@@ -690,7 +707,7 @@ async function issueTaskReward(userId: string, taskType: string, amount: number)
   
   await kv.set(historyKey, history);
   
-  console.log(`      💰 發放任獎勵: user=${userId}, type=${taskType}, amount=${amount}P`);
+  console.log(`      💰 發放任務獎勵: user=${userId}, type=${taskType}, amount=${amount}P`);
 }
 
 export default cron;

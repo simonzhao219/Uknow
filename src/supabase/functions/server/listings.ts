@@ -575,8 +575,8 @@ export async function getAllActiveListings(c: any) {
     
     console.log(`過濾後的刊登數量: ${listings.length}`);
     
-    // 前時間
-    const now = new Date();
+    // 當前時間
+    const now = getTaiwanNow();  // ✅ 修復：使用台灣時區
     
     // 核心過濾邏輯：activeUntil >= now
     const activeListings = listings.filter((listing: any) => {
@@ -792,7 +792,7 @@ export async function updateListing(c: any) {
       description: updateData.description || '',
       photos: updateData.photos,
       contacts: updateData.contacts,
-      updatedAt: new Date().toISOString()
+      updatedAt: toTaiwanISOString(getTaiwanNow())  // ✅ 修復：使用台灣時區
     };
     
     // ===== 步驟9: 儲存到 KV Store =====
@@ -1083,7 +1083,7 @@ async function updateReferralTree(
     tree.thirdGeneration.push(listingInfo);
   }
   
-  tree.lastUpdated = new Date().toISOString();
+  tree.lastUpdated = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
   await kv.set(key, tree);
   
   console.log(`✅ 更新推薦樹: ${userId} - 第${generation}代 +1 (${userName}-${newListing.name})`);
@@ -1111,7 +1111,7 @@ async function updateReferralStats(
   else if (generation === 2) stats.secondGenCount += 1;
   else if (generation === 3) stats.thirdGenCount += 1;
   
-  stats.lastUpdated = new Date().toISOString();
+  stats.lastUpdated = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
   await kv.set(key, stats);
   
   console.log(`✅ 更新推薦統計: user=${userId}, gen=${generation}, total=${stats.totalReferrals}`);
@@ -1165,7 +1165,7 @@ async function issueImmediateReward(
   
   rewards.availableRewards += amount;
   rewards.totalEarned += amount;
-  rewards.lastUpdated = new Date().toISOString();
+  rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());  // ✅ 修復：使用台灣時區
   
   await kv.set(rewardsKey, rewards);
   
@@ -1257,7 +1257,7 @@ async function createRewardSchedules(
       amount: REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH,
       scheduledDate: scheduleDateStr,
       status: SCHEDULE_STATUS.PENDING,
-      createdAt: new Date().toISOString(),
+      createdAt: toTaiwanISOString(getTaiwanNow()),  // ✅ 修復：使用台灣時區
       completedAt: null
     };
     

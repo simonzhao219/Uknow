@@ -143,7 +143,7 @@ dataRepair.post('/repair-user/:userId', async (c) => {
  * 
  * 影響範圍：
  * - 江梓豪：重複推薦碼、重複訂閱
- * - 黎���傑（1代推薦人）：推薦樹、獎勵、排程、月度日誌、任務
+ * - 黎仁傑（1代推薦人）：推薦樹、獎勵、排程、月度日誌、任務
  * - 歐宥塏（2代推薦人）：推薦樹、獎勵、排程
  */
 dataRepair.post('/repair-jiang-zihao', async (c) => {
@@ -1060,11 +1060,15 @@ async function recalculateRewards(userId: string): Promise<RepairResult> {
         
         await kv.set(rewardsKey, rewards);
         
+        // ✅ 計算交易後餘額
+        const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+        
         // 添加校正記錄到歷史
         history.unshift({
           id: `correction_${Date.now()}`,
           type: 'correction_duplicate_reward',
           amount: -difference,
+          balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
           issuedAt: toTaiwanISOString(getTaiwanNow()),
           description: `系統校正：回收重複發放的推薦獎勵`
         });
@@ -1170,11 +1174,15 @@ async function recalculateRewardsForReferee(
         
         await kv.set(rewardsKey, rewards);
         
+        // ✅ 計算交易後餘額
+        const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+        
         // 添加校正記錄到歷史
         history.unshift({
           id: `correction_${Date.now()}`,
           type: 'correction_duplicate_reward',
           amount: -difference,
+          balance: balanceAfterTransaction,  // ✅ 新增：交易後餘額
           issuedAt: toTaiwanISOString(getTaiwanNow()),
           description: `系統校正：回收重複發放的推薦獎勵（被推薦人: ${refereeName}）`
         });
