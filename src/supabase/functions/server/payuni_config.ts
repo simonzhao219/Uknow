@@ -20,9 +20,9 @@ export interface PayUniConfig {
 
 const PayUniConfigs = {
   test: {
-    merID: Deno.env.get('PAYUNI_MER_ID')!,
-    hashKey: Deno.env.get('PAYUNI_HASH_KEY')!,
-    hashIV: Deno.env.get('PAYUNI_HASH_IV')!,
+    merID: Deno.env.get('PAYUNI_TEST_MER_ID')!,
+    hashKey: Deno.env.get('PAYUNI_TEST_HASH_KEY')!,
+    hashIV: Deno.env.get('PAYUNI_TEST_HASH_IV')!,
     apiUrl: 'https://sandbox-api.payuni.com.tw/api/period/Page',
     mode: 'test' as const
   },
