@@ -27,7 +27,7 @@ export const SERVICE_CATEGORIES = [
   "美髮",
   "美容",
   "按摩",
-  "除毛",
+  "熱蠟",
   "睫毛",
   "美甲",
   "紋繡",
