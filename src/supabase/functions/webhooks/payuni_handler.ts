@@ -1,9 +1,9 @@
 import { Hono } from 'npm:hono@4.3.11';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import * as kv from '../server/kv_store.tsx';
+import * as kv from './shared/kv_store.ts';
 import { getPayUniConfig } from './shared/payuni_config.ts';
 import { decryptPayUni, generatePayUniHash } from './shared/payuni_crypto.ts';
-import { getTaiwanNow, toTaiwanISOString } from '../server/date_utils.ts';
+import { getTaiwanNow, toTaiwanISOString } from './shared/date_utils.ts';
 
 const payuniHandler = new Hono();
 
