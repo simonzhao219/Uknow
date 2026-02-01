@@ -144,6 +144,7 @@ payuniHandler.post('/notify', async (c) => {
       profile.pendingActivation = true;  // ← 标记为待激活
       profile.paidAt = toTaiwanISOString(getTaiwanNow());
       profile.periodTradeNo = data.PeriodTradeNo;
+      profile.updatedAt = toTaiwanISOString(getTaiwanNow());  // ✅ 添加更新時間
       
       await kv.set(`user:${order.userId}:profile`, profile);
       console.log('[Webhook PayUni] ✅ 用戶狀態已更新為 Step 2（待確認）');

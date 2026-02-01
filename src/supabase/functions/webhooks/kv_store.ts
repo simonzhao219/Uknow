@@ -39,8 +39,10 @@ export async function set(key: string, value: any): Promise<void> {
     .from('kv_store_5c6718b9')
     .upsert({
       key,
-      value,
-      updated_at: new Date().toISOString()
+      value
+    }, {
+      onConflict: 'key',
+      ignoreDuplicates: false
     });
 
   if (error) {
