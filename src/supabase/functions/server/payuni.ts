@@ -64,7 +64,7 @@ payuni.post('/prepare', async (c) => {
       PeriodTimes: 12,
       FType: 'build',
       NotifyURL: `https://${projectId}.supabase.co/functions/v1/webhooks/payuni/notify`,  // ✅ 改為 webhooks
-      ReturnURL: `${frontendUrl}/payment/result?tradeNo=${tradeNo}`
+      ReturnURL: `${frontendUrl}payment/result?tradeNo=${tradeNo}`
     };
     
     console.log('[PayUni Prepare] 加密數據：', {
