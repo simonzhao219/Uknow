@@ -351,9 +351,12 @@ export const completeRegistration = async (c: Context) => {
     
     // 5. 綁定推薦碼到用戶
     await kv.set(`referral_code:${referralCode}`, {
+      code: referralCode,
       userId: user.id,
+      userName: profile.name,
+      createdAt: toTaiwanISOString(getTaiwanNow()),
       listingId: null,  // 用戶還沒有刊登
-      createdAt: toTaiwanISOString(getTaiwanNow())
+      listingName: null
     });
     
     console.log('[completeRegistration] ✅ 推薦碼已綁定');

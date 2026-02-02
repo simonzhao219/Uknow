@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
-import { Loader2, CheckCircle, XCircle, Clock, RefreshCw, CreditCard } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Clock, RefreshCw, CreditCard, AlertCircle } from 'lucide-react';
 import { useNotification } from './notifications/NotificationContext';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import { Progress } from './ui/progress';
 
 type OrderStatus = 'pending' | 'success' | 'failed' | 'unknown';
 
@@ -44,6 +45,8 @@ export function PaymentResult() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCompleting, setIsCompleting] = useState(false);
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
+  const [retryCount, setRetryCount] = useState(0);  // ✅ 新增：重試計數
+  const [maxRetries] = useState(12);  // ✅ 新增：最多重試 12 次
   
   const tradeNo = searchParams.get('tradeNo');
   
@@ -52,23 +55,22 @@ export function PaymentResult() {
     tradeNo,
     isLoading,
     orderResult,
+    retryCount,
     searchParamsAll: Object.fromEntries(searchParams.entries())
   });
   
-  // 查询订单状态
-  const fetchOrderStatus = async () => {
-    console.log('[PaymentResult] 📞 fetchOrderStatus called', { tradeNo });
+  // ✅ 查询订单状态（支持重試）
+  const fetchOrderStatus = async (): Promise<OrderResult | null> => {
+    console.log('[PaymentResult] 📞 fetchOrderStatus called', { tradeNo, retryCount });
     
     if (!tradeNo) {
       console.error('[PaymentResult] ❌ No tradeNo, cannot fetch');
       setIsLoading(false);
-      setOrderResult({ status: 'unknown', tradeNo: '' });
+      const unknownResult = { status: 'unknown' as OrderStatus, tradeNo: '' };
+      setOrderResult(unknownResult);
       showToast('缺少訂單編號', 'error');
-      return;
+      return unknownResult;
     }
-    
-    console.log('[PaymentResult] 🔄 Setting isLoading = true');
-    setIsLoading(true);
     
     const apiUrl = buildApiUrl(`/payuni/result/${tradeNo}`);
     console.log('[PaymentResult] 🌐 API URL:', apiUrl);
@@ -95,9 +97,12 @@ export function PaymentResult() {
       if (result.success) {
         console.log('[PaymentResult] ✅ Order found:', result.data);  // ✅ 修正：data 不是 order
         setOrderResult(result.data);  // ✅ 修正：data 不是 order
+        return result.data;
       } else {
         console.log('[PaymentResult] ⚠️ API returned success=false');
-        setOrderResult({ status: 'unknown', tradeNo });
+        const unknownResult = { status: 'unknown' as OrderStatus, tradeNo };
+        setOrderResult(unknownResult);
+        return unknownResult;
       }
     } catch (error: any) {
       console.error('[PaymentResult] 💥 API request failed:', error);
@@ -105,21 +110,74 @@ export function PaymentResult() {
       console.error('[PaymentResult] Error message:', error.message);
       console.error('[PaymentResult] Error stack:', error.stack);
       
-      showToast('查詢訂單狀態失敗', 'error');
-      setOrderResult({ status: 'unknown', tradeNo });
-    } finally {
-      console.log('[PaymentResult] 🏁 Setting isLoading = false');
+      // ✅ 只在首次查詢失敗時顯示錯誤提示
+      if (retryCount === 0) {
+        showToast('查詢訂單狀態失敗', 'error');
+      }
+      const unknownResult = { status: 'unknown' as OrderStatus, tradeNo };
+      setOrderResult(unknownResult);
+      return unknownResult;
+    }
+  };
+  
+  // ✅ 智能轮询逻辑（指数退避）
+  const fetchOrderStatusWithRetry = async (currentRetry: number = 0) => {
+    console.log('[PaymentResult] 🔄 fetchOrderStatusWithRetry', { currentRetry, maxRetries });
+    
+    setRetryCount(currentRetry);
+    const result = await fetchOrderStatus();
+    
+    if (!result) {
+      setIsLoading(false);
+      return;
+    }
+    
+    // ✅ 如果是最終狀態，停止輪詢
+    if (result.status === 'success' || result.status === 'failed') {
+      console.log('[PaymentResult] ✅ Final status reached:', result.status);
+      setIsLoading(false);
+      return;
+    }
+    
+    // ✅ 如果仍是 pending，繼續重試
+    if (result.status === 'pending' && currentRetry < maxRetries) {
+      // 指數退避：500ms → 750ms → 1.1s → 1.7s → 2.5s → 3.8s → ...
+      const delay = 500 * Math.pow(1.5, currentRetry);
+      console.log(`[PaymentResult] ⏳ Retry ${currentRetry + 1}/${maxRetries} after ${delay.toFixed(0)}ms`);
+      
+      setTimeout(() => {
+        fetchOrderStatusWithRetry(currentRetry + 1);
+      }, delay);
+    } else if (currentRetry >= maxRetries) {
+      // ✅ 超時保護
+      console.error('[PaymentResult] ⚠️ Max retries reached, giving up');
+      setIsLoading(false);
+      showToast('查詢超時，請稍後再試或聯繫客服', 'warning');
+    } else {
+      // unknown 狀態
       setIsLoading(false);
     }
   };
   
+  // ✅ 首次查詢延遲 5 秒
   useEffect(() => {
     console.log('[PaymentResult] ⚡ useEffect triggered', { tradeNo });
     
     if (tradeNo) {
-      fetchOrderStatus();
+      console.log('[PaymentResult] ⏰ Waiting 5 seconds before first query...');
+      
+      const timer = setTimeout(() => {
+        console.log('[PaymentResult] ▶️ Starting query after 5 seconds delay');
+        fetchOrderStatusWithRetry(0);
+      }, 5000);  // ✅ 延遲 5 秒
+      
+      return () => {
+        console.log('[PaymentResult] 🧹 Cleaning up timer');
+        clearTimeout(timer);
+      };
     } else {
       console.log('[PaymentResult] ⏸️ No tradeNo, waiting...');
+      setIsLoading(false);
     }
   }, [tradeNo]);
   
@@ -130,7 +188,7 @@ export function PaymentResult() {
     };
   }, []);
   
-  console.log('[PaymentResult] 🎨 Rendering UI', { isLoading, orderResult });
+  console.log('[PaymentResult] 🎨 Rendering UI', { isLoading, orderResult, retryCount });
   
   // 完成注册
   const handleCompleteRegistration = async () => {
@@ -200,14 +258,59 @@ export function PaymentResult() {
     window.open('https://line.me/ti/p/@Uknow', '_blank');
   };
   
-  // 加载中
+  // ✅ 加载中（新增進度條和等待提示）
   if (isLoading) {
+    const progress = Math.min((retryCount / maxRetries) * 100, 100);
+    
     return (
       <div className="container max-w-2xl mx-auto p-4 pt-20">
         <Card>
-          <CardContent className="pt-6 flex flex-col items-center gap-4">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="text-lg">查詢付款結果中...</p>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <Clock className="h-16 w-16 text-blue-600 animate-pulse" />
+            </div>
+            <CardTitle className="text-2xl">查詢付款結果中</CardTitle>
+            <CardDescription>
+              {retryCount === 0 
+                ? '正在等待金流系統回應，通常需要 2-5 秒'
+                : `正在確認付款狀態（${retryCount}/${maxRetries}）`
+              }
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+              <p className="text-sm text-blue-800">
+                💡 <strong>提示：</strong>請稍候，系統會自動查詢結果
+              </p>
+              <p className="text-xs text-blue-600">
+                • 無需重新整理頁面<br />
+                • 無需重複點擊按鈕<br />
+                • 查詢過程完全自動化
+              </p>
+              
+              {/* ✅ 進度條 */}
+              {retryCount > 0 && (
+                <div className="space-y-2 pt-2">
+                  <Progress value={progress} className="h-2" />
+                  <p className="text-xs text-center text-blue-600">
+                    查詢進度：{progress.toFixed(0)}%
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            {/* ✅ 手動查詢按鈕（僅在重試 3 次後顯示）*/}
+            {retryCount >= 3 && (
+              <Button
+                onClick={() => fetchOrderStatus()}
+                variant="outline"
+                className="w-full"
+                size="lg"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                立即查詢
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -404,14 +507,14 @@ export function PaymentResult() {
     );
   }
   
-  // 处理中（Webhook 还没收到回调）
+  // ✅ 处理中（Webhook 还没收到回调）- 優化提示
   if (orderResult?.status === 'pending') {
     return (
       <div className="container max-w-2xl mx-auto p-4 pt-20">
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Clock className="h-16 w-16 text-orange-600" />
+              <Clock className="h-16 w-16 text-orange-600 animate-pulse" />
             </div>
             <CardTitle className="text-2xl">處理中</CardTitle>
             <CardDescription>
@@ -421,15 +524,18 @@ export function PaymentResult() {
           <CardContent className="space-y-4">
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
               <p className="text-sm text-orange-800">
-                訂單編號：{orderResult.tradeNo}
+                訂單編號：<span className="font-mono">{orderResult.tradeNo}</span>
               </p>
               <p className="text-sm text-orange-800 mt-2">
-                ⏳ 系統正在確認您的付款，通常需要 1-3 分鐘
+                ⏳ 系統正在確認您的付款，通常需要 2-5 秒
+              </p>
+              <p className="text-xs text-orange-600 mt-2">
+                已重試 {retryCount}/{maxRetries} 次
               </p>
             </div>
             
             <Button
-              onClick={fetchOrderStatus}
+              onClick={() => fetchOrderStatusWithRetry(0)}
               variant="outline"
               className="w-full"
               size="lg"
@@ -437,6 +543,30 @@ export function PaymentResult() {
               <RefreshCw className="mr-2 h-4 w-4" />
               重新查詢
             </Button>
+            
+            {/* ✅ 超時提示（重試超過 8 次）*/}
+            {retryCount >= 8 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-yellow-800 font-medium">
+                      查詢時間較長
+                    </p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      付款可能仍在處理中，建議稍後再試或聯繫客服協助
+                    </p>
+                    <Button
+                      onClick={handleContactSupport}
+                      variant="link"
+                      className="text-yellow-800 underline p-0 h-auto mt-2"
+                    >
+                      聯繫客服
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
