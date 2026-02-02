@@ -26,17 +26,35 @@ export function PaymentResult() {
   
   const tradeNo = searchParams.get('tradeNo');
   
+  // ⚠️ 添加组件挂载日志
+  console.log('[PaymentResult] 🎬 Component rendering', {
+    tradeNo,
+    isLoading,
+    orderResult,
+    searchParamsAll: Object.fromEntries(searchParams.entries())
+  });
+  
   // 查询订单状态
   const fetchOrderStatus = async () => {
+    console.log('[PaymentResult] 📞 fetchOrderStatus called', { tradeNo });
+    
     if (!tradeNo) {
+      console.error('[PaymentResult] ❌ No tradeNo, cannot fetch');
+      setIsLoading(false);
+      setOrderResult({ status: 'unknown', tradeNo: '' });
       showToast('缺少訂單編號', 'error');
-      navigate('/payment/checkout');
       return;
     }
     
+    console.log('[PaymentResult] 🔄 Setting isLoading = true');
     setIsLoading(true);
     
+    const apiUrl = buildApiUrl(`/payuni/result/${tradeNo}`);
+    console.log('[PaymentResult] 🌐 API URL:', apiUrl);
+    
     try {
+      console.log('[PaymentResult] 🚀 Sending API request...');
+      
       const result = await apiRequestJson<{
         success: boolean;
         order: {
@@ -45,25 +63,49 @@ export function PaymentResult() {
           errorMessage?: string;
           errorCode?: string;
         };
-      }>(buildApiUrl(`/payuni/result/${tradeNo}`));
+      }>(apiUrl);
+      
+      console.log('[PaymentResult] ✅ API response:', result);
       
       if (result.success) {
+        console.log('[PaymentResult] ✅ Order found:', result.order);
         setOrderResult(result.order);
       } else {
+        console.log('[PaymentResult] ⚠️ API returned success=false');
         setOrderResult({ status: 'unknown', tradeNo });
       }
     } catch (error: any) {
-      console.error('查詢訂單狀態失敗:', error);
+      console.error('[PaymentResult] 💥 API request failed:', error);
+      console.error('[PaymentResult] Error type:', error.constructor.name);
+      console.error('[PaymentResult] Error message:', error.message);
+      console.error('[PaymentResult] Error stack:', error.stack);
+      
       showToast('查詢訂單狀態失敗', 'error');
       setOrderResult({ status: 'unknown', tradeNo });
     } finally {
+      console.log('[PaymentResult] 🏁 Setting isLoading = false');
       setIsLoading(false);
     }
   };
   
   useEffect(() => {
-    fetchOrderStatus();
+    console.log('[PaymentResult] ⚡ useEffect triggered', { tradeNo });
+    
+    if (tradeNo) {
+      fetchOrderStatus();
+    } else {
+      console.log('[PaymentResult] ⏸️ No tradeNo, waiting...');
+    }
   }, [tradeNo]);
+  
+  useEffect(() => {
+    console.log('[PaymentResult] 🎬 Component mounted');
+    return () => {
+      console.log('[PaymentResult] 🔚 Component unmounting');
+    };
+  }, []);
+  
+  console.log('[PaymentResult] 🎨 Rendering UI', { isLoading, orderResult });
   
   // 完成注册
   const handleCompleteRegistration = async () => {
