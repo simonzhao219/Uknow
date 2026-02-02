@@ -129,7 +129,7 @@ payuni.post('/notify', async (c) => {
 // ========================================
 payuni.get('/result/:tradeNo', async (c) => {
   try {
-    const tradeNo = c.param('tradeNo');
+    const tradeNo = c.req.param('tradeNo');
     
     console.log('[PayUni Result] 查詢訂單:', tradeNo);
     
