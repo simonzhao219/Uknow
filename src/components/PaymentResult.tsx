@@ -8,9 +8,30 @@ import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 
 type OrderStatus = 'pending' | 'success' | 'failed' | 'unknown';
 
+// ✅ PayUni 付款數據完整結構
+interface PaymentData {
+  AuthAmt: string;           // 授權金額
+  PayerName: string;         // 付款人姓名
+  PayerPhone: string;        // 付款人電話
+  PayerEmail: string;        // 付款人 Email
+  Card6No: string;           // 卡號前 6 碼
+  Card4No: string;           // 卡號後 4 碼
+  CardExpired: string;       // 卡片到期日 (MMYY)
+  AuthBankName: string;      // 銀行名稱
+  PeriodAmt: string;         // 週期金額
+  DateList: string;          // 扣款日期清單
+  Message?: string;          // 訊息
+  ResCode?: string;          // 回應代碼
+  ResCodeMsg?: string;       // 回應代碼訊息
+}
+
 interface OrderResult {
   status: OrderStatus;
   tradeNo: string;
+  periodTradeNo?: string;    // ✅ 週期交易號
+  mode?: string;             // ✅ 測試/正式模式
+  completedAt?: string;      // ✅ 完成時間
+  paymentData?: PaymentData; // ✅ PayUni 完整付款數據
   errorMessage?: string;
   errorCode?: string;
 }
@@ -60,6 +81,10 @@ export function PaymentResult() {
         data: {  // ✅ 修正：后端返回的是 "data" 不是 "order"
           status: OrderStatus;
           tradeNo: string;
+          periodTradeNo?: string;    // ✅ 週期交易號
+          mode?: string;             // ✅ 測試/正式模式
+          completedAt?: string;      // ✅ 完成時間
+          paymentData?: PaymentData; // ✅ PayUni 完整付款數據
           errorMessage?: string;
           errorCode?: string;
         };
@@ -191,6 +216,23 @@ export function PaymentResult() {
   
   // 付款成功
   if (orderResult?.status === 'success') {
+    // ✅ 格式化卡片到期日 (MMYY → MM/YY)
+    const formatCardExpiry = (expiry: string) => {
+      if (expiry && expiry.length === 4) {
+        return `${expiry.substring(0, 2)}/${expiry.substring(2)}`;
+      }
+      return expiry;
+    };
+    
+    // ✅ 解析下期扣款日
+    const getNextPaymentDate = (dateList: string) => {
+      if (!dateList) return '未知';
+      const dates = dateList.split(',');
+      return dates.length > 1 ? dates[1] : '未知';
+    };
+    
+    const paymentData = orderResult.paymentData;
+    
     return (
       <div className="container max-w-2xl mx-auto p-4 pt-20">
         <Card>
@@ -204,14 +246,85 @@ export function PaymentResult() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-sm text-green-800">
-                訂單編號：{orderResult.tradeNo}
-              </p>
-              <p className="text-sm text-green-800 mt-1">
-                付款金額：$1,200
-              </p>
+            {/* ✅ 訂單資訊 */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-green-800 font-medium">訂單編號</span>
+                <span className="text-sm text-green-800">{orderResult.periodTradeNo || orderResult.tradeNo}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-green-800 font-medium">付款金額</span>
+                <span className="text-sm text-green-800 font-bold">NT$ {paymentData?.AuthAmt || '1,200'}</span>
+              </div>
+              {orderResult.mode === 'test' && (
+                <div className="pt-2 border-t border-green-300">
+                  <p className="text-xs text-green-700">
+                    ⚠️ 測試模式交易
+                  </p>
+                </div>
+              )}
             </div>
+            
+            {/* ✅ 付款人資訊 */}
+            {paymentData && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">付款人資訊</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">姓名</span>
+                    <span className="text-sm text-gray-800 font-medium">{paymentData.PayerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">電話</span>
+                    <span className="text-sm text-gray-800">{paymentData.PayerPhone}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Email</span>
+                    <span className="text-sm text-gray-800 break-all">{paymentData.PayerEmail}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* ✅ 信用卡資訊 */}
+            {paymentData && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-700 mb-3">信用卡資訊</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-blue-600">銀行</span>
+                    <span className="text-sm text-blue-800 font-medium">{paymentData.AuthBankName}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-blue-600">卡號</span>
+                    <span className="text-sm text-blue-800 font-mono">
+                      {paymentData.Card6No} ****** {paymentData.Card4No}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-blue-600">到期日</span>
+                    <span className="text-sm text-blue-800">{formatCardExpiry(paymentData.CardExpired)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* ✅ 訂閱資訊 */}
+            {paymentData && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-purple-700 mb-3">訂閱資訊</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-purple-600">年費</span>
+                    <span className="text-sm text-purple-800 font-bold">NT$ {paymentData.PeriodAmt} / 年</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-purple-600">下期扣款日</span>
+                    <span className="text-sm text-purple-800">{getNextPaymentDate(paymentData.DateList)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <Button
               onClick={handleCompleteRegistration}
@@ -228,10 +341,6 @@ export function PaymentResult() {
                 '完成註冊'
               )}
             </Button>
-            
-            <p className="text-xs text-center text-muted-foreground">
-              點擊「完成註冊」後，系統將為您生成推薦碼並激活帳號
-            </p>
           </CardContent>
         </Card>
       </div>
