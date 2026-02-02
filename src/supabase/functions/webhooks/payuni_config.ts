@@ -9,7 +9,7 @@
  * 
  * ⚠️ 切換環境只需修改這一行
  */
-const MODE: 'test' | 'production' = 'test';
+const MODE: 'test' | 'production' = 'production';
 
 interface PayUniConfig {
   mode: 'test' | 'production';
