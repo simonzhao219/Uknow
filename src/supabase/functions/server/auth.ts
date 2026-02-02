@@ -861,3 +861,78 @@ export const cancelSignup = async (c: Context) => {
     return c.json({ error: "Internal server error" }, 500);
   }
 };
+
+/**
+ * 重置到付款步驟（從 Step 2 回到 Step 1）
+ * POST /auth/reset-to-payment
+ * 
+ * 使用場景：付款失敗後，用戶點擊「重新付款」
+ */
+export const resetToPayment = async (c: Context) => {
+  try {
+    console.log('[resetToPayment] Resetting user to payment step...');
+    
+    // 1. 驗證 access token
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader) {
+      console.error('[resetToPayment] No Authorization header');
+      return c.json({ error: "Authorization header is required" }, 401);
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    console.log('[resetToPayment] Verifying token...');
+    const { user, error: authError } = await verifyToken(token);
+
+    if (authError || !user) {
+      console.error("[resetToPayment] Auth error:", authError);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    console.log(`[resetToPayment] Authenticated user: ${user.id}, email: ${user.email}`);
+
+    // 2. 獲取用戶 profile
+    const profileKey = `user:${user.id}:profile`;
+    const profile = await kv.get(profileKey);
+    
+    if (!profile) {
+      console.error(`[resetToPayment] Profile not found for user: ${user.id}`);
+      return c.json({ error: "用戶資料不存在" }, 404);
+    }
+
+    // 3. 檢查當前步驟
+    console.log(`[resetToPayment] Current step: ${profile.registrationStep}`);
+    
+    // 只允許從 Step 2 重置到 Step 1
+    if (profile.registrationStep !== 2) {
+      console.warn(`[resetToPayment] User is not at Step 2, current step: ${profile.registrationStep}`);
+      return c.json({ 
+        error: "只能在付款結果頁面重置付款狀態",
+        currentStep: profile.registrationStep 
+      }, 400);
+    }
+
+    // 4. 重置到 Step 1
+    profile.registrationStep = 1;
+    profile.pendingActivation = false;
+    profile.paidAt = null;
+    profile.periodTradeNo = null;
+    profile.updatedAt = toTaiwanISOString(getTaiwanNow());
+    
+    await kv.set(profileKey, profile);
+    
+    console.log(`[resetToPayment] ✅ User reset to Step 1: ${user.id}`);
+    
+    return c.json({
+      success: true,
+      message: "已重置到付款步驟",
+      profile: {
+        registrationStep: profile.registrationStep,
+        pendingActivation: profile.pendingActivation
+      }
+    });
+
+  } catch (error) {
+    console.error("[resetToPayment] Unexpected error:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+};

@@ -144,6 +144,7 @@ payuniHandler.post('/notify', async (c) => {
       profile.pendingActivation = true;  // ← 标记为待激活
       profile.paidAt = toTaiwanISOString(getTaiwanNow());
       profile.periodTradeNo = data.PeriodTradeNo;
+      profile.lastTradeNo = originalTradeNo;  // ✅ 保存原始订单号，用于跳转到付款结果页面
       profile.updatedAt = toTaiwanISOString(getTaiwanNow());  // ✅ 添加更新時間
       
       await kv.set(`user:${order.userId}:profile`, profile);

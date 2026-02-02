@@ -93,20 +93,8 @@ export function PaymentResult() {
           ]
         );
         
-        // 更新 localStorage 中的 user
-        const userStr = localStorage.getItem('user');
-        if (userStr) {
-          const user = JSON.parse(userStr);
-          user.referralCode = result.data.referralCode;
-          user.accountStatus = result.data.accountStatus;
-          user.registrationStep = 3;
-          localStorage.setItem('user', JSON.stringify(user));
-        }
-        
-        // 导向 Dashboard
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 2000);
+        // 重新加載完整的 profile（包含 registrationStep = 3）
+        window.location.href = '/dashboard';
       } else {
         throw new Error(result.message || '完成註冊失敗');
       }
@@ -119,6 +107,33 @@ export function PaymentResult() {
     } finally {
       setIsCompleting(false);
     }
+  };
+  
+  // ✅ 重新付款（回到 Step 1）
+  const handleRetryPayment = async () => {
+    try {
+      // 調用後端 API 重置到 Step 1
+      await apiRequestJson(
+        buildApiUrl('/auth/reset-to-payment'),
+        { method: 'POST' }
+      );
+      
+      showToast('正在返回付款頁面...', 'info');
+      
+      // 重新加載頁面以獲取最新的 profile
+      window.location.href = '/payment/checkout';
+    } catch (error: any) {
+      console.error('重置付款狀態失敗:', error);
+      showToast('操作失敗，請重新整理頁面', 'error');
+    }
+  };
+  
+  // ✅ 聯繫客服
+  const handleContactSupport = () => {
+    // TODO: 替換為實際的客服聯繫方式
+    showToast('客服功能開發中，請稍後再試', 'info');
+    // 未來可以導向客服頁面或開啟 Line/WhatsApp
+    // window.open('https://line.me/ti/p/YOUR_LINE_ID', '_blank');
   };
   
   // 加载中
@@ -217,14 +232,14 @@ export function PaymentResult() {
             
             <div className="flex gap-3">
               <Button
-                onClick={() => navigate('/payment/checkout')}
+                onClick={handleRetryPayment}
                 className="flex-1"
                 size="lg"
               >
                 重新付款
               </Button>
               <Button
-                onClick={() => navigate('/contact')}
+                onClick={handleContactSupport}
                 variant="outline"
                 className="flex-1"
                 size="lg"

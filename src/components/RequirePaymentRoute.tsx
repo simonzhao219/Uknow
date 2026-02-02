@@ -7,51 +7,64 @@ interface RequirePaymentRouteProps {
 }
 
 /**
- * 路由守衛：確保用戶已完成付款才能訪問
+ * 路由守衛：確保用戶完成註冊流程才能訪問會員功能
  * 
- * 檢查邏輯：
- * 1. 如果未登入 → 不處理（由 ProtectedRoute 處理）
- * 2. 如果已登入但未完成資料填寫 → 導向資料填寫頁面
- * 3. 如果已完成資料但未付款 → 導向付款頁面
- * 4. 如果已付款 → 允許訪問
+ * 註冊步驟檢查：
+ * - registrationStep = 0 或不存在 → 導向 /auth/complete-profile（填寫個人資料）
+ * - registrationStep = 1 → 導向 /payment/checkout（付款頁面）
+ * - registrationStep = 2 → 導向 /payment/result（付款結果頁面，等待用戶確認）
+ * - registrationStep = 3 → 允許訪問會員功能
  */
 export function RequirePaymentRoute({ children }: RequirePaymentRouteProps) {
   const { user, isLoggedIn } = useContext(UserContext);
   const navigate = useNavigate();
 
-  console.log('RequirePaymentRoute: Checking payment status -', {
+  console.log('RequirePaymentRoute: Checking registration step -', {
     isLoggedIn,
     hasUser: !!user,
-    hasName: !!user?.name,
-    hasPhone: !!user?.phone,
-    hasBirthDate: !!user?.birthDate,
-    hasReferralCode: !!user?.referralCode,
+    registrationStep: user?.registrationStep,
     currentPath: window.location.pathname
   });
 
   // 使用 useEffect 確保在渲染後執行導航
   useEffect(() => {
     if (!isLoggedIn || !user) {
-      console.log('RequirePaymentRoute: No user, skipping payment check');
+      console.log('RequirePaymentRoute: No user, skipping check');
       return;
     }
 
-    const hasCompleteProfile = !!(user.name && user.phone && user.birthDate);
-    const hasPaidMembership = !!user.referralCode;
+    const step = user.registrationStep ?? 0;
 
-    console.log('RequirePaymentRoute: Payment check result -', {
-      hasCompleteProfile,
-      hasPaidMembership
+    console.log('RequirePaymentRoute: Registration step check -', {
+      step,
+      pendingActivation: user.pendingActivation
     });
 
-    if (!hasCompleteProfile) {
-      console.log('RequirePaymentRoute: User needs to complete profile, redirecting...');
+    // ✅ 根據 registrationStep 決定導向
+    if (step === 0) {
+      console.log('RequirePaymentRoute: Step 0, redirecting to /auth/complete-profile');
       navigate('/auth/complete-profile', { replace: true });
-    } else if (!hasPaidMembership) {
-      console.log('RequirePaymentRoute: User needs to pay, redirecting...');
+    } else if (step === 1) {
+      console.log('RequirePaymentRoute: Step 1, redirecting to /payment/checkout');
       navigate('/payment/checkout', { replace: true });
+    } else if (step === 2) {
+      console.log('RequirePaymentRoute: Step 2, redirecting to /payment/result');
+      // ✅ Step 2：付款成功，等待用戶確認（顯示付款結果頁面）
+      // 需要從 profile 中獲取訂單號
+      if (user.lastTradeNo) {
+        navigate(`/payment/result?tradeNo=${user.lastTradeNo}`, { replace: true });
+      } else {
+        // 如果沒有訂單號，回到付款頁面
+        console.warn('RequirePaymentRoute: Step 2 but no lastTradeNo, redirecting to checkout');
+        navigate('/payment/checkout', { replace: true });
+      }
+    } else if (step === 3) {
+      console.log('RequirePaymentRoute: Step 3, access granted');
+      // ✅ 允許訪問
     } else {
-      console.log('RequirePaymentRoute: User has paid, access granted');
+      // 未知步驟，導向完善資料頁面
+      console.warn('RequirePaymentRoute: Unknown step, redirecting to /auth/complete-profile');
+      navigate('/auth/complete-profile', { replace: true });
     }
   }, [user, isLoggedIn, navigate]);
 
@@ -60,23 +73,36 @@ export function RequirePaymentRoute({ children }: RequirePaymentRouteProps) {
     return <>{children}</>;
   }
 
-  // 檢查付款狀態
-  const hasCompleteProfile = !!(user.name && user.phone && user.birthDate);
-  const hasPaidMembership = !!user.referralCode;
+  const step = user.registrationStep ?? 0;
 
-  // 如果未完成資料，導向資料填寫頁面
-  if (!hasCompleteProfile) {
+  // ✅ 根據 registrationStep 決定是否允許訪問或重定向
+  if (step === 0) {
     console.log('RequirePaymentRoute: Rendering Navigate to /auth/complete-profile');
     return <Navigate to="/auth/complete-profile" replace />;
   }
 
-  // 如果未付款，導向付款頁面
-  if (!hasPaidMembership) {
+  if (step === 1) {
     console.log('RequirePaymentRoute: Rendering Navigate to /payment/checkout');
     return <Navigate to="/payment/checkout" replace />;
   }
 
-  // 已付款，允許訪問
-  console.log('RequirePaymentRoute: Access granted, rendering children');
-  return <>{children}</>;
+  if (step === 2) {
+    console.log('RequirePaymentRoute: Rendering Navigate to /payment/result');
+    if (user.lastTradeNo) {
+      return <Navigate to={`/payment/result?tradeNo=${user.lastTradeNo}`} replace />;
+    } else {
+      console.warn('RequirePaymentRoute: Step 2 but no lastTradeNo, redirecting to checkout');
+      return <Navigate to="/payment/checkout" replace />;
+    }
+  }
+
+  if (step === 3) {
+    // 已完成註冊，允許訪問
+    console.log('RequirePaymentRoute: Access granted, rendering children');
+    return <>{children}</>;
+  }
+
+  // 未知步驟，導向完善資料頁面
+  console.warn('RequirePaymentRoute: Unknown step, redirecting to /auth/complete-profile');
+  return <Navigate to="/auth/complete-profile" replace />;
 }
