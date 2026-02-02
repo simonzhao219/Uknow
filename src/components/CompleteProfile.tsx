@@ -36,48 +36,20 @@ export function CompleteProfile() {
   const { showToast, showSuccess, showNotification } = useNotification();
   const supabase = createClient();
 
-  // 檢查是否有 session
+  // 檢查用戶是否已登入，並獲取 profile
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        showToast('請先完成 Email 驗證', 'error');
-        navigate('/login', { replace: true });
-        return;
-      }
-      
-      // ✅ 1. 檢查是否有 pendingUser（編輯模式）
-      const pendingUserStr = localStorage.getItem('pendingUser');
-      if (pendingUserStr) {
-        try {
-          const pendingUser = JSON.parse(pendingUserStr);
-          console.log('CompleteProfile: Found pendingUser, loading data into form:', pendingUser);
-          
-          // ✅ 自動填入表單（不包含推薦碼，讓用戶重新填寫）
-          setFormData({
-            name: pendingUser.name || '',
-            nationalId: pendingUser.nationalId || '',  // ✅ 新增身分證字號欄位
-            phone: pendingUser.phone || '',
-            birthDate: pendingUser.birthDate || '',
-            referralCode: '',  // ✅ 不帶入推薦碼，讓使用者重填
-            agreedToTerms: false
-          });
-          
-          // ✅ 清除推薦碼驗證狀態
-          setCodeVerified(false);
-          setVerifiedReferralCode('');
-          setReferrerName('');
-          setCodeError('');
-          
-          return; // 編輯模式，不檢查 profile
-        } catch (error) {
-          console.error('CompleteProfile: Error parsing pendingUser:', error);
-          localStorage.removeItem('pendingUser');
-        }
-      }
-      
-      // ✅ 2. 檢查用戶是否已完成資料填寫（非編輯模式）
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          console.log('CompleteProfile: No session found, redirecting to login');
+          showToast('請先登入', 'error');
+          navigate('/login', { replace: true });
+          return;
+        }
+        
+        // 嘗試加載現有的 profile
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
           {
@@ -95,7 +67,16 @@ export function CompleteProfile() {
           const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
           const hasPaidMembership = !!profile.referralCode;
           
-          if (hasCompleteProfile && hasPaidMembership) {
+          // ✅ 新增：檢查是否已完成註冊（registrationStep = 3）
+          if (profile.registrationStep === 3 && profile.referralCode) {
+            // 已完成註冊，導向會員中心
+            console.log('CompleteProfile: User already completed registration (step 3), redirecting to dashboard');
+            showToast('您已完成註冊，正在跳轉到會員中心...', 'info');
+            setTimeout(() => {
+              navigate('/dashboard', { replace: true });
+            }, 1000);
+            return;
+          } else if (hasCompleteProfile && hasPaidMembership) {
             // 已完成註冊，導向會員中心
             console.log('CompleteProfile: User already completed registration, redirecting to dashboard');
             navigate('/dashboard', { replace: true });
@@ -381,7 +362,7 @@ export function CompleteProfile() {
       await supabase.auth.signOut();
       
       // 5. 顯示提示訊息
-      showToast('您可以稍後再完成註冊', 'info');
+      showToast('您可以稍後再完��註冊', 'info');
       
       // 6. 等待一小段時間確保 session 清除完成，然後導向首頁
       setTimeout(() => {

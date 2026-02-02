@@ -65,7 +65,103 @@ subscriptions.get('/status', async (c) => {
     // 2. 獲取用戶的帳號狀態（新規格：訂閱綁定到用戶，而非刊登）
     const accountStatus = await kv.get(`user:${user.id}:account_status`);
     
+    // ✅ 如果沒有 account_status，先嘗試從 PayUni 訂單重建
     if (!accountStatus || !accountStatus.currentSubscriptionId) {
+      console.log(`ℹ️ 用戶沒有 account_status 或 currentSubscriptionId`);
+      
+      // ✅ 嘗試從 PayUni 訂單重建（新增）
+      console.log(`🔄 嘗試從 PayUni 訂單重建訂閱記錄...`);
+      
+      // 獲取用戶 profile（包含 lastTradeNo）
+      const profile = await kv.get(`user:${user.id}:profile`);
+      
+      if (profile?.lastTradeNo) {
+        console.log(`📦 找到訂單號: ${profile.lastTradeNo}`);
+        
+        // 從 PayUni 訂單獲取數據
+        const payuniOrder = await kv.get(`payuni:order:${profile.lastTradeNo}`);
+        
+        if (payuniOrder && payuniOrder.status === 'success') {
+          console.log(`✅ 找到成功的 PayUni 訂單，開始重建訂閱記錄...`);
+          
+          // 生成新的訂閱 ID
+          const subscriptionId = `subscription_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          
+          // 計算訂閱週期（使用台灣時區）
+          const now = getTaiwanNow();
+          const startDate = payuniOrder.completedAt ? new Date(payuniOrder.completedAt) : now;
+          const endDate = new Date(startDate);
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          endDate.setDate(endDate.getDate() - 1);
+          endDate.setHours(23, 59, 59, 999);
+          
+          // 計算寬限期結束日期（結束日 + 60天）
+          const gracePeriodEnd = new Date(endDate);
+          gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 60);
+          gracePeriodEnd.setHours(23, 59, 59, 999);
+          
+          // 創建訂閱記錄
+          const newSubscription = {
+            id: subscriptionId,
+            userId: user.id,
+            status: 'Active',
+            startDate: toTaiwanISOString(startDate),
+            endDate: toTaiwanISOString(endDate),
+            gracePeriodEnd: toTaiwanISOString(gracePeriodEnd),
+            amount: 1200,
+            paymentMethod: 'payuni_recurring',
+            paymentTransactionId: profile.lastTradeNo,
+            periodTradeNo: payuniOrder.periodTradeNo || null,
+            isCanceled: false,
+            canceledAt: null,
+            isRenewal: false,
+            createdAt: toTaiwanISOString(startDate),
+            updatedAt: toTaiwanISOString(now)
+          };
+          
+          // 存儲新的訂閱記錄
+          await kv.set(`subscription:${subscriptionId}`, newSubscription);
+          
+          // 創建帳號狀態
+          await kv.set(`user:${user.id}:account_status`, {
+            status: 'Active',
+            currentSubscriptionId: subscriptionId,
+            activeReferralCodeId: null,
+            activeListingId: null,
+            lastStatusUpdate: toTaiwanISOString(now),
+            lastSubscriptionEndDate: toTaiwanISOString(endDate),
+            gracePeriodEndDate: null
+          });
+          
+          // 添加到用戶訂閱列表
+          const userSubscriptions = await kv.get(`user:${user.id}:subscriptions`) || [];
+          userSubscriptions.unshift(subscriptionId);
+          await kv.set(`user:${user.id}:subscriptions`, userSubscriptions);
+          
+          console.log(`✅ 從 PayUni 訂單重建訂閱記錄完成: ${subscriptionId}`);
+          console.log(`   起始日: ${newSubscription.startDate}`);
+          console.log(`   結束日: ${newSubscription.endDate}`);
+          
+          // 使用新的訂閱記錄繼續處理
+          const statusInfo = calculateSubscriptionStatus(newSubscription);
+          
+          return c.json({
+            success: true,
+            data: {
+              hasSubscription: true,
+              ...statusInfo
+            }
+          });
+        } else if (payuniOrder) {
+          console.log(`⚠️ PayUni 訂單狀態不是成功: ${payuniOrder.status}`);
+        } else {
+          console.log(`⚠️ 找不到 PayUni 訂單: payuni:order:${profile.lastTradeNo}`);
+        }
+      } else {
+        console.log(`⚠️ 用戶 profile 沒有 lastTradeNo`);
+      }
+      
+      // 如果 PayUni 重建也失敗，返回尚未訂閱
       console.log(`ℹ️ 用戶尚未訂閱: ${user.id}`);
       return c.json({
         success: true,
@@ -84,9 +180,9 @@ subscriptions.get('/status', async (c) => {
     const subscription = await kv.get(`subscription:${accountStatus.currentSubscriptionId}`);
     
     if (!subscription) {
-      console.error(`⚠️ 訂閱資料不存在: ${accountStatus.currentSubscriptionId}`);;
+      console.error(`⚠️ 訂閱資料不存在: ${accountStatus.currentSubscriptionId}`);
       
-      // ✅ 回退邏輯：嘗試從舊的鍵讀取（向後兼容）
+      // ✅ 回退邏輯 1：嘗試從舊的鍵讀取（向後兼容）
       console.log(`🔄 嘗試從舊的訂閱鍵讀取: user:${user.id}:subscription`);
       const oldSubscription = await kv.get(`user:${user.id}:subscription`);
       
@@ -153,7 +249,7 @@ subscriptions.get('/status', async (c) => {
         });
       }
       
-      // 如果舊記錄也不存在，返回數據不一致錯誤
+      // 如果所有回退邏輯都失敗，返回數據不一致錯誤
       console.error(`❌ 數據不一致：account_status 存在但找不到任何訂閱記錄`);
       
       // 清理不一致的 account_status
@@ -859,7 +955,7 @@ subscriptions.get('/history', async (c) => {
       return c.json({ error: { message: 'Unauthorized' } }, 401);
     }
     
-    // 2. 獲取付款歷��
+    // 2. 獲取付款歷
     const paymentHistory = await kv.get(`user:${user.id}:payment_history`) || [];
     
     return c.json({
@@ -1029,7 +1125,7 @@ export async function checkAndUpdateSubscriptionStatus(userId: string): Promise<
  * 
  * @param userId - 用戶 ID
  * @param listingId - 刊登 ID
- * @param referralCode - ���薦碼
+ * @param referralCode - 薦碼
  */
 async function handleReferralCodeExpiration(
   userId: string,

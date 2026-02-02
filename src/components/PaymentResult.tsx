@@ -47,6 +47,7 @@ export function PaymentResult() {
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
   const [retryCount, setRetryCount] = useState(0);  // ✅ 新增：重試計數
   const [maxRetries] = useState(12);  // ✅ 新增：最多重試 12 次
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);  // ✅ 新增：檢查認證狀態
   
   const tradeNo = searchParams.get('tradeNo');
   
@@ -56,8 +57,64 @@ export function PaymentResult() {
     isLoading,
     orderResult,
     retryCount,
+    isCheckingAuth,
     searchParamsAll: Object.fromEntries(searchParams.entries())
   });
+  
+  // ✅ 檢查用戶是否已完成註冊（registrationStep = 3）
+  useEffect(() => {
+    const checkUserStatus = async () => {
+      try {
+        console.log('[PaymentResult] 🔍 Checking user registration status...');
+        
+        const supabase = (await import('../utils/supabase/client')).createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          console.log('[PaymentResult] ⚠️ No session found');
+          setIsCheckingAuth(false);
+          return;
+        }
+        
+        // 獲取用戶 profile
+        const { projectId } = await import('../utils/supabase/info');
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const profile = await response.json();
+          console.log('[PaymentResult] 👤 User profile:', {
+            registrationStep: profile.registrationStep,
+            hasReferralCode: !!profile.referralCode
+          });
+          
+          // ✅ 如果已完成註冊（Step 3），自動跳轉到 dashboard
+          if (profile.registrationStep === 3 && profile.referralCode) {
+            console.log('[PaymentResult] ✅ User already completed registration, redirecting to dashboard...');
+            showToast('您已完成註冊，正在跳轉到會員中心...', 'info');
+            
+            setTimeout(() => {
+              navigate('/dashboard', { replace: true });
+            }, 1000);
+            return;
+          }
+        }
+        
+        setIsCheckingAuth(false);
+      } catch (error) {
+        console.error('[PaymentResult] ❌ Error checking user status:', error);
+        setIsCheckingAuth(false);
+      }
+    };
+    
+    checkUserStatus();
+  }, [navigate, showToast]);
   
   // ✅ 查询订单状态（支持重試）
   const fetchOrderStatus = async (): Promise<OrderResult | null> => {
@@ -161,7 +218,13 @@ export function PaymentResult() {
   
   // ✅ 首次查詢延遲 5 秒
   useEffect(() => {
-    console.log('[PaymentResult] ⚡ useEffect triggered', { tradeNo });
+    console.log('[PaymentResult] ⚡ useEffect triggered', { tradeNo, isCheckingAuth });
+    
+    // ✅ 等待認證檢查完成
+    if (isCheckingAuth) {
+      console.log('[PaymentResult] ⏸️ Waiting for auth check...');
+      return;
+    }
     
     if (tradeNo) {
       console.log('[PaymentResult] ⏰ Waiting 5 seconds before first query...');
@@ -179,7 +242,7 @@ export function PaymentResult() {
       console.log('[PaymentResult] ⏸️ No tradeNo, waiting...');
       setIsLoading(false);
     }
-  }, [tradeNo]);
+  }, [tradeNo, isCheckingAuth]);
   
   useEffect(() => {
     console.log('[PaymentResult] 🎬 Component mounted');
