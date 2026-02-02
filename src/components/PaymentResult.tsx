@@ -300,6 +300,12 @@ export function PaymentResult() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p className="text-sm text-gray-800">
+              訂單編號：{orderResult?.tradeNo || tradeNo || '未知'}
+            </p>
+          </div>
+          
           <Button
             onClick={() => window.open('https://line.me/ti/p/@Uknow', '_blank')}
             className="w-full"
