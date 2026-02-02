@@ -57,7 +57,7 @@ export function PaymentResult() {
       
       const result = await apiRequestJson<{
         success: boolean;
-        order: {
+        data: {  // ✅ 修正：后端返回的是 "data" 不是 "order"
           status: OrderStatus;
           tradeNo: string;
           errorMessage?: string;
@@ -68,8 +68,8 @@ export function PaymentResult() {
       console.log('[PaymentResult] ✅ API response:', result);
       
       if (result.success) {
-        console.log('[PaymentResult] ✅ Order found:', result.order);
-        setOrderResult(result.order);
+        console.log('[PaymentResult] ✅ Order found:', result.data);  // ✅ 修正：data 不是 order
+        setOrderResult(result.data);  // ✅ 修正：data 不是 order
       } else {
         console.log('[PaymentResult] ⚠️ API returned success=false');
         setOrderResult({ status: 'unknown', tradeNo });
