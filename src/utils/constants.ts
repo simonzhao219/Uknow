@@ -38,7 +38,7 @@ export const ALLOWED_PHOTO_FORMATS = [
  *    - "warning"：淺黃色背景（重要維護）
  */
 export const MAINTENANCE_NOTICE = {
-  enabled: true, // 總開關：true 啟用，false 停用
+  enabled: false, // 總開關：true 啟用，false 停用
   title: "系統維護預告",
   message:
     "我們將於 2026/02/02 10:00-13:00 進行新「註冊」功能測試，期間付款是測試頁面，不會真的付款。",
