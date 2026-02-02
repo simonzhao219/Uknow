@@ -130,10 +130,7 @@ export function PaymentResult() {
   
   // ✅ 聯繫客服
   const handleContactSupport = () => {
-    // TODO: 替換為實際的客服聯繫方式
-    showToast('客服功能開發中，請稍後再試', 'info');
-    // 未來可以導向客服頁面或開啟 Line/WhatsApp
-    // window.open('https://line.me/ti/p/YOUR_LINE_ID', '_blank');
+    window.open('https://line.me/ti/p/@Uknow', '_blank');
   };
   
   // 加载中
@@ -304,11 +301,11 @@ export function PaymentResult() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Button
-            onClick={() => navigate('/payment/checkout')}
+            onClick={() => window.open('https://line.me/ti/p/@Uknow', '_blank')}
             className="w-full"
             size="lg"
           >
-            返回付款頁面
+            聯絡官方客服
           </Button>
         </CardContent>
       </Card>
