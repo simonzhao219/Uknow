@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
-import { Loader2, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Clock, RefreshCw, CreditCard } from 'lucide-react';
 import { useNotification } from './notifications/NotificationContext';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 
@@ -216,6 +216,14 @@ export function PaymentResult() {
   
   // 付款成功
   if (orderResult?.status === 'success') {
+    // 🐛 调试日志：检查 orderResult 和 paymentData
+    console.log('[PaymentResult] 💳 Payment Success Block', {
+      orderResult,
+      hasPaymentData: !!orderResult.paymentData,
+      paymentDataKeys: orderResult.paymentData ? Object.keys(orderResult.paymentData) : [],
+      paymentData: orderResult.paymentData
+    });
+    
     // ✅ 格式化卡片到期日 (MMYY → MM/YY)
     const formatCardExpiry = (expiry: string) => {
       if (expiry && expiry.length === 4) {
@@ -246,85 +254,83 @@ export function PaymentResult() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* ✅ 訂單資訊 */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-green-800 font-medium">訂單編號</span>
-                <span className="text-sm text-green-800">{orderResult.periodTradeNo || orderResult.tradeNo}</span>
+            {/* ✅ 付款資訊 - 整合成單一卡片 */}
+            <div className="bg-gradient-to-br from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 space-y-4">
+              {/* 付款成功標題 */}
+              <div className="flex items-center gap-2 pb-3 border-b border-green-200">
+                <CreditCard className="h-5 w-5 text-green-600" />
+                <h3 className="text-base font-semibold text-green-800">付款資訊</h3>
+                {orderResult.mode === 'test' && (
+                  <span className="ml-auto text-xs text-green-700 bg-green-100 px-2 py-1 rounded">
+                    ⚠️ 測試模式
+                  </span>
+                )}
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-green-800 font-medium">付款金額</span>
-                <span className="text-sm text-green-800 font-bold">NT$ {paymentData?.AuthAmt || '1,200'}</span>
-              </div>
-              {orderResult.mode === 'test' && (
-                <div className="pt-2 border-t border-green-300">
-                  <p className="text-xs text-green-700">
-                    ⚠️ 測試模式交易
-                  </p>
+              
+              {/* 訂單資訊區 */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">訂單編號</span>
+                  <span className="text-sm text-gray-900 font-mono">{orderResult.periodTradeNo || orderResult.tradeNo}</span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">付款金額</span>
+                  <span className="text-lg text-green-600 font-bold">NT$ {paymentData?.AuthAmt || '1,200'}</span>
+                </div>
+              </div>
+              
+              {/* 付款人與信用卡資訊 */}
+              {paymentData && (
+                <>
+                  <div className="border-t border-green-200 pt-3 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">付款人</span>
+                      <span className="text-sm text-gray-900 font-medium">{paymentData.PayerName}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">聯絡電話</span>
+                      <span className="text-sm text-gray-900">{paymentData.PayerPhone}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Email</span>
+                      <span className="text-sm text-gray-900 break-all">{paymentData.PayerEmail}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-green-200 pt-3 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">信用卡銀行</span>
+                      <span className="text-sm text-gray-900 font-medium">{paymentData.AuthBankName}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">卡號</span>
+                      <span className="text-sm text-gray-900 font-mono">
+                        {paymentData.Card6No} ****** {paymentData.Card4No}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">到期日</span>
+                      <span className="text-sm text-gray-900">{formatCardExpiry(paymentData.CardExpired)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-green-200 pt-3 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">訂閱方案</span>
+                      <span className="text-sm text-gray-900 font-medium">年費會員</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">年費金額</span>
+                      <span className="text-sm text-gray-900 font-bold">NT$ {paymentData.PeriodAmt} / 年</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">下期扣款日</span>
+                      <span className="text-sm text-gray-900">{getNextPaymentDate(paymentData.DateList)}</span>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
-            
-            {/* ✅ 付款人資訊 */}
-            {paymentData && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">付款人資訊</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">姓名</span>
-                    <span className="text-sm text-gray-800 font-medium">{paymentData.PayerName}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">電話</span>
-                    <span className="text-sm text-gray-800">{paymentData.PayerPhone}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Email</span>
-                    <span className="text-sm text-gray-800 break-all">{paymentData.PayerEmail}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* ✅ 信用卡資訊 */}
-            {paymentData && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-700 mb-3">信用卡資訊</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-600">銀行</span>
-                    <span className="text-sm text-blue-800 font-medium">{paymentData.AuthBankName}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-600">卡號</span>
-                    <span className="text-sm text-blue-800 font-mono">
-                      {paymentData.Card6No} ****** {paymentData.Card4No}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-600">到期日</span>
-                    <span className="text-sm text-blue-800">{formatCardExpiry(paymentData.CardExpired)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* ✅ 訂閱資訊 */}
-            {paymentData && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-purple-700 mb-3">訂閱資訊</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-purple-600">年費</span>
-                    <span className="text-sm text-purple-800 font-bold">NT$ {paymentData.PeriodAmt} / 年</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-purple-600">下期扣款日</span>
-                    <span className="text-sm text-purple-800">{getNextPaymentDate(paymentData.DateList)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
             
             <Button
               onClick={handleCompleteRegistration}

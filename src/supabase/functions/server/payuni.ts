@@ -166,7 +166,8 @@ payuni.get('/result/:tradeNo', async (c) => {
         periodTradeNo: order.periodTradeNo,
         errorMessage: order.errorMessage,
         mode: order.mode,
-        completedAt: order.completedAt
+        completedAt: order.completedAt,
+        paymentData: order.paymentData  // ✅ 添加完整的 paymentData
       }
     });
     
