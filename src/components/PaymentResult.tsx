@@ -267,43 +267,31 @@ export function PaymentResult() {
                 )}
               </div>
               
-              {/* 訂單資訊區 */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">訂單編號</span>
-                  <span className="text-sm text-gray-900 font-mono">{orderResult.periodTradeNo || orderResult.tradeNo}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">付款金額</span>
-                  <span className="text-lg text-green-600 font-bold">NT$ {paymentData?.AuthAmt || '1,200'}</span>
-                </div>
-              </div>
-              
               {/* 付款人與信用卡資訊 */}
               {paymentData && (
                 <>
-                  <div className="border-t border-green-200 pt-3 space-y-2">
+                  <div className="border-b border-green-200 p-3 space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">付款人</span>
+                      <span className="text-sm text-gray-600">付款人姓名</span>
                       <span className="text-sm text-gray-900 font-medium">{paymentData.PayerName}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">聯絡電話</span>
+                      <span className="text-sm text-gray-600">付款人電話</span>
                       <span className="text-sm text-gray-900">{paymentData.PayerPhone}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Email</span>
+                      <span className="text-sm text-gray-600">付款人Email</span>
                       <span className="text-sm text-gray-900 break-all">{paymentData.PayerEmail}</span>
                     </div>
                   </div>
                   
-                  <div className="border-t border-green-200 pt-3 space-y-2">
+                  <div className="border-b border-green-200 p-3 space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">信用卡銀行</span>
                       <span className="text-sm text-gray-900 font-medium">{paymentData.AuthBankName}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">卡號</span>
+                      <span className="text-sm text-gray-600">信用卡號</span>
                       <span className="text-sm text-gray-900 font-mono">
                         {paymentData.Card6No} ****** {paymentData.Card4No}
                       </span>
@@ -314,13 +302,9 @@ export function PaymentResult() {
                     </div>
                   </div>
                   
-                  <div className="border-t border-green-200 pt-3 space-y-2">
+                  <div className="border-b border-green-200 p-3 space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">訂閱方案</span>
-                      <span className="text-sm text-gray-900 font-medium">年費會員</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">年費金額</span>
                       <span className="text-sm text-gray-900 font-bold">NT$ {paymentData.PeriodAmt} / 年</span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -330,6 +314,19 @@ export function PaymentResult() {
                   </div>
                 </>
               )}
+              
+              {/* 訂單資訊區 */}
+              <div className="p-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">訂單編號</span>
+                  <span className="text-sm text-gray-900 font-mono">{orderResult.periodTradeNo || orderResult.tradeNo}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">付款金額</span>
+                  <span className="text-lg text-green-600 font-bold">NT$ {paymentData?.AuthAmt || '1,200'}</span>
+                </div>
+              </div>
+              
             </div>
             
             <Button
