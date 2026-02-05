@@ -16,40 +16,42 @@ const TAIWAN_TIMEZONE_OFFSET = 8 * 60; // 台灣時區偏移（分鐘）
  */
 export function getTaiwanNow(): Date {
   const now = new Date();
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  return new Date(utc + (TAIWAN_TIMEZONE_OFFSET * 60000));
+  // ✅ 優化：getTime() 已經返回 UTC 時間戳，直接加台灣時區偏移
+  return new Date(now.getTime() + (TAIWAN_TIMEZONE_OFFSET * 60000));
 }
 
 /**
  * 將日期轉換為台灣時區的日期字符串（YYYY-MM-DD）
- * @param date - Date 對象
+ * 
+ * ⚠️ 重要：此函數接收的 Date 對象應該是 getTaiwanNow() 返回的時間戳調整後的對象
+ * 使用 getUTC*() 方法在 UTC 環境下解釋時間戳，得到台灣時間的數字
+ * 
+ * @param date - Date 對象（時間戳已調整為台灣時間）
  * @returns 台灣時區的日期字符串
  */
 export function toTaiwanDateString(date: Date): string {
-  const taiwanDate = new Date(date.getTime() + (TAIWAN_TIMEZONE_OFFSET * 60000));
-  const year = taiwanDate.getUTCFullYear();
-  const month = String(taiwanDate.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(taiwanDate.getUTCDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 /**
  * 將日期轉換為台灣時區的 ISO 字符串（YYYY-MM-DDTHH:mm:ss+08:00）
  * 
- * ⚠️ 重要：此函數接收的 Date 對象應該已經是台灣時區時間（由 getTaiwanNow() 返回）
- * 不會再次加8小時偏移
+ * ⚠️ 重要：此函數接收的 Date 對象應該是 getTaiwanNow() 返回的時間戳調整後的對象
+ * 使用 getUTC*() 方法在 UTC 環境下解釋時間戳，得到台灣時間的數字
  * 
- * @param date - Date 對象（台灣時區）
+ * @param date - Date 對象（時間戳已調整為台灣時間）
  * @returns 台灣時區的 ISO 字符串
  */
 export function toTaiwanISOString(date: Date): string {
-  // ✅ 修復：不再重複加8小時，直接格式化
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`;
 }
 
@@ -119,7 +121,9 @@ export function formatTaiwanDate(date: Date | string): string {
 /**
  * 格式化日期時間顯示（YYYY/MM/DD HH:mm:ss）
  * 
- * ⚠️ 重要：此函數接收 ISO 字符串或 Date 對象，會自動處理時區轉換
+ * ⚠️ 重要：此函數接收 ISO 字符串或 getTaiwanNow() 返回的 Date 對象
+ * - ISO 字符串：new Date() 會正確解析時區信息
+ * - getTaiwanNow() 的 Date：使用 getUTC*() 方法解釋時間戳
  * 
  * @param date - Date 對象或 ISO 字符串
  * @returns 格式化的日期時間字符串
@@ -127,15 +131,15 @@ export function formatTaiwanDate(date: Date | string): string {
 export function formatTaiwanDateTime(date: Date | string): string {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
   
-  // ✅ 修復：不再重複加8小時
-  // 如果輸入是 ISO 字符串（如 "2026-01-22T04:00:00+08:00"），new Date() 已經正確解析
-  // 如果輸入是 getTaiwanNow() 返回的 Date，已經是台灣時間
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  const hours = String(dateObj.getHours()).padStart(2, '0');
-  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
-  const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+  // 如果是 ISO 字符串（帶時區信息），使用本地方法
+  // 如果是 getTaiwanNow() 返回的對象，需要使用 UTC 方法
+  // 為了統一處理，統一使用 UTC 方法（因為我們的 Date 都是時間戳調整後的）
+  const year = dateObj.getUTCFullYear();
+  const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getUTCDate()).padStart(2, '0');
+  const hours = String(dateObj.getUTCHours()).padStart(2, '0');
+  const minutes = String(dateObj.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(dateObj.getUTCSeconds()).padStart(2, '0');
   
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
@@ -149,13 +153,13 @@ export function formatTaiwanDateTime(date: Date | string): string {
 export function generatePayUniTradeNo(): string {
   const now = getTaiwanNow();
   
-  // 時間戳（14碼）
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
+  // 時間戳（14碼）- 使用 UTC 方法解釋時間戳
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  const hours = String(now.getUTCHours()).padStart(2, '0');
+  const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(now.getUTCSeconds()).padStart(2, '0');
   const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
   
   // 隨機英數字（11碼）

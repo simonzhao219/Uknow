@@ -435,12 +435,17 @@ export const completeRegistration = async (c: Context) => {
         activeUntil: profile.activeUntil,
         createdAt: paidAt
       };
+      // 新成員的直接推薦人信息
+      const gen1Profile = await kv.get(`user:${referredByUserId}:profile`);
+      const newMemberDirectReferrer = {
+        userId: referredByUserId,
+        userName: gen1Profile.name,
+        userReferralCode: gen1Profile.referralCode
+      };
       
       try {
         // ========== 一代推薦關係 ==========
         console.log('[completeRegistration] 📍 處理一代推薦關係...');
-        
-        const gen1Profile = await kv.get(`user:${referredByUserId}:profile`);
         
         if (gen1Profile) {
           // 發放一代首月獎勵
@@ -531,11 +536,7 @@ export const completeRegistration = async (c: Context) => {
                 gen2UserId,
                 newMember,
                 2,
-                {
-                  userId: referredByUserId,
-                  userName: gen1Profile.name,
-                  userReferralCode: gen1Profile.referralCode
-                }
+                newMemberDirectReferrer
               );
               
               // 更新二代推薦統計
@@ -580,11 +581,7 @@ export const completeRegistration = async (c: Context) => {
                     gen3UserId,
                     newMember,
                     3,
-                    {
-                      userId: gen2UserId,
-                      userName: gen2Profile.name,
-                      userReferralCode: gen2Profile.referralCode
-                    }
+                    newMemberDirectReferrer
                   );
                   
                   // 更新三代推薦統計
