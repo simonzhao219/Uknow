@@ -422,7 +422,7 @@ export const completeRegistration = async (c: Context) => {
     const referredByUserId = profile.referredByUserId;
     const referredByCode = profile.referredByCode;
     
-    if (referredByUserId && referredByCode && referredByCode !== 'asa899869') {
+    if (referredByUserId && referredByCode) {
       console.log('[completeRegistration] 🔗 開始處理推薦關係...');
       console.log('[completeRegistration] 推薦碼:', referredByCode);
       console.log('[completeRegistration] 推薦人:', referredByUserId);
