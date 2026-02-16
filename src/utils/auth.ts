@@ -34,6 +34,27 @@ export async function getAccessToken(): Promise<string | null> {
       console.info('[auth] 未找到有效的 session');
       return null;
     }
+
+    // 2. 檢查 token 是否快過期（剩餘時間 < 5 分鐘）
+    const expiresAt = session.expires_at; // Unix timestamp (秒)
+    const now = Math.floor(Date.now() / 1000);
+    const timeLeft = expiresAt - now;
+
+    // 3. 如果快過期，主動 refresh
+    if (timeLeft < 300) {  // 5 分鐘 = 300 秒
+      console.log('[Auth] Token 即將過期，自動 refresh...');
+      
+      const { data: { session: newSession }, error: refreshError } = 
+        await supabase.auth.refreshSession();
+      
+      if (refreshError || !newSession) {
+        console.error('[Auth] Refresh 失敗:', refreshError);
+        return null;
+      }
+      
+      console.log('[Auth] Token refresh 成功');
+      return newSession.access_token;
+    }
     
     return session.access_token;
   } catch (error) {
