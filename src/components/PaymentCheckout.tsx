@@ -627,7 +627,7 @@ export function PaymentCheckout() {
               disabled={isLoading}
               className="w-full"
             >
-              稍後付款（測試用）
+              稍後付款
             </Button>
           </div>
         </CardContent>
