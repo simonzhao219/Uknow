@@ -649,4 +649,297 @@ admin.get('/debug-user-by-email/:email', async (c) => {
   }
 });
 
+/**
+ * POST /admin/manual-reissue-rewards
+ * 手動補發指定日期的獎勵（不檢查排程，直接補發）
+ * 
+ * Body:
+ * - targetDate: 目標日期（格式：YYYY-MM-DD）
+ * - dryRun: 是否為預覽模式（true = 只預覽不執行，false = 實際發放）
+ */
+admin.post('/manual-reissue-rewards', async (c) => {
+  try {
+    // 1. 驗證管理員權限
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { user, error: authError } = await verifyToken(token);
+    
+    if (authError || !user) {
+      return c.json({ error: { message: 'Unauthorized' } }, 401);
+    }
+    
+    const profile = await kv.get(`user:${user.id}:profile`);
+    if (!profile || !profile.isAdmin) {
+      return c.json({ error: { message: 'Forbidden - 需要管理員權限' } }, 403);
+    }
+    
+    console.log('========================================');
+    console.log('💰 手動補發獎勵');
+    console.log('========================================');
+    console.log(`管理員: ${user.email} (${user.id})`);
+    
+    // 2. 獲取請求參數
+    const body = await c.req.json();
+    const { targetDate, dryRun = true } = body;
+    
+    if (!targetDate) {
+      return c.json({ 
+        error: { message: '請提供 targetDate 參數（格式：YYYY-MM-DD）' } 
+      }, 400);
+    }
+    
+    console.log(`目標日期: ${targetDate}`);
+    console.log(`執行模式: ${dryRun ? '🔍 預覽模式（不會真正發放）' : '⚡ 實際發放模式'}`);
+    console.log('');
+    
+    // 3. 查找該日期的所有待處理排程
+    const dateIndexKey = `reward_schedules_by_date:${targetDate}`;
+    const scheduleIds = await kv.get(dateIndexKey) || [];
+    
+    console.log(`📋 在日期索引中找到 ${scheduleIds.length} 個排程 ID`);
+    
+    if (scheduleIds.length === 0) {
+      console.log('✓ 該日期沒有待處理的排程');
+      console.log('========================================');
+      
+      return c.json({
+        success: true,
+        message: `${targetDate} 沒有待處理的排程`,
+        data: {
+          targetDate,
+          dryRun,
+          schedulesFound: 0,
+          processed: 0,
+          skipped: 0,
+          failed: 0,
+          results: []
+        }
+      });
+    }
+    
+    // 4. 逐一處理排程
+    console.log('開始處理排程...\n');
+    
+    const results = [];
+    let successCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    
+    for (let i = 0; i < scheduleIds.length; i++) {
+      const scheduleId = scheduleIds[i];
+      console.log(`[${i + 1}/${scheduleIds.length}] 處理排程: ${scheduleId}`);
+      
+      try {
+        const schedule = await kv.get(`reward_schedule:${scheduleId}`);
+        
+        if (!schedule) {
+          console.warn(`  ⚠️ 排程不存在，跳過`);
+          results.push({
+            scheduleId,
+            status: 'not_found',
+            message: '排程不存在'
+          });
+          skippedCount++;
+          continue;
+        }
+        
+        if (schedule.status !== 'pending') {
+          console.log(`  ⏭️ 排程已處理 (status=${schedule.status})，跳過`);
+          results.push({
+            scheduleId,
+            status: 'already_processed',
+            message: `排程狀態: ${schedule.status}`,
+            details: {
+              userId: schedule.userId,
+              refereeName: schedule.referee?.userName || 'Unknown',
+              generation: schedule.generation,
+              monthNumber: schedule.monthNumber,
+              amount: schedule.amount
+            }
+          });
+          skippedCount++;
+          continue;
+        }
+        
+        // 檢查被推薦人是否存在
+        const refereeProfile = await kv.get(`user:${schedule.referee.userId}:profile`);
+        if (!refereeProfile) {
+          console.warn(`  ⚠️ 被推薦人不存在: ${schedule.referee.userId}，跳過`);
+          results.push({
+            scheduleId,
+            status: 'referee_not_found',
+            message: '被推薦人不存在',
+            details: {
+              refereeUserId: schedule.referee.userId,
+              refereeName: schedule.referee?.userName || 'Unknown'
+            }
+          });
+          skippedCount++;
+          continue;
+        }
+        
+        // 如果是預覽模式，只記錄不執行
+        if (dryRun) {
+          console.log(`  🔍 [預覽] 會發放獎勵:`);
+          console.log(`     接收者: ${schedule.userId}`);
+          console.log(`     被推薦人: ${schedule.referee.userName} (${schedule.referee.userReferralCode})`);
+          console.log(`     代數: 第${schedule.generation}代`);
+          console.log(`     月份: 第${schedule.monthNumber}個月`);
+          console.log(`     金額: ${schedule.amount}P`);
+          
+          results.push({
+            scheduleId,
+            status: 'preview',
+            message: '預覽模式：會發放但目前未執行',
+            details: {
+              userId: schedule.userId,
+              refereeName: schedule.referee.userName,
+              refereeCode: schedule.referee.userReferralCode,
+              generation: schedule.generation,
+              monthNumber: schedule.monthNumber,
+              amount: schedule.amount,
+              scheduledDate: schedule.scheduledDate
+            }
+          });
+          successCount++;
+          continue;
+        }
+        
+        // 實際發放模式：執行發放
+        console.log(`  ⚡ [執行] 發放獎勵...`);
+        console.log(`     接收者: ${schedule.userId}`);
+        console.log(`     被推薦人: ${schedule.referee.userName} (${schedule.referee.userReferralCode})`);
+        console.log(`     代數: 第${schedule.generation}代`);
+        console.log(`     月份: 第${schedule.monthNumber}個月`);
+        console.log(`     金額: ${schedule.amount}P`);
+        
+        // 調用發放函數
+        await manualIssueReward(schedule);
+        
+        // 更新排程狀態
+        schedule.status = 'completed';
+        schedule.completedAt = toTaiwanISOString(getTaiwanNow());
+        await kv.set(`reward_schedule:${scheduleId}`, schedule);
+        
+        console.log(`  ✅ 發放成功\n`);
+        
+        results.push({
+          scheduleId,
+          status: 'issued',
+          message: '獎勵已發放',
+          details: {
+            userId: schedule.userId,
+            refereeName: schedule.referee.userName,
+            refereeCode: schedule.referee.userReferralCode,
+            generation: schedule.generation,
+            monthNumber: schedule.monthNumber,
+            amount: schedule.amount
+          }
+        });
+        
+        successCount++;
+        
+      } catch (error) {
+        console.error(`  ❌ 處理失敗:`, error);
+        results.push({
+          scheduleId,
+          status: 'error',
+          message: error.message
+        });
+        failedCount++;
+      }
+    }
+    
+    console.log('========================================');
+    console.log('📊 處理結果:');
+    console.log(`  成功: ${successCount}`);
+    console.log(`  跳過: ${skippedCount}`);
+    console.log(`  失敗: ${failedCount}`);
+    console.log(`  總計: ${scheduleIds.length}`);
+    console.log('========================================');
+    
+    return c.json({
+      success: true,
+      message: dryRun ? '預覽完成（未實際發放）' : '補發完成',
+      data: {
+        targetDate,
+        dryRun,
+        totalSchedules: scheduleIds.length,
+        successCount,
+        skippedCount,
+        failedCount,
+        results
+      }
+    });
+    
+  } catch (error) {
+    console.error('========================================');
+    console.error('❌ 手動補發獎勵失敗');
+    console.error('========================================');
+    console.error(error);
+    
+    return c.json({
+      success: false,
+      error: { message: error.message }
+    }, 500);
+  }
+});
+
+/**
+ * 手動發放獎勵（複製 cron.ts 的 issueScheduledReward 邏輯）
+ */
+async function manualIssueReward(schedule: any) {
+  const { userId, amount, referee, referrer, generation, monthNumber } = schedule;
+  
+  // 1. 更新獎勵資料
+  const rewardsKey = `user:${userId}:rewards`;
+  const rewards = await kv.get(rewardsKey) || {
+    availableRewards: 0,
+    pendingRewards: 0,
+    withdrawnRewards: 0,
+    totalEarned: 0
+  };
+  
+  rewards.availableRewards += amount;
+  rewards.totalEarned += amount;
+  rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
+  
+  await kv.set(rewardsKey, rewards);
+  
+  // 2. 記錄獎勵歷史
+  const historyKey = `user:${userId}:reward_history`;
+  const history = await kv.get(historyKey) || [];
+  
+  const generationText = generation === 1 ? '一代推薦' : generation === 2 ? '二代推薦' : '三代推薦';
+  const description = `${generationText}-${referee.userName}-${referee.userReferralCode}-第${monthNumber}個月`;
+  
+  const balanceAfterTransaction = rewards.availableRewards + rewards.pendingRewards;
+  
+  history.unshift({
+    id: `reward_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+    type: `referral_gen${generation}_month${monthNumber}`,
+    amount,
+    balance: balanceAfterTransaction,
+    referee,
+    referrer,
+    generation,
+    monthNumber,
+    issuedAt: toTaiwanISOString(getTaiwanNow()),
+    description
+  });
+  
+  // 只保留最近 200 筆
+  if (history.length > 200) {
+    history.length = 200;
+  }
+  
+  await kv.set(historyKey, history);
+  
+  console.log(`     💰 獎勵已入帳: 可提領=${rewards.availableRewards}P, 總累積=${rewards.totalEarned}P`);
+}
+
 export default admin;
