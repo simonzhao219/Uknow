@@ -214,6 +214,20 @@ payuniHandler.post('/notify', async (c) => {
       profile.lastTradeNo = originalTradeNo;
       profile.activeUntil = toTaiwanISOString(endDate);  // ✅ 新增：從訂閱記錄設置
       profile.accountStatus = 'Active';  // ✅ 新增：設置狀態
+      
+      // ========================================
+      // ✅ 清空 pending 訂單字段（15分鐘訂單鎖機制）
+      // ========================================
+      console.log('[Webhook PayUni] 清空 pendingOrderTradeNo...');
+      if (profile.pendingOrderTradeNo) {
+        if (profile.pendingOrderTradeNo !== originalTradeNo) {
+          console.log(`[Webhook PayUni] ⚠️ 警告：profile.pendingOrderTradeNo (${profile.pendingOrderTradeNo}) 與當前訂單 (${originalTradeNo}) 不匹配，但仍清空`);
+        }
+      }
+      profile.pendingOrderTradeNo = null;
+      profile.pendingOrderCreatedAt = null;
+      console.log('[Webhook PayUni] ✅ pendingOrder 已清空');
+      
       profile.updatedAt = toTaiwanISOString(now);
       
       await kv.set(`user:${order.userId}:profile`, profile);
