@@ -9,64 +9,64 @@ interface InAppBrowserWarningProps {
   currentURL: string;
 }
 
-// 平台特定的引导信息
+// 平台特定的引導資訊
 const platformGuides: Record<string, {
   title: string;
   description: string;
   steps: string[];
 }> = {
   line: {
-    title: 'LINE 内置浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器（如 Safari 或 Chrome）中打开',
+    title: 'LINE 內建瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器（如 Safari 或 Chrome）中開啟',
     steps: [
-      '点击右上角的「⋯」按钮',
-      '选择「在 Safari 中打开」或「在 Chrome 中打开」',
-      '或点击下方按钮复制链接，手动在浏览器中打开'
+      '點擊右上角的「⋯」按鈕',
+      '選擇「在 Safari 中開啟」或「在 Chrome 中開啟」',
+      '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
   facebook: {
-    title: 'Facebook 内置浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器中打开',
+    title: 'Facebook 內建瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '点击右上角的「⋯」按钮',
-      '选择「在浏览器中打开」',
-      '或点击下方按钮复制链接，手动在浏览器中打开'
+      '點擊右上角的「⋯」按鈕',
+      '選擇「在瀏覽器中開啟」',
+      '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
   instagram: {
-    title: 'Instagram 内置浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器中打开',
+    title: 'Instagram 內建瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '点击右上角的「⋯」按钮',
-      '选择「在浏览器中打开」',
-      '或点击下方按钮复制链接，手动在浏览器中打开'
+      '點擊右上角的「⋯」按鈕',
+      '選擇「在瀏覽器中開啟」',
+      '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
   twitter: {
-    title: 'Twitter 内置浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器中打开',
+    title: 'Twitter 內建瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '点击右上角的「⋯」按钮',
-      '选择「在 Safari 中打开」',
-      '或点击下方按钮复制链接，手动在浏览器中打开'
+      '點擊右上角的「⋯」按鈕',
+      '選擇「在 Safari 中開啟」',
+      '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
   wechat: {
-    title: '微信内置浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器中打开',
+    title: '微信內建瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '点击右上角的「⋯」按钮',
-      '选择「在浏览器中打开」',
-      '或点击下方按钮复制链接，手动在浏览器中打开'
+      '點擊右上角的「⋯」按鈕',
+      '選擇「在瀏覽器中開啟」',
+      '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
   webview: {
-    title: '当前浏览器无法正常使用',
-    description: '为确保支付流程顺利完成，请在外部浏览器（如 Safari 或 Chrome）中打开',
+    title: '目前瀏覽器無法正常使用',
+    description: '為確保支付流程順利完成，請在外部瀏覽器（如 Safari 或 Chrome）中開啟',
     steps: [
-      '复制下方链接',
-      '在 Safari、Chrome 或其他浏览器中打开',
-      '粘贴链接并访问'
+      '複製下方連結',
+      '在 Safari、Chrome 或其他瀏覽器中開啟',
+      '貼上連結並造訪'
     ]
   }
 };
@@ -75,29 +75,29 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   
-  // 获取平台特定的引导信息，如果没有则使用通用引导
+  // 取得平台特定的引導資訊，如果沒有則使用通用引導
   const guide = platform ? platformGuides[platform] : platformGuides.webview;
   
-  // 处理复制链接
+  // 處理複製連結
   const handleCopyLink = async () => {
     setCopyError(false);
     const success = await copyLinkToClipboard();
     
     if (success) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 3000); // 3秒后恢复按钮状态
+      setTimeout(() => setCopied(false), 3000); // 3 秒後恢復按鈕狀態
     } else {
       setCopyError(true);
       setTimeout(() => setCopyError(false), 3000);
     }
   };
   
-  // 处理在外部浏览器中打开
+  // 處理在外部瀏覽器中開啟
   const handleOpenExternal = () => {
     const opened = openInExternalBrowser();
     
     if (!opened) {
-      // 如果无法自动打开，提示用户手动复制链接
+      // 如果無法自動開啟，提示使用者手動複製連結
       handleCopyLink();
     }
   };
@@ -106,14 +106,14 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
     <div className="min-h-screen bg-gradient-to-b from-background to-muted flex items-center justify-center p-4">
       <Card className="max-w-lg w-full">
         <CardHeader className="text-center space-y-4">
-          {/* 警告图标 */}
+          {/* 警告圖示 */}
           <div className="flex justify-center">
             <div className="rounded-full bg-orange-100 p-4">
               <AlertCircle className="h-12 w-12 text-orange-600" />
             </div>
           </div>
           
-          {/* 标题 */}
+          {/* 標題 */}
           <CardTitle className="text-2xl font-bold">
             {guide.title}
           </CardTitle>
@@ -125,9 +125,9 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
         </CardHeader>
         
         <CardContent className="space-y-6">
-          {/* 操作步骤 */}
+          {/* 操作步驟 */}
           <div className="space-y-3">
-            <p className="font-medium text-sm">请按照以下步骤操作：</p>
+            <p className="font-medium text-sm">請按照以下步驟操作：</p>
             <ol className="space-y-2">
               {guide.steps.map((step, index) => (
                 <li key={index} className="flex gap-3">
@@ -142,17 +142,17 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
             </ol>
           </div>
           
-          {/* 链接显示框 */}
+          {/* 連結顯示框 */}
           <div className="bg-muted p-3 rounded-lg">
-            <p className="text-xs text-muted-foreground mb-1">当前页面链接：</p>
+            <p className="text-xs text-muted-foreground mb-1">目前頁面連結：</p>
             <p className="text-sm font-mono break-all">
               {currentURL}
             </p>
           </div>
           
-          {/* 操作按钮 */}
+          {/* 操作按鈕 */}
           <div className="space-y-3">
-            {/* 复制链接按钮 */}
+            {/* 複製連結按鈕 */}
             <Button
               onClick={handleCopyLink}
               className="w-full"
@@ -162,37 +162,37 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
               {copied ? (
                 <>
                   <Check className="mr-2 h-4 w-4" />
-                  链接已复制
+                  連結已複製
                 </>
               ) : copyError ? (
                 <>
                   <AlertCircle className="mr-2 h-4 w-4" />
-                  复制失败，请手动复制
+                  複製失敗，請手動複製
                 </>
               ) : (
                 <>
                   <Copy className="mr-2 h-4 w-4" />
-                  复制链接
+                  複製連結
                 </>
               )}
             </Button>
             
-            {/* 尝试在外部浏览器打开 */}
+            {/* 嘗試在外部瀏覽器開啟 */}
             <Button
               onClick={handleOpenExternal}
               className="w-full"
               variant="outline"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              尝试在浏览器中打开
+              嘗試在瀏覽器中開啟
             </Button>
           </div>
           
-          {/* 提示信息 */}
+          {/* 提示資訊 */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-xs text-blue-800">
-              💡 <strong>为什么需要在外部浏览器打开？</strong><br />
-              内置浏览器可能导致支付流程中断、登录状态丢失等问题。在 Safari、Chrome 等独立浏览器中使用可以确保功能正常运作。
+              💡 <strong>為什麼需要在外部瀏覽器開啟？</strong><br />
+              內建瀏覽器可能導致支付流程中斷、登入狀態遺失等問題。在 Safari、Chrome 等獨立瀏覽器中使用可確保功能正常運作。
             </p>
           </div>
         </CardContent>
