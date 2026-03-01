@@ -35,32 +35,34 @@ payuni.post('/prepare', async (c) => {
       return c.json({ success: false, error: { message: '用戶資料不存在' } }, 404);
     }
     
-    // 3. 獲取配置
+    // 3. 獲取當前台灣時間（統一使用，確保時間一致性）
+    const now = getTaiwanNow();
+    
+    // 4. 獲取配置
     const config = getPayUniConfig();
     console.log(`[PayUni Prepare] 使用環境：${config.mode}`);
     
     // ========================================
-    // 4. 檢查是否有未過期的 pending 訂單（15分鐘內複用）
+    // 5. 檢查是否有未過期的 pending 訂單（15分鐘內複用）
     // ========================================
     if (profile.pendingOrderTradeNo && profile.pendingOrderCreatedAt) {
       console.log(`[PayUni Prepare] 檢查現有訂單：${profile.pendingOrderTradeNo}`);
       
-      // 4.1 獲取訂單
+      // 5.1 獲取訂單
       const existingOrder = await kv.get(`payuni:order:${profile.pendingOrderTradeNo}`);
       
-      // 4.2 檢查訂單存在且為 pending 狀態
+      // 5.2 檢查訂單存在且為 pending 狀態
       if (existingOrder && existingOrder.status === 'pending') {
-        // 4.3 檢查是否在 15 分鐘內
+        // 5.3 檢查是否在 15 分鐘內
         const createdAt = new Date(profile.pendingOrderCreatedAt);
-        const now = getTaiwanNow();
         const elapsedMs = now.getTime() - createdAt.getTime();
         const elapsedMinutes = elapsedMs / (1000 * 60);
         
         if (elapsedMinutes < 15) {
-          // 4.4 訂單未過期，複用現有訂單
+          // 5.4 訂單未過期，複用現有訂單
           console.log(`[PayUni Prepare] ✅ 複用現有訂單：${profile.pendingOrderTradeNo}（已用時 ${elapsedMinutes.toFixed(1)} 分鐘）`);
           
-          // 4.5 重新生成加密數據（使用現有訂單號）
+          // 5.5 重新生成加密數據（使用現有訂單號）
           const periodDate = toTaiwanDateString(now);
           const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
           const frontendUrl = Deno.env.get('FRONTEND_URL')!;
@@ -89,11 +91,11 @@ payuni.post('/prepare', async (c) => {
             PeriodTimes: 12
           });
           
-          // 4.6 加密
+          // 5.6 加密
           const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
           const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
           
-          // 4.7 返回現���訂單
+          // 5.7 返回現有訂單
           return c.json({
             success: true,
             data: {
@@ -113,25 +115,24 @@ payuni.post('/prepare', async (c) => {
         console.log(`[PayUni Prepare] Pending 訂單不存在或已完成`);
       }
       
-      // 4.8 清空過期或無效的 pending 字段
+      // 5.8 清空過期或無效的 pending 字段
       console.log(`[PayUni Prepare] 清空過期或無效的 pending 訂單字段`);
       profile.pendingOrderTradeNo = null;
       profile.pendingOrderCreatedAt = null;
-      profile.updatedAt = toTaiwanISOString(getTaiwanNow());
+      profile.updatedAt = toTaiwanISOString(now);
       await kv.set(`user:${user.id}:profile`, profile);
     }
     
     // ========================================
-    // 5. 生成新訂單編號（25碼）
+    // 6. 生成新訂單編號（25碼）
     // ========================================
     const tradeNo = generatePayUniTradeNo();
     console.log(`[PayUni Prepare] 訂單編號：${tradeNo}`);
     
-    // 6. 獲取當前台灣時間
-    const now = getTaiwanNow();
+    // 7. 獲取當前台灣時間
     const periodDate = toTaiwanDateString(now);
     
-    // 7. 構建加密數據
+    // 8. 構建加密數據
     const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
     const frontendUrl = Deno.env.get('FRONTEND_URL')!;
     
@@ -159,11 +160,11 @@ payuni.post('/prepare', async (c) => {
       PeriodTimes: 12
     });
     
-    // 8. 加密
+    // 9. 加密
     const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
     const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
     
-    // 9. 存儲訂單
+    // 10. 存儲訂單
     await kv.set(`payuni:order:${tradeNo}`, {
       tradeNo,
       userId: user.id,
@@ -174,14 +175,14 @@ payuni.post('/prepare', async (c) => {
     
     console.log(`[PayUni Prepare] ✅ 訂單已創建：${tradeNo}`);
     
-    // 9.5 記錄新訂單到 profile（15分鐘訂單鎖機制）
+    // 10.5 記錄新訂單到 profile（15分鐘訂單鎖機制）
     profile.pendingOrderTradeNo = tradeNo;
     profile.pendingOrderCreatedAt = toTaiwanISOString(now);
     profile.updatedAt = toTaiwanISOString(now);
     await kv.set(`user:${user.id}:profile`, profile);
     console.log(`[PayUni Prepare] ✅ 新訂單已記錄到 profile：${tradeNo}`);
     
-    // 10. 返回
+    // 11. 返回
     return c.json({
       success: true,
       data: {
