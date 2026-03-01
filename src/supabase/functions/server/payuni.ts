@@ -40,7 +40,7 @@ payuni.post('/prepare', async (c) => {
     console.log(`[PayUni Prepare] 使用環境：${config.mode}`);
     
     // 4. 生成訂單編號（25碼）
-    const tradeNo = generatePayUniTradeNo();
+    const tradeNo = generatePayUniTradeNo(user.id);
     console.log(`[PayUni Prepare] 訂單編號：${tradeNo}`);
     
     // 5. 獲取當前台灣時間

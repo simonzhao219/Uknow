@@ -146,28 +146,23 @@ export function formatTaiwanDateTime(date: Date | string): string {
 
 /**
  * 生成 PayUni 訂單編號（25碼）
- * 格式：YYYYMMDDHHMMSS(14) + 隨機英數字(11)
+ * 格式：YYYYMMDDHH(10) + User UID(前15)
  * 
+ * @param userId - 用戶 UID
  * @returns 25碼訂單編號
  */
-export function generatePayUniTradeNo(): string {
+export function generatePayUniTradeNo(userId: string): string {
   const now = getTaiwanNow();
   
-  // 時間戳（14碼）- 使用 UTC 方法解釋時間戳
+  // 時間戳（10碼）YYYYMMDDHH - 使用 UTC 方法解釋時間戳
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   const day = String(now.getUTCDate()).padStart(2, '0');
   const hours = String(now.getUTCHours()).padStart(2, '0');
-  const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-  const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
+  const timestamp = `${year}${month}${day}${hours}`;
   
-  // 隨機英數字（11碼）
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let random = '';
-  for (let i = 0; i < 11; i++) {
-    random += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  // User UID 前15碼
+  const userIdPrefix = userId.substring(0, 15).padEnd(15, '0');
   
-  return timestamp + random;  // 總共 25 碼
+  return timestamp + userIdPrefix;  // 總共 25 碼 (10 + 15)
 }
