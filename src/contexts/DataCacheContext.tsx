@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 /**
- * 数据缓存接口
+ * 資料快取介面
  * 
- * 每个缓存项包含：
- * - data: 实际数据
- * - timestamp: 缓存时间戳
+ * 每個快取項目包含：
+ * - data: 實際資料
+ * - timestamp: 快取時間戳
  */
 interface CacheItem {
   data: any;
@@ -13,24 +13,24 @@ interface CacheItem {
 }
 
 /**
- * 所有可缓存的数据键
+ * 所有可快取的資料鍵
  */
 interface CachedData {
-  // 会员中心
+  // 會員中心
   subscriptionStatus?: CacheItem;
   
   // 刊登管理
   userListing?: CacheItem;
   
-  // 推荐管理
+  // 推薦管理
   referralTree?: CacheItem;
   
-  // 任务中心
+  // 任務中心
   tasks?: CacheItem;
   pendingRewards?: CacheItem;
   monthlySummary?: CacheItem;
   
-  // 奖励系统
+  // 獎勵系統
   rewards?: CacheItem;
   withdrawals?: CacheItem;
 }
@@ -39,37 +39,37 @@ type CacheKey = keyof CachedData;
 
 interface DataCacheContextType {
   /**
-   * 获取缓存数据
-   * @param key - 缓存键
-   * @returns 缓存的数据，如果不存在则返回 null
+   * 取得快取資料
+   * @param key - 快取鍵
+   * @returns 快取的資料，若不存在則回傳 null
    */
   getCache: (key: CacheKey) => any | null;
   
   /**
-   * 设置缓存数据
-   * @param key - 缓存键
-   * @param value - 要缓存的数据
+   * 設定快取資料
+   * @param key - 快取鍵
+   * @param value - 要快取的資料
    */
   setCache: (key: CacheKey, value: any) => void;
   
   /**
-   * 清除缓存
-   * @param key - 可选，指定要清除的缓存键。如果不提供，则清除所有缓存
+   * 清除快取
+   * @param key - 可選，指定要清除的快取鍵。若不提供，則清除所有快取
    */
   clearCache: (key?: CacheKey) => void;
   
   /**
-   * 检查缓存是否存在
-   * @param key - 缓存键
-   * @returns 是否存在缓存
+   * 檢查快取是否存在
+   * @param key - 快取鍵
+   * @returns 是否存在快取
    */
   hasCache: (key: CacheKey) => boolean;
   
   /**
-   * 检查缓存是否过期
-   * @param key - 缓存键
-   * @param maxAge - 最大缓存时间（毫秒），默认 5 分钟
-   * @returns 是否过期
+   * 檢查快取是否過期
+   * @param key - 快取鍵
+   * @param maxAge - 最大快取時間（毫秒），預設 5 分鐘
+   * @returns 是否過期
    */
   isCacheExpired: (key: CacheKey, maxAge?: number) => boolean;
 }
@@ -77,42 +77,42 @@ interface DataCacheContextType {
 const DataCacheContext = createContext<DataCacheContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'uknow_data_cache';
-const DEFAULT_MAX_AGE = 5 * 60 * 1000; // 5 分钟
+const DEFAULT_MAX_AGE = 5 * 60 * 1000; // 5 分鐘
 
 /**
- * 数据缓存提供者
+ * 資料快取提供者
  * 
- * 使用 SessionStorage 持久化缓存，确保：
- * - 页面刷新时缓存清空
- * - 跨标签页不共享缓存
- * - 关闭标签页后缓存自动清除
+ * 使用 SessionStorage 持久化快取，確保：
+ * - 頁面重新整理時快取清空
+ * - 跨分頁不共用快取
+ * - 關閉分頁後快取自動清除
  */
 export function DataCacheProvider({ children }: { children: React.ReactNode }) {
-  // 初始化缓存（从 SessionStorage 加载）
+  // 初始化快取（從 SessionStorage 載入）
   const [cache, setCache] = useState<CachedData>(() => {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY);
       if (stored) {
-        console.log('📦 从 SessionStorage 加载缓存');
+        console.log('📦 從 SessionStorage 載入快取');
         return JSON.parse(stored);
       }
     } catch (error) {
-      console.error('❌ 加载缓存失败:', error);
+      console.error('❌ 載入快取失敗:', error);
     }
     return {};
   });
 
-  // 每次缓存变化时同步到 SessionStorage
+  // 每次快取變更時同步至 SessionStorage
   useEffect(() => {
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
     } catch (error) {
-      console.error('❌ 保存缓存失败:', error);
+      console.error('❌ 儲存快取失敗:', error);
     }
   }, [cache]);
 
   /**
-   * 获取缓存数据
+   * 取得快取資料
    */
   const getCache = useCallback((key: CacheKey): any | null => {
     const item = cache[key];
@@ -123,10 +123,10 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
   }, [cache]);
 
   /**
-   * 设置缓存数据
+   * 設定快取資料
    */
   const setCacheData = useCallback((key: CacheKey, value: any) => {
-    console.log(`💾 缓存数据: ${key}`);
+    console.log(`💾 快取資料: ${key}`);
     setCache(prev => ({
       ...prev,
       [key]: {
@@ -137,36 +137,36 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
-   * 清除缓存
+   * 清除快取
    */
   const clearCacheData = useCallback((key?: CacheKey) => {
     if (key) {
-      console.log(`🗑️ 清除缓存: ${key}`);
+      console.log(`🗑️ 清除快取: ${key}`);
       setCache(prev => {
         const newCache = { ...prev };
         delete newCache[key];
         return newCache;
       });
     } else {
-      console.log('🗑️ 清除所有缓存');
+      console.log('🗑️ 清除所有快取');
       setCache({});
       try {
         sessionStorage.removeItem(STORAGE_KEY);
       } catch (error) {
-        console.error('❌ 清除 SessionStorage 失败:', error);
+        console.error('❌ 清除 SessionStorage 失敗:', error);
       }
     }
   }, []);
 
   /**
-   * 检查缓存是否存在
+   * 檢查快取是否存在
    */
   const hasCache = useCallback((key: CacheKey): boolean => {
     return !!cache[key];
   }, [cache]);
 
   /**
-   * 检查缓存是否过期
+   * 檢查快取是否過期
    */
   const isCacheExpired = useCallback((key: CacheKey, maxAge: number = DEFAULT_MAX_AGE): boolean => {
     const item = cache[key];
@@ -193,13 +193,13 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * 使用数据缓存的 Hook
+ * 使用資料快取的 Hook
  * 
  * @example
  * ```typescript
  * const { getCache, setCache, hasCache, clearCache } = useDataCache();
  * 
- * // 检查缓存
+ * // 檢查快取
  * if (hasCache('subscriptionStatus')) {
  *   const data = getCache('subscriptionStatus');
  *   setSubscriptionData(data);
@@ -207,11 +207,11 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
  *   fetchSubscriptionStatus();
  * }
  * 
- * // 设置缓存
+ * // 設定快取
  * const data = await apiRequestJson(...);
  * setCache('subscriptionStatus', data);
  * 
- * // 清除缓存
+ * // 清除快取
  * clearCache('subscriptionStatus');
  * ```
  */

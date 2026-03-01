@@ -29,7 +29,7 @@ import { RequirePaymentRoute } from './components/RequirePaymentRoute'; // ✅ �
 import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
-import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：数据缓存
+import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { InAppBrowserWarning } from './components/InAppBrowserWarning'; // ✅ 新增：內建瀏覽器警告
 import { detectInAppBrowser, getCurrentURL } from './utils/browserDetection'; // ✅ 新增：瀏覽器檢測
 import { createClient } from './utils/supabase/client';
@@ -60,7 +60,7 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const supabase = createClient();
-  const { clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
+  const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   
   // ✅ 瀏覽器檢測（只檢測一次）
   const [browserInfo] = useState(() => detectInAppBrowser());
@@ -245,7 +245,7 @@ function AppContent() {
       } else if (event === 'SIGNED_OUT') {
         console.log('App: User signed out, clearing profile');
         
-        // ✅ 清除所有缓存
+        // ✅ 清除所有快取
         console.log('🗑️ App: Clearing all cached data on sign out');
         clearCache();
         

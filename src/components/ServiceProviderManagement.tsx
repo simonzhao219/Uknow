@@ -9,15 +9,15 @@ import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft, Trash2 } fro
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
-import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info'; // ✅ 修复：正确的导入路径
+import { projectId } from '../utils/supabase/info'; // ✅ 修復：正確的匯入路徑
 
 export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
-  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
@@ -26,21 +26,21 @@ export function ServiceProviderManagement() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // ✅ 优化：獲取用戶的刊登（使用缓存）
+  // ✅ 優化：獲取用戶的刊登（使用快取）
   useEffect(() => {
     if (user?.id) {
-      // ✅ 优先使用缓存
+      // ✅ 優先使用快取
       if (hasCache('userListing')) {
-        console.log('🎯 ServiceProviderManagement: 使用缓存的刊登数据');
+        console.log('🎯 ServiceProviderManagement: 使用快取的刊登資料');
         const cached = getCache('userListing');
         setListing(cached);
         setLoading(false);
       } else {
-        console.log('🔄 ServiceProviderManagement: 无缓存，加载新数据');
+        console.log('🔄 ServiceProviderManagement: 無快取，載入新資料');
         fetchUserListing();
       }
     } else {
-      // ✅ 如果沒有 user，停止 loading 並清空 listing
+      // ✅ 若沒有 user，停止 loading 並清空 listing
       console.log('ServiceProviderManagement: No user, skipping fetch');
       setLoading(false);
       setListing(null);
@@ -72,11 +72,11 @@ export function ServiceProviderManagement() {
       }
 
       const data = await response.json();
-      console.log('管理刊登 - 獲取到的數據:', data);
+      console.log('管理刊登 - 獲取到的資料:', data);
       
       const listingData = data.listing || null;
       
-      // ✅ 存入缓存
+      // ✅ 存入快取
       setCache('userListing', listingData);
       setListing(listingData);  // ✅ 單一對象
     } catch (error) {
@@ -172,7 +172,7 @@ export function ServiceProviderManagement() {
       
       showToast('刊登已成功刪除', 'success');
       
-      // ✅ 清除缓存并重新獲取刊登列表（應該會變成 null）
+      // ✅ 清除快取並重新獲取刊登列表（應該會變成 null）
       clearCache('userListing');
       await fetchUserListing();
       

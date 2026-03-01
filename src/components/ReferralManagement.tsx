@@ -9,7 +9,7 @@ import { ReferralDebugger } from './debug/ReferralDebugger';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
-import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 
 /**
@@ -63,23 +63,23 @@ interface ReferralData {
 export function ReferralManagement() {
   const { showToast } = useNotification();
   const handleBack = useBackNavigation();
-  usePageRestoration(); // ✅ 处理 Safari bfcache 页面恢复问题
-  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
+  usePageRestoration(); // ✅ 處理 Safari bfcache 頁面恢復問題
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   
   const [loading, setLoading] = useState(true);
   const [referralData, setReferralData] = useState<ReferralData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);  // ✅ 新增：追蹤複製狀態
 
-  // ✅ 优化：使用缓存
+  // ✅ 優化：使用快取
   useEffect(() => {
     if (hasCache('referralTree')) {
-      console.log('🎯 ReferralManagement: 使用缓存的推荐树');
+      console.log('🎯 ReferralManagement: 使用快取的推薦樹');
       const cached = getCache('referralTree');
       setReferralData(cached);
       setLoading(false);
     } else {
-      console.log('🔄 ReferralManagement: 无缓存，加载新数据');
+      console.log('🔄 ReferralManagement: 無快取，載入新資料');
       fetchReferralData();
     }
   }, []);
@@ -106,7 +106,7 @@ export function ReferralManagement() {
         });
         console.log('📊 一代成員:', result.data.referralTree?.firstGeneration || []);
         
-        // ✅ 存入缓存
+        // ✅ 存入快取
         setCache('referralTree', result.data);
         setReferralData(result.data);
       } else {
@@ -121,7 +121,7 @@ export function ReferralManagement() {
         showToast('登入已過期，請重新登入', 'error');
       } else {
         setError(err.message || '載入失敗，請稍後再試');
-        showToast(err.message || '載入推薦數據失敗', 'error');
+        showToast(err.message || '載入推薦資料失敗', 'error');
       }
     } finally {
       setLoading(false);

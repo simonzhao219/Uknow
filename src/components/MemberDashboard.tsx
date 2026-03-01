@@ -9,7 +9,7 @@ import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
 import { Badge } from './ui/badge';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
-import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { CancelSubscriptionDialog } from './subscription/CancelSubscriptionDialog';
 import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
 
@@ -18,7 +18,7 @@ export function MemberDashboard() {
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
   const { showToast, showSuccess, showError, showWarning, showInfo } = useNotification();
-  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
 
   // 訂閱狀態
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
@@ -43,7 +43,7 @@ export function MemberDashboard() {
     );
   };
 
-  // ✅ 優化：獲取訂閱狀態（使用缓存）
+  // ✅ 優化：獲取訂閱狀態（使用快取）
   useEffect(() => {
     const fetchSubscriptionStatus = async () => {
       try {
@@ -62,13 +62,13 @@ export function MemberDashboard() {
 
         console.log('✅ MemberDashboard: 訂閱狀態:', result);
         
-        // ✅ 存入缓存
+        // ✅ 存入快取
         setCache('subscriptionStatus', result.data);
         setSubscriptionData(result.data);
       } catch (err) {
         console.error('❌ MemberDashboard: 獲取訂閱狀態失敗:', err);
         
-        // 如果是 401 錯誤，不顯示錯誤（用戶可能未登入）
+        // 若為 401 錯誤，不顯示錯誤（用戶可能未登入）
         if (err instanceof ApiError && err.status === 401) {
           console.log('⚠️ MemberDashboard: 用戶未登入，跳過訂閱狀態獲取');
         } else {
@@ -80,14 +80,14 @@ export function MemberDashboard() {
     };
 
     if (user?.id) {
-      // ✅ 优先使用缓存
+      // ✅ 優先使用快取
       if (hasCache('subscriptionStatus')) {
-        console.log('🎯 MemberDashboard: 使用缓存的订阅状态');
+        console.log('🎯 MemberDashboard: 使用快取的訂閱狀態');
         const cached = getCache('subscriptionStatus');
         setSubscriptionData(cached);
         setIsLoadingSubscription(false);
       } else {
-        console.log('🔄 MemberDashboard: 无缓存，加载新数据');
+        console.log('🔄 MemberDashboard: 無快取，載入新資料');
         fetchSubscriptionStatus();
       }
     } else {
@@ -138,7 +138,7 @@ export function MemberDashboard() {
 
   // 重新獲取訂閱狀態
   const refreshSubscriptionStatus = async () => {
-    // ✅ 清除缓存，强制重新加载
+    // ✅ 清除快取，強制重新載入
     clearCache('subscriptionStatus');
     
     setIsLoadingSubscription(true);
@@ -154,11 +154,11 @@ export function MemberDashboard() {
         };
       }>(buildApiUrl('/subscriptions/status'));
 
-      // ✅ 存入缓存
+      // ✅ 存入快取
       setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
     } catch (err) {
-      console.error('❌ 刷新訂閱狀態失敗:', err);
+      console.error('❌ 重新整理訂閱狀態失敗:', err);
     } finally {
       setIsLoadingSubscription(false);
     }
