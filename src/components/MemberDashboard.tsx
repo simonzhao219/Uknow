@@ -562,7 +562,7 @@ export function MemberDashboard() {
               {/* 訂閱週期（本期）*/}
               {subscriptionData.currentPeriodStart && subscriptionData.currentPeriodEnd && (
                 <div className="text-sm">
-                  <span className="text-muted-foreground">訂閱��期：</span>
+                  <span className="text-muted-foreground">訂閱週期：</span>
                   <span className="font-medium">
                     {new Date(subscriptionData.currentPeriodStart).toLocaleDateString('zh-TW', {
                       year: 'numeric',
