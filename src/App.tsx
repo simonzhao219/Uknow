@@ -83,7 +83,7 @@ function AppContent() {
   useEffect(() => {
     let isMounted = true; // ✅ 防止組件卸載後更新狀態
     
-    // 從資料庫載入使���者資料
+    // 從資料庫載入使用者資料
     const loadUserProfile = async () => {
       if (!isMounted) {
         console.log('App: Component unmounted, skipping profile load');
