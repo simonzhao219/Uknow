@@ -53,6 +53,8 @@ export function PaymentResult() {
     referralCode?: string;
   } | null>(null);  // ✅ 新增：用戶狀態
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);  // ✅ 新增：狀態檢查中
+  const [countdown, setCountdown] = useState<number | null>(null);  // ✅ 新增：倒計時狀態
+  const [hasStartedCountdown, setHasStartedCountdown] = useState(false);  // ✅ 新增：防止重複啟動倒計時
   
   const tradeNo = searchParams.get('tradeNo');
   
@@ -128,6 +130,50 @@ export function PaymentResult() {
     checkUserStatus();
   }, [navigate, showToast]);
   
+  // ✅ 完成註冊函數（必須在 useEffect 之前定義）
+  const handleCompleteRegistration = async () => {
+    setIsCompleting(true);
+    
+    try {
+      const result = await apiRequestJson<{
+        success: boolean;
+        message: string;
+        data: {
+          referralCode: string;
+          activeUntil: string;
+          accountStatus: string;
+        };
+      }>(
+        buildApiUrl('/auth/complete-registration'),
+        { method: 'POST' }
+      );
+      
+      if (result.success) {
+        showSuccess(
+          '註冊完成！',
+          `您的推薦碼：${result.data.referralCode}`,
+          [
+            `帳號狀態：${result.data.accountStatus}`,
+            `有效期限：${new Date(result.data.activeUntil).toLocaleDateString('zh-TW')}`
+          ]
+        );
+        
+        // 重新加載完整的 profile（包含 registrationStep = 3）
+        window.location.href = '/dashboard';
+      } else {
+        throw new Error(result.message || '完成註冊失敗');
+      }
+    } catch (error: any) {
+      console.error('完成註冊失敗:', error);
+      showError(
+        '完成註冊失敗',
+        error.message || '請稍後再試，或聯繫客服協助處理'
+      );
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+  
   // ✅ 新增：訂單成功後，定期檢查用戶註冊狀態（每 3 秒，最多 60 秒）
   useEffect(() => {
     if (!orderResult || orderResult.status !== 'success') return;
@@ -200,6 +246,37 @@ export function PaymentResult() {
     };
     
   }, [orderResult, userStatus, navigate, showToast]);
+  
+  // ✅ 新增：自動倒數 5 秒後點擊「完成註冊」按鈕
+  useEffect(() => {
+    if (!orderResult || orderResult.status !== 'success') return;
+    if (userStatus?.registrationStep === 3) return;  // 已完成註冊，不需要倒數
+    if (isCompleting) return;  // 正在處理，不啟動倒數
+    if (hasStartedCountdown) return;  // ✅ 已經啟動過，不重複啟動
+    
+    console.log('[PaymentResult] 🕐 啟動自動倒數計時器');
+    setHasStartedCountdown(true);  // ✅ 標記已啟動
+    setCountdown(5);
+    
+    let remainingTime = 5;
+    
+    const countdownInterval = setInterval(() => {
+      remainingTime--;
+      console.log('[PaymentResult] ⏰ 倒數:', remainingTime);
+      setCountdown(remainingTime);
+      
+      if (remainingTime <= 0) {
+        clearInterval(countdownInterval);
+        console.log('[PaymentResult] ⏰ 倒數結��，自動點擊「完成註冊」');
+        handleCompleteRegistration();
+      }
+    }, 1000);
+    
+    return () => {
+      console.log('[PaymentResult] 🧹 清理倒數計時器');
+      clearInterval(countdownInterval);
+    };
+  }, [orderResult, hasStartedCountdown]);  // ✅ 移除 userStatus 和 isCompleting 依賴
   
   // ✅ 查詢訂單狀態（支援重試）
   const fetchOrderStatus = async (): Promise<OrderResult | null> => {
@@ -337,50 +414,6 @@ export function PaymentResult() {
   }, []);
   
   console.log('[PaymentResult] 🎨 Rendering UI', { isLoading, orderResult, retryCount });
-  
-  // 完成註冊
-  const handleCompleteRegistration = async () => {
-    setIsCompleting(true);
-    
-    try {
-      const result = await apiRequestJson<{
-        success: boolean;
-        message: string;
-        data: {
-          referralCode: string;
-          activeUntil: string;
-          accountStatus: string;
-        };
-      }>(
-        buildApiUrl('/auth/complete-registration'),
-        { method: 'POST' }
-      );
-      
-      if (result.success) {
-        showSuccess(
-          '註冊完成！',
-          `您的推薦碼：${result.data.referralCode}`,
-          [
-            `帳號狀態：${result.data.accountStatus}`,
-            `有效期限：${new Date(result.data.activeUntil).toLocaleDateString('zh-TW')}`
-          ]
-        );
-        
-        // 重新加載完整的 profile（包含 registrationStep = 3）
-        window.location.href = '/dashboard';
-      } else {
-        throw new Error(result.message || '完成註冊失敗');
-      }
-    } catch (error: any) {
-      console.error('完成註冊失敗:', error);
-      showError(
-        '完成註冊失敗',
-        error.message || '請稍後再試，或聯繫客服協助處理'
-      );
-    } finally {
-      setIsCompleting(false);
-    }
-  };
   
   // ✅ 重新付款（回到 Step 1）
   const handleRetryPayment = async () => {
@@ -590,6 +623,10 @@ export function PaymentResult() {
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   處理中...
+                </>
+              ) : countdown !== null && countdown > 0 ? (
+                <>
+                  完成註冊 ({countdown})
                 </>
               ) : (
                 '完成註冊'
