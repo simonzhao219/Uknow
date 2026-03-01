@@ -19,8 +19,8 @@ const platformGuides: Record<string, {
     title: 'LINE 內建瀏覽器無法正常使用',
     description: '為確保支付流程順利完成，請在外部瀏覽器（如 Safari 或 Chrome）中開啟',
     steps: [
-      '點擊右上角的「⋯」按鈕',
-      '選擇「在 Safari 中開啟」或「在 Chrome 中開啟」',
+      '點擊右上角/右下角的「⋯」按鈕',
+      '選擇「在 Safari/Chrome 中開啟」',
       '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
@@ -28,8 +28,8 @@ const platformGuides: Record<string, {
     title: 'Facebook 內建瀏覽器無法正常使用',
     description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '點擊右上角的「⋯」按鈕',
-      '選擇「在瀏覽器中開啟」',
+      '點擊右上角/右下角的「⋯」按鈕',
+      '選擇「在 Safari/Chrome 中開啟」',
       '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
@@ -37,8 +37,8 @@ const platformGuides: Record<string, {
     title: 'Instagram 內建瀏覽器無法正常使用',
     description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '點擊右上角的「⋯」按鈕',
-      '選擇「在瀏覽器中開啟」',
+      '點擊右上角/右下角的「⋯」按鈕',
+      '選擇「在 Safari/Chrome 中開啟」',
       '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
@@ -46,8 +46,8 @@ const platformGuides: Record<string, {
     title: 'Twitter 內建瀏覽器無法正常使用',
     description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '點擊右上角的「⋯」按鈕',
-      '選擇「在 Safari 中開啟」',
+      '點擊右上角/右下角的「⋯」按鈕',
+      '選擇「在 Safari/Chrome 中開啟」',
       '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
@@ -55,8 +55,8 @@ const platformGuides: Record<string, {
     title: '微信內建瀏覽器無法正常使用',
     description: '為確保支付流程順利完成，請在外部瀏覽器中開啟',
     steps: [
-      '點擊右上角的「⋯」按鈕',
-      '選擇「在瀏覽器中開啟」',
+      '點擊右上角/右下角的「⋯」按鈕',
+      '選擇「在 Safari/Chrome 中開啟」',
       '或點擊下方按鈕複製連結，手動在瀏覽器中開啟'
     ]
   },
