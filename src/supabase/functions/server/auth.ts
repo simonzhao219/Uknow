@@ -718,8 +718,8 @@ export const updateUserProfile = async (c: Context) => {
     console.log(`[updateUserProfile] Authenticated user: ${user.id}, email: ${user.email}`);
 
     // 2. 取得更新資料
-    const { name, phone } = await c.req.json();
-    console.log(`[updateUserProfile] Update data - name: ${name}, phone: ${phone}`);
+    const { name, phone, registrationStep } = await c.req.json();
+    console.log(`[updateUserProfile] Update data - name: ${name}, phone: ${phone}, registrationStep: ${registrationStep}`);
 
     // 3. 驗證必填欄位
     if (!name || !phone) {
@@ -774,6 +774,12 @@ export const updateUserProfile = async (c: Context) => {
       phone,
       updatedAt: toTaiwanISOString(getTaiwanNow()),
     };
+    
+    // ✅ 如果前端传入了 registrationStep，也更新它
+    if (registrationStep !== undefined && registrationStep !== null) {
+      updatedProfile.registrationStep = registrationStep;
+      console.log(`[updateUserProfile] ✅ Updating registrationStep to: ${registrationStep}`);
+    }
 
     console.log('[updateUserProfile] Saving updated profile to KV Store...');
     try {
