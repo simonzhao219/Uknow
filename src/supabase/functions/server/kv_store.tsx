@@ -19,78 +19,164 @@ const client = () => createClient(
 
 // Set stores a key-value pair in the database.
 export const set = async (key: string, value: any): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_5c6718b9").upsert({
-    key,
-    value
-  }, {
-    onConflict: 'key',
-    ignoreDuplicates: false
-  });
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { error } = await supabase.from("kv_store_5c6718b9").upsert({
+      key,
+      value
+    }, {
+      onConflict: 'key',
+      ignoreDuplicates: false
+    });
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
 };
 
 // Get retrieves a key-value pair from the database.
 export const get = async (key: string): Promise<any> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_5c6718b9").select("value").eq("key", key).maybeSingle();
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { data, error } = await supabase.from("kv_store_5c6718b9").select("value").eq("key", key).maybeSingle();
+    if (error) {
+      // 如果是 HTML 错误页面，提取关键信息
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+    return data?.value;
+  } catch (err: any) {
+    // 捕获网络错误或其他异常
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
-  return data?.value;
 };
 
 // Delete deletes a key-value pair from the database.
 export const del = async (key: string): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_5c6718b9").delete().eq("key", key);
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { error } = await supabase.from("kv_store_5c6718b9").delete().eq("key", key);
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
 };
 
 // Sets multiple key-value pairs in the database.
 export const mset = async (keys: string[], values: any[]): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_5c6718b9").upsert(
-    keys.map((k, i) => ({ key: k, value: values[i] })),
-    {
-      onConflict: 'key',
-      ignoreDuplicates: false
+  try {
+    const supabase = client();
+    const { error } = await supabase.from("kv_store_5c6718b9").upsert(
+      keys.map((k, i) => ({ key: k, value: values[i] })),
+      {
+        onConflict: 'key',
+        ignoreDuplicates: false
+      }
+    );
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
     }
-  );
-  if (error) {
-    throw new Error(error.message);
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
 };
 
 // Gets multiple key-value pairs from the database.
 export const mget = async (keys: string[]): Promise<any[]> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_5c6718b9").select("value").in("key", keys);
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { data, error } = await supabase.from("kv_store_5c6718b9").select("value").in("key", keys);
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+    return data?.map((d) => d.value) ?? [];
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
-  return data?.map((d) => d.value) ?? [];
 };
 
 // Deletes multiple key-value pairs from the database.
 export const mdel = async (keys: string[]): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_5c6718b9").delete().in("key", keys);
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { error } = await supabase.from("kv_store_5c6718b9").delete().in("key", keys);
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
 };
 
 // Search for key-value pairs by prefix.
 export const getByPrefix = async (prefix: string): Promise<any[]> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_5c6718b9").select("key, value").like("key", prefix + "%");
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const supabase = client();
+    const { data, error } = await supabase.from("kv_store_5c6718b9").select("key, value").like("key", prefix + "%");
+    if (error) {
+      if (error.message && error.message.includes('<!DOCTYPE html>')) {
+        console.error('[KV Store] Supabase service error (502 Bad Gateway)');
+        throw new Error('Database service temporarily unavailable. Please try again later.');
+      }
+      throw new Error(error.message);
+    }
+    return data?.map((d) => d.value) ?? [];
+  } catch (err: any) {
+    if (err.message && err.message.includes('<!DOCTYPE html>')) {
+      console.error('[KV Store] Network error or service unavailable');
+      throw new Error('Database service temporarily unavailable. Please try again later.');
+    }
+    throw err;
   }
-  return data?.map((d) => d.value) ?? [];
 };
