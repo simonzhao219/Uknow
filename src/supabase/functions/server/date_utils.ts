@@ -146,7 +146,7 @@ export function formatTaiwanDateTime(date: Date | string): string {
 
 /**
  * 生成 PayUni 訂單編號（25碼）
- * 格式：YYYYMMDDHH(10) + User UID(前15)
+ * 格式：YYYYMMDDHHM(11位，M是分鐘的十位數，譬如12就是1、01就是0) + User UID(前14去除-)
  * 
  * @param userId - 用戶 UID
  * @returns 25碼訂單編號
@@ -154,15 +154,18 @@ export function formatTaiwanDateTime(date: Date | string): string {
 export function generatePayUniTradeNo(userId: string): string {
   const now = getTaiwanNow();
   
-  // 時間戳（10碼）YYYYMMDDHH - 使用 UTC 方法解釋時間戳
+  // 時間戳（11碼）YYYYMMDDHHM - 使用 UTC 方法解釋時間戳
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   const day = String(now.getUTCDate()).padStart(2, '0');
   const hours = String(now.getUTCHours()).padStart(2, '0');
-  const timestamp = `${year}${month}${day}${hours}`;
+  const minutes = now.getUTCMinutes();
+  const minuteTensDigit = Math.floor(minutes / 10); // 分鐘的十位數（例如：12→1, 01→0, 59→5）
+  const timestamp = `${year}${month}${day}${hours}${minuteTensDigit}`;
   
-  // User UID 前15碼
-  const userIdPrefix = userId.substring(0, 15).padEnd(15, '0');
+  // User UID 前14碼（去除 `-` 字符）
+  const userIdClean = userId.replace(/-/g, ''); // 移除所有 `-`
+  const userIdPrefix = userIdClean.substring(0, 14).padEnd(14, '0');
   
-  return timestamp + userIdPrefix;  // 總共 25 碼 (10 + 15)
+  return timestamp + userIdPrefix;  // 總共 25 碼 (11 + 14)
 }

@@ -20,6 +20,8 @@ export function PaymentCheckout() {
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
   const [activeOrder, setActiveOrder] = useState<any>(null);  // ✅ 新增：活動訂單狀態
+  const [isButtonLocked, setIsButtonLocked] = useState(false);  // ✅ 新增：按鈕鎖定狀態
+  const [lockCountdown, setLockCountdown] = useState(0);  // ✅ 新增：倒計時秒數
   
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
@@ -252,11 +254,30 @@ export function PaymentCheckout() {
     fetchReferrerInfo();
   }, [pendingUser]);
 
+  // ✅ 新增：管理按鈕鎖定倒計時
+  useEffect(() => {
+    if (lockCountdown > 0) {
+      const timer = setTimeout(() => {
+        setLockCountdown(lockCountdown - 1);
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    } else if (lockCountdown === 0 && isButtonLocked) {
+      setIsButtonLocked(false);
+    }
+  }, [lockCountdown, isButtonLocked]);
+
   // ✅ 新增：PayUni 續期收款付款
   const handlePayUniPayment = async () => {
     if (!pendingUser) {
       showToast('用戶資料不存在，請重新註冊', 'error');
       navigate('/auth/complete-profile');
+      return;
+    }
+
+    // ✅ 檢查按鈕是否被鎖定
+    if (isButtonLocked) {
+      showToast(`請稍候 ${lockCountdown} 秒後再試`, 'warning');
       return;
     }
 
@@ -285,6 +306,10 @@ export function PaymentCheckout() {
       const result = await response.json();
 
       if (result.success) {
+        // ✅ 啟動15秒倒計時
+        setIsButtonLocked(true);
+        setLockCountdown(15);
+        
         // 動態創建表單並提交到 PayUni
         const form = document.createElement('form');
         form.method = 'POST';
@@ -660,7 +685,7 @@ export function PaymentCheckout() {
           <div className="space-y-3">
             <Button
               onClick={handlePayUniPayment}
-              disabled={isLoading}
+              disabled={isLoading || isButtonLocked}
               className="w-full"
               size="lg"
             >
@@ -668,6 +693,11 @@ export function PaymentCheckout() {
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   處理中...
+                </>
+              ) : isButtonLocked ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  請稍候 {lockCountdown} 秒
                 </>
               ) : (
                 <>
@@ -680,7 +710,7 @@ export function PaymentCheckout() {
             <Button
               variant="outline"
               onClick={handleCancel}
-              disabled={isLoading}
+              disabled={isLoading || isButtonLocked}
               className="w-full"
             >
               稍後付款
