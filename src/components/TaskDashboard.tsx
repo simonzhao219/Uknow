@@ -126,18 +126,26 @@ export function TaskDashboard() {
 
   // 獲取任務資料
   useEffect(() => {
-    const fetchTasks = async () => {
+    // ✅ P0 修復：並行請求任務列表和待領取獎勵
+    const fetchAllData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        const result = await apiRequestJson<{ success: boolean; data: { tasks: Task[] } }>(
-          buildApiUrl('/tasks')
-        );
+        // ✅ 並行請求（不互相依賴）
+        const [tasksResult, pendingResult] = await Promise.all([
+          apiRequestJson<{ success: boolean; data: { tasks: Task[] } }>(
+            buildApiUrl('/tasks')
+          ),
+          apiRequestJson<{ success: boolean; data: PendingMissionReward[] }>(
+            buildApiUrl('/tasks/pending-rewards')
+          )
+        ]);
         
-        if (result.success) {
+        // 處理任務列表
+        if (tasksResult.success) {
           // ✅ 排序任務：推薦王 (monthly_king) 排在連續推薦達人 (consecutive_referral) 之前
-          const sortedTasks = (result.data.tasks || []).sort((a, b) => {
+          const sortedTasks = (tasksResult.data.tasks || []).sort((a, b) => {
             const order = { 'monthly_king': 1, 'consecutive_referral': 2 };
             return (order[a.type as keyof typeof order] || 999) - (order[b.type as keyof typeof order] || 999);
           });
@@ -145,6 +153,11 @@ export function TaskDashboard() {
           setTasks(sortedTasks);
         } else {
           throw new Error('獲取任務資料失敗');
+        }
+        
+        // 處理待領取獎勵
+        if (pendingResult.success) {
+          setPendingRewards(pendingResult.data);
         }
       } catch (err) {
         console.error('獲取任務資料錯誤:', err);
@@ -159,11 +172,10 @@ export function TaskDashboard() {
       }
     };
 
-    fetchTasks();
-    fetchPendingRewards();
+    fetchAllData();
   }, []);
 
-  // ===== 獲取待領取獎勵 =====
+  // ===== 獲取待領取獎勵（手動刷新用）=====
   const fetchPendingRewards = async () => {
     try {
       setLoadingPending(true);

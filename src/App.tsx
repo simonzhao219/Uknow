@@ -44,15 +44,18 @@ export const UserContext = React.createContext<{
   setUser: (user: any) => void;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isLoadingUser: boolean; // ✅ P1: 全局 loading state
 }>({
   user: null,
   setUser: () => {},
   isLoggedIn: false,
   isAdmin: false,
+  isLoadingUser: true, // ✅ 預設為 true
 });
 
 function AppContent() {
   const [user, setUser] = useState(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true); // ✅ P1: 全局 loading state
   const navigate = useNavigate();
   const location = useLocation();
   const supabase = createClient();
@@ -80,13 +83,14 @@ function AppContent() {
   useEffect(() => {
     let isMounted = true; // ✅ 防止組件卸載後更新狀態
     
-    // 從資料庫載入使用者資料
+    // 從資料庫載入使���者資料
     const loadUserProfile = async () => {
       if (!isMounted) {
         console.log('App: Component unmounted, skipping profile load');
         return;
       }
       try {
+        setIsLoadingUser(true); // ✅ P1: 開始載入
         const { data: { session } } = await supabase.auth.getSession();
         
         // ✅ 增強檢查：確保 session 有效且包含 access_token
@@ -208,6 +212,8 @@ function AppContent() {
             localStorage.removeItem('user');
           }
         }
+      } finally {
+        setIsLoadingUser(false); // ✅ P1: 結束載入
       }
     };
 
@@ -253,7 +259,7 @@ function AppContent() {
   }, []); // ✅ 移除 navigate 和 supabase 依賴，只在首次掛載時執行
 
   return (
-    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin }}>
+    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser }}>
       <FeatureProvider>
         <NotificationProvider>
           <div className="min-h-screen bg-background flex flex-col">

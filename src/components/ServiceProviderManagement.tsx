@@ -24,10 +24,15 @@ export function ServiceProviderManagement() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // ✅ 獲取用戶的刊登（單一）
+  // ✅ P0 修復：獲取用戶的刊登（添加未登錄保護）
   useEffect(() => {
     if (user?.id) {
       fetchUserListing();
+    } else {
+      // ✅ 如果沒有 user，停止 loading 並清空 listing
+      console.log('ServiceProviderManagement: No user, skipping fetch');
+      setLoading(false);
+      setListing(null);
     }
   }, [user?.id]);
 

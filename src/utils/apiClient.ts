@@ -6,6 +6,7 @@
 
 import { getAccessToken } from './auth';
 import { projectId } from './supabase/info';
+import { createClient } from './supabase/client';
 
 /**
  * API 請求錯誤
@@ -93,6 +94,10 @@ export async function apiRequest(
 /**
  * 發送 API 請求並自動解析 JSON 回應
  * 
+ * ✅ P0 修復：統一處理 401 未授權
+ * - 自動清除 session 和 localStorage
+ * - 跳轉到登入頁
+ * 
  * @param url - API 端點 URL
  * @param options - fetch 選項
  * @returns Promise<T> 解析後的 JSON 資料
@@ -110,22 +115,49 @@ export async function apiRequestJson<T = any>(
   url: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await apiRequest(url, options);
-  
-  if (!response.ok) {
-    let errorMessage = `請求失敗 (${response.status})`;
+  try {
+    const response = await apiRequest(url, options);
     
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.error?.message || errorData.message || errorMessage;
-    } catch {
-      // 無法解析錯誤訊息，使用預設訊息
+    if (!response.ok) {
+      let errorMessage = `請求失敗 (${response.status})`;
+      
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error?.message || errorData.message || errorMessage;
+      } catch {
+        // 無法解析錯誤訊息，使用預設訊息
+      }
+      
+      throw new ApiError(errorMessage, response.status);
     }
     
-    throw new ApiError(errorMessage, response.status);
+    return response.json();
+  } catch (err) {
+    // ✅ P0 修復：統一處理 401 未授權
+    if (err instanceof ApiError && err.status === 401) {
+      console.log('🚫 API 401 Unauthorized - 清除 session 並跳轉登入頁');
+      
+      // 清除 Supabase session
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      
+      // 清除 localStorage
+      localStorage.removeItem('user');
+      localStorage.removeItem('pendingSession');
+      
+      // 跳轉到登入頁（避免循環跳轉）
+      if (!window.location.pathname.includes('/login') && 
+          !window.location.pathname.includes('/register')) {
+        window.location.href = '/login';
+      }
+      
+      // 重新拋出錯誤（讓呼叫方可以顯示提示）
+      throw new ApiError('登入已過期，請重新登入', 401, 'UNAUTHORIZED');
+    }
+    
+    // 其他錯誤直接拋出
+    throw err;
   }
-  
-  return response.json();
 }
 
 /**
