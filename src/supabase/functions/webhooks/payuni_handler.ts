@@ -129,29 +129,32 @@ payuniHandler.post('/notify', async (c) => {
         return c.json({ Status: 'FAILED', Message: 'User profile not found' });
       }
       
+      // ✅ 在處理開始時統一獲取台灣時間（確保時間一致性）
+      const now = getTaiwanNow();
+      
       // 檢查是否已完成註冊（冪等性保護）
       if (profile.registrationStep === 3) {
         console.log('[Webhook PayUni] ⚠️ 用戶已完成註冊，跳過重複處理');
         await kv.set(processedKey, {
           processed: true,
-          at: toTaiwanISOString(getTaiwanNow()),
+          at: toTaiwanISOString(now),  // ✅ 使用統一的 now
           status: 'already_completed'
         });
         return c.json({ Status: 'SUCCESS' });
       }
       
       // ✅ 計算訂閱日期（台灣時區）
-      const now = getTaiwanNow();
+      // ⚠️ 重要：必須使用 UTC 方法操作，因為 now 的時間戳已經是台灣時間
       const startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);  // 當日 00:00:00
+      startDate.setUTCHours(0, 0, 0, 0);  // ✅ 使用 setUTCHours 而非 setHours
       
       const endDate = new Date(startDate);
-      endDate.setFullYear(endDate.getFullYear() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      endDate.setHours(23, 59, 59, 999);  // 一年後的前一日 23:59:59
+      endDate.setUTCFullYear(endDate.getUTCFullYear() + 1);  // ✅ 使用 UTC 方法
+      endDate.setUTCDate(endDate.getUTCDate() - 1);  // ✅ 使用 UTC 方法
+      endDate.setUTCHours(23, 59, 59, 999);  // ✅ 使用 setUTCHours
       
       const gracePeriodEnd = new Date(endDate);
-      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 60);  // 寬限期 60 天
+      gracePeriodEnd.setUTCDate(gracePeriodEnd.getUTCDate() + 60);  // ✅ 使用 UTC 方法
       
       console.log('[Webhook PayUni] 訂閱期間:', {
         startDate: toTaiwanISOString(startDate),
