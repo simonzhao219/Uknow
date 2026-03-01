@@ -8,6 +8,7 @@ import { Button } from './ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from './notifications/NotificationContext';  // ✅ 新增
 
@@ -36,6 +37,8 @@ export function RewardDashboard() {
   const handleBack = useBackNavigation();
   usePageRestoration(); // ✅ 处理 Safari bfcache 页面恢复问题
   const { showError } = useNotification();  // ✅ 新增
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
+  
   const [showWithdrawalProcess, setShowWithdrawalProcess] = useState(false);
   const [rewardsData, setRewardsData] = useState<RewardsData | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
@@ -44,9 +47,21 @@ export function RewardDashboard() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);  // ✅ 新增：訂閱狀態
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);  // ✅ 新增：獎勵明細刷新觸發器
 
-  // 獲取獎勵資料和提領記錄
+  // ✅ 优化：使用缓存
   useEffect(() => {
-    fetchData();
+    const cachedRewards = hasCache('rewards') ? getCache('rewards') : null;
+    const cachedWithdrawals = hasCache('withdrawals') ? getCache('withdrawals') : null;
+    
+    if (cachedRewards && cachedWithdrawals) {
+      console.log('🎯 RewardDashboard: 使用缓存的奖励数据');
+      setRewardsData(cachedRewards.rewardsData);
+      setWithdrawals(cachedWithdrawals);
+      setSubscriptionStatus(cachedRewards.subscriptionStatus);
+      setIsLoading(false);
+    } else {
+      console.log('🔄 RewardDashboard: 无缓存，加载新数据');
+      fetchData();
+    }
   }, []);
 
   const fetchData = async () => {
@@ -81,6 +96,14 @@ export function RewardDashboard() {
       if (subscriptionResult.success) {
         setSubscriptionStatus(subscriptionResult.data.status || null);
       }
+      
+      // ✅ 缓存数据
+      setCache('rewards', {
+        rewardsData: rewardsResult.data,
+        subscriptionStatus: subscriptionResult.data.status || null
+      });
+      setCache('withdrawals', withdrawalsResult.data.withdrawals);
+      
     } catch (err) {
       console.error('獲取數據錯誤:', err);
       
@@ -113,6 +136,10 @@ export function RewardDashboard() {
   };
 
   const handleSuccessWithdrawal = () => {
+    // ✅ 清除缓存（提领申请成功，奖励数据变化）
+    clearCache('rewards');
+    clearCache('withdrawals');
+    
     setShowWithdrawalProcess(false);
     fetchData(); // 重新載入數據以更新統計
     setHistoryRefreshTrigger(prev => prev + 1);  // ✅ 新增：觸發獎勵明細刷新

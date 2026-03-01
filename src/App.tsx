@@ -29,6 +29,7 @@ import { RequirePaymentRoute } from './components/RequirePaymentRoute'; // ✅ �
 import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
+import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：数据缓存
 import { InAppBrowserWarning } from './components/InAppBrowserWarning'; // ✅ 新增：內建瀏覽器警告
 import { detectInAppBrowser, getCurrentURL } from './utils/browserDetection'; // ✅ 新增：瀏覽器檢測
 import { createClient } from './utils/supabase/client';
@@ -59,6 +60,7 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const supabase = createClient();
+  const { clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
   
   // ✅ 瀏覽器檢測（只檢測一次）
   const [browserInfo] = useState(() => detectInAppBrowser());
@@ -242,6 +244,11 @@ function AppContent() {
         loadUserProfile();
       } else if (event === 'SIGNED_OUT') {
         console.log('App: User signed out, clearing profile');
+        
+        // ✅ 清除所有缓存
+        console.log('🗑️ App: Clearing all cached data on sign out');
+        clearCache();
+        
         setUser(null);
         localStorage.removeItem('user');
       }
@@ -394,7 +401,9 @@ function AppContent() {
 export default function App() {
   return (
     <Router>
-      <AppContent />
+      <DataCacheProvider>
+        <AppContent />
+      </DataCacheProvider>
     </Router>
   );
 }

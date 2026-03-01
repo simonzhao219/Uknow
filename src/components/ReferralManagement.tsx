@@ -9,6 +9,7 @@ import { ReferralDebugger } from './debug/ReferralDebugger';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 
 /**
@@ -63,14 +64,24 @@ export function ReferralManagement() {
   const { showToast } = useNotification();
   const handleBack = useBackNavigation();
   usePageRestoration(); // ✅ 处理 Safari bfcache 页面恢复问题
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
   
   const [loading, setLoading] = useState(true);
   const [referralData, setReferralData] = useState<ReferralData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);  // ✅ 新增：追蹤複製狀態
 
+  // ✅ 优化：使用缓存
   useEffect(() => {
-    fetchReferralData();
+    if (hasCache('referralTree')) {
+      console.log('🎯 ReferralManagement: 使用缓存的推荐树');
+      const cached = getCache('referralTree');
+      setReferralData(cached);
+      setLoading(false);
+    } else {
+      console.log('🔄 ReferralManagement: 无缓存，加载新数据');
+      fetchReferralData();
+    }
   }, []);
 
   const fetchReferralData = async () => {
@@ -94,7 +105,9 @@ export function ReferralManagement() {
           thirdGen: result.data.referralTree?.thirdGeneration?.length || 0
         });
         console.log('📊 一代成員:', result.data.referralTree?.firstGeneration || []);
-        console.log('📊 統計:', result.data.summary);
+        
+        // ✅ 存入缓存
+        setCache('referralTree', result.data);
         setReferralData(result.data);
       } else {
         throw new Error('獲取推薦數據失敗');

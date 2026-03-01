@@ -9,6 +9,7 @@ import { Calendar, Trophy, Target, Gift, Clock, CheckCircle, AlertTriangle, Arro
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useNavigate } from 'react-router-dom';
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { formatTimestamp } from '../utils/referralFormatter';
 
@@ -105,6 +106,7 @@ export function TaskDashboard() {
   const { showSuccess, showToast } = useNotification();
   const handleBack = useBackNavigation();
   const navigate = useNavigate();
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
   
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -124,13 +126,26 @@ export function TaskDashboard() {
   const [selectedReward, setSelectedReward] = useState<PendingMissionReward | null>(null);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
 
-  // 獲取任務資料
+  // ✅ 优化：獲取任務資料（使用缓存）
   useEffect(() => {
-    // ✅ P0 修復：並行請求任務列表和待領取獎勵
     const fetchAllData = async () => {
       try {
         setIsLoading(true);
         setError(null);
+        
+        // ✅ 检查缓存
+        const cachedTasks = hasCache('tasks') ? getCache('tasks') : null;
+        const cachedPending = hasCache('pendingRewards') ? getCache('pendingRewards') : null;
+        
+        if (cachedTasks && cachedPending) {
+          console.log('🎯 TaskDashboard: 使用缓存的任务数据');
+          setTasks(cachedTasks);
+          setPendingRewards(cachedPending);
+          setIsLoading(false);
+          return;
+        }
+        
+        console.log('🔄 TaskDashboard: 无缓存，加载新数据');
         
         // ✅ 並行請求（不互相依賴）
         const [tasksResult, pendingResult] = await Promise.all([
@@ -151,6 +166,7 @@ export function TaskDashboard() {
           });
           
           setTasks(sortedTasks);
+          setCache('tasks', sortedTasks); // ✅ 缓存任务列表
         } else {
           throw new Error('獲取任務資料失敗');
         }
@@ -158,6 +174,7 @@ export function TaskDashboard() {
         // 處理待領取獎勵
         if (pendingResult.success) {
           setPendingRewards(pendingResult.data);
+          setCache('pendingRewards', pendingResult.data); // ✅ 缓存待领取奖励
         }
       } catch (err) {
         console.error('獲取任務資料錯誤:', err);
@@ -187,6 +204,7 @@ export function TaskDashboard() {
       
       if (result.success) {
         setPendingRewards(result.data);
+        setCache('pendingRewards', result.data); // ✅ 缓存待领取奖励
       }
     } catch (err) {
       console.error('獲取待領取獎勵錯誤:', err);
@@ -261,6 +279,12 @@ export function TaskDashboard() {
       if (result.success) {
         showSuccess('領取任務獎勵成功！', '獎勵已加入您的可提領點數');
         setPendingRewards(pendingRewards.filter(r => r.id !== rewardId));
+        
+        // ✅ 清除缓存（任务状态和待领取奖励都可能变化）
+        clearCache('tasks');
+        clearCache('pendingRewards');
+        clearCache('rewards'); // 奖励点数变化，清除 RewardDashboard 缓存
+        
         setShowClaimDialog(false);
         setSelectedReward(null);
       } else {

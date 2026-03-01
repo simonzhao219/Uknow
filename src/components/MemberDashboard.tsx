@@ -9,6 +9,7 @@ import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
 import { Badge } from './ui/badge';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
+import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：数据缓存
 import { CancelSubscriptionDialog } from './subscription/CancelSubscriptionDialog';
 import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
 
@@ -17,6 +18,7 @@ export function MemberDashboard() {
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
   const { showToast, showSuccess, showError, showWarning, showInfo } = useNotification();
+  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用数据缓存
 
   // 訂閱狀態
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
@@ -41,7 +43,7 @@ export function MemberDashboard() {
     );
   };
 
-  // 獲取訂閱狀態
+  // ✅ 優化：獲取訂閱狀態（使用缓存）
   useEffect(() => {
     const fetchSubscriptionStatus = async () => {
       try {
@@ -59,6 +61,9 @@ export function MemberDashboard() {
         }>(buildApiUrl('/subscriptions/status'));
 
         console.log('✅ MemberDashboard: 訂閱狀態:', result);
+        
+        // ✅ 存入缓存
+        setCache('subscriptionStatus', result.data);
         setSubscriptionData(result.data);
       } catch (err) {
         console.error('❌ MemberDashboard: 獲取訂閱狀態失敗:', err);
@@ -75,7 +80,16 @@ export function MemberDashboard() {
     };
 
     if (user?.id) {
-      fetchSubscriptionStatus();
+      // ✅ 优先使用缓存
+      if (hasCache('subscriptionStatus')) {
+        console.log('🎯 MemberDashboard: 使用缓存的订阅状态');
+        const cached = getCache('subscriptionStatus');
+        setSubscriptionData(cached);
+        setIsLoadingSubscription(false);
+      } else {
+        console.log('🔄 MemberDashboard: 无缓存，加载新数据');
+        fetchSubscriptionStatus();
+      }
     } else {
       setIsLoadingSubscription(false);
     }
@@ -124,6 +138,9 @@ export function MemberDashboard() {
 
   // 重新獲取訂閱狀態
   const refreshSubscriptionStatus = async () => {
+    // ✅ 清除缓存，强制重新加载
+    clearCache('subscriptionStatus');
+    
     setIsLoadingSubscription(true);
     try {
       const result = await apiRequestJson<{
@@ -137,6 +154,8 @@ export function MemberDashboard() {
         };
       }>(buildApiUrl('/subscriptions/status'));
 
+      // ✅ 存入缓存
+      setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
     } catch (err) {
       console.error('❌ 刷新訂閱狀態失敗:', err);
@@ -543,7 +562,7 @@ export function MemberDashboard() {
               {/* 訂閱週期（本期）*/}
               {subscriptionData.currentPeriodStart && subscriptionData.currentPeriodEnd && (
                 <div className="text-sm">
-                  <span className="text-muted-foreground">訂閱週期：</span>
+                  <span className="text-muted-foreground">訂閱��期：</span>
                   <span className="font-medium">
                     {new Date(subscriptionData.currentPeriodStart).toLocaleDateString('zh-TW', {
                       year: 'numeric',
