@@ -1,7 +1,7 @@
 /**
  * 註冊核心函數模組
  * 
- * 提供統一的註冊完成邏輯，避免代碼重複
+ * 提供統一的註冊完成邏輯，避免程式碼重複
  * 被 Webhook 和 API 端點共同調用
  * 
  * 設計原則：
@@ -361,11 +361,24 @@ export async function completeUserRegistration(userId: string): Promise<{
     
     // 6. 激活帳號
     const now = getTaiwanNow();
-    const activeUntil = new Date(now);
-    activeUntil.setFullYear(activeUntil.getFullYear() + 1);
+    
+    // ✅ 使用 profile 中已存在的 activeUntil（Webhook 中已設置）
+    // 如果不存在，則重新計算（兼容舊流程）
+    let activeUntil: Date;
+    if (profile.activeUntil) {
+      console.log('[completeUserRegistration] 使用現有的 activeUntil:', profile.activeUntil);
+      activeUntil = new Date(profile.activeUntil);
+    } else {
+      console.log('[completeUserRegistration] 重新計算 activeUntil');
+      activeUntil = new Date(now);
+      activeUntil.setFullYear(activeUntil.getFullYear() + 1);
+    }
     
     profile.referralCode = referralCode;
-    profile.accountStatus = 'Active';
+    // ✅ 只在 profile 中沒有 accountStatus 時才設置（Webhook 可能已設置）
+    if (!profile.accountStatus) {
+      profile.accountStatus = 'Active';
+    }
     profile.activeUntil = toTaiwanISOString(activeUntil);
     profile.registrationStep = 3;  // 完成註冊
     profile.pendingActivation = false;
@@ -598,7 +611,7 @@ export async function completeUserRegistration(userId: string): Promise<{
         // 不中斷流程，允許用戶繼續使用
       }
     } else {
-      console.log('[completeUserRegistration] ℹ️ 無推薦關係或使用默認推薦碼');
+      console.log('[completeUserRegistration] ℹ️ 無推薦關係或使用預設推薦碼');
     }
     
     console.log('[completeUserRegistration] 🎉 註冊完成:', userId);

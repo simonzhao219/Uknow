@@ -504,7 +504,7 @@ export function PaymentCheckout() {
       // 1. 登出 Supabase
       await supabase.auth.signOut();
       
-      // 2. 清除本地存储
+      // 2. 清除本機儲存
       localStorage.removeItem('user');
       localStorage.removeItem('pendingUser');
       

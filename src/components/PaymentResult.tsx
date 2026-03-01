@@ -56,7 +56,7 @@ export function PaymentResult() {
   
   const tradeNo = searchParams.get('tradeNo');
   
-  // ⚠️ 添加组件挂载日志
+  // ⚠️ 新增元件掛載日誌
   console.log('[PaymentResult] 🎬 Component rendering', {
     tradeNo,
     isLoading,
@@ -201,7 +201,7 @@ export function PaymentResult() {
     
   }, [orderResult, userStatus, navigate, showToast]);
   
-  // ✅ 查询订单状态（支持重試）
+  // ✅ 查詢訂單狀態（支援重試）
   const fetchOrderStatus = async (): Promise<OrderResult | null> => {
     console.log('[PaymentResult] 📞 fetchOrderStatus called', { tradeNo, retryCount });
     
@@ -222,7 +222,7 @@ export function PaymentResult() {
       
       const result = await apiRequestJson<{
         success: boolean;
-        data: {  // ✅ 修正：后端返回的是 "data" 不是 "order"
+        data: {  // ✅ 修正：後端回傳的是 "data" 不是 "order"
           status: OrderStatus;
           tradeNo: string;
           periodTradeNo?: string;    // ✅ 週期交易號
@@ -262,7 +262,7 @@ export function PaymentResult() {
     }
   };
   
-  // ✅ 智能轮询逻辑（指数退避）
+  // ✅ 智能輪詢邏輯（指數退避）
   const fetchOrderStatusWithRetry = async (currentRetry: number = 0) => {
     console.log('[PaymentResult] 🔄 fetchOrderStatusWithRetry', { currentRetry, maxRetries });
     
@@ -338,7 +338,7 @@ export function PaymentResult() {
   
   console.log('[PaymentResult] 🎨 Rendering UI', { isLoading, orderResult, retryCount });
   
-  // 完成注册
+  // 完成註冊
   const handleCompleteRegistration = async () => {
     setIsCompleting(true);
     
@@ -375,7 +375,7 @@ export function PaymentResult() {
       console.error('完成註冊失敗:', error);
       showError(
         '完成註冊失敗',
-        error.message || '請稍後��試，或聯繫客服協助處理'
+        error.message || '請稍後再試，或聯繫客服協助處理'
       );
     } finally {
       setIsCompleting(false);
@@ -406,7 +406,7 @@ export function PaymentResult() {
     window.open('https://line.me/ti/p/@Uknow', '_blank');
   };
   
-  // ✅ 加载中（新增進度條和等待提示）
+  // ✅ 載入中（新增進度條與等待提示）
   if (isLoading) {
     const progress = Math.min((retryCount / maxRetries) * 100, 100);
     
@@ -467,7 +467,7 @@ export function PaymentResult() {
   
   // 付款成功
   if (orderResult?.status === 'success') {
-    // 🐛 调试日志：检查 orderResult 和 paymentData
+    // 🐛 除錯日誌：檢查 orderResult 與 paymentData
     console.log('[PaymentResult] 💳 Payment Success Block', {
       orderResult,
       hasPaymentData: !!orderResult.paymentData,
@@ -601,7 +601,7 @@ export function PaymentResult() {
     );
   }
   
-  // 付款失败
+  // 付款失敗
   if (orderResult?.status === 'failed') {
     return (
       <div className="container max-w-2xl mx-auto p-4 pt-20">
@@ -655,7 +655,7 @@ export function PaymentResult() {
     );
   }
   
-  // ✅ 处理中（Webhook 还没收到回调）- 優化提示
+  // ✅ 處理中（Webhook 尚未收到回調）- 優化提示
   if (orderResult?.status === 'pending') {
     return (
       <div className="container max-w-2xl mx-auto p-4 pt-20">

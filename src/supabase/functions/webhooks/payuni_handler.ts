@@ -88,7 +88,7 @@ payuniHandler.post('/notify', async (c) => {
     const params = new URLSearchParams(decrypted);
     const data = Object.fromEntries(params);
     
-    console.log('[Webhook PayUni] 解密數據:', data);
+    console.log('[Webhook PayUni] 解密資料:', data);
     
     // 5. 解析訂單號（去除 _X）
     const originalTradeNo = data.MerTradeNo.replace(/_\d+$/, '');
@@ -117,7 +117,7 @@ payuniHandler.post('/notify', async (c) => {
       return c.json({ Status: 'SUCCESS' });
     }
     
-    // 8. 處理首期付款成功（只在第一期 + 用户未激活時處理）
+    // 8. 處理首期付款成功（只在第一期 + 用戶未激活時處理）
     if (data.Status === 'SUCCESS' && periodNumber === '1') {
       console.log('[Webhook PayUni] 🎉 首期付款成功');
       
@@ -140,13 +140,78 @@ payuniHandler.post('/notify', async (c) => {
         return c.json({ Status: 'SUCCESS' });
       }
       
-      // ✅ 更新到 Step 2
+      // ✅ 計算訂閱日期（台灣時區）
+      const now = getTaiwanNow();
+      const startDate = new Date(now);
+      startDate.setHours(0, 0, 0, 0);  // 當日 00:00:00
+      
+      const endDate = new Date(startDate);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      endDate.setHours(23, 59, 59, 999);  // 一年後的前一日 23:59:59
+      
+      const gracePeriodEnd = new Date(endDate);
+      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 60);  // 寬限期 60 天
+      
+      console.log('[Webhook PayUni] 訂閱期間:', {
+        startDate: toTaiwanISOString(startDate),
+        endDate: toTaiwanISOString(endDate),
+        gracePeriodEnd: toTaiwanISOString(gracePeriodEnd)
+      });
+      
+      // ✅ 創建訂閱記錄
+      const subscriptionId = `subscription_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const subscription = {
+        id: subscriptionId,
+        userId: order.userId,
+        status: 'Active',
+        startDate: toTaiwanISOString(startDate),
+        endDate: toTaiwanISOString(endDate),
+        gracePeriodEnd: toTaiwanISOString(gracePeriodEnd),
+        amount: 1200,
+        paymentMethod: 'payuni',
+        paymentTransactionId: data.PeriodTradeNo || data.MerTradeNo,
+        payuniTradeNo: data.PeriodTradeNo,
+        payuniMerTradeNo: originalTradeNo,
+        isCanceled: false,
+        canceledAt: null,
+        isRenewal: false,
+        createdAt: toTaiwanISOString(now),
+        updatedAt: toTaiwanISOString(now)
+      };
+      
+      await kv.set(`subscription:${subscriptionId}`, subscription);
+      console.log('[Webhook PayUni] ✅ 訂閱記錄已創建:', subscriptionId);
+      
+      // ✅ 添加到用戶的訂閱列表
+      const userSubscriptions = await kv.get(`user:${order.userId}:subscriptions`) || [];
+      userSubscriptions.unshift(subscriptionId);
+      await kv.set(`user:${order.userId}:subscriptions`, userSubscriptions);
+      console.log('[Webhook PayUni] ✅ 用戶訂閱列表已更新');
+      
+      // ✅ 創建用戶帳號狀態（SSOT）
+      const accountStatus = {
+        status: 'Active',
+        currentSubscriptionId: subscriptionId,
+        activeReferralCodeId: null,  // 稍後在 completeUserRegistration 中設置
+        activeListingId: null,
+        lastStatusUpdate: toTaiwanISOString(now),
+        lastSubscriptionEndDate: toTaiwanISOString(endDate),
+        gracePeriodEndDate: null
+      };
+      
+      await kv.set(`user:${order.userId}:account_status`, accountStatus);
+      console.log('[Webhook PayUni] ✅ 用戶帳號狀態已創建');
+      
+      // ✅ 更新用戶 profile（Step 2 + activeUntil）
       profile.registrationStep = 2;
       profile.pendingActivation = true;
-      profile.paidAt = toTaiwanISOString(getTaiwanNow());
+      profile.paidAt = toTaiwanISOString(now);
       profile.periodTradeNo = data.PeriodTradeNo;
       profile.lastTradeNo = originalTradeNo;
-      profile.updatedAt = toTaiwanISOString(getTaiwanNow());
+      profile.activeUntil = toTaiwanISOString(endDate);  // ✅ 新增：從訂閱記錄設置
+      profile.accountStatus = 'Active';  // ✅ 新增：設置狀態
+      profile.updatedAt = toTaiwanISOString(now);
       
       await kv.set(`user:${order.userId}:profile`, profile);
       console.log('[Webhook PayUni] ✅ 用戶狀態已更新為 Step 2');
@@ -156,7 +221,7 @@ payuniHandler.post('/notify', async (c) => {
       order.periodTradeNo = data.PeriodTradeNo;
       order.periodNumber = periodNumber;
       order.paymentData = data;
-      order.completedAt = toTaiwanISOString(getTaiwanNow());
+      order.completedAt = toTaiwanISOString(now);
       await kv.set(`payuni:order:${originalTradeNo}`, order);
       
       console.log('[Webhook PayUni] ✅ 訂單已完成');
@@ -212,7 +277,7 @@ payuniHandler.post('/notify', async (c) => {
     console.error('[Webhook PayUni] 💥 錯誤:', error);
     console.error('[Webhook PayUni] Stack:', error.stack);
     
-    // 即使發生錯誤，也要返回合法的響應格式
+    // 即使發生錯誤，也要回傳合法的回應格式
     return c.json({ 
       Status: 'FAILED', 
       Message: error.message 
