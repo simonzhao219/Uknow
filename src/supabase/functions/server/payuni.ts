@@ -125,15 +125,79 @@ payuni.post('/prepare', async (c) => {
     }
     
     // ========================================
-    // 6. 生成新訂單編號（25碼）
+    // 6. 并发保护：再次检查是否有其他请求已创建订单
+    // ========================================
+    console.log(`[PayUni Prepare] 并发保护检查：重新读取 profile...`);
+    const latestProfile = await kv.get(`user:${user.id}:profile`);
+    
+    if (latestProfile?.pendingOrderTradeNo && latestProfile?.pendingOrderCreatedAt) {
+      console.log(`[PayUni Prepare] ⚠️ 并发检测：其他请求已创建订单 ${latestProfile.pendingOrderTradeNo}`);
+      
+      // 重新执行复用逻辑
+      const existingOrder = await kv.get(`payuni:order:${latestProfile.pendingOrderTradeNo}`);
+      
+      if (existingOrder && existingOrder.status === 'pending') {
+        const createdAt = new Date(latestProfile.pendingOrderCreatedAt);
+        const elapsedMs = now.getTime() - createdAt.getTime();
+        const elapsedMinutes = elapsedMs / (1000 * 60);
+        
+        if (elapsedMinutes < 15) {
+          console.log(`[PayUni Prepare] ✅ 并发保护：复用其他请求创建的订单（已用时 ${elapsedMinutes.toFixed(1)} 分钟）`);
+          
+          // 重新生成加密数据
+          const periodDate = toTaiwanDateString(now);
+          const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
+          const frontendUrl = Deno.env.get('FRONTEND_URL')!;
+          
+          const encryptData = {
+            MerID: config.merID,
+            MerTradeNo: latestProfile.pendingOrderTradeNo,
+            PeriodAmt: 1200,
+            ProdDesc: '訂閱刊登服務',
+            PayerName: profile.name,
+            PayerPhone: profile.phone,
+            PayerEmail: profile.email,
+            PeriodType: 'year',
+            PeriodDate: periodDate,
+            PeriodTimes: 12,
+            FType: 'build',
+            NotifyURL: `https://${projectId}.supabase.co/functions/v1/webhooks/payuni/notify`,
+            ReturnURL: `${frontendUrl}payment/result?tradeNo=${latestProfile.pendingOrderTradeNo}`
+          };
+          
+          const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
+          const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
+          
+          return c.json({
+            success: true,
+            data: {
+              MerID: config.merID,
+              Version: '1.0',
+              EncryptInfo: encryptInfo,
+              HashInfo: hashInfo,
+              apiUrl: config.apiUrl,
+              mode: config.mode,
+              tradeNo: latestProfile.pendingOrderTradeNo
+            }
+          });
+        }
+      }
+      
+      console.log(`[PayUni Prepare] 并发保护检查：订单已过期或无效，继续生成新订单`);
+    } else {
+      console.log(`[PayUni Prepare] 并发保护检查：无其他请求创建订单，继续生成新订单`);
+    }
+    
+    // ========================================
+    // 7. 生成新訂單編號（25碼）
     // ========================================
     const tradeNo = generatePayUniTradeNo();
     console.log(`[PayUni Prepare] 訂單編號：${tradeNo}`);
     
-    // 7. 獲取當前台灣時間
+    // 8. 獲取當前台灣時間
     const periodDate = toTaiwanDateString(now);
     
-    // 8. 構建加密數據
+    // 9. 構建加密數據
     const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
     const frontendUrl = Deno.env.get('FRONTEND_URL')!;
     
@@ -161,11 +225,11 @@ payuni.post('/prepare', async (c) => {
       PeriodTimes: 12
     });
     
-    // 9. 加密
+    // 10. 加密
     const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
     const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
     
-    // 10. 存儲訂單
+    // 11. 存儲訂單
     await kv.set(`payuni:order:${tradeNo}`, {
       tradeNo,
       userId: user.id,
@@ -176,7 +240,7 @@ payuni.post('/prepare', async (c) => {
     
     console.log(`[PayUni Prepare] ✅ 訂單已創建：${tradeNo}`);
     
-    // 10.5 記錄新訂單到 profile（15分鐘訂單鎖機制）
+    // 11.5 記錄新訂單到 profile（15分鐘訂單鎖機制）
     profile.pendingOrderTradeNo = tradeNo;
     profile.pendingOrderCreatedAt = toTaiwanISOString(now);
     profile.updatedAt = toTaiwanISOString(now);
@@ -212,7 +276,7 @@ payuni.post('/prepare', async (c) => {
       }
     }
     
-    // 11. 返回
+    // 12. 返回
     return c.json({
       success: true,
       data: {
