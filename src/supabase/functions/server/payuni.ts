@@ -183,6 +183,35 @@ payuni.post('/prepare', async (c) => {
     await kv.set(`user:${user.id}:profile`, profile);
     console.log(`[PayUni Prepare] ✅ 新訂單已記錄到 profile：${tradeNo}`);
     
+    // ========================================
+    // ✅ 新增：验证写入是否成功（15分钟订单锁的关键）
+    // 解决 KV Store 最终一致性导致的延迟问题
+    // ========================================
+    console.log(`[PayUni Prepare] 开始验证 profile 写入...`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    let verified = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const savedProfile = await kv.get(`user:${user.id}:profile`);
+      
+      if (savedProfile && savedProfile.pendingOrderTradeNo === tradeNo) {
+        console.log(`[PayUni Prepare] ✅ 验证成功：pendingOrderTradeNo = ${tradeNo}`);
+        verified = true;
+        break;
+      }
+      
+      if (attempt === 1) {
+        console.log(`[PayUni Prepare] ⚠️ 验证失败（尝试 ${attempt}/2），重新写入...`);
+        console.log(`[PayUni Prepare] 期望 = ${tradeNo}, 实际 = ${savedProfile?.pendingOrderTradeNo || 'null'}`);
+        await kv.set(`user:${user.id}:profile`, profile);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } else {
+        console.error(`[PayUni Prepare] ❌ 验证失败 2 次，但订单已创建，继续返回`);
+        console.error(`[PayUni Prepare] ❌ 期望 = ${tradeNo}, 实际 = ${savedProfile?.pendingOrderTradeNo || 'null'}`);
+        console.error(`[PayUni Prepare] ❌ 15分钟订单锁可能失效，用户可能生成多个订单`);
+      }
+    }
+    
     // 11. 返回
     return c.json({
       success: true,

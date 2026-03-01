@@ -16,12 +16,10 @@ export function PaymentCheckout() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingUser, setIsCheckingUser] = useState(true);
-  const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any>(null);  // ✅ 新增：活動訂單狀態
-  
-  const { setUser } = useContext(UserContext);
+  const [lastClickTime, setLastClickTime] = useState(0); // ✅ 新增：防抖机制
+
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
   const supabase = createClient();
@@ -29,8 +27,7 @@ export function PaymentCheckout() {
   console.log('PaymentCheckout: Component state -', {
     isLoading,
     isCheckingUser,
-    hasPendingUser: !!pendingUser,
-    hasActiveOrder: !!activeOrder  // ✅ 新增
+    hasReferrerInfo: !!referrerInfo
   });
 
   // ✅ 新增：定期檢查用戶狀態（每 5 秒）
@@ -259,6 +256,14 @@ export function PaymentCheckout() {
       navigate('/auth/complete-profile');
       return;
     }
+
+    // ✅ 防抖：3秒內防止重複點擊
+    const now = Date.now();
+    if (now - lastClickTime < 3000) {
+      showToast('請勿重複點擊，請稍候...', 'warning');
+      return;
+    }
+    setLastClickTime(now);
 
     try {
       setIsLoading(true);
