@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { MaintenanceBanner } from './components/MaintenanceBanner';
@@ -29,6 +29,8 @@ import { RequirePaymentRoute } from './components/RequirePaymentRoute'; // ✅ �
 import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
+import { InAppBrowserWarning } from './components/InAppBrowserWarning'; // ✅ 新增：内部浏览器警告
+import { detectInAppBrowser, getCurrentURL } from './utils/browserDetection'; // ✅ 新增：浏览器检测
 import { createClient } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info';
 import { termsOfServiceContent } from './content/termsOfService';
@@ -52,11 +54,28 @@ export const UserContext = React.createContext<{
 function AppContent() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const supabase = createClient();
+  
+  // ✅ 浏览器检测（只检测一次）
+  const [browserInfo] = useState(() => detectInAppBrowser());
   
   // Check if user is admin
   const isAdmin = user?.isAdmin === true;
   const isLoggedIn = !!user;
+  
+  // ✅ 如果是内部浏览器，显示警告页并阻止所有操作
+  if (browserInfo.isInAppBrowser) {
+    console.log('App: 检测到内部浏览器:', browserInfo.platform, browserInfo.userAgent);
+    return (
+      <div className="min-h-screen bg-background">
+        <InAppBrowserWarning
+          platform={browserInfo.platform}
+          currentURL={getCurrentURL()}
+        />
+      </div>
+    );
+  }
 
   useEffect(() => {
     let isMounted = true; // ✅ 防止組件卸載後更新狀態
