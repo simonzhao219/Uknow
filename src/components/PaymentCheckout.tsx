@@ -284,14 +284,41 @@ export function PaymentCheckout() {
     try {
       setIsLoading(true);
       
-      // 調用後端 API 準備訂單
+      // ✅ 步驟 1：更新 registrationStep 為 2（付款中）
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         showToast('登入已過期，請重新登入', 'error');
         navigate('/login');
         return;
       }
-
+      
+      console.log('PaymentCheckout: 更新 registrationStep 為 2...');
+      
+      const updateResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            registrationStep: 2
+          })
+        }
+      );
+      
+      if (!updateResponse.ok) {
+        const error = await updateResponse.json();
+        console.error('PaymentCheckout: 更新 registrationStep 失敗:', error);
+        showToast('更新狀態失敗，請稍後再試', 'error');
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('PaymentCheckout: registrationStep 已更新為 2');
+      
+      // ✅ 步驟 2：調用後端 API 準備訂單
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payuni/prepare`,
         {
