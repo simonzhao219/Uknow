@@ -303,7 +303,9 @@ export function PaymentCheckout() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            registrationStep: 2
+            name: pendingUser.name,           // ✅ 必需：用户姓名
+            phone: pendingUser.phone,         // ✅ 必需：用户手机
+            registrationStep: 2               // ✅ 更新为付款中状态
           })
         }
       );
