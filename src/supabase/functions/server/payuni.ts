@@ -35,169 +35,19 @@ payuni.post('/prepare', async (c) => {
       return c.json({ success: false, error: { message: '用戶資料不存在' } }, 404);
     }
     
-    // 3. 獲取當前台灣時間（統一使用，確保時間一致性）
-    const now = getTaiwanNow();
-    
-    // 4. 獲取配置
+    // 3. 獲取配置
     const config = getPayUniConfig();
     console.log(`[PayUni Prepare] 使用環境：${config.mode}`);
     
-    // ========================================
-    // 5. 檢查是否有未過期的 pending 訂單（15分鐘內複用）
-    // ========================================
-    if (profile.pendingOrderTradeNo && profile.pendingOrderCreatedAt) {
-      console.log(`[PayUni Prepare] 🔍 檢查現有訂單：${profile.pendingOrderTradeNo}`);
-      console.log(`[PayUni Prepare] 🔍 訂單創建時間：${profile.pendingOrderCreatedAt}`);
-      
-      // 5.1 獲取訂單
-      const existingOrder = await kv.get(`payuni:order:${profile.pendingOrderTradeNo}`);
-      
-      // 5.2 檢查訂單存在且為 pending 狀態
-      if (existingOrder && existingOrder.status === 'pending') {
-        // 5.3 檢查是否在 15 分鐘內
-        const createdAt = new Date(profile.pendingOrderCreatedAt);
-        const elapsedMs = now.getTime() - createdAt.getTime();
-        const elapsedMinutes = elapsedMs / (1000 * 60);
-        
-        if (elapsedMinutes < 15) {
-          // 5.4 訂單未過期，複用現有訂單
-          console.log(`[PayUni Prepare] ✅ 複用現有訂單：${profile.pendingOrderTradeNo}（已用時 ${elapsedMinutes.toFixed(1)} 分鐘）`);
-          
-          // 5.5 重新生成加密數據（使用現有訂單號）
-          const periodDate = toTaiwanDateString(now);
-          const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
-          const frontendUrl = Deno.env.get('FRONTEND_URL')!;
-          
-          const encryptData = {
-            MerID: config.merID,
-            MerTradeNo: profile.pendingOrderTradeNo,  // ← 複用訂單號
-            PeriodAmt: 1200,
-            ProdDesc: '訂閱刊登服務',
-            PayerName: profile.name,
-            PayerPhone: profile.phone,
-            PayerEmail: profile.email,
-            PeriodType: 'year',
-            PeriodDate: periodDate,  // ← 使用當前日期
-            PeriodTimes: 12,
-            FType: 'build',
-            NotifyURL: `https://${projectId}.supabase.co/functions/v1/webhooks/payuni/notify`,
-            ReturnURL: `${frontendUrl}payment/result?tradeNo=${profile.pendingOrderTradeNo}`
-          };
-          
-          console.log('[PayUni Prepare] 重新生成加密數據：', {
-            MerTradeNo: profile.pendingOrderTradeNo,
-            PeriodAmt: 1200,
-            PeriodType: 'year',
-            PeriodDate: periodDate,
-            PeriodTimes: 12
-          });
-          
-          // 5.6 加密
-          const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
-          const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
-          
-          // 5.7 返回現有訂單
-          return c.json({
-            success: true,
-            data: {
-              MerID: config.merID,
-              Version: '1.0',
-              EncryptInfo: encryptInfo,
-              HashInfo: hashInfo,
-              apiUrl: config.apiUrl,
-              mode: config.mode,
-              tradeNo: profile.pendingOrderTradeNo
-            }
-          });
-        } else {
-          console.log(`[PayUni Prepare] 訂單已過期（${elapsedMinutes.toFixed(1)} 分鐘），將生成新訂單`);
-        }
-      } else {
-        console.log(`[PayUni Prepare] Pending 訂單不存在或已完成`);
-      }
-      
-      // 5.8 清空過期或無效的 pending 字段
-      console.log(`[PayUni Prepare] 清空過期或無效的 pending 訂單字段`);
-      profile.pendingOrderTradeNo = null;
-      profile.pendingOrderCreatedAt = null;
-      profile.updatedAt = toTaiwanISOString(now);
-      await kv.set(`user:${user.id}:profile`, profile);
-    }
-    
-    // ========================================
-    // 6. 并发保护：再次检查是否有其他请求已创建订单
-    // ========================================
-    console.log(`[PayUni Prepare] 并发保护检查：重新读取 profile...`);
-    const latestProfile = await kv.get(`user:${user.id}:profile`);
-    
-    if (latestProfile?.pendingOrderTradeNo && latestProfile?.pendingOrderCreatedAt) {
-      console.log(`[PayUni Prepare] ⚠️ 并发检测：其他请求已创建订单 ${latestProfile.pendingOrderTradeNo}`);
-      
-      // 重新执行复用逻辑
-      const existingOrder = await kv.get(`payuni:order:${latestProfile.pendingOrderTradeNo}`);
-      
-      if (existingOrder && existingOrder.status === 'pending') {
-        const createdAt = new Date(latestProfile.pendingOrderCreatedAt);
-        const elapsedMs = now.getTime() - createdAt.getTime();
-        const elapsedMinutes = elapsedMs / (1000 * 60);
-        
-        if (elapsedMinutes < 15) {
-          console.log(`[PayUni Prepare] ✅ 并发保护：复用其他请求创建的订单（已用时 ${elapsedMinutes.toFixed(1)} 分钟）`);
-          
-          // 重新生成加密数据
-          const periodDate = toTaiwanDateString(now);
-          const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
-          const frontendUrl = Deno.env.get('FRONTEND_URL')!;
-          
-          const encryptData = {
-            MerID: config.merID,
-            MerTradeNo: latestProfile.pendingOrderTradeNo,
-            PeriodAmt: 1200,
-            ProdDesc: '訂閱刊登服務',
-            PayerName: profile.name,
-            PayerPhone: profile.phone,
-            PayerEmail: profile.email,
-            PeriodType: 'year',
-            PeriodDate: periodDate,
-            PeriodTimes: 12,
-            FType: 'build',
-            NotifyURL: `https://${projectId}.supabase.co/functions/v1/webhooks/payuni/notify`,
-            ReturnURL: `${frontendUrl}payment/result?tradeNo=${latestProfile.pendingOrderTradeNo}`
-          };
-          
-          const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
-          const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
-          
-          return c.json({
-            success: true,
-            data: {
-              MerID: config.merID,
-              Version: '1.0',
-              EncryptInfo: encryptInfo,
-              HashInfo: hashInfo,
-              apiUrl: config.apiUrl,
-              mode: config.mode,
-              tradeNo: latestProfile.pendingOrderTradeNo
-            }
-          });
-        }
-      }
-      
-      console.log(`[PayUni Prepare] 并发保护检查：订单已过期或无效，继续生成新订单`);
-    } else {
-      console.log(`[PayUni Prepare] 并发保护检查：无其他请求创建订单，继续生成新订单`);
-    }
-    
-    // ========================================
-    // 7. 生成新訂單編號（25碼）
-    // ========================================
+    // 4. 生成訂單編號（25碼）
     const tradeNo = generatePayUniTradeNo();
     console.log(`[PayUni Prepare] 訂單編號：${tradeNo}`);
     
-    // 8. 獲取當前台灣時間
+    // 5. 獲取當前台灣時間
+    const now = getTaiwanNow();
     const periodDate = toTaiwanDateString(now);
     
-    // 9. 構建加密數據
+    // 6. 構建加密數據
     const projectId = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
     const frontendUrl = Deno.env.get('FRONTEND_URL')!;
     
@@ -225,11 +75,11 @@ payuni.post('/prepare', async (c) => {
       PeriodTimes: 12
     });
     
-    // 10. 加密
+    // 7. 加密
     const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
     const hashInfo = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
     
-    // 11. 存儲訂單
+    // 8. 存儲訂單
     await kv.set(`payuni:order:${tradeNo}`, {
       tradeNo,
       userId: user.id,
@@ -240,43 +90,7 @@ payuni.post('/prepare', async (c) => {
     
     console.log(`[PayUni Prepare] ✅ 訂單已創建：${tradeNo}`);
     
-    // 11.5 記錄新訂單到 profile（15分鐘訂單鎖機制）
-    profile.pendingOrderTradeNo = tradeNo;
-    profile.pendingOrderCreatedAt = toTaiwanISOString(now);
-    profile.updatedAt = toTaiwanISOString(now);
-    await kv.set(`user:${user.id}:profile`, profile);
-    console.log(`[PayUni Prepare] ✅ 新訂單已記錄到 profile：${tradeNo}`);
-    
-    // ========================================
-    // ✅ 新增：验证写入是否成功（15分钟订单锁的关键）
-    // 解决 KV Store 最终一致性导致的延迟问题
-    // ========================================
-    console.log(`[PayUni Prepare] 开始验证 profile 写入...`);
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    let verified = false;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const savedProfile = await kv.get(`user:${user.id}:profile`);
-      
-      if (savedProfile && savedProfile.pendingOrderTradeNo === tradeNo) {
-        console.log(`[PayUni Prepare] ✅ 验证成功：pendingOrderTradeNo = ${tradeNo}`);
-        verified = true;
-        break;
-      }
-      
-      if (attempt === 1) {
-        console.log(`[PayUni Prepare] ⚠️ 验证失败（尝试 ${attempt}/2），重新写入...`);
-        console.log(`[PayUni Prepare] 期望 = ${tradeNo}, 实际 = ${savedProfile?.pendingOrderTradeNo || 'null'}`);
-        await kv.set(`user:${user.id}:profile`, profile);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } else {
-        console.error(`[PayUni Prepare] ❌ 验证失败 2 次，但订单已创建，继续返回`);
-        console.error(`[PayUni Prepare] ❌ 期望 = ${tradeNo}, 实际 = ${savedProfile?.pendingOrderTradeNo || 'null'}`);
-        console.error(`[PayUni Prepare] ❌ 15分钟订单锁可能失效，用户可能生成多个订单`);
-      }
-    }
-    
-    // 12. 返回
+    // 9. 返回
     return c.json({
       success: true,
       data: {
