@@ -19,6 +19,7 @@ export function PaymentCheckout() {
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
+  const [activeOrder, setActiveOrder] = useState<any>(null);  // ✅ 新增：活動訂單狀態
   
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
@@ -28,8 +29,55 @@ export function PaymentCheckout() {
   console.log('PaymentCheckout: Component state -', {
     isLoading,
     isCheckingUser,
-    hasPendingUser: !!pendingUser
+    hasPendingUser: !!pendingUser,
+    hasActiveOrder: !!activeOrder  // ✅ 新增
   });
+
+  // ✅ 新增：定期檢查用戶狀態（每 5 秒）
+  useEffect(() => {
+    if (!pendingUser) return;
+    
+    const checkUserStatus = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const profile = await response.json();
+          
+          // ✅ 檢查狀態並自動跳轉
+          if (profile.registrationStep === 3) {
+            console.log('PaymentCheckout: 用戶已完成註冊，跳轉到 dashboard');
+            showToast('註冊完成！正在跳轉...', 'success');
+            setTimeout(() => {
+              navigate('/dashboard', { replace: true });
+            }, 1500);
+          } else if (profile.registrationStep === 2 && profile.pendingActivation && profile.lastTradeNo) {
+            console.log('PaymentCheckout: 用戶已付款，跳轉到結果頁');
+            navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
+          }
+        }
+      } catch (error) {
+        console.error('檢查用戶狀態失敗:', error);
+      }
+    };
+    
+    // ✅ 每 5 秒檢查一次
+    const intervalId = setInterval(checkUserStatus, 5000);
+    
+    // 組件卸載時清除
+    return () => clearInterval(intervalId);
+    
+  }, [pendingUser, navigate, showToast, supabase]);
 
   // 檢查是否有待付款的用戶資料
   useEffect(() => {
@@ -76,6 +124,14 @@ export function PaymentCheckout() {
                 // 已完成付款，導向會員中心
                 console.log('PaymentCheckout: User already paid, redirecting to dashboard');
                 navigate('/dashboard', { replace: true });
+                return;
+              }
+              
+              // ✅ 新增：檢查是否有活動訂單
+              if (profile.registrationStep === 2 && profile.pendingActivation && profile.lastTradeNo) {
+                console.log('PaymentCheckout: User has active order, checking status...');
+                // 有待處理的訂單，跳轉到付款結果頁
+                navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
                 return;
               }
               

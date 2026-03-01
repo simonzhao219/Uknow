@@ -4,6 +4,7 @@ import * as kv from './kv_store.ts';
 import { getPayUniConfig } from './payuni_config.ts';
 import { decryptPayUni, generatePayUniHash } from './payuni_crypto.ts';
 import { getTaiwanNow, toTaiwanISOString } from './date_utils.ts';
+import { completeUserRegistration } from './auth_registration_core.ts';
 
 const payuniHandler = new Hono();
 
@@ -139,16 +140,16 @@ payuniHandler.post('/notify', async (c) => {
         return c.json({ Status: 'SUCCESS' });
       }
       
-      // ✅ 只更新状态，不生成推荐码和奖励
-      profile.registrationStep = 2;  // ← 进入 Step 2（等待用户确认）
-      profile.pendingActivation = true;  // ← 标记为待激活
+      // ✅ 更新到 Step 2
+      profile.registrationStep = 2;
+      profile.pendingActivation = true;
       profile.paidAt = toTaiwanISOString(getTaiwanNow());
       profile.periodTradeNo = data.PeriodTradeNo;
-      profile.lastTradeNo = originalTradeNo;  // ✅ 保存原始订单号，用于跳转到付款结果页面
-      profile.updatedAt = toTaiwanISOString(getTaiwanNow());  // ✅ 添加更新時間
+      profile.lastTradeNo = originalTradeNo;
+      profile.updatedAt = toTaiwanISOString(getTaiwanNow());
       
       await kv.set(`user:${order.userId}:profile`, profile);
-      console.log('[Webhook PayUni] ✅ 用戶狀態已更新為 Step 2（待確認）');
+      console.log('[Webhook PayUni] ✅ 用戶狀態已更新為 Step 2');
       
       // 更新訂單狀態
       order.status = 'success';
@@ -159,6 +160,25 @@ payuniHandler.post('/notify', async (c) => {
       await kv.set(`payuni:order:${originalTradeNo}`, order);
       
       console.log('[Webhook PayUni] ✅ 訂單已完成');
+      
+      // ✅ 自動完成註冊（Step 2 → Step 3）
+      console.log('[Webhook PayUni] 🚀 開始自動完成註冊...');
+      
+      try {
+        const registrationResult = await completeUserRegistration(order.userId);
+        
+        if (registrationResult.success) {
+          console.log('[Webhook PayUni] ✅ 註冊自動完成成功');
+          console.log('[Webhook PayUni] 推薦碼:', registrationResult.data?.referralCode);
+        } else {
+          console.error('[Webhook PayUni] ⚠️ 註冊自動完成失敗:', registrationResult.error);
+          console.error('[Webhook PayUni] 用戶可使用手動按鈕完成註冊');
+        }
+      } catch (regError: any) {
+        console.error('[Webhook PayUni] ⚠️ 註冊自動完成異常:', regError.message);
+        console.error('[Webhook PayUni] 用戶可使用手動按鈕完成註冊');
+      }
+      
       console.log('[Webhook PayUni] ✅ 用戶已激活:', order.userId);
     }
     

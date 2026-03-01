@@ -48,6 +48,11 @@ export function PaymentResult() {
   const [retryCount, setRetryCount] = useState(0);  // ✅ 新增：重試計數
   const [maxRetries] = useState(12);  // ✅ 新增：最多重試 12 次
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);  // ✅ 新增：檢查認證狀態
+  const [userStatus, setUserStatus] = useState<{
+    registrationStep: number;
+    referralCode?: string;
+  } | null>(null);  // ✅ 新增：用戶狀態
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);  // ✅ 新增：狀態檢查中
   
   const tradeNo = searchParams.get('tradeNo');
   
@@ -58,6 +63,8 @@ export function PaymentResult() {
     orderResult,
     retryCount,
     isCheckingAuth,
+    userStatus,
+    isCheckingStatus,
     searchParamsAll: Object.fromEntries(searchParams.entries())
   });
   
@@ -94,6 +101,11 @@ export function PaymentResult() {
             hasReferralCode: !!profile.referralCode
           });
           
+          setUserStatus({
+            registrationStep: profile.registrationStep,
+            referralCode: profile.referralCode
+          });
+          
           // ✅ 如果已完成註冊（Step 3），自動跳轉到 dashboard
           if (profile.registrationStep === 3 && profile.referralCode) {
             console.log('[PaymentResult] ✅ User already completed registration, redirecting to dashboard...');
@@ -115,6 +127,79 @@ export function PaymentResult() {
     
     checkUserStatus();
   }, [navigate, showToast]);
+  
+  // ✅ 新增：訂單成功後，定期檢查用戶註冊狀態（每 3 秒，最多 60 秒）
+  useEffect(() => {
+    if (!orderResult || orderResult.status !== 'success') return;
+    if (userStatus?.registrationStep === 3) return;  // 已完成，停止檢查
+    
+    setIsCheckingStatus(true);
+    
+    const checkRegistrationStatus = async () => {
+      try {
+        const supabase = (await import('../utils/supabase/client')).createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) return;
+        
+        const { projectId } = await import('../utils/supabase/info');
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        
+        if (response.ok) {
+          const profile = await response.json();
+          setUserStatus({
+            registrationStep: profile.registrationStep,
+            referralCode: profile.referralCode
+          });
+          
+          // ✅ 如果已完成，自動跳轉
+          if (profile.registrationStep === 3) {
+            console.log('[PaymentResult] 檢測到註冊已完成');
+            setIsCheckingStatus(false);
+            showToast('🎉 註冊完成！正在跳轉...', 'success');
+            
+            setTimeout(() => {
+              navigate('/dashboard', { replace: true });
+            }, 2000);
+          }
+        }
+      } catch (error) {
+        console.error('檢查註冊狀態失敗:', error);
+      }
+    };
+    
+    // ✅ 立即檢查一次
+    checkRegistrationStatus();
+    
+    // ✅ 每 3 秒檢查一次（最多檢查 20 次 = 60 秒）
+    let checkCount = 0;
+    const maxChecks = 20;
+    
+    const intervalId = setInterval(() => {
+      checkCount++;
+      
+      if (checkCount >= maxChecks) {
+        console.log('[PaymentResult] 檢查次數已達上限，停止輪詢');
+        setIsCheckingStatus(false);
+        clearInterval(intervalId);
+        return;
+      }
+      
+      checkRegistrationStatus();
+    }, 3000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+    
+  }, [orderResult, userStatus, navigate, showToast]);
   
   // ✅ 查询订单状态（支持重試）
   const fetchOrderStatus = async (): Promise<OrderResult | null> => {
@@ -290,7 +375,7 @@ export function PaymentResult() {
       console.error('完成註冊失敗:', error);
       showError(
         '完成註冊失敗',
-        error.message || '請稍後再試，或聯繫客服協助處理'
+        error.message || '請稍後��試，或聯繫客服協助處理'
       );
     } finally {
       setIsCompleting(false);
