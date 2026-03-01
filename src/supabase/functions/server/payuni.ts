@@ -46,7 +46,8 @@ payuni.post('/prepare', async (c) => {
     // 5. 檢查是否有未過期的 pending 訂單（15分鐘內複用）
     // ========================================
     if (profile.pendingOrderTradeNo && profile.pendingOrderCreatedAt) {
-      console.log(`[PayUni Prepare] 檢查現有訂單：${profile.pendingOrderTradeNo}`);
+      console.log(`[PayUni Prepare] 🔍 檢查現有訂單：${profile.pendingOrderTradeNo}`);
+      console.log(`[PayUni Prepare] 🔍 訂單創建時間：${profile.pendingOrderCreatedAt}`);
       
       // 5.1 獲取訂單
       const existingOrder = await kv.get(`payuni:order:${profile.pendingOrderTradeNo}`);

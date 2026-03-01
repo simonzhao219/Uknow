@@ -285,6 +285,10 @@ export function PaymentCheckout() {
       const result = await response.json();
 
       if (result.success) {
+        // ✅ 顯示訂單編號以便確認是否複用
+        console.log('PaymentCheckout: 後端返回的訂單編號:', result.data.tradeNo);
+        console.log('PaymentCheckout: 環境模式:', result.data.mode);
+        
         // 動態創建表單並提交到 PayUni
         const form = document.createElement('form');
         form.method = 'POST';
