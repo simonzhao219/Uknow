@@ -10,7 +10,6 @@ import { EmailVerificationPending } from './components/EmailVerificationPending'
 import { AuthCallback } from './components/AuthCallback';
 import { CompleteProfile } from './components/CompleteProfile';
 import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
-import { PaymentConfirm } from './components/PaymentConfirm';  // ✅ 新增：付款確認頁面
 import { PaymentResult } from './components/PaymentResult';  // ✅ 新增：付款結果頁面
 import { ForgotPasswordPage } from './components/ForgotPasswordPage';  // ✨ 新增
 import { ResetPasswordPage } from './components/ResetPasswordPage';    // ✨ 新增
@@ -341,11 +340,6 @@ function AppContent() {
                 <Route path="/payment/checkout" element={
                   <ProtectedRoute>
                     <PaymentCheckout />
-                  </ProtectedRoute>
-                } />
-                <Route path="/payment/confirm" element={
-                  <ProtectedRoute>
-                    <PaymentConfirm />
                   </ProtectedRoute>
                 } />
                 <Route path="/payment/result" element={

@@ -66,9 +66,6 @@ export function PaymentCheckout() {
           } else if (profile.registrationStep === 2 && profile.pendingActivation && profile.lastTradeNo) {
             console.log('PaymentCheckout: 用戶已付款，跳轉到結果頁');
             navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
-          } else if (profile.registrationStep === 2 && !profile.lastTradeNo) {
-            console.log('PaymentCheckout: 用戶 registrationStep=2 但沒有訂單號，跳轉到確認頁');
-            navigate('/payment/confirm', { replace: true });
           }
         }
       } catch (error) {
@@ -137,13 +134,6 @@ export function PaymentCheckout() {
                 console.log('PaymentCheckout: User has active order, checking status...');
                 // 有待處理的訂單，跳轉到付款結果頁
                 navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
-                return;
-              }
-              
-              // ✅ 新增：檢查 registrationStep = 2 但沒有訂單號
-              if (profile.registrationStep === 2 && !profile.lastTradeNo) {
-                console.log('PaymentCheckout: User at step 2 but no trade number, redirecting to confirm page');
-                navigate('/payment/confirm', { replace: true });
                 return;
               }
               
