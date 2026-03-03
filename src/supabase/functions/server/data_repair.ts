@@ -1,7 +1,8 @@
 import { Hono } from 'npm:hono@4.3.11';
 import * as kv from './kv_store.tsx';
-import { toTaiwanISOString, getTaiwanNow } from './date_utils.ts';
+import { toTaiwanISOString, getTaiwanNow, toTaiwanDateString } from './date_utils.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { REWARD_CONFIG } from './reward_config.ts';
 
 const dataRepair = new Hono();
 
@@ -1143,7 +1144,7 @@ async function recalculateRewardsForReferee(
     const historyKey = `user:${referrerId}:reward_history`;
     const history = await kv.get(historyKey) || [];
     
-    // 統計實際已發放的首月獎勵
+    // 統計實際已發放的���月獎勵
     const firstMonthRewards = history.filter((r: any) => 
       r.type && r.type.includes('month1')
     );
@@ -1390,15 +1391,9 @@ dataRepair.post('/repair-all', async (c) => {
   console.log('[Data Repair] 開始批量修復...');
   
   try {
-    // 1. 先執行驗證，獲取所有有問題的用戶
-    const { body: validateRequest } = c.req;
-    
-    // 這裡應該調用 data_validation.ts 的驗證功能
-    // 暫時返回提示信息
-    
     return c.json({
       success: false,
-      message: '批量修復功能尚未實現，請先使用驗證功能獲取問題列表，然後針對特定用戶執行修復'
+      message: '批量修復功能尚未實現，請使用 /fix-missing-referred-by 端點修復推薦鏈問題'
     });
     
   } catch (error) {
@@ -1407,6 +1402,404 @@ dataRepair.post('/repair-all', async (c) => {
       success: false,
       error: { message: '批量修復失敗', details: error.message }
     }, 500);
+  }
+});
+
+/**
+ * ⭐⭐⭐ 修復所有缺失的 referred_by 記錄並重建推薦樹
+ * POST /data-repair/fix-missing-referred-by
+ * 
+ * 問題根因：auth_registration_core.ts 的 completeUserRegistration 函數
+ * 遺漏了建立 user:${userId}:referred_by 記錄，導致二代、三代推薦關係斷裂。
+ * 
+ * Query Parameters:
+ * - dryRun=true  只檢查不修改（預設）
+ * - dryRun=false 實際執行修復
+ */
+dataRepair.post('/fix-missing-referred-by', async (c) => {
+  const dryRun = c.req.query('dryRun') !== 'false';
+  
+  console.log('========================================');
+  console.log(`🔧 修復缺失的 referred_by 記錄${dryRun ? '（預覽模式）' : '（執行模式）'}`);
+  console.log('========================================');
+  
+  try {
+    // ===== 步驟 1: 掃描所有 profile =====
+    console.log('\n步驟 1: 掃描所有用戶 profile...');
+    
+    const allProfiles = await kv.getByPrefix('user:');
+    const profiles = allProfiles.filter((item: any) => 
+      typeof item === 'object' && item !== null && item.id && item.email && item.registrationStep !== undefined
+    );
+    
+    console.log(`✅ 找到 ${profiles.length} 個用戶 profile`);
+    
+    // ===== 步驟 2: 找出缺失 referred_by 的用戶 =====
+    console.log('\n步驟 2: 檢查缺失的 referred_by 記錄...');
+    
+    const missingReferredBy: any[] = [];
+    const allReferredByMap: { [userId: string]: any } = {};
+    
+    for (const profile of profiles) {
+      if (profile.referredByUserId) {
+        const referredBy = await kv.get(`user:${profile.id}:referred_by`);
+        
+        if (!referredBy) {
+          missingReferredBy.push(profile);
+          console.log(`❌ 缺失: ${profile.name} (${profile.id}) → 推薦人: ${profile.referredByUserId}`);
+        } else {
+          allReferredByMap[profile.id] = referredBy;
+        }
+      }
+    }
+    
+    console.log(`\n📊 統計結果:`);
+    console.log(`   有推薦人的用戶: ${profiles.filter((p: any) => p.referredByUserId).length}`);
+    console.log(`   缺失 referred_by: ${missingReferredBy.length}`);
+    console.log(`   已有 referred_by: ${Object.keys(allReferredByMap).length}`);
+    
+    if (dryRun) {
+      console.log('\n⚠️ 預覽模式 - 不執行修改');
+      return c.json({
+        success: true,
+        dryRun: true,
+        summary: {
+          totalProfiles: profiles.length,
+          usersWithReferrer: profiles.filter((p: any) => p.referredByUserId).length,
+          missingReferredBy: missingReferredBy.length,
+          existingReferredBy: Object.keys(allReferredByMap).length
+        },
+        missingUsers: missingReferredBy.map((p: any) => ({
+          userId: p.id,
+          userName: p.name,
+          referredByUserId: p.referredByUserId,
+          referredByCode: p.referredByCode,
+          registrationStep: p.registrationStep
+        }))
+      });
+    }
+    
+    // ===== 步驟 3: 補建缺失的 referred_by 記錄 =====
+    console.log('\n步驟 3: 補建缺失的 referred_by 記錄...');
+    
+    let createdCount = 0;
+    
+    for (const profile of missingReferredBy) {
+      let referrerUserName = '未知用戶';
+      let referrerListingId = null;
+      let referrerListingName = null;
+      
+      if (profile.referredByCode) {
+        const referralCodeData = await kv.get(`referral_code:${profile.referredByCode}`);
+        if (referralCodeData) {
+          referrerUserName = referralCodeData.userName || '未知用戶';
+          referrerListingId = referralCodeData.listingId || null;
+          referrerListingName = referralCodeData.listingName || null;
+        }
+      }
+      
+      if (referrerUserName === '未知用戶') {
+        const referrerProfile = await kv.get(`user:${profile.referredByUserId}:profile`);
+        if (referrerProfile) {
+          referrerUserName = referrerProfile.name || '未知用戶';
+        }
+      }
+      
+      const referredByRecord = {
+        referrerUserId: profile.referredByUserId,
+        referrerListingId,
+        referrerUserName,
+        referrerListingName,
+        referralCode: profile.referredByCode,
+        referredAt: profile.paidAt || profile.createdAt || toTaiwanISOString(getTaiwanNow()),
+        generation: 1
+      };
+      
+      await kv.set(`user:${profile.id}:referred_by`, referredByRecord);
+      allReferredByMap[profile.id] = referredByRecord;
+      createdCount++;
+      
+      console.log(`✅ 已建立: ${profile.name} (${profile.id}) → ${referrerUserName}`);
+    }
+    
+    console.log(`\n📊 步驟 3 完成: 共建立 ${createdCount} 筆 referred_by 記錄`);
+    
+    // ===== 步驟 4: 重建所有推薦樹 =====
+    console.log('\n步驟 4: 重建所有推薦樹...');
+    
+    const profileMap: { [userId: string]: any } = {};
+    for (const profile of profiles) {
+      profileMap[profile.id] = profile;
+    }
+    
+    // 找出所有推薦人
+    const referrerIds = new Set<string>();
+    for (const profile of profiles) {
+      if (profile.referredByUserId) {
+        referrerIds.add(profile.referredByUserId);
+        const gen1RB = allReferredByMap[profile.referredByUserId];
+        if (gen1RB?.referrerUserId) {
+          referrerIds.add(gen1RB.referrerUserId);
+          const gen2RB = allReferredByMap[gen1RB.referrerUserId];
+          if (gen2RB?.referrerUserId) {
+            referrerIds.add(gen2RB.referrerUserId);
+          }
+        }
+      }
+    }
+    
+    console.log(`找到 ${referrerIds.size} 個推薦人需要重建推薦樹`);
+    
+    const newTrees: { [userId: string]: { firstGeneration: any[], secondGeneration: any[], thirdGeneration: any[] } } = {};
+    for (const rid of referrerIds) {
+      newTrees[rid] = { firstGeneration: [], secondGeneration: [], thirdGeneration: [] };
+    }
+    
+    for (const profile of profiles) {
+      if (!profile.referredByUserId || profile.registrationStep < 3) continue;
+      
+      const gen1ReferrerId = profile.referredByUserId;
+      const memberInfo = {
+        userId: profile.id,
+        userName: profile.name,
+        userReferralCode: profile.referralCode || null,
+        listingId: null, listingName: null, serviceType: null, city: null,
+        activeUntil: profile.activeUntil || null,
+        isActive: profile.activeUntil ? new Date(profile.activeUntil) >= getTaiwanNow() : false,
+        createdAt: profile.paidAt || profile.createdAt
+      };
+      
+      const gen1Prof = profileMap[gen1ReferrerId];
+      const directReferrerInfo = gen1Prof ? {
+        userId: gen1ReferrerId,
+        userName: gen1Prof.name || '未知用戶',
+        userReferralCode: gen1Prof.referralCode || null
+      } : null;
+      
+      if (newTrees[gen1ReferrerId]) {
+        newTrees[gen1ReferrerId].firstGeneration.push({ ...memberInfo, referrer: null });
+      }
+      
+      const gen1RB = allReferredByMap[gen1ReferrerId];
+      if (gen1RB?.referrerUserId) {
+        const gen2Id = gen1RB.referrerUserId;
+        if (newTrees[gen2Id]) {
+          newTrees[gen2Id].secondGeneration.push({ ...memberInfo, referrer: directReferrerInfo });
+        }
+        
+        const gen2RB = allReferredByMap[gen2Id];
+        if (gen2RB?.referrerUserId) {
+          const gen3Id = gen2RB.referrerUserId;
+          if (newTrees[gen3Id]) {
+            newTrees[gen3Id].thirdGeneration.push({ ...memberInfo, referrer: directReferrerInfo });
+          }
+        }
+      }
+    }
+    
+    let treesUpdated = 0;
+    const treeChanges: any[] = [];
+    
+    for (const [userId, newTree] of Object.entries(newTrees)) {
+      const oldTree = await kv.get(`user:${userId}:referral_tree`);
+      const oldGen1 = oldTree?.firstGeneration?.length || 0;
+      const oldGen2 = oldTree?.secondGeneration?.length || 0;
+      const oldGen3 = oldTree?.thirdGeneration?.length || 0;
+      const newGen1 = newTree.firstGeneration.length;
+      const newGen2 = newTree.secondGeneration.length;
+      const newGen3 = newTree.thirdGeneration.length;
+      
+      const hasChange = oldGen1 !== newGen1 || oldGen2 !== newGen2 || oldGen3 !== newGen3;
+      
+      await kv.set(`user:${userId}:referral_tree`, { ...newTree, lastUpdated: toTaiwanISOString(getTaiwanNow()) });
+      await kv.set(`user:${userId}:referral_stats`, {
+        totalReferrals: newGen1 + newGen2 + newGen3,
+        firstGenCount: newGen1, secondGenCount: newGen2, thirdGenCount: newGen3,
+        lastUpdated: toTaiwanISOString(getTaiwanNow())
+      });
+      
+      treesUpdated++;
+      
+      if (hasChange) {
+        const userName = profileMap[userId]?.name || '未知用戶';
+        console.log(`🔄 ${userName}: 1代 ${oldGen1}→${newGen1}, 2代 ${oldGen2}→${newGen2}, 3代 ${oldGen3}→${newGen3}`);
+        treeChanges.push({ userId, userName, before: { gen1: oldGen1, gen2: oldGen2, gen3: oldGen3 }, after: { gen1: newGen1, gen2: newGen2, gen3: newGen3 } });
+      }
+    }
+    
+    console.log(`\n📊 步驟 4 完成: 更新 ${treesUpdated} 棵推薦樹，其中 ${treeChanges.length} 棵有變化`);
+    
+    // ===== 步驟 5: 補發缺失的二代、三代獎勵 =====
+    console.log('\n步驟 5: 補發缺失的二代、三代獎勵...');
+    
+    let rewardsIssued = 0;
+    let schedulesCreated = 0;
+    const rewardDetails: any[] = [];
+    
+    for (const profile of profiles) {
+      if (!profile.referredByUserId || profile.registrationStep < 3) continue;
+      
+      const gen1ReferrerId = profile.referredByUserId;
+      const gen1RB = allReferredByMap[gen1ReferrerId];
+      if (!gen1RB?.referrerUserId) continue;
+      
+      const gen2ReferrerId = gen1RB.referrerUserId;
+      const gen2Profile = profileMap[gen2ReferrerId];
+      
+      if (gen2Profile) {
+        const gen2History = await kv.get(`user:${gen2ReferrerId}:reward_history`) || [];
+        const alreadyIssued = gen2History.some((r: any) => r.type === 'referral_gen2_month1' && r.referee?.userId === profile.id);
+        
+        if (!alreadyIssued) {
+          console.log(`💰 補發二代獎勵: ${gen2Profile.name} ← ${profile.name}`);
+          
+          const rewardsKey = `user:${gen2ReferrerId}:rewards`;
+          const rewards = await kv.get(rewardsKey) || { availableRewards: 0, pendingRewards: 0, withdrawnRewards: 0, totalEarned: 0 };
+          rewards.availableRewards += REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH;
+          rewards.totalEarned += REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH;
+          rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
+          await kv.set(rewardsKey, rewards);
+          
+          gen2History.unshift({
+            id: `reward_repair_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            type: 'referral_gen2_month1',
+            amount: REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH,
+            balance: rewards.availableRewards + rewards.pendingRewards,
+            referee: { userId: profile.id, userName: profile.name, userReferralCode: profile.referralCode },
+            generation: 2, monthNumber: 1,
+            issuedAt: toTaiwanISOString(getTaiwanNow()),
+            description: `二代-${profile.name}-${profile.referralCode || 'N/A'}-第1個月`
+          });
+          if (gen2History.length > 200) gen2History.length = 200;
+          await kv.set(`user:${gen2ReferrerId}:reward_history`, gen2History);
+          
+          rewardsIssued++;
+          rewardDetails.push({ receiver: gen2Profile.name, receiverId: gen2ReferrerId, referee: profile.name, refereeId: profile.id, generation: 2 });
+          
+          if (profile.activeUntil) {
+            const activeUntil = new Date(profile.activeUntil);
+            const startDate = new Date(activeUntil);
+            startDate.setDate(startDate.getDate() - 364);
+            
+            for (let month = 2; month <= 12; month++) {
+              const scheduledDate = new Date(startDate);
+              scheduledDate.setMonth(scheduledDate.getMonth() + (month - 1));
+              const scheduledDateStr = toTaiwanDateString(scheduledDate);
+              const scheduleId = `schedule_repair_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              
+              await kv.set(`reward_schedule:${scheduleId}`, {
+                id: scheduleId, userId: gen2ReferrerId,
+                referee: { userId: profile.id, userName: profile.name, userReferralCode: profile.referralCode },
+                generation: 2, monthNumber: month, amount: REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH,
+                scheduledDate: scheduledDateStr, status: 'pending',
+                createdAt: toTaiwanISOString(getTaiwanNow()), completedAt: null, cancellationReason: null
+              });
+              
+              const dateIndexKey = `reward_schedules_by_date:${scheduledDateStr}`;
+              const dateIndex = await kv.get(dateIndexKey) || [];
+              dateIndex.push(scheduleId);
+              await kv.set(dateIndexKey, dateIndex);
+              schedulesCreated++;
+            }
+          }
+        }
+      }
+      
+      // 三代
+      const gen2RB = allReferredByMap[gen2ReferrerId];
+      if (!gen2RB?.referrerUserId) continue;
+      
+      const gen3ReferrerId = gen2RB.referrerUserId;
+      const gen3Profile = profileMap[gen3ReferrerId];
+      
+      if (gen3Profile) {
+        const gen3History = await kv.get(`user:${gen3ReferrerId}:reward_history`) || [];
+        const alreadyIssued = gen3History.some((r: any) => r.type === 'referral_gen3_month1' && r.referee?.userId === profile.id);
+        
+        if (!alreadyIssued) {
+          console.log(`💰 補發三代獎勵: ${gen3Profile.name} ← ${profile.name}`);
+          
+          const rewardsKey = `user:${gen3ReferrerId}:rewards`;
+          const rewards = await kv.get(rewardsKey) || { availableRewards: 0, pendingRewards: 0, withdrawnRewards: 0, totalEarned: 0 };
+          rewards.availableRewards += REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH;
+          rewards.totalEarned += REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH;
+          rewards.lastUpdated = toTaiwanISOString(getTaiwanNow());
+          await kv.set(rewardsKey, rewards);
+          
+          gen3History.unshift({
+            id: `reward_repair_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            type: 'referral_gen3_month1',
+            amount: REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH,
+            balance: rewards.availableRewards + rewards.pendingRewards,
+            referee: { userId: profile.id, userName: profile.name, userReferralCode: profile.referralCode },
+            generation: 3, monthNumber: 1,
+            issuedAt: toTaiwanISOString(getTaiwanNow()),
+            description: `三代-${profile.name}-${profile.referralCode || 'N/A'}-第1個月`
+          });
+          if (gen3History.length > 200) gen3History.length = 200;
+          await kv.set(`user:${gen3ReferrerId}:reward_history`, gen3History);
+          
+          rewardsIssued++;
+          rewardDetails.push({ receiver: gen3Profile.name, receiverId: gen3ReferrerId, referee: profile.name, refereeId: profile.id, generation: 3 });
+          
+          if (profile.activeUntil) {
+            const activeUntil = new Date(profile.activeUntil);
+            const startDate = new Date(activeUntil);
+            startDate.setDate(startDate.getDate() - 364);
+            
+            for (let month = 2; month <= 12; month++) {
+              const scheduledDate = new Date(startDate);
+              scheduledDate.setMonth(scheduledDate.getMonth() + (month - 1));
+              const scheduledDateStr = toTaiwanDateString(scheduledDate);
+              const scheduleId = `schedule_repair_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              
+              await kv.set(`reward_schedule:${scheduleId}`, {
+                id: scheduleId, userId: gen3ReferrerId,
+                referee: { userId: profile.id, userName: profile.name, userReferralCode: profile.referralCode },
+                generation: 3, monthNumber: month, amount: REWARD_CONFIG.REFERRAL_REWARD_PER_MONTH,
+                scheduledDate: scheduledDateStr, status: 'pending',
+                createdAt: toTaiwanISOString(getTaiwanNow()), completedAt: null, cancellationReason: null
+              });
+              
+              const dateIndexKey = `reward_schedules_by_date:${scheduledDateStr}`;
+              const dateIndex = await kv.get(dateIndexKey) || [];
+              dateIndex.push(scheduleId);
+              await kv.set(dateIndexKey, dateIndex);
+              schedulesCreated++;
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`\n📊 步驟 5 完成: 補發 ${rewardsIssued} 筆首月獎勵，補建 ${schedulesCreated} 筆後續排程`);
+    
+    // 保存修復日誌
+    const logKey = `repair_log:fix_missing_referred_by:${Date.now()}`;
+    await kv.set(logKey, {
+      type: 'fix_missing_referred_by',
+      timestamp: toTaiwanISOString(getTaiwanNow()),
+      summary: { referredByCreated: createdCount, treesUpdated, treesChanged: treeChanges.length, rewardsIssued, schedulesCreated },
+      treeChanges, rewardDetails
+    });
+    
+    console.log('========================================');
+    console.log('✅ 修復完成！');
+    console.log(`   建立 referred_by: ${createdCount} 筆`);
+    console.log(`   更新推薦樹: ${treesUpdated} 棵（${treeChanges.length} 棵有變化）`);
+    console.log(`   補發獎勵: ${rewardsIssued} 筆`);
+    console.log(`   補建排程: ${schedulesCreated} 筆`);
+    console.log('========================================');
+    
+    return c.json({
+      success: true, dryRun: false,
+      summary: { referredByCreated: createdCount, treesUpdated, treesChanged: treeChanges.length, rewardsIssued, schedulesCreated },
+      treeChanges, rewardDetails
+    });
+    
+  } catch (error: any) {
+    console.error('❌ 修復失敗:', error);
+    return c.json({ success: false, error: { message: '修復失敗', details: error.message } }, 500);
   }
 });
 

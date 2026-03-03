@@ -438,6 +438,20 @@ export async function completeUserRegistration(userId: string): Promise<{
       console.log('[completeUserRegistration] 推薦碼:', referredByCode);
       console.log('[completeUserRegistration] 推薦人:', referredByUserId);
       
+      // ✅ 修復：建立 user:${userId}:referred_by 記錄（之前遺漏！）
+      // 此記錄是二代、三代推薦鏈向上追溯的關鍵
+      const referralCodeData = await kv.get(`referral_code:${referredByCode}`);
+      await kv.set(`user:${userId}:referred_by`, {
+        referrerUserId: referredByUserId,
+        referrerListingId: referralCodeData?.listingId || null,
+        referrerUserName: referralCodeData?.userName || profile.name || '未知用戶',
+        referrerListingName: referralCodeData?.listingName || null,
+        referralCode: referredByCode,
+        referredAt: profile.paidAt || toTaiwanISOString(getTaiwanNow()),
+        generation: 1
+      });
+      console.log(`[completeUserRegistration] ✅ referred_by 記錄已建立: user:${userId}:referred_by`);
+      
       const paidAt = profile.paidAt;
       const newMember = {
         userId: userId,
