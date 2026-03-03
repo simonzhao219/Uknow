@@ -1537,10 +1537,24 @@ dataRepair.post('/fix-missing-referred-by', async (c) => {
     for (const profile of profiles) {
       if (profile.referredByUserId) {
         referrerIds.add(profile.referredByUserId);
+        
         const gen1RB = allReferredByMap[profile.referredByUserId];
+        
+        // 🔧 新增日志：检查一代推荐人的 referred_by
+        if (!gen1RB) {
+          console.log(`⚠️  警告: ${profile.name} 的一代推荐人 ${profile.referredByUserId} 没有 referred_by 记录`);
+        }
+        
         if (gen1RB?.referrerUserId) {
           referrerIds.add(gen1RB.referrerUserId);
+          
           const gen2RB = allReferredByMap[gen1RB.referrerUserId];
+          
+          // 🔧 新增日志：检查二代推荐人的 referred_by
+          if (!gen2RB) {
+            console.log(`⚠️  警告: ${profile.name} 的二代推荐人 ${gen1RB.referrerUserId} 没有 referred_by 记录`);
+          }
+          
           if (gen2RB?.referrerUserId) {
             referrerIds.add(gen2RB.referrerUserId);
           }
@@ -1800,6 +1814,237 @@ dataRepair.post('/fix-missing-referred-by', async (c) => {
   } catch (error: any) {
     console.error('❌ 修復失敗:', error);
     return c.json({ success: false, error: { message: '修復失敗', details: error.message } }, 500);
+  }
+});
+
+/**
+ * 🔧 修复指定用户的推荐树关系（包括往上三代）
+ * POST /data-repair/fix-specific-user/:userId
+ * 
+ * 用于修复因 referred_by 记录缺失导致的推荐树不完整问题
+ * 
+ * 使用场景：
+ * - 用户注册时，其直接推荐人的 referred_by 记录不存在
+ * - 导致该用户只出现在直接推荐人的一代树中
+ * - 没有出现在二代、三代推荐人的树中
+ */
+dataRepair.post('/fix-specific-user/:userId', async (c) => {
+  const userId = c.req.param('userId');
+  
+  console.log('========================================');
+  console.log(`🔧 修复指定用户的推荐树关系: ${userId}`);
+  console.log('========================================');
+  
+  try {
+    // 1. 获取用户 profile
+    const profile = await kv.get(`user:${userId}:profile`);
+    if (!profile) {
+      return c.json({ 
+        success: false, 
+        error: { message: '用户不存在' } 
+      }, 404);
+    }
+    
+    console.log(`✓ 用户信息: ${profile.name} (${profile.email})`);
+    
+    // 2. 获取 referred_by
+    const referredBy = await kv.get(`user:${userId}:referred_by`);
+    if (!referredBy) {
+      return c.json({ 
+        success: false, 
+        error: { message: '该用户没有推荐人，无需修复' } 
+      }, 400);
+    }
+    
+    console.log(`✓ 推荐人: ${referredBy.referrerUserName} (${referredBy.referrerUserId})`);
+    
+    // 3. 构建新成员信息
+    const newMember = {
+      userId: profile.id,
+      userName: profile.name,
+      userReferralCode: profile.referralCode,
+      listingId: null,
+      listingName: null,
+      serviceType: null,
+      city: null,
+      activeUntil: profile.activeUntil,
+      isActive: profile.activeUntil ? new Date(profile.activeUntil) >= getTaiwanNow() : false,
+      createdAt: profile.paidAt || profile.createdAt
+    };
+    
+    const results = [];
+    
+    // 4. 更新一代推荐人的树
+    console.log('\\n步骤 1: 检查一代推荐树...');
+    const gen1Id = referredBy.referrerUserId;
+    const gen1Tree = await kv.get(`user:${gen1Id}:referral_tree`) || {
+      firstGeneration: [],
+      secondGeneration: [],
+      thirdGeneration: []
+    };
+    
+    const existsInGen1 = gen1Tree.firstGeneration?.some((m: any) => m.userId === userId);
+    if (!existsInGen1) {
+      gen1Tree.firstGeneration = gen1Tree.firstGeneration || [];
+      gen1Tree.firstGeneration.push({ ...newMember, referrer: null });
+      gen1Tree.lastUpdated = toTaiwanISOString(getTaiwanNow());
+      await kv.set(`user:${gen1Id}:referral_tree`, gen1Tree);
+      console.log(`✅ 已添加到一代推荐树: ${referredBy.referrerUserName}`);
+      results.push({ generation: 1, userId: gen1Id, userName: referredBy.referrerUserName, action: 'added' });
+    } else {
+      console.log(`ℹ️  已存在于一代推荐树，跳过`);
+      results.push({ generation: 1, userId: gen1Id, userName: referredBy.referrerUserName, action: 'skipped' });
+    }
+    
+    // 5. 更新二代推荐人的树
+    console.log('\\n步骤 2: 检查二代推荐树...');
+    const gen1RB = await kv.get(`user:${gen1Id}:referred_by`);
+    if (gen1RB?.referrerUserId) {
+      const gen2Id = gen1RB.referrerUserId;
+      const gen2Profile = await kv.get(`user:${gen2Id}:profile`);
+      
+      if (gen2Profile) {
+        console.log(`✓ 找到二代推荐人: ${gen2Profile.name} (${gen2Id})`);
+        
+        const gen2Tree = await kv.get(`user:${gen2Id}:referral_tree`) || {
+          firstGeneration: [],
+          secondGeneration: [],
+          thirdGeneration: []
+        };
+        
+        const existsInGen2 = gen2Tree.secondGeneration?.some((m: any) => m.userId === userId);
+        if (!existsInGen2) {
+          gen2Tree.secondGeneration = gen2Tree.secondGeneration || [];
+          gen2Tree.secondGeneration.push({
+            ...newMember,
+            referrer: {
+              userId: gen1Id,
+              userName: referredBy.referrerUserName,
+              userReferralCode: referredBy.referralCode
+            }
+          });
+          gen2Tree.lastUpdated = toTaiwanISOString(getTaiwanNow());
+          await kv.set(`user:${gen2Id}:referral_tree`, gen2Tree);
+          
+          // 更新推荐统计
+          const gen2Stats = await kv.get(`user:${gen2Id}:referral_stats`) || {
+            totalReferrals: 0,
+            firstGenCount: 0,
+            secondGenCount: 0,
+            thirdGenCount: 0
+          };
+          gen2Stats.secondGenCount = gen2Tree.secondGeneration.length;
+          gen2Stats.totalReferrals = (gen2Tree.firstGeneration?.length || 0) + 
+                                     gen2Tree.secondGeneration.length + 
+                                     (gen2Tree.thirdGeneration?.length || 0);
+          gen2Stats.lastUpdated = toTaiwanISOString(getTaiwanNow());
+          await kv.set(`user:${gen2Id}:referral_stats`, gen2Stats);
+          
+          console.log(`✅ 已添加到二代推荐树: ${gen2Profile.name}`);
+          results.push({ generation: 2, userId: gen2Id, userName: gen2Profile.name, action: 'added' });
+        } else {
+          console.log(`ℹ️  已存在于二代推荐树，跳过`);
+          results.push({ generation: 2, userId: gen2Id, userName: gen2Profile.name, action: 'skipped' });
+        }
+        
+        // 6. 更新三代推荐人的树
+        console.log('\\n步骤 3: 检查三代推荐树...');
+        const gen2RB = await kv.get(`user:${gen2Id}:referred_by`);
+        if (gen2RB?.referrerUserId) {
+          const gen3Id = gen2RB.referrerUserId;
+          const gen3Profile = await kv.get(`user:${gen3Id}:profile`);
+          
+          if (gen3Profile) {
+            console.log(`✓ 找到三代推荐人: ${gen3Profile.name} (${gen3Id})`);
+            
+            const gen3Tree = await kv.get(`user:${gen3Id}:referral_tree`) || {
+              firstGeneration: [],
+              secondGeneration: [],
+              thirdGeneration: []
+            };
+            
+            const existsInGen3 = gen3Tree.thirdGeneration?.some((m: any) => m.userId === userId);
+            if (!existsInGen3) {
+              gen3Tree.thirdGeneration = gen3Tree.thirdGeneration || [];
+              gen3Tree.thirdGeneration.push({
+                ...newMember,
+                referrer: {
+                  userId: gen1Id,
+                  userName: referredBy.referrerUserName,
+                  userReferralCode: referredBy.referralCode
+                }
+              });
+              gen3Tree.lastUpdated = toTaiwanISOString(getTaiwanNow());
+              await kv.set(`user:${gen3Id}:referral_tree`, gen3Tree);
+              
+              // 更新推荐统计
+              const gen3Stats = await kv.get(`user:${gen3Id}:referral_stats`) || {
+                totalReferrals: 0,
+                firstGenCount: 0,
+                secondGenCount: 0,
+                thirdGenCount: 0
+              };
+              gen3Stats.thirdGenCount = gen3Tree.thirdGeneration.length;
+              gen3Stats.totalReferrals = (gen3Tree.firstGeneration?.length || 0) + 
+                                         (gen3Tree.secondGeneration?.length || 0) + 
+                                         gen3Tree.thirdGeneration.length;
+              gen3Stats.lastUpdated = toTaiwanISOString(getTaiwanNow());
+              await kv.set(`user:${gen3Id}:referral_stats`, gen3Stats);
+              
+              console.log(`✅ 已添加到三代推荐树: ${gen3Profile.name}`);
+              results.push({ generation: 3, userId: gen3Id, userName: gen3Profile.name, action: 'added' });
+            } else {
+              console.log(`ℹ️  已存在于三代推荐树，跳过`);
+              results.push({ generation: 3, userId: gen3Id, userName: gen3Profile.name, action: 'skipped' });
+            }
+          } else {
+            console.log(`⚠️  找不到三代推荐人的 profile: ${gen3Id}`);
+          }
+        } else {
+          console.log(`ℹ️  二代推荐人没有上级推荐人，无三代关系`);
+        }
+      } else {
+        console.log(`⚠️  找不到二代推荐人的 profile: ${gen2Id}`);
+      }
+    } else {
+      console.log(`ℹ️  一代推荐人没有上级推荐人，无二代、三代关系`);
+    }
+    
+    // 保存修复日志
+    const logKey = `repair_log:fix_specific_user:${userId}:${Date.now()}`;
+    await kv.set(logKey, {
+      type: 'fix_specific_user',
+      userId,
+      userName: profile.name,
+      timestamp: toTaiwanISOString(getTaiwanNow()),
+      results
+    });
+    
+    console.log('========================================');
+    console.log('✅ 修复完成！');
+    console.log(`   用户: ${profile.name}`);
+    console.log(`   操作: ${results.filter(r => r.action === 'added').length} 项添加, ${results.filter(r => r.action === 'skipped').length} 项跳过`);
+    console.log('========================================');
+    
+    return c.json({
+      success: true,
+      user: {
+        userId,
+        userName: profile.name
+      },
+      results
+    });
+    
+  } catch (error: any) {
+    console.error('========================================');
+    console.error('❌ 修复失败');
+    console.error('========================================');
+    console.error(error);
+    
+    return c.json({
+      success: false,
+      error: { message: '修复失败', details: error.message }
+    }, 500);
   }
 });
 

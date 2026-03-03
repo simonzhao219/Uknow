@@ -1,0 +1,190 @@
+{
+    "success": true,
+    "dryRun": false,
+    "summary": {
+        "referredByCreated": 66,
+        "treesUpdated": 19,
+        "treesChanged": 8,
+        "rewardsIssued": 9,
+        "schedulesCreated": 88
+    },
+    "treeChanges": [
+        {
+            "userId": "05d6823b-dcd2-4427-ac74-013ed6d9d69d",
+            "userName": "歐宥塏",
+            "before": {
+                "gen1": 17,
+                "gen2": 74,
+                "gen3": 21
+            },
+            "after": {
+                "gen1": 18,
+                "gen2": 72,
+                "gen3": 21
+            }
+        },
+        {
+            "userId": "d8181d92-1a47-4ddc-af52-0cb109094ce8",
+            "userName": "黃盈棋",
+            "before": {
+                "gen1": 5,
+                "gen2": 21,
+                "gen3": 1
+            },
+            "after": {
+                "gen1": 4,
+                "gen2": 21,
+                "gen3": 1
+            }
+        },
+        {
+            "userId": "61b157d2-f242-4288-8deb-ffb7752d385e",
+            "userName": "黎仁傑",
+            "before": {
+                "gen1": 30,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 28,
+                "gen2": 0,
+                "gen3": 0
+            }
+        },
+        {
+            "userId": "7602c4f9-9358-434d-aa2b-628e0f355bea",
+            "userName": "陳昱瑋",
+            "before": {
+                "gen1": 10,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 9,
+                "gen2": 0,
+                "gen3": 0
+            }
+        },
+        {
+            "userId": "1795fdac-4689-4057-a7b1-267fddbbde5c",
+            "userName": "Simon2",
+            "before": {
+                "gen1": 0,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 3,
+                "gen2": 1,
+                "gen3": 1
+            }
+        },
+        {
+            "userId": "05b4ae5f-e037-494a-95d7-ba323e589ac8",
+            "userName": "趙韋翔",
+            "before": {
+                "gen1": 0,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 1,
+                "gen2": 3,
+                "gen3": 1
+            }
+        },
+        {
+            "userId": "d4149412-edc9-48a2-870a-3a81781e922b",
+            "userName": "Simon5",
+            "before": {
+                "gen1": 1,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 1,
+                "gen2": 1,
+                "gen3": 0
+            }
+        },
+        {
+            "userId": "155246b8-3d05-4eb5-b6f9-5e182609c45c",
+            "userName": "蔡欣怡",
+            "before": {
+                "gen1": 1,
+                "gen2": 0,
+                "gen3": 0
+            },
+            "after": {
+                "gen1": 2,
+                "gen2": 0,
+                "gen3": 0
+            }
+        }
+    ],
+    "rewardDetails": [
+        {
+            "receiver": "趙韋翔",
+            "receiverId": "05b4ae5f-e037-494a-95d7-ba323e589ac8",
+            "referee": "Simon5",
+            "refereeId": "d4149412-edc9-48a2-870a-3a81781e922b",
+            "generation": 2
+        },
+        {
+            "receiver": "趙韋翔",
+            "receiverId": "05b4ae5f-e037-494a-95d7-ba323e589ac8",
+            "referee": "Simon3",
+            "refereeId": "1b7534a8-b476-4c8d-85fa-b39fcf9f0f3d",
+            "generation": 2
+        },
+        {
+            "receiver": "Simon2",
+            "receiverId": "1795fdac-4689-4057-a7b1-267fddbbde5c",
+            "referee": "Simon6",
+            "refereeId": "55d56e0d-d8b2-430d-8aef-fd2554d2de11",
+            "generation": 2
+        },
+        {
+            "receiver": "趙韋翔",
+            "receiverId": "05b4ae5f-e037-494a-95d7-ba323e589ac8",
+            "referee": "Simon6",
+            "refereeId": "55d56e0d-d8b2-430d-8aef-fd2554d2de11",
+            "generation": 3
+        },
+        {
+            "receiver": "趙韋翔",
+            "receiverId": "05b4ae5f-e037-494a-95d7-ba323e589ac8",
+            "referee": "Simon4",
+            "refereeId": "37a21610-f2e2-4e30-854e-5fb25af0a726",
+            "generation": 2
+        },
+        {
+            "receiver": "Simon5",
+            "receiverId": "d4149412-edc9-48a2-870a-3a81781e922b",
+            "referee": "Simon7",
+            "refereeId": "5d0b4708-dc3a-49d6-853c-d79c5f28da38",
+            "generation": 2
+        },
+        {
+            "receiver": "Simon2",
+            "receiverId": "1795fdac-4689-4057-a7b1-267fddbbde5c",
+            "referee": "Simon7",
+            "refereeId": "5d0b4708-dc3a-49d6-853c-d79c5f28da38",
+            "generation": 3
+        },
+        {
+            "receiver": "歐宥塏",
+            "receiverId": "05d6823b-dcd2-4427-ac74-013ed6d9d69d",
+            "referee": "許凱傑",
+            "refereeId": "1ba118f2-b9bd-4e89-affc-79bbb63b156b",
+            "generation": 2
+        },
+        {
+            "receiver": "歐宥塏",
+            "receiverId": "05d6823b-dcd2-4427-ac74-013ed6d9d69d",
+            "referee": "林哲愷",
+            "refereeId": "bfbb970a-8cbe-4673-a6de-a093ada7bb51",
+            "generation": 2
+        }
+    ]
+}
