@@ -38,12 +38,12 @@ export const ALLOWED_PHOTO_FORMATS = [
  *    - "warning"：淺黃色背景（重要維護）
  */
 export const MAINTENANCE_NOTICE = {
-  enabled: false, // 總開關：true 啟用，false 停用
+  enabled: true, // 總開關：true 啟用，false 停用
   title: "系統維護預告",
   message:
-    "我們將於 2026/02/02 10:00-13:00 進行新「註冊」功能測試，期間付款是測試頁面，不會真的付款。",
-  startTime: "2026-02-02T10:00:00+08:00", // 維護開始時間（台灣時區）
-  endTime: "2026-02-02T13:00:00+08:00", // 維護結束時間（台灣時區）
+    "我們將於 2026/03/04 00:00-13:00 進行系統，期間付款是測試頁面，不會真的付款。",
+  startTime: "2026-03-04T00:00:00+08:00", // 維護開始時間（台灣時區）
+  endTime: "2026-03-04T12:00:00+08:00", // 維護結束時間（台灣時區）
   severity: "info" as "info" | "warning", // 嚴重程度
 };
 
