@@ -5,8 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Loader2, CheckCircle, CreditCard, Edit, Upload, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
+import { buildApiUrl } from '../utils/apiClient';
 
 // ✅ 統一金流付款網址（從環境變數讀取）
 const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
@@ -45,7 +45,7 @@ export function PaymentCheckout() {
         if (!session) return;
         
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          buildApiUrl('/auth/profile'),
           {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -102,7 +102,7 @@ export function PaymentCheckout() {
         
         try {
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+            buildApiUrl('/auth/profile'),
             {
               headers: {
                 'Authorization': `Bearer ${session.access_token}`,
@@ -221,7 +221,7 @@ export function PaymentCheckout() {
         console.log(`PaymentCheckout: Fetching referrer info for code: ${pendingUser.referredByCode}`);
         
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/referrals/validate/${pendingUser.referredByCode}`,
+          buildApiUrl(`/referrals/validate/${pendingUser.referredByCode}`),
           {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -295,7 +295,7 @@ export function PaymentCheckout() {
       console.log('PaymentCheckout: 更新 registrationStep 為 2...');
       
       const updateResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        buildApiUrl('/auth/profile'),
         {
           method: 'PUT',
           headers: {
@@ -322,7 +322,7 @@ export function PaymentCheckout() {
       
       // ✅ 步驟 2：調用後端 API 準備訂單
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payuni/prepare`,
+        buildApiUrl('/payuni/prepare'),
         {
           method: 'POST',
           headers: {
@@ -412,7 +412,7 @@ export function PaymentCheckout() {
 
       // 1. 創建付款訂單
       const orderResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payment/create-order`,
+        buildApiUrl('/payment/create-order'),
         {
           method: 'POST',
           headers: {
@@ -442,7 +442,7 @@ export function PaymentCheckout() {
       console.log('PaymentCheckout: Simulating payment success...');
       
       const paymentResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/payment/simulate-success`,
+        buildApiUrl('/payment/simulate-success'),
         {
           method: 'POST',
           headers: {
@@ -501,7 +501,7 @@ export function PaymentCheckout() {
   const refreshUserProfileAndNavigate = async (session: any) => {
     try {
       const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        buildApiUrl('/auth/profile'),
         {
           method: 'GET',
           headers: {
@@ -593,7 +593,7 @@ export function PaymentCheckout() {
       }
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/reset-registration`,
+        buildApiUrl('/auth/reset-registration'),
         {
           method: 'POST',
           headers: {

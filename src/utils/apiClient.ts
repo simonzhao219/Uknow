@@ -106,7 +106,7 @@ export async function apiRequest(
  * @example
  * ```typescript
  * const data = await apiRequestJson<RewardsData>(
- *   `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/rewards`
+ *   `https://${projectId}.supabase.co/functions/v1/api/rewards`
  * );
  * console.log('Available rewards:', data.availableRewards);
  * ```
@@ -169,11 +169,10 @@ export async function apiRequestJson<T = any>(
  * @example
  * ```typescript
  * const url = buildApiUrl('/rewards');
- * // 返回: https://{projectId}.supabase.co/functions/v1/make-server-5c6718b9/rewards
+ * // 返回: https://{projectId}.supabase.co/functions/v1/api/rewards
  * ```
  */
 export function buildApiUrl(path: string): string {
-  // 確保 path 以 / 開頭
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9${cleanPath}`;
+  return `https://${projectId}.supabase.co/functions/v1/api${cleanPath}`;
 }

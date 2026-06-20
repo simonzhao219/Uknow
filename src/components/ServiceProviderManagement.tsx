@@ -11,7 +11,6 @@ import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info'; // ✅ 修復：正確的匯入路徑
 
 export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
@@ -50,35 +49,18 @@ export function ServiceProviderManagement() {
   const fetchUserListing = async () => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        showToast('請先登入', 'error');
-        setListing(null);
-        return;
-      }
+      if (!user?.id) { setListing(null); return; }
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/user`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        }
-      );
+      const { data: listingData, error } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (!response.ok) {
-        throw new Error('獲取刊登失敗');
-      }
+      if (error) throw error;
 
-      const data = await response.json();
-      console.log('管理刊登 - 獲取到的資料:', data);
-      
-      const listingData = data.listing || null;
-      
-      // ✅ 存入快取
       setCache('userListing', listingData);
-      setListing(listingData);  // ✅ 單一對象
+      setListing(listingData);
     } catch (error) {
       console.error('獲取刊登失敗:', error);
       showToast('獲取刊登失敗，請稍後再試', 'error');
@@ -143,32 +125,16 @@ export function ServiceProviderManagement() {
     setIsDeleting(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        showToast('請先登入', 'error');
-        return;
-      }
-      
       console.log(`[刪除刊登] 開始刪除: ${listing.id}`);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${listing.id}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || '刪除失敗');
-      }
-      
-      const result = await response.json();
-      console.log(`[刪除刊登] ✅ 成功:`, result);
+      const { error: deleteError } = await supabase
+        .from('listings')
+        .delete()
+        .eq('id', listing.id)
+        .eq('user_id', user.id);
+
+      if (deleteError) throw new Error(deleteError.message || '刪除失敗');
+      console.log(`[刪除刊登] ✅ 成功`);
       
       showToast('刊登已成功刪除', 'success');
       

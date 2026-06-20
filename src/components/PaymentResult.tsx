@@ -86,15 +86,10 @@ export function PaymentResult() {
         }
         
         // 獲取用戶 profile
-        const { projectId } = await import('../utils/supabase/info');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
+        const { buildApiUrl: apiUrl } = await import('../utils/apiClient');
+        const response = await fetch(apiUrl('/auth/profile'), {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        });
         
         if (response.ok) {
           const profile = await response.json();
@@ -188,15 +183,10 @@ export function PaymentResult() {
         
         if (!session) return;
         
-        const { projectId } = await import('../utils/supabase/info');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
+        const { buildApiUrl: apiUrl } = await import('../utils/apiClient');
+        const response = await fetch(apiUrl('/auth/profile'), {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        });
         
         if (response.ok) {
           const profile = await response.json();

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { buildApiUrl } from '../utils/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from './ui/button';
@@ -328,7 +328,7 @@ export function AuthCallback() {
             console.log(`AuthCallback: Fetching profile (attempt ${attempt}/3)...`);
             
             const response = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+              buildApiUrl('/auth/profile'),
               {
                 headers: {
                   Authorization: `Bearer ${session.access_token}`,

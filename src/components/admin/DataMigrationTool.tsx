@@ -4,8 +4,8 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { createClient } from '../../utils/supabase/client';
+import { buildApiUrl } from '../../utils/apiClient';
 
 interface MigrationDetail {
   listingId: string;
@@ -53,7 +53,7 @@ export function DataMigrationTool() {
       showToast('開始遷移數據...', 'info');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/admin/migrate-referrer-listing-ids`,
+        buildApiUrl('/admin/migrate-referrer-listing-ids'),
         {
           method: 'POST',
           headers: {

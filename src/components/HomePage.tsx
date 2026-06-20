@@ -36,7 +36,6 @@ import {
   GENDER_OPTIONS,
 } from "../utils/constants";
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -104,22 +103,14 @@ export function HomePage() {
   const fetchAllListings = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/active`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
+      const supabase = createClient();
+      const { data: listings, error } = await supabase
+        .from('public_listings')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (!response.ok) {
-        throw new Error('獲取刊登列表失敗');
-      }
-
-      const data = await response.json();
-      console.log('首頁 - 獲取到的刊登:', data);
-      setServiceProviders(data.listings || []);
+      if (error) throw error;
+      setServiceProviders(listings || []);
     } catch (error) {
       console.error('獲取刊登列表失敗:', error);
       setServiceProviders([]);
