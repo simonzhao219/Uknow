@@ -8,7 +8,6 @@ import { Checkbox } from './ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
@@ -51,7 +50,7 @@ export function CompleteProfile() {
         
         // 嘗試加載現有的 profile
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+          buildApiUrl('/auth/profile'),
           {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -269,7 +268,7 @@ export function CompleteProfile() {
 
       // 呼叫後端儲存資料
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/register`,
+        buildApiUrl('/auth/register'),
         {
           method: 'POST',
           headers: {
@@ -334,7 +333,7 @@ export function CompleteProfile() {
         try {
           console.log('CompleteProfile: Calling cancel-signup API...');
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/cancel-signup`,
+            buildApiUrl('/auth/cancel-signup'),
             {
               method: 'DELETE',
               headers: {

@@ -22,7 +22,7 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { ReferralCodeCard } from "./referral/ReferralCodeCard";
 import { UserContext } from "../App";
 import { ReferralGuide } from './referral/ReferralGuide';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 
@@ -47,22 +47,15 @@ export function ServiceProviderDetail() {
       setLoading(true);
       setError(false);
       try {
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
-            }
-          }
-        );
+        const supabase = createClient();
+        const { data: listing, error: queryError } = await supabase
+          .from('public_listings')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-        if (!response.ok) {
-          throw new Error('獲取刊登詳情失敗');
-        }
-
-        const data = await response.json();
-        console.log('詳情頁 - 獲取到的刊登:', data);
-        setServiceProvider(data.listing);
+        if (queryError || !listing) throw new Error('獲取刊登詳情失敗');
+        setServiceProvider(listing);
       } catch (error) {
         console.error('❌ 獲取刊登詳情失敗:', error);
         setError(true);

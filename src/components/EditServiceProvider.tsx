@@ -23,7 +23,7 @@ import { NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH } from '../utils/constants';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { buildApiUrl } from '../utils/apiClient';
 
 export function EditServiceProvider() {
   const { id } = useParams();
@@ -59,31 +59,15 @@ export function EditServiceProvider() {
     const fetchListing = async () => {
       setIsLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          showToast('請先登入', 'error');
-          navigate('/login');
-          return;
-        }
+        const { data: listing, error: queryError } = await supabase
+          .from('listings')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          }
-        );
+        if (queryError || !listing) throw new Error('獲取刊登詳情失敗');
 
-        if (!response.ok) {
-          throw new Error('獲取刊登詳情失敗');
-        }
-
-        const data = await response.json();
-        const listing = data.listing;
-        
-        // 验证是否是用户自己的刊登
-        if (listing.userId !== user?.id) {
+        if (listing.user_id !== user?.id) {
           showToast('您無權編輯此刊登', 'error');
           navigate('/service-providers');
           return;
@@ -91,18 +75,14 @@ export function EditServiceProvider() {
 
         setServiceProvider(listing);
         setFormData({
-          name: listing.name,
-          category: listing.category,
-          gender: listing.gender || '',  // ✅ 新增
-          city: listing.city,
-          districts: listing.districts || [],
+          name:        listing.name,
+          category:    listing.category,
+          gender:      listing.gender || '',
+          city:        listing.city,
+          districts:   listing.districts || [],
           description: listing.description || '',
-          photos: listing.photos || [],
-          contacts: listing.contacts || {
-            instagram: '',
-            line: '',
-            facebook: ''
-          }
+          photos:      listing.photos || [],
+          contacts:    listing.contacts || { instagram: '', line: '', facebook: '' },
         });
       } catch (error) {
         console.error('❌ 獲取刊登詳情失敗:', error);
@@ -213,7 +193,7 @@ export function EditServiceProvider() {
         formDataToSend.append('listingTempId', serviceProvider.id); // 使用刊登 ID
         
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/upload-photo`,
+          buildApiUrl('/listings/upload-photo'),
           {
             method: 'POST',
             headers: {
@@ -269,42 +249,23 @@ export function EditServiceProvider() {
     setIsLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        showToast('請先登入', 'error');
-        navigate('/login');
-        return;
-      }
+      const { error: updateError } = await supabase
+        .from('listings')
+        .update({
+          name:        formData.name,
+          category:    formData.category,
+          gender:      formData.gender,
+          city:        formData.city,
+          districts:   formData.districts,
+          description: formData.description,
+          photos:      formData.photos,
+          contacts:    formData.contacts,
+        })
+        .eq('id', serviceProvider.id)
+        .eq('user_id', user!.id);
 
-      // 调用后端 API 更新刊登
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/${serviceProvider.id}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            name: formData.name,
-            category: formData.category,
-            gender: formData.gender,
-            city: formData.city,
-            districts: formData.districts,
-            description: formData.description,
-            photos: formData.photos,
-            contacts: formData.contacts
-          })
-        }
-      );
+      if (updateError) throw new Error(updateError.message || '更新失敗');
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error?.message || '更新失敗');
-      }
-
-      console.log('✅ 刊登更新成功:', data);
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
 

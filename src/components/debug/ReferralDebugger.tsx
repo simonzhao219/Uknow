@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { useAuth } from '../../contexts/AuthContext';
 import { Search, RefreshCw } from 'lucide-react';
+import { buildApiUrl } from '../../utils/apiClient';
 
 /**
  * 推薦關係Debug工具
@@ -26,7 +27,7 @@ export function ReferralDebugger() {
 
     try {
       const response = await fetch(
-        `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/make-server-5c6718b9/referrals/debug/${targetUserId}`,
+        buildApiUrl(`/referrals/debug/${targetUserId}`),
         {
           headers: {
             'Content-Type': 'application/json',

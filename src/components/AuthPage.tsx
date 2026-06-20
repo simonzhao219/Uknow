@@ -6,8 +6,8 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { useNotification } from './notifications/NotificationContext';
+import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 
 export function AuthPage() {
@@ -37,7 +37,7 @@ export function AuthPage() {
           
           // 驗證 session 是否有效
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+            buildApiUrl('/auth/profile'),
             {
               headers: {
                 Authorization: `Bearer ${session.access_token}`,
@@ -100,16 +100,9 @@ export function AuthPage() {
     setIsLoading(true);
 
     try {
-      const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/check-email`;
-      console.log('Calling API:', apiUrl);
-      console.log('Request body:', { email });
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch(buildApiUrl('/auth/check-email'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
 
@@ -169,7 +162,7 @@ export function AuthPage() {
 
       // 取得用戶資料
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/auth/profile`,
+        buildApiUrl('/auth/profile'),
         {
           headers: {
             Authorization: `Bearer ${data.session.access_token}`,

@@ -23,7 +23,7 @@ import { YEARLY_PRICE } from '../utils/constants';
 import { FieldError, getInputErrorClass } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
+import { buildApiUrl } from '../utils/apiClient';
 
 interface ContactInfo {
   instagram: string;
@@ -62,36 +62,16 @@ export function CreateServiceProvider() {
   useEffect(() => {
     const checkExistingListing = async () => {
       if (!user?.id) return;
-      
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          showToast('請先登入', 'error');
-          navigate('/login');
-          return;
-        }
+        const { data: existingListing } = await supabase
+          .from('listings')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/user`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          }
-        );
-
-        if (!response.ok) {
-          console.error('檢查刊登失敗');
-          return;
-        }
-
-        const data = await response.json();
-        
-        if (data.success && data.listing) {
-          console.log('用戶已有刊登，導向編輯頁面');
+        if (existingListing) {
           showToast('您已經有一個刊登，每個帳號只能建立一個刊登', 'info');
-          navigate(`/service-providers/edit/${data.listing.id}`, { replace: true });
+          navigate(`/service-providers/edit/${existingListing.id}`, { replace: true });
         }
       } catch (error) {
         console.error('檢查刊登失敗:', error);
@@ -183,14 +163,8 @@ export function CreateServiceProvider() {
 
   const uploadPhotosToServer = async (files: File[]) => {
     setUploadingPhotos(true);
-    
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        showToast('請先登入', 'error');
-        return;
-      }
-      
       console.log(`[Upload Photos] 開始上傳 ${files.length} 張照片...`);
       
       const uploadPromises = files.map(async (file) => {
@@ -200,27 +174,19 @@ export function CreateServiceProvider() {
         formDataToSend.append('file', file);
         formDataToSend.append('listingTempId', listingTempId);
         
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/upload-photo`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: formDataToSend
-          }
-        );
-        
-        console.log(`[Upload Photos] Response status: ${response.status}`);
-        
+        const { data: { session: s } } = await supabase.auth.getSession();
+        const response = await fetch(buildApiUrl('/listings/upload-photo'), {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${s?.access_token}` },
+          body: formDataToSend,
+        });
+
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(`[Upload Photos] 上傳失敗:`, errorData);
           throw new Error(errorData.error?.message || '上傳失敗');
         }
-        
+
         const data = await response.json();
-        console.log(`[Upload Photos] ✅ 照片上傳成功: ${data.photoUrl}`);
         return data.photoUrl;
       });
       
@@ -255,51 +221,28 @@ export function CreateServiceProvider() {
 
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
-    
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        showError('未登入', '請先登入後再試');
-        return;
-      }
       
       console.log('[Create Listing] 步驟1: 創建刊登...');
-      
-      // ✅ 修正：后端期望 { listingData: {...} } 结构
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-5c6718b9/listings/create`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            listingData: {
-              name: formData.name,
-              category: formData.category,
-              gender: formData.gender,
-              city: formData.city,
-              districts: formData.districts,
-              description: formData.description,
-              photos: formData.photos,
-              contacts: formData.contacts
-            }
-          })
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        showError(
-          '刊登建立失敗',
-          errorData.error?.message || '請稍後再試'
-        );
+
+      const { error: insertError } = await supabase.from('listings').insert({
+        user_id:     user.id,
+        name:        formData.name,
+        category:    formData.category,
+        gender:      formData.gender,
+        city:        formData.city,
+        districts:   formData.districts,
+        description: formData.description,
+        photos:      formData.photos,
+        contacts:    formData.contacts,
+      });
+
+      if (insertError) {
+        showError('刊登建立失敗', insertError.message || '請稍後再試');
         return;
       }
-      
-      const data = await response.json();
-      
+
       console.log('[Create Listing] ✅ 刊登建立完成');
       
       showToast('刊登建立成功！', 'success');
