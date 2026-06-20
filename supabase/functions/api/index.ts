@@ -7,7 +7,9 @@ import { cors } from 'npm:hono/cors';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
 
-const app = new Hono();
+// Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
+// 因此所有路由需掛在 /api basePath 下，否則一律 404。
+const app = new Hono().basePath('/api');
 
 // ============================================================
 // CORS
