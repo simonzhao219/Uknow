@@ -577,6 +577,486 @@ app.post('/webhooks/payuni/notify', async (c) => {
 });
 
 // ============================================================
+// 工具：台灣時間 (UTC+8) 目前月份字串 "YYYY-MM"
+// ============================================================
+function twCurrentMonth(): string {
+  const now = new Date(Date.now() + 8 * 3600_000);
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+// ============================================================
+// GET /subscriptions/status
+// RewardDashboard：查訂閱狀態
+// ============================================================
+app.get('/subscriptions/status', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const { data: acct } = await sb()
+    .from('user_account_status')
+    .select('status, end_date, grace_period_end')
+    .eq('user_id', user.id)
+    .single();
+
+  return c.json({
+    success: true,
+    data: {
+      hasSubscription: acct?.status === 'active' || acct?.status === 'grace',
+      status:          acct?.status ?? 'expired',
+      activeUntil:     acct?.end_date ?? null,
+      gracePeriodEnd:  acct?.grace_period_end ?? null,
+    }
+  });
+});
+
+// ============================================================
+// GET /rewards
+// RewardDashboard：獎勵餘額
+// ============================================================
+app.get('/rewards', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client = sb();
+  const todayStart = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00+08:00';
+
+  const [{ data: balance }, { data: pending }, { data: todayW }] = await Promise.all([
+    client.from('reward_balances').select('*').eq('user_id', user.id).maybeSingle(),
+    client.from('withdrawals').select('amount').eq('user_id', user.id).eq('status', 'pending'),
+    client.from('withdrawals').select('id').eq('user_id', user.id).gte('requested_at', todayStart).limit(1),
+  ]);
+
+  const pendingAmount = pending?.reduce((s: number, w: any) => s + w.amount, 0) ?? 0;
+  const available     = (balance?.available ?? 0) - pendingAmount;
+
+  return c.json({
+    success: true,
+    data: {
+      availableRewards: Math.max(0, available),
+      pendingRewards:   pendingAmount,
+      withdrawnRewards: balance?.withdrawn ?? 0,
+      totalEarned:      balance?.total_earned ?? 0,
+      lastUpdated:      new Date().toISOString(),
+      hasWithdrawnToday: (todayW?.length ?? 0) > 0,
+    }
+  });
+});
+
+// ============================================================
+// GET /rewards/withdrawals
+// RewardDashboard：提領記錄
+// ============================================================
+app.get('/rewards/withdrawals', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const { data: rows } = await sb()
+    .from('withdrawals')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('requested_at', { ascending: false });
+
+  const withdrawals = (rows ?? []).map((w: any) => ({
+    id:           w.id,
+    userId:       w.user_id,
+    amount:       w.amount,
+    fee:          0,
+    status:       w.status,
+    requestedAt:  w.requested_at,
+    processedAt:  w.processed_at,
+    completedAt:  w.status === 'completed' ? w.processed_at : null,
+  }));
+
+  return c.json({ success: true, data: { withdrawals } });
+});
+
+// ============================================================
+// GET /rewards/history
+// 獎勵明細（reward_transactions）
+// ============================================================
+app.get('/rewards/history', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
+  const { data: rows } = await sb()
+    .from('reward_transactions')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  return c.json({ success: true, data: { transactions: rows ?? [] } });
+});
+
+// ============================================================
+// GET /referrals/my-tree
+// ReferralManagement：推薦樹（3代）
+// ============================================================
+app.get('/referrals/my-tree', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client = sb();
+
+  // -- Gen 1 --
+  const { data: gen1Edges } = await client
+    .from('referral_edges')
+    .select('referee_user_id, referred_at')
+    .eq('referrer_user_id', user.id);
+
+  const gen1Ids = (gen1Edges ?? []).map((e: any) => e.referee_user_id);
+
+  // -- Gen 2 --
+  const gen2EdgesRes = gen1Ids.length
+    ? await client.from('referral_edges')
+        .select('referee_user_id, referrer_user_id, referred_at')
+        .in('referrer_user_id', gen1Ids)
+    : { data: [] };
+  const gen2Edges = gen2EdgesRes.data ?? [];
+  const gen2Ids   = gen2Edges.map((e: any) => e.referee_user_id);
+
+  // -- Gen 3 --
+  const gen3EdgesRes = gen2Ids.length
+    ? await client.from('referral_edges')
+        .select('referee_user_id, referrer_user_id, referred_at')
+        .in('referrer_user_id', gen2Ids)
+    : { data: [] };
+  const gen3Edges = gen3EdgesRes.data ?? [];
+  const gen3Ids   = gen3Edges.map((e: any) => e.referee_user_id);
+
+  const allIds = [...new Set([...gen1Ids, ...gen2Ids, ...gen3Ids])];
+
+  // -- Batch fetch enrichment data + my referral code --
+  const emptyResult = async () => {
+    const { data: mc } = await client.from('referral_codes')
+      .select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+    return c.json({
+      success: true,
+      data: {
+        userReferralCode: mc?.code ?? '',
+        referralTree: { firstGeneration: [], secondGeneration: [], thirdGeneration: [] },
+        summary: { totalReferrals: 0, firstGenCount: 0, secondGenCount: 0, thirdGenCount: 0 },
+      }
+    });
+  };
+
+  if (!allIds.length) return emptyResult();
+
+  const [
+    { data: profiles },
+    { data: codes },
+    { data: listings },
+    { data: accounts },
+    { data: myCodeRow },
+  ] = await Promise.all([
+    client.from('profiles').select('id, name').in('id', allIds),
+    client.from('referral_codes').select('user_id, code').in('user_id', allIds).eq('status', 'active'),
+    client.from('listings').select('user_id, id, name, category, city').in('user_id', allIds),
+    client.from('user_account_status').select('user_id, status, end_date').in('user_id', allIds),
+    client.from('referral_codes').select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle(),
+  ]);
+
+  const profMap:    Record<string, any> = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p]));
+  const codeMap:    Record<string, string> = Object.fromEntries((codes ?? []).map((r: any) => [r.user_id, r.code]));
+  const listingMap: Record<string, any> = Object.fromEntries((listings ?? []).map((l: any) => [l.user_id, l]));
+  const acctMap:    Record<string, any> = Object.fromEntries((accounts ?? []).map((a: any) => [a.user_id, a]));
+
+  const buildMember = (uid: string, createdAt: string, referrerUid?: string) => {
+    const acct = acctMap[uid];
+    const ref  = referrerUid ? {
+      userId:          referrerUid,
+      userName:        profMap[referrerUid]?.name ?? '',
+      userReferralCode: codeMap[referrerUid] ?? null,
+      listingId:       listingMap[referrerUid]?.id ?? null,
+      listingName:     listingMap[referrerUid]?.name ?? null,
+    } : null;
+    return {
+      userId:           uid,
+      userName:         profMap[uid]?.name ?? '',
+      userReferralCode: codeMap[uid] ?? null,
+      listingId:        listingMap[uid]?.id ?? null,
+      listingName:      listingMap[uid]?.name ?? null,
+      serviceType:      listingMap[uid]?.category ?? null,
+      city:             listingMap[uid]?.city ?? null,
+      activeUntil:      acct?.end_date ?? null,
+      isActive:         acct?.status === 'active' || acct?.status === 'grace',
+      referrer:         ref,
+      createdAt,
+    };
+  };
+
+  const firstGeneration  = (gen1Edges ?? []).map((e: any) => buildMember(e.referee_user_id, e.referred_at));
+  const secondGeneration = gen2Edges.map((e: any) => buildMember(e.referee_user_id, e.referred_at, e.referrer_user_id));
+  const thirdGeneration  = gen3Edges.map((e: any) => buildMember(e.referee_user_id, e.referred_at, e.referrer_user_id));
+
+  return c.json({
+    success: true,
+    data: {
+      userReferralCode: myCodeRow?.code ?? '',
+      referralTree: { firstGeneration, secondGeneration, thirdGeneration },
+      summary: {
+        firstGenCount:  firstGeneration.length,
+        secondGenCount: secondGeneration.length,
+        thirdGenCount:  thirdGeneration.length,
+        totalReferrals: firstGeneration.length + secondGeneration.length + thirdGeneration.length,
+      },
+    }
+  });
+});
+
+// ============================================================
+// GET /tasks
+// TaskDashboard：任務列表（新版只有「推薦王」月任務）
+// ============================================================
+app.get('/tasks', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const currentMonth = twCurrentMonth();
+  const KING_TARGET  = 10;
+  const KING_REWARD  = 1000;
+
+  const { data: progress } = await sb()
+    .from('task_progress')
+    .select('monthly_referrals, total_referrals, updated_at')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const monthly        = (progress?.monthly_referrals as Record<string, number>) ?? {};
+  const currentCount   = monthly[currentMonth] ?? 0;
+  const completedMonths = Object.entries(monthly)
+    .filter(([m, cnt]) => m !== currentMonth && cnt >= KING_TARGET).length;
+
+  const tasks = [{
+    id:          'task_monthly_king',
+    type:        'monthly_king',
+    title:       '推薦王',
+    description: '單月推薦10位以上用戶',
+    target:      KING_TARGET,
+    current:     currentCount,
+    completed:   currentCount >= KING_TARGET,
+    reward:      KING_REWARD,
+    progress:    Math.min((currentCount / KING_TARGET) * 100, 100),
+    details: {
+      currentMonth,
+      historyCount:     Object.keys(monthly).length,
+      completedMonths,
+    }
+  }];
+
+  return c.json({
+    success: true,
+    data: {
+      tasks,
+      rawData: {
+        monthlyKing: {
+          currentMonth,
+          currentCount,
+          completedMonths,
+          monthly_referrals: monthly,
+        }
+      }
+    }
+  });
+});
+
+// ============================================================
+// GET /tasks/pending-rewards
+// 新版：獎勵在付款時立即發放，無需手動領取；回傳空陣列
+// ============================================================
+app.get('/tasks/pending-rewards', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  return c.json({ success: true, data: [] });
+});
+
+// ============================================================
+// GET /tasks/monthly-summary
+// TaskDashboard：本月推薦摘要（本月被推薦者列表）
+// ============================================================
+app.get('/tasks/monthly-summary', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const currentMonth = twCurrentMonth();
+  const monthStart   = new Date(`${currentMonth}-01T00:00:00+08:00`).toISOString();
+  const nextMonth    = new Date(Date.now() + 8 * 3600_000);
+  nextMonth.setUTCDate(1);
+  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+  const monthEnd = new Date(nextMonth.getTime() - 1).toISOString();
+
+  const client = sb();
+  const { data: edges } = await client
+    .from('referral_edges')
+    .select('referee_user_id, referred_at')
+    .eq('referrer_user_id', user.id)
+    .gte('referred_at', monthStart)
+    .lte('referred_at', monthEnd);
+
+  const refIds = (edges ?? []).map((e: any) => e.referee_user_id);
+  let nameMap: Record<string, string> = {};
+  if (refIds.length) {
+    const { data: profs } = await client.from('profiles').select('id, name').in('id', refIds);
+    nameMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.name]));
+  }
+
+  const referrals = (edges ?? []).map((e: any) => ({
+    userId:    e.referee_user_id,
+    userName:  nameMap[e.referee_user_id] ?? '',
+    createdAt: e.referred_at,
+  }));
+
+  return c.json({
+    success: true,
+    data: { month: currentMonth, referralCount: referrals.length, referrals },
+  });
+});
+
+// ============================================================
+// GET /tasks/current-month-top
+// TaskDashboard：本月推薦排行榜
+// ============================================================
+app.get('/tasks/current-month-top', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const limit        = Math.min(parseInt(c.req.query('limit') || '10'), 200);
+  const currentMonth = twCurrentMonth();
+
+  const client = sb();
+  const { data: allProgress } = await client
+    .from('task_progress')
+    .select('user_id, monthly_referrals');
+
+  const ranked = (allProgress ?? [])
+    .map((p: any) => ({
+      userId: p.user_id,
+      count:  ((p.monthly_referrals as Record<string, number>) ?? {})[currentMonth] ?? 0,
+    }))
+    .filter((r: any) => r.count > 0)
+    .sort((a: any, b: any) => b.count - a.count)
+    .slice(0, limit);
+
+  const userIds = ranked.map((r: any) => r.userId);
+  let nameMap: Record<string, string> = {};
+  if (userIds.length) {
+    const { data: profs } = await client.from('profiles').select('id, name').in('id', userIds);
+    nameMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.name]));
+  }
+
+  const rankings = ranked.map((r: any, i: number) => ({
+    rank:          i + 1,
+    userId:        r.userId,
+    userName:      nameMap[r.userId] ?? '',
+    referralCount: r.count,
+  }));
+
+  return c.json({ success: true, data: { month: currentMonth, rankings } });
+});
+
+// ============================================================
+// POST /tasks/claim-reward/:id
+// 新版：獎勵自動發放，不支援手動領取
+// ============================================================
+app.post('/tasks/claim-reward/:id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  return c.json({
+    success: false,
+    error:   '新版系統獎勵已於達成條件時自動發放，無需手動領取',
+  }, 400);
+});
+
+// ============================================================
+// POST /listings/upload-photo
+// 上傳刊登照片至 Supabase Storage (bucket: listings)
+// ============================================================
+app.post('/listings/upload-photo', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: '解析上傳資料失敗' }, 400);
+  }
+
+  const file = formData.get('file') as File | null;
+  if (!file) return c.json({ error: '未提供檔案' }, 400);
+
+  const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!ALLOWED.includes(file.type)) {
+    return c.json({ error: '只支援 JPG、PNG、WEBP 格式' }, 400);
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return c.json({ error: '檔案不得超過 5MB' }, 400);
+  }
+
+  const ext  = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const client = sb();
+  const { data: upload, error: uploadErr } = await client.storage
+    .from('make-5c6718b9-listings-photos')
+    .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: false });
+
+  if (uploadErr) {
+    console.error('[upload-photo] Storage error:', uploadErr);
+    return c.json({ error: uploadErr.message || '上傳失敗' }, 500);
+  }
+
+  const { data: urlData } = client.storage.from('make-5c6718b9-listings-photos').getPublicUrl(upload.path);
+
+  return c.json({ success: true, photoUrl: urlData.publicUrl });
+});
+
+// ============================================================
+// GET /referrals/debug/:userId  (admin only)
+// ============================================================
+app.get('/referrals/debug/:userId', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client   = sb();
+  const targetId = c.req.param('userId');
+
+  // Admin check
+  const { data: prof } = await client.from('profiles').select('is_admin').eq('id', user.id).single();
+  if (!prof?.is_admin && user.id !== targetId) {
+    return c.json({ error: '僅限管理員' }, 403);
+  }
+
+  const [
+    { data: profile },
+    { data: acct },
+    { data: gen1 },
+    { data: code },
+  ] = await Promise.all([
+    client.from('profiles').select('id, name, referred_by_code, registration_step').eq('id', targetId).single(),
+    client.from('user_account_status').select('status, end_date').eq('user_id', targetId).single(),
+    client.from('referral_edges').select('referee_user_id, referred_at').eq('referrer_user_id', targetId),
+    client.from('referral_codes').select('code, status').eq('user_id', targetId).maybeSingle(),
+  ]);
+
+  return c.json({
+    success: true,
+    data: {
+      profile: profile ? {
+        name:             profile.name,
+        referralCode:     code?.code ?? null,
+        referredByCode:   profile.referred_by_code,
+        registrationStep: profile.registration_step,
+      } : null,
+      accountStatus:     acct,
+      directReferrals:   gen1?.length ?? 0,
+      referralCodeStatus: code?.status ?? null,
+    }
+  });
+});
+
+// ============================================================
 // 健康檢查
 // ============================================================
 app.get('/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }));
