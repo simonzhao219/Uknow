@@ -437,8 +437,8 @@ app.post('/payuni/prepare', async (c) => {
     Lang:       'zh-tw',
   };
 
-  const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
-  const hashInfo    = generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
+  const encryptInfo = await encryptPayUni(encryptData, config.hashKey, config.hashIV);
+  const hashInfo    = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
 
   // 寫入 payment_orders
   const { error: insertErr } = await client.from('payment_orders').insert({
@@ -512,7 +512,7 @@ app.post('/webhooks/payuni/notify', async (c) => {
   }
 
   // 驗簽
-  if (generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV) !== HashInfo) {
+  if (await generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV) !== HashInfo) {
     console.error('[notify] Hash 驗證失敗');
     return c.json({ Status: 'FAILED', Message: 'hash mismatch' });
   }
@@ -520,7 +520,7 @@ app.post('/webhooks/payuni/notify', async (c) => {
   // 解密
   let data: Record<string, string>;
   try {
-    data = Object.fromEntries(new URLSearchParams(decryptPayUni(EncryptInfo, config.hashKey, config.hashIV)));
+    data = Object.fromEntries(new URLSearchParams(await decryptPayUni(EncryptInfo, config.hashKey, config.hashIV)));
   } catch (e) {
     console.error('[notify] 解密失敗:', e);
     return c.json({ Status: 'FAILED', Message: 'decrypt error' });
