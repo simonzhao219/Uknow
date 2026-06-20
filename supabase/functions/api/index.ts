@@ -823,10 +823,10 @@ app.get('/tasks', async (c) => {
     .eq('user_id', user.id)
     .maybeSingle();
 
-  const monthly        = (progress?.monthly_referrals as Record<string, number>) ?? {};
-  const currentCount   = monthly[currentMonth] ?? 0;
+  const monthly        = (progress?.monthly_referrals as Record<string, any>) ?? {};
+  const currentCount   = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
   const completedMonths = Object.entries(monthly)
-    .filter(([m, cnt]) => m !== currentMonth && cnt >= KING_TARGET).length;
+    .filter(([m, v]) => m !== currentMonth && (Array.isArray(v) ? v.length : 0) >= KING_TARGET).length;
 
   const tasks = [{
     id:          'task_monthly_king',
@@ -930,10 +930,10 @@ app.get('/tasks/current-month-top', async (c) => {
     .select('user_id, monthly_referrals');
 
   const ranked = (allProgress ?? [])
-    .map((p: any) => ({
-      userId: p.user_id,
-      count:  ((p.monthly_referrals as Record<string, number>) ?? {})[currentMonth] ?? 0,
-    }))
+    .map((p: any) => {
+      const monthVal = ((p.monthly_referrals as Record<string, any>) ?? {})[currentMonth];
+      return { userId: p.user_id, count: Array.isArray(monthVal) ? monthVal.length : 0 };
+    })
     .filter((r: any) => r.count > 0)
     .sort((a: any, b: any) => b.count - a.count)
     .slice(0, limit);
