@@ -16,8 +16,10 @@ const app = new Hono().basePath('/api');
 // ============================================================
 app.use('*', cors({
   origin: (origin) => {
-    const allowed = Deno.env.get('FRONTEND_URL') || '';
-    return origin === allowed || origin.startsWith('http://localhost') ? origin : '';
+    // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
+    const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
+    const o       = origin.replace(/\/$/, '');
+    return o === allowed || o.startsWith('http://localhost') ? origin : '';
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
