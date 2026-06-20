@@ -44,29 +44,35 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 }
 
 // ============================================================
-// PayUni 設定
+// PayUni 設定 — 整合式支付頁（UPP / UNiPaypage），一次性付款
+// 文件：https://docs.payuni.com.tw/web/#/7/34
 // ============================================================
 function payuniConfig() {
-  const key  = Deno.env.get('PAYUNI_HASH_KEY')!;
-  const iv   = Deno.env.get('PAYUNI_HASH_IV')!;
+  const key   = Deno.env.get('PAYUNI_HASH_KEY')!;
+  const iv    = Deno.env.get('PAYUNI_HASH_IV')!;
   const merID = Deno.env.get('PAYUNI_MER_ID')!;
   if (!key || !iv || !merID) throw new Error('PayUni 環境變數未設定');
+  const sandbox = Deno.env.get('PAYUNI_SANDBOX') === 'true';
   return {
     merID,
     hashKey: key,
     hashIV:  iv,
-    // 使用定期扣款 API，PeriodTimes=1 表示一次性付清，不自動續扣
-    apiUrl: 'https://api.payuni.com.tw/api/period/Page',
+    version: '1.0',
+    apiUrl: sandbox
+      ? 'https://sandbox-api.payuni.com.tw/api/upp'
+      : 'https://api.payuni.com.tw/api/upp',
   };
 }
 
-function generateTradeNo(userId: string): string {
+// MerTradeNo：限英數字。用 台灣日期時間(14) + 4 碼亂數 = 18 碼，
+// 對應的 user 由 payment_orders.transaction_id 查回，毋需編進訂單號
+function generateTradeNo(): string {
   const now = new Date(Date.now() + 8 * 3600_000);  // UTC+8
   const pad = (n: number, l = 2) => String(n).padStart(l, '0');
-  const ts = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
-             `${pad(now.getUTCHours())}${Math.floor(now.getUTCMinutes() / 10)}`;
-  const uid14 = userId.replace(/-/g, '').substring(0, 14).padEnd(14, '0');
-  return `${ts}${uid14}`;  // 25 chars
+  const dt = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
+             `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${dt}${rand}`;  // 18 chars
 }
 
 // ============================================================
@@ -128,34 +134,32 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
   }
 
-  // 查 profile 取得姓名 / 電話
-  const { data: profile } = await client
-    .from('profiles')
-    .select('name, phone')
-    .eq('id', user.id)
-    .single();
-  if (!profile) return c.json({ success: false, error: '用戶資料不存在' }, 404);
-
   const config  = payuniConfig();
-  const tradeNo = generateTradeNo(user.id);
+  const tradeNo = generateTradeNo();
 
   const projectId   = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
   const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
 
-  const encryptData = {
-    MerID:       config.merID,
-    MerTradeNo:  tradeNo,
-    PeriodAmt:   1200,
-    ProdDesc:    'Uknow 年費會員',
-    PayerName:   profile.name || '',
-    PayerPhone:  profile.phone || '',
-    PayerEmail:  user.email || '',
-    PeriodType:  'year',
-    PeriodDate:  new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10).replace(/-/g, '/'),
-    PeriodTimes: 1,         // ← 1 = 一次性，不自動續扣
-    FType:       'build',
-    NotifyURL:   `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
-    ReturnURL:   `${frontendUrl}/payment/result?tradeNo=${tradeNo}`,
+  // 付款期限：3 天後（YYYY-MM-DD，台灣時區）
+  const expire = new Date(Date.now() + 8 * 3600_000 + 3 * 86400_000)
+    .toISOString().slice(0, 10);
+
+  // UPP（整合式支付頁）加密內容
+  const encryptData: Record<string, string | number> = {
+    MerID:      config.merID,
+    MerTradeNo: tradeNo,
+    TradeAmt:   1200,
+    Timestamp:  Math.floor(Date.now() / 1000),
+    ProdDesc:   'Uknow 年費會員',
+    UsrMail:    user.email || '',
+    ExpireDate: expire,
+    NotifyURL:  `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
+    ReturnURL:  `${frontendUrl}/payment/result?tradeNo=${tradeNo}`,
+    // 開放的付款方式（1 = 啟用）
+    Credit:     1,   // 信用卡
+    ATM:        1,   // 銀行轉帳（虛擬帳號）
+    CVS:        1,   // 超商代碼
+    Lang:       'zh-tw',
   };
 
   const encryptInfo = encryptPayUni(encryptData, config.hashKey, config.hashIV);
@@ -174,11 +178,12 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '建立訂單失敗' }, 500);
   }
 
+  // 前端把這些欄位組成表單 POST 到 apiUrl
   return c.json({
     success: true,
     data: {
       MerID:       config.merID,
-      Version:     '1.0',
+      Version:     config.version,
       EncryptInfo: encryptInfo,
       HashInfo:    hashInfo,
       apiUrl:      config.apiUrl,
@@ -273,6 +278,12 @@ app.post('/webhooks/payuni/notify', async (c) => {
   if (order.status === 'completed') {
     console.log('[notify] 重複通知，略過:', MerTradeNo);
     return c.json({ Status: 'SUCCESS' });
+  }
+
+  // 金額驗證：防止竄改（UPP 回傳 TradeAmt）
+  if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
+    console.error('[notify] 金額不符:', data.TradeAmt);
+    return c.json({ Status: 'FAILED', Message: 'amount mismatch' });
   }
 
   // 呼叫原子性付款處理函數
