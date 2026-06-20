@@ -91,9 +91,23 @@ Dashboard → **Authentication** → **Emails**（或 **Email Templates**）
 
 ---
 
+## ☑️ 步驟 3.5：確認 `api` 函數的 JWT 設定
+
+`api` 函數必須設為 **`verify_jwt = false`**（已於部署時設定）。原因：
+
+- PayUni 的付款回調 webhook（`/api/webhooks/payuni/notify`）**不會**帶 Supabase JWT，
+  若 gateway 開啟 JWT 驗證會直接擋掉 → 付款永遠無法完成。
+- 函數內部已用 `requireAuth()` 對每個受保護路由自行驗證使用者 JWT，
+  公開端點（health、webhook）則刻意不驗。
+
+> 若日後重新部署，請確保 `verify_jwt` 維持 `false`
+> （Dashboard → Edge Functions → `api` → Details，或 MCP/CLI 部署參數）。
+
+---
+
 ## ☑️ 步驟 4：驗證設定是否成功
 
-### 4-1 健康檢查（不需登入）
+### 4-1 健康檢查（不需登入、不需金鑰）
 ```bash
 curl https://uhtwwxtazwqnlbejhprl.supabase.co/functions/v1/api/health
 # 預期：{"ok":true,"ts":"..."}
