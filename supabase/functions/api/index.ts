@@ -445,9 +445,11 @@ app.post('/payuni/prepare', async (c) => {
     ExpireDate: expire,
     NotifyURL:  `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
     ReturnURL:  `${frontendUrl}/payment/result?tradeNo=${tradeNo}`,
+    // 啟用的付款方式（值為 1 代表開啟，PayUni 整合式支付頁會顯示對應按鈕）
     Credit:     1,   // 信用卡
-    ATM:        1,   // 銀行轉帳（虛擬帳號）
-    CVS:        1,   // 超商代碼
+    ApplePay:   1,   // Apple Pay
+    GooglePay:  1,   // Google Pay
+    SamsungPay: 1,   // Samsung Pay
     Lang:       'zh-tw',
   };
 
