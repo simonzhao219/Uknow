@@ -304,9 +304,9 @@ export function CreateServiceProvider() {
           </div>
 
           <div className="space-y-2">
-            <Label>服務類別 *</Label>
+            <Label id="category-label">服務類別 *</Label>
             <Select value={formData.category} onValueChange={(value) => setFormData({...formData, category: value})}>
-              <SelectTrigger className={getInputErrorClass(!!errors.category)}>
+              <SelectTrigger aria-labelledby="category-label" className={getInputErrorClass(!!errors.category)}>
                 <SelectValue placeholder="選擇服務類別" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
@@ -319,9 +319,9 @@ export function CreateServiceProvider() {
           </div>
 
           <div className="space-y-2">
-            <Label>性別 *</Label>
+            <Label id="gender-label">性別 *</Label>
             <Select value={formData.gender} onValueChange={(value) => setFormData({...formData, gender: value})}>
-              <SelectTrigger className={getInputErrorClass(!!errors.gender)}>
+              <SelectTrigger aria-labelledby="gender-label" className={getInputErrorClass(!!errors.gender)}>
                 <SelectValue placeholder="選擇性別" />
               </SelectTrigger>
               <SelectContent>
@@ -335,9 +335,9 @@ export function CreateServiceProvider() {
           {/* 服務地區選擇 */}
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>服務城市 * (只能選擇一個縣市)</Label>
+              <Label id="city-label">服務城市 * (只能選擇一個縣市)</Label>
               <Select value={formData.city} onValueChange={handleCityChange}>
-                <SelectTrigger className={getInputErrorClass(!!errors.city)}>
+                <SelectTrigger aria-labelledby="city-label" className={getInputErrorClass(!!errors.city)}>
                   <SelectValue placeholder="選擇城市" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60 overflow-y-auto">

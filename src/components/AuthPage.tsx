@@ -22,7 +22,7 @@ export function AuthPage() {
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast, showInfo } = useNotification();
+  const { showToast } = useNotification();
   const supabase = createClient();
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
@@ -254,41 +254,16 @@ export function AuthPage() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
       });
 
-      console.log('✅ Signup response:', data);
-      
       if (error) {
-        console.error('❌ Sign up error:', error);
         showToast(error.message, 'error');
         return;
       }
 
-      // 檢查是否需要 email 確認
-      if (data?.user) {
-        console.log('📧 User created:', {
-          id: data.user.id,
-          email: data.user.email,
-          email_confirmed_at: data.user.email_confirmed_at,
-          confirmation_sent_at: data.user.confirmation_sent_at,
-        });
-
-        if (!data.user.email_confirmed_at) {
-          console.log('✉️ Email confirmation required, should have sent verification email');
-        } else {
-          console.log('⚠️ Email already confirmed (auto-confirm enabled?)');
-        }
-      }
-
-      // 導向等待驗證頁面
-      navigate('/auth/verify-email', {
-        state: { 
-          email,
-          registrationTime: Date.now(), // 傳遞註冊時間，用於計算初始冷卻
-        },
+      // 導向 OTP 輸入頁
+      navigate('/auth/verify-otp', {
+        state: { email, otpType: 'signup' },
       });
     } catch (error) {
       console.error('Error during sign up:', error);
@@ -339,17 +314,9 @@ export function AuthPage() {
     return errors;
   };
 
-  // 忘記密碼處理
+  // 忘記密碼 → 導向 OTP 密碼重設流程
   const handleForgotPassword = () => {
-    showInfo(
-      '需要協助重設密碼？',
-      '為確保您的帳號安全，密碼重設需由客服人員協助。',
-      [
-        '請加入 LINE 官方帳號：@uknow',
-        '告知客服您需要重設密碼',
-        '客服將在確認身份後協助您'
-      ]
-    );
+    navigate('/forgot-password', { state: { email } });
   };
 
   return (
@@ -381,43 +348,21 @@ export function AuthPage() {
                   onKeyDown={(e) => e.key === 'Enter' && handleCheckEmail()}
                   placeholder="your@email.com"
                   className={getInputErrorClass(!!errors.email)}
+                  aria-required="true"
+                  aria-invalid={!!errors.email || undefined}
+                  aria-describedby={errors.email ? 'email-error' : undefined}
                   autoFocus
                 />
-                <FieldError error={errors.email} />
+                <FieldError id="email-error" error={errors.email} />
               </div>
 
               <Button
                 onClick={handleCheckEmail}
-                disabled={isLoading || !email}
+                disabled={!email}
+                loading={isLoading}
                 className="w-full"
               >
-                {isLoading ? (
-                  <>
-                    <svg
-                      className="animate-spin h-4 w-4 mr-2"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                      />
-                    </svg>
-                    檢查中...
-                  </>
-                ) : (
-                  '繼續'
-                )}
+                {isLoading ? '檢查中...' : '繼續'}
               </Button>
             </div>
           )}
@@ -471,36 +416,11 @@ export function AuthPage() {
                 </Button>
                 <Button
                   onClick={handleLogin}
-                  disabled={isLoading || !password}
+                  disabled={!password}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      登入中...
-                    </>
-                  ) : (
-                    '登入'
-                  )}
+                  {isLoading ? '登入中...' : '登入'}
                 </Button>
               </div>
             </div>
@@ -568,36 +488,11 @@ export function AuthPage() {
                 </Button>
                 <Button
                   onClick={handleSignUp}
-                  disabled={isLoading || !password || !confirmPassword}
+                  disabled={!password || !confirmPassword}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      註冊中...
-                    </>
-                  ) : (
-                    '註冊'
-                  )}
+                  {isLoading ? '註冊中...' : '註冊'}
                 </Button>
               </div>
             </div>
