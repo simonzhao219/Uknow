@@ -54,8 +54,15 @@ const Button = React.forwardRef<
       aria-busy={loading || undefined}
       {...props}
     >
-      {!asChild && loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-      {children}
+      {asChild ? (
+        // Slot requires a single React element child — never inject a sibling spinner.
+        children
+      ) : (
+        <>
+          {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          {children}
+        </>
+      )}
     </Comp>
   );
 });
