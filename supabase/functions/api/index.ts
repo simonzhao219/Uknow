@@ -444,7 +444,9 @@ app.post('/payuni/prepare', async (c) => {
     UsrMail:    user.email || '',
     ExpireDate: expire,
     NotifyURL:  `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
-    ReturnURL:  `${frontendUrl}/payment/result?tradeNo=${tradeNo}`,
+    // PayUni 付款完成後會以 POST 導回 ReturnURL；靜態前端只收 GET（會回 405），
+    // 因此導回後端，再由後端 303 轉址回前端結果頁（GET）。
+    ReturnURL:  `https://${projectId}.supabase.co/functions/v1/api/payuni/return?tradeNo=${tradeNo}`,
     // 啟用的付款方式（值為 1 代表開啟，PayUni 整合式支付頁會顯示對應按鈕）
     Credit:     1,   // 信用卡
     ApplePay:   1,   // Apple Pay
@@ -502,6 +504,41 @@ app.get('/payuni/result/:tradeNo', async (c) => {
 
   return c.json({ success: true, data: order });
 });
+
+// ============================================================
+// /payuni/return
+// PayUni 付款完成後以 POST（含加密結果）導回此處；
+// 靜態前端無法接受 POST，故由後端接住後 303 轉址回前端結果頁（瀏覽器改用 GET）。
+// 同時支援 GET，以防 PayUni 或使用者以 GET 開啟。
+// ============================================================
+const payuniReturnHandler = async (c: any) => {
+  const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
+
+  // tradeNo 來源：優先讀 query（prepare 時已帶上），其次嘗試從 POST body 的 EncryptInfo 解密取得
+  let tradeNo = c.req.query('tradeNo') || '';
+  if (!tradeNo) {
+    try {
+      const raw = await c.req.parseBody();
+      const encryptInfo = raw?.EncryptInfo ? String(raw.EncryptInfo) : '';
+      if (encryptInfo) {
+        const config = payuniConfig();
+        const data = Object.fromEntries(
+          new URLSearchParams(await decryptPayUni(encryptInfo, config.hashKey, config.hashIV))
+        );
+        tradeNo = data.MerTradeNo || '';
+      }
+    } catch (e) {
+      console.error('[payuni/return] 解析 body 失敗（略過）:', e);
+    }
+  }
+
+  const target = `${frontendUrl}/payment/result${tradeNo ? `?tradeNo=${encodeURIComponent(tradeNo)}` : ''}`;
+  console.log('[payuni/return] 轉址回前端:', target);
+  return c.redirect(target, 303);
+};
+
+app.post('/payuni/return', payuniReturnHandler);
+app.get('/payuni/return', payuniReturnHandler);
 
 // ============================================================
 // POST /webhooks/payuni/notify
