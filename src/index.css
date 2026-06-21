@@ -4263,3 +4263,25 @@ html {
     transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
   }
 }
+
+/* --- Email verification OTP slots ---
+   This project ships a prebuilt Tailwind stylesheet (index.css), so utility
+   classes that were never compiled (e.g. w-9, ring-*, data-[active=*]) have no
+   effect. The slots therefore collapsed to thin lines and the focused slot had
+   no highlight. These plain rules guarantee proper sizing and an active state. */
+[data-slot="input-otp-slot"] {
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background-color: var(--input-background);
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+[data-slot="input-otp-slot"][data-active="true"] {
+  z-index: 10;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+}
