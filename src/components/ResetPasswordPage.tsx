@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { isWeakPasswordError, translateAuthError } from '../utils/authErrors';
 
 export function ResetPasswordPage() {
   const [password, setPassword] = useState('');
@@ -93,7 +94,14 @@ export function ResetPasswordPage() {
 
       if (error) {
         console.error('ResetPassword: Error updating password:', error);
-        showToast('密碼重設失敗，請稍後再試', 'error');
+        const friendlyMessage = translateAuthError(error, '密碼重設失敗，請稍後再試。');
+
+        // 外洩 / 過弱密碼：顯示在密碼欄位下方，更貼近情境
+        if (isWeakPasswordError(error)) {
+          setErrors({ password: friendlyMessage });
+        }
+
+        showToast(friendlyMessage, 'error');
         return;
       }
 
