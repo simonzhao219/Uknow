@@ -294,9 +294,6 @@ export function AuthPage() {
       if (!/[0-9]/.test(pwd)) {
         requirements.push('至少一個數字（0-9）');
       }
-      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)) {
-        requirements.push('至少一個符號（如 !@#$%^&*）');
-      }
 
       if (requirements.length > 0) {
         errors.password = `密碼需包含：${requirements.join('、')}`;
@@ -454,7 +451,6 @@ export function AuthPage() {
                     <li>至少一個大寫字母（A-Z）</li>
                     <li>至少一個小寫字母（a-z）</li>
                     <li>至少一個數字（0-9）</li>
-                    <li>至少一個符號（例如：!@#$%^&*）</li>
                   </ul>
                 </div>
               </div>
