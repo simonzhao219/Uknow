@@ -7,9 +7,12 @@ import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
-
-const OTP_VALID_SECONDS = 180; // 3 minutes
-const RESEND_COOLDOWN_SECONDS = 90;
+import {
+  startOtpWindow,
+  getOtpExpiry,
+  getSecondsLeft,
+  clearOtpWindow,
+} from '../utils/otpExpiry';
 
 export function OTPVerificationPage() {
   const location = useLocation();
@@ -23,26 +26,30 @@ export function OTPVerificationPage() {
   const [otp, setOtp] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
-  const [validSecondsLeft, setValidSecondsLeft] = useState(OTP_VALID_SECONDS);
+  // 「有效期限」與「重新寄送」共用同一個倒數，以到期時間戳記為準，
+  // 重新整理頁面不會重新計算。
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   useEffect(() => {
     if (!email) {
       navigate('/login', { replace: true });
+      return;
     }
+    // 沿用已保存的到期時間；若沒有（例如直接進入頁面）才建立一個新的倒數。
+    const existing = getOtpExpiry(email);
+    setExpiresAt(existing ?? startOtpWindow(email));
   }, [email, navigate]);
 
+  // 每秒重新渲染以更新剩餘秒數顯示。
   useEffect(() => {
-    if (validSecondsLeft <= 0) return;
-    const t = setTimeout(() => setValidSecondsLeft((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [validSecondsLeft]);
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendCooldown]);
+  const secondsLeft = expiresAt ? getSecondsLeft(expiresAt) : 0;
+  // 引用 nowTick 以確保倒數每秒刷新。
+  void nowTick;
 
   const formatSeconds = (s: number) => {
     const m = Math.floor(s / 60);
@@ -72,6 +79,9 @@ export function OTPVerificationPage() {
         setOtp('');
         return;
       }
+
+      // 驗證成功，清除倒數狀態
+      clearOtpWindow(email);
 
       if (otpType === 'recovery') {
         navigate('/auth/reset-password', { replace: true });
@@ -112,8 +122,11 @@ export function OTPVerificationPage() {
     }
   };
 
+  const isOtpExpired = expiresAt !== null && secondsLeft <= 0;
+
   const handleResend = async () => {
-    if (resendCooldown > 0 || isResending) return;
+    // 驗證碼到期後才可重新寄送（與有效期限共用同一個倒數）。
+    if (!isOtpExpired || isResending) return;
     setIsResending(true);
 
     try {
@@ -125,8 +138,8 @@ export function OTPVerificationPage() {
         if (error) throw error;
       }
       showToast('驗證碼已重新寄出，請查看信箱', 'success');
-      setResendCooldown(RESEND_COOLDOWN_SECONDS);
-      setValidSecondsLeft(OTP_VALID_SECONDS);
+      // 寄出新驗證碼，重新開始 3 分鐘倒數。
+      setExpiresAt(startOtpWindow(email));
       setOtp('');
     } catch {
       showToast('重新寄送失敗，請稍後再試', 'error');
@@ -134,8 +147,6 @@ export function OTPVerificationPage() {
       setIsResending(false);
     }
   };
-
-  const isOtpExpired = validSecondsLeft <= 0;
 
   return (
     <div className="max-w-md mx-auto mt-12">
@@ -179,7 +190,7 @@ export function OTPVerificationPage() {
               ) : (
                 <span className="text-muted-foreground">
                   驗證碼有效期限：
-                  <span className="font-mono tabular-nums">{formatSeconds(validSecondsLeft)}</span>
+                  <span className="font-mono tabular-nums">{formatSeconds(secondsLeft)}</span>
                 </span>
               )}
             </div>
@@ -200,13 +211,13 @@ export function OTPVerificationPage() {
             <Button
               variant="ghost"
               onClick={handleResend}
-              disabled={resendCooldown > 0}
+              disabled={!isOtpExpired}
               loading={isResending}
               className="text-sm"
             >
-              {resendCooldown > 0
-                ? `重新寄送（${resendCooldown} 秒後可用）`
-                : '重新寄送驗證碼'}
+              {isOtpExpired
+                ? '重新寄送驗證碼'
+                : `重新寄送（${secondsLeft} 秒後可用）`}
             </Button>
           </div>
 
