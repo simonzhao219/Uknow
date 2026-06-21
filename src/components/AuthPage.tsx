@@ -369,7 +369,13 @@ export function AuthPage() {
 
           {/* 步驟 2A：登入 */}
           {step === 2 && isExistingUser && (
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleLogin();
+              }}
+            >
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
@@ -383,7 +389,6 @@ export function AuthPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                   placeholder="請輸入密碼"
                   className={getInputErrorClass(!!errors.password)}
                   autoFocus
@@ -404,6 +409,7 @@ export function AuthPage() {
 
               <div className="flex gap-3">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => {
                     setStep(1);
@@ -415,7 +421,7 @@ export function AuthPage() {
                   上一步
                 </Button>
                 <Button
-                  onClick={handleLogin}
+                  type="submit"
                   disabled={!password}
                   loading={isLoading}
                   className="flex-1"
@@ -423,12 +429,18 @@ export function AuthPage() {
                   {isLoading ? '登入中...' : '登入'}
                 </Button>
               </div>
-            </div>
+            </form>
           )}
 
           {/* 步驟 2B：註冊（設定密碼） */}
           {step === 2 && !isExistingUser && (
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSignUp();
+              }}
+            >
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
@@ -466,7 +478,6 @@ export function AuthPage() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSignUp()}
                   placeholder="再次輸入密碼"
                   className={getInputErrorClass(!!errors.confirmPassword)}
                 />
@@ -475,6 +486,7 @@ export function AuthPage() {
 
               <div className="flex gap-3">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => {
                     setStep(1);
@@ -487,7 +499,7 @@ export function AuthPage() {
                   上一步
                 </Button>
                 <Button
-                  onClick={handleSignUp}
+                  type="submit"
                   disabled={!password || !confirmPassword}
                   loading={isLoading}
                   className="flex-1"
@@ -495,7 +507,7 @@ export function AuthPage() {
                   {isLoading ? '註冊中...' : '註冊'}
                 </Button>
               </div>
-            </div>
+            </form>
           )}
         </CardContent>
       </Card>

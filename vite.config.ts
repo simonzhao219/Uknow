@@ -56,6 +56,12 @@
       target: 'esnext',
       outDir: 'build',
     },
+    // Strip debug logging from production bundles only.
+    // console.error / console.warn are kept so real problems still surface.
+    // Dev builds are not minified, so all logs remain available locally.
+    esbuild: {
+      pure: ['console.log', 'console.info', 'console.debug'],
+    },
     server: {
       port: 3000,
       open: true,
