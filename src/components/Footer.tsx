@@ -12,7 +12,7 @@ export function Footer() {
           {/*<div className="space-y-3">
             <h3 className="font-semibold text-lg">關於我們</h3>
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">仕捷股份有限公司</p>
+              <p className="font-medium text-foreground">優識生活有限公司</p>
               <p>統編：90546663</p>
             </div>
           </div> */}
@@ -71,7 +71,7 @@ export function Footer() {
 
         {/* 版權聲明 */}
         <div className="pt-6 text-center text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} 仕捷股份有限公司 Uknow. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} 優識生活有限公司 Uknow. All rights reserved.</p>
         </div>
       </div>
     </footer>
