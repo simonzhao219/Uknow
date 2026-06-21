@@ -243,9 +243,6 @@ export const signUpUser = async (c: Context) => {
     if (!/[0-9]/.test(password)) {
       passwordErrors.push("至少一個數字");
     }
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-      passwordErrors.push("至少一個符號");
-    }
 
     if (passwordErrors.length > 0) {
       return c.json({ 
