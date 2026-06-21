@@ -51,12 +51,6 @@ export function OTPVerificationPage() {
   // 引用 nowTick 以確保倒數每秒刷新。
   void nowTick;
 
-  const formatSeconds = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${String(sec).padStart(2, '0')}`;
-  };
-
   const handleVerify = async (code: string) => {
     if (isVerifying || code.length !== 6) return;
     setIsVerifying(true);
@@ -190,7 +184,7 @@ export function OTPVerificationPage() {
               ) : (
                 <span className="text-muted-foreground">
                   驗證碼有效期限：
-                  <span className="font-mono tabular-nums">{formatSeconds(secondsLeft)}</span>
+                  <span className="font-mono tabular-nums">{secondsLeft}</span> 秒
                 </span>
               )}
             </div>
@@ -215,9 +209,7 @@ export function OTPVerificationPage() {
               loading={isResending}
               className="text-sm"
             >
-              {isOtpExpired
-                ? '重新寄送驗證碼'
-                : `重新寄送（${secondsLeft} 秒後可用）`}
+              {isOtpExpired ? '重新寄送驗證碼' : '重新寄送（驗證碼到期後可用）'}
             </Button>
           </div>
 
