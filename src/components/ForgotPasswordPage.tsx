@@ -65,13 +65,9 @@ export function ForgotPasswordPage() {
 
       console.log('ForgotPassword: Reset email sent successfully');
 
-      // ✅ 安全性：即使 Email 不存在也顯示成功（避免洩漏用戶信息）
-      // 導向驗證頁面（重用 EmailVerificationPending）
-      navigate('/auth/verify-reset-email', {
-        state: {
-          email,
-          sentAt: Date.now(), // 用於計算冷卻時間
-        },
+      // 即使 Email 不存在也顯示成功（避免洩漏用戶信息）
+      navigate('/auth/verify-otp', {
+        state: { email, otpType: 'recovery' },
       });
     } catch (error) {
       console.error('ForgotPassword: Exception:', error);
@@ -87,7 +83,7 @@ export function ForgotPasswordPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">忘記密碼</CardTitle>
           <CardDescription>
-            輸入您的 Email，我們將寄送密碼重設連結給您
+            輸入您的 Email，我們將寄送 6 位數驗證碼給您
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -109,36 +105,10 @@ export function ForgotPasswordPage() {
                 </Button>
                 <Button
                   onClick={handleSubmit}
-                  disabled={isLoading}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      發送中...
-                    </>
-                  ) : (
-                    '發送重設連結'
-                  )}
+                  {isLoading ? '發送中...' : '發送驗證碼'}
                 </Button>
               </div>
 
@@ -154,7 +124,7 @@ export function ForgotPasswordPage() {
               </div>
             </>
           ) : (
-            /* ✅ 編輯模式：輸入框（直接訪問或點擊「更改 Email」）*/
+            /* 編輯模式：輸入框（直接訪問或點擊「更改 Email」）*/
             <>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -166,9 +136,12 @@ export function ForgotPasswordPage() {
                   onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                   placeholder="your@email.com"
                   className={getInputErrorClass(!!errors.email)}
+                  aria-required="true"
+                  aria-invalid={!!errors.email || undefined}
+                  aria-describedby={errors.email ? 'forgot-email-error' : undefined}
                   autoFocus
                 />
-                <FieldError error={errors.email} />
+                <FieldError id="forgot-email-error" error={errors.email} />
               </div>
 
               <div className="flex gap-3">
@@ -182,36 +155,11 @@ export function ForgotPasswordPage() {
                 </Button>
                 <Button
                   onClick={handleSubmit}
-                  disabled={isLoading || !email}
+                  disabled={!email}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      發送中...
-                    </>
-                  ) : (
-                    '發送重設連結'
-                  )}
+                  {isLoading ? '發送中...' : '發送驗證碼'}
                 </Button>
               </div>
             </>

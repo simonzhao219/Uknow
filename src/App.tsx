@@ -6,8 +6,7 @@ import { MaintenanceBanner } from './components/MaintenanceBanner';
 import { HomePage } from './components/HomePage';
 import { ServiceProviderDetail } from './components/ServiceProviderDetail';
 import { AuthPage } from './components/AuthPage';
-import { EmailVerificationPending } from './components/EmailVerificationPending';
-import { AuthCallback } from './components/AuthCallback';
+import { OTPVerificationPage } from './components/OTPVerificationPage';
 import { CompleteProfile } from './components/CompleteProfile';
 import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
 import { PaymentResult } from './components/PaymentResult';  // ✅ 新增：付款結果頁面
@@ -129,12 +128,6 @@ function AppContent() {
       }
     });
 
-    // 檢查 URL 是否包含 Supabase auth hash（email 驗證回呼）
-    const hash = window.location.hash;
-    if (hash && (hash.includes('access_token') || hash.includes('error'))) {
-      navigate('/auth/callback', { replace: true });
-    }
-
     // 監聽 auth 狀態變化
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.access_token) {
@@ -167,9 +160,7 @@ function AppContent() {
                 {/* Authentication Routes */}
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
-                <Route path="/auth/verify-email" element={<EmailVerificationPending />} />
-                <Route path="/auth/verify-reset-email" element={<EmailVerificationPending mode="password-reset" />} />  {/* ✨ 新增 */}
-                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/auth/verify-otp" element={<OTPVerificationPage />} />
                 <Route path="/auth/complete-profile" element={<CompleteProfile />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />  {/* ✨ 新增 */}
                 <Route path="/auth/reset-password" element={<ResetPasswordPage />} />  {/* ✨ 新增 */}
