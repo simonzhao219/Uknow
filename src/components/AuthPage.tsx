@@ -257,7 +257,14 @@ export function AuthPage() {
       });
 
       if (error) {
-        showToast(error.message, 'error');
+        const friendlyMessage = translateSignUpError(error);
+
+        // 外洩 / 過弱密碼：顯示在密碼欄位下方，更貼近情境
+        if (isWeakPasswordError(error)) {
+          setErrors({ password: friendlyMessage });
+        }
+
+        showToast(friendlyMessage, 'error');
         return;
       }
 
@@ -271,6 +278,36 @@ export function AuthPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 判斷是否為 Supabase「密碼已外洩 / 過弱」錯誤
+  const isWeakPasswordError = (error: { code?: string; message?: string }) => {
+    return (
+      error?.code === 'weak_password' ||
+      /known to be weak|easy to guess|pwned|leaked/i.test(error?.message ?? '')
+    );
+  };
+
+  // 將 Supabase 註冊錯誤翻成友善的中文提示
+  const translateSignUpError = (error: { code?: string; message?: string }) => {
+    if (isWeakPasswordError(error)) {
+      return '此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。';
+    }
+
+    const message = error?.message ?? '';
+
+    if (error?.code === 'user_already_exists' || /already registered|already exists/i.test(message)) {
+      return '此電子郵件已經註冊過，請改用登入。';
+    }
+    if (error?.code === 'over_email_send_rate_limit' || /rate limit/i.test(message)) {
+      return '操作過於頻繁，請稍後再試。';
+    }
+    if (/invalid.*email|email.*invalid/i.test(message)) {
+      return '電子郵件格式不正確，請重新輸入。';
+    }
+
+    // 其他未對應的錯誤，回傳通用提示
+    return '註冊失敗，請稍後再試。';
   };
 
   // 密碼驗證
