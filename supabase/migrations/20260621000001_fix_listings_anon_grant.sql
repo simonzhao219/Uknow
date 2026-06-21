@@ -18,3 +18,8 @@
 -- ============================================================
 
 grant select on public.listings to anon, authenticated;
+
+-- 前端對 listings 直接做完整 CRUD（建立/編輯/刪除服務提供者），
+-- 對應 RLS policy 已涵蓋 insert/update/delete（own 或 admin）。
+-- 訪客（anon）只需 select，不開放寫入。
+grant insert, update, delete on public.listings to authenticated;
