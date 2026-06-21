@@ -8,6 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { startOtpWindow } from '../utils/otpExpiry';
 
 export function ForgotPasswordPage() {
   const location = useLocation();
@@ -64,6 +65,9 @@ export function ForgotPasswordPage() {
       }
 
       console.log('ForgotPassword: Reset email sent successfully');
+
+      // 開始驗證碼 3 分鐘倒數（與重新寄送共用）
+      startOtpWindow(email);
 
       // 即使 Email 不存在也顯示成功（避免洩漏用戶信息）
       navigate('/auth/verify-otp', {

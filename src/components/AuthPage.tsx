@@ -9,6 +9,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { startOtpWindow } from '../utils/otpExpiry';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -267,6 +268,9 @@ export function AuthPage() {
         showToast(friendlyMessage, 'error');
         return;
       }
+
+      // 開始驗證碼 3 分鐘倒數（與重新寄送共用）
+      startOtpWindow(email);
 
       // 導向 OTP 輸入頁
       navigate('/auth/verify-otp', {
