@@ -84,11 +84,21 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
 // 文件：https://docs.payuni.com.tw/web/#/7/34
 // ============================================================
 function payuniConfig() {
-  const key   = Deno.env.get('PAYUNI_HASH_KEY')!;
-  const iv    = Deno.env.get('PAYUNI_HASH_IV')!;
-  const merID = Deno.env.get('PAYUNI_MER_ID')!;
-  if (!key || !iv || !merID) throw new Error('PayUni 環境變數未設定');
   const sandbox = Deno.env.get('PAYUNI_SANDBOX') === 'true';
+
+  // sandbox（測試站）與正式站是兩套獨立帳號，MerID / HashKey / HashIV 都不同，不能混用。
+  // 測試模式優先讀 PAYUNI_TEST_*，若未設定則退回一般變數。
+  const merID = sandbox
+    ? (Deno.env.get('PAYUNI_TEST_MER_ID')   || Deno.env.get('PAYUNI_MER_ID')!)
+    : Deno.env.get('PAYUNI_MER_ID')!;
+  const key = sandbox
+    ? (Deno.env.get('PAYUNI_TEST_HASH_KEY') || Deno.env.get('PAYUNI_HASH_KEY')!)
+    : Deno.env.get('PAYUNI_HASH_KEY')!;
+  const iv = sandbox
+    ? (Deno.env.get('PAYUNI_TEST_HASH_IV')  || Deno.env.get('PAYUNI_HASH_IV')!)
+    : Deno.env.get('PAYUNI_HASH_IV')!;
+
+  if (!key || !iv || !merID) throw new Error('PayUni 環境變數未設定');
   return {
     merID,
     hashKey: key,
