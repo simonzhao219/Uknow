@@ -172,6 +172,7 @@ export function OTPVerificationPage() {
               }}
               disabled={isVerifying || isOtpExpired}
               aria-label="驗證碼，請輸入 6 位數字"
+              data-testid="otp-input-group"
             >
               <InputOTPGroup>
                 <InputOTPSlot index={0} />
@@ -214,6 +215,7 @@ export function OTPVerificationPage() {
               disabled={!isOtpExpired}
               loading={isResending}
               className="text-sm"
+              data-testid="otp-resend-button"
             >
               {isOtpExpired
                 ? '重新寄送驗證碼'

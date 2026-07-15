@@ -582,7 +582,7 @@ export function CompleteProfile() {
               
               {/* ✅ 推薦人姓名顯示 */}
               {referrerName && (
-                <p className="text-sm text-green-600">
+                <p className="text-sm text-green-600" data-testid="referral-code-status">
                   推薦人：{referrerName}
                 </p>
               )}
@@ -612,6 +612,7 @@ export function CompleteProfile() {
               className="w-full"
               disabled={!isFormValid || isLoading}
               onClick={handleSubmit}
+              data-testid="profile-submit-button"
             >
               {isLoading ? (
                 <>

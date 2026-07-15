@@ -120,14 +120,14 @@ export function PaymentResult() {
 
   if (!tradeNo) {
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20">
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-missing-tradeno">
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">查詢訂單失敗</CardTitle>
             <CardDescription>缺少訂單編號</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={handleContactSupport} className="w-full" size="lg">
+            <Button onClick={handleContactSupport} className="w-full" size="lg" data-testid="contact-support-button">
               聯絡官方客服
             </Button>
           </CardContent>
@@ -165,7 +165,7 @@ export function PaymentResult() {
     };
 
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20">
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-success">
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -243,7 +243,7 @@ export function PaymentResult() {
               </div>
             )}
 
-            <Button onClick={handleGoToDashboard} className="w-full" size="lg">
+            <Button onClick={handleGoToDashboard} className="w-full" size="lg" data-testid="go-to-dashboard-button">
               前往會員中心
             </Button>
           </CardContent>
@@ -256,7 +256,7 @@ export function PaymentResult() {
   if (resolvedStatus === 'failed') {
     const failReason = orderResult?.payuni?.ResCodeMsg || orderResult?.payuni?.Message;
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20">
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-failed">
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -277,10 +277,10 @@ export function PaymentResult() {
             )}
 
             <div className="flex gap-3">
-              <Button onClick={handleRetryPayment} className="flex-1" size="lg">
+              <Button onClick={handleRetryPayment} className="flex-1" size="lg" data-testid="retry-payment-button">
                 重新付款
               </Button>
-              <Button onClick={handleContactSupport} variant="outline" className="flex-1" size="lg">
+              <Button onClick={handleContactSupport} variant="outline" className="flex-1" size="lg" data-testid="contact-support-button">
                 聯繫客服
               </Button>
             </div>
@@ -294,7 +294,7 @@ export function PaymentResult() {
   // 重複扣款或款項遺失，讓使用者可以安心離開，不用一直守在這個頁面。
   if (resolvedStatus === 'pending') {
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20">
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-pending">
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -324,6 +324,7 @@ export function PaymentResult() {
                     onClick={handleContactSupport}
                     variant="link"
                     className="text-yellow-800 underline p-0 h-auto mt-1"
+                    data-testid="contact-support-button"
                   >
                     聯繫客服
                   </Button>
@@ -338,7 +339,7 @@ export function PaymentResult() {
 
   // 未知狀態
   return (
-    <div className="container max-w-2xl mx-auto p-4 pt-20">
+    <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-unknown">
       <Card>
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">查詢訂單失敗</CardTitle>
@@ -348,7 +349,7 @@ export function PaymentResult() {
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <p className="text-sm text-gray-800">訂單編號：{tradeNo}</p>
           </div>
-          <Button onClick={handleContactSupport} className="w-full" size="lg">
+          <Button onClick={handleContactSupport} className="w-full" size="lg" data-testid="contact-support-button">
             聯絡官方客服
           </Button>
         </CardContent>

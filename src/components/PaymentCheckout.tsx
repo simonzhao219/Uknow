@@ -643,6 +643,7 @@ export function PaymentCheckout() {
                 size="sm"
                 onClick={handleEdit}
                 className="h-8 px-2"
+                data-testid="edit-profile-button"
               >
                 <Edit className="h-4 w-4 mr-1" />
                 編輯
@@ -689,6 +690,7 @@ export function PaymentCheckout() {
               disabled={isLoading || isButtonLocked}
               className="w-full"
               size="lg"
+              data-testid="payuni-pay-button"
             >
               {isLoading ? (
                 <>
@@ -698,7 +700,7 @@ export function PaymentCheckout() {
               ) : isButtonLocked ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  請稍候 {lockCountdown} 秒
+                  請稍候 <span data-testid="lock-countdown">{lockCountdown}</span> 秒
                 </>
               ) : (
                 <>
@@ -713,6 +715,7 @@ export function PaymentCheckout() {
               onClick={handleCancel}
               disabled={isLoading || isButtonLocked}
               className="w-full"
+              data-testid="cancel-payment-button"
             >
               稍後付款
             </Button>

@@ -75,9 +75,11 @@ export function ToastCard({ id, message, type, duration = 2000, onClose }: Toast
           transition={{ duration: 0.2 }}
           className={`
             ${style.bgColor} ${style.borderColor} ${style.textColor}
-            border-l-4 rounded-lg shadow-lg p-4 mb-2 
+            border-l-4 rounded-lg shadow-lg p-4 mb-2
             flex items-center gap-3 min-w-[280px] max-w-[500px]
           `}
+          data-testid="toast"
+          data-toast-type={type}
         >
           <Icon className={`${style.iconColor} flex-shrink-0`} size={20} />
           <span className="flex-1">{message}</span>

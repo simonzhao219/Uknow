@@ -399,6 +399,7 @@ export function AuthPage() {
                 disabled={!email}
                 loading={isLoading}
                 className="w-full"
+                data-testid="auth-continue-button"
               >
                 {isLoading ? '檢查中...' : '繼續'}
               </Button>
@@ -439,6 +440,7 @@ export function AuthPage() {
                     type="button"
                     onClick={handleForgotPassword}
                     className="text-sm text-primary hover:underline"
+                    data-testid="forgot-password-link"
                   >
                     忘記密碼？
                   </button>
@@ -455,6 +457,7 @@ export function AuthPage() {
                     setErrors({});
                   }}
                   className="flex-1"
+                  data-testid="auth-back-button"
                 >
                   上一步
                 </Button>
@@ -463,6 +466,7 @@ export function AuthPage() {
                   disabled={!password}
                   loading={isLoading}
                   className="flex-1"
+                  data-testid="auth-login-button"
                 >
                   {isLoading ? '登入中...' : '登入'}
                 </Button>
@@ -532,6 +536,7 @@ export function AuthPage() {
                     setErrors({});
                   }}
                   className="flex-1"
+                  data-testid="auth-back-button"
                 >
                   上一步
                 </Button>
@@ -540,6 +545,7 @@ export function AuthPage() {
                   disabled={!password || !confirmPassword}
                   loading={isLoading}
                   className="flex-1"
+                  data-testid="auth-signup-button"
                 >
                   {isLoading ? '註冊中...' : '註冊'}
                 </Button>
