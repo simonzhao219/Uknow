@@ -440,6 +440,12 @@ export function CompleteProfile() {
 
   const isFormValid = !Object.keys(validateForm()).length;
 
+  // ✅ 推薦碼欄位僅在「空值」或「已驗證過的有效值」時才允許進入下一步
+  // 若填了推薦碼但尚未驗證（或驗證後又被修改），則讓「下一步」反灰
+  const isReferralCodeAcceptable =
+    !formData.referralCode.trim() ||
+    (codeVerified && formData.referralCode === verifiedReferralCode);
+
   return (
     <div className="max-w-md mx-auto mt-12">
       <Card>
@@ -610,7 +616,7 @@ export function CompleteProfile() {
             <Button
               type="submit"
               className="w-full"
-              disabled={!isFormValid || isLoading}
+              disabled={!isFormValid || isLoading || !isReferralCodeAcceptable}
               onClick={handleSubmit}
               data-testid="profile-submit-button"
             >
