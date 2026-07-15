@@ -37,9 +37,33 @@ REAL_NETWORK_GUARD_PATTERNS = [
 
 
 def _port_open(host: str, port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.5)
-        return sock.connect_ex((host, port)) == 0
+    # socket.connect_ex() combined with settimeout() is flaky on some
+    # platforms (observed spuriously returning WSAEWOULDBLOCK on Windows even
+    # once a server is listening) — create_connection() uses blocking connect
+    # semantics under the hood and doesn't have that failure mode.
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _windows_pid_on_port(port: int):
+    """`npm run dev` on Windows only runs via a cmd.exe wrapper (shell=True),
+    and npm/node don't reliably stay attached to that wrapper's process tree —
+    a tree-kill on the wrapper's PID can leave node.exe running. Killing
+    whoever actually holds the port is the reliable alternative."""
+    try:
+        output = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True, timeout=5
+        ).stdout
+    except Exception:
+        return None
+    needle = f":{port} "
+    for line in output.splitlines():
+        if "LISTENING" in line and needle in line:
+            return line.split()[-1]
+    return None
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -61,24 +85,25 @@ def dev_server():
         shell=True,
     )
     try:
-        for _ in range(60):
+        # Generous: Vite's first cold start (dependency pre-bundling) can
+        # take well over a minute; later runs are much faster.
+        for _ in range(120):
             if _port_open("localhost", 3000):
                 break
             time.sleep(1)
         else:
             process.terminate()
-            raise RuntimeError("Vite dev server did not start on http://localhost:3000 within 60s")
+            raise RuntimeError("Vite dev server did not start on http://localhost:3000 within 120s")
         yield
     finally:
         if os.name == "nt":
-            # shell=True on Windows makes `process` the cmd.exe wrapper, not
-            # node/vite — killing just that PID would orphan the real server.
-            # /T kills the whole process tree rooted at it.
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            pid = _windows_pid_on_port(3000)
+            if pid:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", pid],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
         else:
             process.terminate()
         try:

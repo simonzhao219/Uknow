@@ -28,7 +28,8 @@ jobs:
           deno-version: v2.x
 
       - name: Type-check Edge Function
-        run: deno check supabase/functions/api/*.ts
+        working-directory: supabase/functions
+        run: deno task check
 
       - uses: supabase/setup-cli@v1
         with:
@@ -49,7 +50,8 @@ jobs:
 
       - name: Run Deno tests against local Supabase
         if: steps.has-tests.outputs.found == 'true'
-        run: deno test --allow-all supabase/functions/api/
+        working-directory: supabase/functions
+        run: deno task test
 
       - name: Stop local Supabase
         if: always() && steps.has-tests.outputs.found == 'true'

@@ -72,7 +72,11 @@ class BackendApiMock:
         self._context.route(f"{API_BASE}{path}**", handler)
 
     def set_profile(self, registration_step: int = 3, **overrides) -> dict:
+        # The backend serves the same handler at both /profile (used by
+        # App.tsx's global session bootstrap) and /auth/profile (used by
+        # AuthPage/CompleteProfile/PaymentCheckout's own re-checks).
         profile = build_profile(registration_step, **overrides)
+        self._route("/profile", lambda route: _fulfill_json(route, profile))
         self._route("/auth/profile", lambda route: _fulfill_json(route, profile))
         return profile
 
