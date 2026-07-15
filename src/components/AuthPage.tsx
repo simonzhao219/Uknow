@@ -47,8 +47,8 @@ export function AuthPage() {
           );
 
           // ✅ 只處理無效 session，不主動重定向
-          if (response.status === 410 || response.status === 404) {
-            console.log('AuthPage: Session is invalid (user deleted), cleaning up...');
+          if (response.status === 410 || response.status === 404 || response.status === 401) {
+            console.log('AuthPage: Session is invalid (user deleted or token expired), cleaning up...');
             await supabase.auth.signOut();
             localStorage.removeItem('user');
             localStorage.removeItem('pendingSession');
