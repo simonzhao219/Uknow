@@ -1,0 +1,26 @@
+name: Deploy Supabase Edge Functions
+
+# Database migrations are no longer handled here — Supabase's native GitHub
+# integration applies them automatically when this branch is merged into main.
+# This workflow only covers Edge Functions, which that integration doesn't deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Edge Function
+        run: supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

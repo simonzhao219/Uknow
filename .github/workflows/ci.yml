@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Edge Function
+        run: deno check supabase/functions/api/*.ts
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Check for Deno test files
+        id: has-tests
+        run: |
+          if compgen -G "supabase/functions/api/*.test.ts" > /dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Start local Supabase
+        if: steps.has-tests.outputs.found == 'true'
+        run: supabase start
+
+      - name: Run Deno tests against local Supabase
+        if: steps.has-tests.outputs.found == 'true'
+        run: deno test --allow-all supabase/functions/api/
+
+      - name: Stop local Supabase
+        if: always() && steps.has-tests.outputs.found == 'true'
+        run: supabase stop
+
+  e2e-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Playwright config
+        id: has-e2e
+        run: |
+          if [ -f "playwright.config.ts" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.has-e2e.outputs.found == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        if: steps.has-e2e.outputs.found == 'true'
+        with:
+          version: latest
+
+      - name: Install dependencies
+        if: steps.has-e2e.outputs.found == 'true'
+        run: npm ci
+
+      - name: Start local Supabase
+        if: steps.has-e2e.outputs.found == 'true'
+        run: |
+          supabase start
+          echo "VITE_SUPABASE_URL=http://127.0.0.1:54321" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2-)" >> "$GITHUB_ENV"
+
+      - name: Serve Edge Function locally
+        if: steps.has-e2e.outputs.found == 'true'
+        run: supabase functions serve api &
+
+      - name: Build and preview frontend against local Supabase
+        if: steps.has-e2e.outputs.found == 'true'
+        run: |
+          npm run build
+          npx vite preview --port 4173 &
+
+      - name: Install Playwright browser
+        if: steps.has-e2e.outputs.found == 'true'
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run Playwright tests
+        if: steps.has-e2e.outputs.found == 'true'
+        run: npx playwright test --project=${{ matrix.browser }}
+        env:
+          BASE_URL: http://127.0.0.1:4173
+
+      - name: Upload Playwright report
+        if: always() && steps.has-e2e.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Stop local Supabase
+        if: always() && steps.has-e2e.outputs.found == 'true'
+        run: supabase stop
