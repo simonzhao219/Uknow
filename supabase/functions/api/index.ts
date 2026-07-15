@@ -384,6 +384,100 @@ app.get('/referrals/validate/:code', async (c) => {
 });
 
 // ============================================================
+// POST /referrals/join-program
+// 使用者同意推廣獎勵規章/契約書並簽名後，標記加入推薦計畫。
+// 只更新 profiles 的同意狀態；referral_code 由付款成功時另外產生。
+// ============================================================
+app.post('/referrals/join-program', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) {
+    return c.json({ success: false, error: { message: '未授權：請先登入' } }, 401);
+  }
+
+  const client = sb();
+
+  const { data: profile } = await client
+    .from('profiles')
+    .select('referral_program_joined, referral_program_joined_at')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile) {
+    return c.json({ success: false, error: { message: '找不到用戶資料' } }, 404);
+  }
+
+  // 已加入過：直接回傳現況，不重複寫入/上傳（idempotent，容忍雙擊或重送）
+  if (profile.referral_program_joined) {
+    const { data: code } = await client
+      .from('referral_codes').select('code')
+      .eq('user_id', user.id).eq('status', 'active').maybeSingle();
+    return c.json({
+      success: true,
+      data: {
+        referralCode: code?.code ?? '',
+        joinedAt: profile.referral_program_joined_at,
+        message: '您已經加入推薦計畫',
+      },
+    });
+  }
+
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ success: false, error: { message: '請求格式錯誤' } }, 400); }
+
+  const { agreedToTerms, signatureData } = body ?? {};
+  if (agreedToTerms !== true) {
+    return c.json({ success: false, error: { message: '請同意推廣獎勵規章與契約書' } }, 400);
+  }
+  if (typeof signatureData !== 'string' || !signatureData.startsWith('data:image/')) {
+    return c.json({ success: false, error: { message: '請完成簽名' } }, 400);
+  }
+
+  const base64 = signatureData.split(',')[1] ?? '';
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+  } catch {
+    return c.json({ success: false, error: { message: '簽名資料格式錯誤' } }, 400);
+  }
+  if (bytes.byteLength > 2 * 1024 * 1024) {
+    return c.json({ success: false, error: { message: '簽名圖片過大，請重新簽名' } }, 400);
+  }
+
+  // 簽名上傳失敗不擋加入流程 —— 同意條款才是核心動作
+  let signaturePath: string | null = null;
+  const path = `${user.id}/${Date.now()}.png`;
+  const { error: uploadErr } = await client.storage
+    .from('referral-signatures')
+    .upload(path, bytes, { contentType: 'image/png', upsert: false });
+  if (uploadErr) {
+    console.error('[join-program] 簽名上傳失敗，仍允許加入:', uploadErr);
+  } else {
+    signaturePath = path;
+  }
+
+  const joinedAt = new Date().toISOString();
+  const { error: updateErr } = await client.from('profiles').update({
+    referral_program_joined: true,
+    referral_program_joined_at: joinedAt,
+    referral_signature_url: signaturePath,
+  }).eq('id', user.id);
+
+  if (updateErr) {
+    console.error('[join-program] 更新失敗:', updateErr);
+    return c.json({ success: false, error: { message: '加入推薦計畫失敗，請稍後再試' } }, 500);
+  }
+
+  const { data: code } = await client
+    .from('referral_codes').select('code')
+    .eq('user_id', user.id).eq('status', 'active').maybeSingle();
+
+  return c.json({
+    success: true,
+    data: { referralCode: code?.code ?? '', joinedAt, message: '成功加入推薦計畫！' },
+  });
+});
+
+// ============================================================
 // POST /listings/verify-referral-code
 // （向下相容別名，供 CompleteProfile 的 apiRequestJson 呼叫）
 // ============================================================
