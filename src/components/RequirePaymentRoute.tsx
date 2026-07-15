@@ -35,10 +35,7 @@ export function RequirePaymentRoute({ children }: RequirePaymentRouteProps) {
 
     const step = user.registrationStep ?? 0;
 
-    console.log('RequirePaymentRoute: Registration step check -', {
-      step,
-      pendingActivation: user.pendingActivation
-    });
+    console.log('RequirePaymentRoute: Registration step check -', { step });
 
     // ✅ 根據 registrationStep 決定導向
     if (step === 0) {

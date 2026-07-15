@@ -35,7 +35,7 @@ interface CachedData {
   withdrawals?: CacheItem;
 }
 
-type CacheKey = keyof CachedData;
+export type CacheKey = keyof CachedData;
 
 interface DataCacheContextType {
   /**

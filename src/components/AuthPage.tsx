@@ -9,6 +9,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { startOtpWindow } from '../utils/otpExpiry';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -22,7 +23,7 @@ export function AuthPage() {
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast, showInfo } = useNotification();
+  const { showToast } = useNotification();
   const supabase = createClient();
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
@@ -254,41 +255,26 @@ export function AuthPage() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
       });
 
-      console.log('✅ Signup response:', data);
-      
       if (error) {
-        console.error('❌ Sign up error:', error);
-        showToast(error.message, 'error');
+        const friendlyMessage = translateSignUpError(error);
+
+        // 外洩 / 過弱密碼：顯示在密碼欄位下方，更貼近情境
+        if (isWeakPasswordError(error)) {
+          setErrors({ password: friendlyMessage });
+        }
+
+        showToast(friendlyMessage, 'error');
         return;
       }
 
-      // 檢查是否需要 email 確認
-      if (data?.user) {
-        console.log('📧 User created:', {
-          id: data.user.id,
-          email: data.user.email,
-          email_confirmed_at: data.user.email_confirmed_at,
-          confirmation_sent_at: data.user.confirmation_sent_at,
-        });
+      // 開始驗證碼 3 分鐘倒數（與重新寄送共用）
+      startOtpWindow(email);
 
-        if (!data.user.email_confirmed_at) {
-          console.log('✉️ Email confirmation required, should have sent verification email');
-        } else {
-          console.log('⚠️ Email already confirmed (auto-confirm enabled?)');
-        }
-      }
-
-      // 導向等待驗證頁面
-      navigate('/auth/verify-email', {
-        state: { 
-          email,
-          registrationTime: Date.now(), // 傳遞註冊時間，用於計算初始冷卻
-        },
+      // 導向 OTP 輸入頁
+      navigate('/auth/verify-otp', {
+        state: { email, otpType: 'signup' },
       });
     } catch (error) {
       console.error('Error during sign up:', error);
@@ -296,6 +282,36 @@ export function AuthPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 判斷是否為 Supabase「密碼已外洩 / 過弱」錯誤
+  const isWeakPasswordError = (error: { code?: string; message?: string }) => {
+    return (
+      error?.code === 'weak_password' ||
+      /known to be weak|easy to guess|pwned|leaked/i.test(error?.message ?? '')
+    );
+  };
+
+  // 將 Supabase 註冊錯誤翻成友善的中文提示
+  const translateSignUpError = (error: { code?: string; message?: string }) => {
+    if (isWeakPasswordError(error)) {
+      return '此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。';
+    }
+
+    const message = error?.message ?? '';
+
+    if (error?.code === 'user_already_exists' || /already registered|already exists/i.test(message)) {
+      return '此電子郵件已經註冊過，請改用登入。';
+    }
+    if (error?.code === 'over_email_send_rate_limit' || /rate limit/i.test(message)) {
+      return '操作過於頻繁，請稍後再試。';
+    }
+    if (/invalid.*email|email.*invalid/i.test(message)) {
+      return '電子郵件格式不正確，請重新輸入。';
+    }
+
+    // 其他未對應的錯誤，回傳通用提示
+    return '註冊失敗，請稍後再試。';
   };
 
   // 密碼驗證
@@ -319,9 +335,6 @@ export function AuthPage() {
       if (!/[0-9]/.test(pwd)) {
         requirements.push('至少一個數字（0-9）');
       }
-      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)) {
-        requirements.push('至少一個符號（如 !@#$%^&*）');
-      }
 
       if (requirements.length > 0) {
         errors.password = `密碼需包含：${requirements.join('、')}`;
@@ -339,17 +352,9 @@ export function AuthPage() {
     return errors;
   };
 
-  // 忘記密碼處理
+  // 忘記密碼 → 導向 OTP 密碼重設流程
   const handleForgotPassword = () => {
-    showInfo(
-      '需要協助重設密碼？',
-      '為確保您的帳號安全，密碼重設需由客服人員協助。',
-      [
-        '請加入 LINE 官方帳號：@uknow',
-        '告知客服您需要重設密碼',
-        '客服將在確認身份後協助您'
-      ]
-    );
+    navigate('/forgot-password', { state: { email } });
   };
 
   return (
@@ -381,50 +386,34 @@ export function AuthPage() {
                   onKeyDown={(e) => e.key === 'Enter' && handleCheckEmail()}
                   placeholder="your@email.com"
                   className={getInputErrorClass(!!errors.email)}
+                  aria-required="true"
+                  aria-invalid={!!errors.email || undefined}
+                  aria-describedby={errors.email ? 'email-error' : undefined}
                   autoFocus
                 />
-                <FieldError error={errors.email} />
+                <FieldError id="email-error" error={errors.email} />
               </div>
 
               <Button
                 onClick={handleCheckEmail}
-                disabled={isLoading || !email}
+                disabled={!email}
+                loading={isLoading}
                 className="w-full"
               >
-                {isLoading ? (
-                  <>
-                    <svg
-                      className="animate-spin h-4 w-4 mr-2"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                      />
-                    </svg>
-                    檢查中...
-                  </>
-                ) : (
-                  '繼續'
-                )}
+                {isLoading ? '檢查中...' : '繼續'}
               </Button>
             </div>
           )}
 
           {/* 步驟 2A：登入 */}
           {step === 2 && isExistingUser && (
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleLogin();
+              }}
+            >
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
@@ -438,7 +427,6 @@ export function AuthPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                   placeholder="請輸入密碼"
                   className={getInputErrorClass(!!errors.password)}
                   autoFocus
@@ -459,6 +447,7 @@ export function AuthPage() {
 
               <div className="flex gap-3">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => {
                     setStep(1);
@@ -470,45 +459,26 @@ export function AuthPage() {
                   上一步
                 </Button>
                 <Button
-                  onClick={handleLogin}
-                  disabled={isLoading || !password}
+                  type="submit"
+                  disabled={!password}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      登入中...
-                    </>
-                  ) : (
-                    '登入'
-                  )}
+                  {isLoading ? '登入中...' : '登入'}
                 </Button>
               </div>
-            </div>
+            </form>
           )}
 
           {/* 步驟 2B：註冊（設定密碼） */}
           {step === 2 && !isExistingUser && (
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSignUp();
+              }}
+            >
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
@@ -534,7 +504,6 @@ export function AuthPage() {
                     <li>至少一個大寫字母（A-Z）</li>
                     <li>至少一個小寫字母（a-z）</li>
                     <li>至少一個數字（0-9）</li>
-                    <li>至少一個符號（例如：!@#$%^&*）</li>
                   </ul>
                 </div>
               </div>
@@ -546,7 +515,6 @@ export function AuthPage() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSignUp()}
                   placeholder="再次輸入密碼"
                   className={getInputErrorClass(!!errors.confirmPassword)}
                 />
@@ -555,6 +523,7 @@ export function AuthPage() {
 
               <div className="flex gap-3">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => {
                     setStep(1);
@@ -567,40 +536,15 @@ export function AuthPage() {
                   上一步
                 </Button>
                 <Button
-                  onClick={handleSignUp}
-                  disabled={isLoading || !password || !confirmPassword}
+                  type="submit"
+                  disabled={!password || !confirmPassword}
+                  loading={isLoading}
                   className="flex-1"
                 >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4 mr-2"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.928l3-2.647z"
-                        />
-                      </svg>
-                      註冊中...
-                    </>
-                  ) : (
-                    '註冊'
-                  )}
+                  {isLoading ? '註冊中...' : '註冊'}
                 </Button>
               </div>
-            </div>
+            </form>
           )}
         </CardContent>
       </Card>
