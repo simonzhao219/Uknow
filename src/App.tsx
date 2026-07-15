@@ -93,8 +93,10 @@ function AppContent() {
         });
 
         if (!response.ok) {
-          if (response.status === 404 || response.status === 410) {
+          if (response.status === 404 || response.status === 410 || response.status === 401) {
             await supabase.auth.signOut();
+            localStorage.removeItem('user');
+            localStorage.removeItem('pendingSession');
           }
           if (isMounted) setUser(null);
           return;
