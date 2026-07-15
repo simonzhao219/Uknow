@@ -63,7 +63,7 @@ export function PaymentCheckout() {
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1500);
-          } else if (profile.registrationStep === 2 && profile.pendingActivation && profile.lastTradeNo) {
+          } else if (profile.registrationStep === 2 && profile.lastTradeNo) {
             console.log('PaymentCheckout: 用戶已付款，跳轉到結果頁');
             navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
           }
@@ -130,7 +130,7 @@ export function PaymentCheckout() {
               }
               
               // ✅ 新增：檢查是否有活動訂單
-              if (profile.registrationStep === 2 && profile.pendingActivation && profile.lastTradeNo) {
+              if (profile.registrationStep === 2 && profile.lastTradeNo) {
                 console.log('PaymentCheckout: User has active order, checking status...');
                 // 有待處理的訂單，跳轉到付款結果頁
                 navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
@@ -283,44 +283,16 @@ export function PaymentCheckout() {
 
     try {
       setIsLoading(true);
-      
-      // ✅ 步驟 1：更新 registrationStep 為 2（付款中）
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         showToast('登入已過期，請重新登入', 'error');
         navigate('/login');
         return;
       }
-      
-      console.log('PaymentCheckout: 更新 registrationStep 為 2...');
-      
-      const updateResponse = await fetch(
-        buildApiUrl('/auth/profile'),
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: pendingUser.name,           // ✅ 必需：用户姓名
-            phone: pendingUser.phone,         // ✅ 必需：用户手机
-            registrationStep: 2               // ✅ 更新为付款中状态
-          })
-        }
-      );
-      
-      if (!updateResponse.ok) {
-        const error = await updateResponse.json();
-        console.error('PaymentCheckout: 更新 registrationStep 失敗:', error);
-        showToast('更新狀態失敗，請稍後再試', 'error');
-        setIsLoading(false);
-        return;
-      }
-      
-      console.log('PaymentCheckout: registrationStep 已更新為 2');
-      
-      // ✅ 步驟 2：調用後端 API 準備訂單
+
+      // ✅ 呼叫後端 API 準備訂單。registrationStep 會在這筆 pending 訂單
+      // 建立後自動變成 2（由 payment_orders 即時算出，不需要另外寫入）。
       const response = await fetch(
         buildApiUrl('/payuni/prepare'),
         {

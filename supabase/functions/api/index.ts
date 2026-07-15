@@ -51,13 +51,20 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
 async function buildProfileResponse(client: any, userId: string, email?: string) {
-  const [{ data: profile }, { data: acct }, { data: code }] = await Promise.all([
+  const [{ data: profile }, { data: acct }, { data: code }, { data: pendingOrder }, { data: step }] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).single(),
     client.from('user_account_status').select('status, end_date, grace_period_end').eq('user_id', userId).single(),
     client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active').maybeSingle(),
+    client.from('payment_orders').select('transaction_id').eq('user_id', userId).eq('status', 'pending')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    client.rpc('effective_registration_step', { p_user_id: userId }),
   ]);
 
   if (!profile) return null;
+
+  // registrationStep 由 payment_orders 即時算出（見 migration 0011），
+  // 不再信任 profiles.registration_step 這個手動維護的欄位。
+  const registrationStep = step ?? 1;
 
   return {
     id:              profile.id,
@@ -68,7 +75,8 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
     bankCode:        profile.bank_code,
     bankAccount:     profile.bank_account,
     isAdmin:         profile.is_admin,
-    registrationStep: profile.registration_step,
+    registrationStep,
+    lastTradeNo:     registrationStep === 2 ? (pendingOrder?.transaction_id ?? null) : null,
     referralCode:    code?.code ?? null,
     referredByCode:  profile.referred_by_code,
     referralProgramJoined: profile.referral_program_joined,
@@ -217,7 +225,9 @@ app.post('/auth/register', async (c) => {
 
 // ============================================================
 // PUT /auth/profile
-// PaymentCheckout 用於更新 registrationStep（步驟 2 = 付款中）
+// 更新可編輯的基本資料欄位。registrationStep 不接受前端寫入 ——
+// 由 payment_orders 即時算出（見 buildProfileResponse / migration 0011），
+// 避免任何登入用戶自行 PUT 跳過付款流程。
 // ============================================================
 app.put('/auth/profile', async (c) => {
   const user = await requireAuth(c);
@@ -234,7 +244,6 @@ app.put('/auth/profile', async (c) => {
     nationalId:        'national_id',
     bankCode:          'bank_code',
     bankAccount:       'bank_account',
-    registrationStep:  'registration_step',
   };
 
   const updates: Record<string, any> = {};
@@ -321,16 +330,27 @@ app.post('/auth/complete-registration', async (c) => {
 });
 
 // ============================================================
-// POST /auth/reset-to-payment
-// PaymentResult 回到付款頁（重設 registration_step = 1）
+// POST /auth/reset-registration
+// PaymentCheckout「編輯」：讓用戶回到 CompleteProfile 修改基本資料。
+// registrationStep 已改為即時算出（見 buildProfileResponse），這裡不需要
+// 寫任何「step 0」旗標 —— 只要擋掉已付款會員誤觸重置即可；使用者重新
+// 送出 /auth/register 時 registration_step 會自然設回 1。
 // ============================================================
-app.post('/auth/reset-to-payment', async (c) => {
+app.post('/auth/reset-registration', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  await sb().from('profiles')
-    .update({ registration_step: 1 })
-    .eq('id', user.id);
+  const { data: completedOrder } = await sb()
+    .from('payment_orders')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('status', 'completed')
+    .limit(1)
+    .maybeSingle();
+
+  if (completedOrder) {
+    return c.json({ error: '已完成付款，無法重置註冊資料' }, 400);
+  }
 
   return c.json({ success: true });
 });
@@ -493,14 +513,23 @@ app.get('/payuni/result/:tradeNo', async (c) => {
   const tradeNo = c.req.param('tradeNo');
   const { data: order, error } = await sb()
     .from('payment_orders')
-    .select('status, transaction_id, completed_at')
+    .select('status, transaction_id, completed_at, payuni_response')
     .eq('transaction_id', tradeNo)
     .eq('user_id', user.id)
     .single();
 
   if (error || !order) return c.json({ success: false, error: '訂單不存在' }, 404);
 
-  return c.json({ success: true, data: order });
+  // orderStatus 只用來決定前端是否要繼續 polling；成功/失敗的實際原因與
+  // 明細一律以 payuni（PayUni 原始回傳資料）為準，不再自創詞彙轉換。
+  return c.json({
+    success: true,
+    data: {
+      orderStatus: order.status,
+      completedAt: order.completed_at,
+      payuni:      order.payuni_response ?? null,
+    },
+  });
 });
 
 // ============================================================
@@ -546,9 +575,11 @@ app.post('/webhooks/payuni/notify', async (c) => {
   console.log('[notify] MerTradeNo:', MerTradeNo, 'Status:', Status);
 
   // 付款失敗：記錄但回覆 SUCCESS（避免 PayUni 無限重試）
+  // payuni_response 存下完整解密資料，讓前端能顯示 PayUni 實際回傳的
+  // ResCode/ResCodeMsg/Message，不用我們自己編一套錯誤訊息。
   if (Status !== 'SUCCESS') {
     await sb().from('payment_orders')
-      .update({ status: 'failed' })
+      .update({ status: 'failed', payuni_response: data })
       .eq('transaction_id', MerTradeNo);
     console.log('[notify] 付款失敗，已標記訂單');
     return c.json({ Status: 'SUCCESS' });
@@ -578,9 +609,10 @@ app.post('/webhooks/payuni/notify', async (c) => {
 
   // 呼叫原子性付款處理函數
   const { data: result, error } = await sb().rpc('process_successful_payment', {
-    p_user_id:        order.user_id,
-    p_trade_no:       MerTradeNo,
-    p_transaction_id: TradeNo || MerTradeNo,
+    p_user_id:         order.user_id,
+    p_trade_no:        MerTradeNo,
+    p_transaction_id:  TradeNo || MerTradeNo,
+    p_payuni_response: data,
   });
 
   if (error) {
@@ -1049,21 +1081,24 @@ app.get('/referrals/debug/:userId', async (c) => {
     { data: acct },
     { data: gen1 },
     { data: code },
+    { data: effectiveStep },
   ] = await Promise.all([
     client.from('profiles').select('id, name, referred_by_code, registration_step').eq('id', targetId).single(),
     client.from('user_account_status').select('status, end_date').eq('user_id', targetId).single(),
     client.from('referral_edges').select('referee_user_id, referred_at').eq('referrer_user_id', targetId),
     client.from('referral_codes').select('code, status').eq('user_id', targetId).maybeSingle(),
+    client.rpc('effective_registration_step', { p_user_id: targetId }),
   ]);
 
   return c.json({
     success: true,
     data: {
       profile: profile ? {
-        name:             profile.name,
-        referralCode:     code?.code ?? null,
-        referredByCode:   profile.referred_by_code,
-        registrationStep: profile.registration_step,
+        name:                     profile.name,
+        referralCode:             code?.code ?? null,
+        referredByCode:           profile.referred_by_code,
+        registrationStepStored:   profile.registration_step,   // 手動維護的歷史欄位，僅供除錯比對
+        registrationStepEffective: effectiveStep ?? 1,          // 實際生效值（由 payment_orders 即時算出）
       } : null,
       accountStatus:     acct,
       directReferrals:   gen1?.length ?? 0,
