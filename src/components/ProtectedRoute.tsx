@@ -13,7 +13,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProps) {
-  const { isLoggedIn, isLoadingUser } = useContext(UserContext);
+  const { user, isLoggedIn, isLoadingUser } = useContext(UserContext);
   const { isFeatureEnabled } = useFeatures();
   const navigate = useNavigate();
 
@@ -21,7 +21,10 @@ export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProp
   // isLoadingUser=true / user=null 開始，session 還在解析中，
   // 這時不能當成「未登入」導去 /login，否則會在 session 解析完成後
   // 又被導回來，造成一瞬間的畫面跳轉閃爍。
-  if (isLoadingUser) {
+  //
+  // 但若 user 已經有值（例如分頁重新可見時的背景重新驗證），代表這不是冷啟動，
+  // 直接照常渲染子頁面，不要把畫面清空成 spinner（stale-while-revalidate）。
+  if (isLoadingUser && !user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
