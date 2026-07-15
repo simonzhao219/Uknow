@@ -7,6 +7,7 @@
 import { getAccessToken } from './auth';
 import { projectId } from './supabase/info';
 import { createClient } from './supabase/client';
+import { emitSessionExpired } from './authEvents';
 
 /**
  * API 請求錯誤
@@ -48,41 +49,50 @@ export class ApiError extends Error {
  */
 export async function apiRequest(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  isRetry = false
 ): Promise<Response> {
   // 1. 獲取 access token
   const token = await getAccessToken();
-  
+
   if (!token) {
     throw new ApiError('請先登入', 401, 'UNAUTHORIZED');
   }
-  
+
   // 2. 合併 headers
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
     ...options.headers
   };
-  
+
   // 3. 發送請求
   try {
     const response = await fetch(url, {
       ...options,
       headers
     });
-    
-    // 4. 處理認證錯誤
+
+    // 4. 處理認證錯誤：先嘗試 refresh session 一次再重試，避免因 token 剛好
+    // 過期這種暫時性狀況就直接判定登入過期（refresh-and-retry-once）。
     if (response.status === 401) {
+      if (!isRetry) {
+        const supabase = createClient();
+        const { data, error: refreshError } = await supabase.auth.refreshSession();
+        if (!refreshError && data.session) {
+          return apiRequest(url, options, true);
+        }
+      }
       throw new ApiError('登入已過期，請重新登入', 401, 'UNAUTHORIZED');
     }
-    
+
     return response;
   } catch (error) {
     // 如果是網絡錯誤或其他錯誤
     if (error instanceof ApiError) {
       throw error;
     }
-    
+
     throw new ApiError(
       error instanceof Error ? error.message : '網絡請求失敗',
       undefined,
@@ -144,13 +154,11 @@ export async function apiRequestJson<T = any>(
       // 清除 localStorage
       localStorage.removeItem('user');
       localStorage.removeItem('pendingSession');
-      
-      // 跳轉到登入頁（避免循環跳轉）
-      if (!window.location.pathname.includes('/login') && 
-          !window.location.pathname.includes('/register')) {
-        window.location.href = '/login';
-      }
-      
+
+      // 通知上層（App.tsx）以 SPA 導頁方式跳轉到登入頁，避免 window.location.href
+      // 造成整頁重新載入的閃爍。
+      emitSessionExpired();
+
       // 重新拋出錯誤（讓呼叫方可以顯示提示）
       throw new ApiError('登入已過期，請重新登入', 401, 'UNAUTHORIZED');
     }

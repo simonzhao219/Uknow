@@ -35,27 +35,9 @@ export async function getAccessToken(): Promise<string | null> {
       return null;
     }
 
-    // 2. 檢查 token 是否快過期（剩餘時間 < 5 分鐘）
-    const expiresAt = session.expires_at; // Unix timestamp (秒)
-    const now = Math.floor(Date.now() / 1000);
-    const timeLeft = expiresAt - now;
-
-    // 3. 如果快過期，主動 refresh
-    if (timeLeft < 300) {  // 5 分鐘 = 300 秒
-      console.log('[Auth] Token 即將過期，自動 refresh...');
-      
-      const { data: { session: newSession }, error: refreshError } = 
-        await supabase.auth.refreshSession();
-      
-      if (refreshError || !newSession) {
-        console.error('[Auth] Refresh 失敗:', refreshError);
-        return null;
-      }
-      
-      console.log('[Auth] Token refresh 成功');
-      return newSession.access_token;
-    }
-    
+    // Supabase client 已開啟 autoRefreshToken，會在背景自動換發 token，
+    // getSession() 回傳的 token 已經是有效的，不需要在這裡再手動 refresh 一次
+    // （手動 refresh 會與 SDK 內部的自動 refresh 互相搶跑）。
     return session.access_token;
   } catch (error) {
     console.error('[auth] getAccessToken 異常:', error);
