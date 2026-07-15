@@ -464,7 +464,11 @@ app.post('/payuni/prepare', async (c) => {
     UsrMail:    user.email || '',
     ExpireDate: expire,
     NotifyURL:  `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
-    ReturnURL:  `${frontendUrl}/payment/result?tradeNo=${tradeNo}`,
+    // ReturnURL 指向後端（不是前端頁面）——PayUni 導回時會用 POST 帶
+    // EncryptInfo/HashInfo（跟 NotifyURL 收到的是同一份交易結果），
+    // 後端解密後直接知道當下結果，302 導向前端並帶上 status，
+    // 前端不需要再輪詢猜測付款是否成功。
+    ReturnURL:  `https://${projectId}.supabase.co/functions/v1/api/payuni/return`,
     // 啟用的付款方式（值為 1 代表開啟，PayUni 整合式支付頁會顯示對應按鈕）
     Credit:     1,   // 信用卡
     ApplePay:   1,   // Apple Pay
@@ -533,56 +537,29 @@ app.get('/payuni/result/:tradeNo', async (c) => {
 });
 
 // ============================================================
-// POST /webhooks/payuni/notify
-// PayUni 付款成功回調（form-data，不需 JWT）
+// 共用：解析 PayUni 回傳資料並落地寫入 payment_orders。
+// NotifyURL webhook 與 ReturnURL 導回端點都呼叫這裡——兩者收到的
+// 是同一份加密交易結果，只是到達時間點不同；共用同一套邏輯，
+// 並靠 process_successful_payment 內建的「已是 completed 就跳過」
+// 判斷，保證誰先到都不會重複執行業務動作。
 // ============================================================
-app.post('/webhooks/payuni/notify', async (c) => {
-  let config: ReturnType<typeof payuniConfig>;
-  try { config = payuniConfig(); }
-  catch { return c.json({ Status: 'FAILED', Message: 'config error' }); }
-
-  // 解析 form-data
-  let body: Record<string, string>;
-  try {
-    const raw = await c.req.parseBody();
-    body = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v)]));
-  } catch {
-    return c.json({ Status: 'FAILED', Message: 'parse error' });
-  }
-
-  const { EncryptInfo, HashInfo } = body;
-  if (!EncryptInfo || !HashInfo) {
-    console.error('[notify] 缺少 EncryptInfo / HashInfo');
-    return c.json({ Status: 'FAILED', Message: 'missing params' });
-  }
-
-  // 驗簽
-  if (await generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV) !== HashInfo) {
-    console.error('[notify] Hash 驗證失敗');
-    return c.json({ Status: 'FAILED', Message: 'hash mismatch' });
-  }
-
-  // 解密
-  let data: Record<string, string>;
-  try {
-    data = Object.fromEntries(new URLSearchParams(await decryptPayUni(EncryptInfo, config.hashKey, config.hashIV)));
-  } catch (e) {
-    console.error('[notify] 解密失敗:', e);
-    return c.json({ Status: 'FAILED', Message: 'decrypt error' });
-  }
-
+async function resolveOrderFromPayUni(
+  data: Record<string, string>
+): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
   const { Status, MerTradeNo, TradeNo } = data;
-  console.log('[notify] MerTradeNo:', MerTradeNo, 'Status:', Status);
 
-  // 付款失敗：記錄但回覆 SUCCESS（避免 PayUni 無限重試）
+  if (!MerTradeNo) {
+    return { ok: false, message: 'missing MerTradeNo' };
+  }
+
+  // 付款失敗：記錄但視為「處理成功」（呼叫端不需重試）。
   // payuni_response 存下完整解密資料，讓前端能顯示 PayUni 實際回傳的
   // ResCode/ResCodeMsg/Message，不用我們自己編一套錯誤訊息。
   if (Status !== 'SUCCESS') {
     await sb().from('payment_orders')
       .update({ status: 'failed', payuni_response: data })
       .eq('transaction_id', MerTradeNo);
-    console.log('[notify] 付款失敗，已標記訂單');
-    return c.json({ Status: 'SUCCESS' });
+    return { ok: true, status: 'FAILED' };
   }
 
   // 找訂單 + 冪等性
@@ -593,22 +570,19 @@ app.post('/webhooks/payuni/notify', async (c) => {
     .single();
 
   if (!order) {
-    console.error('[notify] 找不到訂單:', MerTradeNo);
-    return c.json({ Status: 'FAILED', Message: 'order not found' });
+    return { ok: false, message: 'order not found' };
   }
   if (order.status === 'completed') {
-    console.log('[notify] 重複通知，略過:', MerTradeNo);
-    return c.json({ Status: 'SUCCESS' });
+    return { ok: true, status: 'SUCCESS' };
   }
 
   // 金額驗證
   if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
-    console.error('[notify] 金額不符:', data.TradeAmt);
-    return c.json({ Status: 'FAILED', Message: 'amount mismatch' });
+    return { ok: false, message: 'amount mismatch' };
   }
 
   // 呼叫原子性付款處理函數
-  const { data: result, error } = await sb().rpc('process_successful_payment', {
+  const { error } = await sb().rpc('process_successful_payment', {
     p_user_id:         order.user_id,
     p_trade_no:        MerTradeNo,
     p_transaction_id:  TradeNo || MerTradeNo,
@@ -616,12 +590,115 @@ app.post('/webhooks/payuni/notify', async (c) => {
   });
 
   if (error) {
-    console.error('[notify] process_successful_payment 失敗:', error);
-    return c.json({ Status: 'FAILED', Message: error.message });
+    return { ok: false, message: error.message };
   }
 
-  console.log('[notify] ✅ 付款完成:', MerTradeNo, result);
+  return { ok: true, status: 'SUCCESS' };
+}
+
+// ============================================================
+// 解密並驗證 PayUni form-data（notify webhook 與 return 導回共用）
+// ============================================================
+async function decryptPayUniFormBody(
+  body: Record<string, string>,
+  config: ReturnType<typeof payuniConfig>
+): Promise<{ ok: true; data: Record<string, string> } | { ok: false; message: string }> {
+  const { EncryptInfo, HashInfo } = body;
+  if (!EncryptInfo || !HashInfo) {
+    return { ok: false, message: 'missing params' };
+  }
+
+  if (await generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV) !== HashInfo) {
+    return { ok: false, message: 'hash mismatch' };
+  }
+
+  try {
+    const data = Object.fromEntries(
+      new URLSearchParams(await decryptPayUni(EncryptInfo, config.hashKey, config.hashIV))
+    );
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, message: `decrypt error: ${e}` };
+  }
+}
+
+// ============================================================
+// POST /webhooks/payuni/notify
+// PayUni 付款成功回調（form-data，不需 JWT）
+// ============================================================
+app.post('/webhooks/payuni/notify', async (c) => {
+  let config: ReturnType<typeof payuniConfig>;
+  try { config = payuniConfig(); }
+  catch { return c.json({ Status: 'FAILED', Message: 'config error' }); }
+
+  let body: Record<string, string>;
+  try {
+    const raw = await c.req.parseBody();
+    body = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v)]));
+  } catch {
+    return c.json({ Status: 'FAILED', Message: 'parse error' });
+  }
+
+  const decrypted = await decryptPayUniFormBody(body, config);
+  if (!decrypted.ok) {
+    console.error('[notify]', decrypted.message);
+    return c.json({ Status: 'FAILED', Message: decrypted.message });
+  }
+
+  console.log('[notify] MerTradeNo:', decrypted.data.MerTradeNo, 'Status:', decrypted.data.Status);
+
+  const result = await resolveOrderFromPayUni(decrypted.data);
+  if (!result.ok) {
+    console.error('[notify]', result.message);
+    return c.json({ Status: 'FAILED', Message: result.message });
+  }
+
+  console.log('[notify] ✅ 處理完成:', decrypted.data.MerTradeNo, result.status);
   return c.json({ Status: 'SUCCESS' });
+});
+
+// ============================================================
+// POST /payuni/return
+// 使用者付款完成後，PayUni 用瀏覽器導回這裡（form-data POST，
+// 帶的 EncryptInfo/HashInfo 跟 NotifyURL 收到的是同一份交易結果）。
+// 解密後立刻知道當下的付款結果，302 導向前端並帶上 status，
+// 前端不需要再等待/輪詢猜測付款是否成功。
+// ============================================================
+app.post('/payuni/return', async (c) => {
+  const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
+  const fallbackRedirect = (tradeNo?: string) =>
+    c.redirect(`${frontendUrl}/payment/result${tradeNo ? `?tradeNo=${tradeNo}` : ''}`, 302);
+
+  let config: ReturnType<typeof payuniConfig>;
+  try { config = payuniConfig(); }
+  catch { return fallbackRedirect(); }
+
+  let body: Record<string, string>;
+  try {
+    const raw = await c.req.parseBody();
+    body = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v)]));
+  } catch {
+    return fallbackRedirect();
+  }
+
+  const decrypted = await decryptPayUniFormBody(body, config);
+  if (!decrypted.ok) {
+    console.error('[return]', decrypted.message);
+    // 解密/驗簽失敗時（此時還不知道 tradeNo）不帶 status，
+    // 讓前端 fallback 讀 DB——NotifyURL webhook 仍會是這筆訂單最終的真相來源。
+    return fallbackRedirect();
+  }
+
+  const tradeNo = decrypted.data.MerTradeNo;
+  console.log('[return] MerTradeNo:', tradeNo, 'Status:', decrypted.data.Status);
+
+  const result = await resolveOrderFromPayUni(decrypted.data);
+  if (!result.ok) {
+    console.error('[return]', result.message);
+    return fallbackRedirect(tradeNo);
+  }
+
+  return c.redirect(`${frontendUrl}/payment/result?tradeNo=${tradeNo}&status=${result.status}`, 302);
 });
 
 // ============================================================

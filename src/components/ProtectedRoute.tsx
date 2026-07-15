@@ -13,19 +13,23 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProps) {
-  const { isLoggedIn, user } = useContext(UserContext);
+  const { isLoggedIn, isLoadingUser } = useContext(UserContext);
   const { isFeatureEnabled } = useFeatures();
   const navigate = useNavigate();
-  
-  console.log('ProtectedRoute: Checking access -', {
-    isLoggedIn,
-    hasUser: !!user,
-    currentPath: window.location.pathname,
-    featureRequired
-  });
+
+  // 整頁重新載入（例如 PayUni 導回）時 UserContext 會重新從
+  // isLoadingUser=true / user=null 開始，session 還在解析中，
+  // 這時不能當成「未登入」導去 /login，否則會在 session 解析完成後
+  // 又被導回來，造成一瞬間的畫面跳轉閃爍。
+  if (isLoadingUser) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
-    console.log('ProtectedRoute: User not logged in, redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 
