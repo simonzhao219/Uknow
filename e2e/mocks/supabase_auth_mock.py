@@ -50,7 +50,7 @@ class SupabaseAuthMock:
         body = {"error": "invalid_grant", "error_description": "Invalid login credentials"}
         self._context.route(f"{SUPABASE_AUTH_BASE}/token**", lambda route: _fulfill_json(route, body, status=400))
 
-    def mock_signup_success(self, email: str, user_id: str = DEFAULT_USER_ID) -> dict:
+    def mock_signup_success(self, email: str = DEFAULT_EMAIL, user_id: str = DEFAULT_USER_ID) -> dict:
         session = build_session(email, user_id)
         self._context.route(f"{SUPABASE_AUTH_BASE}/signup**", lambda route: _fulfill_json(route, session))
         return session

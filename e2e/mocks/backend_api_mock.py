@@ -12,7 +12,6 @@ PaymentResult screen without ever resolving api.payuni.com.tw.
 """
 
 import json
-import time
 from typing import Optional
 
 from playwright.sync_api import BrowserContext
@@ -21,13 +20,19 @@ from config import API_BASE, BASE_URL, DEFAULT_EMAIL, DEFAULT_USER_ID, MOCK_PAYU
 
 
 def build_profile(registration_step: int = 3, **overrides) -> dict:
+    # A real step-0 user hasn't filled in their profile yet. Several
+    # components (App.tsx, CompleteProfile.tsx, PaymentCheckout.tsx) derive
+    # "is this profile complete?" from name/phone/birthDate being present —
+    # leaving them populated at step 0 makes those components disagree with
+    # registrationStep and redirect-loop against each other.
+    has_profile = registration_step > 0
     profile = {
         "id": DEFAULT_USER_ID,
         "email": DEFAULT_EMAIL,
-        "name": "測試用戶",
-        "phone": "0912345678",
-        "nationalId": "A123456789",
-        "birthDate": "1990-01-01",
+        "name": "測試用戶" if has_profile else None,
+        "phone": "0912345678" if has_profile else None,
+        "nationalId": "A123456789" if has_profile else None,
+        "birthDate": "1990-01-01" if has_profile else None,
         "registrationStep": registration_step,
         "referredByCode": None,
         "referrerName": None,
@@ -82,6 +87,10 @@ class BackendApiMock:
 
     def set_check_email(self, exists: bool):
         self._route("/auth/check-email", lambda route: _fulfill_json(route, {"exists": exists}))
+
+    def set_subscription_status(self, has_subscription: bool = True, status: str = "active"):
+        body = {"success": True, "data": {"hasSubscription": has_subscription, "status": status}}
+        self._route("/subscriptions/status", lambda route: _fulfill_json(route, body))
 
     def set_register_success(self, registration_step: int = 1, **overrides) -> dict:
         profile = build_profile(registration_step, **overrides)
@@ -161,30 +170,23 @@ class BackendApiMock:
             lambda route: route.fulfill(status=302, headers={"Location": redirect_url}, body=""),
         )
 
-    def mock_prepare_with_delayed_redirect(self, trade_no: str, status: str, delay_seconds: float = 2.0):
-        """Same as `mock_prepare_and_redirect`, but the gateway response is
-        delayed so the checkout page stays mounted long enough to observe
-        its post-click locked/counting-down button before navigation."""
-        prepare_body = {
-            "success": True,
-            "data": {
-                "MerID": "E2ETEST",
-                "Version": "UPP",
-                "EncryptInfo": "e2e-encrypted-payload",
-                "HashInfo": "E2EHASH",
-                "apiUrl": MOCK_PAYUNI_GATEWAY,
-                "tradeNo": trade_no,
-            },
-        }
-        self._route("/payuni/prepare", lambda route: _fulfill_json(route, prepare_body))
+    def mock_prepare_that_never_resolves(self):
+        """Leaves POST /payuni/prepare permanently pending (no fulfill/abort)
+        so the checkout page stays mounted with its post-click `isLoading`
+        disabled state — used to test the button lock without ever reaching
+        a real navigation.
 
-        redirect_url = f"{BASE_URL}/payment/result?tradeNo={trade_no}&status={status}"
-
-        def gateway_handler(route):
-            time.sleep(delay_seconds)
-            route.fulfill(status=302, headers={"Location": redirect_url}, body="")
-
-        self._context.route(f"{MOCK_PAYUNI_GATEWAY}**", gateway_handler)
+        Deliberately targets /payuni/prepare (a plain fetch) rather than the
+        PayUni gateway redirect: hanging the *gateway* leaves the page mid
+        top-level-navigation, and Chromium stops servicing further CDP
+        commands (including our own assertions) until that navigation
+        settles — so nothing downstream can be observed. A pending ordinary
+        fetch has no such effect. A blocking `time.sleep()` here would have
+        the same problem as hanging the navigation: it freezes Playwright's
+        driver thread and starves the very assertion checking the button, so
+        we simply never respond instead of delaying the response."""
+        self._context.route(f"{API_BASE}/payuni/prepare**", lambda route: None)
+        self._context.route(f"{MOCK_PAYUNI_GATEWAY}**", lambda route: None)
 
     def set_prepare_error(self, message: str, code: Optional[str] = None, status: int = 400):
         body = {"success": False, "error": {"message": message, "code": code}}

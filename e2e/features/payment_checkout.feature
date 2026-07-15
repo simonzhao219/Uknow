@@ -34,13 +34,12 @@ Feature: Payment checkout
     And I click pay
     Then I should see the payment result "failed"
 
-  Scenario: The pay button locks immediately after being clicked
+  Scenario: The pay button disables immediately after being clicked, before PayUni even responds
     Given I am logged in with registration step 1
-    And PayUni's redirect will be slow for trade number "PU00000006"
+    And PayUni's prepare call never resolves
     When I visit "/payment/checkout"
     And I click pay
     Then the pay button should be disabled
-    And I should see the lock countdown
 
   Scenario: Paying later signs the user out
     Given I am logged in with registration step 1

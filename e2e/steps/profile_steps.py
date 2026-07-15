@@ -24,8 +24,11 @@ def save_profile_succeeds(api_mock, step):
 
 
 @when(
-    parsers.parse(
-        'I fill the profile form with name "{name}" national ID "{national_id}" birth date "{birth_date}" phone "{phone}"'
+    # parsers.re (not .parse): the Examples table has a blank name cell in
+    # one row, and parse's {name} fields require at least one character.
+    parsers.re(
+        r'I fill the profile form with name "(?P<name>[^"]*)" national ID "(?P<national_id>[^"]*)"'
+        r' birth date "(?P<birth_date>[^"]*)" phone "(?P<phone>[^"]*)"'
     )
 )
 def fill_profile_form(complete_profile_page, name, national_id, birth_date, phone):

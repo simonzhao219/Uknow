@@ -19,14 +19,27 @@ def logged_in_at_step(context, step):
     seed_authenticated_session(context, registration_step=step)
 
 
-@given(parsers.parse('I am logged in with registration step {step:d} and last trade number "{trade_no}"'))
+@given(
+    parsers.re(
+        r'I am logged in with registration step (?P<step>\d+) and last trade number "(?P<trade_no>[^"]*)"'
+    )
+)
 def logged_in_with_trade_no(context, step, trade_no):
-    seed_authenticated_session(context, registration_step=step, lastTradeNo=trade_no or None)
+    # parsers.re (not .parse) because the Examples table has a blank
+    # trade_no cell in some rows, and parse's {name} fields require >=1 char.
+    seed_authenticated_session(context, registration_step=int(step), lastTradeNo=trade_no or None)
 
 
 @given(parsers.parse('I am logged in with registration step {step:d} and a referral code "{referral_code}"'))
-def logged_in_with_referral_code(context, step, referral_code):
-    seed_authenticated_session(context, registration_step=step, referralCode=referral_code)
+def logged_in_with_referral_code(context, api_mock, step, referral_code):
+    # A profile with a referralCode models a paid member (hasPaidMembership
+    # = !!profile.referralCode in the real app) — MemberDashboard additionally
+    # gates showing that code behind `referralProgramJoined`, and separately
+    # checks /subscriptions/status before showing subscription-dependent UI.
+    seed_authenticated_session(
+        context, registration_step=step, referralCode=referral_code, referralProgramJoined=True
+    )
+    api_mock.set_subscription_status(has_subscription=True)
 
 
 @given(parsers.parse('I am logged in with registration step {step:d} referred by code "{code}" from "{name}"'))

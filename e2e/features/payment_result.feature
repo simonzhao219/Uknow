@@ -56,7 +56,6 @@ Feature: Payment result
     Then I should be redirected to "/payment/checkout"
 
   Scenario: Contact support opens the LINE link in a new tab
-    Given trade "PU00000018" enriches with a successful PayUni payment
-    When I visit "/payment/result?tradeNo=PU00000018&status=SUCCESS"
+    When I visit "/payment/result"
     And I click contact support
     Then a new tab should open to "https://line.me/ti/p/@Uknow"

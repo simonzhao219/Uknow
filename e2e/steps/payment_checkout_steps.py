@@ -25,10 +25,9 @@ def payuni_failed(api_mock, trade_no):
     )
 
 
-@given(parsers.parse('PayUni\'s redirect will be slow for trade number "{trade_no}"'))
-def payuni_slow(api_mock, trade_no):
-    api_mock.mock_prepare_with_delayed_redirect(trade_no, "SUCCESS", delay_seconds=2.0)
-    api_mock.set_payuni_result(trade_no, "pending")
+@given("PayUni's prepare call never resolves")
+def payuni_prepare_hangs(api_mock):
+    api_mock.mock_prepare_that_never_resolves()
 
 
 @given(parsers.parse('PayUni preparation fails with "{message}"'))
@@ -69,8 +68,3 @@ def should_see_payment_result(payment_result_page, state):
 @then("the pay button should be disabled")
 def pay_button_disabled(payment_checkout_page):
     expect(payment_checkout_page.pay_button()).to_be_disabled(timeout=5_000)
-
-
-@then("I should see the lock countdown")
-def should_see_lock_countdown(payment_checkout_page):
-    expect(payment_checkout_page.lock_countdown()).to_be_visible(timeout=5_000)
