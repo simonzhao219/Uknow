@@ -79,7 +79,10 @@ export function PaymentResult() {
   useEffect(() => {
     if (statusParam) return;
     if (!tradeNo) return;
-    if (orderResult?.orderStatus !== 'pending') return;
+    // 只要已經有 PayUni 回應（不論成功或失敗）或訂單已有明確結果，
+    // 就不用再重試——真正需要等待的只有「PayUni 還沒回覆過」這種情況。
+    if (orderResult?.payuni) return;
+    if (orderResult && orderResult.orderStatus !== 'pending') return;
     if (pendingRecheckCount >= MAX_PENDING_RECHECKS) return;
 
     const timer = setTimeout(() => {
@@ -94,17 +97,25 @@ export function PaymentResult() {
     return () => clearTimeout(timer);
   }, [statusParam, tradeNo, orderResult, pendingRecheckCount]);
 
+  // 判斷優先順序：
+  // 1. 網址上的 status（/payuni/return 解密後當下就知道，最即時）
+  // 2. payuni_response.Status（只要 PayUni 曾經回覆過這筆交易，不管我們自己
+  //    內部的訂閱/推薦碼/獎勵等周邊業務邏輯有沒有處理完，都以這個為準——
+  //    使用者有沒有付款成功是 PayUni 說了算，不是我們自己的 orderStatus）
+  // 3. orderStatus（真正還沒收到 PayUni 任何回覆時的最後手段）
   const resolvedStatus: ResolvedStatus = statusParam === 'SUCCESS'
     ? 'success'
     : statusParam === 'FAILED'
       ? 'failed'
-      : orderResult?.orderStatus === 'completed'
+      : orderResult?.payuni?.Status === 'SUCCESS'
         ? 'success'
-        : orderResult?.orderStatus === 'failed' || orderResult?.orderStatus === 'cancelled'
+        : orderResult?.payuni
           ? 'failed'
-          : orderResult?.orderStatus === 'pending'
-            ? 'pending'
-            : 'unknown';
+          : orderResult?.orderStatus === 'failed' || orderResult?.orderStatus === 'cancelled'
+            ? 'failed'
+            : orderResult?.orderStatus === 'pending'
+              ? 'pending'
+              : 'unknown';
 
   const handleGoToDashboard = () => {
     window.location.href = '/dashboard';
