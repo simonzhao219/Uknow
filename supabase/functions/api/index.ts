@@ -543,6 +543,19 @@ app.get('/payuni/result/:tradeNo', async (c) => {
 // 並靠 process_successful_payment 內建的「已是 completed 就跳過」
 // 判斷，保證誰先到都不會重複執行業務動作。
 // ============================================================
+// 診斷用：無論後續處理成功或失敗，都盡量把 PayUni 這次的原始回傳資料
+// 留在對應的訂單上，讓卡單時能直接從 payment_orders.payuni_response 查
+// 出當時收到的內容，不用再靠猜。失敗不拋錯，不影響原本的回傳結果。
+async function persistRawResponseBestEffort(merTradeNo: string, data: Record<string, string>) {
+  try {
+    await sb().from('payment_orders')
+      .update({ payuni_response: data })
+      .eq('transaction_id', merTradeNo);
+  } catch (e) {
+    console.error('[persistRawResponseBestEffort]', e);
+  }
+}
+
 async function resolveOrderFromPayUni(
   data: Record<string, string>
 ): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
@@ -570,6 +583,7 @@ async function resolveOrderFromPayUni(
     .single();
 
   if (!order) {
+    await persistRawResponseBestEffort(MerTradeNo, data);
     return { ok: false, message: 'order not found' };
   }
   if (order.status === 'completed') {
@@ -578,6 +592,7 @@ async function resolveOrderFromPayUni(
 
   // 金額驗證
   if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
+    await persistRawResponseBestEffort(MerTradeNo, data);
     return { ok: false, message: 'amount mismatch' };
   }
 
@@ -590,6 +605,7 @@ async function resolveOrderFromPayUni(
   });
 
   if (error) {
+    await persistRawResponseBestEffort(MerTradeNo, data);
     return { ok: false, message: error.message };
   }
 
@@ -649,7 +665,7 @@ app.post('/webhooks/payuni/notify', async (c) => {
 
   const result = await resolveOrderFromPayUni(decrypted.data);
   if (!result.ok) {
-    console.error('[notify]', result.message);
+    console.error('[notify]', result.message, JSON.stringify(decrypted.data));
     return c.json({ Status: 'FAILED', Message: result.message });
   }
 
@@ -694,7 +710,7 @@ app.post('/payuni/return', async (c) => {
 
   const result = await resolveOrderFromPayUni(decrypted.data);
   if (!result.ok) {
-    console.error('[return]', result.message);
+    console.error('[return]', result.message, JSON.stringify(decrypted.data));
     return fallbackRedirect(tradeNo);
   }
 
