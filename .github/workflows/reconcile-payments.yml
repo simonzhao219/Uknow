@@ -1,0 +1,24 @@
+name: Reconcile Pending Payments
+
+# 對 PayUni webhook 沒送達、卡在 pending 太久的訂單做對帳。
+#
+# 目前只開 workflow_dispatch（手動觸發）：POST /internal/reconcile-pending-payments
+# 內部的 queryPayUniTradeStatus() 還是個明確拋錯的佔位函數（找不到 PayUni
+# 的查詢交易狀態 API 文件，無法在不知道合約的情況下實作），所以目前排程
+# 觸發只會讓每筆卡住的訂單都製造一筆註定失敗的 system_alerts，沒有實際
+# 幫助。等 PayUni 查詢 API 合約確認、queryPayUniTradeStatus 真正實作後，
+# 再取消下面的 schedule 註解。
+on:
+  # schedule:
+  #   - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reconciliation endpoint
+        run: |
+          curl -fsS -X POST \
+            "https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments" \
+            -H "x-internal-secret: ${{ secrets.RECONCILE_SECRET }}"

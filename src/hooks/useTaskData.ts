@@ -3,6 +3,11 @@ import { useDataCache } from '../contexts/DataCacheContext';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
 
+export interface TaskReward {
+  type: 'free_renewal_year';
+  label: string;
+}
+
 export interface Task {
   id: string;
   type: string;
@@ -11,8 +16,10 @@ export interface Task {
   target: number;
   current: number;
   completed: boolean;
-  reward: number;
+  reward: TaskReward;
   progress: number;
+  hasUnclaimedReward?: boolean;
+  unclaimedRewardCount?: number;
   details: any;
 }
 
@@ -48,6 +55,7 @@ export interface CurrentMonthReferrals {
 export interface PendingMissionReward {
   id: string;
   type: 'consecutive_referral' | 'monthly_king';
+  rewardType?: 'free_renewal_year';
   amount: number;
   achievedAt: string;
   status: 'pending' | 'claimed' | 'expired';

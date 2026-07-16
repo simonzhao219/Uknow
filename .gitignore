@@ -25,6 +25,7 @@ npm-debug.log*
 # TypeScript
 *.tsbuildinfo
 supabase/.temp/
+supabase/.branches/
 
 # E2E (pytest-bdd + Playwright)
 e2e/.venv/

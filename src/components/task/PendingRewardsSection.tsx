@@ -52,7 +52,9 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward }: Props) 
                     <div className="flex items-center gap-1">
                       <Gift className="h-4 w-4 text-yellow-600" />
                       <span className="text-muted-foreground">獎勵:</span>
-                      <span className="font-bold text-yellow-600 text-base">{reward.amount} P</span>
+                      <span className="font-bold text-yellow-600 text-base">
+                        {reward.rewardType === 'free_renewal_year' ? '免費續約 1 年' : `${reward.amount} P`}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="h-4 w-4 text-muted-foreground" />

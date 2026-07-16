@@ -66,6 +66,17 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
   // 不再信任 profiles.registration_step 這個手動維護的欄位。
   const registrationStep = step ?? 1;
 
+  // 機會性補跑：已付款完成的使用者每次讀自己 profile 時，順便確認
+  // 推薦碼/獎勵/任務進度有沒有缺（見 repair_orphaned_payments）。
+  // best-effort（內部已吞掉所有錯誤，不影響這次回應的成功與否）；
+  // 特意 await 而不是 fire-and-forget——Edge Function 執行環境可能在
+  // response 回傳後就終止這個 isolate，沒 await 完成的背景工作不保證
+  // 會真的跑完。對已經修復好的使用者，repair 內部的偵測查詢應該找不到
+  // 任何候選、開銷很小。
+  if (registrationStep === 3) {
+    await repairOrphanedPaymentsBestEffort(userId);
+  }
+
   return {
     id:              profile.id,
     name:            profile.name,
@@ -650,6 +661,33 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
   }
 }
 
+// ============================================================
+// 工具：把邊緣函數這端發生的失敗寫進 system_alerts，讓卡單/失敗有
+// 地方可查。跟 SQL 那邊的 log_system_alert() 是同一張表，只是這裡是
+// TypeScript 端自己失敗時用的——絕不能讓告警本身害呼叫端也失敗。
+// ============================================================
+async function logSystemAlert(source: string, context: Record<string, unknown>, message = 'edge function alert') {
+  try {
+    await sb().from('system_alerts').insert({ source, severity: 'warning', message, context });
+  } catch (e) {
+    console.error('[logSystemAlert] failed to persist alert', e);
+  }
+}
+
+// ============================================================
+// 工具：機會性補跑周邊業務邏輯（推薦碼/推薦邊/獎勵/任務進度）。
+// best-effort——失敗只記 log，不影響呼叫端的回應。跟排程的
+// reconcile-pending-payments 互補，不重複：這裡覆蓋「使用者自己的
+// 請求剛好經過某個時機點」，排程覆蓋「完全沒人再碰這筆資料」的情況。
+// ============================================================
+async function repairOrphanedPaymentsBestEffort(userId: string) {
+  try {
+    await sb().rpc('repair_orphaned_payments', { p_user_id: userId });
+  } catch (e) {
+    console.error('[repairOrphanedPaymentsBestEffort]', e);
+  }
+}
+
 async function resolveOrderFromPayUni(
   data: Record<string, string>
 ): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
@@ -662,10 +700,14 @@ async function resolveOrderFromPayUni(
   // 付款失敗：記錄但視為「處理成功」（呼叫端不需重試）。
   // payuni_response 存下完整解密資料，讓前端能顯示 PayUni 實際回傳的
   // ResCode/ResCodeMsg/Message，不用我們自己編一套錯誤訊息。
+  // .eq('status', 'pending')：避免這筆訂單其實已經被（幾乎同時到達的）
+  // 另一個真正成功的通知處理完成後，被對帳/重試呼叫的過期失敗結果
+  // 誤蓋回 failed。
   if (Status !== 'SUCCESS') {
     await sb().from('payment_orders')
       .update({ status: 'failed', payuni_response: data })
-      .eq('transaction_id', MerTradeNo);
+      .eq('transaction_id', MerTradeNo)
+      .eq('status', 'pending');
     return { ok: true, status: 'FAILED' };
   }
 
@@ -700,11 +742,108 @@ async function resolveOrderFromPayUni(
 
   if (error) {
     await persistRawResponseBestEffort(MerTradeNo, data);
+    await logSystemAlert('resolveOrderFromPayUni', { merTradeNo: MerTradeNo, error: error.message });
     return { ok: false, message: error.message };
   }
 
+  // 機會性補跑：如果這次呼叫的周邊邏輯（推薦碼/獎勵/任務進度）因為
+  // 任何原因沒完全跑完，這裡立刻再試一次，不用等使用者剛好回來看
+  // profile 或排程掃到。
+  await repairOrphanedPaymentsBestEffort(order.user_id);
+
   return { ok: true, status: 'SUCCESS' };
 }
+
+// ============================================================
+// 對帳：PayUni webhook 沒送達時，訂單會永遠卡在 pending。定期掃描
+// 超過門檻時間還是 pending 的訂單，主動問 PayUni 真實狀態，透過既有
+// 的 resolveOrderFromPayUni 走同一套處理路徑（不重複實作業務邏輯）。
+//
+// 核心迴圈抽成獨立、可注入依賴的函數，方便測試（也方便之後真的接上
+// PayUni 查詢 API 時只換掉 queryFn 這個參數，不用動迴圈本身）。
+// ============================================================
+type QueryResult =
+  | { stillProcessing: true }
+  | { stillProcessing: false; data: Record<string, string> };
+
+export async function reconcilePendingOrders(
+  client: any,
+  queryFn: (merTradeNo: string) => Promise<QueryResult>,
+  resolveFn: typeof resolveOrderFromPayUni,
+  opts: { thresholdMinutes: number; limit: number },
+): Promise<{ checked: number; resolved: number; stillPending: number; queryErrors: number }> {
+  const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
+
+  const { data: stuck, error } = await client
+    .from('payment_orders')
+    .select('id, transaction_id, user_id, created_at')
+    .eq('status', 'pending')
+    .lt('created_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(opts.limit);
+
+  if (error) throw new Error(`reconcilePendingOrders: 查詢 pending 訂單失敗: ${error.message}`);
+
+  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, queryErrors: 0 };
+
+  for (const order of stuck ?? []) {
+    try {
+      const result = await queryFn(order.transaction_id!);
+      if (result.stillProcessing) {
+        summary.stillPending++;
+        continue;
+      }
+      const outcome = await resolveFn(result.data);
+      if (outcome.ok) {
+        summary.resolved++;
+      } else {
+        await logSystemAlert('reconcile-pending-payments', { tradeNo: order.transaction_id, message: outcome.message });
+      }
+    } catch (e) {
+      summary.queryErrors++;
+      await logSystemAlert('reconcile-pending-payments', { tradeNo: order.transaction_id, error: String(e) });
+    }
+  }
+
+  return summary;
+}
+
+// ⚠️ OPEN QUESTION — 尚未實作。整個 repo 找不到 PayUni「查詢交易狀態」
+// 的 server-to-server API 參考（只有 UPP 結帳頁的 API，見 payuniConfig
+// 上方文件連結）。需要 PayUni 該支查詢 API 的文件/合約才能真正實作；
+// 在那之前這裡先明確拋錯，reconcile 路由會把每筆卡單訂單都記一筆
+// system_alerts，不會假裝對帳成功。
+async function queryPayUniTradeStatus(_merTradeNo: string): Promise<QueryResult> {
+  throw new Error('queryPayUniTradeStatus 尚未實作 —— PayUni 查詢交易狀態的 API 合約未知');
+}
+
+// ============================================================
+// POST /internal/reconcile-pending-payments
+// 給排程呼叫（見 .github/workflows/reconcile-payments.yml），不是給
+// 使用者用——用共用密鑰驗證，不是 JWT。
+// ============================================================
+const RECONCILE_THRESHOLD_MINUTES = Number(Deno.env.get('RECONCILE_THRESHOLD_MINUTES') ?? '20');
+const RECONCILE_BATCH_LIMIT = 50;
+
+app.post('/internal/reconcile-pending-payments', async (c) => {
+  const secret = Deno.env.get('RECONCILE_SECRET');
+  if (!secret || c.req.header('x-internal-secret') !== secret) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  try {
+    const summary = await reconcilePendingOrders(
+      sb(),
+      queryPayUniTradeStatus,
+      resolveOrderFromPayUni,
+      { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
+    );
+    return c.json({ success: true, data: summary });
+  } catch (e) {
+    console.error('[reconcile-pending-payments]', e);
+    return c.json({ success: false, error: String(e) }, 500);
+  }
+});
 
 // ============================================================
 // 解密並驗證 PayUni form-data（notify webhook 與 return 導回共用）
@@ -1043,6 +1182,9 @@ app.get('/referrals/my-tree', async (c) => {
 // ============================================================
 // GET /tasks
 // TaskDashboard：任務列表（新版只有「推薦王」月任務）
+// 推薦王的獎勵不是點數，是「免費續約 1 年」credit（見
+// referral_king_rewards），需要使用者另外呼叫 /tasks/claim-reward/:id
+// 領取才會真的延展會員到期日。
 // ============================================================
 app.get('/tasks', async (c) => {
   const user = await requireAuth(c);
@@ -1050,18 +1192,27 @@ app.get('/tasks', async (c) => {
 
   const currentMonth = twCurrentMonth();
   const KING_TARGET  = 10;
-  const KING_REWARD  = 1000;
 
-  const { data: progress } = await sb()
-    .from('task_progress')
-    .select('monthly_referrals, total_referrals, updated_at')
-    .eq('user_id', user.id)
-    .maybeSingle();
+  const client = sb();
+  const [{ data: progress }, { data: rewardsRows }] = await Promise.all([
+    client.from('task_progress')
+      .select('monthly_referrals, total_referrals, updated_at')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    client.from('referral_king_rewards')
+      .select('id, month_key, status, granted_at, claimed_at')
+      .eq('user_id', user.id)
+      .order('month_key', { ascending: false }),
+  ]);
 
   const monthly        = (progress?.monthly_referrals as Record<string, any>) ?? {};
   const currentCount   = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
   const completedMonths = Object.entries(monthly)
     .filter(([m, v]) => m !== currentMonth && (Array.isArray(v) ? v.length : 0) >= KING_TARGET).length;
+
+  const allRewards = rewardsRows ?? [];
+  const unclaimed   = allRewards.filter((r: any) => r.status === 'unclaimed');
+  const thisMonthCredit = allRewards.find((r: any) => r.month_key === currentMonth) ?? null;
 
   const tasks = [{
     id:          'task_monthly_king',
@@ -1071,12 +1222,20 @@ app.get('/tasks', async (c) => {
     target:      KING_TARGET,
     current:     currentCount,
     completed:   currentCount >= KING_TARGET,
-    reward:      KING_REWARD,
+    reward:      { type: 'free_renewal_year', label: '免費續約 1 年' },
     progress:    Math.min((currentCount / KING_TARGET) * 100, 100),
+    hasUnclaimedReward:   unclaimed.length > 0,
+    unclaimedRewardCount: unclaimed.length,
     details: {
       currentMonth,
       historyCount:     Object.keys(monthly).length,
       completedMonths,
+      currentMonthCredit: thisMonthCredit && {
+        id:        thisMonthCredit.id,
+        status:    thisMonthCredit.status,
+        grantedAt: thisMonthCredit.granted_at,
+        claimedAt: thisMonthCredit.claimed_at,
+      },
     }
   }];
 
@@ -1098,12 +1257,34 @@ app.get('/tasks', async (c) => {
 
 // ============================================================
 // GET /tasks/pending-rewards
-// 新版：獎勵在付款時立即發放，無需手動領取；回傳空陣列
+// 待領取的推薦王「免費續約 1 年」credit 列表。沿用既有前端
+// （useTaskData / PendingRewardsSection / ClaimRewardDialog）已經在
+// 等的 PendingMissionReward 形狀，amount 固定 0（不是點數），用新增的
+// rewardType 欄位讓前端知道這是續約而不是點數。
 // ============================================================
 app.get('/tasks/pending-rewards', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
-  return c.json({ success: true, data: [] });
+
+  const { data: rows } = await sb()
+    .from('referral_king_rewards')
+    .select('id, month_key, granted_at')
+    .eq('user_id', user.id)
+    .eq('status', 'unclaimed')
+    .order('month_key', { ascending: false });
+
+  const data = (rows ?? []).map((r: any) => ({
+    id:          r.id,
+    type:        'monthly_king',
+    rewardType:  'free_renewal_year',
+    amount:      0,
+    achievedAt:  r.granted_at,
+    status:      'pending',
+    description: `${r.month_key} 推薦王任務達成：可領取免費續約 1 年`,
+    details:     { monthKey: r.month_key },
+  }));
+
+  return c.json({ success: true, data });
 });
 
 // ============================================================
@@ -1192,15 +1373,54 @@ app.get('/tasks/current-month-top', async (c) => {
 
 // ============================================================
 // POST /tasks/claim-reward/:id
-// 新版：獎勵自動發放，不支援手動領取
+// 領取推薦王「免費續約 1 年」credit。沿用前端既有的身分證驗證步驟
+// （ClaimRewardDialog 第三步），驗證通過才呼叫
+// claim_referral_king_reward 真的延展訂閱到期日。
 // ============================================================
 app.post('/tasks/claim-reward/:id', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
+
+  let body: any;
+  try { body = await c.req.json(); } catch { body = {}; }
+
+  const rewardId  = c.req.param('id');
+  const idNumber  = (body?.idNumber || '').trim();
+
+  const client = sb();
+  const { data: profile } = await client
+    .from('profiles')
+    .select('national_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile?.national_id || idNumber !== profile.national_id) {
+    return c.json({ success: false, error: '身分證字號驗證失敗' }, 400);
+  }
+
+  const { data, error } = await client.rpc('claim_referral_king_reward', {
+    p_user_id:   user.id,
+    p_reward_id: rewardId,
+  });
+
+  if (error) {
+    console.error('[claim-reward] rpc error:', error);
+    return c.json({ success: false, error: '領取失敗，請稍後再試或聯繫客服' }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found' ? 404
+      : data?.error_code === 'forbidden' ? 403 : 400;
+    return c.json({ success: false, error: data?.message ?? '領取失敗' }, status);
+  }
+
   return c.json({
-    success: false,
-    error:   '新版系統獎勵已於達成條件時自動發放，無需手動領取',
-  }, 400);
+    success: true,
+    data: {
+      subscriptionId: data.subscriptionId,
+      activeUntil:    data.activeUntil,
+      gracePeriodEnd: data.gracePeriodEnd,
+    },
+  });
 });
 
 // ============================================================
@@ -1299,4 +1519,9 @@ app.get('/referrals/debug/:userId', async (c) => {
 // ============================================================
 app.get('/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }));
 
-Deno.serve(app.fetch);
+// import.meta.main 只有直接執行這個檔案時才是 true（Supabase Edge
+// Runtime 的啟動方式）；被 *.test.ts 用 `import { ... } from './index.ts'`
+// 引入時是 false，避免測試一 import 就意外啟動一個真的監聽 port 的伺服器。
+if (import.meta.main) {
+  Deno.serve(app.fetch);
+}

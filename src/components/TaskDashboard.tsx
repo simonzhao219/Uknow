@@ -155,7 +155,7 @@ export function TaskDashboard() {
                     <Gift className="h-5 w-5 text-yellow-600" />
                     <span className="text-sm font-medium">任務獎勵</span>
                   </div>
-                  <span className="text-lg font-bold text-yellow-600">{task.reward} P</span>
+                  <span className="text-lg font-bold text-yellow-600">{task.reward.label}</span>
                 </div>
 
                 {task.type === 'consecutive_referral' && task.details && (
