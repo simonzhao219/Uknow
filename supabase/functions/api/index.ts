@@ -9,7 +9,8 @@ import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
 
 // Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
 // 因此所有路由需掛在 /api basePath 下，否則一律 404。
-const app = new Hono().basePath('/api');
+// export 供測試以 app.request() 直接打路由（import.meta.main 已防止測試時啟動 server）。
+export const app = new Hono().basePath('/api');
 
 // ============================================================
 // CORS
@@ -50,13 +51,17 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 // ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
-async function buildProfileResponse(client: any, userId: string, email?: string) {
-  const [{ data: profile }, { data: acct }, { data: code }, { data: pendingOrder }, { data: step }] = await Promise.all([
+export async function buildProfileResponse(client: any, userId: string, email?: string, alreadyHealed = false) {
+  const [{ data: profile }, { data: acct }, { data: code }, { data: pendingOrders }, { data: step }] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).single(),
     client.from('user_account_status').select('status, end_date, grace_period_end').eq('user_id', userId).single(),
     client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active').maybeSingle(),
-    client.from('payment_orders').select('transaction_id').eq('user_id', userId).eq('status', 'pending')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    // 抓多筆 pending：卡單使用者可能又重試了一次付款，最新那筆 pending
+    // 沒有 payuni_response，但更早那筆已存了 SUCCESS——判斷「已付款待
+    // 開通」必須看得到全部 pending，不能只看最新一筆。
+    client.from('payment_orders').select('transaction_id, payuniStatus:payuni_response->>Status')
+      .eq('user_id', userId).eq('status', 'pending')
+      .order('created_at', { ascending: false }).limit(10),
     client.rpc('effective_registration_step', { p_user_id: userId }),
   ]);
 
@@ -65,6 +70,23 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
   // registrationStep 由 payment_orders 即時算出（見 migration 0011），
   // 不再信任 profiles.registration_step 這個手動維護的欄位。
   const registrationStep = step ?? 1;
+
+  // 已付款待開通：任一 pending 訂單上已存有 PayUni 的 SUCCESS 回應
+  // （persistRawResponseBestEffort 在內部處理失敗時寫入的復原資料來源，
+  // 見 migration 0007）。前端守衛靠這個旗標把「付了錢等開通」跟
+  // 「還沒付錢」區分開，不會把已付款的人送回結帳頁造成重複付款。
+  const paidOrder = (pendingOrders ?? []).find((o: any) => o.payuniStatus === 'SUCCESS');
+  let paidAwaitingActivation = !!paidOrder;
+
+  // 自癒：PayUni 已說 SUCCESS 但訂單還卡在 pending → 立刻補完，並有界
+  // 重入一次重算整份 profile——使用者這一次載入就直接拿到 step 3 +
+  // active，不需要再重新整理。特意 await（isolate 終止問題，同下方
+  // repair 的註解）；補不完（例如金額不符待人工）就維持旗標讓前端顯示
+  // 「開通處理中」。
+  if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed) {
+    const healed = await healPaidPendingOrdersBestEffort(userId);
+    if (healed) return buildProfileResponse(client, userId, email, true);
+  }
 
   // 機會性補跑：已付款完成的使用者每次讀自己 profile 時，順便確認
   // 推薦碼/獎勵/任務進度有沒有缺（見 repair_orphaned_payments）。
@@ -75,6 +97,7 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
   // 任何候選、開銷很小。
   if (registrationStep === 3) {
     await repairOrphanedPaymentsBestEffort(userId);
+    paidAwaitingActivation = false;
   }
 
   return {
@@ -87,7 +110,12 @@ async function buildProfileResponse(client: any, userId: string, email?: string)
     bankAccount:     profile.bank_account,
     isAdmin:         profile.is_admin,
     registrationStep,
-    lastTradeNo:     registrationStep === 2 ? (pendingOrder?.transaction_id ?? null) : null,
+    // 待開通時優先指向「已付款成功」的那筆訂單，讓前端守衛導去的
+    // 結果頁顯示正確的訂單；否則維持最新一筆 pending 的舊語意。
+    lastTradeNo:     registrationStep === 2
+      ? (paidOrder?.transaction_id ?? pendingOrders?.[0]?.transaction_id ?? null)
+      : null,
+    paidAwaitingActivation,
     referralCode:    code?.code ?? null,
     referredByCode:  profile.referred_by_code,
     referralProgramJoined: profile.referral_program_joined,
@@ -549,10 +577,74 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
   }
 
+  // 過期會員續費雙模式（見 migration 0008）：
+  //   extend = 續約，效期接續前一筆訂閱的最後一天；
+  //   fresh  = 新約，效期從付款日起算、可換新推薦人。
+  // 首次付款沒有 body（renewalMode = null，語意同 fresh）。
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 沒有 body = 首次付款 */ }
+  const renewalMode: 'extend' | 'fresh' | null =
+    body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
+
+  if (renewalMode === 'extend') {
+    // extend 只有「曾是會員」且「接續後效期仍在未來」才有意義——過期
+    // 超過一年的人選 extend 會付了錢效期仍在過去，直接拒絕（前端也不
+    // 顯示該選項），process_successful_payment 才能對 renewal_mode
+    // 字面執行而不需要補救邏輯。
+    const { data: lastSub } = await client
+      .from('subscriptions')
+      .select('end_date')
+      .eq('user_id', user.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!lastSub?.end_date) {
+      return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
+    }
+    const extendedEnd = new Date(lastSub.end_date);
+    extendedEnd.setFullYear(extendedEnd.getFullYear() + 1);
+    if (extendedEnd.getTime() <= Date.now()) {
+      return c.json({ success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' }, 400);
+    }
+  }
+
+  // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
+  // apply_referral_side_effects 會把推薦邊 rewire 到新推薦人（0008），
+  // 之後的推薦獎勵歸新推薦人；舊推薦人的歷史獎勵不受影響。
+  const referredByCode: string =
+    typeof body?.referredByCode === 'string' ? body.referredByCode.toLowerCase().trim() : '';
+  if (renewalMode === 'fresh' && referredByCode) {
+    const { data: codeRows, error: codeErr } = await client
+      .rpc('validate_referral_code', { p_code: referredByCode });
+    if (codeErr || !codeRows || codeRows.length === 0) {
+      return c.json({ success: false, error: '推薦碼不存在或已失效' }, 400);
+    }
+    const referrerUserId = codeRows[0].referrer_user_id;
+    if (referrerUserId === user.id) {
+      return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
+    }
+    const { error: refErr } = await client
+      .from('profiles')
+      .update({ referred_by_code: referredByCode, referred_by_user_id: referrerUserId })
+      .eq('id', user.id);
+    if (refErr) {
+      console.error('[prepare] 更新推薦人失敗:', refErr);
+      return c.json({ success: false, error: '更新推薦人失敗' }, 500);
+    }
+  }
+
   const config  = payuniConfig();
   const tradeNo = generateTradeNo();
 
-  const projectId   = Deno.env.get('SUPABASE_URL')!.match(/https:\/\/(.+)\.supabase\.co/)![1];
+  // 雲端環境從 *.supabase.co 網址取 project id；本地 supabase start
+  // （http://127.0.0.1:54321）比對不到時直接用該網址當 functions base，
+  // 讓本地開發/測試不會在這裡炸掉。
+  const supabaseUrl   = Deno.env.get('SUPABASE_URL')!.replace(/\/$/, '');
+  const projectId     = supabaseUrl.match(/https:\/\/(.+)\.supabase\.co/)?.[1];
+  const functionsBase = projectId
+    ? `https://${projectId}.supabase.co/functions/v1`
+    : `${supabaseUrl}/functions/v1`;
   const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
 
   // 付款期限：3 天後（YYYY-MM-DD，台灣時區）
@@ -568,12 +660,12 @@ app.post('/payuni/prepare', async (c) => {
     ProdDesc:   'Uknow 年費會員',
     UsrMail:    user.email || '',
     ExpireDate: expire,
-    NotifyURL:  `https://${projectId}.supabase.co/functions/v1/api/webhooks/payuni/notify`,
+    NotifyURL:  `${functionsBase}/api/webhooks/payuni/notify`,
     // ReturnURL 指向後端（不是前端頁面）——PayUni 導回時會用 POST 帶
     // EncryptInfo/HashInfo（跟 NotifyURL 收到的是同一份交易結果），
     // 後端解密後直接知道當下結果，302 導向前端並帶上 status，
     // 前端不需要再輪詢猜測付款是否成功。
-    ReturnURL:  `https://${projectId}.supabase.co/functions/v1/api/payuni/return`,
+    ReturnURL:  `${functionsBase}/api/payuni/return`,
     // 啟用的付款方式（值為 1 代表開啟，PayUni 整合式支付頁會顯示對應按鈕）
     Credit:     1,   // 信用卡
     ApplePay:   1,   // Apple Pay
@@ -585,13 +677,16 @@ app.post('/payuni/prepare', async (c) => {
   const encryptInfo = await encryptPayUni(encryptData, config.hashKey, config.hashIV);
   const hashInfo    = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
 
-  // 寫入 payment_orders
+  // 寫入 payment_orders（renewal_mode 記錄使用者選的續費模式，
+  // process_successful_payment 依它決定效期錨點——效期在付款當下才
+  // 決定，不信任前端傳日期）
   const { error: insertErr } = await client.from('payment_orders').insert({
     user_id:        user.id,
     amount:         1200,
     status:         'pending',
     payment_method: 'payuni',
     transaction_id: tradeNo,
+    renewal_mode:   renewalMode,
   });
   if (insertErr) {
     console.error('[prepare] insert payment_orders 失敗:', insertErr);
@@ -620,14 +715,26 @@ app.get('/payuni/result/:tradeNo', async (c) => {
   if (!user) return c.json({ success: false, error: '未授權' }, 401);
 
   const tradeNo = c.req.param('tradeNo');
-  const { data: order, error } = await sb()
+  const fetchOrder = () => sb()
     .from('payment_orders')
     .select('status, transaction_id, completed_at, payuni_response')
     .eq('transaction_id', tradeNo)
     .eq('user_id', user.id)
     .single();
 
+  let { data: order, error } = await fetchOrder();
   if (error || !order) return c.json({ success: false, error: '訂單不存在' }, 404);
+
+  // 自癒：訂單還 pending 但已存有 PayUni 的 SUCCESS 回應（內部處理曾
+  // 失敗的卡單，見 migration 0007）→ 當場補完再回傳，使用者在結果頁的
+  // 這一次輪詢就能拿到 completed，不用等下一輪。
+  if (order.status === 'pending' && order.payuni_response?.Status === 'SUCCESS') {
+    const healed = await healPaidPendingOrdersBestEffort(user.id);
+    if (healed) {
+      const refetched = await fetchOrder();
+      if (refetched.data) order = refetched.data;
+    }
+  }
 
   // orderStatus 只用來決定前端是否要繼續 polling；成功/失敗的實際原因與
   // 明細一律以 payuni（PayUni 原始回傳資料）為準，不再自創詞彙轉換。
@@ -637,6 +744,9 @@ app.get('/payuni/result/:tradeNo', async (c) => {
       orderStatus: order.status,
       completedAt: order.completed_at,
       payuni:      order.payuni_response ?? null,
+      // 已付款但尚未收斂成訂閱（例如金額不符待人工）——前端顯示
+      // 「開通處理中」而不是把使用者當成沒付錢。
+      paidAwaitingActivation: order.status === 'pending' && order.payuni_response?.Status === 'SUCCESS',
     },
   });
 });
@@ -651,11 +761,15 @@ app.get('/payuni/result/:tradeNo', async (c) => {
 // 診斷用：無論後續處理成功或失敗，都盡量把 PayUni 這次的原始回傳資料
 // 留在對應的訂單上，讓卡單時能直接從 payment_orders.payuni_response 查
 // 出當時收到的內容，不用再靠猜。失敗不拋錯，不影響原本的回傳結果。
+// .neq('status','completed')：已完成訂單的 payuni_response 是
+// process_successful_payment 原子寫入的權威資料，不能被（幾乎同時到達
+// 的另一路通知走到失敗分支時的）過期回應蓋掉。
 async function persistRawResponseBestEffort(merTradeNo: string, data: Record<string, string>) {
   try {
     await sb().from('payment_orders')
       .update({ payuni_response: data })
-      .eq('transaction_id', merTradeNo);
+      .eq('transaction_id', merTradeNo)
+      .neq('status', 'completed');
   } catch (e) {
     console.error('[persistRawResponseBestEffort]', e);
   }
@@ -688,6 +802,27 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
   }
 }
 
+// ============================================================
+// 工具：自癒卡單訂單（pending 但 payuni_response 已存 SUCCESS，見
+// migration 0007）。best-effort——失敗只記 log；回傳是否真的補完了
+// 任何訂單，讓呼叫端知道要不要重讀最新狀態。
+// ============================================================
+async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean> {
+  try {
+    const { data, error } = await sb().rpc('complete_paid_pending_orders', {
+      p_user_id: userId ?? null,
+    });
+    if (error) {
+      console.error('[healPaidPendingOrdersBestEffort]', error);
+      return false;
+    }
+    return (data?.completed_count ?? 0) > 0;
+  } catch (e) {
+    console.error('[healPaidPendingOrdersBestEffort]', e);
+    return false;
+  }
+}
+
 async function resolveOrderFromPayUni(
   data: Record<string, string>
 ): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
@@ -703,11 +838,15 @@ async function resolveOrderFromPayUni(
   // .eq('status', 'pending')：避免這筆訂單其實已經被（幾乎同時到達的）
   // 另一個真正成功的通知處理完成後，被對帳/重試呼叫的過期失敗結果
   // 誤蓋回 failed。
+  // .or(...)：訂單上已存有 SUCCESS 回應時（= 卡單的復原資料來源，見
+  // migration 0007），遲到的失敗結果不得覆蓋——否則會悄悄解除一位
+  // 真的付了錢的使用者的自癒資格。
   if (Status !== 'SUCCESS') {
     await sb().from('payment_orders')
       .update({ status: 'failed', payuni_response: data })
       .eq('transaction_id', MerTradeNo)
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .or('payuni_response.is.null,payuni_response->>Status.neq.SUCCESS');
     return { ok: true, status: 'FAILED' };
   }
 
@@ -774,10 +913,15 @@ export async function reconcilePendingOrders(
 ): Promise<{ checked: number; resolved: number; stillPending: number; queryErrors: number }> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
 
+  // .or(...)：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
+  // 自癒（reconcile 路由的 heal pre-pass），這裡只處理「完全沒有存檔
+  // 判決」的訂單——金額不符的卡單已有自己的去重告警，不該每輪對帳都
+  // 再被 queryPayUniTradeStatus 的佔位錯誤重複告警一次。
   const { data: stuck, error } = await client
     .from('payment_orders')
     .select('id, transaction_id, user_id, created_at')
     .eq('status', 'pending')
+    .or('payuni_response.is.null,payuni_response->>Status.neq.SUCCESS')
     .lt('created_at', cutoff)
     .order('created_at', { ascending: true })
     .limit(opts.limit);
@@ -832,13 +976,20 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
   }
 
   try {
+    // 先跑自癒 pass：把「已存有 PayUni SUCCESS 回應」的卡單直接收斂成
+    // 訂閱（migration 0007），不需要 PayUni 查詢 API。補完的訂單會離開
+    // pending，下面的掃描自然不會再碰到。
+    const { data: healSummary, error: healError } = await sb()
+      .rpc('complete_paid_pending_orders', { p_user_id: null });
+    if (healError) console.error('[reconcile-pending-payments] heal pass 失敗:', healError);
+
     const summary = await reconcilePendingOrders(
       sb(),
       queryPayUniTradeStatus,
       resolveOrderFromPayUni,
       { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
     );
-    return c.json({ success: true, data: summary });
+    return c.json({ success: true, data: { ...summary, heal: healSummary ?? null } });
   } catch (e) {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);
@@ -941,13 +1092,20 @@ app.post('/payuni/return', async (c) => {
   const tradeNo = decrypted.data.MerTradeNo;
   console.log('[return] MerTradeNo:', tradeNo, 'Status:', decrypted.data.Status);
 
+  // 解密成功的當下就已確知 PayUni 的付款結果——status 一律取自 PayUni
+  // 的原話，跟我們內部處理成不成功「脫鉤」。過去內部處理失敗會走
+  // fallbackRedirect 把已知的 SUCCESS 丟掉，前端只好自己查 DB 又查到
+  // 卡在 pending 的訂單，形成付了錢卻進不了會員中心的死循環。內部失敗
+  // 只記 log + alert（resolveOrderFromPayUni 內已寫入），卡單的收斂交給
+  // 自癒機制（persistRawResponseBestEffort 存下的回應就是復原資料來源）。
+  const payuniStatus = decrypted.data.Status === 'SUCCESS' ? 'SUCCESS' : 'FAILED';
+
   const result = await resolveOrderFromPayUni(decrypted.data);
   if (!result.ok) {
     console.error('[return]', result.message, JSON.stringify(decrypted.data));
-    return fallbackRedirect(tradeNo);
   }
 
-  return c.redirect(`${frontendUrl}/payment/result?tradeNo=${tradeNo}&status=${result.status}`, 302);
+  return c.redirect(`${frontendUrl}/payment/result?tradeNo=${tradeNo}&status=${payuniStatus}`, 302);
 });
 
 // ============================================================
@@ -966,11 +1124,22 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const { data: acct } = await sb()
-    .from('user_account_status')
-    .select('status, end_date, grace_period_end')
-    .eq('user_id', user.id)
-    .single();
+  const [{ data: acct }, { data: sub }] = await Promise.all([
+    sb().from('user_account_status')
+      .select('status, end_date, grace_period_end')
+      .eq('user_id', user.id)
+      .single(),
+    // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
+    // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
+    // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
+    // 「看不到」有延長）。
+    sb().from('subscriptions')
+      .select('start_date, end_date')
+      .eq('user_id', user.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   return c.json({
     success: true,
@@ -979,6 +1148,8 @@ app.get('/subscriptions/status', async (c) => {
       status:          acct?.status ?? 'expired',
       activeUntil:     acct?.end_date ?? null,
       gracePeriodEnd:  acct?.grace_period_end ?? null,
+      currentPeriodStart: sub?.start_date ?? null,
+      currentPeriodEnd:   sub?.end_date ?? null,
     }
   });
 });

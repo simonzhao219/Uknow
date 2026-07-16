@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -24,7 +24,7 @@ import { UserDiagnosisPage } from './components/admin/UserDiagnosisPage'; // ✅
 import { MarkdownContent } from './components/MarkdownContent';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
-import { RequirePaymentRoute } from './components/RequirePaymentRoute'; // ✅ 新增
+import { RequireMembershipRoute } from './components/RequireMembershipRoute'; // ✅ 會員資格守衛（以會籍有效為準）
 import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
@@ -46,12 +46,15 @@ export const UserContext = React.createContext<{
   isLoggedIn: boolean;
   isAdmin: boolean;
   isLoadingUser: boolean; // ✅ P1: 全局 loading state
+  /** 靜默重抓 /profile 並更新 context；回傳最新 profile（失敗回 null）。 */
+  refreshUser: () => Promise<any | null>;
 }>({
   user: null,
   setUser: () => {},
   isLoggedIn: false,
   isAdmin: false,
   isLoadingUser: true, // ✅ 預設為 true
+  refreshUser: async () => null,
 });
 
 function AppContent() {
@@ -173,8 +176,34 @@ function AppContent() {
     });
   }, [navigate]);
 
+  // 靜默重抓 /profile：付款開通輪詢、任務領獎後讓路由守衛讀到最新的
+  // accountStatus，不用整頁 reload（window.location.href）。
+  // 刻意「不碰 isLoadingUser」——ProtectedRoute 的全頁 spinner 條件是
+  // isLoadingUser && !user，這裡維持 stale-while-revalidate，避免重現
+  // 當初 SIGNED_IN 重複廣播造成整頁被 spinner 取代的問題（見
+  // loadedUserIdRef 的註解）。暫時性錯誤一律回 null、不清空 user，
+  // 也不在這裡 signOut——真正的 session 過期由 apiClient 的
+  // onSessionExpired 處理。
+  const refreshUser = useCallback(async (): Promise<any | null> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return null;
+      const response = await fetch(buildApiUrl('/profile'), {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!response.ok) return null;
+      const profile = await response.json();
+      setUser(profile);
+      loadedUserIdRef.current = profile.id; // 同一使用者時是 no-op，僅保持一致
+      return profile;
+    } catch {
+      return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser }}>
+    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }}>
       <FeatureProvider>
         <NotificationProvider>
           <div className="min-h-screen bg-background flex flex-col">
@@ -196,51 +225,51 @@ function AppContent() {
                 {/* Protected Member Routes */}
                 <Route path="/dashboard" element={
                   <ProtectedRoute>
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <MemberDashboard />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <ServiceProviderManagement />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers/create" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <CreateServiceProvider />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/service-providers/edit/:id" element={
                   <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <EditServiceProvider />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/referrals" element={
                   <ProtectedRoute featureRequired="referralManagement">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <ReferralManagement />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/tasks" element={
                   <ProtectedRoute featureRequired="taskCenter">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <TaskDashboard />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/rewards" element={
                   <ProtectedRoute featureRequired="rewardSystem">
-                    <RequirePaymentRoute>
+                    <RequireMembershipRoute>
                       <RewardDashboard />
-                    </RequirePaymentRoute>
+                    </RequireMembershipRoute>
                   </ProtectedRoute>
                 } />
                 <Route path="/payment/checkout" element={

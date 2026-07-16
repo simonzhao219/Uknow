@@ -3,10 +3,53 @@
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from mocks.backend_api_mock import build_payuni_response
+from mocks.backend_api_mock import build_payuni_response, build_profile
 from steps.common_steps import *  # noqa: F401,F403
 
 scenarios("payment_result.feature")
+
+
+@given(parsers.parse('the profile activates while polling for trade "{trade_no}"'))
+def profile_activates_while_polling(api_mock, trade_no):
+    # 模擬後端自癒收斂中：App bootstrap 與最初幾次輪詢都拿到「已付款、
+    # 待開通」的 profile，之後轉為有效會員——PaymentResult 應顯示開通中
+    # 畫面並在轉 active 時自動進會員中心。多放幾格 awaiting，讓
+    # 「開通中」畫面有穩定可斷言的存在時間，避免與自動導頁互相競速。
+    awaiting = build_profile(
+        2, accountStatus="expired", paidAwaitingActivation=True, lastTradeNo=trade_no
+    )
+    active = build_profile(3)
+    api_mock.set_profile_sequence([awaiting, awaiting, awaiting, active])
+
+
+@given(parsers.parse('the profile never activates for trade "{trade_no}"'))
+def profile_never_activates(api_mock, trade_no):
+    # 收斂不了的卡單（例如金額不符待人工）——輪詢有界，逾時後交給客服。
+    api_mock.set_profile(
+        2, accountStatus="expired", paidAwaitingActivation=True, lastTradeNo=trade_no
+    )
+
+
+@given("the activation clock is controllable")
+def install_clock(page):
+    # 開通輪詢是 15 次 × 3 秒 ≈ 45 秒的有界等待；用 Playwright 的假時鐘
+    # 快轉，測試不用真的等。必須在導頁前 install。
+    page.clock.install()
+
+
+@when("I fast-forward through the activation polling window")
+def fast_forward_activation_window(page):
+    # 每輪輪詢 = setTimeout(3s) → await fetch → 排下一個 setTimeout。
+    # fetch 在假時鐘之外真實解析，所以要「快轉一格、讓 fetch 落地、再
+    # 快轉」地逐格推進，直到 15 次上限用完（20 × 3.5s > 45s）。
+    for _ in range(20):
+        page.clock.fast_forward(3_500)
+        page.wait_for_timeout(100)  # 讓被觸發的 fetch/microtask 真實解析
+
+
+@when("I click retry activation")
+def click_retry_activation(payment_result_page):
+    payment_result_page.click_retry_activation()
 
 
 @given(parsers.parse('trade "{trade_no}" enriches with a successful PayUni payment'))

@@ -5,15 +5,33 @@ Feature: Payment checkout
   previously-shipped bug where paid users bounced back here instead of the
   result page.
 
-  Scenario: A user with an active pending order is redirected to the result page
-    Given I am logged in with registration step 2 and last trade number "PU00000003"
+  Scenario: A paid user awaiting activation is redirected to the result page
+    Given I am logged in awaiting activation with trade number "PU00000003"
     When I visit "/payment/checkout"
     Then I should be redirected to "/payment/result?tradeNo=PU00000003"
 
-  Scenario: An already-paid user is redirected to the dashboard
+  Scenario: A step-2 user whose payment failed stays on checkout to retry
+    Given I am logged in with step 2 and a failed payment for trade "PU00000098"
+    When I visit "/payment/checkout"
+    Then I should see the text "完成付款"
+
+  Scenario: An already-paid active member is redirected to the dashboard
     Given I am logged in with registration step 2 and a referral code "REF001"
     When I visit "/payment/checkout"
     Then I should be redirected to "/dashboard"
+
+  Scenario: An expired former member sees both renewal options
+    Given I am logged in as an expired former member
+    When I visit "/payment/checkout"
+    Then I should see the text "續費會員"
+    And I should see the text "續約（接續原效期）"
+    And I should see the text "新約（重新起算）"
+
+  Scenario: A member expired for over a year can only start a fresh contract
+    Given I am logged in as a long-expired former member
+    When I visit "/payment/checkout"
+    Then I should see the text "新約（重新起算）"
+    And I should see the text "無法接續原效期"
 
   Scenario: Referrer info is shown when the profile has an uncached referral code
     Given I am logged in with registration step 1 referred by code "friend1" from "推薦人測試"

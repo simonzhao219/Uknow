@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
 import { Loader2, CheckCircle, CreditCard, Edit, Upload, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
@@ -22,6 +23,12 @@ export function PaymentCheckout() {
   const [activeOrder, setActiveOrder] = useState<any>(null);  // ✅ 新增：活動訂單狀態
   const [isButtonLocked, setIsButtonLocked] = useState(false);  // ✅ 新增：按鈕鎖定狀態
   const [lockCountdown, setLockCountdown] = useState(0);  // ✅ 新增：倒計時秒數
+  // ✅ 過期會員續費雙模式（見 migration 0008）：extend=續約接續原效期；
+  //    fresh=新約從付款日起算、可換新推薦人。null 表示尚未選擇。
+  const [renewalMode, setRenewalMode] = useState<'extend' | 'fresh' | null>(null);
+  const [newReferralCode, setNewReferralCode] = useState('');
+  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
   
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
@@ -55,15 +62,20 @@ export function PaymentCheckout() {
         
         if (response.ok) {
           const profile = await response.json();
-          
-          // ✅ 檢查狀態並自動跳轉
-          if (profile.registrationStep === 3) {
-            console.log('PaymentCheckout: 用戶已完成註冊，跳轉到 dashboard');
+
+          // ✅ 檢查狀態並自動跳轉——以會籍（accountStatus）為準，不再看
+          // registrationStep：過期會員的 step 也是 3，但他們是來續約的，
+          // 不能被彈回 dashboard 造成守衛↔結帳的無限循環。
+          const isMemberActive = profile.accountStatus === 'active' || profile.accountStatus === 'grace';
+          if (isMemberActive) {
+            console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
             showToast('註冊完成！正在跳轉...', 'success');
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1500);
-          } else if (profile.registrationStep === 2 && profile.lastTradeNo) {
+          } else if (profile.paidAwaitingActivation && profile.lastTradeNo) {
+            // 已付款、開通中（不是「有 pending 訂單」就跳——付款失敗的
+            // step 2 使用者要留在結帳頁重新付款）。
             console.log('PaymentCheckout: 用戶已付款，跳轉到結果頁');
             navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
           }
@@ -114,43 +126,39 @@ export function PaymentCheckout() {
             const profile = await response.json();
             console.log('PaymentCheckout: Profile loaded from API:', profile);
             
-            // 3. 檢查 registrationStep
-            if (profile.registrationStep === 1 || profile.registrationStep === 2) {
-              // 用戶已填寫基本資料，使用 profile 數據
-              console.log('PaymentCheckout: User has completed profile (step 1/2), using API data');
-              
-              // ✅ 新增：檢查是否已完成付款
-              const hasPaidMembership = !!profile.referralCode;
-              
-              if (hasPaidMembership) {
-                // 已完成付款，導向會員中心
-                console.log('PaymentCheckout: User already paid, redirecting to dashboard');
-                navigate('/dashboard', { replace: true });
-                return;
-              }
-              
-              // ✅ 新增：檢查是否有活動訂單
-              if (profile.registrationStep === 2 && profile.lastTradeNo) {
-                console.log('PaymentCheckout: User has active order, checking status...');
-                // 有待處理的訂單，跳轉到付款結果頁
-                navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
-                return;
-              }
-              
-              setPendingUser(profile);
-              setIsCheckingUser(false);
+            // 3. 以會籍與付款狀態決定去向（registrationStep 只用來判斷
+            //    首次註冊漏斗走到哪，不再當「已是會員」的依據）。
+            const isMemberActive = profile.accountStatus === 'active' || profile.accountStatus === 'grace';
+
+            if (isMemberActive) {
+              // 會籍有效（active/grace）才彈回會員中心；過期會員留在
+              // 結帳頁續約——舊版看 referralCode / step 3 就彈走，過期
+              // 會員會在守衛與結帳頁之間無限循環。
+              console.log('PaymentCheckout: Member is active, redirecting to dashboard');
+              navigate('/dashboard', { replace: true });
               return;
-            } else if (profile.registrationStep === 0 || !profile.registrationStep) {
+            }
+
+            // 已付款、開通中 → 結果頁（自癒輪詢）。付款失敗的 step 2
+            // 使用者 paidAwaitingActivation 為 false，留在結帳頁重新付款。
+            if (profile.paidAwaitingActivation && profile.lastTradeNo) {
+              console.log('PaymentCheckout: User has paid order awaiting activation, redirecting to result');
+              navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
+              return;
+            }
+
+            if (profile.registrationStep === 0 || !profile.registrationStep) {
               // 用戶尚未填寫基本資料，靜默導向 complete-profile
               console.log('PaymentCheckout: User needs to complete profile (step 0), redirecting');
               navigate('/auth/complete-profile', { replace: true });
               return;
-            } else if (profile.registrationStep === 3) {
-              // 用戶完成註冊，不應該在這裡
-              console.log('PaymentCheckout: User registration complete (step 3), redirecting to dashboard');
-              navigate('/dashboard', { replace: true });
-              return;
             }
+
+            // step 1 / 2（付款失敗）/ 3（已過期，續約）→ 留在結帳頁
+            console.log('PaymentCheckout: User can pay (first payment or renewal), using API data');
+            setPendingUser(profile);
+            setIsCheckingUser(false);
+            return;
           } else {
             console.error('PaymentCheckout: Failed to load profile, status:', response.status);
             navigate('/login', { replace: true });
@@ -260,12 +268,61 @@ export function PaymentCheckout() {
       const timer = setTimeout(() => {
         setLockCountdown(lockCountdown - 1);
       }, 1000);
-      
+
       return () => clearTimeout(timer);
     } else if (lockCountdown === 0 && isButtonLocked) {
       setIsButtonLocked(false);
     }
   }, [lockCountdown, isButtonLocked]);
+
+  // ✅ 續費身分判斷：曾有訂閱（subscriptionEndDate 存在）且此刻不是有效
+  //    會員（有效會員在進入本頁時已被彈去 dashboard）→ 這是過期續費。
+  const isRenewal = !!pendingUser?.subscriptionEndDate;
+  // 續約（extend）只有在「接續後效期仍在未來」才有意義；過期超過一年
+  // 只能選新約（後端 /payuni/prepare 也會擋）。
+  const extendNewEnd = (() => {
+    if (!pendingUser?.subscriptionEndDate) return null;
+    const d = new Date(pendingUser.subscriptionEndDate);
+    d.setFullYear(d.getFullYear() + 1);
+    return d;
+  })();
+  const canExtend = !!extendNewEnd && extendNewEnd.getTime() > Date.now();
+  // 進到續費畫面時給預設選項：能續約就預選續約（對使用者較直覺），
+  // 不能就預選新約。
+  useEffect(() => {
+    if (isRenewal && renewalMode === null) {
+      setRenewalMode(canExtend ? 'extend' : 'fresh');
+    }
+  }, [isRenewal, canExtend, renewalMode]);
+
+  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
+  const handleValidateNewCode = async (code: string) => {
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setNewCodeStatus('idle');
+      setNewReferrerName(null);
+      return;
+    }
+    setNewCodeStatus('checking');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+      const result = await response.json();
+      if (response.ok && result.valid && result.referrer) {
+        setNewCodeStatus('valid');
+        setNewReferrerName(result.referrer.userName);
+      } else {
+        setNewCodeStatus('invalid');
+        setNewReferrerName(null);
+      }
+    } catch {
+      setNewCodeStatus('invalid');
+      setNewReferrerName(null);
+    }
+  };
 
   // ✅ 新增：PayUni 續期收款付款
   const handlePayUniPayment = async () => {
@@ -281,6 +338,13 @@ export function PaymentCheckout() {
       return;
     }
 
+    // ✅ 續費模式檢查：新約填了推薦碼就必須先驗證通過，避免帶著無效碼
+    //    送出（後端也會擋，這裡先給友善提示）。
+    if (isRenewal && renewalMode === 'fresh' && newReferralCode.trim() && newCodeStatus !== 'valid') {
+      showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
+      return;
+    }
+
     try {
       setIsLoading(true);
 
@@ -293,6 +357,7 @@ export function PaymentCheckout() {
 
       // ✅ 呼叫後端 API 準備訂單。registrationStep 會在這筆 pending 訂單
       // 建立後自動變成 2（由 payment_orders 即時算出，不需要另外寫入）。
+      // 過期續費時帶上使用者選的模式；首次付款不帶 body（後端視同 fresh）。
       const response = await fetch(
         buildApiUrl('/payuni/prepare'),
         {
@@ -300,7 +365,15 @@ export function PaymentCheckout() {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json'
-          }
+          },
+          ...(isRenewal && renewalMode ? {
+            body: JSON.stringify({
+              renewalMode,
+              ...(renewalMode === 'fresh' && newReferralCode.trim() && newCodeStatus === 'valid'
+                ? { referredByCode: newReferralCode.trim() }
+                : {}),
+            })
+          } : {}),
         }
       );
 
@@ -628,10 +701,12 @@ export function PaymentCheckout() {
               <CreditCard className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl">完成付款</CardTitle>
-          {/*<CardDescription>
-            最後一步，付款後即可開始使用 Uknow 平台
-          </CardDescription>*/}
+          <CardTitle className="text-2xl">{isRenewal ? '續費會員' : '完成付款'}</CardTitle>
+          {isRenewal && (
+            <CardDescription>
+              您的會籍已於 {pendingUser.subscriptionEndDate?.slice(0, 10)} 到期，請選擇續費方式
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 用戶資訊確認 */}
@@ -670,6 +745,96 @@ export function PaymentCheckout() {
               )}
             </div>
           </div>
+
+          {/* 續費模式選擇：續約（接續原效期）/ 新約（重新起算，可換推薦人） */}
+          {isRenewal && (
+            <div className="space-y-3" data-testid="renewal-mode-section">
+              <h3 className="text-sm font-medium">續費方式</h3>
+
+              {canExtend && (
+                <button
+                  type="button"
+                  onClick={() => setRenewalMode('extend')}
+                  className={`w-full text-left p-4 rounded-lg border transition-colors ${
+                    renewalMode === 'extend'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                  data-testid="renewal-mode-extend"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">續約（接續原效期）</span>
+                    {renewalMode === 'extend' && <CheckCircle className="h-5 w-5 text-primary" />}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    保留原帳號脈絡，效期自 {pendingUser.subscriptionEndDate?.slice(0, 10)} 接續，
+                    至 {extendNewEnd?.toISOString().slice(0, 10)}
+                  </p>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setRenewalMode('fresh')}
+                className={`w-full text-left p-4 rounded-lg border transition-colors ${
+                  renewalMode === 'fresh'
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                    : 'border-border hover:border-primary/50'
+                }`}
+                data-testid="renewal-mode-fresh"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">新約（重新起算）</span>
+                  {renewalMode === 'fresh' && <CheckCircle className="h-5 w-5 text-primary" />}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  效期自付款日起算一年，可填寫新的推薦碼
+                </p>
+              </button>
+
+              {!canExtend && (
+                <p className="text-xs text-muted-foreground">
+                  會籍已過期超過一年，無法接續原效期，僅能以新約重新起算。
+                </p>
+              )}
+
+              {renewalMode === 'fresh' && (
+                <div className="space-y-1 p-3 bg-muted rounded-lg">
+                  <label className="text-sm font-medium" htmlFor="new-referral-code">
+                    新推薦碼（選填）
+                  </label>
+                  <Input
+                    id="new-referral-code"
+                    value={newReferralCode}
+                    placeholder={pendingUser.referredByCode ? `目前：${pendingUser.referredByCode}` : '輸入推薦碼'}
+                    onChange={(e) => {
+                      setNewReferralCode(e.target.value);
+                      setNewCodeStatus('idle');
+                      setNewReferrerName(null);
+                    }}
+                    onBlur={() => handleValidateNewCode(newReferralCode)}
+                    data-testid="new-referral-code-input"
+                  />
+                  {newCodeStatus === 'checking' && (
+                    <p className="text-xs text-muted-foreground">
+                      <Loader2 className="inline h-3 w-3 animate-spin mr-1" />驗證中…
+                    </p>
+                  )}
+                  {newCodeStatus === 'valid' && newReferrerName && (
+                    <p className="text-xs text-green-600" data-testid="new-referrer-name">
+                      推薦人：{newReferrerName}
+                    </p>
+                  )}
+                  {newCodeStatus === 'invalid' && (
+                    <p className="text-xs text-red-600">推薦碼不存在或已失效</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    留空則維持原推薦關係。
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 付款金額 */}
           <div className="space-y-2">

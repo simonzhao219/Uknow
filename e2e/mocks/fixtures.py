@@ -36,3 +36,23 @@ def seed_authenticated_session(
 
     api_mock = BackendApiMock(context)
     return api_mock.set_profile(registration_step, **overrides)
+
+
+def seed_stale_cache(context: BrowserContext, key: str, data, age_ms: int) -> None:
+    """Pre-populate the app's sessionStorage data cache (DataCacheContext)
+    with an entry whose timestamp is `age_ms` in the past. Lets TTL scenarios
+    prove "expired cache is bypassed / fresh cache is served" deterministically
+    without waiting out the real 5-minute window."""
+    context.add_init_script(
+        f"""
+        (() => {{
+          const KEY = 'uknow_data_cache';
+          const cache = JSON.parse(window.sessionStorage.getItem(KEY) || '{{}}');
+          cache[{json.dumps(key)}] = {{
+            data: {json.dumps(data)},
+            timestamp: Date.now() - {int(age_ms)},
+          }};
+          window.sessionStorage.setItem(KEY, JSON.stringify(cache));
+        }})();
+        """
+    )

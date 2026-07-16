@@ -75,3 +75,42 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
     await deleteTestUsers(client, [successUser.id, stillPendingUser.id, freshUser.id]);
   }
 });
+
+// ============================================================
+// 掃描過濾：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
+// 自癒，不該進 queryPayUniTradeStatus 的查詢迴圈（金額不符的卡單已有
+// 自己的去重告警，不能每輪對帳都再被佔位錯誤重複告警一次）。
+// ============================================================
+Deno.test('reconcilePendingOrders 只掃「沒有存檔判決」的 pending 訂單', async () => {
+  const client = adminClient();
+  const noVerdictUser = await createTestUser(client, { name: 'No Verdict' });
+  const storedSuccessUser = await createTestUser(client, { name: 'Stored Success' });
+
+  try {
+    const noVerdictTradeNo = await seedPendingOrder(client, noVerdictUser.id, 30);
+    const storedTradeNo = await seedPendingOrder(client, storedSuccessUser.id, 30);
+    // 這筆已存 SUCCESS（金額不符所以自癒收斂不了）——不該被掃到。
+    await client.from('payment_orders')
+      .update({ payuni_response: { Status: 'SUCCESS', TradeAmt: '9999' } })
+      .eq('transaction_id', storedTradeNo);
+
+    const queried: string[] = [];
+    const summary = await reconcilePendingOrders(
+      client,
+      // deno-lint-ignore require-await
+      async (merTradeNo: string) => {
+        queried.push(merTradeNo);
+        return { stillProcessing: true };
+      },
+      // deno-lint-ignore require-await
+      async () => ({ ok: true as const, status: 'SUCCESS' as const }),
+      { thresholdMinutes: 20, limit: 50 },
+    );
+
+    assertEquals(queried.includes(noVerdictTradeNo), true, '無判決的訂單應該進查詢迴圈');
+    assertEquals(queried.includes(storedTradeNo), false, '已存 SUCCESS 的訂單不該進查詢迴圈');
+    assertEquals(summary.stillPending >= 1, true);
+  } finally {
+    await deleteTestUsers(client, [noVerdictUser.id, storedSuccessUser.id]);
+  }
+});

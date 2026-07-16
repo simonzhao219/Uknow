@@ -32,7 +32,7 @@ export interface UseSubscriptionResult {
 
 export function useSubscription(): UseSubscriptionResult {
   const { user } = useContext(UserContext);
-  const { getCache, setCache, hasCache, clearCache } = useDataCache();
+  const { getValidCache, setCache, clearCache } = useDataCache();
   const { showToast, showSuccess, showError } = useNotification();
 
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(null);
@@ -62,8 +62,11 @@ export function useSubscription(): UseSubscriptionResult {
       setIsLoading(false);
       return;
     }
-    if (hasCache('subscriptionStatus')) {
-      setSubscriptionData(getCache('subscriptionStatus') as SubscriptionData);
+    // 過期視同 cache miss（getValidCache，5 分鐘 TTL）：領獎/付款等事件
+    // 之外的陳舊性也有上限，會員到期日不會整個 session 顯示舊值。
+    const cached = getValidCache('subscriptionStatus') as SubscriptionData | null;
+    if (cached) {
+      setSubscriptionData(cached);
       setIsLoading(false);
     } else {
       fetchStatus();

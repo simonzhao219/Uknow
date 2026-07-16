@@ -18,6 +18,13 @@ export function adminClient(): SupabaseClient {
   });
 }
 
+// 讓 index.ts 內部的 sb()（讀環境變數）指向同一個本地實例——
+// 直接測 index.ts 匯出的函數/路由（app.request()）時需要。
+export function ensureEdgeFunctionEnv(): void {
+  Deno.env.set('SUPABASE_URL', SUPABASE_URL);
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
+}
+
 let counter = 0;
 
 // 建立測試使用者：透過 auth.admin.createUser + user_metadata.referred_by_code，
@@ -75,6 +82,31 @@ export async function payForUser(
   });
 
   return { tradeNo, data, error };
+}
+
+// 取得某測試使用者的真實 access token（給需要 requireAuth 的 HTTP 路由
+// 測試用）：admin.generateLink 產生 magiclink 的 hashed_token，再用
+// verifyOtp 換一個真的 session——不需要知道本地實例的 anon key。
+export async function getUserAccessToken(client: SupabaseClient, email: string): Promise<string> {
+  const { data: linkData, error: linkError } = await client.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  });
+  if (linkError || !linkData?.properties?.hashed_token) {
+    throw new Error(`getUserAccessToken generateLink failed: ${linkError?.message ?? 'no token'}`);
+  }
+  // verifyOtp 會把換到的 user session 存在 client 上，之後同一個 client 的
+  // PostgREST 請求都會帶這個使用者的 Authorization、受 RLS 限制——所以
+  // 一定要用丟棄式 client 來換 token，不能污染呼叫端的 admin client。
+  const throwaway = adminClient();
+  const { data: otpData, error: otpError } = await throwaway.auth.verifyOtp({
+    token_hash: linkData.properties.hashed_token,
+    type: 'email',
+  });
+  if (otpError || !otpData?.session?.access_token) {
+    throw new Error(`getUserAccessToken verifyOtp failed: ${otpError?.message ?? 'no session'}`);
+  }
+  return otpData.session.access_token;
 }
 
 export async function getActiveReferralCode(client: SupabaseClient, userId: string): Promise<string> {

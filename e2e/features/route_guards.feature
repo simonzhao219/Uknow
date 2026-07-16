@@ -1,10 +1,13 @@
-Feature: Route guards enforce the registration-step state machine
-  ProtectedRoute redirects anonymous visitors to /login; RequirePaymentRoute
-  then redirects logged-in members based on registrationStep (0 = needs
-  profile, 1 = needs payment, 2 = payment submitted awaiting confirmation,
-  3 = full member) before the actual page is ever rendered. This is the
-  exact logic behind a previously-shipped bug where paid users bounced back
-  to checkout instead of the result page.
+Feature: Route guards enforce membership entitlement
+  ProtectedRoute redirects anonymous visitors to /login; RequireMembershipRoute
+  then gates member-only pages on *entitlement* (accountStatus derived from the
+  subscription end_date): active/grace members (and admins) pass, everyone else
+  is routed to where they can resolve their state — the activation-pending
+  result page if they've already paid, checkout for renewal or first payment,
+  or the profile form for the first-time funnel. registrationStep is demoted to
+  first-time-funnel routing only. This replaces the old step-based state
+  machine whose "step 2 always bounces to /payment/result" rule permanently
+  trapped users whose paid order was stuck in pending.
 
   @smoke
   Scenario: Anonymous user is redirected to login
@@ -12,20 +15,43 @@ Feature: Route guards enforce the registration-step state machine
     When I visit "/dashboard"
     Then I should be redirected to "/login"
 
-  Scenario Outline: Registration step determines the landing page for a member-only route
+  @smoke
+  Scenario: An active member reaches the member-only route directly
+    Given I am logged in as an active member
+    When I visit "/dashboard"
+    Then I should see the dashboard
+
+  Scenario: A member in the grace period still reaches the member-only route
+    Given I am logged in as a member in grace period
+    When I visit "/dashboard"
+    Then I should see the dashboard
+
+  Scenario: An admin without a subscription is not locked out
+    Given I am logged in as an admin without a subscription
+    When I visit "/dashboard"
+    Then I should see the dashboard
+
+  Scenario: A paid user awaiting activation is sent to the activation-pending result page
+    Given I am logged in awaiting activation with trade number "PU00000001"
+    When I visit "/dashboard"
+    Then I should be redirected to "/payment/result?tradeNo=PU00000001"
+
+  Scenario: A user whose payment failed is sent back to checkout, not trapped on the result page
+    Given I am logged in with step 2 and a failed payment for trade "PU00000002"
+    When I visit "/dashboard"
+    Then I should be redirected to "/payment/checkout"
+
+  Scenario: An expired former member is sent to checkout to renew, not the registration funnel
+    Given I am logged in as an expired former member
+    When I visit "/dashboard"
+    Then I should be redirected to "/payment/checkout"
+
+  Scenario Outline: The first-time funnel routes by registration step
     Given I am logged in with registration step <step> and last trade number "<trade_no>"
     When I visit "/dashboard"
     Then I should be redirected to "<destination>"
 
     Examples:
-      | step | trade_no   | destination                         |
-      | 0    |            | /auth/complete-profile               |
-      | 1    |            | /payment/checkout                    |
-      | 2    | PU00000001 | /payment/result?tradeNo=PU00000001   |
-      | 2    |            | /payment/checkout                    |
-
-  @smoke
-  Scenario: A full member reaches the member-only route directly
-    Given I am logged in with registration step 3
-    When I visit "/dashboard"
-    Then I should see the dashboard
+      | step | trade_no | destination            |
+      | 0    |          | /auth/complete-profile |
+      | 1    |          | /payment/checkout      |

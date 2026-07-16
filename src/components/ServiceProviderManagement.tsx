@@ -16,7 +16,7 @@ export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
-  const { getCache, setCache, hasCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
+  const { getValidCache, setCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
@@ -28,14 +28,14 @@ export function ServiceProviderManagement() {
   // ✅ 優化：獲取用戶的刊登（使用快取）
   useEffect(() => {
     if (user?.id) {
-      // ✅ 優先使用快取
-      if (hasCache('userListing')) {
+      // ✅ 優先使用快取（過期視同 cache miss，5 分鐘 TTL）
+      const cached = getValidCache('userListing');
+      if (cached != null) {
         console.log('🎯 ServiceProviderManagement: 使用快取的刊登資料');
-        const cached = getCache('userListing');
         setListing(cached);
         setLoading(false);
       } else {
-        console.log('🔄 ServiceProviderManagement: 無快取，載入新資料');
+        console.log('🔄 ServiceProviderManagement: 無快取或已過期，載入新資料');
         fetchUserListing();
       }
     } else {

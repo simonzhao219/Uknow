@@ -29,18 +29,21 @@ export function useFetchData<T = unknown>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { getCache, setCache, hasCache } = useDataCache();
+  const { getValidCache, setCache } = useDataCache();
   const { showToast } = useNotification();
 
   const fetch = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    // 優先使用快取
-    if (cacheKey && hasCache(cacheKey)) {
-      setData(getCache(cacheKey) as T);
-      setLoading(false);
-      return;
+    // 優先使用快取（過期視同 cache miss，5 分鐘 TTL）
+    if (cacheKey) {
+      const cached = getValidCache(cacheKey);
+      if (cached != null) {
+        setData(cached as T);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
