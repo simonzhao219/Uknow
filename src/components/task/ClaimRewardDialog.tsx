@@ -12,6 +12,7 @@ import { createClaimRewardConfig } from '../common/verification-configs/claimRew
 interface PendingMissionReward {
   id: string;
   type: 'consecutive_referral' | 'monthly_king';
+  rewardType?: 'free_renewal_year';
   amount: number;
   achievedAt: string;
   status: 'pending' | 'claimed' | 'expired';
