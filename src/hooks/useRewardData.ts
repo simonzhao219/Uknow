@@ -33,7 +33,7 @@ export interface UseRewardDataResult {
 }
 
 export function useRewardData(): UseRewardDataResult {
-  const { getCache, setCache, hasCache, clearCache } = useDataCache();
+  const { getValidCache, setCache, clearCache } = useDataCache();
 
   const [rewardsData, setRewardsData] = useState<RewardsData | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
@@ -64,6 +64,10 @@ export function useRewardData(): UseRewardDataResult {
       setWithdrawals(withdrawalsResult.data.withdrawals);
       setSubscriptionStatus(status);
 
+      // 注意：這裡把訂閱狀態的複本綁進 'rewards' 快取（提領資格判斷用），
+      // 跟 useSubscription 的 'subscriptionStatus' 是兩份獨立快取——任何
+      // 會改變訂閱狀態的流程必須同時清這兩把 key（見 useTaskData 的
+      // handleClaimReward）。
       setCache('rewards', { rewardsData: rewardsResult.data, subscriptionStatus: status });
       setCache('withdrawals', withdrawalsResult.data.withdrawals);
     } catch (err) {
@@ -81,8 +85,10 @@ export function useRewardData(): UseRewardDataResult {
   }, []);
 
   useEffect(() => {
-    const cachedRewards = hasCache('rewards') ? getCache('rewards') : null;
-    const cachedWithdrawals = hasCache('withdrawals') ? getCache('withdrawals') : null;
+    // 過期視同 cache miss（getValidCache，5 分鐘 TTL）：下線付款後，
+    // 推薦人最多 5 分鐘內就能在獎勵頁看到新進的推薦獎金。
+    const cachedRewards = getValidCache('rewards');
+    const cachedWithdrawals = getValidCache('withdrawals');
     if (cachedRewards && cachedWithdrawals) {
       setRewardsData(cachedRewards.rewardsData);
       setWithdrawals(cachedWithdrawals);

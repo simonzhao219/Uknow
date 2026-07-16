@@ -72,6 +72,18 @@ interface DataCacheContextType {
    * @returns 是否過期
    */
   isCacheExpired: (key: CacheKey, maxAge?: number) => boolean;
+
+  /**
+   * 取得「未過期」的快取；不存在或超過 maxAge 一律回傳 null，
+   * 呼叫端把 null 視同 cache miss 重新請求。
+   *
+   * 這是把 isCacheExpired（過去從未被任何 hook 呼叫的死碼）真正接上的
+   * 最小機制：推薦樹 / 任務進度 / 獎勵不再整個 session 不更新——下線
+   * 付款後推薦人最多 5 分鐘內就能看到新下線、獎勵與任務進度。
+   * @param key - 快取鍵
+   * @param maxAge - 最大快取時間（毫秒），預設 5 分鐘
+   */
+  getValidCache: (key: CacheKey, maxAge?: number) => any | null;
 }
 
 const DataCacheContext = createContext<DataCacheContextType | undefined>(undefined);
@@ -177,12 +189,24 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
     return age > maxAge;
   }, [cache]);
 
+  /**
+   * 取得未過期的快取（過期視同不存在）
+   */
+  const getValidCache = useCallback((key: CacheKey, maxAge: number = DEFAULT_MAX_AGE): any | null => {
+    const item = cache[key];
+    if (!item || Date.now() - item.timestamp > maxAge) {
+      return null;
+    }
+    return item.data;
+  }, [cache]);
+
   const value: DataCacheContextType = {
     getCache,
     setCache: setCacheData,
     clearCache: clearCacheData,
     hasCache,
-    isCacheExpired
+    isCacheExpired,
+    getValidCache
   };
 
   return (

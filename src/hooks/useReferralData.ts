@@ -50,7 +50,7 @@ export interface UseReferralDataResult {
 }
 
 export function useReferralData(): UseReferralDataResult {
-  const { getCache, setCache, hasCache } = useDataCache();
+  const { getValidCache, setCache } = useDataCache();
   const { showToast } = useNotification();
 
   const [referralData, setReferralData] = useState<ReferralData | null>(null);
@@ -84,8 +84,11 @@ export function useReferralData(): UseReferralDataResult {
   }, []);
 
   useEffect(() => {
-    if (hasCache('referralTree')) {
-      setReferralData(getCache('referralTree') as ReferralData);
+    // 過期視同 cache miss（getValidCache，5 分鐘 TTL）：推薦人不用登出
+    // 重登，最多 5 分鐘內就能看到新付款的下線出現在推薦樹。
+    const cached = getValidCache('referralTree') as ReferralData | null;
+    if (cached) {
+      setReferralData(cached);
       setLoading(false);
     } else {
       fetchData();

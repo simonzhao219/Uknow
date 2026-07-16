@@ -11,7 +11,10 @@ scenarios("payment_checkout.feature")
 
 @given(parsers.parse('PayUni will report a successful payment for trade number "{trade_no}"'))
 def payuni_success(api_mock, trade_no):
-    api_mock.mock_prepare_and_redirect(trade_no, "SUCCESS")
+    # activate_profile：付款成功導回時，profile 也切換成有效會員——
+    # 否則新版 PaymentResult 會停在「開通中」輪詢（付款成功但 profile
+    # 永遠不轉 active 是事故情境，不是快樂路徑）。
+    api_mock.mock_prepare_and_redirect(trade_no, "SUCCESS", activate_profile={"registration_step": 3})
     api_mock.set_payuni_result(trade_no, "completed", build_payuni_response("SUCCESS", TradeNo=trade_no))
 
 

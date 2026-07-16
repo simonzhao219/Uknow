@@ -80,7 +80,7 @@ export interface UseTaskDataResult {
 }
 
 export function useTaskData(): UseTaskDataResult {
-  const { getCache, setCache, hasCache, clearCache } = useDataCache();
+  const { getValidCache, setCache, clearCache } = useDataCache();
   const { showSuccess, showToast } = useNotification();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -98,8 +98,10 @@ export function useTaskData(): UseTaskDataResult {
       setIsLoading(true);
       setError(null);
       try {
-        const cachedTasks = hasCache('tasks') ? getCache('tasks') : null;
-        const cachedPending = hasCache('pendingRewards') ? getCache('pendingRewards') : null;
+        // 過期視同 cache miss（getValidCache，5 分鐘 TTL）：推薦王的
+        // 本月推薦數不再整個 session 卡在舊值。
+        const cachedTasks = getValidCache('tasks');
+        const cachedPending = getValidCache('pendingRewards');
 
         if (cachedTasks && cachedPending) {
           setTasks(cachedTasks);
@@ -216,6 +218,12 @@ export function useTaskData(): UseTaskDataResult {
       clearCache('tasks');
       clearCache('pendingRewards');
       clearCache('rewards');
+      // 領「免費續約一年」會直接改變會員到期日——MemberDashboard 的
+      // SubscriptionStatusCard 讀的是 subscriptionStatus 快取，不清掉
+      // 就會顯示舊到期日。刻意只失效、不用 claim 回傳的 activeUntil 做
+      // 局部樂觀更新：SubscriptionData 欄位多（daysRemaining、
+      // nextPaymentDate…），湊半個物件的風險大於下次進頁重抓的成本。
+      clearCache('subscriptionStatus');
     } else {
       throw new Error('領取獎勵失敗');
     }

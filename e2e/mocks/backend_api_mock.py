@@ -26,6 +26,12 @@ def build_profile(registration_step: int = 3, **overrides) -> dict:
     # leaving them populated at step 0 makes those components disagree with
     # registrationStep and redirect-loop against each other.
     has_profile = registration_step > 0
+    # RequireMembershipRoute gates on accountStatus (active/grace pass),
+    # not registrationStep — the defaults keep the intuitive mapping
+    # (step 3 = active member, everything else = not a member yet) so
+    # older scenarios keep working; entitlement-specific scenarios
+    # override these explicitly.
+    is_member = registration_step >= 3
     profile = {
         "id": DEFAULT_USER_ID,
         "email": DEFAULT_EMAIL,
@@ -38,6 +44,10 @@ def build_profile(registration_step: int = 3, **overrides) -> dict:
         "referrerName": None,
         "referralCode": None,
         "lastTradeNo": None,
+        "isAdmin": False,
+        "accountStatus": "active" if is_member else "expired",
+        "subscriptionEndDate": "2027-01-01T00:00:00.000Z" if is_member else None,
+        "paidAwaitingActivation": False,
     }
     profile.update(overrides)
     return profile
@@ -85,12 +95,52 @@ class BackendApiMock:
         self._route("/auth/profile", lambda route: _fulfill_json(route, profile))
         return profile
 
+    def set_profile_sequence(self, profiles: list):
+        """`profiles` is a list of profile dicts (see build_profile). Each
+        successive profile request — regardless of whether it hits /profile
+        (App bootstrap, refreshUser polling) or /auth/profile — advances to
+        the next entry, staying on the last. Used to model "the backend
+        activates the membership while the page is polling" (PaymentResult's
+        activation self-heal)."""
+        state = {"call_count": 0}
+
+        def handler(route):
+            index = min(state["call_count"], len(profiles) - 1)
+            state["call_count"] += 1
+            _fulfill_json(route, profiles[index])
+
+        self._route("/profile", handler)
+        self._route("/auth/profile", handler)
+
     def set_check_email(self, exists: bool):
         self._route("/auth/check-email", lambda route: _fulfill_json(route, {"exists": exists}))
 
-    def set_subscription_status(self, has_subscription: bool = True, status: str = "active"):
-        body = {"success": True, "data": {"hasSubscription": has_subscription, "status": status}}
+    def set_subscription_status(
+        self,
+        has_subscription: bool = True,
+        status: str = "active",
+        active_until: Optional[str] = None,
+        **extra,
+    ):
+        data = {"hasSubscription": has_subscription, "status": status, "activeUntil": active_until}
+        data.update(extra)
+        body = {"success": True, "data": data}
         self._route("/subscriptions/status", lambda route: _fulfill_json(route, body))
+
+    def set_subscription_status_sequence(self, responses: list):
+        """`responses` is a list of `data` dicts for /subscriptions/status.
+        Each successive request advances (staying on the last) — used to model
+        "the claim extended the membership": the claim dialog's preview reads
+        the pre-claim state, the dashboard visit after claiming reads the
+        post-claim state (its cache was invalidated by handleClaimReward)."""
+        state = {"call_count": 0}
+
+        def handler(route):
+            index = min(state["call_count"], len(responses) - 1)
+            state["call_count"] += 1
+            _fulfill_json(route, {"success": True, "data": responses[index]})
+
+        self._route("/subscriptions/status", handler)
 
     def set_register_success(self, registration_step: int = 1, **overrides) -> dict:
         profile = build_profile(registration_step, **overrides)
@@ -150,7 +200,7 @@ class BackendApiMock:
         body = {"success": False, "error": "訂單不存在"}
         self._route(f"/payuni/result/{trade_no}", lambda route: _fulfill_json(route, body, status=404))
 
-    def mock_prepare_and_redirect(self, trade_no: str, status: str):
+    def mock_prepare_and_redirect(self, trade_no: str, status: str, activate_profile: Optional[dict] = None):
         prepare_body = {
             "success": True,
             "data": {
@@ -165,10 +215,19 @@ class BackendApiMock:
         self._route("/payuni/prepare", lambda route: _fulfill_json(route, prepare_body))
 
         redirect_url = f"{BASE_URL}/payment/result?tradeNo={trade_no}&status={status}"
-        self._context.route(
-            f"{MOCK_PAYUNI_GATEWAY}**",
-            lambda route: route.fulfill(status=302, headers={"Location": redirect_url}, body=""),
-        )
+
+        def gateway_handler(route):
+            # Model "the backend processed the payment during the gateway
+            # round-trip": before redirecting back, swap /profile to the
+            # activated member profile (later-registered routes win in
+            # Playwright). Without this the new PaymentResult would sit in
+            # its "activating" polling state — a paid user whose profile
+            # never activates is the incident case, not the happy path.
+            if activate_profile is not None:
+                self.set_profile(**activate_profile)
+            route.fulfill(status=302, headers={"Location": redirect_url}, body="")
+
+        self._context.route(f"{MOCK_PAYUNI_GATEWAY}**", gateway_handler)
 
     def mock_prepare_that_never_resolves(self):
         """Leaves POST /payuni/prepare permanently pending (no fulfill/abort)
@@ -191,3 +250,109 @@ class BackendApiMock:
     def set_prepare_error(self, message: str, code: Optional[str] = None, status: int = 400):
         body = {"success": False, "error": {"message": message, "code": code}}
         self._route("/payuni/prepare", lambda route: _fulfill_json(route, body, status=status))
+
+    def set_referral_tree(
+        self,
+        first_generation: Optional[list] = None,
+        second_generation: Optional[list] = None,
+        third_generation: Optional[list] = None,
+        user_referral_code: str = "MYCODE",
+    ):
+        first = first_generation or []
+        second = second_generation or []
+        third = third_generation or []
+        body = {
+            "success": True,
+            "data": {
+                "userReferralCode": user_referral_code,
+                "referralTree": {
+                    "firstGeneration": first,
+                    "secondGeneration": second,
+                    "thirdGeneration": third,
+                },
+                "summary": {
+                    "firstGenCount": len(first),
+                    "secondGenCount": len(second),
+                    "thirdGenCount": len(third),
+                    "totalReferrals": len(first) + len(second) + len(third),
+                },
+            },
+        }
+        self._route("/referrals/my-tree", lambda route: _fulfill_json(route, body))
+
+    def set_task_center(self, tasks: Optional[list] = None, pending_rewards: Optional[list] = None):
+        # Registration order matters: later-registered routes win in
+        # Playwright, and `/tasks**` also matches `/tasks/pending-rewards` —
+        # so the broad /tasks route must be registered *first*.
+        tasks_body = {"success": True, "data": {"tasks": tasks or []}}
+        self._route("/tasks", lambda route: _fulfill_json(route, tasks_body))
+        pending_body = {"success": True, "data": pending_rewards or []}
+        self._route("/tasks/pending-rewards", lambda route: _fulfill_json(route, pending_body))
+
+    def set_claim_reward_success(self, reward_id: str):
+        # Must be called after set_task_center for the same glob-precedence
+        # reason documented there.
+        body = {"success": True, "data": {"subscriptionId": "sub-e2e", "activeUntil": None}}
+        self._route(f"/tasks/claim-reward/{reward_id}", lambda route: _fulfill_json(route, body))
+
+    def set_verify_id_success(self):
+        # ThreeStepDialog 第三步（IdNumberInput）在啟用確認按鈕前，會先
+        # POST /rewards/verify-id 驗證身分證字號與註冊資料一致。
+        self._route("/rewards/verify-id", lambda route: _fulfill_json(route, {"success": True}))
+
+
+def build_referral_member(name: str, **overrides) -> dict:
+    member = {
+        "userId": f"member-{name}",
+        "userName": name,
+        "userReferralCode": None,
+        "listingId": None,
+        "listingName": None,
+        "serviceType": None,
+        "city": None,
+        "activeUntil": "2027-01-01T00:00:00.000Z",
+        "isActive": True,
+        "referrer": None,
+        "createdAt": "2026-07-16T00:00:00.000Z",
+    }
+    member.update(overrides)
+    return member
+
+
+def build_monthly_king_task(current: int = 0, **overrides) -> dict:
+    task = {
+        "id": "task_monthly_king",
+        "type": "monthly_king",
+        "title": "推薦王",
+        "description": "單月推薦滿 10 人，獲得免費續約 1 年",
+        "target": 10,
+        "current": current,
+        "completed": current >= 10,
+        "reward": {"type": "free_renewal_year", "label": "免費續約 1 年"},
+        "progress": min(current / 10, 1),
+        "hasUnclaimedReward": False,
+        "unclaimedRewardCount": 0,
+        "details": {
+            "currentMonth": "2026-07",
+            "historyCount": 0,
+            "completedMonths": 0,
+            "currentMonthCredit": False,
+        },
+    }
+    task.update(overrides)
+    return task
+
+
+def build_pending_free_year_reward(reward_id: str = "reward-e2e-1", **overrides) -> dict:
+    reward = {
+        "id": reward_id,
+        "type": "monthly_king",
+        "rewardType": "free_renewal_year",
+        "amount": 0,
+        "achievedAt": "2026-07-01T00:00:00.000Z",
+        "status": "pending",
+        "description": "推薦王：單月推薦滿 10 人",
+        "details": {"monthKey": "2026-07"},
+    }
+    reward.update(overrides)
+    return reward

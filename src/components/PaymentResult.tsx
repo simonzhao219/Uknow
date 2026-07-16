@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
 import { Loader2, CheckCircle, XCircle, Clock, CreditCard, AlertCircle } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import { UserContext } from '../App';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -39,8 +40,16 @@ type ResolvedStatus = 'success' | 'failed' | 'pending' | 'unknown';
 // 一點緩衝時間，不是等待劇場，所以次數很小、也不在畫面上顯示倒數。
 const MAX_PENDING_RECHECKS = 2;
 
+// 付款成功但會籍還沒生效（後端自癒收斂中）時的輪詢參數。export 給 e2e
+// 測試引用，避免測試寫死另一份數字。15 × 3s ≈ 45 秒——有界，不是等待
+// 劇場；後端自癒通常數秒內完成。
+export const MAX_ACTIVATION_POLLS = 15;
+export const ACTIVATION_POLL_INTERVAL_MS = 3000;
+
 export function PaymentResult() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user, refreshUser } = useContext(UserContext);
 
   const tradeNo = searchParams.get('tradeNo');
   // PayUni 導回時，後端 /payuni/return 已經解密並判定結果，直接把
@@ -52,6 +61,8 @@ export function PaymentResult() {
   // 時才需要等這次查詢。
   const [isLoadingStatus, setIsLoadingStatus] = useState(!statusParam);
   const [pendingRecheckCount, setPendingRecheckCount] = useState(0);
+  const [activationAttempts, setActivationAttempts] = useState(0);
+  const [activationTimedOut, setActivationTimedOut] = useState(false);
 
   // 背景抓訂單明細（付款人、卡片資訊、金額），純粹用來豐富成功/失敗畫面的顯示內容，
   // 不影響狀態判斷——狀態已經由 statusParam 或下面的 fallback 查詢決定。
@@ -117,12 +128,40 @@ export function PaymentResult() {
               ? 'pending'
               : 'unknown';
 
-  const handleGoToDashboard = () => {
-    window.location.href = '/dashboard';
+  // 會籍是否已生效——付款成功畫面與守衛都以這個為準（不是 registrationStep）。
+  const isMemberActive = user?.accountStatus === 'active' || user?.accountStatus === 'grace';
+
+  // 付款成功但會籍還沒生效（後端自癒收斂中）：輪詢 /profile，轉 active
+  // 的瞬間自動帶進會員中心——絕不留一顆按了會被守衛彈回來的「成功」
+  // 按鈕。正常情況（return 端點同步處理完成、或 profile 載入時已自癒）
+  // 到達本頁時會籍已生效，這個輪詢根本不會啟動。
+  useEffect(() => {
+    if (resolvedStatus !== 'success' || isMemberActive || activationTimedOut) return;
+    if (activationAttempts >= MAX_ACTIVATION_POLLS) {
+      setActivationTimedOut(true);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const profile = await refreshUser();
+      if (profile?.accountStatus === 'active' || profile?.accountStatus === 'grace') {
+        navigate('/dashboard', { replace: true });
+      } else {
+        setActivationAttempts((n) => n + 1);
+      }
+    }, activationAttempts === 0 ? 0 : ACTIVATION_POLL_INTERVAL_MS); // 第一次立即查
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedStatus, isMemberActive, activationAttempts, activationTimedOut]);
+
+  // 先 refreshUser 再 SPA 導頁（取代 window.location.href 整頁 reload）：
+  // 確保守衛讀到最新 accountStatus，才不會被彈回本頁。
+  const handleGoToDashboard = async () => {
+    await refreshUser();
+    navigate('/dashboard');
   };
 
   const handleRetryPayment = () => {
-    window.location.href = '/payment/checkout';
+    navigate('/payment/checkout');
   };
 
   const handleContactSupport = () => {
@@ -159,6 +198,82 @@ export function PaymentResult() {
             <CardTitle className="text-2xl">查詢付款結果中</CardTitle>
             <CardDescription>請稍候，正在確認您的付款狀態</CardDescription>
           </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // 付款成功、但會籍還沒生效（後端自癒收斂中）→ 開通中畫面。
+  // 上面的輪詢會在轉 active 的瞬間自動進會員中心；逾時則交給客服，
+  // 不再是過去那顆按了只會繞回本頁的死按鈕。
+  if (resolvedStatus === 'success' && !isMemberActive && !activationTimedOut) {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-activating">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <Loader2 className="h-16 w-16 text-green-600 animate-spin" />
+            </div>
+            <CardTitle className="text-2xl">付款成功，正在開通會員資格</CardTitle>
+            <CardDescription>通常數秒內完成，開通後將自動前往會員中心</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-sm text-green-800">
+                訂單編號：<span className="font-mono">{tradeNo}</span>
+              </p>
+              <p className="text-sm text-green-800 mt-1">
+                您的款項已受理，不會重複扣款，請稍候片刻。
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 開通逾時：款項已收到，但系統補開通比預期久——把人交給客服，
+  // 並提供重新確認的入口。
+  if (resolvedStatus === 'success' && !isMemberActive && activationTimedOut) {
+    return (
+      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-activation-timeout">
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <Clock className="h-16 w-16 text-orange-600" />
+            </div>
+            <CardTitle className="text-2xl">付款成功，開通處理中</CardTitle>
+            <CardDescription>您的款項已收到，會員資格開通比預期久一些</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
+              <p className="text-sm text-orange-800">
+                訂單編號：<span className="font-mono">{tradeNo}</span>
+              </p>
+              <p className="text-sm text-orange-800">
+                這不會造成您重複扣款或款項遺失。您可以稍後再回來，或聯繫客服為您立即處理。
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                onClick={() => { setActivationAttempts(0); setActivationTimedOut(false); }}
+                className="flex-1"
+                size="lg"
+                data-testid="retry-activation-button"
+              >
+                重新確認
+              </Button>
+              <Button
+                onClick={handleContactSupport}
+                variant="outline"
+                className="flex-1"
+                size="lg"
+                data-testid="contact-support-button"
+              >
+                聯繫客服
+              </Button>
+            </div>
+          </CardContent>
         </Card>
       </div>
     );
