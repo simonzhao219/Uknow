@@ -331,7 +331,7 @@ app.post('/auth/register', async (c) => {
 
   // M2 身分證檢查碼驗證：有填才驗（格式 + 檢查碼），不合法一律拒收，
   // 避免無效號碼落地（落地後提領驗證形同虛設）。唯一性由 DB unique index
-  // 保證（見 migration 0719 0005）。
+  // 保證（見 migration 0720 0003）。
   if (nationalId && !isValidTaiwanId(nationalId)) {
     return c.json({ error: '身分證字號格式或檢查碼不正確' }, 400);
   }
@@ -380,7 +380,7 @@ app.post('/auth/register', async (c) => {
 
   const { error } = await client.from('profiles').update(updates).eq('id', user.id);
   if (error) {
-    // M2：身分證字號唯一性衝突（partial unique index，migration 0719 0005）
+    // M2：身分證字號唯一性衝突（partial unique index，migration 0720 0003）
     if ((error as any).code === '23505') {
       return c.json({ error: '此身分證字號已被使用' }, 409);
     }
@@ -408,7 +408,7 @@ app.put('/auth/profile', async (c) => {
 
   const client = sb();
   // M2：nationalId 不在此可編輯——身分證字號一經設定即不可自行變更
-  //（DB 端另有不可變 trigger 與唯一索引，見 migration 0719 0005）。
+  //（DB 端另有不可變 trigger 與唯一索引，見 migration 0720 0003）。
   const allowedFields: Record<string, string> = {
     name:              'name',
     phone:             'phone',
