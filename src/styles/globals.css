@@ -1,7 +1,11 @@
+@import "tailwindcss";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-size: 14px;
+  /* 根字級 16px：對齊 Tailwind 預設字階，rem 尺寸（字級/間距/元件高度）回到設計原意，
+     手機閱讀更舒適，並讓觸控目標達標。原本 14px 使全站等比縮小約 12.5%。 */
+  --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
@@ -44,9 +48,10 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
+  /* 卡片/彈出層比背景亮一階，深色模式下才有層次與邊界（原本與背景同色，深度消失） */
+  --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
+  --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.985 0 0);
   --primary-foreground: oklch(0.205 0 0);
@@ -57,7 +62,8 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
+  /* 深色模式錯誤文字改用近白，提升在紅底上的對比（原本紅字紅底對比不足） */
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.439 0 0);

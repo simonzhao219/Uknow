@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
+import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
 import { MaintenanceBanner } from './components/MaintenanceBanner';
 import { HomePage } from './components/HomePage';
@@ -190,7 +191,8 @@ function AppContent() {
           <div className="min-h-screen bg-background flex flex-col">
             <Navbar />
             <MaintenanceBanner />
-            <main className="container mx-auto px-4 py-6 flex-1">
+            {/* 登入後手機有底部導覽，main 補下方留白避免內容被遮住 */}
+            <main className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
@@ -300,6 +302,7 @@ function AppContent() {
               </Routes>
             </main>
             <Footer />
+            <BottomNav />
           </div>
           <Toaster />
         </NotificationProvider>
