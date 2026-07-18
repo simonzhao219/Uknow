@@ -20,7 +20,7 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.109.1
 
       - name: Deploy Edge Function
         run: supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
