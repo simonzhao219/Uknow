@@ -84,8 +84,10 @@ where  t.referee_user_id = e.referee_user_id
 
 -- ------------------------------------------------------------
 -- apply_referral_side_effects：發獎當下寫入名字快照。
---   基準是 0008（含「換推薦人時 rewire 推薦邊」的 do update），
---   只加了名字查詢與 insert 欄位，其餘冪等/鎖/rewire/例外邏輯原封不動。
+--   基準是 0718 0103（推薦王門檻 8 + 0008 的推薦邊 rewire）——本函數
+--   時間戳在其後，create or replace 整支覆蓋，故必須沿用門檻 8，否則
+--   會把 0103 的調整退回 10。只加了名字查詢與 insert 欄位，其餘冪等/
+--   鎖/rewire/門檻/例外邏輯原封不動。
 -- ------------------------------------------------------------
 create or replace function public.apply_referral_side_effects(
   p_user_id         uuid,
@@ -200,11 +202,13 @@ begin
         updated_at = now()
       returning jsonb_array_length(monthly_referrals -> v_month_key) into v_month_count;
 
-      -- 推薦王：本月累積推薦數達 10 人門檻即發放「免費續約一年」credit
-      -- （未領取狀態）。用 >=10 而不是 =10，加上 unique(user_id,
-      -- month_key) 雙重保險：就算這段邏輯被 repair_orphaned_payments
-      -- 重放、或補跑時一次跳過 10 這個整數，也不會重複發放。
-      if v_month_count >= 10 then
+      -- 推薦王：本月累積推薦數達 8 人門檻即發放「免費續約一年」credit
+      -- （未領取狀態）。門檻 10→8 由 migration 0718 0103 調整，本函數
+      -- 因 create or replace 整支覆蓋，必須沿用 8 否則會把它退回 10。
+      -- 用 >=8 而不是 =8，加上 unique(user_id, month_key) 雙重保險：
+      -- 就算被 repair_orphaned_payments 重放、或補跑時一次跳過 8 這個
+      -- 整數，也不會重複發放。
+      if v_month_count >= 8 then
         insert into public.referral_king_rewards (user_id, month_key, status, granted_at)
         values (v_referrer1, v_month_key, 'unclaimed', now())
         on conflict (user_id, month_key) do nothing;
