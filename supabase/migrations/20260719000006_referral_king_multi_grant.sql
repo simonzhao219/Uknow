@@ -1,20 +1,24 @@
 -- ============================================================
--- Uknow — 0719 0005 推薦王：單月可多次發放（H3）+ 不重複人數計（L2）
+-- Uknow — 0719 0006 推薦王：單月可多次發放（H3）+ 不重複人數計（L2）
 -- ============================================================
 --
--- 業務決策（使用者拍板）：推薦王改為「單月每滿 8 位不重複被推薦者發一筆
+-- 業務決策（使用者拍板）：推薦王改為「單月每滿門檻位不重複被推薦者發一批
 -- 免費續約 1 年」，可於同月多次達成（前端 MonthlyKingProgress 早已顯示
 -- 「第 N 次完成」，此前後端卻只發 1 筆/月——本 migration 把後端補齊）。
 --
 --   H3：referral_king_rewards 由「每人每月一筆」改為「每人每月每批一筆」。
 --       新增 batch_index，唯一鍵改為 (user_id, month_key, batch_index)。
---       發放時 batches = floor(不重複人數 / 8)，補齊 1..batches 各一筆。
+--       發放時 batches = floor(不重複人數 / 門檻)，補齊 1..batches 各一筆。
 --   L2：門檻改以「不重複被推薦者」計（monthly_referrals 陣列去重長度），
 --       續約/重複付款事件不會灌大推薦王人數（推薦王＝推薦「人」數）。
+--   H2：referred_by_user_id 指向自己時視為無上線（不建邊、不發任何一代
+--       獎勵，也不計推薦王）。
 --
--- 同時把 apply_referral_side_effects 併入 H2 自我推薦縱深防禦：
---   若 referred_by_user_id 指向自己，視為無上線（不建邊、不發任何一代
---   獎勵，也不計推薦王）。此為最終版本，基準是 0719 0001（名字快照）。
+-- 基準 = live 版 20260719000002（reward_config，config-driven 獎金/門檻 +
+-- 名字快照 + rewire）。本檔沿用其「讀 reward_config」的取值方式（獎金
+-- 額度、推薦王門檻皆來自 reward_config，讀不到 fallback 100/8），只在其上
+-- 疊加 H2 自付防禦、L2 去重、H3 多批發放。其餘（鎖、冪等、例外隔離、
+-- 名字快照）一字不動。
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -30,7 +34,7 @@ alter table public.referral_king_rewards
   unique (user_id, month_key, batch_index);
 
 -- ------------------------------------------------------------
--- 2. apply_referral_side_effects（最終版）
+-- 2. apply_referral_side_effects（最終版：config-driven + H2/L2/H3）
 -- ------------------------------------------------------------
 create or replace function public.apply_referral_side_effects(
   p_user_id         uuid,
@@ -53,7 +57,17 @@ declare
   v_applied          text[] := '{}';
   v_referee_name     text;
   v_referrer1_name   text;
+  v_reward_amount    int;    -- 每代獎金，取自 reward_config
+  v_king_threshold   int;    -- 推薦王月門檻，取自 reward_config
 begin
+  -- 可變常數單一真相：讀 reward_config；讀不到就 fallback 回現值。
+  select referral_reward_amount, referral_king_monthly_threshold
+    into v_reward_amount, v_king_threshold
+  from public.reward_config
+  where id = true;
+  v_reward_amount  := coalesce(v_reward_amount, 100);
+  v_king_threshold := coalesce(v_king_threshold, 8);
+
   select referred_by_user_id, name into v_referrer1, v_referee_name
   from public.profiles
   where id = p_user_id
@@ -118,7 +132,7 @@ begin
         (user_id, type, amount, generation, referee_user_id, subscription_id,
          description, referee_name, referee_referrer_name)
       values
-        (v_referrer1, 'referral_reward', 100, 1, p_user_id, p_subscription_id,
+        (v_referrer1, 'referral_reward', v_reward_amount, 1, p_user_id, p_subscription_id,
          '推薦獎勵（第 1 代）', v_referee_name, null);
 
       v_month_key := to_char(now() at time zone 'Asia/Taipei', 'YYYY-MM');
@@ -143,10 +157,10 @@ begin
            lateral jsonb_array_elements_text(coalesce(tp.monthly_referrals -> v_month_key, '[]'::jsonb)) as elem
       where tp.user_id = v_referrer1;
 
-      -- H3：每滿 8 位不重複被推薦者發一批 credit；補齊 1..batches 各一筆。
+      -- H3：每滿門檻位不重複被推薦者發一批 credit；補齊 1..batches 各一筆。
       -- unique(user_id, month_key, batch_index) + on conflict do nothing：
-      -- 補跑/重放天然冪等，且已領取的批次不會被重建（列已存在）。
-      v_batches := floor(coalesce(v_distinct_count, 0) / 8.0);
+      -- 補跑/重放天然冪等，已領取的批次不會被重建（列已存在）。
+      v_batches := floor(coalesce(v_distinct_count, 0)::numeric / v_king_threshold);
       if v_batches >= 1 then
         insert into public.referral_king_rewards (user_id, month_key, batch_index, status, granted_at)
         select v_referrer1, v_month_key, gs, 'unclaimed', now()
@@ -178,7 +192,7 @@ begin
           (user_id, type, amount, generation, referee_user_id, subscription_id,
            description, referee_name, referee_referrer_name)
         values
-          (v_referrer2, 'referral_reward', 100, 2, p_user_id, p_subscription_id,
+          (v_referrer2, 'referral_reward', v_reward_amount, 2, p_user_id, p_subscription_id,
            '推薦獎勵（第 2 代）', v_referee_name, v_referrer1_name);
         v_applied := array_append(v_applied, 'gen2_reward');
       exception when others then
@@ -204,7 +218,7 @@ begin
             (user_id, type, amount, generation, referee_user_id, subscription_id,
              description, referee_name, referee_referrer_name)
           values
-            (v_referrer3, 'referral_reward', 100, 3, p_user_id, p_subscription_id,
+            (v_referrer3, 'referral_reward', v_reward_amount, 3, p_user_id, p_subscription_id,
              '推薦獎勵（第 3 代）', v_referee_name, v_referrer1_name);
           v_applied := array_append(v_applied, 'gen3_reward');
         exception when others then
