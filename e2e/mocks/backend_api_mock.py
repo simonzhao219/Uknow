@@ -295,6 +295,11 @@ class BackendApiMock:
         body = {"success": True, "data": {"subscriptionId": "sub-e2e", "activeUntil": None}}
         self._route(f"/tasks/claim-reward/{reward_id}", lambda route: _fulfill_json(route, body))
 
+    def set_upload_photo_success(self, photo_url: str = "https://example.com/uploaded.jpg"):
+        # CreateServiceProvider/EditServiceProvider POST each photo to
+        # /listings/upload-photo and read back { photoUrl }.
+        self._route("/listings/upload-photo", lambda route: _fulfill_json(route, {"photoUrl": photo_url}))
+
     def set_verify_id_success(self):
         # ThreeStepDialog 第三步（IdNumberInput）在啟用確認按鈕前，會先
         # POST /rewards/verify-id 驗證身分證字號與註冊資料一致。

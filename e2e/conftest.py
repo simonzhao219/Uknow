@@ -20,8 +20,10 @@ import pytest
 from config import BASE_URL, SUPABASE_PROJECT_REF
 from mocks.backend_api_mock import BackendApiMock
 from mocks.supabase_auth_mock import SupabaseAuthMock
+from mocks.supabase_rest_mock import SupabaseRestMock
 from pages.auth_page import AuthPage
 from pages.complete_profile_page import CompleteProfilePage
+from pages.create_service_provider_page import CreateServiceProviderPage
 from pages.dashboard_page import DashboardPage
 from pages.forgot_password_page import ForgotPasswordPage
 from pages.navbar import Navbar
@@ -29,6 +31,8 @@ from pages.otp_page import OtpPage
 from pages.reset_password_page import ResetPasswordPage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.payment_result_page import PaymentResultPage
+from pages.service_provider_detail_page import ServiceProviderDetailPage
+from pages.service_provider_management_page import ServiceProviderManagementPage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -152,6 +156,11 @@ def api_mock(context, _block_real_network):
     return BackendApiMock(context)
 
 
+@pytest.fixture
+def rest_mock(context, _block_real_network):
+    return SupabaseRestMock(context)
+
+
 # --- Page objects ------------------------------------------------------------
 
 
@@ -198,3 +207,18 @@ def dashboard_page(page):
 @pytest.fixture
 def navbar(page):
     return Navbar(page)
+
+
+@pytest.fixture
+def service_provider_management_page(page):
+    return ServiceProviderManagementPage(page)
+
+
+@pytest.fixture
+def service_provider_detail_page(page):
+    return ServiceProviderDetailPage(page)
+
+
+@pytest.fixture
+def create_service_provider_page(page):
+    return CreateServiceProviderPage(page)
