@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { StatCardGrid } from '../ui/stat-card-grid';
 import { Award, Wallet, TrendingUp, Clock } from 'lucide-react';
 
 interface RewardStatsProps {
@@ -15,11 +16,10 @@ export function RewardStats({
   pendingRewards,
   withdrawnRewards
 }: RewardStatsProps) {
-  // 目前只顯示 2 張卡（處理中／已提領已停用），直接用填滿寬度的兩欄 grid，
-  // 左右對稱、無多餘右側空白。原本是為 4 張卡設計的水平捲動輪播
-  // （min-w + shrink-0 + overflow-x-auto），卡片減為 2 張後會靠左並留白。
+  // 用共用的 StatCardGrid：欄數綁定卡片數、等寬填滿、左右對稱。
+  // 目前只顯示 2 張卡（處理中／已提領已停用）。
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <StatCardGrid>
       <Card>
         <CardHeader className="pb-2 md:pb-3">
           <CardTitle className="flex items-center gap-1.5 md:gap-2 text-sm md:text-lg">
@@ -68,6 +68,6 @@ export function RewardStats({
           <div className="text-2xl md:text-3xl font-bold text-purple-600">{withdrawnRewards}P</div>
         </CardContent>
       </Card> */}
-    </div>
+    </StatCardGrid>
   );
 }
