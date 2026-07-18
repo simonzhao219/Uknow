@@ -38,6 +38,7 @@ export interface CurrentMonthReferrals {
   completedCount: number;
   currentProgress: number;
   referrals: MonthlyReferralRecord[];
+  target: number;  // 推薦王月門檻（reward_config），前端進度以此為準
 }
 
 export interface PendingMissionReward {

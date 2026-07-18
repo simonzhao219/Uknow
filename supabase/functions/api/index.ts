@@ -88,6 +88,24 @@ function sb() {
 }
 
 // ============================================================
+// 獎勵可變常數單一真相：讀 reward_config（見 migration 0719 0002）。
+// 推薦王門檻 8 以前散在 SQL 函數、這裡、前端三處；現在 SQL 函數與這裡都
+// 讀同一張表，前端再由 task payload 拿到 target，不再各自硬編。讀不到就
+// fallback 回現值，永不因設定缺失而算錯進度。
+// ============================================================
+async function getRewardConfig(client: any): Promise<{ referralRewardAmount: number; referralKingThreshold: number }> {
+  const { data } = await client
+    .from('reward_config')
+    .select('referral_reward_amount, referral_king_monthly_threshold')
+    .eq('id', true)
+    .maybeSingle();
+  return {
+    referralRewardAmount:  data?.referral_reward_amount ?? 100,
+    referralKingThreshold: data?.referral_king_monthly_threshold ?? 8,
+  };
+}
+
+// ============================================================
 // 工具：從 Authorization header 取得已驗證 user
 // ============================================================
 async function requireAuth(c: any): Promise<{ id: string; email?: string } | null> {
@@ -2057,10 +2075,9 @@ app.get('/tasks', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const currentMonth = twCurrentMonth();
-  const KING_TARGET  = 8;
 
   const client = sb();
-  const [{ data: progress }, { data: rewardsRows }] = await Promise.all([
+  const [{ data: progress }, { data: rewardsRows }, cfg] = await Promise.all([
     client.from('task_progress')
       .select('monthly_referrals, total_referrals, updated_at')
       .eq('user_id', user.id)
@@ -2069,7 +2086,9 @@ app.get('/tasks', async (c) => {
       .select('id, month_key, status, granted_at, claimed_at')
       .eq('user_id', user.id)
       .order('month_key', { ascending: false }),
+    getRewardConfig(client),
   ]);
+  const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
 
   const monthly        = (progress?.monthly_referrals as Record<string, any>) ?? {};
   const currentCount   = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
@@ -2084,7 +2103,7 @@ app.get('/tasks', async (c) => {
     id:          'task_monthly_king',
     type:        'monthly_king',
     title:       '推薦王',
-    description: '單月推薦8位以上用戶',
+    description: `單月推薦${KING_TARGET}位以上用戶`,
     target:      KING_TARGET,
     current:     currentCount,
     completed:   currentCount >= KING_TARGET,
@@ -2168,16 +2187,18 @@ app.get('/tasks/current-month-top', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const KING_TARGET = 8;
   const limit        = Math.min(parseInt(c.req.query('limit') || '100'), 200);
   const currentMonth = twCurrentMonth();
 
   const client = sb();
-  const { data: progress } = await client
-    .from('task_progress')
-    .select('monthly_referrals')
-    .eq('user_id', user.id)
-    .maybeSingle();
+  const [{ data: progress }, cfg] = await Promise.all([
+    client.from('task_progress')
+      .select('monthly_referrals')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    getRewardConfig(client),
+  ]);
+  const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
 
   const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
   // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 8 位標
@@ -2228,7 +2249,7 @@ app.get('/tasks/current-month-top', async (c) => {
 
   return c.json({
     success: true,
-    data: { month: currentMonth, total, completedCount, currentProgress, referrals },
+    data: { month: currentMonth, total, completedCount, currentProgress, referrals, target: KING_TARGET },
   } satisfies CurrentMonthReferralsResponse);
 });
 

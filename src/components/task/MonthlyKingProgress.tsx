@@ -9,7 +9,8 @@ interface MonthlyKingProgressProps {
   month: string;
   total: number;
   completedCount: number; // 本月已完成次數
-  currentProgress: number; // 當前進度 (0-7)
+  currentProgress: number; // 當前進度 (0 ~ target-1)
+  target: number; // 推薦王月門檻（reward_config），每滿 target 人完成一輪
   referrals: Array<{
     userName: string;
     userReferralCode: string | null;
@@ -22,7 +23,7 @@ interface MonthlyKingProgressProps {
  * 推薦王溢出進度組件
  * 
  * 顯示：
- * - 本月已完成次數（每8人為1次）
+ * - 本月已完成次數（每滿 target 人為 1 次）
  * - 當前進度（剩餘計數）
  * - 所有推薦人列表
  */
@@ -31,6 +32,7 @@ export function MonthlyKingProgress({
   total,
   completedCount,
   currentProgress,
+  target,
   referrals,
   onClose
 }: MonthlyKingProgressProps) {
@@ -40,8 +42,8 @@ export function MonthlyKingProgress({
     return `${year}年${month}月`;
   };
 
-  const progressPercentage = (currentProgress / 8) * 100;
-  const overallPercentage = (total / 8) * 100;
+  const progressPercentage = (currentProgress / target) * 100;
+  const overallPercentage = (total / target) * 100;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -66,17 +68,17 @@ export function MonthlyKingProgress({
           {/* ✅ 統一進度條 - 顯示當前輪次進度 */}
           <ProgressBar
             current={currentProgress}
-            target={8}
+            target={target}
             title="當前輪次進度"
             showStats={false}
             extraInfo={
-              currentProgress < 8 ? (
+              currentProgress < target ? (
                 <p className="text-blue-700">
-                  💡 再推薦 {8 - currentProgress} 人可再獲得免費續約 1 年！
+                  💡 再推薦 {target - currentProgress} 人可再獲得免費續約 1 年！
                 </p>
               ) : (
                 <p className="text-green-700">
-                  ✅ 已達成本輪目標！完成 8 人推薦
+                  ✅ 已達成本輪目標！完成 {target} 人推薦
                 </p>
               )
             }
@@ -98,7 +100,7 @@ export function MonthlyKingProgress({
                       第 {index + 1} 次完成（+免費續約 1 年）
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {index === 0 ? `第 8 人達成` : `第 ${(index + 1) * 8} 人達成`}
+                      {`第 ${(index + 1) * target} 人達成`}
                     </span>
                   </div>
                 ))}
@@ -116,11 +118,11 @@ export function MonthlyKingProgress({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-2">
               {referrals.map((referral, index) => (
                 <div key={index} className="relative">
-                  {/* 完成標記（每8人一個標記）*/}
-                  {(index + 1) % 8 === 0 && (
+                  {/* 完成標記（每 target 人一個標記）*/}
+                  {(index + 1) % target === 0 && (
                     <div className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full z-10 flex items-center gap-1">
                       <CheckCircle className="h-3 w-3" />
-                      第{(index + 1) / 8}次完成
+                      第{(index + 1) / target}次完成
                     </div>
                   )}
 
@@ -128,7 +130,7 @@ export function MonthlyKingProgress({
                     userName={referral.userName}
                     userReferralCode={referral.userReferralCode}
                     createdAt={referral.createdAt}
-                    isCompleted={(index + 1) % 8 === 0}
+                    isCompleted={(index + 1) % target === 0}
                     completionBorderColor="border-yellow-500"
                   />
                 </div>
@@ -140,7 +142,7 @@ export function MonthlyKingProgress({
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
             <p className="text-yellow-900">
               💡 <strong>溢出機制說明：</strong>
-              每推薦滿 8 人即可獲得免費續約 1 年，計數器自動扣除 8 人。
+              每推薦滿 {target} 人即可獲得免費續約 1 年，計數器自動扣除 {target} 人。
               剩餘人數累計至下一輪，下月 1 日歸零重新計算。
             </p>
           </div>
