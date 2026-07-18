@@ -86,12 +86,12 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     }
   }, [refreshTrigger]);
 
-  // 篩選獎勵記錄——四種資料庫 type 值：referral_reward / task_monthly_king /
-  // withdrawal / adjustment（見 supabase/functions/_shared/api-contract.ts）
+  // 篩選獎勵記錄——明細只剩會影響點數的流水：referral_reward / withdrawal /
+  // adjustment（見 supabase/functions/_shared/api-contract.ts）。推薦王任務獎勵
+  // 已改為「免費續約 1 年」credit，不再進點數流水帳，故不再提供「任務獎勵」篩選。
   const filteredHistory = history.filter(record => {
     if (filterType === 'all') return true;
     if (filterType === 'referral') return record.type.startsWith('referral_');
-    if (filterType === 'task') return record.type.startsWith('task_');
     if (filterType === 'withdrawal') return record.type === 'withdrawal';
     return true;
   });
@@ -118,7 +118,6 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
               <SelectContent>
                 <SelectItem value="all">全部類型</SelectItem>
                 <SelectItem value="referral">推薦獎勵</SelectItem>
-                <SelectItem value="task">任務獎勵</SelectItem>
                 <SelectItem value="withdrawal">點數提領</SelectItem>
               </SelectContent>
             </Select>
@@ -211,13 +210,22 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                           {/* 第二行：細節資訊 */}
                           <p className="text-sm text-muted-foreground truncate">
                             {(() => {
-                              // 如果 detail 不存在，返回 '—'
+                              // 推薦獎勵優先用結構化的名字快照（migration 0719 0001）：
+                              //   被推薦人（其直接推薦人）；直推（第 1 代）只顯示被推薦人。
+                              // 不再靠切 description 反推——那串裡本就沒有名字。
+                              if (record.refereeName) {
+                                return record.generation && record.generation > 1 && record.refereeReferrerName
+                                  ? `${record.refereeName}（${record.refereeReferrerName}）`
+                                  : record.refereeName;
+                              }
+
+                              // 其餘型別 / 尚未回填到快照的舊資料：沿用原本的 description 解析
                               if (!detail) return '—';
-                              
+
                               // 移除推薦碼（格式：-abc123456-）
                               // 推薦碼格式：3個小寫字母 + 6個數字
                               const cleanedDetail = detail.replace(/-[a-z]{3}\d{6}-/g, '-');
-                              
+
                               return cleanedDetail;
                             })()}
                           </p>

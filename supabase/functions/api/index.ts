@@ -1894,21 +1894,23 @@ app.get('/rewards/history', async (c) => {
 
   const { data: rows, count } = await sb()
     .from('reward_transactions_with_balance')
-    .select('id, type, amount, description, created_at, generation, balance_after', { count: 'exact' })
+    .select('id, type, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(offset, offset + limit - 1);
 
   const history = (rows ?? []).map((r: any) => ({
-    id:          r.id,
-    type:        r.type,
-    amount:      r.amount,
-    description: r.description,
-    issuedAt:    r.created_at,
-    requestedAt: r.type === 'withdrawal' ? r.created_at : undefined,
-    generation:  r.generation ?? undefined,
-    balance:     r.balance_after,
+    id:                  r.id,
+    type:                r.type,
+    amount:              r.amount,
+    description:         r.description,
+    issuedAt:            r.created_at,
+    requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
+    generation:          r.generation ?? undefined,
+    balance:             r.balance_after,
+    refereeName:         r.referee_name ?? undefined,
+    refereeReferrerName: r.referee_referrer_name ?? undefined,
   }));
 
   return c.json({
@@ -2045,7 +2047,7 @@ app.get('/tasks', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const currentMonth = twCurrentMonth();
-  const KING_TARGET  = 10;
+  const KING_TARGET  = 8;
 
   const client = sb();
   const [{ data: progress }, { data: rewardsRows }] = await Promise.all([
@@ -2072,7 +2074,7 @@ app.get('/tasks', async (c) => {
     id:          'task_monthly_king',
     type:        'monthly_king',
     title:       '推薦王',
-    description: '單月推薦10位以上用戶',
+    description: '單月推薦8位以上用戶',
     target:      KING_TARGET,
     current:     currentCount,
     completed:   currentCount >= KING_TARGET,
@@ -2156,7 +2158,7 @@ app.get('/tasks/current-month-top', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const KING_TARGET = 10;
+  const KING_TARGET = 8;
   const limit        = Math.min(parseInt(c.req.query('limit') || '100'), 200);
   const currentMonth = twCurrentMonth();
 
@@ -2168,7 +2170,7 @@ app.get('/tasks/current-month-top', async (c) => {
     .maybeSingle();
 
   const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
-  // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 10 位標
+  // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 8 位標
   // 「第N次完成」，順序錯了標記就跟著錯。
   const ids: string[] = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth] : [];
   const total           = ids.length;

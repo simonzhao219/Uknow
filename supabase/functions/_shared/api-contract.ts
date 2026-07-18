@@ -184,6 +184,12 @@ export const RewardHistoryRecordSchema = obj({
   requestedAt: optional(str()),
   generation:  optional(num()),
   balance:     optional(num()),
+  // 推薦獎勵專用：發獎當下的名字快照（見 migration 0719 0001）。
+  // refereeName          = 被推薦人（因其訂閱而發此獎）。
+  // refereeReferrerName  = 被推薦人的直接推薦人；第 1 代為空（即收獎者本人）。
+  // 兩者僅推薦獎勵有值，其餘型別 / 舊資料為 undefined，前端 fallback。
+  refereeName:         optional(str()),
+  refereeReferrerName: optional(str()),
 });
 export type RewardHistoryRecord = Infer<typeof RewardHistoryRecordSchema>;
 
