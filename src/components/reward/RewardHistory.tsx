@@ -86,12 +86,12 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     }
   }, [refreshTrigger]);
 
-  // 篩選獎勵記錄——四種資料庫 type 值：referral_reward / task_monthly_king /
-  // withdrawal / adjustment（見 supabase/functions/_shared/api-contract.ts）
+  // 篩選獎勵記錄——明細只剩會影響點數的流水：referral_reward / withdrawal /
+  // adjustment（見 supabase/functions/_shared/api-contract.ts）。推薦王任務獎勵
+  // 已改為「免費續約 1 年」credit，不再進點數流水帳，故不再提供「任務獎勵」篩選。
   const filteredHistory = history.filter(record => {
     if (filterType === 'all') return true;
     if (filterType === 'referral') return record.type.startsWith('referral_');
-    if (filterType === 'task') return record.type.startsWith('task_');
     if (filterType === 'withdrawal') return record.type === 'withdrawal';
     return true;
   });
@@ -118,7 +118,6 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
               <SelectContent>
                 <SelectItem value="all">全部類型</SelectItem>
                 <SelectItem value="referral">推薦獎勵</SelectItem>
-                <SelectItem value="task">任務獎勵</SelectItem>
                 <SelectItem value="withdrawal">點數提領</SelectItem>
               </SelectContent>
             </Select>

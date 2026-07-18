@@ -115,7 +115,7 @@ Deno.test('GET /tasks：恰一個 monthly_king 任務', async () => {
 });
 
 Deno.test('GET /tasks/pending-rewards：契約形狀', async () => {
-  // 直接塞一筆 unclaimed credit（10 人門檻的完整路徑由
+  // 直接塞一筆 unclaimed credit（8 人門檻的完整路徑由
   // referral-king-reward.test.ts 覆蓋，這裡只驗形狀）。
   const { error } = await client.from('referral_king_rewards').insert({
     user_id: referrer.id, month_key: '2099-01', status: 'unclaimed',
