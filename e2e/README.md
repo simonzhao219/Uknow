@@ -66,6 +66,16 @@ steps/            # step definitions; common_steps.py holds shared Given/When/Th
    page object; only add a `data-testid` to the source component when the
    text/role is ambiguous or state-dependent.
 
+## Recently added coverage
+
+- The **public directory** — the app's front door — is now covered:
+  `home_listings.feature` drives the `/` listing grid, the keyword search
+  (match / no-match + clear), the two empty states, and card→detail
+  navigation; `service_provider_detail.feature` drives the public
+  `/service-providers/:id` page (found + `找不到此服務者` not-found). Both read
+  the `public_listings` view through `SupabaseRestMock.set_public_listings`
+  (list) / `set_public_listing` (single).
+
 ## Known gaps (by design, for this first pass)
 
 - Real Supabase/PayUni integration is out of scope here — see the Deno tests
