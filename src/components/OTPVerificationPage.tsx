@@ -13,6 +13,7 @@ import {
   getSecondsLeft,
   clearOtpWindow,
 } from '../utils/otpExpiry';
+import { nextRouteForStep } from '../utils/registrationFlow';
 
 export function OTPVerificationPage() {
   const location = useLocation();
@@ -97,13 +98,8 @@ export function OTPVerificationPage() {
           data: { registrationStep: number };
         }>(buildApiUrl('/auth/profile'));
         const step = result.data?.registrationStep ?? 0;
-        if (step >= 3) {
-          navigate('/dashboard', { replace: true });
-        } else if (step >= 1) {
-          navigate('/payment/checkout', { replace: true });
-        } else {
-          navigate('/auth/complete-profile', { replace: true });
-        }
+        // 與 AuthPage 共用同一份「下一步去哪」的決策，避免兩處走針。
+        navigate(nextRouteForStep(step), { replace: true });
       } catch (profileErr) {
         // New user — profile doesn't exist yet
         if (profileErr instanceof ApiError && profileErr.status === 401) {

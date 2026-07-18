@@ -13,7 +13,7 @@ export function Footer() {
   return (
     <footer className="mt-auto border-t bg-muted/30">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <nav aria-label="頁尾導覽" className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <nav aria-label="頁尾導覽" className="grid grid-cols-2 gap-x-4 gap-y-6 mb-6">
           {/* 快速連結 */}
           <div className="space-y-3">
             <h2 className="font-semibold text-lg">快速連結</h2>
