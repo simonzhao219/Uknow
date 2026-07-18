@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { StatCardGrid } from '../ui/stat-card-grid';
 import { Users, UserPlus } from 'lucide-react';
 
 interface ReferralStatsProps {
@@ -10,34 +11,12 @@ interface ReferralStatsProps {
 
 export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCount }: ReferralStatsProps) {
   const totalReferrals = firstLevelCount + secondLevelCount + thirdLevelCount;
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // 组件挂载时重置滚动位置
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollLeft = 0;
-    }
-  }, []);
-  
-  // 监听窗口大小变化，在响应式切换时重置滚动
-  useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current && window.innerWidth >= 768) {
-        // 平板/桌面版：重置滚动（因为变成 grid 布局不需要滚动）
-        containerRef.current.scrollLeft = 0;
-      }
-    };
-    
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
+  // 用共用的 StatCardGrid：4 張卡在手機以 2×2 全部可見（不再水平捲動），
+  // 桌面一列四欄，等寬填滿、左右對稱。
   return (
-    <div 
-      ref={containerRef}
-      className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory md:grid md:grid-cols-2 lg:grid-cols-4 md:overflow-x-visible"
-    >
-      <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
+    <StatCardGrid>
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Users className="h-5 w-5 text-blue-600 shrink-0" />
@@ -52,7 +31,7 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardContent>
       </Card>
 
-      <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <UserPlus className="h-5 w-5 text-green-600 shrink-0" />
@@ -67,7 +46,7 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardContent>
       </Card>
 
-      <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <UserPlus className="h-5 w-5 text-purple-600 shrink-0" />
@@ -82,7 +61,7 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
         </CardContent>
       </Card>
 
-      <Card className="min-w-[168px] snap-start shrink-0 md:min-w-0">
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <UserPlus className="h-5 w-5 text-orange-600 shrink-0" />
@@ -96,6 +75,6 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
           </p>*/}
         </CardContent>
       </Card>
-    </div>
+    </StatCardGrid>
   );
 }
