@@ -104,6 +104,17 @@ def click_retry_payment(payment_result_page):
 
 @when("I click contact support", target_fixture="popup")
 def click_contact_support(page, payment_result_page):
+    # LINE is an external third party we must never navigate to for real (it's
+    # unreachable from the sandbox and would 302-redirect anyway, making the
+    # exact-URL assertion non-deterministic). Fulfilling the domain with a stub
+    # lets the new tab settle on the exact intended deep link so the test asserts
+    # "we opened the right LINE URL" without leaving the mocked network.
+    page.context.route(
+        "https://line.me/**",
+        lambda route: route.fulfill(
+            status=200, content_type="text/html", body="<html><body>LINE</body></html>"
+        ),
+    )
     with page.expect_popup() as popup_info:
         payment_result_page.click_contact_support()
     return popup_info.value

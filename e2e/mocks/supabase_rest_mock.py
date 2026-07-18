@@ -48,6 +48,31 @@ def build_listing(user_id: str = DEFAULT_USER_ID, **overrides) -> dict:
     return listing
 
 
+def build_public_listing(listing_id: str = "11111111-1111-1111-1111-111111111111", **overrides) -> dict:
+    """A row shaped like the `public_listings` view that HomePage (list read)
+    and ServiceProviderDetail (`.single()` read) consume. HomePage filters on
+    name/description/tags and shows city/district/category/gender; Detail also
+    renders the photo gallery and 服務介紹 / 聯絡方式 sections."""
+    listing = {
+        "id": listing_id,
+        "name": "測試服務者",
+        "category": "美髮",
+        "gender": "女",
+        "city": "台北市",
+        "districts": ["全區"],
+        "description": "這是一段測試用的服務介紹。",
+        "tags": ["剪髮", "染髮"],
+        "photos": [
+            "https://example.com/photo1.jpg",
+            "https://example.com/photo2.jpg",
+        ],
+        "contacts": {"instagram": "test_ig", "line": "", "facebook": ""},
+        "created_at": "2026-01-01T00:00:00.000Z",
+    }
+    listing.update(overrides)
+    return listing
+
+
 def _fulfill_json(route, body, status: int = 200):
     route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
 
@@ -80,6 +105,7 @@ class SupabaseRestMock:
         self._user_listing = None      # maybeSingle GET /listings  (Management, Create existing-check)
         self._listing_by_id = None     # single GET /listings by id  (Edit read)
         self._public_listing = None    # single GET /public_listings (Detail)
+        self._public_listings = []     # select() list GET /public_listings (HomePage)
         self._write_error = None       # (status, body) to fail insert/update/delete
         self._routed = False
 
@@ -113,6 +139,14 @@ class SupabaseRestMock:
         self._ensure_routes()
         return listing
 
+    def set_public_listings(self, listings):
+        """The array returned by HomePage's `.select().order()` list read on
+        `public_listings`. Pass a list of rows (possibly empty for the
+        "目前沒有可用的服務者" empty state)."""
+        self._public_listings = list(listings)
+        self._ensure_routes()
+        return listings
+
     def fail_writes(self, message: str = "操作失敗", status: int = 400):
         self._write_error = (status, {"message": message, "code": "", "details": "", "hint": ""})
         self._ensure_routes()
@@ -144,7 +178,12 @@ class SupabaseRestMock:
 
     def _handle_public_listings(self, route):
         if route.request.method == "GET":
-            if self._public_listing is None:
-                return _not_found_406(route)
-            return _fulfill_json(route, self._public_listing)
+            accept = (route.request.headers.get("accept") or "").lower()
+            if _OBJECT_ACCEPT in accept:
+                # `.single()` by id — Detail read.
+                if self._public_listing is None:
+                    return _not_found_406(route)
+                return _fulfill_json(route, self._public_listing)
+            # `.select().order()` list — HomePage read.
+            return _fulfill_json(route, self._public_listings)
         return _fulfill_empty(route, status=204)

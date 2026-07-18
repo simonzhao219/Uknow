@@ -1,4 +1,8 @@
 pytest>=8.0
 pytest-bdd>=7.2
 pytest-playwright>=0.5
-playwright>=1.45
+# Pinned: the bundled browser build must match `playwright install` (or a
+# pre-provisioned browser). An open `>=` range silently floats to a newer
+# Chromium build than the one installed, failing with "Executable doesn't
+# exist" at launch. 1.56.0 bundles chromium build 1194.
+playwright==1.56.0
