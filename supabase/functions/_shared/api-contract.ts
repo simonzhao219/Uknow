@@ -311,6 +311,7 @@ export const CurrentMonthReferralsResponseSchema = obj({
     completedCount:  num(),
     currentProgress: num(),
     referrals:       arr(MonthlyReferralRecordSchema),
+    target:          num(),   // 推薦王月門檻（reward_config），前端進度以此為準
   }),
 });
 export type CurrentMonthReferralsResponse = Infer<typeof CurrentMonthReferralsResponseSchema>;
