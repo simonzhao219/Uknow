@@ -1,14 +1,13 @@
 // ============================================================
-// 推薦王（單月推薦 10 人）：達標即發放可領取的「免費續約 1 年」
+// 推薦王（單月推薦 8 人）：達標即發放可領取的「免費續約 1 年」
 // credit；使用者需主動呼叫 claim_referral_king_reward 才會真的延展
-// 訂閱到期日。referral_king_rewards 表跟 claim_referral_king_reward
-// 函數目前都不存在，預期 FAIL。
+// 訂閱到期日。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
 import { twDayOf, twDayPlusDays, twDayPlusYears, twEndOfDayInstant } from './tw-dates.ts';
 
-Deno.test('hitting 10 referrals in a month grants exactly one unclaimed free-renewal credit, even past 10', async () => {
+Deno.test('hitting 8 referrals in a month grants exactly one unclaimed free-renewal credit, even past 8', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'King Referrer' });
   const refereeIds: string[] = [];
@@ -18,7 +17,7 @@ Deno.test('hitting 10 referrals in a month grants exactly one unclaimed free-ren
     assertEquals(error, null);
     const refCode = await getActiveReferralCode(client, referrer.id);
 
-    // 付 12 個下線（超過門檻 10），驗證只會有 1 筆 credit，不會每超過
+    // 付 12 個下線（超過門檻 8），驗證只會有 1 筆 credit，不會每超過
     // 1 個就再開一筆。
     for (let i = 0; i < 12; i++) {
       const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });

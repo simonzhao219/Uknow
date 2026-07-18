@@ -445,12 +445,12 @@ def build_monthly_king_task(current: int = 0, **overrides) -> dict:
         "id": "task_monthly_king",
         "type": "monthly_king",
         "title": "推薦王",
-        "description": "單月推薦滿 10 人，獲得免費續約 1 年",
-        "target": 10,
+        "description": "單月推薦滿 8 人，獲得免費續約 1 年",
+        "target": 8,
         "current": current,
-        "completed": current >= 10,
+        "completed": current >= 8,
         "reward": {"type": "free_renewal_year", "label": "免費續約 1 年"},
-        "progress": min(current / 10, 1),
+        "progress": min(current / 8, 1),
         "hasUnclaimedReward": False,
         "unclaimedRewardCount": 0,
         "details": {
@@ -512,7 +512,7 @@ def build_pending_free_year_reward(reward_id: str = "reward-e2e-1", **overrides)
         "amount": 0,
         "achievedAt": "2026-07-01T00:00:00.000Z",
         "status": "pending",
-        "description": "推薦王：單月推薦滿 10 人",
+        "description": "推薦王：單月推薦滿 8 人",
         "details": {"monthKey": "2026-07"},
     }
     reward.update(overrides)

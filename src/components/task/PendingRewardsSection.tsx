@@ -36,7 +36,9 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward }: Props) 
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-3">
+        {/* 上限 max-h + overflow-y-auto：即使累積數十筆未領取獎勵，卡片高度
+            也被封頂、內部滾動，不會把整頁撐爆。 */}
+        <CardContent className="space-y-3 max-h-[28rem] overflow-y-auto">
           {pendingRewards.map((reward) => (
             <div
               key={reward.id}
