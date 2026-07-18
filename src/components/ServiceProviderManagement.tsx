@@ -16,7 +16,7 @@ export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
-  const { getValidCache, setCache, clearCache } = useDataCache(); // ✅ 新增：使用資料快取
+  const { getCache, setCache, clearCache, isStale } = useDataCache();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
@@ -25,29 +25,27 @@ export function ServiceProviderManagement() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // ✅ 優化：獲取用戶的刊登（使用快取）
+  // stale-while-revalidate：有快取先畫（秒開），stale 時背景重新請求。
   useEffect(() => {
     if (user?.id) {
-      // ✅ 優先使用快取（過期視同 cache miss，5 分鐘 TTL）
-      const cached = getValidCache('userListing');
+      const cached = getCache('userListing');
       if (cached != null) {
-        console.log('🎯 ServiceProviderManagement: 使用快取的刊登資料');
         setListing(cached);
         setLoading(false);
-      } else {
-        console.log('🔄 ServiceProviderManagement: 無快取或已過期，載入新資料');
-        fetchUserListing();
+      }
+      if (cached == null || isStale('userListing')) {
+        fetchUserListing(cached != null);
       }
     } else {
       // ✅ 若沒有 user，停止 loading 並清空 listing
-      console.log('ServiceProviderManagement: No user, skipping fetch');
       setLoading(false);
       setListing(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const fetchUserListing = async () => {
-    setLoading(true);
+  const fetchUserListing = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       if (!user?.id) { setListing(null); return; }
 
@@ -63,10 +61,13 @@ export function ServiceProviderManagement() {
       setListing(listingData);
     } catch (error) {
       console.error('獲取刊登失敗:', error);
-      showToast('獲取刊登失敗，請稍後再試', 'error');
-      setListing(null);
+      // 背景重新請求失敗不打擾使用者，畫面沿用舊資料。
+      if (!isBackground) {
+        showToast('獲取刊登失敗，請稍後再試', 'error');
+        setListing(null);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

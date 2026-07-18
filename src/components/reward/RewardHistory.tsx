@@ -4,47 +4,8 @@ import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Calendar, TrendingUp, TrendingDown, Receipt, Loader2 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
-import { formatReferee, formatReferrer, formatTimestamp } from '../../utils/referralFormatter';
-
-/**
- * 獎勵記錄（新格式）
- */
-interface RewardRecord {
-  id: string;
-  type: string;
-  amount: number;
-  description: string;
-  issuedAt: string;
-  
-  // ✅ 提領相關：申請日期（提領點數和手續費會有此欄位）
-  requestedAt?: string;
-  
-  // ✅ 提領詳細信息（僅 withdrawal_with_fee 類型有此欄位）
-  withdrawalDetails?: {
-    netAmount: number;    // 淨提領額
-    fee: number;          // 手續費
-    totalAmount: number;  // 總扣款額
-  };
-  
-  // ✅ 推薦獎勵的完整信息
-  referee?: {
-    userId: string;
-    userName: string;
-    listingId: string;
-    listingName: string;
-  };
-  referrer?: {
-    userId: string;
-    userName: string;
-    listingId: string;
-    listingName: string;
-  };
-  generation?: number;
-  monthNumber?: number;
-  
-  // 新增額欄位
-  balance?: number;
-}
+import { formatTimestamp } from '../../utils/referralFormatter';
+import type { RewardHistoryRecord as RewardRecord, RewardHistoryResponse } from '@contract';
 
 interface RewardHistoryProps {
   refreshTrigger?: number;  // ✅ 新增：刷新觸發器
@@ -72,15 +33,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       const currentOffset = isLoadMore ? offset : 0;
       
       // ✅ 使用統一的 API 請求工具
-      const result = await apiRequestJson<{ 
-        success: boolean; 
-        data: { 
-          history: RewardRecord[];
-          total: number;
-          limit: number;
-          offset: number;
-        } 
-      }>(
+      const result = await apiRequestJson<RewardHistoryResponse>(
         buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}`)
       );
       
@@ -133,43 +86,13 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     }
   }, [refreshTrigger]);
 
-  // ✅ 新增：格式化明細顯示邏輯
-  const getFormattedDetail = (record: RewardRecord) => {
-    // 特殊處理：提領申請類型（withdrawal_pending）
-    if (record.type === 'withdrawal_pending') {
-      const totalAmount = Math.abs(record.amount);  // 1015
-      const fee = 15;  // 固定手續費
-      const withdrawalAmount = totalAmount - fee;  // 1000
-      
-      return `${withdrawalAmount} P + 手續費 ${fee} P`;  // ✅ 格式化為規格要求
-    }
-    
-    // 其他類型保持原有邏輯
-    return null;  // null 表示使用原有邏輯
-  };
-
-  // 篩選獎勵記錄
+  // 篩選獎勵記錄——四種資料庫 type 值：referral_reward / task_monthly_king /
+  // withdrawal / adjustment（見 supabase/functions/_shared/api-contract.ts）
   const filteredHistory = history.filter(record => {
     if (filterType === 'all') return true;
-    
-    if (filterType === 'referral') {
-      return record.type.startsWith('referral_');
-    }
-    
-    if (filterType === 'task') {
-      // ✅ 修復：支持 task_ 和 mission_ 兩種格式
-      return record.type.startsWith('task_') || record.type.startsWith('mission_');
-    }
-    
-    if (filterType === 'withdrawal') {
-      // ✅ 新增：點數提領篩選（支持新舊格式 + withdrawal_pending）
-      return record.type === 'withdrawal_with_fee' || 
-             record.type === 'withdrawal' || 
-             record.type === 'withdrawal_fee' ||
-             record.type === 'withdrawal_pending' ||
-             record.type === 'withdrawal_completed';
-    }
-    
+    if (filterType === 'referral') return record.type.startsWith('referral_');
+    if (filterType === 'task') return record.type.startsWith('task_');
+    if (filterType === 'withdrawal') return record.type === 'withdrawal';
     return true;
   });
 
@@ -240,29 +163,13 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                   {(() => {
                     let type = '';
                     let detail = '';
-                    
-                    // ✅ 特殊處理：提領申請類型（withdrawal_pending）
-                    if (record.type === 'withdrawal_pending') {
-                      type = '提領申請';  // ✅ 固定標題
-                      detail = getFormattedDetail(record) || '—';  // 使用格式化函數
-                    }
-                    // ✅ 檢查是否為提領類型（支持新舊格式）
-                    else if (record.type === 'withdrawal_with_fee' || 
-                        record.type === 'withdrawal' || 
-                        record.type === 'withdrawal_fee') {
-                      // 提領類型：使用 description 作為標題
+
+                    if (record.type === 'withdrawal') {
+                      // 提領：description 作為標題，申請日期作細節
                       type = record.description;
-                      
-                      // ✅ 優先顯示詳細拆分（新記錄 withdrawal_with_fee）
-                      if (record.withdrawalDetails) {
-                        const { netAmount, fee } = record.withdrawalDetails;
-                        detail = ` ${Math.abs(netAmount).toLocaleString()}P + 手續費 ${fee}P`;
-                      } else {
-                        // 向後兼容：舊記錄（withdrawal/withdrawal_fee）顯示申請日期
-                        detail = record.requestedAt 
-                          ? `申請日期：${formatTimestamp(record.requestedAt)}`
-                          : '—';
-                      }
+                      detail = record.requestedAt
+                        ? `申請日期：${formatTimestamp(record.requestedAt)}`
+                        : '—';
                     } else {
                       // ✅ 優先檢查中文冒號（系統校正等特殊記錄）
                       if (record.description.includes('：')) {

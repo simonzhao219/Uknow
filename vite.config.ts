@@ -50,6 +50,9 @@
         '@radix-ui/react-alert-dialog@1.1.6': '@radix-ui/react-alert-dialog',
         '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
         '@': path.resolve(__dirname, './src'),
+        // 契約 SSOT：前後端共用同一份 API 型別定義（見
+        // supabase/functions/_shared/api-contract.ts 檔頭說明）。
+        '@contract': path.resolve(__dirname, './supabase/functions/_shared/api-contract.ts'),
       },
     },
     build: {

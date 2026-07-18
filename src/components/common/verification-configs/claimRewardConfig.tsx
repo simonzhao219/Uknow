@@ -2,10 +2,11 @@ import React from 'react';
 import { ThreeStepConfig } from '../ThreeStepDialog';
 import { AlertTriangle, ArrowRight, CheckCircle } from 'lucide-react';
 import { formatTimestamp } from '../../../utils/referralFormatter';
+import { twDayOf, twDayPlusYears, formatTwDate } from '../../../utils/twDate';
 
 interface PendingMissionReward {
   id: string;
-  type: 'consecutive_referral' | 'monthly_king';
+  type: 'monthly_king';
   rewardType?: 'free_renewal_year';
   amount: number;
   achievedAt: string;
@@ -93,11 +94,12 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
           );
         }
 
-        const currentEnd = previewData.activeUntil ? new Date(previewData.activeUntil) : null;
-        const afterEnd = currentEnd ? new Date(currentEnd) : null;
-        if (afterEnd) afterEnd.setFullYear(afterEnd.getFullYear() + 1);
+        // 日領域計算，與後端 claim_referral_king_reward 的
+        // 「新最後一天 = tw_day(舊迄日) + 1 年」完全同語意。
+        const currentEndDay = previewData.activeUntil ? twDayOf(previewData.activeUntil) : null;
+        const afterEndDay = currentEndDay ? twDayPlusYears(currentEndDay, 1) : null;
 
-        const formatDate = (d: Date | null) => (d ? d.toLocaleDateString('zh-TW') : '—');
+        const formatDate = (day: string | null) => (day ? formatTwDate(day) : '—');
 
         return (
           <div className="space-y-4">
@@ -116,12 +118,12 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-white p-3 rounded border border-blue-200">
                   <div className="text-xs text-muted-foreground mb-1">目前</div>
-                  <div className="text-lg font-bold text-blue-600">{formatDate(currentEnd)}</div>
+                  <div className="text-lg font-bold text-blue-600">{formatDate(currentEndDay)}</div>
                 </div>
                 <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
                 <div className="flex-1 bg-white p-3 rounded border border-blue-200">
                   <div className="text-xs text-muted-foreground mb-1">領取後</div>
-                  <div className="text-lg font-bold text-green-600">{formatDate(afterEnd)}</div>
+                  <div className="text-lg font-bold text-green-600">{formatDate(afterEndDay)}</div>
                 </div>
               </div>
             </div>

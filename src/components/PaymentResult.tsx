@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { Loader2, CheckCircle, XCircle, Clock, CreditCard, AlertCircle } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import { UserContext } from '../App';
+import { useDataCache } from '../contexts/DataCacheContext';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -50,6 +51,7 @@ export function PaymentResult() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, refreshUser } = useContext(UserContext);
+  const { invalidate } = useDataCache();
 
   const tradeNo = searchParams.get('tradeNo');
   // PayUni 導回時，後端 /payuni/return 已經解密並判定結果，直接把
@@ -130,6 +132,13 @@ export function PaymentResult() {
 
   // 會籍是否已生效——付款成功畫面與守衛都以這個為準（不是 registrationStep）。
   const isMemberActive = user?.accountStatus === 'active' || user?.accountStatus === 'grace';
+
+  // 付款成功 → 一次性失效整組相關快取（會籍/獎勵/任務/推薦樹），
+  // 回會員中心讀到的都是最新資料——修「續約後自己的到期日還顯示舊值」。
+  useEffect(() => {
+    if (resolvedStatus === 'success') invalidate('payment');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedStatus]);
 
   // 付款成功但會籍還沒生效（後端自癒收斂中）：輪詢 /profile，轉 active
   // 的瞬間自動帶進會員中心——絕不留一顆按了會被守衛彈回來的「成功」

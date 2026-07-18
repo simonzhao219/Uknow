@@ -15,6 +15,8 @@
  * @file /utils/referralFormatter.ts
  */
 
+import { formatTwDate, formatTwTimestamp } from './twDate';
+
 /**
  * 格式化被推薦人信息
  * 
@@ -56,32 +58,8 @@ export function formatReferrer(userName: string, listingName: string): string {
  * // 返回: '2024/12/15 12:34:56'
  */
 export function formatTimestamp(isoString: string): string {
-  // ✅ 強制使用台灣時區（UTC+8）顯示時間
-  const date = new Date(isoString);
-  
-  // 使用 toLocaleString 強制轉換為台灣時區
-  const taiwanTimeStr = date.toLocaleString('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  
-  // 格式化為 YYYY/MM/DD HH:mm:ss
-  // toLocaleString 返回格式：YYYY/M/D 下午H:mm:ss 或 YYYY/M/D HH:mm:ss
-  const parts = taiwanTimeStr.split(' ');
-  const datePart = parts[0]; // YYYY/M/D
-  const timePart = parts[parts.length - 1]; // HH:mm:ss
-  
-  // 標準化日期部分（補零）
-  const [year, month, day] = datePart.split('/');
-  const paddedDate = `${year}/${month.padStart(2, '0')}/${day.padStart(2, '0')}`;
-  
-  return `${paddedDate} ${timePart}`;
+  // 委派給統一的台灣時間工具（src/utils/twDate.ts）
+  return formatTwTimestamp(isoString);
 }
 
 /**
@@ -95,19 +73,8 @@ export function formatTimestamp(isoString: string): string {
  * // 返回: '2024/12/15'
  */
 export function formatDate(isoString: string): string {
-  // ✅ 強制使用台灣時區（UTC+8）顯示日期
-  const date = new Date(isoString);
-  
-  // 使用 toLocaleString 強制轉換為台灣時區
-  const taiwanDateStr = date.toLocaleDateString('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  // toLocaleDateString 返回格式：YYYY/MM/DD
-  return taiwanDateStr;
+  // 委派給統一的台灣時間工具（src/utils/twDate.ts）
+  return formatTwDate(isoString);
 }
 
 /**

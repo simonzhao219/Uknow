@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDataCache } from '../contexts/DataCacheContext';
+import { dedupe } from '../utils/requestDedup';
+import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
 
@@ -23,25 +25,11 @@ export interface Task {
   details: any;
 }
 
-export interface MonthlyProgress {
-  month: string;
-  hasReferral: boolean;
-  firstReferral: {
-    userName: string;
-    userReferralCode: string;
-    createdAt: string;
-  } | null;
-  status: 'completed' | 'missed' | 'pending' | 'future';
-  gameMonth: number;
-}
-
 export interface MonthlyReferralRecord {
   userId: string;
   userName: string;
-  userReferralCode: string;
-  listingId: string | null;
-  listingName: string | null;
-  createdAt: string;
+  userReferralCode: string | null;
+  createdAt: string | null;
 }
 
 export interface CurrentMonthReferrals {
@@ -54,7 +42,7 @@ export interface CurrentMonthReferrals {
 
 export interface PendingMissionReward {
   id: string;
-  type: 'consecutive_referral' | 'monthly_king';
+  type: 'monthly_king';
   rewardType?: 'free_renewal_year';
   amount: number;
   achievedAt: string;
@@ -66,108 +54,101 @@ export interface PendingMissionReward {
 export interface UseTaskDataResult {
   tasks: Task[];
   pendingRewards: PendingMissionReward[];
-  monthlyProgress: MonthlyProgress[];
   currentMonthData: CurrentMonthReferrals | null;
   isLoading: boolean;
-  loadingMonthly: boolean;
+  isValidating: boolean;
   loadingCurrent: boolean;
   loadingPending: boolean;
   error: string | null;
-  fetchMonthlySummary: () => Promise<MonthlyProgress[] | null>;
   fetchCurrentMonthTop: () => Promise<CurrentMonthReferrals | null>;
   fetchPendingRewards: () => Promise<void>;
   handleClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
 }
 
+const DEDUP_KEY = 'tasks+pendingRewards';
+
 export function useTaskData(): UseTaskDataResult {
-  const { getValidCache, setCache, clearCache } = useDataCache();
+  const { getCache, setCache, isStale, invalidate } = useDataCache();
   const { showSuccess, showToast } = useNotification();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pendingRewards, setPendingRewards] = useState<PendingMissionReward[]>([]);
-  const [monthlyProgress, setMonthlyProgress] = useState<MonthlyProgress[]>([]);
   const [currentMonthData, setCurrentMonthData] = useState<CurrentMonthReferrals | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingMonthly, setLoadingMonthly] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [loadingCurrent, setLoadingCurrent] = useState(false);
   const [loadingPending, setLoadingPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasDataRef = useRef(false);
 
-  useEffect(() => {
-    const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
+    if (hasDataRef.current) {
+      setIsValidating(true);
+    } else {
       setIsLoading(true);
       setError(null);
-      try {
-        // 過期視同 cache miss（getValidCache，5 分鐘 TTL）：推薦王的
-        // 本月推薦數不再整個 session 卡在舊值。
-        const cachedTasks = getValidCache('tasks');
-        const cachedPending = getValidCache('pendingRewards');
-
-        if (cachedTasks && cachedPending) {
-          setTasks(cachedTasks);
-          setPendingRewards(cachedPending);
-          setIsLoading(false);
-          return;
-        }
-
-        const [tasksResult, pendingResult] = await Promise.all([
-          apiRequestJson<{ success: boolean; data: { tasks: Task[] } }>(buildApiUrl('/tasks')),
-          apiRequestJson<{ success: boolean; data: PendingMissionReward[] }>(
-            buildApiUrl('/tasks/pending-rewards')
-          ),
-        ]);
-
-        if (tasksResult.success) {
-          const sorted = (tasksResult.data.tasks || []).sort((a, b) => {
-            const order: Record<string, number> = { monthly_king: 1, consecutive_referral: 2 };
-            return (order[a.type] ?? 999) - (order[b.type] ?? 999);
-          });
-          setTasks(sorted);
-          setCache('tasks', sorted);
-        } else {
-          throw new Error('獲取任務資料失敗');
-        }
-
-        if (pendingResult.success) {
-          setPendingRewards(pendingResult.data);
-          setCache('pendingRewards', pendingResult.data);
-        }
-      } catch (err) {
-        const msg =
-          err instanceof ApiError && err.status === 401
-            ? '登入已過期，請重新登入'
-            : err instanceof Error
-            ? err.message
-            : '獲取任務資料失敗';
-        setError(msg);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchAllData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchMonthlySummary = useCallback(async (): Promise<MonthlyProgress[] | null> => {
-    setLoadingMonthly(true);
+    }
     try {
-      const result = await apiRequestJson<{ success: boolean; data: MonthlyProgress[] }>(
-        buildApiUrl('/tasks/monthly-summary')
-      );
-      if (result.success) {
-        setMonthlyProgress(result.data);
-        return result.data;
+      const [tasksResult, pendingResult] = await Promise.all([
+        apiRequestJson<{ success: boolean; data: { tasks: Task[] } }>(buildApiUrl('/tasks')),
+        apiRequestJson<{ success: boolean; data: PendingMissionReward[] }>(
+          buildApiUrl('/tasks/pending-rewards')
+        ),
+      ]);
+
+      if (tasksResult.success) {
+        const list = tasksResult.data.tasks || [];
+        setTasks(list);
+        setCache('tasks', list);
+      } else {
+        throw new Error('獲取任務資料失敗');
       }
-      throw new Error('獲取月度摘要失敗');
+
+      if (pendingResult.success) {
+        setPendingRewards(pendingResult.data);
+        setCache('pendingRewards', pendingResult.data);
+      }
+      hasDataRef.current = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '獲取月度摘要失敗', 'error');
-      return null;
+      const msg =
+        err instanceof ApiError && err.status === 401
+          ? '登入已過期，請重新登入'
+          : err instanceof Error
+          ? err.message
+          : '獲取任務資料失敗';
+      if (!hasDataRef.current) {
+        setError(msg);
+      } else {
+        console.error('[useTaskData] 背景重新請求失敗:', msg);
+      }
     } finally {
-      setLoadingMonthly(false);
+      setIsLoading(false);
+      setIsValidating(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // stale-while-revalidate：有快取先畫（秒開），同時背景重新請求——
+    // 推薦王的本月推薦數在 F5 後一個 round-trip 內就是最新值。
+    const cachedTasks = getCache('tasks');
+    const cachedPending = getCache('pendingRewards');
+    if (cachedTasks && cachedPending) {
+      setTasks(cachedTasks);
+      setPendingRewards(cachedPending);
+      hasDataRef.current = true;
+      setIsLoading(false);
+    }
+    if (!cachedTasks || !cachedPending || isStale('tasks') || isStale('pendingRewards')) {
+      dedupe(DEDUP_KEY, fetchAllData);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useRevalidateOnFocus(
+    () => isStale('tasks') || isStale('pendingRewards'),
+    () => dedupe(DEDUP_KEY, fetchAllData)
+  );
 
   const fetchCurrentMonthTop = useCallback(async (): Promise<CurrentMonthReferrals | null> => {
     setLoadingCurrent(true);
@@ -213,17 +194,13 @@ export function useTaskData(): UseTaskDataResult {
       { method: 'POST', body: JSON.stringify({ idNumber }) }
     );
     if (result.success) {
-      showSuccess('領取任務獎勵成功！', '獎勵已加入您的可提領點數');
+      showSuccess('領取任務獎勵成功！', '免費續約 1 年已加入您的會員效期');
       setPendingRewards((prev) => prev.filter((r) => r.id !== rewardId));
-      clearCache('tasks');
-      clearCache('pendingRewards');
-      clearCache('rewards');
-      // 領「免費續約一年」會直接改變會員到期日——MemberDashboard 的
-      // SubscriptionStatusCard 讀的是 subscriptionStatus 快取，不清掉
-      // 就會顯示舊到期日。刻意只失效、不用 claim 回傳的 activeUntil 做
-      // 局部樂觀更新：SubscriptionData 欄位多（daysRemaining、
-      // nextPaymentDate…），湊半個物件的風險大於下次進頁重抓的成本。
-      clearCache('subscriptionStatus');
+      // 領「免費續約一年」直接改變會員到期日——一次失效整組相關快取
+      // （tasks / pendingRewards / rewards / subscriptionStatus，見
+      // MUTATION_GROUPS.rewardClaim）。刻意只失效、不做局部樂觀更新：
+      // 下次進頁重抓的成本低於湊半個物件的風險。
+      invalidate('rewardClaim');
     } else {
       throw new Error('領取獎勵失敗');
     }
@@ -233,14 +210,12 @@ export function useTaskData(): UseTaskDataResult {
   return {
     tasks,
     pendingRewards,
-    monthlyProgress,
     currentMonthData,
     isLoading,
-    loadingMonthly,
+    isValidating,
     loadingCurrent,
     loadingPending,
     error,
-    fetchMonthlySummary,
     fetchCurrentMonthTop,
     fetchPendingRewards,
     handleClaimReward,

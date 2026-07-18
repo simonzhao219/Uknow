@@ -18,8 +18,7 @@ export function MemberDashboard() {
   const { isFeatureEnabled } = useFeatures();
   const { showToast, showInfo } = useNotification();
 
-  const { subscriptionData, isLoading, isProcessing, handleConfirmCancel, handleResume, handleMakeup } =
-    useSubscription();
+  const { subscriptionData, isLoading } = useSubscription();
 
   const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
 
@@ -211,10 +210,6 @@ export function MemberDashboard() {
       <SubscriptionStatusCard
         subscriptionData={subscriptionData}
         isLoading={isLoading}
-        isProcessing={isProcessing}
-        onConfirmCancel={handleConfirmCancel}
-        onResume={handleResume}
-        onMakeup={handleMakeup}
       />
 
       <JoinReferralProgramDialog
