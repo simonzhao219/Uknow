@@ -10,8 +10,23 @@ import {
   deleteTestUsers,
   payForUser,
   getActiveReferralCode,
-  expireSubscriptions,
 } from './test-helpers.ts';
+
+// 本地輔助：讓某使用者的訂閱過期 N 天（與 renewal-modes.test.ts 同語意）。
+async function expireSubscriptions(
+  client: ReturnType<typeof adminClient>,
+  userId: string,
+  endDaysAgo: number,
+) {
+  const end = new Date(Date.now() - endDaysAgo * 86400_000).toISOString();
+  const grace = new Date(Date.now() - Math.max(endDaysAgo - 60, 1) * 86400_000).toISOString();
+  const { error } = await client
+    .from('subscriptions')
+    .update({ end_date: end, grace_period_end: grace })
+    .eq('user_id', userId);
+  if (error) throw new Error(`expireSubscriptions failed: ${error.message}`);
+  return end;
+}
 
 Deno.test('單月 16 位不重複下線 → 發 2 批推薦王 credit（每滿 8 位一批）', async () => {
   const client = adminClient();
