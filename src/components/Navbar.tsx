@@ -58,7 +58,7 @@ export function Navbar() {
   };
 
   return (
-    <nav className="border-b bg-card">
+    <nav className="border-b bg-card sticky top-0 z-40">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center space-x-2">
           <img src={logoImage} alt="Uknow Logo" className="h-10 object-contain" />
