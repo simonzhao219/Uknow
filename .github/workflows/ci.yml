@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       # 前端型別檢查（vite build 用 SWC 只轉譯不檢查型別）
       - run: npm run typecheck
+      # 前端純函式單元測試（vitest，node 環境，無需瀏覽器）
+      - run: npm test
       - run: npm run build
 
   api-tests:

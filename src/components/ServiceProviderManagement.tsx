@@ -231,22 +231,23 @@ export function ServiceProviderManagement() {
                     
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" asChild>
-                        <Link to={`/service-providers/${listing.id}`}>
+                        <Link to={`/service-providers/${listing.id}`} aria-label="查看刊登">
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
-                      
+
                       <Button variant="outline" size="sm" asChild>
-                        <Link to={`/service-providers/edit/${listing.id}`}>
+                        <Link to={`/service-providers/edit/${listing.id}`} aria-label="編輯刊登">
                           <Edit className="h-4 w-4" />
                         </Link>
                       </Button>
-                      
-                      <Button 
-                        variant="destructive" 
+
+                      <Button
+                        variant="destructive"
                         size="sm"
                         onClick={handleDeleteListing}
                         disabled={isDeleting}
+                        aria-label="刪除刊登"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
