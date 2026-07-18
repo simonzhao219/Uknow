@@ -10,6 +10,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
 import { useDataCache } from '../contexts/DataCacheContext';
+import { detectInAppBrowser } from '../utils/browserDetection';
 
 // ✅ 統一金流付款網址（從環境變數讀取）
 const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
@@ -428,7 +429,14 @@ export function PaymentCheckout() {
   // ✅ 新增：重新開啟付款頁面
   const handleReopenPayment = () => {
     const paymentUrl = PAYUNI_PAYMENT_URL;
-    window.open(paymentUrl, '_blank');
+    // 內建瀏覽器（如 LINE）常會擋掉 window.open('_blank') 的彈窗，導致付款頁
+    // 開不起來；改用同視窗導向，付款完成後再由 PayUni 導回 /payment/result。
+    // 外部瀏覽器維持開新分頁，保留原本的操作體驗。
+    if (detectInAppBrowser().isInAppBrowser) {
+      window.location.assign(paymentUrl);
+    } else {
+      window.open(paymentUrl, '_blank');
+    }
     showToast('已開啟付款頁面', 'info');
   };
 

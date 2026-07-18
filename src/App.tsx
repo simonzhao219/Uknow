@@ -28,8 +28,6 @@ import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
 import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
-import { InAppBrowserWarning } from './components/InAppBrowserWarning'; // ✅ 新增：內建瀏覽器警告
-import { detectInAppBrowser, getCurrentURL } from './utils/browserDetection'; // ✅ 新增：瀏覽器檢測
 import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
@@ -66,26 +64,10 @@ function AppContent() {
   // 記錄目前已載入 profile 的使用者 id，用來分辨「真的登入」與分頁重新可見時
   // Supabase 重複廣播的 SIGNED_IN（同一個使用者、token 沒換發也會發一次）。
   const loadedUserIdRef = useRef<string | null>(null);
-  
-  // ✅ 瀏覽器檢測（只檢測一次）
-  const [browserInfo] = useState(() => detectInAppBrowser());
-  
+
   // Check if user is admin
   const isAdmin = user?.isAdmin === true;
   const isLoggedIn = !!user;
-  
-  // ✅ 若是內建瀏覽器，顯示警告頁並阻止所有操作
-  if (browserInfo.isInAppBrowser) {
-    console.log('App: 檢測到內建瀏覽器:', browserInfo.platform, browserInfo.userAgent);
-    return (
-      <div className="min-h-screen bg-background">
-        <InAppBrowserWarning
-          platform={browserInfo.platform}
-          currentURL={getCurrentURL()}
-        />
-      </div>
-    );
-  }
 
   useEffect(() => {
     let isMounted = true;
