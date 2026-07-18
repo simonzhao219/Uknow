@@ -63,6 +63,7 @@ const READ_PATHS = [
   '/referrals/my-tree',
   '/tasks',
   '/tasks/*',
+  '/announcements/active',
 ] as const;
 for (const p of READ_PATHS) {
   app.use(p, etag());
@@ -94,6 +95,24 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
   if (!token) return null;
   const { data: { user }, error } = await sb().auth.getUser(token);
   return error || !user ? null : user;
+}
+
+// ============================================================
+// 工具：管理員判斷（所有 /admin/** 路由的統一守門）
+// ============================================================
+async function isAdminUser(userId: string): Promise<boolean> {
+  const { data } = await sb().from('profiles').select('is_admin').eq('id', userId).single();
+  return !!data?.is_admin;
+}
+
+// ============================================================
+// 工具：身分證字號驗證——提領申請/查收確認/領獎/敏感操作共用。
+// 比對 profiles.national_id（不分大小寫、去空白）。
+// ============================================================
+async function verifyNationalId(client: any, userId: string, idNumber: string): Promise<boolean> {
+  const { data } = await client.from('profiles').select('national_id').eq('id', userId).single();
+  const input = (idNumber ?? '').trim().toUpperCase();
+  return !!data?.national_id && input === data.national_id.trim().toUpperCase();
 }
 
 // ============================================================
@@ -170,6 +189,7 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
     referralSignatureUrl:  profile.referral_signature_url,
     accountStatus:   acct?.status ?? 'expired',
     subscriptionEndDate: acct?.end_date ?? null,
+    suspended:       !!profile.suspended_at,
     email,
   };
 }
@@ -202,6 +222,10 @@ function payuniConfig() {
     apiUrl: sandbox
       ? 'https://sandbox-api.payuni.com.tw/api/upp'
       : 'https://api.payuni.com.tw/api/upp',
+    // server-to-server 交易查詢（reconcile 對帳用）
+    queryUrl: sandbox
+      ? 'https://sandbox-api.payuni.com.tw/api/trade/query'
+      : 'https://api.payuni.com.tw/api/trade/query',
   };
 }
 
@@ -599,6 +623,306 @@ app.get('/admin/features', (c) => {
       rewardSystem:              true,
     }
   });
+});
+
+// ============================================================
+// Admin 後台：提領管理 / 會員管理 / 公告管理
+// 所有 /admin/** 路由統一守門：requireAuth + profiles.is_admin。
+// ============================================================
+
+// GET /admin/withdrawals?status=
+// 提領單列表（含申請人資料與身分證照片簽名網址）
+app.get('/admin/withdrawals', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const statusFilter = c.req.query('status');
+  const limit  = Math.min(parseInt(c.req.query('limit') || '200'), 500);
+  const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
+
+  const client = sb();
+  let query = client.from('withdrawals')
+    .select('*', { count: 'exact' })
+    .order('requested_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (statusFilter) query = query.eq('status', statusFilter);
+  const { data: rows, count } = await query;
+
+  const userIds = [...new Set((rows ?? []).map((w: any) => w.user_id))];
+  let profMap: Record<string, any> = {};
+  if (userIds.length) {
+    const { data: profs } = await client.from('profiles')
+      .select('id, name, phone, national_id, id_card_front_path, id_card_back_path')
+      .in('id', userIds);
+    profMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p]));
+  }
+
+  // 批次簽名證件照網址（1 小時）
+  const allPaths = userIds.flatMap((id) => {
+    const p = profMap[id];
+    return [p?.id_card_front_path, p?.id_card_back_path].filter(Boolean) as string[];
+  });
+  const urlMap: Record<string, string> = {};
+  if (allPaths.length) {
+    const { data: signed } = await client.storage.from('id-cards').createSignedUrls(allPaths, 3600);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl;
+    }
+  }
+
+  const withdrawals = (rows ?? []).map((w: any) => {
+    const p = profMap[w.user_id];
+    return {
+      id:             w.id,
+      userId:         w.user_id,
+      userName:       p?.name ?? '',
+      userPhone:      p?.phone ?? null,
+      idNumber:       p?.national_id ?? null,
+      amount:         w.amount,
+      fee:            w.fee,
+      status:         w.status,
+      bankCode:       w.bank_code,
+      bankAccount:    w.bank_account,
+      note:           w.note,
+      requestedAt:    w.requested_at,
+      processedAt:    w.processed_at,
+      completedAt:    w.completed_at,
+      idCardFrontUrl: p?.id_card_front_path ? (urlMap[p.id_card_front_path] ?? null) : null,
+      idCardBackUrl:  p?.id_card_back_path ? (urlMap[p.id_card_back_path] ?? null) : null,
+    };
+  });
+
+  return c.json({ success: true, data: { withdrawals, total: count ?? 0, limit, offset } });
+});
+
+// POST /admin/withdrawals/:id/status
+// 狀態轉換：pending → awaiting_collection（已匯款）/ rejected（退件退點）
+app.post('/admin/withdrawals/:id/status', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+
+  const { data, error } = await sb().rpc('admin_update_withdrawal_status', {
+    p_admin_id:      user.id,
+    p_withdrawal_id: c.req.param('id'),
+    p_status:        body?.status ?? '',
+    p_note:          body?.note ?? null,
+  });
+
+  if (error) {
+    console.error('[admin-withdrawal-status] rpc error:', error);
+    return c.json({ success: false, error: { message: '狀態更新失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found' ? 404
+      : data?.error_code === 'forbidden' ? 403 : 400;
+    return c.json({ success: false, error: { message: data?.message ?? '狀態更新失敗' } }, status);
+  }
+
+  return c.json({
+    success: true,
+    data: { withdrawalId: c.req.param('id'), status: data.status, processedAt: data.processed_at ?? null },
+  });
+});
+
+// GET /admin/members?search=&limit=&offset=
+app.get('/admin/members', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_list_members', {
+    p_search: c.req.query('search') ?? null,
+    p_limit:  Math.min(parseInt(c.req.query('limit') || '50'), 200),
+    p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
+  });
+
+  if (error) {
+    console.error('[admin-members] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得會員列表' } }, 500);
+  }
+
+  const members = (data?.members ?? []).map((m: any) => ({
+    id:            m.id,
+    name:          m.name,
+    email:         m.email,
+    phone:         m.phone,
+    isAdmin:       m.is_admin,
+    suspended:     !!m.suspended_at,
+    suspendedAt:   m.suspended_at,
+    accountStatus: m.account_status,
+    listingCount:  m.listing_count,
+    createdAt:     m.created_at,
+  }));
+
+  return c.json({ success: true, data: { members, total: data?.total ?? 0 } });
+});
+
+// POST /admin/members/:id/suspend  body: { suspend: boolean }
+app.post('/admin/members/:id/suspend', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+  const suspend = !!body?.suspend;
+
+  const targetId = c.req.param('id');
+  if (targetId === user.id && suspend) {
+    return c.json({ success: false, error: { message: '不能停權自己' } }, 400);
+  }
+
+  const { error } = await sb().from('profiles')
+    .update({ suspended_at: suspend ? new Date().toISOString() : null })
+    .eq('id', targetId);
+
+  if (error) {
+    console.error('[admin-suspend] error:', error);
+    return c.json({ success: false, error: { message: '停權狀態更新失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { userId: targetId, suspended: suspend } });
+});
+
+// ============================================================
+// 全站公告（前台橫幅 + admin CRUD）
+// ============================================================
+
+// GET /announcements/active（公開，不需登入——前台 MaintenanceBanner 用）
+app.get('/announcements/active', async (c) => {
+  const { data: rows } = await sb()
+    .from('announcements')
+    .select('id, title, message, type, starts_at, ends_at')
+    .eq('is_active', true)
+    .lte('starts_at', new Date().toISOString())
+    .or(`ends_at.is.null,ends_at.gte.${new Date().toISOString()}`)
+    .order('starts_at', { ascending: false });
+
+  const announcements = (rows ?? []).map((a: any) => ({
+    id:       a.id,
+    title:    a.title,
+    message:  a.message,
+    type:     a.type,
+    startsAt: a.starts_at,
+    endsAt:   a.ends_at,
+  }));
+
+  return c.json({ success: true, data: { announcements } });
+});
+
+// GET /admin/announcements（全部，含未生效/已停用）
+app.get('/admin/announcements', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data: rows } = await sb()
+    .from('announcements')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  const announcements = (rows ?? []).map((a: any) => ({
+    id:        a.id,
+    title:     a.title,
+    message:   a.message,
+    type:      a.type,
+    startsAt:  a.starts_at,
+    endsAt:    a.ends_at,
+    isActive:  a.is_active,
+    createdAt: a.created_at,
+  }));
+
+  return c.json({ success: true, data: { announcements } });
+});
+
+// POST /admin/announcements  body: { title, message, type, startsAt?, endsAt? }
+app.post('/admin/announcements', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+
+  const title   = (body?.title ?? '').trim();
+  const message = (body?.message ?? '').trim();
+  const type    = ['info', 'warning', 'error'].includes(body?.type) ? body.type : 'info';
+  if (!title || !message) {
+    return c.json({ success: false, error: { message: '請填寫完整的公告標題與內容' } }, 400);
+  }
+
+  const { data: row, error } = await sb().from('announcements').insert({
+    title,
+    message,
+    type,
+    starts_at:  body?.startsAt ?? new Date().toISOString(),
+    ends_at:    body?.endsAt ?? null,
+    created_by: user.id,
+  }).select('id').single();
+
+  if (error) {
+    console.error('[admin-announcements] insert error:', error);
+    return c.json({ success: false, error: { message: '公告建立失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { id: row!.id } });
+});
+
+// DELETE /admin/announcements/:id
+app.delete('/admin/announcements/:id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { error } = await sb().from('announcements').delete().eq('id', c.req.param('id'));
+  if (error) {
+    return c.json({ success: false, error: { message: '公告刪除失敗' } }, 500);
+  }
+  return c.json({ success: true });
+});
+
+// ============================================================
+// AdminSetup：首次系統設定（尚無任何管理員時，允許自助宣告）
+// ============================================================
+app.get('/admin-setup/check', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client = sb();
+  const [{ data: me }, { data: admins }] = await Promise.all([
+    client.from('profiles').select('name, is_admin').eq('id', user.id).single(),
+    client.from('profiles').select('id').eq('is_admin', true).limit(1),
+  ]);
+
+  const hasExistingAdmin = (admins?.length ?? 0) > 0;
+  return c.json({
+    success:          true,
+    isAdmin:          !!me?.is_admin,
+    hasExistingAdmin,
+    canBecomeAdmin:   !hasExistingAdmin,
+    userId:           user.id,
+    userName:         me?.name ?? '',
+    userEmail:        user.email ?? '',
+  });
+});
+
+app.post('/admin-setup/set-self-admin', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const { data, error } = await sb().rpc('admin_setup_claim', { p_user_id: user.id });
+  if (error) {
+    console.error('[admin-setup] rpc error:', error);
+    return c.json({ success: false, error: { message: '設置失敗，請稍後再試' } }, 500);
+  }
+  if (!data?.success) {
+    return c.json({ success: false, error: { message: data?.message ?? '設置失敗' } }, 403);
+  }
+  return c.json({ success: true, message: '您已成為平台管理員' });
 });
 
 // ============================================================
@@ -1000,13 +1324,78 @@ export async function reconcilePendingOrders(
   return summary;
 }
 
-// ⚠️ OPEN QUESTION — 尚未實作。整個 repo 找不到 PayUni「查詢交易狀態」
-// 的 server-to-server API 參考（只有 UPP 結帳頁的 API，見 payuniConfig
-// 上方文件連結）。需要 PayUni 該支查詢 API 的文件/合約才能真正實作；
-// 在那之前這裡先明確拋錯，reconcile 路由會把每筆卡單訂單都記一筆
-// system_alerts，不會假裝對帳成功。
-async function queryPayUniTradeStatus(_merTradeNo: string): Promise<QueryResult> {
-  throw new Error('queryPayUniTradeStatus 尚未實作 —— PayUni 查詢交易狀態的 API 合約未知');
+// PayUni server-to-server 交易查詢（https://docs.payuni.com.tw 的
+// 交易查詢 API）。加密/雜湊格式與 UPP 相同（crypto.ts），payload 帶
+// MerTradeNo。防禦性設計：
+//   * 只有明確「已付款」（TradeStatus=1）才回 SUCCESS 交給
+//     resolveOrderFromPayUni（會走 process_successful_payment，
+//     付款時點錨定 PayTime/AuthDay）。
+//   * 明確失敗/取消（2、3）回非 SUCCESS → 訂單標 failed。
+//   * 查無此單、未付款、未知狀態一律 stillProcessing——不確定的資料
+//     絕不拿來標記訂單，寧可下一輪再查。
+// ⚠️ 欄位名稱以 PayUni 官方文件為準；上線前先在 sandbox 用
+// workflow_dispatch 手動驗證一輪，確認無誤再打開 cron。
+async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
+  const config = payuniConfig();
+
+  const encryptInfo = await encryptPayUni(
+    {
+      MerID:      config.merID,
+      Timestamp:  Math.floor(Date.now() / 1000),
+      MerTradeNo: merTradeNo,
+    },
+    config.hashKey,
+    config.hashIV,
+  );
+  const hashInfo = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
+
+  const res = await fetch(config.queryUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      MerID:       config.merID,
+      Version:     config.version,
+      EncryptInfo: encryptInfo,
+      HashInfo:    hashInfo,
+    }),
+  });
+  if (!res.ok) throw new Error(`PayUni 查詢 HTTP ${res.status}`);
+
+  const raw = await res.json().catch(() => null) as Record<string, string> | null;
+  if (!raw) throw new Error('PayUni 查詢回應不是 JSON');
+
+  // 查詢層失敗（例如查無交易）：不代表付款失敗，只代表這輪還無法判定。
+  if (raw.Status !== 'SUCCESS' || !raw.EncryptInfo) {
+    return { stillProcessing: true };
+  }
+
+  const decrypted = Object.fromEntries(
+    new URLSearchParams(await decryptPayUni(raw.EncryptInfo, config.hashKey, config.hashIV)),
+  );
+
+  // 結果可能是 Result（JSON 陣列字串）或平鋪欄位——兩種都接。
+  let trade: Record<string, unknown> = decrypted;
+  if (decrypted.Result) {
+    try {
+      const list = JSON.parse(decrypted.Result);
+      if (Array.isArray(list) && list.length) {
+        trade = list.find((t: any) => t?.MerTradeNo === merTradeNo) ?? list[0];
+      }
+    } catch { /* Result 不是 JSON → 沿用平鋪欄位 */ }
+  }
+
+  const flat: Record<string, string> = {};
+  for (const [k, v] of Object.entries(trade)) flat[k] = String(v ?? '');
+  const tradeStatus = flat.TradeStatus ?? '';
+
+  if (tradeStatus === '1') {
+    return { stillProcessing: false, data: { ...flat, Status: 'SUCCESS' } };
+  }
+  if (tradeStatus === '2' || tradeStatus === '3') {
+    // 付款失敗 / 付款取消 → 讓 resolveOrderFromPayUni 標 failed
+    return { stillProcessing: false, data: { ...flat, Status: `FAILED_${tradeStatus}` } };
+  }
+  return { stillProcessing: true };
 }
 
 // ============================================================
@@ -1209,28 +1598,50 @@ app.get('/rewards', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const client = sb();
-  const todayStart = `${twDayOf()}T00:00:00+08:00`;
-
-  const [{ data: balance }, { data: pending }, { data: todayW }] = await Promise.all([
-    client.from('reward_balances').select('*').eq('user_id', user.id).maybeSingle(),
-    client.from('withdrawals').select('amount').eq('user_id', user.id).eq('status', 'pending'),
-    client.from('withdrawals').select('id').eq('user_id', user.id).gte('requested_at', todayStart).limit(1),
-  ]);
-
-  const pendingAmount = pending?.reduce((s: number, w: any) => s + w.amount, 0) ?? 0;
-  const available     = (balance?.available ?? 0) - pendingAmount;
-
+  // 單一 SSOT 讀取（get_reward_summary，migration 0718 0101）：
+  // 帳本語意下申請提領當下即扣款，available 不需要再另外減 pending。
   // 不回 lastUpdated 之類的非決定性欄位——同樣的資料必須產生同樣的
   // body，ETag/304 條件請求才有意義（見 CORS 區塊下的 etag middleware）。
+  const { data, error } = await sb().rpc('get_reward_summary', { p_user_id: user.id });
+  if (error || !data) {
+    console.error('[rewards] get_reward_summary error:', error);
+    return c.json({ success: false, error: '無法取得獎勵資料' }, 500);
+  }
+
   return c.json({
     success: true,
     data: {
-      availableRewards: Math.max(0, available),
-      pendingRewards:   pendingAmount,
-      withdrawnRewards: balance?.withdrawn ?? 0,
-      totalEarned:      balance?.total_earned ?? 0,
-      hasWithdrawnToday: (todayW?.length ?? 0) > 0,
+      availableRewards:  Math.max(0, data.available),
+      pendingRewards:    data.pending,
+      withdrawnRewards:  data.withdrawn,
+      totalEarned:       data.total_earned,
+      hasWithdrawnToday: data.has_withdrawn_today,
+    }
+  });
+});
+
+// ============================================================
+// GET /rewards/points-preview
+// 領獎/提領三步驟對話框的第 2 步預覽——與 GET /rewards 讀同一個
+// SSOT（get_reward_summary），兩邊永遠不會不同調。
+// ============================================================
+app.get('/rewards/points-preview', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const { data, error } = await sb().rpc('get_reward_summary', { p_user_id: user.id });
+  if (error || !data) {
+    console.error('[points-preview] get_reward_summary error:', error);
+    return c.json({ success: false, error: '無法取得點數資料' }, 500);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      currentAvailable: Math.max(0, data.available),
+      currentTotal:     data.total_earned,
+      currentPending:   data.pending,
+      currentWithdrawn: data.withdrawn,
     }
   });
 });
@@ -1253,14 +1664,216 @@ app.get('/rewards/withdrawals', async (c) => {
     id:           w.id,
     userId:       w.user_id,
     amount:       w.amount,
-    fee:          0,
+    fee:          w.fee,
     status:       w.status,
     requestedAt:  w.requested_at,
     processedAt:  w.processed_at,
-    completedAt:  w.status === 'completed' ? w.processed_at : null,
+    completedAt:  w.completed_at,
   }));
 
   return c.json({ success: true, data: { withdrawals } });
+});
+
+// ============================================================
+// POST /rewards/verify-id
+// 提領第 3 步的身分證即時驗證（WithdrawalProcess 自動觸發）
+// ============================================================
+app.post('/rewards/verify-id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+
+  if (await verifyNationalId(sb(), user.id, body?.idNumber ?? '')) {
+    return c.json({ success: true, message: '驗證成功' });
+  }
+  return c.json({ success: false, message: '身分證字號不正確' }, 400);
+});
+
+// ============================================================
+// GET /rewards/id-photos
+// 已上傳的身分證照片（私有 bucket，回 1 小時簽名網址）
+// ============================================================
+app.get('/rewards/id-photos', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client = sb();
+  const { data: profile } = await client
+    .from('profiles')
+    .select('id_card_front_path, id_card_back_path')
+    .eq('id', user.id)
+    .single();
+
+  const sign = async (path: string | null): Promise<string | null> => {
+    if (!path) return null;
+    const { data } = await client.storage.from('id-cards').createSignedUrl(path, 3600);
+    return data?.signedUrl ?? null;
+  };
+
+  return c.json({
+    success: true,
+    data: {
+      frontUrl: await sign(profile?.id_card_front_path ?? null),
+      backUrl:  await sign(profile?.id_card_back_path ?? null),
+    }
+  });
+});
+
+// ============================================================
+// POST /rewards/upload-id-photos
+// 上傳身分證正反面（multipart；固定路徑 {userId}/front.jpg、back.jpg
+// 覆寫——證件照跨提領重用，下次提領自動帶入）
+// ============================================================
+app.post('/rewards/upload-id-photos', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: { message: '未授權' } }, 401);
+
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: { message: '解析上傳資料失敗' } }, 400);
+  }
+
+  const front = formData.get('idCardFront') as File | null;
+  const back  = formData.get('idCardBack') as File | null;
+  if (!front && !back) {
+    return c.json({ error: { message: '未提供檔案' } }, 400);
+  }
+
+  const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+  for (const f of [front, back]) {
+    if (!f) continue;
+    if (!ALLOWED.includes(f.type)) return c.json({ error: { message: '只支援 JPG、PNG、WEBP 格式' } }, 400);
+    if (f.size > 5 * 1024 * 1024) return c.json({ error: { message: '檔案不得超過 5MB' } }, 400);
+  }
+
+  const client = sb();
+  const upload = async (file: File, side: 'front' | 'back'): Promise<string> => {
+    const path = `${user.id}/${side}.jpg`;
+    const { error } = await client.storage
+      .from('id-cards')
+      .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: true });
+    if (error) throw new Error(error.message);
+    return path;
+  };
+
+  try {
+    const patch: Record<string, string> = {};
+    let frontPath: string | null = null;
+    let backPath: string | null = null;
+    if (front) { frontPath = await upload(front, 'front'); patch.id_card_front_path = frontPath; }
+    if (back)  { backPath  = await upload(back, 'back');   patch.id_card_back_path  = backPath; }
+    await client.from('profiles').update(patch).eq('id', user.id);
+
+    return c.json({ success: true, data: { frontPath, backPath } });
+  } catch (err) {
+    console.error('[upload-id-photos] Storage error:', err);
+    return c.json({ error: { message: err instanceof Error ? err.message : '上傳失敗' } }, 500);
+  }
+});
+
+// ============================================================
+// POST /rewards/withdraw
+// 申請提領——業務規則（金額級距/單日上限/一天一次/餘額/會籍/證件照）
+// 全在 SQL 函數 request_withdrawal（migration 0718 0101）內原子執行。
+// ============================================================
+app.post('/rewards/withdraw', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: { message: '未授權' } }, 401);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+
+  const amount      = Number(body?.amount);
+  const idNumber    = (body?.idNumber ?? '').trim();
+  const bankCode    = (body?.bankCode ?? '').trim();
+  const bankAccount = (body?.bankAccount ?? '').replace(/-/g, '').trim();
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return c.json({ success: false, error: { message: '提領金額不正確' } }, 400);
+  }
+  if (!/^\d{3,4}$/.test(bankCode)) {
+    return c.json({ success: false, error: { message: '銀行代碼格式不正確' } }, 400);
+  }
+  if (!/^\d{10,16}$/.test(bankAccount)) {
+    return c.json({ success: false, error: { message: '銀行帳號格式不正確' } }, 400);
+  }
+
+  const client = sb();
+  if (!(await verifyNationalId(client, user.id, idNumber))) {
+    return c.json({ success: false, error: { message: '身分證字號驗證失敗' } }, 400);
+  }
+
+  const { data, error } = await client.rpc('request_withdrawal', {
+    p_user_id:      user.id,
+    p_amount:       amount,
+    p_bank_code:    bankCode,
+    p_bank_account: bankAccount,
+  });
+
+  if (error) {
+    console.error('[withdraw] rpc error:', error);
+    return c.json({ success: false, error: { message: '提領申請失敗，請稍後再試' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'subscription_invalid' || data?.error_code === 'not_joined' ? 403 : 400;
+    return c.json({ success: false, error: { message: data?.message ?? '提領申請失敗' } }, status);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      withdrawalId: data.withdrawal_id,
+      status:       data.status,
+      amount:       data.amount,
+      fee:          data.fee,
+      requestedAt:  data.requested_at,
+    }
+  });
+});
+
+// ============================================================
+// POST /rewards/withdrawals/:id/confirm
+// 使用者「查收」確認（awaiting_collection → completed）
+// ============================================================
+app.post('/rewards/withdrawals/:id/confirm', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* 空 body */ }
+
+  const client = sb();
+  if (!(await verifyNationalId(client, user.id, body?.idNumber ?? ''))) {
+    return c.json({ success: false, error: { message: '身分證字號驗證失敗' } }, 400);
+  }
+
+  const { data, error } = await client.rpc('confirm_withdrawal_collection', {
+    p_user_id:       user.id,
+    p_withdrawal_id: c.req.param('id'),
+  });
+
+  if (error) {
+    console.error('[confirm-collection] rpc error:', error);
+    return c.json({ success: false, error: { message: '查收確認失敗，請稍後再試' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found' ? 404
+      : data?.error_code === 'forbidden' ? 403 : 400;
+    return c.json({ success: false, error: { message: data?.message ?? '查收確認失敗' } }, status);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      withdrawalId: c.req.param('id'),
+      status:       data.status,
+      completedAt:  data.completed_at ?? null,
+    }
+  });
 });
 
 // ============================================================
@@ -1624,13 +2237,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
   const idNumber  = (body?.idNumber || '').trim();
 
   const client = sb();
-  const { data: profile } = await client
-    .from('profiles')
-    .select('national_id')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile?.national_id || idNumber !== profile.national_id) {
+  if (!(await verifyNationalId(client, user.id, idNumber))) {
     return c.json({ success: false, error: '身分證字號驗證失敗' }, 400);
   }
 

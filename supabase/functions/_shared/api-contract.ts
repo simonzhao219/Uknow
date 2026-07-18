@@ -122,6 +122,7 @@ export const ProfileResponseSchema = obj({
   referralSignatureUrl:   nullable(str()),
   accountStatus:          literals('active', 'grace', 'expired'),
   subscriptionEndDate:    nullable(str()),
+  suspended:              bool(),
   email:                  optional(str()),
 });
 export type ProfileResponse = Infer<typeof ProfileResponseSchema>;
@@ -317,6 +318,115 @@ export const ClaimRewardResponseSchema = obj({
   }),
 });
 export type ClaimRewardResponse = Infer<typeof ClaimRewardResponseSchema>;
+
+export const PointsPreviewResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    currentAvailable: num(),
+    currentTotal:     num(),
+    currentPending:   num(),
+    currentWithdrawn: num(),
+  }),
+});
+export type PointsPreviewResponse = Infer<typeof PointsPreviewResponseSchema>;
+
+export const IdPhotosResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    frontUrl: nullable(str()),
+    backUrl:  nullable(str()),
+  }),
+});
+export type IdPhotosResponse = Infer<typeof IdPhotosResponseSchema>;
+
+export const WithdrawResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    withdrawalId: str(),
+    status:       literals('pending'),
+    amount:       num(),
+    fee:          num(),
+    requestedAt:  str(),
+  }),
+});
+export type WithdrawResponse = Infer<typeof WithdrawResponseSchema>;
+
+export const ConfirmCollectionResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    withdrawalId: str(),
+    status:       literals('completed'),
+    completedAt:  nullable(str()),
+  }),
+});
+export type ConfirmCollectionResponse = Infer<typeof ConfirmCollectionResponseSchema>;
+
+export const AnnouncementSchema = obj({
+  id:       str(),
+  title:    str(),
+  message:  str(),
+  type:     literals('info', 'warning', 'error'),
+  startsAt: str(),
+  endsAt:   nullable(str()),
+});
+export type Announcement = Infer<typeof AnnouncementSchema>;
+
+export const ActiveAnnouncementsResponseSchema = obj({
+  success: bool(),
+  data: obj({ announcements: arr(AnnouncementSchema) }),
+});
+export type ActiveAnnouncementsResponse = Infer<typeof ActiveAnnouncementsResponseSchema>;
+
+export const AdminWithdrawalRecordSchema = obj({
+  id:             str(),
+  userId:         str(),
+  userName:       str(),
+  userPhone:      nullable(str()),
+  idNumber:       nullable(str()),
+  amount:         num(),
+  fee:            num(),
+  status:         literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  bankCode:       nullable(str()),
+  bankAccount:    nullable(str()),
+  note:           nullable(str()),
+  requestedAt:    str(),
+  processedAt:    nullable(str()),
+  completedAt:    nullable(str()),
+  idCardFrontUrl: nullable(str()),
+  idCardBackUrl:  nullable(str()),
+});
+export type AdminWithdrawalRecord = Infer<typeof AdminWithdrawalRecordSchema>;
+
+export const AdminWithdrawalsResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    withdrawals: arr(AdminWithdrawalRecordSchema),
+    total:  num(),
+    limit:  num(),
+    offset: num(),
+  }),
+});
+export type AdminWithdrawalsResponse = Infer<typeof AdminWithdrawalsResponseSchema>;
+
+export const AdminMemberSchema = obj({
+  id:            str(),
+  name:          nullable(str()),
+  email:         str(),
+  phone:         nullable(str()),
+  isAdmin:       bool(),
+  suspended:     bool(),
+  suspendedAt:   nullable(str()),
+  accountStatus: literals('active', 'grace', 'expired'),
+  listingCount:  num(),
+  createdAt:     str(),
+});
+export type AdminMember = Infer<typeof AdminMemberSchema>;
+
+export const AdminMembersResponseSchema = obj({
+  success: bool(),
+  data: obj({ members: arr(AdminMemberSchema), total: num() }),
+});
+export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
 
 export const API_PATHS = {
   profile:               '/profile',
