@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
+import { PasswordInput } from './ui/password-input';
 import { Label } from './ui/label';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
@@ -375,15 +376,21 @@ export function AuthPage() {
         <CardContent className="space-y-4">
           {/* 步驟 1：輸入 Email */}
           {step === 1 && (
-            <div className="space-y-4">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCheckEmail();
+              }}
+            >
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCheckEmail()}
                   placeholder="your@email.com"
                   className={getInputErrorClass(!!errors.email)}
                   aria-required="true"
@@ -395,7 +402,7 @@ export function AuthPage() {
               </div>
 
               <Button
-                onClick={handleCheckEmail}
+                type="submit"
                 disabled={!email}
                 loading={isLoading}
                 className="w-full"
@@ -403,7 +410,7 @@ export function AuthPage() {
               >
                 {isLoading ? '檢查中...' : '繼續'}
               </Button>
-            </div>
+            </form>
           )}
 
           {/* 步驟 2A：登入 */}
@@ -423,9 +430,9 @@ export function AuthPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">密碼</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="請輸入密碼"
@@ -491,9 +498,9 @@ export function AuthPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">設定密碼</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="請輸入密碼"
@@ -514,9 +521,9 @@ export function AuthPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">確認密碼</Label>
-                <Input
+                <PasswordInput
                   id="confirmPassword"
-                  type="password"
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="再次輸入密碼"
