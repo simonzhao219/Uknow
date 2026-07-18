@@ -7,6 +7,8 @@ import { InAppBrowserPlatform, copyLinkToClipboard, openInExternalBrowser } from
 interface InAppBrowserWarningProps {
   platform: InAppBrowserPlatform;
   currentURL: string;
+  /** 逃生出口：偵測誤判時讓使用者仍能繼續使用（不阻擋整個 App）。 */
+  onContinue?: () => void;
 }
 
 // 平台特定的引導資訊
@@ -71,7 +73,7 @@ const platformGuides: Record<string, {
   }
 };
 
-export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarningProps) {
+export function InAppBrowserWarning({ platform, currentURL, onContinue }: InAppBrowserWarningProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   
@@ -186,6 +188,18 @@ export function InAppBrowserWarning({ platform, currentURL }: InAppBrowserWarnin
               <ExternalLink className="mr-2 h-4 w-4" />
               嘗試在瀏覽器中開啟
             </Button>
+
+            {/* 逃生出口：偵測可能誤判時，讓使用者仍能繼續（部分功能如支付
+                在內建瀏覽器可能仍不穩定）。 */}
+            {onContinue && (
+              <Button
+                onClick={onContinue}
+                className="w-full"
+                variant="ghost"
+              >
+                仍要在目前瀏覽器繼續使用
+              </Button>
+            )}
           </div>
           
           {/* 提示資訊 */}

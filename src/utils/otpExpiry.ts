@@ -1,6 +1,16 @@
 // 驗證碼有效期限與「重新寄送」共用同一個 3 分鐘倒數。
 // 每寄出一封驗證碼就重新開始倒數；驗證碼到期後才可重新寄送。
 // 倒數狀態以到期時間戳記保存，重新整理頁面不會重新計算。
+//
+// ⚠️ 安全邊界（M3）：這個 3 分鐘倒數純屬「重新寄送」的 UX 節流，只存在
+// localStorage，並不 gate 實際驗證。真正的 OTP 有效期、重試次數與寄送
+// 速率限制一律由 Supabase Auth 決定（前端直接呼叫 supabase.auth.verifyOtp
+// / resend / signUp，不經過本專案的 Edge Function，因此無法在後端加一道
+// 有效的節流）。要強化防護請在 Supabase 後台調整：
+//   * Auth → Email OTP expiry（建議縮短，例如 10 分鐘內）
+//   * Auth → Rate limits（每 email/IP 的寄送與驗證次數）
+// 清除 localStorage 或換分頁可繞過此前端倒數，屬預期行為——最終防線在
+// Supabase，不在此檔。
 
 export const OTP_VALID_SECONDS = 180; // 3 minutes
 

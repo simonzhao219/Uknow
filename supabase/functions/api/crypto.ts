@@ -79,3 +79,14 @@ export async function generatePayUniHash(
   const hashBuf = await crypto.subtle.digest('SHA-256', data);
   return toHex(new Uint8Array(hashBuf)).toUpperCase();
 }
+
+// 常數時間字串比較（避免驗簽時的計時側信道）。長度不同直接 false，
+// 相同長度則不提早退出，逐字元 XOR 累積差異。
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}

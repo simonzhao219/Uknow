@@ -41,6 +41,20 @@ export function twMonthKey(at: Date | string | number = new Date()): string {
   return twDayOf(at).slice(0, 7);
 }
 
+/**
+ * 依台灣今日計算足歲數；birthDay 需為 'YYYY-MM-DD'（可帶時間，只取日期）。
+ * 非法格式回 NaN。用於伺服器端年齡驗證（18+），避免信任前端與瀏覽器時區。
+ */
+export function twAgeYears(birthDay: string, at: Date | string | number = new Date()): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDay ?? '');
+  if (!m) return NaN;
+  const by = Number(m[1]), bm = Number(m[2]), bd = Number(m[3]);
+  const [ty, tm, td] = twDayOf(at).split('-').map(Number);
+  let age = ty - by;
+  if (tm < bm || (tm === bm && td < bd)) age -= 1;
+  return age;
+}
+
 /** 台灣時間 'YYYYMMDDHHMMSS'（MerTradeNo 用） */
 export function twCompactTimestamp(at: Date | string | number = new Date()): string {
   const d = new Date(at);

@@ -6,7 +6,7 @@ import { Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono/cors';
 import { etag } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
+import { encryptPayUni, decryptPayUni, generatePayUniHash, timingSafeEqual } from './crypto.ts';
 import {
   twDayOf,
   twMonthKey,
@@ -14,7 +14,9 @@ import {
   twDayPlusDays,
   subscriptionLastDay,
   twEndOfDayInstant,
+  twAgeYears,
 } from './tw-dates.ts';
+import { isValidTaiwanId } from '../_shared/taiwan-id.ts';
 import type {
   RewardHistoryResponse,
   CurrentMonthReferralsResponse,
@@ -283,15 +285,25 @@ app.post('/auth/check-email', async (c) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  const res = await fetch(
-    `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=50&search=${encodeURIComponent(email)}`,
-    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
-  );
-
-  if (!res.ok) return c.json({ exists: false });
-  const data = await res.json();
-  const exists = (data.users || []).some((u: any) => u.email?.toLowerCase() === email);
-  return c.json({ exists });
+  // L6：完整分頁比對——search 是子字串匹配，若命中結果多於一頁，只看
+  // 第一頁會漏掉真正的那筆而誤判「不存在」，把已註冊者推進註冊分支。
+  // 逐頁掃到命中或最後一頁；MAX_PAGES 為保護上限（搜尋詞過寬時）。
+  const perPage = 50;
+  const MAX_PAGES = 20;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=${perPage}&search=${encodeURIComponent(email)}`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    );
+    if (!res.ok) return c.json({ exists: false });
+    const data = await res.json();
+    const users = data.users || [];
+    if (users.some((u: any) => u.email?.toLowerCase() === email)) {
+      return c.json({ exists: true });
+    }
+    if (users.length < perPage) break; // 最後一頁
+  }
+  return c.json({ exists: false });
 });
 
 // ============================================================
@@ -311,6 +323,19 @@ app.post('/auth/register', async (c) => {
     return c.json({ error: '請填寫姓名、手機、生日' }, 400);
   }
 
+  // M1 伺服器端 18 歲驗證（台灣日曆日）——前端擋不算數，直接 POST 也擋。
+  const age = twAgeYears(birthDate);
+  if (!Number.isFinite(age) || age < 18) {
+    return c.json({ error: '須年滿 18 歲才能註冊' }, 400);
+  }
+
+  // M2 身分證檢查碼驗證：有填才驗（格式 + 檢查碼），不合法一律拒收，
+  // 避免無效號碼落地（落地後提領驗證形同虛設）。唯一性由 DB unique index
+  // 保證（見 migration 0719 0004）。
+  if (nationalId && !isValidTaiwanId(nationalId)) {
+    return c.json({ error: '身分證字號格式或檢查碼不正確' }, 400);
+  }
+
   const client = sb();
 
   // 若有填推薦碼，先查出推薦人 user_id
@@ -326,6 +351,22 @@ app.post('/auth/register', async (c) => {
     referrerUserId = rc?.user_id ?? null;
   }
 
+  if (referrerUserId) {
+    // H2 自我推薦防護：已付款會員重送 /auth/register 帶入自己的推薦碼，
+    // 會把 referred_by_user_id 設成自己，下次付款便自付自領。此處擋掉
+    // （prepare 的 fresh 路徑早有此擋，register 路徑補齊）。
+    if (referrerUserId === user.id) {
+      return c.json({ error: '不能使用自己的推薦碼' }, 400);
+    }
+    // L1 循環防護：新推薦人不得為本人的下線，否則組織圖成環、發獎鏈重覆計。
+    const { data: cycle } = await client.rpc('referral_would_create_cycle', {
+      p_user: user.id, p_new_referrer: referrerUserId,
+    });
+    if (cycle === true) {
+      return c.json({ error: '推薦關係不可循環（該推薦人為您的下線）' }, 400);
+    }
+  }
+
   // 透過 service_role 更新 profile（包含 registration_step = 1）
   const updates: Record<string, any> = {
     name,
@@ -339,6 +380,10 @@ app.post('/auth/register', async (c) => {
 
   const { error } = await client.from('profiles').update(updates).eq('id', user.id);
   if (error) {
+    // M2：身分證字號唯一性衝突（partial unique index，migration 0719 0004）
+    if ((error as any).code === '23505') {
+      return c.json({ error: '此身分證字號已被使用' }, 409);
+    }
     console.error('[register] update 失敗:', error);
     return c.json({ error: '更新失敗' }, 500);
   }
@@ -362,11 +407,12 @@ app.put('/auth/profile', async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ error: '請求格式錯誤' }, 400); }
 
   const client = sb();
+  // M2：nationalId 不在此可編輯——身分證字號一經設定即不可自行變更
+  //（DB 端另有不可變 trigger 與唯一索引，見 migration 0719 0004）。
   const allowedFields: Record<string, string> = {
     name:              'name',
     phone:             'phone',
     birthDate:         'birth_date',
-    nationalId:        'national_id',
     bankCode:          'bank_code',
     bankAccount:       'bank_account',
   };
@@ -378,6 +424,14 @@ app.put('/auth/profile', async (c) => {
 
   if (Object.keys(updates).length === 0) {
     return c.json({ error: '沒有可更新的欄位' }, 400);
+  }
+
+  // M1：若更新生日，一樣做伺服器端 18 歲驗證。
+  if ('birth_date' in updates) {
+    const age = twAgeYears(updates.birth_date);
+    if (!Number.isFinite(age) || age < 18) {
+      return c.json({ error: '須年滿 18 歲' }, 400);
+    }
   }
 
   const { error } = await client.from('profiles').update(updates).eq('id', user.id);
@@ -807,6 +861,42 @@ app.post('/admin/members/:id/suspend', async (c) => {
 });
 
 // ============================================================
+// GET /admin/stuck-orders
+// L5：列出待人工裁決的金流告警（金額不符/缺漏而 park 的卡單、自癒/對帳
+// 失敗）。讀 system_alerts 未解決紀錄，讓「維持 pending 待人工」的訂單
+// 有地方可查，不再只散落在 log。
+// ============================================================
+app.get('/admin/stuck-orders', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const limit = Math.min(parseInt(c.req.query('limit') || '100'), 500);
+  const { data: rows } = await sb()
+    .from('system_alerts')
+    .select('id, source, severity, message, context, created_at, resolved_at')
+    .in('source', ['complete_paid_pending_orders', 'resolveOrderFromPayUni', 'reconcile-pending-payments'])
+    .is('resolved_at', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  const alerts = (rows ?? []).map((a: any) => ({
+    id:        a.id,
+    source:    a.source,
+    severity:  a.severity,
+    message:   a.message,
+    orderId:   a.context?.order_id ?? null,
+    tradeNo:   a.context?.trade_no ?? a.context?.tradeNo ?? a.context?.merTradeNo ?? null,
+    userId:    a.context?.user_id ?? null,
+    tradeAmt:  a.context?.trade_amt ?? a.context?.tradeAmt ?? null,
+    context:   a.context ?? null,
+    createdAt: a.created_at,
+  }));
+
+  return c.json({ success: true, data: { alerts, total: alerts.length } });
+});
+
+// ============================================================
 // 全站公告（前台橫幅 + admin CRUD）
 // ============================================================
 
@@ -965,6 +1055,44 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
   }
 
+  // H1 防重複扣款：grace/expired 可付款，但若已有一筆「付了錢等開通」
+  // 或「剛建立仍在途」的訂單，再開新單就會重複扣款（年費不退款）。
+  // 把使用者導回結果頁看既有訂單，而不是建立第二筆會被重複刷的訂單。
+  const { data: openOrders } = await client
+    .from('payment_orders')
+    .select('transaction_id, created_at, payuniStatus:payuni_response->>Status')
+    .eq('user_id', user.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  const paidPending = (openOrders ?? []).find((o: any) => o.payuniStatus === 'SUCCESS');
+  if (paidPending) {
+    return c.json({
+      success: false,
+      code:    'paid_awaiting_activation',
+      error:   '您已有一筆付款正在開通中，請勿重複付款',
+      data:    { tradeNo: paidPending.transaction_id },
+    }, 409);
+  }
+
+  // 在途訂單去重：短時間內剛建立、尚未有結果的 pending 訂單擋掉重複送出
+  // （雙擊 / 多分頁）。窗口刻意保守（PAYUNI_INFLIGHT_WINDOW_SECONDS，
+  // 預設 120 秒），過窗後仍允許重試被放棄的付款。
+  const inFlightWindowMs =
+    (Number(Deno.env.get('PAYUNI_INFLIGHT_WINDOW_SECONDS')) || 120) * 1000;
+  const recentPending = (openOrders ?? []).find(
+    (o: any) => Date.now() - new Date(o.created_at).getTime() < inFlightWindowMs,
+  );
+  if (recentPending) {
+    return c.json({
+      success: false,
+      code:    'order_in_flight',
+      error:   '您有一筆付款正在進行中，請完成或稍候再試',
+      data:    { tradeNo: recentPending.transaction_id },
+    }, 409);
+  }
+
   // 過期會員續費雙模式（見 migration 0008）：
   //   extend = 續約，效期接續前一筆訂閱的最後一天；
   //   fresh  = 新約，效期從付款日起算、可換新推薦人。
@@ -1014,6 +1142,13 @@ app.post('/payuni/prepare', async (c) => {
     const referrerUserId = codeRows[0].referrer_user_id;
     if (referrerUserId === user.id) {
       return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
+    }
+    // L1 循環防護：換線目標不得為本人的下線（fresh 換線是唯一能造環的入口）。
+    const { data: cycle } = await client.rpc('referral_would_create_cycle', {
+      p_user: user.id, p_new_referrer: referrerUserId,
+    });
+    if (cycle === true) {
+      return c.json({ success: false, error: '推薦關係不可循環（該推薦人為您的下線）' }, 400);
     }
     const { error: refErr } = await client
       .from('profiles')
@@ -1255,10 +1390,15 @@ async function resolveOrderFromPayUni(
     return { ok: true, status: 'SUCCESS' };
   }
 
-  // 金額驗證
-  if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
+  // 金額驗證（L4：改為強制——TradeAmt 缺席或非 1200 一律 park 待人工，
+  // 不再寬容放行。錢可能已刷，維持 pending 交人工裁決，不自動標失敗）。
+  const tradeAmt = data.TradeAmt != null && data.TradeAmt !== '' ? Number(data.TradeAmt) : NaN;
+  if (!Number.isFinite(tradeAmt) || tradeAmt !== 1200) {
     await persistRawResponseBestEffort(MerTradeNo, data);
-    return { ok: false, message: 'amount mismatch' };
+    await logSystemAlert('resolveOrderFromPayUni',
+      { merTradeNo: MerTradeNo, reason: 'amount missing or mismatch', tradeAmt: data.TradeAmt ?? null },
+      'PayUni 回應金額缺漏或與方案價不符，訂單維持 pending 待人工裁決');
+    return { ok: false, message: 'amount missing or mismatch' };
   }
 
   // 呼叫原子性付款處理函數
@@ -1463,7 +1603,8 @@ async function decryptPayUniFormBody(
     return { ok: false, message: 'missing params' };
   }
 
-  if (await generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV) !== HashInfo) {
+  const expectedHash = await generatePayUniHash(EncryptInfo, config.hashKey, config.hashIV);
+  if (!timingSafeEqual(expectedHash, HashInfo ?? '')) {
     return { ok: false, message: 'hash mismatch' };
   }
 
@@ -1588,7 +1729,7 @@ app.get('/subscriptions/status', async (c) => {
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
     // 「看不到」有延長）。
     sb().from('subscriptions')
-      .select('start_date, end_date')
+      .select('start_date, end_date, is_canceled')
       .eq('user_id', user.id)
       .order('end_date', { ascending: false })
       .limit(1)
@@ -1604,8 +1745,46 @@ app.get('/subscriptions/status', async (c) => {
       gracePeriodEnd:  acct?.grace_period_end ?? null,
       currentPeriodStart: sub?.start_date ?? null,
       currentPeriodEnd:   sub?.end_date ?? null,
+      // L7：已取消續約旗標（到期後不再提醒/續期；狀態機仍以效期為準）。
+      isCanceled:      !!sub?.is_canceled,
     }
   });
+});
+
+// ============================================================
+// POST /subscriptions/cancel
+// 使用者取消續約：標記最新一筆訂閱 is_canceled=true（會籍在效期內仍有效，
+// 到期後不再提醒續約）。年費為一次性手動付款，取消不涉及退款/停止扣款。
+// ============================================================
+app.post('/subscriptions/cancel', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  const client = sb();
+  const { data: sub } = await client
+    .from('subscriptions')
+    .select('id, is_canceled')
+    .eq('user_id', user.id)
+    .order('end_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!sub) {
+    return c.json({ success: false, error: { message: '沒有可取消的訂閱' } }, 400);
+  }
+  if (sub.is_canceled) {
+    return c.json({ success: true, data: { alreadyCanceled: true } });
+  }
+
+  const { error } = await client
+    .from('subscriptions')
+    .update({ is_canceled: true })
+    .eq('id', sub.id);
+  if (error) {
+    console.error('[subscriptions/cancel] update 失敗:', error);
+    return c.json({ success: false, error: { message: '取消失敗，請稍後再試' } }, 500);
+  }
+  return c.json({ success: true, data: { canceled: true } });
 });
 
 // ============================================================
@@ -1810,7 +1989,9 @@ app.post('/rewards/withdraw', async (c) => {
   const bankCode    = (body?.bankCode ?? '').trim();
   const bankAccount = (body?.bankAccount ?? '').replace(/-/g, '').trim();
 
-  if (!Number.isInteger(amount) || amount <= 0) {
+  // 上限 100,000,000 防止超大值溢位 int4 讓 RPC 拋錯回 500（合法上限
+  // 由 SQL 的單日級距把關）——這裡只擋明顯不合理與溢位風險值。
+  if (!Number.isInteger(amount) || amount <= 0 || amount > 100_000_000) {
     return c.json({ success: false, error: { message: '提領金額不正確' } }, 400);
   }
   if (!/^\d{3,4}$/.test(bankCode)) {
@@ -2091,9 +2272,12 @@ app.get('/tasks', async (c) => {
   const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
 
   const monthly        = (progress?.monthly_referrals as Record<string, any>) ?? {};
-  const currentCount   = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
+  // L2：推薦王以「不重複被推薦者」計數（續約/重複付款不灌數），與發獎
+  // 函數 apply_referral_side_effects 的 count(distinct) 門檻一致。
+  const distinctLen = (v: any) => (Array.isArray(v) ? new Set(v).size : 0);
+  const currentCount   = distinctLen(monthly[currentMonth]);
   const completedMonths = Object.entries(monthly)
-    .filter(([m, v]) => m !== currentMonth && (Array.isArray(v) ? v.length : 0) >= KING_TARGET).length;
+    .filter(([m, v]) => m !== currentMonth && distinctLen(v) >= KING_TARGET).length;
 
   const allRewards = rewardsRows ?? [];
   const unclaimed   = allRewards.filter((r: any) => r.status === 'unclaimed');
@@ -2201,9 +2385,11 @@ app.get('/tasks/current-month-top', async (c) => {
   const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
 
   const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
-  // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 8 位標
-  // 「第N次完成」，順序錯了標記就跟著錯。
-  const ids: string[] = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth] : [];
+  // L2：以「不重複被推薦者」為準（Set 保留首次出現順序）——續約/重複
+  // 付款不會讓同一人在明細或門檻計數中重覆出現，與發獎門檻一致。UI 每滿
+  // 第 8 位標「第N次完成」，順序即首次成為下線的順序。
+  const rawIds: string[] = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth] : [];
+  const ids: string[]   = [...new Set(rawIds)];
   const total           = ids.length;
   const completedCount  = Math.floor(total / KING_TARGET);
   const currentProgress = total % KING_TARGET;

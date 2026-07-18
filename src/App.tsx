@@ -69,23 +69,12 @@ function AppContent() {
   
   // ✅ 瀏覽器檢測（只檢測一次）
   const [browserInfo] = useState(() => detectInAppBrowser());
-  
+  // 逃生出口：偵測可能誤判時，讓使用者仍能繼續使用整個 App。
+  const [bypassInAppWarning, setBypassInAppWarning] = useState(false);
+
   // Check if user is admin
   const isAdmin = user?.isAdmin === true;
   const isLoggedIn = !!user;
-  
-  // ✅ 若是內建瀏覽器，顯示警告頁並阻止所有操作
-  if (browserInfo.isInAppBrowser) {
-    console.log('App: 檢測到內建瀏覽器:', browserInfo.platform, browserInfo.userAgent);
-    return (
-      <div className="min-h-screen bg-background">
-        <InAppBrowserWarning
-          platform={browserInfo.platform}
-          currentURL={getCurrentURL()}
-        />
-      </div>
-    );
-  }
 
   useEffect(() => {
     let isMounted = true;
@@ -200,6 +189,21 @@ function AppContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ 若是內建瀏覽器，顯示警告頁並阻止所有操作（改置於所有 hooks 之後，
+  // 以符合 Rules of Hooks；偵測誤判時可透過逃生出口繼續）。
+  if (browserInfo.isInAppBrowser && !bypassInAppWarning) {
+    console.log('App: 檢測到內建瀏覽器:', browserInfo.platform, browserInfo.userAgent);
+    return (
+      <div className="min-h-screen bg-background">
+        <InAppBrowserWarning
+          platform={browserInfo.platform}
+          currentURL={getCurrentURL()}
+          onContinue={() => setBypassInAppWarning(true)}
+        />
+      </div>
+    );
+  }
 
   return (
     <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }}>
