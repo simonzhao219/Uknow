@@ -432,123 +432,6 @@ export function PaymentCheckout() {
     showToast('已開啟付款頁面', 'info');
   };
 
-  const handlePayment = async () => {
-    if (!pendingUser) {
-      showToast('用戶資料不存在，請重新註冊', 'error');
-      navigate('/auth/complete-profile');
-      return;
-    }
-
-    // ✅ CRITICAL: 防止重複提交
-    if (isLoading) {
-      showToast('處理中，請稍候...', 'warning');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      console.log('PaymentCheckout: Starting payment process...');
-      
-      // 取得當前 session
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        console.error('PaymentCheckout: No session found');
-        showToast('登入狀態已過期，請重新登入', 'error');
-        navigate('/login');
-        return;
-      }
-
-      console.log('PaymentCheckout: Creating payment order...');
-
-      // 1. 創建付款訂單
-      const orderResponse = await fetch(
-        buildApiUrl('/payment/create-order'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            userId: pendingUser.id,
-            amount: 1200,
-            referralCode: pendingUser.referredByCode || null,
-          }),
-        }
-      );
-
-      if (!orderResponse.ok) {
-        const errorData = await orderResponse.json();
-        console.error('PaymentCheckout: Order creation error:', errorData);
-        throw new Error(errorData.error?.message || '創建付款訂單失敗');
-      }
-
-      const orderResult = await orderResponse.json();
-      const { orderId } = orderResult.data; // ✅ 修正：從 data 中取出 orderId
-      console.log('PaymentCheckout: Order created:', orderId);
-      console.log('PaymentCheckout: Full order details:', orderResult.data);
-
-      // 2. 模擬付款成功（實際環境中會跳轉到藍新金流）
-      console.log('PaymentCheckout: Simulating payment success...');
-      
-      const paymentResponse = await fetch(
-        buildApiUrl('/payment/simulate-success'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            orderId: orderId,
-          }),
-        }
-      );
-
-      if (!paymentResponse.ok) {
-        const errorData = await paymentResponse.json();
-        console.error('PaymentCheckout: Payment processing error:', errorData);
-        
-        // ✅ CRITICAL: 處理特定錯誤碼
-        if (errorData.error?.code === 'DUPLICATE_SUBSCRIPTION') {
-          showToast('您已完成付款，無需重複付款', 'warning');
-          // 嘗試獲取最新用戶資料並導航
-          await refreshUserProfileAndNavigate(session);
-          return;
-        }
-        
-        if (errorData.error?.code === 'PAYMENT_IN_PROGRESS') {
-          showToast(errorData.error.message, 'warning');
-          return;
-        }
-        
-        throw new Error(errorData.error?.message || '付款處理失敗');
-      }
-
-      const result = await paymentResponse.json();
-      console.log('PaymentCheckout: Payment successful:', result);
-      
-      // ✅ CRITICAL: 檢查是否是重複處理
-      if (result.alreadyProcessed) {
-        console.log('PaymentCheckout: Payment already processed, redirecting...');
-        showToast('付款已完成', 'success');
-        await refreshUserProfileAndNavigate(session);
-        return;
-      }
-
-      // 3. 獲取完整的用戶資料（包含推薦碼）
-      await refreshUserProfileAndNavigate(session);
-
-    } catch (error: any) {
-      console.error('PaymentCheckout: Payment error:', error);
-      showToast(error.message || '付款處理失敗，請稍後再試', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
   // ✅ 新增：統一的用戶資料刷新與導航邏輯
   const refreshUserProfileAndNavigate = async (session: any) => {
     try {
@@ -588,7 +471,7 @@ export function PaymentCheckout() {
         const fallbackProfile = {
           ...pendingUser,
           registrationStep: 3,
-          referralCode: result.data?.referralCode || '生成中',
+          referralCode: pendingUser?.referralCode || '生成中',
         };
         
         setUser(fallbackProfile);

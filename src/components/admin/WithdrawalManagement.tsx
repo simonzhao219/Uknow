@@ -1,57 +1,69 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Checkbox } from '../ui/checkbox';
-import { Download, Settings, Eye } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Download, Eye, Loader2, RefreshCw } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import { useNotification } from '../notifications/NotificationContext';
+import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
+import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
 
-// 定義可選擇的欄位
-interface ColumnConfig {
-  id: string;
-  label: string;
-  enabled: boolean;
+// 提領生命週期（與後端 SQL 函數一致）：
+//   pending（待處理）→ awaiting_collection（已匯款，待查收）
+//                   → completed（用戶已確認查收）
+//   pending → rejected（退件，點數自動退回）
+const STATUS_LABEL: Record<string, string> = {
+  pending:             '待處理',
+  awaiting_collection: '待查收',
+  completed:           '已完成',
+  rejected:            '已退件',
+};
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case 'pending':             return <Badge variant="secondary">待處理</Badge>;
+    case 'awaiting_collection': return <Badge className="bg-orange-500">待查收</Badge>;
+    case 'completed':           return <Badge variant="outline">已完成</Badge>;
+    case 'rejected':            return <Badge variant="destructive">已退件</Badge>;
+    default:                    return <Badge variant="secondary">{status}</Badge>;
+  }
 }
 
-// 身分證照片查看 Dialog
 interface IdCardDialogProps {
-  isOpen: boolean;
+  record: AdminWithdrawalRecord;
   onClose: () => void;
-  userName: string;
-  idNumber: string;
-  frontImage: string;
-  backImage: string;
 }
 
-function IdCardDialog({ isOpen, onClose, userName, idNumber, frontImage, backImage }: IdCardDialogProps) {
+function IdCardDialog({ record, onClose }: IdCardDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>身分證照片查閱</DialogTitle>
           <DialogDescription>
-            會員：{userName} | 身分證字號：{idNumber}
+            會員：{record.userName} | 身分證字號：{record.idNumber ?? '未設定'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-4">
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證正面</p>
-            <img 
-              src={frontImage} 
-              alt="身分證正面" 
-              className="w-full h-auto rounded-lg border"
-            />
+            {record.idCardFrontUrl ? (
+              <img src={record.idCardFrontUrl} alt="身分證正面" className="w-full h-auto rounded-lg border" />
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">未上傳</p>
+            )}
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證反面</p>
-            <img 
-              src={backImage} 
-              alt="身分證反面" 
-              className="w-full h-auto rounded-lg border"
-            />
+            {record.idCardBackUrl ? (
+              <img src={record.idCardBackUrl} alt="身分證反面" className="w-full h-auto rounded-lg border" />
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">未上傳</p>
+            )}
           </div>
         </div>
         <div className="flex justify-end">
@@ -63,372 +75,218 @@ function IdCardDialog({ isOpen, onClose, userName, idNumber, frontImage, backIma
 }
 
 export function WithdrawalManagement() {
-  const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [withdrawals, setWithdrawals] = useState<any[]>([]);
-  const [idCardDialog, setIdCardDialog] = useState<{
-    isOpen: boolean;
-    userId: string | null;
-  }>({ isOpen: false, userId: null });
-  
-  // 欄位選擇狀態
-  const [columns, setColumns] = useState<ColumnConfig[]>([
-    { id: 'member', label: '會員', enabled: true },
-    { id: 'amount', label: '金額', enabled: true },
-    { id: 'actualAmount', label: '實收金額', enabled: true },
-    { id: 'bankCode', label: '收款銀行代號', enabled: true },
-    { id: 'bankAccount', label: '收款銀行帳號', enabled: true },
-    { id: 'idNumber', label: '身分證字號', enabled: true },
-    { id: 'appliedAt', label: '申請時間', enabled: true },
-    { id: 'status', label: '狀態', enabled: true },
-  ]);
+  const { showSuccess, showToast } = useNotification();
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <Badge variant="secondary">待處理</Badge>;
-      case 'processing':
-        return <Badge variant="default">處理中</Badge>;
-      case 'awaiting_confirmation':
-        return <Badge className="bg-orange-500">待查收</Badge>;
-      case 'completed':
-        return <Badge variant="outline">已完成</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+  const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminWithdrawalRecord | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const fetchWithdrawals = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const qs = statusFilter !== 'all' ? `?status=${statusFilter}` : '';
+      const result = await apiRequestJson<AdminWithdrawalsResponse>(
+        buildApiUrl(`/admin/withdrawals${qs}`)
+      );
+      if (result.success) setWithdrawals(result.data.withdrawals);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '無法取得提領申請', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
+
+  useEffect(() => {
+    fetchWithdrawals();
+  }, [fetchWithdrawals]);
+
+  const updateStatus = async (record: AdminWithdrawalRecord, status: 'awaiting_collection' | 'rejected', note?: string) => {
+    setProcessingId(record.id);
+    try {
+      const result = await apiRequestJson<{ success: boolean; error?: { message: string } }>(
+        buildApiUrl(`/admin/withdrawals/${record.id}/status`),
+        { method: 'POST', body: JSON.stringify({ status, note }) }
+      );
+      if (result.success) {
+        showSuccess(
+          status === 'awaiting_collection' ? '已標記匯款完成' : '已退件',
+          status === 'awaiting_collection'
+            ? `${record.userName} 的提領已轉為待查收`
+            : `${record.userName} 的點數已退回`
+        );
+        await fetchWithdrawals();
+      } else {
+        showToast(result.error?.message ?? '狀態更新失敗', 'error');
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '狀態更新失敗', 'error');
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const getUserName = (userId: string) => {
-    // TODO: Replace with actual API call to get user data
-    return '用戶';
-  };
-
-  // 獲取用戶資訊
-  const getUserInfo = (userId: string) => {
-    // TODO: Replace with actual API call to get user data
-    return null;
-  };
-
-  // 獲取狀態文字
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return '待處理';
-      case 'processing':
-        return '處理中';
-      case 'awaiting_confirmation':
-        return '待查收';
-      case 'completed':
-        return '已完成';
-      default:
-        return status;
-    }
-  };
-
-  // 切換欄位顯示
-  const toggleColumn = (columnId: string) => {
-    setColumns(prev =>
-      prev.map(col =>
-        col.id === columnId ? { ...col, enabled: !col.enabled } : col
-      )
-    );
-  };
-
-  // 開啟身分證照片查看
-  const openIdCardDialog = (userId: string) => {
-    setIdCardDialog({ isOpen: true, userId });
-  };
-
-  // 關閉身分證照片查看
-  const closeIdCardDialog = () => {
-    setIdCardDialog({ isOpen: false, userId: null });
-  };
-
-  // 下載CSV
   const downloadCSV = () => {
-    // 建立CSV標題
-    const headers = columns
-      .filter(col => col.enabled)
-      .map(col => col.label)
-      .join(',');
+    const headers = ['會員', '提領金額', '手續費', '匯款金額', '收款銀行代號', '收款銀行帳號', '身分證字號', '申請時間', '狀態'];
+    const rows = withdrawals.map((w) => [
+      w.userName,
+      String(w.amount + w.fee),
+      String(w.fee),
+      String(w.amount),
+      w.bankCode ?? '未設定',
+      w.bankAccount ?? '未設定',
+      w.idNumber ?? '未設定',
+      formatTwTimestamp(w.requestedAt),
+      STATUS_LABEL[w.status] ?? w.status,
+    ].join(','));
 
-    // 建立CSV內容
-    const rows = withdrawals.map(withdrawal => {
-      const rowData: string[] = [];
-      const userInfo = getUserInfo(withdrawal.userId);
-      
-      columns.forEach(col => {
-        if (!col.enabled) return;
-        
-        switch (col.id) {
-          case 'member':
-            rowData.push(getUserName(withdrawal.userId));
-            break;
-          case 'amount':
-            rowData.push(withdrawal.amount.toString());
-            break;
-          case 'actualAmount':
-            rowData.push(withdrawal.actualAmount.toString());
-            break;
-          case 'bankCode':
-            rowData.push(userInfo?.bankCode || '未設定');
-            break;
-          case 'bankAccount':
-            rowData.push(userInfo?.bankAccount || '未設定');
-            break;
-          case 'idNumber':
-            rowData.push(userInfo?.idNumber || '未設定');
-            break;
-          case 'appliedAt':
-            rowData.push(new Date(withdrawal.appliedAt).toLocaleDateString('zh-TW'));
-            break;
-          case 'status':
-            rowData.push(getStatusText(withdrawal.status));
-            break;
-        }
-      });
-      
-      return rowData.join(',');
-    });
-
-    // 組合CSV內容
-    const csv = [headers, ...rows].join('\n');
-
-    // 建立BOM以支援中文
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
-    
-    // 下載檔案
+    const BOM = '﻿';
+    const blob = new Blob([BOM + [headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `獎金提領申請_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = `獎金提領申請_${twDayOf()}.csv`;
     link.click();
-    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
   };
-
-  const handleStatusChange = (withdrawalId: string, newStatus: string) => {
-    setWithdrawals(prev => 
-      prev.map(w => 
-        w.id === withdrawalId 
-          ? { ...w, status: newStatus, processedAt: newStatus === 'completed' ? new Date().toISOString() : w.processedAt }
-          : w
-      )
-    );
-  };
-
-  const handleBatchStatusChange = (newStatus: string) => {
-    setWithdrawals(prev => 
-      prev.map(w => 
-        selectedItems.includes(w.id)
-          ? { ...w, status: newStatus, processedAt: newStatus === 'completed' ? new Date().toISOString() : w.processedAt }
-          : w
-      )
-    );
-    setSelectedItems([]);
-  };
-
-  const handleSelectItem = (withdrawalId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedItems([...selectedItems, withdrawalId]);
-    } else {
-      setSelectedItems(selectedItems.filter(id => id !== withdrawalId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedItems(withdrawals.map(w => w.id));
-    } else {
-      setSelectedItems([]);
-    }
-  };
-
-  // 取得當前查看的用戶資訊
-  const currentViewUser = idCardDialog.userId ? getUserInfo(idCardDialog.userId) : null;
 
   return (
     <div className="space-y-6">
-      {/* 身分證照片查看 Dialog */}
-      {currentViewUser && (
-        <IdCardDialog
-          isOpen={idCardDialog.isOpen}
-          onClose={closeIdCardDialog}
-          userName={currentViewUser.name}
-          idNumber={currentViewUser.idNumber}
-          frontImage={currentViewUser.idCardFrontImage || ''}
-          backImage={currentViewUser.idCardBackImage || ''}
-        />
+      {viewRecord && <IdCardDialog record={viewRecord} onClose={() => setViewRecord(null)} />}
+
+      {rejectTarget && (
+        <AlertDialog open onOpenChange={() => setRejectTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>確認退件？</AlertDialogTitle>
+              <AlertDialogDescription>
+                退件後，{rejectTarget.userName} 的 {rejectTarget.amount + rejectTarget.fee} P
+                （含手續費）將自動退回其可提領點數。此操作無法復原。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = rejectTarget;
+                  setRejectTarget(null);
+                  if (target) updateStatus(target, 'rejected');
+                }}
+              >
+                確認退件
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
-      {/* 批次操作和匯出功能 */}
-      {selectedItems.length > 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-sm">已選擇 {selectedItems.length} 項</span>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => handleBatchStatusChange('processing')}>
-                    批次設為處理中
-                  </Button>
-                  <Button size="sm" onClick={() => handleBatchStatusChange('awaiting_confirmation')}>
-                    批次設為待查收
-                  </Button>
-                  <Button size="sm" onClick={() => handleBatchStatusChange('completed')}>
-                    批次設為已完成
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setSelectedItems([])}>
-                    取消選擇
-                  </Button>
-                </div>
-              </div>
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="全部狀態" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部狀態</SelectItem>
+                  <SelectItem value="pending">待處理</SelectItem>
+                  <SelectItem value="awaiting_collection">待查收</SelectItem>
+                  <SelectItem value="completed">已完成</SelectItem>
+                  <SelectItem value="rejected">已退件</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                重新整理
+              </Button>
+              <Button variant="default" size="sm" onClick={downloadCSV} disabled={!withdrawals.length}>
+                <Download className="h-4 w-4 mr-2" />
+                下載CSV
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Settings className="h-4 w-4 mr-2" />
-                      選擇欄位
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56" align="start">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium mb-3">選擇要顯示的欄位</p>
-                      {columns.map(col => (
-                        <div key={col.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={col.id}
-                            checked={col.enabled}
-                            onCheckedChange={() => toggleColumn(col.id)}
-                          />
-                          <label
-                            htmlFor={col.id}
-                            className="text-sm cursor-pointer"
-                          >
-                            {col.label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <Button variant="default" size="sm" onClick={downloadCSV}>
-                  <Download className="h-4 w-4 mr-2" />
-                  下載CSV
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                共 {withdrawals.length} 筆申請
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            <p className="text-sm text-muted-foreground">共 {withdrawals.length} 筆申請</p>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* 提領申請表格 */}
       <Card>
         <CardHeader>
           <CardTitle>獎金提領申請</CardTitle>
-          <CardDescription>管理所有用戶的獎金提領申請</CardDescription>
+          <CardDescription>
+            匯款完成後標記「已匯款」，會員確認查收後自動轉為已完成；退件會自動退回點數
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={selectedItems.length === withdrawals.length && withdrawals.length > 0}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
-                {columns.find(c => c.id === 'member')?.enabled && <TableHead>會員</TableHead>}
-                {columns.find(c => c.id === 'amount')?.enabled && <TableHead>金額</TableHead>}
-                {columns.find(c => c.id === 'actualAmount')?.enabled && <TableHead>實收金額</TableHead>}
-                {columns.find(c => c.id === 'bankCode')?.enabled && <TableHead>收款銀行代號</TableHead>}
-                {columns.find(c => c.id === 'bankAccount')?.enabled && <TableHead>收款銀行帳號</TableHead>}
-                {columns.find(c => c.id === 'idNumber')?.enabled && <TableHead>身分證字號</TableHead>}
-                {columns.find(c => c.id === 'appliedAt')?.enabled && <TableHead>申請時間</TableHead>}
-                {columns.find(c => c.id === 'status')?.enabled && <TableHead>狀態</TableHead>}
-                <TableHead>身分證照片</TableHead>
-                <TableHead>操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {withdrawals.map((withdrawal) => {
-                const userInfo = getUserInfo(withdrawal.userId);
-                return (
-                  <TableRow key={withdrawal.id}>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : withdrawals.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>會員</TableHead>
+                  <TableHead>扣點</TableHead>
+                  <TableHead>匯款金額</TableHead>
+                  <TableHead>收款銀行</TableHead>
+                  <TableHead>收款帳號</TableHead>
+                  <TableHead>申請時間</TableHead>
+                  <TableHead>狀態</TableHead>
+                  <TableHead>身分證照片</TableHead>
+                  <TableHead>操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {withdrawals.map((w) => (
+                  <TableRow key={w.id}>
+                    <TableCell>{w.userName}</TableCell>
+                    <TableCell>{w.amount + w.fee} P</TableCell>
+                    <TableCell>${w.amount}</TableCell>
+                    <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
+                    <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
+                    <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
+                    <TableCell>{getStatusBadge(w.status)}</TableCell>
                     <TableCell>
-                      <Checkbox
-                        checked={selectedItems.includes(withdrawal.id)}
-                        onCheckedChange={(checked) => handleSelectItem(withdrawal.id, checked as boolean)}
-                      />
-                    </TableCell>
-                    {columns.find(c => c.id === 'member')?.enabled && (
-                      <TableCell>{getUserName(withdrawal.userId)}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'amount')?.enabled && (
-                      <TableCell>${withdrawal.amount}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'actualAmount')?.enabled && (
-                      <TableCell>${withdrawal.actualAmount}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'bankCode')?.enabled && (
-                      <TableCell className="font-mono text-sm">{userInfo?.bankCode || '-'}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'bankAccount')?.enabled && (
-                      <TableCell className="font-mono text-sm">{userInfo?.bankAccount || '-'}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'idNumber')?.enabled && (
-                      <TableCell className="font-mono text-sm">{userInfo?.idNumber || '-'}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'appliedAt')?.enabled && (
-                      <TableCell>{new Date(withdrawal.appliedAt).toLocaleDateString('zh-TW')}</TableCell>
-                    )}
-                    {columns.find(c => c.id === 'status')?.enabled && (
-                      <TableCell>{getStatusBadge(withdrawal.status)}</TableCell>
-                    )}
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openIdCardDialog(withdrawal.userId)}
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => setViewRecord(w)}>
                         <Eye className="h-4 w-4 mr-1" />
                         查看
                       </Button>
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={withdrawal.status}
-                        onValueChange={(value) => handleStatusChange(withdrawal.id, value)}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">待處理</SelectItem>
-                          <SelectItem value="processing">處理中</SelectItem>
-                          <SelectItem value="awaiting_confirmation">待查收</SelectItem>
-                          <SelectItem value="completed" disabled={withdrawal.status !== 'awaiting_confirmation'}>
-                            已完成
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {w.status === 'pending' ? (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => updateStatus(w, 'awaiting_collection')}
+                            disabled={processingId === w.id}
+                          >
+                            已匯款
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setRejectTarget(w)}
+                            disabled={processingId === w.id}
+                          >
+                            退件
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          {w.status === 'awaiting_collection' ? '等待會員查收' : '—'}
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -87,14 +87,17 @@ function FormItem({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+// props 放寬為 any：radix label 的 ref 型別與 @types/react 19 衝突
+// （執行期無礙，僅型別層），與其他 ui/* 檔的 Comp: any 同一類基線處理。
 function FormLabel({
   className,
   ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root>) {
+}: React.ComponentProps<typeof LabelPrimitive.Root> & Record<string, any>) {
   const { error, formItemId } = useFormField();
+  const LabelComp: any = Label;
 
   return (
-    <Label
+    <LabelComp
       data-slot="form-label"
       data-error={!!error}
       className={cn("data-[error=true]:text-destructive", className)}
