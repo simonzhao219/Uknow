@@ -4,8 +4,21 @@
 // ============================================================
 import { Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono/cors';
+import { etag } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
+import {
+  twDayOf,
+  twMonthKey,
+  twCompactTimestamp,
+  twDayPlusDays,
+  subscriptionLastDay,
+  twEndOfDayInstant,
+} from './tw-dates.ts';
+import type {
+  RewardHistoryResponse,
+  CurrentMonthReferralsResponse,
+} from '../_shared/api-contract.ts';
 
 // Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
 // 因此所有路由需掛在 /api basePath 下，否則一律 404。
@@ -23,9 +36,44 @@ app.use('*', cors({
     return o === allowed || o.startsWith('http://localhost') ? origin : '';
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
+  allowHeaders: ['Content-Type', 'Authorization', 'If-None-Match'],
+  exposeHeaders: ['ETag'],
+  // preflight 快取 2 小時：每個帶 Authorization 的請求本來都要多付一次
+  // OPTIONS round-trip，這是整條 API 路徑上最大的單項頻寬/延遲節省。
+  maxAge: 7200,
   credentials: true,
 }));
+
+// ============================================================
+// 讀端點的條件請求（stale-while-revalidate 的頻寬優化）
+//
+// 前端改為「每次進頁都背景 revalidate」之後，多數 revalidate 的回應
+// 其實跟上次一模一樣。掛 etag middleware + Cache-Control: private,
+// no-cache 後，瀏覽器會自動帶 If-None-Match，內容沒變就回 304 空
+// body——確認新鮮度的成本從整包 JSON 降到幾乎為零，前端程式碼零改動
+// （fetch 對 304 透明地回快取內容）。
+// 前提：回應內容必須是決定性的（同樣的資料 → 同樣的 body），所以
+// /rewards 移除了無人使用的 lastUpdated=new Date() 欄位。
+// ============================================================
+const READ_PATHS = [
+  '/subscriptions/status',
+  '/rewards',
+  '/rewards/*',
+  '/referrals/my-tree',
+  '/tasks',
+  '/tasks/*',
+] as const;
+for (const p of READ_PATHS) {
+  app.use(p, etag());
+  app.use(p, async (c, next) => {
+    await next();
+    if (c.req.method === 'GET') {
+      c.header('Cache-Control', 'private, no-cache');
+      c.header('Vary', 'Authorization');
+    }
+  });
+}
 
 // ============================================================
 // 工具：建立 service_role Supabase 客戶端
@@ -159,12 +207,8 @@ function payuniConfig() {
 
 // MerTradeNo：限英數字。用 台灣日期時間(14) + 4 碼亂數 = 18 碼
 function generateTradeNo(): string {
-  const now = new Date(Date.now() + 8 * 3600_000);  // UTC+8
-  const pad = (n: number, l = 2) => String(n).padStart(l, '0');
-  const dt = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
-             `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${dt}${rand}`;  // 18 chars
+  return `${twCompactTimestamp()}${rand}`;  // 18 chars
 }
 
 // ============================================================
@@ -567,13 +611,15 @@ app.post('/payuni/prepare', async (c) => {
 
   const client = sb();
 
-  // 防重複：已有有效訂閱就拒絕
+  // 防重複：只擋「目前仍在效期內」的會員。寬限期（grace）與已失效
+  // （expired）都可以付款——這正是續訂（到期後接續）或重新訂閱的
+  // 唯一入口（訂閱三態模型：付款即訂閱／續訂／重新訂，見 0718 系列）。
   const { data: acct } = await client
     .from('user_account_status')
     .select('status')
     .eq('user_id', user.id)
     .single();
-  if (acct?.status === 'active' || acct?.status === 'grace') {
+  if (acct?.status === 'active') {
     return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
   }
 
@@ -602,9 +648,12 @@ app.post('/payuni/prepare', async (c) => {
     if (!lastSub?.end_date) {
       return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
     }
-    const extendedEnd = new Date(lastSub.end_date);
-    extendedEnd.setFullYear(extendedEnd.getFullYear() + 1);
-    if (extendedEnd.getTime() <= Date.now()) {
+    // 日領域計算，與 process_successful_payment 的 extend 分支
+    // （tw_day(前期迄) + 1 天起算）完全同語意——這裡通過的請求，
+    // 付款完成後端點算出來的效期保證仍在未來。
+    const anchorDay      = twDayPlusDays(twDayOf(lastSub.end_date), 1);
+    const extendedEndDay = subscriptionLastDay(anchorDay);
+    if (twEndOfDayInstant(extendedEndDay).getTime() <= Date.now()) {
       return c.json({ success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' }, 400);
     }
   }
@@ -648,8 +697,7 @@ app.post('/payuni/prepare', async (c) => {
   const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
 
   // 付款期限：3 天後（YYYY-MM-DD，台灣時區）
-  const expire = new Date(Date.now() + 8 * 3600_000 + 3 * 86400_000)
-    .toISOString().slice(0, 10);
+  const expire = twDayPlusDays(twDayOf(), 3);
 
   // UPP（整合式支付頁）加密內容
   const encryptData: Record<string, string | number> = {
@@ -1109,11 +1157,10 @@ app.post('/payuni/return', async (c) => {
 });
 
 // ============================================================
-// 工具：台灣時間 (UTC+8) 目前月份字串 "YYYY-MM"
+// 工具：台灣時間目前月份字串 "YYYY-MM"
 // ============================================================
 function twCurrentMonth(): string {
-  const now = new Date(Date.now() + 8 * 3600_000);
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  return twMonthKey();
 }
 
 // ============================================================
@@ -1163,7 +1210,7 @@ app.get('/rewards', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const client = sb();
-  const todayStart = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00+08:00';
+  const todayStart = `${twDayOf()}T00:00:00+08:00`;
 
   const [{ data: balance }, { data: pending }, { data: todayW }] = await Promise.all([
     client.from('reward_balances').select('*').eq('user_id', user.id).maybeSingle(),
@@ -1174,6 +1221,8 @@ app.get('/rewards', async (c) => {
   const pendingAmount = pending?.reduce((s: number, w: any) => s + w.amount, 0) ?? 0;
   const available     = (balance?.available ?? 0) - pendingAmount;
 
+  // 不回 lastUpdated 之類的非決定性欄位——同樣的資料必須產生同樣的
+  // body，ETag/304 條件請求才有意義（見 CORS 區塊下的 etag middleware）。
   return c.json({
     success: true,
     data: {
@@ -1181,7 +1230,6 @@ app.get('/rewards', async (c) => {
       pendingRewards:   pendingAmount,
       withdrawnRewards: balance?.withdrawn ?? 0,
       totalEarned:      balance?.total_earned ?? 0,
-      lastUpdated:      new Date().toISOString(),
       hasWithdrawnToday: (todayW?.length ?? 0) > 0,
     }
   });
@@ -1217,21 +1265,43 @@ app.get('/rewards/withdrawals', async (c) => {
 
 // ============================================================
 // GET /rewards/history
-// 獎勵明細（reward_transactions）
+// 獎勵明細（reward_transactions_with_balance —— 見 migration 0718 0003）
+//
+// 修 #4：舊版回 { data: { transactions } }，RewardHistory.tsx 讀的是
+// { data: { history, total, limit, offset } }——前端讀到的欄位永遠是
+// undefined，畫面永遠空白。這裡改回前端本來就在等的形狀，並補上真正
+// 的分頁（offset/total）與逐列餘額（balance_after）。
 // ============================================================
 app.get('/rewards/history', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
-  const { data: rows } = await sb()
-    .from('reward_transactions')
-    .select('*')
+  const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
+
+  const { data: rows, count } = await sb()
+    .from('reward_transactions_with_balance')
+    .select('id, type, amount, description, created_at, generation, balance_after', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .order('id', { ascending: false })
+    .range(offset, offset + limit - 1);
 
-  return c.json({ success: true, data: { transactions: rows ?? [] } });
+  const history = (rows ?? []).map((r: any) => ({
+    id:          r.id,
+    type:        r.type,
+    amount:      r.amount,
+    description: r.description,
+    issuedAt:    r.created_at,
+    requestedAt: r.type === 'withdrawal' ? r.created_at : undefined,
+    generation:  r.generation ?? undefined,
+    balance:     r.balance_after,
+  }));
+
+  return c.json({
+    success: true,
+    data: { history, total: count ?? 0, limit, offset },
+  } satisfies RewardHistoryResponse);
 });
 
 // ============================================================
@@ -1459,87 +1529,82 @@ app.get('/tasks/pending-rewards', async (c) => {
 });
 
 // ============================================================
-// GET /tasks/monthly-summary
-// TaskDashboard：本月推薦摘要（本月被推薦者列表）
-// ============================================================
-app.get('/tasks/monthly-summary', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  const currentMonth = twCurrentMonth();
-  const monthStart   = new Date(`${currentMonth}-01T00:00:00+08:00`).toISOString();
-  const nextMonth    = new Date(Date.now() + 8 * 3600_000);
-  nextMonth.setUTCDate(1);
-  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-  const monthEnd = new Date(nextMonth.getTime() - 1).toISOString();
-
-  const client = sb();
-  const { data: edges } = await client
-    .from('referral_edges')
-    .select('referee_user_id, referred_at')
-    .eq('referrer_user_id', user.id)
-    .gte('referred_at', monthStart)
-    .lte('referred_at', monthEnd);
-
-  const refIds = (edges ?? []).map((e: any) => e.referee_user_id);
-  let nameMap: Record<string, string> = {};
-  if (refIds.length) {
-    const { data: profs } = await client.from('profiles').select('id, name').in('id', refIds);
-    nameMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.name]));
-  }
-
-  const referrals = (edges ?? []).map((e: any) => ({
-    userId:    e.referee_user_id,
-    userName:  nameMap[e.referee_user_id] ?? '',
-    createdAt: e.referred_at,
-  }));
-
-  return c.json({
-    success: true,
-    data: { month: currentMonth, referralCount: referrals.length, referrals },
-  });
-});
-
-// ============================================================
 // GET /tasks/current-month-top
-// TaskDashboard：本月推薦排行榜
+// TaskDashboard：查看本月推薦詳情（推薦王任務卡片按鈕）
+//
+// 修 #6：舊版回排行榜 { month, rankings }（順帶全表掃 task_progress、
+// 洩漏所有用戶姓名/推薦數給任何登入者），但前端 useTaskData/
+// MonthlyKingProgress 要的是「自己本月的推薦明細」
+// { month, total, completedCount, currentProgress, referrals }——
+// 拿到排行榜形狀後 referrals.length/.map 直接炸掉，按鈕形同失效。
+// 這裡改成回傳呼叫者自己的月推薦明細（路徑不變，端點語意換掉）。
 // ============================================================
 app.get('/tasks/current-month-top', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const limit        = Math.min(parseInt(c.req.query('limit') || '10'), 200);
+  const KING_TARGET = 10;
+  const limit        = Math.min(parseInt(c.req.query('limit') || '100'), 200);
   const currentMonth = twCurrentMonth();
 
   const client = sb();
-  const { data: allProgress } = await client
+  const { data: progress } = await client
     .from('task_progress')
-    .select('user_id, monthly_referrals');
+    .select('monthly_referrals')
+    .eq('user_id', user.id)
+    .maybeSingle();
 
-  const ranked = (allProgress ?? [])
-    .map((p: any) => {
-      const monthVal = ((p.monthly_referrals as Record<string, any>) ?? {})[currentMonth];
-      return { userId: p.user_id, count: Array.isArray(monthVal) ? monthVal.length : 0 };
-    })
-    .filter((r: any) => r.count > 0)
-    .sort((a: any, b: any) => b.count - a.count)
-    .slice(0, limit);
+  const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
+  // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 10 位標
+  // 「第N次完成」，順序錯了標記就跟著錯。
+  const ids: string[] = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth] : [];
+  const total           = ids.length;
+  const completedCount  = Math.floor(total / KING_TARGET);
+  const currentProgress = total % KING_TARGET;
+  const limitedIds       = ids.slice(0, limit);
 
-  const userIds = ranked.map((r: any) => r.userId);
   let nameMap: Record<string, string> = {};
-  if (userIds.length) {
-    const { data: profs } = await client.from('profiles').select('id, name').in('id', userIds);
+  let codeMap: Record<string, string> = {};
+  let createdAtMap: Record<string, string> = {};
+
+  if (limitedIds.length) {
+    const [{ data: profs }, { data: codes }, { data: rewardRows }] = await Promise.all([
+      client.from('profiles').select('id, name').in('id', limitedIds),
+      client.from('referral_codes').select('user_id, code').in('user_id', limitedIds).eq('status', 'active'),
+      // 本月第 1 代推薦獎勵與 monthly_referrals 是同一次交易寫入
+      // （apply_referral_side_effects），依 referee_user_id 一一對應。
+      client.from('reward_transactions')
+        .select('referee_user_id, created_at')
+        .eq('user_id', user.id)
+        .eq('generation', 1)
+        .in('referee_user_id', limitedIds),
+    ]);
     nameMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.name]));
+    codeMap = Object.fromEntries((codes ?? []).map((r: any) => [r.user_id, r.code]));
+    createdAtMap = Object.fromEntries((rewardRows ?? []).map((r: any) => [r.referee_user_id, r.created_at]));
+
+    // fallback：極少數第 1 代獎勵寫入失敗（見 apply_referral_side_effects
+    // 的 warning-only 隔離）時退回推薦邊建立時間。
+    const missingIds = limitedIds.filter((id) => !createdAtMap[id]);
+    if (missingIds.length) {
+      const { data: edges } = await client.from('referral_edges')
+        .select('referee_user_id, referred_at')
+        .in('referee_user_id', missingIds);
+      for (const e of edges ?? []) createdAtMap[(e as any).referee_user_id] = (e as any).referred_at;
+    }
   }
 
-  const rankings = ranked.map((r: any, i: number) => ({
-    rank:          i + 1,
-    userId:        r.userId,
-    userName:      nameMap[r.userId] ?? '',
-    referralCount: r.count,
+  const referrals = limitedIds.map((id) => ({
+    userId:           id,
+    userName:         nameMap[id] ?? '',
+    userReferralCode: codeMap[id] ?? null,
+    createdAt:        createdAtMap[id] ?? null,
   }));
 
-  return c.json({ success: true, data: { month: currentMonth, rankings } });
+  return c.json({
+    success: true,
+    data: { month: currentMonth, total, completedCount, currentProgress, referrals },
+  } satisfies CurrentMonthReferralsResponse);
 });
 
 // ============================================================

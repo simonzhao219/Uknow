@@ -1,8 +1,10 @@
 // ============================================================
-// 過期會員續費雙模式（migration 0008 + /payuni/prepare）：
-//   * extend（續約）：新訂閱效期接續前一筆的最後一天
-//   * fresh（新約）：效期從付款日起算，可換新推薦人（推薦邊 rewire）
+// 過期會員續費雙模式（migration 0008 + 0718 0001 + /payuni/prepare）：
+//   * extend（續約）：新訂閱效期接續「前一筆最後一天（台灣日）的隔天」
+//   * fresh（新約）：效期從付款日（台灣日曆日）起算，可換新推薦人
 //   * 過期超過一年不能選 extend（prepare 拒絕）
+// 0718 時間領域重設計後，所有效期邊界都正規化到台灣日界：
+//   start = 錨定日 TW 00:00、end = 最後一天 TW 23:59:59.999999。
 // ============================================================
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import {
@@ -14,6 +16,13 @@ import {
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
+import {
+  twDayOf,
+  twDayPlusDays,
+  subscriptionLastDay,
+  twStartOfDayInstant,
+  twEndOfDayInstant,
+} from './tw-dates.ts';
 
 ensureEdgeFunctionEnv();
 // prepare 路由會呼叫 payuniConfig()（成功路徑要加密表單資料）。
@@ -97,11 +106,13 @@ Deno.test('extend：新訂閱效期接續前一筆的最後一天（不是付款
 
     const renewal = subs![1];
     assertEquals(renewal.is_renewal, true);
-    // start = 前一筆 end_date；end = start + 1 年
-    assertEquals(new Date(renewal.start_date).getTime(), new Date(prevEnd).getTime());
-    const expectedEnd = new Date(prevEnd);
-    expectedEnd.setFullYear(expectedEnd.getFullYear() + 1);
-    assertEquals(new Date(renewal.end_date).getTime(), expectedEnd.getTime());
+    // 錨定日 = 前一筆最後一天（台灣日）的隔天；start = 錨定日 TW 00:00、
+    // end = 錨定日 + 1 年 − 1 天的 TW 日終（例：前期迄 2027/7/14 →
+    // 新期 2027/7/15 ~ 2028/7/14）。
+    const anchorDay = twDayPlusDays(twDayOf(prevEnd), 1);
+    assertEquals(new Date(renewal.start_date).getTime(), twStartOfDayInstant(anchorDay).getTime());
+    const lastDay = subscriptionLastDay(anchorDay);
+    assertEquals(new Date(renewal.end_date).getTime(), twEndOfDayInstant(lastDay).getTime());
 
     // 過期 90 天 + 接續一年 → 現在是有效會員
     const { data: acct } = await client
@@ -134,9 +145,16 @@ Deno.test('fresh / null：效期從付款當下起算（現行語意不變）', 
       .select('start_date')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
-    const start = new Date(subs![1].start_date).getTime();
-    // start ≈ 付款當下（容忍 60 秒時鐘誤差）
-    assertEquals(Math.abs(start - before) < 60_000, true, `fresh 起算日應為付款日，實際 ${subs![1].start_date}`);
+    // start = 付款日（台灣日曆日）的 TW 00:00。付款瞬間可能跨台灣午夜，
+    // 兩個候選日都接受。
+    const startDay = twDayOf(subs![1].start_date);
+    const dayOk = startDay === twDayOf(before) || startDay === twDayOf(Date.now());
+    assertEquals(dayOk, true, `fresh 起算日應為付款日（台灣日），實際 ${subs![1].start_date}`);
+    assertEquals(
+      new Date(subs![1].start_date).getTime(),
+      twStartOfDayInstant(startDay).getTime(),
+      'start 應正規化為台灣日 00:00',
+    );
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
