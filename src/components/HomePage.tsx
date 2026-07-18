@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
+import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import {
@@ -11,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Search,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
@@ -26,10 +28,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./ui/collapsible";
-import { 
-  NAME_MAX_LENGTH, 
-  NAME_DISPLAY_LENGTH_MOBILE, 
-  NAME_DISPLAY_LENGTH_DESKTOP,
+import {
   SERVICE_CATEGORIES,
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
@@ -76,8 +75,24 @@ const cityCoordinates: Record<string, { lat: number; lng: number }> = {
   '連江縣': { lat: 26.1605, lng: 119.9297 }
 };
 
+// 依 districts 陣列組出可讀的地區字串：有「全區」只顯示全區，否則最多前 10 個。
+// 手機與桌面卡片共用，避免重複邏輯。
+const formatDistrict = (serviceProvider: any): string => {
+  if (!Array.isArray(serviceProvider.districts) || serviceProvider.districts.length === 0) {
+    return serviceProvider.district || "";
+  }
+  if (serviceProvider.districts.includes("全區")) {
+    return "全區";
+  }
+  const maxDisplay = 10;
+  const districts = serviceProvider.districts.slice(0, maxDisplay);
+  const displayText = districts.join(", ");
+  return serviceProvider.districts.length > maxDisplay ? `${displayText}...` : displayText;
+};
+
 export function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
@@ -91,13 +106,25 @@ export function HomePage() {
   // ✅ 数据状态管理
   const [serviceProviders, setServiceProviders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // 模擬用戶位置（台北市政府）
-  const userLocation = { lat: 25.0380, lng: 121.5640 };
+
+  // 使用者真實座標（取得授權後才用來做「由近到遠」排序）。
+  // 原本寫死台北市政府座標，對非台北使用者的距離排序具誤導性；
+  // 未授權 / 不支援時保留後端的最新排序（created_at desc），不假裝依距離。
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // ✅ 获取所有活跃刊登
   useEffect(() => {
     fetchAllListings();
+  }, []);
+
+  // 嘗試取得使用者定位（失敗則沿用最新排序）
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setUserCoords(null),
+      { timeout: 8000, maximumAge: 300000 }
+    );
   }, []);
 
   const fetchAllListings = async () => {
@@ -121,6 +148,22 @@ export function HomePage() {
 
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
+      // 關鍵字搜尋（名稱／服務介紹／標籤）
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const haystack = [
+          serviceProvider.name,
+          serviceProvider.description,
+          ...(Array.isArray(serviceProvider.tags) ? serviceProvider.tags : []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) {
+          return false;
+        }
+      }
+
       // 服務類別篩選（單選）
       if (selectedCategory && serviceProvider.category !== selectedCategory) {
         return false;
@@ -163,31 +206,30 @@ export function HomePage() {
       return true;
     });
 
-    // 按距離排序（使用城市座標）
-    filtered.sort((a, b) => {
-      // 使用服務者城市對應的座標，如果沒有應座標則使用台北作為預設
-      const aCoords = cityCoordinates[a.city] || cityCoordinates['台北市'];
-      const bCoords = cityCoordinates[b.city] || cityCoordinates['台北市'];
-      
-      // 確保座標存在才進行計算
-      if (!aCoords || !bCoords) {
-        return 0;
-      }
-      
-      const distanceA = calculateDistance(userLocation.lat, userLocation.lng, aCoords.lat, aCoords.lng);
-      const distanceB = calculateDistance(userLocation.lat, userLocation.lng, bCoords.lat, bCoords.lng);
-      
-      return distanceA - distanceB;
-    });
+    // 僅在取得使用者真實定位後，才依「由近到遠」排序；
+    // 未授權 / 不支援時保留後端的最新（created_at desc）排序，不假裝依距離。
+    if (userCoords) {
+      filtered = [...filtered].sort((a, b) => {
+        const aCoords = cityCoordinates[a.city];
+        const bCoords = cityCoordinates[b.city];
+        if (!aCoords && !bCoords) return 0;
+        if (!aCoords) return 1;
+        if (!bCoords) return -1;
+        const distanceA = calculateDistance(userCoords.lat, userCoords.lng, aCoords.lat, aCoords.lng);
+        const distanceB = calculateDistance(userCoords.lat, userCoords.lng, bCoords.lat, bCoords.lng);
+        return distanceA - distanceB;
+      });
+    }
 
     return filtered;
   }, [
     serviceProviders,
+    searchQuery,
     selectedCategory,
     selectedGenders,
     selectedCities,
     selectedDistricts,
-    userLocation
+    userCoords
   ]);
 
   const handleCityChange = (city: string, checked: boolean) => {
@@ -259,6 +301,7 @@ export function HomePage() {
     setSelectedCities([]);
     setSelectedDistricts([]);
     setOpenCities({});
+    setSearchQuery("");
   };
 
   const totalFilters = (selectedCategory ? 1 : 0) + selectedGenders.length + selectedCities.length;
@@ -273,6 +316,25 @@ export function HomePage() {
         <p className="text-muted-foreground">
           Uknow 連結專業服務者與需求者，讓專業技能發揮最大價值
         </p>
+      </div>
+
+      {/* 關鍵字搜尋 */}
+      <div className="relative">
+        <Search
+          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+          aria-hidden="true"
+        />
+        <label htmlFor="service-search" className="sr-only">
+          搜尋服務者
+        </label>
+        <Input
+          id="service-search"
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="搜尋服務者名稱、服務內容或標籤"
+          className="pl-9"
+        />
       </div>
 
       {/* 篩選區域 */}
@@ -691,21 +753,21 @@ export function HomePage() {
           <div className="text-center py-12">
             <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground text-lg mb-2">
-              {totalFilters > 0 
-                ? '沒有找到符合條件的服務者' 
+              {totalFilters > 0 || searchQuery.trim()
+                ? '沒有找到符合條件的服務者'
                 : '目前沒有可用的服務者'}
             </p>
             <p className="text-sm text-muted-foreground mb-4">
-              {totalFilters > 0 
-                ? '試試調整篩選條件，或清除所有篩選來查看更多結果' 
+              {totalFilters > 0 || searchQuery.trim()
+                ? '試試調整搜尋或篩選條件，或清除所有條件來查看更多結果'
                 : '請稍後再來看看，或許會有新的服務者加入'}
             </p>
-            {totalFilters > 0 && (
+            {(totalFilters > 0 || searchQuery.trim()) && (
               <Button
                 onClick={clearFilters}
                 variant="outline"
               >
-                清除所有篩選
+                清除搜尋與篩選
               </Button>
             )}
           </div>
@@ -714,9 +776,9 @@ export function HomePage() {
         {/* ========== 正常顯示資料（僅在載入完成且有資料時） ========== */}
         {!loading && filteredServiceProviders.length > 0 && (
           <>
-            {/* 手機版緊湊網格 */}
+            {/* 手機版資訊卡片網格 */}
             <div className="block md:hidden">
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 {filteredServiceProviders.map((serviceProvider) => (
                   <MobileServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
                 ))}
@@ -736,54 +798,52 @@ export function HomePage() {
   );
 }
 
-// 手機版緊湊網格項目組件
+// 手機版資訊卡片：照片 + 名稱 + 類別 + 地區 + 性別，讓手機使用者不必逐一點入
+// 也能判斷服務內容與地點（原本只有照片與名字，資訊量遠少於桌面版）。
 function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+  const displayDistrict = formatDistrict(serviceProvider);
   return (
-    <Link to={`/service-providers/${serviceProvider.id}`} className="block">
-      <div className="relative aspect-square overflow-hidden rounded-lg group">
-        <ImageWithFallback
-          src={serviceProvider.photos[0]}
-          alt={serviceProvider.name}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-        />
-        {/* 半透明覆蓋層 */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        {/* 左下角姓名 */}
-        <div className="absolute bottom-1 left-1">
-          <span className="text-white text-xs font-medium drop-shadow-md">
-            {serviceProvider.name.length > NAME_DISPLAY_LENGTH_MOBILE ? `${serviceProvider.name.substring(0, NAME_DISPLAY_LENGTH_MOBILE)}...` : serviceProvider.name}
-          </span>
-        </div>
-      </div>
+    <Link to={`/service-providers/${serviceProvider.id}`} className="block h-full">
+      <Card className="h-full overflow-hidden hover:shadow-md transition-shadow">
+        <CardContent className="p-0">
+          <div className="relative aspect-square overflow-hidden group">
+            <ImageWithFallback
+              src={serviceProvider.photos?.[0]}
+              alt={serviceProvider.name}
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            />
+            {serviceProvider.gender && (
+              <Badge
+                variant="secondary"
+                className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0 shadow-sm"
+              >
+                {serviceProvider.gender === '男' ? '♂' : '♀'}
+              </Badge>
+            )}
+          </div>
+          <div className="p-2 space-y-1">
+            <h3 className="font-medium text-sm line-clamp-1">
+              {serviceProvider.name}
+            </h3>
+            <Badge variant="secondary" className="text-xs">
+              {serviceProvider.category}
+            </Badge>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="line-clamp-1">
+                {serviceProvider.city} {displayDistrict}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </Link>
   );
 }
 
 // 桌面版完整卡片組件
 function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
-  // ✅ 适配 districts 数组显示 - 如果有「全區」就只显示全區，否则最多显示前10个
-  const displayDistrict = (() => {
-    if (!Array.isArray(serviceProvider.districts) || serviceProvider.districts.length === 0) {
-      return serviceProvider.district || '';
-    }
-    
-    // 如果包含「全區」，只显示全區
-    if (serviceProvider.districts.includes('全區')) {
-      return '全區';
-    }
-    
-    // 最多显示前10个区
-    const maxDisplay = 10;
-    const districts = serviceProvider.districts.slice(0, maxDisplay);
-    const displayText = districts.join(', ');
-    
-    // 如果超过10个，添加 "..."
-    if (serviceProvider.districts.length > maxDisplay) {
-      return `${displayText}...`;
-    }
-    
-    return displayText;
-  })();
+  const displayDistrict = formatDistrict(serviceProvider);
 
   return (
     <Link to={`/service-providers/${serviceProvider.id}`}>
@@ -791,7 +851,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
         <CardContent className="p-0">
           <div className="aspect-video relative overflow-hidden rounded-t-lg">
             <ImageWithFallback
-              src={serviceProvider.photos[0]}
+              src={serviceProvider.photos?.[0]}
               alt={serviceProvider.name}
               className="w-full h-full object-cover"
             />
@@ -800,12 +860,12 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <h3 className="font-semibold line-clamp-1">
-                  {serviceProvider.name.length > NAME_DISPLAY_LENGTH_DESKTOP ? `${serviceProvider.name.substring(0, NAME_DISPLAY_LENGTH_DESKTOP)}...` : serviceProvider.name}
+                  {serviceProvider.name}
                 </h3>
                 {/* 🆕 性别 Badge */}
                 {serviceProvider.gender && (
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className={`text-xs shrink-0 ${serviceProvider.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
                   >
                     {serviceProvider.gender === '男' ? '♂ 男' : '♀ 女'}
@@ -818,9 +878,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
             </div>
 
             <p className="text-sm text-muted-foreground line-clamp-2">
-              {serviceProvider.description.length > 20
-                ? `${serviceProvider.description.substring(0, 20)}...`
-                : serviceProvider.description}
+              {serviceProvider.description}
             </p>
 
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
