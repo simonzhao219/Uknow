@@ -38,33 +38,6 @@ export function formatReferralCard(record: {
 }
 
 /**
- * 獲取任務徽章
- * 
- * @param type - 任務類型
- * @param progress - 進度（連續月數或完成次數）
- * @returns 徽章資訊
- */
-export function getTaskBadge(
-  type: 'consecutive_referral' | 'monthly_king',
-  progress: number
-) {
-  if (type === 'consecutive_referral') {
-    // 連續推薦達人徽章
-    if (progress >= 12) return { icon: '💎', name: '鑽石達人', color: 'text-purple-600' };
-    if (progress >= 9) return { icon: '🥇', name: '金牌達人', color: 'text-yellow-600' };
-    if (progress >= 6) return { icon: '🥈', name: '銀牌達人', color: 'text-gray-500' };
-    if (progress >= 3) return { icon: '🥉', name: '銅牌達人', color: 'text-orange-600' };
-    return { icon: '🌱', name: '新手上路', color: 'text-green-600' };
-  } else {
-    // 推薦王徽章
-    if (progress >= 10) return { icon: '⭐⭐⭐', name: '推薦王', color: 'text-yellow-600' };
-    if (progress >= 5) return { icon: '⭐⭐', name: '推薦達人', color: 'text-blue-600' };
-    if (progress >= 1) return { icon: '⭐', name: '推薦新星', color: 'text-green-600' };
-    return { icon: '🔰', name: '見習推薦', color: 'text-gray-600' };
-  }
-}
-
-/**
  * 獲取激勵文案
  * 
  * @param progress - 進度百分比（0-100）
