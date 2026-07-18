@@ -288,10 +288,13 @@ app.post('/auth/check-email', async (c) => {
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
 
-  if (!res.ok) return c.json({ exists: false });
+  if (!res.ok) return c.json({ exists: false, confirmed: false });
   const data = await res.json();
-  const exists = (data.users || []).some((u: any) => u.email?.toLowerCase() === email);
-  return c.json({ exists });
+  const match = (data.users || []).find((u: any) => u.email?.toLowerCase() === email);
+  // confirmed 讓前端在步驟 1 就能分辨「已完成驗證的既有帳號（→登入）」與
+  // 「註冊到一半、Email 未驗證的帳號（→接續 OTP 驗證，而非死巷在登入表單）」。
+  const confirmed = !!(match?.email_confirmed_at || match?.confirmed_at);
+  return c.json({ exists: !!match, confirmed });
 });
 
 // ============================================================

@@ -10,6 +10,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
+import { resolvePostLoginAction, classifyLoginError } from '../utils/registrationFlow';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -88,6 +89,26 @@ export function AuthPage() {
     }
   }, [user, navigate, location, showToast]);  // ← ✅ 加入 user 依賴
 
+  // 接續一個「註冊到一半、Email 尚未驗證」的帳號。
+  //
+  // 這是整個修復的核心：只要偵測到帳號存在但未驗證（不論是在步驟 1 檢查
+  // Email 時發現，或是在登入時被 GoTrue 以 email_not_confirmed 擋下），就重新
+  // 寄一次驗證碼並把使用者帶回 OTP 驗證頁，讓中斷的流程接得回去——而不是
+  // 謊報「密碼錯誤」把人困在死巷。身分由 Email 收到的驗證碼證明，因此這裡
+  // 不需要、也不驗證密碼。
+  const resumeUnverifiedSignup = async (targetEmail: string) => {
+    try {
+      // 舊驗證碼多半已過期；重寄一次以確保使用者手上有可用的碼。
+      // 若因頻率限制等原因失敗，仍照樣導向驗證頁（頁面上有「重新寄送」可補救）。
+      await supabase.auth.resend({ type: 'signup', email: targetEmail });
+    } catch (error) {
+      console.warn('resumeUnverifiedSignup: resend failed, navigating anyway', error);
+    }
+    startOtpWindow(targetEmail);
+    showToast('此帳號尚未完成 Email 驗證，已重新寄送驗證碼', 'info');
+    navigate('/auth/verify-otp', { state: { email: targetEmail, otpType: 'signup' } });
+  };
+
   // 步驟 1：檢查 Email 是否存在
   const handleCheckEmail = async () => {
     setErrors({});
@@ -118,6 +139,13 @@ export function AuthPage() {
 
       const data = await response.json();
       console.log('Response data:', data);
+
+      // 註冊到一半、Email 未驗證的帳號：直接接續 OTP 驗證，不進登入表單
+      // （登入表單只會走進「密碼正確卻被擋、又無路可退」的死巷）。
+      if (data.exists && data.confirmed === false) {
+        await resumeUnverifiedSignup(email);
+        return;
+      }
 
       setIsExistingUser(data.exists);
       setStep(2);
@@ -154,6 +182,14 @@ export function AuthPage() {
           name: error.name,
           code: error.code
         });
+
+        // 未驗證的帳號不是「密碼錯誤」——它是一個沒走完驗證的註冊，帳號其實
+        // 是活的。導回 OTP 驗證接續流程，而不是把人困在登入頁。
+        if (classifyLoginError(error) === 'email_not_confirmed') {
+          await resumeUnverifiedSignup(email);
+          return;
+        }
+
         showToast('Email 或密碼錯誤', 'error');
         return;
       }
@@ -200,32 +236,17 @@ export function AuthPage() {
       console.log('User profile:', profile);
       console.log('User registrationStep:', profile.registrationStep);
 
-      // ✅ 根據 registrationStep 決定導向
-      if (!profile.registrationStep || profile.registrationStep === 0) {
-        // 新用戶，尚未填寫基本資料
-        console.log('AuthPage: New user, redirecting to complete profile');
-        showToast('請完善您的個人資料', 'info');
-        navigate('/auth/complete-profile');
-      } else if (profile.registrationStep === 1 || profile.registrationStep === 2) {
-        // ✅ 已填寫基本資料，設定 user（讓 ProtectedRoute 通過）
-        console.log('AuthPage: User needs to complete payment');
+      // ✅ 由單一狀態機（registrationFlow）決定導向與是否登入，
+      // 不再在此處各自維護一份 if/else——OTP 驗證頁也用同一份決策。
+      const action = resolvePostLoginAction(profile.registrationStep);
+      if (action.authenticate) {
         setUser(profile);
         localStorage.setItem('user', JSON.stringify(profile));
-        // ✅ 靜默導向，不顯示 toast（PaymentCheckout 頁面會有說明）
-        navigate('/payment/checkout');
-      } else if (profile.registrationStep === 3) {
-        // 註冊完成，可正常使用
-        console.log('AuthPage: User registration complete, redirecting to dashboard');
-        setUser(profile);  // ✅ 只有完成註冊才設定 user
-        localStorage.setItem('user', JSON.stringify(profile));
-        showToast('登入成功！', 'success');
-        navigate('/dashboard');
-      } else {
-        // 未知狀態，預設導向完善資料
-        console.warn('AuthPage: Unknown registrationStep:', profile.registrationStep);
-        showToast('請完善您的個人資料', 'info');
-        navigate('/auth/complete-profile');
       }
+      if (action.toast) {
+        showToast(action.toast.message, action.toast.type);
+      }
+      navigate(action.route);
     } catch (error) {
       console.error('Error during login:', error);
       showToast('登入失敗，請稍後再試', 'error');
