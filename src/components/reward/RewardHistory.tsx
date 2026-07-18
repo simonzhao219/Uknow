@@ -211,13 +211,22 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                           {/* 第二行：細節資訊 */}
                           <p className="text-sm text-muted-foreground truncate">
                             {(() => {
-                              // 如果 detail 不存在，返回 '—'
+                              // 推薦獎勵優先用結構化的名字快照（migration 0719 0001）：
+                              //   被推薦人（其直接推薦人）；直推（第 1 代）只顯示被推薦人。
+                              // 不再靠切 description 反推——那串裡本就沒有名字。
+                              if (record.refereeName) {
+                                return record.generation && record.generation > 1 && record.refereeReferrerName
+                                  ? `${record.refereeName}（${record.refereeReferrerName}）`
+                                  : record.refereeName;
+                              }
+
+                              // 其餘型別 / 尚未回填到快照的舊資料：沿用原本的 description 解析
                               if (!detail) return '—';
-                              
+
                               // 移除推薦碼（格式：-abc123456-）
                               // 推薦碼格式：3個小寫字母 + 6個數字
                               const cleanedDetail = detail.replace(/-[a-z]{3}\d{6}-/g, '-');
-                              
+
                               return cleanedDetail;
                             })()}
                           </p>

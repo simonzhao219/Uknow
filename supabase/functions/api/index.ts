@@ -1894,21 +1894,23 @@ app.get('/rewards/history', async (c) => {
 
   const { data: rows, count } = await sb()
     .from('reward_transactions_with_balance')
-    .select('id, type, amount, description, created_at, generation, balance_after', { count: 'exact' })
+    .select('id, type, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(offset, offset + limit - 1);
 
   const history = (rows ?? []).map((r: any) => ({
-    id:          r.id,
-    type:        r.type,
-    amount:      r.amount,
-    description: r.description,
-    issuedAt:    r.created_at,
-    requestedAt: r.type === 'withdrawal' ? r.created_at : undefined,
-    generation:  r.generation ?? undefined,
-    balance:     r.balance_after,
+    id:                  r.id,
+    type:                r.type,
+    amount:              r.amount,
+    description:         r.description,
+    issuedAt:            r.created_at,
+    requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
+    generation:          r.generation ?? undefined,
+    balance:             r.balance_after,
+    refereeName:         r.referee_name ?? undefined,
+    refereeReferrerName: r.referee_referrer_name ?? undefined,
   }));
 
   return c.json({
