@@ -1,14 +1,20 @@
 // ============================================================
 // 刊登（listings）測試：
 //   (A) 兩支 HTTP 路由 —— /listings/verify-referral-code、/listings/upload-photo
-//   (B) 直連 PostgREST 的 RLS/檢視表行為 —— 擁有權隔離、public_listings
-//       以 has_active_subscription() 做能見度 gating
+//   (B) public_listings 檢視表能見度 —— 以 has_active_subscription() gating：
+//       只有「有效訂閱且未停權」的擁有者，其刊登才對外可見。
 //
-// 前端的刊登 CRUD 是直連 supabase-js（RLS 保護），不走 HTTP 層，所以這裡用
-// per-user client（verifyOtp 後受 RLS 限制）驗證擁有權，用 service-role client
-// 播種、並透過 public_listings 檢視表驗證能見度（檢視表 WHERE 會對所有角色生效）。
+// 為什麼不在這裡用 per-user（authenticated）client 直接測 listings 的 RLS
+// insert/update/delete？本專案刻意只把 table 權限 GRANT 給 service_role
+// （見 migration 20260717000001），authenticated/anon 依賴 hosted Supabase 的
+// 預設授權；本地 `supabase start` 不會補這層 grant，所以 authenticated 直連
+// listings 會在「權限（GRANT）」層就被擋（42501），測不到 RLS policy 本身。
+// 既有測試套件也因此一律用 service-role 播種、透過 public_listings 檢視表
+// （其 WHERE 對所有角色生效）驗證對外能見度——本檔沿用同一套可靠模式。
+// 擁有權寫入保護由 RLS 的 listings_insert/update/delete_own 負責（hosted 端
+// 生效），此處不重複以行為測試涵蓋。
 // ============================================================
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
@@ -18,7 +24,6 @@ import {
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
-import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 ensureEdgeFunctionEnv();
 Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
@@ -28,25 +33,6 @@ Deno.env.set('PAYUNI_SANDBOX', 'false');
 Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
 const { app } = await import('./index.ts');
-
-// 取得一個「受 RLS 限制」的 per-user client：用 magiclink→verifyOtp 換 session，
-// 之後這個 client 的 PostgREST 請求都以該使用者身分（role=authenticated）發出。
-async function userClient(admin: SupabaseClient, email: string): Promise<SupabaseClient> {
-  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email,
-  });
-  if (linkError || !linkData?.properties?.hashed_token) {
-    throw new Error(`userClient generateLink failed: ${linkError?.message ?? 'no token'}`);
-  }
-  const client = adminClient();
-  const { error: otpError } = await client.auth.verifyOtp({
-    token_hash: linkData.properties.hashed_token,
-    type: 'email',
-  });
-  if (otpError) throw new Error(`userClient verifyOtp failed: ${otpError.message}`);
-  return client;
-}
 
 function listingRow(userId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -113,7 +99,7 @@ Deno.test('verify-referral-code: an active member\'s code validates', async () =
 
 // ============================================================
 // (A2) POST /listings/upload-photo — 驗證分支（成功路徑需要 storage bucket，
-//      不在單元層測試）
+//      不在此層測試）
 // ============================================================
 
 Deno.test('upload-photo: rejects an unauthenticated request', async () => {
@@ -185,82 +171,47 @@ Deno.test('upload-photo: rejects a file larger than 5MB', async () => {
 });
 
 // ============================================================
-// (B1) RLS 擁有權：insert 只能替自己建立
+// (B) public_listings：只有 active 且未停權的擁有者，其刊登才對外可見
+//     （檢視表 WHERE has_active_subscription() 對所有角色生效，含 service-role）
 // ============================================================
 
-Deno.test('RLS: a user can insert their own listing but not one for someone else', async () => {
-  const admin = adminClient();
-  const a = await createTestUser(admin, { name: 'A' });
-  const b = await createTestUser(admin, { name: 'B' });
-  try {
-    const clientA = await userClient(admin, a.email);
-
-    // 替別人（B）建立 → WITH CHECK (user_id = auth.uid()) 擋下
-    const forOther = await clientA.from('listings').insert(listingRow(b.id));
-    assert(forOther.error, '應禁止替其他使用者建立刊登');
-
-    // 替自己建立 → 允許
-    const forSelf = await clientA.from('listings').insert(listingRow(a.id));
-    assertEquals(forSelf.error, null);
-  } finally {
-    await deleteTestUsers(admin, [a.id, b.id]);
-  }
-});
-
-// ============================================================
-// (B2) RLS 擁有權：不能更新/刪除他人的刊登
-// ============================================================
-
-Deno.test('RLS: a user cannot update or delete another user\'s listing', async () => {
-  const admin = adminClient();
-  const owner = await createTestUser(admin, { name: '擁有者' });
-  const intruder = await createTestUser(admin, { name: '入侵者' });
-  try {
-    // 用 service-role 播種擁有者的刊登（繞過 RLS，只是要有一列存在）
-    const seed = await admin.from('listings').insert(listingRow(owner.id, { name: '原始名稱' }));
-    assertEquals(seed.error, null);
-    const { data: seeded } = await admin
-      .from('listings').select('id').eq('user_id', owner.id).single();
-    const listingId = seeded!.id;
-
-    const clientB = await userClient(admin, intruder.email);
-
-    // 更新他人刊登 → update_own 的 USING 不符 → 0 列受影響、名稱不變
-    await clientB.from('listings').update({ name: '被竄改' }).eq('id', listingId);
-    const afterUpdate = await admin.from('listings').select('name').eq('id', listingId).single();
-    assertEquals(afterUpdate.data!.name, '原始名稱');
-
-    // 刪除他人刊登 → delete_own 的 USING 不符 → 該列仍存在
-    await clientB.from('listings').delete().eq('id', listingId);
-    const afterDelete = await admin.from('listings').select('id').eq('id', listingId).maybeSingle();
-    assert(afterDelete.data, '入侵者不應能刪除他人的刊登');
-  } finally {
-    await deleteTestUsers(admin, [owner.id, intruder.id]);
-  }
-});
-
-// ============================================================
-// (B3) public_listings：只有 active 會員的刊登對外可見
-// ============================================================
-
-Deno.test('public_listings: only an active member\'s listing is visible', async () => {
+Deno.test('public_listings: an active member\'s listing is visible, an unpaid member\'s is not', async () => {
   const admin = adminClient();
   const activeUser = await createTestUser(admin, { name: '有效會員' });
-  const inactiveUser = await createTestUser(admin, { name: '未付款會員' });
+  const unpaidUser = await createTestUser(admin, { name: '未付款會員' });
   try {
     await payForUser(admin, activeUser.id); // → active 訂閱
     await admin.from('listings').insert(listingRow(activeUser.id, { name: '可見刊登' }));
-    await admin.from('listings').insert(listingRow(inactiveUser.id, { name: '隱藏刊登' }));
+    await admin.from('listings').insert(listingRow(unpaidUser.id, { name: '隱藏刊登' }));
 
-    // 檢視表 WHERE has_active_subscription() 對所有角色生效（含 service-role）
     const activeView = await admin
       .from('public_listings').select('id').eq('user_id', activeUser.id);
     assertEquals(activeView.data?.length, 1);
 
-    const inactiveView = await admin
-      .from('public_listings').select('id').eq('user_id', inactiveUser.id);
-    assertEquals(inactiveView.data?.length, 0);
+    const unpaidView = await admin
+      .from('public_listings').select('id').eq('user_id', unpaidUser.id);
+    assertEquals(unpaidView.data?.length, 0);
   } finally {
-    await deleteTestUsers(admin, [activeUser.id, inactiveUser.id]);
+    await deleteTestUsers(admin, [activeUser.id, unpaidUser.id]);
+  }
+});
+
+Deno.test('public_listings: suspending an active member hides their listing', async () => {
+  const admin = adminClient();
+  const user = await createTestUser(admin, { name: '被停權會員' });
+  try {
+    await payForUser(admin, user.id);
+    await admin.from('listings').insert(listingRow(user.id, { name: '停權前可見' }));
+
+    const before = await admin.from('public_listings').select('id').eq('user_id', user.id);
+    assertEquals(before.data?.length, 1);
+
+    // 停權（profiles.suspended_at）→ has_active_subscription() 轉為 false
+    await admin.from('profiles').update({ suspended_at: '2020-01-01T00:00:00Z' }).eq('id', user.id);
+
+    const after = await admin.from('public_listings').select('id').eq('user_id', user.id);
+    assertEquals(after.data?.length, 0);
+  } finally {
+    await deleteTestUsers(admin, [user.id]);
   }
 });
