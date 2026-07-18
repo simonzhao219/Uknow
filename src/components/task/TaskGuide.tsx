@@ -18,7 +18,7 @@ export function TaskGuide() {
           <ul className="text-sm text-muted-foreground space-y-2">
             <li className="flex items-start gap-2">
               <span className="text-orange-600 shrink-0">•</span>
-              <span>單月每成功推薦 10 位用戶即可獲得免費續約 1 年（可累計）</span>
+              <span>單月每成功推薦 8 位用戶即可獲得免費續約 1 年（可累計）</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-orange-600 shrink-0">•</span>
