@@ -113,7 +113,7 @@ export function TaskDashboard() {
                     </div>
                   </div>
                   <div className="mt-3">
-                    <TaskBadge type="monthly_king" progress={task.current} />
+                    <TaskBadge type="monthly_king" progress={task.current} target={task.target} />
                   </div>
                 </CardHeader>
 

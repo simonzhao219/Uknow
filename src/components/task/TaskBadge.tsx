@@ -2,20 +2,23 @@ import React from 'react';
 
 interface TaskBadgeProps {
   type: 'monthly_king';
-  progress: number;
+  progress: number;      // 本月已推薦人數
+  target: number;        // 推薦王當月門檻（reward_config，預設 8）
   className?: string;
 }
 
 /**
- * 任務成就徽章組件——推薦王：
- * 🔰 見習推薦 - 0 次
- * ⭐ 推薦新星 - 完成1次
- * ⭐⭐ 推薦達人 - 完成5次
- * ⭐⭐⭐ 推薦王 - 完成10次
+ * 任務成就徽章組件——推薦王，依「本月推薦人數 progress」相對「當月門檻
+ * target」分級（門檻由 reward_config 決定，故不寫死數字）：
+ * 🔰 見習推薦 - 尚未推薦
+ * ⭐ 推薦新星 - 至少 1 人
+ * ⭐⭐ 推薦達人 - 達門檻一半
+ * ⭐⭐⭐ 推薦王 - 達當月門檻（即已可領取免費續約 1 年）
  */
-export function TaskBadge({ progress, className = '' }: TaskBadgeProps) {
+export function TaskBadge({ progress, target, className = '' }: TaskBadgeProps) {
+  const halfway = Math.max(1, Math.ceil(target / 2));
   const getBadgeInfo = () => {
-    if (progress >= 10) {
+    if (progress >= target) {
       return {
         icon: '⭐⭐⭐',
         name: '推薦王',
@@ -24,7 +27,7 @@ export function TaskBadge({ progress, className = '' }: TaskBadgeProps) {
         borderColor: 'border-yellow-300'
       };
     }
-    if (progress >= 5) {
+    if (progress >= halfway) {
       return {
         icon: '⭐⭐',
         name: '推薦達人',
