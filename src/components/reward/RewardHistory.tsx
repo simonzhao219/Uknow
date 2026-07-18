@@ -31,10 +31,14 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       }
       
       const currentOffset = isLoadMore ? offset : 0;
-      
+
+      // type 篩選下推到後端：'all' 不帶 param，其餘（referral / withdrawal）帶下去，
+      // 讓後端只回該分類、count 也是該分類總數。分頁才不會漏掉後頁的紀錄。
+      const typeParam = filterType !== 'all' ? `&type=${filterType}` : '';
+
       // ✅ 使用統一的 API 請求工具
       const result = await apiRequestJson<RewardHistoryResponse>(
-        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}`)
+        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${typeParam}`)
       );
       
       if (result.success) {
@@ -73,28 +77,25 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     fetchHistory(true);
   };
 
-  // 初始載入
+  // 初始載入 + 篩選變更：切換 filterType 時重新從第一頁抓（非追加），
+  // offset 由 fetchHistory 在非追加模式歸零。mount 時 filterType='all' 也走這裡。
   useEffect(() => {
     fetchHistory();
-  }, []);
-  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType]);
+
   // ✅ 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      setOffset(0);  // 重置偏移量
-      fetchHistory();
+      fetchHistory();  // 非追加：內部 offset 歸零
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
 
-  // 篩選獎勵記錄——明細只剩會影響點數的流水：referral_reward / withdrawal /
-  // adjustment（見 supabase/functions/_shared/api-contract.ts）。推薦王任務獎勵
-  // 已改為「免費續約 1 年」credit，不再進點數流水帳，故不再提供「任務獎勵」篩選。
-  const filteredHistory = history.filter(record => {
-    if (filterType === 'all') return true;
-    if (filterType === 'referral') return record.type.startsWith('referral_');
-    if (filterType === 'withdrawal') return record.type === 'withdrawal';
-    return true;
-  });
+  // 篩選已下推到後端（見 fetchHistory 的 type param）——明細只剩會影響點數的流水：
+  // referral_reward / withdrawal / adjustment（見 _shared/api-contract.ts）。推薦王任務
+  // 獎勵已改為「免費續約 1 年」credit，不再進點數流水帳，故不提供「任務獎勵」篩選。
+  // 直接渲染 history（後端已按 filterType 過濾），不再前端二次過濾。
 
   return (
     <Card>
@@ -144,7 +145,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {/* 獎勵記錄列表 */}
         {!isLoading && !error && (
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            {filteredHistory.length === 0 ? (
+            {history.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">尚無獎勵記錄</p>
@@ -153,7 +154,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                 </p>
               </div>
             ) : (
-              filteredHistory.map((record) => (
+              history.map((record) => (
                 <div 
                   key={record.id}
                   className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"

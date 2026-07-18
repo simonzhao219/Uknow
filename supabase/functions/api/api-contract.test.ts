@@ -93,6 +93,29 @@ Deno.test('GET /rewards/history：契約形狀 + 分頁 + 餘額對帳', async (
   assertEquals(parsed.data.history[0].balance, bal!.available);
 });
 
+Deno.test('GET /rewards/history?type=：type 篩選在後端下推（count 為該分類總數）', async () => {
+  // referral：只回推薦獎勵；種子有 2 筆 gen1，total 應 >= 2 且每筆都是 referral_*
+  const ref = await getJson('/rewards/history?type=referral&limit=50&offset=0', token);
+  assertEquals(ref.status, 200);
+  const refParsed = assertShape(RewardHistoryResponseSchema, ref.body, 'GET /rewards/history?type=referral');
+  assert(refParsed.data.total >= 2, `type=referral 應至少 2 筆，實際 ${refParsed.data.total}`);
+  assert(
+    refParsed.data.history.every((r) => r.type.startsWith('referral_')),
+    'type=referral 只應回 referral_* 類型',
+  );
+
+  // withdrawal：此推薦人無提領 → total=0、history 空（證明 count 隨 filter 變）
+  const wd = await getJson('/rewards/history?type=withdrawal&limit=50&offset=0', token);
+  const wdParsed = assertShape(RewardHistoryResponseSchema, wd.body, 'GET /rewards/history?type=withdrawal');
+  assertEquals(wdParsed.data.total, 0, 'type=withdrawal 對無提領者 total 應為 0');
+  assertEquals(wdParsed.data.history.length, 0);
+
+  // all（未帶 type）：涵蓋全部，total 不應小於單一分類
+  const all = await getJson('/rewards/history?limit=50&offset=0', token);
+  const allParsed = assertShape(RewardHistoryResponseSchema, all.body, 'GET /rewards/history all');
+  assert(allParsed.data.total >= refParsed.data.total, 'all 的 total 不應小於 referral 分類');
+});
+
 Deno.test('GET /tasks/current-month-top：個人本月推薦明細（不是排行榜）', async () => {
   const { status, body } = await getJson('/tasks/current-month-top?limit=100', token);
   assertEquals(status, 200);
