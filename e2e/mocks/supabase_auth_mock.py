@@ -71,6 +71,27 @@ class SupabaseAuthMock:
     def mock_resend_success(self):
         self._context.route(f"{SUPABASE_AUTH_BASE}/resend**", lambda route: _fulfill_json(route, {}))
 
+    def mock_recover_success(self):
+        # `supabase.auth.resetPasswordForEmail()` posts to GoTrue's /recover and
+        # (to avoid leaking whether an account exists) always returns 200 {}.
+        # Reused for the initial send and for "resend" in the recovery flow.
+        self._context.route(f"{SUPABASE_AUTH_BASE}/recover**", lambda route: _fulfill_json(route, {}))
+
+    def mock_recover_error(self, message: str = "Email rate limit exceeded", code: str = "over_email_send_rate_limit", status: int = 429):
+        body = {"code": status, "error_code": code, "msg": message}
+        self._context.route(f"{SUPABASE_AUTH_BASE}/recover**", lambda route: _fulfill_json(route, body, status=status))
+
+    def mock_update_user_success(self, email: str = DEFAULT_EMAIL, user_id: str = DEFAULT_USER_ID) -> dict:
+        # `supabase.auth.updateUser({ password })` issues PUT /user and expects
+        # the updated User object back.
+        user = build_session(email, user_id)["user"]
+        self._context.route(f"{SUPABASE_AUTH_BASE}/user**", lambda route: _fulfill_json(route, user))
+        return user
+
+    def mock_update_user_error(self, message: str = "New password should be different from the old password.", code: str = "same_password", status: int = 422):
+        body = {"error_code": code, "msg": message}
+        self._context.route(f"{SUPABASE_AUTH_BASE}/user**", lambda route: _fulfill_json(route, body, status=status))
+
     def mock_signout(self):
         self._context.route(
             f"{SUPABASE_AUTH_BASE}/logout**",

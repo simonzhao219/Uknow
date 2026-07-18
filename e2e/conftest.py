@@ -23,8 +23,10 @@ from mocks.supabase_auth_mock import SupabaseAuthMock
 from pages.auth_page import AuthPage
 from pages.complete_profile_page import CompleteProfilePage
 from pages.dashboard_page import DashboardPage
+from pages.forgot_password_page import ForgotPasswordPage
 from pages.navbar import Navbar
 from pages.otp_page import OtpPage
+from pages.reset_password_page import ResetPasswordPage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.payment_result_page import PaymentResultPage
 
@@ -161,6 +163,16 @@ def auth_page(page):
 @pytest.fixture
 def otp_page(page):
     return OtpPage(page)
+
+
+@pytest.fixture
+def forgot_password_page(page):
+    return ForgotPasswordPage(page)
+
+
+@pytest.fixture
+def reset_password_page(page):
+    return ResetPasswordPage(page)
 
 
 @pytest.fixture
