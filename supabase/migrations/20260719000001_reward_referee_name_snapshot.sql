@@ -16,7 +16,7 @@
 --
 --   referee_name          = 被推薦人（因其訂閱而發此獎，= referee_user_id）
 --                           發獎當下的顯示名。
---   referee_referrer_name = 被推薦人的「直接推薦人」發獎當下的顯示名。
+--   referee_referrer_name = 被推薦人的直接推薦人發獎當下的顯示名。
 --                           第 1 代時這個人就是收獎者本人（多餘），故存 NULL，
 --                           前端也只在第 2/3 代顯示括號。
 --
@@ -33,7 +33,30 @@ comment on column public.reward_transactions.referee_name is
 comment on column public.reward_transactions.referee_referrer_name is
   '被推薦人之直接推薦人發獎當下的顯示名快照；第 1 代為 NULL（即收獎者本人）。';
 
--- reward_transactions_with_balance 是 select t.*，新欄位自動帶入，view 免動。
+-- ------------------------------------------------------------
+-- 重建 reward_transactions_with_balance
+--   ⚠️ view 的 `select t.*` 是在建立當下就展開並凍結成當時的欄位清單，
+--   ALTER TABLE ADD COLUMN 不會自動補進 view。因此新增欄位後必須重建
+--   view，否則 GET /rewards/history 選到新欄位會直接查詢失敗（PostgREST
+--   回錯 → rows/count 皆 null → total 變 0，整張明細空白）。
+--   新欄位排在 subscription_id 之後、balance_after 之前，欄位順序變了，
+--   create or replace view 只允許在尾端追加，故改用 drop + create。
+-- ------------------------------------------------------------
+drop view if exists public.reward_transactions_with_balance;
+
+create view public.reward_transactions_with_balance
+with (security_invoker = on) as
+select
+  t.*,
+  sum(t.amount) over (
+    partition by t.user_id
+    order by t.created_at, t.id
+  ) as balance_after
+from public.reward_transactions t;
+
+-- edge function 走 service_role（default privileges 已涵蓋）；
+-- 不開放 anon/authenticated 直查。
+revoke all on public.reward_transactions_with_balance from anon, authenticated;
 
 -- ------------------------------------------------------------
 -- 回填既有 referral_reward 列
@@ -60,8 +83,9 @@ where  t.referee_user_id = e.referee_user_id
   and  t.referee_referrer_name is null;
 
 -- ------------------------------------------------------------
--- apply_referral_side_effects：發獎當下寫入名字快照
---   只加了三處 name 查詢與 insert 欄位，其餘冪等/鎖/例外邏輯原封不動。
+-- apply_referral_side_effects：發獎當下寫入名字快照。
+--   基準是 0008（含「換推薦人時 rewire 推薦邊」的 do update），
+--   只加了名字查詢與 insert 欄位，其餘冪等/鎖/rewire/例外邏輯原封不動。
 -- ------------------------------------------------------------
 create or replace function public.apply_referral_side_effects(
   p_user_id         uuid,
@@ -125,11 +149,17 @@ begin
   -- 被推薦人的直接推薦人 = v_referrer1，取其當下名做第 2/3 代的括號快照
   select name into v_referrer1_name from public.profiles where id = v_referrer1;
 
-  -- 3b. 推薦關係邊（referee_user_id 是 PK，天然冪等）
+  -- 3b. 推薦關係邊（referee_user_id 是 PK）。0008 起：新約(fresh)換了
+  --     推薦人時，profiles.referred_by_user_id 已在 /payuni/prepare 更新，
+  --     這裡把既有的邊 rewire 到新推薦人；推薦人沒變時維持 no-op，
+  --     不會每次付款都空轉 update。
   begin
     insert into public.referral_edges (referee_user_id, referrer_user_id, referral_code_id)
     values (p_user_id, v_referrer1, v_code_id)
-    on conflict (referee_user_id) do nothing;
+    on conflict (referee_user_id) do update
+      set referrer_user_id = excluded.referrer_user_id,
+          referral_code_id = excluded.referral_code_id
+      where referral_edges.referrer_user_id is distinct from excluded.referrer_user_id;
   exception when others then
     perform public.log_system_alert('apply_referral_side_effects', 'warning', sqlerrm,
       jsonb_build_object('user_id', p_user_id, 'subscription_id', p_subscription_id, 'step', 'referral_edge'));
