@@ -1892,13 +1892,23 @@ app.get('/rewards/history', async (c) => {
   const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
-  const { data: rows, count } = await sb()
+  // type 篩選下推到後端：前端的分類（referral / withdrawal）對應到 reward_transactions.type。
+  // 'referral' 用 like 'referral_%' 對齊前端原本的 startsWith('referral_') 語意；未帶或 'all'
+  // 不加條件。篩選必須在 DB 端做，count 才會是「該分類的總數」，分頁與「已顯示 X / Y」才對得上
+  // ——舊版在前端過濾已載入的頁面，後頁的紀錄永遠看不到、計數也對不上。
+  const typeFilter = c.req.query('type');
+
+  let query = sb()
     .from('reward_transactions_with_balance')
     .select('id, type, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('id', { ascending: false });
+
+  if (typeFilter === 'referral') query = query.like('type', 'referral_%');
+  else if (typeFilter === 'withdrawal') query = query.eq('type', 'withdrawal');
+
+  const { data: rows, count } = await query.range(offset, offset + limit - 1);
 
   const history = (rows ?? []).map((r: any) => ({
     id:                  r.id,
