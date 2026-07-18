@@ -77,7 +77,7 @@ export function Navbar() {
           ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                <Button variant="ghost" size="icon" aria-label="開啟會員選單" className="relative h-10 w-10 rounded-full">
                   <Avatar className="h-10 w-10">
                     <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
