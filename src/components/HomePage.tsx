@@ -5,13 +5,13 @@ import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
+import { Skeleton } from "./ui/skeleton";
 import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import {
   MapPin,
   ChevronDown,
   ChevronRight,
-  Loader2,
   Search,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -740,11 +740,24 @@ export function HomePage() {
           </div>
         )}
 
-        {/* ========== 載入中狀態 ========== */}
+        {/* ========== 載入中狀態：骨架屏（與卡片版面一致，降低版面跳動） ========== */}
         {loading && (
-          <div className="text-center py-16">
-            <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">載入服務者資料中...</p>
+          <div aria-busy="true" aria-live="polite">
+            <span className="sr-only">載入服務者資料中</span>
+            {/* 手機兩欄 */}
+            <div className="block md:hidden">
+              <div className="grid grid-cols-2 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <MobileCardSkeleton key={i} />
+                ))}
+              </div>
+            </div>
+            {/* 桌面 2/3 欄 */}
+            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <DesktopCardSkeleton key={i} />
+              ))}
+            </div>
           </div>
         )}
 
@@ -795,6 +808,37 @@ export function HomePage() {
         )}
       </div>
     </div>
+  );
+}
+
+// 載入中骨架屏：對應手機與桌面卡片外形，避免資料到位時版面跳動。
+function MobileCardSkeleton() {
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-0">
+        <Skeleton className="aspect-square w-full rounded-none" />
+        <div className="p-2 space-y-2">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-12" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DesktopCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <Skeleton className="aspect-video w-full rounded-t-lg rounded-b-none" />
+        <div className="p-4 space-y-3">
+          <Skeleton className="h-5 w-1/2" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-1/3" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
