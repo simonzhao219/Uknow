@@ -86,6 +86,14 @@ class BackendApiMock:
     def _route(self, path: str, handler):
         self._context.route(f"{API_BASE}{path}**", handler)
 
+    def _route_exact(self, path: str, handler):
+        # Matches only this exact URL (no trailing wildcard), so a glob like
+        # `/rewards` can't also swallow `/rewards/withdrawals`. Used for the
+        # reward-domain reads, which the app calls at fixed, query-less paths —
+        # this keeps their mocks order-independent regardless of which Given
+        # registers them first.
+        self._context.route(f"{API_BASE}{path}", handler)
+
     def set_profile(self, registration_step: int = 3, **overrides) -> dict:
         # The backend serves the same handler at both /profile (used by
         # App.tsx's global session bootstrap) and /auth/profile (used by
@@ -300,6 +308,119 @@ class BackendApiMock:
         # POST /rewards/verify-id 驗證身分證字號與註冊資料一致。
         self._route("/rewards/verify-id", lambda route: _fulfill_json(route, {"success": True}))
 
+    def set_verify_id_error(self, message: str = "身分證字號不正確"):
+        self._route(
+            "/rewards/verify-id",
+            lambda route: _fulfill_json(route, {"success": False, "message": message}, status=400),
+        )
+
+    # --- Rewards / points / withdrawals（獎勵回饋頁 RewardDashboard）-------------
+    #
+    # RewardDashboard 開機時（useRewardData + RewardHistory）會同時打
+    # /rewards、/rewards/withdrawals、/subscriptions/status、/rewards/history。
+    # 這些 glob 會互相包含（`/rewards**` 也吃得到 `/rewards/history`），而
+    # Playwright 以「最後註冊的 route 先比對」，所以下面刻意「最廣的先註冊」
+    # ——與 set_task_center 同一條規則。付款相關的動作端點（withdraw / confirm）
+    # 用精確路徑另外註冊，避免被廣義的 `/rewards/withdrawals**` 蓋掉。
+
+    def set_reward_summary(
+        self,
+        available: int = 0,
+        pending: int = 0,
+        withdrawn: int = 0,
+        total_earned: int = 0,
+        has_withdrawn_today: bool = False,
+    ):
+        body = {
+            "success": True,
+            "data": {
+                "availableRewards": available,
+                "pendingRewards": pending,
+                "withdrawnRewards": withdrawn,
+                "totalEarned": total_earned,
+                "hasWithdrawnToday": has_withdrawn_today,
+            },
+        }
+        self._route_exact("/rewards", lambda route: _fulfill_json(route, body))
+
+    def set_reward_withdrawals(self, withdrawals: Optional[list] = None):
+        body = {"success": True, "data": {"withdrawals": withdrawals or []}}
+        self._route_exact("/rewards/withdrawals", lambda route: _fulfill_json(route, body))
+
+    def set_reward_history(self, history: Optional[list] = None):
+        records = history or []
+        body = {
+            "success": True,
+            "data": {"history": records, "total": len(records), "limit": 50, "offset": 0},
+        }
+        self._route("/rewards/history", lambda route: _fulfill_json(route, body))
+
+    def set_reward_id_photos(self, front_url: Optional[str] = None, back_url: Optional[str] = None):
+        # WithdrawalProcess 開機時讀「已上傳的身分證照片」；預先給網址就能
+        # 讓提領申請走到底而不必真的上傳檔案（validateStep2 接受既有照片）。
+        body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
+        self._route_exact("/rewards/id-photos", lambda route: _fulfill_json(route, body))
+
+    def set_reward_dashboard(
+        self,
+        available: int = 0,
+        pending: int = 0,
+        withdrawn: int = 0,
+        total_earned: int = 0,
+        has_withdrawn_today: bool = False,
+        withdrawals: Optional[list] = None,
+        history: Optional[list] = None,
+        front_url: Optional[str] = None,
+        back_url: Optional[str] = None,
+    ):
+        """One call to wire every read the 獎勵回饋 page performs. Registered
+        broadest-glob-first so the nested routes below win (last-registered
+        wins in Playwright)."""
+        self.set_reward_summary(available, pending, withdrawn, total_earned, has_withdrawn_today)
+        self.set_reward_withdrawals(withdrawals)
+        self.set_reward_history(history)
+        self.set_reward_id_photos(front_url, back_url)
+        self.set_verify_id_success()
+
+    def set_withdraw_success(self, withdrawal_id: str = "wd-e2e-new", amount: int = 1000, fee: int = 15):
+        # POST /rewards/withdraw —— 用「精確路徑」註冊（無尾綴 **），這樣才
+        # 不會連 GET /rewards/withdrawals 一起吃掉（`/rewards/withdraw**` 會
+        # match `/rewards/withdrawals`）。
+        body = {
+            "success": True,
+            "data": {
+                "withdrawalId": withdrawal_id,
+                "status": "pending",
+                "amount": amount,
+                "fee": fee,
+                "requestedAt": "2026-07-18T00:00:00.000Z",
+            },
+        }
+        self._context.route(f"{API_BASE}/rewards/withdraw", lambda route: _fulfill_json(route, body))
+
+    def set_withdraw_error(self, message: str, status: int = 400):
+        body = {"success": False, "error": {"message": message}}
+        self._context.route(
+            f"{API_BASE}/rewards/withdraw", lambda route: _fulfill_json(route, body, status=status)
+        )
+
+    def set_confirm_collection_success(self, withdrawal_id: str):
+        # POST /rewards/withdrawals/:id/confirm —— 精確 id 路徑，比廣義的
+        # /rewards/withdrawals** 更具體且較晚註冊，所以查收會命中這裡，而
+        # 提領清單的 GET 仍走 set_reward_withdrawals。
+        body = {
+            "success": True,
+            "data": {"withdrawalId": withdrawal_id, "status": "completed", "completedAt": "2026-07-18T00:00:00.000Z"},
+        }
+        self._route(f"/rewards/withdrawals/{withdrawal_id}/confirm", lambda route: _fulfill_json(route, body))
+
+    def set_confirm_collection_error(self, withdrawal_id: str, message: str, status: int = 400):
+        body = {"success": False, "error": {"message": message}}
+        self._route(
+            f"/rewards/withdrawals/{withdrawal_id}/confirm",
+            lambda route: _fulfill_json(route, body, status=status),
+        )
+
 
 def build_referral_member(name: str, **overrides) -> dict:
     member = {
@@ -341,6 +462,46 @@ def build_monthly_king_task(current: int = 0, **overrides) -> dict:
     }
     task.update(overrides)
     return task
+
+
+def build_withdrawal_record(status: str = "awaiting_collection", **overrides) -> dict:
+    """A row for GET /rewards/withdrawals (WithdrawalRecordSchema). Defaults to
+    `awaiting_collection` — the only status that renders a 查收 button."""
+    record = {
+        "id": "wd-e2e-1",
+        "userId": DEFAULT_USER_ID,
+        "amount": 1000,
+        "fee": 15,
+        "status": status,
+        "requestedAt": "2026-07-16T00:00:00.000Z",
+        "processedAt": None if status == "pending" else "2026-07-17T00:00:00.000Z",
+        "completedAt": "2026-07-18T00:00:00.000Z" if status == "completed" else None,
+    }
+    record.update(overrides)
+    return record
+
+
+def build_reward_history_record(
+    type: str = "referral_reward",
+    amount: int = 200,
+    description: str = "一代推薦 - 王小明",
+    generation: int = 1,
+    balance: int = 200,
+    **overrides,
+) -> dict:
+    """A row for GET /rewards/history (RewardHistoryRecordSchema). Defaults model
+    a first-generation referral commission — the 推薦關係 -> 點數 link."""
+    record = {
+        "id": "rh-e2e-1",
+        "type": type,
+        "amount": amount,
+        "description": description,
+        "issuedAt": "2026-07-16T00:00:00.000Z",
+        "generation": generation,
+        "balance": balance,
+    }
+    record.update(overrides)
+    return record
 
 
 def build_pending_free_year_reward(reward_id: str = "reward-e2e-1", **overrides) -> dict:

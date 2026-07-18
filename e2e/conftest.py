@@ -29,6 +29,7 @@ from pages.otp_page import OtpPage
 from pages.reset_password_page import ResetPasswordPage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.payment_result_page import PaymentResultPage
+from pages.reward_page import RewardPage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -198,3 +199,8 @@ def dashboard_page(page):
 @pytest.fixture
 def navbar(page):
     return Navbar(page)
+
+
+@pytest.fixture
+def reward_page(page):
+    return RewardPage(page)

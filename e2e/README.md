@@ -73,5 +73,11 @@ steps/            # step definitions; common_steps.py holds shared Given/When/Th
 - The `FeatureContext` feature-flag system is currently a hardcoded
   all-enabled stub client-side, so the "disabled feature" UI path in
   `ProtectedRoute` isn't reachable yet and has no scenario.
-- Dashboard, admin, referrals/tasks/rewards pages only have smoke-level (or
-  no) coverage — expand `features/` as those flows stabilize.
+- Dashboard and admin pages only have smoke-level (or no) coverage — expand
+  `features/` as those flows stabilize.
+- The reward-points and withdrawal flows (獎勵回饋, `/rewards`) — the value a
+  member unlocks *after paying*: referral-earned points, eligibility
+  guardrails, the withdrawal application, and the 查收 collection step — are
+  covered in `rewards_withdrawal.feature`. ID-photo *upload* is skipped by
+  pre-seeding `GET /rewards/id-photos`; driving the real file-chooser upload
+  path is still open.
