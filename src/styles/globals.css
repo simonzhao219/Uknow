@@ -3,7 +3,9 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-size: 14px;
+  /* 根字級 16px：對齊 Tailwind 預設字階，rem 尺寸（字級/間距/元件高度）回到設計原意，
+     手機閱讀更舒適，並讓觸控目標達標。原本 14px 使全站等比縮小約 12.5%。 */
+  --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
