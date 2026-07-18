@@ -378,6 +378,7 @@ export function AuthPage() {
           {step === 1 && (
             <form
               className="space-y-4"
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 handleCheckEmail();
