@@ -200,6 +200,7 @@ export function TaskDashboard() {
           completedCount={currentMonthData.completedCount}
           currentProgress={currentMonthData.currentProgress}
           referrals={currentMonthData.referrals}
+          target={currentMonthData.target}
           onClose={() => setShowKingProgress(false)}
         />
       )}
