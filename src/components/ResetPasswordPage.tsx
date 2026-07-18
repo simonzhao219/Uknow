@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
+import { PasswordInput } from './ui/password-input';
 import { Label } from './ui/label';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
@@ -135,9 +135,9 @@ export function ResetPasswordPage() {
           {/* 密碼輸入 */}
           <div className="space-y-2">
             <Label htmlFor="password">新密碼</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="請輸入新密碼"
@@ -161,9 +161,9 @@ export function ResetPasswordPage() {
           {/* 確認密碼 */}
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">確認新密碼</Label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
-              type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
