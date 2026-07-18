@@ -25,13 +25,13 @@ export function LoginPage() {
     setError('');
     
     // Legacy mock login - redirect to real auth page
-    showInfo('請使用註冊/登入頁面進行登入');
+    showInfo('提示', '請使用註冊/登入頁面進行登入');
     navigate('/auth/login', { replace: true });
   };
 
   const handleSocialLogin = (provider: string) => {
     // Redirect to real auth page
-    showInfo('請使用註冊/登入頁面進行登入');
+    showInfo('提示', '請使用註冊/登入頁面進行登入');
     navigate('/auth/login', { replace: true });
   };
 

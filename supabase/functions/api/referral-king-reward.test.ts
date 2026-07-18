@@ -6,6 +6,7 @@
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
+import { twDayOf, twDayPlusDays, twDayPlusYears, twEndOfDayInstant } from './tw-dates.ts';
 
 Deno.test('hitting 10 referrals in a month grants exactly one unclaimed free-renewal credit, even past 10', async () => {
   const client = adminClient();
@@ -91,9 +92,16 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
       .eq('id', subBefore!.id)
       .single();
 
-    const expectedEnd = new Date(subBefore!.end_date);
-    expectedEnd.setUTCFullYear(expectedEnd.getUTCFullYear() + 1);
+    // 日領域語意（0718 0001）：新最後一天 = 原最後一天（台灣日）+ 1 年，
+    // end/grace 都是台灣日終。
+    const newLastDay = twDayPlusYears(twDayOf(subBefore!.end_date), 1);
+    const expectedEnd = twEndOfDayInstant(newLastDay);
     assertEquals(new Date(subAfter!.end_date).getTime(), expectedEnd.getTime());
+    assertEquals(
+      new Date(subAfter!.grace_period_end).getTime(),
+      twEndOfDayInstant(twDayPlusDays(newLastDay, 60)).getTime(),
+      'grace 應為新最後一天 + 60 天的台灣日終',
+    );
 
     const { data: creditAfter } = await client
       .from('referral_king_rewards')

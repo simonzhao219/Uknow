@@ -20,7 +20,6 @@ import { ReferralManagement } from './components/ReferralManagement';
 import { TaskDashboard } from './components/TaskDashboard';
 import { RewardDashboard } from './components/RewardDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
-import { UserDiagnosisPage } from './components/admin/UserDiagnosisPage'; // ✅ 新增：使用者診斷工具
 import { MarkdownContent } from './components/MarkdownContent';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -289,12 +288,6 @@ function AppContent() {
                     <AdminDashboard />
                   </AdminRoute>
                 } />
-                <Route path="/admin/user-diagnosis" element={
-                  <AdminRoute>
-                    <UserDiagnosisPage />
-                  </AdminRoute>
-                } />
-                
                 {/* Public Content Pages */}
                 <Route path="/terms-of-service" element={
                   <MarkdownContent 

@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { useAuth } from '../../contexts/AuthContext';
+// 原本 import 不存在的 '../../contexts/AuthContext'（會在渲染時直接
+// crash）——tsc 基線建立時抓到的真實 bug，改用 App 的 UserContext。
+import { useContext } from 'react';
+import { UserContext } from '../../App';
 import { Search, RefreshCw } from 'lucide-react';
 import { buildApiUrl } from '../../utils/apiClient';
 
@@ -11,7 +14,7 @@ import { buildApiUrl } from '../../utils/apiClient';
  * 用於檢查用戶的推薦關係數據是否正確建立
  */
 export function ReferralDebugger() {
-  const { user } = useAuth();
+  const { user } = useContext(UserContext);
   const [userId, setUserId] = useState(user?.id || '');
   const [debugData, setDebugData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);

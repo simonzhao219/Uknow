@@ -16,6 +16,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # 前端型別檢查（vite build 用 SWC 只轉譯不檢查型別）
+      - run: npm run typecheck
       - run: npm run build
 
   api-tests:

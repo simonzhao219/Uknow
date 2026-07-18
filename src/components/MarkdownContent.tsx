@@ -50,7 +50,9 @@ export function MarkdownContent({ content, title }: MarkdownContentProps) {
                     <code className="block bg-muted p-4 rounded-lg my-4 overflow-x-auto" {...props} />
                   ),
                 hr: ({ node, ...props }) => <hr className="my-6 border-t" {...props} />,
-              }}
+                // react-markdown v10 自帶的 React 型別與專案的 @types/react 19
+                // 對不上（ref 型別衝突）——執行期無礙，僅型別層 cast。
+              } as any}
             >
               {content}
             </ReactMarkdown>

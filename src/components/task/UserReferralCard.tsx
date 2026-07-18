@@ -4,8 +4,8 @@ import { formatTimestamp } from '../../utils/referralFormatter';
 
 interface UserReferralCardProps {
   userName: string;
-  userReferralCode: string;
-  createdAt: string;
+  userReferralCode: string | null;
+  createdAt: string | null;
   className?: string;
   isCompleted?: boolean;           // ⭐ 新增：是否為完成任務的卡片
   completionBorderColor?: string;  // ⭐ 新增：完成時的邊框顏色（Tailwind class）
@@ -61,7 +61,7 @@ export function UserReferralCard({
       <div className="flex items-center gap-2">
         <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
         <p className="text-xs text-muted-foreground">
-          {formatTimestamp(createdAt)}
+          {createdAt ? formatTimestamp(createdAt) : '—'}
         </p>
       </div>
     </div>

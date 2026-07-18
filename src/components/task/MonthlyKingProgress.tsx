@@ -12,8 +12,8 @@ interface MonthlyKingProgressProps {
   currentProgress: number; // 當前進度 (0-9)
   referrals: Array<{
     userName: string;
-    userReferralCode: string;
-    createdAt: string;
+    userReferralCode: string | null;
+    createdAt: string | null;
   }>;
   onClose: () => void;
 }
@@ -72,7 +72,7 @@ export function MonthlyKingProgress({
             extraInfo={
               currentProgress < 10 ? (
                 <p className="text-blue-700">
-                  💡 再推薦 {10 - currentProgress} 人可再獲得 1000P！
+                  💡 再推薦 {10 - currentProgress} 人可再獲得免費續約 1 年！
                 </p>
               ) : (
                 <p className="text-green-700">
@@ -95,7 +95,7 @@ export function MonthlyKingProgress({
                   <div key={index} className="flex items-center gap-2 text-sm">
                     <Zap className="h-4 w-4 text-yellow-600" />
                     <span className="text-green-700">
-                      第 {index + 1} 次完成 (+1000P)
+                      第 {index + 1} 次完成（+免費續約 1 年）
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {index === 0 ? `第 10 人達成` : `第 ${(index + 1) * 10} 人達成`}
@@ -110,7 +110,7 @@ export function MonthlyKingProgress({
           <div>
             <h3 className="font-medium mb-3 flex items-center gap-2">
               📋 本月推薦列表
-              <span className="text-sm text-muted-foreground">({referrals.length} 人)</span>
+              <span className="text-sm text-muted-foreground">({total} 人)</span>
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-2">
@@ -140,7 +140,7 @@ export function MonthlyKingProgress({
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
             <p className="text-yellow-900">
               💡 <strong>溢出機制說明：</strong>
-              每推薦滿 10 人即可獲得 1000P，計數器自動扣除 10 人。
+              每推薦滿 10 人即可獲得免費續約 1 年，計數器自動扣除 10 人。
               剩餘人數累計至下一輪，下月 1 日歸零重新計算。
             </p>
           </div>

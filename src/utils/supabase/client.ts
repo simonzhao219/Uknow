@@ -3,7 +3,9 @@ import { projectId, publicAnonKey } from './info';
 
 const supabaseUrl = `https://${projectId}.supabase.co`;
 
-let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
+// <any>：本專案沒有產生 Database schema 型別；不加泛型時 supabase-js v2
+// 會把未知資料表的列型別推成 never（.insert/.select 全部報錯）。
+let supabaseClient: ReturnType<typeof createSupabaseClient<any>> | null = null;
 
 /**
  * 獲取 Supabase Client 單例
@@ -11,11 +13,13 @@ let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
  */
 export function createClient() {
   if (!supabaseClient) {
-    supabaseClient = createSupabaseClient(supabaseUrl, publicAnonKey, {
+    supabaseClient = createSupabaseClient<any>(supabaseUrl, publicAnonKey, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionUrl: true,
+        // 原本打成 detectSessionUrl（拼錯，選項被靜默忽略）——tsc 基線
+        // 建立時抓到的真實 bug。
+        detectSessionInUrl: true,
         storage: typeof window !== 'undefined' ? window.localStorage : undefined
       }
     });

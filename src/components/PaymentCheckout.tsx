@@ -8,6 +8,8 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
+import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
+import { useDataCache } from '../contexts/DataCacheContext';
 
 // ✅ 統一金流付款網址（從環境變數讀取）
 const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
@@ -33,6 +35,7 @@ export function PaymentCheckout() {
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
+  const { invalidate } = useDataCache();
   const supabase = createClient();
   
   console.log('PaymentCheckout: Component state -', {
@@ -66,7 +69,9 @@ export function PaymentCheckout() {
           // ✅ 檢查狀態並自動跳轉——以會籍（accountStatus）為準，不再看
           // registrationStep：過期會員的 step 也是 3，但他們是來續約的，
           // 不能被彈回 dashboard 造成守衛↔結帳的無限循環。
-          const isMemberActive = profile.accountStatus === 'active' || profile.accountStatus === 'grace';
+          // 只擋 active：寬限期（grace）是「到期後續訂」的正常入口
+          // （訂閱三態模型），要留在結帳頁完成付款。
+          const isMemberActive = profile.accountStatus === 'active';
           if (isMemberActive) {
             console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
             showToast('註冊完成！正在跳轉...', 'success');
@@ -128,10 +133,12 @@ export function PaymentCheckout() {
             
             // 3. 以會籍與付款狀態決定去向（registrationStep 只用來判斷
             //    首次註冊漏斗走到哪，不再當「已是會員」的依據）。
-            const isMemberActive = profile.accountStatus === 'active' || profile.accountStatus === 'grace';
+            //    只擋 active：寬限期（grace）是「到期後續訂」的正常入口
+            //    （訂閱三態模型），要留在結帳頁完成付款。
+            const isMemberActive = profile.accountStatus === 'active';
 
             if (isMemberActive) {
-              // 會籍有效（active/grace）才彈回會員中心；過期會員留在
+              // 會籍有效（active）才彈回會員中心；grace/過期會員留在
               // 結帳頁續約——舊版看 referralCode / step 3 就彈走，過期
               // 會員會在守衛與結帳頁之間無限循環。
               console.log('PaymentCheckout: Member is active, redirecting to dashboard');
@@ -279,14 +286,14 @@ export function PaymentCheckout() {
   //    會員（有效會員在進入本頁時已被彈去 dashboard）→ 這是過期續費。
   const isRenewal = !!pendingUser?.subscriptionEndDate;
   // 續約（extend）只有在「接續後效期仍在未來」才有意義；過期超過一年
-  // 只能選新約（後端 /payuni/prepare 也會擋）。
-  const extendNewEnd = (() => {
-    if (!pendingUser?.subscriptionEndDate) return null;
-    const d = new Date(pendingUser.subscriptionEndDate);
-    d.setFullYear(d.getFullYear() + 1);
-    return d;
-  })();
-  const canExtend = !!extendNewEnd && extendNewEnd.getTime() > Date.now();
+  // 只能選新約（後端 /payuni/prepare 也會擋）。日領域計算，與後端
+  // process_successful_payment 的 extend 錨點（前期迄日的台灣日曆日
+  // + 1 天起算）完全同語意——不是「舊迄日 + 1 年」的原始 instant 運算。
+  const extendAnchorDay = pendingUser?.subscriptionEndDate
+    ? twDayPlusDays(twDayOf(pendingUser.subscriptionEndDate), 1)
+    : null;
+  const extendEndDay = extendAnchorDay ? subscriptionLastDay(extendAnchorDay) : null;
+  const canExtend = !!extendEndDay && twEndOfDayInstant(extendEndDay).getTime() > Date.now();
   // 進到續費畫面時給預設選項：能續約就預選續約（對使用者較直覺），
   // 不能就預選新約。
   useEffect(() => {
@@ -425,123 +432,6 @@ export function PaymentCheckout() {
     showToast('已開啟付款頁面', 'info');
   };
 
-  const handlePayment = async () => {
-    if (!pendingUser) {
-      showToast('用戶資料不存在，請重新註冊', 'error');
-      navigate('/auth/complete-profile');
-      return;
-    }
-
-    // ✅ CRITICAL: 防止重複提交
-    if (isLoading) {
-      showToast('處理中，請稍候...', 'warning');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      console.log('PaymentCheckout: Starting payment process...');
-      
-      // 取得當前 session
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        console.error('PaymentCheckout: No session found');
-        showToast('登入狀態已過期，請重新登入', 'error');
-        navigate('/login');
-        return;
-      }
-
-      console.log('PaymentCheckout: Creating payment order...');
-
-      // 1. 創建付款訂單
-      const orderResponse = await fetch(
-        buildApiUrl('/payment/create-order'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            userId: pendingUser.id,
-            amount: 1200,
-            referralCode: pendingUser.referredByCode || null,
-          }),
-        }
-      );
-
-      if (!orderResponse.ok) {
-        const errorData = await orderResponse.json();
-        console.error('PaymentCheckout: Order creation error:', errorData);
-        throw new Error(errorData.error?.message || '創建付款訂單失敗');
-      }
-
-      const orderResult = await orderResponse.json();
-      const { orderId } = orderResult.data; // ✅ 修正：從 data 中取出 orderId
-      console.log('PaymentCheckout: Order created:', orderId);
-      console.log('PaymentCheckout: Full order details:', orderResult.data);
-
-      // 2. 模擬付款成功（實際環境中會跳轉到藍新金流）
-      console.log('PaymentCheckout: Simulating payment success...');
-      
-      const paymentResponse = await fetch(
-        buildApiUrl('/payment/simulate-success'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            orderId: orderId,
-          }),
-        }
-      );
-
-      if (!paymentResponse.ok) {
-        const errorData = await paymentResponse.json();
-        console.error('PaymentCheckout: Payment processing error:', errorData);
-        
-        // ✅ CRITICAL: 處理特定錯誤碼
-        if (errorData.error?.code === 'DUPLICATE_SUBSCRIPTION') {
-          showToast('您已完成付款，無需重複付款', 'warning');
-          // 嘗試獲取最新用戶資料並導航
-          await refreshUserProfileAndNavigate(session);
-          return;
-        }
-        
-        if (errorData.error?.code === 'PAYMENT_IN_PROGRESS') {
-          showToast(errorData.error.message, 'warning');
-          return;
-        }
-        
-        throw new Error(errorData.error?.message || '付款處理失敗');
-      }
-
-      const result = await paymentResponse.json();
-      console.log('PaymentCheckout: Payment successful:', result);
-      
-      // ✅ CRITICAL: 檢查是否是重複處理
-      if (result.alreadyProcessed) {
-        console.log('PaymentCheckout: Payment already processed, redirecting...');
-        showToast('付款已完成', 'success');
-        await refreshUserProfileAndNavigate(session);
-        return;
-      }
-
-      // 3. 獲取完整的用戶資料（包含推薦碼）
-      await refreshUserProfileAndNavigate(session);
-
-    } catch (error: any) {
-      console.error('PaymentCheckout: Payment error:', error);
-      showToast(error.message || '付款處理失敗，請稍後再試', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
   // ✅ 新增：統一的用戶資料刷新與導航邏輯
   const refreshUserProfileAndNavigate = async (session: any) => {
     try {
@@ -558,11 +448,14 @@ export function PaymentCheckout() {
       if (profileResponse.ok) {
         const updatedProfile = await profileResponse.json();
         console.log('PaymentCheckout: Updated profile retrieved:', updatedProfile);
-        
+
         // 更新用戶狀態
         setUser(updatedProfile);
         localStorage.setItem('user', JSON.stringify(updatedProfile));
         localStorage.removeItem('pendingUser');
+        // 付款完成影響會籍/獎勵/任務/推薦樹等一整組快取（見
+        // MUTATION_GROUPS），一次失效，回會員中心讀到的都是新資料。
+        invalidate('payment');
 
         // ✅ 修改：使用輕量級 Toast 通知
         showToast('註冊成功', 'success');
@@ -578,7 +471,7 @@ export function PaymentCheckout() {
         const fallbackProfile = {
           ...pendingUser,
           registrationStep: 3,
-          referralCode: result.data?.referralCode || '生成中',
+          referralCode: pendingUser?.referralCode || '生成中',
         };
         
         setUser(fallbackProfile);
@@ -704,7 +597,7 @@ export function PaymentCheckout() {
           <CardTitle className="text-2xl">{isRenewal ? '續費會員' : '完成付款'}</CardTitle>
           {isRenewal && (
             <CardDescription>
-              您的會籍已於 {pendingUser.subscriptionEndDate?.slice(0, 10)} 到期，請選擇續費方式
+              您的會籍已於 {pendingUser.subscriptionEndDate && formatTwDate(pendingUser.subscriptionEndDate)} 到期，請選擇續費方式
             </CardDescription>
           )}
         </CardHeader>
@@ -767,8 +660,8 @@ export function PaymentCheckout() {
                     {renewalMode === 'extend' && <CheckCircle className="h-5 w-5 text-primary" />}
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
-                    保留原帳號脈絡，效期自 {pendingUser.subscriptionEndDate?.slice(0, 10)} 接續，
-                    至 {extendNewEnd?.toISOString().slice(0, 10)}
+                    保留原帳號脈絡，效期自 {extendAnchorDay && formatTwDate(extendAnchorDay)} 接續，
+                    至 {extendEndDay && formatTwDate(extendEndDay)}
                   </p>
                 </button>
               )}

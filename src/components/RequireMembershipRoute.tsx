@@ -58,6 +58,21 @@ export function RequireMembershipRoute({ children }: RequireMembershipRouteProps
 
   const redirect = isLoggedIn && user ? resolveMembershipRedirect(user) : null;
 
+  // 停權（profiles.suspended_at，admin 會員管理設定）：擋在會員區之外，
+  // 顯示明確訊息——不能導去結帳頁（會造成付了錢也進不來）。
+  // 刊登的下架由後端 has_active_subscription() 處理，這裡只管畫面。
+  if (isLoggedIn && user?.suspended && !user?.isAdmin) {
+    return (
+      <div className="max-w-md mx-auto mt-16 text-center space-y-3 p-6 border rounded-lg bg-red-50 border-red-200">
+        <h2 className="text-xl font-bold text-red-800">帳號已停權</h2>
+        <p className="text-sm text-red-700">
+          您的帳號目前處於停權狀態，會員功能與刊登已暫停。
+          若有疑問請聯繫客服。
+        </p>
+      </div>
+    );
+  }
+
   // 沿用原本 useEffect + render-time Navigate 的雙保險寫法，
   // 但決策表只寫一次（resolveMembershipRedirect）。
   useEffect(() => {

@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
-import { Progress } from './ui/progress';
-import { Calendar, Trophy, Target, Gift, AlertTriangle, ArrowLeft, Loader2, Eye, Zap } from 'lucide-react';
+import { Target, Gift, ArrowLeft, Loader2, Eye, Zap, Trophy } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useTaskData } from '../hooks/useTaskData';
 import { PendingRewardsSection } from './task/PendingRewardsSection';
 import { TaskGuide } from './task/TaskGuide';
-import { MonthlyCalendarView } from './task/MonthlyCalendarView';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
 import { TaskBadge } from './task/TaskBadge';
 import { getMotivationText, getProgressColor, getProgressBarStyle } from '../utils/userReferralFormatter';
@@ -25,24 +23,15 @@ export function TaskDashboard() {
   const {
     tasks,
     pendingRewards,
-    monthlyProgress,
     currentMonthData,
     isLoading,
-    loadingMonthly,
     loadingCurrent,
     error,
-    fetchMonthlySummary,
     fetchCurrentMonthTop,
     handleClaimReward,
   } = useTaskData();
 
-  const [showMonthlyCalendar, setShowMonthlyCalendar] = useState(false);
   const [showKingProgress, setShowKingProgress] = useState(false);
-
-  const handleViewMonthlySummary = async () => {
-    const data = await fetchMonthlySummary();
-    if (data) setShowMonthlyCalendar(true);
-  };
 
   const handleViewCurrentMonthTop = async () => {
     const data = await fetchCurrentMonthTop();
@@ -51,7 +40,7 @@ export function TaskDashboard() {
 
   if (isLoading) {
     return (
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
             <ArrowLeft className="h-5 w-5" />
@@ -70,7 +59,7 @@ export function TaskDashboard() {
 
   if (error) {
     return (
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
             <ArrowLeft className="h-5 w-5" />
@@ -88,7 +77,7 @@ export function TaskDashboard() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
@@ -96,160 +85,113 @@ export function TaskDashboard() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">任務中心</h1>
+            <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
           </div>
         </div>
       </div>
 
       <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} />
 
-      {/* 進行中的任務 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {tasks.map((task) => {
-          const motivationText = getMotivationText(task.progress);
-          const progressColor = getProgressColor(task.progress);
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+        <div className="lg:col-span-3 space-y-6">
+          {tasks.map((task) => {
+            const motivationText = getMotivationText(task.progress);
+            const progressColor = getProgressColor(task.progress);
 
-          return (
-            <Card key={task.id} className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow">
-              <div
-                className={`absolute top-0 right-0 w-32 h-32 opacity-10 ${
-                  task.type === 'consecutive_referral'
-                    ? 'bg-gradient-to-br from-blue-500 to-purple-500'
-                    : 'bg-gradient-to-br from-orange-500 to-yellow-500'
-                } rounded-full -mr-16 -mt-16`}
-              />
+            return (
+              <Card key={task.id} className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow">
+                <div className="absolute top-0 right-0 w-32 h-32 opacity-10 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-full -mr-16 -mt-16" />
 
-              <CardHeader className="relative">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2 flex-1">
-                    <Trophy className="h-6 w-6 text-yellow-500 shrink-0" />
-                    <div>
-                      <CardTitle className="text-xl">{task.title}</CardTitle>
-                      <CardDescription className="mt-1">{task.description}</CardDescription>
+                <CardHeader className="relative">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Trophy className="h-6 w-6 text-yellow-500 shrink-0" />
+                      <div>
+                        <CardTitle className="text-xl">{task.title}</CardTitle>
+                        <CardDescription className="mt-1">{task.description}</CardDescription>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="mt-3">
-                  <TaskBadge type={task.type as any} progress={task.current} />
-                </div>
-              </CardHeader>
+                  <div className="mt-3">
+                    <TaskBadge type="monthly_king" progress={task.current} />
+                  </div>
+                </CardHeader>
 
-              <CardContent className="space-y-4 relative">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">任務進度</span>
-                    <span className={`text-sm font-bold ${progressColor}`}>
-                      {task.current} / {task.target}
-                    </span>
+                <CardContent className="space-y-4 relative">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">任務進度</span>
+                      <span className={`text-sm font-bold ${progressColor}`}>
+                        {task.current} / {task.target}
+                      </span>
+                    </div>
+                    <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-500 ${getProgressBarStyle(task.progress)}`}
+                        style={{ width: `${Math.min(task.progress, 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground text-center">{motivationText}</p>
                   </div>
-                  <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-500 ${getProgressBarStyle(task.progress)}`}
-                      style={{ width: `${Math.min(task.progress, 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-muted-foreground text-center">{motivationText}</p>
-                </div>
 
-                <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-                  <div className="flex items-center gap-2">
-                    <Gift className="h-5 w-5 text-yellow-600" />
-                    <span className="text-sm font-medium">任務獎勵</span>
+                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center gap-2">
+                      <Gift className="h-5 w-5 text-yellow-600" />
+                      <span className="text-sm font-medium">任務獎勵</span>
+                    </div>
+                    <span className="text-lg font-bold text-yellow-600">{task.reward.label}</span>
                   </div>
-                  <span className="text-lg font-bold text-yellow-600">{task.reward.label}</span>
-                </div>
 
-                {task.type === 'consecutive_referral' && task.details && (
-                  <div className="space-y-3">
-                    {task.details.startMonth && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        <span>
-                          開始: {formatMonth(task.details.startMonth)}
-                          {task.details.lastActiveMonth &&
-                            ` · 最後活躍: ${formatMonth(task.details.lastActiveMonth)}`}
-                        </span>
-                      </div>
-                    )}
-                    {task.current > 0 ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleViewMonthlySummary}
-                        loading={loadingMonthly}
-                        className="w-full gap-2"
-                      >
-                        {loadingMonthly ? (
-                          '載入中...'
-                        ) : (
-                          <>
-                            <Calendar className="h-4 w-4" />
-                            查看 12 個月詳情
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <Alert>
-                        <Zap className="h-4 w-4" />
-                        <AlertDescription>完成第一次推薦後，任務將自動啟動！</AlertDescription>
-                      </Alert>
-                    )}
-                  </div>
-                )}
+                  {task.details && (
+                    <div className="space-y-3">
+                      {task.details.currentMonth && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Target className="h-4 w-4" />
+                          <span>
+                            本月 ({formatMonth(task.details.currentMonth)}) 已推薦 {task.current} 人
+                          </span>
+                        </div>
+                      )}
+                      {task.details.completedMonths > 0 && (
+                        <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700 flex items-center gap-2">
+                          累計完成 {task.details.completedMonths} 次推薦王任務
+                        </div>
+                      )}
+                      {task.current > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleViewCurrentMonthTop}
+                          loading={loadingCurrent}
+                          className="w-full gap-2"
+                        >
+                          {loadingCurrent ? (
+                            '載入中...'
+                          ) : (
+                            <>
+                              <Eye className="h-4 w-4" />
+                              查看本月推薦詳情
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <Alert>
+                          <Zap className="h-4 w-4" />
+                          <AlertDescription>完成第一次推薦後，任務將自動啟動！</AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
-                {task.type === 'monthly_king' && task.details && (
-                  <div className="space-y-3">
-                    {task.details.currentMonth && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Target className="h-4 w-4" />
-                        <span>
-                          本月 ({formatMonth(task.details.currentMonth)}) 已推薦 {task.current} 人
-                        </span>
-                      </div>
-                    )}
-                    {task.details.completedMonths > 0 && (
-                      <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700 flex items-center gap-2">
-                        累計完成 {task.details.completedMonths} 次推薦王任務
-                      </div>
-                    )}
-                    {task.current > 0 ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleViewCurrentMonthTop}
-                        loading={loadingCurrent}
-                        className="w-full gap-2"
-                      >
-                        {loadingCurrent ? (
-                          '載入中...'
-                        ) : (
-                          <>
-                            <Eye className="h-4 w-4" />
-                            查看本月推薦詳情
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <Alert>
-                        <Zap className="h-4 w-4" />
-                        <AlertDescription>完成第一次推薦後，任務將自動啟動！</AlertDescription>
-                      </Alert>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+        <div className="lg:col-span-2">
+          <TaskGuide />
+        </div>
       </div>
-
-      <TaskGuide />
-
-      {showMonthlyCalendar && (
-        <MonthlyCalendarView
-          monthlyProgress={monthlyProgress}
-          onClose={() => setShowMonthlyCalendar(false)}
-        />
-      )}
 
       {showKingProgress && currentMonthData && (
         <MonthlyKingProgress
