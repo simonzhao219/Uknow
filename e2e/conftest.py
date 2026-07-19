@@ -21,6 +21,7 @@ from config import BASE_URL, SUPABASE_PROJECT_REF
 from mocks.backend_api_mock import BackendApiMock
 from mocks.supabase_auth_mock import SupabaseAuthMock
 from mocks.supabase_rest_mock import SupabaseRestMock
+from pages.admin_dashboard_page import AdminDashboardPage
 from pages.auth_page import AuthPage
 from pages.complete_profile_page import CompleteProfilePage
 from pages.create_service_provider_page import CreateServiceProviderPage
@@ -214,6 +215,11 @@ def navbar(page):
 @pytest.fixture
 def home_page(page):
     return HomePage(page)
+
+
+@pytest.fixture
+def admin_dashboard_page(page):
+    return AdminDashboardPage(page)
 
 
 @pytest.fixture

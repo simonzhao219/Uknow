@@ -434,6 +434,96 @@ class BackendApiMock:
             lambda route: _fulfill_json(route, body, status=status),
         )
 
+    # --- Admin dashboard ---------------------------------------------------
+    # Each admin tab reads `{success, data:{...}}` and writes back through the
+    # same path prefix (POST .../status, .../suspend, create/delete
+    # announcement), so one handler per prefix branches on HTTP method: GET
+    # returns the seeded list, any write returns a bare success.
+
+    def set_admin_withdrawals(self, withdrawals=None):
+        records = withdrawals or []
+
+        def handler(route):
+            if route.request.method == "GET":
+                return _fulfill_json(route, {"success": True, "data": {"withdrawals": records}})
+            return _fulfill_json(route, {"success": True})
+
+        self._route("/admin/withdrawals", handler)
+
+    def set_admin_members(self, members=None):
+        records = members or []
+
+        def handler(route):
+            if route.request.method == "GET":
+                return _fulfill_json(
+                    route, {"success": True, "data": {"members": records, "total": len(records)}}
+                )
+            return _fulfill_json(route, {"success": True})
+
+        self._route("/admin/members", handler)
+
+    def set_admin_announcements(self, announcements=None):
+        records = announcements or []
+
+        def handler(route):
+            if route.request.method == "GET":
+                return _fulfill_json(route, {"success": True, "data": {"announcements": records}})
+            return _fulfill_json(route, {"success": True})
+
+        self._route("/admin/announcements", handler)
+
+    def set_admin_setup(self, is_admin=True, can_become_admin=False, has_existing_admin=True):
+        body = {
+            "success": True,
+            "isAdmin": is_admin,
+            "canBecomeAdmin": can_become_admin,
+            "hasExistingAdmin": has_existing_admin,
+        }
+
+        def handler(route):
+            if route.request.method == "GET":
+                return _fulfill_json(route, body)
+            return _fulfill_json(route, {"success": True})
+
+        self._route("/admin-setup/check", handler)
+        self._route("/admin-setup/set-self-admin", handler)
+
+
+def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
+    """A row for `/admin/withdrawals` (WithdrawalManagement). `pending` rows
+    render the 已匯款 / 退件 action buttons."""
+    record = {
+        "id": "wd-admin-1",
+        "userName": "王小明",
+        "idNumber": "A123456789",
+        "idCardFrontUrl": None,
+        "idCardBackUrl": None,
+        "amount": 1000,
+        "fee": 15,
+        "bankCode": "004",
+        "bankAccount": "12345678901234",
+        "requestedAt": "2026-07-16T00:00:00.000Z",
+        "status": status,
+    }
+    record.update(overrides)
+    return record
+
+
+def build_admin_member(name: str = "陳大文", **overrides) -> dict:
+    """A row for `/admin/members` (MemberManagement)."""
+    member = {
+        "id": "mem-admin-1",
+        "name": name,
+        "email": "member@example.com",
+        "phone": "0912345678",
+        "accountStatus": "active",
+        "listingCount": 0,
+        "isAdmin": False,
+        "suspended": False,
+    }
+    member.update(overrides)
+    return member
+
 
 def build_referral_member(name: str, **overrides) -> dict:
     member = {

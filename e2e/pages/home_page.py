@@ -41,8 +41,14 @@ class HomePage(BasePage):
         return self.page.get_by_role("searchbox")
 
     def card(self, listing_id: str) -> Locator:
-        """The visible (desktop) card link for a given listing id."""
+        """The visible card link for a given listing id (desktop grid at wide
+        viewports, mobile grid at narrow ones — the other is `display:none`)."""
         return self.page.locator(f"a[href='/service-providers/{listing_id}']:visible")
+
+    def cards(self) -> Locator:
+        """All currently-visible listing cards, in DOM order — which is render
+        order, so `.first` is the top card after any client-side sort."""
+        return self.page.locator("a[href^='/service-providers/']:visible")
 
     def no_results_message(self) -> Locator:
         """Empty state when a search/filter is active but nothing matches."""
