@@ -6,7 +6,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from './ui/input-otp';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
-import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
+import { buildApiUrl } from '../utils/apiClient';
 import {
   startOtpWindow,
   getOtpExpiry,
@@ -78,7 +78,13 @@ export function OTPVerificationPage() {
     setIsVerifying(true);
 
     try {
-      const { error } = await supabase.auth.verifyOtp({
+      // verifyOtp 成功會「當場建立一個有效 session」並回傳在 data.session——
+      // 這正是要讓它直接生效、免去使用者再登入一次的關鍵。過去這裡丟掉了
+      // data、改用 setTimeout(500) 等 session 傳播再走 apiRequestJson，而
+      // apiRequestJson 一遇 401 就會主動 signOut + 導回登入頁；只要那個等待
+      // 有一點點沒到位，剛驗證好的 session 就被自己清掉、逼使用者重登
+      //（使用者回報的「再填一次帳密登入」正是這條路徑）。
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: otpType,
@@ -105,26 +111,40 @@ export function OTPVerificationPage() {
         return;
       }
 
-      // Signup: give session time to propagate, then route by registrationStep
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Signup: 直接用 verifyOtp 當場回傳的 session 決定下一步——不再 setTimeout
+      // 等待、也不走會「401 就自我登出」的 apiRequestJson。session 本身已透過
+      // supabase-js 的 onAuthStateChange('SIGNED_IN') 讓 App.tsx 全域生效，
+      // 這裡只需要讀一次 registrationStep 決定漏斗去向。
+      const session = data.session;
+      if (!session) {
+        // signup 的 verifyOtp 照理一定回 session；真的沒有就保守帶去完善資料頁，
+        // 絕不因此把使用者踢回登入（session 沒建立才需要重登，這裡不是）。
+        navigate('/auth/complete-profile', { replace: true });
+        return;
+      }
 
       try {
-        const result = await apiRequestJson<{
-          success: boolean;
-          data: { registrationStep: number };
-        }>(buildApiUrl('/auth/profile'));
-        const step = result.data?.registrationStep ?? 0;
-        // 與 AuthPage 共用同一份「下一步去哪」的決策，避免兩處走針。
-        navigate(nextRouteForStep(step), { replace: true });
-      } catch (profileErr) {
-        // New user — profile doesn't exist yet
-        if (profileErr instanceof ApiError && profileErr.status === 401) {
-          // Auth error: don't proceed silently
+        const response = await fetch(buildApiUrl('/auth/profile'), {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (response.ok) {
+          const profile = await response.json();
+          // 與 AuthPage 共用同一份「下一步去哪」的決策，避免兩處走針。
+          navigate(nextRouteForStep(profile.registrationStep), { replace: true });
+        } else if (response.status === 401) {
+          // 剛建立的 session 卻被後端拒絕：這是「session 真的不可用」，
+          // 才需要重新登入。注意這與舊版的假性 401 不同——舊版是靠
+          // getAccessToken()/setTimeout 等 session 傳播，時機沒到就誤判 401；
+          // 現在直接用 verifyOtp 當場回傳的 token，不會再有那種假象。
           showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
           navigate('/login', { replace: true });
         } else {
+          // 其他非 200（例如 404：profile 列還沒建好）——session 是有效的，
+          // 就近帶去完善資料頁繼續註冊流程，而不是把人踢回登入頁。
           navigate('/auth/complete-profile', { replace: true });
         }
+      } catch {
+        navigate('/auth/complete-profile', { replace: true });
       }
     } catch {
       showToast('驗證失敗，請稍後再試', 'error');

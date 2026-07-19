@@ -63,7 +63,10 @@ Feature: Route guards enforce membership entitlement
   # counterpart to the backend contract test (fresh user ⇒ step 0) and the
   # checkout guard's unit test — together they close the seam the incident fell
   # through: the backend now emits 0, and the frontend routes 0 off checkout.
-  Scenario: A step-0 user who reaches checkout is sent to complete their profile, not shown a blank confirmation
+  # The redirect is not silent: the page says why ("請先完成個人資料") so the
+  # user understands they're being asked to finish onboarding first.
+  Scenario: A step-0 user who reaches checkout is told to finish their profile first, not shown a blank confirmation
     Given I am logged in with registration step 0
     When I visit "/payment/checkout"
-    Then I should be redirected to "/auth/complete-profile"
+    Then I should see a toast containing "請先完成個人資料"
+    And I should be redirected to "/auth/complete-profile"
