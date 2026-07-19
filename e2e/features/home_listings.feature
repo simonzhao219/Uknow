@@ -41,3 +41,25 @@ Feature: Public service-provider directory (home page)
     When I visit "/"
     And I open the listing card for "Alice 美髮師"
     Then I should be on the detail page for "Alice 美髮師"
+
+  @listing
+  Scenario: Without location permission the newest listing stays on top
+    Given the public directory has a listing "台北服務者" in "台北市"
+    And the public directory has a listing "高雄服務者" in "高雄市"
+    When I visit "/"
+    Then the first listing should be "台北服務者"
+
+  @listing
+  Scenario: With location granted the directory sorts nearest-first
+    Given the public directory has a listing "台北服務者" in "台北市"
+    And the public directory has a listing "高雄服務者" in "高雄市"
+    And my location is "高雄市"
+    When I visit "/"
+    Then the first listing should be "高雄服務者"
+
+  @listing @compatibility
+  Scenario: The directory renders mobile cards on a small screen
+    Given I am on a mobile-sized screen
+    And the public directory lists providers "Alice 美髮師"
+    When I visit "/"
+    Then I should see the listing card for "Alice 美髮師"

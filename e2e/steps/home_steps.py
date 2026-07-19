@@ -22,6 +22,14 @@ def _parse_names(names: str):
     return [part.strip().strip('"').strip() for part in names.split(",")]
 
 
+# Subset of HomePage's built-in city→coordinate table, enough to drive the
+# "sort by distance from me" behaviour deterministically.
+_CITY_COORDS = {
+    "台北市": {"latitude": 25.0330, "longitude": 121.5654},
+    "高雄市": {"latitude": 22.6273, "longitude": 120.3014},
+}
+
+
 @pytest.fixture
 def directory():
     """name -> public_listings row, shared across a scenario's steps."""
@@ -44,6 +52,26 @@ def directory_lists(rest_mock, directory, names):
 @given("the public directory has no listings")
 def directory_empty(rest_mock, directory):
     rest_mock.set_public_listings([])
+
+
+@given(parsers.parse('the public directory has a listing "{name}" in "{city}"'))
+def directory_add_city_listing(rest_mock, directory, name, city):
+    # Accumulates across steps, preserving insertion order (which HomePage keeps
+    # as the default "most recent first" order until distance sort reorders it).
+    row = build_public_listing(listing_id=_listing_id(len(directory) + 1), name=name, city=city)
+    directory[name] = row
+    rest_mock.set_public_listings(list(directory.values()))
+
+
+@given(parsers.parse('my location is "{city}"'))
+def my_location_is(context, city):
+    context.grant_permissions(["geolocation"])
+    context.set_geolocation(_CITY_COORDS[city])
+
+
+@given("I am on a mobile-sized screen")
+def on_mobile_screen(page):
+    page.set_viewport_size({"width": 375, "height": 812})
 
 
 @given(parsers.parse('a public listing "{name}" exists with description "{desc}"'))
@@ -99,3 +127,8 @@ def should_not_see_card(home_page, directory, name):
 @then(parsers.parse('I should be on the detail page for "{name}"'))
 def on_detail_page(page, directory, name):
     page.wait_for_url(f"**/service-providers/{directory[name]['id']}", timeout=10_000)
+
+
+@then(parsers.parse('the first listing should be "{name}"'))
+def first_listing_should_be(home_page, name):
+    expect(home_page.cards().first).to_contain_text(name, timeout=5_000)

@@ -116,15 +116,30 @@ auth（login/signup/OTP/forgot-password/complete-profile）、payment（checkout
 
 ---
 
-## 6. 仍開放的自動化缺口（後續建議，對照 Phase 2 面向）
+## 6. Backlog 狀態（對照 Phase 2 面向）
 
-| 缺口 | 面向 | 建議 |
+| 缺口 | 面向 | 狀態 |
 |---|---|---|
-| Admin 後台（會員/提領/通知管理）深度測試 | Functional / 越權 | 補 admin feature，mock 管理 API |
-| Feature-flag 停用路徑（ProtectedRoute 擋 featureRequired） | Negative / 授權 | 需可切換 FeatureContext（目前前端全開 stub）→ 需產品提供可控旗標 |
-| ID 照片實體上傳（file chooser） | Functional / 邊界 | 驅動真實 file-chooser 路徑 |
-| 首頁距離排序（geolocation 授權後由近到遠） | Functional / 邊界 | 用 `context.grant_permissions(["geolocation"])` + `set_geolocation` 補一條排序 scenario |
-| 手機響應式卡片（mobile grid） | 相容性 | 以 375px viewport 補一組 |
-| 後端規則層（Supabase functions） | 安全 / 契約 | 參 `supabase/functions/api/*.test.ts`（Deno），與 UI 層互補 |
+| Admin 後台（提領/會員管理、tab 導覽、越權阻擋） | Functional / 越權 | ✅ 已完成（round 2，見 §7） |
+| 首頁距離排序（geolocation 授權後由近到遠） | Functional / 邊界 | ✅ 已完成（round 2） |
+| 手機響應式卡片（mobile grid） | 相容性 | ✅ 已完成（round 2） |
+| Feature-flag 停用路徑（ProtectedRoute 擋 featureRequired） | Negative / 授權 | ⏸ 仍開放：`FeatureContext` 為前端全開 stub，停用路徑不可達；需**產品先提供可控旗標**（動 app 行為）才可測，非測試層可自足。 |
+| ID 照片實體上傳（file chooser） | Functional / 邊界 | ⏸ 仍開放：需驅動真實 file-chooser（`page.expect_file_chooser`）+ mock 上傳端點。 |
+| 後端規則層（Supabase functions） | 安全 / 契約 | ⏸ 仍開放：屬 Deno 測試層（`supabase/functions/api/*.test.ts`），與 UI 層互補、另一條 toolchain。 |
 
-> 這些對應 Phase 2 測試計畫中「已列面向但真實系統尚未自動化」之處，構成下一輪 backlog。
+---
+
+## 7. Backlog round 2（本輪續作）
+
+### 7.1 新增自動化
+- **首頁距離排序**（`home_listings.feature` +2）：以 `context.set_geolocation` 授權定位後，目錄依「使用者→服務者城市距離」由近到遠排序；未授權時維持最新（插入）順序。對照 HomePage 的 Haversine 排序邏輯。
+- **首頁手機響應式**（+1）：375px viewport 下 mobile 卡片網格正確渲染（卡片 `:visible` 定位涵蓋 desktop/mobile 兩種格線）。
+- **Admin 後台**（新 `admin_dashboard.feature`，5 scenario）：非管理員訪問 `/admin` 被導向 `/dashboard`（越權）、管理員看到四個管理分頁、提領空狀態、待處理提領顯示申請人與「待處理」徽章、切到「會員管理」分頁列出會員。新增 `AdminDashboardPage` 頁面物件、`BackendApiMock` 的 admin 端點（withdrawals/members/announcements/admin-setup）與 `build_admin_withdrawal` / `build_admin_member` 建構子；`pytest.ini` 補 `compatibility` marker。
+
+### 7.2 黑箱測試找出的真實產品 bug（已修）
+- **`AdminRoute` 冷啟動彈出 bug**：`ProtectedRoute` 會等待 session 解析（`isLoadingUser && !user` 顯示 loading），但 `AdminRoute` 未比照——直接進 `/admin`（管理員書籤、整頁重新載入、金流導回）時，載入瞬間 `user=null` 被判未登入而導去 `/login`，登入頁再把「已登入」的管理員彈到 `/dashboard`，導致管理員**看不到後台**。修法：`AdminRoute` 比照 `ProtectedRoute` 加上載入中 spinner 守衛。新增的越權/渲染 admin 測試同時證明並鎖定此修正。
+
+### 7.3 結果
+- 全 E2E 套件：**124 passed / 0 failed**；`tsc --noEmit` 通過；vitest 單元 **86 passed**。
+
+> 剩餘 ⏸ 項目（feature-flag 停用路徑、ID 照片上傳、後端 Deno 層）各有前置條件（產品旗標、file-chooser 驅動、另一 toolchain），列為下一輪。
