@@ -182,6 +182,21 @@ def upload_id_photos(reward_page):
     reward_page.upload_id_photos()
 
 
+@when("I remove the saved front ID photo")
+def remove_saved_front_photo(reward_page):
+    reward_page.remove_front_id_photo()
+
+
+@then("the front ID photo upload area should appear")
+def front_upload_area_appears(reward_page):
+    expect(reward_page.front_upload_input()).to_have_count(1, timeout=5_000)
+
+
+@when("I upload a replacement front ID photo")
+def upload_replacement_front(reward_page):
+    reward_page.upload_replacement_front_photo()
+
+
 @when("I agree to the withdrawal terms")
 def agree_terms(reward_page):
     reward_page.agree_terms()

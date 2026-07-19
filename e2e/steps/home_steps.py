@@ -74,6 +74,11 @@ def on_mobile_screen(page):
     page.set_viewport_size({"width": 375, "height": 812})
 
 
+@given("the public directory is temporarily failing")
+def directory_failing(rest_mock):
+    rest_mock.fail_public_listings()
+
+
 @given(parsers.parse('a public listing "{name}" exists with description "{desc}"'))
 def public_listing_exists(rest_mock, directory, name, desc):
     row = build_public_listing(name=name, description=desc)
@@ -87,6 +92,28 @@ def no_public_listing(rest_mock, listing_id):
 
 
 # --- When ------------------------------------------------------------------
+
+
+@when(parsers.parse('the public directory recovers with providers {names}'))
+def directory_recovers(rest_mock, directory, names):
+    rows = []
+    for i, name in enumerate(_parse_names(names), start=1):
+        row = build_public_listing(listing_id=_listing_id(i), name=name)
+        directory[name] = row
+        rows.append(row)
+    # set_public_listings clears the pending failure installed by
+    # fail_public_listings, so the retry button's refetch succeeds.
+    rest_mock.set_public_listings(rows)
+
+
+@when("I retry loading the directory")
+def retry_directory(page):
+    page.get_by_role("button", name="重新載入").click()
+
+
+@then(parsers.parse('I should not see the text "{text}"'))
+def should_not_see_text(page, text):
+    expect(page.get_by_text(text)).to_have_count(0)
 
 
 @when(parsers.parse('I search the directory for "{text}"'))
