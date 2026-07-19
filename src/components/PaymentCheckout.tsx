@@ -136,6 +136,11 @@ export function PaymentCheckout() {
             const redirect = resolveCheckoutPageRedirect(profile);
             if (redirect) {
               console.log('PaymentCheckout: Redirecting to', redirect);
+              // 資料未填齊而被導回完善資料頁時，先說一句原因再帶過去——避免
+              // 使用者看到畫面「無故」跳走，不知道自己被要求先補資料。
+              if (redirect === '/auth/complete-profile') {
+                showToast('請先完成個人資料', 'info');
+              }
               navigate(redirect, { replace: true });
               return;
             }
