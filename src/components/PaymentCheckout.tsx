@@ -9,12 +9,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
-import { useDataCache } from '../contexts/DataCacheContext';
-import { detectInAppBrowser } from '../utils/browserDetection';
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
-
-// ✅ 統一金流付款網址（從環境變數讀取）
-const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -37,7 +32,6 @@ export function PaymentCheckout() {
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
-  const { invalidate } = useDataCache();
   const supabase = createClient();
   
   console.log('PaymentCheckout: Component state -', {
@@ -427,79 +421,6 @@ export function PaymentCheckout() {
       showToast(error.message || '付款失敗', 'error');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // ✅ 新增：重新開啟付款頁面
-  const handleReopenPayment = () => {
-    const paymentUrl = PAYUNI_PAYMENT_URL;
-    // 內建瀏覽器（如 LINE）常會擋掉 window.open('_blank') 的彈窗，導致付款頁
-    // 開不起來；改用同視窗導向，付款完成後再由 PayUni 導回 /payment/result。
-    // 外部瀏覽器維持開新分頁，保留原本的操作體驗。
-    if (detectInAppBrowser().isInAppBrowser) {
-      window.location.assign(paymentUrl);
-    } else {
-      window.open(paymentUrl, '_blank');
-    }
-    showToast('已開啟付款頁面', 'info');
-  };
-
-  // ✅ 新增：統一的用戶資料刷新與導航邏輯
-  const refreshUserProfileAndNavigate = async (session: any) => {
-    try {
-      const profileResponse = await fetch(
-        buildApiUrl('/auth/profile'),
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (profileResponse.ok) {
-        const updatedProfile = await profileResponse.json();
-        console.log('PaymentCheckout: Updated profile retrieved:', updatedProfile);
-
-        // 更新用戶狀態
-        setUser(updatedProfile);
-        localStorage.setItem('user', JSON.stringify(updatedProfile));
-        localStorage.removeItem('pendingUser');
-        // 付款完成影響會籍/獎勵/任務/推薦樹等一整組快取（見
-        // MUTATION_GROUPS），一次失效，回會員中心讀到的都是新資料。
-        invalidate('payment');
-
-        // ✅ 修改：使用輕量級 Toast 通知
-        showToast('註冊成功', 'success');
-
-        // 導向 dashboard（縮短延遲以配合 Toast）
-        setTimeout(() => {
-          navigate('/dashboard', { replace: true });
-        }, 500);
-      } else {
-        // 如果無法獲取更新後的資料，使用原有資料並導向
-        console.warn('PaymentCheckout: Failed to retrieve updated profile, using cached data');
-        
-        const fallbackProfile = {
-          ...pendingUser,
-          registrationStep: 3,
-          referralCode: pendingUser?.referralCode || '生成中',
-        };
-        
-        setUser(fallbackProfile);
-        localStorage.setItem('user', JSON.stringify(fallbackProfile));
-        localStorage.removeItem('pendingUser');
-
-        // ✅ 修改：使用輕量級 Toast 通知
-        showToast('註冊成功', 'success');
-
-        setTimeout(() => {
-          navigate('/dashboard', { replace: true });
-        }, 500);
-      }
-    } catch (error) {
-      console.error('PaymentCheckout: Error refreshing user profile:', error);
-      showToast('無法獲取最新用戶資料，請稍後再試', 'error');
     }
   };
 

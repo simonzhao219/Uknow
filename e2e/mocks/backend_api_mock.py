@@ -37,7 +37,10 @@ def build_profile(registration_step: int = 3, **overrides) -> dict:
         "email": DEFAULT_EMAIL,
         "name": "測試用戶" if has_profile else None,
         "phone": "0912345678" if has_profile else None,
-        "nationalId": "A123456789" if has_profile else None,
+        # 後端遮罩契約（profile-masking.test.ts）：GET /profile 只回遮罩值
+        # （頭 3 尾 3），完整字號僅存於 DB、由伺服器端比對。表單輸入情境
+        # 仍用完整值（使用者本來就輸入完整字號）。
+        "nationalId": "A12****789" if has_profile else None,
         "birthDate": "1990-01-01" if has_profile else None,
         "registrationStep": registration_step,
         "referredByCode": None,

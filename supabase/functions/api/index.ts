@@ -134,6 +134,26 @@ async function verifyNationalId(client: any, userId: string, idNumber: string): 
 }
 
 // ============================================================
+// 工具：敏感欄位遮罩。GET /profile 不回傳完整身分證字號/銀行帳號——
+// 持有 access token 的一方不應能拿到完整值，否則「敏感操作需輸入
+// 身分證驗證」（verify-id / 提領 / 領獎）形同虛設。完整值只存在 DB，
+// 比對一律走伺服器端（verifyNationalId）。管理員匯款作業所需的完整
+// 值仍由 GET /admin/withdrawals 提供（admin 守門 + 匯款必要）。
+// ============================================================
+function maskNationalId(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const v = id.trim();
+  if (v.length <= 6) return '*'.repeat(v.length);
+  return v.slice(0, 3) + '*'.repeat(v.length - 6) + v.slice(-3);
+}
+
+function maskBankAccount(acct: string | null | undefined): string | null {
+  if (!acct) return null;
+  const v = acct.trim();
+  return '*'.repeat(Math.max(v.length - 4, 0)) + v.slice(-4);
+}
+
+// ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
 export async function buildProfileResponse(client: any, userId: string, email?: string, alreadyHealed = false) {
@@ -191,9 +211,9 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
     name:            profile.name,
     phone:           profile.phone,
     birthDate:       profile.birth_date,
-    nationalId:      profile.national_id,
+    nationalId:      maskNationalId(profile.national_id),
     bankCode:        profile.bank_code,
-    bankAccount:     profile.bank_account,
+    bankAccount:     maskBankAccount(profile.bank_account),
     isAdmin:         profile.is_admin,
     registrationStep,
     // 待開通時優先指向「已付款成功」的那筆訂單，讓前端守衛導去的
@@ -367,6 +387,14 @@ app.put('/auth/profile', async (c) => {
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: '請求格式錯誤' }, 400); }
 
+  // 遮罩值防呆：GET /profile 回的是遮罩值（A12****789 / *****0123），
+  // 前端若誤把它回填送出，會把 DB 的完整值蓋成星號——一律拒絕。
+  for (const key of ['nationalId', 'bankCode', 'bankAccount']) {
+    if (typeof body?.[key] === 'string' && body[key].includes('*')) {
+      return c.json({ error: '欄位含遮罩字元，請輸入完整內容' }, 400);
+    }
+  }
+
   const client = sb();
   const allowedFields: Record<string, string> = {
     name:              'name',
@@ -399,13 +427,28 @@ app.put('/auth/profile', async (c) => {
 
 // ============================================================
 // DELETE /auth/cancel-signup
-// CompleteProfile「我晚點再填」：刪除尚未完成的帳號
+// CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
+// 守衛：已完成付款或有提領紀錄的會員不得自助刪除——schema 全面
+// on delete cascade，刪 auth user 會連鎖抹除 payment_orders /
+// withdrawals / referral_edges，金流稽核紀錄與推薦樹對帳從此消失
+// （與 /auth/reset-registration 的「已完成付款無法重置」同一原則）。
 // ============================================================
 app.delete('/auth/cancel-signup', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const { error } = await sb().auth.admin.deleteUser(user.id);
+  const client = sb();
+  const [{ data: completedOrder }, { data: withdrawal }] = await Promise.all([
+    client.from('payment_orders').select('id')
+      .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
+    client.from('withdrawals').select('id')
+      .eq('user_id', user.id).limit(1).maybeSingle(),
+  ]);
+  if (completedOrder || withdrawal) {
+    return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
+  }
+
+  const { error } = await client.auth.admin.deleteUser(user.id);
   if (error) {
     console.error('[cancel-signup] 刪除失敗:', error);
     return c.json({ error: '刪除失敗' }, 500);

@@ -5,6 +5,10 @@ node_modules/
 build/
 dist/
 
+# 資料傾印/匯出——含個資，一律不進版本庫（見 src/utils/repoHygiene.test.ts）
+export/
+src/imports/
+
 # Environment variables
 .env
 .env.local

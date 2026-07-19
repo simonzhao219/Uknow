@@ -20,6 +20,9 @@ jobs:
       - run: npm run typecheck
       # 前端純函式單元測試（vitest，node 環境，無需瀏覽器）
       - run: npm test
+      # 死碼防線：未被引用的檔案與未使用的依賴一律擋下（見 knip.json）。
+      # 存活元件的未使用 named export 不在此閘門內（vendored shadcn 子元件屬設計系統表面）。
+      - run: npx knip --include files,dependencies
       - run: npm run build
 
   api-tests:
