@@ -19,6 +19,7 @@ import {
   Copy,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { GenderBadge } from "./common/GenderBadge";
 import { ReferralCodeCard } from "./referral/ReferralCodeCard";
 import { UserContext } from "../App";
 import { ReferralGuide } from './referral/ReferralGuide';
@@ -181,14 +182,7 @@ export function ServiceProviderDetail() {
                   {serviceProvider.name}
                 </h1>
                 {/* 🆕 性别 Badge */}
-                {serviceProvider.gender && (
-                  <Badge 
-                    variant="outline" 
-                    className={`text-base ${serviceProvider.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
-                  >
-                    {serviceProvider.gender === '男' ? '♂ 男' : '♀ 女'}
-                  </Badge>
-                )}
+                <GenderBadge gender={serviceProvider.gender} className="text-base" />
               </div>
               <Badge
                 variant="default"
