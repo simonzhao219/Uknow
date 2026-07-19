@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { GenderBadge } from "./common/GenderBadge";
+import { FilterCountBadge } from "./common/FilterCountBadge";
 import {
   Sheet,
   SheetContent,
@@ -358,11 +359,7 @@ export function HomePage() {
                   className="flex flex-col items-center gap-1 h-auto py-3"
                 >
                   <span className="text-xs">性別</span>
-                  {selectedGenders.length > 0 && (
-                    <Badge variant="secondary" className="text-xs px-1 py-0">
-                      {selectedGenders.length}
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedGenders.length} />
                 </Button>
               </SheetTrigger>
               <SheetContent className="w-full sm:max-w-md pt-12">
@@ -399,11 +396,7 @@ export function HomePage() {
                   className="flex flex-col items-center gap-1 h-auto py-3"
                 >
                   <span className="text-xs">服務類別</span>
-                  {selectedCategory && (
-                    <Badge variant="secondary" className="text-xs px-1 py-0">
-                      1
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedCategory ? 1 : 0} />
                 </Button>
               </SheetTrigger>
               <SheetContent className="w-full sm:max-w-md pt-12">
@@ -447,11 +440,7 @@ export function HomePage() {
                   className="flex flex-col items-center gap-1 h-auto py-3"
                 >
                   <span className="text-xs">服務地區</span>
-                  {selectedCities.length > 0 && (
-                    <Badge variant="secondary" className="text-xs px-1 py-0">
-                      {selectedCities.length}
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedCities.length} />
                 </Button>
               </SheetTrigger>
               <SheetContent className="w-full sm:max-w-md pt-12">
@@ -557,11 +546,7 @@ export function HomePage() {
               >
                 <span className="flex items-center gap-2">
                   性別篩選
-                  {selectedGenders.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedGenders.length}
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedGenders.length} />
                 </span>
                 <ChevronRight className={`h-4 w-4 transition-transform ${isGenderFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
@@ -596,11 +581,7 @@ export function HomePage() {
               >
                 <span className="flex items-center gap-2">
                   服務類別
-                  {selectedCategory && (
-                    <Badge variant="secondary" className="text-xs">
-                      1
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedCategory ? 1 : 0} />
                 </span>
                 <ChevronRight className={`h-4 w-4 transition-transform ${isCategoryFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
@@ -643,11 +624,7 @@ export function HomePage() {
               >
                 <span className="flex items-center gap-2">
                   服務地區
-                  {selectedCities.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedCities.length}
-                    </Badge>
-                  )}
+                  <FilterCountBadge count={selectedCities.length} />
                 </span>
                 <ChevronRight className={`h-4 w-4 transition-transform ${isLocationFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
