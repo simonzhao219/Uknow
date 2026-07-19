@@ -436,7 +436,7 @@ export function CompleteProfile() {
       await supabase.auth.signOut();
       
       // 5. 顯示提示訊息
-      showToast('您可以稍後再完��註冊', 'info');
+      showToast('您可以稍後再完成註冊', 'info');
       
       // 6. 等待一小段時間確保 session 清除完成，然後導向首頁
       setTimeout(() => {
