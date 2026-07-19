@@ -547,66 +547,6 @@ export function WithdrawalProcess({
               </div>
             </div>
 
-            {/* 統計數據變化預覽 */}
-            {/* <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-3">
-              <h3 className="font-medium text-blue-900 flex items-center gap-2">
-                <CheckCircle className="h-4 w-4" />
-                統計數據變化預覽
-              </h3> */}
-              
-              {/* 可提領Point變化 */}
-               {/* <div className="space-y-2">
-                <div className="text-sm text-blue-800 font-medium">可提領Point</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-white p-3 rounded border border-blue-200">
-                    <div className="text-xs text-muted-foreground mb-1">當前</div>
-                    <div className="text-lg font-bold text-blue-600">
-                      {safeAvailableRewards.toLocaleString()}P
-                    </div>
-                  </div>
-                  <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                  <div className="flex-1 bg-white p-3 rounded border border-blue-200">
-                    <div className="text-xs text-muted-foreground mb-1">提領後</div>
-                    <div className="text-lg font-bold text-green-600">
-                      {(safeAvailableRewards - amountNum - WITHDRAWAL_FEE).toLocaleString()}P
-                    </div>
-                  </div>
-                </div>
-              </div> */}
-
-              {/* 處理中Point變化 */}
-              {/*<div className="space-y-2">
-                <div className="text-sm text-blue-800 font-medium">處理中Point</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-white p-3 rounded border border-blue-200">
-                    <div className="text-xs text-muted-foreground mb-1">當前</div>
-                    <div className="text-lg font-bold text-blue-600">
-                      {safePendingRewards.toLocaleString()}P
-                    </div>
-                  </div>
-                  <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                  <div className="flex-1 bg-white p-3 rounded border border-blue-200">
-                    <div className="text-xs text-muted-foreground mb-1">提領後</div>
-                    <div className="text-lg font-bold text-orange-600">
-                      {(safePendingRewards + amountNum + WITHDRAWAL_FEE).toLocaleString()}P
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div> */}
-
-            {/* 重要提醒 */}
-            {/* <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>請確認以上資訊：</strong>
-                <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
-                  <li>提領申請送出後無法修改或取消</li>
-                  <li>Point將立即從「可提領」轉為「處理中」</li>
-                </ul>
-              </AlertDescription>
-            </Alert> */}
-
             <div className="flex gap-4">
               <Button variant="outline" onClick={handleBack} className="flex-1">
                 <ArrowLeft className="h-4 w-4 mr-2" />
