@@ -55,6 +55,12 @@ describe('buildInviteMessage — 一律同時含「連結」與「推薦碼」',
   it('是可閱讀的多行邀請訊息', () => {
     expect(buildInviteMessage('abc123')).toContain('邀請你一起加入');
   });
+
+  it('連結只出現一次（避免重複）', () => {
+    const message = buildInviteMessage('abc123');
+    const occurrences = message.split('register?ref=abc123').length - 1;
+    expect(occurrences).toBe(1);
+  });
 });
 
 describe('pending referral — 撐過註冊漏斗（save/get/clear）', () => {

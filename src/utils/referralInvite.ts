@@ -33,10 +33,11 @@ export function buildReferralLink(code: string): string {
 
 /**
  * 產生分享用的邀請訊息 —— 無論原生分享或複製 fallback，內容一律同時含
- * 「連結」與「推薦碼」。
+ * 「連結」與「推薦碼」。連結只出現一次（分享時不再另外帶 url 欄位，避免部分
+ * App 把 url 再接到訊息尾端造成重複）。
  */
 export function buildInviteMessage(code: string): string {
-  return `邀請你一起加入：\nUknow ${buildReferralLink(code)}\n推薦碼 ${code}`;
+  return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
 }
 
 /** 用隱藏 textarea + execCommand 複製文字（不受 Clipboard API 權限限制，相容性佳）。 */
@@ -72,12 +73,13 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
   }
 
   const message = buildInviteMessage(code);
-  const url = buildReferralLink(code);
   const { isInAppBrowser } = detectInAppBrowser();
 
   if (!isInAppBrowser && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    // 只帶 text（訊息本身已含連結）；不另外帶 url，避免部分 App 把 url 再接到
+    // 訊息尾端，導致連結出現兩次。
     navigator
-      .share({ title: 'Uknow 專業服務平台', text: message, url })
+      .share({ title: 'Uknow 專業服務平台', text: message })
       .catch(() => {
         // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
         if (copyTextFallback(message)) {
