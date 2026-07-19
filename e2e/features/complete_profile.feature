@@ -58,6 +58,17 @@ Feature: Complete profile
     Then I should still be on the complete profile page
     And the profile form should still contain name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
 
+  # Guard for the follow-up bug: the terms dialog rendered its long body as a
+  # flex child without a bounded height, so on a short (mobile) screen the whole
+  # card grew past the viewport and could not scroll — the end of the terms sat
+  # behind the bottom nav, unreachable. The body now scrolls inside a bounded
+  # height while the title/close stay fixed.
+  Scenario: The terms of service dialog fits a mobile screen and its body scrolls
+    Given I am on a mobile-sized screen
+    When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+    And I open the terms of service
+    Then the terms dialog should fit within the screen and its body should scroll
+
   Scenario: A half-filled form survives a page reload
     When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
     And I reload the page
