@@ -120,16 +120,11 @@ class BackendApiMock:
         self._route("/profile", handler)
         self._route("/auth/profile", handler)
 
-    def set_check_email(self, exists: bool, confirmed: bool = True):
-        # `confirmed` reports whether the account finished email verification.
-        # An existing-but-unconfirmed account (exists=True, confirmed=False) is
-        # an interrupted signup: step 1 must route it back into OTP verification
-        # rather than presenting a login form that can only dead-end. Defaults
-        # to confirmed=True so every pre-existing scenario keeps its old meaning.
-        self._route(
-            "/auth/check-email",
-            lambda route: _fulfill_json(route, {"exists": exists, "confirmed": confirmed}),
-        )
+    def set_check_email(self, exists: bool):
+        # Mirrors the real endpoint, which returns only `exists`. Verification
+        # status is deliberately not exposed (recovery is password-first — see
+        # AuthPage.handleLogin), so scenarios never depend on a `confirmed` flag.
+        self._route("/auth/check-email", lambda route: _fulfill_json(route, {"exists": exists}))
 
     def set_subscription_status(
         self,
