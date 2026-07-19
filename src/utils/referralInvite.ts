@@ -10,6 +10,7 @@
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
 import { detectInAppBrowser } from './browserDetection';
+import { getPublicAppUrl } from '../config';
 
 type ShowToast = (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
@@ -20,8 +21,8 @@ const PENDING_KEY = 'pending_referral_code';
  * 否則退回目前站台 origin，這樣預覽環境也能產生可用連結、正式環境可用環境變數釘死。
  */
 function appBaseUrl(): string {
-  const configured = import.meta.env?.VITE_PUBLIC_APP_URL as string | undefined;
-  if (configured) return configured.replace(/\/$/, '');
+  const configured = getPublicAppUrl();
+  if (configured) return configured;
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
   return '';
 }

@@ -5,7 +5,7 @@
  */
 
 import { getAccessToken } from './auth';
-import { projectId } from './supabase/info';
+import { getApiBaseUrl } from '../config';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
 
@@ -182,5 +182,5 @@ export async function apiRequestJson<T = any>(
  */
 export function buildApiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `https://${projectId}.supabase.co/functions/v1/api${cleanPath}`;
+  return `${getApiBaseUrl()}${cleanPath}`;
 }

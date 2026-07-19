@@ -1,7 +1,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from './info';
+import { getSupabaseUrl, getSupabaseAnonKey } from '../../config';
 
-const supabaseUrl = `https://${projectId}.supabase.co`;
+const supabaseUrl = getSupabaseUrl();
 
 // <any>：本專案沒有產生 Database schema 型別；不加泛型時 supabase-js v2
 // 會把未知資料表的列型別推成 never（.insert/.select 全部報錯）。
@@ -13,7 +13,7 @@ let supabaseClient: ReturnType<typeof createSupabaseClient<any>> | null = null;
  */
 export function createClient() {
   if (!supabaseClient) {
-    supabaseClient = createSupabaseClient<any>(supabaseUrl, publicAnonKey, {
+    supabaseClient = createSupabaseClient<any>(supabaseUrl, getSupabaseAnonKey(), {
       auth: {
         autoRefreshToken: true,
         persistSession: true,

@@ -12,9 +12,7 @@ import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatT
 import { useDataCache } from '../contexts/DataCacheContext';
 import { detectInAppBrowser } from '../utils/browserDetection';
 import { resolveCheckoutPageRedirect } from '../utils/registrationFlow';
-
-// ✅ 統一金流付款網址（從環境變數讀取）
-const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
+import { getPayuniPaymentUrl } from '../config';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -405,7 +403,14 @@ export function PaymentCheckout() {
 
   // ✅ 新增：重新開啟付款頁面
   const handleReopenPayment = () => {
-    const paymentUrl = PAYUNI_PAYMENT_URL;
+    let paymentUrl: string;
+    try {
+      paymentUrl = getPayuniPaymentUrl();
+    } catch (error: any) {
+      console.error('PaymentCheckout: 缺少付款網址設定:', error);
+      showToast('付款設定尚未完成，請稍後再試或聯絡客服', 'error');
+      return;
+    }
     // 內建瀏覽器（如 LINE）常會擋掉 window.open('_blank') 的彈窗，導致付款頁
     // 開不起來；改用同視窗導向，付款完成後再由 PayUni 導回 /payment/result。
     // 外部瀏覽器維持開新分頁，保留原本的操作體驗。
