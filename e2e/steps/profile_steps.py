@@ -61,9 +61,48 @@ def open_and_close_terms(complete_profile_page):
     complete_profile_page.close_terms()
 
 
+@when("I open the terms of service")
+def open_terms(complete_profile_page):
+    complete_profile_page.open_terms()
+
+
 @when("I reload the page")
 def reload_page(page):
     page.reload()
+
+
+@given("I am on a mobile-sized screen")
+def mobile_screen(page):
+    # iPhone-12-ish portrait. The terms dialog overflow bug only shows at a
+    # short viewport, so the default desktop size (1280x900) would miss it.
+    page.set_viewport_size({"width": 390, "height": 844})
+
+
+@then("the terms dialog should fit within the screen and its body should scroll")
+def terms_dialog_fits_and_scrolls(page, complete_profile_page):
+    dialog = complete_profile_page.terms_dialog()
+    expect(dialog).to_be_visible(timeout=5_000)
+
+    # 1) The whole dialog must sit within the viewport — nothing spills below
+    #    the fold (where the bottom nav would otherwise hide it).
+    box = dialog.bounding_box()
+    viewport_h = page.viewport_size["height"]
+    assert box is not None and box["y"] + box["height"] <= viewport_h + 1, (
+        f"dialog spills below viewport: bottom={box['y'] + box['height'] if box else None} > {viewport_h}"
+    )
+
+    # 2) The close button stays reachable (fixed header, not scrolled away).
+    expect(page.get_by_role("button", name="Close")).to_be_visible()
+
+    # 3) The long terms text must actually be scrollable inside the body,
+    #    i.e. content is taller than the clipped, bounded body.
+    metrics = page.eval_on_selector(
+        "[data-testid='legal-dialog-body']",
+        "el => ({ scrollH: el.scrollHeight, clientH: el.clientHeight })",
+    )
+    assert metrics["scrollH"] > metrics["clientH"], (
+        f"terms body is not scrollable: scrollHeight={metrics['scrollH']} clientHeight={metrics['clientH']}"
+    )
 
 
 @when("I submit the profile form")

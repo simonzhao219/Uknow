@@ -6,7 +6,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from './ui/dialog';
-import { ScrollArea } from './ui/scroll-area';
 import { LegalMarkdown } from './LegalMarkdown';
 
 interface LegalDialogProps {
@@ -25,12 +24,18 @@ interface LegalDialogProps {
  * 把法遵文件（服務條款等）以「就地彈窗」呈現，而不是導向到另一個路由。
  *
  * 為什麼不用 <Link>：在表單（例如註冊完善資料頁）裡放一條會換頁的 <Link>，
- * 點下去會卸載整個表單、清空使用者填到一半的 useState —— 這正是本次要修的
- * 資料遺失 bug。改用彈窗後，表單始終掛載在底下，讀完條款關掉即可繼續，
+ * 點下去會卸載整個表單、清空使用者填到一半的 useState —— 這正是先前修的
+ * 資料遺失 bug。改用彈窗後，表單始終掛載在底下，讀完關掉即可繼續，
  * 不換頁、不開新分頁，於 LINE 等內建瀏覽器（會擋 target=_blank）也一致可用。
  *
  * 觸發元件刻意用 <button>（而非 <a>），避免巢狀在 <label> 裡的連結在行動裝置
  * 上誤觸表單其他行為；並 stopPropagation，點條款不會連帶勾到旁邊的同意勾選框。
+ *
+ * 捲動採全站慣用的「同一元素上 max-h + overflow-y-auto」寫法（見 RewardHistory、
+ * JoinReferralProgramDialog 等），而非 flex 子項 + Radix ScrollArea —— 後者受
+ * flexbox `min-height:auto` 影響，長內文會撐破彈窗且不捲動（本次修的 bug）。
+ * 標題列固定在上方、只有內文區塊捲動，關閉鈕（DialogContent 的絕對定位 X）
+ * 因此永遠可點，不會被捲走。
  */
 export function LegalDialog({
   triggerLabel,
@@ -53,13 +58,19 @@ export function LegalDialog({
           {triggerLabel}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <ScrollArea className="flex-1 pr-4 -mr-4">
+        {/* 內文自己的 max-h + overflow-y-auto：標題不動、內文獨立捲動。
+            max-h 用 dvh（動態視窗高度），行動瀏覽器網址列縮放時不會誤算高度；
+            標題列 + 這塊 ≤ 約 85dvh，整個彈窗穩穩落在螢幕內、不被底部導覽列蓋住。 */}
+        <div
+          className="max-h-[70dvh] overflow-y-auto pr-2 -mr-2"
+          data-testid="legal-dialog-body"
+        >
           <LegalMarkdown content={content} />
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
