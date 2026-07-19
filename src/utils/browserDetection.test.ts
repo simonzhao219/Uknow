@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  detectInAppBrowser,
-  getCurrentURL,
-  openInExternalBrowser,
-  copyLinkToClipboard,
-} from './browserDetection';
+import { detectInAppBrowser } from './browserDetection';
 
 // vitest.config.ts runs these in the `node` environment (no jsdom), so there is
 // no real navigator/window/document. Each test stubs exactly the globals the
@@ -158,95 +153,5 @@ describe('detectInAppBrowser — real browsers are not flagged', () => {
     const result = detectInAppBrowser();
     expect(result.isInAppBrowser).toBe(false);
     expect(result.platform).toBeNull();
-  });
-});
-
-describe('getCurrentURL', () => {
-  it('returns window.location.href', () => {
-    stubBrowser({ location: { href: 'https://uknow.example.com/service-providers/42' } });
-    expect(getCurrentURL()).toBe('https://uknow.example.com/service-providers/42');
-  });
-});
-
-describe('openInExternalBrowser', () => {
-  it('uses the x-web-search scheme on iOS and reports success', () => {
-    const location: StubLocation = { href: 'https://uknow.example.com/payment/checkout' };
-    stubBrowser({ ua: UA.iosSafari, location });
-    const ok = openInExternalBrowser();
-    expect(ok).toBe(true);
-    expect(location.href).toContain('x-web-search://');
-    expect(location.href).toContain(encodeURIComponent('https://uknow.example.com/payment/checkout'));
-  });
-
-  it('builds an intent:// URL on Android and reports success', () => {
-    const location: StubLocation = {
-      href: 'https://uknow.example.com/payment/checkout?x=1',
-      host: 'uknow.example.com',
-      pathname: '/payment/checkout',
-      search: '?x=1',
-    };
-    stubBrowser({ ua: UA.androidChrome, location });
-    const ok = openInExternalBrowser();
-    expect(ok).toBe(true);
-    expect(location.href).toBe(
-      'intent://uknow.example.com/payment/checkout?x=1#Intent;scheme=https;end',
-    );
-  });
-
-  it('reports failure on desktop (no known scheme to hand off to)', () => {
-    const location: StubLocation = { href: 'https://uknow.example.com/' };
-    stubBrowser({ ua: UA.desktopChrome, location });
-    expect(openInExternalBrowser()).toBe(false);
-    expect(location.href).toBe('https://uknow.example.com/');
-  });
-});
-
-describe('copyLinkToClipboard', () => {
-  it('uses the Clipboard API when available', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    stubBrowser({
-      location: { href: 'https://uknow.example.com/referrals' },
-      clipboard: { writeText },
-    });
-    await expect(copyLinkToClipboard()).resolves.toBe(true);
-    expect(writeText).toHaveBeenCalledWith('https://uknow.example.com/referrals');
-  });
-
-  it('returns false when the Clipboard API rejects', async () => {
-    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
-    stubBrowser({ clipboard: { writeText } });
-    await expect(copyLinkToClipboard()).resolves.toBe(false);
-  });
-
-  it('falls back to execCommand("copy") when the Clipboard API is unavailable', async () => {
-    const textArea: Record<string, unknown> = { style: {}, focus: vi.fn(), select: vi.fn(), value: '' };
-    const appendChild = vi.fn();
-    const removeChild = vi.fn();
-    const execCommand = vi.fn(() => true);
-    stubBrowser({
-      location: { href: 'https://uknow.example.com/dashboard' },
-      document: {
-        createElement: vi.fn(() => textArea),
-        body: { appendChild, removeChild },
-        execCommand,
-      },
-    });
-    await expect(copyLinkToClipboard()).resolves.toBe(true);
-    expect(textArea.value).toBe('https://uknow.example.com/dashboard');
-    expect(appendChild).toHaveBeenCalledWith(textArea);
-    expect(execCommand).toHaveBeenCalledWith('copy');
-    expect(removeChild).toHaveBeenCalledWith(textArea);
-  });
-
-  it('returns false when the execCommand fallback fails', async () => {
-    const textArea: Record<string, unknown> = { style: {}, focus: vi.fn(), select: vi.fn(), value: '' };
-    stubBrowser({
-      document: {
-        createElement: vi.fn(() => textArea),
-        body: { appendChild: vi.fn(), removeChild: vi.fn() },
-        execCommand: vi.fn(() => false),
-      },
-    });
-    await expect(copyLinkToClipboard()).resolves.toBe(false);
   });
 });

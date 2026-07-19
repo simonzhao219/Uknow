@@ -4,7 +4,6 @@ import { Button } from './ui/button';
 import { ArrowLeft, Users, Loader2 } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
-import { ReferralDebugger } from './debug/ReferralDebugger';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';

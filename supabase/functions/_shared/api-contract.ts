@@ -109,6 +109,8 @@ export const ProfileResponseSchema = obj({
   name:                   nullable(str()),
   phone:                  nullable(str()),
   birthDate:              nullable(str()),
+  // 遮罩值（profile-masking.test.ts）：nationalId 頭 3 尾 3（A12****789）、
+  // bankAccount 僅末 4 碼。完整值只存在 DB，比對走 POST /rewards/verify-id。
   nationalId:             nullable(str()),
   bankCode:               nullable(str()),
   bankAccount:            nullable(str()),
