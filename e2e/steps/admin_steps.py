@@ -43,6 +43,16 @@ def open_tab(admin_dashboard_page, name):
     admin_dashboard_page.open_tab(name)
 
 
+@when("I mark the withdrawal as paid")
+def mark_withdrawal_paid(admin_dashboard_page):
+    admin_dashboard_page.mark_first_withdrawal_paid()
+
+
+@when("I reject the withdrawal")
+def reject_withdrawal(admin_dashboard_page):
+    admin_dashboard_page.reject_first_withdrawal()
+
+
 # --- Then ------------------------------------------------------------------
 
 

@@ -366,8 +366,20 @@ class BackendApiMock:
     def set_reward_id_photos(self, front_url: Optional[str] = None, back_url: Optional[str] = None):
         # WithdrawalProcess 開機時讀「已上傳的身分證照片」；預先給網址就能
         # 讓提領申請走到底而不必真的上傳檔案（validateStep2 接受既有照片）。
+        # 給 None/None 則模擬「尚未上傳」，強制走真正的 file-chooser 上傳路徑。
         body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
         self._route_exact("/rewards/id-photos", lambda route: _fulfill_json(route, body))
+
+    def set_upload_id_photos_success(
+        self,
+        front_url: str = "https://mock/id-front.jpg",
+        back_url: str = "https://mock/id-back.jpg",
+    ):
+        # WithdrawalProcess submit 時，若使用者選了新照片，會先把兩張身分證圖片
+        # 以 multipart FormData POST 到 /rewards/upload-id-photos，再送出提領。
+        # 元件只檢查 response.ok 並讀回 JSON。
+        body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
+        self._route("/rewards/upload-id-photos", lambda route: _fulfill_json(route, body))
 
     def set_reward_dashboard(
         self,
