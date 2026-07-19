@@ -1,7 +1,7 @@
 """`CompleteProfile.tsx` — post-signup profile form (name, national ID,
 birth date, phone, optional referral code) gating access to /payment/checkout."""
 
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 
 from pages.base_page import BasePage
 
@@ -28,6 +28,24 @@ class CompleteProfilePage(BasePage):
     def check_terms(self) -> "CompleteProfilePage":
         self.page.locator("#terms").click()
         return self
+
+    def open_terms(self) -> "CompleteProfilePage":
+        """Open the terms-of-service dialog. It is an in-page modal (not a route
+        change), so opening it must not unmount the form or clear typed input."""
+        self.page.get_by_test_id("terms-link").click()
+        return self
+
+    def close_terms(self) -> "CompleteProfilePage":
+        """Dismiss the terms dialog via its close button and wait for it to go."""
+        self.page.keyboard.press("Escape")
+        expect(self.terms_dialog()).to_be_hidden()
+        return self
+
+    def terms_dialog(self):
+        return self.page.get_by_role("dialog")
+
+    def field_value(self, field_id: str) -> str:
+        return self.page.locator(f"#{field_id}").input_value()
 
     def submit(self) -> "CompleteProfilePage":
         self.page.get_by_test_id("profile-submit-button").click()

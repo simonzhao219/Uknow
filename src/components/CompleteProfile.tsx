@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -14,16 +14,26 @@ import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // 
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { validateProfileForm } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
+import { loadProfileDraft, saveProfileDraft, clearProfileDraft } from '../utils/formDraft';
+import { termsOfServiceContent } from '../content/termsOfService';
+import { LegalDialog } from './LegalDialog';
+
+const EMPTY_FORM = {
+  name: '',
+  nationalId: '',  // ✅ 新增身分證字號欄位
+  phone: '',
+  birthDate: '',
+  referralCode: '',
+  agreedToTerms: false,
+};
 
 export function CompleteProfile() {
-  const [formData, setFormData] = useState({
-    name: '',
-    nationalId: '',  // ✅ 新增身分證字號欄位
-    phone: '',
-    birthDate: '',
-    referralCode: '',
-    agreedToTerms: false,
-  });
+  // 用 lazy initializer 從 sessionStorage 的草稿還原「填到一半」的內容。
+  // 這是資料遺失 bug 的架構層防護（見 utils/formDraft.ts 與
+  // docs/multi-step-flow-recovery.md 契約第 1 條）：不論表單因為什麼原因被卸載
+  // ——重整、上一頁、session 檢查導頁——回來都能原樣接續，而不是空白重填。
+  // 同步在掛載時就補回，避免先閃一張空表單再跳出資料。
+  const [formData, setFormData] = useState(() => ({ ...EMPTY_FORM, ...loadProfileDraft() }));
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
@@ -150,6 +160,12 @@ export function CompleteProfile() {
     // 僅在掛載時執行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 每次表單內容變動就把草稿寫回 sessionStorage，讓「填到一半被卸載」也能接回。
+  // saveProfileDraft 內部會判斷空草稿並自動清除，不會留下無意義殘留。
+  useEffect(() => {
+    saveProfileDraft(formData);
+  }, [formData]);
 
   // 驗證規則集中在 src/utils/profileValidation.ts（純函式、有單元測試），
   // 這裡只負責把當前 formData 丟進去、拿回錯誤 map。
@@ -361,6 +377,8 @@ export function CompleteProfile() {
 
       // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
       clearPendingReferral();
+      // 資料已成功送出後端，草稿完成使命；清掉以免下一位使用者在同分頁看到殘留。
+      clearProfileDraft();
 
       // 顯示簡單提示（自動消失，不阻塞）
       showToast('基本資訊已儲存，請完成付款', 'success');
@@ -410,6 +428,8 @@ export function CompleteProfile() {
       setUser(null);
       localStorage.removeItem('user');
       clearPendingReferral();
+      // 使用者主動選擇稍後再註冊，等同放棄這次草稿，一併清除。
+      clearProfileDraft();
       
       // 4. 登出 Supabase session（確保完全登出）
       console.log('CompleteProfile: Signing out from Supabase...');
@@ -673,7 +693,16 @@ export function CompleteProfile() {
                   }}
                 />
                 <Label htmlFor="terms" className="text-sm cursor-pointer">
-                  我已詳讀並同意 <Link to="/terms-of-service" className="text-primary underline" onClick={(e) => e.stopPropagation()}>服務條款</Link>
+                  我已詳讀並同意{' '}
+                  {/* 就地彈窗，而非 <Link> 換頁：換頁會卸載本表單、清空使用者
+                      填到一半的資料（本次修的 bug）。彈窗讓表單留在底下，
+                      讀完關掉即可繼續，於 LINE 等內建瀏覽器也一致可用。 */}
+                  <LegalDialog
+                    triggerLabel="服務條款"
+                    title="服務條款"
+                    content={termsOfServiceContent}
+                    triggerTestId="terms-link"
+                  />
                 </Label>
               </div>
               <FieldError error={errors.agreedToTerms} />

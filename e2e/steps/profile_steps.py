@@ -52,6 +52,20 @@ def check_terms(complete_profile_page):
     complete_profile_page.check_terms()
 
 
+@when("I open and close the terms of service")
+def open_and_close_terms(complete_profile_page):
+    complete_profile_page.open_terms()
+    # The dialog must actually appear before we dismiss it — proves the terms
+    # link opens a modal rather than navigating away.
+    expect(complete_profile_page.terms_dialog()).to_be_visible(timeout=5_000)
+    complete_profile_page.close_terms()
+
+
+@when("I reload the page")
+def reload_page(page):
+    page.reload()
+
+
 @when("I submit the profile form")
 def submit_profile_form(complete_profile_page):
     complete_profile_page.submit()
@@ -81,3 +95,18 @@ def referral_code_status(complete_profile_page, text):
 @then(parsers.parse('the referral code field should contain "{code}"'))
 def referral_field_contains(page, code):
     expect(page.locator("#referralCode")).to_have_value(code, timeout=5_000)
+
+
+@then(
+    parsers.re(
+        r'the profile form should still contain name "(?P<name>[^"]*)" national ID "(?P<national_id>[^"]*)"'
+        r' birth date "(?P<birth_date>[^"]*)" phone "(?P<phone>[^"]*)"'
+    )
+)
+def form_still_contains(page, name, national_id, birth_date, phone):
+    # The whole point of the bug fix: reading the terms (or reloading) must not
+    # wipe the half-filled form.
+    expect(page.locator("#name")).to_have_value(name, timeout=5_000)
+    expect(page.locator("#nationalId")).to_have_value(national_id)
+    expect(page.locator("#birthDate")).to_have_value(birth_date)
+    expect(page.locator("#phone")).to_have_value(phone)

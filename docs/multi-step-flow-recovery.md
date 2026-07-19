@@ -67,7 +67,7 @@
 | 流程 | 中間狀態存在哪 | 中斷後可否恢復 | 依據 |
 |------|--------------|--------------|------|
 | 註冊 → **OTP 驗證** → 完善資料 → 付款 | 後端 `registrationStep` + 本次修復的「未驗證」前置狀態 | ✅（修復後） | `AuthPage` / `OTPVerificationPage` / `registrationFlow` |
-| 完善資料（CompleteProfile） | 後端 `registrationStep`（`hasCompleteProfile`） | ✅ | 登入/開機時依 step 重導 |
+| 完善資料（CompleteProfile） | **步驟**存後端 `registrationStep`（`hasCompleteProfile`）；**填到一半的表單內容**存 `sessionStorage` 草稿（`formDraft`） | ✅ | 步驟：登入/開機時依 step 重導；草稿：`formDraft` 於卸載後 rehydrate |
 | 付款（PaymentCheckout / PayUni 回跳） | 後端 `registrationStep=1/2` + 訂單自癒 migration | ✅ | 路由守衛 + `process_successful_payment` 自癒 |
 | 忘記密碼 → OTP → 重設 | 後端 recovery session + `otpSession` 持久化的待驗證情境 | ✅ | `ForgotPasswordPage` / `OTPVerificationPage` / `otpSession` |
 | 提領（WithdrawalProcess 多步 dialog） | 前端 component state（銀行帳號存 localStorage、身分證照片存後端） | ⚠️ 沒有死巷（餘額即時重算、照片可由 `/rewards/id-photos` 復原、送出後「查收」是後端狀態），但關閉 dialog 會遺失當次草稿（金額/步驟）；身分證字號**刻意不儲存**（隱私） | `WithdrawalProcess` |
@@ -87,6 +87,31 @@ localStorage，`OTPVerificationPage` 在 router state 消失時改由它 rehydra
 契約第 1 條「狀態要能撐過重整、不能只存在單次導頁裡」的落實。e2e 以「新分頁重開
 連結」（共用 localStorage、但 history state 全新）如實驗收，而非用會保留 state 的
 same-URL 重新整理。
+
+### 完善資料頁「填到一半不再被清空」（契約第 1 條）
+
+事故：完善資料頁的「服務條款」是一條會換頁的 `<Link to="/terms-of-service">`，
+點下去會**卸載整個表單**、連同它的 `useState(formData)` 一起蒸發；讀完條款按
+上一頁回來只剩一張空白表單，得整張重填。同樣的清空也會發生在任何卸載成因上——
+重整、瀏覽器上一頁、`checkSession` 導頁。根因與 OTP 頁同屬「狀態只活在 React
+記憶體 / 單次導頁裡」。
+
+修法分兩層，對應本次 commit：
+
+- **UI/UX（先不讓它卸載）**：服務條款改用**就地彈窗**（`LegalDialog` +
+  共用的 `LegalMarkdown`）而非換頁。表單始終掛載在底下，讀完關掉即可繼續，
+  不換頁、不開新分頁，於 LINE 等會擋 `target=_blank` 的內建瀏覽器也一致可用。
+- **架構（就算卸載也接得回）**：`src/utils/formDraft.ts` 把填到一半的內容持久化到
+  `sessionStorage`，`CompleteProfile` 以 lazy initializer 於掛載時同步 rehydrate，
+  成功送出或「稍後註冊」時清除。選 `sessionStorage`（而非 localStorage）是刻意的
+  隱私取捨：撐得過同分頁導頁與重整（正是本 bug 情境），但分頁關閉即清，身分證
+  字號等個資不長期落地。純函式核心（sanitize / parse）以 vitest 釘死，e2e 另以
+  「讀條款後表單仍在」「重整後表單仍在」兩情境如實驗收。
+
+> **通則**：任何「填寫中的表單」若其內容只存在 component state，等同一個
+> 「離開頁面就遺失、又沒人負責恢復的中間狀態」。表單內同時存在會換頁的連結
+> （條款、隱私政策等）時尤其危險。新表單請比照：法遵連結用就地彈窗、
+> 內容以可持久化來源作草稿。CreateServiceProvider 等長表單為後續可套用同一手法的候選。
 
 ## 4. 可恢復性契約（新流程必須遵守）
 
