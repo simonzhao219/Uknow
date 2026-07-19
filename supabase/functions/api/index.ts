@@ -152,8 +152,9 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
 
   if (!profile) return null;
 
-  // registrationStep 由 payment_orders 即時算出（見 migration 0011），
-  // 不再信任 profiles.registration_step 這個手動維護的欄位。
+  // registrationStep 由 profiles 基本資料 + payment_orders 即時算出
+  // （effective_registration_step，見 migration 0011/0004）。手動維護的
+  // profiles.registration_step 欄位已於 migration 0006 移除。
   const registrationStep = step ?? 1;
 
   // 已付款待開通：任一 pending 訂單上已存有 PayUni 的 SUCCESS 回應
@@ -299,7 +300,8 @@ app.post('/auth/check-email', async (c) => {
 
 // ============================================================
 // POST /auth/register
-// CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1
+// CompleteProfile：填完基本資料後呼叫，寫入 profiles 基本資料。
+// 註冊進度不落地成欄位——由 effective_registration_step 即時算出。
 // ============================================================
 app.post('/auth/register', async (c) => {
   const user = await requireAuth(c);
@@ -329,13 +331,14 @@ app.post('/auth/register', async (c) => {
     referrerUserId = rc?.user_id ?? null;
   }
 
-  // 透過 service_role 更新 profile（包含 registration_step = 1）
+  // 透過 service_role 更新 profile。註冊進度不再寫入欄位——一律由
+  // effective_registration_step 從 profiles 基本資料 + payment_orders 即時算出
+  // （registration_step 欄位已於 migration 0006 移除）。
   const updates: Record<string, any> = {
     name,
     phone,
     birth_date:        birthDate,
     national_id:       nationalId || null,
-    registration_step: 1,
     referred_by_code:  cleanCode,
     referred_by_user_id: referrerUserId,
   };
@@ -462,7 +465,7 @@ app.post('/auth/complete-registration', async (c) => {
 // PaymentCheckout「編輯」：讓用戶回到 CompleteProfile 修改基本資料。
 // registrationStep 已改為即時算出（見 buildProfileResponse），這裡不需要
 // 寫任何「step 0」旗標 —— 只要擋掉已付款會員誤觸重置即可；使用者重新
-// 送出 /auth/register 時 registration_step 會自然設回 1。
+// 送出 /auth/register 補齊基本資料後，effective step 會自然回到 1。
 // ============================================================
 app.post('/auth/reset-registration', async (c) => {
   const user = await requireAuth(c);
@@ -1426,6 +1429,9 @@ async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> 
 // ============================================================
 const RECONCILE_THRESHOLD_MINUTES = Number(Deno.env.get('RECONCILE_THRESHOLD_MINUTES') ?? '20');
 const RECONCILE_BATCH_LIMIT = 50;
+// 「開了 PayUni 卻從未付款」的 pending 訂單過期天數。PayUni 付款連結有效期是
+// 建單日 +3 天，故預設 4 天（多留一天緩衝）後即可安全判定放棄並標 cancelled。
+const RECONCILE_EXPIRE_DAYS = Number(Deno.env.get('RECONCILE_EXPIRE_DAYS') ?? '4');
 
 app.post('/internal/reconcile-pending-payments', async (c) => {
   const secret = Deno.env.get('RECONCILE_SECRET');
@@ -1441,13 +1447,21 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
       .rpc('complete_paid_pending_orders', { p_user_id: null });
     if (healError) console.error('[reconcile-pending-payments] heal pass 失敗:', healError);
 
+    // 過期 pass：把「開了 PayUni 卻從未付款、且已超過連結有效期」的孤兒
+    // pending 訂單標成 cancelled（見 migration 0007）。放在 PayUni 查詢
+    // pass 之前，過期的訂單就不會再被 queryPayUniTradeStatus 白白查一次。
+    // 已存 SUCCESS 回應的卡單被函式排除，仍由上面的 heal pass 負責。
+    const { data: expiredCount, error: expireError } = await sb()
+      .rpc('expire_abandoned_pending_orders', { p_expiry_days: RECONCILE_EXPIRE_DAYS });
+    if (expireError) console.error('[reconcile-pending-payments] expire pass 失敗:', expireError);
+
     const summary = await reconcilePendingOrders(
       sb(),
       queryPayUniTradeStatus,
       resolveOrderFromPayUni,
       { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
     );
-    return c.json({ success: true, data: { ...summary, heal: healSummary ?? null } });
+    return c.json({ success: true, data: { ...summary, heal: healSummary ?? null, expired: expiredCount ?? 0 } });
   } catch (e) {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);
@@ -2369,7 +2383,7 @@ app.get('/referrals/debug/:userId', async (c) => {
     { data: code },
     { data: effectiveStep },
   ] = await Promise.all([
-    client.from('profiles').select('id, name, referred_by_code, registration_step').eq('id', targetId).single(),
+    client.from('profiles').select('id, name, referred_by_code').eq('id', targetId).single(),
     client.from('user_account_status').select('status, end_date').eq('user_id', targetId).single(),
     client.from('referral_edges').select('referee_user_id, referred_at').eq('referrer_user_id', targetId),
     client.from('referral_codes').select('code, status').eq('user_id', targetId).maybeSingle(),
@@ -2383,8 +2397,7 @@ app.get('/referrals/debug/:userId', async (c) => {
         name:                     profile.name,
         referralCode:             code?.code ?? null,
         referredByCode:           profile.referred_by_code,
-        registrationStepStored:   profile.registration_step,   // 手動維護的歷史欄位，僅供除錯比對
-        registrationStepEffective: effectiveStep ?? 1,          // 實際生效值（由 payment_orders 即時算出）
+        registrationStepEffective: effectiveStep ?? 1,          // 唯一真相：由 profiles 基本資料 + payment_orders 即時算出
       } : null,
       accountStatus:     acct,
       directReferrals:   gen1?.length ?? 0,

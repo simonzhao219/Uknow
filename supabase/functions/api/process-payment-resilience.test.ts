@@ -36,12 +36,11 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
         .single();
       assertEquals(order?.status, 'completed');
 
-      const { data: profile } = await client
-        .from('profiles')
-        .select('registration_step')
-        .eq('id', payer.id)
-        .single();
-      assertEquals(profile?.registration_step, 3);
+      // 註冊進度不再是欄位——查即時計算的 effective_registration_step
+      // （有 completed 訂單 → 3），這才是系統真正讀的 SSOT。
+      const { data: effectiveStep } = await client
+        .rpc('effective_registration_step', { p_user_id: payer.id });
+      assertEquals(effectiveStep, 3);
 
       const { data: subs } = await client.from('subscriptions').select('id').eq('user_id', payer.id);
       assertEquals(subs?.length, 1);
