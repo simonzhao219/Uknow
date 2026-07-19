@@ -46,6 +46,23 @@ Feature: Complete profile
     And I click verify referral code
     Then I should see a toast containing "推薦碼已過期"
 
+  # --- Data-loss guard: reading the terms / reloading must not wipe the form ---
+  # The reported incident: the "服務條款" link was an in-app <Link> that unmounted
+  # the whole form (destroying its useState), so coming back left a blank form to
+  # retype. Terms now open in an in-page dialog, and the form is drafted to
+  # sessionStorage so any unmount (reload, back, redirect) is recoverable.
+
+  Scenario: Reading the terms of service does not clear the half-filled form
+    When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+    And I open and close the terms of service
+    Then I should still be on the complete profile page
+    And the profile form should still contain name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+
+  Scenario: A half-filled form survives a page reload
+    When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+    And I reload the page
+    Then the profile form should still contain name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+
   Scenario: A fully valid submission proceeds to checkout
     Given saving the profile succeeds with registration step 1
     When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"

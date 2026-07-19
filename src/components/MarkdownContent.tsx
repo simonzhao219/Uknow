@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { ArrowLeft, FileText } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { LegalMarkdown } from './LegalMarkdown';
 
 interface MarkdownContentProps {
   content: string;
@@ -29,34 +29,7 @@ export function MarkdownContent({ content, title }: MarkdownContentProps) {
       {/* 內容卡片 */}
       <Card>
         <CardContent className="pt-6">
-          <div className="prose prose-sm md:prose-base max-w-none">
-            <ReactMarkdown
-              components={{
-                h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mb-4 mt-6" {...props} />,
-                h2: ({ node, ...props }) => <h2 className="text-xl font-semibold mb-3 mt-5" {...props} />,
-                h3: ({ node, ...props }) => <h3 className="text-lg font-semibold mb-2 mt-4" {...props} />,
-                p: ({ node, ...props }) => <p className="mb-4 leading-relaxed text-muted-foreground" {...props} />,
-                ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-4 space-y-1 text-muted-foreground" {...props} />,
-                ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-4 space-y-1 text-muted-foreground" {...props} />,
-                li: ({ node, ...props }) => <li className="ml-4" {...props} />,
-                a: ({ node, ...props }) => <a className="text-primary hover:underline" {...props} />,
-                blockquote: ({ node, ...props }) => (
-                  <blockquote className="border-l-4 border-primary pl-4 italic my-4 text-muted-foreground" {...props} />
-                ),
-                code: ({ node, inline, ...props }: any) => 
-                  inline ? (
-                    <code className="bg-muted px-1.5 py-0.5 rounded text-sm" {...props} />
-                  ) : (
-                    <code className="block bg-muted p-4 rounded-lg my-4 overflow-x-auto" {...props} />
-                  ),
-                hr: ({ node, ...props }) => <hr className="my-6 border-t" {...props} />,
-                // react-markdown v10 自帶的 React 型別與專案的 @types/react 19
-                // 對不上（ref 型別衝突）——執行期無礙，僅型別層 cast。
-              } as any}
-            >
-              {content}
-            </ReactMarkdown>
-          </div>
+          <LegalMarkdown content={content} />
         </CardContent>
       </Card>
     </div>
