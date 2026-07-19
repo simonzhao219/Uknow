@@ -8,3 +8,10 @@ Feature: Dashboard smoke test
     When I visit "/dashboard"
     Then I should see the dashboard
     And I should see the text "REF001"
+
+  Scenario: A member shares an invite (copy fallback) carrying link and code
+    Given I am logged in with registration step 3 and a referral code "REF001"
+    And the browser has no native share sheet
+    When I visit "/dashboard"
+    And I click the share referral button
+    Then I should see a toast containing "邀請訊息已複製到剪貼簿"

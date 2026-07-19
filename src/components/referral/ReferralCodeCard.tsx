@@ -5,6 +5,7 @@ import { Input } from '../ui/input';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Share2, Copy, Gift } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
+import { shareReferralInvite } from '../../utils/referralInvite';
 
 interface ReferralCodeCardProps {
   referralCode?: string;
@@ -33,29 +34,7 @@ export function ReferralCodeCard({ referralCode }: ReferralCodeCardProps) {
   };
 
   const shareReferralLink = () => {
-    const referralLink = `https://uknow.app/register?ref=${referralCode}`;
-    if (navigator.share) {
-      navigator.share({
-        title: 'Uknow 專業服務平台',
-        text: '使用我的推薦碼加入 Uknow，一起享受專業服務！',
-        url: referralLink
-      });
-    } else {
-      // 使用傳統的 execCommand 方法
-      const textArea = document.createElement('textarea');
-      textArea.value = referralLink;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        showToast('推薦連結已複製到剪貼簿！', 'success');
-      } catch (err) {
-        console.error('複製失敗:', err);
-      }
-      document.body.removeChild(textArea);
-    }
+    shareReferralInvite(referralCode || '', showToast);
   };
 
   return (

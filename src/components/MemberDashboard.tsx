@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, Copy, Shield } from 'lucide-react';
+import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, Copy, Shield, Share2 } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
+import { shareReferralInvite } from '../utils/referralInvite';
 import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
@@ -109,15 +110,28 @@ export function MemberDashboard() {
                     {user?.referralCode || '未生成'}
                   </p>
                   {user?.referralCode && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={handleCopyReferralCode}
-                      title="複製推薦碼"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={handleCopyReferralCode}
+                        title="複製推薦碼"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => shareReferralInvite(user.referralCode!, showToast)}
+                        title="分享邀請連結與推薦碼"
+                        data-testid="share-referral-button"
+                      >
+                        <Share2 className="h-4 w-4 mr-1" />
+                        分享
+                      </Button>
+                    </>
                   )}
                 </>
               ) : (

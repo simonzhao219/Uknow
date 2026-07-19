@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -13,6 +13,7 @@ import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
 import { resolvePostLoginAction, classifyLoginError } from '../utils/registrationFlow';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
+import { savePendingReferral } from '../utils/referralInvite';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -26,8 +27,16 @@ export function AuthPage() {
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { showToast } = useNotification();
   const supabase = createClient();
+
+  // 邀請連結（/register?ref=CODE）落地時，先把推薦碼記進 localStorage，讓它撐過
+  // 註冊漏斗（signup → OTP → 完善資料頁），最後在完善資料頁自動帶入並驗證。
+  useEffect(() => {
+    const ref = searchParams.get('ref');
+    if (ref) savePendingReferral(ref);
+  }, [searchParams]);
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
   useEffect(() => {

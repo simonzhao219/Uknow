@@ -31,6 +31,10 @@ Feature: Signup
     And I submit signup
     Then I should be redirected to "/auth/verify-otp"
 
+  Scenario: An invite link's referral code is captured for later auto-fill
+    When I visit "/register?ref=abc123"
+    Then the pending referral code should be "abc123"
+
   Scenario: An already-registered email is reported with a friendly message
     Given signing up fails because the email is already registered
     When I enter email "new-user@example.com" and continue

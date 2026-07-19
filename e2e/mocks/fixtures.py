@@ -38,6 +38,22 @@ def seed_authenticated_session(
     return api_mock.set_profile(registration_step, **overrides)
 
 
+def seed_pending_referral(context: BrowserContext, code: str) -> None:
+    """Simulate having opened an invite link (/register?ref=CODE) earlier in the
+    funnel: the app persists the code in localStorage so it survives
+    signup -> OTP -> complete-profile. Seeded via an init script so it's present
+    before the app's first script runs on the next navigation."""
+    context.add_init_script(
+        f"window.localStorage.setItem('pending_referral_code', {json.dumps(code)});"
+    )
+
+
+def disable_native_share(context: BrowserContext) -> None:
+    """Force the copy-to-clipboard fallback deterministically by removing the
+    Web Share API, regardless of the headless browser's support for it."""
+    context.add_init_script("try { delete navigator.share; } catch (e) {}")
+
+
 def seed_stale_cache(context: BrowserContext, key: str, data, age_ms: int) -> None:
     """Pre-populate the app's sessionStorage data cache (DataCacheContext)
     with an entry whose timestamp is `age_ms` in the past. Lets TTL scenarios
