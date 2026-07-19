@@ -11,6 +11,7 @@ import { buildApiUrl } from '../utils/apiClient';
 import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { detectInAppBrowser } from '../utils/browserDetection';
+import { resolveCheckoutPageRedirect } from '../utils/registrationFlow';
 
 // ✅ 統一金流付款網址（從環境變數讀取）
 const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
@@ -67,23 +68,19 @@ export function PaymentCheckout() {
         if (response.ok) {
           const profile = await response.json();
 
-          // ✅ 檢查狀態並自動跳轉——以會籍（accountStatus）為準，不再看
-          // registrationStep：過期會員的 step 也是 3，但他們是來續約的，
-          // 不能被彈回 dashboard 造成守衛↔結帳的無限循環。
-          // 只擋 active：寬限期（grace）是「到期後續訂」的正常入口
-          // （訂閱三態模型），要留在結帳頁完成付款。
-          const isMemberActive = profile.accountStatus === 'active';
-          if (isMemberActive) {
+          // 導向決策收斂到單一純函式（見 registrationFlow.ts）。輪詢時只在乎
+          // 兩件事：會籍轉為 active（→ dashboard）、付款開通中（→ 結果頁）；
+          // 其餘（含 grace 續約、step 0）留在原地由主流程處理，不在輪詢中彈跳。
+          const redirect = resolveCheckoutPageRedirect(profile);
+          if (redirect === '/dashboard') {
             console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
             showToast('註冊完成！正在跳轉...', 'success');
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1500);
-          } else if (profile.paidAwaitingActivation && profile.lastTradeNo) {
-            // 已付款、開通中（不是「有 pending 訂單」就跳——付款失敗的
-            // step 2 使用者要留在結帳頁重新付款）。
+          } else if (redirect?.startsWith('/payment/result')) {
             console.log('PaymentCheckout: 用戶已付款，跳轉到結果頁');
-            navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
+            navigate(redirect, { replace: true });
           }
         }
       } catch (error) {
@@ -131,38 +128,18 @@ export function PaymentCheckout() {
           if (response.ok) {
             const profile = await response.json();
             console.log('PaymentCheckout: Profile loaded from API:', profile);
-            
-            // 3. 以會籍與付款狀態決定去向（registrationStep 只用來判斷
-            //    首次註冊漏斗走到哪，不再當「已是會員」的依據）。
-            //    只擋 active：寬限期（grace）是「到期後續訂」的正常入口
-            //    （訂閱三態模型），要留在結帳頁完成付款。
-            const isMemberActive = profile.accountStatus === 'active';
 
-            if (isMemberActive) {
-              // 會籍有效（active）才彈回會員中心；grace/過期會員留在
-              // 結帳頁續約——舊版看 referralCode / step 3 就彈走，過期
-              // 會員會在守衛與結帳頁之間無限循環。
-              console.log('PaymentCheckout: Member is active, redirecting to dashboard');
-              navigate('/dashboard', { replace: true });
+            // 導向決策收斂到單一純函式（見 registrationFlow.ts）：
+            // active → dashboard；付款開通中 → 結果頁；step 0 → 完善資料頁；
+            // 其餘（step 1 首購 / step 2 付款失敗重試 / grace・過期續約）留在結帳頁。
+            // 特意不擋 grace，避免守衛↔結帳的無限循環。
+            const redirect = resolveCheckoutPageRedirect(profile);
+            if (redirect) {
+              console.log('PaymentCheckout: Redirecting to', redirect);
+              navigate(redirect, { replace: true });
               return;
             }
 
-            // 已付款、開通中 → 結果頁（自癒輪詢）。付款失敗的 step 2
-            // 使用者 paidAwaitingActivation 為 false，留在結帳頁重新付款。
-            if (profile.paidAwaitingActivation && profile.lastTradeNo) {
-              console.log('PaymentCheckout: User has paid order awaiting activation, redirecting to result');
-              navigate(`/payment/result?tradeNo=${profile.lastTradeNo}`, { replace: true });
-              return;
-            }
-
-            if (profile.registrationStep === 0 || !profile.registrationStep) {
-              // 用戶尚未填寫基本資料，靜默導向 complete-profile
-              console.log('PaymentCheckout: User needs to complete profile (step 0), redirecting');
-              navigate('/auth/complete-profile', { replace: true });
-              return;
-            }
-
-            // step 1 / 2（付款失敗）/ 3（已過期，續約）→ 留在結帳頁
             console.log('PaymentCheckout: User can pay (first payment or renewal), using API data');
             setPendingUser(profile);
             setIsCheckingUser(false);
@@ -556,10 +533,12 @@ export function PaymentCheckout() {
       }
       
       console.log('PaymentCheckout: Registration step reset to 0');
-      
-      // 3. 導向填寫資料頁面
+
+      // 3. 導向填寫資料頁面，並以 location.state 明確帶上「編輯」意圖——
+      //    CompleteProfile 的守衛看到 editing=true 就不會把資料已填齊的
+      //    使用者立刻彈回結帳頁（本次修的 bug 根因）。
       showToast('您可以重新編輯註冊資料', 'info');
-      navigate('/auth/complete-profile');
+      navigate('/auth/complete-profile', { state: { editing: true } });
       
     } catch (error: any) {
       console.error('PaymentCheckout: Error during edit:', error);

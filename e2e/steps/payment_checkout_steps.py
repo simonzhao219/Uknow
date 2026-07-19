@@ -1,5 +1,7 @@
 """Steps for payment_checkout.feature."""
 
+import re
+
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -71,3 +73,24 @@ def should_see_payment_result(payment_result_page, state):
 @then("the pay button should be disabled")
 def pay_button_disabled(payment_checkout_page):
     expect(payment_checkout_page.pay_button()).to_be_disabled(timeout=5_000)
+
+
+@then("I should remain on the complete profile page")
+def remain_on_complete_profile(page):
+    # The bug this guards: clicking edit landed on /auth/complete-profile and
+    # then bounced straight back to /payment/checkout. Wait past the profile
+    # re-fetch that used to trigger the bounce, then assert we're still here and
+    # the form actually rendered.
+    page.wait_for_timeout(1500)
+    expect(page).to_have_url(re.compile(r"/auth/complete-profile"))
+    expect(page.get_by_text("完善個人資料")).to_be_visible(timeout=5_000)
+
+
+@then(parsers.parse('the name field should contain "{value}"'))
+def name_field_contains(page, value):
+    expect(page.locator("#name")).to_have_value(value, timeout=5_000)
+
+
+@then(parsers.parse('the phone field should contain "{value}"'))
+def phone_field_contains(page, value):
+    expect(page.locator("#phone")).to_have_value(value, timeout=5_000)

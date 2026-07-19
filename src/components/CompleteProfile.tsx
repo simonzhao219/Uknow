@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -13,6 +13,7 @@ import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { validateProfileForm } from '../utils/profileValidation';
+import { resolveProfilePageRedirect } from '../utils/registrationFlow';
 
 export function CompleteProfile() {
   const [formData, setFormData] = useState({
@@ -34,22 +35,65 @@ export function CompleteProfile() {
 
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
+  const location = useLocation();
   const { showToast, showSuccess, showNotification } = useNotification();
   const supabase = createClient();
+
+  // 「編輯」意圖：從結帳頁按「編輯」回來的人，資料本來就填齊了。若守衛只看
+  // 「資料是否存在」就會把想改資料的人立刻彈回結帳頁（本次修的 bug）。
+  // 意圖以 React Router 的 location.state 傳遞（PaymentCheckout.handleEdit 設定）。
+  const isEditing = !!(location.state as { editing?: boolean } | null)?.editing;
+
+  // 編輯模式回填：把使用者剛剛在結帳頁看到的資料帶回表單，讓「編輯」名副其實
+  // （而不是一張空白表單）。資料來源是 handleEdit 存進 localStorage 的 pendingUser
+  // 快照，它是使用者當下看到的內容，且含推薦人姓名。
+  //
+  // 特別注意推薦碼：後端 /auth/register 會把 referred_by_code 寫成這次送出的值，
+  // 若編輯時把推薦碼欄位留空再送出，會「清掉」原本的推薦關係。因此必須回填
+  // referredByCode，並把它預先標記為已驗證（本來就是綁定中的有效碼），使用者
+  // 不必為了改個電話而被迫重新驗證推薦碼。
+  useEffect(() => {
+    if (!isEditing) return;
+    try {
+      const raw = localStorage.getItem('pendingUser');
+      if (!raw) return;
+      const snapshot = JSON.parse(raw);
+      const boundCode = (snapshot.referredByCode || '').toLowerCase();
+      setFormData((prev) => ({
+        ...prev,
+        name: snapshot.name || '',
+        nationalId: snapshot.nationalId || '',
+        phone: snapshot.phone || '',
+        birthDate: snapshot.birthDate || '',
+        referralCode: boundCode,
+        // 走到結帳頁代表先前已同意過服務條款，編輯時不再要求重新勾選。
+        agreedToTerms: true,
+      }));
+      if (boundCode) {
+        setVerifiedReferralCode(boundCode);
+        setCodeVerified(true);
+        if (snapshot.referrerName) setReferrerName(snapshot.referrerName);
+      }
+    } catch (error) {
+      console.error('CompleteProfile: Error prefilling edit data:', error);
+    }
+    // 僅在掛載時依 isEditing 執行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   // 檢查用戶是否已登入，並獲取 profile
   useEffect(() => {
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
           console.log('CompleteProfile: No session found, redirecting to login');
           showToast('請先登入', 'error');
           navigate('/login', { replace: true });
           return;
         }
-        
+
         // 嘗試加載現有的 profile
         const response = await fetch(
           buildApiUrl('/auth/profile'),
@@ -59,34 +103,31 @@ export function CompleteProfile() {
             },
           }
         );
-        
+
         if (response.ok) {
           const profile = await response.json();
           console.log('CompleteProfile: Loaded profile:', profile);
-          
-          // 檢查是否已完成資料填寫
-          const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
-          const hasPaidMembership = !!profile.referralCode;
-          
-          // ✅ 新增：檢查是否已完成註冊（registrationStep = 3）
-          if (profile.registrationStep === 3 && profile.referralCode) {
-            // 已完成註冊，導向會員中心
-            console.log('CompleteProfile: User already completed registration (step 3), redirecting to dashboard');
+
+          // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
+          // 各寫一份 if/else。editing=true 時一律留在本頁讓使用者改資料。
+          const redirect = resolveProfilePageRedirect(profile.registrationStep, { editing: isEditing });
+
+          if (redirect === '/dashboard') {
+            // 已完成註冊：保留原本的友善提示與短暫延遲。
+            console.log('CompleteProfile: User already completed registration, redirecting to dashboard');
             showToast('您已完成註冊，正在跳轉到會員中心...', 'info');
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1000);
             return;
-          } else if (hasCompleteProfile && hasPaidMembership) {
-            // 已完成註冊，導向會員中心
-            console.log('CompleteProfile: User already completed registration, redirecting to dashboard');
-            navigate('/dashboard', { replace: true });
-          } else if (hasCompleteProfile && !hasPaidMembership) {
-            // 已完成資料填寫但未付款，導向付款頁面
-            console.log('CompleteProfile: User already completed profile, redirecting to payment');
-            navigate('/payment/checkout', { replace: true });
           }
-          // 如果未完成資料填寫，繼續留在此頁面
+
+          if (redirect) {
+            console.log('CompleteProfile: Redirecting to', redirect);
+            navigate(redirect, { replace: true });
+            return;
+          }
+          // redirect === null：留在本頁（新用戶填資料，或使用者要編輯既有資料）。
         }
       } catch (error) {
         console.error('CompleteProfile: Error checking profile:', error);
@@ -94,11 +135,13 @@ export function CompleteProfile() {
       }
     };
     checkSession();
-  }, [supabase, navigate, showToast]);
+  }, [supabase, navigate, showToast, isEditing]);
 
   // 邀請連結帶進來的推薦碼：掛載時自動填入並驗證（顯示推薦人姓名），欄位仍可修改。
   // 只在欄位為空時帶入，避免覆蓋使用者手動輸入的值。
   useEffect(() => {
+    // 編輯模式已回填綁定中的推薦碼，別讓邀請連結的暫存碼蓋掉它。
+    if (isEditing) return;
     const pending = getPendingReferral();
     if (pending && !formData.referralCode) {
       setFormData((prev) => ({ ...prev, referralCode: pending }));
