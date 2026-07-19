@@ -7,6 +7,26 @@ import { Label } from './ui/label';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
+import { validatePasswordPolicy } from '../utils/passwordPolicy';
+
+// 判斷是否為 Supabase「密碼已外洩 / 過弱」錯誤（與 AuthPage 一致）。
+// 客戶端政策擋不掉外洩密碼——那要靠 Supabase 的 pwned 名單，只有送出後才知道。
+function isWeakPasswordError(error: { code?: string; message?: string }) {
+  return (
+    error?.code === 'weak_password' ||
+    /known to be weak|easy to guess|pwned|leaked/i.test(error?.message ?? '')
+  );
+}
+
+// 判斷是否為「新密碼與舊密碼相同」的錯誤。
+function isSamePasswordError(error: { code?: string; message?: string }) {
+  return (
+    error?.code === 'same_password' ||
+    /should be different from the old password|different from the old/i.test(
+      error?.message ?? '',
+    )
+  );
+}
 
 export function ResetPasswordPage() {
   const [password, setPassword] = useState('');
@@ -37,46 +57,11 @@ export function ResetPasswordPage() {
     checkSession();
   }, [supabase, navigate, showToast]);
 
-  // ✅ 重用 AuthPage 的密碼驗證邏輯
-  const validatePassword = (pwd: string, confirmPwd: string) => {
-    const errors: { [key: string]: string } = {};
-
-    if (!pwd) {
-      errors.password = '請輸入密碼';
-    } else {
-      const requirements = [];
-
-      if (pwd.length < 8) {
-        requirements.push('至少 8 個字元');
-      }
-      if (!/[A-Z]/.test(pwd)) {
-        requirements.push('至少一個大寫字母（A-Z）');
-      }
-      if (!/[a-z]/.test(pwd)) {
-        requirements.push('至少一個小寫字母（a-z）');
-      }
-      if (!/[0-9]/.test(pwd)) {
-        requirements.push('至少一個數字（0-9）');
-      }
-
-      if (requirements.length > 0) {
-        errors.password = `密碼需包含：${requirements.join('、')}`;
-      }
-    }
-
-    if (!confirmPwd) {
-      errors.confirmPassword = '請再次輸入密碼以確認';
-    } else if (pwd !== confirmPwd) {
-      errors.confirmPassword = '兩次輸入的密碼不一致，請重新確認';
-    }
-
-    return errors;
-  };
-
   const handleSubmit = async () => {
     setErrors({});
 
-    const validationErrors = validatePassword(password, confirmPassword);
+    // 與 AuthPage 共用同一份密碼政策（見 utils/passwordPolicy）
+    const validationErrors = validatePasswordPolicy(password, confirmPassword);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
@@ -93,6 +78,24 @@ export function ResetPasswordPage() {
 
       if (error) {
         console.error('ResetPassword: Error updating password:', error);
+
+        // 外洩 / 過弱密碼：客戶端政策放行、但 Supabase 擋下——顯示在密碼欄位下方，
+        // 而不是誤導性的通用「請稍後再試」（後者會讓人以為是系統問題而反覆重試）。
+        if (isWeakPasswordError(error)) {
+          const message = '此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。';
+          setErrors({ password: message });
+          showToast(message, 'error');
+          return;
+        }
+
+        // 新密碼與舊密碼相同。
+        if (isSamePasswordError(error)) {
+          const message = '新密碼不能與舊密碼相同，請改用其他密碼。';
+          setErrors({ password: message });
+          showToast(message, 'error');
+          return;
+        }
+
         showToast('密碼重設失敗，請稍後再試', 'error');
         return;
       }

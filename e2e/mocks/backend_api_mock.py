@@ -126,6 +126,22 @@ class BackendApiMock:
         # AuthPage.handleLogin), so scenarios never depend on a `confirmed` flag.
         self._route("/auth/check-email", lambda route: _fulfill_json(route, {"exists": exists}))
 
+    def set_check_email_error(self, status: int = 500):
+        # A backend failure on the step-1 email check: AuthPage surfaces it as a
+        # toast and stays on step 1 (never advances to the password form).
+        self._route(
+            "/auth/check-email",
+            lambda route: _fulfill_json(route, {"error": "internal error"}, status=status),
+        )
+
+    def set_profile_error(self, status: int = 404, message: str = "not found"):
+        # Both /profile (App bootstrap) and /auth/profile (AuthPage / OTP
+        # re-check) fail with this status. Models a deleted account (410/404) or
+        # a rejected session (401) after an otherwise-successful auth step.
+        body = {"success": False, "error": {"message": message}}
+        self._route("/profile", lambda route: _fulfill_json(route, body, status=status))
+        self._route("/auth/profile", lambda route: _fulfill_json(route, body, status=status))
+
     def set_subscription_status(
         self,
         has_subscription: bool = True,
@@ -380,6 +396,18 @@ class BackendApiMock:
         # 元件只檢查 response.ok 並讀回 JSON。
         body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
         self._route("/rewards/upload-id-photos", lambda route: _fulfill_json(route, body))
+
+    def set_upload_id_photos_error(
+        self, message: str = "照片上傳失敗，請稍後再試", status: int = 500
+    ):
+        # WithdrawalProcess submit uploads new ID photos *before* the withdraw
+        # call; a non-ok response here aborts the whole submission and the
+        # component surfaces `error.message` as a toast.
+        body = {"success": False, "error": {"message": message}}
+        self._route(
+            "/rewards/upload-id-photos",
+            lambda route: _fulfill_json(route, body, status=status),
+        )
 
     def set_reward_dashboard(
         self,

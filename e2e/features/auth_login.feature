@@ -25,6 +25,11 @@ Feature: Login
     When I enter email "not-an-email" and continue
     Then I should see the email field error "請輸入有效的 Email 格式（例如：example@email.com）"
 
+  Scenario: A login whose account was deleted is sent back to registration
+    Given a registered member "ghost@example.com" whose account was deleted
+    When I log in as "ghost@example.com" with password "Passw0rd!"
+    Then I should see a toast containing "帳號不存在或已被刪除，請重新註冊"
+
   Scenario: Forgot password link navigates to the reset flow
     Given a registered member "e2e-user@example.com" with password "Passw0rd!" and registration step 3
     When I enter email "e2e-user@example.com" and continue

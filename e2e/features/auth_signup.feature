@@ -37,3 +37,22 @@ Feature: Signup
     And I set password "Passw0rd!" and confirm "Passw0rd!"
     And I submit signup
     Then I should see a toast containing "此電子郵件已經註冊過，請改用登入。"
+
+  Scenario: A breached password is reported as such, not as a generic failure
+    Given signing up fails because the password was found in a breach
+    When I enter email "new-user@example.com" and continue
+    And I set password "Passw0rd!" and confirm "Passw0rd!"
+    And I submit signup
+    Then I should see a toast containing "此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。"
+
+  Scenario: Too-frequent signups are reported as a rate limit
+    Given signing up fails because of the email rate limit
+    When I enter email "new-user@example.com" and continue
+    And I set password "Passw0rd!" and confirm "Passw0rd!"
+    And I submit signup
+    Then I should see a toast containing "操作過於頻繁，請稍後再試。"
+
+  Scenario: A failure checking the email keeps the user on the email step
+    Given checking whether the email exists fails
+    When I enter email "new-user@example.com" and continue
+    Then I should see a toast containing "檢查 Email 時發生錯誤"

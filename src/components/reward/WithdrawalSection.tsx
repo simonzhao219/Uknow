@@ -9,6 +9,11 @@ import { CollectionPreviewDialog } from './CollectionPreviewDialog';
 import { CollectionVerifyDialog } from './CollectionVerifyDialog';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
+import {
+  MIN_WITHDRAWAL,
+  WITHDRAWAL_FEE,
+  MIN_REQUIRED_BALANCE,
+} from '../../utils/withdrawalValidation';
 
 interface WithdrawalRecord {
   id: string;
@@ -52,11 +57,9 @@ export function WithdrawalSection({
   const [collectionStep, setCollectionStep] = useState<CollectionStep>(null);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRecord | null>(null);
   
-  // ✅ 提領規則
-  const MIN_WITHDRAWAL = 1000;  // 最低提領金額
-  const WITHDRAWAL_FEE = 15;     // 手續費
-  const MIN_REQUIRED = MIN_WITHDRAWAL + WITHDRAWAL_FEE; // 1015P
-  
+  // ✅ 提領規則（收斂於 utils/withdrawalValidation，避免與 WithdrawalProcess 漂移）
+  const MIN_REQUIRED = MIN_REQUIRED_BALANCE; // 1015P
+
   // ✅ 判斷是否可以提領
   const isInsufficientBalance = availableRewards < MIN_REQUIRED;
   const hasReachedDailyLimit = hasWithdrawnToday;

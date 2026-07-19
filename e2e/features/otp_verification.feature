@@ -22,6 +22,18 @@ Feature: OTP verification
     When I click resend
     Then I should see a toast containing "驗證碼已重新寄出，請查看信箱"
 
+  Scenario: A verified brand-new user with no profile yet goes to complete-profile
+    Given I have just signed up with email "new-user@example.com"
+    And verifying the code succeeds but no profile exists yet
+    When I enter the OTP code "123456"
+    Then I should be redirected to "/auth/complete-profile"
+
+  Scenario: A verified signup whose session is rejected returns to login
+    Given I have just signed up with email "new-user@example.com"
+    And verifying the code succeeds but the session is rejected as unauthorized
+    When I enter the OTP code "123456"
+    Then I should see a toast containing "驗證成功，但登入狀態異常，請重新登入"
+
   Scenario: Direct navigation without a pending signup redirects to login
     Given I am not logged in
     When I visit "/auth/verify-otp"

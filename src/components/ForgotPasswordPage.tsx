@@ -43,18 +43,25 @@ export function ForgotPasswordPage() {
   const handleSubmit = async () => {
     setErrors({});
 
+    // 正規化前後空白，讓寄送、倒數計時、導頁都用同一份乾淨的 email。
+    const normalizedEmail = email.trim();
+
     // 驗證 Email 格式
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setErrors({ email: '請輸入有效的 Email 格式（例如：example@email.com）' });
       return;
+    }
+
+    if (normalizedEmail !== email) {
+      setEmail(normalizedEmail);
     }
 
     setIsLoading(true);
 
     try {
-      console.log('ForgotPassword: Sending reset email to:', email);
+      console.log('ForgotPassword: Sending reset email to:', normalizedEmail);
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/auth/callback?type=password-reset`,
       });
 
@@ -67,11 +74,11 @@ export function ForgotPasswordPage() {
       console.log('ForgotPassword: Reset email sent successfully');
 
       // 開始驗證碼 3 分鐘倒數（與重新寄送共用）
-      startOtpWindow(email);
+      startOtpWindow(normalizedEmail);
 
       // 即使 Email 不存在也顯示成功（避免洩漏用戶信息）
       navigate('/auth/verify-otp', {
-        state: { email, otpType: 'recovery' },
+        state: { email: normalizedEmail, otpType: 'recovery' },
       });
     } catch (error) {
       console.error('ForgotPassword: Exception:', error);
