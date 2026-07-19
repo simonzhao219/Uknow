@@ -120,7 +120,7 @@ export function CompleteProfile() {
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
           // 各寫一份 if/else。editing=true 時一律留在本頁讓使用者改資料。
-          const redirect = resolveProfilePageRedirect(profile.registrationStep, { editing: isEditing });
+          const redirect = resolveProfilePageRedirect(profile, { editing: isEditing });
 
           if (redirect === '/dashboard') {
             // 已完成註冊：保留原本的友善提示與短暫延遲。
