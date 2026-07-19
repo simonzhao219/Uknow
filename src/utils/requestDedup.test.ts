@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { dedupe } from './requestDedup';
 
-// Characterization（Phase 1 護欄）：in-flight 去重合約，Phase 3 四個 hook
-// 收斂到 useFetchData 後仍須維持相同語意。
+// Characterization（Phase 1 護欄）：in-flight 去重合約，四個 SWR hook 共用，
+// 資料層改動後仍須維持相同語意。
 describe('dedupe — module-scope in-flight 去重', () => {
   it('同一 key 飛行中：後續呼叫共用同一個 promise、fn 只執行一次', async () => {
     let resolveFn: () => void = () => {};

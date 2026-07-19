@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 
 // Characterization（Phase 1 護欄）：釘死 useSubscription 的 SWR 對外行為，
-// 保護 Phase 3-D（四個 hook 收斂到 useFetchData）不改變契約：
+// 保護資料層改動不改變契約：
 //   1. 無快取時 mount → 呼叫 API、isLoading true→false、拿到 data。
 //   2. 有快取時 mount → 秒開快取、仍背景 revalidate。
 //   3. refresh() 清快取後重新請求。
