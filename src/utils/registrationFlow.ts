@@ -101,17 +101,26 @@ export function isProfileComplete(profile: FunnelProfile): boolean {
  * 就會把想改資料的人立刻彈回結帳頁（本次修的 bug）。因此當 editing=true 時，
  * 一律留在本頁；否則才用 registrationStep 這個單一事實來源決定漏斗前進的去向。
  *
+ * 第二道防線（與 resolveCheckoutPageRedirect 對稱）：基本資料未填齊就一律留在
+ * 本頁，不論後端把 step 算成多少。少了它，一旦 step 漂移到 ≥1（正是空白結帳頁
+ * 事故的形狀），這頁會用 step 把空資料使用者導去結帳頁、結帳頁又用
+ * isProfileComplete 把他導回這頁，形成 ping-pong。兩頁都以 isProfileComplete
+ * 當防線，才能保證「資料沒填齊 → 一定停在填資料頁」這個不變式。
+ *
  * 用 nextRouteForStep 而非另寫一份 if/else——與登入後導向共用同一張
  * step→route 對照表，兩邊永遠一致，不會再出現「登入去 A、守衛去 B」的分歧。
  */
 export function resolveProfilePageRedirect(
-  step: RegistrationStep,
+  profile: FunnelProfile,
   opts?: { editing?: boolean },
 ): string | null {
   // 使用者主動要回來改資料——尊重意圖，不做任何彈跳。
   if (opts?.editing) return null;
 
-  const route = nextRouteForStep(step);
+  // 基本資料未填齊 → 留在本頁讓他填，不被 step 帶走（見上方 ping-pong 說明）。
+  if (!isProfileComplete(profile)) return null;
+
+  const route = nextRouteForStep(profile.registrationStep);
   // 目標就是本頁（step 0 / 未知）→ 留下讓他填資料。
   return route === '/auth/complete-profile' ? null : route;
 }

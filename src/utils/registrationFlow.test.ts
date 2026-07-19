@@ -7,6 +7,7 @@ import {
   resolveProfilePageRedirect,
   resolveCheckoutPageRedirect,
   type FunnelProfile,
+  type RegistrationStep,
 } from './registrationFlow';
 
 describe('resolvePostLoginAction — registrationStep 是唯一的導向來源', () => {
@@ -98,45 +99,72 @@ describe('isProfileComplete — 基本資料是否已填齊', () => {
 });
 
 describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一決策來源）', () => {
+  // 一個「資料已填齊」的 profile 骨架，測試只覆寫 registrationStep。
+  const filled = (registrationStep: RegistrationStep): FunnelProfile => ({
+    registrationStep,
+    name: '王小明',
+    phone: '0912345678',
+    birthDate: '1990-01-01',
+  });
+
   // 這條就是本次 bug 的核心：使用者在結帳頁按「編輯」回到本頁，
   // 資料本來就填齊了；若守衛只看「資料是否存在」就會把人立刻彈回結帳頁。
   describe('editing 意圖：使用者主動要回來改資料', () => {
     it('step 1、資料已填、editing=true → 留在原頁（不彈回結帳）', () => {
-      expect(resolveProfilePageRedirect(1, { editing: true })).toBeNull();
+      expect(resolveProfilePageRedirect(filled(1), { editing: true })).toBeNull();
     });
 
     it('step 2、資料已填、editing=true → 留在原頁', () => {
-      expect(resolveProfilePageRedirect(2, { editing: true })).toBeNull();
+      expect(resolveProfilePageRedirect(filled(2), { editing: true })).toBeNull();
     });
 
     it('即便 step 3，editing=true 也不會硬把人推走（交由頁面自行處理，不做彈跳）', () => {
-      expect(resolveProfilePageRedirect(3, { editing: true })).toBeNull();
+      expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBeNull();
     });
   });
 
-  describe('非 editing：正常漏斗前進', () => {
+  describe('非 editing：正常漏斗前進（資料已填齊）', () => {
     it('step 1（待付款）→ 導向結帳頁', () => {
-      expect(resolveProfilePageRedirect(1)).toBe('/payment/checkout');
+      expect(resolveProfilePageRedirect(filled(1))).toBe('/payment/checkout');
     });
 
     it('step 2（待開通）→ 導向結帳頁', () => {
-      expect(resolveProfilePageRedirect(2)).toBe('/payment/checkout');
+      expect(resolveProfilePageRedirect(filled(2))).toBe('/payment/checkout');
     });
 
     it('step 3（完成）→ 導向會員中心', () => {
-      expect(resolveProfilePageRedirect(3)).toBe('/dashboard');
+      expect(resolveProfilePageRedirect(filled(3))).toBe('/dashboard');
     });
 
     it('step 0（新用戶尚未填資料）→ 留在本頁填資料', () => {
-      expect(resolveProfilePageRedirect(0)).toBeNull();
+      expect(resolveProfilePageRedirect({ registrationStep: 0 })).toBeNull();
     });
 
     it.each([null, undefined])('未知/缺值 %p → 保守留在本頁', (step) => {
-      expect(resolveProfilePageRedirect(step as number | null | undefined)).toBeNull();
+      expect(resolveProfilePageRedirect({ registrationStep: step as RegistrationStep })).toBeNull();
     });
 
     it('editing=false 明確傳入時，行為與不傳一致', () => {
-      expect(resolveProfilePageRedirect(1, { editing: false })).toBe('/payment/checkout');
+      expect(resolveProfilePageRedirect(filled(1), { editing: false })).toBe('/payment/checkout');
+    });
+  });
+
+  // 第二道防線（與 resolveCheckoutPageRedirect 對稱）：資料未填齊時，
+  // 不論後端把 step 誤算成多少，都留在本頁——避免與結帳頁守衛互彈。
+  describe('資料未填齊 → 一律留在本頁（不被 step 帶走）', () => {
+    it('step 誤算成 1 但資料全空 → 留在本頁（不彈去結帳頁）', () => {
+      expect(resolveProfilePageRedirect({ registrationStep: 1, name: '', phone: null, birthDate: null }))
+        .toBeNull();
+    });
+
+    it('step 誤算成 2 但只缺手機一欄 → 仍留在本頁', () => {
+      expect(resolveProfilePageRedirect({ registrationStep: 2, name: '王小明', phone: null, birthDate: '1990-01-01' }))
+        .toBeNull();
+    });
+
+    it('step 3 但資料未填齊 → 仍留在本頁（資料完整性優先於 step）', () => {
+      expect(resolveProfilePageRedirect({ registrationStep: 3, name: '', phone: '0912345678', birthDate: '1990-01-01' }))
+        .toBeNull();
     });
   });
 });
@@ -237,7 +265,28 @@ describe('兩頁守衛互不彈跳（ping-pong 不變式）', () => {
   });
 
   it('編輯頁（editing）不彈走同一位 step 1 使用者', () => {
-    expect(resolveProfilePageRedirect(midFunnelUser.registrationStep, { editing: true }))
+    expect(resolveProfilePageRedirect(midFunnelUser, { editing: true }))
       .toBeNull();
+  });
+
+  // 對稱防線下的另一個不變式：資料未填齊的使用者，兩頁都留住他——
+  // 結帳頁把他導去填資料頁，填資料頁不會再用 step 把他彈回結帳頁。
+  const unfilledUser: FunnelProfile = {
+    registrationStep: 1,  // 後端誤算（空白結帳頁事故的形狀）
+    name: '',
+    phone: null,
+    birthDate: null,
+    accountStatus: 'expired',
+    paidAwaitingActivation: false,
+    lastTradeNo: null,
+    referralCode: null,
+  };
+
+  it('結帳頁把資料未填的使用者導去填資料頁', () => {
+    expect(resolveCheckoutPageRedirect(unfilledUser)).toBe('/auth/complete-profile');
+  });
+
+  it('填資料頁不會再把同一位使用者用 step 彈回結帳頁（無 ping-pong）', () => {
+    expect(resolveProfilePageRedirect(unfilledUser)).toBeNull();
   });
 });
