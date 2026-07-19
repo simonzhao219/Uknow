@@ -12,6 +12,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
+import { validateProfileForm } from '../utils/profileValidation';
 
 export function CompleteProfile() {
   const [formData, setFormData] = useState({
@@ -107,54 +108,37 @@ export function CompleteProfile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
+  // 驗證規則集中在 src/utils/profileValidation.ts（純函式、有單元測試），
+  // 這裡只負責把當前 formData 丟進去、拿回錯誤 map。
+  const validateForm = () => validateProfileForm(formData);
 
-    // 姓名驗證
-    if (!formData.name.trim()) {
-      newErrors.name = '請輸入真實姓名';
-    } else if (formData.name.length > 10) {
-      newErrors.name = '姓名最多 10 個字元';
+  // 欄位在畫面上的先後順序，用來把焦點移到「第一個」有問題的欄位。
+  const FIELD_ORDER = ['name', 'nationalId', 'birthDate', 'phone', 'referralCode', 'agreedToTerms'];
+  const FIELD_FOCUS_ID: { [key: string]: string } = {
+    name: 'name',
+    nationalId: 'nationalId',
+    birthDate: 'birthDate',
+    phone: 'phone',
+    referralCode: 'referralCode',
+    agreedToTerms: 'terms',
+  };
+
+  const focusFirstError = (errs: { [key: string]: string }) => {
+    const first = FIELD_ORDER.find((f) => errs[f]);
+    if (!first) return;
+    const el = document.getElementById(FIELD_FOCUS_ID[first]);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 用 requestAnimationFrame 等捲動後再 focus，避免焦點把畫面又拉走
+      requestAnimationFrame(() => (el as HTMLElement).focus?.());
     }
+  };
 
-    // 身分證字號驗證
-    if (!formData.nationalId.trim()) {
-      newErrors.nationalId = '請輸入身分證字號';
-    } else if (!/^[A-Z][12]\d{8}$/.test(formData.nationalId)) {
-      newErrors.nationalId = '身分證字號格式不正確（格式：A123456789）';
-    }
-
-    // 手機號碼驗證
-    if (!formData.phone.trim()) {
-      newErrors.phone = '請輸入手機號碼';
-    } else if (!/^09\d{8}$/.test(formData.phone)) {
-      newErrors.phone = '手機號碼格式不正確（格式：09XXXXXXXX）';
-    }
-
-    // 生日驗證
-    if (!formData.birthDate) {
-      newErrors.birthDate = '請選擇出生年月日';
-    } else {
-      const birthDate = new Date(formData.birthDate);
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
-
-      if (age < 18) {
-        newErrors.birthDate = '註冊用戶需年滿 18 歲';
-      }
-    }
-
-    // 服務條款驗證
-    if (!formData.agreedToTerms) {
-      newErrors.agreedToTerms = '請同意服務條款';
-    }
-
-    return newErrors;
+  // 失焦時只驗證「該欄位」，讓使用者一離開欄位就看到紅字提示，
+  // 而不是把整張表單的錯誤一次全部亮起來。
+  const handleBlur = (field: string) => {
+    const all = validateForm();
+    setErrors((prev) => ({ ...prev, [field]: all[field] || '' }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -163,10 +147,21 @@ export function CompleteProfile() {
     // 驗證表單
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
+      // 一次亮出所有問題欄位的紅字（setErrors 直接覆蓋），而不是只有一個 toast
       setErrors(validationErrors);
-      // 顯示第一個錯誤
-      const firstError = Object.values(validationErrors)[0];
+      // 顯示第一個錯誤並把焦點移過去
+      const firstErrorKey = FIELD_ORDER.find((f) => validationErrors[f]);
+      const firstError = firstErrorKey ? validationErrors[firstErrorKey] : Object.values(validationErrors)[0];
       showToast(firstError, 'error');
+      focusFirstError(validationErrors);
+      return;
+    }
+
+    // 推薦碼已填但尚未驗證：在此明確擋下並給出可執行的下一步，避免按鈕看似可按卻無反應
+    if (formData.referralCode.trim() && !(codeVerified && formData.referralCode === verifiedReferralCode)) {
+      setCodeError('請先點「驗證」確認推薦碼，或清空此欄位');
+      showToast('請先驗證推薦碼', 'warning');
+      focusFirstError({ referralCode: 'x' });
       return;
     }
 
@@ -458,13 +453,11 @@ export function CompleteProfile() {
     }
   };
 
-  const isFormValid = !Object.keys(validateForm()).length;
-
-  // ✅ 推薦碼欄位僅在「空值」或「已驗證過的有效值」時才允許進入下一步
-  // 若填了推薦碼但尚未驗證（或驗證後又被修改），則讓「下一步」反灰
-  const isReferralCodeAcceptable =
-    !formData.referralCode.trim() ||
-    (codeVerified && formData.referralCode === verifiedReferralCode);
+  // 推薦碼已填但尚未驗證（或驗證後又被改動）——用來在欄位下方顯示提醒，
+  // 但「不再」拿來讓按鈕反灰；按鈕永遠可按，點下去才明確告訴使用者卡在哪。
+  const referralNeedsVerify =
+    !!formData.referralCode.trim() &&
+    !(codeVerified && formData.referralCode === verifiedReferralCode);
 
   return (
     <div className="max-w-md mx-auto mt-12">
@@ -487,6 +480,7 @@ export function CompleteProfile() {
                     setErrors({ ...errors, name: '' });
                   }
                 }}
+                onBlur={() => handleBlur('name')}
                 placeholder="請輸入身分證上的姓名"
                 maxLength={10}
                 className={getInputErrorClass(!!errors.name)}
@@ -507,13 +501,14 @@ export function CompleteProfile() {
                   setFormData({ ...formData, nationalId: e.target.value });
                   setErrors({ ...errors, nationalId: '' });
                 }}
+                onBlur={() => handleBlur('nationalId')}
                 placeholder="A123456789"
                 maxLength={10}
                 className={getInputErrorClass(!!errors.nationalId)}
               />
               <FieldError error={errors.nationalId} />
               <p className="text-sm text-muted-foreground">
-                身分證字號格式：A123456789
+                格式：1 碼英文字母 + 9 碼數字，第 2 碼為 1（男）或 2（女），例：A123456789
               </p>
             </div>
 
@@ -537,6 +532,7 @@ export function CompleteProfile() {
                   setFormData({ ...formData, birthDate: e.target.value });
                   setErrors({ ...errors, birthDate: '' });
                 }}
+                onBlur={() => handleBlur('birthDate')}
                 className={getInputErrorClass(!!errors.birthDate)}
               />
               <FieldError error={errors.birthDate} />
@@ -555,6 +551,7 @@ export function CompleteProfile() {
                   setFormData({ ...formData, phone: e.target.value });
                   setErrors({ ...errors, phone: '' });
                 }}
+                onBlur={() => handleBlur('phone')}
                 placeholder="09XXXXXXXX"
                 maxLength={10}
                 className={getInputErrorClass(!!errors.phone)}
@@ -605,9 +602,16 @@ export function CompleteProfile() {
                 </Button>
               </div>
               <FieldError error={codeError} />
-              
+
+              {/* 已填但尚未驗證：主動提示，避免使用者以為「填了就好」卻在按鈕卡住 */}
+              {referralNeedsVerify && !codeError && (
+                <p className="text-sm text-amber-600" data-testid="referral-code-hint">
+                  尚未驗證，請點右側「驗證」，或清空此欄位後即可繼續
+                </p>
+              )}
+
               {/* ✅ 推薦人姓名顯示 */}
-              {referrerName && (
+              {referrerName && !referralNeedsVerify && (
                 <p className="text-sm text-green-600" data-testid="referral-code-status">
                   推薦人：{referrerName}
                 </p>
@@ -636,7 +640,7 @@ export function CompleteProfile() {
             <Button
               type="submit"
               className="w-full"
-              disabled={!isFormValid || isLoading || !isReferralCodeAcceptable}
+              disabled={isLoading}
               onClick={handleSubmit}
               data-testid="profile-submit-button"
             >
