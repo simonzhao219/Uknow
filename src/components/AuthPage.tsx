@@ -12,6 +12,7 @@ import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
 import { resolvePostLoginAction, classifyLoginError } from '../utils/registrationFlow';
+import { validatePasswordPolicy } from '../utils/passwordPolicy';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -113,10 +114,18 @@ export function AuthPage() {
   const handleCheckEmail = async () => {
     setErrors({});
 
+    // 前後空白是最常見的貼上失誤，會讓「檢查存在 / 登入 / 註冊」用到不同的字串。
+    // 先正規化一次，之後每一步（含步驟 2 的登入 / 註冊）都用同一份乾淨的 email。
+    const normalizedEmail = email.trim();
+
     // 驗證 Email 格式
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setErrors({ email: '請輸入有效的 Email 格式（例如：example@email.com）' });
       return;
+    }
+
+    if (normalizedEmail !== email) {
+      setEmail(normalizedEmail);
     }
 
     setIsLoading(true);
@@ -125,7 +134,7 @@ export function AuthPage() {
       const response = await fetch(buildApiUrl('/auth/check-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       console.log('Response status:', response.status);
@@ -258,8 +267,8 @@ export function AuthPage() {
   const handleSignUp = async () => {
     setErrors({});
 
-    // 驗證密碼
-    const passwordErrors = validatePassword(password, confirmPassword);
+    // 驗證密碼（與 ResetPasswordPage 共用同一份政策，見 utils/passwordPolicy）
+    const passwordErrors = validatePasswordPolicy(password, confirmPassword);
     if (Object.keys(passwordErrors).length > 0) {
       setErrors(passwordErrors);
       return;
@@ -332,44 +341,6 @@ export function AuthPage() {
 
     // 其他未對應的錯誤，回傳通用提示
     return '註冊失敗，請稍後再試。';
-  };
-
-  // 密碼驗證
-  const validatePassword = (pwd: string, confirmPwd: string) => {
-    const errors: { [key: string]: string } = {};
-
-    if (!pwd) {
-      errors.password = '請輸入密碼';
-    } else {
-      const requirements = [];
-      
-      if (pwd.length < 8) {
-        requirements.push('至少 8 個字元');
-      }
-      if (!/[A-Z]/.test(pwd)) {
-        requirements.push('至少一個大寫字母（A-Z）');
-      }
-      if (!/[a-z]/.test(pwd)) {
-        requirements.push('至少一個小寫字母（a-z）');
-      }
-      if (!/[0-9]/.test(pwd)) {
-        requirements.push('至少一個數字（0-9）');
-      }
-
-      if (requirements.length > 0) {
-        errors.password = `密碼需包含：${requirements.join('、')}`;
-      }
-    }
-
-    if (!isExistingUser) {
-      if (!confirmPwd) {
-        errors.confirmPassword = '請再次輸入密碼以確認';
-      } else if (pwd !== confirmPwd) {
-        errors.confirmPassword = '兩次輸入的密碼不一致，請重新確認';
-      }
-    }
-
-    return errors;
   };
 
   // 忘記密碼 → 導向 OTP 密碼重設流程

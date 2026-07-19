@@ -30,6 +30,23 @@ def verify_fails(auth_mock):
     auth_mock.mock_verify_otp_invalid()
 
 
+@given("verifying the code succeeds but no profile exists yet")
+def verify_ok_no_profile(auth_mock, api_mock):
+    # A brand-new verified user has no profile row yet: the post-verify profile
+    # fetch 404s, and the page must route to complete-profile (not dead-end).
+    auth_mock.mock_verify_otp_success()
+    api_mock.set_profile_error(404)
+
+
+@given("verifying the code succeeds but the session is rejected as unauthorized")
+def verify_ok_profile_unauthorized(auth_mock, api_mock):
+    # verifyOtp succeeds but the follow-up profile call is 401 — the page must
+    # not proceed silently; it surfaces the anomaly and returns to login.
+    auth_mock.mock_verify_otp_success()
+    auth_mock.mock_signout()
+    api_mock.set_profile_error(401)
+
+
 @given("3 minutes and 1 second have passed")
 def fast_forward_otp_window(page):
     # Real time, not a scheduled setTimeout — the countdown compares

@@ -117,6 +117,124 @@ Feature: Reward points and withdrawal
     And I submit the withdrawal application
     Then I should see a toast containing "已達每日提領上限"
 
+  # --- Amount guardrails (WithdrawalProcess.validateStep1) ------------------
+  # The money core: what can actually leave the account. Each violation must be
+  # caught client-side before the confirm step, mirroring the backend's rules.
+
+  @rewards
+  Scenario: A withdrawal below the minimum is rejected
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "500"
+    And I proceed past the amount step
+    Then I should see a field error containing "最低提領Point為 1,000P"
+
+  @rewards
+  Scenario: A withdrawal that is not a multiple of 1000 is rejected
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1500"
+    And I proceed past the amount step
+    Then I should see a field error containing "提領Point必須為 1000 的倍數"
+
+  @rewards
+  Scenario: A withdrawal above the daily cap is rejected at 8000
+    # 20000 available → 19985 withdrawable → floored 19000, but capped at the
+    # 8000 daily limit; 9000 must be rejected against the cap, not the balance.
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 20000 available and 20000 total earned
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "9000"
+    And I proceed past the amount step
+    Then I should see a field error containing "提領Point不能超過 8,000P"
+
+  # --- Identity guardrails (WithdrawalProcess.validateStep2) ----------------
+
+  @rewards
+  Scenario: An ID that fails verification cannot submit the application
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos are already on file
+    And verifying the national ID always fails
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I enter the withdrawal ID number "A123456789"
+    Then I should see a field error containing "驗證失敗，請稍後再試"
+    And the submit-withdrawal button should be disabled
+
+  @rewards
+  Scenario: A too-short bank account is rejected on submit
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos are already on file
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "123"
+    And I agree to the withdrawal terms
+    And I submit the withdrawal application
+    Then I should see a field error containing "銀行帳號至少需要10位數字"
+
+  @rewards
+  Scenario: The application stays locked until the terms are agreed
+    # Every field is valid; the submit gate must remain closed purely because
+    # the terms checkbox is unticked, and open the moment it is ticked.
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos are already on file
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
+    Then I should see the text "身分證驗證成功"
+    And the submit-withdrawal button should be disabled
+    When I agree to the withdrawal terms
+    Then the submit-withdrawal button should be enabled
+
+  @rewards
+  Scenario: A failed ID-photo upload aborts the submission with an error
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And I have not uploaded my ID card photos yet
+    And uploading my ID card photos fails with "照片上傳失敗，請稍後再試"
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
+    And I upload my ID card photos
+    And I agree to the withdrawal terms
+    And I submit the withdrawal application
+    Then I should see a toast containing "照片上傳失敗，請稍後再試"
+
+  # --- Collection (查收) guardrail ------------------------------------------
+
+  @rewards
+  Scenario: A collection whose ID fails verification surfaces the error and stays open
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 3000 available and 8000 total earned
+    And I have a withdrawal "wd-e2e-1" awaiting collection
+    And confirming collection of "wd-e2e-1" fails with "身分證字號與提領申請不符"
+    When I visit "/rewards"
+    And I click collect on the awaiting withdrawal
+    And I advance through the collection reminder
+    And I advance through the collection preview
+    And I verify collection with ID "A123456789"
+    Then I should see the text "確認查收失敗"
+
   @rewards
   Scenario: A member confirms collection of an approved withdrawal
     Given I am a paid member who joined the referral program

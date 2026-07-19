@@ -14,6 +14,13 @@ Feature: Forgot password
     And I submit the reset request for "not-an-email"
     Then I should see a field error containing "請輸入有效的 Email 格式"
 
+  Scenario: A reset request for an unknown email still proceeds (no account enumeration)
+    # The backend returns 200 whether or not the account exists, so the UI must
+    # behave identically for an unknown email — never revealing non-existence.
+    Given the account "nobody@example.com" can receive a reset code
+    When I request a password reset for "nobody@example.com"
+    Then I should be redirected to "/auth/verify-otp"
+
   Scenario: A failed send shows an error and keeps the user on the page
     Given sending the reset code fails
     When I visit "/forgot-password"
@@ -87,3 +94,21 @@ Feature: Forgot password
     And I enter the recovery code "123456"
     And I set the new password "NewPassw0rd!" and confirmation "NewPassw0rd!"
     Then I should see a toast containing "密碼重設失敗，請稍後再試"
+
+  Scenario: Reusing the old password is rejected with a clear message
+    Given the account "e2e-user@example.com" can receive a reset code
+    And the recovery code verifies successfully
+    And updating the password fails because it matches the old password
+    When I request a password reset for "e2e-user@example.com"
+    And I enter the recovery code "123456"
+    And I set the new password "NewPassw0rd!" and confirmation "NewPassw0rd!"
+    Then I should see a toast containing "新密碼不能與舊密碼相同，請改用其他密碼。"
+
+  Scenario: A breached new password is rejected instead of a generic failure
+    Given the account "e2e-user@example.com" can receive a reset code
+    And the recovery code verifies successfully
+    And updating the password fails because the password was found in a breach
+    When I request a password reset for "e2e-user@example.com"
+    And I enter the recovery code "123456"
+    And I set the new password "NewPassw0rd!" and confirmation "NewPassw0rd!"
+    Then I should see a toast containing "此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。"

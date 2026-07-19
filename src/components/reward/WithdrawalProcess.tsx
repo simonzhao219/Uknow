@@ -12,6 +12,17 @@ import { useNotification } from '../notifications/NotificationContext';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
 import { IdNumberInput } from './IdNumberInput';
+import {
+  WITHDRAWAL_FEE,
+  DAILY_WITHDRAWAL_LIMIT,
+  MIN_WITHDRAWAL,
+  computeWithdrawablePoints,
+  computeMaxWithdrawal,
+  canWithdrawFromBalance,
+  validateWithdrawalAmount,
+  validateBankAccount,
+  isValidIdNumberFormat,
+} from '../../utils/withdrawalValidation';
 
 interface WithdrawalProcessProps {
   availableRewards: number;
@@ -65,20 +76,13 @@ export function WithdrawalProcess({
   const safeAvailableRewards = availableRewards || 0;
   const safePendingRewards = pendingRewards || 0;
   
-  // ✅ 新規則：提領計算
-  const WITHDRAWAL_FEE = 15;              // 提領手續費
-  const DAILY_WITHDRAWAL_LIMIT = 8000;    // 每日提領上限
-  const MIN_WITHDRAWAL = 1000;            // 最低提領金額
-
+  // ✅ 提領計算（規則收斂於 utils/withdrawalValidation，並有單元測試釘死邊界）
   // 可以提領Point = 可提領Point - 手續費
-  const withdrawablePoints = Math.max(0, safeAvailableRewards - WITHDRAWAL_FEE);
-  
+  const withdrawablePoints = computeWithdrawablePoints(safeAvailableRewards);
+
   // 最大提領Point = min(floor(可以提領Point / 1000) * 1000, 8000P)
-  const maxWithdrawal = Math.min(
-    Math.floor(withdrawablePoints / 1000) * 1000,
-    DAILY_WITHDRAWAL_LIMIT
-  );
-  
+  const maxWithdrawal = computeMaxWithdrawal(safeAvailableRewards);
+
   const amountNum = parseInt(amount) || 0;
 
   // ✅ 載入已儲存的銀行帳號（不載入身分證字號）
@@ -132,8 +136,7 @@ export function WithdrawalProcess({
       }
       
       // 檢查格式
-      const idPattern = /^[A-Z][12]\d{8}$/;
-      if (!idPattern.test(idNumber)) {
+      if (!isValidIdNumberFormat(idNumber)) {
         setIsIdVerified(false);
         return;
       }
@@ -178,14 +181,9 @@ export function WithdrawalProcess({
   const validateStep1 = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!amount) {
-      newErrors.amount = '請輸入提領Point';
-    } else if (amountNum < MIN_WITHDRAWAL) {
-      newErrors.amount = `最低提領Point為 ${MIN_WITHDRAWAL.toLocaleString()}P`;
-    } else if (amountNum % 1000 !== 0) {
-      newErrors.amount = '提領Point必須為 1000 的倍數';
-    } else if (amountNum > maxWithdrawal) {
-      newErrors.amount = `提領Point不能超過 ${maxWithdrawal.toLocaleString()}P`;
+    const amountError = validateWithdrawalAmount(amount, maxWithdrawal);
+    if (amountError) {
+      newErrors.amount = amountError;
     }
 
     setErrors(newErrors);
@@ -205,21 +203,9 @@ export function WithdrawalProcess({
       newErrors.bankCode = '請選擇收款銀行';
     }
 
-    if (!personalData.bankAccount.trim()) {
-      newErrors.bankAccount = '請輸入收款銀行帳號';
-    } else {
-      // 移除連字號後檢查
-      const accountDigits = personalData.bankAccount.replace(/-/g, '');
-      
-      if (!/^[\d-]+$/.test(personalData.bankAccount)) {
-        newErrors.bankAccount = '銀行帳號只能包含數字和連字號';
-      } else if (accountDigits.length < 10) {
-        newErrors.bankAccount = '銀行帳號至少需要10位數字';
-      } else if (accountDigits.length > 16) {
-        newErrors.bankAccount = '銀行帳號不能超過16位數字';
-      } else if (!/^\d+$/.test(accountDigits)) {
-        newErrors.bankAccount = '請輸入有效的銀行帳號';
-      }
+    const bankAccountError = validateBankAccount(personalData.bankAccount);
+    if (bankAccountError) {
+      newErrors.bankAccount = bankAccountError;
     }
 
     // 檢查是否有上傳照片或已有照片
@@ -383,7 +369,7 @@ export function WithdrawalProcess({
     }
   };
 
-  const canWithdraw = maxWithdrawal >= MIN_WITHDRAWAL;
+  const canWithdraw = canWithdrawFromBalance(safeAvailableRewards);
 
   if (!canWithdraw) {
     return (
@@ -801,7 +787,7 @@ export function WithdrawalProcess({
                   <li>如需更新照片，可重新上傳覆蓋舊照片</li>
                   {/* <li><strong>建議您在身分證照片上加上浮水印</strong>（例如：「僅供Uknow提領使用」）</li> */}
                   <li>照片僅用於身分驗證，不會作其他用途</li>
-                  <li>帳號：請確認您填寫之帳號與您存摺上的資訊一致（應為10-14位數）</li>
+                  <li>帳號：請確認您填寫之帳號與您存摺上的資訊一致（應為10-16位數）</li>
                   <li>提領申請送出後無法修改</li>
                   <li>若上述資料皆已正確輸入但仍提領失敗,請您來信Uknow客服中心</li>
                 </ul>

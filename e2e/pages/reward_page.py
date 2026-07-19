@@ -89,12 +89,15 @@ class RewardPage(BasePage):
     def agree_terms(self) -> None:
         self.page.get_by_role("checkbox").check()
 
+    def submit_button(self) -> Locator:
+        return self.page.get_by_role("button", name="提交申請")
+
     def submit_withdrawal(self) -> None:
         # The national ID is verified asynchronously (POST /rewards/verify-id
         # once 10 chars are entered); wait for the success marker so the submit
         # doesn't race the isIdVerified gate.
         self.page.get_by_text("身分證驗證成功").first.wait_for(timeout=5_000)
-        self.page.get_by_role("button", name="提交申請").click()
+        self.submit_button().click()
 
     # --- Collection (查收) flow — CollectionConfirm/Preview/Verify dialogs ----
 

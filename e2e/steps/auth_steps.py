@@ -24,6 +24,17 @@ def member_login_fails(auth_mock, api_mock, email):
     auth_mock.mock_login_invalid_credentials()
 
 
+@given(parsers.parse('a registered member "{email}" whose account was deleted'))
+def member_account_deleted(auth_mock, api_mock, email):
+    # Password login succeeds, but the profile fetch reports the account is
+    # gone (410) — AuthPage must sign out, explain, and return to step 1 rather
+    # than throwing a generic "login failed".
+    api_mock.set_check_email(True)
+    auth_mock.mock_login_success(email)
+    auth_mock.mock_signout()
+    api_mock.set_profile_error(410)
+
+
 @given(parsers.parse('the email "{email}" is not yet registered'))
 def email_not_registered(api_mock, email):
     api_mock.set_check_email(False)
@@ -37,6 +48,26 @@ def signup_succeeds(auth_mock, password):
 @given("signing up fails because the email is already registered")
 def signup_fails_existing(auth_mock):
     auth_mock.mock_signup_error("email address already registered", code="user_already_exists")
+
+
+@given("signing up fails because the password was found in a breach")
+def signup_fails_weak_password(auth_mock):
+    auth_mock.mock_signup_error(
+        "Password is known to be weak and easy to guess, please use a different one.",
+        code="weak_password",
+    )
+
+
+@given("signing up fails because of the email rate limit")
+def signup_fails_rate_limit(auth_mock):
+    auth_mock.mock_signup_error(
+        "email rate limit exceeded", code="over_email_send_rate_limit", status=429
+    )
+
+
+@given("checking whether the email exists fails")
+def check_email_fails(api_mock):
+    api_mock.set_check_email_error()
 
 
 # --- When --------------------------------------------------------------------

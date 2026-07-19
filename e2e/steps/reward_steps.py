@@ -121,6 +121,24 @@ def confirm_collection_succeeds(api_mock, withdrawal_id):
     api_mock.set_confirm_collection_success(withdrawal_id)
 
 
+@given(parsers.parse('confirming collection of "{withdrawal_id}" fails with "{message}"'))
+def confirm_collection_fails(api_mock, withdrawal_id, message):
+    api_mock.set_confirm_collection_error(withdrawal_id, message)
+
+
+@given("verifying the national ID always fails")
+def verify_id_always_fails(api_mock):
+    # A rejected national ID leaves isIdVerified false, so the submit gate stays
+    # closed — the security-relevant guard against withdrawing under a mismatched
+    # identity. (A 4xx surfaces the generic "驗證失敗，請稍後再試" reason.)
+    api_mock.set_verify_id_error()
+
+
+@given(parsers.parse('uploading my ID card photos fails with "{message}"'))
+def upload_id_photos_fails(api_mock, message):
+    api_mock.set_upload_id_photos_error(message)
+
+
 # --- Withdrawal application flow (WithdrawalProcess) ------------------------
 
 @when("I start a withdrawal application")
@@ -152,6 +170,11 @@ def fill_identity(reward_page, id_number, bank, account):
     reward_page.fill_id_number(id_number)
     reward_page.select_bank(bank)
     reward_page.fill_bank_account(account)
+
+
+@when(parsers.parse('I enter the withdrawal ID number "{id_number}"'))
+def enter_withdrawal_id(reward_page, id_number):
+    reward_page.fill_id_number(id_number)
 
 
 @when("I upload my ID card photos")
@@ -207,3 +230,13 @@ def apply_button_disabled(reward_page):
 @then("I should see the empty reward history")
 def should_see_empty_history(reward_page):
     expect(reward_page.history_empty_state()).to_be_visible(timeout=5_000)
+
+
+@then("the submit-withdrawal button should be disabled")
+def submit_withdrawal_disabled(reward_page):
+    expect(reward_page.submit_button()).to_be_disabled(timeout=5_000)
+
+
+@then("the submit-withdrawal button should be enabled")
+def submit_withdrawal_enabled(reward_page):
+    expect(reward_page.submit_button()).to_be_enabled(timeout=5_000)

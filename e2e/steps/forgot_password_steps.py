@@ -45,7 +45,26 @@ def updating_password_succeeds(auth_mock):
 
 @given("updating the password fails")
 def updating_password_fails(auth_mock):
+    # A generic, unclassified server failure → ResetPasswordPage shows its
+    # fallback message. (Kept non-specific so the specific same-password /
+    # breached-password branches below are exercised by their own Givens.)
+    auth_mock.mock_update_user_error(
+        message="Internal Server Error", code="unexpected_failure", status=500
+    )
+
+
+@given("updating the password fails because it matches the old password")
+def updating_password_same(auth_mock):
+    # GoTrue's `same_password` — the new password equals the current one.
     auth_mock.mock_update_user_error()
+
+
+@given("updating the password fails because the password was found in a breach")
+def updating_password_weak(auth_mock):
+    auth_mock.mock_update_user_error(
+        message="Password is known to be weak and easy to guess, please use a different one.",
+        code="weak_password",
+    )
 
 
 # --- When --------------------------------------------------------------------
