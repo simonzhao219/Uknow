@@ -11,7 +11,7 @@ import { buildApiUrl } from '../utils/apiClient';
 import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { detectInAppBrowser } from '../utils/browserDetection';
-import { resolveCheckoutPageRedirect } from '../utils/registrationFlow';
+import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 
 // ✅ 統一金流付款網址（從環境變數讀取）
 const PAYUNI_PAYMENT_URL = import.meta.env?.VITE_PAYUNI_PAYMENT_URL || 'https://api.payuni.com.tw/api/period/U08596041/TX09JXtXXU';
@@ -164,8 +164,21 @@ export function PaymentCheckout() {
       // 4. 如果 localStorage 有 pendingUser，正常使用
       try {
         const userData = JSON.parse(pendingUserData);
+
+        // render 層第二道防線（與 API 分支的 resolveCheckoutPageRedirect、
+        // App.tsx 啟動守衛同源，都用 isProfileComplete 這唯一定義）：即使繞過
+        // 路由守衛、直接帶著 localStorage 的快取資料進到本頁，只要基本資料
+        // 沒填齊就一律導回完善資料頁，不讓「空白的註冊資訊確認」被 render 出來。
+        // localStorage 分支原本完全不做完整度檢查，是空白結帳頁事故僅存的破口。
+        if (!isProfileComplete(userData)) {
+          showToast('請先完成個人資料', 'info');
+          localStorage.removeItem('pendingUser');
+          navigate('/auth/complete-profile', { replace: true });
+          return;
+        }
+
         setPendingUser(userData);
-        
+
         // 驗證 session 是否有效
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -318,6 +331,15 @@ export function PaymentCheckout() {
   const handlePayUniPayment = async () => {
     if (!pendingUser) {
       showToast('用戶資料不存在，請重新註冊', 'error');
+      navigate('/auth/complete-profile');
+      return;
+    }
+
+    // ✅ 動作層防線：基本資料未填齊時不得送單付款。與按鈕的 disabled 條件同源，
+    //    防止「空白的註冊資訊確認」頁仍能按下付款、產生一筆無姓名/身分證的髒單
+    //    （空白結帳頁事故裡使用者正是對著空欄位按了兩次付款）。
+    if (!isProfileComplete(pendingUser)) {
+      showToast('請先完成個人資料再付款', 'warning');
       navigate('/auth/complete-profile');
       return;
     }
@@ -737,7 +759,7 @@ export function PaymentCheckout() {
           <div className="space-y-3">
             <Button
               onClick={handlePayUniPayment}
-              disabled={isLoading || isButtonLocked}
+              disabled={isLoading || isButtonLocked || !isProfileComplete(pendingUser)}
               className="w-full"
               size="lg"
               data-testid="payuni-pay-button"
@@ -759,6 +781,22 @@ export function PaymentCheckout() {
                 </>
               )}
             </Button>
+
+            {/* 資料未填齊時，說明付款鈕為何反灰，並給一個回填資料的明確入口，
+                避免使用者面對一顆「按不動」的按鈕不知所措。 */}
+            {!isProfileComplete(pendingUser) && (
+              <p className="text-sm text-center text-muted-foreground" data-testid="incomplete-profile-hint">
+                請先{' '}
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  完成個人資料
+                </button>
+                {' '}才能付款
+              </p>
+            )}
 
             <Button
               variant="outline"
