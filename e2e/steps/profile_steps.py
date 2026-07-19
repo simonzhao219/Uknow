@@ -1,5 +1,7 @@
 """Steps for complete_profile.feature."""
 
+import re
+
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -60,14 +62,15 @@ def confirm_referral_warning(complete_profile_page):
     complete_profile_page.confirm_referral_warning()
 
 
-@then("the profile submit button should be disabled")
-def submit_disabled(page):
-    expect(page.get_by_test_id("profile-submit-button")).to_be_disabled(timeout=5_000)
-
-
 @then("the profile submit button should be enabled")
 def submit_enabled(page):
     expect(page.get_by_test_id("profile-submit-button")).to_be_enabled(timeout=5_000)
+
+
+@then("I should still be on the complete profile page")
+def still_on_complete_profile(page):
+    # An invalid submit surfaces the error inline instead of navigating away.
+    expect(page).to_have_url(re.compile(r"/auth/complete-profile"), timeout=5_000)
 
 
 @then(parsers.parse('I should see the referral code status "{text}"'))

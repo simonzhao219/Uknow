@@ -1,26 +1,31 @@
 Feature: Complete profile
   CompleteProfile.tsx collects the fields required before checkout: name,
   national ID, birth date, phone, and an optional referral code that (once
-  verified) is bound permanently. The submit button re-evaluates validation
-  on every render and stays disabled until every field passes, so most
-  scenarios here assert on that disabled state rather than a submit-time
-  error message.
+  verified) is bound permanently. The submit button is never silently
+  disabled on invalid input — a disabled button with no visible reason is a
+  dead-end (see docs/multi-step-flow-recovery.md). Instead the button stays
+  clickable and a click on an invalid form surfaces the specific reason
+  inline and keeps the user on the page, so these scenarios assert on that
+  submit-time error rather than a disabled state.
 
   Background:
     Given I am logged in with registration step 0
     And I visit "/auth/complete-profile"
 
-  Scenario Outline: The submit button stays disabled until every field is valid
+  Scenario Outline: An invalid form does not silently disable the button — clicking surfaces the reason
     When I fill the profile form with name "<name>" national ID "<national_id>" birth date "<birth_date>" phone "<phone>"
-    Then the profile submit button should be disabled
+    Then the profile submit button should be enabled
+    When I submit the profile form
+    Then I should see a field error containing "<error>"
+    And I should still be on the complete profile page
 
     Examples:
-      | name | national_id | birth_date | phone      |
-      |      | A123456789  | 1990-01-01 | 0912345678 |
-      | 測試 | B99999999   | 1990-01-01 | 0912345678 |
-      | 測試 | A123456789  | 1990-01-01 | 12345      |
-      | 測試 | A123456789  | 2020-01-01 | 0912345678 |
-      | 測試 | A123456789  | 1990-01-01 | 0912345678 |
+      | name | national_id | birth_date | phone      | error            |
+      |      | A123456789  | 1990-01-01 | 0912345678 | 請輸入真實姓名   |
+      | 測試 | B99999999   | 1990-01-01 | 0912345678 | 第 2 碼需為      |
+      | 測試 | A123456789  | 1990-01-01 | 12345      | 手機號碼格式不正確 |
+      | 測試 | A123456789  | 2020-01-01 | 0912345678 | 註冊用戶需年滿   |
+      | 測試 | A123456789  | 1990-01-01 | 0912345678 | 請同意服務條款   |
 
   Scenario: A valid referral code shows the referrer's name
     Given the referral code "abc123" is valid for referrer "推薦人測試"
