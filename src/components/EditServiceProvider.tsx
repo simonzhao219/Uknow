@@ -18,6 +18,7 @@ import {
   CollapsibleTrigger,
 } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
+import { getGenderDisplay } from '../utils/gender';
 import { validateContacts } from '../utils/contactValidation';
 import { NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH } from '../utils/constants';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
@@ -356,8 +357,8 @@ export function EditServiceProvider() {
                   <SelectValue placeholder="選擇性別" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="男">♂ 男</SelectItem>
-                  <SelectItem value="女">♀ 女</SelectItem>
+                  <SelectItem value="男">{getGenderDisplay('男')!.symbolWithLabel}</SelectItem>
+                  <SelectItem value="女">{getGenderDisplay('女')!.symbolWithLabel}</SelectItem>
                 </SelectContent>
               </Select>
               <FieldError error={errors.gender} />
