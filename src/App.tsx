@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import type { ProfileResponse } from '@contract';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
@@ -29,7 +30,7 @@ import { NotificationProvider } from './components/notifications/NotificationCon
 import { FeatureProvider } from './contexts/FeatureContext';
 import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { createClient } from './utils/supabase/client';
-import { buildApiUrl } from './utils/apiClient';
+import { apiRequest, buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { isProfileComplete } from './utils/registrationFlow';
 import { termsOfServiceContent } from './content/termsOfService';
@@ -39,13 +40,13 @@ import { referralRewardContractContent } from './content/referralRewardContract'
 
 // User context
 export const UserContext = React.createContext<{
-  user: any;
-  setUser: (user: any) => void;
+  user: ProfileResponse | null;
+  setUser: (user: ProfileResponse | null) => void;
   isLoggedIn: boolean;
   isAdmin: boolean;
   isLoadingUser: boolean; // ✅ P1: 全局 loading state
   /** 靜默重抓 /profile 並更新 context；回傳最新 profile（失敗回 null）。 */
-  refreshUser: () => Promise<any | null>;
+  refreshUser: () => Promise<ProfileResponse | null>;
 }>({
   user: null,
   setUser: () => {},
@@ -56,7 +57,7 @@ export const UserContext = React.createContext<{
 });
 
 function AppContent() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<ProfileResponse | null>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true); // ✅ P1: 全局 loading state
   const navigate = useNavigate();
   const location = useLocation();
@@ -166,15 +167,14 @@ function AppContent() {
   // loadedUserIdRef 的註解）。暫時性錯誤一律回 null、不清空 user，
   // 也不在這裡 signOut——真正的 session 過期由 apiClient 的
   // onSessionExpired 處理。
-  const refreshUser = useCallback(async (): Promise<any | null> => {
+  const refreshUser = useCallback(async (): Promise<ProfileResponse | null> => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return null;
-      const response = await fetch(buildApiUrl('/profile'), {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      // 走 apiClient 的 apiRequest（低層）：自動附 token 並在 401 時 refresh-retry
+      // 一次，但不像 apiRequestJson 會 signOut——維持這裡「靜默重抓、暫時性錯誤
+      // 一律回 null、不清空 user」的語意。真正的 session 過期由 onSessionExpired 處理。
+      const response = await apiRequest(buildApiUrl('/profile'));
       if (!response.ok) return null;
-      const profile = await response.json();
+      const profile: ProfileResponse = await response.json();
       setUser(profile);
       loadedUserIdRef.current = profile.id; // 同一使用者時是 no-op，僅保持一致
       return profile;
@@ -184,8 +184,16 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // useMemo：避免每次 AppContent 重繪（例如換頁時 useLocation 觸發）都產生
+  // 新的 context value 物件，逼所有 useContext(UserContext) 消費者（幾乎全 app）
+  // 一起重繪。
+  const userContextValue = useMemo(
+    () => ({ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }),
+    [user, isLoggedIn, isAdmin, isLoadingUser, refreshUser],
+  );
+
   return (
-    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }}>
+    <UserContext.Provider value={userContextValue}>
       <FeatureProvider>
         <NotificationProvider>
           <div className="min-h-screen bg-background flex flex-col">

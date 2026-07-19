@@ -1,6 +1,23 @@
 import React, { useContext, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import type { ProfileResponse } from '@contract';
 import { UserContext } from '../App';
+
+/** resolveMembershipRedirect 會讀到的 profile 欄位子集（全可選，方便單元測試傳部分物件）。 */
+type MembershipProfile = Partial<
+  Pick<
+    ProfileResponse,
+    | 'isAdmin'
+    | 'accountStatus'
+    | 'paidAwaitingActivation'
+    | 'lastTradeNo'
+    | 'subscriptionEndDate'
+    | 'name'
+    | 'phone'
+    | 'birthDate'
+    | 'registrationStep'
+  >
+>;
 
 interface RequireMembershipRouteProps {
   children: React.ReactNode;
@@ -25,7 +42,7 @@ interface RequireMembershipRouteProps {
  *   5. step 0 或資料不完整            → /auth/complete-profile（首次漏斗）
  *   6. 其餘（step 1、step 2 但付款失敗）→ /payment/checkout
  */
-export function resolveMembershipRedirect(user: any): string | null {
+export function resolveMembershipRedirect(user: MembershipProfile): string | null {
   if (user.isAdmin) return null;
   if (user.accountStatus === 'active' || user.accountStatus === 'grace') return null;
 
