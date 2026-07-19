@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -8,6 +7,9 @@ import { Loader2, Shield, FileText } from 'lucide-react';
 import { SignaturePad } from './SignaturePad';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
+import { LegalDialog } from '../LegalDialog';
+import { referralRewardRulesContent } from '../../content/referralRewardRules';
+import { referralRewardContractContent } from '../../content/referralRewardContract';
 
 interface JoinReferralProgramDialogProps {
   open: boolean;
@@ -96,25 +98,27 @@ export function JoinReferralProgramDialog({
                       onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
                       className="mt-0.5"
                     />
+                    {/* 兩份文件用就地彈窗閱讀（LegalDialog），不再用 target="_blank"
+                        開新分頁。開新分頁會讓文件頁成為分頁歷史第一筆，其「上一頁」
+                        鈕 navigate(-1) 無處可回而變死鈕（本次修的 bug）。改用彈窗後
+                        關掉即回到本對話框、簽名與勾選狀態原封不動，根本不需要返回鈕。 */}
                     <Label htmlFor="terms" className="text-sm cursor-pointer flex-1">
                       我已詳閱並同意
-                      <Link
-                        to="/referral-reward-rules"
-                        target="_blank"
-                        className="text-foreground hover:underline mx-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        推廣獎勵規章
-                      </Link>
+                      <LegalDialog
+                        triggerLabel="推廣獎勵規章"
+                        title="推廣獎勵規章"
+                        content={referralRewardRulesContent}
+                        triggerClassName="text-foreground hover:underline mx-1"
+                        triggerTestId="referral-rules-link"
+                      />
                       和
-                      <Link
-                        to="/referral-reward-contract"
-                        target="_blank"
-                        className="text-foreground hover:underline mx-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        推廣獎勵契約書
-                      </Link>
+                      <LegalDialog
+                        triggerLabel="推廣獎勵契約書"
+                        title="推廣獎勵契約書"
+                        content={referralRewardContractContent}
+                        triggerClassName="text-foreground hover:underline mx-1"
+                        triggerTestId="referral-contract-link"
+                      />
                     </Label>
                   </div>
                 </div>
