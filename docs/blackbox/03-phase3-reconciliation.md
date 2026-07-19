@@ -121,10 +121,11 @@ auth（login/signup/OTP/forgot-password/complete-profile）、payment（checkout
 | 缺口 | 面向 | 狀態 |
 |---|---|---|
 | Admin 後台（提領/會員管理、tab 導覽、越權阻擋） | Functional / 越權 | ✅ 已完成（round 2，見 §7） |
+| Admin 提領審核動作（已匯款 / 退件） | Functional / 動作 | ✅ 已完成（round 3，見 §8） |
 | 首頁距離排序（geolocation 授權後由近到遠） | Functional / 邊界 | ✅ 已完成（round 2） |
 | 手機響應式卡片（mobile grid） | 相容性 | ✅ 已完成（round 2） |
+| ID 照片實體上傳（file chooser） | Functional / 邊界 | ✅ 已完成（round 3，見 §8） |
 | Feature-flag 停用路徑（ProtectedRoute 擋 featureRequired） | Negative / 授權 | ⏸ 仍開放：`FeatureContext` 為前端全開 stub，停用路徑不可達；需**產品先提供可控旗標**（動 app 行為）才可測，非測試層可自足。 |
-| ID 照片實體上傳（file chooser） | Functional / 邊界 | ⏸ 仍開放：需驅動真實 file-chooser（`page.expect_file_chooser`）+ mock 上傳端點。 |
 | 後端規則層（Supabase functions） | 安全 / 契約 | ⏸ 仍開放：屬 Deno 測試層（`supabase/functions/api/*.test.ts`），與 UI 層互補、另一條 toolchain。 |
 
 ---
@@ -142,4 +143,15 @@ auth（login/signup/OTP/forgot-password/complete-profile）、payment（checkout
 ### 7.3 結果
 - 全 E2E 套件：**124 passed / 0 failed**；`tsc --noEmit` 通過；vitest 單元 **86 passed**。
 
-> 剩餘 ⏸ 項目（feature-flag 停用路徑、ID 照片上傳、後端 Deno 層）各有前置條件（產品旗標、file-chooser 驅動、另一 toolchain），列為下一輪。
+---
+
+## 8. Backlog round 3（本輪續作）
+
+### 8.1 新增自動化
+- **Admin 提領審核動作**（`admin_dashboard.feature` +2）：對待處理提領按「已匯款」→ 成功卡片「已標記匯款完成」；按「退件」→ 確認對話框 →「已退件」。補齊上一輪只鋪了 mock（POST `/status`）卻未驅動的動作路徑；`AdminDashboardPage` 加 `mark_first_withdrawal_paid` / `reject_first_withdrawal`。（實作插曲：成功回饋走的是置中 `NotificationCard` modal 而非角落 toast，斷言改用文字定位。）
+- **ID 照片實體上傳**（`rewards_withdrawal.feature` +1）：不預先塞照片，改以 Playwright `set_input_files`（記憶體 1×1 PNG，不需磁碟檔）驅動兩個 `input[type=file]` 走真實上傳路徑 → POST `/rewards/upload-id-photos` → 送出提領成功。新增 `RewardPage.upload_id_photos`（先設背面、再設正面以避開選檔後 input 抽換造成的 reindex）與 `BackendApiMock.set_upload_id_photos_success`（原有 `set_upload_photo_success` 只涵蓋刊登照片 `/listings/upload-photo`，非 ID 照片端點）。
+
+### 8.2 結果
+- 全 E2E 套件：**127 passed / 0 failed**（本輪僅動 e2e，`src` 未變動，故 typecheck / vitest 不受影響）。
+
+> 剩餘 ⏸ 兩項：**feature-flag 停用路徑**需產品先提供可控旗標（`FeatureContext` 目前前端全開，動它屬產品架構決策，非測試層可自足）；**後端 Supabase functions Deno 測試層**屬另一條 toolchain。兩者各有前置條件，非單純測試補齊。
