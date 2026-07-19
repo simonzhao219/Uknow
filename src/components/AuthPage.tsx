@@ -92,11 +92,10 @@ export function AuthPage() {
 
   // 接續一個「註冊到一半、Email 尚未驗證」的帳號。
   //
-  // 這是整個修復的核心：只要偵測到帳號存在但未驗證（不論是在步驟 1 檢查
-  // Email 時發現，或是在登入時被 GoTrue 以 email_not_confirmed 擋下），就重新
-  // 寄一次驗證碼並把使用者帶回 OTP 驗證頁，讓中斷的流程接得回去——而不是
-  // 謊報「密碼錯誤」把人困在死巷。身分由 Email 收到的驗證碼證明，因此這裡
-  // 不需要、也不驗證密碼。
+  // 只由 handleLogin 在「密碼正確、但 GoTrue 回報 email_not_confirmed」時呼叫
+  // （GoTrue 先驗密碼，密碼錯只會回 invalid_credentials，不會走到這裡）。
+  // 因此重寄驗證碼這個寄信動作永遠需要正確密碼，不會變成無密碼的寄信觸發點。
+  // 到這一步身分已由密碼證明，最終再由 Email 驗證碼二次確認。
   const resumeUnverifiedSignup = async (targetEmail: string) => {
     try {
       // 舊驗證碼多半已過期；重寄一次以確保使用者手上有可用的碼。
@@ -141,13 +140,12 @@ export function AuthPage() {
       const data = await response.json();
       console.log('Response data:', data);
 
-      // 註冊到一半、Email 未驗證的帳號：直接接續 OTP 驗證，不進登入表單
-      // （登入表單只會走進「密碼正確卻被擋、又無路可退」的死巷）。
-      if (data.exists && data.confirmed === false) {
-        await resumeUnverifiedSignup(email);
-        return;
-      }
-
+      // 這裡「不」因為未驗證就自動寄驗證碼——那會變成一個「只要知道 email
+      // 就能讓系統寄信」的無密碼觸發點，可被輪流打多個已知 email 來耗盡專案的
+      // 寄信配額（email 放大攻擊）。復原一律走「密碼優先」：先進入密碼表單，
+      // 由 handleLogin 在密碼正確、且 GoTrue 回報 email_not_confirmed 時才接續
+      // 驗證（見下方 handleLogin）。GoTrue 是先驗密碼、密碼正確才回報未驗證，
+      // 因此寄信永遠需要正確密碼。
       setIsExistingUser(data.exists);
       setStep(2);
     } catch (error) {
