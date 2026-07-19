@@ -87,6 +87,16 @@ def id_photos_on_file(api_mock):
     )
 
 
+@given("I have not uploaded my ID card photos yet")
+def no_id_photos_on_file(api_mock):
+    api_mock.set_reward_id_photos(front_url=None, back_url=None)
+
+
+@given("uploading my ID card photos succeeds")
+def upload_id_photos_succeeds(api_mock):
+    api_mock.set_upload_id_photos_success()
+
+
 # --- Withdrawal submit / collection outcomes -------------------------------
 
 @given("submitting a withdrawal succeeds")
@@ -142,6 +152,11 @@ def fill_identity(reward_page, id_number, bank, account):
     reward_page.fill_id_number(id_number)
     reward_page.select_bank(bank)
     reward_page.fill_bank_account(account)
+
+
+@when("I upload my ID card photos")
+def upload_id_photos(reward_page):
+    reward_page.upload_id_photos()
 
 
 @when("I agree to the withdrawal terms")

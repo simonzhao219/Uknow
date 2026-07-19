@@ -11,6 +11,17 @@ from playwright.sync_api import Locator, Page
 
 from pages.base_page import BasePage
 
+# A minimal valid 1x1 PNG, used as the in-memory ID-card image so the upload
+# path can be driven without shipping a fixture file.
+_TINY_PNG = bytes([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+    0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+    0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+])
+
 
 class RewardPage(BasePage):
     def __init__(self, page: Page):
@@ -58,6 +69,22 @@ class RewardPage(BasePage):
 
     def fill_bank_account(self, account: str) -> None:
         self.page.get_by_label("收款銀行帳號", exact=False).fill(account)
+
+    def upload_id_photos(self) -> None:
+        # The two `<input type="file" accept="image/*">` for the front/back ID
+        # card. Playwright can set files on them directly (in-memory PNG, no
+        # real file on disk), which fires the component's onChange the same way
+        # picking a file in the OS chooser would.
+        # Picking a photo swaps that block from the upload input to a thumbnail
+        # (its <input> leaves the DOM), which would reindex the remaining input.
+        # Set the back one (nth 1) first while both exist, then the front (nth 0).
+        file_inputs = self.page.locator('input[type="file"]')
+        file_inputs.nth(1).set_input_files(
+            files=[{"name": "id-back.png", "mimeType": "image/png", "buffer": _TINY_PNG}]
+        )
+        file_inputs.nth(0).set_input_files(
+            files=[{"name": "id-front.png", "mimeType": "image/png", "buffer": _TINY_PNG}]
+        )
 
     def agree_terms(self) -> None:
         self.page.get_by_role("checkbox").check()

@@ -38,3 +38,18 @@ Feature: Admin dashboard
     When I visit "/admin"
     And I open the "會員管理" tab
     Then I should see the text "陳大文"
+
+  Scenario: Marking a pending withdrawal as paid
+    Given I am logged in as an admin
+    And there is a pending withdrawal from "王小明"
+    When I visit "/admin"
+    And I mark the withdrawal as paid
+    Then I should see the text "已標記匯款完成"
+
+  @negative
+  Scenario: Rejecting a pending withdrawal refunds the applicant
+    Given I am logged in as an admin
+    And there is a pending withdrawal from "王小明"
+    When I visit "/admin"
+    And I reject the withdrawal
+    Then I should see the text "已退件"

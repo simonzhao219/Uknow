@@ -27,3 +27,13 @@ class AdminDashboardPage(BasePage):
 
     def open_tab(self, name: str) -> None:
         self.tab(name).click()
+
+    # --- withdrawal review actions (pending rows only) ---------------------
+
+    def mark_first_withdrawal_paid(self) -> None:
+        self.page.get_by_role("button", name="已匯款").first.click()
+
+    def reject_first_withdrawal(self) -> None:
+        # exact=True so this doesn't also match the dialog's "確認退件" button.
+        self.page.get_by_role("button", name="退件", exact=True).first.click()
+        self.page.get_by_role("button", name="確認退件").click()
