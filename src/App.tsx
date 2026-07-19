@@ -1,32 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import type { ProfileResponse } from '@contract';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
 import { MaintenanceBanner } from './components/MaintenanceBanner';
-import { HomePage } from './components/HomePage';
-import { ServiceProviderDetail } from './components/ServiceProviderDetail';
-import { AuthPage } from './components/AuthPage';
-import { OTPVerificationPage } from './components/OTPVerificationPage';
-import { CompleteProfile } from './components/CompleteProfile';
-import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
-import { PaymentResult } from './components/PaymentResult';  // ✅ 新增：付款結果頁面
-import { ForgotPasswordPage } from './components/ForgotPasswordPage';  // ✨ 新增
-import { ResetPasswordPage } from './components/ResetPasswordPage';    // ✨ 新增
-import { MemberDashboard } from './components/MemberDashboard';
-import { ServiceProviderManagement } from './components/ServiceProviderManagement';
-import { CreateServiceProvider } from './components/CreateServiceProvider';
-import { EditServiceProvider } from './components/EditServiceProvider';
-import { ReferralManagement } from './components/ReferralManagement';
-import { TaskDashboard } from './components/TaskDashboard';
-import { RewardDashboard } from './components/RewardDashboard';
-import { AdminDashboard } from './components/AdminDashboard';
-import { MarkdownContent } from './components/MarkdownContent';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { RequireMembershipRoute } from './components/RequireMembershipRoute'; // ✅ 會員資格守衛（以會籍有效為準）
+import { FeatureGate } from './components/FeatureGate';
+import { LoadingScreen } from './components/LoadingScreen';
 import { NotificationProvider } from './components/notifications/NotificationContext';
+
+// 路由頁面採 lazy 載入 → 各自獨立 chunk，縮小初始 bundle（Admin/付款/各儀表板
+// 不再全部打進首屏）。命名匯出需包一層轉成 default 供 React.lazy 使用。
+const HomePage = lazy(() => import('./components/HomePage').then((m) => ({ default: m.HomePage })));
+const ServiceProviderDetail = lazy(() => import('./components/ServiceProviderDetail').then((m) => ({ default: m.ServiceProviderDetail })));
+const AuthPage = lazy(() => import('./components/AuthPage').then((m) => ({ default: m.AuthPage })));
+const OTPVerificationPage = lazy(() => import('./components/OTPVerificationPage').then((m) => ({ default: m.OTPVerificationPage })));
+const CompleteProfile = lazy(() => import('./components/CompleteProfile').then((m) => ({ default: m.CompleteProfile })));
+const PaymentCheckout = lazy(() => import('./components/PaymentCheckout').then((m) => ({ default: m.PaymentCheckout })));
+const PaymentResult = lazy(() => import('./components/PaymentResult').then((m) => ({ default: m.PaymentResult })));
+const ForgotPasswordPage = lazy(() => import('./components/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('./components/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const MemberDashboard = lazy(() => import('./components/MemberDashboard').then((m) => ({ default: m.MemberDashboard })));
+const ServiceProviderManagement = lazy(() => import('./components/ServiceProviderManagement').then((m) => ({ default: m.ServiceProviderManagement })));
+const CreateServiceProvider = lazy(() => import('./components/CreateServiceProvider').then((m) => ({ default: m.CreateServiceProvider })));
+const EditServiceProvider = lazy(() => import('./components/EditServiceProvider').then((m) => ({ default: m.EditServiceProvider })));
+const ReferralManagement = lazy(() => import('./components/ReferralManagement').then((m) => ({ default: m.ReferralManagement })));
+const TaskDashboard = lazy(() => import('./components/TaskDashboard').then((m) => ({ default: m.TaskDashboard })));
+const RewardDashboard = lazy(() => import('./components/RewardDashboard').then((m) => ({ default: m.RewardDashboard })));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const MarkdownContent = lazy(() => import('./components/MarkdownContent').then((m) => ({ default: m.MarkdownContent })));
 import { FeatureProvider } from './contexts/FeatureContext';
 import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { createClient } from './utils/supabase/client';
@@ -201,10 +206,12 @@ function AppContent() {
             <MaintenanceBanner />
             {/* 登入後手機有底部導覽，main 補下方留白避免內容被遮住 */}
             <main className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}>
+              {/* Suspense fallback：lazy 路由 chunk 載入中的過場 */}
+              <Suspense fallback={<LoadingScreen />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
-                
+
                 {/* Authentication Routes */}
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
@@ -212,74 +219,30 @@ function AppContent() {
                 <Route path="/auth/complete-profile" element={<CompleteProfile />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />  {/* ✨ 新增 */}
                 <Route path="/auth/reset-password" element={<ResetPasswordPage />} />  {/* ✨ 新增 */}
-                
-                {/* Protected Member Routes */}
-                <Route path="/dashboard" element={
-                  <ProtectedRoute>
-                    <RequireMembershipRoute>
-                      <MemberDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <ServiceProviderManagement />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers/create" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <CreateServiceProvider />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers/edit/:id" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <EditServiceProvider />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/referrals" element={
-                  <ProtectedRoute featureRequired="referralManagement">
-                    <RequireMembershipRoute>
-                      <ReferralManagement />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/tasks" element={
-                  <ProtectedRoute featureRequired="taskCenter">
-                    <RequireMembershipRoute>
-                      <TaskDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/rewards" element={
-                  <ProtectedRoute featureRequired="rewardSystem">
-                    <RequireMembershipRoute>
-                      <RewardDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/payment/checkout" element={
-                  <ProtectedRoute>
-                    <PaymentCheckout />
-                  </ProtectedRoute>
-                } />
-                <Route path="/payment/result" element={
-                  <ProtectedRoute>
-                    <PaymentResult />
-                  </ProtectedRoute>
-                } />
-                
+
+                {/* Protected Member Routes：登入守衛以 layout route 包一層，
+                    避免每條路由重複巢狀 ProtectedRoute>RequireMembershipRoute
+                    而漏包造成守衛被靜默略過。功能開關改由獨立 FeatureGate 負責。 */}
+                <Route element={<ProtectedRoute />}>
+                  {/* 需有效會籍 */}
+                  <Route element={<RequireMembershipRoute />}>
+                    <Route path="/dashboard" element={<MemberDashboard />} />
+                    <Route path="/service-providers" element={<FeatureGate feature="serviceProviderManagement"><ServiceProviderManagement /></FeatureGate>} />
+                    <Route path="/service-providers/create" element={<FeatureGate feature="serviceProviderManagement"><CreateServiceProvider /></FeatureGate>} />
+                    <Route path="/service-providers/edit/:id" element={<FeatureGate feature="serviceProviderManagement"><EditServiceProvider /></FeatureGate>} />
+                    <Route path="/referrals" element={<FeatureGate feature="referralManagement"><ReferralManagement /></FeatureGate>} />
+                    <Route path="/tasks" element={<FeatureGate feature="taskCenter"><TaskDashboard /></FeatureGate>} />
+                    <Route path="/rewards" element={<FeatureGate feature="rewardSystem"><RewardDashboard /></FeatureGate>} />
+                  </Route>
+                  {/* 登入即可，不需會籍（付款流程本身） */}
+                  <Route path="/payment/checkout" element={<PaymentCheckout />} />
+                  <Route path="/payment/result" element={<PaymentResult />} />
+                </Route>
+
                 {/* Admin Routes */}
-                <Route path="/admin" element={
-                  <AdminRoute>
-                    <AdminDashboard />
-                  </AdminRoute>
-                } />
+                <Route element={<AdminRoute />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                </Route>
                 {/* Public Content Pages */}
                 <Route path="/terms-of-service" element={
                   <MarkdownContent 
@@ -308,6 +271,7 @@ function AppContent() {
                 
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </Suspense>
             </main>
             <Footer />
             <BottomNav />

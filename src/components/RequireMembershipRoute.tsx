@@ -1,5 +1,5 @@
 import React, { useContext, useEffect } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '@contract';
 import { UserContext } from '../App';
 
@@ -20,7 +20,8 @@ type MembershipProfile = Partial<
 >;
 
 interface RequireMembershipRouteProps {
-  children: React.ReactNode;
+  /** 作為包裹元件用；不給則以 <Outlet/> 當 layout route 用。 */
+  children?: React.ReactNode;
 }
 
 /**
@@ -100,12 +101,12 @@ export function RequireMembershipRoute({ children }: RequireMembershipRouteProps
 
   // 如果未登入，不處理（讓 ProtectedRoute 處理）
   if (!isLoggedIn || !user) {
-    return <>{children}</>;
+    return <>{children ?? <Outlet />}</>;
   }
 
   if (redirect) {
     return <Navigate to={redirect} replace />;
   }
 
-  return <>{children}</>;
+  return <>{children ?? <Outlet />}</>;
 }
