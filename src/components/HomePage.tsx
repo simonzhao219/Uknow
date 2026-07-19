@@ -15,6 +15,7 @@ import {
   Search,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { GenderBadge } from "./common/GenderBadge";
 import {
   Sheet,
   SheetContent,
@@ -856,14 +857,13 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }
               alt={serviceProvider.name}
               className="w-full h-full object-cover transition-transform group-hover:scale-105"
             />
-            {serviceProvider.gender && (
-              <Badge
-                variant="secondary"
-                className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0 shadow-sm"
-              >
-                {serviceProvider.gender === '男' ? '♂' : '♀'}
-              </Badge>
-            )}
+            <GenderBadge
+              gender={serviceProvider.gender}
+              showLabel={false}
+              applyColor={false}
+              variant="secondary"
+              className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 shadow-sm"
+            />
           </div>
           <div className="p-2 space-y-1">
             <h3 className="font-medium text-sm line-clamp-1">
@@ -907,14 +907,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
                   {serviceProvider.name}
                 </h3>
                 {/* 🆕 性别 Badge */}
-                {serviceProvider.gender && (
-                  <Badge
-                    variant="outline"
-                    className={`text-xs shrink-0 ${serviceProvider.gender === '男' ? 'border-blue-500 text-blue-600' : 'border-pink-500 text-pink-600'}`}
-                  >
-                    {serviceProvider.gender === '男' ? '♂ 男' : '♀ 女'}
-                  </Badge>
-                )}
+                <GenderBadge gender={serviceProvider.gender} className="text-xs shrink-0" />
               </div>
               <Badge variant="secondary" className="shrink-0">
                 {serviceProvider.category}
