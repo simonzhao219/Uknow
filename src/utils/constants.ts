@@ -4,8 +4,6 @@
 
 // 名稱長度常數配置
 export const NAME_MAX_LENGTH = 10; // 服務者名稱的最大長度（表單輸入限制）
-export const NAME_DISPLAY_LENGTH_MOBILE = 8; // 手機版首頁顯示名稱的長度
-export const NAME_DISPLAY_LENGTH_DESKTOP = 10; // 桌面版首頁顯示名稱的長度
 
 // 描述長度常數
 export const DESCRIPTION_MAX_LENGTH = 200; // 服務介紹的最大長度

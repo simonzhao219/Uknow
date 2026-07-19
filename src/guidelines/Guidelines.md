@@ -109,7 +109,6 @@ export function MyComponent() {
 ├── contactValidation.ts      # 聯絡方式驗證工具
 ├── districtSelection.ts      # 區域選擇邏輯
 ├── formHelpers.tsx           # 表單輔助工具
-├── generateIds.ts            # ID 生成器與 Mock 數據
 ├── auth.ts                   # 統一認證工具 ✅
 ├── apiClient.ts              # 統一 API 請求工具 ✅
 └── supabase/
@@ -130,9 +129,6 @@ export function MyComponent() {
 
 #### 4. formHelpers.tsx - 表單輔助工具
 提供統一的表單錯誤顯示樣式
-
-#### 5. generateIds.ts - ID 生成器與 Mock 數據
-處理用戶和刊登的唯一識別碼生成
 
 #### 6. auth.ts - 統一認證工具 ✅
 **所有組件必須使用這個工具來處理認證**
@@ -163,8 +159,7 @@ export function MyComponent() {
 1. **數字常數** → 放入 `constants.ts`
 2. **驗證邏輯** → 放入 `contactValidation.ts` 或創建新的驗證文件
 3. **表單相關** → 放入 `formHelpers.tsx`
-4. **ID/隨機生成** → 放入 `generateIds.ts`
-5. **認證相關** → 使用 `auth.ts` 的統一方法
+4. **認證相關** → 使用 `auth.ts` 的統一方法
 6. **API 請求** → 使用 `apiClient.ts` 的統一方法
 7. **複雜業務邏輯** → 創建專門的工具文件（如 `districtSelection.ts`）
 

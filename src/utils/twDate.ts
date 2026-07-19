@@ -27,11 +27,6 @@ export function twDayOf(at: Date | string | number = new Date()): string {
   return TW_DAY_FMT.format(new Date(at));
 }
 
-/** 台灣時間目前月份 'YYYY-MM' */
-export function twMonthKey(at: Date | string | number = new Date()): string {
-  return twDayOf(at).slice(0, 7);
-}
-
 /** 顯示用日期 'YYYY/MM/DD'（台灣日曆日） */
 export function formatTwDate(at: Date | string | number): string {
   return twDayOf(at).replaceAll('-', '/');

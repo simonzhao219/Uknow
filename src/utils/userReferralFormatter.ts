@@ -20,24 +20,6 @@ export function formatUserReferral(
 }
 
 /**
- * 格式化被推薦人卡片顯示數據
- * 
- * @param record - 月度推薦記錄
- * @returns 格式化後的卡片數據
- */
-export function formatReferralCard(record: {
-  userName: string;
-  userReferralCode: string;
-  createdAt: string;
-}) {
-  return {
-    userName: record.userName,
-    code: record.userReferralCode,
-    timestamp: record.createdAt
-  };
-}
-
-/**
  * 獲取激勵文案
  * 
  * @param progress - 進度百分比（0-100）
