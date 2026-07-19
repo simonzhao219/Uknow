@@ -5,7 +5,8 @@ finished email verification must resume the OTP step, never dead-end on the
 login form. Reuses the generic redirect/toast assertions from common_steps.
 """
 
-from pytest_bdd import given, parsers, scenarios, when
+from playwright.sync_api import expect
+from pytest_bdd import given, parsers, scenarios, then, when
 
 from steps.common_steps import *  # noqa: F401,F403
 
@@ -15,11 +16,12 @@ scenarios("registration_recovery.feature")
 # --- Given -------------------------------------------------------------------
 
 
-@given(parsers.parse('the email "{email}" exists but is not verified'))
-def email_exists_unverified(api_mock, email):
-    # Guard A: check-email reports the account as unconfirmed, so step 1 routes
-    # straight to verification and the login form is never shown.
-    api_mock.set_check_email(True, confirmed=False)
+@given(parsers.parse('a monitored member "{email}" who exists but is not verified'))
+def monitored_unverified_member(auth_mock, api_mock, email):
+    # The account exists; we watch the verification-email endpoint so the test
+    # can prove that entering the email alone (no password) sends nothing.
+    api_mock.set_check_email(True)
+    auth_mock.spy_resend()
 
 
 @given(
@@ -28,11 +30,12 @@ def email_exists_unverified(api_mock, email):
     )
 )
 def login_form_then_unverified(auth_mock, api_mock, email):
-    # Guard B (safety net): check-email's `confirmed` heuristic says confirmed
-    # (so the login form renders), but GoTrue — the source of truth — rejects
-    # the password login with email_not_confirmed. The handler must still
-    # resume verification rather than dead-end on "wrong password".
-    api_mock.set_check_email(True, confirmed=True)
+    # Recovery path: the account exists (login form renders), and GoTrue — the
+    # source of truth — rejects the *correct* password with email_not_confirmed.
+    # The handler must resume verification instead of dead-ending on "wrong
+    # password". GoTrue checks the password first, so this state is only ever
+    # reached with the right password.
+    api_mock.set_check_email(True)
     auth_mock.mock_login_email_not_confirmed()
 
 
@@ -63,3 +66,22 @@ def log_in(auth_page, email, password):
     auth_page.submit_email()
     auth_page.fill_login_password(password)
     auth_page.submit_login()
+
+
+# --- Then --------------------------------------------------------------------
+
+
+@then("I should be on the login step")
+def on_login_step(auth_page):
+    # The password form is shown — we did NOT jump to /auth/verify-otp on email
+    # alone.
+    expect(auth_page.page.get_by_test_id("auth-login-button")).to_be_visible(timeout=5_000)
+
+
+@then("no verification email was sent")
+def no_verification_email(auth_page, auth_mock):
+    # Give any (erroneous) resend a chance to fire before asserting it didn't.
+    auth_page.page.wait_for_timeout(500)
+    assert auth_mock.resend_calls == [], (
+        f"a verification email was sent without a password: {auth_mock.resend_calls}"
+    )

@@ -40,6 +40,7 @@ class SupabaseAuthMock:
 
     def __init__(self, context: BrowserContext):
         self._context = context
+        self.resend_calls: list = []
 
     def mock_login_success(self, email: str, user_id: str = DEFAULT_USER_ID, access_token: str = "e2e-fake-access-token") -> dict:
         session = build_session(email, user_id, access_token)
@@ -78,6 +79,19 @@ class SupabaseAuthMock:
 
     def mock_resend_success(self):
         self._context.route(f"{SUPABASE_AUTH_BASE}/resend**", lambda route: _fulfill_json(route, {}))
+
+    def spy_resend(self):
+        # Records every verification-email resend so a test can assert one was
+        # (or was NOT) triggered. `resend_calls` starts empty on this per-test
+        # mock instance. Fulfils 200 so the app behaves as if the send worked.
+        self.resend_calls = []
+
+        def handler(route):
+            self.resend_calls.append(route.request.url)
+            _fulfill_json(route, {})
+
+        self._context.route(f"{SUPABASE_AUTH_BASE}/resend**", handler)
+        return self.resend_calls
 
     def mock_recover_success(self):
         # `supabase.auth.resetPasswordForEmail()` posts to GoTrue's /recover and

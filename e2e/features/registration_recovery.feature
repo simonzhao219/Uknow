@@ -7,21 +7,24 @@ Feature: Registration flow recovery
   on the OTP page, closes it, then comes back and tries to log in with the
   *correct* password. The account exists but its email was never verified, so
   GoTrue refuses the login with `email_not_confirmed`. The old UI reported this
-  as "Email 或密碼錯誤" and offered no route back into verification — the
-  account looked permanently broken. There are two independent guards that must
-  keep it recoverable: step 1 detects the unverified account up front, and the
-  login handler is a safety net if the form was reached anyway.
+  as "Email 或密碼錯誤" and offered no route back into verification.
 
-  # --- Guard A: step 1 detects the unverified account before the login form ---
+  Recovery is deliberately password-first: knowing only the email must never be
+  enough to make the system send a verification email (that would be an email
+  amplification / quota-exhaustion vector). GoTrue verifies the password before
+  it reports email_not_confirmed, so resuming verification always requires the
+  correct password.
 
-  Scenario: Entering an unverified email at step 1 goes straight to verification
+  # --- Security guard: email alone must not trigger any mail ---
+
+  Scenario: An unverified email alone asks for the password and sends no mail
     Given I visit "/login"
-    And the email "stuck@example.com" exists but is not verified
-    And resending the verification code succeeds
+    And a monitored member "stuck@example.com" who exists but is not verified
     When I enter email "stuck@example.com" and continue
-    Then I should be redirected to "/auth/verify-otp"
+    Then I should be on the login step
+    And no verification email was sent
 
-  # --- Guard B: the login handler catches email_not_confirmed as a safety net ---
+  # --- Recovery: the correct password on an unverified account resumes OTP ---
 
   Scenario: A password login rejected as unverified resumes verification
     Given the login form is reachable for "stuck@example.com" but the password login is rejected as unverified
