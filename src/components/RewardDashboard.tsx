@@ -121,6 +121,7 @@ export function RewardDashboard() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <RewardHistory refreshTrigger={historyRefreshTrigger} />
         <WithdrawalSection
           availableRewards={rewardsData?.availableRewards || 0}
           pendingRewards={rewardsData?.pendingRewards || 0}
@@ -132,7 +133,6 @@ export function RewardDashboard() {
           subscriptionStatus={subscriptionStatus}
           referralProgramJoined={user?.referralProgramJoined}
         />
-        <RewardHistory refreshTrigger={historyRefreshTrigger} />
       </div>
     </div>
   );
