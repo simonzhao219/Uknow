@@ -122,11 +122,17 @@ export function resolveProfilePageRedirect(
  * 判斷順序（與 buildProfileResponse 的三態會籍模型對齊）：
  *   1. 會籍有效（active）→ 已是會員，回會員中心。
  *   2. 已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 結果頁自癒輪詢。
- *   3. 尚未填基本資料（step 0 / 缺值）→ 回完善資料頁。
+ *   3. 基本資料未填齊（step 0 / 缺值 / 姓名·生日·手機任一為空）→ 回完善資料頁。
  *   4. 其餘（step 1 首購 / step 2 付款失敗重試 / grace・過期續約）→ 留在結帳頁。
  *
  * 特意「不擋 grace」：寬限期是「到期後續訂」的正常入口，要留在結帳頁完成付款，
  * 否則會與 dashboard 守衛互彈（見 PaymentCheckout 內原有註解）。
+ *
+ * 第 3 條除了看 registrationStep，也直接用 isProfileComplete 檢查真實欄位——
+ * 這是對「後端把 step 誤算成 ≥1 但資料其實沒填」這一整類 bug 的第二道防線
+ * （本次修的空白結帳頁根因）。少了它，只要 step 一旦漂移到 ≥1，結帳頁就會
+ * 顯示一張空白的「註冊資訊確認」。與 App.tsx 啟動守衛用同一個 isProfileComplete，
+ * 讓「資料是否填齊」在整個前端只有一個定義。
  */
 export function resolveCheckoutPageRedirect(profile: FunnelProfile): string | null {
   if (profile.accountStatus === 'active') return '/dashboard';
@@ -135,7 +141,9 @@ export function resolveCheckoutPageRedirect(profile: FunnelProfile): string | nu
     return `/payment/result?tradeNo=${profile.lastTradeNo}`;
   }
 
-  if (!profile.registrationStep) return '/auth/complete-profile';
+  if (!profile.registrationStep || !isProfileComplete(profile)) {
+    return '/auth/complete-profile';
+  }
 
   return null;
 }
