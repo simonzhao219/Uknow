@@ -10,6 +10,9 @@ dist/
 .env.local
 .env.*.local
 
+# Data exports (一次性 DB 匯出，含真實個資，絕不進版控；歷史清除見 docs/security/)
+export/
+
 # Editor
 .vscode/
 .idea/
