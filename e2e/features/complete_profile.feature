@@ -28,6 +28,13 @@ Feature: Complete profile
     And I click verify referral code
     Then I should see the referral code status "推薦人：推薦人測試"
 
+  Scenario: A referral code from an invite link is auto-filled and auto-verified
+    Given the referral code "abc123" is valid for referrer "推薦人測試"
+    And an invite link with referral code "abc123" has been opened
+    When I visit "/auth/complete-profile"
+    Then the referral code field should contain "abc123"
+    And I should see the referral code status "推薦人：推薦人測試"
+
   Scenario: An invalid referral code is rejected
     Given the referral code "expired1" is invalid with message "推薦碼已過期"
     When I fill the referral code "expired1"

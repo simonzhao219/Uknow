@@ -73,3 +73,8 @@ def submit_enabled(page):
 @then(parsers.parse('I should see the referral code status "{text}"'))
 def referral_code_status(complete_profile_page, text):
     expect(complete_profile_page.referral_code_status()).to_have_text(text, timeout=5_000)
+
+
+@then(parsers.parse('the referral code field should contain "{code}"'))
+def referral_field_contains(page, code):
+    expect(page.locator("#referralCode")).to_have_value(code, timeout=5_000)

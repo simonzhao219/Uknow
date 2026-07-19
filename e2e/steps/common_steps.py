@@ -9,7 +9,11 @@ from playwright.sync_api import expect
 from pytest_bdd import given, parsers, then, when
 
 from config import BASE_URL
-from mocks.fixtures import seed_authenticated_session
+from mocks.fixtures import (
+    disable_native_share,
+    seed_authenticated_session,
+    seed_pending_referral,
+)
 
 
 def _iso_days_ago(days: int) -> str:
@@ -129,10 +133,26 @@ def logged_in_referred_by(context, api_mock, step, code, name):
     api_mock.set_referral_validate(code, name)
 
 
+@given(parsers.parse('an invite link with referral code "{code}" has been opened'))
+def invite_link_opened(context, code):
+    seed_pending_referral(context, code)
+
+
+@given("the browser has no native share sheet")
+def browser_no_native_share(context):
+    disable_native_share(context)
+
+
 @given(parsers.parse('I visit "{path}"'))
 @when(parsers.parse('I visit "{path}"'))
 def visit(page, path):
     page.goto(path)
+
+
+@then(parsers.parse('the pending referral code should be "{code}"'))
+def pending_referral_should_be(page, code):
+    stored = page.evaluate("() => window.localStorage.getItem('pending_referral_code')")
+    assert stored == code, f"expected pending referral {code!r}, got {stored!r}"
 
 
 @then(parsers.parse('I should be redirected to "{path}"'))

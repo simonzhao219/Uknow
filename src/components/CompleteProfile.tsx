@@ -11,6 +11,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
+import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 
 export function CompleteProfile() {
   const [formData, setFormData] = useState({
@@ -93,6 +94,18 @@ export function CompleteProfile() {
     };
     checkSession();
   }, [supabase, navigate, showToast]);
+
+  // 邀請連結帶進來的推薦碼：掛載時自動填入並驗證（顯示推薦人姓名），欄位仍可修改。
+  // 只在欄位為空時帶入，避免覆蓋使用者手動輸入的值。
+  useEffect(() => {
+    const pending = getPendingReferral();
+    if (pending && !formData.referralCode) {
+      setFormData((prev) => ({ ...prev, referralCode: pending }));
+      verifyReferralCode(pending);
+    }
+    // 僅在掛載時執行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
@@ -308,6 +321,9 @@ export function CompleteProfile() {
       setUser(profile);
       localStorage.setItem('user', JSON.stringify(profile));
 
+      // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
+      clearPendingReferral();
+
       // 顯示簡單提示（自動消失，不阻塞）
       showToast('基本資訊已儲存，請完成付款', 'success');
 
@@ -355,6 +371,7 @@ export function CompleteProfile() {
       // 3. 清除本地狀態（在登出前先清除，避免競態條件）
       setUser(null);
       localStorage.removeItem('user');
+      clearPendingReferral();
       
       // 4. 登出 Supabase session（確保完全登出）
       console.log('CompleteProfile: Signing out from Supabase...');
@@ -380,18 +397,21 @@ export function CompleteProfile() {
     }
   };
 
-  const verifyReferralCode = async () => {
-    if (!formData.referralCode.trim()) {
+  // codeArg 讓「自動帶入」能用明確的推薦碼驗證，避免 setState 後才 verify 時讀到舊 state。
+  // 注意：按鈕的 onClick 會把事件物件當第一參數傳進來，所以只在 codeArg 是字串時才採用。
+  const verifyReferralCode = async (codeArg?: string) => {
+    const code = typeof codeArg === 'string' ? codeArg : formData.referralCode;
+    if (!code.trim()) {
       setCodeError('請輸入推薦碼');
       return;
     }
-    
+
     setIsVerifyingCode(true);
     setCodeError('');
 
     try {
       // ✅ 使用統一的 API 請求工具
-      const result = await apiRequestJson<{ 
+      const result = await apiRequestJson<{
         valid: boolean;
         referrerName?: string;
         referrerUserId?: string;
@@ -401,7 +421,7 @@ export function CompleteProfile() {
         {
           method: 'POST',
           body: JSON.stringify({
-            referralCode: formData.referralCode.toLowerCase().trim(),
+            referralCode: code.toLowerCase().trim(),
             currentUserId: null  // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
           }),
         }
@@ -410,7 +430,7 @@ export function CompleteProfile() {
       if (result.valid && result.referrerName) {
         setCodeVerified(true);
         setCodeError('');
-        setVerifiedReferralCode(formData.referralCode);  // ✅ 儲存已驗證的推薦碼
+        setVerifiedReferralCode(code);  // ✅ 儲存已驗證的推薦碼
         setReferrerName(result.referrerName);  // ✅ 儲存推薦人姓名
         showToast('推薦碼驗證成功', 'success');  // ✅ 只顯示簡單訊息
       } else {
@@ -570,7 +590,7 @@ export function CompleteProfile() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={verifyReferralCode}
+                  onClick={() => verifyReferralCode()}
                   disabled={isVerifyingCode || !formData.referralCode.trim() || (codeVerified && formData.referralCode === verifiedReferralCode)}
                   className="shrink-0"
                 >
