@@ -104,6 +104,16 @@ def terms_dialog_fits_and_scrolls(page, complete_profile_page):
         f"terms body is not scrollable: scrollHeight={metrics['scrollH']} clientHeight={metrics['clientH']}"
     )
 
+    # 4) The card must not bleed edge-to-edge: a small side gutter keeps the
+    #    card outline visible (the default DialogContent max-w-[calc(100%-2rem)]
+    #    must survive the sm:max-w-2xl override on mobile).
+    viewport_w = page.viewport_size["width"]
+    left_gutter = box["x"]
+    right_gutter = viewport_w - (box["x"] + box["width"])
+    assert left_gutter >= 8 and right_gutter >= 8, (
+        f"terms dialog has no side gutter: left={left_gutter} right={right_gutter}"
+    )
+
 
 @when("I submit the profile form")
 def submit_profile_form(complete_profile_page):
