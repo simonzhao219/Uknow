@@ -69,6 +69,77 @@ export function nextRouteForStep(step: RegistrationStep): string {
   return resolvePostLoginAction(step).route;
 }
 
+/**
+ * 漏斗頁面（CompleteProfile / PaymentCheckout）守衛需要用到的 profile 欄位子集。
+ * 刻意只列出決策會讀到的欄位，讓這些純函式與整包 ProfileResponse 解耦、好測試。
+ */
+export interface FunnelProfile {
+  registrationStep?: RegistrationStep;
+  name?: string | null;
+  phone?: string | null;
+  birthDate?: string | null;
+  referralCode?: string | null;
+  accountStatus?: 'active' | 'grace' | 'expired' | string | null;
+  paidAwaitingActivation?: boolean | null;
+  lastTradeNo?: string | null;
+}
+
+/**
+ * 基本資料是否已填齊。App.tsx / CompleteProfile / PaymentCheckout 過去各自
+ * 寫一份 `!!(name && phone && birthDate)`，語意一旦走針就會互相彈跳。收斂成
+ * 一個函式，讓「什麼叫做資料填完」只有一個定義。
+ */
+export function isProfileComplete(profile: FunnelProfile): boolean {
+  return !!(profile.name && profile.phone && profile.birthDate);
+}
+
+/**
+ * CompleteProfile 頁的守衛：回傳「應該把使用者導去哪」，null = 留在本頁。
+ *
+ * 關鍵設計——「使用者意圖」是一等公民：
+ * 從結帳頁按「編輯」回來的人，資料本來就填齊了。若守衛只看「資料是否存在」
+ * 就會把想改資料的人立刻彈回結帳頁（本次修的 bug）。因此當 editing=true 時，
+ * 一律留在本頁；否則才用 registrationStep 這個單一事實來源決定漏斗前進的去向。
+ *
+ * 用 nextRouteForStep 而非另寫一份 if/else——與登入後導向共用同一張
+ * step→route 對照表，兩邊永遠一致，不會再出現「登入去 A、守衛去 B」的分歧。
+ */
+export function resolveProfilePageRedirect(
+  step: RegistrationStep,
+  opts?: { editing?: boolean },
+): string | null {
+  // 使用者主動要回來改資料——尊重意圖，不做任何彈跳。
+  if (opts?.editing) return null;
+
+  const route = nextRouteForStep(step);
+  // 目標就是本頁（step 0 / 未知）→ 留下讓他填資料。
+  return route === '/auth/complete-profile' ? null : route;
+}
+
+/**
+ * PaymentCheckout 頁的守衛：回傳「應該把使用者導去哪」，null = 留在結帳頁。
+ *
+ * 判斷順序（與 buildProfileResponse 的三態會籍模型對齊）：
+ *   1. 會籍有效（active）→ 已是會員，回會員中心。
+ *   2. 已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 結果頁自癒輪詢。
+ *   3. 尚未填基本資料（step 0 / 缺值）→ 回完善資料頁。
+ *   4. 其餘（step 1 首購 / step 2 付款失敗重試 / grace・過期續約）→ 留在結帳頁。
+ *
+ * 特意「不擋 grace」：寬限期是「到期後續訂」的正常入口，要留在結帳頁完成付款，
+ * 否則會與 dashboard 守衛互彈（見 PaymentCheckout 內原有註解）。
+ */
+export function resolveCheckoutPageRedirect(profile: FunnelProfile): string | null {
+  if (profile.accountStatus === 'active') return '/dashboard';
+
+  if (profile.paidAwaitingActivation && profile.lastTradeNo) {
+    return `/payment/result?tradeNo=${profile.lastTradeNo}`;
+  }
+
+  if (!profile.registrationStep) return '/auth/complete-profile';
+
+  return null;
+}
+
 export type LoginErrorKind =
   /** 帳號已建立、密碼正確，但 Email 尚未驗證——可復原，應導回 OTP 驗證。 */
   | 'email_not_confirmed'

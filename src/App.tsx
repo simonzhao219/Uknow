@@ -32,6 +32,7 @@ import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; /
 import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
+import { isProfileComplete } from './utils/registrationFlow';
 import { termsOfServiceContent } from './content/termsOfService';
 import { listingPlansContent } from './content/listingPlans';
 import { referralRewardRulesContent } from './content/referralRewardRules';
@@ -97,7 +98,7 @@ function AppContent() {
         const profile = await response.json();
         if (!isMounted) return;
 
-        const hasCompleteProfile = !!(profile.name && profile.phone && profile.birthDate);
+        const hasCompleteProfile = isProfileComplete(profile);
         if (!hasCompleteProfile) {
           if (window.location.pathname !== '/auth/complete-profile') {
             navigate('/auth/complete-profile', { replace: true });

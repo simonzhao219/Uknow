@@ -66,12 +66,20 @@ Feature: Payment checkout
     And I click pay later
     Then I should be redirected to "/login"
 
-  Scenario: Editing resets registration and returns to the profile form
+  # Regression: clicking edit used to land on the profile form and then
+  # immediately bounce back to checkout, because CompleteProfile's guard keyed
+  # off "profile has data" rather than the user's edit intent. It must now stay
+  # on the form AND prefill what the user was just looking at — otherwise the
+  # re-submit would blank out fields (and even wipe the bound referral code).
+  Scenario: Editing returns to the profile form, stays there, and prefills the data
     Given I am logged in with registration step 1
     And resetting registration succeeds
     When I visit "/payment/checkout"
     And I click edit
     Then I should be redirected to "/auth/complete-profile"
+    And I should remain on the complete profile page
+    And the name field should contain "測試用戶"
+    And the phone field should contain "0912345678"
 
   Scenario: A duplicate-subscription error is surfaced as a warning
     Given I am logged in with registration step 1
