@@ -26,3 +26,11 @@ Feature: OTP verification
     Given I am not logged in
     When I visit "/auth/verify-otp"
     Then I should be redirected to "/login"
+
+  Scenario: Reopening the verification link in a new tab resumes an in-progress signup
+    # Closing the tab and reopening the link loses React Router's in-memory
+    # state; the page must rehydrate the pending verification from storage
+    # instead of bouncing to /login.
+    Given I have just signed up with email "new-user@example.com"
+    When I reopen the verification page in a new tab
+    Then the reopened tab should still be verifying "new-user@example.com"
