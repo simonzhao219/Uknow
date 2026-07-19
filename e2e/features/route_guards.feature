@@ -55,3 +55,15 @@ Feature: Route guards enforce membership entitlement
       | step | trade_no | destination            |
       | 0    |          | /auth/complete-profile |
       | 1    |          | /payment/checkout      |
+
+  # Regression guard for the blank "完成付款 / 註冊資訊確認" incident: a
+  # freshly-registered step-0 user (basic profile still empty) who reaches the
+  # checkout page directly must be routed to fill their profile first, never
+  # shown a checkout whose confirmation block is blank. This is the end-to-end
+  # counterpart to the backend contract test (fresh user ⇒ step 0) and the
+  # checkout guard's unit test — together they close the seam the incident fell
+  # through: the backend now emits 0, and the frontend routes 0 off checkout.
+  Scenario: A step-0 user who reaches checkout is sent to complete their profile, not shown a blank confirmation
+    Given I am logged in with registration step 0
+    When I visit "/payment/checkout"
+    Then I should be redirected to "/auth/complete-profile"
