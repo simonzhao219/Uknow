@@ -58,7 +58,11 @@ export function LegalDialog({
           {triggerLabel}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      {/* 只在 sm 以上才放寬到 max-w-2xl；手機刻意「不覆寫」寬度，保留
+          DialogContent 預設的 w-full max-w-[calc(100%-2rem)] —— 那條規則替
+          彈窗左右各留 1rem(16px)邊距，讓卡片輪廓浮出、不貼齊螢幕邊緣。
+          先前直接寫 max-w-2xl 會把這條預設 gutter 蓋掉，手機上就全幅貼邊。 */}
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
