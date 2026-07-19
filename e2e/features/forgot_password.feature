@@ -46,6 +46,14 @@ Feature: Forgot password
     Then I should be redirected to "/forgot-password"
     And I should see a toast containing "驗證已過期，請重新申請密碼重設"
 
+  Scenario: Reopening the verification link in a new tab resumes an in-progress reset
+    # Reopening the recovery OTP link in a new tab must rehydrate the pending
+    # reset from storage, not bounce back to /login.
+    Given the account "e2e-user@example.com" can receive a reset code
+    When I request a password reset for "e2e-user@example.com"
+    And I reopen the verification page in a new tab
+    Then the reopened tab should still be verifying "e2e-user@example.com"
+
   Scenario: A weak new password is rejected
     Given the account "e2e-user@example.com" can receive a reset code
     And the recovery code verifies successfully

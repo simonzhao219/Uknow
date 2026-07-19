@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -14,6 +14,7 @@ import {
   clearOtpWindow,
 } from '../utils/otpExpiry';
 import { nextRouteForStep } from '../utils/registrationFlow';
+import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
 
 export function OTPVerificationPage() {
   const location = useLocation();
@@ -21,8 +22,22 @@ export function OTPVerificationPage() {
   const { showToast } = useNotification();
   const supabase = createClient();
 
-  const email: string = location.state?.email ?? '';
-  const otpType: 'signup' | 'recovery' = location.state?.otpType ?? 'signup';
+  // 優先用導頁帶來的 state；若沒有（例如使用者關掉頁面後重開網址／新分頁開啟，
+  // router state 已不存在），就從 localStorage 還原待驗證情境，讓中斷的驗證流程
+  // 接得回去而不是被踢回登入。
+  const { email, otpType } = useMemo<{ email: string; otpType: 'signup' | 'recovery' }>(() => {
+    const stateEmail: string | undefined = location.state?.email;
+    const stateOtpType: 'signup' | 'recovery' | undefined = location.state?.otpType;
+    if (stateEmail) return { email: stateEmail, otpType: stateOtpType ?? 'signup' };
+    const pending = getPendingOtp();
+    if (pending) return { email: pending.email, otpType: pending.otpType };
+    return { email: '', otpType: 'signup' };
+  }, [location.state]);
+
+  // 記住目前的待驗證情境，讓之後重開網址時能還原（見上方 useMemo）。
+  useEffect(() => {
+    if (email) savePendingOtp(email, otpType);
+  }, [email, otpType]);
 
   const [otp, setOtp] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -81,8 +96,9 @@ export function OTPVerificationPage() {
         return;
       }
 
-      // 驗證成功，清除倒數狀態
+      // 驗證成功，清除倒數與待驗證情境
       clearOtpWindow(email);
+      clearPendingOtp();
 
       if (otpType === 'recovery') {
         navigate('/auth/reset-password', { replace: true });

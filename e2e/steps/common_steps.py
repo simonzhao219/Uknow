@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, then, when
 
+from config import BASE_URL
 from mocks.fixtures import seed_authenticated_session
 
 
@@ -137,6 +138,26 @@ def visit(page, path):
 @then(parsers.parse('I should be redirected to "{path}"'))
 def should_be_redirected(page, path):
     page.wait_for_url(f"**{path}", timeout=10_000)
+
+
+@when("I reopen the verification page in a new tab", target_fixture="reopened_page")
+def reopen_verification_new_tab(context):
+    # Faithfully models "closed the tab, reopened the link": a new tab shares the
+    # context's localStorage (so the pending-OTP marker is visible) but has a
+    # fresh history with no React Router state — the exact condition the old page
+    # dead-ended on. (A same-URL page.goto/reload would preserve history.state
+    # and never exercise the rehydration path.)
+    new_page = context.new_page()
+    new_page.goto(f"{BASE_URL}/auth/verify-otp")
+    return new_page
+
+
+@then(parsers.parse('the reopened tab should still be verifying "{email}"'))
+def reopened_still_verifying(reopened_page, email):
+    # It rehydrated the pending verification from storage instead of bouncing to
+    # /login.
+    reopened_page.wait_for_url("**/auth/verify-otp", timeout=10_000)
+    expect(reopened_page.get_by_text(email)).to_be_visible(timeout=5_000)
 
 
 @then(parsers.parse('I should see a toast containing "{message}"'))

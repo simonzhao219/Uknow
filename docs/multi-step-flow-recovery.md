@@ -69,12 +69,24 @@
 | 註冊 → **OTP 驗證** → 完善資料 → 付款 | 後端 `registrationStep` + 本次修復的「未驗證」前置狀態 | ✅（修復後） | `AuthPage` / `OTPVerificationPage` / `registrationFlow` |
 | 完善資料（CompleteProfile） | 後端 `registrationStep`（`hasCompleteProfile`） | ✅ | 登入/開機時依 step 重導 |
 | 付款（PaymentCheckout / PayUni 回跳） | 後端 `registrationStep=1/2` + 訂單自癒 migration | ✅ | 路由守衛 + `process_successful_payment` 自癒 |
-| 忘記密碼 → OTP → 重設 | 前端 router state（`otpType='recovery'`） | ⚠️ 部分：重整頁面會沿用倒數，但直接開 `/auth/reset-password` 無 session 時需重走 | `ForgotPasswordPage` / `OTPVerificationPage` |
-| 提領（WithdrawalProcess 多步 dialog） | 前端 component state | ⚠️ 關閉 dialog 即遺失草稿（金額/照片已上傳者可由 `/rewards/id-photos` 復原） | `WithdrawalProcess` |
+| 忘記密碼 → OTP → 重設 | 後端 recovery session + `otpSession` 持久化的待驗證情境 | ✅ | `ForgotPasswordPage` / `OTPVerificationPage` / `otpSession` |
+| 提領（WithdrawalProcess 多步 dialog） | 前端 component state（銀行帳號存 localStorage、身分證照片存後端） | ⚠️ 沒有死巷（餘額即時重算、照片可由 `/rewards/id-photos` 復原、送出後「查收」是後端狀態），但關閉 dialog 會遺失當次草稿（金額/步驟）；身分證字號**刻意不儲存**（隱私） | `WithdrawalProcess` |
 
 **規律**：靠**後端可查詢的狀態**驅動的步驟都能恢復；靠**前端記憶體 / 一次性導頁 /
 router state** 驅動的步驟則容易死巷。OTP 驗證的前置「未驗證」狀態正是後者，
 所以最先爆炸。
+
+### OTP 頁不再因「重開網址」而斷線（契約第 1 條）
+
+驗證碼頁（註冊與重設密碼共用）過去只從 React Router 的 `location.state` 取得
+email 與 otpType。BrowserRouter 的 state 由 `window.history.state` 撐著，**重整
+（F5）會保留**，所以重整不會斷；但「關掉分頁後重開連結／用新分頁開啟」這種
+沒有 history state 的進入方式，就會因 `!email` 被踢回 /login。`src/utils/otpSession.ts`
+把待驗證情境（email + 類型，皆非機敏資料；驗證碼本身永不經手）持久化到
+localStorage，`OTPVerificationPage` 在 router state 消失時改由它 rehydrate——這正是
+契約第 1 條「狀態要能撐過重整、不能只存在單次導頁裡」的落實。e2e 以「新分頁重開
+連結」（共用 localStorage、但 history state 全新）如實驗收，而非用會保留 state 的
+same-URL 重新整理。
 
 ## 4. 可恢復性契約（新流程必須遵守）
 
