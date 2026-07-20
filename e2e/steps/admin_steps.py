@@ -7,7 +7,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from steps.common_steps import *  # noqa: F401,F403  — I visit / see text / redirected
 from mocks.fixtures import seed_authenticated_session
-from mocks.backend_api_mock import build_admin_member, build_admin_withdrawal
+from mocks.backend_api_mock import build_admin_member, build_admin_withdrawal, build_system_alert
 
 scenarios("admin_dashboard.feature")
 
@@ -18,6 +18,16 @@ scenarios("admin_dashboard.feature")
 @given("I am logged in as an admin")
 def logged_in_admin(context):
     seed_authenticated_session(context, registration_step=3, isAdmin=True, accountStatus="active")
+
+
+@given(parsers.parse('there is an unresolved system alert "{message}"'))
+def unresolved_system_alert(api_mock, message):
+    api_mock.set_system_alerts([build_system_alert(message=message)])
+
+
+@when("I resolve the first system alert")
+def resolve_first_alert(page):
+    page.get_by_role("button", name="標記已處理").first.click()
 
 
 @given("there are no withdrawal applications")
