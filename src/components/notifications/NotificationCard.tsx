@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -71,6 +71,23 @@ export function NotificationCard({
 }: NotificationCardProps) {
   const style = notificationStyles[type];
   const Icon = style.icon;
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // dialog 基本可及性：開啟時把焦點移進彈窗（否則 Tab 仍在背後頁面遊走）、
+  // Esc 關閉（與點擊遮罩同一路徑）、關閉時把焦點還給原本的元素。
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    cardRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleConfirm = () => {
     if (onConfirm) {
@@ -97,14 +114,19 @@ export function NotificationCard({
         onClick={onClose}
       >
         <motion.div
+          ref={cardRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          tabIndex={-1}
           initial={{ opacity: 0, y: -20, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -20, scale: 0.95 }}
           transition={{ duration: 0.3 }}
           className={`
             ${style.bgColor} ${style.borderColor}
-            border-t-4 rounded-lg shadow-2xl 
-            w-full max-w-md bg-white
+            border-t-4 rounded-lg shadow-2xl
+            w-full max-w-md bg-white outline-none
           `}
           onClick={(e) => e.stopPropagation()}
         >

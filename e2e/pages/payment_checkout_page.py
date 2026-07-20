@@ -15,8 +15,11 @@ class PaymentCheckoutPage(BasePage):
         return self
 
     def click_pay_later(self) -> "PaymentCheckoutPage":
-        self.page.get_by_test_id("cancel-payment-button").click()
+        self.pay_later_button().click()
         return self
+
+    def pay_later_button(self):
+        return self.page.get_by_test_id("cancel-payment-button")
 
     def click_edit(self) -> "PaymentCheckoutPage":
         self.page.get_by_test_id("edit-profile-button").click()

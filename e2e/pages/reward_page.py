@@ -86,6 +86,21 @@ class RewardPage(BasePage):
             files=[{"name": "id-front.png", "mimeType": "image/png", "buffer": _TINY_PNG}]
         )
 
+    def remove_front_id_photo(self) -> None:
+        # The X button on the front-photo thumbnail (saved photo or fresh
+        # preview). Named per the component's aria-label.
+        self.page.get_by_role("button", name="移除正面照片").click()
+
+    def front_upload_input(self):
+        # With the back photo still showing its thumbnail, the front upload
+        # block is the only `<input type="file">` in the DOM.
+        return self.page.locator('input[type="file"]')
+
+    def upload_replacement_front_photo(self) -> None:
+        self.front_upload_input().set_input_files(
+            files=[{"name": "id-front-new.png", "mimeType": "image/png", "buffer": _TINY_PNG}]
+        )
+
     def agree_terms(self) -> None:
         self.page.get_by_role("checkbox").check()
 
