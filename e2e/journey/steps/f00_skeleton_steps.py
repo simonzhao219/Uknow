@@ -29,8 +29,8 @@ def register(guarded_page, supabase_admin, run_state, node):
 
 
 @when(parsers.parse('使用者 "{node}" 以測試卡完成付款'))
-def pay(guarded_page, journey_config, node):
-    payment.pay_via_gui(guarded_page, journey_config)
+def pay(guarded_page, journey_config, supabase_admin, run_state, node):
+    payment.pay_via_gui(guarded_page, journey_config, supabase_admin, run_state.users[node])
 
 
 @then(parsers.parse('"{node}" 可以進入會員儀表板'))

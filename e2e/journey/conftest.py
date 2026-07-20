@@ -65,6 +65,9 @@ class JourneyConfig:
     card_expiry: str         # MMYY
     card_cvv: str
     production_ref: str
+    anon_key_public: str     # webhook 模式打 Edge Function 用
+    payuni_hash_key: str     # webhook 模式：分支的 PAYUNI_TEST_HASH_KEY
+    payuni_hash_iv: str      # webhook 模式：分支的 PAYUNI_TEST_HASH_IV
 
 
 @pytest.fixture(scope="session")
@@ -99,6 +102,9 @@ def journey_config() -> JourneyConfig:
         card_expiry=os.environ.get("JOURNEY_TEST_CARD_EXPIRY", "0131"),
         card_cvv=os.environ.get("JOURNEY_TEST_CARD_CVV", "123"),
         production_ref=production_ref,
+        anon_key_public=anon,
+        payuni_hash_key=os.environ.get("JOURNEY_PAYUNI_HASH_KEY", ""),
+        payuni_hash_iv=os.environ.get("JOURNEY_PAYUNI_HASH_IV", ""),
     )
 
 

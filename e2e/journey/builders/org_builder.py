@@ -72,7 +72,7 @@ def _build_one(cfg, admin: SupabaseAdmin, user: JourneyUser,
                 referral_code=referral_code,
                 referrer_name=referrer_name,
             )
-            payment.pay_via_gui(page, cfg)
+            payment.pay_via_gui(page, cfg, admin, user)
         finally:
             browser.close()
 

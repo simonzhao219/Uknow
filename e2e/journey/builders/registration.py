@@ -17,14 +17,11 @@ from tools.supa import SupabaseAdmin
 BIRTH_DATE = "1990-01-01"  # 固定成年生日：18 歲門檻的正向樣本
 
 
-def register_via_gui(
-    page: Page,
-    admin: SupabaseAdmin,
-    user: JourneyUser,
-    referral_code: str | None = None,
-    referrer_name: str | None = None,
-) -> None:
-    """走完註冊三步，結束時停在付款結帳頁。"""
+def register_account_via_gui(page: Page, admin: SupabaseAdmin, user: JourneyUser) -> None:
+    """Step 0 + Step 1 + OTP：結束時停在「完善資料」頁。
+
+    獨立成子流程，讓負向情境（15_registration_negative）能建一個
+    走到資料完善頁的臨時帳號，在表單上驗證邊界。"""
     auth = AuthPage(page)
     page.goto("/register")
 
@@ -41,9 +38,22 @@ def register_via_gui(
     otp_code = admin.fetch_signup_otp(user.email, user.password)
     OtpPage(page).enter_code(otp_code)
 
-    # Step 2：完善資料（verifyOtp 成功後導向 CompleteProfile）
-    profile = CompleteProfilePage(page)
+    # verifyOtp 成功後導向 CompleteProfile
     expect(page.locator("#name")).to_be_visible(timeout=30_000)
+
+
+def register_via_gui(
+    page: Page,
+    admin: SupabaseAdmin,
+    user: JourneyUser,
+    referral_code: str | None = None,
+    referrer_name: str | None = None,
+) -> None:
+    """走完註冊三步，結束時停在付款結帳頁。"""
+    register_account_via_gui(page, admin, user)
+
+    # Step 2：完善資料
+    profile = CompleteProfilePage(page)
     profile.fill_form(user.name, user.national_id, BIRTH_DATE, user.phone)
 
     if referral_code:
