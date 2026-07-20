@@ -33,7 +33,18 @@ app.use('*', cors({
     // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
     const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
     const o       = origin.replace(/\/$/, '');
-    return o === allowed || o.startsWith('http://localhost') ? origin : '';
+    if (o === allowed) return origin;
+    // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
+    // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
+    // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
+    const devMode = Deno.env.get('DEV_CORS') === 'true' || Deno.env.get('PAYUNI_SANDBOX') === 'true';
+    if (devMode) {
+      try {
+        const host = new URL(o).hostname;
+        if (host === 'localhost' || host === '127.0.0.1') return origin;
+      } catch { /* 非法 Origin → 拒絕 */ }
+    }
+    return '';
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
@@ -267,10 +278,17 @@ function payuniConfig() {
   };
 }
 
-// MerTradeNo：限英數字。用 台灣日期時間(14) + 4 碼亂數 = 18 碼
-function generateTradeNo(): string {
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${twCompactTimestamp()}${rand}`;  // 18 chars
+// MerTradeNo：限英數字。台灣日期時間(14) + 6 碼 CSPRNG 亂數 = 20 碼。
+// Math.random 4 碼 base36 在同秒內碰撞機率約 1/168 萬——量大後偶發，
+// 碰撞會撞 payment_orders 的唯一鍵讓使用者吃 500；CSPRNG 6 碼把機率
+// 壓到 ~1/2×10⁹，且不可預測。export 供 hardening.test.ts 驗證格式。
+export function generateTradeNo(): string {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let rand = '';
+  for (const b of bytes) rand += chars[b % 36];
+  return `${twCompactTimestamp()}${rand}`;  // 20 chars
 }
 
 // ============================================================
@@ -294,6 +312,18 @@ app.get('/auth/profile', profileHandler);
 // 檢查 email 是否已存在（AuthPage 步驟 1 使用）
 // ============================================================
 app.post('/auth/check-email', async (c) => {
+  // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流
+  // （bump_rate_limit，fail-open：限流器故障不擋正常註冊）。
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    || c.req.header('cf-connecting-ip')
+    || 'unknown';
+  const { data: allowed } = await sb().rpc('bump_rate_limit', {
+    p_key: `check-email:${ip}`, p_max: 10, p_window_seconds: 300,
+  });
+  if (allowed === false) {
+    return c.json({ error: '請求過於頻繁，請稍後再試' }, 429);
+  }
+
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ exists: false }); }
 
@@ -686,6 +716,48 @@ app.use('/admin/*', async (c, next) => {
   if (!user) return c.json({ error: '未授權' }, 401);
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
   await next();
+});
+
+// ============================================================
+// system_alerts 的出口（見 system-alerts-api.test.ts）：這張表自
+// 0716000004 起只進不出——「金額不符待人工裁決」等需要人工介入的
+// 告警實際上無人看得到，且告警去重靠 resolved_at is null，永不
+// resolve 代表同一訂單只告警一次、第一次漏看就永遠靜默。
+// 這兩個端點刻意明確檢查 DB error 回 500（「查詢失敗」與「沒有資料」
+// 對維運後台必須可區分，不得靜默轉成空 200）。
+// ============================================================
+app.get('/admin/system-alerts', async (c) => {
+  const unresolvedOnly = c.req.query('unresolved') !== 'false';
+  const limit = Math.min(parseInt(c.req.query('limit') || '100'), 500);
+
+  let query = sb().from('system_alerts')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (unresolvedOnly) query = query.is('resolved_at', null);
+
+  const { data: alerts, count, error } = await query;
+  if (error) {
+    console.error('[admin/system-alerts] 查詢失敗:', error);
+    return c.json({ error: { message: '查詢告警失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { alerts: alerts ?? [], total: count ?? 0 } });
+});
+
+app.post('/admin/system-alerts/:id/resolve', async (c) => {
+  const id = c.req.param('id');
+  const { data: resolved, error } = await sb().from('system_alerts')
+    .update({ resolved_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('resolved_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error('[admin/system-alerts/resolve] 更新失敗:', error);
+    return c.json({ error: { message: '標記告警失敗' } }, 500);
+  }
+  if (!resolved) return c.json({ error: { message: '找不到未處理的告警' } }, 404);
+  return c.json({ success: true });
 });
 
 // ============================================================
@@ -1086,7 +1158,30 @@ app.post('/payuni/prepare', async (c) => {
   }
 
   const config  = payuniConfig();
-  const tradeNo = generateTradeNo();
+
+  // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
+  // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
+  // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
+  let tradeNo = generateTradeNo();
+  {
+    const orderRow = () => ({
+      user_id:        user.id,
+      amount:         1200,
+      status:         'pending',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      renewal_mode:   renewalMode,
+    });
+    let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
+    if (insertErr && insertErr.code === '23505') {
+      tradeNo = generateTradeNo();
+      ({ error: insertErr } = await client.from('payment_orders').insert(orderRow()));
+    }
+    if (insertErr) {
+      console.error('[prepare] insert payment_orders 失敗:', insertErr);
+      return c.json({ success: false, error: '建立訂單失敗' }, 500);
+    }
+  }
 
   // 雲端環境從 *.supabase.co 網址取 project id；本地 supabase start
   // （http://127.0.0.1:54321）比對不到時直接用該網址當 functions base，
@@ -1127,21 +1222,9 @@ app.post('/payuni/prepare', async (c) => {
   const encryptInfo = await encryptPayUni(encryptData, config.hashKey, config.hashIV);
   const hashInfo    = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
 
-  // 寫入 payment_orders（renewal_mode 記錄使用者選的續費模式，
-  // process_successful_payment 依它決定效期錨點——效期在付款當下才
-  // 決定，不信任前端傳日期）
-  const { error: insertErr } = await client.from('payment_orders').insert({
-    user_id:        user.id,
-    amount:         1200,
-    status:         'pending',
-    payment_method: 'payuni',
-    transaction_id: tradeNo,
-    renewal_mode:   renewalMode,
-  });
-  if (insertErr) {
-    console.error('[prepare] insert payment_orders 失敗:', insertErr);
-    return c.json({ success: false, error: '建立訂單失敗' }, 500);
-  }
+  // payment_orders 已在組加密 payload 之前寫入（見上方建單先行區塊；
+  // renewal_mode 記錄使用者選的續費模式，process_successful_payment
+  // 依它決定效期錨點——效期在付款當下才決定，不信任前端傳日期）。
 
   return c.json({
     success: true,
@@ -1230,12 +1313,33 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
 // 地方可查。跟 SQL 那邊的 log_system_alert() 是同一張表，只是這裡是
 // TypeScript 端自己失敗時用的——絕不能讓告警本身害呼叫端也失敗。
 // ============================================================
-async function logSystemAlert(source: string, context: Record<string, unknown>, message = 'edge function alert') {
+async function logSystemAlert(
+  source: string,
+  context: Record<string, unknown>,
+  message = 'edge function alert',
+  severity: 'info' | 'warning' | 'error' = 'warning',
+) {
   try {
-    await sb().from('system_alerts').insert({ source, severity: 'warning', message, context });
+    await sb().from('system_alerts').insert({ source, severity, message, context });
   } catch (e) {
     console.error('[logSystemAlert] failed to persist alert', e);
   }
+}
+
+// 常數時間字串比較：對兩邊 SHA-256 摘要做等長 XOR 比對（Web Crypto
+// 沒有 timingSafeEqual）。長期靜態共享密鑰的直接 !== 比較是已知的
+// timing side-channel 反模式。
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  const va = new Uint8Array(da);
+  const vb = new Uint8Array(db);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
 }
 
 // ============================================================
@@ -1331,7 +1435,11 @@ async function resolveOrderFromPayUni(
 
   if (error) {
     await persistRawResponseBestEffort(MerTradeNo, data);
-    await logSystemAlert('resolveOrderFromPayUni', { merTradeNo: MerTradeNo, error: error.message });
+    // 付款處理失敗是 error 級事件（不是 warning）：PayUni 已回結果、
+    // 我方入帳流程炸掉，必須人工介入。
+    await logSystemAlert('resolveOrderFromPayUni',
+      { merTradeNo: MerTradeNo, error: error.message },
+      '付款處理失敗，需人工介入', 'error');
     return { ok: false, message: error.message };
   }
 
@@ -1508,7 +1616,7 @@ const RECONCILE_BATCH_LIMIT = 50;
 
 app.post('/internal/reconcile-pending-payments', async (c) => {
   const secret = Deno.env.get('RECONCILE_SECRET');
-  if (!secret || c.req.header('x-internal-secret') !== secret) {
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
