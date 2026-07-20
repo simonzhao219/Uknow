@@ -125,6 +125,33 @@ class SupabaseAdmin:
         resp.raise_for_status()
         return resp.json()
 
+    def rest_delete(self, table: str, params: dict) -> None:
+        """帶條件刪除（service role 繞過 RLS）。僅供測試分支的
+        基礎設施操作（如重置 rate_limits 計數）使用。"""
+        resp = self.session.delete(
+            f"{self.base_url}/rest/v1/{table}",
+            headers=self._service_headers,
+            params=params,
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+
+    def reward_config(self) -> dict:
+        """讀 reward_config 單列（單代獎金、推薦王門檻）——預期值斷言
+        用實際設定計算，不寫死。"""
+        rows = self.rest_select("reward_config", {"select": "*", "limit": "1"})
+        if not rows:
+            raise RuntimeError("reward_config 不存在——分支 migrations 未套用完整？")
+        return rows[0]
+
+    def reset_check_email_rate_limit(self) -> None:
+        """清掉 check-email 的固定窗口計數（10 次/5 分/IP）。
+
+        30 人建樹同一 IP 一定撞限流；正式碼不動，改在拋棄式分支上
+        於波次之間重置計數器——這正是設計書「測試分支放寬限流參數、
+        不動產品碼」的落地。"""
+        self.rest_delete("rate_limits", {"key": "like.check-email:*"})
+
     # --- Storage -----------------------------------------------------------
 
     def storage_list(self, bucket: str, prefix: str) -> list[str]:
