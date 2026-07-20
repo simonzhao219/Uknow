@@ -88,3 +88,31 @@ Feature: Public service-provider directory (home page)
     And the public directory lists providers "Alice 美髮師"
     When I visit "/"
     Then I should see the listing card for "Alice 美髮師"
+
+  @listing @compatibility
+  Scenario: The mobile directory defaults to the 3-column photo wall without overflow
+    Given I am on a mobile-sized screen
+    And the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師"
+    When I visit "/"
+    Then the photo-wall view is active
+    And the directory has no horizontal overflow
+
+  @listing @compatibility
+  Scenario: A visitor can switch between the photo-wall and detailed views on mobile
+    Given I am on a mobile-sized screen
+    And the public directory lists providers "Alice 美髮師"
+    When I visit "/"
+    And I switch to the detailed view
+    Then the detailed view is active
+    And I should see the listing card for "Alice 美髮師"
+    When I switch to the photo-wall view
+    Then the photo-wall view is active
+
+  @listing @compatibility
+  Scenario: The mobile view preference is remembered across reloads
+    Given I am on a mobile-sized screen
+    And the public directory lists providers "Alice 美髮師"
+    When I visit "/"
+    And I switch to the detailed view
+    And I reload the page
+    Then the detailed view is active

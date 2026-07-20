@@ -44,6 +44,13 @@ import {
   listingMatchesDistricts,
   type DistrictSelectionByCity,
 } from '../utils/districtSelection';
+import {
+  readHomeViewMode,
+  writeHomeViewMode,
+  type HomeViewMode,
+} from '../utils/homeViewMode';
+import { HomeViewToggle } from './home/HomeViewToggle';
+import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -107,6 +114,13 @@ export function HomePage() {
   const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>({});
   const selectedCities = Object.keys(districtsByCity);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+
+  // 手機首頁的檢視密度：預設 3 欄照片牆，回訪者沿用上次選擇（見 homeViewMode.ts）。
+  // 以 lazy initializer 在首個 render 就讀回偏好，避免先閃一下預設再跳成偏好。
+  const [viewMode, setViewMode] = useState<HomeViewMode>(() => readHomeViewMode());
+  useEffect(() => {
+    writeHomeViewMode(viewMode);
+  }, [viewMode]);
 
   // 桌面版篩選器展開狀態
   const [isGenderFilterOpen, setIsGenderFilterOpen] = useState(false);
@@ -444,20 +458,28 @@ export function HomePage() {
         {/* 結果統計 - 僅在非載入狀態顯示 */}
         {!loading && (
           <div className="mb-4">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-3">
               <span className="text-sm text-muted-foreground">
                 找到 {filteredServiceProviders.length} 位服務者
               </span>
-              {totalFilters > 0 && (
-                <Button
-                  onClick={clearFilters}
-                  variant="ghost"
-                  size="sm"
-                  className="hidden md:flex text-xs md:text-sm px-2"
-                >
-                  清除篩選 ({totalFilters})
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {totalFilters > 0 && (
+                  <Button
+                    onClick={clearFilters}
+                    variant="ghost"
+                    size="sm"
+                    className="hidden md:flex text-xs md:text-sm px-2"
+                  >
+                    清除篩選 ({totalFilters})
+                  </Button>
+                )}
+                {/* 檢視方式切換：手機專屬（桌面版面已寬、資訊完整，不提供切換） */}
+                <HomeViewToggle
+                  value={viewMode}
+                  onChange={setViewMode}
+                  className="md:hidden"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -466,13 +488,21 @@ export function HomePage() {
         {loading && (
           <div aria-busy="true" aria-live="polite">
             <span className="sr-only">載入服務者資料中</span>
-            {/* 手機兩欄 */}
+            {/* 手機：骨架屏跟著檢視模式走，資料到位時版面不跳動 */}
             <div className="block md:hidden">
-              <div className="grid grid-cols-2 gap-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <MobileCardSkeleton key={i} />
-                ))}
-              </div>
+              {viewMode === "photo" ? (
+                <div className="grid grid-cols-3 gap-0.5">
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-square w-full rounded-none" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <MobileCardSkeleton key={i} />
+                  ))}
+                </div>
+              )}
             </div>
             {/* 桌面 2/3 欄 */}
             <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -525,13 +555,21 @@ export function HomePage() {
         {/* ========== 正常顯示資料（僅在載入完成且有資料時） ========== */}
         {!loading && filteredServiceProviders.length > 0 && (
           <>
-            {/* 手機版資訊卡片網格 */}
+            {/* 手機版：依檢視模式在「3 欄照片牆」與「2 欄詳細卡」間切換 */}
             <div className="block md:hidden">
-              <div className="grid grid-cols-2 gap-3">
-                {filteredServiceProviders.map((serviceProvider) => (
-                  <MobileServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
-                ))}
-              </div>
+              {viewMode === "photo" ? (
+                <div className="grid grid-cols-3 gap-0.5">
+                  {filteredServiceProviders.map((serviceProvider) => (
+                    <MobilePhotoWallCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {filteredServiceProviders.map((serviceProvider) => (
+                    <MobileServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 桌面版卡片網格 */}

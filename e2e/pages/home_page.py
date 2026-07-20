@@ -34,6 +34,31 @@ class HomePage(BasePage):
     def open_listing(self, listing_id: str) -> None:
         self.card(listing_id).click()
 
+    # --- mobile view toggle（照片牆 3 欄 ↔ 詳細 2 欄）---------------------
+    # 分段控制只在手機視窗顯示（桌面 md:hidden）。以 aria-label 定位、aria-pressed
+    # 判斷當前模式，天然對齊元件的無障礙契約，不必依賴 class 或欄數猜測。
+
+    def photo_view_button(self) -> Locator:
+        return self.page.get_by_role("button", name="照片檢視")
+
+    def detailed_view_button(self) -> Locator:
+        return self.page.get_by_role("button", name="詳細檢視")
+
+    def switch_to_photo_view(self) -> None:
+        self.photo_view_button().click()
+
+    def switch_to_detailed_view(self) -> None:
+        self.detailed_view_button().click()
+
+    def reload(self) -> None:
+        self.page.reload()
+
+    def has_horizontal_overflow(self) -> bool:
+        """True 代表頁面在當前視窗下產生了水平捲軸（跑版 / 溢出）。"""
+        return self.page.evaluate(
+            "() => document.documentElement.scrollWidth > window.innerWidth"
+        )
+
     # --- desktop location filter（Collapsible + FilterChip 膠囊按鈕）------
     # FilterChip 是原生 <button aria-pressed>，以文字為可存取名稱；
     # 每個已選縣市有自己的「{city}的服務區域」面板，「全區」與同名區
