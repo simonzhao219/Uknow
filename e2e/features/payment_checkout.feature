@@ -59,12 +59,24 @@ Feature: Payment checkout
     And I click pay
     Then the pay button should be disabled
 
-  Scenario: Paying later signs the user out
+  # 「稍後付款」按身分分流：首次註冊者維持登出（resolvePostLoginAction 會在
+  # 下次登入時把 step 1/2 使用者靜默導回結帳，漏斗接得回去），但按鈕文字
+  # 必須把「會登出」講清楚；續費會員只是想先離開，登出他們是錯的。
+  Scenario: Paying later as a first-time signup signs the user out, and says so
     Given I am logged in with registration step 1
     And logging out succeeds
     When I visit "/payment/checkout"
-    And I click pay later
+    Then the pay-later button should be labeled "登出，稍後再付款"
+    When I click pay later
     Then I should be redirected to "/login"
+
+  Scenario: A renewing member who pays later stays signed in
+    Given I am logged in as an expired former member
+    When I visit "/payment/checkout"
+    Then the pay-later button should be labeled "稍後再說"
+    When I click pay later
+    Then I should be redirected to "/"
+    And I should see a toast containing "隨時可回來完成續費"
 
   # Regression: clicking edit used to land on the profile form and then
   # immediately bounce back to checkout, because CompleteProfile's guard keyed
