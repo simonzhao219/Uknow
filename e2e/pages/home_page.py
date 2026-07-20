@@ -34,6 +34,22 @@ class HomePage(BasePage):
     def open_listing(self, listing_id: str) -> None:
         self.card(listing_id).click()
 
+    # --- desktop location filter (Collapsible; checkboxes have stable ids) --
+
+    def open_location_filter(self) -> None:
+        # 桌面版「服務地區」Collapsible 的觸發鈕（手機版 Sheet 在寬視窗
+        # display:none，不會被 role 選中）。
+        self.page.get_by_role("button", name="服務地區").click()
+
+    def check_city(self, city: str) -> None:
+        self.page.locator(f"#desktop-city-{city}").click()
+
+    def toggle_all_districts(self, city: str) -> None:
+        self.page.locator(f"#desktop-district-{city}-all").click()
+
+    def check_district(self, city: str, district: str) -> None:
+        self.page.locator(f"#desktop-district-{city}-{district}").click()
+
     # --- locators ----------------------------------------------------------
 
     def search_box(self) -> Locator:

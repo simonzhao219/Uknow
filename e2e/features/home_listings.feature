@@ -52,6 +52,21 @@ Feature: Public service-provider directory (home page)
     And I open the listing card for "Alice 美髮師"
     Then I should be on the detail page for "Alice 美髮師"
 
+  @listing @negative
+  Scenario: District filters are scoped per city and never leak across cities
+    Given the public directory has a listing "北市中山服務者" in "台北市" district "中山區"
+    And the public directory has a listing "北市大安服務者" in "台北市" district "大安區"
+    And the public directory has a listing "基隆七堵服務者" in "基隆市" district "七堵區"
+    When I visit "/"
+    And I open the desktop location filter
+    And I check the city "台北市"
+    And I uncheck all districts of "台北市"
+    And I check the district "中山區" of "台北市"
+    And I check the city "基隆市"
+    Then I should see the listing card for "北市中山服務者"
+    And I should see the listing card for "基隆七堵服務者"
+    But I should not see the listing card for "北市大安服務者"
+
   @listing
   Scenario: Without location permission the newest listing stays on top
     Given the public directory has a listing "台北服務者" in "台北市"
