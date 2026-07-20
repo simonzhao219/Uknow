@@ -35,8 +35,22 @@ export JOURNEY_SUPABASE_ANON_KEY=<分支 anon key>
 export JOURNEY_SUPABASE_SERVICE_ROLE_KEY=<分支 service role key>
 
 pytest -m skeleton          # M1 walking skeleton（單人全流程）
-pytest tools/test_twid.py   # 離線單元測試（不需要環境與瀏覽器）
+pytest                      # 全套：骨架 → 30 人建樹 → 樹/帳本斷言（依檔名 f00→f10→f20 定序）
+pytest -m orgbuild          # 只跑 30 人建樹（A0 未建置時會由 builder 一併補建）
+pytest -m rewards           # 只跑樹/帳本斷言（樹未建置時整批 skip 並提示）
+pytest tools/               # 離線單元測試（twid、orgchart——不需環境與瀏覽器）
 ```
+
+**建樹的平行度**：`JOURNEY_BUILD_PARALLELISM`（預設 3）。同一代內的
+節點以「執行緒 × 各自的 headless Chromium」平行；每一波開始前 harness
+會用 service role 重置分支上的 `check-email` 限流計數（拋棄式分支限定
+的基礎設施操作，正式碼與正式環境都不動）。
+
+⚠️ **GoTrue email 發送限流**：GUI signUp 會觸發 OTP 郵件發送，Supabase
+內建 SMTP 的預設額度極低（每小時個位數），30 人建樹必撞。分支設定需
+擇一：掛 custom SMTP（收不收得到無所謂，OTP 是用 Admin API 取的）或在
+Auth 設定把 email rate limit 調到 ≥60/hr。M4 會把這一步併入分支建立
+自動化。
 
 未設定 `JOURNEY_*` 時，需要環境的情境整批 skip、離線測試照跑——
 所以上層 CI 收錄本目錄也不會誤打真網路。
@@ -77,10 +91,20 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## M1 已知範圍界線
+## 目前進度與範圍界線（M2 止）
 
+已落地：
+- **M1**：單人 walking skeleton（`00_skeleton.feature`）。
+- **M2**：30 人六代建樹（`10_org_build.feature`，逐代 BFS、同代平行、
+  同 RUN_ID 失敗續建的冪等設計）＋樹/帳本斷言（`20_referral_rewards.feature`：
+  root 代數分佈 8/8/8、第 4 代零貢獻、獎勵頁與推薦樹 GUI、B1/B2/C1/F1/G1
+  交叉帳本——金額一律以 reward_config 現值計算，調參不改測試）。
+
+尚未落地：
 - `builders/payuni_sandbox_page.py` 的選擇器是**未經真 sandbox 校準**的
   第一版（候選清單設計，改版只修這一檔）；首次帶憑證執行時校準。
 - `webhook` 付款備援模式（簽章注入）屬 M3，目前會拋 NotImplementedError。
-- 分支的建立/刪除仍是手動（上方 CLI 指令）；M4 併入 nightly workflow。
-- 30 人建樹（`orgchart.yaml` 已就緒）與六大模組 feature 屬 M2/M3。
+- 任務（推薦王 claim）、刊登、提領雙視角、更多註冊負向邊界、時光機
+  情境屬 M3。
+- 分支的建立/刪除與 GoTrue email 限流設定仍是手動；M4 併入 nightly
+  workflow。
