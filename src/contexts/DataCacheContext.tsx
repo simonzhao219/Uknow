@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 
 /**
  * 資料快取介面
@@ -211,15 +211,24 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
     return !!cacheRef.current[key];
   }, []);
 
-  const value: DataCacheContextType = {
-    getCache,
-    getEntry,
-    isStale,
-    setCache: setCacheData,
-    clearCache: clearCacheData,
-    invalidate,
-    hasCache,
-  };
+  // value 必須 memo，且 deps 可為空：七個函式全是 [] deps 的 useCallback
+  // （讀取走 cacheRef 鏡射），identity 終身穩定。若用物件字面量，每次
+  // setCache（即每個 hook 的背景 revalidate 完成）都會產生新 value，
+  // 讓所有 useDataCache 消費者無謂重渲染——「ref 鏡射 state 維持穩定
+  // identity」的設計就被最外層這個物件毀掉了。
+  const value: DataCacheContextType = useMemo(
+    () => ({
+      getCache,
+      getEntry,
+      isStale,
+      setCache: setCacheData,
+      clearCache: clearCacheData,
+      invalidate,
+      hasCache,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   return (
     <DataCacheContext.Provider value={value}>

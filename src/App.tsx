@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
@@ -9,19 +10,12 @@ import { ServiceProviderDetail } from './components/ServiceProviderDetail';
 import { AuthPage } from './components/AuthPage';
 import { OTPVerificationPage } from './components/OTPVerificationPage';
 import { CompleteProfile } from './components/CompleteProfile';
-import { PaymentCheckout } from './components/PaymentCheckout';  // ✅ 新增
-import { PaymentResult } from './components/PaymentResult';  // ✅ 新增：付款結果頁面
-import { ForgotPasswordPage } from './components/ForgotPasswordPage';  // ✨ 新增
-import { ResetPasswordPage } from './components/ResetPasswordPage';    // ✨ 新增
-import { MemberDashboard } from './components/MemberDashboard';
-import { ServiceProviderManagement } from './components/ServiceProviderManagement';
-import { CreateServiceProvider } from './components/CreateServiceProvider';
-import { EditServiceProvider } from './components/EditServiceProvider';
-import { ReferralManagement } from './components/ReferralManagement';
-import { TaskDashboard } from './components/TaskDashboard';
-import { RewardDashboard } from './components/RewardDashboard';
-import { AdminDashboard } from './components/AdminDashboard';
-import { MarkdownContent } from './components/MarkdownContent';
+// 金流頁刻意保持同步載入：付款途中不承受 lazy chunk 載入失敗的風險。
+import { PaymentCheckout } from './components/PaymentCheckout';
+import { PaymentResult } from './components/PaymentResult';
+import { ForgotPasswordPage } from './components/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/ResetPasswordPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { RequireMembershipRoute } from './components/RequireMembershipRoute'; // ✅ 會員資格守衛（以會籍有效為準）
@@ -33,10 +27,35 @@ import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { isProfileComplete } from './utils/registrationFlow';
-import { termsOfServiceContent } from './content/termsOfService';
-import { listingPlansContent } from './content/listingPlans';
-import { referralRewardRulesContent } from './content/referralRewardRules';
-import { referralRewardContractContent } from './content/referralRewardContract';
+
+// Code splitting（見 appShell.test.ts 的架構契約）：
+// 訪客開首頁不需要下載管理後台、會員區與法務長文。admin/會員區/內容頁
+// 都改為路由層 lazy，Suspense fallback 用與各頁一致的置中 spinner。
+const lazyNamed = <T extends Record<string, any>, K extends keyof T>(
+  loader: () => Promise<T>,
+  name: K,
+) => lazy(() => loader().then((m) => ({ default: m[name] })));
+
+const MemberDashboard = lazyNamed(() => import('./components/MemberDashboard'), 'MemberDashboard');
+const ServiceProviderManagement = lazyNamed(() => import('./components/ServiceProviderManagement'), 'ServiceProviderManagement');
+const CreateServiceProvider = lazyNamed(() => import('./components/CreateServiceProvider'), 'CreateServiceProvider');
+const EditServiceProvider = lazyNamed(() => import('./components/EditServiceProvider'), 'EditServiceProvider');
+const ReferralManagement = lazyNamed(() => import('./components/ReferralManagement'), 'ReferralManagement');
+const TaskDashboard = lazyNamed(() => import('./components/TaskDashboard'), 'TaskDashboard');
+const RewardDashboard = lazyNamed(() => import('./components/RewardDashboard'), 'RewardDashboard');
+const AdminDashboard = lazyNamed(() => import('./components/AdminDashboard'), 'AdminDashboard');
+const TermsOfServicePage = lazyNamed(() => import('./components/ContentPages'), 'TermsOfServicePage');
+const ListingPlansPage = lazyNamed(() => import('./components/ContentPages'), 'ListingPlansPage');
+const ReferralRewardRulesPage = lazyNamed(() => import('./components/ContentPages'), 'ReferralRewardRulesPage');
+const ReferralRewardContractPage = lazyNamed(() => import('./components/ContentPages'), 'ReferralRewardContractPage');
+
+function RouteLoader() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
 
 // User context
 export const UserContext = React.createContext<{
@@ -60,7 +79,6 @@ function AppContent() {
   const [user, setUser] = useState(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true); // ✅ P1: 全局 loading state
   const navigate = useNavigate();
-  const location = useLocation();
   const supabase = createClient();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   // 記錄目前已載入 profile 的使用者 id，用來分辨「真的登入」與分頁重新可見時
@@ -185,8 +203,17 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // value 必須 memo：這個 context 有 17 個消費者，未 memo 的物件字面量
+  // 會讓 AppContent 每次 render（含每次背景 revalidate）都逼全部消費者
+  // 重渲染。setUser 與 refreshUser 皆為穩定 identity，deps 只需狀態本身。
+  const contextValue = useMemo(
+    () => ({ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, isLoadingUser]
+  );
+
   return (
-    <UserContext.Provider value={{ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }}>
+    <UserContext.Provider value={contextValue}>
       <FeatureProvider>
         <NotificationProvider>
           <div className="min-h-screen bg-background flex flex-col">
@@ -194,6 +221,8 @@ function AppContent() {
             <MaintenanceBanner />
             {/* 登入後手機有底部導覽，main 補下方留白避免內容被遮住 */}
             <main className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}>
+              <ErrorBoundary>
+              <Suspense fallback={<RouteLoader />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
@@ -273,34 +302,16 @@ function AppContent() {
                     <AdminDashboard />
                   </AdminRoute>
                 } />
-                {/* Public Content Pages */}
-                <Route path="/terms-of-service" element={
-                  <MarkdownContent 
-                    content={termsOfServiceContent} 
-                    title="服務條款" 
-                  />
-                } />
-                <Route path="/listing-plans" element={
-                  <MarkdownContent 
-                    content={listingPlansContent} 
-                    title="刊登方案" 
-                  />
-                } />
-                <Route path="/referral-reward-rules" element={
-                  <MarkdownContent 
-                    content={referralRewardRulesContent} 
-                    title="推薦獎勵規則" 
-                  />
-                } />
-                <Route path="/referral-reward-contract" element={
-                  <MarkdownContent 
-                    content={referralRewardContractContent} 
-                    title="推薦獎勵合約" 
-                  />
-                } />
-                
+                {/* Public Content Pages（lazy：見 ContentPages.tsx 的 chunk 邊界說明） */}
+                <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+                <Route path="/listing-plans" element={<ListingPlansPage />} />
+                <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />
+                <Route path="/referral-reward-contract" element={<ReferralRewardContractPage />} />
+
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </Suspense>
+              </ErrorBoundary>
             </main>
             <Footer />
             <BottomNav />
