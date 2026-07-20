@@ -797,7 +797,13 @@ app.get('/admin/withdrawals', async (c) => {
     .order('requested_at', { ascending: false })
     .range(offset, offset + limit - 1);
   if (statusFilter) query = query.eq('status', statusFilter);
-  const { data: rows, count } = await query;
+  const { data: rows, count, error: listErr } = await query;
+  // 金流後台必須能區分「查詢失敗」與「真的沒有提領單」——DB 故障
+  // 靜默轉成空 200 會讓 admin 以為沒有待審件，維運端零察覺。
+  if (listErr) {
+    console.error('[admin/withdrawals] 查詢失敗:', listErr);
+    return c.json({ error: { message: '查詢提領單失敗' } }, 500);
+  }
 
   const userIds = [...new Set((rows ?? []).map((w: any) => w.user_id))];
   let profMap: Record<string, any> = {};
@@ -1862,11 +1868,17 @@ app.get('/rewards/withdrawals', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const { data: rows } = await sb()
+  const { data: rows, error: listErr } = await sb()
     .from('withdrawals')
     .select('*')
     .eq('user_id', user.id)
     .order('requested_at', { ascending: false });
+  // 同 admin 列表：會員的提領紀錄是金流資料，「查詢失敗」不得偽裝成
+  // 「沒有提領紀錄」的空 200。
+  if (listErr) {
+    console.error('[rewards/withdrawals] 查詢失敗:', listErr);
+    return c.json({ error: { message: '查詢提領紀錄失敗' } }, 500);
+  }
 
   const withdrawals = (rows ?? []).map((w: any) => ({
     id:           w.id,
