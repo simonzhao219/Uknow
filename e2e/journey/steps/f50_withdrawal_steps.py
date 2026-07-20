@@ -7,6 +7,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from builders import withdrawal
 from builders.login import login_admin, login_via_gui
+from builders.referral_program import ensure_joined_via_gui
 from builders.verification import available_points
 from pages.admin_dashboard_page import AdminDashboardPage
 from pages.reward_page import RewardPage
@@ -14,6 +15,16 @@ from pages.reward_page import RewardPage
 scenarios("50_withdrawal.feature")
 
 WITHDRAWAL_TAB = "獎金提領管理"
+
+
+@given(parsers.parse('"{node}" 已透過 GUI 加入推薦計畫'))
+def joined_program(guarded_page, supabase_admin, run_state, node):
+    ensure_joined_via_gui(guarded_page, supabase_admin, run_state.users[node])
+
+
+@then("獎勵頁顯示尚未加入推薦計畫的提示")
+def not_joined_hint(guarded_page):
+    expect(guarded_page.get_by_text("尚未加入推薦計畫").first).to_be_visible(timeout=15_000)
 
 
 def _latest_withdrawal(supabase_admin, user_id: str) -> dict:

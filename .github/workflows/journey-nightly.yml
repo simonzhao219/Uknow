@@ -1,0 +1,169 @@
+name: Journey Nightly
+
+# 六代 30 人全功能 Journey 套件（e2e/journey/）——CI 四軌設計的軌道 4。
+#
+# 一次執行 = 一個拋棄式 Supabase preview branch：測前建立、測後刪除
+# ＝資料保證清乾淨（cleanup.py 的零殘留斷言是第二道保險）。
+#
+# ⚠️ 首跑校準（與 reconcile-payments.yml 同一模式）：schedule 先註解，
+# 用 workflow_dispatch 手動觸發驗證一輪（分支建立、GoTrue email 限流、
+# PayUni sandbox 刷卡頁選擇器、任務對話框按鈕序），全綠後把 schedule
+# 打開即可。
+#
+# 需要的 repository secrets：
+#   SUPABASE_ACCESS_TOKEN      既有（deploy-supabase.yml 同一把）
+#   PAYUNI_TEST_MER_ID         PayUni sandbox 商店代號
+#   PAYUNI_TEST_HASH_KEY       PayUni sandbox HashKey
+#   PAYUNI_TEST_HASH_IV        PayUni sandbox HashIV
+# 需要的 repository variables：
+#   SUPABASE_PROJECT_REF       既有（正式專案 ref，分支從它長出來）
+
+on:
+  # 首跑校準通過後打開（台北 02:00 = UTC 18:00）：
+  # schedule:
+  #   - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      payment_mode:
+        description: '付款模式（sandbox=真刷測試卡；webhook=簽章注入備援）'
+        type: choice
+        options: [sandbox, webhook]
+        default: sandbox
+      scope:
+        description: '範圍（skeleton=單人骨架快速驗證；full=全 30 人六模組）'
+        type: choice
+        options: [full, skeleton]
+        default: full
+
+# 分支費用＋PayUni sandbox 共享狀態：同時最多一場
+concurrency:
+  group: journey-nightly
+  cancel-in-progress: false
+
+jobs:
+  journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PARENT_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      # ------------------------------------------------------------------
+      # 1. 開拋棄式 preview branch（名稱帶 run id，殘留可辨識）
+      #    分支會自動套用 main 的全部 migrations。
+      # ------------------------------------------------------------------
+      - name: Create disposable Supabase branch
+        id: branch
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="journey-${{ github.run_id }}"
+          echo "name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          supabase link --project-ref "$PARENT_PROJECT_REF"
+          supabase branches create "$BRANCH_NAME" --experimental
+          # 等分支就緒並取連線資訊（ref / keys）
+          for i in $(seq 1 30); do
+            OUT="$(supabase branches get "$BRANCH_NAME" --experimental -o env 2>/dev/null || true)"
+            if echo "$OUT" | grep -q '^POSTGRES_URL\|^API_URL'; then break; fi
+            sleep 10
+          done
+          supabase branches get "$BRANCH_NAME" --experimental -o env > branch.env
+          # branch.env 的欄位名以 CLI 版本為準——首跑校準時核對下面三行
+          BRANCH_REF="$(grep -oP '(?<=^REF=).*' branch.env || grep -oP 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env | head -1)"
+          echo "ref=$BRANCH_REF" >> "$GITHUB_OUTPUT"
+          {
+            echo "JOURNEY_SUPABASE_PROJECT_REF=$BRANCH_REF"
+            echo "JOURNEY_SUPABASE_ANON_KEY=$(grep -oP '(?<=^ANON_KEY=).*' branch.env)"
+            echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$(grep -oP '(?<=^SERVICE_ROLE_KEY=).*' branch.env)"
+          } >> "$GITHUB_ENV"
+
+      # ------------------------------------------------------------------
+      # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
+      #    GoTrue email 限流放寬（GUI signUp 會發 OTP 郵件，內建 SMTP
+      #    額度極低；OTP 實際由 Admin API 取得，郵件收不收得到無所謂）
+      # ------------------------------------------------------------------
+      - name: Configure branch (function secrets + auth rate limit)
+        run: |
+          set -euo pipefail
+          supabase secrets set --project-ref "${{ steps.branch.outputs.ref }}" \
+            PAYUNI_SANDBOX=true \
+            PAYUNI_TEST_MER_ID="${{ secrets.PAYUNI_TEST_MER_ID }}" \
+            PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
+            PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
+            FRONTEND_URL="http://localhost:3100"
+          # Auth email 發送限流 ≥60/hr（management API；欄位名首跑校準）
+          curl -sf -X PATCH \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
+            -d '{"rate_limit_email_sent": 100}' || echo "::warning::auth rate limit 調整失敗——30 人建樹可能撞 email 限流"
+
+      # ------------------------------------------------------------------
+      # 3. 跑套件
+      # ------------------------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: e2e/journey/requirements.txt
+      - run: pip install -r e2e/journey/requirements.txt
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+      - run: playwright install chromium --with-deps
+
+      - name: Run journey suite
+        working-directory: e2e/journey
+        env:
+          PYTHONUNBUFFERED: "1"
+          JOURNEY_PAYMENT_MODE: ${{ inputs.payment_mode || 'sandbox' }}
+          JOURNEY_PAYUNI_HASH_KEY: ${{ secrets.PAYUNI_TEST_HASH_KEY }}
+          JOURNEY_PAYUNI_HASH_IV: ${{ secrets.PAYUNI_TEST_HASH_IV }}
+          JOURNEY_RUN_ID: gh${{ github.run_id }}
+          JOURNEY_BUILD_PARALLELISM: "8"
+        run: |
+          if [ "${{ inputs.scope || 'full' }}" = "skeleton" ]; then
+            pytest -m skeleton --browser chromium \
+              --screenshot only-on-failure --tracing retain-on-failure \
+              --output test-results -v
+          else
+            pytest --browser chromium \
+              --screenshot only-on-failure --tracing retain-on-failure \
+              --output test-results -v
+          fi
+
+      - name: Upload journey artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-results-${{ github.run_id }}
+          path: |
+            e2e/journey/test-results/
+            e2e/journey/.run/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # ------------------------------------------------------------------
+      # 4. 第一道保險：不論成敗，整個分支刪掉＝資料必然不存在
+      #    （suite 內的 cleanup.py + 零殘留斷言是第二道，已在步驟 3 跑過）
+      # ------------------------------------------------------------------
+      - name: Delete disposable branch
+        if: always()
+        run: |
+          supabase branches delete "${{ steps.branch.outputs.name }}" --experimental --yes \
+            || echo "::error::分支刪除失敗——請到 Supabase dashboard 手動刪除 ${{ steps.branch.outputs.name }}"

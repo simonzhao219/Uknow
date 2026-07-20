@@ -125,6 +125,19 @@ class SupabaseAdmin:
         resp.raise_for_status()
         return resp.json()
 
+    def rest_update(self, table: str, params: dict, values: dict) -> list[dict]:
+        """帶條件 PATCH（service role 繞過 RLS）。僅供拋棄式分支上的
+        時光機資料回填使用——正式環境沒有任何路徑會呼叫到這裡。"""
+        resp = self.session.patch(
+            f"{self.base_url}/rest/v1/{table}",
+            headers={**self._service_headers, "Prefer": "return=representation"},
+            params=params,
+            json=values,
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def rest_delete(self, table: str, params: dict) -> None:
         """帶條件刪除（service role 繞過 RLS）。僅供測試分支的
         基礎設施操作（如重置 rate_limits 計數）使用。"""
