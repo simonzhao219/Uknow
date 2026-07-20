@@ -106,6 +106,7 @@ class SupabaseRestMock:
         self._listing_by_id = None     # single GET /listings by id  (Edit read)
         self._public_listing = None    # single GET /public_listings (Detail)
         self._public_listings = []     # select() list GET /public_listings (HomePage)
+        self._public_listings_error = None  # (status, body) to fail HomePage's list read
         self._write_error = None       # (status, body) to fail insert/update/delete
         self._routed = False
 
@@ -142,10 +143,19 @@ class SupabaseRestMock:
     def set_public_listings(self, listings):
         """The array returned by HomePage's `.select().order()` list read on
         `public_listings`. Pass a list of rows (possibly empty for the
-        "目前沒有可用的服務者" empty state)."""
+        "目前沒有可用的服務者" empty state). Also clears any pending
+        `fail_public_listings` failure, so retry flows can recover."""
         self._public_listings = list(listings)
+        self._public_listings_error = None
         self._ensure_routes()
         return listings
+
+    def fail_public_listings(self, status: int = 500, message: str = "internal error"):
+        """Make HomePage's list read fail (supabase-js surfaces the non-2xx as
+        a query error, and the component must show its load-error state, NOT
+        the empty state). Call `set_public_listings(...)` to recover."""
+        self._public_listings_error = (status, {"message": message, "code": str(status), "details": "", "hint": ""})
+        self._ensure_routes()
 
     def fail_writes(self, message: str = "操作失敗", status: int = 400):
         self._write_error = (status, {"message": message, "code": "", "details": "", "hint": ""})
@@ -185,5 +195,8 @@ class SupabaseRestMock:
                     return _not_found_406(route)
                 return _fulfill_json(route, self._public_listing)
             # `.select().order()` list — HomePage read.
+            if self._public_listings_error:
+                status, body = self._public_listings_error
+                return _fulfill_json(route, body, status=status)
             return _fulfill_json(route, self._public_listings)
         return _fulfill_empty(route, status=204)

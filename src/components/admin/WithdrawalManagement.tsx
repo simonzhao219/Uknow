@@ -82,6 +82,7 @@ export function WithdrawalManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [rejectTarget, setRejectTarget] = useState<AdminWithdrawalRecord | null>(null);
+  const [paidTarget, setPaidTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const fetchWithdrawals = useCallback(async () => {
@@ -155,6 +156,35 @@ export function WithdrawalManagement() {
   return (
     <div className="space-y-6">
       {viewRecord && <IdCardDialog record={viewRecord} onClose={() => setViewRecord(null)} />}
+
+      {/* 「已匯款」與「退件」同屬金錢狀態操作，一律先確認——兩顆按鈕
+          相鄰，單鍵直接執行會讓誤觸立即通知會員款項已匯出。 */}
+      {paidTarget && (
+        <AlertDialog open onOpenChange={() => setPaidTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>確認已完成匯款？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {paidTarget.userName} 的提領 {paidTarget.amount} P，
+                匯入帳號末五碼 {String(paidTarget.bankAccount ?? '').slice(-5) || '未提供'}。
+                確認後該筆將轉為「待查收」並通知會員款項已匯出。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = paidTarget;
+                  setPaidTarget(null);
+                  if (target) updateStatus(target, 'awaiting_collection');
+                }}
+              >
+                確認匯款
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {rejectTarget && (
         <AlertDialog open onOpenChange={() => setRejectTarget(null)}>
@@ -262,7 +292,7 @@ export function WithdrawalManagement() {
                         <div className="flex gap-2">
                           <Button
                             size="sm"
-                            onClick={() => updateStatus(w, 'awaiting_collection')}
+                            onClick={() => setPaidTarget(w)}
                             disabled={processingId === w.id}
                           >
                             已匯款

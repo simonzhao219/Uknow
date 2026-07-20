@@ -31,7 +31,10 @@ class AdminDashboardPage(BasePage):
     # --- withdrawal review actions (pending rows only) ---------------------
 
     def mark_first_withdrawal_paid(self) -> None:
-        self.page.get_by_role("button", name="已匯款").first.click()
+        # Money-state change goes through a confirmation dialog, same as 退件.
+        # exact=True so this doesn't also match the dialog's "確認匯款" button.
+        self.page.get_by_role("button", name="已匯款", exact=True).first.click()
+        self.page.get_by_role("button", name="確認匯款").click()
 
     def reject_first_withdrawal(self) -> None:
         # exact=True so this doesn't also match the dialog's "確認退件" button.

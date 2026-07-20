@@ -121,23 +121,45 @@ export async function apiRequest(
  * console.log('Available rewards:', data.availableRewards);
  * ```
  */
+/**
+ * 從後端錯誤回應中取出人類可讀的訊息。
+ *
+ * 後端有兩種錯誤信封並存（index.ts 中字串形 69 處、物件形 38 處）：
+ *   { error: '已有有效訂閱，請到期後再續約' }   ← 字串形
+ *   { error: { message: '...' } }               ← 物件形
+ * 只解析物件形會讓字串形的具體原因退化成「請求失敗 (400)」——
+ * 續訂、付款準備這些金流節點的錯誤訊息就這樣遺失。兩種都要接。
+ */
+export function extractApiErrorMessage(errorData: unknown, fallback: string): string {
+  if (errorData && typeof errorData === 'object') {
+    const { error, message } = errorData as { error?: unknown; message?: unknown };
+    if (typeof error === 'string' && error) return error;
+    if (error && typeof error === 'object') {
+      const nested = (error as { message?: unknown }).message;
+      if (typeof nested === 'string' && nested) return nested;
+    }
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
 export async function apiRequestJson<T = any>(
   url: string,
   options: RequestInit = {}
 ): Promise<T> {
   try {
     const response = await apiRequest(url, options);
-    
+
     if (!response.ok) {
       let errorMessage = `請求失敗 (${response.status})`;
-      
+
       try {
         const errorData = await response.json();
-        errorMessage = errorData.error?.message || errorData.message || errorMessage;
+        errorMessage = extractApiErrorMessage(errorData, errorMessage);
       } catch {
         // 無法解析錯誤訊息，使用預設訊息
       }
-      
+
       throw new ApiError(errorMessage, response.status);
     }
     

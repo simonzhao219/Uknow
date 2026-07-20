@@ -60,6 +60,11 @@ def click_pay_later(payment_checkout_page):
     payment_checkout_page.click_pay_later()
 
 
+@then(parsers.parse('the pay-later button should be labeled "{label}"'))
+def pay_later_button_labeled(payment_checkout_page, label):
+    expect(payment_checkout_page.pay_later_button()).to_have_text(label, timeout=5_000)
+
+
 @when("I click edit")
 def click_edit(payment_checkout_page):
     payment_checkout_page.click_edit()

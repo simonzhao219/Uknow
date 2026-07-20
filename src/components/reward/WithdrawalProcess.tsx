@@ -272,11 +272,16 @@ export function WithdrawalProcess({
 
   const removeFile = (field: 'idCardFront' | 'idCardBack') => {
     setPersonalData({...personalData, [field]: null});
-    // ✅ 清除照片預覽 URL
+    // 同時清掉預覽與伺服器上已存照片的 URL——兩者任一還在，縮圖就不會
+    // 讓位給上傳區塊，回頭客會被困在「X 按了沒反應、想換照片沒入口」。
+    // 已存照片只是前端顯示層的引用；後端檔案在重新上傳時才會被覆蓋，
+    // 而 validateStep2 會擋「移除後未重新上傳就送出」。
     if (field === 'idCardFront') {
       setIdCardFrontPreview(null);
+      setExistingPhotos(prev => ({ ...prev, frontUrl: null }));
     } else if (field === 'idCardBack') {
       setIdCardBackPreview(null);
+      setExistingPhotos(prev => ({ ...prev, backUrl: null }));
     }
   };
 
@@ -660,6 +665,7 @@ export function WithdrawalProcess({
                     size="sm"
                     className="absolute top-1 right-1 h-6 w-6 p-0"
                     onClick={() => removeFile('idCardFront')}
+                    aria-label="移除正面照片"
                   >
                     <X className="h-3 w-3" />
                   </Button>
@@ -697,6 +703,7 @@ export function WithdrawalProcess({
                     size="sm"
                     className="absolute top-1 right-1 h-6 w-6 p-0"
                     onClick={() => removeFile('idCardBack')}
+                    aria-label="移除背面照片"
                   >
                     <X className="h-3 w-3" />
                   </Button>
