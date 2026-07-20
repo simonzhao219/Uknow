@@ -189,3 +189,38 @@ def on_detail_page(page, directory, name):
 @then(parsers.parse('the first listing should be "{name}"'))
 def first_listing_should_be(home_page, name):
     expect(home_page.cards().first).to_contain_text(name, timeout=5_000)
+
+
+# --- mobile view toggle（照片牆 ↔ 詳細）------------------------------------
+
+
+@when("I switch to the detailed view")
+def switch_to_detailed(home_page):
+    home_page.switch_to_detailed_view()
+
+
+@when("I switch to the photo-wall view")
+def switch_to_photo(home_page):
+    home_page.switch_to_photo_view()
+
+
+@when("I reload the page")
+def reload_page(home_page):
+    home_page.reload()
+
+
+@then("the photo-wall view is active")
+def photo_view_active(home_page):
+    expect(home_page.photo_view_button()).to_have_attribute("aria-pressed", "true", timeout=5_000)
+    expect(home_page.detailed_view_button()).to_have_attribute("aria-pressed", "false")
+
+
+@then("the detailed view is active")
+def detailed_view_active(home_page):
+    expect(home_page.detailed_view_button()).to_have_attribute("aria-pressed", "true", timeout=5_000)
+    expect(home_page.photo_view_button()).to_have_attribute("aria-pressed", "false")
+
+
+@then("the directory has no horizontal overflow")
+def no_horizontal_overflow(home_page):
+    assert not home_page.has_horizontal_overflow(), "首頁在手機視窗下產生了水平溢出（跑版）"
