@@ -3,14 +3,10 @@ import { Link } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
-import { Checkbox } from "./ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import {
   MapPin,
-  ChevronDown,
   ChevronRight,
   Search,
   AlertCircle,
@@ -18,10 +14,13 @@ import {
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { GenderBadge } from "./common/GenderBadge";
 import { FilterCountBadge } from "./common/FilterCountBadge";
+import { FilterChip } from "./common/FilterChip";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -99,8 +98,7 @@ export function HomePage() {
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
-  const [openCities, setOpenCities] = useState<Record<string, boolean>>({});
-  
+
   // 桌面版篩選器展開狀態
   const [isGenderFilterOpen, setIsGenderFilterOpen] = useState(false);
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
@@ -241,20 +239,16 @@ export function HomePage() {
   ]);
 
   const handleCityChange = (city: string, checked: boolean) => {
+    const cityDistricts = TAIWAN_REGIONS[city] || [];
+    const allCityDistricts = ['全區', ...cityDistricts];
     if (checked) {
+      // 選擇縣市時預設涵蓋全區；已選縣市的區域面板會直接顯示供進一步縮小範圍
       setSelectedCities([...selectedCities, city]);
-      // 當選擇縣市時，自動展開該縣市的區域選項並選擇全區
-      setOpenCities({ ...openCities, [city]: true });
-      const cityDistricts = TAIWAN_REGIONS[city] || [];
-      const allCityDistricts = ['全區', ...cityDistricts];
       setSelectedDistricts([...selectedDistricts, ...allCityDistricts]);
     } else {
-      setSelectedCities(selectedCities.filter((c) => c !== city));
       // 取消選擇縣市時，也清除該縣市下的所有區域選擇（包含全區）
-      const cityDistricts = TAIWAN_REGIONS[city] || [];
-      const allCityDistricts = ['全區', ...cityDistricts];
+      setSelectedCities(selectedCities.filter((c) => c !== city));
       setSelectedDistricts(selectedDistricts.filter((d) => !allCityDistricts.includes(d)));
-      setOpenCities({ ...openCities, [city]: false });
     }
   };
 
@@ -299,16 +293,11 @@ export function HomePage() {
     }
   };
 
-  const toggleCityOpen = (city: string) => {
-    setOpenCities({ ...openCities, [city]: !openCities[city] });
-  };
-
   const clearFilters = () => {
     setSelectedCategory("");
     setSelectedGenders([]);
     setSelectedCities([]);
     setSelectedDistricts([]);
-    setOpenCities({});
     setSearchQuery("");
   };
 
@@ -347,178 +336,58 @@ export function HomePage() {
 
       {/* 篩選區域 */}
       <div className="bg-card p-6 rounded-lg border space-y-4">
-        {/* 手機版三個獨立篩選按鈕 */}
+        {/* 手機版三個獨立篩選按鈕：點開後從底部彈出面板（拇指熱區），
+            以「查看 N 位服務者」主按鈕收合，不必伸手去點右上角的 X */}
         <div className="flex flex-col gap-3 md:hidden">
           <div className="grid grid-cols-3 gap-2">
-            {/* 性別篩選按鈕 */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex flex-col items-center gap-1 h-auto py-3"
-                >
-                  <span className="text-xs">性別</span>
-                  <FilterCountBadge count={selectedGenders.length} />
-                </Button>
-              </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md pt-12">
-                <SheetHeader className="pb-4">
-                  <SheetTitle>性別篩選</SheetTitle>
-                  <SheetDescription>
-                    選擇您偏好的性別來篩選服務者
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="mt-6 px-4 space-y-4">
-                  {GENDER_OPTIONS.map((gender) => (
-                    <div key={gender} className="flex items-center space-x-3 py-2">
-                      <Checkbox
-                        id={`mobile-gender-${gender}`}
-                        checked={selectedGenders.includes(gender)}
-                        onCheckedChange={(checked) => handleGenderChange(gender, checked as boolean)}
-                        className="h-5 w-5"
-                      />
-                      <Label htmlFor={`mobile-gender-${gender}`} className="text-base cursor-pointer flex-1">
-                        {gender}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
+            <MobileFilterSheet
+              triggerLabel="性別"
+              count={selectedGenders.length}
+              title="性別篩選"
+              description="選擇您偏好的性別來篩選服務者"
+              resultCount={filteredServiceProviders.length}
+              onReset={() => setSelectedGenders([])}
+            >
+              <GenderFilterChips
+                selectedGenders={selectedGenders}
+                onGenderChange={handleGenderChange}
+              />
+            </MobileFilterSheet>
 
-            {/* 服務類別篩選按鈕 */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex flex-col items-center gap-1 h-auto py-3"
-                >
-                  <span className="text-xs">服務類別</span>
-                  <FilterCountBadge count={selectedCategory ? 1 : 0} />
-                </Button>
-              </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md pt-12">
-                <SheetHeader className="pb-4">
-                  <SheetTitle>服務類別</SheetTitle>
-                  <SheetDescription>
-                    選擇您需要的服務類別來篩選服務者
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="mt-6 px-4 space-y-3 h-full overflow-y-auto">
-                  <RadioGroup 
-                    value={selectedCategory} 
-                    onValueChange={setSelectedCategory}
-                    className="space-y-3"
-                  >
-                    <div className="flex items-center space-x-3 py-2">
-                      <RadioGroupItem value="" id="mobile-category-all" className="h-5 w-5" />
-                      <Label htmlFor="mobile-category-all" className="text-base cursor-pointer flex-1">
-                        全部類別
-                      </Label>
-                    </div>
-                    {SERVICE_CATEGORIES.map((category) => (
-                      <div key={category} className="flex items-center space-x-3 py-2">
-                        <RadioGroupItem value={category} id={`mobile-category-${category}`} className="h-5 w-5" />
-                        <Label htmlFor={`mobile-category-${category}`} className="text-base cursor-pointer flex-1">
-                          {category}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                </div>
-              </SheetContent>
-            </Sheet>
+            <MobileFilterSheet
+              triggerLabel="服務類別"
+              count={selectedCategory ? 1 : 0}
+              title="服務類別"
+              description="選擇您需要的服務類別來篩選服務者"
+              resultCount={filteredServiceProviders.length}
+              onReset={() => setSelectedCategory("")}
+            >
+              <CategoryFilterChips
+                selectedCategory={selectedCategory}
+                onSelect={setSelectedCategory}
+              />
+            </MobileFilterSheet>
 
-            {/* 服務地區篩選按鈕 */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex flex-col items-center gap-1 h-auto py-3"
-                >
-                  <span className="text-xs">服務地區</span>
-                  <FilterCountBadge count={selectedCities.length} />
-                </Button>
-              </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md pt-12">
-                <SheetHeader className="pb-4">
-                  <SheetTitle>服務地區</SheetTitle>
-                  <SheetDescription>
-                    選擇您偏好的服務地區來篩選服務者
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="mt-6 px-4 space-y-3 h-full overflow-y-auto">
-                  {TAIWAN_CITIES.map((city) => (
-                    <Collapsible
-                      key={city}
-                      open={openCities[city]}
-                      onOpenChange={() => toggleCityOpen(city)}
-                    >
-                      <div className="space-y-3 py-1">
-                        <div className="flex items-center space-x-3 py-2">
-                          <Checkbox
-                            id={`mobile-city-${city}`}
-                            checked={selectedCities.includes(city)}
-                            onCheckedChange={(checked) => handleCityChange(city, checked as boolean)}
-                            className="h-5 w-5"
-                          />
-                          <CollapsibleTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="flex items-center justify-between w-full p-0 h-auto font-normal"
-                            >
-                              <Label htmlFor={`mobile-city-${city}`} className="text-base cursor-pointer flex-1 text-left">
-                                {city}
-                              </Label>
-                              {selectedCities.includes(city) && (
-                                <ChevronDown className={`h-4 w-4 transition-transform ${openCities[city] ? 'rotate-180' : ''}`} />
-                              )}
-                            </Button>
-                          </CollapsibleTrigger>
-                        </div>
-                        
-                        {selectedCities.includes(city) && (
-                          <CollapsibleContent className="space-y-3 ml-8">
-                            {/* 全區選項 */}
-                            <div className="flex items-center space-x-3 py-2">
-                              <Checkbox
-                                id={`mobile-district-${city}-all`}
-                                checked={selectedDistricts.includes('全區')}
-                                onCheckedChange={(checked) => handleDistrictChange(city, '全區', checked as boolean)}
-                                className="h-5 w-5"
-                              />
-                              <Label htmlFor={`mobile-district-${city}-all`} className="text-base cursor-pointer font-medium text-primary flex-1">
-                                全區
-                              </Label>
-                            </div>
-                            {/* 具體區域選項 */}
-                            {TAIWAN_REGIONS[city]?.map((district) => (
-                              <div key={district} className="flex items-center space-x-3 py-2">
-                                <Checkbox
-                                  id={`mobile-district-${city}-${district}`}
-                                  checked={selectedDistricts.includes(district)}
-                                  onCheckedChange={(checked) => handleDistrictChange(city, district, checked as boolean)}
-                                  className="h-5 w-5"
-                                />
-                                <Label htmlFor={`mobile-district-${city}-${district}`} className="text-base cursor-pointer flex-1">
-                                  {district}
-                                </Label>
-                              </div>
-                            ))}
-                          </CollapsibleContent>
-                        )}
-                      </div>
-                    </Collapsible>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
+            <MobileFilterSheet
+              triggerLabel="服務地區"
+              count={selectedCities.length}
+              title="服務地區"
+              description="選擇您偏好的服務地區來篩選服務者"
+              resultCount={filteredServiceProviders.length}
+              onReset={() => {
+                setSelectedCities([]);
+                setSelectedDistricts([]);
+              }}
+            >
+              <LocationFilterChips
+                selectedCities={selectedCities}
+                selectedDistricts={selectedDistricts}
+                onCityChange={handleCityChange}
+                onDistrictChange={handleDistrictChange}
+              />
+            </MobileFilterSheet>
           </div>
-          
+
           {/* 清除篩選按鈕 */}
           {totalFilters > 0 && (
             <Button
@@ -551,21 +420,11 @@ export function HomePage() {
                 <ChevronRight className={`h-4 w-4 transition-transform ${isGenderFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 pl-4 pr-2 pb-2">
-              <div className="flex gap-4">
-                {GENDER_OPTIONS.map((gender) => (
-                  <div key={gender} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`desktop-gender-${gender}`}
-                      checked={selectedGenders.includes(gender)}
-                      onCheckedChange={(checked) => handleGenderChange(gender, checked as boolean)}
-                    />
-                    <Label htmlFor={`desktop-gender-${gender}`} className="text-sm cursor-pointer">
-                      {gender}
-                    </Label>
-                  </div>
-                ))}
-              </div>
+            <CollapsibleContent className="pl-4 pr-2 pb-2">
+              <GenderFilterChips
+                selectedGenders={selectedGenders}
+                onGenderChange={handleGenderChange}
+              />
             </CollapsibleContent>
           </Collapsible>
 
@@ -586,29 +445,11 @@ export function HomePage() {
                 <ChevronRight className={`h-4 w-4 transition-transform ${isCategoryFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 pl-4 pr-2 pb-2">
-              <div className="bg-muted/30 p-4 rounded-lg max-h-48 overflow-y-auto">
-                <RadioGroup 
-                  value={selectedCategory} 
-                  onValueChange={setSelectedCategory}
-                  className="grid grid-cols-3 lg:grid-cols-4 gap-3"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="" id="desktop-category-all" />
-                    <Label htmlFor="desktop-category-all" className="text-sm cursor-pointer">
-                      全部
-                    </Label>
-                  </div>
-                  {SERVICE_CATEGORIES.map((category) => (
-                    <div key={category} className="flex items-center space-x-2">
-                      <RadioGroupItem value={category} id={`desktop-category-${category}`} />
-                      <Label htmlFor={`desktop-category-${category}`} className="text-sm cursor-pointer">
-                        {category}
-                      </Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-              </div>
+            <CollapsibleContent className="pl-4 pr-2 pb-2">
+              <CategoryFilterChips
+                selectedCategory={selectedCategory}
+                onSelect={setSelectedCategory}
+              />
             </CollapsibleContent>
           </Collapsible>
 
@@ -629,73 +470,13 @@ export function HomePage() {
                 <ChevronRight className={`h-4 w-4 transition-transform ${isLocationFilterOpen ? 'rotate-90' : ''}`} />
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 pl-4 pr-2 pb-2">
-              <div className="bg-muted/30 p-4 rounded-lg max-h-48 overflow-y-auto">
-                <div className="space-y-3">
-                  {TAIWAN_CITIES.map((city) => (
-                    <Collapsible
-                      key={city}
-                      open={openCities[city]}
-                      onOpenChange={() => toggleCityOpen(city)}
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`desktop-city-${city}`}
-                            checked={selectedCities.includes(city)}
-                            onCheckedChange={(checked) => handleCityChange(city, checked as boolean)}
-                          />
-                          <CollapsibleTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="flex items-center justify-between w-full p-0 h-auto font-normal"
-                            >
-                              <Label htmlFor={`desktop-city-${city}`} className="text-sm cursor-pointer flex-1 text-left">
-                                {city}
-                              </Label>
-                              {selectedCities.includes(city) && (
-                                <ChevronDown className={`h-4 w-4 transition-transform ${openCities[city] ? 'rotate-180' : ''}`} />
-                              )}
-                            </Button>
-                          </CollapsibleTrigger>
-                        </div>
-                        
-                        {selectedCities.includes(city) && (
-                          <CollapsibleContent className="ml-6">
-                            <div className="grid grid-cols-3 lg:grid-cols-4 gap-2">
-                              {/* 全區選項 */}
-                              <div className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`desktop-district-${city}-all`}
-                                  checked={selectedDistricts.includes('全區')}
-                                  onCheckedChange={(checked) => handleDistrictChange(city, '全區', checked as boolean)}
-                                />
-                                <Label htmlFor={`desktop-district-${city}-all`} className="text-sm cursor-pointer font-medium text-primary">
-                                  全區
-                                </Label>
-                              </div>
-                              {/* 具體區域選項 */}
-                              {TAIWAN_REGIONS[city]?.map((district) => (
-                                <div key={district} className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={`desktop-district-${city}-${district}`}
-                                    checked={selectedDistricts.includes(district)}
-                                    onCheckedChange={(checked) => handleDistrictChange(city, district, checked as boolean)}
-                                  />
-                                  <Label htmlFor={`desktop-district-${city}-${district}`} className="text-sm cursor-pointer">
-                                    {district}
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                          </CollapsibleContent>
-                        )}
-                      </div>
-                    </Collapsible>
-                  ))}
-                </div>
-              </div>
+            <CollapsibleContent className="pl-4 pr-2 pb-2">
+              <LocationFilterChips
+                selectedCities={selectedCities}
+                selectedDistricts={selectedDistricts}
+                onCityChange={handleCityChange}
+                onDistrictChange={handleDistrictChange}
+              />
             </CollapsibleContent>
           </Collapsible>
         </div>
@@ -805,6 +586,191 @@ export function HomePage() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// 篩選 UI（手機底部面板與桌面折疊區共用同一套 chip 內容元件）
+// ============================================
+
+// 手機版篩選面板：從螢幕底部彈出（單手拇指可及），而非右側全幅滑出。
+// 關閉動線以底部的「查看 N 位服務者」主按鈕為主（同時回饋目前結果數），
+// 點背景遮罩也可關閉；右上角 X 僅作為輔助。
+function MobileFilterSheet({
+  triggerLabel,
+  count,
+  title,
+  description,
+  resultCount,
+  onReset,
+  children,
+}: {
+  triggerLabel: string;
+  /** 該區塊已選條件數（顯示在觸發按鈕上，>0 時面板底部才出現「重設」） */
+  count: number;
+  title: string;
+  description: string;
+  /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋 */
+  resultCount: number;
+  /** 只重設此區塊的條件（非全部篩選） */
+  onReset: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex flex-col items-center gap-1 h-auto py-3"
+        >
+          <span className="text-xs">{triggerLabel}</span>
+          <FilterCountBadge count={count} />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="bottom" className="max-h-[85vh] rounded-t-2xl gap-0 p-0">
+        {/* 底部面板慣例的抓握指示條 */}
+        <div
+          className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-muted"
+          aria-hidden="true"
+        />
+        <SheetHeader className="px-4 pt-2 pb-3">
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>{description}</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          {children}
+        </div>
+        <SheetFooter className="mt-0 flex-row gap-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {count > 0 && (
+            <Button variant="ghost" onClick={onReset} className="shrink-0">
+              重設
+            </Button>
+          )}
+          <SheetClose asChild>
+            <Button className="min-h-12 flex-1">
+              查看 {resultCount} 位服務者
+            </Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function GenderFilterChips({
+  selectedGenders,
+  onGenderChange,
+}: {
+  selectedGenders: string[];
+  onGenderChange: (gender: string, checked: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {GENDER_OPTIONS.map((gender) => (
+        <FilterChip
+          key={gender}
+          label={gender}
+          selected={selectedGenders.includes(gender)}
+          onToggle={() =>
+            onGenderChange(gender, !selectedGenders.includes(gender))
+          }
+          className="min-w-20"
+        />
+      ))}
+    </div>
+  );
+}
+
+// 服務類別（單選）：chip 以內容寬度自動換行排滿整行，
+// 取代一欄一項的直列，30 個類別不再需要長距離捲動。
+// 再點一次已選類別可取消（回到全部）。
+function CategoryFilterChips({
+  selectedCategory,
+  onSelect,
+}: {
+  selectedCategory: string;
+  onSelect: (category: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <FilterChip
+        label="全部類別"
+        selected={selectedCategory === ""}
+        onToggle={() => onSelect("")}
+      />
+      {SERVICE_CATEGORIES.map((category) => (
+        <FilterChip
+          key={category}
+          label={category}
+          selected={selectedCategory === category}
+          onToggle={() =>
+            onSelect(selectedCategory === category ? "" : category)
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+// 服務地區：縣市 chip 換行排列；選了縣市後，該縣市的區域 chip 面板
+// 直接顯示在下方（預設全區），不再需要 checkbox + 展開箭頭的雙重操作。
+function LocationFilterChips({
+  selectedCities,
+  selectedDistricts,
+  onCityChange,
+  onDistrictChange,
+}: {
+  selectedCities: string[];
+  selectedDistricts: string[];
+  onCityChange: (city: string, checked: boolean) => void;
+  onDistrictChange: (city: string, district: string, checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {TAIWAN_CITIES.map((city) => (
+          <FilterChip
+            key={city}
+            label={city}
+            selected={selectedCities.includes(city)}
+            onToggle={() => onCityChange(city, !selectedCities.includes(city))}
+          />
+        ))}
+      </div>
+      {selectedCities.map((city) => (
+        <div key={city} className="space-y-2 rounded-lg bg-muted/30 p-3">
+          <p className="text-sm font-medium">{city}的服務區域</p>
+          <div className="flex flex-wrap gap-2">
+            <FilterChip
+              label="全區"
+              selected={selectedDistricts.includes("全區")}
+              onToggle={() =>
+                onDistrictChange(
+                  city,
+                  "全區",
+                  !selectedDistricts.includes("全區"),
+                )
+              }
+            />
+            {TAIWAN_REGIONS[city]?.map((district) => (
+              <FilterChip
+                key={district}
+                label={district}
+                selected={selectedDistricts.includes(district)}
+                onToggle={() =>
+                  onDistrictChange(
+                    city,
+                    district,
+                    !selectedDistricts.includes(district),
+                  )
+                }
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
