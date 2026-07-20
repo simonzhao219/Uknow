@@ -91,7 +91,7 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 目前進度與範圍界線（M3 止）
+## 目前進度與範圍界線（M4 止）
 
 已落地：
 - **M1**：單人 walking skeleton（`00_skeleton.feature`）。
@@ -112,15 +112,33 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
     `PAYUNI_TEST_*` 金鑰簽出合法 notify 打真後端（設
     `JOURNEY_PAYMENT_MODE=webhook` + `JOURNEY_PAYUNI_HASH_KEY/_IV`）。
 
-**已知產品落差（測試設計時發現）**：規格 §1.1 要求身分證字號唯一性
-檢核，但 `profiles.national_id` 沒有唯一約束、`/auth/register` 也未檢查
-——「重複身分證應被拒」情境待產品修正後補上（見 15_ feature 檔頭註記）。
+- **M4**：
+  - `60_time_scenarios`：時光機（`tools/seed_time_machine.py`，service
+    role 只回填 subscriptions 的 end/grace 兩欄）——刊登可見性隨
+    active→grace→expired 變化、寬限期推薦碼仍可推廣、**補繳接續原到期
+    日而非付款日**（雙向斷言：距錨點約一年＋距付款日明顯少於一年）；
+  - 提領前置補齊：`builders/referral_program.py`——GUI 簽名加入推薦
+    計畫（`request_withdrawal` 的第一道檢核），f50 各情境冪等引用；
+  - CI 四軌落地：`ci.yml` 加 paths-ignore／workflow 級 concurrency／
+    拆掉 e2e 對 build 的 needs／新增 `journey-offline` job（純函數＋
+    收集健全性）；`journey-nightly.yml` 一鍵開分支→設 secrets→跑套件
+    →傳 artifacts→**always() 刪分支**（schedule 依 repo 慣例先註解，
+    workflow_dispatch 首跑校準通過後打開）。
 
-尚未落地：
-- `builders/payuni_sandbox_page.py` 的選擇器是**未經真 sandbox 校準**的
-  第一版（候選清單設計，改版只修這一檔）；首次帶憑證執行時校準。
-  任務 claim 對話框（ThreeStepDialog）的按鈕序同樣待首跑校準。
-- 時光機情境（連續推薦達人、即將失效/永久失效、補繳）、當月排行榜、
-  刊登編輯流程屬 M4。
-- 分支的建立/刪除與 GoTrue email 限流設定仍是手動；M4 併入 nightly
-  workflow。
+**已知產品落差（測試設計過程發現，均已寫入對應 feature 檔頭）**：
+1. 規格 §5.1 獎勵 120P/代 vs 實作 `reward_config` 預設 100P/代
+   （測試以現值計算，不受影響）；
+2. 規格 §1.1 身分證字號唯一性檢核——`profiles.national_id` 無唯一
+   約束、`/auth/register` 未檢查；
+3. 規格 §7.1 連續推薦達人（連續 12 個月）——後端未實作，`/tasks`
+   只有推薦王；
+4. 規格 §2 永久失效「舊碼作廢」——沒有機制把 `referral_codes.status`
+   改掉，失效會員的碼仍驗證成功；
+5. 規格 §2 即將失效「刊登隱藏」——實作 `has_active_subscription` 在
+   寬限期內回 true，刊登照常公開（60_ 以現況斷言並標記）。
+
+尚未落地（首跑校準對象）：
+- `builders/payuni_sandbox_page.py`（sandbox 刷卡頁）、任務 claim 對話
+  框按鈕序、加入推薦計畫對話框送出鈕、`journey-nightly.yml` 的分支
+  CLI 欄位名——皆為候選清單/註記設計，首次帶憑證執行時校準。
+- 當月排行榜、刊登編輯流程、`reuse_tree` 快照重用。

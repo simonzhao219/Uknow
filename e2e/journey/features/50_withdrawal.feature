@@ -10,13 +10,23 @@ Feature: 提領 — 雙視角全生命週期
     Given journey 測試環境已就緒
     And 組織樹已建置完成
 
+  # 提領前置：request_withdrawal 第一道檢核是「已加入推薦計畫」
+  # （GUI 簽名流程）——各情境先以冪等步驟確保主角已加入。
+
+  @journey @withdrawal @negative
+  Scenario: 未加入推薦計畫的會員看到未加入提示
+    When "C1" 登入並開啟獎勵頁
+    Then 獎勵頁顯示尚未加入推薦計畫的提示
+
   @journey @withdrawal @negative
   Scenario: 餘額不足 1,015P 的會員看到資格不足提示
+    Given "B1" 已透過 GUI 加入推薦計畫
     When "B1" 登入並開啟獎勵頁
     Then 獎勵頁顯示可提領Point不足的提示
 
   @journey @withdrawal @negative
   Scenario: 金額驗證 — 低於下限、非倍數、超過上限
+    Given "A0" 已透過 GUI 加入推薦計畫
     When "A0" 登入並開啟獎勵頁
     And "A0" 開始提領申請
     Then 金額 "500" 被拒且顯示最低提領限制
@@ -25,7 +35,8 @@ Feature: 提領 — 雙視角全生命週期
 
   @journey @withdrawal
   Scenario: 完整生命週期 — 申請、匯款、查收
-    Given 記下 "A0" 的可提領點數
+    Given "A0" 已透過 GUI 加入推薦計畫
+    And 記下 "A0" 的可提領點數
     When "A0" 透過 GUI 申請提領 1000 點
     Then "A0" 的可提領點數減少 1015
     When 管理員在提領管理將第一筆申請標記已匯款
@@ -34,7 +45,8 @@ Feature: 提領 — 雙視角全生命週期
 
   @journey @withdrawal
   Scenario: 退件路徑 — 點數退回
-    Given 記下 "A0" 的可提領點數
+    Given "A0" 已透過 GUI 加入推薦計畫
+    And 記下 "A0" 的可提領點數
     When "A0" 透過 GUI 申請提領 1000 點
     Then "A0" 的可提領點數減少 1015
     When 管理員在提領管理退件第一筆申請
