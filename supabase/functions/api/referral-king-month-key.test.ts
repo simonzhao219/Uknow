@@ -75,11 +75,24 @@ Deno.test('process_successful_payment：付款月由 PayUni AuthDay 錨定並傳
     // 清掉推薦人既有的 task_progress，讓斷言只看這筆付款
     await client.from('task_progress').delete().eq('user_id', referrer.id);
 
-    // 付款回應帶 2026-03-10 的 AuthDay/AuthTime（正午，避開時區邊界）
-    const { error: payErr } = await payForUser(client, newReferee.id, {
-      payuniResponse: { Status: 'SUCCESS', AuthDay: '20260310', AuthTime: '120000' },
+    // 真實情境建模：訂單建於 2026-03、webhook 遺失、事後才補開通。
+    // payuni_paid_at 有防呆窗（paid_at 不得早於訂單 created_at 一天以上，
+    // 否則視為垃圾資料退回 fallback），所以訂單的 created_at 必須跟
+    // AuthDay 同期——這正是「事故重演」的正確形狀。
+    const tradeNo = `ANCHOR-${newReferee.id}`;
+    const { error: seedErr } = await client.from('payment_orders').insert({
+      user_id: newReferee.id, amount: 1200, status: 'pending', payment_method: 'payuni',
+      transaction_id: tradeNo, created_at: '2026-03-10T03:00:00Z',
     });
-    assertEquals(payErr, null);
+    assertEquals(seedErr, null);
+    const { data: processed, error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: newReferee.id,
+      p_trade_no: tradeNo,
+      p_transaction_id: tradeNo,
+      p_payuni_response: { Status: 'SUCCESS', AuthDay: '20260310', AuthTime: '120000' },
+    });
+    assertEquals(payErr, null, JSON.stringify(payErr));
+    assertEquals(processed?.success, true, JSON.stringify(processed));
 
     const { data: progress } = await client
       .from('task_progress').select('monthly_referrals').eq('user_id', referrer.id).single();
