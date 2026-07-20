@@ -1,0 +1,3 @@
+-r ../requirements.txt
+# service-role 存取（OTP 取碼、清理、DB 斷言）
+requests>=2.31

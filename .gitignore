@@ -32,6 +32,7 @@ supabase/.temp/
 supabase/.branches/
 
 # E2E (pytest-bdd + Playwright)
+e2e/journey/.run/
 e2e/.venv/
 e2e/__pycache__/
 e2e/**/__pycache__/

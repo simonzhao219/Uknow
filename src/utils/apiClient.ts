@@ -5,7 +5,7 @@
  */
 
 import { getAccessToken } from './auth';
-import { projectId } from './supabase/info';
+import { projectId } from './supabase/projectConfig';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
 
