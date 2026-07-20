@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { WithdrawalManagement } from './admin/WithdrawalManagement';
 import { MemberManagement } from './admin/MemberManagement';
 import { SystemNotifications } from './admin/SystemNotifications';
+import { SystemAlerts } from './admin/SystemAlerts';
 import { AdminSetup } from './admin/AdminSetup';
 
 export function AdminDashboard() {
@@ -14,10 +15,11 @@ export function AdminDashboard() {
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
           <TabsTrigger value="members">會員管理</TabsTrigger>
           <TabsTrigger value="announcements">公告管理</TabsTrigger>
+          <TabsTrigger value="system-alerts">系統告警</TabsTrigger>
           <TabsTrigger value="admin-setup">管理員設置</TabsTrigger>
         </TabsList>
 
@@ -31,6 +33,10 @@ export function AdminDashboard() {
 
         <TabsContent value="announcements">
           <SystemNotifications />
+        </TabsContent>
+
+        <TabsContent value="system-alerts">
+          <SystemAlerts />
         </TabsContent>
 
         <TabsContent value="admin-setup">

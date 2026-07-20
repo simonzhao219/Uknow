@@ -386,6 +386,29 @@ export const ActiveAnnouncementsResponseSchema = obj({
 });
 export type ActiveAnnouncementsResponse = Infer<typeof ActiveAnnouncementsResponseSchema>;
 
+// GET /admin/system-alerts（SystemAlerts tab）。欄位沿用 DB snake_case
+// ——這是內部維運資料，不做前端命名轉換。context 為任意 jsonb 物件。
+export const SystemAlertSchema = obj({
+  id:          str(),
+  source:      str(),
+  severity:    literals('info', 'warning', 'error'),
+  message:     str(),
+  context:     obj({}),
+  created_at:  str(),
+  resolved_at: nullable(str()),
+});
+
+export const SystemAlertsResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    alerts: arr(SystemAlertSchema),
+    total:  num(),
+  }),
+});
+
+export type SystemAlert = Infer<typeof SystemAlertSchema>;
+export type SystemAlertsResponse = Infer<typeof SystemAlertsResponseSchema>;
+
 export const AdminWithdrawalRecordSchema = obj({
   id:             str(),
   userId:         str(),
