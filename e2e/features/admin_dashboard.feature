@@ -1,7 +1,7 @@
 Feature: Admin dashboard
-  "/admin" (AdminRoute — admins only) is a four-tab management console:
-  獎金提領管理 / 會員管理 / 公告管理 / 管理員設置. A logged-in non-admin is
-  redirected to their dashboard rather than seeing it.
+  "/admin" (AdminRoute — admins only) is a five-tab management console:
+  獎金提領管理 / 會員管理 / 公告管理 / 系統告警 / 管理員設置. A logged-in
+  non-admin is redirected to their dashboard rather than seeing it.
 
   @smoke @route_guard @negative
   Scenario: A logged-in non-admin is redirected away from /admin
@@ -38,6 +38,17 @@ Feature: Admin dashboard
     When I visit "/admin"
     And I open the "會員管理" tab
     Then I should see the text "陳大文"
+
+  Scenario: The system alerts tab lists unresolved alerts and resolving clears them
+    Given I am logged in as an admin
+    And there are no withdrawal applications
+    And there is an unresolved system alert "付款處理失敗，需人工介入"
+    When I visit "/admin"
+    And I open the "系統告警" tab
+    Then I should see the text "付款處理失敗，需人工介入"
+    When I resolve the first system alert
+    Then I should see a toast containing "已標記處理"
+    And I should see the text "目前沒有未處理的告警"
 
   Scenario: Marking a pending withdrawal as paid
     Given I am logged in as an admin

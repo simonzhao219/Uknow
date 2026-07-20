@@ -510,6 +510,24 @@ class BackendApiMock:
 
         self._route("/admin/announcements", handler)
 
+    def set_system_alerts(self, alerts=None):
+        """GET /admin/system-alerts 的未處理告警列表（SystemAlerts tab）。
+        Stateful：POST .../{id}/resolve 會把該筆從列表移除，讓元件
+        resolve 後的 refetch 拿到少一筆的結果。"""
+        records = list(alerts or [])
+
+        def handler(route):
+            url = route.request.url
+            if route.request.method == "POST" and url.rstrip("/").endswith("/resolve"):
+                alert_id = url.split("/system-alerts/")[1].split("/")[0]
+                records[:] = [a for a in records if a["id"] != alert_id]
+                return _fulfill_json(route, {"success": True})
+            return _fulfill_json(
+                route, {"success": True, "data": {"alerts": records, "total": len(records)}}
+            )
+
+        self._route("/admin/system-alerts", handler)
+
     def set_admin_setup(self, is_admin=True, can_become_admin=False, has_existing_admin=True):
         body = {
             "success": True,
@@ -525,6 +543,21 @@ class BackendApiMock:
 
         self._route("/admin-setup/check", handler)
         self._route("/admin-setup/set-self-admin", handler)
+
+
+def build_system_alert(alert_id: str = "alert-e2e-1", **overrides) -> dict:
+    """A row for `/admin/system-alerts` (SystemAlerts tab)."""
+    alert = {
+        "id": alert_id,
+        "source": "resolveOrderFromPayUni",
+        "severity": "error",
+        "message": "付款處理失敗，需人工介入",
+        "context": {"merTradeNo": "20260710120000ABCDEF"},
+        "created_at": "2026-07-10T12:00:00.000Z",
+        "resolved_at": None,
+    }
+    alert.update(overrides)
+    return alert
 
 
 def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
