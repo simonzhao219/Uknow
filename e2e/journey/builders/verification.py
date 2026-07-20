@@ -10,6 +10,14 @@ from tools.supa import SupabaseAdmin
 REFERRAL_CODE_PATTERN = re.compile(r"^[a-z]{3}\d{6}$")  # 3 碼小寫英文 + 6 碼數字
 
 
+def available_points(admin: SupabaseAdmin, user: JourneyUser) -> int:
+    """以該會員自己的身分打 GET /rewards——與前端讀同一個 SSOT。"""
+    token = admin.password_grant_token(user.email, user.password)
+    resp = admin.api_get("/rewards", token)
+    assert resp.ok, f"/rewards 失敗：{resp.status_code} {resp.text}"
+    return int(resp.json()["data"]["availableRewards"])
+
+
 def fetch_backend_landing(admin: SupabaseAdmin, user: JourneyUser) -> None:
     """斷言訂閱/完成訂單/active 推薦碼皆已落地，並回填 user_id 與推薦碼。"""
     matches = admin.list_users_by_email_prefix(user.email)

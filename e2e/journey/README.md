@@ -91,7 +91,7 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 目前進度與範圍界線（M2 止）
+## 目前進度與範圍界線（M3 止）
 
 已落地：
 - **M1**：單人 walking skeleton（`00_skeleton.feature`）。
@@ -99,12 +99,28 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
   同 RUN_ID 失敗續建的冪等設計）＋樹/帳本斷言（`20_referral_rewards.feature`：
   root 代數分佈 8/8/8、第 4 代零貢獻、獎勵頁與推薦樹 GUI、B1/B2/C1/F1/G1
   交叉帳本——金額一律以 reward_config 現值計算，調參不改測試）。
+- **M3**：
+  - `15_registration_negative`：未滿 18、無效推薦碼（臨時帳號 X1）；
+  - `30_tasks`：推薦王達標（B8 付款當下）→ GUI 領取「免費續約 1 年」→
+    到期日延長約一年＋獎勵標記 claimed；
+  - `40_listing`：建立（真照片上傳）→ 訪客首頁搜尋/詳情 → 一帳號一
+    刊登 → 下架後首頁消失；
+  - `50_withdrawal`：B1 資格不足、金額三重負向（下限/倍數/上限）、
+    完整生命週期（申請→admin 已匯款→查收→completed）與退件退款——
+    餘額斷言一律打 GET /rewards（與前端同一 SSOT）；
+  - `webhook` 付款備援模式：`tools/payuni_crypto.py` 以分支的
+    `PAYUNI_TEST_*` 金鑰簽出合法 notify 打真後端（設
+    `JOURNEY_PAYMENT_MODE=webhook` + `JOURNEY_PAYUNI_HASH_KEY/_IV`）。
+
+**已知產品落差（測試設計時發現）**：規格 §1.1 要求身分證字號唯一性
+檢核，但 `profiles.national_id` 沒有唯一約束、`/auth/register` 也未檢查
+——「重複身分證應被拒」情境待產品修正後補上（見 15_ feature 檔頭註記）。
 
 尚未落地：
 - `builders/payuni_sandbox_page.py` 的選擇器是**未經真 sandbox 校準**的
   第一版（候選清單設計，改版只修這一檔）；首次帶憑證執行時校準。
-- `webhook` 付款備援模式（簽章注入）屬 M3，目前會拋 NotImplementedError。
-- 任務（推薦王 claim）、刊登、提領雙視角、更多註冊負向邊界、時光機
-  情境屬 M3。
+  任務 claim 對話框（ThreeStepDialog）的按鈕序同樣待首跑校準。
+- 時光機情境（連續推薦達人、即將失效/永久失效、補繳）、當月排行榜、
+  刊登編輯流程屬 M4。
 - 分支的建立/刪除與 GoTrue email 限流設定仍是手動；M4 併入 nightly
   workflow。

@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
 from playwright.sync_api import expect
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import parsers, scenarios, then, when
 
 from builders.login import login_via_gui
 from tools import orgchart
 
 scenarios("20_referral_rewards.feature")
 
-
-@pytest.fixture(scope="module")
-def org_nodes():
-    return orgchart.load_nodes()
-
-
-@pytest.fixture
-def reward_amount(supabase_admin):
-    """單代獎金讀 reward_config 現值——金額調參不改測試。"""
-    return int(supabase_admin.reward_config()["referral_reward_amount"])
+# 「組織樹已建置完成」與 org_nodes / reward_amount fixtures 定義於
+# steps/conftest.py（f30/f40/f50 共用）。
 
 
 def _ledger(supabase_admin, user_id: str) -> list[dict]:
@@ -28,16 +19,6 @@ def _ledger(supabase_admin, user_id: str) -> list[dict]:
         "reward_transactions",
         {"select": "amount,generation,type", "user_id": f"eq.{user_id}"},
     )
-
-
-@given("組織樹已建置完成")
-def tree_ready(run_state, org_nodes):
-    missing = [
-        n for n in org_nodes
-        if not run_state.users.get(n) or not run_state.users[n].referral_code
-    ]
-    if missing:
-        pytest.skip(f"組織樹未建置完成（缺 {len(missing)} 節點）——請先跑 10_org_build")
 
 
 @then(parsers.parse('資料庫中 "{node}" 的獎勵代數分佈為 8/8/8'))
