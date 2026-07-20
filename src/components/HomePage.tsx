@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   Search,
+  AlertCircle,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { GenderBadge } from "./common/GenderBadge";
@@ -107,6 +108,9 @@ export function HomePage() {
   // ✅ 数据状态管理
   const [serviceProviders, setServiceProviders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // 載入失敗與「真的沒有刊登」是兩回事：失敗要顯示錯誤與重試，
+  // 不能偽裝成「目前沒有可用的服務者」空狀態。
+  const [loadError, setLoadError] = useState(false);
 
   // 使用者真實座標（取得授權後才用來做「由近到遠」排序）。
   // 原本寫死台北市政府座標，對非台北使用者的距離排序具誤導性；
@@ -130,6 +134,7 @@ export function HomePage() {
 
   const fetchAllListings = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const supabase = createClient();
       const { data: listings, error } = await supabase
@@ -142,6 +147,7 @@ export function HomePage() {
     } catch (error) {
       console.error('獲取刊登列表失敗:', error);
       setServiceProviders([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -762,8 +768,22 @@ export function HomePage() {
           </div>
         )}
 
-        {/* ========== 空狀態顯示（僅在載入完成且無資料時） ========== */}
-        {!loading && filteredServiceProviders.length === 0 && (
+        {/* ========== 載入失敗（與空狀態明確區分，提供重試） ========== */}
+        {!loading && loadError && (
+          <div className="text-center py-12">
+            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground text-lg mb-2">載入失敗</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              無法取得服務者列表，請檢查網路連線後再試一次
+            </p>
+            <Button onClick={fetchAllListings} variant="outline">
+              重新載入
+            </Button>
+          </div>
+        )}
+
+        {/* ========== 空狀態顯示（僅在載入完成、無錯誤且無資料時） ========== */}
+        {!loading && !loadError && filteredServiceProviders.length === 0 && (
           <div className="text-center py-12">
             <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground text-lg mb-2">
