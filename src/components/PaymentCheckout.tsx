@@ -424,20 +424,31 @@ export function PaymentCheckout() {
     }
   };
 
+  // 「稍後付款」按身分分流：
+  // - 續費會員（isRenewal）是完整會員只是想先離開，絕不登出——導回首頁
+  //   保留 session，之後點任何會員功能守衛會再把他帶回結帳頁。
+  // - 首次註冊者維持登出：resolvePostLoginAction 會在 step 1/2 使用者
+  //   下次登入時靜默導回結帳，漏斗接得回去；按鈕文字已明示「登出」。
   const handleCancel = async () => {
+    if (isRenewal) {
+      showToast('已保留您的登入，隨時可回來完成續費', 'info');
+      navigate('/', { replace: true });
+      return;
+    }
+
     try {
       // 1. 登出 Supabase
       await supabase.auth.signOut();
-      
+
       // 2. 清除本機儲存
       localStorage.removeItem('user');
       localStorage.removeItem('pendingUser');
-      
+
       // 3. 清除 UserContext
       setUser(null);
-      
+
       showToast('您已登出，可以稍後再完成付款', 'info');
-      
+
       // 4. 導向登入頁面
       navigate('/login', { replace: true });
     } catch (error) {
@@ -726,7 +737,7 @@ export function PaymentCheckout() {
               className="w-full"
               data-testid="cancel-payment-button"
             >
-              稍後付款
+              {isRenewal ? '稍後再說' : '登出，稍後再付款'}
             </Button>
           </div>
         </CardContent>
