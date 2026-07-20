@@ -675,6 +675,20 @@ app.post('/listings/verify-referral-code', async (c) => {
 });
 
 // ============================================================
+// /admin/** 統一守門 middleware：requireAuth + profiles.is_admin。
+// 逐路由手貼守門漏一次就是權限漏洞（GET /admin/features 曾是無驗證
+// 的漏網之魚，見 admin-gate.test.ts）——middleware 讓整個命名空間
+// 一律先過這道網；個別 handler 內既有的檢查保留作為第二道防線。
+// 必須註冊在所有 /admin 路由之前才會生效。
+// ============================================================
+app.use('/admin/*', async (c, next) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+  await next();
+});
+
+// ============================================================
 // GET /admin/features
 // 功能開關（目前全部開啟，後續可改成資料庫設定）
 // ============================================================
@@ -1345,9 +1359,15 @@ export async function reconcilePendingOrders(
   client: any,
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
-  opts: { thresholdMinutes: number; limit: number },
-): Promise<{ checked: number; resolved: number; stillPending: number; queryErrors: number }> {
+  opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
+): Promise<{ checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
+  // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
+  // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
+  // 需要對帳的卡單餓死。超過 PayUni ExpireDate（3 天）再留一天緩衝後仍查
+  // 無結果 → 標 'expired'。已存 SUCCESS 存檔的卡單不在掃描範圍（下方 .or
+  // 過濾），永不會被誤標。
+  const expireCutoffMs = Date.now() - (opts.expireAfterDays ?? 4) * 24 * 60 * 60_000;
 
   // .or(...)：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
   // 自癒（reconcile 路由的 heal pre-pass），這裡只處理「完全沒有存檔
@@ -1364,13 +1384,29 @@ export async function reconcilePendingOrders(
 
   if (error) throw new Error(`reconcilePendingOrders: 查詢 pending 訂單失敗: ${error.message}`);
 
-  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, queryErrors: 0 };
+  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, expired: 0, queryErrors: 0 };
 
   for (const order of stuck ?? []) {
     try {
       const result = await queryFn(order.transaction_id!);
       if (result.stillProcessing) {
-        summary.stillPending++;
+        if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+          const { error: expireErr } = await client
+            .from('payment_orders')
+            .update({ status: 'expired' })
+            .eq('id', order.id)
+            .eq('status', 'pending');
+          if (expireErr) {
+            summary.queryErrors++;
+            await logSystemAlert('reconcile-pending-payments', {
+              tradeNo: order.transaction_id, error: `標記 expired 失敗: ${expireErr.message}`,
+            });
+          } else {
+            summary.expired++;
+          }
+        } else {
+          summary.stillPending++;
+        }
         continue;
       }
       const outcome = await resolveFn(result.data);
