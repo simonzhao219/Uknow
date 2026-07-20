@@ -37,6 +37,13 @@ import {
   GENDER_OPTIONS,
 } from "../utils/constants";
 import { createClient } from '../utils/supabase/client';
+import {
+  toggleCity,
+  toggleCityDistrict,
+  cityDistricts,
+  listingMatchesDistricts,
+  type DistrictSelectionByCity,
+} from '../utils/districtSelection';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -95,8 +102,10 @@ const formatDistrict = (serviceProvider: any): string => {
 export function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedCities, setSelectedCities] = useState<string[]>([]);
-  const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
+  // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
+  // 每個縣市的「全區」與區選擇互相獨立，同名區不再跨縣市誤配。
+  const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>({});
+  const selectedCities = Object.keys(districtsByCity);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
 
   // 桌面版篩選器展開狀態
@@ -182,30 +191,17 @@ export function HomePage() {
         }
       }
 
-      // ✅ 地區篩選（适配 districts 数组）
+      // 地區篩選：縣市層先比對，區層交由縣市 scope 的判定（該市勾全區
+      // 或區清空＝該市全過；具體區要有交集；同名區不跨市誤配）。
       if (selectedCities.length > 0) {
-        // 檢查服務者的城市是否在選中的城市列表中
         if (!selectedCities.includes(serviceProvider.city)) {
           return false;
         }
-        
-        // 如果有選擇特定區域
-        if (selectedDistricts.length > 0) {
-          const hasAllDistricts = selectedDistricts.includes('全區');
-          
-          // ✅ 适配后端的 districts 数组格式
-          const listingDistricts = Array.isArray(serviceProvider.districts)
-            ? serviceProvider.districts
-            : [serviceProvider.district || ''];  // 兼容旧格式
-          
-          // 检查是否有交集
-          const hasSpecificDistrict = listingDistricts.some((d: string) => 
-            selectedDistricts.includes(d)
-          );
-          
-          if (!hasAllDistricts && !hasSpecificDistrict) {
-            return false;
-          }
+        const listingDistricts = Array.isArray(serviceProvider.districts)
+          ? serviceProvider.districts
+          : [serviceProvider.district || ''];  // 兼容旧格式
+        if (!listingMatchesDistricts(districtsByCity, serviceProvider.city, listingDistricts)) {
+          return false;
         }
       }
 
@@ -233,56 +229,21 @@ export function HomePage() {
     searchQuery,
     selectedCategory,
     selectedGenders,
-    selectedCities,
-    selectedDistricts,
+    districtsByCity,
     userCoords
   ]);
 
   const handleCityChange = (city: string, checked: boolean) => {
-    const cityDistricts = TAIWAN_REGIONS[city] || [];
-    const allCityDistricts = ['全區', ...cityDistricts];
-    if (checked) {
-      // 選擇縣市時預設涵蓋全區；已選縣市的區域面板會直接顯示供進一步縮小範圍
-      setSelectedCities([...selectedCities, city]);
-      setSelectedDistricts([...selectedDistricts, ...allCityDistricts]);
-    } else {
-      // 取消選擇縣市時，也清除該縣市下的所有區域選擇（包含全區）
-      setSelectedCities(selectedCities.filter((c) => c !== city));
-      setSelectedDistricts(selectedDistricts.filter((d) => !allCityDistricts.includes(d)));
-    }
+    // 勾選縣市＝預設全區；取消＝移除該市整個 key。純函式只動這一市。
+    setDistrictsByCity((prev) => toggleCity(prev, city, checked, TAIWAN_REGIONS[city] || []));
   };
 
   const handleDistrictChange = (city: string, district: string, checked: boolean) => {
-    const cityDistricts = TAIWAN_REGIONS[city] || [];
-    
-    if (district === '全區') {
-      // 如果點擊的是「全區」
-      if (checked) {
-        // 勾選全區時，勾選該縣市下所有區域
-        const allCityDistricts = ['全區', ...cityDistricts];
-        const newDistricts = [...selectedDistricts.filter(d => !allCityDistricts.includes(d)), ...allCityDistricts];
-        setSelectedDistricts(newDistricts);
-      } else {
-        // 取消勾選全區時，取消該縣市下所有區域
-        const allCityDistricts = ['全區', ...cityDistricts];
-        setSelectedDistricts(selectedDistricts.filter(d => !allCityDistricts.includes(d)));
-      }
-    } else {
-      // 如果點擊的具體區域
-      if (checked) {
-        const newDistricts = [...selectedDistricts, district];
-        // 檢查是否該縣市下所有區域都被選中，如是則同時勾選「全區」
-        const selectedCityDistricts = newDistricts.filter(d => cityDistricts.includes(d));
-        if (selectedCityDistricts.length === cityDistricts.length) {
-          newDistricts.push('全區');
-        }
-        setSelectedDistricts(newDistricts);
-      } else {
-        // 取消勾選具體區域時，同時取消勾選「全區」
-        const newDistricts = selectedDistricts.filter(d => d !== district && d !== '全區');
-        setSelectedDistricts(newDistricts);
-      }
-    }
+    // 單縣市內的「全區↔具體區」語意沿用 handleDistrictSelection（有測試釘住），
+    // 縣市之間互不影響。
+    setDistrictsByCity((prev) =>
+      toggleCityDistrict(prev, city, TAIWAN_REGIONS[city] || [], district, checked)
+    );
   };
 
   const handleGenderChange = (gender: string, checked: boolean) => {
@@ -296,8 +257,7 @@ export function HomePage() {
   const clearFilters = () => {
     setSelectedCategory("");
     setSelectedGenders([]);
-    setSelectedCities([]);
-    setSelectedDistricts([]);
+    setDistrictsByCity({});
     setSearchQuery("");
   };
 
@@ -374,14 +334,11 @@ export function HomePage() {
               title="服務地區"
               description="選擇您偏好的服務地區來篩選服務者"
               resultCount={filteredServiceProviders.length}
-              onReset={() => {
-                setSelectedCities([]);
-                setSelectedDistricts([]);
-              }}
+              onReset={() => setDistrictsByCity({})}
             >
               <LocationFilterChips
                 selectedCities={selectedCities}
-                selectedDistricts={selectedDistricts}
+                districtsByCity={districtsByCity}
                 onCityChange={handleCityChange}
                 onDistrictChange={handleDistrictChange}
               />
@@ -473,7 +430,7 @@ export function HomePage() {
             <CollapsibleContent className="pl-4 pr-2 pb-2">
               <LocationFilterChips
                 selectedCities={selectedCities}
-                selectedDistricts={selectedDistricts}
+                districtsByCity={districtsByCity}
                 onCityChange={handleCityChange}
                 onDistrictChange={handleDistrictChange}
               />
@@ -718,12 +675,13 @@ function CategoryFilterChips({
 // 直接顯示在下方（預設全區），不再需要 checkbox + 展開箭頭的雙重操作。
 function LocationFilterChips({
   selectedCities,
-  selectedDistricts,
+  districtsByCity,
   onCityChange,
   onDistrictChange,
 }: {
   selectedCities: string[];
-  selectedDistricts: string[];
+  /** 以縣市為 scope 的選區狀態：各市「全區」互相獨立、同名區不跨市誤配 */
+  districtsByCity: DistrictSelectionByCity;
   onCityChange: (city: string, checked: boolean) => void;
   onDistrictChange: (city: string, district: string, checked: boolean) => void;
 }) {
@@ -745,12 +703,12 @@ function LocationFilterChips({
           <div className="flex flex-wrap gap-2">
             <FilterChip
               label="全區"
-              selected={selectedDistricts.includes("全區")}
+              selected={cityDistricts(districtsByCity, city).includes("全區")}
               onToggle={() =>
                 onDistrictChange(
                   city,
                   "全區",
-                  !selectedDistricts.includes("全區"),
+                  !cityDistricts(districtsByCity, city).includes("全區"),
                 )
               }
             />
@@ -758,12 +716,12 @@ function LocationFilterChips({
               <FilterChip
                 key={district}
                 label={district}
-                selected={selectedDistricts.includes(district)}
+                selected={cityDistricts(districtsByCity, city).includes(district)}
                 onToggle={() =>
                   onDistrictChange(
                     city,
                     district,
-                    !selectedDistricts.includes(district),
+                    !cityDistricts(districtsByCity, city).includes(district),
                   )
                 }
               />

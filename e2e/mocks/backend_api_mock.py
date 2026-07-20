@@ -330,6 +330,20 @@ class BackendApiMock:
         # /listings/upload-photo and read back { photoUrl }.
         self._route("/listings/upload-photo", lambda route: _fulfill_json(route, {"photoUrl": photo_url}))
 
+    def set_upload_photo_deferred(self, photo_url: str = "https://example.com/uploaded.jpg"):
+        """攔下照片上傳請求但先不回應，讓測試能在「上傳仍在途」的窗口內
+        操作表單，再呼叫 release_deferred_uploads() 放行。用來釘住：上傳
+        完成的 setFormData 回寫不得覆寫使用者在上傳期間輸入的欄位
+        （stale closure 會把整份表單倒回上傳開始時的快照）。"""
+        self._deferred_uploads = []
+        self._deferred_upload_url = photo_url
+        self._route("/listings/upload-photo", lambda route: self._deferred_uploads.append(route))
+
+    def release_deferred_uploads(self):
+        for route in self._deferred_uploads:
+            _fulfill_json(route, {"photoUrl": self._deferred_upload_url})
+        self._deferred_uploads = []
+
     def set_verify_id_success(self):
         # ThreeStepDialog 第三步（IdNumberInput）在啟用確認按鈕前，會先
         # POST /rewards/verify-id 驗證身分證字號與註冊資料一致。

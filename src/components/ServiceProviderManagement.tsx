@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { UserContext } from '../App';
 import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft, Trash2 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -19,6 +20,7 @@ export function ServiceProviderManagement() {
   const { getCache, setCache, clearCache, isStale } = useDataCache();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   // ✅ 新規格：單一刊登模式
   const [listing, setListing] = useState<any | null>(null);
@@ -112,17 +114,11 @@ export function ServiceProviderManagement() {
     }
   };
 
-  // ✅ 刪除刊登
+  // 刪除刊登。確認一律走 AlertDialog（全站確認彈窗的統一標準）——
+  // 原生 window.confirm 在 LINE 等內建瀏覽器可能被抑制、樣式與品牌
+  // 脫節，也無法排版說明文字。
   const handleDeleteListing = async () => {
     if (!listing) return;
-    
-    // 顯示確認對話框
-    const confirmed = window.confirm(
-      `確定要刪除刊登「${listing.name}」嗎？\n\n此操作無法復原，刊登的所有資料（包括照片）都會被永久刪除。`
-    );
-    
-    if (!confirmed) return;
-    
     setIsDeleting(true);
     
     try {
@@ -156,6 +152,31 @@ export function ServiceProviderManagement() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {showDeleteConfirm && listing && (
+        <AlertDialog open onOpenChange={() => setShowDeleteConfirm(false)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>確認刪除刊登？</AlertDialogTitle>
+              <AlertDialogDescription>
+                確定要刪除刊登「{listing.name}」嗎？此操作無法復原，
+                刊登的所有資料（包括照片）都會被永久刪除。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  handleDeleteListing();
+                }}
+              >
+                確認刪除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button
@@ -246,7 +267,7 @@ export function ServiceProviderManagement() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={handleDeleteListing}
+                        onClick={() => setShowDeleteConfirm(true)}
                         disabled={isDeleting}
                         aria-label="刪除刊登"
                       >

@@ -59,6 +59,72 @@ export function handleDistrictSelection(
   return sortDistrictsWithAllFirst(newDistricts);
 }
 
+// ============================================================
+// 多縣市選區狀態（HomePage 的地區篩選）。
+//
+// 為什麼要以縣市為 scope：舊的「不分縣市扁平 string[]」造成三個 bug——
+// 「全區」是跨縣市共用字串（勾 A 市全區，B 市的全區也顯示已勾）、
+// 取消一市的全區會連坐其他市、台灣多縣市同名區（中山區、東區…）
+// 互相誤匹配。以 Record<縣市, 選區[]> 儲存後，每個縣市的「全區」與
+// 區選擇天然獨立，單縣市內的勾選語意則沿用上面已有測試的
+// handleDistrictSelection。
+// ============================================================
+
+export type DistrictSelectionByCity = Record<string, string[]>;
+
+/** 勾/取消一個縣市。勾選時預設帶「全區＋該市所有區」；取消時整個 key 移除。 */
+export function toggleCity(
+  state: DistrictSelectionByCity,
+  city: string,
+  checked: boolean,
+  availableDistricts: string[],
+): DistrictSelectionByCity {
+  const next = { ...state };
+  if (checked) {
+    next[city] = ['全區', ...availableDistricts];
+  } else {
+    delete next[city];
+  }
+  return next;
+}
+
+/** 勾/取消某縣市的一個區（或「全區」）。只影響該縣市，其他縣市原封不動。 */
+export function toggleCityDistrict(
+  state: DistrictSelectionByCity,
+  city: string,
+  availableDistricts: string[],
+  district: string,
+  checked: boolean,
+): DistrictSelectionByCity {
+  return {
+    ...state,
+    [city]: handleDistrictSelection(state[city] ?? [], availableDistricts, district, checked),
+  };
+}
+
+/** 該縣市目前的選區清單（未選過的縣市回空陣列）。 */
+export function cityDistricts(state: DistrictSelectionByCity, city: string): string[] {
+  return state[city] ?? [];
+}
+
+/**
+ * 篩選判定：某刊登（其縣市 + districts 陣列）是否通過該縣市的區選擇。
+ * - 該市勾「全區」→ 全過。
+ * - 該市勾具體區 → 有交集才過。
+ * - 該市已勾但區清空（點掉全區）→ 視為「只按縣市篩」，全過。
+ * - 刊登本身標「全區」→ 任何區選擇都過。
+ */
+export function listingMatchesDistricts(
+  state: DistrictSelectionByCity,
+  city: string,
+  listingDistricts: string[],
+): boolean {
+  const selected = state[city] ?? [];
+  if (selected.length === 0 || selected.includes('全區')) return true;
+  if (listingDistricts.includes('全區')) return true;
+  return listingDistricts.some((d) => selected.includes(d));
+}
+
 /**
  * 排序區域陣列，確保「全區」永遠在第一位
  * @param districts 區域陣列

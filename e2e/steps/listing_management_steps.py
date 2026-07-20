@@ -54,6 +54,26 @@ def photo_uploads_succeed(api_mock):
     api_mock.set_upload_photo_success()
 
 
+@given("photo uploads are captured until released")
+def photo_uploads_deferred(api_mock):
+    api_mock.set_upload_photo_deferred()
+
+
+@when("I fill the listing form while photos are still uploading")
+def fill_during_upload(create_service_provider_page):
+    create_service_provider_page.fill_valid_form_photos_first()
+
+
+@when("the photo uploads complete")
+def uploads_complete(api_mock):
+    api_mock.release_deferred_uploads()
+
+
+@then("the create submit button should become enabled")
+def submit_becomes_enabled(create_service_provider_page):
+    expect(create_service_provider_page.submit_button()).to_be_enabled(timeout=5_000)
+
+
 # --- When ---------------------------------------------------------------------
 
 @when("I delete the listing")

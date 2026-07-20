@@ -19,7 +19,6 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { RequireMembershipRoute } from './components/RequireMembershipRoute'; // ✅ 會員資格守衛（以會籍有效為準）
-import { Toaster } from './components/ui/sonner';
 import { NotificationProvider } from './components/notifications/NotificationContext';
 import { FeatureProvider } from './contexts/FeatureContext';
 import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
@@ -316,7 +315,6 @@ function AppContent() {
             <Footer />
             <BottomNav />
           </div>
-          <Toaster />
         </NotificationProvider>
       </FeatureProvider>
     </UserContext.Provider>
