@@ -102,21 +102,26 @@ export function JoinReferralProgramDialog({
                         開新分頁。開新分頁會讓文件頁成為分頁歷史第一筆，其「上一頁」
                         鈕 navigate(-1) 無處可回而變死鈕（本次修的 bug）。改用彈窗後
                         關掉即回到本對話框、簽名與勾選狀態原封不動，根本不需要返回鈕。 */}
-                    <Label htmlFor="terms" className="text-sm cursor-pointer flex-1">
-                      我已詳閱並同意
+                    {/* leading-relaxed 讓換行後的行距不擠；每個文件連結各自
+                        whitespace-nowrap + inline-block，保證「推廣獎勵規章」「推廣獎勵契約書」
+                        這種專有名詞永遠整組不斷字。整句仍可換行，但只會在
+                        「我已詳閱並同意 / 規章 / 和 / 契約書」這些完整詞塊之間斷，
+                        不會再把一兩個字（章、書）擠到下一行造成排版怪異。 */}
+                    <Label htmlFor="terms" className="text-sm cursor-pointer flex-1 leading-relaxed">
+                      <span className="whitespace-nowrap">我已詳閱並同意</span>
                       <LegalDialog
                         triggerLabel="推廣獎勵規章"
                         title="推廣獎勵規章"
                         content={referralRewardRulesContent}
-                        triggerClassName="text-foreground hover:underline mx-1"
+                        triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-rules-link"
                       />
-                      和
+                      <span className="whitespace-nowrap">和</span>
                       <LegalDialog
                         triggerLabel="推廣獎勵契約書"
                         title="推廣獎勵契約書"
                         content={referralRewardContractContent}
-                        triggerClassName="text-foreground hover:underline mx-1"
+                        triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-contract-link"
                       />
                     </Label>
