@@ -247,35 +247,71 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
 // PayUni 設定 — 整合式支付頁（UPP / UNiPaypage），一次性付款
 // 文件：https://docs.payuni.com.tw/web/#/7/34
 // ============================================================
-function payuniConfig() {
-  const sandbox = Deno.env.get('PAYUNI_SANDBOX') === 'true';
+export type PayuniMode = 'sandbox' | 'production';
 
-  // sandbox（測試站）與正式站是兩套獨立帳號，MerID / HashKey / HashIV 都不同，不能混用。
-  // 測試模式優先讀 PAYUNI_TEST_*，若未設定則退回一般變數。
-  const merID = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_MER_ID')   || Deno.env.get('PAYUNI_MER_ID')!)
-    : Deno.env.get('PAYUNI_MER_ID')!;
-  const key = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_HASH_KEY') || Deno.env.get('PAYUNI_HASH_KEY')!)
-    : Deno.env.get('PAYUNI_HASH_KEY')!;
-  const iv = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_HASH_IV')  || Deno.env.get('PAYUNI_HASH_IV')!)
-    : Deno.env.get('PAYUNI_HASH_IV')!;
+export interface PayuniConfig {
+  merID: string;
+  hashKey: string;
+  hashIV: string;
+  version: string;
+  apiUrl: string;
+  queryUrl: string;
+  mode: PayuniMode;
+}
 
-  if (!key || !iv || !merID) throw new Error('PayUni 環境變數未設定');
+// 純函式：從環境變數讀取器解析 PayUni 設定。抽成 pure fn 是為了能在 CI
+// 用不同的環境組合單元測試，不必碰真的 Deno.env 或 PayUni 網路端點。
+//
+// 核心不變式（過去被違反 → 線上「授權失敗(模擬)」的根因）：
+//   sandbox（測試站）與正式站是兩套完全獨立的帳號，三個憑證
+//   MerID / HashKey / HashIV 必須「成套、同源」。舊版對每個欄位各自
+//   `PAYUNI_TEST_X || PAYUNI_X` 逐欄回退，只要測試站憑證缺一角，就會把
+//   正式站的 MerID/金鑰混進 sandbox 端點——PayUni 收到自己不認識的商店，
+//   一律回傳含「(模擬)」浮水印的授權失敗。所以這裡改成：
+//     * 依 mode 選定唯一一套前綴（PAYUNI_ 或 PAYUNI_TEST_）；
+//     * 三個欄位缺任何一個就明確拋錯，絕不跨環境回退；
+//     * 回傳 mode，讓呼叫端／前端／log 能看見「這筆到底打哪個環境」。
+export function resolvePayuniConfig(read: (key: string) => string | undefined): PayuniConfig {
+  const mode: PayuniMode = read('PAYUNI_SANDBOX') === 'true' ? 'sandbox' : 'production';
+  const prefix = mode === 'sandbox' ? 'PAYUNI_TEST_' : 'PAYUNI_';
+
+  const merID   = read(`${prefix}MER_ID`)?.trim();
+  const hashKey = read(`${prefix}HASH_KEY`)?.trim();
+  const hashIV  = read(`${prefix}HASH_IV`)?.trim();
+
+  const missing = [
+    !merID   && `${prefix}MER_ID`,
+    !hashKey && `${prefix}HASH_KEY`,
+    !hashIV  && `${prefix}HASH_IV`,
+  ].filter(Boolean) as string[];
+
+  if (missing.length > 0) {
+    // 明確、成套地失敗——寧可在建單當下就擋下（前端顯示「建立訂單失敗」），
+    // 也不要把混搭憑證送去 PayUni，讓使用者走到付款頁才吃「授權失敗(模擬)」。
+    const hint = mode === 'sandbox'
+      ? ' 測試站需自成一套 PAYUNI_TEST_* 憑證，不會回退到正式站憑證；以正式站憑證打 sandbox 端點會得到「授權失敗(模擬)」。'
+      : '';
+    throw new Error(`PayUni 環境變數未設定（mode=${mode}）：缺少 ${missing.join('、')}。${hint}`);
+  }
+
   return {
-    merID,
-    hashKey: key,
-    hashIV:  iv,
+    merID: merID!,
+    hashKey: hashKey!,
+    hashIV: hashIV!,
     version: '1.0',
-    apiUrl: sandbox
+    apiUrl: mode === 'sandbox'
       ? 'https://sandbox-api.payuni.com.tw/api/upp'
       : 'https://api.payuni.com.tw/api/upp',
     // server-to-server 交易查詢（reconcile 對帳用）
-    queryUrl: sandbox
+    queryUrl: mode === 'sandbox'
       ? 'https://sandbox-api.payuni.com.tw/api/trade/query'
       : 'https://api.payuni.com.tw/api/trade/query',
+    mode,
   };
+}
+
+function payuniConfig(): PayuniConfig {
+  return resolvePayuniConfig((k) => Deno.env.get(k));
 }
 
 // MerTradeNo：限英數字。台灣日期時間(14) + 6 碼 CSPRNG 亂數 = 20 碼。
@@ -1183,6 +1219,12 @@ app.post('/payuni/prepare', async (c) => {
     }
   }
 
+  // 「測試站在線上收真錢」是災難級誤設定：sandbox 只會回模擬結果，
+  // 使用者永遠付不成功。把 mode 大聲寫進 log，讓維運能在告警／log 一眼看見。
+  if (config.mode === 'sandbox') {
+    console.warn('[prepare] ⚠️ PayUni 以 sandbox（測試站）模式建單——付款只會得到模擬結果，正式環境請確認 PAYUNI_SANDBOX 未被設為 true。tradeNo:', tradeNo);
+  }
+
   // 雲端環境從 *.supabase.co 網址取 project id；本地 supabase start
   // （http://127.0.0.1:54321）比對不到時直接用該網址當 functions base，
   // 讓本地開發/測試不會在這裡炸掉。
@@ -1234,6 +1276,9 @@ app.post('/payuni/prepare', async (c) => {
       EncryptInfo: encryptInfo,
       HashInfo:    hashInfo,
       apiUrl:      config.apiUrl,
+      // 讓前端能明確知道這筆是打正式站還是測試站（前端已 log 這個值）。
+      // sandbox 一律回傳含「(模擬)」的模擬結果，正式站才會有真實金流。
+      mode:        config.mode,
       tradeNo,
     }
   });
