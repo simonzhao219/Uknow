@@ -42,7 +42,7 @@ export function MemberDashboard() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>

@@ -46,7 +46,7 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -64,7 +64,7 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -73,7 +73,9 @@ export function RewardDashboard() {
         </div>
         <div className="text-center py-12">
           <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>重新載入</Button>
+          {/* 只重抓本頁資料，不整頁 reload（reload 會重開整個 SPA：
+              重解析 session、清光快取、白畫面閃爍） */}
+          <Button onClick={clearAndRefetch}>重新載入</Button>
         </div>
       </div>
     );
@@ -83,7 +85,7 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -104,7 +106,7 @@ export function RewardDashboard() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>

@@ -7,7 +7,7 @@ import { Loader2, CheckCircle, CreditCard, Edit, Upload, ExternalLink, X, Image 
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
-import { buildApiUrl } from '../utils/apiClient';
+import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
 import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 
@@ -414,7 +414,7 @@ export function PaymentCheckout() {
         console.log('PaymentCheckout: Submitting form to PayUni:', result.data.mode);
         form.submit();  // 提交後會跳轉到 PayUni
       } else {
-        showToast(result.error?.message || '準備訂單失敗', 'error');
+        showToast(extractApiErrorMessage(result, '準備訂單失敗'), 'error');
       }
     } catch (error: any) {
       console.error('PaymentCheckout: PayUni payment error:', error);
@@ -477,7 +477,7 @@ export function PaymentCheckout() {
       if (!response.ok) {
         const errorData = await response.json();
         console.error('PaymentCheckout: Reset registration error:', errorData);
-        throw new Error(errorData.error?.message || '重置註冊狀態失敗');
+        throw new Error(extractApiErrorMessage(errorData, '重置註冊狀態失敗'));
       }
       
       console.log('PaymentCheckout: Registration step reset to 0');
