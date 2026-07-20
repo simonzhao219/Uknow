@@ -34,7 +34,7 @@ Deno.test('apply_referral_side_effects：p_paid_at 決定 task_progress 的月�
     // 取 referee 的 subscription id 供冪等鍵
     const { data: sub } = await client
       .from('subscriptions').select('id').eq('user_id', newReferee.id)
-      .order('created_at', { ascending: false }).limit(1).single();
+      .order('end_date', { ascending: false }).limit(1).single();
     assert(sub, 'referee 應已有訂閱');
 
     // 清掉 payForUser 當下已寫入的本月 task_progress，重新以指定付款月補跑

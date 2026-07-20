@@ -37,6 +37,11 @@ Deno.test('reconcile：超過門檻天數且查無結果的殭屍單標成 expir
   const recentUser = await createTestUser(client, { name: 'Recently Stuck' });
 
   try {
+    // 補齊基本資料，讓 effective_registration_step 的斷言落在「已填資料、
+    // 無在途訂單」的 step 1（createTestUser 只帶 name）。
+    await client.from('profiles')
+      .update({ phone: '0912345678', birth_date: '1990-01-01' })
+      .eq('id', zombieUser.id);
     await seedPendingOrder(client, zombieUser.id, FIVE_DAYS_MIN); // 5 天前棄付
     await seedPendingOrder(client, recentUser.id, 60);            // 1 小時前，還在等 webhook
 
