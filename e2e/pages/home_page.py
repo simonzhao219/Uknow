@@ -34,7 +34,10 @@ class HomePage(BasePage):
     def open_listing(self, listing_id: str) -> None:
         self.card(listing_id).click()
 
-    # --- desktop location filter (Collapsible; checkboxes have stable ids) --
+    # --- desktop location filter（Collapsible + FilterChip 膠囊按鈕）------
+    # FilterChip 是原生 <button aria-pressed>，以文字為可存取名稱；
+    # 每個已選縣市有自己的「{city}的服務區域」面板，「全區」與同名區
+    # 都以該面板為 scope 定位，天然對齊 per-city 的選取語意。
 
     def open_location_filter(self) -> None:
         # 桌面版「服務地區」Collapsible 的觸發鈕（手機版 Sheet 在寬視窗
@@ -42,13 +45,18 @@ class HomePage(BasePage):
         self.page.get_by_role("button", name="服務地區").click()
 
     def check_city(self, city: str) -> None:
-        self.page.locator(f"#desktop-city-{city}").click()
+        self.page.get_by_role("button", name=city, exact=True).click()
+
+    def _city_district_panel(self):
+        return self.page.locator("div.rounded-lg")
 
     def toggle_all_districts(self, city: str) -> None:
-        self.page.locator(f"#desktop-district-{city}-all").click()
+        panel = self._city_district_panel().filter(has_text=f"{city}的服務區域")
+        panel.get_by_role("button", name="全區", exact=True).click()
 
     def check_district(self, city: str, district: str) -> None:
-        self.page.locator(f"#desktop-district-{city}-{district}").click()
+        panel = self._city_district_panel().filter(has_text=f"{city}的服務區域")
+        panel.get_by_role("button", name=district, exact=True).click()
 
     # --- locators ----------------------------------------------------------
 

@@ -82,3 +82,15 @@ Feature: Listing management
     And I fill in a valid listing and submit
     Then I should see a toast containing "刊登建立成功"
     And I should be redirected to "/service-providers"
+
+  # 回歸釘：上傳完成的回寫曾用 stale closure 覆寫整份表單——使用者在
+  # 照片上傳期間輸入的欄位（此處為聯絡方式）會在上傳完成時被清空，
+  # 送出鈕永遠 disabled。冷啟動下 CI 反覆間歇失敗的根因即此。
+  Scenario: Input typed while photos are uploading survives the upload completing
+    Given I am logged in as an active member
+    And I have no listing yet
+    And photo uploads are captured until released
+    When I visit "/service-providers/create"
+    And I fill the listing form while photos are still uploading
+    And the photo uploads complete
+    Then the create submit button should become enabled

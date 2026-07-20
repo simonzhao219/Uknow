@@ -37,6 +37,24 @@ class CreateServiceProviderPage(BasePage):
         self.page.locator("#instagram").fill(instagram)
         return self
 
+    def fill_valid_form_photos_first(
+        self,
+        name: str = "測試服務者",
+        category: str = "美髮",
+        gender: str = "女",
+        city: str = "台北市",
+        instagram: str = "valid_ig",
+    ) -> "CreateServiceProviderPage":
+        """與 fill_valid_form 同內容，但把照片上傳排在聯絡方式之前——
+        搭配 deferred upload mock，聯絡方式是在「上傳仍在途」時輸入的。"""
+        self.page.locator("#name").fill(name)
+        self._select("服務類別", category)
+        self._select("性別", gender)
+        self._select("服務城市", city)
+        self._upload_three_photos()
+        self.page.locator("#instagram").fill(instagram)
+        return self
+
     def _upload_three_photos(self) -> None:
         files = [
             {"name": f"photo{i}.jpg", "mimeType": "image/jpeg", "buffer": _FAKE_JPEG}

@@ -195,14 +195,20 @@ export function CreateServiceProvider() {
       console.log(`[Upload Photos] ✅ 所有照片上傳完成，共 ${photoUrls.length} 張`);
       console.log(`[Upload Photos] 照片 URLs:`, photoUrls);
       
-      setFormData({
-        ...formData,
-        photos: [...formData.photos, ...photoUrls]
+      // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
+      // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（曾造成聯絡
+      // 方式被清空、送出鈕永遠 disabled 的間歇性 bug，見 e2e「Input typed
+      // while photos are uploading survives」情境）。
+      setFormData(prev => ({
+        ...prev,
+        photos: [...prev.photos, ...photoUrls]
+      }));
+
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.photos;
+        return next;
       });
-      
-      const newErrors = { ...errors };
-      delete newErrors.photos;
-      setErrors(newErrors);
       
       showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
       

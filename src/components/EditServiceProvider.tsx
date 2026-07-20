@@ -215,14 +215,19 @@ export function EditServiceProvider() {
       
       const photoUrls = await Promise.all(uploadPromises);
       
-      setFormData({
-        ...formData,
-        photos: [...formData.photos, ...photoUrls]
-      });
+      // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
+      // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（與
+      // CreateServiceProvider 同一個 stale closure bug）。
+      setFormData(prev => ({
+        ...prev,
+        photos: [...prev.photos, ...photoUrls]
+      }));
 
-      const newErrors = { ...errors };
-      delete newErrors.photos;
-      setErrors(newErrors);
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.photos;
+        return next;
+      });
       
       showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
       
