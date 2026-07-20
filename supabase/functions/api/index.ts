@@ -33,7 +33,18 @@ app.use('*', cors({
     // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
     const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
     const o       = origin.replace(/\/$/, '');
-    return o === allowed || o.startsWith('http://localhost') ? origin : '';
+    if (o === allowed) return origin;
+    // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
+    // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
+    // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
+    const devMode = Deno.env.get('DEV_CORS') === 'true' || Deno.env.get('PAYUNI_SANDBOX') === 'true';
+    if (devMode) {
+      try {
+        const host = new URL(o).hostname;
+        if (host === 'localhost' || host === '127.0.0.1') return origin;
+      } catch { /* 非法 Origin → 拒絕 */ }
+    }
+    return '';
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
@@ -236,41 +247,84 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
 // PayUni 設定 — 整合式支付頁（UPP / UNiPaypage），一次性付款
 // 文件：https://docs.payuni.com.tw/web/#/7/34
 // ============================================================
-function payuniConfig() {
-  const sandbox = Deno.env.get('PAYUNI_SANDBOX') === 'true';
+export type PayuniMode = 'sandbox' | 'production';
 
-  // sandbox（測試站）與正式站是兩套獨立帳號，MerID / HashKey / HashIV 都不同，不能混用。
-  // 測試模式優先讀 PAYUNI_TEST_*，若未設定則退回一般變數。
-  const merID = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_MER_ID')   || Deno.env.get('PAYUNI_MER_ID')!)
-    : Deno.env.get('PAYUNI_MER_ID')!;
-  const key = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_HASH_KEY') || Deno.env.get('PAYUNI_HASH_KEY')!)
-    : Deno.env.get('PAYUNI_HASH_KEY')!;
-  const iv = sandbox
-    ? (Deno.env.get('PAYUNI_TEST_HASH_IV')  || Deno.env.get('PAYUNI_HASH_IV')!)
-    : Deno.env.get('PAYUNI_HASH_IV')!;
+export interface PayuniConfig {
+  merID: string;
+  hashKey: string;
+  hashIV: string;
+  version: string;
+  apiUrl: string;
+  queryUrl: string;
+  mode: PayuniMode;
+}
 
-  if (!key || !iv || !merID) throw new Error('PayUni 環境變數未設定');
+// 純函式：從環境變數讀取器解析 PayUni 設定。抽成 pure fn 是為了能在 CI
+// 用不同的環境組合單元測試，不必碰真的 Deno.env 或 PayUni 網路端點。
+//
+// 核心不變式（過去被違反 → 線上「授權失敗(模擬)」的根因）：
+//   sandbox（測試站）與正式站是兩套完全獨立的帳號，三個憑證
+//   MerID / HashKey / HashIV 必須「成套、同源」。舊版對每個欄位各自
+//   `PAYUNI_TEST_X || PAYUNI_X` 逐欄回退，只要測試站憑證缺一角，就會把
+//   正式站的 MerID/金鑰混進 sandbox 端點——PayUni 收到自己不認識的商店，
+//   一律回傳含「(模擬)」浮水印的授權失敗。所以這裡改成：
+//     * 依 mode 選定唯一一套前綴（PAYUNI_ 或 PAYUNI_TEST_）；
+//     * 三個欄位缺任何一個就明確拋錯，絕不跨環境回退；
+//     * 回傳 mode，讓呼叫端／前端／log 能看見「這筆到底打哪個環境」。
+export function resolvePayuniConfig(read: (key: string) => string | undefined): PayuniConfig {
+  const mode: PayuniMode = read('PAYUNI_SANDBOX') === 'true' ? 'sandbox' : 'production';
+  const prefix = mode === 'sandbox' ? 'PAYUNI_TEST_' : 'PAYUNI_';
+
+  const merID   = read(`${prefix}MER_ID`)?.trim();
+  const hashKey = read(`${prefix}HASH_KEY`)?.trim();
+  const hashIV  = read(`${prefix}HASH_IV`)?.trim();
+
+  const missing = [
+    !merID   && `${prefix}MER_ID`,
+    !hashKey && `${prefix}HASH_KEY`,
+    !hashIV  && `${prefix}HASH_IV`,
+  ].filter(Boolean) as string[];
+
+  if (missing.length > 0) {
+    // 明確、成套地失敗——寧可在建單當下就擋下（前端顯示「建立訂單失敗」），
+    // 也不要把混搭憑證送去 PayUni，讓使用者走到付款頁才吃「授權失敗(模擬)」。
+    const hint = mode === 'sandbox'
+      ? ' 測試站需自成一套 PAYUNI_TEST_* 憑證，不會回退到正式站憑證；以正式站憑證打 sandbox 端點會得到「授權失敗(模擬)」。'
+      : '';
+    throw new Error(`PayUni 環境變數未設定（mode=${mode}）：缺少 ${missing.join('、')}。${hint}`);
+  }
+
   return {
-    merID,
-    hashKey: key,
-    hashIV:  iv,
+    merID: merID!,
+    hashKey: hashKey!,
+    hashIV: hashIV!,
     version: '1.0',
-    apiUrl: sandbox
+    apiUrl: mode === 'sandbox'
       ? 'https://sandbox-api.payuni.com.tw/api/upp'
       : 'https://api.payuni.com.tw/api/upp',
     // server-to-server 交易查詢（reconcile 對帳用）
-    queryUrl: sandbox
+    queryUrl: mode === 'sandbox'
       ? 'https://sandbox-api.payuni.com.tw/api/trade/query'
       : 'https://api.payuni.com.tw/api/trade/query',
+    mode,
   };
 }
 
-// MerTradeNo：限英數字。用 台灣日期時間(14) + 4 碼亂數 = 18 碼
-function generateTradeNo(): string {
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${twCompactTimestamp()}${rand}`;  // 18 chars
+function payuniConfig(): PayuniConfig {
+  return resolvePayuniConfig((k) => Deno.env.get(k));
+}
+
+// MerTradeNo：限英數字。台灣日期時間(14) + 6 碼 CSPRNG 亂數 = 20 碼。
+// Math.random 4 碼 base36 在同秒內碰撞機率約 1/168 萬——量大後偶發，
+// 碰撞會撞 payment_orders 的唯一鍵讓使用者吃 500；CSPRNG 6 碼把機率
+// 壓到 ~1/2×10⁹，且不可預測。export 供 hardening.test.ts 驗證格式。
+export function generateTradeNo(): string {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let rand = '';
+  for (const b of bytes) rand += chars[b % 36];
+  return `${twCompactTimestamp()}${rand}`;  // 20 chars
 }
 
 // ============================================================
@@ -294,6 +348,18 @@ app.get('/auth/profile', profileHandler);
 // 檢查 email 是否已存在（AuthPage 步驟 1 使用）
 // ============================================================
 app.post('/auth/check-email', async (c) => {
+  // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流
+  // （bump_rate_limit，fail-open：限流器故障不擋正常註冊）。
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    || c.req.header('cf-connecting-ip')
+    || 'unknown';
+  const { data: allowed } = await sb().rpc('bump_rate_limit', {
+    p_key: `check-email:${ip}`, p_max: 10, p_window_seconds: 300,
+  });
+  if (allowed === false) {
+    return c.json({ error: '請求過於頻繁，請稍後再試' }, 429);
+  }
+
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ exists: false }); }
 
@@ -672,6 +738,62 @@ app.post('/listings/verify-referral-code', async (c) => {
       listingName: row.listing_name ?? null,
     },
   });
+});
+
+// ============================================================
+// /admin/** 統一守門 middleware：requireAuth + profiles.is_admin。
+// 逐路由手貼守門漏一次就是權限漏洞（GET /admin/features 曾是無驗證
+// 的漏網之魚，見 admin-gate.test.ts）——middleware 讓整個命名空間
+// 一律先過這道網；個別 handler 內既有的檢查保留作為第二道防線。
+// 必須註冊在所有 /admin 路由之前才會生效。
+// ============================================================
+app.use('/admin/*', async (c, next) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+  await next();
+});
+
+// ============================================================
+// system_alerts 的出口（見 system-alerts-api.test.ts）：這張表自
+// 0716000004 起只進不出——「金額不符待人工裁決」等需要人工介入的
+// 告警實際上無人看得到，且告警去重靠 resolved_at is null，永不
+// resolve 代表同一訂單只告警一次、第一次漏看就永遠靜默。
+// 這兩個端點刻意明確檢查 DB error 回 500（「查詢失敗」與「沒有資料」
+// 對維運後台必須可區分，不得靜默轉成空 200）。
+// ============================================================
+app.get('/admin/system-alerts', async (c) => {
+  const unresolvedOnly = c.req.query('unresolved') !== 'false';
+  const limit = Math.min(parseInt(c.req.query('limit') || '100'), 500);
+
+  let query = sb().from('system_alerts')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (unresolvedOnly) query = query.is('resolved_at', null);
+
+  const { data: alerts, count, error } = await query;
+  if (error) {
+    console.error('[admin/system-alerts] 查詢失敗:', error);
+    return c.json({ error: { message: '查詢告警失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { alerts: alerts ?? [], total: count ?? 0 } });
+});
+
+app.post('/admin/system-alerts/:id/resolve', async (c) => {
+  const id = c.req.param('id');
+  const { data: resolved, error } = await sb().from('system_alerts')
+    .update({ resolved_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('resolved_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error('[admin/system-alerts/resolve] 更新失敗:', error);
+    return c.json({ error: { message: '標記告警失敗' } }, 500);
+  }
+  if (!resolved) return c.json({ error: { message: '找不到未處理的告警' } }, 404);
+  return c.json({ success: true });
 });
 
 // ============================================================
@@ -1072,7 +1194,36 @@ app.post('/payuni/prepare', async (c) => {
   }
 
   const config  = payuniConfig();
-  const tradeNo = generateTradeNo();
+
+  // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
+  // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
+  // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
+  let tradeNo = generateTradeNo();
+  {
+    const orderRow = () => ({
+      user_id:        user.id,
+      amount:         1200,
+      status:         'pending',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      renewal_mode:   renewalMode,
+    });
+    let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
+    if (insertErr && insertErr.code === '23505') {
+      tradeNo = generateTradeNo();
+      ({ error: insertErr } = await client.from('payment_orders').insert(orderRow()));
+    }
+    if (insertErr) {
+      console.error('[prepare] insert payment_orders 失敗:', insertErr);
+      return c.json({ success: false, error: '建立訂單失敗' }, 500);
+    }
+  }
+
+  // 「測試站在線上收真錢」是災難級誤設定：sandbox 只會回模擬結果，
+  // 使用者永遠付不成功。把 mode 大聲寫進 log，讓維運能在告警／log 一眼看見。
+  if (config.mode === 'sandbox') {
+    console.warn('[prepare] ⚠️ PayUni 以 sandbox（測試站）模式建單——付款只會得到模擬結果，正式環境請確認 PAYUNI_SANDBOX 未被設為 true。tradeNo:', tradeNo);
+  }
 
   // 雲端環境從 *.supabase.co 網址取 project id；本地 supabase start
   // （http://127.0.0.1:54321）比對不到時直接用該網址當 functions base，
@@ -1113,21 +1264,9 @@ app.post('/payuni/prepare', async (c) => {
   const encryptInfo = await encryptPayUni(encryptData, config.hashKey, config.hashIV);
   const hashInfo    = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
 
-  // 寫入 payment_orders（renewal_mode 記錄使用者選的續費模式，
-  // process_successful_payment 依它決定效期錨點——效期在付款當下才
-  // 決定，不信任前端傳日期）
-  const { error: insertErr } = await client.from('payment_orders').insert({
-    user_id:        user.id,
-    amount:         1200,
-    status:         'pending',
-    payment_method: 'payuni',
-    transaction_id: tradeNo,
-    renewal_mode:   renewalMode,
-  });
-  if (insertErr) {
-    console.error('[prepare] insert payment_orders 失敗:', insertErr);
-    return c.json({ success: false, error: '建立訂單失敗' }, 500);
-  }
+  // payment_orders 已在組加密 payload 之前寫入（見上方建單先行區塊；
+  // renewal_mode 記錄使用者選的續費模式，process_successful_payment
+  // 依它決定效期錨點——效期在付款當下才決定，不信任前端傳日期）。
 
   return c.json({
     success: true,
@@ -1137,6 +1276,9 @@ app.post('/payuni/prepare', async (c) => {
       EncryptInfo: encryptInfo,
       HashInfo:    hashInfo,
       apiUrl:      config.apiUrl,
+      // 讓前端能明確知道這筆是打正式站還是測試站（前端已 log 這個值）。
+      // sandbox 一律回傳含「(模擬)」的模擬結果，正式站才會有真實金流。
+      mode:        config.mode,
       tradeNo,
     }
   });
@@ -1216,12 +1358,33 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
 // 地方可查。跟 SQL 那邊的 log_system_alert() 是同一張表，只是這裡是
 // TypeScript 端自己失敗時用的——絕不能讓告警本身害呼叫端也失敗。
 // ============================================================
-async function logSystemAlert(source: string, context: Record<string, unknown>, message = 'edge function alert') {
+async function logSystemAlert(
+  source: string,
+  context: Record<string, unknown>,
+  message = 'edge function alert',
+  severity: 'info' | 'warning' | 'error' = 'warning',
+) {
   try {
-    await sb().from('system_alerts').insert({ source, severity: 'warning', message, context });
+    await sb().from('system_alerts').insert({ source, severity, message, context });
   } catch (e) {
     console.error('[logSystemAlert] failed to persist alert', e);
   }
+}
+
+// 常數時間字串比較：對兩邊 SHA-256 摘要做等長 XOR 比對（Web Crypto
+// 沒有 timingSafeEqual）。長期靜態共享密鑰的直接 !== 比較是已知的
+// timing side-channel 反模式。
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  const va = new Uint8Array(da);
+  const vb = new Uint8Array(db);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
 }
 
 // ============================================================
@@ -1317,7 +1480,11 @@ async function resolveOrderFromPayUni(
 
   if (error) {
     await persistRawResponseBestEffort(MerTradeNo, data);
-    await logSystemAlert('resolveOrderFromPayUni', { merTradeNo: MerTradeNo, error: error.message });
+    // 付款處理失敗是 error 級事件（不是 warning）：PayUni 已回結果、
+    // 我方入帳流程炸掉，必須人工介入。
+    await logSystemAlert('resolveOrderFromPayUni',
+      { merTradeNo: MerTradeNo, error: error.message },
+      '付款處理失敗，需人工介入', 'error');
     return { ok: false, message: error.message };
   }
 
@@ -1345,9 +1512,15 @@ export async function reconcilePendingOrders(
   client: any,
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
-  opts: { thresholdMinutes: number; limit: number },
-): Promise<{ checked: number; resolved: number; stillPending: number; queryErrors: number }> {
+  opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
+): Promise<{ checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
+  // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
+  // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
+  // 需要對帳的卡單餓死。超過 PayUni ExpireDate（3 天）再留一天緩衝後仍查
+  // 無結果 → 標 'expired'。已存 SUCCESS 存檔的卡單不在掃描範圍（下方 .or
+  // 過濾），永不會被誤標。
+  const expireCutoffMs = Date.now() - (opts.expireAfterDays ?? 4) * 24 * 60 * 60_000;
 
   // .or(...)：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
   // 自癒（reconcile 路由的 heal pre-pass），這裡只處理「完全沒有存檔
@@ -1364,13 +1537,29 @@ export async function reconcilePendingOrders(
 
   if (error) throw new Error(`reconcilePendingOrders: 查詢 pending 訂單失敗: ${error.message}`);
 
-  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, queryErrors: 0 };
+  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, expired: 0, queryErrors: 0 };
 
   for (const order of stuck ?? []) {
     try {
       const result = await queryFn(order.transaction_id!);
       if (result.stillProcessing) {
-        summary.stillPending++;
+        if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+          const { error: expireErr } = await client
+            .from('payment_orders')
+            .update({ status: 'expired' })
+            .eq('id', order.id)
+            .eq('status', 'pending');
+          if (expireErr) {
+            summary.queryErrors++;
+            await logSystemAlert('reconcile-pending-payments', {
+              tradeNo: order.transaction_id, error: `標記 expired 失敗: ${expireErr.message}`,
+            });
+          } else {
+            summary.expired++;
+          }
+        } else {
+          summary.stillPending++;
+        }
         continue;
       }
       const outcome = await resolveFn(result.data);
@@ -1472,7 +1661,7 @@ const RECONCILE_BATCH_LIMIT = 50;
 
 app.post('/internal/reconcile-pending-payments', async (c) => {
   const secret = Deno.env.get('RECONCILE_SECRET');
-  if (!secret || c.req.header('x-internal-secret') !== secret) {
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
