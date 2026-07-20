@@ -307,31 +307,74 @@ e2e/
 
 ---
 
-## 11. 執行與 CI
+## 11. CI 架構：四軌分層，效率最大化
 
-### 11.1 時間預算（全 30 人走 GUI）
+Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會擋合併的長 gate 只會讓人
+繞過 CI。設計原則：測試的「貴」花在對的觸發時機上；每一軌都有明確的時間預算與擋不擋
+合併的定位。
+
+### 11.1 四軌總覽
+
+| 軌道 | 觸發 | 內容 | 目標牆鐘 | 擋合併？ |
+|---|---|---|---|---|
+| **1. PR gate** | 每次 push | typecheck/unit/knip/build＋api-tests＋mocked e2e | **< 10 分** | ✅ |
+| **2. journey-smoke** | PR 動到關鍵路徑時 | 1 人版 walking skeleton（webhook 付款模式） | ~6–8 分 | ✅（僅該類 PR） |
+| **3. main 合併後** | push main | 部署（現有 workflow）＋部署後 smoke | ~10 分 | —（紅燈即時通知） |
+| **4. journey-full** | nightly 02:00＋手動 | 全 30 人、六模組、時光機、清理 | **~30–35 分** | ❌（紅燈自動開 issue） |
+
+**軌道 2 是槓桿最大的一條**：skeleton（註冊→OTP→付款→獎勵落地→清理，單人）能抓到
+八成的整合性壞法，卻只要 smoke 的成本。觸發條件用 paths filter：`supabase/**` 或
+`src/` 的金流／推薦／訂閱模組有 diff 才跑；純 UI 或文件 PR 不付這個成本。
+
+### 11.2 現有 `ci.yml`（軌道 1）的三個效率修正
+
+1. **paths filter**：`docs/**`、`**/*.md` 的變更直接跳過 build/api-tests/e2e
+   （本設計書自己的 PR 就跑了整套 CI——這就是漏洞本身）；
+2. **拆掉序列化**：`e2e-tests` 的 `needs: build` 只是 fail-fast 訊號、不共用產物，
+   改為平行後牆鐘從 build→e2e 串行的 ~14 分降到 max(各 job) ≈ 10 分
+   （代價：build 紅時 e2e 白跑幾分鐘，可接受）；
+3. **workflow 層級 `concurrency` + `cancel-in-progress`**：同一 PR 的新 push 淘汰舊
+   run，不排隊燒 runner。
+
+### 11.3 journey-full 內部提效：48 分 → ~30 分
+
+| 手段 | 說明 | 省下 |
+|---|---|---|
+| **骨架先行** | nightly 開頭先跑 1 人 skeleton（~5 分），失敗即中止整場——不讓環境問題燒 40 分鐘才報錯 | 失敗場次 -35 分 |
+| **建樹平行度 3 → 8** | 測試分支放寬 rate limit 後，六代＝6 個波次（8/8/8/3/1/1），每波 ~90 秒 | 建樹 25 分 → **10–12 分** |
+| **模組驗證按狀態足跡拆 DAG** | 獎勵帳本／推薦樹斷言唯讀可全平行；刊登只動 `listings`；提領必須在獎勵斷言後（餘額需穩定）；時光機最後（改 C7/C8） | 驗證 8 分 → ~5 分 |
+| **付款模式排程化** | 平日 nightly 跑 webhook 模式（快、測我們的程式碼），**週日跑全 sandbox 真刷**（測與 PayUni 的整合）——整合斷裂不是天天發生，一週驗一次夠 | 平日 -10~15 分 |
+| **樹快照重用** | 建樹成功後 `pg_dump` 分支存為 artifact；`workflow_dispatch` 帶 `reuse_tree=true` 時還原快照到新分支、跳過建樹，直接跑模組斷言 | debug 迭代 40 分 → **~8 分** |
+| **只重跑失敗的** | pytest `--lf` 二次通過制；sandbox 連紅自動降級 webhook 重跑 | 重跑場次大幅縮短 |
+
+調整後的 nightly 時間預算：
 
 | 階段 | 估時 |
 |---|---|
 | 分支建立＋migrations＋dev server | ~4 分 |
-| 建樹 30 人（每人 60–90 秒，含 sandbox 刷卡；同代平行 ×3） | ~20–28 分 |
-| 六大模組驗證 | ~8 分 |
+| 1 人 skeleton gate | ~5 分 |
+| 建樹 30 人（同代平行 ×8） | ~10–12 分 |
+| 模組驗證（DAG 平行） | ~5 分 |
 | 跨時間情境 | ~5 分 |
 | 清理＋零殘留斷言＋刪分支 | ~3 分 |
-| **合計** | **~40–48 分**（nightly 可接受） |
+| **合計** | **~30–35 分**（週日全 sandbox 模式 +10~15 分） |
 
-### 11.2 Rate limit 節流
+### 11.4 Rate limit 節流
 
-`20260720000002_rate_limits.sql` 對 check-email 等端點限流。同代平行度先定 3，
-builder 內建 429/限流回應的指數退避；若 nightly 時間吃緊再評估「測試分支放寬限流參數」
-（以 migration 外的 seed 調整，不動產品碼）。
+`20260720000002_rate_limits.sql` 對 check-email 等端點限流。同代平行度預設 8 的前提
+是測試分支放寬限流參數（以 migration 外的 seed 調整，不動產品碼）；未放寬時 builder
+自動降回 3，內建 429 指數退避。
 
-### 11.3 CI 編排（`.github/workflows/journey-nightly.yml`）
+### 11.5 編排與衛生條款（`.github/workflows/journey-nightly.yml`）
 
-- 每日 02:00（Asia/Taipei）＋手動 `workflow_dispatch`（可指定 `JOURNEY_PAYMENT_MODE`）；
-- Secrets：Supabase access token（開分支用）、PayUni sandbox 憑證、測試卡號；
-- 失敗上傳 trace/screenshot/`run_state.json`/DB dump 為 artifacts；
-- sandbox 模式連續 2 晚紅燈 → 自動改 webhook 模式重跑一次，兩者結果分開回報。
+- 每日 02:00（Asia/Taipei）＋`workflow_dispatch`（inputs：`JOURNEY_PAYMENT_MODE`、
+  `reuse_tree`、`feature_filter` 只跑單一模組）；
+- journey 的 `concurrency` group 上限 1（分支費用＋PayUni sandbox 共享狀態），
+  每個 job 一律設 `timeout-minutes`；
+- Secrets：Supabase access token（開分支）、PayUni sandbox 憑證、測試卡號；
+- 失敗上傳 trace/screenshot/`run_state.json`/DB dump 為 artifacts，並**自動開啟或更新
+  一張 nightly 追蹤 issue**（附 artifacts 連結）；綠燈沉默，不製造通知噪音；
+- flaky 情境以 `@quarantine` 標記隔離統計通過率，不讓單一 flake 把整晚判紅。
 
 ---
 
