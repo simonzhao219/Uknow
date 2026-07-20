@@ -63,6 +63,36 @@ def directory_add_city_listing(rest_mock, directory, name, city):
     rest_mock.set_public_listings(list(directory.values()))
 
 
+@given(parsers.parse('the public directory has a listing "{name}" in "{city}" district "{district}"'))
+def directory_add_district_listing(rest_mock, directory, name, city, district):
+    row = build_public_listing(
+        listing_id=_listing_id(len(directory) + 1), name=name, city=city, districts=[district],
+    )
+    directory[name] = row
+    rest_mock.set_public_listings(list(directory.values()))
+
+
+@when("I open the desktop location filter")
+def open_location_filter(home_page):
+    home_page.open_location_filter()
+
+
+@when(parsers.parse('I check the city "{city}"'))
+def check_city(home_page, city):
+    home_page.check_city(city)
+
+
+@when(parsers.parse('I uncheck all districts of "{city}"'))
+def uncheck_all_districts(home_page, city):
+    # 勾選縣市時預設帶全區；此步驟點掉「全區」＝清空該市的區選擇
+    home_page.toggle_all_districts(city)
+
+
+@when(parsers.parse('I check the district "{district}" of "{city}"'))
+def check_district(home_page, city, district):
+    home_page.check_district(city, district)
+
+
 @given(parsers.parse('my location is "{city}"'))
 def my_location_is(context, city):
     context.grant_permissions(["geolocation"])

@@ -58,9 +58,10 @@ def photo_uploads_succeed(api_mock):
 
 @when("I delete the listing")
 def delete_listing(page, service_provider_management_page):
-    # Deletion is guarded by a native window.confirm — accept it, then click.
-    page.once("dialog", lambda dialog: dialog.accept())
+    # 刪除走 shadcn AlertDialog（全站確認彈窗的統一標準；原生 window.confirm
+    # 在 LINE 等內建瀏覽器可能被抑制、樣式也與品牌脫節）。
     service_provider_management_page.click_delete()
+    page.get_by_role("button", name="確認刪除").click()
 
 
 @when("I fill in a valid listing and submit")
