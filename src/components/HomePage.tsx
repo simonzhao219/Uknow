@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
 import { Link } from "react-router-dom";
+import { UserContext } from "../App";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -105,6 +106,9 @@ const formatDistrict = (serviceProvider: any): string => {
 };
 
 export function HomePage() {
+  // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
+  // 需要上移避開，且預設收合成圓形按鈕以減少與導覽列疊出兩層 chrome。
+  const { isLoggedIn } = useContext(UserContext);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
@@ -357,6 +361,7 @@ export function HomePage() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         totalFilters={totalFilters}
+        hasBottomNav={isLoggedIn}
         resultCount={filteredServiceProviders.length}
         onResetFilters={() => {
           setSelectedGenders([]);
@@ -592,6 +597,11 @@ function MobileFilterSheet({
 //
 // 設計取捨（對應「操作習慣在下方」與「不想讓搜尋列常駐佔位」兩個訴求）：
 //   - fixed 浮在內容上方（含 safe-area 偏移），版面零佔用，首屏留給服務者列表；
+//   - 可收合成圓形按鈕（FAB）：長條會遮到底下的內容與按鈕，收合後只剩
+//     一顆圓，徽章顯示「搜尋＋篩選」總條件數，狀態不因收合而消失；
+//   - 登入會員的手機版有固定底部導覽列（BottomNav，56px＋safe-area），
+//     工具列自動上移避開，並預設收合——避免與導覽列疊出兩層全寬 chrome；
+//     未登入（無導覽列）預設展開，維持搜尋的可發現性；
 //   - 搜尋開「頂部」覆蓋層而非底部面板——軟鍵盤從下方升起，輸入框在上方
 //     永遠不會被鍵盤遮住（底部面板＋鍵盤在 iOS Safari 有遮擋/跳動的既知問題）；
 //     輸入即時過濾，主按鈕同步顯示結果數；
@@ -601,6 +611,7 @@ function MobileSearchFilterBar({
   searchQuery,
   onSearchChange,
   totalFilters,
+  hasBottomNav,
   resultCount,
   onResetFilters,
   children,
@@ -608,15 +619,63 @@ function MobileSearchFilterBar({
   searchQuery: string;
   onSearchChange: (value: string) => void;
   totalFilters: number;
+  /** 登入會員的固定底部導覽列存在時，工具列上移避開且預設收合 */
+  hasBottomNav: boolean;
   resultCount: number;
   /** 清除全部篩選條件（不含搜尋字串，搜尋在搜尋面板內清除） */
   onResetFilters: () => void;
   /** 整合篩選面板的內容（三個 chip 區塊） */
   children: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(!hasBottomNav);
+  // 登入狀態是非同步載入的：首次渲染時多半還是未登入（預設展開），
+  // 待使用者資料回來、導覽列出現時自動收合一次——但使用者手動開合過
+  // 就尊重其選擇，不再自動改動。
+  const userToggledRef = useRef(false);
+  useEffect(() => {
+    if (hasBottomNav && !userToggledRef.current) {
+      setExpanded(false);
+    }
+  }, [hasBottomNav]);
+
+  const toggleExpanded = (next: boolean) => {
+    userToggledRef.current = true;
+    setExpanded(next);
+  };
+
+  // 搜尋字串也算一項條件：收合後仍能從徽章看出「目前有條件生效」
+  const activeCount = totalFilters + (searchQuery.trim() ? 1 : 0);
+
+  // BottomNav 高 56px（min-h）＋ safe-area，再留 12px 間距
+  const offsetClass = hasBottomNav
+    ? "bottom-[calc(56px+env(safe-area-inset-bottom)+0.75rem)]"
+    : "bottom-[max(1rem,env(safe-area-inset-bottom))]";
+
+  if (!expanded) {
+    return (
+      <div className={cn("md:hidden fixed right-4 z-40", offsetClass)}>
+        <button
+          type="button"
+          onClick={() => toggleExpanded(true)}
+          aria-label="展開搜尋與篩選"
+          aria-expanded={false}
+          className="relative flex h-14 w-14 items-center justify-center rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-90 duration-200"
+        >
+          <Search className="h-5 w-5" aria-hidden="true" />
+          {activeCount > 0 && (
+            <FilterCountBadge
+              count={activeCount}
+              className="absolute -top-0.5 -right-0.5 bg-primary text-primary-foreground"
+            />
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="md:hidden fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40">
-      <div className="flex items-stretch rounded-full border bg-background shadow-lg">
+    <div className={cn("md:hidden fixed inset-x-4 z-40", offsetClass)}>
+      <div className="flex items-stretch rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-95 duration-200">
         {/* 搜尋入口：顯示目前搜尋字樣作為狀態回饋 */}
         <Sheet>
           <SheetTrigger asChild>
@@ -702,6 +761,19 @@ function MobileSearchFilterBar({
         >
           {children}
         </MobileFilterSheet>
+
+        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+
+        {/* 收合：縮成圓形按鈕，避免長條遮住底下的內容 */}
+        <button
+          type="button"
+          onClick={() => toggleExpanded(false)}
+          aria-label="收合搜尋與篩選"
+          aria-expanded={true}
+          className="flex shrink-0 items-center rounded-r-full px-3 text-muted-foreground"
+        >
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
