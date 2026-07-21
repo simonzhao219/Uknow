@@ -135,7 +135,6 @@ export const SubscriptionStatusResponseSchema = obj({
     hasSubscription:    bool(),
     status:             literals('active', 'expired'),
     activeUntil:        nullable(str()),
-    gracePeriodEnd:     nullable(str()),
     currentPeriodStart: nullable(str()),
     currentPeriodEnd:   nullable(str()),
   }),
@@ -323,7 +322,6 @@ export const ClaimRewardResponseSchema = obj({
   data: obj({
     subscriptionId: str(),
     activeUntil:    str(),
-    gracePeriodEnd: str(),
   }),
 });
 export type ClaimRewardResponse = Infer<typeof ClaimRewardResponseSchema>;

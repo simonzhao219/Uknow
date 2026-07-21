@@ -174,6 +174,12 @@ Deno.test('其餘讀端點契約形狀（rewards / withdrawals / subscriptions /
   const subParsed = assertShape(SubscriptionStatusResponseSchema, subStatus.body, 'GET /subscriptions/status');
   assertEquals(subParsed.data.status, 'active');
   assert(subParsed.data.currentPeriodEnd !== null, '應回訂閱週期迄日');
+  // 兩態模型（移除寬限期）後 gracePeriodEnd 為死欄位——回應不應再帶它。
+  // obj() 非嚴格（忽略多餘鍵），故在此顯式斷言鍵不存在。
+  assert(
+    !('gracePeriodEnd' in (subStatus.body as { data: Record<string, unknown> }).data),
+    '/subscriptions/status 不應再回傳 gracePeriodEnd',
+  );
 
   const tree = await getJson('/referrals/my-tree', token);
   const treeParsed = assertShape(ReferralTreeResponseSchema, tree.body, 'GET /referrals/my-tree');

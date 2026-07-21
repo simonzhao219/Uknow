@@ -14,7 +14,6 @@ export interface SubscriptionData {
   hasSubscription: boolean;
   status?: 'active' | 'expired';
   activeUntil?: string;
-  gracePeriodEnd?: string;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
 }
