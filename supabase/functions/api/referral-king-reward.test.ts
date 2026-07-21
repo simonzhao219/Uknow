@@ -135,3 +135,79 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
     await deleteTestUsers(client, [referrer.id, ...refereeIds]);
   }
 });
+
+Deno.test('an expired member cannot claim a free-renewal credit — blocked, credit stays unclaimed, subscription not extended', async () => {
+  // 業務規則（0721 0004）：「免費續約 1 年」credit 需先 active 才能領取，
+  // 不允許到期會員用它免費復活。判準與 user_account_status 一致
+  // （now() > end_date 即 expired）。
+  const client = adminClient();
+  const referrer = await createTestUser(client, { name: 'Expired Claimer' });
+  const refereeIds: string[] = [];
+
+  try {
+    const { error } = await payForUser(client, referrer.id);
+    assertEquals(error, null);
+    const refCode = await getActiveReferralCode(client, referrer.id);
+
+    for (let i = 0; i < 10; i++) {
+      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      refereeIds.push(referee.id);
+      const { error: payErr } = await payForUser(client, referee.id);
+      assertEquals(payErr, null);
+    }
+
+    const { data: creditRow } = await client
+      .from('referral_king_rewards')
+      .select('id')
+      .eq('user_id', referrer.id)
+      .eq('status', 'unclaimed')
+      .single();
+
+    const { data: subBefore } = await client
+      .from('subscriptions')
+      .select('id')
+      .eq('user_id', referrer.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .single();
+
+    // 強制讓最新一筆訂閱過期：end_date 移到過去（grace 相應 = end + 60 天）。
+    const pastEnd = '2020-01-01T15:59:59.000Z';
+    const pastGrace = '2020-03-01T15:59:59.000Z';
+    const { error: expireErr } = await client
+      .from('subscriptions')
+      .update({ end_date: pastEnd, grace_period_end: pastGrace })
+      .eq('id', subBefore!.id);
+    assertEquals(expireErr, null, `設為過期失敗: ${expireErr?.message}`);
+
+    // 到期會員領取 → 應被擋（subscription_invalid），不得免費復活。
+    const { data: claimResult, error: claimErr } = await client.rpc('claim_referral_king_reward', {
+      p_user_id: referrer.id,
+      p_reward_id: creditRow!.id,
+    });
+    assertEquals(claimErr, null, `不該拋 SQL 例外: ${claimErr?.message}`);
+    assertEquals(claimResult?.success, false, '到期會員不該領取成功');
+    assertEquals(claimResult?.error_code, 'subscription_invalid');
+
+    // credit 維持 unclaimed（續訂恢復 active 後仍可領），到期日未被延展。
+    const { data: creditAfter } = await client
+      .from('referral_king_rewards')
+      .select('status')
+      .eq('id', creditRow!.id)
+      .single();
+    assertEquals(creditAfter?.status, 'unclaimed', 'credit 應保持未領取，供續訂後領取');
+
+    const { data: subAfter } = await client
+      .from('subscriptions')
+      .select('end_date')
+      .eq('id', subBefore!.id)
+      .single();
+    assertEquals(
+      new Date(subAfter!.end_date).getTime(),
+      new Date(pastEnd).getTime(),
+      '到期會員領取被擋後，訂閱到期日不該被延展（不得免費復活）',
+    );
+  } finally {
+    await deleteTestUsers(client, [referrer.id, ...refereeIds]);
+  }
+});

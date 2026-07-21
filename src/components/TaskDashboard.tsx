@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
 import { Target, Gift, ArrowLeft, Loader2, Eye, Zap, Trophy } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useTaskData } from '../hooks/useTaskData';
+import { UserContext } from '../App';
 import { PendingRewardsSection } from './task/PendingRewardsSection';
 import { TaskGuide } from './task/TaskGuide';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
@@ -30,6 +31,13 @@ export function TaskDashboard() {
     fetchCurrentMonthTop,
     handleClaimReward,
   } = useTaskData();
+
+  // 會籍狀態直接讀 UserContext.user.accountStatus——與會員資格守衛
+  // （RequireMembershipRoute）同一來源，且 App 已對 /profile 掛 focus-
+  // revalidation，不必為了判斷「能否領免費續約」另開一支 /subscriptions/status
+  // 請求。credit 需先 active 才能領（後端 claim_referral_king_reward 亦會擋）。
+  const { user } = useContext(UserContext);
+  const isMembershipExpired = user?.accountStatus === 'expired';
 
   const [showKingProgress, setShowKingProgress] = useState(false);
 
@@ -90,7 +98,7 @@ export function TaskDashboard() {
         </div>
       </div>
 
-      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} />
+      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} isExpired={isMembershipExpired} />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 space-y-6">
