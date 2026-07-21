@@ -15,18 +15,17 @@ Feature: Listing management
     And I should see the create-listing action
 
   @listing
-  Scenario: A member with an active listing sees it summarised
+  Scenario: A member with a listing sees it summarised
     Given I am logged in as an active member
     And I have an active listing named "美髮小美"
     When I visit "/service-providers"
     Then I should see the text "美髮小美"
-    And I should see the text "活躍中"
 
-  # 刊登本身沒有效期——「活躍中／已過期」完全由帳號訂閱狀態決定
-  # （後端 has_active_subscription／public_listings view 一處守門）。而
-  # 刊登管理頁位於 RequireMembershipRoute（只放行 active/grace）之後，過期
-  # 會員根本進不來（見下方 route_guard 情境），因此在此頁「已過期」是不可
-  # 觸發的狀態，不再有對應情境。
+  # 刊登本身沒有狀態或效期——是否對外顯示完全由帳號訂閱決定，且在資料層
+  # 一處守門（public_listings view 以 has_active_subscription 過濾），會員
+  # 過期／停權的刊登會自動從首頁消失。因此刊登管理頁不再顯示任何「活躍／
+  # 過期」徽章，也沒有對應的狀態情境；過期會員本就被 RequireMembershipRoute
+  # 導去 checkout（見下方 route_guard 情境）。
 
   @listing @route_guard
   Scenario: An expired member cannot reach listing management and is sent to checkout

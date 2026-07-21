@@ -9,7 +9,7 @@ Feature: 刊登 — 建立、公開可見、一帳號一刊登、下架
   @journey @listing
   Scenario: A0 透過 GUI 建立刊登
     When "A0" 登入並建立自己的刊登
-    Then 刊登管理頁顯示該刊登為活躍中
+    Then 刊登管理頁顯示該刊登
 
   @journey @listing
   Scenario: 訪客可在公開首頁搜尋到 A0 的刊登並開啟詳情

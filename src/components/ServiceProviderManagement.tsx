@@ -11,7 +11,6 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
-import { useSubscription } from '../hooks/useSubscription';
 import { createClient } from '../utils/supabase/client';
 
 export function ServiceProviderManagement() {
@@ -19,13 +18,10 @@ export function ServiceProviderManagement() {
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { getCache, setCache, clearCache, isStale } = useDataCache();
-  // 刊登本身不帶效期（listings 表刻意不存 active_until）——刊登的
-  // 「活躍／已過期」完全由帳號訂閱狀態決定，與後端 has_active_subscription()
-  // ／public_listings view 的可見性守門同源：active／grace 皆對外可見，
-  // 只有 expired 才真正下架。
-  const { subscriptionData, isLoading: subLoading } = useSubscription();
-  const isAccountActive =
-    subscriptionData?.status === 'active' || subscriptionData?.status === 'grace';
+  // 刊登本身沒有狀態或效期（listings 表刻意不存 is_active／active_until）——
+  // 是否對外顯示完全由帳號訂閱決定，且在資料層一處守門：HomePage 讀
+  // public_listings view，view 以 has_active_subscription() 過濾，會員過期／
+  // 停權的刊登會自動從首頁消失。因此這裡不再顯示任何「活躍／過期」狀態徽章。
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -253,12 +249,6 @@ export function ServiceProviderManagement() {
                       <h3 className="text-xl font-semibold">{listing.name}</h3>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="default">{listing.category}</Badge>
-                        {/* 狀態來自帳號訂閱，訂閱資料載入中先不顯示，避免誤閃「已過期」 */}
-                        {!subLoading && (
-                          <Badge variant={isAccountActive ? "secondary" : "outline"}>
-                            {isAccountActive ? '活躍中' : '已過期'}
-                          </Badge>
-                        )}
                       </div>
                     </div>
                     
@@ -292,16 +282,6 @@ export function ServiceProviderManagement() {
                       <MapPin className="h-4 w-4" />
                       <span>{listing.city} {Array.isArray(listing.districts) ? listing.districts[0] : listing.district || ''}</span>
                     </div>
-                    
-                    {/* 過期文案改述帳號會員效期（刊登本身無效期）；刊登下架與否
-                        取決於此。有 activeUntil 才顯示日期，避免顯示 Invalid Date。 */}
-                    {!subLoading && !isAccountActive && (
-                      <div className="text-sm text-destructive">
-                        {subscriptionData?.activeUntil
-                          ? `會員效期已於 ${new Date(subscriptionData.activeUntil).toLocaleDateString('zh-TW')} 截止，刊登已暫停對外顯示`
-                          : '尚未開通會員，刊登不會對外顯示'}
-                      </div>
-                    )}
                   </div>
 
                   <p className="text-muted-foreground line-clamp-2">
