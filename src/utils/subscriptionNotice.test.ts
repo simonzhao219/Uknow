@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { renewalNoticeDaysLeft, RENEWAL_NOTICE_DAYS } from './subscriptionNotice';
+import {
+  renewalNoticeDaysLeft,
+  RENEWAL_NOTICE_DAYS,
+  subscriptionCardState,
+} from './subscriptionNotice';
 
 const DAY = 86_400_000;
 // 固定 now 讓天數計算可重現（不依賴真實時鐘）。
@@ -37,5 +41,33 @@ describe('renewalNoticeDaysLeft — 到期前續訂提醒（active 且 ≤30 天
 
   it('activeUntil 已過（時鐘偏移導致負值）→ 防禦性回 null', () => {
     expect(renewalNoticeDaysLeft('active', inDays(-1), NOW)).toBeNull();
+  });
+});
+
+describe('subscriptionCardState — 訂閱卡片顯示狀態分類', () => {
+  it('null（尚未載入/無資料）→ none', () => {
+    expect(subscriptionCardState(null)).toBe('none');
+  });
+
+  it('active 會員 → active', () => {
+    expect(
+      subscriptionCardState({ hasSubscription: true, status: 'active', activeUntil: inDays(100) }),
+    ).toBe('active');
+  });
+
+  it('expired 但曾訂閱過（有 activeUntil）→ expired-former（老會員續訂）', () => {
+    expect(
+      subscriptionCardState({ hasSubscription: false, status: 'expired', activeUntil: inDays(-10) }),
+    ).toBe('expired-former');
+  });
+
+  it('expired 且從未訂閱（無 activeUntil）→ none', () => {
+    expect(
+      subscriptionCardState({ hasSubscription: false, status: 'expired', activeUntil: undefined }),
+    ).toBe('none');
+  });
+
+  it('無 status 無 activeUntil（全新使用者）→ none', () => {
+    expect(subscriptionCardState({ hasSubscription: false })).toBe('none');
   });
 });
