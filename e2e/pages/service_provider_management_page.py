@@ -20,12 +20,6 @@ class ServiceProviderManagementPage(BasePage):
     def create_link(self):
         return self.page.get_by_role("link", name="刊登新服務")
 
-    def status_badge_active(self):
-        return self.page.get_by_text("活躍中")
-
-    def status_badge_expired(self):
-        return self.page.get_by_text("已過期")
-
     def delete_button(self):
         return self.page.get_by_role("button", name="刪除刊登")
 

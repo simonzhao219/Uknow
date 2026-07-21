@@ -36,13 +36,12 @@ def create_listing(guarded_page, run_state, node):
     form.submit()
 
 
-@then("刊登管理頁顯示該刊登為活躍中")
-def listing_active(guarded_page, run_state):
-    management = ServiceProviderManagementPage(guarded_page)
+@then("刊登管理頁顯示該刊登")
+def listing_shown(guarded_page, run_state):
+    # 刊登本身沒有狀態徽章；建立成功即應在管理頁看到該刊登。
     expect(guarded_page.get_by_text(listing_name(run_state, "A0"))).to_be_visible(
         timeout=30_000
     )
-    expect(management.status_badge_active()).to_be_visible()
 
 
 @when(parsers.parse('訪客在首頁搜尋 "{node}" 的刊登名稱'))
