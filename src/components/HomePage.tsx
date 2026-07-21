@@ -9,6 +9,7 @@ import {
   MapPin,
   ChevronDown,
   Search,
+  SlidersHorizontal,
   AlertCircle,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -281,9 +282,10 @@ export function HomePage() {
         </p>
       </div>
 
-      {/* 關鍵字搜尋 + 桌面篩選工具列：同一列收斂成一條搜尋／篩選帶，
-          取代原本三列全寬收合列＋大卡片留白的版面 */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      {/* 桌面：搜尋＋篩選工具列同一列。
+          手機：這一列整個隱藏——搜尋與篩選移到底部浮動工具列（拇指熱區、
+          浮在內容上不佔版面），首屏直接呈現服務者列表。 */}
+      <div className="hidden md:flex md:items-center gap-3">
         <div className="relative md:flex-1">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
@@ -304,7 +306,7 @@ export function HomePage() {
 
         {/* 桌面篩選：popover 下拉面板，內容與手機共用同一套 chip 元件；
             單選時直接把選中的值寫進按鈕文字，不展開也看得到目前條件 */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <DesktopFilterPopover
             label="性別"
             summary={
@@ -349,69 +351,45 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* 手機版篩選卡：三個獨立篩選按鈕，點開後從底部彈出面板（拇指熱區），
-          以「查看 N 位服務者」主按鈕收合，不必伸手去點右上角的 X */}
-      <div className="bg-card p-4 rounded-lg border md:hidden">
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-3 gap-2">
-            <MobileFilterSheet
-              triggerLabel="性別"
-              count={selectedGenders.length}
-              title="性別篩選"
-              description="選擇您偏好的性別來篩選服務者"
-              resultCount={filteredServiceProviders.length}
-              onReset={() => setSelectedGenders([])}
-            >
-              <GenderFilterChips
-                selectedGenders={selectedGenders}
-                onGenderChange={handleGenderChange}
-              />
-            </MobileFilterSheet>
-
-            <MobileFilterSheet
-              triggerLabel="服務類別"
-              count={selectedCategory ? 1 : 0}
-              title="服務類別"
-              description="選擇您需要的服務類別來篩選服務者"
-              resultCount={filteredServiceProviders.length}
-              onReset={() => setSelectedCategory("")}
-            >
-              <CategoryFilterChips
-                selectedCategory={selectedCategory}
-                onSelect={setSelectedCategory}
-              />
-            </MobileFilterSheet>
-
-            <MobileFilterSheet
-              triggerLabel="服務地區"
-              count={selectedCities.length}
-              title="服務地區"
-              description="選擇您偏好的服務地區來篩選服務者"
-              resultCount={filteredServiceProviders.length}
-              onReset={() => setDistrictsByCity({})}
-            >
-              <LocationFilterChips
-                selectedCities={selectedCities}
-                districtsByCity={districtsByCity}
-                onCityChange={handleCityChange}
-                onDistrictChange={handleDistrictChange}
-              />
-            </MobileFilterSheet>
-          </div>
-
-          {/* 清除篩選按鈕 */}
-          {totalFilters > 0 && (
-            <Button
-              onClick={clearFilters}
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-            >
-              清除所有篩選 ({totalFilters})
-            </Button>
-          )}
+      {/* 手機版底部浮動工具列：搜尋＋篩選集中在單手拇指熱區，
+          浮在內容上、不佔版面；篩選為單一入口的整合面板 */}
+      <MobileSearchFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        totalFilters={totalFilters}
+        resultCount={filteredServiceProviders.length}
+        onResetFilters={() => {
+          setSelectedGenders([]);
+          setSelectedCategory("");
+          setDistrictsByCity({});
+        }}
+      >
+        <div className="space-y-6">
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">性別</h3>
+            <GenderFilterChips
+              selectedGenders={selectedGenders}
+              onGenderChange={handleGenderChange}
+            />
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">服務類別</h3>
+            <CategoryFilterChips
+              selectedCategory={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">服務地區</h3>
+            <LocationFilterChips
+              selectedCities={selectedCities}
+              districtsByCity={districtsByCity}
+              onCityChange={handleCityChange}
+              onDistrictChange={handleDistrictChange}
+            />
+          </section>
         </div>
-      </div>
+      </MobileSearchFilterBar>
 
       {/* 結果顯示區域 */}
       <div className="space-y-6">
@@ -423,12 +401,14 @@ export function HomePage() {
                 找到 {filteredServiceProviders.length} 位服務者
               </span>
               <div className="flex items-center gap-2">
+                {/* 手機版搜尋／篩選都收進底部工具列後，這裡是面板外
+                    唯一的一鍵清除入口，因此不再只限桌面顯示 */}
                 {totalFilters > 0 && (
                   <Button
                     onClick={clearFilters}
                     variant="ghost"
                     size="sm"
-                    className="hidden md:flex text-xs md:text-sm px-2"
+                    className="text-xs md:text-sm px-2"
                   >
                     清除篩選 ({totalFilters})
                   </Button>
@@ -541,6 +521,9 @@ export function HomePage() {
           </>
         )}
       </div>
+
+      {/* 手機版底部工具列的佔位：避免最後一排卡片與頁尾被浮動列蓋住 */}
+      <div className="h-20 md:hidden" aria-hidden="true" />
     </div>
   );
 }
@@ -553,37 +536,28 @@ export function HomePage() {
 // 關閉動線以底部的「查看 N 位服務者」主按鈕為主（同時回饋目前結果數），
 // 點背景遮罩也可關閉；右上角 X 僅作為輔助。
 function MobileFilterSheet({
-  triggerLabel,
-  count,
+  trigger,
   title,
   description,
   resultCount,
+  showReset,
   onReset,
   children,
 }: {
-  triggerLabel: string;
-  /** 該區塊已選條件數（顯示在觸發按鈕上，>0 時面板底部才出現「重設」） */
-  count: number;
+  /** 開啟面板的觸發元素（會以 asChild 掛上 SheetTrigger） */
+  trigger: React.ReactNode;
   title: string;
   description: string;
   /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋 */
   resultCount: number;
-  /** 只重設此區塊的條件（非全部篩選） */
+  /** 是否顯示「重設」（有任一條件時才出現） */
+  showReset: boolean;
   onReset: () => void;
   children: React.ReactNode;
 }) {
   return (
     <Sheet>
-      <SheetTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex flex-col items-center gap-1 h-auto py-3"
-        >
-          <span className="text-xs">{triggerLabel}</span>
-          <FilterCountBadge count={count} />
-        </Button>
-      </SheetTrigger>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent side="bottom" className="max-h-[85vh] rounded-t-2xl gap-0 p-0">
         {/* 底部面板慣例的抓握指示條 */}
         <div
@@ -598,7 +572,7 @@ function MobileFilterSheet({
           {children}
         </div>
         <SheetFooter className="mt-0 flex-row gap-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          {count > 0 && (
+          {showReset && (
             <Button variant="ghost" onClick={onReset} className="shrink-0">
               重設
             </Button>
@@ -611,6 +585,125 @@ function MobileFilterSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// 手機版底部浮動工具列：搜尋與篩選的唯一入口。
+//
+// 設計取捨（對應「操作習慣在下方」與「不想讓搜尋列常駐佔位」兩個訴求）：
+//   - fixed 浮在內容上方（含 safe-area 偏移），版面零佔用，首屏留給服務者列表；
+//   - 搜尋開「頂部」覆蓋層而非底部面板——軟鍵盤從下方升起，輸入框在上方
+//     永遠不會被鍵盤遮住（底部面板＋鍵盤在 iOS Safari 有遮擋/跳動的既知問題）；
+//     輸入即時過濾，主按鈕同步顯示結果數；
+//   - 篩選收斂成單一入口的整合面板（性別／類別／地區三個區塊一次看完），
+//     取代原本三顆並排小按鈕；工具列上以數量徽章與搜尋字樣回饋目前條件。
+function MobileSearchFilterBar({
+  searchQuery,
+  onSearchChange,
+  totalFilters,
+  resultCount,
+  onResetFilters,
+  children,
+}: {
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  totalFilters: number;
+  resultCount: number;
+  /** 清除全部篩選條件（不含搜尋字串，搜尋在搜尋面板內清除） */
+  onResetFilters: () => void;
+  /** 整合篩選面板的內容（三個 chip 區塊） */
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="md:hidden fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40">
+      <div className="flex items-stretch rounded-full border bg-background shadow-lg">
+        {/* 搜尋入口：顯示目前搜尋字樣作為狀態回饋 */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-l-full px-4 py-3 text-left"
+            >
+              <Search
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              {searchQuery ? (
+                <span className="truncate text-sm">{searchQuery}</span>
+              ) : (
+                <span className="truncate text-sm text-muted-foreground">
+                  搜尋服務者
+                </span>
+              )}
+            </button>
+          </SheetTrigger>
+          <SheetContent side="top" className="gap-0 p-0">
+            <SheetHeader className="px-4 pt-4 pb-2">
+              <SheetTitle>搜尋服務者</SheetTitle>
+              <SheetDescription>
+                輸入名稱、服務內容或標籤，結果即時更新
+              </SheetDescription>
+            </SheetHeader>
+            <div className="px-4 pb-4">
+              <div className="relative">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="搜尋服務者名稱、服務內容或標籤"
+                  className="pl-9"
+                  aria-label="搜尋服務者"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <SheetFooter className="mt-0 flex-row gap-3 border-t p-4">
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  onClick={() => onSearchChange("")}
+                  className="shrink-0"
+                >
+                  清除
+                </Button>
+              )}
+              <SheetClose asChild>
+                <Button className="min-h-12 flex-1">
+                  查看 {resultCount} 位服務者
+                </Button>
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+
+        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+
+        {/* 篩選入口：單一整合面板 */}
+        <MobileFilterSheet
+          trigger={
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1.5 rounded-r-full px-4 py-3"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+              <span className="text-sm">篩選</span>
+              <FilterCountBadge count={totalFilters} />
+            </button>
+          }
+          title="篩選"
+          description="設定條件來縮小服務者範圍"
+          resultCount={resultCount}
+          showReset={totalFilters > 0}
+          onReset={onResetFilters}
+        >
+          {children}
+        </MobileFilterSheet>
+      </div>
+    </div>
   );
 }
 
