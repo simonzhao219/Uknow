@@ -170,7 +170,7 @@ function maskBankAccount(acct: string | null | undefined): string | null {
 export async function buildProfileResponse(client: any, userId: string, email?: string, alreadyHealed = false) {
   const [{ data: profile }, { data: acct }, { data: code }, { data: pendingOrders }, { data: step }] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).single(),
-    client.from('user_account_status').select('status, end_date, grace_period_end').eq('user_id', userId).single(),
+    client.from('user_account_status').select('status, end_date').eq('user_id', userId).single(),
     client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active').maybeSingle(),
     // 抓多筆 pending：卡單使用者可能又重試了一次付款，最新那筆 pending
     // 沒有 payuni_response，但更早那筆已存了 SUCCESS——判斷「已付款待
@@ -1821,7 +1821,7 @@ app.get('/subscriptions/status', async (c) => {
 
   const [{ data: acct }, { data: sub }] = await Promise.all([
     sb().from('user_account_status')
-      .select('status, end_date, grace_period_end')
+      .select('status, end_date')
       .eq('user_id', user.id)
       .single(),
     // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
@@ -1842,7 +1842,6 @@ app.get('/subscriptions/status', async (c) => {
       hasSubscription: acct?.status === 'active',
       status:          acct?.status ?? 'expired',
       activeUntil:     acct?.end_date ?? null,
-      gracePeriodEnd:  acct?.grace_period_end ?? null,
       currentPeriodStart: sub?.start_date ?? null,
       currentPeriodEnd:   sub?.end_date ?? null,
     }
@@ -2541,7 +2540,6 @@ app.post('/tasks/claim-reward/:id', async (c) => {
     data: {
       subscriptionId: data.subscriptionId,
       activeUntil:    data.activeUntil,
-      gracePeriodEnd: data.gracePeriodEnd,
     },
   });
 });
