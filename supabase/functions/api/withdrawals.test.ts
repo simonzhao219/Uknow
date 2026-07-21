@@ -121,7 +121,7 @@ Deno.test('request_withdrawal：驗證規則（金額級距/餘額/證件照/會
     const r2 = await requestWithdrawal(client, user2.id, 1000);
     assertEquals(r2.data?.error_code, 'missing_id_photos');
 
-    // 會籍過期（grace）不能提領
+    // 會籍過期（expired）不能提領
     await client.from('profiles').update({
       id_card_front_path: 'x/front.jpg', id_card_back_path: 'x/back.jpg',
     }).eq('id', user2.id);

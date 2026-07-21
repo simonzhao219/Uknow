@@ -131,7 +131,7 @@ export function PaymentResult() {
               : 'unknown';
 
   // 會籍是否已生效——付款成功畫面與守衛都以這個為準（不是 registrationStep）。
-  const isMemberActive = user?.accountStatus === 'active' || user?.accountStatus === 'grace';
+  const isMemberActive = user?.accountStatus === 'active';
 
   // 付款成功 → 一次性失效整組相關快取（會籍/獎勵/任務/推薦樹），
   // 回會員中心讀到的都是最新資料——修「續約後自己的到期日還顯示舊值」。
@@ -152,7 +152,7 @@ export function PaymentResult() {
     }
     const timer = setTimeout(async () => {
       const profile = await refreshUser();
-      if (profile?.accountStatus === 'active' || profile?.accountStatus === 'grace') {
+      if (profile?.accountStatus === 'active') {
         navigate('/dashboard', { replace: true });
       } else {
         setActivationAttempts((n) => n + 1);

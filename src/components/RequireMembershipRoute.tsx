@@ -19,7 +19,7 @@ interface RequireMembershipRouteProps {
  *
  * 決策表（由上而下）：
  *   1. isAdmin                       → 放行（管理員可能沒有訂閱）
- *   2. accountStatus active/grace    → 放行
+ *   2. accountStatus active           → 放行
  *   3. paidAwaitingActivation        → /payment/result（開通中，自癒頁）
  *   4. 曾有訂閱（已過期）             → /payment/checkout（續約）
  *   5. step 0 或資料不完整            → /auth/complete-profile（首次漏斗）
@@ -27,7 +27,7 @@ interface RequireMembershipRouteProps {
  */
 export function resolveMembershipRedirect(user: any): string | null {
   if (user.isAdmin) return null;
-  if (user.accountStatus === 'active' || user.accountStatus === 'grace') return null;
+  if (user.accountStatus === 'active') return null;
 
   // 已付款、後端收斂中（PayUni 已回 SUCCESS 但訂閱還沒建好）→ 開通中
   // 頁面會輪詢並在轉 active 時自動進會員中心；絕不能把已付款的人送回

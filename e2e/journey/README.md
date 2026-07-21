@@ -114,9 +114,10 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 - **M4**：
   - `60_time_scenarios`：時光機（`tools/seed_time_machine.py`，service
-    role 只回填 subscriptions 的 end/grace 兩欄）——刊登可見性隨
-    active→grace→expired 變化、寬限期推薦碼仍可推廣、**補繳接續原到期
-    日而非付款日**（雙向斷言：距錨點約一年＋距付款日明顯少於一年）；
+    role 回填 subscriptions 的 end_date）——會籍兩態（見 0721 移除寬限
+    期）：刊登可見性隨 active→expired 變化（到期即隱藏）、過期會員推薦碼
+    仍可推廣、**補繳接續原到期日而非付款日**（雙向斷言：距錨點約一年＋
+    距付款日明顯少於一年）；
   - 提領前置補齊：`builders/referral_program.py`——GUI 簽名加入推薦
     計畫（`request_withdrawal` 的第一道檢核），f50 各情境冪等引用；
   - CI 四軌落地：`ci.yml` 加 paths-ignore／workflow 級 concurrency／

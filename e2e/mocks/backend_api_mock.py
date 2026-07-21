@@ -26,7 +26,7 @@ def build_profile(registration_step: int = 3, **overrides) -> dict:
     # leaving them populated at step 0 makes those components disagree with
     # registrationStep and redirect-loop against each other.
     has_profile = registration_step > 0
-    # RequireMembershipRoute gates on accountStatus (active/grace pass),
+    # RequireMembershipRoute gates on accountStatus (only active passes),
     # not registrationStep — the defaults keep the intuitive mapping
     # (step 3 = active member, everything else = not a member yet) so
     # older scenarios keep working; entitlement-specific scenarios

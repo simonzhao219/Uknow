@@ -1127,9 +1127,9 @@ app.post('/payuni/prepare', async (c) => {
 
   const client = sb();
 
-  // 防重複：只擋「目前仍在效期內」的會員。寬限期（grace）與已失效
-  // （expired）都可以付款——這正是續訂（到期後接續）或重新訂閱的
-  // 唯一入口（訂閱三態模型：付款即訂閱／續訂／重新訂，見 0718 系列）。
+  // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
+  // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
+  // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
   const { data: acct } = await client
     .from('user_account_status')
     .select('status')
@@ -1839,7 +1839,7 @@ app.get('/subscriptions/status', async (c) => {
   return c.json({
     success: true,
     data: {
-      hasSubscription: acct?.status === 'active' || acct?.status === 'grace',
+      hasSubscription: acct?.status === 'active',
       status:          acct?.status ?? 'expired',
       activeUntil:     acct?.end_date ?? null,
       gracePeriodEnd:  acct?.grace_period_end ?? null,
@@ -2285,7 +2285,7 @@ app.get('/referrals/my-tree', async (c) => {
       serviceType:      listingMap[uid]?.category ?? null,
       city:             listingMap[uid]?.city ?? null,
       activeUntil:      acct?.end_date ?? null,
-      isActive:         acct?.status === 'active' || acct?.status === 'grace',
+      isActive:         acct?.status === 'active',
       referrer:         ref,
       createdAt,
     };

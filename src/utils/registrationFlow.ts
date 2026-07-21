@@ -79,7 +79,7 @@ export interface FunnelProfile {
   phone?: string | null;
   birthDate?: string | null;
   referralCode?: string | null;
-  accountStatus?: 'active' | 'grace' | 'expired' | string | null;
+  accountStatus?: 'active' | 'expired' | string | null;
   paidAwaitingActivation?: boolean | null;
   lastTradeNo?: string | null;
 }
@@ -128,14 +128,14 @@ export function resolveProfilePageRedirect(
 /**
  * PaymentCheckout 頁的守衛：回傳「應該把使用者導去哪」，null = 留在結帳頁。
  *
- * 判斷順序（與 buildProfileResponse 的三態會籍模型對齊）：
+ * 判斷順序（與 buildProfileResponse 的兩態會籍模型對齊）：
  *   1. 會籍有效（active）→ 已是會員，回會員中心。
  *   2. 已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 結果頁自癒輪詢。
  *   3. 基本資料未填齊（step 0 / 缺值 / 姓名·生日·手機任一為空）→ 回完善資料頁。
- *   4. 其餘（step 1 首購 / step 2 付款失敗重試 / grace・過期續約）→ 留在結帳頁。
+ *   4. 其餘（step 1 首購 / step 2 付款失敗重試 / 過期續約）→ 留在結帳頁。
  *
- * 特意「不擋 grace」：寬限期是「到期後續訂」的正常入口，要留在結帳頁完成付款，
- * 否則會與 dashboard 守衛互彈（見 PaymentCheckout 內原有註解）。
+ * 特意「不擋 expired」：失效會籍是「到期後續訂」的正常入口，要留在結帳頁完成
+ * 付款，否則會與 dashboard 守衛互彈（見 PaymentCheckout 內原有註解）。
  *
  * 第 3 條除了看 registrationStep，也直接用 isProfileComplete 檢查真實欄位——
  * 這是對「後端把 step 誤算成 ≥1 但資料其實沒填」這一整類 bug 的第二道防線

@@ -80,25 +80,25 @@ def no_results(guarded_page):
 # --- 時光機 ----------------------------------------------------------------
 
 
-@when(parsers.parse('時光機將 "{node}" 推入寬限期'))
-@given(parsers.parse('時光機將 "{node}" 推入寬限期'))
-def push_to_grace(supabase_admin, run_state, node):
-    seed_time_machine.enter_grace(supabase_admin, run_state.users[node].user_id)
+@when(parsers.parse('時光機將 "{node}" 推入剛過期（未滿一年）'))
+@given(parsers.parse('時光機將 "{node}" 推入剛過期（未滿一年）'))
+def push_to_recently_expired(supabase_admin, run_state, node):
+    seed_time_machine.enter_recently_expired(supabase_admin, run_state.users[node].user_id)
 
 
-@when(parsers.parse('時光機將 "{node}" 推入永久失效'))
+@when(parsers.parse('時光機將 "{node}" 推入完全失效'))
 def push_to_expired(supabase_admin, run_state, node):
     seed_time_machine.enter_expired(supabase_admin, run_state.users[node].user_id)
 
 
-@given(parsers.parse('時光機將 "{node}" 推入寬限期並記下接續錨點'))
-def push_to_grace_with_anchor(supabase_admin, run_state, scenario_memo, node):
-    row = seed_time_machine.enter_grace(supabase_admin, run_state.users[node].user_id)
+@given(parsers.parse('時光機將 "{node}" 推入剛過期（未滿一年）並記下接續錨點'))
+def push_to_recently_expired_with_anchor(supabase_admin, run_state, scenario_memo, node):
+    row = seed_time_machine.enter_recently_expired(supabase_admin, run_state.users[node].user_id)
     scenario_memo["anchor_end"] = _parse_ts(row["end_date"])
     scenario_memo["seeded_at"] = datetime.now(timezone.utc)
 
 
-# --- 寬限期推薦碼仍可推廣 ---------------------------------------------------
+# --- 過期會員推薦碼仍可推廣 ---------------------------------------------------
 
 
 @when(parsers.parse('臨時使用者 "{scratch}" 在完善資料頁驗證 "{node}" 的推薦碼'))
@@ -125,7 +125,7 @@ def code_shows_referrer_name(guarded_page, run_state, node):
     expect(status).to_contain_text(run_state.users[node].name)
 
 
-# --- 寬限期補繳（extend）----------------------------------------------------
+# --- 過期會員（未滿一年）續約 extend ----------------------------------------
 
 
 @when(parsers.parse('"{node}" 登入並以「續約（接續原效期）」完成補繳'))
@@ -134,7 +134,7 @@ def renew_extend(guarded_page, journey_config, supabase_admin, run_state, node):
     login_via_gui(guarded_page, user)
     guarded_page.goto("/payment/checkout")
     expect(PaymentCheckoutPage(guarded_page).pay_button()).to_be_visible(timeout=30_000)
-    # 續費雙模式的單選：寬限期會員 canExtend=true，預設即為續約——
+    # 續費雙模式的單選：過期未滿一年 canExtend=true，預設即為續約——
     # 仍顯式點選，避免依賴預設值。
     guarded_page.get_by_text("續約（接續原效期）").first.click()
     payment.pay_via_gui(guarded_page, journey_config, supabase_admin, user)

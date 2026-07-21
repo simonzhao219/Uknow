@@ -63,7 +63,7 @@ export function WithdrawalSection({
   // ✅ 判斷是否可以提領
   const isInsufficientBalance = availableRewards < MIN_REQUIRED;
   const hasReachedDailyLimit = hasWithdrawnToday;
-  const isSubscriptionInvalid = subscriptionStatus === 'grace' || subscriptionStatus === 'expired';
+  const isSubscriptionInvalid = subscriptionStatus === 'expired';
   const hasNotJoinedReferral = !referralProgramJoined;  // ✅ 新增：未加入推薦計畫
   
   const canWithdraw = !isInsufficientBalance 
@@ -80,12 +80,7 @@ export function WithdrawalSection({
     
     // ✅ 檢查訂閱狀態
     if (isSubscriptionInvalid) {
-      if (subscriptionStatus === 'grace') {
-        return '訂閱處於寬限期，無法申請提領。請補繳以恢復服務。';
-      }
-      if (subscriptionStatus === 'expired') {
-        return '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
-      }
+      return '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
     }
     
     if (isInsufficientBalance) {

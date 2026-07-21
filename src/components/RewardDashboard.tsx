@@ -25,12 +25,8 @@ export function RewardDashboard() {
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
 
   const handleStartWithdrawal = () => {
-    if (subscriptionStatus === 'grace' || subscriptionStatus === 'expired') {
-      const message =
-        subscriptionStatus === 'grace'
-          ? '訂閱處於寬限期，無法申請提領。請補繳以恢復服務。'
-          : '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
-      showError('無法申請提領', message);
+    if (subscriptionStatus === 'expired') {
+      showError('無法申請提領', '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。');
       return;
     }
     setShowWithdrawalProcess(true);
