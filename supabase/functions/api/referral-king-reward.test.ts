@@ -211,3 +211,77 @@ Deno.test('an expired member cannot claim a free-renewal credit — blocked, cre
     await deleteTestUsers(client, [referrer.id, ...refereeIds]);
   }
 });
+
+Deno.test('a suspended member cannot claim a free-renewal credit even while subscription is active — blocked, credit stays unclaimed, subscription not extended', async () => {
+  // 業務規則（0721 0005）：停權（suspended）比照到期（expired），一律不得
+  // 領取免費續約 credit。與提領同一把尺——停權優先擋（error_code 'suspended'）。
+  // 本例刻意保持訂閱在效期內（active），單獨隔離「停權」這道守衛。
+  const client = adminClient();
+  const referrer = await createTestUser(client, { name: 'Suspended Claimer' });
+  const refereeIds: string[] = [];
+
+  try {
+    const { error } = await payForUser(client, referrer.id);
+    assertEquals(error, null);
+    const refCode = await getActiveReferralCode(client, referrer.id);
+
+    for (let i = 0; i < 10; i++) {
+      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      refereeIds.push(referee.id);
+      const { error: payErr } = await payForUser(client, referee.id);
+      assertEquals(payErr, null);
+    }
+
+    const { data: creditRow } = await client
+      .from('referral_king_rewards')
+      .select('id')
+      .eq('user_id', referrer.id)
+      .eq('status', 'unclaimed')
+      .single();
+
+    const { data: subBefore } = await client
+      .from('subscriptions')
+      .select('id, end_date')
+      .eq('user_id', referrer.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .single();
+
+    // 停權該帳號，但訂閱維持在效期內（active）。
+    const { error: suspendErr } = await client
+      .from('profiles')
+      .update({ suspended_at: new Date().toISOString() })
+      .eq('id', referrer.id);
+    assertEquals(suspendErr, null, `停權失敗: ${suspendErr?.message}`);
+
+    // 停權會員領取 → 應被擋（suspended），優先於任何會籍判斷。
+    const { data: claimResult, error: claimErr } = await client.rpc('claim_referral_king_reward', {
+      p_user_id: referrer.id,
+      p_reward_id: creditRow!.id,
+    });
+    assertEquals(claimErr, null, `不該拋 SQL 例外: ${claimErr?.message}`);
+    assertEquals(claimResult?.success, false, '停權會員不該領取成功');
+    assertEquals(claimResult?.error_code, 'suspended');
+
+    // credit 維持 unclaimed（解除停權後仍可領），到期日未被延展。
+    const { data: creditAfter } = await client
+      .from('referral_king_rewards')
+      .select('status')
+      .eq('id', creditRow!.id)
+      .single();
+    assertEquals(creditAfter?.status, 'unclaimed', 'credit 應保持未領取，供解除停權後領取');
+
+    const { data: subAfter } = await client
+      .from('subscriptions')
+      .select('end_date')
+      .eq('id', subBefore!.id)
+      .single();
+    assertEquals(
+      new Date(subAfter!.end_date).getTime(),
+      new Date(subBefore!.end_date).getTime(),
+      '停權會員領取被擋後，訂閱到期日不該被延展',
+    );
+  } finally {
+    await deleteTestUsers(client, [referrer.id, ...refereeIds]);
+  }
+});

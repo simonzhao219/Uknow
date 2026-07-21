@@ -352,7 +352,10 @@ Uknow Web App
     
 * **失效期間仍持續入帳**：推薦獎勵綁「下線付款事件」、不檢查上線狀態，故失效上線在下線付款時仍照常獲得獎勵（`apply_referral_side_effects`）。累積的點數在恢復 active 前不可提領——這也構成續訂誘因。  
 
-* **推薦王「免費續約 1 年」credit 需先 active 才能領取**：此 credit 的語意是在既有會籍後接續一年，領取（`claim_referral_king_reward`）前會檢查會籍是否仍在效期內（判準與 `user_account_status` 一致：`now() <= end_date`）。**不允許到期會員用 credit 免費復活**；到期則回 `subscription_invalid`（API 403），credit 維持 `unclaimed`，待正常續訂恢復 active 後仍可領取。與「點數不可提領」同一原則：福利保留、但享用需會籍有效。已在 active 狀態領取過的 credit 冪等成功，不因日後到期而翻案。  
+* **推薦王「免費續約 1 年」credit 需帳號正常且會籍有效才能領取**：此 credit 的語意是在既有會籍後接續一年，領取（`claim_referral_king_reward`）與提領（`request_withdrawal`）、刊登可見（`has_active_subscription`）用**同一把尺**，同時擋兩種情形（守衛順序與提領逐字對齊）：
+    * **停權（suspended）優先擋** → `error_code 'suspended'`（API 403）：admin 停權即凍結帳號，期間不得動用免費續約。
+    * **到期（expired）再擋** → `error_code 'subscription_invalid'`（API 403）：**不允許到期會員用 credit 免費復活**（判準與 `user_account_status` 一致：`now() <= end_date`）。
+  兩種情形 credit 皆維持 `unclaimed`，待解除停權／續訂恢復 active 後仍可領取。與「點數不可提領」同一原則：福利保留、但享用需帳號正常且會籍有效。已在正常 active 狀態領取過的 credit 冪等成功，不因日後停權或到期而翻案。  
     
 * **推薦碼不作廢、仍可被使用**：失效不改變 `referral_codes.status`，該碼仍可被新用戶驗證、推薦關係照常建立；未來下線付款的獎勵歸屬依當下的推薦樹。組織圖節點保留（標記 Inactive），下線不斷開。  
     

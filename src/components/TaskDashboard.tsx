@@ -32,12 +32,17 @@ export function TaskDashboard() {
     handleClaimReward,
   } = useTaskData();
 
-  // 會籍狀態直接讀 UserContext.user.accountStatus——與會員資格守衛
-  // （RequireMembershipRoute）同一來源，且 App 已對 /profile 掛 focus-
-  // revalidation，不必為了判斷「能否領免費續約」另開一支 /subscriptions/status
-  // 請求。credit 需先 active 才能領（後端 claim_referral_king_reward 亦會擋）。
+  // 領免費續約 credit 的可領性：帳號須正常（未停權）且會籍有效（active）。
+  // 兩個訊號都直接讀 UserContext.user（/profile 回傳 accountStatus 與
+  // suspended，App 已對 /profile 掛 focus-revalidation），不必另開請求。
+  // 與後端 claim_referral_king_reward 同一把尺：停權優先擋、再擋到期。
   const { user } = useContext(UserContext);
-  const isMembershipExpired = user?.accountStatus === 'expired';
+  const claimBlockedReason =
+    user?.suspended === true
+      ? '帳號已停權，請聯繫客服'
+      : user?.accountStatus === 'expired'
+        ? '會籍已失效，請先續訂後再領取'
+        : null;
 
   const [showKingProgress, setShowKingProgress] = useState(false);
 
@@ -98,7 +103,7 @@ export function TaskDashboard() {
         </div>
       </div>
 
-      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} isExpired={isMembershipExpired} />
+      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} claimBlockedReason={claimBlockedReason} />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 space-y-6">
