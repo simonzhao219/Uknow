@@ -102,20 +102,27 @@ begin
   if v_ref1 is null then return v_applied; end if;
   select name into v_ref1_name from public.profiles where id = v_ref1;
 
-  -- gen1（每一代各包 exception，warning-only，不互相拖累）
+  -- 【複審 G】gen1（每一代各包一層 begin…exception，warning-only，不互相拖累）。
+  -- 抽共用函數時務必保留此 per-gen 隔離，否則 gen2/gen3 失敗會連 gen1 一起
+  -- rollback——等於把現行 wave4_guards.sql:314-366 的韌性改差了。
   if not exists (
     select 1 from public.reward_transactions
     where referee_user_id = p_referee and generation = 1
       and subscription_id is not distinct from p_subscription_id
       and source_claim_id  is not distinct from p_claim_id
   ) then
-    insert into public.reward_transactions
-      (user_id, type, amount, generation, referee_user_id, subscription_id, source_claim_id,
-       description, referee_name, referee_referrer_name)
-    values
-      (v_ref1, 'referral_reward', p_amount, 1, p_referee, p_subscription_id, p_claim_id,
-       '推薦獎勵（第 1 代' || p_description_tag || '）', v_referee_name, null);
-    v_applied := array_append(v_applied, 'gen1');
+    begin
+      insert into public.reward_transactions
+        (user_id, type, amount, generation, referee_user_id, subscription_id, source_claim_id,
+         description, referee_name, referee_referrer_name)
+      values
+        (v_ref1, 'referral_reward', p_amount, 1, p_referee, p_subscription_id, p_claim_id,
+         '推薦獎勵（第 1 代' || p_description_tag || '）', v_referee_name, null);
+      v_applied := array_append(v_applied, 'gen1');
+    exception when others then
+      perform public.log_system_alert('pay_referral_generations', 'warning', sqlerrm,
+        jsonb_build_object('referee', p_referee, 'generation', 1));
+    end;
   end if;
 
   -- gen2 / gen3：沿 referral_edges 往上，帶括號名字快照，冪等鍵同上。
@@ -202,8 +209,12 @@ create or replace function public.reconcile_king_credits(
 returns void language plpgsql security definer set search_path = public as $$
 declare v_count int; v_target int; v_next int;
 begin
+  -- 【複審 H】先鎖 task_progress(U) 這一列，把「發 credit」完全序列化——
+  -- 新增下線路徑本來就靠這列的 UPDATE 鎖排隊，但續約路徑也會呼叫 reconcile
+  -- 卻不動這列；不加鎖時併發下可能讀到較舊 count 而少發一張（會被下次
+  -- 自癒補回，但非即時）。for update 讓兩條路徑一致序列化、即時正確。
   select coalesce(jsonb_array_length(monthly_referrals -> p_month_key), 0)
-    into v_count from public.task_progress where user_id = p_user_id;
+    into v_count from public.task_progress where user_id = p_user_id for update;
   v_target := v_count / p_threshold;                       -- floor
   select coalesce(max(round_ordinal), 0) into v_next        -- 由 max 推導，防空號
     from public.referral_king_rewards where user_id = p_user_id and month_key = p_month_key;
@@ -293,6 +304,14 @@ end;
 4. **pair-history 掃描成本**：每筆付款掃上線整份 `monthly_referrals` 做 `@>`。單列 jsonb，通常數 KB，可接受；若未來出現超大推薦樹，再考慮加一個扁平 `counted_referees` set 或側表加速（選配）。
 5. **多載/相依**：本版**不改** `apply_referral_side_effects` 簽名（pair-history 取代 is_renewal），省去 drop-overload；但新增 `source_claim_id`、`round_ordinal`、兩支輔助函數，須按 §7 順序套用。
 6. **UI/後端一致性**：順帶消除「UI 多輪承諾 vs 後端每月一張」既有落差；上線需前後端同步部署。
+
+### 複審二輪（針對修訂本身）的收斂
+7. **【G・已納入 §4.1】** 共用發獎函數必須保留 per-generation `begin…exception` 隔離，否則抽函數會回歸掉現行「gen3 失敗不拖累 gen1」的韌性。
+8. **【H・已納入 §4.4】** `reconcile_king_credits` 進來先 `for update` 鎖 `task_progress(U)`，讓新增下線與續約兩條路徑一致序列化，避免併發下少發一張的過渡態。
+9. **【I・經確認不處理】** pair-history「換回舊上線不 +1」的說明/客服風險——依業務決定**不另做 FAQ/特別處理**，規則本身即為準（`TaskGuide`/`ReferralGuide` 仍會平舖規則，但不視為需特別緩解的風險）。
+10. **【J・實作守則】** `pay_referral_generations` 讀 `referred_by_user_id`/`referral_edges`，**必須在推薦邊 rewire 之後**才呼叫，否則換線那筆會誤發給舊上線。
+11. **【K・實作守則】** claim 發的獎勵 `subscription_id = null`；以 subscription 分組的後台報表會顯示為「無對應訂閱」（餘額加總不受影響），報表面需處理。
+12. **【L・實作守則】** `pay_referral_generations`、`reconcile_king_credits` 皆 SECURITY DEFINER，務必 `revoke … from anon, authenticated, public`，並確認無任何 RPC/edge 端點直接暴露。
 
 ---
 
