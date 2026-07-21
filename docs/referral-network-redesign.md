@@ -22,7 +22,9 @@
 ### 1.3 資料層其實很健康（利多）
 - `referral_edges`：`referee_user_id` 是主鍵 → 每人只有一個上線 → 這是一棵**樹（forest）**，不是複雜網狀圖，天生適合樹狀呈現。
 - 獎勵只算 3 代 → 顯示深度天然有上限，不會無限遞迴。
-- 節點狀態 `active / grace / 永久失效`，失效節點**仍留在樹上**（下線不斷開）→ 視覺需可區分。
+- 節點狀態採 main 0721 後的模型（見下方註記），失效節點**仍留在樹上**（下線不斷開）→ 視覺需可區分。
+
+> **⚠ 對齊 main 0721 狀態重構**：main 已 `remove_grace_status`——會員狀態由三態收斂為**兩態 `active / expired`**（到期即失效，取消 60 天寬限）；提醒前移到**到期前 30 天**（`subscriptionNotice.ts` 的 `renewalNoticeDaysLeft`）；`suspended`（`profiles.suspended_at`）為正交狀態，會擋刊登可見性與獎勵領取；可見性（`has_active_subscription`）改以 `end_date` 為界。本設計已依此重做狀態系統（見 §4.5）。附帶效果：先前「grace 卻在 `public_listings` 顯示」的不一致已隨 grace 移除而消失。
 
 **結論：這題是「還原呈現層的結構」＋「重新設計載入策略」，資料庫 schema 不需改。**
 
@@ -64,7 +66,7 @@
 | 狀態點（綠/琥珀/灰） | `user_account_status.status` | ✅ |
 | 姓名（深代數遮罩，見 §3.4） | `profiles.name` | ✅ |
 | 代數色標（左側 rail） | 計算 | ✅ |
-| **最近訂閱到期日**（近期到期以警示色） | `account_status.end_date` | ✅ |
+| **最近訂閱到期日**（active）／**「剩 N 天到期」**（即將到期，琥珀）／「已失效」／「已停權」 | `account_status.end_date` + `suspended_at` | ✅ |
 | 下線數 pill / 「末代」標籤 | `childCount` | ❌ 列上不放——展開與否由左側箭頭表示；下線數收到詳情 |
 | 本月獎勵摘要 | `reward_schedules` | ❌ 列上不放（收到詳情）——到期日是更該被掃到的流失風險訊號 |
 | 服務類別 · 城市 | `listings` | ❌ 列上不放（收到詳情） |
@@ -90,7 +92,10 @@ interface ReferralNode {
   userId: string;
   name: string;
   generation: 1 | 2 | 3;             // 相對於我（root）
-  status: 'active' | 'grace' | 'inactive';   // 對應帳戶狀態；inactive = 永久失效
+  status: 'active' | 'expiring' | 'expired' | 'suspended';
+  // active=效期內；expiring=active 且距 end_date ≤30 天；
+  // expired=到期/從未訂閱；suspended=帳號停權（正交狀態）
+  daysToExpiry?: number;             // expiring 用：距到期天數（伺服器算）
   joinedAt: string;                  // referred_at
   referralCode: string | null;
   listing: { serviceType: string | null; city: string | null } | null;
@@ -110,7 +115,7 @@ interface ReferralNode {
 - 底部動作：展開其下線、查看刊登（服務／城市等細節由此進刊登頁自行檢視）。
 - **不呈現**：刊登服務／城市、獎勵金額、推薦碼、聯絡方式。
 
-**失效節點的「查看刊登」**：刊登詳情頁讀 `public_listings` view，其只暴露 `has_active_subscription`（active/grace）者；**永久失效者的刊登不在此 view**（規格 §342：永久失效刊登隱藏），直接連過去會落到通用的「找不到此服務者」死頁。故對**永久失效（off）**節點，詳情**不提供「查看刊登」連結**，改標「此帳號已失效，刊登已下架」。即將失效（grace）的刊登在 view 中仍可見，保留正常連結。
+**失效／停權節點的「查看刊登」**：刊登詳情頁讀 `public_listings` view，其只暴露 `has_active_subscription` 者——0721 後可見性以 `end_date` 為界且會擋 `suspended`。因此 **expired 與 suspended 兩者的刊登都不在此 view**，直接連過去會落到通用的「找不到此服務者」死頁。故對 **expired／suspended** 節點，詳情**不提供「查看刊登」連結**，改標「此帳號已失效／已停權，刊登已下架」。active（含即將到期）的刊登仍公開，保留正常連結。
 
 ### 3.3 卡片內頂部（非頁面頂部）
 - 三代人數統計卡**不在此**——它們是頁面上方既有的 `ReferralStats`，本次不動。
@@ -169,12 +174,18 @@ interface ReferralNode {
 - Bottom sheet（手機）：姓名 + 狀態徽章、加入日、刊登、推薦碼（複製）、**獎勵區塊**（已入帳／待發放／剩餘月數）、「查看其下線」。
 - 桌機：右側 sticky 面板，內容同上。
 
-### 4.5 狀態視覺系統（不可只靠顏色）
-| 狀態 | 色 | 圖示 | 標籤 | 樹上呈現 |
-|---|---|---|---|---|
-| 訂閱中 active | 綠 | ● 實心 | 有效 | 正常 |
-| 寬限 grace | 琥珀 | ◐ 半 | 寬限中 | 正常 + 提示 |
-| 永久失效 inactive | 灰 | ○ 空心 | 已失效 | 降透明度，但**保留節點與其下線** |
+### 4.5 狀態視覺系統（兩態 + 即將到期 + 停權，不可只靠顏色）
+
+| 狀態 | 定義 | 色 | 圖示 | 樹列右側 | 查看刊登 | 獎勵 |
+|---|---|---|---|---|---|---|
+| 訂閱中 active | `now ≤ end_date` | 綠 | ● 實心 | 到期日 | 可看 | 正常 |
+| 即將到期 | active 且距到期 ≤30 天 | 琥珀 | ● | **「剩 N 天到期」** | 可看 | 正常，流失風險高 |
+| 已失效 expired | 過期／從未訂閱 | 灰 | ○ 空心 | 「已失效」 | ❌ 標「已下架」 | 停止 |
+| 停權 suspended | `suspended_at` 有值 | 紅 | ● | 「已停權」 | ❌ 標「已下架」 | 領取被擋 |
+
+- 琥珀色由舊「grace 狀態」**轉義**為「active 但 ≤30 天將到期」——對齊 main 的 30 天續訂提醒，是催下線續約的流失防線。
+- expired／suspended 節點降透明度但**保留在樹上**，下線不斷開。
+- `suspended` 不在 `user_account_status` 兩態列舉中（來自 `profiles.suspended_at`），故 my-tree／node API **需額外回傳 `suspended_at`** 才能正確標示與擋「查看刊登」。
 
 ### 4.6 空 / 載入 / 錯誤
 - 空：維持現況引導（分享推薦碼）。
@@ -261,5 +272,7 @@ interface ReferralNode {
 ## 9. 風險與待確認
 
 - **隱私**：目前 API 已回傳二、三代下線的真實姓名與刊登。是否需對較深代數做遮罩（例如只顯示暱稱／代號）？沿用現況或收斂，需產品決策。
-- **失效節點**：確認失效下線仍完整顯示於樹中（規格 §4「即使上線永久失效，組織圖中節點仍存在」）——本設計遵循此規則。
-- **搜尋範圍**：搜尋是否僅限有效節點，或含已失效？預設含全部並以狀態徽章區分。
+- **失效/停權節點**：expired／suspended 下線仍完整顯示於樹中（節點保留、下線不斷）——本設計遵循。
+- **API 需回傳 `suspended_at`**：`suspended` 不在 `user_account_status` 兩態列舉中，my-tree／node 端點須額外帶出，前端才能標示停權並擋「查看刊登」。
+- **即將到期由伺服器判定**：`daysToExpiry`／`status='expiring'` 建議在伺服器算（對齊 `renewalNoticeDaysLeft` 的 30 天門檻），避免前端各自為政。
+- **搜尋範圍**：搜尋是否僅限有效節點，或含 expired／suspended？預設含全部並以狀態徽章區分。
