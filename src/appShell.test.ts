@@ -28,6 +28,18 @@ describe('code splitting 契約', () => {
   });
 });
 
+describe('會籍守衛新鮮度契約', () => {
+  // 兩態下「有/無存取權」是硬切換：會員於 session 中途到期時，路由守衛
+  // 讀的 accountStatus（來自 /profile）必須能重新驗證，否則守衛整個
+  // session 放行已失效會員（卡片顯示失效、人卻還在會員區）。與
+  // useSubscription 的 focus-revalidate 對齊：App 必須在分頁切回時
+  // 靜默重抓 /profile（refreshUser）。
+  it('App 必須對 profile 掛 focus-revalidation（refreshUser）', () => {
+    expect(app).toMatch(/useRevalidateOnFocus\(/);
+    expect(app).toMatch(/useRevalidateOnFocus\([\s\S]*?refreshUser\(\)/);
+  });
+});
+
 describe('錯誤防線契約', () => {
   it('App 必須掛 ErrorBoundary', () => {
     expect(app).toMatch(/<ErrorBoundary>/);

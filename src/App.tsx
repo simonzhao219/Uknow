@@ -26,6 +26,8 @@ import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { isProfileComplete } from './utils/registrationFlow';
+import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
+import { dedupe } from './utils/requestDedup';
 
 // Code splitting（見 appShell.test.ts 的架構契約）：
 // 訪客開首頁不需要下載管理後台、會員區與法務長文。admin/會員區/內容頁
@@ -201,6 +203,16 @@ function AppContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 分頁切回可見時，靜默重抓 /profile，讓路由守衛（讀 accountStatus）在
+  // 會員於 session 中途跨過到期時能同步把人導去續約——與 useSubscription
+  // 的 focus-revalidate 對齊，不再出現「卡片顯示失效、守衛仍放行」的矛盾。
+  // refreshUser 刻意不碰 isLoadingUser（stale-while-revalidate，不閃全頁
+  // spinner）；dedupe 讓 focus/visibilitychange 同時觸發時只打一次。
+  useRevalidateOnFocus(
+    () => isLoggedIn,
+    () => { void dedupe('profileRevalidate', async () => { await refreshUser(); }); }
+  );
 
   // value 必須 memo：這個 context 有 17 個消費者，未 memo 的物件字面量
   // 會讓 AppContent 每次 render（含每次背景 revalidate）都逼全部消費者
