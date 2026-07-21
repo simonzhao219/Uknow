@@ -12,10 +12,30 @@ interface ReferralStatsProps {
 export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCount }: ReferralStatsProps) {
   const totalReferrals = firstLevelCount + secondLevelCount + thirdLevelCount;
 
-  // 用共用的 StatCardGrid：4 張卡在手機以 2×2 全部可見（不再水平捲動），
-  // 桌面一列四欄，等寬填滿、左右對稱。
+  // 手機：瘦身成單列四欄精簡條，把黃金版位讓給推薦樹（不再用 2×2 大卡占版面）。
+  const compact = [
+    { label: '總推薦', value: totalReferrals, color: 'text-blue-600' },
+    { label: '一代', value: firstLevelCount, color: 'text-green-600' },
+    { label: '二代', value: secondLevelCount, color: 'text-purple-600' },
+    { label: '三代', value: thirdLevelCount, color: 'text-orange-600' },
+  ];
+
   return (
-    <StatCardGrid>
+    <>
+      <Card className="sm:hidden">
+        <CardContent className="grid grid-cols-4 divide-x divide-border px-0 py-3">
+          {compact.map((s) => (
+            <div key={s.label} className="flex flex-col items-center gap-0.5 px-1">
+              <span className={`text-2xl font-bold ${s.color}`}>{s.value}</span>
+              <span className="text-xs text-muted-foreground">{s.label}</span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* 桌面 / 平板：維持四張卡 */}
+      <div className="hidden sm:block">
+        <StatCardGrid>
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -75,6 +95,8 @@ export function ReferralStats({ firstLevelCount, secondLevelCount, thirdLevelCou
           </p>*/}
         </CardContent>
       </Card>
-    </StatCardGrid>
+        </StatCardGrid>
+      </div>
+    </>
   );
 }
