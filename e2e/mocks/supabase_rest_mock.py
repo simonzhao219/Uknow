@@ -25,8 +25,10 @@ _OBJECT_ACCEPT = "application/vnd.pgrst.object+json"
 
 
 def build_listing(user_id: str = DEFAULT_USER_ID, **overrides) -> dict:
-    """A listing row shaped like what the components read back. `activeUntil`
-    drives the 活躍中 / 已過期 badge in ServiceProviderManagement."""
+    """A listing row shaped like the real `listings` table. Note: the table
+    deliberately stores NO temporal validity (see initial schema:「不存
+    is_active / active_until — 可見性由訂閱即時算」)——刊登的活躍／過期由
+    帳號訂閱狀態決定，不在 listing row 上。"""
     listing = {
         "id": "11111111-1111-1111-1111-111111111111",
         "user_id": user_id,
@@ -42,7 +44,6 @@ def build_listing(user_id: str = DEFAULT_USER_ID, **overrides) -> dict:
             "https://example.com/photo3.jpg",
         ],
         "contacts": {"instagram": "test_ig", "line": "", "facebook": ""},
-        "activeUntil": "2099-01-01T00:00:00.000Z",
     }
     listing.update(overrides)
     return listing

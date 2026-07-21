@@ -22,13 +22,11 @@ Feature: Listing management
     Then I should see the text "美髮小美"
     And I should see the text "活躍中"
 
-  @listing
-  Scenario: An expired listing is flagged as expired
-    Given I am logged in as an active member
-    And I have an expired listing named "過期工作室"
-    When I visit "/service-providers"
-    Then I should see the text "過期工作室"
-    And I should see the text "已過期"
+  # 刊登本身沒有效期——「活躍中／已過期」完全由帳號訂閱狀態決定
+  # （後端 has_active_subscription／public_listings view 一處守門）。而
+  # 刊登管理頁位於 RequireMembershipRoute（只放行 active/grace）之後，過期
+  # 會員根本進不來（見下方 route_guard 情境），因此在此頁「已過期」是不可
+  # 觸發的狀態，不再有對應情境。
 
   @listing @route_guard
   Scenario: An expired member cannot reach listing management and is sent to checkout
