@@ -18,7 +18,6 @@ export type { WithdrawalRecord };
 export interface UseRewardDataResult {
   rewardsData: RewardsData | null;
   withdrawals: WithdrawalRecord[];
-  subscriptionStatus: string | null;
   isLoading: boolean;
   isValidating: boolean;
   error: string | null;
@@ -33,7 +32,6 @@ export function useRewardData(): UseRewardDataResult {
 
   const [rewardsData, setRewardsData] = useState<RewardsData | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,31 +45,24 @@ export function useRewardData(): UseRewardDataResult {
       setError(null);
     }
     try {
-      const [rewardsResult, withdrawalsResult, subscriptionResult] = await Promise.all([
+      // 訂閱狀態不在這裡打——收斂到 useSubscription 作為唯一來源，避免
+      // 兩份獨立快取在到期/續訂邊界互相矛盾（提領資格由 RewardDashboard
+      // 直接讀 useSubscription 的 status 傳入 WithdrawalSection）。
+      const [rewardsResult, withdrawalsResult] = await Promise.all([
         apiRequestJson<{ success: boolean; data: RewardsData }>(buildApiUrl('/rewards')),
         apiRequestJson<{ success: boolean; data: { withdrawals: WithdrawalRecord[] } }>(
           buildApiUrl('/rewards/withdrawals')
-        ),
-        apiRequestJson<{ success: boolean; data: { hasSubscription: boolean; status?: string } }>(
-          buildApiUrl('/subscriptions/status')
         ),
       ]);
 
       if (!rewardsResult.success) throw new Error('獲取獎勵資料失敗');
       if (!withdrawalsResult.success) throw new Error('獲取提領記錄失敗');
 
-      const status = subscriptionResult.success ? (subscriptionResult.data.status ?? null) : null;
-
       setRewardsData(rewardsResult.data);
       setWithdrawals(withdrawalsResult.data.withdrawals);
-      setSubscriptionStatus(status);
       hasDataRef.current = true;
 
-      // 注意：這裡把訂閱狀態的複本綁進 'rewards' 快取（提領資格判斷用），
-      // 跟 useSubscription 的 'subscriptionStatus' 是兩份獨立快取——任何
-      // 會改變訂閱狀態的流程必須同時清這兩把 key（MUTATION_GROUPS 的
-      // payment / rewardClaim 群組都已涵蓋）。
-      setCache('rewards', { rewardsData: rewardsResult.data, subscriptionStatus: status });
+      setCache('rewards', { rewardsData: rewardsResult.data });
       setCache('withdrawals', withdrawalsResult.data.withdrawals);
     } catch (err) {
       const msg =
@@ -100,7 +91,6 @@ export function useRewardData(): UseRewardDataResult {
     if (cachedRewards && cachedWithdrawals) {
       setRewardsData(cachedRewards.rewardsData);
       setWithdrawals(cachedWithdrawals);
-      setSubscriptionStatus(cachedRewards.subscriptionStatus);
       hasDataRef.current = true;
       setIsLoading(false);
     }
@@ -123,5 +113,5 @@ export function useRewardData(): UseRewardDataResult {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { rewardsData, withdrawals, subscriptionStatus, isLoading, isValidating, error, refetch, clearAndRefetch };
+  return { rewardsData, withdrawals, isLoading, isValidating, error, refetch, clearAndRefetch };
 }

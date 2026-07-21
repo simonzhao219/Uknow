@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useRewardData } from '../hooks/useRewardData';
+import { useSubscription } from '../hooks/useSubscription';
 import { useNotification } from './notifications/NotificationContext';
 
 export function RewardDashboard() {
@@ -18,8 +19,12 @@ export function RewardDashboard() {
   usePageRestoration();
   const { showError } = useNotification();
 
-  const { rewardsData, withdrawals, subscriptionStatus, isLoading, error, refetch, clearAndRefetch } =
+  const { rewardsData, withdrawals, isLoading, error, refetch, clearAndRefetch } =
     useRewardData();
+  // 訂閱狀態單一來源：與 SubscriptionStatusCard 共用 useSubscription 的
+  // 快取，避免與獎勵資料各自維護一份 status 在邊界互相矛盾。
+  const { subscriptionData } = useSubscription();
+  const subscriptionStatus = subscriptionData?.status ?? null;
 
   const [showWithdrawalProcess, setShowWithdrawalProcess] = useState(false);
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
