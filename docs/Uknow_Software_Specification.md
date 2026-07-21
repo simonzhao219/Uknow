@@ -357,6 +357,8 @@ Uknow Web App
     * **到期（expired）再擋** → `error_code 'subscription_invalid'`（API 403）：**不允許到期會員用 credit 免費復活**（判準與 `user_account_status` 一致：`now() <= end_date`）。
   兩種情形 credit 皆維持 `unclaimed`，待解除停權／續訂恢復 active 後仍可領取。與「點數不可提領」同一原則：福利保留、但享用需帳號正常且會籍有效。已在正常 active 狀態領取過的 credit 冪等成功，不因日後停權或到期而翻案。  
     
+* **停權（suspended）是「選擇性凍結」，非會員區硬鎖定（刻意設計）**：`suspended` 是 admin 手動設定的 `profiles.suspended_at`，與會籍狀態（active/expired，由訂閱日期即時算）是**正交的兩軸**——會籍本體仍只有 active/expired 兩態。停權的效果是凍結**金錢／福利相關動作**（刊登可見、提領、領免費續約皆擋），但**不**把帳號鎖出會員區：會籍守衛（`RequireMembershipRoute`）只看 `accountStatus`，停權但仍在效期內的會員可照常瀏覽會員區、僅上述動作被擋。此為刻意取捨（凍結價值出口即可，不必全站封鎖）；若日後需改為硬鎖定，於守衛加一道 `suspended` 判斷即可。  
+    
 * **推薦碼不作廢、仍可被使用**：失效不改變 `referral_codes.status`，該碼仍可被新用戶驗證、推薦關係照常建立；未來下線付款的獎勵歸屬依當下的推薦樹。組織圖節點保留（標記 Inactive），下線不斷開。  
     
 * 若使用者選擇「新訂閱」（失效超過一年或主動換線），視為新的一筆合約，效期從付款日重新計算；推薦人可於結帳時更換。
