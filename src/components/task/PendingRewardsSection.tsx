@@ -11,15 +11,17 @@ interface Props {
   pendingRewards: PendingMissionReward[];
   onClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
   /**
-   * 會籍是否已失效。「免費續約 1 年」credit 的語意是在既有會籍後接一年，
-   * 需先 active 才能領取——不允許到期會員用 credit 免費復活（後端
-   * claim_referral_king_reward 亦會擋，這裡只是提早收斂 UI、避免走完
-   * 三步驟對話框才被 403 退回）。
+   * 不可領取的原因（到期或停權）。有值即停用領取鈕並顯示此原因；
+   * null/undefined 表示可領取。「免費續約 1 年」credit 的語意是在既有
+   * 會籍後接一年，需帳號正常且會籍有效才能領取——到期不得免費復活、
+   * 停權期間不得動用（後端 claim_referral_king_reward 亦會擋，這裡只是
+   * 提早收斂 UI、避免走完三步驟對話框才被 403 退回）。
    */
-  isExpired?: boolean;
+  claimBlockedReason?: string | null;
 }
 
-export function PendingRewardsSection({ pendingRewards, onClaimReward, isExpired = false }: Props) {
+export function PendingRewardsSection({ pendingRewards, onClaimReward, claimBlockedReason = null }: Props) {
+  const isBlocked = !!claimBlockedReason;
   const [selectedReward, setSelectedReward] = useState<PendingMissionReward | null>(null);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
 
@@ -39,8 +41,8 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, isExpired
             </Badge>
           </div>
           <CardDescription className="text-base">
-            {isExpired
-              ? '您有待領取的「免費續約 1 年」獎勵。此獎勵為在現有會籍後延長一年，需先續訂恢復有效會籍後才能領取。'
+            {isBlocked
+              ? `您有待領取的「免費續約 1 年」獎勵，但目前無法領取：${claimBlockedReason}`
               : `🎉 恭喜！您有 ${pendingRewards.length} 個任務獎勵待領取，請盡快領取！`}
           </CardDescription>
         </CardHeader>
@@ -75,8 +77,8 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, isExpired
                 </div>
                 <Button
                   size="lg"
-                  disabled={isExpired}
-                  title={isExpired ? '會籍已失效，請先續訂後再領取' : undefined}
+                  disabled={isBlocked}
+                  title={claimBlockedReason ?? undefined}
                   onClick={() => {
                     setSelectedReward(reward);
                     setShowClaimDialog(true);
@@ -84,7 +86,7 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, isExpired
                   className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white gap-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Gift className="h-5 w-5" />
-                  {isExpired ? '續訂後可領取' : '立即領取'}
+                  {isBlocked ? '暫無法領取' : '立即領取'}
                 </Button>
               </div>
             </div>

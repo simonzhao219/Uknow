@@ -2530,9 +2530,10 @@ app.post('/tasks/claim-reward/:id', async (c) => {
     return c.json({ success: false, error: '領取失敗，請稍後再試或聯繫客服' }, 500);
   }
   if (!data?.success) {
-    // subscription_invalid：會籍已失效，claim 需先 active（不可用 credit 免費復活）。
+    // suspended（停權）/ subscription_invalid（會籍失效）：領取需帳號正常且會籍有效，
+    // 與提領/刊登同一把尺，不可用 credit 免費復活或在停權期間動用。
     const status = data?.error_code === 'not_found' ? 404
-      : data?.error_code === 'forbidden' || data?.error_code === 'subscription_invalid' ? 403 : 400;
+      : ['forbidden', 'subscription_invalid', 'suspended'].includes(data?.error_code) ? 403 : 400;
     return c.json({ success: false, error: data?.message ?? '領取失敗' }, status);
   }
 
