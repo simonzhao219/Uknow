@@ -23,3 +23,19 @@ export function renewalNoticeDaysLeft(
   if (daysLeft < 0 || daysLeft > RENEWAL_NOTICE_DAYS) return null;
   return daysLeft;
 }
+
+// 訂閱卡片顯示狀態：把「hasSubscription + status + 是否曾訂閱」收斂成單一
+// 判斷，避免元件裡散落三態條件。兩態模型下 hasSubscription === (status
+// 為 active)，故 expired 老會員 hasSubscription 為 false——但他「曾訂閱過」
+// （activeUntil 有值），該顯示「會籍已失效，續訂以恢復」而非「尚未訂閱」。
+export type SubscriptionCardState = 'active' | 'expired-former' | 'none';
+
+export function subscriptionCardState(
+  data: { hasSubscription: boolean; status?: 'active' | 'expired'; activeUntil?: string } | null,
+): SubscriptionCardState {
+  if (!data) return 'none';
+  if (data.hasSubscription) return 'active';
+  // 曾訂閱過（有到期日）但已失效 → 老會員續訂入口，不是「從未訂閱」。
+  if (data.status === 'expired' && !!data.activeUntil) return 'expired-former';
+  return 'none';
+}
