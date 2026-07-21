@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
+import { ReferralQRCode } from './referral/ReferralQRCode';
 
 export function MemberDashboard() {
   const { user, setUser } = useContext(UserContext);
@@ -117,6 +118,11 @@ export function MemberDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 我的推薦 QR Code —— 掃描即帶推薦碼直達註冊 */}
+      {user?.referralProgramJoined && user?.referralCode && (
+        <ReferralQRCode referralCode={user.referralCode} memberName={user?.name} />
+      )}
 
       {/* 快速操作區域 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

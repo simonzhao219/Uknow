@@ -29,24 +29,46 @@ export const app = new Hono().basePath('/api');
 // ============================================================
 // CORS
 // ============================================================
+
+/**
+ * 判斷某個瀏覽器 Origin 是否放行；回傳要回填的 Access-Control-Allow-Origin
+ * 值（放行時原樣反射該 origin，credentials 模式不能用萬用 `*`），不放行回 ''。
+ *
+ * 放行來源（由嚴到寬）：
+ *  1. 正式站 FRONTEND_URL——單一釘死來源，去尾斜線後精確比對。
+ *  2. Cloudflare Pages 本專案部署：`uknow.pages.dev` 及其子網域。每個分支／PR
+ *     會產生獨立的預覽子網域（例如 `<slug>.uknow.pages.dev`），這些都是本專案
+ *     自家的部署，放行後預覽站才能實際登入測試，不必為了看預覽而改動正式流程。
+ *     以 URL 解析後精確比對 hostname 尾綴，避免 `uknow.pages.dev.attacker.com`
+ *     這類前綴／字串包含的繞過。
+ *  3. localhost / 127.0.0.1——僅在開發旗標（DEV_CORS 或 PAYUNI_SANDBOX）下放行。
+ */
+export function isAllowedOrigin(
+  origin: string,
+  read: (key: string) => string | undefined = (k) => Deno.env.get(k),
+): string {
+  const o = (origin || '').replace(/\/$/, '');
+  if (!o) return '';
+
+  const allowed = (read('FRONTEND_URL') || '').replace(/\/$/, '');
+  if (allowed && o === allowed) return origin;
+
+  try {
+    const host = new URL(o).hostname;
+
+    // Cloudflare Pages：本專案正式網域與所有預覽子網域。
+    if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
+
+    // localhost 只在明確的開發旗標下放行；production 不該永久放行本機。
+    const devMode = read('DEV_CORS') === 'true' || read('PAYUNI_SANDBOX') === 'true';
+    if (devMode && (host === 'localhost' || host === '127.0.0.1')) return origin;
+  } catch { /* 非法 Origin → 拒絕 */ }
+
+  return '';
+}
+
 app.use('*', cors({
-  origin: (origin) => {
-    // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
-    const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
-    const o       = origin.replace(/\/$/, '');
-    if (o === allowed) return origin;
-    // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
-    // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
-    // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
-    const devMode = Deno.env.get('DEV_CORS') === 'true' || Deno.env.get('PAYUNI_SANDBOX') === 'true';
-    if (devMode) {
-      try {
-        const host = new URL(o).hostname;
-        if (host === 'localhost' || host === '127.0.0.1') return origin;
-      } catch { /* 非法 Origin → 拒絕 */ }
-    }
-    return '';
-  },
+  origin: (origin) => isAllowedOrigin(origin),
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
   allowHeaders: ['Content-Type', 'Authorization', 'If-None-Match'],
