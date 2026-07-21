@@ -10,7 +10,6 @@ scenarios("listing_management.feature")
 
 # A user id that is NOT the logged-in DEFAULT_USER_ID, for ownership checks.
 _OTHER_USER_ID = "00000000-0000-0000-0000-000000000002"
-_PAST_ISO = "2020-01-01T00:00:00.000Z"
 
 
 # --- Given: seed the REST layer ------------------------------------------------
@@ -23,11 +22,6 @@ def no_listing(rest_mock):
 @given(parsers.parse('I have an active listing named "{name}"'))
 def active_listing(rest_mock, name):
     rest_mock.set_user_listing(build_listing(name=name))
-
-
-@given(parsers.parse('I have an expired listing named "{name}"'))
-def expired_listing(rest_mock, name):
-    rest_mock.set_user_listing(build_listing(name=name, activeUntil=_PAST_ISO))
 
 
 @given("there is a listing owned by another member")

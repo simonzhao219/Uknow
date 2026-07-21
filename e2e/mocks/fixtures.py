@@ -35,7 +35,22 @@ def seed_authenticated_session(
     overrides.update(profile_overrides)
 
     api_mock = BackendApiMock(context)
-    return api_mock.set_profile(registration_step, **overrides)
+    profile = api_mock.set_profile(registration_step, **overrides)
+
+    # 會籍與訂閱是同一份事實的兩個面向（後端由訂閱 end_date 推導
+    # accountStatus）。頁面用 useSubscription() 讀 /subscriptions/status 來
+    # 判斷刊登是否對外顯示（活躍中／已過期），所以只 mock profile 而不 mock
+    # 訂閱狀態，會讓這條請求被 block、徽章永遠不渲染。這裡預設回一份與
+    # accountStatus 一致的訂閱狀態，讓守衛（讀 accountStatus）與徽章（讀
+    # 訂閱狀態）天生一致；需要不同步狀態的情境（如任務延長會籍）仍可在之後
+    # 呼叫 set_subscription_status* 覆寫（Playwright 後註冊的路由優先）。
+    account_status = profile.get("accountStatus", "expired")
+    api_mock.set_subscription_status(
+        has_subscription=account_status in ("active", "grace"),
+        status=account_status,
+        active_until=profile.get("subscriptionEndDate"),
+    )
+    return profile
 
 
 def seed_pending_referral(context: BrowserContext, code: str) -> None:
