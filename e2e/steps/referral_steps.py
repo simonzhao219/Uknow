@@ -10,11 +10,11 @@ scenarios("referral_visibility.feature")
 
 
 def _tree_data(member_names):
-    """useReferralData 快取的形狀 = GET /referrals/my-tree 回應的 data。"""
+    """useReferralData 快取的形狀 = GET /referrals/my-tree 回應的 data（巢狀樹）。"""
     first = [build_referral_member(name) for name in member_names]
     return {
         "userReferralCode": "MYCODE",
-        "referralTree": {"firstGeneration": first, "secondGeneration": [], "thirdGeneration": []},
+        "roots": first,
         "summary": {
             "firstGenCount": len(first),
             "secondGenCount": 0,
