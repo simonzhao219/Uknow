@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { CreditCard, Loader2 } from 'lucide-react';
+import { CreditCard, AlertTriangle, Loader2 } from 'lucide-react';
 import type { SubscriptionData } from '../../hooks/useSubscription';
 import { formatTwDate } from '../../utils/twDate';
+import { renewalNoticeDaysLeft } from '../../utils/subscriptionNotice';
 
 interface Props {
   subscriptionData: SubscriptionData | null;
@@ -27,6 +28,8 @@ function formatDate(dateStr: string) {
 
 export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
   const statusInfo = STATUS_MAP[subscriptionData?.status ?? 'expired'] ?? STATUS_MAP.expired;
+  // 到期前 30 天倒數提醒（active 會員）——到期即失效無寬限期，提醒往前移。
+  const noticeDaysLeft = renewalNoticeDaysLeft(subscriptionData?.status, subscriptionData?.activeUntil);
 
   return (
     <Card>
@@ -46,6 +49,11 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
             <Link to="/payment/checkout">續訂 / 重新訂閱</Link>
           </Button>
         )}
+        {!isLoading && noticeDaysLeft !== null && (
+          <Button variant="default" size="sm" className="bg-amber-600 hover:bg-amber-700" asChild>
+            <Link to="/payment/checkout">立即續訂</Link>
+          </Button>
+        )}
       </CardHeader>
 
       <CardContent>
@@ -63,6 +71,21 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           </div>
         ) : (
           <div className="space-y-3">
+            {noticeDaysLeft !== null && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-amber-900">會籍即將到期</p>
+                    <p className="text-sm text-amber-800 mt-1">
+                      您的會籍將於 {noticeDaysLeft} 天後到期。到期即失效（無寬限期），
+                      請儘早續訂，以免會員功能與刊登中斷。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {subscriptionData.currentPeriodStart && subscriptionData.currentPeriodEnd && (
               <div className="text-sm">
                 <span className="text-muted-foreground">訂閱週期：</span>
