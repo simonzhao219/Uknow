@@ -7,7 +7,7 @@ import { Input } from "./ui/input";
 import { Skeleton } from "./ui/skeleton";
 import {
   MapPin,
-  ChevronRight,
+  ChevronDown,
   Search,
   AlertCircle,
 } from "lucide-react";
@@ -25,11 +25,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "./ui/sheet";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { cn } from "./ui/utils";
 import {
   SERVICE_CATEGORIES,
   TAIWAN_CITIES,
@@ -122,11 +119,6 @@ export function HomePage() {
     writeHomeViewMode(viewMode);
   }, [viewMode]);
 
-  // 桌面版篩選器展開狀態
-  const [isGenderFilterOpen, setIsGenderFilterOpen] = useState(false);
-  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
-  const [isLocationFilterOpen, setIsLocationFilterOpen] = useState(false);
-  
   // ✅ 数据状态管理
   const [serviceProviders, setServiceProviders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -289,30 +281,78 @@ export function HomePage() {
         </p>
       </div>
 
-      {/* 關鍵字搜尋 */}
-      <div className="relative">
-        <Search
-          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
-          aria-hidden="true"
-        />
-        <label htmlFor="service-search" className="sr-only">
-          搜尋服務者
-        </label>
-        <Input
-          id="service-search"
-          type="search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="搜尋服務者名稱、服務內容或標籤"
-          className="pl-9"
-        />
+      {/* 關鍵字搜尋 + 桌面篩選工具列：同一列收斂成一條搜尋／篩選帶，
+          取代原本三列全寬收合列＋大卡片留白的版面 */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="relative md:flex-1">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+            aria-hidden="true"
+          />
+          <label htmlFor="service-search" className="sr-only">
+            搜尋服務者
+          </label>
+          <Input
+            id="service-search"
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜尋服務者名稱、服務內容或標籤"
+            className="pl-9"
+          />
+        </div>
+
+        {/* 桌面篩選：popover 下拉面板，內容與手機共用同一套 chip 元件；
+            單選時直接把選中的值寫進按鈕文字，不展開也看得到目前條件 */}
+        <div className="hidden md:flex items-center gap-2">
+          <DesktopFilterPopover
+            label="性別"
+            summary={
+              selectedGenders.length === 1 ? `性別：${selectedGenders[0]}` : undefined
+            }
+            count={selectedGenders.length}
+            panelClassName="w-auto"
+          >
+            <GenderFilterChips
+              selectedGenders={selectedGenders}
+              onGenderChange={handleGenderChange}
+            />
+          </DesktopFilterPopover>
+
+          <DesktopFilterPopover
+            label="服務類別"
+            summary={selectedCategory ? `類別：${selectedCategory}` : undefined}
+            count={selectedCategory ? 1 : 0}
+            panelClassName="w-[min(560px,90vw)]"
+          >
+            <CategoryFilterChips
+              selectedCategory={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+          </DesktopFilterPopover>
+
+          <DesktopFilterPopover
+            label="服務地區"
+            summary={
+              selectedCities.length === 1 ? `地區：${selectedCities[0]}` : undefined
+            }
+            count={selectedCities.length}
+            panelClassName="w-[min(640px,90vw)] max-h-[70vh] overflow-y-auto"
+          >
+            <LocationFilterChips
+              selectedCities={selectedCities}
+              districtsByCity={districtsByCity}
+              onCityChange={handleCityChange}
+              onDistrictChange={handleDistrictChange}
+            />
+          </DesktopFilterPopover>
+        </div>
       </div>
 
-      {/* 篩選區域 */}
-      <div className="bg-card p-6 rounded-lg border space-y-4">
-        {/* 手機版三個獨立篩選按鈕：點開後從底部彈出面板（拇指熱區），
-            以「查看 N 位服務者」主按鈕收合，不必伸手去點右上角的 X */}
-        <div className="flex flex-col gap-3 md:hidden">
+      {/* 手機版篩選卡：三個獨立篩選按鈕，點開後從底部彈出面板（拇指熱區），
+          以「查看 N 位服務者」主按鈕收合，不必伸手去點右上角的 X */}
+      <div className="bg-card p-4 rounded-lg border md:hidden">
+        <div className="flex flex-col gap-3">
           <div className="grid grid-cols-3 gap-2">
             <MobileFilterSheet
               triggerLabel="性別"
@@ -365,91 +405,11 @@ export function HomePage() {
               onClick={clearFilters}
               variant="ghost"
               size="sm"
-              className="text-xs md:hidden"
+              className="text-xs"
             >
               清除所有篩選 ({totalFilters})
             </Button>
           )}
-        </div>
-
-        {/* 桌面可折疊篩選區域 */}
-        <div className="hidden md:block space-y-3">
-          {/* 性別篩選 */}
-          <Collapsible
-            open={isGenderFilterOpen}
-            onOpenChange={setIsGenderFilterOpen}
-          >
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="flex items-center justify-between w-full p-2 h-auto font-medium text-left"
-              >
-                <span className="flex items-center gap-2">
-                  性別篩選
-                  <FilterCountBadge count={selectedGenders.length} />
-                </span>
-                <ChevronRight className={`h-4 w-4 transition-transform ${isGenderFilterOpen ? 'rotate-90' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pl-4 pr-2 pb-2">
-              <GenderFilterChips
-                selectedGenders={selectedGenders}
-                onGenderChange={handleGenderChange}
-              />
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* 服務類別篩選 */}
-          <Collapsible
-            open={isCategoryFilterOpen}
-            onOpenChange={setIsCategoryFilterOpen}
-          >
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="flex items-center justify-between w-full p-2 h-auto font-medium text-left"
-              >
-                <span className="flex items-center gap-2">
-                  服務類別
-                  <FilterCountBadge count={selectedCategory ? 1 : 0} />
-                </span>
-                <ChevronRight className={`h-4 w-4 transition-transform ${isCategoryFilterOpen ? 'rotate-90' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pl-4 pr-2 pb-2">
-              <CategoryFilterChips
-                selectedCategory={selectedCategory}
-                onSelect={setSelectedCategory}
-              />
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* 服務地區篩選 */}
-          <Collapsible
-            open={isLocationFilterOpen}
-            onOpenChange={setIsLocationFilterOpen}
-          >
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="flex items-center justify-between w-full p-2 h-auto font-medium text-left"
-              >
-                <span className="flex items-center gap-2">
-                  服務地區
-                  <FilterCountBadge count={selectedCities.length} />
-                </span>
-                <ChevronRight className={`h-4 w-4 transition-transform ${isLocationFilterOpen ? 'rotate-90' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pl-4 pr-2 pb-2">
-              <LocationFilterChips
-                selectedCities={selectedCities}
-                districtsByCity={districtsByCity}
-                onCityChange={handleCityChange}
-                onDistrictChange={handleDistrictChange}
-              />
-            </CollapsibleContent>
-          </Collapsible>
         </div>
       </div>
 
@@ -651,6 +611,50 @@ function MobileFilterSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// 桌面版篩選：搜尋列旁的 popover 下拉按鈕。
+// 原本三列全寬 Collapsible 收合列各只有短標題＋箭頭，包在大卡片裡
+// 佔了近半屏卻幾乎全是留白；改為工具列後整個篩選區只佔一列高度，
+// 面板浮出、不推擠結果列表。單選條件直接把值寫進按鈕文字（如「類別：美髮」），
+// 多選則顯示數量徽章，不展開也能看到目前條件。
+function DesktopFilterPopover({
+  label,
+  summary,
+  count,
+  panelClassName,
+  children,
+}: {
+  label: string;
+  /** 已選條件的摘要文字（取代 label 顯示）；未選或多選時傳 undefined */
+  summary?: string;
+  count: number;
+  panelClassName?: string;
+  children: React.ReactNode;
+}) {
+  const active = count > 0;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-9 gap-1.5 rounded-full",
+            active && "border-primary/60 bg-primary/5",
+          )}
+        >
+          <span>{summary ?? label}</span>
+          {/* 摘要已含選中的值時不再重複顯示數字 */}
+          {!summary && <FilterCountBadge count={count} />}
+          <ChevronDown className="h-4 w-4 opacity-60" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={8} className={cn("p-4", panelClassName)}>
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
