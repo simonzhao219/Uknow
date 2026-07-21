@@ -187,7 +187,11 @@ def should_see_field_error(page, message):
 
 @then(parsers.parse('I should see the text "{text}"'))
 def should_see_text(page, text):
-    expect(page.get_by_text(text)).to_be_visible(timeout=5_000)
+    # 「看得到某段文字」是存在性斷言（至少出現一次），不是唯一性斷言。用 .first
+    # 讓它不會因為同一段文字合理地出現多次（例如推薦碼同時出現在會員資訊卡與
+    # 推薦 QR Code 連結）而誤觸 Playwright strict mode。缺席仍由 should_not_see_text
+    # 以 to_have_count(0) 把關。
+    expect(page.get_by_text(text).first).to_be_visible(timeout=5_000)
 
 
 @then("I should see the dashboard")

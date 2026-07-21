@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { ArrowLeft, Users, Loader2, Share2 } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
+import { ReferralQRCode } from './referral/ReferralQRCode';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';
@@ -79,6 +80,10 @@ export function ReferralManagement() {
         secondLevelCount={referralData?.summary.secondGenCount || 0}
         thirdLevelCount={referralData?.summary.thirdGenCount || 0}
       />
+
+      {referralData?.userReferralCode && (
+        <ReferralQRCode referralCode={referralData.userReferralCode} />
+      )}
 
       <Card>
         <CardHeader>
