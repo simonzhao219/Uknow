@@ -122,7 +122,7 @@ export const ProfileResponseSchema = obj({
   referredByCode:         nullable(str()),
   referralProgramJoined:  bool(),
   referralSignatureUrl:   nullable(str()),
-  accountStatus:          literals('active', 'grace', 'expired'),
+  accountStatus:          literals('active', 'expired'),
   subscriptionEndDate:    nullable(str()),
   suspended:              bool(),
   email:                  optional(str()),
@@ -133,7 +133,7 @@ export const SubscriptionStatusResponseSchema = obj({
   success: bool(),
   data: obj({
     hasSubscription:    bool(),
-    status:             literals('active', 'grace', 'expired'),
+    status:             literals('active', 'expired'),
     activeUntil:        nullable(str()),
     gracePeriodEnd:     nullable(str()),
     currentPeriodStart: nullable(str()),
@@ -448,7 +448,7 @@ export const AdminMemberSchema = obj({
   isAdmin:       bool(),
   suspended:     bool(),
   suspendedAt:   nullable(str()),
-  accountStatus: literals('active', 'grace', 'expired'),
+  accountStatus: literals('active', 'expired'),
   listingCount:  num(),
   createdAt:     str(),
 });

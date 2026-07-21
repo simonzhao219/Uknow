@@ -1,7 +1,7 @@
 Feature: Route guards enforce membership entitlement
   ProtectedRoute redirects anonymous visitors to /login; RequireMembershipRoute
   then gates member-only pages on *entitlement* (accountStatus derived from the
-  subscription end_date): active/grace members (and admins) pass, everyone else
+  subscription end_date): active members (and admins) pass, everyone else
   is routed to where they can resolve their state — the activation-pending
   result page if they've already paid, checkout for renewal or first payment,
   or the profile form for the first-time funnel. registrationStep is demoted to
@@ -18,11 +18,6 @@ Feature: Route guards enforce membership entitlement
   @smoke
   Scenario: An active member reaches the member-only route directly
     Given I am logged in as an active member
-    When I visit "/dashboard"
-    Then I should see the dashboard
-
-  Scenario: A member in the grace period still reaches the member-only route
-    Given I am logged in as a member in grace period
     When I visit "/dashboard"
     Then I should see the dashboard
 

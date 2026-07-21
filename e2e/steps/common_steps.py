@@ -48,11 +48,6 @@ def logged_in_active_member(context):
     seed_authenticated_session(context, registration_step=3, accountStatus="active")
 
 
-@given("I am logged in as a member in grace period")
-def logged_in_grace_member(context):
-    seed_authenticated_session(context, registration_step=3, accountStatus="grace")
-
-
 @given("I am logged in as an expired former member")
 def logged_in_expired_member(context):
     # 曾是會員（subscriptionEndDate 存在）但已超過寬限期 → 守衛應導去

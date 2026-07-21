@@ -50,7 +50,7 @@ Uknow 是一個**服務者媒合平台**：一般訪客可公開瀏覽/搜尋服
 
 ### 2.3 存取控制（真實觀察）
 - `ProtectedRoute`：未登入導向 `/login`。
-- `RequireMembershipRoute`：以 `accountStatus`（active / grace / expired）決定放行；過期導向 `/payment/checkout` 續約，付款開通中導向 `/payment/result`。
+- `RequireMembershipRoute`：以 `accountStatus`（會員兩態：active / expired，見 0721 移除寬限期）決定放行——僅 active 放行；expired（到期即失效，無寬限期）導向 `/payment/checkout` 續約，付款開通中導向 `/payment/result`。
 - `AdminRoute`：非管理員擋下。
 - `FeatureContext`：功能旗標（目前為前端全開啟 stub）。
 

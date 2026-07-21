@@ -9,10 +9,11 @@ Feature: Reward points and withdrawal
   withdrawal.
 
   The route sits behind ProtectedRoute + RequireMembershipRoute, so only an
-  entitled (active/grace) member reaches it; an expired member is redirected to
-  checkout by the guard (covered in route_guards.feature) and never renders this
-  page, which is why the "subscription invalid" guardrail here is exercised via
-  the grace period, the one invalid-for-withdrawal state that can still view it.
+  active member reaches it; an expired member is redirected to checkout by the
+  guard (covered in route_guards.feature) and never renders this page. With the
+  grace period removed (two-state membership), there is no longer any state that
+  can view this page yet is invalid for withdrawal, so the "subscription invalid"
+  guardrail is enforced at the guard and backend layers rather than here.
 
   @rewards
   Scenario: A paid member sees their points balance and the referral that earned it
@@ -58,14 +59,6 @@ Feature: Reward points and withdrawal
     When I visit "/rewards"
     Then the apply-withdrawal button should be disabled
     And I should see the text "今日已提領過一次，請明天再試"
-
-  @rewards
-  Scenario: A member in the grace period cannot withdraw
-    Given I am a grace-period member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    When I visit "/rewards"
-    Then the apply-withdrawal button should be disabled
-    And I should see the text "訂閱處於寬限期，無法申請提領。請補繳以恢復服務。"
 
   @rewards
   Scenario: An eligible member can submit a withdrawal application end to end

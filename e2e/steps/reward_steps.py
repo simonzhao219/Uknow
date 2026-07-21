@@ -44,14 +44,6 @@ def paid_member_not_joined(context, api_mock):
     _seed_member(context, api_mock, account_status="active", sub_status="active", joined=False)
 
 
-@given("I am a grace-period member who joined the referral program")
-def grace_member_joined(context, api_mock):
-    # Grace still passes RequireMembershipRoute (so the page renders), but the
-    # withdrawal button must stay disabled — the one invalid-for-withdrawal
-    # state that can actually view this page.
-    _seed_member(context, api_mock, account_status="grace", sub_status="grace", joined=True)
-
-
 # --- Reward summary / history / photos overrides ---------------------------
 
 @given(parsers.parse("my reward summary shows {available:d} available and {total:d} total earned"))

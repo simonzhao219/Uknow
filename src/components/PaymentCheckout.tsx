@@ -64,7 +64,7 @@ export function PaymentCheckout() {
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts）。輪詢時只在乎
           // 兩件事：會籍轉為 active（→ dashboard）、付款開通中（→ 結果頁）；
-          // 其餘（含 grace 續約、step 0）留在原地由主流程處理，不在輪詢中彈跳。
+          // 其餘（含過期續約、step 0）留在原地由主流程處理，不在輪詢中彈跳。
           const redirect = resolveCheckoutPageRedirect(profile);
           if (redirect === '/dashboard') {
             console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
@@ -125,8 +125,8 @@ export function PaymentCheckout() {
 
             // 導向決策收斂到單一純函式（見 registrationFlow.ts）：
             // active → dashboard；付款開通中 → 結果頁；step 0 → 完善資料頁；
-            // 其餘（step 1 首購 / step 2 付款失敗重試 / grace・過期續約）留在結帳頁。
-            // 特意不擋 grace，避免守衛↔結帳的無限循環。
+            // 其餘（step 1 首購 / step 2 付款失敗重試 / 過期續約）留在結帳頁。
+            // 特意不擋 expired，避免守衛↔結帳的無限循環。
             const redirect = resolveCheckoutPageRedirect(profile);
             if (redirect) {
               console.log('PaymentCheckout: Redirecting to', redirect);

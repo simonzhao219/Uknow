@@ -45,7 +45,7 @@ def seed_authenticated_session(
     # set_subscription_status* 覆寫（Playwright 後註冊的路由優先）。
     account_status = profile.get("accountStatus", "expired")
     api_mock.set_subscription_status(
-        has_subscription=account_status in ("active", "grace"),
+        has_subscription=account_status == "active",
         status=account_status,
         active_until=profile.get("subscriptionEndDate"),
     )

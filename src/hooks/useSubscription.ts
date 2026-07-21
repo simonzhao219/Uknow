@@ -6,12 +6,13 @@ import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
 
-// 訂閱三態模型（見時間領域/訂閱重設計）：一次性年費、無自動扣款，
-// 沒有「取消／恢復／補繳」——過期後直接用 /payment/checkout 續訂或
-// 重新訂即可，效期由 process_successful_payment 依 renewalMode 決定。
+// 會員兩態模型（見 0721 移除寬限期）：一次性年費、無自動扣款，
+// 沒有「取消／恢復／補繳／寬限期」——到期即失效，之後直接用
+// /payment/checkout 續訂或重新訂即可，效期由 process_successful_payment
+// 依 renewalMode 決定。
 export interface SubscriptionData {
   hasSubscription: boolean;
-  status?: 'active' | 'grace' | 'expired';
+  status?: 'active' | 'expired';
   activeUntil?: string;
   gracePeriodEnd?: string;
   currentPeriodStart?: string;

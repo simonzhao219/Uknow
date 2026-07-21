@@ -3,7 +3,7 @@ Feature: Listing management
   publish a single service listing. CRUD talks to Supabase PostgREST directly
   (`/rest/v1/listings`, `/rest/v1/public_listings`) under RLS, so these
   scenarios mock the REST layer via `rest_mock`. Management/create/edit sit
-  behind RequireMembershipRoute (active/grace only); the public detail page has
+  behind RequireMembershipRoute (active only); the public detail page has
   no guard.
 
   @listing @smoke

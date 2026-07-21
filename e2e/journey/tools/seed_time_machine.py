@@ -1,9 +1,11 @@
 """時光機：以 service role 改寫訂閱時間戳，讓「跨時間」的會籍狀態
-（即將失效 grace／永久失效 expired）在單次測試內可達。
+在單次測試內可達。會員兩態（見 0721 移除寬限期）：到期即失效，只有
+active / expired；不再有 60 天緩衝窗。
 
 原則：**資料是種的，行為斷言是真的**——回填只動 subscriptions 的
-end_date / grace_period_end 兩欄（user_account_status 視圖由這兩欄即時
-推導狀態），其後所有斷言仍走 GUI 與真後端。
+end_date（user_account_status 視圖由 end_date 即時推導狀態；
+grace_period_end 一併回填只為維持資料完整，狀態判斷已不讀它），
+其後所有斷言仍走 GUI 與真後端。
 
 僅限拋棄式測試分支；正式碼與正式環境沒有任何路徑觸及此模組。
 """
@@ -46,14 +48,16 @@ def _shift_latest(admin: SupabaseAdmin, user_id: str,
     return updated[0]
 
 
-def enter_grace(admin: SupabaseAdmin, user_id: str) -> dict:
-    """進入「即將失效」：到期 30 天、仍在 60 天寬限內（寬限剩 30 天）。
+def enter_recently_expired(admin: SupabaseAdmin, user_id: str) -> dict:
+    """進入「剛過期」：到期 30 天（未滿一年，仍可走續約 extend 接續）。
 
-    回傳更新後的訂閱列——end_date 就是補繳 extend 的接續錨點，
-    呼叫端要拿它斷言「接續原週期、不是從付款日起算」。"""
+    兩態模型下 end_date 一過即 expired，沒有寬限期；到期 30 天仍在
+    「續約接續」的一年窗內。回傳更新後的訂閱列——end_date 就是補繳
+    extend 的接續錨點，呼叫端要拿它斷言「接續原週期、不是從付款日起算」。"""
     return _shift_latest(admin, user_id, end_delta_days=-30, grace_delta_days=+30)
 
 
 def enter_expired(admin: SupabaseAdmin, user_id: str) -> dict:
-    """進入「永久失效」：到期 90 天、寬限也已於 30 天前結束。"""
+    """進入「完全失效」：到期 90 天（兩態模型：end_date 一過即失效，
+    無寬限期）。刊登隨即隱藏。"""
     return _shift_latest(admin, user_id, end_delta_days=-90, grace_delta_days=-30)
