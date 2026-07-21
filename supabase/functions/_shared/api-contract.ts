@@ -205,38 +205,32 @@ export const RewardHistoryResponseSchema = obj({
 });
 export type RewardHistoryResponse = Infer<typeof RewardHistoryResponseSchema>;
 
-const ReferralLinkSchema = obj({
-  userId:           str(),
-  userName:         str(),
-  userReferralCode: nullable(str()),
-  listingId:        nullable(str()),
-  listingName:      nullable(str()),
-});
+// 推薦網絡：巢狀樹（封頂 3 代）。深度固定，故用顯式三層 schema 取代遞迴。
+// 節點姓名於伺服器端遮罩（二、三代），前端不持有未遮罩資料。
+// status 由帳戶兩態（active/expired）+ suspended_at + 距到期天數推導：
+//   active｜expiring（active 且 ≤30 天到期）｜expired｜suspended
+const ReferralNodeFields = {
+  userId:       str(),
+  name:         str(),                                        // 已遮罩（二、三代）
+  generation:   num(),
+  status:       literals('active', 'expiring', 'expired', 'suspended'),
+  daysToExpiry: nullable(num()),                              // 僅 active/expiring 有值
+  endDate:      nullable(str()),
+  joinedAt:     str(),
+  listingId:    nullable(str()),                              // 供「查看刊登」；失效/停權者前端不連
+  childCount:   num(),
+} as const;
 
-export const ReferralMemberSchema = obj({
-  userId:           str(),
-  userName:         str(),
-  userReferralCode: nullable(str()),
-  listingId:        nullable(str()),
-  listingName:      nullable(str()),
-  serviceType:      nullable(str()),
-  city:             nullable(str()),
-  activeUntil:      nullable(str()),
-  isActive:         bool(),
-  referrer:         nullable(ReferralLinkSchema),
-  createdAt:        str(),
-});
-export type ReferralMember = Infer<typeof ReferralMemberSchema>;
+export const ReferralGen3NodeSchema = obj({ ...ReferralNodeFields });          // 葉節點（末代）
+export const ReferralGen2NodeSchema = obj({ ...ReferralNodeFields, children: arr(ReferralGen3NodeSchema) });
+export const ReferralGen1NodeSchema = obj({ ...ReferralNodeFields, children: arr(ReferralGen2NodeSchema) });
+export type ReferralNode = Infer<typeof ReferralGen1NodeSchema>;
 
 export const ReferralTreeResponseSchema = obj({
   success: bool(),
   data: obj({
     userReferralCode: str(),
-    referralTree: obj({
-      firstGeneration:  arr(ReferralMemberSchema),
-      secondGeneration: arr(ReferralMemberSchema),
-      thirdGeneration:  arr(ReferralMemberSchema),
-    }),
+    roots: arr(ReferralGen1NodeSchema),
     summary: obj({
       firstGenCount:  num(),
       secondGenCount: num(),

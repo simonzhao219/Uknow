@@ -5,30 +5,20 @@ import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
 
-export interface ReferralMember {
-  userId: string;
-  userName: string;
-  userReferralCode: string | null;
-  listingId: string | null;
-  listingName: string | null;
-  serviceType: string | null;
-  city: string | null;
-  activeUntil: string | null;
-  isActive: boolean;
-  referrer?: {
-    userId: string;
-    userName: string;
-    userReferralCode: string | null;
-    listingId: string | null;
-    listingName: string | null;
-  } | null;
-  createdAt: string;
-}
+export type ReferralNodeStatus = 'active' | 'expiring' | 'expired' | 'suspended';
 
-export interface ReferralTree {
-  firstGeneration: ReferralMember[];
-  secondGeneration: ReferralMember[];
-  thirdGeneration: ReferralMember[];
+/** 推薦網絡節點（巢狀，封頂 3 代）。姓名於伺服器端遮罩（二、三代）。 */
+export interface ReferralNode {
+  userId: string;
+  name: string;
+  generation: number;
+  status: ReferralNodeStatus;
+  daysToExpiry: number | null;   // 僅 active/expiring 有值
+  endDate: string | null;
+  joinedAt: string;
+  listingId: string | null;      // 供「查看刊登」；失效/停權者不連
+  childCount: number;
+  children: ReferralNode[];
 }
 
 export interface ReferralSummary {
@@ -40,7 +30,7 @@ export interface ReferralSummary {
 
 export interface ReferralData {
   userReferralCode: string;
-  referralTree: ReferralTree;
+  roots: ReferralNode[];
   summary: ReferralSummary;
 }
 
