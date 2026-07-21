@@ -295,11 +295,7 @@ class BackendApiMock:
             "success": True,
             "data": {
                 "userReferralCode": user_referral_code,
-                "referralTree": {
-                    "firstGeneration": first,
-                    "secondGeneration": second,
-                    "thirdGeneration": third,
-                },
+                "roots": first,
                 "summary": {
                     "firstGenCount": len(first),
                     "secondGenCount": len(second),
@@ -611,18 +607,18 @@ def build_admin_member(name: str = "陳大文", **overrides) -> dict:
 
 
 def build_referral_member(name: str, **overrides) -> dict:
+    # 推薦網絡節點（巢狀樹）。一代（直推）姓名不遮罩，故 name 直通。
     member = {
         "userId": f"member-{name}",
-        "userName": name,
-        "userReferralCode": None,
+        "name": name,
+        "generation": 1,
+        "status": "active",
+        "daysToExpiry": 180,
+        "endDate": "2027-01-01T00:00:00.000Z",
+        "joinedAt": "2026-07-16T00:00:00.000Z",
         "listingId": None,
-        "listingName": None,
-        "serviceType": None,
-        "city": None,
-        "activeUntil": "2027-01-01T00:00:00.000Z",
-        "isActive": True,
-        "referrer": None,
-        "createdAt": "2026-07-16T00:00:00.000Z",
+        "childCount": 0,
+        "children": [],
     }
     member.update(overrides)
     return member
