@@ -1,18 +1,21 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { ArrowLeft, Users, Loader2 } from 'lucide-react';
+import { ArrowLeft, Users, Loader2, Share2 } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';
+import { useNotification } from './notifications/NotificationContext';
+import { shareReferralInvite } from '../utils/referralInvite';
 
 export function ReferralManagement() {
   const handleBack = useBackNavigation();
   usePageRestoration();
 
   const { referralData, loading, error, refetch } = useReferralData();
+  const { showToast } = useNotification();
 
   if (loading) {
     return (
@@ -84,19 +87,26 @@ export function ReferralManagement() {
             我的推薦網絡
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {!referralData ||
-          (referralData.referralTree.firstGeneration.length === 0 &&
-            referralData.referralTree.secondGeneration.length === 0 &&
-            referralData.referralTree.thirdGeneration.length === 0) ? (
-            <div className="text-center py-8">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">尚無推薦紀錄</p>
-              <p className="text-sm text-muted-foreground mt-2">分享您的推薦碼，開始建立推薦網絡</p>
+        <CardContent className="space-y-4">
+          {/* 推薦碼 + 分享（沿用 Dashboard 的 shareReferralInvite） */}
+          <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">我的推薦碼</p>
+              <p className="truncate font-mono text-base font-semibold tracking-wider">
+                {referralData?.userReferralCode || '—'}
+              </p>
             </div>
-          ) : (
-            <ReferralTreeView referralTree={referralData.referralTree} />
-          )}
+            <Button
+              className="ml-auto shrink-0"
+              onClick={() => shareReferralInvite(referralData?.userReferralCode || '', showToast)}
+              disabled={!referralData?.userReferralCode}
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              分享
+            </Button>
+          </div>
+
+          <ReferralTreeView roots={referralData?.roots ?? []} />
         </CardContent>
       </Card>
     </div>
