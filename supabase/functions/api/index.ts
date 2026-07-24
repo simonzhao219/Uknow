@@ -1412,6 +1412,9 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
 async function repairOrphanedPaymentsBestEffort(userId: string) {
   try {
     await sb().rpc('repair_orphaned_payments', { p_user_id: userId });
+    // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、
+    // warning-only 沒寫成的上線續約獎勵。同樣 best-effort、冪等。
+    await sb().rpc('repair_orphaned_claim_rewards', { p_user_id: userId });
   } catch (e) {
     console.error('[repairOrphanedPaymentsBestEffort]', e);
   }
@@ -2371,7 +2374,6 @@ app.get('/tasks', async (c) => {
 
   const allRewards = rewardsRows ?? [];
   const unclaimed   = allRewards.filter((r: any) => r.status === 'unclaimed');
-  const thisMonthCredit = allRewards.find((r: any) => r.month_key === currentMonth) ?? null;
 
   const tasks = [{
     id:          'task_monthly_king',
@@ -2389,12 +2391,6 @@ app.get('/tasks', async (c) => {
       currentMonth,
       historyCount:     Object.keys(monthly).length,
       completedMonths,
-      currentMonthCredit: thisMonthCredit && {
-        id:        thisMonthCredit.id,
-        status:    thisMonthCredit.status,
-        grantedAt: thisMonthCredit.granted_at,
-        claimedAt: thisMonthCredit.claimed_at,
-      },
     }
   }];
 
