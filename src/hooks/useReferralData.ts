@@ -5,44 +5,16 @@ import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
 
-export interface ReferralMember {
-  userId: string;
-  userName: string;
-  userReferralCode: string | null;
-  listingId: string | null;
-  listingName: string | null;
-  serviceType: string | null;
-  city: string | null;
-  activeUntil: string | null;
-  isActive: boolean;
-  referrer?: {
-    userId: string;
-    userName: string;
-    userReferralCode: string | null;
-    listingId: string | null;
-    listingName: string | null;
-  } | null;
-  createdAt: string;
-}
+import { normalizeReferralData } from '../utils/referralTree';
 
-export interface ReferralTree {
-  firstGeneration: ReferralMember[];
-  secondGeneration: ReferralMember[];
-  thirdGeneration: ReferralMember[];
-}
-
-export interface ReferralSummary {
-  totalReferrals: number;
-  firstGenCount: number;
-  secondGenCount: number;
-  thirdGenCount: number;
-}
-
-export interface ReferralData {
-  userReferralCode: string;
-  referralTree: ReferralTree;
-  summary: ReferralSummary;
-}
+// 型別集中在 utils/referralTree（純模組，可被測試與相容層共用）。
+export type {
+  ReferralNodeStatus,
+  ReferralNode,
+  ReferralSummary,
+  ReferralData,
+} from '../utils/referralTree';
+import type { ReferralData } from '../utils/referralTree';
 
 export interface UseReferralDataResult {
   referralData: ReferralData | null;
@@ -72,12 +44,14 @@ export function useReferralData(): UseReferralDataResult {
       setError(null);
     }
     try {
-      const result = await apiRequestJson<{ success: boolean; data: ReferralData }>(
+      const result = await apiRequestJson<{ success: boolean; data: unknown }>(
         buildApiUrl('/referrals/my-tree')
       );
       if (result.success) {
-        setCache('referralTree', result.data);
-        setReferralData(result.data);
+        // 寬容讀取：新後端回 roots；舊後端（過渡期）回 referralTree，於此正規化。
+        const data = normalizeReferralData(result.data);
+        setCache('referralTree', data);
+        setReferralData(data);
         hasDataRef.current = true;
       } else {
         throw new Error('獲取推薦數據失敗');
@@ -105,7 +79,8 @@ export function useReferralData(): UseReferralDataResult {
     // stale-while-revalidate：有快取先畫（秒開），同時背景重新請求——
     // F5 後一個 round-trip 內就能看到新付款的下線出現在推薦樹，不必
     // 登出登入、也不必等 TTL 過期。
-    const cached = getCache('referralTree') as ReferralData | null;
+    const cachedRaw = getCache('referralTree');
+    const cached = cachedRaw ? normalizeReferralData(cachedRaw) : null;
     if (cached) {
       setReferralData(cached);
       hasDataRef.current = true;

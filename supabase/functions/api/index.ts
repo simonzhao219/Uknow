@@ -18,6 +18,7 @@ import {
 import type {
   RewardHistoryResponse,
   CurrentMonthReferralsResponse,
+  ReferralTreeResponse,
 } from '../_shared/api-contract.ts';
 
 // Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
@@ -34,6 +35,15 @@ app.use('*', cors({
     const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
     const o       = origin.replace(/\/$/, '');
     if (o === allowed) return origin;
+    // 放行本專案自家的 Cloudflare Pages 預覽子網域（*.uknow.pages.dev）。
+    // 這些是同一 Pages 專案下、由本 repo 部署的第一方預覽（第三方無法註冊
+    // 此命名空間），讓 branch 預覽也能登入 / 打 API——否則預覽跑的是
+    // production edge function，會被單一 FRONTEND_URL 白名單擋成 Failed to fetch。
+    // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com / 前綴繞過。
+    try {
+      const host = new URL(origin).hostname;
+      if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
+    } catch { /* 非法 Origin → 拒絕 */ }
     // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
     // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
     // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
@@ -2232,81 +2242,99 @@ app.get('/referrals/my-tree', async (c) => {
   const allIds = [...new Set([...gen1Ids, ...gen2Ids, ...gen3Ids])];
 
   // -- Batch fetch enrichment data + my referral code --
+  const summaryOf = () => ({
+    firstGenCount:  gen1Ids.length,
+    secondGenCount: gen2Ids.length,
+    thirdGenCount:  gen3Ids.length,
+    totalReferrals: gen1Ids.length + gen2Ids.length + gen3Ids.length,
+  });
+
   const emptyResult = async () => {
     const { data: mc } = await client.from('referral_codes')
       .select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle();
     return c.json({
       success: true,
-      data: {
-        userReferralCode: mc?.code ?? '',
-        referralTree: { firstGeneration: [], secondGeneration: [], thirdGeneration: [] },
-        summary: { totalReferrals: 0, firstGenCount: 0, secondGenCount: 0, thirdGenCount: 0 },
-      }
-    });
+      data: { userReferralCode: mc?.code ?? '', roots: [], summary: summaryOf() },
+    } satisfies ReferralTreeResponse);
   };
 
   if (!allIds.length) return emptyResult();
 
   const [
     { data: profiles },
-    { data: codes },
     { data: listings },
     { data: accounts },
     { data: myCodeRow },
   ] = await Promise.all([
-    client.from('profiles').select('id, name').in('id', allIds),
-    client.from('referral_codes').select('user_id, code').in('user_id', allIds).eq('status', 'active'),
-    client.from('listings').select('user_id, id, name, category, city').in('user_id', allIds),
+    client.from('profiles').select('id, name, suspended_at').in('id', allIds),
+    client.from('listings').select('user_id, id').in('user_id', allIds),
     client.from('user_account_status').select('user_id, status, end_date').in('user_id', allIds),
     client.from('referral_codes').select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle(),
   ]);
 
   const profMap:    Record<string, any> = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p]));
-  const codeMap:    Record<string, string> = Object.fromEntries((codes ?? []).map((r: any) => [r.user_id, r.code]));
   const listingMap: Record<string, any> = Object.fromEntries((listings ?? []).map((l: any) => [l.user_id, l]));
   const acctMap:    Record<string, any> = Object.fromEntries((accounts ?? []).map((a: any) => [a.user_id, a]));
 
-  const buildMember = (uid: string, createdAt: string, referrerUid?: string) => {
-    const acct = acctMap[uid];
-    const ref  = referrerUid ? {
-      userId:          referrerUid,
-      userName:        profMap[referrerUid]?.name ?? '',
-      userReferralCode: codeMap[referrerUid] ?? null,
-      listingId:       listingMap[referrerUid]?.id ?? null,
-      listingName:     listingMap[referrerUid]?.name ?? null,
-    } : null;
+  // referrer_user_id -> 直接下線（referee + 加入時間）。一代的上線是 user 本人。
+  const childrenOf: Record<string, { id: string; at: string }[]> = {};
+  const pushChild = (referrer: string, referee: string, at: string) =>
+    (childrenOf[referrer] ??= []).push({ id: referee, at });
+  (gen1Edges ?? []).forEach((e: any) => pushChild(user.id, e.referee_user_id, e.referred_at));
+  gen2Edges.forEach((e: any) => pushChild(e.referrer_user_id, e.referee_user_id, e.referred_at));
+  gen3Edges.forEach((e: any) => pushChild(e.referrer_user_id, e.referee_user_id, e.referred_at));
+
+  // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
+  // active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
+  const RENEWAL_DAYS = 30;
+  const deriveStatus = (acct: any, suspendedAt: string | null) => {
+    if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
+    if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
+    const dl = acct?.end_date
+      ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
+      : null;
+    if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) return { status: 'expiring' as const, daysToExpiry: dl };
+    return { status: 'active' as const, daysToExpiry: dl };
+  };
+
+  // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
+  // 英數保留首末、中間固定 •••（不洩漏長度）。
+  const maskName = (raw: string | null | undefined, gen: number): string => {
+    const name = (raw ?? '').trim();
+    if (gen <= 1 || name.length <= 1) return name;
+    const chars = [...name];
+    const hasHan = /[㐀-鿿豈-﫿]/.test(name);
+    if (hasHan) {
+      return chars.length === 2
+        ? chars[0] + '○'
+        : chars[0] + '○'.repeat(chars.length - 2) + chars[chars.length - 1];
+    }
+    return chars.length === 2 ? chars[0] + '•' : chars[0] + '•••' + chars[chars.length - 1];
+  };
+
+  const buildNode = (uid: string, gen: number, at: string): any => {
+    const { status, daysToExpiry } = deriveStatus(acctMap[uid], profMap[uid]?.suspended_at ?? null);
+    const kids = gen < 3 ? (childrenOf[uid] ?? []) : [];
     return {
-      userId:           uid,
-      userName:         profMap[uid]?.name ?? '',
-      userReferralCode: codeMap[uid] ?? null,
-      listingId:        listingMap[uid]?.id ?? null,
-      listingName:      listingMap[uid]?.name ?? null,
-      serviceType:      listingMap[uid]?.category ?? null,
-      city:             listingMap[uid]?.city ?? null,
-      activeUntil:      acct?.end_date ?? null,
-      isActive:         acct?.status === 'active',
-      referrer:         ref,
-      createdAt,
+      userId:       uid,
+      name:         maskName(profMap[uid]?.name, gen),
+      generation:   gen,
+      status,
+      daysToExpiry,
+      endDate:      acctMap[uid]?.end_date ?? null,
+      joinedAt:     at,
+      listingId:    listingMap[uid]?.id ?? null,
+      childCount:   kids.length,
+      children:     kids.map((k) => buildNode(k.id, gen + 1, k.at)),
     };
   };
 
-  const firstGeneration  = (gen1Edges ?? []).map((e: any) => buildMember(e.referee_user_id, e.referred_at));
-  const secondGeneration = gen2Edges.map((e: any) => buildMember(e.referee_user_id, e.referred_at, e.referrer_user_id));
-  const thirdGeneration  = gen3Edges.map((e: any) => buildMember(e.referee_user_id, e.referred_at, e.referrer_user_id));
+  const roots = (childrenOf[user.id] ?? []).map((k) => buildNode(k.id, 1, k.at));
 
   return c.json({
     success: true,
-    data: {
-      userReferralCode: myCodeRow?.code ?? '',
-      referralTree: { firstGeneration, secondGeneration, thirdGeneration },
-      summary: {
-        firstGenCount:  firstGeneration.length,
-        secondGenCount: secondGeneration.length,
-        thirdGenCount:  thirdGeneration.length,
-        totalReferrals: firstGeneration.length + secondGeneration.length + thirdGeneration.length,
-      },
-    }
-  });
+    data: { userReferralCode: myCodeRow?.code ?? '', roots, summary: summaryOf() },
+  } satisfies ReferralTreeResponse);
 });
 
 // ============================================================
