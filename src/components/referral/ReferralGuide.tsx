@@ -39,6 +39,10 @@ export function ReferralGuide() {
             </p>
           </div>
         </div>
+
+        <p className="mt-6 text-sm text-muted-foreground text-center">
+          好友<strong>每次訂閱與續約</strong>（含以任務免費續約），您都會再獲得一次推薦獎金。
+        </p>
       </CardContent>
     </Card>
   );

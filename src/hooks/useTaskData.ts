@@ -64,6 +64,7 @@ export interface UseTaskDataResult {
   fetchCurrentMonthTop: () => Promise<CurrentMonthReferrals | null>;
   fetchPendingRewards: () => Promise<void>;
   handleClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
+  handleClaimAllRewards: (idNumber: string) => Promise<void>;
 }
 
 const DEDUP_KEY = 'tasks+pendingRewards';
@@ -81,6 +82,11 @@ export function useTaskData(): UseTaskDataResult {
   const [loadingPending, setLoadingPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasDataRef = useRef(false);
+  // 批次領取要迭代「當下」的待領清單，用 ref 鏡射避免 stale closure。
+  const pendingRewardsRef = useRef<PendingMissionReward[]>([]);
+  useEffect(() => {
+    pendingRewardsRef.current = pendingRewards;
+  }, [pendingRewards]);
 
   const fetchAllData = useCallback(async () => {
     if (hasDataRef.current) {
@@ -208,6 +214,42 @@ export function useTaskData(): UseTaskDataResult {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 批次領取：驗證一次身分證，依序重用單筆領取端點逐張領（best-effort）。
+  // 逐張呼叫讓後端各自驗證與逐年堆疊（claim 內部訂閱列鎖序列化），
+  // 某張失敗不影響其餘；最後一次彙總提示、一次失效相關快取。
+  const handleClaimAllRewards = useCallback(async (idNumber: string) => {
+    const targets = [...pendingRewardsRef.current];
+    if (targets.length === 0) return;
+
+    let claimed = 0;
+    let failed = 0;
+    for (const r of targets) {
+      try {
+        const result = await apiRequestJson<{ success: boolean }>(
+          buildApiUrl(`/tasks/claim-reward/${r.id}`),
+          { method: 'POST', body: JSON.stringify({ idNumber }) }
+        );
+        if (result.success) {
+          claimed += 1;
+          setPendingRewards((prev) => prev.filter((x) => x.id !== r.id));
+        } else {
+          failed += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+
+    if (claimed > 0) {
+      showSuccess('批次領取完成', `已領取 ${claimed} 張，會員效期共延展 ${claimed} 年`);
+      invalidate('rewardClaim');
+    }
+    if (failed > 0) {
+      showToast(`有 ${failed} 張領取失敗，請稍後再試或聯繫客服`, 'error');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return {
     tasks,
     pendingRewards,
@@ -220,5 +262,6 @@ export function useTaskData(): UseTaskDataResult {
     fetchCurrentMonthTop,
     fetchPendingRewards,
     handleClaimReward,
+    handleClaimAllRewards,
   };
 }

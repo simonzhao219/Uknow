@@ -4,12 +4,16 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Trophy, Gift, Clock, Sparkles } from 'lucide-react';
 import { ClaimRewardDialog } from './ClaimRewardDialog';
+import { ThreeStepDialog } from '../common/ThreeStepDialog';
+import { createClaimAllRewardsConfig } from '../common/verification-configs/claimRewardConfig';
 import { formatTimestamp } from '../../utils/referralFormatter';
 import type { PendingMissionReward } from '../../hooks/useTaskData';
 
 interface Props {
   pendingRewards: PendingMissionReward[];
   onClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
+  /** 批次領取：驗證一次身分證後一次領完全部待領 credit。未提供則只顯示單筆領取。 */
+  onClaimAll?: (idNumber: string) => Promise<void>;
   /**
    * 不可領取的原因（到期或停權）。有值即停用領取鈕並顯示此原因；
    * null/undefined 表示可領取。「免費續約 1 年」credit 的語意是在既有
@@ -20,12 +24,16 @@ interface Props {
   claimBlockedReason?: string | null;
 }
 
-export function PendingRewardsSection({ pendingRewards, onClaimReward, claimBlockedReason = null }: Props) {
+export function PendingRewardsSection({ pendingRewards, onClaimReward, onClaimAll, claimBlockedReason = null }: Props) {
   const isBlocked = !!claimBlockedReason;
   const [selectedReward, setSelectedReward] = useState<PendingMissionReward | null>(null);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
+  const [showClaimAllDialog, setShowClaimAllDialog] = useState(false);
 
   if (pendingRewards.length === 0) return null;
+
+  // 有多張待領且父層有提供批次 handler 時，才顯示「領取全部」。
+  const canClaimAll = !!onClaimAll && pendingRewards.length >= 2;
 
   return (
     <>
@@ -45,6 +53,19 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, claimBloc
               ? `您有待領取的「免費續約 1 年」獎勵，但目前無法領取：${claimBlockedReason}`
               : `🎉 恭喜！您有 ${pendingRewards.length} 個任務獎勵待領取，請盡快領取！`}
           </CardDescription>
+
+          {canClaimAll && (
+            <Button
+              size="lg"
+              disabled={isBlocked}
+              title={claimBlockedReason ?? undefined}
+              onClick={() => setShowClaimAllDialog(true)}
+              className="mt-2 w-full sm:w-auto bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Gift className="h-5 w-5" />
+              一次領取全部（{pendingRewards.length} 張）
+            </Button>
+          )}
         </CardHeader>
 
         {/* 上限 max-h + overflow-y-auto：即使累積數十筆未領取獎勵，卡片高度
@@ -103,6 +124,15 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, claimBloc
             setSelectedReward(null);
           }}
           onConfirm={onClaimReward}
+        />
+      )}
+
+      {showClaimAllDialog && onClaimAll && (
+        <ThreeStepDialog
+          isOpen={showClaimAllDialog}
+          config={createClaimAllRewardsConfig(pendingRewards.length)}
+          onClose={() => setShowClaimAllDialog(false)}
+          onConfirm={onClaimAll}
         />
       )}
     </>
