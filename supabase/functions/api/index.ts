@@ -2391,6 +2391,9 @@ app.get('/tasks', async (c) => {
       currentMonth,
       historyCount:     Object.keys(monthly).length,
       completedMonths,
+      // 累計獲得的免費續約張數（含當月、含已領）。多輪之下這才是誠實的
+      // 「完成次數」——completedMonths 只數達標月份、且排除當月，會低估。
+      totalCredits:     allRewards.length,
     }
   }];
 

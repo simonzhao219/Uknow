@@ -641,6 +641,7 @@ def build_monthly_king_task(current: int = 0, **overrides) -> dict:
             "currentMonth": "2026-07",
             "historyCount": 0,
             "completedMonths": 0,
+            "totalCredits": 0,
         },
     }
     task.update(overrides)

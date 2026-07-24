@@ -11,6 +11,7 @@ import { TaskGuide } from './task/TaskGuide';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
 import { TaskBadge } from './task/TaskBadge';
 import { getMotivationText, getProgressColor, getProgressBarStyle } from '../utils/userReferralFormatter';
+import { computeKingRounds } from '../utils/kingProgress';
 
 function formatMonth(monthStr: string) {
   if (!monthStr) return '';
@@ -110,7 +111,10 @@ export function TaskDashboard() {
         <div className="lg:col-span-3 space-y-6">
           {tasks.map((task) => {
             const motivationText = getMotivationText(task.progress);
-            const progressColor = getProgressColor(task.progress);
+            // 進度條/分數以「當前輪」呈現（3-B 多輪）；motivation/badge 維持
+            // 依原始 task.progress/task.current（決策 b）。
+            const rounds = computeKingRounds(task.current, task.target);
+            const progressColor = getProgressColor(rounds.roundProgressPct);
 
             return (
               <Card key={task.id} className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow">
@@ -134,19 +138,28 @@ export function TaskDashboard() {
                 <CardContent className="space-y-4 relative">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">任務進度</span>
+                      <span className="text-sm font-medium">
+                        {rounds.roundsThisMonth > 0 ? '本輪進度' : '任務進度'}
+                      </span>
                       <span className={`text-sm font-bold ${progressColor}`}>
-                        {task.current} / {task.target}
+                        {rounds.currentRoundCount} / {task.target}
                       </span>
                     </div>
                     <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className={`h-full transition-all duration-500 ${getProgressBarStyle(task.progress)}`}
-                        style={{ width: `${Math.min(task.progress, 100)}%` }}
+                        className={`h-full transition-all duration-500 ${getProgressBarStyle(rounds.roundProgressPct)}`}
+                        style={{ width: `${Math.min(rounds.roundProgressPct, 100)}%` }}
                       />
                     </div>
                     <p className="text-sm text-muted-foreground text-center">{motivationText}</p>
                   </div>
+
+                  {rounds.roundsThisMonth > 0 && (
+                    <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800 flex items-center justify-center gap-2">
+                      🎉 本月已達成 {rounds.roundsThisMonth} 輪
+                      {task.unclaimedRewardCount > 0 && `（可領 ${task.unclaimedRewardCount} 張免費續約）`}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
                     <div className="flex items-center gap-2">
@@ -166,9 +179,9 @@ export function TaskDashboard() {
                           </span>
                         </div>
                       )}
-                      {task.details.completedMonths > 0 && (
+                      {task.details.totalCredits > 0 && (
                         <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700 flex items-center gap-2">
-                          累計完成 {task.details.completedMonths} 次推薦王任務
+                          累計獲得 {task.details.totalCredits} 張免費續約
                         </div>
                       )}
                       {task.current > 0 ? (
