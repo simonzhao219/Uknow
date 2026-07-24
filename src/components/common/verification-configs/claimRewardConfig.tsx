@@ -40,6 +40,119 @@ export function createClaimRewardConfig(reward: PendingMissionReward): ThreeStep
   return createPointsRewardConfig(reward);
 }
 
+/**
+ * 批次領取「免費續約 1 年」credit 的配置：驗證一次身分證、一次領完全部
+ * N 張，會員效期延展 N 年。步驟與單筆一致，只是文案改為「全部 N 張」、
+ * 到期日預覽改為 +N 年。
+ */
+export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
+  return {
+    title: '領取全部任務獎勵',
+
+    step1: {
+      title: `確認領取全部 ${count} 張任務獎勵`,
+      description: '請仔細閱讀以下說明後再繼續',
+      content: (
+        <div className="space-y-4">
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">🎁 獎勵內容</span>
+              <span className="font-bold text-yellow-600">免費續約 1 年 × {count}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">📅 合計延展</span>
+              <span className="font-bold text-green-600">{count} 年</span>
+            </div>
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium mb-2 text-red-900">⚠️ 重要提醒：</p>
+                <ul className="space-y-1 text-sm text-red-800">
+                  <li>• 領取後無法撤回</li>
+                  <li>• 領取後將立即延長您的會員到期日 {count} 年</li>
+                  <li>• 驗證一次即一次領完全部 {count} 張</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      ),
+      nextButtonText: '下一步'
+    },
+
+    step2: {
+      title: '📅 領取後會員到期日預覽',
+      description: '確認以下資訊無誤後，請繼續下一步驗證身分',
+      apiEndpoint: '/subscriptions/status',
+      content: (previewData) => {
+        if (!previewData) {
+          return (
+            <div className="text-center py-8 text-muted-foreground">
+              載入預覽數據中...
+            </div>
+          );
+        }
+
+        // 日領域計算：與後端逐張 claim（新最後一天 = tw_day(舊迄日) + 1 年）
+        // 連續堆疊 count 次同語意。
+        const currentEndDay = previewData.activeUntil ? twDayOf(previewData.activeUntil) : null;
+        const afterEndDay = currentEndDay ? twDayPlusYears(currentEndDay, count) : null;
+
+        const formatDate = (day: string | null) => (day ? formatTwDate(day) : '—');
+
+        return (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800">
+                以下是領取全部 {count} 張任務獎勵後，您的會員到期日變化：
+              </p>
+            </div>
+
+            <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-4">
+              <h3 className="font-medium text-blue-900 flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                會員到期日
+              </h3>
+
+              <div className="flex items-center gap-3">
+                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                  <div className="text-xs text-muted-foreground mb-1">目前</div>
+                  <div className="text-lg font-bold text-blue-600">{formatDate(currentEndDay)}</div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
+                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                  <div className="text-xs text-muted-foreground mb-1">領取後（+{count} 年）</div>
+                  <div className="text-lg font-bold text-green-600">{formatDate(afterEndDay)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <p className="text-sm text-green-900">
+                  ✅ 確認後將立即延長您的會員到期日 {count} 年
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      },
+      nextButtonText: '下一步'
+    },
+
+    step3: {
+      title: '🔐 身分驗證',
+      description: '為確保帳戶安全，請輸入您的身分證字號',
+      warningMessage: `點擊「確認領取」後，將立即延長您的會員到期日 ${count} 年。此操作無法撤銷。`,
+      confirmButtonText: `確認領取全部 ${count} 張`
+    }
+  };
+}
+
 function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepConfig {
   return {
     title: '領取任務獎勵',

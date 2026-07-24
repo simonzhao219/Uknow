@@ -30,6 +30,7 @@ export function TaskDashboard() {
     error,
     fetchCurrentMonthTop,
     handleClaimReward,
+    handleClaimAllRewards,
   } = useTaskData();
 
   // 領免費續約 credit 的可領性：帳號須正常（未停權）且會籍有效（active）。
@@ -103,7 +104,7 @@ export function TaskDashboard() {
         </div>
       </div>
 
-      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} claimBlockedReason={claimBlockedReason} />
+      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} onClaimAll={handleClaimAllRewards} claimBlockedReason={claimBlockedReason} />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 space-y-6">
