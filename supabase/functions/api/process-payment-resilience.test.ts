@@ -46,13 +46,17 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
       const { data: subs } = await client.from('subscriptions').select('id').eq('user_id', payer.id);
       assertEquals(subs?.length, 1);
 
-      // 周邊邏輯確實失敗了：推薦人的獎勵不會存在。這是目前設計「已知、
-      // 接受的代價」——這正是後面 orphan-repair 要補的缺口。
+      // 周邊邏輯的 task 段（Block B）確實失敗了（monthly_referrals 形狀壞掉，
+      // pair-history 的 jsonb_each 於非物件爆炸），但規則更新後「發獎」已從
+      // 「task」拆成獨立 subtransaction（Block A 呼叫共用函數
+      // pay_referral_generations，per-gen 隔離）。故 gen1 獎勵在 task 段失敗下
+      // 仍保留——比舊制「整段一起 rollback、獎勵一併消失」更耐失敗，也縮小了
+      // orphan-repair 要補的缺口。核心付款（訂單 completed / step 3 / 訂閱）不受影響。
       const { data: rewards } = await client
         .from('reward_transactions')
-        .select('id')
+        .select('id, generation')
         .eq('referee_user_id', payer.id);
-      assertEquals(rewards?.length, 0);
+      assertEquals(rewards?.length, 1, 'gen1 獎勵應在 task 段失敗下仍保留（Block A 與 Block B 已隔離）');
     } finally {
       await deleteTestUsers(client, [payer.id]);
     }
