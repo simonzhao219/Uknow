@@ -35,6 +35,15 @@ app.use('*', cors({
     const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
     const o       = origin.replace(/\/$/, '');
     if (o === allowed) return origin;
+    // 放行本專案自家的 Cloudflare Pages 預覽子網域（*.uknow.pages.dev）。
+    // 這些是同一 Pages 專案下、由本 repo 部署的第一方預覽（第三方無法註冊
+    // 此命名空間），讓 branch 預覽也能登入 / 打 API——否則預覽跑的是
+    // production edge function，會被單一 FRONTEND_URL 白名單擋成 Failed to fetch。
+    // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com / 前綴繞過。
+    try {
+      const host = new URL(origin).hostname;
+      if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
+    } catch { /* 非法 Origin → 拒絕 */ }
     // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
     // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
     // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
