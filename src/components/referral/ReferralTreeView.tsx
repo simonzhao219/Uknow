@@ -18,6 +18,18 @@ const GEN_BADGE: Record<number, string> = {
   2: 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300',
   3: 'bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
 };
+// 分支連接線依「子代」上色（低飽和）：gen2 分支=淡紫、gen3 分支=淡橘。
+// 世代線索綁在結構上、安靜不吵，取代原本整條粗色軌。gen1 是根、無上層線。
+const GEN_LINE: Record<number, string> = {
+  2: 'border-purple-300 dark:border-purple-900',
+  3: 'border-orange-300 dark:border-orange-900',
+};
+
+// 需要關注橫幅一次顯示的上限（依緊急度排序後取前 N，其餘收在「還有 N 位」）。
+const ATTENTION_CAP = 6;
+
+// 列/搜尋結果可鍵盤操作時共用的 focus ring。
+const INTERACTIVE_ROW = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const STATUS: Record<ReferralNodeStatus, { dot: string; label: string; badge: string }> = {
   active:    { dot: 'bg-green-500', label: '訂閱中', badge: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300' },
@@ -39,6 +51,26 @@ function avatarColor(id: string): string {
 }
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
+}
+
+// 距到期天數：優先前端由 endDate 重算，避免顯示伺服器算好的過時快照
+// （頁面久開跨日時 daysToExpiry 會失準）；無 endDate 時退回伺服器值。
+function daysLeftOf(node: ReferralNode): number | null {
+  if (node.endDate) {
+    const ms = Date.parse(node.endDate);
+    if (!Number.isNaN(ms)) return Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000));
+  }
+  return node.daysToExpiry;
+}
+
+// 讓可點的列也能鍵盤操作（Enter / Space 開詳情）。
+function rowKeyActivate(handler: () => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handler();
+    }
+  };
 }
 
 function useMediaQuery(query: string): boolean {
@@ -96,22 +128,29 @@ function NodeRow({
 }) {
   const [open, setOpen] = useState(false);
   const expandable = node.generation < 3 && node.childCount > 0;
+  const daysLeft = node.status === 'expiring' ? daysLeftOf(node) : null;
 
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
+        aria-label={`${node.name} 詳情`}
         className={cn(
           'group flex items-center gap-2 rounded-lg py-2 pl-1 pr-2 cursor-pointer transition-colors hover:bg-muted/60',
+          INTERACTIVE_ROW,
           selectedId === node.userId && 'bg-muted',
           listingHidden(node.status) && 'opacity-55',
         )}
         onClick={() => onSelect(node)}
+        onKeyDown={rowKeyActivate(() => onSelect(node))}
       >
         {/* 展開箭頭（含分支規模：subtle 數量） */}
         {expandable ? (
           <button
             type="button"
             aria-label={open ? '收合' : '展開'}
+            aria-expanded={open}
             className="flex h-6 min-w-6 items-center justify-center gap-0.5 rounded px-0.5 text-muted-foreground hover:bg-muted"
             onClick={(e) => {
               e.stopPropagation();
@@ -131,16 +170,16 @@ function NodeRow({
           <span className="block truncate font-medium">{node.name}</span>
         </span>
 
-        {node.status === 'expiring' && node.daysToExpiry != null && (
+        {daysLeft != null && (
           <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
-            剩 {node.daysToExpiry} 天到期
+            剩 {daysLeft} 天到期
           </span>
         )}
       </div>
 
       {expandable && open && (
-        // 連接線：以細的左邊界表達父子分支，取代原本的整條粗色軌
-        <div className="ml-4 border-l border-border/70 pl-2">
+        // 連接線：細左邊界表達父子分支，依子代低飽和上色（世代線索綁在結構上）
+        <div className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}>
           {node.children.map((child) => (
             <NodeRow key={child.userId} node={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
           ))}
@@ -152,16 +191,22 @@ function NodeRow({
 
 // ---------- 需要關注橫幅 ----------
 function AttentionBanner({ nodes, onSelect }: { nodes: ReferralNode[]; onSelect: (n: ReferralNode) => void }) {
+  const [showAll, setShowAll] = useState(false);
+
+  // 依緊急度排序：即將到期（還救得回、按剩餘天數）＞已失效＞已停權。
   const items = useMemo(() => {
     const list = flatten(nodes).filter((n) => needsAttention(n.status));
     const rank = (n: ReferralNode) => (n.status === 'expiring' ? 0 : n.status === 'expired' ? 1 : 2);
-    return list.sort((a, b) => rank(a) - rank(b) || (a.daysToExpiry ?? 0) - (b.daysToExpiry ?? 0));
+    return list.sort((a, b) => rank(a) - rank(b) || (daysLeftOf(a) ?? 0) - (daysLeftOf(b) ?? 0));
   }, [nodes]);
 
   if (items.length === 0) return null;
 
   const reason = (n: ReferralNode) =>
-    n.status === 'expiring' ? `剩 ${n.daysToExpiry} 天到期` : n.status === 'suspended' ? '已停權' : '已失效';
+    n.status === 'expiring' ? `剩 ${daysLeftOf(n)} 天到期` : n.status === 'suspended' ? '已停權' : '已失效';
+
+  const shown = showAll ? items : items.slice(0, ATTENTION_CAP);
+  const overflow = items.length - shown.length;
 
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
@@ -170,7 +215,7 @@ function AttentionBanner({ nodes, onSelect }: { nodes: ReferralNode[]; onSelect:
         {items.length} 位下線需要關注
       </div>
       <div className="flex flex-wrap gap-2">
-        {items.map((n) => (
+        {shown.map((n) => (
           <button
             key={n.userId}
             type="button"
@@ -182,6 +227,15 @@ function AttentionBanner({ nodes, onSelect }: { nodes: ReferralNode[]; onSelect:
             <span className="text-muted-foreground">· {reason(n)}</span>
           </button>
         ))}
+        {overflow > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="rounded-full border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-muted dark:border-amber-800 dark:text-amber-300"
+          >
+            還有 {overflow} 位
+          </button>
+        )}
       </div>
     </div>
   );
@@ -216,7 +270,7 @@ function NodeDetail({ node }: { node: ReferralNode }) {
           <dt className="text-muted-foreground">訂閱到期</dt>
           <dd className={cn('font-medium', node.status === 'expiring' && 'text-amber-600 dark:text-amber-400')}>
             {node.endDate ? formatTwDate(node.endDate) : '—'}
-            {node.status === 'expiring' && node.daysToExpiry != null && `（剩 ${node.daysToExpiry} 天）`}
+            {node.status === 'expiring' && daysLeftOf(node) != null && `（剩 ${daysLeftOf(node)} 天）`}
           </dd>
         </div>
       </dl>
@@ -298,9 +352,14 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
             {searchResults.map((n) => (
               <div
                 key={n.userId}
+                role="button"
+                tabIndex={0}
+                aria-label={`${n.name} 詳情`}
                 onClick={() => onSelect(n)}
+                onKeyDown={rowKeyActivate(() => onSelect(n))}
                 className={cn(
                   'flex cursor-pointer items-center gap-2 rounded-lg py-2 pl-1 pr-2 transition-colors hover:bg-muted/60',
+                  INTERACTIVE_ROW,
                   selectedNode?.userId === n.userId && 'bg-muted',
                 )}
               >
@@ -309,8 +368,8 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
                   <span className="block truncate font-medium">{n.name}</span>
                   <span className="text-xs text-muted-foreground">{GEN_LABEL[n.generation]}</span>
                 </span>
-                {n.status === 'expiring' && n.daysToExpiry != null && (
-                  <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">剩 {n.daysToExpiry} 天到期</span>
+                {n.status === 'expiring' && daysLeftOf(n) != null && (
+                  <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">剩 {daysLeftOf(n)} 天到期</span>
                 )}
               </div>
             ))}
