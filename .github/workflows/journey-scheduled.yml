@@ -1,0 +1,46 @@
+name: Journey (Scheduled)
+
+# ============================================================================
+# journey 套件的排程／手動觸發入口——**薄外殼**：只負責 triggers 與
+# concurrency，所有邏輯都在 journey.yml（單一定義，晉升 PR 與這裡共用）。
+#
+# 為什麼 concurrency 放在這裡而不是 journey.yml：
+# reusable workflow 的 workflow 層 concurrency 會參與呼叫端的排隊，一旦
+# 呼叫端的 run 被 cancel-in-progress 取消，該 group 的 slot 不會乾淨釋放，
+# 之後每個 run 都永遠卡在 pending 且連 job 都不會建立（PR #114 實測）。
+# 保護放在這層就沒有這個問題：PR 路徑本來就由 ci.yml 的 concurrency 管，
+# 這裡只需要擋住「兩場排程／手動 journey 同時開拋棄式分支」——那才是
+# 真正會付兩份分支費用、且會撞 PayUni sandbox 共用狀態的情況。
+# ============================================================================
+on:
+  schedule:
+    # 台北 02:00 = UTC 18:00
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: '範圍（skeleton=單人骨架快速驗證；full=全 30 人六模組）'
+        type: choice
+        options: [full, skeleton]
+        default: full
+      payment_mode:
+        description: '付款模式（sandbox=真刷測試卡；webhook=簽章注入備援）'
+        type: choice
+        options: [sandbox, webhook]
+        default: sandbox
+
+# 分支費用＋PayUni sandbox 共享狀態：同時最多一場
+concurrency:
+  group: journey-scheduled
+  cancel-in-progress: false
+
+jobs:
+  journey:
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/journey.yml
+    with:
+      scope: ${{ inputs.scope || 'full' }}
+      payment_mode: ${{ inputs.payment_mode || 'sandbox' }}
+    secrets: inherit

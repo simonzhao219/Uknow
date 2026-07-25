@@ -9,8 +9,8 @@ name: Journey
 # 呼叫點有三個，共用這一份定義（曾經 main / develop 各有一份副本各自
 # 演化，假綠燈就是這樣長出來的）：
 #   1. ci.yml 的 journey job —— develop→main 晉升 PR 必跑（上線前閘門）
-#   2. schedule —— 每晚台北 02:00（抓外部相依漂移）
-#   3. workflow_dispatch —— 手動
+#   2. journey-scheduled.yml —— 每晚台北 02:00 排程與手動觸發的薄外殼
+#      （它只負責 triggers 與 concurrency，邏輯全在這裡）
 #
 # ⚠️ 本 workflow 的第一設計要求是「不可能假綠」：
 #   - 連線資訊解析不到 → 硬失敗（而不是傳空字串下去讓情境靜默 skip）
@@ -36,26 +36,14 @@ on:
         description: 'sandbox=真刷測試卡；webhook=簽章注入備援'
         type: string
         default: sandbox
-  workflow_dispatch:
-    inputs:
-      scope:
-        description: '範圍（skeleton=單人骨架快速驗證；full=全 30 人六模組）'
-        type: choice
-        options: [full, skeleton]
-        default: full
-      payment_mode:
-        description: '付款模式（sandbox=真刷測試卡；webhook=簽章注入備援）'
-        type: choice
-        options: [sandbox, webhook]
-        default: sandbox
-  schedule:
-    # 台北 02:00 = UTC 18:00
-    - cron: '0 18 * * *'
 
-# 分支費用＋PayUni sandbox 共享狀態：同時最多一場
-concurrency:
-  group: journey-${{ github.ref }}
-  cancel-in-progress: false
+# ⚠️ 這裡刻意不設 concurrency。reusable workflow 的 workflow 層 concurrency
+# 會參與呼叫端的排隊:2026-07-25 實測,呼叫端 run 被 cancel-in-progress
+# 取消後,這個 group 的 slot 沒有乾淨釋放,後續每一個 run 都永遠卡在
+# pending、連一個 job 都不會建立(PR #114 的 run 30157868894)。
+# 「同時最多一場 journey」的保護改放在 journey-scheduled.yml——真正需要它
+# 的是排程/手動路徑(分支費用＋PayUni sandbox 共用狀態);PR 路徑本來就
+# 被 ci.yml 的 concurrency: ci-<ref> 蓋住了。
 
 # ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
 # (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
