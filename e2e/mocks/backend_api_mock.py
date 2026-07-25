@@ -654,7 +654,6 @@ def build_referral_member(name: str, **overrides) -> dict:
         "joinedAt": "2026-07-16T00:00:00.000Z",
         "listingId": None,
         "childCount": 0,
-        "subtreeLatestJoinedAt": "2026-07-16T00:00:00.000Z",
     }
     member.update(overrides)
     return member

@@ -2484,18 +2484,6 @@ async function loadNetwork(client: any, viewerId: string) {
   );
   const acctMap: Record<string, any> = Object.fromEntries(accounts.map((a: any) => [a.user_id, a]));
 
-  // 「更新順序」排序鍵：自身與可見子樹（封頂 3 代）最新加入時間。
-  // 由深到淺 bottom-up 計算，天生免疫資料異常造成的環。
-  const subtreeMs = new Map<string, number>();
-  const msOf = (uid: string) => Date.parse(joinedAtOf.get(uid) ?? '') || 0;
-  for (const ids of [gen3Ids, gen2Ids, gen1Ids]) {
-    for (const uid of ids) {
-      let m = msOf(uid);
-      for (const k of childrenOf[uid] ?? []) m = Math.max(m, subtreeMs.get(k.id) ?? 0);
-      subtreeMs.set(uid, m);
-    }
-  }
-
   return {
     gen1Ids,
     gen2Ids,
@@ -2505,7 +2493,6 @@ async function loadNetwork(client: any, viewerId: string) {
     parentOf,
     genOf,
     joinedAtOf,
-    subtreeMs,
     profMap,
     listingMap,
     acctMap,
@@ -2537,7 +2524,6 @@ function buildFlatNode(net: Network, uid: string): NetworkNode {
     joinedAt: net.joinedAtOf.get(uid) ?? '',
     listingId: net.listingMap[uid]?.id ?? null,
     childCount: kids.length,
-    subtreeLatestJoinedAt: new Date(net.subtreeMs.get(uid) ?? 0).toISOString(),
   };
 }
 

@@ -55,7 +55,6 @@ function makeNode(over: Partial<NetworkNode> = {}): NetworkNode {
     joinedAt: '2026-07-01T00:00:00Z',
     listingId: null,
     childCount: 0,
-    subtreeLatestJoinedAt: '2026-07-01T00:00:00Z',
     ...over,
   };
 }

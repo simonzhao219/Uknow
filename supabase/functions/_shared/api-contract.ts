@@ -286,8 +286,9 @@ const ReferralSummarySchema = obj({
 // 推薦網絡懶載入端點（Tier B）：/referrals/network/*
 // 節點改為「扁平」形狀（無 children）——樹由前端依 childCount 懶載入組裝。
 // 排序在伺服器（真名 + Intl.Collator zh-Hant），sort 回聲讓前端快取正確。
-// subtreeLatestJoinedAt = 自身與可見子樹（封頂 3 代）中最新的加入時間，
-// 供「更新順序」排序與前端本地重排。
+// 「更新順序」的排序鍵是節點自身的 joinedAt——每一代各自排序，子樹新血
+// 不影響上層位置。先前的 subtreeLatestJoinedAt（子樹最新加入時間）已隨
+// 該變更失去用途並移除。
 // ------------------------------------------------------------
 export const NetworkSortModeSchema = literals(
   'updated_desc',
@@ -307,10 +308,7 @@ export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
  */
 export const DEFAULT_NETWORK_SORT: NetworkSortMode = 'updated_asc';
 
-export const NetworkNodeSchema = obj({
-  ...ReferralNodeFields,
-  subtreeLatestJoinedAt: str(),
-});
+export const NetworkNodeSchema = obj(ReferralNodeFields);
 export type NetworkNode = Infer<typeof NetworkNodeSchema>;
 
 export const NetworkOverviewResponseSchema = obj({
