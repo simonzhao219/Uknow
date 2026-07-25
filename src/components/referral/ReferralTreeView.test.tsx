@@ -145,6 +145,13 @@ describe('需要關注橫幅（伺服器上限）', () => {
 });
 
 describe('排序控制', () => {
+  it('晶片顯示當前排序的短標籤（收合不佔版面、狀態一眼可見）', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
+    expect(screen.getByText('Z→A')).toBeTruthy();
+    // 完整文案只出現在展開的選單選項中，不撐爆收合列
+    expect(screen.getByRole('option', { name: '姓名：Z → A（筆畫多 → 少）' })).toBeTruthy();
+  });
+
   it('原生 select 受控於 sort、變更回報 onSortChange', () => {
     const onSortChange = vi.fn();
     renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }), { onSortChange });

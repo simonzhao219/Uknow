@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   parseSortMode,
   SORT_OPTIONS,
+  SORT_SHORT_LABEL,
   SORT_STORAGE_KEY,
   readStoredSort,
   storeSort,
@@ -41,6 +42,17 @@ describe('SORT_OPTIONS（核定文案）', () => {
       { value: 'name_asc', label: '姓名：A → Z（筆畫少 → 多）' },
       { value: 'name_desc', label: '姓名：Z → A（筆畫多 → 少）' },
     ]);
+  });
+});
+
+describe('SORT_SHORT_LABEL（窄螢幕晶片短標籤）', () => {
+  it('四模式各有 ≤3 字的短標籤，收合狀態一眼可見且撐不爆版面', () => {
+    expect(SORT_SHORT_LABEL).toEqual({
+      updated_desc: '最新',
+      updated_asc: '最舊',
+      name_asc: 'A→Z',
+      name_desc: 'Z→A',
+    });
   });
 });
 
