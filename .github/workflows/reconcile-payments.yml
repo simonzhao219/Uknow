@@ -28,14 +28,14 @@ concurrency:
 # (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
 
 jobs:
-  reconcile:
+  reconcile-orders:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       issues: write
     steps:
-      - name: Call reconciliation endpoint
+      - name: 呼叫對帳端點
         env:
           ENDPOINT: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
@@ -67,7 +67,7 @@ jobs:
                 f"stillPending={data[\"stillPending\"]} expired={data.get(\"expired\", 0)}")
           ' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Open issue on failure
+      - name: 失敗時開 issue
         if: failure()
         uses: actions/github-script@v7
         with:

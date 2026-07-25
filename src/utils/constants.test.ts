@@ -11,12 +11,12 @@ import {
 } from './constants';
 
 describe('listing numeric / photo constants', () => {
-  it('has the expected listing form limits', () => {
+  it('刊登表單的長度上限符合規格', () => {
     expect(NAME_MAX_LENGTH).toBe(10);
     expect(DESCRIPTION_MAX_LENGTH).toBe(200);
   });
 
-  it('caps photos at 3 files of 5MB in jpg/png/webp', () => {
+  it('照片上限為 3 張、每張 5MB、限 jpg/png/webp', () => {
     expect(MAX_PHOTO_SIZE).toBe(5 * 1024 * 1024);
     expect(MAX_PHOTO_SIZE).toBe(5242880);
     expect(MAX_PHOTO_COUNT).toBe(3);
@@ -25,23 +25,23 @@ describe('listing numeric / photo constants', () => {
 });
 
 describe('SERVICE_CATEGORIES', () => {
-  it('is non-empty and has no duplicates', () => {
+  it('非空且無重複項', () => {
     expect(SERVICE_CATEGORIES.length).toBeGreaterThan(0);
     expect(new Set(SERVICE_CATEGORIES).size).toBe(SERVICE_CATEGORIES.length);
   });
 });
 
 describe('TAIWAN_CITIES / TAIWAN_REGIONS consistency', () => {
-  it('has no duplicate cities', () => {
+  it('縣市清單無重複', () => {
     expect(new Set(TAIWAN_CITIES).size).toBe(TAIWAN_CITIES.length);
   });
 
-  it('every city has a region entry (and vice versa)', () => {
+  it('每個縣市都有對應區域，反向亦然', () => {
     const regionKeys = Object.keys(TAIWAN_REGIONS);
     expect(new Set(regionKeys)).toEqual(new Set(TAIWAN_CITIES));
   });
 
-  it('every city maps to a non-empty list of districts with no duplicates', () => {
+  it('每個縣市都對到非空且無重複的行政區清單', () => {
     for (const city of TAIWAN_CITIES) {
       const districts = TAIWAN_REGIONS[city];
       expect(Array.isArray(districts)).toBe(true);

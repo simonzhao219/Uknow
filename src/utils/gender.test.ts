@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getGenderDisplay, TEXT_PRESENTATION, type GenderDisplay } from './gender';
 
 describe('TEXT_PRESENTATION', () => {
-  it('is the Unicode text-presentation selector U+FE0E', () => {
+  it('是 Unicode 文字呈現選擇符 U+FE0E', () => {
     // 這是修正的核心：U+FE0E 強制前一個字元以「文字」而非「emoji」渲染，
     // 避免 iOS Safari 把 ♂/♀ 放大成 emoji 而在 badge 內被裁切。
     expect(TEXT_PRESENTATION).toBe('︎');
@@ -29,7 +29,7 @@ describe('getGenderDisplay', () => {
     expect(result.colorClass).toBe('border-pink-500 text-pink-600');
   });
 
-  it('forces text presentation on the ♂ / ♀ symbols so they are not rendered as emoji', () => {
+  it('強制 ♂／♀ 以文字呈現，不被畫成 emoji', () => {
     const male = getGenderDisplay('男') as GenderDisplay;
     const female = getGenderDisplay('女') as GenderDisplay;
 
@@ -45,7 +45,7 @@ describe('getGenderDisplay', () => {
     }
   });
 
-  it('returns null for unknown / empty / non-string values so no badge is shown', () => {
+  it('未知、空值與非字串回傳 null，不顯示徽章', () => {
     expect(getGenderDisplay('')).toBeNull();
     expect(getGenderDisplay('其他')).toBeNull();
     expect(getGenderDisplay(undefined)).toBeNull();
@@ -54,7 +54,7 @@ describe('getGenderDisplay', () => {
     expect(getGenderDisplay({})).toBeNull();
   });
 
-  it('returns a stable reference for the same gender (shared singletons)', () => {
+  it('同一性別回傳穩定參考（共用單例）', () => {
     expect(getGenderDisplay('男')).toBe(getGenderDisplay('男'));
     expect(getGenderDisplay('女')).toBe(getGenderDisplay('女'));
   });

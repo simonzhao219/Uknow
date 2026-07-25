@@ -14,7 +14,7 @@ describe('handleDistrictSelection', () => {
     expect(result).toEqual([]);
   });
 
-  it('checking a specific district adds it', () => {
+  it('勾選特定行政區會加入選取', () => {
     const result = handleDistrictSelection([], AVAILABLE, '中正區', true);
     expect(result).toEqual(['中正區']);
   });
@@ -33,12 +33,12 @@ describe('handleDistrictSelection', () => {
     expect(new Set(result)).toEqual(new Set(['中正區', '大同區']));
   });
 
-  it('checking an already-selected district does not duplicate it', () => {
+  it('重複勾選同一行政區不會產生重複項', () => {
     const result = handleDistrictSelection(['中正區'], AVAILABLE, '中正區', true);
     expect(result).toEqual(['中正區']);
   });
 
-  it('does not mutate the input array', () => {
+  it('不變動傳入的陣列', () => {
     const current = ['中正區'];
     handleDistrictSelection(current, AVAILABLE, '大同區', true);
     expect(current).toEqual(['中正區']);
@@ -46,7 +46,7 @@ describe('handleDistrictSelection', () => {
 });
 
 describe('sortDistrictsWithAllFirst', () => {
-  it('returns an empty array unchanged', () => {
+  it('空陣列原樣回傳', () => {
     expect(sortDistrictsWithAllFirst([])).toEqual([]);
   });
 

@@ -5,19 +5,19 @@ import { projectId } from './supabase/info';
 const BASE = `https://${projectId}.supabase.co/functions/v1/api`;
 
 describe('buildApiUrl', () => {
-  it('appends a path that already has a leading slash', () => {
+  it('路徑本來就有前導斜線時原樣接上', () => {
     expect(buildApiUrl('/rewards')).toBe(`${BASE}/rewards`);
   });
 
-  it('adds the leading slash when the path lacks one', () => {
+  it('路徑缺前導斜線時補上', () => {
     expect(buildApiUrl('rewards')).toBe(`${BASE}/rewards`);
   });
 
-  it('does not double the slash', () => {
+  it('不產生重複斜線', () => {
     expect(buildApiUrl('/listings/upload-photo')).toBe(`${BASE}/listings/upload-photo`);
   });
 
-  it('handles an empty path as the api root', () => {
+  it('空路徑視為 api 根路徑', () => {
     expect(buildApiUrl('')).toBe(`${BASE}/`);
   });
 });

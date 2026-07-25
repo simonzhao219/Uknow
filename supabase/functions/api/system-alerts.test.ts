@@ -6,7 +6,7 @@
 import { assertEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers, payForUser } from './test-helpers.ts';
 
-Deno.test('a peripheral failure inside process_successful_payment writes a system_alerts row', async () => {
+Deno.test('process_successful_payment 內的周邊失敗會寫入一筆 system_alerts', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
 

@@ -14,7 +14,7 @@ import {
   payForUser,
 } from './test-helpers.ts';
 
-Deno.test('a referrer is rewarded 100 points again on the referee renewal, keyed per payment event', async () => {
+Deno.test('下線續約時推薦人再得 100 點，以每次付款事件為鍵', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
 

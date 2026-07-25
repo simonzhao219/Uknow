@@ -11,7 +11,7 @@ import {
   payForUser,
 } from './test-helpers.ts';
 
-Deno.test('a peripheral referral/reward failure does not roll back the core payment commit', async () => {
+Deno.test('周邊的推薦／獎勵失敗不得回滾核心付款交易', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
 
@@ -78,7 +78,7 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
   }
 });
 
-Deno.test('renewal payment reuses the existing active referral code (no duplicate-code rollback)', async () => {
+Deno.test('續約付款沿用既有 active 推薦碼（不因重複碼而回滾）', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Renewing Member' });
 
