@@ -78,6 +78,6 @@ scripts/                git hooks 與框架自檢腳本
 
 最常用的兩份：
 
-- [`docs/Uknow_Software_Specification.md`](docs/Uknow_Software_Specification.md)
+- [`docs/uknow-software-specification.md`](docs/uknow-software-specification.md)
   —— 需求與業務規則的單一事實來源
 - [`CLAUDE.md`](CLAUDE.md) —— AI 助理的操作手冊（開發流程、閘門、慣例）

@@ -3,7 +3,7 @@
 Supabase（PostgreSQL + Auth + Storage）+ 單一 Edge Function。
 取代舊版「單一 KV 表 + 15,000 行手動維護 JSON」的架構。
 
-> **業務規則不在這裡**：完整規則見 `docs/Uknow_Software_Specification.md`。
+> **業務規則不在這裡**：完整規則見 `docs/uknow-software-specification.md`。
 > 本文件只講**後端結構**（schema、函數、部署）。規則寫兩份必然漂移
 > ——這份 README 就曾把獎金與任務門檻寫成早已作廢的舊值。
 
@@ -121,7 +121,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `main` | `vars.SUPABASE_PROJECT_REF` | 正式站（部署需人工核准） |
 
 Dashboard 端的手動設定（Secrets、Email OTP 模板、PayUni 後台）
-見 `docs/SUPABASE_SETUP_CHECKLIST.md`。
+見 `docs/supabase-setup-checklist.md`。
 
 ### 本地開發
 
