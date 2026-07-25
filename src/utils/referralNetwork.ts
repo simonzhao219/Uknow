@@ -60,6 +60,17 @@ export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
   { value: 'name_desc', label: '姓名：Z → A（筆畫多 → 少）' },
 ];
 
+/**
+ * 排序晶片的收合短標籤（≤3 字）：窄螢幕上完整文案會撐爆整列、把高頻的
+ * 搜尋框壓扁——收合只顯示狀態、完整文案留在展開的選單裡。
+ */
+export const SORT_SHORT_LABEL: Record<NetworkSortMode, string> = {
+  updated_desc: '最新',
+  updated_asc: '最舊',
+  name_asc: 'A→Z',
+  name_desc: 'Z→A',
+};
+
 /** 非法/未知值一律回落預設 updated_desc（與伺服器 parseSortMode 同語意）。 */
 export function parseSortMode(raw: unknown): NetworkSortMode {
   return (SORT_MODES as readonly unknown[]).includes(raw) ? (raw as NetworkSortMode) : 'updated_desc';
