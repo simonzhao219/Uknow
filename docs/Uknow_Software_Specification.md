@@ -143,8 +143,12 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | **訂閱中 (active)** | 付款成功且 `now() <= end_date` | ✅ 顯示 | ✅ 可推廣 | ✅ 正常領取 | ✅ 可提領 | ✅ 持續進行 |
 | **完全失效 (expired)** | `now() > end_date` | ❌ 隱藏 | ✅ 碼仍有效 | ✅ 保留不歸零 | ❌ 不可 | 保留不歸零 |
 
-> **已取消（is_canceled）為保留概念，未實作**：一次性年費、無自動續扣，
-> 目前沒有自助取消流程。欄位保留供未來，實際狀態仍只有 active／expired。
+> **不提供自助取消訂閱（已定案的產品決策，非落差）**：一次性年費、
+> 無自動續扣，沒有「續扣」可停——不續約即到期失效（`now() > end_date`），
+> 使用者不需要、也不會有取消入口。此決策已確認，**不必再列為待實作項**。
+> `subscriptions.is_canceled` 因此是 vestigial 欄位：自始不被任何流程寫入
+> 或讀取，僅保留以避免破壞性 migration（`user_account_status` view 原樣
+> 帶出、無消費者）。實際狀態永遠只有 active／expired 兩態。
 > 〔實作〕`20260721000003_mark_is_canceled_vestigial.sql`
 
 ### 5.1 失效狀態的詳細語意
@@ -496,10 +500,9 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 |---|---|---|
 | 1 | 身分證字號唯一性檢核（§4.2） | `profiles.national_id` 無唯一約束、`/auth/register` 未檢查 |
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
-| 3 | 自助取消訂閱（§5） | `is_canceled` 欄位保留但無流程 |
-| 4 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
-| 5 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
-| 6 | 當月推薦排行榜 | 端點存在，尚無完整 UI 與測試覆蓋 |
+| 3 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
+| 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
+| 5 | 當月推薦排行榜 | 端點存在，尚無完整 UI 與測試覆蓋 |
 
 ---
 
