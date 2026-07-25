@@ -52,6 +52,8 @@ mocks/            # SupabaseAuthMock, BackendApiMock, session-seeding helper
 pages/            # Page Object Model — one class per route/component
 features/         # Gherkin feature files (English)
 steps/            # step definitions; common_steps.py holds shared Given/When/Then
+overflow_probe.py # 瀏覽器內的溢字/溢版量測探針（給下面那支巡檢用）
+test_overflow_sweep.py  # 375px 全路由溢字巡檢（非 BDD，見下節）
 ```
 
 ## Adding a scenario
@@ -65,6 +67,36 @@ steps/            # step definitions; common_steps.py holds shared Given/When/Th
 4. If it needs a new selector, prefer `get_by_role`/`get_by_label` on the
    page object; only add a `data-testid` to the source component when the
    text/role is ambiguous or state-dependent.
+
+## 溢字/溢版巡檢（`test_overflow_sweep.py`）
+
+規格明訂「以手機瀏覽器為主要優化目標」，但這套 suite 預設跑
+1280×900（`conftest.py` 的 `browser_context_args`），手機版面在 CI 幾乎
+沒被畫出來過。這支巡檢補上那一軸：把每條路由在 **375px** 下載入、量一次
+盒子，找出文字或內容跑出容器的地方。
+
+```bash
+pytest test_overflow_sweep.py --browser chromium     # 跑巡檢
+E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 轉成硬失敗
+```
+
+- **預設 report-only**：結果寫進 `test-results/overflow-report.{md,json}`
+  （CI 已經會把整個目錄當 artifact 上傳），不會讓 CI 變紅。一上線就硬
+  失敗的閘門會被關掉；先讓紅色 baseline 變成看得見的證據，等清乾淨了再
+  設 `E2E_OVERFLOW_STRICT=1` 轉成硬失敗。ratchet 機制已內建，屆時不必
+  改測試。
+- **唯一會失敗的情況**是路由守衛把巡檢導去別的頁面——那代表這條沒掃到
+  目標頁面，是巡檢本身壞了，必須修 setup 的登入/會籍狀態。
+- **不是 `.feature`**：其他測試描述使用者行為，這支是橫切面巡檢，硬套
+  Gherkin 只會得到沒人想讀的假場景。走 `pytest.ini` 已允許的 `test_*.py`。
+- **測資是「最壞但可達」**：每個欄位取產品實際允許的極端值（名稱 10 字
+  上限、清單裡最長的類別、使用者貼上的原始 FB 網址），不是憑空的長字串
+  ——超出產品約束的假資料會做出假紅，讓報告不可信。
+- **盲區**：只做被動載入，掃不到 toast、對話框、下拉等需要互動才出現的
+  東西；目前也只跑 375px 單一軸。每次報告的文末都會列出來。
+
+新增路由時記得把它加進 `ROUTES`；需要特殊登入/會籍狀態的，寫一個
+`_setup_*` 函式並沿用 `mocks/` 既有的 helper。
 
 ## Recently added coverage
 
