@@ -11,12 +11,10 @@ Feature: In-app browsers are no longer blocked
     Then the full app should render
 
     Examples:
+      # 各平台 UA 的辨識由 src/utils/browserDetection.test.ts（15 個測試，
+      # 涵蓋這裡每一個平台）驗；e2e 只需證明偵測結果確實接到了渲染決策。
       | platform        |
       | LINE (iOS)      |
-      | LINE (Android)  |
-      | Facebook        |
-      | Instagram       |
-      | WeChat          |
       | Android WebView |
 
   Scenario: An injected LINE LIFF SDK global no longer forces a block page

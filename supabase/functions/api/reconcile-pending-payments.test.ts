@@ -44,6 +44,7 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
     const resolvedCalls: string[] = [];
     const summary = await reconcilePendingOrders(
       client,
+      // deno-lint-ignore require-await -- 注入的 test double 要符合 async 契約
       async (merTradeNo: string) => {
         if (merTradeNo === successTradeNo) {
           return {

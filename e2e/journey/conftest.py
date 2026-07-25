@@ -76,11 +76,27 @@ def journey_config() -> JourneyConfig:
     anon = os.environ.get("JOURNEY_SUPABASE_ANON_KEY")
     service = os.environ.get("JOURNEY_SUPABASE_SERVICE_ROLE_KEY")
     if not (ref and anon and service):
-        pytest.skip(
-            "journey 環境未設定：需要 JOURNEY_SUPABASE_PROJECT_REF / "
-            "JOURNEY_SUPABASE_ANON_KEY / JOURNEY_SUPABASE_SERVICE_ROLE_KEY"
+        missing = [
+            name
+            for name, value in (
+                ("JOURNEY_SUPABASE_PROJECT_REF", ref),
+                ("JOURNEY_SUPABASE_ANON_KEY", anon),
+                ("JOURNEY_SUPABASE_SERVICE_ROLE_KEY", service),
+            )
+            if not value
+        ]
+        message = (
+            f"journey 環境未設定，缺：{', '.join(missing)}"
             "（一律指向拋棄式測試分支，見 journey/README.md）"
         )
+        # CI 設 JOURNEY_REQUIRE_ENV=1：環境缺件是**設定壞掉**，不是
+        # 「這台機器不適合跑」。靜默 skip 會讓整場 27 個情境變成 0.2 秒
+        # 的綠燈——2026-07-21 的兩次「全綠」就是這樣來的（分支 CLI 的
+        # 欄位名變了，key 撈成空字串，一路傳到這裡變成 skip）。
+        # 本機沒設環境時仍然 skip：開發者跑 `pytest tools/` 不該被擋。
+        if os.environ.get("JOURNEY_REQUIRE_ENV") == "1":
+            pytest.fail(message + "。JOURNEY_REQUIRE_ENV=1 下不接受 skip。", pytrace=False)
+        pytest.skip(message)
 
     production_ref = _generated_project_ref()
     if ref == production_ref:

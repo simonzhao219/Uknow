@@ -1,26 +1,119 @@
 name: Deploy Supabase Edge Functions
 
-# Database migrations are no longer handled here — Supabase's native GitHub
-# integration applies them automatically when this branch is merged into main.
-# This workflow only covers Edge Functions, which that integration doesn't deploy.
+# ============================================================================
+# 部署 Edge Function。Database migrations 不在這裡——Supabase 原生 GitHub
+# 整合會在合併進 main 時自動套用。
+#
+# ⚠️ 觸發改為 workflow_run（等 CI 綠），不再是 push。
+# 原本 `on: push` 與 ci.yml **平行起跑**：函式往往在 api-tests 還沒開始
+# 跑就已經推上去了，等於「測試紅了但東西已經上線」。main 上這條路徑
+# 直通正式站。
+#
+# workflow_run 的兩個特性要記得：
+#   1. workflow 定義一律取自預設分支（main）的版本，不是被觸發那次
+#      commit 的版本——這是 GitHub 的安全設計，也表示改這個檔案要合進
+#      main 才會生效。
+#   2. 它不支援 paths 過濾。所以這裡改成「CI 綠就部署」，不再判斷
+#      supabase/functions 有沒有改。這反而是更強的性質：只要 CI 綠，
+#      線上跑的就等於該分支的 HEAD，不會因為某次部署悄悄失敗而長期漂移。
+# ============================================================================
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main, develop]
-    paths:
-      - 'supabase/functions/**'
+
+# 兩次快速合併不得亂序部署（舊的後到會覆蓋新的）
+concurrency:
+  group: deploy-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
+    # CI 沒綠就不部署。這一行是整個檔案存在的理由。
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    # main → production 環境：在 repo Settings → Environments 為
+    # production 設 required reviewer，部署會停在等待核准。
+    # 「main 收到 push = 正式站部署，不可逆的東西都在這一步」值得一道人工閘。
+    environment:
+      name: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'develop' }}
+      url: https://${{ github.event.workflow_run.head_branch == 'main' && vars.SUPABASE_PROJECT_REF || vars.SUPABASE_DEVELOP_PROJECT_REF }}.supabase.co
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ github.ref_name == 'main' && vars.SUPABASE_PROJECT_REF || vars.SUPABASE_DEVELOP_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: ${{ github.event.workflow_run.head_branch == 'main' && vars.SUPABASE_PROJECT_REF || vars.SUPABASE_DEVELOP_PROJECT_REF }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 部署被觸發的那個 commit，不是預設分支的 HEAD
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
 
+      # 先寫 DEPLOY_SHA 再部署：函式啟動時就讀得到，煙霧測試才驗得出
+      # 「線上跑的是這一版」而不只是「有東西回應」。
+      - name: Stamp the deployed commit
+        run: |
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
+            DEPLOY_SHA="$DEPLOY_SHA"
+
       - name: Deploy Edge Function
-        run: supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+        run: |
+          supabase functions deploy api \
+            --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      # 部署「成功」不等於線上是對的：secrets 沒生效、cold start 就炸、
+      # 推到錯的 project——這些在 deploy 指令的退出碼上都是 0。
+      - name: Post-deploy smoke
+        env:
+          HEALTH_URL: https://${{ env.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/health
+        run: |
+          set -uo pipefail
+          for attempt in $(seq 1 20); do
+            body="$(curl -sS --max-time 10 "$HEALTH_URL" || true)"
+            sha="$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha",""))' 2>/dev/null || true)"
+            if [ "$sha" = "$DEPLOY_SHA" ]; then
+              echo "✅ 線上函式已是 ${DEPLOY_SHA:0:7}（第 $attempt 次探測）"
+              exit 0
+            fi
+            echo "第 $attempt 次:線上 sha='${sha:-無回應}',等待傳播…"
+            sleep 6
+          done
+          echo "::error::部署後 2 分鐘內 /health 仍未回報 $DEPLOY_SHA —— 線上可能不是這一版,請檢查"
+          exit 1
+
+      - name: Open issue on failed deploy
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.workflow_run.head_branch;
+            const sha = context.payload.workflow_run.head_sha;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Edge Function 部署失敗（${branch} @ ${sha.slice(0, 7)}）`,
+              body: [
+                '## 部署失敗',
+                '',
+                `- 分支：\`${branch}\``,
+                `- Commit：${sha}`,
+                `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                branch === 'main'
+                  ? '⚠️ **這是正式站**。線上函式可能停在舊版或處於半部署狀態，請優先處理。'
+                  : 'develop 環境部署失敗，晉升前必須修好。',
+                '',
+                '重跑：Actions → Deploy Supabase Edge Functions → Re-run failed jobs',
+              ].join('\n'),
+            });

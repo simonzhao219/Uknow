@@ -1,14 +1,21 @@
-name: Journey Nightly
+name: Journey
 
-# 六代 30 人全功能 Journey 套件（e2e/journey/）——CI 四軌設計的軌道 4。
+# ============================================================================
+# 六代 30 人全功能 Journey 套件（e2e/journey/）——打真後端的全鏈路驗證。
 #
 # 一次執行 = 一個拋棄式 Supabase preview branch：測前建立、測後刪除
 # ＝資料保證清乾淨（cleanup.py 的零殘留斷言是第二道保險）。
 #
-# ⚠️ 首跑校準（與 reconcile-payments.yml 同一模式）：schedule 先註解，
-# 用 workflow_dispatch 手動觸發驗證一輪（分支建立、GoTrue email 限流、
-# PayUni sandbox 刷卡頁選擇器、任務對話框按鈕序），全綠後把 schedule
-# 打開即可。
+# 呼叫點有三個，共用這一份定義（曾經 main / develop 各有一份副本各自
+# 演化，假綠燈就是這樣長出來的）：
+#   1. ci.yml 的 journey job —— develop→main 晉升 PR 必跑（上線前閘門）
+#   2. schedule —— 每晚台北 02:00（抓外部相依漂移）
+#   3. workflow_dispatch —— 手動
+#
+# ⚠️ 本 workflow 的第一設計要求是「不可能假綠」：
+#   - 連線資訊解析不到 → 硬失敗（而不是傳空字串下去讓情境靜默 skip）
+#   - 實際執行情境數低於下限 → 硬失敗（deselect / skip 都會 exit 0）
+# 2026-07-21 的兩次「全綠」實際上是 27 個情境全 skip、套件跑了 0.2 秒。
 #
 # 需要的 repository secrets：
 #   SUPABASE_ACCESS_TOKEN      既有（deploy-supabase.yml 同一把）
@@ -16,30 +23,42 @@ name: Journey Nightly
 #   PAYUNI_TEST_HASH_KEY       PayUni sandbox HashKey
 #   PAYUNI_TEST_HASH_IV        PayUni sandbox HashIV
 # 需要的 repository variables：
-#   SUPABASE_PROJECT_REF       既有（正式專案 ref，分支從它長出來）
-
+#   SUPABASE_PROJECT_REF       正式專案 ref（分支從它長出來）
+# ============================================================================
 on:
-  # 台北 02:00 = UTC 18:00。首跑校準已於 2026-07 通過
-  # （skeleton 與 full 兩種 scope 手動觸發皆全綠）。
-  schedule:
-    - cron: '0 18 * * *'
+  workflow_call:
+    inputs:
+      scope:
+        description: 'full=全 30 人六模組；skeleton=單人骨架'
+        type: string
+        default: full
+      payment_mode:
+        description: 'sandbox=真刷測試卡；webhook=簽章注入備援'
+        type: string
+        default: sandbox
   workflow_dispatch:
     inputs:
-      payment_mode:
-        description: '付款模式（sandbox=真刷測試卡；webhook=簽章注入備援）'
-        type: choice
-        options: [sandbox, webhook]
-        default: sandbox
       scope:
         description: '範圍（skeleton=單人骨架快速驗證；full=全 30 人六模組）'
         type: choice
         options: [full, skeleton]
         default: full
+      payment_mode:
+        description: '付款模式（sandbox=真刷測試卡；webhook=簽章注入備援）'
+        type: choice
+        options: [sandbox, webhook]
+        default: sandbox
+  schedule:
+    # 台北 02:00 = UTC 18:00
+    - cron: '0 18 * * *'
 
 # 分支費用＋PayUni sandbox 共享狀態：同時最多一場
 concurrency:
-  group: journey-nightly
+  group: journey-${{ github.ref }}
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   journey:
@@ -51,6 +70,8 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PARENT_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SCOPE: ${{ inputs.scope || 'full' }}
+      PAYMENT_MODE: ${{ inputs.payment_mode || 'sandbox' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,20 +91,44 @@ jobs:
           echo "name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
           supabase link --project-ref "$PARENT_PROJECT_REF"
           supabase branches create "$BRANCH_NAME" --experimental
-          # 等分支就緒並取連線資訊（ref / keys）
-          for i in $(seq 1 30); do
+          # 等分支就緒並取連線資訊
+          for _ in $(seq 1 30); do
             OUT="$(supabase branches get "$BRANCH_NAME" --experimental -o env 2>/dev/null || true)"
             if echo "$OUT" | grep -q '^POSTGRES_URL\|^API_URL'; then break; fi
             sleep 10
           done
           supabase branches get "$BRANCH_NAME" --experimental -o env > branch.env
-          # branch.env 的欄位名以 CLI 版本為準——首跑校準時核對下面三行
-          BRANCH_REF="$(grep -oP '(?<=^REF=).*' branch.env || grep -oP 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env | head -1)"
+
+          # 欄位名會隨 CLI 版本變（2026-07 那次假綠就是 grep '^ANON_KEY='
+          # 撈不到而靜默傳了空字串）——改成比對「尾綴」，容忍任意前綴。
+          extract() { grep -oPm1 "^[A-Z0-9_]*${1}=\K.*" branch.env | tr -d '"' || true; }
+          BRANCH_REF="$(extract 'REF')"
+          [ -n "$BRANCH_REF" ] || BRANCH_REF="$(grep -oPm1 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env || true)"
+          ANON_KEY="$(extract 'ANON_KEY')"
+          SERVICE_KEY="$(extract 'SERVICE_ROLE_KEY')"
+
+          # 硬斷言：解析不到就當場失敗。傳空字串下去只會讓每個情境
+          # 靜默 skip，然後整場「成功」——那比紅燈危險得多。
+          missing=''
+          [ -n "$BRANCH_REF" ]   || missing="$missing BRANCH_REF"
+          [ -n "$ANON_KEY" ]     || missing="$missing ANON_KEY"
+          [ -n "$SERVICE_KEY" ]  || missing="$missing SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::branch.env 解析不到:$missing —— CLI 欄位名可能已變"
+            echo "branch.env 實際有的欄位名（不印值）:"
+            grep -oP '^[A-Z0-9_]+(?==)' branch.env | sed 's/^/  /'
+            exit 1
+          fi
+
+          # 這兩個是真密鑰,務必讓 Actions 遮蔽,以免任何 step 意外印出
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_KEY"
+
           echo "ref=$BRANCH_REF" >> "$GITHUB_OUTPUT"
           {
             echo "JOURNEY_SUPABASE_PROJECT_REF=$BRANCH_REF"
-            echo "JOURNEY_SUPABASE_ANON_KEY=$(grep -oP '(?<=^ANON_KEY=).*' branch.env)"
-            echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$(grep -oP '(?<=^SERVICE_ROLE_KEY=).*' branch.env)"
+            echo "JOURNEY_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY"
           } >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
@@ -100,12 +145,18 @@ jobs:
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
             FRONTEND_URL="http://localhost:3100"
-          # Auth email 發送限流 ≥60/hr（management API；欄位名首跑校準）
           curl -sf -X PATCH \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
             -d '{"rate_limit_email_sent": 100}' || echo "::warning::auth rate limit 調整失敗——30 人建樹可能撞 email 限流"
+
+      # 分支是從 main 的 migrations 長出來的,但 Edge Function 不會自動
+      # 跟上——不部署就是拿舊版函式測新版程式碼,測了也不算數。
+      - name: Deploy Edge Function to the disposable branch
+        run: |
+          supabase functions deploy api \
+            --project-ref "${{ steps.branch.outputs.ref }}" --no-verify-jwt
 
       # ------------------------------------------------------------------
       # 3. 跑套件
@@ -134,22 +185,59 @@ jobs:
       - name: Run journey suite
         working-directory: e2e/journey
         env:
-          PYTHONUNBUFFERED: "1"
-          JOURNEY_PAYMENT_MODE: ${{ inputs.payment_mode || 'sandbox' }}
+          PYTHONUNBUFFERED: '1'
+          # conftest 看到 JOURNEY_REQUIRE_ENV=1 時,環境缺件改為硬失敗
+          # 而不是 skip——本機沒設環境仍然 skip,只有 CI 不容許靜默放過。
+          JOURNEY_REQUIRE_ENV: '1'
+          JOURNEY_PAYMENT_MODE: ${{ env.PAYMENT_MODE }}
           JOURNEY_PAYUNI_HASH_KEY: ${{ secrets.PAYUNI_TEST_HASH_KEY }}
           JOURNEY_PAYUNI_HASH_IV: ${{ secrets.PAYUNI_TEST_HASH_IV }}
           JOURNEY_RUN_ID: gh${{ github.run_id }}
-          JOURNEY_BUILD_PARALLELISM: "8"
+          JOURNEY_BUILD_PARALLELISM: '8'
         run: |
-          if [ "${{ inputs.scope || 'full' }}" = "skeleton" ]; then
-            pytest -m skeleton --browser chromium \
-              --screenshot only-on-failure --tracing retain-on-failure \
-              --output test-results -v
-          else
-            pytest --browser chromium \
-              --screenshot only-on-failure --tracing retain-on-failure \
-              --output test-results -v
-          fi
+          mkdir -p test-results
+          MARKER=''
+          if [ "$SCOPE" = 'skeleton' ]; then MARKER='-m skeleton'; fi
+          # shellcheck disable=SC2086
+          pytest $MARKER --browser chromium \
+            --screenshot only-on-failure --tracing retain-on-failure \
+            --output test-results \
+            --junitxml=test-results/junit.xml \
+            -v
+
+      # 「跑了 0 個情境」與「情境全過」在 pytest 的退出碼上是同一個 0：
+      # deselect（-m 沒命中）與 skip 都不會讓 pytest 失敗。這一步把
+      # 「實際執行量」本身變成斷言,讓空跑不可能被誤讀成通過。
+      - name: 斷言 journey 真的跑了
+        if: ${{ !cancelled() }}
+        working-directory: e2e/journey
+        env:
+          MIN_SKELETON: '1'
+          MIN_FULL: '20'
+        run: |
+          python3 - <<'PY'
+          import os, sys, xml.etree.ElementTree as ET
+
+          path = 'test-results/junit.xml'
+          if not os.path.exists(path):
+              sys.exit('::error::找不到 junit.xml —— pytest 未產出報告,視為未執行')
+
+          root = ET.parse(path).getroot()
+          suites = [root] if root.tag == 'testsuite' else list(root)
+          total   = sum(int(s.get('tests', 0))    for s in suites)
+          skipped = sum(int(s.get('skipped', 0))  for s in suites)
+          ran = total - skipped
+          floor = int(os.environ['MIN_SKELETON' if os.environ['SCOPE'] == 'skeleton' else 'MIN_FULL'])
+
+          print(f'scope={os.environ["SCOPE"]} collected={total} skipped={skipped} ran={ran} floor={floor}')
+          if ran < floor:
+              sys.exit(
+                  f'::error::journey 實際只執行 {ran} 個情境（下限 {floor}）——'
+                  '視為未執行。常見原因:分支連線資訊沒帶進來導致情境全 skip,'
+                  '或 marker 沒命中導致全數 deselect。'
+              )
+          print('OK:journey 確實執行了')
+          PY
 
       - name: Upload journey artifacts
         if: ${{ !cancelled() }}
@@ -176,18 +264,19 @@ jobs:
       # 5. 失敗訊號必須有人接住：排程 run 的失敗通知只寄給最後改 workflow
       #    的人，很容易無聲蒸發——自動開 issue 作為 triage 佇列，缺陷
       #    回流（issue → plan → 修復）才有起點。
+      #    晉升 PR 觸發時不開 issue：PR 上的紅燈本身就是接住訊號的地方。
       # ------------------------------------------------------------------
       - name: Open triage issue on failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `journey-nightly 失敗（run ${context.runId}）`,
+              title: `journey 失敗（run ${context.runId}）`,
               body: [
-                '## Journey Nightly 失敗',
+                '## Journey 失敗',
                 '',
                 `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
                 `- 觸發：${context.eventName}`,

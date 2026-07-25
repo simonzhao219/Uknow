@@ -21,6 +21,16 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 DRY_RUN="${PRE_COMMIT_DRY_RUN:-0}"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
+# 測試接縫：dry-run 時可指定假的 staged 清單。
+# 沒有這個接縫的話,hook 的行為測試就得讀真實 git index——結果是
+# 「有沒有暫存後端檔案」決定測試通過與否:CI 的乾淨 checkout 恆綠,
+# 開發者正在改後端時恆紅。那種測試在該說話時剛好不說話。
+# 與 PRE_COMMIT_FAKE_MERGE 同樣只在 dry-run 生效,而 dry-run 必定以
+# 99 退出,所以不可能成為繞過閘門的手段。
+if [ "$DRY_RUN" = "1" ] && [ -n "${PRE_COMMIT_FAKE_STAGED:-}" ]; then
+  staged="$PRE_COMMIT_FAKE_STAGED"
+fi
+
 # 執行一組閘門；dry-run 時只宣告不執行。
 run_gate() {
   local label="$1"

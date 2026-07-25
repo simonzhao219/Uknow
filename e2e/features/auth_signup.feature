@@ -17,11 +17,11 @@ Feature: Signup
     Then I should see a field error containing "<message>"
 
     Examples:
+      # 規則逐條的正確性由 src/utils/passwordPolicy.test.ts（14 個測試）
+      # 涵蓋；這裡只保留兩個代表，證明 (a) 政策錯誤會 inline 呈現、
+      # (b) 確認欄不一致走的是另一條路徑（requireConfirmation）。
       | password  | confirm   | message                          |
       | short1A   | short1A   | 至少 8 個字元                      |
-      | alllower1 | alllower1 | 至少一個大寫字母（A-Z）              |
-      | ALLUPPER1 | ALLUPPER1 | 至少一個小寫字母（a-z）              |
-      | NoDigitsX | NoDigitsX | 至少一個數字（0-9）                 |
       | Passw0rd! | Different | 兩次輸入的密碼不一致，請重新確認       |
 
   Scenario: Successful signup navigates to OTP verification

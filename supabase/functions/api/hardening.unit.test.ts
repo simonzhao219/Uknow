@@ -8,7 +8,7 @@
 //     startsWith('http://localhost') 可被 localhost.attacker.com 繞過
 //     ——改為 URL 解析精確比對 hostname，僅開發旗標下放行。
 // ============================================================
-import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1';
+import { assertEquals, assertMatch } from 'jsr:@std/assert@1';
 import { ensureEdgeFunctionEnv } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
