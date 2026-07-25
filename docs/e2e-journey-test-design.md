@@ -201,7 +201,8 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 ### `30_tasks.feature` — 任務
 - B8 付款當下 Root 推薦王進度 8/8 達標；
 - Root claim「免費續約一年」→ 訂閱到期日 +1 年（GUI 與 `/subscriptions/status` 雙重斷言）；
-- 當月排行榜（`/tasks/current-month-top`）Root 居首。
+- 當月推薦排行榜**不提供**（規格書 §9.1），故無對應情境；`/tasks/current-month-top`
+  僅回傳 Root 個人本月推薦明細，不涉排名。
 
 ### `40_listing.feature` — 刊登
 - Root 建立刊登（含照片上傳）→ 登出後訪客在首頁搜得到、詳情頁正確；
