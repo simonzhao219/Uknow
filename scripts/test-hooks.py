@@ -72,6 +72,29 @@ for cmd, want, why in BASH_CASES:
     expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
 
 
+# bash-guard 第 5 類:新分支的 base 檢查。head_matches_develop 由呼叫方
+# (main() 的 git rev-parse)量測後傳入,這裡直接餵布林值,不需要真的建 repo。
+BRANCH_CASES = [
+    # (指令, head 是否等於 origin/develop, 應否 deny, 說明)
+    ("git checkout -b feature/x", True, False, "HEAD 已是最新 develop"),
+    ("git checkout -b feature/x", False, True, "HEAD 不是最新 develop"),
+    ("git checkout -b feature/x", None, False, "量不到(如無 origin/develop)時放行"),
+    ("git checkout -b feature/x origin/develop", False, False, "顯式指定 origin/develop 為 base"),
+    ("git checkout -b feature/x develop", True, False, "顯式指定 develop(短名)為 base"),
+    ("git checkout -b feature/x main", True, True, "顯式指定 main 為 base——違反 git-flow"),
+    ("git checkout -b feature/x origin/main", False, True, "顯式指定 origin/main 為 base"),
+    ("git switch -c fix/y", False, True, "switch -c 同樣受控"),
+    ("git switch -c fix/y origin/develop", False, False, "switch -c 顯式指定 develop"),
+    ("git branch -d old-feature", False, False, "刪除分支不受影響(不是 checkout -b/switch -c)"),
+    ("git branch -a", False, False, "列出分支不受影響"),
+    ("git checkout develop", False, False, "純切換分支(非建立)不受影響"),
+    ("git checkout -b feature/x  ", True, False, "尾隨空白不誤判成有 start-point"),
+]
+
+for cmd, head_ok, want, why in BRANCH_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd, head_ok) is not None, want)
+
+
 # ------------------------------------------------------------ tdd-test-guard
 tdd_guard = load("tdd-test-guard")
 
