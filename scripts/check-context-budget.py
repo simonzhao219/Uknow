@@ -6,7 +6,8 @@ document-naming)都在驗「設定寫對了沒」,沒有一支在驗「這個 re
 來說貴不貴」。而 `framework-check` 唯一的 context 經濟指標是 CLAUDE.md 的
 200 行上限——它只管一個檔案,管不到:
 
-1. 啟動固定成本(CLAUDE.md + 無 paths 的 rules,每個 session 都付)
+1. 啟動固定成本(CLAUDE.md + 無 paths 的 rules + skill/agent 的 frontmatter,
+   每個 session 都付)
 2. 單檔讀取成本(`api/index.ts` 兩週長 204 行,沒有任何訊號)
 3. rule 的 paths 有沒有真的匹配到東西(匹配不到 = 宣告了但永遠不載入)
 
@@ -16,8 +17,14 @@ document-naming)都在驗「設定寫對了沒」,沒有一支在驗「這個 re
 
 ## 三條規則
 
-**C1 啟動固定成本上限** —— CLAUDE.md 加上所有「無 `paths:`」的 rules,
-每個 session 都會全量載入。超過上限就該把內容搬進 path-scoped rule 或 skill。
+**C1 啟動固定成本上限** —— CLAUDE.md、所有「無 `paths:`」的 rules,加上每個
+skill 與 agent 的 **frontmatter**(Claude Code 靠 name + description 決定何時
+該叫哪一個,所以它們每個 session 都在 context 裡;本體不算——skill 內文只在
+被呼叫時載入,agent 內文只在該 subagent 的 window 裡)。超過上限就該把內容
+搬進 path-scoped rule 或 skill。
+
+**C0 掃描健全性** —— 掃到的檔案數低於下限就擋。沒有這條,C2 掃到 0 個檔案
+仍會回報「OK」,壞掉與健康無法區分。
 
 **C2 單檔讀取成本(軟警戒,不擋)** —— 超過閾值的檔案警告一次,建議補導航
 或拆分。刻意**不擋**:硬擋會在錯誤的時機逼人重構,而重構的時機該由人選。
@@ -65,7 +72,23 @@ STARTUP_BUDGET = int(WINDOW * 0.05)  # 10,000
 LARGE_FILE_WARN = int(WINDOW * 0.10)  # 20,000
 
 # 掃描範圍:排除不會被當成原始碼讀的東西(lockfile 已在 permissions.deny)
-SCAN_GLOBS = ("src/**/*", "supabase/**/*", "e2e/**/*", "scripts/**/*", "docs/**/*")
+SCAN_GLOBS = (
+    "src/**/*",
+    "supabase/**/*",
+    "e2e/**/*",
+    "scripts/**/*",
+    "docs/**/*",
+    ".claude/**/*",  # 框架檔案自己也會被讀,一份過長的 skill 同樣是成本
+)
+
+# 掃描結果的健全下限。低於這個數字代表**掃描本身壞了**(glob 寫錯、目錄搬家),
+# 而不是「這個 repo 很小」。
+#
+# 為什麼需要這條:沒有它,C2 掃到 0 個檔案仍會回報「OK,0 個大檔警告」——
+# 壞掉與健康在輸出上完全無法區分。那正是 2026-07-25 `changes` 路徑過濾
+# 那個 bug 的形態(設定寫了、語意不生效、CI 全綠所以沒人發現),而本檔正是
+# 為了防那一類而存在。自己犯同一個錯特別諷刺,所以這裡明確擋住。
+MIN_SCANNED_FILES = 50
 SKIP_PARTS = {"node_modules", ".git", "dist", "build", "test-results", "__pycache__"}
 SKIP_NAMES = {"package-lock.json", "deno.lock"}
 
@@ -173,14 +196,49 @@ def _pattern_hits(pattern: str) -> bool:
         return False
 
 
+def scan_sanity_violations(file_count: int) -> list[str]:
+    """掃描健全性:掃到的檔案數過少代表掃描壞了,不是 repo 變小。純函式。
+
+    沒有這條,C2 掃到 0 個檔案仍會回報「OK,0 個大檔警告」——壞掉與健康在
+    輸出上無法區分,正是本檔要防的那一類 bug。
+    """
+    if file_count >= MIN_SCANNED_FILES:
+        return []
+    return [
+        f"只掃到 {file_count} 個檔案（下限 {MIN_SCANNED_FILES}）"
+        f"——這通常代表 SCAN_GLOBS 壞了或目錄搬過家，而不是 repo 變小。"
+        f"C2 在這個狀態下不具意義:它會回報「0 個大檔警告」，"
+        f"與真的沒有大檔完全無法區分。"
+    ]
+
+
+def _frontmatter_tokens(path: Path) -> int:
+    """skill / agent 的 YAML frontmatter 成本。
+
+    Claude Code 每個 session 都會把所有 skill 與 agent 的 name + description
+    載入 context(那是它決定「何時該叫哪一個」的依據),所以它們屬於啟動固定
+    成本。**本體不算**——skill 內文只在被呼叫時載入,agent 內文只在該 subagent
+    的 window 裡。
+    """
+    m = FRONTMATTER_PATHS.search(path.read_text(encoding="utf-8"))
+    return estimate_tokens(m.group(1)) if m else 0
+
+
 def scan() -> int:
     fail = 0
 
-    # C1 啟動固定成本:CLAUDE.md + 無 paths 的 rules
+    # C1 啟動固定成本:CLAUDE.md + 無 paths 的 rules + skill/agent 的 frontmatter
     startup: list[tuple[str, int]] = []
     claude_md = ROOT / "CLAUDE.md"
     if claude_md.exists():
         startup.append(("CLAUDE.md", estimate_tokens(claude_md.read_text(encoding="utf-8"))))
+
+    skill_fm = sum(_frontmatter_tokens(p) for p in (ROOT / ".claude" / "skills").glob("*/SKILL.md"))
+    agent_fm = sum(_frontmatter_tokens(p) for p in (ROOT / ".claude" / "agents").glob("*.md"))
+    if skill_fm:
+        startup.append(("skills 的 frontmatter", skill_fm))
+    if agent_fm:
+        startup.append(("agents 的 frontmatter", agent_fm))
 
     rules: list[tuple[str, list[str], list[bool]]] = []
     for rule in sorted((ROOT / ".claude" / "rules").glob("*.md")):
@@ -202,6 +260,13 @@ def scan() -> int:
 
     # C2 軟警戒——警告不擋
     files = [(str(p.relative_to(ROOT)), estimate_tokens(p.read_text(encoding="utf-8", errors="ignore"))) for p in _iter_files()]
+
+    # 掃描健全性:先確認「有掃到東西」再談警告數。0 個警告可能代表沒有大檔,
+    # 也可能代表根本沒掃到——這兩者在輸出上必須可區分。
+    for msg in scan_sanity_violations(len(files)):
+        print(f"FAIL: {msg}")
+        return 1
+
     warnings = large_file_warnings(files)
     for msg in warnings:
         print(f"WARN: {msg}")
@@ -211,7 +276,7 @@ def scan() -> int:
         print(
             f"check-context-budget: OK"
             f"（啟動固定成本 ≈{total:,} tokens / 上限 {STARTUP_BUDGET:,}"
-            f"；{len(warnings)} 個大檔警告）"
+            f"；掃描 {len(files)} 檔、{len(warnings)} 個大檔警告）"
         )
     return fail
 
@@ -252,6 +317,14 @@ TOKEN_CASES = [
 ]
 
 
+SANITY_CASES = [
+    ("掃到足量檔案", MIN_SCANNED_FILES, 0),
+    ("剛好在下限", MIN_SCANNED_FILES, 0),
+    ("低於下限", MIN_SCANNED_FILES - 1, 1),
+    ("掃到 0 個 = 掃描壞了", 0, 1),
+]
+
+
 def self_test() -> int:
     failures: list[str] = []
     n = 0
@@ -280,6 +353,11 @@ def self_test() -> int:
         n += 1
         if len(dead_rule_violations(rules)) != want:
             failures.append(f"dead_rule[{label}]: 預期 {want} 筆")
+
+    for label, count, want in SANITY_CASES:
+        n += 1
+        if len(scan_sanity_violations(count)) != want:
+            failures.append(f"scan_sanity[{label}]: 預期 {want} 筆")
 
     if failures:
         print("check-context-budget 表格案例未過:")

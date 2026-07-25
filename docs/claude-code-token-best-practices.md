@@ -384,9 +384,9 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 
 | 層 | 作用 | 本 repo 的實作 |
 |---|---|---|
-| **① 准入** | 能不能進 context | `permissions.deny`（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile） |
+| **① 准入** | 能不能進 context | `permissions.deny`（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile）——成本 0，被擋的內容從未進入 |
 | **② 投遞** | 什麼時候到手 | `CLAUDE.md`（每 session）、`.claude/rules` + `paths:`（條件）、skills（按需）、subagent（隔離） |
-| **③ 壓縮** | 已產生的輸出如何進來 | `check-output-filter.py`（Claude 執行的指令）、`lib-quiet.sh`（pre-commit） |
+| **③ 壓縮** | 已產生的輸出如何進來 | **PreToolUse hook** `check-output-filter.py`（Claude 執行的指令）、`lib-quiet.sh`（`git commit` 觸發的 pre-commit，不在 hook 範圍內） |
 | **④ 結構** | 最小理解單元多大 | `api/index.ts` 的區段地圖（緩解）；拆模組（根本解，未做） |
 | **⑤ 觀測** | 上面四層還在不在運作 | `check-context-budget.py` 及既有四支 canary |
 
@@ -419,22 +419,47 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 依序問，第一個 yes 就是答案：
 
 1. 能從 codebase 推導出來嗎？ → **不要寫**（寫了就是重複真相來源）
-2. 是「絕不該發生」而非「通常不該」嗎？ → `permissions.deny` / hook
+2. 要管的是**行為**還是**知識**？ → 行為走下方 B 表（hook / deny），知識往下走
 3. 只在特定路徑下相關嗎？ → `.claude/rules` + `paths:`
 4. 是多步驟流程、只在被叫到時才需要？ → skill
 5. 每個 session 都需要，且缺了 Claude 會犯錯？ → `CLAUDE.md`
 6. 以上皆非 → **不要寫**
 
-| 落點 | 成本函數 |
-|---|---|
-| `permissions.deny` | **0**（甚至負） |
-| `.claude/rules` + `paths:` | N × 相關 session |
-| skill | N × 被呼叫次數 |
-| `CLAUDE.md` | **N × 每個 session** |
-| subagent | 獨立 window，只回摘要 |
+第 2 步是分岔而不是選項，因為**知識與行為的成本函數根本不同類**：知識的成本是
+「每 session 付幾次」，行為攔截的成本是「觸發次數 × 輸出量」。混在同一張表裡，
+hook 會沒有欄位可填而被擠掉——這份文件初版就犯了這個錯。
 
-第 2 步是最常見的錯配：**把「絕不該」寫進 CLAUDE.md**——它讀起來像規則，
-實際只是祈願。`docs/blackbox/` 那條原本就是這樣。
+#### A 表・知識放置
+
+| 落點 | 成本函數 | 適合 |
+|---|---|---|
+| `.claude/rules` + `paths:` | N × 相關 session | 分區慣例、單體檔導航 |
+| skill | N × 被呼叫次數（frontmatter 仍每 session 付） | 多步驟 SOP |
+| `CLAUDE.md` | **N × 每個 session** | 猜不到的指令、跨區慣例 |
+| subagent | 獨立 window，只回摘要（frontmatter 仍每 session 付） | 高輸出量探索 |
+
+> skill 與 agent 的 **frontmatter**（`name` + `description`）每個 session 都在
+> context 裡——那是 Claude 決定「何時該叫哪一個」的依據。所以 description 要短而
+> 準：太長是每 session 的固定支出，太模糊則永遠不會被正確觸發。本 repo 這部分
+> 目前約 717 tokens，已納入 C1 計算。
+
+#### B 表・行為攔截
+
+| 落點 | 何時作用 | token 意義 |
+|---|---|---|
+| `permissions.deny` | 讀取發生前 | **成本 0**——被擋的內容從未進入 context。「絕不該讀」的唯一正解 |
+| `PreToolUse` hook | 指令執行前 | 可 deny，也可**改寫輸入**（`updatedInput`）。`check-output-filter.py` 就是靠這個把驗證指令包裝成「綠燈只回一行」 |
+| `PostToolUse` hook | 工具回傳後 | 可處理輸出。本 repo **未使用**——目前的輸出治理都在 PreToolUse 改寫指令那一側 |
+| `SessionStart` hook | session 開場 | **它的 stdout 會直接進 context**，等於是可程式化的啟動成本。`session-bootstrap.sh` 因此刻意在順利路徑上完全安靜——那不是禮貌，是設計 |
+
+**選 deny 還是 hook**：目標是「檔案不該被讀」用 `permissions.deny`（成本 0 且無法
+繞過）；目標是「指令的行為要改變」才用 hook。把該用 deny 的寫成 hook 是多餘的
+複雜度，把該用 deny 的寫進 `CLAUDE.md` 則是最常見的錯配——它讀起來像規則，實際
+只是祈願。`docs/blackbox/` 那條原本就是這樣。
+
+⚠️ **同一個 matcher 上有多個 hook 時**，回報 `permissionDecision: allow` 有可能
+蓋掉另一個 hook 的 `deny`。`check-output-filter.py` 因此先問過 `bash-guard.decide()`，
+它要擋的指令一律不出手——這是安全條件，不是最佳化。
 
 ### 5.4 預算模型（`check-context-budget.py` 的依據）
 
