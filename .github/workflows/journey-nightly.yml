@@ -19,9 +19,10 @@ name: Journey Nightly
 #   SUPABASE_PROJECT_REF       既有（正式專案 ref，分支從它長出來）
 
 on:
-  # 首跑校準通過後打開（台北 02:00 = UTC 18:00）：
-  # schedule:
-  #   - cron: '0 18 * * *'
+  # 台北 02:00 = UTC 18:00。首跑校準已於 2026-07 通過
+  # （skeleton 與 full 兩種 scope 手動觸發皆全綠）。
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       payment_mode:
