@@ -3,6 +3,18 @@
 外送/服務媒合平台。React 18 + Vite + TS(前端)、Supabase Edge Functions
 (Deno,後端 API)、Supabase Postgres、Cloudflare Pages 部署、PayUni 金流。
 
+## 動手之前:走哪條流程
+
+| 情況 | 走這條 |
+|---|---|
+| 新功能、新頁面、改流程 | `/plan-feature <slug>` → 自動接 `/review-plan` → **停等人審** → 人親自打 `/tdd-implement <slug>` |
+| 修 bug、行為不對、報錯 | `/fix-bug <描述>`(根因+同類掃描+四面向+防線回填) |
+| 只想審既有 diff | `/review-implementation <slug>` |
+
+**規劃未經人審通過,不要寫任何產品程式碼。** `feature/*` 分支上沒有
+`docs/plans/<slug>/plan.md` 時,PreToolUse 守衛會擋掉 `src/**` 與
+`supabase/functions/**` 的寫入(規劃書目錄名 = 分支 slug)。
+
 ## 指令
 
 | 指令 | 用途 |
@@ -11,7 +23,8 @@
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
 | `npm run check:full` | check + build + Deno 型別檢查(送 PR 前跑) |
 | `npm run test:watch` | vitest 監看模式 |
-| `bash scripts/framework-check.sh` | 框架檔案健康檢查 |
+| `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試) |
+| `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
@@ -44,20 +57,19 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 ⚠️ `docs/blackbox/` 是未讀碼的黑箱練習產物,內容與本專案實際功能**無關**,
 禁止當成規格來源。
 
-## 開發流程(摘要;完整 SOP 在各 skill 內)
+## 開發流程細節(完整 SOP 在各 skill 內)
 
-新功能一律三段式,每段可在全新 session 執行(狀態都在 `docs/plans/<feature>/`):
-
-1. `/plan-feature <名稱>` — 探索+產規劃書(系統/架構/UIUX/需求四面向)
-2. `/review-plan <feature>` — 4 個獨立視角 subagent(系統/架構/UIUX/需求)
-   審查,彙整 review.md,停待人審
-3. `/tdd-implement <feature>` — 人審通過後才可執行;TDD 紅→綠,相位鎖防改測試
-
-修 bug 一律走 `/fix-bug`(根因分析+同類掃描+四面向審視+防線回填,
-禁止就地貼補丁;表層 typo 有簡版分級)。
+三段式的每一段都可在**全新 session** 執行——狀態全在
+`docs/plans/<feature>/`(plan.md / review.md / progress.md),不依賴對話歷史。
+`/tdd-implement` 是唯一不能自動觸發的 skill:那道鎖就是「人審通過才實作」。
+實作完成後 `/review-implementation` 會用同四個視角審 diff,專門攔「規劃審過、
+實作走偏」。
 
 - Git-flow(簡化版):`feature/<slug>`、`fix/<slug>` 從 develop 切出,PR 回
   develop;絕不直接 push main/develop(hook 會擋)。
+  已知例外:claude.ai/code 的 web session 會自動開 `claude/<描述>-<hash>`
+  分支——不符 `feature/*` 命名但可正常運作(守衛只認 `feature/*`)。真的要
+  走三段式流程時,自己切一個 `feature/<slug>` 分支。
 - 環境對應:develop 有自己的 persistent Supabase project
   (`vars.SUPABASE_DEVELOP_PROJECT_REF`),main 是正式站
   (`vars.SUPABASE_PROJECT_REF`)。push 到任一分支且動了

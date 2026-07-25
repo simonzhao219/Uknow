@@ -54,7 +54,10 @@ glob——多 feature 並存時會吃進別案狀態):
 
 1. `npm run check:full`(含 build 與 Deno 型別檢查)
 2. UI 有改動:啟動 dev server 用 Playwright 截圖自查關鍵畫面(視覺迴路)
-3. Push:`git push -u origin feature/$ARGUMENTS`,開 PR → **develop**
-   (照 PR 範本填:規劃書連結、紅燈 hashes、CI run)
-4. `gh pr checks --watch` 盯到綠;紅了同 session 修——CI 訊號沒有回來
+3. **跑 `/review-implementation $ARGUMENTS`**——四視角審實作 diff,重點是
+   「有沒有偏離當初審核通過的 plan」。CI 證明不了這件事,只有獨立視角能。
+   P0 修掉(或人工豁免並記錄)才可 push
+4. Push:`git push -u origin feature/$ARGUMENTS`,開 PR → **develop**
+   (照 PR 範本填:規劃書連結、審查報告、紅燈 hashes、CI run)
+5. `gh pr checks --watch` 盯到綠;紅了同 session 修——CI 訊號沒有回來
    之前,任務不算完

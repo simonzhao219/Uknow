@@ -1,8 +1,7 @@
 ---
 name: plan-feature
-description: 產出新功能的四面向規劃書（系統/架構/UIUX/需求），是所有新功能的第一步
+description: 任何新功能/新需求開發的第一步——產出四面向規劃書（系統/架構/UIUX/需求）。使用者提出要加功能、做新頁面、改流程時一律先走這裡，不要直接寫程式
 argument-hint: [feature-slug 或功能描述]
-disable-model-invocation: true
 ---
 
 # /plan-feature — 規劃階段
@@ -21,6 +20,8 @@ disable-model-invocation: true
 2. **實例化**:`mkdir -p docs/plans/<feature>`,從 `docs/_templates/plan.md`
    複製骨架;參考 `examples/plan-example.md` 的填寫密度(它示範的是
    「一句話講清楚」的高度,不是愈長愈好)。
+   **`<feature>` 就是之後的分支 slug**(`feature/<feature>`)——目錄名與
+   分支名必須一致,PreToolUse 守衛靠這個對應找規劃書。
 3. **填寫四面向與階段切分**。階段切分是給 TDD 用的:每階段一個紅綠循環、
    有明確測試落點與驗證標準——切不出測試落點的階段代表設計還沒想清楚。
 4. **開放問題是逃生口**:規格書模糊、兩案難決、需要商業判斷的,列入
@@ -29,5 +30,7 @@ disable-model-invocation: true
 5. **收尾**:同時從 `docs/_templates/progress.md` 實例化
    `docs/plans/<feature>/progress.md` 並預填階段清單(狀態全部「未開始」)
    ——下一階段的 rehydrate 鏈從這裡開始,現在不建,鏈就是斷的。
-6. **停**。輸出規劃書路徑與一段摘要,提示使用者:下一步是
-   `/review-plan <feature>`。本 skill 到此為止,不進入審查、不寫任何實作。
+6. **接著跑 `/review-plan <feature>`**——規劃完就審查,不要等人開口。
+   規劃書自己寫完自己看不出問題,這是確認偏誤,四個獨立視角才看得見。
+7. **絕不寫任何實作**。審查報告出來後停,等人裁決;實作只能由人親自打
+   `/tdd-implement` 啟動(那道鎖是「人審通過才實作」的唯一保證)。
