@@ -19,7 +19,7 @@ from pages.create_service_provider_page import CreateServiceProviderPage
 from pages.home_page import HomePage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.service_provider_management_page import ServiceProviderManagementPage
-from tools import seed_time_machine, twid
+from tools import orgchart, seed_time_machine, twid
 
 scenarios("60_time_scenarios.feature")
 
@@ -87,8 +87,28 @@ def push_to_recently_expired(supabase_admin, run_state, node):
 
 
 @when(parsers.parse('時光機將 "{node}" 推入完全失效'))
+@given(parsers.parse('時光機將 "{node}" 推入完全失效'))
 def push_to_expired(supabase_admin, run_state, node):
     seed_time_machine.enter_expired(supabase_admin, run_state.users[node].user_id)
+
+
+@given(parsers.parse('時光機將 "{node}" 推入過期超過一年'))
+def push_to_expired_over_a_year(supabase_admin, run_state, node):
+    seed_time_machine.enter_expired_over_a_year(supabase_admin, run_state.users[node].user_id)
+
+
+@given(parsers.parse('時光機記下並將 "{node}" 推入完全失效'))
+def push_to_expired_with_snapshot(supabase_admin, run_state, scenario_memo, node):
+    uid = run_state.users[node].user_id
+    scenario_memo["sub_snapshot"] = seed_time_machine.capture_dates(supabase_admin, uid)
+    seed_time_machine.enter_expired(supabase_admin, uid)
+
+
+@then(parsers.parse('時光機恢復 "{node}" 的訂閱效期'))
+def restore_subscription(supabase_admin, run_state, scenario_memo, node):
+    seed_time_machine.restore_dates(
+        supabase_admin, run_state.users[node].user_id, scenario_memo["sub_snapshot"]
+    )
 
 
 @given(parsers.parse('時光機將 "{node}" 推入剛過期（未滿一年）並記下接續錨點'))
@@ -123,6 +143,130 @@ def code_shows_referrer_name(guarded_page, run_state, node):
     status = CompleteProfilePage(guarded_page).referral_code_status()
     expect(status).to_be_visible(timeout=10_000)
     expect(status).to_contain_text(run_state.users[node].name)
+
+
+# --- 過期會員的點數保留／組織圖標記／提領閘門 --------------------------------
+
+
+@when(parsers.parse('"{node}" 登入並開啟獎勵頁'))
+def open_rewards(guarded_page, run_state, node):
+    login_via_gui(guarded_page, run_state.users[node])
+    guarded_page.goto("/rewards")
+    expect(guarded_page.get_by_role("heading", name="獎勵回饋")).to_be_visible(timeout=15_000)
+
+
+@then(parsers.parse('獎勵頁顯示的總點數等於 "{node}" 三代下線數乘以單代獎金'))
+def rewards_retained(guarded_page, run_state, org_nodes, reward_amount, node):
+    expected = orgchart.expected_reward_count(org_nodes, node) * reward_amount
+    expect(guarded_page.get_by_text(f"{expected}P", exact=True).first).to_be_visible(
+        timeout=15_000
+    )
+
+
+@then("獎勵頁顯示訂閱已失效無法提領的提示")
+def withdrawal_blocked_hint(guarded_page):
+    expect(guarded_page.get_by_text("訂閱已失效，無法申請提領").first).to_be_visible(
+        timeout=15_000
+    )
+
+
+@when(parsers.parse('"{node}" 登入並開啟推薦頁'))
+def open_referrals(guarded_page, run_state, node):
+    login_via_gui(guarded_page, run_state.users[node])
+    guarded_page.goto("/referrals")
+    expect(guarded_page.get_by_text("一代", exact=True)).to_be_visible(timeout=15_000)
+
+
+@then(parsers.parse('推薦樹包含 "{node}" 的姓名與已失效標記'))
+def tree_shows_inactive_member(guarded_page, run_state, node):
+    # 一代預設展開；失效節點的卡片帶「已失效」標籤但仍在樹上
+    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+    expect(guarded_page.get_by_text("已失效").first).to_be_visible()
+
+
+@then(parsers.parse('展開二代後推薦樹仍包含 "{node}" 的姓名'))
+def tree_structure_intact(guarded_page, run_state, node):
+    guarded_page.get_by_text("二代", exact=True).click()
+    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+
+
+# --- 過期超過一年：僅能新約 --------------------------------------------------
+
+
+@when(parsers.parse('"{node}" 登入並開啟付款頁'))
+def open_checkout(guarded_page, run_state, node):
+    login_via_gui(guarded_page, run_state.users[node])
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+
+
+@then("付款頁顯示僅能以新約重新起算")
+def only_fresh_allowed(guarded_page):
+    expect(guarded_page.get_by_text("會籍已過期超過一年").first).to_be_visible()
+
+
+@then("付款頁沒有「續約（接續原效期）」選項")
+def no_extend_option(guarded_page):
+    expect(guarded_page.get_by_test_id("renewal-mode-extend")).to_have_count(0)
+    expect(guarded_page.get_by_test_id("renewal-mode-fresh")).to_be_visible()
+
+
+# --- 新約復活：換推薦人、付款日起算、刊登重新公開 ----------------------------
+
+
+@when(parsers.parse('"{node}" 登入並以「新約（重新起算）」與 "{referrer}" 的推薦碼完成重新訂閱'))
+def renew_fresh_with_new_referrer(guarded_page, journey_config, supabase_admin,
+                                  run_state, scenario_memo, node, referrer):
+    user = run_state.users[node]
+    new_referrer = run_state.users[referrer]
+    login_via_gui(guarded_page, user)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+
+    guarded_page.get_by_test_id("renewal-mode-fresh").click()
+    code_input = guarded_page.get_by_test_id("new-referral-code-input")
+    code_input.fill(new_referrer.referral_code)
+    code_input.blur()  # 驗證掛在 onBlur
+    expect(guarded_page.get_by_test_id("new-referrer-name")).to_contain_text(
+        new_referrer.name, timeout=10_000
+    )
+
+    scenario_memo["paid_at"] = datetime.now(timezone.utc)
+    payment.pay_via_gui(guarded_page, journey_config, supabase_admin, user)
+
+
+@then(parsers.parse('"{node}" 的新到期日自付款日起算約一年'))
+def end_date_payment_anchored(supabase_admin, run_state, scenario_memo, node):
+    new_end = _latest_end_date(supabase_admin, run_state.users[node].user_id)
+    days = (new_end - scenario_memo["paid_at"]).days
+    assert 360 <= days <= 370, f"新約到期日距付款日 {days} 天，未從付款日重新起算"
+
+
+@then(parsers.parse('"{node}" 的推薦邊已改指向 "{referrer}"'))
+def edge_rewired(supabase_admin, run_state, node, referrer):
+    edges = supabase_admin.rest_select(
+        "referral_edges",
+        {"select": "referrer_user_id",
+         "referee_user_id": f"eq.{run_state.users[node].user_id}"},
+    )
+    assert edges, f"{node} 沒有推薦邊"
+    expected = run_state.users[referrer].user_id
+    assert edges[0]["referrer_user_id"] == expected, (
+        f"{node} 的推薦邊指向 {edges[0]['referrer_user_id']}，未 rewire 到 {referrer}"
+    )
+
+
+@then(parsers.parse('"{referrer}" 因 "{node}" 的新約獲得一筆直推獎勵'))
+def new_referrer_rewarded(supabase_admin, run_state, reward_amount, referrer, node):
+    rows = supabase_admin.rest_select(
+        "reward_transactions",
+        {"select": "amount,generation",
+         "user_id": f"eq.{run_state.users[referrer].user_id}",
+         "referee_user_id": f"eq.{run_state.users[node].user_id}",
+         "generation": "eq.1"},
+    )
+    assert rows, f"{referrer} 沒有因 {node} 的新約獲得直推獎勵"
+    assert int(rows[0]["amount"]) == reward_amount, f"獎勵金額異常：{rows[0]}"
 
 
 # --- 過期會員（未滿一年）續約 extend ----------------------------------------
