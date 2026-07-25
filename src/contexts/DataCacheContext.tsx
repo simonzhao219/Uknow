@@ -27,7 +27,7 @@ interface CachedData {
   userListing?: CacheItem;
 
   // 推薦管理
-  referralTree?: CacheItem;
+  referralNetwork?: CacheItem;
 
   // 任務中心
   tasks?: CacheItem;
@@ -51,7 +51,7 @@ export type CacheKey = keyof CachedData;
 export const MUTATION_GROUPS = {
   // 付款完成（首次付款／續訂／重新訂）：影響會籍狀態、推薦樹（新下線
   // 或推薦人變更）、獎勵與任務進度（推薦人這方的獎勵/推薦王計數）。
-  payment: ['subscriptionStatus', 'rewards', 'withdrawals', 'tasks', 'pendingRewards', 'referralTree'] as CacheKey[],
+  payment: ['subscriptionStatus', 'rewards', 'withdrawals', 'tasks', 'pendingRewards', 'referralNetwork'] as CacheKey[],
   // 領取推薦王「免費續約 1 年」：改變會員到期日 + 待領清單。
   rewardClaim: ['tasks', 'pendingRewards', 'rewards', 'subscriptionStatus'] as CacheKey[],
   // 提領申請／查收確認：獎勵餘額與提領記錄。

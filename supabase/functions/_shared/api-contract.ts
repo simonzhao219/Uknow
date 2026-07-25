@@ -228,7 +228,7 @@ export const RewardHistoryResponseSchema = obj({
 });
 export type RewardHistoryResponse = Infer<typeof RewardHistoryResponseSchema>;
 
-// 推薦網絡：巢狀樹（封頂 3 代）。深度固定，故用顯式三層 schema 取代遞迴。
+// 推薦網絡節點共通欄位（封頂 3 代）。
 // 節點姓名於伺服器端遮罩（二、三代），前端不持有未遮罩資料。
 // status 由帳戶兩態（active/expired）+ suspended_at + 距到期天數推導：
 //   active｜expiring（active 且 ≤30 天到期）｜expired｜suspended
@@ -244,27 +244,12 @@ const ReferralNodeFields = {
   childCount:   num(),
 } as const;
 
-export const ReferralGen3NodeSchema = obj({ ...ReferralNodeFields });          // 葉節點（末代）
-export const ReferralGen2NodeSchema = obj({ ...ReferralNodeFields, children: arr(ReferralGen3NodeSchema) });
-export const ReferralGen1NodeSchema = obj({ ...ReferralNodeFields, children: arr(ReferralGen2NodeSchema) });
-export type ReferralNode = Infer<typeof ReferralGen1NodeSchema>;
-
 const ReferralSummarySchema = obj({
   firstGenCount:  num(),
   secondGenCount: num(),
   thirdGenCount:  num(),
   totalReferrals: num(),
 });
-
-export const ReferralTreeResponseSchema = obj({
-  success: bool(),
-  data: obj({
-    userReferralCode: str(),
-    roots: arr(ReferralGen1NodeSchema),
-    summary: ReferralSummarySchema,
-  }),
-});
-export type ReferralTreeResponse = Infer<typeof ReferralTreeResponseSchema>;
 
 // ------------------------------------------------------------
 // 推薦網絡懶載入端點（Tier B）：/referrals/network/*
@@ -540,7 +525,6 @@ export const API_PATHS = {
   rewards:               '/rewards',
   rewardsWithdrawals:    '/rewards/withdrawals',
   rewardsHistory:        '/rewards/history',
-  referralsMyTree:       '/referrals/my-tree',
   networkOverview:       '/referrals/network/overview',
   networkChildren:       '/referrals/network/children',
   networkSearch:         '/referrals/network/search',
