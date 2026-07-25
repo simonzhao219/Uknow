@@ -136,16 +136,36 @@ jobs:
           #    A0。前端的註冊流程本來就有 OTP 那一步，關掉確認等於 develop 的
           #    註冊 UX 與正式站不同，順手改回來。
           auth_api="https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth"
-          patch_out="$(curl -sS -w '\n%{http_code}' -X PATCH \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            "$auth_api" \
-            -d '{"rate_limit_email_sent": 200, "mailer_autoconfirm": false}')"
-          patch_code="$(echo "$patch_out" | tail -1)"
-          if [ "$patch_code" != "200" ]; then
-            echo "::error::auth 設定 PATCH 失敗（HTTP $patch_code）："
-            echo "$patch_out" | head -5
+          patch_auth() {  # $1 = JSON body → 印出 "HTTP碼 回應本文"
+            curl -sS -w '\n%{http_code}' -X PATCH \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$auth_api" -d "$1"
+          }
+
+          # 兩個欄位必須分開送。合併送的話整包會被拒——rate_limit_email_sent
+          # 需要專案先設好 custom SMTP，沒設就回 401，連帶讓同一包裡的
+          # mailer_autoconfirm 一起失效（run 30176329217 的實測訊息：
+          # "Custom SMTP required to configure SMTP_SENDER_NAME or
+          #  RATE_LIMIT_EMAIL_SENT"）。這正是第三次執行「PATCH 看似成功、
+          # 設定卻沒生效」的真正原因。
+          confirm_out="$(patch_auth '{"mailer_autoconfirm": false}')"
+          confirm_code="$(echo "$confirm_out" | tail -1)"
+          if [ "$confirm_code" != "200" ]; then
+            echo "::error::關閉自動確認 email 失敗（HTTP $confirm_code）："
+            echo "$confirm_out" | head -5
             exit 1
+          fi
+
+          # 限流放寬是 best-effort：沒有 custom SMTP 就一定失敗，而那是專案
+          # 設定問題，不是本 workflow 能解的。仍然照跑是因為有 custom SMTP
+          # 的環境會成功；失敗時明講後果，不要讓人以為只是雜訊。
+          rate_out="$(patch_auth '{"rate_limit_email_sent": 200}')"
+          rate_code="$(echo "$rate_out" | tail -1)"
+          if [ "$rate_code" != "200" ]; then
+            echo "::warning::email 寄送限流未能放寬（HTTP $rate_code）：$(echo "$rate_out" | head -1)"
+            echo "::warning::內建 SMTP 的額度是每小時個位數，45 人註冊會撞牆——"
+            echo "::warning::要種完整棵樹，該分支專案需要先設定 custom SMTP。"
           fi
 
           # 設完回頭讀一次確認生效。前三次執行的教訓：run 30175585595 明明
