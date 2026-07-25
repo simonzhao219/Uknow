@@ -99,10 +99,17 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 實作走偏」。
 
 - Git-flow(簡化版):`feature/<slug>`、`fix/<slug>` 從 develop 切出,PR 回
-  develop;絕不直接 push main/develop(hook 會擋)。
-  已知例外:claude.ai/code 的 web session 會自動開 `claude/<描述>-<hash>`
-  分支——不符 `feature/*` 命名但可正常運作(守衛只認 `feature/*`)。真的要
-  走三段式流程時,自己切一個 `feature/<slug>` 分支。
+  develop;絕不直接 push main/develop(hook 會擋)。`checkout -b`/`switch -c`
+  沒指定 start-point 時,bash-guard 會查 HEAD 是否等於最新 origin/develop,
+  且拒絕顯式以 main 為 base(第 5 類,見 `.claude/hooks/bash-guard.py`)。
+  已知例外:claude.ai/code 的 web session 由平台在 session 啟動**前**就
+  開好 `claude/<描述>-<hash>` 分支,早於任何 hook——不符 `feature/*` 命名
+  (守衛只認 `feature/*`),繼承的 base 是 GitHub repo Settings → Branches
+  的 default branch。**目前是 main,應改成 develop**(2026-07-25
+  friction-log:一個 web session 因此生在缺整套 `.claude/` 框架的 main
+  上)。改對之前,web session 開局先確認 HEAD 是否為 develop,不是就
+  `git checkout -B <branch> origin/develop`。真的要走三段式流程時,自己
+  切一個 `feature/<slug>` 分支。
 - 合併規矩:PR **只用 rebase 更新**(`git fetch origin develop && git rebase
   origin/develop && git push --force-with-lease`),**不要按 GitHub 的
   Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。

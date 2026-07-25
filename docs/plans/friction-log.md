@@ -304,3 +304,41 @@ X（已定案的產品決策，非落差）」之類的說明，重複強調某�
 教訓：關閉一個清單項目時，「刪除該列」和「解釋為什麼刪除」是兩件事——
 前者是清理，後者預設不必做。「已定案」「非落差」「不必再列」這類措辭
 是說給流程／審查看的話，不是產品事實，不屬於 B 級現況文件該留的內容。
+
+## 2026-07-25｜漏網｜web session 從 main(非 develop)開局,整套 .claude/ 框架不存在
+
+使用者要求「強制新分支預設以 develop 為 base」,追查時發現這正在發生:
+本次 claude.ai/code web session 的起始分支 `claude/claude-code-default-
+branch-base-kfk9b6` merge-base 是 `origin/main` 的 tip,不是
+`origin/develop`——本機當時完全沒有 `.claude/`、`CLAUDE.md`,連
+`git branch -a` 都要先 `git fetch --prune` 才看得到 `develop`(初次 clone
+顯然只抓了 main 這條)。
+
+**根因**:GitHub repo 的 `default_branch` 設定是 `main`(GitHub API 直接
+證實)。claude.ai/code 的 web session 由平台在 session 啟動前建立分支,
+依據就是這個設定——早於 `.claude/hooks/` 任何 PreToolUse hook 生效。
+Claude Code 治理的六層(permissions.deny/hook/paths-scoped rule/skill/
+CLAUDE.md/prompt)全部管不到這一步:session 存在了它們才存在。
+
+CLAUDE.md 原本只記錄「web session 分支不符 `feature/*` 命名」這個已知
+例外,沒意識到 base 也可能是錯的。兩者是同一個平台行為的兩面,但後果差
+很多:命名不影響守衛放行,base 選錯卻讓整個 session 是空的——規劃書守衛、
+TDD 相位鎖、命名檢查、規格書漂移偵測……全套治理形同不存在,而且不會有
+任何錯誤訊息,純粹「看起來一切正常,只是規則都不在」。
+
+**處置**:
+1. `.claude/hooks/bash-guard.py` 補第 5 類:`checkout -b`/`switch -c`
+   沒有顯式 start-point 時查 HEAD 是否為最新 `origin/develop`,不是就擋
+   且指路;顯式以 main 為 start-point 同樣擋。`scripts/test-hooks.py` 補
+   13 條表格案例(含刪分支/列分支/純切換分支的反向驗證,避免誤擋)。這條
+   覆蓋的是 **session 中途**由 Claude 自己開新分支的情形。
+2. CLAUDE.md 的「已知例外」段落補上 default branch 這條根因,並標明
+   GitHub repo Settings → Branches → default branch 應該改成 develop——
+   這是本次事故唯一的完整解,但改 GitHub repo 設定不在任何 Claude Code
+   治理層內,只能由人在 GitHub 上做,已請人工處理。
+
+**教訓**:平台自動化(web session 建分支)發生在 Claude Code 治理層啟動
+之前,那一步的正確性只能靠**上游設定**(這裡是 GitHub default branch),
+沒有任何 permissions/hook/rule/skill/CLAUDE.md/prompt 能補救已經選錯的
+base。治理層生效前的第一個問題永遠是「這個治理層本身是什麼時候開始
+生效的」——答不出來的那段,就是它管不到的盲區。
