@@ -314,10 +314,14 @@ authenticated 的 GRANT 與兩個端點的新驗證對它完全無效**。不堵
   `SUPABASE_ANON_KEY` 的讀取或本地 fallback(對照 `SERVICE_ROLE_KEY` 在
   `test-helpers.ts:12-13` 有本地 demo fallback)。不先補這個,階段 3
   開工當下就卡住。
-- **階段 5 的 journey 修改是必須的**:`e2e/journey/run_state.py:40` 以
+- **階段 5 的 journey 修改是必須的**:`e2e/journey/run_state.py:59` 以
   `name=f"測試{run_id}{node}"`(中文＋run_id＋節點代號如 `A0`)產生姓名,
   在新規則下**必定被拒**,整套 journey 會在註冊階段全滅。journey 依規則
   不能在本機跑,只在排程或晉升 PR 才會發現,是晚且貴的失敗點。
+  develop 的 `8cafd94` 之後又多一層:該 commit 以同一支產生器在 develop
+  種了**持久化的 45 人示範資料**(「跑完留著」),代表這批帳號的姓名同樣
+  不符新規則。它們是既有資料、不會被回溯校驗(§1「不做」),但**任何再次
+  執行的種樹流程都會在註冊階段失敗**,故階段 5 修產生器的優先級只升不降。
 
 ## 6. 開放問題
 
