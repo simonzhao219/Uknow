@@ -31,7 +31,13 @@ if [ "$DRY_RUN" = "1" ] && [ -n "${PRE_COMMIT_FAKE_STAGED:-}" ]; then
   staged="$PRE_COMMIT_FAKE_STAGED"
 fi
 
+# 綠燈安靜化的包裝器（抽成獨立檔案才有可測的接縫，理由見該檔開頭）。
+# shellcheck source=scripts/git-hooks/lib-quiet.sh
+. "$(git rev-parse --show-toplevel)/scripts/git-hooks/lib-quiet.sh"
+
 # 執行一組閘門；dry-run 時只宣告不執行。
+# 輸出處理：綠燈折疊成一行、紅燈原樣全印（run_gate_quiet）。exit code 一律
+# 原樣傳遞——這是 commit 閘門，吞掉退出碼等於閘門「看起來正常」地失效。
 run_gate() {
   local label="$1"
   shift
@@ -39,7 +45,7 @@ run_gate() {
     echo "DRYRUN: WOULD_RUN $label"
     return 0
   fi
-  "$@"
+  run_gate_quiet "$label" "$@"
 }
 
 if [ -f .claude/tdd-lock ]; then

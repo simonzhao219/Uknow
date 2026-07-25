@@ -27,3 +27,34 @@ paths:
 - pre-commit 在 functions 有改動時會自動跑 `deno fmt --check` +
   `deno task check`,本機沒裝 deno 會擋 commit 並附安裝指引
   (`deno.land` 被擋的環境可用 `npm i -g deno`)
+
+## index.ts 導航——**不要整檔讀**
+
+`api/index.ts` 是單一 Hono app,**3,000+ 行、49 條路由、約 31,000 tokens**
+(≈15% 的 context window)。整檔讀進來會擠掉後續工作的空間,而任何單一
+任務用得到的通常不到 5%。**先定位,再用 Read 的 offset/limit 取那一段。**
+
+定位指令(行號會隨改動漂移,一律現算,不要相信任何寫死的行號):
+
+    grep -n "app\.\(get\|post\|put\|patch\|delete\)(" supabase/functions/api/index.ts
+    grep -n "<你要找的路徑或函式名>" supabase/functions/api/index.ts
+
+檔案的區段順序(用來判斷該往檔頭還是檔尾找):
+
+| # | 區段 | 內容 |
+|---|---|---|
+| 1 | 前置 | CORS、`READ_PATHS`、`CORS_304_HEADERS` |
+| 2 | 共用工具 | `sb()`、`getRewardConfig()`、`requireAuth()`、`isAdminUser()`、`verifyNationalId()`、`maskNationalId()`、`maskBankAccount()` |
+| 3 | PayUni 設定 | `payuniConfig()` |
+| 4 | auth | `/profile`、`/auth/*`(check-email / register / profile / cancel-signup / complete-registration / reset-registration) |
+| 5 | 推薦碼 | `/referrals/validate/:code`、`/referrals/join-program`、`/listings/verify-referral-code` |
+| 6 | admin | `/admin/system-alerts`、`/admin/features`、`/admin/withdrawals`、`/admin/members`、`/admin/announcements`、`/announcements/active`、`/admin-setup/*` |
+| 7 | 金流 | `/payuni/prepare`、`/payuni/result/:tradeNo`、`/payuni/return`、`/webhooks/payuni/notify`、`/internal/reconcile-pending-payments` |
+| 8 | 會籍 | `/subscriptions/status` |
+| 9 | 獎勵/提領 | `/rewards`、`/rewards/points-preview`、`/rewards/withdrawals`、`/rewards/verify-id`、`/rewards/id-photos`、`/rewards/upload-id-photos`、`/rewards/withdraw`、`/rewards/withdrawals/:id/confirm`、`/rewards/history` |
+| 10 | 推薦網絡 | `/referrals/network/overview`、`/children`、`/search` |
+| 11 | 任務 | `/tasks`、`/tasks/pending-rewards`、`/tasks/current-month-top`、`/tasks/claim-reward/:id` |
+| 12 | 其他 | `/listings/upload-photo`、`/referrals/debug/:userId`、`/health` |
+
+改動前也先看 `_shared/api-contract.ts`(前後端共用契約,≈5,000 tok)——
+契約變更要同步兩側,只改一邊會在 CI 的型別檢查才炸。

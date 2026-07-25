@@ -44,6 +44,13 @@
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
 commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
+**驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
+看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——
+那些行是 biome 的 200+ 條 advisory warning,綠燈時資訊量為零。紅燈不折疊,
+失敗段落照常顯示,exit code 一律原樣傳遞。需要完整輸出時在指令後接
+`| tail -80`(自帶 pipe 的指令不會被改寫)。**只影響 Claude 執行的指令**;
+`git commit` 觸發的 pre-commit 輸出不在範圍內。
+
 ## 架構事實
 
 - 狀態管理:React Context(App.tsx 的 UserContext),無 Redux/Zustand
@@ -114,11 +121,34 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
   綠燈 commit 標記是流程必要(PR 以紅燈 hash 為證據)。
 - Push 後自查 CI:`gh pr checks <pr> --watch`,紅了同 session 修到綠。
 - 糾偏 SOP:方向錯了 Esc 中斷 → `/rewind` 回檢查點;同一錯誤糾正兩次
-  仍錯 → `/clear` 換乾淨 context 重述問題。
+  仍錯 → `/clear` 換乾淨 context 重述問題。覺得「變慢/變笨」時**先跑
+  `/context` 看誰吃掉空間**,不要直接 `/compact`——壓縮本身就是一次大請求,
+  而 `/clear` 是零成本。
 - 記憶紀律:專案決策一律寫進 `docs/plans/`(git 是單一事實來源);
   auto-memory 只放個人操作性學習,不放專案決策。
 - 框架自身的摩擦(誤擋/漏網/重複糾正)記入 `docs/plans/friction-log.md`,
   每 2 個 feature 或雙週整併成框架修訂 PR。
+
+## 模型與 effort 分級
+
+流程有分級(表層錯走簡版、行為級走完整版),模型也該有——thinking token
+以 output 計價,而本專案任務跨度很大:
+
+| 任務 | 用 |
+|---|---|
+| 改文案、加 log、修 typo | Sonnet + `/effort` 降級 |
+| 一般功能實作、修 bug | Sonnet |
+| 金流·會籍·獎勵規則、跨層契約、`api/index.ts` 結構調整 | Opus |
+| 四個 plan-reviewer subagent | Sonnet(已寫進各 agent 的 frontmatter) |
+
+MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
+固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
+
+## Compact instructions
+
+壓縮時務必保留:當前 feature slug 與階段編號、紅燈 commit hash、改動過的
+檔案清單、最後一次 `npm run check` 的結果、`docs/plans/<slug>/` 下已寫入的
+檔案路徑。細節可捨——那些都能從上述檔案重讀。
 
 ## 環境前置
 
