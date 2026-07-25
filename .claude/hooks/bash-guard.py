@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""PreToolUse hook(Bash):擋三種確定性後門。
+"""PreToolUse hook(Bash):擋四種確定性後門。
 
 這些不是「風格偏好」而是框架的完整性條件:
 1. git commit --no-verify——繞過 pre-commit 閘門(閘門存在的意義歸零)
 2. git push --force / -f——改寫共享歷史(--force-with-lease 除外)
-3. 本機跑 journey 套件——打真 Supabase 分支、產真資料、耗分支費用
+3. 直接 push main/develop——git-flow 的底線:main/develop 只吃 PR,
+   不吃直推(branch protection 是第二道,這裡是即刻生效的第一道)
+4. 本機跑 journey 套件——打真 Supabase 分支、產真資料、耗分支費用
    (離線的 pytest tools/ 與 --collect-only 不擋)
 """
 
@@ -48,6 +50,20 @@ def main() -> None:
     ):
         deny("git push --force 會改寫共享歷史。需要安全強推時用 --force-with-lease,並先說明原因。")
         return
+
+    push_match = re.search(r"\bgit\b[^\n|;&]*\bpush\b(?P<rest>[^\n|;&]*)", cmd)
+    if push_match:
+        for token in push_match.group("rest").split():
+            if token.startswith("-"):
+                continue
+            dest = token.split(":")[-1] if ":" in token else token
+            if dest.removeprefix("refs/heads/") in ("main", "develop"):
+                deny(
+                    "git-flow:main/develop 只接受 PR 合併,不接受直接 push。"
+                    "請推 feature/fix 分支並開 PR(feature → develop;晉升 → main,"
+                    "見 CLAUDE.md 晉升 SOP)。"
+                )
+                return
 
     if re.search(r"\bpytest\b", cmd) and "journey" in cmd:
         if "tools/" not in cmd and "--collect-only" not in cmd:

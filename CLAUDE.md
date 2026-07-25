@@ -49,11 +49,19 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 新功能一律三段式,每段可在全新 session 執行(狀態都在 `docs/plans/<feature>/`):
 
 1. `/plan-feature <名稱>` — 探索+產規劃書(系統/架構/UIUX/需求四面向)
-2. `/review-plan <feature>` — 3 個獨立視角 subagent 審查,彙整 review.md,停待人審
+2. `/review-plan <feature>` — 4 個獨立視角 subagent(系統/架構/UIUX/需求)
+   審查,彙整 review.md,停待人審
 3. `/tdd-implement <feature>` — 人審通過後才可執行;TDD 紅→綠,相位鎖防改測試
 
+修 bug 一律走 `/fix-bug`(根因分析+同類掃描+四面向審視+防線回填,
+禁止就地貼補丁;表層 typo 有簡版分級)。
+
 - Git-flow(簡化版):`feature/<slug>`、`fix/<slug>` 從 develop 切出,PR 回
-  develop;develop 驗證後升 main。絕不直接 push main/develop。
+  develop;絕不直接 push main/develop(hook 會擋)。
+- 晉升 SOP(develop→main):(a) develop 上 CI 四軌綠;(b) 手動
+  workflow_dispatch 跑一次 journey(至少 skeleton)綠——這是唯一的真後端
+  驗證,晉升鏈上必須有它;(c) 開晉升 PR(develop→main),用 merge commit
+  保留歷史。main 收到 push 會自動部署 Edge Functions,晉升=上線。
 - Commit:Conventional Commits(`feat:` `fix:` `test:` `docs:` `refactor:`
   `style:` `chore:` `ci:`),**advisory**——但 TDD 相位的 `test(red)` /
   綠燈 commit 標記是流程必要(PR 以紅燈 hash 為證據)。

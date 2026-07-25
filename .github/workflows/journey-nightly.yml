@@ -194,7 +194,7 @@ jobs:
                 '',
                 'Triage SOP：',
                 '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
-                '2. 真缺陷 → 開 docs/plans/ 規劃修復；環境雜訊 → 註記後關閉',
+                '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
                 '3. 同因重複失敗 ≥2 次 → 記入 docs/plans/friction-log.md',
               ].join('\n'),
             });
