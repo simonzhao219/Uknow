@@ -4,7 +4,7 @@
 // ============================================================
 import { Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono/cors';
-import { etag } from 'npm:hono/etag';
+import { etag, RETAINED_304_HEADERS } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
 import {
@@ -92,8 +92,22 @@ const READ_PATHS = [
   '/tasks/*',
   '/announcements/active',
 ] as const;
+// 304 也必須帶 CORS 標頭：hono/etag 預設只保留 RETAINED_304_HEADERS，
+// 會把 Access-Control-Allow-Origin 從 304 剝掉。瀏覽器 HTTP 快取按 URL
+// 共用（*.uknow.pages.dev 各預覽網域同屬一個 site partition），舊部署存下
+// 的快取條目可能帶著「別的預覽網域」的 ACAO——revalidate 拿到的 304 若沒有
+// 新 ACAO，瀏覽器就沿用快取裡的舊值，CORS 檢查直接失敗（症狀：preview 登入
+// 後所有讀端點被擋，錯誤訊息指著另一個 pages.dev 網域）。304 帶上本次請求
+// 算出的 CORS 標頭後，規範要求瀏覽器用 304 的標頭更新快取條目——等於順手
+// 把中毒的快取治好。
+const CORS_304_HEADERS = [
+  ...RETAINED_304_HEADERS,
+  'access-control-allow-origin',
+  'access-control-allow-credentials',
+  'access-control-expose-headers',
+];
 for (const p of READ_PATHS) {
-  app.use(p, etag());
+  app.use(p, etag({ retainedHeaders: CORS_304_HEADERS }));
   app.use(p, async (c, next) => {
     await next();
     if (c.req.method === 'GET') {
