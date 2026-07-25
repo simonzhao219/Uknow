@@ -26,8 +26,14 @@ from pathlib import Path
 GUARDED_PREFIXES = ("src/", "supabase/functions/")
 
 
-def decide(branch: str, rel_path: str, plan_exists: bool) -> str | None:
-    """回傳 deny 理由,或 None 表示放行。純函式,無 I/O。"""
+def decide(branch: str, rel_path: str, plan_present: bool) -> str | None:
+    """回傳 deny 理由,或 None 表示放行。純函式,無 I/O。
+
+    plan_present 由呼叫方判定,語意是「這條分支上曾經有過規劃書」——
+    工作目錄現存**或**分支歷史裡出現過都算。規劃檔是鷹架,`/tdd-implement`
+    收尾會把它刪掉(見 CLAUDE.md 規劃檔生命週期),若只看工作目錄,清理完
+    之後的修正(例如修 CI 紅燈)會被自己的守衛擋住。
+    """
     if not branch.startswith("feature/"):
         return None  # 只管 feature 分支
     slug = branch[len("feature/") :]
@@ -35,15 +41,37 @@ def decide(branch: str, rel_path: str, plan_exists: bool) -> str | None:
         return None
     if not rel_path.startswith(GUARDED_PREFIXES):
         return None  # 文件、規劃書、設定檔等不受限
-    if plan_exists:
+    if plan_present:
         return None
     return (
-        f"分支 {branch} 還沒有規劃書(docs/plans/{slug}/plan.md 不存在),"
-        f"不能直接寫 {rel_path}。新功能一律三段式:先 /plan-feature {slug} 產出"
-        f"四面向規劃書(會自動接 /review-plan 四視角審查),人審通過後才由人啟動 "
-        f"/tdd-implement {slug}。若這不是新功能開發(修 bug 走 /fix-bug、"
-        f"框架維護等),請改用 fix/* 或其他分支名。"
+        f"分支 {branch} 沒有(也從未有過)規劃書 docs/plans/{slug}/plan.md,"
+        f"不能直接寫 {rel_path}。新功能先 /plan-feature {slug}(會自動接 "
+        f"/review-plan 四視角審查),人審通過後才由人啟動 /tdd-implement {slug}。"
+        f"輕量改動可走 Plan Mode 規劃、不落檔——但那種情況請用 fix/* 或其他"
+        f"分支名,別用 feature/*(修 bug 走 /fix-bug)。"
     )
+
+
+def plan_ever_existed(root: Path, slug: str) -> bool:
+    """工作目錄現存,或這條分支的歷史裡出現過——兩者皆算「有規劃書」。
+
+    看歷史是為了讓「收尾清理規劃檔」與這道守衛不衝突:清掉之後仍能繼續
+    修 CI 紅燈。git 查詢失敗時退回只看工作目錄(守衛寧可寬鬆也不要誤鎖)。
+    """
+    rel = f"docs/plans/{slug}/plan.md"
+    if (root / rel).exists():
+        return True
+    try:
+        out = subprocess.run(
+            ["git", "log", "--oneline", "-1", "--", rel],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return out.returncode == 0 and bool(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def current_branch(root: Path) -> str:
@@ -79,9 +107,9 @@ def main() -> None:
         rel = file_path.lstrip("./")
 
     slug = branch[len("feature/") :] if branch.startswith("feature/") else ""
-    plan_exists = bool(slug) and (root / "docs" / "plans" / slug / "plan.md").exists()
+    plan_present = bool(slug) and plan_ever_existed(root, slug)
 
-    reason = decide(branch, rel, plan_exists)
+    reason = decide(branch, rel, plan_present)
     if reason:
         print(
             json.dumps(

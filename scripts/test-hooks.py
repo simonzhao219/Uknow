@@ -94,7 +94,7 @@ for lock, path, want, why in TDD_CASES:
 plan_guard = load("feature-plan-guard")
 
 PLAN_CASES = [
-    # (分支, 檔案, 規劃書存在, 應否 deny, 說明)
+    # (分支, 檔案, 規劃書曾存在, 應否 deny, 說明)
     ("feature/task-fav", "src/utils/favorites.ts", False, True, "feature 分支無規劃書寫 src"),
     ("feature/task-fav", "src/utils/favorites.test.ts", False, True, "測試檔同樣受管"),
     ("feature/task-fav", "supabase/functions/api/index.ts", False, True, "後端同樣受管"),
@@ -109,6 +109,59 @@ PLAN_CASES = [
 
 for branch, path, plan, want, why in PLAN_CASES:
     expect(f"feature-plan-guard[{why}]", plan_guard.decide(branch, path, plan) is not None, want)
+
+
+def test_plan_ever_existed() -> None:
+    """plan_ever_existed 的真實 git 查詢——在拋棄式 repo 裡驗三種狀態。
+
+    這條是「收尾清理規劃檔」能成立的前提:清掉之後守衛仍須放行,否則
+    清理完就無法再修 CI 紅燈(守衛會鎖死自己)。純函式測不到這段,因為
+    它的判斷來自 git 歷史。
+    """
+    global checked
+    import tempfile
+
+    def git(cwd: str, *args: str) -> None:
+        subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            env=dict(
+                os.environ,
+                GIT_AUTHOR_NAME="t",
+                GIT_AUTHOR_EMAIL="t@e",
+                GIT_COMMITTER_NAME="t",
+                GIT_COMMITTER_EMAIL="t@e",
+            ),
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        git(tmp, "init", "-q")
+        plan_dir = Path(tmp) / "docs" / "plans" / "demo"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.md").write_text("# demo\n")
+        git(tmp, "add", "-A")
+        git(tmp, "commit", "-qm", "add plan")
+
+        checked += 1
+        if not plan_guard.plan_ever_existed(Path(tmp), "demo"):
+            failures.append("plan_ever_existed[檔案存在]: 應為 True")
+
+        # 模擬 /tdd-implement 收尾的鷹架拆除
+        git(tmp, "rm", "-rq", "docs/plans/demo")
+        git(tmp, "commit", "-qm", "chore(plans): 清理 demo 規劃檔")
+
+        checked += 1
+        if not plan_guard.plan_ever_existed(Path(tmp), "demo"):
+            failures.append("plan_ever_existed[已清理但歷史有過]: 應為 True(否則清理後守衛會鎖死自己)")
+
+        checked += 1
+        if plan_guard.plan_ever_existed(Path(tmp), "never-planned"):
+            failures.append("plan_ever_existed[從未存在]: 應為 False")
+
+
+test_plan_ever_existed()
 
 
 # ----------------------------------------------------------------- pre-commit

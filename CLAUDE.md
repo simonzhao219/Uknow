@@ -11,9 +11,22 @@
 | 修 bug、行為不對、報錯 | `/fix-bug <描述>`(根因+同類掃描+四面向+防線回填) |
 | 只想審既有 diff | `/review-implementation <slug>` |
 
-**規劃未經人審通過,不要寫任何產品程式碼。** `feature/*` 分支上沒有
+**規劃未經人審通過,不要寫任何產品程式碼。** `feature/*` 分支上不曾有過
 `docs/plans/<slug>/plan.md` 時,PreToolUse 守衛會擋掉 `src/**` 與
 `supabase/functions/**` 的寫入(規劃書目錄名 = 分支 slug)。
+
+## 規劃檔生命週期:鷹架,不是文件
+
+`docs/plans/` 平常只該有 `friction-log.md`。規劃檔是施工鷹架:
+
+- **預設不落檔**——輕量改動用 Plan Mode 規劃(對話內),審完直接做,
+  分支用 `fix/*` 或 `claude/*`(用 `feature/*` 會觸發需要規劃檔的守衛)
+- **落檔**只在:跨 session/跨天、動金流·資料·會籍、階段數 ≥3
+- **落檔的在 PR 前刪除**(`/tdd-implement` 收尾負責):值得長期保存的決策
+  要**升級**進規格書/架構文件/friction-log,其餘隨 commit 清掉。內容不會
+  消失——`git show <hash>:docs/plans/<slug>/plan.md` 永遠取得回,PR 也是紀錄
+- 理由:功能上線後,程式碼與測試才是真相。留著的舊 plan 描述的是「當初
+  想做什麼」,會被誤當成規格——那比沒有文件更糟
 
 ## 指令
 
