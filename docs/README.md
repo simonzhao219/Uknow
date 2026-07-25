@@ -24,8 +24,8 @@
 
 | 文件 | 何時讀 |
 |---|---|
-| [`Uknow_Software_Specification.md`](Uknow_Software_Specification.md) | **動任何功能前。** 需求與業務規則的單一事實來源——會員/訂閱/推薦/獎勵/任務/提領/刊登的規則都在這裡。`plan-reviewer-requirements` 以它為溯源對象 |
-| [`UI_UX_Guidelines.md`](UI_UX_Guidelines.md) | 動任何 UI。尺寸/觸控/導覽契約/表單/三態/可測試性慣例 |
+| [`uknow-software-specification.md`](uknow-software-specification.md) | **動任何功能前。** 需求與業務規則的單一事實來源——會員/訂閱/推薦/獎勵/任務/提領/刊登的規則都在這裡。`plan-reviewer-requirements` 以它為溯源對象 |
+| [`ui-ux-guidelines.md`](ui-ux-guidelines.md) | 動任何 UI。尺寸/觸控/導覽契約/表單/三態/可測試性慣例 |
 | [`multi-step-flow-recovery.md`](multi-step-flow-recovery.md) | 動多步驟表單或金流頁。四條可恢復性契約 + 全站連續流程盤點 |
 
 ### B・現況說明
@@ -35,7 +35,7 @@
 | [`../README.md`](../README.md) | 第一次接觸這個 repo |
 | [`../CLAUDE.md`](../CLAUDE.md) | AI 助理的操作手冊：開發流程、閘門、分支與部署慣例 |
 | [`../supabase/README.md`](../supabase/README.md) | 動後端 schema／函數。SSOT 設計、資料表、關鍵函數、migration 慣例 |
-| [`SUPABASE_SETUP_CHECKLIST.md`](SUPABASE_SETUP_CHECKLIST.md) | Supabase 環境問題。程式碼之外必須在 Dashboard 手動完成的設定 |
+| [`supabase-setup-checklist.md`](supabase-setup-checklist.md) | Supabase 環境問題。程式碼之外必須在 Dashboard 手動完成的設定 |
 | [`e2e-journey-test-design.md`](e2e-journey-test-design.md) | 動 journey 測試。六代 30 人情境的設計與決策 |
 | [`../e2e/README.md`](../e2e/README.md) | 動全 mock 的 e2e 套件 |
 | [`../e2e/journey/README.md`](../e2e/journey/README.md) | 跑 journey 套件（**絕不在本機跑**） |
@@ -59,6 +59,11 @@
 ---
 
 ## 慣例
+
+**檔名 kebab-case。** 全小寫、連字號分隔(`README.md` / `CLAUDE.md` /
+`SKILL.md` 例外——工具依固定檔名辨識)。原則與理由見
+[`../.claude/rules/document-naming.md`](../.claude/rules/document-naming.md),
+由 `scripts/check-document-naming.py` 機械把關(framework-check 軌)。
 
 **規則只寫一份。** 業務規則一律寫進規格書，其他文件用連結指過去。
 過去曾出現「規格書寫 120P、後端 README 寫 120P、實作是 100P」的三方漂移

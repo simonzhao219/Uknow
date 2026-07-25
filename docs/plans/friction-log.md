@@ -200,7 +200,7 @@ yaml,維持 framework-check 免依賴的契約),規則抽象為「paths-filter �
 
 ## 2026-07-25｜漏網｜規格書漂移沒有任何閘門偵測,而它是審查閘門的溯源對象
 
-文件整理時對照程式碼逐條查證,發現 `docs/Uknow_Software_Specification.md`
+文件整理時對照程式碼逐條查證,發現 `docs/uknow-software-specification.md`
 有多處與實作**相反**(不是模糊,是相反):
 
 | 規格書寫的 | 實作是 | 何時失真 |

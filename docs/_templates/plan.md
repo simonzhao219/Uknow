@@ -8,7 +8,7 @@
 
 ## 1. 使用者需求
 
-- 對照規格書章節:`docs/Uknow_Software_Specification.md#…`
+- 對照規格書章節:`docs/uknow-software-specification.md#…`
 - 使用者故事 / 驗收情境(可驗證的行為,不是實作描述)
 - 不做什麼(明確排除,防範圍蔓延)
 
@@ -26,7 +26,7 @@
 
 ## 4. UI/UX
 
-- 頁面/元件變更;對照 `docs/UI_UX_Guidelines.md` 的既有模式
+- 頁面/元件變更;對照 `docs/ui-ux-guidelines.md` 的既有模式
 - 行動版行為(本專案以行動版為主)
 - 空態/錯誤態/載入態
 

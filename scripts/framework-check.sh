@@ -121,6 +121,19 @@ if [ -f scripts/check-spec-drift.py ]; then
   fi
 fi
 
+# 10. docs/ 文件命名的機械檢查——命名慣例只寫在文件裡一定會漂（見
+#     .claude/rules/document-naming.md）。同樣先驗檢查器自己再驗 repo。
+if [ -f scripts/check-document-naming.py ]; then
+  if ! python3 scripts/check-document-naming.py --self-test; then
+    echo "FAIL: 文件命名檢查器自身的表格案例未過（scripts/check-document-naming.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-document-naming.py; then
+    echo "FAIL: 文件命名檢查未過（scripts/check-document-naming.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi

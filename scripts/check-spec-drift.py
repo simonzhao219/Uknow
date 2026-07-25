@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """規格書漂移的機械檢查——把「規格書說的」與「程式碼做的」逐條對上。
 
-存在理由(2026-07-25 文件整理的防線回填):`docs/Uknow_Software_Specification.md`
+存在理由(2026-07-25 文件整理的防線回填):`docs/uknow-software-specification.md`
 是 `plan-reviewer-requirements` 的溯源對象——契約寫明「規劃書的功能斷言對不到
 規格書章節 → 一律 P0」。那次整理發現規格書有多處與實作**相反**(金流商、獎金
 120P vs 100P、推薦王門檻 10 vs 8、已移除的任務、路由大小寫),而規格書失真時
@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC_REL = "docs/Uknow_Software_Specification.md"
+SPEC_REL = "docs/uknow-software-specification.md"
 APP_REL = "src/App.tsx"
 
 BACKTICKED = re.compile(r"`([^`]+)`")
