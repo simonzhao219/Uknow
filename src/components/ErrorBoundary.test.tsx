@@ -20,7 +20,7 @@ describe('ErrorBoundary', () => {
       render(
         <ErrorBoundary>
           <Bomb />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
       expect(screen.getByText('頁面發生錯誤')).toBeTruthy();
       expect(screen.getByRole('button', { name: '重新整理' })).toBeTruthy();
@@ -33,7 +33,7 @@ describe('ErrorBoundary', () => {
     render(
       <ErrorBoundary>
         <div>正常內容</div>
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
     expect(screen.getByText('正常內容')).toBeTruthy();
   });

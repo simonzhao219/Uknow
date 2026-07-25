@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useContext } from 'react';
 import { UserContext } from '../App';
 import { RewardStats } from './reward/RewardStats';
@@ -19,8 +19,7 @@ export function RewardDashboard() {
   usePageRestoration();
   const { showError } = useNotification();
 
-  const { rewardsData, withdrawals, isLoading, error, refetch, clearAndRefetch } =
-    useRewardData();
+  const { rewardsData, withdrawals, isLoading, error, refetch, clearAndRefetch } = useRewardData();
   // 訂閱狀態單一來源：與 SubscriptionStatusCard 共用 useSubscription 的
   // 快取，避免與獎勵資料各自維護一份 status 在邊界互相矛盾。
   const { subscriptionData } = useSubscription();
@@ -47,7 +46,13 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -65,7 +70,13 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -86,7 +97,13 @@ export function RewardDashboard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -107,7 +124,13 @@ export function RewardDashboard() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBack}
+          className="shrink-0"
+          aria-label="返回上一頁"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>

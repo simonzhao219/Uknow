@@ -1,10 +1,16 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { UserContext } from '../App';
-import { User, Settings, Award, Users, LogOut, Shield, Target, CreditCard } from 'lucide-react';
+import { User, Settings, Award, Users, LogOut, Shield, Target } from 'lucide-react';
 import { useFeatures } from '../contexts/FeatureContext';
 import { createClient } from '../utils/supabase/client';
 import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
@@ -18,13 +24,13 @@ export function Navbar() {
 
   const handleLogout = async () => {
     console.log('Navbar: Logging out user...');
-    
+
     try {
       // ✅ 1. 先清除本地狀態（避免 UI 閃爍）
       setUser(null);
       localStorage.removeItem('user');
       console.log('Navbar: Cleared local user state');
-      
+
       // ✅ 2. 登出 Supabase Auth（等待完成）
       const { error } = await supabase.auth.signOut();
       if (error) {
@@ -33,23 +39,22 @@ export function Navbar() {
       } else {
         console.log('Navbar: Successfully signed out from Supabase');
       }
-      
+
       // ✅ 3. 強制清除所有 Supabase auth storage
       const storageKeys = Object.keys(localStorage);
-      storageKeys.forEach(key => {
+      storageKeys.forEach((key) => {
         if (key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key);
           console.log('Navbar: Cleared storage key:', key);
         }
       });
-      
+
       // ✅ 4. 短暫延遲確保 session 清除完成，然後導航
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       console.log('Navbar: Navigating to home page...');
       // ✅ 使用 replace: true 避免返回歷史
       navigate('/', { replace: true });
-      
     } catch (error) {
       console.error('Navbar: Unexpected error during logout:', error);
       // ✅ 即使發生異常，也要確保導航
@@ -77,7 +82,12 @@ export function Navbar() {
           ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="開啟會員選單" className="relative h-10 w-10 rounded-full">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="開啟會員選單"
+                  className="relative h-10 w-10 rounded-full"
+                >
                   <Avatar className="h-10 w-10">
                     <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>

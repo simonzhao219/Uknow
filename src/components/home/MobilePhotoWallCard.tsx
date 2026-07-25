@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { ImageWithFallback } from "../figma/ImageWithFallback";
+import { Link } from 'react-router-dom';
+import { ImageWithFallback } from '../figma/ImageWithFallback';
 
 // 手機首頁「照片牆」磚塊（3 欄密集網格用）。
 //

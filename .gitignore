@@ -31,6 +31,11 @@ npm-debug.log*
 supabase/.temp/
 supabase/.branches/
 
+# Claude Code 本機狀態（tdd-lock 是 TDD 相位鎖的 session 狀態，絕不入版控）
+.claude/tdd-lock
+.claude/settings.local.json
+CLAUDE.local.md
+
 # E2E (pytest-bdd + Playwright)
 e2e/journey/.run/
 e2e/.venv/
@@ -40,3 +45,6 @@ e2e/.pytest_cache/
 e2e/test-results/
 e2e/playwright-report/
 e2e/playwright/.cache/
+
+# Python bytecode（.claude/hooks 的 py_compile 副產物）
+__pycache__/

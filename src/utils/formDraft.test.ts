@@ -12,7 +12,9 @@ import {
 } from './formDraft';
 
 // 記憶體版 Storage —— 讓草稿讀寫能在 node 環境（無 sessionStorage）下被單元測試。
-function memoryStorage(initial: Record<string, string> = {}): StorageLike & { dump: () => Record<string, string> } {
+function memoryStorage(
+  initial: Record<string, string> = {},
+): StorageLike & { dump: () => Record<string, string> } {
   const map = new Map<string, string>(Object.entries(initial));
   return {
     getItem: (k) => (map.has(k) ? map.get(k)! : null),
@@ -105,7 +107,9 @@ describe('storage 讀寫（注入記憶體 storage）', () => {
   });
 
   it('load 會消毒儲存體裡被竄改的髒資料', () => {
-    const s = memoryStorage({ [PROFILE_DRAFT_KEY]: JSON.stringify({ name: '小明', evil: 1, phone: 999 }) });
+    const s = memoryStorage({
+      [PROFILE_DRAFT_KEY]: JSON.stringify({ name: '小明', evil: 1, phone: 999 }),
+    });
     expect(loadProfileDraft(s)).toEqual({ name: '小明' });
   });
 

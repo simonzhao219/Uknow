@@ -7,7 +7,6 @@
 //   3. feature flag 只會讓中間的格子消失，絕不改變剩下項目的相對順序
 //      ——導覽列在不同帳號狀態下漂移，使用者的位置記憶就失效了。
 //   4. 刊登不在導覽列裡（主入口在會員中心）。
-import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -47,15 +46,13 @@ function renderNav(isLoggedIn = true) {
       <UserCtx.Provider value={{ isLoggedIn }}>
         <BottomNav />
       </UserCtx.Provider>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
 /** 導覽列目前實際呈現的標籤，依畫面順序。 */
 function labels() {
-  return screen
-    .getAllByRole('link')
-    .map((el) => el.textContent?.trim() ?? '');
+  return screen.getAllByRole('link').map((el) => el.textContent?.trim() ?? '');
 }
 
 beforeEach(() => {

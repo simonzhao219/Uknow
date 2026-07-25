@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -33,7 +33,7 @@ export function ForgotPasswordPage() {
     } else {
       setIsEditing(true); // 顯示輸入框
     }
-    
+
     // 如果有錯誤訊息，顯示 toast
     if (errorMessage) {
       showToast(errorMessage, 'error');
@@ -93,9 +93,7 @@ export function ForgotPasswordPage() {
       <Card>
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">忘記密碼</CardTitle>
-          <CardDescription>
-            輸入您的 Email，我們將寄送 6 位數驗證碼給您
-          </CardDescription>
+          <CardDescription>輸入您的 Email，我們將寄送 6 位數驗證碼給您</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* ✅ 顯示模式：灰色區塊（從登入頁帶過來的 email）*/}
@@ -107,18 +105,10 @@ export function ForgotPasswordPage() {
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditing(true)}
-                  className="flex-1"
-                >
+                <Button variant="outline" onClick={() => setIsEditing(true)} className="flex-1">
                   更改 Email
                 </Button>
-                <Button
-                  onClick={handleSubmit}
-                  loading={isLoading}
-                  className="flex-1"
-                >
+                <Button onClick={handleSubmit} loading={isLoading} className="flex-1">
                   {isLoading ? '發送中...' : '發送驗證碼'}
                 </Button>
               </div>
@@ -157,11 +147,7 @@ export function ForgotPasswordPage() {
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/login')}
-                  className="flex-1"
-                >
+                <Button variant="outline" onClick={() => navigate('/login')} className="flex-1">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   返回登入
                 </Button>

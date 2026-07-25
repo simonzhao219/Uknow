@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  describePasswordRequirements,
-  validatePasswordPolicy,
-} from './passwordPolicy';
+import { describePasswordRequirements, validatePasswordPolicy } from './passwordPolicy';
 
 describe('describePasswordRequirements — 逐條列出缺少的規則', () => {
   it('完全合格的密碼回傳空陣列', () => {
@@ -19,21 +16,15 @@ describe('describePasswordRequirements — 逐條列出缺少的規則', () => {
   });
 
   it('缺大寫', () => {
-    expect(describePasswordRequirements('alllower1')).toEqual([
-      '至少一個大寫字母（A-Z）',
-    ]);
+    expect(describePasswordRequirements('alllower1')).toEqual(['至少一個大寫字母（A-Z）']);
   });
 
   it('缺小寫', () => {
-    expect(describePasswordRequirements('ALLUPPER1')).toEqual([
-      '至少一個小寫字母（a-z）',
-    ]);
+    expect(describePasswordRequirements('ALLUPPER1')).toEqual(['至少一個小寫字母（a-z）']);
   });
 
   it('缺數字', () => {
-    expect(describePasswordRequirements('NoDigitsX')).toEqual([
-      '至少一個數字（0-9）',
-    ]);
+    expect(describePasswordRequirements('NoDigitsX')).toEqual(['至少一個數字（0-9）']);
   });
 
   it('多項同時缺失時全部列出（順序固定）', () => {

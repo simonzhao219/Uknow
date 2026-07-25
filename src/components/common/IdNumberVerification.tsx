@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card } from '../ui/card';
 import { IdNumberInput } from '../reward/IdNumberInput';
-import { AlertTriangle, Shield, Loader2 } from 'lucide-react';
+import { Shield, Loader2 } from 'lucide-react';
 
 interface IdNumberVerificationProps {
   title?: string;
@@ -17,12 +17,12 @@ interface IdNumberVerificationProps {
 
 /**
  * ✅ 統一的身分證驗證步驟組件（步驟3）
- * 
+ *
  * 功能：
  * - 使用統一的 IdNumberInput 組件
  * - 顯示場景特定的警告訊息
  * - 處理提交載入狀態和錯誤
- * 
+ *
  * 使用範例：
  * ```tsx
  * <IdNumberVerification
@@ -44,7 +44,7 @@ export function IdNumberVerification({
   error,
   onBack,
   onConfirm,
-  onClose
+  onClose,
 }: IdNumberVerificationProps) {
   const [idNumber, setIdNumber] = useState('');
   const [isVerified, setIsVerified] = useState(false);
@@ -83,9 +83,7 @@ export function IdNumberVerification({
       <div className="p-6">
         {/* 標題 */}
         <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
-            {title}
-          </h2>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">{title}</h2>
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
 
@@ -132,7 +130,12 @@ export function IdNumberVerification({
             className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
             上一步
           </button>

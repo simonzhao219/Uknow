@@ -47,7 +47,11 @@ const DEDUP_KEY = 'userListing';
  * @param enabled 傳 false 時完全不請求（例如 serviceProviderManagement
  *   feature flag 關閉時，會員中心不該為了一張不會顯示的卡片打 API）。
  */
-export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): UseUserListingResult {
+export function useUserListing({
+  enabled = true,
+}: {
+  enabled?: boolean;
+} = {}): UseUserListingResult {
   const { user } = useContext(UserContext);
   const { getCache, setCache, hasCache, isStale } = useDataCache();
   const { showToast } = useNotification();
@@ -109,7 +113,7 @@ export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): 
       setLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -133,12 +137,12 @@ export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): 
     if (!hasCache(CACHE_KEY) || isStale(CACHE_KEY)) {
       dedupe(DEDUP_KEY, fetchListing);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, enabled]);
 
   useRevalidateOnFocus(
     () => enabled && !!userIdRef.current && isStale(CACHE_KEY),
-    () => dedupe(DEDUP_KEY, fetchListing)
+    () => dedupe(DEDUP_KEY, fetchListing),
   );
 
   const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchListing), [fetchListing]);

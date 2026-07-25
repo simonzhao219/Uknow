@@ -29,18 +29,19 @@ describe('buildApiUrl', () => {
 // 「請求失敗 (400)」這類通用文案。
 describe('extractApiErrorMessage', () => {
   it('解析字串形信封 { error: string }', () => {
-    expect(extractApiErrorMessage({ error: '已有有效訂閱，請到期後再續約' }, 'fallback'))
-      .toBe('已有有效訂閱，請到期後再續約');
+    expect(extractApiErrorMessage({ error: '已有有效訂閱，請到期後再續約' }, 'fallback')).toBe(
+      '已有有效訂閱，請到期後再續約',
+    );
   });
 
   it('解析物件形信封 { error: { message } }', () => {
-    expect(extractApiErrorMessage({ error: { message: '未授權' } }, 'fallback'))
-      .toBe('未授權');
+    expect(extractApiErrorMessage({ error: { message: '未授權' } }, 'fallback')).toBe('未授權');
   });
 
   it('解析頂層 message 欄位', () => {
-    expect(extractApiErrorMessage({ message: '身分證字號不正確' }, 'fallback'))
-      .toBe('身分證字號不正確');
+    expect(extractApiErrorMessage({ message: '身分證字號不正確' }, 'fallback')).toBe(
+      '身分證字號不正確',
+    );
   });
 
   it('無法辨識時回傳 fallback', () => {

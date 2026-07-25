@@ -1,4 +1,3 @@
-import React from 'react';
 import { X, CheckCircle, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -21,7 +20,7 @@ interface MonthlyKingProgressProps {
 
 /**
  * 推薦王溢出進度組件
- * 
+ *
  * 顯示：
  * - 本月已完成次數（每滿 target 人為 1 次）
  * - 當前進度（剩餘計數）
@@ -34,7 +33,7 @@ export function MonthlyKingProgress({
   currentProgress,
   target,
   referrals,
-  onClose
+  onClose,
 }: MonthlyKingProgressProps) {
   const formatMonth = (monthStr: string) => {
     if (!monthStr) return '';
@@ -51,12 +50,8 @@ export function MonthlyKingProgress({
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                ⚡ 推薦王任務詳情
-              </CardTitle>
-              <CardDescription>
-                {formatMonth(month)} - 本月推薦進度
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2">⚡ 推薦王任務詳情</CardTitle>
+              <CardDescription>{formatMonth(month)} - 本月推薦進度</CardDescription>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-5 w-5" />
@@ -77,9 +72,7 @@ export function MonthlyKingProgress({
                   💡 再推薦 {target - currentProgress} 人可再獲得免費續約 1 年！
                 </p>
               ) : (
-                <p className="text-green-700">
-                  ✅ 已達成本輪目標！完成 {target} 人推薦
-                </p>
+                <p className="text-green-700">✅ 已達成本輪目標！完成 {target} 人推薦</p>
               )
             }
           />
@@ -91,14 +84,12 @@ export function MonthlyKingProgress({
                 <CheckCircle className="h-5 w-5 text-green-600" />
                 <h3 className="font-medium text-green-900">✨ 本月成就</h3>
               </div>
-              
+
               <div className="space-y-2">
                 {Array.from({ length: completedCount }).map((_, index) => (
                   <div key={index} className="flex items-center gap-2 text-sm">
                     <Zap className="h-4 w-4 text-yellow-600" />
-                    <span className="text-green-700">
-                      第 {index + 1} 次完成（+免費續約 1 年）
-                    </span>
+                    <span className="text-green-700">第 {index + 1} 次完成（+免費續約 1 年）</span>
                     <span className="text-xs text-muted-foreground">
                       {`第 ${(index + 1) * target} 人達成`}
                     </span>
@@ -114,15 +105,14 @@ export function MonthlyKingProgress({
               📋 本月推薦列表
               <span className="text-sm text-muted-foreground">({total} 人)</span>
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-2">
               {referrals.map((referral, index) => (
                 <div key={index} className="relative">
                   {/* 完成標記（每 target 人一個標記）*/}
                   {(index + 1) % target === 0 && (
                     <div className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full z-10 flex items-center gap-1">
-                      <CheckCircle className="h-3 w-3" />
-                      第{(index + 1) / target}次完成
+                      <CheckCircle className="h-3 w-3" />第{(index + 1) / target}次完成
                     </div>
                   )}
 

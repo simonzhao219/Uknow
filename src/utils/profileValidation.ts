@@ -31,7 +31,8 @@ export function validateNationalId(rawId: string): string | undefined {
   if (!/^[A-Z]/.test(id)) return '身分證字號需以一個英文字母開頭（例：A123456789）';
   // 明確指出第 2 碼規則 —— 這正是「Q777777777」這類值會靜默卡住的地方。
   if (!/^[A-Z][12]/.test(id)) return '第 2 碼需為 1（男）或 2（女），例：A123456789';
-  if (!/^[A-Z][12]\d{8}$/.test(id)) return '身分證字號需為 1 碼英文字母加 9 碼數字（例：A123456789）';
+  if (!/^[A-Z][12]\d{8}$/.test(id))
+    return '身分證字號需為 1 碼英文字母加 9 碼數字（例：A123456789）';
   return undefined;
 }
 
@@ -66,7 +67,10 @@ export function validateAgreedToTerms(agreed: boolean): string | undefined {
 }
 
 // 回傳所有「有問題」欄位的錯誤 map；空物件代表整張表單合法。
-export function validateProfileForm(values: ProfileFormValues, now: Date = new Date()): ProfileErrors {
+export function validateProfileForm(
+  values: ProfileFormValues,
+  now: Date = new Date(),
+): ProfileErrors {
   const errors: ProfileErrors = {};
   const name = validateName(values.name);
   if (name) errors.name = name;

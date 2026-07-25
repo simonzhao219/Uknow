@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# commit 閘門：npm run check 全綠才放行。
+#
+# 由 package.json 的 prepare script 透過 core.hooksPath 自動掛載——
+# npm ci / npm i 之後即生效，全新 clone 不需要任何手動步驟。
+#
+# 紅燈通道：TDD 流程要求先 commit 失敗中的測試（test(red)），此時 vitest
+# 必紅——若無此通道，本 hook 會擋掉框架自己規定的 commit（設計審查時的
+# P0 死鎖）。.claude/tdd-lock 存在即代表紅燈期：跳過 vitest，只跑靜態
+# 閘門（biome / typecheck / knip）。紅燈的定義是「編譯過、斷言失敗」，
+# 所以靜態閘門仍須全綠（受測 API 先建 stub）。解鎖唯一路徑是
+# scripts/tdd-unlock.sh（check 全綠才刪鎖）。
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ -f .claude/tdd-lock ]; then
+  echo "[pre-commit] TDD 紅燈期（.claude/tdd-lock 存在）：跳過 vitest，只跑靜態閘門"
+  if ! (npx biome check . && npx tsc --noEmit -p . && npx knip --include files,dependencies); then
+    echo "" >&2
+    echo "[pre-commit] 靜態閘門未過，commit 已擋下。" >&2
+    echo "  紅燈 = 編譯過、斷言失敗。請先讓 biome/typecheck/knip 全綠" >&2
+    echo "  （受測 API 尚不存在時，先建最小 stub 讓型別過）。" >&2
+    exit 1
+  fi
+else
+  if ! npm run check; then
+    echo "" >&2
+    echo "[pre-commit] npm run check 未過，commit 已擋下。修復後重試。" >&2
+    echo "  若這是 TDD 的紅燈測試 commit：先 touch .claude/tdd-lock 進入紅燈期" >&2
+    echo "  （綠燈後用 scripts/tdd-unlock.sh 解鎖），見 CLAUDE.md TDD 流程。" >&2
+    exit 1
+  fi
+fi
+
+# Deno 側閘門：只有 supabase/functions/ 有改動才跑（fmt --check ＋型別
+# 檢查皆為秒級、免網路、免 supabase start；deno task test 需要本地
+# supabase，刻意留給 CI 的 api-tests 軌）。
+#
+# 合併例外：merge commit 帶進的後端變更是上游 commit（已過 CI api-tests），
+# 不是本次在寫的東西。缺 deno 時擋 merge 只會讓沒裝 deno 的環境無法完成
+# 任何含後端檔案的合併（死鎖），所以合併中缺 deno 降為警告；deno 在的話
+# 照跑不誤——免費的驗證沒有不要的道理。
+if echo "$staged" | grep -q '^supabase/functions/'; then
+  merging=false
+  if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    merging=true
+  fi
+
+  if command -v deno >/dev/null 2>&1; then
+    if ! (cd supabase/functions && deno fmt --check && deno task check); then
+      echo "" >&2
+      echo "[pre-commit] Deno 閘門未過（deno fmt --check / deno task check）。" >&2
+      echo "  修正格式：cd supabase/functions && deno fmt" >&2
+      exit 1
+    fi
+  elif [ "$merging" = true ]; then
+    echo "[pre-commit] 合併中且本機無 deno：後端變更來自上游（已過 CI），略過 Deno 閘門。"
+  else
+    echo "" >&2
+    echo "[pre-commit] supabase/functions/ 有變更但本機沒有 deno，commit 已擋下。" >&2
+    echo "  安裝：https://docs.deno.com/runtime/getting_started/installation/" >&2
+    echo "  （CI 的 api-tests 軌仍會把關，但缺 deno 表示你無法在本機驗證後端改動）" >&2
+    exit 1
+  fi
+fi
+
+exit 0

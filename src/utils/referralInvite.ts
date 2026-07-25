@@ -75,17 +75,19 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
   const message = buildInviteMessage(code);
   const { isInAppBrowser } = detectInAppBrowser();
 
-  if (!isInAppBrowser && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+  if (
+    !isInAppBrowser &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function'
+  ) {
     // 只帶 text（訊息本身已含連結）；不另外帶 url，避免部分 App 把 url 再接到
     // 訊息尾端，導致連結出現兩次。
-    navigator
-      .share({ title: 'Uknow 專業服務平台', text: message })
-      .catch(() => {
-        // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
-        if (copyTextFallback(message)) {
-          showToast('邀請訊息已複製到剪貼簿！', 'success');
-        }
-      });
+    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch(() => {
+      // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
+      if (copyTextFallback(message)) {
+        showToast('邀請訊息已複製到剪貼簿！', 'success');
+      }
+    });
     return;
   }
 

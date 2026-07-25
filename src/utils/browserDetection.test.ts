@@ -14,13 +14,15 @@ interface StubLocation {
   search?: string;
 }
 
-function stubBrowser(options: {
-  ua?: string;
-  liff?: boolean;
-  location?: StubLocation;
-  clipboard?: unknown;
-  document?: unknown;
-} = {}) {
+function stubBrowser(
+  options: {
+    ua?: string;
+    liff?: boolean;
+    location?: StubLocation;
+    clipboard?: unknown;
+    document?: unknown;
+  } = {},
+) {
   const {
     ua = 'test-agent',
     liff = false,

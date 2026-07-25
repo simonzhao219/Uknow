@@ -1,4 +1,3 @@
-import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Target, AlertTriangle } from 'lucide-react';
@@ -18,11 +17,15 @@ export function TaskGuide() {
           <ul className="text-sm text-muted-foreground space-y-2">
             <li className="flex items-start gap-2">
               <span className="text-orange-600 shrink-0">•</span>
-              <span>單月每成功推薦 8 位<strong>新</strong>用戶即可獲得免費續約 1 年（可累計多張）</span>
+              <span>
+                單月每成功推薦 8 位<strong>新</strong>用戶即可獲得免費續約 1 年（可累計多張）
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-orange-600 shrink-0">•</span>
-              <span>計當月<strong>新推薦</strong>的下線人數（同一位下線續約不重複計）</span>
+              <span>
+                計當月<strong>新推薦</strong>的下線人數（同一位下線續約不重複計）
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-orange-600 shrink-0">•</span>
@@ -35,9 +38,8 @@ export function TaskGuide() {
           <AlertTriangle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-900">
             <strong>領取說明：</strong>
-            任務完成後，獎勵將出現在「待領取獎勵」區域。
-            請完成 3 步驟驗證流程後，會員效期將立即延長 1 年；
-            累積多張時可用「一次領取全部」驗證一次、批次領完。
+            任務完成後，獎勵將出現在「待領取獎勵」區域。 請完成 3 步驟驗證流程後，會員效期將立即延長
+            1 年； 累積多張時可用「一次領取全部」驗證一次、批次領完。
           </AlertDescription>
         </Alert>
       </CardContent>

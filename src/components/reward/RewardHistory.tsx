@@ -1,44 +1,74 @@
-import React, { useState, useEffect } from 'react';
+import type React from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { FilterChip } from '../common/FilterChip';
-import { Calendar, Receipt, Loader2, Users, Gift, TrendingDown, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import {
+  Calendar,
+  Receipt,
+  Loader2,
+  Users,
+  Gift,
+  TrendingDown,
+  RotateCcw,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
 import { formatRewardDetail, isReferralSource } from '../../utils/rewardHistory';
-import type { RewardHistoryRecord as RewardRecord, RewardHistoryResponse, RewardSourceCategory } from '@contract';
+import type {
+  RewardHistoryRecord as RewardRecord,
+  RewardHistoryResponse,
+  RewardSourceCategory,
+} from '@contract';
 
 interface RewardHistoryProps {
-  refreshTrigger?: number;  // ✅ 刷新觸發器
+  refreshTrigger?: number; // ✅ 刷新觸發器
 }
 
 // 來源分類 → 顯示標籤 / 圖示 / 顏色（KEY 來自 @contract 的 enum＝單一真相；
 // label/icon/color 是純 UI 呈現）。退款用琥珀色與收入分家，避免被誤讀為新收入。
-type SourceMeta = { label: string; Icon: React.ComponentType<{ className?: string }>; badgeClass: string };
+type SourceMeta = {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  badgeClass: string;
+};
 const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
   referral_payment: {
-    label: '推薦獎勵·付款', Icon: Users,
-    badgeClass: 'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    label: '推薦獎勵·付款',
+    Icon: Users,
+    badgeClass:
+      'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   },
   referral_task_renewal: {
-    label: '推薦獎勵·任務續約', Icon: Gift,
-    badgeClass: 'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    label: '推薦獎勵·任務續約',
+    Icon: Gift,
+    badgeClass:
+      'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   },
   withdrawal: {
-    label: '點數提領', Icon: TrendingDown,
+    label: '點數提領',
+    Icon: TrendingDown,
     badgeClass: 'border-transparent bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   },
   withdrawal_refund: {
-    label: '提領退款', Icon: RotateCcw,
-    badgeClass: 'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    label: '提領退款',
+    Icon: RotateCcw,
+    badgeClass:
+      'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   },
   adjustment_manual: {
-    label: '人工調整', Icon: SlidersHorizontal,
+    label: '人工調整',
+    Icon: SlidersHorizontal,
     badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
 };
-const FALLBACK_META: SourceMeta = { label: '其他', Icon: Receipt, badgeClass: 'border-transparent bg-muted text-muted-foreground' };
+const FALLBACK_META: SourceMeta = {
+  label: '其他',
+  Icon: Receipt,
+  badgeClass: 'border-transparent bg-muted text-muted-foreground',
+};
 
 // 可篩選的來源分類（刻意不含 adjustment_manual——目前無端點產生，會是永遠空的分類）。
 const SOURCE_FILTERS: RewardSourceCategory[] = [
@@ -76,14 +106,14 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       const sourceParam = selectedSources.length ? `&source=${selectedSources.join(',')}` : '';
 
       const result = await apiRequestJson<RewardHistoryResponse>(
-        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${sourceParam}`)
+        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${sourceParam}`),
       );
 
       if (result.success) {
         const newHistory = result.data.history || [];
 
         if (isLoadMore) {
-          setHistory(prev => [...prev, ...newHistory]);
+          setHistory((prev) => [...prev, ...newHistory]);
         } else {
           setHistory(newHistory);
         }
@@ -112,9 +142,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   };
 
   const toggleSource = (s: RewardSourceCategory) => {
-    setSelectedSources(prev =>
-      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
-    );
+    setSelectedSources((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   };
   const clearSources = () => setSelectedSources([]);
 
@@ -127,7 +155,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   // 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      fetchHistory();  // 非追加：內部 offset 歸零
+      fetchHistory(); // 非追加：內部 offset 歸零
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
@@ -139,9 +167,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
           <Receipt className="h-5 w-5" />
           獎勵明細
         </CardTitle>
-        <CardDescription>
-          查看您的Point收支記錄，可依來源篩選
-        </CardDescription>
+        <CardDescription>查看您的Point收支記錄，可依來源篩選</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 篩選器：來源分類多選 chips（全部 = 清空選取）。手機自動換行。 */}
@@ -184,9 +210,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                   {isFiltered ? '此分類尚無記錄' : '尚無獎勵記錄'}
                 </p>
                 {!isFiltered && (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    完成推薦或任務後將顯示在此處
-                  </p>
+                  <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>
                 )}
               </div>
             ) : (
@@ -231,8 +255,11 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
 
                       {/* 右側：金額 +（未篩選時）餘額 */}
                       <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
-                        <span className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {record.amount >= 0 ? '+' : ''}{record.amount}P
+                        <span
+                          className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                        >
+                          {record.amount >= 0 ? '+' : ''}
+                          {record.amount}P
                         </span>
                         {/* 逐列餘額是「全域」流水餘額；篩選時中間紀錄被隱藏會讓餘額看似跳動，
                             故只在「全部」檢視顯示，避免誤導。 */}
@@ -260,12 +287,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {/* 加載更多按鈕 */}
         {!isLoading && !error && offset < total && (
           <div className="text-center">
-            <Button
-              onClick={handleLoadMore}
-              variant="outline"
-              size="sm"
-              disabled={isLoadingMore}
-            >
+            <Button onClick={handleLoadMore} variant="outline" size="sm" disabled={isLoadingMore}>
               {isLoadingMore ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />

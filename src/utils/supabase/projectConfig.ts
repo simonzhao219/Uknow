@@ -6,10 +6,7 @@
  * journey E2E 測試靠這個把整個前端指向拋棄式的 Supabase 測試分支，
  * 正式建置不設這兩個變數，行為不變。
  */
-import {
-  projectId as generatedProjectId,
-  publicAnonKey as generatedAnonKey,
-} from './info';
+import { projectId as generatedProjectId, publicAnonKey as generatedAnonKey } from './info';
 
 export const projectId: string =
   (import.meta.env?.VITE_SUPABASE_PROJECT_ID as string | undefined) || generatedProjectId;

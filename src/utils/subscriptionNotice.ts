@@ -36,6 +36,6 @@ export function subscriptionCardState(
   if (!data) return 'none';
   if (data.hasSubscription) return 'active';
   // 曾訂閱過（有到期日）但已失效 → 老會員續訂入口，不是「從未訂閱」。
-  if (data.status === 'expired' && !!data.activeUntil) return 'expired-former';
+  if (data.status === 'expired' && data.activeUntil) return 'expired-former';
   return 'none';
 }

@@ -21,7 +21,13 @@ const rec = (o: Partial<RewardHistoryRecord>): RewardHistoryRecord => ({
 describe('formatRewardDetail', () => {
   it('提領：以結構化金額組出「提領 X P + 手續費 15 P」', () => {
     expect(
-      formatRewardDetail(rec({ sourceCategory: 'withdrawal', amount: -1015, description: '提領申請（1000 P + 手續費 15 P）' })),
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'withdrawal',
+          amount: -1015,
+          description: '提領申請（1000 P + 手續費 15 P）',
+        }),
+      ),
     ).toBe('提領 1000 P + 手續費 15 P');
     // 描述格式無關——一律由金額重算，故舊資料也統一顯示
     expect(formatRewardDetail(rec({ sourceCategory: 'withdrawal', amount: -8015 }))).toBe(
@@ -31,24 +37,48 @@ describe('formatRewardDetail', () => {
 
   it('推薦·付款 第 1 代：只顯示被推薦人（後端已遮罩值直通）', () => {
     expect(
-      formatRewardDetail(rec({ sourceCategory: 'referral_payment', generation: 1, refereeName: '王小明' })),
+      formatRewardDetail(
+        rec({ sourceCategory: 'referral_payment', generation: 1, refereeName: '王小明' }),
+      ),
     ).toBe('王小明');
   });
 
   it('推薦 第 2/3 代：被推薦人（上線）括號格式', () => {
     expect(
-      formatRewardDetail(rec({ sourceCategory: 'referral_payment', generation: 2, refereeName: '陳○文', refereeReferrerName: '王小明' })),
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'referral_payment',
+          generation: 2,
+          refereeName: '陳○文',
+          refereeReferrerName: '王小明',
+        }),
+      ),
     ).toBe('陳○文（王小明）');
     expect(
-      formatRewardDetail(rec({ sourceCategory: 'referral_task_renewal', generation: 3, refereeName: '李○華', refereeReferrerName: '陳○文' })),
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'referral_task_renewal',
+          generation: 3,
+          refereeName: '李○華',
+          refereeReferrerName: '陳○文',
+        }),
+      ),
     ).toBe('李○華（陳○文）');
   });
 
   it('退款／調整：description 原樣，無則回退 —', () => {
     expect(
-      formatRewardDetail(rec({ sourceCategory: 'withdrawal_refund', amount: 1015, description: '提領遭退件，點數退回' })),
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'withdrawal_refund',
+          amount: 1015,
+          description: '提領遭退件，點數退回',
+        }),
+      ),
     ).toBe('提領遭退件，點數退回');
-    expect(formatRewardDetail(rec({ sourceCategory: 'adjustment_manual', description: '' }))).toBe('—');
+    expect(formatRewardDetail(rec({ sourceCategory: 'adjustment_manual', description: '' }))).toBe(
+      '—',
+    );
   });
 });
 
