@@ -62,7 +62,7 @@ Feature: Payment result
   Scenario: Contact support opens the LINE link in a new tab
     When I visit "/payment/result"
     And I click contact support
-    Then a new tab should open to "https://line.me/ti/p/@Uknow"
+    Then a new tab should open to "https://line.me/R/ti/p/@uknow"
 
   Scenario: A paid arrival not yet activated shows the activating screen, then auto-advances once the backend converges
     Given trade "PU00000020" enriches with a successful PayUni payment

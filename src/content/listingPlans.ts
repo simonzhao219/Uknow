@@ -1,3 +1,5 @@
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
+
 export const listingPlansContent = `# Uknow 服務者刊登與合作方案
 
 *最後更新日期：2026/01/05*
@@ -30,7 +32,7 @@ export const listingPlansContent = `# Uknow 服務者刊登與合作方案
 
 **費用：**
 * 已購買刊登方案者：**免費自動開通**
-* 純推廣夥伴：**NT$ 800** / 年 （請洽官方 Line：@Uknow 申請）
+* 純推廣夥伴：**NT$ 800** / 年 （請洽官方 Line：[${LINE_OFFICIAL_ACCOUNT_HANDLE}](${LINE_OFFICIAL_ACCOUNT_URL}) 申請）
 
 
 **獎勵機制：**

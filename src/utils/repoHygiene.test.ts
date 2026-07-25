@@ -65,3 +65,20 @@ describe('使用者可見文案不得含編碼損毀字元', () => {
     expect(offenders, 'U+FFFD 代表檔案位元組已損毀，使用者會看到亂碼').toEqual([]);
   });
 });
+
+describe('官方 LINE 帳號代稱統一', () => {
+  it('src/ 內不得出現大寫版官方 LINE 帳號代稱，一律透過 utils/constants 的共用常數呈現小寫 @uknow', () => {
+    // 拆字組出 pattern，避免這行本身的字面量被自己的掃描規則命中。
+    const mixedCaseHandle = new RegExp(`@${'U'}know\\b`);
+    const offenders: string[] = [];
+    for (const rel of walk('src', ['.ts', '.tsx'])) {
+      if (rel === join('src', 'utils', 'repoHygiene.test.ts')) continue;
+      const text = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      if (mixedCaseHandle.test(text)) offenders.push(rel);
+    }
+    expect(
+      offenders,
+      '官方 LINE 帳號代稱應統一小寫 @uknow（見 LINE_OFFICIAL_ACCOUNT_HANDLE）',
+    ).toEqual([]);
+  });
+});

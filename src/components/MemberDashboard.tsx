@@ -23,6 +23,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 export function MemberDashboard() {
   const { user, setUser } = useContext(UserContext);
@@ -51,7 +52,17 @@ export function MemberDashboard() {
   const handleShowProfileInfo = () => {
     showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
       '如需更改基本資料，請透過 LINE 聯繫客服：',
-      '📱 LINE 官方帳號：@Uknow',
+      <>
+        📱 LINE 官方帳號：
+        <a
+          href={LINE_OFFICIAL_ACCOUNT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          {LINE_OFFICIAL_ACCOUNT_HANDLE}
+        </a>
+      </>,
     ]);
   };
 
