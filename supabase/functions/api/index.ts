@@ -3,8 +3,8 @@
 // 取代舊 make-server-5c6718b9，使用新的正規化 schema
 // ============================================================
 import { Hono } from 'npm:hono@4';
-import { cors } from 'npm:hono/cors';
-import { etag, RETAINED_304_HEADERS } from 'npm:hono/etag';
+import { cors } from 'npm:hono@4/cors';
+import { etag, RETAINED_304_HEADERS } from 'npm:hono@4/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { decryptPayUni, encryptPayUni, generatePayUniHash } from './crypto.ts';
 import {
@@ -1330,7 +1330,6 @@ app.post('/payuni/prepare', async (c) => {
   const functionsBase = projectId
     ? `https://${projectId}.supabase.co/functions/v1`
     : `${supabaseUrl}/functions/v1`;
-  const frontendUrl = Deno.env.get('FRONTEND_URL')!.replace(/\/$/, '');
 
   // 付款期限：3 天後（YYYY-MM-DD，台灣時區）
   const expire = twDayPlusDays(twDayOf(), 3);
@@ -3070,8 +3069,19 @@ app.get('/referrals/debug/:userId', async (c) => {
 
 // ============================================================
 // 健康檢查
+//
+// sha 回報「這個 runtime 實際跑的是哪個 commit」——部署後的煙霧測試
+// 靠它分辨「函式活著」與「函式是這次要部署的那一版」。deploy workflow
+// 在 functions deploy 之前用 supabase secrets set DEPLOY_SHA=<sha> 寫入；
+// 沒設時回 unknown（本地開發與舊部署）。repo 是公開的，commit sha
+// 不是機密。
 // ============================================================
-app.get('/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }));
+app.get('/health', (c) =>
+  c.json({
+    ok: true,
+    ts: new Date().toISOString(),
+    sha: Deno.env.get('DEPLOY_SHA') ?? 'unknown',
+  }));
 
 // import.meta.main 只有直接執行這個檔案時才是 true（Supabase Edge
 // Runtime 的啟動方式）；被 *.test.ts 用 `import { ... } from './index.ts'`

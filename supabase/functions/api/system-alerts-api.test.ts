@@ -100,7 +100,4 @@ Deno.test('POST /admin/system-alerts/:id/resolve：標記已處理後離開未�
   }
 });
 
-Deno.test('system-alerts 端點受 admin 守門涵蓋：匿名 401', async () => {
-  const res = await app.request('/api/admin/system-alerts');
-  assertEquals(res.status, 401);
-});
+// 守門（401/403）已收攏到 admin-gate.test.ts 的 ADMIN_ROUTES 單一清單。

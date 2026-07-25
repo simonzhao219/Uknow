@@ -13,39 +13,14 @@ import {
 } from './test-helpers.ts';
 import { twDayOf, twDayPlusDays, twDayPlusYears, twEndOfDayInstant } from './tw-dates.ts';
 
-Deno.test('hitting 8 referrals in a month grants exactly one unclaimed free-renewal credit, even past 8', async () => {
-  const client = adminClient();
-  const referrer = await createTestUser(client, { name: 'King Referrer' });
-  const refereeIds: string[] = [];
-
-  try {
-    const { error } = await payForUser(client, referrer.id);
-    assertEquals(error, null);
-    const refCode = await getActiveReferralCode(client, referrer.id);
-
-    // 付 12 個下線（超過門檻 8），驗證只會有 1 筆 credit，不會每超過
-    // 1 個就再開一筆。
-    for (let i = 0; i < 12; i++) {
-      const referee = await createTestUser(client, {
-        name: `Referee ${i}`,
-        referredByCode: refCode,
-      });
-      refereeIds.push(referee.id);
-      const { error: payErr } = await payForUser(client, referee.id);
-      assertEquals(payErr, null, `referee ${i} 付款失敗: ${payErr?.message}`);
-    }
-
-    const { data: credits } = await client
-      .from('referral_king_rewards')
-      .select('id, status, month_key')
-      .eq('user_id', referrer.id);
-    assertEquals(credits?.length, 1, `應該只有 1 筆推薦王 credit，實際 ${credits?.length}`);
-    assertEquals(credits?.[0].status, 'unclaimed');
-  } finally {
-    await deleteTestUsers(client, [referrer.id, ...refereeIds]);
-  }
-});
-
+// 這裡原本有一個「hitting 8 referrals … grants exactly one credit, even
+// past 8」的測試：付 12 個下線、斷言恰 1 張 credit。它在規則 3-B
+// （每滿 8 位發一張，migration 20260724000002）上線後就**碰巧通過**——
+// floor(12/8) = 1，斷言成立，但它宣稱守的「超過 8 也只有一張」已經
+// 不是產品行為了。真要有人把多張 credit 改壞成永遠一張，它照樣綠燈；
+// 真要有人把門檻改成 6，它會以一個看不懂的訊息紅燈。
+// 正確的邊界（8→1 張、16→2 張）由 king-multi-credit.test.ts 守著，
+// 所以這裡直接移除，不留一個守不住任何東西的斷言。
 Deno.test('claiming a free-renewal-year credit extends the current subscription by 1 year, idempotently, without touching referral rewards', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Claiming Referrer' });

@@ -1,0 +1,59 @@
+version: 2
+
+# 相依更新。金流與個資平台不能靠「有空再看」來追安全更新，但也不該
+# 每天被 PR 洪水淹沒——所以：安全性更新走 GitHub 自動的 security
+# updates（即時），一般版本更新收斂成每週一批、分組送。
+#
+# ⚠️ 這些 PR 一樣要過 ci-ok 才能合併（branch protection 對所有 PR 生效），
+# 所以「相依升級把測試搞紅」會在合併前擋下來,不會摸黑上線。
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '02:00'
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    groups:
+      # 開發相依一次一批：它們動不到線上產物，批次審最省事
+      dev-dependencies:
+        dependency-type: development
+      # 生產相依只把 patch/minor 收成一組；major 單獨開 PR，
+      # 因為 major 需要真的讀 changelog
+      production-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+    commit-message:
+      prefix: 'chore'
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    target-branch: develop
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'ci'
+
+  - package-ecosystem: pip
+    directory: '/e2e'
+    target-branch: develop
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore'
+      include: scope
+
+  - package-ecosystem: pip
+    directory: '/e2e/journey'
+    target-branch: develop
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore'
+      include: scope

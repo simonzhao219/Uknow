@@ -48,3 +48,6 @@ e2e/playwright/.cache/
 
 # Python bytecode（.claude/hooks 的 py_compile 副產物）
 __pycache__/
+
+# vitest 覆蓋率報告(每次執行重新產生)
+coverage/

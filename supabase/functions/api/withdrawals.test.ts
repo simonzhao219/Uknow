@@ -4,13 +4,12 @@
 //   * 生命週期：pending → awaiting_collection → completed / rejected
 //   * 業務規則：金額級距、一天一次（台灣日）、餘額、會籍、證件照
 // ============================================================
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
-  getActiveReferralCode,
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';

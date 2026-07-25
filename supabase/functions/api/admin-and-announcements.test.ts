@@ -1,6 +1,7 @@
 // ============================================================
-// Admin 後台（migration 0718 0102 + /admin/** 端點群）：
-//   * requireAdmin 統一守門（非管理員 403）
+// Admin 後台（migration 0718 0102 + /admin/** 端點群）的**業務行為**。
+// 守門本身（匿名 401 / 非管理員 403）不在這裡——見 admin-gate.test.ts
+// 的 ADMIN_ROUTES 單一清單。
 //   * 會員管理：admin_list_members（含 email）+ 停權（刊登下架）
 //   * 全站公告：admin CRUD + 公開的 /announcements/active
 //   * AdminSetup：首位管理員自助宣告（有管理員後鎖死）
@@ -35,28 +36,8 @@ function authed(token: string, init: RequestInit = {}) {
   };
 }
 
-Deno.test('admin 守門：非管理員一律 403', async () => {
-  const client = adminClient();
-  const user = await createTestUser(client, { name: 'Normal User' });
-
-  try {
-    const token = await getUserAccessToken(client, user.email);
-    for (
-      const [method, path] of [
-        ['GET', '/api/admin/withdrawals'],
-        ['GET', '/api/admin/members'],
-        ['GET', '/api/admin/announcements'],
-        ['POST', '/api/admin/announcements'],
-      ] as const
-    ) {
-      const res = await app.request(path, authed(token, { method }));
-      assertEquals(res.status, 403, `${method} ${path} 非管理員應 403`);
-      await res.body?.cancel();
-    }
-  } finally {
-    await deleteTestUsers(client, [user.id]);
-  }
-});
+// 守門（401/403）已收攏到 admin-gate.test.ts 的 ADMIN_ROUTES 單一清單，
+// 本檔只負責 admin 端點的業務行為。
 
 Deno.test('會員管理：列表含 email 與會籍；停權讓刊登從 public_listings 消失', async () => {
   const client = adminClient();

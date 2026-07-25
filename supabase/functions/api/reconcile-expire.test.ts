@@ -51,8 +51,8 @@ Deno.test('reconcile：超過門檻天數且查無結果的殭屍單標成 expir
 
     const summary = await reconcilePendingOrders(
       client,
-      async () => ({ stillProcessing: true }), // PayUni 一律查無此單
-      async () => ({ ok: true as const, status: 'SUCCESS' as const }),
+      () => Promise.resolve({ stillProcessing: true }), // PayUni 一律查無此單
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
       { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
     );
 
@@ -88,8 +88,8 @@ Deno.test('reconcile：已存 SUCCESS 存檔的老卡單不在掃描範圍、絕
 
     const summary = await reconcilePendingOrders(
       client,
-      async () => ({ stillProcessing: true }),
-      async () => ({ ok: true as const, status: 'SUCCESS' as const }),
+      () => Promise.resolve({ stillProcessing: true }),
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
       { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
     );
 

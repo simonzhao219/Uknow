@@ -1,24 +1,100 @@
 name: Reconcile Pending Payments
 
+# ============================================================================
 # 對 PayUni webhook 沒送達、卡在 pending 太久的訂單做對帳。
 #
-# queryPayUniTradeStatus 已實作（PayUni server-to-server 交易查詢，
-# 見 supabase/functions/api/index.ts）。排程尚未打開：欄位契約需先在
-# sandbox 用 workflow_dispatch 手動觸發驗證一輪（建一筆訂單、不送
-# notify、確認對帳能把它撿回 completed 且效期錨定授權日），確認無誤
-# 後把下面的 schedule 註解取消即可。
+# 這是**錢的安全網**：使用者刷卡成功但通知沒送達時，訂單會永遠停在
+# pending＝付了錢進不了會員中心。queryPayUniTradeStatus 已實作、
+# reconcile-pending-payments / reconcile-expire 兩支 Deno 測試也在 CI 每次
+# 跑——唯獨排程從寫下來到 2026-07 都還註解著，等於這道安全網線上沒開。
+#
+# 開啟排程時採用的是「讓假綠不可能」而不是「再驗一次才敢開」：
+#   - curl -f：HTTP 錯誤直接失敗
+#   - 回應形狀斷言：HTTP 200 但 body 是錯誤內容也要紅
+#   - 失敗自動開 issue：排程失敗的通知只寄給最後改檔的人，很容易蒸發
+# 頻率取每小時（不是每 15 分鐘）：對帳的價值在「幾小時內撿回」而不是
+# 「即時」，而較低頻率讓首次上線的風險面更小。
+# ============================================================================
 on:
-  # 驗證通過後打開：
-  # schedule:
-  #   - cron: '*/15 * * * *'
+  schedule:
+    - cron: '0 * * * *'
   workflow_dispatch: {}
+
+concurrency:
+  group: reconcile-payments
+  cancel-in-progress: false
+
+# ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
+# (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
 
 jobs:
   reconcile:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Call reconciliation endpoint
+        env:
+          ENDPOINT: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
         run: |
-          curl -fsS -X POST \
-            "https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments" \
-            -H "x-internal-secret: ${{ secrets.RECONCILE_SECRET }}"
+          set -uo pipefail
+          body="$(curl -fsS -X POST "$ENDPOINT" -H "x-internal-secret: $RECONCILE_SECRET")"
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::error::對帳端點呼叫失敗（curl exit $rc）"
+            exit 1
+          fi
+          echo "回應：$body"
+          # HTTP 200 不代表對帳成功——端點內部出錯時仍可能回 200。
+          # 契約（index.ts /internal/reconcile-pending-payments）：
+          #   { success: true, data: { checked, resolved, stillPending, ... } }
+          printf '%s' "$body" | python3 -c '
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+          except Exception as e:
+              sys.exit(f"::error::對帳回應不是合法 JSON：{e}")
+          if not d.get("success"):
+              sys.exit(f"::error::對帳回報失敗：{json.dumps(d, ensure_ascii=False)[:400]}")
+          data = d.get("data") or {}
+          missing = [k for k in ("checked", "resolved", "stillPending") if k not in data]
+          if missing:
+              sys.exit(f"::error::對帳回應缺少欄位 {missing}：{json.dumps(d, ensure_ascii=False)[:400]}")
+          print(f"對帳完成：checked={data[\"checked\"]} resolved={data[\"resolved\"]} "
+                f"stillPending={data[\"stillPending\"]} expired={data.get(\"expired\", 0)}")
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '付款對帳排程失敗';
+            // 同一個故障不重複開 issue——排程每小時跑，壞掉就是每小時一張。
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: [],
+            });
+            if (existing.data.some((i) => i.title === title)) {
+              core.info('已有未關閉的同名 issue，不重複建立');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                '## 付款對帳排程失敗',
+                '',
+                `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '**影響**：卡在 pending 的訂單不會被自動撿回——付了錢的使用者',
+                '可能停在「處理中」而無法使用會員功能。修好前建議手動確認',
+                '`payment_orders` 是否有超過數小時仍 pending 的紀錄。',
+                '',
+                '排除後關閉此 issue，排程會在下個整點自動恢復。',
+              ].join('\n'),
+            });

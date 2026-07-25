@@ -34,6 +34,7 @@
 |---|---|
 | `npm run dev` | 開發伺服器(port 3000) |
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
+| `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
 | `npm run check:full` | check + build + Deno 型別檢查(送 PR 前跑) |
 | `npm run test:watch` | vitest 監看模式 |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試) |
@@ -91,14 +92,19 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
   軌),新增 CI job 只要進它的 needs,不必去動保護規則。
 - 環境對應:develop 有自己的 persistent Supabase project
   (`vars.SUPABASE_DEVELOP_PROJECT_REF`),main 是正式站
-  (`vars.SUPABASE_PROJECT_REF`)。push 到任一分支且動了
-  `supabase/functions/**`,就會部署 Edge Function 到**該分支對應的**
-  project(見 deploy-supabase.yml)——develop 是可安全驗證的真後端。
-- 晉升 SOP(develop→main):(a) develop 上 CI 四軌綠;(b) 手動
-  workflow_dispatch 跑一次 journey(至少 skeleton)綠;(c) 開晉升 PR
-  (develop→main),用 merge commit 保留歷史。**main 收到 push =
-  正式站部署**(Edge Function 自動部署、migration 由 Supabase 原生整合
-  套用),晉升即上線,不可逆的東西都在這一步。
+  (`vars.SUPABASE_PROJECT_REF`)。Edge Function 由 deploy-supabase.yml
+  在**該分支 CI 綠之後**部署到對應 project(`workflow_run` 觸發,不是
+  push)——develop 是可安全驗證的真後端。部署後會打 `/api/health` 比對
+  `sha`,確認線上跑的就是這個 commit。
+- **正式站部署需人工核准**:main 的部署綁 GitHub `production` 環境,
+  在 Settings → Environments 設 required reviewer。核准前不會動到線上。
+- 晉升 SOP(develop→main):(a) develop 上 CI 綠;(b) 開晉升 PR
+  (develop→main)——**journey 全套會自動在這個 PR 上跑**(30-90 分鐘,
+  真後端拋棄式分支),不再需要手動 workflow_dispatch;(c) 綠了以
+  merge commit 合併。**main 收到 push = 正式站部署**(migration 由
+  Supabase 原生整合套用),不可逆的東西都在這一步。
+  注:`linear-check` 在 base=main 時自動跳過(晉升 PR 帶的正是 develop
+  上累積的 feature merge commit)。
 - Commit:Conventional Commits(`feat:` `fix:` `test:` `docs:` `refactor:`
   `style:` `chore:` `ci:`),**advisory**——但 TDD 相位的 `test(red)` /
   綠燈 commit 標記是流程必要(PR 以紅燈 hash 為證據)。

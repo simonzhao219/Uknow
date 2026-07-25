@@ -20,11 +20,11 @@ Feature: Complete profile
     And I should still be on the complete profile page
 
     Examples:
+      # 各欄位的驗證規則由 src/utils/profileValidation.test.ts 涵蓋。
+      # 這裡釘的是行為契約本身：按鈕不會靜默 disabled、按下去會說出
+      # 原因。一個欄位級錯誤＋一個表單級錯誤即足以釘住。
       | name | national_id | birth_date | phone      | error            |
       |      | A123456789  | 1990-01-01 | 0912345678 | 請輸入真實姓名   |
-      | 測試 | B99999999   | 1990-01-01 | 0912345678 | 第 2 碼需為      |
-      | 測試 | A123456789  | 1990-01-01 | 12345      | 手機號碼格式不正確 |
-      | 測試 | A123456789  | 2020-01-01 | 0912345678 | 註冊用戶需年滿   |
       | 測試 | A123456789  | 1990-01-01 | 0912345678 | 請同意服務條款   |
 
   Scenario: A valid referral code shows the referrer's name
