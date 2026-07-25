@@ -35,9 +35,9 @@ else
   fi
 fi
 
-# Deno 側閘門：只有 supabase/functions/ 有改動才跑（fmt --check ＋型別
-# 檢查皆為秒級、免網路、免 supabase start；deno task test 需要本地
-# supabase，刻意留給 CI 的 api-tests 軌）。
+# Deno 側閘門：只有 supabase/functions/ 有改動才跑（fmt --check 免網路、
+# 型別檢查要能連 registry 解析相依，兩者皆秒級、免 supabase start；
+# deno task test 需要本地 supabase，刻意留給 CI 的 api-tests 軌）。
 #
 # 合併例外：merge commit 帶進的後端變更是上游 commit（已過 CI api-tests），
 # 不是本次在寫的東西。缺 deno 時擋 merge 只會讓沒裝 deno 的環境無法完成
@@ -50,11 +50,33 @@ if echo "$staged" | grep -q '^supabase/functions/'; then
   fi
 
   if command -v deno >/dev/null 2>&1; then
-    if ! (cd supabase/functions && deno fmt --check && deno task check); then
+    if ! (cd supabase/functions && deno fmt --check); then
       echo "" >&2
-      echo "[pre-commit] Deno 閘門未過（deno fmt --check / deno task check）。" >&2
+      echo "[pre-commit] deno fmt --check 未過，commit 已擋下。" >&2
       echo "  修正格式：cd supabase/functions && deno fmt" >&2
       exit 1
+    fi
+
+    # 網路例外（與上面的 merge 例外同源）：型別檢查要解析 jsr:/npm: 相依，
+    # 也就是要連得上 registry。沙箱 egress 政策擋掉 jsr.io、離線、registry
+    # 掛掉時，這一步必然失敗且與程式碼無關——照擋等於「沒有網路就不准寫
+    # 後端」，又是一個死鎖。故分辨「型別真的有錯」與「根本跑不起來」：
+    # 後者降為警告，交給 CI 的 api-tests 軌（那裡有網路，跑的是同一條指令）。
+    # 判別只認 deno 自己的相依解析／連線失敗訊息；型別錯誤不會長這樣，
+    # 仍然照擋。
+    check_out=$(cd supabase/functions && deno task check 2>&1)
+    check_rc=$?
+    if [ $check_rc -ne 0 ]; then
+      if echo "$check_out" | grep -qE "failed to load|error sending request|403 Forbidden|Import '.*' failed|connection error|dns error|error trying to connect"; then
+        echo "[pre-commit] deno task check 無法解析相依（registry 不可達），降為警告：" >&2
+        echo "$check_out" | grep -E "^error" | head -3 >&2
+        echo "  型別檢查交由 CI 的 api-tests 軌把關（該環境有網路）。" >&2
+      else
+        echo "$check_out" >&2
+        echo "" >&2
+        echo "[pre-commit] deno task check 未過（型別錯誤），commit 已擋下。" >&2
+        exit 1
+      fi
     fi
   elif [ "$merging" = true ]; then
     echo "[pre-commit] 合併中且本機無 deno：後端變更來自上游（已過 CI），略過 Deno 閘門。"
