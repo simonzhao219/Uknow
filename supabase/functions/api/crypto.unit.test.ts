@@ -4,7 +4,7 @@ import { decryptPayUni, encryptPayUni, generatePayUniHash } from './crypto.ts';
 const KEY = '0123456789abcdef0123456789abcdef';
 const IV = '0123456789ab';
 
-Deno.test('encryptPayUni -> decryptPayUni round-trips the original payload', async () => {
+Deno.test('encryptPayUni → decryptPayUni：來回轉換後還原原始 payload', async () => {
   const payload = { MerchantID: 'TESTMID', Amt: 1000, TradeNo: 'ORDER123' };
 
   const encrypted = await encryptPayUni(payload, KEY, IV);
@@ -16,7 +16,7 @@ Deno.test('encryptPayUni -> decryptPayUni round-trips the original payload', asy
   assertEquals(params.get('TradeNo'), 'ORDER123');
 });
 
-Deno.test('generatePayUniHash is deterministic and uppercase hex', async () => {
+Deno.test('generatePayUniHash：結果具決定性且為大寫十六進位', async () => {
   const encrypted = await encryptPayUni({ foo: 'bar' }, KEY, IV);
 
   const hash1 = await generatePayUniHash(encrypted, KEY, IV);
@@ -27,7 +27,7 @@ Deno.test('generatePayUniHash is deterministic and uppercase hex', async () => {
   assertEquals(/^[0-9A-F]+$/.test(hash1), true);
 });
 
-Deno.test('generatePayUniHash changes when the ciphertext changes', async () => {
+Deno.test('generatePayUniHash：密文改變時雜湊隨之改變', async () => {
   const encryptedA = await encryptPayUni({ foo: 'bar' }, KEY, IV);
   const encryptedB = await encryptPayUni({ foo: 'baz' }, KEY, IV);
 

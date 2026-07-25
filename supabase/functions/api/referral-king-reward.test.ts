@@ -21,7 +21,7 @@ import { twDayOf, twDayPlusDays, twDayPlusYears, twEndOfDayInstant } from './tw-
 // 真要有人把門檻改成 6，它會以一個看不懂的訊息紅燈。
 // 正確的邊界（8→1 張、16→2 張）由 king-multi-credit.test.ts 守著，
 // 所以這裡直接移除，不留一個守不住任何東西的斷言。
-Deno.test('claiming a free-renewal-year credit extends the current subscription by 1 year, idempotently, without touching referral rewards', async () => {
+Deno.test('領取免費續約 credit：訂閱延長一年、冪等，且不動到推薦獎勵', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Claiming Referrer' });
   const refereeIds: string[] = [];
@@ -133,7 +133,7 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
   }
 });
 
-Deno.test('an expired member cannot claim a free-renewal credit — blocked, credit stays unclaimed, subscription not extended', async () => {
+Deno.test('過期會員不得領取 credit：被擋、credit 維持 unclaimed、訂閱不延長', async () => {
   // 業務規則（0721 0004）：「免費續約 1 年」credit 需先 active 才能領取，
   // 不允許到期會員用它免費復活。判準與 user_account_status 一致
   // （now() > end_date 即 expired）。
@@ -212,7 +212,7 @@ Deno.test('an expired member cannot claim a free-renewal credit — blocked, cre
   }
 });
 
-Deno.test('a suspended member cannot claim a free-renewal credit even while subscription is active — blocked, credit stays unclaimed, subscription not extended', async () => {
+Deno.test('停權會員即使訂閱仍 active 也不得領取 credit：被擋、credit 維持 unclaimed、訂閱不延長', async () => {
   // 業務規則（0721 0005）：停權（suspended）比照到期（expired），一律不得
   // 領取免費續約 credit。與提領同一把尺——停權優先擋（error_code 'suspended'）。
   // 本例刻意保持訂閱在效期內（active），單獨隔離「停權」這道守衛。

@@ -28,7 +28,7 @@ import {
 const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
   'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
-Deno.test('process_successful_payment is safe under concurrent duplicate calls for the same trade_no', async () => {
+Deno.test('process_successful_payment：同一 trade_no 併發重複呼叫仍安全', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
   const { error: referrerPayErr } = await payForUser(client, referrer.id);

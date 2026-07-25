@@ -31,7 +31,7 @@ describe('buildReferralLink', () => {
     vi.unstubAllGlobals();
   });
 
-  it('builds a /register?ref= link from the referral code', () => {
+  it('由推薦碼組出 /register?ref= 連結', () => {
     expect(buildReferralLink('abc123')).toBe('https://test.example/register?ref=abc123');
   });
 });
@@ -68,7 +68,7 @@ describe('pending referral — 撐過註冊漏斗（save/get/clear）', () => {
     installMemoryStorage();
   });
 
-  it('save → get round-trip', () => {
+  it('save 後 get 可取回同一份資料', () => {
     savePendingReferral('abc123');
     expect(getPendingReferral()).toBe('abc123');
   });

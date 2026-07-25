@@ -100,6 +100,122 @@ def violations(text: str) -> list[str]:
     return found
 
 
+# ============================================================================
+# 命名與結構規則(規則 2-7)——完整原則見 .claude/rules/github-actions.md
+# ============================================================================
+
+JOB_ID = re.compile(r"^  ([a-z][a-z0-9-]*):\s*$")
+CJK = re.compile(r"[\u4e00-\u9fff]")
+TITLE_CASE = re.compile(r"^[A-Z][A-Za-z0-9]*( [A-Z(][A-Za-z0-9)/-]*)*$")
+
+# job id 不得只講「跑什麼工具」——工具會換,那一軌要證明的事不會
+TOOL_NAMES = {
+    "npm-audit", "biome", "eslint", "vitest", "jest", "pytest", "tsc",
+    "deno", "playwright", "knip", "shellcheck", "actionlint",
+}
+# job id 不得是裸形容詞/裸動詞:branch protection 的 check 清單只看得到這串字
+BARE_WORDS = {
+    "static", "unit", "build", "test", "tests", "lint", "check", "deploy",
+    "run", "verify", "e2e", "integration", "release", "publish",
+}
+# 這些 job id 進了 branch protection 的 required checks,改名要同步改保護規則
+FROZEN_JOB_IDS = {"ci-ok"}
+
+
+def _jobs(text: str) -> list[tuple[str, str]]:
+    """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
+    except StopIteration:
+        return []
+    out: list[tuple[str, str]] = []
+    cur_id: str | None = None
+    cur: list[str] = []
+    for line in lines[start + 1 :]:
+        m = JOB_ID.match(line)
+        if m:
+            if cur_id:
+                out.append((cur_id, "\n".join(cur)))
+            cur_id, cur = m.group(1), []
+            continue
+        if cur_id is not None:
+            cur.append(line)
+    if cur_id:
+        out.append((cur_id, "\n".join(cur)))
+    return out
+
+
+def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
+    """workflow 的命名與結構規則。純函式,無 I/O。"""
+    found: list[str] = []
+
+    # 規則 2:workflow name 是識別字(workflow_run 以名稱引用、也是 badge URL)
+    #        → 英文 Title Case,不得含中文
+    for line in text.splitlines():
+        if line.startswith("name:"):
+            wf = line.split(":", 1)[1].strip()
+            if CJK.search(wf):
+                found.append(f"workflow name {wf!r} 含中文——它是識別字(workflow_run 以名稱引用),須為英文 Title Case")
+            elif not TITLE_CASE.match(wf):
+                found.append(f"workflow name {wf!r} 不是 Title Case(每個字首大寫、不用標點)")
+            break
+
+    # 規則 3:禁止 workflow 層 permissions
+    #        它是**上限**不是預設值,會讓需要更多權限的 job 越權而整個
+    #        workflow 拒絕啟動(startup_failure,連 check run 都不建立)。
+    for i, line in enumerate(text.splitlines()):
+        if line.rstrip() == "permissions:" and not line.startswith(" "):
+            found.append(
+                "出現 workflow 層 permissions——它是上限而非預設值,"
+                "需要 issues: write 之類的 job 會被判越權,整個 workflow 拒絕啟動。"
+                "權限一律逐 job 宣告。"
+            )
+            break
+
+    jobs = _jobs(text)
+    for job_id, block in jobs:
+        # 規則 4:job id 命名——kebab-case 名詞片語,不得是工具名或裸形容詞/動詞
+        if job_id in TOOL_NAMES:
+            found.append(f"job id {job_id!r} 是工具名——請改成「這一軌證明了什麼」(例:dependency-audit)")
+        elif job_id in BARE_WORDS:
+            found.append(f"job id {job_id!r} 是裸形容詞/動詞——branch protection 只顯示這串字,請用名詞片語(例:{job_id}-tests / {job_id}-checks)")
+
+        is_reusable_call = any(l.strip().startswith("uses: ./") for l in block.splitlines())
+
+        # 規則 5:每個 job 都要有 timeout-minutes(呼叫 reusable 的 job 不支援)
+        if not is_reusable_call and "timeout-minutes:" not in block:
+            found.append(f"job {job_id!r} 缺 timeout-minutes——沒有上限的 job 卡住就是燒滿 6 小時")
+
+        # 規則 6:每個 step 都要有 name
+        for bl in _steps(block):
+            first = bl.splitlines()[0]
+            if re.match(r"^\s*-\s+uses\s*:", first) or re.match(r"^\s*-\s+run\s*:", first):
+                found.append(
+                    f"job {job_id!r} 有無名 step({first.strip()[:50]})——"
+                    "UI 會顯示成 'Run actions/xxx',與真正的閘門混在一起難以判讀"
+                )
+
+    # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
+    #        漏一個 = 那一軌不擋合併(2026-07-25 PR #109 就是這樣被 auto-merge 掉的)
+    if filename.endswith("ci.yml") and any(j == "ci-ok" for j, _ in jobs):
+        ci_ok_block = next(b for j, b in jobs if j == "ci-ok")
+        declared = {
+            l.strip().lstrip("- ").strip()
+            for l in ci_ok_block.splitlines()
+            if re.match(r"^\s+-\s+[a-z][a-z0-9-]*\s*$", l)
+        }
+        others = {j for j, _ in jobs if j != "ci-ok"}
+        missing = others - declared
+        if missing:
+            found.append(
+                f"ci-ok 的 needs 漏了 {sorted(missing)}——那幾軌紅了也不會擋合併。"
+                "ci-ok 是唯一的 required check,新增 job 必須同步進它的 needs。"
+            )
+
+    return found
+
+
 # --- 表格案例:每筆是 (標籤, workflow 片段, 預期違規數) ---
 CASES: list[tuple[str, str, int]] = [
     (
@@ -192,11 +308,16 @@ def self_test() -> int:
         if got != want:
             failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
 
+    for label, snippet, fname, want in NAMING_CASES:
+        got = len(naming_violations(snippet, fname))
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
+
     if failures:
         print("check-workflows 表格案例未過:")
         print("\n".join(failures))
         return 1
-    print(f"check-workflows self-test: OK（{len(CASES)} 條案例）")
+    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES)} 條案例）")
     return 0
 
 
@@ -206,7 +327,8 @@ def scan() -> int:
 
     fail = 0
     for path in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml")):
-        for msg in violations(path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8")
+        for msg in list(violations(text)) + naming_violations(text, path.name):
             print(f"FAIL: {path.relative_to(ROOT)}: {msg}")
             fail = 1
 
@@ -214,6 +336,74 @@ def scan() -> int:
         print("check-workflows: OK")
     return fail
 
+
+
+# --- 命名規則的表格案例:每筆是 (標籤, workflow 片段, 檔名, 預期違規數) ---
+NAMING_CASES: list[tuple[str, str, str, int]] = [
+    ("workflow name 含中文 → 違規", "name: 持續整合\njobs:\n", "x.yml", 1),
+    ("workflow name 非 Title Case → 違規", "name: ci pipeline\njobs:\n", "x.yml", 1),
+    ("workflow name Title Case → 通過", "name: Security Audit\njobs:\n", "x.yml", 0),
+    (
+        "workflow 層 permissions → 違規(PR #114:整個 workflow 拒絕啟動)",
+        "name: CI\npermissions:\n  contents: read\njobs:\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是工具名 → 違規",
+        "name: CI\njobs:\n  npm-audit:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是裸形容詞 → 違規",
+        "name: CI\njobs:\n  static:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是名詞片語 → 通過",
+        "name: CI\njobs:\n  static-checks:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        0,
+    ),
+    (
+        "job 缺 timeout-minutes → 違規",
+        "name: CI\njobs:\n  static-checks:\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "無名 step → 違規",
+        "name: CI\njobs:\n  static-checks:\n    timeout-minutes: 5\n    steps:\n      - uses: actions/checkout@v4\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "ci-ok 漏掉某一軌 → 違規(PR #109 的事故形態)",
+        (
+            "name: CI\njobs:\n"
+            "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  e2e-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - unit-tests\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        1,
+    ),
+    (
+        "ci-ok needs 完整 → 通過",
+        (
+            "name: CI\njobs:\n"
+            "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  e2e-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - unit-tests\n      - e2e-tests\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+]
 
 if __name__ == "__main__":
     sys.exit(self_test() if "--self-test" in sys.argv[1:] else scan())

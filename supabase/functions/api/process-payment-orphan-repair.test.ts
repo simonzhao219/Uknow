@@ -45,7 +45,7 @@ async function seedOrphanedCompletedPayment(
   return { orderId: order!.id, subscriptionId: sub!.id };
 }
 
-Deno.test('repair_orphaned_payments backfills missing referral code/reward/task-progress, idempotently', async () => {
+Deno.test('repair_orphaned_payments：補回缺漏的推薦碼、獎勵與任務進度，且冪等', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
   const payer = await createTestUser(client, { name: 'Payer' });

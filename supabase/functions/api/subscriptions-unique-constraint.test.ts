@@ -6,7 +6,7 @@
 import { assertEquals, assertNotEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
 
-Deno.test('subscriptions.payment_transaction_id has a defense-in-depth unique constraint', async () => {
+Deno.test('subscriptions.payment_transaction_id：具備縱深防禦的唯一約束', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Dup Sub Test' });
 

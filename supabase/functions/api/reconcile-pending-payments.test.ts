@@ -30,7 +30,7 @@ async function seedPendingOrder(
   return tradeNo;
 }
 
-Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/resolve functions', async () => {
+Deno.test('reconcilePendingOrders：透過注入的查詢／解析函式收斂卡單', async () => {
   const client = adminClient();
   const successUser = await createTestUser(client, { name: 'Stuck Success' });
   const stillPendingUser = await createTestUser(client, { name: 'Still Pending' });

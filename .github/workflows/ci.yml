@@ -45,8 +45,10 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       backend: ${{ steps.filter.outputs.backend }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 判斷本次變更範圍
+        uses: dorny/paths-filter@v3
         id: filter
         with:
           # predicate-quantifier 預設是 some（「符合任一 pattern 即命中」），
@@ -71,9 +73,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - run: bash scripts/framework-check.sh
-      - name: Shellcheck hook scripts
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 框架健康檢查
+        run: bash scripts/framework-check.sh
+      - name: Shell 腳本靜態檢查（shellcheck）
         run: |
           shopt -s nullglob
           files=(scripts/git-hooks/* scripts/*.sh)
@@ -84,29 +88,33 @@ jobs:
   # ── L1：秒級靜態閘門 ────────────────────────────────────────────────
   # 前端與後端的靜態檢查合在同一 job：兩邊都是秒級，分開反而多付一次
   # runner 啟動與 checkout 的固定成本。
-  static:
+  static-checks:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 安裝 Node 24
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - name: 安裝前端相依
+        run: npm ci
 
       # 與本機 npm run check、pre-commit hook 共用同一定義，杜絕
       # 「本地綠 CI 紅」的規則漂移（vite build 用 SWC 只轉譯不檢查型別）
-      - name: Biome
+      - name: 前端風格與 lint（Biome）
         run: npx biome check .
-      - name: TypeScript
+      - name: 前端型別檢查（tsc）
         run: npm run typecheck
-      - name: Knip（未使用檔案／相依）
+      - name: 未使用檔案與相依（Knip）
         run: npx knip --include files,dependencies
 
-      - uses: denoland/setup-deno@v2
+      - name: 安裝 Deno
+        uses: denoland/setup-deno@v2
         if: needs.changes.outputs.backend == 'true'
         with:
           deno-version: v2.x
@@ -115,39 +123,42 @@ jobs:
       # 這三條把 Deno 側的規則接上唯一的強制點。
       # check 檢查 api/*.ts 全部而非只有 index.ts：測試檔（5700+ 行）
       # 過去從不做型別檢查，型別錯誤只有跑到才會炸。
-      - name: Deno fmt
+      - name: 後端格式檢查（deno fmt）
         if: needs.changes.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task fmt:check
-      - name: Deno lint
+      - name: 後端 lint（deno lint）
         if: needs.changes.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task lint
-      - name: Deno type-check（含測試檔）
+      - name: 後端型別檢查含測試檔（deno check）
         if: needs.changes.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task check
 
   # ── L2：單元測試（不碰資料庫，秒級回饋）────────────────────────────
-  unit:
+  unit-tests:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 安裝 Node 24
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - name: 安裝前端相依
+        run: npm ci
 
-      - name: Vitest（含覆蓋率）
+      - name: 前端單元測試與覆蓋率（Vitest）
         run: npm run test:coverage
 
       # 覆蓋率要看得見才有用：印在 job summary，每個 PR 一眼可見趨勢。
       # 門檻本身由 vitest.config.ts 的 thresholds 強制（棘輪，只准往上）。
-      - name: 覆蓋率摘要
+      - name: 輸出覆蓋率摘要到 job summary
         if: ${{ !cancelled() }}
         run: |
           node -e '
@@ -162,7 +173,8 @@ jobs:
               `### 前端覆蓋率\n\n| 指標 | % | 已覆蓋/總數 |\n|---|---|---|\n${rows}\n`);
           '
 
-      - uses: denoland/setup-deno@v2
+      - name: 安裝 Deno
+        uses: denoland/setup-deno@v2
         if: needs.changes.outputs.backend == 'true'
         with:
           deno-version: v2.x
@@ -170,27 +182,31 @@ jobs:
       # supabase start，所以不該被綁在分鐘級的 api-tests 軌後面。
       # 這三支剛好都是安全相關（憑證混用、CORS 繞道、內部密鑰），
       # 放在最快的軌道上最划算。
-      - name: Deno 單元測試（無 DB）
+      - name: 後端純函式測試（不需資料庫）
         if: needs.changes.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task test:unit
 
-  build:
+  build-bundle:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 安裝 Node 24
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - name: 安裝前端相依
+        run: npm ci
+      - name: 建置產出（Vite）
+        run: npm run build
       # 主 chunk 目前 955 kB / gzip 296 kB。預算是棘輪不是目標：
       # 擋住「無聲長大」，真的需要放寬時要在 PR 裡明說理由。
-      - name: Bundle 預算
+      - name: 檢查 bundle 預算
         run: node scripts/check-bundle-budget.mjs
 
   # ── L3：整合測試 ────────────────────────────────────────────────────
@@ -200,29 +216,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v2
+      - name: 安裝 Deno
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
-      - uses: supabase/setup-cli@v1
+      - name: 安裝 Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
 
       # 排除只有 GUI/可觀測性用途的服務，省下約 30s 的映像拉取與啟動。
       # 測試需要的是 db / auth / rest / storage。
-      - name: Start local Supabase
+      - name: 啟動本地 Supabase
         run: supabase start -x studio,logflare,vector,supavisor
 
-      - name: Export local Supabase connection info
+      - name: 匯出本地 Supabase 連線資訊
         run: |
           echo "SUPABASE_URL=$(supabase status -o env | grep '^API_URL=' | cut -d= -f2- | tr -d '"')" >> "$GITHUB_ENV"
           echo "SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '"')" >> "$GITHUB_ENV"
           echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o env | grep '^SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '"')" >> "$GITHUB_ENV"
 
       # 刻意不跑 supabase stop：job 結束整台 runner 就回收，那 20s 純浪費。
-      - name: Run Deno DB tests
+      - name: 後端整合測試（需資料庫）
         working-directory: supabase/functions
         run: deno task test:db
 
@@ -235,26 +254,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: 安裝 Node 24
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Install frontend dependencies
+      - name: 安裝前端相依
         run: npm ci
 
-      - uses: actions/setup-python@v5
+      - name: 安裝 Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: e2e/requirements.txt
 
-      - name: Install e2e dependencies
+      - name: 安裝 e2e 相依
         run: pip install -r e2e/requirements.txt
 
-      - name: Cache Playwright browser binaries
+      - name: 快取 Playwright 瀏覽器
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
@@ -262,13 +284,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install Playwright browser
+      - name: 安裝 Playwright 瀏覽器
         run: playwright install chromium --with-deps
 
       # dev server 由 workflow 顯式起：conftest 的 Popen(shell=True) 殺的是
       # shell wrapper，node 子程序會留下來（CI log 的 "Terminate orphan
       # process: npm run dev" 就是它）。在這裡起、由 runner 回收，乾淨。
-      - name: Start dev server
+      - name: 啟動 dev server
         run: |
           npm run dev &
           for _ in $(seq 1 120); do
@@ -283,7 +305,7 @@ jobs:
       # 已經有兩個情境會因資源競爭失敗（單獨跑、單檔跑都穩定通過）。
       # 這套件貼著時間懸崖，再加並發等於拿主閘門的可信度換 90 秒。
       # 速度從「刪掉在下層已經驗過的重複情境」拿，不從並發拿。
-      - name: Run e2e suite
+      - name: e2e 情境測試（全 mock）
         working-directory: e2e
         env:
           PYTHONUNBUFFERED: '1'
@@ -296,7 +318,7 @@ jobs:
             --output test-results \
             -q
 
-      - name: Upload e2e test results
+      - name: 上傳 e2e 測試產物
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
@@ -314,22 +336,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 安裝 Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: e2e/journey/requirements.txt
 
-      - name: Install journey dependencies
+      - name: 安裝 journey 相依
         run: pip install -r e2e/journey/requirements.txt
 
-      - name: Offline unit tests
+      - name: journey 離線純函式測試
         working-directory: e2e/journey
         run: pytest tools/ -q
 
-      - name: Scenario collection sanity
+      - name: journey 情境收集健全性
         working-directory: e2e/journey
         run: pytest --collect-only -q
 
@@ -338,7 +362,7 @@ jobs:
   # 30-90 分鐘完全付得起；日常 feature PR 則完全不受影響（skip）。
   # 與 nightly 共用同一份 reusable workflow，杜絕兩份定義漂移
   # （main / develop 兩個副本各自演化正是 2026-07 那次的成因）。
-  journey:
+  journey-full:
     needs: changes
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     # 呼叫端的權限是被呼叫 workflow 的**上限**——journey.yml 的 job 要
@@ -368,7 +392,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
         with:
           # 預設會 checkout refs/pull/N/merge（GitHub 合成的試合併結果，
           # 本身就是 merge commit）——必須指名 head sha 才量得到真正的
@@ -401,7 +426,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -429,13 +455,13 @@ jobs:
     needs:
       - changes
       - framework-check
-      - static
-      - unit
-      - build
+      - static-checks
+      - unit-tests
+      - build-bundle
       - api-tests
       - e2e-tests
       - journey-offline
-      - journey
+      - journey-full
       - linear-check
       - migration-guard
     if: always()

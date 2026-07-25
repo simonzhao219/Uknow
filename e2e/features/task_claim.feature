@@ -1,10 +1,10 @@
 Feature: Task rewards update membership visibly
-  Claiming the 推薦王 free-renewal-year reward extends the subscription
+  Claiming the referral-king free-renewal-year reward extends the subscription
   end_date on the backend; the frontend must invalidate its cached
   subscription status so the member dashboard shows the new period
   immediately — not the pre-claim dates for the rest of the session.
 
-  Scenario: The 推薦王 monthly progress is visible on the task dashboard
+  Scenario: The referral-king monthly progress is visible on the task dashboard
     Given I am logged in as an active member
     And my task center shows 3 referrals this month
     When I visit "/tasks"

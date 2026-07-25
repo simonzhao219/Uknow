@@ -1,4 +1,4 @@
-name: Journey (Scheduled)
+name: Journey Scheduled
 
 # ============================================================================
 # journey 套件的排程／手動觸發入口——**薄外殼**：只負責 triggers 與
@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  journey:
+  journey-suite:
     permissions:
       contents: read
       issues: write

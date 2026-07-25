@@ -32,7 +32,7 @@ concurrency:
 # (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
 
 jobs:
-  deploy:
+  deploy-edge-function:
     # CI 沒綠就不部署。這一行是整個檔案存在的理由。
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -51,30 +51,32 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ github.event.workflow_run.head_branch == 'main' && vars.SUPABASE_PROJECT_REF || vars.SUPABASE_DEVELOP_PROJECT_REF }}
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
         with:
           # 部署被觸發的那個 commit，不是預設分支的 HEAD
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - uses: supabase/setup-cli@v1
+      - name: 安裝 Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
 
       # 先寫 DEPLOY_SHA 再部署：函式啟動時就讀得到，煙霧測試才驗得出
       # 「線上跑的是這一版」而不只是「有東西回應」。
-      - name: Stamp the deployed commit
+      - name: 寫入本次部署的 commit sha
         run: |
           supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
             DEPLOY_SHA="$DEPLOY_SHA"
 
-      - name: Deploy Edge Function
+      - name: 部署 Edge Function
         run: |
           supabase functions deploy api \
             --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       # 部署「成功」不等於線上是對的：secrets 沒生效、cold start 就炸、
       # 推到錯的 project——這些在 deploy 指令的退出碼上都是 0。
-      - name: Post-deploy smoke
+      - name: 部署後煙霧測試（比對 /health sha）
         env:
           HEALTH_URL: https://${{ env.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/health
         run: |
@@ -92,7 +94,7 @@ jobs:
           echo "::error::部署後 2 分鐘內 /health 仍未回報 $DEPLOY_SHA —— 線上可能不是這一版,請檢查"
           exit 1
 
-      - name: Open issue on failed deploy
+      - name: 失敗時開 issue
         if: failure()
         uses: actions/github-script@v7
         with:
