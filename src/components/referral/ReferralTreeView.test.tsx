@@ -145,12 +145,29 @@ describe('需要關注橫幅（伺服器上限）', () => {
 });
 
 describe('排序控制', () => {
-  it('單層 select：短文案選項存在，且當前排序文字只出現一份（無疊字層）', () => {
+  it('手機 icon-only、sm+ 顯示短標籤；select 永遠透明（疊字根因回歸釘）', () => {
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
     expect(screen.getByRole('option', { name: '姓名 Z→A' })).toBeTruthy();
-    // 疊字回歸陷阱：先前「晶片 + 透明 select 覆蓋」的雙層結構會讓同一
-    // 文案渲染兩份（focus 時直接印在一起）——單層結構下必須只有一份。
-    expect(screen.getAllByText('姓名 Z→A').length).toBe(1);
+
+    // 疊字根因回歸釘：select 必須永遠保持透明——當初的糊字來自
+    // focus-visible 時把覆蓋層 reveal 成可見，兩層文字直接印在一起。
+    const select = screen.getByLabelText('排序方式') as HTMLSelectElement;
+    expect(select.className).toContain('opacity-0');
+    expect(select.className).not.toMatch(/focus-visible:opacity/);
+
+    // 視覺標籤層：aria-hidden（a11y 單一來源在 select）、手機隱藏（icon-only）
+    const label = screen.getByTestId('sort-label');
+    expect(label.getAttribute('aria-hidden')).toBe('true');
+    expect(label.className).toContain('hidden');
+    expect(label.className).toContain('sm:inline');
+
+    // 非預設排序 → 手機 icon-only 時以指示點提示「目前非預設排序」
+    expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
+  });
+
+  it('預設排序（更新新→舊）不顯示指示點', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }));
+    expect(screen.queryByTestId('sort-active-dot')).toBeNull();
   });
 
   it('原生 select 受控於 sort、變更回報 onSortChange', () => {
