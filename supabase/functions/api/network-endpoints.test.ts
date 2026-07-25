@@ -49,6 +49,7 @@ import {
 } from './test-helpers.ts';
 import {
   assertShape,
+  DEFAULT_NETWORK_SORT,
   NetworkChildrenResponseSchema,
   NetworkOverviewResponseSchema,
   NetworkSearchResponseSchema,
@@ -142,10 +143,15 @@ Deno.test('未帶 token 一律 401', async () => {
   }
 });
 
-Deno.test('overview：契約形狀 + 摘要計數', async () => {
+Deno.test('overview：契約形狀 + 摘要計數 + 預設排序為「最舊加入」', async () => {
   const { status, body } = await getJson('/referrals/network/overview', token);
   assertEquals(status, 200);
   const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview');
+
+  // 不帶 sort → 預設 updated_asc（舊到新）。這是使用者可見的預設值，
+  // 與下方「非法值回落」共用同一個 DEFAULT_NETWORK_SORT。
+  assertEquals(parsed.data.sort, 'updated_asc');
+  assertEquals(parsed.data.roots.map((r) => r.userId), [g1a.id, g1b.id, g1c.id]);
 
   assertEquals(parsed.data.summary.firstGenCount, 3);
   assertEquals(parsed.data.summary.secondGenCount, 5, '陳小華 + 趙雲 + 林美 ×3');
@@ -206,7 +212,18 @@ Deno.test('overview：name 排序——A→Z 英文組在前；Z→A = 完全反
 Deno.test('overview：無效 sort 回落預設並回聲', async () => {
   const { body } = await getJson('/referrals/network/overview?sort=bogus', token);
   const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview bogus sort');
-  assertEquals(parsed.data.sort, 'updated_desc');
+  assertEquals(parsed.data.sort, DEFAULT_NETWORK_SORT);
+  assertEquals(DEFAULT_NETWORK_SORT, 'updated_asc', '預設＝最舊加入（需求方裁決）');
+});
+
+Deno.test('children / search：預設同樣回落 DEFAULT_NETWORK_SORT', async () => {
+  const kids = await getJson(`/referrals/network/children?parentId=${g1a.id}`, token);
+  const kidsParsed = assertShape(NetworkChildrenResponseSchema, kids.body, 'children default sort');
+  assertEquals(kidsParsed.data.sort, DEFAULT_NETWORK_SORT);
+
+  const found = await getJson('/referrals/network/search?q=ali', token);
+  const foundParsed = assertShape(NetworkSearchResponseSchema, found.body, 'search default sort');
+  assertEquals(foundParsed.data.sort, DEFAULT_NETWORK_SORT);
 });
 
 Deno.test('overview：attention——停權的深代下線入列且遮罩', async () => {
