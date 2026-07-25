@@ -10,6 +10,12 @@
 >
 > **會變的數字不寫死在文件**：獎金額度與推薦王門檻的執行期真相是資料表
 > `reward_config`（見 §8.1）。本文件寫出的是**現值**，調參時以資料表為準。
+>
+> **本文件有機械把關**：`scripts/check-spec-drift.py`（接在 framework-check 軌）
+> 會把可驗證的事實與程式碼逐條對上——業務常數、§3 路由表、狀態機與分類列舉、
+> 以及本文件引用的檔案路徑。改了程式碼沒同步這裡，CI 會紅；**改這裡的措辭
+> 導致檢查器抽不到值，CI 也會紅**（抽不到就當通過，等於閘門靜默失效）。
+> 調整相關段落的寫法時，請一併更新該腳本的抽取式。
 
 ---
 
@@ -77,12 +83,18 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/auth/complete-profile` | 完善個資 | 登入 |
 | `/payment/checkout`、`/payment/result` | 結帳 / 付款結果 | 登入 |
 | `/dashboard` | 會員儀表板 | 登入 + 會籍 |
-| `/service-providers`（+ `/create`、`/edit/:id`） | 刊登管理 | 登入 + 會籍 + featureFlag |
+| `/service-providers` | 刊登管理 | 登入 + 會籍 + featureFlag |
+| `/service-providers/create` | 新增刊登 | 登入 + 會籍 + featureFlag |
+| `/service-providers/edit/:id` | 編輯刊登 | 登入 + 會籍 + featureFlag |
 | `/referrals` | 推薦網絡 | 登入 + 會籍 + featureFlag |
 | `/tasks` | 任務中心 | 登入 + 會籍 + featureFlag |
 | `/rewards` | 獎勵回饋 / 提領 | 登入 + 會籍 + featureFlag |
 | `/admin` | 管理後台 | 管理員 |
-| `*` | 導回 `/` | — |
+| `*` | 未匹配路由導回首頁 | — |
+
+> 本表的第一欄由 `scripts/check-spec-drift.py` 與 `src/App.tsx` 的
+> `<Route path>` 做**集合對照**——多一條、少一條、拼錯都會讓 framework-check
+> 變紅。因此路由請逐條列出，不要用「（+ /create、/edit/:id）」這類簡寫。
 
 **守衛語意**
 
@@ -92,8 +104,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 - `AdminRoute`：非管理員擋下。
 - `FeatureContext`：功能旗標，**目前為前端全開啟 stub**，尚無後端來源。
 
-> 路由命名為 kebab-case（`/service-providers`）。歷史文件曾記為 camelCase
-> （`/serviceProviders`），已於 2026-07 對照 `App.tsx` 更正。
+> 路由命名為 kebab-case（`/service-providers`）。
 
 ---
 
@@ -143,13 +154,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | **訂閱中 (active)** | 付款成功且 `now() <= end_date` | ✅ 顯示 | ✅ 可推廣 | ✅ 正常領取 | ✅ 可提領 | ✅ 持續進行 |
 | **完全失效 (expired)** | `now() > end_date` | ❌ 隱藏 | ✅ 碼仍有效 | ✅ 保留不歸零 | ❌ 不可 | 保留不歸零 |
 
-> **不提供自助取消訂閱（已定案的產品決策，非落差）**：一次性年費、
-> 無自動續扣，沒有「續扣」可停——不續約即到期失效（`now() > end_date`），
-> 使用者不需要、也不會有取消入口。此決策已確認，**不必再列為待實作項**。
-> `subscriptions.is_canceled` 因此是 vestigial 欄位：自始不被任何流程寫入
-> 或讀取，僅保留以避免破壞性 migration（`user_account_status` view 原樣
-> 帶出、無消費者）。實際狀態永遠只有 active／expired 兩態。
-> 〔實作〕`20260721000003_mark_is_canceled_vestigial.sql`
+一次性年費、無自動續扣，因此沒有「續扣」可停——不續約即到期失效。
 
 ### 5.1 失效狀態的詳細語意
 
@@ -282,11 +287,6 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 - **層級**：三代制（直推 / 代推 / 深推）。
 - **發放金額**：每代 **100 P**，**付款當下一次發清**，直接入流水帳。
 
-> **無每月排程**：早期規格曾設計「每代 10 P × 12 個月 = 120 P、寫入 11 筆
-> 待發放紀錄」的分期機制。該機制已於 2026-06 移除（`reward_schedules` 整張
-> 刪除、改即時一次發清）。
-> 〔實作〕`20260620000007_business_rule_revision.sql`
->
 > **金額是可調參數**：現值 100 P 存於 `reward_config.referral_reward_amount`，
 > SQL 函數、Edge Function、前端皆從此處讀取，不得各自硬編。
 > 〔實作〕`20260719000002_reward_config.sql`
@@ -346,7 +346,9 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 ## 9. 任務系統
 
-### 9.1 推薦王（唯一在線任務）
+目前只有一個任務：推薦王。
+
+### 9.1 推薦王
 
 - **條件**：當月**新下線**累積滿 **8 位**（`reward_config.referral_king_monthly_threshold`）。
 - **獎勵**：一張可領取的**「免費續約 1 年」credit**（`unclaimed` 狀態），
@@ -379,13 +381,6 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 - 領取後：訂閱效期**接續延展一年**，credit 標記 `claimed`。
 - 領取同時**對領取者的上線鏈發三代 100 P**（§8.2 最後一列）——
   任務續約也算「下線續約」。發獎失敗不回滾「訂閱已延展」的事實。
-
-### 9.4 已移除的任務
-
-**連續推薦達人**（連續 12 個月每月至少直推 1 人 → 1,000 P）**已於 2026-06 取消**，
-後端無此實作（`task_progress` 的 `consecutive_*` 欄位、`reward_transactions` 的
-`task_consecutive` 類型皆已刪除）。
-〔實作〕`20260620000007_business_rule_revision.sql`
 
 ---
 
@@ -486,9 +481,6 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
 
-> **任務管理**（任務建立/分配/審核）在早期規格中列出，但任務系統現為
-> 規則驅動的自動發放（§9），**無 admin 任務管理介面**。
-
 ---
 
 ## 14. 已知落差與未實作項目
@@ -501,8 +493,8 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 1 | 身分證字號唯一性檢核（§4.2） | `profiles.national_id` 無唯一約束、`/auth/register` 未檢查 |
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
 | 3 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
-| 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
-| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `api-contract.ts` 常數，尚未執行 |
+| 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`src/contexts/FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
+| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 
 ---
 

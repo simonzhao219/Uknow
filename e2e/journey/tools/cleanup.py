@@ -34,7 +34,6 @@ RESIDUE_TABLES: list[tuple[str, str]] = [
     ("referral_edges", "referrer_user_id"),
     ("referral_edges", "referee_user_id"),
     ("reward_transactions", "user_id"),
-    ("reward_schedules", "user_id"),
     ("referral_king_rewards", "user_id"),
     ("withdrawals", "user_id"),
     ("listings", "user_id"),
