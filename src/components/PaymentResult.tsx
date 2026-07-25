@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
@@ -13,19 +13,19 @@ type OrderStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
 
 // ✅ PayUni 原始回傳資料，原樣顯示，不重新定義/轉換欄位
 interface PayUniResponse {
-  Status: string;            // 'SUCCESS' 表示成功，其他值皆視為失敗
-  TradeNo?: string;          // PayUni 自己的交易編號
-  AuthAmt?: string;          // 授權金額
-  PayerName?: string;        // 付款人姓名
-  PayerPhone?: string;       // 付款人電話
-  PayerEmail?: string;       // 付款人 Email
-  Card6No?: string;          // 卡號前 6 碼
-  Card4No?: string;          // 卡號後 4 碼
-  CardExpired?: string;      // 卡片到期日 (MMYY)
-  AuthBankName?: string;     // 銀行名稱
-  Message?: string;          // 訊息
-  ResCode?: string;          // 回應代碼
-  ResCodeMsg?: string;       // 回應代碼訊息
+  Status: string; // 'SUCCESS' 表示成功，其他值皆視為失敗
+  TradeNo?: string; // PayUni 自己的交易編號
+  AuthAmt?: string; // 授權金額
+  PayerName?: string; // 付款人姓名
+  PayerPhone?: string; // 付款人電話
+  PayerEmail?: string; // 付款人 Email
+  Card6No?: string; // 卡號前 6 碼
+  Card4No?: string; // 卡號後 4 碼
+  CardExpired?: string; // 卡片到期日 (MMYY)
+  AuthBankName?: string; // 銀行名稱
+  Message?: string; // 訊息
+  ResCode?: string; // 回應代碼
+  ResCodeMsg?: string; // 回應代碼訊息
   [key: string]: any;
 }
 
@@ -74,7 +74,9 @@ export function PaymentResult() {
       return;
     }
 
-    apiRequestJson<{ success: boolean; data: OrderResult }>(buildApiUrl(`/payuni/result/${tradeNo}`))
+    apiRequestJson<{ success: boolean; data: OrderResult }>(
+      buildApiUrl(`/payuni/result/${tradeNo}`),
+    )
       .then((result) => {
         if (result.success) setOrderResult(result.data);
       })
@@ -99,7 +101,9 @@ export function PaymentResult() {
     if (pendingRecheckCount >= MAX_PENDING_RECHECKS) return;
 
     const timer = setTimeout(() => {
-      apiRequestJson<{ success: boolean; data: OrderResult }>(buildApiUrl(`/payuni/result/${tradeNo}`))
+      apiRequestJson<{ success: boolean; data: OrderResult }>(
+        buildApiUrl(`/payuni/result/${tradeNo}`),
+      )
         .then((result) => {
           if (result.success) setOrderResult(result.data);
         })
@@ -116,19 +120,20 @@ export function PaymentResult() {
   //    內部的訂閱/推薦碼/獎勵等周邊業務邏輯有沒有處理完，都以這個為準——
   //    使用者有沒有付款成功是 PayUni 說了算，不是我們自己的 orderStatus）
   // 3. orderStatus（真正還沒收到 PayUni 任何回覆時的最後手段）
-  const resolvedStatus: ResolvedStatus = statusParam === 'SUCCESS'
-    ? 'success'
-    : statusParam === 'FAILED'
-      ? 'failed'
-      : orderResult?.payuni?.Status === 'SUCCESS'
-        ? 'success'
-        : orderResult?.payuni
-          ? 'failed'
-          : orderResult?.orderStatus === 'failed' || orderResult?.orderStatus === 'cancelled'
+  const resolvedStatus: ResolvedStatus =
+    statusParam === 'SUCCESS'
+      ? 'success'
+      : statusParam === 'FAILED'
+        ? 'failed'
+        : orderResult?.payuni?.Status === 'SUCCESS'
+          ? 'success'
+          : orderResult?.payuni
             ? 'failed'
-            : orderResult?.orderStatus === 'pending'
-              ? 'pending'
-              : 'unknown';
+            : orderResult?.orderStatus === 'failed' || orderResult?.orderStatus === 'cancelled'
+              ? 'failed'
+              : orderResult?.orderStatus === 'pending'
+                ? 'pending'
+                : 'unknown';
 
   // 會籍是否已生效——付款成功畫面與守衛都以這個為準（不是 registrationStep）。
   const isMemberActive = user?.accountStatus === 'active';
@@ -137,7 +142,7 @@ export function PaymentResult() {
   // 回會員中心讀到的都是最新資料——修「續約後自己的到期日還顯示舊值」。
   useEffect(() => {
     if (resolvedStatus === 'success') invalidate('payment');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedStatus]);
 
   // 付款成功但會籍還沒生效（後端自癒收斂中）：輪詢 /profile，轉 active
@@ -150,16 +155,19 @@ export function PaymentResult() {
       setActivationTimedOut(true);
       return;
     }
-    const timer = setTimeout(async () => {
-      const profile = await refreshUser();
-      if (profile?.accountStatus === 'active') {
-        navigate('/dashboard', { replace: true });
-      } else {
-        setActivationAttempts((n) => n + 1);
-      }
-    }, activationAttempts === 0 ? 0 : ACTIVATION_POLL_INTERVAL_MS); // 第一次立即查
+    const timer = setTimeout(
+      async () => {
+        const profile = await refreshUser();
+        if (profile?.accountStatus === 'active') {
+          navigate('/dashboard', { replace: true });
+        } else {
+          setActivationAttempts((n) => n + 1);
+        }
+      },
+      activationAttempts === 0 ? 0 : ACTIVATION_POLL_INTERVAL_MS,
+    ); // 第一次立即查
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedStatus, isMemberActive, activationAttempts, activationTimedOut]);
 
   // 先 refreshUser 再 SPA 導頁（取代 window.location.href 整頁 reload）：
@@ -179,14 +187,22 @@ export function PaymentResult() {
 
   if (!tradeNo) {
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-missing-tradeno">
+      <div
+        className="container max-w-2xl mx-auto p-4 pt-20"
+        data-testid="payment-result-missing-tradeno"
+      >
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">查詢訂單失敗</CardTitle>
             <CardDescription>缺少訂單編號</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={handleContactSupport} className="w-full" size="lg" data-testid="contact-support-button">
+            <Button
+              onClick={handleContactSupport}
+              className="w-full"
+              size="lg"
+              data-testid="contact-support-button"
+            >
               聯絡官方客服
             </Button>
           </CardContent>
@@ -217,7 +233,10 @@ export function PaymentResult() {
   // 不再是過去那顆按了只會繞回本頁的死按鈕。
   if (resolvedStatus === 'success' && !isMemberActive && !activationTimedOut) {
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-activating">
+      <div
+        className="container max-w-2xl mx-auto p-4 pt-20"
+        data-testid="payment-result-activating"
+      >
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -245,7 +264,10 @@ export function PaymentResult() {
   // 並提供重新確認的入口。
   if (resolvedStatus === 'success' && !isMemberActive && activationTimedOut) {
     return (
-      <div className="container max-w-2xl mx-auto p-4 pt-20" data-testid="payment-result-activation-timeout">
+      <div
+        className="container max-w-2xl mx-auto p-4 pt-20"
+        data-testid="payment-result-activation-timeout"
+      >
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -265,7 +287,10 @@ export function PaymentResult() {
             </div>
             <div className="flex gap-3">
               <Button
-                onClick={() => { setActivationAttempts(0); setActivationTimedOut(false); }}
+                onClick={() => {
+                  setActivationAttempts(0);
+                  setActivationTimedOut(false);
+                }}
                 className="flex-1"
                 size="lg"
                 data-testid="retry-activation-button"
@@ -322,7 +347,9 @@ export function PaymentResult() {
                     {paymentData.PayerName && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">付款人姓名</span>
-                        <span className="text-sm text-gray-900 font-medium">{paymentData.PayerName}</span>
+                        <span className="text-sm text-gray-900 font-medium">
+                          {paymentData.PayerName}
+                        </span>
                       </div>
                     )}
                     {paymentData.PayerPhone && (
@@ -334,7 +361,9 @@ export function PaymentResult() {
                     {paymentData.PayerEmail && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">付款人Email</span>
-                        <span className="text-sm text-gray-900 break-all">{paymentData.PayerEmail}</span>
+                        <span className="text-sm text-gray-900 break-all">
+                          {paymentData.PayerEmail}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -345,7 +374,9 @@ export function PaymentResult() {
                     {paymentData.AuthBankName && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">信用卡銀行</span>
-                        <span className="text-sm text-gray-900 font-medium">{paymentData.AuthBankName}</span>
+                        <span className="text-sm text-gray-900 font-medium">
+                          {paymentData.AuthBankName}
+                        </span>
                       </div>
                     )}
                     {paymentData.Card6No && (
@@ -359,7 +390,9 @@ export function PaymentResult() {
                     {paymentData.CardExpired && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">到期日</span>
-                        <span className="text-sm text-gray-900">{formatCardExpiry(paymentData.CardExpired)}</span>
+                        <span className="text-sm text-gray-900">
+                          {formatCardExpiry(paymentData.CardExpired)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -368,17 +401,26 @@ export function PaymentResult() {
                 <div className="p-3 space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">訂單編號</span>
-                    <span className="text-sm text-gray-900 font-mono">{paymentData.TradeNo || tradeNo}</span>
+                    <span className="text-sm text-gray-900 font-mono">
+                      {paymentData.TradeNo || tradeNo}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">付款金額</span>
-                    <span className="text-lg text-green-600 font-bold">NT$ {paymentData.AuthAmt || '1,200'}</span>
+                    <span className="text-lg text-green-600 font-bold">
+                      NT$ {paymentData.AuthAmt || '1,200'}
+                    </span>
                   </div>
                 </div>
               </div>
             )}
 
-            <Button onClick={handleGoToDashboard} className="w-full" size="lg" data-testid="go-to-dashboard-button">
+            <Button
+              onClick={handleGoToDashboard}
+              className="w-full"
+              size="lg"
+              data-testid="go-to-dashboard-button"
+            >
               前往會員中心
             </Button>
           </CardContent>
@@ -406,16 +448,29 @@ export function PaymentResult() {
                 <p className="text-sm text-red-800 font-medium">錯誤原因：</p>
                 <p className="text-sm text-red-800 mt-1">{failReason}</p>
                 {orderResult?.payuni?.ResCode && (
-                  <p className="text-xs text-red-600 mt-2">錯誤代碼：{orderResult.payuni.ResCode}</p>
+                  <p className="text-xs text-red-600 mt-2">
+                    錯誤代碼：{orderResult.payuni.ResCode}
+                  </p>
                 )}
               </div>
             )}
 
             <div className="flex gap-3">
-              <Button onClick={handleRetryPayment} className="flex-1" size="lg" data-testid="retry-payment-button">
+              <Button
+                onClick={handleRetryPayment}
+                className="flex-1"
+                size="lg"
+                data-testid="retry-payment-button"
+              >
                 重新付款
               </Button>
-              <Button onClick={handleContactSupport} variant="outline" className="flex-1" size="lg" data-testid="contact-support-button">
+              <Button
+                onClick={handleContactSupport}
+                variant="outline"
+                className="flex-1"
+                size="lg"
+                data-testid="contact-support-button"
+              >
                 聯繫客服
               </Button>
             </div>
@@ -484,7 +539,12 @@ export function PaymentResult() {
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <p className="text-sm text-gray-800">訂單編號：{tradeNo}</p>
           </div>
-          <Button onClick={handleContactSupport} className="w-full" size="lg" data-testid="contact-support-button">
+          <Button
+            onClick={handleContactSupport}
+            className="w-full"
+            size="lg"
+            data-testid="contact-support-button"
+          >
             聯絡官方客服
           </Button>
         </CardContent>

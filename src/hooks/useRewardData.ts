@@ -51,7 +51,7 @@ export function useRewardData(): UseRewardDataResult {
       const [rewardsResult, withdrawalsResult] = await Promise.all([
         apiRequestJson<{ success: boolean; data: RewardsData }>(buildApiUrl('/rewards')),
         apiRequestJson<{ success: boolean; data: { withdrawals: WithdrawalRecord[] } }>(
-          buildApiUrl('/rewards/withdrawals')
+          buildApiUrl('/rewards/withdrawals'),
         ),
       ]);
 
@@ -69,8 +69,8 @@ export function useRewardData(): UseRewardDataResult {
         err instanceof ApiError && err.status === 401
           ? '登入已過期，請重新登入'
           : err instanceof Error
-          ? err.message
-          : '獲取資料失敗';
+            ? err.message
+            : '獲取資料失敗';
       if (!hasDataRef.current) {
         setError(msg);
       } else {
@@ -80,7 +80,7 @@ export function useRewardData(): UseRewardDataResult {
       setIsLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -97,12 +97,12 @@ export function useRewardData(): UseRewardDataResult {
     if (!cachedRewards || !cachedWithdrawals || isStale('rewards') || isStale('withdrawals')) {
       dedupe(DEDUP_KEY, fetchData);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('rewards') || isStale('withdrawals'),
-    () => dedupe(DEDUP_KEY, fetchData)
+    () => dedupe(DEDUP_KEY, fetchData),
   );
 
   const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchData), [fetchData]);
@@ -110,7 +110,7 @@ export function useRewardData(): UseRewardDataResult {
   const clearAndRefetch = useCallback(async () => {
     invalidate('withdrawal'); // 清 rewards + withdrawals
     await dedupe(DEDUP_KEY, fetchData);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { rewardsData, withdrawals, isLoading, isValidating, error, refetch, clearAndRefetch };

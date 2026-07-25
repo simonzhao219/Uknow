@@ -1,4 +1,13 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type React from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 
 /**
  * 資料快取介面
@@ -51,7 +60,14 @@ export type CacheKey = keyof CachedData;
 export const MUTATION_GROUPS = {
   // 付款完成（首次付款／續訂／重新訂）：影響會籍狀態、推薦樹（新下線
   // 或推薦人變更）、獎勵與任務進度（推薦人這方的獎勵/推薦王計數）。
-  payment: ['subscriptionStatus', 'rewards', 'withdrawals', 'tasks', 'pendingRewards', 'referralNetwork'] as CacheKey[],
+  payment: [
+    'subscriptionStatus',
+    'rewards',
+    'withdrawals',
+    'tasks',
+    'pendingRewards',
+    'referralNetwork',
+  ] as CacheKey[],
   // 領取推薦王「免費續約 1 年」：改變會員到期日 + 待領清單。
   rewardClaim: ['tasks', 'pendingRewards', 'rewards', 'subscriptionStatus'] as CacheKey[],
   // 提領申請／查收確認：獎勵餘額與提領記錄。
@@ -175,7 +191,7 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setCacheData = useCallback((key: CacheKey, value: any) => {
-    setCache(prev => ({
+    setCache((prev) => ({
       ...prev,
       [key]: { data: value, timestamp: Date.now() }, // fromStorage 不設 = false：這是親自 fetch 的新鮮資料
     }));
@@ -183,7 +199,7 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
 
   const clearCacheData = useCallback((key?: CacheKey) => {
     if (key) {
-      setCache(prev => {
+      setCache((prev) => {
         const newCache = { ...prev };
         delete newCache[key];
         return newCache;
@@ -200,7 +216,7 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
 
   const invalidate = useCallback((event: MutationEvent) => {
     const keys = MUTATION_GROUPS[event];
-    setCache(prev => {
+    setCache((prev) => {
       const next = { ...prev };
       for (const k of keys) delete next[k];
       return next;
@@ -227,14 +243,10 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
       hasCache,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [],
   );
 
-  return (
-    <DataCacheContext.Provider value={value}>
-      {children}
-    </DataCacheContext.Provider>
-  );
+  return <DataCacheContext.Provider value={value}>{children}</DataCacheContext.Provider>;
 }
 
 /**

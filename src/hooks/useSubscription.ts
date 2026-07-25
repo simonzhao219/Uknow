@@ -45,7 +45,7 @@ export function useSubscription(): UseSubscriptionResult {
     }
     try {
       const result = await apiRequestJson<{ success: boolean; data: SubscriptionData }>(
-        buildApiUrl('/subscriptions/status')
+        buildApiUrl('/subscriptions/status'),
       );
       setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
@@ -60,7 +60,7 @@ export function useSubscription(): UseSubscriptionResult {
       setIsLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -80,18 +80,18 @@ export function useSubscription(): UseSubscriptionResult {
     if (!cached || isStale('subscriptionStatus')) {
       dedupe(DEDUP_KEY, fetchStatus);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useRevalidateOnFocus(
     () => isStale('subscriptionStatus'),
-    () => dedupe(DEDUP_KEY, fetchStatus)
+    () => dedupe(DEDUP_KEY, fetchStatus),
   );
 
   const refresh = useCallback(async () => {
     clearCache('subscriptionStatus');
     await dedupe(DEDUP_KEY, fetchStatus);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { subscriptionData, isLoading, isValidating, refresh };

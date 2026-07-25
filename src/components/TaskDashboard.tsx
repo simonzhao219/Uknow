@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
@@ -10,7 +10,11 @@ import { PendingRewardsSection } from './task/PendingRewardsSection';
 import { TaskGuide } from './task/TaskGuide';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
 import { TaskBadge } from './task/TaskBadge';
-import { getMotivationText, getProgressColor, getProgressBarStyle } from '../utils/userReferralFormatter';
+import {
+  getMotivationText,
+  getProgressColor,
+  getProgressBarStyle,
+} from '../utils/userReferralFormatter';
 import { computeKingRounds } from '../utils/kingProgress';
 
 function formatMonth(monthStr: string) {
@@ -57,7 +61,13 @@ export function TaskDashboard() {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -76,7 +86,13 @@ export function TaskDashboard() {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -95,7 +111,13 @@ export function TaskDashboard() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -105,7 +127,12 @@ export function TaskDashboard() {
         </div>
       </div>
 
-      <PendingRewardsSection pendingRewards={pendingRewards} onClaimReward={handleClaimReward} onClaimAll={handleClaimAllRewards} claimBlockedReason={claimBlockedReason} />
+      <PendingRewardsSection
+        pendingRewards={pendingRewards}
+        onClaimReward={handleClaimReward}
+        onClaimAll={handleClaimAllRewards}
+        claimBlockedReason={claimBlockedReason}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 space-y-6">
@@ -117,7 +144,10 @@ export function TaskDashboard() {
             const progressColor = getProgressColor(rounds.roundProgressPct);
 
             return (
-              <Card key={task.id} className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow">
+              <Card
+                key={task.id}
+                className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow"
+              >
                 <div className="absolute top-0 right-0 w-32 h-32 opacity-10 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-full -mr-16 -mt-16" />
 
                 <CardHeader className="relative">
@@ -157,7 +187,8 @@ export function TaskDashboard() {
                   {rounds.roundsThisMonth > 0 && (
                     <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800 flex items-center justify-center gap-2">
                       🎉 本月已達成 {rounds.roundsThisMonth} 輪
-                      {task.unclaimedRewardCount > 0 && `（可領 ${task.unclaimedRewardCount} 張免費續約）`}
+                      {task.unclaimedRewardCount > 0 &&
+                        `（可領 ${task.unclaimedRewardCount} 張免費續約）`}
                     </div>
                   )}
 

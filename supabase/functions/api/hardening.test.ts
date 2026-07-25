@@ -56,14 +56,20 @@ Deno.test('CORS：非開發模式下不放行 localhost，前綴繞過網域一�
   const attack = await app.request('/api/announcements/active', {
     headers: { Origin: 'http://localhost.attacker.com' },
   });
-  assertEquals(attack.headers.get('access-control-allow-origin'), null,
-    'localhost.attacker.com 不得拿到 CORS 放行');
+  assertEquals(
+    attack.headers.get('access-control-allow-origin'),
+    null,
+    'localhost.attacker.com 不得拿到 CORS 放行',
+  );
 
   const localhost = await app.request('/api/announcements/active', {
     headers: { Origin: 'http://localhost:3000' },
   });
-  assertEquals(localhost.headers.get('access-control-allow-origin'), null,
-    'production 不放行 localhost');
+  assertEquals(
+    localhost.headers.get('access-control-allow-origin'),
+    null,
+    'production 不放行 localhost',
+  );
 
   const legit = await app.request('/api/announcements/active', {
     headers: { Origin: 'https://frontend.test' },
@@ -74,22 +80,30 @@ Deno.test('CORS：非開發模式下不放行 localhost，前綴繞過網域一�
   const preview = await app.request('/api/announcements/active', {
     headers: { Origin: 'https://claude-referral-network-tree.uknow.pages.dev' },
   });
-  assertEquals(preview.headers.get('access-control-allow-origin'),
+  assertEquals(
+    preview.headers.get('access-control-allow-origin'),
     'https://claude-referral-network-tree.uknow.pages.dev',
-    '自家 *.uknow.pages.dev 預覽子網域應放行');
+    '自家 *.uknow.pages.dev 預覽子網域應放行',
+  );
 
   // 但不得被 *.uknow.pages.dev 的前綴/後綴繞過
   const fakeSuffix = await app.request('/api/announcements/active', {
     headers: { Origin: 'https://uknow.pages.dev.attacker.com' },
   });
-  assertEquals(fakeSuffix.headers.get('access-control-allow-origin'), null,
-    'uknow.pages.dev.attacker.com 不得拿到 CORS 放行');
+  assertEquals(
+    fakeSuffix.headers.get('access-control-allow-origin'),
+    null,
+    'uknow.pages.dev.attacker.com 不得拿到 CORS 放行',
+  );
 
   const fakePrefix = await app.request('/api/announcements/active', {
     headers: { Origin: 'https://evil-uknow.pages.dev' },
   });
-  assertEquals(fakePrefix.headers.get('access-control-allow-origin'), null,
-    'evil-uknow.pages.dev（非子網域）不得拿到 CORS 放行');
+  assertEquals(
+    fakePrefix.headers.get('access-control-allow-origin'),
+    null,
+    'evil-uknow.pages.dev（非子網域）不得拿到 CORS 放行',
+  );
 
   // 開發旗標開啟時，真正的 localhost 才放行
   Deno.env.set('DEV_CORS', 'true');
@@ -102,8 +116,11 @@ Deno.test('CORS：非開發模式下不放行 localhost，前綴繞過網域一�
     const devAttack = await app.request('/api/announcements/active', {
       headers: { Origin: 'http://localhost.attacker.com' },
     });
-    assertEquals(devAttack.headers.get('access-control-allow-origin'), null,
-      '開發模式也不得被前綴網域繞過');
+    assertEquals(
+      devAttack.headers.get('access-control-allow-origin'),
+      null,
+      '開發模式也不得被前綴網域繞過',
+    );
   } finally {
     Deno.env.delete('DEV_CORS');
   }

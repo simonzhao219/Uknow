@@ -38,7 +38,7 @@ export interface CurrentMonthReferrals {
   completedCount: number;
   currentProgress: number;
   referrals: MonthlyReferralRecord[];
-  target: number;  // 推薦王月門檻（reward_config），前端進度以此為準
+  target: number; // 推薦王月門檻（reward_config），前端進度以此為準
 }
 
 export interface PendingMissionReward {
@@ -99,7 +99,7 @@ export function useTaskData(): UseTaskDataResult {
       const [tasksResult, pendingResult] = await Promise.all([
         apiRequestJson<{ success: boolean; data: { tasks: Task[] } }>(buildApiUrl('/tasks')),
         apiRequestJson<{ success: boolean; data: PendingMissionReward[] }>(
-          buildApiUrl('/tasks/pending-rewards')
+          buildApiUrl('/tasks/pending-rewards'),
         ),
       ]);
 
@@ -121,8 +121,8 @@ export function useTaskData(): UseTaskDataResult {
         err instanceof ApiError && err.status === 401
           ? '登入已過期，請重新登入'
           : err instanceof Error
-          ? err.message
-          : '獲取任務資料失敗';
+            ? err.message
+            : '獲取任務資料失敗';
       if (!hasDataRef.current) {
         setError(msg);
       } else {
@@ -132,7 +132,7 @@ export function useTaskData(): UseTaskDataResult {
       setIsLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -149,19 +149,19 @@ export function useTaskData(): UseTaskDataResult {
     if (!cachedTasks || !cachedPending || isStale('tasks') || isStale('pendingRewards')) {
       dedupe(DEDUP_KEY, fetchAllData);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('tasks') || isStale('pendingRewards'),
-    () => dedupe(DEDUP_KEY, fetchAllData)
+    () => dedupe(DEDUP_KEY, fetchAllData),
   );
 
   const fetchCurrentMonthTop = useCallback(async (): Promise<CurrentMonthReferrals | null> => {
     setLoadingCurrent(true);
     try {
       const result = await apiRequestJson<{ success: boolean; data: CurrentMonthReferrals }>(
-        buildApiUrl('/tasks/current-month-top?limit=100')
+        buildApiUrl('/tasks/current-month-top?limit=100'),
       );
       if (result.success) {
         setCurrentMonthData(result.data);
@@ -174,14 +174,14 @@ export function useTaskData(): UseTaskDataResult {
     } finally {
       setLoadingCurrent(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchPendingRewards = useCallback(async () => {
     setLoadingPending(true);
     try {
       const result = await apiRequestJson<{ success: boolean; data: PendingMissionReward[] }>(
-        buildApiUrl('/tasks/pending-rewards')
+        buildApiUrl('/tasks/pending-rewards'),
       );
       if (result.success) {
         setPendingRewards(result.data);
@@ -192,13 +192,13 @@ export function useTaskData(): UseTaskDataResult {
     } finally {
       setLoadingPending(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClaimReward = useCallback(async (rewardId: string, idNumber: string) => {
     const result = await apiRequestJson<{ success: boolean; data: any }>(
       buildApiUrl(`/tasks/claim-reward/${rewardId}`),
-      { method: 'POST', body: JSON.stringify({ idNumber }) }
+      { method: 'POST', body: JSON.stringify({ idNumber }) },
     );
     if (result.success) {
       showSuccess('領取任務獎勵成功！', '免費續約 1 年已加入您的會員效期');
@@ -211,7 +211,7 @@ export function useTaskData(): UseTaskDataResult {
     } else {
       throw new Error('領取獎勵失敗');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 批次領取：驗證一次身分證，依序重用單筆領取端點逐張領（best-effort）。
@@ -227,7 +227,7 @@ export function useTaskData(): UseTaskDataResult {
       try {
         const result = await apiRequestJson<{ success: boolean }>(
           buildApiUrl(`/tasks/claim-reward/${r.id}`),
-          { method: 'POST', body: JSON.stringify({ idNumber }) }
+          { method: 'POST', body: JSON.stringify({ idNumber }) },
         );
         if (result.success) {
           claimed += 1;
@@ -247,7 +247,7 @@ export function useTaskData(): UseTaskDataResult {
     if (failed > 0) {
       showToast(`有 ${failed} 張領取失敗，請稍後再試或聯繫客服`, 'error');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

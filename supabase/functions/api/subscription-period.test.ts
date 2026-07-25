@@ -7,17 +7,13 @@
 //   * backfill_time_domain()：既有資料嚴格重算、可重跑冪等
 // ============================================================
 import { assertEquals, assertNotEquals } from 'jsr:@std/assert@1';
+import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
 import {
-  adminClient,
-  createTestUser,
-  deleteTestUsers,
-} from './test-helpers.ts';
-import {
+  subscriptionLastDay,
   twDayOf,
   twDayPlusDays,
-  subscriptionLastDay,
-  twStartOfDayInstant,
   twEndOfDayInstant,
+  twStartOfDayInstant,
 } from './tw-dates.ts';
 
 let seq = 0;
@@ -118,7 +114,9 @@ Deno.test('fallback 鏈：回應沒有 AuthDay 時錨定訂單 created_at 的台
 
   try {
     // created_at = 2026-07-10T10:00Z（= 台灣 7/10 18:00 → 台灣日 7/10）
-    const tradeNo = await insertPendingOrder(client, user.id, { createdAt: '2026-07-10T10:00:00Z' });
+    const tradeNo = await insertPendingOrder(client, user.id, {
+      createdAt: '2026-07-10T10:00:00Z',
+    });
     const { error } = await processPayment(client, user.id, tradeNo, { Status: 'SUCCESS' });
     assertEquals(error, null);
 
@@ -136,7 +134,9 @@ Deno.test('畸形 AuthDay 不炸，安全 fallback 到 created_at', async () => 
   const user = await createTestUser(client, { name: 'Malformed User' });
 
   try {
-    const tradeNo = await insertPendingOrder(client, user.id, { createdAt: '2026-07-10T10:00:00Z' });
+    const tradeNo = await insertPendingOrder(client, user.id, {
+      createdAt: '2026-07-10T10:00:00Z',
+    });
     const { error } = await processPayment(client, user.id, tradeNo, {
       Status: 'SUCCESS',
       AuthDay: '99999999', // 格式對（8 碼數字）但數值非法
@@ -157,7 +157,9 @@ Deno.test('台灣午夜邊界：AuthTime 23:59:59 仍算當天', async () => {
 
   try {
     // AuthDay 7/15 23:59:59 台灣 = 7/15 15:59:59Z
-    const tradeNo = await insertPendingOrder(client, user.id, { createdAt: '2026-07-15T15:00:00Z' });
+    const tradeNo = await insertPendingOrder(client, user.id, {
+      createdAt: '2026-07-15T15:00:00Z',
+    });
     const { error } = await processPayment(client, user.id, tradeNo, {
       Status: 'SUCCESS',
       AuthDay: '20260715',
@@ -191,7 +193,11 @@ Deno.test('延遲自癒：complete_paid_pending_orders 開通的效期也錨定�
     assertEquals(error, null);
 
     const sub = await latestSubscription(client, user.id);
-    assertEquals(twDayOf(sub.start_date), twDayOf(threeDaysAgo), '起始日應為付款日，不是自癒執行日');
+    assertEquals(
+      twDayOf(sub.start_date),
+      twDayOf(threeDaysAgo),
+      '起始日應為付款日，不是自癒執行日',
+    );
     assertNotEquals(twDayOf(sub.start_date), twDayOf(Date.now()));
   } finally {
     await deleteTestUsers(client, [user.id]);

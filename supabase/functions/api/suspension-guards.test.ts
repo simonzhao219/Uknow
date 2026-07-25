@@ -37,7 +37,10 @@ async function createWithdrawableUser(client: ReturnType<typeof adminClient>) {
     id_card_back_path: `${user.id}/back.jpg`,
   }).eq('id', user.id);
   await client.from('reward_transactions').insert({
-    user_id: user.id, type: 'adjustment', amount: 5000, description: '測試點數',
+    user_id: user.id,
+    type: 'adjustment',
+    amount: 5000,
+    description: '測試點數',
   });
   return user;
 }
@@ -52,7 +55,10 @@ Deno.test('request_withdrawal：被停權會員不得申請提領', async () => 
       .eq('id', user.id);
 
     const { data, error } = await client.rpc('request_withdrawal', {
-      p_user_id: user.id, p_amount: 1000, p_bank_code: '812', p_bank_account: '1234567890123',
+      p_user_id: user.id,
+      p_amount: 1000,
+      p_bank_code: '812',
+      p_bank_account: '1234567890123',
     });
     assertEquals(error, null);
     assertEquals(data?.success, false, JSON.stringify(data));
@@ -72,7 +78,10 @@ Deno.test('request_withdrawal：解除停權後恢復可提領（characterizatio
   try {
     // 未停權（suspended_at 為 null）→ 走原有全部守衛，應成功
     const { data } = await client.rpc('request_withdrawal', {
-      p_user_id: user.id, p_amount: 1000, p_bank_code: '812', p_bank_account: '1234567890123',
+      p_user_id: user.id,
+      p_amount: 1000,
+      p_bank_code: '812',
+      p_bank_account: '1234567890123',
     });
     assertEquals(data?.success, true, JSON.stringify(data));
   } finally {

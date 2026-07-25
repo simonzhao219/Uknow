@@ -70,11 +70,14 @@ function makeOverview(over: Partial<NetworkOverview> = {}): NetworkOverview {
   };
 }
 
-function renderTree(overview: NetworkOverview, opts: {
-  loadChildren?: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork?: (q: string) => Promise<{ node: NetworkNode; ancestorPath: string[] }[]>;
-  onSortChange?: (m: any) => void;
-} = {}) {
+function renderTree(
+  overview: NetworkOverview,
+  opts: {
+    loadChildren?: (parentId: string) => Promise<NetworkNode[]>;
+    searchNetwork?: (q: string) => Promise<{ node: NetworkNode; ancestorPath: string[] }[]>;
+    onSortChange?: (m: any) => void;
+  } = {},
+) {
   return render(
     <MemoryRouter>
       <ReferralTreeView
@@ -92,7 +95,9 @@ describe('懶載入展開', () => {
   it('展開呼叫 loadChildren(parentId)，等待中顯示 skeleton，回來後渲染子列', async () => {
     const parent = makeNode({ userId: 'p1', name: '王大明', childCount: 1 });
     let resolveChildren!: (v: NetworkNode[]) => void;
-    const pending = new Promise<NetworkNode[]>((r) => { resolveChildren = r; });
+    const pending = new Promise<NetworkNode[]>((r) => {
+      resolveChildren = r;
+    });
     const loadChildren = vi.fn().mockReturnValue(pending);
 
     renderTree(makeOverview({ roots: [parent] }), { loadChildren });
@@ -126,7 +131,7 @@ describe('列右側資訊（方案 A 對齊）', () => {
       name: '林快到期',
       childCount: 1,
       status: 'expiring',
-      daysToExpiry: 99,                                      // 伺服器過時快照
+      daysToExpiry: 99, // 伺服器過時快照
       endDate: new Date(Date.now() + 10 * DAY).toISOString(), // 實際剩 10 天
     });
     renderTree(makeOverview({ roots: [node] }));
@@ -179,7 +184,12 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     // 標籤之寬，切換排序不再伸縮
     const label = screen.getByTestId('sort-label');
     const stacked = Array.from(label.querySelectorAll('span'));
-    expect(stacked.map((s) => s.textContent)).toEqual(['最新加入', '最舊加入', '姓名 A→Z', '姓名 Z→A']);
+    expect(stacked.map((s) => s.textContent)).toEqual([
+      '最新加入',
+      '最舊加入',
+      '姓名 A→Z',
+      '姓名 Z→A',
+    ]);
     for (const s of stacked) {
       expect(s.className).toContain('col-start-1');
       expect(s.className).toContain('row-start-1');
@@ -202,8 +212,15 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     fireEvent.keyDown(screen.getByRole('button', { name: '排序方式' }), { key: 'Enter' });
 
     const items = await screen.findAllByRole('menuitemradio');
-    expect(items.map((i) => i.textContent)).toEqual(['最新加入', '最舊加入', '姓名 A→Z', '姓名 Z→A']);
-    expect(screen.getByRole('menuitemradio', { name: '姓名 Z→A' }).getAttribute('aria-checked')).toBe('true');
+    expect(items.map((i) => i.textContent)).toEqual([
+      '最新加入',
+      '最舊加入',
+      '姓名 A→Z',
+      '姓名 Z→A',
+    ]);
+    expect(
+      screen.getByRole('menuitemradio', { name: '姓名 Z→A' }).getAttribute('aria-checked'),
+    ).toBe('true');
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: '姓名 A→Z' }));
     expect(onSortChange).toHaveBeenCalledWith('name_asc');
@@ -223,17 +240,24 @@ describe('伺服器搜尋（debounce）', () => {
     vi.useFakeTimers();
     try {
       const searchNetwork = vi.fn().mockResolvedValue([
-        { node: makeNode({ userId: 's1', name: '陳○華', generation: 2 }), ancestorPath: ['g1', 's1'] },
+        {
+          node: makeNode({ userId: 's1', name: '陳○華', generation: 2 }),
+          ancestorPath: ['g1', 's1'],
+        },
       ]);
       renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }), { searchNetwork });
 
       fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '小' } });
       expect(searchNetwork).not.toHaveBeenCalled();
 
-      await act(async () => { vi.advanceTimersByTime(300); });
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
       expect(searchNetwork).toHaveBeenCalledWith('小');
 
-      await act(async () => { await Promise.resolve(); });
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(screen.getByText('陳○華')).toBeTruthy();
     } finally {
       vi.useRealTimers();

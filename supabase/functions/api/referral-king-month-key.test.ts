@@ -24,7 +24,10 @@ Deno.test('apply_referral_side_effects：p_paid_at 決定 task_progress 的月�
     assertEquals(error, null);
     const code = await getActiveReferralCode(client, referrer.id);
 
-    const newReferee = await createTestUser(client, { name: 'Late Healed Referee', referredByCode: code });
+    const newReferee = await createTestUser(client, {
+      name: 'Late Healed Referee',
+      referredByCode: code,
+    });
     referee = newReferee;
     // 模擬跨月自癒：付款發生在 2026-01（台北時間 1/15 中午），side effects
     // 卻在「現在」才補跑。直接以第三參數傳付款時點。
@@ -69,7 +72,10 @@ Deno.test('process_successful_payment：付款月由 PayUni AuthDay 錨定並傳
     assertEquals(error, null);
     const code = await getActiveReferralCode(client, referrer.id);
 
-    const newReferee = await createTestUser(client, { name: 'Anchor Referee', referredByCode: code });
+    const newReferee = await createTestUser(client, {
+      name: 'Anchor Referee',
+      referredByCode: code,
+    });
     referee = newReferee;
 
     // 清掉推薦人既有的 task_progress，讓斷言只看這筆付款
@@ -81,8 +87,12 @@ Deno.test('process_successful_payment：付款月由 PayUni AuthDay 錨定並傳
     // AuthDay 同期——這正是「事故重演」的正確形狀。
     const tradeNo = `ANCHOR-${newReferee.id}`;
     const { error: seedErr } = await client.from('payment_orders').insert({
-      user_id: newReferee.id, amount: 1200, status: 'pending', payment_method: 'payuni',
-      transaction_id: tradeNo, created_at: '2026-03-10T03:00:00Z',
+      user_id: newReferee.id,
+      amount: 1200,
+      status: 'pending',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      created_at: '2026-03-10T03:00:00Z',
     });
     assertEquals(seedErr, null);
     const { data: processed, error: payErr } = await client.rpc('process_successful_payment', {

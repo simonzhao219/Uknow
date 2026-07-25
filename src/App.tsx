@@ -38,17 +38,38 @@ const lazyNamed = <T extends Record<string, any>, K extends keyof T>(
 ) => lazy(() => loader().then((m) => ({ default: m[name] })));
 
 const MemberDashboard = lazyNamed(() => import('./components/MemberDashboard'), 'MemberDashboard');
-const ServiceProviderManagement = lazyNamed(() => import('./components/ServiceProviderManagement'), 'ServiceProviderManagement');
-const CreateServiceProvider = lazyNamed(() => import('./components/CreateServiceProvider'), 'CreateServiceProvider');
-const EditServiceProvider = lazyNamed(() => import('./components/EditServiceProvider'), 'EditServiceProvider');
-const ReferralManagement = lazyNamed(() => import('./components/ReferralManagement'), 'ReferralManagement');
+const ServiceProviderManagement = lazyNamed(
+  () => import('./components/ServiceProviderManagement'),
+  'ServiceProviderManagement',
+);
+const CreateServiceProvider = lazyNamed(
+  () => import('./components/CreateServiceProvider'),
+  'CreateServiceProvider',
+);
+const EditServiceProvider = lazyNamed(
+  () => import('./components/EditServiceProvider'),
+  'EditServiceProvider',
+);
+const ReferralManagement = lazyNamed(
+  () => import('./components/ReferralManagement'),
+  'ReferralManagement',
+);
 const TaskDashboard = lazyNamed(() => import('./components/TaskDashboard'), 'TaskDashboard');
 const RewardDashboard = lazyNamed(() => import('./components/RewardDashboard'), 'RewardDashboard');
 const AdminDashboard = lazyNamed(() => import('./components/AdminDashboard'), 'AdminDashboard');
-const TermsOfServicePage = lazyNamed(() => import('./components/ContentPages'), 'TermsOfServicePage');
+const TermsOfServicePage = lazyNamed(
+  () => import('./components/ContentPages'),
+  'TermsOfServicePage',
+);
 const ListingPlansPage = lazyNamed(() => import('./components/ContentPages'), 'ListingPlansPage');
-const ReferralRewardRulesPage = lazyNamed(() => import('./components/ContentPages'), 'ReferralRewardRulesPage');
-const ReferralRewardContractPage = lazyNamed(() => import('./components/ContentPages'), 'ReferralRewardContractPage');
+const ReferralRewardRulesPage = lazyNamed(
+  () => import('./components/ContentPages'),
+  'ReferralRewardRulesPage',
+);
+const ReferralRewardContractPage = lazyNamed(
+  () => import('./components/ContentPages'),
+  'ReferralRewardContractPage',
+);
 
 function RouteLoader() {
   return (
@@ -139,12 +160,17 @@ function AppContent() {
       if (session?.access_token) {
         loadUserProfile(session.access_token);
       } else {
-        if (isMounted) { setUser(null); setIsLoadingUser(false); }
+        if (isMounted) {
+          setUser(null);
+          setIsLoadingUser(false);
+        }
       }
     });
 
     // 監聽 auth 狀態變化
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.access_token) {
         // Supabase 在分頁從背景切回可見時，即使 token 沒有換發也會重新廣播一次
         // SIGNED_IN。若是同一個已登入使用者，直接忽略，避免整頁被 spinner 取代
@@ -156,7 +182,10 @@ function AppContent() {
       } else if (event === 'SIGNED_OUT') {
         clearCache();
         loadedUserIdRef.current = null;
-        if (isMounted) { setUser(null); setIsLoadingUser(false); }
+        if (isMounted) {
+          setUser(null);
+          setIsLoadingUser(false);
+        }
         localStorage.removeItem('user');
       }
       // TOKEN_REFRESHED：僅換發 token，不需要任何 UI 狀態變化。
@@ -172,7 +201,10 @@ function AppContent() {
   // 到登入頁，避免整頁重新載入（window.location.href）造成的閃爍與狀態重置。
   useEffect(() => {
     return onSessionExpired(() => {
-      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+      if (
+        !window.location.pathname.includes('/login') &&
+        !window.location.pathname.includes('/register')
+      ) {
         navigate('/login', { replace: true });
       }
     });
@@ -188,7 +220,9 @@ function AppContent() {
   // onSessionExpired 處理。
   const refreshUser = useCallback(async (): Promise<any | null> => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.access_token) return null;
       const response = await fetch(buildApiUrl('/profile'), {
         headers: { Authorization: `Bearer ${session.access_token}` },
@@ -201,7 +235,7 @@ function AppContent() {
     } catch {
       return null;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 分頁切回可見時，靜默重抓 /profile，讓路由守衛（讀 accountStatus）在
@@ -211,7 +245,11 @@ function AppContent() {
   // spinner）；dedupe 讓 focus/visibilitychange 同時觸發時只打一次。
   useRevalidateOnFocus(
     () => isLoggedIn,
-    () => { void dedupe('profileRevalidate', async () => { await refreshUser(); }); }
+    () => {
+      void dedupe('profileRevalidate', async () => {
+        await refreshUser();
+      });
+    },
   );
 
   // value 必須 memo：這個 context 有 17 個消費者，未 memo 的物件字面量
@@ -220,7 +258,7 @@ function AppContent() {
   const contextValue = useMemo(
     () => ({ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, isLoadingUser]
+    [user, isLoadingUser],
   );
 
   return (
@@ -231,97 +269,130 @@ function AppContent() {
             <Navbar />
             <MaintenanceBanner />
             {/* 登入後手機有底部導覽，main 補下方留白避免內容被遮住 */}
-            <main className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}>
+            <main
+              className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}
+            >
               <ErrorBoundary>
-              <Suspense fallback={<RouteLoader />}>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
-                
-                {/* Authentication Routes */}
-                <Route path="/login" element={<AuthPage />} />
-                <Route path="/register" element={<AuthPage />} />
-                <Route path="/auth/verify-otp" element={<OTPVerificationPage />} />
-                <Route path="/auth/complete-profile" element={<CompleteProfile />} />
-                <Route path="/forgot-password" element={<ForgotPasswordPage />} />  {/* ✨ 新增 */}
-                <Route path="/auth/reset-password" element={<ResetPasswordPage />} />  {/* ✨ 新增 */}
-                
-                {/* Protected Member Routes */}
-                <Route path="/dashboard" element={
-                  <ProtectedRoute>
-                    <RequireMembershipRoute>
-                      <MemberDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <ServiceProviderManagement />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers/create" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <CreateServiceProvider />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/service-providers/edit/:id" element={
-                  <ProtectedRoute featureRequired="serviceProviderManagement">
-                    <RequireMembershipRoute>
-                      <EditServiceProvider />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/referrals" element={
-                  <ProtectedRoute featureRequired="referralManagement">
-                    <RequireMembershipRoute>
-                      <ReferralManagement />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/tasks" element={
-                  <ProtectedRoute featureRequired="taskCenter">
-                    <RequireMembershipRoute>
-                      <TaskDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/rewards" element={
-                  <ProtectedRoute featureRequired="rewardSystem">
-                    <RequireMembershipRoute>
-                      <RewardDashboard />
-                    </RequireMembershipRoute>
-                  </ProtectedRoute>
-                } />
-                <Route path="/payment/checkout" element={
-                  <ProtectedRoute>
-                    <PaymentCheckout />
-                  </ProtectedRoute>
-                } />
-                <Route path="/payment/result" element={
-                  <ProtectedRoute>
-                    <PaymentResult />
-                  </ProtectedRoute>
-                } />
-                
-                {/* Admin Routes */}
-                <Route path="/admin" element={
-                  <AdminRoute>
-                    <AdminDashboard />
-                  </AdminRoute>
-                } />
-                {/* Public Content Pages（lazy：見 ContentPages.tsx 的 chunk 邊界說明） */}
-                <Route path="/terms-of-service" element={<TermsOfServicePage />} />
-                <Route path="/listing-plans" element={<ListingPlansPage />} />
-                <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />
-                <Route path="/referral-reward-contract" element={<ReferralRewardContractPage />} />
-
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-              </Suspense>
+                <Suspense fallback={<RouteLoader />}>
+                  <Routes>
+                    <Route path="/" element={<HomePage />} />
+                    <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
+                    {/* Authentication Routes */}
+                    <Route path="/login" element={<AuthPage />} />
+                    <Route path="/register" element={<AuthPage />} />
+                    <Route path="/auth/verify-otp" element={<OTPVerificationPage />} />
+                    <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />{' '}
+                    {/* ✨ 新增 */}
+                    <Route path="/auth/reset-password" element={<ResetPasswordPage />} />{' '}
+                    {/* ✨ 新增 */}
+                    {/* Protected Member Routes */}
+                    <Route
+                      path="/dashboard"
+                      element={
+                        <ProtectedRoute>
+                          <RequireMembershipRoute>
+                            <MemberDashboard />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/service-providers"
+                      element={
+                        <ProtectedRoute featureRequired="serviceProviderManagement">
+                          <RequireMembershipRoute>
+                            <ServiceProviderManagement />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/service-providers/create"
+                      element={
+                        <ProtectedRoute featureRequired="serviceProviderManagement">
+                          <RequireMembershipRoute>
+                            <CreateServiceProvider />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/service-providers/edit/:id"
+                      element={
+                        <ProtectedRoute featureRequired="serviceProviderManagement">
+                          <RequireMembershipRoute>
+                            <EditServiceProvider />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/referrals"
+                      element={
+                        <ProtectedRoute featureRequired="referralManagement">
+                          <RequireMembershipRoute>
+                            <ReferralManagement />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/tasks"
+                      element={
+                        <ProtectedRoute featureRequired="taskCenter">
+                          <RequireMembershipRoute>
+                            <TaskDashboard />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/rewards"
+                      element={
+                        <ProtectedRoute featureRequired="rewardSystem">
+                          <RequireMembershipRoute>
+                            <RewardDashboard />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/payment/checkout"
+                      element={
+                        <ProtectedRoute>
+                          <PaymentCheckout />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/payment/result"
+                      element={
+                        <ProtectedRoute>
+                          <PaymentResult />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Admin Routes */}
+                    <Route
+                      path="/admin"
+                      element={
+                        <AdminRoute>
+                          <AdminDashboard />
+                        </AdminRoute>
+                      }
+                    />
+                    {/* Public Content Pages（lazy：見 ContentPages.tsx 的 chunk 邊界說明） */}
+                    <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+                    <Route path="/listing-plans" element={<ListingPlansPage />} />
+                    <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />
+                    <Route
+                      path="/referral-reward-contract"
+                      element={<ReferralRewardContractPage />}
+                    />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
               </ErrorBoundary>
             </main>
             <Footer />

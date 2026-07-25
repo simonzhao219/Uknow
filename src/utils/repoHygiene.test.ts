@@ -31,14 +31,14 @@ describe('個資傾印不得進版本庫', () => {
     expect(
       existsSync(join(REPO_ROOT, 'export')),
       'export/ 含真實會員個資（姓名/身分證/手機/生日），不得存在於 repo；' +
-        '資料備份應放在受存取控管的儲存位置（如 Supabase Storage 私有 bucket）'
+        '資料備份應放在受存取控管的儲存位置（如 Supabase Storage 私有 bucket）',
     ).toBe(false);
   });
 
   it('src/imports/ 一次性腳本輸出目錄不得存在', () => {
     expect(
       existsSync(join(REPO_ROOT, 'src', 'imports')),
-      'src/imports/reward-summary.json 是含真實用戶姓名的一次性 migration 輸出，不得進版本庫'
+      'src/imports/reward-summary.json 是含真實用戶姓名的一次性 migration 輸出，不得進版本庫',
     ).toBe(false);
   });
 
@@ -49,7 +49,7 @@ describe('個資傾印不得進版本庫', () => {
       const text = readFileSync(join(REPO_ROOT, rel), 'utf8');
       expect(
         /"(nationalId|national_id)"\s*:\s*"[A-Z][12]\d{8}"/.test(text),
-        `${rel} 疑似含真實身分證字號的資料傾印`
+        `${rel} 疑似含真實身分證字號的資料傾印`,
       ).toBe(false);
     }
   });
@@ -62,9 +62,6 @@ describe('使用者可見文案不得含編碼損毀字元', () => {
       const text = readFileSync(join(REPO_ROOT, rel), 'utf8');
       if (text.includes('\uFFFD')) offenders.push(rel);
     }
-    expect(
-      offenders,
-      'U+FFFD 代表檔案位元組已損毀，使用者會看到亂碼'
-    ).toEqual([]);
+    expect(offenders, 'U+FFFD 代表檔案位元組已損毀，使用者會看到亂碼').toEqual([]);
   });
 });

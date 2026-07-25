@@ -11,7 +11,12 @@
 // ============================================================
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import { encryptPayUni, generatePayUniHash } from './crypto.ts';
-import { adminClient, createTestUser, deleteTestUsers, ensureEdgeFunctionEnv } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  ensureEdgeFunctionEnv,
+} from './test-helpers.ts';
 
 const KEY = '0123456789abcdef0123456789abcdef';
 const IV = '0123456789ab';
@@ -36,8 +41,12 @@ async function seedPendingOrder(
 ) {
   const tradeNo = `RETURN-${Date.now()}-${seq++}`;
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, payuni_response: payuniResponse,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    payuni_response: payuniResponse,
   });
   if (error) throw new Error(`seedPendingOrder failed: ${error.message}`);
   return tradeNo;
@@ -62,7 +71,10 @@ Deno.test('內部處理失敗（金額不符）仍 302 帶 status=SUCCESS，且�
     // TradeAmt 9999：resolveOrderFromPayUni 內部會判金額不符 → ok:false，
     // 不需要注入任何故障就能穩定重現「內部處理失敗」。
     const res = await postReturn({
-      Status: 'SUCCESS', MerTradeNo: tradeNo, TradeNo: `PU-${tradeNo}`, TradeAmt: '9999',
+      Status: 'SUCCESS',
+      MerTradeNo: tradeNo,
+      TradeNo: `PU-${tradeNo}`,
+      TradeAmt: '9999',
     });
 
     assertEquals(res.status, 302);
@@ -92,7 +104,11 @@ Deno.test('付款失敗：302 帶 status=FAILED，訂單標為 failed', async ()
     const tradeNo = await seedPendingOrder(client, user.id);
 
     const res = await postReturn({
-      Status: 'FAILED', MerTradeNo: tradeNo, TradeAmt: '1200', ResCode: '51', ResCodeMsg: '額度不足',
+      Status: 'FAILED',
+      MerTradeNo: tradeNo,
+      TradeAmt: '1200',
+      ResCode: '51',
+      ResCodeMsg: '額度不足',
     });
 
     assertEquals(res.status, 302);
@@ -125,12 +141,17 @@ Deno.test('遲到的 FAILED 不得覆蓋已存的 SUCCESS 復原資料來源', a
   try {
     // 卡單：pending + SUCCESS 存檔（自癒候選）。
     const tradeNo = await seedPendingOrder(client, user.id, {
-      Status: 'SUCCESS', MerTradeNo: 'placeholder', TradeAmt: '1200',
+      Status: 'SUCCESS',
+      MerTradeNo: 'placeholder',
+      TradeAmt: '1200',
     });
 
     // 一份遲到/過期的 FAILED 通知進來。
     const res = await postReturn({
-      Status: 'FAILED', MerTradeNo: tradeNo, TradeAmt: '1200', ResCode: '99',
+      Status: 'FAILED',
+      MerTradeNo: tradeNo,
+      TradeAmt: '1200',
+      ResCode: '99',
     });
     assertEquals(res.status, 302);
 
@@ -156,7 +177,9 @@ Deno.test('persistRawResponseBestEffort 不覆蓋 completed 訂單的權威回�
     // 先讓訂單 completed（權威回應 = SUCCESS/1200）。
     const tradeNo = await seedPendingOrder(client, user.id);
     const { error } = await client.rpc('process_successful_payment', {
-      p_user_id: user.id, p_trade_no: tradeNo, p_transaction_id: `PU-${tradeNo}`,
+      p_user_id: user.id,
+      p_trade_no: tradeNo,
+      p_transaction_id: `PU-${tradeNo}`,
       p_payuni_response: { Status: 'SUCCESS', MerTradeNo: tradeNo, TradeAmt: '1200' },
     });
     assertEquals(error, null);
@@ -177,7 +200,11 @@ Deno.test('persistRawResponseBestEffort 不覆蓋 completed 訂單的權威回�
       .eq('transaction_id', tradeNo)
       .single();
     assertEquals(order?.status, 'completed');
-    assertEquals(order?.payuni_response?.Status, 'SUCCESS', 'completed 訂單的權威回應不該被過期資料蓋掉');
+    assertEquals(
+      order?.payuni_response?.Status,
+      'SUCCESS',
+      'completed 訂單的權威回應不該被過期資料蓋掉',
+    );
   } finally {
     await deleteTestUsers(client, [user.id]);
   }

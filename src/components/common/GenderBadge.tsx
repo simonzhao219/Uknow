@@ -1,7 +1,7 @@
-import { Mars, Venus } from "lucide-react";
-import { Badge } from "../ui/badge";
-import { cn } from "../ui/utils";
-import { getGenderDisplay, type GenderIconName } from "../../utils/gender";
+import { Mars, Venus } from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { cn } from '../ui/utils';
+import { getGenderDisplay, type GenderIconName } from '../../utils/gender';
 
 // 性別 Badge 共用元件（單一事實來源）。
 //
@@ -21,7 +21,7 @@ interface GenderBadgeProps {
   showLabel?: boolean;
   /** 是否套用藍 / 粉配色（outline 樣式用；secondary 樣式維持中性灰時傳 false） */
   applyColor?: boolean;
-  variant?: React.ComponentProps<typeof Badge>["variant"];
+  variant?: React.ComponentProps<typeof Badge>['variant'];
   className?: string;
 }
 
@@ -29,7 +29,7 @@ export function GenderBadge({
   gender,
   showLabel = true,
   applyColor = true,
-  variant = "outline",
+  variant = 'outline',
   className,
 }: GenderBadgeProps) {
   const display = getGenderDisplay(gender);

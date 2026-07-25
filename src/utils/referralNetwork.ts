@@ -26,7 +26,7 @@ export interface NetworkNode {
 }
 
 export interface NetworkAttention {
-  total: number;            // 全部需要關注的人數（items 有伺服器上限）
+  total: number; // 全部需要關注的人數（items 有伺服器上限）
   items: NetworkNode[];
 }
 
@@ -40,17 +40,22 @@ export interface NetworkSummary {
 export interface NetworkOverview {
   userReferralCode: string;
   sort: NetworkSortMode;
-  roots: NetworkNode[];     // 一代（排序後；下線走懶載入）
+  roots: NetworkNode[]; // 一代（排序後；下線走懶載入）
   attention: NetworkAttention;
   summary: NetworkSummary;
 }
 
 export interface NetworkSearchMatch {
-  node: NetworkNode;                 // 顯示名已遮罩（比對用真名在伺服器）
-  ancestorPath: string[];            // 一代 → 命中者本身
+  node: NetworkNode; // 顯示名已遮罩（比對用真名在伺服器）
+  ancestorPath: string[]; // 一代 → 命中者本身
 }
 
-const SORT_MODES: readonly NetworkSortMode[] = ['updated_desc', 'updated_asc', 'name_asc', 'name_desc'];
+const SORT_MODES: readonly NetworkSortMode[] = [
+  'updated_desc',
+  'updated_asc',
+  'name_asc',
+  'name_desc',
+];
 
 /**
  * 排序選項（文案經需求方核定，測試釘死一字不差）。
@@ -67,7 +72,9 @@ export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
 
 /** 非法/未知值一律回落預設 updated_desc（與伺服器 parseSortMode 同語意）。 */
 export function parseSortMode(raw: unknown): NetworkSortMode {
-  return (SORT_MODES as readonly unknown[]).includes(raw) ? (raw as NetworkSortMode) : 'updated_desc';
+  return (SORT_MODES as readonly unknown[]).includes(raw)
+    ? (raw as NetworkSortMode)
+    : 'updated_desc';
 }
 
 export const SORT_STORAGE_KEY = 'referralSortMode';
@@ -94,7 +101,10 @@ export function storeSort(mode: NetworkSortMode): void {
  * 當下的快照，頁面久開跨日會過時）；無 endDate 才 fallback 伺服器值。
  * 已過期 clamp 到 0，不出現負數倒數。
  */
-export function nodeDaysLeft(node: { endDate: string | null; daysToExpiry: number | null }): number | null {
+export function nodeDaysLeft(node: {
+  endDate: string | null;
+  daysToExpiry: number | null;
+}): number | null {
   if (node.endDate) {
     const ms = Date.parse(node.endDate);
     if (!Number.isNaN(ms)) return Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000));

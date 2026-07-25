@@ -1,6 +1,6 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Target, Share2, Award, User, LucideIcon } from 'lucide-react';
+import { Home, Target, Share2, Award, User, type LucideIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { useFeatures } from '../contexts/FeatureContext';
 

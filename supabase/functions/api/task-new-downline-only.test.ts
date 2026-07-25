@@ -10,8 +10,8 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
-  payForUser,
   getActiveReferralCode,
+  payForUser,
 } from './test-helpers.ts';
 
 // 某 referee UUID 在某 referrer 的 monthly_referrals（跨所有月份）出現次數。

@@ -106,7 +106,9 @@ function defaultStorage(): StorageLike | null {
   }
 }
 
-export function loadProfileDraft(storage: StorageLike | null = defaultStorage()): Partial<ProfileDraft> {
+export function loadProfileDraft(
+  storage: StorageLike | null = defaultStorage(),
+): Partial<ProfileDraft> {
   if (!storage) return {};
   try {
     return parseDraft(storage.getItem(PROFILE_DRAFT_KEY));

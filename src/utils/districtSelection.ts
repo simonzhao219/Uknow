@@ -15,7 +15,7 @@ export function handleDistrictSelection(
   currentDistricts: string[],
   availableDistricts: string[],
   targetDistrict: string,
-  isChecked: boolean
+  isChecked: boolean,
 ): string[] {
   let newDistricts = [...currentDistricts];
 
@@ -35,12 +35,12 @@ export function handleDistrictSelection(
       if (!newDistricts.includes(targetDistrict)) {
         newDistricts.push(targetDistrict);
       }
-      
+
       // 檢查是否所有具體區域都被選中
-      const selectedSpecificDistricts = newDistricts.filter(d => d !== '全區');
+      const selectedSpecificDistricts = newDistricts.filter((d) => d !== '全區');
       if (
         selectedSpecificDistricts.length === availableDistricts.length &&
-        availableDistricts.every(d => selectedSpecificDistricts.includes(d))
+        availableDistricts.every((d) => selectedSpecificDistricts.includes(d))
       ) {
         // 所有具體區域都被選中 → 自動勾選「全區」
         if (!newDistricts.includes('全區')) {
@@ -49,9 +49,9 @@ export function handleDistrictSelection(
       }
     } else {
       // 取消勾選具體區域
-      newDistricts = newDistricts.filter(d => d !== targetDistrict);
+      newDistricts = newDistricts.filter((d) => d !== targetDistrict);
       // 取消任何具體區域時，自動取消「全區」
-      newDistricts = newDistricts.filter(d => d !== '全區');
+      newDistricts = newDistricts.filter((d) => d !== '全區');
     }
   }
 
@@ -132,11 +132,11 @@ export function listingMatchesDistricts(
  */
 export function sortDistrictsWithAllFirst(districts: string[]): string[] {
   const hasAll = districts.includes('全區');
-  const otherDistricts = districts.filter(d => d !== '全區');
-  
+  const otherDistricts = districts.filter((d) => d !== '全區');
+
   if (hasAll) {
     return ['全區', ...otherDistricts];
   }
-  
+
   return otherDistricts;
 }

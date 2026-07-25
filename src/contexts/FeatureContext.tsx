@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useCallback, type ReactNode } from 'react';
 
 export interface Features {
   serviceProviderManagement: boolean;
@@ -18,15 +18,15 @@ const FeatureContext = createContext<FeatureContextType | undefined>(undefined);
 
 const ALL_FEATURES: Features = {
   serviceProviderManagement: true,
-  referralManagement:        true,
-  taskCenter:                true,
-  rewardSystem:              true,
+  referralManagement: true,
+  taskCenter: true,
+  rewardSystem: true,
 };
 
 export function FeatureProvider({ children }: { children: ReactNode }) {
   const isFeatureEnabled = useCallback(
     (featureKey: keyof Features) => ALL_FEATURES[featureKey],
-    []
+    [],
   );
 
   const refreshFeatures = useCallback(() => {}, []);

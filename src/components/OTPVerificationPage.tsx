@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -7,12 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
-import {
-  startOtpWindow,
-  getOtpExpiry,
-  getSecondsLeft,
-  clearOtpWindow,
-} from '../utils/otpExpiry';
+import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
 import { nextRouteForStep } from '../utils/registrationFlow';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
 
@@ -94,10 +89,7 @@ export function OTPVerificationPage() {
         const isExpiredOrInvalid =
           error.message.toLowerCase().includes('expired') ||
           error.message.toLowerCase().includes('invalid');
-        showToast(
-          isExpiredOrInvalid ? '驗證碼錯誤或已過期，請重新寄送' : error.message,
-          'error'
-        );
+        showToast(isExpiredOrInvalid ? '驗證碼錯誤或已過期，請重新寄送' : error.message, 'error');
         setOtp('');
         return;
       }
@@ -188,8 +180,7 @@ export function OTPVerificationPage() {
             {otpType === 'recovery' ? '重設密碼驗證' : '驗證您的 Email'}
           </CardTitle>
           <CardDescription>
-            驗證碼已寄送至{' '}
-            <span className="font-medium text-foreground">{email}</span>
+            驗證碼已寄送至 <span className="font-medium text-foreground">{email}</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -249,9 +240,7 @@ export function OTPVerificationPage() {
               className="text-sm"
               data-testid="otp-resend-button"
             >
-              {isOtpExpired
-                ? '重新寄送驗證碼'
-                : `重新寄送（${secondsLeft} 秒後可用）`}
+              {isOtpExpired ? '重新寄送驗證碼' : `重新寄送（${secondsLeft} 秒後可用）`}
             </Button>
           </div>
 

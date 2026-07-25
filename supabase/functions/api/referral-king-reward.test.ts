@@ -4,7 +4,13 @@
 // 訂閱到期日。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
-import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  getActiveReferralCode,
+  payForUser,
+} from './test-helpers.ts';
 import { twDayOf, twDayPlusDays, twDayPlusYears, twEndOfDayInstant } from './tw-dates.ts';
 
 Deno.test('hitting 8 referrals in a month grants exactly one unclaimed free-renewal credit, even past 8', async () => {
@@ -20,7 +26,10 @@ Deno.test('hitting 8 referrals in a month grants exactly one unclaimed free-rene
     // 付 12 個下線（超過門檻 8），驗證只會有 1 筆 credit，不會每超過
     // 1 個就再開一筆。
     for (let i = 0; i < 12; i++) {
-      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      const referee = await createTestUser(client, {
+        name: `Referee ${i}`,
+        referredByCode: refCode,
+      });
       refereeIds.push(referee.id);
       const { error: payErr } = await payForUser(client, referee.id);
       assertEquals(payErr, null, `referee ${i} 付款失敗: ${payErr?.message}`);
@@ -48,7 +57,10 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
     const refCode = await getActiveReferralCode(client, referrer.id);
 
     for (let i = 0; i < 10; i++) {
-      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      const referee = await createTestUser(client, {
+        name: `Referee ${i}`,
+        referredByCode: refCode,
+      });
       refereeIds.push(referee.id);
       const { error: payErr } = await payForUser(client, referee.id);
       assertEquals(payErr, null);
@@ -112,9 +124,15 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
 
     // claim 不該動到任何推薦獎金/推薦邊——這是「用任務領的免費續約」，
     // 不是真的付款，不該再觸發一輪推薦鏈。
-    const rewardsAfter = await client.from('reward_transactions').select('id').eq('user_id', referrer.id);
+    const rewardsAfter = await client.from('reward_transactions').select('id').eq(
+      'user_id',
+      referrer.id,
+    );
     assertEquals(rewardsAfter.data?.length, rewardsBefore.data?.length);
-    const edgesAfter = await client.from('referral_edges').select('referee_user_id').eq('referrer_user_id', referrer.id);
+    const edgesAfter = await client.from('referral_edges').select('referee_user_id').eq(
+      'referrer_user_id',
+      referrer.id,
+    );
     assertEquals(edgesAfter.data?.length, edgesBefore.data?.length);
 
     // 重複 claim：冪等成功，不會再延展一次。
@@ -130,7 +148,11 @@ Deno.test('claiming a free-renewal-year credit extends the current subscription 
       .select('end_date')
       .eq('id', subBefore!.id)
       .single();
-    assertEquals(new Date(subAfterSecondClaim!.end_date).getTime(), expectedEnd.getTime(), '重複領取不該再延展一次');
+    assertEquals(
+      new Date(subAfterSecondClaim!.end_date).getTime(),
+      expectedEnd.getTime(),
+      '重複領取不該再延展一次',
+    );
   } finally {
     await deleteTestUsers(client, [referrer.id, ...refereeIds]);
   }
@@ -150,7 +172,10 @@ Deno.test('an expired member cannot claim a free-renewal credit — blocked, cre
     const refCode = await getActiveReferralCode(client, referrer.id);
 
     for (let i = 0; i < 10; i++) {
-      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      const referee = await createTestUser(client, {
+        name: `Referee ${i}`,
+        referredByCode: refCode,
+      });
       refereeIds.push(referee.id);
       const { error: payErr } = await payForUser(client, referee.id);
       assertEquals(payErr, null);
@@ -226,7 +251,10 @@ Deno.test('a suspended member cannot claim a free-renewal credit even while subs
     const refCode = await getActiveReferralCode(client, referrer.id);
 
     for (let i = 0; i < 10; i++) {
-      const referee = await createTestUser(client, { name: `Referee ${i}`, referredByCode: refCode });
+      const referee = await createTestUser(client, {
+        name: `Referee ${i}`,
+        referredByCode: refCode,
+      });
       refereeIds.push(referee.id);
       const { error: payErr } = await payForUser(client, referee.id);
       assertEquals(payErr, null);

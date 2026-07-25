@@ -1,9 +1,19 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, Shield, Share2 } from 'lucide-react';
+import {
+  Users,
+  Settings,
+  User,
+  CheckSquare,
+  Gift,
+  Info,
+  ArrowLeft,
+  Shield,
+  Share2,
+} from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
@@ -25,7 +35,11 @@ export function MemberDashboard() {
   // 刊登不在底部導覽裡，這張卡片是它的主入口——所以要能直接看出「我有沒有
   // 刊登、刊登的是什麼」，而不是只給一個看不出狀態的連結。
   const listingEnabled = isFeatureEnabled('serviceProviderManagement');
-  const { listing, loading: listingLoading, error: listingError } = useUserListing({
+  const {
+    listing,
+    loading: listingLoading,
+    error: listingError,
+  } = useUserListing({
     enabled: listingEnabled,
   });
   // 三態要分清楚：讀取中／讀取失敗／確定沒有刊登。只有第三種才顯示建立
@@ -35,16 +49,19 @@ export function MemberDashboard() {
   const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
 
   const handleShowProfileInfo = () => {
-    showInfo(
-      '修改會員資料',
-      '會員資料一經註冊後無法自行修改。',
-      ['如需更改基本資料，請透過 LINE 聯繫客服：', '📱 LINE 官方帳號：@Uknow']
-    );
+    showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
+      '如需更改基本資料，請透過 LINE 聯繫客服：',
+      '📱 LINE 官方帳號：@Uknow',
+    ]);
   };
 
   const handleJoinReferralSuccess = (referralCode: string, joinedAt: string) => {
     if (user) {
-      const updatedUser = { ...user, referralProgramJoined: true, referralProgramJoinedAt: joinedAt };
+      const updatedUser = {
+        ...user,
+        referralProgramJoined: true,
+        referralProgramJoinedAt: joinedAt,
+      };
       setUser(updatedUser);
       localStorage.setItem('user', JSON.stringify(updatedUser));
     }
@@ -53,7 +70,13 @@ export function MemberDashboard() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBack}
+          className="shrink-0"
+          aria-label="返回上一頁"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
@@ -215,10 +238,7 @@ export function MemberDashboard() {
       </div>
 
       {/* 訂閱狀態 */}
-      <SubscriptionStatusCard
-        subscriptionData={subscriptionData}
-        isLoading={isLoading}
-      />
+      <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
 
       <JoinReferralProgramDialog
         open={showJoinReferralDialog}

@@ -1,5 +1,4 @@
-import React from 'react';
-import { ToastCard, ToastConfig } from './ToastCard';
+import { ToastCard, type ToastConfig } from './ToastCard';
 
 interface ToastContainerProps {
   toasts: ToastConfig[];

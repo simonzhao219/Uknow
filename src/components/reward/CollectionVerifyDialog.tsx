@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Shield, Loader2, ArrowLeft } from 'lucide-react';
@@ -14,7 +14,11 @@ interface CollectionVerifyDialogProps {
  * 查收驗證對話框 - 第三步
  * 輸入身分證字號進行驗證
  */
-export function CollectionVerifyDialog({ onConfirm, onBack, onCancel }: CollectionVerifyDialogProps) {
+export function CollectionVerifyDialog({
+  onConfirm,
+  onBack,
+  onCancel,
+}: CollectionVerifyDialogProps) {
   const [idNumber, setIdNumber] = useState('');
   const [isVerified, setIsVerified] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,9 +56,7 @@ export function CollectionVerifyDialog({ onConfirm, onBack, onCancel }: Collecti
             <Shield className="h-5 w-5 text-blue-600" />
             身分證驗證 - 步驟 3/3
           </CardTitle>
-          <CardDescription>
-            請輸入您註冊時使用的身分證字號
-          </CardDescription>
+          <CardDescription>請輸入您註冊時使用的身分證字號</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 說明 */}
@@ -77,18 +79,11 @@ export function CollectionVerifyDialog({ onConfirm, onBack, onCancel }: Collecti
           />
 
           {/* 總錯誤提示 */}
-          {error && (
-            <p className="text-sm text-red-600">{error}</p>
-          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={onBack}
-              className="flex-1"
-              disabled={isSubmitting}
-            >
+            <Button variant="outline" onClick={onBack} className="flex-1" disabled={isSubmitting}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               返回
             </Button>

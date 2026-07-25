@@ -47,8 +47,11 @@ async function fillBasicProfile(client: ReturnType<typeof adminClient>, userId: 
 async function seedPendingOrder(client: ReturnType<typeof adminClient>, userId: string) {
   const tradeNo = `CONTRACT-${Date.now()}-${seq++}`;
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending',
-    payment_method: 'payuni', transaction_id: tradeNo,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
   });
   assertEquals(error, null, `建立 pending 訂單失敗：${error?.message}`);
   return tradeNo;

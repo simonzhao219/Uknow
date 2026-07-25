@@ -1,17 +1,11 @@
 name: CI
 
+# git-flow：feature/* → develop（PR+CI）→ main。develop 與 main 同軌把關。
 on:
   pull_request:
-    branches: [main]
-    # 純文件變更不燒 CI（journey 設計書的 PR 曾為一個 .md 跑整套）
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
+    branches: [main, develop]
   push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
+    branches: [main, develop]
 
 # 同一 ref 的新 push 淘汰舊 run，不排隊燒 runner
 concurrency:
@@ -19,7 +13,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 路徑過濾改在 job 層做（原本是 workflow 層 paths-ignore）：required
+  # checks 需要 workflow 每次都跑——workflow 層被 ignore 時 required
+  # check 永遠 pending、純文件 PR 會卡死無法合併；job 層 skip 則計為
+  # 通過。純文件變更依然不燒重的 job，省 runner 的初衷不變。
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      contents: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.claude/**'
+
+  # 框架軌：驗證 CLAUDE.md / .claude/ / hooks 腳本自身的健康度。
+  # 秒級、免依賴、免 secrets，永遠執行——所以它可以無條件列入
+  # required checks，同時兜住主軌路徑過濾放掉的框架檔案 PR。
+  framework-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/framework-check.sh
+      - name: Shellcheck hook scripts
+        run: |
+          shopt -s nullglob
+          files=(scripts/git-hooks/* scripts/*.sh)
+          if [ "${#files[@]}" -gt 0 ]; then
+            shellcheck -S warning "${files[@]}"
+          fi
+
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -29,16 +66,15 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # 前端型別檢查（vite build 用 SWC 只轉譯不檢查型別）
-      - run: npm run typecheck
-      # 前端純函式單元測試（vitest，node 環境，無需瀏覽器）
-      - run: npm test
-      # 死碼防線：未被引用的檔案與未使用的依賴一律擋下（見 knip.json）。
-      # 存活元件的未使用 named export 不在此閘門內（vendored shadcn 子元件屬設計系統表面）。
-      - run: npx knip --include files,dependencies
+      # 統一閘門：biome + typecheck + vitest + knip——與本機 npm run
+      # check、pre-commit hook 共用同一定義，杜絕「本地綠 CI 紅」的
+      # 規則漂移（vite build 用 SWC 只轉譯不檢查型別，typecheck 必要）
+      - run: npm run check
       - run: npm run build
 
   api-tests:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -90,6 +126,8 @@ jobs:
     # app via `npm run dev` (not the build/ artifact). 刻意「不」needs: build
     # ——它不共用 build 產物，串行只是把牆鐘時間從 max(各 job) 拉成兩段
     # 相加；build 紅的時候 e2e 白跑幾分鐘是可接受的代價。
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -148,6 +186,8 @@ jobs:
     # journey 套件的離線防線：純函數單元測試（twid / orgchart /
     # payuni_crypto）＋情境收集健全性。不需要瀏覽器、不需要 secrets、
     # 不打任何網路——真正的 journey 執行在 journey-nightly.yml。
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

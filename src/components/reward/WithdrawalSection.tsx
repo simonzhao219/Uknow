@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -34,29 +34,29 @@ interface WithdrawalSectionProps {
   withdrawals: WithdrawalRecord[];
   onStartWithdrawal: () => void;
   onRefresh: () => void;
-  subscriptionStatus?: string | null;  // ✅ 新增：訂閱狀態
-  referralProgramJoined?: boolean;     // ✅ 新增：是否加入推薦計畫
+  subscriptionStatus?: string | null; // ✅ 新增：訂閱狀態
+  referralProgramJoined?: boolean; // ✅ 新增：是否加入推薦計畫
 }
 
 type CollectionStep = null | 'confirm' | 'preview' | 'verify';
 
-export function WithdrawalSection({ 
+export function WithdrawalSection({
   availableRewards,
   pendingRewards,
   withdrawnRewards,
-  hasWithdrawnToday, 
+  hasWithdrawnToday,
   withdrawals,
   onStartWithdrawal,
   onRefresh,
   subscriptionStatus,
-  referralProgramJoined  // ✅ 新增
+  referralProgramJoined, // ✅ 新增
 }: WithdrawalSectionProps) {
   const { showToast, showSuccess, showError } = useNotification();
-  
+
   // ✅ 查收流程狀態
   const [collectionStep, setCollectionStep] = useState<CollectionStep>(null);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRecord | null>(null);
-  
+
   // ✅ 提領規則（收斂於 utils/withdrawalValidation，避免與 WithdrawalProcess 漂移）
   const MIN_REQUIRED = MIN_REQUIRED_BALANCE; // 1015P
 
@@ -64,25 +64,26 @@ export function WithdrawalSection({
   const isInsufficientBalance = availableRewards < MIN_REQUIRED;
   const hasReachedDailyLimit = hasWithdrawnToday;
   const isSubscriptionInvalid = subscriptionStatus === 'expired';
-  const hasNotJoinedReferral = !referralProgramJoined;  // ✅ 新增：未加入推薦計畫
-  
-  const canWithdraw = !isInsufficientBalance 
-    && !hasReachedDailyLimit 
-    && !isSubscriptionInvalid
-    && !hasNotJoinedReferral;  // ✅ 新增條件
-  
+  const hasNotJoinedReferral = !referralProgramJoined; // ✅ 新增：未加入推薦計畫
+
+  const canWithdraw =
+    !isInsufficientBalance &&
+    !hasReachedDailyLimit &&
+    !isSubscriptionInvalid &&
+    !hasNotJoinedReferral; // ✅ 新增條件
+
   // ✅ 生成提示訊息
   const getDisabledReason = () => {
     // ✅ 最優先檢查是否加入推薦計畫
     if (hasNotJoinedReferral) {
       return '尚未加入推薦計畫，無法申請提領';
     }
-    
+
     // ✅ 檢查訂閱狀態
     if (isSubscriptionInvalid) {
       return '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
     }
-    
+
     if (isInsufficientBalance) {
       return `可提領Point不足${MIN_REQUIRED.toLocaleString()}P（最低提領${MIN_WITHDRAWAL.toLocaleString()}P + 手續費${WITHDRAWAL_FEE}P）`;
     }
@@ -112,9 +113,17 @@ export function WithdrawalSection({
       case 'pending':
         return <Badge variant="secondary">處理中</Badge>;
       case 'awaiting_collection':
-        return <Badge variant="outline" className="bg-blue-100 text-blue-800">待查收</Badge>;
+        return (
+          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+            待查收
+          </Badge>
+        );
       case 'completed':
-        return <Badge variant="default" className="bg-green-100 text-green-800">已完成</Badge>;
+        return (
+          <Badge variant="default" className="bg-green-100 text-green-800">
+            已完成
+          </Badge>
+        );
       case 'rejected':
         return <Badge variant="destructive">已拒絕</Badge>;
       default:
@@ -157,15 +166,15 @@ export function WithdrawalSection({
         buildApiUrl(`/rewards/withdrawals/${selectedWithdrawal.id}/confirm`),
         {
           method: 'POST',
-          body: JSON.stringify({ idNumber })
-        }
+          body: JSON.stringify({ idNumber }),
+        },
       );
 
       if (result.success) {
         showSuccess('查收確認成功！', '獎勵明細已更新');
         setCollectionStep(null);
         setSelectedWithdrawal(null);
-        
+
         // ✅ 刷新數據
         onRefresh();
       } else {
@@ -173,13 +182,13 @@ export function WithdrawalSection({
       }
     } catch (err) {
       console.error('確認查收錯誤:', err);
-      
+
       if (err instanceof ApiError) {
         showError('確認查收失敗', err.message);
       } else {
         showError('確認查收失敗', err instanceof Error ? err.message : '請稍後再試');
       }
-      
+
       throw err; // 拋出錯誤讓 Dialog 保持打開並顯示錯誤
     }
   };
@@ -191,7 +200,7 @@ export function WithdrawalSection({
   };
 
   // ✅ 過濾掉已完成的提領記錄（用戶看不到）
-  const activeWithdrawals = withdrawals.filter(w => w.status !== 'completed');
+  const activeWithdrawals = withdrawals.filter((w) => w.status !== 'completed');
 
   return (
     <>
@@ -201,14 +210,12 @@ export function WithdrawalSection({
             <CreditCard className="h-5 w-5" />
             Point提領與申請記錄
           </CardTitle>
-          <CardDescription>
-            管理您的Point提領申請
-          </CardDescription>
+          <CardDescription>管理您的Point提領申請</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 提領按鈕區域 */}
           <div className="border-b pb-4">
-            <Button 
+            <Button
               onClick={onStartWithdrawal}
               className="w-full"
               size="lg"
@@ -216,7 +223,7 @@ export function WithdrawalSection({
             >
               申請Point提領
             </Button>
-            
+
             {!canWithdraw && (
               <p className="text-sm text-muted-foreground mt-2 text-center">
                 {getDisabledReason()}
@@ -227,7 +234,7 @@ export function WithdrawalSection({
           {/* 申請記錄 */}
           <div>
             <h3 className="font-medium mb-4">申請記錄</h3>
-            
+
             {activeWithdrawals.length === 0 ? (
               <div className="text-center py-8">
                 <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -236,7 +243,7 @@ export function WithdrawalSection({
             ) : (
               <div className="space-y-3">
                 {activeWithdrawals.map((withdrawal) => (
-                  <div 
+                  <div
                     key={withdrawal.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                   >
@@ -255,11 +262,11 @@ export function WithdrawalSection({
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="text-right flex flex-col gap-2">
                       {withdrawal.status === 'awaiting_collection' && (
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => handleClickCollection(withdrawal)}
                           className="text-xs"

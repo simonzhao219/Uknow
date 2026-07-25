@@ -34,7 +34,9 @@ describe('MobilePhotoWallCard', () => {
   it('整格是通往該服務者詳情頁的連結', () => {
     renderCard();
     const link = screen.getByRole('link');
-    expect(link.getAttribute('href')).toBe('/service-providers/a0000000-0000-0000-0000-000000000001');
+    expect(link.getAttribute('href')).toBe(
+      '/service-providers/a0000000-0000-0000-0000-000000000001',
+    );
   });
 
   it('顯示照片（alt 為服務者名稱）、名稱與服務類別', () => {

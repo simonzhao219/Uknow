@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
@@ -29,7 +28,12 @@ export function MarkdownContent({ content, title }: MarkdownContentProps) {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* 標題列 */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={handleBack} data-testid="doc-back-button" aria-label="返回上一頁">
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          data-testid="doc-back-button"
+          aria-label="返回上一頁"
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex items-center gap-3">
