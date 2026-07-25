@@ -10,6 +10,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { shareReferralInvite } from '../utils/referralInvite';
 import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
+import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
 
@@ -20,6 +21,16 @@ export function MemberDashboard() {
   const { showToast, showInfo } = useNotification();
 
   const { subscriptionData, isLoading } = useSubscription();
+
+  // 刊登不在底部導覽裡，這張卡片是它的主入口——所以要能直接看出「我有沒有
+  // 刊登、刊登的是什麼」，而不是只給一個看不出狀態的連結。
+  const listingEnabled = isFeatureEnabled('serviceProviderManagement');
+  const { listing, loading: listingLoading, error: listingError } = useUserListing({
+    enabled: listingEnabled,
+  });
+  // 三態要分清楚：讀取中／讀取失敗／確定沒有刊登。只有第三種才顯示建立
+  // CTA，否則會對已經有刊登的人喊「尚未刊登」。
+  const hasNoListing = !listingLoading && !listingError && listing === null;
 
   const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
 
@@ -120,19 +131,33 @@ export function MemberDashboard() {
 
       {/* 快速操作區域 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {isFeatureEnabled('serviceProviderManagement') && (
+        {listingEnabled && (
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Settings className="h-5 w-5 text-blue-600" />
                 刊登管理
               </CardTitle>
-              <CardDescription>管理已刊登的服務</CardDescription>
+              <CardDescription className="truncate">
+                {listingLoading
+                  ? '讀取刊登狀態…'
+                  : listingError
+                    ? '暫時無法取得刊登狀態'
+                    : listing
+                      ? [listing.name, listing.category].filter(Boolean).join('・')
+                      : '尚未建立刊登'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild variant="outline" className="w-full">
-                <Link to="/service-providers">查看管理</Link>
-              </Button>
+              {hasNoListing ? (
+                <Button asChild className="w-full">
+                  <Link to="/service-providers/create">立即刊登</Link>
+                </Button>
+              ) : (
+                <Button asChild variant="outline" className="w-full">
+                  <Link to="/service-providers">查看管理</Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
