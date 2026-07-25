@@ -472,12 +472,15 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 `/admin`，`AdminRoute` 守衛。
 
-| 模組 | 功能 |
-|---|---|
-| **會員管理** | 會員列表與狀態、資料審核、**停權/解除停權**（§5.2） |
-| **提領管理** | 提領申請審核、標記已匯款、退件退款、財務記錄 |
-| **系統通知** | 系統公告發布與管理（`announcements`） |
-| **儀表板** | 平台數據統計 |
+| 模組 | 元件 | 功能 |
+|---|---|---|
+| **會員管理** | `MemberManagement` | 會員列表與狀態、資料審核、**停權/解除停權**（§5.2） |
+| **提領管理** | `WithdrawalManagement` | 提領申請審核、標記已匯款、退件退款、財務記錄 |
+| **系統通知** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
+| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
+| **管理員設定** | `AdminSetup` | 初次指派管理員 |
+
+所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
 
 > **任務管理**（任務建立/分配/審核）在早期規格中列出，但任務系統現為
 > 規則驅動的自動發放（§9），**無 admin 任務管理介面**。
@@ -495,7 +498,7 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
 | 3 | 自助取消訂閱（§5） | `is_canceled` 欄位保留但無流程 |
 | 4 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
-| 5 | `FeatureContext` 功能旗標（§3） | 前端全開啟 stub，無後端來源 |
+| 5 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
 | 6 | 當月推薦排行榜 | 端點存在，尚無完整 UI 與測試覆蓋 |
 
 ---
