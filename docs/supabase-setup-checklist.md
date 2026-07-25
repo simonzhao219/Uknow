@@ -70,6 +70,13 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `PAYUNI_SANDBOX` | `true` / `false` | develop 填 `true`；正式站填 `false` |
 | `FRONTEND_URL` | 見上表 | **結尾不要加 `/`**；用於 CORS 白名單與付款完成導回頁 |
 
+> ⚠️ **`FRONTEND_URL` 同時決定「要不要放行 Cloudflare Pages 預覽網域」**
+> （`resolveCorsOrigin()`）：這個值本身是 `*.uknow.pages.dev` 時，視為預覽
+> 環境，放行其他 `*.uknow.pages.dev`；是正式網域時，**只認自己**。
+> 所以正式站的 `FRONTEND_URL` 必須**正好**是使用者實際造訪的網域
+> （`https://uknow.com.tw`）——填錯不只是導回頁壞掉，整個前端會被 CORS 擋成
+> `Failed to fetch`。改這個值前先確認線上實際用哪個網域。
+
 > ⚠️ **三把憑證必須成套、同源，缺一角就整組失敗**（刻意的）。舊版程式對每個
 > 欄位各自 `PAYUNI_TEST_X || PAYUNI_X` 逐欄回退，只要測試站憑證缺一角，正式站
 > 的金鑰就會被混進 sandbox 端點，PayUni 回傳帶「(模擬)」浮水印的授權失敗。
@@ -194,6 +201,10 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 |---|---|---|
 | `https://develop.uknow.pages.dev` | `ijcxnxhrziehdtkwausy.supabase.co` | 預覽站在讀寫正式站資料 |
 | `https://uknow.com.tw` | `uhtwwxtazwqnlbejhprl.supabase.co` | 正式站在讀 develop 的資料 |
+
+打錯時的症狀現在是**明確失敗**而不是靜默成功：正式站的 Edge Function 只放行
+自己的 `FRONTEND_URL`，預覽網域打過去會被 CORS 擋下（`Failed to fetch`）。
+這是刻意的——環境沒分乾淨時，會動作的錯誤比會報錯的錯誤難查得多。
 
 前端該打哪一組由 `config/supabaseTarget.ts` 依分支決定（只有 `main` 打正式站），
 不由 Cloudflare 儀表板的環境變數決定——所以這張表對不上時，先看該檔與
