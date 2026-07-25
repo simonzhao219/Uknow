@@ -4,13 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { FilterChip } from '../common/FilterChip';
-import { SegmentedFilter, type SegmentedFilterOption } from '../common/SegmentedFilter';
 import {
   Calendar,
   Receipt,
   Loader2,
-  Users,
-  Gift,
+  UserPlus,
+  RefreshCw,
   TrendingDown,
   RotateCcw,
   SlidersHorizontal,
@@ -20,20 +19,19 @@ import { formatTimestamp } from '../../utils/referralFormatter';
 import { formatRewardDetail, isReferralSource } from '../../utils/rewardHistory';
 import {
   ALL_REWARD_FILTER,
-  REWARD_FILTER_GROUPS,
   REWARD_SOURCE_LABELS,
-  findRewardFilterGroup,
   isRewardFilterActive,
   rewardFilterLabel,
-  selectRewardFilterGroup,
+  rewardFilterOptions,
   toRewardSourceParam,
-  type RewardFilterGroupId,
+  toggleRewardSource,
   type RewardHistoryFilter,
 } from '../../utils/rewardHistoryFilter';
 import type {
   RewardHistoryRecord as RewardRecord,
   RewardHistoryResponse,
   RewardSourceCategory,
+  RewardSourceFacet,
 } from '@contract';
 
 interface RewardHistoryProps {
@@ -48,13 +46,13 @@ type SourceMeta = {
   badgeClass: string;
 };
 const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
-  referral_payment: {
-    Icon: Users,
+  referral_signup: {
+    Icon: UserPlus,
     badgeClass:
       'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   },
-  referral_task_renewal: {
-    Icon: Gift,
+  referral_renewal: {
+    Icon: RefreshCw,
     badgeClass:
       'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   },
@@ -77,24 +75,20 @@ const FALLBACK_META: SourceMeta = {
   badgeClass: 'border-transparent bg-muted text-muted-foreground',
 };
 
-// 第一層（互斥、必選其一）：全部 + 兩個來源群組。短標籤讓它在任何寬度都是一列。
-const GROUP_OPTIONS: readonly SegmentedFilterOption<RewardFilterGroupId | 'all'>[] = [
-  { value: 'all', label: '全部' },
-  ...REWARD_FILTER_GROUPS.map((g) => ({ value: g.id, label: g.label })),
-];
-
 export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [history, setHistory] = useState<RewardRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // 來源篩選：兩層單選（群組 + 可選的細分），見 utils/rewardHistoryFilter。
+  // 來源篩選：平列多選，空集合＝全部（見 utils/rewardHistoryFilter）。
   const [filter, setFilter] = useState<RewardHistoryFilter>(ALL_REWARD_FILTER);
+  // 篩選選項來自後端 facet（使用者實際有的分類與筆數），恆為未篩選全集。
+  const [facets, setFacets] = useState<RewardSourceFacet[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const isFiltered = isRewardFilterActive(filter);
-  const activeGroup = findRewardFilterGroup(filter.group);
+  const filterOptions = rewardFilterOptions(facets);
 
   const fetchHistory = async (isLoadMore = false) => {
     try {
@@ -126,6 +120,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         }
 
         setTotal(result.data.total || 0);
+        setFacets(result.data.sources || []);
         setOffset(currentOffset + newHistory.length);
       } else {
         throw new Error('獲取獎勵歷史失敗');
@@ -148,12 +143,14 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     fetchHistory(true);
   };
 
-  const handleGroupChange = (group: RewardFilterGroupId | 'all') => {
-    setFilter(selectRewardFilterGroup(group === 'all' ? null : group));
-  };
-  // 第二層：再點一次已選的細分＝回到「該群組不限」（不必先跳去別的分類再跳回來）。
-  const toggleSubSource = (source: RewardSourceCategory) => {
-    setFilter((prev) => ({ ...prev, source: prev.source === source ? null : source }));
+  const handleToggleSource = (source: RewardSourceCategory) => {
+    setFilter((prev) =>
+      toggleRewardSource(
+        prev,
+        source,
+        filterOptions.map((o) => o.source),
+      ),
+    );
   };
 
   // 初始載入 + 篩選變更：切換來源時重新從第一頁抓（非追加），offset 由 fetchHistory 歸零。
@@ -180,29 +177,30 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         <CardDescription>查看您的Point收支記錄，可依來源篩選</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 篩選器：兩層漸進式揭露。
-            第一層固定一列（全部／推薦獎勵／點數提領）；第二層只在選了群組後出現，
-            標籤短到不會換行。理由與取捨見 utils/rewardHistoryFilter 檔頭。 */}
-        <div className="space-y-2">
-          <SegmentedFilter
-            options={GROUP_OPTIONS}
-            value={filter.group ?? 'all'}
-            onChange={handleGroupChange}
-            ariaLabel="獎勵來源分類"
-          />
-          {activeGroup && (
-            <fieldset className="flex flex-wrap gap-2" aria-label={`${activeGroup.label}細分`}>
-              {activeGroup.subs.map((sub) => (
-                <FilterChip
-                  key={sub.source}
-                  label={sub.label}
-                  selected={filter.source === sub.source}
-                  onToggle={() => toggleSubSource(sub.source)}
-                />
-              ))}
-            </fieldset>
-          )}
-        </div>
+        {/* 篩選器：平列多選，「全部」＝清空選取。選項來自後端 facet，故只會出現
+            使用者實際有的分類，各 chip 筆數加總恆等於「全部」。
+            版面：手機用等寬三欄（3+2 兩列、不鋸齒），sm 以上收成單列 flex。
+            只有一種來源時整個篩選器沒有意義，直接不畫。 */}
+        {filterOptions.length > 1 && (
+          <fieldset
+            className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap"
+            aria-label="獎勵來源篩選"
+          >
+            <FilterChip
+              label="全部"
+              selected={!isFiltered}
+              onToggle={() => setFilter(ALL_REWARD_FILTER)}
+            />
+            {filterOptions.map((option) => (
+              <FilterChip
+                key={option.source}
+                label={`${option.label} ${option.count}`}
+                selected={filter.includes(option.source)}
+                onToggle={() => handleToggleSource(option.source)}
+              />
+            ))}
+          </fieldset>
+        )}
 
         {/* 載入狀態 */}
         {isLoading && (
@@ -228,7 +226,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">
-                  {isFiltered ? `「${rewardFilterLabel(filter)}」尚無記錄` : '尚無獎勵記錄'}
+                  {isFiltered ? `所選來源（${rewardFilterLabel(filter)}）尚無記錄` : '尚無獎勵記錄'}
                 </p>
                 {!isFiltered && (
                   <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>

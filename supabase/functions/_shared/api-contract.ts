@@ -43,7 +43,13 @@ export function str(): Schema<string> {
 }
 
 export function num(): Schema<number> {
-  return schema((v, p) => (typeof v === 'number' && Number.isFinite(v) ? [] : [`${p}: 預期 number，收到 ${typeof v}`]));
+  return schema((
+    v,
+    p,
+  ) => (typeof v === 'number' && Number.isFinite(v)
+    ? []
+    : [`${p}: 預期 number，收到 ${typeof v}`])
+  );
 }
 
 export function bool(): Schema<boolean> {
@@ -105,38 +111,38 @@ export function assertShape<T>(s: Schema<T>, value: unknown, label: string): T {
 // ------------------------------------------------------------
 
 export const ProfileResponseSchema = obj({
-  id:                     str(),
-  name:                   nullable(str()),
-  phone:                  nullable(str()),
-  birthDate:              nullable(str()),
+  id: str(),
+  name: nullable(str()),
+  phone: nullable(str()),
+  birthDate: nullable(str()),
   // 遮罩值（profile-masking.test.ts）：nationalId 頭 3 尾 3（A12****789）、
   // bankAccount 僅末 4 碼。完整值只存在 DB，比對走 POST /rewards/verify-id。
-  nationalId:             nullable(str()),
-  bankCode:               nullable(str()),
-  bankAccount:            nullable(str()),
-  isAdmin:                bool(),
-  registrationStep:       num(),
-  lastTradeNo:            nullable(str()),
+  nationalId: nullable(str()),
+  bankCode: nullable(str()),
+  bankAccount: nullable(str()),
+  isAdmin: bool(),
+  registrationStep: num(),
+  lastTradeNo: nullable(str()),
   paidAwaitingActivation: bool(),
-  referralCode:           nullable(str()),
-  referredByCode:         nullable(str()),
-  referralProgramJoined:  bool(),
-  referralSignatureUrl:   nullable(str()),
-  accountStatus:          literals('active', 'expired'),
-  subscriptionEndDate:    nullable(str()),
-  suspended:              bool(),
-  email:                  optional(str()),
+  referralCode: nullable(str()),
+  referredByCode: nullable(str()),
+  referralProgramJoined: bool(),
+  referralSignatureUrl: nullable(str()),
+  accountStatus: literals('active', 'expired'),
+  subscriptionEndDate: nullable(str()),
+  suspended: bool(),
+  email: optional(str()),
 });
 export type ProfileResponse = Infer<typeof ProfileResponseSchema>;
 
 export const SubscriptionStatusResponseSchema = obj({
   success: bool(),
   data: obj({
-    hasSubscription:    bool(),
-    status:             literals('active', 'expired'),
-    activeUntil:        nullable(str()),
+    hasSubscription: bool(),
+    status: literals('active', 'expired'),
+    activeUntil: nullable(str()),
     currentPeriodStart: nullable(str()),
-    currentPeriodEnd:   nullable(str()),
+    currentPeriodEnd: nullable(str()),
   }),
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
@@ -144,21 +150,21 @@ export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponse
 export const RewardsSummaryResponseSchema = obj({
   success: bool(),
   data: obj({
-    availableRewards:  num(),
-    pendingRewards:    num(),
-    withdrawnRewards:  num(),
-    totalEarned:       num(),
+    availableRewards: num(),
+    pendingRewards: num(),
+    withdrawnRewards: num(),
+    totalEarned: num(),
     hasWithdrawnToday: bool(),
   }),
 });
 export type RewardsSummaryResponse = Infer<typeof RewardsSummaryResponseSchema>;
 
 export const WithdrawalRecordSchema = obj({
-  id:          str(),
-  userId:      str(),
-  amount:      num(),
-  fee:         num(),
-  status:      literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  id: str(),
+  userId: str(),
+  amount: num(),
+  fee: num(),
+  status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -177,18 +183,24 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  * limit, offset } }；這裡固定新格式，後端與前端都以此為準。
  */
 /**
- * 獎勵明細來源分類（view 衍生欄 source_category，見 migration 0725 0001）。
+ * 獎勵明細來源分類（view 衍生欄 source_category，見 migration 0725 0002）。
  * 分辨/篩選點數來源的單一詞彙表，前後端共享：SQL 用 CASE 產出、edge 直通、
  * 前端讀 enum——取代前端切 description 反推分類的舊反模式。
- *   referral_payment       下線付款帶來的推薦獎勵（source_claim_id 為 null）
- *   referral_task_renewal  下線用任務免費續約帶來的推薦獎勵（source_claim_id 非 null）
- *   withdrawal             點數提領扣款
- *   withdrawal_refund      提領退件退款（adjustment 且綁 withdrawal_id）
- *   adjustment_manual      人工調整（目前無端點產生，保留；前端不列為篩選）
+ *
+ * 分類軸是「拉新／續約」（規則書 online-rewards-referral-rule-update.md 的
+ * 語彙），不是冪等鍵：
+ *   referral_signup    這位被推薦人第一次替我帶來獎勵（配對視角，非全域首購）
+ *   referral_renewal   同一位被推薦人的後續獎勵——付款續約與任務免費續約皆是
+ *   withdrawal         點數提領扣款
+ *   withdrawal_refund  提領退件退還（adjustment 且綁 withdrawal_id）
+ *   adjustment_manual  人工調整（目前無端點產生；有資料才會出現在篩選器）
+ *
+ * 付款續約 vs 任務免費續約的差別沒有消失，改由 RewardHistoryRecord.viaFreeRenewal
+ * 承載（明細第二行註記），不再佔一個分類。
  */
 export const REWARD_SOURCE_CATEGORIES = [
-  'referral_payment',
-  'referral_task_renewal',
+  'referral_signup',
+  'referral_renewal',
   'withdrawal',
   'withdrawal_refund',
   'adjustment_manual',
@@ -196,24 +208,41 @@ export const REWARD_SOURCE_CATEGORIES = [
 export const RewardSourceCategorySchema = literals(...REWARD_SOURCE_CATEGORIES);
 export type RewardSourceCategory = Infer<typeof RewardSourceCategorySchema>;
 
+/**
+ * 分類 facet：這位使用者實際存在的來源分類與筆數（見 SQL function
+ * reward_source_facets）。恆為未篩選的全集，篩選器照它渲染——空分類不出現、
+ * schema 允許但清單沒列的分類（人工調整）真的出現時自動長出來，
+ * 「各分類筆數加總 = 全部」永遠守恆。
+ */
+export const RewardSourceFacetSchema = obj({
+  sourceCategory: RewardSourceCategorySchema,
+  count: num(),
+});
+export type RewardSourceFacet = Infer<typeof RewardSourceFacetSchema>;
+
 export const RewardHistoryRecordSchema = obj({
-  id:          str(),
-  type:        str(), // referral_reward | task_monthly_king | withdrawal | adjustment（資料庫值直通）
+  id: str(),
+  type: str(), // referral_reward | task_monthly_king | withdrawal | adjustment（資料庫值直通）
   // 來源分類（view source_category 衍生欄）：分辨/篩選點數來源的結構化真相，
   // 取代前端切 description 反推分類。見 migration 0725 0001。
   sourceCategory: RewardSourceCategorySchema,
-  amount:      num(),
+  amount: num(),
   description: str(),
-  issuedAt:    str(),
+  issuedAt: str(),
   requestedAt: optional(str()),
-  generation:  optional(num()),
-  balance:     optional(num()),
+  generation: optional(num()),
+  balance: optional(num()),
   // 推薦獎勵專用：發獎當下的名字快照（見 migration 0719 0001）。
   // refereeName          = 被推薦人（因其訂閱而發此獎）。
   // refereeReferrerName  = 被推薦人的直接推薦人；第 1 代為空（即收獎者本人）。
   // 兩者僅推薦獎勵有值，其餘型別 / 舊資料為 undefined，前端 fallback。
-  refereeName:         optional(str()),
+  refereeName: optional(str()),
   refereeReferrerName: optional(str()),
+  // 這筆續約獎勵是下線用「推薦王免費續約券」換來的（source_claim_id 非 null）。
+  // 分類軸改成拉新／續約後，付款續約與免費續約同屬 referral_renewal；這個旗標
+  // 讓明細第二行仍能註記「任務免費續約」，資訊不流失、也不多佔一個篩選分類。
+  // 僅該情形為 true，其餘為 undefined。
+  viaFreeRenewal: optional(bool()),
 });
 export type RewardHistoryRecord = Infer<typeof RewardHistoryRecordSchema>;
 
@@ -221,9 +250,11 @@ export const RewardHistoryResponseSchema = obj({
   success: bool(),
   data: obj({
     history: arr(RewardHistoryRecordSchema),
-    total:   num(),
-    limit:   num(),
-    offset:  num(),
+    total: num(),
+    limit: num(),
+    offset: num(),
+    // 未篩選的分類全集（不隨 ?source= 變動）——篩選器的選項來源。
+    sources: arr(RewardSourceFacetSchema),
   }),
 });
 export type RewardHistoryResponse = Infer<typeof RewardHistoryResponseSchema>;
@@ -233,21 +264,21 @@ export type RewardHistoryResponse = Infer<typeof RewardHistoryResponseSchema>;
 // status 由帳戶兩態（active/expired）+ suspended_at + 距到期天數推導：
 //   active｜expiring（active 且 ≤30 天到期）｜expired｜suspended
 const ReferralNodeFields = {
-  userId:       str(),
-  name:         str(),                                        // 已遮罩（二、三代）
-  generation:   num(),
-  status:       literals('active', 'expiring', 'expired', 'suspended'),
-  daysToExpiry: nullable(num()),                              // 僅 active/expiring 有值
-  endDate:      nullable(str()),
-  joinedAt:     str(),
-  listingId:    nullable(str()),                              // 供「查看刊登」；失效/停權者前端不連
-  childCount:   num(),
+  userId: str(),
+  name: str(), // 已遮罩（二、三代）
+  generation: num(),
+  status: literals('active', 'expiring', 'expired', 'suspended'),
+  daysToExpiry: nullable(num()), // 僅 active/expiring 有值
+  endDate: nullable(str()),
+  joinedAt: str(),
+  listingId: nullable(str()), // 供「查看刊登」；失效/停權者前端不連
+  childCount: num(),
 } as const;
 
 const ReferralSummarySchema = obj({
-  firstGenCount:  num(),
+  firstGenCount: num(),
   secondGenCount: num(),
-  thirdGenCount:  num(),
+  thirdGenCount: num(),
   totalReferrals: num(),
 });
 
@@ -259,7 +290,10 @@ const ReferralSummarySchema = obj({
 // 供「更新順序」排序與前端本地重排。
 // ------------------------------------------------------------
 export const NetworkSortModeSchema = literals(
-  'updated_desc', 'updated_asc', 'name_asc', 'name_desc',
+  'updated_desc',
+  'updated_asc',
+  'name_asc',
+  'name_desc',
 );
 export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
 
@@ -274,8 +308,8 @@ export const NetworkOverviewResponseSchema = obj({
   data: obj({
     userReferralCode: str(),
     sort: NetworkSortModeSchema,
-    roots: arr(NetworkNodeSchema),                 // 一代（排序後；children 走懶載入）
-    attention: obj({                               // 需要關注：伺服器依緊急度排序 + 上限
+    roots: arr(NetworkNodeSchema), // 一代（排序後；children 走懶載入）
+    attention: obj({ // 需要關注：伺服器依緊急度排序 + 上限
       total: num(),
       items: arr(NetworkNodeSchema),
     }),
@@ -289,7 +323,7 @@ export const NetworkChildrenResponseSchema = obj({
   data: obj({
     parentId: str(),
     sort: NetworkSortModeSchema,
-    nodes: arr(NetworkNodeSchema),                 // parentId 的直接下線（排序後）
+    nodes: arr(NetworkNodeSchema), // parentId 的直接下線（排序後）
   }),
 });
 export type NetworkChildrenResponse = Infer<typeof NetworkChildrenResponseSchema>;
@@ -299,26 +333,26 @@ export const NetworkSearchResponseSchema = obj({
   data: obj({
     query: str(),
     sort: NetworkSortModeSchema,
-    total: num(),                                  // 全部命中數（matches 有上限）
+    total: num(), // 全部命中數（matches 有上限）
     matches: arr(obj({
-      node: NetworkNodeSchema,                     // 顯示名已遮罩（比對用真名在伺服器）
-      ancestorPath: arr(str()),                    // 一代 → 命中者本身（含）的 userId 序列
+      node: NetworkNodeSchema, // 顯示名已遮罩（比對用真名在伺服器）
+      ancestorPath: arr(str()), // 一代 → 命中者本身（含）的 userId 序列
     })),
   }),
 });
 export type NetworkSearchResponse = Infer<typeof NetworkSearchResponseSchema>;
 
 export const TaskSchema = obj({
-  id:          str(),
-  type:        literals('monthly_king'),
-  title:       str(),
+  id: str(),
+  type: literals('monthly_king'),
+  title: str(),
   description: str(),
-  target:      num(),
-  current:     num(),
-  completed:   bool(),
-  reward:      obj({ type: literals('free_renewal_year'), label: str() }),
-  progress:    num(),
-  hasUnclaimedReward:   bool(),
+  target: num(),
+  current: num(),
+  completed: bool(),
+  reward: obj({ type: literals('free_renewal_year'), label: str() }),
+  progress: num(),
+  hasUnclaimedReward: bool(),
   unclaimedRewardCount: num(),
   details: any(),
 });
@@ -327,27 +361,27 @@ export type Task = Infer<typeof TaskSchema>;
 export const TasksResponseSchema = obj({
   success: bool(),
   data: obj({
-    tasks:   arr(TaskSchema),
+    tasks: arr(TaskSchema),
     rawData: any(),
   }),
 });
 export type TasksResponse = Infer<typeof TasksResponseSchema>;
 
 export const PendingRewardSchema = obj({
-  id:          str(),
-  type:        literals('monthly_king'),
-  rewardType:  literals('free_renewal_year'),
-  amount:      num(),
-  achievedAt:  str(),
-  status:      literals('pending', 'claimed', 'expired'),
+  id: str(),
+  type: literals('monthly_king'),
+  rewardType: literals('free_renewal_year'),
+  amount: num(),
+  achievedAt: str(),
+  status: literals('pending', 'claimed', 'expired'),
   description: str(),
-  details:     any(),
+  details: any(),
 });
 export type PendingReward = Infer<typeof PendingRewardSchema>;
 
 export const PendingRewardsResponseSchema = obj({
   success: bool(),
-  data:    arr(PendingRewardSchema),
+  data: arr(PendingRewardSchema),
 });
 export type PendingRewardsResponse = Infer<typeof PendingRewardsResponseSchema>;
 
@@ -358,22 +392,22 @@ export type PendingRewardsResponse = Infer<typeof PendingRewardsResponseSchema>;
  * { month, total, completedCount, currentProgress, referrals }。
  */
 export const MonthlyReferralRecordSchema = obj({
-  userId:           str(),
-  userName:         str(),
+  userId: str(),
+  userName: str(),
   userReferralCode: nullable(str()),
-  createdAt:        nullable(str()),
+  createdAt: nullable(str()),
 });
 export type MonthlyReferralRecord = Infer<typeof MonthlyReferralRecordSchema>;
 
 export const CurrentMonthReferralsResponseSchema = obj({
   success: bool(),
   data: obj({
-    month:           str(),
-    total:           num(),
-    completedCount:  num(),
+    month: str(),
+    total: num(),
+    completedCount: num(),
     currentProgress: num(),
-    referrals:       arr(MonthlyReferralRecordSchema),
-    target:          num(),   // 推薦王月門檻（reward_config），前端進度以此為準
+    referrals: arr(MonthlyReferralRecordSchema),
+    target: num(), // 推薦王月門檻（reward_config），前端進度以此為準
   }),
 });
 export type CurrentMonthReferralsResponse = Infer<typeof CurrentMonthReferralsResponseSchema>;
@@ -382,7 +416,7 @@ export const ClaimRewardResponseSchema = obj({
   success: bool(),
   data: obj({
     subscriptionId: str(),
-    activeUntil:    str(),
+    activeUntil: str(),
   }),
 });
 export type ClaimRewardResponse = Infer<typeof ClaimRewardResponseSchema>;
@@ -391,8 +425,8 @@ export const PointsPreviewResponseSchema = obj({
   success: bool(),
   data: obj({
     currentAvailable: num(),
-    currentTotal:     num(),
-    currentPending:   num(),
+    currentTotal: num(),
+    currentPending: num(),
     currentWithdrawn: num(),
   }),
 });
@@ -402,7 +436,7 @@ export const IdPhotosResponseSchema = obj({
   success: bool(),
   data: obj({
     frontUrl: nullable(str()),
-    backUrl:  nullable(str()),
+    backUrl: nullable(str()),
   }),
 });
 export type IdPhotosResponse = Infer<typeof IdPhotosResponseSchema>;
@@ -411,10 +445,10 @@ export const WithdrawResponseSchema = obj({
   success: bool(),
   data: obj({
     withdrawalId: str(),
-    status:       literals('pending'),
-    amount:       num(),
-    fee:          num(),
-    requestedAt:  str(),
+    status: literals('pending'),
+    amount: num(),
+    fee: num(),
+    requestedAt: str(),
   }),
 });
 export type WithdrawResponse = Infer<typeof WithdrawResponseSchema>;
@@ -423,19 +457,19 @@ export const ConfirmCollectionResponseSchema = obj({
   success: bool(),
   data: obj({
     withdrawalId: str(),
-    status:       literals('completed'),
-    completedAt:  nullable(str()),
+    status: literals('completed'),
+    completedAt: nullable(str()),
   }),
 });
 export type ConfirmCollectionResponse = Infer<typeof ConfirmCollectionResponseSchema>;
 
 export const AnnouncementSchema = obj({
-  id:       str(),
-  title:    str(),
-  message:  str(),
-  type:     literals('info', 'warning', 'error'),
+  id: str(),
+  title: str(),
+  message: str(),
+  type: literals('info', 'warning', 'error'),
   startsAt: str(),
-  endsAt:   nullable(str()),
+  endsAt: nullable(str()),
 });
 export type Announcement = Infer<typeof AnnouncementSchema>;
 
@@ -448,12 +482,12 @@ export type ActiveAnnouncementsResponse = Infer<typeof ActiveAnnouncementsRespon
 // GET /admin/system-alerts（SystemAlerts tab）。欄位沿用 DB snake_case
 // ——這是內部維運資料，不做前端命名轉換。context 為任意 jsonb 物件。
 export const SystemAlertSchema = obj({
-  id:          str(),
-  source:      str(),
-  severity:    literals('info', 'warning', 'error'),
-  message:     str(),
-  context:     obj({}),
-  created_at:  str(),
+  id: str(),
+  source: str(),
+  severity: literals('info', 'warning', 'error'),
+  message: str(),
+  context: obj({}),
+  created_at: str(),
   resolved_at: nullable(str()),
 });
 
@@ -461,7 +495,7 @@ export const SystemAlertsResponseSchema = obj({
   success: bool(),
   data: obj({
     alerts: arr(SystemAlertSchema),
-    total:  num(),
+    total: num(),
   }),
 });
 
@@ -469,22 +503,22 @@ export type SystemAlert = Infer<typeof SystemAlertSchema>;
 export type SystemAlertsResponse = Infer<typeof SystemAlertsResponseSchema>;
 
 export const AdminWithdrawalRecordSchema = obj({
-  id:             str(),
-  userId:         str(),
-  userName:       str(),
-  userPhone:      nullable(str()),
-  idNumber:       nullable(str()),
-  amount:         num(),
-  fee:            num(),
-  status:         literals('pending', 'awaiting_collection', 'completed', 'rejected'),
-  bankCode:       nullable(str()),
-  bankAccount:    nullable(str()),
-  note:           nullable(str()),
-  requestedAt:    str(),
-  processedAt:    nullable(str()),
-  completedAt:    nullable(str()),
+  id: str(),
+  userId: str(),
+  userName: str(),
+  userPhone: nullable(str()),
+  idNumber: nullable(str()),
+  amount: num(),
+  fee: num(),
+  status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  bankCode: nullable(str()),
+  bankAccount: nullable(str()),
+  note: nullable(str()),
+  requestedAt: str(),
+  processedAt: nullable(str()),
+  completedAt: nullable(str()),
   idCardFrontUrl: nullable(str()),
-  idCardBackUrl:  nullable(str()),
+  idCardBackUrl: nullable(str()),
 });
 export type AdminWithdrawalRecord = Infer<typeof AdminWithdrawalRecordSchema>;
 
@@ -492,24 +526,24 @@ export const AdminWithdrawalsResponseSchema = obj({
   success: bool(),
   data: obj({
     withdrawals: arr(AdminWithdrawalRecordSchema),
-    total:  num(),
-    limit:  num(),
+    total: num(),
+    limit: num(),
     offset: num(),
   }),
 });
 export type AdminWithdrawalsResponse = Infer<typeof AdminWithdrawalsResponseSchema>;
 
 export const AdminMemberSchema = obj({
-  id:            str(),
-  name:          nullable(str()),
-  email:         str(),
-  phone:         nullable(str()),
-  isAdmin:       bool(),
-  suspended:     bool(),
-  suspendedAt:   nullable(str()),
+  id: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  isAdmin: bool(),
+  suspended: bool(),
+  suspendedAt: nullable(str()),
   accountStatus: literals('active', 'expired'),
-  listingCount:  num(),
-  createdAt:     str(),
+  listingCount: num(),
+  createdAt: str(),
 });
 export type AdminMember = Infer<typeof AdminMemberSchema>;
 
@@ -520,16 +554,16 @@ export const AdminMembersResponseSchema = obj({
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
 
 export const API_PATHS = {
-  profile:               '/profile',
-  subscriptionStatus:    '/subscriptions/status',
-  rewards:               '/rewards',
-  rewardsWithdrawals:    '/rewards/withdrawals',
-  rewardsHistory:        '/rewards/history',
-  networkOverview:       '/referrals/network/overview',
-  networkChildren:       '/referrals/network/children',
-  networkSearch:         '/referrals/network/search',
-  tasks:                 '/tasks',
-  tasksPendingRewards:   '/tasks/pending-rewards',
-  tasksCurrentMonthTop:  '/tasks/current-month-top',
-  tasksClaimReward:      (id: string) => `/tasks/claim-reward/${id}`,
+  profile: '/profile',
+  subscriptionStatus: '/subscriptions/status',
+  rewards: '/rewards',
+  rewardsWithdrawals: '/rewards/withdrawals',
+  rewardsHistory: '/rewards/history',
+  networkOverview: '/referrals/network/overview',
+  networkChildren: '/referrals/network/children',
+  networkSearch: '/referrals/network/search',
+  tasks: '/tasks',
+  tasksPendingRewards: '/tasks/pending-rewards',
+  tasksCurrentMonthTop: '/tasks/current-month-top',
+  tasksClaimReward: (id: string) => `/tasks/claim-reward/${id}`,
 } as const;

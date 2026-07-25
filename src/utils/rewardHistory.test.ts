@@ -6,7 +6,7 @@ import type { RewardHistoryRecord } from '@contract';
 const rec = (o: Partial<RewardHistoryRecord>): RewardHistoryRecord => ({
   id: 'x',
   type: 'referral_reward',
-  sourceCategory: 'referral_payment',
+  sourceCategory: 'referral_signup',
   amount: 100,
   description: '',
   issuedAt: '2026-07-20T00:00:00Z',
@@ -15,6 +15,7 @@ const rec = (o: Partial<RewardHistoryRecord>): RewardHistoryRecord => ({
   balance: undefined,
   refereeName: undefined,
   refereeReferrerName: undefined,
+  viaFreeRenewal: undefined,
   ...o,
 });
 
@@ -35,10 +36,10 @@ describe('formatRewardDetail', () => {
     );
   });
 
-  it('推薦·付款 第 1 代：只顯示被推薦人（後端已遮罩值直通）', () => {
+  it('推薦新人 第 1 代：只顯示被推薦人（後端已遮罩值直通）', () => {
     expect(
       formatRewardDetail(
-        rec({ sourceCategory: 'referral_payment', generation: 1, refereeName: '王小明' }),
+        rec({ sourceCategory: 'referral_signup', generation: 1, refereeName: '王小明' }),
       ),
     ).toBe('王小明');
   });
@@ -47,7 +48,7 @@ describe('formatRewardDetail', () => {
     expect(
       formatRewardDetail(
         rec({
-          sourceCategory: 'referral_payment',
+          sourceCategory: 'referral_signup',
           generation: 2,
           refereeName: '陳○文',
           refereeReferrerName: '王小明',
@@ -57,7 +58,7 @@ describe('formatRewardDetail', () => {
     expect(
       formatRewardDetail(
         rec({
-          sourceCategory: 'referral_task_renewal',
+          sourceCategory: 'referral_renewal',
           generation: 3,
           refereeName: '李○華',
           refereeReferrerName: '陳○文',
@@ -66,7 +67,39 @@ describe('formatRewardDetail', () => {
     ).toBe('李○華（陳○文）');
   });
 
-  it('退款／調整：description 原樣，無則回退 —', () => {
+  it('子代續約：券換的才註記「任務免費續約」，付款續約不贅字', () => {
+    // 分類軸改成拉新／續約後，付款續約與免費續約同屬 referral_renewal，
+    // 這行註記是它們在 UI 上唯一的區別（見 migration 0725 0002）。
+    expect(
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'referral_renewal',
+          generation: 1,
+          refereeName: '王小明',
+          viaFreeRenewal: true,
+        }),
+      ),
+    ).toBe('王小明・任務免費續約');
+    expect(
+      formatRewardDetail(
+        rec({ sourceCategory: 'referral_renewal', generation: 1, refereeName: '王小明' }),
+      ),
+    ).toBe('王小明');
+    // 第 2/3 代：括號上線與註記並存
+    expect(
+      formatRewardDetail(
+        rec({
+          sourceCategory: 'referral_renewal',
+          generation: 2,
+          refereeName: '陳○文',
+          refereeReferrerName: '王小明',
+          viaFreeRenewal: true,
+        }),
+      ),
+    ).toBe('陳○文（王小明）・任務免費續約');
+  });
+
+  it('退還／調整：description 原樣，無則回退 —', () => {
     expect(
       formatRewardDetail(
         rec({
@@ -84,8 +117,8 @@ describe('formatRewardDetail', () => {
 
 describe('isReferralSource', () => {
   it('推薦類為 true、其餘為 false', () => {
-    expect(isReferralSource('referral_payment')).toBe(true);
-    expect(isReferralSource('referral_task_renewal')).toBe(true);
+    expect(isReferralSource('referral_signup')).toBe(true);
+    expect(isReferralSource('referral_renewal')).toBe(true);
     expect(isReferralSource('withdrawal')).toBe(false);
     expect(isReferralSource('withdrawal_refund')).toBe(false);
     expect(isReferralSource('adjustment_manual')).toBe(false);

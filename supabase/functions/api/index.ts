@@ -6,23 +6,23 @@ import { Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono/cors';
 import { etag, RETAINED_304_HEADERS } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
+import { decryptPayUni, encryptPayUni, generatePayUniHash } from './crypto.ts';
 import {
-  twDayOf,
-  twMonthKey,
-  twCompactTimestamp,
-  twDayPlusDays,
   subscriptionLastDay,
+  twCompactTimestamp,
+  twDayOf,
+  twDayPlusDays,
   twEndOfDayInstant,
+  twMonthKey,
 } from './tw-dates.ts';
 import type {
-  RewardHistoryResponse,
   CurrentMonthReferralsResponse,
-  NetworkSortMode,
+  NetworkChildrenResponse,
   NetworkNode,
   NetworkOverviewResponse,
-  NetworkChildrenResponse,
   NetworkSearchResponse,
+  NetworkSortMode,
+  RewardHistoryResponse,
 } from '../_shared/api-contract.ts';
 
 // Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
@@ -33,42 +33,46 @@ export const app = new Hono().basePath('/api');
 // ============================================================
 // CORS
 // ============================================================
-app.use('*', cors({
-  origin: (origin) => {
-    // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
-    const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
-    const o       = origin.replace(/\/$/, '');
-    if (o === allowed) return origin;
-    // 放行本專案自家的 Cloudflare Pages 預覽子網域（*.uknow.pages.dev）。
-    // 這些是同一 Pages 專案下、由本 repo 部署的第一方預覽（第三方無法註冊
-    // 此命名空間），讓 branch 預覽也能登入 / 打 API——否則預覽跑的是
-    // production edge function，會被單一 FRONTEND_URL 白名單擋成 Failed to fetch。
-    // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com / 前綴繞過。
-    try {
-      const host = new URL(origin).hostname;
-      if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
-    } catch { /* 非法 Origin → 拒絕 */ }
-    // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
-    // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
-    // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
-    const devMode = Deno.env.get('DEV_CORS') === 'true' || Deno.env.get('PAYUNI_SANDBOX') === 'true';
-    if (devMode) {
+app.use(
+  '*',
+  cors({
+    origin: (origin) => {
+      // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
+      const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
+      const o = origin.replace(/\/$/, '');
+      if (o === allowed) return origin;
+      // 放行本專案自家的 Cloudflare Pages 預覽子網域（*.uknow.pages.dev）。
+      // 這些是同一 Pages 專案下、由本 repo 部署的第一方預覽（第三方無法註冊
+      // 此命名空間），讓 branch 預覽也能登入 / 打 API——否則預覽跑的是
+      // production edge function，會被單一 FRONTEND_URL 白名單擋成 Failed to fetch。
+      // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com / 前綴繞過。
       try {
-        const host = new URL(o).hostname;
-        if (host === 'localhost' || host === '127.0.0.1') return origin;
+        const host = new URL(origin).hostname;
+        if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
       } catch { /* 非法 Origin → 拒絕 */ }
-    }
-    return '';
-  },
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
-  allowHeaders: ['Content-Type', 'Authorization', 'If-None-Match'],
-  exposeHeaders: ['ETag'],
-  // preflight 快取 2 小時：每個帶 Authorization 的請求本來都要多付一次
-  // OPTIONS round-trip，這是整條 API 路徑上最大的單項頻寬/延遲節省。
-  maxAge: 7200,
-  credentials: true,
-}));
+      // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
+      // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
+      // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
+      const devMode = Deno.env.get('DEV_CORS') === 'true' ||
+        Deno.env.get('PAYUNI_SANDBOX') === 'true';
+      if (devMode) {
+        try {
+          const host = new URL(o).hostname;
+          if (host === 'localhost' || host === '127.0.0.1') return origin;
+        } catch { /* 非法 Origin → 拒絕 */ }
+      }
+      return '';
+    },
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
+    allowHeaders: ['Content-Type', 'Authorization', 'If-None-Match'],
+    exposeHeaders: ['ETag'],
+    // preflight 快取 2 小時：每個帶 Authorization 的請求本來都要多付一次
+    // OPTIONS round-trip，這是整條 API 路徑上最大的單項頻寬/延遲節省。
+    maxAge: 7200,
+    credentials: true,
+  }),
+);
 
 // ============================================================
 // 讀端點的條件請求（stale-while-revalidate 的頻寬優化）
@@ -122,7 +126,7 @@ function sb() {
   return createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false } },
   );
 }
 
@@ -132,14 +136,16 @@ function sb() {
 // 讀同一張表，前端再由 task payload 拿到 target，不再各自硬編。讀不到就
 // fallback 回現值，永不因設定缺失而算錯進度。
 // ============================================================
-async function getRewardConfig(client: any): Promise<{ referralRewardAmount: number; referralKingThreshold: number }> {
+async function getRewardConfig(
+  client: any,
+): Promise<{ referralRewardAmount: number; referralKingThreshold: number }> {
   const { data } = await client
     .from('reward_config')
     .select('referral_reward_amount, referral_king_monthly_threshold')
     .eq('id', true)
     .maybeSingle();
   return {
-    referralRewardAmount:  data?.referral_reward_amount ?? 100,
+    referralRewardAmount: data?.referral_reward_amount ?? 100,
     referralKingThreshold: data?.referral_king_monthly_threshold ?? 8,
   };
 }
@@ -195,11 +201,23 @@ function maskBankAccount(acct: string | null | undefined): string | null {
 // ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
-export async function buildProfileResponse(client: any, userId: string, email?: string, alreadyHealed = false) {
-  const [{ data: profile }, { data: acct }, { data: code }, { data: pendingOrders }, { data: step }] = await Promise.all([
+export async function buildProfileResponse(
+  client: any,
+  userId: string,
+  email?: string,
+  alreadyHealed = false,
+) {
+  const [
+    { data: profile },
+    { data: acct },
+    { data: code },
+    { data: pendingOrders },
+    { data: step },
+  ] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).single(),
     client.from('user_account_status').select('status, end_date').eq('user_id', userId).single(),
-    client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active').maybeSingle(),
+    client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active')
+      .maybeSingle(),
     // 抓多筆 pending：卡單使用者可能又重試了一次付款，最新那筆 pending
     // 沒有 payuni_response，但更早那筆已存了 SUCCESS——判斷「已付款待
     // 開通」必須看得到全部 pending，不能只看最新一筆。
@@ -245,28 +263,28 @@ export async function buildProfileResponse(client: any, userId: string, email?: 
   }
 
   return {
-    id:              profile.id,
-    name:            profile.name,
-    phone:           profile.phone,
-    birthDate:       profile.birth_date,
-    nationalId:      maskNationalId(profile.national_id),
-    bankCode:        profile.bank_code,
-    bankAccount:     maskBankAccount(profile.bank_account),
-    isAdmin:         profile.is_admin,
+    id: profile.id,
+    name: profile.name,
+    phone: profile.phone,
+    birthDate: profile.birth_date,
+    nationalId: maskNationalId(profile.national_id),
+    bankCode: profile.bank_code,
+    bankAccount: maskBankAccount(profile.bank_account),
+    isAdmin: profile.is_admin,
     registrationStep,
     // 待開通時優先指向「已付款成功」的那筆訂單，讓前端守衛導去的
     // 結果頁顯示正確的訂單；否則維持最新一筆 pending 的舊語意。
-    lastTradeNo:     registrationStep === 2
+    lastTradeNo: registrationStep === 2
       ? (paidOrder?.transaction_id ?? pendingOrders?.[0]?.transaction_id ?? null)
       : null,
     paidAwaitingActivation,
-    referralCode:    code?.code ?? null,
-    referredByCode:  profile.referred_by_code,
+    referralCode: code?.code ?? null,
+    referredByCode: profile.referred_by_code,
     referralProgramJoined: profile.referral_program_joined,
-    referralSignatureUrl:  profile.referral_signature_url,
-    accountStatus:   acct?.status ?? 'expired',
+    referralSignatureUrl: profile.referral_signature_url,
+    accountStatus: acct?.status ?? 'expired',
     subscriptionEndDate: acct?.end_date ?? null,
-    suspended:       !!profile.suspended_at,
+    suspended: !!profile.suspended_at,
     email,
   };
 }
@@ -303,14 +321,14 @@ export function resolvePayuniConfig(read: (key: string) => string | undefined): 
   const mode: PayuniMode = read('PAYUNI_SANDBOX') === 'true' ? 'sandbox' : 'production';
   const prefix = mode === 'sandbox' ? 'PAYUNI_TEST_' : 'PAYUNI_';
 
-  const merID   = read(`${prefix}MER_ID`)?.trim();
+  const merID = read(`${prefix}MER_ID`)?.trim();
   const hashKey = read(`${prefix}HASH_KEY`)?.trim();
-  const hashIV  = read(`${prefix}HASH_IV`)?.trim();
+  const hashIV = read(`${prefix}HASH_IV`)?.trim();
 
   const missing = [
-    !merID   && `${prefix}MER_ID`,
+    !merID && `${prefix}MER_ID`,
     !hashKey && `${prefix}HASH_KEY`,
-    !hashIV  && `${prefix}HASH_IV`,
+    !hashIV && `${prefix}HASH_IV`,
   ].filter(Boolean) as string[];
 
   if (missing.length > 0) {
@@ -352,7 +370,7 @@ export function generateTradeNo(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let rand = '';
   for (const b of bytes) rand += chars[b % 36];
-  return `${twCompactTimestamp()}${rand}`;  // 20 chars
+  return `${twCompactTimestamp()}${rand}`; // 20 chars
 }
 
 // ============================================================
@@ -378,28 +396,34 @@ app.get('/auth/profile', profileHandler);
 app.post('/auth/check-email', async (c) => {
   // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流
   // （bump_rate_limit，fail-open：限流器故障不擋正常註冊）。
-  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('cf-connecting-ip')
-    || 'unknown';
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+    c.req.header('cf-connecting-ip') ||
+    'unknown';
   const { data: allowed } = await sb().rpc('bump_rate_limit', {
-    p_key: `check-email:${ip}`, p_max: 10, p_window_seconds: 300,
+    p_key: `check-email:${ip}`,
+    p_max: 10,
+    p_window_seconds: 300,
   });
   if (allowed === false) {
     return c.json({ error: '請求過於頻繁，請稍後再試' }, 429);
   }
 
   let body: any;
-  try { body = await c.req.json(); } catch { return c.json({ exists: false }); }
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ exists: false });
+  }
 
   const email = body?.email?.trim()?.toLowerCase();
   if (!email) return c.json({ exists: false });
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
   const res = await fetch(
     `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=50&search=${encodeURIComponent(email)}`,
-    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
   );
 
   if (!res.ok) return c.json({ exists: false });
@@ -420,7 +444,11 @@ app.post('/auth/register', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   let body: any;
-  try { body = await c.req.json(); } catch { return c.json({ error: '請求格式錯誤' }, 400); }
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: '請求格式錯誤' }, 400);
+  }
 
   const { name, nationalId, phone, birthDate, referralCode } = body;
 
@@ -447,10 +475,10 @@ app.post('/auth/register', async (c) => {
   const updates: Record<string, any> = {
     name,
     phone,
-    birth_date:        birthDate,
-    national_id:       nationalId || null,
+    birth_date: birthDate,
+    national_id: nationalId || null,
     registration_step: 1,
-    referred_by_code:  cleanCode,
+    referred_by_code: cleanCode,
     referred_by_user_id: referrerUserId,
   };
 
@@ -476,7 +504,11 @@ app.put('/auth/profile', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   let body: any;
-  try { body = await c.req.json(); } catch { return c.json({ error: '請求格式錯誤' }, 400); }
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: '請求格式錯誤' }, 400);
+  }
 
   // 遮罩值防呆：GET /profile 回的是遮罩值（A12****789 / *****0123），
   // 前端若誤把它回填送出，會把 DB 的完整值蓋成星號——一律拒絕。
@@ -488,12 +520,12 @@ app.put('/auth/profile', async (c) => {
 
   const client = sb();
   const allowedFields: Record<string, string> = {
-    name:              'name',
-    phone:             'phone',
-    birthDate:         'birth_date',
-    nationalId:        'national_id',
-    bankCode:          'bank_code',
-    bankAccount:       'bank_account',
+    name: 'name',
+    phone: 'phone',
+    birthDate: 'birth_date',
+    nationalId: 'national_id',
+    bankCode: 'bank_code',
+    bankAccount: 'bank_account',
   };
 
   const updates: Record<string, any> = {};
@@ -565,10 +597,10 @@ app.post('/auth/complete-registration', async (c) => {
       success: true,
       message: '已完成註冊',
       data: {
-        referralCode:  data.referralCode,
-        activeUntil:   data.subscriptionEndDate,
+        referralCode: data.referralCode,
+        activeUntil: data.subscriptionEndDate,
         accountStatus: data.accountStatus,
-      }
+      },
     });
   }
 
@@ -638,12 +670,12 @@ app.get('/referrals/validate/:code', async (c) => {
   return c.json({
     valid: true,
     referrer: {
-      userId:      row.referrer_user_id,
-      userName:    row.referrer_name,
+      userId: row.referrer_user_id,
+      userName: row.referrer_name,
       listingName: row.listing_name ?? null,
     },
     // 舊欄位名稱（向下相容）
-    referrerName:   row.referrer_name,
+    referrerName: row.referrer_name,
     referrerUserId: row.referrer_user_id,
   });
 });
@@ -687,7 +719,11 @@ app.post('/referrals/join-program', async (c) => {
   }
 
   let body: any;
-  try { body = await c.req.json(); } catch { return c.json({ success: false, error: { message: '請求格式錯誤' } }, 400); }
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: { message: '請求格式錯誤' } }, 400);
+  }
 
   const { agreedToTerms, signatureData } = body ?? {};
   if (agreedToTerms !== true) {
@@ -748,7 +784,11 @@ app.post('/referrals/join-program', async (c) => {
 // ============================================================
 app.post('/listings/verify-referral-code', async (c) => {
   let body: any;
-  try { body = await c.req.json(); } catch { return c.json({ valid: false }); }
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ valid: false });
+  }
   const code = (body?.referralCode || body?.code || '').toLowerCase().trim();
   if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
 
@@ -758,11 +798,11 @@ app.post('/listings/verify-referral-code', async (c) => {
   }
   const row = data[0];
   return c.json({
-    valid:       true,
+    valid: true,
     referrerName: row.referrer_name,
     referrer: {
-      userId:      row.referrer_user_id,
-      userName:    row.referrer_name,
+      userId: row.referrer_user_id,
+      userName: row.referrer_name,
       listingName: row.listing_name ?? null,
     },
   });
@@ -832,10 +872,10 @@ app.get('/admin/features', (c) => {
   return c.json({
     features: {
       serviceProviderManagement: true,
-      referralManagement:        true,
-      taskCenter:                true,
-      rewardSystem:              true,
-    }
+      referralManagement: true,
+      taskCenter: true,
+      rewardSystem: true,
+    },
   });
 });
 
@@ -852,7 +892,7 @@ app.get('/admin/withdrawals', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   const statusFilter = c.req.query('status');
-  const limit  = Math.min(parseInt(c.req.query('limit') || '200'), 500);
+  const limit = Math.min(parseInt(c.req.query('limit') || '200'), 500);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
   const client = sb();
@@ -894,22 +934,22 @@ app.get('/admin/withdrawals', async (c) => {
   const withdrawals = (rows ?? []).map((w: any) => {
     const p = profMap[w.user_id];
     return {
-      id:             w.id,
-      userId:         w.user_id,
-      userName:       p?.name ?? '',
-      userPhone:      p?.phone ?? null,
-      idNumber:       p?.national_id ?? null,
-      amount:         w.amount,
-      fee:            w.fee,
-      status:         w.status,
-      bankCode:       w.bank_code,
-      bankAccount:    w.bank_account,
-      note:           w.note,
-      requestedAt:    w.requested_at,
-      processedAt:    w.processed_at,
-      completedAt:    w.completed_at,
+      id: w.id,
+      userId: w.user_id,
+      userName: p?.name ?? '',
+      userPhone: p?.phone ?? null,
+      idNumber: p?.national_id ?? null,
+      amount: w.amount,
+      fee: w.fee,
+      status: w.status,
+      bankCode: w.bank_code,
+      bankAccount: w.bank_account,
+      note: w.note,
+      requestedAt: w.requested_at,
+      processedAt: w.processed_at,
+      completedAt: w.completed_at,
       idCardFrontUrl: p?.id_card_front_path ? (urlMap[p.id_card_front_path] ?? null) : null,
-      idCardBackUrl:  p?.id_card_back_path ? (urlMap[p.id_card_back_path] ?? null) : null,
+      idCardBackUrl: p?.id_card_back_path ? (urlMap[p.id_card_back_path] ?? null) : null,
     };
   });
 
@@ -924,13 +964,15 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
 
   const { data, error } = await sb().rpc('admin_update_withdrawal_status', {
-    p_admin_id:      user.id,
+    p_admin_id: user.id,
     p_withdrawal_id: c.req.param('id'),
-    p_status:        body?.status ?? '',
-    p_note:          body?.note ?? null,
+    p_status: body?.status ?? '',
+    p_note: body?.note ?? null,
   });
 
   if (error) {
@@ -938,14 +980,21 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
     return c.json({ success: false, error: { message: '狀態更新失敗' } }, 500);
   }
   if (!data?.success) {
-    const status = data?.error_code === 'not_found' ? 404
-      : data?.error_code === 'forbidden' ? 403 : 400;
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : data?.error_code === 'forbidden'
+      ? 403
+      : 400;
     return c.json({ success: false, error: { message: data?.message ?? '狀態更新失敗' } }, status);
   }
 
   return c.json({
     success: true,
-    data: { withdrawalId: c.req.param('id'), status: data.status, processedAt: data.processed_at ?? null },
+    data: {
+      withdrawalId: c.req.param('id'),
+      status: data.status,
+      processedAt: data.processed_at ?? null,
+    },
   });
 });
 
@@ -957,7 +1006,7 @@ app.get('/admin/members', async (c) => {
 
   const { data, error } = await sb().rpc('admin_list_members', {
     p_search: c.req.query('search') ?? null,
-    p_limit:  Math.min(parseInt(c.req.query('limit') || '50'), 200),
+    p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
     p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
   });
 
@@ -967,16 +1016,16 @@ app.get('/admin/members', async (c) => {
   }
 
   const members = (data?.members ?? []).map((m: any) => ({
-    id:            m.id,
-    name:          m.name,
-    email:         m.email,
-    phone:         m.phone,
-    isAdmin:       m.is_admin,
-    suspended:     !!m.suspended_at,
-    suspendedAt:   m.suspended_at,
+    id: m.id,
+    name: m.name,
+    email: m.email,
+    phone: m.phone,
+    isAdmin: m.is_admin,
+    suspended: !!m.suspended_at,
+    suspendedAt: m.suspended_at,
     accountStatus: m.account_status,
-    listingCount:  m.listing_count,
-    createdAt:     m.created_at,
+    listingCount: m.listing_count,
+    createdAt: m.created_at,
   }));
 
   return c.json({ success: true, data: { members, total: data?.total ?? 0 } });
@@ -989,7 +1038,9 @@ app.post('/admin/members/:id/suspend', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
   const suspend = !!body?.suspend;
 
   const targetId = c.req.param('id');
@@ -1023,12 +1074,12 @@ app.get('/announcements/active', async (c) => {
     .order('starts_at', { ascending: false });
 
   const announcements = (rows ?? []).map((a: any) => ({
-    id:       a.id,
-    title:    a.title,
-    message:  a.message,
-    type:     a.type,
+    id: a.id,
+    title: a.title,
+    message: a.message,
+    type: a.type,
     startsAt: a.starts_at,
-    endsAt:   a.ends_at,
+    endsAt: a.ends_at,
   }));
 
   return c.json({ success: true, data: { announcements } });
@@ -1047,13 +1098,13 @@ app.get('/admin/announcements', async (c) => {
     .limit(100);
 
   const announcements = (rows ?? []).map((a: any) => ({
-    id:        a.id,
-    title:     a.title,
-    message:   a.message,
-    type:      a.type,
-    startsAt:  a.starts_at,
-    endsAt:    a.ends_at,
-    isActive:  a.is_active,
+    id: a.id,
+    title: a.title,
+    message: a.message,
+    type: a.type,
+    startsAt: a.starts_at,
+    endsAt: a.ends_at,
+    isActive: a.is_active,
     createdAt: a.created_at,
   }));
 
@@ -1067,11 +1118,13 @@ app.post('/admin/announcements', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
 
-  const title   = (body?.title ?? '').trim();
+  const title = (body?.title ?? '').trim();
   const message = (body?.message ?? '').trim();
-  const type    = ['info', 'warning', 'error'].includes(body?.type) ? body.type : 'info';
+  const type = ['info', 'warning', 'error'].includes(body?.type) ? body.type : 'info';
   if (!title || !message) {
     return c.json({ success: false, error: { message: '請填寫完整的公告標題與內容' } }, 400);
   }
@@ -1080,8 +1133,8 @@ app.post('/admin/announcements', async (c) => {
     title,
     message,
     type,
-    starts_at:  body?.startsAt ?? new Date().toISOString(),
-    ends_at:    body?.endsAt ?? null,
+    starts_at: body?.startsAt ?? new Date().toISOString(),
+    ends_at: body?.endsAt ?? null,
     created_by: user.id,
   }).select('id').single();
 
@@ -1120,13 +1173,13 @@ app.get('/admin-setup/check', async (c) => {
 
   const hasExistingAdmin = (admins?.length ?? 0) > 0;
   return c.json({
-    success:          true,
-    isAdmin:          !!me?.is_admin,
+    success: true,
+    isAdmin: !!me?.is_admin,
     hasExistingAdmin,
-    canBecomeAdmin:   !hasExistingAdmin,
-    userId:           user.id,
-    userName:         me?.name ?? '',
-    userEmail:        user.email ?? '',
+    canBecomeAdmin: !hasExistingAdmin,
+    userId: user.id,
+    userName: me?.name ?? '',
+    userEmail: user.email ?? '',
   });
 });
 
@@ -1172,7 +1225,9 @@ app.post('/payuni/prepare', async (c) => {
   //   fresh  = 新約，效期從付款日起算、可換新推薦人。
   // 首次付款沒有 body（renewalMode = null，語意同 fresh）。
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 沒有 body = 首次付款 */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 沒有 body = 首次付款 */ }
   const renewalMode: 'extend' | 'fresh' | null =
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
@@ -1195,18 +1250,22 @@ app.post('/payuni/prepare', async (c) => {
     // 日領域計算，與 process_successful_payment 的 extend 分支
     // （tw_day(前期迄) + 1 天起算）完全同語意——這裡通過的請求，
     // 付款完成後端點算出來的效期保證仍在未來。
-    const anchorDay      = twDayPlusDays(twDayOf(lastSub.end_date), 1);
+    const anchorDay = twDayPlusDays(twDayOf(lastSub.end_date), 1);
     const extendedEndDay = subscriptionLastDay(anchorDay);
     if (twEndOfDayInstant(extendedEndDay).getTime() <= Date.now()) {
-      return c.json({ success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' }, 400);
+      return c.json(
+        { success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' },
+        400,
+      );
     }
   }
 
   // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
   // apply_referral_side_effects 會把推薦邊 rewire 到新推薦人（0008），
   // 之後的推薦獎勵歸新推薦人；舊推薦人的歷史獎勵不受影響。
-  const referredByCode: string =
-    typeof body?.referredByCode === 'string' ? body.referredByCode.toLowerCase().trim() : '';
+  const referredByCode: string = typeof body?.referredByCode === 'string'
+    ? body.referredByCode.toLowerCase().trim()
+    : '';
   if (renewalMode === 'fresh' && referredByCode) {
     const { data: codeRows, error: codeErr } = await client
       .rpc('validate_referral_code', { p_code: referredByCode });
@@ -1227,7 +1286,7 @@ app.post('/payuni/prepare', async (c) => {
     }
   }
 
-  const config  = payuniConfig();
+  const config = payuniConfig();
 
   // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
   // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
@@ -1235,12 +1294,12 @@ app.post('/payuni/prepare', async (c) => {
   let tradeNo = generateTradeNo();
   {
     const orderRow = () => ({
-      user_id:        user.id,
-      amount:         1200,
-      status:         'pending',
+      user_id: user.id,
+      amount: 1200,
+      status: 'pending',
       payment_method: 'payuni',
       transaction_id: tradeNo,
-      renewal_mode:   renewalMode,
+      renewal_mode: renewalMode,
     });
     let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
     if (insertErr && insertErr.code === '23505') {
@@ -1256,14 +1315,17 @@ app.post('/payuni/prepare', async (c) => {
   // 「測試站在線上收真錢」是災難級誤設定：sandbox 只會回模擬結果，
   // 使用者永遠付不成功。把 mode 大聲寫進 log，讓維運能在告警／log 一眼看見。
   if (config.mode === 'sandbox') {
-    console.warn('[prepare] ⚠️ PayUni 以 sandbox（測試站）模式建單——付款只會得到模擬結果，正式環境請確認 PAYUNI_SANDBOX 未被設為 true。tradeNo:', tradeNo);
+    console.warn(
+      '[prepare] ⚠️ PayUni 以 sandbox（測試站）模式建單——付款只會得到模擬結果，正式環境請確認 PAYUNI_SANDBOX 未被設為 true。tradeNo:',
+      tradeNo,
+    );
   }
 
   // 雲端環境從 *.supabase.co 網址取 project id；本地 supabase start
   // （http://127.0.0.1:54321）比對不到時直接用該網址當 functions base，
   // 讓本地開發/測試不會在這裡炸掉。
-  const supabaseUrl   = Deno.env.get('SUPABASE_URL')!.replace(/\/$/, '');
-  const projectId     = supabaseUrl.match(/https:\/\/(.+)\.supabase\.co/)?.[1];
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!.replace(/\/$/, '');
+  const projectId = supabaseUrl.match(/https:\/\/(.+)\.supabase\.co/)?.[1];
   const functionsBase = projectId
     ? `https://${projectId}.supabase.co/functions/v1`
     : `${supabaseUrl}/functions/v1`;
@@ -1274,29 +1336,29 @@ app.post('/payuni/prepare', async (c) => {
 
   // UPP（整合式支付頁）加密內容
   const encryptData: Record<string, string | number> = {
-    MerID:      config.merID,
+    MerID: config.merID,
     MerTradeNo: tradeNo,
-    TradeAmt:   1200,
-    Timestamp:  Math.floor(Date.now() / 1000),
-    ProdDesc:   'Uknow 年費會員',
-    UsrMail:    user.email || '',
+    TradeAmt: 1200,
+    Timestamp: Math.floor(Date.now() / 1000),
+    ProdDesc: 'Uknow 年費會員',
+    UsrMail: user.email || '',
     ExpireDate: expire,
-    NotifyURL:  `${functionsBase}/api/webhooks/payuni/notify`,
+    NotifyURL: `${functionsBase}/api/webhooks/payuni/notify`,
     // ReturnURL 指向後端（不是前端頁面）——PayUni 導回時會用 POST 帶
     // EncryptInfo/HashInfo（跟 NotifyURL 收到的是同一份交易結果），
     // 後端解密後直接知道當下結果，302 導向前端並帶上 status，
     // 前端不需要再輪詢猜測付款是否成功。
-    ReturnURL:  `${functionsBase}/api/payuni/return`,
+    ReturnURL: `${functionsBase}/api/payuni/return`,
     // 啟用的付款方式（值為 1 代表開啟，PayUni 整合式支付頁會顯示對應按鈕）
-    Credit:     1,   // 信用卡
-    ApplePay:   1,   // Apple Pay
-    GooglePay:  1,   // Google Pay
-    SamsungPay: 1,   // Samsung Pay
-    Lang:       'zh-tw',
+    Credit: 1, // 信用卡
+    ApplePay: 1, // Apple Pay
+    GooglePay: 1, // Google Pay
+    SamsungPay: 1, // Samsung Pay
+    Lang: 'zh-tw',
   };
 
   const encryptInfo = await encryptPayUni(encryptData, config.hashKey, config.hashIV);
-  const hashInfo    = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
+  const hashInfo = await generatePayUniHash(encryptInfo, config.hashKey, config.hashIV);
 
   // payment_orders 已在組加密 payload 之前寫入（見上方建單先行區塊；
   // renewal_mode 記錄使用者選的續費模式，process_successful_payment
@@ -1305,16 +1367,16 @@ app.post('/payuni/prepare', async (c) => {
   return c.json({
     success: true,
     data: {
-      MerID:       config.merID,
-      Version:     config.version,
+      MerID: config.merID,
+      Version: config.version,
       EncryptInfo: encryptInfo,
-      HashInfo:    hashInfo,
-      apiUrl:      config.apiUrl,
+      HashInfo: hashInfo,
+      apiUrl: config.apiUrl,
       // 讓前端能明確知道這筆是打正式站還是測試站（前端已 log 這個值）。
       // sandbox 一律回傳含「(模擬)」的模擬結果，正式站才會有真實金流。
-      mode:        config.mode,
+      mode: config.mode,
       tradeNo,
-    }
+    },
   });
 });
 
@@ -1327,12 +1389,13 @@ app.get('/payuni/result/:tradeNo', async (c) => {
   if (!user) return c.json({ success: false, error: '未授權' }, 401);
 
   const tradeNo = c.req.param('tradeNo');
-  const fetchOrder = () => sb()
-    .from('payment_orders')
-    .select('status, transaction_id, completed_at, payuni_response')
-    .eq('transaction_id', tradeNo)
-    .eq('user_id', user.id)
-    .single();
+  const fetchOrder = () =>
+    sb()
+      .from('payment_orders')
+      .select('status, transaction_id, completed_at, payuni_response')
+      .eq('transaction_id', tradeNo)
+      .eq('user_id', user.id)
+      .single();
 
   let { data: order, error } = await fetchOrder();
   if (error || !order) return c.json({ success: false, error: '訂單不存在' }, 404);
@@ -1355,10 +1418,11 @@ app.get('/payuni/result/:tradeNo', async (c) => {
     data: {
       orderStatus: order.status,
       completedAt: order.completed_at,
-      payuni:      order.payuni_response ?? null,
+      payuni: order.payuni_response ?? null,
       // 已付款但尚未收斂成訂閱（例如金額不符待人工）——前端顯示
       // 「開通處理中」而不是把使用者當成沒付錢。
-      paidAwaitingActivation: order.status === 'pending' && order.payuni_response?.Status === 'SUCCESS',
+      paidAwaitingActivation: order.status === 'pending' &&
+        order.payuni_response?.Status === 'SUCCESS',
     },
   });
 });
@@ -1460,7 +1524,7 @@ async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean
 }
 
 async function resolveOrderFromPayUni(
-  data: Record<string, string>
+  data: Record<string, string>,
 ): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
   const { Status, MerTradeNo, TradeNo } = data;
 
@@ -1509,9 +1573,9 @@ async function resolveOrderFromPayUni(
 
   // 呼叫原子性付款處理函數
   const { error } = await sb().rpc('process_successful_payment', {
-    p_user_id:         order.user_id,
-    p_trade_no:        MerTradeNo,
-    p_transaction_id:  TradeNo || MerTradeNo,
+    p_user_id: order.user_id,
+    p_trade_no: MerTradeNo,
+    p_transaction_id: TradeNo || MerTradeNo,
     p_payuni_response: data,
   });
 
@@ -1519,9 +1583,12 @@ async function resolveOrderFromPayUni(
     await persistRawResponseBestEffort(MerTradeNo, data);
     // 付款處理失敗是 error 級事件（不是 warning）：PayUni 已回結果、
     // 我方入帳流程炸掉，必須人工介入。
-    await logSystemAlert('resolveOrderFromPayUni',
+    await logSystemAlert(
+      'resolveOrderFromPayUni',
       { merTradeNo: MerTradeNo, error: error.message },
-      '付款處理失敗，需人工介入', 'error');
+      '付款處理失敗，需人工介入',
+      'error',
+    );
     return { ok: false, message: error.message };
   }
 
@@ -1550,7 +1617,9 @@ export async function reconcilePendingOrders(
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
   opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
-): Promise<{ checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }> {
+): Promise<
+  { checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }
+> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
   // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
   // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
@@ -1574,7 +1643,13 @@ export async function reconcilePendingOrders(
 
   if (error) throw new Error(`reconcilePendingOrders: 查詢 pending 訂單失敗: ${error.message}`);
 
-  const summary = { checked: stuck?.length ?? 0, resolved: 0, stillPending: 0, expired: 0, queryErrors: 0 };
+  const summary = {
+    checked: stuck?.length ?? 0,
+    resolved: 0,
+    stillPending: 0,
+    expired: 0,
+    queryErrors: 0,
+  };
 
   for (const order of stuck ?? []) {
     try {
@@ -1589,7 +1664,8 @@ export async function reconcilePendingOrders(
           if (expireErr) {
             summary.queryErrors++;
             await logSystemAlert('reconcile-pending-payments', {
-              tradeNo: order.transaction_id, error: `標記 expired 失敗: ${expireErr.message}`,
+              tradeNo: order.transaction_id,
+              error: `標記 expired 失敗: ${expireErr.message}`,
             });
           } else {
             summary.expired++;
@@ -1603,11 +1679,17 @@ export async function reconcilePendingOrders(
       if (outcome.ok) {
         summary.resolved++;
       } else {
-        await logSystemAlert('reconcile-pending-payments', { tradeNo: order.transaction_id, message: outcome.message });
+        await logSystemAlert('reconcile-pending-payments', {
+          tradeNo: order.transaction_id,
+          message: outcome.message,
+        });
       }
     } catch (e) {
       summary.queryErrors++;
-      await logSystemAlert('reconcile-pending-payments', { tradeNo: order.transaction_id, error: String(e) });
+      await logSystemAlert('reconcile-pending-payments', {
+        tradeNo: order.transaction_id,
+        error: String(e),
+      });
     }
   }
 
@@ -1630,8 +1712,8 @@ async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> 
 
   const encryptInfo = await encryptPayUni(
     {
-      MerID:      config.merID,
-      Timestamp:  Math.floor(Date.now() / 1000),
+      MerID: config.merID,
+      Timestamp: Math.floor(Date.now() / 1000),
       MerTradeNo: merTradeNo,
     },
     config.hashKey,
@@ -1643,10 +1725,10 @@ async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> 
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      MerID:       config.merID,
-      Version:     config.version,
+      MerID: config.merID,
+      Version: config.version,
       EncryptInfo: encryptInfo,
-      HashInfo:    hashInfo,
+      HashInfo: hashInfo,
     }),
   });
   if (!res.ok) throw new Error(`PayUni 查詢 HTTP ${res.status}`);
@@ -1728,7 +1810,7 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
 // ============================================================
 async function decryptPayUniFormBody(
   body: Record<string, string>,
-  config: ReturnType<typeof payuniConfig>
+  config: ReturnType<typeof payuniConfig>,
 ): Promise<{ ok: true; data: Record<string, string> } | { ok: false; message: string }> {
   const { EncryptInfo, HashInfo } = body;
   if (!EncryptInfo || !HashInfo) {
@@ -1741,7 +1823,7 @@ async function decryptPayUniFormBody(
 
   try {
     const data = Object.fromEntries(
-      new URLSearchParams(await decryptPayUni(EncryptInfo, config.hashKey, config.hashIV))
+      new URLSearchParams(await decryptPayUni(EncryptInfo, config.hashKey, config.hashIV)),
     );
     return { ok: true, data };
   } catch (e) {
@@ -1755,8 +1837,11 @@ async function decryptPayUniFormBody(
 // ============================================================
 app.post('/webhooks/payuni/notify', async (c) => {
   let config: ReturnType<typeof payuniConfig>;
-  try { config = payuniConfig(); }
-  catch { return c.json({ Status: 'FAILED', Message: 'config error' }); }
+  try {
+    config = payuniConfig();
+  } catch {
+    return c.json({ Status: 'FAILED', Message: 'config error' });
+  }
 
   let body: Record<string, string>;
   try {
@@ -1797,8 +1882,11 @@ app.post('/payuni/return', async (c) => {
     c.redirect(`${frontendUrl}/payment/result${tradeNo ? `?tradeNo=${tradeNo}` : ''}`, 302);
 
   let config: ReturnType<typeof payuniConfig>;
-  try { config = payuniConfig(); }
-  catch { return fallbackRedirect(); }
+  try {
+    config = payuniConfig();
+  } catch {
+    return fallbackRedirect();
+  }
 
   let body: Record<string, string>;
   try {
@@ -1871,11 +1959,11 @@ app.get('/subscriptions/status', async (c) => {
     success: true,
     data: {
       hasSubscription: acct?.status === 'active',
-      status:          acct?.status ?? 'expired',
-      activeUntil:     acct?.end_date ?? null,
+      status: acct?.status ?? 'expired',
+      activeUntil: acct?.end_date ?? null,
       currentPeriodStart: sub?.start_date ?? null,
-      currentPeriodEnd:   sub?.end_date ?? null,
-    }
+      currentPeriodEnd: sub?.end_date ?? null,
+    },
   });
 });
 
@@ -1900,12 +1988,12 @@ app.get('/rewards', async (c) => {
   return c.json({
     success: true,
     data: {
-      availableRewards:  Math.max(0, data.available),
-      pendingRewards:    data.pending,
-      withdrawnRewards:  data.withdrawn,
-      totalEarned:       data.total_earned,
+      availableRewards: Math.max(0, data.available),
+      pendingRewards: data.pending,
+      withdrawnRewards: data.withdrawn,
+      totalEarned: data.total_earned,
       hasWithdrawnToday: data.has_withdrawn_today,
-    }
+    },
   });
 });
 
@@ -1928,10 +2016,10 @@ app.get('/rewards/points-preview', async (c) => {
     success: true,
     data: {
       currentAvailable: Math.max(0, data.available),
-      currentTotal:     data.total_earned,
-      currentPending:   data.pending,
+      currentTotal: data.total_earned,
+      currentPending: data.pending,
       currentWithdrawn: data.withdrawn,
-    }
+    },
   });
 });
 
@@ -1956,14 +2044,14 @@ app.get('/rewards/withdrawals', async (c) => {
   }
 
   const withdrawals = (rows ?? []).map((w: any) => ({
-    id:           w.id,
-    userId:       w.user_id,
-    amount:       w.amount,
-    fee:          w.fee,
-    status:       w.status,
-    requestedAt:  w.requested_at,
-    processedAt:  w.processed_at,
-    completedAt:  w.completed_at,
+    id: w.id,
+    userId: w.user_id,
+    amount: w.amount,
+    fee: w.fee,
+    status: w.status,
+    requestedAt: w.requested_at,
+    processedAt: w.processed_at,
+    completedAt: w.completed_at,
   }));
 
   return c.json({ success: true, data: { withdrawals } });
@@ -1978,7 +2066,9 @@ app.post('/rewards/verify-id', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
 
   if (await verifyNationalId(sb(), user.id, body?.idNumber ?? '')) {
     return c.json({ success: true, message: '驗證成功' });
@@ -2011,8 +2101,8 @@ app.get('/rewards/id-photos', async (c) => {
     success: true,
     data: {
       frontUrl: await sign(profile?.id_card_front_path ?? null),
-      backUrl:  await sign(profile?.id_card_back_path ?? null),
-    }
+      backUrl: await sign(profile?.id_card_back_path ?? null),
+    },
   });
 });
 
@@ -2033,7 +2123,7 @@ app.post('/rewards/upload-id-photos', async (c) => {
   }
 
   const front = formData.get('idCardFront') as File | null;
-  const back  = formData.get('idCardBack') as File | null;
+  const back = formData.get('idCardBack') as File | null;
   if (!front && !back) {
     return c.json({ error: { message: '未提供檔案' } }, 400);
   }
@@ -2041,7 +2131,9 @@ app.post('/rewards/upload-id-photos', async (c) => {
   const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
   for (const f of [front, back]) {
     if (!f) continue;
-    if (!ALLOWED.includes(f.type)) return c.json({ error: { message: '只支援 JPG、PNG、WEBP 格式' } }, 400);
+    if (!ALLOWED.includes(f.type)) {
+      return c.json({ error: { message: '只支援 JPG、PNG、WEBP 格式' } }, 400);
+    }
     if (f.size > 5 * 1024 * 1024) return c.json({ error: { message: '檔案不得超過 5MB' } }, 400);
   }
 
@@ -2059,8 +2151,14 @@ app.post('/rewards/upload-id-photos', async (c) => {
     const patch: Record<string, string> = {};
     let frontPath: string | null = null;
     let backPath: string | null = null;
-    if (front) { frontPath = await upload(front, 'front'); patch.id_card_front_path = frontPath; }
-    if (back)  { backPath  = await upload(back, 'back');   patch.id_card_back_path  = backPath; }
+    if (front) {
+      frontPath = await upload(front, 'front');
+      patch.id_card_front_path = frontPath;
+    }
+    if (back) {
+      backPath = await upload(back, 'back');
+      patch.id_card_back_path = backPath;
+    }
     await client.from('profiles').update(patch).eq('id', user.id);
 
     return c.json({ success: true, data: { frontPath, backPath } });
@@ -2080,11 +2178,13 @@ app.post('/rewards/withdraw', async (c) => {
   if (!user) return c.json({ error: { message: '未授權' } }, 401);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
 
-  const amount      = Number(body?.amount);
-  const idNumber    = (body?.idNumber ?? '').trim();
-  const bankCode    = (body?.bankCode ?? '').trim();
+  const amount = Number(body?.amount);
+  const idNumber = (body?.idNumber ?? '').trim();
+  const bankCode = (body?.bankCode ?? '').trim();
   const bankAccount = (body?.bankAccount ?? '').replace(/-/g, '').trim();
 
   if (!Number.isInteger(amount) || amount <= 0) {
@@ -2103,9 +2203,9 @@ app.post('/rewards/withdraw', async (c) => {
   }
 
   const { data, error } = await client.rpc('request_withdrawal', {
-    p_user_id:      user.id,
-    p_amount:       amount,
-    p_bank_code:    bankCode,
+    p_user_id: user.id,
+    p_amount: amount,
+    p_bank_code: bankCode,
     p_bank_account: bankAccount,
   });
 
@@ -2114,7 +2214,9 @@ app.post('/rewards/withdraw', async (c) => {
     return c.json({ success: false, error: { message: '提領申請失敗，請稍後再試' } }, 500);
   }
   if (!data?.success) {
-    const status = data?.error_code === 'subscription_invalid' || data?.error_code === 'not_joined' ? 403 : 400;
+    const status = data?.error_code === 'subscription_invalid' || data?.error_code === 'not_joined'
+      ? 403
+      : 400;
     return c.json({ success: false, error: { message: data?.message ?? '提領申請失敗' } }, status);
   }
 
@@ -2122,11 +2224,11 @@ app.post('/rewards/withdraw', async (c) => {
     success: true,
     data: {
       withdrawalId: data.withdrawal_id,
-      status:       data.status,
-      amount:       data.amount,
-      fee:          data.fee,
-      requestedAt:  data.requested_at,
-    }
+      status: data.status,
+      amount: data.amount,
+      fee: data.fee,
+      requestedAt: data.requested_at,
+    },
   });
 });
 
@@ -2139,7 +2241,9 @@ app.post('/rewards/withdrawals/:id/confirm', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   let body: any = {};
-  try { body = await c.req.json(); } catch { /* 空 body */ }
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
 
   const client = sb();
   if (!(await verifyNationalId(client, user.id, body?.idNumber ?? ''))) {
@@ -2147,7 +2251,7 @@ app.post('/rewards/withdrawals/:id/confirm', async (c) => {
   }
 
   const { data, error } = await client.rpc('confirm_withdrawal_collection', {
-    p_user_id:       user.id,
+    p_user_id: user.id,
     p_withdrawal_id: c.req.param('id'),
   });
 
@@ -2156,8 +2260,11 @@ app.post('/rewards/withdrawals/:id/confirm', async (c) => {
     return c.json({ success: false, error: { message: '查收確認失敗，請稍後再試' } }, 500);
   }
   if (!data?.success) {
-    const status = data?.error_code === 'not_found' ? 404
-      : data?.error_code === 'forbidden' ? 403 : 400;
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : data?.error_code === 'forbidden'
+      ? 403
+      : 400;
     return c.json({ success: false, error: { message: data?.message ?? '查收確認失敗' } }, status);
   }
 
@@ -2165,9 +2272,9 @@ app.post('/rewards/withdrawals/:id/confirm', async (c) => {
     success: true,
     data: {
       withdrawalId: c.req.param('id'),
-      status:       data.status,
-      completedAt:  data.completed_at ?? null,
-    }
+      status: data.status,
+      completedAt: data.completed_at ?? null,
+    },
   });
 });
 
@@ -2184,49 +2291,67 @@ app.get('/rewards/history', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
-  // 來源分類篩選下推到後端：view 衍生欄 source_category（見 migration 0725 0001）。
-  // ?source=referral_payment,referral_task_renewal（CSV 多選）；未帶 = 全部。
+  // 來源分類篩選下推到後端：view 衍生欄 source_category（見 migration 0725 0002）。
+  // ?source=referral_signup,referral_renewal（CSV 多選）；未帶 = 全部。
   // 篩選必須在 DB 端（.in），count 才是「該分類集合的總數」，分頁與「已顯示 X / Y」
   // 才對得上——舊版在前端過濾已載入頁面，後頁永遠看不到、計數也對不上。
   const sourceParam = c.req.query('source');
-  const sources = sourceParam
-    ? sourceParam.split(',').map((s) => s.trim()).filter(Boolean)
-    : [];
+  const sources = sourceParam ? sourceParam.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
   let query = sb()
     .from('reward_transactions_with_balance')
-    .select('id, type, source_category, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
+    .select(
+      'id, type, source_category, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name, source_claim_id',
+      { count: 'exact' },
+    )
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false });
 
   if (sources.length) query = query.in('source_category', sources);
 
-  const { data: rows, count } = await query.range(offset, offset + limit - 1);
+  // facet 與明細同時取：篩選器要照「使用者實際有哪些分類」渲染，故 facet 永遠
+  // 算未篩選的全集——若跟著 ?source= 收斂，選了一個分類就會把其他 chip 弄不見。
+  const [{ data: rows, count }, { data: facetRows }] = await Promise.all([
+    query.range(offset, offset + limit - 1),
+    sb().rpc('reward_source_facets', { p_user_id: user.id }),
+  ]);
 
   const history = (rows ?? []).map((r: any) => ({
-    id:                  r.id,
-    type:                r.type,
-    sourceCategory:      r.source_category,
-    amount:              r.amount,
-    description:         r.description,
-    issuedAt:            r.created_at,
-    requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
-    generation:          r.generation ?? undefined,
-    balance:             r.balance_after,
+    id: r.id,
+    type: r.type,
+    sourceCategory: r.source_category,
+    amount: r.amount,
+    description: r.description,
+    issuedAt: r.created_at,
+    requestedAt: r.type === 'withdrawal' ? r.created_at : undefined,
+    generation: r.generation ?? undefined,
+    balance: r.balance_after,
     // 姓名遮罩與推薦管理共用同一支 maskNameByGen（個資機敏單一真相）：被推薦人的
     // 世代深度＝該筆 generation（第 1 代直推全顯、2/3 代遮罩）；其上線深度＝generation − 1。
-    refereeName:         r.referee_name ? maskNameByGen(r.referee_name, r.generation ?? 1) : undefined,
-    refereeReferrerName: r.referee_referrer_name ? maskNameByGen(r.referee_referrer_name, (r.generation ?? 1) - 1) : undefined,
+    refereeName: r.referee_name ? maskNameByGen(r.referee_name, r.generation ?? 1) : undefined,
+    refereeReferrerName: r.referee_referrer_name
+      ? maskNameByGen(r.referee_referrer_name, (r.generation ?? 1) - 1)
+      : undefined,
+    // 續約獎勵是「下線用免費續約券換的」還是「下線付錢續的」——分類不再分家，
+    // 由這個旗標讓明細第二行仍能註記（見 api-contract 的 viaFreeRenewal）。
+    viaFreeRenewal: r.source_claim_id ? true : undefined,
   }));
 
-  return c.json({
-    success: true,
-    data: { history, total: count ?? 0, limit, offset },
-  } satisfies RewardHistoryResponse);
+  const facets = (facetRows ?? []).map((f: any) => ({
+    sourceCategory: f.source_category,
+    count: Number(f.tx_count),
+  }));
+
+  return c.json(
+    {
+      success: true,
+      data: { history, total: count ?? 0, limit, offset, sources: facets },
+    } satisfies RewardHistoryResponse,
+  );
 });
 
 // ============================================================
@@ -2242,7 +2367,9 @@ function deriveNodeStatus(acct: any, suspendedAt: string | null) {
   const dl = acct?.end_date
     ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
     : null;
-  if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) return { status: 'expiring' as const, daysToExpiry: dl };
+  if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) {
+    return { status: 'expiring' as const, daysToExpiry: dl };
+  }
   return { status: 'active' as const, daysToExpiry: dl };
 }
 
@@ -2274,11 +2401,18 @@ function maskNameByGen(raw: string | null | undefined, gen: number): string {
 // 由各 handler 統一回 500——先前「錯誤靜默轉空樹」會讓使用者誤以為沒有下線。
 const IN_CHUNK = 150;
 async function selectInChunks(
-  client: any, table: string, columns: string, col: string, ids: string[],
+  client: any,
+  table: string,
+  columns: string,
+  col: string,
+  ids: string[],
 ): Promise<any[]> {
   const out: any[] = [];
   for (let i = 0; i < ids.length; i += IN_CHUNK) {
-    const { data, error } = await client.from(table).select(columns).in(col, ids.slice(i, i + IN_CHUNK));
+    const { data, error } = await client.from(table).select(columns).in(
+      col,
+      ids.slice(i, i + IN_CHUNK),
+    );
     if (error) throw new Error(`${table} 查詢失敗: ${error.message}`);
     out.push(...(data ?? []));
   }
@@ -2298,14 +2432,24 @@ async function loadNetwork(client: any, viewerId: string) {
   const gen1Ids = gen1Edges.map((e: any) => e.referee_user_id);
 
   const gen2Edges = gen1Ids.length
-    ? await selectInChunks(client, 'referral_edges',
-        'referee_user_id, referrer_user_id, referred_at', 'referrer_user_id', gen1Ids)
+    ? await selectInChunks(
+      client,
+      'referral_edges',
+      'referee_user_id, referrer_user_id, referred_at',
+      'referrer_user_id',
+      gen1Ids,
+    )
     : [];
   const gen2Ids = gen2Edges.map((e: any) => e.referee_user_id);
 
   const gen3Edges = gen2Ids.length
-    ? await selectInChunks(client, 'referral_edges',
-        'referee_user_id, referrer_user_id, referred_at', 'referrer_user_id', gen2Ids)
+    ? await selectInChunks(
+      client,
+      'referral_edges',
+      'referee_user_id, referrer_user_id, referred_at',
+      'referrer_user_id',
+      gen2Ids,
+    )
     : [];
   const gen3Ids = gen3Edges.map((e: any) => e.referee_user_id);
 
@@ -2328,14 +2472,16 @@ async function loadNetwork(client: any, viewerId: string) {
 
   const [profiles, listings, accounts] = allIds.length
     ? await Promise.all([
-        selectInChunks(client, 'profiles', 'id, name, suspended_at', 'id', allIds),
-        selectInChunks(client, 'listings', 'user_id, id', 'user_id', allIds),
-        selectInChunks(client, 'user_account_status', 'user_id, status, end_date', 'user_id', allIds),
-      ])
+      selectInChunks(client, 'profiles', 'id, name, suspended_at', 'id', allIds),
+      selectInChunks(client, 'listings', 'user_id, id', 'user_id', allIds),
+      selectInChunks(client, 'user_account_status', 'user_id, status, end_date', 'user_id', allIds),
+    ])
     : [[], [], []];
-  const profMap:    Record<string, any> = Object.fromEntries(profiles.map((p: any) => [p.id, p]));
-  const listingMap: Record<string, any> = Object.fromEntries(listings.map((l: any) => [l.user_id, l]));
-  const acctMap:    Record<string, any> = Object.fromEntries(accounts.map((a: any) => [a.user_id, a]));
+  const profMap: Record<string, any> = Object.fromEntries(profiles.map((p: any) => [p.id, p]));
+  const listingMap: Record<string, any> = Object.fromEntries(
+    listings.map((l: any) => [l.user_id, l]),
+  );
+  const acctMap: Record<string, any> = Object.fromEntries(accounts.map((a: any) => [a.user_id, a]));
 
   // 「更新順序」排序鍵：自身與可見子樹（封頂 3 代）最新加入時間。
   // 由深到淺 bottom-up 計算，天生免疫資料異常造成的環。
@@ -2350,13 +2496,22 @@ async function loadNetwork(client: any, viewerId: string) {
   }
 
   return {
-    gen1Ids, gen2Ids, gen3Ids, allIds,
-    childrenOf, parentOf, genOf, joinedAtOf, subtreeMs,
-    profMap, listingMap, acctMap,
+    gen1Ids,
+    gen2Ids,
+    gen3Ids,
+    allIds,
+    childrenOf,
+    parentOf,
+    genOf,
+    joinedAtOf,
+    subtreeMs,
+    profMap,
+    listingMap,
+    acctMap,
     summary: {
-      firstGenCount:  gen1Ids.length,
+      firstGenCount: gen1Ids.length,
       secondGenCount: gen2Ids.length,
-      thirdGenCount:  gen3Ids.length,
+      thirdGenCount: gen3Ids.length,
       totalReferrals: gen1Ids.length + gen2Ids.length + gen3Ids.length,
     },
   };
@@ -2366,18 +2521,21 @@ type Network = Awaited<ReturnType<typeof loadNetwork>>;
 // 扁平節點（/referrals/network/* 的 payload；children 由前端懶載入組裝）
 function buildFlatNode(net: Network, uid: string): NetworkNode {
   const gen = net.genOf.get(uid) ?? 0;
-  const { status, daysToExpiry } = deriveNodeStatus(net.acctMap[uid], net.profMap[uid]?.suspended_at ?? null);
+  const { status, daysToExpiry } = deriveNodeStatus(
+    net.acctMap[uid],
+    net.profMap[uid]?.suspended_at ?? null,
+  );
   const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
   return {
-    userId:       uid,
-    name:         maskNameByGen(net.profMap[uid]?.name, gen),
-    generation:   gen,
+    userId: uid,
+    name: maskNameByGen(net.profMap[uid]?.name, gen),
+    generation: gen,
     status,
     daysToExpiry,
-    endDate:      net.acctMap[uid]?.end_date ?? null,
-    joinedAt:     net.joinedAtOf.get(uid) ?? '',
-    listingId:    net.listingMap[uid]?.id ?? null,
-    childCount:   kids.length,
+    endDate: net.acctMap[uid]?.end_date ?? null,
+    joinedAt: net.joinedAtOf.get(uid) ?? '',
+    listingId: net.listingMap[uid]?.id ?? null,
+    childCount: kids.length,
     subtreeLatestJoinedAt: new Date(net.subtreeMs.get(uid) ?? 0).toISOString(),
   };
 }
@@ -2395,7 +2553,8 @@ function parseSortMode(raw: string | undefined): NetworkSortMode {
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
   const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
   const tie = (a: string, b: string) => {
-    const d = (Date.parse(net.joinedAtOf.get(b) ?? '') || 0) - (Date.parse(net.joinedAtOf.get(a) ?? '') || 0);
+    const d = (Date.parse(net.joinedAtOf.get(b) ?? '') || 0) -
+      (Date.parse(net.joinedAtOf.get(a) ?? '') || 0);
     return d !== 0 ? d : (a < b ? -1 : a > b ? 1 : 0);
   };
   const nameAsc = (a: string, b: string) => {
@@ -2444,18 +2603,21 @@ app.get('/referrals/network/overview', async (c) => {
         (rank[a.status] - rank[b.status]) ||
         ((a.daysToExpiry ?? Infinity) - (b.daysToExpiry ?? Infinity)) ||
         ((Date.parse(b.endDate ?? '') || 0) - (Date.parse(a.endDate ?? '') || 0)) ||
-        (a.userId < b.userId ? -1 : 1));
+        (a.userId < b.userId ? -1 : 1)
+      );
 
-    return c.json({
-      success: true,
-      data: {
-        userReferralCode: code,
-        sort,
-        roots,
-        attention: { total: attentionAll.length, items: attentionAll.slice(0, ATTENTION_LIMIT) },
-        summary: net.summary,
-      },
-    } satisfies NetworkOverviewResponse);
+    return c.json(
+      {
+        success: true,
+        data: {
+          userReferralCode: code,
+          sort,
+          roots,
+          attention: { total: attentionAll.length, items: attentionAll.slice(0, ATTENTION_LIMIT) },
+          summary: net.summary,
+        },
+      } satisfies NetworkOverviewResponse,
+    );
   } catch (err) {
     console.error('[referrals/network/overview] 失敗:', err);
     return c.json({ error: { message: '載入推薦網絡失敗' } }, 500);
@@ -2486,10 +2648,12 @@ app.get('/referrals/network/children', async (c) => {
     const childIds = parentGen >= 3 ? [] : (net.childrenOf[parentId] ?? []).map((k) => k.id);
     const nodes = sortNodeIds(net, childIds, sort).map((uid) => buildFlatNode(net, uid));
 
-    return c.json({
-      success: true,
-      data: { parentId, sort, nodes },
-    } satisfies NetworkChildrenResponse);
+    return c.json(
+      {
+        success: true,
+        data: { parentId, sort, nodes },
+      } satisfies NetworkChildrenResponse,
+    );
   } catch (err) {
     console.error('[referrals/network/children] 失敗:', err);
     return c.json({ error: { message: '載入下線失敗' } }, 500);
@@ -2514,7 +2678,8 @@ app.get('/referrals/network/search', async (c) => {
 
     const qLower = q.toLowerCase();
     const hitIds = net.allIds.filter((uid) =>
-      ((net.profMap[uid]?.name ?? '') as string).toLowerCase().includes(qLower));
+      ((net.profMap[uid]?.name ?? '') as string).toLowerCase().includes(qLower)
+    );
 
     const pathTo = (uid: string): string[] => {
       const path: string[] = [];
@@ -2530,10 +2695,12 @@ app.get('/referrals/network/search', async (c) => {
       .slice(0, SEARCH_LIMIT)
       .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
 
-    return c.json({
-      success: true,
-      data: { query: q, sort, total: hitIds.length, matches },
-    } satisfies NetworkSearchResponse);
+    return c.json(
+      {
+        success: true,
+        data: { query: q, sort, total: hitIds.length, matches },
+      } satisfies NetworkSearchResponse,
+    );
   } catch (err) {
     console.error('[referrals/network/search] 失敗:', err);
     return c.json({ error: { message: '搜尋失敗' } }, 500);
@@ -2565,36 +2732,37 @@ app.get('/tasks', async (c) => {
       .order('month_key', { ascending: false }),
     getRewardConfig(client),
   ]);
-  const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
+  const KING_TARGET = cfg.referralKingThreshold; // 推薦王門檻取自 reward_config
 
-  const monthly        = (progress?.monthly_referrals as Record<string, any>) ?? {};
-  const currentCount   = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
+  const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
+  const currentCount = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth].length : 0;
   const completedMonths = Object.entries(monthly)
-    .filter(([m, v]) => m !== currentMonth && (Array.isArray(v) ? v.length : 0) >= KING_TARGET).length;
+    .filter(([m, v]) => m !== currentMonth && (Array.isArray(v) ? v.length : 0) >= KING_TARGET)
+    .length;
 
   const allRewards = rewardsRows ?? [];
-  const unclaimed   = allRewards.filter((r: any) => r.status === 'unclaimed');
+  const unclaimed = allRewards.filter((r: any) => r.status === 'unclaimed');
 
   const tasks = [{
-    id:          'task_monthly_king',
-    type:        'monthly_king',
-    title:       '推薦王',
+    id: 'task_monthly_king',
+    type: 'monthly_king',
+    title: '推薦王',
     description: `單月推薦${KING_TARGET}位以上用戶`,
-    target:      KING_TARGET,
-    current:     currentCount,
-    completed:   currentCount >= KING_TARGET,
-    reward:      { type: 'free_renewal_year', label: '免費續約 1 年' },
-    progress:    Math.min((currentCount / KING_TARGET) * 100, 100),
-    hasUnclaimedReward:   unclaimed.length > 0,
+    target: KING_TARGET,
+    current: currentCount,
+    completed: currentCount >= KING_TARGET,
+    reward: { type: 'free_renewal_year', label: '免費續約 1 年' },
+    progress: Math.min((currentCount / KING_TARGET) * 100, 100),
+    hasUnclaimedReward: unclaimed.length > 0,
     unclaimedRewardCount: unclaimed.length,
     details: {
       currentMonth,
-      historyCount:     Object.keys(monthly).length,
+      historyCount: Object.keys(monthly).length,
       completedMonths,
       // 累計獲得的免費續約張數（含當月、含已領）。多輪之下這才是誠實的
       // 「完成次數」——completedMonths 只數達標月份、且排除當月，會低估。
-      totalCredits:     allRewards.length,
-    }
+      totalCredits: allRewards.length,
+    },
   }];
 
   return c.json({
@@ -2607,9 +2775,9 @@ app.get('/tasks', async (c) => {
           currentCount,
           completedMonths,
           monthly_referrals: monthly,
-        }
-      }
-    }
+        },
+      },
+    },
   });
 });
 
@@ -2632,14 +2800,14 @@ app.get('/tasks/pending-rewards', async (c) => {
     .order('month_key', { ascending: false });
 
   const data = (rows ?? []).map((r: any) => ({
-    id:          r.id,
-    type:        'monthly_king',
-    rewardType:  'free_renewal_year',
-    amount:      0,
-    achievedAt:  r.granted_at,
-    status:      'pending',
+    id: r.id,
+    type: 'monthly_king',
+    rewardType: 'free_renewal_year',
+    amount: 0,
+    achievedAt: r.granted_at,
+    status: 'pending',
     description: `${r.month_key} 推薦王任務達成：可領取免費續約 1 年`,
-    details:     { monthKey: r.month_key },
+    details: { monthKey: r.month_key },
   }));
 
   return c.json({ success: true, data });
@@ -2660,7 +2828,7 @@ app.get('/tasks/current-month-top', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const limit        = Math.min(parseInt(c.req.query('limit') || '100'), 200);
+  const limit = Math.min(parseInt(c.req.query('limit') || '100'), 200);
   const currentMonth = twCurrentMonth();
 
   const client = sb();
@@ -2671,16 +2839,16 @@ app.get('/tasks/current-month-top', async (c) => {
       .maybeSingle(),
     getRewardConfig(client),
   ]);
-  const KING_TARGET = cfg.referralKingThreshold;  // 推薦王門檻取自 reward_config
+  const KING_TARGET = cfg.referralKingThreshold; // 推薦王門檻取自 reward_config
 
   const monthly = (progress?.monthly_referrals as Record<string, any>) ?? {};
   // 保留 append 順序（每次成功付款推進一位）——UI 每滿第 8 位標
   // 「第N次完成」，順序錯了標記就跟著錯。
   const ids: string[] = Array.isArray(monthly[currentMonth]) ? monthly[currentMonth] : [];
-  const total           = ids.length;
-  const completedCount  = Math.floor(total / KING_TARGET);
+  const total = ids.length;
+  const completedCount = Math.floor(total / KING_TARGET);
   const currentProgress = total % KING_TARGET;
-  const limitedIds       = ids.slice(0, limit);
+  const limitedIds = ids.slice(0, limit);
 
   let nameMap: Record<string, string> = {};
   let codeMap: Record<string, string> = {};
@@ -2689,7 +2857,10 @@ app.get('/tasks/current-month-top', async (c) => {
   if (limitedIds.length) {
     const [{ data: profs }, { data: codes }, { data: rewardRows }] = await Promise.all([
       client.from('profiles').select('id, name').in('id', limitedIds),
-      client.from('referral_codes').select('user_id, code').in('user_id', limitedIds).eq('status', 'active'),
+      client.from('referral_codes').select('user_id, code').in('user_id', limitedIds).eq(
+        'status',
+        'active',
+      ),
       // 本月第 1 代推薦獎勵與 monthly_referrals 是同一次交易寫入
       // （apply_referral_side_effects），依 referee_user_id 一一對應。
       client.from('reward_transactions')
@@ -2700,7 +2871,9 @@ app.get('/tasks/current-month-top', async (c) => {
     ]);
     nameMap = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.name]));
     codeMap = Object.fromEntries((codes ?? []).map((r: any) => [r.user_id, r.code]));
-    createdAtMap = Object.fromEntries((rewardRows ?? []).map((r: any) => [r.referee_user_id, r.created_at]));
+    createdAtMap = Object.fromEntries(
+      (rewardRows ?? []).map((r: any) => [r.referee_user_id, r.created_at]),
+    );
 
     // fallback：極少數第 1 代獎勵寫入失敗（見 apply_referral_side_effects
     // 的 warning-only 隔離）時退回推薦邊建立時間。
@@ -2709,21 +2882,32 @@ app.get('/tasks/current-month-top', async (c) => {
       const { data: edges } = await client.from('referral_edges')
         .select('referee_user_id, referred_at')
         .in('referee_user_id', missingIds);
-      for (const e of edges ?? []) createdAtMap[(e as any).referee_user_id] = (e as any).referred_at;
+      for (const e of edges ?? []) {
+        createdAtMap[(e as any).referee_user_id] = (e as any).referred_at;
+      }
     }
   }
 
   const referrals = limitedIds.map((id) => ({
-    userId:           id,
-    userName:         nameMap[id] ?? '',
+    userId: id,
+    userName: nameMap[id] ?? '',
     userReferralCode: codeMap[id] ?? null,
-    createdAt:        createdAtMap[id] ?? null,
+    createdAt: createdAtMap[id] ?? null,
   }));
 
-  return c.json({
-    success: true,
-    data: { month: currentMonth, total, completedCount, currentProgress, referrals, target: KING_TARGET },
-  } satisfies CurrentMonthReferralsResponse);
+  return c.json(
+    {
+      success: true,
+      data: {
+        month: currentMonth,
+        total,
+        completedCount,
+        currentProgress,
+        referrals,
+        target: KING_TARGET,
+      },
+    } satisfies CurrentMonthReferralsResponse,
+  );
 });
 
 // ============================================================
@@ -2737,10 +2921,14 @@ app.post('/tasks/claim-reward/:id', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   let body: any;
-  try { body = await c.req.json(); } catch { body = {}; }
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
 
-  const rewardId  = c.req.param('id');
-  const idNumber  = (body?.idNumber || '').trim();
+  const rewardId = c.req.param('id');
+  const idNumber = (body?.idNumber || '').trim();
 
   const client = sb();
   if (!(await verifyNationalId(client, user.id, idNumber))) {
@@ -2748,7 +2936,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
   }
 
   const { data, error } = await client.rpc('claim_referral_king_reward', {
-    p_user_id:   user.id,
+    p_user_id: user.id,
     p_reward_id: rewardId,
   });
 
@@ -2759,8 +2947,11 @@ app.post('/tasks/claim-reward/:id', async (c) => {
   if (!data?.success) {
     // suspended（停權）/ subscription_invalid（會籍失效）：領取需帳號正常且會籍有效，
     // 與提領/刊登同一把尺，不可用 credit 免費復活或在停權期間動用。
-    const status = data?.error_code === 'not_found' ? 404
-      : ['forbidden', 'subscription_invalid', 'suspended'].includes(data?.error_code) ? 403 : 400;
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : ['forbidden', 'subscription_invalid', 'suspended'].includes(data?.error_code)
+      ? 403
+      : 400;
     return c.json({ success: false, error: data?.message ?? '領取失敗' }, status);
   }
 
@@ -2768,7 +2959,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
     success: true,
     data: {
       subscriptionId: data.subscriptionId,
-      activeUntil:    data.activeUntil,
+      activeUntil: data.activeUntil,
     },
   });
 });
@@ -2799,7 +2990,7 @@ app.post('/listings/upload-photo', async (c) => {
     return c.json({ error: '檔案不得超過 5MB' }, 400);
   }
 
-  const ext  = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
   const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
   const client = sb();
@@ -2812,7 +3003,9 @@ app.post('/listings/upload-photo', async (c) => {
     return c.json({ error: uploadErr.message || '上傳失敗' }, 500);
   }
 
-  const { data: urlData } = client.storage.from('make-5c6718b9-listings-photos').getPublicUrl(upload.path);
+  const { data: urlData } = client.storage.from('make-5c6718b9-listings-photos').getPublicUrl(
+    upload.path,
+  );
 
   return c.json({ success: true, photoUrl: urlData.publicUrl });
 });
@@ -2824,11 +3017,12 @@ app.get('/referrals/debug/:userId', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const client   = sb();
+  const client = sb();
   const targetId = c.req.param('userId');
 
   // Admin check
-  const { data: prof } = await client.from('profiles').select('is_admin').eq('id', user.id).single();
+  const { data: prof } = await client.from('profiles').select('is_admin').eq('id', user.id)
+    .single();
   if (!prof?.is_admin && user.id !== targetId) {
     return c.json({ error: '僅限管理員' }, 403);
   }
@@ -2840,9 +3034,15 @@ app.get('/referrals/debug/:userId', async (c) => {
     { data: code },
     { data: effectiveStep },
   ] = await Promise.all([
-    client.from('profiles').select('id, name, referred_by_code, registration_step').eq('id', targetId).single(),
+    client.from('profiles').select('id, name, referred_by_code, registration_step').eq(
+      'id',
+      targetId,
+    ).single(),
     client.from('user_account_status').select('status, end_date').eq('user_id', targetId).single(),
-    client.from('referral_edges').select('referee_user_id, referred_at').eq('referrer_user_id', targetId),
+    client.from('referral_edges').select('referee_user_id, referred_at').eq(
+      'referrer_user_id',
+      targetId,
+    ),
     client.from('referral_codes').select('code, status').eq('user_id', targetId).maybeSingle(),
     client.rpc('effective_registration_step', { p_user_id: targetId }),
   ]);
@@ -2850,17 +3050,19 @@ app.get('/referrals/debug/:userId', async (c) => {
   return c.json({
     success: true,
     data: {
-      profile: profile ? {
-        name:                     profile.name,
-        referralCode:             code?.code ?? null,
-        referredByCode:           profile.referred_by_code,
-        registrationStepStored:   profile.registration_step,   // 手動維護的歷史欄位，僅供除錯比對
-        registrationStepEffective: effectiveStep ?? 1,          // 實際生效值（由 payment_orders 即時算出）
-      } : null,
-      accountStatus:     acct,
-      directReferrals:   gen1?.length ?? 0,
+      profile: profile
+        ? {
+          name: profile.name,
+          referralCode: code?.code ?? null,
+          referredByCode: profile.referred_by_code,
+          registrationStepStored: profile.registration_step, // 手動維護的歷史欄位，僅供除錯比對
+          registrationStepEffective: effectiveStep ?? 1, // 實際生效值（由 payment_orders 即時算出）
+        }
+        : null,
+      accountStatus: acct,
+      directReferrals: gen1?.length ?? 0,
       referralCodeStatus: code?.status ?? null,
-    }
+    },
   });
 });
 
