@@ -86,7 +86,7 @@
 
 - **`npm run check` 統一閘門**：`biome && tsc && vitest && knip` 收成一個指令。Claude 不用記四個 runner，也不會跑錯——這是**呼叫端**的 token 節約。
 - **SessionStart bootstrap 在順利路徑上是安靜的**：只有缺 `node_modules`、git hooks 沒掛、TDD 鎖殘留、缺 deno/supabase CLI 時才輸出。SessionStart 的 stdout 會進 context，這個設計刻意不浪費它。
-- **CI 的 `changes` job 路徑過濾 + `ci-ok` 單一匯總閘門**：純文件 PR 不燒重 job，而 required check 只認 `ci-ok`（新增 job 只要進 needs）。註解還記下了 PR #109 的失敗教訓。
+- **CI 的 `ci-ok` 單一匯總閘門**：required check 只認 `ci-ok`（新增 job 只要進 needs，保護規則永遠不用動）。註解還記下了 PR #109 的失敗教訓。（同一個 job 裡的**路徑過濾實際上沒有生效**——見下方 P1。）
 - **`linear-check` 強制線性歷史**，CLAUDE.md 明寫「不要按 GitHub 的 Update branch」——這條**必須**留在全域 context，因為刪掉它 Claude 就會踩。
 - **記憶紀律**：專案決策進 `docs/plans/`（git 為單一事實來源），auto-memory 只放個人操作性學習。這正確處理了官方 auto memory 只載入前 200 行的限制。
 
@@ -215,7 +215,56 @@ CLAUDE.md 已經寫了：
 
 更徹底的做法是把 blackbox 練習移到獨立 repo 或分支——它與本專案無關，留在主線只會持續造成搜尋噪音（且會隨 repo 成長越來越容易被命中）。**建議 deny 先上**（一行、立即生效），搬移看你們對這份練習紀錄的保存意願。
 
-### P2 —— CLAUDE.md 補 compact instructions
+### P1 —— CI 的 `changes` 路徑過濾從未生效（本 PR 意外實測出來）
+
+`ci.yml` 的 `changes` job 用 `dorny/paths-filter@v3`，意圖寫在註解裡：
+
+> 純文件變更依然不燒重的 job，省 runner 的初衷不變。
+
+**這個初衷目前沒有兌現。** 本 PR 只動一個 `docs/*.md` 檔案，`changes` job 的 log 是：
+
+```
+predicate-quantifier: some
+Detected 1 changed files
+Filter code = true
+Matching files:
+docs/claude-code-token-best-practices.md [added]
+```
+
+`code=true` → `build`、`api-tests`、`e2e-tests`、`journey-offline` 四軌全部照跑。
+
+**根因**：`predicate-quantifier` 沒設，取預設值 `some`——語意是「檔案符合**任一** pattern 就算命中」。
+於是 `docs/....md` 命中第一條 `'**'` 就成立，後面三條負向 pattern（`!docs/**`、`!**/*.md`、
+`!.claude/**`）永遠不會被考慮。dorny 官方文件對這個 exclusion 慣用法的說明很明確：**必須**
+搭配 `predicate-quantifier: 'every'`（要求所有 pattern 都成立），負向排除才會作用。
+
+換句話說 `code` 對**任何** PR 都是 `true`，這個 filter 從加入起就沒有 skip 過任何東西。
+
+**這是從 main 退化來的**：main 上用的是 workflow 層 `paths-ignore`，那個是**有效**的（純文件 PR
+根本不觸發 workflow）。develop 改成 job 層過濾的理由是正確的——workflow 層被 ignore 時
+required check 永遠 pending、純文件 PR 會卡死無法合併（註解裡寫了）——但搬遷過程中把實際的
+過濾能力弄丟了。
+
+**修法是一行**：
+
+```yaml
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: every      # ← 缺這行,負向 pattern 全部失效
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.claude/**'
+```
+
+改完要驗證兩個方向，缺一邊就會換一種壞法：純文件 PR 應 skip 四軌而 `ci-ok` 仍綠（`skipped`
+計為通過的邏輯已經寫在 `ci-ok` 裡）；動 `src/**` 的 PR 應照跑四軌。
+
+雖然這一項省的是 CI runner 而不是 context token，但它與本文件同源——**宣稱有的治理其實沒生效，
+比沒有治理更貴**，因為沒人會再去看它。這也是為什麼上面每一項建議都附了驗證方式。
 
 CLAUDE.md 目前沒有壓縮指示。官方建議在 CLAUDE.md 裡指定壓縮時要保留什麼，否則 auto-compact 會按自己的判斷摘要，而本專案 TDD 流程有**特別怕丟的東西**：紅燈 hash 是 PR 的證據，`docs/plans/<slug>/` 的階段狀態是 rehydrate 的依據。
 
@@ -258,6 +307,7 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 | **P0** | `npm run check` 輸出過濾 hook | 新增 `.claude/hooks/check-output-filter.py` + settings.json Bash matcher | 1 小時（含 `test-hooks.py` 案例） | 最高頻漏點：綠燈輸出從數千壓到數十 tok |
 | **P1** | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
 | **P1** | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
+| **P1** | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | 純文件 PR 不再燒四軌 runner（目前全跑） |
 | **P2** | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
 | **P2** | 模型與 effort 分級 | `/fix-bug` skill 的分級段 | 20 分鐘 | thinking token 對齊任務難度 |
 | **P2** | MCP 精簡 + `/context` 習慣 | 操作規範 | 10 分鐘 | 縮小工具清單與誤用面 |
