@@ -51,7 +51,7 @@
 | Hooks 做決定性攔阻 | ✅ 4 個（bash-guard / feature-plan-guard / tdd-test-guard / session-bootstrap） |
 | Hooks 做**輸出前置過濾** | ✅ **已補**（`check-output-filter.py`）；原本 4 個 hook 全是守衛 |
 | 文件按需讀取、不全量預載 | ✅ CLAUDE.md 有「Docs 路徑地圖（需要時才讀，勿全部預載）」——正是官方的 just-in-time 取用 |
-| 權限 allowlist 減少往返 | ✅ settings.json 20 條 allow + 6 條 deny（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile） |
+| 權限 allowlist 減少往返 | ✅ settings.json 20 條 allow + 5 條 deny（`.env` / `supabase/.temp` / 兩個 lockfile） |
 | Subagent 指定較便宜的模型 | ✅ **已補** `model: sonnet` × 4 |
 | CLI 取代 MCP、關掉沒用的 server | ⚠️ 規範**已補**（優先 CLI、只常用 GitHub + Supabase）；關 server 本身需使用者端 `/mcp` 操作 |
 
@@ -75,7 +75,6 @@
 | `supabase/functions/api/index.ts` | **3,081 行、49 條路由、≈ 30,900 tok** | 2,877 行（**+204 行**） |
 | `CLAUDE.md` | 116 行 / ≈ 1,646 tok | 不存在 |
 | `docs/`（不含本文件） | ≈ 39,000 tok | ≈ 38,000 tok |
-| 其中 `docs/blackbox/` | **≈ 14,100 tok** | 同 |
 | `package-lock.json` | ≈ 62,100 tok | ≈ 60,900 tok |
 | `src/components/HomePage.tsx` | 1,028 行 / ≈ 9,900 tok | 1,066 行 |
 | migrations / `*.test.ts` / `.feature` | 46 / 64 / 27 | 45 / 62 / 27 |
@@ -226,29 +225,29 @@ model: sonnet          # ← 追加
 
 同時值得記一筆：`/review-plan` 的 **Plan Mode（不落檔）模式會把規劃全文放進每個 subagent 的 prompt**，等於規劃內容 ×4。這是 fresh-context 扇出的固有代價（也是它避免確認偏誤的原因），不該取消——但它是「規劃書要寫精簡」的一個實際理由。
 
-### ~~P1~~ ✅ 已套用 —— `docs/blackbox/` 是 14,100 tok 的搜尋陷阱
+### ~~P1~~ ✅ 已解決（比原建議更徹底：整個目錄已刪除）—— `docs/blackbox/` 曾是 14,100 tok 的搜尋陷阱
 
-> 已加進 `permissions.deny`，並一併擋掉 `package-lock.json`（≈62,100 tok）與
-> `supabase/functions/deno.lock`。以下保留原始診斷。
+> 本節原建議把 `docs/blackbox/` 加進 `permissions.deny`，已一度照做。但
+> PR #115（2026-07-25 的文件整理）判定這個目錄與本專案零關聯，直接**整個
+> 刪除**——deny 規則因此也失去存在理由，一併移除。CLAUDE.md 那句「禁止
+> 當成規格來源」的警語同一個 PR 也拿掉了。以下保留原始診斷，帶引號的
+> CLAUDE.md 警語現在只是歷史紀錄，不代表目前的 CLAUDE.md 內容。
+>
+> **一個順帶的方法論教訓**：這節分析本身在 PR #115 合併後有一段時間沒
+> 更新過——deny 規則已經是 dead config、上面這段文字還在描述一個已經
+> 不存在的東西，直到後續分析才發現並回頭修。這正是本文件在別處反覆強調
+> 的那個模式（「宣稱有的治理若不生效，比沒有治理更貴」）換了個對象重演：
+> 這次不是治理沒生效，是**文件在治理對象消失後沒有同步退場**。
 
-CLAUDE.md 已經寫了：
+CLAUDE.md 曾經寫著：
 
 > ⚠️ `docs/blackbox/` 是未讀碼的黑箱練習產物，內容與本專案實際功能**無關**，禁止當成規格來源。
 
 問題是這條規則只約束「**當成規格用**」，攔不住它**進 context**。三個檔案共 14,100 tok，檔名是 `01-spec.md` / `02-test-plan.md` / `03-phase3-reconciliation.md`——任何 `grep -r "reconciliation" docs/` 或 Glob `docs/**/*spec*` 都會命中，然後 Claude 讀了才發現不該用。
 
-官方的區分很清楚：**CLAUDE.md 是建議、settings 是強制**。既然這是「絕對不該讀」而非「讀了要小心」，就該落到 settings。而 `settings.json` 的 `permissions.deny` 已經在用這個模式（`.env`、`supabase/.temp`），追加一行即可：
+官方的區分很清楚：**CLAUDE.md 是建議、settings 是強制**。既然這是「絕對不該讀」而非「讀了要小心」，就該落到 settings，而不只是留在 CLAUDE.md 的警語裡。當時 `settings.json` 的 `permissions.deny` 已經在用這個模式（`.env`、`supabase/.temp`），加一行 `Read(./docs/blackbox/**)` 是成本最低的立即止血。
 
-```json
-"deny": [
-  "Read(./.env)",
-  "Read(./.env.*)",
-  "Read(./supabase/.temp/**)",
-  "Read(./docs/blackbox/**)"
-]
-```
-
-更徹底的做法是把 blackbox 練習移到獨立 repo 或分支——它與本專案無關，留在主線只會持續造成搜尋噪音（且會隨 repo 成長越來越容易被命中）。**建議 deny 先上**（一行、立即生效），搬移看你們對這份練習紀錄的保存意願。
+回頭看，**更徹底的做法**（本節原本也提到、當作「看保存意願再做」的選項）才是真正解法：deny-list 只是把噪音擋在 Claude 的搜尋範圍外，目錄本身還在，仍然是每個 clone、每次全庫掃描的常駐成本；直接刪除才是把問題連根移除，而不是持續管理它。
 
 ### ~~P1~~ ✅ 已修 —— CI 的 `changes` 路徑過濾從未生效（本 PR 意外實測出來）
 
@@ -380,7 +379,7 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 | ~~P0~~ ✅ | `api/index.ts` 路由導航（grep 定位 + 分區表） | `.claude/rules/supabase-functions.md`（已 paths-scoped） | 30 分鐘 | 後端任務省 ≈ 25,000 tok；前端 session 零成本 |
 | ~~P0~~ ✅ | `npm run check` 輸出過濾 hook | 新增 `.claude/hooks/check-output-filter.py` + settings.json Bash matcher | 1 小時（含 `test-hooks.py` 案例） | 最高頻漏點：綠燈輸出從數千壓到數十 tok |
 | ~~P1~~ ✅ | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
-| ~~P1~~ ✅ | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
+| ~~P1~~ ✅ | `docs/blackbox/` 曾加進 `permissions.deny`，後改為整個目錄刪除（PR #115） | 目錄已刪除，deny 規則隨之移除 | 1 分鐘（deny）+ 刪除 | 消除 14,100 tok 的搜尋陷阱，且不再需要持續管理 |
 | ~~P1~~ ✅ | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | **已修（PR #113，已合併）**：純文件 PR 不再燒四軌 runner |
 | ~~P2~~ ✅ | pre-commit 綠燈安靜化（`lib-quiet.sh` + `run_gate`） | `scripts/git-hooks/` | 抽包裝器 + 9 條案例 | **已套用**：每次 commit 省下 200+ 行 biome warning |
 | ~~P2~~ ✅ | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
