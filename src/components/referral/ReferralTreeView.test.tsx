@@ -145,11 +145,12 @@ describe('需要關注橫幅（伺服器上限）', () => {
 });
 
 describe('排序控制', () => {
-  it('晶片顯示當前排序的短標籤（收合不佔版面、狀態一眼可見）', () => {
+  it('單層 select：短文案選項存在，且當前排序文字只出現一份（無疊字層）', () => {
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
-    expect(screen.getByText('Z→A')).toBeTruthy();
-    // 完整文案只出現在展開的選單選項中，不撐爆收合列
-    expect(screen.getByRole('option', { name: '姓名：Z → A（筆畫多 → 少）' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '姓名 Z→A' })).toBeTruthy();
+    // 疊字回歸陷阱：先前「晶片 + 透明 select 覆蓋」的雙層結構會讓同一
+    // 文案渲染兩份（focus 時直接印在一起）——單層結構下必須只有一份。
+    expect(screen.getAllByText('姓名 Z→A').length).toBe(1);
   });
 
   it('原生 select 受控於 sort、變更回報 onSortChange', () => {
