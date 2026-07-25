@@ -111,6 +111,77 @@ for branch, path, plan, want, why in PLAN_CASES:
     expect(f"feature-plan-guard[{why}]", plan_guard.decide(branch, path, plan) is not None, want)
 
 
+# ------------------------------------------------------- check-output-filter
+# 這個 hook 不擋東西、只改寫指令,所以 expect() 的語意在這裡是
+# 「是否出手改寫」而不是「是否 deny」。
+out_filter = load("check-output-filter")
+
+FILTER_CASES = [
+    # (指令, 應否改寫, 說明)
+    ("npm run check", True, "統一閘門——最高頻的支出"),
+    ("npm run check:full", True, "送 PR 前的指令"),
+    ("npm test", True, "vitest"),
+    ("npm run test:coverage", True, "覆蓋率"),
+    ("npx vitest run", True, "直接呼叫 vitest"),
+    ("cd supabase/functions && deno task check", True, "Deno 型別檢查"),
+    ("cd supabase/functions && deno task test:unit", True, "Deno 單元測試"),
+    ("npm run check | tail -80", False, "已有 pipe——這就是取回完整輸出的繞過方式"),
+    ("npm run check > out.txt", False, "已自行重導向"),
+    ("npm run check 2>&1 | grep FAIL", False, "已自行處理輸出"),
+    ("npm run build", False, "非驗證指令,輸出本來就短"),
+    ("npm run dev", False, "長跑指令不能包裝"),
+    ("git commit -m 'x'", False, "刻意不含 git commit(不在 allowlist,且常帶 heredoc)"),
+    ("ls -la", False, "無關指令"),
+]
+
+for cmd, want, why in FILTER_CASES:
+    expect(f"check-output-filter[{why}]", out_filter.decide(cmd) is not None, want)
+
+# 安全條件:本 hook 與 bash-guard 掛在同一個 Bash matcher,而它回報的
+# permissionDecision: allow 有可能蓋掉 bash-guard 的 deny。所以 bash-guard
+# 要擋的指令,本 hook 必須不出手。少了這條分支,一條「npm run check &&
+# <危險指令>」就能靠本 hook 的 allow 繞過守衛。
+_danger = "npm run check && git " + "push --for" + "ce origin develop"  # 僅字串,不執行
+expect(
+    "check-output-filter[bash-guard 要擋時不出手,不覆蓋 deny]",
+    out_filter.decide(_danger, guard_denies=True) is not None,
+    False,
+)
+expect(
+    "check-output-filter[上述危險指令確實會被 bash-guard 擋]",
+    bash_guard.decide(_danger) is not None,
+    True,
+)
+
+
+def test_output_filter_preserves_exit_code() -> None:
+    """改寫後的指令必須原樣傳遞 exit code——這是本 hook 唯一的致命失敗模式。
+
+    純函式測不到:`cmd | grep ...` 這種寫法在語法上完全正常,但 exit status
+    會變成 grep/head 的,於是**紅燈會被當成綠燈**。必須真的跑一次才知道。
+    """
+    global checked
+
+    # 把包裝內的真實指令換成 `exit N`:驗的是包裝層對 exit code 的傳遞,
+    # 不是 vitest 本身(那由 vitest 自己的軌負責),因此不依賴 node_modules。
+    for inner, want_rc, label in [
+        ("npm test", 0, "綠燈保留 0"),
+        ("npm test", 1, "紅燈保留非零"),
+    ]:
+        rewritten = out_filter.decide(inner)
+        assert rewritten is not None
+        # 把真正的受測指令換成 true/false:驗的是包裝層的 exit code 傳遞,
+        # 不是 vitest 本身(那由 vitest 自己的 CI 軌負責)。
+        probe = rewritten.replace(f"{{ {inner} ; }}", "{ sh -c 'exit %d' ; }" % want_rc)
+        rc = subprocess.run(["bash", "-c", probe], capture_output=True, text=True).returncode
+        checked += 1
+        if rc != want_rc:
+            failures.append(f"check-output-filter[{label}]: 預期 exit {want_rc},實得 {rc}")
+
+
+test_output_filter_preserves_exit_code()
+
+
 def test_plan_ever_existed() -> None:
     """plan_ever_existed 的真實 git 查詢——在拋棄式 repo 裡驗三種狀態。
 

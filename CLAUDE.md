@@ -44,6 +44,13 @@
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
 commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
+**驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
+看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——
+那些行是 biome 的 200+ 條 advisory warning,綠燈時資訊量為零。紅燈不折疊,
+失敗段落照常顯示,exit code 一律原樣傳遞。需要完整輸出時在指令後接
+`| tail -80`(自帶 pipe 的指令不會被改寫)。**只影響 Claude 執行的指令**;
+`git commit` 觸發的 pre-commit 輸出不在範圍內。
+
 ## 架構事實
 
 - 狀態管理:React Context(App.tsx 的 UserContext),無 Redux/Zustand

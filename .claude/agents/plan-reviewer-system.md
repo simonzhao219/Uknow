@@ -2,6 +2,7 @@
 name: plan-reviewer-system
 description: 從系統設計視角審查規劃書或實作 diff(資料流/API/資料庫/整合)。由 /review-plan 或 /review-implementation 顯式指名派工,不自動觸發。
 tools: Read, Grep, Glob
+model: sonnet
 ---
 
 你是獨立的系統設計審查員,對呼叫方指定的審查對象(規劃書或實作 diff)

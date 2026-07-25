@@ -49,10 +49,10 @@
 | 長流程搬進 skills（按需載入） | ✅ 5 個 skill；`tdd-implement` 還用 `disable-model-invocation: true` 鎖成只能人啟動 |
 | Subagent 隔離高輸出量操作 | ✅ 4 個 fresh-context 審查員，`tools: Read, Grep, Glob`（無 Write/Edit）——工具面收得很緊 |
 | Hooks 做決定性攔阻 | ✅ 4 個（bash-guard / feature-plan-guard / tdd-test-guard / session-bootstrap） |
-| Hooks 做**輸出前置過濾** | ❌ 現有 4 個 hook 全是**守衛**，沒有一個過濾輸出 |
+| Hooks 做**輸出前置過濾** | ✅ **已補**（`check-output-filter.py`）；原本 4 個 hook 全是守衛 |
 | 文件按需讀取、不全量預載 | ✅ CLAUDE.md 有「Docs 路徑地圖（需要時才讀，勿全部預載）」——正是官方的 just-in-time 取用 |
-| 權限 allowlist 減少往返 | ✅ settings.json 20 條 allow + 3 條 deny（`.env` / `supabase/.temp`） |
-| Subagent 指定較便宜的模型 | ❌ 4 個 agent 都沒有 `model:` 欄位，繼承主 session 模型 |
+| 權限 allowlist 減少往返 | ✅ settings.json 20 條 allow + 6 條 deny（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile） |
+| Subagent 指定較便宜的模型 | ✅ **已補** `model: sonnet` × 4 |
 | CLI 取代 MCP、關掉沒用的 server | ⚠️ 未見規範；本 session 連了 8 台，多數與本 repo 無關 |
 
 ### C. 模型與推理層
@@ -86,7 +86,7 @@
 
 - **`npm run check` 統一閘門**：`biome && tsc && vitest && knip` 收成一個指令。Claude 不用記四個 runner，也不會跑錯——這是**呼叫端**的 token 節約。
 - **SessionStart bootstrap 在順利路徑上是安靜的**：只有缺 `node_modules`、git hooks 沒掛、TDD 鎖殘留、缺 deno/supabase CLI 時才輸出。SessionStart 的 stdout 會進 context，這個設計刻意不浪費它。
-- **CI 的 `ci-ok` 單一匯總閘門**：required check 只認 `ci-ok`（新增 job 只要進 needs，保護規則永遠不用動）。註解還記下了 PR #109 的失敗教訓。（同一個 job 裡的**路徑過濾實際上沒有生效**——見下方 P1。）
+- **CI 的 `ci-ok` 單一匯總閘門**：required check 只認 `ci-ok`（新增 job 只要進 needs，保護規則永遠不用動）。註解還記下了 PR #109 的失敗教訓。（同一個 job 裡的路徑過濾原本**完全沒有生效**，已於 PR #113 修復——見下方該節。）
 - **`linear-check` 強制線性歷史**，CLAUDE.md 明寫「不要按 GitHub 的 Update branch」——這條**必須**留在全域 context，因為刪掉它 Claude 就會踩。
 - **記憶紀律**：專案決策進 `docs/plans/`（git 為單一事實來源），auto-memory 只放個人操作性學習。這正確處理了官方 auto memory 只載入前 200 行的限制。
 
@@ -94,7 +94,10 @@
 
 ## 四、剩餘缺口與實踐方案
 
-### P0 —— `api/index.ts` 的導航缺口（唯一還在惡化的問題）
+### ~~P0~~ ✅ 已套用 —— `api/index.ts` 的導航缺口
+
+> 已實作於 `.claude/rules/supabase-functions.md`：grep 定位指令 + 12 段區段表
+> （刻意不寫死行號）。以下保留原始診斷。
 
 3,081 行 / 49 條路由 / **≈ 30,900 tok = 單檔一次讀取吃掉 15% context**。而它在 develop 上**又長了 204 行**。
 
@@ -125,7 +128,11 @@ CLAUDE.md 目前只說「後端單一 Edge Function：`supabase/functions/api/in
 
 根本解是把 49 條路由按領域拆成 `routes/*.ts`，`index.ts` 只留組裝——之後單一領域任務讀 2,000–5,000 tok 就夠。但這是有風險的重構，需 `deno task check` + `deno task test` + e2e 全綠才能收。**建議先做地圖**（近乎零風險、拿到大部分收益），拆分等有其他理由要動這個檔案時搭車。
 
-### P0 —— `npm run check` 輸出未過濾（最高頻的漏點）
+### ~~P0~~ ✅ 已套用 —— `npm run check` 輸出未過濾（最高頻的漏點）
+
+> 已實作於 `.claude/hooks/check-output-filter.py`，接進 settings.json 的 Bash
+> matcher，並在 CLAUDE.md 註明。實作與下方草稿有三處重要差異，見「實作與草稿的
+> 差異」一節。以下保留原始診斷。
 
 這是 develop 上**發生頻率最高**的 token 支出：
 
@@ -171,7 +178,32 @@ print(json.dumps({"hookSpecificOutput": {
 
 **預期效果**：全綠的 64 個測試檔 + biome + knip 輸出，從數千 tok 壓到數十 tok。以「改完必跑」的頻率計，這是單位時間內回報最高的一項。
 
-### P1 —— 4 個審查 subagent 沒指定模型
+#### 實作與草稿的差異（三處，都是實作時才發現的坑）
+
+上面那份草稿**不能直接用**。實作時發現三個問題，其中第一個會造成比它省下的更嚴重的後果：
+
+1. **草稿會吞掉 exit code。** `cmd 2>&1 | grep ... | head -120 || echo '全綠'` 的 exit
+   status 是 pipeline 最後一段的，不是 `cmd` 的——**紅燈會被當成綠燈**。這比不過濾
+   危險得多：省 token 的機制不該有機會謊報成功。實作改成把輸出寫進 `mktemp`、
+   捕捉 `$?`、最後 `exit` 原碼，過濾只決定「顯示什麼」，不影響「成功還是失敗」。
+   `scripts/test-hooks.py` 為此加了一條真的跑一次的案例（純函式測不到這個）。
+2. **回報 `permissionDecision: allow` 可能蓋掉 `bash-guard` 的 deny。** 兩個 hook 掛在
+   同一個 Bash matcher 上，於是 `npm run check && <危險指令>` 有機會靠本 hook 的
+   allow 繞過守衛。實作先問過 `bash-guard.decide()`，它要擋的指令一律不出手。
+   這條也進了表格案例——**它是安全條件，不是最佳化**。
+3. **`git commit` 刻意排除。** 它不在 `permissions.allow` 內，自動 allow 等於偷偷放寬
+   commit 權限；而它常以 heredoc 形式出現，包裝會破壞 heredoc。代價是
+   **pre-commit 自己跑 `npm run check` 的輸出仍未折疊**——而那正是實務上最常見的
+   那坨 200+ 行 biome warning。要治它得改 `scripts/git-hooks/pre-commit` 讓它在
+   綠燈時自己安靜，那是獨立的一件事（見下方 P2 追加項）。
+
+繞過方式收斂為一條：指令自帶 pipe／重導向／heredoc 時一律不改寫，所以
+`npm run check | tail -80` 永遠拿得到完整輸出。
+
+### ~~P1~~ ✅ 已套用 —— 4 個審查 subagent 沒指定模型
+
+> 四個 `.claude/agents/plan-reviewer-*.md` 都已加 `model: sonnet`。
+> 仍建議在下一個 feature 上比對審查品質。以下保留原始診斷。
 
 `.claude/agents/plan-reviewer-*.md` 都沒有 `model:` 欄位，因此**繼承主 session 模型**。而扇出倍率不小：
 
@@ -194,7 +226,10 @@ model: sonnet          # ← 追加
 
 同時值得記一筆：`/review-plan` 的 **Plan Mode（不落檔）模式會把規劃全文放進每個 subagent 的 prompt**，等於規劃內容 ×4。這是 fresh-context 扇出的固有代價（也是它避免確認偏誤的原因），不該取消——但它是「規劃書要寫精簡」的一個實際理由。
 
-### P1 —— `docs/blackbox/` 是 14,100 tok 的搜尋陷阱
+### ~~P1~~ ✅ 已套用 —— `docs/blackbox/` 是 14,100 tok 的搜尋陷阱
+
+> 已加進 `permissions.deny`，並一併擋掉 `package-lock.json`（≈62,100 tok）與
+> `supabase/functions/deno.lock`。以下保留原始診斷。
 
 CLAUDE.md 已經寫了：
 
@@ -307,10 +342,10 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 
 | 優先 | 動作 | 落點 | 成本 | 預期效果 |
 | --- | --- | --- | --- | --- |
-| **P0** | `api/index.ts` 路由導航（grep 定位 + 分區表） | `.claude/rules/supabase-functions.md`（已 paths-scoped） | 30 分鐘 | 後端任務省 ≈ 25,000 tok；前端 session 零成本 |
-| **P0** | `npm run check` 輸出過濾 hook | 新增 `.claude/hooks/check-output-filter.py` + settings.json Bash matcher | 1 小時（含 `test-hooks.py` 案例） | 最高頻漏點：綠燈輸出從數千壓到數十 tok |
-| **P1** | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
-| **P1** | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
+| ~~P0~~ ✅ | `api/index.ts` 路由導航（grep 定位 + 分區表） | `.claude/rules/supabase-functions.md`（已 paths-scoped） | 30 分鐘 | 後端任務省 ≈ 25,000 tok；前端 session 零成本 |
+| ~~P0~~ ✅ | `npm run check` 輸出過濾 hook | 新增 `.claude/hooks/check-output-filter.py` + settings.json Bash matcher | 1 小時（含 `test-hooks.py` 案例） | 最高頻漏點：綠燈輸出從數千壓到數十 tok |
+| ~~P1~~ ✅ | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
+| ~~P1~~ ✅ | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
 | ~~P1~~ ✅ | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | **已修（PR #113，已合併）**：純文件 PR 不再燒四軌 runner |
 | **P2** | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
 | **P2** | 模型與 effort 分級 | `/fix-bug` skill 的分級段 | 20 分鐘 | thinking token 對齊任務難度 |
