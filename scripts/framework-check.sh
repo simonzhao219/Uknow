@@ -52,6 +52,22 @@ for f in scripts/git-hooks/* scripts/*.sh; do
   fi
 done
 
+# 5. Claude Code hooks（settings.json 以 bash/python3 顯式呼叫，驗語法即可）
+for f in .claude/hooks/*.sh; do
+  [ -f "$f" ] || continue
+  if ! bash -n "$f"; then
+    echo "FAIL: $f bash 語法錯誤"
+    fail=1
+  fi
+done
+for f in .claude/hooks/*.py; do
+  [ -f "$f" ] || continue
+  if ! python3 -m py_compile "$f" 2>/dev/null; then
+    echo "FAIL: $f python 語法錯誤"
+    fail=1
+  fi
+done
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi
