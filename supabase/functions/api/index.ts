@@ -7,6 +7,7 @@ import { cors } from 'npm:hono/cors';
 import { etag } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
+import { maskDisplayName } from './mask.ts';
 import {
   twDayOf,
   twMonthKey,
@@ -2199,8 +2200,10 @@ app.get('/rewards/history', async (c) => {
     requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
     generation:          r.generation ?? undefined,
     balance:             r.balance_after,
-    refereeName:         r.referee_name ?? undefined,
-    refereeReferrerName: r.referee_referrer_name ?? undefined,
+    // 姓名遮罩與推薦管理一致（./mask.ts，個資機敏單一真相）：被推薦人的世代深度
+    // ＝該筆 generation（第 1 代直推全顯、2/3 代遮罩）；其上線深度＝generation − 1。
+    refereeName:         r.referee_name ? maskDisplayName(r.referee_name, r.generation ?? 1) : undefined,
+    refereeReferrerName: r.referee_referrer_name ? maskDisplayName(r.referee_referrer_name, (r.generation ?? 1) - 1) : undefined,
   }));
 
   return c.json({
@@ -2303,27 +2306,13 @@ app.get('/referrals/my-tree', async (c) => {
     return { status: 'active' as const, daysToExpiry: dl };
   };
 
-  // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
-  // 英數保留首末、中間固定 •••（不洩漏長度）。
-  const maskName = (raw: string | null | undefined, gen: number): string => {
-    const name = (raw ?? '').trim();
-    if (gen <= 1 || name.length <= 1) return name;
-    const chars = [...name];
-    const hasHan = /[㐀-鿿豈-﫿]/.test(name);
-    if (hasHan) {
-      return chars.length === 2
-        ? chars[0] + '○'
-        : chars[0] + '○'.repeat(chars.length - 2) + chars[chars.length - 1];
-    }
-    return chars.length === 2 ? chars[0] + '•' : chars[0] + '•••' + chars[chars.length - 1];
-  };
 
   const buildNode = (uid: string, gen: number, at: string): any => {
     const { status, daysToExpiry } = deriveStatus(acctMap[uid], profMap[uid]?.suspended_at ?? null);
     const kids = gen < 3 ? (childrenOf[uid] ?? []) : [];
     return {
       userId:       uid,
-      name:         maskName(profMap[uid]?.name, gen),
+      name:         maskDisplayName(profMap[uid]?.name, gen),
       generation:   gen,
       status,
       daysToExpiry,

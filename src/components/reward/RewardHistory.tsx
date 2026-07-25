@@ -6,6 +6,7 @@ import { FilterChip } from '../common/FilterChip';
 import { Calendar, Receipt, Loader2, Users, Gift, TrendingDown, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
+import { formatRewardDetail, isReferralSource } from '../../utils/rewardHistory';
 import type { RewardHistoryRecord as RewardRecord, RewardHistoryResponse, RewardSourceCategory } from '@contract';
 
 interface RewardHistoryProps {
@@ -46,8 +47,6 @@ const SOURCE_FILTERS: RewardSourceCategory[] = [
   'withdrawal',
   'withdrawal_refund',
 ];
-
-const REFERRAL_SOURCES: RewardSourceCategory[] = ['referral_payment', 'referral_task_renewal'];
 
 export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [history, setHistory] = useState<RewardRecord[]>([]);
@@ -193,19 +192,10 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
             ) : (
               history.map((record) => {
                 const meta = SOURCE_META[record.sourceCategory] ?? FALLBACK_META;
-                const isReferral = REFERRAL_SOURCES.includes(record.sourceCategory);
-
-                // 細節行：推薦類用結構化名字快照（migration 0719 0001）；其餘型別原樣顯示
-                // description（乾淨人話，不再切字串反推分類）。
-                let detail = '—';
-                if (isReferral && record.refereeName) {
-                  detail = record.generation && record.generation > 1 && record.refereeReferrerName
-                    ? `${record.refereeName}（${record.refereeReferrerName}）`
-                    : record.refereeName;
-                } else if (record.description) {
-                  detail = record.description;
-                }
-
+                const isReferral = isReferralSource(record.sourceCategory);
+                // 細節行與代數 badge 皆走純函式 / helper（見 utils/rewardHistory）：
+                // 提領重算成「提領 X P + 手續費 15 P」；推薦類用（後端已遮罩的）名字快照。
+                const detail = formatRewardDetail(record);
                 const Icon = meta.Icon;
 
                 return (
