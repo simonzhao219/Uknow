@@ -88,7 +88,14 @@
 「`joinedAt` 降冪 → `userId` 字典序」。換鍵後主鍵與 tie 都是 `joinedAt`,
 主鍵相等時 tie 的時間比較恆為 0、必落到 `userId`,是**全序**。
 殘留:`name_*` 仍吃 `tie()`,同名者次序仍是「新的在前」,與新預設的心智模型
-相反(僅同名時可見)→ 開放問題 #7〔P2-16〕。
+相反(僅同名時可見)。
+
+> **人審裁決(2026-07-25,採納建議)**:`tie()` 的時間比較**改為升冪**。
+> 理由:讓「升冪排完 `reverse()` 得降冪」的機制在**所有鍵上語意一致**——
+> 升冪模式下每一個比較鍵都是升冪,降冪就是整體反轉,不再有一個鍵偷偷反向。
+> 影響面僅限**真名完全相同**的兩人在 `name_*` 下的先後,且**無任何既有測試
+> 釘死**(`network-endpoints.test.ts` L129–143 的姓名測試用的是相異姓名
+> 王大明/Alice/Zoe)。Phase 1 須補一組同名 fixture 把新行為釘死。
 
 **發現 6(伺服器權威在換鍵後變成可選)**:`joinedAt` 未遮罩、每個節點都有,
 換鍵後 `updated_*` 前端完全排得出來,`referralNetwork.ts` L6–7 的分工註解自此
@@ -124,8 +131,9 @@ L18/L39 仍記載它是「三代推薦樹」的資料來源。**三個端點與�
   > 正確理由:維持 API 對外一致性(直接打 API、e2e mock 才觸得到),
   > **Phase 2 不影響前端可見行為**——實作/回滾時勿誤判階段依賴。
 
-  > 建議收斂〔P2-7,見開放問題 #8〕:在 `@contract` 匯出
+  > **人審裁決(2026-07-25,開放問題 #8 = 是)**:在 `@contract` 匯出
   > `DEFAULT_NETWORK_SORT`,四處改讀它,消滅跨 runtime 的四份複本。
+  > 前後端共用同一個常數,日後改預設只需動一處。
 
 - **回應形狀變更(Phase 5)**:移除 `subtreeLatestJoinedAt` 欄位與 `subtreeMs` 計算。
 
@@ -135,6 +143,42 @@ L18/L39 仍記載它是「三代推薦樹」的資料來源。**三個端點與�
   > 真正逼同一 commit 的是 `buildFlatNode`(L2367)宣告了回傳型別 `NetworkNode`,
   > 物件字面量吃 TS excess-property check。結論(同一 commit)不變,但這也暴露
   > 「payload 多餘欄位無任何 runtime 防線」→ Phase 5 必須補執行期斷言(見 §5)。
+
+### 2.3 搜尋不得靜默截斷(人審裁決,開放問題 #2)
+
+**需求方原則(2026-07-25)**:「搜尋一定要搜得到人,而且**符合條件的都應該可以
+搜得到**」——並要求此原則推廣到其他篩選器(首頁、獎勵明細)。
+
+**釐清**:推薦網絡搜尋**已經是後端搜尋**(伺服器用未遮罩真名比對,`index.ts`
+L2516–2517;前端只有遮罩名,本來就搜不了)。破口不在前後端分工,而在
+**`SEARCH_LIMIT = 50` 的應用層截斷 + 前端不顯示總數**——伺服器其實已經回傳
+`total`(`NetworkSearchResponseSchema` L302),但 `ReferralTreeView.tsx` L569–571
+只 map `matches`,`total` 從未被渲染,**截斷完全無感**。
+
+**專案已有正確範例,照抄即可**:
+
+| 位置 | 是否符合原則 | 做法 |
+|---|---|---|
+| `/rewards/history`(獎勵明細)L2183–2208 | ✅ **符合** | DB 端 `.in()` 篩選 + `count:'exact'` + `.range(offset,…)`;UI `RewardHistory.tsx` L281–288 顯示「已顯示 X / Y 筆記錄」+ 載入更多。程式碼註解已明寫此原則 |
+| 推薦網絡 `attention` L2455 | ✅ 符合 | 回傳 `total` + `items`,`AttentionBanner` L279–285 顯示總數與 overflow |
+| 推薦網絡 `search` L2529–2531 | ❌ **違反** | 排序後 `.slice(0, 50)`,`total` 有回傳但 UI 不顯示 |
+| 首頁 `HomePage.tsx` L147–160 | ❌ **違反(潛在)** | 見下 |
+
+**設計(本次採用)**:`/referrals/network/search` 沿用 `/rewards/history` 的既有
+模式,不發明新東西——
+- 端點加 `offset`/`limit` query param(`limit` 上限沿用 200 的既有慣例),
+  回應維持既有的 `total`(全部命中數,**不受 limit 影響**)
+- 前端顯示「已顯示 X / Y 筆」+ 「載入更多」,與 `RewardHistory` 同一模式
+- 排序鍵與方向照本次新規則;因為 `total` 與載入更多都在,**排序方向不再決定
+  「誰搜得到」**,靜默截斷消滅
+
+**首頁的同類破口(不併入本次,獨立 feature)**:`HomePage.tsx` L147–160
+**繞過 Edge Function**,直接以 supabase-js 查 `public_listings`,
+`.select('*')` **無 `limit`、無 `count`**,僅靠 PostgREST 的 `db-max-rows`
+(Supabase 預設 1000)硬截;隨後在**瀏覽器端**做關鍵字/分類/性別/縣市篩選與
+距離排序(L168–240)。刊登數超過該上限後,「符合條件的搜不到」必然發生且無感。
+→ 需改為伺服器端篩選 + 分頁 + total,範圍遠超本次排序器 → 開獨立 feature
+(見開放問題 #12)。
 
 ## 3. 架構影響
 
@@ -180,18 +224,22 @@ L18/L39 仍記載它是「三代推薦樹」的資料來源。**三個端點與�
   - 下拉選單項目順序(`DropdownMenuRadioItem` 迭代 `SORT_OPTIONS`)
   - 觸發器晶片內四個疊放標籤的 DOM 順序(L520–533,`hidden sm:grid` 同格疊放)
   - 晶片寬度不受影響(仍為最寬標籤之寬,四個標籤全數佔位)
-- **手機端狀態可見性缺口**〔P1-6,開放問題 #6〕:排序晶片文字層是 `hidden sm:grid`
-  (L520),手機為純 icon,狀態補償只有「非預設才亮」的琥珀點。新預設「最舊加入」
-  又是反直覺方向(一般清單慣例是新→舊),手機使用者會看到一串最早的人、畫面零線索。
-  A1 驗收因此**明文限縮為 sm+**,手機端解法待裁決。
-- **a11y 既有債會被放大**〔P2-11,開放問題 #6〕:觸發器 `aria-label="排序方式"`
-  (L514)永不含目前排序值;舊預設符合慣例時影響小,改成非慣例預設後,螢幕閱讀器
-  使用者在手機上完全無從得知目前順序。
-- **切排序無載入回饋**〔P2-12,開放問題 #9〕:`setSort`(L123–134)在已有資料時走
-  `isValidating` 而非 `loading`,而 `ReferralManagement.tsx` L16 根本沒解構
-  `isValidating`——晶片文字立刻變、已展開分支立刻收合,但清單原地維持舊順序直到
-  回應才默默重排。既有行為,但改預設後「老使用者上線第一件事就是切回最新加入」
-  會大量觸發這段空窗(LINE 內建瀏覽器更慢)。
+- **手機端狀態可見性**〔P1-6 + P2-11,人審裁決 2026-07-25:採納建議 (b)+(c)〕:
+  排序晶片文字層是 `hidden sm:grid`(L520),手機為純 icon,狀態補償只有
+  「非預設才亮」的琥珀點——這是**刻意的空間決策**(L510–511 註解:短標籤才不會
+  撐爆窄螢幕的搜尋列),不推翻。處置:
+  - **(b) 維持 icon-only**,驗收 A1 **明文限縮為 sm+**(見 §1)
+  - **(c) 修 `aria-label`**:`aria-label="排序方式"`(L514)永不含目前排序值,
+    改成 ``排序方式:${當前選項 label}``——**零視覺變更**,償還既有 a11y 債,
+    讓螢幕閱讀器使用者在手機上也知道目前順序。納入 Phase 5 斷言。
+- **切排序無載入回饋**〔P2-12,人審裁決:**本次處理,不留既有債**〕:
+  `setSort`(L123–134)在已有資料時走 `isValidating` 而非 `loading`,而
+  `ReferralManagement.tsx` L16 **根本沒解構 `isValidating`**——晶片文字立刻變、
+  已展開分支立刻收合,但清單原地維持舊順序直到回應才默默重排。改預設後
+  「老使用者上線第一件事就是切回最新加入」會大量觸發這段空窗(LINE 內建瀏覽器
+  更慢)。處置:`ReferralManagement.tsx` 解構並下傳 `isValidating`,
+  `ReferralTreeView` 於 revalidate 期間降透明度 + `aria-busy`(沿用既有
+  children skeleton L233–243 的視覺語彙,不發明新模式)。
 - 空態、載入態、錯誤態、搜尋列、行動版佈局:**全不變**(三態皆不依賴 sort 值;
   首次載入走全頁 loading,不會先閃舊順序)。
 - 已知取捨:舊排序鍵順帶提供了「某分支有新成員」的隱性提示,改後消失。既有替代
@@ -208,11 +256,15 @@ Phase 1 須加開:王大明下再加一個加入時間早於陳小華的二代�
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | 排序鍵:子樹最新 → 自身 `joinedAt`(含種子加開) | `supabase/functions/api/network-endpoints.test.ts`(Deno) | B1/B2/B4/B5:各層依自身加入時間排、子樹新血不推升上層、同分全序 |
-| 2 | 伺服器預設 → `updated_asc` | 同上 | 無 `sort` 與非法 `sort` 皆回落並回聲 `updated_asc`(不影響前端可見行為) |
-| 3 | 前端預設 → `updated_asc`(兩處回落 + docstring + e2e mock `sort` 回聲)＋ `SORT_OPTIONS` 重排 | `src/utils/referralNetwork.test.ts`(**jsdom**) | 三種回落路徑一致;`SORT_OPTIONS` 首項為 `updated_asc`/「最舊加入」,四項文字不變 |
-| 4 | 指示點基準 + A1 使用者可見層 + 選單順序 | `src/components/referral/ReferralTreeView.test.tsx`(jsdom) | 預設不亮點;`sort=updated_asc` 時 `sort-label` 顯示「最舊加入」;選單四項順序為 最舊/最新/A→Z/Z→A |
-| 5 | 移除死欄位(先收斂型別為 `@contract` re-export) | 兩側測試 + e2e mock + `npm run check` | 回應不得再含該 key(執行期斷言);契約與註解不再描述已不存在的語意 |
+| 1 | 排序鍵 → 自身 `joinedAt` ＋ `tie()` 改升冪 ＋ 種子加開多子節點分支/同名組 | `supabase/functions/api/network-endpoints.test.ts`(Deno) | B1/B2/B4/B5:各層依自身加入時間排、子樹新血不推升上層、同分全序;同名者在 `name_*` 下依升冪時間 |
+| 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | 同上 | 無 `sort` 與非法 `sort` 皆回落並回聲 `updated_asc`(不影響前端可見行為) |
+| 3 | **search 不再靜默截斷**:`offset`/`limit` 分頁,`total` 為全部命中數 | 同上 | 命中 >50 時可分頁取回**全部**;`total` 不受 `limit` 影響;越界 offset 回空陣列不報錯 |
+| 4 | 前端預設 + `SORT_OPTIONS` 重排 + 改讀 `DEFAULT_NETWORK_SORT` + e2e mock `sort` 回聲 | `src/utils/referralNetwork.test.ts`(**jsdom**) | 三種回落路徑一致;`SORT_OPTIONS` 首項為 `updated_asc`/「最舊加入」,四項文字不變 |
+| 5 | 指示點基準 + A1 可見層 + 選單順序 + `aria-label` 含當前排序 | `src/components/referral/ReferralTreeView.test.tsx`(jsdom) | 預設不亮點;`sort-label` 顯示「最舊加入」;選單順序 最舊/最新/A→Z/Z→A;可及名稱含當前排序值 |
+| 6 | search 結果 UI:「已顯示 X / Y 筆」+ 載入更多 | 同上 | 命中 >limit 時顯示總數與載入更多;載完後按鈕消失(比照 `RewardHistory` L281–288) |
+| 7 | 切排序載入回饋(`isValidating` 下傳並呈現) | 同上 | revalidate 期間清單降透明度 + `aria-busy`;回應後恢復 |
+| 8 | 型別收斂 `@contract` re-export ＋ 移除死欄位 | 兩側測試 + e2e mock + `npm run check` | 回應不得再含該 key(**執行期斷言**);契約與註解不再描述已不存在的語意 |
+| 9 | 規格書回填(以 code 為準) | 無測試落點(文件) | §3.2.3 補排序器規格;`supabase/README.md` L18/L39 更正 |
 
 實作要點:
 
@@ -221,17 +273,21 @@ Phase 1 須加開:王大明下再加一個加入時間早於陳小華的二代�
   期望值變 `[Zoe, Alice, 王]`、Phase 2 改預設後又變回 `[王, Alice, Zoe]`,同一批
   斷言連翻兩次。改為顯式參數後,「排序鍵」與「預設值」各自只被一個測試釘住,
   Phase 2 只需驗 `sort` 回聲。
-- **Phase 3 落點是 jsdom 不是 node**〔P2-9〕:`referralNetwork.test.ts` L1 已有
+- **Phase 4 落點是 jsdom 不是 node**〔P2-9〕:`referralNetwork.test.ts` L1 已有
   `// @vitest-environment jsdom` pragma(`readStoredSort` 用 localStorage)。
-- **Phase 5 的紅燈是執行期斷言**〔P1-2〕:`assert(!('subtreeLatestJoinedAt' in node))`
+- **Phase 8 的紅燈是執行期斷言**〔P1-2〕:`assert(!('subtreeLatestJoinedAt' in node))`
   加在既有 overview 測試內。純刪欄位只得到 typecheck 紅,而
   `tdd-implement/SKILL.md` L30/L34 明訂「typecheck 紅不叫紅燈」;這條斷言同時是
   唯一能證明欄位真的離開 payload 的 runtime 防線。
-- **e2e mock 的 `sort` 回聲屬 Phase 3**(L306/L312/L640),欄位移除才屬 Phase 5
+- **e2e mock 的 `sort` 回聲屬 Phase 4**(L306/L312/L640),欄位移除才屬 Phase 8
   〔P2-10〕。實測既有 e2e 不會紅:`referral_steps.py` L24 種下的 `updated_desc`
   快取會被判為 miss,但情境斷言的是「新成員文字出現」,重新請求後照樣通過。
-- Phase 5 須在 Phase 1 之後(換鍵後 `sortNodeIds` 才與 `subtreeMs` 解耦),
+- Phase 8 須在 Phase 1 之後(換鍵後 `sortNodeIds` 才與 `subtreeMs` 解耦),
   且可獨立 revert 而不會把排序鍵拉回舊語意。
+- **Phase 3 與 6 是一組**(後端分頁 + 前端呈現),但刻意分成兩個紅綠循環:
+  Phase 3 證明「取得得到全部」,Phase 6 證明「使用者知道還有多少」。
+- Phase 9 是文件,無測試落點——**不得**與程式碼階段合併 commit,以免規格書
+  變更混在行為變更的 diff 裡看不出來。
 
 **既有測試受影響清單**(需求變更導致的預期值變更,須連同測試標題/註解一起改寫,
 禁止改測試遷就實作):
@@ -256,50 +312,57 @@ Phase 1 須加開:王大明下再加一個加入時間早於陳小華的二代�
 - [x] **#3 下拉選項是否重排**〔原建議「不重排」被推翻〕→ **重排,預設項置頂**:
       順序改為 最舊加入 / 最新加入 / 姓名 A→Z / 姓名 Z→A(見 §4)
 
-**待裁決**:
+- [x] **#1 規格書回填** → **要,且「以 code 為準」回填**:§3.2.3 補排序器規格
+      (四模式、預設 `updated_asc`、逐代各自依自身 `joinedAt` 排序、降冪 = 升冪反轉、
+      姓名混排規則、`joinedAt` 的定義見 #10);併入 `supabase/README.md` L18/L39
+      對 `referral_tree()` 的過時描述更正〔P2-17〕。→ Phase 9。
+- [x] **#2 search 靜默截斷**〔P1-1〕→ **原則:符合條件的都必須搜得到**。
+      設計沿用專案既有的 `/rewards/history` 模式(伺服器端篩選 + `total` +
+      offset 分頁 + UI「已顯示 X / Y」+ 載入更多),詳見 **§2.3**。→ Phase 3 + 6。
+- [x] **#4 失去的「分支有新血」提示** → **本次不補**,替代管道見 §4。
+- [x] **#5 移除死欄位是否併入本次** → **併入**(Phase 8),可獨立 revert。
+- [x] **#6 手機端排序狀態可見性**〔P1-6 + P2-11〕→ 採納建議 **(b)+(c)**:
+      維持 icon-only(空間是刻意決策)、A1 驗收限縮 sm+、`aria-label` 改為含
+      當前排序值。詳見 §4。→ Phase 5。
+- [x] **#7 `tie()` 的方向殘留**〔P2-16〕→ 採納建議:**`tie()` 改升冪**,
+      讓所有比較鍵在升冪模式下方向一致。詳見 §2.1 發現 5。→ Phase 1。
+- [x] **#8 預設值收斂為單一來源**〔P2-7〕→ **是**:`@contract` 匯出
+      `DEFAULT_NETWORK_SORT`,四處改讀它。→ Phase 2 + 4 + 5。
+- [x] **#9 切排序的無回饋空窗**〔P2-12〕→ **本次處理,不留既有債**:
+      下傳 `isValidating`,revalidate 期間降透明度 + `aria-busy`。→ Phase 7。
+- [x] **#10 `joinedAt` 的語意**〔系統視角〕→ **接受現況**:`joinedAt` 即
+      `referral_edges.referred_at`(推薦邊建立時間),換推薦人 rewire 時
+      **不更新**該時間戳(`20260724000004_…sql` L87–92),因此被 rewire 過來的
+      下線會帶著較早的時間、排在該上線清單前段。此語意於 Phase 9 明文寫進規格書,
+      不另訂 rewire 時間語意。
 
-- [ ] **#1 規格書回填**:§3.2.3 對排序器無任何描述,本次改的是使用者可見行為。
-      要不要一併把排序器規格(四模式、預設、逐代自排語意、`joinedAt` 的定義)寫進
-      規格書?併入範圍建議含 `supabase/README.md` L18/L39 對 `referral_tree()` 的
-      過時描述〔P2-17〕。(建議:要。)
-- [ ] **#2 search 命中 >50 時保留哪一批**〔**P1-1,本次最實質的行為缺口**〕:
-      search 在**排序後**才 `slice(0, SEARCH_LIMIT=50)`(L2529–2531),排序鍵與
-      預設方向一改,「哪 50 個人搜得到」就跟著換——預設轉 asc 後回傳的是**最舊的
-      50 位**,大網絡中最新加入的下線會直接搜不到,而 UI 只 render `matches`、
-      不顯示 `total`(L569–571),**截斷是靜默的**。
-      → 需裁決:(a) search 固定用「最新在前」;(b) 先取前 50 再排序;(c) 維持現狀
-      並顯示 total/截斷提示。並在測試補一個 >50 的命中集把決定釘死。
-- [ ] **#4 失去的「分支有新血」提示**要不要補?(建議:**本次不補**,替代管道見 §4。)
-- [ ] **#5 Phase 5(移除死欄位)是否併入本次**?(建議:**併入**——留著會讓契約
-      註解說著已不存在的語意。若要拆,Phase 1–4 可獨立出貨。)
-- [ ] **#6 手機端排序狀態可見性**〔P1-6 + P2-11〕:(a) 手機也顯示當前排序短標籤
-      (晶片已用 grid 疊放取得固定寬,不會抖動);(b) 維持 icon-only,A1 驗收限縮
-      sm+;(c) 至少把 `aria-label` 改成含當前排序值(零視覺變更、償還既有 a11y 債)。
-      (依需求方「這次只改排序」的範圍偏好,傾向 (b)+(c)。)
-- [ ] **#7 `tie()` 的方向殘留**〔P2-16〕:`name_*` 仍吃「`joinedAt` 降冪」的 tie,
-      同名者次序仍是「新的在前」,與新預設心智模型相反(僅同名時可見)。
-      → 動核定行為 vs 明記為刻意不動。
-- [ ] **#8 預設值是否收斂為單一來源**〔P2-7〕:在 `@contract` 匯出
-      `DEFAULT_NETWORK_SORT`,四處改讀它。(建議:要,順手償還跨 runtime 複本。)
-- [ ] **#9 切排序的無回饋空窗**〔P2-12〕:本次以既有 `isValidating` 補骨架/降透明度,
-      或判定為既有債另案處理(**要明文記錄,不留白**)。
-- [ ] **#10 `joinedAt` 的語意**〔需人工裁決,系統視角〕:`joinedAt` 取自
-      `referral_edges.referred_at`,而換推薦人續約時 rewire **只改
-      `referrer_user_id`、不更新 `referred_at`**
-      (`20260724000004_apply_referral_side_effects_pair_history.sql` L87–92)——
-      被 rewire 過來的下線帶著更早的時間戳,在新預設下會直接坐上該上線清單的第一位,
-      語意像「最早加入我的網絡」但事實不是。
-      → 接受(並在 #1 回填時寫明 `joinedAt` = 推薦邊建立時間)或另訂 rewire 時間語意。
-- [ ] **#11 「最舊加入」當預設的理由**〔需人工裁決,UI/UX 視角〕:規劃書未記錄理由,
-      也未檢驗長清單情境——一代 roots 由 overview 一次全回、前端 `roots.map` 全數
-      渲染(**無分頁/虛擬化**),下線多的人新加入者永遠沉在最底,手機要滑到底。
-      → 回填需求方的真實理由(合理推測:「舊→新 ≈ 續約到期先後」,若屬實則此預設
-      站得住腳),並確認下線數量大時的預期行為。**理由不入檔,下一個人會當 bug 改回去。**
+**仍待回覆(不阻擋開工,但 Phase 9 需要)**:
+
+- [ ] **#11a 「最舊加入」當預設的理由**〔需求方確認〕:目前無任何地方記錄理由,
+      日後極可能被當成 bug 改回「最新在上」(一般清單慣例)。
+      **待確認的推測**:「舊→新 ≈ 續約到期的先後」——會籍多為一年期,越早加入越早
+      到期,而本頁核心用途偏「維護既有下線」(AttentionBanner 置頂、列右側優先顯示
+      到期倒數)。需求方確認後即照此寫入規格書(Phase 9);若理由不同請提供。
+- [x] **#11b 長清單無虛擬化** → **本次不做虛擬化**:一代 roots 由 overview 一次
+      全回、`roots.map` 全數渲染,新加入者在新預設下永遠沉在最底。緩解來自 #2
+      ——搜尋修好後「找特定的人」本就該用搜尋而非滑清單。明文記錄門檻:
+      **一代下線 > 100 人**時另開效能 feature 處理(分頁或虛擬化)。
+- [ ] **#12 首頁篩選器的同類破口**(§2.3)〔獨立 feature,不併入本次〕:
+      `HomePage.tsx` L147–160 繞過 Edge Function 直接查 `public_listings`,
+      `.select('*')` 無 `limit`/`count`,僅靠 PostgREST `db-max-rows`(Supabase
+      預設 1000)硬截,再於**瀏覽器端**篩選——刊登數超過上限後「符合條件的搜不到」
+      必然發生且無感。需改為伺服器端篩選 + 分頁 + total。
+      → 建議另開 `feature/homepage-server-side-filter`。
+      (獎勵明細 `/rewards/history` **已符合原則**,無須變更。)
 
 ## 7. 風險與回滾
 
-- **最壞情況**:排序順序不如需求方預期(尤其 #2 的 search 截斷決策)。影響僅止於
-  清單呈現順序——不涉及金流、獎勵計算、權限或資料寫入,**無資料面不可逆風險**。
+- **最壞情況**:排序順序不如需求方預期。影響僅止於清單呈現順序——不涉及金流、
+  獎勵計算、權限或資料寫入,**無資料面不可逆風險**。
+- **範圍已擴大**(相對於 v1 的 5 階段):新增 search 分頁(Phase 3+6)、載入回饋
+  (Phase 7)、預設值收斂(貫穿)、規格書回填(Phase 9)。其中 **Phase 3+6 是唯一
+  改變 API 契約的部分**(`search` 新增 `offset`/`limit` param)——純加法、
+  舊呼叫不帶參數時行為等同現狀的第一頁,向後相容。
 - **回滾**:純程式碼變更,無 migration、無資料轉換、無 localStorage 格式變更 →
   `git revert` 即完全復原。已存 `updated_asc` 的使用者在回滾後仍是合法值。
 - **部署偏移**〔P2-2 理由更正〕:前端(Cloudflare Pages)與 Edge Function 分開部署。
