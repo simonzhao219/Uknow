@@ -56,7 +56,9 @@ function parseDay(day: string): [number, number, number] {
 }
 
 function fmtDay(y: number, m: number, d: number): string {
-  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${
+    String(d).padStart(2, '0')
+  }`;
 }
 
 /** 日曆日 + n 天（純日期運算，與時區無關） */

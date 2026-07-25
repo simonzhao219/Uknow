@@ -11,8 +11,8 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
-  payForUser,
   getActiveReferralCode,
+  payForUser,
 } from './test-helpers.ts';
 
 Deno.test('repair_orphaned_claim_rewards：補回任務續約缺漏的上線三代獎勵，冪等', async () => {
@@ -46,7 +46,8 @@ Deno.test('repair_orphaned_claim_rewards：補回任務續約缺漏的上線三�
 
     // A 領取 credit → 正常情況會 cascade 發 upline 一筆 gen1
     assertEquals(
-      (await client.rpc('claim_referral_king_reward', { p_user_id: a.id, p_reward_id: credit!.id })).error,
+      (await client.rpc('claim_referral_king_reward', { p_user_id: a.id, p_reward_id: credit!.id }))
+        .error,
       null,
     );
 
@@ -63,7 +64,9 @@ Deno.test('repair_orphaned_claim_rewards：補回任務續約缺漏的上線三�
     assertEquals(gone.data?.length ?? 0, 0, '前置：cascade 獎勵應已被刪');
 
     // 自癒：repair 應把缺漏的續約獎勵補回。
-    const { error: repairErr } = await client.rpc('repair_orphaned_claim_rewards', { p_user_id: a.id });
+    const { error: repairErr } = await client.rpc('repair_orphaned_claim_rewards', {
+      p_user_id: a.id,
+    });
     assertEquals(repairErr, null, `repair 呼叫失敗: ${repairErr?.message}`);
 
     const after = await client

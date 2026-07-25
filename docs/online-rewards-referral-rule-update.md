@@ -271,6 +271,12 @@ end;
 - `MonthlyKingProgress.tsx`：列表＝新人清單；「溢出機制」文案改為「每滿 8 位新人得一張、可累積多張」（後端追上，不再超額承諾）。
 - **【複審 E】** `PendingRewardsSection.tsx` / `ClaimRewardDialog.tsx`：支援「**驗證一次、批次領取全部待領 credit**」，避免每張都要重跑身分證驗證；`SubscriptionStatusCard` 明確顯示「累計延展至 20XX 年」讓年份堆疊可被理解。
 - `RewardHistory.tsx`：顯示任務續約獎勵新 description（第 N 代・任務續約）。
+- **【0725 修訂】** 獎勵明細的來源分類改用本文件的語彙軸（**招募新人 vs 留存續約**），
+  而非冪等鍵：`referral_signup`（獎勵-推薦新人）／`referral_renewal`（獎勵-子代續約）。
+  付款續約與任務免費續約同屬「續約」，兩者的差別改由 `viaFreeRenewal` 旗標在明細
+  第二行註記「・任務免費續約」。「新人」採**配對視角**（該收獎者 × 該被推薦人的第一筆
+  獎勵），與 4.4 的 pair-history 同源——`is_renewal` 是付款人的全域屬性，換線時會對
+  新上線給錯答案。見 migration `20260725000002_reward_source_lifecycle.sql`。
 - `ReferralGuide.tsx` / `TaskGuide.tsx`：把「何時 +1 / 何時 100P」與 pair-history（換線／換回）規則講白。
 
 ---

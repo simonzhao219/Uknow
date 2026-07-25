@@ -29,8 +29,8 @@ import {
 } from './test-helpers.ts';
 import {
   assertShape,
-  NetworkOverviewResponseSchema,
   NetworkChildrenResponseSchema,
+  NetworkOverviewResponseSchema,
   NetworkSearchResponseSchema,
 } from '../_shared/api-contract.ts';
 
@@ -63,13 +63,13 @@ async function seedPaidUser(name: string, referredByCode?: string) {
 
 const viewer = await seedPaidUser('Network Viewer');
 const vCode = await getActiveReferralCode(client, viewer.id);
-const g1a = await seedPaidUser('王大明', vCode);       // 一代，最早
-const g1b = await seedPaidUser('Alice', vCode);        // 一代
+const g1a = await seedPaidUser('王大明', vCode); // 一代，最早
+const g1b = await seedPaidUser('Alice', vCode); // 一代
 const g1aCode = await getActiveReferralCode(client, g1a.id);
-const g2 = await seedPaidUser('陳小華', g1aCode);      // 二代（將被停權）
+const g2 = await seedPaidUser('陳小華', g1aCode); // 二代（將被停權）
 const g2Code = await getActiveReferralCode(client, g2.id);
-const g3 = await seedPaidUser('𠮷', g2Code);           // 三代（王大明分支的新血；astral 字元回歸陷阱）
-const g1c = await seedPaidUser('Zoe', vCode);          // 一代，最晚加入
+const g3 = await seedPaidUser('𠮷', g2Code); // 三代（王大明分支的新血；astral 字元回歸陷阱）
+const g1c = await seedPaidUser('Zoe', vCode); // 一代，最晚加入
 
 // 停權陳小華：attention 素材 + 停權狀態遮罩/標示驗證
 {
@@ -85,11 +85,13 @@ seeded.push(stranger.id);
 const token = await getUserAccessToken(client, viewer.email);
 
 Deno.test('未帶 token 一律 401', async () => {
-  for (const path of [
-    '/referrals/network/overview',
-    `/referrals/network/children?parentId=${viewer.id}`,
-    '/referrals/network/search?q=x',
-  ]) {
+  for (
+    const path of [
+      '/referrals/network/overview',
+      `/referrals/network/children?parentId=${viewer.id}`,
+      '/referrals/network/search?q=x',
+    ]
+  ) {
     const { status } = await getJson(path);
     assertEquals(status, 401, `${path} 未授權應回 401`);
   }
@@ -133,7 +135,11 @@ Deno.test('overview：name 排序——A→Z 英文組在前；Z→A = 完全反
   assertEquals(ascParsed.data.roots.map((r) => r.userId), [g1b.id, g1c.id, g1a.id]);
 
   const desc = await getJson('/referrals/network/overview?sort=name_desc', token);
-  const descParsed = assertShape(NetworkOverviewResponseSchema, desc.body, 'GET overview name_desc');
+  const descParsed = assertShape(
+    NetworkOverviewResponseSchema,
+    desc.body,
+    'GET overview name_desc',
+  );
   assertEquals(
     descParsed.data.roots.map((r) => r.userId),
     [...ascParsed.data.roots.map((r) => r.userId)].reverse(),

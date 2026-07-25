@@ -7,7 +7,13 @@
 // 污染其他測試檔（deno test 預設循序執行，還原後即互不影響）。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
-import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  getActiveReferralCode,
+  payForUser,
+} from './test-helpers.ts';
 
 Deno.test('reward_config：改表即改發獎額度與推薦王門檻（單一真相）', async () => {
   const client = adminClient();
@@ -35,7 +41,10 @@ Deno.test('reward_config：改表即改發獎額度與推薦王門檻（單一�
 
     // 付 2 個下線（= 新門檻）
     for (let i = 0; i < 2; i++) {
-      const referee = await createTestUser(client, { name: `Config Referee ${i}`, referredByCode: refCode });
+      const referee = await createTestUser(client, {
+        name: `Config Referee ${i}`,
+        referredByCode: refCode,
+      });
       refereeIds.push(referee.id);
       const { error: payErr } = await payForUser(client, referee.id);
       assertEquals(payErr, null, `referee ${i} 付款失敗: ${payErr?.message}`);

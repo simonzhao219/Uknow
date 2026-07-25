@@ -11,8 +11,8 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
-  payForUser,
   getActiveReferralCode,
+  payForUser,
 } from './test-helpers.ts';
 
 Deno.test('claim 免費續約 credit → 上線得三代 100P（source_claim_id 冪等），不 +1 task', async () => {
