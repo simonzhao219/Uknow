@@ -143,12 +143,10 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | **訂閱中 (active)** | 付款成功且 `now() <= end_date` | ✅ 顯示 | ✅ 可推廣 | ✅ 正常領取 | ✅ 可提領 | ✅ 持續進行 |
 | **完全失效 (expired)** | `now() > end_date` | ❌ 隱藏 | ✅ 碼仍有效 | ✅ 保留不歸零 | ❌ 不可 | 保留不歸零 |
 
-> **不提供自助取消訂閱（已定案的產品決策，非落差）**：一次性年費、
-> 無自動續扣，沒有「續扣」可停——不續約即到期失效（`now() > end_date`），
-> 使用者不需要、也不會有取消入口。此決策已確認，**不必再列為待實作項**。
-> `subscriptions.is_canceled` 因此是 vestigial 欄位：自始不被任何流程寫入
-> 或讀取，僅保留以避免破壞性 migration（`user_account_status` view 原樣
-> 帶出、無消費者）。實際狀態永遠只有 active／expired 兩態。
+> `subscriptions.is_canceled` 為 vestigial 欄位：一次性年費、無自動續扣，
+> 沒有「續扣」可停，自始不被任何流程寫入或讀取，僅保留以避免破壞性
+> migration（`user_account_status` view 原樣帶出、無消費者）。實際狀態
+> 永遠只有 active／expired 兩態。
 > 〔實作〕`20260721000003_mark_is_canceled_vestigial.sql`
 
 ### 5.1 失效狀態的詳細語意
