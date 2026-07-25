@@ -176,9 +176,32 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  * 舊回應是 { data: { transactions } }，前端讀 { data: { history, total,
  * limit, offset } }；這裡固定新格式，後端與前端都以此為準。
  */
+/**
+ * 獎勵明細來源分類（view 衍生欄 source_category，見 migration 0725 0001）。
+ * 分辨/篩選點數來源的單一詞彙表，前後端共享：SQL 用 CASE 產出、edge 直通、
+ * 前端讀 enum——取代前端切 description 反推分類的舊反模式。
+ *   referral_payment       下線付款帶來的推薦獎勵（source_claim_id 為 null）
+ *   referral_task_renewal  下線用任務免費續約帶來的推薦獎勵（source_claim_id 非 null）
+ *   withdrawal             點數提領扣款
+ *   withdrawal_refund      提領退件退款（adjustment 且綁 withdrawal_id）
+ *   adjustment_manual      人工調整（目前無端點產生，保留；前端不列為篩選）
+ */
+export const REWARD_SOURCE_CATEGORIES = [
+  'referral_payment',
+  'referral_task_renewal',
+  'withdrawal',
+  'withdrawal_refund',
+  'adjustment_manual',
+] as const;
+export const RewardSourceCategorySchema = literals(...REWARD_SOURCE_CATEGORIES);
+export type RewardSourceCategory = Infer<typeof RewardSourceCategorySchema>;
+
 export const RewardHistoryRecordSchema = obj({
   id:          str(),
   type:        str(), // referral_reward | task_monthly_king | withdrawal | adjustment（資料庫值直通）
+  // 來源分類（view source_category 衍生欄）：分辨/篩選點數來源的結構化真相，
+  // 取代前端切 description 反推分類。見 migration 0725 0001。
+  sourceCategory: RewardSourceCategorySchema,
   amount:      num(),
   description: str(),
   issuedAt:    str(),
