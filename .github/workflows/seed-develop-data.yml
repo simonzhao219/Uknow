@@ -126,14 +126,38 @@ jobs:
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
             FRONTEND_URL="http://localhost:3100"
-          # 45 人註冊會發 45 封 OTP 信，內建 SMTP 的預設額度是個位數。
-          # OTP 實際由 Admin API 取得，信收不收得到無所謂，但限流會擋住註冊本身。
+          # 兩件事一起設：
+          # 1. rate_limit_email_sent：45 人註冊會發 45 封 OTP 信，內建 SMTP 的
+          #    預設額度是個位數。OTP 實際由 Admin API 取得，信收不收得到無所謂，
+          #    但限流會擋住註冊本身。
+          # 2. mailer_autoconfirm=false：develop 分支原本把 email 確認關掉了
+          #    （與正式站不一致）。自動確認的帳號讓 Admin API 的
+          #    generate_link(type=signup) 回 422——run 30175036725 就是這樣死在
+          #    A0。前端的註冊流程本來就有 OTP 那一步，關掉確認等於 develop 的
+          #    註冊 UX 與正式站不同，順手改回來。
           curl -sf -X PATCH \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
-            -d '{"rate_limit_email_sent": 200}' \
+            -d '{"rate_limit_email_sent": 200, "mailer_autoconfirm": false}' \
             || echo "::warning::auth rate limit 調整失敗——45 人建樹可能撞 email 限流"
+
+      # 種資料不是冪等的：root 用固定 email，已存在時 GUI 註冊入口會切換成
+      # 登入表單，建樹會以一個難懂的畫面錯誤死在第 0 代（run 30175036725 的
+      # 殘留就是這樣留下的）。與其讓人事後從截圖反推，不如開跑前就講清楚。
+      - name: 前置檢查（root email 尚未存在於目標分支）
+        run: |
+          set -uo pipefail
+          users="$(curl -sS \
+            -H "apikey: $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" \
+            "https://${{ steps.branch.outputs.ref }}.supabase.co/auth/v1/admin/users?per_page=1000")"
+          if echo "$users" | grep -q "\"email\":\"${{ inputs.root_email }}\""; then
+            echo "::error::${{ inputs.root_email }} 已存在於 develop 分支——種資料不是冪等的。"
+            echo "::error::要重種請先清除既有資料（見 workflow 摘要的 cleanup 指令），"
+            echo "::error::或改用不同的 root_email 執行。"
+            exit 1
+          fi
 
       - name: 安裝 Node 24
         uses: actions/setup-node@v4
