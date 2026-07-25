@@ -138,6 +138,15 @@ def browser_no_native_share(context):
     disable_native_share(context)
 
 
+@given("I am on a 375px-wide phone screen")
+def phone_screen_375(page):
+    # 375×812 = iPhone X~13 mini,主流機種裡最窄的一群,也是
+    # test_overflow_sweep.py 巡檢用的同一個寬度——兩邊看到的版面一致。
+    # 刻意與 profile_steps.py 的 390px「mobile-sized screen」分開命名:那條
+    # 是為了重現需要「矮」視窗才會出現的對話框問題,關心的是高度。
+    page.set_viewport_size({"width": 375, "height": 812})
+
+
 @given(parsers.parse('I visit "{path}"'))
 @when(parsers.parse('I visit "{path}"'))
 def visit(page, path):
@@ -178,6 +187,24 @@ def reopened_still_verifying(reopened_page, email):
 @then(parsers.parse('I should see a toast containing "{message}"'))
 def should_see_toast(page, message):
     expect(page.get_by_test_id("toast").filter(has_text=message).last).to_be_visible(timeout=5_000)
+
+
+@then("the toast should stay within the screen")
+def toast_stays_within_screen(page):
+    # Toast 是 position: fixed,不會把頁面撐出橫向捲軸——所以「整頁有沒有
+    # 捲軸」這種檢查看不到它超出視窗,只能直接量它的盒子對視窗邊界。
+    # (ToastContainer 曾經沒有寬度上限,長訊息會撐到 500px 並置中掛在畫面
+    #  外,375px 下左右各溢出 63px、兩端文字被切掉。)
+    toast = page.get_by_test_id("toast").last
+    expect(toast).to_be_visible(timeout=5_000)
+    box = toast.bounding_box()
+    viewport_w = page.viewport_size["width"]
+    assert box is not None, "toast has no bounding box"
+    right_gutter = viewport_w - (box["x"] + box["width"])
+    assert box["x"] >= 8 and right_gutter >= 8, (
+        f"toast 超出視窗:left={box['x']:.0f} right_gutter={right_gutter:.0f} "
+        f"(width={box['width']:.0f}, viewport={viewport_w})"
+    )
 
 
 @then(parsers.parse('I should see a field error containing "{message}"'))
