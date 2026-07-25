@@ -82,6 +82,7 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 | 動 CI workflow | `.claude/rules/github-actions.md`(命名與結構,有機械把關) |
 | 新增任何測試 | `.claude/rules/test-naming.md`(命名分層,有機械把關) |
 | Supabase 環境問題 | `docs/supabase-setup-checklist.md` |
+| 關閉 §14 落差項目/改文件措辭 | `docs/README.md`〈慣例〉(規則只寫一份、沒有的功能不必記錄沒有) |
 
 規格書與程式碼衝突時**以程式碼為準,並在同一個 PR 回頭修規格書**——
 規格書是 `plan-reviewer-requirements` 的溯源對象,它失真等於審查閘門
@@ -131,6 +132,11 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   仍錯 → `/clear` 換乾淨 context 重述問題。覺得「變慢/變笨」時**先跑
   `/context` 看誰吃掉空間**,不要直接 `/compact`——壓縮本身就是一次大請求,
   而 `/clear` 是零成本。
+- 自我糾正要掃同類、要沉澱:commit message 若出現「精簡/移除/撤回/
+  修正先前」這類自我修正語氣(不論 `feat:`/`fix:`/`docs:` 哪個前綴),
+  先看同一份文件其他段落、姊妹文件裡是不是還有同一個毛病(參考
+  `/fix-bug` 的「同類掃描」);若因此浮現一條可複用的原則,順手寫進
+  `docs/README.md` 或 friction-log,不要只留在 commit message 裡。
 - 記憶紀律:專案決策一律寫進 `docs/plans/`(git 是單一事實來源);
   auto-memory 只放個人操作性學習,不放專案決策。
 - 框架自身的摩擦(誤擋/漏網/重複糾正)記入 `docs/plans/friction-log.md`,
