@@ -5,7 +5,7 @@
 //   * 全站公告：admin CRUD + 公開的 /announcements/active
 //   * AdminSetup：首位管理員自助宣告（有管理員後鎖死）
 // ============================================================
-import { assertEquals, assert } from 'jsr:@std/assert@1';
+import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
@@ -41,12 +41,14 @@ Deno.test('admin 守門：非管理員一律 403', async () => {
 
   try {
     const token = await getUserAccessToken(client, user.email);
-    for (const [method, path] of [
-      ['GET', '/api/admin/withdrawals'],
-      ['GET', '/api/admin/members'],
-      ['GET', '/api/admin/announcements'],
-      ['POST', '/api/admin/announcements'],
-    ] as const) {
+    for (
+      const [method, path] of [
+        ['GET', '/api/admin/withdrawals'],
+        ['GET', '/api/admin/members'],
+        ['GET', '/api/admin/announcements'],
+        ['POST', '/api/admin/announcements'],
+      ] as const
+    ) {
       const res = await app.request(path, authed(token, { method }));
       assertEquals(res.status, 403, `${method} ${path} 非管理員應 403`);
       await res.body?.cancel();
@@ -67,8 +69,15 @@ Deno.test('會員管理：列表含 email 與會籍；停權讓刊登從 public_
 
     // 給會員一個刊登
     const { error: insertErr } = await client.from('listings').insert({
-      user_id: member.id, name: '測試刊登', category: '按摩', city: '台北市',
-      districts: ['中山區'], gender: 'female', photos: [], contacts: {}, description: 'x',
+      user_id: member.id,
+      name: '測試刊登',
+      category: '按摩',
+      city: '台北市',
+      districts: ['中山區'],
+      gender: 'female',
+      photos: [],
+      contacts: {},
+      description: 'x',
     });
     assertEquals(insertErr, null);
 
@@ -137,20 +146,28 @@ Deno.test('全站公告：admin 建立/刪除；/announcements/active 只回生�
     const token = await getUserAccessToken(client, admin.email);
 
     // 建立一則生效中 + 一則未來生效
-    const create = await app.request('/api/admin/announcements', authed(token, {
-      method: 'POST',
-      body: JSON.stringify({ title: '系統維護預告', message: '今晚維護', type: 'warning' }),
-    }));
+    const create = await app.request(
+      '/api/admin/announcements',
+      authed(token, {
+        method: 'POST',
+        body: JSON.stringify({ title: '系統維護預告', message: '今晚維護', type: 'warning' }),
+      }),
+    );
     const created = await create.json();
     assertEquals(created.success, true, JSON.stringify(created));
 
-    const future = await app.request('/api/admin/announcements', authed(token, {
-      method: 'POST',
-      body: JSON.stringify({
-        title: '未來公告', message: '還沒開始', type: 'info',
-        startsAt: new Date(Date.now() + 7 * 86400_000).toISOString(),
+    const future = await app.request(
+      '/api/admin/announcements',
+      authed(token, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: '未來公告',
+          message: '還沒開始',
+          type: 'info',
+          startsAt: new Date(Date.now() + 7 * 86400_000).toISOString(),
+        }),
       }),
-    }));
+    );
     const futureBody = await future.json();
     assertEquals(futureBody.success, true);
 
@@ -169,7 +186,10 @@ Deno.test('全站公告：admin 建立/刪除；/announcements/active 只回生�
     assert(allTitles.includes('未來公告'));
 
     // 刪除後從 active 消失
-    const del = await app.request(`/api/admin/announcements/${created.data.id}`, authed(token, { method: 'DELETE' }));
+    const del = await app.request(
+      `/api/admin/announcements/${created.data.id}`,
+      authed(token, { method: 'DELETE' }),
+    );
     assertEquals((await del.json()).success, true);
     const active2 = await app.request('/api/announcements/active');
     const active2Body = await active2.json();
@@ -200,7 +220,10 @@ Deno.test('AdminSetup：無管理員時可自助宣告；已有管理員後鎖�
     const check1Body = await check1.json();
     assertEquals(check1Body.canBecomeAdmin, true);
 
-    const claim = await app.request('/api/admin-setup/set-self-admin', authed(firstToken, { method: 'POST' }));
+    const claim = await app.request(
+      '/api/admin-setup/set-self-admin',
+      authed(firstToken, { method: 'POST' }),
+    );
     assertEquals((await claim.json()).success, true);
 
     // 第二人不能再宣告
@@ -210,7 +233,10 @@ Deno.test('AdminSetup：無管理員時可自助宣告；已有管理員後鎖�
     assertEquals(check2Body.hasExistingAdmin, true);
     assertEquals(check2Body.canBecomeAdmin, false);
 
-    const claim2 = await app.request('/api/admin-setup/set-self-admin', authed(secondToken, { method: 'POST' }));
+    const claim2 = await app.request(
+      '/api/admin-setup/set-self-admin',
+      authed(secondToken, { method: 'POST' }),
+    );
     assertEquals(claim2.status, 403);
     await claim2.body?.cancel();
   } finally {

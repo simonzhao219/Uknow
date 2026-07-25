@@ -8,8 +8,8 @@ import {
   Calendar,
   Receipt,
   Loader2,
-  Users,
-  Gift,
+  UserPlus,
+  RefreshCw,
   TrendingDown,
   RotateCcw,
   SlidersHorizontal,
@@ -17,78 +17,78 @@ import {
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
 import { formatRewardDetail, isReferralSource } from '../../utils/rewardHistory';
+import {
+  ALL_REWARD_FILTER,
+  REWARD_SOURCE_LABELS,
+  isRewardFilterActive,
+  rewardFilterLabel,
+  rewardFilterOptions,
+  toRewardSourceParam,
+  toggleRewardSource,
+  type RewardHistoryFilter,
+} from '../../utils/rewardHistoryFilter';
 import type {
   RewardHistoryRecord as RewardRecord,
   RewardHistoryResponse,
   RewardSourceCategory,
+  RewardSourceFacet,
 } from '@contract';
 
 interface RewardHistoryProps {
   refreshTrigger?: number; // ✅ 刷新觸發器
 }
 
-// 來源分類 → 顯示標籤 / 圖示 / 顏色（KEY 來自 @contract 的 enum＝單一真相；
-// label/icon/color 是純 UI 呈現）。退款用琥珀色與收入分家，避免被誤讀為新收入。
+// 來源分類 → 圖示 / 顏色（KEY 來自 @contract 的 enum＝單一真相；這裡只放視覺）。
+// 文字標籤在 utils/rewardHistoryFilter 的 REWARD_SOURCE_LABELS（純資料、可測、
+// 與篩選器共用同一份用詞）。退款用琥珀色與收入分家，避免被誤讀為新收入。
 type SourceMeta = {
-  label: string;
   Icon: React.ComponentType<{ className?: string }>;
   badgeClass: string;
 };
 const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
-  referral_payment: {
-    label: '推薦獎勵·付款',
-    Icon: Users,
+  referral_signup: {
+    Icon: UserPlus,
     badgeClass:
       'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   },
-  referral_task_renewal: {
-    label: '推薦獎勵·任務續約',
-    Icon: Gift,
+  referral_renewal: {
+    Icon: RefreshCw,
     badgeClass:
       'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   },
   withdrawal: {
-    label: '點數提領',
     Icon: TrendingDown,
     badgeClass: 'border-transparent bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   },
   withdrawal_refund: {
-    label: '提領退款',
     Icon: RotateCcw,
     badgeClass:
       'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   },
   adjustment_manual: {
-    label: '人工調整',
     Icon: SlidersHorizontal,
     badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
 };
 const FALLBACK_META: SourceMeta = {
-  label: '其他',
   Icon: Receipt,
   badgeClass: 'border-transparent bg-muted text-muted-foreground',
 };
-
-// 可篩選的來源分類（刻意不含 adjustment_manual——目前無端點產生，會是永遠空的分類）。
-const SOURCE_FILTERS: RewardSourceCategory[] = [
-  'referral_payment',
-  'referral_task_renewal',
-  'withdrawal',
-  'withdrawal_refund',
-];
 
 export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [history, setHistory] = useState<RewardRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // 多選來源篩選；空陣列 = 全部。
-  const [selectedSources, setSelectedSources] = useState<RewardSourceCategory[]>([]);
+  // 來源篩選：平列多選，空集合＝全部（見 utils/rewardHistoryFilter）。
+  const [filter, setFilter] = useState<RewardHistoryFilter>(ALL_REWARD_FILTER);
+  // 篩選選項來自後端 facet（使用者實際有的分類與筆數），恆為未篩選全集。
+  const [facets, setFacets] = useState<RewardSourceFacet[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const isFiltered = selectedSources.length > 0;
+  const isFiltered = isRewardFilterActive(filter);
+  const filterOptions = rewardFilterOptions(facets);
 
   const fetchHistory = async (isLoadMore = false) => {
     try {
@@ -102,8 +102,9 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       const currentOffset = isLoadMore ? offset : 0;
 
       // 來源篩選下推到後端：帶 CSV ?source=，後端只回該分類集合、count 也是該集合總數，
-      // 分頁才不會漏掉後頁紀錄（見 index.ts /rewards/history）。空選＝不帶 param＝全部。
-      const sourceParam = selectedSources.length ? `&source=${selectedSources.join(',')}` : '';
+      // 分頁才不會漏掉後頁紀錄（見 index.ts /rewards/history）。全部＝不帶 param。
+      const sources = toRewardSourceParam(filter);
+      const sourceParam = sources ? `&source=${sources}` : '';
 
       const result = await apiRequestJson<RewardHistoryResponse>(
         buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${sourceParam}`),
@@ -119,6 +120,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         }
 
         setTotal(result.data.total || 0);
+        setFacets(result.data.sources || []);
         setOffset(currentOffset + newHistory.length);
       } else {
         throw new Error('獲取獎勵歷史失敗');
@@ -141,16 +143,21 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     fetchHistory(true);
   };
 
-  const toggleSource = (s: RewardSourceCategory) => {
-    setSelectedSources((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  const handleToggleSource = (source: RewardSourceCategory) => {
+    setFilter((prev) =>
+      toggleRewardSource(
+        prev,
+        source,
+        filterOptions.map((o) => o.source),
+      ),
+    );
   };
-  const clearSources = () => setSelectedSources([]);
 
   // 初始載入 + 篩選變更：切換來源時重新從第一頁抓（非追加），offset 由 fetchHistory 歸零。
   useEffect(() => {
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSources]);
+  }, [filter]);
 
   // 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
@@ -170,18 +177,30 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         <CardDescription>查看您的Point收支記錄，可依來源篩選</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 篩選器：來源分類多選 chips（全部 = 清空選取）。手機自動換行。 */}
-        <div className="flex flex-wrap gap-2">
-          <FilterChip label="全部" selected={!isFiltered} onToggle={clearSources} />
-          {SOURCE_FILTERS.map((s) => (
+        {/* 篩選器：平列多選，「全部」＝清空選取。選項來自後端 facet，故只會出現
+            使用者實際有的分類，各 chip 筆數加總恆等於「全部」。
+            版面：手機用等寬三欄（3+2 兩列、不鋸齒），sm 以上收成單列 flex。
+            只有一種來源時整個篩選器沒有意義，直接不畫。 */}
+        {filterOptions.length > 1 && (
+          <fieldset
+            className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap"
+            aria-label="獎勵來源篩選"
+          >
             <FilterChip
-              key={s}
-              label={SOURCE_META[s].label}
-              selected={selectedSources.includes(s)}
-              onToggle={() => toggleSource(s)}
+              label="全部"
+              selected={!isFiltered}
+              onToggle={() => setFilter(ALL_REWARD_FILTER)}
             />
-          ))}
-        </div>
+            {filterOptions.map((option) => (
+              <FilterChip
+                key={option.source}
+                label={`${option.label} ${option.count}`}
+                selected={filter.includes(option.source)}
+                onToggle={() => handleToggleSource(option.source)}
+              />
+            ))}
+          </fieldset>
+        )}
 
         {/* 載入狀態 */}
         {isLoading && (
@@ -207,7 +226,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">
-                  {isFiltered ? '此分類尚無記錄' : '尚無獎勵記錄'}
+                  {isFiltered ? `所選來源（${rewardFilterLabel(filter)}）尚無記錄` : '尚無獎勵記錄'}
                 </p>
                 {!isFiltered && (
                   <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>
@@ -234,7 +253,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" className={meta.badgeClass}>
                             <Icon className="h-3 w-3" />
-                            {meta.label}
+                            {REWARD_SOURCE_LABELS[record.sourceCategory] ?? '其他'}
                           </Badge>
                           {isReferral && record.generation ? (
                             <Badge variant="outline" className="text-muted-foreground">

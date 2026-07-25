@@ -8,7 +8,12 @@
 // 什麼都不用做，登入即痊癒。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
-import { adminClient, createTestUser, deleteTestUsers, ensureEdgeFunctionEnv } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  ensureEdgeFunctionEnv,
+} from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
 const { buildProfileResponse } = await import('./index.ts');
@@ -23,8 +28,12 @@ async function seedPendingOrder(
 ) {
   const tradeNo = `PROFILE-${Date.now()}-${seq++}`;
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, payuni_response: payuniResponse,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    payuni_response: payuniResponse,
     ...(createdAt ? { created_at: createdAt } : {}),
   });
   if (error) throw new Error(`seedPendingOrder failed: ${error.message}`);
@@ -65,7 +74,11 @@ Deno.test('自癒收斂不了（金額不符）：step 2 + paidAwaitingActivatio
     const profile = await buildProfileResponse(client, user.id, user.email);
 
     assertEquals(profile?.registrationStep, 2);
-    assertEquals(profile?.paidAwaitingActivation, true, '已付款但收斂不了，要讓前端知道不是「沒付錢」');
+    assertEquals(
+      profile?.paidAwaitingActivation,
+      true,
+      '已付款但收斂不了，要讓前端知道不是「沒付錢」',
+    );
     assertEquals(profile?.lastTradeNo, tradeNo);
 
     const { data: order } = await client
@@ -100,7 +113,10 @@ Deno.test('多筆 pending：只有較舊那筆有 SUCCESS 存檔，也要能自�
   try {
     // 較舊：卡單（有 SUCCESS 存檔）；較新：使用者重試付款留下的空 pending。
     const stuckTradeNo = await seedPendingOrder(
-      client, user.id, success(), new Date(Date.now() - 3600_000).toISOString(),
+      client,
+      user.id,
+      success(),
+      new Date(Date.now() - 3600_000).toISOString(),
     );
     await seedPendingOrder(client, user.id, null);
 
@@ -124,7 +140,10 @@ Deno.test('待開通時 lastTradeNo 指向已付款成功的那筆訂單，不�
     // 較舊：金額不符的卡單（自癒收斂不了，但確實付過款）；
     // 較新：重試留下的空 pending。守衛要導去的是「付款成功那筆」的結果頁。
     const paidTradeNo = await seedPendingOrder(
-      client, user.id, success('9999'), new Date(Date.now() - 3600_000).toISOString(),
+      client,
+      user.id,
+      success('9999'),
+      new Date(Date.now() - 3600_000).toISOString(),
     );
     await seedPendingOrder(client, user.id, null);
 

@@ -15,7 +15,7 @@
 //     * 每個 mode 只認自己那一套前綴的三個憑證，成套或明確失敗；
 //     * 永不跨環境逐欄回退混用。
 // ============================================================
-import { assertEquals, assertThrows, assertStringIncludes } from 'jsr:@std/assert@1';
+import { assertEquals, assertStringIncludes, assertThrows } from 'jsr:@std/assert@1';
 import { resolvePayuniConfig } from './index.ts';
 
 // 用一個 plain object 當環境讀取器，完全脫離 Deno.env——純函式、可平行、零副作用。
@@ -59,11 +59,12 @@ Deno.test('sandbox 但測試站憑證缺一角：明確拋錯，絕不把正式�
   // 只設了 TEST_MER_ID，缺 HASH_KEY / HASH_IV——舊版會逐欄回退成
   // 「測試站 MerID + 正式站金鑰」的 Frankenstein 組合送去 sandbox。
   const err = assertThrows(
-    () => resolvePayuniConfig(reader({
-      PAYUNI_SANDBOX: 'true',
-      ...PROD,
-      PAYUNI_TEST_MER_ID: 'TESTMER',
-    })),
+    () =>
+      resolvePayuniConfig(reader({
+        PAYUNI_SANDBOX: 'true',
+        ...PROD,
+        PAYUNI_TEST_MER_ID: 'TESTMER',
+      })),
     Error,
   );
   assertStringIncludes(err.message, 'mode=sandbox');
@@ -87,11 +88,12 @@ Deno.test('sandbox 但完全沒設測試站憑證：拋錯，不靜默借用正�
 
 Deno.test('production 缺任一正式站憑證：明確列出缺哪個變數', () => {
   const err = assertThrows(
-    () => resolvePayuniConfig(reader({
-      PAYUNI_MER_ID: 'PRODMER',
-      PAYUNI_HASH_KEY: PROD.PAYUNI_HASH_KEY,
-      // 缺 PAYUNI_HASH_IV
-    })),
+    () =>
+      resolvePayuniConfig(reader({
+        PAYUNI_MER_ID: 'PRODMER',
+        PAYUNI_HASH_KEY: PROD.PAYUNI_HASH_KEY,
+        // 缺 PAYUNI_HASH_IV
+      })),
     Error,
   );
   assertStringIncludes(err.message, 'mode=production');
@@ -100,11 +102,12 @@ Deno.test('production 缺任一正式站憑證：明確列出缺哪個變數', (
 
 Deno.test('空字串／純空白憑證等同未設定（防「設了但其實是空值」的假陽性）', () => {
   assertThrows(
-    () => resolvePayuniConfig(reader({
-      PAYUNI_MER_ID: '   ',
-      PAYUNI_HASH_KEY: PROD.PAYUNI_HASH_KEY,
-      PAYUNI_HASH_IV: PROD.PAYUNI_HASH_IV,
-    })),
+    () =>
+      resolvePayuniConfig(reader({
+        PAYUNI_MER_ID: '   ',
+        PAYUNI_HASH_KEY: PROD.PAYUNI_HASH_KEY,
+        PAYUNI_HASH_IV: PROD.PAYUNI_HASH_IV,
+      })),
     Error,
     'PAYUNI_MER_ID',
   );

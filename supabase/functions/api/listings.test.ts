@@ -76,7 +76,7 @@ Deno.test('verify-referral-code: unknown code is invalid', async () => {
   assertEquals(body.valid, false);
 });
 
-Deno.test('verify-referral-code: an active member\'s code validates', async () => {
+Deno.test("verify-referral-code: an active member's code validates", async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: '推薦人' });
   try {
@@ -175,7 +175,7 @@ Deno.test('upload-photo: rejects a file larger than 5MB', async () => {
 //     （檢視表 WHERE has_active_subscription() 對所有角色生效，含 service-role）
 // ============================================================
 
-Deno.test('public_listings: an active member\'s listing is visible, an unpaid member\'s is not', async () => {
+Deno.test("public_listings: an active member's listing is visible, an unpaid member's is not", async () => {
   const admin = adminClient();
   const activeUser = await createTestUser(admin, { name: '有效會員' });
   const unpaidUser = await createTestUser(admin, { name: '未付款會員' });

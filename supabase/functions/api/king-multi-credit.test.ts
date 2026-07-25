@@ -9,8 +9,8 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
-  payForUser,
   getActiveReferralCode,
+  payForUser,
 } from './test-helpers.ts';
 
 Deno.test('推薦王：當月滿 8 / 16 位新人 → 1 / 2 張 credit（round_ordinal 遞增）', async () => {

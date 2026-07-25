@@ -10,9 +10,9 @@ import {
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
+  getActiveReferralCode,
   getUserAccessToken,
   payForUser,
-  getActiveReferralCode,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
