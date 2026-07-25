@@ -10,15 +10,32 @@
 # 閘門（biome / typecheck / knip）。紅燈的定義是「編譯過、斷言失敗」，
 # 所以靜態閘門仍須全綠（受測 API 先建 stub）。解鎖唯一路徑是
 # scripts/tdd-unlock.sh（check 全綠才刪鎖）。
+#
+# 測試接縫：PRE_COMMIT_DRY_RUN=1 只印出「會做什麼決策」而不執行閘門，
+# 並且**一律以 99 退出**——所以它永遠不可能被當成繞過閘門的手段
+# （dry-run 跑出來的 commit 一定失敗）。scripts/test-hooks.py 靠它驗行為。
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
+DRY_RUN="${PRE_COMMIT_DRY_RUN:-0}"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# 執行一組閘門；dry-run 時只宣告不執行。
+run_gate() {
+  local label="$1"
+  shift
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "DRYRUN: WOULD_RUN $label"
+    return 0
+  fi
+  "$@"
+}
 
 if [ -f .claude/tdd-lock ]; then
   echo "[pre-commit] TDD 紅燈期（.claude/tdd-lock 存在）：跳過 vitest，只跑靜態閘門"
-  if ! (npx biome check . && npx tsc --noEmit -p . && npx knip --include files,dependencies); then
+  [ "$DRY_RUN" = "1" ] && echo "DRYRUN: MODE red-channel"
+  if ! run_gate static-gates bash -c 'npx biome check . && npx tsc --noEmit -p . && npx knip --include files,dependencies'; then
     echo "" >&2
     echo "[pre-commit] 靜態閘門未過，commit 已擋下。" >&2
     echo "  紅燈 = 編譯過、斷言失敗。請先讓 biome/typecheck/knip 全綠" >&2
@@ -26,7 +43,8 @@ if [ -f .claude/tdd-lock ]; then
     exit 1
   fi
 else
-  if ! npm run check; then
+  [ "$DRY_RUN" = "1" ] && echo "DRYRUN: MODE full-check"
+  if ! run_gate npm-run-check npm run check; then
     echo "" >&2
     echo "[pre-commit] npm run check 未過，commit 已擋下。修復後重試。" >&2
     echo "  若這是 TDD 的紅燈測試 commit：先 touch .claude/tdd-lock 進入紅燈期" >&2
@@ -48,45 +66,62 @@ if echo "$staged" | grep -q '^supabase/functions/'; then
   if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
     merging=true
   fi
+  # dry-run 專用的假合併訊號（只在 dry-run 生效，而 dry-run 必定失敗退出，
+  # 所以它不可能成為真正的繞道）
+  if [ "$DRY_RUN" = "1" ] && [ "${PRE_COMMIT_FAKE_MERGE:-0}" = "1" ]; then
+    merging=true
+  fi
 
   if command -v deno >/dev/null 2>&1; then
-    if ! (cd supabase/functions && deno fmt --check); then
+    [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO deno-present"
+    if ! run_gate deno-fmt bash -c 'cd supabase/functions && deno fmt --check'; then
       echo "" >&2
       echo "[pre-commit] deno fmt --check 未過，commit 已擋下。" >&2
       echo "  修正格式：cd supabase/functions && deno fmt" >&2
       exit 1
     fi
 
-    # 網路例外（與上面的 merge 例外同源）：型別檢查要解析 jsr:/npm: 相依，
+    # 網路例外（與下面的 merge 例外同源）：型別檢查要解析 jsr:/npm: 相依，
     # 也就是要連得上 registry。沙箱 egress 政策擋掉 jsr.io、離線、registry
     # 掛掉時，這一步必然失敗且與程式碼無關——照擋等於「沒有網路就不准寫
     # 後端」，又是一個死鎖。故分辨「型別真的有錯」與「根本跑不起來」：
     # 後者降為警告，交給 CI 的 api-tests 軌（那裡有網路，跑的是同一條指令）。
     # 判別只認 deno 自己的相依解析／連線失敗訊息；型別錯誤不會長這樣，
     # 仍然照擋。
-    check_out=$(cd supabase/functions && deno task check 2>&1)
-    check_rc=$?
-    if [ $check_rc -ne 0 ]; then
-      if echo "$check_out" | grep -qE "failed to load|error sending request|403 Forbidden|Import '.*' failed|connection error|dns error|error trying to connect"; then
-        echo "[pre-commit] deno task check 無法解析相依（registry 不可達），降為警告：" >&2
-        echo "$check_out" | grep -E "^error" | head -3 >&2
-        echo "  型別檢查交由 CI 的 api-tests 軌把關（該環境有網路）。" >&2
-      else
-        echo "$check_out" >&2
-        echo "" >&2
-        echo "[pre-commit] deno task check 未過（型別錯誤），commit 已擋下。" >&2
-        exit 1
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "DRYRUN: WOULD_RUN deno-check"
+    else
+      check_out=$(cd supabase/functions && deno task check 2>&1)
+      check_rc=$?
+      if [ $check_rc -ne 0 ]; then
+        if echo "$check_out" | grep -qE "failed to load|error sending request|403 Forbidden|Import '.*' failed|connection error|dns error|error trying to connect"; then
+          echo "[pre-commit] deno task check 無法解析相依（registry 不可達），降為警告：" >&2
+          echo "$check_out" | grep -E "^error" | head -3 >&2
+          echo "  型別檢查交由 CI 的 api-tests 軌把關（該環境有網路）。" >&2
+        else
+          echo "$check_out" >&2
+          echo "" >&2
+          echo "[pre-commit] deno task check 未過（型別錯誤），commit 已擋下。" >&2
+          exit 1
+        fi
       fi
     fi
   elif [ "$merging" = true ]; then
     echo "[pre-commit] 合併中且本機無 deno：後端變更來自上游（已過 CI），略過 Deno 閘門。"
+    [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO merge-exception-skip"
   else
+    [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO block-no-deno"
     echo "" >&2
     echo "[pre-commit] supabase/functions/ 有變更但本機沒有 deno，commit 已擋下。" >&2
     echo "  安裝：https://docs.deno.com/runtime/getting_started/installation/" >&2
     echo "  （CI 的 api-tests 軌仍會把關，但缺 deno 表示你無法在本機驗證後端改動）" >&2
     exit 1
   fi
+fi
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "DRYRUN: WOULD_PASS"
+  exit 99
 fi
 
 exit 0

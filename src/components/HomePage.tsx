@@ -282,9 +282,7 @@ export function HomePage() {
       {/* 標題區域 */}
       <div className="text-center space-y-4">
         <h1 className="text-3xl md:text-4xl font-bold">找到你需要的專業服務</h1>
-        <p className="text-muted-foreground">
-          Uknow 連結專業服務者與需求者，讓專業技能發揮最大價值
-        </p>
+        <p className="text-muted-foreground">Uknow 連結專業服務，讓專業眾所皆知</p>
       </div>
 
       {/* 桌面：搜尋＋篩選工具列同一列。

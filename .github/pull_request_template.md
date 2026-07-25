@@ -8,7 +8,9 @@
      勾「不適用」並一句話說明——誠實的不適用勝過捏造的引用 -->
 
 - 規劃書:`docs/plans/<feature>/plan.md` / □ 不適用:
-- 審查報告:`docs/plans/<feature>/review.md`(人審裁決已勾)/ □ 不適用:
+- 規劃審查:`docs/plans/<feature>/review.md`(人審裁決已勾)/ □ 不適用:
+- 實作審查:`docs/plans/<feature>/implementation-review.md`(四視角審 diff,
+  P0 已清)/ □ 不適用:
 - 紅燈 commit(s):<hash> / □ 不適用:
 - CI:等本 PR 的 checks 全綠(車尾燈就是證據,不必貼輸出)
 

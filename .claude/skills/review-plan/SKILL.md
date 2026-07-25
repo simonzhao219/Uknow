@@ -1,8 +1,7 @@
 ---
 name: review-plan
-description: 對規劃書做三視角第三方審查（架構/UIUX/需求），彙整報告後停待人審
+description: 對規劃書做四視角第三方審查（系統/架構/UIUX/需求），彙整報告後停待人審。規劃書一寫完就該跑
 argument-hint: [feature-slug]
-disable-model-invocation: true
 ---
 
 # /review-plan — 審查階段

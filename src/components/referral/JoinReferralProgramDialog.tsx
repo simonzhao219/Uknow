@@ -10,6 +10,7 @@ import { useNotification } from '../notifications/NotificationContext';
 import { LegalDialog } from '../LegalDialog';
 import { referralRewardRulesContent } from '../../content/referralRewardRules';
 import { referralRewardContractContent } from '../../content/referralRewardContract';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface JoinReferralProgramDialogProps {
   open: boolean;
@@ -26,6 +27,12 @@ export function JoinReferralProgramDialog({
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useNotification();
+
+  // 開啟期間鎖住背景頁面。這個彈窗是手刻的 fixed 遮罩（不是 Radix Dialog），
+  // 底下的頁面本來還能被拖動；iOS Safari 一旦拖到頁面就會收合／展開網址列，
+  // 版面高度當場改變，置中的卡片跟著上下彈跳，簽名時尤其難用。
+  // 注意：Hook 必須排在下面的 `if (!open) return null` 之前，否則會違反 Hook 規則。
+  useBodyScrollLock(open);
 
   if (!open) return null;
 
@@ -65,8 +72,13 @@ export function JoinReferralProgramDialog({
   return (
     <>
       {/* 遮罩 */}
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* 遮罩本身 overscroll-contain：即使手指落在卡片外面拖動，也不會把捲動
+          連鎖傳到底下的頁面（iOS 的橡皮筋回彈就是這樣被觸發的）。 */}
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overscroll-contain">
+        {/* 高度用 dvh 而非 vh：行動瀏覽器網址列收合時 vh 不會更新，卡片會超出
+            可視範圍、底部按鈕被切掉。overscroll-contain 讓卡片捲到頭尾時停住，
+            不會把剩餘的捲動交給背景頁面。 */}
+        <Card className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto overscroll-contain">
           <div className="p-6">
             {/* 標題 */}
             <div className="mb-6">
