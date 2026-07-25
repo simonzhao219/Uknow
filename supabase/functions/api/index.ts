@@ -18,7 +18,6 @@ import {
 import type {
   RewardHistoryResponse,
   CurrentMonthReferralsResponse,
-  ReferralTreeResponse,
   NetworkSortMode,
   NetworkNode,
   NetworkOverviewResponse,
@@ -86,7 +85,6 @@ const READ_PATHS = [
   '/subscriptions/status',
   '/rewards',
   '/rewards/*',
-  '/referrals/my-tree',
   '/referrals/network/*',
   '/tasks',
   '/tasks/*',
@@ -2227,7 +2225,7 @@ app.get('/rewards/history', async (c) => {
 });
 
 // ============================================================
-// 推薦網絡：共用機制（my-tree 與 /referrals/network/* 同一份真相）
+// 推薦網絡：共用機制（/referrals/network/* 三端點同一份真相）
 //
 // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
 // active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
@@ -2267,7 +2265,7 @@ function maskNameByGen(raw: string | null | undefined, gen: number): string {
 }
 
 // .in() 分批：PostgREST 的 .in() 走 URL query，上千個 UUID 會爆 URL 長度上限，
-// 一律切塊撈再合併（也順手修掉 my-tree 原本的同一潛在問題）。查詢失敗擲出，
+// 一律切塊撈再合併。查詢失敗擲出，
 // 由各 handler 統一回 500——先前「錯誤靜默轉空樹」會讓使用者誤以為沒有下線。
 const IN_CHUNK = 150;
 async function selectInChunks(
@@ -2415,48 +2413,6 @@ async function myReferralCode(client: any, userId: string): Promise<string> {
     .select('code').eq('user_id', userId).eq('status', 'active').maybeSingle();
   return data?.code ?? '';
 }
-
-// ============================================================
-// GET /referrals/my-tree
-// ReferralManagement：推薦樹（3代，巢狀）。Tier B 過渡期保留；
-// 前端切換到 /referrals/network/* 後退役。
-// ============================================================
-app.get('/referrals/my-tree', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  try {
-    const client = sb();
-    const net = await loadNetwork(client, user.id);
-    const code = await myReferralCode(client, user.id);
-
-    const buildNested = (uid: string, gen: number, at: string): any => {
-      const { status, daysToExpiry } = deriveNodeStatus(net.acctMap[uid], net.profMap[uid]?.suspended_at ?? null);
-      const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
-      return {
-        userId:       uid,
-        name:         maskNameByGen(net.profMap[uid]?.name, gen),
-        generation:   gen,
-        status,
-        daysToExpiry,
-        endDate:      net.acctMap[uid]?.end_date ?? null,
-        joinedAt:     at,
-        listingId:    net.listingMap[uid]?.id ?? null,
-        childCount:   kids.length,
-        children:     kids.map((k) => buildNested(k.id, gen + 1, k.at)),
-      };
-    };
-    const roots = (net.childrenOf[user.id] ?? []).map((k) => buildNested(k.id, 1, k.at));
-
-    return c.json({
-      success: true,
-      data: { userReferralCode: code, roots, summary: net.summary },
-    } satisfies ReferralTreeResponse);
-  } catch (err) {
-    console.error('[referrals/my-tree] 失敗:', err);
-    return c.json({ error: { message: '載入推薦網絡失敗' } }, 500);
-  }
-});
 
 // ============================================================
 // GET /referrals/network/overview?sort=
