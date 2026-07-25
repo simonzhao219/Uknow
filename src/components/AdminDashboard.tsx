@@ -14,7 +14,11 @@ export function AdminDashboard() {
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        {/* grid-cols-5 的欄是 minmax(0,1fr)，會把五個中文標籤壓到比文字還窄
+            （375px 下每格僅約 69px，最長的「獎金提領管理」需要約 100px）。
+            桌面寬度夠、等寬排列好看，所以只在 md 以上維持 grid；手機交回
+            TabsList 的 flex + 橫向捲動，標籤保持完整可讀。 */}
+        <TabsList className="w-full md:grid md:grid-cols-5">
           <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
           <TabsTrigger value="members">會員管理</TabsTrigger>
           <TabsTrigger value="announcements">公告管理</TabsTrigger>
