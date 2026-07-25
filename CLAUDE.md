@@ -106,23 +106,30 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   已知例外:claude.ai/code 的 web session 由平台在 session 啟動**前**就
   開好 `claude/<描述>-<hash>` 分支,早於任何 hook——不符 `feature/*` 命名
   (守衛只認 `feature/*`),繼承的 base 是 GitHub repo Settings → Branches
-  的 default branch。**目前是 main,應改成 develop**(2026-07-25
-  friction-log:一個 web session 因此生在缺整套 `.claude/` 框架的 main
-  上)。改對之前,web session 開局先確認 HEAD 是否為 develop,不是就
-  `git checkout -B <branch> origin/develop`。真的要走三段式流程時,自己
-  切一個 `feature/<slug>` 分支。
+  的 default branch。**default branch 已於 2026-07-25 改成 develop**
+  (改之前是 main,friction-log 記了一個 web session 因此生在缺整套
+  `.claude/` 框架的 main 上)。開局仍建議確認 HEAD 是否為 develop,
+  不是就 `git checkout -B <branch> origin/develop`。真的要走三段式流程時,
+  自己切一個 `feature/<slug>` 分支。
+  連帶效果:`workflow_run` 觸發的 workflow(deploy-supabase.yml)定義取自
+  default branch,所以改它**合進 develop 就生效**,不必等晉升 main。
 - 合併規矩:PR **只用 rebase 更新**(`git fetch origin develop && git rebase
   origin/develop && git push --force-with-lease`),**不要按 GitHub 的
   Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
   branch protection 的 required check 只有 `ci-ok` 一個(它 needs 全部
   軌),新增 CI job 只要進它的 needs,不必去動保護規則。
-- 環境對應:develop 有自己的 persistent Supabase project
-  (`vars.SUPABASE_DEVELOP_PROJECT_REF`),main 是正式站
-  (`vars.SUPABASE_PROJECT_REF`)。Edge Function 由 deploy-supabase.yml
-  在**該分支 CI 綠之後**部署到對應 project(`workflow_run` 觸發,不是
-  push)——develop 是可安全驗證的真後端。部署後會打 `/api/health` 比對
-  `sha`,確認線上跑的就是這個 commit。
+- 環境對應:develop 有自己的 persistent Supabase **branch**(不是獨立
+  project——由 Supabase Branching 從正式專案長出來,有自己的 DB/金鑰/
+  Secrets,但掛在正式專案底下),main 是正式站。兩者的 ref 都**commit 在
+  git 裡**:develop 看 `config/supabaseTarget.ts`、正式站看
+  `src/utils/supabase/info.tsx`,前端建置與 deploy workflow 讀同一份
+  (`vars.*` 只是可選覆蓋,與 git 不一致會硬失敗)。Edge Function 由
+  deploy-supabase.yml 在**該分支 CI 綠之後**部署到對應環境(`workflow_run`
+  觸發,不是 push)——develop 是可安全驗證的真後端。部署後會打
+  `/api/health` 比對 `sha`,確認線上跑的就是這個 commit。
+  ⚠️ 分支建立時沿用母專案 Secrets:develop 的 PayUni 必須是 sandbox 那套
+  (`PAYUNI_SANDBOX=true` + `PAYUNI_TEST_*`),否則測試付款打進真金流。
 - **正式站部署需人工核准**:main 的部署綁 GitHub `production` 環境,
   在 Settings → Environments 設 required reviewer。核准前不會動到線上。
 - 晉升 SOP(develop→main):(a) develop 上 CI 綠;(b) 開晉升 PR

@@ -113,12 +113,20 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## 環境與部署
 
-兩個 Supabase project，由 CI 依分支對應：
+兩個 Supabase 環境，由 CI 依分支對應。**部署目標的 ref 讀 git 內的檔案**，
+不讀儀表板變數——那兩個檔本來就是前端建置決定「打哪個後端」的依據，讓部署
+與建置用同一份，兩邊就不可能各自漂移（`vars.*` 降為可選覆蓋，若與 git 不一致
+會硬失敗；見 `deploy-supabase.yml` 的「解析目標 project ref」）：
 
-| 分支 | Project | 用途 |
-|---|---|---|
-| `develop` | `vars.SUPABASE_DEVELOP_PROJECT_REF` | 可安全驗證的真後端 |
-| `main` | `vars.SUPABASE_PROJECT_REF` | 正式站（部署需人工核准） |
+| 分支 | Supabase 形態 | ref 來源 | 用途 |
+|---|---|---|---|
+| `develop` | 正式專案的 **persistent branch**（`develop`） | `config/supabaseTarget.ts` | 可安全驗證的真後端 |
+| `main` | **正式專案** | `src/utils/supabase/info.tsx` | 正式站（部署需人工核准） |
+
+> develop 是 Supabase Branching 長出來的分支，不是另一個獨立 project：
+> 有自己的 DB／金鑰／Secrets，但掛在正式專案底下（同組織、同帳單）。
+> 分支建立時會沿用母專案當下的 Secrets——**PayUni 憑證務必覆寫成 sandbox 那套**，
+> 否則 develop 的測試付款會打進真金流。見 `docs/supabase-setup-checklist.md`。
 
 Dashboard 端的手動設定（Secrets、Email OTP 模板、PayUni 後台）
 見 `docs/supabase-setup-checklist.md`。

@@ -3,28 +3,39 @@
 > 本清單涵蓋**程式碼與 migration 之外、必須在 Supabase 後台手動完成**的設定。
 > 完成後 `api` Edge Function（PayUni 付款、Email OTP）才能正常運作。
 
-## 適用範圍：每個 project 各做一次
+## 適用範圍：每個環境各做一次
 
-本專案有**兩個 Supabase project**，兩邊都要各自跑完這份清單
-（Secrets 不會跨 project 共用）：
+本專案有**兩個 Supabase 環境，各自獨立的資料庫、金鑰與 Secrets**，
+兩邊都要各自跑完這份清單（Secrets 不會跨環境共用）：
 
-| 環境 | Project ref 來源 | 用途 |
-|---|---|---|
-| develop | GitHub `vars.SUPABASE_DEVELOP_PROJECT_REF` | 可安全驗證的真後端 |
-| main（正式站） | GitHub `vars.SUPABASE_PROJECT_REF` | 正式站，部署需人工核准 |
+| 環境 | Supabase 形態 | ref 的真相在 | 用途 |
+|---|---|---|---|
+| develop | 正式專案底下的 **persistent branch**（名稱 `develop`） | `config/supabaseTarget.ts` | 可安全驗證的真後端 |
+| main（正式站） | **正式專案**本身 | `src/utils/supabase/info.tsx` | 正式站，部署需人工核准 |
+
+> **develop 是「分支」不是「另一個專案」。** 它由 Supabase 的 GitHub 整合
+> （Branching）從正式專案長出來，有自己的 DB／API 金鑰／Edge Function／
+> Secrets，但**掛在正式專案底下**——同一個組織、同一份帳單，在儀表板上要從
+> 正式專案切分支才看得到。實務上有兩個後果：
+> 1. **分支建立時會沿用母專案當下的 Secrets。** 也就是說 develop 分支很可能
+>    一出生就帶著**正式站的 PayUni 憑證**。不覆寫掉，develop 上的測試付款
+>    會打進真金流、真的扣錢——這是本清單最該優先確認的一項。
+> 2. 對分支按 Supabase 的 **merge**，等於把它的 migration 推進正式專案。
+>    本專案的晉升走 GitHub PR（develop→main），不從 Supabase 儀表板 merge。
 
 Journey 測試用的**拋棄式 preview branch** 另有自己的設定，
 見 `e2e/journey/README.md`。
 
-以下用 `<PROJECT_REF>` 代表目標 project 的 ref，操作前先確認自己在哪個環境：
+以下用 `<PROJECT_REF>` 代表目標環境的 ref，操作前先確認自己在哪個環境：
 
 ```
 Dashboard : https://supabase.com/dashboard/project/<PROJECT_REF>
 API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 ```
 
-> ⚠️ 正式站與 develop 的 PayUni 憑證**不共用**：develop 用 sandbox
-> （`PAYUNI_SANDBOX=true`），正式站用正式憑證。設錯會讓測試付款打到真金流。
+> ⚠️ 正式站與 develop 的 PayUni 憑證**不共用，也不同變數名**：develop 用
+> sandbox（`PAYUNI_SANDBOX=true` + `PAYUNI_TEST_*` 三把），正式站用正式憑證
+> （`PAYUNI_SANDBOX=false` + `PAYUNI_*` 三把）。細節見下一節的表。
 
 ---
 
@@ -36,13 +47,31 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 > Secrets 是**整個 project 共用**的，所有 Edge Function（含 `api`）都會讀到，
 > 不需逐一函數設定。
 
+**兩個環境要設的變數名不一樣**，因為 `resolvePayuniConfig()`（`api/index.ts`）
+先由 `PAYUNI_SANDBOX` 決定 mode，再**只認該 mode 那一套前綴**的三把憑證：
+
+| 環境 | `PAYUNI_SANDBOX` | 要設的三把憑證 | `FRONTEND_URL` |
+|---|---|---|---|
+| develop | `true` | `PAYUNI_TEST_MER_ID`／`PAYUNI_TEST_HASH_KEY`／`PAYUNI_TEST_HASH_IV` | `https://develop.uknow.pages.dev` |
+| 正式站 | `false` | `PAYUNI_MER_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV` | `https://uknow.com.tw` |
+
 | 變數名稱 | 值 | 說明 |
 |----------|-----|------|
-| `PAYUNI_MER_ID` | （PayUni 商店代號） | PayUni 後台取得 |
-| `PAYUNI_HASH_KEY` | （32 字元） | PayUni 後台「Hash Key」 |
-| `PAYUNI_HASH_IV` | （16 字元） | PayUni 後台「Hash IV」 |
+| `PAYUNI_(TEST_)MER_ID` | （PayUni 商店代號） | PayUni 後台取得 |
+| `PAYUNI_(TEST_)HASH_KEY` | （32 字元） | PayUni 後台「Hash Key」 |
+| `PAYUNI_(TEST_)HASH_IV` | （16 字元） | PayUni 後台「Hash IV」 |
 | `PAYUNI_SANDBOX` | `true` / `false` | develop 填 `true`；正式站填 `false` |
-| `FRONTEND_URL` | 例：`https://你的前端網域.com` | **結尾不要加 `/`**；用於 CORS 白名單與付款完成導回頁 |
+| `FRONTEND_URL` | 見上表 | **結尾不要加 `/`**；用於 CORS 白名單與付款完成導回頁 |
+
+> ⚠️ **三把憑證必須成套、同源，缺一角就整組失敗**（刻意的）。舊版程式對每個
+> 欄位各自 `PAYUNI_TEST_X || PAYUNI_X` 逐欄回退，只要測試站憑證缺一角，正式站
+> 的金鑰就會被混進 sandbox 端點，PayUni 回傳帶「(模擬)」浮水印的授權失敗。
+> 現在改成缺任何一把就在建單當下明確拋錯，訊息會直接寫出缺哪個變數。
+>
+> 也就是說：**develop 只設 `PAYUNI_SANDBOX=true` 而沒設 `PAYUNI_TEST_*`，
+> 付款會直接壞掉**（錯誤訊息：`PayUni 環境變數未設定（mode=sandbox）`）。
+> 反過來如果 develop 沒設 `PAYUNI_SANDBOX=true` 卻留著從母專案繼承來的
+> `PAYUNI_*` 正式憑證，測試付款會**打進真金流**——後者危險得多。
 
 > ⚠️ `SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY` 由 Supabase **自動注入**，
 > **不需要**手動新增。
@@ -133,14 +162,35 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 
 ---
 
-## 快速檢查表（每個 project 各一份）
+## 快速檢查表（每個環境各一份）
 
 - [ ] 步驟 1：5 個 Edge Function Secrets 已新增並 Save
+- [ ] 步驟 1：**develop 用的是 `PAYUNI_TEST_*` 三把 + `PAYUNI_SANDBOX=true`**
+      （只設 `PAYUNI_SANDBOX=true` 不設 `PAYUNI_TEST_*` 會壞；留著繼承來的
+      `PAYUNI_*` 正式憑證則會打進真金流）
+- [ ] 步驟 1：**develop 的 `FRONTEND_URL` 是 `https://develop.uknow.pages.dev`**
+      ——不是正式站網域，也不是 `http://localhost:3100`
+      （`seed-develop-data.yml` 建樹期間會暫時改成 localhost，收尾步驟負責設回；
+      該 workflow 中途失敗過的話，這一項要親眼確認）
 - [ ] 步驟 1：`api` 已重新部署，變數生效
 - [ ] 步驟 2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
+
+### 兩個環境都設完後，再驗一次「沒有交叉」
+
+分開設完不等於真的分開了——最容易漏的是**前端連到了另一組後端**。
+在瀏覽器打開各自站台、開 DevTools → Network，看 API 請求打到哪個網域：
+
+| 站台 | API 請求應該打到 | 打錯代表 |
+|---|---|---|
+| `https://develop.uknow.pages.dev` | `ijcxnxhrziehdtkwausy.supabase.co` | 預覽站在讀寫正式站資料 |
+| `https://uknow.com.tw` | `uhtwwxtazwqnlbejhprl.supabase.co` | 正式站在讀 develop 的資料 |
+
+前端該打哪一組由 `config/supabaseTarget.ts` 依分支決定（只有 `main` 打正式站），
+不由 Cloudflare 儀表板的環境變數決定——所以這張表對不上時，先看該檔與
+`vite.config.ts`，不要去儀表板加變數蓋過它。
 
 ---
 

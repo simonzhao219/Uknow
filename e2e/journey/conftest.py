@@ -46,10 +46,26 @@ from tools.supa import SupabaseAdmin  # noqa: E402
 
 
 def _generated_project_ref() -> str:
-    """從自動產生的 info.tsx 讀出正式專案 ref——封鎖名單的單一真相。"""
-    text = (REPO_ROOT / "src" / "utils" / "supabase" / "info.tsx").read_text(encoding="utf-8")
-    match = re.search(r'projectId\s*=\s*"([a-z0-9]+)"', text)
-    return match.group(1) if match else "uhtwwxtazwqnlbejhprl"
+    """從自動產生的 info.tsx 讀出正式專案 ref——封鎖名單的單一真相。
+
+    這個值有兩個用途,都是安全性質的:拒絕讓 journey 跑在正式專案上,
+    以及在 Playwright 層封鎖所有指向正式站網域的請求。
+
+    ⚠️ 舊版的 regex 寫死雙引號(`projectId\\s*=\\s*"..."`),但 info.tsx 產生
+    出來的是**單引號**,所以它從來沒有匹配成功過,每次都靜默落到寫死的
+    fallback。今天兩者剛好同值所以看不出來——info.tsx 一旦重新產生成別的
+    ref,封鎖名單就會保護錯的專案,而 journey 會對正式站寫資料。
+    因此這裡改成兩種引號都吃,且**找不到就硬失敗**:讀不出正式站 ref 時,
+    「確定沒打到正式站」這句話就無法成立,不該讓測試繼續跑。
+    """
+    path = REPO_ROOT / "src" / "utils" / "supabase" / "info.tsx"
+    match = re.search(r"""projectId\s*=\s*['"]([a-z0-9]+)['"]""", path.read_text(encoding="utf-8"))
+    if not match:
+        raise RuntimeError(
+            f"無法從 {path} 解析出正式專案 ref——正式站封鎖名單失去依據,拒絕執行。"
+            "info.tsx 的格式若改了,請同步更新這裡的 regex。"
+        )
+    return match.group(1)
 
 
 @dataclass(frozen=True)
