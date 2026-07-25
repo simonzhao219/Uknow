@@ -38,7 +38,10 @@ export interface UseReferralDataResult {
   sort: NetworkSortMode;
   setSort: (mode: NetworkSortMode) => void;
   loadChildren: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+  searchNetwork: (
+    q: string,
+    offset?: number,
+  ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
 }
 
 const DEDUP_KEY = 'referralNetwork';
@@ -158,14 +161,23 @@ export function useReferralData(): UseReferralDataResult {
     }
   }, []);
 
-  const searchNetwork = useCallback(async (q: string): Promise<NetworkSearchMatch[]> => {
-    const result = await apiRequestJson<{
-      success: boolean;
-      data: { matches: NetworkSearchMatch[] };
-    }>(buildApiUrl(`/referrals/network/search?q=${encodeURIComponent(q)}&sort=${sortRef.current}`));
-    if (!result.success) throw new Error('搜尋失敗');
-    return result.data.matches;
-  }, []);
+  // 回傳 total 而非只有 matches：搜尋不得靜默截斷,呼叫端要能顯示
+  // 「已顯示 X / Y」並續接下一頁（offset = 已取回筆數）。
+  const searchNetwork = useCallback(
+    async (q: string, offset = 0): Promise<{ matches: NetworkSearchMatch[]; total: number }> => {
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: { matches: NetworkSearchMatch[]; total: number };
+      }>(
+        buildApiUrl(
+          `/referrals/network/search?q=${encodeURIComponent(q)}&sort=${sortRef.current}&offset=${offset}`,
+        ),
+      );
+      if (!result.success) throw new Error('搜尋失敗');
+      return { matches: result.data.matches, total: result.data.total };
+    },
+    [],
+  );
 
   return {
     overview,

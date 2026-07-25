@@ -379,7 +379,10 @@ interface ReferralTreeViewProps {
   sort: NetworkSortMode;
   onSortChange: (mode: NetworkSortMode) => void;
   loadChildren: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+  searchNetwork: (
+    q: string,
+    offset: number,
+  ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
 }
 
 type SearchState =
@@ -418,8 +421,8 @@ export function ReferralTreeView({
     let cancelled = false;
     setSearch({ status: 'loading' });
     const t = setTimeout(() => {
-      searchNetwork(q)
-        .then((matches) => {
+      searchNetwork(q, 0)
+        .then(({ matches }) => {
           if (!cancelled) setSearch({ status: 'done', matches });
         })
         .catch(() => {
