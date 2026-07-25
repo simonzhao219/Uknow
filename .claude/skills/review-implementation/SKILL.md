@@ -19,6 +19,9 @@ argument-hint: [feature-slug]
    - `docs/plans/$ARGUMENTS/plan.md`(當初審核通過的設計)
    - `docs/plans/$ARGUMENTS/review.md`(規劃期的發現與處置)
    - `docs/plans/$ARGUMENTS/progress.md`(實作期的 blockers 與偏離紀錄)
+   - 規劃檔已清理或走 Plan Mode(不落檔)時:用
+     `git show <紅燈commit>:docs/plans/$ARGUMENTS/plan.md` 取回,或直接把
+     手上的規劃內容放進 reviewer 的 prompt——**沒有檔案不是略過審查的理由**
 2. **同一則訊息平行派出**四個 subagent(同步等待結果):
    `plan-reviewer-system`、`plan-reviewer-architecture`、
    `plan-reviewer-uiux`、`plan-reviewer-requirements`。給每個:

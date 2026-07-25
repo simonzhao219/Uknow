@@ -7,8 +7,12 @@ disable-model-invocation: true
 
 # /tdd-implement — 實作階段
 
-依 `docs/plans/$ARGUMENTS/plan.md` 的階段切分逐階段 TDD。
-**只有人可以啟動本 skill**——這是「人審通過才實作」的機制保證。
+依已審核通過的規劃逐階段 TDD。**只有人可以啟動本 skill**——這是「人審
+通過才實作」的機制保證。
+
+適用於**落檔模式**(規劃在 `docs/plans/$ARGUMENTS/`)。Plan Mode 的輕量
+改動不需要本 skill 的階段機制,審查通過後直接做即可(仍照 TDD:先測試
+後實作),分支別用 `feature/*`。
 
 **本階段可在全新 session 執行**,rehydrate 全靠檔案(刻意不用動態注入
 glob——多 feature 並存時會吃進別案狀態):
@@ -57,7 +61,18 @@ glob——多 feature 並存時會吃進別案狀態):
 3. **跑 `/review-implementation $ARGUMENTS`**——四視角審實作 diff,重點是
    「有沒有偏離當初審核通過的 plan」。CI 證明不了這件事,只有獨立視角能。
    P0 修掉(或人工豁免並記錄)才可 push
-4. Push:`git push -u origin feature/$ARGUMENTS`,開 PR → **develop**
-   (照 PR 範本填:規劃書連結、審查報告、紅燈 hashes、CI run)
-5. `gh pr checks --watch` 盯到綠;紅了同 session 修——CI 訊號沒有回來
+4. **清理規劃檔**——規劃檔是鷹架,施工完就拆:
+   - 先把值得長期保存的決策**升級**進正式文件(規格書 / 架構文件 /
+     `docs/plans/friction-log.md` 的框架摩擦條目)。留在 plan 裡等人考古
+     的決策等於沒保存
+   - `git rm -r docs/plans/$ARGUMENTS`,獨立 commit
+     `chore(plans): 清理 $ARGUMENTS 規劃檔`
+   - 內容不會消失:deletion commit 之前的版本永遠在 git 裡
+     (`git show <hash>:docs/plans/$ARGUMENTS/plan.md`),PR 本身也是紀錄。
+     守衛看的是「這條分支曾經有過規劃書」,所以清理後仍可繼續修 CI 紅燈
+5. Push:`git push -u origin feature/$ARGUMENTS`,開 PR → **develop**
+   (照 PR 範本填:紅燈 hashes、審查結論摘要、CI run。規劃檔已清理時,
+   在 PR 描述**貼上規劃與審查的結論摘要**——證據要跟著 PR 走,不能因為
+   檔案清掉就消失)
+6. `gh pr checks --watch` 盯到綠;紅了同 session 修——CI 訊號沒有回來
    之前,任務不算完
