@@ -3,6 +3,17 @@ import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
+import { resolveSupabaseTarget } from './config/supabaseTarget';
+
+// 分支感知的 Supabase 目標：只有 main 打正式站，其餘分支（develop 與各種
+// 預覽）指向 develop 的分支 DB。規則、理由與覆蓋順序見 config/supabaseTarget.ts；
+// 這裡只負責把結果餵給 Vite 的 env（projectConfig.ts 讀 VITE_SUPABASE_*）。
+const supabaseTarget = resolveSupabaseTarget(process.env);
+if (supabaseTarget) {
+  process.env.VITE_SUPABASE_PROJECT_ID = supabaseTarget.projectId;
+  process.env.VITE_SUPABASE_ANON_KEY = supabaseTarget.anonKey;
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
