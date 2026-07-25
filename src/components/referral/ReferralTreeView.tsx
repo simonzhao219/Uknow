@@ -413,16 +413,30 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             </button>
           )}
         </div>
-        {/* 排序：單一原生 select（晶片樣式）。選項文字本身就短（≤5 字），
-            收合自然短——單層、單一文字來源，結構上不可能疊字；
-            行動端點擊即原生選單，鍵盤/報讀直接操作 select 本體。 */}
-        <div className="relative flex shrink-0 items-center">
-          <ArrowUpDown className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        {/* 排序：手機 icon-only（最小佔位）、sm+ 顯示短標籤。
+            視覺層 aria-hidden；操作/a11y 走覆蓋其上「永遠透明」的原生
+            select（上次疊字的元兇是 focus-visible reveal——此處結構上
+            禁止 reveal，focus 環改由 :has(:focus-visible) 打在外框）。
+            手機 icon-only 失去狀態可見性的補償：非預設排序時亮指示點。 */}
+        <div className="relative shrink-0 rounded-full has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+          <span aria-hidden data-testid="sort-label-wrap" className="flex items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm sm:py-2 sm:pl-3 sm:pr-3">
+            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+            <span data-testid="sort-label" aria-hidden="true" className="hidden whitespace-nowrap sm:inline">
+              {SORT_OPTIONS.find((o) => o.value === sort)?.label}
+            </span>
+          </span>
+          {sort !== 'updated_desc' && (
+            <span
+              data-testid="sort-active-dot"
+              aria-hidden
+              className="absolute right-0 top-0 h-2 w-2 rounded-full bg-amber-500 sm:hidden"
+            />
+          )}
           <select
             aria-label="排序方式"
             value={sort}
             onChange={(e) => onSortChange(parseSortMode(e.target.value))}
-            className="cursor-pointer appearance-none rounded-full border bg-muted/40 py-2 pl-8 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
           >
             {SORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
