@@ -68,6 +68,16 @@ for f in .claude/hooks/*.py; do
   fi
 done
 
+# 6. hook 的行為測試（不只語法）——閘門自己也要有紅綠燈。
+#    friction-log 2026-07-25「pre-commit 誤擋 merge」的防線回填：那次是靠
+#    人工模擬才發現的，行為分支沒有自動測試就只能靠事故發現迴歸。
+if [ -f scripts/test-hooks.py ]; then
+  if ! python3 scripts/test-hooks.py; then
+    echo "FAIL: hook 行為測試未過（scripts/test-hooks.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi

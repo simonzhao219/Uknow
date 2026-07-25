@@ -45,8 +45,24 @@ pre-commit 的「後端有改但本機無 deno → 擋」規則觸發，**無法
 commit 已過 CI api-tests 軌）；deno 在則照跑。**自撰閘門的第一次誤擋，
 修閘門而非繞閘門**——這正是 friction-log 存在的用途。
 
-防線回填：framework-check 目前只驗腳本語法，不驗 hook 的行為分支。
-本次靠人工模擬觸發才發現，已記為待辦：hook 行為需要 case 化的自我測試。
+防線回填：**已完成**（2026-07-25）。三個 guard 的判斷抽成純函式 `decide()`、
+pre-commit 加 `PRE_COMMIT_DRY_RUN` 決策輸出（一律以 99 退出，不可能成為繞道），
+`scripts/test-hooks.py` 以 41 條表格案例驗行為，接進 `framework-check.sh`。
+測試本身用突變驗證過有效（拿掉 main/develop 防線、改壞紅燈通道，皆被抓到）。
+
+## 2026-07-25｜設計自我修正｜/review-plan 上鎖是錯的
+
+原設計三個 skill 全上 `disable-model-invocation`，理由是「外迴路由人啟動」。
+但「防止模型跳過人審去實作」這個目的**已由 `/tdd-implement` 的前置檢查達成**
+（檢查 review.md 存在、P0 已處置、人審勾選）。額外鎖住 `/plan-feature` 與
+`/review-plan` 沒有增加保護，只製造了「規劃與審查可被靜默略過」的洞——使用者
+說「加個功能」時模型沒有任何機制把它導向規劃流程。
+
+處置：解鎖 `/plan-feature`（description 寫明「新功能第一步，不要直接寫程式」）
+與 `/review-plan`（唯讀、產報告後停，無副作用），`/tdd-implement` 維持鎖定。
+再加 `feature-plan-guard` 作為確定性後盾——自動觸發是啟發式的，不能只靠它。
+
+教訓：上鎖要問「這道鎖擋住的具體行為是什麼」，不是「這階段感覺該由人啟動」。
 
 ## 2026-07-25｜誤擋教訓｜biome unsafe autofix 誤刪檔頭註解
 
