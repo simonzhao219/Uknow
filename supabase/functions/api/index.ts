@@ -2573,7 +2573,12 @@ function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string
 }
 
 const ATTENTION_LIMIT = 6;
-const SEARCH_LIMIT = 50;
+// 搜尋分頁：預設頁大小 50、上限 200（與 /rewards/history 同慣例）。
+// total 永遠是全部命中數、不受這兩者影響——「符合條件的都要搜得到」是靠
+// 分頁走得完，不是靠把單頁放大；先前在排序後才 slice(0, 50)，排序方向一改
+// 就換一批人搜得到，而前端不顯示 total，截斷完全無感。
+const SEARCH_PAGE_SIZE = 50;
+const SEARCH_PAGE_MAX = 200;
 
 async function myReferralCode(client: any, userId: string): Promise<string> {
   const { data } = await client.from('referral_codes')
@@ -2694,11 +2699,16 @@ app.get('/referrals/network/search', async (c) => {
       return path.reverse();
     };
 
-    // stub：分頁尚未實作（Phase 3 綠燈才接），先回聲固定值讓契約形狀成立
-    const limit = SEARCH_LIMIT;
-    const offset = 0;
+    // 壞值一律回落而非報錯：搜尋是高頻互動，limit=abc 不該讓使用者看到 400。
+    // Number('') / Number(undefined) 皆為 NaN → `|| 預設`；負 offset 由 max 夾到 0。
+    const limit = Math.min(
+      Math.max(Number(c.req.query('limit')) || SEARCH_PAGE_SIZE, 1),
+      SEARCH_PAGE_MAX,
+    );
+    const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+    // 越界 offset 由 slice 自然回空陣列——是「空的一頁」，不是錯誤。
     const matches = sortNodeIds(net, hitIds, sort)
-      .slice(0, SEARCH_LIMIT)
+      .slice(offset, offset + limit)
       .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
 
     return c.json(
