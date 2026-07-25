@@ -22,7 +22,6 @@ import {
   RewardsSummaryResponseSchema,
   WithdrawalsResponseSchema,
   RewardHistoryResponseSchema,
-  ReferralTreeResponseSchema,
   TasksResponseSchema,
   PendingRewardsResponseSchema,
   CurrentMonthReferralsResponseSchema,
@@ -163,7 +162,12 @@ Deno.test('GET /tasks/monthly-summary 已刪除（404）', async () => {
   assertEquals(status, 404);
 });
 
-Deno.test('其餘讀端點契約形狀（rewards / withdrawals / subscriptions / my-tree / profile）', async () => {
+Deno.test('GET /referrals/my-tree 已退役（404）——Tier C：前端已切換 /referrals/network/*', async () => {
+  const { status } = await getJson('/referrals/my-tree', token);
+  assertEquals(status, 404);
+});
+
+Deno.test('其餘讀端點契約形狀（rewards / withdrawals / subscriptions / profile）', async () => {
   const rewards = await getJson('/rewards', token);
   assertShape(RewardsSummaryResponseSchema, rewards.body, 'GET /rewards');
 
@@ -180,10 +184,6 @@ Deno.test('其餘讀端點契約形狀（rewards / withdrawals / subscriptions /
     !('gracePeriodEnd' in (subStatus.body as { data: Record<string, unknown> }).data),
     '/subscriptions/status 不應再回傳 gracePeriodEnd',
   );
-
-  const tree = await getJson('/referrals/my-tree', token);
-  const treeParsed = assertShape(ReferralTreeResponseSchema, tree.body, 'GET /referrals/my-tree');
-  assertEquals(treeParsed.data.summary.firstGenCount, 2);
 
   const profile = await getJson('/profile', token);
   const profileParsed = assertShape(ProfileResponseSchema, profile.body, 'GET /profile');
