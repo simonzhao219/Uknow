@@ -130,6 +130,27 @@ Feature: Reward points and withdrawal
     And I submit the withdrawal application
     Then I should see a toast containing "已達每日提領上限"
 
+  @compatibility
+  Scenario: A toast carrying an unbreakable error code stays inside a phone screen
+    # 後端錯誤訊息會原樣進 toast。中文句子能自由斷行所以永遠塞得下,但錯誤
+    # 代碼這種不可斷的長 token 沒有斷點:它會把訊息欄撐開、卡片頂到寬度上限,
+    # 然後整張卡片掛到視窗外(修正前 375px 下左右各溢出 61px,兩端文字被切)。
+    Given I am on a 375px-wide phone screen
+    And I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos are already on file
+    And submitting a withdrawal fails with "ERR_SUBSCRIPTION_STATE_TRANSITION_FAILURE_0x8F2A1C9D"
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
+    And I agree to the withdrawal terms
+    And I submit the withdrawal application
+    Then I should see a toast containing "ERR_SUBSCRIPTION_STATE_TRANSITION_FAILURE"
+    And the toast should stay within the screen
+
   # --- Amount guardrails (WithdrawalProcess.validateStep1) ------------------
   # The money core: what can actually leave the account. Each violation must be
   # caught client-side before the confirm step, mirroring the backend's rules.
