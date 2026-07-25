@@ -143,6 +143,37 @@ _PROBE_JS = """
 """
 
 
+_CJK_METRICS_JS = """
+() => {
+  const probe = document.createElement('span');
+  probe.textContent = '獎金提領管理';  // 6 個全形字
+  probe.style.cssText =
+    'position:absolute;left:-9999px;top:0;font-size:16px;white-space:nowrap;' +
+    'font-family:ui-sans-serif,system-ui,sans-serif';
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width / (6 * 16);  // 真正的 CJK 字型每字寬 1em，比值應該是 1.0
+}
+"""
+
+
+def cjk_em_ratio(page) -> float:
+    """量 6 個全形字的平均字寬（以 em 為單位）。
+
+    這是整支巡檢的地基:所有數字都建立在「中文字畫出來多寬」上，而字寬由
+    執行環境的字型決定。同一份程式在不同機器上可能量出不同的溢出量，而且
+    這種漂移是靜默的——測試照樣綠，只是 baseline 悄悄變得偏鬆或偏緊。
+
+    注意這個檢查能保證的範圍:它確認「中文有以全形寬度畫出來」。至於一台
+    完全沒有 CJK 字型的機器會量到什麼比值，沒有實測過——Chromium 會逐字
+    回退到系統上任何可用字型，`font-family` 關不掉，所以在有字型的機器上
+    模擬不出無字型的情況。因此比值除了拿來斷言，也會一併寫進報告,讓跨
+    環境的差異即使在斷言通過時也看得見。
+    """
+    return page.evaluate(_CJK_METRICS_JS)
+
+
 def settle(page) -> None:
     """等頁面靜下來再量。networkidle 拿不到就退回固定等待——這裡寧可多等
     一下也不要量到動畫中途的盒子。"""

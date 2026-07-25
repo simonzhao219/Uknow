@@ -38,7 +38,7 @@ from mocks.backend_api_mock import (
 )
 from mocks.fixtures import seed_authenticated_session
 from mocks.supabase_rest_mock import build_listing, build_public_listing
-from overflow_probe import MOBILE_VIEWPORT, scan_overflow, settle
+from overflow_probe import MOBILE_VIEWPORT, cjk_em_ratio, scan_overflow, settle
 
 STRICT = os.environ.get("E2E_OVERFLOW_STRICT") == "1"
 REPORT_DIR = Path(__file__).parent / "test-results"
@@ -313,6 +313,8 @@ def _write_report(results):
         f"- 掃描路由：{len(results)} 條（另有 {len(SKIPPED_ROUTES)} 條未掃，見文末）",
         f"- 發現總數：**{total}**",
         f"- 模式：{'STRICT（會讓 CI 失敗）' if STRICT else 'report-only（不擋 CI）'}",
+        f"- 中文字寬：{results[0]['cjkEmRatio'] if results else '?'}em"
+        "（應為 1.0；跨環境比對 baseline 時先確認這個值一致）",
         "",
         "訊號說明：`horizontal` 內容比框寬｜`vertical` 固定高度容器內文字被切"
         "｜`viewport-escape` fixed 元素超出視窗。",
@@ -378,6 +380,16 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
     page.goto(route.path)
     settle(page)
 
+    # 地基檢查:全站文案是中文，所有溢出數字都建立在中文字寬上。字沒有以
+    # 全形畫出來，量到的就不是這個 app 在真實裝置上的樣子。這條是硬失敗、
+    # 不受 report-only 影響——量測工具本身壞掉時,報告不該還裝作有效。
+    ratio = cjk_em_ratio(page)
+    assert 0.95 <= ratio <= 1.05, (
+        f"這台機器的中文字寬是 {ratio:.2f}em（應為 1.00em）——中文沒有以全形寬度"
+        "畫出來，量到的溢出數字不能代表真實裝置，baseline 不可信。"
+        "請確認有裝中文字型（Debian/Ubuntu:fonts-wqy-zenhei 或 fonts-noto-cjk）。"
+    )
+
     result = scan_overflow(page)
     landed = page.url.split("localhost:3000", 1)[-1] or "/"
 
@@ -388,6 +400,9 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
             "landed": landed,
             "findings": result["findings"],
             "pageHorizontalScroll": result["pageHorizontalScroll"],
+            # 記在報告裡:所有數字都是以這個字寬量出來的。跨環境比對 baseline
+            # 時，先看這個值是否一致，再看發現數量。
+            "cjkEmRatio": round(ratio, 3),
         }
     )
 
