@@ -12,7 +12,10 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'node',
-      include: ['src/**/*.test.{ts,tsx}'],
+      // src/** 是產品程式碼；config/** 是建置期設定（分支 → Supabase 目標），
+      // 兩者都跑在 node 上。刻意逐一列出而非放寬成 '**'：supabase/** 是另一個
+      // runtime（Deno），絕不能被收進來。
+      include: ['src/**/*.test.{ts,tsx}', 'config/**/*.test.ts'],
       exclude: ['node_modules', 'build', 'e2e', 'supabase'],
       coverage: {
         provider: 'v8',
