@@ -289,6 +289,7 @@ def pre_commit_dryrun(
     lock: bool = False,
     staged: str | None = None,
     deno: str | None = None,
+    doc_diff: str | None = None,
 ) -> str:
     """跑 pre-commit 的 dry-run,回傳 DRYRUN: 決策行(空白分隔)。"""
     lock_path = ROOT / ".claude" / "tdd-lock"
@@ -308,6 +309,10 @@ def pre_commit_dryrun(
         # 取決於跑它的那台機器
         if deno is not None:
             env["PRE_COMMIT_FAKE_DENO"] = deno
+        # 明確指定文件 diff 內容,行為測試才不會受「此刻暫存區剛好有什麼
+        # docs/e2e 變更」影響
+        if doc_diff is not None:
+            env["PRE_COMMIT_FAKE_DOC_DIFF"] = doc_diff
         out = subprocess.run(
             ["bash", str(ROOT / "scripts" / "git-hooks" / "pre-commit")],
             cwd=ROOT,
@@ -377,6 +382,18 @@ expect_in("pre-commit[合併中＋無 deno:降為略過]", "DENO merge-exception
 # 假合併訊號不得讓「沒有後端變更」的 commit 憑空走進 Deno 分支
 merge_front = pre_commit_dryrun(fake_merge=True, staged="src/App.tsx")
 expect_not_in("pre-commit[假合併訊號不憑空觸發 Deno]", "DENO", merge_front)
+
+# 文件旁白提醒:只提醒不擋(exit code 99 的斷言已包在 pre_commit_dryrun 裡)。
+# 關鍵字刻意窄——只認「已定案不提供/非落差」這種自我辯護措辭,不能誤觸發
+# §14 表格本身合法的「未實作」字樣(見 .claude/rules/document-writing.md 的例外條款)。
+doc_bad = pre_commit_dryrun(doc_diff="+不提供自助取消訂閱（已定案的產品決策，非落差）")
+expect_in("pre-commit[新增「已定案不提供」文字:advisory 提醒]", "DOC_ADVISORY triggered", doc_bad)
+
+doc_ok = pre_commit_dryrun(doc_diff="+一般文件變更，不含旁白字樣")
+expect_not_in("pre-commit[一般文件變更:不觸發]", "DOC_ADVISORY", doc_ok)
+
+doc_legit_gap_row = pre_commit_dryrun(doc_diff="+| 5 | 到期前 Email 提醒 | 未實作 |")
+expect_not_in("pre-commit[§14 合法的「未實作」措辭:不誤觸發]", "DOC_ADVISORY", doc_legit_gap_row)
 
 
 # --------------------------------------------------------------------- 結果
