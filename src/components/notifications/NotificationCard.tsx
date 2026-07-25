@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -8,7 +8,7 @@ export interface NotificationConfig {
   title: string;
   message: string;
   type: NotificationType;
-  details?: string[];
+  details?: ReactNode[];
   onConfirm?: () => void;
   confirmText?: string;
   onCancel?: () => void;

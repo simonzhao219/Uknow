@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { AlertTriangle } from 'lucide-react';
 import { formatTimestamp } from '../../utils/referralFormatter';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../../utils/constants';
 
 interface CollectionConfirmDialogProps {
   withdrawal: {
@@ -63,7 +64,17 @@ export function CollectionConfirmDialog({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
             <h4 className="font-medium text-blue-900 mb-2">如有問題請聯絡客服</h4>
             <div className="space-y-1 text-sm text-blue-800">
-              <p>📞 LINE 客服：@uknow</p>
+              <p>
+                📞 LINE 客服：
+                <a
+                  href={LINE_OFFICIAL_ACCOUNT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-blue-900"
+                >
+                  {LINE_OFFICIAL_ACCOUNT_HANDLE}
+                </a>
+              </p>
               <p className="text-xs text-blue-600 mt-2">請提供以下資訊以便查詢：</p>
               <ul className="text-xs text-blue-600 list-disc list-inside space-y-0.5">
                 <li>帳號資訊</li>

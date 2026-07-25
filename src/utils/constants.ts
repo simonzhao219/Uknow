@@ -19,6 +19,15 @@ export const MAX_PHOTO_COUNT = 3; // 最多3張照片
 export const ALLOWED_PHOTO_FORMATS = ['image/jpeg', 'image/png', 'image/webp']; // 允許的照片格式
 
 // ============================================
+// 客服聯絡常數
+// ============================================
+
+// 官方 LINE 帳號——所有顯示處都應引用這裡，避免各處大小寫不一致、
+// 或連結格式各自漂移（曾同時存在多種純文字寫法與不同的 line.me 網址格式）
+export const LINE_OFFICIAL_ACCOUNT_HANDLE = '@uknow';
+export const LINE_OFFICIAL_ACCOUNT_URL = `https://line.me/R/ti/p/${LINE_OFFICIAL_ACCOUNT_HANDLE}`;
+
+// ============================================
 // 服務相關常數
 // ============================================
 

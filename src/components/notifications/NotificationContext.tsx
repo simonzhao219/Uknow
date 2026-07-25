@@ -12,10 +12,10 @@ interface NotificationContextType {
   showNotification: (config: NotificationConfig) => void;
 
   // 快捷方法
-  showSuccess: (title: string, message: string, details?: string[]) => void;
-  showError: (title: string, message: string, details?: string[]) => void;
-  showWarning: (title: string, message: string, details?: string[]) => void;
-  showInfo: (title: string, message: string, details?: string[]) => void;
+  showSuccess: (title: string, message: string, details?: ReactNode[]) => void;
+  showError: (title: string, message: string, details?: ReactNode[]) => void;
+  showWarning: (title: string, message: string, details?: ReactNode[]) => void;
+  showInfo: (title: string, message: string, details?: ReactNode[]) => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -75,7 +75,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // 快捷方法
   const showSuccess = useCallback(
-    (title: string, message: string, details?: string[]) => {
+    (title: string, message: string, details?: ReactNode[]) => {
       showNotification({
         type: 'success',
         title,
@@ -87,7 +87,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   );
 
   const showError = useCallback(
-    (title: string, message: string, details?: string[]) => {
+    (title: string, message: string, details?: ReactNode[]) => {
       showNotification({
         type: 'error',
         title,
@@ -99,7 +99,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   );
 
   const showWarning = useCallback(
-    (title: string, message: string, details?: string[]) => {
+    (title: string, message: string, details?: ReactNode[]) => {
       showNotification({
         type: 'warning',
         title,
@@ -111,7 +111,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   );
 
   const showInfo = useCallback(
-    (title: string, message: string, details?: string[]) => {
+    (title: string, message: string, details?: ReactNode[]) => {
       showNotification({
         type: 'info',
         title,
