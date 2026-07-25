@@ -80,6 +80,8 @@ Deno.test('GET /rewards/history：契約形狀 + 分頁 + 餘額對帳', async (
   assertEquals(parsed.data.offset, 0);
   assert(parsed.data.total >= 2, `推薦人應至少有 2 筆 gen1 獎勵，實際 total=${parsed.data.total}`);
   assertEquals(parsed.data.history.length, 1);
+  // 種子的推薦獎勵都來自下線付款 → source_category 應為 referral_payment（非任務續約）
+  assertEquals(parsed.data.history[0].sourceCategory, 'referral_payment');
 
   // 分頁不重疊 + offset 回聲
   const page2 = await getJson('/rewards/history?limit=1&offset=1', token);
@@ -93,27 +95,41 @@ Deno.test('GET /rewards/history：契約形狀 + 分頁 + 餘額對帳', async (
   assertEquals(parsed.data.history[0].balance, bal!.available);
 });
 
-Deno.test('GET /rewards/history?type=：type 篩選在後端下推（count 為該分類總數）', async () => {
-  // referral：只回推薦獎勵；種子有 2 筆 gen1，total 應 >= 2 且每筆都是 referral_*
-  const ref = await getJson('/rewards/history?type=referral&limit=50&offset=0', token);
-  assertEquals(ref.status, 200);
-  const refParsed = assertShape(RewardHistoryResponseSchema, ref.body, 'GET /rewards/history?type=referral');
-  assert(refParsed.data.total >= 2, `type=referral 應至少 2 筆，實際 ${refParsed.data.total}`);
+Deno.test('GET /rewards/history?source=：來源分類篩選在後端下推（count 為該分類集合總數）', async () => {
+  // referral_payment：種子的 2 筆 gen1 都是「下線付款」帶來的（source_claim_id 為 null）
+  const rp = await getJson('/rewards/history?source=referral_payment&limit=50&offset=0', token);
+  assertEquals(rp.status, 200);
+  const rpParsed = assertShape(RewardHistoryResponseSchema, rp.body, 'GET ?source=referral_payment');
+  assert(rpParsed.data.total >= 2, `source=referral_payment 應至少 2 筆，實際 ${rpParsed.data.total}`);
   assert(
-    refParsed.data.history.every((r) => r.type.startsWith('referral_')),
-    'type=referral 只應回 referral_* 類型',
+    rpParsed.data.history.every((r) => r.sourceCategory === 'referral_payment'),
+    'source=referral_payment 只應回 referral_payment',
   );
 
-  // withdrawal：此推薦人無提領 → total=0、history 空（證明 count 隨 filter 變）
-  const wd = await getJson('/rewards/history?type=withdrawal&limit=50&offset=0', token);
-  const wdParsed = assertShape(RewardHistoryResponseSchema, wd.body, 'GET /rewards/history?type=withdrawal');
-  assertEquals(wdParsed.data.total, 0, 'type=withdrawal 對無提領者 total 應為 0');
+  // referral_task_renewal：種子沒有任務續約 cascade → total=0（證明兩種推薦獎勵分得開）
+  const rt = await getJson('/rewards/history?source=referral_task_renewal&limit=50&offset=0', token);
+  const rtParsed = assertShape(RewardHistoryResponseSchema, rt.body, 'GET ?source=referral_task_renewal');
+  assertEquals(rtParsed.data.total, 0, 'source=referral_task_renewal 對無任務續約者 total 應為 0');
+
+  // withdrawal：此推薦人無提領 → total=0（證明 count 隨 filter 變）
+  const wd = await getJson('/rewards/history?source=withdrawal&limit=50&offset=0', token);
+  const wdParsed = assertShape(RewardHistoryResponseSchema, wd.body, 'GET ?source=withdrawal');
+  assertEquals(wdParsed.data.total, 0, 'source=withdrawal 對無提領者 total 應為 0');
   assertEquals(wdParsed.data.history.length, 0);
 
-  // all（未帶 type）：涵蓋全部，total 不應小於單一分類
+  // 多選 CSV：referral_payment + withdrawal → 等於兩分類相加（此處 withdrawal=0）
+  const multi = await getJson('/rewards/history?source=referral_payment,withdrawal&limit=50&offset=0', token);
+  const multiParsed = assertShape(RewardHistoryResponseSchema, multi.body, 'GET ?source=multi');
+  assertEquals(
+    multiParsed.data.total,
+    rpParsed.data.total + wdParsed.data.total,
+    '多選 total 應等於各分類相加',
+  );
+
+  // all（未帶 source）：涵蓋全部，total 不應小於單一分類
   const all = await getJson('/rewards/history?limit=50&offset=0', token);
   const allParsed = assertShape(RewardHistoryResponseSchema, all.body, 'GET /rewards/history all');
-  assert(allParsed.data.total >= refParsed.data.total, 'all 的 total 不應小於 referral 分類');
+  assert(allParsed.data.total >= rpParsed.data.total, 'all 的 total 不應小於單一分類');
 });
 
 Deno.test('GET /tasks/current-month-top：個人本月推薦明細（不是排行榜）', async () => {

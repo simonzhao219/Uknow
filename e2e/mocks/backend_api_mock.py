@@ -671,13 +671,19 @@ def build_reward_history_record(
     description: str = "一代推薦 - 王小明",
     generation: int = 1,
     balance: int = 200,
+    source_category: str = "referral_payment",
     **overrides,
 ) -> dict:
     """A row for GET /rewards/history (RewardHistoryRecordSchema). Defaults model
-    a first-generation referral commission — the 推薦關係 -> 點數 link."""
+    a first-generation referral commission — the 推薦關係 -> 點數 link.
+
+    sourceCategory 是明細的來源分類（view source_category 衍生欄，見 migration
+    0725 0001）：付款推薦 referral_payment / 任務續約 referral_task_renewal /
+    提領 withdrawal / 退款 withdrawal_refund。前端用它渲染來源 badge 與篩選。"""
     record = {
         "id": "rh-e2e-1",
         "type": type,
+        "sourceCategory": source_category,
         "amount": amount,
         "description": description,
         "issuedAt": "2026-07-16T00:00:00.000Z",

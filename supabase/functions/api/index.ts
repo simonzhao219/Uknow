@@ -2169,27 +2169,30 @@ app.get('/rewards/history', async (c) => {
   const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
-  // type 篩選下推到後端：前端的分類（referral / withdrawal）對應到 reward_transactions.type。
-  // 'referral' 用 like 'referral_%' 對齊前端原本的 startsWith('referral_') 語意；未帶或 'all'
-  // 不加條件。篩選必須在 DB 端做，count 才會是「該分類的總數」，分頁與「已顯示 X / Y」才對得上
-  // ——舊版在前端過濾已載入的頁面，後頁的紀錄永遠看不到、計數也對不上。
-  const typeFilter = c.req.query('type');
+  // 來源分類篩選下推到後端：view 衍生欄 source_category（見 migration 0725 0001）。
+  // ?source=referral_payment,referral_task_renewal（CSV 多選）；未帶 = 全部。
+  // 篩選必須在 DB 端（.in），count 才是「該分類集合的總數」，分頁與「已顯示 X / Y」
+  // 才對得上——舊版在前端過濾已載入頁面，後頁永遠看不到、計數也對不上。
+  const sourceParam = c.req.query('source');
+  const sources = sourceParam
+    ? sourceParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
 
   let query = sb()
     .from('reward_transactions_with_balance')
-    .select('id, type, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
+    .select('id, type, source_category, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false });
 
-  if (typeFilter === 'referral') query = query.like('type', 'referral_%');
-  else if (typeFilter === 'withdrawal') query = query.eq('type', 'withdrawal');
+  if (sources.length) query = query.in('source_category', sources);
 
   const { data: rows, count } = await query.range(offset, offset + limit - 1);
 
   const history = (rows ?? []).map((r: any) => ({
     id:                  r.id,
     type:                r.type,
+    sourceCategory:      r.source_category,
     amount:              r.amount,
     description:         r.description,
     issuedAt:            r.created_at,
