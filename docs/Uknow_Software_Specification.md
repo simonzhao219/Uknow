@@ -502,7 +502,7 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
 | 3 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
 | 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
-| 5 | 當月推薦排行榜 | 端點存在，尚無完整 UI 與測試覆蓋 |
+| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `api-contract.ts` 常數，尚未執行 |
 
 ---
 
