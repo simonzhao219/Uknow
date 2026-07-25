@@ -163,13 +163,36 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const trigger = screen.getByRole('button', { name: '排序方式' });
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
 
-    // sm+ 短標籤、手機 icon-only（隱藏標籤）
+    // sm+ 短標籤、手機 icon-only（隱藏標籤）；grid 疊放承載固定寬
     const label = screen.getByTestId('sort-label');
     expect(label.className).toContain('hidden');
-    expect(label.className).toContain('sm:inline');
+    expect(label.className).toContain('sm:grid');
 
-    // 關閉狀態下全畫面只有一份排序文字：疊字問題結構性絕跡
+    // 關閉狀態下全畫面每份排序文字至多一份：疊字問題結構性絕跡
     expect(screen.getAllByText('姓名 Z→A').length).toBe(1);
+  });
+
+  it('排序晶片寬度固定：四個標籤全數疊放於同一格，非當前者隱形且不進 a11y 樹', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
+
+    // 所有選項標籤都在觸發器內佔位（疊同一 grid 格）→ 晶片寬度恆為最寬
+    // 標籤之寬，切換排序不再伸縮
+    const label = screen.getByTestId('sort-label');
+    const stacked = Array.from(label.querySelectorAll('span'));
+    expect(stacked.map((s) => s.textContent)).toEqual(['最新加入', '最舊加入', '姓名 A→Z', '姓名 Z→A']);
+    for (const s of stacked) {
+      expect(s.className).toContain('col-start-1');
+      expect(s.className).toContain('row-start-1');
+    }
+
+    // 當前選項可見；其餘三個以 invisible 佔位、aria-hidden 退出 a11y 樹
+    const [newest, oldest, nameAsc, nameDesc] = stacked;
+    expect(nameDesc.className).not.toContain('invisible');
+    expect(nameDesc.getAttribute('aria-hidden')).toBeNull();
+    for (const ghost of [newest, oldest, nameAsc]) {
+      expect(ghost.className).toContain('invisible');
+      expect(ghost.getAttribute('aria-hidden')).toBe('true');
+    }
   });
 
   it('展開為 menuitemradio 四選項、當前排序 aria-checked、點選回報 onSortChange', async () => {
