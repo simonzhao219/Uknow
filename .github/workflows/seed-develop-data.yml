@@ -135,12 +135,36 @@ jobs:
           #    generate_link(type=signup) 回 422——run 30175036725 就是這樣死在
           #    A0。前端的註冊流程本來就有 OTP 那一步，關掉確認等於 develop 的
           #    註冊 UX 與正式站不同，順手改回來。
-          curl -sf -X PATCH \
+          auth_api="https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth"
+          patch_out="$(curl -sS -w '\n%{http_code}' -X PATCH \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
-            -d '{"rate_limit_email_sent": 200, "mailer_autoconfirm": false}' \
-            || echo "::warning::auth rate limit 調整失敗——45 人建樹可能撞 email 限流"
+            "$auth_api" \
+            -d '{"rate_limit_email_sent": 200, "mailer_autoconfirm": false}')"
+          patch_code="$(echo "$patch_out" | tail -1)"
+          if [ "$patch_code" != "200" ]; then
+            echo "::error::auth 設定 PATCH 失敗（HTTP $patch_code）："
+            echo "$patch_out" | head -5
+            exit 1
+          fi
+
+          # 設完回頭讀一次確認生效。前三次執行的教訓：run 30175585595 明明
+          # PATCH 過了卻仍然死在同一個 422——「送出設定」與「設定生效」是
+          # 兩件事，而靜默的 no-op 比明確的失敗貴得多（每次都要燒一輪 CI
+          # 才發現）。這裡把它變成前置條件斷言。
+          autoconfirm="$(curl -sS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "$auth_api" \
+            | grep -o '"mailer_autoconfirm":[^,}]*' | head -1)"
+          echo "目前的 email 確認設定：${autoconfirm:-（讀不到欄位）}"
+          case "$autoconfirm" in
+            *true*)
+              echo "::error::develop 分支仍是自動確認 email（mailer_autoconfirm=true）。"
+              echo "::error::GUI signUp 會直接產生已確認帳號，Admin API 的"
+              echo "::error::generate_link(type=signup) 對它回 422，建樹取不到 OTP。"
+              echo "::error::請到 Supabase dashboard → 該分支專案 → Authentication →"
+              echo "::error::Sign In / Providers → Email，把 Confirm email 打開後重跑。"
+              exit 1
+              ;;
+          esac
 
       # 種資料不是冪等的：root 用固定 email，已存在時 GUI 註冊入口會切換成
       # 登入表單，建樹會以一個難懂的畫面錯誤死在第 0 代（run 30175036725 的
