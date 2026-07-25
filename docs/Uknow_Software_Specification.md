@@ -10,6 +10,12 @@
 >
 > **會變的數字不寫死在文件**：獎金額度與推薦王門檻的執行期真相是資料表
 > `reward_config`（見 §8.1）。本文件寫出的是**現值**，調參時以資料表為準。
+>
+> **本文件有機械把關**：`scripts/check-spec-drift.py`（接在 framework-check 軌）
+> 會把可驗證的事實與程式碼逐條對上——業務常數、§3 路由表、狀態機與分類列舉、
+> 以及本文件引用的檔案路徑。改了程式碼沒同步這裡，CI 會紅；**改這裡的措辭
+> 導致檢查器抽不到值，CI 也會紅**（抽不到就當通過，等於閘門靜默失效）。
+> 調整相關段落的寫法時，請一併更新該腳本的抽取式。
 
 ---
 
@@ -77,12 +83,18 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/auth/complete-profile` | 完善個資 | 登入 |
 | `/payment/checkout`、`/payment/result` | 結帳 / 付款結果 | 登入 |
 | `/dashboard` | 會員儀表板 | 登入 + 會籍 |
-| `/service-providers`（+ `/create`、`/edit/:id`） | 刊登管理 | 登入 + 會籍 + featureFlag |
+| `/service-providers` | 刊登管理 | 登入 + 會籍 + featureFlag |
+| `/service-providers/create` | 新增刊登 | 登入 + 會籍 + featureFlag |
+| `/service-providers/edit/:id` | 編輯刊登 | 登入 + 會籍 + featureFlag |
 | `/referrals` | 推薦網絡 | 登入 + 會籍 + featureFlag |
 | `/tasks` | 任務中心 | 登入 + 會籍 + featureFlag |
 | `/rewards` | 獎勵回饋 / 提領 | 登入 + 會籍 + featureFlag |
 | `/admin` | 管理後台 | 管理員 |
-| `*` | 導回 `/` | — |
+| `*` | 未匹配路由導回首頁 | — |
+
+> 本表的第一欄由 `scripts/check-spec-drift.py` 與 `src/App.tsx` 的
+> `<Route path>` 做**集合對照**——多一條、少一條、拼錯都會讓 framework-check
+> 變紅。因此路由請逐條列出，不要用「（+ /create、/edit/:id）」這類簡寫。
 
 **守衛語意**
 
@@ -501,8 +513,8 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 1 | 身分證字號唯一性檢核（§4.2） | `profiles.national_id` 無唯一約束、`/auth/register` 未檢查 |
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
 | 3 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
-| 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
-| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `api-contract.ts` 常數，尚未執行 |
+| 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`src/contexts/FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
+| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 
 ---
 

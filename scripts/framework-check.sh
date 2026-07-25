@@ -105,6 +105,22 @@ if [ -f scripts/check-test-names.py ]; then
   fi
 fi
 
+# 9. 規格書漂移。規格書是 plan-reviewer-requirements 的溯源對象（對不到章節的
+#    功能斷言一律 P0），所以它失真時這道審查閘門不是失效而是**反向作用**——
+#    用作廢的規則擋掉正確的規劃。2026-07-25 的文件整理發現多處與實作相反的
+#    敘述，且落差曾被三份文件各自旁註「以程式碼為準」卻沒人回頭修上游。
+#    人工逐條比對不會發生第二次，所以接一道機器。
+if [ -f scripts/check-spec-drift.py ]; then
+  if ! python3 scripts/check-spec-drift.py --self-test; then
+    echo "FAIL: 規格書漂移檢查器自身的表格案例未過（scripts/check-spec-drift.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-spec-drift.py; then
+    echo "FAIL: 規格書與程式碼不一致（scripts/check-spec-drift.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi

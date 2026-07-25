@@ -37,10 +37,11 @@
 | `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
 | `npm run check:full` | check + build + Deno 型別檢查(送 PR 前跑) |
 | `npm run test:watch` | vitest 監看模式 |
-| `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查) |
+| `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
 | `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
+| `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
@@ -84,7 +85,9 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
 規格書與程式碼衝突時**以程式碼為準,並在同一個 PR 回頭修規格書**——
 規格書是 `plan-reviewer-requirements` 的溯源對象,它失真等於審查閘門
-在把關錯誤的規則。
+在把關錯誤的規則。這條由 `scripts/check-spec-drift.py` 機械把關(接在
+framework-check 軌):改了業務常數、路由、狀態機列舉而沒同步規格書,
+CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不容許靜默失效。
 
 ## 開發流程細節(完整 SOP 在各 skill 內)
 
