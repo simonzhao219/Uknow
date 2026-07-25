@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -10,14 +10,13 @@ import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft, Trash2 } fro
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
-import { useDataCache } from '../contexts/DataCacheContext'; // ✅ 新增：資料快取
+import { useUserListing } from '../hooks/useUserListing';
 import { createClient } from '../utils/supabase/client';
 
 export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
-  const { getCache, setCache, clearCache, isStale } = useDataCache();
   // 刊登本身沒有狀態或效期（listings 表刻意不存 is_active／active_until）——
   // 是否對外顯示完全由帳號訂閱決定，且在資料層一處守門：HomePage 讀
   // public_listings view，view 以 has_active_subscription() 過濾，會員過期／
@@ -25,57 +24,11 @@ export function ServiceProviderManagement() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  
-  // ✅ 新規格：單一刊登模式
-  const [listing, setListing] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // ✅ 新規格：單一刊登模式。取得／快取／revalidate 全部收斂在 useUserListing，
+  // 與會員中心的刊登卡片共用同一份邏輯與同一個快取鍵。
+  const { listing, loading, error: listingError, refetch: refetchListing } = useUserListing();
   const supabase = createClient();
-
-  // stale-while-revalidate：有快取先畫（秒開），stale 時背景重新請求。
-  useEffect(() => {
-    if (user?.id) {
-      const cached = getCache('userListing');
-      if (cached != null) {
-        setListing(cached);
-        setLoading(false);
-      }
-      if (cached == null || isStale('userListing')) {
-        fetchUserListing(cached != null);
-      }
-    } else {
-      // ✅ 若沒有 user，停止 loading 並清空 listing
-      setLoading(false);
-      setListing(null);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-
-  const fetchUserListing = async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    try {
-      if (!user?.id) { setListing(null); return; }
-
-      const { data: listingData, error } = await supabase
-        .from('listings')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      setCache('userListing', listingData);
-      setListing(listingData);
-    } catch (error) {
-      console.error('獲取刊登失敗:', error);
-      // 背景重新請求失敗不打擾使用者，畫面沿用舊資料。
-      if (!isBackground) {
-        showToast('獲取刊登失敗，請稍後再試', 'error');
-        setListing(null);
-      }
-    } finally {
-      if (!isBackground) setLoading(false);
-    }
-  };
 
   // ✅ 複製推薦碼（簡化版）
   const handleCopyReferralCode = async () => {
@@ -138,11 +91,11 @@ export function ServiceProviderManagement() {
       console.log(`[刪除刊登] ✅ 成功`);
       
       showToast('刊登已成功刪除', 'success');
-      
-      // ✅ 清除快取並重新獲取刊登列表（應該會變成 null）
-      clearCache('userListing');
-      await fetchUserListing();
-      
+
+      // ✅ 重新獲取（應該會變成 null）——refetch 成功時會覆寫快取，
+      // 不需要再另外 clearCache。
+      await refetchListing();
+
     } catch (error) {
       console.error('[刪除刊登] ❌ 錯誤:', error);
       showError(
@@ -197,8 +150,10 @@ export function ServiceProviderManagement() {
             {/* <p className="text-muted-foreground">管理理您的專業服務刊登</p> */}
           </div>
         </div>
-        {/* ✅ 只有當用戶沒有刊登時，才顯示「刊登新服務」按鈕 */}
-        {!loading && listing === null && (
+        {/* ✅ 只有當用戶「確定」沒有刊登時，才顯示「刊登新服務」按鈕——
+            讀取失敗時 listing 同樣是 null，此時放行會讓已有刊登的人建出
+            第二則，違反單一刊登模式。 */}
+        {!loading && !listingError && listing === null && (
           <Button asChild>
             <Link to="/service-providers/create">
               <Plus className="h-4 w-4 mr-2" />
@@ -216,6 +171,16 @@ export function ServiceProviderManagement() {
             <p className="text-muted-foreground mb-6">
               正在獲取您的專業服務刊登
             </p>
+          </CardContent>
+        </Card>
+      ) : listingError ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <h3 className="text-lg font-medium mb-2">暫時無法取得刊登狀態</h3>
+            <p className="text-muted-foreground mb-6">{listingError}</p>
+            <Button variant="outline" onClick={() => { void refetchListing(); }}>
+              重新載入
+            </Button>
           </CardContent>
         </Card>
       ) : listing === null ? (
