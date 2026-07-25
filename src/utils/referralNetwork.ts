@@ -52,24 +52,18 @@ export interface NetworkSearchMatch {
 
 const SORT_MODES: readonly NetworkSortMode[] = ['updated_desc', 'updated_asc', 'name_asc', 'name_desc'];
 
-/** 排序選項（文案經需求方核定，測試釘死一字不差）。 */
-export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
-  { value: 'updated_desc', label: '更新：新 → 舊' },
-  { value: 'updated_asc', label: '更新：舊 → 新' },
-  { value: 'name_asc', label: '姓名：A → Z（筆畫少 → 多）' },
-  { value: 'name_desc', label: '姓名：Z → A（筆畫多 → 少）' },
-];
-
 /**
- * 排序晶片的收合短標籤（≤3 字）：窄螢幕上完整文案會撐爆整列、把高頻的
- * 搜尋框壓扁——收合只顯示狀態、完整文案留在展開的選單裡。
+ * 排序選項（文案經需求方核定，測試釘死一字不差）。
+ * 短文案是刻意的：收合的原生 select 顯示選中項全文，選項短（≤5 字）
+ * 收合就短——單層結構、單一文字來源，從結構上消滅先前「晶片 + 透明
+ * select 覆蓋」在 focus 時的疊字問題，窄螢幕也撐不爆搜尋列。
  */
-export const SORT_SHORT_LABEL: Record<NetworkSortMode, string> = {
-  updated_desc: '最新',
-  updated_asc: '最舊',
-  name_asc: 'A→Z',
-  name_desc: 'Z→A',
-};
+export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
+  { value: 'updated_desc', label: '最新加入' },
+  { value: 'updated_asc', label: '最舊加入' },
+  { value: 'name_asc', label: '姓名 A→Z' },
+  { value: 'name_desc', label: '姓名 Z→A' },
+];
 
 /** 非法/未知值一律回落預設 updated_desc（與伺服器 parseSortMode 同語意）。 */
 export function parseSortMode(raw: unknown): NetworkSortMode {
