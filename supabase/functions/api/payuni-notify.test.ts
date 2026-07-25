@@ -287,12 +287,13 @@ Deno.test('重放：同一筆 notify 連送三次只開通一次，不重複發�
     assertEquals(await orderStatus(client, tradeNo), 'completed');
     assertEquals(await subscriptionCount(client, referee.id), 1, '重放不得產生第二筆訂閱');
 
-    // 推薦獎勵也不得因為重放而重複發放
+    // 推薦獎勵也不得因為重放而重複發放（一代獎勵恰一筆）
     const { data: rewards } = await client
-      .from('rewards')
+      .from('reward_transactions')
       .select('id')
       .eq('user_id', referrer.id)
-      .eq('source_user_id', referee.id);
+      .eq('referee_user_id', referee.id)
+      .eq('generation', 1);
     assertEquals(rewards?.length, 1, '重放不得重複發推薦獎勵');
   } finally {
     await deleteTestUsers(client, created);
