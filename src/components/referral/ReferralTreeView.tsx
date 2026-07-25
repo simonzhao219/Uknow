@@ -129,12 +129,18 @@ function NodeRow({
   const [open, setOpen] = useState(false);
   const expandable = node.generation < 3 && node.childCount > 0;
   const daysLeft = node.status === 'expiring' ? daysLeftOf(node) : null;
+  const groupId = `rtn-group-${node.userId}`;
 
   return (
     <div>
+      {/* 正規樹語意：treeitem 可含互動元素（展開鈕），不再有 button-in-button */}
       <div
-        role="button"
+        role="treeitem"
         tabIndex={0}
+        aria-level={node.generation}
+        aria-selected={selectedId === node.userId}
+        aria-expanded={expandable ? open : undefined}
+        aria-owns={expandable && open ? groupId : undefined}
         aria-label={`${node.name} 詳情`}
         className={cn(
           'group flex items-center gap-2 rounded-lg py-2 pl-1 pr-2 cursor-pointer transition-colors hover:bg-muted/60',
@@ -179,7 +185,7 @@ function NodeRow({
 
       {expandable && open && (
         // 連接線：細左邊界表達父子分支，依子代低飽和上色（世代線索綁在結構上）
-        <div className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}>
+        <div id={groupId} role="group" className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}>
           {node.children.map((child) => (
             <NodeRow key={child.userId} node={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
           ))}
@@ -376,7 +382,7 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
           </div>
         )
       ) : (
-        <div className="space-y-0.5">
+        <div role="tree" aria-label="我的推薦網絡" className="space-y-0.5">
           {roots.map((node) => (
             <NodeRow key={node.userId} node={node} depth={0} selectedId={selectedNode?.userId ?? null} onSelect={onSelect} />
           ))}
