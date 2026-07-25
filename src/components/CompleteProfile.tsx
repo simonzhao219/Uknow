@@ -1,4 +1,5 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import type React from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -10,7 +11,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
-import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';  // ✅ 新增統一 API 請求工具
+import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { validateProfileForm } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
@@ -20,7 +21,7 @@ import { LegalDialog } from './LegalDialog';
 
 const EMPTY_FORM = {
   name: '',
-  nationalId: '',  // ✅ 新增身分證字號欄位
+  nationalId: '', // ✅ 新增身分證字號欄位
   phone: '',
   birthDate: '',
   referralCode: '',
@@ -95,7 +96,9 @@ export function CompleteProfile() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (!session) {
           console.log('CompleteProfile: No session found, redirecting to login');
@@ -105,14 +108,11 @@ export function CompleteProfile() {
         }
 
         // 嘗試加載現有的 profile
-        const response = await fetch(
-          buildApiUrl('/auth/profile'),
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
+        const response = await fetch(buildApiUrl('/auth/profile'), {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
 
         if (response.ok) {
           const profile = await response.json();
@@ -124,7 +124,9 @@ export function CompleteProfile() {
 
           if (redirect === '/dashboard') {
             // 已完成註冊：保留原本的友善提示與短暫延遲。
-            console.log('CompleteProfile: User already completed registration, redirecting to dashboard');
+            console.log(
+              'CompleteProfile: User already completed registration, redirecting to dashboard',
+            );
             showToast('您已完成註冊，正在跳轉到會員中心...', 'info');
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
@@ -210,14 +212,19 @@ export function CompleteProfile() {
       setErrors(validationErrors);
       // 顯示第一個錯誤並把焦點移過去
       const firstErrorKey = FIELD_ORDER.find((f) => validationErrors[f]);
-      const firstError = firstErrorKey ? validationErrors[firstErrorKey] : Object.values(validationErrors)[0];
+      const firstError = firstErrorKey
+        ? validationErrors[firstErrorKey]
+        : Object.values(validationErrors)[0];
       showToast(firstError, 'error');
       focusFirstError(validationErrors);
       return;
     }
 
     // 推薦碼已填但尚未驗證：在此明確擋下並給出可執行的下一步，避免按鈕看似可按卻無反應
-    if (formData.referralCode.trim() && !(codeVerified && formData.referralCode === verifiedReferralCode)) {
+    if (
+      formData.referralCode.trim() &&
+      !(codeVerified && formData.referralCode === verifiedReferralCode)
+    ) {
       setCodeError('請先點「驗證」確認推薦碼，或清空此欄位');
       showToast('請先驗證推薦碼', 'warning');
       focusFirstError({ referralCode: 'x' });
@@ -228,7 +235,7 @@ export function CompleteProfile() {
     if (!hasConfirmedReferralCode.current) {
       // 準備警告訊息的詳細資訊
       const details: string[] = [];
-      
+
       if (formData.referralCode.trim() && referrerName) {
         // 有填推薦碼：顯示推薦碼和推薦人
         details.push(`推薦碼：${formData.referralCode}`);
@@ -237,7 +244,7 @@ export function CompleteProfile() {
         // 沒有填推薦碼：提示將沒有推薦人
         details.push('您未填寫推薦碼');
       }
-      
+
       // 顯示警告卡片
       showNotification({
         type: 'warning',
@@ -257,7 +264,7 @@ export function CompleteProfile() {
         onCancel: () => {
           // 什麼都不做，停留在當前頁面
           console.log('User cancelled referral code confirmation');
-        }
+        },
       });
       return;
     }
@@ -270,25 +277,22 @@ export function CompleteProfile() {
         setCodeError('請先驗證推薦碼');
         return;
       }
-      
+
       // ✅ 即使已驗證，點擊下一步時再驗證一次（確保推薦碼仍然有效）
       setIsLoading(true);
       try {
-        const result = await apiRequestJson<{ 
+        const result = await apiRequestJson<{
           valid: boolean;
           referrerName?: string;
           referrerUserId?: string;
           error?: { message: string };
-        }>(
-          buildApiUrl('/listings/verify-referral-code'),
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              referralCode: formData.referralCode.toLowerCase().trim(),
-              currentUserId: null
-            }),
-          }
-        );
+        }>(buildApiUrl('/listings/verify-referral-code'), {
+          method: 'POST',
+          body: JSON.stringify({
+            referralCode: formData.referralCode.toLowerCase().trim(),
+            currentUserId: null,
+          }),
+        });
 
         if (!result.valid) {
           showToast(result.error?.message || '推薦碼無效，請重新驗證', 'error');
@@ -299,7 +303,7 @@ export function CompleteProfile() {
           setIsLoading(false);
           return;
         }
-        
+
         // 驗證成功，更新推薦人姓名（可能已變更）
         if (result.referrerName) {
           setReferrerName(result.referrerName);
@@ -320,9 +324,11 @@ export function CompleteProfile() {
 
     try {
       console.log('CompleteProfile: Starting profile submission...');
-      
+
       // 取得當前 session
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session) {
         console.error('CompleteProfile: No session found');
@@ -334,23 +340,20 @@ export function CompleteProfile() {
       console.log('CompleteProfile: Session found, submitting profile data...');
 
       // 呼叫後端儲存資料
-      const response = await fetch(
-        buildApiUrl('/auth/register'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            name: formData.name,
-            nationalId: formData.nationalId,  // ✅ 新增身分證字號欄位
-            phone: formData.phone,
-            birthDate: formData.birthDate,
-            referralCode: formData.referralCode,
-          }),
-        }
-      );
+      const response = await fetch(buildApiUrl('/auth/register'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          nationalId: formData.nationalId, // ✅ 新增身分證字號欄位
+          phone: formData.phone,
+          birthDate: formData.birthDate,
+          referralCode: formData.referralCode,
+        }),
+      });
 
       console.log('CompleteProfile: API response status:', response.status);
 
@@ -367,7 +370,7 @@ export function CompleteProfile() {
       // ✅ 手動加入推薦人姓名（前端已驗證時獲取）
       const pendingUserData = {
         ...profile,
-        referrerName: referrerName || null  // 加入推薦人姓名
+        referrerName: referrerName || null, // 加入推薦人姓名
       };
       localStorage.setItem('pendingUser', JSON.stringify(pendingUserData));
 
@@ -396,24 +399,23 @@ export function CompleteProfile() {
   const handleLaterSignup = async () => {
     try {
       console.log('CompleteProfile: User chose to sign up later, cleaning up...');
-      
+
       // 1. 取得當前 session，用於呼叫後端刪除帳號
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (session) {
         // 2. 呼叫後端刪除未完成的用戶帳號
         try {
           console.log('CompleteProfile: Calling cancel-signup API...');
-          const response = await fetch(
-            buildApiUrl('/auth/cancel-signup'),
-            {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-            }
-          );
-          
+          const response = await fetch(buildApiUrl('/auth/cancel-signup'), {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+
           if (response.ok) {
             console.log('CompleteProfile: Account deleted successfully');
           } else {
@@ -423,21 +425,21 @@ export function CompleteProfile() {
           console.error('CompleteProfile: Error calling cancel-signup API:', error);
         }
       }
-      
+
       // 3. 清除本地狀態（在登出前先清除，避免競態條件）
       setUser(null);
       localStorage.removeItem('user');
       clearPendingReferral();
       // 使用者主動選擇稍後再註冊，等同放棄這次草稿，一併清除。
       clearProfileDraft();
-      
+
       // 4. 登出 Supabase session（確保完全登出）
       console.log('CompleteProfile: Signing out from Supabase...');
       await supabase.auth.signOut();
-      
+
       // 5. 顯示提示訊息
       showToast('您可以稍後再完成註冊', 'info');
-      
+
       // 6. 等待一小段時間確保 session 清除完成，然後導向首頁
       setTimeout(() => {
         console.log('CompleteProfile: Navigating to home page...');
@@ -445,7 +447,7 @@ export function CompleteProfile() {
       }, 100);
     } catch (error: any) {
       console.error('CompleteProfile: Error during cancellation:', error);
-      
+
       // 即使發生錯誤，也要嘗試清除狀態並導航
       setUser(null);
       localStorage.removeItem('user');
@@ -474,23 +476,20 @@ export function CompleteProfile() {
         referrerName?: string;
         referrerUserId?: string;
         error?: { message: string };
-      }>(
-        buildApiUrl('/listings/verify-referral-code'),
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            referralCode: code.toLowerCase().trim(),
-            currentUserId: null  // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
-          }),
-        }
-      );
+      }>(buildApiUrl('/listings/verify-referral-code'), {
+        method: 'POST',
+        body: JSON.stringify({
+          referralCode: code.toLowerCase().trim(),
+          currentUserId: null, // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
+        }),
+      });
 
       if (result.valid && result.referrerName) {
         setCodeVerified(true);
         setCodeError('');
-        setVerifiedReferralCode(code);  // ✅ 儲存已驗證的推薦碼
-        setReferrerName(result.referrerName);  // ✅ 儲存推薦人姓名
-        showToast('推薦碼驗證成功', 'success');  // ✅ 只顯示簡單訊息
+        setVerifiedReferralCode(code); // ✅ 儲存已驗證的推薦碼
+        setReferrerName(result.referrerName); // ✅ 儲存推薦人姓名
+        showToast('推薦碼驗證成功', 'success'); // ✅ 只顯示簡單訊息
       } else {
         setCodeError(result.error?.message || '推薦碼無效');
         setCodeVerified(false);
@@ -500,7 +499,7 @@ export function CompleteProfile() {
       }
     } catch (err: any) {
       console.error('CompleteProfile: Referral code verification error:', err);
-      
+
       if (err instanceof ApiError && err.status === 401) {
         setCodeError('登入已過期，請重新登入');
         showToast('登入已過期，請重新登入', 'error');
@@ -587,7 +586,7 @@ export function CompleteProfile() {
                   const eighteenYearsAgo = new Date(
                     today.getFullYear() - 18,
                     today.getMonth(),
-                    today.getDate()
+                    today.getDate(),
                   );
                   return eighteenYearsAgo.toISOString().split('T')[0];
                 })()}
@@ -599,11 +598,9 @@ export function CompleteProfile() {
                 className={getInputErrorClass(!!errors.birthDate)}
               />
               <FieldError error={errors.birthDate} />
-              <p className="text-sm text-muted-foreground">
-                註冊用戶需年滿 18 歲
-              </p>
+              <p className="text-sm text-muted-foreground">註冊用戶需年滿 18 歲</p>
             </div>
-            
+
             {/* 手機號碼 */}
             <div className="space-y-2">
               <Label htmlFor="phone">手機號碼 *</Label>
@@ -620,9 +617,7 @@ export function CompleteProfile() {
                 className={getInputErrorClass(!!errors.phone)}
               />
               <FieldError error={errors.phone} />
-              <p className="text-sm text-muted-foreground">
-                台灣手機號碼格式：09 開頭，共 10 位數
-              </p>
+              <p className="text-sm text-muted-foreground">台灣手機號碼格式：09 開頭，共 10 位數</p>
             </div>
 
             {/* 推薦碼 */}
@@ -636,7 +631,7 @@ export function CompleteProfile() {
                     const newCode = e.target.value.toLowerCase(); // ✅ 立即轉小寫
                     setFormData({ ...formData, referralCode: newCode });
                     setCodeError('');
-                    
+
                     // ✅ 如果推薦碼改變，清除驗證狀態和確認狀態
                     if (newCode !== verifiedReferralCode) {
                       setCodeVerified(false);
@@ -651,7 +646,11 @@ export function CompleteProfile() {
                   type="button"
                   variant="outline"
                   onClick={() => verifyReferralCode()}
-                  disabled={isVerifyingCode || !formData.referralCode.trim() || (codeVerified && formData.referralCode === verifiedReferralCode)}
+                  disabled={
+                    isVerifyingCode ||
+                    !formData.referralCode.trim() ||
+                    (codeVerified && formData.referralCode === verifiedReferralCode)
+                  }
                   className="shrink-0"
                 >
                   {isVerifyingCode ? (

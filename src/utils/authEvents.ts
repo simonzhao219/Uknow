@@ -18,5 +18,7 @@ export function onSessionExpired(callback: Listener): () => void {
 }
 
 export function emitSessionExpired(): void {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    listener();
+  });
 }

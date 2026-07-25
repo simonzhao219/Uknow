@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, FileText, Package, Gift } from 'lucide-react';
 

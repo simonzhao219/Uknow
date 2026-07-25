@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
+import type React from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { RotateCcw, Check } from 'lucide-react';
 
@@ -35,10 +36,10 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     if (disabled) return;
     setIsDrawing(true);
-    
+
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -49,12 +50,12 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || disabled) return;
-    
+
     e.preventDefault(); // 防止觸控時的滾動
-    
+
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -67,7 +68,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
     if (!isDrawing) return;
     setIsDrawing(false);
     setHasSigned(true);
-    
+
     const canvas = canvasRef.current;
     if (canvas) {
       const signatureData = canvas.toDataURL('image/png');
@@ -85,7 +86,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
 
     return {
       x: clientX - rect.left,
-      y: clientY - rect.top
+      y: clientY - rect.top,
     };
   };
 
@@ -134,7 +135,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
           <RotateCcw className="h-4 w-4 mr-1" />
           清除簽名
         </Button>
-        
+
         {hasSigned && (
           <div className="flex items-center gap-1 text-green-600 text-sm">
             <Check className="h-4 w-4" />

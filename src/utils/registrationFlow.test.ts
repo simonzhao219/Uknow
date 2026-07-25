@@ -54,8 +54,9 @@ describe('nextRouteForStep', () => {
 
 describe('classifyLoginError — 未驗證不能被誤判成密碼錯誤', () => {
   it('email_not_confirmed（by code）→ 可復原，導回驗證', () => {
-    expect(classifyLoginError({ code: 'email_not_confirmed', message: 'Email not confirmed' }))
-      .toBe('email_not_confirmed');
+    expect(
+      classifyLoginError({ code: 'email_not_confirmed', message: 'Email not confirmed' }),
+    ).toBe('email_not_confirmed');
   });
 
   it('email_not_confirmed（只有訊息文字）→ 仍能辨識', () => {
@@ -63,15 +64,18 @@ describe('classifyLoginError — 未驗證不能被誤判成密碼錯誤', () =>
   });
 
   it('email_not_confirmed（走 error_description 欄位）→ 仍能辨識', () => {
-    expect(classifyLoginError({ error_description: 'Email not confirmed' }))
-      .toBe('email_not_confirmed');
+    expect(classifyLoginError({ error_description: 'Email not confirmed' })).toBe(
+      'email_not_confirmed',
+    );
   });
 
   it('真正的帳密錯誤（invalid_grant / Invalid login credentials）→ invalid_credentials', () => {
-    expect(classifyLoginError({ error_description: 'Invalid login credentials' }))
-      .toBe('invalid_credentials');
-    expect(classifyLoginError({ code: 'invalid_credentials', message: 'Invalid login credentials' }))
-      .toBe('invalid_credentials');
+    expect(classifyLoginError({ error_description: 'Invalid login credentials' })).toBe(
+      'invalid_credentials',
+    );
+    expect(
+      classifyLoginError({ code: 'invalid_credentials', message: 'Invalid login credentials' }),
+    ).toBe('invalid_credentials');
   });
 
   it('未提供錯誤或無法辨識 → unknown', () => {
@@ -83,8 +87,9 @@ describe('classifyLoginError — 未驗證不能被誤判成密碼錯誤', () =>
 
 describe('isProfileComplete — 基本資料是否已填齊', () => {
   it('name + phone + birthDate 都有 → 完成', () => {
-    expect(isProfileComplete({ name: '王小明', phone: '0912345678', birthDate: '1990-01-01' }))
-      .toBe(true);
+    expect(
+      isProfileComplete({ name: '王小明', phone: '0912345678', birthDate: '1990-01-01' }),
+    ).toBe(true);
   });
 
   it.each([
@@ -153,18 +158,31 @@ describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一�
   // 不論後端把 step 誤算成多少，都留在本頁——避免與結帳頁守衛互彈。
   describe('資料未填齊 → 一律留在本頁（不被 step 帶走）', () => {
     it('step 誤算成 1 但資料全空 → 留在本頁（不彈去結帳頁）', () => {
-      expect(resolveProfilePageRedirect({ registrationStep: 1, name: '', phone: null, birthDate: null }))
-        .toBeNull();
+      expect(
+        resolveProfilePageRedirect({ registrationStep: 1, name: '', phone: null, birthDate: null }),
+      ).toBeNull();
     });
 
     it('step 誤算成 2 但只缺手機一欄 → 仍留在本頁', () => {
-      expect(resolveProfilePageRedirect({ registrationStep: 2, name: '王小明', phone: null, birthDate: '1990-01-01' }))
-        .toBeNull();
+      expect(
+        resolveProfilePageRedirect({
+          registrationStep: 2,
+          name: '王小明',
+          phone: null,
+          birthDate: '1990-01-01',
+        }),
+      ).toBeNull();
     });
 
     it('step 3 但資料未填齊 → 仍留在本頁（資料完整性優先於 step）', () => {
-      expect(resolveProfilePageRedirect({ registrationStep: 3, name: '', phone: '0912345678', birthDate: '1990-01-01' }))
-        .toBeNull();
+      expect(
+        resolveProfilePageRedirect({
+          registrationStep: 3,
+          name: '',
+          phone: '0912345678',
+          birthDate: '1990-01-01',
+        }),
+      ).toBeNull();
     });
   });
 });
@@ -182,47 +200,54 @@ describe('resolveCheckoutPageRedirect — PaymentCheckout 頁的守衛（單一�
   };
 
   it('會籍有效（active）→ 導向會員中心', () => {
-    expect(resolveCheckoutPageRedirect({ ...base, accountStatus: 'active' }))
-      .toBe('/dashboard');
+    expect(resolveCheckoutPageRedirect({ ...base, accountStatus: 'active' })).toBe('/dashboard');
   });
 
   it('已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 導向結果頁', () => {
-    expect(resolveCheckoutPageRedirect({
-      ...base,
-      paidAwaitingActivation: true,
-      lastTradeNo: 'PU00000003',
-    })).toBe('/payment/result?tradeNo=PU00000003');
+    expect(
+      resolveCheckoutPageRedirect({
+        ...base,
+        paidAwaitingActivation: true,
+        lastTradeNo: 'PU00000003',
+      }),
+    ).toBe('/payment/result?tradeNo=PU00000003');
   });
 
   it('付款失敗的 step 2（paidAwaitingActivation=false）→ 留在結帳頁重新付款', () => {
-    expect(resolveCheckoutPageRedirect({
-      ...base,
-      registrationStep: 2,
-      paidAwaitingActivation: false,
-    })).toBeNull();
+    expect(
+      resolveCheckoutPageRedirect({
+        ...base,
+        registrationStep: 2,
+        paidAwaitingActivation: false,
+      }),
+    ).toBeNull();
   });
 
   it('尚未填基本資料（step 0）→ 導向完善資料頁', () => {
-    expect(resolveCheckoutPageRedirect({ ...base, registrationStep: 0 }))
-      .toBe('/auth/complete-profile');
+    expect(resolveCheckoutPageRedirect({ ...base, registrationStep: 0 })).toBe(
+      '/auth/complete-profile',
+    );
   });
 
   // 空白結帳頁 bug 的回歸測試：即使後端把 step 誤算成 1（剛註冊、資料全空的
   // 使用者在舊 effective_registration_step 下就是這樣），只要姓名/生日/手機
   // 沒填齊，就必須被導回完善資料頁，不能停在會顯示空白「註冊資訊確認」的結帳頁。
   it('step 誤算成 1 但基本資料全空 → 仍導回完善資料頁（不顯示空白結帳頁）', () => {
-    expect(resolveCheckoutPageRedirect({
-      ...base,
-      registrationStep: 1,
-      name: '',
-      phone: null,
-      birthDate: null,
-    })).toBe('/auth/complete-profile');
+    expect(
+      resolveCheckoutPageRedirect({
+        ...base,
+        registrationStep: 1,
+        name: '',
+        phone: null,
+        birthDate: null,
+      }),
+    ).toBe('/auth/complete-profile');
   });
 
   it('step 1 但只缺手機一欄 → 仍導回完善資料頁', () => {
-    expect(resolveCheckoutPageRedirect({ ...base, registrationStep: 1, phone: null }))
-      .toBe('/auth/complete-profile');
+    expect(resolveCheckoutPageRedirect({ ...base, registrationStep: 1, phone: null })).toBe(
+      '/auth/complete-profile',
+    );
   });
 
   it('step 1（首次待付款）→ 留在結帳頁', () => {
@@ -230,17 +255,18 @@ describe('resolveCheckoutPageRedirect — PaymentCheckout 頁的守衛（單一�
   });
 
   it('已失效（expired）續約者 → 留在結帳頁完成付款', () => {
-    expect(resolveCheckoutPageRedirect({ ...base, accountStatus: 'expired' }))
-      .toBeNull();
+    expect(resolveCheckoutPageRedirect({ ...base, accountStatus: 'expired' })).toBeNull();
   });
 
   it('active 優先於其它狀態（即使同時 paidAwaitingActivation）', () => {
-    expect(resolveCheckoutPageRedirect({
-      ...base,
-      accountStatus: 'active',
-      paidAwaitingActivation: true,
-      lastTradeNo: 'PU00000009',
-    })).toBe('/dashboard');
+    expect(
+      resolveCheckoutPageRedirect({
+        ...base,
+        accountStatus: 'active',
+        paidAwaitingActivation: true,
+        lastTradeNo: 'PU00000009',
+      }),
+    ).toBe('/dashboard');
   });
 });
 
@@ -265,14 +291,13 @@ describe('兩頁守衛互不彈跳（ping-pong 不變式）', () => {
   });
 
   it('編輯頁（editing）不彈走同一位 step 1 使用者', () => {
-    expect(resolveProfilePageRedirect(midFunnelUser, { editing: true }))
-      .toBeNull();
+    expect(resolveProfilePageRedirect(midFunnelUser, { editing: true })).toBeNull();
   });
 
   // 對稱防線下的另一個不變式：資料未填齊的使用者，兩頁都留住他——
   // 結帳頁把他導去填資料頁，填資料頁不會再用 step 把他彈回結帳頁。
   const unfilledUser: FunnelProfile = {
-    registrationStep: 1,  // 後端誤算（空白結帳頁事故的形狀）
+    registrationStep: 1, // 後端誤算（空白結帳頁事故的形狀）
     name: '',
     phone: null,
     birthDate: null,

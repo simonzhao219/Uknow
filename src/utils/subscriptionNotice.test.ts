@@ -57,7 +57,11 @@ describe('subscriptionCardState — 訂閱卡片顯示狀態分類', () => {
 
   it('expired 但曾訂閱過（有 activeUntil）→ expired-former（老會員續訂）', () => {
     expect(
-      subscriptionCardState({ hasSubscription: false, status: 'expired', activeUntil: inDays(-10) }),
+      subscriptionCardState({
+        hasSubscription: false,
+        status: 'expired',
+        activeUntil: inDays(-10),
+      }),
     ).toBe('expired-former');
   });
 

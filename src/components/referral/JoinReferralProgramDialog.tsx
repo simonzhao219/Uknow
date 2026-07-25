@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -20,7 +20,7 @@ interface JoinReferralProgramDialogProps {
 export function JoinReferralProgramDialog({
   open,
   onClose,
-  onSuccess
+  onSuccess,
 }: JoinReferralProgramDialogProps) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
@@ -39,16 +39,13 @@ export function JoinReferralProgramDialog({
       const result = await apiRequestJson<{
         success: boolean;
         data: { referralCode: string; joinedAt: string; message?: string };
-      }>(
-        buildApiUrl('/referrals/join-program'),
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            agreedToTerms,
-            signatureData
-          })
-        }
-      );
+      }>(buildApiUrl('/referrals/join-program'), {
+        method: 'POST',
+        body: JSON.stringify({
+          agreedToTerms,
+          signatureData,
+        }),
+      });
 
       if (result.success && result.data) {
         showToast(result.data.message || '成功加入推薦計畫！', 'success');
@@ -89,7 +86,7 @@ export function JoinReferralProgramDialog({
                   <FileText className="h-5 w-5" />
                   閱讀並同意條款
                 </h3>
-                
+
                 <div className="space-y-2">
                   <div className="flex items-start gap-2">
                     <Checkbox
@@ -107,7 +104,10 @@ export function JoinReferralProgramDialog({
                         這種專有名詞永遠整組不斷字。整句仍可換行，但只會在
                         「我已詳閱並同意 / 規章 / 和 / 契約書」這些完整詞塊之間斷，
                         不會再把一兩個字（章、書）擠到下一行造成排版怪異。 */}
-                    <Label htmlFor="terms" className="text-sm cursor-pointer flex-1 leading-relaxed">
+                    <Label
+                      htmlFor="terms"
+                      className="text-sm cursor-pointer flex-1 leading-relaxed"
+                    >
                       <span className="whitespace-nowrap">我已詳閱並同意</span>
                       <LegalDialog
                         triggerLabel="推廣獎勵規章"
@@ -132,10 +132,7 @@ export function JoinReferralProgramDialog({
               {/* 2️⃣ 簽名 */}
               <div className="space-y-3">
                 <h3 className="font-medium">簽名確認（中文正楷）</h3>
-                <SignaturePad
-                  onSignatureChange={setSignatureData}
-                  disabled={isSubmitting}
-                />
+                <SignaturePad onSignatureChange={setSignatureData} disabled={isSubmitting} />
               </div>
 
               {/* 說明 */}
@@ -148,11 +145,7 @@ export function JoinReferralProgramDialog({
 
             {/* 按鈕 */}
             <div className="flex justify-end gap-3 mt-6">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                disabled={isSubmitting}
-              >
+              <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
                 取消
               </Button>
               <Button

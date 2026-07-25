@@ -1,6 +1,6 @@
 /**
  * 🔑 管理員設置組件
- * 
+ *
  * 功能：
  * - 檢查當前用戶是否為管理員
  * - 如果系統還沒有管理員，允許當前用戶設為管理員
@@ -53,9 +53,7 @@ export function AdminSetup() {
   const checkAdminStatus = async () => {
     setIsLoading(true);
     try {
-      const result = await apiRequestJson<AdminCheckResponse>(
-        buildApiUrl('/admin-setup/check')
-      );
+      const result = await apiRequestJson<AdminCheckResponse>(buildApiUrl('/admin-setup/check'));
 
       setAdminStatus(result);
       console.log('管理員狀態:', result);
@@ -75,31 +73,21 @@ export function AdminSetup() {
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+            'Content-Type': 'application/json',
+          },
+        },
       );
 
       if (result.success) {
-        showSuccess(
-          '設置成功！',
-          '您已成為平台管理員',
-          ['現在可以使用所有管理功能']
-        );
+        showSuccess('設置成功！', '您已成為平台管理員', ['現在可以使用所有管理功能']);
         // 重新檢查狀態
         await checkAdminStatus();
       } else {
-        showError(
-          '設置失敗',
-          result.error?.message || '無法設置管理員權限'
-        );
+        showError('設置失敗', result.error?.message || '無法設置管理員權限');
       }
     } catch (error: any) {
       console.error('設置管理員失敗:', error);
-      showError(
-        '設置失敗',
-        error.message || '設置管理員權限時發生錯誤'
-      );
+      showError('設置失敗', error.message || '設置管理員權限時發生錯誤');
     } finally {
       setIsSetting(false);
     }
@@ -143,9 +131,7 @@ export function AdminSetup() {
             <Shield className="h-5 w-5" />
             管理員權限設置
           </CardTitle>
-          <CardDescription>
-            管理平台的所有功能需要管理員權限
-          </CardDescription>
+          <CardDescription>管理平台的所有功能需要管理員權限</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 用戶信息 */}
@@ -156,7 +142,7 @@ export function AdminSetup() {
                 {adminStatus.isAdmin ? '管理員' : '普通用戶'}
               </Badge>
             </div>
-            
+
             {adminStatus.userName && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -262,7 +248,7 @@ export function AdminSetup() {
               <li>查看平台統計數據</li>
               <li>設置其他管理員</li>
             </ul>
-            
+
             <div className="border-t pt-3 mt-4">
               <p className="font-medium text-xs text-muted-foreground mb-2">安全提示：</p>
               <ul className="list-disc list-inside space-y-1 ml-2 text-xs text-muted-foreground">

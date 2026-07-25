@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -22,9 +22,7 @@ function isWeakPasswordError(error: { code?: string; message?: string }) {
 function isSamePasswordError(error: { code?: string; message?: string }) {
   return (
     error?.code === 'same_password' ||
-    /should be different from the old password|different from the old/i.test(
-      error?.message ?? '',
-    )
+    /should be different from the old password|different from the old/i.test(error?.message ?? '')
   );
 }
 
@@ -42,7 +40,9 @@ export function ResetPasswordPage() {
   useEffect(() => {
     const checkSession = async () => {
       console.log('ResetPassword: Checking for valid recovery session...');
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session) {
         console.error('ResetPassword: No session found, redirecting to forgot password');
@@ -103,11 +103,7 @@ export function ResetPasswordPage() {
       console.log('ResetPassword: ✅ Password updated successfully');
 
       // 成功後顯示通知
-      showSuccess(
-        '密碼重設成功！',
-        '您的密碼已成功更新',
-        ['請使用新密碼登入']
-      );
+      showSuccess('密碼重設成功！', '您的密碼已成功更新', ['請使用新密碼登入']);
 
       // 導向登入頁面
       setTimeout(() => {

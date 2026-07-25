@@ -45,7 +45,7 @@ export function useReferralData(): UseReferralDataResult {
     }
     try {
       const result = await apiRequestJson<{ success: boolean; data: unknown }>(
-        buildApiUrl('/referrals/my-tree')
+        buildApiUrl('/referrals/my-tree'),
       );
       if (result.success) {
         // 寬容讀取：新後端回 roots；舊後端（過渡期）回 referralTree，於此正規化。
@@ -72,7 +72,7 @@ export function useReferralData(): UseReferralDataResult {
       setLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -89,12 +89,12 @@ export function useReferralData(): UseReferralDataResult {
     if (!cached || isStale('referralTree')) {
       dedupe(DEDUP_KEY, fetchData);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('referralTree'),
-    () => dedupe(DEDUP_KEY, fetchData)
+    () => dedupe(DEDUP_KEY, fetchData),
   );
 
   const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchData), [fetchData]);

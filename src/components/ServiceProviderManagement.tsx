@@ -1,12 +1,20 @@
-import React, { useContext, useState } from 'react';
+import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Alert, AlertDescription } from './ui/alert';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { UserContext } from '../App';
-import { Plus, Edit, Eye, Calendar, MapPin, Copy, Check, ArrowLeft, Trash2 } from 'lucide-react';
+import { Plus, Edit, Eye, MapPin, ArrowLeft, Trash2 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
@@ -33,12 +41,12 @@ export function ServiceProviderManagement() {
   // ✅ 複製推薦碼（簡化版）
   const handleCopyReferralCode = async () => {
     const referralCode = listing?.referralCode;
-    
+
     if (!referralCode) {
       showToast('無法取得推薦碼', 'error');
       return;
     }
-    
+
     try {
       // 使用傳統的 execCommand 方法（更可靠，不受 Clipboard API 權限限制）
       const textArea = document.createElement('textarea');
@@ -49,11 +57,11 @@ export function ServiceProviderManagement() {
       document.body.appendChild(textArea);
       textArea.focus();
       textArea.select();
-      
+
       try {
         const successful = document.execCommand('copy');
         document.body.removeChild(textArea);
-        
+
         if (successful) {
           setCopiedId(listing.id);
           showToast('推薦碼已複製到剪貼簿', 'success');
@@ -77,10 +85,10 @@ export function ServiceProviderManagement() {
   const handleDeleteListing = async () => {
     if (!listing) return;
     setIsDeleting(true);
-    
+
     try {
       console.log(`[刪除刊登] 開始刪除: ${listing.id}`);
-      
+
       const { error: deleteError } = await supabase
         .from('listings')
         .delete()
@@ -89,18 +97,17 @@ export function ServiceProviderManagement() {
 
       if (deleteError) throw new Error(deleteError.message || '刪除失敗');
       console.log(`[刪除刊登] ✅ 成功`);
-      
+
       showToast('刊登已成功刪除', 'success');
 
       // ✅ 重新獲取（應該會變成 null）——refetch 成功時會覆寫快取，
       // 不需要再另外 clearCache。
       await refetchListing();
-
     } catch (error) {
       console.error('[刪除刊登] ❌ 錯誤:', error);
       showError(
         '刪除失敗',
-        error instanceof Error ? error.message : '刪除刊登時發生錯誤，請稍後再試'
+        error instanceof Error ? error.message : '刪除刊登時發生錯誤，請稍後再試',
       );
     } finally {
       setIsDeleting(false);
@@ -168,9 +175,7 @@ export function ServiceProviderManagement() {
         <Card>
           <CardContent className="text-center py-12">
             <h3 className="text-lg font-medium mb-2">載入中...</h3>
-            <p className="text-muted-foreground mb-6">
-              正在獲取您的專業服務刊登
-            </p>
+            <p className="text-muted-foreground mb-6">正在獲取您的專業服務刊登</p>
           </CardContent>
         </Card>
       ) : listingError ? (
@@ -178,7 +183,12 @@ export function ServiceProviderManagement() {
           <CardContent className="text-center py-12">
             <h3 className="text-lg font-medium mb-2">暫時無法取得刊登狀態</h3>
             <p className="text-muted-foreground mb-6">{listingError}</p>
-            <Button variant="outline" onClick={() => { void refetchListing(); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void refetchListing();
+              }}
+            >
               重新載入
             </Button>
           </CardContent>
@@ -216,7 +226,7 @@ export function ServiceProviderManagement() {
                         <Badge variant="default">{listing.category}</Badge>
                       </div>
                     </div>
-                    
+
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" asChild>
                         <Link to={`/service-providers/${listing.id}`} aria-label="查看刊登">
@@ -245,13 +255,16 @@ export function ServiceProviderManagement() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <MapPin className="h-4 w-4" />
-                      <span>{listing.city} {Array.isArray(listing.districts) ? listing.districts[0] : listing.district || ''}</span>
+                      <span>
+                        {listing.city}{' '}
+                        {Array.isArray(listing.districts)
+                          ? listing.districts[0]
+                          : listing.district || ''}
+                      </span>
                     </div>
                   </div>
 
-                  <p className="text-muted-foreground line-clamp-2">
-                    {listing.description}
-                  </p>
+                  <p className="text-muted-foreground line-clamp-2">{listing.description}</p>
 
                   {/* 推薦碼區域已移除 */}
                 </div>

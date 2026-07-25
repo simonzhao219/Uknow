@@ -1,4 +1,3 @@
-import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { WithdrawalManagement } from './admin/WithdrawalManagement';
 import { MemberManagement } from './admin/MemberManagement';

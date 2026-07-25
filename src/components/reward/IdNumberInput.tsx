@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
@@ -17,7 +17,7 @@ type VerificationStatus = 'idle' | 'verifying' | 'success' | 'error';
 
 /**
  * 可重用的身分證輸入驗證組件
- * 
+ *
  * 功能：
  * - 輸入滿 10 個字符時自動驗證
  * - 顯示驗證狀態（驗證中、成功、失敗）
@@ -29,7 +29,7 @@ export function IdNumberInput({
   onVerified,
   disabled = false,
   label = '身分證字號',
-  placeholder = '例如：A123456789'
+  placeholder = '例如：A123456789',
 }: IdNumberInputProps) {
   const [status, setStatus] = useState<VerificationStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -64,8 +64,8 @@ export function IdNumberInput({
         buildApiUrl('/rewards/verify-id'),
         {
           method: 'POST',
-          body: JSON.stringify({ idNumber })
-        }
+          body: JSON.stringify({ idNumber }),
+        },
       );
 
       if (result.success) {
@@ -125,21 +125,15 @@ export function IdNumberInput({
         />
         {/* 驗證狀態圖標 */}
         {status !== 'idle' && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            {getStatusIcon()}
-          </div>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">{getStatusIcon()}</div>
         )}
       </div>
 
       {/* 錯誤提示 */}
-      {status === 'error' && errorMessage && (
-        <p className="text-sm text-red-600">{errorMessage}</p>
-      )}
+      {status === 'error' && errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
 
       {/* 成功提示 */}
-      {status === 'success' && (
-        <p className="text-sm text-green-600">✓ 身分證驗證成功</p>
-      )}
+      {status === 'success' && <p className="text-sm text-green-600">✓ 身分證驗證成功</p>}
 
       {/* 格式說明 */}
       {status === 'idle' && (
@@ -149,9 +143,7 @@ export function IdNumberInput({
       )}
 
       {/* 驗證中提示 */}
-      {status === 'verifying' && (
-        <p className="text-sm text-blue-600">驗證中...</p>
-      )}
+      {status === 'verifying' && <p className="text-sm text-blue-600">驗證中...</p>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -44,17 +44,11 @@ export function ReferralCodeCard({ referralCode }: ReferralCodeCardProps) {
           <Share2 className="h-5 w-5" />
           我的推薦碼
         </CardTitle>
-        <CardDescription>
-          分享您的專屬推薦碼，每成功推薦一人即可獲得 $10 獎金
-        </CardDescription>
+        <CardDescription>分享您的專屬推薦碼，每成功推薦一人即可獲得 $10 獎金</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-4">
-          <Input
-            value={referralCode || ''}
-            readOnly
-            className="font-mono text-lg text-center"
-          />
+          <Input value={referralCode || ''} readOnly className="font-mono text-lg text-center" />
           <Button onClick={copyReferralCode} variant="outline">
             <Copy className="h-4 w-4 mr-2" />
             {copiedCode ? '已複製' : '複製'}

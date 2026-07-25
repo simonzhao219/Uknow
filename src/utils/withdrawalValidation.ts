@@ -52,10 +52,7 @@ export function canWithdrawFromBalance(availableRewards: number): boolean {
  * 驗證提領金額（字串輸入）。回傳錯誤訊息字串，或 null（通過）。
  * 判斷順序刻意與後端一致：未填 → 低於最低 → 非倍數 → 超過上限。
  */
-export function validateWithdrawalAmount(
-  amount: string,
-  maxWithdrawal: number,
-): string | null {
+export function validateWithdrawalAmount(amount: string, maxWithdrawal: number): string | null {
   if (!amount) {
     return '請輸入提領Point';
   }

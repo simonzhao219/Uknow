@@ -20,12 +20,20 @@ describe('HomeViewToggle', () => {
 
   it('以 aria-pressed 標示當前模式', () => {
     const { rerender } = render(<HomeViewToggle value="photo" onChange={() => {}} />);
-    expect(screen.getByRole('button', { name: '照片檢視' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: '詳細檢視' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: '照片檢視' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: '詳細檢視' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
 
     rerender(<HomeViewToggle value="detailed" onChange={() => {}} />);
-    expect(screen.getByRole('button', { name: '照片檢視' }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('button', { name: '詳細檢視' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '照片檢視' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(screen.getByRole('button', { name: '詳細檢視' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
   });
 
   it('點另一個模式會回報該模式', () => {

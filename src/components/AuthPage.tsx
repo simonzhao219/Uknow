@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -43,24 +43,25 @@ export function AuthPage() {
     const cleanupInvalidSessions = async () => {
       try {
         // 檢查當前 session 狀態
-        const { data: { session } } = await supabase.auth.getSession();
-        
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
         if (session) {
           console.log('AuthPage: Found existing session, checking validity...');
-          
+
           // 驗證 session 是否有效
-          const response = await fetch(
-            buildApiUrl('/auth/profile'),
-            {
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-              },
-            }
-          );
+          const response = await fetch(buildApiUrl('/auth/profile'), {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
 
           // ✅ 只處理無效 session，不主動重定向
           if (response.status === 410 || response.status === 404 || response.status === 401) {
-            console.log('AuthPage: Session is invalid (user deleted or token expired), cleaning up...');
+            console.log(
+              'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
+            );
             await supabase.auth.signOut();
             localStorage.removeItem('user');
             localStorage.removeItem('pendingSession');
@@ -92,13 +93,13 @@ export function AuthPage() {
 
     // ✅ 顯示來自其他頁面的提示訊息（不處理自動導向）
     // 導向由 handleLogin 處理（用戶主動登入時）
-    
+
     if (location.state?.message) {
       showToast(location.state.message, location.state.emailVerified ? 'success' : 'info');
       // 清除 state，避免重複顯示
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [user, navigate, location, showToast]);  // ← ✅ 加入 user 依賴
+  }, [user, navigate, location, showToast]); // ← ✅ 加入 user 依賴
 
   // 接續一個「註冊到一半、Email 尚未驗證」的帳號。
   //
@@ -168,7 +169,10 @@ export function AuthPage() {
       setStep(2);
     } catch (error) {
       console.error('Error checking email:', error);
-      showToast(`檢查 Email 時發生錯誤：${error instanceof Error ? error.message : '未知錯誤'}`, 'error');
+      showToast(
+        `檢查 Email 時發生錯誤：${error instanceof Error ? error.message : '未知錯誤'}`,
+        'error',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -197,7 +201,7 @@ export function AuthPage() {
           message: error.message,
           status: error.status,
           name: error.name,
-          code: error.code
+          code: error.code,
         });
 
         // 未驗證的帳號不是「密碼錯誤」——它是一個沒走完驗證的註冊，帳號其實
@@ -215,14 +219,11 @@ export function AuthPage() {
       console.log('Access token length:', data.session?.access_token?.length || 0);
 
       // 取得用戶資料
-      const response = await fetch(
-        buildApiUrl('/auth/profile'),
-        {
-          headers: {
-            Authorization: `Bearer ${data.session.access_token}`,
-          },
-        }
-      );
+      const response = await fetch(buildApiUrl('/auth/profile'), {
+        headers: {
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+      });
 
       console.log('Profile fetch response status:', response.status);
 
@@ -230,14 +231,14 @@ export function AuthPage() {
         console.error('AuthPage: Failed to fetch profile, status:', response.status);
         const errorText = await response.text();
         console.error('AuthPage: Error response body:', errorText);
-        
+
         // 特殊處理：帳號已被刪除（410）或不存在（404）
         if (response.status === 410 || response.status === 404) {
           console.log('AuthPage: User account deleted or not found, cleaning up...');
-          
+
           // 清除 session
           await supabase.auth.signOut();
-          
+
           showToast('帳號不存在或已被刪除，請重新註冊', 'error');
           setStep(1);
           setEmail('');
@@ -245,7 +246,7 @@ export function AuthPage() {
           setIsLoading(false);
           return;
         }
-        
+
         throw new Error(`Failed to fetch user profile (status: ${response.status})`);
       }
 
@@ -338,7 +339,10 @@ export function AuthPage() {
 
     const message = error?.message ?? '';
 
-    if (error?.code === 'user_already_exists' || /already registered|already exists/i.test(message)) {
+    if (
+      error?.code === 'user_already_exists' ||
+      /already registered|already exists/i.test(message)
+    ) {
       return '此電子郵件已經註冊過，請改用登入。';
     }
     if (error?.code === 'over_email_send_rate_limit' || /rate limit/i.test(message)) {
@@ -440,7 +444,7 @@ export function AuthPage() {
                   autoFocus
                 />
                 <FieldError error={errors.password} />
-                
+
                 {/* ✨ 新增：忘記密碼連結 */}
                 <div className="text-right">
                   <button

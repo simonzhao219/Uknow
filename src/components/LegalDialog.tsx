@@ -1,11 +1,5 @@
-import React, { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from './ui/dialog';
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { LegalMarkdown } from './LegalMarkdown';
 
 interface LegalDialogProps {
@@ -69,10 +63,7 @@ export function LegalDialog({
         {/* 內文自己的 max-h + overflow-y-auto：標題不動、內文獨立捲動。
             max-h 用 dvh（動態視窗高度），行動瀏覽器網址列縮放時不會誤算高度；
             標題列 + 這塊 ≤ 約 85dvh，整個彈窗穩穩落在螢幕內、不被底部導覽列蓋住。 */}
-        <div
-          className="max-h-[70dvh] overflow-y-auto pr-2 -mr-2"
-          data-testid="legal-dialog-body"
-        >
+        <div className="max-h-[70dvh] overflow-y-auto pr-2 -mr-2" data-testid="legal-dialog-body">
           <LegalMarkdown content={content} />
         </div>
       </DialogContent>

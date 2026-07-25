@@ -12,7 +12,18 @@ describe('normalizeReferralData', () => {
     const raw = {
       userReferralCode: 'ABC',
       roots: [
-        { userId: 'u1', name: '甲', generation: 1, status: 'active', daysToExpiry: 100, endDate: '2027-01-01', joinedAt: '2026-01-01', listingId: 'L1', childCount: 0, children: [] },
+        {
+          userId: 'u1',
+          name: '甲',
+          generation: 1,
+          status: 'active',
+          daysToExpiry: 100,
+          endDate: '2027-01-01',
+          joinedAt: '2026-01-01',
+          listingId: 'L1',
+          childCount: 0,
+          children: [],
+        },
       ],
       summary: { firstGenCount: 1, secondGenCount: 0, thirdGenCount: 0, totalReferrals: 1 },
     };
@@ -28,13 +39,37 @@ describe('normalizeReferralData', () => {
       userReferralCode: 'ABC',
       referralTree: {
         firstGeneration: [
-          { userId: 'g1', userName: '一代甲', listingId: 'L1', activeUntil: '2027-01-01', isActive: true, referrer: null, createdAt: '2026-01-01' },
+          {
+            userId: 'g1',
+            userName: '一代甲',
+            listingId: 'L1',
+            activeUntil: '2027-01-01',
+            isActive: true,
+            referrer: null,
+            createdAt: '2026-01-01',
+          },
         ],
         secondGeneration: [
-          { userId: 'g2', userName: '二代乙', listingId: null, activeUntil: null, isActive: false, referrer: { userId: 'g1' }, createdAt: '2026-02-01' },
+          {
+            userId: 'g2',
+            userName: '二代乙',
+            listingId: null,
+            activeUntil: null,
+            isActive: false,
+            referrer: { userId: 'g1' },
+            createdAt: '2026-02-01',
+          },
         ],
         thirdGeneration: [
-          { userId: 'g3', userName: '三代丙', listingId: 'L3', activeUntil: '2027-03-01', isActive: true, referrer: { userId: 'g2' }, createdAt: '2026-03-01' },
+          {
+            userId: 'g3',
+            userName: '三代丙',
+            listingId: 'L3',
+            activeUntil: '2027-03-01',
+            isActive: true,
+            referrer: { userId: 'g2' },
+            createdAt: '2026-03-01',
+          },
         ],
       },
       summary: { firstGenCount: 1, secondGenCount: 1, thirdGenCount: 1, totalReferrals: 3 },
@@ -43,7 +78,13 @@ describe('normalizeReferralData', () => {
 
     expect(out.roots).toHaveLength(1);
     const g1 = out.roots[0];
-    expect(g1).toMatchObject({ userId: 'g1', name: '一代甲', generation: 1, status: 'active', childCount: 1 });
+    expect(g1).toMatchObject({
+      userId: 'g1',
+      name: '一代甲',
+      generation: 1,
+      status: 'active',
+      childCount: 1,
+    });
     expect(g1.children).toHaveLength(1);
 
     const g2 = g1.children[0];
@@ -56,7 +97,10 @@ describe('normalizeReferralData', () => {
   });
 
   it('缺 roots 也缺 referralTree：回空樹但保留 summary', () => {
-    const raw = { userReferralCode: 'X', summary: { firstGenCount: 5, secondGenCount: 0, thirdGenCount: 0, totalReferrals: 5 } };
+    const raw = {
+      userReferralCode: 'X',
+      summary: { firstGenCount: 5, secondGenCount: 0, thirdGenCount: 0, totalReferrals: 5 },
+    };
     const out = normalizeReferralData(raw);
     expect(out.roots).toEqual([]);
     expect(out.summary.totalReferrals).toBe(5);

@@ -68,7 +68,7 @@ function rootsFromLegacyTree(tree: any): ReferralNode[] {
     const kids = childrenByReferrer.get(m?.userId) ?? [];
     return {
       userId: m?.userId ?? '',
-      name: m?.userName ?? '',                 // 舊後端未遮罩；與現行 prod 行為一致（過渡）
+      name: m?.userName ?? '', // 舊後端未遮罩；與現行 prod 行為一致（過渡）
       generation: gen,
       status: m?.isActive ? 'active' : 'expired',
       daysToExpiry: null,

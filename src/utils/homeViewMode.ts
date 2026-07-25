@@ -40,9 +40,7 @@ function defaultStorage(): StorageLike | null {
 }
 
 // 讀取偏好。任何失敗（無儲存體 / 存取拋錯 / 髒資料）都安全地回預設模式。
-export function readHomeViewMode(
-  storage: StorageLike | null = defaultStorage(),
-): HomeViewMode {
+export function readHomeViewMode(storage: StorageLike | null = defaultStorage()): HomeViewMode {
   if (!storage) return DEFAULT_HOME_VIEW_MODE;
   try {
     return normalizeHomeViewMode(storage.getItem(HOME_VIEW_MODE_KEY));

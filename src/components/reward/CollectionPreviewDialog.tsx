@@ -1,4 +1,3 @@
-import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react';
@@ -23,18 +22,18 @@ interface CollectionPreviewDialogProps {
  * 查收预览对话框 - 第二步
  * 显示统计数据变化预览
  */
-export function CollectionPreviewDialog({ 
-  withdrawal, 
+export function CollectionPreviewDialog({
+  withdrawal,
   pendingRewards,
   withdrawnRewards,
-  onNext, 
+  onNext,
   onBack,
-  onCancel 
+  onCancel,
 }: CollectionPreviewDialogProps) {
   // ✅ 前端计算查收后的统计数据变化
   const totalDeduction = withdrawal.amount + withdrawal.fee; // 实际从处理中扣除的总额
   const afterPendingRewards = pendingRewards - totalDeduction;
-  const afterWithdrawnRewards = withdrawnRewards + totalDeduction;  // ⭐ 改为总额（包含手续费）
+  const afterWithdrawnRewards = withdrawnRewards + totalDeduction; // ⭐ 改为总额（包含手续费）
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -44,9 +43,7 @@ export function CollectionPreviewDialog({
             <CheckCircle className="h-5 w-5 text-blue-600" />
             預覽統計變化 - 步驟 2/3
           </CardTitle>
-          <CardDescription>
-            確認查收後的點數統計變化
-          </CardDescription>
+          <CardDescription>確認查收後的點數統計變化</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 提領明細 */}
@@ -82,7 +79,7 @@ export function CollectionPreviewDialog({
               <CheckCircle className="h-4 w-4" />
               統計數據變化預覽
             </h3>
-            
+
             {/* 處理中Point變化 */}
             <div className="space-y-2">
               <div className="text-sm text-blue-800 font-medium">處理中Point</div>
@@ -133,18 +130,11 @@ export function CollectionPreviewDialog({
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={onBack}
-              className="flex-1"
-            >
+            <Button variant="outline" onClick={onBack} className="flex-1">
               <ArrowLeft className="h-4 w-4 mr-2" />
               上一步
             </Button>
-            <Button
-              onClick={onNext}
-              className="flex-1"
-            >
+            <Button onClick={onNext} className="flex-1">
               下一步
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>

@@ -14,9 +14,12 @@ import type { SystemAlert, SystemAlertsResponse } from '@contract';
 // 它們只進不出，除非維運直接下 SQL 否則無人看得到。
 function getSeverityBadge(severity: SystemAlert['severity']) {
   switch (severity) {
-    case 'error':   return <Badge variant="destructive">error</Badge>;
-    case 'warning': return <Badge className="bg-orange-500">warning</Badge>;
-    default:        return <Badge variant="outline">info</Badge>;
+    case 'error':
+      return <Badge variant="destructive">error</Badge>;
+    case 'warning':
+      return <Badge className="bg-orange-500">warning</Badge>;
+    default:
+      return <Badge variant="outline">info</Badge>;
   }
 }
 
@@ -31,9 +34,7 @@ export function SystemAlerts() {
     setIsLoading(true);
     setLoadError(false);
     try {
-      const res = await apiRequestJson<SystemAlertsResponse>(
-        buildApiUrl('/admin/system-alerts')
-      );
+      const res = await apiRequestJson<SystemAlertsResponse>(buildApiUrl('/admin/system-alerts'));
       setAlerts(res.data.alerts);
     } catch (error) {
       console.error('SystemAlerts: 載入告警失敗:', error);
@@ -43,15 +44,16 @@ export function SystemAlerts() {
     }
   }, []);
 
-  useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts]);
 
   const resolveAlert = async (alert: SystemAlert) => {
     setResolvingId(alert.id);
     try {
-      await apiRequestJson(
-        buildApiUrl(`/admin/system-alerts/${alert.id}/resolve`),
-        { method: 'POST' }
-      );
+      await apiRequestJson(buildApiUrl(`/admin/system-alerts/${alert.id}/resolve`), {
+        method: 'POST',
+      });
       showToast('已標記處理', 'success');
       await fetchAlerts();
     } catch (error) {
@@ -87,7 +89,9 @@ export function SystemAlerts() {
         {!isLoading && loadError && (
           <div className="text-center py-12 space-y-4">
             <p className="text-muted-foreground">載入告警失敗，請檢查網路後再試</p>
-            <Button variant="outline" onClick={fetchAlerts}>重新載入</Button>
+            <Button variant="outline" onClick={fetchAlerts}>
+              重新載入
+            </Button>
           </div>
         )}
 

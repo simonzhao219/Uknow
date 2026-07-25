@@ -10,8 +10,8 @@ import { useNotification } from '../notifications/NotificationContext';
 import type { AdminMember, AdminMembersResponse } from '@contract';
 
 const ACCOUNT_STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  active:  { label: '有效會員', className: 'bg-green-100 text-green-800 border-green-300' },
-  expired: { label: '已失效',   className: 'bg-gray-100 text-gray-800 border-gray-300' },
+  active: { label: '有效會員', className: 'bg-green-100 text-green-800 border-green-300' },
+  expired: { label: '已失效', className: 'bg-gray-100 text-gray-800 border-gray-300' },
 };
 
 export function MemberManagement() {
@@ -28,9 +28,7 @@ export function MemberManagement() {
     setIsLoading(true);
     try {
       const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-      const result = await apiRequestJson<AdminMembersResponse>(
-        buildApiUrl(`/admin/members${qs}`)
-      );
+      const result = await apiRequestJson<AdminMembersResponse>(buildApiUrl(`/admin/members${qs}`));
       if (result.success) {
         setMembers(result.data.members);
         setTotal(result.data.total);
@@ -40,7 +38,7 @@ export function MemberManagement() {
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   useEffect(() => {
@@ -52,14 +50,14 @@ export function MemberManagement() {
     try {
       const result = await apiRequestJson<{ success: boolean; error?: { message: string } }>(
         buildApiUrl(`/admin/members/${member.id}/suspend`),
-        { method: 'POST', body: JSON.stringify({ suspend: !member.suspended }) }
+        { method: 'POST', body: JSON.stringify({ suspend: !member.suspended }) },
       );
       if (result.success) {
         showSuccess(
           member.suspended ? '已恢復會員' : '已停權會員',
           member.suspended
             ? `${member.name ?? member.email} 已恢復正常`
-            : `${member.name ?? member.email} 已停權，其刊登將自動下架`
+            : `${member.name ?? member.email} 已停權，其刊登將自動下架`,
         );
         await fetchMembers();
       } else {
@@ -169,7 +167,8 @@ export function MemberManagement() {
               </TableHeader>
               <TableBody>
                 {members.map((member) => {
-                  const acct = ACCOUNT_STATUS_BADGE[member.accountStatus] ?? ACCOUNT_STATUS_BADGE.expired;
+                  const acct =
+                    ACCOUNT_STATUS_BADGE[member.accountStatus] ?? ACCOUNT_STATUS_BADGE.expired;
                   return (
                     <TableRow key={member.id}>
                       <TableCell>{member.name ?? '—'}</TableCell>

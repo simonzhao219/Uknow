@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -8,7 +8,7 @@ import { formatTimestamp } from '../../utils/referralFormatter';
 import type { RewardHistoryRecord as RewardRecord, RewardHistoryResponse } from '@contract';
 
 interface RewardHistoryProps {
-  refreshTrigger?: number;  // ✅ 新增：刷新觸發器
+  refreshTrigger?: number; // ✅ 新增：刷新觸發器
 }
 
 export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
@@ -16,9 +16,9 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('all');
-  const [offset, setOffset] = useState(0);  // ✅ 新增：當前加載位置
-  const [total, setTotal] = useState(0);  // ✅ 新增：總記錄數
-  const [isLoadingMore, setIsLoadingMore] = useState(false);  // ✅ 新增：加載更多中
+  const [offset, setOffset] = useState(0); // ✅ 新增：當前加載位置
+  const [total, setTotal] = useState(0); // ✅ 新增：總記錄數
+  const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 新增：加載更多中
 
   // ✅ 提取獲取歷史的邏輯為獨立函數，支持追加模式
   const fetchHistory = async (isLoadMore = false) => {
@@ -29,7 +29,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         setIsLoading(true);
         setError(null);
       }
-      
+
       const currentOffset = isLoadMore ? offset : 0;
 
       // type 篩選下推到後端：'all' 不帶 param，其餘（referral / withdrawal）帶下去，
@@ -38,20 +38,20 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
 
       // ✅ 使用統一的 API 請求工具
       const result = await apiRequestJson<RewardHistoryResponse>(
-        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${typeParam}`)
+        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${typeParam}`),
       );
-      
+
       if (result.success) {
         const newHistory = result.data.history || [];
-        
+
         if (isLoadMore) {
           // 追加模式：合併新舊記錄
-          setHistory(prev => [...prev, ...newHistory]);
+          setHistory((prev) => [...prev, ...newHistory]);
         } else {
           // 初始模式：替換記錄
           setHistory(newHistory);
         }
-        
+
         // 更新總數和偏移量
         setTotal(result.data.total || 0);
         setOffset(currentOffset + newHistory.length);
@@ -60,7 +60,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       }
     } catch (err) {
       console.error('獲取獎勵歷史錯誤:', err);
-      
+
       if (err instanceof ApiError && err.status === 401) {
         setError('登入已過期，請重新登入');
       } else {
@@ -71,7 +71,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
       setIsLoadingMore(false);
     }
   };
-  
+
   // ✅ 新增：加載更多函數
   const handleLoadMore = () => {
     fetchHistory(true);
@@ -87,7 +87,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   // ✅ 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      fetchHistory();  // 非追加：內部 offset 歸零
+      fetchHistory(); // 非追加：內部 offset 歸零
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
@@ -104,9 +104,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
           <Receipt className="h-5 w-5" />
           獎勵明細
         </CardTitle>
-        <CardDescription>
-          查看您的Point收入記錄
-        </CardDescription>
+        <CardDescription>查看您的Point收入記錄</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 篩選器 */}
@@ -149,13 +147,11 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">尚無獎勵記錄</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  完成推薦或任務後將顯示在此處
-                </p>
+                <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>
               </div>
             ) : (
               history.map((record) => (
-                <div 
+                <div
                   key={record.id}
                   className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                 >
@@ -193,7 +189,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                         }
                       }
                     }
-                    
+
                     return (
                       <div className="flex items-start justify-between gap-4">
                         {/* 左侧内容 */}
@@ -207,7 +203,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                             )}
                             <span className="font-medium truncate">{type}</span>
                           </div>
-                          
+
                           {/* 第二行：細節資訊 */}
                           <p className="text-sm text-muted-foreground truncate">
                             {(() => {
@@ -215,7 +211,9 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                               //   被推薦人（其直接推薦人）；直推（第 1 代）只顯示被推薦人。
                               // 不再靠切 description 反推——那串裡本就沒有名字。
                               if (record.refereeName) {
-                                return record.generation && record.generation > 1 && record.refereeReferrerName
+                                return record.generation &&
+                                  record.generation > 1 &&
+                                  record.refereeReferrerName
                                   ? `${record.refereeName}（${record.refereeReferrerName}）`
                                   : record.refereeName;
                               }
@@ -230,18 +228,21 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                               return cleanedDetail;
                             })()}
                           </p>
-                          
+
                           {/* 第三行：入帳日期時間 */}
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3 shrink-0" />
                             <span className="truncate">{formatTimestamp(record.issuedAt)}</span>
                           </div>
                         </div>
-                        
+
                         {/* 右侧：金額 + 餘額（垂直居中）*/}
                         <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
-                          <span className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {record.amount >= 0 ? '+' : ''}{record.amount}P
+                          <span
+                            className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                          >
+                            {record.amount >= 0 ? '+' : ''}
+                            {record.amount}P
                           </span>
                           {record.balance !== undefined && (
                             <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
@@ -258,23 +259,18 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
             )}
           </div>
         )}
-        
+
         {/* ✅ 新增：已加載筆數顯示 */}
         {!isLoading && !error && total > 0 && (
           <div className="text-center text-sm text-muted-foreground">
             已顯示 {Math.min(history.length, total)} / {total} 筆記錄
           </div>
         )}
-        
+
         {/* ✅ 新增：加載更多按鈕 */}
         {!isLoading && !error && offset < total && (
           <div className="text-center">
-            <Button
-              onClick={handleLoadMore}
-              variant="outline"
-              size="sm"
-              disabled={isLoadingMore}
-            >
+            <Button onClick={handleLoadMore} variant="outline" size="sm" disabled={isLoadingMore}>
               {isLoadingMore ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />

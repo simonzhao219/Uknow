@@ -1,7 +1,6 @@
-import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { StatCardGrid } from '../ui/stat-card-grid';
-import { Award, Wallet, TrendingUp, Clock } from 'lucide-react';
+import { Award, Wallet } from 'lucide-react';
 
 interface RewardStatsProps {
   totalRewards: number;
@@ -14,7 +13,7 @@ export function RewardStats({
   totalRewards,
   availableRewards,
   pendingRewards,
-  withdrawnRewards
+  withdrawnRewards,
 }: RewardStatsProps) {
   // 用共用的 StatCardGrid：欄數綁定卡片數、等寬填滿、左右對稱。
   // 目前只顯示 2 張卡（處理中／已提領已停用）。

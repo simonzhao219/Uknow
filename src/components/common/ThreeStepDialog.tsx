@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import type React from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../ui/card';
 import { IdNumberVerification } from './IdNumberVerification';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
@@ -9,7 +10,7 @@ import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 export interface ThreeStepConfig {
   // Dialog標題
   title: string;
-  
+
   // 步驟1配置
   step1: {
     title: string;
@@ -17,21 +18,21 @@ export interface ThreeStepConfig {
     content: React.ReactNode;
     nextButtonText?: string;
   };
-  
+
   // 步驟2配置（預覽變化）
   step2: {
     title: string;
     description: string;
-    apiEndpoint?: string;  // 如果提供，將自動獲取預覽數據
-    content: (data: any) => React.ReactNode;  // 接收預覽數據，返回渲染內容
+    apiEndpoint?: string; // 如果提供，將自動獲取預覽數據
+    content: (data: any) => React.ReactNode; // 接收預覽數據，返回渲染內容
     nextButtonText?: string;
   };
-  
+
   // 步驟3配置（身分證驗證）
   step3: {
     title?: string;
     description?: string;
-    warningMessage: string;  // 最後確認的警告訊息
+    warningMessage: string; // 最後確認的警告訊息
     confirmButtonText?: string;
   };
 }
@@ -41,22 +42,22 @@ interface ThreeStepDialogProps {
   config: ThreeStepConfig;
   onClose: () => void;
   onConfirm: (idNumber: string) => Promise<void>;
-  defaultPreviewData?: any;  // Fallback數據（如果API獲取失敗）
+  defaultPreviewData?: any; // Fallback數據（如果API獲取失敗）
 }
 
 /**
  * ✅ 通用的三步驟驗證Dialog組件
- * 
+ *
  * 統一處理：
  * - 步驟狀態管理（1 → 2 → 3）
  * - 步驟2的API數據獲取
  * - 載入狀態和錯誤處理
  * - 步驟3的身分證驗證
- * 
+ *
  * 使用範例：
  * ```tsx
  * const config = createClaimRewardConfig(reward);
- * 
+ *
  * <ThreeStepDialog
  *   isOpen={isOpen}
  *   config={config}
@@ -70,10 +71,10 @@ export function ThreeStepDialog({
   config,
   onClose,
   onConfirm,
-  defaultPreviewData
+  defaultPreviewData,
 }: ThreeStepDialogProps) {
   const [step, setStep] = useState(1);
-  const [previewData, setPreviewData] = useState<any>(null);  // ✅ 不再使用 defaultPreviewData 初始化
+  const [previewData, setPreviewData] = useState<any>(null); // ✅ 不再使用 defaultPreviewData 初始化
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -110,7 +111,7 @@ export function ThreeStepDialog({
     } catch (err) {
       console.error('❌ 獲取預覽數據失敗:', err);
       setPreviewError(err instanceof Error ? err.message : '獲取數據失敗，請稍後再試');
-      
+
       // Fallback到默認數據
       if (defaultPreviewData) {
         setPreviewData(defaultPreviewData);
@@ -151,7 +152,7 @@ export function ThreeStepDialog({
   // ===== 重置狀態 =====
   const handleReset = () => {
     setStep(1);
-    setPreviewData(null);  // ✅ 清空預覽數據，確保下次打開時重新獲取
+    setPreviewData(null); // ✅ 清空預覽數據，確保下次打開時重新獲取
     setIsLoadingPreview(false);
     setPreviewError(null);
     setIsSubmitting(false);
@@ -233,7 +234,7 @@ function StepOneCard({
   content,
   nextButtonText = '下一步',
   onNext,
-  onClose
+  onClose,
 }: StepOneCardProps) {
   return (
     <Card className="w-full max-w-lg">
@@ -243,9 +244,7 @@ function StepOneCard({
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
 
-        <div className="mb-6">
-          {content}
-        </div>
+        <div className="mb-6">{content}</div>
 
         <div className="flex justify-end gap-3">
           <button
@@ -292,7 +291,7 @@ function StepTwoCard({
   onRetry,
   onNext,
   onBack,
-  onClose
+  onClose,
 }: StepTwoCardProps) {
   return (
     <Card className="w-full max-w-lg">
@@ -307,8 +306,19 @@ function StepTwoCard({
           {isLoading && (
             <div className="flex items-center justify-center py-8">
               <svg className="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
               </svg>
               <span className="ml-3 text-muted-foreground">正在獲取最新資料...</span>
             </div>
@@ -338,7 +348,12 @@ function StepTwoCard({
             className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
             上一步
           </button>

@@ -1,13 +1,8 @@
-import React, { useState, useContext, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Button } from "./ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import { Badge } from "./ui/badge";
+import React, { useState, useContext, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Badge } from './ui/badge';
 import {
   ArrowLeft,
   MapPin,
@@ -17,11 +12,13 @@ import {
   Facebook,
   ExternalLink,
   Copy,
-} from "lucide-react";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
-import { GenderBadge } from "./common/GenderBadge";
-import { ReferralCodeCard } from "./referral/ReferralCodeCard";
-import { UserContext } from "../App";
+} from 'lucide-react';
+import { ImageWithFallback } from './figma/ImageWithFallback';
+import { GenderBadge } from './common/GenderBadge';
+// biome-ignore lint/correctness/noUnusedImports: 元件已建未接線——刪除或接線待裁決（見 docs/plans/friction-log.md）
+import { ReferralCodeCard } from './referral/ReferralCodeCard';
+import { UserContext } from '../App';
+// biome-ignore lint/correctness/noUnusedImports: 元件已建未接線——刪除或接線待裁決（見 docs/plans/friction-log.md）
 import { ReferralGuide } from './referral/ReferralGuide';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
@@ -34,7 +31,7 @@ export function ServiceProviderDetail() {
   const navigate = useNavigate();
   const handleBack = useBackNavigation();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  
+
   // ✅ 添加状态管理
   const [serviceProvider, setServiceProvider] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +40,7 @@ export function ServiceProviderDetail() {
   // ✅ 从后端 API 获取数据
   useEffect(() => {
     if (!id) return;
-    
+
     const fetchListing = async () => {
       setLoading(true);
       setError(false);
@@ -81,32 +78,27 @@ export function ServiceProviderDetail() {
   if (error || !serviceProvider) {
     return (
       <div className="max-w-4xl mx-auto text-center py-12">
-        <h2 className="text-2xl font-bold mb-4">
-          找不到此服務者
-        </h2>
-        <Button onClick={() => navigate("/")}>返回首頁</Button>
+        <h2 className="text-2xl font-bold mb-4">找不到此服務者</h2>
+        <Button onClick={() => navigate('/')}>返回首頁</Button>
       </div>
     );
   }
 
-  const handleContactClick = (
-    platform: string,
-    value: string,
-  ) => {
-    let url = "";
+  const handleContactClick = (platform: string, value: string) => {
+    let url = '';
     switch (platform) {
-      case "instagram":
-        url = `https://instagram.com/${value.replace("@", "")}`;
+      case 'instagram':
+        url = `https://instagram.com/${value.replace('@', '')}`;
         break;
-      case "line":
+      case 'line':
         url = `https://line.me/R/ti/p/${value}`;
         break;
-      case "facebook":
+      case 'facebook':
         url = `https://facebook.com/${value}`;
         break;
     }
     if (url) {
-      window.open(url, "_blank");
+      window.open(url, '_blank');
     }
   };
 
@@ -130,11 +122,7 @@ export function ServiceProviderDetail() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* 返回按鈕 */}
-      <Button
-        variant="ghost"
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-2"
-      >
+      <Button variant="ghost" onClick={() => navigate(-1)} className="flex items-center gap-2">
         <ArrowLeft className="h-4 w-4" />
         返回
       </Button>
@@ -157,9 +145,7 @@ export function ServiceProviderDetail() {
                   key={index}
                   onClick={() => setCurrentImageIndex(index)}
                   className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
-                    currentImageIndex === index
-                      ? "border-primary"
-                      : "border-transparent"
+                    currentImageIndex === index ? 'border-primary' : 'border-transparent'
                   }`}
                 >
                   <ImageWithFallback
@@ -178,16 +164,11 @@ export function ServiceProviderDetail() {
           <div>
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold">
-                  {serviceProvider.name}
-                </h1>
+                <h1 className="text-3xl font-bold">{serviceProvider.name}</h1>
                 {/* 🆕 性别 Badge */}
                 <GenderBadge gender={serviceProvider.gender} className="text-base" />
               </div>
-              <Badge
-                variant="default"
-                className="text-lg px-3 py-1"
-              >
+              <Badge variant="default" className="text-lg px-3 py-1">
                 {serviceProvider.category}
               </Badge>
             </div>
@@ -196,10 +177,11 @@ export function ServiceProviderDetail() {
               <div className="flex items-center gap-2 text-muted-foreground">
                 <MapPin className="h-5 w-5" />
                 <span>
-                  {serviceProvider.city} {Array.isArray(serviceProvider.districts) 
-                    ? (serviceProvider.districts.includes('全區') 
-                        ? '全區' 
-                        : serviceProvider.districts.join(', '))
+                  {serviceProvider.city}{' '}
+                  {Array.isArray(serviceProvider.districts)
+                    ? serviceProvider.districts.includes('全區')
+                      ? '全區'
+                      : serviceProvider.districts.join(', ')
                     : serviceProvider.district || ''}
                 </span>
               </div>
@@ -228,36 +210,24 @@ export function ServiceProviderDetail() {
                 <Button
                   variant="outline"
                   className="w-full justify-start"
-                  onClick={() =>
-                    handleContactClick(
-                      "facebook",
-                      serviceProvider.contacts.facebook,
-                    )
-                  }
+                  onClick={() => handleContactClick('facebook', serviceProvider.contacts.facebook)}
                 >
                   <Facebook className="h-5 w-5 mr-3 text-blue-600" />
-                  <span className="flex-1 text-left">
-                    {serviceProvider.contacts.facebook}
-                  </span>
+                  <span className="flex-1 text-left">{serviceProvider.contacts.facebook}</span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               )}
-              
+
               {serviceProvider.contacts.instagram && (
                 <Button
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() =>
-                    handleContactClick(
-                      "instagram",
-                      serviceProvider.contacts.instagram,
-                    )
+                    handleContactClick('instagram', serviceProvider.contacts.instagram)
                   }
                 >
                   <Instagram className="h-5 w-5 mr-3 text-pink-500" />
-                  <span className="flex-1 text-left">
-                    {serviceProvider.contacts.instagram}
-                  </span>
+                  <span className="flex-1 text-left">{serviceProvider.contacts.instagram}</span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               )}
@@ -266,16 +236,10 @@ export function ServiceProviderDetail() {
                 <Button
                   variant="outline"
                   className="w-full justify-start"
-                  onClick={() =>
-                    copyLineId(
-                      serviceProvider.contacts.line,
-                    )
-                  }
+                  onClick={() => copyLineId(serviceProvider.contacts.line)}
                 >
                   <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
-                  <span className="flex-1 text-left">
-                    {serviceProvider.contacts.line}
-                  </span>
+                  <span className="flex-1 text-left">{serviceProvider.contacts.line}</span>
                   <Copy className="h-4 w-4" />
                 </Button>
               )}

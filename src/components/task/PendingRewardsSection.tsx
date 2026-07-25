@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -24,7 +24,12 @@ interface Props {
   claimBlockedReason?: string | null;
 }
 
-export function PendingRewardsSection({ pendingRewards, onClaimReward, onClaimAll, claimBlockedReason = null }: Props) {
+export function PendingRewardsSection({
+  pendingRewards,
+  onClaimReward,
+  onClaimAll,
+  claimBlockedReason = null,
+}: Props) {
   const isBlocked = !!claimBlockedReason;
   const [selectedReward, setSelectedReward] = useState<PendingMissionReward | null>(null);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
@@ -87,12 +92,16 @@ export function PendingRewardsSection({ pendingRewards, onClaimReward, onClaimAl
                       <Gift className="h-4 w-4 text-yellow-600" />
                       <span className="text-muted-foreground">獎勵:</span>
                       <span className="font-bold text-yellow-600 text-base">
-                        {reward.rewardType === 'free_renewal_year' ? '免費續約 1 年' : `${reward.amount} P`}
+                        {reward.rewardType === 'free_renewal_year'
+                          ? '免費續約 1 年'
+                          : `${reward.amount} P`}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">{formatTimestamp(reward.achievedAt)}</span>
+                      <span className="text-muted-foreground">
+                        {formatTimestamp(reward.achievedAt)}
+                      </span>
                     </div>
                   </div>
                 </div>
