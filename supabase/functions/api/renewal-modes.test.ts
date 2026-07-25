@@ -17,11 +17,11 @@ import {
   payForUser,
 } from './test-helpers.ts';
 import {
+  subscriptionLastDay,
   twDayOf,
   twDayPlusDays,
-  subscriptionLastDay,
-  twStartOfDayInstant,
   twEndOfDayInstant,
+  twStartOfDayInstant,
 } from './tw-dates.ts';
 
 ensureEdgeFunctionEnv();
@@ -92,8 +92,12 @@ Deno.test('extend：新訂閱效期接續前一筆的最後一天（不是付款
     // 直接塞一筆 extend 訂單並驅動付款（效期錨點是 SQL 層的職責）。
     const tradeNo = `EXTEND-${Date.now()}-${seq++}`;
     await client.from('payment_orders').insert({
-      user_id: user.id, amount: 1200, status: 'pending', payment_method: 'payuni',
-      transaction_id: tradeNo, renewal_mode: 'extend',
+      user_id: user.id,
+      amount: 1200,
+      status: 'pending',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      renewal_mode: 'extend',
     });
     assertEquals(await payPendingOrder(client, user.id, tradeNo), null);
 
@@ -134,8 +138,12 @@ Deno.test('fresh / null：效期從付款當下起算（現行語意不變）', 
 
     const tradeNo = `FRESH-${Date.now()}-${seq++}`;
     await client.from('payment_orders').insert({
-      user_id: user.id, amount: 1200, status: 'pending', payment_method: 'payuni',
-      transaction_id: tradeNo, renewal_mode: 'fresh',
+      user_id: user.id,
+      amount: 1200,
+      status: 'pending',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      renewal_mode: 'fresh',
     });
     const before = Date.now();
     assertEquals(await payPendingOrder(client, user.id, tradeNo), null);

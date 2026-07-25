@@ -30,13 +30,17 @@ Deno.test('bump_rate_limit：同一 key 在窗內超過上限即拒絕，窗口�
 
   for (let i = 1; i <= 3; i++) {
     const { data, error } = await client.rpc('bump_rate_limit', {
-      p_key: key, p_max: 3, p_window_seconds: 300,
+      p_key: key,
+      p_max: 3,
+      p_window_seconds: 300,
     });
     assertEquals(error, null);
     assertEquals(data, true, `第 ${i} 次應放行`);
   }
   const { data: fourth } = await client.rpc('bump_rate_limit', {
-    p_key: key, p_max: 3, p_window_seconds: 300,
+    p_key: key,
+    p_max: 3,
+    p_window_seconds: 300,
   });
   assertEquals(fourth, false, '第 4 次應被拒');
 
@@ -45,7 +49,9 @@ Deno.test('bump_rate_limit：同一 key 在窗內超過上限即拒絕，窗口�
     .update({ window_start: new Date(Date.now() - 3600_000).toISOString() })
     .eq('key', key);
   const { data: afterWindow } = await client.rpc('bump_rate_limit', {
-    p_key: key, p_max: 3, p_window_seconds: 300,
+    p_key: key,
+    p_max: 3,
+    p_window_seconds: 300,
   });
   assertEquals(afterWindow, true, '窗口過期後應重置放行');
 

@@ -36,7 +36,10 @@ Deno.test('GET /admin/system-alerts：預設只列未處理告警，含本測試
 
   try {
     await client.from('system_alerts').insert({
-      source: marker, severity: 'error', message: '測試告警', context: { probe: true },
+      source: marker,
+      severity: 'error',
+      message: '測試告警',
+      context: { probe: true },
     });
 
     const token = await getUserAccessToken(client, admin.email);

@@ -9,8 +9,8 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 // 公開、固定不變的值（`supabase status -o env` 印出來的 SERVICE_ROLE_KEY），
 // 不是真正的密鑰。CI 若改用其他方式啟動本地 Supabase，可用環境變數覆寫。
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? 'http://127.0.0.1:54321';
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  ?? 'eyJhbGciOiJFUzI1NiIsImtpZCI6ImI4MTI2OWYxLTIxZDgtNGYyZS1iNzE5LWMyMjQwYTg0MGQ5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MjA5OTUxNzg3NH0.NOO6XuN2hBOf4kSPXeCbtKxc55pJgRqmOJtLFMKmGH0KAYcOYo1el2sqZTVTi4kXPtgAghlLvX4nkUdQ3_cJFw';
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+  'eyJhbGciOiJFUzI1NiIsImtpZCI6ImI4MTI2OWYxLTIxZDgtNGYyZS1iNzE5LWMyMjQwYTg0MGQ5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MjA5OTUxNzg3NH0.NOO6XuN2hBOf4kSPXeCbtKxc55pJgRqmOJtLFMKmGH0KAYcOYo1el2sqZTVTi4kXPtgAghlLvX4nkUdQ3_cJFw';
 
 export function adminClient(): SupabaseClient {
   return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
@@ -109,7 +109,10 @@ export async function getUserAccessToken(client: SupabaseClient, email: string):
   return otpData.session.access_token;
 }
 
-export async function getActiveReferralCode(client: SupabaseClient, userId: string): Promise<string> {
+export async function getActiveReferralCode(
+  client: SupabaseClient,
+  userId: string,
+): Promise<string> {
   const { data } = await client
     .from('referral_codes')
     .select('code')

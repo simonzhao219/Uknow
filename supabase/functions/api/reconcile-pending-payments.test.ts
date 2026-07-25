@@ -19,8 +19,12 @@ async function seedPendingOrder(
   const tradeNo = `RECONCILE-${userId}`;
   const createdAt = new Date(Date.now() - ageMinutes * 60_000).toISOString();
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, created_at: createdAt,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    created_at: createdAt,
   });
   if (error) throw new Error(`seed pending order failed: ${error.message}`);
   return tradeNo;
@@ -42,7 +46,10 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
       client,
       async (merTradeNo: string) => {
         if (merTradeNo === successTradeNo) {
-          return { stillProcessing: false, data: { MerTradeNo: merTradeNo, TradeNo: merTradeNo, Status: 'SUCCESS' } };
+          return {
+            stillProcessing: false,
+            data: { MerTradeNo: merTradeNo, TradeNo: merTradeNo, Status: 'SUCCESS' },
+          };
         }
         if (merTradeNo === stillPendingTradeNo) {
           return { stillProcessing: true };
@@ -59,7 +66,11 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
       { thresholdMinutes: 20, limit: 50 },
     );
 
-    assertEquals(summary.checked, 2, `應該只掃到 2 筆超過門檻的 pending 訂單，實際 ${summary.checked}`);
+    assertEquals(
+      summary.checked,
+      2,
+      `應該只掃到 2 筆超過門檻的 pending 訂單，實際 ${summary.checked}`,
+    );
     assertEquals(summary.resolved, 1);
     assertEquals(summary.stillPending, 1);
     assertEquals(resolvedCalls, [successTradeNo]);
