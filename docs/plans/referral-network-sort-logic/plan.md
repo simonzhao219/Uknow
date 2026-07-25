@@ -7,6 +7,30 @@
 (web session 自動分支)產出;若要走守衛版三段式流程,實作時切
 `feature/referral-network-sort-logic`(目錄名 = 該 slug)。
 
+> **行號基準(2026-07-25 rebase 到 `origin/develop` = `5d5e7ed` 後重新核對)**
+>
+> develop 進了 23 個 commit,`index.ts` +1006 行、`api-contract.ts` +342 行、
+> `ReferralTreeView.tsx` +27 行(頭像配色改綁世代,與排序無關)。
+> **排序器邏輯本身一字未改**,規劃書全部前提仍成立;下文行號多為 rebase 前的
+> 基準,實作時以下列重新核對過的錨點為準:
+>
+> | 錨點 | 舊行號 | **新行號** |
+> |---|---|---|
+> | `sortNodeIds()`(內容完全相同) | 2395 | **2553** |
+> | `updatedAsc` 吃 `subtreeMs` | 2407 | **2565–2566** |
+> | `tie()` | 2397 | **2555–2559** |
+> | `parseSortMode()` 回落 | 2393 | **2548–2551** |
+> | `subtreeMs` bottom-up 計算 | 2342–2350 | **2488–2494** |
+> | `buildFlatNode` 輸出該欄位 | 2381 | **2539** |
+> | `SEARCH_LIMIT = 50` / `.slice()` | 2414 / 2530 | **2573 / 2695** |
+> | `NetworkNodeSchema.subtreeLatestJoinedAt` | 268 | **302** |
+> | `ReferralTreeView` 指示點 `sort !== 'updated_desc'` | 534 | **531** |
+>
+> 未變動的檔案(行號仍有效):`src/utils/referralNetwork.ts`(L10/L54/L67/L73/L77/L87)、
+> `src/hooks/useReferralData.ts`、`src/components/ReferralManagement.tsx`。
+> 已複驗:`obj()`(L90–98)仍只檢查已宣告的 key、放行多餘欄位 → P1-2 的推理成立;
+> `@contract` 尚無 `DEFAULT_NETWORK_SORT`,由 Phase 2 新增。
+
 ## 0. 一句話
 
 依需求方指定的兩條排序規則調整「我的推薦網絡」:預設由舊到新,且每一代
