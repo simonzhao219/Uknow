@@ -11,19 +11,33 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 前端姓名格式規則(`validateName`) | ⬜ 未開始 | | |
-| 2 | 後端共用姓名格式驗證(`/auth/register`、`/auth/profile`) | ⬜ 未開始 | | |
-| 3 | 錯誤訊息文案/互動核對(`CompleteProfile.tsx`) | ⬜ 未開始 | | |
+| 1 | 前端 `validateName` 雙模式規則與分模式長度上限 | ⬜ 未開始 | | |
+| 2 | 後端 `export` 姓名驗證函式,接進兩個端點 | ⬜ 未開始 | | |
+| 3 | 撤銷 `profiles.name` 的 authenticated UPDATE GRANT | ⬜ 未開始 | | |
+| 4 | 表單模式切換、長度連動、草稿、確認框合併 | ⬜ 未開始 | | |
+| 5 | 收尾:規格書 §4.2 與 journey 姓名產生器同步 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃書與四視角審查(`review.md`)皆已完成。**尚未開工**——審查有 1 個 P0
-(`profiles.name` 的既有 DB GRANT 讓規劃的 Edge Function 防線可被直接
-繞過)、8 個 P1、4 個 P2、1 項需人工裁決,依規則 P0 未處置前不得開工。
-須由人裁決 P0 的處置方式(三選一:撤銷 GRANT / 加 DB 層防線 / 明文接受
-殘留風險)與開放問題(規則嚴格度含原住民羅馬拼音姓名、是否要二次確認
-互動、既有錯誤資料規模清點),裁決後才能由人親自打 `/tdd-implement
-id-name-validation-safeguard` 啟動階段 1。
+規劃已到 **v2**(依人審四項裁決重寫),**v2 四視角重審已完成**,結果寫在
+`review.md` 的「v2 審查」節:**2 個 P0、16 個 P1、4 個 P2**。
+
+**尚未開工,且依規則不得開工**——兩個 P0 都未處置:
+
+1. **間隔號**:裁決「不接受標點符號」會擋掉原住民漢字音譯姓名
+   (`谷辣斯·尤達卡`,身分證標準格式),這些人今天可正常註冊,實作後
+   會被判非法——是規劃新增的迴歸。UI/UX 與需求兩視角獨立判 P0。
+2. **`handle_new_user` INSERT 路徑**:v2 §3 的「六面向窮舉」只掃 UPDATE
+   與 `.from('profiles')`,漏了註冊 trigger 從 `raw_user_meta_data` 寫入
+   `profiles.name` 這條路。該路徑對外可達(公開 signup 端點、只需 anon
+   key、免 OTP)且是 `security definer`,撤銷 GRANT 與 Edge Function 驗證
+   對它都無效。需求視角判 P0、架構視角判 P2(理由:前端目前不帶 name
+   metadata),依聚合規則不改判、併陳待裁決。
+
+還有三項待裁決的設計取捨已列在 `review.md`「v2 處置」節的勾選清單:
+切換鈕要不要有真正的強制力、外文是否接受全大寫、外文長度上限數字
+(建議 50)。全部結清後才能由人親自打
+`/tdd-implement id-name-validation-safeguard` 啟動階段 1。
 
 ## Blockers(逃生口紀錄)
 
