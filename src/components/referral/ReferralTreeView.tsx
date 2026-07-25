@@ -7,7 +7,6 @@ import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
 import {
   SORT_OPTIONS,
-  SORT_SHORT_LABEL,
   parseSortMode,
   nodeDaysLeft,
   type NetworkNode,
@@ -414,19 +413,16 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             </button>
           )}
         </div>
-        {/* 排序晶片：收合只顯示短標籤（狀態一眼可見、撐不爆窄螢幕），
-            透明的原生 select 蓋滿晶片——點擊仍叫出行動端原生選單，
-            完整文案在選項裡，鍵盤/報讀走 select 本體。 */}
-        <div className="relative shrink-0">
-          <span aria-hidden className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-3 py-2 text-sm">
-            <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="whitespace-nowrap">{SORT_SHORT_LABEL[sort]}</span>
-          </span>
+        {/* 排序：單一原生 select（晶片樣式）。選項文字本身就短（≤5 字），
+            收合自然短——單層、單一文字來源，結構上不可能疊字；
+            行動端點擊即原生選單，鍵盤/報讀直接操作 select 本體。 */}
+        <div className="relative flex shrink-0 items-center">
+          <ArrowUpDown className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-muted-foreground" aria-hidden />
           <select
             aria-label="排序方式"
             value={sort}
             onChange={(e) => onSortChange(parseSortMode(e.target.value))}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 focus-visible:opacity-100 focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-ring"
+            className="cursor-pointer appearance-none rounded-full border bg-muted/40 py-2 pl-8 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {SORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
