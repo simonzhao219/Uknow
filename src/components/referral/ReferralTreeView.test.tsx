@@ -369,6 +369,47 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
   });
 });
 
+// 切排序時：晶片文字立刻變、已展開分支立刻收合，但清單原地維持舊順序直到
+// 回應才默默重排。改預設後「老使用者上線第一件事就是切回最新加入」會大量
+// 觸發這段無回饋空窗（LINE 內建瀏覽器更慢）。
+describe('重新驗證中的載入回饋（切排序不再是無回饋空窗）', () => {
+  it('isValidating 期間樹降透明度並標記 aria-busy；回應後恢復', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({ roots: [makeNode()] })}
+          sort={DEFAULT_NETWORK_SORT}
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          isValidating
+        />
+      </MemoryRouter>,
+    );
+
+    const tree = screen.getByRole('tree', { name: '我的推薦網絡' });
+    expect(tree.getAttribute('aria-busy')).toBe('true');
+    expect(tree.className).toContain('opacity-');
+
+    rerender(
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({ roots: [makeNode()] })}
+          sort={DEFAULT_NETWORK_SORT}
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          isValidating={false}
+        />
+      </MemoryRouter>,
+    );
+
+    const settled = screen.getByRole('tree', { name: '我的推薦網絡' });
+    expect(settled.getAttribute('aria-busy')).toBeNull();
+    expect(settled.className).not.toContain('opacity-');
+  });
+});
+
 describe('a11y 語意不退化', () => {
   it('維持 tree / treeitem 結構', () => {
     renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }));

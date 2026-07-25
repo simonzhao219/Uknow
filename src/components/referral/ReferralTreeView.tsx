@@ -384,6 +384,8 @@ interface ReferralTreeViewProps {
     q: string,
     offset: number,
   ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
+  /** 背景重新請求中（切排序、focus revalidate）——清單仍是舊資料，需回饋 */
+  isValidating?: boolean;
 }
 
 type SearchState =
@@ -400,6 +402,7 @@ export function ReferralTreeView({
   onSortChange,
   loadChildren,
   searchNetwork,
+  isValidating = false,
 }: ReferralTreeViewProps) {
   const [selected, setSelected] = useState<NetworkNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -637,7 +640,18 @@ export function ReferralTreeView({
           </div>
         ) : null
       ) : (
-        <div role="tree" aria-label="我的推薦網絡" className="space-y-0.5">
+        // 背景重新請求中：清單仍是舊排序的資料，降透明度 + aria-busy 讓
+        // 「還沒重排完」看得見也聽得見。切排序時 setSort 走的是
+        // isValidating 而非 loading（有資料就不整頁 spinner）。
+        <div
+          role="tree"
+          aria-label="我的推薦網絡"
+          aria-busy={isValidating || undefined}
+          className={cn(
+            'space-y-0.5 transition-opacity',
+            isValidating && 'opacity-50 pointer-events-none',
+          )}
+        >
           {roots.map((node) => (
             <NodeRow
               key={node.userId}
