@@ -276,7 +276,9 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
     const loadChildren = vi.fn().mockResolvedValue([child]);
 
     renderTree(makeOverview({ roots: [parent, sibling] }), { loadChildren });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '展開' })); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
 
     expect(avatarBg('甲')).toBe(avatarBg('乙'));
     expect(avatarBg('丙')).not.toBe(avatarBg('甲'));
