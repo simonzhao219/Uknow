@@ -62,6 +62,21 @@ def link_targets(section_text: str) -> set[str]:
     return set(MD_LINK.findall(section_text))
 
 
+def duplicate_index_entries(target_list: list[str]) -> list[str]:
+    """文件清單裡出現一次以上的連結目標。純函式,無 I/O。
+
+    刻意吃 list 而不是 set:`link_targets()` 回 set,重複在進入任何檢查之前
+    就被吃掉了——這正是 2026-07-25 同一份文件被收錄兩次卻仍全綠的原因。
+    D4 原本只驗「每份文件都被收錄」與「連結都指得到」兩個方向,**完整性
+    不等於唯一性**:兩列描述不同用途的重複條目會讓讀者以為是兩份文件,
+    而且改其中一列時另一列會靜默過期。
+    """
+    seen: dict[str, int] = {}
+    for t in target_list:
+        seen[t] = seen.get(t, 0) + 1
+    return sorted(t for t, n in seen.items() if n > 1)
+
+
 def missing_from_index(top_level_names: set[str], targets: set[str]) -> list[str]:
     """哪些頂層 docs/*.md 沒被文件清單的連結收錄(README.md 自己除外)。
     純函式——targets 由呼叫方(真的解析 docs/README.md)注入。"""
@@ -108,6 +123,14 @@ MISSING_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
     ("連結是子路徑,取檔名比對仍算收錄 → 通過", {"friction-log.md"}, {"plans/friction-log.md"}, []),
 ]
 
+DUPLICATE_CASES: list[tuple[str, list[str], list[str]]] = [
+    ("無重複 → 通過", ["a.md", "b.md"], []),
+    ("同一目標出現兩次 → 違規", ["a.md", "b.md", "a.md"], ["a.md"]),
+    ("同一目標出現三次 → 仍只報一次", ["a.md", "a.md", "a.md"], ["a.md"]),
+    ("兩個目標各重複 → 都報", ["a.md", "a.md", "b.md", "b.md"], ["a.md", "b.md"]),
+    ("空清單 → 通過", [], []),
+]
+
 DANGLING_CASES: list[tuple[str, set[str], set[str], list[str]]] = [
     ("連結存在 → 通過", {"a.md"}, {"a.md"}, []),
     ("連結已刪除的檔案 → 違規", {"a.md", "b.md"}, {"a.md"}, ["b.md"]),
@@ -125,6 +148,11 @@ def self_test() -> int:
 
     for label, top_level, targets, want in MISSING_CASES:
         got = missing_from_index(top_level, targets)
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want},實得 {got}")
+
+    for label, target_list, want in DUPLICATE_CASES:
+        got = duplicate_index_entries(target_list)
         if got != want:
             failures.append(f"  FAIL: {label} — 預期 {want},實得 {got}")
 
@@ -163,6 +191,10 @@ def scan() -> int:
         section = _index_section(readme.read_text(encoding="utf-8"))
         targets = link_targets(section)
         top_level = {p.name for p in DOCS_DIR.glob("*.md")}
+
+        for t in duplicate_index_entries(MD_LINK.findall(section)):
+            print(f"FAIL: docs/README.md 文件清單重複收錄 {t!r}——同一份文件只該有一列")
+            fail = 1
 
         for name in missing_from_index(top_level, targets):
             print(f"FAIL: docs/{name} 未被 docs/README.md 的文件清單收錄")
