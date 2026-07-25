@@ -61,3 +61,26 @@ def enter_expired(admin: SupabaseAdmin, user_id: str) -> dict:
     """進入「完全失效」：到期 90 天（兩態模型：end_date 一過即失效，
     無寬限期）。刊登隨即隱藏。"""
     return _shift_latest(admin, user_id, end_delta_days=-90, grace_delta_days=-30)
+
+
+def enter_expired_over_a_year(admin: SupabaseAdmin, user_id: str) -> dict:
+    """進入「過期超過一年」：extend（接續原效期）在此窗外——接續後的
+    效期仍在過去，前端不顯示續約選項、後端 /payuni/prepare 也會拒絕，
+    只剩新約（fresh）一條路。"""
+    return _shift_latest(admin, user_id, end_delta_days=-400, grace_delta_days=-340)
+
+
+def capture_dates(admin: SupabaseAdmin, user_id: str) -> dict:
+    """快照最新訂閱的時間欄位——搭配 restore_dates 讓「把 A0 推入失效」
+    這類情境測完能還原，不把污染留給後續調查。"""
+    return _latest_subscription(admin, user_id)
+
+
+def restore_dates(admin: SupabaseAdmin, user_id: str, snapshot: dict) -> None:
+    updated = admin.rest_update(
+        "subscriptions",
+        {"id": f"eq.{snapshot['id']}"},
+        {"end_date": snapshot["end_date"],
+         "grace_period_end": snapshot["grace_period_end"]},
+    )
+    assert updated, f"user {user_id} 的訂閱效期還原失敗"

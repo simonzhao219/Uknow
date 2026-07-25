@@ -123,8 +123,8 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
   - CI 四軌落地：`ci.yml` 加 paths-ignore／workflow 級 concurrency／
     拆掉 e2e 對 build 的 needs／新增 `journey-offline` job（純函數＋
     收集健全性）；`journey-nightly.yml` 一鍵開分支→設 secrets→跑套件
-    →傳 artifacts→**always() 刪分支**（schedule 依 repo 慣例先註解，
-    workflow_dispatch 首跑校準通過後打開）。
+    →傳 artifacts→**always() 刪分支**；首跑校準（skeleton＋full 手動
+    觸發皆全綠）通過後，nightly schedule 已開啟（台北 02:00）。
 
 **已知產品落差（測試設計過程發現，均已寫入對應 feature 檔頭）**：
 1. 規格 §5.1 獎勵 120P/代 vs 實作 `reward_config` 預設 100P/代
@@ -140,8 +140,17 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 - 移除寬限期（兩態）後「到期即隱藏刊登」，原「寬限期仍公開刊登」的
   落差已消除。
 
-尚未落地（首跑校準對象）：
-- `builders/payuni_sandbox_page.py`（sandbox 刷卡頁）、任務 claim 對話
-  框按鈕序、加入推薦計畫對話框送出鈕、`journey-nightly.yml` 的分支
-  CLI 欄位名——皆為候選清單/註記設計，首次帶憑證執行時校準。
-- 當月排行榜、刊登編輯流程、`reuse_tree` 快照重用。
+**首跑校準已完成（2026-07，skeleton＋full 皆全綠）**：sandbox 刷卡頁
+選擇器、任務 claim 對話框、加入推薦計畫對話框、分支 CLI 欄位名皆已
+實證可用；候選清單設計保留，PayUni/UI 改版時只修對應單一檔案。
+
+**到期後狀態覆蓋（60_time_scenarios，共 8 情境）**：刊登到期即隱藏、
+推薦碼仍可推廣、點數保留不歸零、上線組織圖已失效標記且結構不斷開、
+過期超過一年僅能新約、新約復活（換推薦人 rewire＋付款日起算＋刊登
+重新公開）、extend 補繳（接續原到期日＋權益恢復）、過期提領被擋
+（測後時光機還原效期）。
+仍未覆蓋（後端實作範圍待確認，建議開 product issue）：手動取消續訂
+（`is_canceled`）、到期前 5 日提醒 email、推薦王 credit 的過期機制。
+
+尚未落地（後續迭代選項）：
+- 當月排行榜、刊登編輯流程、`reuse_tree` 快照重用（debug 迭代提速）。
