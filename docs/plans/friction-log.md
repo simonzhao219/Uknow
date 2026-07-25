@@ -165,3 +165,35 @@ Phase 4 卡在紅燈期無法收綠,且紅燈期守衛(正確地)禁止改測試
 **處置**:規劃階段切分時,對「同一個常數/型別被多個測試檔釘住」的情況要先
 掃一次引用點。四視角審查未攔到此問題——可考慮在 review-plan 的架構視角加一
 條檢查:每個階段的「既有測試受影響清單」是否跨階段重疊。
+
+## 2026-07-25｜漏網(已修)｜CI 的 changes 路徑過濾從加入起就沒生效過
+
+`ci.yml` 的 `changes` job 用 `dorny/paths-filter` 做路徑過濾,註解寫明意圖是
+「純文件變更依然不燒重的 job,省 runner 的初衷不變」。實際上 `code` 對**任何**
+PR 都回 `true`——四條 `if: needs.changes.outputs.code == 'true'` 從加入起恆為真,
+沒有 skip 過任何東西。是寫 token 效率分析的純文件 PR 意外撞出來的:只動一個
+`.md` 卻四軌全跑。
+
+根因:`predicate-quantifier` 未設,取預設值 `some`——語意是「檔案符合**任一**
+pattern 即命中」。於是 `- '**'` 先成立,底下三條負向排除永遠不被考慮。負向
+排除要生效必須明確設 `every`(dorny 官方文件記載的 exclusion 慣用法)。
+
+**為什麼沒被發現**:這是「設定寫了但語意不生效」的一類——CI 全綠、沒有任何
+訊號。而既有閘門對 `.github/workflows/` 只有「GitHub 願不願意跑」這一層,
+沒有任何一層驗設定的語意。這也是從 main 退化來的:main 用 workflow 層
+`paths-ignore` 是有效的,改成 job 層的理由正確(workflow 層被 ignore 時
+required check 永遠 pending、純文件 PR 卡死),但搬遷時弄丟了過濾能力。
+順帶一提,`framework-check.sh` 開頭「框架檔案會被主軌路徑過濾跳過,所以需要
+本軌」的前提在此期間也是假的——修好後才第一次成真。
+
+**處置**:已補閘門。新增 `scripts/check-workflows.py`(純文字掃描、不 import
+yaml,維持 framework-check 免依賴的契約),規則抽象為「paths-filter 只要用了
+負向 pattern 就必須設 `predicate-quantifier: every`」,接進 framework-check 軌;
+檢查器自己有 6 條表格案例。通則:**宣稱有的治理若不生效,比沒有治理更貴**
+——因為沒人會再去看它。日後加任何「宣稱會 skip/擋/過濾」的設定,要同時想
+「什麼東西會在它默默失效時變紅」。
+
+**附帶發現(未處置)**:TDD 相位鎖只覆蓋 vitest 層——`.claude/tdd-lock` 的兩個
+效果是 pre-commit 跳過 vitest 與擋改 `src/**/*.test.tsx`。框架軌(framework-check)
+的紅燈沒有對應機制,本次紅燈期因此未建鎖(建了兩個效果都是 no-op,只留下殘留
+鎖的風險)。若日後框架軌的 TDD 變頻繁,值得想清楚要不要有對應的相位機制。

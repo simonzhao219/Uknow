@@ -30,6 +30,12 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # predicate-quantifier 預設是 some（「符合任一 pattern 即命中」），
+          # 那會讓 '**' 先成立、底下三條負向排除永遠不被考慮，code 對任何
+          # 變更都回 true——本 filter 從加入到 2026-07-25 都沒 skip 過任何
+          # 東西。every 要求所有 pattern 都成立，負向排除才生效。
+          # 由 scripts/check-workflows.py 機械把關（framework-check 軌）。
+          predicate-quantifier: every
           filters: |
             code:
               - '**'
