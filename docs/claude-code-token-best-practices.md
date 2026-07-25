@@ -36,8 +36,8 @@
 | `/clear` 切換任務、同一問題糾正兩次就重開 | ✅ 已寫進 CLAUDE.md「糾偏 SOP」 |
 | Esc 中斷 / `/rewind` 回檢查點 | ✅ 同上 |
 | Plan mode 先規劃再實作 | ✅ 三段式流程（`/plan-feature` → `/review-plan` → 人審 → `/tdd-implement`），且 PreToolUse 守衛硬性擋住未審就寫產品碼 |
-| `/compact <指示>` 自訂壓縮重點 | ❌ CLAUDE.md 無 compact instructions 段 |
-| `/context`、`/usage` 監看用量 | ❌ 未見於文件或流程 |
+| `/compact <指示>` 自訂壓縮重點 | ✅ **已補** CLAUDE.md 的 Compact instructions（保留 slug/階段/紅燈 hash） |
+| `/context`、`/usage` 監看用量 | ✅ **已補**：糾偏 SOP 加「先跑 `/context` 再決定，不要直接 `/compact`」 |
 | 具體 prompt、給可驗證目標 | ✅ TDD 紅燈先行本質上就是「先給可驗證目標」 |
 
 ### B. 專案配置層
@@ -53,14 +53,14 @@
 | 文件按需讀取、不全量預載 | ✅ CLAUDE.md 有「Docs 路徑地圖（需要時才讀，勿全部預載）」——正是官方的 just-in-time 取用 |
 | 權限 allowlist 減少往返 | ✅ settings.json 20 條 allow + 6 條 deny（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile） |
 | Subagent 指定較便宜的模型 | ✅ **已補** `model: sonnet` × 4 |
-| CLI 取代 MCP、關掉沒用的 server | ⚠️ 未見規範；本 session 連了 8 台，多數與本 repo 無關 |
+| CLI 取代 MCP、關掉沒用的 server | ⚠️ 規範**已補**（優先 CLI、只常用 GitHub + Supabase）；關 server 本身需使用者端 `/mcp` 操作 |
 
 ### C. 模型與推理層
 
 | 官方做法 | develop 現況 |
 | --- | --- |
-| 模型分級（Sonnet 為主、Opus 留給架構決策） | ❌ 未規範 |
-| `/effort` 降級、`MAX_THINKING_TOKENS` | ❌ 未規範 |
+| 模型分級（Sonnet 為主、Opus 留給架構決策） | ✅ **已補** CLAUDE.md 的四級對照表 |
+| `/effort` 降級、`MAX_THINKING_TOKENS` | ✅ **已補**（輕量任務降 effort，同表） |
 | Agent teams 用 Sonnet、團隊要小 | — 未使用 agent teams |
 
 **結論：專案配置層（B）幾乎全部做對，而且做得比官方範例更嚴（守衛 + 相位鎖）。剩下的缺口集中在「輸出量治理」與「模型分級」——也就是 A 與 C。**
@@ -329,7 +329,9 @@ required check 永遠 pending、純文件 PR 會卡死無法合併（註解裡�
 friction-log 記錄的存量債（導入 biome 時降級為 warn）；真正清掉它們比折疊輸出更根本，
 但那是償還計畫的事。
 
-### P2 —— CLAUDE.md 補 compact instructions
+### ~~P2~~ ✅ 已套用 —— CLAUDE.md 補 compact instructions
+
+> 已加進 `CLAUDE.md`。以下保留原始診斷。
 
 CLAUDE.md 目前沒有壓縮指示。官方建議在 CLAUDE.md 裡指定壓縮時要保留什麼，否則 auto-compact 會按自己的判斷摘要，而本專案 TDD 流程有**特別怕丟的東西**：紅燈 hash 是 PR 的證據，`docs/plans/<slug>/` 的階段狀態是 rehydrate 的依據。
 
@@ -343,7 +345,10 @@ CLAUDE.md 目前沒有壓縮指示。官方建議在 CLAUDE.md 裡指定壓縮�
 
 約 6 行成本，換掉「壓縮後不知道自己在第幾階段、紅燈 hash 是哪個」這種需要重新摸索的情況。
 
-### P2 —— 模型分級與 effort 規範
+### ~~P2~~ ✅ 已套用 —— 模型分級與 effort 規範
+
+> 已加進 `CLAUDE.md`（而非 `/fix-bug` skill——模型選擇對功能開發同樣適用，
+> 只放在修 bug 的流程裡會在做功能時缺席）。以下保留原始診斷。
 
 CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完整版），但**沒有對應的模型/推理分級**。thinking token 以 output 計價，而本專案的任務跨度很大：
 
@@ -356,7 +361,11 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 
 `/fix-bug` skill 的「0. 分級」段落是最自然的落點——那裡已經在做比例原則的判斷。
 
-### P2 —— MCP 精簡與 `/context` 習慣
+### ~~P2~~ ⚠️ 部分套用 —— MCP 精簡與 `/context` 習慣
+
+> `/context` 習慣與「優先用 CLI」的規範已寫進 `CLAUDE.md`。**關閉 MCP server
+> 本身做不到**——那是使用者端的 client 設定（`/mcp`），不在 repo 內。
+> 以下保留原始診斷。
 
 本 session 連了 8 台 MCP server（GitHub、Supabase、Figma、Cloudflare、Atlassian、Gmail、Calendar、Drive）。schema 預設 deferred（只有名稱進 context），但工具清單本身是固定開銷，且擴大誤用面。對本 repo：保留 GitHub（web 環境無 `gh` CLI）與 Supabase；Figma / Cloudflare 按需開；Atlassian / Gmail / Calendar / Drive 關掉。
 
@@ -374,10 +383,10 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 | ~~P1~~ ✅ | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
 | ~~P1~~ ✅ | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | **已修（PR #113，已合併）**：純文件 PR 不再燒四軌 runner |
 | ~~P2~~ ✅ | pre-commit 綠燈安靜化（`lib-quiet.sh` + `run_gate`） | `scripts/git-hooks/` | 抽包裝器 + 9 條案例 | **已套用**：每次 commit 省下 200+ 行 biome warning |
-| **P2** | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
-| **P2** | 模型與 effort 分級 | `/fix-bug` skill 的分級段 | 20 分鐘 | thinking token 對齊任務難度 |
-| **P2** | MCP 精簡 + `/context` 習慣 | 操作規範 | 10 分鐘 | 縮小工具清單與誤用面 |
-| **P2** | 拆分 `api/index.ts` 為領域路由模組 | `supabase/functions/api/routes/` | 半天 + 全綠 | 根本解，有重構風險，建議搭車 |
+| ~~P2~~ ✅ | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
+| ~~P2~~ ✅ | 模型與 effort 分級 | `CLAUDE.md`（不是 `/fix-bug`——見該節） | 20 分鐘 | thinking token 對齊任務難度 |
+| ~~P2~~ ⚠️ | MCP 精簡 + `/context` 習慣 | `CLAUDE.md`（關 server 需使用者端操作） | 10 分鐘 | 縮小工具清單與誤用面 |
+| **P2** | 拆分 `api/index.ts` 為領域路由模組 | `supabase/functions/api/routes/` | 半天 + 全綠 | **未做**：碰金流·會籍，依 CLAUDE.md 需走 `/plan-feature` → `/review-plan` → 人審 → `/tdd-implement`；且本機無 deno/supabase 無法驗證（見下節） |
 
 **兩個 P0 加起來約 1.5 小時，覆蓋了目前最大的單次漏點（30.9k tok 的單體檔）與最高頻的重複漏點（每次 `npm run check`）。**
 
