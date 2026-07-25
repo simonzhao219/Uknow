@@ -32,6 +32,22 @@
 imports 後成為孤兒、knip 閘門要求處置。
 **人審裁決（2026-07-25）：刪除**——已隨框架 PR 移除（git 歷史可找回）。
 
+## 2026-07-25｜誤擋（已修）｜pre-commit 的 deno 閘門擋住 merge commit
+
+框架 PR 合併 develop 時，上游 commit 帶進 `supabase/functions/**` 變更，
+pre-commit 的「後端有改但本機無 deno → 擋」規則觸發，**無法完成合併**
+（沒裝 deno 的容器等於無法解任何含後端檔案的衝突＝死鎖）。
+
+根因：閘門的意圖是「不准在無法驗證的情況下**寫**後端」，但判斷依據是
+「staged 檔案路徑」，把「合併他人已驗證的 commit」誤判成「我在寫後端」。
+
+處置：pre-commit 偵測 `MERGE_HEAD`，合併中且無 deno 時降為警告（上游
+commit 已過 CI api-tests 軌）；deno 在則照跑。**自撰閘門的第一次誤擋，
+修閘門而非繞閘門**——這正是 friction-log 存在的用途。
+
+防線回填：framework-check 目前只驗腳本語法，不驗 hook 的行為分支。
+本次靠人工模擬觸發才發現，已記為待辦：hook 行為需要 case 化的自我測試。
+
 ## 2026-07-25｜誤擋教訓｜biome unsafe autofix 誤刪檔頭註解
 
 `--unsafe --only=correctness/noUnusedImports` 移除 `import React` 時，把黏附

@@ -38,7 +38,17 @@ fi
 # Deno 側閘門：只有 supabase/functions/ 有改動才跑（fmt --check ＋型別
 # 檢查皆為秒級、免網路、免 supabase start；deno task test 需要本地
 # supabase，刻意留給 CI 的 api-tests 軌）。
+#
+# 合併例外：merge commit 帶進的後端變更是上游 commit（已過 CI api-tests），
+# 不是本次在寫的東西。缺 deno 時擋 merge 只會讓沒裝 deno 的環境無法完成
+# 任何含後端檔案的合併（死鎖），所以合併中缺 deno 降為警告；deno 在的話
+# 照跑不誤——免費的驗證沒有不要的道理。
 if echo "$staged" | grep -q '^supabase/functions/'; then
+  merging=false
+  if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    merging=true
+  fi
+
   if command -v deno >/dev/null 2>&1; then
     if ! (cd supabase/functions && deno fmt --check && deno task check); then
       echo "" >&2
@@ -46,6 +56,8 @@ if echo "$staged" | grep -q '^supabase/functions/'; then
       echo "  修正格式：cd supabase/functions && deno fmt" >&2
       exit 1
     fi
+  elif [ "$merging" = true ]; then
+    echo "[pre-commit] 合併中且本機無 deno：後端變更來自上游（已過 CI），略過 Deno 閘門。"
   else
     echo "" >&2
     echo "[pre-commit] supabase/functions/ 有變更但本機沒有 deno，commit 已擋下。" >&2

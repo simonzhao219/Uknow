@@ -1,16 +1,45 @@
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Users, ExternalLink, Ban, Search, AlertTriangle, X } from 'lucide-react';
+import {
+  ChevronRight,
+  Users,
+  ExternalLink,
+  Ban,
+  Search,
+  AlertTriangle,
+  X,
+  ArrowUpDown,
+} from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { Skeleton } from '../ui/skeleton';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
-import type { ReferralNode, ReferralNodeStatus } from '../../hooks/useReferralData';
+import {
+  SORT_OPTIONS,
+  parseSortMode,
+  nodeDaysLeft,
+  type NetworkNode,
+  type NetworkNodeStatus,
+  type NetworkOverview,
+  type NetworkSearchMatch,
+  type NetworkSortMode,
+} from '../../utils/referralNetwork';
 
 // ============================================================
-// 推薦網絡：可展開的縮排大綱樹
-// P0：頭像依身分差色、連接線 + 降噪、需要關注橫幅
-// P1：桌機雙欄（樹 + 常駐詳情）、搜尋、分支規模感（chevron 上的數量）
+// 推薦網絡：懶載入縮排大綱樹（Tier B）
+// - 節點扁平化：展開才呼叫 loadChildren（skeleton 等待、hook 層快取）
+// - 排序：伺服器權威；此處只受控顯示 + 回報變更（原生 select，行動端佳）
+// - 搜尋：debounce 300ms 打伺服器（真名比對在後端，深代遮罩也搜得到）
+// - 對齊（方案 A）：前導槽固定寬只放 chevron；分支數移列右側，
+//   即將到期的倒數優先於分支數
 // ============================================================
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
@@ -19,20 +48,13 @@ const GEN_BADGE: Record<number, string> = {
   2: 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300',
   3: 'bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
 };
-// 分支連接線依「子代」上色（低飽和）：gen2 分支=淡紫、gen3 分支=淡橘。
-// 世代線索綁在結構上、安靜不吵，取代原本整條粗色軌。gen1 是根、無上層線。
+// 分支連接線依「子代」低飽和上色（世代線索綁在結構上）
 const GEN_LINE: Record<number, string> = {
   2: 'border-purple-300 dark:border-purple-900',
   3: 'border-orange-300 dark:border-orange-900',
 };
 
-// 需要關注橫幅一次顯示的上限（依緊急度排序後取前 N，其餘收在「還有 N 位」）。
-const ATTENTION_CAP = 6;
-
-// 列/搜尋結果可鍵盤操作時共用的 focus ring。
-const INTERACTIVE_ROW = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-
-const STATUS: Record<ReferralNodeStatus, { dot: string; label: string; badge: string }> = {
+const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: string }> = {
   active: {
     dot: 'bg-green-500',
     label: '訂閱中',
@@ -52,11 +74,8 @@ const STATUS: Record<ReferralNodeStatus, { dot: string; label: string; badge: st
 };
 
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
-const listingHidden = (s: ReferralNodeStatus) => s === 'expired' || s === 'suspended';
-const needsAttention = (s: ReferralNodeStatus) =>
-  s === 'expiring' || s === 'expired' || s === 'suspended';
+const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-// 依 userId 給頭像底色（辨識度），取代單一底色的「一片相同」。
 const AVATAR_COLORS = [
   '#16a34a',
   '#7c3aed',
@@ -76,26 +95,6 @@ function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
 }
 
-// 距到期天數：優先前端由 endDate 重算，避免顯示伺服器算好的過時快照
-// （頁面久開跨日時 daysToExpiry 會失準）；無 endDate 時退回伺服器值。
-function daysLeftOf(node: ReferralNode): number | null {
-  if (node.endDate) {
-    const ms = Date.parse(node.endDate);
-    if (!Number.isNaN(ms)) return Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000));
-  }
-  return node.daysToExpiry;
-}
-
-// 讓可點的列也能鍵盤操作（Enter / Space 開詳情）。
-function rowKeyActivate(handler: () => void) {
-  return (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handler();
-    }
-  };
-}
-
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(query).matches,
@@ -111,18 +110,18 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-function flatten(nodes: ReferralNode[]): ReferralNode[] {
-  const out: ReferralNode[] = [];
-  const walk = (n: ReferralNode) => {
-    out.push(n);
-    n.children?.forEach(walk);
+const INTERACTIVE_ROW = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+function rowKeyActivate(handler: () => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handler();
+    }
   };
-  nodes.forEach(walk);
-  return out;
 }
 
 // ---------- 頭像 ----------
-function Avatar({ node, size = 36 }: { node: ReferralNode; size?: number }) {
+function Avatar({ node, size = 36 }: { node: NetworkNode; size?: number }) {
   const s = STATUS[node.status];
   return (
     <span className="relative shrink-0" style={{ width: size, height: size }}>
@@ -141,33 +140,53 @@ function Avatar({ node, size = 36 }: { node: ReferralNode; size?: number }) {
   );
 }
 
-// ---------- 樹的一列 + 其子節點（連接線） ----------
-function NodeRow({
-  node,
-  depth,
-  selectedId,
-  onSelect,
-}: {
-  node: ReferralNode;
-  depth: number;
+// ---------- 列右側：到期倒數優先，其次分支數 ----------
+function RowAside({ node }: { node: NetworkNode }) {
+  if (node.status === 'expiring') {
+    const d = nodeDaysLeft(node);
+    if (d != null) {
+      return (
+        <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
+          剩 {d} 天到期
+        </span>
+      );
+    }
+  }
+  if (node.childCount > 0) {
+    return (
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+        {node.childCount > 99 ? '99+' : node.childCount} 位
+      </span>
+    );
+  }
+  return null;
+}
+
+// ---------- 樹的一列（懶載入） ----------
+interface NodeRowProps {
+  node: NetworkNode;
+  childrenMap: Record<string, NetworkNode[] | 'loading'>;
+  expanded: Set<string>;
+  onToggle: (node: NetworkNode) => void;
   selectedId: string | null;
-  onSelect: (n: ReferralNode) => void;
-}) {
-  const [open, setOpen] = useState(false);
+  onSelect: (n: NetworkNode) => void;
+}
+
+function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }: NodeRowProps) {
   const expandable = node.generation < 3 && node.childCount > 0;
-  const daysLeft = node.status === 'expiring' ? daysLeftOf(node) : null;
+  const isOpen = expanded.has(node.userId);
+  const kids = childrenMap[node.userId];
   const groupId = `rtn-group-${node.userId}`;
 
   return (
     <div>
-      {/* 正規樹語意：treeitem 可含互動元素（展開鈕），不再有 button-in-button */}
       <div
         role="treeitem"
         tabIndex={0}
         aria-level={node.generation}
         aria-selected={selectedId === node.userId}
-        aria-expanded={expandable ? open : undefined}
-        aria-owns={expandable && open ? groupId : undefined}
+        aria-expanded={expandable ? isOpen : undefined}
+        aria-owns={expandable && isOpen ? groupId : undefined}
         aria-label={`${node.name} 詳情`}
         className={cn(
           'group flex items-center gap-2 rounded-lg py-2 pl-1 pr-2 cursor-pointer transition-colors hover:bg-muted/60',
@@ -178,20 +197,19 @@ function NodeRow({
         onClick={() => onSelect(node)}
         onKeyDown={rowKeyActivate(() => onSelect(node))}
       >
-        {/* 展開箭頭（含分支規模：subtle 數量） */}
+        {/* 前導槽固定寬（方案 A）：只放 chevron，葉節點等寬留白 → 頭像永遠對齊 */}
         {expandable ? (
           <button
             type="button"
-            aria-label={open ? '收合' : '展開'}
-            aria-expanded={open}
-            className="flex h-6 min-w-6 items-center justify-center gap-0.5 rounded px-0.5 text-muted-foreground hover:bg-muted"
+            aria-label={isOpen ? '收合' : '展開'}
+            aria-expanded={isOpen}
+            className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
             onClick={(e) => {
               e.stopPropagation();
-              setOpen((v) => !v);
+              onToggle(node);
             }}
           >
-            <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
-            <span className="text-[11px] tabular-nums leading-none">{node.childCount}</span>
+            <ChevronRight className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-90')} />
           </button>
         ) : (
           <span className="h-6 w-6 shrink-0" />
@@ -203,73 +221,71 @@ function NodeRow({
           <span className="block truncate font-medium">{node.name}</span>
         </span>
 
-        {daysLeft != null && (
-          <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
-            剩 {daysLeft} 天到期
-          </span>
-        )}
+        <RowAside node={node} />
       </div>
 
-      {expandable && open && (
-        // 連接線：細左邊界表達父子分支，依子代低飽和上色（世代線索綁在結構上）
+      {expandable && isOpen && (
         <div
           id={groupId}
           role="group"
           className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}
         >
-          {node.children.map((child) => (
-            <NodeRow
-              key={child.userId}
-              node={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-          ))}
+          {kids === 'loading' || kids === undefined ? (
+            <div data-testid="children-loading" className="space-y-2 py-2 pl-1">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            </div>
+          ) : (
+            kids.map((child) => (
+              <NodeRow
+                key={child.userId}
+                node={child}
+                childrenMap={childrenMap}
+                expanded={expanded}
+                onToggle={onToggle}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+            ))
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// ---------- 需要關注橫幅 ----------
+// ---------- 需要關注橫幅（伺服器算好：依緊急度排序 + 上限） ----------
 function AttentionBanner({
-  nodes,
+  attention,
   onSelect,
 }: {
-  nodes: ReferralNode[];
-  onSelect: (n: ReferralNode) => void;
+  attention: { total: number; items: NetworkNode[] };
+  onSelect: (n: NetworkNode) => void;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  if (attention.total === 0 || attention.items.length === 0) return null;
 
-  // 依緊急度排序：即將到期（還救得回、按剩餘天數）＞已失效＞已停權。
-  const items = useMemo(() => {
-    const list = flatten(nodes).filter((n) => needsAttention(n.status));
-    const rank = (n: ReferralNode) =>
-      n.status === 'expiring' ? 0 : n.status === 'expired' ? 1 : 2;
-    return list.sort((a, b) => rank(a) - rank(b) || (daysLeftOf(a) ?? 0) - (daysLeftOf(b) ?? 0));
-  }, [nodes]);
-
-  if (items.length === 0) return null;
-
-  const reason = (n: ReferralNode) =>
+  const reason = (n: NetworkNode) =>
     n.status === 'expiring'
-      ? `剩 ${daysLeftOf(n)} 天到期`
+      ? `剩 ${nodeDaysLeft(n)} 天到期`
       : n.status === 'suspended'
         ? '已停權'
         : '已失效';
-
-  const shown = showAll ? items : items.slice(0, ATTENTION_CAP);
-  const overflow = items.length - shown.length;
+  const overflow = attention.total - attention.items.length;
 
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
         <AlertTriangle className="h-4 w-4" />
-        {items.length} 位下線需要關注
+        {attention.total} 位下線需要關注
       </div>
-      <div className="flex flex-wrap gap-2">
-        {shown.map((n) => (
+      <div className="flex flex-wrap items-center gap-2">
+        {attention.items.map((n) => (
           <button
             key={n.userId}
             type="button"
@@ -282,13 +298,7 @@ function AttentionBanner({
           </button>
         ))}
         {overflow > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="rounded-full border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-muted dark:border-amber-800 dark:text-amber-300"
-          >
-            還有 {overflow} 位
-          </button>
+          <span className="text-xs text-amber-800 dark:text-amber-300">還有 {overflow} 位</span>
         )}
       </div>
     </div>
@@ -296,10 +306,11 @@ function AttentionBanner({
 }
 
 // ---------- 詳情內容（sheet 與桌機側欄共用） ----------
-function NodeDetail({ node }: { node: ReferralNode }) {
+function NodeDetail({ node }: { node: NetworkNode }) {
   const navigate = useNavigate();
   const s = STATUS[node.status];
   const hidden = listingHidden(node.status);
+  const d = node.status === 'expiring' ? nodeDaysLeft(node) : null;
 
   return (
     <div className="space-y-4">
@@ -325,7 +336,7 @@ function NodeDetail({ node }: { node: ReferralNode }) {
       <dl className="divide-y divide-border rounded-lg border">
         <div className="flex items-center justify-between px-3 py-2.5 text-sm">
           <dt className="text-muted-foreground">加入日期</dt>
-          <dd className="font-medium">{formatTwDate(node.joinedAt)}</dd>
+          <dd className="font-medium">{node.joinedAt ? formatTwDate(node.joinedAt) : '—'}</dd>
         </div>
         <div className="flex items-center justify-between px-3 py-2.5 text-sm">
           <dt className="text-muted-foreground">訂閱到期</dt>
@@ -336,9 +347,7 @@ function NodeDetail({ node }: { node: ReferralNode }) {
             )}
           >
             {node.endDate ? formatTwDate(node.endDate) : '—'}
-            {node.status === 'expiring' &&
-              daysLeftOf(node) != null &&
-              `（剩 ${daysLeftOf(node)} 天）`}
+            {d != null && `（剩 ${d} 天）`}
           </dd>
         </div>
       </dl>
@@ -367,24 +376,99 @@ function NodeDetail({ node }: { node: ReferralNode }) {
 }
 
 // ---------- 主元件 ----------
-export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
-  const [selected, setSelected] = useState<ReferralNode | null>(null);
+interface ReferralTreeViewProps {
+  overview: NetworkOverview | null;
+  sort: NetworkSortMode;
+  onSortChange: (mode: NetworkSortMode) => void;
+  loadChildren: (parentId: string) => Promise<NetworkNode[]>;
+  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+}
+
+type SearchState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'done'; matches: NetworkSearchMatch[] }
+  | { status: 'error' };
+
+export function ReferralTreeView({
+  overview,
+  sort,
+  onSortChange,
+  loadChildren,
+  searchNetwork,
+}: ReferralTreeViewProps) {
+  const [selected, setSelected] = useState<NetworkNode | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [childrenMap, setChildrenMap] = useState<Record<string, NetworkNode[] | 'loading'>>({});
   const [query, setQuery] = useState('');
+  const [search, setSearch] = useState<SearchState>({ status: 'idle' });
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
-  // selected 依 userId 從最新 roots 取回（避免展開/資料更新後拿到舊物件）
-  const flat = useMemo(() => flatten(roots), [roots]);
-  const selectedNode = selected
-    ? (flat.find((n) => n.userId === selected.userId) ?? selected)
-    : null;
+  // 切排序：伺服器是排序權威，已展開的分支順序作廢 → 收合重來
+  useEffect(() => {
+    setExpanded(new Set());
+    setChildrenMap({});
+  }, [sort]);
 
-  const searchResults = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return null;
-    return flat.filter((n) => n.name.toLowerCase().includes(q));
-  }, [query, flat]);
+  // 伺服器搜尋（debounce 300ms；過時回應丟棄）
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setSearch({ status: 'idle' });
+      return;
+    }
+    let cancelled = false;
+    setSearch({ status: 'loading' });
+    const t = setTimeout(() => {
+      searchNetwork(q)
+        .then((matches) => {
+          if (!cancelled) setSearch({ status: 'done', matches });
+        })
+        .catch(() => {
+          if (!cancelled) setSearch({ status: 'error' });
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [query, searchNetwork, sort]);
 
-  if (roots.length === 0) {
+  const roots = overview?.roots ?? [];
+  const onSelect = (n: NetworkNode) => setSelected(n);
+
+  const onToggle = (node: NetworkNode) => {
+    const id = node.userId;
+    if (expanded.has(id)) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    setExpanded((prev) => new Set(prev).add(id));
+    if (childrenMap[id] === undefined) {
+      setChildrenMap((prev) => ({ ...prev, [id]: 'loading' }));
+      loadChildren(id)
+        .then((nodes) => setChildrenMap((prev) => ({ ...prev, [id]: nodes })))
+        .catch(() => {
+          // 載入失敗：收回展開，讓使用者可重試（skeleton 不會卡死）
+          setChildrenMap((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        });
+    }
+  };
+
+  if (roots.length === 0 && (overview?.attention.total ?? 0) === 0) {
     return (
       <div className="rounded-lg border py-8 text-center">
         <Users className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
@@ -394,74 +478,132 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
     );
   }
 
-  const onSelect = (n: ReferralNode) => setSelected(n);
+  const searching = query.trim().length > 0;
 
   const treeColumn = (
     <div className="space-y-3">
-      <AttentionBanner nodes={roots} onSelect={onSelect} />
+      {overview && <AttentionBanner attention={overview.attention} onSelect={onSelect} />}
 
-      {/* 搜尋（比對顯示名稱；深代數已遮罩，主要適用直推） */}
-      <div className="flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-2">
-        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜尋下線姓名"
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-        />
-        {query && (
-          <button
-            type="button"
-            aria-label="清除搜尋"
-            onClick={() => setQuery('')}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+      {/* 搜尋 + 排序 */}
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border bg-muted/40 px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜尋下線姓名"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {query && (
+            <button
+              type="button"
+              aria-label="清除搜尋"
+              onClick={() => setQuery('')}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        {/* 排序：Radix DropdownMenu——原生 select 的選單面板由 OS 渲染，
+            風格管不到（直角、系統反白），與站內其他篩選器不一致，故退役。
+            觸發器維持晶片：手機 icon-only（非預設排序亮指示點補償狀態
+            可見性）、sm+ 帶短標籤；單一文字來源，疊字問題結構性絕跡。 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="排序方式"
+            className="relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:py-2 sm:pl-3 sm:pr-3"
           >
-            <X className="h-4 w-4" />
-          </button>
-        )}
+            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+            {/* 四個標籤疊同一 grid 格：晶片寬恆為最寬標籤之寬，切換排序不伸縮。
+                非當前者 invisible 佔位、aria-hidden 退出 a11y 樹（單一可讀文字不變） */}
+            <span data-testid="sort-label" className="hidden sm:grid">
+              {SORT_OPTIONS.map((o) => (
+                <span
+                  key={o.value}
+                  aria-hidden={o.value !== sort || undefined}
+                  className={cn(
+                    'col-start-1 row-start-1 whitespace-nowrap',
+                    o.value !== sort && 'invisible',
+                  )}
+                >
+                  {o.label}
+                </span>
+              ))}
+            </span>
+            {sort !== 'updated_desc' && (
+              <span
+                data-testid="sort-active-dot"
+                aria-hidden
+                className="absolute right-0 top-0 h-2 w-2 rounded-full bg-amber-500 sm:hidden"
+              />
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[9rem]">
+            <DropdownMenuRadioGroup
+              value={sort}
+              onValueChange={(v) => onSortChange(parseSortMode(v))}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <DropdownMenuRadioItem key={o.value} value={o.value} className="py-2.5">
+                  {o.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {searchResults ? (
-        searchResults.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">找不到「{query}」</p>
-        ) : (
+      {searching ? (
+        search.status === 'loading' ? (
+          <div className="space-y-2 py-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          </div>
+        ) : search.status === 'error' ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">搜尋失敗，請稍後再試</p>
+        ) : search.status === 'done' && search.matches.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">找不到「{query.trim()}」</p>
+        ) : search.status === 'done' ? (
           <div className="space-y-0.5">
-            {searchResults.map((n) => (
+            {search.matches.map(({ node }) => (
               <div
-                key={n.userId}
+                key={node.userId}
                 role="button"
                 tabIndex={0}
-                aria-label={`${n.name} 詳情`}
-                onClick={() => onSelect(n)}
-                onKeyDown={rowKeyActivate(() => onSelect(n))}
+                aria-label={`${node.name} 詳情`}
+                onClick={() => onSelect(node)}
+                onKeyDown={rowKeyActivate(() => onSelect(node))}
                 className={cn(
                   'flex cursor-pointer items-center gap-2 rounded-lg py-2 pl-1 pr-2 transition-colors hover:bg-muted/60',
                   INTERACTIVE_ROW,
-                  selectedNode?.userId === n.userId && 'bg-muted',
+                  selected?.userId === node.userId && 'bg-muted',
                 )}
               >
-                <Avatar node={n} />
+                <Avatar node={node} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{n.name}</span>
-                  <span className="text-xs text-muted-foreground">{GEN_LABEL[n.generation]}</span>
-                </span>
-                {n.status === 'expiring' && daysLeftOf(n) != null && (
-                  <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                    剩 {daysLeftOf(n)} 天到期
+                  <span className="block truncate font-medium">{node.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {GEN_LABEL[node.generation]}
                   </span>
-                )}
+                </span>
+                <RowAside node={node} />
               </div>
             ))}
           </div>
-        )
+        ) : null
       ) : (
         <div role="tree" aria-label="我的推薦網絡" className="space-y-0.5">
           {roots.map((node) => (
             <NodeRow
               key={node.userId}
               node={node}
-              depth={0}
-              selectedId={selectedNode?.userId ?? null}
+              childrenMap={childrenMap}
+              expanded={expanded}
+              onToggle={onToggle}
+              selectedId={selected?.userId ?? null}
               onSelect={onSelect}
             />
           ))}
@@ -478,13 +620,13 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
 
         <aside className="hidden lg:block">
           <div className="sticky top-4 rounded-lg border bg-card p-4">
-            {selectedNode ? (
+            {selected ? (
               <>
                 <div className="mb-3 flex items-center gap-3">
-                  <Avatar node={selectedNode} size={44} />
-                  <p className="text-lg font-semibold">{selectedNode.name}</p>
+                  <Avatar node={selected} size={44} />
+                  <p className="text-lg font-semibold">{selected.name}</p>
                 </div>
-                <NodeDetail node={selectedNode} />
+                <NodeDetail node={selected} />
               </>
             ) : (
               <p className="py-12 text-center text-sm text-muted-foreground">
@@ -499,21 +641,21 @@ export function ReferralTreeView({ roots }: { roots: ReferralNode[] }) {
 
       {/* 手機詳情 sheet（桌機不觸發） */}
       {!isDesktop && (
-        <Sheet open={!!selectedNode} onOpenChange={(o) => !o && setSelected(null)}>
+        <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
           <SheetContent
             side="bottom"
             className="mx-auto max-h-[85%] gap-0 rounded-t-2xl sm:max-w-lg"
           >
-            {selectedNode && (
+            {selected && (
               <>
                 <SheetHeader className="pb-2">
                   <div className="flex items-center gap-3 pr-8">
-                    <Avatar node={selectedNode} size={48} />
-                    <SheetTitle className="text-lg">{selectedNode.name}</SheetTitle>
+                    <Avatar node={selected} size={48} />
+                    <SheetTitle className="text-lg">{selected.name}</SheetTitle>
                   </div>
                 </SheetHeader>
                 <div className="overflow-y-auto px-4 pb-6">
-                  <NodeDetail node={selectedNode} />
+                  <NodeDetail node={selected} />
                 </div>
               </>
             )}

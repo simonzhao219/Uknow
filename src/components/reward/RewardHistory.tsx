@@ -1,26 +1,95 @@
+import type React from 'react';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Calendar, TrendingUp, TrendingDown, Receipt, Loader2 } from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { FilterChip } from '../common/FilterChip';
+import {
+  Calendar,
+  Receipt,
+  Loader2,
+  Users,
+  Gift,
+  TrendingDown,
+  RotateCcw,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
-import type { RewardHistoryRecord as RewardRecord, RewardHistoryResponse } from '@contract';
+import { formatRewardDetail, isReferralSource } from '../../utils/rewardHistory';
+import type {
+  RewardHistoryRecord as RewardRecord,
+  RewardHistoryResponse,
+  RewardSourceCategory,
+} from '@contract';
 
 interface RewardHistoryProps {
-  refreshTrigger?: number; // ✅ 新增：刷新觸發器
+  refreshTrigger?: number; // ✅ 刷新觸發器
 }
+
+// 來源分類 → 顯示標籤 / 圖示 / 顏色（KEY 來自 @contract 的 enum＝單一真相；
+// label/icon/color 是純 UI 呈現）。退款用琥珀色與收入分家，避免被誤讀為新收入。
+type SourceMeta = {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  badgeClass: string;
+};
+const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
+  referral_payment: {
+    label: '推薦獎勵·付款',
+    Icon: Users,
+    badgeClass:
+      'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  },
+  referral_task_renewal: {
+    label: '推薦獎勵·任務續約',
+    Icon: Gift,
+    badgeClass:
+      'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  },
+  withdrawal: {
+    label: '點數提領',
+    Icon: TrendingDown,
+    badgeClass: 'border-transparent bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  },
+  withdrawal_refund: {
+    label: '提領退款',
+    Icon: RotateCcw,
+    badgeClass:
+      'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  },
+  adjustment_manual: {
+    label: '人工調整',
+    Icon: SlidersHorizontal,
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
+  },
+};
+const FALLBACK_META: SourceMeta = {
+  label: '其他',
+  Icon: Receipt,
+  badgeClass: 'border-transparent bg-muted text-muted-foreground',
+};
+
+// 可篩選的來源分類（刻意不含 adjustment_manual——目前無端點產生，會是永遠空的分類）。
+const SOURCE_FILTERS: RewardSourceCategory[] = [
+  'referral_payment',
+  'referral_task_renewal',
+  'withdrawal',
+  'withdrawal_refund',
+];
 
 export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [history, setHistory] = useState<RewardRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState('all');
-  const [offset, setOffset] = useState(0); // ✅ 新增：當前加載位置
-  const [total, setTotal] = useState(0); // ✅ 新增：總記錄數
-  const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 新增：加載更多中
+  // 多選來源篩選；空陣列 = 全部。
+  const [selectedSources, setSelectedSources] = useState<RewardSourceCategory[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // ✅ 提取獲取歷史的邏輯為獨立函數，支持追加模式
+  const isFiltered = selectedSources.length > 0;
+
   const fetchHistory = async (isLoadMore = false) => {
     try {
       if (isLoadMore) {
@@ -32,27 +101,23 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
 
       const currentOffset = isLoadMore ? offset : 0;
 
-      // type 篩選下推到後端：'all' 不帶 param，其餘（referral / withdrawal）帶下去，
-      // 讓後端只回該分類、count 也是該分類總數。分頁才不會漏掉後頁的紀錄。
-      const typeParam = filterType !== 'all' ? `&type=${filterType}` : '';
+      // 來源篩選下推到後端：帶 CSV ?source=，後端只回該分類集合、count 也是該集合總數，
+      // 分頁才不會漏掉後頁紀錄（見 index.ts /rewards/history）。空選＝不帶 param＝全部。
+      const sourceParam = selectedSources.length ? `&source=${selectedSources.join(',')}` : '';
 
-      // ✅ 使用統一的 API 請求工具
       const result = await apiRequestJson<RewardHistoryResponse>(
-        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${typeParam}`),
+        buildApiUrl(`/rewards/history?limit=50&offset=${currentOffset}${sourceParam}`),
       );
 
       if (result.success) {
         const newHistory = result.data.history || [];
 
         if (isLoadMore) {
-          // 追加模式：合併新舊記錄
           setHistory((prev) => [...prev, ...newHistory]);
         } else {
-          // 初始模式：替換記錄
           setHistory(newHistory);
         }
 
-        // 更新總數和偏移量
         setTotal(result.data.total || 0);
         setOffset(currentOffset + newHistory.length);
       } else {
@@ -72,30 +137,28 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
     }
   };
 
-  // ✅ 新增：加載更多函數
   const handleLoadMore = () => {
     fetchHistory(true);
   };
 
-  // 初始載入 + 篩選變更：切換 filterType 時重新從第一頁抓（非追加），
-  // offset 由 fetchHistory 在非追加模式歸零。mount 時 filterType='all' 也走這裡。
+  const toggleSource = (s: RewardSourceCategory) => {
+    setSelectedSources((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  };
+  const clearSources = () => setSelectedSources([]);
+
+  // 初始載入 + 篩選變更：切換來源時重新從第一頁抓（非追加），offset 由 fetchHistory 歸零。
   useEffect(() => {
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType]);
+  }, [selectedSources]);
 
-  // ✅ 監聽 refreshTrigger 變化並重新獲取數據
+  // 監聽 refreshTrigger 變化並重新獲取數據
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
       fetchHistory(); // 非追加：內部 offset 歸零
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
-
-  // 篩選已下推到後端（見 fetchHistory 的 type param）——明細只剩會影響點數的流水：
-  // referral_reward / withdrawal / adjustment（見 _shared/api-contract.ts）。推薦王任務
-  // 獎勵已改為「免費續約 1 年」credit，不再進點數流水帳，故不提供「任務獎勵」篩選。
-  // 直接渲染 history（後端已按 filterType 過濾），不再前端二次過濾。
 
   return (
     <Card>
@@ -104,23 +167,20 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
           <Receipt className="h-5 w-5" />
           獎勵明細
         </CardTitle>
-        <CardDescription>查看您的Point收入記錄</CardDescription>
+        <CardDescription>查看您的Point收支記錄，可依來源篩選</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 篩選器 */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger>
-                <SelectValue placeholder="選擇獎勵類型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部類型</SelectItem>
-                <SelectItem value="referral">推薦獎勵</SelectItem>
-                <SelectItem value="withdrawal">點數提領</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        {/* 篩選器：來源分類多選 chips（全部 = 清空選取）。手機自動換行。 */}
+        <div className="flex flex-wrap gap-2">
+          <FilterChip label="全部" selected={!isFiltered} onToggle={clearSources} />
+          {SOURCE_FILTERS.map((s) => (
+            <FilterChip
+              key={s}
+              label={SOURCE_META[s].label}
+              selected={selectedSources.includes(s)}
+              onToggle={() => toggleSource(s)}
+            />
+          ))}
         </div>
 
         {/* 載入狀態 */}
@@ -146,128 +206,85 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
             {history.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">尚無獎勵記錄</p>
-                <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>
+                <p className="text-muted-foreground">
+                  {isFiltered ? '此分類尚無記錄' : '尚無獎勵記錄'}
+                </p>
+                {!isFiltered && (
+                  <p className="text-sm text-muted-foreground mt-2">完成推薦或任務後將顯示在此處</p>
+                )}
               </div>
             ) : (
-              history.map((record) => (
-                <div
-                  key={record.id}
-                  className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  {/* 解析 description 為種類和細節 */}
-                  {(() => {
-                    let type = '';
-                    let detail = '';
+              history.map((record) => {
+                const meta = SOURCE_META[record.sourceCategory] ?? FALLBACK_META;
+                const isReferral = isReferralSource(record.sourceCategory);
+                // 細節行與代數 badge 皆走純函式 / helper（見 utils/rewardHistory）：
+                // 提領重算成「提領 X P + 手續費 15 P」；推薦類用（後端已遮罩的）名字快照。
+                const detail = formatRewardDetail(record);
+                const Icon = meta.Icon;
 
-                    if (record.type === 'withdrawal') {
-                      // 提領：description 作為標題，申請日期作細節
-                      type = record.description;
-                      detail = record.requestedAt
-                        ? `申請日期：${formatTimestamp(record.requestedAt)}`
-                        : '—';
-                    } else {
-                      // ✅ 優先檢查中文冒號（系統校正等特殊記錄）
-                      if (record.description.includes('：')) {
-                        const colonIndex = record.description.indexOf('：');
-                        type = record.description.substring(0, colonIndex).trim();
-                        detail = record.description.substring(colonIndex + 1).trim();
-                      }
-                      // 推薦獎勵格式：「一代推薦-細節」或「任務獎勵 - 細節」
-                      else if (record.description.includes(' - ')) {
-                        const [t, ...d] = record.description.split(' - ');
-                        type = t.trim();
-                        detail = d.join(' - ').trim();
-                      } else {
-                        const dashIndex = record.description.indexOf('-');
-                        if (dashIndex !== -1) {
-                          type = record.description.substring(0, dashIndex).trim();
-                          detail = record.description.substring(dashIndex + 1).trim();
-                        } else {
-                          type = record.description;
-                          detail = '';
-                        }
-                      }
-                    }
-
-                    return (
-                      <div className="flex items-start justify-between gap-4">
-                        {/* 左侧内容 */}
-                        <div className="flex-1 min-w-0 space-y-2">
-                          {/* 第一行：種類圖標 + 標題 */}
-                          <div className="flex items-center gap-2">
-                            {record.amount >= 0 ? (
-                              <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
-                            ) : (
-                              <TrendingDown className="h-4 w-4 text-red-600 shrink-0" />
-                            )}
-                            <span className="font-medium truncate">{type}</span>
-                          </div>
-
-                          {/* 第二行：細節資訊 */}
-                          <p className="text-sm text-muted-foreground truncate">
-                            {(() => {
-                              // 推薦獎勵優先用結構化的名字快照（migration 0719 0001）：
-                              //   被推薦人（其直接推薦人）；直推（第 1 代）只顯示被推薦人。
-                              // 不再靠切 description 反推——那串裡本就沒有名字。
-                              if (record.refereeName) {
-                                return record.generation &&
-                                  record.generation > 1 &&
-                                  record.refereeReferrerName
-                                  ? `${record.refereeName}（${record.refereeReferrerName}）`
-                                  : record.refereeName;
-                              }
-
-                              // 其餘型別 / 尚未回填到快照的舊資料：沿用原本的 description 解析
-                              if (!detail) return '—';
-
-                              // 移除推薦碼（格式：-abc123456-）
-                              // 推薦碼格式：3個小寫字母 + 6個數字
-                              const cleanedDetail = detail.replace(/-[a-z]{3}\d{6}-/g, '-');
-
-                              return cleanedDetail;
-                            })()}
-                          </p>
-
-                          {/* 第三行：入帳日期時間 */}
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Calendar className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{formatTimestamp(record.issuedAt)}</span>
-                          </div>
+                return (
+                  <div
+                    key={record.id}
+                    className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      {/* 左側內容 */}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        {/* 第一行：來源分類 badge（+ 推薦代數次級 badge） */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className={meta.badgeClass}>
+                            <Icon className="h-3 w-3" />
+                            {meta.label}
+                          </Badge>
+                          {isReferral && record.generation ? (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              第 {record.generation} 代
+                            </Badge>
+                          ) : null}
                         </div>
 
-                        {/* 右侧：金額 + 餘額（垂直居中）*/}
-                        <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
-                          <span
-                            className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
-                          >
-                            {record.amount >= 0 ? '+' : ''}
-                            {record.amount}P
-                          </span>
-                          {record.balance !== undefined && (
-                            <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
-                              {/* <span className="text-muted-foreground">餘額</span>*/}
-                              {record.balance.toLocaleString()}P
-                            </span>
-                          )}
+                        {/* 第二行：細節資訊 */}
+                        <p className="text-sm text-muted-foreground truncate">{detail}</p>
+
+                        {/* 第三行：入帳日期時間 */}
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{formatTimestamp(record.issuedAt)}</span>
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
-              ))
+
+                      {/* 右側：金額 +（未篩選時）餘額 */}
+                      <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
+                        <span
+                          className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                        >
+                          {record.amount >= 0 ? '+' : ''}
+                          {record.amount}P
+                        </span>
+                        {/* 逐列餘額是「全域」流水餘額；篩選時中間紀錄被隱藏會讓餘額看似跳動，
+                            故只在「全部」檢視顯示，避免誤導。 */}
+                        {!isFiltered && record.balance !== undefined && (
+                          <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                            {record.balance.toLocaleString()}P
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}
 
-        {/* ✅ 新增：已加載筆數顯示 */}
+        {/* 已加載筆數顯示 */}
         {!isLoading && !error && total > 0 && (
           <div className="text-center text-sm text-muted-foreground">
             已顯示 {Math.min(history.length, total)} / {total} 筆記錄
           </div>
         )}
 
-        {/* ✅ 新增：加載更多按鈕 */}
+        {/* 加載更多按鈕 */}
         {!isLoading && !error && offset < total && (
           <div className="text-center">
             <Button onClick={handleLoadMore} variant="outline" size="sm" disabled={isLoadingMore}>

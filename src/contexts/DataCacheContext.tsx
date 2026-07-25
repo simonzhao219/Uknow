@@ -36,7 +36,7 @@ interface CachedData {
   userListing?: CacheItem;
 
   // 推薦管理
-  referralTree?: CacheItem;
+  referralNetwork?: CacheItem;
 
   // 任務中心
   tasks?: CacheItem;
@@ -66,7 +66,7 @@ export const MUTATION_GROUPS = {
     'withdrawals',
     'tasks',
     'pendingRewards',
-    'referralTree',
+    'referralNetwork',
   ] as CacheKey[],
   // 領取推薦王「免費續約 1 年」：改變會員到期日 + 待領清單。
   rewardClaim: ['tasks', 'pendingRewards', 'rewards', 'subscriptionStatus'] as CacheKey[],

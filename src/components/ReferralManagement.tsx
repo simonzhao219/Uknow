@@ -13,7 +13,8 @@ export function ReferralManagement() {
   const handleBack = useBackNavigation();
   usePageRestoration();
 
-  const { referralData, loading, error, refetch } = useReferralData();
+  const { overview, loading, error, refetch, sort, setSort, loadChildren, searchNetwork } =
+    useReferralData();
   const { showToast } = useNotification();
 
   if (loading) {
@@ -92,9 +93,9 @@ export function ReferralManagement() {
       </div>
 
       <ReferralStats
-        firstLevelCount={referralData?.summary.firstGenCount || 0}
-        secondLevelCount={referralData?.summary.secondGenCount || 0}
-        thirdLevelCount={referralData?.summary.thirdGenCount || 0}
+        firstLevelCount={overview?.summary.firstGenCount || 0}
+        secondLevelCount={overview?.summary.secondGenCount || 0}
+        thirdLevelCount={overview?.summary.thirdGenCount || 0}
       />
 
       <Card>
@@ -110,20 +111,26 @@ export function ReferralManagement() {
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground">我的推薦碼</p>
               <p className="truncate font-mono text-base font-semibold tracking-wider">
-                {referralData?.userReferralCode || '—'}
+                {overview?.userReferralCode || '—'}
               </p>
             </div>
             <Button
               className="ml-auto shrink-0"
-              onClick={() => shareReferralInvite(referralData?.userReferralCode || '', showToast)}
-              disabled={!referralData?.userReferralCode}
+              onClick={() => shareReferralInvite(overview?.userReferralCode || '', showToast)}
+              disabled={!overview?.userReferralCode}
             >
               <Share2 className="mr-2 h-4 w-4" />
               分享
             </Button>
           </div>
 
-          <ReferralTreeView roots={referralData?.roots ?? []} />
+          <ReferralTreeView
+            overview={overview}
+            sort={sort}
+            onSortChange={setSort}
+            loadChildren={loadChildren}
+            searchNetwork={searchNetwork}
+          />
         </CardContent>
       </Card>
     </div>

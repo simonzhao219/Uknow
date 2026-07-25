@@ -18,7 +18,6 @@ import {
 import type {
   RewardHistoryResponse,
   CurrentMonthReferralsResponse,
-  ReferralTreeResponse,
   NetworkSortMode,
   NetworkNode,
   NetworkOverviewResponse,
@@ -86,7 +85,6 @@ const READ_PATHS = [
   '/subscriptions/status',
   '/rewards',
   '/rewards/*',
-  '/referrals/my-tree',
   '/referrals/network/*',
   '/tasks',
   '/tasks/*',
@@ -2189,35 +2187,40 @@ app.get('/rewards/history', async (c) => {
   const limit  = Math.min(parseInt(c.req.query('limit') || '50'), 200);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
-  // type 篩選下推到後端：前端的分類（referral / withdrawal）對應到 reward_transactions.type。
-  // 'referral' 用 like 'referral_%' 對齊前端原本的 startsWith('referral_') 語意；未帶或 'all'
-  // 不加條件。篩選必須在 DB 端做，count 才會是「該分類的總數」，分頁與「已顯示 X / Y」才對得上
-  // ——舊版在前端過濾已載入的頁面，後頁的紀錄永遠看不到、計數也對不上。
-  const typeFilter = c.req.query('type');
+  // 來源分類篩選下推到後端：view 衍生欄 source_category（見 migration 0725 0001）。
+  // ?source=referral_payment,referral_task_renewal（CSV 多選）；未帶 = 全部。
+  // 篩選必須在 DB 端（.in），count 才是「該分類集合的總數」，分頁與「已顯示 X / Y」
+  // 才對得上——舊版在前端過濾已載入頁面，後頁永遠看不到、計數也對不上。
+  const sourceParam = c.req.query('source');
+  const sources = sourceParam
+    ? sourceParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
 
   let query = sb()
     .from('reward_transactions_with_balance')
-    .select('id, type, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
+    .select('id, type, source_category, amount, description, created_at, generation, balance_after, referee_name, referee_referrer_name', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false });
 
-  if (typeFilter === 'referral') query = query.like('type', 'referral_%');
-  else if (typeFilter === 'withdrawal') query = query.eq('type', 'withdrawal');
+  if (sources.length) query = query.in('source_category', sources);
 
   const { data: rows, count } = await query.range(offset, offset + limit - 1);
 
   const history = (rows ?? []).map((r: any) => ({
     id:                  r.id,
     type:                r.type,
+    sourceCategory:      r.source_category,
     amount:              r.amount,
     description:         r.description,
     issuedAt:            r.created_at,
     requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
     generation:          r.generation ?? undefined,
     balance:             r.balance_after,
-    refereeName:         r.referee_name ?? undefined,
-    refereeReferrerName: r.referee_referrer_name ?? undefined,
+    // 姓名遮罩與推薦管理共用同一支 maskNameByGen（個資機敏單一真相）：被推薦人的
+    // 世代深度＝該筆 generation（第 1 代直推全顯、2/3 代遮罩）；其上線深度＝generation − 1。
+    refereeName:         r.referee_name ? maskNameByGen(r.referee_name, r.generation ?? 1) : undefined,
+    refereeReferrerName: r.referee_referrer_name ? maskNameByGen(r.referee_referrer_name, (r.generation ?? 1) - 1) : undefined,
   }));
 
   return c.json({
@@ -2227,7 +2230,7 @@ app.get('/rewards/history', async (c) => {
 });
 
 // ============================================================
-// 推薦網絡：共用機制（my-tree 與 /referrals/network/* 同一份真相）
+// 推薦網絡：共用機制（/referrals/network/* 三端點同一份真相）
 //
 // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
 // active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
@@ -2267,7 +2270,7 @@ function maskNameByGen(raw: string | null | undefined, gen: number): string {
 }
 
 // .in() 分批：PostgREST 的 .in() 走 URL query，上千個 UUID 會爆 URL 長度上限，
-// 一律切塊撈再合併（也順手修掉 my-tree 原本的同一潛在問題）。查詢失敗擲出，
+// 一律切塊撈再合併。查詢失敗擲出，
 // 由各 handler 統一回 500——先前「錯誤靜默轉空樹」會讓使用者誤以為沒有下線。
 const IN_CHUNK = 150;
 async function selectInChunks(
@@ -2415,48 +2418,6 @@ async function myReferralCode(client: any, userId: string): Promise<string> {
     .select('code').eq('user_id', userId).eq('status', 'active').maybeSingle();
   return data?.code ?? '';
 }
-
-// ============================================================
-// GET /referrals/my-tree
-// ReferralManagement：推薦樹（3代，巢狀）。Tier B 過渡期保留；
-// 前端切換到 /referrals/network/* 後退役。
-// ============================================================
-app.get('/referrals/my-tree', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  try {
-    const client = sb();
-    const net = await loadNetwork(client, user.id);
-    const code = await myReferralCode(client, user.id);
-
-    const buildNested = (uid: string, gen: number, at: string): any => {
-      const { status, daysToExpiry } = deriveNodeStatus(net.acctMap[uid], net.profMap[uid]?.suspended_at ?? null);
-      const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
-      return {
-        userId:       uid,
-        name:         maskNameByGen(net.profMap[uid]?.name, gen),
-        generation:   gen,
-        status,
-        daysToExpiry,
-        endDate:      net.acctMap[uid]?.end_date ?? null,
-        joinedAt:     at,
-        listingId:    net.listingMap[uid]?.id ?? null,
-        childCount:   kids.length,
-        children:     kids.map((k) => buildNested(k.id, gen + 1, k.at)),
-      };
-    };
-    const roots = (net.childrenOf[user.id] ?? []).map((k) => buildNested(k.id, 1, k.at));
-
-    return c.json({
-      success: true,
-      data: { userReferralCode: code, roots, summary: net.summary },
-    } satisfies ReferralTreeResponse);
-  } catch (err) {
-    console.error('[referrals/my-tree] 失敗:', err);
-    return c.json({ error: { message: '載入推薦網絡失敗' } }, 500);
-  }
-});
 
 // ============================================================
 // GET /referrals/network/overview?sort=

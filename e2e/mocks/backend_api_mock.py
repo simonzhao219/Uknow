@@ -288,23 +288,30 @@ class BackendApiMock:
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
     ):
-        first = first_generation or []
-        second = second_generation or []
-        third = third_generation or []
+        # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
+        # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
         body = {
             "success": True,
-            "data": {
-                "userReferralCode": user_referral_code,
-                "roots": first,
-                "summary": {
-                    "firstGenCount": len(first),
-                    "secondGenCount": len(second),
-                    "thirdGenCount": len(third),
-                    "totalReferrals": len(first) + len(second) + len(third),
-                },
-            },
+            "data": build_network_overview(
+                first_generation or [],
+                second_gen_count=len(second_generation or []),
+                third_gen_count=len(third_generation or []),
+                user_referral_code=user_referral_code,
+            ),
         }
-        self._route("/referrals/my-tree", lambda route: _fulfill_json(route, body))
+        self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
+        self._route(
+            "/referrals/network/children",
+            lambda route: _fulfill_json(
+                route, {"success": True, "data": {"parentId": "", "sort": "updated_desc", "nodes": []}}
+            ),
+        )
+        self._route(
+            "/referrals/network/search",
+            lambda route: _fulfill_json(
+                route, {"success": True, "data": {"query": "", "sort": "updated_desc", "total": 0, "matches": []}}
+            ),
+        )
 
     def set_task_center(self, tasks: Optional[list] = None, pending_rewards: Optional[list] = None):
         # Registration order matters: later-registered routes win in
@@ -607,7 +614,8 @@ def build_admin_member(name: str = "陳大文", **overrides) -> dict:
 
 
 def build_referral_member(name: str, **overrides) -> dict:
-    # 推薦網絡節點（巢狀樹）。一代（直推）姓名不遮罩，故 name 直通。
+    # 推薦網絡節點（Tier B 扁平形狀；children 走懶載入端點）。
+    # 一代（直推）姓名不遮罩，故 name 直通。
     member = {
         "userId": f"member-{name}",
         "name": name,
@@ -618,10 +626,33 @@ def build_referral_member(name: str, **overrides) -> dict:
         "joinedAt": "2026-07-16T00:00:00.000Z",
         "listingId": None,
         "childCount": 0,
-        "children": [],
+        "subtreeLatestJoinedAt": "2026-07-16T00:00:00.000Z",
     }
     member.update(overrides)
     return member
+
+
+def build_network_overview(
+    roots: list,
+    second_gen_count: int = 0,
+    third_gen_count: int = 0,
+    user_referral_code: str = "MYCODE",
+    sort: str = "updated_desc",
+    attention: Optional[dict] = None,
+) -> dict:
+    # GET /referrals/network/overview 的 data 形狀（useReferralData 快取同形）。
+    return {
+        "userReferralCode": user_referral_code,
+        "sort": sort,
+        "roots": roots,
+        "attention": attention or {"total": 0, "items": []},
+        "summary": {
+            "firstGenCount": len(roots),
+            "secondGenCount": second_gen_count,
+            "thirdGenCount": third_gen_count,
+            "totalReferrals": len(roots) + second_gen_count + third_gen_count,
+        },
+    }
 
 
 def build_monthly_king_task(current: int = 0, **overrides) -> dict:
@@ -671,13 +702,19 @@ def build_reward_history_record(
     description: str = "一代推薦 - 王小明",
     generation: int = 1,
     balance: int = 200,
+    source_category: str = "referral_payment",
     **overrides,
 ) -> dict:
     """A row for GET /rewards/history (RewardHistoryRecordSchema). Defaults model
-    a first-generation referral commission — the 推薦關係 -> 點數 link."""
+    a first-generation referral commission — the 推薦關係 -> 點數 link.
+
+    sourceCategory 是明細的來源分類（view source_category 衍生欄，見 migration
+    0725 0001）：付款推薦 referral_payment / 任務續約 referral_task_renewal /
+    提領 withdrawal / 退款 withdrawal_refund。前端用它渲染來源 badge 與篩選。"""
     record = {
         "id": "rh-e2e-1",
         "type": type,
+        "sourceCategory": source_category,
         "amount": amount,
         "description": description,
         "issuedAt": "2026-07-16T00:00:00.000Z",

@@ -58,10 +58,16 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
 - Git-flow(簡化版):`feature/<slug>`、`fix/<slug>` 從 develop 切出,PR 回
   develop;絕不直接 push main/develop(hook 會擋)。
+- 環境對應:develop 有自己的 persistent Supabase project
+  (`vars.SUPABASE_DEVELOP_PROJECT_REF`),main 是正式站
+  (`vars.SUPABASE_PROJECT_REF`)。push 到任一分支且動了
+  `supabase/functions/**`,就會部署 Edge Function 到**該分支對應的**
+  project(見 deploy-supabase.yml)——develop 是可安全驗證的真後端。
 - 晉升 SOP(develop→main):(a) develop 上 CI 四軌綠;(b) 手動
-  workflow_dispatch 跑一次 journey(至少 skeleton)綠——這是唯一的真後端
-  驗證,晉升鏈上必須有它;(c) 開晉升 PR(develop→main),用 merge commit
-  保留歷史。main 收到 push 會自動部署 Edge Functions,晉升=上線。
+  workflow_dispatch 跑一次 journey(至少 skeleton)綠;(c) 開晉升 PR
+  (develop→main),用 merge commit 保留歷史。**main 收到 push =
+  正式站部署**(Edge Function 自動部署、migration 由 Supabase 原生整合
+  套用),晉升即上線,不可逆的東西都在這一步。
 - Commit:Conventional Commits(`feat:` `fix:` `test:` `docs:` `refactor:`
   `style:` `chore:` `ci:`),**advisory**——但 TDD 相位的 `test(red)` /
   綠燈 commit 標記是流程必要(PR 以紅燈 hash 為證據)。
