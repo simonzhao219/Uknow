@@ -11,7 +11,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | 🔴 紅燈中 | `4027c2f` | |
+| 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | ✅ 綠 | `4027c2f` | (見下) |
 | 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | ⬜ 未開始 | | |
 | 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | ⬜ 未開始 | | |
 | 4 | 前端預設 ＋ `SORT_OPTIONS` 重排(預設項置頂)＋ e2e mock sort 回聲 | ⬜ 未開始 | | |
@@ -69,6 +69,18 @@
 本機輸出。此為 CLAUDE.md 既有的兜底路徑(「完整測試由 CI 的 api-tests 軌兜底」),
 非違規;但每個後端階段多一次 CI round-trip。
 前端階段(4–7)不受影響,vitest 本機可完整跑紅綠。
+
+⚠️ **重要操作紀律(踩過一次)**:CI 有 concurrency group,**推新 commit 會取消
+正在跑的那輪**——`4027c2f` 那輪就是被緊接著的 progress.md commit 取消掉的
+(`conclusion: cancelled`)。所以後端階段的紅燈實作**寫好後不要立刻 push**,
+必須等紅燈那輪 `api-tests` 跑完、讀到紅,才推綠燈。
+
+**Phase 1 紅燈證據**:CI run
+[30151398394](https://github.com/simonzhao219/Uknow/actions/runs/30151398394/job/89662298360)
+(head `3c40d05`,內容等同紅燈 commit `4027c2f`)——
+`FAILED | 134 passed | 5 failed`,失敗的正是 5 條排序斷言
+(overview updated_asc/updated_desc、children 二代層內、同名 tie-break、
+children self),其餘 134 條全綠 → 種子改寫未誤傷既有行為。
 
 ### B-2 分支未依 skill 切 `feature/*`(2026-07-25)
 

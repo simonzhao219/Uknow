@@ -2540,7 +2540,10 @@ function buildFlatNode(net: Network, uid: string): NetworkNode {
   };
 }
 
-// 排序：updated = 子樹最新加入；name = 真名（伺服器才有）+ Intl.Collator zh-Hant。
+// 排序：updated = 節點「自身」加入時間；name = 真名（伺服器才有）+ Intl.Collator
+// zh-Hant。三個端點傳進來的一律是同層兄弟集合（overview = 一代、children =
+// 某節點的直接下線），因此「每一代各自排自己的」是結構天生成立的；關鍵在鍵要
+// 用自身 joinedAt——先前用「子樹最新加入」，下線一加入就把上線推到列表頂端。
 // 混排規則（與需求方核定）：A→Z（筆畫少→多）英文組在前；Z→A 為其完全反轉
 // （中文組自然在前）——降冪一律用「升冪後反轉」實作，兩方向永不漂移。
 const NETWORK_SORT_MODES = ['updated_desc', 'updated_asc', 'name_asc', 'name_desc'] as const;
@@ -2552,19 +2555,18 @@ function parseSortMode(raw: string | undefined): NetworkSortMode {
 }
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
   const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
-  const tie = (a: string, b: string) => {
-    const d = (Date.parse(net.joinedAtOf.get(b) ?? '') || 0) -
-      (Date.parse(net.joinedAtOf.get(a) ?? '') || 0);
-    return d !== 0 ? d : (a < b ? -1 : a > b ? 1 : 0);
-  };
+  const joinedMs = (uid: string) => Date.parse(net.joinedAtOf.get(uid) ?? '') || 0;
+  // 自身加入時間升冪 → userId 字典序。一律升冪：升冪模式下每個比較鍵方向一致，
+  // 降冪就是整體反轉，不會有單一個鍵偷偷反向（同名者的次序曾因此與主鍵相反）。
+  // 缺值/壞值一律歸零（`?? '' || 0`），NaN 進比較器會讓排序整個失序。
+  // 這同時就是 updated_asc 的比較器——「自身加入時間」正是它的主鍵。
+  const tie = (a: string, b: string) => (joinedMs(a) - joinedMs(b)) || (a < b ? -1 : a > b ? 1 : 0);
   const nameAsc = (a: string, b: string) => {
     const ga = HAN_LEAD.test(realName(a)) ? 1 : 0;
     const gb = HAN_LEAD.test(realName(b)) ? 1 : 0;
     return (ga - gb) || zhCollator.compare(realName(a), realName(b)) || tie(a, b);
   };
-  const updatedAsc = (a: string, b: string) =>
-    ((net.subtreeMs.get(a) ?? 0) - (net.subtreeMs.get(b) ?? 0)) || tie(a, b);
-  const sorted = [...ids].sort(mode.startsWith('name') ? nameAsc : updatedAsc);
+  const sorted = [...ids].sort(mode.startsWith('name') ? nameAsc : tie);
   if (mode === 'updated_desc' || mode === 'name_desc') sorted.reverse();
   return sorted;
 }
