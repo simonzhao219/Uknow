@@ -215,7 +215,11 @@ CLAUDE.md 已經寫了：
 
 更徹底的做法是把 blackbox 練習移到獨立 repo 或分支——它與本專案無關，留在主線只會持續造成搜尋噪音（且會隨 repo 成長越來越容易被命中）。**建議 deny 先上**（一行、立即生效），搬移看你們對這份練習紀錄的保存意願。
 
-### P1 —— CI 的 `changes` 路徑過濾從未生效（本 PR 意外實測出來）
+### ~~P1~~ ✅ 已修 —— CI 的 `changes` 路徑過濾從未生效（本 PR 意外實測出來）
+
+> **已於 PR #113 修復並合併進 develop**（`fix/ci-paths-filter-quantifier`，走 `/fix-bug` 完整版）。
+> 修法為一行 `predicate-quantifier: every`，防線回填為 `scripts/check-workflows.py`
+> 接進 framework-check 軌。以下保留原始診斷紀錄。
 
 `ci.yml` 的 `changes` job 用 `dorny/paths-filter@v3`，意圖寫在註解裡：
 
@@ -307,7 +311,7 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 | **P0** | `npm run check` 輸出過濾 hook | 新增 `.claude/hooks/check-output-filter.py` + settings.json Bash matcher | 1 小時（含 `test-hooks.py` 案例） | 最高頻漏點：綠燈輸出從數千壓到數十 tok |
 | **P1** | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
 | **P1** | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
-| **P1** | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | 純文件 PR 不再燒四軌 runner（目前全跑） |
+| ~~P1~~ ✅ | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | **已修（PR #113，已合併）**：純文件 PR 不再燒四軌 runner |
 | **P2** | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
 | **P2** | 模型與 effort 分級 | `/fix-bug` skill 的分級段 | 20 分鐘 | thinking token 對齊任務難度 |
 | **P2** | MCP 精簡 + `/context` 習慣 | 操作規範 | 10 分鐘 | 縮小工具清單與誤用面 |
