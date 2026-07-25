@@ -13,9 +13,8 @@
 |---|---|---|---|---|
 | 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | ✅ 綠 | `4027c2f` | `d1601d0` |
 | 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | ✅ 綠 | `372662d` | `09044fe` |
-| 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | 🔴 紅燈中 | `19b9e55` | |
-| 4 | 前端預設 ＋ `SORT_OPTIONS` 重排(預設項置頂)＋ e2e mock sort 回聲 | ⬜ 未開始 | | |
-| 5 | 指示點基準 ＋ A1 可見層 ＋ 選單順序 ＋ `aria-label` 含當前排序 | ⬜ 未開始 | | |
+| 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | ✅ 綠 | `19b9e55` | `a05e8b6` |
+| 4+5 | 前端預設 ＋ `SORT_OPTIONS` 重排 ＋ e2e mock ＋ 指示點基準 ＋ A1 可見層 ＋ `aria-label`(**合併,見 B-3**) | ✅ 綠 | `c6d473f` / `592bb9b` | `PENDING` |
 | 6 | search 結果 UI:「已顯示 X / Y 筆」＋ 載入更多 | ⬜ 未開始 | | |
 | 7 | 切排序載入回饋(`isValidating` 下傳並呈現) | ⬜ 未開始 | | |
 | 8 | 型別收斂 `@contract` re-export ＋ 移除死欄位(紅燈 = 執行期斷言) | ⬜ 未開始 | | |
@@ -23,40 +22,38 @@
 
 ## 目前位置與下一步
 
-規劃書(**v3**)與四視角審查報告(`./review.md`)皆已完成,**尚未寫任何產品程式碼**。
+**實作進行中**:9 階段已完成 5 個(1、2、3、4+5 合併)。
 
-審查結果 1 個 P0 / 6 個 P1 / 15 個 P2 / 5 項需人工裁決,**已全數處置**
-(`review.md`「總裁決」= 修訂後通過)。
+已完成的行為變更:
 
-**需求方裁決摘要**(共兩輪,2026-07-25):
+1. **排序鍵**改為節點自身 `joinedAt`——每一代各自排序,下線加入不再把上線
+   推到列表頂端;`tie()` 一併改升冪,升冪模式下所有比較鍵方向一致
+2. **預設排序**改為 `updated_asc`(最舊加入),收斂為 `@contract` 的
+   `DEFAULT_NETWORK_SORT` 單一來源(原本散落兩個 runtime 共四處)
+3. **search 不再靜默截斷**:`offset`/`limit` 分頁,`total` 恆為全部命中數
+4. **選單重排**成預設項置頂(最舊/最新/A→Z/Z→A,文案一字未動)、
+   指示點基準跟隨新預設、`aria-label` 補上目前排序值(償還既有 a11y 債)
 
-1. 需求 B = **僅換排序鍵**,維持現行巢狀懶載入樹呈現(P0 解除)
-2. 列上**不**露出加入日期;老使用者 localStorage **不動**、**不**告知
-3. 下拉選單**重排**成預設項置頂(最舊/最新/A→Z/Z→A,文字一字不動)
-4. **搜尋原則:符合條件的都必須搜得到** → 沿用 `/rewards/history` 既有模式
-   (伺服器端篩選 + total + offset 分頁 + 「已顯示 X / Y」+ 載入更多)
-5. 手機端維持 icon-only、A1 限縮 sm+、修 `aria-label`
-6. 預設值收斂為 `@contract` 的 `DEFAULT_NETWORK_SORT`
-7. 切排序的無回饋空窗**本次處理,不留既有債**
-8. `tie()` 改升冪;`joinedAt` 語意接受現況(= `referred_at`,rewire 不更新)
-9. 規格書**以 code 為準**回填
+**下一步:Phase 6**——search 結果 UI 顯示「已顯示 X / Y 筆」+ 載入更多
+(比照 `RewardHistory.tsx` L281–288 的既有模式),讓 Phase 3 的分頁能被使用者
+實際用到。接著 Phase 7(切排序載入回饋)、Phase 8(移除死欄位)、
+Phase 9(規格書回填)。
 
-**唯一未回覆項**:#11a「最舊加入」當預設的**理由**(待確認的推測是「舊→新 ≈
-續約到期先後」)——只影響 Phase 9 的規格書文字,**不阻擋 Phase 1–8 開工**。
+**未回覆項**(不阻擋):#11a「最舊加入」當預設的**理由**,只影響 Phase 9 的
+規格書文字。
 
 **衍生的獨立 feature(不併入本次)**:#12 首頁篩選器改伺服器端
 (`HomePage.tsx` 直查 `public_listings`、無 limit/count、瀏覽器端篩選,
 刊登數超過 PostgREST `db-max-rows` 後「符合條件的搜不到」必然發生)。
 
-下一步:由人親自打 `/tdd-implement referral-network-sort-logic` 開工。
-(v3 新增的 Phase 3/6/7/9 未經四視角審查,想再保險可對修訂後的 plan.md
-重跑 `/review-plan`——非流程強制。)
-
 ## Blockers(逃生口紀錄)
 
 ### B-3 【逃生口 2:plan 階段切分有誤】SORT_OPTIONS 重排跨兩個階段的測試落點
 
-**狀態:等人工裁決,Phase 4 停在紅燈期(`.claude/tdd-lock` 保留中)**
+**狀態:✅ 已裁決並處置(2026-07-25)** — 需求方選 **(a) 合併 Phase 4/5 的重排部分**,
+由人授權解鎖後一併更新 `ReferralTreeView.test.tsx` 的順序斷言。合併後的紅綠循環:
+紅燈 `592bb9b`(2 failed | 13 passed,biome/tsc 綠)→ 綠燈見下表。
+plan §5 的 Phase 4/5 欄位已標註「重排跨 4/5,實作時合併」。
 
 plan §5 把「`SORT_OPTIONS` 重排(預設項置頂)」放在 Phase 3/4,但把
 「選單順序斷言」放在 Phase 5 的驗證標準。實作後發現這個切分不成立:

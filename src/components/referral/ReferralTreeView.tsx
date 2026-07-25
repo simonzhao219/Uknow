@@ -23,6 +23,7 @@ import { Skeleton } from '../ui/skeleton';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
 import {
+  DEFAULT_NETWORK_SORT,
   SORT_OPTIONS,
   parseSortMode,
   nodeDaysLeft,
@@ -508,7 +509,7 @@ export function ReferralTreeView({
             可見性）、sm+ 帶短標籤；單一文字來源，疊字問題結構性絕跡。 */}
         <DropdownMenu>
           <DropdownMenuTrigger
-            aria-label="排序方式"
+            aria-label={`排序方式：${SORT_OPTIONS.find((o) => o.value === sort)?.label ?? ''}`}
             className="relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:py-2 sm:pl-3 sm:pr-3"
           >
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
@@ -528,7 +529,7 @@ export function ReferralTreeView({
                 </span>
               ))}
             </span>
-            {sort !== 'updated_desc' && (
+            {sort !== DEFAULT_NETWORK_SORT && (
               <span
                 data-testid="sort-active-dot"
                 aria-hidden
