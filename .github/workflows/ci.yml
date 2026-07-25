@@ -209,3 +209,76 @@ jobs:
       - name: Scenario collection sanity
         working-directory: e2e/journey
         run: pytest --collect-only -q
+
+  # PR 分支必須用 rebase 更新，不得用 merge 更新。
+  # branch protection 的「Require branches to be up to date」只保證 head 含
+  # 最新 base，不管你是怎麼含進去的；按 Update branch 預設塞的是 merge
+  # commit。這條把「含進去的方式」也鎖成 rebase：分支上出現任何 merge
+  # commit 就紅燈。兩條合起來 = 合併前必定是 rebase 過的線性歷史。
+  # GitHub 沒有任何設定能強制 Update branch 用 rebase，只能在這裡擋。
+  linear-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 預設會 checkout refs/pull/N/merge（GitHub 合成的試合併結果，
+          # 本身就是 merge commit）——必須指名 head sha 才量得到真正的
+          # PR 分支；fetch-depth: 0 才有 base 分支可以比對。
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: PR 分支不得含 merge commit
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          merges=$(git rev-list --merges "origin/$BASE_REF..HEAD")
+          if [ -n "$merges" ]; then
+            echo "::error::PR 分支含 merge commit,請改用 rebase 更新:"
+            echo "$merges" | while read -r sha; do
+              git --no-pager log -1 --format='  %h %s' "$sha"
+            done
+            echo "修法:git fetch origin $BASE_REF \\"
+            echo "     && git rebase origin/$BASE_REF \\"
+            echo "     && git push --force-with-lease"
+            exit 1
+          fi
+          echo "OK:相對 origin/$BASE_REF 為線性歷史"
+
+  # 唯一該列入 branch protection required checks 的項目。
+  # 逐條把 job 加進 required 清單會漂移——2026-07-25 的 PR #109 就是這樣
+  # 在 api-tests / e2e-tests 還在跑的時候被 auto-merge 合掉的(那兩條不在
+  # 清單裡,build 一綠條件就滿足)。改成單一匯總點:新增 job 只要進
+  # needs,保護規則永遠不用動,也不可能再漏。
+  ci-ok:
+    needs:
+      - changes
+      - framework-check
+      - build
+      - api-tests
+      - e2e-tests
+      - journey-offline
+      - linear-check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 匯總各軌結果
+        env:
+          # skipped 計為通過:純文件 PR 會 skip 重的 job(見 changes 那段
+          # 註解)、linear-check 在 push 事件不跑。把 skipped 當失敗會讓
+          # 這兩種情況永遠合不了。
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "各軌結果:$RESULTS"
+          failed=0
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) failed=1 ;;
+            esac
+          done
+          if [ "$failed" -eq 1 ]; then
+            echo "::error::有軌未通過(failure/cancelled),不得合併"
+            exit 1
+          fi

@@ -83,6 +83,12 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
   已知例外:claude.ai/code 的 web session 會自動開 `claude/<描述>-<hash>`
   分支——不符 `feature/*` 命名但可正常運作(守衛只認 `feature/*`)。真的要
   走三段式流程時,自己切一個 `feature/<slug>` 分支。
+- 合併規矩:PR **只用 rebase 更新**(`git fetch origin develop && git rebase
+  origin/develop && git push --force-with-lease`),**不要按 GitHub 的
+  Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
+  合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
+  branch protection 的 required check 只有 `ci-ok` 一個(它 needs 全部
+  軌),新增 CI job 只要進它的 needs,不必去動保護規則。
 - 環境對應:develop 有自己的 persistent Supabase project
   (`vars.SUPABASE_DEVELOP_PROJECT_REF`),main 是正式站
   (`vars.SUPABASE_PROJECT_REF`)。push 到任一分支且動了
