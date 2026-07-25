@@ -228,11 +228,6 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 | 完全失效（逾期，兩態無寬限期） | 把 C8 到期日改為 90 天前 | 刊登隱藏、**點數/任務保留不歸零**、**推薦碼不作廢仍可驗證**、其上線組織圖顯示 Inactive 節點但**結構不斷開** |
 | 逾期超過一年 | 把到期日改為 400 天前 | 只能走新約（fresh），效期從付款日起算、可換推薦人 |
 
-> **不在此表的兩類情境**：「連續推薦達人」任務與「年費月領排程
-> （`reward_schedules`）」在本設計成文時尚存於舊規格，兩者皆已於 2026-06
-> 隨 `20260620000007_business_rule_revision` 移除（改即時一次發清、任務只剩
-> 推薦王）。規則現況見規格書 §8–§9。
-
 回填一律以 RUN_ID 圈定範圍、寫在獨立 scenario 的 Background，避免污染 §6 的帳本斷言
 （§6 先跑、§7 後跑，pytest 以 `--order` 固定順序）。
 
@@ -270,7 +265,7 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 
 ```
 Storage 物件（id-photos / signatures / listing-photos，依 RUN_ID 前綴）
-→ withdrawal_requests → reward_transactions → reward_schedules
+→ withdrawals → reward_transactions
 → referral_king_rewards → referral_edges → referral_codes
 → listings → payment_orders → subscriptions → profiles
 → auth.users（Admin API，含 admin 帳號）

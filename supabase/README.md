@@ -44,9 +44,6 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `system_alerts` | 背景失敗告警（warning-only 隔離的落點） | N |
 | `rate_limits` | 端點限流計數 | N |
 
-> `reward_schedules`（每月發獎排程）已隨「改即時一次發清」整張移除
-> （`20260620000007`）。
-
 ## 衍生 View / 函數（即時計算）
 
 **View**
