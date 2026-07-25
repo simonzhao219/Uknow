@@ -45,7 +45,7 @@ const SORT_MODES: readonly NetworkSortMode[] = [
  * select 覆蓋」在 focus 時的疊字問題，窄螢幕也撐不爆搜尋列。
  */
 export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
-  { value: 'updated_asc', label: '最舊加入' },
+  { value: 'updated_asc', label: '最早加入' },
   { value: 'updated_desc', label: '最新加入' },
   { value: 'name_asc', label: '姓名 A→Z' },
   { value: 'name_desc', label: '姓名 Z→A' },

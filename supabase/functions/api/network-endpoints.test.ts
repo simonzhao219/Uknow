@@ -143,7 +143,7 @@ Deno.test('未帶 token 一律 401', async () => {
   }
 });
 
-Deno.test('overview：契約形狀 + 摘要計數 + 預設排序為「最舊加入」', async () => {
+Deno.test('overview：契約形狀 + 摘要計數 + 預設排序為「最早加入」', async () => {
   const { status, body } = await getJson('/referrals/network/overview', token);
   assertEquals(status, 200);
   const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview');
@@ -226,7 +226,7 @@ Deno.test('overview：無效 sort 回落預設並回聲', async () => {
   const { body } = await getJson('/referrals/network/overview?sort=bogus', token);
   const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview bogus sort');
   assertEquals(parsed.data.sort, DEFAULT_NETWORK_SORT);
-  assertEquals(DEFAULT_NETWORK_SORT, 'updated_asc', '預設＝最舊加入（需求方裁決）');
+  assertEquals(DEFAULT_NETWORK_SORT, 'updated_asc', '預設＝最早加入（需求方裁決）');
 });
 
 Deno.test('children / search：預設同樣回落 DEFAULT_NETWORK_SORT', async () => {

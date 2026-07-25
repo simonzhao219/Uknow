@@ -188,7 +188,7 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const label = screen.getByTestId('sort-label');
     const stacked = Array.from(label.querySelectorAll('span'));
     expect(stacked.map((s) => s.textContent)).toEqual([
-      '最舊加入',
+      '最早加入',
       '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
@@ -216,7 +216,7 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
 
     const items = await screen.findAllByRole('menuitemradio');
     expect(items.map((i) => i.textContent)).toEqual([
-      '最舊加入',
+      '最早加入',
       '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
@@ -244,13 +244,13 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     expect(screen.queryByTestId('sort-active-dot')).toBeNull();
   });
 
-  it('預設排序時晶片顯示「最舊加入」（驗收 A1，sm+ 可見層）', () => {
+  it('預設排序時晶片顯示「最早加入」（驗收 A1，sm+ 可見層）', () => {
     renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
     const label = screen.getByTestId('sort-label');
     const visible = Array.from(label.querySelectorAll('span')).filter(
       (s) => !s.className.includes('invisible'),
     );
-    expect(visible.map((s) => s.textContent)).toEqual(['最舊加入']);
+    expect(visible.map((s) => s.textContent)).toEqual(['最早加入']);
   });
 
   it('觸發器的可及名稱含目前排序值（手機 icon-only 時的唯一狀態線索）', () => {
@@ -258,7 +258,7 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     expect(screen.getByRole('button', { name: '排序方式：姓名 A→Z' })).toBeTruthy();
     cleanup();
     renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
-    expect(screen.getByRole('button', { name: '排序方式：最舊加入' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '排序方式：最早加入' })).toBeTruthy();
   });
 });
 
