@@ -344,6 +344,57 @@ Deno.test('search：英文大小寫不敏感；空字串 400', async () => {
   assertEquals(empty.status, 400);
 });
 
+// 「符合條件的都必須搜得到」——需求方訂下的原則。先前 search 在排序後才
+// slice(0, 50)，排序方向一改就換一批人搜得到，且 UI 只 render matches、
+// 不顯示 total，截斷完全無感。分頁機制與 /rewards/history 同一套。
+//
+// 註：規劃書寫的是「命中 >50 要能全部取回」，但為此種 50+ 個付費使用者會讓
+// 這支測試慢到不可接受。改用 limit=2 掃過三個同名「林美」——分頁的正確性
+// （不重不漏、total 不受 limit 影響、越界不炸）是同一組不變式，與門檻無關。
+Deno.test('search：分頁不遺漏——limit/offset 走完可取回全部命中', async () => {
+  const all = await getJson('/referrals/network/search?q=%E6%9E%97', token); // 林
+  const allParsed = assertShape(NetworkSearchResponseSchema, all.body, 'search 林 all');
+  assertEquals(allParsed.data.total, 3, '三個同名「林美」');
+  assertEquals(allParsed.data.matches.length, 3, '未指定 limit 時預設頁足以容納三筆');
+  const everyone = allParsed.data.matches.map((m) => m.node.userId);
+
+  const page1 = await getJson('/referrals/network/search?q=%E6%9E%97&limit=2', token);
+  const p1 = assertShape(NetworkSearchResponseSchema, page1.body, 'search 林 page1');
+  assertEquals(p1.data.total, 3, 'total 是「全部命中數」，不受 limit 影響');
+  assertEquals(p1.data.limit, 2);
+  assertEquals(p1.data.offset, 0);
+  assertEquals(p1.data.matches.length, 2);
+
+  const page2 = await getJson('/referrals/network/search?q=%E6%9E%97&limit=2&offset=2', token);
+  const p2 = assertShape(NetworkSearchResponseSchema, page2.body, 'search 林 page2');
+  assertEquals(p2.data.total, 3);
+  assertEquals(p2.data.offset, 2);
+  assertEquals(p2.data.matches.length, 1);
+
+  // 兩頁併起來 = 全部命中，不重不漏（順序與單頁一致）
+  assertEquals(
+    [...p1.data.matches, ...p2.data.matches].map((m) => m.node.userId),
+    everyone,
+    '分頁走完必須等於一次取回的完整命中集',
+  );
+});
+
+Deno.test('search：越界 offset 回空但 total 不變；limit 夾在 1..200；壞值回落預設', async () => {
+  const beyond = await getJson('/referrals/network/search?q=%E6%9E%97&offset=99', token);
+  const b = assertShape(NetworkSearchResponseSchema, beyond.body, 'search 林 beyond');
+  assertEquals(b.data.matches, [], '越界只是空頁，不是錯誤');
+  assertEquals(b.data.total, 3, '越界不影響 total——UI 才能照樣顯示「共 N 筆」');
+
+  const huge = await getJson('/referrals/network/search?q=%E6%9E%97&limit=9999', token);
+  const h = assertShape(NetworkSearchResponseSchema, huge.body, 'search 林 huge limit');
+  assertEquals(h.data.limit, 200, 'limit 上限 200（與 /rewards/history 同慣例）');
+
+  const junk = await getJson('/referrals/network/search?q=%E6%9E%97&limit=abc&offset=-5', token);
+  const j = assertShape(NetworkSearchResponseSchema, junk.body, 'search 林 junk paging');
+  assertEquals(j.data.limit, 50, '壞值回落預設頁大小');
+  assertEquals(j.data.offset, 0, '負 offset 夾到 0');
+});
+
 Deno.test('cleanup（最後執行：清掉共用種子）', async () => {
   await deleteTestUsers(client, seeded);
 });

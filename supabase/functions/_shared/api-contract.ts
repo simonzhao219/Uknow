@@ -343,7 +343,11 @@ export const NetworkSearchResponseSchema = obj({
   data: obj({
     query: str(),
     sort: NetworkSortModeSchema,
-    total: num(), // 全部命中數（matches 有上限）
+    // total 是「全部命中數」，永遠不受 limit/offset 影響——前端據此顯示
+    // 「已顯示 X / Y」與載入更多。搜尋不得靜默截斷：符合條件的都要搜得到。
+    total: num(),
+    limit: num(), // 本頁大小（回聲；夾在 1..200）
+    offset: num(), // 本頁起點（回聲；越界回空頁而非錯誤）
     matches: arr(obj({
       node: NetworkNodeSchema, // 顯示名已遮罩（比對用真名在伺服器）
       ancestorPath: arr(str()), // 一代 → 命中者本身（含）的 userId 序列

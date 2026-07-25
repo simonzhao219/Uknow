@@ -2694,6 +2694,9 @@ app.get('/referrals/network/search', async (c) => {
       return path.reverse();
     };
 
+    // stub：分頁尚未實作（Phase 3 綠燈才接），先回聲固定值讓契約形狀成立
+    const limit = SEARCH_LIMIT;
+    const offset = 0;
     const matches = sortNodeIds(net, hitIds, sort)
       .slice(0, SEARCH_LIMIT)
       .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
@@ -2701,7 +2704,7 @@ app.get('/referrals/network/search', async (c) => {
     return c.json(
       {
         success: true,
-        data: { query: q, sort, total: hitIds.length, matches },
+        data: { query: q, sort, total: hitIds.length, limit, offset, matches },
       } satisfies NetworkSearchResponse,
     );
   } catch (err) {
