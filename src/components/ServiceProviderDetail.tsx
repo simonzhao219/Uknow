@@ -15,11 +15,7 @@ import {
 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
-// biome-ignore lint/correctness/noUnusedImports: 元件已建未接線——刪除或接線待裁決（見 docs/plans/friction-log.md）
-import { ReferralCodeCard } from './referral/ReferralCodeCard';
 import { UserContext } from '../App';
-// biome-ignore lint/correctness/noUnusedImports: 元件已建未接線——刪除或接線待裁決（見 docs/plans/friction-log.md）
-import { ReferralGuide } from './referral/ReferralGuide';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';

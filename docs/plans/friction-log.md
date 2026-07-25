@@ -25,12 +25,12 @@
 
 償還方式：碰到該檔案就順手修該檔案的 warning（童子軍原則），不開專案式大掃除。
 
-## 2026-07-25｜待裁決｜ReferralCodeCard / ReferralGuide 已建未接線
+## 2026-07-25｜已裁決｜ReferralCodeCard / ReferralGuide 已建未接線 → 刪除
 
 `src/components/referral/ReferralCodeCard.tsx` 與 `ReferralGuide.tsx` 只被
 `ServiceProviderDetail.tsx` 的 dead import 引用（從未渲染）。biome 清 unused
-imports 後成為孤兒、knip 閘門要求處置。暫以 biome-ignore 保留引用。
-**待裁決：刪除，或是接線到推薦功能 UI。**
+imports 後成為孤兒、knip 閘門要求處置。
+**人審裁決（2026-07-25）：刪除**——已隨框架 PR 移除（git 歷史可找回）。
 
 ## 2026-07-25｜誤擋教訓｜biome unsafe autofix 誤刪檔頭註解
 
