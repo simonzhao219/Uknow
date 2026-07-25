@@ -54,6 +54,39 @@
 
 ## Blockers(逃生口紀錄)
 
+### B-3 【逃生口 2:plan 階段切分有誤】SORT_OPTIONS 重排跨兩個階段的測試落點
+
+**狀態:等人工裁決,Phase 4 停在紅燈期(`.claude/tdd-lock` 保留中)**
+
+plan §5 把「`SORT_OPTIONS` 重排(預設項置頂)」放在 Phase 3/4,但把
+「選單順序斷言」放在 Phase 5 的驗證標準。實作後發現這個切分不成立:
+
+| 測試檔 | plan 指定階段 | 目前期望 |
+|---|---|---|
+| `src/utils/referralNetwork.test.ts` | Phase 4 | `[最舊, 最新, A→Z, Z→A]`(已改) |
+| `src/components/referral/ReferralTreeView.test.tsx` L187–192 / L215–220 | Phase 5 | `[最新, 最舊, A→Z, Z→A]`(未改) |
+
+元件以 `SORT_OPTIONS.map(...)` 渲染,兩份期望**必然同進退**——不存在能同時
+滿足兩者的實作(除非刻意讓顯示順序與資料順序脫鉤,那是為過測試而扭曲設計)。
+因此 `npm run check` 現在紅在 `ReferralTreeView.test.tsx` 的 2 條斷言,
+`scripts/tdd-unlock.sh` 不放行,而紅燈期守衛(正確地)禁止我改測試檔。
+
+註:plan §5「既有測試受影響清單」**已預先列出這兩處**,review.md 的處置節
+也已由需求方核可重排——所以這不是「測試寫錯」,是階段切分把一個不可分割的
+變更切成兩半。
+
+**建議處置(擇一,需人裁決)**:
+
+- **(a) 合併 Phase 4/5 的重排部分**〔建議〕:視為同一個紅綠循環,由人解鎖後
+  一併更新 `ReferralTreeView.test.tsx` 那兩條順序斷言(文案不動、只動順序),
+  再跑 unlock 收綠。plan §5 對應欄位標註「重排跨 4/5,實作時合併」。
+- (b) 把重排整個移到 Phase 5:需回退 Phase 4 紅燈中的 `SORT_OPTIONS` 斷言,
+  等於重做 Phase 4 的紅燈 commit,歷史較亂。
+- (c) 放棄重排(推翻需求方裁決)——不建議。
+
+其餘 Phase 4 內容(預設值改讀 `DEFAULT_NETWORK_SORT`)**本身已綠**:
+`npx vitest run src/utils/referralNetwork.test.ts` → 12 passed。
+
 ### B-1 環境限制:後端階段的紅綠燈只能從 CI 讀(2026-07-25)
 
 本 session 環境無法在本機驗證任何 Deno 側變更:
