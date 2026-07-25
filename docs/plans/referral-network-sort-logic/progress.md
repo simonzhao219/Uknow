@@ -15,7 +15,7 @@
 | 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | ✅ 綠 | `372662d` | `09044fe` |
 | 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | ✅ 綠 | `19b9e55` | `a05e8b6` |
 | 4+5 | 前端預設 ＋ `SORT_OPTIONS` 重排 ＋ e2e mock ＋ 指示點基準 ＋ A1 可見層 ＋ `aria-label`(**合併,見 B-3**) | ✅ 綠 | `c6d473f` / `592bb9b` | `5dca27a` |
-| 6 | search 結果 UI:「已顯示 X / Y 筆記錄」＋ 加載更多 | ✅ 綠 | `d0bb7b2` | `PENDING6` |
+| 6 | search 結果 UI:「已顯示 X / Y 筆記錄」＋ 加載更多 | ✅ 綠 | `d0bb7b2` | `049afd6` |
 | 7 | 切排序載入回饋(`isValidating` 下傳並呈現) | ⬜ 未開始 | | |
 | 8 | 型別收斂 `@contract` re-export ＋ 移除死欄位(紅燈 = 執行期斷言) | ⬜ 未開始 | | |
 | 9 | 規格書回填(以 code 為準)——文件階段,無測試落點 | ⬜ 未開始 | | |
