@@ -162,6 +162,14 @@ Deno.test('overview：契約形狀 + 摘要計數 + 預設排序為「最舊加�
   assertEquals(wang.name, '王大明');
   assertEquals(wang.generation, 1);
   assertEquals(wang.childCount, 2, '陳小華 + 趙雲');
+
+  // 死欄位必須真的離開 payload。注意：契約的 obj() 只檢查已宣告的 key、
+  // 放行多餘欄位，所以「把 schema 的欄位刪掉」不會讓 assertShape 變紅——
+  // 只有這條執行期斷言抓得到「schema 刪了、後端還在吐」。
+  assert(
+    !('subtreeLatestJoinedAt' in wang),
+    'subtreeLatestJoinedAt 在排序鍵換成自身 joinedAt 後已無用途，不得再出現在 payload',
+  );
 });
 
 Deno.test('overview：updated_asc——一代依「自身」加入時間排，子樹新血不推升上層', async () => {
@@ -173,13 +181,18 @@ Deno.test('overview：updated_asc——一代依「自身」加入時間排，�
   // 舊的「子樹最新加入」鍵會給 [Zoe, 王大明, Alice]——這條斷言就是兩者的分水嶺。
   assertEquals(parsed.data.roots.map((r) => r.userId), [g1a.id, g1b.id, g1c.id]);
 
-  // 子樹鍵仍然存在且語意不變，但已「不再影響排序」——王大明的 subtreeLatest
-  // 晚於自身加入，卻依舊排在最前，正是排序鍵已換成自身 joinedAt 的證明。
+  // 王大明排最前，而其子樹裡確實有比自己晚很多的新血（王志豪 t7）——
+  // 「子樹有新血卻不影響上層位置」正是排序鍵已換成自身 joinedAt 的證明。
   const wang = parsed.data.roots[0];
   assertEquals(wang.userId, g1a.id);
+  const kids = await getJson(
+    `/referrals/network/children?parentId=${g2a.id}&sort=updated_desc`,
+    token,
+  );
+  const kidsParsed = assertShape(NetworkChildrenResponseSchema, kids.body, 'children g2a desc');
   assert(
-    Date.parse(wang.subtreeLatestJoinedAt) > Date.parse(wang.joinedAt),
-    '王大明的 subtreeLatestJoinedAt 應仍晚於其自身 joinedAt（欄位語意未變）',
+    Date.parse(kidsParsed.data.nodes[0].joinedAt) > Date.parse(wang.joinedAt),
+    '王大明子樹中最新的三代確實晚於王大明自身，卻沒有把他推離第一位',
   );
 });
 
