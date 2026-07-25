@@ -12,7 +12,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   parseSortMode,
   SORT_OPTIONS,
-  SORT_SHORT_LABEL,
   SORT_STORAGE_KEY,
   readStoredSort,
   storeSort,
@@ -34,25 +33,14 @@ describe('parseSortMode', () => {
   });
 });
 
-describe('SORT_OPTIONS（核定文案）', () => {
-  it('四個選項、順序與文案一字不差', () => {
+describe('SORT_OPTIONS（核定短文案：收合=展開同一份，單層結構消滅疊字）', () => {
+  it('四個選項、順序與文案一字不差（皆 ≤5 字，窄螢幕收合不爆版）', () => {
     expect(SORT_OPTIONS).toEqual([
-      { value: 'updated_desc', label: '更新：新 → 舊' },
-      { value: 'updated_asc', label: '更新：舊 → 新' },
-      { value: 'name_asc', label: '姓名：A → Z（筆畫少 → 多）' },
-      { value: 'name_desc', label: '姓名：Z → A（筆畫多 → 少）' },
+      { value: 'updated_desc', label: '最新加入' },
+      { value: 'updated_asc', label: '最舊加入' },
+      { value: 'name_asc', label: '姓名 A→Z' },
+      { value: 'name_desc', label: '姓名 Z→A' },
     ]);
-  });
-});
-
-describe('SORT_SHORT_LABEL（窄螢幕晶片短標籤）', () => {
-  it('四模式各有 ≤3 字的短標籤，收合狀態一眼可見且撐不爆版面', () => {
-    expect(SORT_SHORT_LABEL).toEqual({
-      updated_desc: '最新',
-      updated_asc: '最舊',
-      name_asc: 'A→Z',
-      name_desc: 'Z→A',
-    });
   });
 });
 
