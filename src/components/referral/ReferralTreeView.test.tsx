@@ -241,6 +241,24 @@ describe('伺服器搜尋（debounce）', () => {
   });
 });
 
+describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
+  const avatarBg = (initial: string) =>
+    (screen.getByText(initial) as HTMLElement).style.backgroundColor;
+
+  it('同世代同色（不因 userId 而異）、跨世代異色', async () => {
+    const parent = makeNode({ userId: 'u1', name: '甲一', generation: 1, childCount: 1 });
+    const sibling = makeNode({ userId: 'u2', name: '乙二', generation: 1 });
+    const child = makeNode({ userId: 'u3', name: '丙三', generation: 2 });
+    const loadChildren = vi.fn().mockResolvedValue([child]);
+
+    renderTree(makeOverview({ roots: [parent, sibling] }), { loadChildren });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '展開' })); });
+
+    expect(avatarBg('甲')).toBe(avatarBg('乙'));
+    expect(avatarBg('丙')).not.toBe(avatarBg('甲'));
+  });
+});
+
 describe('a11y 語意不退化', () => {
   it('維持 tree / treeitem 結構', () => {
     renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }));
