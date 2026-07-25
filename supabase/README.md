@@ -125,8 +125,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 > develop 是 Supabase Branching 長出來的分支，不是另一個獨立 project：
 > 有自己的 DB／金鑰／Secrets，但掛在正式專案底下（同組織、同帳單）。
-> 分支建立時會沿用母專案當下的 Secrets——**PayUni 憑證務必覆寫成 sandbox 那套**，
-> 否則 develop 的測試付款會打進真金流。見 `docs/supabase-setup-checklist.md`。
+> **Secrets 逐分支獨立、不從母專案繼承**，所以 develop 的那套（PayUni sandbox
+> 憑證與 `FRONTEND_URL`）要單獨設一次。見 `docs/supabase-setup-checklist.md`。
 
 Dashboard 端的手動設定（Secrets、Email OTP 模板、PayUni 後台）
 見 `docs/supabase-setup-checklist.md`。

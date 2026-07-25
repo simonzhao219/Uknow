@@ -128,8 +128,10 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   deploy-supabase.yml 在**該分支 CI 綠之後**部署到對應環境(`workflow_run`
   觸發,不是 push)——develop 是可安全驗證的真後端。部署後會打
   `/api/health` 比對 `sha`,確認線上跑的就是這個 commit。
-  ⚠️ 分支建立時沿用母專案 Secrets:develop 的 PayUni 必須是 sandbox 那套
-  (`PAYUNI_SANDBOX=true` + `PAYUNI_TEST_*`),否則測試付款打進真金流。
+  ⚠️ Secrets 逐分支獨立、**不從母專案繼承**,所以 develop 要自己設一套:
+  `PAYUNI_SANDBOX=true` + `PAYUNI_TEST_*` 三把 + `FRONTEND_URL`。漏設的
+  症狀是付款直接失敗(`PayUni 環境變數未設定`);真正會打進真金流的是
+  「develop 上把 `PAYUNI_SANDBOX` 設成 false 又擺著正式憑證」這種人為設錯。
 - **正式站部署需人工核准**:main 的部署綁 GitHub `production` 環境,
   在 Settings → Environments 設 required reviewer。核准前不會動到線上。
 - 晉升 SOP(develop→main):(a) develop 上 CI 綠;(b) 開晉升 PR

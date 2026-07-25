@@ -17,11 +17,18 @@
 > （Branching）從正式專案長出來，有自己的 DB／API 金鑰／Edge Function／
 > Secrets，但**掛在正式專案底下**——同一個組織、同一份帳單，在儀表板上要從
 > 正式專案切分支才看得到。實務上有兩個後果：
-> 1. **分支建立時會沿用母專案當下的 Secrets。** 也就是說 develop 分支很可能
->    一出生就帶著**正式站的 PayUni 憑證**。不覆寫掉，develop 上的測試付款
->    會打進真金流、真的扣錢——這是本清單最該優先確認的一項。
+> 1. **Secrets 是逐分支獨立的，不會從母專案繼承**
+>    （[Supabase 文件](https://supabase.com/docs/guides/deployment/branching/configuration)：
+>    "Secrets set for one branch are not automatically available in other
+>    branches"）。所以新分支一開始**一把都沒有**，這份清單的步驟 1 要在
+>    develop 上**完整再做一次**——漏做的症狀是付款直接失敗
+>    （`PayUni 環境變數未設定`），不是靜默打到正式站。
 > 2. 對分支按 Supabase 的 **merge**，等於把它的 migration 推進正式專案。
 >    本專案的晉升走 GitHub PR（develop→main），不從 Supabase 儀表板 merge。
+>
+> ⚠️ 真正會打到真金流的組合是**人為設錯**：develop 上把 `PAYUNI_SANDBOX`
+> 設成 `false`（或刪掉），同時又存在 `PAYUNI_*` 正式憑證。這不是預設狀態，
+> 但一旦發生沒有任何自動閘門會擋——develop 上這三個變數只該是 `PAYUNI_TEST_*`。
 
 Journey 測試用的**拋棄式 preview branch** 另有自己的設定，
 見 `e2e/journey/README.md`。
@@ -70,8 +77,7 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 >
 > 也就是說：**develop 只設 `PAYUNI_SANDBOX=true` 而沒設 `PAYUNI_TEST_*`，
 > 付款會直接壞掉**（錯誤訊息：`PayUni 環境變數未設定（mode=sandbox）`）。
-> 反過來如果 develop 沒設 `PAYUNI_SANDBOX=true` 卻留著從母專案繼承來的
-> `PAYUNI_*` 正式憑證，測試付款會**打進真金流**——後者危險得多。
+> 這是漏設時的預設症狀——會擋下來，不會靜默走錯環境。
 
 > ⚠️ `SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY` 由 Supabase **自動注入**，
 > **不需要**手動新增。
@@ -166,12 +172,13 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 
 - [ ] 步驟 1：5 個 Edge Function Secrets 已新增並 Save
 - [ ] 步驟 1：**develop 用的是 `PAYUNI_TEST_*` 三把 + `PAYUNI_SANDBOX=true`**
-      （只設 `PAYUNI_SANDBOX=true` 不設 `PAYUNI_TEST_*` 會壞；留著繼承來的
-      `PAYUNI_*` 正式憑證則會打進真金流）
+      （develop 上不該出現 `PAYUNI_SANDBOX=false` 與 `PAYUNI_*` 正式憑證併存——
+      那是唯一會讓測試付款打進真金流的組合）
 - [ ] 步驟 1：**develop 的 `FRONTEND_URL` 是 `https://develop.uknow.pages.dev`**
       ——不是正式站網域，也不是 `http://localhost:3100`
-      （`seed-develop-data.yml` 建樹期間會暫時改成 localhost，收尾步驟負責設回；
-      該 workflow 中途失敗過的話，這一項要親眼確認）
+      （`seed-develop-data.yml` 建樹期間會暫時改成 localhost，收尾步驟
+      `if: always()` 負責設回。該 workflow 若被硬中止、收尾沒跑成，develop
+      就會停在 localhost：付款導回會落到不存在的位址）
 - [ ] 步驟 1：`api` 已重新部署，變數生效
 - [ ] 步驟 2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
