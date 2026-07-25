@@ -31,6 +31,11 @@ npm-debug.log*
 supabase/.temp/
 supabase/.branches/
 
+# Claude Code 本機狀態（tdd-lock 是 TDD 相位鎖的 session 狀態，絕不入版控）
+.claude/tdd-lock
+.claude/settings.local.json
+CLAUDE.local.md
+
 # E2E (pytest-bdd + Playwright)
 e2e/journey/.run/
 e2e/.venv/
