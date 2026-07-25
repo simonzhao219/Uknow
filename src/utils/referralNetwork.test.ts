@@ -35,7 +35,7 @@ describe('parseSortMode', () => {
     expect(parseSortMode(42)).toBe(DEFAULT_NETWORK_SORT);
   });
 
-  it('預設值即「最舊加入」（需求方裁決）', () => {
+  it('預設值即「最早加入」（需求方裁決）', () => {
     expect(DEFAULT_NETWORK_SORT).toBe('updated_asc');
   });
 });
@@ -44,7 +44,7 @@ describe('SORT_OPTIONS（核定短文案：收合=展開同一份，單層結構
   it('四個選項、順序與文案一字不差（皆 ≤5 字，窄螢幕收合不爆版）', () => {
     // 順序＝預設項置頂（需求方裁決）；文案本身一字未動。
     expect(SORT_OPTIONS).toEqual([
-      { value: 'updated_asc', label: '最舊加入' },
+      { value: 'updated_asc', label: '最早加入' },
       { value: 'updated_desc', label: '最新加入' },
       { value: 'name_asc', label: '姓名 A→Z' },
       { value: 'name_desc', label: '姓名 Z→A' },
