@@ -40,6 +40,7 @@ import {
 // - 搜尋：debounce 300ms 打伺服器（真名比對在後端，深代遮罩也搜得到）
 // - 對齊（方案 A）：前導槽固定寬只放 chevron；分支數移列右側，
 //   即將到期的倒數優先於分支數
+// - 顏色語意：頭像底色＝世代、右下角圓點＝訂閱狀態，兩者各自單一職責
 // ============================================================
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
@@ -76,20 +77,16 @@ const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: str
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-const AVATAR_COLORS = [
-  '#16a34a',
-  '#7c3aed',
-  '#ea580c',
-  '#0891b2',
-  '#db2777',
-  '#ca8a04',
-  '#4f46e5',
-  '#0d9488',
-];
-function avatarColor(id: string): string {
-  let sum = 0;
-  for (const ch of id) sum = (sum + ch.charCodeAt(0)) % AVATAR_COLORS.length;
-  return AVATAR_COLORS[sum];
+// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色系）：一代綠、二代紫、三代橘。
+// 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
+const GEN_AVATAR: Record<number, string> = {
+  1: '#16a34a',
+  2: '#7c3aed',
+  3: '#ea580c',
+};
+const GEN_AVATAR_FALLBACK = '#64748b'; // 世代超出 1–3 時的中性色
+function avatarColor(generation: number): string {
+  return GEN_AVATAR[generation] ?? GEN_AVATAR_FALLBACK;
 }
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
@@ -127,7 +124,7 @@ function Avatar({ node, size = 36 }: { node: NetworkNode; size?: number }) {
     <span className="relative shrink-0" style={{ width: size, height: size }}>
       <span
         className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
-        style={{ backgroundColor: avatarColor(node.userId), fontSize: size * 0.38 }}
+        style={{ backgroundColor: avatarColor(node.generation), fontSize: size * 0.38 }}
       >
         {initial(node.name)}
       </span>
