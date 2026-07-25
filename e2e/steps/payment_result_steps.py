@@ -102,22 +102,21 @@ def click_retry_payment(payment_result_page):
     payment_result_page.click_retry_payment()
 
 
-@when("I click contact support", target_fixture="popup")
+@when("I click contact support")
 def click_contact_support(page, payment_result_page):
     # LINE is an external third party we must never navigate to for real (it's
     # unreachable from the sandbox and would 302-redirect anyway, making the
     # exact-URL assertion non-deterministic). Fulfilling the domain with a stub
-    # lets the new tab settle on the exact intended deep link so the test asserts
-    # "we opened the right LINE URL" without leaving the mocked network.
+    # lets the same-tab navigation settle on the exact intended deep link so the
+    # test asserts "we opened the right LINE URL" without leaving the mocked
+    # network.
     page.context.route(
         "https://line.me/**",
         lambda route: route.fulfill(
             status=200, content_type="text/html", body="<html><body>LINE</body></html>"
         ),
     )
-    with page.expect_popup() as popup_info:
-        payment_result_page.click_contact_support()
-    return popup_info.value
+    payment_result_page.click_contact_support()
 
 
 @then(parsers.parse('I should see the payment result "{state}"'))
@@ -125,6 +124,6 @@ def should_see_payment_result(payment_result_page, state):
     expect(payment_result_page.state_container(state)).to_be_visible(timeout=6_000)
 
 
-@then(parsers.parse('a new tab should open to "{url}"'))
-def new_tab_opens_to(popup, url):
-    expect(popup).to_have_url(url, timeout=5_000)
+@then(parsers.parse('the page should navigate to "{url}"'))
+def page_navigates_to(page, url):
+    expect(page).to_have_url(url, timeout=5_000)

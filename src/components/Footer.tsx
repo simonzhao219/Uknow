@@ -39,8 +39,6 @@ export function Footer() {
               <li>
                 <a
                   href={LINE_OFFICIAL_ACCOUNT_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />

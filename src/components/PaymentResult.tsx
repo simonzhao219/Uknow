@@ -7,6 +7,7 @@ import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import { UserContext } from '../App';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
+import { openExternalLink } from '../utils/externalLink';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -183,7 +184,7 @@ export function PaymentResult() {
   };
 
   const handleContactSupport = () => {
-    window.open(LINE_OFFICIAL_ACCOUNT_URL, '_blank');
+    openExternalLink(LINE_OFFICIAL_ACCOUNT_URL);
   };
 
   if (!tradeNo) {

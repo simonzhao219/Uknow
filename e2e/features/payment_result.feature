@@ -59,10 +59,10 @@ Feature: Payment result
     And I click retry payment
     Then I should be redirected to "/payment/checkout"
 
-  Scenario: Contact support opens the LINE link in a new tab
+  Scenario: Contact support opens the LINE link in the same tab
     When I visit "/payment/result"
     And I click contact support
-    Then a new tab should open to "https://line.me/R/ti/p/@uknow"
+    Then the page should navigate to "https://line.me/R/ti/p/@uknow"
 
   Scenario: A paid arrival not yet activated shows the activating screen, then auto-advances once the backend converges
     Given trade "PU00000020" enriches with a successful PayUni payment

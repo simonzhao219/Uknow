@@ -54,12 +54,7 @@ export function MemberDashboard() {
       '如需更改基本資料，請透過 LINE 聯繫客服：',
       <>
         📱 LINE 官方帳號：
-        <a
-          href={LINE_OFFICIAL_ACCOUNT_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline"
-        >
+        <a href={LINE_OFFICIAL_ACCOUNT_URL} className="underline">
           {LINE_OFFICIAL_ACCOUNT_HANDLE}
         </a>
       </>,
