@@ -149,7 +149,8 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 > `subscriptions.is_canceled` 因此是 vestigial 欄位：自始不被任何流程寫入
 > 或讀取，僅保留以避免破壞性 migration（`user_account_status` view 原樣
 > 帶出、無消費者）。實際狀態永遠只有 active／expired 兩態。
-> 〔實作〕`20260721000003_mark_is_canceled_vestigial.sql`
+> 〔實作〕`20260721000003_mark_is_canceled_vestigial.sql`、
+> `20260725000003_is_canceled_wontfix_note.sql`
 
 ### 5.1 失效狀態的詳細語意
 
