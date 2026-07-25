@@ -357,16 +357,6 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 - **計數自癒**：credit 發放獨立於計數 append，每次付款都重新對帳補足差額
   （`reconcile_king_credits`），漏發會被下一筆付款補上。
 
-> **不提供當月推薦排行榜／排名顯示（已定案的產品決策，非落差）**：
-> `/tasks/current-month-top` 端點命名沿用早期「排行榜」構想，但實際只
-> 回傳呼叫者本人的當月推薦明細（`month, total, completedCount,
-> currentProgress, referrals`）。舊版曾回傳全站排行榜 `{ month, rankings }`，
-> 會讓任何已登入使用者看到全體會員姓名與推薦數（隱私外洩），且與前端
-> 實際需求不符（`useTaskData`/`MonthlyKingProgress` 拿到該形狀會直接
-> crash），已修正為只回傳個人明細。此決策已確認，**不規劃**提供公開
-> 排行榜或跨會員排名顯示。
-> 〔實作〕`supabase/functions/api/index.ts`（`GET /tasks/current-month-top`）
-
 ### 9.2 「新下線」的判準：pair-history
 
 > **`task +1 ⟺ 被推薦人 R 從未出現在上線 U 的 `task_progress.monthly_referrals`
@@ -512,6 +502,7 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 2 | 到期前 Email 提醒（§6.1） | 未實作；目前只有站內倒數 banner |
 | 3 | 推薦王 credit 的過期機制 | 無過期設計，credit 永久有效 |
 | 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
+| 5 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `api-contract.ts` 常數，尚未執行 |
 
 ---
 
