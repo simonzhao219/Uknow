@@ -2,7 +2,9 @@
 
 > 研究來源：Anthropic 官方 Claude Code 文件（`Manage costs effectively`、`Best practices`、
 > `How Claude remembers your project`、`Explore the context window`）。
-> **量測基準：`develop`（`30d6b33`）**，2026-07-25。token 數以 `bytes / 4` 估算，屬同數量級估計而非精確計數。
+> **量測基準：`develop`（`30d6b33`）**，2026-07-25。第一～四節的 token 數以 `bytes / 4` 估算。
+> 第五節之後改用 CJK 感知估算（`scripts/check-context-budget.py`），本 repo 實測比 `bytes/4`
+> 高 +6%～+16%——兩者都是估算而非真值，需要精確數字時看 `/context`。
 >
 > 註：本文件首版以 `main`（`ff55440`）為基準，結論已被 `develop` 推翻——`develop` 領先 main 75 個 commit，
 > 其中包含完整的 `CLAUDE.md` 與 `.claude/` 框架。首版的 P0/P1 建議多數已在 `develop` 落地，本版重寫。
@@ -371,6 +373,92 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 搭配習慣：**遇到「感覺變慢/變笨」時先跑 `/context`**看誰吃掉了空間，而不是直接 `/compact`（後者本身是一次大請求）。這條值得寫進 CLAUDE.md 的糾偏 SOP。
 
 ---
+
+## 五、架構：把原則收斂成可執行的結構
+
+前四節是診斷與逐項處置。這一節是把它們收斂成一個**控制系統**——有致動器、
+有感測器、有設定點。沒有感測器的致動器會在幾個月內默默失效而無人察覺
+（`changes` 路徑過濾就是活例子），所以第五層不是裝飾。
+
+### 5.1 分層：依「相對於決策時點的位置」切
+
+| 層 | 作用 | 本 repo 的實作 |
+|---|---|---|
+| **① 准入** | 能不能進 context | `permissions.deny`（`.env` / `supabase/.temp` / `docs/blackbox` / 兩個 lockfile） |
+| **② 投遞** | 什麼時候到手 | `CLAUDE.md`（每 session）、`.claude/rules` + `paths:`（條件）、skills（按需）、subagent（隔離） |
+| **③ 壓縮** | 已產生的輸出如何進來 | `check-output-filter.py`（Claude 執行的指令）、`lib-quiet.sh`（pre-commit） |
+| **④ 結構** | 最小理解單元多大 | `api/index.ts` 的區段地圖（緩解）；拆模組（根本解，未做） |
+| **⑤ 觀測** | 上面四層還在不在運作 | `check-context-budget.py` 及既有四支 canary |
+
+依「時點」切而不是依「功能」切，是因為**同一份知識放錯層就完全失效**：
+`api/index.ts` 的區段地圖放進 `docs/` 是零效果（永遠不會在該用的那一刻被讀到），
+放進 `CLAUDE.md` 是每個 session 都付費，放進 paths-scoped rule 才是恰好命中。
+
+### 5.2 四條不變式：品質不降低的形式化保證
+
+任何新機制進來前必須先過這四條。它們是可測的。
+
+**I1 保真性** —— 只移除冗餘，絕不移除承重訊號。
+> 判準：一則資訊是承重的，若且唯若它缺席時下一個決策會改變。
+> 測法：exit code 原樣傳遞，且**用非 1 的退出碼驗**（現行測試用 3 與 7），
+> 證明傳的是原始碼而不是「某個非零值」。
+
+**I2 自證性** —— 機制失效時必須有東西變紅。
+> 測法：突變測試——拿掉機制，對應閘門必須立刻紅。
+> **答不出「它默默失效時什麼會變紅」就先別加。**
+
+**I3 可繞過且已告知** —— 壓縮要有取回完整資訊的路徑，且該路徑與機制的存在
+本身都要在 agent 的 context 裡。
+> 少了「已告知」，Claude 會為了確認而重跑 → 機制製造它要省的成本。
+> 現行：`| tail -80`（filter）、`PRE_COMMIT_VERBOSE=1`（pre-commit），兩者都寫進 CLAUDE.md。
+
+**I4 人機同利** —— 對人不能變差，否則會在某個趕時間的下午被繞過。
+
+### 5.3 放置演算法：新知識該落在哪裡
+
+依序問，第一個 yes 就是答案：
+
+1. 能從 codebase 推導出來嗎？ → **不要寫**（寫了就是重複真相來源）
+2. 是「絕不該發生」而非「通常不該」嗎？ → `permissions.deny` / hook
+3. 只在特定路徑下相關嗎？ → `.claude/rules` + `paths:`
+4. 是多步驟流程、只在被叫到時才需要？ → skill
+5. 每個 session 都需要，且缺了 Claude 會犯錯？ → `CLAUDE.md`
+6. 以上皆非 → **不要寫**
+
+| 落點 | 成本函數 |
+|---|---|
+| `permissions.deny` | **0**（甚至負） |
+| `.claude/rules` + `paths:` | N × 相關 session |
+| skill | N × 被呼叫次數 |
+| `CLAUDE.md` | **N × 每個 session** |
+| subagent | 獨立 window，只回摘要 |
+
+第 2 步是最常見的錯配：**把「絕不該」寫進 CLAUDE.md**——它讀起來像規則，
+實際只是祈願。`docs/blackbox/` 那條原本就是這樣。
+
+### 5.4 預算模型（`check-context-budget.py` 的依據）
+
+| 區塊 | 目標 | 機械把關 |
+|---|---|---|
+| 啟動固定成本（CLAUDE.md + 無 `paths:` 的 rules） | < 5% window（10,000 tok） | **C1 硬擋** |
+| 工作集（當前任務要讀的檔案） | < 40% window | — |
+| 單檔上限 | < 10% window（20,000 tok）＝工作集的 1/4 | **C2 軟警戒** |
+| rule 的 `paths:` 必須匹配到檔案 | — | **C3 硬擋**（匹配不到＝死設定） |
+
+token 數為 **CJK 感知估算**（CJK 約 1 token/字元，其餘約 4 字元/token）。
+相較常見的 `bytes/4`，本 repo 實測差 +6%（程式碼）到 +16%（中文文件）——
+因為 CJK 在 UTF-8 是 3 bytes，`bytes/4` 會低估。**仍是估算不是真值**
+（本環境無 Anthropic API key，無法做真實 tokenizer 計數），所以閾值都留了
+寬裕，需要精確數字時看 `/context`。
+
+### 5.5 刻意不做的事
+
+- **不做量化節流**（「最多讀 N 檔」）——違反 I4，會把 agent 逼去猜，
+  那才是真正會降低品質的路。目標從來不是「讀更少」，是「讀得更準」。
+- **不追求 agent 自律**——Claude 對自己的 context 用量是盲的，沒有本體感覺。
+  所有設計都假設它不會、也不需要自己判斷。
+- **不管 MCP server 開關**——使用者端 `/mcp` 設定，repo 內只能寫下規範。
+- **不解決 compaction 失真**——只能用 compact instructions 降低代價。
 
 ## 五、優先順序總結
 

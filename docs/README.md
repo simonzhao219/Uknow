@@ -36,6 +36,7 @@
 | [`../CLAUDE.md`](../CLAUDE.md) | AI 助理的操作手冊：開發流程、閘門、分支與部署慣例 |
 | [`../supabase/README.md`](../supabase/README.md) | 動後端 schema／函數。SSOT 設計、資料表、關鍵函數、migration 慣例 |
 | [`supabase-setup-checklist.md`](supabase-setup-checklist.md) | Supabase 環境問題。程式碼之外必須在 Dashboard 手動完成的設定 |
+| [`claude-code-token-best-practices.md`](claude-code-token-best-practices.md) | 動框架檔案（`.claude/`、`scripts/`、CLAUDE.md）前。token/context 治理的分層架構、四條不變式、放置演算法與預算模型；由 `scripts/check-context-budget.py` 機械把關 |
 | [`e2e-journey-test-design.md`](e2e-journey-test-design.md) | 動 journey 測試。六代 30 人情境的設計與決策 |
 | [`../e2e/README.md`](../e2e/README.md) | 動全 mock 的 e2e 套件 |
 | [`../e2e/journey/README.md`](../e2e/journey/README.md) | 跑 journey 套件（**絕不在本機跑**） |

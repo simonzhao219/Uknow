@@ -134,6 +134,21 @@ if [ -f scripts/check-document-naming.py ]; then
   fi
 fi
 
+# 11. Context 預算與讀取成本。其餘各軌驗「設定寫對了沒」，這一軌驗「這個
+#     repo 對 agent 來說貴不貴」——啟動固定成本、單檔讀取成本（軟警戒）、
+#     以及 rule 的 paths 是否真的匹配得到檔案（匹配不到＝宣告了但永遠不
+#     載入，與 2026-07-25 的 changes 路徑過濾同一類 bug）。
+if [ -f scripts/check-context-budget.py ]; then
+  if ! python3 scripts/check-context-budget.py --self-test; then
+    echo "FAIL: context 預算檢查器自身的表格案例未過（scripts/check-context-budget.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-context-budget.py; then
+    echo "FAIL: context 預算檢查未過（scripts/check-context-budget.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi
