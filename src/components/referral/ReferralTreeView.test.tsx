@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ReferralTreeView } from './ReferralTreeView';
+import { DEFAULT_NETWORK_SORT } from '../../utils/referralNetwork';
 import type { NetworkNode, NetworkOverview } from '../../utils/referralNetwork';
 
 afterEach(cleanup);
@@ -165,7 +166,7 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     // 原生 select 正式退役：選單面板改由 app 渲染，風格才管得到
     expect(document.querySelector('select')).toBeNull();
 
-    const trigger = screen.getByRole('button', { name: '排序方式' });
+    const trigger = screen.getByRole('button', { name: /排序方式/ });
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
 
     // sm+ 短標籤、手機 icon-only（隱藏標籤）；grid 疊放承載固定寬
@@ -185,8 +186,8 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const label = screen.getByTestId('sort-label');
     const stacked = Array.from(label.querySelectorAll('span'));
     expect(stacked.map((s) => s.textContent)).toEqual([
-      '最新加入',
       '最舊加入',
+      '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
     ]);
@@ -196,10 +197,10 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     }
 
     // 當前選項可見；其餘三個以 invisible 佔位、aria-hidden 退出 a11y 樹
-    const [newest, oldest, nameAsc, nameDesc] = stacked;
+    const [oldest, newest, nameAsc, nameDesc] = stacked;
     expect(nameDesc.className).not.toContain('invisible');
     expect(nameDesc.getAttribute('aria-hidden')).toBeNull();
-    for (const ghost of [newest, oldest, nameAsc]) {
+    for (const ghost of [oldest, newest, nameAsc]) {
       expect(ghost.className).toContain('invisible');
       expect(ghost.getAttribute('aria-hidden')).toBe('true');
     }
@@ -209,12 +210,12 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const onSortChange = vi.fn();
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }), { onSortChange });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: '排序方式' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: /排序方式/ }), { key: 'Enter' });
 
     const items = await screen.findAllByRole('menuitemradio');
     expect(items.map((i) => i.textContent)).toEqual([
-      '最新加入',
       '最舊加入',
+      '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
     ]);
@@ -230,8 +231,32 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
     expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
     cleanup();
+
+    // 「最新加入」在新預設下已是非預設 → 必須亮點。判斷基準若沒跟著
+    // DEFAULT_NETWORK_SORT 走，亮點語意會完全反轉，而且純視覺不會報錯。
     renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }));
+    expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
+    cleanup();
+
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
     expect(screen.queryByTestId('sort-active-dot')).toBeNull();
+  });
+
+  it('預設排序時晶片顯示「最舊加入」（驗收 A1，sm+ 可見層）', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
+    const label = screen.getByTestId('sort-label');
+    const visible = Array.from(label.querySelectorAll('span')).filter(
+      (s) => !s.className.includes('invisible'),
+    );
+    expect(visible.map((s) => s.textContent)).toEqual(['最舊加入']);
+  });
+
+  it('觸發器的可及名稱含目前排序值（手機 icon-only 時的唯一狀態線索）', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_asc' }));
+    expect(screen.getByRole('button', { name: '排序方式：姓名 A→Z' })).toBeTruthy();
+    cleanup();
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
+    expect(screen.getByRole('button', { name: '排序方式：最舊加入' })).toBeTruthy();
   });
 });
 

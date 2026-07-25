@@ -7,6 +7,10 @@
 // sort 參數——遮罩後的顯示名無法在前端做正確的姓名排序，這是刻意分工。
 // ============================================================
 
+import { DEFAULT_NETWORK_SORT } from '@contract';
+
+export { DEFAULT_NETWORK_SORT };
+
 export type NetworkSortMode = 'updated_desc' | 'updated_asc' | 'name_asc' | 'name_desc';
 export type NetworkNodeStatus = 'active' | 'expiring' | 'expired' | 'suspended';
 
@@ -64,17 +68,17 @@ const SORT_MODES: readonly NetworkSortMode[] = [
  * select 覆蓋」在 focus 時的疊字問題，窄螢幕也撐不爆搜尋列。
  */
 export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
-  { value: 'updated_desc', label: '最新加入' },
   { value: 'updated_asc', label: '最舊加入' },
+  { value: 'updated_desc', label: '最新加入' },
   { value: 'name_asc', label: '姓名 A→Z' },
   { value: 'name_desc', label: '姓名 Z→A' },
 ];
 
-/** 非法/未知值一律回落預設 updated_desc（與伺服器 parseSortMode 同語意）。 */
+/** 非法/未知值一律回落 DEFAULT_NETWORK_SORT（與伺服器 parseSortMode 同語意）。 */
 export function parseSortMode(raw: unknown): NetworkSortMode {
   return (SORT_MODES as readonly unknown[]).includes(raw)
     ? (raw as NetworkSortMode)
-    : 'updated_desc';
+    : DEFAULT_NETWORK_SORT;
 }
 
 export const SORT_STORAGE_KEY = 'referralSortMode';
@@ -84,7 +88,7 @@ export function readStoredSort(): NetworkSortMode {
   try {
     return parseSortMode(localStorage.getItem(SORT_STORAGE_KEY));
   } catch {
-    return 'updated_desc';
+    return DEFAULT_NETWORK_SORT;
   }
 }
 

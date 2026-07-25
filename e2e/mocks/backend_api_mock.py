@@ -303,13 +303,24 @@ class BackendApiMock:
         self._route(
             "/referrals/network/children",
             lambda route: _fulfill_json(
-                route, {"success": True, "data": {"parentId": "", "sort": "updated_desc", "nodes": []}}
+                route, {"success": True, "data": {"parentId": "", "sort": "updated_asc", "nodes": []}}
             ),
         )
         self._route(
             "/referrals/network/search",
             lambda route: _fulfill_json(
-                route, {"success": True, "data": {"query": "", "sort": "updated_desc", "total": 0, "matches": []}}
+                route,
+                {
+                    "success": True,
+                    "data": {
+                        "query": "",
+                        "sort": "updated_asc",
+                        "total": 0,
+                        "limit": 50,
+                        "offset": 0,
+                        "matches": [],
+                    },
+                },
             ),
         )
 
@@ -654,7 +665,7 @@ def build_network_overview(
     second_gen_count: int = 0,
     third_gen_count: int = 0,
     user_referral_code: str = "MYCODE",
-    sort: str = "updated_desc",
+    sort: str = "updated_asc",
     attention: Optional[dict] = None,
 ) -> dict:
     # GET /referrals/network/overview 的 data 形狀（useReferralData 快取同形）。
