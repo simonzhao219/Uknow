@@ -11,7 +11,7 @@ tools: Read, Grep, Glob
 **先讀 `docs/_templates/review.md` 的「輸出契約」節**,輸出必須符合契約。
 
 審你的面向:
-- 模式一致性:對照 `docs/UI_UX_Analysis.md`——規劃的互動是否沿用既有
+- 模式一致性:對照 `docs/UI_UX_Guidelines.md`——規劃的互動是否沿用既有
   模式(導覽、卡片操作、表單、對話框)?發明新模式要有明確理由
 - 行動版優先:本專案使用者幾乎都在手機上(LINE 內建瀏覽器佔比高,
   對照 `src/utils/browserDetection.ts` 的既有處理)——桌面思維的設計是缺口
