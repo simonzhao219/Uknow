@@ -430,8 +430,18 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             className="relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:py-2 sm:pl-3 sm:pr-3"
           >
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-            <span data-testid="sort-label" className="hidden whitespace-nowrap sm:inline">
-              {SORT_OPTIONS.find((o) => o.value === sort)?.label}
+            {/* 四個標籤疊同一 grid 格：晶片寬恆為最寬標籤之寬，切換排序不伸縮。
+                非當前者 invisible 佔位、aria-hidden 退出 a11y 樹（單一可讀文字不變） */}
+            <span data-testid="sort-label" className="hidden sm:grid">
+              {SORT_OPTIONS.map((o) => (
+                <span
+                  key={o.value}
+                  aria-hidden={o.value !== sort || undefined}
+                  className={cn('col-start-1 row-start-1 whitespace-nowrap', o.value !== sort && 'invisible')}
+                >
+                  {o.label}
+                </span>
+              ))}
             </span>
             {sort !== 'updated_desc' && (
               <span
