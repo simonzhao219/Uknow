@@ -11,7 +11,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | ⬜ 未開始 | | |
+| 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | 🔴 紅燈中 | `4027c2f` | |
 | 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | ⬜ 未開始 | | |
 | 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | ⬜ 未開始 | | |
 | 4 | 前端預設 ＋ `SORT_OPTIONS` 重排(預設項置頂)＋ e2e mock sort 回聲 | ⬜ 未開始 | | |
