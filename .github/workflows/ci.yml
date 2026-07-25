@@ -2,13 +2,13 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     # 純文件變更不燒 CI（journey 設計書的 PR 曾為一個 .md 跑整套）
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
   push:
-    branches: [main]
+    branches: [main, develop]
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
