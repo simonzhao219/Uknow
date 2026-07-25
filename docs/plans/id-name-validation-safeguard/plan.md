@@ -128,14 +128,35 @@ profiles」。**該前提已不成立**:前端 supabase-js 直連只用於 `list
   - `supabase/migrations/`:新增撤銷 GRANT 的 migration。
   - `src/components/CompleteProfile.tsx`:姓名欄位加模式切換、長度規則連動、
     確認對話框合併。
-- **撤銷安全性查證**(對應裁決「不能影響原有功能」),逐條確認無依賴:
-  - 前端 `src/**`:supabase-js 直連只碰 `listings`/`public_listings`,
-    無任何 `profiles` 寫入。
-  - Edge Function:`sb()`(`index.ts:126`)用 service_role,不受 GRANT 影響。
-  - e2e journey:透過 UI 操作註冊,不直接寫 `profiles`。
-  - 待補:`security invoker` function/trigger 是否有以呼叫者身分寫
-    `profiles`、`20260620000009` 之後是否有 migration 再調整過此權限
-    ——查證進行中,結果須在開工前補入本節。
+- **撤銷安全性查證**(對應裁決「不能影響原有功能」)——六個面向逐條窮舉,
+  全數確認無依賴:
+  1. **前端 `src/**`**:supabase-js 直連只碰 `listings`/`public_listings`,
+     對 `profiles` 零寫入。migration 註解點名的 `CompleteProfile.tsx` 實際上
+     只用 `supabase.auth.getSession()` 取 token,寫入走
+     `fetch(buildApiUrl('/auth/register'))`——**0009 註解描述的「前端直接
+     update profiles」架構已不存在**。
+  2. **e2e 兩套件**:`e2e/`(mocked)全網路 mock;`e2e/journey/` 的
+     `SupabaseAdmin.rest_update`(`tools/supa.py`)一律走 service_role header,
+     且唯二呼叫點(`seed_time_machine.py`)目標是 `subscriptions`;anon key
+     只用於登入與打 Edge Function,不直寫 REST table。
+  3. **後端 client**:`supabase/functions/` 全目錄只有兩處 `createClient`
+     (`index.ts:126` 的 `sb()`、`test-helpers.ts` 的 `adminClient()`),
+     皆用 `SUPABASE_SERVICE_ROLE_KEY`;index.ts 內 16 處
+     `.from('profiles')` 的 client 來源逐一確認都是 `sb()`。無任何
+     「以使用者 token 建 client」的路徑。
+  4. **DB 內部**:migrations 中 11 處 `update public.profiles` 全落在
+     `security definer` 函式內。`profiles` 上的兩個 trigger 中
+     `set_updated_at` 雖為 invoker,但僅修改 BEFORE UPDATE 的 NEW 欄位、
+     不另發 UPDATE 陳述式,不需呼叫端持有該欄位 GRANT(此點屬 Postgres
+     權限模型推論,非本 repo 程式碼可直接驗證,階段 3 的測試會實證)。
+  5. **後續 migration**:`20260620000009` 之後無任何 migration 再調整
+     `profiles` 的 authenticated GRANT。反向佐證:
+     `20260717000001_service_role_grants.sql:18-21` 註解明寫「刻意只授權
+     service_role……anon/authenticated 維持各 migration 的明確控制(例如
+     0009 的 profiles 欄位級 update)」——後續作者已確認 0009 是唯一控制點。
+  6. **admin 路徑**:`MemberManagement`/`WithdrawalManagement` 只 import
+     `apiRequestJson`/`buildApiUrl`,對 supabase client 零命中;後端對應
+     handler 走 `sb()` 或 service_role + definer 函式,雙重不受影響。
 - multi-step-flow 四契約:本次新增「模式切換」這個表單狀態,必須一併納入
   草稿持久化(見上),否則使用者切到外文模式、點服務條款彈窗後回來會被
   重置回中文模式,是契約 1 的新破口。
@@ -208,9 +229,10 @@ journey 依規則不能在本機跑,只在排程或晉升 PR 才會發現,是晚
 - **最大風險是誤擋合法使用者**(開放問題#1 的間隔號案例已是具體而非假設性
   的風險):規則過嚴會讓部分族群無法完成註冊,而註冊是營收入口,失敗成本
   遠高於「偶爾有人填錯姓名」。開工前應先結清開放問題#1。
-- **撤銷 GRANT 的風險**:若有未查出的路徑依賴該權限,撤銷後該功能會直接
-  失敗。緩解:§3 的逐條查證須在開工前補完;階段 3 的 characterization 測試
-  會釘住既有註冊/更新路徑不受影響。
+- **撤銷 GRANT 的風險**:已由 §3 六面向查證降到很低——所有寫入路徑都已走
+  service_role,0009 註解描述的「前端直連」架構早已不存在。殘留的唯一不確定
+  是 §3 第 4 點的 Postgres 權限模型推論(invoker trigger 不需欄位 GRANT),
+  階段 3 的測試會實證這一點。
 - **回滾**:階段 1、2、4 是驗證邏輯疊加,revert 即還原。階段 3 的 migration
   需要反向 migration(`grant update (name) ... to authenticated`)才能回滾
   ——這是本次唯一不能靠 revert PR 單獨還原的變更,需在 PR 說明中標注。
