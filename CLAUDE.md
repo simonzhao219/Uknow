@@ -42,6 +42,7 @@
 | `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
+| `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
