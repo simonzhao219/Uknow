@@ -182,6 +182,54 @@ def test_output_filter_preserves_exit_code() -> None:
 test_output_filter_preserves_exit_code()
 
 
+# ---------------------------------------------------- pre-commit 綠燈安靜化
+def test_pre_commit_quiet_wrapper() -> None:
+    """run_gate_quiet:綠燈折疊、紅燈全印,且 exit code 一律原樣傳遞。
+
+    這是 commit 閘門的一部分,吞掉退出碼等於閘門「看起來正常」地失效——
+    所以紅燈那條刻意用退出碼 3(而不是 1)驗,證明傳遞的是**原始碼**而不是
+    「某個非零值」。
+
+    包裝器抽成 scripts/git-hooks/lib-quiet.sh 就是為了這幾條能直接餵
+    true/false,不必真的跑一次 npm run check(那要 30 秒且依賴環境)。
+    """
+    lib = ROOT / "scripts" / "git-hooks" / "lib-quiet.sh"
+
+    def run(snippet: str, env_extra: dict[str, str] | None = None):
+        return subprocess.run(
+            ["bash", "-c", f". '{lib}'\n{snippet}"],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, **(env_extra or {})),
+        )
+
+    def check_case(label: str, ok: bool) -> None:
+        global checked
+        checked += 1
+        if not ok:
+            failures.append(f"pre-commit-quiet[{label}]")
+
+    green = run("run_gate_quiet demo bash -c 'echo noise; echo more noise'")
+    check_case("綠燈保留 exit 0", green.returncode == 0)
+    check_case("綠燈折疊成摘要", "綠燈" in green.stdout and "2 行" in green.stdout)
+    check_case("綠燈不外洩原始輸出", "noise" not in green.stdout)
+
+    red = run("run_gate_quiet demo bash -c 'echo BOOM >&2; exit 3'")
+    check_case("紅燈傳遞原始退出碼 3(不是任意非零)", red.returncode == 3)
+    check_case("紅燈原樣印出輸出", "BOOM" in red.stderr)
+    check_case("紅燈不印綠燈摘要", "綠燈" not in red.stdout)
+
+    verbose = run("run_gate_quiet demo bash -c 'echo LIVE'", {"PRE_COMMIT_VERBOSE": "1"})
+    check_case("VERBOSE=1 直接透傳不折疊", "LIVE" in verbose.stdout and "綠燈" not in verbose.stdout)
+    check_case("VERBOSE=1 仍保留 exit 0", verbose.returncode == 0)
+
+    verbose_red = run("run_gate_quiet demo bash -c 'exit 7'", {"PRE_COMMIT_VERBOSE": "1"})
+    check_case("VERBOSE=1 紅燈仍傳遞原始退出碼 7", verbose_red.returncode == 7)
+
+
+test_pre_commit_quiet_wrapper()
+
+
 def test_plan_ever_existed() -> None:
     """plan_ever_existed 的真實 git 查詢——在拋棄式 repo 裡驗三種狀態。
 

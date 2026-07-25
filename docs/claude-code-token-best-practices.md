@@ -305,6 +305,32 @@ required check 永遠 pending、純文件 PR 會卡死無法合併（註解裡�
 雖然這一項省的是 CI runner 而不是 context token，但它與本文件同源——**宣稱有的治理其實沒生效，
 比沒有治理更貴**，因為沒人會再去看它。這也是為什麼上面每一項建議都附了驗證方式。
 
+### ~~P2（新增）~~ ✅ 已套用 —— 讓 pre-commit 在綠燈時自己安靜
+
+上面那個輸出過濾 hook 只覆蓋 **Claude 執行的** 指令，`git commit` 觸發的 pre-commit 不在範圍內
+（原因見「實作與草稿的差異」第 3 點）。而實務上最常見的那坨 200+ 行 biome warning 正是從這裡
+來的——本次施工期間就重複出現三次，每次改的都只是 `.md` 或 `scripts/`。
+
+**已實作**：包裝器抽成 `scripts/git-hooks/lib-quiet.sh`，由 `pre-commit` 的 `run_gate` 統一套用，
+所以三個閘門（`static-gates` / `npm-run-check` / `deno-fmt`）全部受益。綠燈只印一行摘要，
+紅燈原樣全印。`PRE_COMMIT_VERBOSE=1` 取回完整輸出（折疊會吃掉即時進度與顏色）。
+`DRYRUN` 輸出一字未變，既有行為案例不受影響。
+
+**為什麼抽成獨立檔案**：這是 commit 閘門的一部分，而閘門自己必須有紅綠燈（framework-check 的
+既有原則）。內嵌在 `pre-commit` 裡就沒有可測的接縫——那支腳本一被 source 就會開始跑閘門。
+抽出來之後可以直接餵 `true`/`false` 驗兩個方向，不必真的跑一次 `npm run check`。
+
+**最關鍵的實作要點**：`exit code 必須原樣傳遞`。這裡是 commit 閘門，吞掉退出碼等於閘門
+「看起來正常」地失效，比前面那個 hook 的同類風險更嚴重。因此包裝器顯式捕捉 `$?` 再 `return`，
+而測試刻意用退出碼 **3** 與 **7** 驗（不是 1），證明傳遞的是**原始碼**而不是「某個非零值」。
+
+順帶一提，`deno task check` 那段**原本就已經是這個模式**（捕捉進 `check_out`、只在失敗時印）——
+本次只是把專案自己已經想到的做法推廣到另外三個閘門。而那 214 條 biome warning 本身是
+friction-log 記錄的存量債（導入 biome 時降級為 warn）；真正清掉它們比折疊輸出更根本，
+但那是償還計畫的事。
+
+### P2 —— CLAUDE.md 補 compact instructions
+
 CLAUDE.md 目前沒有壓縮指示。官方建議在 CLAUDE.md 裡指定壓縮時要保留什麼，否則 auto-compact 會按自己的判斷摘要，而本專案 TDD 流程有**特別怕丟的東西**：紅燈 hash 是 PR 的證據，`docs/plans/<slug>/` 的階段狀態是 rehydrate 的依據。
 
 ```markdown
@@ -347,6 +373,7 @@ CLAUDE.md 有完整的流程分級（表層錯走簡版、行為級 bug 走完�
 | ~~P1~~ ✅ | 4 個審查 subagent 加 `model: sonnet` | `.claude/agents/*.md` | 5 分鐘 + 一次比對試跑 | 每 feature 8 次扇出的單位成本下降 |
 | ~~P1~~ ✅ | `docs/blackbox/**` 加進 `permissions.deny` | `.claude/settings.json` | 1 分鐘 | 消除 14,100 tok 的搜尋陷阱 |
 | ~~P1~~ ✅ | `changes` job 補 `predicate-quantifier: every` | `.github/workflows/ci.yml` | 1 行 + 雙向驗證 | **已修（PR #113，已合併）**：純文件 PR 不再燒四軌 runner |
+| ~~P2~~ ✅ | pre-commit 綠燈安靜化（`lib-quiet.sh` + `run_gate`） | `scripts/git-hooks/` | 抽包裝器 + 9 條案例 | **已套用**：每次 commit 省下 200+ 行 biome warning |
 | **P2** | CLAUDE.md 補 compact instructions | `CLAUDE.md` | 10 分鐘 | 壓縮後不再遺失階段/紅燈 hash |
 | **P2** | 模型與 effort 分級 | `/fix-bug` skill 的分級段 | 20 分鐘 | thinking token 對齊任務難度 |
 | **P2** | MCP 精簡 + `/context` 習慣 | 操作規範 | 10 分鐘 | 縮小工具清單與誤用面 |
