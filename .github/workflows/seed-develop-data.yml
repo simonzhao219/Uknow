@@ -75,17 +75,43 @@ jobs:
           set -euo pipefail
           supabase link --project-ref "$PARENT_PROJECT_REF"
           supabase branches get develop --experimental -o env > branch.env
-          BRANCH_REF="$(grep -oP '(?<=^REF=).*' branch.env \
-            || grep -oP 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env | head -1)"
-          if [ -z "$BRANCH_REF" ] || [ "$BRANCH_REF" = "$PARENT_PROJECT_REF" ]; then
-            echo "::error::取到的分支 ref（$BRANCH_REF）是空的或等於正式專案——中止。"
+
+          # 解析方式與 journey.yml 同一套,理由也同一個:欄位名會隨 CLI 版本
+          # 變,`grep '^ANON_KEY='` 撈不到時會靜默傳空字串下去(2026-07 那次
+          # 假綠,以及本檔首跑 run 30174097721 的失敗,都是這個)。比對尾綴、
+          # 容忍任意前綴,解析不到就當場失敗。
+          extract() { grep -oPm1 "^[A-Z0-9_]*${1}=\K.*" branch.env | tr -d '"' || true; }
+          BRANCH_REF="$(extract 'REF')"
+          [ -n "$BRANCH_REF" ] || BRANCH_REF="$(grep -oPm1 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env || true)"
+          ANON_KEY="$(extract 'ANON_KEY')"
+          SERVICE_KEY="$(extract 'SERVICE_ROLE_KEY')"
+
+          missing=''
+          [ -n "$BRANCH_REF" ]  || missing="$missing BRANCH_REF"
+          [ -n "$ANON_KEY" ]    || missing="$missing ANON_KEY"
+          [ -n "$SERVICE_KEY" ] || missing="$missing SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::branch.env 解析不到:$missing —— CLI 欄位名可能已變"
+            echo "branch.env 實際有的欄位名（不印值）:"
+            grep -oP '^[A-Z0-9_]+(?==)' branch.env | sed 's/^/  /'
             exit 1
           fi
+
+          # 種資料專屬的第二道確認:目標必須是 develop 分支,不能是正式專案。
+          if [ "$BRANCH_REF" = "$PARENT_PROJECT_REF" ]; then
+            echo "::error::分支 ref 等於正式專案 $PARENT_PROJECT_REF——中止。"
+            exit 1
+          fi
+
+          # 這兩個是真密鑰,務必讓 Actions 遮蔽,以免任何 step 的 env 傾印外洩
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_KEY"
+
           echo "ref=$BRANCH_REF" >> "$GITHUB_OUTPUT"
           {
             echo "JOURNEY_SUPABASE_PROJECT_REF=$BRANCH_REF"
-            echo "JOURNEY_SUPABASE_ANON_KEY=$(grep -oP '(?<=^ANON_KEY=).*' branch.env)"
-            echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$(grep -oP '(?<=^SERVICE_ROLE_KEY=).*' branch.env)"
+            echo "JOURNEY_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY"
           } >> "$GITHUB_ENV"
 
       # 建樹期間前端跑在 runner 的 3100 埠，所以 FRONTEND_URL 要指向它

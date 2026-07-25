@@ -377,3 +377,23 @@ description 以決定何時呼叫),低估 23%(3,150 → 3,868)。教訓同源:�
 **處置**:`git fetch --prune` 清掉殘留 ref 後,一般 push 即可(分支不存在,
 不需要強推)。強推前先確認殘留 ref 指向的 commit 已完全併入 develop
 (`git merge-base --is-ancestor`),確保沒有未合併工作會被覆蓋。
+
+## 2026-07-25｜自造漏網｜照抄 workflow 時抄到已被修掉的舊版寫法
+
+新增 `seed-develop-data.yml` 時,分支連線資訊的解析是從 session 早期讀到的
+`journey-nightly.yml` 複製的。但那支檔案在此期間已被重構成
+`journey.yml` + `journey-scheduled.yml`,而且**正好修掉了我抄的那一段**:
+`grep '^ANON_KEY='` 撈不到欄位時會靜默傳空字串,journey.yml 的註解白紙黑字
+寫著「2026-07 那次假綠就是這個」。首跑(run 30174097721)於是以完全相同的
+方式失敗——ref 解析成功、兩把 key 空白、套件在 `JOURNEY_REQUIRE_ENV=1`
+下 1 秒內硬失敗。
+
+代價很小(硬斷言讓它當場紅燈,不是假綠),但根因值得記:**context 裡的
+檔案內容會過期**。同一個 session 內讀過的檔案,隔幾十輪之後可能已經被
+上游改掉,而模型不會自己感覺到。
+
+處置:抄任何既有檔案的做法之前,先確認手上的版本是最新的
+(`git log --oneline -3 -- <path>` 或重讀一次),尤其是「這段看起來解決過
+某個坑」的段落——那種段落最可能已經被改進過。這次也順手補上 journey.yml
+的 `::add-mask::`:原本的寫法會讓兩把密鑰出現在每個 step 的 env 傾印裡,
+而這是公開 repo。
