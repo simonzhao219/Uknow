@@ -78,6 +78,20 @@ if [ -f scripts/test-hooks.py ]; then
   fi
 fi
 
+# 7. CI workflow 設定的語意檢查。既有閘門對 .github/workflows/ 只驗「GitHub
+#    願不願意跑」，設定寫了但不生效（語意錯誤）沒有任何一層會紅——2026-07-25
+#    的 changes 路徑過濾就是這樣漏網的。檢查器自己也表格化驗行為。
+if [ -f scripts/check-workflows.py ]; then
+  if ! python3 scripts/check-workflows.py --self-test; then
+    echo "FAIL: workflow 檢查器自身的表格案例未過（scripts/check-workflows.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-workflows.py; then
+    echo "FAIL: CI workflow 設定檢查未過（scripts/check-workflows.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi
