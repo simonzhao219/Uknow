@@ -32,15 +32,21 @@ Deno.test('讀端點：ETag + 304 條件請求 + 快取標頭', async () => {
     assertEquals(error, null);
     const token = await getUserAccessToken(client, user.email);
 
+    // 帶 Origin 模擬瀏覽器跨網域呼叫（*.uknow.pages.dev 預覽網域）
+    const previewOrigin = 'https://61e6efda.uknow.pages.dev';
     const res1 = await app.request('/api/rewards', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, Origin: previewOrigin },
     });
     assertEquals(res1.status, 200);
     const etag1 = res1.headers.get('ETag');
     assert(etag1, '讀端點應回 ETag');
     assertEquals(res1.headers.get('Cache-Control'), 'private, no-cache');
-    // CORS middleware 會追加 Vary: Origin，只驗證包含 Authorization
-    assert((res1.headers.get('Vary') ?? '').includes('Authorization'));
+    assertEquals(res1.headers.get('Access-Control-Allow-Origin'), previewOrigin);
+    // 快取必須同時按 Authorization 與 Origin 分片——缺 Origin 會讓瀏覽器把
+    // A 預覽網域存的回應（含 A 的 ACAO）拿去回覆 B 網域的請求，CORS 直接失敗
+    const vary1 = (res1.headers.get('Vary') ?? '').toLowerCase();
+    assert(vary1.includes('authorization') && vary1.includes('origin'),
+      `Vary 應含 Authorization 與 Origin，實際：${vary1}`);
     await res1.body?.cancel();
 
     // 同樣資料 → 同樣 ETag（回應必須是決定性的）
@@ -50,12 +56,39 @@ Deno.test('讀端點：ETag + 304 條件請求 + 快取標頭', async () => {
     assertEquals(res2.headers.get('ETag'), etag1);
     await res2.body?.cancel();
 
-    // If-None-Match 命中 → 304 空 body
+    // If-None-Match 命中 → 304 空 body。CORS 標頭必須保留在 304 上——
+    // hono/etag 預設會剝掉 ACAO，瀏覽器 revalidate 時就只能沿用快取裡
+    // （可能是別的預覽網域的）舊 ACAO，整個讀端點被 CORS 擋下
     const res304 = await app.request('/api/rewards', {
-      headers: { Authorization: `Bearer ${token}`, 'If-None-Match': etag1! },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'If-None-Match': etag1!,
+        Origin: previewOrigin,
+      },
     });
     assertEquals(res304.status, 304);
     assertEquals(await res304.text(), '');
+    assertEquals(res304.headers.get('Access-Control-Allow-Origin'), previewOrigin,
+      '304 必須帶本次請求的 ACAO，否則跨預覽網域的快取 revalidation 會被 CORS 擋下');
+    assertEquals(res304.headers.get('Access-Control-Allow-Credentials'), 'true');
+    const vary304 = (res304.headers.get('Vary') ?? '').toLowerCase();
+    assert(vary304.includes('authorization') && vary304.includes('origin'),
+      `304 的 Vary 應含 Authorization 與 Origin，實際：${vary304}`);
+
+    // ACAO 是按「本次請求的 Origin」動態反射的——換一個預覽網域（任意
+    // *.uknow.pages.dev 子網域，含 branch 別名）revalidate 同一個 ETag，
+    // 304 必須帶「新網域」的 ACAO，而不是黏在上一個網域的值
+    const otherPreviewOrigin = 'https://claude-branch-alias.uknow.pages.dev';
+    const res304b = await app.request('/api/rewards', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'If-None-Match': etag1!,
+        Origin: otherPreviewOrigin,
+      },
+    });
+    assertEquals(res304b.status, 304);
+    assertEquals(res304b.headers.get('Access-Control-Allow-Origin'), otherPreviewOrigin,
+      '304 的 ACAO 必須跟著本次請求的 Origin 走，任何預覽子網域都適用');
 
     // 資料變了 → 200 + 新 ETag
     await client.from('reward_transactions').insert({

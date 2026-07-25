@@ -4,10 +4,9 @@
 // ============================================================
 import { Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono/cors';
-import { etag } from 'npm:hono/etag';
+import { etag, RETAINED_304_HEADERS } from 'npm:hono/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encryptPayUni, decryptPayUni, generatePayUniHash } from './crypto.ts';
-import { maskDisplayName } from './mask.ts';
 import {
   twDayOf,
   twMonthKey,
@@ -20,6 +19,11 @@ import type {
   RewardHistoryResponse,
   CurrentMonthReferralsResponse,
   ReferralTreeResponse,
+  NetworkSortMode,
+  NetworkNode,
+  NetworkOverviewResponse,
+  NetworkChildrenResponse,
+  NetworkSearchResponse,
 } from '../_shared/api-contract.ts';
 
 // Supabase 將函數名稱（/api）保留在傳給函數的路徑中，
@@ -83,12 +87,27 @@ const READ_PATHS = [
   '/rewards',
   '/rewards/*',
   '/referrals/my-tree',
+  '/referrals/network/*',
   '/tasks',
   '/tasks/*',
   '/announcements/active',
 ] as const;
+// 304 也必須帶 CORS 標頭：hono/etag 預設只保留 RETAINED_304_HEADERS，
+// 會把 Access-Control-Allow-Origin 從 304 剝掉。瀏覽器 HTTP 快取按 URL
+// 共用（*.uknow.pages.dev 各預覽網域同屬一個 site partition），舊部署存下
+// 的快取條目可能帶著「別的預覽網域」的 ACAO——revalidate 拿到的 304 若沒有
+// 新 ACAO，瀏覽器就沿用快取裡的舊值，CORS 檢查直接失敗（症狀：preview 登入
+// 後所有讀端點被擋，錯誤訊息指著另一個 pages.dev 網域）。304 帶上本次請求
+// 算出的 CORS 標頭後，規範要求瀏覽器用 304 的標頭更新快取條目——等於順手
+// 把中毒的快取治好。
+const CORS_304_HEADERS = [
+  ...RETAINED_304_HEADERS,
+  'access-control-allow-origin',
+  'access-control-allow-credentials',
+  'access-control-expose-headers',
+];
 for (const p of READ_PATHS) {
-  app.use(p, etag());
+  app.use(p, etag({ retainedHeaders: CORS_304_HEADERS }));
   app.use(p, async (c, next) => {
     await next();
     if (c.req.method === 'GET') {
@@ -2200,10 +2219,10 @@ app.get('/rewards/history', async (c) => {
     requestedAt:         r.type === 'withdrawal' ? r.created_at : undefined,
     generation:          r.generation ?? undefined,
     balance:             r.balance_after,
-    // 姓名遮罩與推薦管理一致（./mask.ts，個資機敏單一真相）：被推薦人的世代深度
-    // ＝該筆 generation（第 1 代直推全顯、2/3 代遮罩）；其上線深度＝generation − 1。
-    refereeName:         r.referee_name ? maskDisplayName(r.referee_name, r.generation ?? 1) : undefined,
-    refereeReferrerName: r.referee_referrer_name ? maskDisplayName(r.referee_referrer_name, (r.generation ?? 1) - 1) : undefined,
+    // 姓名遮罩與推薦管理共用同一支 maskNameByGen（個資機敏單一真相）：被推薦人的
+    // 世代深度＝該筆 generation（第 1 代直推全顯、2/3 代遮罩）；其上線深度＝generation − 1。
+    refereeName:         r.referee_name ? maskNameByGen(r.referee_name, r.generation ?? 1) : undefined,
+    refereeReferrerName: r.referee_referrer_name ? maskNameByGen(r.referee_referrer_name, (r.generation ?? 1) - 1) : undefined,
   }));
 
   return c.json({
@@ -2213,123 +2232,356 @@ app.get('/rewards/history', async (c) => {
 });
 
 // ============================================================
+// 推薦網絡：共用機制（my-tree 與 /referrals/network/* 同一份真相）
+//
+// 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
+// active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
+// ============================================================
+const RENEWAL_DAYS = 30;
+function deriveNodeStatus(acct: any, suspendedAt: string | null) {
+  if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
+  if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
+  const dl = acct?.end_date
+    ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
+    : null;
+  if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) return { status: 'expiring' as const, daysToExpiry: dl };
+  return { status: 'active' as const, daysToExpiry: dl };
+}
+
+// 漢字偵測範圍：U+3400–U+9FFF（統一表意文字＋擴充A）＋ U+F900–U+FAFF（相容表意文字）。
+// 必須用 \u 跳脫寫死：字面「豈」(U+F900) 曾被編輯器 NFC 正規化成同形的 U+8C48，
+// 範圍尾端因此悄悄涵蓋全部 surrogate——單一 emoji 姓名會被誤判為 CJK、
+// 走進 '○'.repeat(-1) 直接把端點打成 500（對抗審查抓到的位元組級事故）。
+const HAN_RANGE = '\\u3400-\\u9FFF\\uF900-\\uFAFF';
+const HAS_HAN = new RegExp(`[${HAN_RANGE}]`);
+const HAN_LEAD = new RegExp(`^[${HAN_RANGE}]`);
+
+// 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
+// 英數保留首末、中間固定 •••（不洩漏長度）。
+function maskNameByGen(raw: string | null | undefined, gen: number): string {
+  const name = (raw ?? '').trim();
+  if (gen <= 1 || name.length <= 1) return name;
+  const chars = [...name];
+  const hasHan = HAS_HAN.test(name);
+  if (hasHan) {
+    return chars.length === 2
+      ? chars[0] + '○'
+      : chars[0] + '○'.repeat(chars.length - 2) + chars[chars.length - 1];
+  }
+  return chars.length === 2 ? chars[0] + '•' : chars[0] + '•••' + chars[chars.length - 1];
+}
+
+// .in() 分批：PostgREST 的 .in() 走 URL query，上千個 UUID 會爆 URL 長度上限，
+// 一律切塊撈再合併（也順手修掉 my-tree 原本的同一潛在問題）。查詢失敗擲出，
+// 由各 handler 統一回 500——先前「錯誤靜默轉空樹」會讓使用者誤以為沒有下線。
+const IN_CHUNK = 150;
+async function selectInChunks(
+  client: any, table: string, columns: string, col: string, ids: string[],
+): Promise<any[]> {
+  const out: any[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const { data, error } = await client.from(table).select(columns).in(col, ids.slice(i, i + IN_CHUNK));
+    if (error) throw new Error(`${table} 查詢失敗: ${error.message}`);
+    out.push(...(data ?? []));
+  }
+  return out;
+}
+
+// 觀看者的 3 代子樹（edges + enrichment）一次載齊。
+// edges 三條索引查詢極便宜；enrichment 目前一律全撈（attention 需要全體狀態、
+// search 需要全體真名），日後若 profiling 顯示 children 端點太重再細分。
+async function loadNetwork(client: any, viewerId: string) {
+  const { data: gen1Raw, error: gen1Err } = await client
+    .from('referral_edges')
+    .select('referee_user_id, referred_at')
+    .eq('referrer_user_id', viewerId);
+  if (gen1Err) throw new Error(`referral_edges 查詢失敗: ${gen1Err.message}`);
+  const gen1Edges = gen1Raw ?? [];
+  const gen1Ids = gen1Edges.map((e: any) => e.referee_user_id);
+
+  const gen2Edges = gen1Ids.length
+    ? await selectInChunks(client, 'referral_edges',
+        'referee_user_id, referrer_user_id, referred_at', 'referrer_user_id', gen1Ids)
+    : [];
+  const gen2Ids = gen2Edges.map((e: any) => e.referee_user_id);
+
+  const gen3Edges = gen2Ids.length
+    ? await selectInChunks(client, 'referral_edges',
+        'referee_user_id, referrer_user_id, referred_at', 'referrer_user_id', gen2Ids)
+    : [];
+  const gen3Ids = gen3Edges.map((e: any) => e.referee_user_id);
+
+  const allIds = [...new Set([...gen1Ids, ...gen2Ids, ...gen3Ids])];
+
+  // referrer -> 直接下線（一代的上線是觀看者本人）；referee -> 上線（搜尋路徑用）
+  const childrenOf: Record<string, { id: string; at: string }[]> = {};
+  const parentOf = new Map<string, string>();
+  const genOf = new Map<string, number>();
+  const joinedAtOf = new Map<string, string>();
+  const addEdge = (referrer: string, referee: string, at: string, gen: number) => {
+    (childrenOf[referrer] ??= []).push({ id: referee, at });
+    parentOf.set(referee, referrer);
+    genOf.set(referee, gen);
+    joinedAtOf.set(referee, at);
+  };
+  gen1Edges.forEach((e: any) => addEdge(viewerId, e.referee_user_id, e.referred_at, 1));
+  gen2Edges.forEach((e: any) => addEdge(e.referrer_user_id, e.referee_user_id, e.referred_at, 2));
+  gen3Edges.forEach((e: any) => addEdge(e.referrer_user_id, e.referee_user_id, e.referred_at, 3));
+
+  const [profiles, listings, accounts] = allIds.length
+    ? await Promise.all([
+        selectInChunks(client, 'profiles', 'id, name, suspended_at', 'id', allIds),
+        selectInChunks(client, 'listings', 'user_id, id', 'user_id', allIds),
+        selectInChunks(client, 'user_account_status', 'user_id, status, end_date', 'user_id', allIds),
+      ])
+    : [[], [], []];
+  const profMap:    Record<string, any> = Object.fromEntries(profiles.map((p: any) => [p.id, p]));
+  const listingMap: Record<string, any> = Object.fromEntries(listings.map((l: any) => [l.user_id, l]));
+  const acctMap:    Record<string, any> = Object.fromEntries(accounts.map((a: any) => [a.user_id, a]));
+
+  // 「更新順序」排序鍵：自身與可見子樹（封頂 3 代）最新加入時間。
+  // 由深到淺 bottom-up 計算，天生免疫資料異常造成的環。
+  const subtreeMs = new Map<string, number>();
+  const msOf = (uid: string) => Date.parse(joinedAtOf.get(uid) ?? '') || 0;
+  for (const ids of [gen3Ids, gen2Ids, gen1Ids]) {
+    for (const uid of ids) {
+      let m = msOf(uid);
+      for (const k of childrenOf[uid] ?? []) m = Math.max(m, subtreeMs.get(k.id) ?? 0);
+      subtreeMs.set(uid, m);
+    }
+  }
+
+  return {
+    gen1Ids, gen2Ids, gen3Ids, allIds,
+    childrenOf, parentOf, genOf, joinedAtOf, subtreeMs,
+    profMap, listingMap, acctMap,
+    summary: {
+      firstGenCount:  gen1Ids.length,
+      secondGenCount: gen2Ids.length,
+      thirdGenCount:  gen3Ids.length,
+      totalReferrals: gen1Ids.length + gen2Ids.length + gen3Ids.length,
+    },
+  };
+}
+type Network = Awaited<ReturnType<typeof loadNetwork>>;
+
+// 扁平節點（/referrals/network/* 的 payload；children 由前端懶載入組裝）
+function buildFlatNode(net: Network, uid: string): NetworkNode {
+  const gen = net.genOf.get(uid) ?? 0;
+  const { status, daysToExpiry } = deriveNodeStatus(net.acctMap[uid], net.profMap[uid]?.suspended_at ?? null);
+  const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
+  return {
+    userId:       uid,
+    name:         maskNameByGen(net.profMap[uid]?.name, gen),
+    generation:   gen,
+    status,
+    daysToExpiry,
+    endDate:      net.acctMap[uid]?.end_date ?? null,
+    joinedAt:     net.joinedAtOf.get(uid) ?? '',
+    listingId:    net.listingMap[uid]?.id ?? null,
+    childCount:   kids.length,
+    subtreeLatestJoinedAt: new Date(net.subtreeMs.get(uid) ?? 0).toISOString(),
+  };
+}
+
+// 排序：updated = 子樹最新加入；name = 真名（伺服器才有）+ Intl.Collator zh-Hant。
+// 混排規則（與需求方核定）：A→Z（筆畫少→多）英文組在前；Z→A 為其完全反轉
+// （中文組自然在前）——降冪一律用「升冪後反轉」實作，兩方向永不漂移。
+const NETWORK_SORT_MODES = ['updated_desc', 'updated_asc', 'name_asc', 'name_desc'] as const;
+const zhCollator = new Intl.Collator('zh-Hant');
+function parseSortMode(raw: string | undefined): NetworkSortMode {
+  return (NETWORK_SORT_MODES as readonly string[]).includes(raw ?? '')
+    ? (raw as NetworkSortMode)
+    : 'updated_desc';
+}
+function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
+  const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
+  const tie = (a: string, b: string) => {
+    const d = (Date.parse(net.joinedAtOf.get(b) ?? '') || 0) - (Date.parse(net.joinedAtOf.get(a) ?? '') || 0);
+    return d !== 0 ? d : (a < b ? -1 : a > b ? 1 : 0);
+  };
+  const nameAsc = (a: string, b: string) => {
+    const ga = HAN_LEAD.test(realName(a)) ? 1 : 0;
+    const gb = HAN_LEAD.test(realName(b)) ? 1 : 0;
+    return (ga - gb) || zhCollator.compare(realName(a), realName(b)) || tie(a, b);
+  };
+  const updatedAsc = (a: string, b: string) =>
+    ((net.subtreeMs.get(a) ?? 0) - (net.subtreeMs.get(b) ?? 0)) || tie(a, b);
+  const sorted = [...ids].sort(mode.startsWith('name') ? nameAsc : updatedAsc);
+  if (mode === 'updated_desc' || mode === 'name_desc') sorted.reverse();
+  return sorted;
+}
+
+const ATTENTION_LIMIT = 6;
+const SEARCH_LIMIT = 50;
+
+async function myReferralCode(client: any, userId: string): Promise<string> {
+  const { data } = await client.from('referral_codes')
+    .select('code').eq('user_id', userId).eq('status', 'active').maybeSingle();
+  return data?.code ?? '';
+}
+
+// ============================================================
 // GET /referrals/my-tree
-// ReferralManagement：推薦樹（3代）
+// ReferralManagement：推薦樹（3代，巢狀）。Tier B 過渡期保留；
+// 前端切換到 /referrals/network/* 後退役。
 // ============================================================
 app.get('/referrals/my-tree', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const client = sb();
+  try {
+    const client = sb();
+    const net = await loadNetwork(client, user.id);
+    const code = await myReferralCode(client, user.id);
 
-  // -- Gen 1 --
-  const { data: gen1Edges } = await client
-    .from('referral_edges')
-    .select('referee_user_id, referred_at')
-    .eq('referrer_user_id', user.id);
+    const buildNested = (uid: string, gen: number, at: string): any => {
+      const { status, daysToExpiry } = deriveNodeStatus(net.acctMap[uid], net.profMap[uid]?.suspended_at ?? null);
+      const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
+      return {
+        userId:       uid,
+        name:         maskNameByGen(net.profMap[uid]?.name, gen),
+        generation:   gen,
+        status,
+        daysToExpiry,
+        endDate:      net.acctMap[uid]?.end_date ?? null,
+        joinedAt:     at,
+        listingId:    net.listingMap[uid]?.id ?? null,
+        childCount:   kids.length,
+        children:     kids.map((k) => buildNested(k.id, gen + 1, k.at)),
+      };
+    };
+    const roots = (net.childrenOf[user.id] ?? []).map((k) => buildNested(k.id, 1, k.at));
 
-  const gen1Ids = (gen1Edges ?? []).map((e: any) => e.referee_user_id);
-
-  // -- Gen 2 --
-  const gen2EdgesRes = gen1Ids.length
-    ? await client.from('referral_edges')
-        .select('referee_user_id, referrer_user_id, referred_at')
-        .in('referrer_user_id', gen1Ids)
-    : { data: [] };
-  const gen2Edges = gen2EdgesRes.data ?? [];
-  const gen2Ids   = gen2Edges.map((e: any) => e.referee_user_id);
-
-  // -- Gen 3 --
-  const gen3EdgesRes = gen2Ids.length
-    ? await client.from('referral_edges')
-        .select('referee_user_id, referrer_user_id, referred_at')
-        .in('referrer_user_id', gen2Ids)
-    : { data: [] };
-  const gen3Edges = gen3EdgesRes.data ?? [];
-  const gen3Ids   = gen3Edges.map((e: any) => e.referee_user_id);
-
-  const allIds = [...new Set([...gen1Ids, ...gen2Ids, ...gen3Ids])];
-
-  // -- Batch fetch enrichment data + my referral code --
-  const summaryOf = () => ({
-    firstGenCount:  gen1Ids.length,
-    secondGenCount: gen2Ids.length,
-    thirdGenCount:  gen3Ids.length,
-    totalReferrals: gen1Ids.length + gen2Ids.length + gen3Ids.length,
-  });
-
-  const emptyResult = async () => {
-    const { data: mc } = await client.from('referral_codes')
-      .select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle();
     return c.json({
       success: true,
-      data: { userReferralCode: mc?.code ?? '', roots: [], summary: summaryOf() },
+      data: { userReferralCode: code, roots, summary: net.summary },
     } satisfies ReferralTreeResponse);
-  };
+  } catch (err) {
+    console.error('[referrals/my-tree] 失敗:', err);
+    return c.json({ error: { message: '載入推薦網絡失敗' } }, 500);
+  }
+});
 
-  if (!allIds.length) return emptyResult();
+// ============================================================
+// GET /referrals/network/overview?sort=
+// 懶載入入口：推薦碼 + 三代摘要 + 一代節點（排序後）+ 需要關注清單。
+// ============================================================
+app.get('/referrals/network/overview', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  const sort = parseSortMode(c.req.query('sort'));
 
-  const [
-    { data: profiles },
-    { data: listings },
-    { data: accounts },
-    { data: myCodeRow },
-  ] = await Promise.all([
-    client.from('profiles').select('id, name, suspended_at').in('id', allIds),
-    client.from('listings').select('user_id, id').in('user_id', allIds),
-    client.from('user_account_status').select('user_id, status, end_date').in('user_id', allIds),
-    client.from('referral_codes').select('code').eq('user_id', user.id).eq('status', 'active').maybeSingle(),
-  ]);
+  try {
+    const client = sb();
+    const net = await loadNetwork(client, user.id);
+    const code = await myReferralCode(client, user.id);
 
-  const profMap:    Record<string, any> = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p]));
-  const listingMap: Record<string, any> = Object.fromEntries((listings ?? []).map((l: any) => [l.user_id, l]));
-  const acctMap:    Record<string, any> = Object.fromEntries((accounts ?? []).map((a: any) => [a.user_id, a]));
+    const roots = sortNodeIds(net, net.gen1Ids, sort).map((uid) => buildFlatNode(net, uid));
 
-  // referrer_user_id -> 直接下線（referee + 加入時間）。一代的上線是 user 本人。
-  const childrenOf: Record<string, { id: string; at: string }[]> = {};
-  const pushChild = (referrer: string, referee: string, at: string) =>
-    (childrenOf[referrer] ??= []).push({ id: referee, at });
-  (gen1Edges ?? []).forEach((e: any) => pushChild(user.id, e.referee_user_id, e.referred_at));
-  gen2Edges.forEach((e: any) => pushChild(e.referrer_user_id, e.referee_user_id, e.referred_at));
-  gen3Edges.forEach((e: any) => pushChild(e.referrer_user_id, e.referee_user_id, e.referred_at));
+    // 需要關注：expiring（依剩餘天數）→ expired（依最近到期）→ suspended。
+    const rank: Record<string, number> = { expiring: 0, expired: 1, suspended: 2 };
+    const attentionAll = net.allIds
+      .map((uid) => buildFlatNode(net, uid))
+      .filter((n) => n.status !== 'active')
+      .sort((a, b) =>
+        (rank[a.status] - rank[b.status]) ||
+        ((a.daysToExpiry ?? Infinity) - (b.daysToExpiry ?? Infinity)) ||
+        ((Date.parse(b.endDate ?? '') || 0) - (Date.parse(a.endDate ?? '') || 0)) ||
+        (a.userId < b.userId ? -1 : 1));
 
-  // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
-  // active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
-  const RENEWAL_DAYS = 30;
-  const deriveStatus = (acct: any, suspendedAt: string | null) => {
-    if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
-    if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
-    const dl = acct?.end_date
-      ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
-      : null;
-    if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) return { status: 'expiring' as const, daysToExpiry: dl };
-    return { status: 'active' as const, daysToExpiry: dl };
-  };
+    return c.json({
+      success: true,
+      data: {
+        userReferralCode: code,
+        sort,
+        roots,
+        attention: { total: attentionAll.length, items: attentionAll.slice(0, ATTENTION_LIMIT) },
+        summary: net.summary,
+      },
+    } satisfies NetworkOverviewResponse);
+  } catch (err) {
+    console.error('[referrals/network/overview] 失敗:', err);
+    return c.json({ error: { message: '載入推薦網絡失敗' } }, 500);
+  }
+});
 
+// ============================================================
+// GET /referrals/network/children?parentId=&sort=
+// 懶載入展開：parentId 的直接下線。授權：parentId 必在觀看者 3 代子樹內
+// （或為觀看者本人）；gen3 節點的下線超出可見範圍 → 空陣列。
+// ============================================================
+app.get('/referrals/network/children', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  const parentId = (c.req.query('parentId') ?? '').trim();
+  if (!parentId) return c.json({ error: { message: '缺少 parentId' } }, 400);
+  const sort = parseSortMode(c.req.query('sort'));
 
-  const buildNode = (uid: string, gen: number, at: string): any => {
-    const { status, daysToExpiry } = deriveStatus(acctMap[uid], profMap[uid]?.suspended_at ?? null);
-    const kids = gen < 3 ? (childrenOf[uid] ?? []) : [];
-    return {
-      userId:       uid,
-      name:         maskDisplayName(profMap[uid]?.name, gen),
-      generation:   gen,
-      status,
-      daysToExpiry,
-      endDate:      acctMap[uid]?.end_date ?? null,
-      joinedAt:     at,
-      listingId:    listingMap[uid]?.id ?? null,
-      childCount:   kids.length,
-      children:     kids.map((k) => buildNode(k.id, gen + 1, k.at)),
+  try {
+    const net = await loadNetwork(sb(), user.id);
+
+    const isSelf = parentId === user.id;
+    const parentGen = isSelf ? 0 : net.genOf.get(parentId);
+    if (parentGen === undefined) {
+      return c.json({ error: { message: '無權查看此節點' } }, 403);
+    }
+
+    const childIds = parentGen >= 3 ? [] : (net.childrenOf[parentId] ?? []).map((k) => k.id);
+    const nodes = sortNodeIds(net, childIds, sort).map((uid) => buildFlatNode(net, uid));
+
+    return c.json({
+      success: true,
+      data: { parentId, sort, nodes },
+    } satisfies NetworkChildrenResponse);
+  } catch (err) {
+    console.error('[referrals/network/children] 失敗:', err);
+    return c.json({ error: { message: '載入下線失敗' } }, 500);
+  }
+});
+
+// ============================================================
+// GET /referrals/network/search?q=&sort=
+// 伺服器以「真名」比對（伺服器才有未遮罩名），回傳遮罩後顯示名 +
+// 祖先路徑（一代 → 命中者本身），前端據此自動展開。深代下線因此搜得到，
+// 又不洩漏真名。
+// ============================================================
+app.get('/referrals/network/search', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  const q = (c.req.query('q') ?? '').trim();
+  if (!q) return c.json({ error: { message: '缺少搜尋字串' } }, 400);
+  const sort = parseSortMode(c.req.query('sort'));
+
+  try {
+    const net = await loadNetwork(sb(), user.id);
+
+    const qLower = q.toLowerCase();
+    const hitIds = net.allIds.filter((uid) =>
+      ((net.profMap[uid]?.name ?? '') as string).toLowerCase().includes(qLower));
+
+    const pathTo = (uid: string): string[] => {
+      const path: string[] = [];
+      let cur: string | undefined = uid;
+      for (let hop = 0; cur && cur !== user.id && hop < 4; hop++) {
+        path.push(cur);
+        cur = net.parentOf.get(cur);
+      }
+      return path.reverse();
     };
-  };
 
-  const roots = (childrenOf[user.id] ?? []).map((k) => buildNode(k.id, 1, k.at));
+    const matches = sortNodeIds(net, hitIds, sort)
+      .slice(0, SEARCH_LIMIT)
+      .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
 
-  return c.json({
-    success: true,
-    data: { userReferralCode: myCodeRow?.code ?? '', roots, summary: summaryOf() },
-  } satisfies ReferralTreeResponse);
+    return c.json({
+      success: true,
+      data: { query: q, sort, total: hitIds.length, matches },
+    } satisfies NetworkSearchResponse);
+  } catch (err) {
+    console.error('[referrals/network/search] 失敗:', err);
+    return c.json({ error: { message: '搜尋失敗' } }, 500);
+  }
 });
 
 // ============================================================
