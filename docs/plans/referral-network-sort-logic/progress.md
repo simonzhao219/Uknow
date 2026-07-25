@@ -14,7 +14,7 @@
 | 1 | 排序鍵 → 自身 joinedAt ＋ `tie()` 改升冪 ＋ 種子加開(多子節點/同名組) | ✅ 綠 | `4027c2f` | `d1601d0` |
 | 2 | 伺服器預設 → `updated_asc`,改讀 `@contract` 的 `DEFAULT_NETWORK_SORT` | ✅ 綠 | `372662d` | `09044fe` |
 | 3 | search 不再靜默截斷:`offset`/`limit` 分頁,`total` = 全部命中數 | ✅ 綠 | `19b9e55` | `a05e8b6` |
-| 4+5 | 前端預設 ＋ `SORT_OPTIONS` 重排 ＋ e2e mock ＋ 指示點基準 ＋ A1 可見層 ＋ `aria-label`(**合併,見 B-3**) | ✅ 綠 | `c6d473f` / `592bb9b` | `PENDING` |
+| 4+5 | 前端預設 ＋ `SORT_OPTIONS` 重排 ＋ e2e mock ＋ 指示點基準 ＋ A1 可見層 ＋ `aria-label`(**合併,見 B-3**) | ✅ 綠 | `c6d473f` / `592bb9b` | `5dca27a` |
 | 6 | search 結果 UI:「已顯示 X / Y 筆」＋ 載入更多 | ⬜ 未開始 | | |
 | 7 | 切排序載入回饋(`isValidating` 下傳並呈現) | ⬜ 未開始 | | |
 | 8 | 型別收斂 `@contract` re-export ＋ 移除死欄位(紅燈 = 執行期斷言) | ⬜ 未開始 | | |
