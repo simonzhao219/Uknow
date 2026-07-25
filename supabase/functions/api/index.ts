@@ -15,6 +15,7 @@ import {
   twEndOfDayInstant,
   twMonthKey,
 } from './tw-dates.ts';
+import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
   NetworkChildrenResponse,
@@ -2551,7 +2552,7 @@ const zhCollator = new Intl.Collator('zh-Hant');
 function parseSortMode(raw: string | undefined): NetworkSortMode {
   return (NETWORK_SORT_MODES as readonly string[]).includes(raw ?? '')
     ? (raw as NetworkSortMode)
-    : 'updated_desc';
+    : DEFAULT_NETWORK_SORT;
 }
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
   const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();

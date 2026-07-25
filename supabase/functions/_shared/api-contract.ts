@@ -305,7 +305,7 @@ export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
  * 的判斷式），改預設時漏掉任何一處都不會有測試或 typecheck 報錯——晶片那處
  * 尤其危險，漏改會讓亮點語意完全反轉且純視覺不報錯。
  */
-export const DEFAULT_NETWORK_SORT: NetworkSortMode = 'updated_desc';
+export const DEFAULT_NETWORK_SORT: NetworkSortMode = 'updated_asc';
 
 export const NetworkNodeSchema = obj({
   ...ReferralNodeFields,
