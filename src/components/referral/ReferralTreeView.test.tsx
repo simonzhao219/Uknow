@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ReferralTreeView } from './ReferralTreeView';
+import { DEFAULT_NETWORK_SORT } from '../../utils/referralNetwork';
 import type { NetworkNode, NetworkOverview } from '../../utils/referralNetwork';
 
 afterEach(cleanup);
@@ -54,7 +55,6 @@ function makeNode(over: Partial<NetworkNode> = {}): NetworkNode {
     joinedAt: '2026-07-01T00:00:00Z',
     listingId: null,
     childCount: 0,
-    subtreeLatestJoinedAt: '2026-07-01T00:00:00Z',
     ...over,
   };
 }
@@ -74,7 +74,10 @@ function renderTree(
   overview: NetworkOverview,
   opts: {
     loadChildren?: (parentId: string) => Promise<NetworkNode[]>;
-    searchNetwork?: (q: string) => Promise<{ node: NetworkNode; ancestorPath: string[] }[]>;
+    searchNetwork?: (
+      q: string,
+      offset: number,
+    ) => Promise<{ matches: { node: NetworkNode; ancestorPath: string[] }[]; total: number }>;
     onSortChange?: (m: any) => void;
   } = {},
 ) {
@@ -85,7 +88,7 @@ function renderTree(
         sort={overview.sort}
         onSortChange={opts.onSortChange ?? (() => {})}
         loadChildren={opts.loadChildren ?? (async () => [])}
-        searchNetwork={opts.searchNetwork ?? (async () => [])}
+        searchNetwork={opts.searchNetwork ?? (async () => ({ matches: [], total: 0 }))}
       />
     </MemoryRouter>,
   );
@@ -165,7 +168,7 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     // 原生 select 正式退役：選單面板改由 app 渲染，風格才管得到
     expect(document.querySelector('select')).toBeNull();
 
-    const trigger = screen.getByRole('button', { name: '排序方式' });
+    const trigger = screen.getByRole('button', { name: /排序方式/ });
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
 
     // sm+ 短標籤、手機 icon-only（隱藏標籤）；grid 疊放承載固定寬
@@ -185,8 +188,8 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const label = screen.getByTestId('sort-label');
     const stacked = Array.from(label.querySelectorAll('span'));
     expect(stacked.map((s) => s.textContent)).toEqual([
-      '最新加入',
       '最舊加入',
+      '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
     ]);
@@ -196,10 +199,10 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     }
 
     // 當前選項可見；其餘三個以 invisible 佔位、aria-hidden 退出 a11y 樹
-    const [newest, oldest, nameAsc, nameDesc] = stacked;
+    const [oldest, newest, nameAsc, nameDesc] = stacked;
     expect(nameDesc.className).not.toContain('invisible');
     expect(nameDesc.getAttribute('aria-hidden')).toBeNull();
-    for (const ghost of [newest, oldest, nameAsc]) {
+    for (const ghost of [oldest, newest, nameAsc]) {
       expect(ghost.className).toContain('invisible');
       expect(ghost.getAttribute('aria-hidden')).toBe('true');
     }
@@ -209,12 +212,12 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     const onSortChange = vi.fn();
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }), { onSortChange });
 
-    fireEvent.keyDown(screen.getByRole('button', { name: '排序方式' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: /排序方式/ }), { key: 'Enter' });
 
     const items = await screen.findAllByRole('menuitemradio');
     expect(items.map((i) => i.textContent)).toEqual([
-      '最新加入',
       '最舊加入',
+      '最新加入',
       '姓名 A→Z',
       '姓名 Z→A',
     ]);
@@ -230,8 +233,32 @@ describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
     expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
     cleanup();
+
+    // 「最新加入」在新預設下已是非預設 → 必須亮點。判斷基準若沒跟著
+    // DEFAULT_NETWORK_SORT 走，亮點語意會完全反轉，而且純視覺不會報錯。
     renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }));
+    expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
+    cleanup();
+
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
     expect(screen.queryByTestId('sort-active-dot')).toBeNull();
+  });
+
+  it('預設排序時晶片顯示「最舊加入」（驗收 A1，sm+ 可見層）', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
+    const label = screen.getByTestId('sort-label');
+    const visible = Array.from(label.querySelectorAll('span')).filter(
+      (s) => !s.className.includes('invisible'),
+    );
+    expect(visible.map((s) => s.textContent)).toEqual(['最舊加入']);
+  });
+
+  it('觸發器的可及名稱含目前排序值（手機 icon-only 時的唯一狀態線索）', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_asc' }));
+    expect(screen.getByRole('button', { name: '排序方式：姓名 A→Z' })).toBeTruthy();
+    cleanup();
+    renderTree(makeOverview({ roots: [makeNode()], sort: DEFAULT_NETWORK_SORT }));
+    expect(screen.getByRole('button', { name: '排序方式：最舊加入' })).toBeTruthy();
   });
 });
 
@@ -239,12 +266,15 @@ describe('伺服器搜尋（debounce）', () => {
   it('輸入後 300ms 才呼叫 searchNetwork，渲染遮罩結果', async () => {
     vi.useFakeTimers();
     try {
-      const searchNetwork = vi.fn().mockResolvedValue([
-        {
-          node: makeNode({ userId: 's1', name: '陳○華', generation: 2 }),
-          ancestorPath: ['g1', 's1'],
-        },
-      ]);
+      const searchNetwork = vi.fn().mockResolvedValue({
+        matches: [
+          {
+            node: makeNode({ userId: 's1', name: '陳○華', generation: 2 }),
+            ancestorPath: ['g1', 's1'],
+          },
+        ],
+        total: 1,
+      });
       renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }), { searchNetwork });
 
       fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '小' } });
@@ -253,7 +283,7 @@ describe('伺服器搜尋（debounce）', () => {
       await act(async () => {
         vi.advanceTimersByTime(300);
       });
-      expect(searchNetwork).toHaveBeenCalledWith('小');
+      expect(searchNetwork).toHaveBeenCalledWith('小', 0);
 
       await act(async () => {
         await Promise.resolve();
@@ -262,6 +292,59 @@ describe('伺服器搜尋（debounce）', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // 「符合條件的都必須搜得到」——需求方訂下的原則。伺服器分頁（Phase 3）
+  // 若沒有對應的 UI，使用者仍只看得到第一頁且毫不知情，等於白做。
+  it('命中多於一頁：顯示「已顯示 X / Y」與加載更多，載完後按鈕消失', async () => {
+    const mk = (id: string) => ({
+      node: makeNode({ userId: id, name: `林○${id}`, generation: 2 }),
+      ancestorPath: ['g1', id],
+    });
+    const searchNetwork = vi
+      .fn()
+      .mockResolvedValueOnce({ matches: [mk('s1'), mk('s2')], total: 3 })
+      .mockResolvedValueOnce({ matches: [mk('s3')], total: 3 });
+
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }), { searchNetwork });
+    fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '林' } });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    expect(searchNetwork).toHaveBeenCalledWith('林', 0);
+    expect(screen.getByText('已顯示 2 / 3 筆記錄')).toBeTruthy();
+
+    // 加載更多：以「已取回筆數」為 offset 續接，不是重打第一頁
+    fireEvent.click(screen.getByRole('button', { name: '加載更多' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(searchNetwork).toHaveBeenCalledWith('林', 2);
+
+    // 三筆到齊 → 計數更新、按鈕消失（沒有「還有更多」的假象）
+    expect(screen.getByText('已顯示 3 / 3 筆記錄')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '加載更多' })).toBeNull();
+    expect(screen.getByText('林○s3')).toBeTruthy();
+  });
+
+  it('命中僅一頁：仍顯示總數，但不出現加載更多', async () => {
+    const searchNetwork = vi.fn().mockResolvedValue({
+      matches: [
+        { node: makeNode({ userId: 's1', name: '陳○華', generation: 2 }), ancestorPath: ['s1'] },
+      ],
+      total: 1,
+    });
+    renderTree(makeOverview({ roots: [makeNode()] }), { searchNetwork });
+    fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '陳' } });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    expect(screen.getByText('已顯示 1 / 1 筆記錄')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '加載更多' })).toBeNull();
   });
 });
 
@@ -282,6 +365,47 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
 
     expect(avatarBg('甲')).toBe(avatarBg('乙'));
     expect(avatarBg('丙')).not.toBe(avatarBg('甲'));
+  });
+});
+
+// 切排序時：晶片文字立刻變、已展開分支立刻收合，但清單原地維持舊順序直到
+// 回應才默默重排。改預設後「老使用者上線第一件事就是切回最新加入」會大量
+// 觸發這段無回饋空窗（LINE 內建瀏覽器更慢）。
+describe('重新驗證中的載入回饋（切排序不再是無回饋空窗）', () => {
+  it('isValidating 期間樹降透明度並標記 aria-busy；回應後恢復', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({ roots: [makeNode()] })}
+          sort={DEFAULT_NETWORK_SORT}
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          isValidating
+        />
+      </MemoryRouter>,
+    );
+
+    const tree = screen.getByRole('tree', { name: '我的推薦網絡' });
+    expect(tree.getAttribute('aria-busy')).toBe('true');
+    expect(tree.className).toContain('opacity-');
+
+    rerender(
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({ roots: [makeNode()] })}
+          sort={DEFAULT_NETWORK_SORT}
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          isValidating={false}
+        />
+      </MemoryRouter>,
+    );
+
+    const settled = screen.getByRole('tree', { name: '我的推薦網絡' });
+    expect(settled.getAttribute('aria-busy')).toBeNull();
+    expect(settled.className).not.toContain('opacity-');
   });
 });
 

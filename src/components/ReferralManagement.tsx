@@ -13,8 +13,17 @@ export function ReferralManagement() {
   const handleBack = useBackNavigation();
   usePageRestoration();
 
-  const { overview, loading, error, refetch, sort, setSort, loadChildren, searchNetwork } =
-    useReferralData();
+  const {
+    overview,
+    loading,
+    isValidating,
+    error,
+    refetch,
+    sort,
+    setSort,
+    loadChildren,
+    searchNetwork,
+  } = useReferralData();
   const { showToast } = useNotification();
 
   if (loading) {
@@ -130,6 +139,7 @@ export function ReferralManagement() {
             onSortChange={setSort}
             loadChildren={loadChildren}
             searchNetwork={searchNetwork}
+            isValidating={isValidating}
           />
         </CardContent>
       </Card>

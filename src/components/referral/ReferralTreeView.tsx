@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronRight,
@@ -19,10 +19,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
 import {
+  DEFAULT_NETWORK_SORT,
   SORT_OPTIONS,
   parseSortMode,
   nodeDaysLeft,
@@ -378,13 +380,20 @@ interface ReferralTreeViewProps {
   sort: NetworkSortMode;
   onSortChange: (mode: NetworkSortMode) => void;
   loadChildren: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+  searchNetwork: (
+    q: string,
+    offset: number,
+  ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
+  /** 背景重新請求中（切排序、focus revalidate）——清單仍是舊資料，需回饋 */
+  isValidating?: boolean;
 }
 
 type SearchState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'done'; matches: NetworkSearchMatch[] }
+  // total = 全部命中數（不受分頁影響）；matches 是「目前已取回」的累積。
+  // 兩者都要,使用者才知道還有多少沒看到——搜尋不得靜默截斷。
+  | { status: 'done'; matches: NetworkSearchMatch[]; total: number; loadingMore: boolean }
   | { status: 'error' };
 
 export function ReferralTreeView({
@@ -393,6 +402,7 @@ export function ReferralTreeView({
   onSortChange,
   loadChildren,
   searchNetwork,
+  isValidating = false,
 }: ReferralTreeViewProps) {
   const [selected, setSelected] = useState<NetworkNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -417,9 +427,9 @@ export function ReferralTreeView({
     let cancelled = false;
     setSearch({ status: 'loading' });
     const t = setTimeout(() => {
-      searchNetwork(q)
-        .then((matches) => {
-          if (!cancelled) setSearch({ status: 'done', matches });
+      searchNetwork(q, 0)
+        .then(({ matches, total }) => {
+          if (!cancelled) setSearch({ status: 'done', matches, total, loadingMore: false });
         })
         .catch(() => {
           if (!cancelled) setSearch({ status: 'error' });
@@ -430,6 +440,25 @@ export function ReferralTreeView({
       clearTimeout(t);
     };
   }, [query, searchNetwork, sort]);
+
+  // 加載更多：offset = 已取回筆數，續接而非重打第一頁。
+  // 失敗不清空已顯示的結果——只把 loadingMore 收掉，使用者可再按一次。
+  const loadMoreMatches = useCallback(() => {
+    if (search.status !== 'done' || search.loadingMore) return;
+    const offset = search.matches.length;
+    setSearch({ ...search, loadingMore: true });
+    searchNetwork(query.trim(), offset)
+      .then(({ matches, total }) => {
+        setSearch((prev) =>
+          prev.status === 'done'
+            ? { status: 'done', matches: [...prev.matches, ...matches], total, loadingMore: false }
+            : prev,
+        );
+      })
+      .catch(() => {
+        setSearch((prev) => (prev.status === 'done' ? { ...prev, loadingMore: false } : prev));
+      });
+  }, [search, searchNetwork, query]);
 
   const roots = overview?.roots ?? [];
   const onSelect = (n: NetworkNode) => setSelected(n);
@@ -508,7 +537,7 @@ export function ReferralTreeView({
             可見性）、sm+ 帶短標籤；單一文字來源，疊字問題結構性絕跡。 */}
         <DropdownMenu>
           <DropdownMenuTrigger
-            aria-label="排序方式"
+            aria-label={`排序方式：${SORT_OPTIONS.find((o) => o.value === sort)?.label ?? ''}`}
             className="relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:py-2 sm:pl-3 sm:pr-3"
           >
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
@@ -528,7 +557,7 @@ export function ReferralTreeView({
                 </span>
               ))}
             </span>
-            {sort !== 'updated_desc' && (
+            {sort !== DEFAULT_NETWORK_SORT && (
               <span
                 data-testid="sort-active-dot"
                 aria-hidden
@@ -589,10 +618,40 @@ export function ReferralTreeView({
                 <RowAside node={node} />
               </div>
             ))}
+
+            {/* 命中總數與續接——版位與文案照 RewardHistory 的既有慣例。
+                沒有這一段，伺服器分頁就等於靜默截斷：使用者只看得到第一頁
+                且毫不知情。 */}
+            <div className="pt-2 text-center text-sm text-muted-foreground">
+              已顯示 {Math.min(search.matches.length, search.total)} / {search.total} 筆記錄
+            </div>
+            {search.matches.length < search.total && (
+              <div className="text-center">
+                <Button
+                  onClick={loadMoreMatches}
+                  variant="outline"
+                  size="sm"
+                  disabled={search.loadingMore}
+                >
+                  {search.loadingMore ? '加載中...' : '加載更多'}
+                </Button>
+              </div>
+            )}
           </div>
         ) : null
       ) : (
-        <div role="tree" aria-label="我的推薦網絡" className="space-y-0.5">
+        // 背景重新請求中：清單仍是舊排序的資料，降透明度 + aria-busy 讓
+        // 「還沒重排完」看得見也聽得見。切排序時 setSort 走的是
+        // isValidating 而非 loading（有資料就不整頁 spinner）。
+        <div
+          role="tree"
+          aria-label="我的推薦網絡"
+          aria-busy={isValidating || undefined}
+          className={cn(
+            'space-y-0.5 transition-opacity',
+            isValidating && 'opacity-50 pointer-events-none',
+          )}
+        >
           {roots.map((node) => (
             <NodeRow
               key={node.userId}

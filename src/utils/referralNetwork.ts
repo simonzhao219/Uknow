@@ -3,52 +3,33 @@
 //
 // 後端三端點（/referrals/network/overview|children|search）為唯一資料
 // 來源；節點為「扁平」形狀（無 children），樹由前端依 childCount 懶載入
-// 組裝。排序在伺服器算（真名 + Intl.Collator），前端只負責記憶與傳遞
-// sort 參數——遮罩後的顯示名無法在前端做正確的姓名排序，這是刻意分工。
+// 組裝。排序在伺服器算：name_* 必須留在伺服器（前端只有遮罩後的顯示名），
+// 而 updated_* 的鍵 joinedAt 雖然前端也拿得到，仍不下放——兩套排序等於
+// 兩份真相。前端只負責記憶與傳遞 sort 參數。
+//
+// 型別一律從 @contract re-export，不再手抄第二份：先前這裡是獨立宣告的
+// 鏡像，契約改欄位時漏改這邊，npm run check 與 deno task check 會「全綠」
+// 而前端長期宣告一個 API 已不回傳的欄位——防線是單向的。
 // ============================================================
 
-export type NetworkSortMode = 'updated_desc' | 'updated_asc' | 'name_asc' | 'name_desc';
-export type NetworkNodeStatus = 'active' | 'expiring' | 'expired' | 'suspended';
+import type {
+  NetworkChildrenResponse,
+  NetworkNode,
+  NetworkOverviewResponse,
+  NetworkSearchResponse,
+  NetworkSortMode,
+} from '@contract';
+import { DEFAULT_NETWORK_SORT } from '@contract';
 
-/** 推薦網絡節點（扁平；姓名於伺服器端遮罩：一代全顯、二三代遮罩）。 */
-export interface NetworkNode {
-  userId: string;
-  name: string;
-  generation: number;
-  status: NetworkNodeStatus;
-  daysToExpiry: number | null;
-  endDate: string | null;
-  joinedAt: string;
-  listingId: string | null;
-  childCount: number;
-  /** 自身與可見子樹（封頂 3 代）最新加入時間——「更新順序」的排序鍵 */
-  subtreeLatestJoinedAt: string;
-}
+export { DEFAULT_NETWORK_SORT };
+export type { NetworkNode, NetworkSortMode };
 
-export interface NetworkAttention {
-  total: number; // 全部需要關注的人數（items 有伺服器上限）
-  items: NetworkNode[];
-}
-
-export interface NetworkSummary {
-  firstGenCount: number;
-  secondGenCount: number;
-  thirdGenCount: number;
-  totalReferrals: number;
-}
-
-export interface NetworkOverview {
-  userReferralCode: string;
-  sort: NetworkSortMode;
-  roots: NetworkNode[]; // 一代（排序後；下線走懶載入）
-  attention: NetworkAttention;
-  summary: NetworkSummary;
-}
-
-export interface NetworkSearchMatch {
-  node: NetworkNode; // 顯示名已遮罩（比對用真名在伺服器）
-  ancestorPath: string[]; // 一代 → 命中者本身
-}
+export type NetworkNodeStatus = NetworkNode['status'];
+export type NetworkAttention = NetworkOverviewResponse['data']['attention'];
+export type NetworkSummary = NetworkOverviewResponse['data']['summary'];
+export type NetworkOverview = NetworkOverviewResponse['data'];
+export type NetworkChildren = NetworkChildrenResponse['data'];
+export type NetworkSearchMatch = NetworkSearchResponse['data']['matches'][number];
 
 const SORT_MODES: readonly NetworkSortMode[] = [
   'updated_desc',
@@ -64,17 +45,17 @@ const SORT_MODES: readonly NetworkSortMode[] = [
  * select 覆蓋」在 focus 時的疊字問題，窄螢幕也撐不爆搜尋列。
  */
 export const SORT_OPTIONS: { value: NetworkSortMode; label: string }[] = [
-  { value: 'updated_desc', label: '最新加入' },
   { value: 'updated_asc', label: '最舊加入' },
+  { value: 'updated_desc', label: '最新加入' },
   { value: 'name_asc', label: '姓名 A→Z' },
   { value: 'name_desc', label: '姓名 Z→A' },
 ];
 
-/** 非法/未知值一律回落預設 updated_desc（與伺服器 parseSortMode 同語意）。 */
+/** 非法/未知值一律回落 DEFAULT_NETWORK_SORT（與伺服器 parseSortMode 同語意）。 */
 export function parseSortMode(raw: unknown): NetworkSortMode {
   return (SORT_MODES as readonly unknown[]).includes(raw)
     ? (raw as NetworkSortMode)
-    : 'updated_desc';
+    : DEFAULT_NETWORK_SORT;
 }
 
 export const SORT_STORAGE_KEY = 'referralSortMode';
@@ -84,7 +65,7 @@ export function readStoredSort(): NetworkSortMode {
   try {
     return parseSortMode(localStorage.getItem(SORT_STORAGE_KEY));
   } catch {
-    return 'updated_desc';
+    return DEFAULT_NETWORK_SORT;
   }
 }
 

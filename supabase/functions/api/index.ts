@@ -15,6 +15,7 @@ import {
   twEndOfDayInstant,
   twMonthKey,
 } from './tw-dates.ts';
+import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
   NetworkChildrenResponse,
@@ -2483,18 +2484,6 @@ async function loadNetwork(client: any, viewerId: string) {
   );
   const acctMap: Record<string, any> = Object.fromEntries(accounts.map((a: any) => [a.user_id, a]));
 
-  // 「更新順序」排序鍵：自身與可見子樹（封頂 3 代）最新加入時間。
-  // 由深到淺 bottom-up 計算，天生免疫資料異常造成的環。
-  const subtreeMs = new Map<string, number>();
-  const msOf = (uid: string) => Date.parse(joinedAtOf.get(uid) ?? '') || 0;
-  for (const ids of [gen3Ids, gen2Ids, gen1Ids]) {
-    for (const uid of ids) {
-      let m = msOf(uid);
-      for (const k of childrenOf[uid] ?? []) m = Math.max(m, subtreeMs.get(k.id) ?? 0);
-      subtreeMs.set(uid, m);
-    }
-  }
-
   return {
     gen1Ids,
     gen2Ids,
@@ -2504,7 +2493,6 @@ async function loadNetwork(client: any, viewerId: string) {
     parentOf,
     genOf,
     joinedAtOf,
-    subtreeMs,
     profMap,
     listingMap,
     acctMap,
@@ -2536,11 +2524,13 @@ function buildFlatNode(net: Network, uid: string): NetworkNode {
     joinedAt: net.joinedAtOf.get(uid) ?? '',
     listingId: net.listingMap[uid]?.id ?? null,
     childCount: kids.length,
-    subtreeLatestJoinedAt: new Date(net.subtreeMs.get(uid) ?? 0).toISOString(),
   };
 }
 
-// 排序：updated = 子樹最新加入；name = 真名（伺服器才有）+ Intl.Collator zh-Hant。
+// 排序：updated = 節點「自身」加入時間；name = 真名（伺服器才有）+ Intl.Collator
+// zh-Hant。三個端點傳進來的一律是同層兄弟集合（overview = 一代、children =
+// 某節點的直接下線），因此「每一代各自排自己的」是結構天生成立的；關鍵在鍵要
+// 用自身 joinedAt——先前用「子樹最新加入」，下線一加入就把上線推到列表頂端。
 // 混排規則（與需求方核定）：A→Z（筆畫少→多）英文組在前；Z→A 為其完全反轉
 // （中文組自然在前）——降冪一律用「升冪後反轉」實作，兩方向永不漂移。
 const NETWORK_SORT_MODES = ['updated_desc', 'updated_asc', 'name_asc', 'name_desc'] as const;
@@ -2548,29 +2538,33 @@ const zhCollator = new Intl.Collator('zh-Hant');
 function parseSortMode(raw: string | undefined): NetworkSortMode {
   return (NETWORK_SORT_MODES as readonly string[]).includes(raw ?? '')
     ? (raw as NetworkSortMode)
-    : 'updated_desc';
+    : DEFAULT_NETWORK_SORT;
 }
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
   const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
-  const tie = (a: string, b: string) => {
-    const d = (Date.parse(net.joinedAtOf.get(b) ?? '') || 0) -
-      (Date.parse(net.joinedAtOf.get(a) ?? '') || 0);
-    return d !== 0 ? d : (a < b ? -1 : a > b ? 1 : 0);
-  };
+  const joinedMs = (uid: string) => Date.parse(net.joinedAtOf.get(uid) ?? '') || 0;
+  // 自身加入時間升冪 → userId 字典序。一律升冪：升冪模式下每個比較鍵方向一致，
+  // 降冪就是整體反轉，不會有單一個鍵偷偷反向（同名者的次序曾因此與主鍵相反）。
+  // 缺值/壞值一律歸零（`?? '' || 0`），NaN 進比較器會讓排序整個失序。
+  // 這同時就是 updated_asc 的比較器——「自身加入時間」正是它的主鍵。
+  const tie = (a: string, b: string) => (joinedMs(a) - joinedMs(b)) || (a < b ? -1 : a > b ? 1 : 0);
   const nameAsc = (a: string, b: string) => {
     const ga = HAN_LEAD.test(realName(a)) ? 1 : 0;
     const gb = HAN_LEAD.test(realName(b)) ? 1 : 0;
     return (ga - gb) || zhCollator.compare(realName(a), realName(b)) || tie(a, b);
   };
-  const updatedAsc = (a: string, b: string) =>
-    ((net.subtreeMs.get(a) ?? 0) - (net.subtreeMs.get(b) ?? 0)) || tie(a, b);
-  const sorted = [...ids].sort(mode.startsWith('name') ? nameAsc : updatedAsc);
+  const sorted = [...ids].sort(mode.startsWith('name') ? nameAsc : tie);
   if (mode === 'updated_desc' || mode === 'name_desc') sorted.reverse();
   return sorted;
 }
 
 const ATTENTION_LIMIT = 6;
-const SEARCH_LIMIT = 50;
+// 搜尋分頁：預設頁大小 50、上限 200（與 /rewards/history 同慣例）。
+// total 永遠是全部命中數、不受這兩者影響——「符合條件的都要搜得到」是靠
+// 分頁走得完，不是靠把單頁放大；先前在排序後才 slice(0, 50)，排序方向一改
+// 就換一批人搜得到，而前端不顯示 total，截斷完全無感。
+const SEARCH_PAGE_SIZE = 50;
+const SEARCH_PAGE_MAX = 200;
 
 async function myReferralCode(client: any, userId: string): Promise<string> {
   const { data } = await client.from('referral_codes')
@@ -2691,14 +2685,22 @@ app.get('/referrals/network/search', async (c) => {
       return path.reverse();
     };
 
+    // 壞值一律回落而非報錯：搜尋是高頻互動，limit=abc 不該讓使用者看到 400。
+    // Number('') / Number(undefined) 皆為 NaN → `|| 預設`；負 offset 由 max 夾到 0。
+    const limit = Math.min(
+      Math.max(Number(c.req.query('limit')) || SEARCH_PAGE_SIZE, 1),
+      SEARCH_PAGE_MAX,
+    );
+    const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+    // 越界 offset 由 slice 自然回空陣列——是「空的一頁」，不是錯誤。
     const matches = sortNodeIds(net, hitIds, sort)
-      .slice(0, SEARCH_LIMIT)
+      .slice(offset, offset + limit)
       .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
 
     return c.json(
       {
         success: true,
-        data: { query: q, sort, total: hitIds.length, matches },
+        data: { query: q, sort, total: hitIds.length, limit, offset, matches },
       } satisfies NetworkSearchResponse,
     );
   } catch (err) {

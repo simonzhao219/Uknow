@@ -286,8 +286,9 @@ const ReferralSummarySchema = obj({
 // 推薦網絡懶載入端點（Tier B）：/referrals/network/*
 // 節點改為「扁平」形狀（無 children）——樹由前端依 childCount 懶載入組裝。
 // 排序在伺服器（真名 + Intl.Collator zh-Hant），sort 回聲讓前端快取正確。
-// subtreeLatestJoinedAt = 自身與可見子樹（封頂 3 代）中最新的加入時間，
-// 供「更新順序」排序與前端本地重排。
+// 「更新順序」的排序鍵是節點自身的 joinedAt——每一代各自排序，子樹新血
+// 不影響上層位置。先前的 subtreeLatestJoinedAt（子樹最新加入時間）已隨
+// 該變更失去用途並移除。
 // ------------------------------------------------------------
 export const NetworkSortModeSchema = literals(
   'updated_desc',
@@ -297,10 +298,17 @@ export const NetworkSortModeSchema = literals(
 );
 export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
 
-export const NetworkNodeSchema = obj({
-  ...ReferralNodeFields,
-  subtreeLatestJoinedAt: str(),
-});
+/**
+ * 預設排序：前後端共用的**單一來源**。
+ *
+ * 先前這個值在兩個 runtime 共散落四處硬編碼（伺服器 parseSortMode、前端
+ * parseSortMode、readStoredSort 的 catch、以及排序晶片「非預設才亮指示點」
+ * 的判斷式），改預設時漏掉任何一處都不會有測試或 typecheck 報錯——晶片那處
+ * 尤其危險，漏改會讓亮點語意完全反轉且純視覺不報錯。
+ */
+export const DEFAULT_NETWORK_SORT: NetworkSortMode = 'updated_asc';
+
+export const NetworkNodeSchema = obj(ReferralNodeFields);
 export type NetworkNode = Infer<typeof NetworkNodeSchema>;
 
 export const NetworkOverviewResponseSchema = obj({
@@ -333,7 +341,11 @@ export const NetworkSearchResponseSchema = obj({
   data: obj({
     query: str(),
     sort: NetworkSortModeSchema,
-    total: num(), // 全部命中數（matches 有上限）
+    // total 是「全部命中數」，永遠不受 limit/offset 影響——前端據此顯示
+    // 「已顯示 X / Y」與載入更多。搜尋不得靜默截斷：符合條件的都要搜得到。
+    total: num(),
+    limit: num(), // 本頁大小（回聲；夾在 1..200）
+    offset: num(), // 本頁起點（回聲；越界回空頁而非錯誤）
     matches: arr(obj({
       node: NetworkNodeSchema, // 顯示名已遮罩（比對用真名在伺服器）
       ancestorPath: arr(str()), // 一代 → 命中者本身（含）的 userId 序列
