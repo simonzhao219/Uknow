@@ -26,7 +26,7 @@
 
 ## 4. UI/UX
 
-- 頁面/元件變更;對照 `docs/UI_UX_Analysis.md` 的既有模式
+- 頁面/元件變更;對照 `docs/UI_UX_Guidelines.md` 的既有模式
 - 行動版行為(本專案以行動版為主)
 - 空態/錯誤態/載入態
 

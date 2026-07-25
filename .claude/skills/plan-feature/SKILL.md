@@ -30,7 +30,7 @@ argument-hint: [feature-slug 或功能描述]
 
 1. **先讀再想**(順序刻意:需求 → 現況 → 才有資格設計):
    - `docs/Uknow_Software_Specification.md` 中與 $ARGUMENTS 相關的章節
-   - 動 UI 就再讀 `docs/UI_UX_Analysis.md` 對應段落
+   - 動 UI 就再讀 `docs/UI_UX_Guidelines.md` 對應段落
    - 探索會被動到的 src/supabase 模組(用 Grep/Read,不要憑印象)
 2. **依四面向規劃**:結構照 `docs/_templates/plan.md` 的節次(使用者需求 /
    系統設計 / 架構影響 / UIUX / 階段切分 / 開放問題 / 風險回滾)。

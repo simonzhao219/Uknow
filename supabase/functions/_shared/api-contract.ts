@@ -187,8 +187,7 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  * 分辨/篩選點數來源的單一詞彙表，前後端共享：SQL 用 CASE 產出、edge 直通、
  * 前端讀 enum——取代前端切 description 反推分類的舊反模式。
  *
- * 分類軸是「拉新／續約」（規則書 online-rewards-referral-rule-update.md 的
- * 語彙），不是冪等鍵：
+ * 分類軸是「拉新／續約」（規格書 §8.4 的語彙），不是冪等鍵：
  *   referral_signup    這位被推薦人第一次替我帶來獎勵（配對視角，非全域首購）
  *   referral_renewal   同一位被推薦人的後續獎勵——付款續約與任務免費續約皆是
  *   withdrawal         點數提領扣款

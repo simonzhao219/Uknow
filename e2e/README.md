@@ -103,28 +103,31 @@ E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 轉成硬失敗
 新增路由時記得把它加進 `ROUTES`；需要特殊登入/會籍狀態的，寫一個
 `_setup_*` 函式並沿用 `mocks/` 既有的 helper。
 
-## Recently added coverage
+## Coverage
 
-- The **public directory** — the app's front door — is now covered:
-  `home_listings.feature` drives the `/` listing grid, the keyword search
-  (match / no-match + clear), the two empty states, and card→detail
-  navigation; `service_provider_detail.feature` drives the public
-  `/service-providers/:id` page (found + `找不到此服務者` not-found). Both read
-  the `public_listings` view through `SupabaseRestMock.set_public_listings`
-  (list) / `set_public_listing` (single).
+- **Public directory** (the app's front door): `home_listings.feature` drives
+  the `/` listing grid, keyword search (match / no-match + clear), the two
+  empty states, and card→detail navigation; `service_provider_detail.feature`
+  drives the public `/service-providers/:id` page (found + `找不到此服務者`
+  not-found). Both read the `public_listings` view through
+  `SupabaseRestMock.set_public_listings` (list) / `set_public_listing` (single).
+- **Registration recovery**: `registration_recovery.feature` is the template
+  for the four recoverability contracts — see
+  `docs/multi-step-flow-recovery.md`. Any new multi-step flow adds its own
+  "leave mid-flow, come back through a different entry" scenario here.
+- **Rewards and withdrawal** (`/rewards`) — the value a member unlocks *after*
+  paying: referral-earned points, eligibility guardrails, the withdrawal
+  application, and the 查收 collection step — `rewards_withdrawal.feature`.
 
-## Known gaps (by design, for this first pass)
+## Known gaps (by design)
 
 - Real Supabase/PayUni integration is out of scope here — see the Deno tests
-  under `supabase/functions/api/*.test.ts` for that layer.
+  under `supabase/functions/api/*.test.ts` for that layer, and `journey/` for
+  full-stack coverage against a real branch.
 - The `FeatureContext` feature-flag system is currently a hardcoded
   all-enabled stub client-side, so the "disabled feature" UI path in
   `ProtectedRoute` isn't reachable yet and has no scenario.
 - Dashboard and admin pages only have smoke-level (or no) coverage — expand
   `features/` as those flows stabilize.
-- The reward-points and withdrawal flows (獎勵回饋, `/rewards`) — the value a
-  member unlocks *after paying*: referral-earned points, eligibility
-  guardrails, the withdrawal application, and the 查收 collection step — are
-  covered in `rewards_withdrawal.feature`. ID-photo *upload* is skipped by
-  pre-seeding `GET /rewards/id-photos`; driving the real file-chooser upload
-  path is still open.
+- ID-photo *upload* is skipped by pre-seeding `GET /rewards/id-photos`;
+  driving the real file-chooser upload path is still open.

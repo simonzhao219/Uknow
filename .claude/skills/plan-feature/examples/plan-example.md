@@ -25,7 +25,7 @@
 
 ## 4. UI/UX
 
-- 星號沿用 lucide `Star`/`StarOff`，位置比照 UI_UX_Analysis 的卡片操作區慣例
+- 星號沿用 lucide `Star`/`StarOff`，位置比照 UI_UX_Guidelines 的卡片操作區慣例
 - 空態：「還沒有收藏任務」＋回任務列表 CTA；載入態沿用置中 spinner
 
 ## 5. 階段切分

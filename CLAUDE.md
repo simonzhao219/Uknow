@@ -1,6 +1,6 @@
 # Uknow
 
-外送/服務媒合平台。React 18 + Vite + TS(前端)、Supabase Edge Functions
+專業服務媒合平台。React 18 + Vite + TS(前端)、Supabase Edge Functions
 (Deno,後端 API)、Supabase Postgres、Cloudflare Pages 部署、PayUni 金流。
 
 ## 動手之前:走哪條流程
@@ -59,17 +59,21 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
 ## Docs 路徑地圖(需要時才讀,勿全部預載)
 
+完整索引與權威性分級見 `docs/README.md`。最常用的:
+
 | 何時 | 讀什麼 |
 |---|---|
 | 動任何功能前 | `docs/Uknow_Software_Specification.md` 對應章節 |
-| 動 UI | `docs/UI_UX_Analysis.md` |
+| 動推薦/獎勵/任務/提領規則 | 同上 §7–§10(規則的單一事實來源) |
+| 動 UI | `docs/UI_UX_Guidelines.md` |
 | 動多步驟表單/金流頁 | `docs/multi-step-flow-recovery.md`(四契約) |
+| 動後端 schema/函數 | `supabase/README.md` |
 | 動 e2e/journey | `docs/e2e-journey-test-design.md` |
-| 動推薦/獎勵規則 | `docs/online-rewards-referral-rule-update.md` |
 | Supabase 環境問題 | `docs/SUPABASE_SETUP_CHECKLIST.md` |
 
-⚠️ `docs/blackbox/` 是未讀碼的黑箱練習產物,內容與本專案實際功能**無關**,
-禁止當成規格來源。
+規格書與程式碼衝突時**以程式碼為準,並在同一個 PR 回頭修規格書**——
+規格書是 `plan-reviewer-requirements` 的溯源對象,它失真等於審查閘門
+在把關錯誤的規則。
 
 ## 開發流程細節(完整 SOP 在各 skill 內)
 
