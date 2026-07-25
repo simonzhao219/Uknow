@@ -67,6 +67,15 @@ step name 描述**意圖**不是工具:`Biome` ❌ → `前端風格與 lint（B
 | job id `ci-ok` | branch protection 的 required check 找不到,PR 永遠 pending |
 | job id `changes` | 見上方連字號陷阱;且所有 `needs.changes.outputs.*` 要同步改 |
 
+⚠️ **改名前務必用 GitHub UI(Settings → Branches → 該規則 → Edit)檢查
+branch protection 的 required status checks 清單**,不能只看 CLAUDE.md
+或這份文件——規則文件講的是「應該」只鎖 `ci-ok`,但保護規則本身可能還
+殘留舊 job id(例如把 `build` 改名成 `build-bundle` 後,清單裡若還留著
+`build`,它從此不會再被任何 job 回報,PR 會卡在「Waiting for status to
+be reported」永遠不綠——不是紅燈,是沒人送出那個名字的狀態,GitHub API
+查得到的所有 check 可能都已經 success,UI 卻仍卡住)。改完 job id 要
+同時到 UI 確認清單裡沒有殘留的舊名稱。
+
 ## reusable workflow 的兩個地雷
 
 1. **不要在 reusable workflow 裡宣告 workflow 層 `concurrency`**。它會參與
