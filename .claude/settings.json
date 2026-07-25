@@ -69,6 +69,29 @@
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check-output-filter.py\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-rebase.sh\"",
+            "if": "Bash(git push*)",
+            "timeout": 60,
+            "statusMessage": "Checking branch is rebased onto origin/develop before push..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-rebase.sh\"",
+            "timeout": 60,
+            "statusMessage": "Checking branch is rebased onto origin/develop before opening PR..."
+          }
+        ]
       }
     ]
   }
