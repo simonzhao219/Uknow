@@ -30,6 +30,15 @@ beforeEach(() => {
     onchange: null,
     dispatchEvent: () => false,
   })) as any;
+  // Radix popper 內容（DropdownMenu）在 jsdom 缺的 API
+  (window as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  (window.HTMLElement.prototype as any).hasPointerCapture = () => false;
+  (window.HTMLElement.prototype as any).releasePointerCapture = () => {};
 });
 
 const DAY = 86_400_000;
@@ -144,39 +153,45 @@ describe('需要關注橫幅（伺服器上限）', () => {
   });
 });
 
-describe('排序控制', () => {
-  it('手機 icon-only、sm+ 顯示短標籤；select 永遠透明（疊字根因回歸釘）', () => {
+describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 select 退役）', () => {
+  it('無原生 select（OS 面板不一致的根因）；觸發器為選單按鈕、手機 icon-only', () => {
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
-    expect(screen.getByRole('option', { name: '姓名 Z→A' })).toBeTruthy();
 
-    // 疊字根因回歸釘：select 必須永遠保持透明——當初的糊字來自
-    // focus-visible 時把覆蓋層 reveal 成可見，兩層文字直接印在一起。
-    const select = screen.getByLabelText('排序方式') as HTMLSelectElement;
-    expect(select.className).toContain('opacity-0');
-    expect(select.className).not.toMatch(/focus-visible:opacity/);
+    // 原生 select 正式退役：選單面板改由 app 渲染，風格才管得到
+    expect(document.querySelector('select')).toBeNull();
 
-    // 視覺標籤層：aria-hidden（a11y 單一來源在 select）、手機隱藏（icon-only）
+    const trigger = screen.getByRole('button', { name: '排序方式' });
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+
+    // sm+ 短標籤、手機 icon-only（隱藏標籤）
     const label = screen.getByTestId('sort-label');
-    expect(label.getAttribute('aria-hidden')).toBe('true');
     expect(label.className).toContain('hidden');
     expect(label.className).toContain('sm:inline');
 
-    // 非預設排序 → 手機 icon-only 時以指示點提示「目前非預設排序」
-    expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
+    // 關閉狀態下全畫面只有一份排序文字：疊字問題結構性絕跡
+    expect(screen.getAllByText('姓名 Z→A').length).toBe(1);
   });
 
-  it('預設排序（更新新→舊）不顯示指示點', () => {
+  it('展開為 menuitemradio 四選項、當前排序 aria-checked、點選回報 onSortChange', async () => {
+    const onSortChange = vi.fn();
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }), { onSortChange });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: '排序方式' }), { key: 'Enter' });
+
+    const items = await screen.findAllByRole('menuitemradio');
+    expect(items.map((i) => i.textContent)).toEqual(['最新加入', '最舊加入', '姓名 A→Z', '姓名 Z→A']);
+    expect(screen.getByRole('menuitemradio', { name: '姓名 Z→A' }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '姓名 A→Z' }));
+    expect(onSortChange).toHaveBeenCalledWith('name_asc');
+  });
+
+  it('非預設排序顯示指示點（手機 icon-only 的狀態補償）、預設不顯示', () => {
+    renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
+    expect(screen.getByTestId('sort-active-dot')).toBeTruthy();
+    cleanup();
     renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }));
     expect(screen.queryByTestId('sort-active-dot')).toBeNull();
-  });
-
-  it('原生 select 受控於 sort、變更回報 onSortChange', () => {
-    const onSortChange = vi.fn();
-    renderTree(makeOverview({ roots: [makeNode()], sort: 'updated_desc' }), { onSortChange });
-    const select = screen.getByLabelText('排序方式') as HTMLSelectElement;
-    expect(select.value).toBe('updated_desc');
-    fireEvent.change(select, { target: { value: 'name_asc' } });
-    expect(onSortChange).toHaveBeenCalledWith('name_asc');
   });
 });
 
