@@ -25,8 +25,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+# ⚠️ 這裡刻意不設 workflow 層 permissions:它是**上限**而不是預設值,
+# 每個 job（含 uses: 呼叫的 reusable workflow）都不得超過它。設成
+# contents: read 會讓 changes 的 pull-requests: read 與 journey 的
+# issues: write 變成越權,GitHub 在建圖階段就拒絕整個 workflow
+# （startup_failure,連 check run 都不會建立）。權限一律逐 job 宣告。
 
 jobs:
   # 路徑過濾在 job 層做（不是 workflow 層）：required checks 需要 workflow
@@ -332,6 +335,12 @@ jobs:
   journey:
     needs: changes
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    # 呼叫端的權限是被呼叫 workflow 的**上限**——journey.yml 的 job 要
+    # issues: write（失敗時開 triage issue），這裡沒給就會是越權而整個
+    # workflow 拒絕啟動。
+    permissions:
+      contents: read
+      issues: write
     uses: ./.github/workflows/journey.yml
     with:
       scope: full

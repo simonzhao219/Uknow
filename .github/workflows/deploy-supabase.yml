@@ -28,8 +28,8 @@ concurrency:
   group: deploy-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
+# ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
+# (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
 
 jobs:
   deploy:
