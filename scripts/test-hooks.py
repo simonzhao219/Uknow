@@ -166,7 +166,10 @@ test_plan_ever_existed()
 
 # ----------------------------------------------------------------- pre-commit
 def pre_commit_dryrun(
-    fake_merge: bool = False, lock: bool = False, staged: str | None = None
+    fake_merge: bool = False,
+    lock: bool = False,
+    staged: str | None = None,
+    deno: str | None = None,
 ) -> str:
     """跑 pre-commit 的 dry-run,回傳 DRYRUN: 決策行(空白分隔)。"""
     lock_path = ROOT / ".claude" / "tdd-lock"
@@ -182,6 +185,10 @@ def pre_commit_dryrun(
         # 明確指定 staged 清單,行為測試才不會受「此刻剛好暫存了什麼」影響
         if staged is not None:
             env["PRE_COMMIT_FAKE_STAGED"] = staged
+        # 明確指定「本機有沒有 deno」（present / absent），測試才不會
+        # 取決於跑它的那台機器
+        if deno is not None:
+            env["PRE_COMMIT_FAKE_DENO"] = deno
         out = subprocess.run(
             ["bash", str(ROOT / "scripts" / "git-hooks" / "pre-commit")],
             cwd=ROOT,
@@ -230,14 +237,23 @@ expect_not_in("pre-commit[紅燈期不跑 npm run check]", "WOULD_RUN npm-run-ch
 front_only = pre_commit_dryrun(staged="src/App.tsx")
 expect_not_in("pre-commit[純前端變更不碰 Deno 閘門]", "DENO", front_only)
 
-backend = pre_commit_dryrun(staged="supabase/functions/api/index.ts")
-expect_in("pre-commit[後端變更會走到 Deno 閘門]", "DENO", backend)
+BACKEND = "supabase/functions/api/index.ts"
 
-# 合併例外:有後端變更時,本機有無 deno 決定走哪一條分支——
-# 有 deno 就照跑 fmt/check,沒 deno 且合併中才降為略過。
-# 兩種環境下都必須「走到 Deno 分支」,所以只斷言這一點,不斷言分支結果。
-merge_dry = pre_commit_dryrun(fake_merge=True, staged="supabase/functions/api/index.ts")
-expect_in("pre-commit[合併中的後端變更仍進入 Deno 判斷]", "DENO", merge_dry)
+# 有 deno:照跑 fmt + type-check 兩道閘門
+with_deno = pre_commit_dryrun(staged=BACKEND, deno="present")
+expect_in("pre-commit[後端變更＋有 deno:跑 fmt]", "WOULD_RUN deno-fmt", with_deno)
+expect_in("pre-commit[後端變更＋有 deno:跑 type-check]", "WOULD_RUN deno-check", with_deno)
+
+# 無 deno 且非合併:擋下 commit(顯式指定 no_deno,不看跑測試的機器裝了沒——
+# 本機裝了走 A 路、CI runner 沒裝走 B 路,那樣同一份測試在兩邊給不同答案)
+no_deno = pre_commit_dryrun(staged=BACKEND, deno="absent")
+expect_in("pre-commit[後端變更＋無 deno:擋下]", "DENO block-no-deno", no_deno)
+
+# 合併例外:合併帶進來的後端變更是上游 commit(已過 CI),缺 deno 時
+# 降為略過而不是死鎖——沒有這條,沒裝 deno 的環境無法完成任何含後端
+# 檔案的合併。
+merge_no_deno = pre_commit_dryrun(fake_merge=True, staged=BACKEND, deno="absent")
+expect_in("pre-commit[合併中＋無 deno:降為略過]", "DENO merge-exception-skip", merge_no_deno)
 
 # 假合併訊號不得讓「沒有後端變更」的 commit 憑空走進 Deno 分支
 merge_front = pre_commit_dryrun(fake_merge=True, staged="src/App.tsx")

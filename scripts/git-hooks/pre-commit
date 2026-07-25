@@ -82,7 +82,21 @@ if echo "$staged" | grep -q '^supabase/functions/'; then
     merging=true
   fi
 
-  if command -v deno >/dev/null 2>&1; then
+  # dry-run 專用的雙向假訊號（present / absent）：沒有它，這幾條分支的
+  # 行為測試會取決於「跑測試的那台機器裝了 deno 沒」——本機裝了走 A 路、
+  # CI 的 framework-check runner 沒裝走 B 路，同一份測試在兩邊給不同
+  # 答案（2026-07-25 PR #114 就是這樣紅的）。必須兩個方向都能指定，
+  # 只做單向（假裝沒有）仍會讓「有 deno」那條依賴環境。
+  has_deno=false
+  if command -v deno >/dev/null 2>&1; then has_deno=true; fi
+  if [ "$DRY_RUN" = "1" ]; then
+    case "${PRE_COMMIT_FAKE_DENO:-}" in
+      present) has_deno=true ;;
+      absent) has_deno=false ;;
+    esac
+  fi
+
+  if [ "$has_deno" = true ]; then
     [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO deno-present"
     if ! run_gate deno-fmt bash -c 'cd supabase/functions && deno fmt --check'; then
       echo "" >&2
@@ -119,8 +133,11 @@ if echo "$staged" | grep -q '^supabase/functions/'; then
   elif [ "$merging" = true ]; then
     echo "[pre-commit] 合併中且本機無 deno：後端變更來自上游（已過 CI），略過 Deno 閘門。"
     [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO merge-exception-skip"
+  elif [ "$DRY_RUN" = "1" ]; then
+    # dry-run 只宣告決策,不執行也不提前退出——保持「一律 99」的契約,
+    # 否則退出碼會隨環境變動,行為測試就失去可比性。
+    echo "DRYRUN: DENO block-no-deno"
   else
-    [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DENO block-no-deno"
     echo "" >&2
     echo "[pre-commit] supabase/functions/ 有變更但本機沒有 deno，commit 已擋下。" >&2
     echo "  安裝：https://docs.deno.com/runtime/getting_started/installation/" >&2
