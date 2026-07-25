@@ -66,6 +66,35 @@ describe('使用者可見文案不得含編碼損毀字元', () => {
   });
 });
 
+describe('外部連結一律在原分頁開啟', () => {
+  it('src/ 內不得使用 target="_blank" 或 window.open(url, \'_blank\')', () => {
+    // 背景：LINE/IG/FB 等聯絡連結曾各自複製貼上 target="_blank" /
+    // window.open(url, '_blank') 開新分頁，與產品預期（原頁開啟）不符。
+    // JS 導頁一律改用 utils/externalLink.ts 的 openExternalLink()；
+    // <a> 標籤不加 target（預設 _self 即為原頁開啟）。
+    const blankTarget = /target=["']_blank["']/;
+    const windowOpenBlank = /window\.open\([^)]*_blank/;
+    // 這兩檔只在註解裡「提及」舊寫法（記錄先前修過的分頁歷史 bug），
+    // 不是實際使用，掃描規則抓不出註解與程式碼的差異，故白名單排除。
+    const commentOnlyMentions = new Set([
+      join('src', 'utils', 'backNavigation.ts'),
+      join('src', 'components', 'referral', 'JoinReferralProgramDialog.tsx'),
+    ]);
+    const offenders: string[] = [];
+    for (const rel of walk('src', ['.ts', '.tsx'])) {
+      if (rel === join('src', 'utils', 'repoHygiene.test.ts')) continue;
+      if (commentOnlyMentions.has(rel)) continue;
+      const text = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      if (blankTarget.test(text) || windowOpenBlank.test(text)) offenders.push(rel);
+    }
+    expect(
+      offenders,
+      '外部連結請在原分頁開啟：<a> 不加 target="_blank"；JS 導頁改用 ' +
+        'utils/externalLink.ts 的 openExternalLink()',
+    ).toEqual([]);
+  });
+});
+
 describe('官方 LINE 帳號代稱統一', () => {
   it('src/ 內不得出現大寫版官方 LINE 帳號代稱，一律透過 utils/constants 的共用常數呈現小寫 @uknow', () => {
     // 拆字組出 pattern，避免這行本身的字面量被自己的掃描規則命中。
