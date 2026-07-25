@@ -82,7 +82,7 @@ commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 | 動 CI workflow | `.claude/rules/github-actions.md`(命名與結構,有機械把關) |
 | 新增任何測試 | `.claude/rules/test-naming.md`(命名分層,有機械把關) |
 | Supabase 環境問題 | `docs/supabase-setup-checklist.md` |
-| 關閉 §14 落差項目/改文件措辭 | `docs/README.md`〈慣例〉(規則只寫一份、沒有的功能不必記錄沒有) |
+| 關閉 §14 落差項目/改文件措辭 | `.claude/rules/document-writing.md`(path-scoped,自動載入) |
 
 規格書與程式碼衝突時**以程式碼為準,並在同一個 PR 回頭修規格書**——
 規格書是 `plan-reviewer-requirements` 的溯源對象,它失真等於審查閘門

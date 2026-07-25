@@ -155,7 +155,7 @@ fi
 # 文件旁白提醒(advisory,不擋 commit)：§14 落差消除時常見的復發模式
 # 是在刪除處或別的文件另外補一段「已定案不提供 X、非落差」的解釋——
 # 這種措辭在 §14 表格與 vestigial 殘跡註記裡是合法的，grep 分不出
-# 語意，所以只能提醒不能擋（見 docs/README.md〈慣例〉、
+# 語意，所以只能提醒不能擋（見 .claude/rules/document-writing.md、
 # friction-log 2026-07-25 那則教訓）。
 doc_diff=$(git diff --cached -- 'docs/**/*.md' 'e2e/**/*.md' 2>/dev/null)
 if [ "$DRY_RUN" = "1" ] && [ -n "${PRE_COMMIT_FAKE_DOC_DIFF:-}" ]; then
@@ -164,7 +164,7 @@ fi
 if echo "$doc_diff" | grep -E '^\+' | grep -v '^\+\+\+ ' \
     | grep -qE '已定案不提供|已定案的產品決策|非落差|不必再列為待實作'; then
   echo "[pre-commit] 提醒:新增文字疑似「解釋功能為什麼不存在」——確認不是重複旁白" >&2
-  echo "  （規則見 docs/README.md〈慣例〉「沒有的功能，不必記錄「沒有」」）。" >&2
+  echo "  （規則見 .claude/rules/document-writing.md）。" >&2
   [ "$DRY_RUN" = "1" ] && echo "DRYRUN: DOC_ADVISORY triggered"
 fi
 

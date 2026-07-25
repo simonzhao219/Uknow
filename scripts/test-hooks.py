@@ -385,7 +385,7 @@ expect_not_in("pre-commit[假合併訊號不憑空觸發 Deno]", "DENO", merge_f
 
 # 文件旁白提醒:只提醒不擋(exit code 99 的斷言已包在 pre_commit_dryrun 裡)。
 # 關鍵字刻意窄——只認「已定案不提供/非落差」這種自我辯護措辭,不能誤觸發
-# §14 表格本身合法的「未實作」字樣(見 docs/README.md〈慣例〉的例外條款)。
+# §14 表格本身合法的「未實作」字樣(見 .claude/rules/document-writing.md 的例外條款)。
 doc_bad = pre_commit_dryrun(doc_diff="+不提供自助取消訂閱（已定案的產品決策，非落差）")
 expect_in("pre-commit[新增「已定案不提供」文字:advisory 提醒]", "DOC_ADVISORY triggered", doc_bad)
 
