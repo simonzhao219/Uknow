@@ -66,12 +66,7 @@ export function CollectionConfirmDialog({
             <div className="space-y-1 text-sm text-blue-800">
               <p>
                 📞 LINE 客服：
-                <a
-                  href={LINE_OFFICIAL_ACCOUNT_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-blue-900"
-                >
+                <a href={LINE_OFFICIAL_ACCOUNT_URL} className="underline hover:text-blue-900">
                   {LINE_OFFICIAL_ACCOUNT_HANDLE}
                 </a>
               </p>

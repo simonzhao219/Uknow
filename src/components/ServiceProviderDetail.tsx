@@ -19,6 +19,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
+import { openExternalLink } from '../utils/externalLink';
 
 export function ServiceProviderDetail() {
   const { user } = useContext(UserContext);
@@ -94,7 +95,7 @@ export function ServiceProviderDetail() {
         break;
     }
     if (url) {
-      window.open(url, '_blank');
+      openExternalLink(url);
     }
   };
 
