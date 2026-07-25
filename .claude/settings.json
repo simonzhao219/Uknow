@@ -26,7 +26,6 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./supabase/.temp/**)",
-      "Read(./docs/blackbox/**)",
       "Read(./package-lock.json)",
       "Read(./supabase/functions/deno.lock)"
     ]
@@ -90,6 +89,17 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-rebase.sh\"",
             "timeout": 60,
             "statusMessage": "Checking branch is rebased onto origin/develop before opening PR..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/deletion-residue-check.py\"",
+            "timeout": 30
           }
         ]
       }

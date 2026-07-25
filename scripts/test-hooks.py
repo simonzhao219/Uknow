@@ -134,6 +134,50 @@ for branch, path, plan, want, why in PLAN_CASES:
     expect(f"feature-plan-guard[{why}]", plan_guard.decide(branch, path, plan) is not None, want)
 
 
+# ----------------------------------------------------- deletion-residue-check
+residue = load("deletion-residue-check")
+
+RESIDUE_WATCH_CASES = [
+    # (刪除路徑, 應否納入監看, 說明)
+    ("docs/blackbox/01-spec.md", True, "docs/ 底下的刪除"),
+    (".claude/rules/old-rule.md", True, ".claude/ 底下的刪除"),
+    ("src/components/Old.tsx", False, "src/ 不在監看範圍(避免一般重構的雜訊)"),
+    ("supabase/functions/api/old.ts", False, "supabase/ 不在監看範圍"),
+]
+
+for path, want, why in RESIDUE_WATCH_CASES:
+    checked += 1
+    got = residue.watched_deletions([path]) == [path]
+    if got != want:
+        failures.append(f"deletion-residue-check[watch:{why}]: 預期 {want},實得 {got}")
+
+RESIDUE_KEYWORD_CASES = [
+    # (刪除路徑, 上層目錄是否還在, 預期關鍵字, 說明)
+    ("docs/blackbox/01-spec.md", False, "blackbox", "整個目錄被刪光 → 用目錄名"),
+    ("docs/old-notes.md", True, "old-notes", "上層(docs/)還在 → 用去除副檔名的檔名"),
+    (".claude/rules/old-rule.md", True, "old-rule", "上層(.claude/rules/)還在 → 同規則,不誤用目錄名"),
+]
+
+for path, parent_exists, want, why in RESIDUE_KEYWORD_CASES:
+    checked += 1
+    got_kw = residue.keyword_for(path, parent_exists)
+    if got_kw != want:
+        failures.append(f"deletion-residue-check[keyword:{why}]: 預期 {want!r},實得 {got_kw!r}")
+
+RESIDUE_REPORT_CASES = [
+    # ((刪除路徑, 關鍵字) 配對清單, grep 命中對照表, 應否產出報告, 說明)
+    ([("docs/blackbox/01-spec.md", "blackbox")], {"blackbox": ["docs/plans/friction-log.md"]}, True, "有殘留 → 有報告"),
+    ([("docs/blackbox/01-spec.md", "blackbox")], {"blackbox": []}, False, "無殘留 → 無報告"),
+    ([], {}, False, "沒有監看範圍內的刪除 → 無報告"),
+]
+
+for keyed, hits, want_report, why in RESIDUE_REPORT_CASES:
+    checked += 1
+    got = residue.residue_report(keyed, hits) is not None
+    if got != want_report:
+        failures.append(f"deletion-residue-check[report:{why}]: 應{'要' if want_report else '不要'}產出報告")
+
+
 # ------------------------------------------------------- check-output-filter
 # 這個 hook 不擋東西、只改寫指令,所以 expect() 的語意在這裡是
 # 「是否出手改寫」而不是「是否 deny」。

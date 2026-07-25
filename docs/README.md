@@ -39,6 +39,7 @@
 | [`e2e-journey-test-design.md`](e2e-journey-test-design.md) | 動 journey 測試。六代 30 人情境的設計與決策 |
 | [`../e2e/README.md`](../e2e/README.md) | 動全 mock 的 e2e 套件 |
 | [`../e2e/journey/README.md`](../e2e/journey/README.md) | 跑 journey 套件（**絕不在本機跑**） |
+| [`claude-code-token-best-practices.md`](claude-code-token-best-practices.md) | 調整 hook／權限／CLAUDE.md／subagent 模型設定前，看目前對官方 token 效率 best practice 的採用現況與缺口 |
 
 ### C・長期記憶
 

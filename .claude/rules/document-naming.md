@@ -38,6 +38,14 @@ paths:
 | `CLAUDE.md` | Claude Code 依固定檔名載入專案指示。不在 `docs/` 內,一併記錄避免有人「順手」改名 |
 | `SKILL.md` | Claude Code skill loader 依固定檔名辨識(`.claude/skills/*/SKILL.md`),不在 `docs/` 內,一併記錄 |
 
+**D4 文件清單完整性** —— `docs/` 頂層每一個 `*.md`(`_templates/`、
+`plans/` 除外,那兩處是 D 級鷹架,索引只描述資料夾層級,不逐檔收錄)都
+必須被 `docs/README.md` 的文件清單收錄;文件清單裡的連結也都要指向
+確實存在的路徑,兩個方向都查。2026-07-25 發現
+`claude-code-token-best-practices.md` 連續被兩個文件盤點 PR(#115 的
+docs cleanup、#124 的命名規則盤點)路過卻沒被收錄——盤點會找到檔案,
+但在這條規則機械化之前,沒有任何一層在管「找到了要不要收進索引」。
+
 ## 新增文件時
 
 1. 檔名 kebab-case,內容語言不受此限
