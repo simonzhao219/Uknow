@@ -75,6 +75,21 @@ Deno.test('讀端點：ETag + 304 條件請求 + 快取標頭', async () => {
     assert(vary304.includes('authorization') && vary304.includes('origin'),
       `304 的 Vary 應含 Authorization 與 Origin，實際：${vary304}`);
 
+    // ACAO 是按「本次請求的 Origin」動態反射的——換一個預覽網域（任意
+    // *.uknow.pages.dev 子網域，含 branch 別名）revalidate 同一個 ETag，
+    // 304 必須帶「新網域」的 ACAO，而不是黏在上一個網域的值
+    const otherPreviewOrigin = 'https://claude-branch-alias.uknow.pages.dev';
+    const res304b = await app.request('/api/rewards', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'If-None-Match': etag1!,
+        Origin: otherPreviewOrigin,
+      },
+    });
+    assertEquals(res304b.status, 304);
+    assertEquals(res304b.headers.get('Access-Control-Allow-Origin'), otherPreviewOrigin,
+      '304 的 ACAO 必須跟著本次請求的 Origin 走，任何預覽子網域都適用');
+
     // 資料變了 → 200 + 新 ETag
     await client.from('reward_transactions').insert({
       user_id: user.id, type: 'adjustment', amount: 100, description: '測試調整',
