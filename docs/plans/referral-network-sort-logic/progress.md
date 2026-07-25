@@ -54,10 +54,29 @@
 
 ## Blockers(逃生口紀錄)
 
-尚無。
+### B-1 環境限制:後端階段的紅綠燈只能從 CI 讀(2026-07-25)
 
-注意:階段 1–2 的 deno 測試需要 `supabase start`(本地 Postgres),
-本機無 deno/supabase CLI 時靠 CI 的 api-tests 軌兜底(見 SessionStart 提示)。
+本 session 環境無法在本機驗證任何 Deno 側變更:
+
+| 嘗試 | 結果 |
+|---|---|
+| 安裝 deno | ✅ 成功(改走 npm `deno@2.9.4`;官方 `deno.land` 安裝腳本被 proxy 擋,403) |
+| `deno task check`(型別) | ❌ **失敗**——`jsr:@supabase/supabase-js` 的 `jsr.io` 直連與走 proxy **都是 403**,相依拉不下來 |
+| `deno task test` | ❌ **不可能**——需 `supabase start` 起本地 Postgres,而 **docker daemon 不可用** |
+
+→ **處置**:Phase 1/2/3/8 的後端部分改為「commit 紅燈 → push → 讀 CI
+`api-tests` 軌的紅 → 實作 → push → 讀 CI 綠」,紅燈證據為 CI run URL 而非
+本機輸出。此為 CLAUDE.md 既有的兜底路徑(「完整測試由 CI 的 api-tests 軌兜底」),
+非違規;但每個後端階段多一次 CI round-trip。
+前端階段(4–7)不受影響,vitest 本機可完整跑紅綠。
+
+### B-2 分支未依 skill 切 `feature/*`(2026-07-25)
+
+`/tdd-implement` 的 rehydrate 第 4 步要求切 `feature/referral-network-sort-logic`,
+但本 session 被指定只能在 `claude/recommendation-network-sorter-logic-ap6yza`
+開發與推送(PR #106 已開在此分支)。依 CLAUDE.md 的已知例外(web session 的
+`claude/*` 分支不符 `feature/*` 命名但可正常運作,守衛只認 `feature/*`),
+不切分支,PreToolUse 守衛因此不生效——**規劃書仍在,流程證據不受影響**。
 
 ## 框架摩擦
 
