@@ -226,20 +226,79 @@ export const ReferralGen2NodeSchema = obj({ ...ReferralNodeFields, children: arr
 export const ReferralGen1NodeSchema = obj({ ...ReferralNodeFields, children: arr(ReferralGen2NodeSchema) });
 export type ReferralNode = Infer<typeof ReferralGen1NodeSchema>;
 
+const ReferralSummarySchema = obj({
+  firstGenCount:  num(),
+  secondGenCount: num(),
+  thirdGenCount:  num(),
+  totalReferrals: num(),
+});
+
 export const ReferralTreeResponseSchema = obj({
   success: bool(),
   data: obj({
     userReferralCode: str(),
     roots: arr(ReferralGen1NodeSchema),
-    summary: obj({
-      firstGenCount:  num(),
-      secondGenCount: num(),
-      thirdGenCount:  num(),
-      totalReferrals: num(),
-    }),
+    summary: ReferralSummarySchema,
   }),
 });
 export type ReferralTreeResponse = Infer<typeof ReferralTreeResponseSchema>;
+
+// ------------------------------------------------------------
+// 推薦網絡懶載入端點（Tier B）：/referrals/network/*
+// 節點改為「扁平」形狀（無 children）——樹由前端依 childCount 懶載入組裝。
+// 排序在伺服器（真名 + Intl.Collator zh-Hant），sort 回聲讓前端快取正確。
+// subtreeLatestJoinedAt = 自身與可見子樹（封頂 3 代）中最新的加入時間，
+// 供「更新順序」排序與前端本地重排。
+// ------------------------------------------------------------
+export const NetworkSortModeSchema = literals(
+  'updated_desc', 'updated_asc', 'name_asc', 'name_desc',
+);
+export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
+
+export const NetworkNodeSchema = obj({
+  ...ReferralNodeFields,
+  subtreeLatestJoinedAt: str(),
+});
+export type NetworkNode = Infer<typeof NetworkNodeSchema>;
+
+export const NetworkOverviewResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    userReferralCode: str(),
+    sort: NetworkSortModeSchema,
+    roots: arr(NetworkNodeSchema),                 // 一代（排序後；children 走懶載入）
+    attention: obj({                               // 需要關注：伺服器依緊急度排序 + 上限
+      total: num(),
+      items: arr(NetworkNodeSchema),
+    }),
+    summary: ReferralSummarySchema,
+  }),
+});
+export type NetworkOverviewResponse = Infer<typeof NetworkOverviewResponseSchema>;
+
+export const NetworkChildrenResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    parentId: str(),
+    sort: NetworkSortModeSchema,
+    nodes: arr(NetworkNodeSchema),                 // parentId 的直接下線（排序後）
+  }),
+});
+export type NetworkChildrenResponse = Infer<typeof NetworkChildrenResponseSchema>;
+
+export const NetworkSearchResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    query: str(),
+    sort: NetworkSortModeSchema,
+    total: num(),                                  // 全部命中數（matches 有上限）
+    matches: arr(obj({
+      node: NetworkNodeSchema,                     // 顯示名已遮罩（比對用真名在伺服器）
+      ancestorPath: arr(str()),                    // 一代 → 命中者本身（含）的 userId 序列
+    })),
+  }),
+});
+export type NetworkSearchResponse = Infer<typeof NetworkSearchResponseSchema>;
 
 export const TaskSchema = obj({
   id:          str(),
@@ -459,6 +518,9 @@ export const API_PATHS = {
   rewardsWithdrawals:    '/rewards/withdrawals',
   rewardsHistory:        '/rewards/history',
   referralsMyTree:       '/referrals/my-tree',
+  networkOverview:       '/referrals/network/overview',
+  networkChildren:       '/referrals/network/children',
+  networkSearch:         '/referrals/network/search',
   tasks:                 '/tasks',
   tasksPendingRewards:   '/tasks/pending-rewards',
   tasksCurrentMonthTop:  '/tasks/current-month-top',
