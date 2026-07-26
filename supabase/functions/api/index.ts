@@ -381,6 +381,9 @@ export async function buildProfileResponse(
     paidAwaitingActivation,
     referralCode: code?.code ?? null,
     referredByCode: profile.referred_by_code,
+    // 自動綁定旗標：前端據此抑制預設推薦人的顯示與資料擷取
+    // （PaymentCheckout 確認卡 + fetchReferrerInfo 早退）。
+    isAutoReferral: !!profile.referred_by_is_default,
     referralProgramJoined: profile.referral_program_joined,
     referralSignatureUrl: profile.referral_signature_url,
     accountStatus: acct?.status ?? 'expired',
