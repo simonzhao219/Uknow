@@ -7,8 +7,16 @@
 //
 // 每條錯誤訊息都盡量「說出為什麼」，讓使用者不會對著看似填好的欄位卻卡住。
 
+// 姓名有兩種模式,由表單切換鈕控制,預設中文(見 plan §2.1)。
+// 前端依模式「嚴格」把關、後端採「聯集」——刻意的不對稱:後端只收到姓名
+// 字串,就算加模式參數,攻擊者也只要宣稱自己是外文模式即可繞過,旗標沒有
+// 安全價值。所以後端是安全邊界(擋任何模式都不合法的垃圾),前端是 UX
+// 引導(讓「預設你該填中文」有強制力,且錯誤訊息永遠對得上當下模式)。
+export type NameMode = 'zh' | 'foreign';
+
 export interface ProfileFormValues {
   name: string;
+  nameMode: NameMode;
   nationalId: string;
   phone: string;
   birthDate: string; // 'YYYY-MM-DD'
@@ -19,7 +27,12 @@ export type ProfileErrors = Partial<Record<keyof ProfileFormValues, string>>;
 
 export const MIN_AGE = 18;
 
-export function validateName(name: string): string | undefined {
+export const NAME_MAX_LENGTH: Record<NameMode, number> = {
+  zh: 10,
+  foreign: 50,
+};
+
+export function validateName(name: string, _mode: NameMode = 'zh'): string | undefined {
   if (!name.trim()) return '請輸入真實姓名';
   if (name.length > 10) return '姓名最多 10 個字元';
   return undefined;
@@ -72,7 +85,7 @@ export function validateProfileForm(
   now: Date = new Date(),
 ): ProfileErrors {
   const errors: ProfileErrors = {};
-  const name = validateName(values.name);
+  const name = validateName(values.name, values.nameMode);
   if (name) errors.name = name;
   const nationalId = validateNationalId(values.nationalId);
   if (nationalId) errors.nationalId = nationalId;

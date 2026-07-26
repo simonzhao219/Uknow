@@ -13,7 +13,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
-import { validateProfileForm } from '../utils/profileValidation';
+import { validateProfileForm, type NameMode } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
 import { loadProfileDraft, saveProfileDraft, clearProfileDraft } from '../utils/formDraft';
 import { termsOfServiceContent } from '../content/termsOfService';
@@ -21,6 +21,9 @@ import { LegalDialog } from './LegalDialog';
 
 const EMPTY_FORM = {
   name: '',
+  // 姓名模式(中文/外文)。階段 1 只先讓型別成立、預設中文;切換鈕、長度連動、
+  // 草稿持久化與兩條 prefill 路徑的模式還原都在階段 4 才接。
+  nameMode: 'zh' as NameMode,
   nationalId: '', // ✅ 新增身分證字號欄位
   phone: '',
   birthDate: '',
