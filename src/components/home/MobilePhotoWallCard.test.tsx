@@ -20,6 +20,12 @@ const provider = {
   districts: ['中山區'],
   description: '這是一段測試用的服務介紹。',
   photos: ['https://example.com/photo1.jpg'],
+  // 卡片不讀這幾個欄位，但它們在 listings 表是 not null——fixture 補齊才
+  // 符合 PublicListingRow，別為了讓測試過而把型別放寬。
+  user_id: 'b0000000-0000-0000-0000-000000000001',
+  contacts: { instagram: 'test_ig' },
+  created_at: '2026-01-01T00:00:00.000Z',
+  updated_at: '2026-01-01T00:00:00.000Z',
 };
 
 function renderCard(overrides: Record<string, unknown> = {}) {

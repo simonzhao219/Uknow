@@ -41,6 +41,7 @@ import {
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
+import type { PublicListingRow } from '../types/listing';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -85,9 +86,9 @@ const cityCoordinates: Record<string, { lat: number; lng: number }> = {
 
 // 依 districts 陣列組出可讀的地區字串：有「全區」只顯示全區，否則最多前 10 個。
 // 手機與桌面卡片共用，避免重複邏輯。
-const formatDistrict = (serviceProvider: any): string => {
-  if (!Array.isArray(serviceProvider.districts) || serviceProvider.districts.length === 0) {
-    return serviceProvider.district || '';
+const formatDistrict = (serviceProvider: PublicListingRow): string => {
+  if (serviceProvider.districts.length === 0) {
+    return '';
   }
   if (serviceProvider.districts.includes('全區')) {
     return '全區';
@@ -118,7 +119,7 @@ export function HomePage() {
   }, [viewMode]);
 
   // ✅ 数据状态管理
-  const [serviceProviders, setServiceProviders] = useState<any[]>([]);
+  const [serviceProviders, setServiceProviders] = useState<PublicListingRow[]>([]);
   const [loading, setLoading] = useState(true);
   // 載入失敗與「真的沒有刊登」是兩回事：失敗要顯示錯誤與重試，
   // 不能偽裝成「目前沒有可用的服務者」空狀態。
@@ -167,14 +168,10 @@ export function HomePage() {
 
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
-      // 關鍵字搜尋（名稱／服務介紹／標籤）
+      // 關鍵字搜尋（名稱／服務介紹）
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const haystack = [
-          serviceProvider.name,
-          serviceProvider.description,
-          ...(Array.isArray(serviceProvider.tags) ? serviceProvider.tags : []),
-        ]
+        const haystack = [serviceProvider.name, serviceProvider.description]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -201,10 +198,9 @@ export function HomePage() {
         if (!selectedCities.includes(serviceProvider.city)) {
           return false;
         }
-        const listingDistricts = Array.isArray(serviceProvider.districts)
-          ? serviceProvider.districts
-          : [serviceProvider.district || '']; // 兼容旧格式
-        if (!listingMatchesDistricts(districtsByCity, serviceProvider.city, listingDistricts)) {
+        if (
+          !listingMatchesDistricts(districtsByCity, serviceProvider.city, serviceProvider.districts)
+        ) {
           return false;
         }
       }
@@ -931,7 +927,7 @@ function DesktopCardSkeleton() {
 
 // 手機版資訊卡片：照片 + 名稱 + 類別 + 地區 + 性別，讓手機使用者不必逐一點入
 // 也能判斷服務內容與地點（原本只有照片與名字，資訊量遠少於桌面版）。
-function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   const displayDistrict = formatDistrict(serviceProvider);
   return (
     <Link to={`/service-providers/${serviceProvider.id}`} className="block h-full">
@@ -970,7 +966,7 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }
 }
 
 // 桌面版完整卡片組件
-function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   const displayDistrict = formatDistrict(serviceProvider);
 
   return (
@@ -1005,20 +1001,6 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
               <span>
                 {serviceProvider.city} {displayDistrict}
               </span>
-            </div>
-
-            <div className="flex flex-wrap gap-1">
-              {serviceProvider.tags &&
-                serviceProvider.tags.slice(0, 2).map((tag: string, index: number) => (
-                  <Badge key={index} variant="outline" className="text-xs">
-                    {tag}
-                  </Badge>
-                ))}
-              {serviceProvider.tags && serviceProvider.tags.length > 2 && (
-                <Badge variant="outline" className="text-xs">
-                  +{serviceProvider.tags.length - 2}
-                </Badge>
-              )}
             </div>
           </div>
         </CardContent>

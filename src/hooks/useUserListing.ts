@@ -5,6 +5,7 @@ import { dedupe } from '../utils/requestDedup';
 import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from '../components/notifications/NotificationContext';
+import type { ListingRow } from '../types/listing';
 
 /**
  * 使用者的刊登。單一刊登模式：一個帳號最多一則，查不到就是 null。
@@ -13,21 +14,9 @@ import { useNotification } from '../components/notifications/NotificationContext
  * 在資料層一處守門（HomePage 讀 public_listings view）。因此這裡只回
  * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。
  */
-export interface UserListing {
-  id: string;
-  name: string;
-  category?: string;
-  city?: string;
-  districts?: string[];
-  district?: string;
-  description?: string;
-  photos?: string[];
-  [key: string]: any;
-}
-
 export interface UseUserListingResult {
   /** null 有兩種意思，必須配合 loading／error 一起讀：資料還沒到、或確實沒有刊登。 */
-  listing: UserListing | null;
+  listing: ListingRow | null;
   loading: boolean;
   isValidating: boolean;
   /** 冷啟動失敗才會有值；背景 revalidate 失敗畫面沿用舊資料，不設 error。 */
@@ -56,7 +45,7 @@ export function useUserListing({
   const { getCache, setCache, hasCache, isStale } = useDataCache();
   const { showToast } = useNotification();
 
-  const [listing, setListing] = useState<UserListing | null>(null);
+  const [listing, setListing] = useState<ListingRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +80,7 @@ export function useUserListing({
 
       if (queryError) throw queryError;
 
-      const next = (data as UserListing) ?? null;
+      const next = (data as ListingRow) ?? null;
       // null 也要寫進快取：「這個人沒有刊登」是查證過的結果，值得快取，
       // 讀取端用 hasCache 而不是 data != null 來判斷有沒有快取過。
       setCache(CACHE_KEY, next);

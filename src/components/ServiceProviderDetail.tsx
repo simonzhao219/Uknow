@@ -20,6 +20,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { openExternalLink } from '../utils/externalLink';
+import type { PublicListingRow } from '../types/listing';
 
 export function ServiceProviderDetail() {
   const { user } = useContext(UserContext);
@@ -30,7 +31,7 @@ export function ServiceProviderDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // ✅ 添加状态管理
-  const [serviceProvider, setServiceProvider] = useState<any>(null);
+  const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -175,11 +176,9 @@ export function ServiceProviderDetail() {
                 <MapPin className="h-5 w-5" />
                 <span>
                   {serviceProvider.city}{' '}
-                  {Array.isArray(serviceProvider.districts)
-                    ? serviceProvider.districts.includes('全區')
-                      ? '全區'
-                      : serviceProvider.districts.join(', ')
-                    : serviceProvider.district || ''}
+                  {serviceProvider.districts.includes('全區')
+                    ? '全區'
+                    : serviceProvider.districts.join(', ')}
                 </span>
               </div>
             </div>
