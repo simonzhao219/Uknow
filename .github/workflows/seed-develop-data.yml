@@ -60,20 +60,6 @@ jobs:
       # 且刻意不回退到正式站憑證（見 index.ts 該函式的註解——混搭憑證會讓
       # PayUni 回「授權失敗(模擬)」）。secrets 沒設時 GitHub 代入空字串，
       # 症狀是建樹跑到付款才吃 /payuni/prepare 500（run 30186374052）。
-      - name: 前置檢查（PayUni sandbox 憑證）
-        run: |
-          missing=''
-          [ -n "${{ secrets.PAYUNI_TEST_MER_ID }}" ]   || missing="$missing PAYUNI_TEST_MER_ID"
-          [ -n "${{ secrets.PAYUNI_TEST_HASH_KEY }}" ] || missing="$missing PAYUNI_TEST_HASH_KEY"
-          [ -n "${{ secrets.PAYUNI_TEST_HASH_IV }}" ]  || missing="$missing PAYUNI_TEST_HASH_IV"
-          if [ -n "$missing" ]; then
-            echo "::error::缺 repository secret:$missing"
-            echo "::error::下線要付款才會產生推薦獎勵，而 sandbox 模式只認這三件套、"
-            echo "::error::不會回退到正式站憑證（那會讓 PayUni 回「授權失敗(模擬)」）。"
-            echo "::error::請向 PayUni 取得測試站商店代號與金鑰後加進 repository secrets。"
-            exit 1
-          fi
-
       - name: 前置檢查（root 密碼 secret）
         run: |
           if [ -z "${{ secrets.SEED_ROOT_PASSWORD }}" ]; then
@@ -137,14 +123,51 @@ jobs:
       # （付款完成後的導回網址）。收尾步驟會設回 develop 站台網址——
       # 忘了設回去的話，develop 上真人付款會被導去一個不存在的 localhost。
       - name: 設定 develop 分支（sandbox 金流與 auth 限流）
+        env:
+          MER_ID: ${{ secrets.PAYUNI_TEST_MER_ID }}
+          HASH_KEY: ${{ secrets.PAYUNI_TEST_HASH_KEY }}
+          HASH_IV: ${{ secrets.PAYUNI_TEST_HASH_IV }}
         run: |
           set -euo pipefail
-          supabase secrets set --project-ref "${{ steps.branch.outputs.ref }}" \
-            PAYUNI_SANDBOX=true \
-            PAYUNI_TEST_MER_ID="${{ secrets.PAYUNI_TEST_MER_ID }}" \
-            PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
-            PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
-            FRONTEND_URL="http://localhost:3100"
+
+          # ⚠️ 只在 repository secret 真的有值時才覆寫 PayUni 憑證。
+          #
+          # 舊版無條件帶入 `${{ secrets.PAYUNI_TEST_* }}`——GitHub 對不存在的
+          # secret 展開成空字串，於是這一步把分支上**原本設好的**測試憑證
+          # 洗成空的，然後 resolvePayuniConfig 在 sandbox 模式找不到三件套
+          # 就 500（run 30186374052 的真因，前五次執行都這樣洗過一次）。
+          #
+          # 憑證的主人是分支專案本身（人在 Supabase dashboard 設定），
+          # 這個 workflow 沒有理由代它決定；有 repo secret 才視為「CI 想覆寫」。
+          args=(PAYUNI_SANDBOX=true FRONTEND_URL="http://localhost:3100")
+          if [ -n "$MER_ID" ] && [ -n "$HASH_KEY" ] && [ -n "$HASH_IV" ]; then
+            args+=(PAYUNI_TEST_MER_ID="$MER_ID" PAYUNI_TEST_HASH_KEY="$HASH_KEY" PAYUNI_TEST_HASH_IV="$HASH_IV")
+            echo "PayUni 測試憑證：以 repository secret 覆寫。"
+          else
+            echo "PayUni 測試憑證：repository secret 未設，沿用分支上既有的值（不覆寫）。"
+          fi
+          supabase secrets set --project-ref "${{ steps.branch.outputs.ref }}" "${args[@]}"
+
+          # 設完驗證三件套「存在且不是空字串」。secrets list 只給摘要不給值，
+          # 但空字串的摘要是固定的（md5 of ""），足以抓出上面那個洗掉的情境。
+          # 這是本輪唯一能在開跑前確認「付款一定跑得動」的訊號——沒有它，
+          # 缺憑證要到第 2 分鐘才以一個 500 的形式現形。
+          secrets_out="$(supabase secrets list --project-ref "${{ steps.branch.outputs.ref }}")"
+          empty_md5='d41d8cd98f00b204e9800998ecf8427e'
+          bad=''
+          for key in PAYUNI_TEST_MER_ID PAYUNI_TEST_HASH_KEY PAYUNI_TEST_HASH_IV; do
+            line="$(echo "$secrets_out" | grep -E "^\s*$key\b" || true)"
+            if [ -z "$line" ]; then bad="$bad $key(不存在)"; continue; fi
+            case "$line" in *"$empty_md5"*) bad="$bad $key(空值)" ;; esac
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::分支上的 PayUni 測試憑證有問題:$bad"
+            echo "::error::sandbox 模式只認 PAYUNI_TEST_* 三件套，且不回退到正式站憑證"
+            echo "::error::（混搭憑證會讓 PayUni 回「授權失敗(模擬)」）。"
+            echo "::error::請到 Supabase dashboard → 該分支專案 → Edge Functions → Secrets"
+            echo "::error::重新填入三個值，或改用 repository secrets 讓 CI 代設。"
+            exit 1
+          fi
           # 兩件事一起設：
           # 1. rate_limit_email_sent：45 人註冊會發 45 封 OTP 信，內建 SMTP 的
           #    預設額度是個位數。OTP 實際由 Admin API 取得，信收不收得到無所謂，
@@ -266,6 +289,14 @@ jobs:
           JOURNEY_PAYMENT_MODE: sandbox
           JOURNEY_PAYUNI_HASH_KEY: ${{ secrets.PAYUNI_TEST_HASH_KEY }}
           JOURNEY_PAYUNI_HASH_IV: ${{ secrets.PAYUNI_TEST_HASH_IV }}
+          # PayUni sandbox 刷卡頁要填的測試卡（人審提供，2026-07-26）。
+          # 卡號與 conftest 預設相同，有效期不同——預設 0131 已過期，
+          # 格式是 MMYY，所以 09/33 寫成 0933。
+          # 注意這與 PAYUNI_TEST_* 三件套是兩回事：那三個是後端建單用的
+          # 商店憑證，缺了連刷卡頁都到不了，卡號正確也用不上。
+          JOURNEY_TEST_CARD_NUMBER: '4147631000000001'
+          JOURNEY_TEST_CARD_EXPIRY: '0933'
+          JOURNEY_TEST_CARD_CVV: '123'
           JOURNEY_BUILD_PARALLELISM: ${{ inputs.build_parallelism }}
         run: |
           mkdir -p test-results
