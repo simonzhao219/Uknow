@@ -42,6 +42,15 @@ function anonKey(): string {
 // `app.request()`（Hono in-process 呼叫），完全不經過 PostgREST 閘道——
 // 那條路徑的欄位權限行為因此從未被任何測試碰到，而它正是姓名格式驗證
 // 最大的繞過面（見 20260726000002 migration 檔頭）。
+// **刻意不帶 `Prefer: return=representation`**:那會讓 PostgREST 在 UPDATE 之後
+// 補一次 SELECT，而 `authenticated` 沒有 `profiles` 的 table-level SELECT 權限
+// （migrations 裡從來沒有 `grant select ... on profiles`——前端讀 profile 一律
+// 走 Edge Function 的 service_role），於是**任何**欄位的 PATCH 都會回 403
+// `42501 permission denied for table profiles`。
+//
+// 那個 403 來自 SELECT 而非 UPDATE，會讓這支 helper 完全失去辨別力:
+// 「撤銷 name 的 UPDATE 後直寫被拒」這條斷言即使在 REVOKE 根本沒生效的情況下
+// 也會通過。成功時 PostgREST 回 204 No Content，`res.ok` 仍為 true。
 export async function patchProfileAsUser(
   accessToken: string,
   userId: string,
@@ -53,7 +62,6 @@ export async function patchProfileAsUser(
       apikey: anonKey(),
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      Prefer: 'return=representation',
     },
     body: JSON.stringify(patch),
   });

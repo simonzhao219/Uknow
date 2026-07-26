@@ -34,9 +34,17 @@ Deno.test('profiles.name：使用者 token 直打 PostgREST 改姓名被拒,DB �
   try {
     const token = await getUserAccessToken(client, user.email);
     const res = await patchProfileAsUser(token, user.id, { name: 'z1234567m' });
+    const body = await res.clone().text();
 
-    // PostgREST 對缺少欄位權限回 401/403(視版本),總之不得是 2xx。
-    assert(!res.ok, `直寫 name 應被拒,實際 ${res.status}:${await res.text()}`);
+    // 不能只斷言 `!res.ok`——那樣即使 REVOKE 根本沒生效也會通過(見
+    // patchProfileAsUser 的註解:帶 return=representation 時任何欄位都會因
+    // SELECT 權限而 403)。這裡連拒絕的**理由**一起釘住:必須是 Postgres 的
+    // 權限錯誤 42501,而不是別的原因湊巧讓請求失敗。
+    assert(!res.ok, `直寫 name 應被拒,實際 ${res.status}:${body}`);
+    assert(
+      body.includes('42501') || body.toLowerCase().includes('permission denied'),
+      `拒絕的理由必須是欄位權限不足(42501),實際 ${res.status}:${body}`,
+    );
 
     const { data: profile } = await client
       .from('profiles').select('name').eq('id', user.id).single();
@@ -56,7 +64,12 @@ Deno.test('profiles.phone：本次未撤銷的自助欄位仍可直寫(character
   try {
     const token = await getUserAccessToken(client, user.email);
     const res = await patchProfileAsUser(token, user.id, { phone: '0912345678' });
-    assert(res.ok, `phone 直寫應仍成功,實際 ${res.status}:${await res.text()}`);
+    assert(res.ok, `phone 直寫應仍成功,實際 ${res.status}:${await res.clone().text()}`);
+
+    // 真的寫進去了(不是只回了 2xx)——用 service_role 讀回確認。
+    const { data: profile } = await client
+      .from('profiles').select('phone').eq('id', user.id).single();
+    assertEquals(profile?.phone, '0912345678');
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
