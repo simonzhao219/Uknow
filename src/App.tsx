@@ -236,6 +236,10 @@ function AppContent() {
       if (!response.ok) return null;
       const profile = await response.json();
       setUser(profile);
+      // 一併落 localStorage：只更新 context 的話，下一次整頁載入會從 localStorage
+      // 讀回舊 profile，剛剛重抓到的變動（會籍到期、加入推薦計畫）當場被復活。
+      // 這也讓呼叫端不必各自手刻一份 setUser + setItem——那正是本次重構移除的重複。
+      localStorage.setItem('user', JSON.stringify(profile));
       loadedUserIdRef.current = profile.id; // 同一使用者時是 no-op，僅保持一致
       return profile;
     } catch {

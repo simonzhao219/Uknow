@@ -27,6 +27,17 @@ export interface UseSubscriptionResult {
 
 const DEDUP_KEY = 'subscriptionStatus';
 
+/**
+ * ⚠️ **同一個畫面只准掛一個實例。**
+ *
+ * dedupe(DEDUP_KEY, …) 只會執行「先到者」的 fetchStatus，後到的實例拿到同一個
+ * promise，但它自己的 setSubscriptionData / setIsLoading(false) 永遠不會跑——
+ * 於是那個實例的 subscriptionData 卡在 null、isLoading 卡在 true，畫面永遠停在
+ * 載入中。而 React 的 effect 是子先父後，所以「餓死的」通常是父層那個。
+ *
+ * 需要在子元件顯示會籍狀態時，改讀 UserContext 的 `user.accountStatus`
+ * （`/profile` 已回傳同一份資料），不要再掛一個本 hook。
+ */
 export function useSubscription(): UseSubscriptionResult {
   const { user } = useContext(UserContext);
   const { getCache, setCache, clearCache, isStale } = useDataCache();
