@@ -13,5 +13,6 @@ Feature: Dashboard smoke test
     Given I am logged in with registration step 3 and a referral code "REF001"
     And the browser has no native share sheet
     When I visit "/dashboard"
+    And I open the invite friend panel
     And I click the share referral button
     Then I should see a toast containing "邀請訊息已複製到剪貼簿"

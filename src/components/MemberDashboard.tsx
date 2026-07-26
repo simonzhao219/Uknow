@@ -3,33 +3,21 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import {
-  Users,
-  Settings,
-  User,
-  CheckSquare,
-  Gift,
-  Info,
-  ArrowLeft,
-  Shield,
-  Share2,
-} from 'lucide-react';
+import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
-import { shareReferralInvite } from '../utils/referralInvite';
-import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
+import { InviteFriendButton } from './referral/InviteFriendButton';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 export function MemberDashboard() {
   const { user, setUser } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
-  const { showToast, showInfo } = useNotification();
+  const { showInfo } = useNotification();
 
   const { subscriptionData, isLoading } = useSubscription();
 
@@ -46,8 +34,6 @@ export function MemberDashboard() {
   // 三態要分清楚：讀取中／讀取失敗／確定沒有刊登。只有第三種才顯示建立
   // CTA，否則會對已經有刊登的人喊「尚未刊登」。
   const hasNoListing = !listingLoading && !listingError && listing === null;
-
-  const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
 
   const handleShowProfileInfo = () => {
     showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
@@ -124,34 +110,25 @@ export function MemberDashboard() {
           <div>
             <p className="text-sm text-muted-foreground">我的推薦碼</p>
             <div className="flex items-center gap-2">
-              {user?.referralProgramJoined ? (
-                <>
-                  <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                    {user?.referralCode || '未生成'}
-                  </p>
-                  {user?.referralCode && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => shareReferralInvite(user.referralCode!, showToast)}
-                      title="分享邀請連結與推薦碼"
-                      data-testid="share-referral-button"
-                    >
-                      <Share2 className="h-4 w-4 mr-1" />
-                      分享
-                    </Button>
-                  )}
-                </>
+              {user?.referralProgramJoined && !user?.referralCode ? (
+                <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
+                  未生成
+                </p>
               ) : (
-                <Button
-                  onClick={() => setShowJoinReferralDialog(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                  size="sm"
-                >
-                  <Shield className="mr-2 h-4 w-4" />
-                  加入推薦計畫
-                </Button>
+                <>
+                  {user?.referralCode ? (
+                    <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
+                      {user.referralCode}
+                    </p>
+                  ) : null}
+                  {/* 單一「邀請好友」入口：已加入 → 開含 QR 的分享面板；未加入 → 引導加入。 */}
+                  <InviteFriendButton
+                    joined={!!user?.referralProgramJoined}
+                    referralCode={user?.referralCode}
+                    memberName={user?.name}
+                    onJoinSuccess={handleJoinReferralSuccess}
+                  />
+                </>
               )}
             </div>
           </div>
@@ -245,12 +222,6 @@ export function MemberDashboard() {
 
       {/* 訂閱狀態 */}
       <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
-
-      <JoinReferralProgramDialog
-        open={showJoinReferralDialog}
-        onClose={() => setShowJoinReferralDialog(false)}
-        onSuccess={handleJoinReferralSuccess}
-      />
     </div>
   );
 }
