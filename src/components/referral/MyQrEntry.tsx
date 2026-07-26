@@ -3,7 +3,6 @@ import { QrCode, Shield } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
 import { UserContext } from '../../App';
-import { useSubscription } from '../../hooks/useSubscription';
 import { MyQrDialog } from './MyQrDialog';
 import { JoinReferralProgramDialog } from './JoinReferralProgramDialog';
 
@@ -26,13 +25,17 @@ interface MyQrEntryProps {
  * 由元件自己從單一來源取，呼叫端連傳錯的機會都沒有。className 只影響外框、
  * onJoined 只是副作用掛鉤，兩者都無法造成兩頁行為分歧。
  *
- * 推薦碼的單一資料來源是 UserContext（`/profile`）。推薦網絡端點也回一份
- * userReferralCode，但兩份快取的更新時機不同，加入推薦計畫後會出現一頁已更新、
- * 一頁還是舊值——所以這裡只認 `/profile`，它同時也是 refreshUser() 維護的那份。
+ * 狀態一律取自 UserContext（`/profile`）——推薦碼、是否已加入、會籍狀態都在那裡，
+ * 而它同時是 refreshUser() 維護的那一份。推薦網絡端點也回一份 userReferralCode，
+ * 但兩份快取的更新時機不同，加入推薦計畫後會出現一頁已更新、一頁還是舊值。
+ *
+ * 會籍狀態刻意**不用** useSubscription：那個 hook 的 dedupe 只會跑「先到者」的
+ * fetchStatus，同一頁掛第二個實例時，後到的那個自己的 setState 永遠不會執行。
+ * React 的 effect 子先父後，所以本元件（子）會把會員中心（父）那份餓死，
+ * SubscriptionStatusCard 就永遠停在載入中（e2e 的 free_renewal_year 情境抓到）。
  */
 export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   const { user, refreshUser } = useContext(UserContext);
-  const { subscriptionData } = useSubscription();
   const [qrOpen, setQrOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
 
@@ -98,7 +101,7 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
         joined={!!user?.referralProgramJoined}
         referralCode={user?.referralCode}
         memberName={user?.name}
-        accountStatus={subscriptionData?.status}
+        accountStatus={user?.accountStatus}
         onRequestJoin={openJoin}
       />
 

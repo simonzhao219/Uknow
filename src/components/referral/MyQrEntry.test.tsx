@@ -23,20 +23,12 @@ const { UserCtx } = await vi.hoisted(async () => {
 });
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
-vi.mock('../../hooks/useSubscription', () => ({
-  useSubscription: () => ({
-    subscriptionData: { hasSubscription: true, status: 'active' },
-    isLoading: false,
-    isValidating: false,
-    refresh: vi.fn(),
-  }),
-}));
 
 // 替身只需暴露「開著沒」與「能不能觸發加入」，其餘內容不是本單元的責任。
 vi.mock('./MyQrDialog', () => ({
-  MyQrDialog: ({ open, onRequestJoin }: any) =>
+  MyQrDialog: ({ open, accountStatus, onRequestJoin }: any) =>
     open ? (
-      <div data-testid="my-qr-dialog">
+      <div data-testid="my-qr-dialog" data-account-status={accountStatus}>
         <button type="button" onClick={onRequestJoin}>
           分頁內加入
         </button>
@@ -108,6 +100,18 @@ describe('MyQrEntry', () => {
     expect(screen.queryByTestId('my-qr-dialog')).toBeNull();
     fireEvent.click(screen.getByTestId('my-qr-button'));
     expect(screen.getByTestId('my-qr-dialog')).toBeTruthy();
+  });
+
+  it('會籍狀態取自 user.accountStatus，不另外掛 useSubscription', () => {
+    // 掛第二個 useSubscription 會讓 dedupe 餓死會員中心那一份（見該 hook 檔頭）。
+    renderEntry({
+      referralProgramJoined: true,
+      referralCode: 'zld310438',
+      accountStatus: 'active',
+    });
+
+    fireEvent.click(screen.getByTestId('my-qr-button'));
+    expect(screen.getByTestId('my-qr-dialog').getAttribute('data-account-status')).toBe('active');
   });
 
   it('由面板內要求加入時先關掉面板再開加入流程', () => {
