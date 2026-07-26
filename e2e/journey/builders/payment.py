@@ -31,7 +31,9 @@ def pay_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> Non
 
     if cfg.payment_mode == "sandbox":
         checkout.click_pay()
-        PayuniSandboxPage(page).complete_payment(cfg.card_number, cfg.card_expiry, cfg.card_cvv)
+        PayuniSandboxPage(page).complete_payment(
+            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email
+        )
     elif cfg.payment_mode == "webhook":
         _arm_webhook_gateway(page, cfg, admin, user)
         checkout.click_pay()
