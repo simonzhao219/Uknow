@@ -79,7 +79,14 @@ export function MyQrDialog({
                   <Button
                     className="bg-purple-600 hover:bg-purple-700 text-white"
                     size="sm"
-                    onClick={() => setJoinOpen(true)}
+                    onClick={() => {
+                      // 先關掉本面板再開加入流程：JoinReferralProgramDialog 是手刻的
+                      // fixed z-50 遮罩，而本面板是 Radix Dialog（portal 到 body、同樣
+                      // z-50），兩者疊在一起時 Radix 這層會蓋住加入流程並吃掉點擊，
+                      // 使用者根本按不到裡面的簽名與同意條款。不疊窗也比較好懂。
+                      onOpenChange(false);
+                      setJoinOpen(true);
+                    }}
                   >
                     <Shield className="mr-1 h-4 w-4" />
                     加入推薦計畫

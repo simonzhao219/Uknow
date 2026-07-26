@@ -17,8 +17,13 @@ def click_document_back(page):
 
 @when("I open the join referral program dialog")
 def open_join_dialog(page):
-    # The card's trigger button; the dialog's submit button shares the label,
-    # so .first targets the trigger before the dialog exists.
+    # The join CTA now lives inside the member centre's「我的 QR」dialog, on the
+    # 邀請好友 tab (the dialog opens on the 會員核身碼 tab by default), so reach it
+    # through that entry first.
+    page.get_by_test_id("my-qr-button").click()
+    page.get_by_test_id("invite-tab").click()
+    # The dialog's submit button shares the label, so .first targets the trigger
+    # before the join dialog exists.
     page.get_by_role("button", name="加入推薦計畫").first.click()
     expect(page.get_by_text("完成以下步驟即可開始使用推薦碼邀請好友")).to_be_visible(timeout=5_000)
 
