@@ -1,16 +1,16 @@
-import { useContext } from 'react';
+import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft } from 'lucide-react';
+import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, QrCode } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { InviteFriendButton } from './referral/InviteFriendButton';
+import { MyQrDialog } from './referral/MyQrDialog';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 export function MemberDashboard() {
@@ -20,6 +20,7 @@ export function MemberDashboard() {
   const { showInfo } = useNotification();
 
   const { subscriptionData, isLoading } = useSubscription();
+  const [showMyQr, setShowMyQr] = useState(false);
 
   // 刊登不在底部導覽裡，這張卡片是它的主入口——所以要能直接看出「我有沒有
   // 刊登、刊登的是什麼」，而不是只給一個看不出狀態的連結。
@@ -110,26 +111,22 @@ export function MemberDashboard() {
           <div>
             <p className="text-sm text-muted-foreground">我的推薦碼</p>
             <div className="flex items-center gap-2">
-              {user?.referralProgramJoined && !user?.referralCode ? (
+              {user?.referralProgramJoined && user?.referralCode ? (
                 <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                  未生成
+                  {user.referralCode}
                 </p>
-              ) : (
-                <>
-                  {user?.referralCode ? (
-                    <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                      {user.referralCode}
-                    </p>
-                  ) : null}
-                  {/* 單一「邀請好友」入口：已加入 → 開含 QR 的分享面板；未加入 → 引導加入。 */}
-                  <InviteFriendButton
-                    joined={!!user?.referralProgramJoined}
-                    referralCode={user?.referralCode}
-                    memberName={user?.name}
-                    onJoinSuccess={handleJoinReferralSuccess}
-                  />
-                </>
-              )}
+              ) : null}
+              {/* 單一「我的 QR」入口：核身碼（所有會員）＋邀請好友（推薦計畫）兩分頁。 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setShowMyQr(true)}
+                data-testid="my-qr-button"
+              >
+                <QrCode className="mr-1 h-4 w-4" />
+                我的 QR
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -222,6 +219,16 @@ export function MemberDashboard() {
 
       {/* 訂閱狀態 */}
       <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
+
+      <MyQrDialog
+        open={showMyQr}
+        onOpenChange={setShowMyQr}
+        joined={!!user?.referralProgramJoined}
+        referralCode={user?.referralCode}
+        memberName={user?.name}
+        accountStatus={subscriptionData?.status}
+        onJoinSuccess={handleJoinReferralSuccess}
+      />
     </div>
   );
 }
