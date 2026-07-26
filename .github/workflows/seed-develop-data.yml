@@ -55,6 +55,25 @@ jobs:
       - name: 取出程式碼
         uses: actions/checkout@v4
 
+      # PayUni sandbox 憑證是「成套」需求：resolvePayuniConfig 在
+      # PAYUNI_SANDBOX=true 時只認 PAYUNI_TEST_* 三件套，缺一個就拋錯，
+      # 且刻意不回退到正式站憑證（見 index.ts 該函式的註解——混搭憑證會讓
+      # PayUni 回「授權失敗(模擬)」）。secrets 沒設時 GitHub 代入空字串，
+      # 症狀是建樹跑到付款才吃 /payuni/prepare 500（run 30186374052）。
+      - name: 前置檢查（PayUni sandbox 憑證）
+        run: |
+          missing=''
+          [ -n "${{ secrets.PAYUNI_TEST_MER_ID }}" ]   || missing="$missing PAYUNI_TEST_MER_ID"
+          [ -n "${{ secrets.PAYUNI_TEST_HASH_KEY }}" ] || missing="$missing PAYUNI_TEST_HASH_KEY"
+          [ -n "${{ secrets.PAYUNI_TEST_HASH_IV }}" ]  || missing="$missing PAYUNI_TEST_HASH_IV"
+          if [ -n "$missing" ]; then
+            echo "::error::缺 repository secret:$missing"
+            echo "::error::下線要付款才會產生推薦獎勵，而 sandbox 模式只認這三件套、"
+            echo "::error::不會回退到正式站憑證（那會讓 PayUni 回「授權失敗(模擬)」）。"
+            echo "::error::請向 PayUni 取得測試站商店代號與金鑰後加進 repository secrets。"
+            exit 1
+          fi
+
       - name: 前置檢查（root 密碼 secret）
         run: |
           if [ -z "${{ secrets.SEED_ROOT_PASSWORD }}" ]; then
