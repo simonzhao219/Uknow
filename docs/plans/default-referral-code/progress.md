@@ -9,44 +9,44 @@
 
 ## 階段狀態
 
+規劃書已改寫為 **v2**(依 review.md 的 2 個 P0、11 個 P1、3 個 P2 與人審裁決)。
+階段由 3 個改為 5 個:
+
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `reward_config.default_referrer_code` + 未填推薦碼者付款綁定預設推薦人(情境 A/B/E) | ⬜ 未開始 | | |
-| 2 | 護欄:自我推薦、碼失效 fallback、續約 no-op(情境 C/D/F) | ⬜ 未開始 | | |
-| 3 | 推薦王照常參與 + 規格書 §7/§8 同步(情境 G) | ⬜ 未開始 | | |
+| 1 | `reward_config.default_referrer_code` + `resolve_default_referrer()` 子函數(首購判準/停權護欄/大小寫/自我推薦)——情境 D/E/F/H/I | ⬜ 未開始 | | |
+| 2 | 接進 `apply_referral_side_effects`(exception 隔離 + 回寫三欄位)+ `profiles.referred_by_is_default`——情境 A/B/C/G/L | ⬜ 未開始 | | |
+| 3 | 回歸:fresh 換線與 claim 路徑——情境 J/K | ⬜ 未開始 | | |
+| 4 | 契約 + API:`ProfileResponseSchema.isAutoReferral` | ⬜ 未開始 | | |
+| 5 | 前端抑制(`PaymentCheckout` / `CompleteProfile`)+ 規格書 §7/§8 同步——情境 M | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-四視角審查已完成,報告在 `./review.md`:**2 個 P0、11 個 P1、3 個 P2、
-2 項需人工裁決**。**尚未寫任何產品程式碼。**
+**尚未寫任何產品程式碼。**
 
-**現在卡在人審**。兩個 P0 都必須先處置才可開工:
-- P0-1 停權護欄:解析預設推薦人須重用 `validate_referral_code()`
-  (`referral_codes.status` 與 `profiles.suspended_at` 無連動,規劃書原本
-  的安全宣稱是錯的)
-- P0-2「不回填」自相矛盾且會**回溯**發放歷史獎金:需人裁決適用範圍
-  (見 review.md〈需人工裁決 A〉的讀法一/讀法二)
+v1 的兩個 P0 已由人裁決並在 v2 處置完畢(見 `review.md`〈處置〉):
+- P0-1 → 解析改用 `validate_referral_code()`
+- P0-2 → 裁決「只綁首購」,判準用現成的 `subscriptions.is_renewal`;
+  此判準同時讓回溯發獎鏈在源頭不成立,不必動自癒函數
+- 額外裁決:啟用 `isAutoReferral` 抑制顯示 → 範圍擴大到 `src/**` 與共用契約
 
-裁決後:改規劃 → 重跑 `/review-plan` → 人親自打
-`/tdd-implement default-referral-code` 才開工。
+**下一步:對 v2 重跑 `/review-plan default-referral-code`**(P0 修訂後不得直接
+開工)。v2 審過後才由人親自打 `/tdd-implement default-referral-code`。
 
 ## Blockers(逃生口紀錄)
 
-- **P0-2 未裁決(阻擋開工)**:「不回填」的兩種讀法導向不同機制,規劃書
-  自行選了文字描述卻實作另一種。詳見 `review.md`〈需人工裁決 A〉。
-- **驗證過的回溯發獎路徑(P0-2 的技術根據,實作時務必保留這條記錄)**:
-  既有無推薦人會員被 lazy 綁定後,只要載入一次 profile
-  (`index.ts:362` 無條件對 `registrationStep === 3` 呼叫
-  `repairOrphanedPaymentsBestEffort`),`repair_orphaned_payments` 的候選
-  條件(`20260716000006:377-382`)就會把其**歷史 subscription** 全部抓成
-  候選並補發 gen1 給預設推薦人。
-- **開放問題未決(阻擋階段 1 的真路徑驗證)**:`asa899869` 是否存在於
-  正式站/develop 的 `referral_codes` 且為 `active`,尚未確認。develop 的
-  Supabase branch 有獨立 DB,極可能不存在此碼——階段 1 的測試需自行建立
-  測試用推薦碼作為預設值(不要直接依賴 `asa899869` 這個字面),否則測試
-  會走到 fallback 路徑而非主路徑,綠燈卻沒證明任何事。
-- **開放問題未決**:規格書 §7/§8 是否記載此機制。規劃書採「記載機制本身、
-  不加面向使用者的告知語句」的解讀,待人審確認。
+- **已解除**:P0-2 的裁決(選項一/讀法二)。保留技術根據供實作參考——
+  既有無推薦人會員一旦被綁定,只要載入一次 profile
+  (`index.ts:362` 對 `registrationStep === 3` 無條件呼叫
+  `repairOrphanedPaymentsBestEffort`),`repair_orphaned_payments` 的候選條件
+  (`20260716000006`:377-382)就會把其**歷史 subscription** 全部抓成候選並補發
+  gen1。v2 靠「只綁首購」讓 `referred_by_user_id` 始終為 null,從源頭切斷。
+- **開放問題未決(阻擋階段 1 的真路徑驗證)**:`asa899869` 是否存在於正式站/
+  develop 的 `referral_codes` 且 active、未停權,尚未確認。develop 的 Supabase
+  branch 有獨立 DB,極可能不存在此碼——階段 1、2 的測試一律**自建測試用推薦碼**
+  當預設值,不要依賴 `asa899869` 字面,否則會走 fallback 路徑,綠燈卻沒證明任何事。
+- **開放問題未決**:規格書 §7/§8 是否記載機制本身;§4.3 既有缺陷本次不修是否接受;
+  預設推薦人帳號的提領落地面(KYC/每日上限/資金消化)。
 
 ## 框架摩擦
 
