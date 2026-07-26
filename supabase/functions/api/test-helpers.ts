@@ -18,62 +18,6 @@ export function adminClient(): SupabaseClient {
   });
 }
 
-// anon key 刻意**沒有**像 SERVICE_ROLE_KEY 那樣的寫死 fallback：它由
-// `supabase start` 當場產生，寫死一個只會過期騙人。CI 已從
-// `supabase status -o env` 匯出（ci.yml 的「匯出本地 Supabase 連線資訊」）。
-//
-// 缺少時**明確失敗**而不是靜默跳過：需要它的那條測試在驗「使用者 token
-// 直寫 PostgREST 被拒」，靜默跳過會讓這道防線在無人察覺的情況下失去驗證。
-function anonKey(): string {
-  const key = Deno.env.get('SUPABASE_ANON_KEY');
-  if (!key) {
-    throw new Error(
-      'SUPABASE_ANON_KEY 未設定，無法測「使用者 token 直寫 PostgREST」。本機請先執行：' +
-        `export SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '"')`,
-    );
-  }
-  return key;
-}
-
-// 以**使用者 token** 直接打 PostgREST（不經 Edge Function），用來驗證
-// column-level GRANT 是否真的擋住自助寫入。
-//
-// 為什麼需要新 helper：既有測試拿到的 access token 一律只餵給
-// `app.request()`（Hono in-process 呼叫），完全不經過 PostgREST 閘道——
-// 那條路徑的欄位權限行為因此從未被任何測試碰到，而它正是姓名格式驗證
-// 最大的繞過面（見 20260726000002 migration 檔頭）。
-// **刻意不帶 `Prefer: return=representation`**:那會讓 PostgREST 在 UPDATE 之後
-// 補一次 SELECT，而 `authenticated` 沒有 `profiles` 的 table-level SELECT 權限
-// （migrations 裡從來沒有 `grant select ... on profiles`——前端讀 profile 一律
-// 走 Edge Function 的 service_role），於是**任何**欄位的 PATCH 都會回 403
-// `42501 permission denied for table profiles`。
-//
-// 那個 403 來自 SELECT 而非 UPDATE，會讓這支 helper 完全失去辨別力:
-// 「撤銷 name 的 UPDATE 後直寫被拒」這條斷言即使在 REVOKE 根本沒生效的情況下
-// 也會通過。成功時 PostgREST 回 204 No Content，`res.ok` 仍為 true。
-export async function patchProfileAsUser(
-  accessToken: string,
-  userId: string,
-  patch: Record<string, unknown>,
-): Promise<Response> {
-  return await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-    method: 'PATCH',
-    headers: {
-      apikey: anonKey(),
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(patch),
-  });
-}
-
-// 讓 index.ts 內部的 sb()（讀環境變數）指向同一個本地實例——
-// 直接測 index.ts 匯出的函數/路由（app.request()）時需要。
-export function ensureEdgeFunctionEnv(): void {
-  Deno.env.set('SUPABASE_URL', SUPABASE_URL);
-  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
-}
-
 let counter = 0;
 
 // 建立測試使用者：`referred_by_code` 仍走 user_metadata，讓

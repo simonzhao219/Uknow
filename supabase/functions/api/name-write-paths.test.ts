@@ -1,8 +1,8 @@
 // ============================================================
 // 姓名寫入路徑收斂的契約(20260726000002,需真 Postgres):
-//   * 撤銷 `authenticated` 的 `update (name)` 之後,使用者 token 直打
-//     PostgREST 改姓名必須被拒。這條路徑是姓名格式驗證最大的繞過面——
-//     Edge Function 的驗證對它完全無效。
+//   * 撤銷 `authenticated` 的 `update (name)` 後,該欄位不再能被自助寫入
+//     ——直接以 `has_column_privilege` 問 Postgres(理由見下方那段註解:
+//     走 PostgREST 測會因為 SELECT 權限而失去辨別力)。
 //   * `handle_new_user()` 不再從 `raw_user_meta_data ->> 'name'` 帶入姓名:
 //     帶 `data.name` 呼叫 signup 後 `profiles.name` 必為空字串。那個 metadata
 //     是任何人打公開 Auth 端點就能帶入的(只需 anon key、免 OTP),且函式是
@@ -13,65 +13,63 @@
 //   * 其餘自助欄位(phone 等)的 GRANT 本次刻意不動,characterization 釘住,
 //     以免日後有人以為這個 migration 把整張表都收乾淨了。
 // ============================================================
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
+import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
   getActiveReferralCode,
-  getUserAccessToken,
-  patchProfileAsUser,
   payForUser,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
 
-Deno.test('profiles.name：使用者 token 直打 PostgREST 改姓名被拒,DB 原值不變', async () => {
-  const client = adminClient();
-  const user = await createTestUser(client, { name: '王小明' });
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
+// ============================================================
+// GRANT 的效果直接問 Postgres,不透過 PostgREST。
+//
+// 為什麼不用「以使用者 token 打 PATCH /rest/v1/profiles」來測:
+// `authenticated` 對 `profiles` **沒有 table-level SELECT**(migrations 裡從來
+// 沒有 `grant select ... on profiles`——前端讀 profile 一律走 Edge Function 的
+// service_role)。PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
+// **任何**欄位的 PATCH 都會回 403 `42501 permission denied for table profiles`。
+// 那個 403 來自 SELECT 而非 UPDATE,會讓斷言完全失去辨別力:即使 REVOKE 根本
+// 沒生效也照樣「被拒」。CI 連續兩輪紅燈才逼出這個事實(第一輪誤判成
+// `Prefer: return=representation` 的副作用,拿掉之後仍紅)。
+//
+// `has_column_privilege` 問的正是 migration 唯一改動的那件事,中間不隔任何一層。
+// ============================================================
+Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限,其餘自助欄位保留', async () => {
+  const sql = postgres(DB_URL);
   try {
-    const token = await getUserAccessToken(client, user.email);
-    const res = await patchProfileAsUser(token, user.id, { name: 'z1234567m' });
-    const body = await res.clone().text();
+    const [row] = await sql`
+      select
+        has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE') as name_update,
+        has_column_privilege('authenticated', 'public.profiles', 'phone', 'UPDATE') as phone_update,
+        has_column_privilege(
+          'authenticated', 'public.profiles', 'national_id', 'UPDATE'
+        ) as national_id_update,
+        has_table_privilege('authenticated', 'public.profiles', 'SELECT') as table_select
+    `;
 
-    // 不能只斷言 `!res.ok`——那樣即使 REVOKE 根本沒生效也會通過(見
-    // patchProfileAsUser 的註解:帶 return=representation 時任何欄位都會因
-    // SELECT 權限而 403)。這裡連拒絕的**理由**一起釘住:必須是 Postgres 的
-    // 權限錯誤 42501,而不是別的原因湊巧讓請求失敗。
-    assert(!res.ok, `直寫 name 應被拒,實際 ${res.status}:${body}`);
-    assert(
-      body.includes('42501') || body.toLowerCase().includes('permission denied'),
-      `拒絕的理由必須是欄位權限不足(42501),實際 ${res.status}:${body}`,
-    );
+    // 這是 20260726000002 的核心:姓名不再能被自助寫入。
+    assertEquals(row.name_update, false, 'name 的 UPDATE 權限應已撤銷');
 
-    const { data: profile } = await client
-      .from('profiles').select('name').eq('id', user.id).single();
-    assertEquals(profile?.name, '王小明');
+    // 本次刻意只收 name 一欄。其餘同類繞過面仍在,留待另案——這兩條
+    // characterization 存在是為了讓下一個讀者不會誤以為整張表都收乾淨了。
+    assertEquals(row.phone_update, true, 'phone 的自助 UPDATE 本次不動');
+    assertEquals(row.national_id_update, true, 'national_id 的自助 UPDATE 本次不動');
+
+    // 記錄「沒有 table-level SELECT」這個事實:它是上面那段註解的依據,也讓
+    // 日後若有人為了某個讀取功能補上 grant select,這條會紅、迫使重新評估
+    // ——因為那會讓帶過濾條件的直寫路徑重新變得可表達。
+    assertEquals(row.table_select, false, 'authenticated 不應有 profiles 的 table-level SELECT');
   } finally {
-    await deleteTestUsers(client, [user.id]);
-  }
-});
-
-Deno.test('profiles.phone：本次未撤銷的自助欄位仍可直寫(characterization)', async () => {
-  // 刻意釘住「只收了 name 一欄」。phone / birth_date / national_id /
-  // bank_code / bank_account 的同類繞過面仍在,留待另案——這條測試存在是
-  // 為了讓下一個讀者不會誤以為 20260726000002 把整張表都收乾淨了。
-  const client = adminClient();
-  const user = await createTestUser(client, { name: '王小明' });
-
-  try {
-    const token = await getUserAccessToken(client, user.email);
-    const res = await patchProfileAsUser(token, user.id, { phone: '0912345678' });
-    assert(res.ok, `phone 直寫應仍成功,實際 ${res.status}:${await res.clone().text()}`);
-
-    // 真的寫進去了(不是只回了 2xx)——用 service_role 讀回確認。
-    const { data: profile } = await client
-      .from('profiles').select('phone').eq('id', user.id).single();
-    assertEquals(profile?.phone, '0912345678');
-  } finally {
-    await deleteTestUsers(client, [user.id]);
+    await sql.end();
   }
 });
 
