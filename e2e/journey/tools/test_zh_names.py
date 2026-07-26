@@ -31,24 +31,47 @@ def _assert_valid(name: str) -> None:
     assert ZH_NAME.match(name), f"「{name}」不符中文模式規則"
 
 
+# 真實 CI 用 `JOURNEY_RUN_ID: gh<github.run_id>`(journey.yml),GitHub 的
+# run id 目前是 10 位以上數字——加 `gh` 前綴就超過姓名上限 10 字。這些樣本
+# 必須包含那個形狀,否則測試永遠踩不進截斷區間,對真實輸入沒有辨別力。
+REAL_RUN_IDS = ("gh30182175581", "gh9999999999999", "a1b2", "0000", "zzzz")
+NODES = ("A0", "B1", "G1", "admin")
+
+
 def test_典型的_run_id_與節點代號產生合規姓名():
-    for run_id in ("a1b2", "0000", "zzzz", "9f3k"):
-        for node in ("A0", "B1", "G1", "admin"):
+    for run_id in REAL_RUN_IDS:
+        for node in NODES:
             _assert_valid(zh_name_for(run_id, node))
 
 
 def test_同一組輸入永遠得到同一個姓名():
     # journey 的 UI 斷言靠姓名認人,產生器必須是決定性的。
-    assert zh_name_for("a1b2", "A0") == zh_name_for("a1b2", "A0")
+    assert zh_name_for("gh30182175581", "A0") == zh_name_for("gh30182175581", "A0")
 
 
 def test_不同節點不撞名():
-    run_id = "a1b2"
-    nodes = ["A0", "B1", "B2", "C1", "C2", "D1", "E1", "F1", "G1"]
-    names = [zh_name_for(run_id, n) for n in nodes]
-    assert len(set(names)) == len(names), f"節點姓名撞名:{names}"
+    # 用**真實長度**的 run_id:先前用 4 字元的 "a1b2" 測,永遠不會踩進截斷
+    # 區間,而真實 CI 的 gh<10+ 位數字> 會——最初的實作在那個輸入下讓 30 個
+    # 節點全部同名,測試卻全綠,提供了假的保護感。
+    nodes = ["A0", "B1", "B2", "C1", "C2", "D1", "E1", "F1", "G1", "admin"]
+    for run_id in REAL_RUN_IDS:
+        names = [zh_name_for(run_id, n) for n in nodes]
+        assert len(set(names)) == len(names), f"run_id={run_id} 節點姓名撞名:{names}"
+
+
+def test_node_的字元永遠不被截斷():
+    # 截斷只該發生在 run_id 那一段。node 是認人的依據,被切掉就會撞名。
+    for run_id in REAL_RUN_IDS:
+        for node in NODES:
+            name = zh_name_for(run_id, node)
+            # run_id 給空字串時得到的就是「測 + node 映射」,那段必須完整出現
+            # 在真實 run_id 版本的尾端。
+            expected_tail = zh_name_for("", node).removeprefix("測")
+            assert name.endswith(expected_tail), (
+                f"run_id={run_id} node={node} 的 node 段被截斷:{name}"
+            )
 
 
 def test_不含任何英數字元():
-    name = zh_name_for("a1b2", "A0")
+    name = zh_name_for("gh30182175581", "A0")
     assert not re.search(r"[A-Za-z0-9]", name), f"「{name}」夾帶英數字元"

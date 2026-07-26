@@ -43,9 +43,16 @@ v3/v2/v1 三節,新的在上)。v1:1 P0;v2:2 P0;**v3:0 P0**,10 個 P1 已
 
 ### 階段 1 做了什麼
 
-- `src/utils/nameValidationCases.ts`(新檔):**共用案例表**。獨立成檔不只
-  因為測試檔不得 export(biome `noExportsInTest`),更因為階段 2 的 Deno 側
+- `supabase/functions/_shared/name-validation-cases.ts`(新檔):**共用案例表**。
+  獨立成檔不只因為測試檔不得 export(biome `noExportsInTest`),更因為 Deno 側
   要引用同一份——該檔刻意不 import 任何東西。
+  **位置**:物理放在 Deno 側,前端經 `@name-cases` alias 讀入(vite.config.ts
+  + tsconfig.json paths/include),與既有 `@contract`/`api-contract.ts` 同構。
+  最初放在 `src/utils/` 讓 Deno 用 `../../../` 反向爬,被實作審查判 P1
+  ——牴觸「Deno 只依賴 `supabase/functions/**`」的邊界,且方向與既有前例相反。
+  兩個 range 的下界探針**必須用 `\u` 跳脫**(`\u3400`、`\uF900`):字面漢字
+  會被編輯器/git NFC 正規化(字面「豈」實際存成同形的 U+8C48),探針因此
+  完全失能——這點也是實作審查抓到的。
 - `src/utils/profileValidation.ts`:`validateName(name, mode)` 依模式嚴格
   驗證;`NameMode`、`NAME_MAX_LENGTH`、`ProfileFormValues.nameMode`。
 - `src/components/CompleteProfile.tsx`:只加 `EMPTY_FORM.nameMode` 讓型別

@@ -33,11 +33,29 @@ def _map_char(ch: str) -> str:
     return ""
 
 
-def zh_name_for(run_id: str, node: str) -> str:
-    """回傳「測 + run_id 映射 + node 映射」的純中文姓名。
+MAX_LEN = 10  # 中文模式的姓名上限
 
-    長度上限:中文模式是 10 字。run_id 目前是 4 碼、node 最多 3 碼,加前綴
-    共 8 字以內;真的超長時從尾端截斷,寧可短也不要被規則擋下。
+
+def zh_name_for(run_id: str, node: str) -> str:
+    """回傳「測 + run_id 尾段映射 + node 映射」的純中文姓名。
+
+    **node 的字元永遠保留,截斷只發生在 run_id 這一段。**
+
+    這一點是硬需求,不是美觀考量:真實 CI 用 `JOURNEY_RUN_ID: gh<github.run_id>`
+    (`journey.yml`),GitHub 的 run id 目前是 10 位以上數字,加 `gh` 前綴就
+    12 字元以上,已經超過姓名上限。若像最初那樣「run_id + node 串接後整體
+    截到 10 字」,node 會被整段切掉——同一次 run 的 30 個節點全部同名,而
+    journey 有大量步驟用 `get_by_text(users[node].name, exact=True)` 認人,
+    會認錯人或直接撞上 Playwright 的 strict-mode 多重匹配錯誤。
+
+    取 run_id 的**尾段**而非前段:`gh<遞增數字>` 的前幾碼在同一天幾乎相同,
+    尾碼的區辨力高得多(這一段只給人看失敗截圖時辨識批次用,不影響正確性)。
     """
-    body = "".join(_map_char(c) for c in f"{run_id}{node}")
-    return (_PREFIX + body)[:10]
+    node_part = "".join(_map_char(c) for c in node)
+    budget = MAX_LEN - len(_PREFIX) - len(node_part)
+    if budget <= 0:
+        # 理論上不會發生(現有節點代號最長是 admin,5 字);真發生時保 node、
+        # 犧牲 run_id,因為認人靠的是 node。
+        return (_PREFIX + node_part)[:MAX_LEN]
+    run_part = "".join(_map_char(c) for c in run_id)[-budget:]
+    return _PREFIX + run_part + node_part

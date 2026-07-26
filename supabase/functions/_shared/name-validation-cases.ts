@@ -28,8 +28,12 @@ export const NAME_CASES: readonly NameCase[] = [
   { input: '王小明', zh: true, foreign: false },
   { input: '王', zh: true, foreign: false },
   { input: '谷辣斯 尤達卡', zh: true, foreign: false }, // 音譯姓名改以半形空格分隔
-  { input: '㐀㐀', zh: true, foreign: false }, // CJK 擴充 A 區下界
-  { input: '豈豈', zh: true, foreign: false }, // 相容表意文字下界
+  { input: '\u3400\u3400', zh: true, foreign: false }, // CJK 擴充 A 區下界(同理用跳脫)
+  // 相容表意文字下界(U+F900)。**必須用 \u 跳脫**:字面「豈」會被編輯器/git
+  // NFC 正規化成同形的 U+8C48(這正是 index.ts 的 HAN_RANGE 註解記載的同一起
+  // 事故),而 U+8C48 本來就落在主範圍 \u3400-\u9FFF 內——探針因此完全沒有
+  // 測到 \uF900-\uFAFF 這段是否真的被涵蓋,砍掉它所有測試仍會全綠。
+  { input: '\uF900\uF900', zh: true, foreign: false },
   // --- 空格文法探針(v3 審查 P1:原案例表完全沒有這個維度)---
   { input: '王 小 明', zh: false, foreign: false }, // 兩個空格
   { input: '谷 辣', zh: false, foreign: false }, // 空格兩邊各只有 1 字
