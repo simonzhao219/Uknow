@@ -22,25 +22,18 @@
 
 ## 目前位置與下一步
 
-**尚未寫任何產品程式碼。**
+**三輪審查全部完成,規劃書已到 v4,無未處置 P0/P1。開始實作。**
 
-v2 重審已完成(`review.md`〈v2 重審報告〉):**無新 P0**、8 個 P1、7 個 P2、
-1 項需人工裁決。規劃書已修訂為 **v3**,P1/P2 全數處置。
+第三輪(v3)結果:P0 0、P1 8、P2 4,全數處置。兩個最重要的:
+- **V3-1** F/H 在 SQL 層回傳相同的零列,v3 的告警分類做不到 → 改用只做診斷
+  分類、不參與權限判定的輔助查詢,兩者都告警但 reason 不同
+- **V3-3** 抑制只做渲染層擋不住網路層 —— `fetchReferrerInfo` 照樣發
+  `GET /referrals/validate/<碼>` 並 console.log 印出碼與推薦人真名
 
-v3 的實質修正(不只是措辭):
-- **V2-2** `referred_by_is_default` 補清除時機——`/payuni/prepare` fresh 換線
-  是第二個寫入點,不經 `apply_referral_side_effects`,v2 漏了它,旗標會永久卡
-  `true`,把使用者自己選的真推薦人也一起隱藏
-- **V2-4** 補第三曝光點 `PaymentCheckout.tsx:664-671` 的 placeholder(v1/v2 皆漏)
-- **V2-5** §4.3 改為**整段區塊不渲染**——受控元件不能只清顯示值,否則使用者
-  打一個字就會覆蓋掉背後的碼
-- **V2-3** 情境 F 的告警指派給 `resolve_default_referrer`(查無結果不是例外,
-  不會觸發 exception 隔離)
-- **V2-7** 階段 3 不再是「純回歸」,有真正的產品碼
-
-**下一步:等人裁決 `review.md`〈v2 需人工裁決〉的既有 bug 處理範圍**(見下方
-Blockers),裁決後對 v3 重跑 `/review-plan`;v3 審過才由人親自打
-`/tdd-implement default-referral-code`。
+**v4 縮小了範圍**:撤回 §4.3(`CompleteProfile` 抑制)——系統視角證明
+`isEditing && isAutoReferral` 不可達(`/auth/reset-registration` 對有
+completed 訂單者回 400,而旗標為 true 者必然有),UI/UX 視角證明 v3 的佐證
+引用已不存在。改為在階段 3 補測試釘住那道守衛。
 
 ## Blockers(逃生口紀錄)
 

@@ -1,11 +1,14 @@
 # 預設推薦人（未填推薦碼時自動綁定）規劃書
 
-> **修訂版 v3**——v2 的基礎上,依 v2 重審的 8 個 P1、7 個 P2 修訂(v2 無新 P0)。
+> **修訂版 v4**——v2 的基礎上,依 v2 重審的 8 個 P1、7 個 P2 修訂(v2 無新 P0)。
 > v2 主要變更:①「不回填」用 `subscriptions.is_renewal`(**只綁首購**);
 > ② 解析重用 `validate_referral_code()`;③ 抽獨立子函數;④ 範圍含前端與契約。
-> v3 主要變更:⑤ `referred_by_is_default` 補**清除時機**(fresh 換線);
-> ⑥ 補**第三曝光點**(`PaymentCheckout` placeholder);⑦ §4.2 改為**整段不渲染**
-> (受控元件不能只清顯示值);⑧ 情境 F 告警指派給子函數;⑨ 修正 §1.3 過度宣稱。
+> v3 變更:⑤ `referred_by_is_default` 補**清除時機**;⑥ 補第三曝光點;
+> ⑦ 情境 F 告警指派給子函數;⑧ 修正 §1.3 過度宣稱。
+> **v4 變更(第三輪審查):⑨ 砍掉 `CompleteProfile` 的抑制——該狀態組合
+> 不可達(見 §4.3),改以測試釘住依賴的守衛;⑩ 抑制下沉到資料擷取層
+> ——渲染層擋不住 `fetchReferrerInfo` 的網路請求與 console.log;
+> ⑪ F/H 告警分類改用輔助診斷查詢(兩者在 SQL 層回傳相同的零列)。**
 
 ## 0. 一句話
 
@@ -41,10 +44,10 @@
 | G | 預設推薦人的推薦王月任務 | 照常累計、照常發 credit(決定 1) |
 | **H** | **預設推薦人於解析當下已被停權** | **不套用**——比照 `validate_referral_code` 既有語意(P0-1) |
 | **I** | **既有會員(feature 上線前已付款、無推薦人)續約** | **不綁定**、不發獎、`referred_by_user_id` 維持 null(決定 2) |
-| **J** | **被預設綁定者後續以 fresh 模式換到真推薦人** | 依 §7.2 既有換線語意:推薦邊改指新上線,預設推薦人的歷史獎勵與任務計數保留 |
+| **J** | **被預設綁定者後續以 fresh 模式換到真推薦人** | 依 §7.2 既有換線語意:推薦邊改指新上線,預設推薦人的歷史獎勵與任務計數保留;**且 `referred_by_is_default` 同步重置為 `false`**(§2.6——這是 v3 修的核心 bug,測試必須斷言它) |
 | **K** | **被預設綁定者自己達推薦王門檻並領取免費續約 credit** | `claim_referral_king_reward` → `pay_referral_generations` 對其(預設)上線鏈正確發三代 |
 | **L** | 預設推薦人自己也沒有上線 | gen2/gen3 不發放,行為同既有「頂層無上線使用者」(既有邏輯已正確,補此列僅為完整性) |
-| **M** | 被預設綁定者在畫面上 | 續約確認卡不顯示推薦碼/推薦人;編輯資料時推薦碼欄位不顯示該碼(決定 4) |
+| **M** | 被預設綁定者在畫面上 | ①續約確認卡不顯示推薦碼/推薦人(§4.1);②**且不發出 `GET /referrals/validate/<碼>` 請求、不 console.log 該碼**(§4.1——渲染層擋不住網路層);③續約「新約」的推薦碼輸入框 placeholder 退回「輸入推薦碼」,不外洩(§4.2) |
 
 ### 1.3 明確不做
 
@@ -116,10 +119,31 @@ revoke execute on function public.resolve_default_referrer(uuid, uuid)
 
 > **告警職責在子函數內(V2-3)**:情境 F 要求「碼失效 → `system_alerts` 告警」,
 > 但那是 `validate_referral_code` **回傳零列**,是正常查詢結果、**不是例外**,
-> 不會觸發 §2.7 的 `exception when others`。故 `resolve_default_referrer` 必須在
-> 「`default_referrer_code` 非 null 但 `validate_referral_code` 查無結果」這個
-> **特定分支**內明確呼叫 `log_system_alert`,再回傳 null。其餘四種 null(停用、
-> 非首購、停權、自我推薦)是正常業務分支,**不告警**——否則告警會被雜訊淹沒。
+> 不會觸發 §2.7 的 `exception when others`。故告警必須由
+> `resolve_default_referrer` 自己發出。
+>
+> **⚠️ F 與 H 在 SQL 層無法用回傳值區分(v4 修正,第三輪 P1)**:
+> `validate_referral_code` 的條件是 `status='active' AND suspended_at is null`
+> ——「碼不存在/未 active」(F)與「碼有效但推薦人被停權」(H)**都回零列**。
+> v3 寫的「F 告警、H 不告警」按字面實作**做不到**。
+>
+> **做法**:加一個**只用於告警分類、不參與權限判定**的輔助查詢(§2.4 的護欄
+> 禁止的是拿自拼查詢**做判定**,不禁止拿它做診斷):
+>
+> ```
+> if v_default_code is not null and v_resolved is null then
+>   if exists (select 1 from referral_codes where code = v_default_code and status = 'active')
+>   then log_system_alert(..., 'default_referrer_suspended', ...)   -- 情境 H
+>   else log_system_alert(..., 'default_referrer_code_invalid', ...) -- 情境 F
+>   end if;
+> end if;
+> ```
+>
+> **兩者都告警,但 reason 不同**——推薦人被停權導致機制靜默失效,同樣是營運
+> 必須知道的事。其餘三種 null(停用、非首購、自我推薦)是正常業務分支,**不告警**。
+>
+> 音量考量:告警只在「首購 + 無推薦人 + 設定非 null 但解析失敗」時發生,
+> 上限受註冊速率約束;`system_alerts` 有 `resolved_at` 與後台介面可收斂。
 
 ### 2.3 首購判準:讀現成的 `subscriptions.is_renewal`(P0-2 / 決定 2)
 
@@ -222,6 +246,30 @@ comment on column public.reward_config.default_referrer_code is
 **做法**:在 `/payuni/prepare` fresh 分支的同一次 `update` 內一併寫
 `referred_by_is_default: false`——換線的本質就是「使用者主動指定了非自動來源」。
 
+**第三個寫入點 `/auth/register` 為何不需要清除邏輯(v4 新增,第三輪 P1)**
+
+§2.1 列出 `referred_by_*` 有三個寫入點。`/auth/register`(`index.ts:589-611`)
+每次呼叫都會**無條件覆寫**這兩個欄位、且從不觸碰 `referred_by_is_default`
+——但它**到不了已自動綁定的使用者**:
+
+- 進入 `CompleteProfile` 編輯模式的唯一入口是 `PaymentCheckout.handleEdit`,
+  它**先**呼叫 `POST /auth/reset-registration`,失敗就 throw、只顯示 toast、
+  **不導頁**。
+- 該端點只要使用者有**任一筆** `status='completed'` 的 `payment_orders`
+  就回 400(`index.ts:783-785`)。
+- 而 `referred_by_is_default = true` 只可能由 `apply_referral_side_effects`
+  在**付款成功後**寫入,故該使用者必然有 completed 訂單。
+
+⇒ `isEditing && isAutoReferral` 在現行程式碼下**不可達**。
+
+**這是一個依賴,不是巧合可以放著不管**:此依賴橫跨兩個檔案的互動,任何單一
+reviewer 都難以獨立發現。若日後放寬 `/auth/reset-registration`(例如產品決定
+「已付費會員也能編輯基本資料」——與本 feature 無關卻完全可能發生),
+`/auth/register` 立刻變成真正被忽略的第三個寫入點,旗標會靜默卡住。
+
+**做法**:階段 3 補一支測試**釘住這道守衛**(已查證目前**沒有任何測試**
+保護它),讓放寬它的人當場看到紅燈並被指回這裡。
+
 **稽核用途的查詢路徑(V2-13)**:本欄位透過 SQL 直接查詢(Supabase Studio),
 **不建 admin UI**。已查證後台(`admin_list_members`、`MemberManagement.tsx`)
 對 `referred_by_*` 系列零引用,提領守衛(§10.1)也不含此判準。若需求擴大到需要
@@ -288,6 +336,17 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 `isAutoReferral` 旗標**早已存在於此條件式,但全域從未被任何地方賦值**(死碼)。
 本 feature 由 §2.8 的契約欄位為它供值,條件式本身**一字不改**即生效。
 
+**⚠️ 但只擋渲染層不夠(v4 新增,第三輪 P1)**:同檔的 `fetchReferrerInfo`
+(`:205-271`)在元件掛載時執行,早退條件只查 `!pendingUser?.referredByCode`
+(`:208`),**沒有查 `isAutoReferral`**。自動綁定者回訪續約時它照樣:
+
+1. 發出 `GET /referrals/validate/<預設碼>` —— 回應本體含預設推薦人**真名**,
+   在 Network 面板完整可見
+2. `console.log` 印出預設碼與推薦人姓名(`:236`、`:252`)
+
+渲染條件擋得再乾淨,資料早已跨過網路邊界。**抑制必須下沉到資料擷取層**:
+早退條件加上 `|| pendingUser.isAutoReferral`,與 render 用同一個旗標。
+
 **4.2 續約「新約」的新推薦碼輸入框**(`PaymentCheckout.tsx:664-671`)——
 **v3 新增,v1/v2 皆漏(V2-4)**
 
@@ -305,31 +364,28 @@ placeholder={
 **做法**:比照 4.1 加 `!pendingUser.isAutoReferral` 判斷,自動綁定時 placeholder
 退回 `'輸入推薦碼'`。
 
-**4.3 編輯資料時的推薦碼欄位**(`CompleteProfile.tsx:91-122`)
+> 同區塊 `:694` 的「留空則維持原推薦關係。」提示是**無條件渲染**,對自動綁定者
+> 仍會顯示。此語意模糊對「從未有過推薦人」的使用者本來就存在(既有狀態),
+> 本 feature 只是把新族群併入既有的模糊地帶,**刻意保持通用、不特別處理**
+> ——特別處理反而會反向洩漏「你有一個看不見的推薦人」。
 
-`:108` 的 `referralCode: boundCode` 會把預設碼**預填進輸入框**,比 4.1 更直接。
+**4.3 `CompleteProfile` 編輯路徑——v4 決定「不做抑制」**
 
-⚠️ **此處不可只是清空**:該 prefill 是 load-bearing 的——檔案 `:88-90` 的註解
-寫明「若編輯時把推薦碼欄位留空再送出,會**清掉**原本的推薦關係」,而
-`POST /auth/register` 確實會把空值寫成 `null`(`index.ts:591`)。單純不預填會
-讓使用者一次編輯就永久解除綁定,且因 §2.3 只綁首購,**再也不會被重新綁定**。
+v3 曾規劃在此抑制推薦碼欄位。**v4 撤回這個決定**,兩個理由:
 
-**做法(v3 修正,V2-5)**:`isAutoReferral` 時**整段推薦碼區塊(`:731-789`)
-不渲染**;`formData.referralCode` 的值留在 state,送出行為完全不變。
+1. **狀態不可達**:`isEditing && isAutoReferral` 在現行程式碼下到不了
+   (完整論證見 §2.6「第三個寫入點」)。寫一段永不觸發的抑制,正是本專案
+   一路在清的死碼模式——`isAutoReferral` 旗標本身就是死碼出身。
+2. **v3 的佐證引用是過期的**:v3 寫「`isReferralCodeAcceptable`(`:445`)仍成立」
+   ——該識別字在現行 `CompleteProfile.tsx` **不存在**(檔案已被 develop 上的
+   其他工作改寫)。基於過期行號設計是本專案踩過的坑。
 
-⚠️ **不可**寫成 `value={isAutoReferral ? '' : formData.referralCode}`——那是
-受控元件,使用者在看似空白的欄位打**一個字元**,`onChange` 拿到的
-`e.target.value` 就是從空字串起算的新值,`setFormData` 會**整個覆蓋**掉背後保留
-的碼,使用者毫無察覺就解除了綁定。v2 的「只抑制顯示」措辭正是指向這個錯誤做法。
+**改為**:把可達性寫成**可執行的假設**——階段 3 補測試釘住
+`/auth/reset-registration` 的「已完成付款 → 400」守衛(目前無任何測試保護)。
+守衛被放寬時測試會紅,把人指回 §2.6。
 
-已驗證整段不渲染**不會**卡住「下一步」:編輯模式回填時已設
-`codeVerified = true` 與 `verifiedReferralCode = boundCode`(`:112-114`),
-故 `isReferralCodeAcceptable`(`:445`)仍成立。
-
-> **精度修正(V2-12)**:`:784` 的「推薦人:」提示**不需要**額外抑制——它只在
-> `referrerName` 有值時渲染,而自動綁定者原始註冊時從未填過碼,localStorage
-> 快照的 `referrerName` 必為 null,該行本來就不會顯示。實作時誤以為兩處都要寫
-> 抑制,會多寫一段永不觸發的死碼。真正要處理的只有輸入框本身。
+**連帶**:v3 提到的「送出前重新驗證會打 `/listings/verify-referral-code`」
+洩漏(第三輪 P1)只存在於同一條不可達路徑上,一併不處理。
 
 **4.4 既有缺陷的曝光放大(P1-11,記錄但不在本 feature 修復)**
 
@@ -339,9 +395,10 @@ placeholder={
 此為既有缺陷(任何手動填碼者續約編輯時就會踩到),本 feature 會把受影響族群從
 罕見邊角變成多數自然流量。
 
-依決定 3(不改揭露文案)與最小爆炸半徑原則,**本 feature 不修**;
-`isAutoReferral` 抑制後,自動綁定者看到的訊息與其畫面一致(欄位空、訊息說未填),
-不產生新的矛盾。列入 §6 開放問題供人審確認。
+**v4 更新**:此缺陷同樣只存在於 §4.3 的不可達編輯路徑上,故對**自動綁定者
+根本不會發生**;它只影響手動填碼者(既有族群,曝光程度不因本 feature 改變)。
+v2/v3 說的「曝光放大」在確認可達性後**不成立**,本 feature 不修、也不需列為
+開放問題。
 
 **4.5 `pendingUser` 的來源不對稱——必須明文記錄的不變量(V2-6)**
 
@@ -371,7 +428,24 @@ placeholder={
 | 2 | 接進 `apply_referral_side_effects`(exception 隔離 + §2.6 回寫三欄位) | ②覆寫主函數 + `profiles.referred_by_is_default` | 同上檔案追加 | 情境 A/B/C/G/L |
 | 3 | **換線清除旗標**(`/payuni/prepare` 加 `referred_by_is_default: false`)+ claim 路徑回歸 | — | 同上檔案追加 | 情境 J/K。**不是純回歸階段(V2-7)**——情境 J 的測試在階段 1+2 之後跑會是**紅燈**,因為 v2 沒有定義旗標清除時機(§2.6),此階段有真正的產品碼要寫 |
 | 4 | 契約 + API:`isAutoReferral` | — | `api/api-contract.test.ts` 追加 | `GET /profile` 帶正確旗標 |
-| 5 | 前端抑制**三處**(§4.1 確認卡、§4.2 placeholder、§4.3 編輯區塊)+ 規格書 §7.4/§8.1 同步 | — | `PaymentCheckout.test.tsx` / `CompleteProfile.test.tsx`(jsdom);`check-spec-drift.py` | 情境 M;**含 §4.5 的 localStorage 舊快照情境**;drift 綠 |
+| 5 | 前端抑制(§4.1 確認卡**與 `fetchReferrerInfo`**、§4.2 placeholder)+ 規格書 §7.4 + **營運手冊搬家** | — | `PaymentCheckout.test.tsx`(jsdom);`check-spec-drift.py` | 情境 M 三項;含 §4.5 localStorage 舊快照情境;drift 綠 |
+
+**階段 5 的三個交付項(v4 明確化)**:
+
+1. **前端抑制**:`PaymentCheckout` 兩處——渲染條件已存在只需供值、
+   `fetchReferrerInfo` 早退要新增(§4.1);placeholder(§4.2)。
+   **不動 `CompleteProfile`**(§4.3)。
+2. **營運手冊搬家(第三輪架構 P1)**:§5.5 的三個步驟必須**搬進**
+   `docs/supabase-setup-checklist.md`(新增步驟),**不可只留在 plan.md**
+   ——`docs/plans/` 是鷹架、PR 前會刪,而該 checklist 開頭就寫明專收
+   「程式碼與 migration 之外、每個環境各做一次的手動設定」,PayUni 憑證等
+   同性質步驟都在那。不搬 = 這份程序只活在 git log 裡,沒人知道要撈。
+3. **規格書 §7.4(第三輪需求 P2 要求先有草稿)**:
+   (a) `default_referrer_code` 是可調參數,`reward_config` 為單一真相;
+   (b) **只套用於首購**(`is_renewal`),續約與換線不受影響;
+   (c) 獎勵發放與換線規則完全比照一般推薦人,不特殊處理;
+   (d) §8.1 只加一句 cross-reference,**不動 §8.2 五列表格**——預設推薦人不
+   改變任何一列語意,追加第六列會誤植成規則本身有變。
 
 **測試紀律(P1-9)**:階段 1、2 會改動全域單列 `reward_config`,**必須比照
 `reward-config.test.ts` 檔頭的紀律**——保存原值、`finally` 還原。漏做會讓殘留的
@@ -408,8 +482,12 @@ CHECK**,故 `asa899869` 合法;但 `user_id` 是 `not null` 外鍵,**必須掛�
 
 > **連帶事實(供營運決策)**:發獎**不檢查**上線的會籍或
 > `referral_program_joined`(§8.2:「不檢查上線狀態」),故此帳號不需有效會籍
-> 即可持續累積點數;但**提領**需 `referral_program_joined` + 未停權 + KYC
-> 身分證照片 + 每日上限(§10.1)。要能真的領出來,這些得先完成。
+> 即可持續累積點數;但**提領**需 §10.1 的完整檢核:未停權、
+> `referral_program_joined`、**會籍在效期內**(`subscription_invalid`)、
+> KYC 身分證照片、金額門檻、當日一次。
+> ⚠️ **「累積不需會籍」與「提領需會籍」不衝突,是兩個獨立面向**——此帳號若
+> 長期不續約,到要提領那天仍會被 `subscription_invalid` 擋下,營運需自行安排
+> 持續續約。
 
 ## 6. 開放問題
 
