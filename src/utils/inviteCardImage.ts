@@ -34,9 +34,9 @@ export function drawInviteCard(options: InviteCardOptions): HTMLCanvasElement {
 
   ctx.textAlign = 'center';
 
-  // 抬頭：「<會員名> 的推薦邀請」——名字粗體，其餘一般。
+  // 抬頭：「<會員名> 的Uknow邀請」——名字粗體，其餘一般。
   if (name) {
-    const suffix = ' 的推薦邀請';
+    const suffix = ' 的Uknow邀請';
     const nameFont = 'bold 30px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
     const suffixFont = '24px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
     ctx.font = nameFont;

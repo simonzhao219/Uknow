@@ -24,16 +24,12 @@ const { UserCtx } = await vi.hoisted(async () => {
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 
-// 替身只需暴露「開著沒」與「能不能觸發加入」，其餘內容不是本單元的責任。
+// 替身只需暴露「開著沒」，其餘內容不是本單元的責任。
+// （面板內原本還有一個「加入推薦計畫」引導，現已移除——未加入時面板只剩會員
+// 核身碼，加入入口統一在推薦碼欄位的 CTA，見 MyQrDialog 的分頁規則。）
 vi.mock('./MyQrDialog', () => ({
-  MyQrDialog: ({ open, accountStatus, onRequestJoin }: any) =>
-    open ? (
-      <div data-testid="my-qr-dialog" data-account-status={accountStatus}>
-        <button type="button" onClick={onRequestJoin}>
-          分頁內加入
-        </button>
-      </div>
-    ) : null,
+  MyQrDialog: ({ open, accountStatus }: any) =>
+    open ? <div data-testid="my-qr-dialog" data-account-status={accountStatus} /> : null,
 }));
 vi.mock('./JoinReferralProgramDialog', () => ({
   JoinReferralProgramDialog: ({ open, onSuccess }: any) =>
@@ -114,13 +110,13 @@ describe('MyQrEntry', () => {
     expect(screen.getByTestId('my-qr-dialog').getAttribute('data-account-status')).toBe('active');
   });
 
-  it('由面板內要求加入時先關掉面板再開加入流程', () => {
+  it('由推薦碼欄位的 CTA 開加入流程時同時關掉面板', () => {
     renderEntry({ referralProgramJoined: false, referralCode: null });
 
-    fireEvent.click(screen.getByTestId('my-qr-button'));
-    fireEvent.click(screen.getByText('分頁內加入'));
+    fireEvent.click(screen.getByTestId('join-referral-button'));
 
-    // 兩者是不同層的遮罩（Radix portal vs 手刻 fixed），疊在一起會吃掉點擊。
+    // 兩者是不同層的遮罩（Radix portal vs 手刻 fixed），疊在一起會吃掉點擊，
+    // 使用者按不到簽名與同意條款——所以開加入流程前一律先關掉面板。
     expect(screen.queryByTestId('my-qr-dialog')).toBeNull();
     expect(screen.getByTestId('join-dialog-submit')).toBeTruthy();
   });

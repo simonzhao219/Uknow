@@ -44,9 +44,11 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   const canShowCode = !!user?.referralProgramJoined && !!user?.referralCode;
 
   const openJoin = () => {
-    // 先關 QR 面板再開加入流程：JoinReferralProgramDialog 是手刻的 fixed z-50
-    // 遮罩，MyQrDialog 是 Radix Dialog（portal 到 body、同樣 z-50），兩者疊在
-    // 一起時 Radix 這層會蓋住加入流程並吃掉點擊，使用者按不到簽名與同意條款。
+    // 加入的入口現在只有推薦碼欄位這顆 CTA（QR 面板未加入時只剩核身碼、沒有加入
+    // 引導），照理不會在面板開著時觸發。仍保留關閉動作當防線：
+    // JoinReferralProgramDialog 是手刻的 fixed z-50 遮罩，MyQrDialog 是 Radix
+    // Dialog（portal 到 body、同樣 z-50），兩者一旦疊起來 Radix 會蓋住加入流程
+    // 並吃掉點擊，使用者按不到簽名與同意條款。
     setQrOpen(false);
     setJoinOpen(true);
   };
@@ -102,7 +104,6 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
         referralCode={user?.referralCode}
         memberName={user?.name}
         accountStatus={user?.accountStatus}
-        onRequestJoin={openJoin}
       />
 
       <JoinReferralProgramDialog
