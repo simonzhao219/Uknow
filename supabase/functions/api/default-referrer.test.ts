@@ -525,3 +525,42 @@ Deno.test('claim：被預設綁定者領推薦王 credit → 三代發獎歸預�
     );
   }
 });
+
+// ============================================================
+// 階段 4：契約——GET /auth/profile 曝出 isAutoReferral
+// ============================================================
+
+Deno.test('profile：自動綁定者 isAutoReferral=true，一般使用者 false', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const referrer = await createTestUser(client, { name: '契約情境推薦人' });
+  const bound = await createTestUser(client, { name: '契約情境自動綁定者' });
+  const plain = await createTestUser(client, { name: '契約情境一般人' });
+  try {
+    await payForUser(client, referrer.id);
+    const code = await getActiveReferralCode(client, referrer.id);
+    await setDefaultCode(client, code);
+    await payForUser(client, bound.id); // 首購 → 自動綁定
+    await setDefaultCode(client, null); // 關掉再讓 plain 付款，確保他不被綁
+    await payForUser(client, plain.id);
+
+    const boundToken = await getUserAccessToken(client, bound.email);
+    const boundRes = await app.request('/api/auth/profile', {
+      headers: { Authorization: `Bearer ${boundToken}` },
+    });
+    assertEquals(boundRes.status, 200);
+    const boundBody = await boundRes.json();
+    assertEquals(boundBody.isAutoReferral, true, '自動綁定者的 profile 應帶 isAutoReferral=true');
+
+    const plainToken = await getUserAccessToken(client, plain.email);
+    const plainRes = await app.request('/api/auth/profile', {
+      headers: { Authorization: `Bearer ${plainToken}` },
+    });
+    assertEquals(plainRes.status, 200);
+    const plainBody = await plainRes.json();
+    assertEquals(plainBody.isAutoReferral, false, '一般使用者應為 false（欄位必須存在）');
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [referrer.id, bound.id, plain.id]);
+  }
+});
