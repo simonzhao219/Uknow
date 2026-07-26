@@ -213,3 +213,151 @@ Deno.test('resolve_default_referrer：設定值大小寫混合 → 正規化後�
     await deleteTestUsers(client, [referrer.id, user.id]);
   }
 });
+
+// ============================================================
+// 階段 2：接進 apply_referral_side_effects（情境 A/B/C/G/L）
+// 走 payForUser（process_successful_payment → apply_referral_side_effects）
+// 的完整付款路徑，驗證綁定、回寫、發獎、任務計數。
+// ============================================================
+
+Deno.test('apply：未填推薦碼首購 → 綁定預設推薦人、發 gen1、無 gen2/3、任務+1', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const referrer = await createTestUser(client, { name: '預設推薦人A' });
+  const user = await createTestUser(client, { name: '自然流量首購A' });
+  try {
+    await payForUser(client, referrer.id);
+    const code = await getActiveReferralCode(client, referrer.id);
+    await setDefaultCode(client, code);
+
+    const { error } = await payForUser(client, user.id);
+    assertEquals(error, null, `首購付款失敗: ${error?.message}`);
+
+    // 回寫三欄位（規劃 §2.6——回寫是發獎的必要條件，pay_referral_generations 重讀 profiles）
+    const { data: prof } = await client
+      .from('profiles')
+      .select('referred_by_user_id, referred_by_code, referred_by_is_default')
+      .eq('id', user.id)
+      .single();
+    assertEquals(prof?.referred_by_user_id, referrer.id, '應回寫 referred_by_user_id');
+    assertEquals(prof?.referred_by_code, code, '應回寫 referred_by_code');
+    assertEquals(prof?.referred_by_is_default, true, '應標記 referred_by_is_default');
+
+    // gen1 發放；預設推薦人自己無上線 → 不得有 gen2/gen3（情境 L）
+    const { data: rewards } = await client
+      .from('reward_transactions')
+      .select('user_id, generation')
+      .eq('referee_user_id', user.id)
+      .eq('type', 'referral_reward');
+    assertEquals(rewards?.length, 1, `應只有 gen1 一筆，實際 ${rewards?.length}`);
+    assertEquals(rewards?.[0].user_id, referrer.id, 'gen1 應歸預設推薦人');
+    assertEquals(rewards?.[0].generation, 1);
+
+    // 任務計數照常（情境 G——已拍板照常參與推薦王）
+    const { data: progress } = await client
+      .from('task_progress')
+      .select('total_referrals')
+      .eq('user_id', referrer.id)
+      .single();
+    assertEquals((progress?.total_referrals ?? 0) >= 1, true, '預設推薦人任務計數應累積');
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [referrer.id, user.id]);
+  }
+});
+
+Deno.test('apply：有真推薦碼者付款 → 不受預設影響，is_default 為 false', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const defReferrer = await createTestUser(client, { name: '預設推薦人B' });
+  const realReferrer = await createTestUser(client, { name: '真推薦人B' });
+  try {
+    await payForUser(client, defReferrer.id);
+    await payForUser(client, realReferrer.id);
+    const defCode = await getActiveReferralCode(client, defReferrer.id);
+    const realCode = await getActiveReferralCode(client, realReferrer.id);
+    await setDefaultCode(client, defCode);
+
+    const user = await createTestUser(client, { name: '有真碼者B', referredByCode: realCode });
+    try {
+      await payForUser(client, user.id);
+      const { data: prof } = await client
+        .from('profiles')
+        .select('referred_by_user_id, referred_by_is_default')
+        .eq('id', user.id)
+        .single();
+      assertEquals(prof?.referred_by_user_id, realReferrer.id, '真推薦人不得被預設覆蓋');
+      assertEquals(prof?.referred_by_is_default ?? false, false, '真推薦碼綁定不得標 is_default');
+
+      const { data: rewards } = await client
+        .from('reward_transactions')
+        .select('user_id')
+        .eq('referee_user_id', user.id)
+        .eq('type', 'referral_reward')
+        .eq('generation', 1);
+      assertEquals(rewards?.[0]?.user_id, realReferrer.id, 'gen1 應歸真推薦人');
+    } finally {
+      await deleteTestUsers(client, [user.id]);
+    }
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [defReferrer.id, realReferrer.id]);
+  }
+});
+
+Deno.test('apply：已被預設綁定者續約 → 綁定不變，該筆續約仍發 gen1', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const referrer = await createTestUser(client, { name: '預設推薦人C' });
+  const user = await createTestUser(client, { name: '續約情境C' });
+  try {
+    await payForUser(client, referrer.id);
+    const code = await getActiveReferralCode(client, referrer.id);
+    await setDefaultCode(client, code);
+
+    await payForUser(client, user.id); // 首購 → 綁定
+    await payForUser(client, user.id); // 續約 → 解析 no-op，但 §8.2 第 2 列照發
+
+    const { data: rewards } = await client
+      .from('reward_transactions')
+      .select('subscription_id')
+      .eq('referee_user_id', user.id)
+      .eq('user_id', referrer.id)
+      .eq('generation', 1);
+    assertEquals(rewards?.length, 2, `首購+續約應各發一筆 gen1，實際 ${rewards?.length}`);
+
+    const { data: prof } = await client
+      .from('profiles')
+      .select('referred_by_user_id, referred_by_is_default')
+      .eq('id', user.id)
+      .single();
+    assertEquals(prof?.referred_by_user_id, referrer.id, '續約不得改變綁定');
+    assertEquals(prof?.referred_by_is_default, true, '旗標維持 true');
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [referrer.id, user.id]);
+  }
+});
+
+Deno.test('apply：解析失敗（碼無效）→ 付款照常成功，使用者維持無推薦人', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const user = await createTestUser(client, { name: '碼無效仍付款成功' });
+  try {
+    await setDefaultCode(client, 'zzz000001');
+    const { data, error } = await payForUser(client, user.id);
+    assertEquals(error, null, '設定錯誤絕不可阻斷金流');
+    assertEquals(data?.success ?? true, true);
+
+    const { data: prof } = await client
+      .from('profiles')
+      .select('referred_by_user_id, referred_by_is_default')
+      .eq('id', user.id)
+      .single();
+    assertEquals(prof?.referred_by_user_id, null, 'fallback 應維持無推薦人');
+    assertEquals(prof?.referred_by_is_default ?? false, false);
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
