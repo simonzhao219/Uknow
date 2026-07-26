@@ -54,11 +54,11 @@ export function MyQrDialog({
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as 'verify' | 'invite')}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="verify" className="gap-1">
+              <TabsTrigger value="verify" className="gap-1" data-testid="verify-tab">
                 <Shield className="h-4 w-4" />
                 會員核身碼
               </TabsTrigger>
-              <TabsTrigger value="invite" className="gap-1">
+              <TabsTrigger value="invite" className="gap-1" data-testid="invite-tab">
                 <Share2 className="h-4 w-4" />
                 邀請好友
               </TabsTrigger>
