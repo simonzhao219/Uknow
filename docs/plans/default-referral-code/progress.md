@@ -17,12 +17,29 @@
 
 ## 目前位置與下一步
 
-規劃書已完成,尚未送 `/review-plan`。**尚未寫任何產品程式碼**。
-下一步:跑 `/review-plan default-referral-code`,四視角審查後停等人審;
-實作只能由人親自打 `/tdd-implement default-referral-code` 啟動。
+四視角審查已完成,報告在 `./review.md`:**2 個 P0、11 個 P1、3 個 P2、
+2 項需人工裁決**。**尚未寫任何產品程式碼。**
+
+**現在卡在人審**。兩個 P0 都必須先處置才可開工:
+- P0-1 停權護欄:解析預設推薦人須重用 `validate_referral_code()`
+  (`referral_codes.status` 與 `profiles.suspended_at` 無連動,規劃書原本
+  的安全宣稱是錯的)
+- P0-2「不回填」自相矛盾且會**回溯**發放歷史獎金:需人裁決適用範圍
+  (見 review.md〈需人工裁決 A〉的讀法一/讀法二)
+
+裁決後:改規劃 → 重跑 `/review-plan` → 人親自打
+`/tdd-implement default-referral-code` 才開工。
 
 ## Blockers(逃生口紀錄)
 
+- **P0-2 未裁決(阻擋開工)**:「不回填」的兩種讀法導向不同機制,規劃書
+  自行選了文字描述卻實作另一種。詳見 `review.md`〈需人工裁決 A〉。
+- **驗證過的回溯發獎路徑(P0-2 的技術根據,實作時務必保留這條記錄)**:
+  既有無推薦人會員被 lazy 綁定後,只要載入一次 profile
+  (`index.ts:362` 無條件對 `registrationStep === 3` 呼叫
+  `repairOrphanedPaymentsBestEffort`),`repair_orphaned_payments` 的候選
+  條件(`20260716000006:377-382`)就會把其**歷史 subscription** 全部抓成
+  候選並補發 gen1 給預設推薦人。
 - **開放問題未決(阻擋階段 1 的真路徑驗證)**:`asa899869` 是否存在於
   正式站/develop 的 `referral_codes` 且為 `active`,尚未確認。develop 的
   Supabase branch 有獨立 DB,極可能不存在此碼——階段 1 的測試需自行建立
