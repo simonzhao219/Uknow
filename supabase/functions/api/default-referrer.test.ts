@@ -17,7 +17,9 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
+  ensureEdgeFunctionEnv,
   getActiveReferralCode,
+  getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
 
@@ -359,5 +361,167 @@ Deno.test('apply：解析失敗（碼無效）→ 付款照常成功，使用者
   } finally {
     await setDefaultCode(client, original);
     await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// ============================================================
+// 階段 3：fresh 換線清旗標（情境 J）+ claim 路徑（情境 K）+ 守衛釘住
+// /payuni/prepare 是 referred_by_* 的第二個寫入點（不經
+// apply_referral_side_effects），旗標清除必須在那裡做。
+// ============================================================
+
+ensureEdgeFunctionEnv();
+// prepare 路由需要 payuniConfig()（照 renewal-modes.test.ts 的測試環境慣例）
+Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
+Deno.env.set('PAYUNI_HASH_KEY', '0123456789abcdef0123456789abcdef');
+Deno.env.set('PAYUNI_HASH_IV', '0123456789ab');
+Deno.env.set('PAYUNI_SANDBOX', 'false');
+Deno.env.set('FRONTEND_URL', 'https://frontend.test');
+
+const { app } = await import('./index.ts');
+
+/** 把使用者的訂閱改成已完全過期（照 renewal-modes.test.ts 的作法）。 */
+async function expireAll(client: ReturnType<typeof adminClient>, userId: string) {
+  const end = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const { error } = await client
+    .from('subscriptions')
+    .update({ end_date: end, grace_period_end: end })
+    .eq('user_id', userId);
+  if (error) throw new Error(`expireAll failed: ${error.message}`);
+}
+
+Deno.test('prepare fresh：被預設綁定者換到真推薦人 → 旗標重置為 false', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const defReferrer = await createTestUser(client, { name: '預設推薦人J' });
+  const realReferrer = await createTestUser(client, { name: '真推薦人J' });
+  const user = await createTestUser(client, { name: '換線情境J' });
+  try {
+    await payForUser(client, defReferrer.id);
+    await payForUser(client, realReferrer.id);
+    const defCode = await getActiveReferralCode(client, defReferrer.id);
+    const realCode = await getActiveReferralCode(client, realReferrer.id);
+    await setDefaultCode(client, defCode);
+
+    await payForUser(client, user.id); // 首購 → 預設綁定，旗標 true
+    await expireAll(client, user.id);
+
+    const token = await getUserAccessToken(client, user.email);
+    const res = await app.request('/api/payuni/prepare', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ renewalMode: 'fresh', referredByCode: realCode }),
+    });
+    assertEquals(res.status, 200, `prepare fresh 應成功: ${await res.text()}`);
+
+    const { data: prof } = await client
+      .from('profiles')
+      .select('referred_by_user_id, referred_by_code, referred_by_is_default')
+      .eq('id', user.id)
+      .single();
+    assertEquals(prof?.referred_by_user_id, realReferrer.id, '換線應改指真推薦人');
+    assertEquals(prof?.referred_by_code, realCode);
+    assertEquals(
+      prof?.referred_by_is_default,
+      false,
+      '換到真推薦人後旗標必須重置——否則前端會把使用者自己選的推薦人也隱藏',
+    );
+
+    // §7.2 換線語意：預設推薦人的歷史獎勵保留
+    const { data: history } = await client
+      .from('reward_transactions')
+      .select('id')
+      .eq('user_id', defReferrer.id)
+      .eq('referee_user_id', user.id);
+    assertEquals((history ?? []).length >= 1, true, '預設推薦人的歷史獎勵不得被撤銷');
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [defReferrer.id, realReferrer.id, user.id]);
+  }
+});
+
+Deno.test('reset-registration：已完成付款者 → 400（釘住編輯入口守衛）', async () => {
+  // 這道守衛是「/auth/register 第三寫入點不需清旗標邏輯」的前提
+  // （見 plan §2.6）：旗標為 true 者必然有 completed 訂單，會被此守衛
+  // 擋在編輯模式之外。放寬此守衛的人必須看到這裡紅燈並回頭補清除邏輯。
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '守衛釘住情境' });
+  try {
+    await payForUser(client, user.id);
+    const token = await getUserAccessToken(client, user.email);
+    const res = await app.request('/api/auth/reset-registration', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assertEquals(res.status, 400, '已完成付款者不得重置註冊資料（守衛不可放寬）');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('claim：被預設綁定者領推薦王 credit → 三代發獎歸預設上線', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  // 推薦王門檻暫調為 1（照 reward-config.test.ts 的還原紀律）
+  const { data: cfg } = await client
+    .from('reward_config')
+    .select('referral_king_monthly_threshold')
+    .eq('id', true)
+    .single();
+  const defReferrer = await createTestUser(client, { name: '預設推薦人K' });
+  const user = await createTestUser(client, { name: '任務續約情境K' });
+  let downlineId: string | null = null;
+  try {
+    await client.from('reward_config')
+      .update({ referral_king_monthly_threshold: 1 }).eq('id', true);
+
+    await payForUser(client, defReferrer.id);
+    const defCode = await getActiveReferralCode(client, defReferrer.id);
+    await setDefaultCode(client, defCode);
+
+    await payForUser(client, user.id); // 首購 → 綁定預設推薦人
+    const userCode = await getActiveReferralCode(client, user.id);
+
+    // user 自己發展一位下線並完成付款 → 門檻 1 → 發 king credit
+    const downline = await createTestUser(client, { name: 'K的下線', referredByCode: userCode });
+    downlineId = downline.id;
+    await payForUser(client, downline.id);
+
+    const { data: credit } = await client
+      .from('referral_king_rewards')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'unclaimed')
+      .limit(1)
+      .maybeSingle();
+    assertEquals(!!credit, true, '門檻 1 應發出 king credit');
+
+    // 領取 → claim_referral_king_reward → pay_referral_generations(claim 鍵)
+    const { error: claimErr } = await client.rpc('claim_referral_king_reward', {
+      p_user_id: user.id,
+      p_reward_id: credit!.id,
+    });
+    assertEquals(claimErr, null, `claim 失敗: ${claimErr?.message}`);
+
+    // 繞過 apply_referral_side_effects 的 claim 路徑，也要吃到預設綁定的結果
+    const { data: rewards } = await client
+      .from('reward_transactions')
+      .select('user_id, source_claim_id')
+      .eq('referee_user_id', user.id)
+      .eq('generation', 1)
+      .not('source_claim_id', 'is', null);
+    assertEquals(rewards?.length, 1, 'claim 應對上線鏈發出一筆 gen1（claim 冪等鍵）');
+    assertEquals(rewards?.[0].user_id, defReferrer.id, 'claim 的 gen1 應歸預設推薦人');
+  } finally {
+    if (cfg) {
+      await client.from('reward_config')
+        .update({ referral_king_monthly_threshold: cfg.referral_king_monthly_threshold })
+        .eq('id', true);
+    }
+    await setDefaultCode(client, original);
+    await deleteTestUsers(
+      client,
+      [defReferrer.id, user.id, ...(downlineId ? [downlineId] : [])],
+    );
   }
 });
