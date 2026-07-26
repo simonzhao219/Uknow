@@ -95,6 +95,20 @@ def decide(cmd: str, guard_denies: bool = False) -> str | None:
     )
 
 
+def _record(rule: str | None) -> None:
+    """記一次決策給 harness 感測器(理由與邊界見 bash-guard.py 的同名函式)。
+
+    本 hook 是**改寫器**不是閘門,所以 rule 記成 collapse 而非 deny——
+    decision_log 的桶子刻意叫 fired/passed,就是為了不讓這種差別被讀數抹平。
+    """
+    try:
+        import decision_log
+
+        decision_log.record("check-output-filter", rule)
+    except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
+        return
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
@@ -103,6 +117,8 @@ def main() -> None:
 
     cmd = str(payload.get("tool_input", {}).get("command", ""))
     new = decide(cmd, guard_denies=_bash_guard_denies(cmd))
+    _record("collapse" if new else None)
+
     if not new:
         return
 

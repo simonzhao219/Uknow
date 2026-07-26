@@ -143,23 +143,42 @@ def _grep_keyword(root: Path, keyword: str) -> list[str]:
         return []
 
 
-def main() -> None:
-    watched = watched_deletions(_git_deleted_paths(ROOT))
-    if not watched:
+def _record_and_flush(rule: str | None) -> None:
+    """記一次決策,並做一次 best-effort 落檔(理由與邊界見 bash-guard.py 的 _record)。
+
+    本檔是 Stop hook,所以這裡是 session 內最後一次能寫東西的時機。但它跑在
+    **最後一次 commit 之後**——這一次 flush 寫出去的內容只有在之後還有 commit
+    時才進得了 git,而 web session 通常不會有。所以它是補漏不是主力:真正的
+    落檔點是 pre-commit(見 decision_log.py 的說明)。
+    """
+    try:
+        import decision_log
+
+        decision_log.record("deletion-residue-check", rule)
+        decision_log.flush()
+    except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
         return
 
-    keyed: list[tuple[str, str]] = []
-    hits: dict[str, list[str]] = {}
-    for path in watched:
-        parent_exists = (ROOT / Path(path).parent).is_dir()
-        kw = keyword_for(path, parent_exists)
-        keyed.append((path, kw))
-        if kw not in hits:
-            hits[kw] = _grep_keyword(ROOT, kw)
 
-    report = residue_report(keyed, hits)
-    if report:
-        print(report)
+def main() -> None:
+    report = ""
+    watched = watched_deletions(_git_deleted_paths(ROOT))
+
+    if watched:
+        keyed: list[tuple[str, str]] = []
+        hits: dict[str, list[str]] = {}
+        for path in watched:
+            parent_exists = (ROOT / Path(path).parent).is_dir()
+            kw = keyword_for(path, parent_exists)
+            keyed.append((path, kw))
+            if kw not in hits:
+                hits[kw] = _grep_keyword(ROOT, kw)
+
+        report = residue_report(keyed, hits)
+        if report:
+            print(report)
+
+    _record_and_flush("residue" if report else None)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,26 @@ run_gate() {
   run_gate_quiet "$label" "$@"
 }
 
+# harness 感測器的落檔點：把本 session 的 hook 決策計數寫成 sessions.jsonl 的
+# 一行並自動暫存。跑在閘門**之前**，這樣它才進得了這一次 commit。
+#
+# 為什麼是這裡而不是 Stop hook：Stop 跑在最後一次 commit **之後**，它寫出來的
+# 東西永遠進不了 git；而近 14 天 47 個合併 PR 有 46 個來自 claude.ai/code 的
+# 拋棄式 web 容器——CLAUDE.md 那句「git 是唯一能跨 session 的通道」在這裡是
+# 硬約束，落在別處就等於沒落。
+#
+# 為什麼敢自動 git add：靠 agent 記得暫存，就是把確定性換成啟發式，而那正是
+# 這整個框架在避免的事。代價是 commit 會多帶一個沒被手動暫存的檔案，所以範圍
+# 嚴格限縮在這一個路徑，且 HARNESS_METRICS=0 可以整組關掉。
+METRICS_LOG=".claude/metrics/sessions.jsonl"
+if [ "${HARNESS_METRICS:-1}" = "0" ]; then
+  [ "$DRY_RUN" = "1" ] && echo "DRYRUN: METRICS disabled"
+elif [ "$DRY_RUN" = "1" ]; then
+  echo "DRYRUN: WOULD_FLUSH metrics"
+elif python3 .claude/hooks/decision_log.py --flush 2>/dev/null && [ -f "$METRICS_LOG" ]; then
+  git add "$METRICS_LOG" 2>/dev/null || true
+fi
+
 if [ -f .claude/tdd-lock ]; then
   echo "[pre-commit] TDD 紅燈期（.claude/tdd-lock 存在）：跳過 vitest，只跑靜態閘門"
   [ "$DRY_RUN" = "1" ] && echo "DRYRUN: MODE red-channel"

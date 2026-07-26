@@ -34,6 +34,16 @@ def decide(lock_exists: bool, file_path: str) -> str | None:
     return None
 
 
+def _record(rule: str | None) -> None:
+    """記一次決策給 harness 感測器(理由與邊界見 bash-guard.py 的同名函式)。"""
+    try:
+        import decision_log
+
+        decision_log.record("tdd-test-guard", rule)
+    except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
+        return
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
@@ -45,6 +55,8 @@ def main() -> None:
     file_path = str(payload.get("tool_input", {}).get("file_path", ""))
 
     reason = decide(lock_exists, file_path)
+    _record("red-phase" if reason else None)
+
     if reason:
         print(
             json.dumps(

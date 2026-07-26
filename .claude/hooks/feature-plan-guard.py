@@ -88,6 +88,16 @@ def current_branch(root: Path) -> str:
         return ""
 
 
+def _record(rule: str | None) -> None:
+    """記一次決策給 harness 感測器(理由與邊界見 bash-guard.py 的同名函式)。"""
+    try:
+        import decision_log
+
+        decision_log.record("feature-plan-guard", rule)
+    except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
+        return
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
@@ -110,6 +120,11 @@ def main() -> None:
     plan_present = bool(slug) and plan_ever_existed(root, slug)
 
     reason = decide(branch, rel, plan_present)
+    # 這條的計數格外有價值:守衛擋下來的每一次,都正好是 /plan-feature 那一層
+    # 沒被觸發的一次(skill 靠 description 比對,是啟發式的)。這個數字就是
+    # skill 命中率的補數——而那個機率至今沒人量過。
+    _record("no-plan" if reason else None)
+
     if reason:
         print(
             json.dumps(

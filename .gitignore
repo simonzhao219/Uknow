@@ -35,6 +35,9 @@ supabase/.branches/
 .claude/tdd-lock
 .claude/settings.local.json
 CLAUDE.local.md
+# harness 感測器的 session 內緩衝（同性質的 session 狀態）。落檔後的
+# .claude/metrics/sessions.jsonl 則**要**進版控——那是唯一能跨 session 的通道。
+.claude/metrics/.session.json
 
 # E2E (pytest-bdd + Playwright)
 e2e/journey/.run/
