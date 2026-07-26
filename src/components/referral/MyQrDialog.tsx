@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QrCode, Share2, Shield } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { MemberVerifyQrTab } from './MemberVerifyQrTab';
 import { InviteFriendPanelContent } from './InviteFriendPanelContent';
@@ -61,17 +61,16 @@ export function MyQrDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto">
+      {/* 刻意不給 DialogDescription：分頁名稱（邀請好友／會員核身碼）已經說明了
+          用途，核身頁自己還有一句「出示這組碼給店家掃描」，標題下再放一句總述
+          是把同一件事講第二遍，還把 QR 擠出手機的第一屏。aria-describedby 顯式
+          給 undefined 是 Radix 的要求——不給的話它會在 dev console 警告缺說明。 */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <QrCode className="h-5 w-5" />
             我的 QR
           </DialogTitle>
-          <DialogDescription>
-            {canShareInvite
-              ? '邀請碼給朋友掃描直接註冊；核身碼給店家掃描確認身分。'
-              : '核身碼給店家掃描確認您的會員身分。'}
-          </DialogDescription>
         </DialogHeader>
 
         {canShareInvite ? (
