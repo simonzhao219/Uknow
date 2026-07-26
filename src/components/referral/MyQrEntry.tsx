@@ -62,54 +62,40 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   };
 
   return (
-    // 兩欄兩列的網格，三個元素全部顯式落位——右上角刻意空著。
-    //
-    // 前一版是 `flex items-center`：左欄是「標籤＋碼／CTA」兩行的堆疊，右欄只有
-    // 一顆按鈕，於是那顆按鈕被對齊到整個左欄的「垂直中央」，落在標籤與 CTA 之間，
-    // 兩顆按鈕看起來各在各的高度。改成網格後兩顆按鈕同屬第二列，基線自然對齊，
-    // 而第一列的高度是從標籤本身長出來的（不是寫死的空白行），標籤字級之後改動
-    // 也不會跑掉。
-    //
-    // justify-items-start：欄寬是 1fr，不釘住的話 CTA 會被撐成滿欄寬。
-    <div
-      className={cn(
-        'grid grid-cols-[minmax(0,1fr)_auto] items-center justify-items-start gap-x-3 gap-y-1',
-        className,
-      )}
-    >
-      <p className="col-start-1 row-start-1 text-sm text-muted-foreground">我的推薦碼</p>
+    <div className={cn('flex items-center gap-3', className)}>
+      <div className="min-w-0">
+        <p className="text-sm text-muted-foreground">我的推薦碼</p>
+        {canShowCode ? (
+          <p
+            data-testid="my-referral-code"
+            className="truncate font-mono text-lg font-semibold tracking-wider text-purple-600"
+          >
+            {user.referralCode}
+          </p>
+        ) : (
+          <Button
+            size="sm"
+            className="mt-1 bg-purple-600 text-white hover:bg-purple-700"
+            onClick={openJoin}
+            data-testid="join-referral-button"
+          >
+            <Shield className="mr-1 h-4 w-4" />
+            加入推薦計畫
+          </Button>
+        )}
+      </div>
 
-      {canShowCode ? (
-        <p
-          data-testid="my-referral-code"
-          className="col-start-1 row-start-2 truncate font-mono text-lg font-semibold tracking-wider text-purple-600"
-        >
-          {user.referralCode}
-        </p>
-      ) : (
-        // 與「我的 QR」同樣是 size="sm"（h-8），高度由同一個尺寸 token 決定，
-        // 不各自寫死——這是兩顆按鈕高度一致的來源。
+      <div className="ml-auto shrink-0">
         <Button
+          variant="outline"
           size="sm"
-          className="col-start-1 row-start-2 bg-purple-600 text-white hover:bg-purple-700"
-          onClick={openJoin}
-          data-testid="join-referral-button"
+          onClick={() => setQrOpen(true)}
+          data-testid="my-qr-button"
         >
-          <Shield className="mr-1 h-4 w-4" />
-          加入推薦計畫
+          <QrCode className="mr-1 h-4 w-4" />
+          我的 QR
         </Button>
-      )}
-
-      <Button
-        variant="outline"
-        size="sm"
-        className="col-start-2 row-start-2"
-        onClick={() => setQrOpen(true)}
-        data-testid="my-qr-button"
-      >
-        <QrCode className="mr-1 h-4 w-4" />
-        我的 QR
-      </Button>
+      </div>
 
       <MyQrDialog
         open={qrOpen}
