@@ -24,8 +24,10 @@ describe('InviteFriendPanelContent', () => {
 
     expect(screen.getByText(expectedLink)).toBeTruthy();
     expect(screen.getByText('abc123')).toBeTruthy();
-    // 抬頭帶會員名（"拿給人掃"模式）
-    expect(screen.getByText('小明 的推薦邀請')).toBeTruthy();
+    // 抬頭帶會員名（"拿給人掃"模式）；名字獨立成粗體 span，故分開斷言
+    const nameEl = screen.getByText('小明');
+    expect(nameEl.className).toContain('font-bold');
+    expect(nameEl.parentElement?.textContent).toBe('小明 的推薦邀請');
     // QR 容器可存取名稱含連結
     const qr = screen.getByTestId('referral-qrcode');
     expect(qr.getAttribute('aria-label')).toContain(expectedLink);

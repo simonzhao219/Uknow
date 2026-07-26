@@ -55,7 +55,7 @@ Deno.test('member 自取核身碼 → admin 掃碼回身分與 active 會籍，�
     });
     assertEquals(selfRes.status, 200);
     const selfBody = await selfRes.json();
-    assertShape(MemberVerifyTokenResponseSchema, selfBody); // SSOT 形狀把關
+    assertShape(MemberVerifyTokenResponseSchema, selfBody, 'GET /members/verify-token'); // SSOT 形狀把關
     assert(selfBody.data.token.length > 0);
 
     // admin 掃碼核身
@@ -63,7 +63,7 @@ Deno.test('member 自取核身碼 → admin 掃碼回身分與 active 會籍，�
     const res = await verifyReq(adminToken, selfBody.data.token);
     assertEquals(res.status, 200);
     const body = await res.json();
-    assertShape(MemberVerifyResponseSchema, body); // SSOT 形狀把關
+    assertShape(MemberVerifyResponseSchema, body, 'POST /admin/members/verify'); // SSOT 形狀把關
     assertEquals(body.data.displayName, '核身測試員');
     assertEquals(body.data.status, 'active');
 

@@ -29,10 +29,7 @@ export function InviteFriendDialog({
             <QrCode className="h-5 w-5" />
             邀請好友
           </DialogTitle>
-          <DialogDescription>
-            讓對方掃描 QR
-            或開啟連結，即可直接前往註冊並自動帶入您的推薦碼；每成功推薦一人可獲得推薦獎勵。
-          </DialogDescription>
+          <DialogDescription>每成功推薦一人可獲得推薦獎勵。</DialogDescription>
         </DialogHeader>
         <InviteFriendPanelContent referralCode={referralCode} memberName={memberName} />
       </DialogContent>

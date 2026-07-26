@@ -79,29 +79,63 @@ export function MemberVerifyScanner() {
     }
   }, []);
 
-  // 相機掃碼：動態載入 @zxing/browser；不支援/拒絕權限即退手動輸入。
+  // 相機掃碼：getUserMedia 取後鏡頭串流，逐幀丟給 jsQR 解碼。
+  // 用 jsQR（只解 QR、動態 import）而非通用條碼庫：後者要多帶 ~200KB 進 bundle
+  // 才多支援我們用不到的格式，會撞破專案的 bundle 預算閘門。
+  // 不支援 / 拒絕權限 / 無相機 → 退手動輸入，功能不中斷。
   useEffect(() => {
     let cancelled = false;
+    let stream: MediaStream | null = null;
+    let rafId = 0;
+
     (async () => {
       try {
-        const { BrowserQRCodeReader } = await import('@zxing/browser');
-        const reader = new BrowserQRCodeReader();
-        const controls = await reader.decodeFromVideoDevice(
-          undefined,
-          videoRef.current ?? undefined,
-          (res) => {
-            if (res && !cancelled) verifyToken(res.getText());
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('no camera api');
+        const jsQR = (await import('jsqr')).default;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+        });
+        if (cancelled) return;
+        const video = videoRef.current;
+        if (!video) throw new Error('no video element');
+        video.srcObject = stream;
+        await video.play();
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const scan = () => {
+          if (cancelled) return;
+          if (ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const found = jsQR(image.data, image.width, image.height);
+            if (found?.data) {
+              verifyToken(found.data);
+              return; // 掃到就停；按「繼續掃描下一位」會重新掛載掃描迴圈
+            }
+          }
+          rafId = requestAnimationFrame(scan);
+        };
+        rafId = requestAnimationFrame(scan);
+        controlsRef.current = {
+          stop: () => {
+            cancelAnimationFrame(rafId);
+            for (const t of stream?.getTracks() ?? []) t.stop();
           },
-        );
-        if (cancelled) controls.stop();
-        else controlsRef.current = controls;
+        };
       } catch {
         if (!cancelled) setCameraFailed(true);
       }
     })();
+
     return () => {
       cancelled = true;
+      cancelAnimationFrame(rafId);
       controlsRef.current?.stop();
+      for (const t of stream?.getTracks() ?? []) t.stop();
     };
   }, [verifyToken]);
 
