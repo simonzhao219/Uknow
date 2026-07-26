@@ -18,6 +18,47 @@ export function adminClient(): SupabaseClient {
   });
 }
 
+// anon key 刻意**沒有**像 SERVICE_ROLE_KEY 那樣的寫死 fallback：它由
+// `supabase start` 當場產生，寫死一個只會過期騙人。CI 已從
+// `supabase status -o env` 匯出（ci.yml 的「匯出本地 Supabase 連線資訊」）。
+//
+// 缺少時**明確失敗**而不是靜默跳過：需要它的那條測試在驗「使用者 token
+// 直寫 PostgREST 被拒」，靜默跳過會讓這道防線在無人察覺的情況下失去驗證。
+function anonKey(): string {
+  const key = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!key) {
+    throw new Error(
+      'SUPABASE_ANON_KEY 未設定，無法測「使用者 token 直寫 PostgREST」。本機請先執行：' +
+        `export SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '"')`,
+    );
+  }
+  return key;
+}
+
+// 以**使用者 token** 直接打 PostgREST（不經 Edge Function），用來驗證
+// column-level GRANT 是否真的擋住自助寫入。
+//
+// 為什麼需要新 helper：既有測試拿到的 access token 一律只餵給
+// `app.request()`（Hono in-process 呼叫），完全不經過 PostgREST 閘道——
+// 那條路徑的欄位權限行為因此從未被任何測試碰到，而它正是姓名格式驗證
+// 最大的繞過面（見 20260726000002 migration 檔頭）。
+export async function patchProfileAsUser(
+  accessToken: string,
+  userId: string,
+  patch: Record<string, unknown>,
+): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: anonKey(),
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(patch),
+  });
+}
+
 // 讓 index.ts 內部的 sb()（讀環境變數）指向同一個本地實例——
 // 直接測 index.ts 匯出的函數/路由（app.request()）時需要。
 export function ensureEdgeFunctionEnv(): void {
@@ -27,9 +68,22 @@ export function ensureEdgeFunctionEnv(): void {
 
 let counter = 0;
 
-// 建立測試使用者：透過 auth.admin.createUser + user_metadata.referred_by_code，
-// 讓 handle_new_user() trigger（20260620000009）用跟真實註冊完全一樣的路徑
-// 解析 referred_by_user_id，不用手動戳 profiles。
+// 建立測試使用者：`referred_by_code` 仍走 user_metadata，讓
+// handle_new_user() trigger 用跟真實註冊完全一樣的路徑解析
+// referred_by_user_id；**姓名改用 service_role 直寫**。
+//
+// 為什麼姓名不能再走 metadata：20260726000002 起 handle_new_user() 不再讀
+// `raw_user_meta_data ->> 'name'`（那條路徑對外可達、繞過所有格式驗證），
+// 一律寫入空字串。繼續靠 metadata 帶姓名的話，所有依賴姓名的測試會靜默
+// 拿到空字串。
+//
+// 為什麼是 service_role 直寫而不是改呼叫 `POST /auth/register`：後者要求
+// name/phone/birthDate 皆非空，補上 phone/birth_date 會讓
+// effective_registration_step 從 0 變 1，直接打壞
+// registration-step-contract.test.ts 一系列斷言（它們依賴「剛建立、資料
+// 未填的使用者 registrationStep 為 0」）。直寫是唯一保住那個不變式的做法，
+// 同層 registration-step-contract.test.ts 的 fillBasicProfile 已是既有前例。
+// **刻意只碰 name，不碰 phone/birth_date。**
 export async function createTestUser(
   client: SupabaseClient,
   opts: { name: string; referredByCode?: string } = { name: 'Test User' },
@@ -40,12 +94,20 @@ export async function createTestUser(
     password: crypto.randomUUID(),
     email_confirm: true,
     user_metadata: {
-      name: opts.name,
       ...(opts.referredByCode ? { referred_by_code: opts.referredByCode } : {}),
     },
   });
   if (error || !data.user) {
     throw new Error(`createTestUser failed: ${error?.message ?? 'no user returned'}`);
+  }
+  if (opts.name) {
+    const { error: nameError } = await client
+      .from('profiles')
+      .update({ name: opts.name })
+      .eq('id', data.user.id);
+    if (nameError) {
+      throw new Error(`createTestUser set name failed: ${nameError.message}`);
+    }
   }
   return { id: data.user.id, email };
 }

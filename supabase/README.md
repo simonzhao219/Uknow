@@ -108,6 +108,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `20260724000004_..._pair_history` | 「新下線」判準改 pair-history |
 | `20260725000002_reward_source_lifecycle` | 獎勵來源分類改「拉新／續約」軸 |
 | `20260726000001_scope_own_policies_to_authenticated` | 「自己的資料」policy 收斂到 authenticated——訪客查詢路徑不再碰 `is_admin()` |
+| `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
