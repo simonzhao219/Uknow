@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NAME_CASES } from '@name-cases';
 import {
   validateName,
   validateNationalId,
@@ -41,14 +42,74 @@ describe('validateNationalId', () => {
 });
 
 describe('validateName', () => {
-  it('一般姓名通過', () => {
-    expect(validateName('Simon7')).toBeUndefined();
+  const zhOf = (s: string) => validateName(s, 'zh');
+  const fgOf = (s: string) => validateName(s, 'foreign');
+
+  it('案例表的中文模式期望值全數符合', () => {
+    for (const c of NAME_CASES) {
+      const err = zhOf(c.input);
+      expect(err === undefined, `「${c.input}」中文模式應${c.zh ? '通過' : '被拒'}`).toBe(c.zh);
+    }
   });
+
+  it('案例表的外文模式期望值全數符合', () => {
+    for (const c of NAME_CASES) {
+      const err = fgOf(c.input);
+      expect(err === undefined, `「${c.input}」外文模式應${c.foreign ? '通過' : '被拒'}`).toBe(
+        c.foreign,
+      );
+    }
+  });
+
+  it('Peter 在中文模式被拒——切換鈕不是裝飾,預設模式有強制力', () => {
+    // v3 審查 P1:原案例表四個不合法值剛好都因含數字或中英混雜而被連帶擋下,
+    // 沒有任何一個能暴露「格式工整的英文字串在預設中文模式直接通過」這個盲點。
+    expect(zhOf('Peter')).toBeDefined();
+    expect(fgOf('Peter')).toBeUndefined();
+  });
+
+  it('中文模式的字元錯誤訊息帶切換到外文模式的出口指引', () => {
+    const err = zhOf('Peter');
+    expect(err).toContain('中文字');
+    expect(err).toContain('外文姓名');
+  });
+
+  it('間隔號被拒,且訊息明確引導改用半形空格', () => {
+    const err = zhOf('谷辣斯·尤達卡');
+    expect(err).toContain('半形空格');
+  });
+
+  it('視覺相近的其他分隔符號也走同一句引導,不靠碼點清單窮舉', () => {
+    // v3 審查 P2:只鎖 U+00B7/U+2027/U+30FB 會讓 bullet、半形中點等變體
+    // 退回通用訊息,原地重現同一個死巷。改以「非中文非英數非空格」判定。
+    for (const sep of ['‧', '・', '•', '･', '　']) {
+      expect(
+        zhOf(`谷辣斯${sep}尤達卡`),
+        `分隔符號 U+${sep.codePointAt(0)?.toString(16)}`,
+      ).toContain('半形空格');
+    }
+  });
+
+  it('字元合法但超長時回長度訊息,依模式帶入各自上限', () => {
+    // v3 審查 P1:這是獨立案例。拿「姓名須為中文字」去回應一個全是合法中文字、
+    // 只是太長的輸入,講的是錯的事。
+    expect(zhOf('王'.repeat(11))).toBe('姓名最多 10 個字元');
+    expect(fgOf(`A${'a'.repeat(50)}`)).toBe('姓名最多 50 個字元');
+  });
+
+  it('剛好在上限的長度通過', () => {
+    expect(zhOf('王'.repeat(10))).toBeUndefined();
+    expect(fgOf(`A${'a'.repeat(49)}`)).toBeUndefined();
+  });
+
   it('空值被拒', () => {
-    expect(validateName('   ')).toBe('請輸入真實姓名');
+    expect(zhOf('   ')).toBe('請輸入真實姓名');
+    expect(fgOf('')).toBe('請輸入真實姓名');
   });
-  it('超過 10 字被拒', () => {
-    expect(validateName('01234567890')).toBe('姓名最多 10 個字元');
+
+  it('未指定模式時預設為中文', () => {
+    expect(validateName('王小明')).toBeUndefined();
+    expect(validateName('Peter')).toBeDefined();
   });
 });
 
@@ -91,7 +152,8 @@ describe('validateBirthDate', () => {
 describe('validateProfileForm', () => {
   const now = new Date(2026, 6, 19);
   const valid: ProfileFormValues = {
-    name: 'Simon7',
+    name: '王小明',
+    nameMode: 'zh',
     nationalId: 'A123456789',
     phone: '0933333333',
     birthDate: '2008-07-17',
@@ -109,9 +171,24 @@ describe('validateProfileForm', () => {
     expect(errors.nationalId).toContain('第 2 碼');
   });
 
+  it('姓名模式會傳進 validateName——外文姓名在中文模式下被表單擋住', () => {
+    const errors = validateProfileForm({ ...valid, name: 'John Smith' }, now);
+    expect(errors.name).toBeDefined();
+    expect(validateProfileForm({ ...valid, name: 'John Smith', nameMode: 'foreign' }, now)).toEqual(
+      {},
+    );
+  });
+
   it('一次標出所有有問題的欄位', () => {
     const errors = validateProfileForm(
-      { name: '', nationalId: 'x', phone: '123', birthDate: '', agreedToTerms: false },
+      {
+        name: '',
+        nameMode: 'zh',
+        nationalId: 'x',
+        phone: '123',
+        birthDate: '',
+        agreedToTerms: false,
+      },
       now,
     );
     expect(errors.name).toBeDefined();

@@ -61,8 +61,10 @@ async function seedPendingOrder(client: ReturnType<typeof adminClient>, userId: 
 
 Deno.test('契約：剛註冊（有 name、缺 phone/birth）、無訂單 → step 0（前端據此導回完善資料頁）', async () => {
   const client = adminClient();
-  // createTestUser 只透過 metadata 帶 name（走 handle_new_user），
-  // phone / birth_date 維持 null——這就是「帳號已建立、基本資料未填」的真實形狀。
+  // createTestUser 以 service_role 直寫 name（20260726000002 起
+  // handle_new_user 不再從 metadata 帶入姓名），且**刻意只碰 name**：
+  // phone / birth_date 維持 null——這就是「帳號已建立、基本資料未填」的
+  // 真實形狀,也是本檔一系列 step 0 斷言賴以成立的不變式。
   const user = await createTestUser(client, { name: '尚未填資料' });
   try {
     assertEquals(await stepOf(client, user.id), 0);

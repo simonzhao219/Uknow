@@ -12,6 +12,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from tools.zh_names import zh_name_for
+
 RUN_DIR = Path(__file__).resolve().parent / ".run"
 
 ROOT_NODE = "A0"
@@ -56,7 +58,9 @@ class RunState:
             node=node,
             email=root_email or f"e2e+{self.run_id}+{node.lower()}@{self.email_domain}",
             password=root_password or f"Journey!{self.run_id}",
-            name=f"測試{self.run_id}{node}",
+            # 姓名必須通過註冊的中文模式規則（全中文字元、恰好 0 或 1 個
+            # 半形空格）。run_id 與 node 含英數，直接拼進去會被擋在 Step 2。
+            name=zh_name_for(self.run_id, node),
             national_id=national_id,
             # 規格只驗格式，但用身分證序號導出可讓 run 內 30 人不同號。
             phone=f"09{int(national_id[2:9]) % 10**8:08d}",

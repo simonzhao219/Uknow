@@ -22,6 +22,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@contract": ["./supabase/functions/_shared/api-contract.ts"],
+      "@name-cases": ["./supabase/functions/_shared/name-validation-cases.ts"],
       "lucide-react@0.487.0": ["./node_modules/lucide-react"],
       "input-otp@1.4.2": ["./node_modules/input-otp"],
       "class-variance-authority@0.7.1": ["./node_modules/class-variance-authority"],
@@ -39,5 +40,9 @@
       "@radix-ui/react-alert-dialog@1.1.6": ["./node_modules/@radix-ui/react-alert-dialog"],
     }
   },
-  "include": ["src", "supabase/functions/_shared/api-contract.ts"]
+  "include": [
+    "src",
+    "supabase/functions/_shared/api-contract.ts",
+    "supabase/functions/_shared/name-validation-cases.ts"
+  ]
 }

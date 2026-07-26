@@ -232,6 +232,74 @@ function maskBankAccount(acct: string | null | undefined): string | null {
 }
 
 // ============================================================
+// 工具：漢字偵測範圍與姓名格式驗證。
+//
+// 漢字偵測範圍：U+3400–U+9FFF（統一表意文字＋擴充A）＋ U+F900–U+FAFF（相容表意文字）。
+// 必須用 \u 跳脫寫死：字面「豈」(U+F900) 曾被編輯器 NFC 正規化成同形的 U+8C48，
+// 範圍尾端因此悄悄涵蓋全部 surrogate——單一 emoji 姓名會被誤判為 CJK、
+// 走進 '○'.repeat(-1) 直接把端點打成 500（對抗審查抓到的位元組級事故）。
+//
+// 這三個常數原本放在推薦網絡段（緊鄰 maskNameByGen），現在被姓名格式驗證與
+// 遮罩兩處共用，故搬到共用工具段——「被多處共用」的常數放在共用段才名副其實。
+// 前端 src/utils/profileValidation.ts 有一份逐字複製（兩個 runtime 隔離、
+// 無法共用常數），改動這裡務必同步那裡，且兩側跑同一份
+// _shared/name-validation-cases.ts 的案例表。
+// ============================================================
+const HAN_RANGE = '\\u3400-\\u9FFF\\uF900-\\uFAFF';
+const HAS_HAN = new RegExp(`[${HAN_RANGE}]`);
+const HAN_LEAD = new RegExp(`^[${HAN_RANGE}]`);
+
+// 中文姓名：字元全為漢字，且「恰好 0 或 1 個半形空格；有空格時兩邊各至少 2 字」。
+const ZH_NAME = new RegExp(`^(?:[${HAN_RANGE}]+|[${HAN_RANGE}]{2,} [${HAN_RANGE}]{2,})$`);
+// 外文姓名：僅英文字母，單字間單一半形空格，每個單字首字母大寫（其餘大小寫不限）。
+const FOREIGN_NAME = /^[A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)*$/;
+// 分隔符號類標點：Unicode 的**標點**(\p{P})與**分隔符**(\p{Z})兩大類，
+// 半形空格本身除外（它是合法的姓名分隔）。
+// 刻意不列舉碼點——只鎖三個間隔號會讓 bullet、半形中點、全形空格等變體漏網。
+// 但也不能用「非漢字非英數非空格」反向定義：那會把 HAN_RANGE 之外的漢字
+// （擴充 B 區以上、造字區，即戶政「缺字」問題）一併當標點，給出文不對題的
+// 「請改用半形空格分隔」。缺字姓名該走的是下方那句罕用字客服出口。
+const SEPARATOR_LIKE = new RegExp('(?=[\\p{P}\\p{Z}])[^ ]', 'u');
+
+// 後端的姓名格式規則是**聯集**：合乎中文規則或外文規則即通過。
+// 前端依切換鈕狀態嚴格把關（中文模式拒 `Peter`），後端不能——它只收到姓名
+// 字串，就算前端多送一個模式旗標，攻擊者也只要宣稱自己是外文模式即可繞過，
+// 旗標沒有安全價值。兩者職責不同：後端是安全邊界（擋任何模式都不合法的值），
+// 前端是 UX 引導（讓「預設你該填中文」有強制力、錯誤訊息對得上當下模式）。
+const NAME_MAX_LENGTH = 50;
+
+export function validateNameFormat(name: unknown): string | undefined {
+  // 型別防禦:`PUT /auth/profile` 的觸發條件是 `'name' in body`,只檢查鍵存在、
+  // 不檢查型別,所以這裡可能收到 null/數字/物件。一律回「格式不符」而**不拋錯**
+  // ——HAN_RANGE 上方註解記載的正是「未防禦邊界輸入把端點打成 500」的事故。
+  if (typeof name !== 'string') return '姓名格式不正確';
+  if (!name.trim()) return '請填寫姓名';
+
+  // 分隔符號優先判定,訊息要能行動:原住民漢字音譯姓名與新住民歸化漢名在
+  // 身分證上帶間隔號,不放行就得讓對方知道改用半形空格,否則等於沒放行。
+  if (SEPARATOR_LIKE.test(name)) {
+    return '姓名不可含標點符號，請改用半形空格分隔（例：谷辣斯 尤達卡）';
+  }
+
+  // 聯集:合乎中文規則**或**外文規則即通過。
+  if (!ZH_NAME.test(name) && !FOREIGN_NAME.test(name)) {
+    // 缺字的逃生口（與前端 validateName 同一條規則）:HAN_RANGE 不含擴充 B 區
+    // 以上與造字區。那些字元既非拉丁字母也非數字，拿「須為中文字」回應一個
+    // 明明在打中文的人是誤導；用「不含拉丁字母也不含數字」偵測缺字的形狀。
+    if (!/[A-Za-z0-9]/.test(name)) {
+      return '此姓名可能含系統未支援的罕用字，請聯繫客服協助';
+    }
+    return '姓名須為中文字，或首字母大寫的英文（例：王小明、John Smith）';
+  }
+
+  // 字元合法之後才談長度——否則會拿「須為中文字」去回應一個全是合法中文字、
+  // 只是太長的輸入。
+  if ([...name].length > NAME_MAX_LENGTH) return `姓名最多 ${NAME_MAX_LENGTH} 個字元`;
+
+  return undefined;
+}
+
+// ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
 export async function buildProfileResponse(
@@ -511,6 +579,11 @@ app.post('/auth/register', async (c) => {
     return c.json({ error: '請填寫姓名、手機、生日' }, 400);
   }
 
+  // 姓名格式:前端 validateName 已依模式擋過,但前端驗證可被直接呼叫 API 繞過,
+  // 而 profiles.name 是提領撥款時人工核對身分的依據。這裡是邊界驗證。
+  const nameError = validateNameFormat(name);
+  if (nameError) return c.json({ error: nameError }, 400);
+
   const client = sb();
 
   // 若有填推薦碼，先查出推薦人 user_id
@@ -582,6 +655,13 @@ app.put('/auth/profile', async (c) => {
     bankCode: 'bank_code',
     bankAccount: 'bank_account',
   };
+
+  // 姓名格式只在 body 帶 name 時檢查——本端點是逐欄位局部更新,無條件檢查會
+  // 誤擋「只改手機/銀行帳號」的請求,也會對 undefined 呼叫字串方法而回 500。
+  if ('name' in body) {
+    const nameError = validateNameFormat(body.name);
+    if (nameError) return c.json({ error: nameError }, 400);
+  }
 
   const updates: Record<string, any> = {};
   for (const [jsKey, dbKey] of Object.entries(allowedFields)) {
@@ -2427,17 +2507,13 @@ function deriveNodeStatus(acct: any, suspendedAt: string | null) {
   return { status: 'active' as const, daysToExpiry: dl };
 }
 
-// 漢字偵測範圍：U+3400–U+9FFF（統一表意文字＋擴充A）＋ U+F900–U+FAFF（相容表意文字）。
-// 必須用 \u 跳脫寫死：字面「豈」(U+F900) 曾被編輯器 NFC 正規化成同形的 U+8C48，
-// 範圍尾端因此悄悄涵蓋全部 surrogate——單一 emoji 姓名會被誤判為 CJK、
-// 走進 '○'.repeat(-1) 直接把端點打成 500（對抗審查抓到的位元組級事故）。
-const HAN_RANGE = '\\u3400-\\u9FFF\\uF900-\\uFAFF';
-const HAS_HAN = new RegExp(`[${HAN_RANGE}]`);
-const HAN_LEAD = new RegExp(`^[${HAN_RANGE}]`);
-
 // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
 // 英數保留首末、中間固定 •••（不洩漏長度）。
-function maskNameByGen(raw: string | null | undefined, gen: number): string {
+// HAN_RANGE/HAS_HAN/HAN_LEAD 已搬到檔頭共用工具段（與 validateNameFormat 同段）。
+// export 是為了讓 unit test 能直接斷言「通過 validateNameFormat 的中文姓名，
+// 經 maskNameByGen(gen=2) 必為中文遮罩樣式」——兩者對「什麼算中文」的認定
+// 若漂移，就會出現「通過驗證卻仍顯示英數樣式遮罩」，原地重現本次要解決的症狀。
+export function maskNameByGen(raw: string | null | undefined, gen: number): string {
   const name = (raw ?? '').trim();
   if (gen <= 1 || name.length <= 1) return name;
   const chars = [...name];
