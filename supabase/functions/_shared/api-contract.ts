@@ -150,6 +150,28 @@ export const SubscriptionStatusResponseSchema = obj({
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
 
+// 會員身分核身（member-verify-qr）——與推薦碼分離的另一組。
+// 會員自取的短效簽章碼；admin 掃碼解析後回會員身分＋會籍四態。
+export const MemberVerifyTokenResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    token: str(),
+    expiresAt: str(),
+  }),
+});
+export type MemberVerifyTokenResponse = Infer<typeof MemberVerifyTokenResponseSchema>;
+
+export const MemberVerifyResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    displayName: str(),
+    // 會籍四態，與推薦網絡節點狀態同一套（deriveNodeStatus）。
+    status: literals('active', 'expiring', 'expired', 'suspended'),
+    activeUntil: nullable(str()),
+  }),
+});
+export type MemberVerifyResponse = Infer<typeof MemberVerifyResponseSchema>;
+
 export const RewardsSummaryResponseSchema = obj({
   success: bool(),
   data: obj({

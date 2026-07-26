@@ -39,6 +39,7 @@ const ADMIN_ROUTES = [
   ['GET', '/api/admin/announcements'],
   ['POST', '/api/admin/announcements'],
   ['GET', '/api/admin/system-alerts'],
+  ['POST', '/api/admin/members/verify'],
 ] as const;
 
 Deno.test('admin 守門：匿名請求一律 401', async () => {

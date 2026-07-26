@@ -8,6 +8,11 @@ import { etag, RETAINED_304_HEADERS } from 'npm:hono@4/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { decryptPayUni, encryptPayUni, generatePayUniHash } from './crypto.ts';
 import {
+  signMemberToken,
+  verifyMemberToken,
+  type VerifyMemberTokenResult,
+} from './member-token.ts';
+import {
   subscriptionLastDay,
   twCompactTimestamp,
   twDayOf,
@@ -18,6 +23,8 @@ import {
 import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
+  MemberVerifyResponse,
+  MemberVerifyTokenResponse,
   NetworkChildrenResponse,
   NetworkNode,
   NetworkOverviewResponse,
@@ -2109,6 +2116,98 @@ app.get('/subscriptions/status', async (c) => {
       currentPeriodEnd: sub?.end_date ?? null,
     },
   });
+});
+
+// ============================================================
+// 會員身分核身（member-verify-qr）——線下 admin 掃會員動態短效碼確認身分＋會籍。
+// 與推薦碼完全分離：推薦碼是公開可分享的，綁身分＝可冒充；這裡用簽章短效 token。
+// ============================================================
+
+/** 核身碼短效期（秒）。現場出示→掃描的時間窗；集中一處便於日後調整。 */
+const MEMBER_VERIFY_TTL_SECONDS = 90;
+
+// GET /members/verify-token —— 會員自取「身分核身」短效碼（登入會員本人）。
+app.get('/members/verify-token', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  try {
+    const now = Date.now();
+    const token = await signMemberToken(user.id, MEMBER_VERIFY_TTL_SECONDS, now);
+    const expiresAt = new Date(now + MEMBER_VERIFY_TTL_SECONDS * 1000).toISOString();
+    return c.json(
+      { success: true, data: { token, expiresAt } } satisfies MemberVerifyTokenResponse,
+    );
+  } catch (e) {
+    // 缺 MEMBER_TOKEN_SECRET → fail-closed（member-token.ts 拋錯），明確 500，不簽空鑰。
+    console.error('[members/verify-token] 簽發失敗（可能缺 MEMBER_TOKEN_SECRET）:', e);
+    return c.json({ success: false, error: { message: '系統設定錯誤，暫時無法產生核身碼' } }, 500);
+  }
+});
+
+// POST /admin/members/verify —— admin 掃會員核身碼：驗簽＋查會籍＋寫稽核＋回身分。
+// 用 POST（非 GET）因為有稽核寫入：GET 語意上可被自動重試而重複寫入稽核。
+// 守門：requireAuth + isAdminUser（本專案逐路由手貼；已登記進 admin-gate.test 的 ADMIN_ROUTES）。
+app.post('/admin/members/verify', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+  const token = typeof body?.token === 'string' ? body.token : '';
+
+  let verified: VerifyMemberTokenResult;
+  try {
+    verified = await verifyMemberToken(token, Date.now());
+  } catch (e) {
+    console.error('[admin/members/verify] 驗章失敗（可能缺 MEMBER_TOKEN_SECRET）:', e);
+    return c.json({ success: false, error: { message: '系統設定錯誤' } }, 500);
+  }
+
+  if (!verified.ok) {
+    // token 過期/竄改/格式錯——與「會籍 expired」是不同語意，前端需區分顯示，
+    // 別讓店家把「碼過期」誤讀成「這個人會籍過期」。
+    const message = verified.reason === 'expired' ? '核身碼已過期，請對方重新出示' : '核身碼無效';
+    return c.json({ success: false, error: { code: `token_${verified.reason}`, message } }, 400);
+  }
+
+  const memberId = verified.memberId;
+  const [{ data: profile }, { data: acct }] = await Promise.all([
+    sb().from('profiles').select('name, suspended_at').eq('id', memberId).maybeSingle(),
+    sb().from('user_account_status').select('status, end_date').eq('user_id', memberId)
+      .maybeSingle(),
+  ]);
+
+  if (!profile) {
+    // token 有效但會員已被刪除（90 秒窗內的邊界）。
+    return c.json({ success: false, error: { code: 'not_found', message: '查無此會員' } }, 404);
+  }
+
+  const { status } = deriveNodeStatus(acct, profile.suspended_at ?? null);
+
+  // 稽核 fail-closed：寫不進去就擋下核身（回 5xx 要求重試），保證每次成功核身都有紀錄。
+  const { error: auditErr } = await sb().from('member_verify_logs').insert({
+    admin_id: user.id,
+    member_id: memberId,
+    result: 'ok',
+  });
+  if (auditErr) {
+    console.error('[admin/members/verify] 稽核寫入失敗，拒絕回應（fail-closed）:', auditErr);
+    return c.json({ success: false, error: { message: '核身暫時無法完成，請重試' } }, 500);
+  }
+
+  return c.json(
+    {
+      success: true,
+      data: {
+        displayName: profile.name ?? '',
+        status,
+        activeUntil: acct?.end_date ?? null,
+      },
+    } satisfies MemberVerifyResponse,
+  );
 });
 
 // ============================================================
