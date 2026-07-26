@@ -1,9 +1,11 @@
 # 預設推薦人（未填推薦碼時自動綁定）規劃書
 
-> **修訂版 v2**——依 `review.md` 的 2 個 P0、11 個 P1、3 個 P2 與人審裁決全面改寫。
-> 主要變更:①「不回填」改用 `subscriptions.is_renewal` 判準(**只綁首購**);
-> ② 解析改用既有 `validate_referral_code()`;③ 解析抽成獨立子函數;
-> ④ 範圍擴大到前端與共用契約(啟用 `isAutoReferral` 抑制顯示)。
+> **修訂版 v3**——v2 的基礎上,依 v2 重審的 8 個 P1、7 個 P2 修訂(v2 無新 P0)。
+> v2 主要變更:①「不回填」用 `subscriptions.is_renewal`(**只綁首購**);
+> ② 解析重用 `validate_referral_code()`;③ 抽獨立子函數;④ 範圍含前端與契約。
+> v3 主要變更:⑤ `referred_by_is_default` 補**清除時機**(fresh 換線);
+> ⑥ 補**第三曝光點**(`PaymentCheckout` placeholder);⑦ §4.2 改為**整段不渲染**
+> (受控元件不能只清顯示值);⑧ 情境 F 告警指派給子函數;⑨ 修正 §1.3 過度宣稱。
 
 ## 0. 一句話
 
@@ -52,7 +54,15 @@
 - **不改**註冊當下的寫入語意:`POST /auth/register` 與 `handle_new_user()`
   仍寫 `null`。預設只在付款成功時套用。
 - **不改** `repair_orphaned_payments` / `repair_orphaned_claim_rewards` 的
-  自癒邏輯——決定 2 的做法讓回溯路徑在源頭就不成立(§2.3),不必動自癒函數。
+  自癒邏輯——決定 2 的做法讓**本 feature 新增的預設推薦人入口**不會觸發回溯
+  (§2.3),故本 feature 不必動自癒函數。
+  > ⚠️ **措辭限定(V2-1)**:這**不等於**「回溯發獎鏈」問題已全面解決。
+  > `/payuni/prepare` 的 fresh 換線(`index.ts:1401-1422`)會在付款**前**直接
+  > `update profiles.referred_by_user_id`,與 `is_renewal` 判準無關;既有無推薦人
+  > 會員換線後,`repair_orphaned_payments` 候選條件(`20260720000001:516-562`)的
+  > `pr.referred_by_user_id is not null` 讀的是**當下**值,其歷史訂閱會全數成為
+  > 候選並回溯補發 gen1 給新推薦人。**這是既有 production bug,非本 feature 引入**
+  > ——處理範圍見 `review.md`〈v2 需人工裁決〉。
 - 不動推薦王門檻、獎金額度、代數等既有業務常數。
 - 不處理推薦網絡樹的規模問題(見 §7 風險表,列為觀察項)。
 
@@ -83,12 +93,33 @@
 沿用該先例——`apply_referral_side_effects` 至今已被全量覆寫 7 次,不該再讓
 第 8 次的 diff 變大。
 
-```
-resolve_default_referrer(p_user_id uuid, p_subscription_id uuid) returns uuid
+```sql
+create or replace function public.resolve_default_referrer(
+  p_user_id         uuid,
+  p_subscription_id uuid
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$ … $$;
+
+revoke execute on function public.resolve_default_referrer(uuid, uuid)
+  from anon, authenticated, public;
 ```
 
-回傳 `null` 表示「不套用」(涵蓋停用、非首購、碼失效、自我推薦全部情形),
+**骨架必須完整照抄(V2-10)**:這是 security definer 函數,漏掉 `revoke` 會讓
+`authenticated` 角色可直接 `rpc('resolve_default_referrer', …)` 探測任意 user 的
+解析結果——反推某筆 subscription 是否首購、預設機制目前是否啟用。
+
+回傳 `null` 表示「不套用」(涵蓋停用、非首購、碼失效、停權、自我推薦全部情形),
 呼叫端只需判斷 null。可獨立測試,不必透過整支金流函數。
+
+> **告警職責在子函數內(V2-3)**:情境 F 要求「碼失效 → `system_alerts` 告警」,
+> 但那是 `validate_referral_code` **回傳零列**,是正常查詢結果、**不是例外**,
+> 不會觸發 §2.7 的 `exception when others`。故 `resolve_default_referrer` 必須在
+> 「`default_referrer_code` 非 null 但 `validate_referral_code` 查無結果」這個
+> **特定分支**內明確呼叫 `log_system_alert`,再回傳 null。其餘四種 null(停用、
+> 非首購、停權、自我推薦)是正常業務分支,**不告警**——否則告警會被雜訊淹沒。
 
 ### 2.3 首購判準:讀現成的 `subscriptions.is_renewal`(P0-2 / 決定 2)
 
@@ -110,6 +141,20 @@ v_is_renewal := exists (select 1 from public.subscriptions where user_id = p_use
 **因此不必修改任何自癒函數**。
 
 判準是單調的:一旦判定非首購就永遠非首購,自癒重放答案不變,天生冪等。
+
+> **與 `20260725000002` 反例先例的對話(V2-9,兩位 reviewer 獨立要求)**:
+> 該 migration(:22-25)明文拒絕用 `is_renewal` 做推薦相關的新舊判斷,理由是
+> 「`is_renewal` 是付款人的**全域屬性**,在『換線』情形會對新上線給錯答案」。
+> **本 feature 的用法不落入同一個陷阱,因為語意軸不同**:
+>
+> | | 被 0725 拒絕的用法 | 本 feature 的用法 |
+> |---|---|---|
+> | 問題 | 「這位被推薦人**對某上線**是不是新人?」 | 「這個帳號**史上**是不是第一次付款?」 |
+> | 層級 | relationship-level(配對) | payer-level(全域) |
+> | 換線影響 | 會給錯答案 → 故改用 pair-history | 不受影響——換線不改變「史上第一次」 |
+>
+> `is_renewal` 本來就是 payer-global 屬性,拿來回答 payer-global 問題是正確用法;
+> 0725 拒絕的是拿它回答 relationship-level 問題。階段 1 需有測試佐證此區分。
 
 ### 2.4 停權護欄:重用 `validate_referral_code()`(P0-1)
 
@@ -159,6 +204,29 @@ comment on column public.reward_config.default_referrer_code is
 > ——由 `referred_by_is_default` 承載這個區別,並在 migration 內更新該欄位註解
 > 說明兩種來源。
 
+**清除時機(V2-2,系統與架構視角獨立撞上)**——這是 v2 的實質破口:
+
+`referred_by_user_id` / `referred_by_code` 有**第二個寫入點**:`/payuni/prepare`
+的 fresh 換線(`index.ts:1414-1417`),它是直接 `update profiles`,**不經過**
+`apply_referral_side_effects`,也就不會執行上表的回寫。時序:
+
+1. 首購被自動綁定 → `referred_by_is_default = true`
+2. 之後 fresh 換線到真推薦人 → `/payuni/prepare` 只改兩個欄位,**旗標沒被碰**
+3. 付款時 `apply_referral_side_effects` 讀到的 `v_referrer1` 已非 null →
+   整段回寫區塊跳過 → **旗標永久卡在 `true`**
+
+後果:`PaymentCheckout.tsx:591` 會把使用者**自己主動選定的真推薦人**也一起隱藏
+——抑制對象變成「曾經被自動綁定過的人」而非「自動綁定這件事」,同時違反決定 3
+(真推薦人本應正常顯示)與決定 4(抑制對象的定義)。
+
+**做法**:在 `/payuni/prepare` fresh 分支的同一次 `update` 內一併寫
+`referred_by_is_default: false`——換線的本質就是「使用者主動指定了非自動來源」。
+
+**稽核用途的查詢路徑(V2-13)**:本欄位透過 SQL 直接查詢(Supabase Studio),
+**不建 admin UI**。已查證後台(`admin_list_members`、`MemberManagement.tsx`)
+對 `referred_by_*` 系列零引用,提領守衛(§10.1)也不含此判準。若需求擴大到需要
+UI 篩選,另開 feature。
+
 ### 2.7 執行順序與錯誤隔離(P1-1)
 
 ```
@@ -184,6 +252,7 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 |---|---|
 | `_shared/api-contract.ts` | `ProfileResponseSchema`(:113)新增 `isAutoReferral: bool()` |
 | `GET /auth/profile`(`buildProfileResponse`) | 回傳 `isAutoReferral: profile.referred_by_is_default` |
+| `POST /payuni/prepare` fresh 分支(`index.ts:1414-1417`) | **v3 新增**:同一次 `update` 一併寫 `referred_by_is_default: false`(§2.6 清除時機) |
 | `getRewardConfig()` | **不動**——`default_referrer_code` 是純 SQL 側邏輯,前端不需要 |
 
 > 契約是前後端共用單一真相,**兩側必須同步**,只改一邊會在 CI 型別檢查才炸。
@@ -196,7 +265,7 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 |---|---|
 | DB | 新增 migration ×3(見 §5;`supabase/README.md`:113-114 明訂不得編輯已套用的 migration) |
 | 共用契約 | `supabase/functions/_shared/api-contract.ts` |
-| Edge Function | `supabase/functions/api/index.ts`(`buildProfileResponse` 一處) |
+| Edge Function | `supabase/functions/api/index.ts` **兩處**:`buildProfileResponse`(帶出 `isAutoReferral`)、`/payuni/prepare` fresh 分支(清除旗標)。v2 只寫一處,漏了後者(V2-2) |
 | 前端 | `src/components/PaymentCheckout.tsx`、`src/components/CompleteProfile.tsx` |
 
 - **效能**:每次付款多一次 `validate_referral_code` 單列索引查詢,且僅在
@@ -219,7 +288,24 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 `isAutoReferral` 旗標**早已存在於此條件式,但全域從未被任何地方賦值**(死碼)。
 本 feature 由 §2.8 的契約欄位為它供值,條件式本身**一字不改**即生效。
 
-**4.2 編輯資料時的推薦碼欄位**(`CompleteProfile.tsx:91-122`)
+**4.2 續約「新約」的新推薦碼輸入框**(`PaymentCheckout.tsx:664-671`)——
+**v3 新增,v1/v2 皆漏(V2-4)**
+
+```tsx
+placeholder={
+  pendingUser.referredByCode
+    ? `目前：${pendingUser.referredByCode}`   // ← 直接外洩預設碼
+    : '輸入推薦碼'
+}
+```
+
+與 4.1 是同一支元件裡的**另一段獨立 JSX**(`renewalMode === 'fresh'` 分支),
+完全沒查 `isAutoReferral`。且這正是情境 J 的路徑——使用者要換推薦人時必然看到。
+
+**做法**:比照 4.1 加 `!pendingUser.isAutoReferral` 判斷,自動綁定時 placeholder
+退回 `'輸入推薦碼'`。
+
+**4.3 編輯資料時的推薦碼欄位**(`CompleteProfile.tsx:91-122`)
 
 `:108` 的 `referralCode: boundCode` 會把預設碼**預填進輸入框**,比 4.1 更直接。
 
@@ -228,11 +314,24 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 `POST /auth/register` 確實會把空值寫成 `null`(`index.ts:591`)。單純不預填會
 讓使用者一次編輯就永久解除綁定,且因 §2.3 只綁首購,**再也不會被重新綁定**。
 
-**做法**:維持 `formData.referralCode` 的值(送出行為完全不變),只在
-`isAutoReferral` 時不渲染該欄位的值與「推薦人:」提示。這是純顯示層抑制,
-不觸碰 `/auth/register` 的語意,爆炸半徑最小。
+**做法(v3 修正,V2-5)**:`isAutoReferral` 時**整段推薦碼區塊(`:731-789`)
+不渲染**;`formData.referralCode` 的值留在 state,送出行為完全不變。
 
-**4.3 既有缺陷的曝光放大(P1-11,記錄但不在本 feature 修復)**
+⚠️ **不可**寫成 `value={isAutoReferral ? '' : formData.referralCode}`——那是
+受控元件,使用者在看似空白的欄位打**一個字元**,`onChange` 拿到的
+`e.target.value` 就是從空字串起算的新值,`setFormData` 會**整個覆蓋**掉背後保留
+的碼,使用者毫無察覺就解除了綁定。v2 的「只抑制顯示」措辭正是指向這個錯誤做法。
+
+已驗證整段不渲染**不會**卡住「下一步」:編輯模式回填時已設
+`codeVerified = true` 與 `verifiedReferralCode = boundCode`(`:112-114`),
+故 `isReferralCodeAcceptable`(`:445`)仍成立。
+
+> **精度修正(V2-12)**:`:784` 的「推薦人:」提示**不需要**額外抑制——它只在
+> `referrerName` 有值時渲染,而自動綁定者原始註冊時從未填過碼,localStorage
+> 快照的 `referrerName` 必為 null,該行本來就不會顯示。實作時誤以為兩處都要寫
+> 抑制,會多寫一段永不觸發的死碼。真正要處理的只有輸入框本身。
+
+**4.4 既有缺陷的曝光放大(P1-11,記錄但不在本 feature 修復)**
 
 `CompleteProfile.tsx:301` 的判斷式 `formData.referralCode.trim() && referrerName`
 假設「有推薦碼」與「有推薦人姓名」同時成立,但 `/auth/profile` **從不回傳
@@ -244,7 +343,22 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 `isAutoReferral` 抑制後,自動綁定者看到的訊息與其畫面一致(欄位空、訊息說未填),
 不產生新的矛盾。列入 §6 開放問題供人審確認。
 
-**行動版**:兩處皆為手機/桌面共用 JSX,無 `md:hidden` 分流,不需額外處理。
+**4.5 `pendingUser` 的來源不對稱——必須明文記錄的不變量(V2-6)**
+
+`checkPendingUser`(`PaymentCheckout.tsx:100-161`)**先查 localStorage**,有值就
+直接採用、**完全不打 `GET /auth/profile`**;只有 localStorage 空了才走 API。
+而 localStorage 的 `pendingUser` 在付款成功後**從不失效或刷新**。
+
+**不變量(目前成立,但未經測試保護)**:`referredByCode` 與 `isAutoReferral` 在
+所有已知寫入點永遠同進同出——舊快照寫入時使用者本來就沒填過碼(否則不會被自動
+綁定),故 `referredByCode` 本身就是空,4.1 條件式的前半截即 falsy,整體不成立,
+不會顯示任何東西。**不存在「有推薦碼卻沒有 `isAutoReferral` 旗標」的落單組合。**
+
+這是橫跨兩檔四個寫入點才推得出的隱含結論。§5 階段 5 必須補一個「localStorage
+已有綁定前舊快照」的測試情境,否則元件層級餵 prop 的測試綠燈**不代表**這條
+實際決定多數續約體驗的分支被驗證過。
+
+**行動版**:三處曝光點皆為手機/桌面共用 JSX,無 `md:hidden` 分流,不需額外處理。
 
 ## 5. 階段切分
 
@@ -255,9 +369,9 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 |---|---|---|---|---|
 | 1 | `reward_config.default_referrer_code` + `resolve_default_referrer()` 子函數(含首購判準、停權護欄、大小寫正規化、自我推薦) | ①欄位+函數 | `api/default-referrer.test.ts` | 情境 D/E/F/H/I——**不經** `apply_referral_side_effects`,直接測子函數 |
 | 2 | 接進 `apply_referral_side_effects`(exception 隔離 + §2.6 回寫三欄位) | ②覆寫主函數 + `profiles.referred_by_is_default` | 同上檔案追加 | 情境 A/B/C/G/L |
-| 3 | 回歸:換線與 claim 路徑 | — | 同上檔案追加 | 情境 J/K(保護 §2.1 的不變量) |
+| 3 | **換線清除旗標**(`/payuni/prepare` 加 `referred_by_is_default: false`)+ claim 路徑回歸 | — | 同上檔案追加 | 情境 J/K。**不是純回歸階段(V2-7)**——情境 J 的測試在階段 1+2 之後跑會是**紅燈**,因為 v2 沒有定義旗標清除時機(§2.6),此階段有真正的產品碼要寫 |
 | 4 | 契約 + API:`isAutoReferral` | — | `api/api-contract.test.ts` 追加 | `GET /profile` 帶正確旗標 |
-| 5 | 前端抑制 + 規格書 §7/§8 同步 | — | `PaymentCheckout.test.tsx` / `CompleteProfile.test.tsx`(jsdom);`check-spec-drift.py` | 情境 M;drift 綠 |
+| 5 | 前端抑制**三處**(§4.1 確認卡、§4.2 placeholder、§4.3 編輯區塊)+ 規格書 §7.4/§8.1 同步 | — | `PaymentCheckout.test.tsx` / `CompleteProfile.test.tsx`(jsdom);`check-spec-drift.py` | 情境 M;**含 §4.5 的 localStorage 舊快照情境**;drift 綠 |
 
 **測試紀律(P1-9)**:階段 1、2 會改動全域單列 `reward_config`,**必須比照
 `reward-config.test.ts` 檔頭的紀律**——保存原值、`finally` 還原。漏做會讓殘留的
@@ -282,6 +396,16 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
       `/referrals/validate/:code`,超出本 feature 範圍)
 - [ ] **預設推薦人帳號的提領落地面**:能否/是否會實際通過 KYC 與每日上限、
       平台如何消化快速累積的點數。§7 只涵蓋發放面,落地面需商業判斷。
+- [ ] **推薦網絡樹規模是否接受「上線後才視情況修」?**(V2-8)——v1 審查原話是
+      「人審裁決**是否可接受**」,v2 逕自移進 §7 風險表定案為觀察項,未經簽核。
+      此風險是本 feature **直接製造**的新曝險(單一帳號吸收全部自然流量、
+      無自然回落),性質比 §4.4 的既有缺陷更需拍板。選項:(a) 接受,上線後抽測;
+      (b) 要求本 feature 一併把 `overview` 的 roots 比照 search 端點加分頁。
+- [ ] **既有 fresh 換線的回溯發獎 bug(V2-1)要不要併進本 feature 修?**
+      已驗證這是**目前線上就存在**的缺陷,與本 feature 無關:任何原本無推薦人的
+      既有會員,做一次 fresh 換線填真推薦碼後,其全部歷史訂閱都會回溯補發 gen1
+      給新推薦人(觸發只需事後載入一次 profile)。選項:(a) 另開 `/fix-bug` 追蹤,
+      本 feature 照常開工;(b) 併入本 feature 一併處理候選查詢邏輯。
 
 ## 7. 風險與回滾
 
@@ -291,6 +415,17 @@ savepoint(`20260720000001`:478-484),**把已成功的 3a 建推薦碼一併回�
 | 獎金負債 | 每個自然首購 = 100P × 最多 3 代 + 每 8 位一張免費續約年 | 上線後觀察首月;停用是一行 UPDATE |
 | 預設推薦人被停權卻忘了停用設定 | — | 情境 H 已擋(重用 `validate_referral_code`) |
 | **推薦網絡樹規模(P1-12,觀察項)** | `GET /referrals/network/overview` 的一代 `roots` **無 limit/offset**;`selectInChunks` 以 150 筆序列化查三張表;`ReferralTreeView.tsx:655-666` 直接 `.map()` 成 DOM **無虛擬化**。預設推薦人的一代下線隨自然註冊單調成長、無自然回落,數百至數千節點時有 Edge Function 執行時限風險,行動裝置/LINE 內建瀏覽器影響更明顯 | 本 feature 不處理;上線後對該帳號的 `overview` 做效能抽測,超標則比照 search 端點為 roots 加分頁 |
+
+**其他已記錄的邊界(不改設計,僅記錄)**
+
+- **(V2-15)** `repair_orphaned_payments` 重放**上線前**的真首購孤兒訂閱時,會用
+  **當下**的 `default_referrer_code` 回填,即便該使用者付款當下這機制還不存在。
+  與既有 repair 行為一致(獎金額度、推薦王門檻皆同理),改了才是不一致。
+- **(V2-14)** 情境 A 的「未填」**不包含**「填了但碼無效」。`/auth/register`
+  (`index.ts:589-611`)**無伺服器端碼驗證**(對比 `/payuni/prepare` 有),繞過
+  前端直呼 API 時,使用者打錯的碼會寫進 `referred_by_code` 但
+  `referred_by_user_id` 為 null,付款時一樣落到預設並覆寫掉他原打的字串。
+  既有缺口、非本 feature 引入,不在本次修復範圍。
 
 **回滾**:`update public.reward_config set default_referrer_code = null;`
 ——即時生效、不必部署、不必 revert migration。已產生的推薦邊與獎勵不會自動撤銷

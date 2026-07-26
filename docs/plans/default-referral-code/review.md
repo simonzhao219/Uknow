@@ -170,3 +170,64 @@ where rc.code = p_code
    config」的替代方案),以及它與 `referred_by_code` 稽核語意的關係。
 3. §4.2 的「維持 state 值、只抑制顯示」是否會產生新的資料/顯示矛盾。
 4. 5 個階段的紅綠循環切分是否成立(特別是階段 3 是純回歸、沒有新產品碼)。
+
+---
+---
+
+# v2 重審報告
+
+審查對象:`plan.md` v2(commit `d1b1ff1`)|審查日期:2026-07-26
+
+## 審查結論
+
+| 視角 | P0 | P1 | P2 | 備註 |
+|---|---|---|---|---|
+| 系統 | 0 | 3 | 2 | v1 兩個 P0 的修正方向確認正確 |
+| 架構 | 0 | 2 | 2 | — |
+| UI/UX | 0 | 3 | 1 | 找到第三曝光點(v1、v2 皆漏) |
+| 需求 | 0 | 2 | 2 | 驗收情境 A–M 對 §8.2 五列覆蓋**完整**,J/K 補得正確 |
+
+**去重後:P0 0 項、P1 8 項、P2 7 項、需人工裁決 1 項。**
+v1 的兩個 P0 已確認修正正確,**本輪無新 P0**。
+
+## P1 清單
+
+| # | 視角 | 章節 | 缺口 → 建議 |
+|---|---|---|---|
+| V2-1 | 系統 | §1.3/§2.3 | **過度宣稱**:「回溯發獎鏈在源頭不成立」只 close 了本 feature 新增的入口。`/payuni/prepare` 的 fresh 換線(`index.ts:1401-1422`)會在付款**前**直接 `update profiles.referred_by_user_id`,與 `is_renewal` 無關;既有無推薦人會員換線後,`repair_orphaned_payments` 候選條件(`20260720000001:516-562`)的 `pr.referred_by_user_id is not null` 讀**當下**值,其歷史訂閱全數成為候選並回溯補發 gen1 給新推薦人 → **這是既有 production bug,非本 feature 引入**。修正 §1.3/§2.3 措辭限定範圍;bug 本身見〈需人工裁決〉 |
+| V2-2 | 系統 + 架構(獨立撞上) | §2.6/§2.8/情境 J | `referred_by_is_default` **無清除時機**。它只在「套用預設」分支寫 `true`;`/payuni/prepare` fresh 換線只 update 兩個欄位,不觸碰它;換線後 `v_referrer1` 已非 null → 整段回寫跳過 → 旗標**永久卡 true** → `PaymentCheckout.tsx:591` 會把使用者**自己選定的真推薦人**也一起隱藏,違反決定 3 與 4 → 在 fresh 換線的同一次 UPDATE 加 `referred_by_is_default: false`;§3 補上 `/payuni/prepare` 這個遺漏的觸點 |
+| V2-3 | 系統 | §2.2/§2.7 | **情境 F 的告警無掛載點**。§2.2 說「回傳 null 涵蓋五種情形,呼叫端只判斷 null」,§2.7 只在**例外**時 `log_system_alert`;但「碼查無結果」是 `validate_referral_code` 回傳零列,**不是例外**,不觸發該層 → 情境 F 要求的 `system_alerts` 告警在現設計下**發不出來** → 由 `resolve_default_referrer` 在「設定非 null 但查無結果」這個分支明確呼叫 `log_system_alert` 後再回傳 null |
+| V2-4 | UI/UX | §4 | **第三曝光點(v1、v2 皆漏)**:`PaymentCheckout.tsx:664-671` 續約選「新約」時的「新推薦碼(選填)」輸入框,`placeholder={pendingUser.referredByCode ? \`目前:${...}\` : '輸入推薦碼'}` **直接外洩預設碼**,完全沒查 `isAutoReferral`。且這正是情境 J 的路徑 → 比照 §4.1 加抑制條件 |
+| V2-5 | UI/UX | §4.2 | **「維持 state 值、只抑制顯示」對受控元件不安全**:`value={isAutoReferral ? '' : formData.referralCode}` 之下,使用者在看似空白的欄位打一個字,`onChange` 的 `e.target.value` 從空字串起算,`setFormData` **整個覆蓋**掉背後保留的碼——使用者毫無察覺就解除綁定 → 改為 `isAutoReferral` 時**整段區塊(`:731-789`)不渲染**;值留在 state 照常送出。已驗證不會卡住「下一步」(編輯模式已設 `codeVerified=true`) |
+| V2-6 | UI/UX | §4.1/§5 | `pendingUser` 兩條來源不對稱:`checkPendingUser` **先查 localStorage**,有值就完全不打 API;而 localStorage 快照在付款成功後**從不失效**。目前「恰好」安全(舊快照的 `referredByCode` 本就是空,條件式前半截即 falsy),但這是橫跨兩檔四個寫入點才推得出的**隱含不變量**,規劃書未提及、測試也不會覆蓋到這條實際決定多數續約體驗的分支 → 比照 §2.1 的寫法明文記下不變量,並補「localStorage 有綁定前舊快照」的測試情境 |
+| V2-7 | 架構 | §5 階段 3 | 階段 3 被定性為「純回歸、0 migration」,但該定性建立在「情境 J 現有機制已正確」這個**經查證為錯**的假設上(見 V2-2)——情境 J 的測試在階段 1+2 後跑會是**紅燈** → 階段 3 有真正的產品碼要寫,不是純回歸 |
+| V2-8 | 需求 | §6 | 網絡樹規模風險在 v1 是「人審裁決**是否可接受**」,v2 只把它移進 §7 風險表並自行定案為「上線後觀察」,**未列入 §6 供人簽核**。與 §4.3 的處理方式不一致(後者有列),且此風險是本 feature **直接製造**的新曝險(單一帳號吸收全部自然流量、無自然回落),性質比 §4.3 的既有缺陷更需拍板 → 補進 §6 |
+
+## P2 清單
+
+| # | 視角 | 缺口 → 建議 |
+|---|---|---|
+| V2-9 | 系統 + 需求(獨立撞上) | §2.3 未與 `20260725000002:22-25` 的**反例先例**對話——該 migration 明文拒絕用 `is_renewal` 做推薦相關新舊判斷(「is_renewal 是付款人的全域屬性,在換線情形會對新上線給錯答案」)。**兩位 reviewer 各自推演後都確認 v2 的用法在不同語意軸上、無實際 bug**(payer-level「史上首次付款」vs relationship-level「對此上線是否新下線」),但規劃書應顯式寫下這個區分,不要留給每個後續讀者各自推演一次 |
+| V2-10 | 架構 | §2.2 只給函數簽章,未列 `security definer` / `set search_path = public` / `revoke execute`。這是 security definer 函數,漏 revoke 會讓 `authenticated` 可直接 rpc 探測任意 user 的解析結果(反推某筆 subscription 是否首購、機制是否啟用)→ 補完整骨架 |
+| V2-11 | 架構 | 單一 PR 涵蓋 3 migration + 契約 + Edge + 2 前端元件,審查面偏大。因 `default_referrer_code` 預設 null,機制在全部階段部署完成前都是 inert 的,故**可**拆兩個 PR;若拆,須明文寫「兩個 PR 都部署前不得把設定改成非 null」的操作序限制。維持單一 PR 亦可,不算缺口 |
+| V2-12 | UI/UX | §4.2 把 `:784` 的「推薦人:」提示列為抑制目標並不精確——自動綁定者的 localStorage 快照 `referrerName` 必為 null,該行**本來就不會顯示**。實作時誤以為兩處都要寫抑制,會多寫一段永不觸發的死碼 |
+| V2-13 | 需求 | §2.6 稱 `referred_by_is_default` 提供「稽核依據」,但未定義由誰、透過什麼路徑查。已查證後台(`admin_list_members`、`MemberManagement.tsx`)對 `referred_by_*` **零引用** → 補一句「透過 SQL 直接查詢,不建 admin UI」 |
+| V2-14 | 需求 | 情境 A 未區分「未填」與「填了但碼無效」。`/auth/register`(`index.ts:589-611`)**無伺服器端碼驗證**(對比 `/payuni/prepare` 有),繞過前端直呼 API 時,使用者打錯的碼會寫進 `referred_by_code` 但 `referred_by_user_id` 為 null → 付款時一樣落到預設並**覆寫掉他原打的字串**。既有缺口、非本 feature 引入,但本 feature 讓後果鏈第一次有實質影響 → 記錄邊界,明確排除在「情境 A = 未填」定義外 |
+| V2-15 | 系統 | `repair_orphaned_payments` 重放**上線前**的真首購孤兒訂閱時,會用**當下**的 `default_referrer_code` 回填。與既有 repair 行為一致(獎金額度、門檻皆同理),不需改設計,列 §7 觀察項即可 |
+
+## 需人工裁決
+
+**既有 fresh 換線回溯發獎 bug 的處理範圍**(V2-1)
+
+已獨立驗證:這是**目前線上就存在**的缺陷,與本 feature 無關——任何原本沒有推薦人的既有會員,只要做一次 fresh 換線填真推薦碼,其**全部歷史訂閱**都會回溯補發 gen1(甚至 gen2/gen3)給那位新推薦人。觸發只需事後載入一次 profile。
+
+裁決選項:
+- **(a)** 只修正規劃書措辭,另開 `/fix-bug` 追蹤,本 feature 照常開工
+- **(b)** 認為與本 feature 高度相關(同一組驗收情境語彙、同一條候選查詢),在本 feature 範圍內一併處理
+
+## 處置(人審後填寫)
+
+- [ ] V2-1~V2-8(P1):□ 修訂規劃 □ 明文豁免(理由:)
+- [ ] V2-9~V2-15(P2):□ 修訂規劃 □ 明文豁免(理由:)
+- [ ] **需人工裁決(既有 bug 範圍)**:□ (a) 另開 fix-bug □ (b) 併入本 feature
+- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過 □ 退回重規劃

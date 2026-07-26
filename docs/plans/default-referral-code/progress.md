@@ -24,29 +24,41 @@
 
 **尚未寫任何產品程式碼。**
 
-v1 的兩個 P0 已由人裁決並在 v2 處置完畢(見 `review.md`〈處置〉):
-- P0-1 → 解析改用 `validate_referral_code()`
-- P0-2 → 裁決「只綁首購」,判準用現成的 `subscriptions.is_renewal`;
-  此判準同時讓回溯發獎鏈在源頭不成立,不必動自癒函數
-- 額外裁決:啟用 `isAutoReferral` 抑制顯示 → 範圍擴大到 `src/**` 與共用契約
+v2 重審已完成(`review.md`〈v2 重審報告〉):**無新 P0**、8 個 P1、7 個 P2、
+1 項需人工裁決。規劃書已修訂為 **v3**,P1/P2 全數處置。
 
-**下一步:對 v2 重跑 `/review-plan default-referral-code`**(P0 修訂後不得直接
-開工)。v2 審過後才由人親自打 `/tdd-implement default-referral-code`。
+v3 的實質修正(不只是措辭):
+- **V2-2** `referred_by_is_default` 補清除時機——`/payuni/prepare` fresh 換線
+  是第二個寫入點,不經 `apply_referral_side_effects`,v2 漏了它,旗標會永久卡
+  `true`,把使用者自己選的真推薦人也一起隱藏
+- **V2-4** 補第三曝光點 `PaymentCheckout.tsx:664-671` 的 placeholder(v1/v2 皆漏)
+- **V2-5** §4.3 改為**整段區塊不渲染**——受控元件不能只清顯示值,否則使用者
+  打一個字就會覆蓋掉背後的碼
+- **V2-3** 情境 F 的告警指派給 `resolve_default_referrer`(查無結果不是例外,
+  不會觸發 exception 隔離)
+- **V2-7** 階段 3 不再是「純回歸」,有真正的產品碼
+
+**下一步:等人裁決 `review.md`〈v2 需人工裁決〉的既有 bug 處理範圍**(見下方
+Blockers),裁決後對 v3 重跑 `/review-plan`;v3 審過才由人親自打
+`/tdd-implement default-referral-code`。
 
 ## Blockers(逃生口紀錄)
 
-- **已解除**:P0-2 的裁決(選項一/讀法二)。保留技術根據供實作參考——
-  既有無推薦人會員一旦被綁定,只要載入一次 profile
-  (`index.ts:362` 對 `registrationStep === 3` 無條件呼叫
-  `repairOrphanedPaymentsBestEffort`),`repair_orphaned_payments` 的候選條件
-  (`20260716000006`:377-382)就會把其**歷史 subscription** 全部抓成候選並補發
-  gen1。v2 靠「只綁首購」讓 `referred_by_user_id` 始終為 null,從源頭切斷。
-- **開放問題未決(阻擋階段 1 的真路徑驗證)**:`asa899869` 是否存在於正式站/
-  develop 的 `referral_codes` 且 active、未停權,尚未確認。develop 的 Supabase
-  branch 有獨立 DB,極可能不存在此碼——階段 1、2 的測試一律**自建測試用推薦碼**
-  當預設值,不要依賴 `asa899869` 字面,否則會走 fallback 路徑,綠燈卻沒證明任何事。
-- **開放問題未決**:規格書 §7/§8 是否記載機制本身;§4.3 既有缺陷本次不修是否接受;
-  預設推薦人帳號的提領落地面(KYC/每日上限/資金消化)。
+- **⚠️ 發現一個與本 feature 無關的既有 production bug(待人裁決處理範圍)**:
+  `repair_orphaned_payments` 的候選條件(`20260720000001:516-562`)中
+  `pr.referred_by_user_id is not null` 讀的是**當下**的 profiles 值,不是歷史
+  訂閱當時的值。任何原本沒有推薦人的既有會員,只要透過 `/payuni/prepare` 的
+  fresh 換線填一次真推薦碼,其**全部歷史訂閱**都會成為候選並回溯補發 gen1
+  (甚至 gen2/gen3)給那位新推薦人;觸發只需事後載入一次 profile
+  (`index.ts:361-362` 對 `registrationStep === 3` 無條件呼叫 repair)。
+  **這條路徑現在就在線上**,與預設推薦人機制無關。
+  選項見 `review.md`〈v2 需人工裁決〉。
+- **開放問題未決**:`asa899869` 是否存在於正式站/develop 的 `referral_codes`
+  且 active、未停權。develop 的 Supabase branch 有獨立 DB,極可能不存在此碼
+  ——階段 1、2 的測試一律**自建測試用推薦碼**當預設值,不要依賴 `asa899869`
+  字面,否則會走 fallback 路徑,綠燈卻沒證明任何事。
+- **開放問題未決**:規格書 §7.4/§8.1 是否記載機制本身;§4.4 既有缺陷本次不修
+  是否接受;推薦網絡樹規模是否接受上線後才修;預設推薦人帳號的提領落地面。
 
 ## 框架摩擦
 
