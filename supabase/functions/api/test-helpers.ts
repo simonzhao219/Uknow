@@ -18,6 +18,13 @@ export function adminClient(): SupabaseClient {
   });
 }
 
+// 讓 index.ts 內部的 sb()（讀環境變數）指向同一個本地實例——
+// 直接測 index.ts 匯出的函數/路由（app.request()）時需要。
+export function ensureEdgeFunctionEnv(): void {
+  Deno.env.set('SUPABASE_URL', SUPABASE_URL);
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
+}
+
 let counter = 0;
 
 // 建立測試使用者：`referred_by_code` 仍走 user_metadata，讓
