@@ -205,7 +205,10 @@ export function PaymentCheckout() {
   // ✅ 獲取推薦人資訊
   useEffect(() => {
     const fetchReferrerInfo = async () => {
-      if (!pendingUser?.referredByCode) {
+      // 自動綁定（預設推薦人）不查也不顯示——只擋渲染擋不住網路層：
+      // 回應本體含推薦人真名，Network 面板完整可見。早退與 :591 的
+      // 渲染條件必須用同一個旗標。
+      if (!pendingUser?.referredByCode || pendingUser.isAutoReferral) {
         return;
       }
 
@@ -665,7 +668,8 @@ export function PaymentCheckout() {
                     id="new-referral-code"
                     value={newReferralCode}
                     placeholder={
-                      pendingUser.referredByCode
+                      // 自動綁定的預設碼不外洩到 placeholder（決定 4）
+                      pendingUser.referredByCode && !pendingUser.isAutoReferral
                         ? `目前：${pendingUser.referredByCode}`
                         : '輸入推薦碼'
                     }
