@@ -16,10 +16,15 @@ from playwright.sync_api import Page
 
 _TEST_RESULTS = Path(__file__).resolve().parents[1] / "test-results"
 
-_FIELDS_JS = """els => els.slice(0, 40).map(e =>
-     `${e.tagName.toLowerCase()} name=${e.name || '-'} id=${e.id || '-'} `
-   + `type=${e.type || '-'} placeholder=${e.placeholder || '-'} text=${(e.innerText || '').trim().slice(0, 20)}`
-   ).join('\\n')"""
+# value 一起帶回來：不少「畫面看起來填好了、送出卻沒反應」的失敗，唯一
+# 的分界就在欄位到底有沒有值（遮罩輸入、React 還沒掛上 handler…）。密碼
+# 只回長度，不回內容。
+_FIELDS_JS = """els => els.slice(0, 40).map(e => {
+     const v = e.type === 'password' ? (e.value ? `<${e.value.length} 碼>` : '') : (e.value || '');
+     return `${e.tagName.toLowerCase()} name=${e.name || '-'} id=${e.id || '-'} `
+       + `type=${e.type || '-'} placeholder=${e.placeholder || '-'} value=${v || '-'} `
+       + `text=${(e.innerText || '').trim().slice(0, 20)}`;
+   }).join('\\n')"""
 
 
 def dump_page(page: Page, label: str) -> str:
