@@ -54,6 +54,15 @@ describe('MyQrDialog', () => {
     expect(screen.getByTestId('verify-content')).toBeTruthy();
   });
 
+  it('標題下不放總述說明，對話框不帶 aria-describedby', () => {
+    // 分頁名稱已經說明用途，核身頁自己還有一句說明——標題下再放一句總述是重複，
+    // 而且在手機上會把 QR 擠出第一屏。用 aria-describedby 而不是比對字串來守：
+    // 任何人重新加回 DialogDescription 都會被這條抓到，不管他寫的是哪句話。
+    render(<MyQrDialog {...baseProps} joined />);
+
+    expect(screen.getByRole('dialog').getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('記住的偏好是核身碼時，開啟就停在核身碼分頁', () => {
     localStorage.setItem('uknow:pref:my-qr-tab', 'verify');
     render(<MyQrDialog {...baseProps} joined />);
