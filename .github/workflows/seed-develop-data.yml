@@ -266,6 +266,14 @@ jobs:
           JOURNEY_PAYMENT_MODE: sandbox
           JOURNEY_PAYUNI_HASH_KEY: ${{ secrets.PAYUNI_TEST_HASH_KEY }}
           JOURNEY_PAYUNI_HASH_IV: ${{ secrets.PAYUNI_TEST_HASH_IV }}
+          # PayUni sandbox 刷卡頁要填的測試卡（人審提供，2026-07-26）。
+          # 卡號與 conftest 預設相同，有效期不同——預設 0131 已過期，
+          # 格式是 MMYY，所以 09/33 寫成 0933。
+          # 注意這與 PAYUNI_TEST_* 三件套是兩回事：那三個是後端建單用的
+          # 商店憑證，缺了連刷卡頁都到不了，卡號正確也用不上。
+          JOURNEY_TEST_CARD_NUMBER: '4147631000000001'
+          JOURNEY_TEST_CARD_EXPIRY: '0933'
+          JOURNEY_TEST_CARD_CVV: '123'
           JOURNEY_BUILD_PARALLELISM: ${{ inputs.build_parallelism }}
         run: |
           mkdir -p test-results
