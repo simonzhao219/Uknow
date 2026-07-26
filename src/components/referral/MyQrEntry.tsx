@@ -59,41 +59,54 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
     onJoined?.();
   };
 
+  // 「我的 QR」與左側內容永遠緊鄰成一組，不用 ml-auto 推到兩端——推到兩端在寬
+  // 螢幕會讓按鈕飄到卡片最右緣、與推薦碼視覺上斷開，看不出是同一件事的兩個入口。
+  const qrButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="shrink-0"
+      onClick={() => setQrOpen(true)}
+      data-testid="my-qr-button"
+    >
+      <QrCode className="mr-1 h-4 w-4" />
+      我的 QR
+    </Button>
+  );
+
   return (
-    <div className={cn('flex items-center gap-3', className)}>
-      <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">我的推薦碼</p>
-        {canShowCode ? (
-          <p
-            data-testid="my-referral-code"
-            className="truncate font-mono text-lg font-semibold tracking-wider text-purple-600"
-          >
-            {user.referralCode}
-          </p>
-        ) : (
+    <div className={cn('min-w-0', className)}>
+      {canShowCode ? (
+        // 有碼：標籤＋值，與同一張卡片的姓名／電話／Email 三格同節奏。
+        <>
+          <p className="text-sm text-muted-foreground">我的推薦碼</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              data-testid="my-referral-code"
+              className="truncate font-mono text-lg font-semibold tracking-wider text-purple-600"
+            >
+              {user.referralCode}
+            </p>
+            {qrButton}
+          </div>
+        </>
+      ) : (
+        // 沒碼：不掛「我的推薦碼」標籤——沒有值可標，標籤配一顆 CTA 會讀成
+        // 「我的推薦碼＝這顆按鈕」。此態就是單純的兩個動作，同高、緊鄰、成組：
+        // 紫色實心是主要動作，QR 外框是次要，標準的 primary/secondary 配對。
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            className="mt-1 bg-purple-600 text-white hover:bg-purple-700"
+            className="shrink-0 bg-purple-600 text-white hover:bg-purple-700"
             onClick={openJoin}
             data-testid="join-referral-button"
           >
             <Shield className="mr-1 h-4 w-4" />
             加入推薦計畫
           </Button>
-        )}
-      </div>
-
-      <div className="ml-auto shrink-0">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setQrOpen(true)}
-          data-testid="my-qr-button"
-        >
-          <QrCode className="mr-1 h-4 w-4" />
-          我的 QR
-        </Button>
-      </div>
+          {qrButton}
+        </div>
+      )}
 
       <MyQrDialog
         open={qrOpen}
