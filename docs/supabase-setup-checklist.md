@@ -89,6 +89,34 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 > ⚠️ `SUPABASE_URL` 與 `SUPABASE_SERVICE_ROLE_KEY` 由 Supabase **自動注入**，
 > **不需要**手動新增。
 
+### 完整對照：Edge Function 到底讀哪些變數
+
+以下是**唯一權威清單**，來源是 `api/index.ts` 裡實際的 `Deno.env.get()`
+與 `read()` 呼叫。2026-07-26 盤點時，正式站的 Secrets 有一半是舊系統遺留、
+從未被任何程式讀過——沒有這張表就分不出「不敢刪」與「不必留」。
+
+| 變數 | 誰負責設 | 說明 |
+|---|---|---|
+| `SUPABASE_URL` | Supabase 自動注入 | 別手動新增 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase 自動注入 | 同上 |
+| `SUPABASE_DB_URL` | Supabase 自動注入 | 同上 |
+| `DEPLOY_SHA` | `deploy-supabase.yml` 自動寫入 | 供 `/health` 回報線上版本 |
+| `FRONTEND_URL` | **你** | 導回頁 + CORS 白名單（見上方警告） |
+| `PAYUNI_SANDBOX` | **你** | 決定用哪一套憑證與端點 |
+| `PAYUNI_(TEST_)MER_ID` / `_HASH_KEY` / `_HASH_IV` | **你** | 依 mode 擇一套，成套或整組失敗 |
+| `RECONCILE_SECRET` | **你（僅正式站）** | 對帳排程的門票；排程只打正式站 |
+| `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
+| `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
+
+**不在這張表上的變數，程式一律讀不到。** 盤點時發現的遺留物包括
+`DATABASE_URL`（程式讀的是自動注入的 `SUPABASE_DB_URL`）、`PAYUNI_API_URL`
+（端點在 `resolvePayuniConfig()` 內依 mode 寫死）、`VITE_PAYUNI_PAYMENT_URL`
+（`VITE_` 是前端建置期前綴，放在這裡不會被任何人讀到）、
+`PASSWORD_ENCRYPTION_KEY`、`RESEND_API_KEY`（零引用，git 歷史裡也從未出現）。
+
+> 💡 掛 custom SMTP 時憑證是填進 **Authentication → SMTP Settings**，
+> 不是 Edge Function Secrets——Auth 服務不讀這裡的變數。
+
 ### ⚠️ 存檔後需重新部署
 
 Secrets 變更後，正在執行的函數實例不會立即生效。
@@ -159,15 +187,33 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 
 ```bash
 curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
-# 預期：{"ok":true,"sha":"<部署的 commit sha>", ...}
 ```
 
-`sha` 應等於該分支最新的 commit——不相等代表部署沒跟上。
+| 欄位 | develop 應為 | 正式站應為 |
+|---|---|---|
+| `sha` | 該分支最新 commit | 同左（不相等代表部署沒跟上） |
+| `payuniMode` | `sandbox` | `production`（**正式站開放後**；開放前是 `sandbox`） |
+| `payuniConfigured` | `true` | `true` |
+
+`payuniMode` 存在的理由：這個設定**沒有任何外顯訊號**。憑證與端點一致時
+PayUni 不會回「(模擬)」浮水印、程式不報錯、儀表板只看得到 secrets 的
+SHA256 digest。2026-07-26 發現正式站當時跑在 sandbox——帳面 20 筆完成訂單、
+NT$24,000，實際入帳 0 元——是靠人工反推 digest 才看出來的，那不是可重複的
+流程。現在一個 curl 就能回答。
+
+`payuniConfigured` 是布林值、不回傳任何憑證內容；`false` 代表當下 mode
+需要的三把憑證沒齊，付款會在建單當下失敗。
+
+> **正式站開放時**：把 `PAYUNI_SANDBOX` 設為 `false`，並把
+> `deploy-supabase.yml` 裡的 `EXPECT_PRODUCTION_PAYUNI` 改成 `true`。
+> 之後任何 main 部署若偵測到 `payuniMode != production` 會直接紅燈，
+> 不再只是警告。
 
 ### 5-2 PayUni 變數是否載入
 
-建立一次測試付款（sandbox）。若回傳 `PayUni 環境變數未設定`，
-代表步驟 1 尚未生效，請重新部署 `api`。
+先看上面的 `payuniConfigured`。若為 `true` 但付款仍失敗，再建立一次測試付款
+（sandbox）看實際錯誤；回傳 `PayUni 環境變數未設定` 代表步驟 1 尚未生效，
+請重新部署 `api`。
 
 ### 5-3 Email OTP
 

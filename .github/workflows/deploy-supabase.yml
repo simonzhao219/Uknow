@@ -128,18 +128,58 @@ jobs:
             echo "- Project：\`${SUPABASE_PROJECT_REF}\`"
             echo "- API base：${api_base}"
           } >> "$GITHUB_STEP_SUMMARY"
+          health=''
           for attempt in $(seq 1 20); do
             body="$(curl -sS --max-time 10 "${api_base}/health" || true)"
             sha="$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha",""))' 2>/dev/null || true)"
             if [ "$sha" = "$DEPLOY_SHA" ]; then
               echo "✅ 線上函式已是 ${DEPLOY_SHA:0:7}（第 $attempt 次探測）"
-              exit 0
+              health="$body"
+              break
             fi
             echo "第 $attempt 次:線上 sha='${sha:-無回應}',等待傳播…"
             sleep 6
           done
-          echo "::error::部署後 2 分鐘內 /health 仍未回報 $DEPLOY_SHA —— 線上可能不是這一版,請檢查"
-          exit 1
+          if [ -z "$health" ]; then
+            echo "::error::部署後 2 分鐘內 /health 仍未回報 $DEPLOY_SHA —— 線上可能不是這一版,請檢查"
+            exit 1
+          fi
+
+          # ----------------------------------------------------------------
+          # 金流環境的可觀測性閘門。
+          #
+          # 2026-07-26:正式站的 PAYUNI_SANDBOX 是 true,所有付款都走 PayUni
+          # 測試站——帳面 20 筆完成訂單、NT$24,000,實際入帳 0 元。當時是刻意
+          # 的（尚未開放),但它**沒有任何訊號**:憑證與端點一致時 PayUni 不回
+          # 浮水印、程式不報錯、儀表板只看得到 secrets 的 SHA256 digest。
+          # 那次是靠人工反推 digest 才發現的。
+          #
+          # 所以先讓它「每次部署都說出來」,寫進 job summary。
+          # 開放正式站時把下面的 EXPECT_PRODUCTION_PAYUNI 改成 true,這道
+          # 提醒就升級成硬閘門——忘記翻 PAYUNI_SANDBOX 會讓部署當場紅燈。
+          # 這個開關刻意放在 git 裡而不是儀表板變數:同 ref 解析的理由,
+          # 儀表板改動沒人 review、也查不到誰改的。
+          # ----------------------------------------------------------------
+          EXPECT_PRODUCTION_PAYUNI='false'   # ← 正式站開放時改成 'true'
+
+          mode="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniMode","unknown"))' 2>/dev/null || echo unknown)"
+          configured="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniConfigured","unknown"))' 2>/dev/null || echo unknown)"
+          {
+            echo "- PayUni 模式：\`${mode}\`（憑證齊全：\`${configured}\`）"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PayUni 模式：${mode}（憑證齊全：${configured}）"
+
+          if [ "$configured" != "True" ] && [ "$configured" != "true" ]; then
+            echo "::warning::${DEPLOY_BRANCH} 的 PayUni 憑證不齊（mode=${mode}）——付款會在建單當下失敗。"
+          fi
+
+          if [ "$DEPLOY_BRANCH" = "main" ] && [ "$mode" != "production" ]; then
+            if [ "$EXPECT_PRODUCTION_PAYUNI" = "true" ]; then
+              echo "::error::正式站的 PayUni 模式是 ${mode},不是 production——付款會走測試站,不會有任何真實金流。請把 PAYUNI_SANDBOX 設為 false 後重新部署。"
+              exit 1
+            fi
+            echo "::warning::正式站目前的 PayUni 模式是 ${mode}（尚未開放,屬預期）。開放前記得把 PAYUNI_SANDBOX 設為 false,並把本檔的 EXPECT_PRODUCTION_PAYUNI 改成 true。"
+          fi
 
       - name: 失敗時開 issue
         if: failure()
