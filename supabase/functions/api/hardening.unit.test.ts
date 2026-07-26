@@ -76,14 +76,15 @@ Deno.test('CORS：非開發模式下不放行 localhost，前綴繞過網域一�
   });
   assertEquals(legit.headers.get('access-control-allow-origin'), 'https://frontend.test');
 
-  // 自家 Cloudflare Pages 預覽子網域放行（branch 預覽也能登入/打 API）
+  // 2026-07 收緊：FRONTEND_URL 不是預覽網域（＝這是正式站那種部署）時，
+  // 預覽子網域一律拒絕。窮舉式的環境組合在 cors-origin.unit.test.ts。
   const preview = await app.request('/api/announcements/active', {
     headers: { Origin: 'https://claude-referral-network-tree.uknow.pages.dev' },
   });
   assertEquals(
     preview.headers.get('access-control-allow-origin'),
-    'https://claude-referral-network-tree.uknow.pages.dev',
-    '自家 *.uknow.pages.dev 預覽子網域應放行',
+    null,
+    '正式站部署不得放行 *.uknow.pages.dev——預覽誤打正式站要失敗,不能靜默成功',
   );
 
   // 但不得被 *.uknow.pages.dev 的前綴/後綴繞過

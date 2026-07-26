@@ -34,36 +34,68 @@ export const app = new Hono().basePath('/api');
 // ============================================================
 // CORS
 // ============================================================
+/** 是不是本專案 Cloudflare Pages 專案底下的網域（含各 branch / commit 預覽別名）。 */
+function isPagesPreviewHost(host: string): boolean {
+  // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com（後綴）
+  // 與 evil-uknow.pages.dev（前綴）這兩類繞過。
+  return host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev');
+}
+
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 決定一個 Origin 能不能拿到 CORS 放行——純函式，好在 CI 用不同的環境組合
+ * 單元測試（同 resolvePayuniConfig 的理由：真正決定安全性的分支，不能只靠
+ * 「線上看起來能用」來驗）。
+ *
+ * 規則有三條，順序即優先序：
+ *   1. 與本部署的 FRONTEND_URL 完全相同 → 放行。這是每個環境的正身。
+ *   2. `*.uknow.pages.dev` 預覽網域 → **只有當本部署自己就是預覽環境時**才放行。
+ *   3. localhost → 只在明確的開發旗標下放行（DEV_CORS / PayUni sandbox）。
+ *
+ * 第 2 條的「自己也是預覽環境」是 2026-07 收緊的重點。原本這條是無條件放行，
+ * 理由是「預覽站跑的是 production edge function，不放行會被擋成 Failed to
+ * fetch」——但那個前提在前端改成分支感知之後就不成立了：現在非 main 分支的
+ * 預覽一律打 develop 分支 DB，需要放行預覽網域的是 develop 那個部署，不是
+ * 正式站。留著等於讓「預覽站誤打正式站」這個**應該要爆炸的錯誤**靜默地成功，
+ * 而它正是環境沒分乾淨時最難察覺的一種。
+ *
+ * 判準取自 FRONTEND_URL 本身而不是另開一個旗標：那個值每個環境本來就必須
+ * 正確（付款完成導回頁靠它），多一個旗標就多一個會與它不一致的東西。
+ * develop 的 FRONTEND_URL 是 https://develop.uknow.pages.dev（預覽網域）→
+ * 放行手足預覽；正式站是 https://uknow.com.tw → 只認自己。
+ */
+export function resolveCorsOrigin(
+  origin: string,
+  read: (key: string) => string | undefined,
+): string {
+  // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
+  const allowed = (read('FRONTEND_URL') || '').replace(/\/$/, '');
+  const o = origin.replace(/\/$/, '');
+  if (allowed && o === allowed) return origin;
+
+  const host = hostnameOf(o);
+  if (host === null) return ''; // 非法 Origin → 拒絕
+
+  const selfHost = hostnameOf(allowed);
+  if (selfHost && isPagesPreviewHost(selfHost) && isPagesPreviewHost(host)) return origin;
+
+  const devMode = read('DEV_CORS') === 'true' || read('PAYUNI_SANDBOX') === 'true';
+  if (devMode && (host === 'localhost' || host === '127.0.0.1')) return origin;
+
+  return '';
+}
+
 app.use(
   '*',
   cors({
-    origin: (origin) => {
-      // 去掉結尾斜線再比對：瀏覽器 Origin 不帶斜線，但 FRONTEND_URL 可能被填成帶斜線
-      const allowed = (Deno.env.get('FRONTEND_URL') || '').replace(/\/$/, '');
-      const o = origin.replace(/\/$/, '');
-      if (o === allowed) return origin;
-      // 放行本專案自家的 Cloudflare Pages 預覽子網域（*.uknow.pages.dev）。
-      // 這些是同一 Pages 專案下、由本 repo 部署的第一方預覽（第三方無法註冊
-      // 此命名空間），讓 branch 預覽也能登入 / 打 API——否則預覽跑的是
-      // production edge function，會被單一 FRONTEND_URL 白名單擋成 Failed to fetch。
-      // 以解析後的 hostname 精確比對，避免 uknow.pages.dev.attacker.com / 前綴繞過。
-      try {
-        const host = new URL(origin).hostname;
-        if (host === 'uknow.pages.dev' || host.endsWith('.uknow.pages.dev')) return origin;
-      } catch { /* 非法 Origin → 拒絕 */ }
-      // localhost 只在明確的開發旗標下放行（DEV_CORS=true 或 PayUni sandbox），
-      // 且以 URL 解析精確比對 hostname——startsWith('http://localhost') 會被
-      // localhost.attacker.com 這類網域繞過，production 也不該永久放行本機。
-      const devMode = Deno.env.get('DEV_CORS') === 'true' ||
-        Deno.env.get('PAYUNI_SANDBOX') === 'true';
-      if (devMode) {
-        try {
-          const host = new URL(o).hostname;
-          if (host === 'localhost' || host === '127.0.0.1') return origin;
-        } catch { /* 非法 Origin → 拒絕 */ }
-      }
-      return '';
-    },
+    origin: (origin) => resolveCorsOrigin(origin, (key) => Deno.env.get(key)),
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     // If-None-Match：搭配讀端點的 ETag 條件請求（見下方 etag middleware）
     allowHeaders: ['Content-Type', 'Authorization', 'If-None-Match'],

@@ -19,7 +19,11 @@ Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
 Deno.env.set('PAYUNI_HASH_KEY', '0123456789abcdef0123456789abcdef');
 Deno.env.set('PAYUNI_HASH_IV', '0123456789ab');
 Deno.env.set('PAYUNI_SANDBOX', 'false');
-Deno.env.set('FRONTEND_URL', 'https://frontend.test');
+// 這支測的是 ETag/304 在**預覽網域之間**的快取行為，所以環境要擺成
+// 「自己就是預覽環境」的那種部署（＝develop）：2026-07 起只有這種部署
+// 才放行手足 *.uknow.pages.dev，正式站那種只認自己的網域。
+// 放行規則本身的窮舉測試在 cors-origin.unit.test.ts。
+Deno.env.set('FRONTEND_URL', 'https://develop.uknow.pages.dev');
 
 const { app } = await import('./index.ts');
 
