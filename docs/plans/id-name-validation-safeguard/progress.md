@@ -5,17 +5,19 @@
      session 才懂的簡稱。 -->
 
 分支:`claude/id-name-validation-safeguard-dkfahy`
-規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(v4)|審查:`./review.md`(三輪;v3 已無 P0)
 
 ## 階段狀態
 
+<!-- 階段定義以 plan.md §5 為準,本表只追蹤狀態。 -->
+
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 前端 `validateName` 雙模式規則與分模式長度上限 | ⬜ 未開始 | | |
-| 2 | 後端 `export` 姓名驗證函式,接進兩個端點 | ⬜ 未開始 | | |
-| 3 | 撤銷 `profiles.name` 的 authenticated UPDATE GRANT | ⬜ 未開始 | | |
-| 4 | 表單模式切換、長度連動、草稿、確認框合併 | ⬜ 未開始 | | |
-| 5 | 收尾:規格書 §4.2 與 journey 姓名產生器同步 | ⬜ 未開始 | | |
+| 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ⬜ 未開始 | | |
+| 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⬜ 未開始 | | |
+| 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⬜ 未開始 | | |
+| 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ⬜ 未開始 | | |
+| 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
@@ -31,21 +33,35 @@
 對的、後果沒寫完」型——補幾句話、把一個二選一拍板、補一個測試探針——
 不需要推翻設計重來。
 
-規劃 PR #133 已合併進 develop(規劃檔因此可跨 session 取用)。**v3 的
-發現尚未折入規劃書**,那是下一步:把 10 個 P1 寫成 v4(多為文字增補),
-再由人親自打 `/tdd-implement id-name-validation-safeguard` 啟動階段 1。
+規劃 PR #133(v3 + v1/v2 審查)已合併進 develop,規劃檔因此可跨 session
+取用。**v3 的 10 個 P1 與 7 個 P2 已全數折入 plan v4**(逐項對應表見
+`review.md` 的「v3 處置」節)。
 
-開工前最值得知道的三項(完整清單見 `review.md` v3 節):
+**規劃已無開工阻擋項。** 下一步是由人親自打
+`/tdd-implement id-name-validation-safeguard` 啟動階段 1。
 
-1. **§2.5(b) 必須補完整 SQL**——`create or replace function` 是整段覆蓋,
-   規劃只摘錄了要改的那一行,實作者漏抄推薦碼解析邏輯就會靜默清空日後
-   所有新註冊使用者的 `referred_by_user_id`。
-2. **`createTestUser` 的二選一要拍板成 service_role 直寫**——走
-   `/auth/register` 會讓測試使用者的 `registration_step` 從 0 變 1,打壞
-   `registration-step-contract.test.ts`;該 helper 有 132 處呼叫。
-3. **`/auth/register` 身兼新註冊與編輯**——舊帳號(含刻意不清洗的髒姓名
-   族群)按「編輯」只想改手機,也會因整份表單重驗而被新規則擋死,牴觸
-   §1/§7「不回溯校驗」的框架陳述。
+### 開工前仍須結清的兩項查證(§6,可與實作並行,但須在階段 1 定案規則前完成)
+
+1. **`HAN_RANGE` 缺字族群的規模**——該正則不含擴充 B 區以上與造字區,
+   對應戶政「缺字」問題。它過去只決定遮罩樣式(不匹配僅是樣式不精準),
+   這是第一次被當註冊關卡,同一落差的後果變成「完全無法註冊」。以既有
+   `profiles.name` 樣本查證是否為真實會撞到的族群。
+2. **純羅馬拼音登記姓名的分隔慣例**——外文模式僅允許 `A-Z`/`a-z` 與單一
+   半形空格。若官方轉寫慣例本就用空格則非問題;若另有分隔符號慣例,
+   外文模式需延伸相同容許。
+
+### v4 相對 v3 的關鍵變更(實作時最容易踩的三處)
+
+1. **§2.5(b) 已補「基準版本 + 唯一差異」的明文指示**——
+   `create or replace function` 是整段覆蓋,漏抄推薦碼解析邏輯會靜默清空
+   日後所有新註冊使用者的 `referred_by_user_id`。階段 3 已加一條專門的
+   防漏抄驗證。
+2. **§2.6 已拍板 `createTestUser` 採 service_role 直寫**(不是二選一)
+   ——走 `/auth/register` 會讓測試使用者的 `registration_step` 從 0 變 1,
+   打壞 `registration-step-contract.test.ts`;該 helper 有 132 處呼叫。
+3. **階段 5 的測試落點已改為新增 `e2e/journey/tools/` 下的離線測試**——
+   原本填的 `pytest tools/` 根本不覆蓋 `run_state.py`,照字面執行會全綠
+   卻什麼都沒驗到。
 
 ## Blockers(逃生口紀錄)
 
