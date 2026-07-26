@@ -53,9 +53,16 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # 非 POSIX:退化成只有原子寫入,不做互斥
+    fcntl = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -162,6 +169,54 @@ def _branch() -> str:
         return ""
 
 
+@contextmanager
+def _exclusive():
+    """序列化 read-modify-write。
+
+    非要不可,而不是保險:bash-guard 與 check-output-filter 掛在 settings.json
+    的**同一個 Bash matcher** 上,Claude Code 會並行執行它們——兩個行程同時
+    read-modify-write 同一個 buffer。沒有這道鎖時實測到的後果不是少算一兩筆,
+    而是**整個 session 消失**:其中一方讀到對方寫到一半的檔案,JSON 解析失敗
+    被當成「還沒有 buffer」,於是開一個新 session id 覆蓋掉既有那筆。
+
+    這是感測器最惡劣的失效模式——它不會報錯,只會安靜地少報,而少報的讀數
+    看起來跟「真的沒事」一模一樣。
+    """
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    lock = METRICS_DIR / ".session.lock"
+    handle = None
+    try:
+        handle = open(lock, "w", encoding="utf-8")  # noqa: SIM115 — 生命週期由本 contextmanager 管
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        if handle is not None:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            handle.close()
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """先寫暫存檔再 os.replace——POSIX 保證 rename 是原子的。
+
+    直接 write_text 會讓並行的讀取方看到寫到一半的內容。鎖擋得住有參與
+    鎖的行程,擋不住讀取器(harness-metrics.py 不上鎖),所以兩層都要。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def _read_buffer() -> dict | None:
     try:
         return json.loads(BUFFER.read_text(encoding="utf-8"))
@@ -169,20 +224,16 @@ def _read_buffer() -> dict | None:
         return None
 
 
-def _write_buffer(state: dict) -> None:
-    METRICS_DIR.mkdir(parents=True, exist_ok=True)
-    BUFFER.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
 def record(hook: str, rule: str | None) -> None:
     """記一次決策。**任何例外都吞掉**——量測失敗不該讓 hook 失敗(約束 2)。"""
     if not enabled():
         return
     try:
-        state = _read_buffer()
-        if state is None:
-            state = new_state(uuid.uuid4().hex[:12], _now(), _branch())
-        _write_buffer(bump(state, hook, rule, _now()))
+        with _exclusive():
+            state = _read_buffer()
+            if state is None:
+                state = new_state(uuid.uuid4().hex[:12], _now(), _branch())
+            _atomic_write(BUFFER, json.dumps(bump(state, hook, rule, _now()), ensure_ascii=False))
     except Exception:  # noqa: BLE001 — 感測器的失敗絕不能傳染給閘門
         return
 
@@ -192,18 +243,18 @@ def flush() -> bool:
     if not enabled():
         return False
     try:
-        state = _read_buffer()
-        if state is None:
-            return False
-        try:
-            lines = LOG.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            lines = []
-        lines = [ln for ln in lines if ln.strip()]
-        merged = merge_lines(lines, to_line(state), state.get("session", ""))
-        METRICS_DIR.mkdir(parents=True, exist_ok=True)
-        LOG.write_text("\n".join(merged) + "\n", encoding="utf-8")
-        return True
+        with _exclusive():
+            state = _read_buffer()
+            if state is None:
+                return False
+            try:
+                lines = LOG.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                lines = []
+            lines = [ln for ln in lines if ln.strip()]
+            merged = merge_lines(lines, to_line(state), state.get("session", ""))
+            _atomic_write(LOG, "\n".join(merged) + "\n")
+            return True
     except Exception:  # noqa: BLE001
         return False
 

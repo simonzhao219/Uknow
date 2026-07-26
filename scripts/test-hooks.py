@@ -650,6 +650,56 @@ def test_decision_log_io() -> None:
         if not (target / "sessions.jsonl").exists():
             failures.append("decision_log[rotate]: 清掉 buffer 前沒有先落檔(資料遺失)")
 
+    # 6. 並行安全。bash-guard 與 check-output-filter 掛在同一個 Bash matcher 上,
+    #    Claude Code 會**並行**執行它們——每個 Bash 指令都是一次 read-modify-write
+    #    競賽。這條是實測抓到的迴歸:沒有鎖與原子寫入時,其中一方會讀到寫到一半
+    #    的 buffer、把它當成「還沒有 buffer」,於是開一個新 session id 蓋掉既有
+    #    那筆——**整個 session 的計數就這樣消失**,而且不會有任何錯誤訊息。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "metrics"
+        n = 24
+        code = (
+            "import importlib.util\n"
+            f"spec = importlib.util.spec_from_file_location('dl', r'{hook_path}')\n"
+            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+            "m.record('race', None)\n"
+        )
+        env = {**os.environ, "HARNESS_METRICS_DIR": str(target)}
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-c", code], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            for _ in range(n)
+        ]
+        for p in procs:
+            p.wait()
+
+        state = json.loads((target / ".session.json").read_text(encoding="utf-8"))
+        expect_eq(f"decision_log[{n} 個並行 record 不掉計數]", state["passed"].get("race"), n)
+
+    # 7. sessions.jsonl 必須是「換檔」而不是「就地覆寫」。
+    #
+    #    第 6 條那道鎖只保護有參與鎖的行程,而 scripts/harness-metrics.py 讀日誌
+    #    時**不上鎖**——就地覆寫(truncate 後再寫)會讓它讀到半截的 JSON,而這是
+    #    會進 git 的檔案,寫壞了等於 commit 一份垃圾進版本庫。
+    #
+    #    判準用 inode 而不是「一邊寫一邊讀看會不會壞」:後者要賭中那個極窄的
+    #    時間窗,抓不到就是靜靜地通過,而且在 CI 上必然 flaky——一條只有機率會
+    #    說話的測試,跟不會說話的測試差別不大。rename-into-place 必然換 inode,
+    #    就地覆寫必然保留 inode,這個差別是確定性的。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "metrics"
+        run({}, "m.record('h', None)\nm.flush()\n", tmp)
+        log_path = target / "sessions.jsonl"
+        before = log_path.stat().st_ino
+        run({}, "m.record('h', None)\nm.flush()\n", tmp)
+        checked += 1
+        if log_path.stat().st_ino == before:
+            failures.append(
+                "decision_log[sessions.jsonl 必須換檔寫入]: inode 沒變,代表是就地覆寫"
+                "——不上鎖的讀取器會讀到半截 JSON"
+            )
+
 
 test_decision_log_io()
 
