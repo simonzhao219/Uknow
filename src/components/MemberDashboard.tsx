@@ -1,26 +1,25 @@
-import { useContext, useState } from 'react';
+import { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, QrCode } from 'lucide-react';
+import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { MyQrDialog } from './referral/MyQrDialog';
+import { MyQrEntry } from './referral/MyQrEntry';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 export function MemberDashboard() {
-  const { user, setUser } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
   const { showInfo } = useNotification();
 
   const { subscriptionData, isLoading } = useSubscription();
-  const [showMyQr, setShowMyQr] = useState(false);
 
   // 刊登不在底部導覽裡，這張卡片是它的主入口——所以要能直接看出「我有沒有
   // 刊登、刊登的是什麼」，而不是只給一個看不出狀態的連結。
@@ -46,18 +45,6 @@ export function MemberDashboard() {
         </a>
       </>,
     ]);
-  };
-
-  const handleJoinReferralSuccess = (referralCode: string, joinedAt: string) => {
-    if (user) {
-      const updatedUser = {
-        ...user,
-        referralProgramJoined: true,
-        referralProgramJoinedAt: joinedAt,
-      };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-    }
   };
 
   return (
@@ -108,27 +95,10 @@ export function MemberDashboard() {
             <p className="text-sm text-muted-foreground">Email</p>
             <p className="font-medium truncate">{user?.email}</p>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">我的推薦碼</p>
-            <div className="flex items-center gap-2">
-              {user?.referralProgramJoined && user?.referralCode ? (
-                <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                  {user.referralCode}
-                </p>
-              ) : null}
-              {/* 單一「我的 QR」入口：核身碼（所有會員）＋邀請好友（推薦計畫）兩分頁。 */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setShowMyQr(true)}
-                data-testid="my-qr-button"
-              >
-                <QrCode className="mr-1 h-4 w-4" />
-                我的 QR
-              </Button>
-            </div>
-          </div>
+          {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
+              呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
+              所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
+          <MyQrEntry />
         </CardContent>
       </Card>
 
@@ -219,16 +189,6 @@ export function MemberDashboard() {
 
       {/* 訂閱狀態 */}
       <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
-
-      <MyQrDialog
-        open={showMyQr}
-        onOpenChange={setShowMyQr}
-        joined={!!user?.referralProgramJoined}
-        referralCode={user?.referralCode}
-        memberName={user?.name}
-        accountStatus={subscriptionData?.status}
-        onJoinSuccess={handleJoinReferralSuccess}
-      />
     </div>
   );
 }
