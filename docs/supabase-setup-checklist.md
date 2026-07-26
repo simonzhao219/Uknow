@@ -69,6 +69,17 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `PAYUNI_(TEST_)HASH_IV` | （16 字元） | PayUni 後台「Hash IV」 |
 | `PAYUNI_SANDBOX` | `true` / `false` | develop 填 `true`；正式站填 `false` |
 | `FRONTEND_URL` | 見上表 | **結尾不要加 `/`**；用於 CORS 白名單與付款完成導回頁 |
+| `MEMBER_TOKEN_SECRET` | 自行產生的隨機字串 | 會員核身碼的簽章密鑰，見下方說明 |
+
+> **`MEMBER_TOKEN_SECRET`**（會員核身 QR，規格書 §13.1）不是跟誰申請的憑證，
+> 是**你自己產生**的隨機字串——後端用它對核身碼做 HMAC 簽章與驗章，等同「防偽
+> 印章」。產生方式：`openssl rand -base64 32`，把輸出貼進來即可。
+>
+> **develop 與正式站各設一把、且值要不同**：這樣 develop 的密鑰外流也偽造不了
+> 正式站的碼。缺這把時核身端點一律回 500（fail-closed）——刻意不以空字串當
+> 密鑰硬跑，否則任何人都能自算出「合法」的碼，等於完全沒有防偽。
+> 密鑰可隨時更換；換掉當下未被掃描的碼會失效，但核身碼壽命只有 90 秒，
+> 實務影響幾乎為零，這也是外流時最簡單的補救。
 
 > ⚠️ **`FRONTEND_URL` 同時決定「要不要放行 Cloudflare Pages 預覽網域」**
 > （`resolveCorsOrigin()`）：這個值本身是 `*.uknow.pages.dev` 時，視為預覽
@@ -104,6 +115,7 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `FRONTEND_URL` | **你** | 導回頁 + CORS 白名單（見上方警告） |
 | `PAYUNI_SANDBOX` | **你** | 決定用哪一套憑證與端點 |
 | `PAYUNI_(TEST_)MER_ID` / `_HASH_KEY` / `_HASH_IV` | **你** | 依 mode 擇一套，成套或整組失敗 |
+| `MEMBER_TOKEN_SECRET` | **你** | 會員核身碼（§13.1）的簽章密鑰；缺了核身端點一律 500 |
 | `RECONCILE_SECRET` | **你（僅正式站）** | 對帳排程的門票；排程只打正式站 |
 | `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
 | `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
@@ -263,7 +275,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 
 ## 快速檢查表（每個環境各一份）
 
-- [ ] 步驟 1：5 個 Edge Function Secrets 已新增並 Save
+- [ ] 步驟 1：6 個 Edge Function Secrets 已新增並 Save
+- [ ] 步驟 1：**`MEMBER_TOKEN_SECRET` 已設**（develop 與正式站各一把、值不同）
 - [ ] 步驟 1：**develop 用的是 `PAYUNI_TEST_*` 三把 + `PAYUNI_SANDBOX=true`**
       （develop 上不該出現 `PAYUNI_SANDBOX=false` 與 `PAYUNI_*` 正式憑證併存——
       那是唯一會讓測試付款打進真金流的組合）
