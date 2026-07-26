@@ -91,7 +91,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## Migrations
 
-46 個 migration，檔名即時序（`YYYYMMDDNNNNNN_描述.sql`）。**每個檔頭都寫了
+47 個 migration，檔名即時序（`YYYYMMDDNNNNNN_描述.sql`）。**每個檔頭都寫了
 「為什麼這樣改」**——改動金流函數前請先讀對應檔頭，那裡記錄了歷次踩過的坑。
 
 幾個影響全域的轉折點：
@@ -107,6 +107,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `20260724000003_pay_referral_generations` | 三代發獎收斂為單一函數 |
 | `20260724000004_..._pair_history` | 「新下線」判準改 pair-history |
 | `20260725000002_reward_source_lifecycle` | 獎勵來源分類改「拉新／續約」軸 |
+| `20260726000001_scope_own_policies_to_authenticated` | 「自己的資料」policy 收斂到 authenticated——訪客查詢路徑不再碰 `is_admin()` |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
