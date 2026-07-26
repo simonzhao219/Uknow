@@ -8,6 +8,7 @@ import {
   saveProfileDraft,
   clearProfileDraft,
   PROFILE_DRAFT_KEY,
+  inferNameMode,
   type StorageLike,
 } from './formDraft';
 
@@ -36,8 +37,10 @@ describe('sanitizeDraft', () => {
   });
 
   it('把過長字串截到欄位上限', () => {
-    const out = sanitizeDraft({ name: '一二三四五六七八九十十一', nationalId: 'A1234567890000' });
-    expect(out.name).toHaveLength(10);
+    // name 的上限是 50(兩個姓名模式中較寬鬆者),不是中文模式的 10
+    // ——理由見 formDraft.ts 的 MAX_LEN 註解與「姓名模式的草稿處理」那組測試。
+    const out = sanitizeDraft({ name: '一'.repeat(60), nationalId: 'A1234567890000' });
+    expect(out.name).toHaveLength(50);
     expect(out.nationalId).toHaveLength(10);
   });
 
@@ -128,5 +131,44 @@ describe('storage 讀寫（注入記憶體 storage）', () => {
       removeItem: () => {},
     };
     expect(loadProfileDraft(throwing)).toEqual({});
+  });
+});
+
+describe('姓名模式的草稿處理', () => {
+  it('nameMode 走 allow-list，被竄改的值一律丟棄', () => {
+    // 模式是只有兩個合法值的 enum。若掛進 MAX_LEN 沿用字串截斷路徑，
+    // 竄改過的 sessionStorage 值會被當成合法草稿原樣寫回 UI state。
+    expect(sanitizeDraft({ nameMode: 'foreign' })).toEqual({ nameMode: 'foreign' });
+    expect(sanitizeDraft({ nameMode: 'zh' })).toEqual({ nameMode: 'zh' });
+    for (const bad of ['xyz', '', 'ZH', 1, null, {}]) {
+      expect(sanitizeDraft({ nameMode: bad }), `nameMode=${JSON.stringify(bad)}`).toEqual({});
+    }
+  });
+
+  it('name 上限取兩模式較寬鬆者，外文長姓名存草稿不被截斷', () => {
+    // 若上限留在中文模式的 10，`Christopher Nolan` 會被截成 `Christophe`
+    // ——而那個截斷結果仍會通過格式驗證，等於把錯的姓名寫進核對身分的欄位。
+    expect(sanitizeDraft({ name: 'Christopher Nolan' })).toEqual({ name: 'Christopher Nolan' });
+    const tooLong = `A${'a'.repeat(60)}`;
+    expect(sanitizeDraft({ name: tooLong }).name).toHaveLength(50);
+  });
+
+  it('只切了模式還沒打字的草稿仍值得存', () => {
+    expect(isDraftMeaningful({ nameMode: 'foreign' })).toBe(true);
+    expect(isDraftMeaningful({ nameMode: 'zh' })).toBe(false);
+  });
+
+  it('inferNameMode 由內容推回模式，供兩條 prefill 路徑還原', () => {
+    expect(inferNameMode('王小明')).toBe('zh');
+    expect(inferNameMode('谷辣斯 尤達卡')).toBe('zh');
+    expect(inferNameMode('John Smith')).toBe('foreign');
+    expect(inferNameMode('JOHN SMITH')).toBe('foreign');
+    expect(inferNameMode('')).toBe('zh');
+  });
+
+  it('外文姓名的草稿還原後模式與內容一致', () => {
+    const s = memoryStorage();
+    saveProfileDraft({ name: 'John Smith', nameMode: 'foreign' }, s);
+    expect(loadProfileDraft(s)).toEqual({ name: 'John Smith', nameMode: 'foreign' });
   });
 });

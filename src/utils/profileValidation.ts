@@ -60,6 +60,11 @@ const FOREIGN_NAME = /^[A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)*$/;
 // 的死巷,只是換一個字元觸發(規劃書 §4 的兜底要求)。
 const SEPARATOR_LIKE = new RegExp(`[^${HAN_RANGE}A-Za-z0-9 ]`);
 
+// 同一條規則的 global 版,供表單在輸入/貼上當下把分隔符號**主動換成半形空格**
+// (見 CompleteProfile 的 handleNameChange)。刻意共用同一個字元集定義,
+// 避免「驗證擋得住、轉換漏一個字元」這種兩邊各自為政的漂移。
+export const SEPARATOR_LIKE_GLOBAL = new RegExp(`[^${HAN_RANGE}A-Za-z0-9 ]`, 'g');
+
 export function validateName(name: string, mode: NameMode = 'zh'): string | undefined {
   if (!name.trim()) return '請輸入真實姓名';
 
