@@ -18,8 +18,15 @@ friction-log——人工、軼事式、未彙總。於是兩件該知道的事�
 而 Stop hook 在**最後一次 commit 之後**才觸發,它寫出來的東西永遠不會被
 commit,容器一死就沒了。所以分成兩段:
 
-    session 期間  →  .claude/metrics/.session.json   (gitignored,小、快)
-    pre-commit    →  .claude/metrics/sessions.jsonl  (committed,唯一落檔點)
+    hook record()     →  .session.json    當前 session 的計數(gitignored)
+    SessionStart      →  .pending.jsonl   上一個 session 的殘留(gitignored)
+    pre-commit        →  sessions.jsonl   committed,**唯一寫受版控檔案的地方**
+
+中間那個 pending 是踩過坑才有的。直覺上 SessionStart 與 Stop hook 都是
+「順手落個檔」的好時機,但受版控的檔案一被寫就是髒工作區,而髒工作區會被
+讀成「有事情沒做完」,持續消耗每個之後路過的人的注意力。判準因此不是
+「這裡方不方便寫」,而是**「寫出去的東西有沒有下游能把它帶到終點」**——
+只有 pre-commit 有:它正在做的那個 commit 就是下游。
 
 一 session 一行,每次 flush **改寫自己那一行**而不是新增,所以一個 session
 產生多次 commit 只會看到同一行在演進。跨分支的尾端衝突由 .gitattributes
@@ -77,6 +84,8 @@ ENV_DIR = "HARNESS_METRICS_DIR"
 
 METRICS_DIR = Path(os.environ.get(ENV_DIR) or ROOT / ".claude" / "metrics")
 BUFFER = METRICS_DIR / ".session.json"
+# 已結束、等待落檔的 session。gitignored——被 .claude/metrics/* 的 pattern 涵蓋。
+PENDING = METRICS_DIR / ".pending.jsonl"
 LOG = METRICS_DIR / "sessions.jsonl"
 
 
@@ -238,37 +247,75 @@ def record(hook: str, rule: str | None) -> None:
         return
 
 
+def _read_lines(path: Path) -> list[str]:
+    try:
+        return [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except OSError:
+        return []
+
+
 def flush() -> bool:
-    """buffer → sessions.jsonl(改寫自己那一行)。回傳是否真的寫了東西。"""
+    """pending + 當前 buffer → sessions.jsonl。回傳是否真的寫了東西。
+
+    **這是唯一會寫受版控檔案的地方,而且只由 pre-commit 呼叫。** 這個不變式
+    不是潔癖,是這個感測器兩次踩過的坑:寫入點的價值不看「這裡方便寫」,要看
+    「寫出去的東西有沒有下游能把它帶到終點」。沒有下游的寫入不是備援,而是把
+    一個受版控的檔案改髒——然後每個之後路過的人都會以為有事情沒做完。
+
+    pre-commit 是唯一保證有下游的時機:它正在做的那個 commit 就是下游。
+    """
     if not enabled():
         return False
     try:
         with _exclusive():
+            pending = _read_lines(PENDING)
             state = _read_buffer()
-            if state is None:
+            if not pending and state is None:
                 return False
-            try:
-                lines = LOG.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                lines = []
-            lines = [ln for ln in lines if ln.strip()]
-            merged = merge_lines(lines, to_line(state), state.get("session", ""))
-            _atomic_write(LOG, "\n".join(merged) + "\n")
+
+            lines = _read_lines(LOG)
+            for row in pending:
+                try:
+                    session = json.loads(row).get("session", "")
+                except (json.JSONDecodeError, ValueError, AttributeError):
+                    continue  # 壞行跳過,不讓它污染 sessions.jsonl
+                lines = merge_lines(lines, row, session)
+            if state is not None:
+                lines = merge_lines(lines, to_line(state), state.get("session", ""))
+
+            _atomic_write(LOG, "\n".join(lines) + "\n")
+            PENDING.unlink(missing_ok=True)
             return True
     except Exception:  # noqa: BLE001
         return False
 
 
 def rotate() -> None:
-    """SessionStart 用:先把上一個 session 的殘留 buffer 落檔,再清掉。
+    """SessionStart 用:把上一個 session 的殘留 buffer 移進 pending,再清掉 buffer。
 
-    本機 CLI 的容器會活過多個 session,不清的話兩個 session 會併成一行。
-    web session 沒有殘留(容器是新的),這條路徑等於 no-op。
+    本機 CLI 的容器會活過多個 session,不清 buffer 的話兩個 session 會併成一行。
+    web session 的容器是新的,這條路徑等於 no-op。
+
+    **刻意不呼叫 flush()。** 第一版在這裡直接落檔,理由是「反正 SessionStart
+    之後通常會有 commit 把它帶走」。但「通常」不夠:唯讀 session(問答、review、
+    plan mode)不會有 commit,此時它就退化成 Stop hook 那個已經被移除的純成本
+    ——session 一開始工作區就是髒的,而使用者什麼都還沒做。
+
+    改成搬進 gitignored 的 pending 後,資料一樣不會遺失(下一次 pre-commit 會把
+    pending 一起帶走),但受版控的檔案只有在真的要 commit 時才會被動到。
     """
-    flush()
+    if not enabled():
+        return
     try:
-        BUFFER.unlink(missing_ok=True)
-    except OSError:
+        with _exclusive():
+            state = _read_buffer()
+            if state is not None:
+                merged = merge_lines(
+                    _read_lines(PENDING), to_line(state), state.get("session", "")
+                )
+                _atomic_write(PENDING, "\n".join(merged) + "\n")
+            BUFFER.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
         return
 
 

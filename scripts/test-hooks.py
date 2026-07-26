@@ -640,17 +640,53 @@ def test_decision_log_io() -> None:
         if target.exists():
             failures.append("decision_log[HARNESS_METRICS=0]: 關掉了還是碰了檔案系統")
 
-    # 5. rotate:落檔後清掉 buffer,下一個 session 才不會跟上一個併成一行
+    # 5. rotate:把殘留 buffer 搬進 pending,**不得碰受版控的 sessions.jsonl**。
+    #
+    #    「不遺失」與「不弄髒」是兩件事,所以拆成兩條分別釘死——併成一條的話,
+    #    一個「什麼都不做」的 rotate 也可能因為斷言太鬆而通過。
+    #    受版控的檔案只有 pre-commit 能寫:SessionStart 之後「通常」會有 commit
+    #    把它帶走,但唯讀 session（問答、review、plan mode）不會,此時直接落檔
+    #    就是讓使用者什麼都還沒做、工作區就髒了。
     with tempfile.TemporaryDirectory() as tmp:
         target = run({}, "m.record('h', None)\nm.rotate()\n", tmp)
         checked += 1
         if (target / ".session.json").exists():
             failures.append("decision_log[rotate]: buffer 沒被清掉")
         checked += 1
-        if not (target / "sessions.jsonl").exists():
-            failures.append("decision_log[rotate]: 清掉 buffer 前沒有先落檔(資料遺失)")
+        if (target / "sessions.jsonl").exists():
+            failures.append(
+                "decision_log[rotate 不得寫受版控檔案]: sessions.jsonl 被建立了"
+                "——唯讀 session 會因此留下髒工作區"
+            )
+        checked += 1
+        pending = target / ".pending.jsonl"
+        if not pending.exists():
+            failures.append("decision_log[rotate]: 沒搬進 pending,清掉 buffer 等於資料遺失")
+        else:
+            rows = [json.loads(ln) for ln in pending.read_text(encoding="utf-8").splitlines() if ln.strip()]
+            expect_eq("decision_log[rotate] pending 保住計數", rows[0]["passed"].get("h"), 1)
 
-    # 6. 並行安全。bash-guard 與 check-output-filter 掛在同一個 Bash matcher 上,
+    # 6. 跨 session 累積確實會被帶到終點:rotate 過的舊 session 與當前 session
+    #    在下一次 flush 一起落檔,各自一行。少了這條,pending 可能只進不出。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run({}, "m.record('old', None)\nm.rotate()\n", tmp)
+        run({}, "m.record('new', None)\nm.flush()\n", tmp)
+        rows = [
+            json.loads(ln)
+            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+        expect_eq("decision_log[跨 session 累積:兩個 session 各一行]", len(rows), 2)
+        expect_eq(
+            "decision_log[跨 session 累積:兩邊的計數都在]",
+            sorted(k for r in rows for k in r["passed"]),
+            ["new", "old"],
+        )
+        checked += 1
+        if (target / ".pending.jsonl").exists():
+            failures.append("decision_log[flush 後 pending 未清空]: 同一筆會被重複落檔")
+
+    # 7. 並行安全。bash-guard 與 check-output-filter 掛在同一個 Bash matcher 上,
     #    Claude Code 會**並行**執行它們——每個 Bash 指令都是一次 read-modify-write
     #    競賽。這條是實測抓到的迴歸:沒有鎖與原子寫入時,其中一方會讀到寫到一半
     #    的 buffer、把它當成「還沒有 buffer」,於是開一個新 session id 蓋掉既有
@@ -677,9 +713,9 @@ def test_decision_log_io() -> None:
         state = json.loads((target / ".session.json").read_text(encoding="utf-8"))
         expect_eq(f"decision_log[{n} 個並行 record 不掉計數]", state["passed"].get("race"), n)
 
-    # 7. sessions.jsonl 必須是「換檔」而不是「就地覆寫」。
+    # 8. sessions.jsonl 必須是「換檔」而不是「就地覆寫」。
     #
-    #    第 6 條那道鎖只保護有參與鎖的行程,而 scripts/harness-metrics.py 讀日誌
+    #    第 7 條那道鎖只保護有參與鎖的行程,而 scripts/harness-metrics.py 讀日誌
     #    時**不上鎖**——就地覆寫(truncate 後再寫)會讓它讀到半截的 JSON,而這是
     #    會進 git 的檔案,寫壞了等於 commit 一份垃圾進版本庫。
     #
