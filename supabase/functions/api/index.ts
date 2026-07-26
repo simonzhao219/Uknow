@@ -3335,6 +3335,11 @@ app.get('/health', (c) => {
     sha: read('DEPLOY_SHA') ?? 'unknown',
     payuniMode: resolvePayuniMode(read),
     payuniConfigured: isPayuniConfigured(read),
+    // 與 payuniConfigured 同一個理由：這個設定沒有任何外顯訊號。缺 secret 時
+    // 核身端點會回 500，但那要有人真的去掃一次碼才會發現；Secrets 頁只看得到
+    // digest。回一個布林值（絕不回內容）讓「設好了沒」一個 curl 就能回答，
+    // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
+    memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
   });
 });
 

@@ -206,6 +206,13 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 | `sha` | 該分支最新 commit | 同左（不相等代表部署沒跟上） |
 | `payuniMode` | `sandbox` | `production`（**正式站開放後**；開放前是 `sandbox`） |
 | `payuniConfigured` | `true` | `true` |
+| `memberTokenConfigured` | `true` | `true` |
+
+`memberTokenConfigured` 是同一個道理的延伸：`MEMBER_TOKEN_SECRET` 設了沒也
+**沒有外顯訊號**——Secrets 頁只看得到 digest，而缺了要等到有人真的掃一次核身碼、
+吃到 500 才會發現。它同樣只回布林值、不回傳金鑰內容。**Secrets 逐分支獨立、
+不從母專案繼承**，所以 develop 與正式站要各自 curl 確認一次，別假設設了一邊
+另一邊就有。
 
 `payuniMode` 存在的理由：這個設定**沒有任何外顯訊號**。憑證與端點一致時
 PayUni 不會回「(模擬)」浮水印、程式不報錯、儀表板只看得到 secrets 的
