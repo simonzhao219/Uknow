@@ -384,11 +384,37 @@ placeholder={
 命名依 `.claude/rules/test-naming.md`:`Deno.test('<主體>:<情境> → <預期>')`,
 中文 ≤72 字;碰 DB 一律 `*.test.ts`(不可 `*.unit.test.ts`)。
 
+## 5.5 部署前置:預設推薦人帳號與推薦碼的建立(每個環境各一次)
+
+**`asa899869` 目前在任何環境都不存在**(人審確認)。推薦碼由
+`generate_referral_code()` **隨機產生**(3 隨機字母 + 6 隨機數字),使用者無法
+自選,故此碼只能以 SQL 指定。`referral_codes.code` 只有 `unique`、**無格式
+CHECK**,故 `asa899869` 合法;但 `user_id` 是 `not null` 外鍵,**必須掛在真實
+帳號底下**。正式站與 develop 的 Supabase branch 是獨立資料庫,兩邊各做一次。
+
+**不用 migration**:擁有此碼的帳號 uuid 在兩環境不同,migration 沒有穩定方式
+指到正確帳號;寫死 uuid 會在另一環境靜默失效。這屬於營運動作,與
+`default_referrer_code` 需人工 `UPDATE` 才啟用同一類(§2.5 刻意如此設計)。
+
+| # | 步驟 | 說明 |
+|---|---|---|
+| 1 | 決定帳號 | 建議開**專用平台帳號**,不用個人帳號——它會出現在所有人的上線位置並累積大量點數,帳務分開較乾淨。走完正常註冊+付款流程 |
+| 2 | 指定推薦碼 | `update public.referral_codes set code = 'asa899869' where user_id = '<uuid>' and status = 'active';`<br>⚠️ **僅在該帳號尚無下線時乾淨**:`referral_edges` 存 `referral_code_id`(uuid)不受影響,但 `profiles.referred_by_code` 存**字串快照**,已用舊碼註冊者的稽核欄位會指向不存在的碼。<br>帳號若從未付款、無碼,可直接 `insert into public.referral_codes (user_id, code, status) values ('<uuid>','asa899869','active');`(`subscription_id` 為 nullable) |
+| 3 | 啟用機制 | `update public.reward_config set default_referrer_code = 'asa899869';` |
+
+**順序不可顛倒**:先有碼再啟用。先啟用而碼不存在時,機制會安全地靜默不生效並寫
+`system_alerts`(情境 F 護欄)——不會出錯,但也不會有作用。**漏做一個環境不會
+無聲失敗**,告警可在後台系統告警看到。
+
+> **連帶事實(供營運決策)**:發獎**不檢查**上線的會籍或
+> `referral_program_joined`(§8.2:「不檢查上線狀態」),故此帳號不需有效會籍
+> 即可持續累積點數;但**提領**需 `referral_program_joined` + 未停權 + KYC
+> 身分證照片 + 每日上限(§10.1)。要能真的領出來,這些得先完成。
+
 ## 6. 開放問題
 
-- [ ] **`asa899869` 在正式站是否存在且 active、且未停權?** 機制生效前提。
-      護欄(情境 F/H)保證不會出錯,只會靜默不生效 + 告警。develop 的 Supabase
-      branch 有獨立 DB,極可能不存在此碼。
+- [x] ~~`asa899869` 是否存在?~~ **已裁決**:目前**任何環境都不存在**,
+      建立步驟見 §5.5(營運動作,非 migration)。
 - [ ] **規格書 §7/§8 記載機制本身**——解讀為決定 3 只約束**面向使用者**的
       揭露(UI/服務條款),內部工程文件照記(且 `check-spec-drift.py` 對業務常數
       有 CI 硬擋)。若解讀有誤請在人審駁回。
@@ -396,16 +422,11 @@ placeholder={
       `/referrals/validate/:code`,超出本 feature 範圍)
 - [ ] **預設推薦人帳號的提領落地面**:能否/是否會實際通過 KYC 與每日上限、
       平台如何消化快速累積的點數。§7 只涵蓋發放面,落地面需商業判斷。
-- [ ] **推薦網絡樹規模是否接受「上線後才視情況修」?**(V2-8)——v1 審查原話是
-      「人審裁決**是否可接受**」,v2 逕自移進 §7 風險表定案為觀察項,未經簽核。
-      此風險是本 feature **直接製造**的新曝險(單一帳號吸收全部自然流量、
-      無自然回落),性質比 §4.4 的既有缺陷更需拍板。選項:(a) 接受,上線後抽測;
-      (b) 要求本 feature 一併把 `overview` 的 roots 比照 search 端點加分頁。
-- [ ] **既有 fresh 換線的回溯發獎 bug(V2-1)要不要併進本 feature 修?**
-      已驗證這是**目前線上就存在**的缺陷,與本 feature 無關:任何原本無推薦人的
-      既有會員,做一次 fresh 換線填真推薦碼後,其全部歷史訂閱都會回溯補發 gen1
-      給新推薦人(觸發只需事後載入一次 profile)。選項:(a) 另開 `/fix-bug` 追蹤,
-      本 feature 照常開工;(b) 併入本 feature 一併處理候選查詢邏輯。
+- [x] ~~推薦網絡樹規模~~ **已裁決:接受**——本 feature 不處理,上線到
+      develop.uknow.pages.dev 與 uknow.com.tw 之後再視實際狀況評估。
+      維持 §7 風險表觀察項。
+- [x] ~~既有 fresh 換線回溯發獎 bug 的範圍~~ **已裁決:(a) 另開 `/fix-bug`
+      追蹤,不併入本 feature**,本 feature 照常開工。追蹤見 GitHub issue #167。
 
 ## 7. 風險與回滾
 

@@ -44,21 +44,19 @@ Blockers),裁決後對 v3 重跑 `/review-plan`;v3 審過才由人親自打
 
 ## Blockers(逃生口紀錄)
 
-- **⚠️ 發現一個與本 feature 無關的既有 production bug(待人裁決處理範圍)**:
-  `repair_orphaned_payments` 的候選條件(`20260720000001:516-562`)中
-  `pr.referred_by_user_id is not null` 讀的是**當下**的 profiles 值,不是歷史
-  訂閱當時的值。任何原本沒有推薦人的既有會員,只要透過 `/payuni/prepare` 的
-  fresh 換線填一次真推薦碼,其**全部歷史訂閱**都會成為候選並回溯補發 gen1
-  (甚至 gen2/gen3)給那位新推薦人;觸發只需事後載入一次 profile
-  (`index.ts:361-362` 對 `registrationStep === 3` 無條件呼叫 repair)。
-  **這條路徑現在就在線上**,與預設推薦人機制無關。
-  選項見 `review.md`〈v2 需人工裁決〉。
-- **開放問題未決**:`asa899869` 是否存在於正式站/develop 的 `referral_codes`
-  且 active、未停權。develop 的 Supabase branch 有獨立 DB,極可能不存在此碼
-  ——階段 1、2 的測試一律**自建測試用推薦碼**當預設值,不要依賴 `asa899869`
-  字面,否則會走 fallback 路徑,綠燈卻沒證明任何事。
-- **開放問題未決**:規格書 §7.4/§8.1 是否記載機制本身;§4.4 既有缺陷本次不修
-  是否接受;推薦網絡樹規模是否接受上線後才修;預設推薦人帳號的提領落地面。
+**三項人審裁決已全數完成,無阻擋開工的 blocker。**
+
+- [x] **既有 fresh 換線回溯發獎 bug** → 裁決 **(a) 另開 fix-bug**,已開
+  **GitHub issue #167**,不併入本 feature。
+- [x] **推薦網絡樹規模** → 裁決 **接受**,上線到 develop.uknow.pages.dev 與
+  uknow.com.tw 後再視實際狀況評估。維持 §7 觀察項。
+- [x] **`asa899869` 的存在性** → 確認**任何環境都不存在**。推薦碼由
+  `generate_referral_code()` 隨機產生、無法自選,只能以 SQL 指定;`code` 欄位
+  無格式 CHECK 故此碼合法,但 `user_id` 是 not null 外鍵,必須掛在真實帳號下。
+  建立步驟見 plan §5.5(**營運動作,非 migration**——帳號 uuid 在兩環境不同,
+  寫死會靜默失效)。
+  ⚠️ **測試仍一律自建測試用推薦碼當預設值**,不要依賴 `asa899869` 字面,
+  否則會走 fallback 路徑,綠燈卻沒證明任何事。
 
 ## 框架摩擦
 
