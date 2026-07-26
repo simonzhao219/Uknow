@@ -14,14 +14,15 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ✅ 綠 | `90ca23c` | `c07463f` |
-| 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⬜ 未開始 | | |
+| 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⚠️ 實作完成、**本機無法驗證紅綠**,待 CI | — (見 Blockers) | — |
 | 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⬜ 未開始 | | |
 | 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ⬜ 未開始 | | |
 | 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-**階段 1 已綠。下一步是階段 2(後端驗證函式)。**
+**階段 1 已綠;階段 2 實作完成但本機驗不了紅綠(見 Blockers),待 CI。
+下一步是階段 3(migration + 測試基礎設施)。**
 
 規劃歷程:v1→v4,三輪四視角審查全部完成(結果記在 `review.md` 的
 v3/v2/v1 三節,新的在上)。v1:1 P0;v2:2 P0;**v3:0 P0**,10 個 P1 已
@@ -68,9 +69,45 @@ v3/v2/v1 三節,新的在上)。v1:1 P0;v2:2 P0;**v3:0 P0**,10 個 P1 已
    原本填的 `pytest tools/` 根本不覆蓋 `run_state.py`,照字面執行會全綠
    卻什麼都沒驗到。
 
+### 階段 2 做了什麼(以及沒能驗證什麼)
+
+- `index.ts` 共用工具段:`HAN_RANGE`/`HAS_HAN`/`HAN_LEAD` 從推薦網絡段
+  (原在 `maskNameByGen` 上方)搬來,現由姓名驗證與遮罩兩處共用;新增
+  `export function validateNameFormat(name: unknown)`(**聯集**規則);
+  `maskNameByGen` 加 `export`(讓 unit test 能直接斷言一致性)。
+- 兩個端點接上驗證:`POST /auth/register` 無條件檢查;
+  `PUT /auth/profile` **只在 `'name' in body` 時**檢查(逐欄位局部更新,
+  無條件檢查會誤擋只改手機的請求,或對 undefined 呼叫字串方法而回 500)。
+- 測試:`api/name-validation.unit.test.ts`(純函式,跑共用案例表 +
+  `maskNameByGen` 一致性)、`api/name-validation-routes.test.ts`(需真
+  Postgres,驗兩端點的 400/局部更新/型別混淆)。
+
 ## Blockers(逃生口紀錄)
 
-（尚無)
+**階段 2:本機無法驗證紅綠,只能靠 CI(逃生口 #3 的變體——不是「綠不了」,
+是「看不到」)。**
+
+原因:這個環境的出口封鎖 `jsr.io` 與 `npm.jsr.io`(兩者皆 403,帶不帶
+proxy 都一樣;只有 `registry.npmjs.org` 通)。`index.ts` 自己 import
+`jsr:@supabase/supabase-js`,所以連 `deno check` 都跑不了,`deno task
+test:unit` 也因 `jsr:@std/assert` 失敗。`npm i -g deno` 只解決執行檔,
+不解決相依。這正是 `.claude/rules/supabase-functions.md` 記載的
+「沙箱擋 jsr.io 之類的環境跑不了」。
+
+**替代驗證(做了什麼、證明了什麼)**:把 `index.ts` 的常數與
+`validateNameFormat`/`maskNameByGen` 本體抽到 scratchpad 的獨立 deno 腳本
+(不含 supabase-js import),對共用案例表跑一遍:
+- 實作版 → 全數通過
+- 把函式退回 stub(`return undefined`)→ **26 條斷言失敗**
+
+所以規則邏輯是驗過的,測試也證明有辨別力(不是空轉)。**但這不是先紅後綠
+的順序,也沒有驗證模組整合**——真正的紅綠訊號來自 CI 的 unit 軌與
+api-tests 軌。`deno fmt --check`、`deno lint`、`check-test-names`、
+`npm run check` 皆已在本機綠。
+
+**下一個 session 若在有 jsr 存取的環境**:直接 `cd supabase/functions &&
+deno task test:unit`(秒級、不需 supabase start)補上真實的階段 2 綠燈,
+並把本節改成正常紀錄。
 
 ## 框架摩擦
 
