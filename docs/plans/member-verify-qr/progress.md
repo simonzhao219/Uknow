@@ -7,15 +7,16 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `member-token.ts` 簽/驗純函式 + unit test | ⬜ 未開始 | | |
-| 2 | migration 稽核表 + 兩端點 + api-contract | ⬜ 未開始 | | |
-| 3 | 會員端「我的 QR」雙分頁 + useMemberVerifyToken | ⬜ 未開始 | | |
-| 4 | admin 獨立掃碼核身頁 /admin/verify（@zxing） | ⬜ 未開始 | | |
-| 5 | 寫回規格書 §13 + §3 路由表 | ⬜ 未開始 | | |
+| 1 | `member-token.ts` 簽/驗純函式 + unit test | ✅ 綠 | | e983add |
+| 2 | migration 稽核表 + 兩端點 + api-contract | ✅ 綠 | | 6a52e28 |
+| 3 | 會員端「我的 QR」雙分頁 + useMemberVerifyToken | ✅ 綠 | | 0b24719 |
+| 4 | admin 獨立掃碼核身頁 /admin/verify（@zxing） | ✅ 綠 | | (本次) |
+| 5 | 寫回規格書 §13 + §3 路由表 | ✅ 綠 | | (本次) |
 
 ## 目前位置與下一步
 
-規劃已落檔、通過兩輪四視角審查、業主決策全定。下一步：階段 1，寫 `member-token.ts` 與其 unit test。
+五個階段皆完成並推送，等 CI（api-tests 軌跑 Deno 測試與 DB 整合測試）與人審。
+**上線前置**：develop / main 兩邊的 Supabase 分支都要各設一把 `MEMBER_TOKEN_SECRET`，否則核身端點回 500。
 
 ## 環境備註（給下一個 session）
 
