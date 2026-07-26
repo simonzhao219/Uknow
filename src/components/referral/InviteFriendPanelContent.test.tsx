@@ -27,12 +27,30 @@ describe('InviteFriendPanelContent', () => {
     // 抬頭帶會員名（"拿給人掃"模式）；名字獨立成粗體 span，故分開斷言
     const nameEl = screen.getByText('小明');
     expect(nameEl.className).toContain('font-bold');
-    expect(nameEl.parentElement?.textContent).toBe('小明 的推薦邀請');
+    expect(nameEl.parentElement?.textContent).toBe('小明 的Uknow邀請');
     // QR 容器可存取名稱含連結
     const qr = screen.getByTestId('referral-qrcode');
     expect(qr.getAttribute('aria-label')).toContain(expectedLink);
     // e2e 依賴的分享鈕 testid 保留在真正觸發分享的按鈕上
     expect(screen.getByTestId('share-referral-button')).toBeTruthy();
+  });
+
+  it('分享拆成「分享 QR Code」與「邀請好友」兩顆，不提供複製連結', () => {
+    render(<InviteFriendPanelContent referralCode="abc123" memberName="小明" />);
+    // 兩顆各司其職：圖片一顆、文字一顆。合併成一顆（text+files 混送）會讓多數
+    // Android 分享目標把文字丟掉，推薦連結與推薦碼就消失了——這條守住不回頭。
+    expect(screen.getByRole('button', { name: /分享 QR Code/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /邀請好友/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /複製連結/ })).toBeNull();
+    // 送出文字的那顆才是 e2e 分享情境依賴的按鈕（複製 fallback 會複製整段邀請訊息）。
+    expect(screen.getByTestId('share-referral-button').textContent).toContain('邀請好友');
+  });
+
+  it('複製推薦碼是 icon-only 按鈕，仍有可存取名稱', () => {
+    render(<InviteFriendPanelContent referralCode="abc123" memberName="小明" />);
+    const copyBtn = screen.getByRole('button', { name: '複製推薦碼' });
+    // icon-only：按鈕內不該再有「複製推薦碼」這串可見文字（碼就在左邊，標籤多餘）。
+    expect(copyBtn.textContent).toBe('');
   });
 
   it('沒有推薦碼時整塊不渲染', () => {

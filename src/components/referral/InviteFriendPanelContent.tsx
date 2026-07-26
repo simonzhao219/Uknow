@@ -3,11 +3,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
 import { Download, Share2, Copy } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
-import {
-  buildInviteMessage,
-  buildReferralLink,
-  shareReferralInvite,
-} from '../../utils/referralInvite';
+import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
 
@@ -65,12 +61,8 @@ export function InviteFriendPanelContent({
     return drawInviteCard({ qrCanvas, memberName, code, link: referralLink });
   };
 
-  const downloadCard = () => {
-    const card = buildCardCanvas();
-    if (!card) {
-      showToast('QR Code 尚未就緒，請稍後再試', 'error');
-      return;
-    }
+  /** 下載邀請卡（也是「分享 QR Code」在不支援檔案分享時的退路）。 */
+  const downloadCard = (card: HTMLCanvasElement) => {
     try {
       const link = document.createElement('a');
       link.download = inviteCardFileName(memberName, code);
@@ -85,12 +77,22 @@ export function InviteFriendPanelContent({
   };
 
   /**
-   * 分享：能分享圖片就連同邀請卡一起送出，否則退回原本的純文字分享。
-   * 逐層降級——不支援檔案分享／使用者取消／轉檔失敗，都還有文字這條路可走。
+   * 分享 QR Code：只送圖片，**不夾帶文字**。
+   *
+   * 為什麼不再把 text 與 files 一起送：Web Share API 附帶檔案時，文字要不要保留
+   * 完全由接收端 App 決定，Android 的 Chrome/Edge 實測只會帶出圖片、把文字丟掉；
+   * 而 navigator.canShare() 只驗證「檔案類型可分享」，**無法**告訴你文字會不會活著。
+   * 混送等於賭運氣，賭輸的代價是推薦連結與推薦碼整個消失（推薦就斷了）。
+   * 所以拆成兩顆按鈕：這顆專送圖（圖裡本來就有 QR 與推薦碼），文字交給「邀請好友」。
+   * 不支援檔案分享的環境（多數桌機瀏覽器）退回下載，使用者仍拿得到圖。
    */
-  const shareCard = async () => {
+  const shareQrCode = async () => {
     const card = buildCardCanvas();
-    if (card && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    if (!card) {
+      showToast('QR Code 尚未就緒，請稍後再試', 'error');
+      return;
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         const blob = await new Promise<Blob | null>((resolve) =>
           card.toBlob((b) => resolve(b), 'image/png'),
@@ -99,22 +101,16 @@ export function InviteFriendPanelContent({
           const file = new File([blob], inviteCardFileName(memberName, code), {
             type: 'image/png',
           });
-          const canShareFiles =
-            typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
-          if (canShareFiles) {
-            await navigator.share({
-              title: 'Uknow 專業服務平台',
-              text: buildInviteMessage(code),
-              files: [file],
-            });
+          if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
             return;
           }
         }
       } catch {
-        // 取消或不支援 → 落回純文字分享（下方）。
+        // 使用者取消或分享失敗 → 落回下載，圖片仍到得了手上。
       }
     }
-    shareReferralInvite(code, showToast);
+    downloadCard(card);
   };
 
   if (!code) return null;
@@ -123,7 +119,7 @@ export function InviteFriendPanelContent({
     <div className="flex flex-col gap-4">
       {memberName ? (
         <p className="text-center text-sm text-muted-foreground">
-          <span className="font-bold text-foreground">{memberName}</span> 的推薦邀請
+          <span className="font-bold text-foreground">{memberName}</span> 的Uknow邀請
         </p>
       ) : null}
 
@@ -144,12 +140,19 @@ export function InviteFriendPanelContent({
         />
       </div>
 
-      {/* 推薦碼 + 明確複製按鈕（沿用專案「複製一律用按鈕」慣例，不做 tap-to-copy） */}
-      <div className="flex items-center justify-center gap-2">
+      {/* 推薦碼 + 複製鈕（icon-only：文字標籤在這裡是多餘的，碼就在左邊。
+          icon-only 必須有可存取名稱，否則螢幕閱讀器只會念出「按鈕」）。 */}
+      <div className="flex items-center justify-center gap-1">
         <span className="font-mono text-lg tracking-wider text-purple-600">{code}</span>
-        <Button variant="ghost" size="sm" onClick={() => copyText(code, '推薦碼已複製！')}>
-          <Copy className="mr-1 h-4 w-4" />
-          複製推薦碼
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => copyText(code, '推薦碼已複製！')}
+          aria-label="複製推薦碼"
+          title="複製推薦碼"
+        >
+          <Copy className="h-4 w-4" />
         </Button>
       </div>
 
@@ -157,22 +160,21 @@ export function InviteFriendPanelContent({
         {referralLink}
       </p>
 
+      {/* 兩顆按鈕各司其職，刻意不合併：文字與圖片一起送時，文字會被多數
+          Android 分享目標丟掉（見 shareQrCode 的說明）。「邀請好友」永遠只送
+          文字，推薦連結與推薦碼保證送達。 */}
       <div className="flex flex-wrap justify-center gap-2">
-        <Button variant="outline" size="sm" onClick={downloadCard}>
+        <Button variant="outline" size="sm" onClick={shareQrCode}>
           <Download className="mr-1 h-4 w-4" />
-          下載
+          分享 QR Code
         </Button>
         <Button
-          variant="outline"
           size="sm"
-          onClick={() => copyText(referralLink, '推薦連結已複製到剪貼簿！')}
+          onClick={() => shareReferralInvite(code, showToast)}
+          data-testid="share-referral-button"
         >
-          <Copy className="mr-1 h-4 w-4" />
-          複製連結
-        </Button>
-        <Button size="sm" onClick={shareCard} data-testid="share-referral-button">
           <Share2 className="mr-1 h-4 w-4" />
-          分享
+          邀請好友
         </Button>
       </div>
 
