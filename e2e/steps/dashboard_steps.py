@@ -9,8 +9,11 @@ scenarios("dashboard_smoke.feature")
 
 @when("I open the invite friend panel")
 def open_invite_friend_panel(page):
-    # 分享收斂進「邀請好友」面板：先開面板，面板內才有分享鍵。
-    page.get_by_test_id("invite-friend-button").click()
+    # 會員中心的入口是「我的 QR」，開啟後預設停在「會員核身碼」分頁
+    # （出示給店家掃描的即時情境容錯低，故為預設）；分享鍵在「邀請好友」
+    # 分頁裡，所以要先切分頁再按分享。
+    page.get_by_test_id("my-qr-button").click()
+    page.get_by_test_id("invite-tab").click()
 
 
 @when("I click the share referral button")

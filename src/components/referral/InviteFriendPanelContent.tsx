@@ -3,8 +3,13 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
 import { Download, Share2, Copy } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
-import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
+import {
+  buildInviteMessage,
+  buildReferralLink,
+  shareReferralInvite,
+} from '../../utils/referralInvite';
 import { detectInAppBrowser } from '../../utils/browserDetection';
+import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
 
 interface InviteFriendPanelContentProps {
   /** 會員專屬推薦碼；QR/連結都由它推導。空值時不渲染（呼叫端的按鈕會擋在加入計畫前）。 */
@@ -53,24 +58,63 @@ export function InviteFriendPanelContent({
     document.body.removeChild(textArea);
   };
 
-  const downloadQRCode = () => {
-    const canvas = qrRef.current?.querySelector('canvas');
-    if (!canvas) {
+  /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結，不含任何按鈕）。 */
+  const buildCardCanvas = (): HTMLCanvasElement | null => {
+    const qrCanvas = qrRef.current?.querySelector('canvas');
+    if (!qrCanvas) return null;
+    return drawInviteCard({ qrCanvas, memberName, code, link: referralLink });
+  };
+
+  const downloadCard = () => {
+    const card = buildCardCanvas();
+    if (!card) {
       showToast('QR Code 尚未就緒，請稍後再試', 'error');
       return;
     }
     try {
-      const safeName = (memberName || 'uknow').replace(/[^\w一-龥-]+/g, '_');
       const link = document.createElement('a');
-      link.download = `Uknow-推薦QRCode-${safeName}-${code}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.download = inviteCardFileName(memberName, code);
+      link.href = card.toDataURL('image/png');
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast('QR Code 已下載！', 'success');
+      showToast('邀請卡已下載！', 'success');
     } catch {
       showToast('下載失敗，請長按圖片另存', 'error');
     }
+  };
+
+  /**
+   * 分享：能分享圖片就連同邀請卡一起送出，否則退回原本的純文字分享。
+   * 逐層降級——不支援檔案分享／使用者取消／轉檔失敗，都還有文字這條路可走。
+   */
+  const shareCard = async () => {
+    const card = buildCardCanvas();
+    if (card && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        const blob = await new Promise<Blob | null>((resolve) =>
+          card.toBlob((b) => resolve(b), 'image/png'),
+        );
+        if (blob) {
+          const file = new File([blob], inviteCardFileName(memberName, code), {
+            type: 'image/png',
+          });
+          const canShareFiles =
+            typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+          if (canShareFiles) {
+            await navigator.share({
+              title: 'Uknow 專業服務平台',
+              text: buildInviteMessage(code),
+              files: [file],
+            });
+            return;
+          }
+        }
+      } catch {
+        // 取消或不支援 → 落回純文字分享（下方）。
+      }
+    }
+    shareReferralInvite(code, showToast);
   };
 
   if (!code) return null;
@@ -78,7 +122,9 @@ export function InviteFriendPanelContent({
   return (
     <div className="flex flex-col gap-4">
       {memberName ? (
-        <p className="text-center text-sm text-muted-foreground">{memberName} 的推薦邀請</p>
+        <p className="text-center text-sm text-muted-foreground">
+          <span className="font-bold text-foreground">{memberName}</span> 的推薦邀請
+        </p>
       ) : null}
 
       <div
@@ -112,7 +158,7 @@ export function InviteFriendPanelContent({
       </p>
 
       <div className="flex flex-wrap justify-center gap-2">
-        <Button variant="outline" size="sm" onClick={downloadQRCode}>
+        <Button variant="outline" size="sm" onClick={downloadCard}>
           <Download className="mr-1 h-4 w-4" />
           下載
         </Button>
@@ -124,11 +170,7 @@ export function InviteFriendPanelContent({
           <Copy className="mr-1 h-4 w-4" />
           複製連結
         </Button>
-        <Button
-          size="sm"
-          onClick={() => shareReferralInvite(code, showToast)}
-          data-testid="share-referral-button"
-        >
+        <Button size="sm" onClick={shareCard} data-testid="share-referral-button">
           <Share2 className="mr-1 h-4 w-4" />
           分享
         </Button>

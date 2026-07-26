@@ -1,4 +1,7 @@
+import { Link } from 'react-router-dom';
+import { ScanLine } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Button } from './ui/button';
 import { WithdrawalManagement } from './admin/WithdrawalManagement';
 import { MemberManagement } from './admin/MemberManagement';
 import { SystemNotifications } from './admin/SystemNotifications';
@@ -8,9 +11,19 @@ import { AdminSetup } from './admin/AdminSetup';
 export function AdminDashboard() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">平台管理</h1>
-        <p className="text-muted-foreground">管理 Uknow 平台的所有功能</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">平台管理</h1>
+          <p className="text-muted-foreground">管理 Uknow 平台的所有功能</p>
+        </div>
+        {/* 掃碼核身是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
+            入口放這裡，避免變成沒有站內連結可達的孤兒頁。 */}
+        <Button asChild variant="outline">
+          <Link to="/admin/verify">
+            <ScanLine className="mr-1 h-4 w-4" />
+            掃碼核身
+          </Link>
+        </Button>
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">

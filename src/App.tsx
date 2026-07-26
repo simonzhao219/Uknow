@@ -57,6 +57,12 @@ const ReferralManagement = lazyNamed(
 const TaskDashboard = lazyNamed(() => import('./components/TaskDashboard'), 'TaskDashboard');
 const RewardDashboard = lazyNamed(() => import('./components/RewardDashboard'), 'RewardDashboard');
 const AdminDashboard = lazyNamed(() => import('./components/AdminDashboard'), 'AdminDashboard');
+// 掃碼核身獨立成頁（相機需全螢幕，且 AdminDashboard 是釘死的 5 欄 Tabs）；
+// lazy 讓 @zxing 掃碼庫只在進這頁時才下載，不拖累其他 admin 操作。
+const MemberVerifyScanner = lazyNamed(
+  () => import('./components/admin/MemberVerifyScanner'),
+  'MemberVerifyScanner',
+);
 const TermsOfServicePage = lazyNamed(
   () => import('./components/ContentPages'),
   'TermsOfServicePage',
@@ -379,6 +385,14 @@ function AppContent() {
                       element={
                         <AdminRoute>
                           <AdminDashboard />
+                        </AdminRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/verify"
+                      element={
+                        <AdminRoute>
+                          <MemberVerifyScanner />
                         </AdminRoute>
                       }
                     />
