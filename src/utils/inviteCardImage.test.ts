@@ -26,6 +26,16 @@ describe('drawInviteCard', () => {
     expect(card.height).toBeGreaterThan(qr.height);
   });
 
+  it('連結過長時仍產出卡片（內部截尾，不撐破版面）', () => {
+    const card = drawInviteCard({
+      qrCanvas: fakeQrCanvas(),
+      memberName: '小明',
+      code: 'abc123',
+      link: `https://example.com/register?ref=${'x'.repeat(400)}`,
+    });
+    expect(card.width).toBeGreaterThan(0);
+  });
+
   it('沒有會員名時仍可產生卡片（抬頭留白，不當機）', () => {
     const card = drawInviteCard({
       qrCanvas: fakeQrCanvas(),

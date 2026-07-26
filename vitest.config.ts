@@ -47,8 +47,11 @@ export default mergeConfig(
         // 新的實測值減 1；**不准為了讓紅燈變綠而調低**——那等於這道
         // 閘門不存在。真的需要調低必須在 PR 內寫明理由。
         thresholds: {
-          lines: 17,
-          statements: 17,
+          // 2026-07-26 實測：lines/statements 21.87、functions 55.21、branches 80.36。
+          // 依「只准往上」的棘輪規則，把 lines/statements 從 17 提到 20（實測值減
+          // 約 2，留一點緩衝）；branches 維持 80（實測減 1 會比現行門檻低，不可調降）。
+          lines: 20,
+          statements: 20,
           functions: 54,
           branches: 80,
         },
