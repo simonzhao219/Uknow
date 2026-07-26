@@ -61,6 +61,13 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
           <DialogDescription>
             會員：{record.userName} | 身分證字號：{record.idNumber ?? '未設定'}
           </DialogDescription>
+          {/* 註冊時姓名不接受標點，原住民漢字音譯姓名與新住民歸化漢名一律以
+              半形空格取代身分證上的間隔號。沒有這句提示，admin 會看到「系統
+              顯示谷辣斯 尤達卡、證件印谷辣斯·尤達卡」而誤判姓名不符退件——
+              傷害正好落在這條規則本來想保護的族群身上。 */}
+          <p className="text-xs text-muted-foreground">
+            提醒：原住民／新住民姓名可能以半形空格取代身分證上的間隔號，屬正常註冊規則。
+          </p>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-4">
           <div className="space-y-2">

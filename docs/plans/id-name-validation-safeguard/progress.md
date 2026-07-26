@@ -17,7 +17,7 @@
 | 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⚠️ 實作完成、**本機無法驗證紅綠**,待 CI | — (見 Blockers) | — |
 | 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⚠️ 實作完成、本機無法驗證(同階段 2),待 CI | — | — |
 | 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ✅ 綠(本機實測) | — (見下) | (本 commit) |
-| 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ⬜ 未開始 | | |
+| 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ✅ 綠(本機實測) | — | (本 commit) |
 
 ## 目前位置與下一步
 
