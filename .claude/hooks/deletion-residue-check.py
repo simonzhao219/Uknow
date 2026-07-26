@@ -143,19 +143,23 @@ def _grep_keyword(root: Path, keyword: str) -> list[str]:
         return []
 
 
-def _record_and_flush(rule: str | None) -> None:
-    """記一次決策,並做一次 best-effort 落檔(理由與邊界見 bash-guard.py 的 _record)。
+def _record(rule: str | None) -> None:
+    """記一次決策給 harness 感測器(理由與邊界見 bash-guard.py 的同名函式)。
 
-    本檔是 Stop hook,所以這裡是 session 內最後一次能寫東西的時機。但它跑在
-    **最後一次 commit 之後**——這一次 flush 寫出去的內容只有在之後還有 commit
-    時才進得了 git,而 web session 通常不會有。所以它是補漏不是主力:真正的
-    落檔點是 pre-commit(見 decision_log.py 的說明)。
+    **這裡刻意不呼叫 flush()。** 本檔是 Stop hook,直覺上「session 最後一次能
+    寫東西的時機」該順手落一次檔,第一版也真的這樣寫了。但它跑在最後一次
+    commit **之後**,所以那次 flush 有兩個性質:
+      - 收益為零:後面不會再有 commit 把它帶進 git,寫了也是白寫
+      - 成本固定:它改動一個受版控的檔案,於是**每一輪結束時工作區都是髒的**
+
+    零收益配上固定成本,就不該留著。落檔點只有 pre-commit 一個(見
+    decision_log.py);session 尾巴那幾筆計數的價值,遠低於「乾淨的工作區」。
+    真正殘留的 buffer 由 SessionStart 的 --rotate 回收,不會遺失。
     """
     try:
         import decision_log
 
         decision_log.record("deletion-residue-check", rule)
-        decision_log.flush()
     except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
         return
 
@@ -178,7 +182,7 @@ def main() -> None:
         if report:
             print(report)
 
-    _record_and_flush("residue" if report else None)
+    _record("residue" if report else None)
 
 
 if __name__ == "__main__":
