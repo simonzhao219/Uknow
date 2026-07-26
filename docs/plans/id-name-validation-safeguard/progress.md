@@ -13,16 +13,28 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ✅ 綠 | `90ca23c` | `c07463f` |
-| 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⚠️ 實作完成、**本機無法驗證紅綠**,待 CI | — (見 Blockers) | — |
-| 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⚠️ 實作完成、本機無法驗證(同階段 2),待 CI | — | — |
-| 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ✅ 綠(本機實測) | — (見下) | (本 commit) |
-| 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ✅ 綠(本機實測) | — | (本 commit) |
+| 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ✅ 綠(本機紅→綠) | `641dcff` | `bfcd985` |
+| 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⚠️ 實作完成、**本機無法驗證紅綠**,待 CI | — (見 Blockers) | `0a23845` |
+| 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⚠️ 實作完成、本機無法驗證(同階段 2),待 CI | — (見 Blockers) | `3d433a9` |
+| 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ✅ 綠(本機實測 + 真瀏覽器截圖) | — (見下) | `fa378a7` |
+| 5 | 收尾:規格書 §4.2、journey 姓名產生器 + 新增 `tools/` 離線測試、後台 `IdCardDialog` 說明 | ✅ 綠(pytest 實跑 4 條) | — | `843e933` |
 
 ## 目前位置與下一步
 
-**階段 1 已綠;階段 2 實作完成但本機驗不了紅綠(見 Blockers),待 CI。
-下一步是階段 3(migration + 測試基礎設施)。**
+**五個階段的實作全部完成。** 階段 1/4/5 本機實測綠燈;階段 2/3 是後端,
+本機因 jsr.io 被封無法驗證紅綠(見 Blockers),交由 CI 的 unit 與 api-tests
+兩軌把關。
+
+`npm run check` 綠(33 檔 394 測試)、`vite build` 綠(2445 modules)、
+`deno fmt`/`deno lint`/`check-spec-drift`/`check-test-names`/
+`check-document-naming` 全綠。`check:full` 唯一失敗的是 `deno task check`
+——同樣是 jsr.io 403,環境限制而非程式問題。
+
+**下一步:四視角實作審查(`/review-implementation`)→ 清理規劃檔 → 開 PR。**
+
+階段 4 另有真瀏覽器(Playwright + 預裝 Chromium)375px 截圖驗證:間隔號
+自動轉換與提示、切換模式保留文字並改上限、`Peter` 在中文模式被拒且訊息
+帶出口指引、超長時計數器轉紅並顯示長度訊息。jsdom 測不到的視覺層由此補上。
 
 規劃歷程:v1→v4,三輪四視角審查全部完成(結果記在 `review.md` 的
 v3/v2/v1 三節,新的在上)。v1:1 P0;v2:2 P0;**v3:0 P0**,10 個 P1 已
