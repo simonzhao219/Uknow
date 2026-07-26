@@ -149,6 +149,22 @@ if [ -f scripts/check-context-budget.py ]; then
   fi
 fi
 
+# 12. Harness 感測器的讀取器。前十一項驗的都是「閘門有沒有壞」,這一項驗的是
+#     「量測閘門的那支東西有沒有壞」——感測器故障是靜默的(閘門壞了會擋住人,
+#     感測器壞了只是不再記錄),所以它比閘門更需要機器盯著。
+#     repo 掃描本身不擋:「還沒有資料」是全新 clone 的正常狀態,只有「日誌裡
+#     全是讀不懂的行」才紅(見該檔的無資料不變式)。
+if [ -f scripts/harness-metrics.py ]; then
+  if ! python3 scripts/harness-metrics.py --self-test; then
+    echo "FAIL: harness 指標讀取器自身的表格案例未過（scripts/harness-metrics.py）"
+    fail=1
+  fi
+  if ! python3 scripts/harness-metrics.py >/dev/null; then
+    echo "FAIL: harness 指標日誌無法解析（scripts/harness-metrics.py）"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "framework-check: OK"
 fi

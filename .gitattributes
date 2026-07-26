@@ -1,0 +1,9 @@
+# harness 感測器的 session 日誌是 append-only 的:每條分支各自附加自己的
+# session 行,合併時尾端衝突是必然而不是意外。union 會保留兩邊的行,正是
+# append-only log 想要的語意——用預設的 merge driver 只會讓每次合併都停下來
+# 要人手解一個沒有內容爭議的衝突。
+#
+# 前提是每行都能獨立成立(一 session 一行、鍵序穩定),這由 decision_log.py 的
+# to_line() 保證;union 不會產生半行,最壞情況只是重複行,而 harness-metrics.py
+# 以 session id 去重。
+.claude/metrics/sessions.jsonl merge=union

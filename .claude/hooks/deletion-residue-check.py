@@ -143,23 +143,46 @@ def _grep_keyword(root: Path, keyword: str) -> list[str]:
         return []
 
 
-def main() -> None:
-    watched = watched_deletions(_git_deleted_paths(ROOT))
-    if not watched:
+def _record(rule: str | None) -> None:
+    """記一次決策給 harness 感測器(理由與邊界見 bash-guard.py 的同名函式)。
+
+    **這裡刻意不呼叫 flush()。** 本檔是 Stop hook,直覺上「session 最後一次能
+    寫東西的時機」該順手落一次檔,第一版也真的這樣寫了。但它跑在最後一次
+    commit **之後**,所以那次 flush 有兩個性質:
+      - 收益為零:後面不會再有 commit 把它帶進 git,寫了也是白寫
+      - 成本固定:它改動一個受版控的檔案,於是**每一輪結束時工作區都是髒的**
+
+    零收益配上固定成本,就不該留著。落檔點只有 pre-commit 一個(見
+    decision_log.py);session 尾巴那幾筆計數的價值,遠低於「乾淨的工作區」。
+    真正殘留的 buffer 由 SessionStart 的 --rotate 回收,不會遺失。
+    """
+    try:
+        import decision_log
+
+        decision_log.record("deletion-residue-check", rule)
+    except Exception:  # noqa: BLE001 — 量測的優先序永遠低於工作
         return
 
-    keyed: list[tuple[str, str]] = []
-    hits: dict[str, list[str]] = {}
-    for path in watched:
-        parent_exists = (ROOT / Path(path).parent).is_dir()
-        kw = keyword_for(path, parent_exists)
-        keyed.append((path, kw))
-        if kw not in hits:
-            hits[kw] = _grep_keyword(ROOT, kw)
 
-    report = residue_report(keyed, hits)
-    if report:
-        print(report)
+def main() -> None:
+    report = ""
+    watched = watched_deletions(_git_deleted_paths(ROOT))
+
+    if watched:
+        keyed: list[tuple[str, str]] = []
+        hits: dict[str, list[str]] = {}
+        for path in watched:
+            parent_exists = (ROOT / Path(path).parent).is_dir()
+            kw = keyword_for(path, parent_exists)
+            keyed.append((path, kw))
+            if kw not in hits:
+                hits[kw] = _grep_keyword(ROOT, kw)
+
+        report = residue_report(keyed, hits)
+        if report:
+            print(report)
+
+    _record("residue" if report else None)
 
 
 if __name__ == "__main__":

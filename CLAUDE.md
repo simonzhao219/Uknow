@@ -44,9 +44,15 @@
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
+| `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
 commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
+
+**hook 的每次決策都會被記錄**(`.claude/hooks/decision_log.py`):計數存在
+session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions.jsonl`
+的一行並自動暫存——Stop hook 跑在最後一次 commit 之後,落在那裡進不了 git,
+而 web session 的容器是拋棄式的。要關掉設 `HARNESS_METRICS=0`。
 
 **驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
 看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——

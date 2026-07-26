@@ -15,9 +15,11 @@ pre-commit 靠 PRE_COMMIT_DRY_RUN=1 的決策輸出驗模式選擇(dry-run 一�
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -357,6 +359,7 @@ def pre_commit_dryrun(
     staged: str | None = None,
     deno: str | None = None,
     doc_diff: str | None = None,
+    harness_metrics: str | None = None,
 ) -> str:
     """跑 pre-commit 的 dry-run,回傳 DRYRUN: 決策行(空白分隔)。"""
     lock_path = ROOT / ".claude" / "tdd-lock"
@@ -380,6 +383,10 @@ def pre_commit_dryrun(
         # docs/e2e 變更」影響
         if doc_diff is not None:
             env["PRE_COMMIT_FAKE_DOC_DIFF"] = doc_diff
+        # 感測器的關閉開關。測試要能兩邊都釘住——只驗「開著會落檔」的話,
+        # 一個永遠回 true 的判斷式也會通過。
+        if harness_metrics is not None:
+            env["HARNESS_METRICS"] = harness_metrics
         out = subprocess.run(
             ["bash", str(ROOT / "scripts" / "git-hooks" / "pre-commit")],
             cwd=ROOT,
@@ -461,6 +468,240 @@ expect_not_in("pre-commit[一般文件變更:不觸發]", "DOC_ADVISORY", doc_ok
 
 doc_legit_gap_row = pre_commit_dryrun(doc_diff="+| 5 | 到期前 Email 提醒 | 未實作 |")
 expect_not_in("pre-commit[§14 合法的「未實作」措辭:不誤觸發]", "DOC_ADVISORY", doc_legit_gap_row)
+
+# harness 感測器的落檔點。這是整條鏈唯一能讓資料進得了 git 的地方(Stop hook
+# 跑在最後一次 commit 之後,寫了也白寫),所以它靜默失效等於整個感測器不存在。
+metrics_on = pre_commit_dryrun(staged="src/App.tsx")
+expect_in("pre-commit[預設會落檔 harness 指標]", "WOULD_FLUSH metrics", metrics_on)
+
+metrics_off = pre_commit_dryrun(staged="src/App.tsx", harness_metrics="0")
+expect_in("pre-commit[HARNESS_METRICS=0:宣告停用]", "METRICS disabled", metrics_off)
+expect_not_in("pre-commit[HARNESS_METRICS=0:不落檔]", "WOULD_FLUSH", metrics_off)
+
+
+# ------------------------------------------------------------- decision_log
+# 感測器與閘門的差別:閘門壞了會擋住人(看得見),感測器壞了只是靜靜地不
+# 記錄(看不見)。所以這一段的重點不只是「功能對不對」,更是「壞掉時看不看
+# 得出來」——沿用 friction-log 那條通則(回報 OK 的檢查必須能區分「真的沒
+# 問題」與「根本沒檢查到」)。
+decision_log = load("decision_log")
+
+
+def expect_eq(label: str, got: object, want: object) -> None:
+    global checked
+    checked += 1
+    if got != want:
+        failures.append(f"{label}: 預期 {want!r},實得 {got!r}")
+
+
+# bump():rule 是 None 記進 passed(誤擋率的分母),否則記進 fired。
+BUMP_CASES = [
+    # (初始 fired, 初始 passed, hook, rule, 預期 fired, 預期 passed, 說明)
+    ({}, {}, "bash-guard", None, {}, {"bash-guard": 1}, "沒出手記進 passed"),
+    ({}, {}, "bash-guard", "no-verify", {"bash-guard/no-verify": 1}, {}, "出手記進 fired 帶 rule"),
+    (
+        {"bash-guard/no-verify": 2},
+        {},
+        "bash-guard",
+        "no-verify",
+        {"bash-guard/no-verify": 3},
+        {},
+        "同一條 rule 累加",
+    ),
+    ({}, {"bash-guard": 5}, "bash-guard", None, {}, {"bash-guard": 6}, "passed 累加"),
+    (
+        {},
+        {},
+        "check-output-filter",
+        "collapse",
+        {"check-output-filter/collapse": 1},
+        {},
+        "改寫器的出手同樣進 fired(桶子刻意語意中性,不叫 deny)",
+    ),
+]
+
+for f0, p0, hook, rule, want_f, want_p, why in BUMP_CASES:
+    st = {**decision_log.new_state("s1", "T0", "b"), "fired": f0, "passed": p0}
+    got = decision_log.bump(st, hook, rule, "T1")
+    expect_eq(f"decision_log.bump[{why}] fired", got["fired"], want_f)
+    expect_eq(f"decision_log.bump[{why}] passed", got["passed"], want_p)
+
+# 不可變性:bump 不得改動傳入的 state。共用可變 dict 的計數器最典型的 bug
+# 就是別名——一旦發生,兩個 session 的數字會互相污染而且完全看不出來。
+_orig = decision_log.new_state("s1", "T0", "b")
+decision_log.bump(_orig, "bash-guard", "no-verify", "T1")
+expect_eq("decision_log.bump[不改動傳入的 state]", _orig["fired"], {})
+
+# ended 每次 bump 都往前推(session 的涵蓋期間靠它算)
+expect_eq(
+    "decision_log.bump[更新 ended]",
+    decision_log.bump(decision_log.new_state("s1", "T0", "b"), "h", None, "T9")["ended"],
+    "T9",
+)
+
+# merge_lines():同 session 取代自己那一行,不是附加。pre-commit 每次 commit
+# 都會 flush,附加的話一個 session 會留下十幾行半成品。
+_a = json.dumps({"session": "aaa", "n": 1})
+_b = json.dumps({"session": "bbb", "n": 2})
+_a2 = json.dumps({"session": "aaa", "n": 99})
+
+MERGE_CASES = [
+    ([], _a, "aaa", [_a], "空 log:附加"),
+    ([_b], _a, "aaa", [_b, _a], "沒有自己那一行:附加在最後"),
+    ([_a, _b], _a2, "aaa", [_a2, _b], "有自己那一行:就地取代,不附加"),
+    ([_b, _a], _a2, "aaa", [_b, _a2], "取代時保持原本的行序"),
+    (["{壞掉的行", _b], _a, "aaa", ["{壞掉的行", _b, _a], "壞行原樣保留,不得吞掉別人的資料"),
+]
+
+for lines, line, session, want, why in MERGE_CASES:
+    expect_eq(f"decision_log.merge_lines[{why}]", decision_log.merge_lines(lines, line, session), want)
+
+# to_line():鍵序必須穩定,否則同一個 session 的多次 flush 會讓 git diff
+# 因字典順序抖動而看起來每次都變,讀不出「這行到底改了什麼」。
+expect_eq(
+    "decision_log.to_line[鍵序穩定]",
+    decision_log.to_line({"b": 1, "a": 2}),
+    decision_log.to_line({"a": 2, "b": 1}),
+)
+
+
+def test_decision_log_io() -> None:
+    """record → flush → 讀回的真實 I/O,以及關閉開關。
+
+    純函式測不到的部分:落檔點是否真的寫出一行、同 session 多次 flush 是否
+    仍是一行、HARNESS_METRICS=0 是否真的完全不碰檔案系統。全部指到 temp 目錄,
+    所以跑測試不會污染 repo 的 sessions.jsonl。
+    """
+    global checked
+    hook_path = str(HOOKS / "decision_log.py")
+
+    def run(env_extra: dict, body: str, tmp: str) -> Path:
+        """在子行程裡 import 記錄器並執行 body,回傳它被指到的 metrics 目錄。
+
+        指到的是 tmp 底下**尚未存在**的子目錄:目錄本身有沒有被建出來,就是
+        「有沒有碰檔案系統」的訊號。若直接指向 tmp(已存在),
+        `mkdir(exist_ok=True)` 這種副作用會完全隱形——第一版就是這樣寫的,
+        突變測試把它抓了出來(見 friction-log:空轉與健康長得一樣的檢查
+        等於沒有檢查)。
+        """
+        target = Path(tmp) / "metrics"
+        code = (
+            "import importlib.util\n"
+            f"spec = importlib.util.spec_from_file_location('dl', r'{hook_path}')\n"
+            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n" + body
+        )
+        subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "HARNESS_METRICS_DIR": str(target), **env_extra},
+        )
+        return target
+
+    # 1. 模組層零 I/O。scripts/test-hooks.py 用 exec_module 載入 hook 模組,而
+    #    check-output-filter 每次呼叫也會 exec_module 載入 bash-guard——模組層
+    #    若有副作用,跑一次測試就污染一次日誌,且每個 Bash 指令會被記兩次。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run({}, "pass\n", tmp)
+        checked += 1
+        if target.exists():
+            failures.append("decision_log[模組層零 I/O]: 只是 import 就碰了檔案系統")
+
+    # 2. record → flush 的來回:寫得出一行,且內容讀得回來
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run(
+            {}, "m.record('bash-guard', 'no-verify')\nm.record('bash-guard', None)\nm.flush()\n", tmp
+        )
+        log = target / "sessions.jsonl"
+        checked += 1
+        if not log.exists():
+            failures.append("decision_log[record→flush]: sessions.jsonl 沒被建立")
+        else:
+            rows = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+            expect_eq("decision_log[record→flush] 行數", len(rows), 1)
+            expect_eq("decision_log[record→flush] fired", rows[0]["fired"], {"bash-guard/no-verify": 1})
+            expect_eq("decision_log[record→flush] passed", rows[0]["passed"], {"bash-guard": 1})
+
+    # 3. 同一個 session flush 兩次仍是一行(pre-commit 每次 commit 都會 flush)
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run({}, "m.record('h', None)\nm.flush()\nm.record('h', None)\nm.flush()\n", tmp)
+        rows = [
+            ln
+            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+        expect_eq("decision_log[同 session 兩次 flush 仍是一行]", len(rows), 1)
+        expect_eq("decision_log[第二次 flush 的計數有累加]", json.loads(rows[0])["passed"], {"h": 2})
+
+    # 4. 關閉開關:HARNESS_METRICS=0 必須完全不碰檔案系統
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run({"HARNESS_METRICS": "0"}, "m.record('h', None)\nm.flush()\n", tmp)
+        checked += 1
+        if target.exists():
+            failures.append("decision_log[HARNESS_METRICS=0]: 關掉了還是碰了檔案系統")
+
+    # 5. rotate:落檔後清掉 buffer,下一個 session 才不會跟上一個併成一行
+    with tempfile.TemporaryDirectory() as tmp:
+        target = run({}, "m.record('h', None)\nm.rotate()\n", tmp)
+        checked += 1
+        if (target / ".session.json").exists():
+            failures.append("decision_log[rotate]: buffer 沒被清掉")
+        checked += 1
+        if not (target / "sessions.jsonl").exists():
+            failures.append("decision_log[rotate]: 清掉 buffer 前沒有先落檔(資料遺失)")
+
+    # 6. 並行安全。bash-guard 與 check-output-filter 掛在同一個 Bash matcher 上,
+    #    Claude Code 會**並行**執行它們——每個 Bash 指令都是一次 read-modify-write
+    #    競賽。這條是實測抓到的迴歸:沒有鎖與原子寫入時,其中一方會讀到寫到一半
+    #    的 buffer、把它當成「還沒有 buffer」,於是開一個新 session id 蓋掉既有
+    #    那筆——**整個 session 的計數就這樣消失**,而且不會有任何錯誤訊息。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "metrics"
+        n = 24
+        code = (
+            "import importlib.util\n"
+            f"spec = importlib.util.spec_from_file_location('dl', r'{hook_path}')\n"
+            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+            "m.record('race', None)\n"
+        )
+        env = {**os.environ, "HARNESS_METRICS_DIR": str(target)}
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-c", code], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            for _ in range(n)
+        ]
+        for p in procs:
+            p.wait()
+
+        state = json.loads((target / ".session.json").read_text(encoding="utf-8"))
+        expect_eq(f"decision_log[{n} 個並行 record 不掉計數]", state["passed"].get("race"), n)
+
+    # 7. sessions.jsonl 必須是「換檔」而不是「就地覆寫」。
+    #
+    #    第 6 條那道鎖只保護有參與鎖的行程,而 scripts/harness-metrics.py 讀日誌
+    #    時**不上鎖**——就地覆寫(truncate 後再寫)會讓它讀到半截的 JSON,而這是
+    #    會進 git 的檔案,寫壞了等於 commit 一份垃圾進版本庫。
+    #
+    #    判準用 inode 而不是「一邊寫一邊讀看會不會壞」:後者要賭中那個極窄的
+    #    時間窗,抓不到就是靜靜地通過,而且在 CI 上必然 flaky——一條只有機率會
+    #    說話的測試,跟不會說話的測試差別不大。rename-into-place 必然換 inode,
+    #    就地覆寫必然保留 inode,這個差別是確定性的。
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "metrics"
+        run({}, "m.record('h', None)\nm.flush()\n", tmp)
+        log_path = target / "sessions.jsonl"
+        before = log_path.stat().st_ino
+        run({}, "m.record('h', None)\nm.flush()\n", tmp)
+        checked += 1
+        if log_path.stat().st_ino == before:
+            failures.append(
+                "decision_log[sessions.jsonl 必須換檔寫入]: inode 沒變,代表是就地覆寫"
+                "——不上鎖的讀取器會讀到半截 JSON"
+            )
+
+
+test_decision_log_io()
 
 
 # --------------------------------------------------------------------- 結果

@@ -36,7 +36,12 @@ if [ -f .claude/tdd-lock ]; then
   esac
 fi
 
-# 4. 選配工具存在性(缺了只提示,不擋——動到對應領域才需要)
+# 4. harness 感測器:把上一個 session 殘留的 buffer 先落檔再清掉。
+#    本機 CLI 的容器會活過多個 session,不清的話兩個 session 的決策會併成
+#    一行;web session 的容器是新的,這條路徑等於 no-op。
+python3 .claude/hooks/decision_log.py --rotate 2>/dev/null || true
+
+# 5. 選配工具存在性(缺了只提示,不擋——動到對應領域才需要)
 command -v deno >/dev/null 2>&1 \
   || echo "[bootstrap] 提示:無 deno——動 supabase/functions 前需安裝 https://docs.deno.com/runtime/getting_started/installation/"
 command -v supabase >/dev/null 2>&1 \
