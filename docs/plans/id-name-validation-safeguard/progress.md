@@ -13,7 +13,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ✅ 綠 | `679de79` | (見下方 commit) |
+| 1 | 前端 `validateName` 依模式驗證 + 分模式長度 + `ProfileFormValues` 型別 | ✅ 綠 | `679de79` | `51b864f` |
 | 2 | 後端 `export` 驗證函式(聯集、重用 `HAN_RANGE`、型別防禦)+ `maskNameByGen` export + 常數搬家 | ⬜ 未開始 | | |
 | 3 | 前置:anon key + PostgREST helper + `createTestUser` 改 service_role 直寫;主體:migration 撤 GRANT + 改 `handle_new_user` | ⬜ 未開始 | | |
 | 4 | 表單切換鈕、長度與計數器警示態、間隔號主動轉換、兩條 prefill 模式還原、草稿 allow-list、確認框合併與旗標重置 | ⬜ 未開始 | | |
