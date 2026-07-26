@@ -16,7 +16,7 @@
 //     * 永不跨環境逐欄回退混用。
 // ============================================================
 import { assertEquals, assertStringIncludes, assertThrows } from 'jsr:@std/assert@1';
-import { resolvePayuniConfig } from './index.ts';
+import { isPayuniConfigured, resolvePayuniConfig, resolvePayuniMode } from './index.ts';
 
 // 用一個 plain object 當環境讀取器，完全脫離 Deno.env——純函式、可平行、零副作用。
 function reader(env: Record<string, string>): (k: string) => string | undefined {
@@ -118,4 +118,46 @@ Deno.test('PAYUNI_SANDBOX 非字面 "true" 一律視為 production（避免 "1"/
     const cfg = resolvePayuniConfig(reader({ PAYUNI_SANDBOX: v, ...PROD }));
     assertEquals(cfg.mode, 'production', `PAYUNI_SANDBOX=${JSON.stringify(v)} 應為 production`);
   }
+});
+
+// ============================================================
+// resolvePayuniMode / isPayuniConfigured —— /health 的可觀測性欄位。
+//
+// 為什麼要有這兩個純函式:PAYUNI_SANDBOX 設錯**沒有任何外顯訊號**。
+// 2026-07-26 發現正式站跑在 sandbox（帳面 20 筆訂單、實際入帳 0 元）,
+// 靠的是人工反推 secrets 的 SHA256 digest——不是可重複的流程。
+// 把判定抽成單一來源後,`/health` 回報的必然等於付款實際會走的路。
+// ============================================================
+
+Deno.test('resolvePayuniMode：判定與 resolvePayuniConfig 完全一致', () => {
+  // 同一組 env 餵給兩者,mode 必須相同——否則 /health 就會說謊
+  for (const env of [{ ...PROD }, { PAYUNI_SANDBOX: 'true', ...TEST }]) {
+    assertEquals(resolvePayuniMode(reader(env)), resolvePayuniConfig(reader(env)).mode);
+  }
+});
+
+Deno.test('resolvePayuniMode：只認字面 "true"，其餘一律 production', () => {
+  for (const v of ['false', '1', 'yes', 'TRUE', '']) {
+    assertEquals(resolvePayuniMode(reader({ PAYUNI_SANDBOX: v })), 'production');
+  }
+  assertEquals(resolvePayuniMode(reader({ PAYUNI_SANDBOX: 'true' })), 'sandbox');
+});
+
+Deno.test('resolvePayuniMode：憑證全缺也不拋錯（/health 必須永遠回得了話）', () => {
+  assertEquals(resolvePayuniMode(reader({})), 'production');
+});
+
+Deno.test('isPayuniConfigured：只看當下 mode 那一套前綴', () => {
+  // 正式站憑證齊全,但被切到 sandbox → 該回 false（缺 PAYUNI_TEST_*）
+  assertEquals(isPayuniConfigured(reader({ PAYUNI_SANDBOX: 'true', ...PROD })), false);
+  assertEquals(isPayuniConfigured(reader({ PAYUNI_SANDBOX: 'true', ...TEST })), true);
+  assertEquals(isPayuniConfigured(reader({ ...PROD })), true);
+  assertEquals(isPayuniConfigured(reader({ ...TEST })), false);
+});
+
+Deno.test('isPayuniConfigured：缺一把或純空白都算沒設', () => {
+  const { PAYUNI_HASH_IV: _drop, ...twoOfThree } = PROD;
+  assertEquals(isPayuniConfigured(reader(twoOfThree)), false);
+  assertEquals(isPayuniConfigured(reader({ ...PROD, PAYUNI_MER_ID: '   ' })), false);
+  assertEquals(isPayuniConfigured(reader({})), false);
 });

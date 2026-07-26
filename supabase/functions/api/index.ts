@@ -350,8 +350,30 @@ export interface PayuniConfig {
 //     * 依 mode 選定唯一一套前綴（PAYUNI_ 或 PAYUNI_TEST_）；
 //     * 三個欄位缺任何一個就明確拋錯，絕不跨環境回退；
 //     * 回傳 mode，讓呼叫端／前端／log 能看見「這筆到底打哪個環境」。
+/**
+ * 這個部署打哪個 PayUni 環境——**唯一**的判定處。
+ *
+ * 抽出來是為了讓 `/health` 能回報同一個答案而不必湊一份自己的判斷：
+ * 這個設定沒有任何外顯訊號（憑證與端點一致時 PayUni 不會有浮水印、
+ * 不會有錯誤），2026-07-26 靠人工比對 secrets 的 SHA256 digest 才發現
+ * 正式站當時跑在 sandbox。判定只有一份，`/health` 就不可能說謊。
+ *
+ * 注意它**只讀 PAYUNI_SANDBOX、不碰憑證**——`/health` 必須永遠回得了話，
+ * 不能因為憑證沒設就跟著炸。
+ */
+export function resolvePayuniMode(read: (key: string) => string | undefined): PayuniMode {
+  return read('PAYUNI_SANDBOX') === 'true' ? 'sandbox' : 'production';
+}
+
+/** 該 mode 需要的三把憑證是否成套齊全（不回傳值,只回傳有沒有）。 */
+export function isPayuniConfigured(read: (key: string) => string | undefined): boolean {
+  const prefix = resolvePayuniMode(read) === 'sandbox' ? 'PAYUNI_TEST_' : 'PAYUNI_';
+  return (['MER_ID', 'HASH_KEY', 'HASH_IV'] as const)
+    .every((k) => (read(`${prefix}${k}`)?.trim() ?? '') !== '');
+}
+
 export function resolvePayuniConfig(read: (key: string) => string | undefined): PayuniConfig {
-  const mode: PayuniMode = read('PAYUNI_SANDBOX') === 'true' ? 'sandbox' : 'production';
+  const mode: PayuniMode = resolvePayuniMode(read);
   const prefix = mode === 'sandbox' ? 'PAYUNI_TEST_' : 'PAYUNI_';
 
   const merID = read(`${prefix}MER_ID`)?.trim();
@@ -3108,12 +3130,28 @@ app.get('/referrals/debug/:userId', async (c) => {
 // 沒設時回 unknown（本地開發與舊部署）。repo 是公開的，commit sha
 // 不是機密。
 // ============================================================
-app.get('/health', (c) =>
-  c.json({
+// payuniMode / payuniConfigured：把「這個環境的金流打哪裡、憑證齊不齊」
+// 變成一個 curl 就能回答的問題。
+//
+// 起因（2026-07-26）：正式站的 PAYUNI_SANDBOX 是 true,所有付款都走了
+// PayUni 測試站——帳面 20 筆完成訂單、NT$24,000,實際入帳 0 元。當時是
+// 刻意的（尚未開放），但它**沒有任何訊號**:憑證與端點一致時 PayUni
+// 不回浮水印、程式不報錯、儀表板只看得到 secrets 的 SHA256 digest。
+// 那次是靠人工反推 digest 才發現的,不是可重複的流程。
+//
+// 兩個欄位都不是機密:mode 從使用者被導去哪個 PayUni 網域就看得出來,
+// configured 只回報布林、不回傳任何憑證內容（同 sha 的取捨——repo 公開,
+// 這些不是機密,而可觀測性的價值遠大於它）。
+app.get('/health', (c) => {
+  const read = (key: string) => Deno.env.get(key);
+  return c.json({
     ok: true,
     ts: new Date().toISOString(),
-    sha: Deno.env.get('DEPLOY_SHA') ?? 'unknown',
-  }));
+    sha: read('DEPLOY_SHA') ?? 'unknown',
+    payuniMode: resolvePayuniMode(read),
+    payuniConfigured: isPayuniConfigured(read),
+  });
+});
 
 // import.meta.main 只有直接執行這個檔案時才是 true（Supabase Edge
 // Runtime 的啟動方式）；被 *.test.ts 用 `import { ... } from './index.ts'`
