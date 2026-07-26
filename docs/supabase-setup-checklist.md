@@ -221,6 +221,46 @@ NT$24,000，實際入帳 0 元——是靠人工反推 digest 才看出來的，
 
 ---
 
+## ☑️ 步驟 6：建立預設推薦人帳號與推薦碼（啟用自動綁定機制時才需要）
+
+規格書 §7.4：未填推薦碼的**首購**會員自動綁定平台指定的預設推薦人。
+機制預設**停用**（`reward_config.default_referrer_code` 為 `null`），
+要啟用需在**每個環境**各做一次以下三步（帳號 uuid 逐環境不同，
+所以是營運動作、不是 migration）：
+
+1. **建立專用平台帳號**：走正常註冊 + 付款流程（不要用個人帳號——它會
+   出現在所有自然流量會員的上線位置並累積大量點數，帳務分開較乾淨）。
+   付款成功會自動產生一個隨機推薦碼。
+2. **把推薦碼改成指定值**（SQL Editor，service role）：
+
+   ```sql
+   update public.referral_codes
+   set code = 'asa899869'          -- 平台指定的碼
+   where user_id = '<該帳號 uuid>' and status = 'active';
+   ```
+
+   ⚠️ 僅在該帳號**尚無下線**時執行才乾淨——`profiles.referred_by_code`
+   存字串快照，已用舊碼註冊者的稽核欄位會指向不存在的碼。
+3. **啟用機制**：
+
+   ```sql
+   update public.reward_config set default_referrer_code = 'asa899869';
+   ```
+
+**順序不可顛倒**（先有碼再啟用）。先啟用而碼不存在不會出錯——機制安全地
+靜默不生效並寫 `system_alerts`（`default_referrer_code_invalid`）；
+推薦人被停權則寫 `default_referrer_suspended`。漏做一個環境不會無聲失敗，
+告警可在後台系統告警看到。
+
+**停用/回滾**：`update public.reward_config set default_referrer_code = null;`
+——即時生效、不必部署。已產生的推薦邊與獎勵不會自動撤銷（與換線語意一致）。
+
+**提領注意**：發獎不檢查上線會籍（§8.2），此帳號不需有效會籍即可累積點數；
+但**提領**需通過 §10.1 完整檢核（加入推薦計畫、未停權、**會籍在效期內**、
+KYC 身分證照片、金額門檻、當日一次）——要能領出點數，帳號需持續續約並完成
+KYC。稽核查詢（誰被自動綁定）：`select id from profiles where referred_by_is_default`，
+走 SQL、不建 admin UI。
+
 ## 快速檢查表（每個環境各一份）
 
 - [ ] 步驟 1：5 個 Edge Function Secrets 已新增並 Save

@@ -277,6 +277,25 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 **載入回饋**：切換排序時伺服器需重算，此期間清單仍是舊順序；樹以降透明度 +
 `aria-busy` 標示重新驗證中，避免看似無回應的空窗。
 
+### 7.4 預設推薦人（未填推薦碼時的自動綁定）
+
+- **首次付款**（`subscriptions.is_renewal = false`）且未填推薦碼者，自動綁定至
+  `reward_config.default_referrer_code` 指定的推薦人（`null` = 停用，
+  是可調參數；啟用/停用一律人工 `UPDATE`，部署步驟見
+  `docs/supabase-setup-checklist.md`）。
+- **僅套用於首購**：既有會員（含其未來所有付款與任務續約）不受影響，
+  `referred_by_user_id` 維持 `null`。
+- 碼合法性重用 `validate_referral_code()`（`active` 且推薦人未停權）；
+  解析失敗時付款照常成功、僅寫 `system_alerts`
+  （`default_referrer_code_invalid` / `default_referrer_suspended` 兩種 reason）。
+- 此推薦人**正常參與** §9 推薦王；獎勵發放與換線規則（§7.2、§8.2）完全比照
+  一般推薦人，不特殊處理。
+- 自動綁定以 `profiles.referred_by_is_default` 標記；fresh 換線到真推薦人時
+  由 `/payuni/prepare` 重置為 `false`。機制對使用者不揭露（前端據
+  `isAutoReferral` 契約欄位抑制顯示與資料擷取）。
+
+〔實作〕`20260726000101`～`20260726000102`、`resolve_default_referrer`
+
 ---
 
 ## 8. 獎勵系統
@@ -289,6 +308,7 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 > **金額是可調參數**：現值 100 P 存於 `reward_config.referral_reward_amount`，
 > SQL 函數、Edge Function、前端皆從此處讀取，不得各自硬編。
+> 未填推薦碼時的預設推薦人同樣是可調參數，見 §7.4。
 > 〔實作〕`20260719000002_reward_config.sql`
 
 ### 8.2 發放時機：拉新與續約都發

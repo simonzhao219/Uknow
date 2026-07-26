@@ -505,3 +505,25 @@ codebase 的時刻。** `/fix-bug` 第 3 步的「同類掃描」正是為此存
 不是「這條原則能套用到幾個地方」。這兩件事會分岔：根因愈清楚、抽象出的原則
 愈漂亮，就愈容易以為「講清楚了」等於「修完了」。**寫下通則的動作本身，應該
 就是觸發同類掃描的訊號**，與分級無關。
+
+## 2026-07-26 web session:平台自動 rebase 在指令執行「中途」發生,吃掉一次 heredoc append
+
+default-referral-code feature 施工期間,claude.ai/code 平台的自動 rebase
+（分支跟 develop 同步）兩度在 Bash 指令執行中途發生:一次讓 `curl` 的輸出
+被 rebase 訊息整個替換,一次讓「append 測試 + commit」的複合指令只執行到
+一半——檔案 append 沒落地、commit 沒發生,但 shell 沒有報 append 失敗,
+是靠事後 `grep -c "Deno.test"` 對帳才發現。
+
+**症狀特徵**:工具回傳「Rebased ... which rewrote local history」這段
+git 訊息出現在**與 git 無關的指令**輸出裡,即是撞上了。
+
+**處置慣例**(本次驗證有效):
+1. 任何複合指令執行後看到該訊息,先 `git log --oneline -3` + `git status -sb`
+   對帳,**不要相信該次指令已完成**;
+2. 檔案內容用可數的錨點對帳(`grep -c`),不要用「指令沒報錯」當證據;
+3. rebase 後本地未推送的 commit 仍在(rebase 只換 hash),
+   `git push --force-with-lease` 同步即可,不需要也不可以照 stop-hook 的
+   建議對 develop 上既有 commit 跑 `--reset-author` 改寫。
+
+框架面沒有可修的鉤子(rebase 由平台觸發,早於 session 可控範圍),
+這則的價值是把「撞上時怎麼判斷、怎麼恢復」沉澱下來。

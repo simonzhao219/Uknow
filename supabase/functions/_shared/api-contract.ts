@@ -126,6 +126,9 @@ export const ProfileResponseSchema = obj({
   paidAwaitingActivation: bool(),
   referralCode: nullable(str()),
   referredByCode: nullable(str()),
+  // referredByCode 是否由預設推薦人機制自動寫入（profiles.referred_by_is_default）。
+  // 前端據此抑制顯示與資料擷取；fresh 換線到真推薦人時後端會重置為 false。
+  isAutoReferral: bool(),
   referralProgramJoined: bool(),
   referralSignatureUrl: nullable(str()),
   accountStatus: literals('active', 'expired'),

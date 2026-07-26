@@ -381,6 +381,9 @@ export async function buildProfileResponse(
     paidAwaitingActivation,
     referralCode: code?.code ?? null,
     referredByCode: profile.referred_by_code,
+    // 自動綁定旗標：前端據此抑制預設推薦人的顯示與資料擷取
+    // （PaymentCheckout 確認卡 + fetchReferrerInfo 早退）。
+    isAutoReferral: !!profile.referred_by_is_default,
     referralProgramJoined: profile.referral_program_joined,
     referralSignatureUrl: profile.referral_signature_url,
     accountStatus: acct?.status ?? 'expired',
@@ -1411,9 +1414,16 @@ app.post('/payuni/prepare', async (c) => {
     if (referrerUserId === user.id) {
       return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
     }
+    // referred_by_is_default 一併重置：使用者親自填碼換線 = 非自動來源。
+    // 這裡是 referred_by_* 的第二個寫入點（不經 apply_referral_side_effects），
+    // 漏掉會讓旗標永久卡 true，前端把使用者自己選的推薦人也一起隱藏。
     const { error: refErr } = await client
       .from('profiles')
-      .update({ referred_by_code: referredByCode, referred_by_user_id: referrerUserId })
+      .update({
+        referred_by_code: referredByCode,
+        referred_by_user_id: referrerUserId,
+        referred_by_is_default: false,
+      })
       .eq('id', user.id);
     if (refErr) {
       console.error('[prepare] 更新推薦人失敗:', refErr);
