@@ -29,7 +29,6 @@ export function ServiceProviderManagement() {
   // 是否對外顯示完全由帳號訂閱決定，且在資料層一處守門：HomePage 讀
   // public_listings view，view 以 has_active_subscription() 過濾，會員過期／
   // 停權的刊登會自動從首頁消失。因此這裡不再顯示任何「活躍／過期」狀態徽章。
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -37,47 +36,6 @@ export function ServiceProviderManagement() {
   // 與會員中心的刊登卡片共用同一份邏輯與同一個快取鍵。
   const { listing, loading, error: listingError, refetch: refetchListing } = useUserListing();
   const supabase = createClient();
-
-  // ✅ 複製推薦碼（簡化版）
-  const handleCopyReferralCode = async () => {
-    const referralCode = listing?.referralCode;
-
-    if (!referralCode) {
-      showToast('無法取得推薦碼', 'error');
-      return;
-    }
-
-    try {
-      // 使用傳統的 execCommand 方法（更可靠，不受 Clipboard API 權限限制）
-      const textArea = document.createElement('textarea');
-      textArea.value = referralCode;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-
-      try {
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-
-        if (successful) {
-          setCopiedId(listing.id);
-          showToast('推薦碼已複製到剪貼簿', 'success');
-          setTimeout(() => setCopiedId(null), 2000);
-        } else {
-          throw new Error('execCommand failed');
-        }
-      } catch (err) {
-        document.body.removeChild(textArea);
-        throw err;
-      }
-    } catch (err) {
-      console.error('複製失敗:', err);
-      showToast('複製失敗，請手動複製推薦碼', 'error');
-    }
-  };
 
   // 刪除刊登。確認一律走 AlertDialog（全站確認彈窗的統一標準）——
   // 原生 window.confirm 在 LINE 等內建瀏覽器可能被抑制、樣式與品牌
@@ -256,10 +214,7 @@ export function ServiceProviderManagement() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <MapPin className="h-4 w-4" />
                       <span>
-                        {listing.city}{' '}
-                        {Array.isArray(listing.districts)
-                          ? listing.districts[0]
-                          : listing.district || ''}
+                        {listing.city} {listing.districts[0] ?? ''}
                       </span>
                     </div>
                   </div>

@@ -21,6 +21,7 @@ import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
+import type { ListingRow } from '../types/listing';
 
 export function EditServiceProvider() {
   const { id } = useParams();
@@ -46,7 +47,7 @@ export function EditServiceProvider() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
-  const [serviceProvider, setServiceProvider] = useState<any>(null);
+  const [serviceProvider, setServiceProvider] = useState<ListingRow | null>(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   // ✅ 从后端 API 获取刊登数据
