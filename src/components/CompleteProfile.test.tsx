@@ -119,6 +119,32 @@ describe('姓名欄位的分隔符號與長度', () => {
     expect(screen.getByText('12/10')).toBeTruthy();
   });
 
+  it('超長時計數器套用警示色,不只是數字變了', () => {
+    // 只斷言「12/10」這串文字的話,nameOverLimit 邏輯日後被誤刪測試仍全綠。
+    renderForm();
+    fireEvent.change(nameInput(), { target: { value: '王'.repeat(12) } });
+    const counter = screen.getByText('12/10');
+    expect(counter.className).toContain('text-destructive');
+  });
+
+  it('缺字姓名走專屬的客服出口,不是誤導的「須為中文字」', () => {
+    // HAN_RANGE 不含造字區與擴充 B 區(戶政「缺字」問題)。那種輸入既非拉丁
+    // 字母也非數字,拿「姓名須為中文字」回應一個明明在打中文的人是誤導。
+    renderForm();
+    fireEvent.change(nameInput(), { target: { value: '\u{20000}\u{20001}' } });
+    fireEvent.blur(nameInput());
+    expect(screen.getByRole('alert').textContent).toContain('客服');
+  });
+
+  it('錯誤時 aria-invalid 與 aria-describedby 指向錯誤訊息', () => {
+    renderForm();
+    fireEvent.change(nameInput(), { target: { value: 'Peter' } });
+    fireEvent.blur(nameInput());
+    expect(nameInput().getAttribute('aria-invalid')).toBe('true');
+    expect(nameInput().getAttribute('aria-describedby')).toBe('name-error');
+    expect(screen.getByRole('alert').getAttribute('id')).toBe('name-error');
+  });
+
   it('離開欄位時字元合法但超長回長度訊息,不是字元訊息', () => {
     renderForm();
     fireEvent.change(nameInput(), { target: { value: '王'.repeat(12) } });

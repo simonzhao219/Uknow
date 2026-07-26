@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NAME_CASES } from './nameValidationCases';
+import { NAME_CASES } from '@name-cases';
 import {
   validateName,
   validateNationalId,

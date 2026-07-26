@@ -15,9 +15,12 @@ import re
 
 from tools.zh_names import zh_name_for
 
-# 與 profileValidation.ts / index.ts 的 HAN_RANGE 對齊(U+3400–U+9FFF 與
-# U+F900–U+FAFF)。這裡是第三份複製品,刻意寫成單一常數並在下方註明出處。
-HAN = "㐀-鿿豈-﫿"
+# 與 profileValidation.ts / index.ts 的 HAN_RANGE 對齊。
+# **必須用 \u 跳脫寫死,不可寫字面漢字**——index.ts 該常數上方的註解記載過
+# 一次真實事故:字面「豈」(U+F900) 曾被編輯器 NFC 正規化成同形的 U+8C48,
+# 範圍尾端因此悄悄涵蓋全部 surrogate。這是第三份複製品,表示法也要一致,
+# 否則等於把已經記取的教訓又複製回來。
+HAN = "\u3400-\u9fff\uf900-\ufaff"
 ZH_NAME = re.compile(f"^(?:[{HAN}]+|[{HAN}]{{2,}} [{HAN}]{{2,}})$")
 MAX_LEN = 10
 

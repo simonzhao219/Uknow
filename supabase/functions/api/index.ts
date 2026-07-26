@@ -243,7 +243,7 @@ function maskBankAccount(acct: string | null | undefined): string | null {
 // 遮罩兩處共用，故搬到共用工具段——「被多處共用」的常數放在共用段才名副其實。
 // 前端 src/utils/profileValidation.ts 有一份逐字複製（兩個 runtime 隔離、
 // 無法共用常數），改動這裡務必同步那裡，且兩側跑同一份
-// src/utils/nameValidationCases.ts 的案例表。
+// _shared/name-validation-cases.ts 的案例表。
 // ============================================================
 const HAN_RANGE = '\\u3400-\\u9FFF\\uF900-\\uFAFF';
 const HAS_HAN = new RegExp(`[${HAN_RANGE}]`);
@@ -253,9 +253,13 @@ const HAN_LEAD = new RegExp(`^[${HAN_RANGE}]`);
 const ZH_NAME = new RegExp(`^(?:[${HAN_RANGE}]+|[${HAN_RANGE}]{2,} [${HAN_RANGE}]{2,})$`);
 // 外文姓名：僅英文字母，單字間單一半形空格，每個單字首字母大寫（其餘大小寫不限）。
 const FOREIGN_NAME = /^[A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)*$/;
-// 分隔符號類標點：任何「非漢字、非英文字母、非數字、非半形空格」的字元。
+// 分隔符號類標點：Unicode 的**標點**(\p{P})與**分隔符**(\p{Z})兩大類，
+// 半形空格本身除外（它是合法的姓名分隔）。
 // 刻意不列舉碼點——只鎖三個間隔號會讓 bullet、半形中點、全形空格等變體漏網。
-const SEPARATOR_LIKE = new RegExp(`[^${HAN_RANGE}A-Za-z0-9 ]`);
+// 但也不能用「非漢字非英數非空格」反向定義：那會把 HAN_RANGE 之外的漢字
+// （擴充 B 區以上、造字區，即戶政「缺字」問題）一併當標點，給出文不對題的
+// 「請改用半形空格分隔」。缺字姓名該走的是下方那句罕用字客服出口。
+const SEPARATOR_LIKE = new RegExp('(?=[\\p{P}\\p{Z}])[^ ]', 'u');
 
 // 後端的姓名格式規則是**聯集**：合乎中文規則或外文規則即通過。
 // 前端依切換鈕狀態嚴格把關（中文模式拒 `Peter`），後端不能——它只收到姓名
@@ -279,6 +283,12 @@ export function validateNameFormat(name: unknown): string | undefined {
 
   // 聯集:合乎中文規則**或**外文規則即通過。
   if (!ZH_NAME.test(name) && !FOREIGN_NAME.test(name)) {
+    // 缺字的逃生口（與前端 validateName 同一條規則）:HAN_RANGE 不含擴充 B 區
+    // 以上與造字區。那些字元既非拉丁字母也非數字，拿「須為中文字」回應一個
+    // 明明在打中文的人是誤導；用「不含拉丁字母也不含數字」偵測缺字的形狀。
+    if (!/[A-Za-z0-9]/.test(name)) {
+      return '此姓名可能含系統未支援的罕用字，請聯繫客服協助';
+    }
     return '姓名須為中文字，或首字母大寫的英文（例：王小明、John Smith）';
   }
 

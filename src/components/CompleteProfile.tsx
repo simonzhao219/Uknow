@@ -617,7 +617,10 @@ export function CompleteProfile() {
                     type="button"
                     aria-pressed={formData.nameMode === mode}
                     onClick={() => switchNameMode(mode)}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                    // min-h-10 對齊 FilterChip 的行動裝置最小可點面積慣例,
+                    // 觸控裝置再拉到 UI 準則 §1 的 44px——這顆控制項落在註冊
+                    // 流程上,點不到的代價是流失。
+                    className={`flex-1 min-h-10 pointer-coarse:min-h-[44px] rounded-md px-3 py-1.5 text-sm transition-colors ${
                       formData.nameMode === mode
                         ? 'bg-background shadow-sm font-medium'
                         : 'text-muted-foreground'
@@ -648,7 +651,13 @@ export function CompleteProfile() {
               >
                 {[...formData.name].length}/{NAME_MAX_LENGTH[formData.nameMode]}
               </div>
-              {nameNotice && <p className="text-sm text-muted-foreground">{nameNotice}</p>}
+              {/* aria-live:系統主動改了使用者輸入的姓名,螢幕報讀器使用者
+                  必須在當下被告知——這正是本功能特別要服務的族群。 */}
+              {nameNotice && (
+                <p className="text-sm text-muted-foreground" aria-live="polite">
+                  {nameNotice}
+                </p>
+              )}
               <FieldError id="name-error" error={errors.name} />
             </div>
 

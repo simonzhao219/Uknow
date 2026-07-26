@@ -4,7 +4,7 @@
 //     嚴格把關(中文模式拒 `Peter`),後端不能:它只收到姓名字串,就算前端
 //     多送一個模式旗標,攻擊者也只要宣稱自己是外文模式即可繞過。兩者職責
 //     不同(規劃書 §2.2)。
-//   * 案例表與前端共用同一份 `src/utils/nameValidationCases.ts`。兩個 runtime
+//   * 案例表與前端共用同一份 `_shared/name-validation-cases.ts`。兩個 runtime
 //     隔離、規則必然各寫一份實作,共用案例表是唯一能在「單邊改了規則、另一邊
 //     忘了同步」的當下就紅燈的機制。
 //   * 型別防禦:非字串輸入回「格式不符」而**不得拋錯**。`PUT /auth/profile`
@@ -14,7 +14,7 @@
 //     要解決的症狀。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { backendAccepts, NAME_CASES } from '../../../src/utils/nameValidationCases.ts';
+import { backendAccepts, NAME_CASES } from '../_shared/name-validation-cases.ts';
 import { maskNameByGen, validateNameFormat } from './index.ts';
 
 Deno.test('validateNameFormat：共用案例表的聯集期望值全數符合', () => {
@@ -52,6 +52,16 @@ Deno.test('validateNameFormat：非字串輸入回格式不符而不拋錯', () 
     const err = validateNameFormat(bad);
     assert(typeof err === 'string', `${JSON.stringify(bad)} 應回字串訊息,實際 ${err}`);
   }
+});
+
+Deno.test('validateNameFormat：缺字走罕用字客服出口,不被當標點也不給誤導訊息', () => {
+  // HAN_RANGE 不含擴充 B 區以上(surrogate pair)與造字區,即戶政「缺字」問題。
+  // 這類字元既非拉丁字母也非數字,若判定寫成「非漢字非英數非空格就當標點」,
+  // 會給出文不對題的「請改用半形空格分隔」;在前端的主動轉換路徑上更糟——
+  // 整個姓名會被靜默換成一串空格。
+  const err = validateNameFormat('\u{20000}\u{20001}');
+  assert(err?.includes('客服'), `缺字應走客服出口,實際 ${err}`);
+  assert(!err?.includes('半形空格'), '缺字不該被當成分隔符號');
 });
 
 Deno.test('validateNameFormat：超長被拒,聯集上限為 50', () => {

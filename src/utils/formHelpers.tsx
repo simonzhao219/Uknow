@@ -15,10 +15,18 @@ export function getInputErrorClass(hasError: boolean): string {
  */
 export function FieldError({ error, id }: { error?: string; id?: string }) {
   if (!error) return null;
+  // 含 \n 的訊息渲染成多個 <p>：一句講規則、一句指出出口(例如姓名欄位的
+  // 「非中文姓名請點上方『外文姓名』」)。合成單一長句在 375px 下會擠成一團,
+  // 拆行後才掃讀得動。單句訊息行為完全不變。
+  const lines = error.split('\n');
   return (
-    <p id={id} className="text-sm text-destructive mt-1" role="alert">
-      {error}
-    </p>
+    <div id={id} role="alert">
+      {lines.map((line) => (
+        <p key={line} className="text-sm text-destructive mt-1">
+          {line}
+        </p>
+      ))}
+    </div>
   );
 }
 
