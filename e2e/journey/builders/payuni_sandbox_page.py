@@ -1,15 +1,16 @@
 """PayUni sandbox 刷卡頁的 Page Object——journey 套件唯一的「外部」頁面。
 
-⚠️ 選擇器狀態：依 PayUni 收銀台的常見欄位命名寫的第一版，**尚未對真
-sandbox 驗證**（M1 首次帶憑證執行時校準；sandbox 改版也只需要修這一
-個檔案）。每個欄位都用候選清單，第一個出現的生效，降低改版斷裂面。
+選擇器狀態：**2026-07-26 已對真 sandbox 校準**（見下方各清單的註解）。
+每個欄位都用候選清單，第一個出現的生效，降低改版斷裂面；對不上時會把
+當下的頁面結構印進錯誤訊息（page_diagnostics），所以下次改版只要讀
+log 就能改對，不必猜。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from playwright.sync_api import Page
+
+from builders.page_diagnostics import dump_page
 
 SANDBOX_URL_GLOB = "https://sandbox-api.payuni.com.tw/**"
 
@@ -57,35 +58,6 @@ class PayuniSandboxPage:
         self.page.wait_for_url(SANDBOX_URL_GLOB, timeout=timeout)
         self.page.wait_for_load_state("domcontentloaded")
 
-    def _dump_page(self, label: str) -> str:
-        """把當下的頁面結構落地，讓「選擇器對不上」變成可以直接修的資訊。
-
-        校準這些選擇器需要看到真的 sandbox 頁，但沒有人能從 CI runner 以外
-        的地方看到它——建樹用自己的瀏覽器實例（org_builder 的 ThreadPool），
-        不走 pytest-playwright 的 page fixture，所以 --tracing/--screenshot
-        都不會產出東西。少了這一步，每次改選擇器都只是換一組猜測。
-        """
-        out_dir = Path(__file__).resolve().parents[1] / "test-results"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        stem = f"payuni-sandbox-{label}"
-        try:
-            (out_dir / f"{stem}.html").write_text(self.page.content(), encoding="utf-8")
-            self.page.screenshot(path=str(out_dir / f"{stem}.png"), full_page=True)
-        except Exception as exc:  # 診斷失敗不該蓋掉原始錯誤
-            return f"（頁面存檔失敗：{exc}）"
-
-        try:
-            fields = self.page.eval_on_selector_all(
-                "input, select, button",
-                """els => els.slice(0, 40).map(e =>
-                     `${e.tagName.toLowerCase()} name=${e.name || '-'} id=${e.id || '-'} `
-                   + `type=${e.type || '-'} placeholder=${e.placeholder || '-'} text=${(e.innerText || '').trim().slice(0, 20)}`
-                   ).join('\\n')""",
-            )
-        except Exception as exc:
-            fields = f"（欄位清單取得失敗：{exc}）"
-        return f"目前頁面 URL：{self.page.url}\n實際的表單元素：\n{fields}"
-
     def _first_present(self, candidates: list[str], label: str):
         for selector in candidates:
             locator = self.page.locator(selector).first
@@ -94,7 +66,7 @@ class PayuniSandboxPage:
         raise RuntimeError(
             f"PayUni sandbox 頁找不到「{label}」欄位——頁面結構可能已改版，"
             f"請更新 payuni_sandbox_page.py 的候選選擇器（tried: {candidates}）\n"
-            f"{self._dump_page(label)}"
+            f"{dump_page(self.page, label)}"
         )
 
     @staticmethod
