@@ -9,47 +9,34 @@
 
 ## 階段狀態
 
-規劃書已改寫為 **v2**(依 review.md 的 2 個 P0、11 個 P1、3 個 P2 與人審裁決)。
-階段由 3 個改為 5 個:
-
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `reward_config.default_referrer_code` + `resolve_default_referrer()` 子函數(首購判準/停權護欄/大小寫/自我推薦)——情境 D/E/F/H/I | ⬜ 未開始 | | |
-| 2 | 接進 `apply_referral_side_effects`(exception 隔離 + 回寫三欄位)+ `profiles.referred_by_is_default`——情境 A/B/C/G/L | ⬜ 未開始 | | |
-| 3 | 回歸:fresh 換線與 claim 路徑——情境 J/K | ⬜ 未開始 | | |
-| 4 | 契約 + API:`ProfileResponseSchema.isAutoReferral` | ⬜ 未開始 | | |
-| 5 | 前端抑制(`PaymentCheckout` / `CompleteProfile`)+ 規格書 §7/§8 同步——情境 M | ⬜ 未開始 | | |
+| 1 | `default_referrer_code` + `resolve_default_referrer`（D/E/F/H/I+正規化） | ✅ 綠 | `fe24bd9`→rebase 後 `1bcfd1e` | `3425ecc` |
+| 2 | 接進 `apply_referral_side_effects` + `referred_by_is_default`（A/B/C/G/L） | ✅ 綠 | `3828710` | `52a10df` |
+| 3 | fresh 換線清旗標 + claim 回歸 + 守衛釘住（J/K） | ✅ 綠 | `3593ffd` | `307be90` |
+| 4 | 契約 `isAutoReferral`（buildProfileResponse + ProfileResponseSchema） | ✅ 綠 | `84cba8e` | `b27fa67` |
+| 5 | 前端抑制（fetchReferrerInfo 早退 + placeholder）＋規格書 §7.4＋checklist 步驟 6 | ✅ 綠 | `8052029`（本機實測 2 failed） | `b60016a`（本機 4/4 綠） |
+
+> 註:後端（Deno/SQL）測試本機無 supabase CLI 跑不了,紅綠證據由 CI 的
+> api-tests 軌承載;前端（vitest）紅綠皆本機實測。
 
 ## 目前位置與下一步
 
-**三輪審查全部完成,規劃書已到 v4,無未處置 P0/P1。開始實作。**
+**五個階段全部完成。** 規格書 §7.4 已記載機制、§8.1 已 cross-reference,
+營運手冊已搬進 `docs/supabase-setup-checklist.md` 步驟 6（V3-5）。
+`check-spec-drift` / `check-document-naming` / `check-test-names` 皆綠。
 
-第三輪(v3)結果:P0 0、P1 8、P2 4,全數處置。兩個最重要的:
-- **V3-1** F/H 在 SQL 層回傳相同的零列,v3 的告警分類做不到 → 改用只做診斷
-  分類、不參與權限判定的輔助查詢,兩者都告警但 reason 不同
-- **V3-3** 抑制只做渲染層擋不住網路層 —— `fetchReferrerInfo` 照樣發
-  `GET /referrals/validate/<碼>` 並 console.log 印出碼與推薦人真名
-
-**v4 縮小了範圍**:撤回 §4.3(`CompleteProfile` 抑制)——系統視角證明
-`isEditing && isAutoReferral` 不可達(`/auth/reset-registration` 對有
-completed 訂單者回 400,而旗標為 true 者必然有),UI/UX 視角證明 v3 的佐證
-引用已不存在。改為在階段 3 補測試釘住那道守衛。
+下一步:清理規劃檔（鷹架,PR 前刪除）→ push → 開 CI 驗證 → PR ready。
 
 ## Blockers(逃生口紀錄)
 
-**三項人審裁決已全數完成,無阻擋開工的 blocker。**
-
-- [x] **既有 fresh 換線回溯發獎 bug** → 裁決 **(a) 另開 fix-bug**,已開
-  **GitHub issue #167**,不併入本 feature。
-- [x] **推薦網絡樹規模** → 裁決 **接受**,上線到 develop.uknow.pages.dev 與
-  uknow.com.tw 後再視實際狀況評估。維持 §7 觀察項。
-- [x] **`asa899869` 的存在性** → 確認**任何環境都不存在**。推薦碼由
-  `generate_referral_code()` 隨機產生、無法自選,只能以 SQL 指定;`code` 欄位
-  無格式 CHECK 故此碼合法,但 `user_id` 是 not null 外鍵,必須掛在真實帳號下。
-  建立步驟見 plan §5.5(**營運動作,非 migration**——帳號 uuid 在兩環境不同,
-  寫死會靜默失效)。
-  ⚠️ **測試仍一律自建測試用推薦碼當預設值**,不要依賴 `asa899869` 字面,
-  否則會走 fallback 路徑,綠燈卻沒證明任何事。
+- **紅燈一寫即綠（合法分支 1,記錄供人審知悉）**:階段 3 的兩支——
+  `reset-registration` 守衛釘住（守衛既存但從無測試保護,本 feature 的
+  §2.6 依賴它）與 claim 路徑情境 K（階段 2 的回寫已讓 claim 自然吃到
+  結果）。兩支的價值是回歸保護,不是新行為。
+- **後端紅綠證據在 CI**:本機無 supabase CLI 且 jsr.io 被網路層擋
+  （403,直連與代理皆然）,Deno 側型別檢查與 DB 測試均由 CI 把關。
+  pre-commit 已自動降級並註明。
 
 ## 框架摩擦
 
