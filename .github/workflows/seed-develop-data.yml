@@ -133,9 +133,12 @@ jobs:
           # ⚠️ 只在 repository secret 真的有值時才覆寫 PayUni 憑證。
           #
           # 舊版無條件帶入 repository secret 的 PAYUNI_TEST_* 三件套——GitHub 對不存在的
-          # （註：這段刻意不寫成 GitHub 運算式的字面形式。run 區塊裡任何位置的
-          #  ${{ }} 都會被求值，連 shell 註解也算，寫了帶萬用字元的假運算式
-          #  會讓整個 workflow 無法解析——2026-07-26 就是這樣壞掉一次。）
+          #
+          # ⚠️ 這幾行註解刻意完全不出現 GitHub 運算式的語法（雙大括號）：
+          #    run 區塊裡任何位置的運算式都會被求值，連 shell 註解也算。
+          #    2026-07-26 連續壞了兩次——先是寫了帶萬用字元的假運算式
+          #    （Unexpected symbol），改完又留下一組空的（An expression was
+          #    expected）。要示範語法就用文字描述，不要寫出那個符號。
           # secret 展開成空字串，於是這一步把分支上**原本設好的**測試憑證
           # 洗成空的，然後 resolvePayuniConfig 在 sandbox 模式找不到三件套
           # 就 500（run 30186374052 的真因，前五次執行都這樣洗過一次）。
