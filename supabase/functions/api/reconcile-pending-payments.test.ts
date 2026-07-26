@@ -19,14 +19,18 @@ async function seedPendingOrder(
   const tradeNo = `RECONCILE-${userId}`;
   const createdAt = new Date(Date.now() - ageMinutes * 60_000).toISOString();
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, created_at: createdAt,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    created_at: createdAt,
   });
   if (error) throw new Error(`seed pending order failed: ${error.message}`);
   return tradeNo;
 }
 
-Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/resolve functions', async () => {
+Deno.test('reconcilePendingOrders：透過注入的查詢／解析函式收斂卡單', async () => {
   const client = adminClient();
   const successUser = await createTestUser(client, { name: 'Stuck Success' });
   const stillPendingUser = await createTestUser(client, { name: 'Still Pending' });
@@ -40,9 +44,13 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
     const resolvedCalls: string[] = [];
     const summary = await reconcilePendingOrders(
       client,
+      // deno-lint-ignore require-await -- 注入的 test double 要符合 async 契約
       async (merTradeNo: string) => {
         if (merTradeNo === successTradeNo) {
-          return { stillProcessing: false, data: { MerTradeNo: merTradeNo, TradeNo: merTradeNo, Status: 'SUCCESS' } };
+          return {
+            stillProcessing: false,
+            data: { MerTradeNo: merTradeNo, TradeNo: merTradeNo, Status: 'SUCCESS' },
+          };
         }
         if (merTradeNo === stillPendingTradeNo) {
           return { stillProcessing: true };
@@ -59,7 +67,11 @@ Deno.test('reconcilePendingOrders resolves stuck orders via the injected query/r
       { thresholdMinutes: 20, limit: 50 },
     );
 
-    assertEquals(summary.checked, 2, `應該只掃到 2 筆超過門檻的 pending 訂單，實際 ${summary.checked}`);
+    assertEquals(
+      summary.checked,
+      2,
+      `應該只掃到 2 筆超過門檻的 pending 訂單，實際 ${summary.checked}`,
+    );
     assertEquals(summary.resolved, 1);
     assertEquals(summary.stillPending, 1);
     assertEquals(resolvedCalls, [successTradeNo]);

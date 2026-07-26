@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -16,7 +15,7 @@ interface Props {
 // 會員兩態模型：付款即訂閱 / 續訂（到期後付款接續）/ 重新訂。
 // 一次性年費、無自動扣款——沒有「取消／恢復／補繳／寬限期」，到期即失效。
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  active:  { label: '訂閱中', color: 'bg-green-100 text-green-800 border-green-300' },
+  active: { label: '訂閱中', color: 'bg-green-100 text-green-800 border-green-300' },
   expired: { label: '已失效', color: 'bg-red-100 text-red-800 border-red-300' },
 };
 
@@ -31,7 +30,10 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
   // active 顯示「訂閱中」；expired 老會員顯示「已失效」；never 不顯示徽章。
   const statusInfo = cardState === 'active' ? STATUS_MAP.active : STATUS_MAP.expired;
   // 到期前 30 天倒數提醒（active 會員）——到期即失效無寬限期，提醒往前移。
-  const noticeDaysLeft = renewalNoticeDaysLeft(subscriptionData?.status, subscriptionData?.activeUntil);
+  const noticeDaysLeft = renewalNoticeDaysLeft(
+    subscriptionData?.status,
+    subscriptionData?.activeUntil,
+  );
 
   return (
     <Card>
@@ -114,7 +116,8 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
               <div className="text-sm">
                 <span className="text-muted-foreground">訂閱週期：</span>
                 <span className="font-medium">
-                  {formatDate(subscriptionData.currentPeriodStart)} ~ {formatDate(subscriptionData.currentPeriodEnd)}
+                  {formatDate(subscriptionData.currentPeriodStart)} ~{' '}
+                  {formatDate(subscriptionData.currentPeriodEnd)}
                 </span>
               </div>
             )}

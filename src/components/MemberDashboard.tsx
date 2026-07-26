@@ -1,59 +1,62 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { UserContext } from '../App';
-import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft, Shield, Share2 } from 'lucide-react';
+import { Users, Settings, User, CheckSquare, Gift, Info, ArrowLeft } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useFeatures } from '../contexts/FeatureContext';
 import { useNotification } from './notifications/NotificationContext';
-import { shareReferralInvite } from '../utils/referralInvite';
-import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { JoinReferralProgramDialog } from './referral/JoinReferralProgramDialog';
+import { MyQrEntry } from './referral/MyQrEntry';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 export function MemberDashboard() {
-  const { user, setUser } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
-  const { showToast, showInfo } = useNotification();
+  const { showInfo } = useNotification();
 
   const { subscriptionData, isLoading } = useSubscription();
 
   // 刊登不在底部導覽裡，這張卡片是它的主入口——所以要能直接看出「我有沒有
   // 刊登、刊登的是什麼」，而不是只給一個看不出狀態的連結。
   const listingEnabled = isFeatureEnabled('serviceProviderManagement');
-  const { listing, loading: listingLoading, error: listingError } = useUserListing({
+  const {
+    listing,
+    loading: listingLoading,
+    error: listingError,
+  } = useUserListing({
     enabled: listingEnabled,
   });
   // 三態要分清楚：讀取中／讀取失敗／確定沒有刊登。只有第三種才顯示建立
   // CTA，否則會對已經有刊登的人喊「尚未刊登」。
   const hasNoListing = !listingLoading && !listingError && listing === null;
 
-  const [showJoinReferralDialog, setShowJoinReferralDialog] = useState(false);
-
   const handleShowProfileInfo = () => {
-    showInfo(
-      '修改會員資料',
-      '會員資料一經註冊後無法自行修改。',
-      ['如需更改基本資料，請透過 LINE 聯繫客服：', '📱 LINE 官方帳號：@Uknow']
-    );
-  };
-
-  const handleJoinReferralSuccess = (referralCode: string, joinedAt: string) => {
-    if (user) {
-      const updatedUser = { ...user, referralProgramJoined: true, referralProgramJoinedAt: joinedAt };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-    }
+    showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
+      '如需更改基本資料，請透過 LINE 聯繫客服：',
+      <>
+        📱 LINE 官方帳號：
+        <a href={LINE_OFFICIAL_ACCOUNT_URL} className="underline">
+          {LINE_OFFICIAL_ACCOUNT_HANDLE}
+        </a>
+      </>,
+    ]);
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBack}
+          className="shrink-0"
+          aria-label="返回上一頁"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
@@ -92,40 +95,10 @@ export function MemberDashboard() {
             <p className="text-sm text-muted-foreground">Email</p>
             <p className="font-medium truncate">{user?.email}</p>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">我的推薦碼</p>
-            <div className="flex items-center gap-2">
-              {user?.referralProgramJoined ? (
-                <>
-                  <p className="font-medium font-mono text-lg tracking-wider text-purple-600">
-                    {user?.referralCode || '未生成'}
-                  </p>
-                  {user?.referralCode && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => shareReferralInvite(user.referralCode!, showToast)}
-                      title="分享邀請連結與推薦碼"
-                      data-testid="share-referral-button"
-                    >
-                      <Share2 className="h-4 w-4 mr-1" />
-                      分享
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <Button
-                  onClick={() => setShowJoinReferralDialog(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                  size="sm"
-                >
-                  <Shield className="mr-2 h-4 w-4" />
-                  加入推薦計畫
-                </Button>
-              )}
-            </div>
-          </div>
+          {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
+              呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
+              所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
+          <MyQrEntry />
         </CardContent>
       </Card>
 
@@ -215,16 +188,7 @@ export function MemberDashboard() {
       </div>
 
       {/* 訂閱狀態 */}
-      <SubscriptionStatusCard
-        subscriptionData={subscriptionData}
-        isLoading={isLoading}
-      />
-
-      <JoinReferralProgramDialog
-        open={showJoinReferralDialog}
-        onClose={() => setShowJoinReferralDialog(false)}
-        onSuccess={handleJoinReferralSuccess}
-      />
+      <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
     </div>
   );
 }

@@ -20,7 +20,8 @@ import {
   payForUser,
 } from './test-helpers.ts';
 
-const DB_URL = Deno.env.get('SUPABASE_DB_URL') ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 let seq = 0;
 
@@ -58,7 +59,9 @@ Deno.test('卡單訂單（pending + SUCCESS 存檔）被補完成訂閱，step �
   try {
     const tradeNo = await seedStuckOrder(client, user.id, successResponse);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
+    const { data, error } = await client.rpc('complete_paid_pending_orders', {
+      p_user_id: user.id,
+    });
     assertEquals(error, null);
     assertEquals(data.completed_count, 1, `expected 1 completed, got ${JSON.stringify(data)}`);
 
@@ -99,7 +102,9 @@ Deno.test('自癒也會補上推薦鏈（推薦邊 + gen1 獎勵 + 任務進度�
   try {
     await seedStuckOrder(client, payer.id, successResponse);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', { p_user_id: payer.id });
+    const { data, error } = await client.rpc('complete_paid_pending_orders', {
+      p_user_id: payer.id,
+    });
     assertEquals(error, null);
     assertEquals(data.completed_count, 1);
 
@@ -135,11 +140,16 @@ Deno.test('FAILED 回應與無回應的 pending 訂單不是候選，不會被�
 
   try {
     const failedTradeNo = await seedStuckOrder(client, user.id, (tn) => ({
-      Status: 'FAILED', MerTradeNo: tn, TradeAmt: '1200', ResCode: '51',
+      Status: 'FAILED',
+      MerTradeNo: tn,
+      TradeAmt: '1200',
+      ResCode: '51',
     }));
     const emptyTradeNo = await seedStuckOrder(client, user.id, null);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
+    const { data, error } = await client.rpc('complete_paid_pending_orders', {
+      p_user_id: user.id,
+    });
     assertEquals(error, null);
     assertEquals(data.candidates_found, 0);
 
@@ -160,7 +170,11 @@ Deno.test('金額不符：維持 pending、不建訂閱、告警去重（重跑�
   const user = await createTestUser(client, { name: 'Amount Mismatch' });
 
   try {
-    const tradeNo = await seedStuckOrder(client, user.id, (tn) => successResponse(tn, { TradeAmt: '9999' }));
+    const tradeNo = await seedStuckOrder(
+      client,
+      user.id,
+      (tn) => successResponse(tn, { TradeAmt: '9999' }),
+    );
 
     const run = () => client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
     const first = await run();
@@ -243,7 +257,10 @@ Deno.test('並發自癒同一使用者：仍然只有 1 筆訂閱、1 筆 gen1 �
   const { error: payErr } = await payForUser(client, referrer.id);
   assertEquals(payErr, null);
   const refCode = await getActiveReferralCode(client, referrer.id);
-  const payer = await createTestUser(client, { name: 'Concurrent Heal Payer', referredByCode: refCode });
+  const payer = await createTestUser(client, {
+    name: 'Concurrent Heal Payer',
+    referredByCode: refCode,
+  });
 
   // 跟 process-payment-concurrency.test.ts 同一招：原生連線才能讓兩個
   // 呼叫真正在 DB 層同時執行（模擬 profile 載入自癒與排程對帳撞在一起）。

@@ -46,3 +46,60 @@ def test_every_non_root_has_reachable_parent_chain(nodes):
             seen.add(cur)
             cur = nodes[cur]
         assert cur == "A0"
+
+
+# --------------------------------------------------------------------------
+# develop 示範資料樹（orgchart-develop-seed.yaml）
+#
+# 與測試樹是兩張獨立的圖、兩種生命週期（種子資料留著、測試資料跑完刪），
+# 但共用同一套載入與計算——所以同一組不變式必須在兩張圖上都成立。
+# --------------------------------------------------------------------------
+
+SEED_PATH = orgchart.JOURNEY_DIR / "orgchart-develop-seed.yaml"
+
+
+@pytest.fixture
+def seed_nodes():
+    return orgchart.load_nodes(SEED_PATH)
+
+
+def test_seed_chart_shape_is_32_8_4(seed_nodes):
+    """人審指定的形狀（2026-07-25）：第 1 代 32、第 2 代 8、第 3 代 4。"""
+    levels = orgchart.generation_levels(seed_nodes)
+    assert [len(level) for level in levels] == [1, 32, 8, 4]
+    assert len(seed_nodes) == 45
+
+
+def test_seed_chart_keeps_a_zero_reward_control_group(seed_nodes):
+    """B9–B32 沒有下線＝帳上恆 0P 的對照組。
+
+    這不是巧合而是設計：畫面上要同時看得到「有下線的」與「沒下線的」
+    兩種會員，獎勵明細的差異才顯示得出來。掛法改了要一起改這條。
+    """
+    zero = [n for n in seed_nodes if orgchart.expected_reward_count(seed_nodes, n) == 0]
+    assert len(zero) >= 24
+
+
+def test_seed_chart_expected_rewards_match_yaml_ledger(seed_nodes):
+    expected = orgchart.load_expected_rewards(SEED_PATH)
+    assert expected, "orgchart-develop-seed.yaml 缺 expected_rewards"
+    for node, points in expected.items():
+        count = orgchart.expected_reward_count(seed_nodes, node)
+        assert count * 100 == points, f"{node}: 筆數 {count}×100 ≠ yaml {points}"
+
+
+def test_seed_chart_root_collects_from_all_three_generations(seed_nodes):
+    """root 的 44 筆＝32+8+4，全樹發出 6,000P。"""
+    assert orgchart.expected_reward_count(seed_nodes, "A0") == 44
+    total = sum(orgchart.expected_reward_count(seed_nodes, n) for n in seed_nodes)
+    assert total * 100 == 6000
+
+
+def test_orgchart_path_override_switches_chart(monkeypatch):
+    """JOURNEY_ORGCHART_PATH 換圖；未設時仍是測試樹（預設不可被影響）。"""
+    monkeypatch.delenv("JOURNEY_ORGCHART_PATH", raising=False)
+    assert orgchart.active_orgchart_path() == orgchart.ORGCHART_PATH
+
+    monkeypatch.setenv("JOURNEY_ORGCHART_PATH", "orgchart-develop-seed.yaml")
+    assert orgchart.active_orgchart_path() == SEED_PATH
+    assert len(orgchart.load_nodes()) == 45

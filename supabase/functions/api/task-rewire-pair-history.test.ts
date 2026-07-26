@@ -13,8 +13,8 @@ import {
   adminClient,
   createTestUser,
   deleteTestUsers,
-  payForUser,
   getActiveReferralCode,
+  payForUser,
 } from './test-helpers.ts';
 
 async function countReferee(

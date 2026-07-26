@@ -44,16 +44,17 @@ export function SystemNotifications() {
   const fetchAnnouncements = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await apiRequestJson<{ success: boolean; data: { announcements: AdminAnnouncement[] } }>(
-        buildApiUrl('/admin/announcements')
-      );
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: { announcements: AdminAnnouncement[] };
+      }>(buildApiUrl('/admin/announcements'));
       if (result.success) setAnnouncements(result.data.announcements);
     } catch (err) {
       showToast(err instanceof Error ? err.message : '無法取得公告列表', 'error');
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -80,7 +81,7 @@ export function SystemNotifications() {
             startsAt: toIso(form.startsAt),
             endsAt: toIso(form.endsAt) ?? null,
           }),
-        }
+        },
       );
       if (result.success) {
         showSuccess('公告已發布', '生效期間內全站橫幅將顯示這則公告');
@@ -100,7 +101,7 @@ export function SystemNotifications() {
     try {
       const result = await apiRequestJson<{ success: boolean }>(
         buildApiUrl(`/admin/announcements/${id}`),
-        { method: 'DELETE' }
+        { method: 'DELETE' },
       );
       if (result.success) {
         showSuccess('公告已刪除', '');
@@ -113,10 +114,14 @@ export function SystemNotifications() {
 
   const getTypeBadge = (type: string) => {
     switch (type) {
-      case 'info':    return <Badge variant="default">資訊</Badge>;
-      case 'warning': return <Badge className="bg-orange-500">警告</Badge>;
-      case 'error':   return <Badge variant="destructive">錯誤</Badge>;
-      default:        return <Badge variant="outline">{type}</Badge>;
+      case 'info':
+        return <Badge variant="default">資訊</Badge>;
+      case 'warning':
+        return <Badge className="bg-orange-500">警告</Badge>;
+      case 'error':
+        return <Badge variant="destructive">錯誤</Badge>;
+      default:
+        return <Badge variant="outline">{type}</Badge>;
     }
   };
 
@@ -222,9 +227,7 @@ export function SystemNotifications() {
             <Bell className="h-5 w-5" />
             公告列表
           </CardTitle>
-          <CardDescription>
-            查看與管理所有公告
-          </CardDescription>
+          <CardDescription>查看與管理所有公告</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (

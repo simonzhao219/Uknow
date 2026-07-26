@@ -5,19 +5,19 @@ import { projectId } from './supabase/info';
 const BASE = `https://${projectId}.supabase.co/functions/v1/api`;
 
 describe('buildApiUrl', () => {
-  it('appends a path that already has a leading slash', () => {
+  it('路徑本來就有前導斜線時原樣接上', () => {
     expect(buildApiUrl('/rewards')).toBe(`${BASE}/rewards`);
   });
 
-  it('adds the leading slash when the path lacks one', () => {
+  it('路徑缺前導斜線時補上', () => {
     expect(buildApiUrl('rewards')).toBe(`${BASE}/rewards`);
   });
 
-  it('does not double the slash', () => {
+  it('不產生重複斜線', () => {
     expect(buildApiUrl('/listings/upload-photo')).toBe(`${BASE}/listings/upload-photo`);
   });
 
-  it('handles an empty path as the api root', () => {
+  it('空路徑視為 api 根路徑', () => {
     expect(buildApiUrl('')).toBe(`${BASE}/`);
   });
 });
@@ -29,18 +29,19 @@ describe('buildApiUrl', () => {
 // 「請求失敗 (400)」這類通用文案。
 describe('extractApiErrorMessage', () => {
   it('解析字串形信封 { error: string }', () => {
-    expect(extractApiErrorMessage({ error: '已有有效訂閱，請到期後再續約' }, 'fallback'))
-      .toBe('已有有效訂閱，請到期後再續約');
+    expect(extractApiErrorMessage({ error: '已有有效訂閱，請到期後再續約' }, 'fallback')).toBe(
+      '已有有效訂閱，請到期後再續約',
+    );
   });
 
   it('解析物件形信封 { error: { message } }', () => {
-    expect(extractApiErrorMessage({ error: { message: '未授權' } }, 'fallback'))
-      .toBe('未授權');
+    expect(extractApiErrorMessage({ error: { message: '未授權' } }, 'fallback')).toBe('未授權');
   });
 
   it('解析頂層 message 欄位', () => {
-    expect(extractApiErrorMessage({ message: '身分證字號不正確' }, 'fallback'))
-      .toBe('身分證字號不正確');
+    expect(extractApiErrorMessage({ message: '身分證字號不正確' }, 'fallback')).toBe(
+      '身分證字號不正確',
+    );
   });
 
   it('無法辨識時回傳 fallback', () => {

@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import requests
 from playwright.sync_api import Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
+from builders.page_diagnostics import dump_page
 from builders.payuni_sandbox_page import SANDBOX_URL_GLOB, PayuniSandboxPage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.payment_result_page import PaymentResultPage
@@ -29,7 +31,9 @@ def pay_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> Non
 
     if cfg.payment_mode == "sandbox":
         checkout.click_pay()
-        PayuniSandboxPage(page).complete_payment(cfg.card_number, cfg.card_expiry, cfg.card_cvv)
+        PayuniSandboxPage(page).complete_payment(
+            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email
+        )
     elif cfg.payment_mode == "webhook":
         _arm_webhook_gateway(page, cfg, admin, user)
         checkout.click_pay()
@@ -37,7 +41,16 @@ def pay_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> Non
         raise ValueError(f"未知的 JOURNEY_PAYMENT_MODE: {cfg.payment_mode}")
 
     # sandbox：PayUni 302 回 /payment/result；webhook：攔截 handler 302 過去。
-    page.wait_for_url("**/payment/result**", timeout=180_000)
+    try:
+        page.wait_for_url("**/payment/result**", timeout=180_000)
+    except PlaywrightTimeoutError as exc:
+        # 逾時只知道「沒回來」，不知道停在哪——把當下的頁面帶回來。
+        # 金流頁的失敗通常直接寫在畫面上（授權失敗、卡片不符、還有一層
+        # 確認…），dump_page 的頁面文字一眼就能分辨是哪一種。
+        raise RuntimeError(
+            f"送出付款後 180 秒內沒有回到 /payment/result（{user.node}）。\n"
+            f"{dump_page(page, f'payment-timeout-{user.node}')}"
+        ) from exc
     assert_payment_success(page)
 
 

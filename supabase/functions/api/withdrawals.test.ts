@@ -4,13 +4,12 @@
 //   * 生命週期：pending → awaiting_collection → completed / rejected
 //   * 業務規則：金額級距、一天一次（台灣日）、餘額、會籍、證件照
 // ============================================================
-import { assertEquals, assert } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
-  getActiveReferralCode,
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
@@ -40,15 +39,25 @@ async function createWithdrawableUser(client: ReturnType<typeof adminClient>, ba
   }).eq('id', user.id);
   if (balance > 0) {
     await client.from('reward_transactions').insert({
-      user_id: user.id, type: 'adjustment', amount: balance, description: '測試點數',
+      user_id: user.id,
+      type: 'adjustment',
+      amount: balance,
+      description: '測試點數',
     });
   }
   return user;
 }
 
-async function requestWithdrawal(client: ReturnType<typeof adminClient>, userId: string, amount: number) {
+async function requestWithdrawal(
+  client: ReturnType<typeof adminClient>,
+  userId: string,
+  amount: number,
+) {
   return await client.rpc('request_withdrawal', {
-    p_user_id: userId, p_amount: amount, p_bank_code: '812', p_bank_account: '1234567890123',
+    p_user_id: userId,
+    p_amount: amount,
+    p_bank_code: '812',
+    p_bank_account: '1234567890123',
   });
 }
 
@@ -104,7 +113,10 @@ Deno.test('request_withdrawal：驗證規則（金額級距/餘額/證件照/會
 
     // 補 1 點後可提領（邊界 1015）
     await client.from('reward_transactions').insert({
-      user_id: user.id, type: 'adjustment', amount: 1, description: '補足邊界',
+      user_id: user.id,
+      type: 'adjustment',
+      amount: 1,
+      description: '補足邊界',
     });
     r = await requestWithdrawal(client, user.id, 1000);
     assertEquals(r.data?.success, true, JSON.stringify(r.data));
@@ -113,17 +125,22 @@ Deno.test('request_withdrawal：驗證規則（金額級距/餘額/證件照/會
     const user2 = await createTestUser(client, { name: 'No Photos' });
     await payForUser(client, user2.id);
     await client.from('profiles').update({
-      referral_program_joined: true, national_id: 'B123456789',
+      referral_program_joined: true,
+      national_id: 'B123456789',
     }).eq('id', user2.id);
     await client.from('reward_transactions').insert({
-      user_id: user2.id, type: 'adjustment', amount: 5000, description: '測試點數',
+      user_id: user2.id,
+      type: 'adjustment',
+      amount: 5000,
+      description: '測試點數',
     });
     const r2 = await requestWithdrawal(client, user2.id, 1000);
     assertEquals(r2.data?.error_code, 'missing_id_photos');
 
     // 會籍過期（expired）不能提領
     await client.from('profiles').update({
-      id_card_front_path: 'x/front.jpg', id_card_back_path: 'x/back.jpg',
+      id_card_front_path: 'x/front.jpg',
+      id_card_back_path: 'x/back.jpg',
     }).eq('id', user2.id);
     await client.from('subscriptions').update({
       end_date: new Date(Date.now() - 86400_000).toISOString(),
@@ -151,28 +168,34 @@ Deno.test('生命週期：已匯款 → 查收完成；退件 → 點數退回�
 
     // 非 pending 不能查收
     const { data: early } = await client.rpc('confirm_withdrawal_collection', {
-      p_user_id: user.id, p_withdrawal_id: req!.withdrawal_id,
+      p_user_id: user.id,
+      p_withdrawal_id: req!.withdrawal_id,
     });
     assertEquals(early?.error_code, 'invalid_status');
 
     // admin 標記已匯款
     const { data: marked } = await client.rpc('admin_update_withdrawal_status', {
-      p_admin_id: admin.id, p_withdrawal_id: req!.withdrawal_id,
-      p_status: 'awaiting_collection', p_note: null,
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
     });
     assertEquals(marked?.success, true, JSON.stringify(marked));
 
     // 使用者查收 → completed；重複查收冪等
     const { data: confirmed } = await client.rpc('confirm_withdrawal_collection', {
-      p_user_id: user.id, p_withdrawal_id: req!.withdrawal_id,
+      p_user_id: user.id,
+      p_withdrawal_id: req!.withdrawal_id,
     });
     assertEquals(confirmed?.success, true);
     const { data: again } = await client.rpc('confirm_withdrawal_collection', {
-      p_user_id: user.id, p_withdrawal_id: req!.withdrawal_id,
+      p_user_id: user.id,
+      p_withdrawal_id: req!.withdrawal_id,
     });
     assertEquals(again?.idempotent, true);
 
-    let { data: bal } = await client.from('reward_balances').select('*').eq('user_id', user.id).single();
+    let { data: bal } = await client.from('reward_balances').select('*').eq('user_id', user.id)
+      .single();
     assertEquals(bal!.withdrawn, 1015);
     assertEquals(bal!.pending, 0);
 
@@ -185,11 +208,14 @@ Deno.test('生命週期：已匯款 → 查收完成；退件 → 點數退回�
 
     const { data: req3 } = await requestWithdrawal(client, user.id, 2000);
     assertEquals(req3?.success, true, JSON.stringify(req3));
-    const balBefore = (await client.from('reward_balances').select('*').eq('user_id', user.id).single()).data!;
+    const balBefore =
+      (await client.from('reward_balances').select('*').eq('user_id', user.id).single()).data!;
 
     const { data: rejected } = await client.rpc('admin_update_withdrawal_status', {
-      p_admin_id: admin.id, p_withdrawal_id: req3!.withdrawal_id,
-      p_status: 'rejected', p_note: '銀行帳號有誤',
+      p_admin_id: admin.id,
+      p_withdrawal_id: req3!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '銀行帳號有誤',
     });
     assertEquals(rejected?.success, true);
 
@@ -201,24 +227,31 @@ Deno.test('生命週期：已匯款 → 查收完成；退件 → 點數退回�
 
     // 重複退件冪等（不會退兩次）
     const { data: rejectAgain } = await client.rpc('admin_update_withdrawal_status', {
-      p_admin_id: admin.id, p_withdrawal_id: req3!.withdrawal_id,
-      p_status: 'rejected', p_note: null,
+      p_admin_id: admin.id,
+      p_withdrawal_id: req3!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: null,
     });
     assertEquals(rejectAgain?.idempotent, true);
-    const balAfter = (await client.from('reward_balances').select('*').eq('user_id', user.id).single()).data!;
+    const balAfter =
+      (await client.from('reward_balances').select('*').eq('user_id', user.id).single()).data!;
     assertEquals(balAfter.available, bal!.available);
 
     // 已退件不能再標已匯款
     const { data: invalid } = await client.rpc('admin_update_withdrawal_status', {
-      p_admin_id: admin.id, p_withdrawal_id: req3!.withdrawal_id,
-      p_status: 'awaiting_collection', p_note: null,
+      p_admin_id: admin.id,
+      p_withdrawal_id: req3!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
     });
     assertEquals(invalid?.error_code, 'invalid_transition');
 
     // 非管理員被拒
     const { data: forbidden } = await client.rpc('admin_update_withdrawal_status', {
-      p_admin_id: user.id, p_withdrawal_id: req3!.withdrawal_id,
-      p_status: 'awaiting_collection', p_note: null,
+      p_admin_id: user.id,
+      p_withdrawal_id: req3!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
     });
     assertEquals(forbidden?.error_code, 'forbidden');
   } finally {
@@ -259,7 +292,12 @@ Deno.test('HTTP 端點：withdraw / points-preview / verify-id / 提領記錄', 
     const withdraw = await app.request('/api/rewards/withdraw', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: 1000, idNumber: ID_NUMBER, bankCode: '812', bankAccount: '1234-5678-901234' }),
+      body: JSON.stringify({
+        amount: 1000,
+        idNumber: ID_NUMBER,
+        bankCode: '812',
+        bankAccount: '1234-5678-901234',
+      }),
     });
     const withdrawBody = await withdraw.json();
     assertEquals(withdrawBody.success, true, JSON.stringify(withdrawBody));

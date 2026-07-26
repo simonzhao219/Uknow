@@ -3,9 +3,15 @@
 // 讓這兩個測試變紅。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
-import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  getActiveReferralCode,
+  payForUser,
+} from './test-helpers.ts';
 
-Deno.test('a peripheral referral/reward failure does not roll back the core payment commit', async () => {
+Deno.test('周邊的推薦／獎勵失敗不得回滾核心付款交易', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
 
@@ -43,7 +49,10 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
         .single();
       assertEquals(profile?.registration_step, 3);
 
-      const { data: subs } = await client.from('subscriptions').select('id').eq('user_id', payer.id);
+      const { data: subs } = await client.from('subscriptions').select('id').eq(
+        'user_id',
+        payer.id,
+      );
       assertEquals(subs?.length, 1);
 
       // 周邊邏輯的 task 段（Block B）確實失敗了（monthly_referrals 形狀壞掉，
@@ -56,7 +65,11 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
         .from('reward_transactions')
         .select('id, generation')
         .eq('referee_user_id', payer.id);
-      assertEquals(rewards?.length, 1, 'gen1 獎勵應在 task 段失敗下仍保留（Block A 與 Block B 已隔離）');
+      assertEquals(
+        rewards?.length,
+        1,
+        'gen1 獎勵應在 task 段失敗下仍保留（Block A 與 Block B 已隔離）',
+      );
     } finally {
       await deleteTestUsers(client, [payer.id]);
     }
@@ -65,7 +78,7 @@ Deno.test('a peripheral referral/reward failure does not roll back the core paym
   }
 });
 
-Deno.test('renewal payment reuses the existing active referral code (no duplicate-code rollback)', async () => {
+Deno.test('續約付款沿用既有 active 推薦碼（不因重複碼而回滾）', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Renewing Member' });
 

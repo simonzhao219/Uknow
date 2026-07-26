@@ -53,7 +53,7 @@ function listingRow(userId: string, overrides: Record<string, unknown> = {}) {
 // (A1) POST /listings/verify-referral-code
 // ============================================================
 
-Deno.test('verify-referral-code: empty code is rejected', async () => {
+Deno.test('verify-referral-code：空推薦碼被拒', async () => {
   const res = await app.request('/api/listings/verify-referral-code', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -65,7 +65,7 @@ Deno.test('verify-referral-code: empty code is rejected', async () => {
   assertEquals(body.error?.message, '推薦碼不能為空');
 });
 
-Deno.test('verify-referral-code: unknown code is invalid', async () => {
+Deno.test('verify-referral-code：不存在的推薦碼判為無效', async () => {
   const res = await app.request('/api/listings/verify-referral-code', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ Deno.test('verify-referral-code: unknown code is invalid', async () => {
   assertEquals(body.valid, false);
 });
 
-Deno.test('verify-referral-code: an active member\'s code validates', async () => {
+Deno.test('verify-referral-code：有效會員的推薦碼通過驗證', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: '推薦人' });
   try {
@@ -102,7 +102,7 @@ Deno.test('verify-referral-code: an active member\'s code validates', async () =
 //      不在此層測試）
 // ============================================================
 
-Deno.test('upload-photo: rejects an unauthenticated request', async () => {
+Deno.test('upload-photo：未驗證的請求被拒', async () => {
   const res = await app.request('/api/listings/upload-photo', {
     method: 'POST',
     body: new FormData(),
@@ -111,7 +111,7 @@ Deno.test('upload-photo: rejects an unauthenticated request', async () => {
   await res.body?.cancel();
 });
 
-Deno.test('upload-photo: rejects when no file is provided', async () => {
+Deno.test('upload-photo：沒帶檔案時被拒', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: '上傳者' });
   try {
@@ -129,7 +129,7 @@ Deno.test('upload-photo: rejects when no file is provided', async () => {
   }
 });
 
-Deno.test('upload-photo: rejects a disallowed file type', async () => {
+Deno.test('upload-photo：不允許的檔案類型被拒', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: '上傳者' });
   try {
@@ -149,7 +149,7 @@ Deno.test('upload-photo: rejects a disallowed file type', async () => {
   }
 });
 
-Deno.test('upload-photo: rejects a file larger than 5MB', async () => {
+Deno.test('upload-photo：超過 5MB 的檔案被拒', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: '上傳者' });
   try {
@@ -175,7 +175,7 @@ Deno.test('upload-photo: rejects a file larger than 5MB', async () => {
 //     （檢視表 WHERE has_active_subscription() 對所有角色生效，含 service-role）
 // ============================================================
 
-Deno.test('public_listings: an active member\'s listing is visible, an unpaid member\'s is not', async () => {
+Deno.test('public_listings：有效會員的刊登可見、未付款會員的不可見', async () => {
   const admin = adminClient();
   const activeUser = await createTestUser(admin, { name: '有效會員' });
   const unpaidUser = await createTestUser(admin, { name: '未付款會員' });
@@ -196,7 +196,7 @@ Deno.test('public_listings: an active member\'s listing is visible, an unpaid me
   }
 });
 
-Deno.test('public_listings: suspending an active member hides their listing', async () => {
+Deno.test('public_listings：停權後該會員的刊登消失', async () => {
   const admin = adminClient();
   const user = await createTestUser(admin, { name: '被停權會員' });
   try {
@@ -211,6 +211,54 @@ Deno.test('public_listings: suspending an active member hides their listing', as
 
     const after = await admin.from('public_listings').select('id').eq('user_id', user.id);
     assertEquals(after.data?.length, 0);
+  } finally {
+    await deleteTestUsers(admin, [user.id]);
+  }
+});
+
+// public_listings 是**唯一**對 anon 開放 select 的資料表面
+// （0620000003 / 0620000004 的 grant select ... to anon, authenticated）。
+// 它現在是顯式欄位清單，但只要有人把它改成 select l.*，listings 之後
+// 新增的任何欄位都會立刻對全世界可見——而那種 diff 在 review 時看起來
+// 只是「簡化」。這條把可見欄位釘成白名單。
+//
+// ⚠️ 這不等於「RLS 已被驗證」：本地 supabase 的 anon/authenticated 缺
+// table GRANT（見檔頭），policy 本身在這個環境測不到。RLS 的行為驗證
+// 只能在 hosted 環境做，是 journey 套件的待補項。
+Deno.test('public_listings: 對外可見欄位是白名單，不得無聲增加', async () => {
+  const admin = adminClient();
+  const user = await createTestUser(admin, { name: '欄位白名單' });
+  try {
+    await payForUser(admin, user.id);
+    await admin.from('listings').insert(listingRow(user.id, { name: '欄位檢查' }));
+
+    const { data } = await admin
+      .from('public_listings')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    const expected = [
+      'id',
+      'user_id',
+      'name',
+      'category',
+      'city',
+      'districts',
+      'gender',
+      'photos',
+      'contacts',
+      'description',
+      'created_at',
+      'updated_at',
+    ].sort();
+
+    assertEquals(
+      Object.keys(data ?? {}).sort(),
+      expected,
+      'public_listings 的欄位變了。新增欄位＝對未登入訪客公開，' +
+        '請確認那是刻意的（例如絕不可出現 national_id / bank_account / phone）',
+    );
   } finally {
     await deleteTestUsers(admin, [user.id]);
   }

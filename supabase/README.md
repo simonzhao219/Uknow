@@ -1,88 +1,149 @@
-# Uknow 後端（重構版）
+# Uknow 後端（Supabase）
 
-本目錄是 Uknow 重新設計後的後端，採 **Supabase（PostgreSQL + Auth + Storage）** 為基礎，
-取代舊版「單一 KV 表 + 15000 行手動維護 JSON」的架構。
+Supabase（PostgreSQL + Auth + Storage）+ 單一 Edge Function。
+取代舊版「單一 KV 表 + 15,000 行手動維護 JSON」的架構。
+
+> **業務規則不在這裡**：完整規則見 `docs/uknow-software-specification.md`。
+> 本文件只講**後端結構**（schema、函數、部署）。規則寫兩份必然漂移
+> ——這份 README 就曾把獎金與任務門檻寫成早已作廢的舊值。
 
 ## 設計核心：單一真相來源（SSOT）
 
-舊系統最大的問題是**同一個事實存好幾份、彼此對不上**，因此需要 `data_repair.ts`
-（2050 行）和針對個別用戶的 hotfix。新設計遵守一條鐵律：
+舊系統最大的問題是**同一個事實存好幾份、彼此對不上**，因此需要
+`data_repair.ts`（2,050 行）和針對個別用戶的 hotfix。新設計遵守一條鐵律：
 
 > **每個事實只存一次。能算出來的，就即時算，絕不另存第二份。**
 
 | 想知道的事 | 舊版（存多份，會打架） | 新版（即時算） |
 |---|---|---|
-| 會員是否有效 | account_status + subscription.status + listing.isActive | `user_account_status` View（用訂閱日期算） |
-| 刊登能否被看到 | listing.isActive | `public_listings` View（用訂閱算） |
-| 點數餘額 | rewards 快取欄位 | `reward_balances` View（用流水帳加總） |
-| 三代推薦樹 | referral_tree 快取 | `referral_tree()` 函數（用 referral_edges 爬） |
+| 會員是否有效 | `account_status` + `subscription.status` + `listing.isActive` | `user_account_status` View（用訂閱日期算） |
+| 刊登能否被看到 | `listing.isActive` | `public_listings` View（用訂閱算） |
+| 點數餘額 | `rewards` 快取欄位 | `reward_balances` View（用流水帳加總） |
+| 三代推薦樹 | `referral_tree` 快取 | `referral_tree()` 函數（爬 `referral_edges`） |
+| 註冊進度 | 前端 state | `effective_registration_step()`（用實際資料推導） |
+
+同一條鐵律延伸出第二條：**會變的業務數字收斂到 `reward_config` 單列表**，
+SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的血淚史）。
 
 ## 資料表（真相表）
 
 | 表 | 說明 | 筆數 |
 |---|---|---|
-| `profiles` | 用戶資料（email 由 auth.users 管） | 1/人 |
+| `profiles` | 用戶資料（email 由 `auth.users` 管） | 1/人 |
 | `listings` | 刊登（一人一個，1:1） | ≤1/人 |
 | `subscriptions` | 訂閱歷史（不存 status 欄位） | N/人 |
+| `payment_orders` | 付款訂單歷史（含 `renewal_mode`） | N/人 |
 | `referral_codes` | 推薦碼歷史（同時僅 1 個 active） | N/人 |
-| `payment_orders` | 付款訂單歷史 | N/人 |
 | `referral_edges` | 推薦關係（只記直接上線一層） | 1/人 |
 | `reward_transactions` | 點數流水帳（只進不改） | N |
 | `withdrawals` | 提領申請 | N |
-| `task_progress` | 任務計數器 | 1/人 |
+| `task_progress` | 任務計數器（`monthly_referrals` jsonb） | 1/人 |
+| `referral_king_rewards` | 推薦王「免費續約 1 年」credit（可多張） | N/人 |
+| `reward_config` | 業務常數單列表（獎金額度、推薦王門檻） | 1（全域） |
+| `announcements` | 系統公告 | N |
+| `system_alerts` | 背景失敗告警（warning-only 隔離的落點） | N |
+| `rate_limits` | 端點限流計數 | N |
 
 ## 衍生 View / 函數（即時計算）
 
-- `user_account_status` — 會員現在狀態（active / grace / expired）
+**View**
+
+- `user_account_status` — 會員現在狀態（**兩態：active / expired**，無寬限期）
 - `public_listings` — 訪客瀏覽（只含有效會員的刊登）
-- `reward_balances` — 點數餘額（total_earned / available / withdrawn）
-- `referral_tree(user_id)` — 三代推薦樹
-- `validate_referral_code(code)` — 註冊頁推薦碼驗證（訪客可呼叫）
-- `generate_referral_code()` — 產生唯一推薦碼
-- `has_active_subscription(user_id)` — 判斷會員是否有效（公開瀏覽用）
+- `reward_balances` — 點數餘額（`total_earned` / `available` / `withdrawn`）
+- `reward_transactions_with_balance` — 明細 + 逐筆結餘 + `source_category` 分類
 
-## 業務規則（v2，依使用者最終確認）
+**關鍵函數**（完整清單見 migrations）
 
-- 訂閱：**一次性付款 1200 元 / 一年**，**不自動續扣**；到期前一個月寄信通知，
-  未續約則帳號失效（寬限期欄位保留，預設仍可設 60 天緩衝）
-- 推薦獎勵：**3 代**，每代 **120 點**（= 10 點 × 12 個月），
-  **付款當下一次發清**，直接入流水帳，無每月排程、無待發
-- 任務：**推薦王**（單月推薦 10 人 → 1000 點）。
-  ~~連續推薦達人~~ 已取消
-- 點數：**1 點 = 1 元**，每日限提領一次
-- 認證：Email + 密碼（Supabase Auth），保留 email 驗證信；
-  身分證字號（national_id）、手寫簽名（加入推薦計畫者才需要）皆保留
+| 函數 | 用途 |
+|---|---|
+| `process_successful_payment` | 付款成功的總入口（訂閱效期、推薦連動） |
+| `apply_referral_side_effects` | 推薦碼 / 推薦邊 / 三代獎勵 / 任務計數 |
+| `pay_referral_generations` | **三代發獎的單一真相**（付款與任務續約共用） |
+| `reconcile_king_credits` | 推薦王 credit 對帳補發（自癒） |
+| `claim_referral_king_reward` | 領取免費續約 credit（延展效期 + 連動發獎） |
+| `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
+| `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
+| `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
+| `referral_tree` | 三代推薦樹（只往下爬 3 層，限自己/admin） |
+| `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人） |
+| `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
+| `effective_registration_step` | 註冊進度即時推導 |
+| `tw_day` / `tw_start_of_day` / `tw_end_of_day` | 台灣時區日界（月份 key、單日限額都靠它） |
 
-## 架構（混合模式）
+**慣例**：業務函數一律 `security definer` + `set search_path = public`，
+並 `revoke execute ... from anon, authenticated, public`——只由 Edge Function
+以 service_role 呼叫。金流相關函數的每個副作用各包一層 `begin…exception`
+（warning-only），單一步驟失敗只寫 `system_alerts`，不整筆回滾。
 
-- 瀏覽 / 讀取（listings、profile、餘額）→ 前端用 supabase-js 直連，RLS 保護
-- 複雜寫入（付款、發獎勵、cron）→ Edge Functions 用 service_role
-- 認證 / Session → 全面交給 supabase-js 內建（自動 refresh token）
+## Edge Function
+
+單一函數 `functions/api/index.ts`（Deno + Hono，掛在 `/api` basePath）。
+
+- **`verify_jwt` 必須為 `false`**：PayUni 的付款回調不帶 Supabase JWT，
+  gateway 層驗 JWT 會直接擋掉。函數內以 `requireAuth()` 逐路由自行驗證，
+  公開端點（`/health`、webhook）刻意不驗。
+- 部署由 `.github/workflows/deploy-supabase.yml` 在**該分支 CI 綠之後**觸發
+  （`workflow_run`，不是 push）；部署後打 `/api/health` 比對 `sha`，
+  確認線上跑的就是這個 commit。
+
+工作守則（格式、lint、測試分層）見 `.claude/rules/supabase-functions.md`。
 
 ## Migrations
 
-| 檔案 | 內容 |
+47 個 migration，檔名即時序（`YYYYMMDDNNNNNN_描述.sql`）。**每個檔頭都寫了
+「為什麼這樣改」**——改動金流函數前請先讀對應檔頭，那裡記錄了歷次踩過的坑。
+
+幾個影響全域的轉折點：
+
+| Migration | 轉折 |
 |---|---|
-| `20260620000001_initial_schema.sql` | 真相表 + 索引 |
-| `20260620000002_rls_policies.sql` | RLS 權限 |
-| `20260620000003_functions_and_views.sql` | 觸發器、函數、衍生 View |
-| `20260620000004_security_hardening.sql` | 修 advisor：public_listings 改 security_invoker、鎖 search_path |
-| `20260620000005_fix_referral_tree_access.sql` | referral_tree 只能查自己/admin |
-| `20260620000006_fix_generate_referral_code_ambiguity.sql` | 修推薦碼產生器變數歧義 |
-| `20260620000007_business_rule_revision.sql` | 即時發獎、移除 reward_schedules / 連續任務、加 national_id |
-| `20260620000008_revoke_event_trigger_exec.sql` | 撤銷 event trigger 函數對外執行權 |
+| `20260620000007_business_rule_revision` | 改即時一次發清、移除 `reward_schedules` 與「連續推薦達人」任務 |
+| `20260716000008_renewal_modes` | 續約雙模式（extend / fresh） |
+| `20260718000101_withdrawal_lifecycle` | 提領狀態機統一為 `pending → awaiting_collection → completed/rejected` |
+| `20260719000002_reward_config` | 業務常數收斂為單列表 |
+| `20260720000001_wave4_guards` | 停權守衛、付款時間錨定 |
+| `20260721000001_remove_grace_status` | 移除寬限期，會籍改兩態 |
+| `20260724000003_pay_referral_generations` | 三代發獎收斂為單一函數 |
+| `20260724000004_..._pair_history` | 「新下線」判準改 pair-history |
+| `20260725000002_reward_source_lifecycle` | 獎勵來源分類改「拉新／續約」軸 |
+| `20260726000001_scope_own_policies_to_authenticated` | 「自己的資料」policy 收斂到 authenticated——訪客查詢路徑不再碰 `is_admin()` |
+| `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
+
+> **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
+> 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
+
+## 環境與部署
+
+兩個 Supabase 環境，由 CI 依分支對應。**部署目標的 ref 讀 git 內的檔案**，
+不讀儀表板變數——那兩個檔本來就是前端建置決定「打哪個後端」的依據，讓部署
+與建置用同一份，兩邊就不可能各自漂移（`vars.*` 降為可選覆蓋，若與 git 不一致
+會硬失敗；見 `deploy-supabase.yml` 的「解析目標 project ref」）：
+
+| 分支 | Supabase 形態 | ref 來源 | 用途 |
+|---|---|---|---|
+| `develop` | 正式專案的 **persistent branch**（`develop`） | `config/supabaseTarget.ts` | 可安全驗證的真後端 |
+| `main` | **正式專案** | `src/utils/supabase/info.tsx` | 正式站（部署需人工核准） |
+
+> develop 是 Supabase Branching 長出來的分支，不是另一個獨立 project：
+> 有自己的 DB／金鑰／Secrets，但掛在正式專案底下（同組織、同帳單）。
+> **Secrets 逐分支獨立、不從母專案繼承**，所以 develop 的那套（PayUni sandbox
+> 憑證與 `FRONTEND_URL`）要單獨設一次。見 `docs/supabase-setup-checklist.md`。
+
+Dashboard 端的手動設定（Secrets、Email OTP 模板、PayUni 後台）
+見 `docs/supabase-setup-checklist.md`。
 
 ### 本地開發
 
 ```bash
-# 安裝 Supabase CLI 後
 supabase login
-supabase link --project-ref uhtwwxtazwqnlbejhprl
-supabase db push          # 套用 migrations 到雲端
-# 或本地測試：
+supabase link --project-ref <目標 project ref>
+
 supabase start            # 啟動本地 Postgres
 supabase db reset         # 套用所有 migrations 到本地
-```
 
-> ⚠️ 套用前需先清空舊資料（含 auth.users）。清空腳本見 `reset_legacy.sql`，
-> 確認後再執行。舊資料已備份於 repo 根目錄 `export/`。
+cd supabase/functions
+deno task check           # 型別檢查
+deno task test:unit       # 純函式測試（不需資料庫）
+deno task test:db         # 整合測試（需 supabase start）
+```

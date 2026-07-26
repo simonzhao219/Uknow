@@ -24,8 +24,12 @@ async function seedPendingOrder(
 ) {
   const tradeNo = `RESULT-${Date.now()}-${seq++}`;
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, payuni_response: payuniResponse,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    payuni_response: payuniResponse,
   });
   if (error) throw new Error(`seedPendingOrder failed: ${error.message}`);
   return tradeNo;
@@ -45,7 +49,9 @@ Deno.test('卡單使用者輪詢結果頁：同一次請求就回 completed（�
   try {
     const token = await getUserAccessToken(client, user.email);
     const tradeNo = await seedPendingOrder(client, user.id, {
-      Status: 'SUCCESS', TradeAmt: '1200', TradeNo: 'PU-RESULT',
+      Status: 'SUCCESS',
+      TradeAmt: '1200',
+      TradeNo: 'PU-RESULT',
     });
 
     const { status, body } = await getResult(token, tradeNo);
@@ -69,7 +75,9 @@ Deno.test('金額不符的卡單：維持 pending，但 paidAwaitingActivation=t
   try {
     const token = await getUserAccessToken(client, user.email);
     const tradeNo = await seedPendingOrder(client, user.id, {
-      Status: 'SUCCESS', TradeAmt: '9999', TradeNo: 'PU-MISMATCH',
+      Status: 'SUCCESS',
+      TradeAmt: '9999',
+      TradeNo: 'PU-MISMATCH',
     });
 
     const { status, body } = await getResult(token, tradeNo);

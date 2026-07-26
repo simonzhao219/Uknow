@@ -6,7 +6,7 @@
 import { assertEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers, payForUser } from './test-helpers.ts';
 
-Deno.test('a peripheral failure inside process_successful_payment writes a system_alerts row', async () => {
+Deno.test('process_successful_payment 內的周邊失敗會寫入一筆 system_alerts', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
 
@@ -31,7 +31,11 @@ Deno.test('a peripheral failure inside process_successful_payment writes a syste
         .select('id, source, severity, context')
         .order('created_at', { ascending: false });
 
-      assertEquals((after.data?.length ?? 0) > (before.data?.length ?? 0), true, '應該多出至少一筆告警紀錄');
+      assertEquals(
+        (after.data?.length ?? 0) > (before.data?.length ?? 0),
+        true,
+        '應該多出至少一筆告警紀錄',
+      );
       // 規則更新後 task/推薦王已從發獎（Block A）拆出成獨立的 Block B：
       // monthly_referrals 被灌成陣列 [] 會讓 Block B 的 pair-history 查詢
       // （jsonb_each 於非物件）爆炸。apply_referral_side_effects 自己的

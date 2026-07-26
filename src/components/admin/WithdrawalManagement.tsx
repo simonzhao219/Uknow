@@ -6,7 +6,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Download, Eye, Loader2, RefreshCw } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
 import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
@@ -17,19 +26,24 @@ import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract'
 //                   → completed（用戶已確認查收）
 //   pending → rejected（退件，點數自動退回）
 const STATUS_LABEL: Record<string, string> = {
-  pending:             '待處理',
+  pending: '待處理',
   awaiting_collection: '待查收',
-  completed:           '已完成',
-  rejected:            '已退件',
+  completed: '已完成',
+  rejected: '已退件',
 };
 
 function getStatusBadge(status: string) {
   switch (status) {
-    case 'pending':             return <Badge variant="secondary">待處理</Badge>;
-    case 'awaiting_collection': return <Badge className="bg-orange-500">待查收</Badge>;
-    case 'completed':           return <Badge variant="outline">已完成</Badge>;
-    case 'rejected':            return <Badge variant="destructive">已退件</Badge>;
-    default:                    return <Badge variant="secondary">{status}</Badge>;
+    case 'pending':
+      return <Badge variant="secondary">待處理</Badge>;
+    case 'awaiting_collection':
+      return <Badge className="bg-orange-500">待查收</Badge>;
+    case 'completed':
+      return <Badge variant="outline">已完成</Badge>;
+    case 'rejected':
+      return <Badge variant="destructive">已退件</Badge>;
+    default:
+      return <Badge variant="secondary">{status}</Badge>;
   }
 }
 
@@ -47,22 +61,41 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
           <DialogDescription>
             會員：{record.userName} | 身分證字號：{record.idNumber ?? '未設定'}
           </DialogDescription>
+          {/* 註冊時姓名不接受標點，原住民漢字音譯姓名與新住民歸化漢名一律以
+              半形空格取代身分證上的間隔號。沒有這句提示，admin 會看到「系統
+              顯示谷辣斯 尤達卡、證件印谷辣斯·尤達卡」而誤判姓名不符退件——
+              傷害正好落在這條規則本來想保護的族群身上。 */}
+          <p className="text-xs text-muted-foreground">
+            提醒：原住民／新住民姓名可能以半形空格取代身分證上的間隔號，屬正常註冊規則。
+          </p>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-4">
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證正面</p>
             {record.idCardFrontUrl ? (
-              <img src={record.idCardFrontUrl} alt="身分證正面" className="w-full h-auto rounded-lg border" />
+              <img
+                src={record.idCardFrontUrl}
+                alt="身分證正面"
+                className="w-full h-auto rounded-lg border"
+              />
             ) : (
-              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">未上傳</p>
+              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
+                未上傳
+              </p>
             )}
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證反面</p>
             {record.idCardBackUrl ? (
-              <img src={record.idCardBackUrl} alt="身分證反面" className="w-full h-auto rounded-lg border" />
+              <img
+                src={record.idCardBackUrl}
+                alt="身分證反面"
+                className="w-full h-auto rounded-lg border"
+              />
             ) : (
-              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">未上傳</p>
+              <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
+                未上傳
+              </p>
             )}
           </div>
         </div>
@@ -90,7 +123,7 @@ export function WithdrawalManagement() {
     try {
       const qs = statusFilter !== 'all' ? `?status=${statusFilter}` : '';
       const result = await apiRequestJson<AdminWithdrawalsResponse>(
-        buildApiUrl(`/admin/withdrawals${qs}`)
+        buildApiUrl(`/admin/withdrawals${qs}`),
       );
       if (result.success) setWithdrawals(result.data.withdrawals);
     } catch (err) {
@@ -98,26 +131,30 @@ export function WithdrawalManagement() {
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   useEffect(() => {
     fetchWithdrawals();
   }, [fetchWithdrawals]);
 
-  const updateStatus = async (record: AdminWithdrawalRecord, status: 'awaiting_collection' | 'rejected', note?: string) => {
+  const updateStatus = async (
+    record: AdminWithdrawalRecord,
+    status: 'awaiting_collection' | 'rejected',
+    note?: string,
+  ) => {
     setProcessingId(record.id);
     try {
       const result = await apiRequestJson<{ success: boolean; error?: { message: string } }>(
         buildApiUrl(`/admin/withdrawals/${record.id}/status`),
-        { method: 'POST', body: JSON.stringify({ status, note }) }
+        { method: 'POST', body: JSON.stringify({ status, note }) },
       );
       if (result.success) {
         showSuccess(
           status === 'awaiting_collection' ? '已標記匯款完成' : '已退件',
           status === 'awaiting_collection'
             ? `${record.userName} 的提領已轉為待查收`
-            : `${record.userName} 的點數已退回`
+            : `${record.userName} 的點數已退回`,
         );
         await fetchWithdrawals();
       } else {
@@ -131,21 +168,35 @@ export function WithdrawalManagement() {
   };
 
   const downloadCSV = () => {
-    const headers = ['會員', '提領金額', '手續費', '匯款金額', '收款銀行代號', '收款銀行帳號', '身分證字號', '申請時間', '狀態'];
-    const rows = withdrawals.map((w) => [
-      w.userName,
-      String(w.amount + w.fee),
-      String(w.fee),
-      String(w.amount),
-      w.bankCode ?? '未設定',
-      w.bankAccount ?? '未設定',
-      w.idNumber ?? '未設定',
-      formatTwTimestamp(w.requestedAt),
-      STATUS_LABEL[w.status] ?? w.status,
-    ].join(','));
+    const headers = [
+      '會員',
+      '提領金額',
+      '手續費',
+      '匯款金額',
+      '收款銀行代號',
+      '收款銀行帳號',
+      '身分證字號',
+      '申請時間',
+      '狀態',
+    ];
+    const rows = withdrawals.map((w) =>
+      [
+        w.userName,
+        String(w.amount + w.fee),
+        String(w.fee),
+        String(w.amount),
+        w.bankCode ?? '未設定',
+        w.bankAccount ?? '未設定',
+        w.idNumber ?? '未設定',
+        formatTwTimestamp(w.requestedAt),
+        STATUS_LABEL[w.status] ?? w.status,
+      ].join(','),
+    );
 
     const BOM = '﻿';
-    const blob = new Blob([BOM + [headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([BOM + [headers.join(','), ...rows].join('\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `獎金提領申請_${twDayOf()}.csv`;
@@ -165,8 +216,8 @@ export function WithdrawalManagement() {
             <AlertDialogHeader>
               <AlertDialogTitle>確認已完成匯款？</AlertDialogTitle>
               <AlertDialogDescription>
-                {paidTarget.userName} 的提領 {paidTarget.amount} P，
-                匯入帳號末五碼 {String(paidTarget.bankAccount ?? '').slice(-5) || '未提供'}。
+                {paidTarget.userName} 的提領 {paidTarget.amount} P， 匯入帳號末五碼{' '}
+                {String(paidTarget.bankAccount ?? '').slice(-5) || '未提供'}。
                 確認後該筆將轉為「待查收」並通知會員款項已匯出。
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -232,7 +283,12 @@ export function WithdrawalManagement() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
-              <Button variant="default" size="sm" onClick={downloadCSV} disabled={!withdrawals.length}>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={downloadCSV}
+                disabled={!withdrawals.length}
+              >
                 <Download className="h-4 w-4 mr-2" />
                 下載CSV
               </Button>

@@ -1,64 +1,71 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
-import { Loader2, CheckCircle, CreditCard, Edit, Upload, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
+import { Loader2, CheckCircle, CreditCard, Edit } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
-import { twDayOf, twDayPlusDays, subscriptionLastDay, twEndOfDayInstant, formatTwDate } from '../utils/twDate';
+import {
+  twDayOf,
+  twDayPlusDays,
+  subscriptionLastDay,
+  twEndOfDayInstant,
+  formatTwDate,
+} from '../utils/twDate';
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingUser, setIsCheckingUser] = useState(true);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any>(null);  // ✅ 新增：活動訂單狀態
-  const [isButtonLocked, setIsButtonLocked] = useState(false);  // ✅ 新增：按鈕鎖定狀態
-  const [lockCountdown, setLockCountdown] = useState(0);  // ✅ 新增：倒計時秒數
+  const [activeOrder, setActiveOrder] = useState<any>(null); // ✅ 新增：活動訂單狀態
+  const [isButtonLocked, setIsButtonLocked] = useState(false); // ✅ 新增：按鈕鎖定狀態
+  const [lockCountdown, setLockCountdown] = useState(0); // ✅ 新增：倒計時秒數
   // ✅ 過期會員續費雙模式（見 migration 0008）：extend=續約接續原效期；
   //    fresh=新約從付款日起算、可換新推薦人。null 表示尚未選擇。
   const [renewalMode, setRenewalMode] = useState<'extend' | 'fresh' | null>(null);
   const [newReferralCode, setNewReferralCode] = useState('');
-  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>(
+    'idle',
+  );
   const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
-  
+
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
   const supabase = createClient();
-  
+
   console.log('PaymentCheckout: Component state -', {
     isLoading,
     isCheckingUser,
     hasPendingUser: !!pendingUser,
-    hasActiveOrder: !!activeOrder  // ✅ 新增
+    hasActiveOrder: !!activeOrder, // ✅ 新增
   });
 
   // ✅ 新增：定期檢查用戶狀態（每 5 秒）
   useEffect(() => {
     if (!pendingUser) return;
-    
+
     const checkUserStatus = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) return;
-        
-        const response = await fetch(
-          buildApiUrl('/auth/profile'),
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
-        
+
+        const response = await fetch(buildApiUrl('/auth/profile'), {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
         if (response.ok) {
           const profile = await response.json();
 
@@ -81,44 +88,42 @@ export function PaymentCheckout() {
         console.error('檢查用戶狀態失敗:', error);
       }
     };
-    
+
     // ✅ 每 5 秒檢查一次
     const intervalId = setInterval(checkUserStatus, 5000);
-    
+
     // 組件卸載時清除
     return () => clearInterval(intervalId);
-    
   }, [pendingUser, navigate, showToast, supabase]);
 
   // 檢查是否有待付款的用戶資料
   useEffect(() => {
     const checkPendingUser = async () => {
       setIsCheckingUser(true);
-      
+
       // 1. 先檢查 localStorage
-      let pendingUserData = localStorage.getItem('pendingUser');
-      
+      const pendingUserData = localStorage.getItem('pendingUser');
+
       // 2. 如果 localStorage 沒有，從數據庫讀取
       if (!pendingUserData) {
         console.log('PaymentCheckout: No pendingUser in localStorage, fetching from API');
-        
-        const { data: { session } } = await supabase.auth.getSession();
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) {
           console.log('PaymentCheckout: No session, redirecting to login');
           navigate('/login', { replace: true });
           return;
         }
-        
+
         try {
-          const response = await fetch(
-            buildApiUrl('/auth/profile'),
-            {
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-            }
-          );
-          
+          const response = await fetch(buildApiUrl('/auth/profile'), {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+
           if (response.ok) {
             const profile = await response.json();
             console.log('PaymentCheckout: Profile loaded from API:', profile);
@@ -174,7 +179,9 @@ export function PaymentCheckout() {
         setPendingUser(userData);
 
         // 驗證 session 是否有效
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) {
           showToast('登入狀態已過期，請重新登入', 'error');
           localStorage.removeItem('pendingUser');
@@ -198,7 +205,10 @@ export function PaymentCheckout() {
   // ✅ 獲取推薦人資訊
   useEffect(() => {
     const fetchReferrerInfo = async () => {
-      if (!pendingUser?.referredByCode) {
+      // 自動綁定（預設推薦人）不查也不顯示——只擋渲染擋不住網路層：
+      // 回應本體含推薦人真名，Network 面板完整可見。早退與 :591 的
+      // 渲染條件必須用同一個旗標。
+      if (!pendingUser?.referredByCode || pendingUser.isAutoReferral) {
         return;
       }
 
@@ -207,41 +217,45 @@ export function PaymentCheckout() {
         console.log('PaymentCheckout: Using cached referrer name:', pendingUser.referrerName);
         setReferrerInfo({
           name: pendingUser.referrerName,
-          code: pendingUser.referredByCode
+          code: pendingUser.referredByCode,
         });
         return;
       }
 
       // ✅ 如果沒有緩存，才發送請求
       setIsLoadingReferrer(true);
-      
+
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
         if (!session) {
           console.log('PaymentCheckout: No session, skip fetching referrer info');
           return;
         }
 
-        console.log(`PaymentCheckout: Fetching referrer info for code: ${pendingUser.referredByCode}`);
-        
+        console.log(
+          `PaymentCheckout: Fetching referrer info for code: ${pendingUser.referredByCode}`,
+        );
+
         const response = await fetch(
           buildApiUrl(`/referrals/validate/${pendingUser.referredByCode}`),
           {
             headers: {
-              'Authorization': `Bearer ${session.access_token}`,
+              Authorization: `Bearer ${session.access_token}`,
             },
-          }
+          },
         );
 
         if (response.ok) {
           const result = await response.json();
-          
+
           if (result.valid && result.referrer) {
             console.log('PaymentCheckout: Referrer info loaded:', result.referrer);
             setReferrerInfo({
               name: result.referrer.userName,
-              code: pendingUser.referredByCode
+              code: pendingUser.referredByCode,
             });
           } else {
             console.log('PaymentCheckout: Referral code invalid or expired');
@@ -302,10 +316,12 @@ export function PaymentCheckout() {
     }
     setNewCodeStatus('checking');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) return;
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const result = await response.json();
       if (response.ok && result.valid && result.referrer) {
@@ -346,7 +362,12 @@ export function PaymentCheckout() {
 
     // ✅ 續費模式檢查：新約填了推薦碼就必須先驗證通過，避免帶著無效碼
     //    送出（後端也會擋，這裡先給友善提示）。
-    if (isRenewal && renewalMode === 'fresh' && newReferralCode.trim() && newCodeStatus !== 'valid') {
+    if (
+      isRenewal &&
+      renewalMode === 'fresh' &&
+      newReferralCode.trim() &&
+      newCodeStatus !== 'valid'
+    ) {
       showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
       return;
     }
@@ -354,7 +375,9 @@ export function PaymentCheckout() {
     try {
       setIsLoading(true);
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
         showToast('登入已過期，請重新登入', 'error');
         navigate('/login');
@@ -364,24 +387,23 @@ export function PaymentCheckout() {
       // ✅ 呼叫後端 API 準備訂單。registrationStep 會在這筆 pending 訂單
       // 建立後自動變成 2（由 payment_orders 即時算出，不需要另外寫入）。
       // 過期續費時帶上使用者選的模式；首次付款不帶 body（後端視同 fresh）。
-      const response = await fetch(
-        buildApiUrl('/payuni/prepare'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          },
-          ...(isRenewal && renewalMode ? {
-            body: JSON.stringify({
-              renewalMode,
-              ...(renewalMode === 'fresh' && newReferralCode.trim() && newCodeStatus === 'valid'
-                ? { referredByCode: newReferralCode.trim() }
-                : {}),
-            })
-          } : {}),
-        }
-      );
+      const response = await fetch(buildApiUrl('/payuni/prepare'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        ...(isRenewal && renewalMode
+          ? {
+              body: JSON.stringify({
+                renewalMode,
+                ...(renewalMode === 'fresh' && newReferralCode.trim() && newCodeStatus === 'valid'
+                  ? { referredByCode: newReferralCode.trim() }
+                  : {}),
+              }),
+            }
+          : {}),
+      });
 
       const result = await response.json();
 
@@ -389,19 +411,19 @@ export function PaymentCheckout() {
         // ✅ 啟動15秒倒計時
         setIsButtonLocked(true);
         setLockCountdown(15);
-        
+
         // 動態創建表單並提交到 PayUni
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = result.data.apiUrl;
-        
+
         const fields = {
           MerID: result.data.MerID,
           Version: result.data.Version,
           EncryptInfo: result.data.EncryptInfo,
-          HashInfo: result.data.HashInfo
+          HashInfo: result.data.HashInfo,
         };
-        
+
         Object.entries(fields).forEach(([name, value]) => {
           const input = document.createElement('input');
           input.type = 'hidden';
@@ -409,10 +431,10 @@ export function PaymentCheckout() {
           input.value = value;
           form.appendChild(input);
         });
-        
+
         document.body.appendChild(form);
         console.log('PaymentCheckout: Submitting form to PayUni:', result.data.mode);
-        form.submit();  // 提交後會跳轉到 PayUni
+        form.submit(); // 提交後會跳轉到 PayUni
       } else {
         showToast(extractApiErrorMessage(result, '準備訂單失敗'), 'error');
       }
@@ -460,37 +482,36 @@ export function PaymentCheckout() {
   const handleEdit = async () => {
     try {
       console.log('PaymentCheckout: User clicked edit, resetting registration...');
-      
+
       // 1. 保存當前資料到 pendingUser（供編輯頁面使用）
       localStorage.setItem('pendingUser', JSON.stringify(pendingUser));
       console.log('PaymentCheckout: Saved current data to pendingUser');
-      
+
       // 2. 調用後端 API 重置 registrationStep 為 0
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session) {
         showToast('登入狀態已過期，請重新登入', 'error');
         navigate('/login');
         return;
       }
-      
-      const response = await fetch(
-        buildApiUrl('/auth/reset-registration'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
-      );
-      
+
+      const response = await fetch(buildApiUrl('/auth/reset-registration'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
       if (!response.ok) {
         const errorData = await response.json();
         console.error('PaymentCheckout: Reset registration error:', errorData);
         throw new Error(extractApiErrorMessage(errorData, '重置註冊狀態失敗'));
       }
-      
+
       console.log('PaymentCheckout: Registration step reset to 0');
 
       // 3. 導向填寫資料頁面，並以 location.state 明確帶上「編輯」意圖——
@@ -498,7 +519,6 @@ export function PaymentCheckout() {
       //    使用者立刻彈回結帳頁（本次修的 bug 根因）。
       showToast('您可以重新編輯註冊資料', 'info');
       navigate('/auth/complete-profile', { state: { editing: true } });
-      
     } catch (error: any) {
       console.error('PaymentCheckout: Error during edit:', error);
       showToast(error.message || '編輯失敗，請稍後再試', 'error');
@@ -543,7 +563,9 @@ export function PaymentCheckout() {
           <CardTitle className="text-2xl">{isRenewal ? '續費會員' : '完成付款'}</CardTitle>
           {isRenewal && (
             <CardDescription>
-              您的會籍已於 {pendingUser.subscriptionEndDate && formatTwDate(pendingUser.subscriptionEndDate)} 到期，請選擇續費方式
+              您的會籍已於{' '}
+              {pendingUser.subscriptionEndDate && formatTwDate(pendingUser.subscriptionEndDate)}{' '}
+              到期，請選擇續費方式
             </CardDescription>
           )}
         </CardHeader>
@@ -645,7 +667,12 @@ export function PaymentCheckout() {
                   <Input
                     id="new-referral-code"
                     value={newReferralCode}
-                    placeholder={pendingUser.referredByCode ? `目前：${pendingUser.referredByCode}` : '輸入推薦碼'}
+                    placeholder={
+                      // 自動綁定的預設碼不外洩到 placeholder（決定 4）
+                      pendingUser.referredByCode && !pendingUser.isAutoReferral
+                        ? `目前：${pendingUser.referredByCode}`
+                        : '輸入推薦碼'
+                    }
                     onChange={(e) => {
                       setNewReferralCode(e.target.value);
                       setNewCodeStatus('idle');
@@ -656,7 +683,8 @@ export function PaymentCheckout() {
                   />
                   {newCodeStatus === 'checking' && (
                     <p className="text-xs text-muted-foreground">
-                      <Loader2 className="inline h-3 w-3 animate-spin mr-1" />驗證中…
+                      <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                      驗證中…
                     </p>
                   )}
                   {newCodeStatus === 'valid' && newReferrerName && (
@@ -667,9 +695,7 @@ export function PaymentCheckout() {
                   {newCodeStatus === 'invalid' && (
                     <p className="text-xs text-red-600">推薦碼不存在或已失效</p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    留空則維持原推薦關係。
-                  </p>
+                  <p className="text-xs text-muted-foreground">留空則維持原推薦關係。</p>
                 </div>
               )}
             </div>
@@ -717,7 +743,10 @@ export function PaymentCheckout() {
             {/* 資料未填齊時，說明付款鈕為何反灰，並給一個回填資料的明確入口，
                 避免使用者面對一顆「按不動」的按鈕不知所措。 */}
             {!isProfileComplete(pendingUser) && (
-              <p className="text-sm text-center text-muted-foreground" data-testid="incomplete-profile-hint">
+              <p
+                className="text-sm text-center text-muted-foreground"
+                data-testid="incomplete-profile-hint"
+              >
                 請先{' '}
                 <button
                   type="button"
@@ -725,8 +754,8 @@ export function PaymentCheckout() {
                   className="underline underline-offset-2 hover:text-foreground"
                 >
                   完成個人資料
-                </button>
-                {' '}才能付款
+                </button>{' '}
+                才能付款
               </p>
             )}
 

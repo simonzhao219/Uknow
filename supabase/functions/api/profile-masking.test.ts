@@ -71,8 +71,10 @@ Deno.test('GET /auth/profile：nationalId 與 bankAccount 必須遮罩', async (
       /^\*+\d{4}$/,
       `bankAccount 未遮罩：${profile.bankAccount}`,
     );
-    assert(!String(profile.bankAccount).includes(BANK_ACCOUNT.slice(0, 9)),
-      'bankAccount 不得包含完整帳號');
+    assert(
+      !String(profile.bankAccount).includes(BANK_ACCOUNT.slice(0, 9)),
+      'bankAccount 不得包含完整帳號',
+    );
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
@@ -142,10 +144,16 @@ Deno.test('GET /admin/withdrawals：管理員列表維持完整值（characteriz
       id_card_back_path: `${member.id}/back.jpg`,
     }).eq('id', member.id);
     await client.from('reward_transactions').insert({
-      user_id: member.id, type: 'adjustment', amount: 5000, description: '測試點數',
+      user_id: member.id,
+      type: 'adjustment',
+      amount: 5000,
+      description: '測試點數',
     });
     const { data: w } = await client.rpc('request_withdrawal', {
-      p_user_id: member.id, p_amount: 1000, p_bank_code: '812', p_bank_account: BANK_ACCOUNT,
+      p_user_id: member.id,
+      p_amount: 1000,
+      p_bank_code: '812',
+      p_bank_account: BANK_ACCOUNT,
     });
     assertEquals(w?.success, true, JSON.stringify(w));
 

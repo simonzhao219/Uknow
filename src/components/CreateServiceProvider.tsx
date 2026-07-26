@@ -1,4 +1,5 @@
-import React, { useState, useContext, useEffect } from 'react';
+import type React from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -7,19 +8,20 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Checkbox } from './ui/checkbox';
-import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
-import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS, MAX_PHOTO_SIZE, MAX_PHOTO_COUNT, ALLOWED_PHOTO_FORMATS } from '../utils/constants';
-import { ArrowLeft, Upload, X, CreditCard, Calendar } from 'lucide-react';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from './ui/collapsible';
+  SERVICE_CATEGORIES,
+  TAIWAN_CITIES,
+  TAIWAN_REGIONS,
+  MAX_PHOTO_SIZE,
+  MAX_PHOTO_COUNT,
+  ALLOWED_PHOTO_FORMATS,
+} from '../utils/constants';
+import { ArrowLeft, Upload, X } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
 import { validateContacts } from '../utils/contactValidation';
-import { YEARLY_PRICE } from '../utils/constants';
 import { FieldError, getInputErrorClass } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { createClient } from '../utils/supabase/client';
@@ -35,7 +37,7 @@ export function CreateServiceProvider() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const { showSuccess, showError, showToast } = useNotification();
-  
+
   // ✅ 只有 1 个步骤，直接填写后提交
   const [formData, setFormData] = useState({
     name: '',
@@ -48,8 +50,8 @@ export function CreateServiceProvider() {
     contacts: {
       instagram: '',
       line: '',
-      facebook: ''
-    }
+      facebook: '',
+    },
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
@@ -77,7 +79,7 @@ export function CreateServiceProvider() {
         console.error('檢查刊登失敗:', error);
       }
     };
-    
+
     checkExistingListing();
   }, [user?.id, navigate, showToast, supabase]);
 
@@ -108,7 +110,7 @@ export function CreateServiceProvider() {
     setFormData({
       ...formData,
       city: newCity,
-      districts: ['全區', ...availableDistricts]
+      districts: ['全區', ...availableDistricts],
     });
     setIsDistrictSectionOpen(true);
     const newErrors = { ...errors };
@@ -123,12 +125,12 @@ export function CreateServiceProvider() {
       formData.districts,
       availableDistricts,
       district,
-      checked
+      checked,
     );
-    
+
     setFormData({
       ...formData,
-      districts: newDistricts
+      districts: newDistricts,
     });
 
     if (newDistricts.length > 0) {
@@ -140,24 +142,24 @@ export function CreateServiceProvider() {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
+
     if (formData.photos.length + files.length > MAX_PHOTO_COUNT) {
       showToast(`最多只能上傳${MAX_PHOTO_COUNT}張照片`, 'error');
       return;
     }
-    
-    const oversizedFiles = files.filter(file => file.size > MAX_PHOTO_SIZE);
+
+    const oversizedFiles = files.filter((file) => file.size > MAX_PHOTO_SIZE);
     if (oversizedFiles.length > 0) {
       showToast('照片大小不能超過 5MB', 'error');
       return;
     }
-    
-    const invalidFiles = files.filter(file => !ALLOWED_PHOTO_FORMATS.includes(file.type));
+
+    const invalidFiles = files.filter((file) => !ALLOWED_PHOTO_FORMATS.includes(file.type));
     if (invalidFiles.length > 0) {
       showToast('只支援 JPG、PNG、WEBP 格式', 'error');
       return;
     }
-    
+
     uploadPhotosToServer(files);
   };
 
@@ -166,18 +168,20 @@ export function CreateServiceProvider() {
 
     try {
       console.log(`[Upload Photos] 開始上傳 ${files.length} 張照片...`);
-      
+
       const uploadPromises = files.map(async (file) => {
         console.log(`[Upload Photos] 上傳照片: ${file.name}, 大小: ${file.size} bytes`);
-        
+
         const formDataToSend = new FormData();
         formDataToSend.append('file', file);
         formDataToSend.append('listingTempId', listingTempId);
-        
-        const { data: { session: s } } = await supabase.auth.getSession();
+
+        const {
+          data: { session: s },
+        } = await supabase.auth.getSession();
         const response = await fetch(buildApiUrl('/listings/upload-photo'), {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${s?.access_token}` },
+          headers: { Authorization: `Bearer ${s?.access_token}` },
           body: formDataToSend,
         });
 
@@ -189,29 +193,28 @@ export function CreateServiceProvider() {
         const data = await response.json();
         return data.photoUrl;
       });
-      
+
       const photoUrls = await Promise.all(uploadPromises);
-      
+
       console.log(`[Upload Photos] ✅ 所有照片上傳完成，共 ${photoUrls.length} 張`);
       console.log(`[Upload Photos] 照片 URLs:`, photoUrls);
-      
+
       // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
       // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（曾造成聯絡
       // 方式被清空、送出鈕永遠 disabled 的間歇性 bug，見 e2e「Input typed
       // while photos are uploading survives」情境）。
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        photos: [...prev.photos, ...photoUrls]
+        photos: [...prev.photos, ...photoUrls],
       }));
 
-      setErrors(prev => {
+      setErrors((prev) => {
         const next = { ...prev };
         delete next.photos;
         return next;
       });
-      
+
       showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
-      
     } catch (error) {
       console.error('[Upload Photos] 照片上傳錯誤:', error);
       showToast(error instanceof Error ? error.message : '照片上傳失敗，請重試', 'error');
@@ -222,26 +225,25 @@ export function CreateServiceProvider() {
 
   const removePhoto = (index: number) => {
     const newPhotos = formData.photos.filter((_, i) => i !== index);
-    setFormData({...formData, photos: newPhotos});
+    setFormData({ ...formData, photos: newPhotos });
   };
 
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
 
     try {
-      
       console.log('[Create Listing] 步驟1: 創建刊登...');
 
       const { error: insertError } = await supabase.from('listings').insert({
-        user_id:     user.id,
-        name:        formData.name,
-        category:    formData.category,
-        gender:      formData.gender,
-        city:        formData.city,
-        districts:   formData.districts,
+        user_id: user.id,
+        name: formData.name,
+        category: formData.category,
+        gender: formData.gender,
+        city: formData.city,
+        districts: formData.districts,
         description: formData.description,
-        photos:      formData.photos,
-        contacts:    formData.contacts,
+        photos: formData.photos,
+        contacts: formData.contacts,
       });
 
       if (insertError) {
@@ -250,11 +252,10 @@ export function CreateServiceProvider() {
       }
 
       console.log('[Create Listing] ✅ 刊登建立完成');
-      
+
       showToast('刊登建立成功！', 'success');
-      
+
       navigate('/service-providers');
-      
     } catch (error) {
       console.error('刊登建立錯誤:', error);
       showError('網絡錯誤', '請檢查網絡連線後再試');
@@ -279,14 +280,12 @@ export function CreateServiceProvider() {
           <p className="text-muted-foreground">請填寫您的專業服務相關資訊</p>
         </div>
       </div>
-      
+
       {/* ✅ 移除步驟指示器，直接顯示表單 */}
       <Card>
         <CardHeader>
           <CardTitle>服務者基本資訊</CardTitle>
-          <CardDescription>
-            請填寫您的專業服務相關資訊
-          </CardDescription>
+          <CardDescription>請填寫您的專業服務相關資訊</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -296,7 +295,7 @@ export function CreateServiceProvider() {
               value={formData.name}
               onChange={(e) => {
                 if (e.target.value.length <= 10) {
-                  setFormData({...formData, name: e.target.value});
+                  setFormData({ ...formData, name: e.target.value });
                 }
               }}
               placeholder="例：專業美髮師 Amy"
@@ -311,13 +310,21 @@ export function CreateServiceProvider() {
 
           <div className="space-y-2">
             <Label id="category-label">服務類別 *</Label>
-            <Select value={formData.category} onValueChange={(value) => setFormData({...formData, category: value})}>
-              <SelectTrigger aria-labelledby="category-label" className={getInputErrorClass(!!errors.category)}>
+            <Select
+              value={formData.category}
+              onValueChange={(value) => setFormData({ ...formData, category: value })}
+            >
+              <SelectTrigger
+                aria-labelledby="category-label"
+                className={getInputErrorClass(!!errors.category)}
+              >
                 <SelectValue placeholder="選擇服務類別" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                {SERVICE_CATEGORIES.map(category => (
-                  <SelectItem key={category} value={category}>{category}</SelectItem>
+                {SERVICE_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -326,8 +333,14 @@ export function CreateServiceProvider() {
 
           <div className="space-y-2">
             <Label id="gender-label">性別 *</Label>
-            <Select value={formData.gender} onValueChange={(value) => setFormData({...formData, gender: value})}>
-              <SelectTrigger aria-labelledby="gender-label" className={getInputErrorClass(!!errors.gender)}>
+            <Select
+              value={formData.gender}
+              onValueChange={(value) => setFormData({ ...formData, gender: value })}
+            >
+              <SelectTrigger
+                aria-labelledby="gender-label"
+                className={getInputErrorClass(!!errors.gender)}
+              >
                 <SelectValue placeholder="選擇性別" />
               </SelectTrigger>
               <SelectContent>
@@ -343,12 +356,17 @@ export function CreateServiceProvider() {
             <div className="space-y-2">
               <Label id="city-label">服務城市 * (只能選擇一個縣市)</Label>
               <Select value={formData.city} onValueChange={handleCityChange}>
-                <SelectTrigger aria-labelledby="city-label" className={getInputErrorClass(!!errors.city)}>
+                <SelectTrigger
+                  aria-labelledby="city-label"
+                  className={getInputErrorClass(!!errors.city)}
+                >
                   <SelectValue placeholder="選擇城市" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60 overflow-y-auto">
-                  {TAIWAN_CITIES.map(city => (
-                    <SelectItem key={city} value={city}>{city}</SelectItem>
+                  {TAIWAN_CITIES.map((city) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -358,21 +376,15 @@ export function CreateServiceProvider() {
             {formData.city && (
               <div className="space-y-2">
                 <Label>服務區域 * (可選擇多個區域)</Label>
-                <Collapsible 
-                  open={isDistrictSectionOpen} 
-                  onOpenChange={setIsDistrictSectionOpen}
-                >
+                <Collapsible open={isDistrictSectionOpen} onOpenChange={setIsDistrictSectionOpen}>
                   <CollapsibleTrigger asChild>
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-between"
-                      type="button"
-                    >
-                      {formData.districts.length > 0 
-                        ? `已選擇 ${formData.districts.length} 個區域` 
-                        : '點擊選擇區域'
-                      }
-                      <X className={`h-4 w-4 transform transition-transform ${isDistrictSectionOpen ? 'rotate-45' : ''}`} />
+                    <Button variant="outline" className="w-full justify-between" type="button">
+                      {formData.districts.length > 0
+                        ? `已選擇 ${formData.districts.length} 個區域`
+                        : '點擊選擇區域'}
+                      <X
+                        className={`h-4 w-4 transform transition-transform ${isDistrictSectionOpen ? 'rotate-45' : ''}`}
+                      />
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-2">
@@ -382,26 +394,30 @@ export function CreateServiceProvider() {
                           <Checkbox
                             id="district-all"
                             checked={formData.districts.includes('全區')}
-                            onCheckedChange={(checked) => handleDistrictChange('全區', checked as boolean)}
+                            onCheckedChange={(checked) =>
+                              handleDistrictChange('全區', checked as boolean)
+                            }
                           />
-                          <Label 
-                            htmlFor="district-all" 
+                          <Label
+                            htmlFor="district-all"
                             className="text-sm cursor-pointer font-medium text-primary"
                           >
                             全區
                           </Label>
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-2 mt-3">
                           {getAvailableDistricts().map((district) => (
                             <div key={district} className="flex items-center space-x-2">
                               <Checkbox
                                 id={`district-${district}`}
                                 checked={formData.districts.includes(district)}
-                                onCheckedChange={(checked) => handleDistrictChange(district, checked as boolean)}
+                                onCheckedChange={(checked) =>
+                                  handleDistrictChange(district, checked as boolean)
+                                }
                               />
-                              <Label 
-                                htmlFor={`district-${district}`} 
+                              <Label
+                                htmlFor={`district-${district}`}
                                 className="text-sm cursor-pointer"
                               >
                                 {district}
@@ -413,12 +429,12 @@ export function CreateServiceProvider() {
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
-                
+
                 {formData.districts.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {formData.districts.map((district) => (
-                      <Badge 
-                        key={district} 
+                      <Badge
+                        key={district}
                         variant={district === '全區' ? 'default' : 'secondary'}
                         className="cursor-pointer"
                         onClick={() => handleDistrictChange(district, false)}
@@ -429,7 +445,7 @@ export function CreateServiceProvider() {
                     ))}
                   </div>
                 )}
-                
+
                 <FieldError error={errors.districts} />
               </div>
             )}
@@ -442,7 +458,7 @@ export function CreateServiceProvider() {
               value={formData.description}
               onChange={(e) => {
                 if (e.target.value.length <= 200) {
-                  setFormData({...formData, description: e.target.value});
+                  setFormData({ ...formData, description: e.target.value });
                 }
               }}
               placeholder="簡單介紹您的專業服務..."
@@ -458,8 +474,15 @@ export function CreateServiceProvider() {
             <Label>上傳照片 * (必須上傳3張，第一張為封面照)</Label>
             <div className="grid grid-cols-3 gap-4">
               {formData.photos.map((photo, index) => (
-                <div key={index} className="relative aspect-video rounded-lg overflow-hidden border">
-                  <img src={photo} alt={`照片 ${index + 1}`} className="w-full h-full object-cover" />
+                <div
+                  key={index}
+                  className="relative aspect-video rounded-lg overflow-hidden border"
+                >
+                  <img
+                    src={photo}
+                    alt={`照片 ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
                   <Button
                     variant="destructive"
                     size="sm"
@@ -470,9 +493,11 @@ export function CreateServiceProvider() {
                   </Button>
                 </div>
               ))}
-              
+
               {formData.photos.length < 3 && (
-                <label className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${uploadingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label
+                  className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${uploadingPhotos ? 'opacity-50 pointer-events-none' : ''}`}
+                >
                   {uploadingPhotos ? (
                     <>
                       <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent mb-2"></div>
@@ -506,10 +531,12 @@ export function CreateServiceProvider() {
                 <Input
                   id="instagram"
                   value={formData.contacts.instagram}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contacts: {...formData.contacts, instagram: e.target.value}
-                  })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      contacts: { ...formData.contacts, instagram: e.target.value },
+                    })
+                  }
                   placeholder="@your_instagram"
                   className={getInputErrorClass(!!errors.instagram)}
                 />
@@ -520,10 +547,12 @@ export function CreateServiceProvider() {
                 <Input
                   id="facebook"
                   value={formData.contacts.facebook}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contacts: {...formData.contacts, facebook: e.target.value}
-                  })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      contacts: { ...formData.contacts, facebook: e.target.value },
+                    })
+                  }
                   placeholder="Facebook 專頁名稱"
                   className={getInputErrorClass(!!errors.facebook)}
                 />
@@ -534,10 +563,12 @@ export function CreateServiceProvider() {
                 <Input
                   id="line"
                   value={formData.contacts.line}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    contacts: {...formData.contacts, line: e.target.value}
-                  })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      contacts: { ...formData.contacts, line: e.target.value },
+                    })
+                  }
                   placeholder="your_line_id"
                   className={getInputErrorClass(!!errors.line)}
                 />
@@ -547,18 +578,20 @@ export function CreateServiceProvider() {
             <FieldError error={errors.contacts} />
           </div>
 
-          <Button 
-            onClick={handleSubmit} 
+          <Button
+            onClick={handleSubmit}
             className="w-full"
             disabled={
               isSubmitting ||
-              !formData.name.trim() || 
-              !formData.category || 
+              !formData.name.trim() ||
+              !formData.category ||
               !formData.gender ||
-              !formData.city || 
-              formData.districts.length === 0 || 
-              formData.photos.length !== 3 || 
-              (!formData.contacts.instagram && !formData.contacts.line && !formData.contacts.facebook)
+              !formData.city ||
+              formData.districts.length === 0 ||
+              formData.photos.length !== 3 ||
+              (!formData.contacts.instagram &&
+                !formData.contacts.line &&
+                !formData.contacts.facebook)
             }
           >
             {isSubmitting ? '建立中...' : '建立刊登'}

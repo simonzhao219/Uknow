@@ -1,6 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Users, ExternalLink, Ban, Search, AlertTriangle, X, ArrowUpDown } from 'lucide-react';
+import {
+  ChevronRight,
+  Users,
+  ExternalLink,
+  Ban,
+  Search,
+  AlertTriangle,
+  X,
+  ArrowUpDown,
+} from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 import {
   DropdownMenu,
@@ -9,10 +19,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
 import {
+  DEFAULT_NETWORK_SORT,
   SORT_OPTIONS,
   parseSortMode,
   nodeDaysLeft,
@@ -30,6 +42,7 @@ import {
 // - 搜尋：debounce 300ms 打伺服器（真名比對在後端，深代遮罩也搜得到）
 // - 對齊（方案 A）：前導槽固定寬只放 chevron；分支數移列右側，
 //   即將到期的倒數優先於分支數
+// - 顏色語意：頭像底色＝世代、右下角圓點＝訂閱狀態，兩者各自單一職責
 // ============================================================
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
@@ -45,20 +58,37 @@ const GEN_LINE: Record<number, string> = {
 };
 
 const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: string }> = {
-  active:    { dot: 'bg-green-500', label: '訂閱中', badge: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300' },
-  expiring:  { dot: 'bg-amber-500', label: '即將到期', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' },
-  expired:   { dot: 'bg-gray-400', label: '已失效', badge: 'bg-muted text-muted-foreground' },
-  suspended: { dot: 'bg-red-500', label: '已停權', badge: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' },
+  active: {
+    dot: 'bg-green-500',
+    label: '訂閱中',
+    badge: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
+  },
+  expiring: {
+    dot: 'bg-amber-500',
+    label: '即將到期',
+    badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+  },
+  expired: { dot: 'bg-gray-400', label: '已失效', badge: 'bg-muted text-muted-foreground' },
+  suspended: {
+    dot: 'bg-red-500',
+    label: '已停權',
+    badge: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+  },
 };
 
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-const AVATAR_COLORS = ['#16a34a', '#7c3aed', '#ea580c', '#0891b2', '#db2777', '#ca8a04', '#4f46e5', '#0d9488'];
-function avatarColor(id: string): string {
-  let sum = 0;
-  for (const ch of id) sum = (sum + ch.charCodeAt(0)) % AVATAR_COLORS.length;
-  return AVATAR_COLORS[sum];
+// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色系）：一代綠、二代紫、三代橘。
+// 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
+const GEN_AVATAR: Record<number, string> = {
+  1: '#16a34a',
+  2: '#7c3aed',
+  3: '#ea580c',
+};
+const GEN_AVATAR_FALLBACK = '#64748b'; // 世代超出 1–3 時的中性色
+function avatarColor(generation: number): string {
+  return GEN_AVATAR[generation] ?? GEN_AVATAR_FALLBACK;
 }
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
@@ -96,11 +126,15 @@ function Avatar({ node, size = 36 }: { node: NetworkNode; size?: number }) {
     <span className="relative shrink-0" style={{ width: size, height: size }}>
       <span
         className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
-        style={{ backgroundColor: avatarColor(node.userId), fontSize: size * 0.38 }}
+        style={{ backgroundColor: avatarColor(node.generation), fontSize: size * 0.38 }}
       >
         {initial(node.name)}
       </span>
-      <span className={cn('absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-card', s.dot)} style={{ width: size * 0.3, height: size * 0.3 }} aria-hidden />
+      <span
+        className={cn('absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-card', s.dot)}
+        style={{ width: size * 0.3, height: size * 0.3 }}
+        aria-hidden
+      />
     </span>
   );
 }
@@ -118,7 +152,11 @@ function RowAside({ node }: { node: NetworkNode }) {
     }
   }
   if (node.childCount > 0) {
-    return <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{node.childCount > 99 ? '99+' : node.childCount} 位</span>;
+    return (
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+        {node.childCount > 99 ? '99+' : node.childCount} 位
+      </span>
+    );
   }
   return null;
 }
@@ -186,11 +224,21 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
       </div>
 
       {expandable && isOpen && (
-        <div id={groupId} role="group" className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}>
+        <div
+          id={groupId}
+          role="group"
+          className={cn('ml-4 border-l pl-2', GEN_LINE[node.generation + 1] ?? 'border-border/70')}
+        >
           {kids === 'loading' || kids === undefined ? (
             <div data-testid="children-loading" className="space-y-2 py-2 pl-1">
-              <div className="flex items-center gap-2"><Skeleton className="h-9 w-9 rounded-full" /><Skeleton className="h-4 w-32" /></div>
-              <div className="flex items-center gap-2"><Skeleton className="h-9 w-9 rounded-full" /><Skeleton className="h-4 w-24" /></div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <Skeleton className="h-4 w-24" />
+              </div>
             </div>
           ) : (
             kids.map((child) => (
@@ -212,14 +260,21 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
 }
 
 // ---------- 需要關注橫幅（伺服器算好：依緊急度排序 + 上限） ----------
-function AttentionBanner({ attention, onSelect }: {
+function AttentionBanner({
+  attention,
+  onSelect,
+}: {
   attention: { total: number; items: NetworkNode[] };
   onSelect: (n: NetworkNode) => void;
 }) {
   if (attention.total === 0 || attention.items.length === 0) return null;
 
   const reason = (n: NetworkNode) =>
-    n.status === 'expiring' ? `剩 ${nodeDaysLeft(n)} 天到期` : n.status === 'suspended' ? '已停權' : '已失效';
+    n.status === 'expiring'
+      ? `剩 ${nodeDaysLeft(n)} 天到期`
+      : n.status === 'suspended'
+        ? '已停權'
+        : '已失效';
   const overflow = attention.total - attention.items.length;
 
   return (
@@ -259,10 +314,17 @@ function NodeDetail({ node }: { node: NetworkNode }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
-        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', GEN_BADGE[node.generation])}>
+        <span
+          className={cn(
+            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+            GEN_BADGE[node.generation],
+          )}
+        >
           {GEN_LABEL[node.generation]}
         </span>
-        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', s.badge)}>● {s.label}</span>
+        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', s.badge)}>
+          ● {s.label}
+        </span>
         {node.generation < 3 && (
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
             {node.childCount} 位直接下線
@@ -277,7 +339,12 @@ function NodeDetail({ node }: { node: NetworkNode }) {
         </div>
         <div className="flex items-center justify-between px-3 py-2.5 text-sm">
           <dt className="text-muted-foreground">訂閱到期</dt>
-          <dd className={cn('font-medium', node.status === 'expiring' && 'text-amber-600 dark:text-amber-400')}>
+          <dd
+            className={cn(
+              'font-medium',
+              node.status === 'expiring' && 'text-amber-600 dark:text-amber-400',
+            )}
+          >
             {node.endDate ? formatTwDate(node.endDate) : '—'}
             {d != null && `（剩 ${d} 天）`}
           </dd>
@@ -299,7 +366,9 @@ function NodeDetail({ node }: { node: NetworkNode }) {
           查看刊登
         </button>
       ) : (
-        <div className="rounded-lg bg-muted px-3 py-2.5 text-center text-sm text-muted-foreground">尚未建立刊登</div>
+        <div className="rounded-lg bg-muted px-3 py-2.5 text-center text-sm text-muted-foreground">
+          尚未建立刊登
+        </div>
       )}
     </div>
   );
@@ -311,16 +380,30 @@ interface ReferralTreeViewProps {
   sort: NetworkSortMode;
   onSortChange: (mode: NetworkSortMode) => void;
   loadChildren: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+  searchNetwork: (
+    q: string,
+    offset: number,
+  ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
+  /** 背景重新請求中（切排序、focus revalidate）——清單仍是舊資料，需回饋 */
+  isValidating?: boolean;
 }
 
 type SearchState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'done'; matches: NetworkSearchMatch[] }
+  // total = 全部命中數（不受分頁影響）；matches 是「目前已取回」的累積。
+  // 兩者都要,使用者才知道還有多少沒看到——搜尋不得靜默截斷。
+  | { status: 'done'; matches: NetworkSearchMatch[]; total: number; loadingMore: boolean }
   | { status: 'error' };
 
-export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, searchNetwork }: ReferralTreeViewProps) {
+export function ReferralTreeView({
+  overview,
+  sort,
+  onSortChange,
+  loadChildren,
+  searchNetwork,
+  isValidating = false,
+}: ReferralTreeViewProps) {
   const [selected, setSelected] = useState<NetworkNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [childrenMap, setChildrenMap] = useState<Record<string, NetworkNode[] | 'loading'>>({});
@@ -344,15 +427,38 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
     let cancelled = false;
     setSearch({ status: 'loading' });
     const t = setTimeout(() => {
-      searchNetwork(q)
-        .then((matches) => { if (!cancelled) setSearch({ status: 'done', matches }); })
-        .catch(() => { if (!cancelled) setSearch({ status: 'error' }); });
+      searchNetwork(q, 0)
+        .then(({ matches, total }) => {
+          if (!cancelled) setSearch({ status: 'done', matches, total, loadingMore: false });
+        })
+        .catch(() => {
+          if (!cancelled) setSearch({ status: 'error' });
+        });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
   }, [query, searchNetwork, sort]);
+
+  // 加載更多：offset = 已取回筆數，續接而非重打第一頁。
+  // 失敗不清空已顯示的結果——只把 loadingMore 收掉，使用者可再按一次。
+  const loadMoreMatches = useCallback(() => {
+    if (search.status !== 'done' || search.loadingMore) return;
+    const offset = search.matches.length;
+    setSearch({ ...search, loadingMore: true });
+    searchNetwork(query.trim(), offset)
+      .then(({ matches, total }) => {
+        setSearch((prev) =>
+          prev.status === 'done'
+            ? { status: 'done', matches: [...prev.matches, ...matches], total, loadingMore: false }
+            : prev,
+        );
+      })
+      .catch(() => {
+        setSearch((prev) => (prev.status === 'done' ? { ...prev, loadingMore: false } : prev));
+      });
+  }, [search, searchNetwork, query]);
 
   const roots = overview?.roots ?? [];
   const onSelect = (n: NetworkNode) => setSelected(n);
@@ -415,7 +521,12 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           {query && (
-            <button type="button" aria-label="清除搜尋" onClick={() => setQuery('')} className="shrink-0 text-muted-foreground hover:text-foreground">
+            <button
+              type="button"
+              aria-label="清除搜尋"
+              onClick={() => setQuery('')}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
               <X className="h-4 w-4" />
             </button>
           )}
@@ -426,7 +537,7 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             可見性）、sm+ 帶短標籤；單一文字來源，疊字問題結構性絕跡。 */}
         <DropdownMenu>
           <DropdownMenuTrigger
-            aria-label="排序方式"
+            aria-label={`排序方式：${SORT_OPTIONS.find((o) => o.value === sort)?.label ?? ''}`}
             className="relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-muted/40 p-2.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:py-2 sm:pl-3 sm:pr-3"
           >
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
@@ -437,13 +548,16 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
                 <span
                   key={o.value}
                   aria-hidden={o.value !== sort || undefined}
-                  className={cn('col-start-1 row-start-1 whitespace-nowrap', o.value !== sort && 'invisible')}
+                  className={cn(
+                    'col-start-1 row-start-1 whitespace-nowrap',
+                    o.value !== sort && 'invisible',
+                  )}
                 >
                   {o.label}
                 </span>
               ))}
             </span>
-            {sort !== 'updated_desc' && (
+            {sort !== DEFAULT_NETWORK_SORT && (
               <span
                 data-testid="sort-active-dot"
                 aria-hidden
@@ -452,7 +566,10 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[9rem]">
-            <DropdownMenuRadioGroup value={sort} onValueChange={(v) => onSortChange(parseSortMode(v))}>
+            <DropdownMenuRadioGroup
+              value={sort}
+              onValueChange={(v) => onSortChange(parseSortMode(v))}
+            >
               {SORT_OPTIONS.map((o) => (
                 <DropdownMenuRadioItem key={o.value} value={o.value} className="py-2.5">
                   {o.label}
@@ -466,7 +583,10 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
       {searching ? (
         search.status === 'loading' ? (
           <div className="space-y-2 py-2">
-            <div className="flex items-center gap-2"><Skeleton className="h-9 w-9 rounded-full" /><Skeleton className="h-4 w-32" /></div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <Skeleton className="h-4 w-32" />
+            </div>
           </div>
         ) : search.status === 'error' ? (
           <p className="py-6 text-center text-sm text-muted-foreground">搜尋失敗，請稍後再試</p>
@@ -491,15 +611,47 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
                 <Avatar node={node} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{node.name}</span>
-                  <span className="text-xs text-muted-foreground">{GEN_LABEL[node.generation]}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {GEN_LABEL[node.generation]}
+                  </span>
                 </span>
                 <RowAside node={node} />
               </div>
             ))}
+
+            {/* 命中總數與續接——版位與文案照 RewardHistory 的既有慣例。
+                沒有這一段，伺服器分頁就等於靜默截斷：使用者只看得到第一頁
+                且毫不知情。 */}
+            <div className="pt-2 text-center text-sm text-muted-foreground">
+              已顯示 {Math.min(search.matches.length, search.total)} / {search.total} 筆記錄
+            </div>
+            {search.matches.length < search.total && (
+              <div className="text-center">
+                <Button
+                  onClick={loadMoreMatches}
+                  variant="outline"
+                  size="sm"
+                  disabled={search.loadingMore}
+                >
+                  {search.loadingMore ? '加載中...' : '加載更多'}
+                </Button>
+              </div>
+            )}
           </div>
         ) : null
       ) : (
-        <div role="tree" aria-label="我的推薦網絡" className="space-y-0.5">
+        // 背景重新請求中：清單仍是舊排序的資料，降透明度 + aria-busy 讓
+        // 「還沒重排完」看得見也聽得見。切排序時 setSort 走的是
+        // isValidating 而非 loading（有資料就不整頁 spinner）。
+        <div
+          role="tree"
+          aria-label="我的推薦網絡"
+          aria-busy={isValidating || undefined}
+          className={cn(
+            'space-y-0.5 transition-opacity',
+            isValidating && 'opacity-50 pointer-events-none',
+          )}
+        >
           {roots.map((node) => (
             <NodeRow
               key={node.userId}
@@ -546,7 +698,10 @@ export function ReferralTreeView({ overview, sort, onSortChange, loadChildren, s
       {/* 手機詳情 sheet（桌機不觸發） */}
       {!isDesktop && (
         <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-          <SheetContent side="bottom" className="mx-auto max-h-[85%] gap-0 rounded-t-2xl sm:max-w-lg">
+          <SheetContent
+            side="bottom"
+            className="mx-auto max-h-[85%] gap-0 rounded-t-2xl sm:max-w-lg"
+          >
             {selected && (
               <>
                 <SheetHeader className="pb-2">

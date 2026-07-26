@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Info, X } from 'lucide-react';
 import { isAuthenticated } from '../utils/auth';
@@ -27,7 +27,9 @@ export function MaintenanceBanner() {
   useEffect(() => {
     try {
       setDismissedIds(JSON.parse(sessionStorage.getItem('dismissedAnnouncements') || '[]'));
-    } catch { /* 壞資料視同沒關閉過 */ }
+    } catch {
+      /* 壞資料視同沒關閉過 */
+    }
 
     isAuthenticated().then(setIsLoggedIn);
 
@@ -64,7 +66,7 @@ export function MaintenanceBanner() {
     }
 
     const authPaths = ['/login', '/register', '/auth/', '/forgot-password'];
-    return authPaths.some(path => currentPath.startsWith(path));
+    return authPaths.some((path) => currentPath.startsWith(path));
   };
 
   if (!shouldDisplay()) {
@@ -79,15 +81,15 @@ export function MaintenanceBanner() {
 
   // 根據類型設定樣式
   const severityStyles: Record<string, string> = {
-    info:    'bg-blue-50 border-blue-200 text-blue-800',
+    info: 'bg-blue-50 border-blue-200 text-blue-800',
     warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    error:   'bg-red-50 border-red-200 text-red-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
   };
 
   const iconStyles: Record<string, string> = {
-    info:    'text-blue-600',
+    info: 'text-blue-600',
     warning: 'text-yellow-600',
-    error:   'text-red-600',
+    error: 'text-red-600',
   };
 
   const style = severityStyles[announcement.type] || severityStyles.info;

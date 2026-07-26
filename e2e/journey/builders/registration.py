@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
+from builders.page_diagnostics import dump_page
 from pages.auth_page import AuthPage
 from pages.complete_profile_page import CompleteProfilePage
 from pages.otp_page import OtpPage
@@ -33,7 +34,17 @@ def register_account_via_gui(page: Page, admin: SupabaseAdmin, user: JourneyUser
     # Step 1：設定密碼 → email OTP
     auth.fill_signup_passwords(user.password, user.password)
     auth.submit_signup()
-    expect(page.get_by_test_id("otp-input-group")).to_be_visible(timeout=30_000)
+    # 平行建樹時這裡是已知的斷點：8 個瀏覽器同時擠 runner 上的 dev server，
+    # 按下註冊卻連 /signup 都沒送出（GoTrue log 上零筆請求）。逾時本身分不出
+    # 是「前端驗證擋下」「按鍵還沒接上 handler」還是「請求送了但失敗」——
+    # dump_page 的頁面文字與欄位實際值一眼就能分辨。
+    try:
+        expect(page.get_by_test_id("otp-input-group")).to_be_visible(timeout=30_000)
+    except AssertionError as exc:
+        raise RuntimeError(
+            f"按下註冊後 30 秒沒有出現 OTP 輸入框（{user.node}）。\n"
+            f"{dump_page(page, f'signup-no-otp-{user.node}')}"
+        ) from exc
 
     otp_code = admin.fetch_signup_otp(user.email, user.password)
     OtpPage(page).enter_code(otp_code)

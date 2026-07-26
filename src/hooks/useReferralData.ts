@@ -38,7 +38,10 @@ export interface UseReferralDataResult {
   sort: NetworkSortMode;
   setSort: (mode: NetworkSortMode) => void;
   loadChildren: (parentId: string) => Promise<NetworkNode[]>;
-  searchNetwork: (q: string) => Promise<NetworkSearchMatch[]>;
+  searchNetwork: (
+    q: string,
+    offset?: number,
+  ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
 }
 
 const DEDUP_KEY = 'referralNetwork';
@@ -69,7 +72,7 @@ export function useReferralData(): UseReferralDataResult {
     }
     try {
       const result = await apiRequestJson<{ success: boolean; data: NetworkOverview }>(
-        buildApiUrl(`/referrals/network/overview?sort=${sortRef.current}`)
+        buildApiUrl(`/referrals/network/overview?sort=${sortRef.current}`),
       );
       if (result.success) {
         setCache('referralNetwork', result.data);
@@ -94,7 +97,7 @@ export function useReferralData(): UseReferralDataResult {
       setLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -110,25 +113,28 @@ export function useReferralData(): UseReferralDataResult {
     if (!cached || cached.sort !== sortRef.current || isStale('referralNetwork')) {
       dedupe(DEDUP_KEY, fetchOverview);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('referralNetwork'),
-    () => dedupe(DEDUP_KEY, fetchOverview)
+    () => dedupe(DEDUP_KEY, fetchOverview),
   );
 
   const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchOverview), [fetchOverview]);
 
-  const setSort = useCallback((mode: NetworkSortMode) => {
-    if (mode === sortRef.current) return;
-    storeSort(mode);
-    setSortState(mode);
-    sortRef.current = mode;
-    childrenCache.current.clear();      // 排序是伺服器權威：舊排序的分支整張作廢
-    childrenInflight.current.clear();
-    dedupe(DEDUP_KEY, fetchOverview);
-  }, [fetchOverview]);
+  const setSort = useCallback(
+    (mode: NetworkSortMode) => {
+      if (mode === sortRef.current) return;
+      storeSort(mode);
+      setSortState(mode);
+      sortRef.current = mode;
+      childrenCache.current.clear(); // 排序是伺服器權威：舊排序的分支整張作廢
+      childrenInflight.current.clear();
+      dedupe(DEDUP_KEY, fetchOverview);
+    },
+    [fetchOverview],
+  );
 
   const loadChildren = useCallback(async (parentId: string): Promise<NetworkNode[]> => {
     const key = `${parentId}::${sortRef.current}`;
@@ -139,7 +145,9 @@ export function useReferralData(): UseReferralDataResult {
 
     const p = (async () => {
       const result = await apiRequestJson<{ success: boolean; data: { nodes: NetworkNode[] } }>(
-        buildApiUrl(`/referrals/network/children?parentId=${encodeURIComponent(parentId)}&sort=${sortRef.current}`)
+        buildApiUrl(
+          `/referrals/network/children?parentId=${encodeURIComponent(parentId)}&sort=${sortRef.current}`,
+        ),
       );
       if (!result.success) throw new Error('載入下線失敗');
       childrenCache.current.set(key, result.data.nodes);
@@ -153,13 +161,33 @@ export function useReferralData(): UseReferralDataResult {
     }
   }, []);
 
-  const searchNetwork = useCallback(async (q: string): Promise<NetworkSearchMatch[]> => {
-    const result = await apiRequestJson<{ success: boolean; data: { matches: NetworkSearchMatch[] } }>(
-      buildApiUrl(`/referrals/network/search?q=${encodeURIComponent(q)}&sort=${sortRef.current}`)
-    );
-    if (!result.success) throw new Error('搜尋失敗');
-    return result.data.matches;
-  }, []);
+  // 回傳 total 而非只有 matches：搜尋不得靜默截斷,呼叫端要能顯示
+  // 「已顯示 X / Y」並續接下一頁（offset = 已取回筆數）。
+  const searchNetwork = useCallback(
+    async (q: string, offset = 0): Promise<{ matches: NetworkSearchMatch[]; total: number }> => {
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: { matches: NetworkSearchMatch[]; total: number };
+      }>(
+        buildApiUrl(
+          `/referrals/network/search?q=${encodeURIComponent(q)}&sort=${sortRef.current}&offset=${offset}`,
+        ),
+      );
+      if (!result.success) throw new Error('搜尋失敗');
+      return { matches: result.data.matches, total: result.data.total };
+    },
+    [],
+  );
 
-  return { overview, loading, isValidating, error, refetch, sort, setSort, loadChildren, searchNetwork };
+  return {
+    overview,
+    loading,
+    isValidating,
+    error,
+    refetch,
+    sort,
+    setSort,
+    loadChildren,
+    searchNetwork,
+  };
 }

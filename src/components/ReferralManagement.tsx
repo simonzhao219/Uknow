@@ -1,27 +1,40 @@
-import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { ArrowLeft, Users, Loader2, Share2 } from 'lucide-react';
+import { ArrowLeft, Users, Loader2 } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
+import { MyQrEntry } from './referral/MyQrEntry';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';
-import { useNotification } from './notifications/NotificationContext';
-import { shareReferralInvite } from '../utils/referralInvite';
 
 export function ReferralManagement() {
   const handleBack = useBackNavigation();
   usePageRestoration();
 
-  const { overview, loading, error, refetch, sort, setSort, loadChildren, searchNetwork } = useReferralData();
-  const { showToast } = useNotification();
+  const {
+    overview,
+    loading,
+    isValidating,
+    error,
+    refetch,
+    sort,
+    setSort,
+    loadChildren,
+    searchNetwork,
+  } = useReferralData();
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -44,7 +57,13 @@ export function ReferralManagement() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBack}
+            className="shrink-0"
+            aria-label="返回上一頁"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -66,7 +85,13 @@ export function ReferralManagement() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0" aria-label="返回上一頁">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBack}
+          className="shrink-0"
+          aria-label="返回上一頁"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
@@ -88,23 +113,10 @@ export function ReferralManagement() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 推薦碼 + 分享（沿用 Dashboard 的 shareReferralInvite） */}
-          <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">我的推薦碼</p>
-              <p className="truncate font-mono text-base font-semibold tracking-wider">
-                {overview?.userReferralCode || '—'}
-              </p>
-            </div>
-            <Button
-              className="ml-auto shrink-0"
-              onClick={() => shareReferralInvite(overview?.userReferralCode || '', showToast)}
-              disabled={!overview?.userReferralCode}
-            >
-              <Share2 className="mr-2 h-4 w-4" />
-              分享
-            </Button>
-          </div>
+          {/* 推薦碼與「我的 QR」的唯一入口——與會員中心共用同一顆（同一個元件、
+              同一份狀態來源），這裡只多給一層 bordered row 的外框。
+              加入成功後 refetch：會員狀態由元件自己重抓，推薦網絡是本頁的事。 */}
+          <MyQrEntry className="rounded-lg border bg-muted/40 px-3 py-2.5" onJoined={refetch} />
 
           <ReferralTreeView
             overview={overview}
@@ -112,6 +124,7 @@ export function ReferralManagement() {
             onSortChange={setSort}
             loadChildren={loadChildren}
             searchNetwork={searchNetwork}
+            isValidating={isValidating}
           />
         </CardContent>
       </Card>

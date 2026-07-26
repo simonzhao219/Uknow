@@ -1,7 +1,8 @@
-import React, { useContext } from 'react';
+import type React from 'react';
+import { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import { UserContext } from '../App';
-import { useFeatures, Features } from '../contexts/FeatureContext';
+import { useFeatures, type Features } from '../contexts/FeatureContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
@@ -57,9 +58,7 @@ export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProp
               很抱歉，您嘗試訪問的功能目前已被管理員關閉。請稍後再試或聯繫客服了解詳情。
             </p>
             <div className="flex gap-2">
-              <Button onClick={() => navigate('/dashboard')}>
-                返回會員中心
-              </Button>
+              <Button onClick={() => navigate('/dashboard')}>返回會員中心</Button>
               <Button variant="outline" onClick={() => navigate('/')}>
                 返回首頁
               </Button>

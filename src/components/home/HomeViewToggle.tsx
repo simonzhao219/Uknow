@@ -1,6 +1,6 @@
-import { Grid3x3, LayoutGrid } from "lucide-react";
-import { cn } from "../ui/utils";
-import type { HomeViewMode } from "../../utils/homeViewMode";
+import { Grid3x3, LayoutGrid } from 'lucide-react';
+import { cn } from '../ui/utils';
+import type { HomeViewMode } from '../../utils/homeViewMode';
 
 // 手機首頁「檢視方式」分段控制（segmented control）。
 //
@@ -20,8 +20,8 @@ interface HomeViewToggleProps {
 }
 
 const OPTIONS: { mode: HomeViewMode; label: string; Icon: typeof Grid3x3 }[] = [
-  { mode: "photo", label: "照片檢視", Icon: Grid3x3 },
-  { mode: "detailed", label: "詳細檢視", Icon: LayoutGrid },
+  { mode: 'photo', label: '照片檢視', Icon: Grid3x3 },
+  { mode: 'detailed', label: '詳細檢視', Icon: LayoutGrid },
 ];
 
 export function HomeViewToggle({ value, onChange, className }: HomeViewToggleProps) {
@@ -30,7 +30,7 @@ export function HomeViewToggle({ value, onChange, className }: HomeViewTogglePro
       role="group"
       aria-label="檢視方式"
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 rounded-lg border bg-muted p-0.5",
+        'inline-flex shrink-0 items-center gap-0.5 rounded-lg border bg-muted p-0.5',
         className,
       )}
     >
@@ -45,10 +45,10 @@ export function HomeViewToggle({ value, onChange, className }: HomeViewTogglePro
             onClick={() => onChange(mode)}
             className={cn(
               // 44px 拇指熱區；未選態透明、選中態實心浮起（iOS 分段控制的視覺語言）
-              "flex h-9 w-11 items-center justify-center rounded-md transition-colors",
+              'flex h-9 w-11 items-center justify-center rounded-md transition-colors',
               active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />

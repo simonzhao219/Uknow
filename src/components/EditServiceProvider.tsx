@@ -1,4 +1,5 @@
-import React, { useState, useContext, useEffect } from 'react';
+import type React from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -7,16 +8,11 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Checkbox } from './ui/checkbox';
-import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
 import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
 import { ArrowLeft, Upload, X, Save, Info } from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from './ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
 import { getGenderDisplay } from '../utils/gender';
 import { validateContacts } from '../utils/contactValidation';
@@ -25,6 +21,7 @@ import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
+import type { ListingRow } from '../types/listing';
 
 export function EditServiceProvider() {
   const { id } = useParams();
@@ -32,11 +29,11 @@ export function EditServiceProvider() {
   const navigate = useNavigate();
   const { showToast, showInfo } = useNotification();
   const supabase = createClient();
-  
+
   const [formData, setFormData] = useState({
     name: '',
     category: '',
-    gender: '',  // ✅ 新增
+    gender: '', // ✅ 新增
     city: '',
     districts: [] as string[],
     description: '',
@@ -44,19 +41,19 @@ export function EditServiceProvider() {
     contacts: {
       instagram: '',
       line: '',
-      facebook: ''
-    }
+      facebook: '',
+    },
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
-  const [serviceProvider, setServiceProvider] = useState<any>(null);
+  const [serviceProvider, setServiceProvider] = useState<ListingRow | null>(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   // ✅ 从后端 API 获取刊登数据
   useEffect(() => {
     if (!id) return;
-    
+
     const fetchListing = async () => {
       setIsLoading(true);
       try {
@@ -76,14 +73,14 @@ export function EditServiceProvider() {
 
         setServiceProvider(listing);
         setFormData({
-          name:        listing.name,
-          category:    listing.category,
-          gender:      listing.gender || '',
-          city:        listing.city,
-          districts:   listing.districts || [],
+          name: listing.name,
+          category: listing.category,
+          gender: listing.gender || '',
+          city: listing.city,
+          districts: listing.districts || [],
           description: listing.description || '',
-          photos:      listing.photos || [],
-          contacts:    listing.contacts || { instagram: '', line: '', facebook: '' },
+          photos: listing.photos || [],
+          contacts: listing.contacts || { instagram: '', line: '', facebook: '' },
         });
       } catch (error) {
         console.error('❌ 獲取刊登詳情失敗:', error);
@@ -124,7 +121,7 @@ export function EditServiceProvider() {
     setFormData({
       ...formData,
       city: newCity,
-      districts: ['全區', ...availableDistricts]  // 勾選全區 + 所有具體區域
+      districts: ['全區', ...availableDistricts], // 勾選全區 + 所有具體區域
     });
     // 自動展開區域選擇
     setIsDistrictSectionOpen(true);
@@ -141,12 +138,12 @@ export function EditServiceProvider() {
       formData.districts,
       availableDistricts,
       district,
-      checked
+      checked,
     );
-    
+
     setFormData({
       ...formData,
-      districts: newDistricts
+      districts: newDistricts,
     });
 
     // 清除區域錯誤
@@ -159,7 +156,7 @@ export function EditServiceProvider() {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
+
     if (formData.photos.length + files.length > 3) {
       showToast('最多只能上傳3張照片', 'error');
       return;
@@ -167,7 +164,7 @@ export function EditServiceProvider() {
 
     // 验证格式
     const ALLOWED_FORMATS = ['image/jpeg', 'image/png', 'image/webp'];
-    const invalidFiles = files.filter(file => !ALLOWED_FORMATS.includes(file.type));
+    const invalidFiles = files.filter((file) => !ALLOWED_FORMATS.includes(file.type));
     if (invalidFiles.length > 0) {
       showToast('只支援 JPG、PNG、WEBP 格式', 'error');
       return;
@@ -179,9 +176,11 @@ export function EditServiceProvider() {
 
   const uploadPhotosToServer = async (files: File[]) => {
     setUploadingPhotos(true);
-    
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
         showToast('請先登入', 'error');
         navigate('/login');
@@ -192,45 +191,41 @@ export function EditServiceProvider() {
         const formDataToSend = new FormData();
         formDataToSend.append('file', file);
         formDataToSend.append('listingTempId', serviceProvider.id); // 使用刊登 ID
-        
-        const response = await fetch(
-          buildApiUrl('/listings/upload-photo'),
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: formDataToSend
-          }
-        );
-        
+
+        const response = await fetch(buildApiUrl('/listings/upload-photo'), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formDataToSend,
+        });
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error?.message || '上傳失敗');
         }
-        
+
         const data = await response.json();
         return data.photoUrl;
       });
-      
+
       const photoUrls = await Promise.all(uploadPromises);
-      
+
       // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
       // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（與
       // CreateServiceProvider 同一個 stale closure bug）。
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        photos: [...prev.photos, ...photoUrls]
+        photos: [...prev.photos, ...photoUrls],
       }));
 
-      setErrors(prev => {
+      setErrors((prev) => {
         const next = { ...prev };
         delete next.photos;
         return next;
       });
-      
+
       showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
-      
     } catch (error: any) {
       console.error('❌ 照片上傳失敗:', error);
       showToast(error.message || '照片上傳失敗，請稍後再試', 'error');
@@ -241,12 +236,12 @@ export function EditServiceProvider() {
 
   const removePhoto = (index: number) => {
     const newPhotos = formData.photos.filter((_, i) => i !== index);
-    setFormData({...formData, photos: newPhotos});
+    setFormData({ ...formData, photos: newPhotos });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validate()) {
       showToast('請檢查表單欄位', 'error');
       return;
@@ -258,14 +253,14 @@ export function EditServiceProvider() {
       const { error: updateError } = await supabase
         .from('listings')
         .update({
-          name:        formData.name,
-          category:    formData.category,
-          gender:      formData.gender,
-          city:        formData.city,
-          districts:   formData.districts,
+          name: formData.name,
+          category: formData.category,
+          gender: formData.gender,
+          city: formData.city,
+          districts: formData.districts,
           description: formData.description,
-          photos:      formData.photos,
-          contacts:    formData.contacts,
+          photos: formData.photos,
+          contacts: formData.contacts,
         })
         .eq('id', serviceProvider.id)
         .eq('user_id', user!.id);
@@ -274,7 +269,6 @@ export function EditServiceProvider() {
 
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
-
     } catch (error: any) {
       console.error('❌ 更新刊登失敗:', error);
       showToast(error.message || '更新失敗，請稍後再試', 'error');
@@ -326,7 +320,7 @@ export function EditServiceProvider() {
                 value={formData.name}
                 onChange={(e) => {
                   if (e.target.value.length <= NAME_MAX_LENGTH) {
-                    setFormData({...formData, name: e.target.value});
+                    setFormData({ ...formData, name: e.target.value });
                   }
                 }}
                 placeholder="例：專業美髮師 Amy"
@@ -341,13 +335,18 @@ export function EditServiceProvider() {
 
             <div className="space-y-2">
               <Label>服務類別 *</Label>
-              <Select value={formData.category} onValueChange={(value) => setFormData({...formData, category: value})}>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => setFormData({ ...formData, category: value })}
+              >
                 <SelectTrigger className={getInputErrorClass(!!errors.category)}>
                   <SelectValue placeholder="選擇服務類別" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60 overflow-y-auto">
-                  {SERVICE_CATEGORIES.map(category => (
-                    <SelectItem key={category} value={category}>{category}</SelectItem>
+                  {SERVICE_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -357,7 +356,10 @@ export function EditServiceProvider() {
             {/* ✅ 性别选择器（可编辑） */}
             <div className="space-y-2">
               <Label>性別 *</Label>
-              <Select value={formData.gender} onValueChange={(value) => setFormData({...formData, gender: value})}>
+              <Select
+                value={formData.gender}
+                onValueChange={(value) => setFormData({ ...formData, gender: value })}
+              >
                 <SelectTrigger className={getInputErrorClass(!!errors.gender)}>
                   <SelectValue placeholder="選擇性別" />
                 </SelectTrigger>
@@ -378,8 +380,10 @@ export function EditServiceProvider() {
                     <SelectValue placeholder="選擇城市" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60 overflow-y-auto">
-                    {TAIWAN_CITIES.map(city => (
-                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    {TAIWAN_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -390,21 +394,15 @@ export function EditServiceProvider() {
               {formData.city && (
                 <div className="space-y-2">
                   <Label>服務區域 * (可選擇多個區域)</Label>
-                  <Collapsible 
-                    open={isDistrictSectionOpen} 
-                    onOpenChange={setIsDistrictSectionOpen}
-                  >
+                  <Collapsible open={isDistrictSectionOpen} onOpenChange={setIsDistrictSectionOpen}>
                     <CollapsibleTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        className="w-full justify-between"
-                        type="button"
-                      >
-                        {formData.districts.length > 0 
-                          ? `已選擇 ${formData.districts.length} 個區域` 
-                          : '點擊選擇區域'
-                        }
-                        <X className={`h-4 w-4 transform transition-transform ${isDistrictSectionOpen ? 'rotate-45' : ''}`} />
+                      <Button variant="outline" className="w-full justify-between" type="button">
+                        {formData.districts.length > 0
+                          ? `已選擇 ${formData.districts.length} 個區域`
+                          : '點擊選擇區域'}
+                        <X
+                          className={`h-4 w-4 transform transition-transform ${isDistrictSectionOpen ? 'rotate-45' : ''}`}
+                        />
                       </Button>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="space-y-2">
@@ -415,16 +413,18 @@ export function EditServiceProvider() {
                             <Checkbox
                               id="district-all"
                               checked={formData.districts.includes('全區')}
-                              onCheckedChange={(checked) => handleDistrictChange('全區', checked as boolean)}
+                              onCheckedChange={(checked) =>
+                                handleDistrictChange('全區', checked as boolean)
+                              }
                             />
-                            <Label 
-                              htmlFor="district-all" 
+                            <Label
+                              htmlFor="district-all"
                               className="text-sm cursor-pointer font-medium text-primary"
                             >
                               全區
                             </Label>
                           </div>
-                          
+
                           {/* 具體區域選項 */}
                           <div className="grid grid-cols-2 gap-2 mt-3">
                             {getAvailableDistricts().map((district) => (
@@ -432,10 +432,12 @@ export function EditServiceProvider() {
                                 <Checkbox
                                   id={`district-${district}`}
                                   checked={formData.districts.includes(district)}
-                                  onCheckedChange={(checked) => handleDistrictChange(district, checked as boolean)}
+                                  onCheckedChange={(checked) =>
+                                    handleDistrictChange(district, checked as boolean)
+                                  }
                                 />
-                                <Label 
-                                  htmlFor={`district-${district}`} 
+                                <Label
+                                  htmlFor={`district-${district}`}
                                   className="text-sm cursor-pointer"
                                 >
                                   {district}
@@ -447,13 +449,13 @@ export function EditServiceProvider() {
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
-                  
+
                   {/* 顯示已選擇的區域 */}
                   {formData.districts.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {formData.districts.map((district) => (
-                        <Badge 
-                          key={district} 
+                        <Badge
+                          key={district}
                           variant={district === '全區' ? 'default' : 'secondary'}
                           className="cursor-pointer"
                           onClick={() => handleDistrictChange(district, false)}
@@ -464,7 +466,7 @@ export function EditServiceProvider() {
                       ))}
                     </div>
                   )}
-                  
+
                   <FieldError error={errors.districts} />
                 </div>
               )}
@@ -477,7 +479,7 @@ export function EditServiceProvider() {
                 value={formData.description}
                 onChange={(e) => {
                   if (e.target.value.length <= DESCRIPTION_MAX_LENGTH) {
-                    setFormData({...formData, description: e.target.value});
+                    setFormData({ ...formData, description: e.target.value });
                   }
                 }}
                 placeholder="簡單介紹您的專業服務..."
@@ -493,8 +495,15 @@ export function EditServiceProvider() {
               <Label>上傳照片 * (必須上傳3張照片)</Label>
               <div className="grid grid-cols-3 gap-4">
                 {formData.photos.map((photo, index) => (
-                  <div key={index} className="relative aspect-video rounded-lg overflow-hidden border">
-                    <img src={photo} alt={`照片 ${index + 1}`} className="w-full h-full object-cover" />
+                  <div
+                    key={index}
+                    className="relative aspect-video rounded-lg overflow-hidden border"
+                  >
+                    <img
+                      src={photo}
+                      alt={`照片 ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
                     <Button
                       type="button"
                       variant="destructive"
@@ -507,9 +516,11 @@ export function EditServiceProvider() {
                     </Button>
                   </div>
                 ))}
-                
+
                 {formData.photos.length < 3 && (
-                  <label className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center ${uploadingPhotos ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-muted-foreground/50'} transition-colors`}>
+                  <label
+                    className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center ${uploadingPhotos ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-muted-foreground/50'} transition-colors`}
+                  >
                     <Upload className="h-6 w-6 text-muted-foreground mb-2" />
                     <span className="text-sm text-muted-foreground text-center px-2">
                       {uploadingPhotos ? '上傳中...' : '上傳照片'}
@@ -536,10 +547,12 @@ export function EditServiceProvider() {
                   <Input
                     id="instagram"
                     value={formData.contacts.instagram}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contacts: {...formData.contacts, instagram: e.target.value}
-                    })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        contacts: { ...formData.contacts, instagram: e.target.value },
+                      })
+                    }
                     placeholder="@your_instagram"
                     className={getInputErrorClass(!!errors.instagram)}
                   />
@@ -548,12 +561,12 @@ export function EditServiceProvider() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="facebook">Facebook</Label>
-                    <Info 
-                      className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors" 
+                    <Info
+                      className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                       onClick={() => {
                         showInfo(
                           '填寫說明',
-                          '請填入Facebook網址後的字串或粉絲專頁名字，例：『www.facebook.com/Uknow』就輸入Uknow。'
+                          '請填入Facebook網址後的字串或粉絲專頁名字，例：『www.facebook.com/Uknow』就輸入Uknow。',
                         );
                       }}
                     />
@@ -561,10 +574,12 @@ export function EditServiceProvider() {
                   <Input
                     id="facebook"
                     value={formData.contacts.facebook}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contacts: {...formData.contacts, facebook: e.target.value}
-                    })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        contacts: { ...formData.contacts, facebook: e.target.value },
+                      })
+                    }
                     placeholder="Facebook網址後的字串或粉專名稱"
                     className={getInputErrorClass(!!errors.facebook)}
                   />
@@ -575,10 +590,12 @@ export function EditServiceProvider() {
                   <Input
                     id="line"
                     value={formData.contacts.line}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contacts: {...formData.contacts, line: e.target.value}
-                    })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        contacts: { ...formData.contacts, line: e.target.value },
+                      })
+                    }
                     placeholder="your_line_id"
                     className={getInputErrorClass(!!errors.line)}
                   />
@@ -589,11 +606,16 @@ export function EditServiceProvider() {
             </div>
 
             <div className="flex gap-4">
-              <Button type="button" variant="outline" onClick={() => navigate('/service-providers')} className="flex-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/service-providers')}
+                className="flex-1"
+              >
                 取消
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="flex-1"
                 disabled={
                   !formData.name.trim() ||
@@ -601,8 +623,10 @@ export function EditServiceProvider() {
                   !formData.gender ||
                   !formData.city ||
                   formData.districts.length === 0 ||
-                  !(formData.photos.length == 3) ||
-                  (!formData.contacts.instagram && !formData.contacts.line && !formData.contacts.facebook)
+                  !(formData.photos.length === 3) ||
+                  (!formData.contacts.instagram &&
+                    !formData.contacts.line &&
+                    !formData.contacts.facebook)
                 }
               >
                 <Save className="h-4 w-4 mr-2" />

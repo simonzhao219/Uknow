@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -8,7 +8,7 @@ export interface NotificationConfig {
   title: string;
   message: string;
   type: NotificationType;
-  details?: string[];
+  details?: ReactNode[];
   onConfirm?: () => void;
   confirmText?: string;
   onCancel?: () => void;
@@ -148,7 +148,7 @@ export function NotificationCard({
           {/* Body */}
           <div className="px-6 pb-4">
             <p className={`${style.textColor} mb-3`}>{message}</p>
-            
+
             {details && details.length > 0 && (
               <div className={`${style.bgColor} rounded-md p-3 space-y-1`}>
                 {details.map((detail, index) => (

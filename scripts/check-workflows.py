@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""CI workflow 設定的機械檢查——目前只驗一條規則。
+
+存在理由(2026-07-25 bug 的防線回填):`.github/workflows/` 是 YAML 設定,
+既有閘門對它只有「GitHub 願不願意跑」這一層——語意錯誤(設定寫了但不生效)
+沒有任何一層會紅。那次的 bug 正是這樣漏網的:`changes` job 的負向 pattern
+從加入起就沒作用,而 CI 全綠、沒有任何訊號。
+
+規則 1:dorny/paths-filter 的負向 pattern 必須搭 predicate-quantifier: every
+  該 action 的 predicate-quantifier 預設是 `some`——語意是「檔案符合**任一**
+  pattern 即視為命中」。於是 `- '**'` 這種全域 pattern 一旦存在,後面的
+  `- '!docs/**'` 永遠不會被考慮,filter 對任何變更都回 true。要讓負向排除
+  生效,必須明確設 `predicate-quantifier: every`(要求所有 pattern 都成立)。
+  這是 dorny 官方文件記載的 exclusion 慣用法。
+
+決策邏輯放在純函式 violations() 裡,好讓表格案例直接驗行為(與 .claude/hooks/
+的 decide() 同慣例)。刻意用純文字掃描而不 import yaml——framework-check 的
+契約是免依賴安裝,不能假設 runner 上有 PyYAML。
+
+跑法:
+  python3 scripts/check-workflows.py              掃 .github/workflows/*.yml
+  python3 scripts/check-workflows.py --self-test  跑表格案例(驗檢查器自己)
+framework-check.sh 會依序呼叫兩者。
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+
+# step 的起點:`- uses:` 或 `- name:`
+STEP_START = re.compile(r"^(\s*)-\s+(uses|name)\s*:")
+# 負向 pattern:list item 的值以 ! 開頭(引號可有可無)
+NEGATED = re.compile(r"""^\s*-\s*['"]?!""")
+QUANTIFIER = re.compile(r"""^\s*predicate-quantifier\s*:\s*['"]?([A-Za-z]+)""")
+
+
+def _steps(text: str) -> list[str]:
+    """把 workflow 文字切成 step 區塊。
+
+    區塊自 `- uses:`/`- name:` 起,止於下一個同縮排的 step 或任何縮排更淺的
+    非空行(job 邊界)——不切 job 邊界會把下一個 job 的內容誤算進來。
+    """
+    lines = text.splitlines()
+    blocks: list[str] = []
+    current: list[str] | None = None
+    indent = 0
+
+    for line in lines:
+        m = STEP_START.match(line)
+        if m:
+            if current is not None:
+                blocks.append("\n".join(current))
+            current, indent = [line], len(m.group(1))
+            continue
+        if current is not None:
+            stripped = line.strip()
+            if stripped and (len(line) - len(line.lstrip())) < indent:
+                blocks.append("\n".join(current))
+                current = None
+                continue
+            current.append(line)
+
+    if current is not None:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def violations(text: str) -> list[str]:
+    """回傳違規訊息清單(空 list 表示通過)。純函式,無 I/O。"""
+    found: list[str] = []
+
+    for block in _steps(text):
+        if "dorny/paths-filter" not in block:
+            continue
+
+        negated = [ln.strip() for ln in block.splitlines() if NEGATED.match(ln)]
+        if not negated:
+            continue  # 沒用負向 pattern,quantifier 不影響結果
+
+        quantifier = None
+        for ln in block.splitlines():
+            m = QUANTIFIER.match(ln)
+            if m:
+                quantifier = m.group(1)
+
+        if quantifier != "every":
+            actual = f"predicate-quantifier: {quantifier}" if quantifier else "未設(預設 some)"
+            found.append(
+                f"dorny/paths-filter 用了負向 pattern({', '.join(negated)})但 {actual}"
+                "——預設的 some 語意是「符合任一 pattern 即命中」,全域 pattern"
+                "(如 '**')會先成立,負向排除永遠不被考慮、filter 對任何變更都回"
+                " true。修法:在同一個 with: 下加 predicate-quantifier: every。"
+            )
+
+    return found
+
+
+# ============================================================================
+# 命名與結構規則(規則 2-7)——完整原則見 .claude/rules/github-actions.md
+# ============================================================================
+
+JOB_ID = re.compile(r"^  ([a-z][a-z0-9-]*):\s*$")
+CJK = re.compile(r"[\u4e00-\u9fff]")
+TITLE_CASE = re.compile(r"^[A-Z][A-Za-z0-9]*( [A-Z(][A-Za-z0-9)/-]*)*$")
+
+# job id 不得只講「跑什麼工具」——工具會換,那一軌要證明的事不會
+TOOL_NAMES = {
+    "npm-audit", "biome", "eslint", "vitest", "jest", "pytest", "tsc",
+    "deno", "playwright", "knip", "shellcheck", "actionlint",
+}
+# job id 不得是裸形容詞/裸動詞:branch protection 的 check 清單只看得到這串字
+BARE_WORDS = {
+    "static", "unit", "build", "test", "tests", "lint", "check", "deploy",
+    "run", "verify", "e2e", "integration", "release", "publish",
+}
+# 這些 job id 進了 branch protection 的 required checks,改名要同步改保護規則
+FROZEN_JOB_IDS = {"ci-ok"}
+
+
+def _jobs(text: str) -> list[tuple[str, str]]:
+    """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
+    except StopIteration:
+        return []
+    out: list[tuple[str, str]] = []
+    cur_id: str | None = None
+    cur: list[str] = []
+    for line in lines[start + 1 :]:
+        m = JOB_ID.match(line)
+        if m:
+            if cur_id:
+                out.append((cur_id, "\n".join(cur)))
+            cur_id, cur = m.group(1), []
+            continue
+        if cur_id is not None:
+            cur.append(line)
+    if cur_id:
+        out.append((cur_id, "\n".join(cur)))
+    return out
+
+
+def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
+    """workflow 的命名與結構規則。純函式,無 I/O。"""
+    found: list[str] = []
+
+    # 規則 2:workflow name 是識別字(workflow_run 以名稱引用、也是 badge URL)
+    #        → 英文 Title Case,不得含中文
+    for line in text.splitlines():
+        if line.startswith("name:"):
+            wf = line.split(":", 1)[1].strip()
+            if CJK.search(wf):
+                found.append(f"workflow name {wf!r} 含中文——它是識別字(workflow_run 以名稱引用),須為英文 Title Case")
+            elif not TITLE_CASE.match(wf):
+                found.append(f"workflow name {wf!r} 不是 Title Case(每個字首大寫、不用標點)")
+            break
+
+    # 規則 3:禁止 workflow 層 permissions
+    #        它是**上限**不是預設值,會讓需要更多權限的 job 越權而整個
+    #        workflow 拒絕啟動(startup_failure,連 check run 都不建立)。
+    for i, line in enumerate(text.splitlines()):
+        if line.rstrip() == "permissions:" and not line.startswith(" "):
+            found.append(
+                "出現 workflow 層 permissions——它是上限而非預設值,"
+                "需要 issues: write 之類的 job 會被判越權,整個 workflow 拒絕啟動。"
+                "權限一律逐 job 宣告。"
+            )
+            break
+
+    jobs = _jobs(text)
+    for job_id, block in jobs:
+        # 規則 4:job id 命名——kebab-case 名詞片語,不得是工具名或裸形容詞/動詞
+        if job_id in TOOL_NAMES:
+            found.append(f"job id {job_id!r} 是工具名——請改成「這一軌證明了什麼」(例:dependency-audit)")
+        elif job_id in BARE_WORDS:
+            found.append(f"job id {job_id!r} 是裸形容詞/動詞——branch protection 只顯示這串字,請用名詞片語(例:{job_id}-tests / {job_id}-checks)")
+
+        is_reusable_call = any(l.strip().startswith("uses: ./") for l in block.splitlines())
+
+        # 規則 5:每個 job 都要有 timeout-minutes(呼叫 reusable 的 job 不支援)
+        if not is_reusable_call and "timeout-minutes:" not in block:
+            found.append(f"job {job_id!r} 缺 timeout-minutes——沒有上限的 job 卡住就是燒滿 6 小時")
+
+        # 規則 6:每個 step 都要有 name
+        for bl in _steps(block):
+            first = bl.splitlines()[0]
+            if re.match(r"^\s*-\s+uses\s*:", first) or re.match(r"^\s*-\s+run\s*:", first):
+                found.append(
+                    f"job {job_id!r} 有無名 step({first.strip()[:50]})——"
+                    "UI 會顯示成 'Run actions/xxx',與真正的閘門混在一起難以判讀"
+                )
+
+    # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
+    #        漏一個 = 那一軌不擋合併(2026-07-25 PR #109 就是這樣被 auto-merge 掉的)
+    if filename.endswith("ci.yml") and any(j == "ci-ok" for j, _ in jobs):
+        ci_ok_block = next(b for j, b in jobs if j == "ci-ok")
+        declared = {
+            l.strip().lstrip("- ").strip()
+            for l in ci_ok_block.splitlines()
+            if re.match(r"^\s+-\s+[a-z][a-z0-9-]*\s*$", l)
+        }
+        others = {j for j, _ in jobs if j != "ci-ok"}
+        missing = others - declared
+        if missing:
+            found.append(
+                f"ci-ok 的 needs 漏了 {sorted(missing)}——那幾軌紅了也不會擋合併。"
+                "ci-ok 是唯一的 required check,新增 job 必須同步進它的 needs。"
+            )
+
+    return found
+
+
+# --- 表格案例:每筆是 (標籤, workflow 片段, 預期違規數) ---
+CASES: list[tuple[str, str, int]] = [
+    (
+        "負向 pattern + 未設 quantifier → 違規（本次 bug 的形態）",
+        """
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+""",
+        1,
+    ),
+    (
+        "負向 pattern + predicate-quantifier: every → 通過",
+        """
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+""",
+        0,
+    ),
+    (
+        "負向 pattern + 明確寫 some → 仍違規（明確寫錯也要擋）",
+        """
+      - uses: dorny/paths-filter@v3
+        with:
+          predicate-quantifier: 'some'
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+""",
+        1,
+    ),
+    (
+        "無負向 pattern → 通過（quantifier 不影響結果）",
+        """
+      - uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'src/**'
+""",
+        0,
+    ),
+    (
+        "不含 paths-filter 的 step → 通過",
+        """
+      - uses: actions/checkout@v4
+      - run: npm ci
+""",
+        0,
+    ),
+    (
+        "負向 pattern 屬於下一個 job 的 paths-filter，不可跨 job 誤判",
+        """
+  changes:
+    steps:
+      - uses: dorny/paths-filter@v3
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+
+  build:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+""",
+        0,
+    ),
+]
+
+
+def self_test() -> int:
+    failures: list[str] = []
+    for label, snippet, want in CASES:
+        got = len(violations(snippet))
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
+
+    for label, snippet, fname, want in NAMING_CASES:
+        got = len(naming_violations(snippet, fname))
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
+
+    if failures:
+        print("check-workflows 表格案例未過:")
+        print("\n".join(failures))
+        return 1
+    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES)} 條案例）")
+    return 0
+
+
+def scan() -> int:
+    if not WORKFLOW_DIR.is_dir():
+        return 0  # 沒有 workflow 目錄視為通過
+
+    fail = 0
+    for path in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml")):
+        text = path.read_text(encoding="utf-8")
+        for msg in list(violations(text)) + naming_violations(text, path.name):
+            print(f"FAIL: {path.relative_to(ROOT)}: {msg}")
+            fail = 1
+
+    if fail == 0:
+        print("check-workflows: OK")
+    return fail
+
+
+
+# --- 命名規則的表格案例:每筆是 (標籤, workflow 片段, 檔名, 預期違規數) ---
+NAMING_CASES: list[tuple[str, str, str, int]] = [
+    ("workflow name 含中文 → 違規", "name: 持續整合\njobs:\n", "x.yml", 1),
+    ("workflow name 非 Title Case → 違規", "name: ci pipeline\njobs:\n", "x.yml", 1),
+    ("workflow name Title Case → 通過", "name: Security Audit\njobs:\n", "x.yml", 0),
+    (
+        "workflow 層 permissions → 違規(PR #114:整個 workflow 拒絕啟動)",
+        "name: CI\npermissions:\n  contents: read\njobs:\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是工具名 → 違規",
+        "name: CI\njobs:\n  npm-audit:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是裸形容詞 → 違規",
+        "name: CI\njobs:\n  static:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "job id 是名詞片語 → 通過",
+        "name: CI\njobs:\n  static-checks:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        0,
+    ),
+    (
+        "job 缺 timeout-minutes → 違規",
+        "name: CI\njobs:\n  static-checks:\n    steps:\n      - name: a\n        run: b\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "無名 step → 違規",
+        "name: CI\njobs:\n  static-checks:\n    timeout-minutes: 5\n    steps:\n      - uses: actions/checkout@v4\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "ci-ok 漏掉某一軌 → 違規(PR #109 的事故形態)",
+        (
+            "name: CI\njobs:\n"
+            "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  e2e-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - unit-tests\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        1,
+    ),
+    (
+        "ci-ok needs 完整 → 通過",
+        (
+            "name: CI\njobs:\n"
+            "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  e2e-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - unit-tests\n      - e2e-tests\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+]
+
+if __name__ == "__main__":
+    sys.exit(self_test() if "--self-test" in sys.argv[1:] else scan())

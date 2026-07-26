@@ -1,3 +1,5 @@
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
+
 export const listingPlansContent = `# Uknow 服務者刊登與合作方案
 
 *最後更新日期：2026/01/05*
@@ -20,7 +22,7 @@ export const listingPlansContent = `# Uknow 服務者刊登與合作方案
 **權益內容：**
 1. **零抽成聯繫**：直接展示您的聯絡方式，客戶可直接與您聯繫，平台不抽取媒合佣金。
 2. **多區域曝光**：可依需求設定多個服務區域，觸及更多潛在客戶。
-3. **免費獲得「推廣夥伴」資格**：直接享有推廣計劃分潤權益（價值 $600）。
+3. **免費獲得「推廣夥伴」資格**：直接享有推廣計劃分潤權益（價值 $800）。
 
 ---
 
@@ -30,7 +32,7 @@ export const listingPlansContent = `# Uknow 服務者刊登與合作方案
 
 **費用：**
 * 已購買刊登方案者：**免費自動開通**
-* 純推廣夥伴：**NT$ 600** / 年 （請洽官方 Line：@Uknow 申請）
+* 純推廣夥伴：**NT$ 800** / 年 （請洽官方 Line：[${LINE_OFFICIAL_ACCOUNT_HANDLE}](${LINE_OFFICIAL_ACCOUNT_URL}) 申請）
 
 
 **獎勵機制：**

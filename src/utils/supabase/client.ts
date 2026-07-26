@@ -20,8 +20,8 @@ export function createClient() {
         // 原本打成 detectSessionUrl（拼錯，選項被靜默忽略）——tsc 基線
         // 建立時抓到的真實 bug。
         detectSessionInUrl: true,
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined
-      }
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      },
     });
   }
   return supabaseClient;

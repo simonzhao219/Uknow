@@ -7,13 +7,20 @@
 import { assertEquals } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
 
-async function seedOrphanedCompletedPayment(client: ReturnType<typeof adminClient>, userId: string) {
+async function seedOrphanedCompletedPayment(
+  client: ReturnType<typeof adminClient>,
+  userId: string,
+) {
   const tradeNo = `ORPHAN-${userId}`;
   const { data: order, error: orderErr } = await client
     .from('payment_orders')
     .insert({
-      user_id: userId, amount: 1200, status: 'completed',
-      payment_method: 'payuni', transaction_id: tradeNo, completed_at: new Date().toISOString(),
+      user_id: userId,
+      amount: 1200,
+      status: 'completed',
+      payment_method: 'payuni',
+      transaction_id: tradeNo,
+      completed_at: new Date().toISOString(),
     })
     .select('id')
     .single();
@@ -26,7 +33,9 @@ async function seedOrphanedCompletedPayment(client: ReturnType<typeof adminClien
       start_date: new Date().toISOString(),
       end_date: new Date(Date.now() + 365 * 86400_000).toISOString(),
       grace_period_end: new Date(Date.now() + 425 * 86400_000).toISOString(),
-      amount: 1200, payment_method: 'payuni', payment_transaction_id: tradeNo,
+      amount: 1200,
+      payment_method: 'payuni',
+      payment_transaction_id: tradeNo,
       source_payment_order_id: order!.id,
     })
     .select('id')
@@ -36,7 +45,7 @@ async function seedOrphanedCompletedPayment(client: ReturnType<typeof adminClien
   return { orderId: order!.id, subscriptionId: sub!.id };
 }
 
-Deno.test('repair_orphaned_payments backfills missing referral code/reward/task-progress, idempotently', async () => {
+Deno.test('repair_orphaned_payments：補回缺漏的推薦碼、獎勵與任務進度，且冪等', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
   const payer = await createTestUser(client, { name: 'Payer' });
@@ -85,7 +94,9 @@ Deno.test('repair_orphaned_payments backfills missing referral code/reward/task-
     assertEquals(progress?.total_referrals, 1);
 
     // 重跑一次：不該重複發獎、不該重複建邊。
-    const { error: secondRunErr } = await client.rpc('repair_orphaned_payments', { p_user_id: payer.id });
+    const { error: secondRunErr } = await client.rpc('repair_orphaned_payments', {
+      p_user_id: payer.id,
+    });
     assertEquals(secondRunErr, null);
 
     const { data: rewardsAfterRerun } = await client

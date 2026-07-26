@@ -21,8 +21,12 @@ async function seedPendingOrder(
   const tradeNo = `EXPIRE-${userId}`;
   const createdAt = new Date(Date.now() - ageMinutes * 60_000).toISOString();
   const { error } = await client.from('payment_orders').insert({
-    user_id: userId, amount: 1200, status: 'pending', payment_method: 'payuni',
-    transaction_id: tradeNo, created_at: createdAt,
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    created_at: createdAt,
     ...(payuniResponse ? { payuni_response: payuniResponse } : {}),
   });
   if (error) throw new Error(`seed pending order failed: ${error.message}`);
@@ -43,12 +47,12 @@ Deno.test('reconcile：超過門檻天數且查無結果的殭屍單標成 expir
       .update({ phone: '0912345678', birth_date: '1990-01-01' })
       .eq('id', zombieUser.id);
     await seedPendingOrder(client, zombieUser.id, FIVE_DAYS_MIN); // 5 天前棄付
-    await seedPendingOrder(client, recentUser.id, 60);            // 1 小時前，還在等 webhook
+    await seedPendingOrder(client, recentUser.id, 60); // 1 小時前，還在等 webhook
 
     const summary = await reconcilePendingOrders(
       client,
-      async () => ({ stillProcessing: true }), // PayUni 一律查無此單
-      async () => ({ ok: true as const, status: 'SUCCESS' as const }),
+      () => Promise.resolve({ stillProcessing: true }), // PayUni 一律查無此單
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
       { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
     );
 
@@ -66,7 +70,9 @@ Deno.test('reconcile：超過門檻天數且查無結果的殭屍單標成 expir
 
     // 終態後使用者回到 step 1（有基本資料、無在途訂單）——不再被
     // buildProfileResponse 當成「付款進行中」。
-    const { data: step } = await client.rpc('effective_registration_step', { p_user_id: zombieUser.id });
+    const { data: step } = await client.rpc('effective_registration_step', {
+      p_user_id: zombieUser.id,
+    });
     assertEquals(step, 1);
   } finally {
     await deleteTestUsers(client, [zombieUser.id, recentUser.id]);
@@ -82,8 +88,8 @@ Deno.test('reconcile：已存 SUCCESS 存檔的老卡單不在掃描範圍、絕
 
     const summary = await reconcilePendingOrders(
       client,
-      async () => ({ stillProcessing: true }),
-      async () => ({ ok: true as const, status: 'SUCCESS' as const }),
+      () => Promise.resolve({ stillProcessing: true }),
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
       { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
     );
 

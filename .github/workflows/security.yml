@@ -1,0 +1,91 @@
+name: Security Audit
+
+# ============================================================================
+# 相依漏洞掃描。刻意「不」放進 ci.yml 的 ci-ok：
+# 新披露的 CVE 與這個 PR 改了什麼毫無關係，把它列成合併阻斷條件，等於
+# 讓「今天有人在某個 transitive 相依上報了個漏洞」擋住所有人的工作——
+# 那種閘門兩週內就會被關掉。
+#
+# 所以：每週跑一次 + 有發現就開 issue（有人接得住訊號），
+# 排程與 Dependabot 的每週一批對齊，同一時段一起看。
+# PR 上的即時把關由 Dependabot 的 security updates 負責。
+# ============================================================================
+on:
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch: {}
+
+# ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
+# (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+      - name: 安裝 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: 安裝前端相依
+        run: npm ci
+
+      - name: 掃描相依漏洞（npm audit）
+        id: audit
+        run: |
+          set -uo pipefail
+          npm audit --audit-level=high --json > audit.json || true
+          node -e '
+            const fs = require("node:fs");
+            const a = JSON.parse(fs.readFileSync("audit.json", "utf8"));
+            const v = a.metadata?.vulnerabilities ?? {};
+            const bad = (v.high ?? 0) + (v.critical ?? 0);
+            const line = `critical=${v.critical ?? 0} high=${v.high ?? 0} moderate=${v.moderate ?? 0} low=${v.low ?? 0}`;
+            console.log(line);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### npm audit\n\n\`${line}\`\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${bad}\n`);
+            const names = Object.entries(a.vulnerabilities ?? {})
+              .filter(([, d]) => ["high", "critical"].includes(d.severity))
+              .map(([n, d]) => `- \`${n}\` (${d.severity}) — ${(d.via ?? []).map((x) => x.title ?? x).join("; ")}`)
+              .join("\n");
+            fs.writeFileSync("findings.md", names || "（無 high/critical）");
+          '
+
+      - name: 發現 high/critical 時開 issue
+        if: steps.audit.outputs.count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const findings = fs.readFileSync('findings.md', 'utf8');
+            const title = `相依安全掃描：${{ steps.audit.outputs.count }} 個 high/critical`;
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+            });
+            const dup = open.data.find((i) => i.title.startsWith('相依安全掃描：'));
+            const body = [
+              '## npm audit 發現 high/critical 漏洞',
+              '',
+              findings,
+              '',
+              `Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '處理方式：`npm audit fix`，或等 Dependabot 的週一批次。',
+              '若是無修補版本的 transitive 相依，在此 issue 註記評估結果後關閉。',
+            ].join('\n');
+            if (dup) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: dup.number, title, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+              });
+            }

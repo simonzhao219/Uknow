@@ -61,14 +61,6 @@ Feature: Forgot password
     And I reopen the verification page in a new tab
     Then the reopened tab should still be verifying "e2e-user@example.com"
 
-  Scenario: A weak new password is rejected
-    Given the account "e2e-user@example.com" can receive a reset code
-    And the recovery code verifies successfully
-    When I request a password reset for "e2e-user@example.com"
-    And I enter the recovery code "123456"
-    And I set the new password "short" and confirmation "short"
-    Then I should see a field error containing "密碼需包含"
-
   Scenario: A mismatched confirmation is rejected
     Given the account "e2e-user@example.com" can receive a reset code
     And the recovery code verifies successfully

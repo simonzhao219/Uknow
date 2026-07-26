@@ -1,26 +1,208 @@
 name: Deploy Supabase Edge Functions
 
-# Database migrations are no longer handled here — Supabase's native GitHub
-# integration applies them automatically when this branch is merged into main.
-# This workflow only covers Edge Functions, which that integration doesn't deploy.
+# ============================================================================
+# 部署 Edge Function。Database migrations 不在這裡——Supabase 原生 GitHub
+# 整合會在合併進 main 時自動套用。
+#
+# ⚠️ 觸發改為 workflow_run（等 CI 綠），不再是 push。
+# 原本 `on: push` 與 ci.yml **平行起跑**：函式往往在 api-tests 還沒開始
+# 跑就已經推上去了，等於「測試紅了但東西已經上線」。main 上這條路徑
+# 直通正式站。
+#
+# workflow_run 的兩個特性要記得：
+#   1. workflow 定義一律取自**預設分支**的版本，不是被觸發那次 commit
+#      的版本——這是 GitHub 的安全設計。預設分支目前是 develop，所以改
+#      這個檔案合進 develop 就會生效（2026-07 之前預設分支是 main，那時
+#      得先晉升才生效）。
+#   2. 它不支援 paths 過濾。所以這裡改成「CI 綠就部署」，不再判斷
+#      supabase/functions 有沒有改。這反而是更強的性質：只要 CI 綠，
+#      線上跑的就等於該分支的 HEAD，不會因為某次部署悄悄失敗而長期漂移。
+# ============================================================================
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/**'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, develop]
+
+# 兩次快速合併不得亂序部署（舊的後到會覆蓋新的）
+concurrency:
+  group: deploy-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+# ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
+# (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。
 
 jobs:
-  deploy:
+  deploy-edge-function:
+    # CI 沒綠就不部署。這一行是整個檔案存在的理由。
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    # main → production 環境：在 repo Settings → Environments 為
+    # production 設 required reviewer，部署會停在等待核准。
+    # 「main 收到 push = 正式站部署，不可逆的東西都在這一步」值得一道人工閘。
+    #
+    # 只宣告 name、不宣告 url：url 是 job 層表達式，只讀得到 vars，而目標
+    # ref 的真相在 git 裡（見下方「解析目標 project ref」）。vars 沒設時
+    # url 會算成 https://.supabase.co 這種壞連結，寧可不放——實際的 API
+    # base 由煙霧測試步驟寫進 job summary。
+    environment:
+      name: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'develop' }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      # vars 是**可選覆蓋**，不是唯一來源——見「解析目標 project ref」。
+      REF_FROM_VARS: ${{ github.event.workflow_run.head_branch == 'main' && vars.SUPABASE_PROJECT_REF || vars.SUPABASE_DEVELOP_PROJECT_REF }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+        with:
+          # 部署被觸發的那個 commit，不是預設分支的 HEAD
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - uses: supabase/setup-cli@v1
+      - name: 安裝 Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
 
-      - name: Deploy Edge Function
-        run: supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+      # ----------------------------------------------------------------
+      # 部署目標的單一真相在 git 裡，不在儀表板。
+      #
+      # 2026-07-25：develop 這條路徑連續 7 次部署失敗，全部死在下一步的
+      # `supabase secrets set`，錯誤訊息是「Cannot find project ref. Have
+      # you run supabase link?」——真正的原因是 vars.SUPABASE_DEVELOP_PROJECT_REF
+      # 根本沒設，ref 是空字串，CLI 只好去找 link 檔。空字串一路無聲傳到
+      # CLI 才炸，訊息還指向錯的方向，是這個設計最貴的部分。
+      #
+      # 兩邊的 ref 其實**早就 commit 在 repo 裡**（前端建置就是讀它們決定
+      # 打哪個後端），所以這裡直接讀同一份，儀表板 vars 降為可選覆蓋：
+      #   main    → src/utils/supabase/info.tsx（正式專案）
+      #   develop → config/supabaseTarget.ts（develop 分支 DB）
+      # 兩者都有值且不一致時**硬失敗**——那代表儀表板與 git 對「要部署到
+      # 哪裡」的認知已經分岔，猜哪邊對都可能把 develop 的函式推上正式站。
+      # ----------------------------------------------------------------
+      - name: 解析目標 project ref
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_BRANCH" = "main" ]; then
+            ref_from_git="$(python3 -c "import re,sys; print(re.search(r'projectId\s*=\s*[\'\"]([a-z0-9]+)[\'\"]', open('src/utils/supabase/info.tsx').read()).group(1))")"
+          else
+            ref_from_git="$(python3 -c "import re,sys; print(re.search(r'projectId:\s*[\'\"]([a-z0-9]+)[\'\"]', open('config/supabaseTarget.ts').read()).group(1))")"
+          fi
+          if [ -n "$REF_FROM_VARS" ] && [ "$REF_FROM_VARS" != "$ref_from_git" ]; then
+            echo "::error::部署目標分岔：git 說 $ref_from_git，儀表板 vars 說 $REF_FROM_VARS。"
+            echo "::error::兩者必須一致才知道該推去哪裡。修正 vars 或 git 內的 ref 後重跑。"
+            exit 1
+          fi
+          echo "SUPABASE_PROJECT_REF=$ref_from_git" >> "$GITHUB_ENV"
+          echo "分支 $DEPLOY_BRANCH → project $ref_from_git"
+
+      # 先寫 DEPLOY_SHA 再部署：函式啟動時就讀得到，煙霧測試才驗得出
+      # 「線上跑的是這一版」而不只是「有東西回應」。
+      - name: 寫入本次部署的 commit sha
+        run: |
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
+            DEPLOY_SHA="$DEPLOY_SHA"
+
+      - name: 部署 Edge Function
+        run: |
+          supabase functions deploy api \
+            --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      # 部署「成功」不等於線上是對的：secrets 沒生效、cold start 就炸、
+      # 推到錯的 project——這些在 deploy 指令的退出碼上都是 0。
+      - name: 部署後煙霧測試（比對 /health sha）
+        run: |
+          set -uo pipefail
+          # URL 在 shell 內組：SUPABASE_PROJECT_REF 由前面的步驟寫進
+          # $GITHUB_ENV，用真的環境變數比用 ${{ env.* }} 表達式少一層時序假設。
+          api_base="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/api"
+          {
+            echo "## 部署目標"
+            echo ""
+            echo "- 分支：\`${DEPLOY_BRANCH}\`"
+            echo "- Project：\`${SUPABASE_PROJECT_REF}\`"
+            echo "- API base：${api_base}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          health=''
+          for attempt in $(seq 1 20); do
+            body="$(curl -sS --max-time 10 "${api_base}/health" || true)"
+            sha="$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha",""))' 2>/dev/null || true)"
+            if [ "$sha" = "$DEPLOY_SHA" ]; then
+              echo "✅ 線上函式已是 ${DEPLOY_SHA:0:7}（第 $attempt 次探測）"
+              health="$body"
+              break
+            fi
+            echo "第 $attempt 次:線上 sha='${sha:-無回應}',等待傳播…"
+            sleep 6
+          done
+          if [ -z "$health" ]; then
+            echo "::error::部署後 2 分鐘內 /health 仍未回報 $DEPLOY_SHA —— 線上可能不是這一版,請檢查"
+            exit 1
+          fi
+
+          # ----------------------------------------------------------------
+          # 金流環境的可觀測性閘門。
+          #
+          # 2026-07-26:正式站的 PAYUNI_SANDBOX 是 true,所有付款都走 PayUni
+          # 測試站——帳面 20 筆完成訂單、NT$24,000,實際入帳 0 元。當時是刻意
+          # 的（尚未開放),但它**沒有任何訊號**:憑證與端點一致時 PayUni 不回
+          # 浮水印、程式不報錯、儀表板只看得到 secrets 的 SHA256 digest。
+          # 那次是靠人工反推 digest 才發現的。
+          #
+          # 所以先讓它「每次部署都說出來」,寫進 job summary。
+          # 開放正式站時把下面的 EXPECT_PRODUCTION_PAYUNI 改成 true,這道
+          # 提醒就升級成硬閘門——忘記翻 PAYUNI_SANDBOX 會讓部署當場紅燈。
+          # 這個開關刻意放在 git 裡而不是儀表板變數:同 ref 解析的理由,
+          # 儀表板改動沒人 review、也查不到誰改的。
+          # ----------------------------------------------------------------
+          EXPECT_PRODUCTION_PAYUNI='false'   # ← 正式站開放時改成 'true'
+
+          mode="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniMode","unknown"))' 2>/dev/null || echo unknown)"
+          configured="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniConfigured","unknown"))' 2>/dev/null || echo unknown)"
+          {
+            echo "- PayUni 模式：\`${mode}\`（憑證齊全：\`${configured}\`）"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PayUni 模式：${mode}（憑證齊全：${configured}）"
+
+          if [ "$configured" != "True" ] && [ "$configured" != "true" ]; then
+            echo "::warning::${DEPLOY_BRANCH} 的 PayUni 憑證不齊（mode=${mode}）——付款會在建單當下失敗。"
+          fi
+
+          if [ "$DEPLOY_BRANCH" = "main" ] && [ "$mode" != "production" ]; then
+            if [ "$EXPECT_PRODUCTION_PAYUNI" = "true" ]; then
+              echo "::error::正式站的 PayUni 模式是 ${mode},不是 production——付款會走測試站,不會有任何真實金流。請把 PAYUNI_SANDBOX 設為 false 後重新部署。"
+              exit 1
+            fi
+            echo "::warning::正式站目前的 PayUni 模式是 ${mode}（尚未開放,屬預期）。開放前記得把 PAYUNI_SANDBOX 設為 false,並把本檔的 EXPECT_PRODUCTION_PAYUNI 改成 true。"
+          fi
+
+      - name: 失敗時開 issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.workflow_run.head_branch;
+            const sha = context.payload.workflow_run.head_sha;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Edge Function 部署失敗（${branch} @ ${sha.slice(0, 7)}）`,
+              body: [
+                '## 部署失敗',
+                '',
+                `- 分支：\`${branch}\``,
+                `- Commit：${sha}`,
+                `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                branch === 'main'
+                  ? '⚠️ **這是正式站**。線上函式可能停在舊版或處於半部署狀態，請優先處理。'
+                  : 'develop 環境部署失敗，晉升前必須修好。',
+                '',
+                '重跑：Actions → Deploy Supabase Edge Functions → Re-run failed jobs',
+              ].join('\n'),
+            });

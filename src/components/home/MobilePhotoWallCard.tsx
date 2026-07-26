@@ -1,5 +1,6 @@
-import { Link } from "react-router-dom";
-import { ImageWithFallback } from "../figma/ImageWithFallback";
+import { Link } from 'react-router-dom';
+import { ImageWithFallback } from '../figma/ImageWithFallback';
+import type { PublicListingRow } from '../../types/listing';
 
 // 手機首頁「照片牆」磚塊（3 欄密集網格用）。
 //
@@ -13,7 +14,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 //   * 類別標籤與名稱都 truncate 單行，並以 max-w 限制寬度，長字只截斷不換行。
 //   * 底部加深色漸層遮罩，白字名稱在任何亮度的照片上都可讀（不用 backdrop-blur，
 //     Safari 上較容易卡頓 / 破圖）。
-export function MobilePhotoWallCard({ serviceProvider }: { serviceProvider: any }) {
+export function MobilePhotoWallCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   return (
     <Link
       to={`/service-providers/${serviceProvider.id}`}

@@ -5,6 +5,7 @@ import { dedupe } from '../utils/requestDedup';
 import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from '../components/notifications/NotificationContext';
+import type { ListingRow } from '../types/listing';
 
 /**
  * 使用者的刊登。單一刊登模式：一個帳號最多一則，查不到就是 null。
@@ -13,21 +14,9 @@ import { useNotification } from '../components/notifications/NotificationContext
  * 在資料層一處守門（HomePage 讀 public_listings view）。因此這裡只回
  * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。
  */
-export interface UserListing {
-  id: string;
-  name: string;
-  category?: string;
-  city?: string;
-  districts?: string[];
-  district?: string;
-  description?: string;
-  photos?: string[];
-  [key: string]: any;
-}
-
 export interface UseUserListingResult {
   /** null 有兩種意思，必須配合 loading／error 一起讀：資料還沒到、或確實沒有刊登。 */
-  listing: UserListing | null;
+  listing: ListingRow | null;
   loading: boolean;
   isValidating: boolean;
   /** 冷啟動失敗才會有值；背景 revalidate 失敗畫面沿用舊資料，不設 error。 */
@@ -47,12 +36,16 @@ const DEDUP_KEY = 'userListing';
  * @param enabled 傳 false 時完全不請求（例如 serviceProviderManagement
  *   feature flag 關閉時，會員中心不該為了一張不會顯示的卡片打 API）。
  */
-export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): UseUserListingResult {
+export function useUserListing({
+  enabled = true,
+}: {
+  enabled?: boolean;
+} = {}): UseUserListingResult {
   const { user } = useContext(UserContext);
   const { getCache, setCache, hasCache, isStale } = useDataCache();
   const { showToast } = useNotification();
 
-  const [listing, setListing] = useState<UserListing | null>(null);
+  const [listing, setListing] = useState<ListingRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +80,7 @@ export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): 
 
       if (queryError) throw queryError;
 
-      const next = (data as UserListing) ?? null;
+      const next = (data as ListingRow) ?? null;
       // null 也要寫進快取：「這個人沒有刊登」是查證過的結果，值得快取，
       // 讀取端用 hasCache 而不是 data != null 來判斷有沒有快取過。
       setCache(CACHE_KEY, next);
@@ -109,7 +102,7 @@ export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): 
       setLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -133,12 +126,12 @@ export function useUserListing({ enabled = true }: { enabled?: boolean } = {}): 
     if (!hasCache(CACHE_KEY) || isStale(CACHE_KEY)) {
       dedupe(DEDUP_KEY, fetchListing);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, enabled]);
 
   useRevalidateOnFocus(
     () => enabled && !!userIdRef.current && isStale(CACHE_KEY),
-    () => dedupe(DEDUP_KEY, fetchListing)
+    () => dedupe(DEDUP_KEY, fetchListing),
   );
 
   const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchListing), [fetchListing]);

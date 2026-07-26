@@ -1,5 +1,4 @@
-import React from 'react';
-import { ThreeStepConfig } from '../ThreeStepDialog';
+import type { ThreeStepConfig } from '../ThreeStepDialog';
 import { AlertTriangle, ArrowRight, CheckCircle } from 'lucide-react';
 import { formatTimestamp } from '../../../utils/referralFormatter';
 import { twDayOf, twDayPlusYears, formatTwDate } from '../../../utils/twDate';
@@ -80,7 +79,7 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
           </div>
         </div>
       ),
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
 
     step2: {
@@ -89,11 +88,7 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
       apiEndpoint: '/subscriptions/status',
       content: (previewData) => {
         if (!previewData) {
-          return (
-            <div className="text-center py-8 text-muted-foreground">
-              載入預覽數據中...
-            </div>
-          );
+          return <div className="text-center py-8 text-muted-foreground">載入預覽數據中...</div>;
         }
 
         // 日領域計算：與後端逐張 claim（新最後一天 = tw_day(舊迄日) + 1 年）
@@ -141,15 +136,15 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
           </div>
         );
       },
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
 
     step3: {
       title: '🔐 身分驗證',
       description: '為確保帳戶安全，請輸入您的身分證字號',
       warningMessage: `點擊「確認領取」後，將立即延長您的會員到期日 ${count} 年。此操作無法撤銷。`,
-      confirmButtonText: `確認領取全部 ${count} 張`
-    }
+      confirmButtonText: `確認領取全部 ${count} 張`,
+    },
   };
 }
 
@@ -191,7 +186,7 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
           </div>
         </div>
       ),
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
 
     step2: {
@@ -200,11 +195,7 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
       apiEndpoint: '/subscriptions/status',
       content: (previewData) => {
         if (!previewData) {
-          return (
-            <div className="text-center py-8 text-muted-foreground">
-              載入預覽數據中...
-            </div>
-          );
+          return <div className="text-center py-8 text-muted-foreground">載入預覽數據中...</div>;
         }
 
         // 日領域計算，與後端 claim_referral_king_reward 的
@@ -217,9 +208,7 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
         return (
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
-                以下是領取任務獎勵後，您的會員到期日變化：
-              </p>
+              <p className="text-sm text-blue-800">以下是領取任務獎勵後，您的會員到期日變化：</p>
             </div>
 
             <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-4">
@@ -244,30 +233,28 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-green-900">
-                  ✅ 確認後將立即延長您的會員到期日
-                </p>
+                <p className="text-sm text-green-900">✅ 確認後將立即延長您的會員到期日</p>
               </div>
             </div>
           </div>
         );
       },
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
 
     step3: {
       title: '🔐 身分驗證',
       description: '為確保帳戶安全，請輸入您的身分證字號',
       warningMessage: '點擊「確認領取」後，將立即延長您的會員到期日 1 年。此操作無法撤銷。',
-      confirmButtonText: '確認領取'
-    }
+      confirmButtonText: '確認領取',
+    },
   };
 }
 
 function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig {
   return {
     title: '領取任務獎勵',
-    
+
     // ===== 步驟1：確認領取 =====
     step1: {
       title: '確認領取任務獎勵',
@@ -305,9 +292,9 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
           </div>
         </div>
       ),
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
-    
+
     // ===== 步驟2：預覽點數變化 =====
     step2: {
       title: '📊 領取後點數變化預覽',
@@ -315,11 +302,7 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
       apiEndpoint: '/rewards/points-preview',
       content: (previewData) => {
         if (!previewData) {
-          return (
-            <div className="text-center py-8 text-muted-foreground">
-              載入預覽數據中...
-            </div>
-          );
+          return <div className="text-center py-8 text-muted-foreground">載入預覽數據中...</div>;
         }
 
         // ✅ 使用後端返回的 SSOT 實際現況點數
@@ -332,9 +315,7 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
           <div className="space-y-4">
             {/* 說明 */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
-                以下是領取任務獎勵後，您的點數變化：
-              </p>
+              <p className="text-sm text-blue-800">以下是領取任務獎勵後，您的點數變化：</p>
             </div>
 
             {/* 點數變化預覽 */}
@@ -343,7 +324,7 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
                 <CheckCircle className="h-4 w-4" />
                 點數變化
               </h3>
-              
+
               <div className="space-y-4">
                 {/* 可提領點數變化 */}
                 <div>
@@ -391,23 +372,21 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-green-900">
-                  ✅ 確認後將立即更新您的點數
-                </p>
+                <p className="text-sm text-green-900">✅ 確認後將立即更新您的點數</p>
               </div>
             </div>
           </div>
         );
       },
-      nextButtonText: '下一步'
+      nextButtonText: '下一步',
     },
-    
+
     // ===== 步驟3：身分證驗證 =====
     step3: {
       title: '🔐 身分驗證',
       description: '為確保帳戶安全，請輸入您的身分證字號',
       warningMessage: '點擊「確認領取」後，獎勵將立即加入您的可提領點數。此操作無法撤銷。',
-      confirmButtonText: '確認領取'
-    }
+      confirmButtonText: '確認領取',
+    },
   };
 }

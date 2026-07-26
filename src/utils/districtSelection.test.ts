@@ -14,7 +14,7 @@ describe('handleDistrictSelection', () => {
     expect(result).toEqual([]);
   });
 
-  it('checking a specific district adds it', () => {
+  it('勾選特定行政區會加入選取', () => {
     const result = handleDistrictSelection([], AVAILABLE, '中正區', true);
     expect(result).toEqual(['中正區']);
   });
@@ -33,12 +33,12 @@ describe('handleDistrictSelection', () => {
     expect(new Set(result)).toEqual(new Set(['中正區', '大同區']));
   });
 
-  it('checking an already-selected district does not duplicate it', () => {
+  it('重複勾選同一行政區不會產生重複項', () => {
     const result = handleDistrictSelection(['中正區'], AVAILABLE, '中正區', true);
     expect(result).toEqual(['中正區']);
   });
 
-  it('does not mutate the input array', () => {
+  it('不變動傳入的陣列', () => {
     const current = ['中正區'];
     handleDistrictSelection(current, AVAILABLE, '大同區', true);
     expect(current).toEqual(['中正區']);
@@ -46,7 +46,7 @@ describe('handleDistrictSelection', () => {
 });
 
 describe('sortDistrictsWithAllFirst', () => {
-  it('returns an empty array unchanged', () => {
+  it('空陣列原樣回傳', () => {
     expect(sortDistrictsWithAllFirst([])).toEqual([]);
   });
 
@@ -95,8 +95,8 @@ describe('toggleCity', () => {
 
   it('取消縣市時整個 key 移除，不影響其他縣市', () => {
     const state: DistrictSelectionByCity = {
-      '台北市': ['全區', ...TAIPEI],
-      '基隆市': ['全區', ...KEELUNG],
+      台北市: ['全區', ...TAIPEI],
+      基隆市: ['全區', ...KEELUNG],
     };
     const next = toggleCity(state, '台北市', false, TAIPEI);
     expect(next['台北市']).toBeUndefined();
@@ -107,23 +107,23 @@ describe('toggleCity', () => {
 describe('toggleCityDistrict（縣市 scope，互不污染）', () => {
   it('取消 A 市的全區不影響 B 市的全區', () => {
     const state: DistrictSelectionByCity = {
-      '台北市': ['全區', ...TAIPEI],
-      '基隆市': ['全區', ...KEELUNG],
+      台北市: ['全區', ...TAIPEI],
+      基隆市: ['全區', ...KEELUNG],
     };
     const next = toggleCityDistrict(state, '台北市', TAIPEI, '全區', false);
     expect(next['台北市']).toEqual([]);
-    expect(next['基隆市']).toEqual(['全區', ...KEELUNG], );
+    expect(next['基隆市']).toEqual(['全區', ...KEELUNG]);
   });
 
   it('同名區各自獨立：勾台北市中山區不動基隆市', () => {
-    const state: DistrictSelectionByCity = { '台北市': [], '基隆市': [] };
+    const state: DistrictSelectionByCity = { 台北市: [], 基隆市: [] };
     const next = toggleCityDistrict(state, '台北市', TAIPEI, '中山區', true);
     expect(next['台北市']).toEqual(['中山區']);
     expect(next['基隆市']).toEqual([]);
   });
 
   it('沿用單縣市語意：勾滿所有區自動補全區、取消任一區自動退全區', () => {
-    const state: DistrictSelectionByCity = { '台北市': ['中正區', '大同區'] };
+    const state: DistrictSelectionByCity = { 台北市: ['中正區', '大同區'] };
     const filled = toggleCityDistrict(state, '台北市', TAIPEI, '中山區', true);
     expect(filled['台北市']).toEqual(['全區', ...TAIPEI]);
     const dropped = toggleCityDistrict(filled, '台北市', TAIPEI, '大同區', false);
@@ -140,9 +140,9 @@ describe('cityDistricts', () => {
 
 describe('listingMatchesDistricts（篩選判定）', () => {
   const state: DistrictSelectionByCity = {
-    '台北市': ['中山區'],
-    '基隆市': ['全區', ...KEELUNG],
-    '高雄市': [],
+    台北市: ['中山區'],
+    基隆市: ['全區', ...KEELUNG],
+    高雄市: [],
   };
 
   it('該市勾全區 → 該市所有刊登都過', () => {

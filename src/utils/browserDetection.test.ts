@@ -14,13 +14,15 @@ interface StubLocation {
   search?: string;
 }
 
-function stubBrowser(options: {
-  ua?: string;
-  liff?: boolean;
-  location?: StubLocation;
-  clipboard?: unknown;
-  document?: unknown;
-} = {}) {
+function stubBrowser(
+  options: {
+    ua?: string;
+    liff?: boolean;
+    location?: StubLocation;
+    clipboard?: unknown;
+    document?: unknown;
+  } = {},
+) {
   const {
     ua = 'test-agent',
     liff = false,
@@ -78,58 +80,58 @@ const UA = {
 };
 
 describe('detectInAppBrowser — in-app browsers', () => {
-  it('detects LINE on iOS via the "Line/" token', () => {
+  it('以 "Line/" token 辨識 iOS 的 LINE', () => {
     stubBrowser({ ua: UA.lineIOS });
     const result = detectInAppBrowser();
     expect(result.isInAppBrowser).toBe(true);
     expect(result.platform).toBe('line');
   });
 
-  it('detects LINE on Android even though the UA also contains chrome/safari', () => {
+  it('Android 的 LINE：UA 同時含 chrome/safari 仍能辨識', () => {
     stubBrowser({ ua: UA.lineAndroid });
     expect(detectInAppBrowser().platform).toBe('line');
   });
 
-  it('detects LINE regardless of token casing (UA is lower-cased first)', () => {
+  it('token 大小寫不影響 LINE 辨識（UA 先轉小寫）', () => {
     stubBrowser({ ua: UA.lineUpper });
     expect(detectInAppBrowser().platform).toBe('line');
   });
 
-  it('detects LINE via the injected window.liff global even with a plain browser UA', () => {
+  it('一般瀏覽器 UA 但有 window.liff 全域時仍判定為 LINE', () => {
     stubBrowser({ ua: UA.iosSafari, liff: true });
     const result = detectInAppBrowser();
     expect(result.isInAppBrowser).toBe(true);
     expect(result.platform).toBe('line');
   });
 
-  it('detects Facebook on iOS (FBAN) and Android (FB_IAB)', () => {
+  it('辨識 Facebook：iOS 的 FBAN 與 Android 的 FB_IAB', () => {
     stubBrowser({ ua: UA.facebookIOS });
     expect(detectInAppBrowser().platform).toBe('facebook');
     stubBrowser({ ua: UA.facebookAndroid });
     expect(detectInAppBrowser().platform).toBe('facebook');
   });
 
-  it('detects Instagram', () => {
+  it('辨識 Instagram', () => {
     stubBrowser({ ua: UA.instagram });
     expect(detectInAppBrowser().platform).toBe('instagram');
   });
 
-  it('detects Twitter', () => {
+  it('辨識 Twitter', () => {
     stubBrowser({ ua: UA.twitter });
     expect(detectInAppBrowser().platform).toBe('twitter');
   });
 
-  it('detects WeChat (MicroMessenger)', () => {
+  it('辨識 WeChat（MicroMessenger）', () => {
     stubBrowser({ ua: UA.wechat });
     expect(detectInAppBrowser().platform).toBe('wechat');
   });
 
-  it('detects a generic Android WebView (wv + android)', () => {
+  it('辨識一般 Android WebView（wv + android）', () => {
     stubBrowser({ ua: UA.androidWebview });
     expect(detectInAppBrowser().platform).toBe('webview');
   });
 
-  it('detects an iOS WebView via the AppleWebKit-without-Safari heuristic', () => {
+  it('以「有 AppleWebKit 但無 Safari」啟發式辨識 iOS WebView', () => {
     stubBrowser({ ua: UA.iosWebview });
     expect(detectInAppBrowser().platform).toBe('webview');
   });
@@ -148,7 +150,7 @@ describe('detectInAppBrowser — real browsers are not flagged', () => {
     expect(result.platform).toBeNull();
   });
 
-  it('excludes search-engine crawlers', () => {
+  it('搜尋引擎爬蟲不算 in-app 瀏覽器', () => {
     stubBrowser({ ua: UA.googlebot });
     const result = detectInAppBrowser();
     expect(result.isInAppBrowser).toBe(false);

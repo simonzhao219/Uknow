@@ -27,6 +27,17 @@ export interface UseSubscriptionResult {
 
 const DEDUP_KEY = 'subscriptionStatus';
 
+/**
+ * ⚠️ **同一個畫面只准掛一個實例。**
+ *
+ * dedupe(DEDUP_KEY, …) 只會執行「先到者」的 fetchStatus，後到的實例拿到同一個
+ * promise，但它自己的 setSubscriptionData / setIsLoading(false) 永遠不會跑——
+ * 於是那個實例的 subscriptionData 卡在 null、isLoading 卡在 true，畫面永遠停在
+ * 載入中。而 React 的 effect 是子先父後，所以「餓死的」通常是父層那個。
+ *
+ * 需要在子元件顯示會籍狀態時，改讀 UserContext 的 `user.accountStatus`
+ * （`/profile` 已回傳同一份資料），不要再掛一個本 hook。
+ */
 export function useSubscription(): UseSubscriptionResult {
   const { user } = useContext(UserContext);
   const { getCache, setCache, clearCache, isStale } = useDataCache();
@@ -45,7 +56,7 @@ export function useSubscription(): UseSubscriptionResult {
     }
     try {
       const result = await apiRequestJson<{ success: boolean; data: SubscriptionData }>(
-        buildApiUrl('/subscriptions/status')
+        buildApiUrl('/subscriptions/status'),
       );
       setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
@@ -60,7 +71,7 @@ export function useSubscription(): UseSubscriptionResult {
       setIsLoading(false);
       setIsValidating(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -80,18 +91,18 @@ export function useSubscription(): UseSubscriptionResult {
     if (!cached || isStale('subscriptionStatus')) {
       dedupe(DEDUP_KEY, fetchStatus);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useRevalidateOnFocus(
     () => isStale('subscriptionStatus'),
-    () => dedupe(DEDUP_KEY, fetchStatus)
+    () => dedupe(DEDUP_KEY, fetchStatus),
   );
 
   const refresh = useCallback(async () => {
     clearCache('subscriptionStatus');
     await dedupe(DEDUP_KEY, fetchStatus);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { subscriptionData, isLoading, isValidating, refresh };

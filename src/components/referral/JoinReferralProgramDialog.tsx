@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -10,6 +10,7 @@ import { useNotification } from '../notifications/NotificationContext';
 import { LegalDialog } from '../LegalDialog';
 import { referralRewardRulesContent } from '../../content/referralRewardRules';
 import { referralRewardContractContent } from '../../content/referralRewardContract';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface JoinReferralProgramDialogProps {
   open: boolean;
@@ -20,12 +21,18 @@ interface JoinReferralProgramDialogProps {
 export function JoinReferralProgramDialog({
   open,
   onClose,
-  onSuccess
+  onSuccess,
 }: JoinReferralProgramDialogProps) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useNotification();
+
+  // 開啟期間鎖住背景頁面。這個彈窗是手刻的 fixed 遮罩（不是 Radix Dialog），
+  // 底下的頁面本來還能被拖動；iOS Safari 一旦拖到頁面就會收合／展開網址列，
+  // 版面高度當場改變，置中的卡片跟著上下彈跳，簽名時尤其難用。
+  // 注意：Hook 必須排在下面的 `if (!open) return null` 之前，否則會違反 Hook 規則。
+  useBodyScrollLock(open);
 
   if (!open) return null;
 
@@ -39,16 +46,13 @@ export function JoinReferralProgramDialog({
       const result = await apiRequestJson<{
         success: boolean;
         data: { referralCode: string; joinedAt: string; message?: string };
-      }>(
-        buildApiUrl('/referrals/join-program'),
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            agreedToTerms,
-            signatureData
-          })
-        }
-      );
+      }>(buildApiUrl('/referrals/join-program'), {
+        method: 'POST',
+        body: JSON.stringify({
+          agreedToTerms,
+          signatureData,
+        }),
+      });
 
       if (result.success && result.data) {
         showToast(result.data.message || '成功加入推薦計畫！', 'success');
@@ -68,8 +72,13 @@ export function JoinReferralProgramDialog({
   return (
     <>
       {/* 遮罩 */}
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* 遮罩本身 overscroll-contain：即使手指落在卡片外面拖動，也不會把捲動
+          連鎖傳到底下的頁面（iOS 的橡皮筋回彈就是這樣被觸發的）。 */}
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overscroll-contain">
+        {/* 高度用 dvh 而非 vh：行動瀏覽器網址列收合時 vh 不會更新，卡片會超出
+            可視範圍、底部按鈕被切掉。overscroll-contain 讓卡片捲到頭尾時停住，
+            不會把剩餘的捲動交給背景頁面。 */}
+        <Card className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto overscroll-contain">
           <div className="p-6">
             {/* 標題 */}
             <div className="mb-6">
@@ -89,7 +98,7 @@ export function JoinReferralProgramDialog({
                   <FileText className="h-5 w-5" />
                   閱讀並同意條款
                 </h3>
-                
+
                 <div className="space-y-2">
                   <div className="flex items-start gap-2">
                     <Checkbox
@@ -107,7 +116,10 @@ export function JoinReferralProgramDialog({
                         這種專有名詞永遠整組不斷字。整句仍可換行，但只會在
                         「我已詳閱並同意 / 規章 / 和 / 契約書」這些完整詞塊之間斷，
                         不會再把一兩個字（章、書）擠到下一行造成排版怪異。 */}
-                    <Label htmlFor="terms" className="text-sm cursor-pointer flex-1 leading-relaxed">
+                    <Label
+                      htmlFor="terms"
+                      className="text-sm cursor-pointer flex-1 leading-relaxed"
+                    >
                       <span className="whitespace-nowrap">我已詳閱並同意</span>
                       <LegalDialog
                         triggerLabel="推廣獎勵規章"
@@ -132,10 +144,7 @@ export function JoinReferralProgramDialog({
               {/* 2️⃣ 簽名 */}
               <div className="space-y-3">
                 <h3 className="font-medium">簽名確認（中文正楷）</h3>
-                <SignaturePad
-                  onSignatureChange={setSignatureData}
-                  disabled={isSubmitting}
-                />
+                <SignaturePad onSignatureChange={setSignatureData} disabled={isSubmitting} />
               </div>
 
               {/* 說明 */}
@@ -148,11 +157,7 @@ export function JoinReferralProgramDialog({
 
             {/* 按鈕 */}
             <div className="flex justify-end gap-3 mt-6">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                disabled={isSubmitting}
-              >
+              <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
                 取消
               </Button>
               <Button

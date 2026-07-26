@@ -54,9 +54,15 @@ describe('otpSession — 待驗證情境撐過重整', () => {
 
   it('storage 不可用時，save/get/clear 都不丟例外', () => {
     vi.stubGlobal('localStorage', {
-      getItem: () => { throw new Error('unavailable'); },
-      setItem: () => { throw new Error('unavailable'); },
-      removeItem: () => { throw new Error('unavailable'); },
+      getItem: () => {
+        throw new Error('unavailable');
+      },
+      setItem: () => {
+        throw new Error('unavailable');
+      },
+      removeItem: () => {
+        throw new Error('unavailable');
+      },
     });
     expect(() => savePendingOtp('a@b.com', 'signup')).not.toThrow();
     expect(getPendingOtp()).toBeNull();

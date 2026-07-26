@@ -13,7 +13,7 @@
 | 測試環境 | **每次測試跑在專屬 Supabase 測試分支/專案**，測完刪整個分支＝資料保證清乾淨；`cleanup.py` 為第二道保險 |
 | 金流模擬 | **真打 PayUni sandbox 刷卡頁**，使用測試卡 `4147631000000001`、有效期 `01/31`、CVV `123`；另備「簽章 webhook 注入」備援模式 |
 | 30 人建置 | **全部 30 人走 Web GUI**（純黑箱），以 nightly 排程執行 |
-| 跨時間情境 | **納入**：以 service-role 回填歷史資料（連續推薦達人 12 個月、訂閱失效（兩態，見 0721）、補繳） |
+| 跨時間情境 | **納入**：以 service-role 回填歷史資料（訂閱失效（兩態，見 0721）、補繳接續、逾期超過一年只能新約） |
 
 ---
 
@@ -44,7 +44,7 @@
 
 ## 2. 組織樹設計：root + 29 人、root 之下六代
 
-依**程式碼現行規則**（與規格書文字略有出入，以程式碼為準）：
+依**程式碼現行規則**（規格書 §8–§10 已於 2026-07 對齊，以程式碼為準）：
 
 - 推薦獎勵為**三代制、每代 100P、付款當下一次發清**（`reward_config.referral_reward_amount`，預設 100）；
 - **推薦王門檻＝單月直推 8 人**（`reward_config.referral_king_monthly_threshold`），獎勵為可 claim 的「免費續約一年」credit；
@@ -201,7 +201,6 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 ### `30_tasks.feature` — 任務
 - B8 付款當下 Root 推薦王進度 8/8 達標；
 - Root claim「免費續約一年」→ 訂閱到期日 +1 年（GUI 與 `/subscriptions/status` 雙重斷言）；
-- 當月排行榜（`/tasks/current-month-top`）Root 居首。
 
 ### `40_listing.feature` — 刊登
 - Root 建立刊登（含照片上傳）→ 登出後訪客在首頁搜得到、詳情頁正確；
@@ -224,12 +223,10 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 
 | 情境 | 回填方式 | GUI 斷言 |
 |---|---|---|
-| 連續推薦達人（連續 12 月直推） | 為 Root 種 11 個月的歷史直推紀錄，第 12 月由真實註冊觸發 | 任務頁進度 12/12、1,000P 歸戶、開啟新一輪 |
-| 連續中斷歸零 | 種 5 個月後跳過 1 個月 | 進度歸零重計 |
 | 剛失效（逾期未滿一年） | 把 C7 訂閱到期日改為 30 天前 | 刊登自首頁隱藏、推薦碼仍可用、**提領被擋**、可續約接續 |
 | 補繳接續原週期 | C7 走 GUI 補繳（§4 流程） | 新到期日＝原到期日 +1 年（不是付款日 +1 年） |
 | 完全失效（逾期，兩態無寬限期） | 把 C8 到期日改為 90 天前 | 刊登隱藏、**點數/任務保留不歸零**、**推薦碼不作廢仍可驗證**、其上線組織圖顯示 Inactive 節點但**結構不斷開** |
-| 年費月領排程（若 `reward_schedules` 啟用） | 把 pending 排程的應發月份改為過去 | 使用者當日首次登入後撥入，上線永久失效者顯示 Void |
+| 逾期超過一年 | 把到期日改為 400 天前 | 只能走新約（fresh），效期從付款日起算、可換推薦人 |
 
 回填一律以 RUN_ID 圈定範圍、寫在獨立 scenario 的 Background，避免污染 §6 的帳本斷言
 （§6 先跑、§7 後跑，pytest 以 `--order` 固定順序）。
@@ -268,7 +265,7 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 
 ```
 Storage 物件（id-photos / signatures / listing-photos，依 RUN_ID 前綴）
-→ withdrawal_requests → reward_transactions → reward_schedules
+→ withdrawals → reward_transactions
 → referral_king_rewards → referral_edges → referral_codes
 → listings → payment_orders → subscriptions → profiles
 → auth.users（Admin API，含 admin 帳號）

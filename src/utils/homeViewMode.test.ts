@@ -78,9 +78,7 @@ describe('writeHomeViewMode', () => {
   });
 
   it('寫入拋錯（配額 / 無痕）被吞掉，不影響流程', () => {
-    expect(() =>
-      writeHomeViewMode('photo', fakeStorage({}, { throwOnSet: true })),
-    ).not.toThrow();
+    expect(() => writeHomeViewMode('photo', fakeStorage({}, { throwOnSet: true }))).not.toThrow();
   });
 
   it('沒有可用儲存體（null）→ 靜默略過', () => {

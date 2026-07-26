@@ -36,7 +36,10 @@ Deno.test('GET /admin/system-alerts：預設只列未處理告警，含本測試
 
   try {
     await client.from('system_alerts').insert({
-      source: marker, severity: 'error', message: '測試告警', context: { probe: true },
+      source: marker,
+      severity: 'error',
+      message: '測試告警',
+      context: { probe: true },
     });
 
     const token = await getUserAccessToken(client, admin.email);
@@ -97,7 +100,4 @@ Deno.test('POST /admin/system-alerts/:id/resolve：標記已處理後離開未�
   }
 });
 
-Deno.test('system-alerts 端點受 admin 守門涵蓋：匿名 401', async () => {
-  const res = await app.request('/api/admin/system-alerts');
-  assertEquals(res.status, 401);
-});
+// 守門（401/403）已收攏到 admin-gate.test.ts 的 ADMIN_ROUTES 單一清單。

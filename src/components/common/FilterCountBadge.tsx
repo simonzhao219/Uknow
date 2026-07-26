@@ -1,5 +1,5 @@
-import { Badge } from "../ui/badge";
-import { cn } from "../ui/utils";
+import { Badge } from '../ui/badge';
+import { cn } from '../ui/utils';
 
 // 篩選數量徽章（單一事實來源）。
 //
@@ -33,10 +33,7 @@ export function FilterCountBadge({ count, className }: FilterCountBadgeProps) {
   return (
     <Badge
       variant="secondary"
-      className={cn(
-        "min-w-4 px-1 py-0 text-xs leading-none tabular-nums",
-        className,
-      )}
+      className={cn('min-w-4 px-1 py-0 text-xs leading-none tabular-nums', className)}
       aria-label={`已選 ${count} 項`}
     >
       {count}

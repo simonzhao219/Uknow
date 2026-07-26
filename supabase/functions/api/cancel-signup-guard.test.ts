@@ -68,10 +68,16 @@ Deno.test('cancel-signup：有提領紀錄的會員被拒絕', async () => {
       id_card_back_path: `${user.id}/back.jpg`,
     }).eq('id', user.id);
     await client.from('reward_transactions').insert({
-      user_id: user.id, type: 'adjustment', amount: 5000, description: '測試點數',
+      user_id: user.id,
+      type: 'adjustment',
+      amount: 5000,
+      description: '測試點數',
     });
     const { data: w } = await client.rpc('request_withdrawal', {
-      p_user_id: user.id, p_amount: 1000, p_bank_code: '812', p_bank_account: '1234567890123',
+      p_user_id: user.id,
+      p_amount: 1000,
+      p_bank_code: '812',
+      p_bank_account: '1234567890123',
     });
     assertEquals(w?.success, true, JSON.stringify(w));
 

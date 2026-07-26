@@ -8,10 +8,30 @@ cleanup 的前綴掃描與 UI 斷言都引用同一套規則。
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from tools.zh_names import zh_name_for
+
 RUN_DIR = Path(__file__).resolve().parent / ".run"
+
+ROOT_NODE = "A0"
+
+
+def _root_override(node: str) -> tuple[str, str]:
+    """root 節點（A0）的固定憑證，供 develop 種資料用；其餘節點一律走生成規則。
+
+    種出來的資料是要給人登入來看的，所以 root 必須是「記得住的帳號」，
+    不能是 e2e+<run_id>+a0@... 這種一次性 email。
+
+    ⚠️ 只在種資料時設。cleanup 是靠 `e2e+<run_id>+` 這個 email 前綴掃描
+    的——固定 email 掃不到，也就刪不掉。測試流程（會 cleanup 的那條）
+    設了它等於留下一個清不掉的帳號，所以 journey.yml 不設這兩個變數。
+    """
+    if node != ROOT_NODE:
+        return "", ""
+    return os.environ.get("JOURNEY_ROOT_EMAIL", ""), os.environ.get("JOURNEY_ROOT_PASSWORD", "")
 
 
 @dataclass
@@ -33,11 +53,14 @@ class RunState:
     users: dict[str, JourneyUser] = field(default_factory=dict)
 
     def new_user(self, node: str, national_id: str) -> JourneyUser:
+        root_email, root_password = _root_override(node)
         user = JourneyUser(
             node=node,
-            email=f"e2e+{self.run_id}+{node.lower()}@{self.email_domain}",
-            password=f"Journey!{self.run_id}",
-            name=f"測試{self.run_id}{node}",
+            email=root_email or f"e2e+{self.run_id}+{node.lower()}@{self.email_domain}",
+            password=root_password or f"Journey!{self.run_id}",
+            # 姓名必須通過註冊的中文模式規則（全中文字元、恰好 0 或 1 個
+            # 半形空格）。run_id 與 node 含英數，直接拼進去會被擋在 Step 2。
+            name=zh_name_for(self.run_id, node),
             national_id=national_id,
             # 規格只驗格式，但用身分證序號導出可讓 run 內 30 人不同號。
             phone=f"09{int(national_id[2:9]) % 10**8:08d}",

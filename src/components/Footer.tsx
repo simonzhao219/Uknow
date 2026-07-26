@@ -1,6 +1,6 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, FileText, Package, Gift } from 'lucide-react';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 
 // 快速連結：讓訪客也能從頁尾探索靜態內容頁（原本整段被註解、導覽有死角）。
 const QUICK_LINKS = [
@@ -38,13 +38,11 @@ export function Footer() {
             <ul className="space-y-1 text-sm">
               <li>
                 <a
-                  href="https://line.me/R/ti/p/@uknow"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={LINE_OFFICIAL_ACCOUNT_URL}
                   className="inline-flex items-center gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                  <span>官方客服：@uknow</span>
+                  <span>官方客服：{LINE_OFFICIAL_ACCOUNT_HANDLE}</span>
                 </a>
               </li>
             </ul>

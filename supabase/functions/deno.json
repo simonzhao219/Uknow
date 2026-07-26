@@ -5,7 +5,11 @@
     "lib": ["deno.window"]
   },
   "tasks": {
-    "check": "deno check api/index.ts",
+    "check": "deno check api/*.ts _shared/*.ts",
+    "lint": "deno lint",
+    "fmt:check": "deno fmt --check",
+    "test:unit": "deno test --allow-env --allow-read api/*.unit.test.ts",
+    "test:db": "deno test --allow-env --allow-net --allow-read --ignore=api/*.unit.test.ts",
     "test": "deno test --allow-env --allow-net --allow-read"
   },
   "fmt": {
@@ -14,7 +18,10 @@
   },
   "lint": {
     "rules": {
-      "tags": ["recommended"]
+      "tags": ["recommended"],
+      "exclude": [
+        "no-explicit-any"
+      ]
     }
   }
 }

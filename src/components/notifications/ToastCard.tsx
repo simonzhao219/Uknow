@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -73,16 +73,22 @@ export function ToastCard({ id, message, type, duration = 2000, onClose }: Toast
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.2 }}
+          // max-w-full（上限交給 ToastContainer 夾住的容器）取代
+          // min-w-[280px] max-w-[500px]：原本那組固定寬度不看視窗，窄螢幕上
+          // 卡片會比畫面還寬。寬度仍隨內容伸縮，只是再也不會超出容器。
           className={`
             ${style.bgColor} ${style.borderColor} ${style.textColor}
             border-l-4 rounded-lg shadow-lg p-4 mb-2
-            flex items-center gap-3 min-w-[280px] max-w-[500px]
+            flex items-center gap-3 max-w-full
           `}
           data-testid="toast"
           data-toast-type={type}
         >
           <Icon className={`${style.iconColor} flex-shrink-0`} size={20} />
-          <span className="flex-1">{message}</span>
+          {/* min-w-0：flex 子項預設不會縮到 min-content 以下，錯誤訊息裡的
+              長 token（Email、網址、錯誤代碼）會把卡片撐爆。break-words 讓
+              那種不可斷的字串換行而不是往外跑。 */}
+          <span className="min-w-0 flex-1 break-words">{message}</span>
           <button
             onClick={handleClose}
             className={`${style.textColor} hover:opacity-70 transition-opacity flex-shrink-0`}

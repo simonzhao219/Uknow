@@ -1,22 +1,17 @@
-import React, { useState, useMemo, useEffect, useContext } from "react";
-import { Link } from "react-router-dom";
-import { UserContext } from "../App";
-import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
-import { Input } from "./ui/input";
-import { Skeleton } from "./ui/skeleton";
-import {
-  MapPin,
-  ChevronDown,
-  Search,
-  SlidersHorizontal,
-  AlertCircle,
-} from "lucide-react";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
-import { GenderBadge } from "./common/GenderBadge";
-import { FilterCountBadge } from "./common/FilterCountBadge";
-import { FilterChip } from "./common/FilterChip";
+import type React from 'react';
+import { useState, useMemo, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
+import { UserContext } from '../App';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { Badge } from './ui/badge';
+import { Input } from './ui/input';
+import { Skeleton } from './ui/skeleton';
+import { MapPin, ChevronDown, Search, SlidersHorizontal, AlertCircle } from 'lucide-react';
+import { ImageWithFallback } from './figma/ImageWithFallback';
+import { GenderBadge } from './common/GenderBadge';
+import { FilterCountBadge } from './common/FilterCountBadge';
+import { FilterChip } from './common/FilterChip';
 import {
   Sheet,
   SheetClose,
@@ -26,15 +21,15 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "./ui/sheet";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { cn } from "./ui/utils";
+} from './ui/sheet';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { cn } from './ui/utils';
 import {
   SERVICE_CATEGORIES,
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
   GENDER_OPTIONS,
-} from "../utils/constants";
+} from '../utils/constants';
 import { createClient } from '../utils/supabase/client';
 import {
   toggleCity,
@@ -43,65 +38,64 @@ import {
   listingMatchesDistricts,
   type DistrictSelectionByCity,
 } from '../utils/districtSelection';
-import {
-  readHomeViewMode,
-  writeHomeViewMode,
-  type HomeViewMode,
-} from '../utils/homeViewMode';
+import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
+import type { PublicListingRow } from '../types/listing';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371; // 地球半徑（公里）
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = 
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
 
 // 台灣縣市座標對照表（用於距離計算）
 const cityCoordinates: Record<string, { lat: number; lng: number }> = {
-  '台北市': { lat: 25.0330, lng: 121.5654 },
-  '新北市': { lat: 25.0118, lng: 121.4654 },
-  '桃園市': { lat: 24.9936, lng: 121.3010 },
-  '台中市': { lat: 24.1477, lng: 120.6736 },
-  '台南市': { lat: 22.9999, lng: 120.2269 },
-  '高雄市': { lat: 22.6273, lng: 120.3014 },
-  '基隆市': { lat: 25.1276, lng: 121.7392 },
-  '新竹市': { lat: 24.8138, lng: 120.9675 },
-  '嘉義市': { lat: 23.4801, lng: 120.4491 },
-  '新竹縣': { lat: 24.8387, lng: 121.0177 },
-  '苗栗縣': { lat: 24.5604, lng: 120.8214 },
-  '彰化縣': { lat: 24.0518, lng: 120.5161 },
-  '南投縣': { lat: 23.9609, lng: 120.9719 },
-  '雲林縣': { lat: 23.7092, lng: 120.4313 },
-  '嘉義縣': { lat: 23.4518, lng: 120.2554 },
-  '屏東縣': { lat: 22.5519, lng: 120.5487 },
-  '宜蘭縣': { lat: 24.7021, lng: 121.7378 },
-  '花蓮縣': { lat: 23.9871, lng: 121.6015 },
-  '台東縣': { lat: 22.7972, lng: 121.1713 },
-  '澎湖縣': { lat: 23.5713, lng: 119.5794 },
-  '金門縣': { lat: 24.4324, lng: 118.3175 },
-  '連江縣': { lat: 26.1605, lng: 119.9297 }
+  台北市: { lat: 25.033, lng: 121.5654 },
+  新北市: { lat: 25.0118, lng: 121.4654 },
+  桃園市: { lat: 24.9936, lng: 121.301 },
+  台中市: { lat: 24.1477, lng: 120.6736 },
+  台南市: { lat: 22.9999, lng: 120.2269 },
+  高雄市: { lat: 22.6273, lng: 120.3014 },
+  基隆市: { lat: 25.1276, lng: 121.7392 },
+  新竹市: { lat: 24.8138, lng: 120.9675 },
+  嘉義市: { lat: 23.4801, lng: 120.4491 },
+  新竹縣: { lat: 24.8387, lng: 121.0177 },
+  苗栗縣: { lat: 24.5604, lng: 120.8214 },
+  彰化縣: { lat: 24.0518, lng: 120.5161 },
+  南投縣: { lat: 23.9609, lng: 120.9719 },
+  雲林縣: { lat: 23.7092, lng: 120.4313 },
+  嘉義縣: { lat: 23.4518, lng: 120.2554 },
+  屏東縣: { lat: 22.5519, lng: 120.5487 },
+  宜蘭縣: { lat: 24.7021, lng: 121.7378 },
+  花蓮縣: { lat: 23.9871, lng: 121.6015 },
+  台東縣: { lat: 22.7972, lng: 121.1713 },
+  澎湖縣: { lat: 23.5713, lng: 119.5794 },
+  金門縣: { lat: 24.4324, lng: 118.3175 },
+  連江縣: { lat: 26.1605, lng: 119.9297 },
 };
 
 // 依 districts 陣列組出可讀的地區字串：有「全區」只顯示全區，否則最多前 10 個。
 // 手機與桌面卡片共用，避免重複邏輯。
-const formatDistrict = (serviceProvider: any): string => {
-  if (!Array.isArray(serviceProvider.districts) || serviceProvider.districts.length === 0) {
-    return serviceProvider.district || "";
+const formatDistrict = (serviceProvider: PublicListingRow): string => {
+  if (serviceProvider.districts.length === 0) {
+    return '';
   }
-  if (serviceProvider.districts.includes("全區")) {
-    return "全區";
+  if (serviceProvider.districts.includes('全區')) {
+    return '全區';
   }
   const maxDisplay = 10;
   const districts = serviceProvider.districts.slice(0, maxDisplay);
-  const displayText = districts.join(", ");
+  const displayText = districts.join(', ');
   return serviceProvider.districts.length > maxDisplay ? `${displayText}...` : displayText;
 };
 
@@ -109,8 +103,8 @@ export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
   // 需要上移避開。
   const { isLoggedIn } = useContext(UserContext);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
   // 每個縣市的「全區」與區選擇互相獨立，同名區不再跨縣市誤配。
   const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>({});
@@ -125,7 +119,7 @@ export function HomePage() {
   }, [viewMode]);
 
   // ✅ 数据状态管理
-  const [serviceProviders, setServiceProviders] = useState<any[]>([]);
+  const [serviceProviders, setServiceProviders] = useState<PublicListingRow[]>([]);
   const [loading, setLoading] = useState(true);
   // 載入失敗與「真的沒有刊登」是兩回事：失敗要顯示錯誤與重試，
   // 不能偽裝成「目前沒有可用的服務者」空狀態。
@@ -143,11 +137,11 @@ export function HomePage() {
 
   // 嘗試取得使用者定位（失敗則沿用最新排序）
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => setUserCoords(null),
-      { timeout: 8000, maximumAge: 300000 }
+      { timeout: 8000, maximumAge: 300000 },
     );
   }, []);
 
@@ -174,16 +168,12 @@ export function HomePage() {
 
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
-      // 關鍵字搜尋（名稱／服務介紹／標籤）
+      // 關鍵字搜尋（名稱／服務介紹）
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const haystack = [
-          serviceProvider.name,
-          serviceProvider.description,
-          ...(Array.isArray(serviceProvider.tags) ? serviceProvider.tags : []),
-        ]
+        const haystack = [serviceProvider.name, serviceProvider.description]
           .filter(Boolean)
-          .join(" ")
+          .join(' ')
           .toLowerCase();
         if (!haystack.includes(q)) {
           return false;
@@ -208,10 +198,9 @@ export function HomePage() {
         if (!selectedCities.includes(serviceProvider.city)) {
           return false;
         }
-        const listingDistricts = Array.isArray(serviceProvider.districts)
-          ? serviceProvider.districts
-          : [serviceProvider.district || ''];  // 兼容旧格式
-        if (!listingMatchesDistricts(districtsByCity, serviceProvider.city, listingDistricts)) {
+        if (
+          !listingMatchesDistricts(districtsByCity, serviceProvider.city, serviceProvider.districts)
+        ) {
           return false;
         }
       }
@@ -228,8 +217,18 @@ export function HomePage() {
         if (!aCoords && !bCoords) return 0;
         if (!aCoords) return 1;
         if (!bCoords) return -1;
-        const distanceA = calculateDistance(userCoords.lat, userCoords.lng, aCoords.lat, aCoords.lng);
-        const distanceB = calculateDistance(userCoords.lat, userCoords.lng, bCoords.lat, bCoords.lng);
+        const distanceA = calculateDistance(
+          userCoords.lat,
+          userCoords.lng,
+          aCoords.lat,
+          aCoords.lng,
+        );
+        const distanceB = calculateDistance(
+          userCoords.lat,
+          userCoords.lng,
+          bCoords.lat,
+          bCoords.lng,
+        );
         return distanceA - distanceB;
       });
     }
@@ -241,7 +240,7 @@ export function HomePage() {
     selectedCategory,
     selectedGenders,
     districtsByCity,
-    userCoords
+    userCoords,
   ]);
 
   const handleCityChange = (city: string, checked: boolean) => {
@@ -253,7 +252,7 @@ export function HomePage() {
     // 單縣市內的「全區↔具體區」語意沿用 handleDistrictSelection（有測試釘住），
     // 縣市之間互不影響。
     setDistrictsByCity((prev) =>
-      toggleCityDistrict(prev, city, TAIWAN_REGIONS[city] || [], district, checked)
+      toggleCityDistrict(prev, city, TAIWAN_REGIONS[city] || [], district, checked),
     );
   };
 
@@ -261,15 +260,15 @@ export function HomePage() {
     if (checked) {
       setSelectedGenders([...selectedGenders, gender]);
     } else {
-      setSelectedGenders(selectedGenders.filter(g => g !== gender));
+      setSelectedGenders(selectedGenders.filter((g) => g !== gender));
     }
   };
 
   const clearFilters = () => {
-    setSelectedCategory("");
+    setSelectedCategory('');
     setSelectedGenders([]);
     setDistrictsByCity({});
-    setSearchQuery("");
+    setSearchQuery('');
   };
 
   const totalFilters = (selectedCategory ? 1 : 0) + selectedGenders.length + selectedCities.length;
@@ -278,12 +277,8 @@ export function HomePage() {
     <div className="max-w-6xl mx-auto space-y-6">
       {/* 標題區域 */}
       <div className="text-center space-y-4">
-        <h1 className="text-3xl md:text-4xl font-bold">
-          找到你需要的專業服務
-        </h1>
-        <p className="text-muted-foreground">
-          Uknow 連結專業服務者與需求者，讓專業技能發揮最大價值
-        </p>
+        <h1 className="text-3xl md:text-4xl font-bold">找到你需要的專業服務</h1>
+        <p className="text-muted-foreground">Uknow 連結專業服務，讓專業眾所皆知</p>
       </div>
 
       {/* 桌面：搜尋＋篩選工具列同一列。
@@ -313,9 +308,7 @@ export function HomePage() {
         <div className="flex items-center gap-2">
           <DesktopFilterPopover
             label="性別"
-            summary={
-              selectedGenders.length === 1 ? `性別：${selectedGenders[0]}` : undefined
-            }
+            summary={selectedGenders.length === 1 ? `性別：${selectedGenders[0]}` : undefined}
             count={selectedGenders.length}
             panelClassName="w-auto"
           >
@@ -339,9 +332,7 @@ export function HomePage() {
 
           <DesktopFilterPopover
             label="服務地區"
-            summary={
-              selectedCities.length === 1 ? `地區：${selectedCities[0]}` : undefined
-            }
+            summary={selectedCities.length === 1 ? `地區：${selectedCities[0]}` : undefined}
             count={selectedCities.length}
             panelClassName="w-[min(640px,90vw)] max-h-[70vh] overflow-y-auto"
           >
@@ -365,7 +356,7 @@ export function HomePage() {
         resultCount={filteredServiceProviders.length}
         onResetFilters={() => {
           setSelectedGenders([]);
-          setSelectedCategory("");
+          setSelectedCategory('');
           setDistrictsByCity({});
         }}
       >
@@ -419,11 +410,7 @@ export function HomePage() {
                   </Button>
                 )}
                 {/* 檢視方式切換：手機專屬（桌面版面已寬、資訊完整，不提供切換） */}
-                <HomeViewToggle
-                  value={viewMode}
-                  onChange={setViewMode}
-                  className="md:hidden"
-                />
+                <HomeViewToggle value={viewMode} onChange={setViewMode} className="md:hidden" />
               </div>
             </div>
           </div>
@@ -435,7 +422,7 @@ export function HomePage() {
             <span className="sr-only">載入服務者資料中</span>
             {/* 手機：骨架屏跟著檢視模式走，資料到位時版面不跳動 */}
             <div className="block md:hidden">
-              {viewMode === "photo" ? (
+              {viewMode === 'photo' ? (
                 <div className="grid grid-cols-3 gap-0.5">
                   {Array.from({ length: 9 }).map((_, i) => (
                     <Skeleton key={i} className="aspect-square w-full rounded-none" />
@@ -487,10 +474,7 @@ export function HomePage() {
                 : '請稍後再來看看，或許會有新的服務者加入'}
             </p>
             {(totalFilters > 0 || searchQuery.trim()) && (
-              <Button
-                onClick={clearFilters}
-                variant="outline"
-              >
+              <Button onClick={clearFilters} variant="outline">
                 清除搜尋與篩選
               </Button>
             )}
@@ -502,16 +486,22 @@ export function HomePage() {
           <>
             {/* 手機版：依檢視模式在「3 欄照片牆」與「2 欄詳細卡」間切換 */}
             <div className="block md:hidden">
-              {viewMode === "photo" ? (
+              {viewMode === 'photo' ? (
                 <div className="grid grid-cols-3 gap-0.5">
                   {filteredServiceProviders.map((serviceProvider) => (
-                    <MobilePhotoWallCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                    <MobilePhotoWallCard
+                      key={serviceProvider.id}
+                      serviceProvider={serviceProvider}
+                    />
                   ))}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {filteredServiceProviders.map((serviceProvider) => (
-                    <MobileServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                    <MobileServiceProviderCard
+                      key={serviceProvider.id}
+                      serviceProvider={serviceProvider}
+                    />
                   ))}
                 </div>
               )}
@@ -573,9 +563,7 @@ function MobileFilterSheet({
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-          {children}
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
         <SheetFooter className="mt-0 flex-row gap-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {showReset && (
             <Button variant="ghost" onClick={onReset} className="shrink-0">
@@ -583,9 +571,7 @@ function MobileFilterSheet({
             </Button>
           )}
           <SheetClose asChild>
-            <Button className="min-h-12 flex-1">
-              查看 {resultCount} 位服務者
-            </Button>
+            <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
           </SheetClose>
         </SheetFooter>
       </SheetContent>
@@ -636,12 +622,12 @@ function MobileSearchFilterBar({
 
   // BottomNav 高 56px（min-h）＋ safe-area，再留 12px 間距
   const offsetClass = hasBottomNav
-    ? "bottom-[calc(56px+env(safe-area-inset-bottom)+0.75rem)]"
-    : "bottom-[max(1rem,env(safe-area-inset-bottom))]";
+    ? 'bottom-[calc(56px+env(safe-area-inset-bottom)+0.75rem)]'
+    : 'bottom-[max(1rem,env(safe-area-inset-bottom))]';
 
   if (!expanded) {
     return (
-      <div className={cn("md:hidden fixed right-4 z-40", offsetClass)}>
+      <div className={cn('md:hidden fixed right-4 z-40', offsetClass)}>
         <button
           type="button"
           onClick={() => setExpanded(true)}
@@ -662,7 +648,7 @@ function MobileSearchFilterBar({
   }
 
   return (
-    <div className={cn("md:hidden fixed inset-x-4 z-40", offsetClass)}>
+    <div className={cn('md:hidden fixed inset-x-4 z-40', offsetClass)}>
       <div className="flex items-stretch rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-95 duration-200">
         {/* 搜尋入口：顯示目前搜尋字樣作為狀態回饋 */}
         <Sheet>
@@ -671,25 +657,18 @@ function MobileSearchFilterBar({
               type="button"
               className="flex min-w-0 flex-1 items-center gap-2 rounded-l-full px-4 py-3 text-left"
             >
-              <Search
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               {searchQuery ? (
                 <span className="truncate text-sm">{searchQuery}</span>
               ) : (
-                <span className="truncate text-sm text-muted-foreground">
-                  搜尋服務者
-                </span>
+                <span className="truncate text-sm text-muted-foreground">搜尋服務者</span>
               )}
             </button>
           </SheetTrigger>
           <SheetContent side="top" className="gap-0 p-0">
             <SheetHeader className="px-4 pt-4 pb-2">
               <SheetTitle>搜尋服務者</SheetTitle>
-              <SheetDescription>
-                輸入名稱、服務內容或標籤，結果即時更新
-              </SheetDescription>
+              <SheetDescription>輸入名稱、服務內容或標籤，結果即時更新</SheetDescription>
             </SheetHeader>
             <div className="px-4 pb-4">
               <div className="relative">
@@ -710,18 +689,12 @@ function MobileSearchFilterBar({
             </div>
             <SheetFooter className="mt-0 flex-row gap-3 border-t p-4">
               {searchQuery && (
-                <Button
-                  variant="ghost"
-                  onClick={() => onSearchChange("")}
-                  className="shrink-0"
-                >
+                <Button variant="ghost" onClick={() => onSearchChange('')} className="shrink-0">
                   清除
                 </Button>
               )}
               <SheetClose asChild>
-                <Button className="min-h-12 flex-1">
-                  查看 {resultCount} 位服務者
-                </Button>
+                <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
               </SheetClose>
             </SheetFooter>
           </SheetContent>
@@ -793,10 +766,7 @@ function DesktopFilterPopover({
         <Button
           variant="outline"
           size="sm"
-          className={cn(
-            "h-9 gap-1.5 rounded-full",
-            active && "border-primary/60 bg-primary/5",
-          )}
+          className={cn('h-9 gap-1.5 rounded-full', active && 'border-primary/60 bg-primary/5')}
         >
           <span>{summary ?? label}</span>
           {/* 摘要已含選中的值時不再重複顯示數字 */}
@@ -804,7 +774,7 @@ function DesktopFilterPopover({
           <ChevronDown className="h-4 w-4 opacity-60" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className={cn("p-4", panelClassName)}>
+      <PopoverContent align="end" sideOffset={8} className={cn('p-4', panelClassName)}>
         {children}
       </PopoverContent>
     </Popover>
@@ -825,9 +795,7 @@ function GenderFilterChips({
           key={gender}
           label={gender}
           selected={selectedGenders.includes(gender)}
-          onToggle={() =>
-            onGenderChange(gender, !selectedGenders.includes(gender))
-          }
+          onToggle={() => onGenderChange(gender, !selectedGenders.includes(gender))}
           className="min-w-20"
         />
       ))}
@@ -849,17 +817,15 @@ function CategoryFilterChips({
     <div className="flex flex-wrap gap-2">
       <FilterChip
         label="全部類別"
-        selected={selectedCategory === ""}
-        onToggle={() => onSelect("")}
+        selected={selectedCategory === ''}
+        onToggle={() => onSelect('')}
       />
       {SERVICE_CATEGORIES.map((category) => (
         <FilterChip
           key={category}
           label={category}
           selected={selectedCategory === category}
-          onToggle={() =>
-            onSelect(selectedCategory === category ? "" : category)
-          }
+          onToggle={() => onSelect(selectedCategory === category ? '' : category)}
         />
       ))}
     </div>
@@ -898,12 +864,12 @@ function LocationFilterChips({
           <div className="flex flex-wrap gap-2">
             <FilterChip
               label="全區"
-              selected={cityDistricts(districtsByCity, city).includes("全區")}
+              selected={cityDistricts(districtsByCity, city).includes('全區')}
               onToggle={() =>
                 onDistrictChange(
                   city,
-                  "全區",
-                  !cityDistricts(districtsByCity, city).includes("全區"),
+                  '全區',
+                  !cityDistricts(districtsByCity, city).includes('全區'),
                 )
               }
             />
@@ -961,7 +927,7 @@ function DesktopCardSkeleton() {
 
 // 手機版資訊卡片：照片 + 名稱 + 類別 + 地區 + 性別，讓手機使用者不必逐一點入
 // 也能判斷服務內容與地點（原本只有照片與名字，資訊量遠少於桌面版）。
-function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   const displayDistrict = formatDistrict(serviceProvider);
   return (
     <Link to={`/service-providers/${serviceProvider.id}`} className="block h-full">
@@ -982,9 +948,7 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }
             />
           </div>
           <div className="p-2 space-y-1">
-            <h3 className="font-medium text-sm line-clamp-1">
-              {serviceProvider.name}
-            </h3>
+            <h3 className="font-medium text-sm line-clamp-1">{serviceProvider.name}</h3>
             <Badge variant="secondary" className="text-xs">
               {serviceProvider.category}
             </Badge>
@@ -1002,7 +966,7 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: any }
 }
 
 // 桌面版完整卡片組件
-function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
+function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   const displayDistrict = formatDistrict(serviceProvider);
 
   return (
@@ -1019,9 +983,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <h3 className="font-semibold line-clamp-1">
-                  {serviceProvider.name}
-                </h3>
+                <h3 className="font-semibold line-clamp-1">{serviceProvider.name}</h3>
                 {/* 🆕 性别 Badge */}
                 <GenderBadge gender={serviceProvider.gender} className="text-xs shrink-0" />
               </div>
@@ -1039,25 +1001,6 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: any }) {
               <span>
                 {serviceProvider.city} {displayDistrict}
               </span>
-            </div>
-
-            <div className="flex flex-wrap gap-1">
-              {serviceProvider.tags && serviceProvider.tags
-                .slice(0, 2)
-                .map((tag: string, index: number) => (
-                  <Badge
-                    key={index}
-                    variant="outline"
-                    className="text-xs"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              {serviceProvider.tags && serviceProvider.tags.length > 2 && (
-                <Badge variant="outline" className="text-xs">
-                  +{serviceProvider.tags.length - 2}
-                </Badge>
-              )}
             </div>
           </div>
         </CardContent>

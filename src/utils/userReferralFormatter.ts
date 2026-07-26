@@ -1,9 +1,9 @@
 /**
  * 會員推薦格式化工具
- * 
+ *
  * ✅ Phase 10: 任務系統優化
  * 規格要求：推薦只與使用者有關，與刊登無關
- * 
+ *
  * 正確格式：userName-userReferralCode
  * 錯誤格式：userName-listingName（已棄用）
  */
@@ -12,16 +12,13 @@
  * 格式化被推薦人資訊（會員推薦格式）
  * @example formatUserReferral('張三', 'abc123456') → '張三-abc123456'
  */
-export function formatUserReferral(
-  userName: string,
-  userReferralCode: string
-): string {
+export function formatUserReferral(userName: string, userReferralCode: string): string {
   return `${userName}-${userReferralCode}`;
 }
 
 /**
  * 格式化被推薦人卡片顯示數據
- * 
+ *
  * @param record - 月度推薦記錄
  * @returns 格式化後的卡片數據
  */
@@ -33,13 +30,13 @@ export function formatReferralCard(record: {
   return {
     userName: record.userName,
     code: record.userReferralCode,
-    timestamp: record.createdAt
+    timestamp: record.createdAt,
   };
 }
 
 /**
  * 獲取激勵文案
- * 
+ *
  * @param progress - 進度百分比（0-100）
  * @returns 激勵文案
  */
@@ -55,7 +52,7 @@ export function getMotivationText(progress: number): string {
 
 /**
  * 獲取進度顏色
- * 
+ *
  * @param progress - 進度百分比（0-100+）
  * @returns Tailwind 顏色類別
  */
@@ -68,7 +65,7 @@ export function getProgressColor(progress: number): string {
 
 /**
  * 獲取進度條樣式
- * 
+ *
  * @param progress - 進度百分比（0-100+）
  * @returns 進度條樣式類別
  */

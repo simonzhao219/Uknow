@@ -15,8 +15,11 @@
 //   3. 讀取一律經過 sanitize：只收白名單欄位、限制長度、型別不符即丟棄，
 //      避免被塞髒資料污染表單或撐爆儲存體。
 
+import { NAME_MAX_LENGTH, type NameMode } from './profileValidation';
+
 export interface ProfileDraft {
   name: string;
+  nameMode: NameMode;
   nationalId: string;
   phone: string;
   birthDate: string;
@@ -33,19 +36,35 @@ export interface StorageLike {
 
 export const PROFILE_DRAFT_KEY = 'uknow:draft:complete-profile';
 
-// 各欄位的最大長度，和表單 maxLength / 驗證規則一致，避免草稿被塞超長字串。
-const MAX_LEN: Record<keyof Omit<ProfileDraft, 'agreedToTerms'>, number> = {
-  name: 10,
+// 各欄位的最大長度，避免草稿被塞超長字串。
+//
+// `name` 取**兩個模式上限中較寬鬆者**（外文 50），不是照抄中文模式的 10。
+// 草稿層只是防炸儲存體的粗篩，做不到也不需要模式相依的精準把關；若留在 10，
+// 外文使用者填 `Christopher Nolan`（17 字元）後遇頁面卸載重整，草稿還原會
+// 靜默截斷成 `Christophe`——**而截斷後的字串仍會通過格式驗證**，等於把一個
+// 格式合法但錯誤的姓名寫進要用來核對身分的欄位，使用者未必察覺。
+const MAX_LEN: Record<keyof Omit<ProfileDraft, 'agreedToTerms' | 'nameMode'>, number> = {
+  name: NAME_MAX_LENGTH.foreign,
   nationalId: 10,
   phone: 10,
   birthDate: 10, // 'YYYY-MM-DD'
   referralCode: 32,
 };
 
+const NAME_MODES: readonly NameMode[] = ['zh', 'foreign'];
+
 function cleanString(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined;
   // 保留使用者原始輸入，只截掉超長部分；不 trim，避免打字中途的空格被吃掉。
   return value.slice(0, max);
+}
+
+// 由內容推回姓名模式：草稿或「編輯」回填只帶得回姓名字串，模式得從內容還原。
+// 兩條 prefill 路徑（草稿還原、isEditing 回填）都用這支，避免外文姓名的人
+// 回到表單時看到中文模式與一句對不上的錯誤訊息。
+// 含拉丁字母就是外文，否則中文（含空字串——預設中文）。
+export function inferNameMode(name: string): NameMode {
+  return /[A-Za-z]/.test(name) ? 'foreign' : 'zh';
 }
 
 // 把任意 parse 出來的物件收斂成「只含已知欄位、型別正確」的部分草稿。
@@ -64,6 +83,13 @@ export function sanitizeDraft(input: unknown): Partial<ProfileDraft> {
     out.agreedToTerms = source.agreedToTerms;
   }
 
+  // 姓名模式是只有兩個合法值的 enum，必須走 **allow-list** 檢查，不能掛進
+  // MAX_LEN 沿用字串截斷路徑——那會讓被竄改的 sessionStorage 值（如 "xyz"）
+  // 被當成合法草稿原樣寫回 UI state，打破本模組「型別不符即丟棄」的設計原則。
+  if (NAME_MODES.includes(source.nameMode as NameMode)) {
+    out.nameMode = source.nameMode as NameMode;
+  }
+
   return out;
 }
 
@@ -76,7 +102,10 @@ export function isDraftMeaningful(draft: Partial<ProfileDraft>): boolean {
       draft.phone?.trim() ||
       draft.birthDate?.trim() ||
       draft.referralCode?.trim() ||
-      draft.agreedToTerms,
+      draft.agreedToTerms ||
+      // 切到外文模式但還沒打字也值得存：否則使用者點了切換鈕、去看服務條款、
+      // 回來又變回中文模式，那個點擊等於白費（契約第 1 條的同一個道理）。
+      (draft.nameMode !== undefined && draft.nameMode !== 'zh'),
   );
 }
 
@@ -106,7 +135,9 @@ function defaultStorage(): StorageLike | null {
   }
 }
 
-export function loadProfileDraft(storage: StorageLike | null = defaultStorage()): Partial<ProfileDraft> {
+export function loadProfileDraft(
+  storage: StorageLike | null = defaultStorage(),
+): Partial<ProfileDraft> {
   if (!storage) return {};
   try {
     return parseDraft(storage.getItem(PROFILE_DRAFT_KEY));

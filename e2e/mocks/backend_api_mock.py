@@ -303,13 +303,24 @@ class BackendApiMock:
         self._route(
             "/referrals/network/children",
             lambda route: _fulfill_json(
-                route, {"success": True, "data": {"parentId": "", "sort": "updated_desc", "nodes": []}}
+                route, {"success": True, "data": {"parentId": "", "sort": "updated_asc", "nodes": []}}
             ),
         )
         self._route(
             "/referrals/network/search",
             lambda route: _fulfill_json(
-                route, {"success": True, "data": {"query": "", "sort": "updated_desc", "total": 0, "matches": []}}
+                route,
+                {
+                    "success": True,
+                    "data": {
+                        "query": "",
+                        "sort": "updated_asc",
+                        "total": 0,
+                        "limit": 50,
+                        "offset": 0,
+                        "matches": [],
+                    },
+                },
             ),
         )
 
@@ -393,9 +404,26 @@ class BackendApiMock:
 
     def set_reward_history(self, history: Optional[list] = None):
         records = history or []
+        # sources = 未篩選的分類 facet（見 RewardHistoryResponseSchema）：前端的
+        # 篩選 chip 照它渲染。這裡由 records 推導，讓 mock 與真後端同口徑
+        # （各分類筆數加總 = total）。
+        counts: dict = {}
+        for record in records:
+            category = record.get("sourceCategory")
+            if category:
+                counts[category] = counts.get(category, 0) + 1
         body = {
             "success": True,
-            "data": {"history": records, "total": len(records), "limit": 50, "offset": 0},
+            "data": {
+                "history": records,
+                "total": len(records),
+                "limit": 50,
+                "offset": 0,
+                "sources": [
+                    {"sourceCategory": category, "count": count}
+                    for category, count in counts.items()
+                ],
+            },
         }
         self._route("/rewards/history", lambda route: _fulfill_json(route, body))
 
@@ -626,7 +654,6 @@ def build_referral_member(name: str, **overrides) -> dict:
         "joinedAt": "2026-07-16T00:00:00.000Z",
         "listingId": None,
         "childCount": 0,
-        "subtreeLatestJoinedAt": "2026-07-16T00:00:00.000Z",
     }
     member.update(overrides)
     return member
@@ -637,7 +664,7 @@ def build_network_overview(
     second_gen_count: int = 0,
     third_gen_count: int = 0,
     user_referral_code: str = "MYCODE",
-    sort: str = "updated_desc",
+    sort: str = "updated_asc",
     attention: Optional[dict] = None,
 ) -> dict:
     # GET /referrals/network/overview 的 data 形狀（useReferralData 快取同形）。
@@ -702,15 +729,16 @@ def build_reward_history_record(
     description: str = "一代推薦 - 王小明",
     generation: int = 1,
     balance: int = 200,
-    source_category: str = "referral_payment",
+    source_category: str = "referral_signup",
     **overrides,
 ) -> dict:
     """A row for GET /rewards/history (RewardHistoryRecordSchema). Defaults model
     a first-generation referral commission — the 推薦關係 -> 點數 link.
 
     sourceCategory 是明細的來源分類（view source_category 衍生欄，見 migration
-    0725 0001）：付款推薦 referral_payment / 任務續約 referral_task_renewal /
-    提領 withdrawal / 退款 withdrawal_refund。前端用它渲染來源 badge 與篩選。"""
+    0725 0002），分類軸是拉新／續約：推薦新人 referral_signup / 子代續約
+    referral_renewal / 提領 withdrawal / 退還 withdrawal_refund。
+    前端用它渲染來源 badge 與篩選。"""
     record = {
         "id": "rh-e2e-1",
         "type": type,

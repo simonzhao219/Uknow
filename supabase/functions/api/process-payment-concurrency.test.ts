@@ -12,16 +12,23 @@
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
-import { adminClient, createTestUser, deleteTestUsers, payForUser, getActiveReferralCode } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  getActiveReferralCode,
+  payForUser,
+} from './test-helpers.ts';
 
 // 走 PostgREST/.rpc() 的話，兩個 HTTP round-trip 各自的開銷（auth、JSON
 // 解析…）反而會把兩個呼叫的實際 DB 執行時間點拉開，很難重現真正的
 // race window。直接開兩條原生連線對 Postgres 下 `select
 // process_successful_payment(...)`，才能讓兩邊的呼叫真正在資料庫層級
 // 同時執行，逼近 webhook / return 導回幾乎同時到達的情境。
-const DB_URL = Deno.env.get('SUPABASE_DB_URL') ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
-Deno.test('process_successful_payment is safe under concurrent duplicate calls for the same trade_no', async () => {
+Deno.test('process_successful_payment：同一 trade_no 併發重複呼叫仍安全', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Referrer' });
   const { error: referrerPayErr } = await payForUser(client, referrer.id);
@@ -32,7 +39,11 @@ Deno.test('process_successful_payment is safe under concurrent duplicate calls f
 
   const tradeNo = `RACE-${payer.id}`;
   const { error: insertErr } = await client.from('payment_orders').insert({
-    user_id: payer.id, amount: 1200, status: 'pending', payment_method: 'payuni', transaction_id: tradeNo,
+    user_id: payer.id,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
   });
   assertEquals(insertErr, null);
 
@@ -59,7 +70,11 @@ Deno.test('process_successful_payment is safe under concurrent duplicate calls f
       .select('id')
       .eq('referee_user_id', payer.id)
       .eq('generation', 1);
-    assertEquals(rewards?.length, 1, `expected exactly 1 gen-1 reward, got ${rewards?.length} (duplicate payout)`);
+    assertEquals(
+      rewards?.length,
+      1,
+      `expected exactly 1 gen-1 reward, got ${rewards?.length} (duplicate payout)`,
+    );
 
     const { data: order } = await client
       .from('payment_orders')

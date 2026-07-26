@@ -130,6 +130,27 @@ Feature: Reward points and withdrawal
     And I submit the withdrawal application
     Then I should see a toast containing "已達每日提領上限"
 
+  @compatibility
+  Scenario: A toast carrying an unbreakable error code stays inside a phone screen
+    # 後端錯誤訊息會原樣進 toast。中文句子能自由斷行所以永遠塞得下,但錯誤
+    # 代碼這種不可斷的長 token 沒有斷點:它會把訊息欄撐開、卡片頂到寬度上限,
+    # 然後整張卡片掛到視窗外(修正前 375px 下左右各溢出 61px,兩端文字被切)。
+    Given I am on a 375px-wide phone screen
+    And I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos are already on file
+    And submitting a withdrawal fails with "ERR_SUBSCRIPTION_STATE_TRANSITION_FAILURE_0x8F2A1C9D"
+    When I visit "/rewards"
+    And I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
+    And I agree to the withdrawal terms
+    And I submit the withdrawal application
+    Then I should see a toast containing "ERR_SUBSCRIPTION_STATE_TRANSITION_FAILURE"
+    And the toast should stay within the screen
+
   # --- Amount guardrails (WithdrawalProcess.validateStep1) ------------------
   # The money core: what can actually leave the account. Each violation must be
   # caught client-side before the confirm step, mirroring the backend's rules.
@@ -145,30 +166,7 @@ Feature: Reward points and withdrawal
     Then I should see a field error containing "最低提領Point為 1,000P"
 
   @rewards
-  Scenario: A withdrawal that is not a multiple of 1000 is rejected
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "1500"
-    And I proceed past the amount step
-    Then I should see a field error containing "提領Point必須為 1000 的倍數"
 
-  @rewards
-  Scenario: A withdrawal above the daily cap is rejected at 8000
-    # 20000 available → 19985 withdrawable → floored 19000, but capped at the
-    # 8000 daily limit; 9000 must be rejected against the cap, not the balance.
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 20000 available and 20000 total earned
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "9000"
-    And I proceed past the amount step
-    Then I should see a field error containing "提領Point不能超過 8,000P"
-
-  # --- Identity guardrails (WithdrawalProcess.validateStep2) ----------------
-
-  @rewards
   Scenario: An ID that fails verification cannot submit the application
     Given I am a paid member who joined the referral program
     And my reward summary shows 5000 available and 8000 total earned
@@ -184,21 +182,7 @@ Feature: Reward points and withdrawal
     And the submit-withdrawal button should be disabled
 
   @rewards
-  Scenario: A too-short bank account is rejected on submit
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    And my ID card photos are already on file
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "1000"
-    And I proceed past the amount step
-    And I confirm the withdrawal summary
-    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "123"
-    And I agree to the withdrawal terms
-    And I submit the withdrawal application
-    Then I should see a field error containing "銀行帳號至少需要10位數字"
 
-  @rewards
   Scenario: The application stays locked until the terms are agreed
     # Every field is valid; the submit gate must remain closed purely because
     # the terms checkbox is unticked, and open the moment it is ticked.

@@ -9,8 +9,8 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 // 公開、固定不變的值（`supabase status -o env` 印出來的 SERVICE_ROLE_KEY），
 // 不是真正的密鑰。CI 若改用其他方式啟動本地 Supabase，可用環境變數覆寫。
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? 'http://127.0.0.1:54321';
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  ?? 'eyJhbGciOiJFUzI1NiIsImtpZCI6ImI4MTI2OWYxLTIxZDgtNGYyZS1iNzE5LWMyMjQwYTg0MGQ5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MjA5OTUxNzg3NH0.NOO6XuN2hBOf4kSPXeCbtKxc55pJgRqmOJtLFMKmGH0KAYcOYo1el2sqZTVTi4kXPtgAghlLvX4nkUdQ3_cJFw';
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+  'eyJhbGciOiJFUzI1NiIsImtpZCI6ImI4MTI2OWYxLTIxZDgtNGYyZS1iNzE5LWMyMjQwYTg0MGQ5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MjA5OTUxNzg3NH0.NOO6XuN2hBOf4kSPXeCbtKxc55pJgRqmOJtLFMKmGH0KAYcOYo1el2sqZTVTi4kXPtgAghlLvX4nkUdQ3_cJFw';
 
 export function adminClient(): SupabaseClient {
   return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
@@ -27,9 +27,22 @@ export function ensureEdgeFunctionEnv(): void {
 
 let counter = 0;
 
-// 建立測試使用者：透過 auth.admin.createUser + user_metadata.referred_by_code，
-// 讓 handle_new_user() trigger（20260620000009）用跟真實註冊完全一樣的路徑
-// 解析 referred_by_user_id，不用手動戳 profiles。
+// 建立測試使用者：`referred_by_code` 仍走 user_metadata，讓
+// handle_new_user() trigger 用跟真實註冊完全一樣的路徑解析
+// referred_by_user_id；**姓名改用 service_role 直寫**。
+//
+// 為什麼姓名不能再走 metadata：20260726000002 起 handle_new_user() 不再讀
+// `raw_user_meta_data ->> 'name'`（那條路徑對外可達、繞過所有格式驗證），
+// 一律寫入空字串。繼續靠 metadata 帶姓名的話，所有依賴姓名的測試會靜默
+// 拿到空字串。
+//
+// 為什麼是 service_role 直寫而不是改呼叫 `POST /auth/register`：後者要求
+// name/phone/birthDate 皆非空，補上 phone/birth_date 會讓
+// effective_registration_step 從 0 變 1，直接打壞
+// registration-step-contract.test.ts 一系列斷言（它們依賴「剛建立、資料
+// 未填的使用者 registrationStep 為 0」）。直寫是唯一保住那個不變式的做法，
+// 同層 registration-step-contract.test.ts 的 fillBasicProfile 已是既有前例。
+// **刻意只碰 name，不碰 phone/birth_date。**
 export async function createTestUser(
   client: SupabaseClient,
   opts: { name: string; referredByCode?: string } = { name: 'Test User' },
@@ -40,12 +53,20 @@ export async function createTestUser(
     password: crypto.randomUUID(),
     email_confirm: true,
     user_metadata: {
-      name: opts.name,
       ...(opts.referredByCode ? { referred_by_code: opts.referredByCode } : {}),
     },
   });
   if (error || !data.user) {
     throw new Error(`createTestUser failed: ${error?.message ?? 'no user returned'}`);
+  }
+  if (opts.name) {
+    const { error: nameError } = await client
+      .from('profiles')
+      .update({ name: opts.name })
+      .eq('id', data.user.id);
+    if (nameError) {
+      throw new Error(`createTestUser set name failed: ${nameError.message}`);
+    }
   }
   return { id: data.user.id, email };
 }
@@ -109,7 +130,10 @@ export async function getUserAccessToken(client: SupabaseClient, email: string):
   return otpData.session.access_token;
 }
 
-export async function getActiveReferralCode(client: SupabaseClient, userId: string): Promise<string> {
+export async function getActiveReferralCode(
+  client: SupabaseClient,
+  userId: string,
+): Promise<string> {
   const { data } = await client
     .from('referral_codes')
     .select('code')

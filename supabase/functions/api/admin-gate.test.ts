@@ -3,6 +3,13 @@
 // middleware 強制涵蓋整個命名空間，而不是逐路由手貼——手貼漏一次
 // 就是權限漏洞，GET /admin/features 正是漏網之魚（掛在 /admin 下
 // 卻無任何驗證，與檔內「所有 /admin/** 統一守門」的註解矛盾）。
+//
+// 本檔是「守門」這件事的**單一權威測試**：底下的 ADMIN_ROUTES 要涵蓋
+// 每一個 /admin/** 命名空間。原本 announcements 的守門測在
+// admin-and-announcements.test.ts、system-alerts 的在 system-alerts-api
+// .test.ts，各自建使用者、各自簽 token——同一條契約散在三個檔案，
+// 新增端點時三處都要記得補，等於三處都可能漏。收攏到這裡之後，
+// 那兩個檔案只負責各自的業務行為。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import {
@@ -22,20 +29,40 @@ Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
 const { app } = await import('./index.ts');
 
-Deno.test('admin 守門：匿名請求 /admin/features 必須 401（原為無驗證漏網端點）', async () => {
-  const res = await app.request('/api/admin/features');
-  assertEquals(res.status, 401, await res.clone().text());
+// 新增 /admin/** 端點時把它加進這裡——這份清單就是「哪些路徑受守門
+// 保護」的規格。漏加一條，這裡不會紅，所以 code review 要盯的是
+// 「新端點有沒有進清單」。
+const ADMIN_ROUTES = [
+  ['GET', '/api/admin/features'],
+  ['GET', '/api/admin/withdrawals'],
+  ['GET', '/api/admin/members'],
+  ['GET', '/api/admin/announcements'],
+  ['POST', '/api/admin/announcements'],
+  ['GET', '/api/admin/system-alerts'],
+  ['POST', '/api/admin/members/verify'],
+] as const;
+
+Deno.test('admin 守門：匿名請求一律 401', async () => {
+  for (const [method, path] of ADMIN_ROUTES) {
+    const res = await app.request(path, { method });
+    assertEquals(res.status, 401, `${method} ${path} 匿名應 401，實際 ${res.status}`);
+    await res.body?.cancel();
+  }
 });
 
-Deno.test('admin 守門：一般會員請求 /admin/** 一律 403', async () => {
+Deno.test('admin 守門：一般會員一律 403', async () => {
   const client = adminClient();
   const member = await createTestUser(client, { name: 'Regular Member' });
 
   try {
     const token = await getUserAccessToken(client, member.email);
-    for (const path of ['/api/admin/features', '/api/admin/withdrawals', '/api/admin/members']) {
-      const res = await app.request(path, { headers: { Authorization: `Bearer ${token}` } });
-      assertEquals(res.status, 403, `${path} 應拒絕非管理員，實際 ${res.status}`);
+    for (const [method, path] of ADMIN_ROUTES) {
+      const res = await app.request(path, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assertEquals(res.status, 403, `${method} ${path} 應拒絕非管理員，實際 ${res.status}`);
+      await res.body?.cancel();
     }
   } finally {
     await deleteTestUsers(client, [member.id]);
