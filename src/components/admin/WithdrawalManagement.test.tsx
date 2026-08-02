@@ -114,7 +114,9 @@ describe('WithdrawalManagement', () => {
 
     await screen.findByText('連線失敗');
     fireEvent.click(screen.getByRole('button', { name: '重試' }));
-    await screen.findByText('王小明');
+    // findAllByText：重試成功後姓名同時出現在同屏作業面板與表格列，
+    // 而那正是 W1 要的形狀，不是重複渲染的瑕疵。
+    await screen.findAllByText('王小明');
     expect(load).toHaveBeenCalledTimes(2);
   });
 
@@ -135,13 +137,19 @@ describe('WithdrawalManagement', () => {
   });
 
   it('收款帳號可一鍵複製', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    // 攔 execCommand 而非 navigator.clipboard：後者是 src/utils/clipboard.ts
+    // **刻意排除**的路徑（LINE 等 in-app 瀏覽器會擋掉，而本專案使用者大量
+    // 從 LINE 進來）。攔錯層就等於在作業台重新引入階段 2.2 排掉的失效模式。
+    const copied: string[] = [];
+    document.execCommand = vi.fn(() => {
+      copied.push((document.activeElement as HTMLTextAreaElement)?.value ?? '');
+      return true;
+    });
     renderConsole();
 
     const panel = await screen.findByRole('region', { name: '匯款作業面板' });
     fireEvent.click(within(panel).getByRole('button', { name: '複製收款帳號' }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('1234567890123'));
+    await waitFor(() => expect(copied).toContain('1234567890123'));
   });
 
   it('待匯款總額用匯款金額加總，不含平台收的手續費', async () => {
@@ -204,12 +212,17 @@ describe('WithdrawalManagement', () => {
 
   it('手機上不顯示標記已匯款，但退件與代為完成照樣可用', async () => {
     stubMediaQuery(false);
+    // 兩筆記錄各帶自己的前置狀態：退件只在 pending 可用、代為完成只在
+    // awaiting_collection 可用。plan §1.4 不做 awaiting_collection → rejected，
+    // 所以一筆記錄不可能同時長出這兩顆鍵。
     renderConsole({
       loadWithdrawals: async () =>
-        page({ withdrawals: [record({ status: 'awaiting_collection' })] }),
+        page({
+          withdrawals: [record(), record({ id: 'w2', status: 'awaiting_collection' })],
+        }),
     });
 
-    await screen.findByText('王小明');
+    await screen.findAllByText('王小明');
     expect(screen.queryByRole('button', { name: '標記已匯款' })).toBeNull();
     expect(screen.getByRole('button', { name: '退件' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '代為完成' })).toBeTruthy();
