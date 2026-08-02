@@ -1159,6 +1159,48 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
   });
 });
 
+// POST /admin/withdrawals/batch-mark-paid
+// body: { items: [{ id, bankRef? }], transferredOn?, note? }
+//
+// admin 在網銀做完一批轉帳後一次標記。回傳逐筆明細而非只給筆數——批次裡
+// 有一筆狀態被別人改過時，admin 要知道**哪幾筆**需要重做。
+app.post('/admin/withdrawals/batch-mark-paid', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (!items.length) {
+    return c.json({ success: false, error: { message: '沒有選取任何提領單' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_batch_mark_paid', {
+    p_admin_id: user.id,
+    // 前端用 camelCase，SQL 側用 snake_case——在邊界轉換，不讓命名慣例洩到對面。
+    p_items: items.map((it: any) => ({ id: it?.id, bank_ref: it?.bankRef ?? null })),
+    p_transferred_on: body?.transferredOn ?? null,
+    p_note: body?.note ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/withdrawals/batch-mark-paid] rpc error:', error);
+    return c.json({ success: false, error: { message: '批次標記失敗' } }, 500);
+  }
+  if (!data?.success) {
+    return c.json({ success: false, error: { message: data?.message ?? '批次標記失敗' } }, 403);
+  }
+
+  return c.json({
+    success: true,
+    data: { succeeded: data.succeeded ?? [], failed: data.failed ?? [] },
+  });
+});
+
 // GET /admin/members?search=&limit=&offset=
 app.get('/admin/members', async (c) => {
   const user = await requireAuth(c);

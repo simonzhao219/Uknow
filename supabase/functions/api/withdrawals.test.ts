@@ -672,12 +672,14 @@ Deno.test('admin_batch_mark_paid：狀態不合法的那筆進 failed，其餘�
   const made = await pendingWithdrawals(client, 2);
 
   try {
-    // 先把第二筆推成 awaiting_collection，讓它在批次裡變成非法轉換
+    // 先把第二筆退件，讓它在批次裡變成非法轉換（rejected → awaiting_collection
+    // 不在轉換表裡）。**不能用 awaiting_collection 當前置狀態**——那會走同狀態
+    // 的冪等成功路徑，測不到分流。
     await client.rpc('admin_update_withdrawal_status', {
       p_admin_id: admin.id,
       p_withdrawal_id: made[1].withdrawalId,
-      p_status: 'awaiting_collection',
-      p_note: null,
+      p_status: 'rejected',
+      p_note: '測試用退件',
     });
 
     const { data } = await batchMarkPaid(client, admin.id, [
