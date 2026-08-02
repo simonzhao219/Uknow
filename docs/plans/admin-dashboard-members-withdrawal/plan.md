@@ -1,214 +1,352 @@
-# 管理後台強化（會員管理 + 提領管理）規劃書
+# 管理後台強化規劃書（以管理者的工作為單位）
+
+> **v2 改寫說明**：v1 是「讀程式碼找出 11 個缺陷再逐一修」的缺陷驅動規劃。
+> 從管理者視角重想後改成**工作驅動**——管理者不會用缺陷的方式體驗系統，
+> 他體驗的是一份工作。重排之後 v1 漏掉的比它修掉的重要（見 §8 修訂紀錄）。
 
 ## 0. 一句話
 
-讓管理員能在後台**看見全部會員**、**查得到單一會員的完整狀況**，並且把提領從
-申請一路**收尾到完成且留下稽核痕跡**——因為目前兩張列表都靜默截斷、卡在
-「待查收」的提領無人能收尾、退件理由永遠到不了會員手上。
+讓管理者能**一次做完**他每天在做的三件事——審證件、匯款、查會員——
+並且每一步都留下能跟銀行對帳的痕跡。
 
 ---
 
 ## 1. 使用者需求
 
-**對照規格書**：§5.2 停權、§10 提領系統（§10.3 狀態機、§10.4 隱私取捨）、
-§13 管理後台。
+**使用者是管理者（admin），不是會員。** 這份規劃的驗收標準是「admin 的工作
+變快、變不容易出錯」，不是「缺陷數歸零」。
 
-### 驗收情境
+### 1.1 管理者的工作盤點
+
+| 頻率 | 工作 | 風險 | 裝置 |
+|---|---|---|---|
+| 每日／每週 | **處理提領**：核對身分 → 放行或退件 → 網銀匯款 → 標記 → 追查收 | 錢、法律 | 電腦（要開網銀） |
+| 隨時 | **客服查詢**：「我提領怎麼還沒到」「為什麼被退件」「我什麼時候到期」 | 信任 | 手機 |
+| 不定期 | **審證件**、停權／解除、公告、告警、加管理員 | 中 | 手機可行 |
+| 線下 | 掃碼核身（`/admin/verify`，已完成，本規劃不動） | 低 | 手機 |
+
+裝置分工是需求方本輪的裁決（「兩者都有」）：**匯款在電腦、客服查詢在手機**。
+因此三個模組各自有主場，不是全部套同一套版面——見 §4。
+
+### 1.2 對照規格書
+
+§5.2 停權、§5.3 守衛順序、§10 提領系統（§10.1 檢核、§10.3 狀態機、
+§10.4 隱私）、§13 管理後台、§13.1 掃碼核身。
+
+### 1.3 驗收情境
+
+**證件審核（PR 1）**
 
 | # | 故事 |
 |---|---|
-| A1 | 平台有 120 位會員時，admin 在會員列表看到「已顯示 50 / 120 筆」，按「加載更多」能觸及第 51 位以後的人 |
-| A2 | 「暫停會員」「管理員」統計卡顯示的是**全站**數字，不隨當前載入頁數變動 |
-| A3 | admin 點某位會員 → 看到會籍到期日、點數餘額（可提領/處理中/已提領）、推薦人與直接下線數、註冊時間、銀行與證件資訊 |
-| A4 | admin 可用狀態（訂閱中/已失效/已停權/管理員）篩選會員，可依註冊時間或到期日排序 |
-| A5 | admin 可把另一位會員設為管理員、也可撤銷；系統永遠至少留一位管理員 |
-| B1 | 一筆提領已匯款但會員三週沒按「查收」，admin 可代為標記完成，並留下「誰、何時、為什麼」 |
-| B2 | admin 退件時**必須**填理由；會員在獎勵頁看得到那行理由 |
-| B3 | 提領列表顯示「已顯示 X / Y 筆」與**待匯款總額**；CSV 匯出的是符合當前篩選的**全部**資料，不是畫面上那頁 |
-| B4 | 任何狀態轉換都查得到經手管理員（`processed_by` / `completed_by`） |
+| V1 | 會員上傳身分證正反面後，狀態為「審核中」，admin 的審核佇列出現該筆 |
+| V2 | admin 看照片後按「通過」或「退回」；退回**必須**填理由，會員在獎勵頁看得到那行理由並可重新上傳 |
+| V3 | 審核**一次通過即跨提領重用**——同一人第二次提領不需重審（證件照本就是跨提領重用設計，見 `20260718000101` §2 註解） |
+| V4 | 會員換上傳新照片 → 狀態退回「審核中」，需重審 |
+| V5 | **既有會員不被新關卡擋住**：已經有提領到達過 `awaiting_collection`／`completed` 的人，其證件視為已審核（admin 當初為了匯款必然看過照片），backfill 為 `approved` |
 
-### 不做什麼（明確排除）
+**提領作業台（PR 2）**
 
-- **不編輯會員的姓名／電話**——姓名格式規則（§4.2）有 `name-write-paths` 守衛與
-  共用案例表，admin 側改名是另一條有自己風險的路，另案。
-- **不刪除會員**（`/auth/delete` 已有自助路徑，且 index.ts:701 註記刪除會連
-  withdrawals/referral_edges 一起消失，admin 代刪風險更高）。
-- **不做通知**——本專案無 `notifications` 表，退件理由靠會員回站內查看。
-  現行 `WithdrawalManagement.tsx:221` 的文案「通知會員款項已匯出」是虛的，
-  一併改成不承諾推播的措辭。
-- **不動 AdminDashboard 的 5 欄 Tab 結構**（§13 註記：硬加會壞版面）。
-- 不做提領批次操作、不做提領的 `awaiting_collection → rejected`（錢已匯出，
-  §6d 註記維持走人工 adjustment）。
+| # | 故事 |
+|---|---|
+| W1 | admin 在**同一個面板**看到姓名、身分證字號、銀行代號、銀行帳號、匯款金額，帳號可**一鍵複製**貼進網銀，不必用眼睛抄 |
+| W2 | admin 勾選多筆 → 填一組匯款日期 → **批次標記已匯款**；交易序號可逐筆填或留空 |
+| W3 | 每次狀態轉換都在 `withdrawal_events` 留一筆（誰、何時、從什麼到什麼、備註、交易序號），**歷史不被覆寫** |
+| W4 | 一筆已匯款但會員三週沒查收，admin 可代為標記完成，必須填理由，事件表留痕 |
+| W5 | admin 退件時必須填理由，會員在獎勵頁看得到 |
+| W6 | 列表顯示「已顯示 X / Y 筆」與**待匯款總額**；CSV 匯出符合當前篩選的全部資料，超過上限時明示拒絕而非給半份 |
+| W7 | 待處理筆數以 badge 出現在 admin 入口，不必點進去才知道有事 |
+
+**會員查詢台（PR 3）**
+
+| # | 故事 |
+|---|---|
+| M1 | admin 在手機上輸入姓名或電話 → 直接看到那個人的全貌：會籍到期日、點數餘額、推薦人與下線數、刊登數、證件審核狀態、停權狀態、註冊時間 |
+| M2 | 瀏覽全部會員時「已顯示 X / Y 筆」+ 加載更多，統計卡顯示**全站**數字而非當前頁 |
+| M3 | 可依狀態（訂閱中/已失效/已停權/管理員）篩選、依註冊時間或到期日排序 |
+| M4 | 可授予／撤銷管理員；不能撤銷自己，系統永遠至少留一位管理員 |
+
+### 1.4 不做什麼
+
+- **不編輯會員姓名／電話**——姓名格式規則（§4.2）有 `name-write-paths` 守衛與
+  共用案例表，admin 側改名是另一條有自己風險的路。
+- **不刪除會員**（`index.ts:701` 註記刪除會連 withdrawals／referral_edges 一起消失）。
+- **不做通知推播**——本專案無 `notifications` 表。所有「通知會員」的文案一律
+  改成不承諾推播的措辭（現行 `WithdrawalManagement.tsx:221` 寫「通知會員款項
+  已匯出」是虛的）。
+- **不動 AdminDashboard 的 5 欄 Tab 上限**（§13 註記硬加會壞版面）——證件審核
+  併入「會員管理」Tab 內的次分頁，不新增第 6 欄。
+- 不做 `awaiting_collection → rejected`（錢已匯出，維持走人工 adjustment）。
 
 ---
 
 ## 2. 系統設計
 
-### 2.1 資料庫（單一新 migration `20260802000001_admin_console.sql`）
+### 2.1 PR 1：證件審核
 
-**欄位**
+**這是一套新狀態機，且會插進既有提領流程的守衛順序，是本規劃風險最高的一段。**
+
+**關鍵取捨：審核與提領解耦。** 現行證件是在提領 dialog 的**第 3 步當場上傳**
+（`WithdrawalProcess.tsx:62`）。若把審核設成提領的前置條件而不解耦，會員會在
+第 3 步卡住、隔天才能回來——把「一次做完」變成「等兩天」。
+
+因此：**證件上傳與審核搬出提領流程**，成為獎勵頁的獨立區塊；提領第 3 步從
+「上傳」改成「檢查審核狀態」（未通過則導向上傳區塊，不在 dialog 內完成）。
+admin 側也因此得到獨立的審核佇列，可以批次審完再批次匯款，而不是每筆提領
+都重看一次同一個人的證件。
+
+**資料層**（migration `20260802000001_id_verification.sql`）
 
 ```
-alter table public.withdrawals
-  add column processed_by uuid references public.profiles(id) on delete set null,
-  add column completed_by uuid references public.profiles(id) on delete set null;
+alter table public.profiles
+  add column id_verification_status text not null default 'none'
+    check (id_verification_status in ('none','pending','approved','rejected')),
+  add column id_verified_at   timestamptz,
+  add column id_verified_by   uuid references public.profiles(id) on delete set null,
+  add column id_reject_reason text;
 ```
 
-`completed_by = user_id` ⇒ 會員本人查收；`completed_by <> user_id` ⇒ 管理員代為。
-**不另開 enum 欄位**——多一個可能與 `completed_by` 不一致的欄位，就多一個
-說謊的地方。
+- 上傳（`/rewards/upload-id-photos`）→ 一律設 `pending`、清空 `id_reject_reason`
+  （驗收情境 V4：換照片就要重審）。
+- **backfill（V5，不可省）**：
 
-**`admin_update_withdrawal_status()` 改寫**（`create or replace`）
+  ```sql
+  update public.profiles p set
+    id_verification_status = 'approved',
+    id_verified_at = now()
+  where p.id_card_front_path is not null
+    and p.id_card_back_path is not null
+    and exists (select 1 from public.withdrawals w
+                where w.user_id = p.id
+                  and w.status in ('awaiting_collection','completed'));
+  ```
 
-- 受理狀態集合由 `{awaiting_collection, rejected}` 擴為
-  `{awaiting_collection, rejected, completed}`。
-- 合法轉換表（其餘一律 `invalid_transition`）：
+  只放行「admin 當初必然看過照片」的人（曾有提領實際匯出）。**只上傳過但
+  從未成功提領的人維持 `pending`**——那是這道關卡本來就該擋的對象。
 
-  | from | to | 附帶效果 |
-  |---|---|---|
-  | `pending` | `awaiting_collection` | `processed_by = admin` |
-  | `pending` | `rejected` | `processed_by = admin`，補償 adjustment（既有邏輯不動） |
-  | `awaiting_collection` | `completed` | `completed_by = admin`、`completed_at = now()`，**不寫帳本**（扣款在申請時已完成，與 `confirm_withdrawal_collection` 同語意） |
+**守衛變更**（`request_withdrawal`，§10.1 檢核 #5）
 
-- **`p_note` 對 `rejected` 與 `completed` 成為必填**（空白/null → `note_required`）。
-  理由：這兩者都是「會員沒有同意、但錢的狀態被改變」的動作，金流稽核需要人話。
-  `awaiting_collection` 維持選填。
-- 同狀態重入維持既有冪等回應。
+現行 #5 是「已上傳身分證正反面照片」→ `missing_id_photos`。改為：
 
-**`confirm_withdrawal_collection()` 改寫**：補寫 `completed_by = p_user_id`，
-其餘不動。
+| 證件狀態 | 結果 |
+|---|---|
+| `none` | `missing_id_photos`（訊息不變） |
+| `pending` | **新** `id_pending_review` — 「證件審核中，通過後即可提領」 |
+| `rejected` | **新** `id_rejected` — 帶上 `id_reject_reason` |
+| `approved` | 放行 |
 
-**`admin_list_members()` 改寫**：回應加 `stats`（全站 `total` / `suspended` /
-`admins` / `active` / `expired`，**在 filtered CTE 上算，不受 limit 影響**），
-成員加 `end_date`（來自 `user_account_status`）；新增 `p_status`
-（`all|active|expired|suspended|admin`）與 `p_sort`
-（`created_desc|created_asc|end_date_asc|end_date_desc|name_asc|name_desc`）。
-排序一律伺服器端算，比照 §7.3 的既有裁決。
+⚠️ **§5.3 要求守衛順序三處逐字對齊**（提領／領取 credit／刊登可見）。證件審核
+只加在提領這一處——需在 §5.3 明文記載「證件審核是提領獨有的第三道，不適用
+另兩處」，否則下一個讀規格書的人會以為三處漏對齊。
 
-**`admin_member_detail(p_user_id)`**（新，`security definer`）：單一會員的
-會籍（`user_account_status.status/end_date`）、點數（`get_reward_summary` 復用，
-不另寫一份餘額邏輯）、推薦人（`profiles.referred_by_user_id` → 姓名）、
-直接下線數（`referral_edges`）、刊登數、銀行/證件路徑、停權時點、註冊時間。
+**函數**：`admin_review_id(p_admin_id, p_user_id, p_approve bool, p_reason text)`
+——退回時 `p_reason` 必填；`admin_list_id_reviews(p_status, p_limit, p_offset)`。
 
-**`admin_set_member_admin(p_admin_id, p_target_id, p_is_admin)`**（新）：
-- 呼叫者須為 admin；
-- 撤銷自己 → `cannot_demote_self`；
-- 撤銷後系統將無任何管理員 → `last_admin`（advisory lock 序列化，比照
-  `admin_setup_claim`）。
-- 可行性已確認：`prevent_admin_escalation` trigger 放行 `service_role`/`postgres`
-  （20260718000102 §2c），security definer 函數改得動 `is_admin`。
+### 2.2 PR 2：提領作業台
 
-**`admin_withdrawal_stats(p_status, p_from, p_to, p_search)`**（新）：回符合篩選
-條件的筆數與**待匯款總額**（`status='pending'` 的 `sum(amount)`，銀行實付金額，
-不含手續費）。
+**資料層**（migration `20260802000002_withdrawal_events.sql`）
 
-### 2.2 API（`supabase/functions/api/index.ts`）
+**用事件表取代在主表加欄位。** v1 原本要加 `processed_by`/`completed_by`，
+那是錯的抽象：`note` 是單一欄位且既有 SQL 是 `note = coalesce(p_note, note)`，
+兩次操作各填理由時**第二次會覆寫第一次**，金流稽核不能丟歷史。
+
+```
+create table public.withdrawal_events (
+  id            uuid primary key default gen_random_uuid(),
+  withdrawal_id uuid not null references public.withdrawals(id) on delete cascade,
+  admin_id      uuid references public.profiles(id) on delete set null,
+  from_status   text not null,
+  to_status     text not null,
+  note          text,
+  bank_ref      text,        -- 匯款交易序號：唯一能跟銀行對帳的錨點
+  transferred_on date,       -- 匯款日期（批次共用一組）
+  created_at    timestamptz not null default now()
+);
+create index idx_withdrawal_events_withdrawal on public.withdrawal_events(withdrawal_id, created_at);
+```
+
+`admin_id is null` = 會員自己的動作（查收確認）。主表 `withdrawals` 只留當前
+狀態，歷史一律讀事件表。
+
+**`admin_update_withdrawal_status()` 改寫**（`create or replace`，原版在
+`20260718000101` §6d——**回滾時從該檔取回**）
+
+合法轉換表（其餘一律 `invalid_transition`）：
+
+| from | to | 附帶效果 |
+|---|---|---|
+| `pending` | `awaiting_collection` | 寫事件（含 `bank_ref`／`transferred_on`）；`note` 選填 |
+| `pending` | `rejected` | 寫事件（`note` **必填**）；補償 adjustment（既有邏輯不動） |
+| `awaiting_collection` | `completed` | 寫事件（`note` **必填**）、`completed_at = now()`；**不寫帳本**（扣款在申請時已完成） |
+
+`note` 必填的判準：**會員沒有同意、但錢的狀態被改變**的動作。
+同狀態重入維持既有冪等回應（不重複寫事件）。
+
+**`confirm_withdrawal_collection()` 改寫**：補寫事件（`admin_id = null`）。
+
+**批次**：`admin_batch_mark_paid(p_admin_id, p_withdrawal_ids uuid[], p_transferred_on date, p_note)`
+——逐筆套用上表的 `pending → awaiting_collection`，**部分失敗不整批回滾**，
+回傳 `{ succeeded: [], failed: [{id, error_code}] }`。理由：批次裡有一筆狀態
+已被別人改過時，整批 abort 會讓 admin 不知道該重做哪幾筆。
+
+**API**
 
 | 端點 | 變更 |
 |---|---|
-| `GET /admin/members` | 新增 `status` / `sort` query；回應加 `stats`、成員加 `endDate`；`limit`/`offset` 既有 |
-| `GET /admin/members/:id` | **新**：會員詳情 |
-| `POST /admin/members/:id/admin` | **新**：`{ isAdmin: boolean }`，422 對應 `cannot_demote_self` / `last_admin` |
-| `GET /admin/withdrawals` | 新增 `from` / `to` / `search` query；回應加 `stats`（`pendingAmount`、各狀態筆數）；`total` 既有但前端未用 |
-| `POST /admin/withdrawals/:id/status` | 受理 `completed`；`note` 對 `rejected`/`completed` 必填，缺 → 400 `note_required` |
-| `GET /rewards/withdrawals` | 回應加 `note` 與 `completedBy`（僅回布林 `completedByAdmin`，不外洩 admin 身分） |
+| `GET /admin/withdrawals` | 加 `from`/`to`/`search` query；回應加 `stats`（`pendingAmount`、各狀態筆數）與 `events`（該筆的轉換歷史） |
+| `POST /admin/withdrawals/:id/status` | 受理 `completed`；`bank_ref`/`transferred_on`；`note` 對 `rejected`/`completed` 必填 |
+| `POST /admin/withdrawals/batch-mark-paid` | **新**：批次標記已匯款 |
+| `GET /admin/withdrawals/summary` | **新**：待處理筆數（供入口 badge，輕量、可獨立快取） |
+| `GET /rewards/withdrawals` | 加 `note`（退件理由）與 `completedByAdmin: bool`（不外洩 admin 身分） |
 
-新端點必須登記進 `admin-gate.test.ts` 的 `ADMIN_ROUTES`（該表是機械把關的
-權限清單）。
+### 2.3 PR 3：會員查詢台
 
-### 2.3 契約（`supabase/functions/_shared/api-contract.ts`）
+- `admin_list_members()` 改寫：加 `stats`（**在 filtered CTE 上算，不受 limit
+  影響**）、`end_date`、`id_verification_status`；新增 `p_status` 與 `p_sort`。
+- `admin_member_detail(p_user_id)`（新）：會籍（`user_account_status`）、點數
+  （**復用 `get_reward_summary`**，不另寫一份餘額邏輯）、推薦人、直接下線數、
+  刊登數、證件審核狀態、銀行資訊、停權時點、註冊時間。
+- `admin_set_member_admin(p_admin_id, p_target_id, p_is_admin)`（新）：
+  `cannot_demote_self` / `last_admin`（advisory lock，比照 `admin_setup_claim`）。
+  可行性已確認——`prevent_admin_escalation` 放行 `service_role`/`postgres`
+  （`20260718000102` §2c）。
+- API：`GET /admin/members`（加 query）、`GET /admin/members/:id`（新）、
+  `POST /admin/members/:id/admin`（新）。
 
-`AdminMemberSchema` 加 `endDate: nullable(str())`；
-`AdminMembersResponseSchema` 加 `stats`；
-新增 `AdminMemberDetailSchema`、`AdminWithdrawalStatsSchema`；
-`AdminWithdrawalRecordSchema` 加 `processedBy`/`completedBy`（nullable str）；
-會員端提領記錄型別（目前寫死在 `WithdrawalSection.tsx:23`）加 `note`。
+### 2.4 契約（`supabase/functions/_shared/api-contract.ts`）
+
+`AdminMemberSchema` 加 `endDate`、`idVerificationStatus`；`AdminMembersResponseSchema`
+加 `stats`；新增 `AdminMemberDetailSchema`、`AdminIdReviewSchema`、
+`WithdrawalEventSchema`、`AdminWithdrawalStatsSchema`。
+會員端提領記錄型別目前**寫死在 `WithdrawalSection.tsx:23`**，順手收進 @contract。
+
+**所有新 admin 端點必須登記進 `admin-gate.test.ts` 的 `ADMIN_ROUTES`**
+——那張表是機械把關的權限清單，漏登記即漏權限。
 
 ---
 
 ## 3. 架構影響
 
-- **動到的既有模組**：`AdminDashboard`（不動 Tab 結構）、`admin/MemberManagement`、
-  `admin/WithdrawalManagement`、`reward/WithdrawalSection`、`api/index.ts` 的
-  admin 區塊與 `/rewards/withdrawals`、共享契約、一支新 migration。
-- **路由 lazy 結構不變**——admin 已在 lazy 群組，新增的是同 Tab 內的元件。
-- **四契約（multi-step-flow）不適用**：admin 側無多步驟表單，詳情面板是唯讀 +
-  單一動作。
-- **CSV 全量匯出的效能**：走「以當前篩選重打一次、`limit` 上限 2000」而非
-  無上限；超過上限時**明示告知並拒絕匯出**，不靜默給半份財務清單。
-- **安全**：`admin_set_member_admin` 是提權路徑，三道防線——API 層 `/admin/*`
-  middleware、SQL 層 `is_admin` 檢查、`last_admin`/`cannot_demote_self` 防呆。
-  `admin_member_detail` 回傳銀行/證件屬敏感資料，僅 admin 可達（見開放問題 #4）。
+- **切成三個 PR**（v1 把 11 階段塞一條分支，審查困難、回滾粒度粗）：
+  PR 1 證件審核 → PR 2 提領作業台 → PR 3 會員查詢台。
+  **順序有依賴**：PR 1 先落地，PR 2 的作業台才知道證件是否已審過（審過就
+  不必再把證件照放在匯款動線的正中央，只留參考入口）。PR 3 獨立，可平行。
+- **`api/index.ts` 已 3351 行**，本規劃再加 6 個端點。不在本規劃拆檔（那是
+  獨立的重構，混進來會讓 diff 無法審），但**新端點一律緊鄰既有 `/admin/*`
+  區塊（957–1210）**，不散落，為日後拆檔留下乾淨的切點。
+- **四契約（multi-step-flow）**：提領 dialog 從 3 步變 2 步，是既有多步驟流程
+  的**縮減**，需回頭確認 `docs/multi-step-flow-recovery.md` 的四契約仍成立
+  （草稿恢復的步驟編號會變）。
+- **效能**：`GET /admin/withdrawals` 加 `events` 會 N+1——一次 `in` 查詢批次
+  取回後在應用層 group，比照現行證件照簽名網址的批次作法（`index.ts:1063`）。
 - **既有測試風險**：`profile-masking.test.ts:132` 是「admin 列表維持完整值」的
-  characterization test，改 `/admin/withdrawals` 回應時**不得破壞**它。
+  characterization，改 `/admin/withdrawals` 時**只加欄位、不改既有欄位**。
+  `withdrawals.test.ts` 的既有 4 個案例會因守衛 #5 變更而受影響——需同步更新
+  （建立可提領使用者的 helper 要補 `id_verification_status = 'approved'`）。
 
 ---
 
 ## 4. UI/UX
 
+裝置分工是需求方裁決（「兩者都有」），因此三個模組各有主場：
+
+| 模組 | 主場 | 版面策略 |
+|---|---|---|
+| 提領作業台 | **電腦**（要開網銀） | 桌面優先：左列表右作業面板。手機降級為唯讀卡片列表（可看狀態、不做匯款） |
+| 會員查詢台 | **手機**（客服隨時查） | 手機優先：搜尋框置頂 + 結果卡片 + 詳情 `Sheet`。桌面用表格 |
+| 證件審核 | 手機可行 | 大圖 + 通過／退回兩顆鍵，單欄，適合拇指 |
+
 對照 `docs/ui-ux-guidelines.md`：
 
-- **§5 不得靜默截斷** → 兩張列表都用既有的「已顯示 X / Y 筆記錄」+「加載更多」
-  模式，實作直接比照 `ReferralTreeView.tsx:626`（含 offset = 已取回筆數的續接、
-  失敗不清空）。
-- **§5 骨架屏** → 現行兩處都是置中 spinner（準則明列「可延伸：…後台列表」），
-  改成與表格列同形的 `Skeleton`。
-- **§7 雙套版面 + Sheet 抽屜** → 會員詳情用 `ui/sheet.tsx`（既有成熟模式），
-  手機全寬、桌面右側抽屜。表格在手機維持橫向捲動（admin 是低頻桌面作業，
-  不為它做卡片化改版——這是刻意取捨）。
-- **§6 三態** → 每張列表與詳情面板都要空/錯/載入態；篩選後無結果的空態文案
-  要與「尚無資料」區分。
+- **§5 不得靜默截斷** → 沿用 §7.3 已裁決的「已顯示 X / Y 筆記錄」+ 加載更多，
+  實作比照 `ReferralTreeView.tsx:626`（含 offset = 已取回筆數的續接、失敗不清空）。
+- **§5 骨架屏** → 現行兩處都是置中 spinner，準則明列「可延伸：…後台列表」，
+  改成與列同形的 `Skeleton`。
+- **§7 雙套版面 + Sheet** → 專案成熟模式，直接沿用；**v1 那句「admin 是低頻
+  桌面作業所以維持橫向捲動」已作廢**（那是未經查證的假設，需求方已否定）。
+- **§3 入口** → 準則明文「已登入的功能入口不應只藏在右上頭像下拉裡」，而
+  admin 入口目前正是如此（`Navbar.tsx:142`）。本規劃補：入口移出下拉、待處理
+  筆數 badge（驗收 W7）。**不動 BottomNav**（§3 契約：只有五格，admin 不進去）。
+- **§6 三態** → 每張列表與面板都要空／錯／載入態；篩選後無結果的空態文案要與
+  「尚無資料」區分。
 - **§8 可測試性** → 搜尋框 `type="search"`、篩選用既有 `common/FilterChip`、
   切換鈕 name 隨狀態變動（「設為管理員」／「撤銷管理員」）。
-- **統計卡** → 用既有 `ui/stat-card-grid.tsx`（手機兩欄），不要另刻。
-- **危險動作** → 代為完成、退件、撤銷管理員都走 `AlertDialog` 二次確認
-  （比照現行「已匯款」的既有慣例）；退件與代為完成的對話框內含**必填**
-  `Textarea` 理由，送出鈕在理由空白時 disabled。
+- **統計卡**用既有 `ui/stat-card-grid.tsx`；**一鍵複製**復用
+  `InviteFriendPanelContent.tsx:40` 的 `copyText`（含 `execCommand` fallback，
+  LINE 內建瀏覽器需要）。
+- **危險動作** → 退件、代為完成、批次標記、撤銷管理員都走 `AlertDialog` 二次
+  確認；必填理由的 `Textarea` 空白時送出鍵 disabled。**批次確認要列出筆數與
+  總金額**（「將標記 12 筆、合計 $34,000 為已匯款」）。
 
 ---
 
 ## 5. 階段切分（每階段 = 一個 TDD 紅綠循環）
 
+### PR 1：證件審核
+
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | CSV 欄位跳脫純函式（抽 `src/utils/csv.ts`） | `src/utils/csv.test.ts`（node） | 逗號/引號/換行/前導 `=+-@` 公式注入皆正確跳脫 |
-| 2 | 提領狀態機擴充：`awaiting_collection → completed`（admin 代為）+ `processed_by`/`completed_by` | `supabase/functions/api/withdrawals.test.ts` | 代為完成成功且 `completed_by` = admin；非法轉換回 `invalid_transition`；重入冪等；帳本不重複寫 |
-| 3 | 退件／代為完成的理由必填，且會員看得到 | 同上 + `admin-and-announcements.test.ts` | 缺 note → 400 `note_required`；`GET /rewards/withdrawals` 回得到 note |
-| 4 | 提領列表分頁契約 + 彙總 + 篩選（`from`/`to`/`search`/`stats`） | `supabase/functions/api/withdrawals.test.ts` | `total` 反映全部命中；`pendingAmount` 正確；`profile-masking.test.ts` 仍綠 |
-| 5 | 會員列表：全站 `stats` + `status` 篩選 + `sort` + `endDate` | `supabase/functions/api/admin-and-announcements.test.ts` | 51 筆資料下 `stats.suspended` 不受 `limit=50` 影響；各排序鍵順序正確 |
-| 6 | 會員詳情 `GET /admin/members/:id` | 同上 | 回得到會籍到期日/餘額/推薦人/下線數；非 admin 403（進 `ADMIN_ROUTES`） |
-| 7 | 管理員授予／撤銷 `POST /admin/members/:id/admin` | 同上 | 撤銷自己 → `cannot_demote_self`；撤銷最後一位 → `last_admin`；成功後 `is_admin` 確實改變 |
-| 8 | 提領前端改版 | `src/components/admin/WithdrawalManagement.test.tsx`（jsdom） | 「已顯示 X / Y」+ 加載更多；退件理由空白時送出鈕 disabled；代為完成走二次確認；CSV 接階段 1 |
-| 9 | 會員前端改版 | `src/components/admin/MemberManagement.test.tsx`（jsdom） | 統計卡讀 `stats` 不再 `filter` 當前頁；篩選/排序/分頁；詳情 Sheet 開闔；管理員切換 |
-| 10 | 會員端提領記錄顯示退件理由 | `src/components/reward/WithdrawalSection.test.tsx`（jsdom） | `rejected` 且有 note 時渲染理由；無 note 時不留空殼 |
-| 11 | 規格書同步 | `python3 scripts/check-spec-drift.py` 綠 | §10.3 補代為完成、§13 表格更新、§14 落差列調整 |
+| 1.1 | 證件審核資料層 + backfill | `supabase/functions/api/id-verification.test.ts` | 上傳→`pending`；換照片→退回 `pending`；backfill 只放行曾成功提領者（V5） |
+| 1.2 | `request_withdrawal` 守衛 #5 改寫 | `withdrawals.test.ts` | 四種證件狀態各自的 error_code；既有 4 個案例同步更新後仍綠 |
+| 1.3 | admin 審核端點 | `id-verification.test.ts` | 退回缺理由 → 400；通過後跨提領重用（V3）；進 `ADMIN_ROUTES` |
+| 1.4 | 會員端證件區塊（移出提領 dialog）+ 提領改 2 步 | `src/components/reward/*.test.tsx`（jsdom） | 審核中／退回（含理由）／通過三態；提領 dialog 步驟數與草稿恢復仍正確 |
+| 1.5 | admin 審核佇列 UI | `src/components/admin/IdReviewQueue.test.tsx`（jsdom） | 大圖＋通過/退回；退回理由空白時送出 disabled |
 
-> **階段 11 的地雷**：`check-spec-drift.py` 的「提領狀態機」抽取式是
-> `^(`pending` → [^\n]*)$`（該檔 ENUMS 第一條）。§10.3 那行**必須維持單行、
-> 以 `` `pending` → `` 開頭**，新描述只能加在它前後。抽不到 = 檢查紅，
+### PR 2：提領作業台
+
+| # | 階段 | 測試落點 | 驗證標準 |
+|---|---|---|---|
+| 2.1 | CSV 欄位跳脫純函式（`src/utils/csv.ts`） | `src/utils/csv.test.ts`（node） | 逗號／引號／換行／前導 `=+-@` 公式注入皆正確跳脫 |
+| 2.2 | `withdrawal_events` + 狀態機改寫（含 `completed`） | `withdrawals.test.ts` | 每次轉換寫一筆事件、歷史不被覆寫；缺 note → `note_required`；重入冪等不重複寫事件 |
+| 2.3 | 批次標記已匯款 | `withdrawals.test.ts` | 部分失敗回 `{succeeded, failed}` 而非整批 abort |
+| 2.4 | 列表分頁／彙總／篩選／events | `withdrawals.test.ts` | `total` 反映全部命中；`pendingAmount` 正確；`profile-masking.test.ts` 仍綠 |
+| 2.5 | 退件理由端到端（會員看得到） | `withdrawals.test.ts` | `GET /rewards/withdrawals` 回得到 note |
+| 2.6 | 作業台前端（同屏＋一鍵複製＋批次＋分頁＋CSV） | `WithdrawalManagement.test.tsx`（jsdom） | 帳號可複製；批次確認顯示筆數與總額；「已顯示 X / Y」；CSV 接 2.1 |
+| 2.7 | 會員端顯示退件理由 | `WithdrawalSection.test.tsx`（jsdom） | `rejected` 有 note 時渲染；無 note 不留空殼 |
+| 2.8 | 入口 badge（待處理筆數） | `Navbar.test.tsx`（jsdom） | 有待處理時顯示數字；為 0 時不顯示空 badge |
+
+### PR 3：會員查詢台
+
+| # | 階段 | 測試落點 | 驗證標準 |
+|---|---|---|---|
+| 3.1 | 列表：全站 `stats` + 篩選 + 排序 + `endDate` | `admin-and-announcements.test.ts` | 51 筆資料下 `stats.suspended` 不受 `limit=50` 影響；各排序鍵正確 |
+| 3.2 | 會員詳情 `GET /admin/members/:id` | 同上 | 回得到會籍到期日／餘額／推薦人／下線數／證件狀態；進 `ADMIN_ROUTES` |
+| 3.3 | 管理員授予／撤銷 | 同上 | `cannot_demote_self`；`last_admin`；成功後 `is_admin` 確實改變 |
+| 3.4 | 查詢台前端（搜尋優先、手機卡片、詳情 Sheet） | `MemberManagement.test.tsx`（jsdom） | 統計卡讀 `stats` 不再 filter 當前頁；詳情 Sheet 開闔；管理員切換 |
+
+### 收尾（隨最後一個 PR）
+
+| # | 階段 | 測試落點 | 驗證標準 |
+|---|---|---|---|
+| 4.1 | 規格書同步：§5.3 證件審核例外、§10.1 檢核 #5、§10.3 事件表、§13 表格 | `python3 scripts/check-spec-drift.py` | 綠 |
+
+> **階段 4.1 的地雷**：`check-spec-drift.py` 的「提領狀態機」抽取式是
+> `` ^(`pending` → [^\n]*)$ ``（該檔 `ENUMS` 第一條）。§10.3 那行**必須維持
+> 單行、以 `` `pending` → `` 開頭**，新描述只能加在它前後。抽不到 = 紅，
 > 這是刻意設計（該檔開頭：「抽不到 = 失敗，不是略過」）。狀態**值**不變
-> （沒有新狀態），所以 `withdrawals_status_check` 不動。
+> （沒有新狀態），`withdrawals_status_check` 不動。
 
 ---
 
 ## 6. 開放問題（等人裁決，禁止腦補）
 
-- [ ] **#1 代為完成要不要強制填理由？** 規劃採「強制」（金流稽核）。若營運嫌
-      麻煩，替代案是預設帶入「逾期未確認，管理員代為結案」但仍可改。
-- [ ] **#2 `completed` 的語意變更如何對會員揭露？** §10.3 現寫「用戶已確認查收」。
-      代為完成後，會員端該顯示「已完成」還是「已完成（管理員代為確認）」？
-      後者誠實但可能引發客訴；前者讓會員以為自己按過。**建議後者**。
-- [ ] **#3 是否要加「逾期自動完成」當保底？** 使用者本輪選了「admin 代為」，
-      未選自動。若日後仍會累積卡單，才回頭做——先看代為完成的實際使用頻率。
-- [ ] **#4 會員詳情面板要不要顯示身分證字號與銀行帳號全碼？**
+已由需求方裁決、**不再是開放問題**：裝置（兩者都有）、批次標記（要做）、
+§13 資料審核（是證件審核流程）、卡單收尾（admin 代為完成）。
+
+- [ ] **#1 證件審核的 backfill 判準**：規劃採「曾有提領到達 `awaiting_collection`
+      或 `completed` 者視為已審核」。只上傳過但從未成功提領的人會落在 `pending`
+      ——他們下次提領會被新關卡擋住並看到「審核中」。這批人有多少、能否接受
+      被擋，需求方需確認（正式站可先查 `count(*)`）。
+- [ ] **#2 會員詳情面板是否顯示身分證字號與銀行帳號全碼？**
       `profile-masking.test.ts` 的 characterization 是「**提領列表**維持完整值
       （匯款作業需要）」——詳情面板不是匯款作業。傾向遮罩（`A1****789`），
-      需要全碼時回提領列表看。需求方裁決。
-- [ ] **#5 CSV 全量匯出上限 2000 筆是否合適？** 取決於實際月提領量，目前無數據。
-      超限時明示拒絕（不給半份財務清單）的原則不變，只有數字待定。
-- [ ] **#6 會員列表預設排序？** 現況是 `created_at desc`（最新註冊在前）。
-      §7.3 為推薦網絡裁決過「預設最早加入」，但 admin 的使用情境不同
-      （通常找新註冊的人），傾向維持 `created_desc`。確認即可。
+      要全碼回作業台看。
+- [ ] **#3 CSV 全量匯出上限**：規劃設 2000 筆、超限明示拒絕。實際月提領量未知，
+      數字待定（原則不變）。
+- [ ] **#4 匯款交易序號是否必填？** 規劃設**選填**（有些網銀批次轉帳不逐筆給
+      序號）。若營運能穩定取得，改必填能讓對帳更硬。
+- [ ] **#5 會員列表預設排序**：現況 `created_at desc`。§7.3 為推薦網絡裁決過
+      「預設最早加入」，但 admin 通常找新註冊的人，傾向維持 `created_desc`。
 
 ---
 
@@ -216,8 +354,32 @@ alter table public.withdrawals
 
 | 風險 | 緩解 |
 |---|---|
-| **狀態機放寬導致誤標完成**（錢沒匯出卻標完成） | 只開 `awaiting_collection → completed` 一條路——必須先經過「已匯款」才可能完成；加上二次確認 + 必填理由 + `completed_by` 稽核 |
-| **提權路徑成為漏洞** | 三道防線（middleware / SQL `is_admin` / `last_admin` 防呆）；`admin-gate.test.ts` 的 `ADMIN_ROUTES` 是機械把關，新端點漏登記會紅 |
-| **改 `/admin/withdrawals` 回應破壞既有 characterization** | 階段 4 的驗證標準明列 `profile-masking.test.ts` 須維持綠；只加欄位不改既有欄位 |
-| **規格書抽取式失配讓閘門靜默失效** | 階段 11 的地雷已寫明；`check-spec-drift.py` 抽不到即紅，不會靜默 |
-| **回滾** | 前端與 API 純加法，revert PR 即可。migration 的欄位是可為 null 的加法欄位（revert 時 `drop column`）；兩支 RPC 用 `create or replace`，回滾需把舊版本定義重新 apply——**因此新 migration 要在檔頭附上被覆寫函數的來源 migration 檔名**（`20260718000101`），方便回滾時取回原版 |
+| **證件審核擋住既有會員**（最高風險：上線即客訴） | §2.1 的 backfill 是強制步驟，且判準保守（曾成功提領即放行）。開放問題 #1 要求上線前先查實際人數 |
+| **提領 dialog 從 3 步變 2 步破壞草稿恢復** | 階段 1.4 的驗證標準明列草稿恢復；回頭核對 `multi-step-flow-recovery.md` 四契約 |
+| **狀態機放寬導致誤標完成** | 只開 `awaiting_collection → completed` 一條路——必須先經過「已匯款」；二次確認 + 必填理由 + 事件表留痕 |
+| **批次操作放大誤觸**（一次錯 12 筆） | 確認對話框列出筆數與總金額；部分失敗回報明細不整批 abort；事件表可逐筆追溯 |
+| **提權路徑成為漏洞** | 三道防線（middleware／SQL `is_admin`／`last_admin` 防呆）；`admin-gate.test.ts` 的 `ADMIN_ROUTES` 是機械把關，漏登記會紅 |
+| **規格書抽取式失配讓閘門靜默失效** | 階段 4.1 的地雷已寫明 |
+| **回滾** | 三個 PR 各自可 revert。migration 的欄位／表都是加法（revert 為 `drop`）；被 `create or replace` 覆寫的函數，其原版來源已在 §2.2 標明（`20260718000101` §6d），回滾時重新 apply。**證件審核的 backfill 是資料異動、revert migration 不會還原**——但它只寫 `approved`，回滾後該欄位不再被讀取，無殘留影響 |
+
+---
+
+## 8. 修訂紀錄
+
+**v2（本版）**：從缺陷驅動改為工作驅動。相對 v1 的實質變更——
+
+1. **`processed_by`/`completed_by` 加欄位 → `withdrawal_events` 事件表**。v1 的
+   方案有實質缺陷：`note` 是單一欄位且 `coalesce(p_note, note)` 會覆寫，兩次
+   操作各填理由時歷史會丟失。
+2. **新增匯款交易序號與匯款日期**。v1 的稽核只記「誰按的」，爭議時平台手上
+   只有「某 admin 點過兩次按鈕」，沒有能跟銀行對帳的錨點。
+3. **新增證件審核子系統**（需求方確認 §13「資料審核」是動詞），連帶解耦提領
+   dialog 的第 3 步。v1 誤將其解讀為「詳情面板」並宣稱關閉落差，那是虛報。
+4. **新增批次標記**。v1 把批次列入「不做」，但 CSV 匯出的存在證明批次是真實
+   工作型態——匯得出去、標不回來，工作流是斷的。
+5. **新增同屏作業面板與一鍵複製**。v1 完全沒碰 admin 每天真正的瓶頸：證件照
+   在 Dialog、銀行帳號在表格，要用眼睛抄進網銀。
+6. **11 階段一條分支 → 三個 PR**。
+7. **推翻 v1「admin 是低頻桌面作業」的取捨**（未經查證的假設，需求方已否定：
+   匯款在電腦、客服查詢在手機）。
+8. **新增 admin 入口與 badge**（v1 未發現 `Navbar.tsx:142` 違反準則 §3）。
