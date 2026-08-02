@@ -12,7 +12,13 @@ import {
   verifyMemberToken,
   type VerifyMemberTokenResult,
 } from './member-token.ts';
-import { twCompactTimestamp, twDayOf, twDayPlusDays, twMonthKey } from './tw-dates.ts';
+import {
+  backfillPlan,
+  twCompactTimestamp,
+  twDayOf,
+  twDayPlusDays,
+  twMonthKey,
+} from './tw-dates.ts';
 import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -1616,6 +1622,28 @@ app.get('/payuni/result/:tradeNo', async (c) => {
     }
   }
 
+  // 精簡版續約資訊（renewal-backfill）：PaymentResult 據此判斷「這是
+  // 補繳中間筆」（backfillCount > 0 → 顯示進度而非開通輪詢），不必另掛
+  // useSubscription()。以查詢當下 DB 的最新訂閱迄日計算剩餘補繳。
+  let renewal: Record<string, unknown> | null = null;
+  {
+    const { data: latestSub } = await sb()
+      .from('subscriptions')
+      .select('end_date')
+      .eq('user_id', user.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestSub?.end_date) {
+      const plan = backfillPlan(twDayOf(latestSub.end_date), twDayOf(new Date()))!;
+      renewal = {
+        backfillCount: plan.backfillCount,
+        backfillAmount: plan.backfillCount * 1200,
+        extendEndDate: plan.extendEndDay,
+      };
+    }
+  }
+
   // orderStatus 只用來決定前端是否要繼續 polling；成功/失敗的實際原因與
   // 明細一律以 payuni（PayUni 原始回傳資料）為準，不再自創詞彙轉換。
   return c.json({
@@ -1628,6 +1656,7 @@ app.get('/payuni/result/:tradeNo', async (c) => {
       // 「開通處理中」而不是把使用者當成沒付錢。
       paidAwaitingActivation: order.status === 'pending' &&
         order.payuni_response?.Status === 'SUCCESS',
+      renewal,
     },
   });
 });
@@ -2146,7 +2175,7 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct }, { data: sub }] = await Promise.all([
+  const [{ data: acct }, { data: sub }, pendingWithdrawal] = await Promise.all([
     sb().from('user_account_status')
       .select('status, end_date')
       .eq('user_id', user.id)
@@ -2154,14 +2183,56 @@ app.get('/subscriptions/status', async (c) => {
     // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
     // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
-    // 「看不到」有延長）。
+    // 「看不到」有延長）。source_payment_order_id 供 hasPaidAnyBackfill
+    // 取對應訂單的付款時點。
     sb().from('subscriptions')
-      .select('start_date, end_date')
+      .select('start_date, end_date, source_payment_order_id')
       .eq('user_id', user.id)
       .order('end_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
+    hasPendingWithdrawal(user.id),
   ]);
+
+  // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
+  // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
+  // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
+  let renewal: Record<string, unknown> | null = null;
+  if (sub?.end_date) {
+    const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
+
+    const [{ data: srcOrder }, { data: bal }, { data: tp }] = await Promise.all([
+      sub.source_payment_order_id
+        ? sb().from('payment_orders')
+          .select('completed_at')
+          .eq('id', sub.source_payment_order_id)
+          .maybeSingle()
+        : Promise.resolve({ data: null }),
+      sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
+      sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
+    ]);
+
+    // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
+    // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
+    // 不得被誤判成「本輪已補繳」）。
+    const hasPaidAnyBackfill = !!(
+      srcOrder?.completed_at &&
+      new Date(sub.end_date).getTime() < new Date(srcOrder.completed_at).getTime()
+    );
+
+    renewal = {
+      extendAnchorDate: plan.extendAnchorDay,
+      extendEndDate: plan.extendEndDay,
+      backfillCount: plan.backfillCount,
+      backfillAmount: plan.backfillCount * 1200,
+      backfillFinalEndDate: plan.backfillFinalEndDay,
+      expiredForMonths: plan.expiredForMonths,
+      hasPaidAnyBackfill,
+      freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
+      freshForfeitReferrals: tp?.total_referrals ?? 0,
+    };
+  }
 
   return c.json({
     success: true,
@@ -2171,6 +2242,8 @@ app.get('/subscriptions/status', async (c) => {
       activeUntil: acct?.end_date ?? null,
       currentPeriodStart: sub?.start_date ?? null,
       currentPeriodEnd: sub?.end_date ?? null,
+      renewal,
+      hasPendingWithdrawal: pendingWithdrawal,
     },
   });
 });

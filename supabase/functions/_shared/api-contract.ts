@@ -138,6 +138,33 @@ export const ProfileResponseSchema = obj({
 });
 export type ProfileResponse = Infer<typeof ProfileResponseSchema>;
 
+/**
+ * 續約資訊（renewal-backfill）：補繳制的結帳頁揭露（A2/A7/A14）與
+ * 建單守衛前端對應所需的全部數字。從未訂閱過 = null。
+ * hasPaidAnyBackfill 定義：最新一筆訂閱的 end_date < 其對應訂單的
+ * completed_at（補繳付款的獨有特徵——付款當下算出的效期已在過去）。
+ */
+export const RenewalInfoSchema = obj({
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆的起算日
+  extendEndDate: str(), // 'YYYY-MM-DD' 下一筆付完的到期日
+  backfillCount: num(), // 還要付幾筆才會 active（active 時 0）
+  backfillAmount: num(), // backfillCount × 年費
+  backfillFinalEndDate: str(), // 補滿後的最終到期日（active 時 = 現到期日）
+  expiredForMonths: num(), // 已過期的完整月數（active 時固定 0）
+  hasPaidAnyBackfill: bool(),
+  freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
+  freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
+});
+export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
+
+/** /payuni/result 的精簡版：PaymentResult 只需判斷補繳中間筆與去路文案。 */
+export const PayuniResultRenewalSchema = obj({
+  backfillCount: num(),
+  backfillAmount: num(),
+  extendEndDate: str(),
+});
+export type PayuniResultRenewal = Infer<typeof PayuniResultRenewalSchema>;
+
 export const SubscriptionStatusResponseSchema = obj({
   success: bool(),
   data: obj({
@@ -146,6 +173,11 @@ export const SubscriptionStatusResponseSchema = obj({
     activeUntil: nullable(str()),
     currentPeriodStart: nullable(str()),
     currentPeriodEnd: nullable(str()),
+    renewal: nullable(RenewalInfoSchema),
+    // A16 建單守衛的前端對應（是建單條件、不是續約概念，故在頂層）。
+    // 只認 status='pending'——不得複用 reward_balances.pending（涵蓋
+    // awaiting_collection，集合不同）。
+    hasPendingWithdrawal: bool(),
   }),
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
