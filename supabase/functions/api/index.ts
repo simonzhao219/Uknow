@@ -1221,6 +1221,96 @@ app.post('/admin/members/:id/suspend', async (c) => {
 });
 
 // ============================================================
+// 證件審核（admin）——會員上傳雙面後進 pending 佇列，admin 核可或退回。
+// 審核結果只在 rejected 時擋提領（見 20260802000002 的守衛 #5a）。
+// ============================================================
+
+// GET /admin/id-reviews?status=&limit=&offset=
+app.get('/admin/id-reviews', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const client = sb();
+  const { data, error } = await client.rpc('admin_list_id_reviews', {
+    p_status: c.req.query('status') ?? 'pending',
+    p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
+    p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得審核佇列' } }, 500);
+  }
+
+  // 批次簽名證件照網址（1 小時）——與 /admin/withdrawals 同模式，一次
+  // createSignedUrls 而不是逐列打 storage。
+  const rows = (data?.reviews ?? []) as Array<Record<string, unknown>>;
+  const paths = rows.flatMap((r) =>
+    [r.id_card_front_path, r.id_card_back_path].filter(Boolean) as string[]
+  );
+  const urlMap: Record<string, string> = {};
+  if (paths.length) {
+    const { data: signed } = await client.storage.from('id-cards').createSignedUrls(paths, 3600);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl;
+    }
+  }
+
+  const reviews = rows.map((r) => ({
+    userId: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    status: r.id_verification_status,
+    rejectReason: r.id_reject_reason,
+    reviewedAt: r.id_verified_at,
+    createdAt: r.created_at,
+    idCardFrontUrl: r.id_card_front_path ? (urlMap[r.id_card_front_path as string] ?? null) : null,
+    idCardBackUrl: r.id_card_back_path ? (urlMap[r.id_card_back_path as string] ?? null) : null,
+  }));
+
+  return c.json({ success: true, data: { reviews, total: data?.total ?? 0 } });
+});
+
+// POST /admin/id-reviews/:userId/review  body: { approve: boolean, reason?: string }
+app.post('/admin/id-reviews/:userId/review', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const { data, error } = await sb().rpc('admin_review_id', {
+    p_admin_id: user.id,
+    p_user_id: c.req.param('userId'),
+    p_approve: !!body?.approve,
+    p_reason: body?.reason ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews/review] rpc error:', error);
+    return c.json({ success: false, error: { message: '審核失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : data?.error_code === 'forbidden'
+      ? 403
+      : 400;
+    return c.json(
+      { success: false, error: { message: data?.message ?? '審核失敗', code: data?.error_code } },
+      status,
+    );
+  }
+
+  return c.json({ success: true, data: { userId: c.req.param('userId'), status: data.status } });
+});
+
+// ============================================================
 // 全站公告（前台橫幅 + admin CRUD）
 // ============================================================
 
@@ -2481,7 +2571,7 @@ app.get('/rewards/id-photos', async (c) => {
   const client = sb();
   const { data: profile } = await client
     .from('profiles')
-    .select('id_card_front_path, id_card_back_path')
+    .select('id_card_front_path, id_card_back_path, id_verification_status, id_reject_reason')
     .eq('id', user.id)
     .single();
 
@@ -2496,6 +2586,9 @@ app.get('/rewards/id-photos', async (c) => {
     data: {
       frontUrl: await sign(profile?.id_card_front_path ?? null),
       backUrl: await sign(profile?.id_card_back_path ?? null),
+      // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+      verificationStatus: profile?.id_verification_status ?? 'none',
+      rejectReason: profile?.id_reject_reason ?? null,
     },
   });
 });

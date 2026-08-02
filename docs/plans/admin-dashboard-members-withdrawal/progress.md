@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | 1.1 | 證件審核資料層 + 上傳端點狀態轉換 + backfill | ✅ 綠 | `7523d0e` | `d0b31bd` |
 | 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | ✅ 綠 | `ee6b979` | `70aa55c` |
-| 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | 🔴 紅燈待 CI | （本次 commit） | |
+| 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | 🟡 紅燈已驗，綠燈待 CI | `c8c5c05` | （本次 commit） |
 | 1.4 | 會員端證件狀態區塊（dialog 結構不變） | ⬜ 未開始 | | |
 | 1.5 | admin 審核佇列 UI + 掛進會員管理 Tab 次分頁殼 | ⬜ 未開始 | | |
 
@@ -125,6 +125,30 @@
 **待人工裁決**：(a) 以 CI 的 `api-tests` 軌走紅綠（自主，慢）、(b) 由使用者在
 有 Docker 的本機跑（快且訊號最真，但需介入 10 次）、(c) 本輪收在已完成的階段、
 DB 階段另案。**在裁決之前不動那 10 個階段。**
+
+### B2 審核佇列排不出「等最久的」——plan §2.1 的欄位表沒有送審時間戳
+
+plan §2.1 定義的四個欄位是 `id_verification_status` / `id_verified_at` /
+`id_verified_by` / `id_reject_reason`，**沒有「何時送審」**。`id_verified_at`
+是「何時被審」，對 `pending` 的列是 null。
+
+後果：admin 審核佇列無法依「等待最久」排序，而那正是佇列最自然的處理順序
+（§1.1 把審證件列為 admin 的實際工作）。本階段先以 `profiles.created_at`
+（註冊時間）排序——穩定、不需改 schema，但不是真正的送審順序。
+
+**未擅自加欄位**：加 `id_submitted_at` 是明顯的解法，但那是 plan §2.1 沒有的
+schema 擴張，依 skill「禁止私改 plan」留給人裁決。若佇列量小到先進先出無所謂，
+維持現狀即可。
+
+### B3 階段 1.1 的實作缺陷：換照片沒清掉 `id_verified_at`
+
+`index.ts` 的 `/rewards/upload-id-photos` 把狀態設回 `pending`、清掉
+`id_reject_reason`，但**沒清 `id_verified_at`**。所以先前已核可、後來換照片的
+會員會是「狀態 pending，卻帶著上一輪的審核時間」——審核佇列顯示或排序時會對
+admin 說謊：「這筆已於 X 時審核」，而它其實還沒被看過。
+
+這是我在階段 1.1 留下的缺陷，不是 plan 的問題。在階段 1.3 補一條紅燈測試後
+一併修掉（狀態轉 pending 時 `id_verified_at` 必須一起歸零）。
 
 ## 框架摩擦
 

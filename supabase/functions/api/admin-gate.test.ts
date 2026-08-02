@@ -40,6 +40,10 @@ const ADMIN_ROUTES = [
   ['POST', '/api/admin/announcements'],
   ['GET', '/api/admin/system-alerts'],
   ['POST', '/api/admin/members/verify'],
+  ['GET', '/api/admin/id-reviews'],
+  // 帶路徑參數的端點也要進來：守門在讀 param 之前就該擋下，
+  // 所以隨便一個合法形狀的 uuid 就足以驗證 401/403。
+  ['POST', '/api/admin/id-reviews/00000000-0000-0000-0000-000000000000/review'],
 ] as const;
 
 Deno.test('admin 守門：匿名請求一律 401', async () => {

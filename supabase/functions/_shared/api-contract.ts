@@ -629,6 +629,27 @@ export const AdminMembersResponseSchema = obj({
 });
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
 
+// 證件審核佇列。`none`（照片沒交齊）不會出現在佇列裡，所以列舉不含它。
+export const AdminIdReviewSchema = obj({
+  userId: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  status: literals('pending', 'approved', 'rejected'),
+  rejectReason: nullable(str()),
+  reviewedAt: nullable(str()),
+  createdAt: str(),
+  idCardFrontUrl: nullable(str()),
+  idCardBackUrl: nullable(str()),
+});
+export type AdminIdReview = Infer<typeof AdminIdReviewSchema>;
+
+export const AdminIdReviewsResponseSchema = obj({
+  success: bool(),
+  data: obj({ reviews: arr(AdminIdReviewSchema), total: num() }),
+});
+export type AdminIdReviewsResponse = Infer<typeof AdminIdReviewsResponseSchema>;
+
 export const API_PATHS = {
   profile: '/profile',
   subscriptionStatus: '/subscriptions/status',
