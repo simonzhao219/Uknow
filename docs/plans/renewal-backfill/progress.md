@@ -8,7 +8,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | 🟢 綠燈(PR #189 待合併) | `28ba947` | `730e7fa` |
-| 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | ⬜ 未開始 | | |
+| 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | 🟢 綠燈(等 CI 確認) | `df8ae96` | `fc55057` |
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ⬜ 未開始 | | |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ⬜ 未開始 | | |
@@ -38,9 +38,15 @@
   api-tests 轉綠,run 30755575179)。
 - 紅燈 hash 記錄於該 fix 分支之外的這裡,因為 fix 分支不帶規劃檔。
 
-**下一步**:PR #189 `ci-ok` 全綠後合併(merge commit)→ 回本分支從
-develop rebase 拿到已合併的鎖 → 階段 2 起跑(清空 migration 基準 =
-**合併後版**,即 `20260802000001`,不要從 wave4 抄)。
+PR #189 已合併(develop merge commit `041b674`),本分支已 rebase。
+階段 2 紅燈 CI run 30756662557:165 既有測試綠、新檔 6/8 條斷言紅
+(另 2 條是「首購 fresh 無沖銷列」「extend 不清空」現狀回歸守衛,
+紅燈期即綠屬預期,非逃生口情境)。綠燈 = migration
+`20260802000002_fresh_ledger_forfeit.sql` + 契約/前端連動 + `/auth/profile`
+接線。
+
+**下一步**:階段 2 綠燈 CI 確認後 → 階段 3(`backfillPlan()` 純函式 +
+`_shared/backfill-cases.ts` 共用案例表,測試落點 `.unit.test.ts` 免 DB)。
 
 ### 實作時特別要記住的六條
 
