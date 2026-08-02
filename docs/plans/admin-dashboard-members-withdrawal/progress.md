@@ -17,8 +17,8 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1.1 | 證件審核資料層 + 上傳端點狀態轉換 + backfill | ✅ 綠 | `7523d0e` | `d0b31bd` |
-| 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | 🟡 紅燈已驗，綠燈待 CI | `ee6b979` | `70aa55c`（CI 驗證中） |
-| 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | ⬜ 未開始 | | |
+| 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | ✅ 綠 | `ee6b979` | `70aa55c` |
+| 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | 🔴 紅燈待 CI | （本次 commit） | |
 | 1.4 | 會員端證件狀態區塊（dialog 結構不變） | ⬜ 未開始 | | |
 | 1.5 | admin 審核佇列 UI + 掛進會員管理 Tab 次分頁殼 | ⬜ 未開始 | | |
 
@@ -53,27 +53,34 @@
 
 ## 目前位置與下一步
 
-**已完成 3 階段，第 4 階段綠燈待 CI。**
+**已完成 4 階段。**
 
 | 階段 | 紅燈 | 綠燈 | 驗證 |
 |---|---|---|---|
 | 2.1 CSV 跳脫 | `a7669e0` | `bc25432` | 本機 vitest（15 斷言） |
 | 2.2 剪貼簿 utility | `499cfe0` | `45dd17d` | 本機 vitest（6 斷言） |
-| 1.1 證件審核資料層 | `7523d0e` | `d0b31bd` | CI api-tests 全綠（run 30735264352） |
-| 1.2 提領守衛 #5a | `ee6b979` | `70aa55c` | 紅燈已驗，綠燈待 CI |
+| 1.1 證件審核資料層 | `7523d0e` | `d0b31bd` | CI api-tests 全綠 |
+| 1.2 提領守衛 #5a | `ee6b979` | `70aa55c` | CI `175 passed / 0 failed` |
 
-**階段 1.2 的紅燈範圍乾淨**（run 30735703347）：`173 passed | 2 failed`，
-只有需要新守衛的兩個斷言失敗。同一輪的 `static-checks` 通過，含
-「後端型別檢查含測試檔（`deno check`）」——那正是本機因 jsr.io 403 跑不了的
-那項，所以紅燈確定是**斷言紅而非編譯紅**。
+**進行中：階段 1.3**（admin 審核端點）。紅燈測試已寫，待 CI 判定。
 
-**如實記錄紅燈品質**：三個新測試裡只有兩個是真紅。
-`none/pending/approved 三態皆不擋提領` 當下就綠——現行程式本來就不擋那三態。
-它是**回歸防線**（防止日後有人把 pending 也擋掉），不是驅動實作的紅燈。
+### 階段 1.3 的兩層防線（審查 P0-2）
 
-**下一步**：讀 `70aa55c` 的 CI 判定 → 綠則接階段 1.3（admin 審核端點
-`admin_review_id` / `admin_list_id_reviews`，含轉換表與「以 authenticated
-身分直呼 rpc 應失敗」的提權防線斷言）。
+把新端點加進 `admin-gate.test.ts` 的 `ADMIN_ROUTES` **只是維持測試涵蓋率，
+不是保護機制**——那份清單的檔頭自己就寫著「漏加一條，這裡不會紅」。真正的
+保護是 `app.use('/admin/*')` middleware。
+
+而 middleware **蓋不到 PostgREST 的 `rpc/` 端點**，那才是 P0-2 指出的真實
+漏洞路徑。所以測試分兩層：
+
+1. 端點層：新端點進 `ADMIN_ROUTES`（匿名 401、一般會員 403）
+2. **函數層：`has_function_privilege('authenticated', …, 'EXECUTE')` 必須 false**
+   ——漏了 `revoke execute` 時唯一會叫的警報
+
+第 2 層用「直接問 Postgres」而非「以 authenticated 打 rpc 看它被拒」，理由見
+`name-write-paths.test.ts` 檔頭記載的教訓：後者的 403 可能來自不相干的權限，
+**即使 REVOKE 沒生效也照樣「被拒」**，斷言會失去辨別力。那是 CI 連紅兩輪才
+逼出來的事實。
 
 ### 本機能驗到哪裡（重要，下一個 session 別重踩）
 
