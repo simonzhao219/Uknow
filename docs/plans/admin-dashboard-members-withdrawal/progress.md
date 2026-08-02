@@ -26,8 +26,8 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 2.1 | CSV 欄位跳脫純函式 | ⬜ 未開始 | | |
-| 2.2 | `copyText` 抽成 `src/utils/clipboard.ts` | ⬜ 未開始 | | |
+| 2.1 | CSV 欄位跳脫純函式 | ✅ 綠 | `a7669e0` | `bc25432` |
+| 2.2 | `copyText` 抽成 `src/utils/clipboard.ts` | ✅ 綠 | `499cfe0` | `45dd17d` |
 | 2.3 | `withdrawal_events`（含 RLS/revoke）+ 狀態機改寫 | ⬜ 未開始 | | |
 | 2.4 | 批次標記已匯款（逐筆 `bank_ref` + savepoint 隔離） | ⬜ 未開始 | | |
 | 2.5 | 列表分頁／彙總／篩選／events | ⬜ 未開始 | | |
@@ -53,16 +53,23 @@
 
 ## 目前位置與下一步
 
-**實作已啟動**（使用者於 2026-08-02 親自執行 `/tdd-implement`；人審裁決已記入
-`review.md` 處置節）。分支 `feature/admin-dashboard-members-withdrawal` 從
-`origin/develop` 重新切出（前一輪的規劃 commit 已隨 PR #186 合併進 develop）。
+**已完成 2 / 15 階段**，兩個都完整走過紅→綠並通過 `npm run check`（463 tests）：
 
-**執行順序偏離 plan 的階段編號，原因見 Blockers B1**：本容器跑不了需要資料庫
-的整合測試，因此先做**完全可在本機紅→綠驗證**的階段（2.1、2.2 等純函式與
-前端），DB 相依階段待環境到位或改由 CI 驗證。這是執行順序調整，**不是改
-plan**——階段內容與驗收標準一字未動。
+| 階段 | 產出 |
+|---|---|
+| 2.1 | `src/utils/csv.ts` —— RFC 4180 引號包裹 + CSV injection 防護（15 斷言） |
+| 2.2 | `src/utils/clipboard.ts` —— 從 `InviteFriendPanelContent` 抽出，順手修掉 `execCommand` 回 false 時顯示「已複製」的靜默失敗（6 斷言） |
 
-目前進行：階段 2.1（CSV 欄位跳脫純函式）。
+**卡住，等人工裁決（見 Blockers B1）。** 剩餘 13 個階段裡：
+
+- **10 個需要真 Postgres**（1.1–1.3、2.3–2.6、3.1–3.3）——本容器 docker daemon
+  不可用，`supabase start` 起不來，拿不到紅燈也驗不了綠燈。
+- **3 個是前端**（1.4、1.5、2.7、2.8、2.9、3.4 共 6 個），但它們**全部依賴上述
+  後端端點的契約**。先寫前端等於讓 mock 定義契約，等真後端補上時再對不起來
+  ——plan 把後端排在前面就是這個理由。
+
+**在裁決之前不動那些階段。** 盲寫後端測試再靠 CI 猜，違反「紅燈必須是斷言紅」
+的前提；先寫前端則是拿 mock 當契約真相。
 
 ## Blockers（逃生口紀錄）
 
