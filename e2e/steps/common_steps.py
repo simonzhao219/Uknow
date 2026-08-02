@@ -63,7 +63,8 @@ def logged_in_expired_member(context):
 
 @given("I am logged in as a long-expired former member")
 def logged_in_long_expired_member(context):
-    # 過期超過一年：接續原效期會「付了錢效期仍在過去」，結帳頁只能選新約。
+    # 過期超過一年：補繳制（A1-A3）下續約仍永遠可選——一筆一年字面接續，
+    # 付了錢效期仍在過去就再付下一筆，直到迄日回到未來。
     seed_authenticated_session(
         context,
         registration_step=3,

@@ -27,11 +27,12 @@ Feature: Payment checkout
     And I should see the text "續約（接續原效期）"
     And I should see the text "新約（重新起算）"
 
-  Scenario: A member expired for over a year can only start a fresh contract
+  Scenario: A member expired for over a year can still choose to extend
     Given I am logged in as a long-expired former member
     When I visit "/payment/checkout"
-    Then I should see the text "新約（重新起算）"
-    And I should see the text "無法接續原效期"
+    Then I should see the text "續約（接續原效期）"
+    And I should see the text "新約（重新起算）"
+    And I should not see the text "無法接續原效期"
 
   Scenario: Referrer info is shown when the profile has an uncached referral code
     Given I am logged in with registration step 1 referred by code "friend1" from "推薦人測試"
