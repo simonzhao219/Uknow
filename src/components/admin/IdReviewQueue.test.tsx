@@ -33,13 +33,16 @@ function review(over: Partial<AdminIdReview> = {}): AdminIdReview {
 
 function renderQueue(
   opts: {
-    loadReviews?: () => Promise<AdminIdReview[]>;
+    loadReviews?: (params: {
+      limit: number;
+      offset: number;
+    }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
     submitReview?: (userId: string, approve: boolean, reason?: string) => Promise<void>;
   } = {},
 ) {
   return render(
     <IdReviewQueue
-      loadReviews={opts.loadReviews ?? (async () => [review()])}
+      loadReviews={opts.loadReviews ?? (async () => ({ reviews: [review()], total: 1 }))}
       submitReview={opts.submitReview ?? (async () => {})}
     />,
   );
@@ -47,19 +50,22 @@ function renderQueue(
 
 describe('IdReviewQueue', () => {
   it('取資料期間顯示載入態', async () => {
-    let resolve!: (v: AdminIdReview[]) => void;
-    const pending = new Promise<AdminIdReview[]>((r) => {
+    let resolve!: (v: { reviews: AdminIdReview[]; total: number }) => void;
+    const pending = new Promise<{ reviews: AdminIdReview[]; total: number }>((r) => {
       resolve = r;
     });
     renderQueue({ loadReviews: () => pending });
 
     expect(screen.getByRole('status', { name: '載入審核佇列中' })).toBeTruthy();
-    resolve([]);
+    resolve({ reviews: [], total: 0 });
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   });
 
   it('取資料失敗時顯示錯誤態並提供重試', async () => {
-    const loadReviews = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce([]);
+    const loadReviews = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ reviews: [], total: 0 });
     renderQueue({ loadReviews });
 
     await screen.findByText('無法取得審核佇列');
@@ -70,7 +76,7 @@ describe('IdReviewQueue', () => {
   });
 
   it('佇列為空時顯示空態，不是空白畫面', async () => {
-    renderQueue({ loadReviews: async () => [] });
+    renderQueue({ loadReviews: async () => ({ reviews: [], total: 0 }) });
     await screen.findByText('目前沒有待審核的證件');
   });
 
@@ -86,7 +92,10 @@ describe('IdReviewQueue', () => {
 
   it('按通過後送出核可並重新整理佇列', async () => {
     const submitReview = vi.fn().mockResolvedValue(undefined);
-    const loadReviews = vi.fn().mockResolvedValueOnce([review()]).mockResolvedValueOnce([]);
+    const loadReviews = vi
+      .fn()
+      .mockResolvedValueOnce({ reviews: [review()], total: 1 })
+      .mockResolvedValueOnce({ reviews: [], total: 0 });
     renderQueue({ loadReviews, submitReview });
 
     await screen.findByText('王小明');
@@ -110,7 +119,10 @@ describe('IdReviewQueue', () => {
 
   it('填了理由才能退回，理由一併送出', async () => {
     const submitReview = vi.fn().mockResolvedValue(undefined);
-    const loadReviews = vi.fn().mockResolvedValueOnce([review()]).mockResolvedValueOnce([]);
+    const loadReviews = vi
+      .fn()
+      .mockResolvedValueOnce({ reviews: [review()], total: 1 })
+      .mockResolvedValueOnce({ reviews: [], total: 0 });
     renderQueue({ loadReviews, submitReview });
 
     await screen.findByText('王小明');
@@ -134,5 +146,21 @@ describe('IdReviewQueue', () => {
     expect((screen.getByRole('button', { name: '確認退回' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  // 不得靜默截斷（ui-ux-guidelines §5）：後端一頁預設 50 筆，backfill 上線
+  // 當日佇列就可能超過。看不到總數的 admin 會以為「今天審完了」，實際上
+  // 第 51 筆之後的人還在等。
+  it('佇列顯示已顯示筆數與總筆數，未載完時提供載入更多', async () => {
+    renderQueue({
+      loadReviews: async ({ offset }) => ({
+        reviews: [review({ userId: `u${offset}`, name: `會員${offset}` })],
+        total: 3,
+      }),
+    });
+
+    expect(await screen.findByText('已顯示 1 / 3 筆')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    expect(await screen.findByText('已顯示 2 / 3 筆')).toBeTruthy();
   });
 });

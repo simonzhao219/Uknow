@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
@@ -13,35 +13,43 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { FieldError } from '../../utils/formHelpers';
+import { usePagedList } from '../../hooks/usePagedList';
 import type { AdminIdReview } from '@contract';
 
 export interface IdReviewQueueProps {
   /** 取回審核佇列。注入而非直接呼叫 apiClient——與 ReferralTreeView 同慣例。 */
-  loadReviews: () => Promise<AdminIdReview[]>;
+  loadReviews: (params: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   /** 送出審核結果。退回時 reason 必填。 */
   submitReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
 
+const QUEUE_PAGE_SIZE = 50;
+
 export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps) {
-  const [state, setState] = useState<'loading' | 'error' | 'done'>('loading');
-  const [rows, setRows] = useState<AdminIdReview[]>([]);
   const [rejectTarget, setRejectTarget] = useState<AdminIdReview | null>(null);
   const [reason, setReason] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setState('loading');
-    try {
-      setRows(await loadReviews());
-      setState('done');
-    } catch {
-      setState('error');
-    }
-  }, [loadReviews]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  // 分頁走共用 hook：後端一頁預設 50 筆，backfill 上線當日佇列就可能超過。
+  // 看不到總數的 admin 會以為「今天審完了」，實際上第 51 筆之後的人還在等
+  // ——那正是 ui-ux-guidelines §5「不得靜默截斷」要防的情況。
+  const list = usePagedList<AdminIdReview>({
+    pageSize: QUEUE_PAGE_SIZE,
+    deps: [],
+    load: useCallback(
+      async ({ limit, offset }: { limit: number; offset: number }) => {
+        const data = await loadReviews({ limit, offset });
+        return { items: data.reviews ?? [], total: data.total ?? 0 };
+      },
+      [loadReviews],
+    ),
+  });
+  const rows = list.items;
+  const state = list.isLoading ? 'loading' : list.error ? 'error' : 'done';
+  const refresh = list.reload;
 
   const act = async (userId: string, approve: boolean, why?: string) => {
     setBusyId(userId);
@@ -206,6 +214,18 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
           </CardContent>
         </Card>
       ))}
+
+      <div className="pt-2 text-center space-y-2 text-sm text-muted-foreground">
+        {/* 不得靜默截斷（ui-ux-guidelines §5）。 */}
+        <p>
+          已顯示 {rows.length} / {list.total} 筆
+        </p>
+        {list.hasMore && (
+          <Button variant="outline" size="sm" onClick={list.loadMore} disabled={list.isLoadingMore}>
+            {list.isLoadingMore ? '載入中…' : '載入更多'}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

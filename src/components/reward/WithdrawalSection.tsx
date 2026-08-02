@@ -191,8 +191,16 @@ export function WithdrawalSection({
     setSelectedWithdrawal(null);
   };
 
-  // ✅ 過濾掉已完成的提領記錄（用戶看不到）
-  const activeWithdrawals = withdrawals.filter((w) => w.status !== 'completed');
+  // 已完成的保留最近幾筆（B7 裁決 (a)）：全部濾掉的話，「管理員代為結案」的
+  // 揭露到不了任何會員面前，而且會員查不到自己的提領何時結束——客服情境
+  // 「我提領怎麼還沒到」在他自己這一側就沒有答案。只留最近幾筆是資訊密度的
+  // 取捨：這裡是申請入口不是歷史帳本。
+  const RECENT_COMPLETED = 5;
+  const completed = withdrawals
+    .filter((w) => w.status === 'completed')
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+    .slice(0, RECENT_COMPLETED);
+  const activeWithdrawals = [...withdrawals.filter((w) => w.status !== 'completed'), ...completed];
 
   return (
     <>
@@ -256,6 +264,12 @@ export function WithdrawalSection({
                             一模一樣的東西再被退一次。只在 rejected 且真的有
                             理由時渲染——空的「退件原因：」看起來像系統把理由
                             弄丟了，比不顯示更糟。 */}
+                        {/* 誠實揭露（規格書 §10.3）：代為結案不能長得像本人查收。 */}
+                        {withdrawal.status === 'completed' && withdrawal.completedByAdmin && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            管理員代為結案（逾期未查收由平台確認入帳）
+                          </p>
+                        )}
                         {withdrawal.status === 'rejected' && withdrawal.note && (
                           <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2">
                             <p className="text-sm font-medium text-destructive">退件原因</p>

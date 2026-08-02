@@ -79,11 +79,14 @@ async function suspendMember(id: string, suspend: boolean) {
   });
 }
 
-async function loadIdReviews() {
-  const res = await apiRequestJson<AdminIdReviewsResponse>(
-    buildApiUrl('/admin/id-reviews?status=pending'),
-  );
-  return res.data.reviews;
+async function loadIdReviews(params: { limit: number; offset: number }) {
+  const qs = new URLSearchParams({
+    status: 'pending',
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  const res = await apiRequestJson<AdminIdReviewsResponse>(buildApiUrl(`/admin/id-reviews?${qs}`));
+  return { reviews: res.data.reviews, total: res.data.total ?? res.data.reviews.length };
 }
 
 async function submitIdReview(userId: string, approve: boolean, reason?: string) {

@@ -68,6 +68,27 @@ describe('WithdrawalSection', () => {
     expect(screen.queryByText(/退件原因/)).toBeNull();
   });
 
+  // 管理員代為結案的揭露（B7／實作審查 P0-2）。改版前 activeWithdrawals 把所有
+  // completed 濾掉，所以 completedByAdmin 這個欄位在 src/ 裡零讀者——契約有、
+  // 後端有、測試有，但揭露到不了任何會員面前。規格書 §10.3 卻已經斷言
+  // 「會員端明示」，等於文件承諾了一個不存在的保護。
+  it('管理員代為結案的記錄標示出來，不讓會員以為自己按過查收', () => {
+    renderSection([
+      record({ status: 'completed', completedByAdmin: true, completedAt: '2026-08-02T00:00:00Z' }),
+    ]);
+    expect(screen.getByText(/管理員代為結案/)).toBeTruthy();
+  });
+
+  it('會員自己查收的已完成記錄不標成管理員代為結案', () => {
+    renderSection([
+      record({ status: 'completed', completedByAdmin: false, completedAt: '2026-08-02T00:00:00Z' }),
+    ]);
+    expect(screen.queryByText(/管理員代為結案/)).toBeNull();
+    // 但記錄本身要看得到——會員查不到自己的提領何時結束，客服情境
+    // 「我提領怎麼還沒到」在他自己那一側就沒有答案。
+    expect(screen.getByText('已完成')).toBeTruthy();
+  });
+
   it('非退件狀態不顯示退件原因區塊', () => {
     renderSection([record({ status: 'pending', note: '這是內部備註' })]);
     expect(screen.queryByText(/退件原因/)).toBeNull();

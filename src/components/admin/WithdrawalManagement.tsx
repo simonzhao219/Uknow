@@ -24,6 +24,7 @@ import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
 import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
   AdminWithdrawalRecord,
   AdminWithdrawalStats,
@@ -580,33 +581,35 @@ export function WithdrawalManagement({
         </div>
       )}
 
-      <section aria-label="提領彙總" className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
+      <section aria-label="提領彙總">
+        <StatCardGrid>
+          {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
             數字去對網銀的轉出總額，混進手續費就對不起來。 */}
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">待匯款總額</p>
-            <p className="text-2xl font-bold">{twd(stats.pendingAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">待處理</p>
-            <p className="text-2xl font-bold">{stats.byStatus.pending}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">待查收</p>
-            <p className="text-2xl font-bold">{stats.byStatus.awaiting_collection}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">已完成</p>
-            <p className="text-2xl font-bold">{stats.byStatus.completed}</p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">待匯款總額</p>
+              <p className="text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">待處理</p>
+              <p className="text-2xl font-bold">{stats.byStatus.pending}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">待查收</p>
+              <p className="text-2xl font-bold">{stats.byStatus.awaiting_collection}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">已完成</p>
+              <p className="text-2xl font-bold">{stats.byStatus.completed}</p>
+            </CardContent>
+          </Card>
+        </StatCardGrid>
       </section>
 
       {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額

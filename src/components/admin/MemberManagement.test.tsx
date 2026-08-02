@@ -88,7 +88,7 @@ function renderConsole(
       loadMemberDetail={opts.loadMemberDetail ?? (async () => detail())}
       setMemberAdmin={opts.setMemberAdmin ?? (async () => {})}
       suspendMember={opts.suspendMember ?? (async () => {})}
-      loadIdReviews={async () => []}
+      loadIdReviews={async () => ({ reviews: [], total: 0 })}
       submitIdReview={async () => {}}
     />,
   );
@@ -282,6 +282,35 @@ describe('MemberManagement', () => {
     expect(await screen.findByRole('button', { name: '設為管理員' })).toBeTruthy();
   });
 
+  // 撤銷管理員是 plan §4 明列的四個危險動作之一（退件、代為完成、批次標記、
+  // 撤銷管理員都走 AlertDialog）——它把整個後台的一把鑰匙收回來，誤觸的代價
+  // 是那個人瞬間失去所有管理能力。
+  it('撤銷管理員走確認框，取消不送出', async () => {
+    const setAdmin = vi.fn(async () => {});
+    renderConsole({
+      loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
+      setMemberAdmin: setAdmin,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/王小明|陳大文/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(setAdmin).not.toHaveBeenCalled();
+  });
+
+  it('撤銷管理員確認後才送出', async () => {
+    const setAdmin = vi.fn(async () => {});
+    renderConsole({
+      loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
+      setMemberAdmin: setAdmin,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認撤銷' }));
+    await waitFor(() => expect(setAdmin).toHaveBeenCalledWith('m1', false));
+  });
+
   it('撤銷管理員失敗時說出是哪一種失敗，不壓成一句操作失敗', async () => {
     renderConsole({
       loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
@@ -291,6 +320,13 @@ describe('MemberManagement', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認撤銷' }));
     expect(await screen.findByText(/不能撤銷自己的管理員權限/)).toBeTruthy();
+  });
+
+  it('搜尋框是 search 型別，輔助科技辨識得出來', async () => {
+    renderConsole();
+    const box = await screen.findByPlaceholderText('搜尋姓名 / Email / 電話');
+    expect(box.getAttribute('type')).toBe('search');
   });
 });

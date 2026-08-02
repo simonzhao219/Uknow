@@ -7,6 +7,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Search, Shield, UserX, Users } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
+import { StatCardGrid } from '../ui/stat-card-grid';
 import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { IdReviewQueue } from './IdReviewQueue';
@@ -29,7 +40,10 @@ export interface MemberManagementProps {
   loadMemberDetail: (id: string) => Promise<AdminMemberDetail>;
   setMemberAdmin: (id: string, isAdmin: boolean) => Promise<void>;
   suspendMember: (id: string, suspend: boolean) => Promise<void>;
-  loadIdReviews: () => Promise<AdminIdReview[]>;
+  loadIdReviews: (params: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
 
@@ -68,6 +82,10 @@ export function MemberManagement({
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
+  // 撤銷管理員是 plan §4 明列的危險動作：它把整個後台的一把鑰匙收回來，
+  // 誤觸的代價是那個人瞬間失去所有管理能力。授予不用確認框——授錯了撤回
+  // 即可，兩個方向的代價不對稱。
+  const [demoteTarget, setDemoteTarget] = useState<AdminMember | null>(null);
 
   // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
   // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
@@ -100,10 +118,19 @@ export function MemberManagement({
   };
 
   const toggleAdmin = async (m: AdminMember) => {
+    // 撤銷走確認框；授予直接執行（代價不對稱，見 demoteTarget 註解）。
+    if (m.isAdmin) {
+      setDemoteTarget(m);
+      return;
+    }
+    await runAdminChange(m, true);
+  };
+
+  const runAdminChange = async (m: AdminMember, isAdmin: boolean) => {
     setProcessingId(m.id);
     setActionError(null);
     try {
-      await setMemberAdmin(m.id, !m.isAdmin);
+      await setMemberAdmin(m.id, isAdmin);
       await list.reload();
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
@@ -139,6 +166,32 @@ export function MemberManagement({
       <TabsContent value="id-reviews">
         <IdReviewQueue loadReviews={loadIdReviews} submitReview={submitIdReview} />
       </TabsContent>
+
+      {demoteTarget && (
+        <AlertDialog open onOpenChange={() => setDemoteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>撤銷管理員權限？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {demoteTarget.name ?? demoteTarget.email} 將立即失去平台管理後台的
+                全部存取權（提領作業、會員管理、證件審核）。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = demoteTarget;
+                  setDemoteTarget(null);
+                  if (target) runAdminChange(target, false);
+                }}
+              >
+                確認撤銷
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {/* 詳情面板。§1.1 的頭號客服情境是「我提領怎麼還沒到」——近期提領記錄
           （含退件理由）是這個面板存在的理由，不是附加資訊。
@@ -226,42 +279,44 @@ export function MemberManagement({
       <TabsContent value="members" className="space-y-6">
         {/* 統計卡片：讀伺服器算好的**全站** stats。改版前是
             `members.filter(...).length`——那個數字會隨分頁改變。 */}
-        <section aria-label="會員統計" className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5 text-blue-600" />
-                總會員數
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
-            </CardContent>
-          </Card>
+        <section aria-label="會員統計">
+          <StatCardGrid>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  總會員數
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <UserX className="h-5 w-5 text-red-600" />
-                暫停會員
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-600">{stats.suspended}</div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <UserX className="h-5 w-5 text-red-600" />
+                  暫停會員
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-red-600">{stats.suspended}</div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Shield className="h-5 w-5 text-green-600" />
-                管理員
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">{stats.admins}</div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Shield className="h-5 w-5 text-green-600" />
+                  管理員
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">{stats.admins}</div>
+              </CardContent>
+            </Card>
+          </StatCardGrid>
         </section>
 
         {actionError && (
@@ -289,6 +344,7 @@ export function MemberManagement({
                 }}
               >
                 <Input
+                  type="search"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   placeholder="搜尋姓名 / Email / 電話"
