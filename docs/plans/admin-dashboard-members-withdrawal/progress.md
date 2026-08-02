@@ -4,9 +4,9 @@
      ——寫給「完全沒有對話記憶的下一個 session」看,不要寫只有當下
      session 才懂的簡稱。 -->
 
-分支：`claude/admin-dashboard-members-withdrawal-xnqajy`
-（web session 由平台預先開好，非 `feature/*`；規劃檔守衛因此不生效，
-三段式流程是自願遵守的，見 CLAUDE.md「已知例外」段）
+分支：`feature/admin-dashboard-members-withdrawal`（PR #186）
+規劃檔目錄名與分支 slug 對上，**PreToolUse 規劃檔守衛生效**——未經規劃的
+`src/**` 與 `supabase/functions/**` 寫入會被機械擋下。
 
 規劃書：`./plan.md`（**v3**，已處置 v2 審查的全部 P0/P1/P2）｜審查：`./review.md`
 
@@ -86,10 +86,17 @@
 <!-- 被 hook 誤擋?規則互相矛盾?同一糾正重複兩次?
      一句話記這裡,整併時搬去 docs/plans/friction-log.md。 -->
 
-- web session 的預設分支是 `claude/*`，與 CLAUDE.md「真的要走三段式流程時，
-  自己切一個 `feature/<slug>` 分支」相衝——本 session 被平台綁定推送分支，
-  切 `feature/*` 會推不上去。三段式因此在 `claude/*` 上執行，規劃檔守衛全程
-  不生效（流程靠自律而非機械把關）。
+- **web session 的預設分支是 `claude/*`，但三段式流程需要 `feature/*`。**
+  CLAUDE.md「已知例外」段已寫明「真的要走三段式流程時，自己切一個
+  `feature/<slug>` 分支」，但 session 開局的指示是「所有開發都在指定的
+  `claude/*` 分支」——兩個指示相衝，且開局指示出現得比 CLAUDE.md 更顯眼，
+  結果是規劃前三個 commit 都落在守衛不生效的 `claude/*` 上，靠使用者提醒
+  才搬回 `feature/*`（原 PR #185 關閉，改開 #186）。
+  **代價不只是分支名**：`claude/*` 上規劃檔守衛完全不作用，「規劃未經人審
+  不得寫產品程式碼」全靠自律。這正是守衛想防的情況，卻在 web session 的
+  預設路徑上靜默失效。
+  可能的修法：SessionStart hook 偵測到 `claude/*` 分支時，主動提示
+  「走三段式請先切 `feature/<slug>`」。
 - `/review-plan` 派出的 reviewer subagent **不會在 session 恢復後存活**，
   結果直接遺失且無任何痕跡（沒有 review.md、沒有錯誤）。長規劃若中途被打斷，
   審查等於白跑一次。或許 review.md 應該由每個 subagent 各自落檔後再彙整，
