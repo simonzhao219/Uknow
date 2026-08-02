@@ -690,6 +690,65 @@ export const AdminMembersResponseSchema = obj({
     stats: AdminMemberStatsSchema,
   }),
 });
+
+/**
+ * 詳情面板裡的一筆提領記錄。
+ *
+ * §1.1 的頭號客服情境是「我提領怎麼還沒到」——這幾個欄位就是那句話的答案，
+ * 不是附加資訊。`note` 讀該筆事件表最新一筆，與 `/admin/withdrawals` 同源。
+ */
+export const AdminMemberWithdrawalSchema = obj({
+  id: str(),
+  amount: num(),
+  fee: num(),
+  status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  note: nullable(str()),
+  requestedAt: str(),
+  processedAt: nullable(str()),
+  completedAt: nullable(str()),
+});
+export type AdminMemberWithdrawal = Infer<typeof AdminMemberWithdrawalSchema>;
+
+/**
+ * 會員詳情。
+ *
+ * **`idNumber` 與 `bankAccount` 是遮罩值**（需求方裁決）。需要全碼時回提領
+ * 作業台看——那裡因匯款作業需要而維持完整值。`bankCode` 不遮：它識別的是
+ * 銀行不是個人，遮了反而讓客服對不出是哪一家。
+ */
+export const AdminMemberDetailSchema = obj({
+  id: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  isAdmin: bool(),
+  suspended: bool(),
+  suspendedAt: nullable(str()),
+  createdAt: str(),
+  accountStatus: literals('active', 'expired'),
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
+  idRejectReason: nullable(str()),
+  /** 遮罩值（`A1****789`）。 */
+  idNumber: nullable(str()),
+  bankCode: nullable(str()),
+  /** 遮罩值（末四碼可見）。 */
+  bankAccount: nullable(str()),
+  referrerName: nullable(str()),
+  directChildCount: num(),
+  listingCount: num(),
+  availablePoints: num(),
+  pendingPoints: num(),
+  withdrawnPoints: num(),
+  recentWithdrawals: arr(AdminMemberWithdrawalSchema),
+});
+export type AdminMemberDetail = Infer<typeof AdminMemberDetailSchema>;
+
+export const AdminMemberDetailResponseSchema = obj({
+  success: bool(),
+  data: obj({ member: AdminMemberDetailSchema }),
+});
+export type AdminMemberDetailResponse = Infer<typeof AdminMemberDetailResponseSchema>;
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
 
 // 證件審核佇列。`none`（照片沒交齊）不會出現在佇列裡，所以列舉不含它。

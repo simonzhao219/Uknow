@@ -1330,6 +1330,72 @@ app.get('/admin/members', async (c) => {
   });
 });
 
+// ============================================================
+// GET /admin/members/:id —— 會員詳情（含近期提領記錄）
+//
+// §1.1 的頭號客服情境是「我提領怎麼還沒到」，`recentWithdrawals` 就是那句話的
+// 答案，不是附加資訊。
+//
+// **遮罩在這一層而不是 SQL**：同一份資料，提領作業台因匯款作業需要而回全碼、
+// 查詢台回遮罩值。規則烤進資料層就沒辦法讓兩個呼叫端有不同的答案。
+// 銀行代號不遮——它識別的是銀行不是個人，遮了反而讓客服對不出是哪一家。
+// ============================================================
+app.get('/admin/members/:id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_member_detail', {
+    p_user_id: c.req.param('id'),
+  });
+
+  if (error) {
+    console.error('[admin-member-detail] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得會員詳情' } }, 500);
+  }
+  if (!data) return c.json({ success: false, error: { message: '查無此會員' } }, 404);
+
+  const points = data.points ?? {};
+  return c.json({
+    success: true,
+    data: {
+      member: {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        isAdmin: data.is_admin,
+        suspended: !!data.suspended_at,
+        suspendedAt: data.suspended_at,
+        createdAt: data.created_at,
+        accountStatus: data.account_status,
+        endDate: data.end_date ?? null,
+        idVerificationStatus: data.id_verification_status ?? 'none',
+        idRejectReason: data.id_reject_reason ?? null,
+        idNumber: maskNationalId(data.national_id),
+        bankCode: data.bank_code ?? null,
+        bankAccount: maskBankAccount(data.bank_account),
+        referrerName: data.referrer_name ?? null,
+        directChildCount: data.direct_child_count ?? 0,
+        listingCount: data.listing_count ?? 0,
+        availablePoints: points.available ?? 0,
+        pendingPoints: points.pending ?? 0,
+        withdrawnPoints: points.withdrawn ?? 0,
+        recentWithdrawals: (data.recent_withdrawals ?? []).map((w: any) => ({
+          id: w.id,
+          amount: w.amount,
+          fee: w.fee,
+          status: w.status,
+          note: w.note ?? null,
+          requestedAt: w.requested_at,
+          processedAt: w.processed_at,
+          completedAt: w.completed_at,
+        })),
+      },
+    },
+  });
+});
+
 // POST /admin/members/:id/suspend  body: { suspend: boolean }
 app.post('/admin/members/:id/suspend', async (c) => {
   const user = await requireAuth(c);
