@@ -892,3 +892,96 @@ Deno.test('GRANT：authenticated 不得 EXECUTE admin_withdrawal_stats', async (
     await sql.end();
   }
 });
+
+// ============================================================
+// 退件理由端到端（plan 階段 2.6）
+//
+// 整條證件與提領審核的價值都卡在這一句話上：**理由要到得了會員面前**。
+// 看不到理由的會員只會重送一模一樣的東西，然後再被退一次——admin 多做一次
+// 工、會員多等一輪，兩邊都沒有得到任何資訊。
+// ============================================================
+
+async function memberGet(client: ReturnType<typeof adminClient>, email: string, path: string) {
+  const token = await getUserAccessToken(client, email);
+  const res = await app.request(path, { headers: { Authorization: `Bearer ${token}` } });
+  return { status: res.status, body: await res.json() };
+}
+
+Deno.test('GET /rewards/withdrawals：退件後會員讀得到 admin 填的理由', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '收款帳號與身分證姓名不符',
+    });
+
+    const { body } = await memberGet(client, user.email, '/api/rewards/withdrawals');
+    const row = body.data.withdrawals.find((w: { id: string }) => w.id === req!.withdrawal_id);
+    assertEquals(row.status, 'rejected');
+    assertEquals(row.note, '收款帳號與身分證姓名不符');
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('GET /rewards/withdrawals：管理員代為結案時標示 completedByAdmin', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'completed',
+      p_note: '逾期未確認，管理員代為結案',
+    });
+
+    const { body } = await memberGet(client, user.email, '/api/rewards/withdrawals');
+    const row = body.data.withdrawals.find((w: { id: string }) => w.id === req!.withdrawal_id);
+    // 誠實揭露：讓會員以為自己按過查收，是規劃 §6 開放問題 #2 明確否決的做法
+    assertEquals(row.completedByAdmin, true, JSON.stringify(row));
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('GET /rewards/withdrawals：會員自己查收時 completedByAdmin 為 false', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+    await client.rpc('confirm_withdrawal_collection', {
+      p_user_id: user.id,
+      p_withdrawal_id: req!.withdrawal_id,
+    });
+
+    const { body } = await memberGet(client, user.email, '/api/rewards/withdrawals');
+    const row = body.data.withdrawals.find((w: { id: string }) => w.id === req!.withdrawal_id);
+    assertEquals(row.status, 'completed');
+    assertEquals(row.completedByAdmin, false, JSON.stringify(row));
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
