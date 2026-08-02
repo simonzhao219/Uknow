@@ -3384,8 +3384,32 @@ app.get('/referrals/debug/:userId', async (c) => {
 // 兩個欄位都不是機密:mode 從使用者被導去哪個 PayUni 網域就看得出來,
 // configured 只回報布林、不回傳任何憑證內容（同 sha 的取捨——repo 公開,
 // 這些不是機密,而可觀測性的價值遠大於它）。
-app.get('/health', (c) => {
+app.get('/health', async (c) => {
   const read = (key: string) => Deno.env.get(key);
+
+  // A12：預設推薦碼（reward_config.default_referrer_code）只能人工 SQL
+  // 設定、沒有 admin UI 掛即時驗證；fresh 未填碼的 A10 機制若因此靜默
+  // 失效，只剩事後告警。部署 SOP 本來就會打 /health 比對 sha，順帶回報
+  // 三態讓失效「可見」。任何錯誤都不得讓 /health 失敗——無法驗證時回
+  // 'invalid'（寧可假警報引人檢查，不可沉默）。碼內容絕不回傳。
+  let defaultReferrer: 'ok' | 'unset' | 'invalid' = 'invalid';
+  try {
+    const { data: cfgRow } = await sb()
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const code = (cfgRow?.default_referrer_code ?? '').trim().toLowerCase();
+    if (!code) {
+      defaultReferrer = 'unset';
+    } else {
+      const { data: rows, error } = await sb().rpc('validate_referral_code', { p_code: code });
+      defaultReferrer = !error && rows && rows.length > 0 ? 'ok' : 'invalid';
+    }
+  } catch (e) {
+    console.error('[health] defaultReferrer 檢查失敗:', e);
+  }
+
   return c.json({
     ok: true,
     ts: new Date().toISOString(),
@@ -3394,9 +3418,10 @@ app.get('/health', (c) => {
     payuniConfigured: isPayuniConfigured(read),
     // 與 payuniConfigured 同一個理由：這個設定沒有任何外顯訊號。缺 secret 時
     // 核身端點會回 500，但那要有人真的去掃一次碼才會發現；Secrets 頁只看得到
-    // digest。回一個布林值（絕不回內容）讓「設好了沒」一個 curl 就能回答，
+    // digest。回一個布林值（絕不回傳任何憑證內容）讓「設好了沒」一個 curl 就能回答，
     // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
     memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
+    defaultReferrer,
   });
 });
 
