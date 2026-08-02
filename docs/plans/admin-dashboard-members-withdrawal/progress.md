@@ -99,8 +99,6 @@
 根本沒發生。改用 `rejected` 當前置狀態。這與 `.claude/rules/test-naming.md`
 檔尾警告的反例同族。
 
-剩餘：2.3–2.9、3.1–3.4、4.1（規格書同步）。
-
 ### 階段 1.3 的兩層防線（審查 P0-2）
 
 把新端點加進 `admin-gate.test.ts` 的 `ADMIN_ROUTES` **只是維持測試涵蓋率，
