@@ -34,7 +34,13 @@ async function getStatus(token: string) {
   return { status: res.status, data: body.data };
 }
 
-/** 把使用者最新訂閱的迄日改成指定台灣日（日終），grace 同步。 */
+/**
+ * 把使用者最新訂閱的迄日改成指定台灣日（日終），grace 同步；並把該使用者
+ * 所有 completed 訂單的 completed_at 回填成「效期起算前」（end − 1 年），
+ * 維持自然付款時序——hasPaidAnyBackfill 的簽名是「end_date < 對應訂單
+ * completed_at」，夾具若只搬 end_date 不搬付款時點，會人工製造出補繳
+ * 簽名（付款在效期結束之後），把正常過期誤扮成已補繳。
+ */
 async function setLastEnd(
   client: ReturnType<typeof adminClient>,
   userId: string,
@@ -46,6 +52,13 @@ async function setLastEnd(
     .update({ end_date: end, grace_period_end: end })
     .eq('user_id', userId);
   if (error) throw new Error(`setLastEnd failed: ${error.message}`);
+  const paidAt = new Date(`${twDayPlusYears(lastEndDay, -1)}T12:00:00+08:00`).toISOString();
+  const { error: ordErr } = await client
+    .from('payment_orders')
+    .update({ completed_at: paidAt })
+    .eq('user_id', userId)
+    .eq('status', 'completed');
+  if (ordErr) throw new Error(`setLastEnd backdate orders failed: ${ordErr.message}`);
 }
 
 async function payExtend(client: ReturnType<typeof adminClient>, userId: string) {
@@ -137,16 +150,17 @@ Deno.test('status：曾 extend 續約後自然再到期且本輪未付款 → ha
     assertEquals((await payForUser(client, user.id)).error, null);
     const { tradeNo } = await payExtend(client, user.id);
 
-    // 模擬「自然再到期」：效期改成 100 天前，且付款時點在效期起算前
-    // 一年多（正常續約的時間關係：completed_at 遠早於 end_date）。
+    // 模擬「自然再到期」：效期改成 100 天前；setLastEnd 會一併把所有
+    // completed 訂單的付款時點回填到效期起算前（正常續約的時間關係：
+    // completed_at 遠早於 end_date）。tradeNo 僅確認 extend 訂單存在。
     const today = twDayOf(new Date());
     await setLastEnd(client, user.id, twDayPlusDays(today, -100));
-    const paidAt = new Date(Date.now() - 465 * 86400_000).toISOString();
-    const { error: backErr } = await client
+    const { data: extOrder } = await client
       .from('payment_orders')
-      .update({ completed_at: paidAt })
-      .eq('transaction_id', tradeNo);
-    assertEquals(backErr, null);
+      .select('status')
+      .eq('transaction_id', tradeNo)
+      .single();
+    assertEquals(extOrder?.status, 'completed');
 
     const token = await getUserAccessToken(client, user.email);
     const data = (await getStatus(token)).data;
