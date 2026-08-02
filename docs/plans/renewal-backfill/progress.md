@@ -26,6 +26,37 @@
 > 階段 13 **不能只看 CI 綠燈**——`check-spec-drift.py` 不比對自由散文,
 > §6.2 表格下方那段舊敘述必須人工核對。
 
+## 收尾:實作審查與 P1/P2 處置(2026-08-02)
+
+四視角 `/review-implementation` 已完成,彙整於 `./implementation-review.md`:
+**P0×0、P1×6(全數為未記錄偏離,已全數修復)、P2×5(修 4 記 1)**。
+
+- **P1-A** 四狀態表第 4 列:`useSubscription` 曝露 `lastFetchFailed`,
+  結帳頁區分載入中(skeleton)/初次失敗(AC-17)/背景失敗+已付補繳
+  (「進度暫時無法讀取」+重試),+3 條 vitest。
+- **P1-B** AC-15 數字:契約加 `paidBackfillCount/paidBackfillAmount`
+  (定義:從最新訂閱往回走、連續帶補繳簽名的筆數),`/subscriptions/status`
+  計算,對話框唸出「付款 N 筆(NT$X,已補至日期)」,Deno + vitest 斷言數字。
+- **P1-C** AC-2:fresh 卡片顯示具體效期迄日(`subscriptionLastDay(今天)`)。
+- **P1-D** 退化分支:未付過且只差 1 筆不出現「補繳」字樣,判準用
+  `hasPaidAnyBackfill`(plan §4:用數值判斷會與進度卡打架)。
+- **P1-E** Q11 文案改回 plan 逐字(「選擇新約會重新建立推薦關係…」),
+  測試補正向斷言。
+- **P1-F** fresh 停用時 `aria-describedby` 錨定提領審核說明。
+- **P2**:`PayuniResultRenewalSchema` 兩端接線(後端標型別、前端
+  `import type`)並加 `extendAnchorDate`;「已補至」改錨點−1 天
+  (迄日反推一年在 02-29 迄日會少一天;Result 端保留反推為部署交錯後備)
+  並統一 `formatTwDate`;零值子句不唸。
+- **P2-4(記錄,不修)**:W3 第五分支 `profile_update_failed`(profiles
+  update 本身失敗)**刻意不測**——觸發它需要讓 update 失敗的注入點,
+  現有測試架構(真 DB)做不到不侵入;分支行為與其他四種失效相同
+  (告警+繼續建單),由同檔其他四情境覆蓋語意。
+- e2e mock 夾具同步補契約欄位;截圖重跑(scratchpad/shots-v2)確認
+  對話框數字、fresh 具體日期、Q11 警語、零值不唸皆正確。
+- 本地驗證:`npm run check` 綠(473 tests)、affected e2e 30/30 綠、
+  deno check(shim)綠、spec-drift/test-names 綠。paid 欄位的 DB 斷言
+  由 CI api-tests 佐證(subscriptions-status / payuni-result-renewal)。
+
 ## 目前位置與下一步
 
 **🔨 實作中(人已親自啟動 /tdd-implement)。階段 1 已綠,PR #189 待合併。**
