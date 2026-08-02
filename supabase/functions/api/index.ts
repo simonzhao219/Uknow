@@ -2542,7 +2542,7 @@ app.post('/rewards/upload-id-photos', async (c) => {
   };
 
   try {
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | null> = {};
     let frontPath: string | null = null;
     let backPath: string | null = null;
     if (front) {
@@ -2553,6 +2553,24 @@ app.post('/rewards/upload-id-photos', async (c) => {
       backPath = await upload(back, 'back');
       patch.id_card_back_path = backPath;
     }
+
+    // 這次上傳後是否「雙面齊全」——要把既有路徑算進來,會員常分兩次補齊。
+    // 只有齊全才進審核佇列:沒交齊卻顯示「審核中」,會員會以為在等 admin,
+    // 實際上是他自己還沒傳完;admin 那邊也會收到一筆缺圖的送審紀錄。
+    const { data: current } = await client
+      .from('profiles')
+      .select('id_card_front_path, id_card_back_path')
+      .eq('id', user.id)
+      .single();
+    const finalFront = frontPath ?? current?.id_card_front_path ?? null;
+    const finalBack = backPath ?? current?.id_card_back_path ?? null;
+    if (finalFront && finalBack) {
+      patch.id_verification_status = 'pending';
+      // 換照片＝重新送審,上一輪的退回理由要清掉,否則會員會在「審核中」
+      // 狀態下還看到舊的退件說明。
+      patch.id_reject_reason = null;
+    }
+
     await client.from('profiles').update(patch).eq('id', user.id);
 
     return c.json({ success: true, data: { frontPath, backPath } });
