@@ -2646,16 +2646,41 @@ app.get('/rewards/withdrawals', async (c) => {
     return c.json({ error: { message: '查詢提領紀錄失敗' } }, 500);
   }
 
-  const withdrawals = (rows ?? []).map((w: any) => ({
-    id: w.id,
-    userId: w.user_id,
-    amount: w.amount,
-    fee: w.fee,
-    status: w.status,
-    requestedAt: w.requested_at,
-    processedAt: w.processed_at,
-    completedAt: w.completed_at,
-  }));
+  // 事件表一次 in 查詢後在應用層 group（同 /admin/withdrawals）。會員端只
+  // 取得出兩個衍生值，不回整條 events——那條歷史裡有 bank_ref 之類的作業
+  // 欄位，是 admin 的作業紀錄，不是會員該讀的東西。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await sb().from('withdrawal_events')
+      .select('withdrawal_id, to_status, note, admin_id, created_at')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) (eventMap[e.withdrawal_id] ??= []).push(e);
+  }
+
+  const withdrawals = (rows ?? []).map((w: any) => {
+    const events = eventMap[w.id] ?? [];
+    // 退件理由必須到得了會員面前：看不到理由的人只會重送一模一樣的東西，
+    // 再被退一次——admin 多做一次工、會員多等一輪，兩邊都沒拿到資訊。
+    // 主表的 note 自 20260802000004 起 vestigial，事件表最新一筆才是現況。
+    const latest = events.length ? events[events.length - 1] : null;
+    // 「誰結的案」看最後一筆 completed 事件：admin_id 非 null = 管理員代為
+    // 結案。讓會員以為自己按過查收，是規劃 §6 開放問題 #2 明確否決的做法。
+    const lastCompleted = [...events].reverse().find((e) => e.to_status === 'completed');
+    return {
+      id: w.id,
+      userId: w.user_id,
+      amount: w.amount,
+      fee: w.fee,
+      status: w.status,
+      note: latest?.note ?? null,
+      completedByAdmin: lastCompleted ? lastCompleted.admin_id !== null : false,
+      requestedAt: w.requested_at,
+      processedAt: w.processed_at,
+      completedAt: w.completed_at,
+    };
+  });
 
   return c.json({ success: true, data: { withdrawals } });
 });

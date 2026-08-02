@@ -228,6 +228,10 @@ export const WithdrawalRecordSchema = obj({
   amount: num(),
   fee: num(),
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  /** 這筆現在的說明，取自 `withdrawal_events` 最新一筆。退件理由靠它到達會員。 */
+  note: nullable(str()),
+  /** 管理員代為結案（非會員本人查收）。誠實揭露，不讓會員誤以為自己按過。 */
+  completedByAdmin: bool(),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),

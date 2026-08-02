@@ -14,17 +14,9 @@ import {
   WITHDRAWAL_FEE,
   MIN_REQUIRED_BALANCE,
 } from '../../utils/withdrawalValidation';
-
-interface WithdrawalRecord {
-  id: string;
-  userId: string;
-  amount: number;
-  fee: number;
-  status: 'pending' | 'awaiting_collection' | 'completed' | 'rejected';
-  requestedAt: string;
-  processedAt: string | null;
-  completedAt: string | null;
-}
+// 型別走契約，不在元件裡手抄一份（plan §2.4）：抄本不會跟著契約長欄位，
+// 而多出來的欄位對元件只是「沒讀」，tsc 不會叫——那正是契約要防的靜默漂移。
+import type { WithdrawalRecord } from '@contract';
 
 interface WithdrawalSectionProps {
   availableRewards: number;
