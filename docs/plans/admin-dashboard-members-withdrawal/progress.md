@@ -52,16 +52,27 @@
 
 ## 目前位置與下一步
 
-規劃書 v2 已完成，**尚未開工**。下一步是跑
-`/review-plan admin-dashboard-members-withdrawal` 取得四視角審查報告
-（v1 那次派出的 subagent 在 session 恢復時遺失，未產出 `review.md`，
-本次需重跑），然後停下等人審。
+規劃書 v2 已完成、四視角審查已完成（`./review.md`），**尚未開工，停在人審**。
+
+審查結果：**3 P0、17 P1、9 P2**。有 P0 → 依 `/review-plan` 規則，必須修訂
+規劃後重跑審查，或由人在 review.md 的「處置」節明文豁免。二選一，不能默默
+帶著 P0 進實作。
+
+三個 P0：
+1. `withdrawal_events` 新表沒有 RLS/GRANT（違反本專案零例外的建表慣例）
+2. 新 SECURITY DEFINER 函數沒有 `revoke execute`——`admin_set_member_admin`
+   缺這行是真實提權漏洞（PostgREST 的 rpc 端點不經 Hono middleware）
+3. 證件審核被設計成 `request_withdrawal` 的阻擋守衛，超出需求方裁決 #6 的
+   範圍且規格書無依據；審查者提出「不阻擋」的更小替代方案
+
+P0-1 與 P0-2 是純技術修訂，改 plan 即可。**P0-3 需要需求方裁決**——它會連帶
+消解數條 P1（四契約、dialog 步驟數、backfill 急迫性、首次提領新等待、§5.3
+例外）。
+
+審查期間需求方已裁決：證件審核 SLA 3 個工作天、詳情面板遮罩、交易序號選填、
+手機只鎖「標記已匯款」。這些需回寫進 plan.md §6 與 §4。
 
 實作只能由人親自打 `/tdd-implement admin-dashboard-members-withdrawal` 啟動。
-
-**開工前必須有答案的開放問題**：#1（證件審核 backfill 判準——會影響階段 1.1
-的測試斷言與正式站既有會員）與 #2（詳情面板是否遮罩身分證／銀行帳號——
-影響階段 3.2）。
 
 ## Blockers（逃生口紀錄）
 
