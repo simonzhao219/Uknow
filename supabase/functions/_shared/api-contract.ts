@@ -218,6 +218,7 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  *   withdrawal         點數提領扣款
  *   withdrawal_refund  提領退件退還（adjustment 且綁 withdrawal_id）
  *   adjustment_manual  人工調整（目前無端點產生；有資料才會出現在篩選器）
+ *   ledger_reset       新約重置——選 fresh 續約時清空帳本的負額沖銷列
  *
  * 付款續約 vs 任務免費續約的差別沒有消失，改由 RewardHistoryRecord.viaFreeRenewal
  * 承載（明細第二行註記），不再佔一個分類。
@@ -228,6 +229,7 @@ export const REWARD_SOURCE_CATEGORIES = [
   'withdrawal',
   'withdrawal_refund',
   'adjustment_manual',
+  'ledger_reset',
 ] as const;
 export const RewardSourceCategorySchema = literals(...REWARD_SOURCE_CATEGORIES);
 export type RewardSourceCategory = Infer<typeof RewardSourceCategorySchema>;

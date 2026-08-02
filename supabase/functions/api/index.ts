@@ -1648,6 +1648,9 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
     // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、
     // warning-only 沒寫成的上線續約獎勵。同樣 best-effort、冪等。
     await sb().rpc('repair_orphaned_claim_rewards', { p_user_id: userId });
+    // fresh 清空帳本的自癒：補回付款當下沖銷失敗的 ledger_reset 列，
+    // 金額取失敗時的告警快照（不是現值）。同樣 best-effort、冪等。
+    await sb().rpc('repair_orphaned_forfeitures', { p_user_id: userId });
   } catch (e) {
     console.error('[repairOrphanedPaymentsBestEffort]', e);
   }
