@@ -7,7 +7,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | ⬜ 未開始 | | |
+| 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | 🟢 綠燈(PR #189 待合併) | `28ba947` | `730e7fa` |
 | 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | ⬜ 未開始 | | |
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ⬜ 未開始 | | |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
@@ -28,15 +28,19 @@
 
 ## 目前位置與下一步
 
-**✅ 規劃流程全部完成,等最終人審。**
+**🔨 實作中(人已親自啟動 /tdd-implement)。階段 1 已綠,PR #189 待合併。**
 
-- 第 7 版針對性覆核**通過**:第 4 輪 13 條發現全數落實、無 P0/P1 級
-  新缺口、與 rules.md M1-M8 無不一致(覆核全文見 review.md 末段)。
-- 四輪四視角 + 一輪針對性覆核;Q1-Q14 + 第 3/4 輪共 11 項裁決全數定案。
+- 階段 1 走獨立先行 PR **#189**(`fix/payment-user-lock` → develop):
+  紅燈 `28ba947`(只含測試,**單獨推送**,CI api-tests 紅 = 紅燈證據,
+  run 30755346723:162 個既有測試綠、僅新測試斷言紅
+  `expected 3 subscriptions, got 2`——race 真實重現);
+  綠燈 `730e7fa`(migration `20260802000001_payment_user_lock.sql`,
+  api-tests 轉綠,run 30755575179)。
+- 紅燈 hash 記錄於該 fix 分支之外的這裡,因為 fix 分支不帶規劃檔。
 
-**下一步(人)**:review.md 末尾勾「人審完成:通過」→ 親自打
-`/tdd-implement renewal-backfill` 開工。實作順序:**先開獨立 PR
-`fix/payment-user-lock`(階段 1 併發鎖)**,合併後本包從階段 2 起跑。
+**下一步**:PR #189 `ci-ok` 全綠後合併(merge commit)→ 回本分支從
+develop rebase 拿到已合併的鎖 → 階段 2 起跑(清空 migration 基準 =
+**合併後版**,即 `20260802000001`,不要從 wave4 抄)。
 
 ### 實作時特別要記住的六條
 
@@ -65,7 +69,12 @@
 
 ## Blockers(逃生口紀錄)
 
-<!-- 尚無 -->
+- **環境限制(階段 1 起適用全案)**:web session 沙箱無法起本機
+  supabase(docker registry 的 blob CDN 被閘道擋,`supabase start` 拉不到
+  image;jsr.io 也 403)。SOP 的「本機 `deno task test` 確認紅/綠」改為
+  **CI api-tests 軌當紅綠燈 oracle**:紅燈 commit 單獨推送讓 CI 跑紅
+  (= 紅燈證據,run 連結記在階段表),綠燈 commit 隨後推、看同軌轉綠。
+  代價是每輪紅綠各等一次 CI(約 3-4 分鐘),換到的是與 SOP 等價的證據鏈。
 
 - 預期可能觸發「逃生口 1(紅燈測試一寫就綠)」的地方:plan.md 的 AC-5
   (補繳每筆都發三代獎金、任務不 +1)是既有行為,**階段 4**(後端拆守衛)
