@@ -279,3 +279,264 @@ Q1,才有辦法一次改齊 §2/§3/§5——因此建議的處置順序是:先�
 
 > 第 1 輪的 P0 全數走「修訂規劃」,無豁免。plan.md 已依上述裁決改寫,
 > 須重跑 `/review-plan` 產生第 2 輪審查結果後,才可再次送人審。
+
+---
+
+# 第 2 輪審查(plan.md 第 2 版)
+
+同樣派四個 fresh-context reviewer,並明確要求「第 1 輪已提過且本版已修訂的
+項目不要重複列,除非修訂本身有問題」。聚合者仍不改判。
+
+## 審查結論
+
+| 視角 | P0 | P1 | P2 | 無缺口面向 |
+|---|---|---|---|---|
+| 系統 | 1 | 3 | 2 | 鎖序與死鎖分析、`hasPaidAnyBackfill` 兩個情境、`completed_at` 假設不成立、連續三筆的測試工具支援度 |
+| 架構 | 1 | 1 | 0 | PaymentCheckout 單例判斷屬實、命名慣例、四契約檢查、Q4 分析公允、appShell 未被動搖 |
+| UI/UX | 0 | 6 | 1 | 模式一致性、資訊架構/BottomNav、a11y |
+| 需求 | 1 | 2 | 1 | A9/A1 成文化、A3 標記改動正確、AC-6/AC-7 可驗證、六個契約欄位有落點、無腦補/偷加碼/偷縮水 |
+
+**去重後:P0 × 1、P1 × 11、P2 × 4。**
+
+> **第 1 輪三個 P0 的修訂全部被確認有效**——併發鎖的位置與鎖序成立、
+> PaymentCheckout 掛 `useSubscription()` 的單例判斷屬實、`PaymentResult.tsx`
+> 的行為修正方向正確。第 2 輪的唯一 P0 是**同一類缺口在同一個 feature 裡
+> 換一個檔案復發**。
+
+---
+
+## P0(阻擋)
+
+**[P0]〔§3 動到的模組 / §4 付款結果頁 / §5 階段 5〕`PaymentResult.tsx` 需要的 `renewal` 沒有任何資料流送達——與第 1 輪 P0-2 是同一種缺口在同一 feature 復發**
+*(系統、架構、需求三個視角各自獨立發現,判定一致)*
+
+§4 的核心修法是「`orderStatus === 'completed'` 且 `renewal.backfillCount > 0`
+→ 跳過輪詢與逾時分支」(`plan.md:261-263`),階段 5 驗證標準原樣引用
+(`plan.md:323`)。但:
+
+- `PaymentResult.tsx` 只打 `GET /payuni/result/:tradeNo`(`:79-92`),回應型別
+  `OrderResult`(`:34-38`)只有 `orderStatus`/`completedAt`/`payuni`,**無 `renewal`**
+- 後端該端點(`index.ts:1567-1578`)同樣不含 `renewal`
+- 該頁不呼叫 `useSubscription()`,也不呼叫 `/subscriptions/status`
+- §3 為 PaymentCheckout 開了一整節定案接線,**對 PaymentResult 完全空白**
+
+第 2 版把它標為「本 feature 的成敗關鍵」「這三個階段不是 UI 收尾,是這個
+feature 的一半」(§7 R2),卻沒有做同樣深度的分析。照現狀開工,實作者只能
+自己發明一條路(裸 fetch、第三方資料路徑,或臨時決定要不要動
+`/payuni/result` 契約)——而 §3 正是為了避免這種「第三份實作」才寫的。
+**階段 5 的 `PaymentResult.test.tsx` 現在也無法定義要 mock 什麼**——
+「切不出測試落點 = 設計沒想清楚」在這裡直接命中。
+
+**架構視角另補一個更隱蔽的陷阱**:若直接掛 `useSubscription()`,同屏意義上
+的單例限制不成立(安全),但它是 stale-while-revalidate(`useSubscription.ts:82-93`),
+而 `DataCacheProvider` 會從 `sessionStorage` 復原**付款前**的快取
+(`DataCacheContext.tsx:140-149`)。PayUni 導回是整頁重載——
+- 中間筆:「還差 N 筆」短暫顯示錯一格,數百毫秒自我修正,傷害有限
+- **最後一筆**:舊快取的 `backfillCount` 仍是 1,會把**剛付完、已經 active**
+  的使用者導向「還差 1 筆」的補繳畫面,完全跳過該走的完成分支
+
+那是 R2 想修的錯誤的鏡像版——「已完成被誤判成中間筆」,發生在最該慶祝的一刻。
+
+→ §3 補一節,比照 PaymentCheckout 那節的分析深度,在兩個方案中定案:
+(a) 掛 `useSubscription()`,但**必須明訂這個判斷不吃 SWR 的預設快取路徑**,
+用 `refresh()` 或等價機制強制取新資料再判斷;或
+(b) 擴充 `GET /payuni/result/:tradeNo` 回傳精簡版 `renewal`(天生每次都是新
+請求,沒有快取問題,但 `index.ts` 該段與 `_shared/api-contract.ts` 要一併列入
+受影響範圍)。
+§3 模組表、`_shared/api-contract.ts`、階段 5 的測試落點據此更新。
+
+---
+
+## P1(應改)
+
+**[P1]〔§2 資料庫變更〕新 migration 的基準版本引用錯誤,照原引用寫會靜默回退一個已修好的 bug**〔系統〕
+§2 全篇引用 `20260718000001:178-183`、`:200-208`、`:247-248`
+(`plan.md:101-127`),但 `process_successful_payment` 的**權威定義在
+`20260720000001_wave4_guards.sql:383-495`**(檔名序最新,其後無 migration 再動)。
+兩版唯一差異:
+- `20260718000001:248` → `apply_referral_side_effects(p_user_id, v_sub_id)`(兩參數)
+- `20260720000001:479` → `apply_referral_side_effects(p_user_id, v_sub_id, v_paid_at)`(**三參數**)
+
+第三個參數是「推薦王月份 key 錨定付款時點而非執行時間」的修法。本 repo 的
+migration 慣例是「基準 = X,唯一差異」逐字複製再改(見 `20260726000102:1-9` 等
+十餘處)。實作者依錯誤基準去寫,會把 `v_paid_at` 掉包,**回退一個影響所有付款
+路徑的 bug,不只本 feature**。
+→ §2/§3 明標「基準 = `20260720000001_wave4_guards.sql`」。
+
+**[P1]〔§2 契約 `hasPaidAnyBackfill`〕定義無法分辨「本輪」,對多數目標族群誤判**〔系統 + UI/UX,兩視角獨立發現,UI/UX 的分析範圍更廣〕
+定義是「目前 `expired`,且最新一筆 `completed` 訂單的 `renewal_mode = 'extend'`」
+(`plan.md:158-160`)。但對一個目前過期的人,「最新一筆 completed 訂單」**必然
+就是產生他現在這個已過期 `end_date` 的那一筆**——不論那是「本輪補繳中的一筆」
+還是「上一輪正常續約、之後自然到期」,兩者在此定義下完全一樣。
+
+**範圍比初判更大**:`extend` 在 A1 拍板後已無時效限制,且是既有**預設選項**
+(`PaymentCheckout.tsx:303-307` 的 `canExtend ? 'extend' : 'fresh'`)。因此
+**任何續約過兩次以上的老會員**,這次又過期時,即使本輪一筆都還沒付,
+`hasPaidAnyBackfill` 都會是 `true`。
+
+後果:退化條件(`hasPaidAnyBackfill === false && backfillCount === 1`)只對
+「第二次繳費就遲到」的窄小族群生效;多數重複續約者會看到補繳語彙與
+「已補至…還差…筆」——而他們什麼都還沒付。**這正是第 1 輪 P1「退化條件只看
+數值」想修掉的同一類文案打架,換一條路徑重新引入。**
+
+階段 4 只驗「有付過 → true」(`plan.md:322`),**沒有反向斷言**,攔不到。
+→ 改用能真正分辨「本輪」的信號(例如比對該訂單是否建立於目前這次過期
+episode 開始之後,或另外持久化一個欄位);階段 4 補「曾 extend 續約、本輪未
+付款 → false」的反例測試。
+
+**[P1]〔§4 付款結果頁 / §5 階段 5〕`orderStatus` 的既有抓取是一次性、不重試的,P0-1 會在一個未排除的時序窗口下復發**〔UI/UX〕
+`PaymentResult.tsx:96-117` 的 pending-recheck effect 開頭是 `if (statusParam) return`
+——而 PayUni 導回**一律帶 `status` 參數**(§2 已述),所以這個 effect **永遠被
+跳過**。`orderStatus` 只在 `:73-92` 抓一次,無論結果如何都不再抓。
+
+若使用者掛載本頁的當下 webhook/return 還沒把訂單寫成 `completed`(差幾百毫秒
+就夠),新分支條件不成立 → 直接落回舊的 45 秒輪詢 → 逾時撞進「聯繫客服」。
+**這正是本次要根除的 P0-1,在規劃沒排除的窗口下依然會發生。**
+
+另外 `PaymentResult.tsx` 這個畫面本身的三態(載入/錯誤/空)完全沒被規劃覆蓋
+——§4 的「錯誤(付款後)」寫的是結帳頁,但 §4 自己指出的最高風險時刻
+(「整頁重載…LINE 內建瀏覽器」)描述的其實正是這一頁首次掛載的那一刻。
+→ 補:(a) `orderStatus` 仍 pending 時的過渡態(短暫沿用舊輪詢作橋接,待資料
+到位切換到新分支,而非直接落入舊逾時錯誤);(b) `renewal` 在本頁的失敗態;
+(c) 階段 5 補一則「webhook 尚未落地、`orderStatus` 仍 pending」的測試情境。
+
+**[P1]〔§7 R4 / §5 階段 3、6、9〕「過期超過一年只能新約」的斷言散在 5 個檔案,R4 只抓到 1 個;其中 journey 那個要到晉升 PR 才會紅**〔架構〕
+R4(`plan.md:376-378`)只提 `renewal-modes.test.ts:171-184`。同一行為還斷言在:
+- `e2e/features/payment_checkout.feature:30-34` + `e2e/steps/common_steps.py:64-73`
+  (前端 mocked e2e,階段 6 拆 `canExtend` 後直接紅,但無階段列出要改)
+- `e2e/journey/features/60_time_scenarios.feature:50-55` +
+  `e2e/journey/steps/f60_time_scenarios_steps.py:193-205` +
+  `e2e/journey/tools/seed_time_machine.py:67`
+  ——**journey 只在 develop→main 晉升 PR 才跑**。不同步的話,不會在階段 1-9
+  任何一次 CI 被抓到,而是在晉升 PR 那 30-90 分鐘跑到一半才紅,**是所有測試
+  落點裡發現最晚的一個**
+- `e2e/journey/README.md:165`、`docs/e2e-journey-test-design.md:16,229`
+  兩份設計文件把舊行為寫成既定設計
+→ 階段 3 或 6 補前端 e2e 的反轉;另立階段(或併入 9)處理 journey 三檔與兩份
+文件。journey 本機不能跑,但**改動與否是規劃階段就該決定的範圍**。
+
+**[P1]〔§5 階段 1 / AC-6〕併發測試技術未指定,codebase 已有明文教訓:`.rpc()` 測不出 race window**〔系統〕
+`process-payment-concurrency.test.ts:23-29` 的既有註解明寫:走 PostgREST/`.rpc()`
+時兩個 HTTP round-trip 的開銷反而會把 DB 執行時間點拉開,很難重現真正的 race;
+該測試因此改用兩條 `npm:postgres@3` 原生連線 + `Promise.allSettled`(`:51-61`)。
+
+階段 1(`plan.md:319`)只寫「兩筆 pending 訂單並行完成」,沒引用這個先例。而
+同一支測試檔現成的 `payPendingOrder` helper(`renewal-modes.test.ts:68-80`)走
+的正是 `.rpc()`——實作者照抄就會寫出一支**綠燈但根本沒測到鎖**的測試,
+R1(規劃書自認的金錢正確性風險)形同沒驗證。
+→ 階段 1 明訂「用兩條原生 postgres 連線,比照 `process-payment-concurrency.test.ts`」。
+
+**[P1]〔§5 階段 9〕規格書更新清單**只刪不增**——做完後規格書會對補繳整套規則完全沉默**〔需求〕
+階段 9 列的四件事全是刪除或改寫既有欄,沒有一項是「把 A1-A9 寫進規格書」。
+`check-spec-drift.py` 只查常數/路由/列舉/路徑,查不到「內容有沒有新增」,所以
+CI 會綠。但結果是:舊的「失效超過一年只能走新約」被拿掉了,新的「可無限期
+逐筆補繳、每筆各自建 subscription、中間筆仍是 expired」**沒有被寫進去**——
+規格書從「有一條規則(已過時)」退化成「這塊完全空白」,比修訂前更難溯源。
+
+這也直接違反 CLAUDE.md 對 `docs/plans/` 生命週期的原則:「值得長期保存的
+決策要**升級**進規格書…其餘隨 commit 清掉」。plan.md 是鷹架、PR 前要刪,
+規格書是 A1-A9 唯一還留得住的地方,現有寫法會讓它們隨鷹架一起消失。
+→ 階段 9 新增一項:把 A1-A5、A7、A9 改寫進 §5.1/§6.2 正文。
+
+**[P1]〔§3 / §5 階段 6-7〕`extendAnchorDate` 沒被指名取代既有本地計算,兩套「起算日」會並存**〔需求〕
+`extendAnchorDate`(`plan.md:139`)是七個契約欄位中唯一沒有任何 UI mockup 或
+測試斷言引用的。它不是死欄位——它**應該**取代 `PaymentCheckout.tsx:296-300`
+的本地計算,而該計算目前驅動 `:630-633` 的既有文案「效期自 X 接續,至 Y」。
+
+§3 只明講「`canExtend` 隨之移除」,沒明講 `extendAnchorDay`/`extendEndDay` 也要
+改吃契約值。這不是理論風險:`pendingUser` 優先讀 `localStorage`
+(`PaymentCheckout.tsx:104-108`),既有 5 秒輪詢(`:52-96`)只觸發跳轉、**不會**
+`setPendingUser`。使用者付完第 1 筆、從 PaymentResult「繼續補繳」回來時,舊文案
+會顯示**付款前**算出的起訖日,與同一頁「已補至 2025-04-02,還差 2 筆」(來自
+`refresh()` 更新的契約值)並排出現、互相矛盾。
+→ §3 明訂一併改吃契約值(或明講為何不需要);階段 6 或 7 補驗證標準。
+
+**[P1]〔§4 付款結果頁〕「稍後再說」導向未定義,導向會員頁會被守衛瞬間彈回**〔UI/UX〕
+`RequireMembershipRoute.tsx:41`(`resolveMembershipRedirect`)寫死「曾有訂閱、
+已過期 → `/payment/checkout`」。補繳中的人 `accountStatus` 永遠 `expired`,
+所以「稍後再說」導向任何受此守衛保護的頁面,都會被立即彈回結帳頁——剛按下
+「不想繼續」就被系統抓回去,比留在原頁更糟。
+
+`PaymentCheckout.tsx:454-459`(`handleCancel`)已有經過設計的同類模式:
+`showToast('已保留您的登入,隨時可回來完成續費', 'info'); navigate('/', { replace: true })`。
+→ §4 明寫沿用此模式(導向 `/` + 同語氣 toast)。
+
+**[P1]〔§4 揭露卡片〕退化分支沒有範例文案,移除 CardDescription 後到期日資訊無主**〔UI/UX〕
+既有 `CardDescription`(`PaymentCheckout.tsx:565-569`)不論過期多久都顯示
+「您的會籍已於 {date} 到期」。§4 要求移除它,但只給了「補繳」情境的範例文案,
+沒寫「退化成一般續約敘述」時實際顯示什麼。實作者若照字面只拿掉補繳詞彙,
+一般續約使用者(依上方 `hasPaidAnyBackfill` 的分析,這其實是多數族群)會連
+「已到期」都看不到。
+→ 補一則退化分支的範例文案,明確包含到期日。
+
+**[P1]〔§5 階段 8〕四契約回歸測試場景過於籠統,沒列出本 feature 獨有的中斷點**〔UI/UX〕
+驗證標準只有一句「補繳中途關頁 → 從不同入口回來 → 接續看到正確進度」。
+套 `registration_recovery.feature` 樣板不會自動涵蓋:
+1. 剛付完第 1 筆、人還停在 `PaymentResult.tsx` 尚未點任一 CTA 就關閉分頁
+   ——本 feature 全新引入的中間狀態。理論上狀態可由後端 `renewal` 即時算出
+   所以沒問題,**但這正是需要 e2e 明確驗收的地方,不能只靠理論推導**
+2. 已補 N 筆中的 M 筆、中途離開後從不同入口回來,結帳頁是否正確顯示「還差
+   X 筆」而非重新從頭起算
+→ 階段 8 驗證標準明列這兩個情境為必測項目。
+
+**[P1]〔§7 R2〕只處理「被誤判成故障」,沒正視「即使系統正常,走 N 次完整流程」本身的疲勞與放棄率**〔UI/UX〕
+Q3 裁決後,過期 N 年要重複 N 次「結帳頁 → PayUni → 結果頁 → 回結帳頁」。
+§7 R2 的「風險隨補繳年數線性放大」只被用來支撐「誤判成故障」這一半。目前的
+進度提示只有一行「已補至 X,還差 N 筆」,沒有整體進度呈現(如「第 M / N 筆」),
+也沒討論中途放棄者的提醒/召回。
+→ §7 至少補一段討論並給出結論(哪怕是「暫不處理,先上線觀察流失率」),
+不要讓「風險隨年數線性放大」只服務於半個風險。
+
+---
+
+## P2(建議)
+
+**[P2]〔§2 `expiredForMonths`〕月底邊界只用閏日(2/29)代表,建議補一個非閏年的一般月底案例**〔系統〕
+`compute_subscription_period` 的 `anchor + 1yr - 1day` 公式讓任何日序都可能出現在
+`end_date`;到期日落在 1/31、3/31、5/31…比較目標月只有 30 天時,同樣可能踩到
+「原到期日日序在目標月不存在」的邊界。閏日案例只是這個類別的一個特例,無法
+驗證算法有沒有把 2/29 的修法過度特化。
+
+**[P2]〔§2 `expiredForMonths`〕對 `status === 'active'` 的語意未定義**〔系統〕
+照字面算會是負數,與欄位名稱矛盾。階段 4 對 active 只斷言 `backfillCount:0`。
+目前沒有已知 UI 路徑會讀到,但屬未定義行為留在新契約裡。
+→ §2 明訂(例如固定回 0)並補測試釘住。
+
+**[P2]〔§4 付款結果頁〕新畫面範例文案缺少同檔其他狀態一律有的「訂單編號」與「不會重複扣款」保證句**〔UI/UX〕
+`PaymentResult.tsx` 現有每個終局/等待畫面(`:283-289`、`:500-505`)都固定顯示
+訂單編號並附保證句。§4 的範例文案兩者皆無,照抄字面會與同檔其他狀態風格不一致
+——使用者在「剛付了真金白銀」的當下少了這句保證,比其他狀態更容易疑慮。
+
+**[P2]〔規格書附錄〕新增的 lock migration 與 `backfillPlan()` 沒有對應索引列**〔需求〕
+附錄「續約雙模式」列目前只指向 `20260716000008_renewal_modes.sql`(`spec:557`)。
+`check-spec-drift.py` 的 `path_violations` 只查「引用的路徑存在嗎」,不查「該引用
+的有沒有引用」,所以不影響機械檢查,純文件完整性建議。
+
+---
+
+## 需人工裁決
+
+- **〔UI/UX〕中途放棄補繳(只付了部分年數)的使用者要不要有提醒/召回設計**
+  (email、站內通知等)?屬產品決策,建議此次一併裁決並記錄結論。
+- 系統與需求兩視角本輪**無新增**需人工裁決項目(Q4、Q5 仍待第 2 輪人審)。
+
+---
+
+## 聚合者附記(不改判,僅記錄觀察)
+
+第 2 輪唯一的 P0,與第 1 輪的 P0-2 是**同一類缺口**——「規劃寫了新的目標行為,
+但沒有設計資料怎麼送到那個畫面」——只是換了一個檔案(PaymentCheckout →
+PaymentResult),而且是在規劃者已經被同一件事指正過一次之後。三個視角獨立
+發現它。這個模式值得記進 `progress.md` 的框架摩擦,若再犯第三次就整併進
+`docs/plans/friction-log.md`。
+
+## 第 2 輪處置(人審後填寫)
+
+- [ ] **P0(PaymentResult 接線)**:□ 方案 (a) 掛 `useSubscription()` + 強制 `refresh()`
+      □ 方案 (b) 擴充 `/payuni/result/:tradeNo` 回傳精簡 renewal □ 其他:
+- [ ] **Q4(twDate 雙副本是否收斂)**:□ 不收斂(規劃預設) □ 收斂
+- [ ] **Q5(揭露文案是否說明補繳價值)**:□ 加 □ 不加
+- [ ] **Q6(新):中途放棄者的召回機制**:□ 本次不做,先觀察 □ 要做,形式:
+- [ ] P1 × 11:□ 全數修訂 □ 部分豁免(逐項列理由:)
+- [ ] P2 × 4:□ 納入 □ 略過
+- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃

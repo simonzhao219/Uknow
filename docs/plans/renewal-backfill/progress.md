@@ -24,16 +24,37 @@
 
 ## 目前位置與下一步
 
-第 1 輪審查(`review.md`)得 P0×3、P1×9、P2×4;人已裁決
-**Q1=(a) 納入併發鎖、Q2=不設筆數上限(依 A1 收斂結案)、Q3=維持逐筆付款**。
-plan.md 已依裁決改寫為第 2 版,三個 P0 與九個 P1 全數修訂、無豁免;
-P2 三項納入,雙副本收斂改列為新開放問題 Q4。
+**第 2 輪審查已完成**(`review.md` 後半段):P0×1、P1×11、P2×4。
 
-**下一步:重跑 `/review-plan renewal-backfill` 產生第 2 輪審查結果 → 停,等人審。**
-第 2 版新增的開放問題 Q4(twDate 雙副本要不要收斂)、Q5(揭露文案要不要
-說明「為什麼值得補繳」)需要人裁決。
+第 1 輪三個 P0 的修訂**全數被確認有效**。第 2 輪唯一的 P0 是**同一類缺口
+換一個檔案復發**:`PaymentResult.tsx` 需要的 `renewal` 沒有任何資料流送達
+(系統/架構/需求三個視角獨立發現)。架構視角另補一個更隱蔽的陷阱——若直接
+掛 `useSubscription()`,它的 stale-while-revalidate 會在**最後一筆**補繳時
+用付款前的舊快取,把剛付完、已經 active 的使用者導向「還差 1 筆」。
+
+**卡在等人裁決第 2 輪處置**,其中 P0 有兩個方案要選:
+- (a) 掛 `useSubscription()` + 強制 `refresh()` 繞過 SWR 快取
+- (b) 擴充 `GET /payuni/result/:tradeNo` 回傳精簡版 `renewal`
+
+另有 Q4(twDate 雙副本)、Q5(揭露文案)、Q6(中途放棄者召回)待裁決。
+
+下一步(需人在 `review.md`「第 2 輪處置」節勾選後才動):
+修訂 plan.md 第 3 版 → 重跑 `/review-plan` → 再等人審。
 
 實作只能由人親自打 `/tdd-implement renewal-backfill` 啟動。
+
+### 第 2 輪特別要記住的三條(修訂時容易漏)
+
+1. **migration 基準版本是 `20260720000001_wave4_guards.sql:383-495`,不是
+   `20260718000001`**。兩版差在 `apply_referral_side_effects` 的第三個參數
+   `v_paid_at`。抄錯基準會靜默回退一個影響所有付款路徑的 bug。
+2. **併發測試必須用兩條原生 postgres 連線**(比照
+   `process-payment-concurrency.test.ts:23-29,51-61`)。走 `.rpc()` 測不出
+   race window,會寫出「綠燈但沒測到鎖」的假測試。
+3. **journey 測試改動要在規劃階段就決定**。
+   `e2e/journey/features/60_time_scenarios.feature:50-55` 等三個檔案斷言了
+   舊行為,而 journey **只在 develop→main 晉升 PR 才跑**——漏改的話會在
+   那 30-90 分鐘跑到一半才紅,是所有落點裡發現最晚的一個。
 
 ## Blockers(逃生口紀錄)
 
