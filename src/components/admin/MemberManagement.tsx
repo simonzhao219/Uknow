@@ -4,7 +4,10 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Users, UserX, Shield, Loader2, Search } from 'lucide-react';
+import { Search, Shield, UserX, Users } from 'lucide-react';
+import { Skeleton } from '../ui/skeleton';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
+import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { IdReviewQueue } from './IdReviewQueue';
 import { usePagedList } from '../../hooks/usePagedList';
@@ -36,6 +39,20 @@ const ACCOUNT_STATUS_BADGE: Record<string, { label: string; className: string }>
 };
 
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
+
+const ID_STATUS_LABEL: Record<string, string> = {
+  none: '未上傳',
+  pending: '審核中',
+  approved: '已通過',
+  rejected: '已退回',
+};
+
+const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
+  pending: '待處理',
+  awaiting_collection: '待查收',
+  completed: '已完成',
+  rejected: '已退件',
+};
 
 export function MemberManagement({
   loadMembers,
@@ -123,9 +140,93 @@ export function MemberManagement({
         <IdReviewQueue loadReviews={loadIdReviews} submitReview={submitIdReview} />
       </TabsContent>
 
+      {/* 詳情面板。§1.1 的頭號客服情境是「我提領怎麼還沒到」——近期提領記錄
+          （含退件理由）是這個面板存在的理由，不是附加資訊。
+          身分證與銀行帳號是**遮罩值**：需要全碼時回提領作業台看，那裡因匯款
+          作業需要而維持完整值。查詢台是客服日常翻閱的地方，翻閱不需要全碼。 */}
+      {detailFor && (
+        <Sheet open onOpenChange={() => setDetailFor(null)}>
+          <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>{detailFor.name ?? detailFor.email}</SheetTitle>
+              <SheetDescription>{detailFor.email}</SheetDescription>
+            </SheetHeader>
+
+            <dl className="grid grid-cols-2 gap-3 py-4 text-sm">
+              <div>
+                <dt className="text-muted-foreground">會籍</dt>
+                <dd>{detailFor.accountStatus === 'active' ? '有效會員' : '已失效'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">到期日</dt>
+                <dd>{detailFor.endDate ? formatTwTimestamp(detailFor.endDate) : '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">可提領點數</dt>
+                <dd>{detailFor.availablePoints.toLocaleString()} P</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">已提領</dt>
+                <dd>{detailFor.withdrawnPoints.toLocaleString()} P</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">推薦人</dt>
+                <dd>{detailFor.referrerName ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">直接下線</dt>
+                <dd>{detailFor.directChildCount} 人</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">證件審核</dt>
+                <dd>{ID_STATUS_LABEL[detailFor.idVerificationStatus]}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">刊登數</dt>
+                <dd>{detailFor.listingCount}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">身分證字號</dt>
+                <dd className="font-mono">{detailFor.idNumber ?? '未設定'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">收款帳號</dt>
+                <dd className="font-mono">
+                  {detailFor.bankCode ?? '—'} / {detailFor.bankAccount ?? '未設定'}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">近期提領記錄</h3>
+              {detailFor.recentWithdrawals.length === 0 ? (
+                <p className="text-sm text-muted-foreground">尚無提領記錄</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {detailFor.recentWithdrawals.map((w) => (
+                    <li key={w.id} className="rounded-md border p-2">
+                      <div className="flex justify-between">
+                        <span>{w.amount.toLocaleString()} P</span>
+                        <span>{WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        申請 {formatTwTimestamp(w.requestedAt)}
+                      </p>
+                      {/* 客服要的就是這一行 */}
+                      {w.note && <p className="text-destructive">{w.note}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
+
       <TabsContent value="members" className="space-y-6">
-        {/* 統計卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 統計卡片：讀伺服器算好的**全站** stats。改版前是
+            `members.filter(...).length`——那個數字會隨分頁改變。 */}
+        <section aria-label="會員統計" className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -134,7 +235,7 @@ export function MemberManagement({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{total}</div>
+              <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
             </CardContent>
           </Card>
 
@@ -146,9 +247,7 @@ export function MemberManagement({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-red-600">
-                {members.filter((m) => m.suspended).length}
-              </div>
+              <div className="text-3xl font-bold text-red-600">{stats.suspended}</div>
             </CardContent>
           </Card>
 
@@ -160,12 +259,19 @@ export function MemberManagement({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">
-                {members.filter((m) => m.isAdmin).length}
-              </div>
+              <div className="text-3xl font-bold text-green-600">{stats.admins}</div>
             </CardContent>
           </Card>
-        </div>
+        </section>
+
+        {actionError && (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            {actionError}
+          </div>
+        )}
 
         {/* 會員列表 */}
         <Card>
@@ -196,13 +302,22 @@ export function MemberManagement({
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div role="status" aria-label="載入會員列表中" className="space-y-3 py-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : list.error ? (
+              // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
+              // 以為系統裡沒有這個人，而不是「沒讀到」。
+              <div className="py-12 text-center space-y-3">
+                <p className="text-destructive">{list.error}</p>
+                <Button variant="outline" onClick={list.reload}>
+                  重試
+                </Button>
               </div>
             ) : members.length === 0 ? (
-              <p className="text-center text-muted-foreground py-12">
-                {search ? '找不到符合條件的會員' : '尚無會員'}
-              </p>
+              <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -247,20 +362,52 @@ export function MemberManagement({
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant={member.suspended ? 'default' : 'destructive'}
-                            onClick={() => handleSuspendToggle(member)}
-                            disabled={processingId === member.id}
-                          >
-                            {member.suspended ? '恢復' : '暫停'}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                              onClick={() => openDetail(member.id)}
+                            >
+                              查看
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => toggleAdmin(member)}
+                              disabled={processingId === member.id}
+                            >
+                              {member.isAdmin ? '撤銷管理員' : '設為管理員'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={member.suspended ? 'default' : 'destructive'}
+                              onClick={() => handleSuspendToggle(member)}
+                              disabled={processingId === member.id}
+                            >
+                              {member.suspended ? '恢復' : '暫停'}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
+            )}
+
+            {!isLoading && !list.error && members.length > 0 && (
+              <div className="pt-4 text-center space-y-2 text-sm text-muted-foreground">
+                {/* 不得靜默截斷（ui-ux-guidelines §5）。 */}
+                <p>
+                  已顯示 {members.length} / {total} 筆
+                </p>
+                {list.hasMore && (
+                  <Button variant="outline" onClick={list.loadMore} disabled={list.isLoadingMore}>
+                    {list.isLoadingMore ? '載入中…' : '載入更多'}
+                  </Button>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
