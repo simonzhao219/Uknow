@@ -92,7 +92,7 @@
 **連帶效果**：不必解耦提領 dialog、不必動 `multi-step-flow-recovery.md` 四契約、
 backfill 從「上線即客訴」等級降為低風險整理、既有會員零影響。
 
-**資料層**（migration `20260802000001_id_verification.sql`）
+**資料層**（migration `20260802000000_id_verification.sql`）
 
 ```sql
 alter table public.profiles

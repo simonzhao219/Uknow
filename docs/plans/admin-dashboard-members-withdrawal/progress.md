@@ -416,18 +416,33 @@ UX 決策（會員的提領記錄要不要保留已完成項、保留多久、�
 - (c) 確認不需要揭露 → 把 `completedByAdmin` 從契約與後端一併移除，不要留著
   一個沒人讀的欄位假裝有這個保護
 
-### rebase 帶進來的同號 migration（不影響正確性，但值得知道）
+### rebase 帶進來的同號 migration —— **我第一次的判斷是錯的**
 
-rebase 到 develop 後，`supabase/migrations/` 出現兩個同號檔：
-`20260802000001_id_verification.sql`（本分支）與
-`20260802000001_payment_user_lock.sql`（develop 上他人的工作）。
+rebase 到 develop 後出現兩個同號檔：`20260802000001_id_verification.sql`（本分支）
+與 `20260802000001_payment_user_lock.sql`（develop 上他人的工作）。
 
-Supabase CLI 依**完整檔名**字典序套用，`id_` < `payment_`，所以順序是決定性的、
-不會隨機。兩者也彼此獨立（證件審核欄位 vs 付款鎖），沒有相依順序問題。
+**我第一次寫的是「Supabase 依完整檔名字典序套用，順序是決定性的、本次無影響」
+——那是錯的。** CI 立刻打臉：
 
-但這違反「時間戳唯一」的隱含慣例。**風險在於下一次**：若兩個同號 migration 之間
-真的有相依順序，字典序不一定等於正確順序，而且沒有任何閘門會叫。值得考慮讓
-`migration-guard` 多查一條「同號」。
+    ERROR: duplicate key value violates unique constraint "schema_migrations_pkey"
+    Key (version)=(20260802000001) already exists.
+
+`supabase_migrations.schema_migrations` **以數字版本為主鍵**，根本不看檔名後半段。
+兩支同號的第二支插入就違反 PK，**整個 migration 套用直接失敗**，不是順序不確定
+而已。我推理的是檔名排序，但沒有去查登記表的鍵是什麼。
+
+**教訓**：對「兩個東西同名會怎樣」這種問題，猜測執行順序沒有意義——要去看
+**誰在記錄它們、用什麼當鍵**。我第一次的分析在自己的抽象層裡是自洽的，只是
+那一層不是真正做決定的那層。
+
+**修法**：把本分支的 `id_verification` 重編為 `20260802000000`（develop 那支已合併，
+不能動）。必須排在 `000002`–`000010` **之前**——它們依賴它建立的
+`id_verification_status` 欄位。`migration-guard` 不會擋：本檔在 develop 上不存在，
+diff 是 `A` 不是 `R`。
+
+**值得機械化**：`migration-guard` 目前只查「既有 migration 不得被修改或刪除」，
+不查同號。同號在 rebase／多人並行時很容易發生，而它的症狀是 CI 在
+`supabase db reset` 階段就整個掛掉——訊息離根因很遠。
 
 ## 框架摩擦
 
