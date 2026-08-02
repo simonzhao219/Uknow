@@ -5,17 +5,22 @@ import { dedupe } from '../utils/requestDedup';
 import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
+import type { RenewalInfo } from '@contract';
 
-// 會員兩態模型（見 0721 移除寬限期）：一次性年費、無自動扣款，
-// 沒有「取消／恢復／補繳／寬限期」——到期即失效，之後直接用
-// /payment/checkout 續訂或重新訂即可，效期由 process_successful_payment
-// 依 renewalMode 決定。
+// 會員兩態模型：一次性年費、無自動扣款、無取消／恢復／寬限期——到期即
+// 失效，之後用 /payment/checkout 續訂：extend 一筆一年從原到期日隔天
+// 字面接續（過期多久都可選，補繳到迄日回到未來為止），fresh 從付款日
+// 起算並清空帳本。效期由 process_successful_payment 依 renewalMode 決定；
+// 補繳數字（renewal）與建單守衛旗標（hasPendingWithdrawal）由
+// /subscriptions/status 提供（契約見 @contract RenewalInfoSchema）。
 export interface SubscriptionData {
   hasSubscription: boolean;
   status?: 'active' | 'expired';
   activeUntil?: string;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  renewal?: RenewalInfo | null;
+  hasPendingWithdrawal?: boolean;
 }
 
 export interface UseSubscriptionResult {
