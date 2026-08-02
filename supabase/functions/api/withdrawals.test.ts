@@ -603,3 +603,152 @@ Deno.test('GRANT：authenticated 與 anon 都不得讀寫 withdrawal_events', as
     await sql.end();
   }
 });
+
+// ============================================================
+// 批次標記已匯款（plan 階段 2.4 / 驗收情境 W2、審查兩條 P1）
+//
+// admin 的實際工作型態是「網銀做一批轉帳，回來標記一批」。CSV 匯出的存在
+// 本身就證明批次是真的——匯得出去、標不回來，工作流是斷的。
+//
+// 兩個 P1 都釘在這裡：
+//   * 逐筆各自的 bank_ref（單一共用參數達不到 W2「可逐筆填或留空」）
+//   * 部分失敗不整批回滾——Postgres 函數預設單一交易，不做 savepoint 隔離
+//     的話這個承諾在硬錯誤下是假的
+// ============================================================
+
+function batchMarkPaid(
+  client: ReturnType<typeof adminClient>,
+  adminId: string,
+  items: { id: string; bank_ref?: string }[],
+  transferredOn = '2026-08-02',
+) {
+  return client.rpc('admin_batch_mark_paid', {
+    p_admin_id: adminId,
+    p_items: items,
+    p_transferred_on: transferredOn,
+    p_note: null,
+  });
+}
+
+/** 建 n 位各有一筆 pending 提領的使用者。 */
+async function pendingWithdrawals(client: ReturnType<typeof adminClient>, n: number) {
+  const made: { userId: string; withdrawalId: string }[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = await createWithdrawableUser(client, 5000);
+    const { data } = await requestWithdrawal(client, u.id, 1000);
+    made.push({ userId: u.id, withdrawalId: data!.withdrawal_id });
+  }
+  return made;
+}
+
+Deno.test('admin_batch_mark_paid：逐筆各自的交易序號分別落地', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 2);
+
+  try {
+    const { data } = await batchMarkPaid(client, admin.id, [
+      { id: made[0].withdrawalId, bank_ref: 'TXN-A' },
+      // 第二筆刻意留空：有些網銀批次轉帳不逐筆給號（開放問題 #4 的裁決是選填）
+      { id: made[1].withdrawalId },
+    ]);
+    assertEquals(data?.succeeded?.length, 2, JSON.stringify(data));
+
+    const { data: e0 } = await eventsOf(client, made[0].withdrawalId);
+    const { data: e1 } = await eventsOf(client, made[1].withdrawalId);
+    assertEquals(e0![0].bank_ref, 'TXN-A');
+    assertEquals(e1![0].bank_ref, null);
+    // 匯款日期是整批共用的
+    assertEquals(e0![0].transferred_on, '2026-08-02');
+    assertEquals(e1![0].transferred_on, '2026-08-02');
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('admin_batch_mark_paid：狀態不合法的那筆進 failed，其餘照常成功', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 2);
+
+  try {
+    // 先把第二筆推成 awaiting_collection，讓它在批次裡變成非法轉換
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: made[1].withdrawalId,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+
+    const { data } = await batchMarkPaid(client, admin.id, [
+      { id: made[0].withdrawalId },
+      { id: made[1].withdrawalId },
+    ]);
+    assertEquals(data?.succeeded?.length, 1, JSON.stringify(data));
+    assertEquals(data?.failed?.length, 1, JSON.stringify(data));
+    assertEquals(data.failed[0].id, made[1].withdrawalId);
+
+    // 成功那筆真的落地了——這是「部分失敗不整批回滾」的實質意義
+    const { data: w0 } = await client.from('withdrawals')
+      .select('status').eq('id', made[0].withdrawalId).single();
+    assertEquals(w0!.status, 'awaiting_collection');
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('admin_batch_mark_paid：硬錯誤不讓已成功的那幾筆跟著回滾', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 1);
+
+  try {
+    // 壞掉的 uuid 會在 cast 時擲例外（invalid_input_syntax）——這是**硬錯誤**，
+    // 不是轉換表擋下的軟錯誤。沒有 savepoint 隔離的話它會讓整個函數的交易
+    // rollback，連前一筆已成功的一起消失。
+    const { data } = await batchMarkPaid(client, admin.id, [
+      { id: made[0].withdrawalId },
+      { id: 'not-a-uuid' },
+    ]);
+
+    assertEquals(data?.succeeded?.length, 1, JSON.stringify(data));
+    assertEquals(data?.failed?.length, 1, JSON.stringify(data));
+
+    const { data: w0 } = await client.from('withdrawals')
+      .select('status').eq('id', made[0].withdrawalId).single();
+    assertEquals(w0!.status, 'awaiting_collection', '硬錯誤不該回滾已成功的那筆');
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('admin_batch_mark_paid：非管理員呼叫 → forbidden', async () => {
+  const client = adminClient();
+  const notAdmin = await createTestUser(client, { name: 'Not Ops' });
+  const made = await pendingWithdrawals(client, 1);
+
+  try {
+    const { data } = await batchMarkPaid(client, notAdmin.id, [{ id: made[0].withdrawalId }]);
+    assertEquals(data?.success, false, JSON.stringify(data));
+    assertEquals(data?.error_code, 'forbidden', JSON.stringify(data));
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(notAdmin.id));
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_batch_mark_paid', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated',
+        to_regprocedure('public.admin_batch_mark_paid(uuid,jsonb,date,text)'),
+        'EXECUTE'
+      ) as auth_exec
+    `;
+    // null = 函數不存在。紅燈期會是 null，實作後必須是 false。
+    assertEquals(row.auth_exec, false, '批次函數不得對 authenticated 開放');
+  } finally {
+    await sql.end();
+  }
+});
