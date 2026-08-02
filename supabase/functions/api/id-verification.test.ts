@@ -499,3 +499,31 @@ Deno.test('GRANT：authenticated 不得 EXECUTE 證件審核相關函數', async
     await sql.end();
   }
 });
+
+// 換照片退回 pending 時，上一輪的審核時間也必須歸零。
+// 留著舊值會讓審核佇列顯示「已於 X 時審核」，但那筆其實還沒被看過——
+// 在金流相鄰的稽核資料裡，一個會說謊的時間戳比沒有時間戳更糟。
+Deno.test('upload-id-photos：換照片退回 pending 時，審核時間一併歸零', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Stale Verified At' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    await uploadPhotos(token, { front: true, back: true });
+    await client.from('profiles').update({
+      id_verification_status: 'approved',
+      id_verified_at: new Date().toISOString(),
+    }).eq('id', user.id);
+
+    await uploadPhotos(token, { front: true });
+
+    const { data } = await client.from('profiles')
+      .select('id_verification_status, id_verified_at')
+      .eq('id', user.id)
+      .single();
+    assertEquals(data!.id_verification_status, 'pending');
+    assertEquals(data!.id_verified_at, null, '待審的列不該帶著上一輪的審核時間');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
