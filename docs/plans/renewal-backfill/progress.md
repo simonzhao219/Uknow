@@ -1,7 +1,7 @@
 # 補繳式續約(renewal-backfill)實作進度
 
 分支:`feature/renewal-backfill`(base:`origin/develop` @ `0bc3edf`)
-規劃書:`./plan.md`(**第 3 版**)|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(**第 4 版**)|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
 
@@ -10,36 +10,38 @@
 | 1 | `process_successful_payment` 加 user 層級鎖(migration,**基準 = `20260720000001`**) | ⬜ 未開始 | | |
 | 2 | `backfillPlan()` 純函式 + `_shared/backfill-cases.ts` 共用案例表 | ⬜ 未開始 | | |
 | 3 | 後端拆守衛(`/payuni/prepare` 移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
-| 4 | **兩支端點**回傳 `renewal`(`/subscriptions/status` + `/payuni/result/:tradeNo`) | ⬜ 未開始 | | |
-| 5 | `PaymentResult.tsx` 區分補繳中間筆與開通收斂延遲 | ⬜ 未開始 | | |
-| 6 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 | ⬜ 未開始 | | |
-| 7 | 補繳進度顯示 + 付款後錯誤態重試 | ⬜ 未開始 | | |
-| 8 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
-| 9 | journey 三檔反轉 + 規格書 §5.1/§6.2(**刪除並補寫新規則**)+ 過時註解同步 | ⬜ 未開始 | | |
+| 4 | **A10/A11:fresh 未填碼套用預設推薦碼**(改法 B,只動 W3) | ⬜ 未開始 | | |
+| 5 | **A12:`/health` 回報 `defaultReferrer` 三態** | ⬜ 未開始 | | |
+| 6 | 兩支端點回傳 `renewal`(`/subscriptions/status` + `/payuni/result/:tradeNo`) | ⬜ 未開始 | | |
+| 7 | `PaymentResult.tsx` 區分補繳中間筆與開通收斂延遲 | ⬜ 未開始 | | |
+| 8 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 + 新約文案 | ⬜ 未開始 | | |
+| 9 | 補繳進度顯示 + 付款後錯誤態重試 | ⬜ 未開始 | | |
+| 10 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
+| 11 | journey 三檔反轉 + 規格書 §5.1/§6.2/**§7.4** + 過時註解同步 | ⬜ 未開始 | | |
 
 > 階段 1 先行是刻意的:它是金錢正確性防線且獨立於其他階段,先補好洞,
 > 後面拆守衛時才不會有一段「規則已放寬但防線未到位」的窗口。
-> 階段 9 **不能只看 CI 綠燈**——`check-spec-drift.py` 不比對自由散文,
+> 階段 11 **不能只看 CI 綠燈**——`check-spec-drift.py` 不比對自由散文,
 > §6.2 表格下方那段舊敘述必須人工核對。
 
 ## 目前位置與下一步
 
-**規劃書已改寫為第 3 版**,依第 2 輪審查(P0×1/P1×11/P2×4)與人審裁決:
-P0=方案(b) 擴充 `/payuni/result/:tradeNo`、Q4=不收斂雙副本、Q5=中性文案、
-Q6=不做召回。P1 十一項與 P2 四項全數修訂,無豁免。
+**規劃書已改寫為第 4 版**。第 3 版之後,人裁決 Q10(保證預設推薦碼永遠存在)
+與 Q11(文案不解釋機制),並要求把「選新約不填碼 → 套用預設推薦碼」納入設計,
+指定用**改法 B**(只動 `/payuni/prepare` 的 fresh 分支,不新增 migration)。
+
+本版新增 A10-A12 三條規則、AC-9~AC-11 三個驗收情境、兩個階段(4 = A10/A11、
+5 = A12),階段總數 9 → 11。**feature 範圍因此擴大。**
 
 **下一步:重跑 `/review-plan renewal-backfill` 產生第 3 輪審查 → 停,等人審。**
 
-⚠️ **第 3 版新增一個開放問題 Q7,需要人裁決,且它不是實作細節**:
-查證後 extend 對使用者可能**永遠是劣勢選項**——推薦線不受 fresh 影響
-(`index.ts:1414` 只在有填新推薦碼時才改寫上代),週年日在系統中沒有下游
-作用,所以 fresh 在所有情境下都不比 extend 貴、涵蓋期都不短。這不推翻
-A1-A9(照舊實作),但意味著補繳制可能是一條沒有人會理性選擇的路徑。
-Q7 若裁決為 (b)/(c),本規劃的階段組成會大幅改變。
+待裁決:Q8(「fresh 清空帳本」的上線時序)、Q9(清空揭露與兩個邊界)、
+**Q12**(預設推薦人 P 要不要排除在推薦王計數之外)、**Q13**(原上代失去下線
+要不要通知)。
 
 實作只能由人親自打 `/tdd-implement renewal-backfill` 啟動。
 
-### 實作時特別要記住的三條(第 2 輪審查抓出,已進第 3 版)
+### 實作時特別要記住的四條
 
 1. **migration 基準版本是 `20260720000001_wave4_guards.sql:383-495`,不是
    `20260718000001`**。兩版差在 `apply_referral_side_effects` 的第三個參數
@@ -51,6 +53,11 @@ Q7 若裁決為 (b)/(c),本規劃的階段組成會大幅改變。
    `e2e/journey/features/60_time_scenarios.feature:50-55` 等三個檔案斷言了
    舊行為,而 journey **只在 develop→main 晉升 PR 才跑**——漏改的話會在
    那 30-90 分鐘跑到一半才紅,是所有落點裡發現最晚的一個。
+4. **A10 的 `referred_by_is_default` 必須設 `true`**(第 4 版新增)。
+   `/payuni/prepare` 現在寫死 `false`(`index.ts:1432`),因為原本只在
+   「使用者親自填碼」時才走那條。未填碼那一支若沿用 `false`,`/profile` 的
+   `isAutoReferral` 就是 false,前端會把使用者不該知道的預設推薦碼顯示在
+   placeholder 上(`PaymentCheckout.tsx:672`)——直接違反 Q11 裁決。
 
 ## Blockers(逃生口紀錄)
 
