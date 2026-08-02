@@ -1,23 +1,25 @@
 # 補繳式續約(renewal-backfill)實作進度
 
 分支:`feature/renewal-backfill`(base:`origin/develop` @ `0bc3edf`)
-規劃書:`./plan.md`(**第 4 版**)|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(**第 5 版**)|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `process_successful_payment` 加 user 層級鎖(migration,**基準 = `20260720000001`**) | ⬜ 未開始 | | |
-| 2 | `backfillPlan()` 純函式 + `_shared/backfill-cases.ts` 共用案例表 | ⬜ 未開始 | | |
-| 3 | 後端拆守衛(`/payuni/prepare` 移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
-| 4 | **A10/A11:fresh 未填碼套用預設推薦碼**(改法 B,只動 W3) | ⬜ 未開始 | | |
-| 5 | **A12:`/health` 回報 `defaultReferrer` 三態** | ⬜ 未開始 | | |
-| 6 | 兩支端點回傳 `renewal`(`/subscriptions/status` + `/payuni/result/:tradeNo`) | ⬜ 未開始 | | |
-| 7 | `PaymentResult.tsx` 區分補繳中間筆與開通收斂延遲 | ⬜ 未開始 | | |
-| 8 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 + 新約文案 | ⬜ 未開始 | | |
-| 9 | 補繳進度顯示 + 付款後錯誤態重試 | ⬜ 未開始 | | |
-| 10 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
-| 11 | journey 三檔反轉 + 規格書 §5.1/§6.2/**§7.4** + 過時註解同步 | ⬜ 未開始 | | |
+| 1 | user 層級鎖(migration,基準 = `20260720000001`) | ⬜ 未開始 | | |
+| 2 | **A13 fresh 清空帳本**(migration,基準 = 階段 1 產出版) | ⬜ 未開始 | | |
+| 3 | `backfillPlan()` 純函式 + 共用案例表 | ⬜ 未開始 | | |
+| 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
+| 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ⬜ 未開始 | | |
+| 6 | **A16 待審提領擋 fresh** | ⬜ 未開始 | | |
+| 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ⬜ 未開始 | | |
+| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ⬜ 未開始 | | |
+| 9 | `PaymentResult.tsx` 區分補繳中間筆 | ⬜ 未開始 | | |
+| 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ⬜ 未開始 | | |
+| 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | ⬜ 未開始 | | |
+| 12 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
+| 13 | journey 三檔反轉 + 規格書(§5.1/§6.2/§7.4/§8 + R8 過渡行為)+ 註解 | ⬜ 未開始 | | |
 
 > 階段 1 先行是刻意的:它是金錢正確性防線且獨立於其他階段,先補好洞,
 > 後面拆守衛時才不會有一段「規則已放寬但防線未到位」的窗口。
@@ -26,22 +28,14 @@
 
 ## 目前位置與下一步
 
-**規劃書已改寫為第 4 版**。第 3 版之後,人裁決 Q10(保證預設推薦碼永遠存在)
-與 Q11(文案不解釋機制),並要求把「選新約不填碼 → 套用預設推薦碼」納入設計,
-指定用**改法 B**(只動 `/payuni/prepare` 的 fresh 分支,不新增 migration)。
+**規劃書已整併為第 5 版,Q1-Q14 全數裁決完畢、開放問題清空。**
+機制規則單一事實來源:`../upline-pairing-lines/rules.md`(M1-M8)。
+「阿凱的七年」完整例子經人逐點確認(2026-08-02「確認沒錯」)。
 
-本版新增 A10-A12 三條規則、AC-9~AC-11 三個驗收情境、兩個階段(4 = A10/A11、
-5 = A12),階段總數 9 → 11。**feature 範圍因此擴大。**
+**下一步:第 3 輪 `/review-plan` 已派出 → 彙整 review.md → 停,等人審。**
+無 P0 或 P0 處置完畢後,實作由人親自打 `/tdd-implement renewal-backfill` 啟動。
 
-**下一步:重跑 `/review-plan renewal-backfill` 產生第 3 輪審查 → 停,等人審。**
-
-待裁決:Q8(「fresh 清空帳本」的上線時序)、Q9(清空揭露與兩個邊界)、
-**Q12**(預設推薦人 P 要不要排除在推薦王計數之外)、**Q13**(原上代失去下線
-要不要通知)。
-
-實作只能由人親自打 `/tdd-implement renewal-backfill` 啟動。
-
-### 實作時特別要記住的四條
+### 實作時特別要記住的五條
 
 1. **migration 基準版本是 `20260720000001_wave4_guards.sql:383-495`,不是
    `20260718000001`**。兩版差在 `apply_referral_side_effects` 的第三個參數
@@ -58,6 +52,9 @@
    「使用者親自填碼」時才走那條。未填碼那一支若沿用 `false`,`/profile` 的
    `isAutoReferral` 就是 false,前端會把使用者不該知道的預設推薦碼顯示在
    placeholder 上(`PaymentCheckout.tsx:672`)——直接違反 Q11 裁決。
+5. **清空絕不在建單時做**(第 5 版新增)。A13 的沖銷必須在付款**成功**
+   當下(`process_successful_payment`),建單後可能棄單;沖銷列冪等綁
+   `subscription_id`;清空 migration 的基準 = 階段 1 產出版,不要從 wave4 抄。
 
 ## Blockers(逃生口紀錄)
 

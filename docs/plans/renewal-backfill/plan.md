@@ -1,14 +1,12 @@
 # 補繳式續約(renewal-backfill)規劃書
 
-> **版本:第 4 版**(2026-08-02)。第 1 輪 P0×3/P1×9/P2×4 → 第 2 版;
-> 第 2 輪 P0×1/P1×11/P2×4 → 第 3 版;**Q10/Q11 裁決新增「選新約不填碼 →
-> 套用預設推薦碼」規則(A10-A12)→ 本版**。已裁決:Q1=(a)、Q2=不設限、
-> Q3=逐筆、P0=方案(b)、Q4=不收斂、Q5=中性文案、Q6=不做召回、Q7=(a)、
-> Q10=保證預設碼存在、Q11=文案不解釋機制。版本差異見 §8。
+> **版本:第 5 版**(2026-08-02)。第 1 輪 P0×3/P1×9/P2×4 → 第 2 版;
+> 第 2 輪 P0×1/P1×11/P2×4 → 第 3 版;Q10/Q11 → 第 4 版;**Q8=(c)/Q9(三條
+> 確認)/Q14=(a)/S9 裁決把「fresh 清空帳本」納入本包(A13-A16)→ 本版**。
+> Q1-Q14 全數裁決完畢,機制規則單一事實來源在
+> `../upline-pairing-lines/rules.md`(M1-M8)。版本差異見 §8。
 >
-> ⚠️ **本版擴大了 feature 範圍**(新增 A10-A12,階段從 **9 個變 11 個**)。
-> 待裁決:Q8(上線時序)、Q9(清空揭露與兩個邊界)、Q12(預設推薦人是否
-> 排除推薦王計數)、Q13(原上代失去下線是否通知)。**須重跑 `/review-plan`。**
+> ⚠️ 階段從 11 個變 **13 個**。開放問題已清空。**須重跑 `/review-plan`(第 3 輪)。**
 
 ## 0. 一句話
 
@@ -18,12 +16,13 @@
 > ⚠️ §0 第 2 版原本寫「保住原本的推薦線與週年日」。查證後**推薦線不受影響**
 > ——`/payuni/prepare` 只在 `renewalMode === 'fresh' && referredByCode` 兩條件
 > 同時成立時才改寫上代(`index.ts:1414`)。extend 的真正價值是**保住累積的
-> 點數與任務進度**(見 §6 Q7),但那條規則屬於另一包、目前尚不存在(§6 Q8)。
+> 點數與任務進度**(Q7)——「fresh 清空帳本」已依 Q8=(c) 納入本包(A13),
+> extend 的價值自本包上線起即成立。
 
 ## 1. 使用者需求
 
 對照規格書 §5.1(失效語意)、§6.2(續約雙模式)——**這兩節與本 feature 直接
-衝突,須在同一個 PR 改寫(§5 階段 11)**。
+衝突,須在同一個 PR 改寫(§5 階段 13)**。
 
 ### 規則(人已逐條拍板,實作不得改動語意)
 
@@ -41,6 +40,10 @@
 | A10 | 續約選**新約(fresh)且未填推薦碼** → **套用平台預設推薦碼**,`referred_by_is_default = true` | ❌ 要改 |
 | A11 | 預設推薦碼解析失敗(未設定/無效/推薦人停權/自我推薦)→ **維持原上代不變 + 告警**,不阻斷金流 | ❌ 新增 |
 | A12 | 預設推薦碼的可用性須為**可見狀態**,不能只靠事後告警 | ❌ 新增 |
+| A13 | 續約選 **fresh → 清空帳本**(不論填碼與否、含填現任上代碼 S9):點數以**沖銷列**作廢(明細封存)、`total_referrals` 歸零、當月桶清空;**歷史月份桶永久保留**(Q14a) | ❌ 新增(Q8c) |
+| A14 | 清空前結帳頁揭露**具體數字**(將作廢點數、累積推薦人數) | ❌ 新增(Q9) |
+| A15 | 補繳中途(本輪已付過 extend)改選 fresh → **二次確認**(含已付筆數金額、效期不退還) | ❌ 新增(Q9) |
+| A16 | 存在**待審提領**時擋下 fresh(建單 400,提示先完成或取消);extend 不受影響 | ❌ 新增(Q9) |
 
 > **A10 的語意**:選新約 = 不要原本的樹了。所以不填碼不等於「維持原狀」,
 > 而是「離開原上代」——比照首購未填碼的既有行為(綁預設推薦人)。
@@ -85,9 +88,25 @@
 **AC-11(A11)** 預設推薦碼未設定/無效/推薦人停權時,小明選新約不填碼 →
 **上代維持 A 不變**,不阻斷付款,並寫入一筆 `system_alerts`。
 
+**AC-12(A13)** 過期會員(餘額 100P、累積 2 人)選 fresh 付款成功 → 可提領
+餘額歸 0(帳本多一筆**負額沖銷列**,原明細全數仍可見)、`total_referrals`
+= 0、當月桶清空、**歷史月份桶原樣保留**。首購 fresh 不產生沖銷列。
+
+**AC-13(A13/S9)** fresh + 填**現任上代**的碼 → 上代不變、樹不變,
+**帳本照樣清空**——清空綁「選 fresh」,不綁「上代有沒有變」。
+
+**AC-14(A16)** 有待審提領時送 fresh 建單 → 400,訊息指向提領;
+同一使用者改選 extend → 200 正常建單。
+
+**AC-15(A15)** `hasPaidAnyBackfill = true` 時切到新約選項 → 顯示二次確認
+(含本輪已付筆數與金額、效期不退還);未確認前不得送單。
+
+**AC-16(A13 + Q14a)** 清空後老下線續約 → 上代 +100P 但任務**不 +1**
+(歷史桶跨清空保留);webhook 對同一筆付款重送 → **不會重複沖銷**(冪等)。
+
 ### 不做什麼
 
-- 不做「上代配對線」(換上代開新線、帳本歸零、樹走訪跳過已離開者)——另案
+- 不做「上代配對線」的**樹結構**部分(節點不搬、走訪跳過不遞補、任務樹檢查)——另案;**帳本清空已依 Q8=(c) 納入本包(A13-A16)**
 - 不做合併訂單(A9)、不設補繳筆數上限(A1)、不為 A8 開例外
 - **不做中途放棄者的召回機制**(Q6 裁決:先上線觀察流失率)
 - **不收斂 `twDate.ts` / `tw-dates.ts` 雙副本**(Q4 裁決)
@@ -156,6 +175,9 @@ renewal: {
   backfillFinalEndDate: string;  // 'YYYY-MM-DD' 補滿後的最終到期日
   expiredForMonths:     number;  // 已過期的完整月數(active 時**固定 0**)
   hasPaidAnyBackfill:   boolean; // 本輪是否已付過補繳(定義見下)
+  freshForfeitPoints:   number;  // 選 fresh 將作廢的可提領點數(A14 揭露)
+  freshForfeitReferrals:number;  // 選 fresh 將歸零的累積推薦人數(A14)
+  hasPendingWithdrawal: boolean; // 有待審提領 → 前端停用 fresh 並說明(A16)
 } | null                          // 從未訂閱過 = null
 ```
 
@@ -165,6 +187,25 @@ renewal: {
 的理由見 §3。
 
 契約兩者都寫進 `supabase/functions/_shared/api-contract.ts`。
+
+### 帳本清空機制(A13-A16,依 Q8=(c) / Q14=(a);規則本體 = rules.md M5/M8)
+
+- **時點:付款成功當下**(`process_successful_payment` 內,
+  `renewal_mode = 'fresh'` 且該使用者已有訂閱紀錄時)。**絕不在建單時**
+  ——建單後可能棄單,提前清空會白白銷毀帳本。
+- **點數:插入一筆負額「沖銷列」**(金額 = 當下可提領餘額)。帳本維持
+  只增不刪、明細全數封存可稽核,`reward_balances` view 的語意不必改。
+  A16 保證清空當下沒有待審提領,故「可提領餘額」= 全部餘額,沖銷後歸 0。
+- **冪等:沖銷列綁本次 `subscription_id`**(存在檢查或唯一約束)——
+  webhook 重送、`repair_orphaned_payments` 重放都不會重複沖銷(AC-16)。
+- **任務**:`total_referrals` 歸 0 + 刪除**當月** key;**其餘月份 key
+  原樣保留**(Q14a——歷史桶就是 pair-history,清掉 = 老下線續約被重新
+  計數 = 刷推薦王 credit 的入口)。
+- **A16 守衛**:`/payuni/prepare` 的 fresh 分支先查待審提領,存在 → 400。
+- **migration 疊放**:清空 migration 的基準 = **階段 1 產出的版本**
+  (user 鎖版),唯一差異 = fresh 沖銷 + 任務歸零——不要再從 wave4 抄,
+  避免在自己的 PR 裡重演基準錯置。
+- **過渡期註記**:樹結構(節點不搬/走訪跳過)仍屬另一包,見 §7 R8。
 
 ### 上代寫入機制:改法 B(A10-A12)
 
@@ -300,7 +341,7 @@ W2 的 `v_referrer1 is null`(已有上代就不進),以及 `resolve_default_refe
 
 > ⚠️ **journey 測試只在 develop→main 晉升 PR 才跑**(30-90 分鐘)。
 > `60_time_scenarios.feature:50-55` 等三檔斷言了「過期超過一年僅能新約」,
-> 漏改的話**不會在階段 1-10 任何一次 CI 被抓到**,而是在晉升 PR 跑到一半才紅
+> 漏改的話**不會在階段 1-12 任何一次 CI 被抓到**,而是在晉升 PR 跑到一半才紅
 > ——是所有測試落點裡發現最晚的一個。本機不能跑 journey,但離線可用
 > `cd e2e/journey && pytest --collect-only -q` 做健全性檢查。
 
@@ -338,7 +379,7 @@ PayUni 回跳)」列入管轄,判準是「需要連續多步才能完成」,與�
 | 契約 | 結論 |
 |---|---|
 | 1. 狀態可從後端查詢 | ✅ `renewal` 即是 |
-| 2. 每一步都有可重入的入口 | ✅ 但要有 e2e 證明(階段 10) |
+| 2. 每一步都有可重入的入口 | ✅ 但要有 e2e 證明(階段 12) |
 | 3. 失敗訊息區分可復原/不可復原,永遠給下一步 | ❌ **要補**——補繳中間筆正是被誤分類成不可復原的可復原狀態 |
 | 4. 外部副作用先驗身分 | ✅ `/payuni/prepare` 走 `requireAuth` |
 
@@ -454,98 +495,35 @@ A10 生效後,「不填碼」的後果從「維持原狀」變成「離開原上
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | `process_successful_payment` 加 user 層級鎖(migration,**基準 = `20260720000001`**) | `api/payment-user-lock.test.ts`(需 DB) | **AC-6**:**用兩條 `npm:postgres@3` 原生連線 + `Promise.allSettled`,比照 `process-payment-concurrency.test.ts:23-29,51-61`**(走 `.rpc()` 的 HTTP 開銷會把執行時間點拉開,測不出 race window)。兩列 `subscriptions` 的 `end_date` **不相同**、第二筆正確接續;既有付款測試全綠 |
-| 2 | `backfillPlan()` 純函式 + `_shared/backfill-cases.ts` | `api/backfill-plan.unit.test.ts`(Deno,免 DB)、`src/utils/twDate.test.ts`(vitest node);共吃同一案例表 | AC-1 三筆錨點/迄日/筆數;`backfillFinalEndDate`、`expiredForMonths` 正確;邊界:跨年、**閏日(2024-02-29)**、**非閏年月底(1/31 → 目標月 30 天)**、剛好今天到期、未滿一年、`endDate === null`、**active 時 `expiredForMonths` 固定 0** |
-| 3 | 後端拆守衛 | `api/renewal-modes.test.ts`(需 DB) | 過期 3 年送 `extend` → 200;**連續打三次真實付款**,三列迄日依序 2025/2026/2027-04-02,前兩次仍 `expired`、第三次 `active`(**AC-1 端到端**);同輪斷言三代獎勵各 3 筆、`task_progress` 不增(**AC-5**)。**既有 `:171-184` 的斷言要反轉,不是刪除** |
-| 4 | **A10/A11:fresh 未填碼套用預設推薦碼** | `api/fresh-default-referrer.test.ts`(需 DB) | **AC-9**:原上代 A、fresh 不填碼 → `referred_by_user_id = P`、`referred_by_code` = 預設碼、**`referred_by_is_default = true`**;**AC-10**:填 A 自己的碼 → 仍是 A(且 `is_default = false`);**AC-11**:預設碼未設定/無效/推薦人停權/自我推薦四種各一例 → **上代維持 A 不變**、建單仍成功(不阻斷金流)、`system_alerts` 有一筆;**S12**:原本無上代的舊會員 fresh 不填碼 → 綁上 P;**S6**:extend 不論填不填碼都不動上代 |
-| 5 | **A12:`/health` 回報預設推薦碼可用性** | `api/health-default-referrer.test.ts`(需 DB) | `defaultReferrer` 三態正確:有效 → `'ok'`;`default_referrer_code` 為 null/空 → `'unset'`;碼不存在或推薦人停權 → `'invalid'`。**不得因此讓 `/health` 失敗**(該端點必須永遠回得了話,見 `index.ts:434-439` 的既有原則) |
-| 6 | 兩支端點回傳 `renewal` | `api/subscriptions-status.test.ts` + `api/payuni-result-renewal.test.ts`(需 DB) | 過期 2 年 1 個月 → `backfillCount:3`、`backfillAmount:3600`、`extendEndDate:'2025-04-02'`、`backfillFinalEndDate:'2027-04-02'`、`expiredForMonths:25`;active → `backfillCount:0`、`expiredForMonths:0`;從未訂閱 → `renewal:null`;已付一筆補繳 → `hasPaidAnyBackfill:true`;**AC-8**:曾 extend 續約、本輪未付款 → `hasPaidAnyBackfill:false` |
-| 7 | `PaymentResult.tsx` 區分補繳中間筆 | `PaymentResult.test.tsx`(vitest + jsdom) | **AC-3**:`completed` 且 `backfillCount>0` → 不啟動輪詢、不顯示逾時錯誤、顯示進度 + 訂單編號 + 保證句 + 兩個 CTA;「稍後再說」導向 `/`;**`orderStatus` 仍 `pending` 時走橋接輪詢,資料到位後切到新分支**;`backfillCount===0` 但非 active → 走原輪詢(不回歸);`renewal` 取得失敗 → 顯示重試而非逾時錯誤 |
-| 8 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 + **新約文案** | `PaymentCheckout.test.tsx`;`e2e/features/payment_checkout.feature` + `common_steps.py` | **AC-4**:過期 3 年時 extend 可見可選;**AC-2** 三個數字全中;**`extendAnchorDay`/`extendEndDay` 顯示的是契約值,不是 `localStorage` 舊值**;`renewal===null` 整塊隱藏;**Q11 文案**:新約選項顯示「不填則不會有推薦人」,且**不出現「預設推薦碼」字樣**;`isAutoReferral` 為 true 時 placeholder 不洩漏原碼。**反轉 `payment_checkout.feature:30-34` 該 scenario 與 `common_steps.py:64-73` 的 step** |
-| 9 | 補繳進度 + 付款後錯誤態 | `PaymentCheckout.test.tsx` | 已付一筆後顯示「已補至 2025-04-02,還差 2 筆」;退化分支**不出現補繳語彙但仍顯示到期日**;`hasPaidAnyBackfill:true` 且抓取失敗 → 重試而非靜默降級 |
-| 10 | 四契約回歸測試 | `e2e/features/renewal_backfill_recovery.feature`(CI `e2e-tests` 軌) | **AC-7**,且**必測這兩個中斷點**:(a) 剛付完第 1 筆、人還停在 `PaymentResult.tsx` 未點任一 CTA 就關閉分頁 → 重新進入應接續;(b) 已補 N 筆中的 M 筆、從不同入口回來 → 結帳頁顯示「還差 X 筆」而非從頭起算 |
-| 11 | journey 測試 + 規格書 + 註解同步 | `cd e2e/journey && pytest --collect-only -q`(離線健全性)+ `python3 scripts/check-spec-drift.py` + **人工核對** | **反轉** `60_time_scenarios.feature:50-55`、`f60_time_scenarios_steps.py:193-205`、`seed_time_machine.py:67`;同步 `e2e/journey/README.md:165`、`docs/e2e-journey-test-design.md:16,229`;§5.1 末條刪除;**§6.2 表格下方散文刪除**;§6.2 表格「適用」欄改寫(**併同修正 fresh 列本來就不準的敘述**);**把 A1-A5、A7、A9 寫進 §5.1/§6.2 正文**;**把 A10-A12 寫進 §7.4 預設推薦人章節**(該節目前只描述首購,須擴寫成「首購 + 續約選新約未填碼」);附錄補一列指向新 migration 與 `backfill-cases.ts`;`useSubscription.ts:9-12` 註解更新 |
+| 1 | `process_successful_payment` 加 user 層級鎖(migration,**基準 = `20260720000001`**) | `api/payment-user-lock.test.ts`(需 DB) | **AC-6**:**用兩條 `npm:postgres@3` 原生連線 + `Promise.allSettled`,比照 `process-payment-concurrency.test.ts:23-29,51-61`**(走 `.rpc()` 測不出 race window)。兩列 `end_date` 不相同、第二筆正確接續;既有付款測試全綠 |
+| 2 | **A13:fresh 清空帳本**(migration,**基準 = 階段 1 產出版**) | `api/fresh-ledger-forfeit.test.ts`(需 DB) | **AC-12**:沖銷列出現、餘額 0、`total_referrals`=0、當月桶清空、**歷史桶原樣**;首購 fresh 無沖銷列;**AC-16**:同一 `subscription_id` 重放不重複沖銷;extend 完全不觸發;**AC-13**:填現任上代碼照樣清空 |
+| 3 | `backfillPlan()` 純函式 + `_shared/backfill-cases.ts` | `api/backfill-plan.unit.test.ts`(Deno,免 DB)、`src/utils/twDate.test.ts`(vitest);共吃同一案例表 | AC-1 三筆錨點/迄日/筆數;`backfillFinalEndDate`、`expiredForMonths`;邊界:跨年、閏日(2024-02-29)、非閏年月底(1/31→30 天月)、剛好今天到期、未滿一年、`endDate === null`、active 時 `expiredForMonths` 固定 0 |
+| 4 | 後端拆守衛 | `api/renewal-modes.test.ts`(需 DB) | 過期 3 年送 `extend` → 200;**連續三筆真實付款**,迄日依序 2025/2026/2027-04-02,前兩次 `expired`、第三次 `active`(**AC-1**);同輪斷言三代獎勵各 3 筆、任務不 +1(**AC-5**)。**既有 `:171-184` 斷言反轉,不是刪除** |
+| 5 | **A10/A11:fresh 未填碼套用預設推薦碼** | `api/fresh-default-referrer.test.ts`(需 DB) | **AC-9**:`referred_by_user_id = P`、**`referred_by_is_default = true`**;**AC-10**:填 A 自己的碼 → 仍是 A 且 `is_default = false`;**AC-11**:四種失效各一例 → 上代維持 A、建單成功、`system_alerts` 一筆;S12:原無上代者 fresh 不填碼 → 綁 P;S6:extend 不動上代 |
+| 6 | **A16:待審提領擋 fresh** | `api/fresh-pending-withdrawal.test.ts`(需 DB) | **AC-14**:有待審提領 → fresh 建單 400、extend 200;提領完成/取消後 fresh 恢復 200 |
+| 7 | **A12:`/health` 回報 `defaultReferrer` 三態** | `api/health-default-referrer.test.ts`(需 DB) | 有效 → `'ok'`;null/空 → `'unset'`;碼不存在或停權 → `'invalid'`;**不得讓 `/health` 失敗**(`index.ts:434-439` 原則) |
+| 8 | 兩支端點回傳 `renewal`(含 A14/A16 新欄位) | `api/subscriptions-status.test.ts` + `api/payuni-result-renewal.test.ts`(需 DB) | 過期 2 年 1 個月 → `backfillCount:3`、`backfillAmount:3600`、`extendEndDate:'2025-04-02'`、`backfillFinalEndDate:'2027-04-02'`、`expiredForMonths:25`;active → 0/0;從未訂閱 → `null`;已付一筆補繳 → `hasPaidAnyBackfill:true`;**AC-8** 反例 → `false`;**`freshForfeitPoints`/`freshForfeitReferrals` 等於現值、`hasPendingWithdrawal` 正確** |
+| 9 | `PaymentResult.tsx` 區分補繳中間筆 | `PaymentResult.test.tsx`(vitest + jsdom) | **AC-3**:`completed` 且 `backfillCount>0` → 不輪詢、不逾時錯誤、顯示進度 + 訂單編號 + 保證句 + 兩個 CTA;「稍後再說」→ `/`;**`orderStatus` pending 時走橋接輪詢再切新分支**;`backfillCount===0` 非 active → 原輪詢(不回歸);`renewal` 失敗 → 重試 |
+| 10 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 + 新約文案 + **A14 清空揭露** | `PaymentCheckout.test.tsx`;`e2e/features/payment_checkout.feature` + `common_steps.py` | **AC-4**、**AC-2** 三數字、`extendAnchorDay/EndDay` 用契約值非 localStorage 舊值、`renewal===null` 隱藏;**Q11 文案**不出現「預設推薦碼」;**A14**:新約選項顯示「將清空 100P、累積 2 人」具體數字,`hasPendingWithdrawal` 時 fresh 停用並說明(**AC-14 前端面**)。**反轉 `payment_checkout.feature:30-34` 與 `common_steps.py:64-73`** |
+| 11 | 補繳進度 + 付款後錯誤態 + **A15 二次確認** | `PaymentCheckout.test.tsx` | 已付一筆後顯示「已補至 2025-04-02,還差 2 筆」;退化分支不出現補繳語彙但含到期日;抓取失敗 → 重試;**AC-15**:`hasPaidAnyBackfill:true` 時切新約 → 二次確認(含已付筆數金額),未確認不得送單 |
+| 12 | 四契約回歸測試 | `e2e/features/renewal_backfill_recovery.feature`(CI `e2e-tests` 軌) | **AC-7** + 兩個必測中斷點:(a) 付完第 1 筆停在 `PaymentResult` 未點 CTA 就關頁 → 重進可接續;(b) 補 M/N 筆後從不同入口回來 → 顯示「還差 X 筆」非從頭起算 |
+| 13 | journey 三檔反轉 + 規格書 + 註解同步 | `cd e2e/journey && pytest --collect-only -q` + `python3 scripts/check-spec-drift.py` + **人工核對** | 反轉 `60_time_scenarios.feature:50-55`、`f60_*_steps.py:193-205`、`seed_time_machine.py:67`;同步 `e2e/journey/README.md:165`、`docs/e2e-journey-test-design.md:16,229`;§5.1 末條刪、**§6.2 散文刪**、§6.2 表改寫(併修 fresh 列);**把 A1-A5/A7/A9 寫進 §5.1/§6.2、A10-A12 寫進 §7.4、A13-A16 寫進 §5.1/§8**(含 R8 過渡行為如實記載,不寫成目標行為);附錄補索引;`useSubscription.ts:9-12` 註解更新 |
 
 **階段 1 先行**:金錢正確性防線,且獨立於其他階段——先補好洞,後面拆守衛時
 才不會有一段「規則已放寬但防線未到位」的窗口。
 
-**階段 11 不能只看 CI 綠燈**:`check-spec-drift.py` 只做常數/路由/列舉/路徑四類
+**階段 13 不能只看 CI 綠燈**:`check-spec-drift.py` 只做常數/路由/列舉/路徑四類
 機械抽取,**不比對自由散文,也不查「內容有沒有新增」**。若只刪不增,規格書會
 從「有一條規則(已過時)」退化成「這塊完全空白」,比修訂前更難溯源——而
 plan.md 是鷹架、PR 前要刪,**規格書是 A1-A9 唯一還留得住的地方**。
 
 ## 6. 開放問題
 
-> Q1-Q3(第 1 輪)、P0 方案、Q4-Q6(第 2 輪)、Q7、**Q10/Q11** 均已裁決,
-> 見 `review.md`。
->
-> **Q10 裁決:保證預設推薦碼永遠存在。** 落實為三層——(1) A12 把可用性做進
-> `/health`,讓它是可見狀態而非事後告警;(2) A11 的降級是「維持原上代 +
-> 告警」,不清成 null(資料還在,人工補正得回來)、不阻斷金流(與
-> `resolve_default_referrer` 既有的「任何例外一律視同無推薦人,不阻斷金流」
-> 一致);(3) 既有的 `system_alerts` 告警保留。
-> 註:`default_referrer_code` 目前只能人工 SQL UPDATE,**沒有 admin UI**
-> 可掛即時驗證,所以第 (1) 層才是主要防線。
->
-> **Q11 裁決:文案不解釋機制。** 只講「不填則不會有推薦人」,不出現
-> 「預設推薦碼」字樣——對使用者而言那就是沒有上一代(見 §4)。
-
-- [x] **Q7 已裁決:(a) 接受現狀,照 A1-A9 實作。**
-
-  第 3 版曾質疑 extend 永遠是劣勢選項(同價或更貴、涵蓋期更短)。人裁決 (a),
-  並指出該質疑的**前提不完整**:比較時只算了「效期 vs 價格」,漏掉帳本。
-
-  **extend 的真正價值 = 保住累積的點數與任務進度**;選新約(fresh)則清空。
-  過期期間下線持續付款、上代照常入帳(§5.1、`pay_referral_generations` 不
-  檢查上線狀態),累積越多,extend 的價值越高——「帳號裡有足夠多的點數與
-  任務完成獎勵,使用者就會願意付錢重啟」。
-
-  ⚠️ **但「fresh 清空帳本」這條規則目前不存在**,它屬於另一包(上代配對線)。
-  Feature 1 單獨上線時 fresh 不會清空,extend 在那段期間仍是劣勢選項。
-  **時序問題見 §6 Q8。**
-
-- [ ] **Q8(新):「fresh 清空帳本」要不要與本 feature 同時上線?**
-
-  Q7 成立的前提是「選 fresh 會清空點數與任務」。該規則屬於另一包
-  (上代配對線,schema 級)。若本 feature 先單獨上線:
-  - extend 在過渡期仍是純劣勢選項,理性使用者全選 fresh
-  - 更糟:使用者會養成「選 fresh 沒差」的認知,另一包上線後突然開始清空,
-    是很傷的預期落差
-
-  方向:
-  (a) 兩包合併上線——但另一包是 schema 級,會拖很久
-  (b) 本 feature 先上,接受過渡期 extend 沒人選
-  (c) **把「fresh 清空帳本」單獨抽出來與本 feature 同時上** ——它不依賴
-      「線」的概念,只需要一個帳本世代標記(或 reset 時間戳),比整包小很多
-  (d) 調換順序,另一包先上
-
-  **傾向 (c)**:歸零規則是 extend 存在意義的來源,與補繳制是同一個產品邏輯
-  的兩半,拆開會讓上線初期的 extend 變成死選項。
-
-- [ ] **Q12(新,A10 的連帶後果):預設推薦人 P 要不要排除在推薦王計數之外?**
-
-  A10 生效後,每個「選新約不填碼」的人都掛到 P 底下。若對 P 是全新配對,
-  P 的 `task_progress` +1;當月滿 8 位就發一張「免費續約一年」credit
-  (`reconcile_king_credits`)。若 P 是平台自己的帳號,等於平台持續發 credit
-  給自己。是刻意的還是副作用?若不是,P 需要被排除在推薦王計數(甚至三代
-  獎金)之外——那會是 `apply_referral_side_effects` 的新分支,不在本版範圍。
-
-- [ ] **Q13(新,A10 的連帶後果):原上代 A 失去下線時要不要通知?**
-
-  A10 讓「換走」的門檻大幅降低——以前要主動填碼才會換,現在什麼都不填就會。
-  A 未來拿不到這個下線的三代獎金,而且完全不會被通知。這是既有 fresh 換線
-  就有的性質,但觸發頻率會顯著上升。本版**不做通知**;若要做,屬另案。
-
-- [ ] **Q9(新):選 fresh 前的清空揭露,以及兩個邊界**
-
-  若 Q8 採 (a)/(c),結帳頁必須在使用者按下「新約」**之前**明確顯示將清空
-  多少點數與哪些任務進度。這比第 2 輪 Q5 問的「要不要說明補繳價值」更重要
-  ——**這才是可以誠實陳述的補繳價值**。兩個邊界要定義:
-  1. **補繳中途改選**:付了 2 筆 extend(2,400)保帳本,第 3 筆改選 fresh
-     → 點數仍歸零。等於花 2,400 買兩年效期然後把帳本丟了,UI 必須在那一刻警告。
-  2. **待審提領**:過期期間送出提領、審核中,選 fresh 歸零時那筆如何處置?
-     第 1 輪 Q2 答過「作廢但提醒」,但當時觸發條件是「換上代」,改為「選 fresh」
-     後範圍大得多。
+**無——Q1 至 Q14 全數裁決完畢。** 索引見
+`../upline-pairing-lines/rules.md`「已裁決索引」;逐題溯源見 `review.md`
+各輪處置節。機制規則的單一事實來源是 rules.md 的 M1-M8;「阿凱的七年」
+完整時間軸例子(含 Q9 三道防線、S9、Q14a 跨清空、B 樹下線歸屬、A10/A11、
+credit/A8)已由人逐點確認。
 
 ## 7. 風險與回滾
 
@@ -565,21 +543,28 @@ Q3 裁決逐筆後,過期 N 年要重複 N 次「結帳頁 → PayUni → 結果
 **R3(中):規格書散文殘留造成自我矛盾,且機械檢查抓不到。** 緩解:階段 9 人工核對。
 
 **R4(中):舊行為斷言散在 5 個檔案,漏改的最晚在晉升 PR 才紅。**
-緩解:階段 8(前端 e2e)與階段 11(journey 三檔 + 兩份文件)分別承接。
+緩解:階段 10(前端 e2e)與階段 13(journey 三檔 + 兩份文件)分別承接。
 
-**R5(低):既有測試斷言反轉時改錯方向(整個刪掉)。** 緩解:階段 3、8 明列
+**R5(低):既有測試斷言反轉時改錯方向(整個刪掉)。** 緩解:階段 4、10 明列
 「反轉而非刪除」。
 
 **R6(高,A10 新增):`referred_by_is_default` 設錯值會洩漏預設推薦碼。**
 W3 目前寫死 `false`;未填碼那一支若沿用,`/profile` 的 `isAutoReferral` 會是
 false,前端就把使用者不該知道的預設推薦碼顯示在 placeholder 上——直接違反
-Q11。緩解:階段 4 的 AC-9 明確斷言 `referred_by_is_default = true`。
+Q11。緩解:階段 5 的 AC-9 明確斷言 `referred_by_is_default = true`。
 
 **R7(中,A10 新增):「不填碼」的語意反轉,老使用者會被沉默換樹。**
 A10 之前不填碼 = 維持原上代;之後 = 離開原上代。同一個操作、相反的結果。
 緩解:階段 8 的 Q11 文案(「不填則不會有推薦人」)必須在選項卡片上、
 在使用者按下付款之前就看得到。**這條的代價是不可逆的**——推薦樹歸屬一旦
 寫下去,只能人工補正。
+
+**R8(中,Q8=(c) 已知過渡狀態):清空先上、樹行為未上。**
+本包上線後、另一包上線前:fresh 清空 ✅ 生效,但現況邊表仍讓下線實質跟著
+換樹者移動(rules.md M4 現況)、發獎也還沒有「在不在樹上」的檢查(M6 的
+走訪屬另一包)——換樹者過渡期仍會收到舊下線的三代獎勵;任務面則由 Q14a
+的歷史桶擋住重複計數。此為人審接受的過渡狀態。緩解:階段 13 把過渡行為
+**如實**寫進規格書(不寫成目標行為),另一包上線時一併修訂。
 
 ### 回滾
 
@@ -594,6 +579,20 @@ A10 之前不填碼 = 維持原上代;之後 = 離開原上代。同一個操作
 > 只能走新約或人工補效期。真要回滾必須同時決定怎麼處置他們。
 
 ## 8. 版本差異
+
+### 第 4 版 → 第 5 版(依 Q8(c)/Q9/Q14(a)/S9 裁決 + 兩輪例子人審確認)
+
+| 項目 | 第 4 版 | 本版 |
+|---|---|---|
+| **A13** | 清空屬另一包 | **納入本包**:fresh 清空(沖銷列/明細封存/歷史桶保留),S9 也清空 |
+| **A14-A16** | Q9 三條僅為建議 | 人已確認,成文為規則:揭露具體數字/二次確認/待審提領擋 fresh |
+| 契約 | 7 欄 | +`freshForfeitPoints`/`freshForfeitReferrals`/`hasPendingWithdrawal` |
+| §2 | — | 新增「帳本清空機制」:付款成功時清、絕不在建單時;沖銷列冪等綁 `subscription_id`;migration 基準 = 階段 1 產出版 |
+| §5 | 11 階段 | **13 階段**(新增階段 2 清空 migration、階段 6 A16 守衛;A14/A15 併入 10/11) |
+| §6 | Q8/Q9/Q12/Q13 開放 | **全數裁決,開放問題清空** |
+| §7 | R1-R7 | 新增 **R8**(清空先上、樹行為未上的過渡狀態) |
+| 驗收 | AC-1~11 | +**AC-12~16** |
+| 依據 | — | 機制規則落檔 `../upline-pairing-lines/rules.md`(M1-M8);「阿凱的七年」例子經人逐點確認 |
 
 ### 第 3 版 → 第 4 版(依 Q10/Q11 裁決)
 
