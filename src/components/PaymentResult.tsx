@@ -192,13 +192,12 @@ export function PaymentResult() {
     !isMemberActive &&
     orderResult?.orderStatus === 'completed' &&
     (slimRenewal?.backfillCount ?? 0) > 0;
-  // renewal 取得失敗：查詢失敗（無 orderResult）或訂單已完成但 renewal
-  // 缺漏——降級為「付款成功＋重試」，不落回逾時錯誤畫面。
+  // renewal 取得失敗 = 「結果查詢本身失敗」——降級為「付款成功＋重試」，
+  // 不落回逾時錯誤畫面。注意：completed 回應裡 renewal 缺漏**不算失敗**，
+  // 走原開通輪詢——那是舊後端形狀（部署 skew：前端先上、Edge 後上）或
+  // 舊 mock，非補繳使用者絕不能因此從「開通中」退化成降級畫面。
   const renewalUnavailable =
-    resolvedStatus === 'success' &&
-    !isMemberActive &&
-    ((resultFetchFailed && !orderResult) ||
-      (orderResult?.orderStatus === 'completed' && !slimRenewal));
+    resolvedStatus === 'success' && !isMemberActive && resultFetchFailed && !orderResult;
   // 橋接中：導回已知成功但 orderStatus 還沒收斂——等上面的橋接輪詢，
   // 先不啟動 45 秒開通輪詢。
   const awaitingBridge =

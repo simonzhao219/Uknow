@@ -143,6 +143,23 @@ describe('PaymentResult 補繳中間筆', () => {
     expect(h.refreshUser).toHaveBeenCalled();
   });
 
+  it('completed 但回應缺 renewal 欄位時，走原開通輪詢而非降級畫面', async () => {
+    // 舊後端形狀（部署 skew）或舊 mock：completed 回應沒有 renewal。
+    // 非補繳使用者不能因此從「開通中」退化成降級畫面（e2e 開通兩情境
+    // 的迴歸防線）。
+    vi.useFakeTimers();
+    h.apiRequestJson.mockResolvedValue(resultResponse('completed', null));
+    render(<PaymentResult />);
+    await act(async () => {});
+
+    expect(screen.getByTestId('payment-result-activating')).toBeTruthy();
+    expect(screen.queryByTestId('payment-result-renewal-unavailable')).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(h.refreshUser).toHaveBeenCalled();
+  });
+
   it('renewal 取不到時顯示付款成功與重試，不落入逾時錯誤畫面', async () => {
     h.apiRequestJson
       .mockRejectedValueOnce(new Error('network'))
