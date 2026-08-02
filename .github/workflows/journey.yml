@@ -125,9 +125,12 @@ jobs:
           [ -n "$BRANCH_REF" ] || BRANCH_REF="$(grep -oPm1 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env || true)"
           ANON_KEY="$(extract 'ANON_KEY')"
           SERVICE_KEY="$(extract 'SERVICE_ROLE_KEY')"
-          # db push 是 DDL，走直連（NON_POOLING）最穩；沒有才退回 pooler
-          DB_URL="$(extract 'POSTGRES_URL_NON_POOLING')"
-          [ -n "$DB_URL" ] || DB_URL="$(extract 'POSTGRES_URL')"
+          # db push 走 pooler URL（POSTGRES_URL）：直連 URL（NON_POOLING，
+          # db.<ref>.supabase.co）只有 IPv6，GitHub runner 沒有 IPv6 路由，
+          # 2026-08-02 run 30761819572 實測 dial 直接 unreachable；CLI 的
+          # 錯誤訊息也明示改用 IPv4 pooler。
+          DB_URL="$(extract 'POSTGRES_URL')"
+          [ -n "$DB_URL" ] || DB_URL="$(extract 'POSTGRES_URL_NON_POOLING')"
 
           # 硬斷言：解析不到就當場失敗。傳空字串下去只會讓每個情境
           # 靜默 skip，然後整場「成功」——那比紅燈危險得多。
