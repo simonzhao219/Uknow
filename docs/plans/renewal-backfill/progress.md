@@ -1,21 +1,21 @@
 # 補繳式續約(renewal-backfill)實作進度
 
 分支:`feature/renewal-backfill`(base:`origin/develop` @ `0bc3edf`)
-規劃書:`./plan.md`(**第 2 版**)|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(**第 3 版**)|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `process_successful_payment` 加 user 層級鎖(migration) | ⬜ 未開始 | | |
+| 1 | `process_successful_payment` 加 user 層級鎖(migration,**基準 = `20260720000001`**) | ⬜ 未開始 | | |
 | 2 | `backfillPlan()` 純函式 + `_shared/backfill-cases.ts` 共用案例表 | ⬜ 未開始 | | |
 | 3 | 後端拆守衛(`/payuni/prepare` 移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
-| 4 | `/subscriptions/status` 回傳 `renewal` 區塊 | ⬜ 未開始 | | |
+| 4 | **兩支端點**回傳 `renewal`(`/subscriptions/status` + `/payuni/result/:tradeNo`) | ⬜ 未開始 | | |
 | 5 | `PaymentResult.tsx` 區分補繳中間筆與開通收斂延遲 | ⬜ 未開始 | | |
 | 6 | 前端接 `useSubscription()` + 拆 `canExtend` + 揭露卡片 | ⬜ 未開始 | | |
 | 7 | 補繳進度顯示 + 付款後錯誤態重試 | ⬜ 未開始 | | |
 | 8 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
-| 9 | 規格書 §5.1 / §6.2 + `useSubscription.ts` 過時註解同步 | ⬜ 未開始 | | |
+| 9 | journey 三檔反轉 + 規格書 §5.1/§6.2(**刪除並補寫新規則**)+ 過時註解同步 | ⬜ 未開始 | | |
 
 > 階段 1 先行是刻意的:它是金錢正確性防線且獨立於其他階段,先補好洞,
 > 後面拆守衛時才不會有一段「規則已放寬但防線未到位」的窗口。
@@ -24,26 +24,22 @@
 
 ## 目前位置與下一步
 
-**第 2 輪審查已完成**(`review.md` 後半段):P0×1、P1×11、P2×4。
+**規劃書已改寫為第 3 版**,依第 2 輪審查(P0×1/P1×11/P2×4)與人審裁決:
+P0=方案(b) 擴充 `/payuni/result/:tradeNo`、Q4=不收斂雙副本、Q5=中性文案、
+Q6=不做召回。P1 十一項與 P2 四項全數修訂,無豁免。
 
-第 1 輪三個 P0 的修訂**全數被確認有效**。第 2 輪唯一的 P0 是**同一類缺口
-換一個檔案復發**:`PaymentResult.tsx` 需要的 `renewal` 沒有任何資料流送達
-(系統/架構/需求三個視角獨立發現)。架構視角另補一個更隱蔽的陷阱——若直接
-掛 `useSubscription()`,它的 stale-while-revalidate 會在**最後一筆**補繳時
-用付款前的舊快取,把剛付完、已經 active 的使用者導向「還差 1 筆」。
+**下一步:重跑 `/review-plan renewal-backfill` 產生第 3 輪審查 → 停,等人審。**
 
-**卡在等人裁決第 2 輪處置**,其中 P0 有兩個方案要選:
-- (a) 掛 `useSubscription()` + 強制 `refresh()` 繞過 SWR 快取
-- (b) 擴充 `GET /payuni/result/:tradeNo` 回傳精簡版 `renewal`
-
-另有 Q4(twDate 雙副本)、Q5(揭露文案)、Q6(中途放棄者召回)待裁決。
-
-下一步(需人在 `review.md`「第 2 輪處置」節勾選後才動):
-修訂 plan.md 第 3 版 → 重跑 `/review-plan` → 再等人審。
+⚠️ **第 3 版新增一個開放問題 Q7,需要人裁決,且它不是實作細節**:
+查證後 extend 對使用者可能**永遠是劣勢選項**——推薦線不受 fresh 影響
+(`index.ts:1414` 只在有填新推薦碼時才改寫上代),週年日在系統中沒有下游
+作用,所以 fresh 在所有情境下都不比 extend 貴、涵蓋期都不短。這不推翻
+A1-A9(照舊實作),但意味著補繳制可能是一條沒有人會理性選擇的路徑。
+Q7 若裁決為 (b)/(c),本規劃的階段組成會大幅改變。
 
 實作只能由人親自打 `/tdd-implement renewal-backfill` 啟動。
 
-### 第 2 輪特別要記住的三條(修訂時容易漏)
+### 實作時特別要記住的三條(第 2 輪審查抓出,已進第 3 版)
 
 1. **migration 基準版本是 `20260720000001_wave4_guards.sql:383-495`,不是
    `20260718000001`**。兩版差在 `apply_referral_side_effects` 的第三個參數
@@ -67,8 +63,15 @@
 
 ## 框架摩擦
 
-- 第 1 版規劃書把「付款後回到結帳頁」寫進 AC-3,實際上 PayUni 導回落在
+- 第 1 版把「付款後回到結帳頁」寫進 AC-3,實際上 PayUni 導回落在
   `/payment/result`。規劃時只讀了 `/payuni/prepare` 與 `process_successful_payment`,
-  沒有往下追導回的落地頁,四視角審查才抓到(P0-1)。
+  沒有往下追導回的落地頁,四視角審查才抓到(第 1 輪 P0-1)。
   **可複用的教訓:動金流流程時,「錢進去」與「人回來」是兩條要分別追的路徑,
-  只追前者會漏掉使用者實際看到的畫面。** 若再犯第二次就整併進 friction-log。
+  只追前者會漏掉使用者實際看到的畫面。**
+
+- **同一類缺口在同一個 feature 裡犯了兩次**:第 1 輪 P0-2 指出「規劃寫了新的
+  目標行為,但沒設計資料怎麼送到那個畫面」(PaymentCheckout);第 2 版修好它
+  之後,第 2 輪 P0 在 `PaymentResult.tsx` 上抓到**完全一樣**的缺口,三個視角
+  獨立發現。**教訓:被指正一類錯誤後,要對同一份產出做同類掃描,不能只修
+  被點名的那一處**(這正是 `/fix-bug` 的「同類掃描」該推廣到規劃階段)。
+  已犯兩次——**若第三輪再出現同型缺口,整併進 `docs/plans/friction-log.md`**。
