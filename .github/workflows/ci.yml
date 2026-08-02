@@ -445,6 +445,21 @@ jobs:
             exit 1
           fi
           echo "OK:只有新增 migration"
+      # supabase_migrations.schema_migrations 以**數字版本**為主鍵（不是檔名）,
+      # 同號兩支檔案在字典序上看似有先後,實際上第二支一插入就 PK 衝突,
+      # 整批 migration 套用中斷（2026-08-02 PR #188 實測:duplicate key
+      # value violates unique constraint "schema_migrations_pkey"）。
+      - name: migration 版本號不得重複
+        run: |
+          set -euo pipefail
+          dups=$(ls supabase/migrations/ | grep -E '^[0-9]+_' | cut -d_ -f1 | sort | uniq -d || true)
+          if [ -n "$dups" ]; then
+            echo "::error::migration 版本號重複——schema_migrations 以數字版本為主鍵,第二支套用時直接 PK 衝突"
+            for v in $dups; do ls supabase/migrations/ | grep "^${v}_"; done
+            echo "修法:把其中一支改成未被占用的版本號(通常整支改名往後挪一號,連同其中的相依順序一起確認)"
+            exit 1
+          fi
+          echo "OK:版本號無重複"
 
   # 唯一該列入 branch protection required checks 的項目。
   # 逐條把 job 加進 required 清單會漂移——2026-07-25 的 PR #109 就是這樣
