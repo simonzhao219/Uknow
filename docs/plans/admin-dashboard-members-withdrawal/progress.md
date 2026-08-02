@@ -31,8 +31,8 @@
 | 2.3 | `withdrawal_events`（含 RLS/revoke）+ 狀態機改寫 | ✅ 綠 | `f534441` | `07620cc` |
 | 2.4 | 批次標記已匯款（逐筆 `bank_ref` + savepoint 隔離） | ✅ 綠 | `f115f7e` | `5f78979` |
 | 2.5 | 列表分頁／彙總／篩選／events | ✅ 綠 | `402e56f` | `29104c5` |
-| 2.6 | 退件理由端到端（含收掉手抄型別） | 🟡 紅燈已驗，綠燈待 CI | `98c71e4` | （本次 commit） |
-| 2.7 | 作業台前端（同屏＋複製＋批次＋分頁＋CSV＋手機邊界） | ⬜ 未開始 | | |
+| 2.6 | 退件理由端到端（含收掉手抄型別） | ✅ 綠 | `98c71e4` | `dff16ba` |
+| 2.7 | 作業台前端（同屏＋複製＋批次＋分頁＋CSV＋手機邊界） | 🟡 紅燈已驗（本機） | （本次 commit） | |
 | 2.8 | 會員端顯示退件理由 | ⬜ 未開始 | | |
 | 2.9 | 入口 badge（待處理筆數） | ⬜ 未開始 | | |
 
@@ -69,16 +69,33 @@
 **已完成 11 階段。** 階段 2.5 紅燈 `402e56f` 判定 `197 passed / 5 failed`
 （範圍乾淨，既有 197 支未受影響），綠燈 `29104c5` 判定 `202 passed / 0 failed`。
 
-進行中：階段 2.6，紅燈 `98c71e4` 判定 `202 passed / 3 failed`——形狀與預期
-一致（既有 202 支不動，3 支新測全紅在 `undefined`）。三條斷言分別釘住
-「退件理由到得了會員面前」「代為結案要誠實揭露」「本人查收不得誤標」。
+**已完成 12 階段。** 階段 2.6 紅燈 `98c71e4` 判定 `202 passed / 3 failed`
+（形狀與預期一致），綠燈 `dff16ba` 判定 `205 passed / 0 failed`。綠燈同時收掉
+plan §2.4 的順手項：`WithdrawalSection.tsx` 的手抄 `WithdrawalRecord` 改 import
+`@contract`——契約這一步長出 `note` 與 `completedByAdmin`，抄本不會跟著長，而
+**多出來的欄位對元件只是「沒讀」、`tsc` 不會叫**，正是契約要防的靜默漂移。
 
-綠燈同時收掉 plan §2.4 的順手項：`WithdrawalSection.tsx` 手抄了一份
-`WithdrawalRecord`，與契約重複。時機是現在——契約這一步要長出 `note` 與
-`completedByAdmin`，抄本不會跟著長，而**多出來的欄位對元件只是「沒讀」，
-`tsc` 不會叫**。那正是契約要防的靜默漂移，留到 2.8 等於明知會歪還放兩階段。
+進行中：階段 2.7（作業台前端），13 條測試本機判定 **12 failed / 1 passed**。
 
-剩餘：2.7–2.9、3.1–3.4、4.1。
+那 1 條綠的是「沒有任何申請時顯示空態」——**它本來就是既有行為**，不是新
+功能被提前實作。如實記錄：這條在本階段是 characterization，不是紅轉綠的證據。
+
+紅燈 commit 同時帶了**最小 stub**（元件改吃注入的 `loadWithdrawals` /
+`updateStatus` / `batchMarkPaid`，`AdminDashboard` 補上三個 module-level
+loader）。這是 pre-commit 靜態閘門的明文要求:「紅燈 = 編譯過、斷言失敗」——
+測試引用尚不存在的 props 會讓 `tsc` 紅，而型別紅燈與斷言紅燈混在一起就分不清
+哪個是真訊號。順帶把 `useNotification` 拿掉：元件測試不該為了 toast 去包整個
+Provider，而錯誤態本來就該渲染在畫面上（三態要求之一）。
+
+剩餘：2.7（實作）、2.8–2.9、3.1–3.4、4.1。
+
+### 階段 2.7 需要先抽取的第二個元件內私有函式
+
+`useMediaQuery` 目前是 `ReferralTreeView.tsx:97` 的檔內私有函式，沒有 export。
+W8（手機只鎖「標記已匯款」）需要它。這與階段 2.2 的 `copyText` 是**同一個
+模式**——plan §4 點名了 `copyText` 卻沒點名這個，但理由完全一樣:「復用不先
+抽取就會變成複製貼上」。抽到 `src/hooks/useMediaQuery.ts`，`ReferralTreeView`
+一併改成 import。
 
 ### ⚠️ 階段 2.4 的紅燈證據品質低於其他階段
 

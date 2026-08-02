@@ -7,6 +7,45 @@ import { MemberManagement } from './admin/MemberManagement';
 import { SystemNotifications } from './admin/SystemNotifications';
 import { SystemAlerts } from './admin/SystemAlerts';
 import { AdminSetup } from './admin/AdminSetup';
+import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import type { AdminWithdrawalsResponse } from '@contract';
+import type { WithdrawalQuery } from './admin/WithdrawalManagement';
+
+// 取數／送出走這裡、畫面只吃 props——與 MemberManagement 餵 IdReviewQueue
+// 的作法一致：元件測試才不用替身掉整個網路層。
+async function loadWithdrawals(params: WithdrawalQuery) {
+  const qs = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+  if (params.status !== 'all') qs.set('status', params.status);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  if (params.search) qs.set('search', params.search);
+  const res = await apiRequestJson<AdminWithdrawalsResponse>(
+    buildApiUrl(`/admin/withdrawals?${qs}`),
+  );
+  return res.data;
+}
+
+async function updateWithdrawalStatus(
+  id: string,
+  status: 'awaiting_collection' | 'rejected' | 'completed',
+  note?: string,
+  bankRef?: string,
+) {
+  await apiRequestJson(buildApiUrl(`/admin/withdrawals/${id}/status`), {
+    method: 'POST',
+    body: JSON.stringify({ status, note, bankRef }),
+  });
+}
+
+async function batchMarkPaid(items: { id: string; bankRef?: string }[]) {
+  const res = await apiRequestJson<{
+    data: { succeeded: string[]; failed: { id: string; error: string }[] };
+  }>(buildApiUrl('/admin/withdrawals/batch-mark-paid'), {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+  return res.data;
+}
 
 export function AdminDashboard() {
   return (
@@ -40,7 +79,11 @@ export function AdminDashboard() {
         </TabsList>
 
         <TabsContent value="withdrawals">
-          <WithdrawalManagement />
+          <WithdrawalManagement
+            loadWithdrawals={loadWithdrawals}
+            updateStatus={updateWithdrawalStatus}
+            batchMarkPaid={batchMarkPaid}
+          />
         </TabsContent>
 
         <TabsContent value="members">

@@ -107,11 +107,37 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
   );
 }
 
-export function WithdrawalManagement() {
-  const { showSuccess, showToast } = useNotification();
+export interface WithdrawalQuery {
+  status: string;
+  from?: string;
+  to?: string;
+  search?: string;
+  limit: number;
+  offset: number;
+}
 
+export interface WithdrawalManagementProps {
+  loadWithdrawals: (params: WithdrawalQuery) => Promise<AdminWithdrawalsResponse['data']>;
+  updateStatus: (
+    id: string,
+    status: 'awaiting_collection' | 'rejected' | 'completed',
+    note?: string,
+    bankRef?: string,
+  ) => Promise<void>;
+  batchMarkPaid: (
+    items: { id: string; bankRef?: string }[],
+  ) => Promise<{ succeeded: string[]; failed: { id: string; error: string }[] }>;
+}
+
+const PAGE_SIZE = 50;
+
+export function WithdrawalManagement({
+  loadWithdrawals,
+  updateStatus: submitStatus,
+}: WithdrawalManagementProps) {
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [rejectTarget, setRejectTarget] = useState<AdminWithdrawalRecord | null>(null);
@@ -120,14 +146,12 @@ export function WithdrawalManagement() {
 
   const fetchWithdrawals = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
-      const qs = statusFilter !== 'all' ? `?status=${statusFilter}` : '';
-      const result = await apiRequestJson<AdminWithdrawalsResponse>(
-        buildApiUrl(`/admin/withdrawals${qs}`),
-      );
-      if (result.success) setWithdrawals(result.data.withdrawals);
+      const data = await loadWithdrawals({ status: statusFilter, limit: PAGE_SIZE, offset: 0 });
+      setWithdrawals(data.withdrawals);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '無法取得提領申請', 'error');
+      setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
     } finally {
       setIsLoading(false);
     }
@@ -145,23 +169,10 @@ export function WithdrawalManagement() {
   ) => {
     setProcessingId(record.id);
     try {
-      const result = await apiRequestJson<{ success: boolean; error?: { message: string } }>(
-        buildApiUrl(`/admin/withdrawals/${record.id}/status`),
-        { method: 'POST', body: JSON.stringify({ status, note }) },
-      );
-      if (result.success) {
-        showSuccess(
-          status === 'awaiting_collection' ? '已標記匯款完成' : '已退件',
-          status === 'awaiting_collection'
-            ? `${record.userName} 的提領已轉為待查收`
-            : `${record.userName} 的點數已退回`,
-        );
-        await fetchWithdrawals();
-      } else {
-        showToast(result.error?.message ?? '狀態更新失敗', 'error');
-      }
+      await submitStatus(record.id, status, note);
+      await fetchWithdrawals();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '狀態更新失敗', 'error');
+      setLoadError(err instanceof Error ? err.message : '狀態更新失敗');
     } finally {
       setProcessingId(null);
     }
