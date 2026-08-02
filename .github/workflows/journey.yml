@@ -172,10 +172,18 @@ jobs:
 
       # ------------------------------------------------------------------
       # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
-      #    GoTrue email 限流放寬（GUI signUp 會發 OTP 郵件，內建 SMTP
-      #    額度極低；OTP 實際由 Admin API 取得，郵件收不收得到無所謂）
+      #    GoTrue 寄信改走 no-op send-email hook。
+      #
+      #    為什麼需要 hook（2026-08-02 run 30762264071 實測）：hosted
+      #    GoTrue 用內建 email 服務時，(a) 直接拒收 example/test 保留
+      #    網域（error_code=email_address_invalid）——journey 的
+      #    @uknow-journey.test 假帳號連 signup 都進不去；(b) 不掛自訂
+      #    寄送管道不准調 rate_limit_email_sent（401 Custom SMTP
+      #    required）。掛上 hook 後寄信不再經內建 mailer，兩個限制一起
+      #    解除；OTP 本來就由 Admin generate_link 取得，信件內容無所謂。
+      #    sink 函數用 psql 建在拋棄式分支上，不進 migration、不碰正式站。
       # ------------------------------------------------------------------
-      - name: 設定分支（函式 secrets 與 auth 限流）
+      - name: 設定分支（函式 secrets、email sink hook、auth 限流）
         run: |
           set -euo pipefail
           supabase secrets set --project-ref "${{ steps.branch.outputs.ref }}" \
@@ -184,13 +192,34 @@ jobs:
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
             FRONTEND_URL="http://localhost:3100"
-          # 失敗時要看得到狀態碼與回應——之前 -sf 吞掉一切，警告完全盲目
-          # （2026-08-02 run 30761921729 只知道「失敗了」，不知道為什麼）。
-          resp="$(curl -sS -w '\n%{http_code}' -X PATCH \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
-            -d '{"rate_limit_email_sent": 100}' || true)"
+
+          psql "$JOURNEY_BRANCH_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create or replace function public.journey_email_sink(event jsonb)
+            returns jsonb language sql as 'select ''{}''::jsonb';
+          grant usage on schema public to supabase_auth_admin;
+          grant execute on function public.journey_email_sink(jsonb) to supabase_auth_admin;
+          SQL
+
+          patch_auth() {
+            curl -sS -w '\n%{http_code}' -X PATCH \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
+              -d "$1" || true
+          }
+
+          # hook 是註冊能不能動的前提——失敗就硬停，帶回應失敗
+          resp="$(patch_auth '{"hook_send_email_enabled": true, "hook_send_email_uri": "pg-functions://postgres/public/journey_email_sink"}')"
+          code="${resp##*$'\n'}"
+          if [ "$code" != "200" ]; then
+            echo "::error::send-email hook 設定失敗（HTTP ${code}）——GUI 註冊將全滅:"
+            printf '%s\n' "$resp" | head -5
+            exit 1
+          fi
+          echo "send-email hook 已啟用"
+
+          # 限流放寬失敗降級為警告：skeleton 用不到，full 的 30 人建樹才會撞
+          resp="$(patch_auth '{"rate_limit_email_sent": 100}')"
           code="${resp##*$'\n'}"
           if [ "$code" != "200" ]; then
             echo "::warning::auth rate limit 調整失敗（HTTP ${code}）——30 人建樹可能撞 email 限流"
