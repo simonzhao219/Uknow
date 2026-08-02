@@ -184,11 +184,18 @@ jobs:
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
             FRONTEND_URL="http://localhost:3100"
-          curl -sf -X PATCH \
+          # 失敗時要看得到狀態碼與回應——之前 -sf 吞掉一切，警告完全盲目
+          # （2026-08-02 run 30761921729 只知道「失敗了」，不知道為什麼）。
+          resp="$(curl -sS -w '\n%{http_code}' -X PATCH \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
-            -d '{"rate_limit_email_sent": 100}' || echo "::warning::auth rate limit 調整失敗——30 人建樹可能撞 email 限流"
+            -d '{"rate_limit_email_sent": 100}' || true)"
+          code="${resp##*$'\n'}"
+          if [ "$code" != "200" ]; then
+            echo "::warning::auth rate limit 調整失敗（HTTP ${code}）——30 人建樹可能撞 email 限流"
+            printf '%s\n' "$resp" | head -5
+          fi
 
       # 分支是從 main 的 migrations 長出來的,但 Edge Function 不會自動
       # 跟上——不部署就是拿舊版函式測新版程式碼,測了也不算數。
@@ -196,6 +203,40 @@ jobs:
         run: |
           supabase functions deploy api \
             --project-ref "${{ steps.branch.outputs.ref }}" --no-verify-jwt
+
+      # GUI 註冊掛掉時只看得到「30 秒沒等到 OTP 框」——toast 早就消失，
+      # 錯誤原因蒸發（2026-08-02 run 30761921729）。先用 REST 直接探測
+      # signup：會失敗就在這裡帶著 GoTrue 的真實回應失敗，不要讓 55 個
+      # 情境去撞一個必死的註冊入口。探測帳號當場刪掉，不留殘留。
+      - name: auth 註冊健檢（signup 探測）
+        run: |
+          set -euo pipefail
+          BASE="https://${{ steps.branch.outputs.ref }}.supabase.co"
+          echo "GoTrue settings（節錄）:"
+          curl -sS "$BASE/auth/v1/settings" -H "apikey: $JOURNEY_SUPABASE_ANON_KEY" \
+            | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({k:s.get(k) for k in ("disable_signup","mailer_autoconfirm","external")}, ensure_ascii=False)[:500])' || true
+
+          PROBE_EMAIL="e2e+authprobe-${{ github.run_id }}@uknow-journey.test"
+          resp="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/auth/v1/signup" \
+            -H "apikey: $JOURNEY_SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
+            -d "{\"email\":\"$PROBE_EMAIL\",\"password\":\"Probe!Aa12345678\"}")"
+          code="${resp##*$'\n'}"
+          body="${resp%$'\n'*}"
+          if [ "$code" != "200" ]; then
+            echo "::error::signup 探測失敗（HTTP ${code}）——GUI 註冊必然全滅，先修這個:"
+            printf '%s\n' "$body" | head -5
+            exit 1
+          fi
+          echo "signup 探測通過（HTTP 200）"
+
+          # 清掉探測帳號（id 從回應撈；signup 回應頂層即 user 物件）
+          probe_id="$(printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or d.get("user",{}).get("id") or "")')"
+          if [ -n "$probe_id" ]; then
+            curl -sS -X DELETE "$BASE/auth/v1/admin/users/$probe_id" \
+              -H "apikey: $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Authorization: Bearer $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" > /dev/null \
+              || echo "::warning::探測帳號刪除失敗（$PROBE_EMAIL）——不影響測試，分支測後即刪"
+          fi
 
       # ------------------------------------------------------------------
       # 3. 跑套件
