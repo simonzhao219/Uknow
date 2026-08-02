@@ -5,6 +5,7 @@ import { RewardStats } from './reward/RewardStats';
 import { WithdrawalSection } from './reward/WithdrawalSection';
 import { WithdrawalProcess } from './reward/WithdrawalProcess';
 import { RewardHistory } from './reward/RewardHistory';
+import { IdVerificationSection } from './reward/IdVerificationSection';
 import { Button } from './ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
@@ -12,6 +13,33 @@ import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useRewardData } from '../hooks/useRewardData';
 import { useSubscription } from '../hooks/useSubscription';
 import { useNotification } from './notifications/NotificationContext';
+import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import type { IdPhotosResponse } from '@contract';
+
+/** 證件狀態的取讀與上傳。抽在元件外，讓 IdVerificationSection 保持可單元測試。 */
+async function loadIdStatus() {
+  const res = await apiRequestJson<IdPhotosResponse>(buildApiUrl('/rewards/id-photos'));
+  return res.data;
+}
+
+async function uploadIdPhotos(files: { front?: File; back?: File }) {
+  const form = new FormData();
+  if (files.front) form.append('idCardFront', files.front);
+  if (files.back) form.append('idCardBack', files.back);
+
+  // 走原生 fetch 而非 apiRequestJson：後者會設 Content-Type: application/json，
+  // 而 multipart 需要瀏覽器自己帶 boundary（同 WithdrawalProcess 的上傳路徑）。
+  const { getAccessToken } = await import('../utils/auth');
+  const token = await getAccessToken();
+  if (!token) throw new Error('請先登入');
+
+  const res = await fetch(buildApiUrl('/rewards/upload-id-photos'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error('照片上傳失敗');
+}
 
 export function RewardDashboard() {
   const { user } = useContext(UserContext);
@@ -160,6 +188,9 @@ export function RewardDashboard() {
           referralProgramJoined={user?.referralProgramJoined}
         />
       </div>
+
+      {/* 提領 CTA 之後——證件是提領的前置條件，但不該把主要行動往下擠（plan §4）。 */}
+      <IdVerificationSection loadStatus={loadIdStatus} uploadPhotos={uploadIdPhotos} />
     </div>
   );
 }

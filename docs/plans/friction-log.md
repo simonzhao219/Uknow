@@ -576,3 +576,70 @@ grep 驗證,不以「改過了」的記憶為準。
    （背景重整失敗）三個 reviewer 視角獨立發現未實作——根因是 hook 沒
    曝露該訊號，而測試只寫了「有資料」與「無資料」兩態。規格表格的每一
    列都該有一條測試，缺訊號時會在寫測試那一刻暴露，而不是審查才抓到。
+
+## 2026-08-02 admin-dashboard feature:三層測試都碰不到的後端契約——mock 的盲區是結構性的
+
+四視角實作審查抓到一個 P0:提領作業台的「退件」在正式環境 100% 失敗。前端
+沒有理由輸入欄、`note` 恆為 `undefined`,而後端 `admin_update_withdrawal_status`
+對 `rejected`/`completed` 強制要求非空 note(`note_required`)。
+
+**值得沉澱的不是 bug 本身,是為什麼 530+214+168 條測試全數綠燈卻沒有一條攔到:**
+
+1. **元件測試**把後端換成注入的 mock——mock 不知道 `note_required` 存在,
+   而且測試名寫「確認後才送出並帶理由」、斷言卻是 `..., undefined)`,把缺陷
+   錄成了預期行為(名實不符,test-naming 檔尾反例的同族);
+2. **mock e2e** 把整個網路換成替身,替身裡沒有那條檢查;
+3. **journey(打真後端)**的 page object 恰好也漏填同一個欄位——寫 page
+   object 的人與寫元件的人是同一人,同一個心智模型的盲點會同步複製到每一層。
+
+三層各自「通過」,因為三層都不知道那條契約存在。**多一層測試不等於多一層
+保護——當所有層都出自同一個心智模型,它們是同一層。** 攔下它的是從規劃書
+出發、獨立讀 diff 的審查視角(三個 reviewer 獨立指向同一處)。
+
+**可操作的教訓**:SQL 函數若對輸入有硬性檢核(必填、格式、狀態轉換表),
+在**前端元件測試裡把那條檢核寫進 mock 的行為**(mock 收到不合格輸入就拋錯),
+讓契約至少存在於兩個心智模型的交界。以及:寫完測試後把「測試名」與「斷言」
+對讀一次——名字宣稱的行為就是斷言該證明的行為。
+
+## 2026-08-02 admin-dashboard feature:同號 migration 不是排序問題,是主鍵衝突
+
+rebase 到 develop 後出現兩支 `20260802000001_*.sql`(本分支與他人的工作)。
+第一時間的分析是「Supabase 依完整檔名字典序套用,順序決定性、無影響」——
+**錯**。CI 立刻回報:
+
+    ERROR: duplicate key value violates unique constraint "schema_migrations_pkey"
+    Key (version)=(20260802000001) already exists.
+
+`supabase_migrations.schema_migrations` 以**數字版本**為主鍵,不看檔名後半段。
+第二支插入直接違反 PK,整個 `db reset` 掛掉——症狀離根因很遠(看起來像
+migration 內容壞了)。
+
+**通則**:「兩個東西同名會怎樣」這種問題,猜執行順序沒有意義——要去查
+**誰在記錄它們、用什麼當鍵**。第一次的分析在「檔名排序」那層自洽,但那層
+不是做決定的層。
+
+**框架缺口**:`migration-guard` 只查「既有 migration 不得被修改/刪除」,
+不查同號。同號在 rebase/多人並行時很容易發生。修法很小:guard 加一步
+`ls supabase/migrations | cut -d_ -f1 | sort | uniq -d` 非空即紅。
+
+## 2026-08-02 admin-dashboard feature:「元件/檔案內私有函式」第二個使用者出現時就該抽
+
+同一個 feature 內三次遇到同一模式:`copyText`(規劃有點名)、`useMediaQuery`、
+`createWithdrawableUser`/`requestWithdrawal`(規劃都沒點名)。規律穩定到值得
+當通則:**私有 helper 在第二個使用者出現的那一刻抽出,不等第三個**——兩份
+拷貝各自演化的那天,兩邊會開始守著不同的定義(「可提領」是什麼、複製走哪個
+API),而且沒有任何測試會叫。
+
+反向的邊界同樣成立(usePagedList 的教訓):**共用抽象的價值在於使用者行為
+真的一樣**。`ReferralTreeView` 的分頁與 SWR 式背景重抓纏在一起,硬併進
+`usePagedList` 只會讓 hook 長出只有它用的選項——為第 N 個使用者加分支的
+那一刻,抽象開始變成負債。抽取的判準不是「長得像」,是「守的是同一條規則」。
+
+## 2026-08-02 admin-dashboard feature:本機 npm run check 不含覆蓋率門檻
+
+`npm run check` 跑 vitest 但不帶 `--coverage`;CI 的 unit-tests 軌跑的是
+`test:coverage`(分支覆蓋率棘輪 80%)。結果:本機全綠、推上去紅。前端階段
+在推之前值得多跑一次 `npm run test:coverage`——它是唯一「CI 會擋、本機預設
+不擋」的閘門。這次補覆蓋率時順帶抓到一個真缺陷(批次部分失敗的訊息被
+緊接著的重抓清掉),證明那 45 個未覆蓋分支不是「測試不勤」,是有一整片
+行為從沒被看過。

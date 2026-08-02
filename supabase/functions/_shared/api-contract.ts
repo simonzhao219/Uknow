@@ -228,6 +228,10 @@ export const WithdrawalRecordSchema = obj({
   amount: num(),
   fee: num(),
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  /** 這筆現在的說明，取自 `withdrawal_events` 最新一筆。退件理由靠它到達會員。 */
+  note: nullable(str()),
+  /** 管理員代為結案（非會員本人查收）。誠實揭露，不讓會員誤以為自己按過。 */
+  completedByAdmin: bool(),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -508,11 +512,18 @@ export const PointsPreviewResponseSchema = obj({
 });
 export type PointsPreviewResponse = Infer<typeof PointsPreviewResponseSchema>;
 
+// 會員端看自己的證件狀態。`none` = 還沒交齊雙面。
+export const IdVerificationStatusSchema = literals('none', 'pending', 'approved', 'rejected');
+export type IdVerificationStatus = Infer<typeof IdVerificationStatusSchema>;
+
 export const IdPhotosResponseSchema = obj({
   success: bool(),
   data: obj({
     frontUrl: nullable(str()),
     backUrl: nullable(str()),
+    verificationStatus: IdVerificationStatusSchema,
+    // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+    rejectReason: nullable(str()),
   }),
 });
 export type IdPhotosResponse = Infer<typeof IdPhotosResponseSchema>;
@@ -578,6 +589,39 @@ export const SystemAlertsResponseSchema = obj({
 export type SystemAlert = Infer<typeof SystemAlertSchema>;
 export type SystemAlertsResponse = Infer<typeof SystemAlertsResponseSchema>;
 
+// 提領狀態轉換的一筆歷史（withdrawal_events）。
+// `byAdmin: false` = 會員自己的查收確認——只回類別，不外洩是哪個 admin。
+export const WithdrawalEventSchema = obj({
+  fromStatus: str(),
+  toStatus: str(),
+  note: nullable(str()),
+  bankRef: nullable(str()),
+  transferredOn: nullable(str()),
+  byAdmin: bool(),
+  createdAt: str(),
+});
+export type WithdrawalEvent = Infer<typeof WithdrawalEventSchema>;
+
+// 待匯款總額用 amount（銀行實付）而非 amount + fee——手續費是平台收的，
+// 不會匯出去。admin 拿這個數字去對網銀的轉出總額。
+export const AdminWithdrawalStatsSchema = obj({
+  pendingAmount: num(),
+  byStatus: obj({
+    pending: num(),
+    awaiting_collection: num(),
+    completed: num(),
+    rejected: num(),
+  }),
+});
+export type AdminWithdrawalStats = Infer<typeof AdminWithdrawalStatsSchema>;
+
+/** 入口 badge 用的輕量彙總。刻意不含列表——帶了就等於把整頁記錄搬到導覽列。 */
+export const AdminWithdrawalSummaryResponseSchema = obj({
+  success: bool(),
+  data: obj({ pendingCount: num(), pendingAmount: num() }),
+});
+export type AdminWithdrawalSummaryResponse = Infer<typeof AdminWithdrawalSummaryResponseSchema>;
+
 export const AdminWithdrawalRecordSchema = obj({
   id: str(),
   userId: str(),
@@ -589,7 +633,9 @@ export const AdminWithdrawalRecordSchema = obj({
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
   bankCode: nullable(str()),
   bankAccount: nullable(str()),
+  // 主表的 note 自 20260802000004 起 vestigial；這個值取自事件表最新一筆。
   note: nullable(str()),
+  events: arr(WithdrawalEventSchema),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -605,6 +651,7 @@ export const AdminWithdrawalsResponseSchema = obj({
     total: num(),
     limit: num(),
     offset: num(),
+    stats: AdminWithdrawalStatsSchema,
   }),
 });
 export type AdminWithdrawalsResponse = Infer<typeof AdminWithdrawalsResponseSchema>;
@@ -618,16 +665,121 @@ export const AdminMemberSchema = obj({
   suspended: bool(),
   suspendedAt: nullable(str()),
   accountStatus: literals('active', 'expired'),
+  /** 會籍到期日；從未付費者為 null。 */
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
   listingCount: num(),
   createdAt: str(),
 });
 export type AdminMember = Infer<typeof AdminMemberSchema>;
 
+/**
+ * 會員列表的統計卡數字。
+ *
+ * **全站，不是當前頁。** 在 SQL 的 filtered CTE 上算完再回來，`limit` 只作用
+ * 在 members 陣列——前端拿到後直接顯示，不得從 `members` 加總（那樣算出來的
+ * 數字會隨分頁改變，等於一組會說謊的統計卡）。
+ */
+export const AdminMemberStatsSchema = obj({
+  total: num(),
+  active: num(),
+  expired: num(),
+  suspended: num(),
+  admins: num(),
+});
+export type AdminMemberStats = Infer<typeof AdminMemberStatsSchema>;
+
 export const AdminMembersResponseSchema = obj({
   success: bool(),
-  data: obj({ members: arr(AdminMemberSchema), total: num() }),
+  data: obj({
+    members: arr(AdminMemberSchema),
+    total: num(),
+    stats: AdminMemberStatsSchema,
+  }),
 });
+
+/**
+ * 詳情面板裡的一筆提領記錄。
+ *
+ * §1.1 的頭號客服情境是「我提領怎麼還沒到」——這幾個欄位就是那句話的答案，
+ * 不是附加資訊。`note` 讀該筆事件表最新一筆，與 `/admin/withdrawals` 同源。
+ */
+export const AdminMemberWithdrawalSchema = obj({
+  id: str(),
+  amount: num(),
+  fee: num(),
+  status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  note: nullable(str()),
+  requestedAt: str(),
+  processedAt: nullable(str()),
+  completedAt: nullable(str()),
+});
+export type AdminMemberWithdrawal = Infer<typeof AdminMemberWithdrawalSchema>;
+
+/**
+ * 會員詳情。
+ *
+ * **`idNumber` 與 `bankAccount` 是遮罩值**（需求方裁決）。需要全碼時回提領
+ * 作業台看——那裡因匯款作業需要而維持完整值。`bankCode` 不遮：它識別的是
+ * 銀行不是個人，遮了反而讓客服對不出是哪一家。
+ */
+export const AdminMemberDetailSchema = obj({
+  id: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  isAdmin: bool(),
+  suspended: bool(),
+  suspendedAt: nullable(str()),
+  createdAt: str(),
+  accountStatus: literals('active', 'expired'),
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
+  idRejectReason: nullable(str()),
+  /** 遮罩值（`A1****789`）。 */
+  idNumber: nullable(str()),
+  bankCode: nullable(str()),
+  /** 遮罩值（末四碼可見）。 */
+  bankAccount: nullable(str()),
+  referrerName: nullable(str()),
+  directChildCount: num(),
+  listingCount: num(),
+  availablePoints: num(),
+  pendingPoints: num(),
+  withdrawnPoints: num(),
+  recentWithdrawals: arr(AdminMemberWithdrawalSchema),
+});
+export type AdminMemberDetail = Infer<typeof AdminMemberDetailSchema>;
+
+export const AdminMemberDetailResponseSchema = obj({
+  success: bool(),
+  data: obj({ member: AdminMemberDetailSchema }),
+});
+export type AdminMemberDetailResponse = Infer<typeof AdminMemberDetailResponseSchema>;
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
+
+// 證件審核佇列。`none`（照片沒交齊）不會出現在佇列裡，所以列舉不含它。
+export const AdminIdReviewSchema = obj({
+  userId: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  status: literals('pending', 'approved', 'rejected'),
+  rejectReason: nullable(str()),
+  reviewedAt: nullable(str()),
+  /** 送審時間。佇列依它排「等最久的」——`createdAt` 是註冊時間，講的是另一件事。 */
+  submittedAt: str(),
+  createdAt: str(),
+  idCardFrontUrl: nullable(str()),
+  idCardBackUrl: nullable(str()),
+});
+export type AdminIdReview = Infer<typeof AdminIdReviewSchema>;
+
+export const AdminIdReviewsResponseSchema = obj({
+  success: bool(),
+  data: obj({ reviews: arr(AdminIdReviewSchema), total: num() }),
+});
+export type AdminIdReviewsResponse = Infer<typeof AdminIdReviewsResponseSchema>;
 
 export const API_PATHS = {
   profile: '/profile',

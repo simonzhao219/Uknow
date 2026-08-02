@@ -143,3 +143,54 @@ export async function getActiveReferralCode(
   if (!data) throw new Error(`getActiveReferralCode: no active code for ${userId}`);
   return data.code;
 }
+
+/**
+ * 提領測試用的身分證字號。與 `createWithdrawableUser` 寫進 profiles 的值一致，
+ * 需要驗證身分證的測試（/rewards/verify-id）也用它。
+ */
+export const TEST_ID_NUMBER = 'A123456789';
+
+/**
+ * 建出一個「可以申請提領」的會員：已付費、已加入推薦計畫、證件照齊、有點數。
+ *
+ * 原本是 `withdrawals.test.ts` 的檔內私有函式；階段 3.2 的會員詳情測試也需要
+ * 同一組前置狀態，所以抽到這裡。**復用不先抽取就會變成複製貼上**，而兩份
+ * 前置條件各自演化的那天，兩邊的測試會開始守著不同的「可提領」定義。
+ */
+export async function createWithdrawableUser(
+  client: SupabaseClient,
+  balance: number,
+): Promise<{ id: string; email: string }> {
+  const user = await createTestUser(client, { name: 'Withdraw User' });
+  const { error } = await payForUser(client, user.id);
+  if (error) throw new Error(`createWithdrawableUser: payForUser failed: ${error.message}`);
+  await client.from('profiles').update({
+    referral_program_joined: true,
+    national_id: TEST_ID_NUMBER,
+    id_card_front_path: `${user.id}/front.jpg`,
+    id_card_back_path: `${user.id}/back.jpg`,
+  }).eq('id', user.id);
+  if (balance > 0) {
+    await client.from('reward_transactions').insert({
+      user_id: user.id,
+      type: 'adjustment',
+      amount: balance,
+      description: '測試點數',
+    });
+  }
+  return user;
+}
+
+/** 以固定的銀行資訊送出一筆提領申請。 */
+export async function requestWithdrawal(
+  client: SupabaseClient,
+  userId: string,
+  amount: number,
+) {
+  return await client.rpc('request_withdrawal', {
+    p_user_id: userId,
+    p_amount: amount,
+    p_bank_code: '812',
+    p_bank_account: '1234567890123',
+  });
+}

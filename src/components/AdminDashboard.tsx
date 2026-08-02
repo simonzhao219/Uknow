@@ -7,6 +7,94 @@ import { MemberManagement } from './admin/MemberManagement';
 import { SystemNotifications } from './admin/SystemNotifications';
 import { SystemAlerts } from './admin/SystemAlerts';
 import { AdminSetup } from './admin/AdminSetup';
+import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import type {
+  AdminIdReviewsResponse,
+  AdminMemberDetailResponse,
+  AdminMembersResponse,
+  AdminWithdrawalsResponse,
+} from '@contract';
+import type { WithdrawalQuery } from './admin/WithdrawalManagement';
+
+// 取數／送出走這裡、畫面只吃 props——與 MemberManagement 餵 IdReviewQueue
+// 的作法一致：元件測試才不用替身掉整個網路層。
+async function loadWithdrawals(params: WithdrawalQuery) {
+  const qs = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+  if (params.status !== 'all') qs.set('status', params.status);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  if (params.search) qs.set('search', params.search);
+  const res = await apiRequestJson<AdminWithdrawalsResponse>(
+    buildApiUrl(`/admin/withdrawals?${qs}`),
+  );
+  return res.data;
+}
+
+async function updateWithdrawalStatus(
+  id: string,
+  status: 'awaiting_collection' | 'rejected' | 'completed',
+  note?: string,
+  bankRef?: string,
+  transferredOn?: string,
+) {
+  await apiRequestJson(buildApiUrl(`/admin/withdrawals/${id}/status`), {
+    method: 'POST',
+    body: JSON.stringify({ status, note, bankRef, transferredOn }),
+  });
+}
+
+async function batchMarkPaid(items: { id: string; bankRef?: string }[]) {
+  const res = await apiRequestJson<{
+    data: { succeeded: string[]; failed: { id: string; error: string }[] };
+  }>(buildApiUrl('/admin/withdrawals/batch-mark-paid'), {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+  return res.data;
+}
+
+async function loadMembers(params: { search?: string; limit: number; offset: number }) {
+  const qs = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+  if (params.search) qs.set('search', params.search);
+  const res = await apiRequestJson<AdminMembersResponse>(buildApiUrl(`/admin/members?${qs}`));
+  return res.data;
+}
+
+async function loadMemberDetail(id: string) {
+  const res = await apiRequestJson<AdminMemberDetailResponse>(buildApiUrl(`/admin/members/${id}`));
+  return res.data.member;
+}
+
+async function setMemberAdmin(id: string, isAdmin: boolean) {
+  await apiRequestJson(buildApiUrl(`/admin/members/${id}/admin`), {
+    method: 'POST',
+    body: JSON.stringify({ isAdmin }),
+  });
+}
+
+async function suspendMember(id: string, suspend: boolean) {
+  await apiRequestJson(buildApiUrl(`/admin/members/${id}/suspend`), {
+    method: 'POST',
+    body: JSON.stringify({ suspend }),
+  });
+}
+
+async function loadIdReviews(params: { limit: number; offset: number }) {
+  const qs = new URLSearchParams({
+    status: 'pending',
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  const res = await apiRequestJson<AdminIdReviewsResponse>(buildApiUrl(`/admin/id-reviews?${qs}`));
+  return { reviews: res.data.reviews, total: res.data.total ?? res.data.reviews.length };
+}
+
+async function submitIdReview(userId: string, approve: boolean, reason?: string) {
+  await apiRequestJson(buildApiUrl(`/admin/id-reviews/${userId}/review`), {
+    method: 'POST',
+    body: JSON.stringify({ approve, reason }),
+  });
+}
 
 export function AdminDashboard() {
   return (
@@ -40,11 +128,22 @@ export function AdminDashboard() {
         </TabsList>
 
         <TabsContent value="withdrawals">
-          <WithdrawalManagement />
+          <WithdrawalManagement
+            loadWithdrawals={loadWithdrawals}
+            updateStatus={updateWithdrawalStatus}
+            batchMarkPaid={batchMarkPaid}
+          />
         </TabsContent>
 
         <TabsContent value="members">
-          <MemberManagement />
+          <MemberManagement
+            loadMembers={loadMembers}
+            loadMemberDetail={loadMemberDetail}
+            setMemberAdmin={setMemberAdmin}
+            suspendMember={suspendMember}
+            loadIdReviews={loadIdReviews}
+            submitIdReview={submitIdReview}
+          />
         </TabsContent>
 
         <TabsContent value="announcements">

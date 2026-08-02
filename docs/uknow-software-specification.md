@@ -195,6 +195,10 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 免費續約 credit 在兩種情形皆維持 `unclaimed`，待解除停權／續訂恢復 active 後
 仍可領取；已在 active 狀態領取過的 credit 冪等成功，不因日後停權或到期而翻案。
 
+**一般原則：閘門擋的是「已知不合格」，不是「尚未確認」。** 提領的證件審核守衛
+（§10.1 #5a）只擋 `rejected` 而不擋 `pending`，同一條理由——把「還沒輪到審核」
+當成不合格，會讓等待本身變成懲罰，而真正的關卡在後面那道人工動作上。
+
 ---
 
 ## 6. 訂閱系統
@@ -462,9 +466,15 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
 | 2 | 已加入推薦計畫（手寫簽名） | `not_joined` |
 | 3 | 金額 ≥ **1,000**、為 **1,000 的倍數**、≤ **單日上限 8,000** | `invalid_amount` |
 | 4 | 會籍在效期內 | `subscription_invalid` |
-| 5 | 已上傳身分證正反面照片 | `missing_id_photos` |
+| 5a | 證件審核**未被退回**（`id_verification_status <> 'rejected'`） | `id_rejected` |
+| 5b | 已上傳身分證正反面照片 | `missing_id_photos` |
 | 6 | 當日（台灣日曆日）尚未申請過——**含被退件的申請** | `already_withdrawn_today` |
 | 7 | 餘額 ≥ 提領金額 + 手續費 | `insufficient_balance` |
+
+**5a 只擋 `rejected`，不擋 `pending`。** 真正的關卡是**匯款**不是申請——admin
+本來就不會在沒核對證件的情況下轉帳。在申請端擋「還沒輪到審核」的人不增加實質
+保護，只讓每個新會員的首次提領多等三個工作天。被退回的人則必須先重新上傳，
+否則他會一直重送同一份資料。`none`／`pending`／`approved` 一律落到 5b。
 
 ### 10.2 手續費：外加制
 
@@ -489,6 +499,15 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
 | **待查收 (awaiting_collection)** | Admin 已匯款，等待用戶確認查收 |
 | **已完成 (completed)** | 用戶已確認查收 |
 | **已拒絕 (rejected)** | 申請被 admin 拒絕，點數與手續費退還（`withdrawal_refund`） |
+
+**每次轉換寫一筆 `withdrawal_events`**（狀態前後、操作者、說明、交易序號、
+匯款日期）。理由是主表只有一個 `note` 欄位，第二次轉換會把第一次的理由覆寫掉
+——退件理由與匯款備註是兩件事，不能共用一格。`withdrawals.note` 自此不再寫入
+（vestigial，語意記在該欄位的 column comment）。
+
+`awaiting_collection` **不回頭轉 `rejected`**：錢已經匯出去了，退件會把點數退還
+而錢收不回來。逾期未查收由 admin **代為結案**（轉 `completed`），會員端明示
+「管理員代為結案」而非讓他以為自己按過查收。
 
 存在 **`pending`** 提領時，續費不可選新約（fresh 建單 400，§6.2）——
 fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已清空的帳本。
@@ -545,13 +564,24 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 
 | 模組 | 元件 | 功能 |
 |---|---|---|
-| **會員管理** | `MemberManagement` | 會員列表與狀態、資料審核、**停權/解除停權**（§5.2） |
-| **提領管理** | `WithdrawalManagement` | 提領申請審核、標記已匯款、退件退款、財務記錄 |
+| **會員管理** | `MemberManagement` | 會員列表（全站統計／狀態篩選／排序）、會員詳情（含近期提領記錄，身分證與銀行帳號遮罩）、管理員授予／撤銷、**停權/解除停權**（§5.2）；次分頁「證件審核」＝身分證照片的通過／退回流程 |
+| **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統通知** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
 | **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
 | **管理員設定** | `AdminSetup` | 初次指派管理員 |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
+
+**但 middleware 不是唯一防線**：PostgREST 的 `rpc/` 端點繞過它，所以每個
+`security definer` 的 admin 函數都必須 `revoke execute from anon, authenticated,
+public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能把自己變成管理員。
+
+管理員授予／撤銷有兩道守衛：`cannot_demote_self`（不能撤銷自己）與 `last_admin`
+（撤銷後不得歸零）。**兩者可達性不對稱**——經由端點時 `last_admin` 到不了（只有
+管理員能呼叫，系統只剩一位時他唯一能撤的就是自己，先撞 `cannot_demote_self`）；
+它守的是呼叫者與目標不同人的路徑。
+
+管理後台入口在導覽列本身（不藏在頭像下拉），帶待處理提領筆數的 badge。
 
 ### 13.1 掃碼核身（會員身分）
 

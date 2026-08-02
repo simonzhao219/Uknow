@@ -1053,15 +1053,38 @@ app.get('/admin/withdrawals', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   const statusFilter = c.req.query('status');
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+  const search = c.req.query('search')?.trim();
   const limit = Math.min(parseInt(c.req.query('limit') || '200'), 500);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
   const client = sb();
+
+  // 搜尋比對的是會員姓名，而姓名在 profiles——先解析出 user_id 集合再篩提領單。
+  // 空集合要當成「查無此人」而不是「不篩」，否則搜尋不到的字串會回傳全部。
+  let searchUserIds: string[] | null = null;
+  if (search) {
+    const { data: hits } = await client.from('profiles')
+      .select('id')
+      .ilike('name', `%${search}%`);
+    searchUserIds = (hits ?? []).map((p: any) => p.id);
+  }
+
   let query = client.from('withdrawals')
     .select('*', { count: 'exact' })
     .order('requested_at', { ascending: false })
     .range(offset, offset + limit - 1);
-  if (statusFilter) query = query.eq('status', statusFilter);
+  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+  if (from) query = query.gte('requested_at', from);
+  // to 是「當日含」：+1 天再取小於，否則當天申請的會被排除
+  if (to) {
+    const end = new Date(`${to}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    query = query.lt('requested_at', end.toISOString());
+  }
+  if (searchUserIds !== null) query = query.in('user_id', searchUserIds);
+
   const { data: rows, count, error: listErr } = await query;
   // 金流後台必須能區分「查詢失敗」與「真的沒有提領單」——DB 故障
   // 靜默轉成空 200 會讓 admin 以為沒有待審件，維運端零察覺。
@@ -1092,8 +1115,33 @@ app.get('/admin/withdrawals', async (c) => {
     }
   }
 
+  // 轉換歷史：一次 in 查詢後在應用層 group，不是逐筆打 DB（同上面證件照的
+  // 批次簽名作法）。逐筆會讓 200 列變成 200 次往返。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await client.from('withdrawal_events')
+      .select('*')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) {
+      (eventMap[e.withdrawal_id] ??= []).push({
+        fromStatus: e.from_status,
+        toStatus: e.to_status,
+        note: e.note,
+        bankRef: e.bank_ref,
+        transferredOn: e.transferred_on,
+        // admin_id 為 null = 會員自己的動作（查收確認）。不外洩 admin 身分,
+        // 只回布林——前端要區分的是「誰按的類別」不是「哪個 admin」。
+        byAdmin: e.admin_id !== null,
+        createdAt: e.created_at,
+      });
+    }
+  }
+
   const withdrawals = (rows ?? []).map((w: any) => {
     const p = profMap[w.user_id];
+    const events = eventMap[w.id] ?? [];
     return {
       id: w.id,
       userId: w.user_id,
@@ -1105,7 +1153,10 @@ app.get('/admin/withdrawals', async (c) => {
       status: w.status,
       bankCode: w.bank_code,
       bankAccount: w.bank_account,
-      note: w.note,
+      // 主表的 note 自 20260802000004 起 vestigial（讀它只會拿到 null）。
+      // 取事件表最新一筆——那才是「這筆現在的說明」。
+      note: events.length ? (events[events.length - 1].note ?? null) : null,
+      events,
       requestedAt: w.requested_at,
       processedAt: w.processed_at,
       completedAt: w.completed_at,
@@ -1114,7 +1165,33 @@ app.get('/admin/withdrawals', async (c) => {
     };
   });
 
-  return c.json({ success: true, data: { withdrawals, total: count ?? 0, limit, offset } });
+  // 彙總在 SQL 端對**整個篩選結果**算，不是對當前頁——後者會隨分頁改變，
+  // 等於一個會說謊的總額，而 admin 拿它去對網銀的轉出金額。
+  const { data: stats } = await client.rpc('admin_withdrawal_stats', {
+    p_status: statusFilter ?? null,
+    p_from: from ?? null,
+    p_to: to ?? null,
+    p_search: search ?? null,
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      withdrawals,
+      total: count ?? 0,
+      limit,
+      offset,
+      stats: {
+        pendingAmount: stats?.pending_amount ?? 0,
+        byStatus: stats?.by_status ?? {
+          pending: 0,
+          awaiting_collection: 0,
+          completed: 0,
+          rejected: 0,
+        },
+      },
+    },
+  });
 });
 
 // POST /admin/withdrawals/:id/status
@@ -1134,6 +1211,10 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
     p_withdrawal_id: c.req.param('id'),
     p_status: body?.status ?? '',
     p_note: body?.note ?? null,
+    // 交易序號與匯款日期是唯一能跟銀行對帳的錨點（plan §2.2）。少了這兩行，
+    // 前端就算送上來也會在這裡被靜默丟掉，事件表的欄位永遠是 null。
+    p_bank_ref: body?.bankRef ?? null,
+    p_transferred_on: body?.transferredOn ?? null,
   });
 
   if (error) {
@@ -1159,6 +1240,48 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
   });
 });
 
+// POST /admin/withdrawals/batch-mark-paid
+// body: { items: [{ id, bankRef? }], transferredOn?, note? }
+//
+// admin 在網銀做完一批轉帳後一次標記。回傳逐筆明細而非只給筆數——批次裡
+// 有一筆狀態被別人改過時，admin 要知道**哪幾筆**需要重做。
+app.post('/admin/withdrawals/batch-mark-paid', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (!items.length) {
+    return c.json({ success: false, error: { message: '沒有選取任何提領單' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_batch_mark_paid', {
+    p_admin_id: user.id,
+    // 前端用 camelCase，SQL 側用 snake_case——在邊界轉換，不讓命名慣例洩到對面。
+    p_items: items.map((it: any) => ({ id: it?.id, bank_ref: it?.bankRef ?? null })),
+    p_transferred_on: body?.transferredOn ?? null,
+    p_note: body?.note ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/withdrawals/batch-mark-paid] rpc error:', error);
+    return c.json({ success: false, error: { message: '批次標記失敗' } }, 500);
+  }
+  if (!data?.success) {
+    return c.json({ success: false, error: { message: data?.message ?? '批次標記失敗' } }, 403);
+  }
+
+  return c.json({
+    success: true,
+    data: { succeeded: data.succeeded ?? [], failed: data.failed ?? [] },
+  });
+});
+
 // GET /admin/members?search=&limit=&offset=
 app.get('/admin/members', async (c) => {
   const user = await requireAuth(c);
@@ -1167,6 +1290,8 @@ app.get('/admin/members', async (c) => {
 
   const { data, error } = await sb().rpc('admin_list_members', {
     p_search: c.req.query('search') ?? null,
+    p_status: c.req.query('status') ?? null,
+    p_sort: c.req.query('sort') ?? 'created_desc',
     p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
     p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
   });
@@ -1185,11 +1310,177 @@ app.get('/admin/members', async (c) => {
     suspended: !!m.suspended_at,
     suspendedAt: m.suspended_at,
     accountStatus: m.account_status,
+    endDate: m.end_date ?? null,
+    idVerificationStatus: m.id_verification_status ?? 'none',
     listingCount: m.listing_count,
     createdAt: m.created_at,
   }));
 
-  return c.json({ success: true, data: { members, total: data?.total ?? 0 } });
+  return c.json({
+    success: true,
+    data: {
+      members,
+      total: data?.total ?? 0,
+      // stats 直通 SQL 算好的全站數字。**不要在這裡從 members 加總**——
+      // members 只有當前頁，那樣算出來的統計卡會隨分頁改變（M2 的反例）。
+      stats: data?.stats ?? {
+        total: 0,
+        active: 0,
+        expired: 0,
+        suspended: 0,
+        admins: 0,
+      },
+    },
+  });
+});
+
+// ============================================================
+// GET /admin/withdrawals/summary —— 入口 badge 用的輕量彙總
+//
+// badge 只要一個數字。走 `GET /admin/withdrawals?limit=1` 也拿得到，但那條
+// handler 會順便替該筆記錄的會員產身分證正反面的**簽名 URL**——每次 admin
+// 載入頁面都替某個人的證件開一次臨時外連，只為了讀一個計數。規劃書 §2.2
+// 把這支定性為「輕量」正是要避開它。
+// ============================================================
+app.get('/admin/withdrawals/summary', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_withdrawal_stats', {
+    p_status: 'pending',
+    p_from: null,
+    p_to: null,
+    p_search: null,
+  });
+
+  if (error) {
+    console.error('[admin-withdrawals-summary] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得提領彙總' } }, 500);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      pendingCount: data?.by_status?.pending ?? 0,
+      pendingAmount: data?.pending_amount ?? 0,
+    },
+  });
+});
+
+// ============================================================
+// GET /admin/members/:id —— 會員詳情（含近期提領記錄）
+//
+// §1.1 的頭號客服情境是「我提領怎麼還沒到」，`recentWithdrawals` 就是那句話的
+// 答案，不是附加資訊。
+//
+// **遮罩在這一層而不是 SQL**：同一份資料，提領作業台因匯款作業需要而回全碼、
+// 查詢台回遮罩值。規則烤進資料層就沒辦法讓兩個呼叫端有不同的答案。
+// 銀行代號不遮——它識別的是銀行不是個人，遮了反而讓客服對不出是哪一家。
+// ============================================================
+app.get('/admin/members/:id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_member_detail', {
+    p_user_id: c.req.param('id'),
+  });
+
+  if (error) {
+    console.error('[admin-member-detail] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得會員詳情' } }, 500);
+  }
+  if (!data) return c.json({ success: false, error: { message: '查無此會員' } }, 404);
+
+  const points = data.points ?? {};
+  return c.json({
+    success: true,
+    data: {
+      member: {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        isAdmin: data.is_admin,
+        suspended: !!data.suspended_at,
+        suspendedAt: data.suspended_at,
+        createdAt: data.created_at,
+        accountStatus: data.account_status,
+        endDate: data.end_date ?? null,
+        idVerificationStatus: data.id_verification_status ?? 'none',
+        idRejectReason: data.id_reject_reason ?? null,
+        idNumber: maskNationalId(data.national_id),
+        bankCode: data.bank_code ?? null,
+        bankAccount: maskBankAccount(data.bank_account),
+        referrerName: data.referrer_name ?? null,
+        directChildCount: data.direct_child_count ?? 0,
+        listingCount: data.listing_count ?? 0,
+        availablePoints: points.available ?? 0,
+        pendingPoints: points.pending ?? 0,
+        withdrawnPoints: points.withdrawn ?? 0,
+        recentWithdrawals: (data.recent_withdrawals ?? []).map((w: any) => ({
+          id: w.id,
+          amount: w.amount,
+          fee: w.fee,
+          status: w.status,
+          note: w.note ?? null,
+          requestedAt: w.requested_at,
+          processedAt: w.processed_at,
+          completedAt: w.completed_at,
+        })),
+      },
+    },
+  });
+});
+
+// ============================================================
+// POST /admin/members/:id/admin  body: { isAdmin: boolean }
+//
+// 授予／撤銷管理員。錯誤碼直通 SQL 的判定（cannot_demote_self / last_admin），
+// 前端據此顯示不同的說明——把它們壓成同一句「操作失敗」會讓 admin 不知道
+// 是自己不能撤自己，還是系統不允許歸零。
+// ============================================================
+app.post('/admin/members/:id/admin', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  if (typeof body?.isAdmin !== 'boolean') {
+    return c.json({ success: false, error: { message: 'isAdmin 必須是布林值' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_set_member_admin', {
+    p_admin_id: user.id,
+    p_target_id: c.req.param('id'),
+    p_is_admin: body.isAdmin,
+  });
+
+  if (error) {
+    console.error('[admin-set-member-admin] rpc error:', error);
+    return c.json({ success: false, error: { message: '權限更新失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const messages: Record<string, string> = {
+      cannot_demote_self: '不能撤銷自己的管理員權限，請由其他管理員操作',
+      last_admin: '系統必須保留至少一位管理員',
+      member_not_found: '查無此會員',
+    };
+    return c.json({
+      success: false,
+      error: {
+        code: data?.error_code ?? 'unknown',
+        message: messages[data?.error_code] ?? '權限更新失敗',
+      },
+    }, 400);
+  }
+
+  return c.json({ success: true, data: { isAdmin: body.isAdmin } });
 });
 
 // POST /admin/members/:id/suspend  body: { suspend: boolean }
@@ -1218,6 +1509,99 @@ app.post('/admin/members/:id/suspend', async (c) => {
     return c.json({ success: false, error: { message: '停權狀態更新失敗' } }, 500);
   }
   return c.json({ success: true, data: { userId: targetId, suspended: suspend } });
+});
+
+// ============================================================
+// 證件審核（admin）——會員上傳雙面後進 pending 佇列，admin 核可或退回。
+// 審核結果只在 rejected 時擋提領（見 20260802000011 的守衛 #5a）。
+// ============================================================
+
+// GET /admin/id-reviews?status=&limit=&offset=
+app.get('/admin/id-reviews', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const client = sb();
+  const { data, error } = await client.rpc('admin_list_id_reviews', {
+    p_status: c.req.query('status') ?? 'pending',
+    p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
+    p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得審核佇列' } }, 500);
+  }
+
+  // 批次簽名證件照網址（1 小時）——與 /admin/withdrawals 同模式，一次
+  // createSignedUrls 而不是逐列打 storage。
+  const rows = (data?.reviews ?? []) as Array<Record<string, unknown>>;
+  const paths = rows.flatMap((r) =>
+    [r.id_card_front_path, r.id_card_back_path].filter(Boolean) as string[]
+  );
+  const urlMap: Record<string, string> = {};
+  if (paths.length) {
+    const { data: signed } = await client.storage.from('id-cards').createSignedUrls(paths, 3600);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl;
+    }
+  }
+
+  const reviews = rows.map((r) => ({
+    userId: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    status: r.id_verification_status,
+    rejectReason: r.id_reject_reason,
+    reviewedAt: r.id_verified_at,
+    // 送審時間：佇列排序的依據，也是 admin 判斷「這個人等多久了」的數字。
+    // 舊列 backfill 成近似值，仍保底 fallback 到註冊時間。
+    submittedAt: r.id_submitted_at ?? r.created_at,
+    createdAt: r.created_at,
+    idCardFrontUrl: r.id_card_front_path ? (urlMap[r.id_card_front_path as string] ?? null) : null,
+    idCardBackUrl: r.id_card_back_path ? (urlMap[r.id_card_back_path as string] ?? null) : null,
+  }));
+
+  return c.json({ success: true, data: { reviews, total: data?.total ?? 0 } });
+});
+
+// POST /admin/id-reviews/:userId/review  body: { approve: boolean, reason?: string }
+app.post('/admin/id-reviews/:userId/review', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const { data, error } = await sb().rpc('admin_review_id', {
+    p_admin_id: user.id,
+    p_user_id: c.req.param('userId'),
+    p_approve: !!body?.approve,
+    p_reason: body?.reason ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews/review] rpc error:', error);
+    return c.json({ success: false, error: { message: '審核失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : data?.error_code === 'forbidden'
+      ? 403
+      : 400;
+    return c.json(
+      { success: false, error: { message: data?.message ?? '審核失敗', code: data?.error_code } },
+      status,
+    );
+  }
+
+  return c.json({ success: true, data: { userId: c.req.param('userId'), status: data.status } });
 });
 
 // ============================================================
@@ -2437,16 +2821,41 @@ app.get('/rewards/withdrawals', async (c) => {
     return c.json({ error: { message: '查詢提領紀錄失敗' } }, 500);
   }
 
-  const withdrawals = (rows ?? []).map((w: any) => ({
-    id: w.id,
-    userId: w.user_id,
-    amount: w.amount,
-    fee: w.fee,
-    status: w.status,
-    requestedAt: w.requested_at,
-    processedAt: w.processed_at,
-    completedAt: w.completed_at,
-  }));
+  // 事件表一次 in 查詢後在應用層 group（同 /admin/withdrawals）。會員端只
+  // 取得出兩個衍生值，不回整條 events——那條歷史裡有 bank_ref 之類的作業
+  // 欄位，是 admin 的作業紀錄，不是會員該讀的東西。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await sb().from('withdrawal_events')
+      .select('withdrawal_id, to_status, note, admin_id, created_at')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) (eventMap[e.withdrawal_id] ??= []).push(e);
+  }
+
+  const withdrawals = (rows ?? []).map((w: any) => {
+    const events = eventMap[w.id] ?? [];
+    // 退件理由必須到得了會員面前：看不到理由的人只會重送一模一樣的東西，
+    // 再被退一次——admin 多做一次工、會員多等一輪，兩邊都沒拿到資訊。
+    // 主表的 note 自 20260802000004 起 vestigial，事件表最新一筆才是現況。
+    const latest = events.length ? events[events.length - 1] : null;
+    // 「誰結的案」看最後一筆 completed 事件：admin_id 非 null = 管理員代為
+    // 結案。讓會員以為自己按過查收，是規劃 §6 開放問題 #2 明確否決的做法。
+    const lastCompleted = [...events].reverse().find((e) => e.to_status === 'completed');
+    return {
+      id: w.id,
+      userId: w.user_id,
+      amount: w.amount,
+      fee: w.fee,
+      status: w.status,
+      note: latest?.note ?? null,
+      completedByAdmin: lastCompleted ? lastCompleted.admin_id !== null : false,
+      requestedAt: w.requested_at,
+      processedAt: w.processed_at,
+      completedAt: w.completed_at,
+    };
+  });
 
   return c.json({ success: true, data: { withdrawals } });
 });
@@ -2481,7 +2890,7 @@ app.get('/rewards/id-photos', async (c) => {
   const client = sb();
   const { data: profile } = await client
     .from('profiles')
-    .select('id_card_front_path, id_card_back_path')
+    .select('id_card_front_path, id_card_back_path, id_verification_status, id_reject_reason')
     .eq('id', user.id)
     .single();
 
@@ -2496,6 +2905,9 @@ app.get('/rewards/id-photos', async (c) => {
     data: {
       frontUrl: await sign(profile?.id_card_front_path ?? null),
       backUrl: await sign(profile?.id_card_back_path ?? null),
+      // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+      verificationStatus: profile?.id_verification_status ?? 'none',
+      rejectReason: profile?.id_reject_reason ?? null,
     },
   });
 });
@@ -2542,7 +2954,7 @@ app.post('/rewards/upload-id-photos', async (c) => {
   };
 
   try {
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | null> = {};
     let frontPath: string | null = null;
     let backPath: string | null = null;
     if (front) {
@@ -2553,6 +2965,32 @@ app.post('/rewards/upload-id-photos', async (c) => {
       backPath = await upload(back, 'back');
       patch.id_card_back_path = backPath;
     }
+
+    // 這次上傳後是否「雙面齊全」——要把既有路徑算進來,會員常分兩次補齊。
+    // 只有齊全才進審核佇列:沒交齊卻顯示「審核中」,會員會以為在等 admin,
+    // 實際上是他自己還沒傳完;admin 那邊也會收到一筆缺圖的送審紀錄。
+    const { data: current } = await client
+      .from('profiles')
+      .select('id_card_front_path, id_card_back_path')
+      .eq('id', user.id)
+      .single();
+    const finalFront = frontPath ?? current?.id_card_front_path ?? null;
+    const finalBack = backPath ?? current?.id_card_back_path ?? null;
+    if (finalFront && finalBack) {
+      patch.id_verification_status = 'pending';
+      // 換照片＝重新送審,上一輪的痕跡要一起清掉:
+      //   * 退回理由——否則會員會在「審核中」狀態下還看到舊的退件說明
+      //   * 審核時間——否則 admin 的審核佇列會顯示「已於 X 時審核」,
+      //     但那筆其實還沒被看過。在金流相鄰的稽核資料裡,一個會說謊的
+      //     時間戳比沒有時間戳更糟:沒有只是資訊不足,說謊會讓人據以決策。
+      patch.id_reject_reason = null;
+      patch.id_verified_at = null;
+      // 送審時刻——審核佇列依它排「等最久的」（B2 的裁決結果）。換照片＝
+      // 重新送審，所以這裡是覆寫而不是「只在第一次設」：重傳的人重新排隊，
+      // 不該帶著上一輪的等待時間插到最前面。
+      patch.id_submitted_at = new Date().toISOString();
+    }
+
     await client.from('profiles').update(patch).eq('id', user.id);
 
     return c.json({ success: true, data: { frontPath, backPath } });
