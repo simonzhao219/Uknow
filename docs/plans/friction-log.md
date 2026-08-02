@@ -556,3 +556,23 @@ plan 誕生前的唯一落腳處。renewal-backfill 收尾清理與任何 `docs/
 同輪並記:「宣稱 P2 全數修訂,實際一條放錯位置未落實」——與 replace 靜默
 no-op 同族(修正動作本身沒有被驗證)。處置沿用上一條:文件修訂後逐條
 grep 驗證,不以「改過了」的記憶為準。
+
+## 2026-08-02｜實作期整併｜renewal-backfill 施工摩擦（plan 清理前升級）
+
+原文脈絡在 `git show 2427e13:docs/plans/renewal-backfill/progress.md`。
+
+1. **被 spec-drift 盯住的規格書段落必須與觸發它的程式碼同 commit**：
+   plan 把 §8.4 加列排在收尾階段，但 check-spec-drift 每次 CI 都比對，
+   階段 2 的契約改動一落地 CI 就紅。「文件統一收尾」的直覺與逐 commit
+   機械把關互斥——切階段時把這類項目直接併進對應的程式碼階段。
+2. **操弄時間欄位的測試夾具必須整組時間關係一起搬**：夾具把 end_date
+   搬到過去但沒動 completed_at，人工製造出補繳簽名（hasPaidAnyBackfill
+   誤判）。時間欄位之間有業務不變量（付款恆在效期起算前），只搬單一
+   欄位等於偽造資料。
+3. **CI concurrency cancel-in-progress 的殘影會偽裝成紅燈**：同分支新
+   push 取消進行中 run，ci-ok 顯示紅但 RESULTS 裡是 `cancelled`。應對：
+   接受「下一個 run 的 log 同時佐證前一階段」的讀法，不必每階段等收斂。
+4. **四狀態/多分支 UI 規格要在測試裡逐列對應**：plan §4 四狀態表第 4 列
+   （背景重整失敗）三個 reviewer 視角獨立發現未實作——根因是 hook 沒
+   曝露該訊號，而測試只寫了「有資料」與「無資料」兩態。規格表格的每一
+   列都該有一條測試，缺訊號時會在寫測試那一刻暴露，而不是審查才抓到。
