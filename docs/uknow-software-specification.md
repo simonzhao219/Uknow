@@ -343,9 +343,11 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 ### 8.4 獎勵明細的來源分類
 
-分類軸是**「拉新／續約」**（使用者想分辨的事），不是冪等鍵（實作細節）。
+分類軸是**「拉新／續約」加「帳本事件」**（使用者想分辨的事），不是冪等鍵
+（實作細節）。
 〔實作〕`REWARD_SOURCE_CATEGORIES`（`_shared/api-contract.ts`）、
-`20260725000002_reward_source_lifecycle.sql`
+`20260725000002_reward_source_lifecycle.sql`、
+`20260802000002_fresh_ledger_forfeit.sql`
 
 | 分類 | 語意 |
 |---|---|
@@ -354,6 +356,7 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | `withdrawal` | 點數提領扣款 |
 | `withdrawal_refund` | 提領退件退還 |
 | `adjustment_manual` | 人工調整（目前無端點產生） |
+| `ledger_reset` | 新約重置——選 fresh 續約時清空帳本的負額沖銷列（明細封存，帳本只增不刪） |
 
 付款續約 vs 任務免費續約的差別由 `viaFreeRenewal` 旗標承載（明細第二行註記
 「・任務免費續約」），不另佔一個分類。

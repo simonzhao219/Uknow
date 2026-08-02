@@ -89,6 +89,16 @@ PR #189 已合併(develop merge commit `041b674`),本分支已 rebase。
 
 ## 框架摩擦
 
+- 階段 2 綠燈後 CI 的 framework-check 紅:plan 把規格書 §8.4 分類表
+  加列排在階段 13,但 `check-spec-drift.py` 在**每次 CI** 比對
+  `REWARD_SOURCE_CATEGORIES` 與 §8.4——契約加了 `ledger_reset`、規格書
+  沒加就紅。已把 §8.4 那一列(含 docstring「帳本事件」軸措辭)**提前到
+  階段 2** 完成;階段 13 清單裡的「§8.4 加一列」項目視為已完成。
+  **可複用的教訓:凡是被機械閘門(spec-drift)盯住的規格書段落,必須跟
+  觸發它的程式碼改動放在同一個 commit,不能排到後面的收尾階段**——
+  規劃時「文件統一收尾」的直覺與逐 commit 機械把關互斥,以後切階段時
+  把這類項目直接併進對應的程式碼階段。
+
 - 第 1 版把「付款後回到結帳頁」寫進 AC-3,實際上 PayUni 導回落在
   `/payment/result`。規劃時只讀了 `/payuni/prepare` 與 `process_successful_payment`,
   沒有往下追導回的落地頁,四視角審查才抓到(第 1 輪 P0-1)。
