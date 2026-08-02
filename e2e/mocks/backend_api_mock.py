@@ -201,10 +201,19 @@ class BackendApiMock:
         order_status: str,
         payuni_response: Optional[dict] = None,
         completed_at: Optional[str] = None,
+        renewal: Optional[dict] = None,
     ):
+        # renewal（精簡版契約，renewal-backfill）：backfillCount > 0 時
+        # PaymentResult 走補繳進度分支而非開通輪詢；缺漏＝舊後端形狀，
+        # 走原開通輪詢（見 PaymentResult 的分類註解）。
         body = {
             "success": True,
-            "data": {"orderStatus": order_status, "completedAt": completed_at, "payuni": payuni_response},
+            "data": {
+                "orderStatus": order_status,
+                "completedAt": completed_at,
+                "payuni": payuni_response,
+                "renewal": renewal,
+            },
         }
         self._route(f"/payuni/result/{trade_no}", lambda route: _fulfill_json(route, body))
 
