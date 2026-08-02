@@ -278,7 +278,9 @@ Deno.test('admin_list_members：stats 算全站，不受 limit=50 截斷', async
 
 Deno.test('admin_list_members：status 篩選只回該狀態的會員', async () => {
   const client = adminClient();
-  const admin = await createTestUser(client, { name: 'Filter Admin' });
+  // 同上：admin 的名字不含搜尋詞。這條目前只是碰巧沒壞——`status=suspended`
+  // 把未停權的 admin 濾掉了——但那是別的條件在保護它，換個 status 就會漏。
+  const admin = await createTestUser(client, { name: 'Selecting Admin' });
   const active = await createTestUser(client, { name: 'Filter Active' });
   const suspended = await createTestUser(client, { name: 'Filter Suspended' });
 
@@ -306,7 +308,9 @@ Deno.test('admin_list_members：status 篩選只回該狀態的會員', async ()
 
 Deno.test('admin_list_members：sort=created_asc 與 created_desc 排序相反', async () => {
   const client = adminClient();
-  const admin = await createTestUser(client, { name: 'Sort Admin' });
+  // admin 的名字刻意不含搜尋詞：`search=Sort` 會把它自己也撈進來，而它是
+  // 當下建立的（最新），於是 created_desc 的第一筆會是 admin 而不是受測資料。
+  const admin = await createTestUser(client, { name: 'Ordering Admin' });
   const first = await createTestUser(client, { name: 'Sort Alpha' });
   const second = await createTestUser(client, { name: 'Sort Beta' });
 
