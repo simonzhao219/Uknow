@@ -13,11 +13,10 @@ import {
   type VerifyMemberTokenResult,
 } from './member-token.ts';
 import {
-  subscriptionLastDay,
+  backfillPlan,
   twCompactTimestamp,
   twDayOf,
   twDayPlusDays,
-  twEndOfDayInstant,
   twMonthKey,
 } from './tw-dates.ts';
 import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
@@ -30,6 +29,7 @@ import type {
   NetworkOverviewResponse,
   NetworkSearchResponse,
   NetworkSortMode,
+  PayuniResultRenewal,
   RewardHistoryResponse,
 } from '../_shared/api-contract.ts';
 
@@ -188,6 +188,22 @@ async function getRewardConfig(
     referralRewardAmount: data?.referral_reward_amount ?? 100,
     referralKingThreshold: data?.referral_king_monthly_threshold ?? 8,
   };
+}
+
+// ============================================================
+// 工具：是否有審核中（pending）的提領。A16 的 fresh 建單守衛與
+// /subscriptions/status 的 hasPendingWithdrawal 共用這一份（單一真相）。
+// ⚠️ 不得複用 reward_balances.pending——該欄位涵蓋 awaiting_collection，
+// 集合不同（只有 pending 可能被退件、退款落回帳本）。
+// ============================================================
+async function hasPendingWithdrawal(userId: string): Promise<boolean> {
+  const { data } = await sb()
+    .from('withdrawals')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .limit(1);
+  return (data?.length ?? 0) > 0;
 }
 
 // ============================================================
@@ -1377,10 +1393,11 @@ app.post('/payuni/prepare', async (c) => {
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
   if (renewalMode === 'extend') {
-    // extend 只有「曾是會員」且「接續後效期仍在未來」才有意義——過期
-    // 超過一年的人選 extend 會付了錢效期仍在過去，直接拒絕（前端也不
-    // 顯示該選項），process_successful_payment 才能對 renewal_mode
-    // 字面執行而不需要補救邏輯。
+    // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
+    // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
+    // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
+    // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
+    // 沒有可接續的效期。
     const { data: lastSub } = await client
       .from('subscriptions')
       .select('end_date')
@@ -1392,17 +1409,17 @@ app.post('/payuni/prepare', async (c) => {
     if (!lastSub?.end_date) {
       return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
     }
-    // 日領域計算，與 process_successful_payment 的 extend 分支
-    // （tw_day(前期迄) + 1 天起算）完全同語意——這裡通過的請求，
-    // 付款完成後端點算出來的效期保證仍在未來。
-    const anchorDay = twDayPlusDays(twDayOf(lastSub.end_date), 1);
-    const extendedEndDay = subscriptionLastDay(anchorDay);
-    if (twEndOfDayInstant(extendedEndDay).getTime() <= Date.now()) {
-      return c.json(
-        { success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' },
-        400,
-      );
-    }
+  }
+
+  // A16：有審核中（pending）提領時擋下 fresh——fresh 會清空帳本，而
+  // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
+  // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
+  // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
+  if (renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id))) {
+    return c.json(
+      { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
+      400,
+    );
   }
 
   // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
@@ -1435,6 +1452,50 @@ app.post('/payuni/prepare', async (c) => {
     if (refErr) {
       console.error('[prepare] 更新推薦人失敗:', refErr);
       return c.json({ success: false, error: '更新推薦人失敗' }, 500);
+    }
+  } else if (renewalMode === 'fresh') {
+    // A10：選新約 = 離開原本的樹；未填碼不等於「維持原狀」，而是比照
+    // 首購未填碼的既有語意——套用平台預設推薦碼，referred_by_is_default
+    // = true（前端據此隱藏這個碼，使用者視角就是「沒有上一代」）。
+    // A11：任一步失敗 → 維持原上代不變 + 告警，**絕不阻斷金流**。
+    // 碼的合法性唯一判準仍是 validate_referral_code（停權/失效都在裡面），
+    // 不複製 resolve_default_referrer 的分類。
+    const alertDefaultUnavailable = (reason: string, extra: Record<string, unknown> = {}) =>
+      logSystemAlert(
+        'payuni-prepare',
+        { user_id: user.id, reason, ...extra },
+        'default_referrer_unavailable_on_fresh',
+      );
+    const { data: cfgRow } = await client
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const defaultCode = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
+    if (!defaultCode) {
+      await alertDefaultUnavailable('unset');
+    } else {
+      const { data: codeRows, error: codeErr } = await client
+        .rpc('validate_referral_code', { p_code: defaultCode });
+      if (codeErr || !codeRows || codeRows.length === 0) {
+        // 不存在、已失效、推薦人停權都落在這裡（validate 的職責）。
+        await alertDefaultUnavailable('code_not_applicable', { code: defaultCode });
+      } else if (codeRows[0].referrer_user_id === user.id) {
+        // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
+        await alertDefaultUnavailable('self_referral', { code: defaultCode });
+      } else {
+        const { error: refErr } = await client
+          .from('profiles')
+          .update({
+            referred_by_code: defaultCode,
+            referred_by_user_id: codeRows[0].referrer_user_id,
+            referred_by_is_default: true,
+          })
+          .eq('id', user.id);
+        if (refErr) {
+          await alertDefaultUnavailable('profile_update_failed', { error: refErr.message });
+        }
+      }
     }
   }
 
@@ -1562,6 +1623,30 @@ app.get('/payuni/result/:tradeNo', async (c) => {
     }
   }
 
+  // 精簡版續約資訊（renewal-backfill）：PaymentResult 據此判斷「這是
+  // 補繳中間筆」（backfillCount > 0 → 顯示進度而非開通輪詢），不必另掛
+  // useSubscription()。以查詢當下 DB 的最新訂閱迄日計算剩餘補繳。
+  // 型別綁契約 PayuniResultRenewalSchema——欄位增減兩端都會被 TS 抓到。
+  let renewal: PayuniResultRenewal | null = null;
+  {
+    const { data: latestSub } = await sb()
+      .from('subscriptions')
+      .select('end_date')
+      .eq('user_id', user.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestSub?.end_date) {
+      const plan = backfillPlan(twDayOf(latestSub.end_date), twDayOf(new Date()))!;
+      renewal = {
+        backfillCount: plan.backfillCount,
+        backfillAmount: plan.backfillCount * 1200,
+        extendAnchorDate: plan.extendAnchorDay,
+        extendEndDate: plan.extendEndDay,
+      };
+    }
+  }
+
   // orderStatus 只用來決定前端是否要繼續 polling；成功/失敗的實際原因與
   // 明細一律以 payuni（PayUni 原始回傳資料）為準，不再自創詞彙轉換。
   return c.json({
@@ -1574,6 +1659,7 @@ app.get('/payuni/result/:tradeNo', async (c) => {
       // 「開通處理中」而不是把使用者當成沒付錢。
       paidAwaitingActivation: order.status === 'pending' &&
         order.payuni_response?.Status === 'SUCCESS',
+      renewal,
     },
   });
 });
@@ -1648,6 +1734,9 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
     // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、
     // warning-only 沒寫成的上線續約獎勵。同樣 best-effort、冪等。
     await sb().rpc('repair_orphaned_claim_rewards', { p_user_id: userId });
+    // fresh 清空帳本的自癒：補回付款當下沖銷失敗的 ledger_reset 列，
+    // 金額取失敗時的告警快照（不是現值）。同樣 best-effort、冪等。
+    await sb().rpc('repair_orphaned_forfeitures', { p_user_id: userId });
   } catch (e) {
     console.error('[repairOrphanedPaymentsBestEffort]', e);
   }
@@ -2089,22 +2178,82 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct }, { data: sub }] = await Promise.all([
+  const [{ data: acct }, { data: subs }, pendingWithdrawal] = await Promise.all([
     sb().from('user_account_status')
       .select('status, end_date')
       .eq('user_id', user.id)
       .single(),
-    // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
+    // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
     // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
-    // 「看不到」有延長）。
+    // 「看不到」有延長）。source_payment_order_id 供補繳簽名判定取對應
+    // 訂單的付款時點；取多筆是為了往前走出「本輪已付幾筆」（A15）。
     sb().from('subscriptions')
-      .select('start_date, end_date')
+      .select('start_date, end_date, source_payment_order_id')
       .eq('user_id', user.id)
       .order('end_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(40),
+    // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
+    hasPendingWithdrawal(user.id),
   ]);
+
+  // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
+  // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
+  // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
+  const sub = subs?.[0] ?? null;
+  let renewal: Record<string, unknown> | null = null;
+  if (sub?.end_date) {
+    const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
+
+    const srcOrderIds = (subs ?? [])
+      .map((s) => s.source_payment_order_id)
+      .filter((id): id is string => !!id);
+    const [{ data: srcOrders }, { data: bal }, { data: tp }] = await Promise.all([
+      srcOrderIds.length > 0
+        ? sb().from('payment_orders')
+          .select('id, completed_at')
+          .in('id', srcOrderIds)
+        : Promise.resolve({ data: [] as { id: string; completed_at: string | null }[] }),
+      sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
+      sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
+    ]);
+
+    // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
+    // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
+    // 不得被誤判成「本輪已補繳」）。從最新一筆往回走，連續帶著這個簽名
+    // 的筆數 = 本輪已付補繳筆數（A15 對話框要唸出具體數字）；一遇到
+    // 非補繳筆（那是上一輪的自然效期）就停。
+    const completedAtById = new Map(
+      (srcOrders ?? []).map((o) => [o.id, o.completed_at]),
+    );
+    let paidBackfillCount = 0;
+    for (const s of subs ?? []) {
+      const completedAt = s.source_payment_order_id
+        ? completedAtById.get(s.source_payment_order_id)
+        : null;
+      const isBackfill = !!(
+        completedAt &&
+        new Date(s.end_date).getTime() < new Date(completedAt).getTime()
+      );
+      if (!isBackfill) break;
+      paidBackfillCount++;
+    }
+    const hasPaidAnyBackfill = paidBackfillCount > 0;
+
+    renewal = {
+      extendAnchorDate: plan.extendAnchorDay,
+      extendEndDate: plan.extendEndDay,
+      backfillCount: plan.backfillCount,
+      backfillAmount: plan.backfillCount * 1200,
+      backfillFinalEndDate: plan.backfillFinalEndDay,
+      expiredForMonths: plan.expiredForMonths,
+      hasPaidAnyBackfill,
+      paidBackfillCount,
+      paidBackfillAmount: paidBackfillCount * 1200,
+      freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
+      freshForfeitReferrals: tp?.total_referrals ?? 0,
+    };
+  }
 
   return c.json({
     success: true,
@@ -2114,6 +2263,8 @@ app.get('/subscriptions/status', async (c) => {
       activeUntil: acct?.end_date ?? null,
       currentPeriodStart: sub?.start_date ?? null,
       currentPeriodEnd: sub?.end_date ?? null,
+      renewal,
+      hasPendingWithdrawal: pendingWithdrawal,
     },
   });
 });
@@ -3327,8 +3478,32 @@ app.get('/referrals/debug/:userId', async (c) => {
 // 兩個欄位都不是機密:mode 從使用者被導去哪個 PayUni 網域就看得出來,
 // configured 只回報布林、不回傳任何憑證內容（同 sha 的取捨——repo 公開,
 // 這些不是機密,而可觀測性的價值遠大於它）。
-app.get('/health', (c) => {
+app.get('/health', async (c) => {
   const read = (key: string) => Deno.env.get(key);
+
+  // A12：預設推薦碼（reward_config.default_referrer_code）只能人工 SQL
+  // 設定、沒有 admin UI 掛即時驗證；fresh 未填碼的 A10 機制若因此靜默
+  // 失效，只剩事後告警。部署 SOP 本來就會打 /health 比對 sha，順帶回報
+  // 三態讓失效「可見」。任何錯誤都不得讓 /health 失敗——無法驗證時回
+  // 'invalid'（寧可假警報引人檢查，不可沉默）。碼內容絕不回傳。
+  let defaultReferrer: 'ok' | 'unset' | 'invalid' = 'invalid';
+  try {
+    const { data: cfgRow } = await sb()
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const code = (cfgRow?.default_referrer_code ?? '').trim().toLowerCase();
+    if (!code) {
+      defaultReferrer = 'unset';
+    } else {
+      const { data: rows, error } = await sb().rpc('validate_referral_code', { p_code: code });
+      defaultReferrer = !error && rows && rows.length > 0 ? 'ok' : 'invalid';
+    }
+  } catch (e) {
+    console.error('[health] defaultReferrer 檢查失敗:', e);
+  }
+
   return c.json({
     ok: true,
     ts: new Date().toISOString(),
@@ -3337,9 +3512,10 @@ app.get('/health', (c) => {
     payuniConfigured: isPayuniConfigured(read),
     // 與 payuniConfigured 同一個理由：這個設定沒有任何外顯訊號。缺 secret 時
     // 核身端點會回 500，但那要有人真的去掃一次碼才會發現；Secrets 頁只看得到
-    // digest。回一個布林值（絕不回內容）讓「設好了沒」一個 curl 就能回答，
+    // digest。回一個布林值（絕不回傳任何憑證內容）讓「設好了沒」一個 curl 就能回答，
     // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
     memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
+    defaultReferrer,
   });
 });
 

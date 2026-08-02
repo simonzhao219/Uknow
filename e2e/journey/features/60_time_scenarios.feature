@@ -47,12 +47,12 @@ Feature: 跨時間情境 — 會籍狀態機（時光機）
     Then 推薦樹包含 "C4" 的姓名與已失效標記
     And 展開二代後推薦樹仍包含 "D4" 的姓名
 
-  @journey @timemachine @negative
-  Scenario: 過期超過一年 — 僅能以新約重新起算
+  @journey @timemachine
+  Scenario: 過期超過一年 — 續約仍可選且顯示補繳揭露
     Given 時光機將 "C5" 推入過期超過一年
     When "C5" 登入並開啟付款頁
-    Then 付款頁顯示僅能以新約重新起算
-    And 付款頁沒有「續約（接續原效期）」選項
+    Then 付款頁仍提供「續約（接續原效期）」選項
+    And 付款頁顯示補繳筆數與總額揭露
 
   @journey @timemachine
   Scenario: 新約復活 — 換推薦人、效期自付款日起算、刊登重新公開

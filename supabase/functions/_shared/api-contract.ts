@@ -138,6 +138,39 @@ export const ProfileResponseSchema = obj({
 });
 export type ProfileResponse = Infer<typeof ProfileResponseSchema>;
 
+/**
+ * 續約資訊（renewal-backfill）：補繳制的結帳頁揭露（A2/A7/A14）與
+ * 建單守衛前端對應所需的全部數字。從未訂閱過 = null。
+ * hasPaidAnyBackfill 定義：最新一筆訂閱的 end_date < 其對應訂單的
+ * completed_at（補繳付款的獨有特徵——付款當下算出的效期已在過去）。
+ */
+export const RenewalInfoSchema = obj({
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆的起算日
+  extendEndDate: str(), // 'YYYY-MM-DD' 下一筆付完的到期日
+  backfillCount: num(), // 還要付幾筆才會 active（active 時 0）
+  backfillAmount: num(), // backfillCount × 年費
+  backfillFinalEndDate: str(), // 補滿後的最終到期日（active 時 = 現到期日）
+  expiredForMonths: num(), // 已過期的完整月數（active 時固定 0）
+  hasPaidAnyBackfill: bool(),
+  // 本輪已付的補繳筆數與金額（A15 二次確認要唸出具體數字）。定義：從最新
+  // 訂閱往前走，連續滿足「end_date < 對應訂單 completed_at」的筆數；沒付過
+  // 恆為 0（hasPaidAnyBackfill === paidBackfillCount > 0）。
+  paidBackfillCount: num(),
+  paidBackfillAmount: num(), // paidBackfillCount × 年費
+  freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
+  freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
+});
+export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
+
+/** /payuni/result 的精簡版：PaymentResult 只需判斷補繳中間筆與去路文案。 */
+export const PayuniResultRenewalSchema = obj({
+  backfillCount: num(),
+  backfillAmount: num(),
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆起算日——「已補至」= 它的前一天
+  extendEndDate: str(),
+});
+export type PayuniResultRenewal = Infer<typeof PayuniResultRenewalSchema>;
+
 export const SubscriptionStatusResponseSchema = obj({
   success: bool(),
   data: obj({
@@ -146,6 +179,11 @@ export const SubscriptionStatusResponseSchema = obj({
     activeUntil: nullable(str()),
     currentPeriodStart: nullable(str()),
     currentPeriodEnd: nullable(str()),
+    renewal: nullable(RenewalInfoSchema),
+    // A16 建單守衛的前端對應（是建單條件、不是續約概念，故在頂層）。
+    // 只認 status='pending'——不得複用 reward_balances.pending（涵蓋
+    // awaiting_collection，集合不同）。
+    hasPendingWithdrawal: bool(),
   }),
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
@@ -212,12 +250,13 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  * 分辨/篩選點數來源的單一詞彙表，前後端共享：SQL 用 CASE 產出、edge 直通、
  * 前端讀 enum——取代前端切 description 反推分類的舊反模式。
  *
- * 分類軸是「拉新／續約」（規格書 §8.4 的語彙），不是冪等鍵：
+ * 分類軸是「拉新／續約」加「帳本事件」（規格書 §8.4 的語彙），不是冪等鍵：
  *   referral_signup    這位被推薦人第一次替我帶來獎勵（配對視角，非全域首購）
  *   referral_renewal   同一位被推薦人的後續獎勵——付款續約與任務免費續約皆是
  *   withdrawal         點數提領扣款
  *   withdrawal_refund  提領退件退還（adjustment 且綁 withdrawal_id）
  *   adjustment_manual  人工調整（目前無端點產生；有資料才會出現在篩選器）
+ *   ledger_reset       新約重置——選 fresh 續約時清空帳本的負額沖銷列
  *
  * 付款續約 vs 任務免費續約的差別沒有消失，改由 RewardHistoryRecord.viaFreeRenewal
  * 承載（明細第二行註記），不再佔一個分類。
@@ -228,6 +267,7 @@ export const REWARD_SOURCE_CATEGORIES = [
   'withdrawal',
   'withdrawal_refund',
   'adjustment_manual',
+  'ledger_reset',
 ] as const;
 export const RewardSourceCategorySchema = literals(...REWARD_SOURCE_CATEGORIES);
 export type RewardSourceCategory = Infer<typeof RewardSourceCategorySchema>;

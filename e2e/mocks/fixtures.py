@@ -44,10 +44,32 @@ def seed_authenticated_session(
     # 狀態天生一致；需要不同步狀態的情境（如任務延長會籍）仍可在之後呼叫
     # set_subscription_status* 覆寫（Playwright 後註冊的路由優先）。
     account_status = profile.get("accountStatus", "expired")
+    # renewal 契約（renewal-backfill）：結帳頁掛 useSubscription() 讀補繳
+    # 資訊，預設回一份形狀正確的固定值（曾訂閱才有；從未訂閱 = null）。
+    # 需要精確數字的情境自行呼叫 set_subscription_status 覆寫。
+    end_date = profile.get("subscriptionEndDate")
+    renewal = None
+    if end_date:
+        expired = account_status != "active"
+        renewal = {
+            "extendAnchorDate": "2026-04-03",
+            "extendEndDate": "2027-04-02",
+            "backfillCount": 1 if expired else 0,
+            "backfillAmount": 1200 if expired else 0,
+            "backfillFinalEndDate": "2027-04-02",
+            "expiredForMonths": 3 if expired else 0,
+            "hasPaidAnyBackfill": False,
+            "paidBackfillCount": 0,
+            "paidBackfillAmount": 0,
+            "freshForfeitPoints": 0,
+            "freshForfeitReferrals": 0,
+        }
     api_mock.set_subscription_status(
         has_subscription=account_status == "active",
         status=account_status,
-        active_until=profile.get("subscriptionEndDate"),
+        active_until=end_date,
+        renewal=renewal,
+        hasPendingWithdrawal=False,
     )
     return profile
 
