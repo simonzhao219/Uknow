@@ -16,7 +16,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1.1 | 證件審核資料層 + 上傳端點狀態轉換 + backfill | ⬜ 未開始 | | |
+| 1.1 | 證件審核資料層 + 上傳端點狀態轉換 + backfill | ✅ 綠 | `7523d0e` | `d0b31bd` |
 | 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | ⬜ 未開始 | | |
 | 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | ⬜ 未開始 | | |
 | 1.4 | 會員端證件狀態區塊（dialog 結構不變） | ⬜ 未開始 | | |
@@ -53,23 +53,35 @@
 
 ## 目前位置與下一步
 
-**已完成 2 / 15 階段**，兩個都完整走過紅→綠並通過 `npm run check`（463 tests）：
+**已完成 3 階段。**
 
-| 階段 | 產出 |
-|---|---|
-| 2.1 | `src/utils/csv.ts` —— RFC 4180 引號包裹 + CSV injection 防護（15 斷言） |
-| 2.2 | `src/utils/clipboard.ts` —— 從 `InviteFriendPanelContent` 抽出，順手修掉 `execCommand` 回 false 時顯示「已複製」的靜默失敗（6 斷言） |
+| 階段 | 紅燈 | 綠燈 | 驗證 |
+|---|---|---|---|
+| 2.1 CSV 跳脫 | `a7669e0` | `bc25432` | 本機 vitest（15 斷言） |
+| 2.2 剪貼簿 utility | `499cfe0` | `45dd17d` | 本機 vitest（6 斷言） |
+| 1.1 證件審核資料層 | `7523d0e` | `d0b31bd` | CI api-tests（run 30735264352 全綠） |
 
-**卡住，等人工裁決（見 Blockers B1）。** 剩餘 13 個階段裡：
+階段 1.1 的紅燈範圍乾淨（`id-verification.test.ts` 全紅、其餘測試檔照常通過），
+綠燈那輪 `api-tests` / `static-checks` / `unit-tests` / `migration-guard` / `ci-ok`
+全數 success。
 
-- **10 個需要真 Postgres**（1.1–1.3、2.3–2.6、3.1–3.3）——本容器 docker daemon
-  不可用，`supabase start` 起不來，拿不到紅燈也驗不了綠燈。
-- **3 個是前端**（1.4、1.5、2.7、2.8、2.9、3.4 共 6 個），但它們**全部依賴上述
-  後端端點的契約**。先寫前端等於讓 mock 定義契約，等真後端補上時再對不起來
-  ——plan 把後端排在前面就是這個理由。
+**進行中：階段 1.2**（`request_withdrawal` 守衛 #5a，只擋 `rejected`）。
+紅燈測試已寫進 `withdrawals.test.ts`，待 CI 判定。
 
-**在裁決之前不動那些階段。** 盲寫後端測試再靠 CI 猜，違反「紅燈必須是斷言紅」
-的前提；先寫前端則是拿 mock 當契約真相。
+### 本機能驗到哪裡（重要，下一個 session 別重踩）
+
+| 檢查 | 本機 | 原因 |
+|---|---|---|
+| vitest | ✅ | — |
+| `deno fmt` / `deno lint` | ✅ | 不需要 registry |
+| `deno check`（型別） | ❌ | `jsr.io` 回 403，相依解析不了。守則已載明這種環境降級交給 CI |
+| `deno task test:db` | ❌ | docker daemon 不可用 |
+
+所以後端階段的**型別與行為都只能靠 CI**。deno 本身可用（`npm i deno` 2.9.4），
+但只幫得上 fmt/lint。
+
+**流程節奏**：每次 push 會 concurrency 取消正在跑的 run，所以「推 commit」與
+「等驗證」互斥。進度檔的更新要搭著下一個階段的 commit 一起推，不能單獨推。
 
 ## Blockers（逃生口紀錄）
 
