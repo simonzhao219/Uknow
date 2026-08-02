@@ -9,10 +9,13 @@ import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
+  createWithdrawableUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  requestWithdrawal,
+  TEST_ID_NUMBER,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -23,44 +26,6 @@ Deno.env.set('PAYUNI_SANDBOX', 'false');
 Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
 const { app } = await import('./index.ts');
-
-const ID_NUMBER = 'A123456789';
-
-// 建一個「可提領」的使用者：已付款會員 + 已加入推薦計畫 + 身分證 +
-// 證件照路徑 + 直接塞 balance 點數。
-async function createWithdrawableUser(client: ReturnType<typeof adminClient>, balance: number) {
-  const user = await createTestUser(client, { name: 'Withdraw User' });
-  const { error } = await payForUser(client, user.id);
-  assertEquals(error, null);
-  await client.from('profiles').update({
-    referral_program_joined: true,
-    national_id: ID_NUMBER,
-    id_card_front_path: `${user.id}/front.jpg`,
-    id_card_back_path: `${user.id}/back.jpg`,
-  }).eq('id', user.id);
-  if (balance > 0) {
-    await client.from('reward_transactions').insert({
-      user_id: user.id,
-      type: 'adjustment',
-      amount: balance,
-      description: '測試點數',
-    });
-  }
-  return user;
-}
-
-async function requestWithdrawal(
-  client: ReturnType<typeof adminClient>,
-  userId: string,
-  amount: number,
-) {
-  return await client.rpc('request_withdrawal', {
-    p_user_id: userId,
-    p_amount: amount,
-    p_bank_code: '812',
-    p_bank_account: '1234567890123',
-  });
-}
 
 Deno.test('request_withdrawal：申請即扣 amount+fee、快照銀行資訊、一天一次', async () => {
   const client = adminClient();
@@ -271,7 +236,7 @@ Deno.test('HTTP 端點：withdraw / points-preview / verify-id / 提領記錄', 
     const okVerify = await app.request('/api/rewards/verify-id', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idNumber: ID_NUMBER }),
+      body: JSON.stringify({ idNumber: TEST_ID_NUMBER }),
     });
     assertEquals((await okVerify.json()).success, true);
     const badVerify = await app.request('/api/rewards/verify-id', {
@@ -295,7 +260,7 @@ Deno.test('HTTP 端點：withdraw / points-preview / verify-id / 提領記錄', 
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: 1000,
-        idNumber: ID_NUMBER,
+        idNumber: TEST_ID_NUMBER,
         bankCode: '812',
         bankAccount: '1234-5678-901234',
       }),

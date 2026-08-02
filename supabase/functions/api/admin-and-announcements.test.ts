@@ -11,10 +11,12 @@ import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
+  createWithdrawableUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  requestWithdrawal,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -375,6 +377,130 @@ Deno.test('GRANT：authenticated 不得 EXECUTE 改寫後的 admin_list_members'
         'authenticated',
         'public.admin_list_members(text, text, text, int, int)',
         'EXECUTE'
+      ) as can_execute
+    `;
+    assertEquals(row.can_execute, false);
+  } finally {
+    await sql.end();
+  }
+});
+
+// ============================================================
+// 會員詳情（規劃書階段 3.2 / 驗收情境 M1）
+//
+// §1.1 的頭號客服情境是「我提領怎麼還沒到」。**詳情面板答不出這句話就失去
+// 存在意義**——所以近期提領記錄（狀態／退件理由／匯款與查收時間）是這支
+// 端點的核心欄位，不是附加資訊。
+//
+// 遮罩（需求方裁決）：身分證與銀行帳號一律遮罩。需要全碼時回提領作業台看，
+// 那裡因匯款作業需要而維持完整值（profile-masking.test.ts 有 characterization
+// 把關）。查詢台是客服日常翻閱的地方，翻閱不需要全碼。
+// ============================================================
+
+Deno.test('admin_member_detail：回得到會籍、餘額、推薦人、下線數與證件狀態', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Detail Admin' });
+  const referrer = await createTestUser(client, { name: 'Detail Referrer' });
+  const member = await createTestUser(client, { name: 'Detail Member' });
+  const child = await createTestUser(client, { name: 'Detail Child' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, member.id);
+    await client
+      .from('profiles')
+      .update({ referred_by_user_id: referrer.id, id_verification_status: 'approved' })
+      .eq('id', member.id);
+    await client.from('profiles').update({ referred_by_user_id: member.id }).eq('id', child.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+
+    assertEquals(res.status, 200);
+    const d = body.data.member;
+    assertEquals(d.accountStatus, 'active');
+    assert(d.endDate, `付費會員應有會籍到期日：${JSON.stringify(d)}`);
+    assertEquals(d.idVerificationStatus, 'approved');
+    assertEquals(d.referrerName, 'Detail Referrer');
+    assertEquals(d.directChildCount, 1);
+    assertEquals(typeof d.availablePoints, 'number');
+  } finally {
+    await deleteTestUsers(client, [admin.id, referrer.id, member.id, child.id]);
+  }
+});
+
+Deno.test('admin_member_detail：身分證與銀行帳號一律遮罩', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Mask Admin' });
+  const member = await createTestUser(client, { name: 'Mask Member' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await client
+      .from('profiles')
+      .update({
+        national_id: 'A123456789',
+        bank_code: '822',
+        bank_account: '1234567890123',
+      })
+      .eq('id', member.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const d = (await res.json()).data.member;
+
+    assert(!d.idNumber.includes('456'), `身分證中段不得外洩：${d.idNumber}`);
+    assert(d.idNumber.includes('*'), `身分證應遮罩：${d.idNumber}`);
+    assert(!d.bankAccount.includes('123456789'), `銀行帳號主體不得外洩：${d.bankAccount}`);
+    assert(d.bankAccount.endsWith('0123'), `末四碼保留供核對：${d.bankAccount}`);
+    // 銀行代號不遮罩：它識別的是銀行不是個人，遮了反而讓客服對不出是哪一家。
+    assertEquals(d.bankCode, '822');
+  } finally {
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('admin_member_detail：近期提領記錄帶狀態與退件理由', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Hist Admin' });
+  const member = await createWithdrawableUser(client, 5000);
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    const { data: req } = await requestWithdrawal(client, member.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '收款帳號與身分證姓名不符',
+    });
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const rows = (await res.json()).data.member.recentWithdrawals;
+
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, 'rejected');
+    // 「我提領怎麼還沒到」的答案就是這行字，答不出來詳情面板就沒有意義。
+    assertEquals(rows[0].note, '收款帳號與身分證姓名不符');
+  } finally {
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_member_detail', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated', 'public.admin_member_detail(uuid)', 'EXECUTE'
       ) as can_execute
     `;
     assertEquals(row.can_execute, false);
