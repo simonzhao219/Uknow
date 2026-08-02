@@ -1053,15 +1053,38 @@ app.get('/admin/withdrawals', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   const statusFilter = c.req.query('status');
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+  const search = c.req.query('search')?.trim();
   const limit = Math.min(parseInt(c.req.query('limit') || '200'), 500);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
   const client = sb();
+
+  // 搜尋比對的是會員姓名，而姓名在 profiles——先解析出 user_id 集合再篩提領單。
+  // 空集合要當成「查無此人」而不是「不篩」，否則搜尋不到的字串會回傳全部。
+  let searchUserIds: string[] | null = null;
+  if (search) {
+    const { data: hits } = await client.from('profiles')
+      .select('id')
+      .ilike('name', `%${search}%`);
+    searchUserIds = (hits ?? []).map((p: any) => p.id);
+  }
+
   let query = client.from('withdrawals')
     .select('*', { count: 'exact' })
     .order('requested_at', { ascending: false })
     .range(offset, offset + limit - 1);
-  if (statusFilter) query = query.eq('status', statusFilter);
+  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+  if (from) query = query.gte('requested_at', from);
+  // to 是「當日含」：+1 天再取小於，否則當天申請的會被排除
+  if (to) {
+    const end = new Date(`${to}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    query = query.lt('requested_at', end.toISOString());
+  }
+  if (searchUserIds !== null) query = query.in('user_id', searchUserIds);
+
   const { data: rows, count, error: listErr } = await query;
   // 金流後台必須能區分「查詢失敗」與「真的沒有提領單」——DB 故障
   // 靜默轉成空 200 會讓 admin 以為沒有待審件，維運端零察覺。
@@ -1092,8 +1115,33 @@ app.get('/admin/withdrawals', async (c) => {
     }
   }
 
+  // 轉換歷史：一次 in 查詢後在應用層 group，不是逐筆打 DB（同上面證件照的
+  // 批次簽名作法）。逐筆會讓 200 列變成 200 次往返。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await client.from('withdrawal_events')
+      .select('*')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) {
+      (eventMap[e.withdrawal_id] ??= []).push({
+        fromStatus: e.from_status,
+        toStatus: e.to_status,
+        note: e.note,
+        bankRef: e.bank_ref,
+        transferredOn: e.transferred_on,
+        // admin_id 為 null = 會員自己的動作（查收確認）。不外洩 admin 身分,
+        // 只回布林——前端要區分的是「誰按的類別」不是「哪個 admin」。
+        byAdmin: e.admin_id !== null,
+        createdAt: e.created_at,
+      });
+    }
+  }
+
   const withdrawals = (rows ?? []).map((w: any) => {
     const p = profMap[w.user_id];
+    const events = eventMap[w.id] ?? [];
     return {
       id: w.id,
       userId: w.user_id,
@@ -1105,7 +1153,10 @@ app.get('/admin/withdrawals', async (c) => {
       status: w.status,
       bankCode: w.bank_code,
       bankAccount: w.bank_account,
-      note: w.note,
+      // 主表的 note 自 20260802000004 起 vestigial（讀它只會拿到 null）。
+      // 取事件表最新一筆——那才是「這筆現在的說明」。
+      note: events.length ? (events[events.length - 1].note ?? null) : null,
+      events,
       requestedAt: w.requested_at,
       processedAt: w.processed_at,
       completedAt: w.completed_at,
@@ -1114,7 +1165,33 @@ app.get('/admin/withdrawals', async (c) => {
     };
   });
 
-  return c.json({ success: true, data: { withdrawals, total: count ?? 0, limit, offset } });
+  // 彙總在 SQL 端對**整個篩選結果**算，不是對當前頁——後者會隨分頁改變，
+  // 等於一個會說謊的總額，而 admin 拿它去對網銀的轉出金額。
+  const { data: stats } = await client.rpc('admin_withdrawal_stats', {
+    p_status: statusFilter ?? null,
+    p_from: from ?? null,
+    p_to: to ?? null,
+    p_search: search ?? null,
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      withdrawals,
+      total: count ?? 0,
+      limit,
+      offset,
+      stats: {
+        pendingAmount: stats?.pending_amount ?? 0,
+        byStatus: stats?.by_status ?? {
+          pending: 0,
+          awaiting_collection: 0,
+          completed: 0,
+          rejected: 0,
+        },
+      },
+    },
+  });
 });
 
 // POST /admin/withdrawals/:id/status

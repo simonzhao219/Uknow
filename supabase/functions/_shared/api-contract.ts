@@ -585,6 +585,32 @@ export const SystemAlertsResponseSchema = obj({
 export type SystemAlert = Infer<typeof SystemAlertSchema>;
 export type SystemAlertsResponse = Infer<typeof SystemAlertsResponseSchema>;
 
+// 提領狀態轉換的一筆歷史（withdrawal_events）。
+// `byAdmin: false` = 會員自己的查收確認——只回類別，不外洩是哪個 admin。
+export const WithdrawalEventSchema = obj({
+  fromStatus: str(),
+  toStatus: str(),
+  note: nullable(str()),
+  bankRef: nullable(str()),
+  transferredOn: nullable(str()),
+  byAdmin: bool(),
+  createdAt: str(),
+});
+export type WithdrawalEvent = Infer<typeof WithdrawalEventSchema>;
+
+// 待匯款總額用 amount（銀行實付）而非 amount + fee——手續費是平台收的，
+// 不會匯出去。admin 拿這個數字去對網銀的轉出總額。
+export const AdminWithdrawalStatsSchema = obj({
+  pendingAmount: num(),
+  byStatus: obj({
+    pending: num(),
+    awaiting_collection: num(),
+    completed: num(),
+    rejected: num(),
+  }),
+});
+export type AdminWithdrawalStats = Infer<typeof AdminWithdrawalStatsSchema>;
+
 export const AdminWithdrawalRecordSchema = obj({
   id: str(),
   userId: str(),
@@ -596,7 +622,9 @@ export const AdminWithdrawalRecordSchema = obj({
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
   bankCode: nullable(str()),
   bankAccount: nullable(str()),
+  // 主表的 note 自 20260802000004 起 vestigial；這個值取自事件表最新一筆。
   note: nullable(str()),
+  events: arr(WithdrawalEventSchema),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -612,6 +640,7 @@ export const AdminWithdrawalsResponseSchema = obj({
     total: num(),
     limit: num(),
     offset: num(),
+    stats: AdminWithdrawalStatsSchema,
   }),
 });
 export type AdminWithdrawalsResponse = Infer<typeof AdminWithdrawalsResponseSchema>;
