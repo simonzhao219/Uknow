@@ -1,14 +1,14 @@
 # 補繳式續約(renewal-backfill)實作進度
 
 分支:`feature/renewal-backfill`(base:`origin/develop` @ `0bc3edf`)
-規劃書:`./plan.md`(**第 5 版**)|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(**第 6 版**)|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | user 層級鎖(migration,基準 = `20260720000001`) | ⬜ 未開始 | | |
-| 2 | **A13 fresh 清空帳本**(migration,基準 = 階段 1 產出版) | ⬜ 未開始 | | |
+| 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | ⬜ 未開始 | | |
+| 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | ⬜ 未開始 | | |
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ⬜ 未開始 | | |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ⬜ 未開始 | | |
@@ -28,18 +28,13 @@
 
 ## 目前位置與下一步
 
-**第 3 輪審查完成**(review.md 末段):**P0×1、P1×13、P2×6**(去重後)。
-四處階段編號引用漂移已由聚合者機械修正(唯一性斷言),根因進 friction-log。
+**第 3 輪 8 項裁決已回填,plan.md 改寫為第 6 版**(裁決內容見 review.md
+「第 3 輪裁決」節)。**第 4 輪 `/review-plan` 已派出**——依人的指示,
+每輪修訂都要經過多方 Review。
 
-正面:需求視角確認 A13-A16 對照 rules.md **逐字無偷加碼/偷縮水**;系統視角
-確認 `reward_balances` 天然支持負額沖銷列、自癒路徑不會雙重沖銷。
-
-**卡在等人裁決第 3 輪處置節的 8 個決定**(review.md 末尾 checklist):
-renewal 缺漏策略(P0)、沖銷列分類、沖銷插入點、A16 狀態集合、「取消提領」
-措辭、A14 跳轉前確認、PR 拆分、rules.md 保留。裁決後出第 6 版 → 第 4 輪
-審查 → 人審。
-
-實作只能由人親自打 `/tdd-implement renewal-backfill` 啟動。
+第 4 輪彙整後 → 停,等人最終裁決。實作由人親自打
+`/tdd-implement renewal-backfill` 啟動;階段 1(併發鎖)依裁決走獨立
+先行 PR `fix/payment-user-lock`。
 
 ### 實作時特別要記住的五條
 
