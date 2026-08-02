@@ -594,3 +594,34 @@ PaymentResult),而且是在規劃者已經被同一件事指正過一次之後�
 ⚠️ **這一點超出 Q5 的範圍,值得人另外裁決**(已列為 Q7,見 plan.md §6):
 若 extend 對使用者永遠是劣勢選項,「補繳制」實際上會是一個**設計出來但
 沒有人會理性選擇**的路徑,本 feature 的九個階段有相當比例是在服務它。
+
+### Q7 裁決(2026-08-02,人):(a) 接受現狀
+
+**第 3 版「extend 永遠劣勢」的分析前提不完整**——只比較了「效期 vs 價格」,
+漏掉帳本。**extend 的真正價值 = 保住累積的點數與任務進度**;選 fresh 則清空。
+過期期間下線持續付款,上代照常入帳(§5.1、`pay_referral_generations` 與
+`apply_referral_side_effects` Block B 皆不檢查上線狀態,已覆核),累積越多
+extend 的價值越高。
+
+**同時查明的兩件事(供另一包「上代配對線」規劃時使用)**:
+
+1. **「選新約不填推薦碼」≠「套用預設推薦碼」。**
+   - `/payuni/prepare` 只在 `renewalMode === 'fresh' && referredByCode` 兩條件
+     同時成立時才改寫 `profiles.referred_by_*`(`index.ts:1414`)
+   - `apply_referral_side_effects` 的預設推薦人分支只在
+     `v_referrer1 is null` 時才走(`20260726000102:103-105`);
+     `resolve_default_referrer` 內部又讀 `subscriptions.is_renewal`,
+     **非首購直接回 null**(`20260726000101:70-75`)
+   - 結論:對一個**已有上代的續約者**,選 fresh 不填碼 = **維持原上代不變**。
+     預設推薦人機制只對「首購且從未有上代」的人生效。
+
+2. **失效期間照常入帳、照常累積任務,extend 續約後全部保留。**
+   規格書 §5.1 明寫且與 code 一致;`pay_referral_generations` 綁下線付款事件、
+   不檢查上線狀態,`apply_referral_side_effects` Block B 的 task +1 只做
+   pair-history 判斷、同樣不看上線狀態。
+
+**衍生的新開放問題**(已寫入 plan.md §6):
+- **Q8**:「fresh 清空帳本」屬另一包,若本 feature 先單獨上線,extend 在過渡期
+  仍是劣勢選項,且使用者會養成「選 fresh 沒差」的認知。
+- **Q9**:選 fresh 前的清空揭露,以及「補繳中途改選 fresh」「待審提領遇到清空」
+  兩個邊界。
