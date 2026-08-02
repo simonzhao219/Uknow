@@ -91,6 +91,37 @@ export function subscriptionLastDay(anchorDay: string): string {
   return a >= b ? a : b; // ISO 字串可直接字典序比較
 }
 
+export type BackfillInstallment = { anchorDay: string; endDay: string };
+
+export type BackfillPlan = {
+  extendAnchorDay: string;
+  extendEndDay: string;
+  backfillCount: number;
+  backfillFinalEndDay: string;
+  expiredForMonths: number;
+  installments: BackfillInstallment[];
+};
+
+/**
+ * 補繳計畫（A1-A4）：從最新訂閱的最後一天與「今天」（皆台灣日曆日）算出
+ * extend 錨點、要補幾筆才 active、每筆的起訖、補滿後到期日與已過期完整
+ * 月數。到期日當天仍 active。規則與案例見 _shared/backfill-cases.ts
+ * （兩側副本共用同一份案例表）。
+ */
+export function backfillPlan(lastEndDay: string | null, today: string): BackfillPlan | null {
+  if (!lastEndDay) return null;
+  parseDay(today);
+  // TODO(tdd 紅燈 stub)：實作於綠燈階段。
+  return {
+    extendAnchorDay: '',
+    extendEndDay: '',
+    backfillCount: -1,
+    backfillFinalEndDay: '',
+    expiredForMonths: -1,
+    installments: [],
+  };
+}
+
 /** 台灣某日 00:00:00 的時點 */
 export function twStartOfDayInstant(day: string): Date {
   parseDay(day); // 驗證格式

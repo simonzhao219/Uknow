@@ -23,6 +23,7 @@
       "@/*": ["./src/*"],
       "@contract": ["./supabase/functions/_shared/api-contract.ts"],
       "@name-cases": ["./supabase/functions/_shared/name-validation-cases.ts"],
+      "@backfill-cases": ["./supabase/functions/_shared/backfill-cases.ts"],
       "lucide-react@0.487.0": ["./node_modules/lucide-react"],
       "input-otp@1.4.2": ["./node_modules/input-otp"],
       "class-variance-authority@0.7.1": ["./node_modules/class-variance-authority"],
