@@ -63,8 +63,11 @@ jobs:
           missing = [k for k in ("checked", "resolved", "stillPending") if k not in data]
           if missing:
               sys.exit(f"::error::對帳回應缺少欄位 {missing}：{json.dumps(d, ensure_ascii=False)[:400]}")
-          print(f"對帳完成：checked={data[\"checked\"]} resolved={data[\"resolved\"]} "
-                f"stillPending={data[\"stillPending\"]} expired={data.get(\"expired\", 0)}")
+          # 不用 f-string 內嵌雙引號：整段 python 被 bash 單引號包裹，先前的
+          # \" 跳脫寫法對 python 是非法語法（f-string 運算式內不得有反斜線），
+          # 端點明明回報成功、排程卻每小時紅一次。
+          print("對帳完成：checked=%s resolved=%s stillPending=%s expired=%s" % (
+              data["checked"], data["resolved"], data["stillPending"], data.get("expired", 0)))
           ' >> "$GITHUB_STEP_SUMMARY"
 
       - name: 失敗時開 issue
