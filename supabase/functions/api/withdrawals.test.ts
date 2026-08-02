@@ -5,6 +5,7 @@
 //   * 業務規則：金額級距、一天一次（台灣日）、餘額、會籍、證件照
 // ============================================================
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
+import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
@@ -397,5 +398,208 @@ Deno.test('request_withdrawal：證件被退回但照片也沒齊 → 仍回 id_
     assertEquals(data?.error_code, 'id_rejected', JSON.stringify(data));
   } finally {
     await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// ============================================================
+// withdrawal_events（plan 階段 2.3 / 審查 P0-1、P1）
+//
+// 為什麼要事件表而不是在 withdrawals 上加欄位：主表的 note 是單一欄位，
+// 舊版 admin_update_withdrawal_status 用 `note = coalesce(p_note, note)`
+// 覆寫。新增「代為完成」轉換後，第二次填的理由會蓋掉第一次——金流稽核
+// 不能丟歷史。
+// ============================================================
+
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
+async function makeAdmin(client: ReturnType<typeof adminClient>) {
+  const admin = await createTestUser(client, { name: 'Ops Admin' });
+  await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+  return admin;
+}
+
+function eventsOf(client: ReturnType<typeof adminClient>, withdrawalId: string) {
+  return client.from('withdrawal_events')
+    .select('*')
+    .eq('withdrawal_id', withdrawalId)
+    .order('created_at');
+}
+
+Deno.test('withdrawal_events：標記已匯款寫一筆事件，帶交易序號與匯款日期', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    const { data: marked } = await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
+      p_bank_ref: 'TXN-20260802-001',
+      p_transferred_on: '2026-08-02',
+    });
+    assertEquals(marked?.success, true, JSON.stringify(marked));
+
+    const { data: evts } = await eventsOf(client, req!.withdrawal_id);
+    assertEquals(evts!.length, 1);
+    assertEquals(evts![0].from_status, 'pending');
+    assertEquals(evts![0].to_status, 'awaiting_collection');
+    assertEquals(evts![0].admin_id, admin.id);
+    // 交易序號是唯一能跟銀行對帳的錨點——爭議時「某 admin 點過按鈕」不夠。
+    assertEquals(evts![0].bank_ref, 'TXN-20260802-001');
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('withdrawal_events：退件與代為完成缺理由 → note_required', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+
+    // 退件缺理由
+    const { data: rej } = await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '   ',
+    });
+    assertEquals(rej?.error_code, 'note_required', JSON.stringify(rej));
+
+    // 代為完成缺理由（先推到 awaiting_collection）
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+    const { data: done } = await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'completed',
+      p_note: null,
+    });
+    assertEquals(done?.error_code, 'note_required', JSON.stringify(done));
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('withdrawal_events：兩次轉換各留一筆理由，歷史不被覆寫', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: '第一次：已於網銀轉出',
+    });
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'completed',
+      p_note: '第二次：逾期未確認，管理員代為結案',
+    });
+
+    const { data: evts } = await eventsOf(client, req!.withdrawal_id);
+    assertEquals(evts!.length, 2);
+    // 這正是 v1 方案的缺陷：單一 note 欄位會讓第二次蓋掉第一次。
+    assertEquals(evts![0].note, '第一次：已於網銀轉出');
+    assertEquals(evts![1].note, '第二次：逾期未確認，管理員代為結案');
+
+    // 主表的 note 欄位停止寫入（保留但 vestigial）
+    const { data: w } = await client.from('withdrawals')
+      .select('note, status').eq('id', req!.withdrawal_id).single();
+    assertEquals(w!.note, null, 'withdrawals.note 不應再被狀態機寫入');
+    assertEquals(w!.status, 'completed');
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('withdrawal_events：同狀態重入冪等，不重複寫事件', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    for (let i = 0; i < 2; i++) {
+      await client.rpc('admin_update_withdrawal_status', {
+        p_admin_id: admin.id,
+        p_withdrawal_id: req!.withdrawal_id,
+        p_status: 'awaiting_collection',
+        p_note: null,
+      });
+    }
+    const { data: evts } = await eventsOf(client, req!.withdrawal_id);
+    assertEquals(evts!.length, 1, '重入不該多寫一筆事件');
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+Deno.test('withdrawal_events：會員自己查收也寫事件，admin_id 為 null', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    const { data: req } = await requestWithdrawal(client, user.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+    await client.rpc('confirm_withdrawal_collection', {
+      p_user_id: user.id,
+      p_withdrawal_id: req!.withdrawal_id,
+    });
+
+    const { data: evts } = await eventsOf(client, req!.withdrawal_id);
+    assertEquals(evts!.length, 2);
+    // admin_id 為 null 就是「會員自己按的」——不必另開欄位表達同一件事。
+    assertEquals(evts![1].admin_id, null);
+    assertEquals(evts![1].to_status, 'completed');
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});
+
+// 直接問 Postgres 而非以 authenticated 打 PostgREST——理由見
+// name-write-paths.test.ts 檔頭：後者的 403 可能來自不相干的權限，
+// 即使 REVOKE 沒生效也照樣「被拒」，斷言會失去辨別力。
+Deno.test('GRANT：authenticated 與 anon 都不得讀寫 withdrawal_events', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql`
+      select
+        relrowsecurity as rls_enabled,
+        has_table_privilege('authenticated', 'public.withdrawal_events', 'SELECT') as auth_select,
+        has_table_privilege('authenticated', 'public.withdrawal_events', 'INSERT') as auth_insert,
+        has_table_privilege('anon', 'public.withdrawal_events', 'SELECT')          as anon_select
+      from pg_class
+      where oid = 'public.withdrawal_events'::regclass
+    `;
+    // 本 repo 每張新表零例外都要 enable RLS + revoke（20260717000001：
+    // 不做 blanket grant，預設權限不可依賴）。這張表存 admin_id / bank_ref /
+    // note，漏了就是全站提領稽核紀錄外洩。
+    assertEquals(row.rls_enabled, true, 'withdrawal_events 應啟用 RLS');
+    assertEquals(row.auth_select, false);
+    assertEquals(row.auth_insert, false);
+    assertEquals(row.anon_select, false);
+  } finally {
+    await sql.end();
   }
 });
