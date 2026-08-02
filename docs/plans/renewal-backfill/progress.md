@@ -10,8 +10,8 @@
 | 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | 🟢 綠燈(PR #189 待合併) | `28ba947` | `730e7fa` |
 | 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | ✅ CI 已確認(run 30757239157) | `df8ae96` | `fc55057` |
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ✅ CI 已確認(本地紅綠 + 同 run) | `22f1f87` | `dd27448` |
-| 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | 🟢 綠燈(等 CI 確認) | `26c6a12` | `968c66d` |
-| 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ⬜ 未開始 | | |
+| 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ✅ CI 佐證(run 30758187758 中 renewal-modes 全綠) | `26c6a12` | `968c66d` |
+| 5 | A10/A11 fresh 未填碼套用預設推薦碼 | 🟢 綠燈(等 CI 確認) | `84a7caa` | `ece0448` |
 | 6 | **A16 待審提領擋 fresh** | ⬜ 未開始 | | |
 | 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ⬜ 未開始 | | |
 | 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ⬜ 未開始 | | |
@@ -89,6 +89,11 @@ PR #189 已合併(develop merge commit `041b674`),本分支已 rebase。
 
 ## 框架摩擦
 
+- **CI 有 concurrency cancel-in-progress**:同分支新 push 會取消進行中的
+  run(階段 4 綠燈 head `454028e` 的 `ci-ok` 紅就是取消殘影——RESULTS 裡
+  兩個 `cancelled`,非真失敗)。應對:每階段的紅燈 push 前先等上一個 run
+  收斂;或接受「下一個 run 的 log 同時佐證前一階段」的讀法(紅燈 run 裡
+  前一階段的測試全綠即為佐證),本包從階段 4 起採後者並記於階段表。
 - 階段 2 綠燈後 CI 的 framework-check 紅:plan 把規格書 §8.4 分類表
   加列排在階段 13,但 `check-spec-drift.py` 在**每次 CI** 比對
   `REWARD_SOURCE_CATEGORIES` 與 §8.4——契約加了 `ledger_reset`、規格書
