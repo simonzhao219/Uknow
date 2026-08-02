@@ -12,14 +12,7 @@ import {
   verifyMemberToken,
   type VerifyMemberTokenResult,
 } from './member-token.ts';
-import {
-  subscriptionLastDay,
-  twCompactTimestamp,
-  twDayOf,
-  twDayPlusDays,
-  twEndOfDayInstant,
-  twMonthKey,
-} from './tw-dates.ts';
+import { twCompactTimestamp, twDayOf, twDayPlusDays, twMonthKey } from './tw-dates.ts';
 import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -1377,10 +1370,11 @@ app.post('/payuni/prepare', async (c) => {
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
   if (renewalMode === 'extend') {
-    // extend 只有「曾是會員」且「接續後效期仍在未來」才有意義——過期
-    // 超過一年的人選 extend 會付了錢效期仍在過去，直接拒絕（前端也不
-    // 顯示該選項），process_successful_payment 才能對 renewal_mode
-    // 字面執行而不需要補救邏輯。
+    // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
+    // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
+    // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
+    // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
+    // 沒有可接續的效期。
     const { data: lastSub } = await client
       .from('subscriptions')
       .select('end_date')
@@ -1391,17 +1385,6 @@ app.post('/payuni/prepare', async (c) => {
 
     if (!lastSub?.end_date) {
       return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
-    }
-    // 日領域計算，與 process_successful_payment 的 extend 分支
-    // （tw_day(前期迄) + 1 天起算）完全同語意——這裡通過的請求，
-    // 付款完成後端點算出來的效期保證仍在未來。
-    const anchorDay = twDayPlusDays(twDayOf(lastSub.end_date), 1);
-    const extendedEndDay = subscriptionLastDay(anchorDay);
-    if (twEndOfDayInstant(extendedEndDay).getTime() <= Date.now()) {
-      return c.json(
-        { success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' },
-        400,
-      );
     }
   }
 
