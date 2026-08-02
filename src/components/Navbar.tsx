@@ -15,16 +15,17 @@ import { useFeatures } from '../contexts/FeatureContext';
 import { createClient } from '../utils/supabase/client';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import { Badge } from './ui/badge';
-import type { AdminWithdrawalsResponse } from '@contract';
+import type { AdminWithdrawalSummaryResponse } from '@contract';
 import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
 
-// 只取彙總，不取列表——`limit=1` 讓後端照樣算出整個 pending 的筆數，
-// 但不用把一整頁提領記錄搬到導覽列來。
+// 走專用的輕量端點（規劃書 §2.2）。用列表端點也拿得到這個數字，但那條會
+// 順便替該筆記錄的會員產身分證簽名 URL——每次 admin 載入頁面都替某個人的
+// 證件開一次臨時外連，只為了讀一個計數。
 async function loadPendingWithdrawalCount(): Promise<number> {
-  const res = await apiRequestJson<AdminWithdrawalsResponse>(
-    buildApiUrl('/admin/withdrawals?status=pending&limit=1&offset=0'),
+  const res = await apiRequestJson<AdminWithdrawalSummaryResponse>(
+    buildApiUrl('/admin/withdrawals/summary'),
   );
-  return res.data.stats?.byStatus.pending ?? 0;
+  return res.data.pendingCount ?? 0;
 }
 
 export function Navbar() {

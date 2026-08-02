@@ -35,6 +35,7 @@ const { app } = await import('./index.ts');
 const ADMIN_ROUTES = [
   ['GET', '/api/admin/features'],
   ['GET', '/api/admin/withdrawals'],
+  ['GET', '/api/admin/withdrawals/summary'],
   ['GET', '/api/admin/members'],
   ['GET', '/api/admin/announcements'],
   ['POST', '/api/admin/announcements'],

@@ -1335,6 +1335,40 @@ app.get('/admin/members', async (c) => {
 });
 
 // ============================================================
+// GET /admin/withdrawals/summary —— 入口 badge 用的輕量彙總
+//
+// badge 只要一個數字。走 `GET /admin/withdrawals?limit=1` 也拿得到，但那條
+// handler 會順便替該筆記錄的會員產身分證正反面的**簽名 URL**——每次 admin
+// 載入頁面都替某個人的證件開一次臨時外連，只為了讀一個計數。規劃書 §2.2
+// 把這支定性為「輕量」正是要避開它。
+// ============================================================
+app.get('/admin/withdrawals/summary', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_withdrawal_stats', {
+    p_status: 'pending',
+    p_from: null,
+    p_to: null,
+    p_search: null,
+  });
+
+  if (error) {
+    console.error('[admin-withdrawals-summary] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得提領彙總' } }, 500);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      pendingCount: data?.by_status?.pending ?? 0,
+      pendingAmount: data?.pending_amount ?? 0,
+    },
+  });
+});
+
+// ============================================================
 // GET /admin/members/:id —— 會員詳情（含近期提領記錄）
 //
 // §1.1 的頭號客服情境是「我提領怎麼還沒到」，`recentWithdrawals` 就是那句話的

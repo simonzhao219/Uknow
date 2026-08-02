@@ -615,6 +615,13 @@ export const AdminWithdrawalStatsSchema = obj({
 });
 export type AdminWithdrawalStats = Infer<typeof AdminWithdrawalStatsSchema>;
 
+/** 入口 badge 用的輕量彙總。刻意不含列表——帶了就等於把整頁記錄搬到導覽列。 */
+export const AdminWithdrawalSummaryResponseSchema = obj({
+  success: bool(),
+  data: obj({ pendingCount: num(), pendingAmount: num() }),
+});
+export type AdminWithdrawalSummaryResponse = Infer<typeof AdminWithdrawalSummaryResponseSchema>;
+
 export const AdminWithdrawalRecordSchema = obj({
   id: str(),
   userId: str(),

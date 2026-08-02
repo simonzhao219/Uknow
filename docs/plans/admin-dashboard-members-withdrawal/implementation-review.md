@@ -79,7 +79,7 @@ CLAUDE.md 的規則是「規格書與程式碼衝突時以程式碼為準，並�
 | 1 | 系統／需求 | `bank_ref`／`transferred_on` 全線無輸入介面，且**端點根本沒轉發** `body.bankRef` —— 前端就算送了也會在邊緣函式被丟掉，事件表那兩欄永遠 null | **已修**（端點轉發 + 單筆標記已匯款加選填欄 + `AdminDashboard` 補 `transferredOn` 參數） |
 | 2 | 系統／UIUX／需求 | 代為完成的理由寫死成 `'管理員代為結案'`，機械滿足 `note_required` 但稽核答不出「憑什麼認定會員已收到錢」 | **已修**（改 admin 自填必填） |
 | 3 | 架構 | `usePagedList` **實際只收斂一處**（`WithdrawalManagement` 完全沒有 import 它，仍是手刻）—— progress.md 寫「收斂了兩處」與程式碼不符 | **已更正紀錄**；retrofit 待裁決 |
-| 4 | 架構 | plan §2.2 明訂的 `GET /admin/withdrawals/summary`（輕量）沒實作，badge 改用列表端點——那條 handler 即使 `limit=1` 仍會替該會員的身分證產**簽名 URL** | 紅燈已寫，**待實作** |
+| 4 | 架構 | plan §2.2 明訂的 `GET /admin/withdrawals/summary`（輕量）沒實作，badge 改用列表端點——那條 handler 即使 `limit=1` 仍會替該會員的身分證產**簽名 URL** | **已修**（補上專用端點，`Navbar` 改走它） |
 | 5 | UIUX | 撤銷管理員沒有 `AlertDialog`（plan §4 明列的四個危險動作之一） | 待處置 |
 | 6 | UIUX | 會員查詢台手機仍是 8 欄 `Table`，plan §4 明訂「手機優先：搜尋框置頂 + 結果卡片」 | 待處置 |
 | 7 | UIUX | M3 的狀態篩選與排序 UI 完全未實作（後端已支援 `p_status`／`p_sort`） | 待處置 |

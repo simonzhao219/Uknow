@@ -66,19 +66,8 @@ function renderNav(isAdmin: boolean) {
 }
 
 function statsResponse(pending: number) {
-  return {
-    success: true,
-    data: {
-      withdrawals: [],
-      total: 0,
-      limit: 1,
-      offset: 0,
-      stats: {
-        pendingAmount: 0,
-        byStatus: { pending, awaiting_collection: 0, completed: 0, rejected: 0 },
-      },
-    },
-  };
+  // 專用的輕量端點：只有兩個數字，不含列表也不含任何簽名 URL。
+  return { success: true, data: { pendingCount: pending, pendingAmount: 0 } };
 }
 
 describe('Navbar', () => {
