@@ -1419,6 +1419,50 @@ app.post('/payuni/prepare', async (c) => {
       console.error('[prepare] 更新推薦人失敗:', refErr);
       return c.json({ success: false, error: '更新推薦人失敗' }, 500);
     }
+  } else if (renewalMode === 'fresh') {
+    // A10：選新約 = 離開原本的樹；未填碼不等於「維持原狀」，而是比照
+    // 首購未填碼的既有語意——套用平台預設推薦碼，referred_by_is_default
+    // = true（前端據此隱藏這個碼，使用者視角就是「沒有上一代」）。
+    // A11：任一步失敗 → 維持原上代不變 + 告警，**絕不阻斷金流**。
+    // 碼的合法性唯一判準仍是 validate_referral_code（停權/失效都在裡面），
+    // 不複製 resolve_default_referrer 的分類。
+    const alertDefaultUnavailable = (reason: string, extra: Record<string, unknown> = {}) =>
+      logSystemAlert(
+        'payuni-prepare',
+        { user_id: user.id, reason, ...extra },
+        'default_referrer_unavailable_on_fresh',
+      );
+    const { data: cfgRow } = await client
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const defaultCode = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
+    if (!defaultCode) {
+      await alertDefaultUnavailable('unset');
+    } else {
+      const { data: codeRows, error: codeErr } = await client
+        .rpc('validate_referral_code', { p_code: defaultCode });
+      if (codeErr || !codeRows || codeRows.length === 0) {
+        // 不存在、已失效、推薦人停權都落在這裡（validate 的職責）。
+        await alertDefaultUnavailable('code_not_applicable', { code: defaultCode });
+      } else if (codeRows[0].referrer_user_id === user.id) {
+        // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
+        await alertDefaultUnavailable('self_referral', { code: defaultCode });
+      } else {
+        const { error: refErr } = await client
+          .from('profiles')
+          .update({
+            referred_by_code: defaultCode,
+            referred_by_user_id: codeRows[0].referrer_user_id,
+            referred_by_is_default: true,
+          })
+          .eq('id', user.id);
+        if (refErr) {
+          await alertDefaultUnavailable('profile_update_failed', { error: refErr.message });
+        }
+      }
+    }
   }
 
   const config = payuniConfig();
