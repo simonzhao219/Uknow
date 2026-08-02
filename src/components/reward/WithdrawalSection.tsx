@@ -252,6 +252,16 @@ export function WithdrawalSection({
                             <p>處理日期：{formatTimestamp(withdrawal.processedAt)}</p>
                           )}
                         </div>
+                        {/* 退件理由是這條審核鏈的終點：看不到理由的人只會重送
+                            一模一樣的東西再被退一次。只在 rejected 且真的有
+                            理由時渲染——空的「退件原因：」看起來像系統把理由
+                            弄丟了，比不顯示更糟。 */}
+                        {withdrawal.status === 'rejected' && withdrawal.note && (
+                          <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                            <p className="text-sm font-medium text-destructive">退件原因</p>
+                            <p className="text-sm text-destructive/90">{withdrawal.note}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
