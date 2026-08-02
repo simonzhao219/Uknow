@@ -7,7 +7,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | 🟢 綠燈(PR #189 待合併) | `28ba947` | `730e7fa` |
+| 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | ✅ PR #189 已合併(develop `041b674`) | `28ba947` | `730e7fa` |
 | 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | ✅ CI 已確認(run 30757239157) | `df8ae96` | `fc55057` |
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ✅ CI 已確認(本地紅綠 + 同 run) | `22f1f87` | `dd27448` |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ✅ CI 佐證(run 30758187758 中 renewal-modes 全綠) | `26c6a12` | `968c66d` |
@@ -16,8 +16,8 @@
 | 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ✅ CI 佐證(run 30759124724 中該檔全綠) | `47ea089` | `a724293` |
 | 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ✅ CI 已確認(run 30760274082;夾具修正 `674fe54`) | `8a8f4a6` | `778a97f` |
 | 9 | `PaymentResult.tsx` 區分補繳中間筆 | ✅ CI 已確認(同 run;e2e 分類修正 `3668888`) | `f92c02a` | `d66cb99` |
-| 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | 🟢 綠燈(本地 vitest 9/9 + e2e checkout 13/13) | `51bbbe6` | `636a145` |
-| 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | ⬜ 未開始 | | |
+| 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ✅ CI 已確認(run 30761232004 全綠) | `51bbbe6` | `636a145` |
+| 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | 🟢 綠燈(本地 vitest 14/14 + e2e checkout 13/13) | `c968b22` | `6e9d3fa` |
 | 12 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
 | 13 | journey 三檔反轉 + 規格書(§5.1/§6.2/§7.4/§8 + R8 過渡行為)+ 註解 | ⬜ 未開始 | | |
 
@@ -45,8 +45,9 @@ PR #189 已合併(develop merge commit `041b674`),本分支已 rebase。
 `20260802000002_fresh_ledger_forfeit.sql` + 契約/前端連動 + `/auth/profile`
 接線。
 
-**下一步**:階段 2 綠燈 CI 確認後 → 階段 3(`backfillPlan()` 純函式 +
-`_shared/backfill-cases.ts` 共用案例表,測試落點 `.unit.test.ts` 免 DB)。
+**下一步**:階段 12(e2e 四契約回歸 `renewal_backfill_recovery.feature`,
+本地可紅綠)→ 階段 13(journey 三檔反轉 + 規格書升級 + 收尾:
+check:full、UI 截圖、/review-implementation、plan 清理、PR 描述)。
 
 ### 實作時特別要記住的六條
 
