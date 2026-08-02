@@ -13,8 +13,8 @@
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ✅ CI 佐證(run 30758187758 中 renewal-modes 全綠) | `26c6a12` | `968c66d` |
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ✅ CI 佐證(run 30758481955 中該檔全綠) | `84a7caa` | `ece0448` |
 | 6 | **A16 待審提領擋 fresh** | ✅ CI 佐證(run 30758760566 中該檔全綠) | `61a88b4` | `8561cd7` |
-| 7 | A12 `/health` 回報 `defaultReferrer` 三態 | 🟢 綠燈(等 CI 確認) | `47ea089` | `a724293` |
-| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ⬜ 未開始 | | |
+| 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ✅ CI 佐證(run 30759124724 中該檔全綠) | `47ea089` | `a724293` |
+| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | 🟢 綠燈(等 CI 確認) | `8a8f4a6` | `778a97f` |
 | 9 | `PaymentResult.tsx` 區分補繳中間筆 | ⬜ 未開始 | | |
 | 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ⬜ 未開始 | | |
 | 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | ⬜ 未開始 | | |
