@@ -28,7 +28,7 @@
 |---|---|---|---|---|
 | 2.1 | CSV 欄位跳脫純函式 | ✅ 綠 | `a7669e0` | `bc25432` |
 | 2.2 | `copyText` 抽成 `src/utils/clipboard.ts` | ✅ 綠 | `499cfe0` | `45dd17d` |
-| 2.3 | `withdrawal_events`（含 RLS/revoke）+ 狀態機改寫 | 🔴 紅燈待 CI | `f534441` | |
+| 2.3 | `withdrawal_events`（含 RLS/revoke）+ 狀態機改寫 | 🟡 紅燈已驗，綠燈待 CI | `f534441` | `07620cc` |
 | 2.4 | 批次標記已匯款（逐筆 `bank_ref` + savepoint 隔離） | ⬜ 未開始 | | |
 | 2.5 | 列表分頁／彙總／篩選／events | ⬜ 未開始 | | |
 | 2.6 | 退件理由端到端 | ⬜ 未開始 | | |
@@ -66,7 +66,18 @@
 | 2.1 CSV 跳脫 | `a7669e0` | `bc25432` | 本機 15 斷言 |
 | 2.2 剪貼簿 utility | `499cfe0` | `45dd17d` | 本機 6 斷言 |
 
-**進行中：階段 2.3**（`withdrawal_events` + 狀態機改寫），紅燈 `f534441` 待 CI。
+**進行中：階段 2.3**（`withdrawal_events` + 狀態機改寫）。
+紅燈 `f534441` 判定 `186 passed / 6 failed`，範圍乾淨；綠燈 `07620cc` 待 CI。
+
+實作時抓到一個**不會叫的錯誤**，值得下一個 session 知道：
+`admin_update_withdrawal_status` 從 4 參數變 6 參數，`create or replace`
+建立的是**多載而不是取代**。舊的 4 參數版本會留著，仍然寫
+`withdrawals.note`、也不受理 `completed`；PostgREST 依參數名解析，呼叫端
+少帶兩個參數就會打到舊版。整個 migration 看起來成功、測試可能還會過，但
+線上跑的是舊規則，且沒有任何錯誤訊息。已加顯式
+`drop function if exists ...(uuid, uuid, text, text)`。
+
+**改任何既有 SQL 函數的簽章時都要先 drop 舊簽章。**
 
 剩餘：2.3–2.9、3.1–3.4、4.1（規格書同步）。
 
