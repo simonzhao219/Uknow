@@ -754,3 +754,141 @@ Deno.test('GRANT：authenticated 不得 EXECUTE admin_batch_mark_paid', async ()
     await sql.end();
   }
 });
+
+// ============================================================
+// 提領列表：分頁／彙總／篩選／事件歷史（plan 階段 2.5）
+//
+// 「不得靜默截斷」是 §7.3 已裁決過的原則：只回前 N 筆而不揭露總數，會讓
+// 使用者以為「找不到」等於「不存在」。這裡的代價更高——admin 少看到幾筆
+// 就是少匯幾筆錢。
+// ============================================================
+
+async function adminGet(client: ReturnType<typeof adminClient>, adminEmail: string, path: string) {
+  const token = await getUserAccessToken(client, adminEmail);
+  const res = await app.request(path, { headers: { Authorization: `Bearer ${token}` } });
+  return { status: res.status, body: await res.json() };
+}
+
+Deno.test('GET /admin/withdrawals：stats 給出待匯款總額與各狀態筆數', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 2);
+
+  try {
+    // 一筆推成已匯款，另一筆維持 pending
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: made[0].withdrawalId,
+      p_status: 'awaiting_collection',
+      p_note: null,
+    });
+
+    const { status, body } = await adminGet(client, admin.email, '/api/admin/withdrawals');
+    assertEquals(status, 200);
+    // 待匯款總額是 admin 開網銀前要對的數字，少算一筆就少匯一筆
+    assertEquals(typeof body.data.stats.pendingAmount, 'number');
+    assertEquals(body.data.stats.byStatus.pending >= 1, true, JSON.stringify(body.data.stats));
+    assertEquals(body.data.stats.byStatus.awaiting_collection >= 1, true);
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('GET /admin/withdrawals：每筆帶轉換歷史，note 讀自事件表最新一筆', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 1);
+
+  try {
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: made[0].withdrawalId,
+      p_status: 'awaiting_collection',
+      p_note: '第一次：已於網銀轉出',
+    });
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: made[0].withdrawalId,
+      p_status: 'completed',
+      p_note: '第二次：逾期未確認，代為結案',
+    });
+
+    const { body } = await adminGet(client, admin.email, '/api/admin/withdrawals');
+    const row = body.data.withdrawals.find((w: { id: string }) => w.id === made[0].withdrawalId);
+    assertEquals(row.events.length, 2, JSON.stringify(row.events));
+    // 主表的 note 已 vestigial（20260802000004），讀它只會拿到 null
+    assertEquals(row.note, '第二次：逾期未確認，代為結案');
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('GET /admin/withdrawals：search 比對會員姓名', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 1);
+
+  try {
+    await client.from('profiles').update({ name: '搜尋目標甲' }).eq('id', made[0].userId);
+
+    const hit = await adminGet(client, admin.email, '/api/admin/withdrawals?search=搜尋目標甲');
+    assertEquals(hit.body.data.withdrawals.length, 1, JSON.stringify(hit.body.data));
+
+    const miss = await adminGet(client, admin.email, '/api/admin/withdrawals?search=不存在的人');
+    assertEquals(miss.body.data.withdrawals.length, 0);
+    // total 要反映篩選後的命中數，不是全表筆數——否則「已顯示 X / Y」會說謊
+    assertEquals(miss.body.data.total, 0);
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('GET /admin/withdrawals：from 與 to 依申請日篩選', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const made = await pendingWithdrawals(client, 1);
+
+  try {
+    await client.from('withdrawals')
+      .update({ requested_at: '2026-01-15T00:00:00Z' })
+      .eq('id', made[0].withdrawalId);
+
+    const inRange = await adminGet(
+      client,
+      admin.email,
+      '/api/admin/withdrawals?from=2026-01-01&to=2026-01-31',
+    );
+    assertEquals(
+      inRange.body.data.withdrawals.some((w: { id: string }) => w.id === made[0].withdrawalId),
+      true,
+    );
+
+    const outOfRange = await adminGet(
+      client,
+      admin.email,
+      '/api/admin/withdrawals?from=2026-02-01&to=2026-02-28',
+    );
+    assertEquals(
+      outOfRange.body.data.withdrawals.some((w: { id: string }) => w.id === made[0].withdrawalId),
+      false,
+    );
+  } finally {
+    await deleteTestUsers(client, made.map((m) => m.userId).concat(admin.id));
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_withdrawal_stats', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated',
+        to_regprocedure('public.admin_withdrawal_stats(text,date,date,text)'),
+        'EXECUTE'
+      ) as auth_exec
+    `;
+    assertEquals(row.auth_exec, false, '彙總函數不得對 authenticated 開放');
+  } finally {
+    await sql.end();
+  }
+});
