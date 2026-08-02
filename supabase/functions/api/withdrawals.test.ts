@@ -950,3 +950,35 @@ Deno.test('GET /rewards/withdrawals：會員自己查收時 completedByAdmin 為
     await deleteTestUsers(client, [admin.id, user.id]);
   }
 });
+
+// ============================================================
+// 入口 badge 的輕量端點（規劃書 §2.2）
+//
+// badge 只要一個數字。走 `GET /admin/withdrawals?limit=1` 拿得到，但那條
+// handler 會順便替該筆記錄的會員產身分證正反面的**簽名 URL**——每次 admin
+// 開頁面都替某個人的證件開一次臨時外連，只為了讀一個計數。規劃書把這支
+// 定性為「輕量」正是要避開它。
+// ============================================================
+
+Deno.test('GET /admin/withdrawals/summary：只回待處理筆數與總額', async () => {
+  const client = adminClient();
+  const admin = await makeAdmin(client);
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    await requestWithdrawal(client, user.id, 1000);
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request('/api/admin/withdrawals/summary', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+
+    assertEquals(res.status, 200);
+    assertEquals(typeof body.data.pendingCount, 'number');
+    assertEquals(typeof body.data.pendingAmount, 'number');
+    // 不夾帶列表：帶了就等於又把整頁記錄（與證件簽名 URL）搬到導覽列。
+    assertEquals(body.data.withdrawals, undefined);
+  } finally {
+    await deleteTestUsers(client, [admin.id, user.id]);
+  }
+});

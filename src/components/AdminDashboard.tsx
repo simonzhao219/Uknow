@@ -35,10 +35,11 @@ async function updateWithdrawalStatus(
   status: 'awaiting_collection' | 'rejected' | 'completed',
   note?: string,
   bankRef?: string,
+  transferredOn?: string,
 ) {
   await apiRequestJson(buildApiUrl(`/admin/withdrawals/${id}/status`), {
     method: 'POST',
-    body: JSON.stringify({ status, note, bankRef }),
+    body: JSON.stringify({ status, note, bankRef, transferredOn }),
   });
 }
 

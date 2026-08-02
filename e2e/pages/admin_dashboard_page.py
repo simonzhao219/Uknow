@@ -37,7 +37,10 @@ class AdminDashboardPage(BasePage):
         self.page.get_by_role("button", name="標記已匯款", exact=True).first.click()
         self.page.get_by_role("button", name="確認匯款").click()
 
-    def reject_first_withdrawal(self) -> None:
+    def reject_first_withdrawal(self, reason: str = "收款帳號與身分證姓名不符") -> None:
         # exact=True so this doesn't also match the dialog's "確認退件" button.
+        # The reason is mandatory: the backend rejects a blank note, and it is the
+        # only text the member ever sees explaining why they were turned down.
         self.page.get_by_role("button", name="退件", exact=True).first.click()
+        self.page.get_by_label("退件理由").fill(reason)
         self.page.get_by_role("button", name="確認退件").click()

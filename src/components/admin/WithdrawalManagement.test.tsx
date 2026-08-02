@@ -273,14 +273,35 @@ describe('WithdrawalManagement', () => {
     expect(await screen.findByRole('button', { name: '標記已匯款' })).toBeTruthy();
   });
 
-  it('退件走確認框，確認後才送出並帶理由', async () => {
+  // 這條原本名叫「確認後才送出並帶理由」，斷言卻是 `..., 'rejected', undefined)`
+  // ——名字宣稱的行為與斷言證明的行為相反，等於把「退件不帶理由」錄成預期。
+  // 後端對 rejected 強制要求非空 note，所以那個實作在正式環境每次都 400，
+  // 而三層測試（元件 mock、mock e2e、journey 的 page object）都攔不到。
+  it('退件沒填理由時送不出去', async () => {
     const update = vi.fn(async () => {});
     renderConsole({ updateStatus: update });
 
     fireEvent.click(await screen.findByRole('button', { name: '退件' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確認退件' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith('w1', 'rejected', undefined));
-    // 動作回報留在畫面上，不彈個 toast 就消失。
+    const confirm = await screen.findByRole('button', { name: '確認退件' });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('請填寫退件理由')).toBeTruthy();
+    fireEvent.click(confirm);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('退件把 admin 填的理由送到後端', async () => {
+    const update = vi.fn(async () => {});
+    renderConsole({ updateStatus: update });
+
+    fireEvent.click(await screen.findByRole('button', { name: '退件' }));
+    fireEvent.change(screen.getByLabelText('退件理由'), {
+      target: { value: '收款帳號與身分證姓名不符' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '確認退件' }));
+
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith('w1', 'rejected', '收款帳號與身分證姓名不符', undefined),
+    );
     expect(await screen.findByText(/已退件/)).toBeTruthy();
   });
 
@@ -295,8 +316,20 @@ describe('WithdrawalManagement', () => {
     fireEvent.click(await screen.findByRole('button', { name: '代為完成' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/管理員代為完成/)).toBeTruthy();
+    // 理由由 admin 自己寫：稽核要答得出「憑什麼認定會員已收到錢」，
+    // 寫死一句固定文案只是機械滿足後端的非空檢查。
+    fireEvent.change(within(dialog).getByLabelText('代為結案理由'), {
+      target: { value: '2026-08-01 致電確認，會員回覆已收到款項' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: '確認代為完成' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith('w1', 'completed', '管理員代為結案'));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        'w1',
+        'completed',
+        '2026-08-01 致電確認，會員回覆已收到款項',
+        undefined,
+      ),
+    );
   });
 
   it('狀態更新失敗時把原因說出來', async () => {
@@ -306,7 +339,8 @@ describe('WithdrawalManagement', () => {
       },
     });
     fireEvent.click(await screen.findByRole('button', { name: '退件' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確認退件' }));
+    fireEvent.change(screen.getByLabelText('退件理由'), { target: { value: '資料有誤' } });
+    fireEvent.click(screen.getByRole('button', { name: '確認退件' }));
     expect(await screen.findByText(/這筆已被其他管理員處理/)).toBeTruthy();
   });
 
@@ -323,6 +357,31 @@ describe('WithdrawalManagement', () => {
 
     // 「1 筆成功、1 筆失敗」比「批次失敗」有用得多：admin 知道要重做哪一筆。
     expect(await screen.findByText(/1 筆成功、1 筆失敗/)).toBeTruthy();
+  });
+
+  it('標記已匯款可帶交易序號，那是唯一能跟銀行對帳的錨點', async () => {
+    const update = vi.fn(async () => {});
+    renderConsole({ updateStatus: update });
+
+    fireEvent.click(await screen.findByRole('button', { name: '標記已匯款' }));
+    fireEvent.change(screen.getByLabelText('交易序號'), { target: { value: 'TX20260801001' } });
+    fireEvent.click(screen.getByRole('button', { name: '確認匯款' }));
+
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith('w1', 'awaiting_collection', undefined, 'TX20260801001'),
+    );
+  });
+
+  it('交易序號留空時不送出空字串', async () => {
+    const update = vi.fn(async () => {});
+    renderConsole({ updateStatus: update });
+
+    fireEvent.click(await screen.findByRole('button', { name: '標記已匯款' }));
+    fireEvent.click(screen.getByRole('button', { name: '確認匯款' }));
+    // 選填就是選填：空字串進資料庫會變成「有填但填了空白」，比 null 難查。
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith('w1', 'awaiting_collection', undefined, undefined),
+    );
   });
 
   it('尚無轉換紀錄時歷史對話框說出來，不留空清單', async () => {

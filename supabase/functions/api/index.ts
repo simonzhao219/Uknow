@@ -1211,6 +1211,10 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
     p_withdrawal_id: c.req.param('id'),
     p_status: body?.status ?? '',
     p_note: body?.note ?? null,
+    // 交易序號與匯款日期是唯一能跟銀行對帳的錨點（plan §2.2）。少了這兩行，
+    // 前端就算送上來也會在這裡被靜默丟掉，事件表的欄位永遠是 null。
+    p_bank_ref: body?.bankRef ?? null,
+    p_transferred_on: body?.transferredOn ?? null,
   });
 
   if (error) {

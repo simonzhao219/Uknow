@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { Skeleton } from '../ui/skeleton';
+import { Textarea } from '../ui/textarea';
+import { FieldError } from '../../utils/formHelpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import {
   AlertDialog,
@@ -182,6 +184,12 @@ export function WithdrawalManagement({
   const [paidTarget, setPaidTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  // 退件與代為結案的理由。後端對這兩個轉換強制要求非空 note（btrim 後為空
+  // 也算沒填），所以沒有輸入欄＝那顆按鈕在正式環境每次都 400。
+  const [reasonInput, setReasonInput] = useState('');
+  // 交易序號選填（需求方裁決）：網銀不一定當下給得出來，強制必填會逼 admin
+  // 亂填。但它是唯一能跟銀行對帳的錨點，所以要有地方可以填。
+  const [bankRefInput, setBankRefInput] = useState('');
 
   const fetchWithdrawals = useCallback(async () => {
     setIsLoading(true);
@@ -270,6 +278,15 @@ export function WithdrawalManagement({
     }
   };
 
+  // 兩個必填理由的對話框共用同一個輸入 state：一次只會開一個，關掉就清空，
+  // 免得上一次的理由殘留到下一筆（那會讓 admin 送出別人的說明）。
+  const reasonFilled = reasonInput.trim().length > 0;
+  const closeReasonDialog = () => {
+    setRejectTarget(null);
+    setCompleteTarget(null);
+    setReasonInput('');
+  };
+
   const copyAccount = (account: string) => {
     copyToClipboard(account);
   };
@@ -278,11 +295,12 @@ export function WithdrawalManagement({
     record: AdminWithdrawalRecord,
     status: 'awaiting_collection' | 'rejected' | 'completed',
     note?: string,
+    bankRef?: string,
   ) => {
     setProcessingId(record.id);
     setActionMessage(null);
     try {
-      await submitStatus(record.id, status, note);
+      await submitStatus(record.id, status, note, bankRef);
       setActionMessage(`${ACTION_DONE[status]}：${record.userName}`);
       await fetchWithdrawals();
     } catch (err) {
@@ -381,13 +399,25 @@ export function WithdrawalManagement({
                 確認後該筆將轉為「待查收」並通知會員款項已匯出。
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="space-y-1 py-2">
+              <Textarea
+                value={bankRefInput}
+                onChange={(e) => setBankRefInput(e.target.value)}
+                placeholder="交易序號（選填，網銀轉出後的憑證編號）"
+                aria-label="交易序號"
+                rows={1}
+              />
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => setBankRefInput('')}>取消</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   const target = paidTarget;
+                  const ref = bankRefInput.trim();
                   setPaidTarget(null);
-                  if (target) updateStatus(target, 'awaiting_collection');
+                  setBankRefInput('');
+                  if (target)
+                    updateStatus(target, 'awaiting_collection', undefined, ref || undefined);
                 }}
               >
                 確認匯款
@@ -398,7 +428,7 @@ export function WithdrawalManagement({
       )}
 
       {rejectTarget && (
-        <AlertDialog open onOpenChange={() => setRejectTarget(null)}>
+        <AlertDialog open onOpenChange={() => closeReasonDialog()}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>確認退件？</AlertDialogTitle>
@@ -407,13 +437,27 @@ export function WithdrawalManagement({
                 （含手續費）將自動退回其可提領點數。此操作無法復原。
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {/* 理由必填：它是會員唯一會看到的說明。沒有它，被退件的人只會
+                重送一模一樣的東西再被退一次。後端也強制要求（note_required）。 */}
+            <div className="space-y-1 py-2">
+              <Textarea
+                value={reasonInput}
+                onChange={(e) => setReasonInput(e.target.value)}
+                placeholder="例：收款帳號與身分證姓名不符，請更正後重新申請"
+                aria-label="退件理由"
+                aria-invalid={!reasonFilled}
+              />
+              <FieldError error={reasonFilled ? undefined : '請填寫退件理由'} />
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel onClick={closeReasonDialog}>取消</AlertDialogCancel>
               <AlertDialogAction
+                disabled={!reasonFilled}
                 onClick={() => {
                   const target = rejectTarget;
-                  setRejectTarget(null);
-                  if (target) updateStatus(target, 'rejected');
+                  const reason = reasonInput.trim();
+                  closeReasonDialog();
+                  if (target) updateStatus(target, 'rejected', reason);
                 }}
               >
                 確認退件
@@ -433,13 +477,27 @@ export function WithdrawalManagement({
                 管理員代為完成，不會顯示成他本人查收。
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {/* 理由必填且由 admin 自己寫：稽核要答得出「是誰、憑什麼認定會員
+                已收到錢」。寫死一句固定文案只是機械滿足後端檢查。 */}
+            <div className="space-y-1 py-2">
+              <Textarea
+                value={reasonInput}
+                onChange={(e) => setReasonInput(e.target.value)}
+                placeholder="例：2026-08-01 致電確認，會員回覆已收到款項"
+                aria-label="代為結案理由"
+                aria-invalid={!reasonFilled}
+              />
+              <FieldError error={reasonFilled ? undefined : '請填寫代為結案的理由'} />
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel onClick={closeReasonDialog}>取消</AlertDialogCancel>
               <AlertDialogAction
+                disabled={!reasonFilled}
                 onClick={() => {
                   const target = completeTarget;
-                  setCompleteTarget(null);
-                  if (target) updateStatus(target, 'completed', '管理員代為結案');
+                  const reason = reasonInput.trim();
+                  closeReasonDialog();
+                  if (target) updateStatus(target, 'completed', reason);
                 }}
               >
                 確認代為完成
