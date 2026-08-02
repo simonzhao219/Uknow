@@ -100,7 +100,9 @@ Root (A)                          ── 本次測試的主角，要能測到所
 │ 1. 由 main 專案建立 preview branch（supabase branches       │
 │    create / MCP create_branch），取得分支專屬的             │
 │    project_ref、anon key、service_role key、DB URL          │
-│ 2. 分支自動套用全部 migrations；harness 檢核               │
+│ 2. 分支 replay 母專案的 migration 歷史；workflow 驗證       │
+│    replay 成功（MIGRATIONS_FAILED 硬失敗）後，以 db push    │
+│    對齊 checkout 獨有的 migrations；harness 檢核            │
 │    reward_config 存在且 seed 值正確                         │
 │ 3. 設定分支的 Edge Function secrets：PAYUNI_SANDBOX=true、  │
 │    PayUni sandbox 商店代號/HashKey/HashIV                   │
