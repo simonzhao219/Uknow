@@ -4,7 +4,7 @@
 //   * 生命週期：pending → awaiting_collection → completed / rejected
 //   * 業務規則：金額級距、一天一次（台灣日）、餘額、會籍、證件照
 // ============================================================
-import { assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
@@ -321,6 +321,80 @@ Deno.test('HTTP 端點：withdraw / points-preview / verify-id / 提領記錄', 
     assertEquals(rewardsBody.data.availableRewards, 5000 - 1015);
     assertEquals(rewardsBody.data.pendingRewards, 1015);
     assertEquals(rewardsBody.data.hasWithdrawnToday, true);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// ============================================================
+// 證件審核與提領的關係（plan 階段 1.2 / 驗收情境 V5、V6）
+//
+// 需求方裁決:審核結果**只在 rejected 時**阻擋提領。真正的關卡是匯款不是
+// 申請——admin 本來就不會在沒核對證件的情況下轉帳,在申請端擋「還沒輪到
+// 審核」的人不增加實質保護,只讓每個新會員的首次提領多等三個工作天。
+// ============================================================
+
+Deno.test('request_withdrawal：證件被退回 → id_rejected 並附退回理由', async () => {
+  const client = adminClient();
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    await client.from('profiles').update({
+      id_verification_status: 'rejected',
+      id_reject_reason: '照片反光看不清出生年月日',
+    }).eq('id', user.id);
+
+    const { data, error } = await requestWithdrawal(client, user.id, 2000);
+    assertEquals(error, null);
+    assertEquals(data?.success, false, JSON.stringify(data));
+    assertEquals(data?.error_code, 'id_rejected', JSON.stringify(data));
+    // 理由必須帶到會員面前——只說「被退回」會讓人重送一模一樣的照片,
+    // 然後再被退一次。
+    assertStringIncludes(String(data?.message ?? ''), '照片反光看不清出生年月日');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('request_withdrawal：none/pending/approved 三態皆不擋提領', async () => {
+  const client = adminClient();
+
+  // none  = 既有會員（本次 migration 之前就上傳過照片的人）,不得因新關卡被擋
+  // pending = 審核中,V5 明訂放行
+  // approved = 已通過
+  for (const status of ['none', 'pending', 'approved'] as const) {
+    const user = await createWithdrawableUser(client, 5000);
+    try {
+      await client.from('profiles')
+        .update({ id_verification_status: status })
+        .eq('id', user.id);
+
+      const { data, error } = await requestWithdrawal(client, user.id, 2000);
+      assertEquals(error, null);
+      assertEquals(data?.success, true, `${status}: ${JSON.stringify(data)}`);
+    } finally {
+      await deleteTestUsers(client, [user.id]);
+    }
+  }
+});
+
+Deno.test('request_withdrawal：證件被退回但照片也沒齊 → 仍回 id_rejected', async () => {
+  const client = adminClient();
+  const user = await createWithdrawableUser(client, 5000);
+
+  try {
+    // 守衛順序:退回狀態(#5a)排在照片存在檢查(#5b)之前。理由是 rejected
+    // 帶得出「為什麼」,而 missing_id_photos 只會叫人重傳——對一個已經被
+    // admin 看過並退回的人,後者是誤導。
+    await client.from('profiles').update({
+      id_verification_status: 'rejected',
+      id_reject_reason: '姓名與證件不符',
+      id_card_back_path: null,
+    }).eq('id', user.id);
+
+    const { data } = await requestWithdrawal(client, user.id, 2000);
+    assertEquals(data?.success, false, JSON.stringify(data));
+    assertEquals(data?.error_code, 'id_rejected', JSON.stringify(data));
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
