@@ -14,8 +14,8 @@
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ✅ CI 佐證(run 30758481955 中該檔全綠) | `84a7caa` | `ece0448` |
 | 6 | **A16 待審提領擋 fresh** | ✅ CI 佐證(run 30758760566 中該檔全綠) | `61a88b4` | `8561cd7` |
 | 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ✅ CI 佐證(run 30759124724 中該檔全綠) | `47ea089` | `a724293` |
-| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | 🟢 綠燈(夾具修正 `674fe54`,等 CI 確認) | `8a8f4a6` | `778a97f` |
-| 9 | `PaymentResult.tsx` 區分補繳中間筆 | 🟢 綠燈(本地 vitest 5/5) | `f92c02a` | `d66cb99` |
+| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ✅ CI 已確認(run 30760274082;夾具修正 `674fe54`) | `8a8f4a6` | `778a97f` |
+| 9 | `PaymentResult.tsx` 區分補繳中間筆 | ✅ CI 已確認(同 run;e2e 分類修正 `3668888`) | `f92c02a` | `d66cb99` |
 | 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ⬜ 未開始 | | |
 | 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | ⬜ 未開始 | | |
 | 12 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
