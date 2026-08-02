@@ -8,7 +8,12 @@ import { SystemNotifications } from './admin/SystemNotifications';
 import { SystemAlerts } from './admin/SystemAlerts';
 import { AdminSetup } from './admin/AdminSetup';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
-import type { AdminWithdrawalsResponse } from '@contract';
+import type {
+  AdminIdReviewsResponse,
+  AdminMemberDetailResponse,
+  AdminMembersResponse,
+  AdminWithdrawalsResponse,
+} from '@contract';
 import type { WithdrawalQuery } from './admin/WithdrawalManagement';
 
 // 取數／送出走這裡、畫面只吃 props——與 MemberManagement 餵 IdReviewQueue
@@ -45,6 +50,46 @@ async function batchMarkPaid(items: { id: string; bankRef?: string }[]) {
     body: JSON.stringify({ items }),
   });
   return res.data;
+}
+
+async function loadMembers(params: { search?: string; limit: number; offset: number }) {
+  const qs = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+  if (params.search) qs.set('search', params.search);
+  const res = await apiRequestJson<AdminMembersResponse>(buildApiUrl(`/admin/members?${qs}`));
+  return res.data;
+}
+
+async function loadMemberDetail(id: string) {
+  const res = await apiRequestJson<AdminMemberDetailResponse>(buildApiUrl(`/admin/members/${id}`));
+  return res.data.member;
+}
+
+async function setMemberAdmin(id: string, isAdmin: boolean) {
+  await apiRequestJson(buildApiUrl(`/admin/members/${id}/admin`), {
+    method: 'POST',
+    body: JSON.stringify({ isAdmin }),
+  });
+}
+
+async function suspendMember(id: string, suspend: boolean) {
+  await apiRequestJson(buildApiUrl(`/admin/members/${id}/suspend`), {
+    method: 'POST',
+    body: JSON.stringify({ suspend }),
+  });
+}
+
+async function loadIdReviews() {
+  const res = await apiRequestJson<AdminIdReviewsResponse>(
+    buildApiUrl('/admin/id-reviews?status=pending'),
+  );
+  return res.data.reviews;
+}
+
+async function submitIdReview(userId: string, approve: boolean, reason?: string) {
+  await apiRequestJson(buildApiUrl(`/admin/id-reviews/${userId}/review`), {
+    method: 'POST',
+    body: JSON.stringify({ approve, reason }),
+  });
 }
 
 export function AdminDashboard() {
@@ -87,7 +132,14 @@ export function AdminDashboard() {
         </TabsContent>
 
         <TabsContent value="members">
-          <MemberManagement />
+          <MemberManagement
+            loadMembers={loadMembers}
+            loadMemberDetail={loadMemberDetail}
+            setMemberAdmin={setMemberAdmin}
+            suspendMember={suspendMember}
+            loadIdReviews={loadIdReviews}
+            submitIdReview={submitIdReview}
+          />
         </TabsContent>
 
         <TabsContent value="announcements">

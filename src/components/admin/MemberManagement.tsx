@@ -7,23 +7,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Users, UserX, Shield, Loader2, Search } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { IdReviewQueue } from './IdReviewQueue';
-import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
-import { useNotification } from '../notifications/NotificationContext';
-import type { AdminIdReviewsResponse, AdminMember, AdminMembersResponse } from '@contract';
+import { usePagedList } from '../../hooks/usePagedList';
+import type {
+  AdminIdReview,
+  AdminMember,
+  AdminMemberDetail,
+  AdminMembersResponse,
+} from '@contract';
 
-/** 證件審核佇列的取讀與送出。抽在元件外，讓 IdReviewQueue 保持可單元測試。 */
-async function loadIdReviews() {
-  const res = await apiRequestJson<AdminIdReviewsResponse>(
-    buildApiUrl('/admin/id-reviews?status=pending'),
-  );
-  return res.data.reviews;
-}
+const PAGE_SIZE = 50;
 
-async function submitIdReview(userId: string, approve: boolean, reason?: string) {
-  await apiRequestJson(buildApiUrl(`/admin/id-reviews/${userId}/review`), {
-    method: 'POST',
-    body: JSON.stringify({ approve, reason }),
-  });
+export interface MemberManagementProps {
+  loadMembers: (params: {
+    search?: string;
+    limit: number;
+    offset: number;
+  }) => Promise<AdminMembersResponse['data']>;
+  loadMemberDetail: (id: string) => Promise<AdminMemberDetail>;
+  setMemberAdmin: (id: string, isAdmin: boolean) => Promise<void>;
+  suspendMember: (id: string, suspend: boolean) => Promise<void>;
+  loadIdReviews: () => Promise<AdminIdReview[]>;
+  submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
 
 const ACCOUNT_STATUS_BADGE: Record<string, { label: string; className: string }> = {
@@ -31,57 +35,76 @@ const ACCOUNT_STATUS_BADGE: Record<string, { label: string; className: string }>
   expired: { label: '已失效', className: 'bg-gray-100 text-gray-800 border-gray-300' },
 };
 
-export function MemberManagement() {
-  const { showSuccess, showToast } = useNotification();
+const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
 
-  const [members, setMembers] = useState<AdminMember[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+export function MemberManagement({
+  loadMembers,
+  loadMemberDetail,
+  setMemberAdmin,
+  suspendMember,
+  loadIdReviews,
+  submitIdReview,
+}: MemberManagementProps) {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [stats, setStats] = useState(EMPTY_STATS);
+  const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
 
-  const fetchMembers = useCallback(async () => {
-    setIsLoading(true);
+  // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
+  // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
+  const list = usePagedList<AdminMember>({
+    pageSize: PAGE_SIZE,
+    deps: [search],
+    load: useCallback(
+      async ({ limit, offset }: { limit: number; offset: number }) => {
+        const data = await loadMembers({ search: search || undefined, limit, offset });
+        // stats 直通伺服器算好的**全站**數字。不從 members 加總——那樣算出來
+        // 的統計卡會隨分頁改變（M2 的反例，改版前正是如此）。
+        setStats(data.stats ?? EMPTY_STATS);
+        return { items: data.members ?? [], total: data.total ?? 0 };
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [search],
+    ),
+  });
+  const members = list.items;
+  const total = list.total;
+  const isLoading = list.isLoading;
+
+  const openDetail = async (id: string) => {
+    setActionError(null);
     try {
-      const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-      const result = await apiRequestJson<AdminMembersResponse>(buildApiUrl(`/admin/members${qs}`));
-      if (result.success) {
-        setMembers(result.data.members);
-        setTotal(result.data.total);
-      }
+      setDetailFor(await loadMemberDetail(id));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '無法取得會員列表', 'error');
-    } finally {
-      setIsLoading(false);
+      setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  };
 
-  useEffect(() => {
-    fetchMembers();
-  }, [fetchMembers]);
+  const toggleAdmin = async (m: AdminMember) => {
+    setProcessingId(m.id);
+    setActionError(null);
+    try {
+      await setMemberAdmin(m.id, !m.isAdmin);
+      await list.reload();
+    } catch (err) {
+      // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
+      // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
+      setActionError(err instanceof Error ? err.message : '權限更新失敗');
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   const handleSuspendToggle = async (member: AdminMember) => {
     setProcessingId(member.id);
+    setActionError(null);
     try {
-      const result = await apiRequestJson<{ success: boolean; error?: { message: string } }>(
-        buildApiUrl(`/admin/members/${member.id}/suspend`),
-        { method: 'POST', body: JSON.stringify({ suspend: !member.suspended }) },
-      );
-      if (result.success) {
-        showSuccess(
-          member.suspended ? '已恢復會員' : '已停權會員',
-          member.suspended
-            ? `${member.name ?? member.email} 已恢復正常`
-            : `${member.name ?? member.email} 已停權，其刊登將自動下架`,
-        );
-        await fetchMembers();
-      } else {
-        showToast(result.error?.message ?? '操作失敗', 'error');
-      }
+      await suspendMember(member.id, !member.suspended);
+      await list.reload();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '操作失敗', 'error');
+      setActionError(err instanceof Error ? err.message : '操作失敗');
     } finally {
       setProcessingId(null);
     }
