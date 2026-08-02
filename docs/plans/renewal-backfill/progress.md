@@ -14,8 +14,8 @@
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ✅ CI 佐證(run 30758481955 中該檔全綠) | `84a7caa` | `ece0448` |
 | 6 | **A16 待審提領擋 fresh** | ✅ CI 佐證(run 30758760566 中該檔全綠) | `61a88b4` | `8561cd7` |
 | 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ✅ CI 佐證(run 30759124724 中該檔全綠) | `47ea089` | `a724293` |
-| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | 🟢 綠燈(等 CI 確認) | `8a8f4a6` | `778a97f` |
-| 9 | `PaymentResult.tsx` 區分補繳中間筆 | ⬜ 未開始 | | |
+| 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | 🟢 綠燈(夾具修正 `674fe54`,等 CI 確認) | `8a8f4a6` | `778a97f` |
+| 9 | `PaymentResult.tsx` 區分補繳中間筆 | 🟢 綠燈(本地 vitest 5/5) | `f92c02a` | `d66cb99` |
 | 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ⬜ 未開始 | | |
 | 11 | 補繳進度 + 錯誤態 + **A15 二次確認** | ⬜ 未開始 | | |
 | 12 | 四契約回歸測試(`renewal_backfill_recovery.feature`) | ⬜ 未開始 | | |
@@ -74,6 +74,15 @@ PR #189 已合併(develop merge commit `041b674`),本分支已 rebase。
    合法點數。快照遺失 → 沖 0 + 升級告警,寧少沖交人工。
 
 ## Blockers(逃生口紀錄)
+
+- **階段 8 綠燈後 CI 抓到測試夾具錯**(run 30759382976 兩條紅):夾具把
+  end_date 搬到過去但沒動 completed_at,人工製造出補繳簽名
+  (`hasPaidAnyBackfill` 誤判 true)。實作忠實執行裁決定義,修的是夾具
+  (`674fe54`:setLastEnd 一併回填付款時點維持自然時序)。**教訓:凡是
+  操弄時間欄位的夾具,必須整組時間關係一起搬,不能只搬單一欄位**。
+- **前端階段(9-11)的紅綠 oracle 是本地 vitest**,紅燈 commit 不單獨
+  推送——推上去只會弄紅 unit-tests 軌,證據就是 commit 歷史(test(red)
+  → feat)加 commit message 裡的本地紅綠紀錄。
 
 - **環境限制(階段 1 起適用全案)**:web session 沙箱無法起本機
   supabase(docker registry 的 blob CDN 被閘道擋,`supabase start` 拉不到
