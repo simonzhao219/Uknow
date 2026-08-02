@@ -508,11 +508,18 @@ export const PointsPreviewResponseSchema = obj({
 });
 export type PointsPreviewResponse = Infer<typeof PointsPreviewResponseSchema>;
 
+// 會員端看自己的證件狀態。`none` = 還沒交齊雙面。
+export const IdVerificationStatusSchema = literals('none', 'pending', 'approved', 'rejected');
+export type IdVerificationStatus = Infer<typeof IdVerificationStatusSchema>;
+
 export const IdPhotosResponseSchema = obj({
   success: bool(),
   data: obj({
     frontUrl: nullable(str()),
     backUrl: nullable(str()),
+    verificationStatus: IdVerificationStatusSchema,
+    // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+    rejectReason: nullable(str()),
   }),
 });
 export type IdPhotosResponse = Infer<typeof IdPhotosResponseSchema>;
