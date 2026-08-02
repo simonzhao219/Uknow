@@ -28,13 +28,17 @@
 
 ## 目前位置與下一步
 
-**第 3 輪 8 項裁決已回填,plan.md 改寫為第 6 版**(裁決內容見 review.md
-「第 3 輪裁決」節)。**第 4 輪 `/review-plan` 已派出**——依人的指示,
-每輪修訂都要經過多方 Review。
+**第 4 輪審查完成:P0 × 0、P1 × 7、P2 × 6(去重後)。**
+第 3 輪 8 項裁決:7 項落實正確;UI/UX 確認前輪 P0+P1 全部無回歸。
+全部發現屬「落實精確度」,無規則層問題。rules.md 自我保留註記與
+friction-log 存活提醒已在聚合時直接處理(保護性修正)。
 
-第 4 輪彙整後 → 停,等人最終裁決。實作由人親自打
-`/tdd-implement renewal-backfill` 啟動;階段 1(併發鎖)依裁決走獨立
-先行 PR `fix/payment-user-lock`。
+**卡在等人裁決第 4 輪處置節的 3 個決定**(review.md 末尾):
+沖銷金額基準(快照 vs 接受過度沖銷,建議快照)、其餘 P1/P2 全數修訂、
+第 7 版用單 reviewer 覆核還是完整第 5 輪。
+
+實作由人親自打 `/tdd-implement renewal-backfill` 啟動;階段 1 走先行 PR
+`fix/payment-user-lock`。
 
 ### 實作時特別要記住的五條
 
