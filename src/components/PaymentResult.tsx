@@ -6,8 +6,10 @@ import { Loader2, CheckCircle, XCircle, Clock, CreditCard, AlertCircle } from 'l
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import { UserContext } from '../App';
 import { useDataCache } from '../contexts/DataCacheContext';
+import { useNotification } from './notifications/NotificationContext';
 import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 import { openExternalLink } from '../utils/externalLink';
+import { twDayPlusYears } from '../utils/twDate';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -35,6 +37,13 @@ interface OrderResult {
   orderStatus: OrderStatus;
   completedAt?: string;
   payuni: PayUniResponse | null;
+  // 精簡版續約資訊（renewal-backfill）：backfillCount > 0 表示這筆是
+  // 補繳中間筆——付款成功但會籍仍 expired 是正常終態，不是開通故障。
+  renewal?: {
+    backfillCount: number;
+    backfillAmount: number;
+    extendEndDate: string;
+  } | null;
 }
 
 type ResolvedStatus = 'success' | 'failed' | 'pending' | 'unknown';
@@ -54,6 +63,7 @@ export function PaymentResult() {
   const navigate = useNavigate();
   const { user, refreshUser } = useContext(UserContext);
   const { invalidate } = useDataCache();
+  const { showToast } = useNotification();
 
   const tradeNo = searchParams.get('tradeNo');
   // PayUni 導回時，後端 /payuni/return 已經解密並判定結果，直接把
@@ -67,6 +77,10 @@ export function PaymentResult() {
   const [pendingRecheckCount, setPendingRecheckCount] = useState(0);
   const [activationAttempts, setActivationAttempts] = useState(0);
   const [activationTimedOut, setActivationTimedOut] = useState(false);
+  // renewal 取得失敗（結果查詢失敗、或橋接輪詢耗盡）→ 降級畫面，
+  // 絕不落回 45 秒逾時錯誤（補繳中間筆的 expired 是正常終態）。
+  const [resultFetchFailed, setResultFetchFailed] = useState(false);
+  const [bridgeAttempts, setBridgeAttempts] = useState(0);
 
   // 背景抓訂單明細（付款人、卡片資訊、金額），純粹用來豐富成功/失敗畫面的顯示內容，
   // 不影響狀態判斷——狀態已經由 statusParam 或下面的 fallback 查詢決定。
@@ -83,13 +97,43 @@ export function PaymentResult() {
         if (result.success) setOrderResult(result.data);
       })
       .catch(() => {
-        // 忽略：如果網址已經有 status，這只是拿明細，失敗不影響畫面判斷
+        // 導回已知成功（statusParam=SUCCESS）時，這次查詢是 renewal 的
+        // 唯一來源——失敗要走降級畫面（付款成功＋重試），不能默默落進
+        // 開通輪詢與逾時錯誤。其他情況維持舊行為（只是拿明細）。
+        if (statusParam === 'SUCCESS') setResultFetchFailed(true);
       })
       .finally(() => {
         if (!statusParam) setIsLoadingStatus(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tradeNo]);
+
+  // 過渡態橋接（renewal-backfill）：PayUni 導回一律帶 status，原本的
+  // pending-recheck effect 永遠被跳過；若掛載當下 webhook 還沒把訂單寫成
+  // completed（差幾百毫秒就夠），沒有這段就會直接落回 45 秒開通輪詢、
+  // 逾時撞進「聯繫客服」。這裡沿用同一支端點短暫輪詢，待 orderStatus 與
+  // renewal 到位後由渲染邏輯切到對應分支；耗盡則轉降級畫面。
+  useEffect(() => {
+    if (statusParam !== 'SUCCESS') return;
+    if (!tradeNo || user?.accountStatus === 'active' || resultFetchFailed) return;
+    if (!orderResult || orderResult.orderStatus !== 'pending') return;
+    if (bridgeAttempts >= MAX_ACTIVATION_POLLS) {
+      setResultFetchFailed(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      apiRequestJson<{ success: boolean; data: OrderResult }>(
+        buildApiUrl(`/payuni/result/${tradeNo}`),
+      )
+        .then((result) => {
+          if (result.success) setOrderResult(result.data);
+        })
+        .catch(() => {})
+        .finally(() => setBridgeAttempts((n) => n + 1));
+    }, ACTIVATION_POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusParam, tradeNo, orderResult, bridgeAttempts, resultFetchFailed]);
 
   // 沒有 status 參數、查到的訂單仍是 pending 時，做少量輕量重試
   // （不是 12 次指數退避的等待劇場，只是給後端一點緩衝時間）。
@@ -140,6 +184,28 @@ export function PaymentResult() {
   // 會籍是否已生效——付款成功畫面與守衛都以這個為準（不是 registrationStep）。
   const isMemberActive = user?.accountStatus === 'active';
 
+  // 補繳中間筆（AC-3）：付款完成且還差 N 筆——expired 是正常終態，
+  // 顯示進度與去路，跳過開通輪詢與逾時分支。
+  const slimRenewal = orderResult?.renewal ?? null;
+  const isBackfillIntermediate =
+    resolvedStatus === 'success' &&
+    !isMemberActive &&
+    orderResult?.orderStatus === 'completed' &&
+    (slimRenewal?.backfillCount ?? 0) > 0;
+  // renewal 取得失敗：查詢失敗（無 orderResult）或訂單已完成但 renewal
+  // 缺漏——降級為「付款成功＋重試」，不落回逾時錯誤畫面。
+  const renewalUnavailable =
+    resolvedStatus === 'success' &&
+    !isMemberActive &&
+    ((resultFetchFailed && !orderResult) ||
+      (orderResult?.orderStatus === 'completed' && !slimRenewal));
+  // 橋接中：導回已知成功但 orderStatus 還沒收斂——等上面的橋接輪詢，
+  // 先不啟動 45 秒開通輪詢。
+  const awaitingBridge =
+    statusParam === 'SUCCESS' &&
+    !resultFetchFailed &&
+    (!orderResult || orderResult.orderStatus === 'pending');
+
   // 付款成功 → 一次性失效整組相關快取（會籍/獎勵/任務/推薦樹），
   // 回會員中心讀到的都是最新資料——修「續約後自己的到期日還顯示舊值」。
   useEffect(() => {
@@ -153,6 +219,8 @@ export function PaymentResult() {
   // 到達本頁時會籍已生效，這個輪詢根本不會啟動。
   useEffect(() => {
     if (resolvedStatus !== 'success' || isMemberActive || activationTimedOut) return;
+    // 補繳中間筆/降級/橋接中都不進開通輪詢——expired 不是待收斂狀態。
+    if (isBackfillIntermediate || renewalUnavailable || awaitingBridge) return;
     if (activationAttempts >= MAX_ACTIVATION_POLLS) {
       setActivationTimedOut(true);
       return;
@@ -170,7 +238,15 @@ export function PaymentResult() {
     ); // 第一次立即查
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedStatus, isMemberActive, activationAttempts, activationTimedOut]);
+  }, [
+    resolvedStatus,
+    isMemberActive,
+    activationAttempts,
+    activationTimedOut,
+    isBackfillIntermediate,
+    renewalUnavailable,
+    awaitingBridge,
+  ]);
 
   // 先 refreshUser 再 SPA 導頁（取代 window.location.href 整頁 reload）：
   // 確保守衛讀到最新 accountStatus，才不會被彈回本頁。
@@ -185,6 +261,29 @@ export function PaymentResult() {
 
   const handleContactSupport = () => {
     openExternalLink(LINE_OFFICIAL_ACCOUNT_URL);
+  };
+
+  // 稍後再說 → 首頁（沿用 PaymentCheckout.handleCancel 的模式）。
+  // 不可導向任何會員頁——RequireMembershipRoute 對「曾有訂閱、已過期」
+  // 寫死導回結帳頁，補繳中的人 accountStatus 永遠 expired，剛按
+  // 「不想繼續」就被抓回去比留在原頁更糟。
+  const handleBackfillLater = () => {
+    showToast('已保留您的補繳進度，隨時可回來繼續', 'info');
+    navigate('/', { replace: true });
+  };
+
+  // 降級畫面的重試：重新打同一支端點（renewal 的唯一來源）。
+  const handleRetryRenewal = () => {
+    if (!tradeNo) return;
+    setResultFetchFailed(false);
+    setBridgeAttempts(0);
+    apiRequestJson<{ success: boolean; data: OrderResult }>(
+      buildApiUrl(`/payuni/result/${tradeNo}`),
+    )
+      .then((result) => {
+        if (result.success) setOrderResult(result.data);
+      })
+      .catch(() => setResultFetchFailed(true));
   };
 
   if (!tradeNo) {
@@ -225,6 +324,98 @@ export function PaymentResult() {
             <CardTitle className="text-2xl">查詢付款結果中</CardTitle>
             <CardDescription>請稍候，正在確認您的付款狀態</CardDescription>
           </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // 補繳中間筆（AC-3）：付款成功、還差 N 筆才生效——這是補繳制的正常
+  // 終態，顯示進度與明確去路，絕不進開通輪詢/逾時錯誤。
+  if (isBackfillIntermediate && slimRenewal) {
+    const paidUpToDay = twDayPlusYears(slimRenewal.extendEndDate, -1);
+    return (
+      <div
+        className="container max-w-2xl mx-auto p-4 pt-20"
+        data-testid="payment-result-backfill-progress"
+      >
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="h-16 w-16 text-green-600" />
+            </div>
+            <CardTitle className="text-2xl">付款成功，已補至 {paidUpToDay}</CardTitle>
+            <CardDescription>您的會籍仍在補繳中</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+              <p className="text-sm text-green-800">
+                訂單編號：<span className="font-mono">{tradeNo}</span>
+              </p>
+              <p className="text-sm text-green-800">
+                還差 <span className="font-bold">{slimRenewal.backfillCount} 筆</span>
+                （NT$ {slimRenewal.backfillAmount.toLocaleString('en-US')}）會籍才會生效。
+              </p>
+              <p className="text-sm text-green-800">這筆款項已完成，不會重複扣款。</p>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                onClick={handleRetryPayment}
+                className="flex-1"
+                size="lg"
+                data-testid="continue-backfill-button"
+              >
+                繼續補繳
+              </Button>
+              <Button
+                onClick={handleBackfillLater}
+                variant="outline"
+                className="flex-1"
+                size="lg"
+                data-testid="backfill-later-button"
+              >
+                稍後再說
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // renewal 取得失敗的降級畫面：付款事實已確定（statusParam=SUCCESS），
+  // 只是進度讀不到——給重試，不落回逾時錯誤。
+  if (renewalUnavailable) {
+    return (
+      <div
+        className="container max-w-2xl mx-auto p-4 pt-20"
+        data-testid="payment-result-renewal-unavailable"
+      >
+        <Card>
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="h-16 w-16 text-green-600" />
+            </div>
+            <CardTitle className="text-2xl">付款成功</CardTitle>
+            <CardDescription>補繳進度暫時無法讀取</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+              <p className="text-sm text-green-800">
+                訂單編號：<span className="font-mono">{tradeNo}</span>
+              </p>
+              <p className="text-sm text-green-800">
+                這筆款項已完成，不會重複扣款。進度暫時無法讀取，請稍後重試。
+              </p>
+            </div>
+            <Button
+              onClick={handleRetryRenewal}
+              className="w-full"
+              size="lg"
+              data-testid="retry-renewal-button"
+            >
+              重新讀取進度
+            </Button>
+          </CardContent>
         </Card>
       </div>
     );
