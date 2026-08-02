@@ -4,7 +4,9 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Download, Eye, Loader2, RefreshCw } from 'lucide-react';
+import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
+import { Checkbox } from '../ui/checkbox';
+import { Skeleton } from '../ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import {
   AlertDialog,
@@ -16,10 +18,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
-import { useNotification } from '../notifications/NotificationContext';
 import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
-import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
+import { buildCsvContent } from '../../utils/csv';
+import { copyToClipboard } from '../../utils/clipboard';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import type {
+  AdminWithdrawalRecord,
+  AdminWithdrawalStats,
+  AdminWithdrawalsResponse,
+} from '@contract';
 
 // 提領生命週期（與後端 SQL 函數一致）：
 //   pending（待處理）→ awaiting_collection（已匯款，待查收）
@@ -131,17 +138,37 @@ export interface WithdrawalManagementProps {
 
 const PAGE_SIZE = 50;
 
+const EMPTY_STATS: AdminWithdrawalStats = {
+  pendingAmount: 0,
+  byStatus: { pending: 0, awaiting_collection: 0, completed: 0, rejected: 0 },
+};
+
+const twd = (n: number) => `$${n.toLocaleString('en-US')}`;
+
 export function WithdrawalManagement({
   loadWithdrawals,
   updateStatus: submitStatus,
+  batchMarkPaid,
 }: WithdrawalManagementProps) {
+  // W8：「標記已匯款」需要同時開著網銀，手機上做不到，所以鎖在桌面。
+  // 退件與代為完成不鎖——那是客服接到電話當下就該能處理的事。
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<AdminWithdrawalStats>(EMPTY_STATS);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
+  const [historyRecord, setHistoryRecord] = useState<AdminWithdrawalRecord | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [paidTarget, setPaidTarget] = useState<AdminWithdrawalRecord | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const fetchWithdrawals = useCallback(async () => {
@@ -150,6 +177,11 @@ export function WithdrawalManagement({
     try {
       const data = await loadWithdrawals({ status: statusFilter, limit: PAGE_SIZE, offset: 0 });
       setWithdrawals(data.withdrawals);
+      setTotal(data.total);
+      setStats(data.stats);
+      // 換一批資料就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在
+      // 的列，而下一步是不可回退的批次匯款。
+      setSelected(new Set());
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
     } finally {
@@ -162,9 +194,65 @@ export function WithdrawalManagement({
     fetchWithdrawals();
   }, [fetchWithdrawals]);
 
+  const loadMore = async () => {
+    setIsLoadingMore(true);
+    try {
+      const data = await loadWithdrawals({
+        status: statusFilter,
+        limit: PAGE_SIZE,
+        offset: withdrawals.length,
+      });
+      setWithdrawals((prev) => [...prev, ...data.withdrawals]);
+      setTotal(data.total);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // 作業面板預設盯著第一筆：admin 開著網銀時，面板必須一進畫面就有內容，
+  // 而不是先點一下才出現。
+  const activeRecord = withdrawals.find((w) => w.id === activeId) ?? withdrawals[0] ?? null;
+  const selectedRecords = withdrawals.filter((w) => selected.has(w.id));
+  const pageIds = withdrawals.map((w) => w.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  const toggleAllOnPage = () => {
+    // 「全選」= 這一頁，不是整個篩選結果。悄悄擴大到未載入的頁，等於使用者
+    // 以為勾了 2 筆、實際送出 37 筆——而批次匯款不可回退。
+    setSelected(allPageSelected ? new Set() : new Set(pageIds));
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const runBatch = async () => {
+    const items = selectedRecords.map((w) => ({ id: w.id }));
+    setBatchOpen(false);
+    try {
+      const result = await batchMarkPaid(items);
+      if (result.failed.length) {
+        setLoadError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : '批次標記失敗');
+    }
+    await fetchWithdrawals();
+  };
+
+  const copyAccount = (account: string) => {
+    copyToClipboard(account);
+  };
+
   const updateStatus = async (
     record: AdminWithdrawalRecord,
-    status: 'awaiting_collection' | 'rejected',
+    status: 'awaiting_collection' | 'rejected' | 'completed',
     note?: string,
   ) => {
     setProcessingId(record.id);
@@ -190,22 +278,21 @@ export function WithdrawalManagement({
       '申請時間',
       '狀態',
     ];
-    const rows = withdrawals.map((w) =>
-      [
-        w.userName,
-        String(w.amount + w.fee),
-        String(w.fee),
-        String(w.amount),
-        w.bankCode ?? '未設定',
-        w.bankAccount ?? '未設定',
-        w.idNumber ?? '未設定',
-        formatTwTimestamp(w.requestedAt),
-        STATUS_LABEL[w.status] ?? w.status,
-      ].join(','),
-    );
+    const rows = withdrawals.map((w) => [
+      w.userName,
+      w.amount + w.fee,
+      w.fee,
+      w.amount,
+      w.bankCode ?? '未設定',
+      w.bankAccount ?? '未設定',
+      w.idNumber ?? '未設定',
+      formatTwTimestamp(w.requestedAt),
+      STATUS_LABEL[w.status] ?? w.status,
+    ]);
 
-    const BOM = '﻿';
-    const blob = new Blob([BOM + [headers.join(','), ...rows].join('\n')], {
+    // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
+    // 姓名帶逗號、備註帶換行都會把手刻的 join(',') 撕成錯位的欄。
+    const blob = new Blob([buildCsvContent(headers, rows)], {
       type: 'text/csv;charset=utf-8;',
     });
     const link = document.createElement('a');
@@ -274,6 +361,169 @@ export function WithdrawalManagement({
         </AlertDialog>
       )}
 
+      {completeTarget && (
+        <AlertDialog open onOpenChange={() => setCompleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>代為標記已完成？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {completeTarget.userName} 的提領將由你代為結案。會員端會明示這是
+                管理員代為完成，不會顯示成他本人查收。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = completeTarget;
+                  setCompleteTarget(null);
+                  if (target) updateStatus(target, 'completed', '管理員代為結案');
+                }}
+              >
+                確認代為完成
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* 批次不可回退，所以確認框列出**受影響會員姓名**，不只給筆數與總額：
+          金額相近時聚合數字不會露出異常，看到名字才會。 */}
+      {batchOpen && (
+        <AlertDialog open onOpenChange={() => setBatchOpen(false)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>批次標記已匯款？</AlertDialogTitle>
+              <AlertDialogDescription>
+                以下 {selectedRecords.length} 筆將轉為「待查收」，合計匯出{' '}
+                {twd(selectedRecords.reduce((s, w) => s + w.amount, 0))}。此操作無法復原。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <ul className="max-h-48 overflow-y-auto text-sm space-y-1 py-2">
+              {selectedRecords.map((w) => (
+                <li key={w.id} className="flex justify-between gap-4">
+                  <span>{w.userName}</span>
+                  <span className="font-mono">{twd(w.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={runBatch}>確認批次匯款</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {historyRecord && (
+        <Dialog open onOpenChange={() => setHistoryRecord(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>轉換歷史</DialogTitle>
+              <DialogDescription>{historyRecord.userName} 的提領處理紀錄</DialogDescription>
+            </DialogHeader>
+            <ol className="space-y-3 py-2 text-sm">
+              {historyRecord.events.length === 0 ? (
+                <li className="text-muted-foreground">尚無轉換紀錄</li>
+              ) : (
+                historyRecord.events.map((e) => (
+                  <li key={e.createdAt} className="border-l-2 pl-3">
+                    <p>
+                      {STATUS_LABEL[e.fromStatus] ?? e.fromStatus} →{' '}
+                      {STATUS_LABEL[e.toStatus] ?? e.toStatus}
+                      <span className="text-muted-foreground ml-2">
+                        {e.byAdmin ? '（管理員）' : '（會員本人）'}
+                      </span>
+                    </p>
+                    {e.note && <p className="text-muted-foreground">{e.note}</p>}
+                    {e.bankRef && <p className="font-mono text-xs">交易序號 {e.bankRef}</p>}
+                    <p className="text-xs text-muted-foreground">
+                      {formatTwTimestamp(e.createdAt)}
+                    </p>
+                  </li>
+                ))
+              )}
+            </ol>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <section aria-label="提領彙總" className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
+            數字去對網銀的轉出總額，混進手續費就對不起來。 */}
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">待匯款總額</p>
+            <p className="text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">待處理</p>
+            <p className="text-2xl font-bold">{stats.byStatus.pending}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">待查收</p>
+            <p className="text-2xl font-bold">{stats.byStatus.awaiting_collection}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">已完成</p>
+            <p className="text-2xl font-bold">{stats.byStatus.completed}</p>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額
+          必須同時在眼前。要捲動或點開才看得到，就是逼人在兩個視窗間來回對帳。 */}
+      {activeRecord && (
+        <Card>
+          <CardHeader>
+            <CardTitle>匯款作業面板</CardTitle>
+            <CardDescription>照這五欄打進網銀，帳號可一鍵複製</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <section aria-label="匯款作業面板" className="grid gap-3 md:grid-cols-5">
+              <div>
+                <p className="text-xs text-muted-foreground">戶名</p>
+                <p className="font-medium">{activeRecord.userName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">身分證字號</p>
+                <p className="font-mono">{activeRecord.idNumber ?? '未設定'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">銀行代號</p>
+                <p className="font-mono">{activeRecord.bankCode ?? '未設定'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">收款帳號</p>
+                <div className="flex items-center gap-1">
+                  <p className="font-mono">{activeRecord.bankAccount ?? '未設定'}</p>
+                  {activeRecord.bankAccount && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="複製收款帳號"
+                      onClick={() => copyAccount(activeRecord.bankAccount ?? '')}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">匯款金額</p>
+                <p className="text-xl font-bold">{twd(activeRecord.amount)}</p>
+              </div>
+            </section>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
@@ -304,8 +554,26 @@ export function WithdrawalManagement({
                 下載CSV
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">共 {withdrawals.length} 筆申請</p>
+            {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
+                只寫「共 N 筆」會讓人以為 N 就是全部。 */}
+            <p className="text-sm text-muted-foreground">
+              已顯示 {withdrawals.length} / {total} 筆
+            </p>
           </div>
+
+          {selected.size > 0 && (
+            <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">
+              <span className="text-sm font-medium">已選取 {selected.size} 筆</span>
+              {isDesktop && (
+                <Button size="sm" onClick={() => setBatchOpen(true)}>
+                  批次標記已匯款
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                清除選取
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -318,8 +586,19 @@ export function WithdrawalManagement({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div role="status" aria-label="載入提領申請中" className="space-y-3 py-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : loadError ? (
+            // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
+            // 以為今天沒人申請提領，而不是「沒讀到」。
+            <div className="py-12 text-center space-y-3">
+              <p className="text-destructive">{loadError}</p>
+              <Button variant="outline" onClick={fetchWithdrawals}>
+                重試
+              </Button>
             </div>
           ) : withdrawals.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
@@ -327,6 +606,13 @@ export function WithdrawalManagement({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      aria-label="全選本頁的提領記錄"
+                      checked={allPageSelected}
+                      onCheckedChange={toggleAllOnPage}
+                    />
+                  </TableHead>
                   <TableHead>會員</TableHead>
                   <TableHead>扣點</TableHead>
                   <TableHead>匯款金額</TableHead>
@@ -335,15 +621,27 @@ export function WithdrawalManagement({
                   <TableHead>申請時間</TableHead>
                   <TableHead>狀態</TableHead>
                   <TableHead>身分證照片</TableHead>
+                  <TableHead>歷史</TableHead>
                   <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {withdrawals.map((w) => (
-                  <TableRow key={w.id}>
+                  <TableRow
+                    key={w.id}
+                    data-state={w.id === activeRecord?.id ? 'selected' : undefined}
+                    onClick={() => setActiveId(w.id)}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`選取 ${w.userName} 的提領記錄`}
+                        checked={selected.has(w.id)}
+                        onCheckedChange={() => toggleOne(w.id)}
+                      />
+                    </TableCell>
                     <TableCell>{w.userName}</TableCell>
                     <TableCell>{w.amount + w.fee} P</TableCell>
-                    <TableCell>${w.amount}</TableCell>
+                    <TableCell>{twd(w.amount)}</TableCell>
                     <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
                     <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
                     <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
@@ -355,15 +653,25 @@ export function WithdrawalManagement({
                       </Button>
                     </TableCell>
                     <TableCell>
+                      {/* 事件歷史手機也看得到（W8）：客服接到「我的錢呢」時，
+                          需要的就是這條時間軸。 */}
+                      <Button variant="ghost" size="sm" onClick={() => setHistoryRecord(w)}>
+                        查看歷史
+                      </Button>
+                    </TableCell>
+                    <TableCell>
                       {w.status === 'pending' ? (
                         <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => setPaidTarget(w)}
-                            disabled={processingId === w.id}
-                          >
-                            已匯款
-                          </Button>
+                          {/* W8：只有這顆鎖在桌面——標記已匯款要同時開著網銀。 */}
+                          {isDesktop && (
+                            <Button
+                              size="sm"
+                              onClick={() => setPaidTarget(w)}
+                              disabled={processingId === w.id}
+                            >
+                              標記已匯款
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="destructive"
@@ -373,16 +681,31 @@ export function WithdrawalManagement({
                             退件
                           </Button>
                         </div>
+                      ) : w.status === 'awaiting_collection' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setCompleteTarget(w)}
+                          disabled={processingId === w.id}
+                        >
+                          代為完成
+                        </Button>
                       ) : (
-                        <span className="text-sm text-muted-foreground">
-                          {w.status === 'awaiting_collection' ? '等待會員查收' : '—'}
-                        </span>
+                        <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {!isLoading && !loadError && withdrawals.length < total && (
+            <div className="pt-4 text-center">
+              <Button variant="outline" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? '載入中…' : '載入更多'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -23,6 +23,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import {
   DEFAULT_NETWORK_SORT,
   SORT_OPTIONS,
@@ -92,21 +93,6 @@ function avatarColor(generation: number): string {
 }
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
-}
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia(query);
-    const onChange = () => setMatches(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
 }
 
 const INTERACTIVE_ROW = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
