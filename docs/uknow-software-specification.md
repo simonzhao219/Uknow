@@ -167,7 +167,11 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
   ——這也構成續訂誘因。
 - **推薦碼不作廢、仍可被使用**：失效不改變 `referral_codes.status`，該碼仍可被
   新用戶驗證、推薦關係照常建立。組織圖節點保留（標記 Inactive），下線不斷開。
-- 失效**超過一年**只能走新約（§6.2），效期從付款日重新計算，並可更換推薦人。
+- 續費雙模式（§6.2）**不因過期多久而改變**：續約（extend）永遠可選——
+  一筆一年從原到期日隔天接續，過期越久需補繳的筆數越多；新約（fresh）
+  從付款日起算、可換推薦人，但會**清空帳本**（沖銷列見 §8.4、任務歸零
+  見 §9.2）——「保留不歸零」說的是失效狀態本身，選新約是使用者主動
+  放棄原帳本的例外。
 
 ### 5.2 停權（suspended）是正交的第二軸
 
@@ -204,15 +208,29 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 
 ### 6.2 續約雙模式
 
-〔實作〕`20260716000008_renewal_modes.sql`、`/payuni/prepare`
+〔實作〕`20260716000008_renewal_modes.sql`、`/payuni/prepare`、
+`20260802000002_fresh_ledger_forfeit.sql`（fresh 清空）、
+`backfillPlan()`（`api/tw-dates.ts` / `src/utils/twDate.ts`，
+案例表 `_shared/backfill-cases.ts`）
 
-| 模式 | 適用 | 效期錨點 | 可換推薦人 |
-|---|---|---|---|
-| **續約（extend）** | 失效**未滿一年** | 接續**前一筆訂閱的到期日** | ❌ |
-| **新約（fresh）** | 首購，或失效**超過一年** | 從**付款日**起算 | ✅ |
+| 模式 | 適用 | 效期錨點 | 推薦人 | 帳本 |
+|---|---|---|---|---|
+| **續約（extend）** | 曾訂閱者**永遠可選**，不因過期多久而消失 | 接續**前一筆訂閱到期日的隔天**，一筆一年 | 不變 | 全數保留 |
+| **新約（fresh）** | 首購或續費 | 從**付款日**起算 | 換線；**未填碼＝綁平台預設推薦人**（§7.4） | **清空**（§8.4 `ledger_reset` 沖銷、§9.2 任務歸零） |
 
-extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 extend 會「付了錢
-效期仍在過去」，`/payuni/prepare` 直接拒絕（前端也不顯示該選項）。
+**補繳**：extend 的效期算術是字面接續、不做「至少從今天起算」的補救——
+算出的效期仍在過去也照給，使用者連續補繳（一筆 NT$1,200 = 一年）直到
+迄日回到未來才恢復 active，原週年日因此保留。每一筆補繳各自成一列
+`subscriptions`（不做合併訂單），且**每一筆都照常發放三代獎勵**（§8.2）；
+任務計數不因老下線補繳 +1（§9.2 pair-history）。結帳頁事前揭露需補繳的
+筆數、總額、補完到期日與已過期時長；付款中途離開後從任何入口回來，
+都以 `/subscriptions/status` 的 `renewal` 契約（`RenewalInfoSchema`）
+接續顯示進度，前端不留自己的進度副本。
+
+**fresh 的護欄**：存在審核中（`pending`）提領時不可選 fresh（§10.1，
+建單 400）；選 fresh 前結帳頁揭露將清空的具體數字（點數、累積推薦
+人數），送出付款前需二次確認——補繳中途改選 fresh 時另列「已付款項
+不退還、效期不保留」警語。
 
 模式由建單時寫入 `payment_orders.renewal_mode`，付款成功當下才據以決定效期
 ——**不信任前端傳入的日期**。
@@ -280,22 +298,31 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 
 ### 7.4 預設推薦人（未填推薦碼時的自動綁定）
 
-- **首次付款**（`subscriptions.is_renewal = false`）且未填推薦碼者，自動綁定至
-  `reward_config.default_referrer_code` 指定的推薦人（`null` = 停用，
-  是可調參數；啟用/停用一律人工 `UPDATE`，部署步驟見
-  `docs/supabase-setup-checklist.md`）。
-- **僅套用於首購**：既有會員（含其未來所有付款與任務續約）不受影響，
-  `referred_by_user_id` 維持 `null`。
-- 碼合法性重用 `validate_referral_code()`（`active` 且推薦人未停權）；
-  解析失敗時付款照常成功、僅寫 `system_alerts`
-  （`default_referrer_code_invalid` / `default_referrer_suspended` 兩種 reason）。
+- 兩條路徑未填推薦碼都綁定至 `reward_config.default_referrer_code` 指定的
+  推薦人（`null` = 停用，是可調參數；啟用/停用一律人工 `UPDATE`，部署
+  步驟見 `docs/supabase-setup-checklist.md`）：
+  - **首次付款**（`subscriptions.is_renewal = false`）：付款成功時由
+    `resolve_default_referrer` 套用。
+  - **續費選新約（fresh）且未填碼**：建單時由 `/payuni/prepare` 套用——
+    選新約 = 離開原本的樹，不填碼不等於維持原狀；要留在原上代必須主動
+    填回原推薦碼。
+- 碼合法性重用 `validate_referral_code()`（`active` 且推薦人未停權），另有
+  自我推薦護欄；解析失敗時**不阻斷金流**（建單/付款照常成功），僅寫
+  `system_alerts`（首購路徑 `default_referrer_code_invalid` /
+  `default_referrer_suspended`；fresh 路徑
+  `default_referrer_unavailable_on_fresh`），此時 fresh 者維持原上代不變。
+- **可用性可見**（不能只靠事後告警）：`/health` 回報 `defaultReferrer`
+  三態 `ok`／`unset`／`invalid`——部署 SOP 打 `/health` 比對 `sha` 時
+  一併看見。
 - 此推薦人**正常參與** §9 推薦王；獎勵發放與換線規則（§7.2、§8.2）完全比照
   一般推薦人，不特殊處理。
-- 自動綁定以 `profiles.referred_by_is_default` 標記；fresh 換線到真推薦人時
-  由 `/payuni/prepare` 重置為 `false`。機制對使用者不揭露（前端據
-  `isAutoReferral` 契約欄位抑制顯示與資料擷取）。
+- 自動綁定以 `profiles.referred_by_is_default` 標記（fresh 未填碼路徑也設
+  `true`）；換線到使用者親自填的推薦碼時由 `/payuni/prepare` 重置為
+  `false`。機制對使用者不揭露（前端據 `isAutoReferral` 契約欄位抑制顯示
+  與資料擷取；續約文案只說「留空表示不指定推薦人」）。
 
-〔實作〕`20260726000101`～`20260726000102`、`resolve_default_referrer`
+〔實作〕`20260726000101`～`20260726000102`、`resolve_default_referrer`、
+`/payuni/prepare` 的 fresh 未填碼分支
 
 ---
 
@@ -361,6 +388,15 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 付款續約 vs 任務免費續約的差別由 `viaFreeRenewal` 旗標承載（明細第二行註記
 「・任務免費續約」），不另佔一個分類。
 
+**新約重置的機制**：續費選 fresh 的付款**成功當下**（絕不在建單時——
+建單後可能棄單）插入一筆負額沖銷列，金額 = 當下可提領餘額；帳本只增
+不刪，原明細全數封存可稽核。冪等鍵綁本次訂閱 id（webhook 重放不重複
+沖銷）；首購 fresh 無沖銷列。沖銷走周邊隔離：失敗不回滾付款，告警
+（source＝fresh_ledger_forfeit）帶失敗當下的**金額快照**；自癒函數
+repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘額，
+失敗後下線新繳的合法點數不被追溯沒收；快照遺失則沖 0 並升級告警交人工。
+〔實作〕migration 20260802000002_fresh_ledger_forfeit.sql
+
 ### 8.5 餘額
 
 `reward_balances` View 由流水帳即時加總，不存快取欄位：
@@ -398,6 +434,12 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 **去重身分 = 下線帳號 UUID**（弱去重，不綁身分證字號）。安全性論證：
 每個 task +1 都對應一筆 1,200 元真實付款，多帳號刷 8 位＝花 9,600 換一張
 價值 1,200 的免費續約，經濟上不划算。
+
+**fresh 清空與 pair-history 的關係**：選 fresh 清空帳本時，
+`total_referrals` 歸 0、**當月**桶刪除（月份 key 沿用付款時點的同一運算
+式），但**歷史月份桶永久保留**——歷史桶就是 pair-history 本體，跨清空
+保留才能擋「換新約重刷推薦王」：清空後老下線再付款，上線照領 100 P
+（§8.2），任務**不 +1**。
 
 ### 9.3 領取（claim）
 
@@ -447,6 +489,12 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | **待查收 (awaiting_collection)** | Admin 已匯款，等待用戶確認查收 |
 | **已完成 (completed)** | 用戶已確認查收 |
 | **已拒絕 (rejected)** | 申請被 admin 拒絕，點數與手續費退還（`withdrawal_refund`） |
+
+存在 **`pending`** 提領時，續費不可選新約（fresh 建單 400，§6.2）——
+fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已清空的帳本。
+只擋 `pending`：`awaiting_collection` 依上表不可再轉 `rejected`（錢已
+核准匯出），無此風險（比照 §9.3 對 §5.3 的守衛對齊寫法，前後端共用
+同一個 `hasPendingWithdrawal` 判準）。
 
 ### 10.4 隱私取捨
 
@@ -558,5 +606,9 @@ extend 不讓使用者因延遲繳費而賺到時間。失效超過一年者選 
 | 提領守衛 | `20260720000001_wave4_guards.sql` |
 | 會籍兩態 | `20260721000001_remove_grace_status.sql` |
 | 續約雙模式 | `20260716000008_renewal_modes.sql` |
+| 付款完成 user 層級鎖 | `20260802000001_payment_user_lock.sql` |
+| fresh 清空帳本（ledger_reset + 補沖自癒） | `20260802000002_fresh_ledger_forfeit.sql` |
+| 補繳計畫（backfillPlan 雙副本＋共用案例表） | `supabase/functions/api/tw-dates.ts`、`src/utils/twDate.ts`、`_shared/backfill-cases.ts` |
+| 預設推薦人 | `20260726000101`～`20260726000102`、`/payuni/prepare` fresh 未填碼分支 |
 | 前端業務常數 | `src/utils/constants.ts` |
 | 前後端共享契約 | `supabase/functions/_shared/api-contract.ts` |

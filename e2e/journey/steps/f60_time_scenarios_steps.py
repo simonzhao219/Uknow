@@ -190,7 +190,7 @@ def tree_structure_intact(guarded_page, run_state, node):
     expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
 
 
-# --- 過期超過一年：僅能新約 --------------------------------------------------
+# --- 過期超過一年：補繳制（A1）下續約永遠可選 --------------------------------
 
 
 @when(parsers.parse('"{node}" 登入並開啟付款頁'))
@@ -200,15 +200,16 @@ def open_checkout(guarded_page, run_state, node):
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
 
 
-@then("付款頁顯示僅能以新約重新起算")
-def only_fresh_allowed(guarded_page):
-    expect(guarded_page.get_by_text("會籍已過期超過一年").first).to_be_visible()
-
-
-@then("付款頁沒有「續約（接續原效期）」選項")
-def no_extend_option(guarded_page):
-    expect(guarded_page.get_by_test_id("renewal-mode-extend")).to_have_count(0)
+@then("付款頁仍提供「續約（接續原效期）」選項")
+def extend_option_present(guarded_page):
+    expect(guarded_page.get_by_test_id("renewal-mode-extend")).to_be_visible()
     expect(guarded_page.get_by_test_id("renewal-mode-fresh")).to_be_visible()
+
+
+@then("付款頁顯示補繳筆數與總額揭露")
+def backfill_disclosure_visible(guarded_page):
+    # extend 是預設選項，揭露卡（筆數/總額/補完到期日）應直接可見。
+    expect(guarded_page.get_by_test_id("backfill-disclosure")).to_be_visible()
 
 
 # --- 新約復活：換推薦人、付款日起算、刊登重新公開 ----------------------------

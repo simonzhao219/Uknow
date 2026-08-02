@@ -64,9 +64,9 @@ def enter_expired(admin: SupabaseAdmin, user_id: str) -> dict:
 
 
 def enter_expired_over_a_year(admin: SupabaseAdmin, user_id: str) -> dict:
-    """進入「過期超過一年」：extend（接續原效期）在此窗外——接續後的
-    效期仍在過去，前端不顯示續約選項、後端 /payuni/prepare 也會拒絕，
-    只剩新約（fresh）一條路。"""
+    """進入「過期超過一年」：補繳制（A1-A3）下 extend 仍可選——一筆一年
+    從原到期日隔天字面接續，算出來仍在過去就再補下一筆，付款頁會揭露
+    需補繳的筆數與總額。"""
     return _shift_latest(admin, user_id, end_delta_days=-400, grace_delta_days=-340)
 
 
