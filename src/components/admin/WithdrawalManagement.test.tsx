@@ -273,6 +273,119 @@ describe('WithdrawalManagement', () => {
     expect(await screen.findByRole('button', { name: '標記已匯款' })).toBeTruthy();
   });
 
+  it('退件走確認框，確認後才送出並帶理由', async () => {
+    const update = vi.fn(async () => {});
+    renderConsole({ updateStatus: update });
+
+    fireEvent.click(await screen.findByRole('button', { name: '退件' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認退件' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('w1', 'rejected', undefined));
+    // 動作回報留在畫面上，不彈個 toast 就消失。
+    expect(await screen.findByText(/已退件/)).toBeTruthy();
+  });
+
+  it('代為完成走確認框，明示會員端會看到是管理員結案', async () => {
+    const update = vi.fn(async () => {});
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record({ status: 'awaiting_collection' })] }),
+      updateStatus: update,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '代為完成' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/管理員代為完成/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: '確認代為完成' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('w1', 'completed', '管理員代為結案'));
+  });
+
+  it('狀態更新失敗時把原因說出來', async () => {
+    renderConsole({
+      updateStatus: async () => {
+        throw new Error('這筆已被其他管理員處理');
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '退件' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認退件' }));
+    expect(await screen.findByText(/這筆已被其他管理員處理/)).toBeTruthy();
+  });
+
+  it('批次有失敗時說出成功與失敗各幾筆，不只說失敗', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+      batchMarkPaid: async () => ({ succeeded: ['w1'], failed: [{ id: 'w2', error: 'x' }] }),
+    });
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    fireEvent.click(screen.getByRole('button', { name: '批次標記已匯款' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認批次匯款' }));
+
+    // 「1 筆成功、1 筆失敗」比「批次失敗」有用得多：admin 知道要重做哪一筆。
+    expect(await screen.findByText(/1 筆成功、1 筆失敗/)).toBeTruthy();
+  });
+
+  it('尚無轉換紀錄時歷史對話框說出來，不留空清單', async () => {
+    renderConsole();
+    fireEvent.click(await screen.findByRole('button', { name: '查看歷史' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('尚無轉換紀錄')).toBeTruthy();
+  });
+
+  it('載入更多把下一頁接在後面', async () => {
+    renderConsole({
+      loadWithdrawals: async ({ offset }: { offset: number }) =>
+        page({ withdrawals: [record({ id: `w${offset}` })], total: 2 }),
+    });
+
+    await screen.findByText('已顯示 1 / 2 筆');
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    await screen.findByText('已顯示 2 / 2 筆');
+  });
+
+  it('手機上勾選後不出現批次標記已匯款', async () => {
+    stubMediaQuery(false);
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+    });
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    // 計數照顯示（勾選本身不鎖），但批次匯款那顆鍵鎖在桌面（W8）。
+    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '批次標記已匯款' })).toBeNull();
+  });
+
+  it('事件歷史顯示交易序號與會員本人的動作', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({
+          withdrawals: [
+            record({
+              status: 'completed',
+              events: [
+                {
+                  fromStatus: 'awaiting_collection',
+                  toStatus: 'completed',
+                  note: null,
+                  bankRef: 'TX20260801001',
+                  transferredOn: '2026-08-01',
+                  byAdmin: false,
+                  createdAt: '2026-08-01T05:00:00Z',
+                },
+              ],
+            }),
+          ],
+        }),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看歷史' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/TX20260801001/)).toBeTruthy();
+    // 誰按的要看得出來——admin 代為結案與會員本人查收是兩件事。
+    expect(within(dialog).getByText(/會員本人/)).toBeTruthy();
+  });
+
   it('事件歷史逐筆列出轉換與說明，手機同樣看得到', async () => {
     stubMediaQuery(false);
     renderConsole({

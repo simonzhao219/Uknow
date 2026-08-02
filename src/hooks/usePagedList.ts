@@ -33,8 +33,6 @@ export interface UsePagedList<T> {
   hasMore: boolean;
   reload: () => Promise<void>;
   loadMore: () => Promise<void>;
-  /** 就地替換一筆（例如切換管理員後不必整頁重抓）。 */
-  replaceItem: (match: (item: T) => boolean, next: T) => void;
 }
 
 export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>): UsePagedList<T> {
@@ -78,10 +76,6 @@ export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length, ...deps]);
 
-  const replaceItem = useCallback((match: (item: T) => boolean, next: T) => {
-    setItems((prev) => prev.map((item) => (match(item) ? next : item)));
-  }, []);
-
   return {
     items,
     total,
@@ -91,6 +85,5 @@ export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>
     hasMore: items.length < total,
     reload,
     loadMore,
-    replaceItem,
   };
 }

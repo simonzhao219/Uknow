@@ -254,15 +254,20 @@ export function WithdrawalManagement({
     setBatchOpen(false);
     try {
       const result = await batchMarkPaid(items);
+      // **先重抓，再報告。** 反過來寫的話 fetchWithdrawals 的 setLoadError(null)
+      // 會把剛寫上去的訊息清掉——admin 做完 12 筆、其中 1 筆失敗，畫面卻什麼
+      // 都不說，他會以為全部成功。批次不可回退，那筆漏掉的不會自己浮出來。
+      await fetchWithdrawals();
       if (result.failed.length) {
         setLoadError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
       } else {
         setActionMessage(`已標記匯款完成：${result.succeeded.length} 筆`);
       }
+      return;
     } catch (err) {
+      await fetchWithdrawals();
       setLoadError(err instanceof Error ? err.message : '批次標記失敗');
     }
-    await fetchWithdrawals();
   };
 
   const copyAccount = (account: string) => {

@@ -182,6 +182,106 @@ describe('MemberManagement', () => {
     expect(within(panel).queryByText('A123456789')).toBeNull();
   });
 
+  it('停權與恢復按下後重抓列表', async () => {
+    const load = vi.fn(async () => page({ members: [member({ suspended: false })] }));
+    const suspend = vi.fn(async () => {});
+    renderConsole({ loadMembers: load, suspendMember: suspend });
+
+    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+    await waitFor(() => expect(suspend).toHaveBeenCalledWith('m1', true));
+    // 重抓而不是就地改：停權會連帶影響刊登可見性等衍生欄位，本地猜測會失真。
+    await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('停權失敗時把原因說出來', async () => {
+    renderConsole({
+      suspendMember: async () => {
+        throw new Error('該會員已被其他管理員處理');
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+    expect(await screen.findByText(/該會員已被其他管理員處理/)).toBeTruthy();
+  });
+
+  it('搜尋送出後以關鍵字重新查詢', async () => {
+    const load = vi.fn(async () => page());
+    renderConsole({ loadMembers: load });
+    await screen.findAllByText('陳大文');
+
+    fireEvent.change(screen.getByPlaceholderText('搜尋姓名 / Email / 電話'), {
+      target: { value: '王小明' },
+    });
+    fireEvent.submit(screen.getByPlaceholderText('搜尋姓名 / Email / 電話').closest('form')!);
+
+    await waitFor(() =>
+      expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '王小明' })),
+    );
+  });
+
+  it('載入更多把下一頁接在後面，不是取代', async () => {
+    const load = vi.fn(async ({ offset }: { offset: number }) =>
+      page({
+        members: [member({ id: `m${offset}`, name: `會員${offset}` })],
+        total: 2,
+      }),
+    );
+    renderConsole({ loadMembers: load as never });
+
+    await screen.findByText('已顯示 1 / 2 筆');
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    await screen.findByText('已顯示 2 / 2 筆');
+  });
+
+  it('詳情取不到時顯示錯誤，不留一個空面板', async () => {
+    renderConsole({
+      loadMemberDetail: async () => {
+        throw new Error('查無此會員');
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    expect(await screen.findByText('查無此會員')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('沒有推薦人與提領記錄時詳情不顯示空欄位殘影', async () => {
+    renderConsole({
+      loadMemberDetail: async () =>
+        detail({ referrerName: null, endDate: null, recentWithdrawals: [] }),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('尚無提領記錄')).toBeTruthy();
+  });
+
+  it('停權與失效會員在列表上看得出來', async () => {
+    renderConsole({
+      loadMembers: async () =>
+        page({
+          members: [
+            member({
+              id: 'm2',
+              name: '林小美',
+              suspended: true,
+              suspendedAt: '2026-07-20T00:00:00Z',
+              accountStatus: 'expired',
+              phone: null,
+            }),
+          ],
+        }),
+    });
+
+    await screen.findByText('林小美');
+    expect(screen.getByText('已暫停')).toBeTruthy();
+    expect(screen.getByText('已失效')).toBeTruthy();
+    // 停權者的動作是「恢復」而不是「暫停」——按錯會讓客服再停一次。
+    expect(screen.getByRole('button', { name: '恢復' })).toBeTruthy();
+  });
+
+  it('一般會員顯示設為管理員，管理員顯示撤銷管理員', async () => {
+    renderConsole({ loadMembers: async () => page({ members: [member({ isAdmin: false })] }) });
+    expect(await screen.findByRole('button', { name: '設為管理員' })).toBeTruthy();
+  });
+
   it('撤銷管理員失敗時說出是哪一種失敗，不壓成一句操作失敗', async () => {
     renderConsole({
       loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
