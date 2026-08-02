@@ -41,6 +41,7 @@ const ADMIN_ROUTES = [
   ['GET', '/api/admin/system-alerts'],
   ['POST', '/api/admin/members/verify'],
   ['GET', '/api/admin/members/00000000-0000-0000-0000-000000000000'],
+  ['POST', '/api/admin/members/00000000-0000-0000-0000-000000000000/admin'],
   ['GET', '/api/admin/id-reviews'],
   ['POST', '/api/admin/withdrawals/batch-mark-paid'],
   // 帶路徑參數的端點也要進來：守門在讀 param 之前就該擋下，

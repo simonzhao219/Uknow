@@ -1396,6 +1396,55 @@ app.get('/admin/members/:id', async (c) => {
   });
 });
 
+// ============================================================
+// POST /admin/members/:id/admin  body: { isAdmin: boolean }
+//
+// 授予／撤銷管理員。錯誤碼直通 SQL 的判定（cannot_demote_self / last_admin），
+// 前端據此顯示不同的說明——把它們壓成同一句「操作失敗」會讓 admin 不知道
+// 是自己不能撤自己，還是系統不允許歸零。
+// ============================================================
+app.post('/admin/members/:id/admin', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  if (typeof body?.isAdmin !== 'boolean') {
+    return c.json({ success: false, error: { message: 'isAdmin 必須是布林值' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_set_member_admin', {
+    p_admin_id: user.id,
+    p_target_id: c.req.param('id'),
+    p_is_admin: body.isAdmin,
+  });
+
+  if (error) {
+    console.error('[admin-set-member-admin] rpc error:', error);
+    return c.json({ success: false, error: { message: '權限更新失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const messages: Record<string, string> = {
+      cannot_demote_self: '不能撤銷自己的管理員權限，請由其他管理員操作',
+      last_admin: '系統必須保留至少一位管理員',
+      member_not_found: '查無此會員',
+    };
+    return c.json({
+      success: false,
+      error: {
+        code: data?.error_code ?? 'unknown',
+        message: messages[data?.error_code] ?? '權限更新失敗',
+      },
+    }, 400);
+  }
+
+  return c.json({ success: true, data: { isAdmin: body.isAdmin } });
+});
+
 // POST /admin/members/:id/suspend  body: { suspend: boolean }
 app.post('/admin/members/:id/suspend', async (c) => {
   const user = await requireAuth(c);
