@@ -1,7 +1,7 @@
 # 補繳式續約(renewal-backfill)實作進度
 
 分支:`feature/renewal-backfill`(base:`origin/develop` @ `0bc3edf`)
-規劃書:`./plan.md`(**第 6 版**)|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`(**第 7 版**)|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
 
@@ -28,19 +28,14 @@
 
 ## 目前位置與下一步
 
-**第 4 輪審查完成:P0 × 0、P1 × 7、P2 × 6(去重後)。**
-第 3 輪 8 項裁決:7 項落實正確;UI/UX 確認前輪 P0+P1 全部無回歸。
-全部發現屬「落實精確度」,無規則層問題。rules.md 自我保留註記與
-friction-log 存活提醒已在聚合時直接處理(保護性修正)。
+**第 4 輪 3 項裁決已回填,plan.md 改寫為第 7 版**(快照補沖/isRenewal
+四狀態表/全部精確度回填)。**單 reviewer 針對性覆核已派出**(裁決 3a)。
 
-**卡在等人裁決第 4 輪處置節的 3 個決定**(review.md 末尾):
-沖銷金額基準(快照 vs 接受過度沖銷,建議快照)、其餘 P1/P2 全數修訂、
-第 7 版用單 reviewer 覆核還是完整第 5 輪。
-
-實作由人親自打 `/tdd-implement renewal-backfill` 啟動;階段 1 走先行 PR
+覆核通過後 → **停,等人在 review.md 勾「通過」做最終人審** → 實作由人
+親自打 `/tdd-implement renewal-backfill` 啟動;階段 1 先走獨立 PR
 `fix/payment-user-lock`。
 
-### 實作時特別要記住的五條
+### 實作時特別要記住的六條
 
 1. **migration 基準版本是 `20260720000001_wave4_guards.sql:383-495`,不是
    `20260718000001`**。兩版差在 `apply_referral_side_effects` 的第三個參數
@@ -59,7 +54,11 @@ friction-log 存活提醒已在聚合時直接處理(保護性修正)。
    placeholder 上(`PaymentCheckout.tsx:672`)——直接違反 Q11 裁決。
 5. **清空絕不在建單時做**(第 5 版新增)。A13 的沖銷必須在付款**成功**
    當下(`process_successful_payment`),建單後可能棄單;沖銷列冪等綁
-   `subscription_id`;清空 migration 的基準 = 階段 1 產出版,不要從 wave4 抄。
+   `subscription_id`;清空 migration 的基準 = **先行 PR 合併後版**,不要從
+   wave4 抄。
+6. **自癒補沖讀快照,不讀當下餘額**(第 7 版新增)。沖銷失敗時金額快照
+   已寫進告警 payload;補沖若改用當下餘額,會沒收延遲期間下線新繳的
+   合法點數。快照遺失 → 沖 0 + 升級告警,寧少沖交人工。
 
 ## Blockers(逃生口紀錄)
 
