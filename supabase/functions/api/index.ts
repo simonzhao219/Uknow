@@ -1286,6 +1286,8 @@ app.get('/admin/members', async (c) => {
 
   const { data, error } = await sb().rpc('admin_list_members', {
     p_search: c.req.query('search') ?? null,
+    p_status: c.req.query('status') ?? null,
+    p_sort: c.req.query('sort') ?? 'created_desc',
     p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
     p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
   });
@@ -1304,11 +1306,28 @@ app.get('/admin/members', async (c) => {
     suspended: !!m.suspended_at,
     suspendedAt: m.suspended_at,
     accountStatus: m.account_status,
+    endDate: m.end_date ?? null,
+    idVerificationStatus: m.id_verification_status ?? 'none',
     listingCount: m.listing_count,
     createdAt: m.created_at,
   }));
 
-  return c.json({ success: true, data: { members, total: data?.total ?? 0 } });
+  return c.json({
+    success: true,
+    data: {
+      members,
+      total: data?.total ?? 0,
+      // stats 直通 SQL 算好的全站數字。**不要在這裡從 members 加總**——
+      // members 只有當前頁，那樣算出來的統計卡會隨分頁改變（M2 的反例）。
+      stats: data?.stats ?? {
+        total: 0,
+        active: 0,
+        expired: 0,
+        suspended: 0,
+        admins: 0,
+      },
+    },
+  });
 });
 
 // POST /admin/members/:id/suspend  body: { suspend: boolean }

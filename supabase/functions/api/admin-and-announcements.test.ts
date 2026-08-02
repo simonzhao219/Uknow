@@ -227,6 +227,12 @@ Deno.test('AdminSetup：無管理員時可自助宣告；已有管理員後鎖�
 });
 
 // ============================================================
+// CI 沒有設 SUPABASE_DB_URL，本地 supabase 的 DB 在 54322——所以全庫其他
+// 五個測試檔都是「env 優先、否則落到這個 fallback」。少了 fallback 會連到
+// 預設的 5432 而 ECONNREFUSED，斷言根本跑不到，等於一條沒有訊號的測試。
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
 // 會員查詢台（規劃書階段 3.1 / 驗收情境 M2、M3）
 //
 // **統計卡說的是全站，不是當前頁。** 這是 M2 的核心：admin 看到「停權 3 人」
@@ -360,7 +366,7 @@ Deno.test('admin_list_members：回應帶 endDate 與 idVerificationStatus', asy
 });
 
 Deno.test('GRANT：authenticated 不得 EXECUTE 改寫後的 admin_list_members', async () => {
-  const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!);
+  const sql = postgres(DB_URL);
   try {
     // 直接問 Postgres 而非「打 rpc 看它被拒」——後者的 403 可能來自不相干的
     // 權限，即使 REVOKE 沒生效也照樣「被拒」，斷言會失去辨別力。

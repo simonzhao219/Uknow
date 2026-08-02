@@ -658,14 +658,37 @@ export const AdminMemberSchema = obj({
   suspended: bool(),
   suspendedAt: nullable(str()),
   accountStatus: literals('active', 'expired'),
+  /** 會籍到期日；從未付費者為 null。 */
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
   listingCount: num(),
   createdAt: str(),
 });
 export type AdminMember = Infer<typeof AdminMemberSchema>;
 
+/**
+ * 會員列表的統計卡數字。
+ *
+ * **全站，不是當前頁。** 在 SQL 的 filtered CTE 上算完再回來，`limit` 只作用
+ * 在 members 陣列——前端拿到後直接顯示，不得從 `members` 加總（那樣算出來的
+ * 數字會隨分頁改變，等於一組會說謊的統計卡）。
+ */
+export const AdminMemberStatsSchema = obj({
+  total: num(),
+  active: num(),
+  expired: num(),
+  suspended: num(),
+  admins: num(),
+});
+export type AdminMemberStats = Infer<typeof AdminMemberStatsSchema>;
+
 export const AdminMembersResponseSchema = obj({
   success: bool(),
-  data: obj({ members: arr(AdminMemberSchema), total: num() }),
+  data: obj({
+    members: arr(AdminMemberSchema),
+    total: num(),
+    stats: AdminMemberStatsSchema,
+  }),
 });
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
 

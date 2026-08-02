@@ -577,8 +577,34 @@ class BackendApiMock:
 
         def handler(route):
             if route.request.method == "GET":
+                # Mirror the real contract: `stats` is computed server-side over
+                # the whole filtered set, so the console can show site-wide
+                # numbers rather than a per-page tally.
+                def count(pred):
+                    return len([r for r in records if pred(r)])
+
                 return _fulfill_json(
-                    route, {"success": True, "data": {"members": records, "total": len(records)}}
+                    route,
+                    {
+                        "success": True,
+                        "data": {
+                            "members": records,
+                            "total": len(records),
+                            "stats": {
+                                "total": len(records),
+                                "active": count(
+                                    lambda r: not r.get("suspended")
+                                    and r.get("accountStatus") == "active"
+                                ),
+                                "expired": count(
+                                    lambda r: not r.get("suspended")
+                                    and r.get("accountStatus") != "active"
+                                ),
+                                "suspended": count(lambda r: r.get("suspended")),
+                                "admins": count(lambda r: r.get("isAdmin")),
+                            },
+                        },
+                    },
                 )
             return _fulfill_json(route, {"success": True})
 
@@ -678,9 +704,13 @@ def build_admin_member(name: str = "陳大文", **overrides) -> dict:
         "email": "member@example.com",
         "phone": "0912345678",
         "accountStatus": "active",
+        "endDate": "2027-01-01T00:00:00.000Z",
+        "idVerificationStatus": "none",
         "listingCount": 0,
         "isAdmin": False,
         "suspended": False,
+        "suspendedAt": None,
+        "createdAt": "2026-07-01T00:00:00.000Z",
     }
     member.update(overrides)
     return member
