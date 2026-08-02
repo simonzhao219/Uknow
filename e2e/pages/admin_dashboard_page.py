@@ -32,8 +32,9 @@ class AdminDashboardPage(BasePage):
 
     def mark_first_withdrawal_paid(self) -> None:
         # Money-state change goes through a confirmation dialog, same as 退件.
-        # exact=True so this doesn't also match the dialog's "確認匯款" button.
-        self.page.get_by_role("button", name="已匯款", exact=True).first.click()
+        # exact=True so this doesn't also match the dialog's "確認匯款" button,
+        # nor the batch bar's "批次標記已匯款".
+        self.page.get_by_role("button", name="標記已匯款", exact=True).first.click()
         self.page.get_by_role("button", name="確認匯款").click()
 
     def reject_first_withdrawal(self) -> None:

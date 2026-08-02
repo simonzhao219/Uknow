@@ -537,7 +537,37 @@ class BackendApiMock:
 
         def handler(route):
             if route.request.method == "GET":
-                return _fulfill_json(route, {"success": True, "data": {"withdrawals": records}})
+                # Mirror the real contract: the console reads `total` for the
+                # "已顯示 X / Y 筆" counter and `stats` for the summary cards.
+                # Returning only `withdrawals` here is what let a shape drift
+                # slip past this layer once already.
+                pending = [r for r in records if r.get("status") == "pending"]
+                return _fulfill_json(
+                    route,
+                    {
+                        "success": True,
+                        "data": {
+                            "withdrawals": records,
+                            "total": len(records),
+                            "limit": 50,
+                            "offset": 0,
+                            "stats": {
+                                "pendingAmount": sum(r.get("amount", 0) for r in pending),
+                                "byStatus": {
+                                    status: len(
+                                        [r for r in records if r.get("status") == status]
+                                    )
+                                    for status in (
+                                        "pending",
+                                        "awaiting_collection",
+                                        "completed",
+                                        "rejected",
+                                    )
+                                },
+                            },
+                        },
+                    },
+                )
             return _fulfill_json(route, {"success": True})
 
         self._route("/admin/withdrawals", handler)
@@ -616,10 +646,12 @@ def build_system_alert(alert_id: str = "alert-e2e-1", **overrides) -> dict:
 
 def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
     """A row for `/admin/withdrawals` (WithdrawalManagement). `pending` rows
-    render the 已匯款 / 退件 action buttons."""
+    render the 標記已匯款 / 退件 action buttons."""
     record = {
         "id": "wd-admin-1",
+        "userId": "user-admin-1",
         "userName": "王小明",
+        "userPhone": "0912345678",
         "idNumber": "A123456789",
         "idCardFrontUrl": None,
         "idCardBackUrl": None,
@@ -627,7 +659,11 @@ def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
         "fee": 15,
         "bankCode": "004",
         "bankAccount": "12345678901234",
+        "note": None,
+        "events": [],
         "requestedAt": "2026-07-16T00:00:00.000Z",
+        "processedAt": None,
+        "completedAt": None,
         "status": status,
     }
     record.update(overrides)

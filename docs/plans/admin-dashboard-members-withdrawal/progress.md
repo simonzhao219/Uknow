@@ -97,6 +97,39 @@ W8（手機只鎖「標記已匯款」）需要它。這與階段 2.2 的 `copyT
 抽取就會變成複製貼上」。抽到 `src/hooks/useMediaQuery.ts`，`ReferralTreeView`
 一併改成 import。
 
+### 階段 2.7 被 e2e 抓到的兩個真缺陷（不是 fixture 過期）
+
+推 `68d6c30` 後 `e2e-tests` 紅了 7 條。**兩條都是我引入的真缺陷**，不是測試
+資料過期而已：
+
+**(1)一個面板的 payload 形狀不合，五個分頁一起打不開。** 舊 mock 只回
+`{withdrawals}`，沒有 `total` / `stats`；元件 `setStats(data.stats)` 拿到
+`undefined`，接著讀 `stats.pendingAmount` 直接擲錯。`WithdrawalManagement` 是
+`AdminDashboard` 的**預設分頁**，所以會員管理、公告、系統告警、管理員設置
+**全部連著打不開**——e2e 的 `get_by_role("tab", name="會員管理")` timeout 就是
+這麼來的。爆炸半徑不該這麼大：已改成缺欄位退回保守值
+（`data.total ?? rows.length`、`data.stats ?? EMPTY_STATS`）。
+
+**(2)admin 做完動作後完全沒有回報。** 紅燈階段我把 `useNotification` 拿掉，
+理由是元件測試不該為了 toast 包整個 Provider——但那同時**把成功回饋一起刪了**，
+而我沒發現，因為 13 條單元測試沒有任何一條驗「做完之後說了什麼」。e2e 有：
+兩條情境斷言的正是 toast 文字 `已標記匯款完成` / `已退件`。
+
+改法不是把 toast 裝回去，而是**把回報留在畫面上**（`role="status"` 的行內訊息
+＋「知道了」）。理由是這個場景本身：admin 標記完一筆就切去網銀，回來時 toast
+早消失了，於是不確定剛才那下到底送出去沒有——對金流動作，這種不確定比沒有
+動畫效果糟得多。
+
+**教訓**：拿掉一個相依時要問「它原本還負責什麼」。`useNotification` 表面上只是
+測試阻力，實際上是那個元件唯一的成功回饋管道。
+
+順帶更新 e2e 側：mock 回真契約形狀（含 `total` / `stats` / `events`），
+page object 的按鈕名改 `標記已匯款`（旅程套件共用同一個 page object，一起涵蓋）。
+
+**本機全套 mock e2e 已驗**：`168 passed`（`pip install -r e2e/requirements.txt`
+後於 `e2e/` 下以 `E2E_SKIP_DEV_SERVER=1` 執行，dev server 另起）。這一層本機
+跑得動、2.5 分鐘——**前端階段值得每次都跑**，不要只靠 CI。
+
 ### ⚠️ 階段 2.4 的紅燈證據品質低於其他階段
 
 前面每個後端階段都是「推紅燈 → 讀 CI 判定 → 推實作」，紅燈由 CI 證明過。

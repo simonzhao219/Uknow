@@ -145,6 +145,14 @@ const EMPTY_STATS: AdminWithdrawalStats = {
 
 const twd = (n: number) => `$${n.toLocaleString('en-US')}`;
 
+// 動作完成後的回報。刻意**留在畫面上**而不是彈個 toast 就消失：admin 做完
+// 一筆會切去網銀，回來時 toast 早就沒了，於是不確定剛才那下到底送出去沒有。
+const ACTION_DONE: Record<string, string> = {
+  awaiting_collection: '已標記匯款完成',
+  rejected: '已退件',
+  completed: '已代為結案',
+};
+
 export function WithdrawalManagement({
   loadWithdrawals,
   updateStatus: submitStatus,
@@ -160,6 +168,7 @@ export function WithdrawalManagement({
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [historyRecord, setHistoryRecord] = useState<AdminWithdrawalRecord | null>(null);
@@ -176,9 +185,14 @@ export function WithdrawalManagement({
     setLoadError(null);
     try {
       const data = await loadWithdrawals({ status: statusFilter, limit: PAGE_SIZE, offset: 0 });
-      setWithdrawals(data.withdrawals);
-      setTotal(data.total);
-      setStats(data.stats);
+      const rows = data.withdrawals ?? [];
+      setWithdrawals(rows);
+      // 缺欄位就退回保守值，不要讓它變成 undefined 再往下讀。這一段是 e2e
+      // 教出來的：舊 mock 不回 total／stats，`stats.pendingAmount` 直接擲錯，
+      // 而 WithdrawalManagement 是 AdminDashboard 的預設分頁——一個面板的
+      // payload 形狀不合，**五個分頁一起打不開**。爆炸半徑不該這麼大。
+      setTotal(data.total ?? rows.length);
+      setStats(data.stats ?? EMPTY_STATS);
       // 換一批資料就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在
       // 的列，而下一步是不可回退的批次匯款。
       setSelected(new Set());
@@ -202,8 +216,8 @@ export function WithdrawalManagement({
         limit: PAGE_SIZE,
         offset: withdrawals.length,
       });
-      setWithdrawals((prev) => [...prev, ...data.withdrawals]);
-      setTotal(data.total);
+      setWithdrawals((prev) => [...prev, ...(data.withdrawals ?? [])]);
+      setTotal((prev) => data.total ?? prev);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
     } finally {
@@ -239,6 +253,8 @@ export function WithdrawalManagement({
       const result = await batchMarkPaid(items);
       if (result.failed.length) {
         setLoadError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
+      } else {
+        setActionMessage(`已標記匯款完成：${result.succeeded.length} 筆`);
       }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '批次標記失敗');
@@ -256,8 +272,10 @@ export function WithdrawalManagement({
     note?: string,
   ) => {
     setProcessingId(record.id);
+    setActionMessage(null);
     try {
       await submitStatus(record.id, status, note);
+      setActionMessage(`${ACTION_DONE[status]}：${record.userName}`);
       await fetchWithdrawals();
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '狀態更新失敗');
@@ -446,6 +464,18 @@ export function WithdrawalManagement({
             </ol>
           </DialogContent>
         </Dialog>
+      )}
+
+      {actionMessage && (
+        <div
+          role="status"
+          className="flex items-center justify-between rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900"
+        >
+          <span>{actionMessage}</span>
+          <Button variant="ghost" size="sm" onClick={() => setActionMessage(null)}>
+            知道了
+          </Button>
+        </div>
       )}
 
       <section aria-label="提領彙總" className="grid grid-cols-2 md:grid-cols-4 gap-4">
