@@ -760,6 +760,8 @@ export const AdminIdReviewSchema = obj({
   status: literals('pending', 'approved', 'rejected'),
   rejectReason: nullable(str()),
   reviewedAt: nullable(str()),
+  /** 送審時間。佇列依它排「等最久的」——`createdAt` 是註冊時間，講的是另一件事。 */
+  submittedAt: str(),
   createdAt: str(),
   idCardFrontUrl: nullable(str()),
   idCardBackUrl: nullable(str()),

@@ -1469,6 +1469,9 @@ app.get('/admin/id-reviews', async (c) => {
     status: r.id_verification_status,
     rejectReason: r.id_reject_reason,
     reviewedAt: r.id_verified_at,
+    // 送審時間：佇列排序的依據，也是 admin 判斷「這個人等多久了」的數字。
+    // 舊列 backfill 成近似值，仍保底 fallback 到註冊時間。
+    submittedAt: r.id_submitted_at ?? r.created_at,
     createdAt: r.created_at,
     idCardFrontUrl: r.id_card_front_path ? (urlMap[r.id_card_front_path as string] ?? null) : null,
     idCardBackUrl: r.id_card_back_path ? (urlMap[r.id_card_back_path as string] ?? null) : null,
@@ -2895,6 +2898,10 @@ app.post('/rewards/upload-id-photos', async (c) => {
       //     時間戳比沒有時間戳更糟:沒有只是資訊不足,說謊會讓人據以決策。
       patch.id_reject_reason = null;
       patch.id_verified_at = null;
+      // 送審時刻——審核佇列依它排「等最久的」（B2 的裁決結果）。換照片＝
+      // 重新送審，所以這裡是覆寫而不是「只在第一次設」：重傳的人重新排隊，
+      // 不該帶著上一輪的等待時間插到最前面。
+      patch.id_submitted_at = new Date().toISOString();
     }
 
     await client.from('profiles').update(patch).eq('id', user.id);

@@ -138,6 +138,9 @@ export interface WithdrawalManagementProps {
 
 const PAGE_SIZE = 50;
 
+// CSV 匯出上限（需求方裁決）。超過就明示拒絕，不給半份檔案。
+const CSV_MAX_ROWS = 2000;
+
 const EMPTY_STATS: AdminWithdrawalStats = {
   pendingAmount: 0,
   byStatus: { pending: 0, awaiting_collection: 0, completed: 0, rejected: 0 },
@@ -284,7 +287,43 @@ export function WithdrawalManagement({
     }
   };
 
-  const downloadCSV = () => {
+  const downloadCSV = async () => {
+    // W6：匯出的是**符合當前篩選的全部資料**，不是畫面上已載入的那幾列。
+    // 給半份比明示拒絕糟得多——對帳是拿這份檔案去比銀行的轉出紀錄，少的
+    // 那幾筆不會自己浮出來。超過上限就明說，並告訴 admin 怎麼縮小範圍。
+    if (total > CSV_MAX_ROWS) {
+      setActionMessage(null);
+      setLoadError(
+        `本次篩選有 ${total} 筆，超過匯出上限 ${CSV_MAX_ROWS} 筆。` +
+          `請縮小日期範圍或狀態篩選後再匯出。`,
+      );
+      return;
+    }
+
+    let rows: AdminWithdrawalRecord[] = withdrawals;
+    if (withdrawals.length < total) {
+      try {
+        const collected: AdminWithdrawalRecord[] = [];
+        // **依實際回傳筆數前進，不是依要求的 limit。** 伺服器可以回得比要求的
+        // 少（上限被夾、篩選期間資料變動），照固定步長跳就會靜默跳過那幾筆
+        // ——而那正是這條修復想根除的「安靜地少給」。
+        while (collected.length < total) {
+          const data = await loadWithdrawals({
+            status: statusFilter,
+            limit: PAGE_SIZE,
+            offset: collected.length,
+          });
+          const batch = data.withdrawals ?? [];
+          if (batch.length === 0) break; // 回空頁就停，避免無限迴圈
+          collected.push(...batch);
+        }
+        rows = collected;
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : '匯出失敗，請稍後再試');
+        return;
+      }
+    }
+
     const headers = [
       '會員',
       '提領金額',
@@ -296,7 +335,7 @@ export function WithdrawalManagement({
       '申請時間',
       '狀態',
     ];
-    const rows = withdrawals.map((w) => [
+    const csvRows = rows.map((w) => [
       w.userName,
       w.amount + w.fee,
       w.fee,
@@ -310,7 +349,7 @@ export function WithdrawalManagement({
 
     // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
     // 姓名帶逗號、備註帶換行都會把手刻的 join(',') 撕成錯位的欄。
-    const blob = new Blob([buildCsvContent(headers, rows)], {
+    const blob = new Blob([buildCsvContent(headers, csvRows)], {
       type: 'text/csv;charset=utf-8;',
     });
     const link = document.createElement('a');

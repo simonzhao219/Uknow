@@ -23,6 +23,7 @@ function review(over: Partial<AdminIdReview> = {}): AdminIdReview {
     status: 'pending',
     rejectReason: null,
     reviewedAt: null,
+    submittedAt: '2026-08-01T00:00:00Z',
     createdAt: '2026-08-01T00:00:00Z',
     idCardFrontUrl: 'https://example.test/front.jpg',
     idCardBackUrl: 'https://example.test/back.jpg',

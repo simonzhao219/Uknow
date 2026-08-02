@@ -35,7 +35,13 @@ function stubMediaQuery(isDesktop: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 
-beforeEach(() => stubMediaQuery(true));
+beforeEach(() => {
+  stubMediaQuery(true);
+  // jsdom 沒有 Blob URL API；CSV 下載會用到它。不替身掉會變成 unhandled
+  // error，讓整個檔案的結果失去可信度（vitest 自己也會這麼警告）。
+  URL.createObjectURL = () => 'blob:test';
+  URL.revokeObjectURL = () => {};
+});
 
 function record(over: Partial<AdminWithdrawalRecord> = {}): AdminWithdrawalRecord {
   return {
@@ -166,6 +172,40 @@ describe('WithdrawalManagement', () => {
 
     const stats = await screen.findByRole('region', { name: '提領彙總' });
     expect(within(stats).getByText('$2,000')).toBeTruthy();
+  });
+
+  // CSV 匯出（W6）。這兩條是補階段 2.7 的缺陷：當時匯出的是「已載入的列」，
+  // 而畫面同時寫著「已顯示 50 / 300」——admin 拿到的是一份殘缺檔案，而且
+  // **沒有任何跡象告訴他這件事**。給半份比明示拒絕糟得多，因為對帳是拿這份
+  // 檔案去比銀行的轉出紀錄，少的那些不會自己浮出來。
+  it('匯出涵蓋整個篩選結果，不是只有已載入的那頁', async () => {
+    const pages = vi.fn(async ({ offset }: { offset: number }) =>
+      page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 3,
+        limit: 1,
+        offset,
+      }),
+    );
+    renderConsole({ loadWithdrawals: pages as never });
+
+    await screen.findByText('已顯示 1 / 3 筆');
+    pages.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '下載CSV' }));
+
+    // 匯出必須自己把剩下的頁補齊，而不是拿畫面上現有的那筆交差。
+    await waitFor(() => expect(pages.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('篩選結果超過匯出上限時明示拒絕，不給半份檔案', async () => {
+    renderConsole({
+      loadWithdrawals: async () => page({ withdrawals: [record()], total: 2500 }),
+    });
+
+    await screen.findByText('已顯示 1 / 2500 筆');
+    fireEvent.click(screen.getByRole('button', { name: '下載CSV' }));
+
+    expect(await screen.findByText(/超過匯出上限/)).toBeTruthy();
   });
 
   it('列表顯示已顯示筆數與總筆數，未載完時提供加載更多', async () => {

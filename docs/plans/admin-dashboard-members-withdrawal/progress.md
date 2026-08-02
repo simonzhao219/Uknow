@@ -288,8 +288,21 @@ plan §2.1 定義的四個欄位是 `id_verification_status` / `id_verified_at` 
 （註冊時間）排序——穩定、不需改 schema，但不是真正的送審順序。
 
 **未擅自加欄位**：加 `id_submitted_at` 是明顯的解法，但那是 plan §2.1 沒有的
-schema 擴張，依 skill「禁止私改 plan」留給人裁決。若佇列量小到先進先出無所謂，
-維持現狀即可。
+schema 擴張，依 skill「禁止私改 plan」留給人裁決。
+
+**裁決結果（2026-08-02，人審）：加欄位。** 已於 migration
+`20260802000009_id_submitted_at.sql` 實作——新增 `profiles.id_submitted_at`、
+`admin_list_id_reviews` 改依它排序、上傳端點在轉 `pending` 時覆寫它（換照片＝
+重新送審，不該帶著上一輪的等待時間插到最前面）、API 與契約加 `submittedAt`。
+
+已存在的列 backfill 成 `coalesce(id_verified_at, created_at)`。**那不是真的送審
+時間，是近似值**——舊資料裡本來就沒有這個資訊，任何值都是近似。選這兩個是因為
+保證非 null 且單調，佇列排序不會出現空洞。migration 的 column comment 寫明了
+哪些列是 backfill 的。
+
+**尚未做的**：admin 佇列 UI 還沒把「等了多久」顯示出來，目前只有排序用到它。
+排序是 B2 的實質內容（「等最久的排前面」），顯示是加分項，留到階段 3.4 的
+前端一併處理較自然。
 
 ### B3 階段 1.1 的實作缺陷：換照片沒清掉 `id_verified_at`
 
