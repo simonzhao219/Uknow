@@ -17,7 +17,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1.1 | 證件審核資料層 + 上傳端點狀態轉換 + backfill | ✅ 綠 | `7523d0e` | `d0b31bd` |
-| 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | ⬜ 未開始 | | |
+| 1.2 | `request_withdrawal` 守衛 #5a（只擋 `rejected`） | 🟡 紅燈已驗，綠燈待 CI | `ee6b979` | `70aa55c`（CI 驗證中） |
 | 1.3 | admin 審核端點（含轉換表 + `revoke execute` 驗證） | ⬜ 未開始 | | |
 | 1.4 | 會員端證件狀態區塊（dialog 結構不變） | ⬜ 未開始 | | |
 | 1.5 | admin 審核佇列 UI + 掛進會員管理 Tab 次分頁殼 | ⬜ 未開始 | | |
@@ -53,20 +53,27 @@
 
 ## 目前位置與下一步
 
-**已完成 3 階段。**
+**已完成 3 階段，第 4 階段綠燈待 CI。**
 
 | 階段 | 紅燈 | 綠燈 | 驗證 |
 |---|---|---|---|
 | 2.1 CSV 跳脫 | `a7669e0` | `bc25432` | 本機 vitest（15 斷言） |
 | 2.2 剪貼簿 utility | `499cfe0` | `45dd17d` | 本機 vitest（6 斷言） |
-| 1.1 證件審核資料層 | `7523d0e` | `d0b31bd` | CI api-tests（run 30735264352 全綠） |
+| 1.1 證件審核資料層 | `7523d0e` | `d0b31bd` | CI api-tests 全綠（run 30735264352） |
+| 1.2 提領守衛 #5a | `ee6b979` | `70aa55c` | 紅燈已驗，綠燈待 CI |
 
-階段 1.1 的紅燈範圍乾淨（`id-verification.test.ts` 全紅、其餘測試檔照常通過），
-綠燈那輪 `api-tests` / `static-checks` / `unit-tests` / `migration-guard` / `ci-ok`
-全數 success。
+**階段 1.2 的紅燈範圍乾淨**（run 30735703347）：`173 passed | 2 failed`，
+只有需要新守衛的兩個斷言失敗。同一輪的 `static-checks` 通過，含
+「後端型別檢查含測試檔（`deno check`）」——那正是本機因 jsr.io 403 跑不了的
+那項，所以紅燈確定是**斷言紅而非編譯紅**。
 
-**進行中：階段 1.2**（`request_withdrawal` 守衛 #5a，只擋 `rejected`）。
-紅燈測試已寫進 `withdrawals.test.ts`，待 CI 判定。
+**如實記錄紅燈品質**：三個新測試裡只有兩個是真紅。
+`none/pending/approved 三態皆不擋提領` 當下就綠——現行程式本來就不擋那三態。
+它是**回歸防線**（防止日後有人把 pending 也擋掉），不是驅動實作的紅燈。
+
+**下一步**：讀 `70aa55c` 的 CI 判定 → 綠則接階段 1.3（admin 審核端點
+`admin_review_id` / `admin_list_id_reviews`，含轉換表與「以 authenticated
+身分直呼 rpc 應失敗」的提權防線斷言）。
 
 ### 本機能驗到哪裡（重要，下一個 session 別重踩）
 
