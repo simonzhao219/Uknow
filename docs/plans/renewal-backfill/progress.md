@@ -12,8 +12,8 @@
 | 3 | `backfillPlan()` 純函式 + 共用案例表 | ✅ CI 已確認(本地紅綠 + 同 run) | `22f1f87` | `dd27448` |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ✅ CI 佐證(run 30758187758 中 renewal-modes 全綠) | `26c6a12` | `968c66d` |
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ✅ CI 佐證(run 30758481955 中該檔全綠) | `84a7caa` | `ece0448` |
-| 6 | **A16 待審提領擋 fresh** | 🟢 綠燈(等 CI 確認) | `61a88b4` | `8561cd7` |
-| 7 | A12 `/health` 回報 `defaultReferrer` 三態 | ⬜ 未開始 | | |
+| 6 | **A16 待審提領擋 fresh** | ✅ CI 佐證(run 30758760566 中該檔全綠) | `61a88b4` | `8561cd7` |
+| 7 | A12 `/health` 回報 `defaultReferrer` 三態 | 🟢 綠燈(等 CI 確認) | `47ea089` | `a724293` |
 | 8 | 兩支端點回傳 `renewal`(含 forfeit/withdrawal 欄位) | ⬜ 未開始 | | |
 | 9 | `PaymentResult.tsx` 區分補繳中間筆 | ⬜ 未開始 | | |
 | 10 | 前端接線 + 揭露卡片 + 新約文案 + **A14 清空揭露** | ⬜ 未開始 | | |
