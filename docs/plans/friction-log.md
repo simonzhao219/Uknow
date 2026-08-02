@@ -682,3 +682,24 @@ journey.yml 的等待迴圈只等連線資訊、不驗分支狀態,把 `MIGRATIO
 statements——否則炸的不是當下任何環境,而是下一個「從歷史 replay 出生」的
 全新環境,而且離事發時間可以隔很多週。**「git 檔案」與「歷史語句」是
 兩份會分岔的真相,只有 replay 那一刻才會對帳。
+
+## 2026-08-02｜同場加映｜journey GUI 註冊從未通過:hosted GoTrue 拒收 .test 網域
+
+修完 migration replay 後,journey 骨架推進到 GUI 註冊,揭出第二個獨立根因:
+hosted GoTrue 用**內建 email 服務**時,(a) signup 直接拒收 example/test
+保留網域(`email_address_invalid`)——journey 的 `@uknow-journey.test`
+假帳號從第一天起就註冊不進去;(b) 不掛自訂寄送管道,連
+`rate_limit_email_sent` 都不准調(401 Custom SMTP required)——設計書
+「測試分支放寬限流」那一步其實一直在無聲失敗(`curl -sf` 吞掉了 401)。
+
+**處置**:journey.yml 在拋棄式分支上以 psql 建 no-op 的
+`journey_email_sink(jsonb)` 並啟用 pg-functions **send-email hook**——
+寄信不再經內建 mailer,兩個限制一起解除;OTP 本來就由 Admin
+`generate_link` 取得,信件內容無所謂。函數只存在於拋棄式分支,不進
+migration、不碰正式站。另加「signup 探測健檢」:部署後先用 REST 打一發
+`/auth/v1/signup`,失敗就帶著 GoTrue 真實回應當場紅燈——GUI 逾時只會說
+「30 秒沒等到 OTP 框」,toast 早消失,錯誤原因蒸發;探測讓死因可讀。
+
+**通則:對外部 SaaS 的「設定調整」步驟,失敗必須帶回應可讀,不准 `-sf`
+吞掉**——這次的 401 早在第一晚就發生了,只是被靜音;若當時可讀,email
+服務的限制會提早七天現形。

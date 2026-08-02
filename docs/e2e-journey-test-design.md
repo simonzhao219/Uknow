@@ -105,7 +105,9 @@ Root (A)                          ── 本次測試的主角，要能測到所
 │    對齊 checkout 獨有的 migrations；harness 檢核            │
 │    reward_config 存在且 seed 值正確                         │
 │ 3. 設定分支的 Edge Function secrets：PAYUNI_SANDBOX=true、  │
-│    PayUni sandbox 商店代號/HashKey/HashIV                   │
+│    PayUni sandbox 商店代號/HashKey/HashIV；掛 no-op         │
+│    send-email hook（hosted GoTrue 內建 email 服務拒收       │
+│    .test 網域且鎖限流，走 hook 一併解除）；signup 探測健檢  │
 │ 4. 產生前端連線設定（見 §3.2），啟動 Vite dev server        │
 └────────────────────────────────────────────────────────────┘
 ┌─ Run ──────────────────────────────────────────────────────┐
