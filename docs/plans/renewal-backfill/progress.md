@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | 1 | user 層級鎖 —— **獨立先行 PR `fix/payment-user-lock`**(基準 = `20260720000001`) | 🟢 綠燈(PR #189 待合併) | `28ba947` | `730e7fa` |
 | 2 | **A13 fresh 清空帳本**(migration,基準 = 先行 PR 合併後版;含 `ledger_reset` + `repair_orphaned_forfeitures`) | 🟢 綠燈(等 CI 確認) | `df8ae96` | `fc55057` |
-| 3 | `backfillPlan()` 純函式 + 共用案例表 | ⬜ 未開始 | | |
+| 3 | `backfillPlan()` 純函式 + 共用案例表 | 🟢 綠燈(本地紅綠皆驗證) | `22f1f87` | (見綠燈 commit) |
 | 4 | 後端拆守衛(移除「過期超過一年拒絕 extend」) | ⬜ 未開始 | | |
 | 5 | A10/A11 fresh 未填碼套用預設推薦碼 | ⬜ 未開始 | | |
 | 6 | **A16 待審提領擋 fresh** | ⬜ 未開始 | | |
