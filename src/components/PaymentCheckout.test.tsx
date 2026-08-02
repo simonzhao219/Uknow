@@ -299,3 +299,118 @@ describe('PaymentCheckout 補繳制', () => {
     expect(sub.refresh).toHaveBeenCalled();
   });
 });
+
+// 階段 11（renewal-backfill / AC-7 前端面 + AC-15）：補繳進度與二次確認。
+describe('PaymentCheckout 補繳進度與付款確認', () => {
+  function seedLongExpired(overrides: Record<string, unknown> = {}) {
+    seedPendingUser({
+      referredByCode: 'xyz987654',
+      isAutoReferral: false,
+      referrerName: '王小明',
+      subscriptionEndDate: longExpiredEnd,
+      ...overrides,
+    });
+  }
+
+  // 已付 1 筆補繳後的契約狀態：錨點前進一年、還差 2 筆。
+  const RENEWAL_IN_PROGRESS = {
+    ...RENEWAL,
+    extendAnchorDate: '2025-04-03',
+    extendEndDate: '2026-04-02',
+    backfillCount: 2,
+    backfillAmount: 2400,
+    hasPaidAnyBackfill: true,
+    freshForfeitPoints: 0,
+    freshForfeitReferrals: 0,
+  };
+
+  it('已付過補繳時顯示已補至日期與剩餘筆數進度', async () => {
+    spyFetch();
+    setSubscription(RENEWAL_IN_PROGRESS);
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    const progress = screen.getByTestId('backfill-progress');
+    // 已補至 = extendEndDate − 1 年（目前實際效期迄日）。
+    expect(progress.textContent).toContain('已補至 2025/04/02');
+    expect(progress.textContent).toContain('還差 2 筆');
+  });
+
+  it('renewal 缺漏的退化分支不出現補繳語彙，但原到期日仍可見', async () => {
+    spyFetch();
+    setSubscription(null);
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    expect(screen.queryByText(/已補至/)).toBeNull();
+    expect(screen.queryByText(/還差/)).toBeNull();
+    expect(screen.queryByText(/補繳/)).toBeNull();
+    // 標頭的「您的會籍已於 <日期> 到期」不依賴 renewal，退化時仍在。
+    expect(screen.getByText(/到期/)).toBeTruthy();
+  });
+
+  it('fresh 有可清空資產時按付款先彈確認，未確認不得送單', async () => {
+    const calls = spyFetch();
+    setSubscription(RENEWAL); // freshForfeitPoints 100 / referrals 2
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // 切換選項本身不彈窗（AC-15：順序是卡片內揭露 → 付款時確認）。
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.queryByTestId('fresh-confirm-dialog')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    // 內容含將清空的具體數字。
+    expect(dialog.textContent).toContain('100 點');
+    expect(dialog.textContent).toContain('2 位');
+    // 未點確認前不得送單。
+    expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
+
+    fireEvent.click(screen.getByTestId('fresh-confirm-action'));
+    await waitFor(() => {
+      expect(calls.filter((u) => u.includes('/payuni/prepare')).length).toBe(1);
+    });
+  });
+
+  it('補繳中途改選 fresh 的確認含效期不退還警語', async () => {
+    const calls = spyFetch();
+    setSubscription(RENEWAL_IN_PROGRESS); // hasPaidAnyBackfill=true、無可清空資產
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('已付');
+    expect(dialog.textContent).toContain('退還');
+    expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
+  });
+
+  it('fresh 無資產且未付過補繳時，付款不需二次確認直接送單', async () => {
+    const calls = spyFetch();
+    setSubscription({
+      ...RENEWAL,
+      backfillCount: 1,
+      backfillAmount: 1200,
+      freshForfeitPoints: 0,
+      freshForfeitReferrals: 0,
+    });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+
+    expect(screen.queryByTestId('fresh-confirm-dialog')).toBeNull();
+    await waitFor(() => {
+      expect(calls.filter((u) => u.includes('/payuni/prepare')).length).toBe(1);
+    });
+  });
+});
