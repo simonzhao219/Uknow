@@ -224,3 +224,19 @@ concurrency 設定把它取消了。`ci-ok` 因此紅——但不是因為測試
   結果直接遺失且無任何痕跡（沒有 review.md、沒有錯誤）。長規劃若中途被打斷，
   審查等於白跑一次。或許 review.md 應該由每個 subagent 各自落檔後再彙整，
   而不是全部彙整完才寫檔。
+
+### ⚠️ B5：又一次「推 commit 與等驗證互斥」失守（同 B4，換了個面向）
+
+`bbb696e` 的 `ci-ok` 紅燈,原因是 `RESULTS` 裡有一個 `cancelled`——階段 2.6
+紅燈推上去時,`bbb696e` 的 **e2e-tests 軌還在跑**,被 concurrency 取消。
+
+B4 的教訓是「等驗證再推」,我這次卻把它窄化成「等 **api-tests** 再推」:
+確認 api-tests `202 passed / 0 failed` 就推了下一個 commit,忘記 `ci-ok`
+needs 的是**全部 11 軌**。後端階段的判定確實只看 api-tests,但**是否可以推**
+要看整個 run 收工沒有。
+
+後果有界:e2e 是全 mock 的前端情境,階段 2.5 只動後端與契約,而且下一個
+run(`ab5c58a`)會重跑同一套 e2e——涵蓋沒有真的漏掉,漏掉的是「這個 commit
+上 e2e 綠過」這條紀錄。
+
+**判定條件從「api-tests 出爐」改成「整個 run 的 status = completed」。**
