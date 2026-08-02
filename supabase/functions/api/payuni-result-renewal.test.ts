@@ -1,6 +1,7 @@
 // ============================================================
 // 階段 8（renewal-backfill）：GET /payuni/result/:tradeNo 回應新增
-// 精簡版 renewal（backfillCount / backfillAmount / extendEndDate），
+// 精簡版 renewal（backfillCount / backfillAmount / extendAnchorDate /
+// extendEndDate，契約 PayuniResultRenewalSchema），
 // 供 PaymentResult.tsx 判斷「這是補繳中間筆」而不必另掛
 // useSubscription()（P0 裁決方案 b）。語意與 /subscriptions/status 的
 // renewal 相同：以查詢當下 DB 的最新訂閱迄日計算剩餘補繳。
@@ -14,7 +15,7 @@ import {
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
-import { twDayOf, twDayPlusYears } from './tw-dates.ts';
+import { twDayOf, twDayPlusDays, twDayPlusYears } from './tw-dates.ts';
 
 ensureEdgeFunctionEnv();
 
@@ -74,9 +75,12 @@ Deno.test('result：補繳中間筆 → renewal 回剩餘筆數/金額/下一筆
 
     // 既有欄位不變：付款本身已完成。
     assertEquals(data.orderStatus, 'completed');
-    // 精簡 renewal：剩 2 筆、2400 元、下一筆補完到 lastEnd+2 年。
+    // 精簡 renewal：剩 2 筆、2400 元、下一筆自剛補到的隔天起算、補完到
+    // lastEnd+2 年。extendAnchorDate 供前端算「已補至 = 錨點前一天」——
+    // 用迄日反推一年在 02-29 迄日時會少一天（實作審查回填）。
     assertEquals(data.renewal.backfillCount, 2);
     assertEquals(data.renewal.backfillAmount, 2400);
+    assertEquals(data.renewal.extendAnchorDate, twDayPlusDays(twDayPlusYears(lastEndDay, 1), 1));
     assertEquals(data.renewal.extendEndDate, twDayPlusYears(lastEndDay, 2));
   } finally {
     await deleteTestUsers(client, [user.id]);

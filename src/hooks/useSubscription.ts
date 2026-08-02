@@ -27,6 +27,12 @@ export interface UseSubscriptionResult {
   subscriptionData: SubscriptionData | null;
   isLoading: boolean;
   isValidating: boolean;
+  /**
+   * 最近一次抓取失敗且尚未被成功蓋掉。搭配 subscriptionData 可區分
+   * 「從未取得」與「曾有資料、本次背景 revalidate 失敗（畫面上是舊資料）」
+   * ——結帳頁四狀態表第 4 列（補繳進度不得靜默過期）靠這個訊號。
+   */
+  lastFetchFailed: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -51,6 +57,7 @@ export function useSubscription(): UseSubscriptionResult {
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
+  const [lastFetchFailed, setLastFetchFailed] = useState(false);
   const hasDataRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
@@ -66,9 +73,12 @@ export function useSubscription(): UseSubscriptionResult {
       setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
       hasDataRef.current = true;
+      setLastFetchFailed(false);
     } catch (err) {
+      setLastFetchFailed(true);
       if (!(err instanceof ApiError && err.status === 401)) {
-        // 背景 revalidate 失敗不打擾使用者：畫面繼續顯示舊資料即可。
+        // 背景 revalidate 失敗預設不打擾使用者：畫面繼續顯示舊資料。
+        // 但訊號要曝露出去——補繳中的結帳頁不得讓進度靜默過期。
         if (!hasDataRef.current) showToast('無法獲取訂閱狀態', 'error');
         else console.error('[useSubscription] 背景重新請求失敗:', err);
       }
@@ -110,5 +120,5 @@ export function useSubscription(): UseSubscriptionResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { subscriptionData, isLoading, isValidating, refresh };
+  return { subscriptionData, isLoading, isValidating, lastFetchFailed, refresh };
 }

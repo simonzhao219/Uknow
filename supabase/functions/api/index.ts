@@ -29,6 +29,7 @@ import type {
   NetworkOverviewResponse,
   NetworkSearchResponse,
   NetworkSortMode,
+  PayuniResultRenewal,
   RewardHistoryResponse,
 } from '../_shared/api-contract.ts';
 
@@ -1625,7 +1626,8 @@ app.get('/payuni/result/:tradeNo', async (c) => {
   // 精簡版續約資訊（renewal-backfill）：PaymentResult 據此判斷「這是
   // 補繳中間筆」（backfillCount > 0 → 顯示進度而非開通輪詢），不必另掛
   // useSubscription()。以查詢當下 DB 的最新訂閱迄日計算剩餘補繳。
-  let renewal: Record<string, unknown> | null = null;
+  // 型別綁契約 PayuniResultRenewalSchema——欄位增減兩端都會被 TS 抓到。
+  let renewal: PayuniResultRenewal | null = null;
   {
     const { data: latestSub } = await sb()
       .from('subscriptions')
@@ -1639,6 +1641,7 @@ app.get('/payuni/result/:tradeNo', async (c) => {
       renewal = {
         backfillCount: plan.backfillCount,
         backfillAmount: plan.backfillCount * 1200,
+        extendAnchorDate: plan.extendAnchorDay,
         extendEndDate: plan.extendEndDay,
       };
     }
@@ -2175,22 +2178,21 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct }, { data: sub }, pendingWithdrawal] = await Promise.all([
+  const [{ data: acct }, { data: subs }, pendingWithdrawal] = await Promise.all([
     sb().from('user_account_status')
       .select('status, end_date')
       .eq('user_id', user.id)
       .single(),
-    // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
+    // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
     // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
-    // 「看不到」有延長）。source_payment_order_id 供 hasPaidAnyBackfill
-    // 取對應訂單的付款時點。
+    // 「看不到」有延長）。source_payment_order_id 供補繳簽名判定取對應
+    // 訂單的付款時點；取多筆是為了往前走出「本輪已付幾筆」（A15）。
     sb().from('subscriptions')
       .select('start_date, end_date, source_payment_order_id')
       .eq('user_id', user.id)
       .order('end_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(40),
     // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
     hasPendingWithdrawal(user.id),
   ]);
@@ -2198,28 +2200,45 @@ app.get('/subscriptions/status', async (c) => {
   // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
   // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
   // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
+  const sub = subs?.[0] ?? null;
   let renewal: Record<string, unknown> | null = null;
   if (sub?.end_date) {
     const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
 
-    const [{ data: srcOrder }, { data: bal }, { data: tp }] = await Promise.all([
-      sub.source_payment_order_id
+    const srcOrderIds = (subs ?? [])
+      .map((s) => s.source_payment_order_id)
+      .filter((id): id is string => !!id);
+    const [{ data: srcOrders }, { data: bal }, { data: tp }] = await Promise.all([
+      srcOrderIds.length > 0
         ? sb().from('payment_orders')
-          .select('completed_at')
-          .eq('id', sub.source_payment_order_id)
-          .maybeSingle()
-        : Promise.resolve({ data: null }),
+          .select('id, completed_at')
+          .in('id', srcOrderIds)
+        : Promise.resolve({ data: [] as { id: string; completed_at: string | null }[] }),
       sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
       sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
     ]);
 
     // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
     // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
-    // 不得被誤判成「本輪已補繳」）。
-    const hasPaidAnyBackfill = !!(
-      srcOrder?.completed_at &&
-      new Date(sub.end_date).getTime() < new Date(srcOrder.completed_at).getTime()
+    // 不得被誤判成「本輪已補繳」）。從最新一筆往回走，連續帶著這個簽名
+    // 的筆數 = 本輪已付補繳筆數（A15 對話框要唸出具體數字）；一遇到
+    // 非補繳筆（那是上一輪的自然效期）就停。
+    const completedAtById = new Map(
+      (srcOrders ?? []).map((o) => [o.id, o.completed_at]),
     );
+    let paidBackfillCount = 0;
+    for (const s of subs ?? []) {
+      const completedAt = s.source_payment_order_id
+        ? completedAtById.get(s.source_payment_order_id)
+        : null;
+      const isBackfill = !!(
+        completedAt &&
+        new Date(s.end_date).getTime() < new Date(completedAt).getTime()
+      );
+      if (!isBackfill) break;
+      paidBackfillCount++;
+    }
+    const hasPaidAnyBackfill = paidBackfillCount > 0;
 
     renewal = {
       extendAnchorDate: plan.extendAnchorDay,
@@ -2229,6 +2248,8 @@ app.get('/subscriptions/status', async (c) => {
       backfillFinalEndDate: plan.backfillFinalEndDay,
       expiredForMonths: plan.expiredForMonths,
       hasPaidAnyBackfill,
+      paidBackfillCount,
+      paidBackfillAmount: paidBackfillCount * 1200,
       freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
       freshForfeitReferrals: tp?.total_referrals ?? 0,
     };

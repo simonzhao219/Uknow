@@ -59,6 +59,8 @@ def seed_authenticated_session(
             "backfillFinalEndDate": "2027-04-02",
             "expiredForMonths": 3 if expired else 0,
             "hasPaidAnyBackfill": False,
+            "paidBackfillCount": 0,
+            "paidBackfillAmount": 0,
             "freshForfeitPoints": 0,
             "freshForfeitReferrals": 0,
         }

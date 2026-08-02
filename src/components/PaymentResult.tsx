@@ -9,7 +9,8 @@ import { useDataCache } from '../contexts/DataCacheContext';
 import { useNotification } from './notifications/NotificationContext';
 import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 import { openExternalLink } from '../utils/externalLink';
-import { twDayPlusYears } from '../utils/twDate';
+import { formatTwDate, twDayPlusDays, twDayPlusYears } from '../utils/twDate';
+import type { PayuniResultRenewal } from '@contract';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -39,11 +40,13 @@ interface OrderResult {
   payuni: PayUniResponse | null;
   // 精簡版續約資訊（renewal-backfill）：backfillCount > 0 表示這筆是
   // 補繳中間筆——付款成功但會籍仍 expired 是正常終態，不是開通故障。
-  renewal?: {
-    backfillCount: number;
-    backfillAmount: number;
-    extendEndDate: string;
-  } | null;
+  // 型別綁契約 PayuniResultRenewalSchema（欄位增減兩端都會被 TS 抓到）；
+  // extendAnchorDate 標 optional：部署交錯期舊後端沒有這個欄位。
+  renewal?:
+    | (Omit<PayuniResultRenewal, 'extendAnchorDate'> & {
+        extendAnchorDate?: string;
+      })
+    | null;
 }
 
 type ResolvedStatus = 'success' | 'failed' | 'pending' | 'unknown';
@@ -331,7 +334,13 @@ export function PaymentResult() {
   // 補繳中間筆（AC-3）：付款成功、還差 N 筆才生效——這是補繳制的正常
   // 終態，顯示進度與明確去路，絕不進開通輪詢/逾時錯誤。
   if (isBackfillIntermediate && slimRenewal) {
-    const paidUpToDay = twDayPlusYears(slimRenewal.extendEndDate, -1);
+    // 已補至 = 下一筆起算日的前一天；迄日反推一年只是部署交錯期舊後端
+    // （無 extendAnchorDate）的後備——迄日落在 02-29 時它會少一天。
+    const paidUpToDay = formatTwDate(
+      slimRenewal.extendAnchorDate
+        ? twDayPlusDays(slimRenewal.extendAnchorDate, -1)
+        : twDayPlusYears(slimRenewal.extendEndDate, -1),
+    );
     return (
       <div
         className="container max-w-2xl mx-auto p-4 pt-20"

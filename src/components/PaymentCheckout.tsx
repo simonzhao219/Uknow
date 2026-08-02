@@ -8,7 +8,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
-import { formatTwDate, twDayPlusYears } from '../utils/twDate';
+import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,7 +48,14 @@ export function PaymentCheckout() {
   const supabase = createClient();
   // renewal 契約（AC-2/A14/A16/AC-17）的單一來源。本頁是獨立路由，
   // 不與 MemberDashboard/RewardDashboard 同屏，單例限制不成立。
-  const { subscriptionData, refresh: refreshSubscription } = useSubscription();
+  // 四狀態判準（plan §4）：載入中 ≠ 初次抓取失敗 ≠ 背景重整失敗，
+  // 分別靠 isLoading 與 lastFetchFailed 區分，不得只看 renewal 是否為 null。
+  const {
+    subscriptionData,
+    isLoading: isRenewalInfoLoading,
+    lastFetchFailed: renewalFetchFailed,
+    refresh: refreshSubscription,
+  } = useSubscription();
   const renewal = subscriptionData?.renewal ?? null;
   const hasPendingWithdrawal = subscriptionData?.hasPendingWithdrawal ?? false;
 
@@ -325,8 +332,12 @@ export function PaymentCheckout() {
     (renewal.freshForfeitPoints > 0 ||
       renewal.freshForfeitReferrals > 0 ||
       renewal.hasPaidAnyBackfill);
-  // 目前實際效期迄日 = 下一筆迄日 − 1 年（補繳進度與確認警語共用）。
-  const paidUpToDay = renewal ? twDayPlusYears(renewal.extendEndDate, -1) : null;
+  // 目前實際效期迄日 = 下一筆起算日的前一天（補繳進度與確認警語共用）。
+  // 不用「迄日 − 1 年」反推：迄日落在 02-29 時會少一天。
+  const paidUpToDay = renewal ? twDayPlusDays(renewal.extendAnchorDate, -1) : null;
+  // AC-2：新約的具體效期迄日（今天起算一年）。鏡射 SQL 的前端預覽，
+  // 實際寫入值仍出自 process_successful_payment。
+  const freshLastDay = subscriptionLastDay(twDayOf(new Date()));
 
   // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
   const handleValidateNewCode = async (code: string) => {
@@ -655,8 +666,20 @@ export function PaymentCheckout() {
             <div className="space-y-3" data-testid="renewal-mode-section">
               <h3 className="text-sm font-medium">續費方式</h3>
 
-              {/* AC-17：renewal 契約取不到 → 兩個選項一併停用 + 重試 */}
-              {!renewal && (
+              {/* 載入中（plan §4 第 2 列）：還在抓不是錯誤，走 skeleton 而非
+                  錯誤文案——沒有暖快取的續約者每次進頁都會先經過這裡。 */}
+              {!renewal && isRenewalInfoLoading && (
+                <div
+                  className="p-3 bg-muted rounded-lg flex items-center gap-2"
+                  data-testid="renewal-info-loading"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">正在載入續約資訊…</p>
+                </div>
+              )}
+
+              {/* AC-17（plan §4 第 3 列）：初次抓取失敗 → 兩個選項一併停用 + 重試 */}
+              {!renewal && !isRenewalInfoLoading && (
                 <div className="p-3 bg-muted rounded-lg space-y-2">
                   <p className="text-sm text-muted-foreground">
                     暫時無法載入續約資訊，請稍後重試。
@@ -668,6 +691,27 @@ export function PaymentCheckout() {
                     data-testid="renewal-info-retry"
                   >
                     重新載入
+                  </Button>
+                </div>
+              )}
+
+              {/* plan §4 第 4 列：曾有資料、本次背景重整失敗。已付過補繳時
+                  不得靜默降級——畫面上的進度可能已過期，明講並給重試。 */}
+              {renewal?.hasPaidAnyBackfill && renewalFetchFailed && (
+                <div
+                  className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2"
+                  data-testid="backfill-progress-stale"
+                >
+                  <p className="text-sm text-amber-800">
+                    進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refreshSubscription()}
+                    data-testid="backfill-progress-refresh"
+                  >
+                    重新整理進度
                   </Button>
                 </div>
               )}
@@ -694,25 +738,44 @@ export function PaymentCheckout() {
                 </p>
               </button>
 
-              {/* AC-2/A7：接續原效期的補繳揭露——總筆數、總額、補完到期日 */}
-              {renewalMode === 'extend' && renewal && renewal.backfillCount > 0 && (
-                <div
-                  className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1"
-                  data-testid="backfill-disclosure"
-                >
-                  <p className="text-sm text-amber-800">
-                    您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}。
-                  </p>
-                  <p className="text-sm text-amber-800">
-                    接續原效期需補繳 <span className="font-bold">{renewal.backfillCount} 筆</span>，
-                    共 NT$ {renewal.backfillAmount.toLocaleString('en-US')}；補繳完成後效期至{' '}
-                    {formatTwDate(renewal.backfillFinalEndDate)}。
-                  </p>
-                  <p className="text-xs text-amber-700">
-                    每筆 NT$ 1,200 需分次付款，每一筆都會立即入帳、不會重複扣款。
-                  </p>
-                </div>
-              )}
+              {/* AC-2/A7：接續原效期的補繳揭露——總筆數、總額、補完到期日。
+                  退化分支（plan §4：未付過且只差 1 筆 = 一般「剛過期」續約）
+                  不出現「補繳」字樣，只講一筆與到期日；判準用 hasPaidAnyBackfill
+                  ——已付 2 筆剩 1 筆的人同樣 count=1，用數值判斷會與進度卡打架。 */}
+              {renewalMode === 'extend' &&
+                renewal &&
+                renewal.backfillCount > 0 &&
+                (!renewal.hasPaidAnyBackfill && renewal.backfillCount === 1 ? (
+                  <div
+                    className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1"
+                    data-testid="backfill-disclosure"
+                  >
+                    <p className="text-sm text-amber-800">
+                      您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}。
+                    </p>
+                    <p className="text-sm text-amber-800">
+                      接續原效期 NT$ 1,200，付款後效期至{' '}
+                      {formatTwDate(renewal.backfillFinalEndDate)}。
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1"
+                    data-testid="backfill-disclosure"
+                  >
+                    <p className="text-sm text-amber-800">
+                      您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}。
+                    </p>
+                    <p className="text-sm text-amber-800">
+                      接續原效期需補繳 <span className="font-bold">{renewal.backfillCount} 筆</span>
+                      ， 共 NT$ {renewal.backfillAmount.toLocaleString('en-US')}；補繳完成後效期至{' '}
+                      {formatTwDate(renewal.backfillFinalEndDate)}。
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      每筆 NT$ 1,200 需分次付款，每一筆都會立即入帳、不會重複扣款。
+                    </p>
+                  </div>
+                ))}
 
               {/* AC-7 前端面：本輪已付過補繳 → 顯示接續進度，回來就接得上。 */}
               {renewal?.hasPaidAnyBackfill && paidUpToDay && (
@@ -733,6 +796,7 @@ export function PaymentCheckout() {
                 disabled={!renewal || hasPendingWithdrawal}
                 aria-disabled={!renewal || hasPendingWithdrawal}
                 aria-pressed={renewalMode === 'fresh'}
+                aria-describedby={hasPendingWithdrawal ? 'pending-withdrawal-note' : undefined}
                 onClick={() => renewal && !hasPendingWithdrawal && setRenewalMode('fresh')}
                 className={`w-full text-left p-4 rounded-lg border transition-colors disabled:opacity-50 ${
                   renewalMode === 'fresh'
@@ -746,15 +810,17 @@ export function PaymentCheckout() {
                   {renewalMode === 'fresh' && <CheckCircle className="h-5 w-5 text-primary" />}
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
-                  效期自付款日起算一年，可填寫新的推薦碼
+                  NT$ 1,200，效期自付款日起算一年（至 {formatTwDate(freshLastDay)}
+                  ），可填寫新的推薦碼
                 </p>
               </button>
 
               {/* AC-14 前端面：審核中提領期間不可選新約（後端建單也會擋）。
-                  只給查看進度的入口，不提供自助取消。 */}
+                  只給查看進度的入口，不提供自助取消。id 供上方 fresh 按鈕的
+                  aria-describedby 錨定——螢幕閱讀器聽得到停用原因。 */}
               {hasPendingWithdrawal && (
                 <div className="p-3 bg-muted rounded-lg space-y-1">
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground" id="pending-withdrawal-note">
                     您有一筆提領正在審核中，審核期間暫時無法選擇新約。請等待審核完成，或聯繫客服。
                   </p>
                   <button
@@ -777,10 +843,21 @@ export function PaymentCheckout() {
                     data-testid="fresh-forfeit-disclosure"
                   >
                     <p className="text-sm text-red-800 font-medium">選擇新約將清空目前累積：</p>
+                    {/* 只唸出非零的項目，避免「0 點」這種贅句。 */}
                     <p className="text-sm text-red-800">
-                      可提領回饋 <span className="font-bold">{renewal.freshForfeitPoints} 點</span>
-                      、累積推薦{' '}
-                      <span className="font-bold">{renewal.freshForfeitReferrals} 位</span>
+                      {renewal.freshForfeitPoints > 0 && (
+                        <>
+                          可提領回饋{' '}
+                          <span className="font-bold">{renewal.freshForfeitPoints} 點</span>
+                        </>
+                      )}
+                      {renewal.freshForfeitPoints > 0 && renewal.freshForfeitReferrals > 0 && '、'}
+                      {renewal.freshForfeitReferrals > 0 && (
+                        <>
+                          累積推薦{' '}
+                          <span className="font-bold">{renewal.freshForfeitReferrals} 位</span>
+                        </>
+                      )}
                       將全部歸零，且無法復原。
                     </p>
                   </div>
@@ -822,9 +899,10 @@ export function PaymentCheckout() {
                   {newCodeStatus === 'invalid' && (
                     <p className="text-xs text-red-600">推薦碼不存在或已失效</p>
                   )}
-                  {/* Q11：對使用者而言「沒填 = 沒有上一代」，不解釋機制內部。 */}
+                  {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道
+                      「這會改變既有推薦關係」；不解釋預設推薦碼機制。 */}
                   <p className="text-xs text-muted-foreground">
-                    填寫推薦碼可加入該推薦人的網絡；留空表示不指定推薦人。
+                    選擇新約會重新建立推薦關係。若要留在原本的推薦人底下，請填入他的推薦碼；不填則不會有推薦人。
                   </p>
                 </div>
               )}
@@ -907,17 +985,28 @@ export function PaymentCheckout() {
                 <AlertDialogTitle>確定要以新約重新開始嗎？</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="space-y-2 text-left">
+                    {/* 零值子句不唸（同揭露卡片）。 */}
                     {renewal &&
                       (renewal.freshForfeitPoints > 0 || renewal.freshForfeitReferrals > 0) && (
                         <p>
-                          目前約 {renewal.freshForfeitPoints} 點可提領回饋與累積推薦{' '}
-                          {renewal.freshForfeitReferrals} 位將全部清空，無法復原。
+                          目前
+                          {renewal.freshForfeitPoints > 0 &&
+                            `約 ${renewal.freshForfeitPoints} 點可提領回饋`}
+                          {renewal.freshForfeitPoints > 0 &&
+                            renewal.freshForfeitReferrals > 0 &&
+                            '與'}
+                          {renewal.freshForfeitReferrals > 0 &&
+                            `累積推薦 ${renewal.freshForfeitReferrals} 位`}
+                          將全部清空，無法復原。
                         </p>
                       )}
+                    {/* AC-15（plan §4 範本）：唸出本輪已付的具體筆數與金額。 */}
                     {renewal?.hasPaidAnyBackfill && paidUpToDay && (
                       <p>
-                        您本輪已付的補繳款項（已補至 {formatTwDate(paidUpToDay)}
-                        ）不會退還，該效期也不會保留到新約。
+                        您已為「接續原效期」付款 {renewal.paidBackfillCount} 筆（NT${' '}
+                        {renewal.paidBackfillAmount.toLocaleString('en-US')}，已補至{' '}
+                        {formatTwDate(paidUpToDay)}
+                        ），改選新約後這些效期不會退還，也不會保留到新約。
                       </p>
                     )}
                     <p>新約將自付款日起重新計算一年效期。</p>

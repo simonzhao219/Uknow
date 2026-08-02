@@ -8,6 +8,8 @@
 // hasPaidAnyBackfill 定義：最新一筆 subscriptions 的 end_date < 其
 // source_payment_order_id 對應訂單的 completed_at（補繳付款的獨有特徵
 // ——付款當下算出的效期已在過去）。
+// paidBackfillCount/paidBackfillAmount（實作審查 P1-B 回填）：從最新
+// 訂閱往前走、連續帶著補繳簽名的筆數與其總額（A15 對話框唸出具體數字）。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import {
@@ -82,14 +84,14 @@ async function payExtend(client: ReturnType<typeof adminClient>, userId: string)
   return { tradeNo, subscriptionId: data?.subscription_id };
 }
 
-Deno.test('status：過期兩年 → renewal 回補繳筆數/金額/錨點/迄日/完整月數', async () => {
+Deno.test('status：過期三年 → renewal 回補繳筆數/金額/錨點/迄日/完整月數', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Status Backfill' });
 
   try {
     assertEquals((await payForUser(client, user.id)).error, null);
     const today = twDayOf(new Date());
-    const lastEndDay = twDayPlusYears(today, -2); // 剛好過期兩年 → 需補 2 筆
+    const lastEndDay = twDayPlusYears(today, -3); // 剛好過期三年 → 需補 3 筆
     await setLastEnd(client, user.id, lastEndDay);
 
     const token = await getUserAccessToken(client, user.email);
@@ -98,21 +100,33 @@ Deno.test('status：過期兩年 → renewal 回補繳筆數/金額/錨點/迄�
 
     assertEquals(data.renewal.extendAnchorDate, twDayPlusDays(lastEndDay, 1));
     assertEquals(data.renewal.extendEndDate, twDayPlusYears(lastEndDay, 1));
-    assertEquals(data.renewal.backfillCount, 2);
-    assertEquals(data.renewal.backfillAmount, 2400);
-    assertEquals(data.renewal.backfillFinalEndDate, twDayPlusYears(lastEndDay, 2));
-    assertEquals(data.renewal.expiredForMonths, 24);
+    assertEquals(data.renewal.backfillCount, 3);
+    assertEquals(data.renewal.backfillAmount, 3600);
+    assertEquals(data.renewal.backfillFinalEndDate, twDayPlusYears(lastEndDay, 3));
+    assertEquals(data.renewal.expiredForMonths, 36);
     assertEquals(data.renewal.hasPaidAnyBackfill, false);
+    assertEquals(data.renewal.paidBackfillCount, 0);
+    assertEquals(data.renewal.paidBackfillAmount, 0);
 
     // 付第 1 筆補繳（效期仍在過去）→ hasPaidAnyBackfill 翻 true、
-    // 剩餘筆數遞減、錨點接續前進。
+    // 剩餘筆數遞減、錨點接續前進、本輪已付筆數/金額浮現（A15 數字）。
     await payExtend(client, user.id);
     const after = (await getStatus(token)).data;
     assertEquals(after.renewal.hasPaidAnyBackfill, true);
-    assertEquals(after.renewal.backfillCount, 1);
-    assertEquals(after.renewal.backfillAmount, 1200);
+    assertEquals(after.renewal.backfillCount, 2);
+    assertEquals(after.renewal.backfillAmount, 2400);
+    assertEquals(after.renewal.paidBackfillCount, 1);
+    assertEquals(after.renewal.paidBackfillAmount, 1200);
     assertEquals(after.renewal.extendAnchorDate, twDayPlusDays(twDayPlusYears(lastEndDay, 1), 1));
-    assertEquals(after.renewal.backfillFinalEndDate, twDayPlusYears(lastEndDay, 2));
+    assertEquals(after.renewal.backfillFinalEndDate, twDayPlusYears(lastEndDay, 3));
+
+    // 付第 2 筆（仍過期）→ 已付鏈往回走跨兩筆訂閱：2 筆（NT$2,400），
+    // 正是 A15 對話框範本要唸出的數字。
+    await payExtend(client, user.id);
+    const full = (await getStatus(token)).data;
+    assertEquals(full.renewal.paidBackfillCount, 2);
+    assertEquals(full.renewal.paidBackfillAmount, 2400);
+    assertEquals(full.renewal.backfillCount, 1);
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
@@ -165,6 +179,7 @@ Deno.test('status：曾 extend 續約後自然再到期且本輪未付款 → ha
     const token = await getUserAccessToken(client, user.email);
     const data = (await getStatus(token)).data;
     assertEquals(data.renewal.hasPaidAnyBackfill, false, 'AC-8：老會員自然到期不得顯示已補繳');
+    assertEquals(data.renewal.paidBackfillCount, 0, 'AC-8：已付鏈同樣不得誤計上一輪付款');
     assertEquals(data.renewal.backfillCount, 1);
   } finally {
     await deleteTestUsers(client, [user.id]);

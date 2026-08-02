@@ -23,6 +23,8 @@ MID_BACKFILL_RENEWAL = {
     "backfillFinalEndDate": "2027-04-02",
     "expiredForMonths": 25,
     "hasPaidAnyBackfill": True,
+    "paidBackfillCount": 1,
+    "paidBackfillAmount": 1200,
     "freshForfeitPoints": 0,
     "freshForfeitReferrals": 0,
 }
@@ -52,7 +54,12 @@ def trade_completes_backfill(api_mock, trade_no):
         trade_no,
         "completed",
         build_payuni_response("SUCCESS", TradeNo=trade_no),
-        renewal={"backfillCount": 2, "backfillAmount": 2400, "extendEndDate": "2026-04-02"},
+        renewal={
+            "backfillCount": 2,
+            "backfillAmount": 2400,
+            "extendAnchorDate": "2025-04-03",
+            "extendEndDate": "2026-04-02",
+        },
     )
 
 

@@ -152,6 +152,11 @@ export const RenewalInfoSchema = obj({
   backfillFinalEndDate: str(), // 補滿後的最終到期日（active 時 = 現到期日）
   expiredForMonths: num(), // 已過期的完整月數（active 時固定 0）
   hasPaidAnyBackfill: bool(),
+  // 本輪已付的補繳筆數與金額（A15 二次確認要唸出具體數字）。定義：從最新
+  // 訂閱往前走，連續滿足「end_date < 對應訂單 completed_at」的筆數；沒付過
+  // 恆為 0（hasPaidAnyBackfill === paidBackfillCount > 0）。
+  paidBackfillCount: num(),
+  paidBackfillAmount: num(), // paidBackfillCount × 年費
   freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
   freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
 });
@@ -161,6 +166,7 @@ export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
 export const PayuniResultRenewalSchema = obj({
   backfillCount: num(),
   backfillAmount: num(),
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆起算日——「已補至」= 它的前一天
   extendEndDate: str(),
 });
 export type PayuniResultRenewal = Infer<typeof PayuniResultRenewalSchema>;

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { createContext } from 'react';
+import { formatTwDate, subscriptionLastDay, twDayOf } from '../utils/twDate';
 
 const showToast = vi.fn();
 
@@ -100,11 +101,17 @@ const RENEWAL = {
   backfillFinalEndDate: '2027-04-02',
   expiredForMonths: 25,
   hasPaidAnyBackfill: false,
+  paidBackfillCount: 0,
+  paidBackfillAmount: 0,
   freshForfeitPoints: 100,
   freshForfeitReferrals: 2,
 };
 
-function setSubscription(renewal: unknown, hasPendingWithdrawal = false) {
+function setSubscription(
+  renewal: unknown,
+  hasPendingWithdrawal = false,
+  { isLoading = false, lastFetchFailed = false } = {},
+) {
   sub.value = {
     subscriptionData: {
       hasSubscription: false,
@@ -115,8 +122,9 @@ function setSubscription(renewal: unknown, hasPendingWithdrawal = false) {
       renewal,
       hasPendingWithdrawal,
     },
-    isLoading: false,
+    isLoading,
     isValidating: false,
+    lastFetchFailed,
     refresh: sub.refresh,
   };
 }
@@ -258,6 +266,23 @@ describe('PaymentCheckout 補繳制', () => {
     const section = screen.getByTestId('renewal-mode-section');
     expect(section.textContent).not.toContain('預設推薦碼');
     expect(section.textContent).not.toContain('維持原推薦關係');
+    // Q11 正向面（plan §4 逐字）：必須傳達「這會改變既有推薦關係」——
+    // 只驗「不包含」擋不住文案被弱化成首購式說明。
+    expect(section.textContent).toContain('選擇新約會重新建立推薦關係');
+    expect(section.textContent).toContain('不填則不會有推薦人');
+  });
+
+  it('fresh 卡片顯示新約的具體效期迄日（AC-2），不是只講起算規則', async () => {
+    spyFetch();
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    const freshCard = screen.getByTestId('renewal-mode-fresh');
+    // 今天起算一年的最後一天（鏡射 SQL 的前端預覽）。
+    const expected = formatTwDate(subscriptionLastDay(twDayOf(new Date())));
+    expect(freshCard.textContent).toContain(expected);
+    expect(freshCard.textContent).toMatch(/NT\$\s?1,200/);
   });
 
   it('hasPendingWithdrawal 時 fresh 卡片停用並提供提領進度入口', async () => {
@@ -271,6 +296,10 @@ describe('PaymentCheckout 補繳制', () => {
 
     expect(freshCard.getAttribute('aria-disabled')).toBe('true');
     expect(freshCard.disabled).toBe(true);
+    // a11y（plan §4）：停用原因用 aria-describedby 錨定到說明文字，
+    // 螢幕閱讀器在按鈕上就聽得到「為什麼不能選」。
+    expect(freshCard.getAttribute('aria-describedby')).toBe('pending-withdrawal-note');
+    expect(document.getElementById('pending-withdrawal-note')).toBeTruthy();
     // 說明原因 + 查看提領進度入口（A16 僅改措辭與入口，不做自助取消）。
     const section = screen.getByTestId('renewal-mode-section');
     expect(section.textContent).toContain('審核');
@@ -298,6 +327,40 @@ describe('PaymentCheckout 補繳制', () => {
     fireEvent.click(screen.getByTestId('renewal-info-retry'));
     expect(sub.refresh).toHaveBeenCalled();
   });
+
+  it('renewal 載入中顯示載入態而非錯誤文案（四狀態表第 2 列）', async () => {
+    spyFetch();
+    setSubscription(null, false, { isLoading: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // 還在抓不是錯誤：skeleton 在、AC-17 的錯誤文案與重試不得出現。
+    expect(screen.getByTestId('renewal-info-loading')).toBeTruthy();
+    expect(screen.queryByText(/暫時無法載入續約資訊/)).toBeNull();
+    expect(screen.queryByTestId('renewal-info-retry')).toBeNull();
+  });
+
+  it('剛過期未付過且只差 1 筆的退化分支不出現補繳語彙但含到期日', async () => {
+    spyFetch();
+    setSubscription({
+      ...RENEWAL,
+      extendEndDate: '2025-04-02',
+      backfillCount: 1,
+      backfillAmount: 1200,
+      backfillFinalEndDate: '2025-04-02',
+      expiredForMonths: 3,
+    });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    const disclosure = screen.getByTestId('backfill-disclosure');
+    // plan §4 退化分支：最常見的「剛過期」一般續約不得被說成「補繳」。
+    expect(disclosure.textContent).not.toContain('補繳');
+    expect(disclosure.textContent).toContain('2025/04/02');
+    expect(disclosure.textContent).toMatch(/NT\$\s?1,200/);
+  });
 });
 
 // 階段 11（renewal-backfill / AC-7 前端面 + AC-15）：補繳進度與二次確認。
@@ -320,6 +383,8 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     backfillCount: 2,
     backfillAmount: 2400,
     hasPaidAnyBackfill: true,
+    paidBackfillCount: 1,
+    paidBackfillAmount: 1200,
     freshForfeitPoints: 0,
     freshForfeitReferrals: 0,
   };
@@ -332,9 +397,37 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
 
     await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
     const progress = screen.getByTestId('backfill-progress');
-    // 已補至 = extendEndDate − 1 年（目前實際效期迄日）。
+    // 已補至 = extendAnchorDate − 1 天（目前實際效期迄日；不用迄日反推
+    // 一年——迄日落在 02-29 時會少一天）。
     expect(progress.textContent).toContain('已補至 2025/04/02');
     expect(progress.textContent).toContain('還差 2 筆');
+  });
+
+  it('曾有進度、背景重整失敗時顯示進度暫時無法讀取並可重試（四狀態表第 4 列）', async () => {
+    spyFetch();
+    setSubscription(RENEWAL_IN_PROGRESS, false, { lastFetchFailed: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // 不靜默降級：舊進度照常顯示，但明講可能過期並給重試。
+    const stale = screen.getByTestId('backfill-progress-stale');
+    expect(stale.textContent).toContain('進度暫時無法讀取');
+    expect(screen.getByTestId('backfill-progress')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('backfill-progress-refresh'));
+    expect(sub.refresh).toHaveBeenCalled();
+  });
+
+  it('未付過補繳者背景重整失敗時沿用舊資料，不另外插提示', async () => {
+    spyFetch();
+    setSubscription(RENEWAL, false, { lastFetchFailed: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // plan §4 第 4 列只在 hasPaidAnyBackfill 時不靜默；其餘沿用舊資料即可。
+    expect(screen.queryByTestId('backfill-progress-stale')).toBeNull();
   });
 
   it('renewal 缺漏的退化分支不出現補繳語彙，但原到期日仍可見', async () => {
@@ -387,8 +480,14 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
 
     const dialog = await screen.findByTestId('fresh-confirm-dialog');
-    expect(dialog.textContent).toContain('已付');
+    // AC-15（plan §4 範本）：唸出本輪已付的具體筆數與金額，不是只有
+    // 「已付」二字——字面斷言擋不住數字缺漏。
+    expect(dialog.textContent).toContain('付款 1 筆');
+    expect(dialog.textContent).toMatch(/NT\$\s?1,200/);
+    expect(dialog.textContent).toContain('已補至 2025/04/02');
     expect(dialog.textContent).toContain('退還');
+    // 零值子句不唸：這個情境沒有可清空資產，不得出現「0 點」贅句。
+    expect(dialog.textContent).not.toContain('0 點');
     expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
   });
 

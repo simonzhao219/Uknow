@@ -43,7 +43,12 @@ vi.mock('./notifications/NotificationContext', () => ({
 
 import { PaymentResult } from './PaymentResult';
 
-type SlimRenewal = { backfillCount: number; backfillAmount: number; extendEndDate: string } | null;
+type SlimRenewal = {
+  backfillCount: number;
+  backfillAmount: number;
+  extendAnchorDate?: string; // 部署交錯期的舊後端沒有這個欄位
+  extendEndDate: string;
+} | null;
 
 function resultResponse(orderStatus: string, renewal: SlimRenewal) {
   return {
@@ -58,7 +63,12 @@ function resultResponse(orderStatus: string, renewal: SlimRenewal) {
   };
 }
 
-const BACKFILL_2 = { backfillCount: 2, backfillAmount: 2400, extendEndDate: '2026-04-02' };
+const BACKFILL_2 = {
+  backfillCount: 2,
+  backfillAmount: 2400,
+  extendAnchorDate: '2025-04-03',
+  extendEndDate: '2026-04-02',
+};
 
 beforeEach(() => {
   h.searchParams = new URLSearchParams({ tradeNo: 'UK20260502TEST', status: 'SUCCESS' });
@@ -79,8 +89,9 @@ describe('PaymentResult 補繳中間筆', () => {
     const view = await screen.findByTestId('payment-result-backfill-progress');
     expect(screen.queryByTestId('payment-result-activating')).toBeNull();
     expect(screen.queryByTestId('payment-result-activation-timeout')).toBeNull();
-    // 進度三要素：已補至（extendEndDate − 1 年）、還差筆數、總額。
-    expect(view.textContent).toContain('2025-04-02');
+    // 進度三要素：已補至（extendAnchorDate − 1 天，formatTwDate 與結帳頁
+    // 一致）、還差筆數、總額。
+    expect(view.textContent).toContain('2025/04/02');
     expect(view.textContent).toContain('2 筆');
     expect(view.textContent).toMatch(/NT\$\s?2,400/);
     // 訂單編號與付款保證句（與同頁其他狀態的既有風格對齊）。
@@ -88,6 +99,21 @@ describe('PaymentResult 補繳中間筆', () => {
     expect(view.textContent).toContain('不會重複扣款');
     // 開通輪詢完全不啟動。
     expect(h.refreshUser).not.toHaveBeenCalled();
+  });
+
+  it('舊後端形狀缺 extendAnchorDate 時，已補至退回迄日反推一年', async () => {
+    // 部署交錯期：前端已上新版、Edge Function 還是舊版精簡契約。
+    h.apiRequestJson.mockResolvedValue(
+      resultResponse('completed', {
+        backfillCount: 2,
+        backfillAmount: 2400,
+        extendEndDate: '2026-04-02',
+      }),
+    );
+    render(<PaymentResult />);
+
+    const view = await screen.findByTestId('payment-result-backfill-progress');
+    expect(view.textContent).toContain('2025/04/02');
   });
 
   it('繼續補繳導向結帳頁；稍後再說導向首頁並顯示提示', async () => {
