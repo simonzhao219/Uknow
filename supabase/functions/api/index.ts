@@ -184,6 +184,22 @@ async function getRewardConfig(
 }
 
 // ============================================================
+// 工具：是否有審核中（pending）的提領。A16 的 fresh 建單守衛與
+// /subscriptions/status 的 hasPendingWithdrawal 共用這一份（單一真相）。
+// ⚠️ 不得複用 reward_balances.pending——該欄位涵蓋 awaiting_collection，
+// 集合不同（只有 pending 可能被退件、退款落回帳本）。
+// ============================================================
+async function hasPendingWithdrawal(userId: string): Promise<boolean> {
+  const { data } = await sb()
+    .from('withdrawals')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+// ============================================================
 // 工具：從 Authorization header 取得已驗證 user
 // ============================================================
 async function requireAuth(c: any): Promise<{ id: string; email?: string } | null> {
@@ -1386,6 +1402,17 @@ app.post('/payuni/prepare', async (c) => {
     if (!lastSub?.end_date) {
       return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
     }
+  }
+
+  // A16：有審核中（pending）提領時擋下 fresh——fresh 會清空帳本，而
+  // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
+  // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
+  // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
+  if (renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id))) {
+    return c.json(
+      { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
+      400,
+    );
   }
 
   // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
