@@ -8,7 +8,17 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
-import { formatTwDate } from '../utils/twDate';
+import { formatTwDate, twDayPlusYears } from '../utils/twDate';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
 
@@ -307,6 +317,17 @@ export function PaymentCheckout() {
     return rest === 0 ? `${years} 年` : `${years} 年 ${rest} 個月`;
   };
 
+  // AC-15：fresh 且（有可清空資產或本輪已付過補繳）→ 付款前需二次確認。
+  const [freshConfirmOpen, setFreshConfirmOpen] = useState(false);
+  const needsFreshConfirm =
+    renewalMode === 'fresh' &&
+    !!renewal &&
+    (renewal.freshForfeitPoints > 0 ||
+      renewal.freshForfeitReferrals > 0 ||
+      renewal.hasPaidAnyBackfill);
+  // 目前實際效期迄日 = 下一筆迄日 − 1 年（補繳進度與確認警語共用）。
+  const paidUpToDay = renewal ? twDayPlusYears(renewal.extendEndDate, -1) : null;
+
   // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
   const handleValidateNewCode = async (code: string) => {
     const trimmed = code.trim();
@@ -381,6 +402,19 @@ export function PaymentCheckout() {
       return;
     }
 
+    // AC-15：順序是「卡片內揭露（A14）→ 付款時確認」——切換選項不彈窗，
+    // 按下付款且屬需確認情境時才彈，未確認絕不送單。
+    if (needsFreshConfirm) {
+      setFreshConfirmOpen(true);
+      return;
+    }
+
+    await submitPayment();
+  };
+
+  // 真正送單（/payuni/prepare → PayUni 表單跳轉）。守衛都在呼叫端；
+  // AC-15 的確認對話框確認後也直接走這裡。
+  const submitPayment = async () => {
     try {
       setIsLoading(true);
 
@@ -680,6 +714,20 @@ export function PaymentCheckout() {
                 </div>
               )}
 
+              {/* AC-7 前端面：本輪已付過補繳 → 顯示接續進度，回來就接得上。 */}
+              {renewal?.hasPaidAnyBackfill && paidUpToDay && (
+                <div
+                  className="p-3 bg-green-50 border border-green-200 rounded-lg"
+                  data-testid="backfill-progress"
+                >
+                  <p className="text-sm text-green-800">
+                    已補至 {formatTwDate(paidUpToDay)}，還差{' '}
+                    <span className="font-bold">{renewal.backfillCount} 筆</span>（NT${' '}
+                    {renewal.backfillAmount.toLocaleString('en-US')}）即可恢復會籍。
+                  </p>
+                </div>
+              )}
+
               <button
                 type="button"
                 disabled={!renewal || hasPendingWithdrawal}
@@ -851,6 +899,45 @@ export function PaymentCheckout() {
               {isRenewal ? '稍後再說' : '登出，稍後再付款'}
             </Button>
           </div>
+
+          {/* AC-15：fresh 的二次確認——內容依情境組合清空數字與補繳警語。 */}
+          <AlertDialog open={freshConfirmOpen} onOpenChange={setFreshConfirmOpen}>
+            <AlertDialogContent data-testid="fresh-confirm-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>確定要以新約重新開始嗎？</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-left">
+                    {renewal &&
+                      (renewal.freshForfeitPoints > 0 || renewal.freshForfeitReferrals > 0) && (
+                        <p>
+                          目前約 {renewal.freshForfeitPoints} 點可提領回饋與累積推薦{' '}
+                          {renewal.freshForfeitReferrals} 位將全部清空，無法復原。
+                        </p>
+                      )}
+                    {renewal?.hasPaidAnyBackfill && paidUpToDay && (
+                      <p>
+                        您本輪已付的補繳款項（已補至 {formatTwDate(paidUpToDay)}
+                        ）不會退還，該效期也不會保留到新約。
+                      </p>
+                    )}
+                    <p>新約將自付款日起重新計算一年效期。</p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel data-testid="fresh-confirm-cancel">再想想</AlertDialogCancel>
+                <AlertDialogAction
+                  data-testid="fresh-confirm-action"
+                  onClick={() => {
+                    setFreshConfirmOpen(false);
+                    submitPayment();
+                  }}
+                >
+                  確認並前往付款
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>
