@@ -512,3 +512,131 @@ Deno.test('GRANT：authenticated 不得 EXECUTE admin_member_detail', async () =
     await sql.end();
   }
 });
+
+// ============================================================
+// 管理員授予／撤銷（規劃書階段 3.3 / 驗收情境 M4）
+//
+// 這組測試守的是**系統不能失去所有管理員**。兩條路徑會造成那個結果：
+//   1. 最後一位管理員撤銷別人 → `last_admin`
+//   2. 管理員撤銷自己 → `cannot_demote_self`
+// 第 2 條單獨看像多餘（撤銷自己也會被 last_admin 擋），但兩位管理員時
+// last_admin 不會擋，而「我不小心把自己降級了」在只有兩人的系統裡等於
+// 把整個後台交給另一個人——那是不可自救的狀態。
+//
+// **最重要的是第三條：提權防線。** `admin_set_member_admin` 是 SECURITY
+// DEFINER，而 PostgREST 的 `rpc/` 端點繞過 Hono 的 /admin/* middleware——
+// 一般會員直呼它就能把自己變成管理員。`revoke execute` 才是真正的防線，
+// middleware 不是。
+// ============================================================
+
+Deno.test('admin_set_member_admin：可授予管理員，被授予者立刻通過守門', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Grant Admin' });
+  const target = await createTestUser(client, { name: 'Grant Target' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    const token = await getUserAccessToken(client, admin.email);
+
+    const res = await app.request(
+      `/api/admin/members/${target.id}/admin`,
+      authed(token, { method: 'POST', body: JSON.stringify({ isAdmin: true }) }),
+    );
+    assertEquals((await res.json()).success, true);
+
+    // 被授予者現在自己也過得了守門——這才是「授予」的實質意義。
+    const targetToken = await getUserAccessToken(client, target.email);
+    const gate = await app.request('/api/admin/features', {
+      headers: { Authorization: `Bearer ${targetToken}` },
+    });
+    assertEquals(gate.status, 200);
+    await gate.body?.cancel();
+  } finally {
+    await deleteTestUsers(client, [admin.id, target.id]);
+  }
+});
+
+Deno.test('admin_set_member_admin：不能撤銷自己 → cannot_demote_self', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Self Admin' });
+  const other = await createTestUser(client, { name: 'Other Admin' });
+
+  try {
+    // 兩位管理員：last_admin 不會擋，所以擋下來的必須是 cannot_demote_self。
+    await client.from('profiles').update({ is_admin: true }).in('id', [admin.id, other.id]);
+    const token = await getUserAccessToken(client, admin.email);
+
+    const res = await app.request(
+      `/api/admin/members/${admin.id}/admin`,
+      authed(token, { method: 'POST', body: JSON.stringify({ isAdmin: false }) }),
+    );
+    const body = await res.json();
+    assertEquals(body.success, false);
+    assertEquals(body.error?.code, 'cannot_demote_self');
+
+    // 確認真的沒被降級
+    const { data: p } = await client.from('profiles').select('is_admin').eq('id', admin.id)
+      .single();
+    assertEquals(p!.is_admin, true);
+  } finally {
+    await deleteTestUsers(client, [admin.id, other.id]);
+  }
+});
+
+Deno.test('admin_set_member_admin：撤到系統零管理員 → last_admin', async () => {
+  const client = adminClient();
+  const soleAdmin = await createTestUser(client, { name: 'Sole Admin' });
+
+  try {
+    // 清場成「全系統只有一位管理員」。
+    await client.from('profiles').update({ is_admin: false }).eq('is_admin', true);
+    await client.from('profiles').update({ is_admin: true }).eq('id', soleAdmin.id);
+
+    // **這條打 rpc 而不是 HTTP 端點，因為經由端點時 last_admin 到不了**：
+    // 只有管理員能呼叫該端點，系統只剩一位管理員時他唯一能撤銷的就是自己，
+    // 那會先撞 cannot_demote_self。last_admin 守的是呼叫者與目標不同人的
+    // 路徑（service_role 直呼、未來的批次流程），那才是它真正的守備範圍。
+    const { data } = await client.rpc('admin_set_member_admin', {
+      p_admin_id: soleAdmin.id,
+      p_target_id: soleAdmin.id,
+      p_is_admin: false,
+    });
+    assertEquals(data?.success, false, JSON.stringify(data));
+    assertEquals(data?.error_code, 'cannot_demote_self');
+
+    // 換一個「不是自己」的呼叫者身分：這時擋下來的才是 last_admin。
+    const ghost = await createTestUser(client, { name: 'Ghost Caller' });
+    try {
+      const { data: byOther } = await client.rpc('admin_set_member_admin', {
+        p_admin_id: ghost.id,
+        p_target_id: soleAdmin.id,
+        p_is_admin: false,
+      });
+      assertEquals(byOther?.success, false, JSON.stringify(byOther));
+      assertEquals(byOther?.error_code, 'last_admin');
+      const { data: p } = await client.from('profiles').select('is_admin')
+        .eq('id', soleAdmin.id).single();
+      assertEquals(p!.is_admin, true);
+    } finally {
+      await deleteTestUsers(client, [ghost.id]);
+    }
+  } finally {
+    await deleteTestUsers(client, [soleAdmin.id]);
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_set_member_admin', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    // 這是 P0-2 的真實漏洞路徑：PostgREST 的 rpc/ 端點繞過 Hono 的
+    // /admin/* middleware，一般會員直呼這支就能把自己變成管理員。
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated', 'public.admin_set_member_admin(uuid, uuid, boolean)', 'EXECUTE'
+      ) as can_execute
+    `;
+    assertEquals(row.can_execute, false);
+  } finally {
+    await sql.end();
+  }
+});
