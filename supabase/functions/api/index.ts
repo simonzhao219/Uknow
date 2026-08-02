@@ -2659,9 +2659,13 @@ app.post('/rewards/upload-id-photos', async (c) => {
     const finalBack = backPath ?? current?.id_card_back_path ?? null;
     if (finalFront && finalBack) {
       patch.id_verification_status = 'pending';
-      // 換照片＝重新送審,上一輪的退回理由要清掉,否則會員會在「審核中」
-      // 狀態下還看到舊的退件說明。
+      // 換照片＝重新送審,上一輪的痕跡要一起清掉:
+      //   * 退回理由——否則會員會在「審核中」狀態下還看到舊的退件說明
+      //   * 審核時間——否則 admin 的審核佇列會顯示「已於 X 時審核」,
+      //     但那筆其實還沒被看過。在金流相鄰的稽核資料裡,一個會說謊的
+      //     時間戳比沒有時間戳更糟:沒有只是資訊不足,說謊會讓人據以決策。
       patch.id_reject_reason = null;
+      patch.id_verified_at = null;
     }
 
     await client.from('profiles').update(patch).eq('id', user.id);
