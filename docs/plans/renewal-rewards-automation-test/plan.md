@@ -137,7 +137,11 @@ DB 寫入行為只能由階段 2+ 的 dispatch 驗證(見 §5)。
   自己的驗收標準就不可能達成**(2026-07-21 假綠事故後加的防線會誤殺
   合法窄選)。改動遵循 `.claude/rules/github-actions.md`,
   `python3 scripts/check-workflows.py` 把關(注意它不查此語意,靠階段 0
-  的 60_ 實測驗收)。
+  的 60_ 實測驗收)。施工提醒(第 3 輪覆核):(i) CLI 的 `-m` 整段蓋掉
+  ini 的 `-m "not seed"`——窄選表達式須確認與 `@seed` 互斥(或明寫
+  `... and not seed`);(ii) 階段 0 驗收時記錄 narrow dispatch 該搭配
+  哪個 `scope` 值,避免搭 `full` 白付 30 人建置成本;(iii) `pytest_expr`
+  input 型別為自由字串,非 choice。
 
 ## 3. 架構影響
 
