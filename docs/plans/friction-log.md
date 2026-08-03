@@ -643,3 +643,63 @@ API),而且沒有任何測試會叫。
 不擋」的閘門。這次補覆蓋率時順帶抓到一個真缺陷(批次部分失敗的訊息被
 緊接著的重抓清掉),證明那 45 個未覆蓋分支不是「測試不勤」,是有一整片
 行為從沒被看過。
+
+## 2026-08-02｜CI 盲區｜journey 排程 7 晚全紅：分支 replay 的來源是母專案的歷史語句,不是 git 檔案
+
+Journey Scheduled 自 2026-07-26 上線起連續 7 晚失敗,失敗集合完全相同
+（`rate_limits`/`referral_king_rewards` REST 404、`set-self-admin` 500）。
+根因:Supabase preview branch 的 schema 來自 replay **母專案
+`supabase_migrations.schema_migrations` 裡存下來的語句**,不是 git 裡的
+migration 檔案。0008（revoke_event_trigger_exec）當年以「無存在性防呆」的
+舊版直接套進 production,git 檔案後來才補上 `do $$ if exists ... $$` 防呆
+——歷史語句與 git 從此分岔。replay 在全新 DB 上執行舊語句
+（`rls_auto_enable()` 不存在）當場炸掉,分支停在 `MIGRATIONS_FAILED`、
+schema 只到 0007,journey 就打在半套 schema 上。
+
+**為什麼 CI 沒攔**:api-tests 在本地 `supabase start` 套的是 **git 檔案**
+（有防呆版）→ 永遠綠;分支 replay 用的是**歷史語句**（無防呆版）→ 永遠紅。
+兩條驗證路徑覆蓋的是兩份不同的真相,而沒有任何一層在比對它們一致。
+journey.yml 的等待迴圈只等連線資訊、不驗分支狀態,把 `MIGRATIONS_FAILED`
+的分支當可用環境往下跑,是第二層放行。
+
+**為什麼 7 晚沒人接**:triage issue 有開,但排程失敗的訊號沒有回流機制
+以外的接手人;且 journey-full 從未在晉升 PR 上真正跑綠過
+（PR #176 從開到合併 3 分鐘,30-90 分的 journey 不可能跑完——晉升閘門
+形同虛設過一次）。
+
+**處置**:
+1. 母專案歷史表 0008 的 statements 更新為 git 檔案內容
+   （同類掃描:51 支全比對,正規化 md5,僅 0008 漂移）;
+   修復後實測建分支 → 51/51 套用、`FUNCTIONS_DEPLOYED`。
+2. journey.yml 等待迴圈改為輪詢分支狀態:`MIGRATIONS_FAILED` 硬失敗並
+   附修法指引;逾時硬失敗——「連得上」不等於「schema 是全的」。
+3. 新增 `supabase db push --db-url` 步驟,把 checkout 獨有的 migrations
+   （如 develop 尚未晉升的版本）補進分支——journey 從此測的是「該 commit
+   的程式碼＋該 commit 的 schema」,同時預演晉升時 production 的
+   migration 套用。
+
+**通則:手動改過已套用的 migration 檔案,就必須同步 repair 遠端歷史表的
+statements——否則炸的不是當下任何環境,而是下一個「從歷史 replay 出生」的
+全新環境,而且離事發時間可以隔很多週。**「git 檔案」與「歷史語句」是
+兩份會分岔的真相,只有 replay 那一刻才會對帳。
+
+## 2026-08-02｜同場加映｜journey GUI 註冊從未通過:hosted GoTrue 拒收 .test 網域
+
+修完 migration replay 後,journey 骨架推進到 GUI 註冊,揭出第二個獨立根因:
+hosted GoTrue 用**內建 email 服務**時,(a) signup 直接拒收 example/test
+保留網域(`email_address_invalid`)——journey 的 `@uknow-journey.test`
+假帳號從第一天起就註冊不進去;(b) 不掛自訂寄送管道,連
+`rate_limit_email_sent` 都不准調(401 Custom SMTP required)——設計書
+「測試分支放寬限流」那一步其實一直在無聲失敗(`curl -sf` 吞掉了 401)。
+
+**處置**:journey.yml 在拋棄式分支上以 psql 建 no-op 的
+`journey_email_sink(jsonb)` 並啟用 pg-functions **send-email hook**——
+寄信不再經內建 mailer,兩個限制一起解除;OTP 本來就由 Admin
+`generate_link` 取得,信件內容無所謂。函數只存在於拋棄式分支,不進
+migration、不碰正式站。另加「signup 探測健檢」:部署後先用 REST 打一發
+`/auth/v1/signup`,失敗就帶著 GoTrue 真實回應當場紅燈——GUI 逾時只會說
+「30 秒沒等到 OTP 框」,toast 早消失,錯誤原因蒸發;探測讓死因可讀。
+
+**通則:對外部 SaaS 的「設定調整」步驟,失敗必須帶回應可讀,不准 `-sf`
+吞掉**——這次的 401 早在第一晚就發生了,只是被靜音;若當時可讀,email
+服務的限制會提早七天現形。
