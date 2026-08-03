@@ -32,4 +32,7 @@ journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本�
 
 ## 框架摩擦
 
-(無)
+- 2026-08-03:bash-guard 誤擋 `git commit`——commit message 內含
+  「pytest_expr」字樣被當成要本機跑 journey(guard 應只看指令本體,
+  不該掃 `-m` 訊息文字)。繞法:訊息寫檔改用 `git commit -F`。
+  整併時搬 friction-log。
