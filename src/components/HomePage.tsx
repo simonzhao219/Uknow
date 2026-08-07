@@ -11,6 +11,8 @@ import { MapPin, ChevronDown, Search, SlidersHorizontal, AlertCircle } from 'luc
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
 import { FilterCountBadge } from './common/FilterCountBadge';
+import { CategoryFilterChips } from './home/CategoryFilterChips';
+import { useCustomCategories } from '../hooks/useCustomCategories';
 import { FilterChip } from './common/FilterChip';
 import {
   Sheet,
@@ -24,12 +26,7 @@ import {
 } from './ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { cn } from './ui/utils';
-import {
-  SERVICE_CATEGORIES,
-  TAIWAN_CITIES,
-  TAIWAN_REGIONS,
-  GENDER_OPTIONS,
-} from '../utils/constants';
+import { TAIWAN_CITIES, TAIWAN_REGIONS, GENDER_OPTIONS } from '../utils/constants';
 import { createClient } from '../utils/supabase/client';
 import {
   toggleCity,
@@ -104,6 +101,11 @@ export function HomePage() {
   // 需要上移避開。
   const { isLoggedIn } = useContext(UserContext);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  // 篩選器的自訂類別與刊登表單走同一條路徑（public_listing_categories view）。
+  // 不從已載入的 serviceProviders 就地推導：那支查詢沒有 limit，撞到 PostgREST
+  // 列數上限時它拿到的不是全部刊登，於是表單列得出某個自訂類別、這裡卻篩不到
+  // 任何一筆。全站對「哪些類別存在」只該有一個答案。
+  const { customCategories } = useCustomCategories();
   const [searchQuery, setSearchQuery] = useState<string>('');
   // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
   // 每個縣市的「全區」與區選擇互相獨立，同名區不再跨縣市誤配。
@@ -326,6 +328,7 @@ export function HomePage() {
           >
             <CategoryFilterChips
               selectedCategory={selectedCategory}
+              customCategories={customCategories}
               onSelect={setSelectedCategory}
             />
           </DesktopFilterPopover>
@@ -372,6 +375,7 @@ export function HomePage() {
             <h3 className="text-sm font-medium">服務類別</h3>
             <CategoryFilterChips
               selectedCategory={selectedCategory}
+              customCategories={customCategories}
               onSelect={setSelectedCategory}
             />
           </section>
@@ -797,35 +801,6 @@ function GenderFilterChips({
           selected={selectedGenders.includes(gender)}
           onToggle={() => onGenderChange(gender, !selectedGenders.includes(gender))}
           className="min-w-20"
-        />
-      ))}
-    </div>
-  );
-}
-
-// 服務類別（單選）：chip 以內容寬度自動換行排滿整行，
-// 取代一欄一項的直列，30 個類別不再需要長距離捲動。
-// 再點一次已選類別可取消（回到全部）。
-function CategoryFilterChips({
-  selectedCategory,
-  onSelect,
-}: {
-  selectedCategory: string;
-  onSelect: (category: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <FilterChip
-        label="全部類別"
-        selected={selectedCategory === ''}
-        onToggle={() => onSelect('')}
-      />
-      {SERVICE_CATEGORIES.map((category) => (
-        <FilterChip
-          key={category}
-          label={category}
-          selected={selectedCategory === category}
-          onToggle={() => onSelect(selectedCategory === category ? '' : category)}
         />
       ))}
     </div>
