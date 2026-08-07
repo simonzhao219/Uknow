@@ -79,14 +79,6 @@ def order_status_only(api_mock, trade_no, status):
     api_mock.set_payuni_result(trade_no, status)
 
 
-@given(parsers.parse('trade "{trade_no}" resolves from "{first}" to "{second}" after one retry'))
-def resolves_after_retry(api_mock, trade_no, first, second):
-    api_mock.set_payuni_result_sequence(
-        trade_no,
-        [(first, None), (second, build_payuni_response("SUCCESS", TradeNo=trade_no))],
-    )
-
-
 @given(parsers.parse('trade "{trade_no}" cannot be found'))
 def trade_not_found(api_mock, trade_no):
     api_mock.set_payuni_result_not_found(trade_no)
@@ -102,28 +94,6 @@ def click_retry_payment(payment_result_page):
     payment_result_page.click_retry_payment()
 
 
-@when("I click contact support")
-def click_contact_support(page, payment_result_page):
-    # LINE is an external third party we must never navigate to for real (it's
-    # unreachable from the sandbox and would 302-redirect anyway, making the
-    # exact-URL assertion non-deterministic). Fulfilling the domain with a stub
-    # lets the same-tab navigation settle on the exact intended deep link so the
-    # test asserts "we opened the right LINE URL" without leaving the mocked
-    # network.
-    page.context.route(
-        "https://line.me/**",
-        lambda route: route.fulfill(
-            status=200, content_type="text/html", body="<html><body>LINE</body></html>"
-        ),
-    )
-    payment_result_page.click_contact_support()
-
-
 @then(parsers.parse('I should see the payment result "{state}"'))
 def should_see_payment_result(payment_result_page, state):
     expect(payment_result_page.state_container(state)).to_be_visible(timeout=6_000)
-
-
-@then(parsers.parse('the page should navigate to "{url}"'))
-def page_navigates_to(page, url):
-    expect(page).to_have_url(url, timeout=5_000)

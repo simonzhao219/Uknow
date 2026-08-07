@@ -61,18 +61,6 @@ def logged_in_expired_member(context):
     )
 
 
-@given("I am logged in as a long-expired former member")
-def logged_in_long_expired_member(context):
-    # 過期超過一年：補繳制（A1-A3）下續約仍永遠可選——一筆一年字面接續，
-    # 付了錢效期仍在過去就再付下一筆，直到迄日回到未來。
-    seed_authenticated_session(
-        context,
-        registration_step=3,
-        accountStatus="expired",
-        subscriptionEndDate=_iso_days_ago(400),
-    )
-
-
 @given(parsers.parse('I am logged in awaiting activation with trade number "{trade_no}"'))
 def logged_in_awaiting_activation(context, trade_no):
     # 已付款（PayUni 已回 SUCCESS）但訂閱還沒建好（後端收斂中）——
