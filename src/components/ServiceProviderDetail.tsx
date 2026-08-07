@@ -2,7 +2,6 @@ import React, { useState, useContext, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
 import { CategoryBadge } from './common/CategoryBadge';
 import {
   ArrowLeft,
@@ -170,10 +169,11 @@ export function ServiceProviderDetail() {
                 {/* 🆕 性别 Badge */}
                 <GenderBadge gender={serviceProvider.gender} className="text-base shrink-0" />
               </div>
+              {/* 與 h1 同列競爭寬度，故封頂在 45% */}
               <CategoryBadge
                 category={serviceProvider.category}
                 variant="default"
-                className="text-lg px-3 py-1"
+                className="text-lg px-3 py-1 max-w-[45%]"
               />
             </div>
 

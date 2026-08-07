@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Skeleton } from './ui/skeleton';
 import { MapPin, ChevronDown, Search, SlidersHorizontal, AlertCircle } from 'lucide-react';
@@ -970,7 +969,8 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
                 {/* 🆕 性别 Badge */}
                 <GenderBadge gender={serviceProvider.gender} className="text-xs shrink-0" />
               </div>
-              <CategoryBadge category={serviceProvider.category} />
+              {/* 與名稱同列競爭寬度：徽章 shrink-0，不封頂會把名稱擠到 0 寬 */}
+              <CategoryBadge category={serviceProvider.category} className="max-w-[45%]" />
             </div>
 
             <p className="text-sm text-muted-foreground line-clamp-2">

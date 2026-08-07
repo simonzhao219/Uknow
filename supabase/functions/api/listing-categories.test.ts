@@ -204,6 +204,26 @@ Deno.test('listings_normalize_category：內部連續空白收成一個，近似
   }
 });
 
+Deno.test('listings_normalize_category：全形空白與換行同樣被收斂', async () => {
+  // 前端的 JS `\s` **確定**含全形空白(ECMAScript 明文),Postgres 的 `\s`
+  // 等價 `[[:space:]]`、是否含 U+3000 取決於資料庫 ctype。兩邊不一致就等於
+  // 「UI 收斂了、資料層沒收斂」,而近似重複字串正是這道 trigger 要擋的東西。
+  const admin = adminClient();
+  const tag = uniqueCategory('wide');
+  const user = await createTestUser(admin, { name: '全形空白會員' });
+  try {
+    await payForUser(admin, user.id);
+    // U+3000 全形空白 ×2 + 換行
+    await admin.from('listings').insert(listingRow(user.id, `\u3000${tag}\u3000\n甲\u3000`));
+
+    const { data } = await admin
+      .from('listings').select('category').eq('user_id', user.id).single();
+    assertEquals(data?.category, `${tag} 甲`);
+  } finally {
+    await deleteTestUsers(admin, [user.id]);
+  }
+});
+
 Deno.test('listings_normalize_category：純空白的類別被拒絕寫入', async () => {
   const admin = adminClient();
   const user = await createTestUser(admin, { name: '空類別會員' });

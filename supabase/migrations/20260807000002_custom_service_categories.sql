@@ -79,17 +79,43 @@ language plpgsql
 set search_path = public
 as $$
 begin
-  -- 內部連續空白(含全形空白、換行)收成一個半形空格,再去頭尾。
-  new.category := btrim(regexp_replace(new.category, '\s+', ' ', 'g'));
+  -- 內部連續空白收成一個半形空格,再去頭尾。
+  --
+  -- 為什麼先 translate() 再 regexp_replace(),而不是直接靠 `\s`:
+  -- Postgres 的 `\s` 等價於 `[[:space:]]`,而該字元類是否包含**全形空白**
+  -- (U+3000)、不斷行空白(U+00A0)等非 ASCII 空白,取決於資料庫的 ctype
+  -- 設定——讀 SQL 判斷不出來,不同環境還可能給不同答案。前端的 JS `\s`
+  -- **確定**包含這些字元(ECMAScript 明文規定),兩邊不一致就等於「UI 收斂了、
+  -- 資料層沒收斂」,而這道 trigger 存在的唯一理由就是擋近似重複字串——
+  -- 把破口留在自己要守的地方沒有道理。translate() 逐字對應,不依賴 locale。
+  -- translate() 的兩個字串逐字對應,長度必須相同(各 8 個字元):
+  --   U+3000 全形空白 / U+00A0 不斷行空白 / U+2002 en space /
+  --   U+2003 em space / U+2009 thin space / tab / LF / CR  →  半形空格 ×8
+  -- 用跳脫序列而非字面字元:全形空白在原始碼裡看不見,
+  -- 而一個看不見的字元被誤刪同樣看不見。
+  new.category := btrim(
+    regexp_replace(
+      translate(
+        new.category,
+        E'\u3000\u00A0\u2002\u2003\u2009\t\n\r',
+        '        '
+      ),
+      '\s+',
+      ' ',
+      'g'
+    )
+  );
 
+  -- 不指定 errcode:預設的 P0001 讓 PostgREST 回 400(輸入格式不對),
+  -- 而 class 23(check_violation)會被對應成 409「衝突」——那個語意會誤導
+  -- 未來加狀態碼分支的錯誤處理,讓它以為重試有意義。目錄下其餘 raise
+  -- exception 也都用預設。
   if new.category = '' then
-    raise exception '服務類別不得為空白'
-      using errcode = 'check_violation';
+    raise exception '服務類別不得為空白';
   end if;
 
   if char_length(new.category) > 20 then
-    raise exception '服務類別超過長度上限（20 字）'
-      using errcode = 'check_violation';
+    raise exception '服務類別超過長度上限（20 字）';
   end if;
 
   return new;

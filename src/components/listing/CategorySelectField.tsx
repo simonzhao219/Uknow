@@ -64,6 +64,15 @@ export function CategorySelectField({
   // 注音符號整串累積殘留(PR #212)。正規化的結果只往父層送,不回寫這裡。
   const [customText, setCustomText] = useState('');
   const [matchedExisting, setMatchedExisting] = useState<string | null>(null);
+  // `validateCustomCategory` 的具體訊息(留白/超長/冒用保留字)。原本這些字串
+  // 算出來就被丟掉,從未到達任何畫面——只有父層那句通用的「請選擇或輸入服務
+  // 類別」會顯示,而它連被觸發的機會都沒有(見 touched 的說明)。
+  const [customError, setCustomError] = useState<string | null>(null);
+  // 使用者是否已經動過自訂輸入框。剛切到自訂模式就喊「請輸入自訂類別」是
+  // 在罵還沒犯錯的人;但**動過之後又清空**就得說話——送出鈕在
+  // `!formData.category` 時是 disabled 的,不講的話使用者只看到一顆按不下去
+  // 的鈕,沒有任何線索。
+  const [touched, setTouched] = useState(false);
   const customInputRef = useRef<HTMLInputElement>(null);
 
   // 揭露後把焦點送進輸入框。⚠️ 這**不保證** iOS 會彈出軟鍵盤:Radix 關閉
@@ -79,6 +88,7 @@ export function CategorySelectField({
     setIsCustomMode(choosingCustom);
     setCustomText('');
     setMatchedExisting(null);
+    setTouched(false);
     // 切到自訂模式時先清空類別值:此時使用者還沒輸入任何東西,
     // 讓送出前的驗證擋得住(留著上一個選擇會讓空白的自訂輸入悄悄通過)。
     onChange(choosingCustom ? '' : selected);
@@ -95,8 +105,10 @@ export function CategorySelectField({
   // (純粹從 raw 推導),被連呼兩次也無妨。
   const commitCustomInput = (raw: string) => {
     setCustomText(raw);
+    setTouched(true);
     const result = validateCustomCategory(raw, knownCategories);
     setMatchedExisting(result.matchedExisting);
+    setCustomError(result.error);
     onChange(result.value);
   };
 
@@ -108,6 +120,8 @@ export function CategorySelectField({
   const builtInSet = new Set<string>(SERVICE_CATEGORIES);
   const existingCustom = knownCategories.filter((category) => !builtInSet.has(category));
   const selectValue = isCustomMode ? CUSTOM_CATEGORY_SENTINEL : value;
+  // 自訂模式下,元件自己算出的具體理由優先於父層的通用訊息。
+  const displayError = (isCustomMode && touched ? customError : null) ?? error ?? undefined;
 
   return (
     <div className="space-y-2">
@@ -115,7 +129,12 @@ export function CategorySelectField({
       <Select value={selectValue} onValueChange={handleSelect}>
         <SelectTrigger
           aria-labelledby="listing-category-label"
-          className={getInputErrorClass(!!error)}
+          className={getInputErrorClass(!!displayError)}
+          // 內建模式也會有錯誤(整個沒選),但錯誤只靠 FieldError 的
+          // role="alert" 宣讀一次;使用者事後 focus 回這顆 trigger 時,
+          // 沒有這兩個屬性就再也聽不到錯誤關聯。
+          aria-invalid={displayError ? true : undefined}
+          aria-describedby={displayError ? ERROR_ID : undefined}
         >
           <SelectValue placeholder="選擇服務類別" />
         </SelectTrigger>
@@ -128,7 +147,7 @@ export function CategorySelectField({
           {existingCustom.length > 0 && (
             <SelectGroup>
               <SelectSeparator />
-              <SelectLabel>其他人建立的類別</SelectLabel>
+              <SelectLabel>自訂類別</SelectLabel>
               {existingCustom.map((category) => (
                 <SelectItem key={category} value={category}>
                   {category}
@@ -157,8 +176,8 @@ export function CategorySelectField({
             {...customImeProps}
             placeholder="例：寵物美容"
             maxLength={CUSTOM_CATEGORY_MAX_LENGTH}
-            className={getInputErrorClass(!!error)}
-            {...getInputAriaProps('listing-category', error)}
+            className={getInputErrorClass(!!displayError)}
+            {...getInputAriaProps('listing-category', displayError ?? undefined)}
           />
           <div className="text-right text-sm text-muted-foreground">
             {customText.length}/{CUSTOM_CATEGORY_MAX_LENGTH}
@@ -170,7 +189,7 @@ export function CategorySelectField({
         </div>
       )}
 
-      <FieldError id={ERROR_ID} error={error} />
+      <FieldError id={ERROR_ID} error={displayError} />
     </div>
   );
 }

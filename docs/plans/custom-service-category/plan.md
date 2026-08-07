@@ -200,15 +200,25 @@ PostgREST 列數上限風險,而它抓的是完整 row、比類別清單**更早
 | 服務者詳情頁徽章 | `text-lg`,父層無 `min-w-0` | 改用 `CategoryBadge` | ✅ 同上 |
 | 刊登管理頁徽章 | 父層 `<div>` 無 `min-w-0` | 改用 `CategoryBadge` | ✅ 同上 |
 | `FilterChip` | 無寬度上限 | `max-w-full` + 內層 `truncate` | ✅ `FilterChip.test` |
-| `DesktopFilterPopover`「類別:X」摘要鈕 | `Button` 基底 `whitespace-nowrap shrink-0`,無上限 | 摘要文字加寬度上限 + truncate | ✅ 同上檔 |
+| `DesktopFilterPopover`「類別:X」摘要鈕 | `Button` 基底 `whitespace-nowrap shrink-0`,無上限 | 摘要文字加寬度上限 + truncate | ❌ **無機械閘門**,僅人工驗收(已於 768px 截圖確認) |
 | `MemberDashboard` 刊登卡片描述 | 外層 `CardDescription` 已 truncate | 不動(列入清單避免後人失去警覺) | — |
 
 **徽章旁的名稱容器**(詳情頁 `<h1>`、刊登管理頁 `<h3>`)另需
 `flex-1 min-w-0` + truncate——只在最外層補 `min-w-0`,擠壓不會解決、
-只是換位置繼續存在。**誠實揭露:這三處沒有硬閘門**,靠
-`e2e/test_overflow_sweep.py`(report-only)與人工驗收。
+只是換位置繼續存在。
+
+**誠實揭露:名稱容器三處與桌面篩選摘要鈕沒有硬閘門**,靠
+`e2e/test_overflow_sweep.py`(report-only)與人工驗收;而摘要鈕連
+report-only 都掃不到——那支巡檢只掃 375px 一個寬度,而該列是
+`hidden md:flex`,375px 下根本不會被渲染。
 不把 report-only 的巡檢寫成「都有界」的佐證——那是 friction-log
-2026-08-07 條記過的降級。
+2026-08-07 條記過的降級,這張表自己也差點犯同一條。
+
+**`CategoryBadge` 的預設上限是 `max-w-full` 不是 `max-w-[45%]`。**
+百分比只在「徽章與名稱同列競爭寬度」時才有意義,由那兩個呼叫端自己傳。
+徽章獨佔一行的兩處套 45% 只會過度截斷:375px 下手機卡片單欄約 149px,
+45% 扣掉內距後不到 4 個全形字,連「寵物美容」都放不下——那會直接違背
+10 字上限「在 375px 卡片徽章仍能單行呈現」的設計前提。
 
 ## 5. 階段切分(每階段 = 一個 TDD 紅綠循環)
 

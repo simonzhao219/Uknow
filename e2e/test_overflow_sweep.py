@@ -379,6 +379,24 @@ def _open_member_detail_sheet(page):
     page.get_by_role("button", name="查看").first.click()
 
 
+def _open_custom_category_input(page):
+    """打開服務類別下拉、選到「自訂類別…」，讓漸進揭露的輸入框真的被畫出來。
+
+    沒有這一步，自訂類別輸入框（含 n/10 計數器、收斂提示）從未被這支巡檢
+    渲染過——那是這個 feature 裡唯一長度不受開發者控制的輸入型 UI，
+    「量不到」不等於「沒問題」。編輯路由的類別雖是自訂值，但 A9 不變式讓它
+    直接顯示在 trigger 上（isCustomMode 預設 False），同樣不會經過這條路徑。
+
+    多步掛鉤，所以步驟之間自己 settle：下拉要先畫出來才點得到選項，
+    輸入框要先揭露才填得進去。
+    """
+    page.get_by_role("combobox", name="服務類別").click()
+    settle(page)
+    page.get_by_role("option", name="自訂類別…").click()
+    settle(page)
+    page.get_by_label("自訂類別名稱").fill(LONGEST_CATEGORY)
+
+
 def _setup_complete_profile(context, api_mock, rest_mock):
     _seed_member(context, registration_step=1, accountStatus="expired", name=None)
 
@@ -402,12 +420,19 @@ ROUTES = [
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),
     SweepRoute("/service-providers", "刊登管理", _setup_listing_mgmt, "/service-providers"),
-    SweepRoute("/service-providers/create", "建立刊登", _setup_listing_create, "/service-providers/create"),
+    SweepRoute(
+        "/service-providers/create",
+        "建立刊登",
+        _setup_listing_create,
+        "/service-providers/create",
+        after_load=_open_custom_category_input,
+    ),
     SweepRoute(
         "/service-providers/edit/11111111-1111-1111-1111-111111111111",
         "編輯刊登",
         _setup_listing_edit,
         "/service-providers/edit/",
+        after_load=_open_custom_category_input,
     ),
     SweepRoute("/referrals", "推薦管理", _setup_referrals, "/referrals"),
     SweepRoute("/tasks", "任務中心", _setup_tasks, "/tasks"),

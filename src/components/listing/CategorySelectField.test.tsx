@@ -18,13 +18,17 @@ import { CategorySelectField } from './CategorySelectField';
 
 afterEach(cleanup);
 
-// Radix Select 走 pointer capture / ResizeObserver,jsdom 兩者都沒有。
-// 這裡只需要「渲染得出來且不炸」,不需要真的量測或開下拉。
+// Radix Select 依賴 jsdom 沒有的三個瀏覽器 API。補上這些替身之後,下拉是
+// **真的可以用鍵盤驅動的**——A1(選「自訂類別…」→ 出現輸入框)因此測得到
+// 真實的 handleSelect,不必靠 startInCustomMode 接縫繞過去。
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
+HTMLElement.prototype.hasPointerCapture ??= () => false;
+HTMLElement.prototype.releasePointerCapture ??= () => {};
+HTMLElement.prototype.scrollIntoView ??= () => {};
 
 function renderField(props: Partial<React.ComponentProps<typeof CategorySelectField>> = {}) {
   const onChange = vi.fn();
@@ -65,6 +69,60 @@ describe('CategorySelectField 選項集合', () => {
   it('沒有選任何類別時顯示 placeholder', () => {
     renderField({ value: '' });
     expect(triggerText()).toContain('選擇服務類別');
+  });
+});
+
+// A1 的真實路徑:透過下拉選單選到「自訂類別…」。這一組刻意**不用**
+// startInCustomMode 接縫——用接縫的話,handleSelect(判斷 sentinel、清空
+// customText/matchedExisting、決定 onChange('') 還是 onChange(selected))
+// 整個函式一行都不會被執行,而它正是 A1 的實作本體。
+describe('CategorySelectField 下拉選取（A1 真實路徑）', () => {
+  function openMenu() {
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+  }
+
+  it('選「自訂類別…」後出現輸入框', () => {
+    renderField();
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '自訂類別…' }));
+    expect(screen.getByLabelText(/自訂類別名稱/)).toBeTruthy();
+  });
+
+  it('選「自訂類別…」當下先清空類別值，讓空白的自訂輸入不會悄悄通過', () => {
+    const { onChange } = renderField({ value: '美髮' });
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '自訂類別…' }));
+    expect(onChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('選內建類別時直接回拋該類別，不進自訂模式', () => {
+    const { onChange } = renderField();
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '按摩' }));
+    expect(onChange).toHaveBeenLastCalledWith('按摩');
+    expect(screen.queryByLabelText(/自訂類別名稱/)).toBeNull();
+  });
+
+  it('別人建立的自訂類別可直接從下拉選取（A5）', () => {
+    const { onChange } = renderField({ customCategories: ['寵物美容'] });
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '寵物美容' }));
+    expect(onChange).toHaveBeenLastCalledWith('寵物美容');
+  });
+
+  it('自訂模式下改選內建類別，殘留的輸入文字不會跟著回來', () => {
+    renderField();
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '自訂類別…' }));
+    fireEvent.change(screen.getByLabelText(/自訂類別名稱/), { target: { value: '寵物溝通' } });
+
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '美髮' }));
+    expect(screen.queryByLabelText(/自訂類別名稱/)).toBeNull();
+
+    openMenu();
+    fireEvent.click(screen.getByRole('option', { name: '自訂類別…' }));
+    expect((screen.getByLabelText(/自訂類別名稱/) as HTMLInputElement).value).toBe('');
   });
 });
 
@@ -164,9 +222,48 @@ describe('CategorySelectField IME 組字', () => {
 });
 
 describe('CategorySelectField 錯誤態', () => {
+  // ⚠️ 這一組刻意**不**用 error prop 灌訊息進去。用 prop 灌只證明「元件收到
+  // 字串會顯示」,證明不了真實流程產得出那個字串——而原本的實作正是把
+  // validateCustomCategory 的 error 算出來就丟掉,那些訊息從未到達任何畫面。
+  // 更糟的是送出鈕在 !formData.category 時是 disabled 的,父層那句通用訊息
+  // 連被觸發的機會都沒有:使用者只看到一顆按不下去的鈕,沒有任何線索。
+  it('輸入後又清空時，自己講出「請輸入自訂類別」', () => {
+    renderField({ startInCustomMode: true });
+    fireEvent.change(customInput(), { target: { value: '寵物溝通' } });
+    fireEvent.change(customInput(), { target: { value: '' } });
+    expect(screen.getByText('請輸入自訂類別')).toBeTruthy();
+  });
+
+  it('剛切到自訂模式、還沒動過時不預先報錯', () => {
+    // 對著還沒犯錯的人喊「請輸入」是噪音。
+    renderField({ startInCustomMode: true });
+    expect(screen.queryByText('請輸入自訂類別')).toBeNull();
+  });
+
+  it('冒用保留字時講出理由，而不是靜默拒絕', () => {
+    renderField({ startInCustomMode: true });
+    fireEvent.change(customInput(), { target: { value: '全部類別' } });
+    expect(screen.getByRole('alert').textContent).toContain('保留');
+  });
+
+  it('自訂模式下的具體理由優先於父層的通用訊息', () => {
+    renderField({ startInCustomMode: true, error: '請選擇或輸入服務類別' });
+    fireEvent.change(customInput(), { target: { value: '寵物溝通' } });
+    fireEvent.change(customInput(), { target: { value: '  ' } });
+    expect(screen.getByText('請輸入自訂類別')).toBeTruthy();
+    expect(screen.queryByText('請選擇或輸入服務類別')).toBeNull();
+  });
+
   it('有錯誤時顯示訊息', () => {
     renderField({ startInCustomMode: true, error: '請輸入自訂類別' });
     expect(screen.getByText('請輸入自訂類別')).toBeTruthy();
+  });
+
+  it('內建模式下的下拉觸發器也標記 aria-invalid（錯誤只被宣讀一次就沒了）', () => {
+    renderField({ error: '請選擇或輸入服務類別' });
+    const trigger = screen.getByRole('combobox');
+    expect(trigger.getAttribute('aria-invalid')).toBe('true');
+    expect(trigger.getAttribute('aria-describedby')).toBe('listing-category-error');
   });
 
   it('有錯誤時輸入框標記 aria-invalid 並指向錯誤訊息', () => {
