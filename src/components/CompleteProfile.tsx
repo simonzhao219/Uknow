@@ -244,6 +244,25 @@ export function CompleteProfile() {
     onCommit: commitName,
   });
 
+  // 推薦碼:立即轉小寫(碼本身不分大小寫,統一成小寫才比得出「有沒有改過」)。
+  // 轉小寫對注音與漢字是 identity,但對**全形英數**不是(Ａ → ａ 是真的變了),
+  // 而全形是中文輸入法的標準功能——所以這裡同樣要延後到組字結束。
+  const applyReferralCode = (code: string) => {
+    setFormData((prev) => ({ ...prev, referralCode: code }));
+    setCodeError('');
+    // 推薦碼改變就清除驗證狀態與確認狀態,否則驗證過一次後改碼再送出,
+    // 送出去的會是一個從未被驗證過的碼。
+    if (code !== verifiedReferralCode) {
+      setCodeVerified(false);
+      setReferrerName('');
+      hasConfirmedSubmission.current = false;
+    }
+  };
+  const referralImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: applyReferralCode,
+    onCommit: (raw) => applyReferralCode(raw.toLowerCase()),
+  });
+
   // 切換模式時**保留已輸入文字**,只換驗證規則與提示(清空會讓誤觸切換鈕的人
   // 整串重打)。長度上限不回溯截斷,由計數器警示色 + blur 的長度訊息呈現。
   const switchNameMode = (mode: NameMode) => {
@@ -756,18 +775,7 @@ export function CompleteProfile() {
                 <Input
                   id="referralCode"
                   value={formData.referralCode}
-                  onChange={(e) => {
-                    const newCode = e.target.value.toLowerCase(); // ✅ 立即轉小寫
-                    setFormData({ ...formData, referralCode: newCode });
-                    setCodeError('');
-
-                    // ✅ 如果推薦碼改變，清除驗證狀態和確認狀態
-                    if (newCode !== verifiedReferralCode) {
-                      setCodeVerified(false);
-                      setReferrerName('');
-                      hasConfirmedSubmission.current = false;
-                    }
-                  }}
+                  {...referralImeProps}
                   placeholder="輸入推薦碼"
                   className={getInputErrorClass(!!codeError)}
                 />
