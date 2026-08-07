@@ -469,11 +469,15 @@ jobs:
       payment_mode: sandbox
     secrets: inherit
 
-  # 唯一該列入 branch protection required checks 的項目。
-  # 逐條把 job 加進 required 清單會漂移——2026-07-25 的 PR #109 就是這樣
-  # 在 api-tests / e2e-tests 還在跑的時候被 auto-merge 合掉的(那兩條不在
-  # 清單裡,build 一綠條件就滿足)。改成單一匯總點:新增 job 只要進
-  # needs,保護規則永遠不用動,也不可能再漏。
+  # 唯一該列入 required status checks 的項目(來源:ruleset
+  # protect-main-develop)。逐條把 job 加進清單會漂移——改成單一匯總點:
+  # 新增 job 只要進 needs,規則永遠不用動,也不可能再漏。
+  #
+  # ⚠️ 這一切的前提是規則真的會被詢問。ruleset 在 private repo 上是付費
+  # 功能,免費方案下 enforcement 顯示 active 卻完全不執行。本 repo 的規則
+  # 建於 2026-07-25、2026-08-07 轉 public 才生效;期間 PR #109 / #205 /
+  # #199 都在 CI 未跑完時合併成功——不是清單漏了誰,是沒人問過閘門。
+  # 詳見 .claude/rules/github-actions.md 規則 7。
   ci-ok:
     needs:
       - guards
