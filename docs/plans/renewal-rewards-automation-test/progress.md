@@ -9,8 +9,8 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | ⬜ 未開始 | | |
-| 1 | 時光機三原語(純函式離線紅綠) | ⬜ 未開始 | | |
+| 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | 🟡 已實作,等窄選 dispatch 取證 | (無——CI 設定無測試落點) | af75999 |
+| 1 | 時光機四原語(純函式離線紅綠) | ✅ 綠 | e430c43 | 53978af |
 | 2 | saga cast+小型載入器+feature 第 1–2 章 | ⬜ 未開始 | | |
 | 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ⬜ 未開始 | | |
 | 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ⬜ 未開始 | | |
@@ -28,7 +28,16 @@ P0 處置)後停等人審裁決(開放問題 #1、#2a/#2b/#2c、#3–#6)。未�
 
 ## Blockers(逃生口紀錄)
 
-(無)
+- **2026-08-07 階段 2(逃生口 2:plan 有誤,停手求裁決)**:plan §2.1
+  假設「P 由 harness 健檢確認存在、不另建」。實況:journey 拋棄式分支
+  只 replay migrations(schema),`reward_config.default_referrer_code`
+  是正式站資料層設定 → 分支上為 NULL,平台帳號/碼皆不存在(grep 全部
+  migrations 無 seed;既有 30 人樹的 A0 不填碼正是走「無上代」路徑)。
+  ch1/ch9 的 A10 斷言與 P 的 delta 斷言無從成立。
+  建議修法(待人裁決):saga 自備 P——名冊加 P0 演員(GUI 首購,
+  ~+2 分),再以 service-role 將其推薦碼寫入
+  `reward_config.default_referrer_code`(冪等、僅拋棄式分支,與限流
+  調參同一「seed 調整不動產品碼」原則);其餘章節表全數不變。
 
 ## 框架摩擦
 
