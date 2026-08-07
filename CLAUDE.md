@@ -35,7 +35,7 @@
 | `npm run dev` | 開發伺服器(port 3000) |
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
 | `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
-| `npm run check:full` | check + build + Deno 型別檢查(送 PR 前跑) |
+| `npm run check:full` | check + **覆蓋率棘輪** + build + Deno 型別檢查(送 PR 前跑) |
 | `npm run test:watch` | vitest 監看模式 |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
