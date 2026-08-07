@@ -100,4 +100,141 @@ describe('WithdrawalProcess', () => {
     expect(screen.getByLabelText('移除背面照片')).toBeTruthy();
     expect(screen.queryByText('證件審核未通過')).toBeNull();
   });
+
+  it('退回理由缺失時顯示聯繫客服的後備文案', async () => {
+    mockIdPhotos(idPhotosResponse({ verificationStatus: 'rejected', rejectReason: null }));
+    await renderAndGoToStep3();
+
+    // 理由欄位理論上必填(後端 note_required),但契約允許 null——
+    // 空白的退回警示比看不到警示更糟,後備文案至少給出下一步。
+    await screen.findByText('證件審核未通過');
+    expect(screen.getByText('請聯繫客服了解原因')).toBeTruthy();
+  });
+
+  it('移除既有照片後該面回到上傳區', async () => {
+    mockIdPhotos(idPhotosResponse({ verificationStatus: 'pending' }));
+    await renderAndGoToStep3();
+
+    fireEvent.click(await screen.findByLabelText('移除正面照片'));
+
+    // 正面回到上傳區,背面縮圖不受影響——兩面各自獨立。
+    expect(screen.getByText('上傳正面照')).toBeTruthy();
+    expect(screen.getByLabelText('移除背面照片')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('移除背面照片'));
+    expect(screen.getByText('上傳背面照')).toBeTruthy();
+  });
+
+  it('選擇非圖片檔案時顯示格式錯誤', async () => {
+    mockIdPhotos(idPhotosResponse({ verificationStatus: 'none', frontUrl: null, backUrl: null }));
+    await renderAndGoToStep3();
+
+    const front = (await screen.findByText('上傳正面照')).closest('label') as HTMLLabelElement;
+    const input = front.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'doc.txt', { type: 'text/plain' })] },
+    });
+
+    await screen.findByText('請上傳圖片檔案');
+  });
+
+  it('身分證字號格式正確且後端驗證通過時顯示成功標記', async () => {
+    mockIdPhotos(idPhotosResponse());
+    await renderAndGoToStep3();
+
+    fireEvent.change(screen.getByLabelText('身分證字號 *'), { target: { value: 'A123456789' } });
+
+    await screen.findByText('✓ 身分證驗證成功');
+  });
+
+  it('後端身分證驗證失敗時顯示欄位錯誤', async () => {
+    apiRequestJson.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/rewards/id-photos')) return idPhotosResponse();
+      if (String(url).includes('/rewards/verify-id')) {
+        return { success: false, message: '身分證字號與會員資料不符' };
+      }
+      return { success: true };
+    });
+    await renderAndGoToStep3();
+
+    fireEvent.change(screen.getByLabelText('身分證字號 *'), { target: { value: 'A123456789' } });
+
+    await screen.findByText('身分證字號與會員資料不符');
+    expect(screen.queryByText('✓ 身分證驗證成功')).toBeNull();
+  });
+
+  it('已儲存的銀行帳號自動帶入步驟 3', async () => {
+    localStorage.setItem(
+      'withdrawalBankData',
+      JSON.stringify({ bankCode: '004', bankAccount: '1234567890' }),
+    );
+    mockIdPhotos(idPhotosResponse());
+    await renderAndGoToStep3();
+
+    expect((screen.getByLabelText('收款銀行帳號 *') as HTMLInputElement).value).toBe('1234567890');
+  });
+
+  it('已存銀行資料損毀時流程照常啟動', async () => {
+    localStorage.setItem('withdrawalBankData', '{not json');
+    mockIdPhotos(idPhotosResponse());
+    await renderAndGoToStep3();
+
+    // 壞資料被吞掉(console.error),欄位保持空白而不是整頁掛掉。
+    expect((screen.getByLabelText('收款銀行帳號 *') as HTMLInputElement).value).toBe('');
+  });
+
+  it('選擇超過 5MB 的照片時顯示大小錯誤', async () => {
+    mockIdPhotos(idPhotosResponse({ verificationStatus: 'none', frontUrl: null, backUrl: null }));
+    await renderAndGoToStep3();
+
+    const front = (await screen.findByText('上傳正面照')).closest('label') as HTMLLabelElement;
+    const input = front.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File([new ArrayBuffer(5 * 1024 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' }),
+        ],
+      },
+    });
+
+    await screen.findByText('檔案大小不能超過 5MB');
+  });
+
+  it('金額非 1000 倍數時停在步驟 1 並顯示錯誤', async () => {
+    mockIdPhotos(idPhotosResponse());
+    render(
+      <WithdrawalProcess
+        availableRewards={5000}
+        pendingRewards={0}
+        onSuccess={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/提領Point \*/), { target: { value: '1500' } });
+    fireEvent.click(screen.getByRole('button', { name: /下一步/ }));
+
+    await screen.findByText('提領Point必須為 1000 的倍數');
+    // 沒進步驟 2:提領明細不在畫面上。
+    expect(screen.queryByText('確認並繼續')).toBeNull();
+  });
+
+  it('步驟 2 按上一步回到金額設定', async () => {
+    mockIdPhotos(idPhotosResponse());
+    render(
+      <WithdrawalProcess
+        availableRewards={5000}
+        pendingRewards={0}
+        onSuccess={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/提領Point \*/), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: /下一步/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /上一步/ }));
+
+    // 回到步驟 1:金額輸入欄仍在且保留原值。
+    expect((screen.getByLabelText(/提領Point \*/) as HTMLInputElement).value).toBe('1000');
+  });
 });

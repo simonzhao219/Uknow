@@ -102,6 +102,36 @@ describe('IdVerificationSection', () => {
     expect(screen.getByLabelText('身分證反面')).toBeTruthy();
   });
 
+  it('退回理由缺失時顯示聯繫客服的後備文案', async () => {
+    renderSection({
+      loadStatus: async () => data({ verificationStatus: 'rejected', rejectReason: null }),
+    });
+
+    // 理由理論上必填(後端 note_required),但契約允許 null——空白的退回
+    // 警示比看不到更糟,後備文案至少給出下一步。
+    await screen.findByText('證件審核未通過');
+    expect(screen.getByText('請聯繫客服了解原因')).toBeTruthy();
+  });
+
+  it('只補反面一張也可送出審核', async () => {
+    const uploadPhotos = vi.fn().mockResolvedValue(undefined);
+    renderSection({
+      loadStatus: async () => data({ verificationStatus: 'rejected', rejectReason: '反面模糊' }),
+      uploadPhotos,
+    });
+
+    await screen.findByText('證件審核未通過');
+    fireEvent.change(screen.getByLabelText('身分證反面') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'b.jpg', { type: 'image/jpeg' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '送出審核' }));
+
+    // 只退一面時逐面補傳是合法路徑(上傳端點會與既有照片合併)。
+    await waitFor(() => expect(uploadPhotos).toHaveBeenCalledTimes(1));
+    expect(uploadPhotos.mock.calls[0][0].back).toBeTruthy();
+    expect(uploadPhotos.mock.calls[0][0].front).toBeUndefined();
+  });
+
   it('被退回但一面都沒選時送出鍵不可用', async () => {
     renderSection({
       loadStatus: async () => data({ verificationStatus: 'rejected', rejectReason: '照片模糊' }),
