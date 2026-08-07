@@ -56,7 +56,9 @@ def ensure_joined_via_gui(page: Page, admin: SupabaseAdmin, user: JourneyUser) -
     login_via_gui(page, user)
     page.get_by_role("button", name="加入推薦計畫").click()
     dialog = page.get_by_role("dialog")
-    expect(dialog).to_be_visible()
+    # 對話框內含簽名板 canvas，冷載入偶爾超過預設 5 秒（2026-08-04
+    # run 30944836300 的 f50 餘額不足情境死在這裡）——放寬到 15 秒。
+    expect(dialog).to_be_visible(timeout=15_000)
 
     dialog.get_by_role("checkbox").first.check()
     _draw_signature(page, dialog.locator("canvas").first)

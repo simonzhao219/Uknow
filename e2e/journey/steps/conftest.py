@@ -37,6 +37,19 @@ def tree_ready(run_state, org_nodes):
 # --- 共用 fixtures ----------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _fresh_check_email_quota(supabase_admin):
+    """每個情境開跑前重置 check-email 的 per-IP 限流計數。
+
+    正式碼的限流（10 次/5 分/IP，帳號枚舉防線）不動；但整套 journey
+    從 runner 同一個 IP 出發，30 人建樹之後跨情境反覆重新登入，幾個
+    情境就會撞滿——2026-08-04 run 30944836300 有 12 個情境死在
+    「登入按鈕不出現」，首因全是 check-email 429。builder 只在建樹
+    波次之間重置；這裡把同一個基礎設施操作擴大到每個情境的起點。
+    """
+    supabase_admin.reset_check_email_rate_limit()
+
+
 @pytest.fixture(scope="session")
 def org_nodes():
     return orgchart.load_nodes()

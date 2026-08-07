@@ -5,6 +5,7 @@ from __future__ import annotations
 from playwright.sync_api import expect
 from pytest_bdd import parsers, scenarios, then, when
 
+from builders import referral_tree
 from builders.login import login_via_gui
 from tools import orgchart
 
@@ -60,22 +61,29 @@ def rewards_page_balance(guarded_page, run_state, org_nodes, reward_amount, node
 
 
 @when(parsers.parse('"{node}" 登入並開啟推薦頁'))
-def open_referrals(guarded_page, run_state, node):
+def open_referrals(guarded_page, run_state, scenario_memo, node):
     login_via_gui(guarded_page, run_state.users[node])
     guarded_page.goto("/referrals")
-    expect(guarded_page.get_by_text("一代", exact=True)).to_be_visible(timeout=15_000)
+    referral_tree.wait_tree(guarded_page)
+    scenario_memo["viewer"] = node
 
 
 @then("推薦樹三個世代區塊各顯示 8 人")
 def tree_generation_counts(guarded_page):
-    expect(guarded_page.get_by_text("8 人", exact=True)).to_have_count(3)
+    # UI 改版後世代人數由 ReferralStats 桌面卡片承載（journey 跑桌面
+    # viewport）：一代/二代/三代各一張卡，數值即該代人數。
+    for label in ("一代", "二代", "三代"):
+        card = guarded_page.locator('[data-slot="card"]').filter(
+            has=guarded_page.locator('[data-slot="card-title"]', has_text=label)
+        )
+        expect(card.locator('[data-slot="card-content"]')).to_have_text("8", timeout=15_000)
 
 
 @then(parsers.parse('展開全部世代後名單包含 "{node}" 的姓名'))
-def tree_contains(guarded_page, run_state, node):
-    # 一代預設展開；二、三代點擊區塊標頭展開。
-    for label in ("二代", "三代"):
-        guarded_page.get_by_text(label, exact=True).click()
+def tree_contains(guarded_page, run_state, org_nodes, scenario_memo, node):
+    referral_tree.expand_ancestors(
+        guarded_page, org_nodes, run_state, scenario_memo["viewer"], node
+    )
     expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
 
 
