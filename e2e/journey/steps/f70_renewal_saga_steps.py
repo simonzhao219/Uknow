@@ -407,10 +407,16 @@ def saga_seed_points(supabase_admin, run_state, node, amount):
 
 
 @when(parsers.parse('"{node}" 完成身分驗證並申請提領 {amount:d}P'))
-def saga_apply_withdrawal(guarded_page, run_state, node, amount):
-    from builders import withdrawal
+def saga_apply_withdrawal(guarded_page, supabase_admin, run_state, node, amount):
+    from builders import referral_program, withdrawal
 
     user = run_state.users[node]
+    # 提領硬前置:profiles.referral_program_joined(推薦碼在付款時就有,
+    # 但 joined 要走簽名對話框;未加入時提領按鈕直接 disabled——
+    # run 31152461663 實測)。ensure_joined 自帶登入,先清 session。
+    guarded_page.goto("/")
+    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
+    referral_program.ensure_joined_via_gui(guarded_page, supabase_admin, user)
     _fresh_gui_login(guarded_page, user)
     withdrawal.apply_via_gui(guarded_page, user, amount)
 
