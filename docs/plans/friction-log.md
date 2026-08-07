@@ -781,3 +781,29 @@ journey full 首次全情境執行(run 30944836300)揪出 f40 四連敗的首因
 SQL、建過的 bucket、調過的設定——都必須有 git 側的對應物,否則它只
 存在於「碰巧還活著的那個環境」。journey 每晚從零重建環境,正是這類
 債的定期審計。**
+
+## 2026-08-07｜事故＋框架修訂｜Actions 分鐘數用罄，所有 workflow 停擺兩小時
+
+01:56Z–04:19Z 帳號分鐘數用罄＋spending limit 觸頂，所有 job 拿不到 runner
+（秒死、runner_id=0），連付款對帳排程都停擺、PR 無法過 CI。提高 limit 解圍，
+根因盤點（用 API 實測 07-25～08-07 的 330 次 CI run＋全部排程 run）：
+
+- **錯誤前提**：ci.yml 檔頭寫著「公開 repo 的 runner 免費且無限」——repo
+  實為 **private**，每個 job 各自無條件進位到整分鐘計費。整套 CI 的成本
+  設計從第一天就建立在錯的事實上。
+- **量化**：CI 佔月估用量 93%（≈11,850 分）；全量一次 19-20 計費分，其中
+  **42% 是 8 個秒級 job 的進位損耗**；重度開發日（08-02，107 run）單日
+  ≈1,900 分，一天就近乎燒掉 Free 方案整月額度。journey 每晚排程連紅 12 晚
+  無人接手（訊號未被消費、照樣計費）；reconcile 名目每小時、實測中位間隔
+  1.7h（GitHub 排程器高峰丟觸發）。
+- **處置**（本次修訂）：四個秒級守衛合併為單一 `guards` job（全量 19→16
+  分/次）；journey 排程每晚→每週（晉升 PR 的 journey-full 不動）；
+  reconcile 每小時→每 2 小時（與實測行為一致化）；新增規則 8（8a 秒級
+  檢查併 step、8b 排程 workflow 必須帶費用註記，check-workflows.py 機械
+  把關）；CLAUDE.md 新增「CI 費用紀律」；量測方法沉澱為
+  scripts/actions-usage.py。
+
+**通則：Actions 分鐘數是有限資源。私有 repo 每 job 進位計費——秒級 job 的
+「數量 × push/排程頻率」比單 job 時長更貴；排程頻率是費用決策，要帶費用
+視角寫下依據；cancel-in-progress 省牆鐘不省錢，省錢的第一槓桿是減少 push
+輪數（本地綠了才 push、湊批 push）。額度紅線＝帳號方案內含分鐘。**

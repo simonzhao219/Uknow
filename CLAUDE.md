@@ -180,6 +180,14 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
 固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
 
+## CI 費用紀律
+
+**私有 repo,每個 job 各自進位到整分鐘計費**:全量 CI 一次 ≈16 分、純文件
+push ≈2 分,成本與 push 次數線性相關(2026-08-07 分鐘數用罄停擺兩小時,見
+friction-log)。本地 `npm run check` 綠了才 push、修紅燈先本地重現一次 push
+修完、TDD 相位 commit 本地累積湊檢查點再推(紅燈 hash 是 commit 證據)。
+動 workflow 先讀 rules 的 github-actions.md 規則 8;雙週整併跑 `scripts/actions-usage.py`。
+
 ## Compact instructions
 
 壓縮時務必保留:當前 feature slug 與階段編號、紅燈 commit hash、改動過的
