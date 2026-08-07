@@ -52,9 +52,16 @@ mocks/            # SupabaseAuthMock, BackendApiMock, session-seeding helper
 pages/            # Page Object Model — one class per route/component
 features/         # Gherkin feature files (English)
 steps/            # step definitions; common_steps.py holds shared Given/When/Then
-overflow_probe.py # 瀏覽器內的溢字/溢版量測探針（給下面那支巡檢用）
-test_overflow_sweep.py  # 375px 全路由溢字巡檢（非 BDD，見下節）
+overflow_probe.py # 溢出探針：有沒有畫到框外（缺陷偵測，掃全頁）
+layout_probe.py   # 版面探針：有沒有長成該有的樣子（意圖驗證，量指定元素）
+test_overflow_sweep.py       # 375px 全路由溢字巡檢（非 BDD，見下節）
+test_admin_mobile_layout.py  # /admin 的正向版面期望（見下節）
 ```
+
+**兩支探針刻意分家**，因為它們的失效方式相反：一個把五個中文分頁擠成單行
+橫向捲動的 `TabsList` 在 `overflow_probe` 眼中**完全乾淨**（`overflow-x: auto`
+是明示要捲動，探針刻意不報），但它正是行動版要修掉的東西。只靠缺陷偵測，
+「沒壞但也沒對」的版面永遠不會被發現。
 
 ## Adding a scenario
 
@@ -89,8 +96,10 @@ test_overflow_sweep.py  # 375px 全路由溢字巡檢（非 BDD，見下節）
   實際 import 的那個識別字**——`RequireMembershipRoute` 有自己的
   `resolveMembershipRedirect`，與 `registrationFlow.ts` 的
   `resolveCheckoutPageRedirect` 是兩張獨立決策表，從無互相 import。
-- 替代品若是 **report-only、不擋 CI**（如 `test_overflow_sweep.py` 在未設
-  `E2E_OVERFLOW_STRICT` 時），那是降級不是接手。
+- 替代品若是 **report-only、不擋 CI**，那是降級不是接手。
+  （`test_overflow_sweep.py` 現在是**逐路由**棘輪：沒標 `known_overflow` 的
+  路由會硬失敗、標了的才是 report-only。所以要看**那一條路由**的狀態，
+  不能再一句「這支不擋 CI」帶過。）
 - **jsdom 沒有版面引擎、也不載入編譯後 CSS**：任何依賴 media query、實際
   尺寸、捲動、溢版的斷言，元件測試結構性地接不住。
 
@@ -126,31 +135,65 @@ Python，得手動 `grep` 步驟片語確認 `features/` 內無其他引用；**
 
 ```bash
 pytest test_overflow_sweep.py --browser chromium     # 跑巡檢
-E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 轉成硬失敗
+E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 連已知債務也一併擋
 ```
 
-- **預設 report-only**：結果寫進 `test-results/overflow-report.{md,json}`
-  （CI 已經會把整個目錄當 artifact 上傳），不會讓 CI 變紅。一上線就硬
-  失敗的閘門會被關掉；先讓紅色 baseline 變成看得見的證據，等清乾淨了再
-  設 `E2E_OVERFLOW_STRICT=1` 轉成硬失敗。ratchet 機制已內建，屆時不必
-  改測試。
-- **唯一會失敗的情況**是路由守衛把巡檢導去別的頁面——那代表這條沒掃到
-  目標頁面，是巡檢本身壞了，必須修 setup 的登入/會籍狀態。
+- **逐路由棘輪（不是全域開關）**：`SweepRoute.known_overflow` 非空才暫時
+  放行，**沒標的一律硬失敗**。原本只有全域 `E2E_OVERFLOW_STRICT`，但那個
+  設計永遠翻不動——只要還有任何一條髒的，整支就得留在 report-only，而已經
+  清乾淨的路由就一直沒有守衛、退化了也沒人知道。清乾淨一條就刪掉它那行
+  `known_overflow`，只准往少的方向走。
+- **報告**寫進 `test-results/overflow-report.{md,json}`（CI 會把整個目錄
+  當 artifact 上傳），每條標示 🔒 已上鎖 / 🏷 已知債務。
+- **導頁被守衛攔走也會失敗**——那代表這條沒掃到目標頁面，是巡檢本身壞了，
+  必須修 setup 的登入/會籍狀態。
+- **`after_load` 把要點一下才出現的東西帶進量測**：Radix 的 `TabsContent`
+  預設不 `forceMount`，非作用中的分頁**根本沒掛進 DOM**，被動導頁只掃得到
+  預設分頁。對話框/Sheet 同理。同一條 `path` 可以掃多次，pytest 的 id 靠
+  `tags` 區分（`/admin#members`）——**不要改用 label 當 id**，中文會被轉義成
+  `\uXXXX`，`-k` 就篩不到了。
 - **不是 `.feature`**：其他測試描述使用者行為，這支是橫切面巡檢，硬套
   Gherkin 只會得到沒人想讀的假場景。走 `pytest.ini` 已允許的 `test_*.py`。
 - **測資是「最壞但可達」**：每個欄位取產品實際允許的極端值（名稱 10 字
   上限、清單裡最長的類別、使用者貼上的原始 FB 網址），不是憑空的長字串
   ——超出產品約束的假資料會做出假紅，讓報告不可信。
-- **盲區**：只做被動載入，掃不到 toast、對話框、下拉等需要互動才出現的
-  東西；目前也只跑 375px 單一軸。每次報告的文末都會列出來。
+  ⚠️ **反過來也成立：測資不夠壞會量出假的乾淨。** 系統告警分頁曾被短訊息
+  測資量成「0 發現」而上鎖，換成正式站真實的 jsonb `context` 後溢出 294px。
+  把一條路由標成上鎖之前，先確認測資真的取到產品允許的極端值。
+  **更隱蔽的一種：整塊根本沒渲染。** 管理員設置分頁的帳號資訊區塊掛在
+  `adminStatus.userName &&` 之下，而 mock 少回了 `userName`；公告管理分頁
+  只給了空清單，於是只渲染「尚無公告」。兩條都因此「0 發現」而上鎖，補齊
+  後各溢出 119px 與 153px。所以上鎖前的自檢有兩層：**mock 的形狀要與後端
+  一致**（缺欄位會讓條件渲染整塊消失）、**清單不能是空的**。
+- **盲區**：沒接 `after_load` 的互動式畫面仍掃不到（**能掃不等於掃了**）、
+  toast 需要操作才出現、目前只跑 375px 單一軸。每次報告的文末都會列出來。
+- **表格的橫向捲動不算溢出**：`Table` 原語自帶 `overflow-x-auto`，明示要捲動
+  ＝有意為之。「要橫向捲才讀得完一列」是可用性問題，這支測不出來。
+  但**單一儲存格裡斷不了行的長字串照樣會報**（例如 `whitespace-nowrap` 的
+  `td` 裝 JSON 原文）——兩者的界線就在這裡。
 - **需要中文字型**:全站文案是中文,所有溢出數字都建立在中文字寬上。
-  巡檢會先量一次字寬,不是全形就硬失敗(這條不受 report-only 影響——
-  量測工具壞掉時報告不該裝作有效)。量到的比值也會寫進報告開頭,跨環境
-  比對 baseline 時先確認這個值一致,再比發現數量。
+  巡檢會先量一次字寬,不是全形就硬失敗(這條不受任何開關影響——量測工具
+  壞掉時報告不該裝作有效)。量到的比值也會寫進報告開頭,跨環境比對
+  baseline 時先確認這個值一致,再比發現數量。
   Debian/Ubuntu 缺字型時裝 `fonts-wqy-zenhei` 或 `fonts-noto-cjk`。
 
 新增路由時記得把它加進 `ROUTES`；需要特殊登入/會籍狀態的，寫一個
 `_setup_*` 函式並沿用 `mocks/` 既有的 helper。
+
+## 正向版面期望（`test_admin_mobile_layout.py`）
+
+巡檢問「有沒有畫到框外」，這支問「該長成什麼樣」——見上面兩支探針分家的
+理由。目前放的是 `/admin` 行動版的 U2/U3 期望（分頁標籤排成兩列、對話框
+留有安全邊距、身分證雙圖上下堆疊）。
+
+這些期望用 **`xfail(strict=True)`** 表達尚未實作的終局：
+
+- 現在：測試失敗 → 記為 xfail → CI 綠（不擋別人的 PR）
+- 功能做完後：測試通過 → **XPASS → CI 紅**，逼實作者回來刪掉 marker
+
+也就是說它是**會自我拆除的鷹架**，不會像註解掉的測試那樣被遺忘，也不會像
+TODO 那樣沒有到期日。**不要**因為看到 xfail 就把 marker 刪掉「讓它變綠」
+——那會把一個尚未滿足的期望變成謊言。
 
 ## Coverage
 
