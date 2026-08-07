@@ -42,6 +42,7 @@
 | `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
+| `python3 scripts/check-migration-versions.py` | migration 版本號唯一與遞增(**rebase 後必跑**——撞號 git 不標成衝突,CI 也抓不到,只在正式站部署時靜默跳過) |
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 | `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
