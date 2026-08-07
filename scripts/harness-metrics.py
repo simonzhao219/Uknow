@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 .claude/metrics/sessions.jsonl 彙總成人看得懂的數字。
+"""把 .claude/metrics/ 底下的 session 日誌彙總成人看得懂的數字。
 
 存在理由:`.claude/hooks/decision_log.py` 負責**收**資料,但一份 JSONL 對人
 的資訊量趨近於零。感測器沒有讀取器就只是在產生垃圾——沒人看的量測不會改變
@@ -37,7 +37,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LOG = ROOT / ".claude" / "metrics" / "sessions.jsonl"
+METRICS = ROOT / ".claude" / "metrics"
+# 分片前(~2026-08-07)的共享單檔。**凍結**:decision_log.py 不再寫它,但那 458
+# 個 session 仍是資料,所以照讀。見 decision_log.py 檔頭「為什麼一分支一個檔」。
+LEGACY_LOG = METRICS / "sessions.jsonl"
+# 現行落檔:一分支一個 .jsonl。讀取端一律 glob——分片是為了「寫」不衝突,
+# 「讀」這邊本來就該把它們當成同一份日誌。
+SHARD_DIR = METRICS / "sessions"
 
 # 終端機裡 CJK 佔兩欄,而 f-string 的對齊數的是字元數。混排的表頭直接用
 # f"{'出手':>8}" 會歪掉(第一版就歪了)。check-context-budget.py 的 token
@@ -93,9 +99,10 @@ def _total(row: dict) -> int:
 def dedupe(rows: list[dict]) -> list[dict]:
     """同一個 session id 只留計數最完整的那筆。純函式。
 
-    .gitattributes 的 merge=union 在合併時可能留下同一 session 的兩份快照
-    (例如 rebase 後兩邊都有)。留總數最大的那筆——flush 是累加式的,所以
-    數字最大的必定是最晚、最完整的那次。
+    同一個 session 出現兩份快照有兩條路徑,都不是異常:.gitattributes 的
+    merge=union 在同分支 rebase 後可能兩邊都留一份;session 中途換分支時,
+    flush 會寫進新分支的分片,舊分支那份仍在。留總數最大的那筆——flush 是
+    累加式的,所以數字最大的必定是最晚、最完整的那次。
     """
     best: dict[str, dict] = {}
     for row in rows:
@@ -278,16 +285,30 @@ def self_test() -> int:
     return 0
 
 
+def _read(path: Path) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+
+
+def collect_lines() -> list[str]:
+    """凍結的歷史檔 + 所有分片,當成同一份日誌。
+
+    排序過才讀,是為了讓兩次執行的輸出一致——glob 的順序是檔案系統決定的,
+    不排序的話「壞行在第幾行」這種診斷會在不同機器上跳來跳去。
+    """
+    lines = _read(LEGACY_LOG)
+    for shard in sorted(SHARD_DIR.glob("*.jsonl")):
+        lines.extend(_read(shard))
+    return lines
+
+
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
 
-    try:
-        lines = LOG.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        lines = []
-
-    rows, bad = parse_lines(lines)
+    rows, bad = parse_lines(collect_lines())
     print(render(aggregate(dedupe(rows)), bad))
 
     # 唯一會讓本檔紅燈的情況:檔案裡有東西,但沒有一行讀得懂。那代表感測器

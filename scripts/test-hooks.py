@@ -576,16 +576,56 @@ expect_eq(
     decision_log.to_line({"a": 2, "b": 1}),
 )
 
+# shard_name():分支名 → 分片檔名。這是「跨分支不再寫同一個檔」的全部機制,
+# 所以它只有兩個責任——**同分支必得同名**(否則同一條分支自己就分裂成好幾個
+# 檔)、**輸出必是安全檔名**(否則感測器會在別人的 commit 裡炸出怪檔案)。
+SHARD_CASES = [
+    ("develop", "develop", "一般分支名原樣"),
+    (
+        "claude/e2e-scenario-dedup-owwsip",
+        "claude__e2e-scenario-dedup-owwsip",
+        "斜線換成雙底線:分片攤平成單層目錄,不長出跟分支同構的目錄樹",
+    ),
+    ("feature/renewal-backfill", "feature__renewal-backfill", "feature 分支同慣例"),
+    ("fix/a b?c*d", "fix__a-b-c-d", "檔名不安全的字元一律換成 -"),
+    ("hotfix/客訴", "hotfix__--", "非 ASCII 也換掉——檔名編碼跨平台不可靠"),
+    (".hidden", "-hidden", "開頭的點換掉:分片不得變成隱藏檔,否則 git add 看得到、人看不到"),
+    ("", "_unknown", "抓不到分支(detached HEAD / 非 git):落到固定檔名,絕不寫出空檔名"),
+    ("   ", "_unknown", "只有空白等同抓不到"),
+    ("a" * 200, "a" * 100, "過長截斷(碰撞只會讓兩條分支共用一檔,退回 union 保底,不會壞)"),
+]
+
+for branch, want, why in SHARD_CASES:
+    expect_eq(f"decision_log.shard_name[{why}]", decision_log.shard_name(branch), want)
+
+# 同一條分支必須永遠映到同一個檔:分片鍵若不穩定,同分支的 session 會散成
+# 好幾個檔,而 merge_lines 的「取代自己那一行」就再也找不到自己那一行。
+expect_eq(
+    "decision_log.shard_name[同分支冪等]",
+    decision_log.shard_name("claude/foo-bar"),
+    decision_log.shard_name("claude/foo-bar"),
+)
+
 
 def test_decision_log_io() -> None:
     """record → flush → 讀回的真實 I/O,以及關閉開關。
 
     純函式測不到的部分:落檔點是否真的寫出一行、同 session 多次 flush 是否
     仍是一行、HARNESS_METRICS=0 是否真的完全不碰檔案系統。全部指到 temp 目錄,
-    所以跑測試不會污染 repo 的 sessions.jsonl。
+    所以跑測試不會污染 repo 的分片日誌。
     """
     global checked
     hook_path = str(HOOKS / "decision_log.py")
+
+    def shard(target: Path) -> Path:
+        """分片目錄裡唯一的那個 .jsonl。
+
+        刻意不寫死檔名:分片鍵是「flush 當下的分支」,寫死等於把測試綁在跑測試
+        的那條分支上——本機在 feature 分支綠、CI 在別的分支紅,而紅的原因與
+        被測行為無關。glob 也正好是 harness-metrics.py 真正的讀取方式。
+        """
+        found = sorted((target / "sessions").glob("*.jsonl"))
+        return found[0] if found else target / "sessions" / "<沒有任何分片>"
 
     def run(env_extra: dict, body: str, tmp: str) -> Path:
         """在子行程裡 import 記錄器並執行 body,回傳它被指到的 metrics 目錄。
@@ -624,10 +664,10 @@ def test_decision_log_io() -> None:
         target = run(
             {}, "m.record('bash-guard', 'no-verify')\nm.record('bash-guard', None)\nm.flush()\n", tmp
         )
-        log = target / "sessions.jsonl"
+        log = shard(target)
         checked += 1
         if not log.exists():
-            failures.append("decision_log[record→flush]: sessions.jsonl 沒被建立")
+            failures.append("decision_log[record→flush]: 分片檔沒被建立")
         else:
             rows = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
             expect_eq("decision_log[record→flush] 行數", len(rows), 1)
@@ -637,13 +677,25 @@ def test_decision_log_io() -> None:
     # 3. 同一個 session flush 兩次仍是一行(pre-commit 每次 commit 都會 flush)
     with tempfile.TemporaryDirectory() as tmp:
         target = run({}, "m.record('h', None)\nm.flush()\nm.record('h', None)\nm.flush()\n", tmp)
-        rows = [
-            ln
-            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
-            if ln.strip()
-        ]
+        rows = [ln for ln in shard(target).read_text(encoding="utf-8").splitlines() if ln.strip()]
         expect_eq("decision_log[同 session 兩次 flush 仍是一行]", len(rows), 1)
         expect_eq("decision_log[第二次 flush 的計數有累加]", json.loads(rows[0])["passed"], {"h": 2})
+        # 同一條分支的兩次 flush 必須落回同一個檔。分片鍵若不穩定,同分支會散成
+        # 好幾個檔——那不只是檔案變多,是 merge_lines 再也找不到「自己那一行」,
+        # 於是每次 commit 都附加一筆半成品,日誌從此只增不收斂。
+        expect_eq(
+            "decision_log[同分支的多次 flush 只產生一個分片]",
+            len(list((target / "sessions").glob("*.jsonl"))),
+            1,
+        )
+        # 落檔位置必須是分片目錄,不是舊的共享單檔。這條就是這次改動的全部目的:
+        # 共享單檔 = 每條分支都寫同一個檔尾 = GitHub 每次都判 PR 有衝突。
+        checked += 1
+        if (target / "sessions.jsonl").exists():
+            failures.append(
+                "decision_log[不得再寫共享單檔]: sessions.jsonl 又被寫了"
+                "——那個檔已凍結為歷史,再寫就把跨分支衝突請回來"
+            )
 
     # 4. 關閉開關:HARNESS_METRICS=0 必須完全不碰檔案系統
     with tempfile.TemporaryDirectory() as tmp:
@@ -665,9 +717,9 @@ def test_decision_log_io() -> None:
         if (target / ".session.json").exists():
             failures.append("decision_log[rotate]: buffer 沒被清掉")
         checked += 1
-        if (target / "sessions.jsonl").exists():
+        if list((target / "sessions").glob("*.jsonl")):
             failures.append(
-                "decision_log[rotate 不得寫受版控檔案]: sessions.jsonl 被建立了"
+                "decision_log[rotate 不得寫受版控檔案]: 分片檔被建立了"
                 "——唯讀 session 會因此留下髒工作區"
             )
         checked += 1
@@ -685,7 +737,7 @@ def test_decision_log_io() -> None:
         run({}, "m.record('new', None)\nm.flush()\n", tmp)
         rows = [
             json.loads(ln)
-            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
+            for ln in shard(target).read_text(encoding="utf-8").splitlines()
             if ln.strip()
         ]
         expect_eq("decision_log[跨 session 累積:兩個 session 各一行]", len(rows), 2)
@@ -738,13 +790,13 @@ def test_decision_log_io() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "metrics"
         run({}, "m.record('h', None)\nm.flush()\n", tmp)
-        log_path = target / "sessions.jsonl"
+        log_path = shard(target)
         before = log_path.stat().st_ino
         run({}, "m.record('h', None)\nm.flush()\n", tmp)
         checked += 1
         if log_path.stat().st_ino == before:
             failures.append(
-                "decision_log[sessions.jsonl 必須換檔寫入]: inode 沒變,代表是就地覆寫"
+                "decision_log[分片檔必須換檔寫入]: inode 沒變,代表是就地覆寫"
                 "——不上鎖的讀取器會讀到半截 JSON"
             )
 

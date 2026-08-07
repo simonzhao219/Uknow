@@ -18,9 +18,9 @@ friction-log——人工、軼事式、未彙總。於是兩件該知道的事�
 而 Stop hook 在**最後一次 commit 之後**才觸發,它寫出來的東西永遠不會被
 commit,容器一死就沒了。所以分成兩段:
 
-    hook record()     →  .session.json    當前 session 的計數(gitignored)
-    SessionStart      →  .pending.jsonl   上一個 session 的殘留(gitignored)
-    pre-commit        →  sessions.jsonl   committed,**唯一寫受版控檔案的地方**
+    hook record()     →  .session.json            當前 session 的計數(gitignored)
+    SessionStart      →  .pending.jsonl           上一個 session 的殘留(gitignored)
+    pre-commit        →  sessions/<分支>.jsonl    committed,**唯一寫受版控檔案的地方**
 
 中間那個 pending 是踩過坑才有的。直覺上 SessionStart 與 Stop hook 都是
 「順手落個檔」的好時機,但受版控的檔案一被寫就是髒工作區,而髒工作區會被
@@ -29,8 +29,32 @@ commit,容器一死就沒了。所以分成兩段:
 只有 pre-commit 有:它正在做的那個 commit 就是下游。
 
 一 session 一行,每次 flush **改寫自己那一行**而不是新增,所以一個 session
-產生多次 commit 只會看到同一行在演進。跨分支的尾端衝突由 .gitattributes
-的 merge=union 處理(append-only log 的標準解法)。
+產生多次 commit 只會看到同一行在演進。
+
+## 為什麼一分支一個檔,而不是共用一個 sessions.jsonl
+
+第一版把所有分支寫進同一個 `.claude/metrics/sessions.jsonl`,並用
+.gitattributes 的 `merge=union` 解跨分支的尾端衝突。union 在**本機**確實
+每次都自動解掉,但 GitHub 算 PR 的 mergeable_state 時不套用 repo 的
+merge driver——develop 一有 commit 碰到這個檔,每個開著的 PR 就被標成
+「This branch has conflicts that must be resolved」。誤報,但它跟真衝突
+長得一模一樣,於是每次都要一個人去判斷一次。
+
+分片把這件事從「解衝突」降級成「不產生衝突」:衝突的根因就是**跨分支寫
+同一個檔尾**,那就讓分片鍵等於分支。兩條分支再也沒有共同的寫入區域,
+GitHub 也就無從算出衝突。這是 changesets / towncrier newsfragment 解
+CHANGELOG 衝突的同一招。
+
+分片鍵取的是 **flush 當下**的分支,不是 state 裡記的 session 起始分支:
+落檔的下游是「正在做的這個 commit」,而那個 commit 落在當下的分支上。
+session 中途換過分支時,若照起始分支寫,這個 commit 就會去改另一條分支
+的檔案——正好把剛消掉的跨分支重疊請回來。session 究竟從哪條分支開始,
+由行內的 `branch` 欄位保存(檔名只是分片鍵,不承載語意)。
+
+`.claude/metrics/sessions.jsonl` 保留為**凍結的歷史**(分片前的 458 個
+session):刪除或改名都是 delete/modify,會讓當時開著的每個 PR 各撞一次
+衝突——那正是這次要消滅的症狀。它不再被寫,所以也不會再衝突;
+scripts/harness-metrics.py 仍會讀它。
 
 ## 三條約束(缺任一條,這個感測器就會從資產變成負債)
 
@@ -86,7 +110,15 @@ METRICS_DIR = Path(os.environ.get(ENV_DIR) or ROOT / ".claude" / "metrics")
 BUFFER = METRICS_DIR / ".session.json"
 # 已結束、等待落檔的 session。gitignored——被 .claude/metrics/* 的 pattern 涵蓋。
 PENDING = METRICS_DIR / ".pending.jsonl"
-LOG = METRICS_DIR / "sessions.jsonl"
+# 受版控的落檔目錄:一分支一個 .jsonl(見檔頭「為什麼一分支一個檔」)。
+SHARD_DIR = METRICS_DIR / "sessions"
+
+# 分片檔名長度上限。碰撞的後果很輕——兩條超長分支共用一個檔,退回 union 保底
+# 的舊行為而已,所以這裡不需要 hash 後綴那種複雜度。
+SHARD_MAX = 100
+# 分支名抓不到時(detached HEAD、非 git 目錄)的固定檔名。**必須有值**:
+# 空檔名會讓落檔靜默失敗,而感測器的靜默失敗跟「真的沒事」長得一模一樣。
+SHARD_FALLBACK = "_unknown"
 
 
 def enabled() -> bool:
@@ -154,6 +186,28 @@ def merge_lines(lines: list[str], line: str, session: str) -> list[str]:
     if not replaced:
         out.append(line)
     return out
+
+
+def shard_name(branch: str) -> str:
+    """分支名 → 分片檔名(不含 .jsonl)。純函式。
+
+    只有兩個責任,兩個都是「錯了會很難看出來」的那種:
+
+    1. **同分支必得同名。** 分片鍵不穩定的話,同一條分支會散進好幾個檔,而
+       merge_lines 的「取代自己那一行」就再也找不到自己那一行——每次 commit
+       附加一筆半成品,日誌只增不收斂,而且看起來很正常。
+    2. **輸出必是安全檔名。** 分支名可以帶 `/`、空白、萬國碼;這個檔案會被
+       pre-commit 自動 git add,吐出怪檔名等於在別人的 commit 裡塞垃圾。
+
+    `/` 特別換成 `__` 而不是併進通用的 `-`,是為了讓 `claude/foo` 與
+    `claude-foo` 這兩條分支不會撞成同一個檔名。
+    """
+    name = branch.strip().replace("/", "__")
+    name = "".join(ch if (ch.isascii() and ch.isalnum()) or ch in "._-" else "-" for ch in name)
+    if name.startswith("."):
+        # 隱藏檔會被 git add 進去卻不出現在 ls 裡——查問題時最花時間的那種狀態。
+        name = "-" + name[1:]
+    return name[:SHARD_MAX] or SHARD_FALLBACK
 
 
 # --------------------------------------------------------------- I/O 區
@@ -247,6 +301,15 @@ def record(hook: str, rule: str | None) -> None:
         return
 
 
+def _log_path() -> Path:
+    """本次 flush 該寫哪個分片。
+
+    分支抓不到時落到 SHARD_FALLBACK 而不是放棄落檔:資料進得了 git 才有價值,
+    而檔名只是分片鍵——真正的分支記在每一行的 `branch` 欄位裡。
+    """
+    return SHARD_DIR / f"{shard_name(_branch())}.jsonl"
+
+
 def _read_lines(path: Path) -> list[str]:
     try:
         return [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -255,7 +318,7 @@ def _read_lines(path: Path) -> list[str]:
 
 
 def flush() -> bool:
-    """pending + 當前 buffer → sessions.jsonl。回傳是否真的寫了東西。
+    """pending + 當前 buffer → 當前分支的分片。回傳是否真的寫了東西。
 
     **這是唯一會寫受版控檔案的地方,而且只由 pre-commit 呼叫。** 這個不變式
     不是潔癖,是這個感測器兩次踩過的坑:寫入點的價值不看「這裡方便寫」,要看
@@ -273,17 +336,18 @@ def flush() -> bool:
             if not pending and state is None:
                 return False
 
-            lines = _read_lines(LOG)
+            log = _log_path()
+            lines = _read_lines(log)
             for row in pending:
                 try:
                     session = json.loads(row).get("session", "")
                 except (json.JSONDecodeError, ValueError, AttributeError):
-                    continue  # 壞行跳過,不讓它污染 sessions.jsonl
+                    continue  # 壞行跳過,不讓它污染分片
                 lines = merge_lines(lines, row, session)
             if state is not None:
                 lines = merge_lines(lines, to_line(state), state.get("session", ""))
 
-            _atomic_write(LOG, "\n".join(lines) + "\n")
+            _atomic_write(log, "\n".join(lines) + "\n")
             PENDING.unlink(missing_ok=True)
             return True
     except Exception:  # noqa: BLE001

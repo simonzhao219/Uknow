@@ -48,7 +48,7 @@ run_gate() {
   run_gate_quiet "$label" "$@"
 }
 
-# harness 感測器的落檔點：把本 session 的 hook 決策計數寫成 sessions.jsonl 的
+# harness 感測器的落檔點：把本 session 的 hook 決策計數寫成**本分支分片**的
 # 一行並自動暫存。跑在閘門**之前**，這樣它才進得了這一次 commit。
 #
 # 為什麼是這裡而不是 Stop hook：Stop 跑在最後一次 commit **之後**，它寫出來的
@@ -58,14 +58,19 @@ run_gate() {
 #
 # 為什麼敢自動 git add：靠 agent 記得暫存，就是把確定性換成啟發式，而那正是
 # 這整個框架在避免的事。代價是 commit 會多帶一個沒被手動暫存的檔案，所以範圍
-# 嚴格限縮在這一個路徑，且 HARNESS_METRICS=0 可以整組關掉。
-METRICS_LOG=".claude/metrics/sessions.jsonl"
+# 嚴格限縮在這一個目錄，且 HARNESS_METRICS=0 可以整組關掉。
+#
+# 暫存整個目錄而不是單一檔案，是因為分片檔名由當下的分支決定（見
+# decision_log.py 的 shard_name）——這裡要重算一次就得複製那套 sanitize 規則，
+# 而兩份規則遲早會不一致。目錄 add 之所以安全：flush 只會寫「當前分支」那一
+# 個分片，其他分片在工作區沒有變更，git add 對它們是 no-op。
+METRICS_SHARDS=".claude/metrics/sessions"
 if [ "${HARNESS_METRICS:-1}" = "0" ]; then
   [ "$DRY_RUN" = "1" ] && echo "DRYRUN: METRICS disabled"
 elif [ "$DRY_RUN" = "1" ]; then
   echo "DRYRUN: WOULD_FLUSH metrics"
-elif python3 .claude/hooks/decision_log.py --flush 2>/dev/null && [ -f "$METRICS_LOG" ]; then
-  git add "$METRICS_LOG" 2>/dev/null || true
+elif python3 .claude/hooks/decision_log.py --flush 2>/dev/null && [ -d "$METRICS_SHARDS" ]; then
+  git add "$METRICS_SHARDS" 2>/dev/null || true
 fi
 
 if [ -f .claude/tdd-lock ]; then

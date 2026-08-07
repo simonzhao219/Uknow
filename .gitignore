@@ -36,9 +36,12 @@ supabase/.branches/
 .claude/settings.local.json
 CLAUDE.local.md
 # harness 感測器:session 內的緩衝與鎖檔都是本機狀態（與 tdd-lock 同性質）。
-# 只有落檔後的 sessions.jsonl **要**進版控——那是唯一能跨 session 的通道。
+# 只有落檔後的日誌**要**進版控——那是唯一能跨 session 的通道。
+# sessions/ 是現行落檔（一分支一個 .jsonl，跨分支不重疊所以不會有合併衝突）；
+# sessions.jsonl 是分片前的歷史，已凍結不再被寫（見 decision_log.py 檔頭）。
 .claude/metrics/*
 !.claude/metrics/sessions.jsonl
+!.claude/metrics/sessions/
 
 # E2E (pytest-bdd + Playwright)
 e2e/journey/.run/
