@@ -11,13 +11,14 @@ import { Checkbox } from './ui/checkbox';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
 import {
-  SERVICE_CATEGORIES,
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
   MAX_PHOTO_SIZE,
   MAX_PHOTO_COUNT,
   ALLOWED_PHOTO_FORMATS,
 } from '../utils/constants';
+import { CategorySelectField } from './listing/CategorySelectField';
+import { useCustomCategories } from '../hooks/useCustomCategories';
 import { ArrowLeft, Upload, X } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
@@ -58,6 +59,7 @@ export function CreateServiceProvider() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [listingTempId] = useState(`temp_${Date.now()}`);
+  const { customCategories } = useCustomCategories();
   const supabase = createClient();
 
   // ✅ 检查用户是否已有刊登
@@ -87,7 +89,7 @@ export function CreateServiceProvider() {
     const newErrors: { [key: string]: string } = {};
 
     if (!formData.name.trim()) newErrors.name = '請輸入服務者名稱';
-    if (!formData.category) newErrors.category = '請選擇服務類別';
+    if (!formData.category) newErrors.category = '請選擇或輸入服務類別';
     if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
@@ -312,28 +314,12 @@ export function CreateServiceProvider() {
             <FieldError error={errors.name} />
           </div>
 
-          <div className="space-y-2">
-            <Label id="category-label">服務類別 *</Label>
-            <Select
-              value={formData.category}
-              onValueChange={(value) => setFormData({ ...formData, category: value })}
-            >
-              <SelectTrigger
-                aria-labelledby="category-label"
-                className={getInputErrorClass(!!errors.category)}
-              >
-                <SelectValue placeholder="選擇服務類別" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60 overflow-y-auto">
-                {SERVICE_CATEGORIES.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FieldError error={errors.category} />
-          </div>
+          <CategorySelectField
+            value={formData.category}
+            onChange={(category) => setFormData({ ...formData, category })}
+            customCategories={customCategories}
+            error={errors.category}
+          />
 
           <div className="space-y-2">
             <Label id="gender-label">性別 *</Label>
