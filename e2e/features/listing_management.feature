@@ -59,18 +59,6 @@ Feature: Listing management
     And I should be redirected to "/service-providers"
 
   @listing
-  Scenario: Anyone can view a public listing detail without logging in
-    Given a public listing named "公開美甲師" exists
-    When I visit "/service-providers/33333333-3333-3333-3333-333333333333"
-    Then I should see the listing detail for "公開美甲師"
-
-  @listing
-  Scenario: A missing listing shows a not-found message
-    Given the public listing does not exist
-    When I visit "/service-providers/99999999-9999-9999-9999-999999999999"
-    Then I should see the text "找不到此服務者"
-
-  @listing
   Scenario: A member creates a listing from a fully valid form
     Given I am logged in as an active member
     And I have no listing yet

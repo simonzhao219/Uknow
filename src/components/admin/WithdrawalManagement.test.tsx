@@ -372,6 +372,20 @@ describe('WithdrawalManagement', () => {
     );
   });
 
+  it('標記已匯款後畫面回報「已標記匯款完成」並帶上該會員', async () => {
+    // 「送出的參數對」與「畫面真的說了什麼」是兩件事：上一條驗前者，這條驗
+    // 後者。原本後者由 admin 的 e2e 情境守（斷言同一串「已標記匯款完成」），
+    // 那條情境刪掉時一度沒有任何一層接手——按鈕可見、參數正確，都證不到
+    // admin 按完之後畫面有沒有回話。帶會員姓名是因為這個動作不可回退，
+    // 「對誰做的」比「做了幾筆」重要。
+    renderConsole({ updateStatus: async () => {} });
+
+    fireEvent.click(await screen.findByRole('button', { name: '標記已匯款' }));
+    fireEvent.click(screen.getByRole('button', { name: '確認匯款' }));
+
+    expect(await screen.findByText(/已標記匯款完成：王小明/)).toBeTruthy();
+  });
+
   it('交易序號留空時不送出空字串', async () => {
     const update = vi.fn(async () => {});
     renderConsole({ updateStatus: update });
