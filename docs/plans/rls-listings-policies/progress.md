@@ -90,7 +90,39 @@ git commit -m "docs: 帶入已審過的規劃書與審查報告"
 
 ## Blockers(逃生口紀錄)
 
-### B1 —— 本容器缺 deno 與 supabase CLI,階段 1 跑不了(事實,非裁決)
+### B1-2 —— 工具鏈已裝好,但**環境的網路政策**讓階段 1 仍無法在本機驗證
+
+人裁示「裝工具鏈」後已安裝(兩者都從 GitHub releases 取得,`deno.land` 被擋):
+
+- `deno 2.4.5`(符合 ci.yml 的 `v2.x`)
+- `supabase 2.109.1`(與 ci.yml 逐字相同;⚠️ 該 tarball 含 `supabase` shim 與
+  `supabase-go` 兩個 binary,只搬 shim 會失敗,要整包解到同一目錄)
+- Docker daemon 需自行 `dockerd` 啟動(容器內預設沒跑)
+
+**但兩道網路牆讓階段 1 仍然驗不了**:
+
+| 需求 | 結果 |
+|---|---|
+| `supabase start` 拉 image | Docker Hub **429 Too Many Requests**(匿名拉取限流) |
+| `deno check` 解析 `jsr:@std/assert` | `jsr.io` **403**(直連與走 proxy 都是) |
+
+跑得動的本機閘門:`deno fmt --check` ✅、`deno lint` ✅、
+`python3 scripts/check-test-names.py` ✅、`npm run check` ✅。
+
+**結論**:階段 1 的綠燈只能由 CI 的 api-tests 軌證明(那裡 jsr 與 Docker Hub 都通)。
+**B3 的突變驗證在本機做不到**——需要能起本地 Postgres 的環境。見下方 B6。
+
+### B6 —— 階段 1 的突變驗證待補【待人裁決】
+
+依 B3 裁決,階段 1 要「寫測試 → 綠 → 打壞不變式 → 確認紅 → 還原 → 綠」。
+本機起不了 Postgres(見 B1-2),CI 也不可能替我們打壞 schema。所以目前只能
+拿到「在正確的 DB 上會綠」(CI api-tests),拿不到「在壞掉的 DB 上會紅」。
+
+可選路徑:(a) 在有 Docker Hub 存取的環境本機補跑一次突變驗證;
+(b) 開一個拋棄式 Supabase 分支做突變(有費用);(c) 接受只有 CI 綠,
+把突變證據列為待補並在 PR 註明。**未裁決前不宣稱階段 1 已完成驗證。**
+
+### B1(原始紀錄)—— 本容器缺 deno 與 supabase CLI,階段 1 跑不了
 
 `deno` 與 `supabase` 皆 command not found(SessionStart hook 開場就提示過),
 `docker` 有。階段 1 是 Deno 測試 + `supabase start` 的本地 Postgres,**在這個
