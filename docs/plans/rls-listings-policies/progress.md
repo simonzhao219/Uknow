@@ -58,6 +58,46 @@ git commit -m "docs: 帶入已審過的規劃書與審查報告"
 
 ## Blockers(逃生口紀錄)
 
+### B1 —— 本容器缺 deno 與 supabase CLI,階段 1 跑不了(事實,非裁決)
+
+`deno` 與 `supabase` 皆 command not found(SessionStart hook 開場就提示過),
+`docker` 有。階段 1 是 Deno 測試 + `supabase start` 的本地 Postgres,**在這個
+容器裡無法執行、也就無法驗證紅或綠**。階段 2 只需要 `pytest`(目前也未安裝,
+但很輕)。node 22.22.2 與 python 3.11.15 都在。
+
+### B2 —— 第三輪架構視角審查尚未回來(時序,非裁決)
+
+系統(P0/P1/P2 = 0/0/0)、需求(0/0/4)、UI/UX(0/1/0,該 P1 已修)都已回覆
+「可開工」;架構仍在跑。它被指派的第 6 題正是**「階段 1 現在有 6 條驗證標準
++ housekeeping,會不會該拆?」**——那會改變第一個 commit 的形狀。
+
+### B3 —— 紅綠循環對本 feature 的三個階段不成立【需人工裁決】
+
+**這是規劃三輪都沒處理到的缺口,依逃生口 2 停手記錄,不自行修改 plan。**
+
+本 feature 全部是既有行為的 characterization,**沒有任何產品碼要寫**。所以:
+
+| 階段 | 測試一寫就… | 說明 |
+|---|---|---|
+| 1(L1 結構) | **綠** | 斷言的是 DB 現況(5 條 policy 都在、RLS 已啟用) |
+| 2(`classify()`) | **紅** ✅ | 函式尚不存在;照 skill 先建 stub 再寫測試,是真正的斷言紅 |
+| 3(L2 讀取) | **綠** | 斷言既有 RLS 行為 |
+| 4(L2 寫入) | **綠** | 同上 |
+
+四個階段有三個會命中逃生口 1(「測試一寫就綠 → 跳過該階段」)——但那顯然
+不是本意,跳過等於這個 feature 什麼都不做。
+
+plan §1 其實寫了正確的判準:「**每一條在對應 policy 被拿掉時必須變紅**」,
+但**沒有寫怎麼示範、也沒有寫 `test(red)` commit 該裝什麼**。而 CLAUDE.md 明訂
+紅燈 hash 是 PR 的證據。
+
+**建議(待裁決):改用突變驗證的紅(mutation-verified red)。**
+寫完測試 → 跑(綠)→ 在本地把受測不變式打壞(`alter table public.listings
+disable row level security;` / `drop policy listings_select_own ...`)→ 確認**紅**
+→ 還原 → 綠。把突變前後的輸出貼進 progress.md 與 PR 描述當證據。
+commit 用 `test:` 而非 `test(red):`——沒有真的紅燈 commit 可指,硬造一個
+反而是假證據。階段 2 不受影響,照原本的 `test(red)` 走。
+
 <!-- 三種合法分支的紀錄處:
      1. 紅燈測試一寫就綠(功能已存在)→ 記錄後跳過該階段,人審知悉
      2. 實作中發現 plan 該階段有誤 → 停手記錄,求人工裁決,禁止私改 plan

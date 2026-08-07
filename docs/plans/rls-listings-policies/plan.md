@@ -387,10 +387,20 @@ journey 絕不在本機跑(hook 會擋),這兩階段本機只驗證得了「情�
 
 | 內容 | 落點 | 形式 |
 |---|---|---|
-| 兩處「0 列即假成功」為何安全(§1 表格) | `ServiceProviderManagement.tsx:56` 與 `EditServiceProvider.tsx:266` 該行上方 | **最小事實註解**,依 `document-writing.md` 的殘跡例外條款 |
-| 後續 11 張表按曝險排序的路線圖(§3) | `docs/e2e-journey-test-design.md` | 新增小節 |
-| 「L1 只能斷言環境無關事實」原則 + `pg_policy`/`pg_get_expr` golden 手法與正規化理由(§2) | `docs/e2e-journey-test-design.md` | 同上 |
-| GRANT 現況表與它對 0726 事故成因的解釋(§2) | `supabase/README.md` 既有事故記錄段落 | 併入 |
+| 兩處「0 列即假成功」為何安全(§1 表格) | `ServiceProviderManagement.tsx:56` 與 `EditServiceProvider.tsx:266` 該行上方 | **最小事實註解**,依 `document-writing.md` 的殘跡例外條款。兩處措辭不同,見下方 |
+| 後續 11 張表按曝險排序的路線圖(§3) | `docs/e2e-journey-test-design.md` | 新增小節(該文件既有 §13 里程碑風格相符,且路線圖橫跨 L1+L2 骨架) |
+| 「L1 只能斷言環境無關事實」原則 + `pg_policy`/`pg_get_expr` golden 手法與正規化理由(§2) | **`supabase/README.md`**(與下一列併同一個新小節) | 新增小節 |
+| GRANT 現況表與它對 0726 事故成因的解釋(§2) | **`supabase/README.md` 的 Migrations 表格下方,新增小節**(例:〈RLS/GRANT 現況與 0726 事故成因〉) | 新增,**不是**併入既有段落 |
+
+⚠️ 第 3、4 列的落點在 v3 初版寫錯,已訂正(第三輪架構審查):
+
+- 第 3 列原本指向 `docs/e2e-journey-test-design.md`,但該文件自 §1.1 起明確界定範圍是
+  `e2e/journey/` 的 Python/pytest-bdd 層,**通篇不涉及 `supabase/functions/api/*.test.ts`
+  的 Deno 測試方法論**。半年後接手 `profiles`/`withdrawals` 的 Deno 測試的人不會去翻
+  journey 設計文件。
+- 第 4 列原本寫「併入 `supabase/README.md` 既有事故記錄段落」——**該 README 沒有這個段落**
+  (149 行全文查過)。0726 的完整事故敘事其實在該 migration 的檔頭,不在 README。
+  所以是新增小節,不是併入。
 
 **註解建議措辭 —— 兩處的保護機制不同,必須各寫各的,不可共用一段。**
 
@@ -416,3 +426,14 @@ journey 絕不在本機跑(hook 會擋),這兩階段本機只驗證得了「情�
 
 ⚠️ **這一節的程式碼註解不在規劃階段做**——`/plan-feature` 明令規劃階段不寫任何
 產品程式碼,`src/**` 的寫入要等 `/tdd-implement` 開工後。本節是交辦,不是已完成。
+
+### ⚠️ 執行時機:要排在 `/review-implementation` 之前
+
+`/tdd-implement` 收尾的既定順序是
+①`check:full` → ②UI 截圖 → ③`/review-implementation` → ④清理規劃檔。
+而「先升級再刪」寫在步驟 ④ 裡——若照字面做,§9 這四項(**包含本 PR 唯一動到
+`src/**` 的兩處註解**)會發生在步驟 ③ 的 `git diff origin/develop...HEAD` 快照
+**之後**,等於完全繞過那道專門攔「實作有沒有偏離規劃」的四視角閘門。
+
+**所以:§9 的四項要在階段 4 綠燈與 `check:full` 之後、`/review-implementation`
+之前完成**,讓它們也進入被審查的 diff;清理規劃檔仍留在最後。
