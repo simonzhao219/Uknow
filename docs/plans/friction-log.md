@@ -918,3 +918,31 @@ required reviewer**——`CLAUDE.md` 宣稱「正式站部署需人工核准:mai
 **連帶效果:** 轉 public 也讓「CI 費用紀律」與 `github-actions.md` 規則 8 的
 成本論證失去前提(標準 runner 對 public repo 免費)。兩處已標註前提變更、
 規則力度待裁決,未擅自鬆綁——8b 有 `check-workflows.py` 的表格自測綁著。
+
+## 2026-08-07｜漏網｜「文字在視線之外」沒有任何閘門攔得到
+
+公告橫幅（`MaintenanceBanner`）的訊息被 `flex-1` 推到滿版橫條的邊緣，
+桌機寬版上落在使用者視線動線之外。CI 全綠、biome 全綠、e2e 全綠——
+使用者自己看到才回報。
+
+**攔得到嗎：攔不到。** 這是視覺判斷，不是可斷言的行為。最接近的閘門
+`e2e/test_overflow_sweep.py` 只在 **375px** 巡溢版且為 report-only，
+而這個缺陷恰好**只在桌機寬版成立**（手機上文字填滿整列，排版是對的）。
+補一條「元素必須置中」的機械檢查沒有意義——置中不是普世正確，
+是這個情境（滿版橫條 + 中軸版面）才正確。
+
+**處置**：升級成準則而非閘門——`ui-ux-guidelines.md` §7 新增「滿版橫條的
+內容必須對齊版面中軸」，`plan-reviewer-uiux` 以該檔為參照對象，下次規劃
+新增滿版元素時會在審查時被問到。同時記下推論：**mobile-first 不等於
+「桌機不必驗收」**，本例的失效模式正是「手機對、桌機錯」。
+
+**同類掃描（兩件事）**
+
+1. *滿版貼邊*：全站只有 `MaintenanceBanner` 一個滿版橫條，已修。其餘
+   `border-b` 都在卡片／表格／dialog 內部，不適用。
+2. *關閉鈕熱區 < 44px（準則 §1）*：同病灶還有兩處，**未修**——
+   `notifications/ToastCard.tsx`（16px icon、無 padding）與
+   `notifications/NotificationCard.tsx`（20px icon、無 padding）。
+   兩者都不在本次 diff 的責任範圍，且直接放大會改變 toast／彈窗高度，
+   需要各自決定用 `-m` 抵銷或接受變高。**待償還**，碰到該檔時順手修
+   （童子軍原則）。作法可參考本次的 `-my-3` 抵銷法：熱區長大、容器不變高。
