@@ -403,31 +403,52 @@ jobs:
             || echo "::error::分支刪除失敗——請到 Supabase dashboard 手動刪除 ${{ steps.branch.outputs.name }}"
 
       # ------------------------------------------------------------------
-      # 5. 失敗訊號必須有人接住：排程 run 的失敗通知只寄給最後改 workflow
-      #    的人，很容易無聲蒸發——自動開 issue 作為 triage 佇列，缺陷
-      #    回流（issue → plan → 修復）才有起點。
-      #    晉升 PR 觸發時不開 issue：PR 上的紅燈本身就是接住訊號的地方。
+      # 5. 失敗訊號必須有人接住：**排程** run 的失敗通知只寄給最後改
+      #    workflow 的人，很容易無聲蒸發——自動開 issue 作為 triage 佇列，
+      #    缺陷回流（issue → plan → 修復）才有起點。
+      #
+      #    ⚠️ 只在 schedule 觸發時開，理由就是上面那句：無人守候的失敗才
+      #    需要一張 issue 來接住。晉升 PR 的紅燈在 PR 上、手動 dispatch 的
+      #    當下有人正盯著，兩者都不需要——2026-08-07 一個上午 10 次 dispatch
+      #    有 6 次失敗，若照舊就是 6 張沒人需要的 issue（原條件是
+      #    `!= 'pull_request'`，把 dispatch 也算了進去）。
+      #
+      #    同名查重：title 刻意**不帶 runId**，否則每次失敗都是新 issue、
+      #    永遠去重不掉（實測累積出 #201/#202/#203 三張同因 issue）。改為
+      #    固定標題 + 更新內文指向最新一次 run，未關閉前只會有一張。
       # ------------------------------------------------------------------
       - name: 失敗時開 triage issue
-        if: failure() && github.event_name != 'pull_request'
+        if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v7
         with:
           script: |
+            const title = 'journey 排程失敗';
+            const body = [
+              '## Journey 排程失敗',
+              '',
+              `- 最新一次 Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Triage SOP：',
+              '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
+              '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
+              '3. 同因重複失敗 ≥2 次 → 記入 docs/plans/friction-log.md',
+              '4. 短期修不動 → 到 Actions 頁停用 Journey Scheduled 排程，修好再開',
+              '   （每場都會開一個付費的 Supabase preview branch，紅著跑不是免費的）',
+              '',
+              '排除後關閉此 issue；下次排程失敗會重新開一張。',
+            ].join('\n');
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+            });
+            const dup = open.data.find((i) => i.title === title);
+            if (dup) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: dup.number, body,
+              });
+              core.info(`已有未關閉的同名 issue #${dup.number}，更新為最新一次 run`);
+              return;
+            }
             await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `journey 失敗（run ${context.runId}）`,
-              body: [
-                '## Journey 失敗',
-                '',
-                `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-                `- 觸發：${context.eventName}`,
-                '',
-                'Triage SOP：',
-                '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
-                '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
-                '3. 同因重複失敗 ≥2 次 → 記入 docs/plans/friction-log.md',
-                '4. 短期修不動 → 到 Actions 頁停用 Journey Scheduled 排程，修好再開',
-                '   （排程失敗也計費——2026-07/08 連紅 12 晚無人接手，等於白燒）',
-              ].join('\n'),
+              owner: context.repo.owner, repo: context.repo.repo, title, body,
             });

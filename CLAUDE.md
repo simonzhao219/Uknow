@@ -181,12 +181,12 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
 固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
 
-## CI 費用紀律
+## CI 紀律
 
-⚠️ **2026-08-07 起 repo 為 public,標準 runner 不再計費**——原成本論證(私有
-repo 每 job 進位計費、08-07 分鐘數用罄停擺兩小時)已不成立,規則未鬆綁,改回
-private 即回復;細節與雙週盤點見 github-actions.md 規則 8。紀律照舊:本地
-`npm run check` 綠了才 push、紅燈先本地重現、TDD 相位 commit 累積湊檢查點。
+**2026-08-07 起 repo 為 public,標準 runner 免費且無上限**——稀缺的是牆鐘不是
+分鐘;切軌與排程頻率的依據見 github-actions.md 規則 8(8a 固定開銷判準、8b
+`頻率依據:` 註記,有機械把關)。push 紀律照舊、理由改成回饋品質:本地
+`npm run check` 綠了才 push、紅燈先本地重現一次修完、TDD 相位 commit 湊批再推。
 
 ## Compact instructions
 

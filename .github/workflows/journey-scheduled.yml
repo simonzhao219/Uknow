@@ -14,13 +14,15 @@ name: Journey Scheduled
 # ============================================================================
 on:
   schedule:
-    # 台北週日 02:00 = UTC 週六 18:00,每週一次。
-    # 費用:full journey 綠燈一場 30-90 計費分——每晚跑是 900-2700 分/月,
-    # 每週跑是 130-390 分/月。降頻的依據(2026-08-07 額度事故後盤點):
-    # 真正擋上線的是晉升 PR 上的 journey-full(ci.yml,不受此檔影響),
-    # 這裡只是 develop 真後端的漂移偵測;而它 2026-07-26 起連紅 12 晚、
-    # 訊號無人消費,日級頻率買不到日級價值。需要即時驗證時用下面的
-    # workflow_dispatch 手動觸發。
+    # 台北週日 02:00 = UTC 週六 18:00，每週一次。
+    # 頻率依據：真正擋上線的是晉升 PR 上的 journey-full（ci.yml，不受此檔
+    # 影響），這裡只是 develop 真後端的漂移偵測，週級延遲對目前的發布節奏
+    # 夠用。成本**不在 GitHub 分鐘**（repo 已轉 public，標準 runner 免費），
+    # 而在每場都要開一個**拋棄式 Supabase preview branch**——Branching 是
+    # 付費功能、按分支時數計；加上 PayUni sandbox 是共用狀態，所以同時
+    # 最多一場（見下方 concurrency）。訊號面的佐證：2026-07-26 起曾連紅
+    # 12 晚無人接手，日級頻率買不到日級價值。
+    # 需要即時驗證時用下面的 workflow_dispatch（可搭 pytest_expr 窄選）。
     - cron: '0 18 * * 6'
   workflow_dispatch:
     inputs:
