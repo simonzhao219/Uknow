@@ -96,6 +96,11 @@ class RewardPage(BasePage):
         # block is the only `<input type="file">` in the DOM.
         return self.page.locator('input[type="file"]')
 
+    def id_photo_file_inputs(self):
+        # 兩面都在上傳區狀態時（沒照片、或證件被退回不予沿用），DOM 上
+        # 恰好是正、背面各一個 file input。
+        return self.page.locator('input[type="file"]')
+
     def upload_replacement_front_photo(self) -> None:
         self.front_upload_input().set_input_files(
             files=[{"name": "id-front-new.png", "mimeType": "image/png", "buffer": _TINY_PNG}]

@@ -84,6 +84,18 @@ def no_id_photos_on_file(api_mock):
     api_mock.set_reward_id_photos(front_url=None, back_url=None)
 
 
+@given(parsers.parse('my ID card photos were rejected with "{reason}"'))
+def id_photos_rejected(api_mock, reason):
+    # 帶 URL：被退回的照片仍存在於後端——這個情境守的是「前端不予沿用」，
+    # 不是「沒有照片」。兩者在 DOM 上長得一樣（上傳區），但成因不同。
+    api_mock.set_reward_id_photos(
+        front_url="https://mock/id-front.jpg",
+        back_url="https://mock/id-back.jpg",
+        verification_status="rejected",
+        reject_reason=reason,
+    )
+
+
 @given("uploading my ID card photos succeeds")
 def upload_id_photos_succeeds(api_mock):
     api_mock.set_upload_id_photos_success()
@@ -182,6 +194,14 @@ def remove_saved_front_photo(reward_page):
 @then("the front ID photo upload area should appear")
 def front_upload_area_appears(reward_page):
     expect(reward_page.front_upload_input()).to_have_count(1, timeout=5_000)
+
+
+@then("both ID photo upload areas should appear")
+def both_upload_areas_appear(reward_page):
+    # rejected 的既有照片不予沿用：兩面都不出現縮圖、都回到上傳區。
+    # 此時流程頁上恰好只有這兩個 file input（RewardDashboard 已提早 return，
+    # 獎勵頁的退回警示卡不在 DOM）。
+    expect(reward_page.id_photo_file_inputs()).to_have_count(2, timeout=5_000)
 
 
 @when("I upload a replacement front ID photo")

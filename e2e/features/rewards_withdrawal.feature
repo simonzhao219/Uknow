@@ -97,6 +97,28 @@ Feature: Reward points and withdrawal
     Then I should see a toast containing "提領申請已成功提交"
 
   @rewards
+  Scenario: A member whose ID was rejected sees the reason and must upload fresh photos
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my ID card photos were rejected with "背面反光看不清出生年月日"
+    And uploading my ID card photos succeeds
+    And submitting a withdrawal succeeds
+    When I visit "/rewards"
+    Then I should see the text "證件審核未通過"
+    And I should see the text "背面反光看不清出生年月日"
+    When I start a withdrawal application
+    And I enter the withdrawal amount "1000"
+    And I proceed past the amount step
+    And I confirm the withdrawal summary
+    Then I should see the text "請重新上傳身分證正反面"
+    And both ID photo upload areas should appear
+    When I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
+    And I upload my ID card photos
+    And I agree to the withdrawal terms
+    And I submit the withdrawal application
+    Then I should see a toast containing "提領申請已成功提交"
+
+  @rewards
   Scenario: A member without ID photos on file uploads them during the application
     Given I am a paid member who joined the referral program
     And my reward summary shows 5000 available and 8000 total earned

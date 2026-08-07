@@ -436,11 +436,33 @@ class BackendApiMock:
         }
         self._route("/rewards/history", lambda route: _fulfill_json(route, body))
 
-    def set_reward_id_photos(self, front_url: Optional[str] = None, back_url: Optional[str] = None):
+    def set_reward_id_photos(
+        self,
+        front_url: Optional[str] = None,
+        back_url: Optional[str] = None,
+        verification_status: Optional[str] = None,
+        reject_reason: Optional[str] = None,
+    ):
         # WithdrawalProcess 開機時讀「已上傳的身分證照片」；預先給網址就能
         # 讓提領申請走到底而不必真的上傳檔案（validateStep2 接受既有照片）。
         # 給 None/None 則模擬「尚未上傳」，強制走真正的 file-chooser 上傳路徑。
-        body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
+        #
+        # body 必須是 IdPhotosResponseSchema 的完整形狀——mock 曾漏掉
+        # verificationStatus/rejectReason（前端 `?? 'none'` 靜默吞掉），這正是
+        # friction-log 記的「三層測試共享盲區」型缺口：契約長了欄位，替身
+        # 沒跟上，rejected 分支在 e2e 就永遠測不到。預設鏡像後端語意：
+        # 雙面齊全＝已送審（pending），否則 none。
+        if verification_status is None:
+            verification_status = "pending" if (front_url and back_url) else "none"
+        body = {
+            "success": True,
+            "data": {
+                "frontUrl": front_url,
+                "backUrl": back_url,
+                "verificationStatus": verification_status,
+                "rejectReason": reject_reason,
+            },
+        }
         self._route_exact("/rewards/id-photos", lambda route: _fulfill_json(route, body))
 
     def set_upload_id_photos_success(
@@ -477,6 +499,8 @@ class BackendApiMock:
         history: Optional[list] = None,
         front_url: Optional[str] = None,
         back_url: Optional[str] = None,
+        verification_status: Optional[str] = None,
+        reject_reason: Optional[str] = None,
     ):
         """One call to wire every read the 獎勵回饋 page performs. Registered
         broadest-glob-first so the nested routes below win (last-registered
@@ -484,7 +508,7 @@ class BackendApiMock:
         self.set_reward_summary(available, pending, withdrawn, total_earned, has_withdrawn_today)
         self.set_reward_withdrawals(withdrawals)
         self.set_reward_history(history)
-        self.set_reward_id_photos(front_url, back_url)
+        self.set_reward_id_photos(front_url, back_url, verification_status, reject_reason)
         self.set_verify_id_success()
 
     def set_withdraw_success(self, withdrawal_id: str = "wd-e2e-new", amount: int = 1000, fee: int = 15):
