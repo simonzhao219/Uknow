@@ -4,9 +4,10 @@
      ——寫給「完全沒有對話記憶的下一個 session」看,不要寫只有當下
      session 才懂的簡稱。 -->
 
-分支:`claude/platform-admin-rwd-4fj79m`
-（平台在 session 啟動前開好的 web session 分支，非 `feature/*`；
-規劃書目錄 slug 為 `platform-admin-rwd`）
+分支:`feature/platform-admin-rwd`（slug 與規劃書目錄同名，`/tdd-implement`
+的守衛認的就是這個對應）。前身是平台開的 web session 分支
+`claude/platform-admin-rwd-4fj79m`——**M1 驗證能力已由 PR #242 合入 develop**，
+該分支已完成任務並被 GitHub 自動刪除。
 規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
@@ -21,19 +22,15 @@
 
 ## 目前位置與下一步
 
-規劃書已寫完、四視角審查已完成（`./review.md`），**尚未實作**。
-**現在停在人審。** 實作只能由人親自打 `/tdd-implement platform-admin-rwd`。
+規劃書已寫完、四視角審查已完成（`./review.md`），**尚未動任何產品程式碼**。
 
-審查結果:**P0 0 項、P1 8 項、P2 10 項**（四個 subagent ＋ 主 session 覆核）。
-無 P0，因此不觸發「修訂後重跑 /review-plan」的強制路徑。
+第一輪審查結果:**P0 0 項、P1 8 項、P2 10 項**（四個 subagent ＋ 主 session
+覆核）。無 P0，但主 session 另指出一項貫穿全案的方法論缺陷（**M1**：這是一份
+RWD 規劃，卻把所有自動化驗證放在 jsdom 裡斷言 class 字串，而 jsdom 不跑版面
+引擎），並建議不要照原樣開工。**八項 P1 現已全數處置**（M1、F3、F6 與五項
+人審裁決），處置紀錄見 `review.md`。
 
-⚠️ **但主 session 的建議是不要照這份開工**，理由不是任何單項 P1，而是
-`review.md` 的 **M1：這是一份 RWD 規劃，卻把所有自動化驗證放在 jsdom 裡
-斷言 class 字串，而 jsdom 不跑版面引擎**。階段 1 的「checkbox 帶
-pointer-coarse class」斷言的是實作者剛打進去的字串，不可能為了正確的理由
-失敗；F2 那種讓修改完全失效的 class 錯誤，規劃內所有測試都照樣全綠。
-
-建議的下一步順序（非直接 `/tdd-implement`）:
+走過的順序（三步都由人審逐一裁決，非直接 `/tdd-implement`）:
 
 1. ~~先補驗證能力（M1 三點）~~ **✅ 已完成**（人審裁決「先補 M1」）。
    見 `review.md` 的「M1 已處置」節。動到的檔案:
@@ -47,14 +44,13 @@ pointer-coarse class」斷言的是實作者剛打進去的字串，不可能為
    探針的分工）、§5（每階段驗證標準改成真實幾何量測，並明列該刪哪幾條
    `known_overflow` 與 xfail marker；階段 5 從「補巡檢能力」改成「驗收棘輪
    歸零」）、§7（風險表兩列）。
-3. 再處置 **F1**（手機卡片是否接手 `setActiveId`——不決定的話匯款作業面板
-   在手機上會釘死第一筆）、**F2**（TabsList 的 class 漏了 `grid` **與**
-   `w-full`）、**F4**（`ui/checkbox.tsx` 的 blast radius，＝Q5）、
-   **N1**（覆蓋率棘輪:CI 跑 test:coverage 但 npm run check 不跑；
-   2026-08-07 門檻已收緊兩次，現為 42/42/65/80，**branches 餘裕最小**，
-   而 RWD 要加的 `isDesktop ? 卡片 : 表格` 三元運算子正是打在 branches 上）、
-   **N2**（規劃指定裸 `<details>`，但 `ui/collapsible.tsx` 已存在且有人在用）
-4. 重跑 `/review-plan`，人審通過後才由人親自打 `/tdd-implement`
+3. ~~五項 P1 裁決並改進 plan.md~~ **✅ 已完成**（人審:「照你的建議」）。
+   F1→手機不另立作業面板、就地展開；F2→補完整四個 class；F4→改熱區不改
+   可見尺寸（Q5 消解）；N1→每階段加 `test:coverage` 門檻不降；N2→改用
+   `Collapsible`。F5 由量測裁決，補成 §4.0 的 P16。裁決表見
+   `review.md` 的「五項 P1 已裁決」節。
+4. 重跑 `/review-plan`（本輪）
+5. 人審通過後**才由人親自打** `/tdd-implement platform-admin-rwd`
 
 ### M1 完成後浮現的新事實（影響後續階段，開工前必讀）
 

@@ -62,10 +62,10 @@
 | `src/components/admin/WithdrawalManagement.tsx` | 表格→手機卡片、工具列換行、作業面板、`IdCardDialog` 寬度 |
 | `src/components/admin/MemberManagement.tsx` | 表格→手機卡片、搜尋列換行、詳情 Sheet 的 `dl` 欄數 |
 | `src/components/admin/SystemAlerts.tsx` | 表格→手機卡片、CardHeader 換行 |
-| `src/components/admin/SystemNotifications.tsx` | 公告列表項目的標題／badge 換行 |
-| `src/components/admin/AdminSetup.tsx` | 帳號資訊列（label/value）長 Email 換行 |
-| `src/components/ui/checkbox.tsx` | 補 `pointer-coarse` 觸控目標（見下） |
-| `e2e/test_overflow_sweep.py` | 逐分頁巡檢（現況只掃得到預設分頁） |
+| `src/components/admin/SystemNotifications.tsx` | 公告列表項目的標題／badge 換行、公告內文 `break-words`（P15） |
+| `src/components/admin/AdminSetup.tsx` | 帳號資訊列（label/value）長 Email 換行（P16，**實測 +119px**） |
+| `src/components/ui/checkbox.tsx` | `pointer-coarse` 熱區擴張（**不改可見尺寸**，見 §4.1「觸控」） |
+| `e2e/test_overflow_sweep.py` | 逐階段刪掉已清償的 `known_overflow`（巡檢能力本身已於 PR #242 完成） |
 
 `IdReviewQueue.tsx` 已是卡片式 + `sm:grid-cols-2`，**不需改動**——列出來是為了
 說明它為什麼不在清單裡，不是漏掉。
@@ -141,22 +141,74 @@
 - 會員卡：姓名 / Email / 電話 / 會籍 badge / 角色 badge / 狀態 badge /
   刊登數 / 三顆操作鍵
 - 告警卡：等級 badge / 來源 / 訊息全文 / 發生時間 / 「標記已處理」；
-  `context` JSON 收進 `<details>`（預設收合、`break-all`）
+  `context` JSON 收進 `Collapsible`（預設收合、`break-all`）
 
 操作鍵一律在卡片內、`flex flex-wrap gap-2`，不做底部固定列（P14）。
 
-**頂層 Tabs**：`grid-cols-3 md:grid-cols-5` + `h-auto`（`TabsList` 原語是
-釘死的 `h-9`，兩列需要放開）。375px ÷ 3 ≈ 117px，最長標籤「獎金提領管理」
-在 `text-sm` 下約 100px——**塞得下**，五個分頁 3+2 兩列全部可見，P1 消失。
+**頂層 Tabs**：`w-full grid grid-cols-3 md:grid-cols-5 h-auto`。
+**四個 class 缺一不可**——`TabsList` 原語的 base 是
+`inline-flex h-9 w-fit ... flex overflow-x-auto`（`ui/tabs.tsx:32`）：
+少了無前綴的 `grid`，`grid-cols-3` 對 `display:flex` 容器毫無作用；
+少了 `w-full`，容器會縮成 `w-fit` 的內容寬度、三欄等分不會發生；
+少了 `h-auto`，釘死的 `h-9` 放不下兩列。現況碼 `AdminDashboard.tsx:122`
+的 `w-full md:grid md:grid-cols-5` 已自證前兩點——作者刻意在 `md:` 明寫
+`grid` 才能覆寫 base 的 `flex`。（審查 F2 ＋「補 F2」）
 
-**匯款作業面板**：手機收成 `<details>`（預設收合，摘要顯示「戶名・匯款金額」），
-展開才出五欄。桌面維持現況同屏（W1 的理由在桌面仍然成立）。
+375px ÷ 3 ≈ 119px，最長標籤「獎金提領管理」在 `text-sm` 下約 100px
+——**塞得下**，五個分頁 3+2 兩列全部可見，P1 消失。這也正面解決了
+`AdminDashboard.tsx:118-121` 註解記錄的問題（`grid-cols-5` 在 375px 下每格
+僅約 69px，所以當初退回橫向捲動）：**兩列的每格比五欄寬 72%**，不是推翻
+那個判斷，是解決它當初繞開的成因。
+
+⚠️ 連帶檢查：`TabsTrigger` 帶 `h-[calc(100%-1px)]`（`tabs.tsx:53`），
+在 `h-auto` 容器下百分比高度的解析**只有真瀏覽器確認得了**——所以階段 1
+的驗收要量 `count_rows`，不是斷言 class 字串。
+
+**匯款作業面板（手機不另立面板）**：手機版**不保留獨立的作業面板卡**，
+改成點卡片就地展開該筆的五欄（戶名／身分證字號／銀行代號／收款帳號＋
+複製鍵／匯款金額）。桌面維持現況（面板在列表上方，W1 的同屏理由在桌面
+仍然成立）。
+
+這條同時解掉審查 F1：`activeId` 的**唯一寫入點**是
+`TableRow onClick`（`WithdrawalManagement.tsx:768`），表格在手機被拿掉後
+就沒有任何寫入路徑，`activeRecord` 會永遠落回 `withdrawals[0]`（`:242`）
+——作業面板釘死第一筆、展開也切不動。三個候選裡選「就地展開」而不是
+「卡片點擊仍寫 `activeId`、面板留在列表上方」，理由是**後者在 375px 單欄下
+必然把面板與該筆記錄分離**，使用者點完要捲回頁首才看得到結果，`:616` 那條
+W1「admin 開著網銀打字，五欄必須同時在眼前」的註解在手機上就名存實亡。
+就地展開讓同屏契約在手機重新成立，順帶把寫入路徑補回去。
+
+實作上手機版仍寫 `setActiveId`（同一個狀態、同一組 handler，不另開一套），
+只是渲染位置從獨立卡片變成該卡內的展開區——**避免出現「桌面一套狀態、
+手機另一套」的兩份真相**。
 
 **對話框**：`IdCardDialog` 改 `max-w-[calc(100%-2rem)] sm:max-w-3xl`（P5）、
 雙圖改 `grid-cols-1 sm:grid-cols-2`（P6）。
 
-**觸控**：`checkbox.tsx` 補 `pointer-coarse:size-[44px]`（比照 `button.tsx`
-的 `icon` size 寫法），滑鼠裝置維持 16px 密度不變。
+**公告內文（P15）**：`SystemNotifications.tsx:263` 的 `<p>` 補 `break-words`
+——長 token（實務上是網址）不斷行，實測撐破 +153px。
+
+**管理員設置的帳號資訊列（P16）**：`AdminSetup.tsx:147-163` 的三列
+`flex items-center justify-between` 在手機改為標籤在上、值在下（或讓值
+`break-all` 並允許換行）。Email 來自 Supabase Auth、長度無上限，實測 +119px。
+
+**觸控**：`checkbox.tsx` **擴大可點區、不改可見尺寸**——用透明的
+`before:` 偽元素把熱區撐到 44×44（`pointer-coarse:before:absolute`
+`pointer-coarse:before:-inset-[14px]`，配 `relative`），可見方框維持
+`size-4`。
+
+不照 `button.tsx:27-30` 的先例直接放大可見尺寸，是因為**兩者的性質不同**：
+`button`／`input`／`select` 放大的是本來就有版面高度的控制項
+（`min-h-[44px]`，視覺變化小）；checkbox 的可見方框是 16px 的**符號**，
+放到 44px 會明顯改變外觀，而它被 5 個**不在本次範圍內**的會員端頁面共用
+（`WithdrawalProcess`、`JoinReferralProgramDialog`、`CompleteProfile`、
+`CreateServiceProvider`、`EditServiceProvider`——審查 F4）。熱區擴張讓那 5 頁的
+視覺**零變化**，blast radius 歸零，也就不需要為它們補回歸驗證。
+
+代價講明：這在本 repo **沒有先例**，等於開第二種觸控目標寫法（正是 N2 在
+擋的「另起爐灶」）。所以配套是**在 `checkbox.tsx` 就地寫明為什麼不能照
+button 放大**，並且驗收改量**實際可點區**（`layout_probe.viewport_fit`，
+真瀏覽器量盒子）——WCAG 2.5.8 算的本來就是可點區而非可見尺寸。
 
 ### 4.2 空態／錯誤態／載入態
 
@@ -195,13 +247,26 @@
   改版做完會 XPASS 讓 CI 紅，**逼實作者回來刪 marker**。刪 marker 是每個
   相關階段的收尾動作，不是可選項。
 
+⚠️ **每個階段都要跑 `npm run test:coverage`，四項門檻一項都不准降**（審查 N1）。
+理由是 `npm run check`（＝ pre-commit 跑的那個）**不含覆蓋率**——它是
+`biome && tsc && vitest && knip`；覆蓋率由 CI 另外跑 `test:coverage` 把關
+（`ci.yml`）。**所以本機全綠不等於 CI 綠。**
+
+具體風險不是抽象的：本次要加的正是 `isDesktop ? 卡片 : 表格` 這種三元運算子，
+**每一個都是新的 branch**，兩側沒被測到就往下掉——而 `branches` 是四項裡
+餘裕最小的一項（2026-08-07 已收緊兩次，門檻 80 / 實測 81.75）。
+
+連帶前置條件：`AdminSetup.tsx` 與 `SystemNotifications.tsx` 目前**零測試檔**，
+而階段 4 要在這兩個元件上加新 JSX。它們的測試檔是**前置條件不是可選項**，
+已列進階段 4 的測試落點。（`SystemAlerts.tsx` 不在此列——develop 已補 8 條。）
+
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | 殼層與觸控原語：TabsList 兩列（P1）、標題字級、`checkbox` 觸控目標（P13） | `src/components/AdminDashboard.test.tsx`（新檔，jsdom）＋ `e2e/test_admin_mobile_layout.py`（既有） | 五個 TabsTrigger 皆在文件中且可點（jsdom）；**TabsList 在 375px 下實測分兩列**（`count_rows`，刪掉 `test_admin_tabs_wrap_to_two_rows_at_375px` 的 xfail marker）；**checkbox 的實際可點區實測 ≥44px**（`viewport_fit` 量盒子，不是斷言剛打進去的 class 字串） |
-| 2 | 提領管理手機版：卡片列表（P2）、工具列換行（P3）、作業面板摺疊（P4）、Dialog 寬度與雙圖（P5/P6） | `WithdrawalManagement.test.tsx`（既有檔擴充，`stubMediaQuery(false)`）＋ `e2e/test_admin_mobile_layout.py` | 手機：無 `<table>`、每筆有會員＋金額＋狀態＋操作；桌面：既有 26 條測試全綠不改；**IdCardDialog 左右安全邊距實測 ≥8px、雙圖實測垂直堆疊**（刪掉那兩條 xfail marker）；**巡檢的 `/admin`、`#id-card-dialog`、`#history-dialog` 三條 `known_overflow` 刪除** |
-| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9） | `MemberManagement.test.tsx`（既有檔擴充） | 手機：每位會員一張卡且三顆操作鍵可達（≥44px 由量測釘住，**拇指熱區位置屬人工目視驗收**——見 review.md 的 F12）；桌面測試不動；**巡檢的 `#members`、`#member-sheet` 兩條 `known_overflow` 刪除** |
-| 4 | 系統告警與公告手機版：告警卡片（P10）、header 換行（P11）、公告列表項（P12）、**公告內文長網址斷行（P15）**、**管理員設置的 Email 列（P16）** | `src/components/admin/SystemAlerts.test.tsx`（**develop 已補 8 條，改為擴充**）＋ `SystemNotifications.test.tsx`（新檔）＋ `AdminSetup.test.tsx`（新檔） | 手機：告警訊息全文可讀、`context` 預設收合；標記已處理可點；**巡檢的 `#system-alerts`、`#announcements`、`#admin-setup` 三條 `known_overflow` 刪除** |
-| 5 | 收尾：確認棘輪真的往少的方向走了 | `e2e/test_overflow_sweep.py`、`e2e/test_admin_mobile_layout.py` | **admin 相關的 8 條 `known_overflow` 全數刪除**、**3 條 xfail marker 全數刪除**，且 `cd e2e && pytest` 全綠——任何一條沒清掉就代表該階段沒做完 |
+| 1 | 殼層與觸控原語：TabsList 兩列（P1）、標題字級、`checkbox` 熱區（P13） | `src/components/AdminDashboard.test.tsx`（新檔，jsdom）＋ `e2e/test_admin_mobile_layout.py`（既有） | 五個 TabsTrigger 皆在文件中且可點（jsdom）；**TabsList 在 375px 下實測分兩列**（`count_rows`，刪掉 `test_admin_tabs_wrap_to_two_rows_at_375px` 的 xfail marker）；**checkbox 的實際可點區實測 ≥44px**（`viewport_fit` 量盒子，不是斷言剛打進去的 class 字串）；**可見方框仍是 16px**（5 個會員端頁面視覺零變化）；`npm run test:coverage` 四項門檻不降 |
+| 2 | 提領管理手機版：卡片列表（P2）、工具列換行（P3）、作業面板摺疊（P4）、Dialog 寬度與雙圖（P5/P6） | `WithdrawalManagement.test.tsx`（既有檔擴充，`stubMediaQuery(false)`）＋ `e2e/test_admin_mobile_layout.py` | 手機：無 `<table>`、每筆有會員＋金額＋狀態＋操作；桌面：既有 26 條測試全綠不改；**IdCardDialog 左右安全邊距實測 ≥8px、雙圖實測垂直堆疊**（刪掉那兩條 xfail marker）；**巡檢的 `/admin`、`#id-card-dialog`、`#history-dialog` 三條 `known_overflow` 刪除**；手機點卡片能切換就地展開的那一筆（釘住 F1 的修法：`setActiveId` 在手機仍有寫入路徑）；`test:coverage` 四項門檻不降 |
+| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9） | `MemberManagement.test.tsx`（既有檔擴充） | 手機：每位會員一張卡且三顆操作鍵可達（≥44px 由量測釘住，**拇指熱區位置屬人工目視驗收**——見 review.md 的 F12）；桌面測試不動；**巡檢的 `#members`、`#member-sheet` 兩條 `known_overflow` 刪除**；`test:coverage` 四項門檻不降 |
+| 4 | 系統告警與公告手機版：告警卡片（P10）、header 換行（P11）、公告列表項（P12）、**公告內文長網址斷行（P15）**、**管理員設置的 Email 列（P16）** | `src/components/admin/SystemAlerts.test.tsx`（**develop 已補 8 條，改為擴充**）＋ `SystemNotifications.test.tsx`（新檔）＋ `AdminSetup.test.tsx`（新檔） | 手機：告警訊息全文可讀、`context` 預設收合；標記已處理可點；**巡檢的 `#system-alerts`、`#announcements`、`#admin-setup` 三條 `known_overflow` 刪除**；`test:coverage` 四項門檻不降 |
+| 5 | 收尾：確認棘輪真的往少的方向走了 | `e2e/test_overflow_sweep.py`、`e2e/test_admin_mobile_layout.py` | **admin 相關的 8 條 `known_overflow` 全數刪除**、**3 條 xfail marker 全數刪除**，且 `cd e2e && pytest` 全綠——任何一條沒清掉就代表該階段沒做完；`npm run check:full` 全綠 |
 
 **階段 5 已經不是「補巡檢能力」了**（那是 M1 做掉的），而是**驗收棘輪歸零**。
 原規劃寫的 `post_nav` 掛鉤在合併 develop 時改用了他們的命名 `after_load`
@@ -244,7 +309,7 @@
 | 雙套版面 = 兩份真相 | 日後新增一個欄位只加到桌面表格，手機卡片悄悄缺資訊 | 手機卡片與桌面列**共用同一組 handler 與同一個 record 物件**，欄位差異靠測試釘住（每階段的驗證標準都要求手機版含關鍵欄位） |
 | `useMediaQuery` 相依 | 測試環境缺 `matchMedia` → 整檔炸掉 | `stubMediaQuery` 已是現成樣板（`WithdrawalManagement.test.tsx:24`），新測試檔一律在 `beforeEach` 掛上 |
 | 既有 975 行 admin 測試誤紅 | 改版把桌面行為也改掉了卻沒發現 | 桌面既有測試**一行都不准改**；要改代表改到了桌面行為，那就不是 RWD 而是改需求，退回人審 |
-| `checkbox` 觸控放大影響其他頁 | 桌面表單的 checkbox 變大、版面走樣 | 只加 `pointer-coarse:`（觸控裝置專屬），滑鼠裝置的 `size-4` 完全不變——與 `button.tsx:24-31` 同一手法 |
+| `checkbox` 觸控改動影響其他頁 | 5 個會員端頁面（`WithdrawalProcess`／`JoinReferralProgramDialog`／`CompleteProfile`／`CreateServiceProvider`／`EditServiceProvider`）的 checkbox 外觀走樣，而它們不在 U1–U6 任何一條故事裡 | **改熱區、不改可見尺寸**——`pointer-coarse:` 的透明 `before:` 偽元素撐出 44×44，可見方框維持 `size-4`。這 5 頁的**視覺零變化**，blast radius 歸零，因此不需為它們補回歸驗證（審查 F4／Q5 因此消解）。驗收量的是**實際可點區**（`layout_probe.viewport_fit`，真瀏覽器量盒子），不是 class 字串 |
 | 分頁兩列擠不下 | 中文標籤在 3 欄下仍溢出 | jsdom 測試只驗結構、量不出真實版面，但**不再是唯一防線**：`test_admin_mobile_layout.py` 在真瀏覽器量 TabsList 的列數、溢版巡檢量 `/admin` 是否畫到框外，兩者都會擋 CI。擠不下就退回 2 欄三列（仍優於現況的橫向捲動） |
 | 巡檢量出「假的乾淨」 | 一條路由被誤標成上鎖，實際上要守的東西從未進 DOM，退化了也沒人知道 | 已發生過三次（系統告警的測資太弱、管理員設置的 mock 少回 `userName`、公告管理給空清單），三條都已補測資並標為債務。上鎖前的兩層自檢寫在 `e2e/README.md`：**mock 形狀要與後端一致**、**清單不能是空的** |
 
