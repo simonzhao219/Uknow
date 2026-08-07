@@ -9,6 +9,37 @@
 
 ---
 
+## 2026-08-07｜漏網｜migration 版本號撞號，三層閘門全綠通過
+
+PR #246（自訂服務類別）rebase 到 develop 後，它的
+`20260807000002_custom_service_categories.sql` 與 #247 的
+`20260807000002_member_verify_logs_comment.sql` **共用同一個版本號**。
+
+漏網的完整性是重點——每一層都「正確地」沒有意見：
+
+| 層 | 為什麼沒攔到 |
+|---|---|
+| git | 兩個不同檔名、各自新增。rebase 乾乾淨淨，不標成衝突 |
+| CI `api-tests` | 本地 `supabase start` 從零重播，兩支都跑得到、都綠 |
+| biome / tsc / vitest / knip | 與檔名無關 |
+| journey 拋棄式分支 | 同樣是從零重播，同樣兩支都跑得到 |
+
+**失效只發生在正式站部署那一刻**：Supabase 以檔名的數字前綴當版本鍵寫進
+`supabase_migrations.schema_migrations`，重複版本會讓其中一支被當成已套用而
+靜默跳過——沒有錯誤訊息，只有一個永遠不會被建立的 view 與線上 404。
+
+這次是靠人工比對 `ls supabase/migrations/` 的輸出才發現的，而發現它的動作
+（rebase 後主動找「git 看不見的衝突」）不在任何 SOP 裡。**通則：兩個分支
+各自新增檔案、而該檔案的*名稱*本身帶語意（版本號、排序鍵、唯一 ID）時，
+git 的無衝突不代表沒有衝突。** 同類還有：`.github/workflows/` 的 job id、
+e2e 的 `NN_<domain>.feature` 里程碑序號。
+
+處置：新增 `scripts/check-migration-versions.py`（M1 版本號唯一、M2 檔名格式、
+M3 版本號遞增，10 條表格案例），接上 framework-check 軌第 10b 項。
+表格案例直接收錄這次的真實檔名組合當迴歸。
+
+---
+
 ## 2026-07-25｜存量債｜biome 導入時降為 warn 的規則
 
 導入 biome 時 error 歸零的手段是把「需人工判斷的存量問題」降級 warn：
