@@ -10,10 +10,12 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | 刪 admin_dashboard 4 條 + rewards_withdrawal 4 條(10.4s,→165 passed) | ✅ 綠 | 不適用(見下) | `0ed6621` |
-| 2 | 刪 payment_result 2 + payment_checkout 2 + home_listings 1(7.5s,→160 passed) | ⬜ 未開始 | — | |
-| 3 | 刪 renewal_backfill 2 + listing_management 2 + forgot_password 1(5.1s,→155 passed) | ⬜ 未開始 | — | |
-| 4 | 回填 ci.yml 檔頭量測(情境數 182→155、計費分 ~7→實測 5–7)與 friction-log | ⬜ 未開始 | — | |
+| 2 | 刪 payment_result 2 + payment_checkout 2 + home_listings 1(7.5s,→160 passed) | ✅ 綠 | 不適用 | `8f5314d` |
+| 3 | 刪 renewal_backfill 2 + listing_management 2 + forgot_password 1(5.1s,→155 passed) | ✅ 綠 | 不適用 | `c9e35ab` |
+| 4 | 回填 ci.yml 檔頭量測與 friction-log | 🛑 **停,待裁決** | — | |
 | 5 | 刪除本規劃檔,原則升級進 e2e/README.md 與 friction-log | ⬜ 未開始 | — | |
+
+(commit hash 為 rebase 後的值;分支已 rebase 到 `origin/develop` 的 `04abd26`。)
 
 > 階段表歷經兩次重排:初版 29 條 → 審查移出 14 條剩 15 → 人審 Q9 裁定
 > C 級(收窄後)算證據,放回 3 條 = **18 條**。
@@ -24,11 +26,20 @@
 
 ## 目前位置與下一步
 
-規劃、四視角審查、**人審裁決**都已完成(2026-08-07,裁決「照建議走」)。
-`review.md`「處置」節已勾完,**2 個 P0 皆已處置,無未處置 P0**。
+**階段 1-3 全綠並已 push(155 passed)。停在階段 4,等人裁決一個新發現的
+前提失效問題:本 repo 已轉 public,計費前提消失**(詳見 Blockers 第一條)。
 
-**下一步:由人親自打 `/tdd-implement e2e-scenario-dedup` 開工。**
-(那道鎖不能自動觸發——它就是「人審通過才實作」的保證。)
+下一步取決於裁決:
+- (a) 認定「回饋速度」本身仍值得 → 階段 4 改成回填**牆鐘與情境數**、
+  把「計費分」語彙整份撤掉,並修正 ci.yml 檔頭「本 repo 是私有 repo」
+  這句已過期的敘述(它與同檔 ci-ok 註解自相矛盾)
+- (b) 認定沒有計費壓力就不值得動 → 保留階段 1-3 的刪除(理由與計費無關),
+  階段 4 只修正 ci.yml 的自相矛盾,不寫任何省錢宣稱
+- (c) 認為 Q9 的判準放寬應隨前提一起收回 → revert 階段 3 的 3 條 C 級刪除
+  (`c9e35ab` 可單獨 revert),回到 15 條
+
+**禁止我自行決定**:這是規劃前提失效,照 `/tdd-implement` 的逃生口 2,
+停手記錄、求人工裁決,不得私改 plan。
 
 最終範圍:**刪 18 條 / 18 case / 22.98s / 12.2%**,173 → **155 passed**,
 CI 約 -28~-40s ≈ 0.6 計費分/run ≈ **360 分/月**。
@@ -43,6 +54,30 @@ Q1(接受實得 ≈360 分/月,另開固定開銷任務;明確記錄「要達標
 尚未動任何 `e2e/` 檔案。
 
 ## Blockers(逃生口紀錄)
+
+- 🛑 **逃生口 2:施工中發現規劃前提失效,停在階段 4 求裁決(禁止私改 plan)**
+
+  **本 repo 已於 2026-08-07 由 private 轉 public**(API 實測
+  `visibility: "public"`;develop 的 `04abd26` 也在 ci-ok 註解寫下
+  「2026-08-07 轉 public 才生效」)。**public repo 的 GitHub-hosted 標準
+  runner 免費且無用量上限**,因此:
+
+  - 本任務的授權來源與整份 §1 量化(「e2e-tests ~7 計費分」「月省 X 分」)
+    **前提已不成立**——沒有計費分鐘可省,金錢效益為 0。
+  - Q1 的整個權衡(接受 ≈360 分/月 vs 另開固定開銷任務 vs 重審 xdist)
+    失去意義。
+  - Q9 當初為了多拿 3.61s 而放寬硬約束 1,那個交換在免費前提下代價/收益
+    比完全改變,值得重新裁決。
+  - **階段 4 正是要把「計費分」數字寫進 ci.yml 檔頭**——照現行 plan 寫下去
+    等於把一個我已知為假的前提固化進授權來源。故停在這裡。
+
+  ⚠️ 注意 develop 上的 ci.yml **自相矛盾**:檔頭仍寫「本 repo 是私有 repo」,
+  而同檔 ci-ok 的新註解寫「2026-08-07 轉 public 才生效」。這本身就是一個
+  待修的漂移,且它是 CLAUDE.md「CI 費用紀律」整段的依據。
+
+  **已完成且不受影響的部分**:階段 1-3 的 18 條刪除全部基於「下層已驗過同
+  一行為」,那個理由與計費無關,155 passed 全綠,牆鐘仍有實得
+  (本機 188.5s → 160.1s,CI 推估 -28~-40s 的**回饋速度**改善)。
 
 - **全套件有一個已知的資源競爭 flake**:`listing_management.feature::A member
   creates a listing from a fully valid form` 在**開工前的基準跑**就紅了一次
