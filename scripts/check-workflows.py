@@ -121,6 +121,11 @@ BARE_WORDS = {
 # 這些 job id 進了 branch protection 的 required checks,改名要同步改保護規則
 FROZEN_JOB_IDS = {"ci-ok"}
 
+# 規則 8b:schedule 觸發的偵測(縮排開頭的 `schedule:` 行;註解行有 # 前綴
+# 不會命中)與費用註記的存在檢查
+SCHEDULE_TRIGGER = re.compile(r"^\s+schedule\s*:\s*$", re.M)
+COST_NOTE = re.compile(r"費用")
+
 
 def _jobs(text: str) -> list[tuple[str, str]]:
     """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
@@ -195,6 +200,19 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                     f"job {job_id!r} 有無名 step({first.strip()[:50]})——"
                     "UI 會顯示成 'Run actions/xxx',與真正的閘門混在一起難以判讀"
                 )
+
+    # 規則 8b:帶 schedule 的 workflow 必須有費用註記
+    #        私有 repo 每個 job 各自進位到整分鐘計費,排程 workflow 的成本
+    #        =頻率 × ceil(單次時長),與有沒有做事無關(11 秒也計 1 分)。
+    #        頻率是費用決策,決策要留下依據——檔內必須有「費用」註記
+    #        (頻率 × 單次計費分 ≈ 分/月,與選這個頻率的理由)。
+    #        2026-08-07 帳號分鐘數用罄事故的防線回填。
+    if SCHEDULE_TRIGGER.search(text) and not COST_NOTE.search(text):
+        found.append(
+            "workflow 帶 schedule 觸發但沒有費用註記——排程頻率是費用決策"
+            "(每 job 進位計費,頻率 × 1 分起跳),請在檔頭註解寫明"
+            "「費用:頻率 × 單次計費分 ≈ 分/月」與選這個頻率的理由。"
+        )
 
     # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
     #        漏一個 = 那一軌不擋合併(2026-07-25 PR #109 就是這樣被 auto-merge 掉的)
@@ -401,6 +419,37 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
             "    steps:\n      - name: a\n        run: b\n"
         ),
         "ci.yml",
+        0,
+    ),
+    (
+        "schedule 觸發但無費用註記 → 違規(2026-08-07 額度事故的防線)",
+        (
+            "name: Nightly Sweep\n"
+            "on:\n  schedule:\n    - cron: '0 18 * * *'\njobs:\n"
+            "  data-sweep:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "schedule 觸發且有費用註記 → 通過",
+        (
+            "name: Nightly Sweep\n"
+            "# 費用:每天 1 次 × 1 分 ≈ 30 分/月——秒級 job,頻率即成本。\n"
+            "on:\n  schedule:\n    - cron: '0 18 * * *'\njobs:\n"
+            "  data-sweep:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    (
+        "無 schedule 的 workflow 不要求費用註記 → 通過",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [develop]\njobs:\n"
+            "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
         0,
     ),
 ]

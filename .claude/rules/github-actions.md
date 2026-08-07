@@ -40,7 +40,7 @@ paths:
 
 ⚠️ **連字號陷阱**:job id 若其 `outputs` 被表達式引用,**避免連字號**——
 `needs.detect-changes.outputs.x` 會被 GitHub 的表達式剖析器讀成減法
-(`needs.detect` − `changes.outputs.x`)。本 repo 的 `changes` 因此保持單字;
+(`needs.detect` − `changes.outputs.x`)。本 repo 的 `guards` 因此保持單字;
 真的需要連字號時用括號式 `needs['detect-changes'].outputs.x`。
 
 **規則 5 — 每個 job 都要有 `timeout-minutes`**
@@ -59,13 +59,27 @@ step name 描述**意圖**不是工具:`Biome` ❌ → `前端風格與 lint（B
 紅了也不擋合併。2026-07-25 的 PR #109 就是這樣在 `api-tests` / `e2e-tests`
 還在跑的時候被 auto-merge 掉的。新增 job 一定要同步進 `ci-ok` 的 needs。
 
+**規則 8 — 費用視角(本 repo 是私有 repo,每個 job 各自進位計費)**
+GitHub-hosted runner 對私有 repo 按分鐘計費,且**每個 job 無條件進位到
+整分鐘**——10 秒的 job 也算 1 分鐘,所以「job 數量 × run 頻率」比「單 job
+時長」更貴(2026-08-07 帳號分鐘數用罄事故:全量 CI 一次 19-20 計費分,
+其中 42% 是 8 個秒級 job 的進位損耗)。
+
+- **8a(審查原則)**:秒級檢查**不開新 job**,併入既有 job 當 step、用
+  step 層 `if:` 控制條件——新開一個 job = 每次 run 至少 +1 分鐘 × run
+  頻率(ci.yml 高峰月是數百 run)。開新 job 的正當理由只有:需要不同的
+  runner 環境、需要與其他軌真並行的分鐘級工作、或需要獨立的 skip 語意。
+- **8b(機械把關)**:帶 `schedule:` 觸發的 workflow,檔內必須有
+  「費用」註記——寫明「頻率 × 單次計費分 ≈ 分/月」與選這個頻率的理由。
+  排程頻率是費用決策,決策要留下依據。
+
 ## 不可改名的識別字
 
 | 名稱 | 改了會怎樣 |
 |---|---|
 | workflow `name: CI` | `deploy-supabase.yml` 的 `workflow_run.workflows: [CI]` 靜默失效——部署再也不會觸發 |
 | job id `ci-ok` | branch protection 的 required check 找不到,PR 永遠 pending |
-| job id `changes` | 見上方連字號陷阱;且所有 `needs.changes.outputs.*` 要同步改 |
+| job id `guards` | 見上方連字號陷阱;且所有 `needs.guards.outputs.*` 要同步改 |
 
 ⚠️ **改名前務必用 GitHub UI(Settings → Branches → 該規則 → Edit)檢查
 branch protection 的 required status checks 清單**,不能只看 CLAUDE.md
@@ -90,4 +104,4 @@ be reported」永遠不綠——不是紅燈,是沒人送出那個名字的狀�
 1. 照上面的規則寫
 2. `python3 scripts/check-workflows.py` 必須綠
 3. 加了新 job → 進 `ci-ok` 的 needs(規則 7 會擋,但別等它擋)
-4. `actionlint` 驗不出規則 3/7 與 concurrency 地雷——那幾條只有這支檢查器管
+4. `actionlint` 驗不出規則 3/7/8b 與 concurrency 地雷——那幾條只有這支檢查器管
