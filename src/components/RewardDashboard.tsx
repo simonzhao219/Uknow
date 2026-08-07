@@ -174,6 +174,9 @@ export function RewardDashboard() {
         totalRewards={rewardsData?.totalEarned || 0}
       />
 
+      {/* 只在 rejected 渲染的警示卡——出事的警示不該沉底;平常回 null,不佔版面。 */}
+      <IdVerificationSection loadStatus={loadIdStatus} uploadPhotos={uploadIdPhotos} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RewardHistory refreshTrigger={historyRefreshTrigger} />
         <WithdrawalSection
@@ -188,9 +191,6 @@ export function RewardDashboard() {
           referralProgramJoined={user?.referralProgramJoined}
         />
       </div>
-
-      {/* 提領 CTA 之後——證件是提領的前置條件，但不該把主要行動往下擠（plan §4）。 */}
-      <IdVerificationSection loadStatus={loadIdStatus} uploadPhotos={uploadIdPhotos} />
     </div>
   );
 }
