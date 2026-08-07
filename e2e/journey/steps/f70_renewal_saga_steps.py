@@ -243,7 +243,11 @@ def active_checkout_redirects_to_dashboard(guarded_page, run_state, node):
 
 
 @given(parsers.parse('saga 將 "{node}" 推入剛過期'))
+@when(parsers.parse('saga 將 "{node}" 推入剛過期'))
 def saga_push_recently_expired(saga, supabase_admin, run_state, node):
+    # ch3/ch4 以 Given 用、ch6 在 When 之後以 And 用——pytest-bdd 的步驟
+    # 綁定分關鍵字,兩種都要註冊(run 31154089148:ch6 走到這步才炸
+    # StepDefinitionNotFound,--collect-only 抓不到這類缺口)。
     seed_time_machine.enter_recently_expired(supabase_admin, run_state.users[node].user_id)
 
 
