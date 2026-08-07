@@ -2,7 +2,7 @@ import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { CategoryBadge } from './common/CategoryBadge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -182,11 +182,13 @@ export function ServiceProviderManagement() {
 
                 {/* 內容 */}
                 <div className="flex-1 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold">{listing.name}</h3>
+                  <div className="flex items-start justify-between gap-3">
+                    {/* min-w-0 + truncate：長自訂類別與長名稱並列時，需要縮的是
+                        名稱本身，只在外層補 min-w-0 只是把擠壓換個位置發生。 */}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xl font-semibold truncate">{listing.name}</h3>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="default">{listing.category}</Badge>
+                        <CategoryBadge category={listing.category} variant="default" />
                       </div>
                     </div>
 

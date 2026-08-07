@@ -22,8 +22,13 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
       type="button"
       aria-pressed={selected}
       onClick={onToggle}
+      title={label}
       className={cn(
         'inline-flex min-h-10 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
+        // max-w-full：自訂服務類別上線後，chip 的文字長度不再由開發者決定
+        // （內建類別最長 6 字，自訂上限 10 字）。沒有上限時，長標籤會把
+        // flex-wrap 容器撐得比篩選面板還寬。
+        'max-w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         selected
           ? 'border-primary bg-primary text-primary-foreground'
@@ -33,7 +38,10 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
         className,
       )}
     >
-      {label}
+      {/* truncate 掛在內層 span：掛在按鈕上時，flex 佈局會讓
+          text-overflow 找不到作用點（按鈕自己是 inline-flex 容器，
+          省略號要由被截斷的那個文字盒負責）。 */}
+      <span className="truncate">{label}</span>
     </button>
   );
 }
