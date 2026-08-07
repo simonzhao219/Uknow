@@ -19,7 +19,7 @@ name: CI
 #   L2 unit        ~45s   vitest(+coverage) / deno unit（不需要 DB）
 #   L2 build       ~20s   vite build + bundle 預算
 #   L3 api-tests   ~3 分  deno DB 測試（本地 supabase）
-#   L3 e2e-tests   ~4 分  pytest-bdd + Playwright（全 mock），155 個測試
+#   L3 e2e-tests   ~4 分  pytest-bdd + Playwright（全 mock），156 個測試
 #   L3 journey-offline ~15s
 #   L4 journey     30-90 分  真後端全鏈路——只在 develop→main 晉升 PR 跑
 #   ci-ok          ~5s    匯總（branch protection 的唯一 required check）
@@ -399,7 +399,7 @@ jobs:
       # 資源競爭失敗（單獨跑、單檔跑都穩定通過）。這套件貼著時間懸崖，
       # 再加並發等於拿主閘門的可信度換 90 秒。
       # 速度從「刪掉在下層已經驗過的重複情境」拿，不從並發拿——2026-08-07
-      # 依此刪掉 18 個情境（173 → 155），每一條都在 vitest 元件測試或
+      # 依此刪掉 18 個情境（含 Outline 展開共 18 個 test case），每一條都在 vitest 元件測試或
       # api-tests 有指名的接手方；pytest step 實測 233s → 184s。
       # ⚠️ 那條資源競爭 flake 仍在（`listing_management` 的建立刊登情境
       # 曾在全量跑紅、單獨跑穩定綠）——全量紅了先單獨重跑一次再判斷。
