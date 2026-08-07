@@ -123,8 +123,9 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   origin/develop && git push --force-with-lease`),**不要按 GitHub 的
   Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
-  branch protection 的 required check 只有 `ci-ok` 一個(它 needs 全部
-  軌),新增 CI job 只要進它的 needs,不必去動保護規則。
+  required check 只有 `ci-ok` 一個(needs 全部軌),新增 job 只要進它的 needs。
+  來源是 ruleset(Settings → **Rules**,非 Branches)。⚠️ **前提是 repo 為
+  public**:ruleset 在 private repo 是付費功能,設了也不執行(見規則 7)。
 - 環境對應:develop 有自己的 persistent Supabase **branch**(不是獨立
   project——由 Supabase Branching 從正式專案長出來,有自己的 DB/金鑰/
   Secrets,但掛在正式專案底下),main 是正式站。兩者的 ref 都**commit 在
@@ -182,11 +183,10 @@ MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每�
 
 ## CI 費用紀律
 
-**私有 repo,每個 job 各自進位到整分鐘計費**:全量 CI 一次 ≈16 分、純文件
-push ≈2 分,成本與 push 次數線性相關(2026-08-07 分鐘數用罄停擺兩小時,見
-friction-log)。本地 `npm run check` 綠了才 push、修紅燈先本地重現一次 push
-修完、TDD 相位 commit 本地累積湊檢查點再推(紅燈 hash 是 commit 證據)。
-動 workflow 先讀 rules 的 github-actions.md 規則 8;雙週整併跑 `scripts/actions-usage.py`。
+⚠️ **2026-08-07 起 repo 為 public,標準 runner 不再計費**——原成本論證(私有
+repo 每 job 進位計費、08-07 分鐘數用罄停擺兩小時)已不成立,規則未鬆綁,改回
+private 即回復;細節與雙週盤點見 github-actions.md 規則 8。紀律照舊:本地
+`npm run check` 綠了才 push、紅燈先本地重現、TDD 相位 commit 累積湊檢查點。
 
 ## Compact instructions
 

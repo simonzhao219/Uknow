@@ -872,3 +872,49 @@ journey-offline 軌的 `--collect-only` 能證明「情境都收集得到」,但
 PaymentCheckout.tsx 內嵌 JSX 字面字串,無常數無測試,漂移要等 30-90
 分鐘的 journey dispatch 才被抓到。建議小票:抽具名常數+一則輕量
 vitest。通則:**要被 e2e 拿來斷言的文案,先抽常數讓 vitest 看得到**。
+
+## 2026-08-07｜假閘門｜文件宣稱的機械把關,要驗證它在「當前方案」下真的會被執行
+
+`CLAUDE.md` 與 `.claude/rules/github-actions.md` 都寫著「branch protection 的
+required check 只有 `ci-ok` 一個」,`ci.yml` 也為此設計了單一匯總 job。三份
+文件一致、UI 上規則也確實存在(ruleset `protect-main-develop`,建於
+2026-07-25 06:08,`enforcement: active`)——但整整 13 天完全沒有生效。
+
+原因是 **ruleset／branch protection 在 private repo 上是付費功能**。免費方案
+下規則可以建立、可以顯示 `active`,卻不會被執行,而且**沒有任何警告**:
+API 的 `GET /rulesets` 回 `Upgrade to GitHub Pro or make this repository
+public`,`GET /branches/develop` 回 `protected: false`,UI 上則只是「Merge
+按鈕是綠的」。
+
+期間三個案例,都是 CI 還在跑就合併成功:
+
+| PR | merged | 當下狀態 |
+|---|---|---|
+| #109 | 07-25 08:38:40 | `api-tests` 08:40:58、`e2e-tests` 08:42:25 才完成 |
+| #205 | 08-07 05:50:46 | `ci-ok` 05:51:01 才完成 |
+| #199 | 08-07 11:42:45 | `e2e-tests`／`api-tests` 皆 in_progress,`ci-ok` 尚未建立 |
+
+#109 當時被歸因為「required checks 清單漂移,`build` 一綠就滿足條件」,並據此
+寫進規則文件。那個歸因**是錯的**——清單裡有什麼根本不重要,規則整個沒有被
+詢問。錯誤歸因的代價是:它看起來像已經修好了(改成單一 `ci-ok` 匯總點),於是
+同一個缺陷又發生了兩次。2026-08-07 repo 改為 public 後閘門才真正開始擋人。
+
+**通則:文件宣稱「有機械把關」時,要驗證的不是「規則設了沒有」,而是「規則在
+當前的可見性／方案／權限下會不會被執行」。** 付費功能在免費方案上的典型失效
+模式是**靜默降級**而非報錯,所以「UI 上看得到」不構成證據。可驗證的問法是拿
+API 去問生效結果,而不是問設定值:
+
+```bash
+gh api repos/:owner/:repo/rules/branches/develop        # 生效中的規則
+gh api repos/:owner/:repo/branches/develop --jq .protected
+```
+
+**同類掃描:** 同一個「付費功能靜默失效」風險面還有 **GitHub Environments 的
+required reviewer**——`CLAUDE.md` 宣稱「正式站部署需人工核准:main 的部署綁
+`production` 環境」,而 environment protection rules 同樣是 private repo 的
+付費功能。轉 public 後應已生效,但**未經驗證**,待人到 Settings → Environments
+確認(`main` 收到 push = 正式站部署,這是不可逆的一步)。
+
+**連帶效果:** 轉 public 也讓「CI 費用紀律」與 `github-actions.md` 規則 8 的
+成本論證失去前提(標準 runner 對 public repo 免費)。兩處已標註前提變更、
+規則力度待裁決,未擅自鬆綁——8b 有 `check-workflows.py` 的表格自測綁著。
