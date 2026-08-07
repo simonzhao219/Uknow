@@ -149,6 +149,20 @@ def seed_unclaimed_king_credit(admin: SupabaseAdmin, user_id: str, month_key: st
     return rows[0]
 
 
+def set_default_referrer_code(admin: SupabaseAdmin, code: str) -> None:
+    """把分支的 reward_config.default_referrer_code 設為指定碼(冪等)。
+
+    分支只 replay schema,正式站在資料層設定的預設碼不會跟過來——saga
+    自備 P0 後用這支把它接上(人審 2026-08-07 裁決)。reward_config 是
+    單列表(id boolean primary key = true)。"""
+    updated = admin.rest_update(
+        "reward_config", {"id": "eq.true"}, {"default_referrer_code": code.lower()}
+    )
+    assert updated and (updated[0].get("default_referrer_code") or "").lower() == code.lower(), (
+        f"default_referrer_code 設定未生效:{updated}"
+    )
+
+
 def resolve_default_referrer_identity(admin: SupabaseAdmin) -> dict:
     """解析預設推薦人 P 的身分(user_id + 顯示名 + 碼)。
 
