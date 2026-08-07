@@ -12,8 +12,8 @@
 | 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | ✅ 綠(run 31147330315:`expr='orgbuild or timemachine' collected=10 ran=10 floor=1`,54 deselected,floor 未誤殺;run 本身紅是 60_ 既有情境失敗——fix/journey-scenario-failures 在修的那批,與窄選機制無關) | (無——CI 設定無測試落點) | af75999 |
 | 1 | 時光機四原語(純函式離線紅綠) | ✅ 綠 | e430c43 | 53978af |
 | 2 | saga cast+小型載入器+feature 第 1–2 章 | ✅ 綠(run 31149371380,ch1+ch2 全過;修了三個坑:admin 裸列 trigger、asyncio loop、多重登入 session) | 5edb1d4 | e23780f |
-| 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ✅ 綠(run 31151243388,ch1-4 全過) | 1cda371 | 242526d |
-| 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | 🟡 程式碼完成,等 dispatch 取證 | (本 commit) | |
+| 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ✅ 綠(run 31151243388,ch1-4 全過) | caba61f(rebase 前 1cda371) | 4a5a56a(rebase 前 242526d) |
+| 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ✅ 綠(run 31154748054,ch1-7 全過;迭代 5 輪:25e66b6 login 新簽名適配、2a2a456 提領前先加入推薦計畫、4fefa62 補 JoinReferralProgramDialog role="dialog"【產品 a11y 修復=計畫偏離,收尾審查需覆核】、ddcc804 「推入剛過期」@given/@when 雙註冊) | 40421b3 | ddcc804 |
 | 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ⬜ 未開始 | | |
 | 6 | 收尾:nightly 全綠+文件同步+命名/收集檢查 | ⬜ 未開始 | | |
 
@@ -22,14 +22,11 @@ journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本�
 
 ## 目前位置與下一步
 
-人審通過已開工。階段 0/2 程式碼完成、等窄選 dispatch 取證;階段 1 全綠。
-**GitHub Actions 平台故障中**(2026-08-07 01:48 起所有 run 3 秒零步驟
-failure、無 log,含從未紅過的 changes/linear-check——與我方改動無關,
-actionlint/check-workflows 本機全綠);已排自動恢復檢查,恢復後:
-(a) rerun 最新 head 的 ci 失敗 jobs;(b) dispatch `orgbuild or
-timemachine` 驗收階段 0;(c) dispatch `renewal_saga` 驗收階段 2;
-(d) 續作階段 3(第 3–4 章)。另:65eb33 的 concurrency group 改名
-(-v2)是故障期間的誤診產物,無功能影響,收尾時再評估去留。
+階段 0–4 全綠(ch1-7 在真後端 GUI 全過)。續作階段 5(第 8–10 章:
+credit/A8 雙發獎、A10-fresh、終章對帳),之後階段 6 收尾。
+注:965eb33 的 concurrency group 改名(-v2)是平台故障期間的誤診產物,
+無功能影響,收尾時再評估去留;4fefa62 動了產品碼(a11y),
+/review-implementation 時需特別覆核。
 
 ## Blockers(逃生口紀錄)
 
