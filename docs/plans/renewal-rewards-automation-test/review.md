@@ -216,4 +216,15 @@ dispatch 的 scope 搭配、input 型別)已回填 plan.md §2.4。
 
 ## 處置(人審後填寫)
 
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
+- [x] 人審完成,裁決:☑ 通過(2026-08-07,人:「按照你的建議開工」)
+
+開放問題裁決(全數依聚合者建議):
+- **#1**:重建時間軸放行,以 rules.md 驗算為準(例子是規則的核對工具,
+  不是規則本身)。
+- **#2a = (b)**:W1 隨遷斷**現況**,情境名與註解標記「另一包上線時反轉」。
+- **#2b/#2c**:留 TODO,隨另一包(upline-pairing-lines)的規劃補章節。
+- **#3/#4**:credit 與點數用**種**的(發放/累積路徑由 30_tasks 與
+  20_referral_rewards 覆蓋,saga 只驗下游連動)。
+- **#5**:納入平日 nightly(+10–15 分);保留 `renewal_saga` marker
+  降級選項(排除於平日、只跑週日全套與晉升 PR)。
+- **#6**:沿用本 session 分支 `claude/renewal-rewards-automation-test-jwjgwu`。
