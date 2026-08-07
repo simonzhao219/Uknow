@@ -76,6 +76,35 @@ repo 的可見性與方案:ruleset／branch protection 在 **private repo 上是
 |---|---|
 | 規則未生效(private + 免費方案) | 合併暢通無阻,PR 上看不到任何 required 標記 |
 | 清單漂移(舊 job id 殘留) | PR 永遠 pending,卡在「Waiting for status to be reported」 |
+| 跨 run 撞名(只發生在晉升 PR) | required check 顯示**綠**,但那個綠來自同 SHA 的 push run;PR 自己的重軌其實還在跑 |
+
+**第三種是 2026-08-07 PR #243 才浮出來的,而且每次晉升都會踩到。**
+晉升 PR 的 head SHA **必定等於 develop 的 head SHA**(晉升就是把 develop
+整條送上 main),所以同一個 commit 上一定有兩個 CI run:
+
+| run | journey-full | ci-ok |
+|---|---|---|
+| develop 的 push run | `skipped`(event 不是 pull_request) | 綠——因為 skipped 計為通過 |
+| 晉升 PR 的 pull_request run | 真的跑,30-90 分鐘 | 要等 journey 跑完才會有 |
+
+push run 先跑完,於是該 SHA 上先出現一個叫 `ci-ok` 的綠燈;branch protection
+看到 required check 已綠就放行。PR #243 就是這樣在
+`journey-full` / `api-tests` / `e2e-tests` 三軌皆 `in_progress` 時被合併的
+——**閘門有被詢問,但它回答的是另一個 run 的結果**。
+
+修法兩道,各自獨立、缺一不可(都由 `check-workflows.py` 規則 7b 機械把關):
+
+1. **條件式 job name**——`ci-ok` 只在 `pull_request` 事件時叫這個名字,
+   其餘事件叫 `ci-ok-push`。這讓「該 SHA 上叫 `ci-ok` 的 check」只可能來自
+   PR run;PR run 的還沒建立時,required check 是 pending,合併鈕是灰的。
+   ⚠️ job **id** 必須維持 `ci-ok`(ruleset 認的是它,見 `FROZEN_JOB_IDS`),
+   改的只是顯示名稱。
+2. **`base_ref == 'main'` 時斷言 `needs['journey-full'].result == 'success'`**
+   ——「skipped 計為通過」對日常 PR 是對的(純文件 PR 會 skip 重軌),但晉升
+   PR 的 journey-full 是上線前唯一的全鏈路閘門,skip 掉等於閘門不存在。
+
+一般化的教訓:**required check 的身分是「名字 + SHA」,不是「名字 + 這個 PR」。**
+任何會讓同一個 SHA 出現在兩種強度不同的 run 裡的流程,都要讓弱的那個換名字。
 
 **規則 8 — 軌道切分與排程頻率:依據要寫在檔案裡**
 

@@ -237,6 +237,33 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                 "ci-ok 是唯一的 required check,新增 job 必須同步進它的 needs。"
             )
 
+        # 規則 7b:晉升 PR 的閘門不得被同 SHA 的 push run 冒充
+        #        晉升 PR 的 head SHA 必定等於 develop 的 head SHA,所以同一個
+        #        commit 上會有兩個 run。push run 的 journey-full 因 event 不符
+        #        而 skipped、skipped 計為通過 → 它的 ci-ok 先綠,branch protection
+        #        看到 required check 已綠就放行(2026-08-07 PR #243 的事故形態:
+        #        合併當下 journey-full / api-tests / e2e-tests 三軌仍 in_progress)。
+        #        兩道防線各自獨立,缺一不可:
+        #          (a) 條件式 name → 該 SHA 上叫 ci-ok 的 check 只可能來自 PR run
+        #          (b) base=main 時斷言 journey-full == success → 不得以 skipped 滑過
+        #        兩條都只在「有 journey-full 這個 promotion-only job」時才適用
+        #        ——沒有它就沒有「push run 少跑一軌卻同樣綠」的落差。
+        if any(j == "journey-full" for j, _ in jobs):
+            if not re.search(
+                r"^\s+name\s*:.*github\.event_name\s*==\s*'pull_request'", ci_ok_block, re.M
+            ):
+                found.append(
+                    "ci-ok 缺條件式 name(非 pull_request 事件時要改名)——"
+                    "develop 的 push run 會在同一個 SHA 上先產出一個叫 ci-ok 的綠燈,"
+                    "晉升 PR 於是能在自己的 journey-full 還沒跑完時被合併(PR #243 的事故形態)。"
+                )
+            if not re.search(r"needs\[['\"]journey-full['\"]\]\.result", ci_ok_block):
+                found.append(
+                    "ci-ok 沒有斷言 journey-full 的結果——「skipped 計為通過」對日常 PR 是對的,"
+                    "但晉升 PR 的 journey-full 是上線前唯一的全鏈路閘門,skip 掉等於閘門不存在。"
+                    "請在 base_ref == 'main' 時要求 needs['journey-full'].result == 'success'。"
+                )
+
     return found
 
 
@@ -423,6 +450,31 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
             "  e2e-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
             "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - unit-tests\n      - e2e-tests\n"
             "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+    (
+        "有 journey-full 但 ci-ok 沒改名也沒斷言 → 兩條違規(PR #243 的事故形態)",
+        (
+            "name: CI\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "ci.yml",
+        2,
+    ),
+    (
+        "有 journey-full 且 ci-ok 條件式改名並斷言 → 通過",
+        (
+            "name: CI\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n"
+            "    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}\n"
+            "    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          echo \"${{ needs['journey-full'].result }}\"\n"
         ),
         "ci.yml",
         0,

@@ -491,6 +491,22 @@ jobs:
   # #199 都在 CI 未跑完時合併成功——不是清單漏了誰,是沒人問過閘門。
   # 詳見 .claude/rules/github-actions.md 規則 7。
   ci-ok:
+    # ⚠️ **只有 pull_request 事件才叫 ci-ok**——這個條件式名稱是閘門的一部分,
+    # 不是裝飾。晉升 PR 的 head SHA **必定等於 develop 的 head SHA**(晉升 PR
+    # 就是把 develop 整條送上 main),所以同一個 commit 上會有兩個 CI run:
+    #   1. develop 的 push run —— journey-full 因 event 不是 pull_request 而
+    #      skipped,而 skipped 計為通過 → ci-ok 綠
+    #   2. 晉升 PR 的 pull_request run —— journey-full 真的跑(30-90 分鐘)
+    # 兩者若都叫 ci-ok,push run 那個綠燈會**先**出現在該 SHA 上,branch
+    # protection 看到 required check 已綠就放行——晉升 PR 於是可以在自己的
+    # journey 還沒跑完時被合併。2026-08-07 的 PR #243 正是這樣合併掉的
+    # (合併當下 journey-full / api-tests / e2e-tests 三軌皆 in_progress)。
+    # 改名讓「該 SHA 上唯一叫 ci-ok 的 check」只可能來自 PR run:PR run 的
+    # ci-ok 尚未建立時,required check 是 pending,合併鈕就是灰的。
+    #
+    # job **id** 必須維持 ci-ok(ruleset 的 required check 認的是它,見
+    # check-workflows.py 的 FROZEN_JOB_IDS);這裡改的是顯示名稱。
+    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}
     needs:
       - guards
       - static-checks
@@ -522,5 +538,21 @@ jobs:
           done
           if [ "$failed" -eq 1 ]; then
             echo "::error::有軌未通過(failure/cancelled),不得合併"
+            exit 1
+          fi
+
+      # 上一步把 skipped 計為通過,那對日常 PR 是對的(純文件 PR 會 skip 重軌),
+      # 但**晉升 PR 的 journey-full 不准是 skipped**——它是上線前唯一的全鏈路
+      # 閘門,skip 掉等於這道閘門不存在。這裡是第二道防線:即使 journey-full
+      # 因為條件寫錯、被取消、或 needs 的 guards 出事而沒跑成 success,晉升
+      # 也應該擋下來,而不是靠「skipped 計為通過」滑過去。
+      - name: 晉升 PR 必須有 journey-full 的真綠燈
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          JOURNEY: ${{ needs['journey-full'].result }}
+        run: |
+          echo "journey-full 結果:$JOURNEY"
+          if [ "$JOURNEY" != "success" ]; then
+            echo "::error::晉升 PR 的 journey-full 必須是 success(目前:$JOURNEY)。全鏈路驗證是上線前唯一該擋的一刻,不得以 skipped 通過"
             exit 1
           fi
