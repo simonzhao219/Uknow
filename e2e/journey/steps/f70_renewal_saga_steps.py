@@ -10,15 +10,17 @@ reward_config.default_referrer_code(僅拋棄式分支的 seed 調整,人審
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 import yaml
-from playwright.sync_api import expect
+from playwright.sync_api import Page, expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from builders.login import login_admin, login_via_gui
 from builders.org_builder import _build_one
+from run_state import JourneyUser
 from tools import seed_time_machine, twid
 
 scenarios("70_renewal_saga.feature")
@@ -45,16 +47,31 @@ def _points_sum(admin, user_id: str) -> int:
 def _ensure_actor(cfg, admin, run_state, node,
                   referral_code=None, referrer_name=None):
     """演員首次登場時經 GUI 建置(註冊三步+付款);已建置(有推薦碼)
-    則跳過——與 org_builder 同一冪等原則,--lf 重跑不重建。"""
+    則跳過——與 org_builder 同一冪等原則,--lf 重跑不重建。
+
+    _build_one 必須丟 worker thread:pytest-playwright 的 sync API 讓
+    主執行緒帶著 asyncio loop,主執行緒再開 sync_playwright() 會炸
+    「Sync API inside asyncio loop」(run 31147957094 實測;10_org 的
+    ThreadPoolExecutor 是同一個理由)。"""
     user = run_state.users.get(node)
     if user and user.referral_code:
         return user
     admin.reset_check_email_rate_limit()
     if user is None:
         user = run_state.new_user(node, twid.generate_for_node(run_state.run_id, node))
-    _build_one(cfg, admin, user, referral_code, referrer_name)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(_build_one, cfg, admin, user, referral_code, referrer_name).result()
     run_state.save()
     return user
+
+
+def _fresh_gui_login(page: Page, user: JourneyUser, wait_for: str | None) -> None:
+    """清掉既有 session 再登入——saga 一個情境內會連續以 admin/演員多重
+    身分登入同一個 guarded_page,不清的話 /login 的「已登入自動導向」
+    會把第二次登入直接彈走。"""
+    page.goto("/")
+    page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
+    login_via_gui(page, user, wait_for=wait_for)
 
 
 @given("saga 演員名冊與預設推薦人 P0 已就緒")
@@ -94,6 +111,8 @@ def saga_purchase_with_code(saga, journey_config, supabase_admin, run_state, nod
 @then(parsers.parse('"{node}" 的上代在管理台會員詳情顯示為預設推薦人'))
 def admin_detail_shows_default_referrer(guarded_page, run_state, saga, node):
     member = run_state.users[node]
+    guarded_page.goto("/")
+    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
     login_admin(guarded_page, run_state.users["admin"])
     guarded_page.get_by_role("tab", name="會員管理").click()
     search = guarded_page.get_by_placeholder("搜尋姓名 / Email / 電話")
@@ -157,7 +176,7 @@ def task_card_shows_progress(guarded_page, supabase_admin, run_state, node, coun
     # 漂移,而不是讓字串斷言神祕失敗。
     threshold = int(supabase_admin.reward_config()["referral_king_monthly_threshold"])
     assert threshold == 8, f"推薦王門檻是 {threshold},與 feature 寫死的 8 不符"
-    login_via_gui(guarded_page, run_state.users[node])
+    _fresh_gui_login(guarded_page, run_state.users[node], "會員中心")
     guarded_page.goto("/tasks")
     expect(guarded_page.get_by_role("heading", name="任務中心")).to_be_visible(
         timeout=15_000
@@ -183,7 +202,7 @@ def p_delta_last_event(saga, supabase_admin, amount):
 
 @then(parsers.parse('"{node}" 於 active 期間開啟付款頁被導回儀表板並顯示訂閱中'))
 def active_checkout_redirects_to_dashboard(guarded_page, run_state, node):
-    login_via_gui(guarded_page, run_state.users[node])
+    _fresh_gui_login(guarded_page, run_state.users[node], "會員中心")
     guarded_page.goto("/payment/checkout")
     # active 的真實訊號:resolveCheckoutPageRedirect 靜默導回 /dashboard,
     # 付款頁不渲染任何訊息(第 2 輪審查 UIUX P1-1 核實)。
