@@ -309,8 +309,8 @@ def upline_unchanged(supabase_admin, run_state, node, referrer):
     )
 
 
-@then(parsers.parse('"{referrer}" 因 "{node}" 的補繳獲得續約獎勵合計 200P——即使 "{_dup}" 此刻已失效【DB】'))
-def backfill_renewal_reward_200(saga, supabase_admin, run_state, referrer, node, _dup):
+@then(parsers.parse('"{referrer}" 因 "{node}" 的補繳獲得續約獎勵合計 200P——失效上線照收【DB】'))
+def backfill_renewal_reward_200(saga, supabase_admin, run_state, referrer, node):
     before = saga["marks"]["u1_points_before_backfill"]
     after = saga["marks"]["u1_points_after_backfill"]
     assert after - before == 200, f"{referrer} 補繳續約獎增量 {after - before} != 200"
