@@ -26,16 +26,18 @@ def ensure_admin(admin: SupabaseAdmin, state: RunState) -> JourneyUser:
     # run 31147957094 實測)。profile 還得過 isProfileComplete
     # (name+phone+birthDate,registrationFlow.ts)——不完整不 setUser、
     # 被導去 complete-profile,AdminRoute 一樣進不去(run 31148505278)。
-    # 補一列完整 profile,與 create_confirmed_user 同屬測試基礎設施範疇。
-    rows = admin.rest_select("profiles", {"select": "id", "id": f"eq.{user.user_id}"})
-    if not rows:
-        admin.rest_insert("profiles", {
-            "id": user.user_id,
-            "name": user.name,
-            "phone": user.phone,
-            "birth_date": "1990-01-01",
-            "national_id": user.national_id,
-        })
+    # ⚠️ handle_new_user trigger 在 auth 建號時就自動建了**裸列**
+    # (name=''),「不存在才插入」永遠跳過(run 31148907886)——
+    # 必須一律 UPDATE 補齊;與 create_confirmed_user 同屬測試基礎設施。
+    fields = {
+        "name": user.name,
+        "phone": user.phone,
+        "birth_date": "1990-01-01",
+        "national_id": user.national_id,
+    }
+    updated = admin.rest_update("profiles", {"id": f"eq.{user.user_id}"}, fields)
+    if not updated:  # trigger 缺席的防禦路徑(理論上不會走到)
+        admin.rest_insert("profiles", {"id": user.user_id, **fields})
 
     token = admin.password_grant_token(user.email, user.password)
 
