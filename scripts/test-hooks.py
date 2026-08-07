@@ -362,12 +362,22 @@ def pre_commit_dryrun(
     harness_metrics: str | None = None,
 ) -> str:
     """跑 pre-commit 的 dry-run,回傳 DRYRUN: 決策行(空白分隔)。"""
+    # 鎖檔要**兩個方向都控制**:只做「要鎖時建立」的話,開發者真的處在紅燈期
+    # (鎖存在)時,所有 lock=False 的案例都會假紅——與下面 staged/deno/doc_diff
+    # 各自隔離的理由完全相同,當初漏了這一個。lock=False 時先把既有鎖移開,
+    # finally 一定放回去(移開而不是刪除:鎖是 session 狀態,弄丟等於靜默解鎖)。
     lock_path = ROOT / ".claude" / "tdd-lock"
+    stash_path = lock_path.with_name("tdd-lock.testhooks-stash")
     created = False
-    if lock and not lock_path.exists():
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path.touch()
-        created = True
+    stashed = False
+    if lock:
+        if not lock_path.exists():
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path.touch()
+            created = True
+    elif lock_path.exists():
+        lock_path.replace(stash_path)
+        stashed = True
     try:
         env = dict(os.environ, PRE_COMMIT_DRY_RUN="1")
         if fake_merge:
@@ -403,6 +413,8 @@ def pre_commit_dryrun(
     finally:
         if created:
             lock_path.unlink(missing_ok=True)
+        if stashed:
+            stash_path.replace(lock_path)
 
 
 def expect_in(label: str, needle: str, haystack: str) -> None:

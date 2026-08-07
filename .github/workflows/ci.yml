@@ -490,7 +490,18 @@ jobs:
   # 建於 2026-07-25、2026-08-07 轉 public 才生效;期間 PR #109 / #205 /
   # #199 都在 CI 未跑完時合併成功——不是清單漏了誰,是沒人問過閘門。
   # 詳見 .claude/rules/github-actions.md 規則 7。
+  #
+  # ⚠️ check-run 的**名稱**依事件區隔,這不是美化(規則 9)。required status
+  # check 的鍵是 (commit SHA, check-run 名稱),**不綁 workflow run**。晉升 PR
+  # 的 head SHA 就是 develop 的 tip,而那顆 SHA 早已被 push run 跑過一輪——
+  # 若兩個 run 的匯總點同名,push run 那顆(裡面 journey-full 必然 skipped、
+  # 而 skipped 算通過)就會在 PR 開啟前先蓋上綠章,PR run 自己的 ci-ok 又因
+  # needs 未完成而尚未建立 check run,於是保護規則從頭到尾看到的都是那顆廉價
+  # 綠章、沒有黃燈可擋。PR #236 就是這樣在 journey-full 還在跑時合併進 main 的。
+  # push run 改名成 ci-ok-push 後,晉升 PR 的 required check 會停在
+  # 「Waiting for status to be reported」直到自己的匯總點真的跑完。
   ci-ok:
+    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}
     needs:
       - guards
       - static-checks
@@ -511,6 +522,12 @@ jobs:
           # 永遠合不了。(linear/migration 已是 guards 內的 step,紅了就是
           # guards 紅,不經 skipped 語意。)
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          # 晉升 PR 的例外(規則 10):journey-full 是上線前唯一的真後端閘門,
+          # 對它套用「skipped 算通過」等於「沒跑也算過」。base=main 時單獨把
+          # 它拉出來要求 success。needs 的 job id 帶連字號,必須用索引語法。
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          JOURNEY_RESULT: ${{ needs['journey-full'].result }}
         run: |
           echo "各軌結果:$RESULTS"
           failed=0
@@ -523,4 +540,12 @@ jobs:
           if [ "$failed" -eq 1 ]; then
             echo "::error::有軌未通過(failure/cancelled),不得合併"
             exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
+            if [ "$JOURNEY_RESULT" != "success" ]; then
+              echo "::error::晉升 PR 的 journey-full 是 '$JOURNEY_RESULT'——上線前唯一的真後端閘門必須真的通過,skipped/cancelled 都不算"
+              exit 1
+            fi
+            echo "晉升 PR:journey-full 已確認 success"
           fi

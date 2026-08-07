@@ -1176,3 +1176,47 @@ console 的原話:
 **通則:前提失效時,先問「要求本身還成立嗎」再決定廢或改。**這次兩條要求都
 獨立於計費成立,廢掉會平白失去把關;而若只留規則不動依據,文件就會留著一段
 已知為假的論證——那正是 08-07 那次「三處引用只掃到兩處」的同型問題。
+
+## 2026-08-07｜假閘門(第三個根因)｜required check 的綠章會跨 workflow run 冒名頂替
+
+〈假閘門〉那則記了「CI 還在跑就合併成功」的兩次歸因:#109 的「清單漂移」
+(錯的)、以及「private repo 的 ruleset 靜默降級」(對的,08-07 轉 public 後
+一般 PR 的閘門確實開始生效)。**同一個症狀今天第三次發生,而且是第三個根因**
+——公開 repo、ruleset 正常運作,晉升 PR #236 照樣在 `journey-full` 還
+`in_progress` 時合併進 main(187 commits、14 個 migration 沒過全鏈路驗證)。
+
+根因:**required status check 的鍵是 (commit SHA, check-run 名稱),不綁
+workflow run**。晉升 PR 的 head SHA 就是 develop 的 tip,而 `ci.yml` 同時有
+`pull_request` 與 `push` 觸發——那顆 SHA 在 PR 開啟前 6 分鐘就已被 push run
+蓋上一顆同名的綠 `ci-ok`。該綠章廉價的原因是 `journey-full` 的條件是
+`event_name == 'pull_request' && base_ref == 'main'`,push 事件必然
+`skipped`,而 `ci-ok` 把 skipped 算通過。
+
+**串起來的第二個機制才是關鍵:GitHub 不為 `needs` 尚未完成的 job 建立
+check run。** 所以 PR run 自己的 `ci-ok` 當時根本不存在(實測該 run 只有 8 個
+job,沒有 ci-ok)。在保護規則的視角裡,「還沒跑完」不是 pending,而是「已經
+綠了(那顆舊的)」——**沒有黃燈可以擋人**。
+
+**通則(三次事故的共同上位原則):驗證閘門時,不能只問「該紅的時候會不會
+紅」,還要問「該擋的時候,那個綠是誰給的」。** 前兩次的診斷都停在「規則有沒有
+被詢問」,這次的教訓是規則被詢問了、答案也是綠的,但**回答問題的不是這次
+執行**。可驗證的問法:點開 PR 上那顆 required check,確認它的 run id 就是這個
+PR 的 run。
+
+**為什麼樣本這麼久才出現:** 只有晉升 PR 會踩到——一般 feature PR 的 head 是
+feature 分支,`push: branches: [main, develop]` 不涵蓋,沒有預先蓋好的綠章。
+晉升幾週一次,而且前幾次都在 ruleset 根本沒生效的期間,症狀被前一個根因蓋住。
+
+**修法**(規則 9 / 10,`check-workflows.py` 機械把關):push run 的匯總點改名
+`ci-ok-push`;`ci-ok` 在 `base_ref == 'main'` 時單獨要求 `journey-full` 為
+success。**不能改用「把 journey-full 列進 required checks」**——reusable
+workflow 的 check-run 名字會隨執行狀態變(真跑叫 `journey-full / journey-suite`、
+被 skip 叫 `journey-full`),兩個名字都修不了。
+
+**同類掃描順手找到的第二個洞:** `scripts/test-hooks.py` 的 `pre_commit_dryrun`
+對 `staged` / `deno` / `doc_diff` 都做了環境隔離(檔內註解還特別寫了理由:
+「行為測試才不會受此刻剛好暫存了什麼影響」),**唯獨漏了 tdd-lock 自己**——
+`lock=False` 只是「不建立」而非「確保沒有」。於是開發者真的處在紅燈期時,兩條
+「無鎖」案例假紅。**同一份檔案裡已經想清楚的隔離原則,沒有套用到它自己最
+特殊的那個參數上。** 已一併修(移開再放回,不刪——刪掉等於靜默解鎖)。
+

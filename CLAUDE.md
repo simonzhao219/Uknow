@@ -123,7 +123,7 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   origin/develop && git push --force-with-lease`),**不要按 GitHub 的
   Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
-  required check 只有 `ci-ok` 一個(needs 全部軌),新增 job 只要進它的 needs。
+  required check 只有 `ci-ok`(needs 全部軌);push run 那顆叫 `ci-ok-push`,見規則 9。
   來源是 ruleset(Settings → **Rules**,非 Branches)。⚠️ **前提是 repo 為
   public**:ruleset 在 private repo 是付費功能,設了也不執行(見規則 7)。
 - 環境對應:develop 有自己的 persistent Supabase **branch**(不是獨立
@@ -143,9 +143,9 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   在 Settings → Environments 設 required reviewer。核准前不會動到線上。
 - 晉升 SOP(develop→main):(a) develop 上 CI 綠;(b) 開晉升 PR
   (develop→main)——**journey 全套會自動在這個 PR 上跑**(30-90 分鐘,
-  真後端拋棄式分支),不再需要手動 workflow_dispatch;(c) 綠了以
-  merge commit 合併。**main 收到 push = 正式站部署**(migration 由
-  Supabase 原生整合套用),不可逆的東西都在這一步。
+  真後端拋棄式分支);(c) 綠了以 merge commit 合併——`journey-full` 沒
+  success 就是 `ci-ok` 紅(規則 10),不靠人記得等。**main 收到 push =
+  正式站部署**(migration 由 Supabase 原生整合套用),不可逆的都在這步。
   注:`linear-check` 在 base=main 時自動跳過(晉升 PR 帶的正是 develop
   上累積的 feature merge commit)。
 - Commit:Conventional Commits(`feat:` `fix:` `test:` `docs:` `refactor:`
