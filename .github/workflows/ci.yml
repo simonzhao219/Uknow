@@ -1,18 +1,28 @@
 name: CI
 
 # ============================================================================
-# 分層閘門：越便宜的檢查越早給訊號，所有軌並行跑（牆鐘 > runner 分鐘，
-# 公開 repo 的 runner 是免費且無限的，沒有省分鐘的必要）。
+# 分層閘門：越便宜的檢查越早給訊號，重的軌並行跑。
 #
-#   L1 static      ~45s   biome / tsc / knip / deno fmt+lint+check
-#   L2 unit        ~70s   vitest(+coverage) / deno unit（不需要 DB）
-#   L2 build       ~40s   vite build + bundle 預算
-#   L3 api-tests   ~2.5m  deno DB 測試（本地 supabase）
-#   L3 e2e-tests   ~2m    pytest-bdd + Playwright（全 mock，xdist 分片）
-#   L3 journey-offline ~20s
-#   L4 journey     ~30-90m  真後端全鏈路——只在 develop→main 晉升 PR 跑
+# ⚠️ 本 repo 是**私有** repo：GitHub-hosted runner 按分鐘計費，且每個 job
+# 各自無條件進位到整分鐘——10 秒的 job 也算 1 分鐘。所以「job 數量 × push
+# 頻率」比「單 job 時長」更貴：秒級檢查一律併入既有 job 當 step，新開
+# job 前先讀 .claude/rules/github-actions.md 規則 8。
+# （2026-08-07 之前這裡寫著「公開 repo 免費無限」——錯誤前提，當天帳號
+#   分鐘數用罄+spending limit 觸頂，所有 workflow 停擺兩小時。）
 #
-# 所有軌匯總到 ci-ok（branch protection 的唯一 required check）。
+#   費用與時長（計費分/次，2026-08 實測）：
+#   guards         ~1 分   路徑過濾＋框架健檢＋linear＋migration（秒級共乘）
+#   L1 static      ~1 分   biome / tsc / knip / deno fmt+lint+check
+#   L2 unit        ~2 分   vitest(+coverage) / deno unit（不需要 DB）
+#   L2 build       ~1 分   vite build + bundle 預算
+#   L3 api-tests   ~4 分   deno DB 測試（本地 supabase）
+#   L3 e2e-tests   ~7 分   pytest-bdd + Playwright（全 mock）
+#   L3 journey-offline ~1 分
+#   L4 journey     30-90 分  真後端全鏈路——只在 develop→main 晉升 PR 跑
+#   ci-ok          ~1 分   匯總（branch protection 的唯一 required check）
+#
+#   全量一次 ≈ 16 分、純文件 PR ≈ 2 分——成本與 push 次數線性相關，
+#   省錢的第一槓桿是「本地綠了才 push、湊批 push」（見 CLAUDE.md）。
 # ============================================================================
 on:
   pull_request:
@@ -27,7 +37,7 @@ concurrency:
 
 # ⚠️ 這裡刻意不設 workflow 層 permissions:它是**上限**而不是預設值,
 # 每個 job（含 uses: 呼叫的 reusable workflow）都不得超過它。設成
-# contents: read 會讓 changes 的 pull-requests: read 與 journey 的
+# contents: read 會讓 guards 的 pull-requests: read 與 journey 的
 # issues: write 變成越權,GitHub 在建圖階段就拒絕整個 workflow
 # （startup_failure,連 check run 都不會建立）。權限一律逐 job 宣告。
 
@@ -35,9 +45,17 @@ jobs:
   # 路徑過濾在 job 層做（不是 workflow 層）：required checks 需要 workflow
   # 每次都跑——workflow 層被 ignore 時 required check 永遠 pending、純文件
   # PR 會卡死無法合併；job 層 skip 則計為通過。
-  changes:
+  #
+  # guards 是四個秒級守衛（路徑過濾／框架健檢／linear／migration）的共乘
+  # job：以前拆成四個 job，每次 run 付 4 分鐘買不到 40 秒的運算（進位
+  # 損耗），合併後 1 分鐘。job id 刻意保持單字：outputs 被
+  # needs.guards.outputs.* 引用，連字號會被表達式剖析器讀成減法
+  # （見 .claude/rules/github-actions.md 的連字號陷阱）。
+  # 代價（已接受）：linear/migration 紅燈時，等 guards 的重軌不會啟動，
+  # 該次 push 只拿到守衛訊號——但守衛紅本來就該先修，而且不啟動＝不計費。
+  guards:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       pull-requests: read
       contents: read
@@ -66,15 +84,9 @@ jobs:
             backend:
               - 'supabase/**'
 
-  # 框架軌：驗證 CLAUDE.md / .claude/ / hooks 腳本自身的健康度。
-  # 秒級、免依賴、免 secrets，永遠執行——所以它可以無條件列入
-  # required checks，同時兜住主軌路徑過濾放掉的框架檔案 PR。
-  framework-check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: 取出程式碼
-        uses: actions/checkout@v4
+      # 框架步：驗證 CLAUDE.md / .claude/ / hooks 腳本自身的健康度。
+      # 秒級、免依賴、免 secrets，永遠執行——兜住主軌路徑過濾放掉的
+      # 框架檔案 PR。
       - name: 框架健康檢查
         run: bash scripts/framework-check.sh
       - name: Shell 腳本靜態檢查（shellcheck）
@@ -85,12 +97,86 @@ jobs:
             shellcheck -S warning "${files[@]}"
           fi
 
+      # 以下守衛需要真正的 PR head 與完整歷史：預設 checkout 的是
+      # refs/pull/N/merge（GitHub 合成的試合併結果，本身就是 merge
+      # commit），量 linear 歷史必須指名 head sha；fetch-depth: 0 才有
+      # base 分支可比對。重新 checkout 會覆蓋工作區——框架健檢已在上面
+      # 用試合併結果跑完，順序不可對調。
+      - name: 取出 PR head 與完整歷史（linear／migration 守衛用）
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # PR 分支必須用 rebase 更新，不得用 merge 更新。
+      # branch protection 的「Require branches to be up to date」只保證 head
+      # 含最新 base，不管你是怎麼含進去的；按 Update branch 預設塞的是
+      # merge commit。這條把「含進去的方式」也鎖成 rebase。GitHub 沒有
+      # 任何設定能強制 Update branch 用 rebase。
+      #
+      # ⚠️ base 是 main 時必須跳過：晉升 PR（develop→main）帶的正是
+      # develop 上累積的 feature merge commit（合併規矩就是 --no-ff），
+      # 這條若照跑，每一個晉升 PR 都會永久紅燈、晉升永遠合不進去。
+      - name: PR 分支不得含 merge commit
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          merges=$(git rev-list --merges "origin/$BASE_REF..HEAD")
+          if [ -n "$merges" ]; then
+            echo "::error::PR 分支含 merge commit,請改用 rebase 更新:"
+            echo "$merges" | while read -r sha; do
+              git --no-pager log -1 --format='  %h %s' "$sha"
+            done
+            echo "修法:git fetch origin $BASE_REF \\"
+            echo "     && git rebase origin/$BASE_REF \\"
+            echo "     && git push --force-with-lease"
+            exit 1
+          fi
+          echo "OK:相對 origin/$BASE_REF 為線性歷史"
+
+      # migration 是對正式資料庫的不可逆操作（main 合併後由 Supabase 原生
+      # 整合自動套用），而且**已套用過的檔案改內容不會重跑**——改舊檔等於
+      # 本機/CI 與正式站永久分歧且無聲。這條把它變成紅燈。
+      - name: 既有 migration 不得被修改或刪除
+        if: github.event_name == 'pull_request' && steps.filter.outputs.backend == 'true'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-status "origin/$BASE_REF...HEAD" -- supabase/migrations/ || true)
+          bad=$(echo "$changed" | grep -E '^(M|D|R)' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::既有 migration 被修改/刪除——已套用的 migration 不會重跑,正式站將與版本庫永久分歧"
+            echo "$bad"
+            echo "修法:另開一支新的 migration 做增量修正,不要改舊檔"
+            exit 1
+          fi
+          echo "OK:只有新增 migration"
+      # supabase_migrations.schema_migrations 以**數字版本**為主鍵（不是檔名）,
+      # 同號兩支檔案在字典序上看似有先後,實際上第二支一插入就 PK 衝突,
+      # 整批 migration 套用中斷（2026-08-02 PR #188 實測:duplicate key
+      # value violates unique constraint "schema_migrations_pkey"）。
+      - name: migration 版本號不得重複
+        if: github.event_name == 'pull_request' && steps.filter.outputs.backend == 'true'
+        run: |
+          set -euo pipefail
+          dups=$(ls supabase/migrations/ | grep -E '^[0-9]+_' | cut -d_ -f1 | sort | uniq -d || true)
+          if [ -n "$dups" ]; then
+            echo "::error::migration 版本號重複——schema_migrations 以數字版本為主鍵,第二支套用時直接 PK 衝突"
+            for v in $dups; do ls supabase/migrations/ | grep "^${v}_"; done
+            echo "修法:把其中一支改成未被占用的版本號(通常整支改名往後挪一號,連同其中的相依順序一起確認)"
+            exit 1
+          fi
+          echo "OK:版本號無重複"
+
   # ── L1：秒級靜態閘門 ────────────────────────────────────────────────
   # 前端與後端的靜態檢查合在同一 job：兩邊都是秒級，分開反而多付一次
   # runner 啟動與 checkout 的固定成本。
   static-checks:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -115,7 +201,7 @@ jobs:
 
       - name: 安裝 Deno
         uses: denoland/setup-deno@v2
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         with:
           deno-version: v2.x
       # deno.json 定義了 fmt/lint 規則卻從沒在 CI 執行過（只有 pre-commit
@@ -124,22 +210,22 @@ jobs:
       # check 檢查 api/*.ts 全部而非只有 index.ts：測試檔（5700+ 行）
       # 過去從不做型別檢查，型別錯誤只有跑到才會炸。
       - name: 後端格式檢查（deno fmt）
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task fmt:check
       - name: 後端 lint（deno lint）
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task lint
       - name: 後端型別檢查含測試檔（deno check）
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task check
 
   # ── L2：單元測試（不碰資料庫，秒級回饋）────────────────────────────
   unit-tests:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -175,7 +261,7 @@ jobs:
 
       - name: 安裝 Deno
         uses: denoland/setup-deno@v2
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         with:
           deno-version: v2.x
       # 純函式後端測試（crypto / payuni-config / hardening）——不需要
@@ -183,13 +269,13 @@ jobs:
       # 這三支剛好都是安全相關（憑證混用、CORS 繞道、內部密鑰），
       # 放在最快的軌道上最划算。
       - name: 後端純函式測試（不需資料庫）
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.guards.outputs.backend == 'true'
         working-directory: supabase/functions
         run: deno task test:unit
 
   build-bundle:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -211,8 +297,8 @@ jobs:
 
   # ── L3：整合測試 ────────────────────────────────────────────────────
   api-tests:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -249,8 +335,8 @@ jobs:
     # e2e/ 是 Python（pytest-bdd + Playwright）套件，網路全 mock，
     # 免 secrets，靠 npm run dev 驅動（不吃 build/ 產物）——所以刻意
     # 「不」needs: build，串行只會把牆鐘從 max(各 job) 拉成相加。
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -331,8 +417,8 @@ jobs:
     # journey 套件的離線防線：純函數單元測試（twid / orgchart /
     # payuni_crypto）＋情境收集健全性。不需要瀏覽器、不需要 secrets、
     # 不打任何網路——真正的 journey 執行在 journey.yml。
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    needs: guards
+    if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -363,7 +449,7 @@ jobs:
   # 與 nightly 共用同一份 reusable workflow，杜絕兩份定義漂移
   # （main / develop 兩個副本各自演化正是 2026-07 那次的成因）。
   journey-full:
-    needs: changes
+    needs: guards
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     # 呼叫端的權限是被呼叫 workflow 的**上限**——journey.yml 的 job 要
     # issues: write（失敗時開 triage issue），這裡沒給就會是越權而整個
@@ -377,90 +463,6 @@ jobs:
       payment_mode: sandbox
     secrets: inherit
 
-  # ── 護欄 ────────────────────────────────────────────────────────────
-  # PR 分支必須用 rebase 更新，不得用 merge 更新。
-  # branch protection 的「Require branches to be up to date」只保證 head 含
-  # 最新 base，不管你是怎麼含進去的；按 Update branch 預設塞的是 merge
-  # commit。這條把「含進去的方式」也鎖成 rebase：分支上出現任何 merge
-  # commit 就紅燈。GitHub 沒有任何設定能強制 Update branch 用 rebase。
-  #
-  # ⚠️ base 是 main 時必須跳過：晉升 PR（develop→main）帶的正是 develop
-  # 上累積的 feature merge commit（合併規矩就是 --no-ff），這條若照跑，
-  # 每一個晉升 PR 都會永久紅燈、ci-ok 跟著紅、晉升永遠合不進去。
-  linear-check:
-    if: github.event_name == 'pull_request' && github.base_ref != 'main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: 取出程式碼
-        uses: actions/checkout@v4
-        with:
-          # 預設會 checkout refs/pull/N/merge（GitHub 合成的試合併結果，
-          # 本身就是 merge commit）——必須指名 head sha 才量得到真正的
-          # PR 分支；fetch-depth: 0 才有 base 分支可以比對。
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: PR 分支不得含 merge commit
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          merges=$(git rev-list --merges "origin/$BASE_REF..HEAD")
-          if [ -n "$merges" ]; then
-            echo "::error::PR 分支含 merge commit,請改用 rebase 更新:"
-            echo "$merges" | while read -r sha; do
-              git --no-pager log -1 --format='  %h %s' "$sha"
-            done
-            echo "修法:git fetch origin $BASE_REF \\"
-            echo "     && git rebase origin/$BASE_REF \\"
-            echo "     && git push --force-with-lease"
-            exit 1
-          fi
-          echo "OK:相對 origin/$BASE_REF 為線性歷史"
-
-  # migration 是對正式資料庫的不可逆操作（main 合併後由 Supabase 原生
-  # 整合自動套用），而且**已套用過的檔案改內容不會重跑**——改舊檔等於
-  # 本機/CI 與正式站永久分歧且無聲。這條把它變成紅燈。
-  migration-guard:
-    needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: 取出程式碼
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: 既有 migration 不得被修改或刪除
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          changed=$(git diff --name-status "origin/$BASE_REF...HEAD" -- supabase/migrations/ || true)
-          bad=$(echo "$changed" | grep -E '^(M|D|R)' || true)
-          if [ -n "$bad" ]; then
-            echo "::error::既有 migration 被修改/刪除——已套用的 migration 不會重跑,正式站將與版本庫永久分歧"
-            echo "$bad"
-            echo "修法:另開一支新的 migration 做增量修正,不要改舊檔"
-            exit 1
-          fi
-          echo "OK:只有新增 migration"
-      # supabase_migrations.schema_migrations 以**數字版本**為主鍵（不是檔名）,
-      # 同號兩支檔案在字典序上看似有先後,實際上第二支一插入就 PK 衝突,
-      # 整批 migration 套用中斷（2026-08-02 PR #188 實測:duplicate key
-      # value violates unique constraint "schema_migrations_pkey"）。
-      - name: migration 版本號不得重複
-        run: |
-          set -euo pipefail
-          dups=$(ls supabase/migrations/ | grep -E '^[0-9]+_' | cut -d_ -f1 | sort | uniq -d || true)
-          if [ -n "$dups" ]; then
-            echo "::error::migration 版本號重複——schema_migrations 以數字版本為主鍵,第二支套用時直接 PK 衝突"
-            for v in $dups; do ls supabase/migrations/ | grep "^${v}_"; done
-            echo "修法:把其中一支改成未被占用的版本號(通常整支改名往後挪一號,連同其中的相依順序一起確認)"
-            exit 1
-          fi
-          echo "OK:版本號無重複"
-
   # 唯一該列入 branch protection required checks 的項目。
   # 逐條把 job 加進 required 清單會漂移——2026-07-25 的 PR #109 就是這樣
   # 在 api-tests / e2e-tests 還在跑的時候被 auto-merge 合掉的(那兩條不在
@@ -468,8 +470,7 @@ jobs:
   # needs,保護規則永遠不用動,也不可能再漏。
   ci-ok:
     needs:
-      - changes
-      - framework-check
+      - guards
       - static-checks
       - unit-tests
       - build-bundle
@@ -477,17 +478,16 @@ jobs:
       - e2e-tests
       - journey-offline
       - journey-full
-      - linear-check
-      - migration-guard
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: 匯總各軌結果
         env:
-          # skipped 計為通過:純文件 PR 會 skip 重的 job(見 changes 那段
-          # 註解)、linear-check 在 push 事件與晉升 PR 不跑、journey 只在
-          # 晉升 PR 跑。把 skipped 當失敗會讓這些情況永遠合不了。
+          # skipped 計為通過:純文件 PR 會 skip 重的 job(見 guards 那段
+          # 註解)、journey 只在晉升 PR 跑。把 skipped 當失敗會讓這些情況
+          # 永遠合不了。(linear/migration 已是 guards 內的 step,紅了就是
+          # guards 紅,不經 skipped 語意。)
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "各軌結果:$RESULTS"
