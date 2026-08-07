@@ -116,6 +116,38 @@ commit 用 `test:` 而非 `test(red):`——沒有真的紅燈 commit 可指,硬
   紅燈證據取 `pytest --collect-only -q`,行為真值等 CI。實作時不要為了製造本機
   紅燈而繞過 hook。
 
+### B4 —— 階段 2 的測試 fixture 自相矛盾【待裁決,逃生口 2】
+
+`test_unclassifiable_42501_raises_instead_of_guessing` 紅,但**實作是對的、
+我的測試案例寫錯**:我把「無法歸類」的例子寫成
+
+```python
+{"code": "42501", "message": "permission denied for something new"}
+```
+
+那句話含 `permission denied for`——那**就是** GRANT 形狀(不論物件是 table /
+function / schema / sequence),所以 `classify()` 正確回 `denied_by_grant`,
+`pytest.raises` 得到 DID NOT RAISE。測試名說「unclassifiable」,fixture 卻完全
+classifiable。真正無法歸類的 42501 是不帶 marker 的裸訊息,例如
+`{"code": "42501", "message": "insufficient privilege"}`。
+
+**不自行修改**:skill 明訂「測試錯了不是繞,是走逃生口 2」,而「實作是對的、
+只是 fixture 標錯」正是動機性推理最常見的說法。提案:那一行的 message 改成
+`"insufficient privilege"`(讓測試真正執行它宣稱的意圖,不是放寬斷言)。
+
+現況:**8 passed, 1 failed**。tdd-lock 仍在,階段 2 維持 🔴。
+
+### B5 —— `test_payuni_crypto.py` 在本容器無法收集(既有環境問題,非本分支造成)
+
+`pyo3_runtime.PanicException` on import。`cryptography 41.0.7` 已安裝且符合
+`requirements.txt` 的 `>=41.0`,所以幾乎確定是 Python 版本落差:本容器是
+**3.11.15**,而 `journey.yml` 與 `ci.yml` 的 journey-offline 軌都釘 **3.12**。
+其餘 20 條純函式測試全過,本 feature 的新模組不碰它。
+
+**不修**——環境產物,超出本 feature 範圍,CI 跑的是它建置對應的版本。
+記在這裡是避免被誤認為本分支引入。代價:`pytest tools/ -q` 在**本容器**無法
+全綠,可驗證的訊號是「本檔 + 其餘純函式模組」。
+
 ## 框架摩擦
 
 <!-- 被 hook 誤擋?規則互相矛盾?同一糾正重複兩次?
