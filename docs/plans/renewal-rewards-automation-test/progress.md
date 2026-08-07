@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | 🟡 已實作,等窄選 dispatch 取證 | (無——CI 設定無測試落點) | af75999 |
+| 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | ✅ 綠(run 31147330315:`expr='orgbuild or timemachine' collected=10 ran=10 floor=1`,54 deselected,floor 未誤殺;run 本身紅是 60_ 既有情境失敗——fix/journey-scenario-failures 在修的那批,與窄選機制無關) | (無——CI 設定無測試落點) | af75999 |
 | 1 | 時光機四原語(純函式離線紅綠) | ✅ 綠 | e430c43 | 53978af |
 | 2 | saga cast+小型載入器+feature 第 1–2 章 | 🟡 程式碼完成,等 dispatch 取證 | 5edb1d4 | 9fa5877(code) |
 | 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ⬜ 未開始 | | |
