@@ -17,11 +17,16 @@
 // video 解碼狀態 / getImageData）都被替身接管，rAF 也換成可手動推進的佇列，
 // 讓「第幾影格發生什麼」變成確定性的。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const jsQR = vi.hoisted(() => vi.fn());
 vi.mock('jsqr', () => ({ default: jsQR }));
+
+// 震動的樣式細節由 haptics 自己的測試釘住；這裡只驗「哪一種結果配哪一種回饋」。
+const hapticSuccess = vi.hoisted(() => vi.fn());
+const hapticAlert = vi.hoisted(() => vi.fn());
+vi.mock('../../utils/haptics', () => ({ hapticSuccess, hapticAlert }));
 
 const apiRequestJson = vi.hoisted(() => vi.fn());
 vi.mock('../../utils/apiClient', () => ({
@@ -35,6 +40,12 @@ const ACTIVE_MEMBER = {
   displayName: '四米特 阿里哈',
   status: 'active' as const,
   activeUntil: '2027-07-25T00:00:00.000Z',
+};
+
+const EXPIRED_MEMBER = {
+  displayName: '四米特 阿里哈',
+  status: 'expired' as const,
+  activeUntil: '2024-01-01T00:00:00.000Z',
 };
 
 /** 待執行的 animation frame callback；由 flushFrame() 手動推進。 */
@@ -99,6 +110,19 @@ async function flushFrame() {
   await act(async () => {
     for (const cb of pending) cb(0);
   });
+}
+
+/** 掛載並退回手動輸入模式（相機不可用時沒有解碼迴圈，等不到影格）。 */
+async function mountManualScanner() {
+  (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockRejectedValue(
+    new Error('permission denied'),
+  );
+  render(
+    <MemoryRouter>
+      <MemberVerifyScanner />
+    </MemoryRouter>,
+  );
+  await screen.findByLabelText('核身碼');
 }
 
 function clickScanNext() {
@@ -166,5 +190,80 @@ describe('MemberVerifyScanner', () => {
 
     await screen.findByTestId('verify-result');
     expect(apiRequestJson).toHaveBeenCalledTimes(2);
+  });
+
+  describe('結果呈現與回饋', () => {
+    // 手機上的原始症狀：掃到碼之後結果落在第一屏之外，店家要往下滑才看得到
+    // 「這個人會籍有沒有效」——而那是這頁存在的唯一理由。根因是取景框沒有
+    // 高度上限（w-full × 相機原生比例，390px 寬即 520~693px 高），把結果卡
+    // 擠出視窗。修法是讓結果**疊在取景框上**、不佔流排版高度。
+    //
+    // jsdom 不套用 Tailwind，量不出真實版面，所以「不需捲動」測不到。
+    // 這裡能釘的是它的結構前提：結果與繼續鈕都在取景容器**之內**。
+    // 一旦有人把它們搬回取景框外的流排版，症狀就會原樣回來。
+    it('核身結果與繼續鈕都渲染在取景框容器之內', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      const viewport = within(screen.getByTestId('scanner-viewport'));
+      expect(viewport.getByTestId('verify-result')).toBeTruthy();
+      expect(viewport.getByRole('button', { name: '繼續掃描下一位' })).toBeTruthy();
+    });
+
+    it('會籍有效時送出成功震動', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      expect(hapticSuccess).toHaveBeenCalledTimes(1);
+      expect(hapticAlert).not.toHaveBeenCalled();
+    });
+
+    it('會籍已過期時送出警示震動而非成功震動', async () => {
+      // 核身成功（API 有回）不等於這個人可以進場。兩者若震得一樣，
+      // 不看螢幕的店家會把「已過期」當成「有效」放行。
+      apiRequestJson.mockResolvedValue({ success: true, data: EXPIRED_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      expect(hapticAlert).toHaveBeenCalledTimes(1);
+      expect(hapticSuccess).not.toHaveBeenCalled();
+    });
+
+    it('核身碼無效導致核身失敗時送出警示震動', async () => {
+      apiRequestJson.mockRejectedValue(new Error('核身碼已過期，請會員重新出示'));
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByText('核身碼已過期，請會員重新出示');
+
+      expect(hapticAlert).toHaveBeenCalledTimes(1);
+      expect(hapticSuccess).not.toHaveBeenCalled();
+    });
+
+    it('相機不可用而退手動輸入時，結果與繼續鈕仍然顯示', async () => {
+      // 結果三態只有一份節點，兩種模式共用。手動輸入模式沒有取景框可依附，
+      // 若結果只活在 overlay 裡，這條路徑會靜默地什麼都不顯示。
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+
+      await mountManualScanner();
+      fireEvent.change(screen.getByLabelText('核身碼'), { target: { value: 'token-a' } });
+      fireEvent.click(screen.getByRole('button', { name: '核身' }));
+
+      await screen.findByTestId('verify-result');
+      expect(screen.queryByTestId('scanner-viewport')).toBeNull();
+      expect(screen.getByRole('button', { name: '繼續掃描下一位' })).toBeTruthy();
+    });
   });
 });

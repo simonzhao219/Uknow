@@ -4,10 +4,21 @@ import { Button } from './ui/button';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
+  /**
+   * 換一個值就重置錯誤狀態。App 餵的是目前路由路徑。
+   *
+   * 少了它，boundary 掛在 `<Routes>` 外層而 `hasError` 永不歸零＝**任何一頁
+   * 的一次 render 錯誤，會鎖死整個 SPA session 的內容區**：使用者換到完全
+   * 健康的頁面，看到的仍是後備畫面（2026-08-07 admin 事故的放大器——
+   * chunk 取不到只該讓 /admin 壞，卻讓整個站看起來都壞了）。
+   */
+  resetKey?: string;
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  /** 上一次 render 時的 resetKey，用來判斷「換頁了沒」。 */
+  resetKey?: string;
 }
 
 /**
@@ -24,8 +35,20 @@ interface ErrorBoundaryState {
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
+  static getDerivedStateFromError(): Pick<ErrorBoundaryState, 'hasError'> {
     return { hasError: true };
+  }
+
+  static getDerivedStateFromProps(
+    props: ErrorBoundaryProps,
+    state: ErrorBoundaryState,
+  ): ErrorBoundaryState | null {
+    // 只在 resetKey 真的變了才重置。同一頁重複 render 時維持後備畫面，
+    // 否則會不斷重試同一個必爆的子樹，變成 render 迴圈。
+    if (props.resetKey !== state.resetKey) {
+      return { hasError: false, resetKey: props.resetKey };
+    }
+    return null;
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {

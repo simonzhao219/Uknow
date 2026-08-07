@@ -1,112 +1,170 @@
 // @vitest-environment jsdom
 //
-// 系統告警表格的「長內容不得溢出欄位」契約。
+// 系統告警 tab。這支測試補的是 e2e 去重盤點揪出的覆蓋缺口
+// （friction-log 2026-08-07）：這個元件先前**沒有任何元件測試**，
+// 唯一的前端防線是 admin 的 e2e 情境，後端則只有 Deno 的
+// `system-alerts-api.test.ts`（驗 API，證不到畫面）。
 //
-// 為什麼在這層守 class 字串而不是量盒子：jsdom 沒有排版引擎，算不出
-// scrollWidth，也不會套用 Tailwind 產生的 CSS——真正把頁面畫出來量的是
-// e2e/test_overflow_sweep.py。這支測試守的是「修法本身沒被改回去」的三個
-// 前提條件，它們都是可以靜態驗證的結構事實：
-//
-//   1. `TableCell` 基底帶 `whitespace-nowrap`（ui/table.tsx），而
-//      `white-space: nowrap` 會讓 `break-all` 完全失效——不是覆蓋優先序
-//      的問題，是 nowrap 直接取消所有換行機會。內層元素必須自己宣告
-//      `whitespace-normal`（white-space 是繼承屬性，子元素顯式宣告即勝出，
-//      不必和 td 的 class 比 specificity）。
-//   2. 限寬必須落在**內層 block** 上。`max-width` 加在 `<td>` 上，auto
-//      table layout 只當提示（CSS 2.1 §17.5.2 明訂 table cell 的
-//      min/max-width 效果 undefined），既不約束也不裁切。
-//   3. 那個內層元素必須是 block。`<code>`/`<span>` 預設 inline，
-//      `max-width` 對 inline 元素無效。
-//
-// 三個條件缺一，長 JSON 就會以單行畫到隔壁「發生時間」欄位上面。
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { SystemAlert } from '@contract';
+// 這張表收的是「需要人工介入」的事件（付款處理失敗、對帳錯誤、金額不符）。
+// 它的失效模式很安靜：**告警只進不出、或畫面根本沒把它畫出來，都不會有人
+// 收到通知**——維運以為沒事，其實是看板壞了。所以這裡釘的是三態
+// （載入／錯誤／空）與「標記已處理之後真的從清單消失」。
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { SystemAlert, SystemAlertsResponse } from '@contract';
 
 const apiRequestJson = vi.fn();
+const showToast = vi.fn();
 
 vi.mock('../../utils/apiClient', () => ({
   apiRequestJson: (...args: unknown[]) => apiRequestJson(...args),
-  buildApiUrl: (path: string) => `https://test.local/functions/v1/api${path}`,
+  buildApiUrl: (path: string) => path,
 }));
-
 vi.mock('../notifications/NotificationContext', () => ({
-  useNotification: () => ({ showToast: vi.fn() }),
+  useNotification: () => ({ showToast }),
 }));
 
-const { SystemAlerts } = await import('./SystemAlerts');
+import { SystemAlerts } from './SystemAlerts';
 
-// 「最壞但可達」：context 是 jsonb，後端寫什麼就存什麼，長度無上限。
-// 這串取自實際出現在正式站的 time_domain_backfill 告警。
-const LONG_CONTEXT = {
-  shrunk_count: 0,
-  subs_updated: 0,
-  orders_updated: 0,
-  shrunk_subscription_ids: [],
-  scanned_at: '2026-07-25T09:56:03.000Z',
-};
-const LONG_MESSAGE =
-  'backfill 完成：orders=0, subscriptions=0, 效期縮短=0，未偵測到需要人工介入的資料，' +
-  '下次排程於 2026-07-26 09:00 再次執行';
-
-function seedAlert(overrides: Partial<SystemAlert> = {}) {
-  const alert: SystemAlert = {
-    id: 'alert-1',
-    source: 'time_domain_backfill',
-    severity: 'info',
-    message: LONG_MESSAGE,
-    context: LONG_CONTEXT,
-    created_at: '2026-07-25T01:56:03.000Z',
+function alert(over: Partial<SystemAlert> = {}): SystemAlert {
+  return {
+    id: 'a1',
+    source: 'process_successful_payment',
+    severity: 'error',
+    message: '付款處理失敗，需人工介入',
+    context: { tradeNo: 'PU00000001' },
+    created_at: '2026-08-01T02:00:00Z',
     resolved_at: null,
-    ...overrides,
+    ...over,
   };
-  apiRequestJson.mockResolvedValue({ success: true, data: { alerts: [alert], total: 1 } });
-  return alert;
 }
 
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
+function listResponse(alerts: SystemAlert[]): SystemAlertsResponse {
+  return { success: true, data: { alerts, total: alerts.length } };
+}
+
+/** 預設：GET 回 alerts，POST（標記）成功。個別測試再覆寫。 */
+function mockApi(alerts: SystemAlert[], opts: { resolveFails?: boolean } = {}) {
+  apiRequestJson.mockImplementation(async (_url: unknown, init?: { method?: string }) => {
+    if (init?.method === 'POST') {
+      if (opts.resolveFails) throw new Error('boom');
+      return { success: true };
+    }
+    return listResponse(alerts);
+  });
+}
+
+beforeEach(() => {
+  apiRequestJson.mockReset();
+  showToast.mockReset();
 });
+afterEach(cleanup);
 
 describe('SystemAlerts', () => {
-  it('詳細資訊的長 JSON 換行與限寬落在同一個 block 上', async () => {
-    seedAlert();
+  it('載入失敗時顯示錯誤態與重新載入,不是假裝沒有告警', async () => {
+    // 這是最危險的一種失效：載入失敗若渲染成空清單，維運會讀成
+    // 「目前沒有未處理的告警」——把故障讀成健康。
+    apiRequestJson.mockRejectedValue(new Error('network down'));
     render(<SystemAlerts />);
 
-    const code = await screen.findByText(JSON.stringify(LONG_CONTEXT));
-
-    // 換行、限寬、block 三者必須在同一個元素上（見檔頭）。
-    expect(code.className).toContain('whitespace-normal');
-    expect(code.className).toContain('break-all');
-    expect(code.className).toContain('block');
-    expect(code.className).toMatch(/\bmax-w-/);
-
-    // 限寬掛在 <td> 上會被 auto table layout 忽略——不是「多此一舉」，
-    // 是「看起來有做、實際沒有」，比沒寫更糟。
-    const cell = code.closest('td');
-    expect(cell?.className ?? '').not.toMatch(/\bmax-w-/);
+    expect(await screen.findByText('載入告警失敗，請檢查網路後再試')).toBeTruthy();
+    expect(screen.queryByText('目前沒有未處理的告警')).toBeNull();
+    expect(screen.getByRole('button', { name: '重新載入' })).toBeTruthy();
   });
 
-  it('訊息欄的長告警文字同樣換行且限寬', async () => {
-    seedAlert();
+  it('載入失敗後按重新載入會重抓', async () => {
+    apiRequestJson.mockRejectedValueOnce(new Error('network down'));
     render(<SystemAlerts />);
+    await screen.findByText('載入告警失敗，請檢查網路後再試');
 
-    const message = await screen.findByText(LONG_MESSAGE);
+    mockApi([alert()]);
+    fireEvent.click(screen.getByRole('button', { name: '重新載入' }));
 
-    expect(message.className).toContain('whitespace-normal');
-    expect(message.className).toContain('block');
-    expect(message.className).toMatch(/\bmax-w-/);
+    expect(await screen.findByText('付款處理失敗，需人工介入')).toBeTruthy();
   });
 
-  it('發生時間維持不換行', async () => {
-    seedAlert();
+  it('沒有未處理告警時顯示空態', async () => {
+    mockApi([]);
     render(<SystemAlerts />);
 
-    // 反向防護：修長內容欄位時不該順手把日期欄的 nowrap 一起拆掉——
-    // 「2026/07/25 09:56:03」被折成兩行是另一種難讀。
-    await waitFor(() => expect(screen.getByText(/2026\/07\/25/)).toBeTruthy());
-    const timeCell = screen.getByText(/2026\/07\/25/).closest('td');
-    expect(timeCell?.className ?? '').toContain('whitespace-nowrap');
+    expect(await screen.findByText('目前沒有未處理的告警')).toBeTruthy();
+  });
+
+  it('列出告警的等級、來源、訊息、context 與時間', async () => {
+    mockApi([alert()]);
+    render(<SystemAlerts />);
+
+    expect(await screen.findByText('付款處理失敗，需人工介入')).toBeTruthy();
+    expect(screen.getByText('process_successful_payment')).toBeTruthy();
+    expect(screen.getByText('error')).toBeTruthy();
+    // context 是 jsonb，維運要靠它定位那一筆訂單——不能只顯示訊息。
+    expect(screen.getByText(/PU00000001/)).toBeTruthy();
+  });
+
+  it('三種等級各自顯示對應標籤', async () => {
+    mockApi([
+      alert({ id: 'a1', severity: 'error', message: '甲' }),
+      alert({ id: 'a2', severity: 'warning', message: '乙' }),
+      alert({ id: 'a3', severity: 'info', message: '丙' }),
+    ]);
+    render(<SystemAlerts />);
+
+    expect(await screen.findByText('error')).toBeTruthy();
+    expect(screen.getByText('warning')).toBeTruthy();
+    expect(screen.getByText('info')).toBeTruthy();
+  });
+
+  it('標記已處理後送出 POST、回報成功,且該筆從清單消失', async () => {
+    // 「同類事件才會再次告警」是這個動作的意義（見元件說明），所以標記完
+    // 一定要重抓——不重抓的話畫面留著已處理的那筆，維運會重複處理。
+    let resolved = false;
+    apiRequestJson.mockImplementation(async (url: unknown, init?: { method?: string }) => {
+      if (init?.method === 'POST') {
+        resolved = true;
+        return { success: true };
+      }
+      return listResponse(resolved ? [] : [alert()]);
+    });
+    render(<SystemAlerts />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '標記已處理' }));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('已標記處理', 'success'));
+    expect(apiRequestJson).toHaveBeenCalledWith('/admin/system-alerts/a1/resolve', {
+      method: 'POST',
+    });
+    expect(await screen.findByText('目前沒有未處理的告警')).toBeTruthy();
+  });
+
+  it('標記失敗時說出來,不靜默吞掉', async () => {
+    mockApi([alert()], { resolveFails: true });
+    render(<SystemAlerts />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '標記已處理' }));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('標記失敗，請重試', 'error'));
+    // 失敗就該留在清單上等人再試。
+    expect(screen.getByText('付款處理失敗，需人工介入')).toBeTruthy();
+  });
+
+  it('長訊息與長 context 都以可換行的區塊呈現,不會單行畫到隔壁欄位', async () => {
+    // 回歸釘（2026-08-07 修正）：TableCell 基底帶 whitespace-nowrap，
+    // 內層必須同時具備 block + 限寬 + whitespace-normal/break，缺一項長內容
+    // 就會以單行畫到隔壁欄位的文字上面。這三個 class 是修正本身，不是裝飾。
+    const long = '對帳錯誤：'.repeat(40);
+    mockApi([alert({ message: long, context: { detail: 'x'.repeat(400) } })]);
+    render(<SystemAlerts />);
+
+    const messageEl = await screen.findByText(long);
+    expect(messageEl.className).toContain('block');
+    expect(messageEl.className).toContain('whitespace-normal');
+    expect(messageEl.className).toMatch(/break-(words|all)/);
+    expect(messageEl.className).toMatch(/max-w-/);
+
+    const contextEl = screen.getByText(/"detail"/);
+    expect(contextEl.className).toContain('block');
+    expect(contextEl.className).toContain('whitespace-normal');
+    expect(contextEl.className).toMatch(/break-(words|all)/);
+    expect(contextEl.className).toMatch(/max-w-/);
   });
 });

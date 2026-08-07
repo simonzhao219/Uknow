@@ -8,23 +8,12 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
-
-// 判斷是否為 Supabase「密碼已外洩 / 過弱」錯誤（與 AuthPage 一致）。
-// 客戶端政策擋不掉外洩密碼——那要靠 Supabase 的 pwned 名單，只有送出後才知道。
-function isWeakPasswordError(error: { code?: string; message?: string }) {
-  return (
-    error?.code === 'weak_password' ||
-    /known to be weak|easy to guess|pwned|leaked/i.test(error?.message ?? '')
-  );
-}
-
-// 判斷是否為「新密碼與舊密碼相同」的錯誤。
-function isSamePasswordError(error: { code?: string; message?: string }) {
-  return (
-    error?.code === 'same_password' ||
-    /should be different from the old password|different from the old/i.test(error?.message ?? '')
-  );
-}
+import {
+  SAME_PASSWORD_MESSAGE,
+  WEAK_PASSWORD_MESSAGE,
+  isSamePasswordError,
+  isWeakPasswordError,
+} from '../utils/authErrors';
 
 export function ResetPasswordPage() {
   const [password, setPassword] = useState('');
@@ -82,7 +71,7 @@ export function ResetPasswordPage() {
         // 外洩 / 過弱密碼：客戶端政策放行、但 Supabase 擋下——顯示在密碼欄位下方，
         // 而不是誤導性的通用「請稍後再試」（後者會讓人以為是系統問題而反覆重試）。
         if (isWeakPasswordError(error)) {
-          const message = '此密碼曾出現在資料外洩名單中，容易被猜到，請改用其他密碼。';
+          const message = WEAK_PASSWORD_MESSAGE;
           setErrors({ password: message });
           showToast(message, 'error');
           return;
@@ -90,7 +79,7 @@ export function ResetPasswordPage() {
 
         // 新密碼與舊密碼相同。
         if (isSamePasswordError(error)) {
-          const message = '新密碼不能與舊密碼相同，請改用其他密碼。';
+          const message = SAME_PASSWORD_MESSAGE;
           setErrors({ password: message });
           showToast(message, 'error');
           return;

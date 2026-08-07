@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
@@ -25,6 +32,7 @@ import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; /
 import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
+import { importWithRetry } from './utils/lazyWithRetry';
 import { isProfileComplete } from './utils/registrationFlow';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { dedupe } from './utils/requestDedup';
@@ -32,10 +40,13 @@ import { dedupe } from './utils/requestDedup';
 // Code splitting（見 appShell.test.ts 的架構契約）：
 // 訪客開首頁不需要下載管理後台、會員區與法務長文。admin/會員區/內容頁
 // 都改為路由層 lazy，Suspense fallback 用與各頁一致的置中 spinner。
+// importWithRetry：chunk 取不到時重試一次、再失敗就整頁重載一次自癒。
+// 沒有它的話，一次資產取不到就是「這個路由整個 session 進不去」——
+// 2026-08-07 正式站 admin 事故的形狀（見 lazyWithRetry.ts 的檔頭）。
 const lazyNamed = <T extends Record<string, any>, K extends keyof T>(
   loader: () => Promise<T>,
   name: K,
-) => lazy(() => loader().then((m) => ({ default: m[name] })));
+) => lazy(() => importWithRetry(loader).then((m) => ({ default: m[name] })));
 
 const MemberDashboard = lazyNamed(() => import('./components/MemberDashboard'), 'MemberDashboard');
 const ServiceProviderManagement = lazyNamed(
@@ -107,6 +118,7 @@ function AppContent() {
   const [user, setUser] = useState(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true); // ✅ P1: 全局 loading state
   const navigate = useNavigate();
+  const location = useLocation();
   const supabase = createClient();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   // 記錄目前已載入 profile 的使用者 id，用來分辨「真的登入」與分頁重新可見時
@@ -282,7 +294,9 @@ function AppContent() {
             <main
               className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}
             >
-              <ErrorBoundary>
+              {/* resetKey=路由路徑：一頁壞掉不該讓整個 session 的內容區
+                  都停在後備畫面（見 ErrorBoundary 的 resetKey 說明）。 */}
+              <ErrorBoundary resetKey={location.pathname}>
                 <Suspense fallback={<RouteLoader />}>
                   <Routes>
                     <Route path="/" element={<HomePage />} />

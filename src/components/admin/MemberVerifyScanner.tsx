@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import { hapticAlert, hapticSuccess } from '../../utils/haptics';
 import {
   type MemberVerifyStatus,
   memberVerifyStatusDisplay,
@@ -79,10 +80,19 @@ export function MemberVerifyScanner() {
       // 失敗的碼刻意不記——那時「再送一次」正是店家要的重試。
       verifiedTokenRef.current = token;
       setResult(res.data);
+      // 震動分級：核身成功（API 有回）不等於這個人可以放行。舉著手機對客人的碼、
+      // 眼睛看客人不看螢幕時，觸覺是唯一到得了的通道——兩種結果若震得一樣，
+      // 「已過期」會被當成「有效」放行。
+      if (memberVerifyStatusDisplay(res.data.status).tone === 'good') {
+        hapticSuccess();
+      } else {
+        hapticAlert();
+      }
     } catch (err: any) {
       // 「核身碼過期/無效」與「會籍過期」是不同語意——錯誤態獨立呈現，
       // 不能讓店家把碼過期誤讀成這個人會籍過期。
       setError(err?.message || '核身失敗，請重新掃描');
+      hapticAlert();
     } finally {
       setVerifying(false);
     }
@@ -151,6 +161,60 @@ export function MemberVerifyScanner() {
 
   const display = result ? memberVerifyStatusDisplay(result.status) : null;
 
+  const reset = () => {
+    setResult(null);
+    setError(null);
+    setManualToken('');
+    pausedRef.current = false; // 迴圈一直活著，這裡放行的是解碼
+  };
+
+  // 三態（載入／錯誤／結果）只有這一份節點，相機模式與手動輸入模式共用。
+  // 進雙套分支的話，「手機看得到、手動輸入模式看不到」這種不對稱只會在
+  // 相機壞掉的現場才被發現——而那正是最不能再出事的時候。
+  //
+  // aria-live 的容器必須恆存於 DOM（空時渲染空 div），否則後續變化不會被播報。
+  const statusRegion = (
+    <div aria-live="polite">
+      {verifying ? (
+        <div className="flex items-center gap-2 rounded-lg bg-background p-3 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          核身中…
+        </div>
+      ) : error ? (
+        <div className="flex items-center gap-3 rounded-lg border-2 border-orange-500 bg-orange-50 p-4 text-orange-900">
+          <AlertTriangle className="h-6 w-6 shrink-0" aria-hidden />
+          <div className="min-w-0">
+            <p className="font-semibold">無法核身</p>
+            <p className="text-sm">{error}</p>
+          </div>
+        </div>
+      ) : result && display ? (
+        <div
+          className={`flex items-center gap-3 rounded-lg border-2 p-4 ${TONE_CLASS[display.tone]}`}
+          data-testid="verify-result"
+        >
+          <ToneIcon tone={display.tone} />
+          <div className="min-w-0">
+            <p className="truncate text-lg font-bold">{result.displayName}</p>
+            <p className="text-sm font-medium">{display.label}</p>
+            {result.activeUntil ? (
+              <p className="text-xs opacity-80">
+                效期至 {new Date(result.activeUntil).toLocaleDateString('zh-TW')}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const scanNextButton =
+    result || error ? (
+      <Button variant="outline" className="w-full bg-background" onClick={reset}>
+        繼續掃描下一位
+      </Button>
+    ) : null;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-4">
@@ -165,7 +229,11 @@ export function MemberVerifyScanner() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold">掃碼核身</h1>
-          <p className="text-sm text-muted-foreground">掃描會員出示的核身碼，確認身分與會籍</p>
+          {/* 手機隱藏副標：這頁的垂直空間全部要留給取景框與結果，而 CardHeader
+              的「對準會員的核身 QR」已經把同一件事說完了。 */}
+          <p className="hidden text-sm text-muted-foreground sm:block">
+            掃描會員出示的核身碼，確認身分與會籍
+          </p>
         </div>
       </div>
 
@@ -178,9 +246,57 @@ export function MemberVerifyScanner() {
         </CardHeader>
         <CardContent className="space-y-4">
           {!cameraFailed ? (
-            <video ref={videoRef} className="w-full rounded-lg bg-black" muted playsInline>
-              <track kind="captions" />
-            </video>
+            /* 取景框與結果的關係，是這頁在手機上唯一真正的版面問題。
+             *
+             * 原症狀：video 只有 `w-full`，高度＝螢幕寬 × 相機串流原生比例
+             * （手機直向多半 3:4 或 9:16，390px 寬即 520~693px 高）。在它之前
+             * Navbar(64)＋公告橫幅(40)＋main py-6(24)＋頁首(76)＋CardHeader 等
+             * 已吃掉約 288px，結果卡必然落在第一屏之外——店家得往下滑才看得到
+             * 「這個人會籍有沒有效」，而那是這頁存在的唯一理由。
+             *
+             * 只要結果卡與取景框搶同一份垂直高度就無解（算下來取景框只剩約
+             * 200px 才塞得進第一屏，那太小、對不準）。所以結果**疊在取景框上**、
+             * 不佔流排版高度。遮住取景框下半部是可接受的，而且這正是本作法成立
+             * 的關鍵：結果顯示期間 pausedRef.current === true，解碼是停的，
+             * 此刻取景框本來就不需要被看見；按「繼續掃描下一位」後它就恢復完整。
+             *
+             * dvh 而非 vh：行動瀏覽器網址列收合時 vh 不更新（同 LegalDialog）。
+             * object-cover 而非 contain：取景區視覺尺寸較大、好對準。**CSS 裁切
+             * 不影響解碼範圍**——canvas 畫的是完整影格，所以掃描範圍比看到的更大，
+             * 是安全的方向（不會出現「明明對準了卻掃不到」）。
+             *
+             * min-h 與「不加 overflow-hidden」是同一件事的兩道防線：疊上去的結果
+             * 面板約 168px（結果卡＋繼續鈕＋內距），視窗很矮時 45dvh 會小於它。
+             * min-h-[16rem] 讓這件事實際上不會發生；真發生時面板寧可溢出到取景框
+             * 下方（頁面多捲一點），也不要被 overflow-hidden 裁掉——看不到結果
+             * 正是這次要修的症狀本身。圓角因此掛在 video 上而非外層。
+             */
+            <div className="relative" data-testid="scanner-viewport">
+              <video
+                ref={videoRef}
+                className="block aspect-[4/3] max-h-[45dvh] min-h-[16rem] w-full rounded-lg bg-black object-cover"
+                muted
+                playsInline
+              >
+                <track kind="captions" />
+              </video>
+
+              {/* 取景輔助：只畫四角、不畫實框。實框會被讀成「只有框內有效」，
+                  與上面那句「解碼吃的是完整影格」剛好相反。 */}
+              <div className="pointer-events-none absolute inset-0" aria-hidden>
+                <div className="absolute left-4 top-4 h-8 w-8 rounded-tl-lg border-l-4 border-t-4 border-white/60" />
+                <div className="absolute right-4 top-4 h-8 w-8 rounded-tr-lg border-r-4 border-t-4 border-white/60" />
+                <div className="absolute bottom-4 left-4 h-8 w-8 rounded-bl-lg border-b-4 border-l-4 border-white/60" />
+                <div className="absolute bottom-4 right-4 h-8 w-8 rounded-br-lg border-b-4 border-r-4 border-white/60" />
+              </div>
+
+              {/* 釘在取景框內而非視窗底部：手機底部已被 BottomNav 佔用
+                  （App.tsx 的 main 有 pb-24），視窗級 fixed 會疊到導覽列上。 */}
+              <div className="absolute inset-x-0 bottom-0 space-y-2 p-3">
+                {statusRegion}
+                {scanNextButton}
+              </div>
+            </div>
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
@@ -200,56 +316,12 @@ export function MemberVerifyScanner() {
                   核身
                 </Button>
               </div>
+
+              {/* 手動輸入沒有取景框可依附，三態走流排版——這裡沒有高度問題
+                  （輸入列本來就矮），節點與相機模式是同一份。 */}
+              {statusRegion}
+              {scanNextButton}
             </div>
-          )}
-
-          {/* 結果／錯誤：aria-live 讓非主動觸發的變化也會被讀出 */}
-          <div aria-live="polite" className="min-h-[4rem]">
-            {verifying ? (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                核身中…
-              </div>
-            ) : error ? (
-              <div className="flex items-center gap-3 rounded-lg border-2 border-orange-500 bg-orange-50 p-4 text-orange-900">
-                <AlertTriangle className="h-6 w-6 shrink-0" aria-hidden />
-                <div>
-                  <p className="font-semibold">無法核身</p>
-                  <p className="text-sm">{error}</p>
-                </div>
-              </div>
-            ) : result && display ? (
-              <div
-                className={`flex items-center gap-3 rounded-lg border-2 p-4 ${TONE_CLASS[display.tone]}`}
-                data-testid="verify-result"
-              >
-                <ToneIcon tone={display.tone} />
-                <div className="min-w-0">
-                  <p className="truncate text-lg font-bold">{result.displayName}</p>
-                  <p className="text-sm font-medium">{display.label}</p>
-                  {result.activeUntil ? (
-                    <p className="text-xs opacity-80">
-                      效期至 {new Date(result.activeUntil).toLocaleDateString('zh-TW')}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          {(result || error) && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setResult(null);
-                setError(null);
-                setManualToken('');
-                pausedRef.current = false; // 迴圈一直活著，這裡放行的是解碼
-              }}
-            >
-              繼續掃描下一位
-            </Button>
           )}
         </CardContent>
       </Card>

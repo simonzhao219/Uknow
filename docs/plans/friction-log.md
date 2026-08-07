@@ -1109,3 +1109,45 @@ pre-commit 這一個進得了 git 的落點)。發現後補跑 `npm run check` �
 (`git commit -F <file>`、改用 Edit 工具寫檔)。**建議:守衛對 `-m` / `-F`
 之後的內容、以及 heredoc 內文,應排除在關鍵字比對之外**——否則「記錄違規」
 本身會被當成違規,而那正好會勸退寫 friction-log 的人。
+
+## 2026-08-07｜漏網｜正式站 admin 進不去:部署缺檔 × SPA 後備把 404 變成 HTML
+
+正式站 `/admin` 整頁進不去,畫面停在 ErrorBoundary 的「頁面發生錯誤」。
+console 的原話:
+
+    Failed to load module script: Expected a JavaScript-or-Wasm module script
+    but the server responded with a MIME type of "text/html"
+    TypeError: Failed to fetch dynamically imported module:
+      https://uknow.com.tw/assets/AdminDashboard-LhNqAPR5.js
+
+根因**不在程式碼**:那次 Cloudflare Pages 部署少上傳了三個 chunk
+(`textarea-*` / `stat-card-grid-*` / `trash-2-*`)。用同一個 commit 在本機
+`npm run build`,這三個檔案都在,且 hash 與瀏覽器要的完全一致——所以是
+「建置正確、上傳不完整」。`_redirects` 的 `/* /index.html 200` 再把
+「檔案不存在」翻譯成「200 + text/html」,module loader 收到 HTML 直接拒絕。
+
+**診斷上最有用的一步是 Edge Function log**:24 小時內
+`/admin/withdrawals/summary`(Navbar 打的,在主 chunk)一路 200,但
+`/admin/withdrawals?limit=...`(後台頁自己打的,在 lazy chunk)**一次都沒有
+出現**。「入口有打、頁面自己的請求沒打」= 頁面在第一次 render 之前就死了,
+一步就把嫌疑從資料形狀縮到 chunk 載入。這個「比對兩支 API 誰有出現」的手法
+值得常態化。
+
+三個機械把關的缺口,前兩個本次已補:
+
+1. **前端把一次資產取不到變成死路**——`React.lazy` 的 promise 一旦 reject
+   就永久 reject。已補 `importWithRetry`(重試一次 → 整頁重載一次自癒,
+   sessionStorage 上鎖確保最多一次)。
+2. **一頁的錯誤鎖死整個 session**——ErrorBoundary 掛在 `<Routes>` 外層而
+   `hasError` 永不歸零,於是任何一頁炸掉之後,換到健康的頁面看到的仍是
+   後備畫面。已補 `resetKey={location.pathname}`。這條與本次事故無關卻同樣
+   致命:它把「/admin 壞了」放大成「整個站看起來都壞了」。
+3. **沒有任何閘門驗證「部署上去的資產是完整的」**——這類缺檔測試抓不到,
+   CI 也抓不到,只有部署後對線上實測才抓得到。建議補一支部署後 smoke:
+   抓線上 index.html,把它引用的每個 `/assets/*` 都 HEAD 一次,非 200 就紅。
+   (deploy-supabase.yml 已有 `/api/health` 比對 sha 的前例,同一個形狀。)
+
+順帶:`public/_headers` 原本不存在,index.html 沒有 no-cache——即使部署修好,
+瀏覽器手上的舊 index.html 仍可能指向已消失的 chunk,「重新整理」也救不回來。
+已補。另外把 `/assets/*` 的缺檔改成誠實回 404(`public/404.html`),避免
+瀏覽器把一份 HTML 快取在 `.js` 的網址底下、修好之後還繼續壞。
