@@ -24,6 +24,7 @@ import type { IdPhotosResponse } from '@contract';
 import { useNotification } from '../notifications/NotificationContext';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
+import { useImeComposition } from '../../hooks/useImeComposition';
 import {
   WITHDRAWAL_FEE,
   DAILY_WITHDRAWAL_LIMIT,
@@ -75,6 +76,32 @@ export function WithdrawalProcess({
 
   // ✅ 身分證驗證狀態（僅需追蹤是否已驗證成功）
   const [isIdVerified, setIsIdVerified] = useState(false);
+
+  // 身分證與銀行帳號兩個欄位都會改寫/拒收使用者打的字,在 IME 組字期間這麼做
+  // 會毀掉組字狀態(iOS Safari 尤其嚴重)。改寫延後到組字結束,組字期間原樣
+  // 收下——不收的話 React 會拿舊值寫回 DOM,那是更糟的路徑。
+  // 見 docs/plans/friction-log.md 的 2026-08-07 條。
+  const idNumberImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: (raw) => setPersonalData((prev) => ({ ...prev, idNumber: raw })),
+    onCommit: (raw) => setPersonalData((prev) => ({ ...prev, idNumber: raw.toUpperCase() })),
+  });
+
+  // 銀行帳號的「只收數字與連字號」是**拒收**:不符就整個丟掉。刻意保留這個
+  // 語意(不改成逐字元過濾),只把它移到組字結束後執行——那時已經沒有組字
+  // 狀態可以毀。組字期間一律原樣收下。
+  const commitBankAccount = (raw: string) => {
+    if (raw !== '' && !/^[\d-]+$/.test(raw)) return;
+    setPersonalData((prev) => ({ ...prev, bankAccount: raw }));
+    setErrors((prev) => {
+      if (!prev.bankAccount) return prev;
+      const { bankAccount: _removed, ...rest } = prev;
+      return rest;
+    });
+  };
+  const bankAccountImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: (raw) => setPersonalData((prev) => ({ ...prev, bankAccount: raw })),
+    onCommit: commitBankAccount,
+  });
 
   // ✅ 已存儲的身分證照片
   const [existingPhotos, setExistingPhotos] = useState<Pick<IdPhotosData, 'frontUrl' | 'backUrl'>>({
@@ -643,9 +670,7 @@ export function WithdrawalProcess({
                 <Input
                   id="idNumber"
                   value={personalData.idNumber}
-                  onChange={(e) =>
-                    setPersonalData({ ...personalData, idNumber: e.target.value.toUpperCase() })
-                  }
+                  {...idNumberImeProps}
                   placeholder="A123456789"
                   maxLength={10}
                   className={getInputErrorClass(!!errors.idNumber)}
@@ -699,17 +724,7 @@ export function WithdrawalProcess({
               <Input
                 id="bankAccount"
                 value={personalData.bankAccount}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '' || /^[\d-]+$/.test(value)) {
-                    setPersonalData({ ...personalData, bankAccount: value });
-                    if (errors.bankAccount) {
-                      const newErrors = { ...errors };
-                      delete newErrors.bankAccount;
-                      setErrors(newErrors);
-                    }
-                  }
-                }}
+                {...bankAccountImeProps}
                 placeholder="請輸入完整銀行帳號"
                 className={getInputErrorClass(!!errors.bankAccount)}
               />
