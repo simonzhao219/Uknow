@@ -54,7 +54,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "biome check . && tsc --noEmit -p . && vitest run && knip --include files,dependencies",
-    "check:full": "npm run check && npm run build && npm run check:deno && npm run check:deno:lint",
+    "check:full": "npm run check && npm run test:coverage && npm run build && npm run check:deno && npm run check:deno:lint",
     "check:deno": "cd supabase/functions && deno task check",
     "check:deno:lint": "cd supabase/functions && deno task fmt:check && deno task lint",
     "prepare": "git config core.hooksPath scripts/git-hooks || true"

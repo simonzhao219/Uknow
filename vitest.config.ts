@@ -47,12 +47,17 @@ export default mergeConfig(
         // 新的實測值減 1；**不准為了讓紅燈變綠而調低**——那等於這道
         // 閘門不存在。真的需要調低必須在 PR 內寫明理由。
         thresholds: {
-          // 2026-07-26 實測：lines/statements 21.87、functions 55.21、branches 80.36。
-          // 依「只准往上」的棘輪規則，把 lines/statements 從 17 提到 20（實測值減
-          // 約 2，留一點緩衝）；branches 維持 80（實測減 1 會比現行門檻低，不可調降）。
-          lines: 20,
-          statements: 20,
-          functions: 54,
+          // 2026-08-07 實測：lines/statements 41.07、functions 65.27、branches 80.94。
+          // 依「只准往上」的棘輪規則提到實測值減約 2（沿用本檔既有的緩衝慣例）；
+          // branches 維持 80（實測減 1 會比現行門檻低，不可調降）。
+          //
+          // lines/statements 從 20 一口氣跳到 39 是償還累積的鬆弛：門檻上次
+          // 校準是 07-26，此後 develop 上的測試把實測值推到近 40，但沒有人
+          // 順手收緊，於是這道閘門有 20 個百分點的空隙——期間任何覆蓋率下滑
+          // 都不會被擋。棘輪的價值全在「貼著實測值」，落後的棘輪等於沒有。
+          lines: 39,
+          statements: 39,
+          functions: 64,
           branches: 80,
         },
       },
