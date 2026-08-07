@@ -78,7 +78,14 @@ export function JoinReferralProgramDialog({
         {/* 高度用 dvh 而非 vh：行動瀏覽器網址列收合時 vh 不會更新，卡片會超出
             可視範圍、底部按鈕被切掉。overscroll-contain 讓卡片捲到頭尾時停住，
             不會把剩餘的捲動交給背景頁面。 */}
-        <Card className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto overscroll-contain">
+        {/* 手刻遮罩不像 Radix Dialog 會自帶 role="dialog"——沒有它，輔助技術
+            （與依 ARIA role 定位的測試）都看不出這是一個 modal。 */}
+        <Card
+          role="dialog"
+          aria-modal="true"
+          aria-label="加入推薦計畫"
+          className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto overscroll-contain"
+        >
           <div className="p-6">
             {/* 標題 */}
             <div className="mb-6">
