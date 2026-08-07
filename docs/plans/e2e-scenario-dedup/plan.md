@@ -82,23 +82,29 @@ pytest step 卻差 **97s(+42%)**——runner 快慢的變異比整份候刪清�
 > 經不起查證(詳見 §4 各表的刪除線標註)。移出後的實得如下,**比初版少了
 > 四成**,Q1 的結論因此更強烈而非減弱。
 
-修訂後實際找得到證據的候刪集合是 **15 個情境(15 個 test case)、
-本機 19.4s、佔 10.3%**,換算 CI 約 **-24~-34s**:
+人審裁決後的候刪集合是 **18 個情境(18 個 test case)、
+本機 23.0s、佔 12.2%**,換算 CI 約 **-28~-40s**:
 
 | 情境 | 現況 | 刪後(推估) | 計費分變化 |
 |---|---|---|---|
-| 快 runner | 290s | ~261s | 5 → **5**(不變) |
-| 慢 runner | 385s | ~351s | 7 → **6**(-1,勉強跨線) |
+| 快 runner | 290s | ~256s | 5 → **5**(不變) |
+| 慢 runner | 385s | ~345s | 7 → **6**(-1) |
 
-計費是無條件進位,省下的 24–34s 是否跨過分鐘邊界取決於落點,
-期望值 ≈ 29/60 ≈ **0.5 計費分/run**。
+計費是無條件進位,省下的 28–40s 是否跨過分鐘邊界取決於落點,
+期望值 ≈ 34/60 ≈ **0.6 計費分/run**。
 
 月估:friction-log 記 07-25~08-07 共 330 次 CI run(≈24/日 ⇒ ≈700/月),
 e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ **≈600 run/月**。
 
-> **月省 ≈ 0.5 × 600 ≈ 300 分**(初版誤估為 450–600 分:一是候刪清單
-> 未經查證偏大,二是區間端點算術不一致——審查 P2-3 指出 0.7–0.9 × 600
-> 應為 420–540 而非 450–600)。任務描述的目標是 700–1,000 分。
+> **月省 ≈ 0.6 × 600 ≈ 360 分**(初版誤估 450–600:候刪清單未經查證偏大,
+> 且區間端點算術不一致,審查 P2-3 指出 0.7–0.9 × 600 應為 420–540)。
+> 任務描述的目標是 700–1,000 分。
+
+**達標需要什麼(Q1 裁決時一併記錄)**:700–1,000 分/月 ÷ 600 run
+≈ **每 run 要砍 70–100s**。刪重複給 28–40s,固定開銷樂觀再給 15–25s,
+合計 40–65s ≈ 420–650 分/月。**要真的碰到 700–1,000,必須放寬三條硬約束
+之一**(並行 / 抽樣 / 改 CI 結構)。人審已裁定接受實得並另開固定開銷任務,
+未選擇重新檢視 xdist。
 
 差額的來源不是「還沒找夠」,而是 §1.1 的平坦成本曲線 + §1.2 的固定開銷:
 **單靠刪重複情境到不了 4 計費分**。要再往下需要動 §1.2 的固定開銷或並發,
@@ -117,7 +123,7 @@ e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ **≈600 run/�
 
 驗收情境(可驗證的行為):
 
-1. `cd e2e && pytest` 全綠,測試數從 173 降到 142。
+1. `cd e2e && pytest` 全綠,測試數從 173 降到 **155**。
 2. 四條使用者關鍵旅程各自**至少保留一條端到端 e2e 情境**(§3.2 對照表)。
 3. 每一條被刪的情境,在 `docs/plans/e2e-scenario-dedup/plan.md`(本檔)
    §4 的表格裡都指得出「哪個檔案的哪個測試名」接手了它的斷言。
@@ -149,10 +155,16 @@ e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ **≈600 run/�
 | **B** | 下層測試斷言同一個**決策函式/純函式**的輸出,且該決策在 e2e 只是被顯示出來 | `withdrawalValidation.test.ts::低於最低（999 / 500 / 0）→ 最低提領提示` 產出的正是 e2e 斷言的 `最低提領Point為 1,000P` |
 | **C** | 同一行為在 e2e 內部被兩個情境重複驗(跨 feature 檔) | `listing_management.feature` 與 `service_provider_detail.feature` 都驗公開詳情頁 |
 
-> **審查後修訂(P1-4)**:初版寫「只有 A、B 級可以刪」卻在 §4.8/§4.10 用
-> C 級刪了 3 條——自己違反自己剛定的判準。硬約束 1 的字面是「在**更便宜的
-> 層**被斷言」,C 級證的是**同一層**另一個情境,不滿足。這 3 條已改列存疑,
-> C 級的地位列為 Q9 待裁決。**現行有效判準:只有 A、B 級可以刪。**
+> **審查後修訂(P1-4)+ 人審裁決(Q9,2026-08-07)**:初版寫「只有 A、B 級
+> 可以刪」卻在 §4.8/§4.10 用 C 級刪了 3 條——自己違反自己剛定的判準。
+> 該矛盾已提交人審,裁決為**C 級算證據,但收窄**:
+>
+> **C 級的合格條件:同一元件、同一段程式碼路徑,只有被 mock 的資料不同。**
+> 僅「看起來結果一樣」不算——那是 §3.1「不算證據」清單的第一條。
+>
+> 依據:硬約束 1 的字面是「在更便宜的層被斷言」,但其**目的**是「別在無人
+> 驗證的情況下刪」;跑兩次同一段程式碼的第二次,對這個目的沒有貢獻。
+> **這是對硬約束 1 的修訂,由人裁決,不是規劃自行放寬**(處置見 review.md)。
 >
 > **套用 B 級時必須額外查證的一件事(P0-1 的教訓)**:確認 e2e 情境走的
 > 是**哪一個**決策函式。`RequireMembershipRoute` 有自己的
@@ -354,15 +366,14 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 0.66 | Anyone can view a public listing detail without logging in | ~~刪~~ → **存疑** | **審查 P1-4 推翻**:證據唯一來源是 C 級(`service_provider_detail.feature::A known listing renders its details`),而 §3.1 現行判準是「只有 A、B 級可以刪」,硬約束 1 也要求「在**更便宜的層**被斷言」——同層另一個 e2e 情境不滿足 → Q9 |
-| 0.82 | A missing listing shows a not-found message | ~~刪~~ → **存疑** | 同上(C 級對應 `service_provider_detail.feature::An unknown listing shows the not-found screen`)→ Q9 |
+| 0.66 | Anyone can view a public listing detail without logging in | **刪**(Q9 裁定) | C級 `service_provider_detail.feature::A known listing renders its details`——**同一個 `/service-providers/:id` 頁、同一條 `public_listings` 讀取路徑**,只有 mock 資料不同,符合 Q9 收窄條件;e2e README 也把該頁擁有權指給 service_provider_detail |
+| 0.82 | A missing listing shows a not-found message | **刪**(Q9 裁定) | C級 `service_provider_detail.feature::An unknown listing shows the not-found screen`——同一條 not-found 分支,**兩者斷言字串完全相同**(`找不到此服務者`) |
 | 其餘 8 條 | (empty state / summarised / expired 導向 / create 反彈 / 刪除 / 無權編輯 / 建立 / 上傳期間輸入不被清空) | **留** | 刊登 CRUD 的元件層無測試;最後一條是冷啟動間歇失敗的回歸釘 |
 
-**小計(修訂後):刪 0 條;存疑 2 條 / 1.48s**
+**小計(Q9 裁決後):刪 2 條 / 1.48s**
 
-> 註:C 級所指的重複**內容為真**(兩檔確實驗同一頁),審查亦確認;
-> 爭點純粹是「同層重複算不算合格的刪除證據」,這是判準問題不是事實問題,
-> 故列 Q9 待裁決而非直接刪。
+> 刪除後 `/service-providers/:id` 這一頁仍有 `service_provider_detail.feature`
+> 的 2 條情境完整守著(found + not-found),不是無人驗證。
 
 ### 4.9 line_browser.feature(5 情境 / 5.8s)
 
@@ -380,13 +391,13 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 2.13 | Resend becomes available once the 3-minute window expires | ~~刪~~ → **存疑** | **審查 P1-4 推翻**:證據唯一來源是 C 級(`otp_verification.feature` 的同名情境),不滿足 §3.1 現行判準與硬約束 1 的「更便宜的層」。重複內容本身為真(同一個 `OTPVerificationPage`、同一段倒數計時,差別只在 `otpType`)→ Q9 |
+| 2.13 | Resend becomes available once the 3-minute window expires | **刪**(Q9 裁定) | C級 `otp_verification.feature::Resend becomes available once the 3-minute window expires`(2.33s)——**同一個 `OTPVerificationPage` 元件、同一段倒數計時程式碼**,只有 `otpType` 與被 mock 的 Supabase 呼叫不同,符合 Q9 收窄條件;recovery 那一側的送碼分支由本檔保留的 `A correct recovery code lands on the new-password page` 與 `An incorrect recovery code shows an error` 覆蓋。輔以 `otpSession.test.ts::save → get 能還原 email 與 otpType` |
 | 1.50 | Reopening the verification link in a new tab resumes an in-progress reset | **存疑** | 與 `otp_verification.feature::Reopening the verification link in a new tab resumes an in-progress signup` 同型,但 recovery session 的 rehydrate 路徑不同 → Q7 |
 | 0.71 | An invalid email is rejected before any request is made | **存疑** | 與 `auth_login.feature::Invalid email format is rejected` 同型但不同元件(ForgotPasswordPage vs AuthPage)→ Q7 |
 | 4 條錯誤訊息 (`A failed password update`、`Reusing the old password`、`A breached new password`、`A failed send`) | | **留** | **關鍵發現**:這些中文訊息硬編在 `AuthPage.tsx` / `ResetPasswordPage.tsx`,`grep` 全 repo **沒有任何單元測試**斷言它們。刪掉等於這層映射全裸 → §6 Q8 |
 | 其餘 7 條 | | **留** | 三頁串接流程,無下層 |
 
-**小計(修訂後):刪 0 條;存疑 3 條 / 4.34s**
+**小計(Q9 裁決後):刪 1 條 / 2.13s;存疑 2 條 / 2.21s**
 
 ### 4.11 全數保留的檔案
 
@@ -408,22 +419,41 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 **修訂後(審查處置完成)**:
 
+**人審裁決後的最終範圍(2026-08-07)**:
+
 | | 情境數 | test case | 本機秒 | 佔比 |
 |---|---|---|---|---|
-| **刪** | **15** | **15** | **19.37** | **10.3%** |
-| **存疑**(待裁決 Q4–Q7、Q9–Q12) | 27 | 28 | 28.63 | 15.2% |
+| **刪** | **18** | **18** | **22.98** | **12.2%** |
+| 存疑(裁定不在本任務動:Q4/Q5/Q7/Q10/Q11/Q12) | 24 | 25 | 25.02 | 13.3% |
 | 留 | 105 | 130 | 140.46 | 74.5% |
 | **合計** | **147** | **173** | **188.46** | 100% |
 
-刪後預期:**158 個 test case、~169s 本機**。
+刪後預期:**155 個 test case、~166s 本機**。
 
-修訂前後對照(初版 → 審查後):
+三階段演變(初版 → 審查後 → 人審裁決後):
 
-| | 初版 | 修訂後 | 差 |
+| | 初版 | 審查後 | **裁決後** |
 |---|---|---|---|
-| 刪 | 29 情境 / 31 case / 31.83s | **15 / 15 / 19.37s** | -14 情境 / -12.46s |
-| 存疑 | 16 / 16 / 18.53s | 27 / 28 / 28.63s | +11(P0-2、P1-1、P1-4、P1-5) |
-| 留 | 102 / 126 / 138.1s | 105 / 130 / 140.46s | +3(P0-1,route_guards 全留) |
+| 刪 | 29 / 31 / 31.83s | 15 / 15 / 19.37s | **18 / 18 / 22.98s** |
+| 存疑 | 16 / 16 / 18.53s | 27 / 28 / 28.63s | 24 / 25 / 25.02s |
+| 留 | 102 / 126 / 138.1s | 105 / 130 / 140.46s | 105 / 130 / 140.46s |
+
+審查把 14 條證據不成立的移出;人審 Q9 裁定 C 級(收窄後)算證據,
+把其中 3 條放回。加總複驗:18+24+105 = 147 情境、18+25+130 = 173 case、
+22.98+25.02+140.46 = 188.46s ≈ §1.1 實測的 188.5s。
+
+**18 條刪除清單**:
+
+| 檔案 | 條數 | 秒 | 證據級 |
+|---|---|---|---|
+| admin_dashboard(空態 / 待處理徽章 / 標記已匯款 / 退件) | 4 | 4.62 | A + Deno |
+| rewards_withdrawal(換照片 / 證件退回 / 低於最低 / 身分證驗證失敗) | 4 | 5.77 | A / B |
+| payment_result(pending 重試輪詢 / LINE 客服連結) | 2 | 5.14 | A / B |
+| forgot_password(3 分鐘 resend 視窗) | 1 | 2.13 | C(Q9) |
+| payment_checkout(兩種續約選項 / 過期逾一年仍可續約) | 2 | 1.41 | A + Deno |
+| listing_management(公開詳情頁 / not-found) | 2 | 1.48 | C(Q9) |
+| renewal_backfill_recovery(補繳進度 / 繼續補繳導向) | 2 | 1.47 | A |
+| home_listings(行政區跨市不外洩) | 1 | 0.96 | B |
 
 **保留下來的 15 條刪除清單**(全數為 A/B 級,且已逐條複驗實際 import 關係):
 
@@ -448,8 +478,8 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 |---|---|---|---|
 | 1 | 刪 §4.1 admin 4 條 + §4.2 rewards 4 條(10.4s) | `e2e/features/admin_dashboard.feature`、`rewards_withdrawal.feature`;清理孤兒 step | `cd e2e && pytest -q` 綠且 **165 passed**;`npx vitest run src/components/admin/WithdrawalManagement.test.tsx src/components/reward/WithdrawalProcess.test.tsx src/components/reward/IdVerificationSection.test.tsx src/utils/withdrawalValidation.test.ts` 全綠;`npm run check` 綠 |
 | 2 | 刪 §4.3 payment_result 2 + §4.5 payment_checkout 2 + §4.4 home 1(7.5s) | `payment_result.feature`、`payment_checkout.feature`、`home_listings.feature` | pytest 綠且 **160 passed**;`npx vitest run src/components/PaymentResult.test.tsx src/components/PaymentCheckout.test.tsx src/utils/districtSelection.test.ts src/utils/externalLink.test.ts src/utils/repoHygiene.test.ts` 全綠(審查 P1-6:此清單初版漏了證據測試,已補齊) |
-| 3 | 刪 §4.7 renewal_backfill 2 條(1.5s) | `renewal_backfill_recovery.feature` | pytest 綠且 **158 passed**;`npx vitest run src/components/PaymentResult.test.tsx` 全綠 |
-| 4 | 回填量測與文件 | `.github/workflows/ci.yml` 檔頭與 e2e job 註解;`docs/plans/friction-log.md` | 情境數 182→158、計費分 ~7→實測 5–7 區間;xdist 註解的 182 前提同步修正;`python3 scripts/check-workflows.py` 綠 |
+| 3 | 刪 §4.7 renewal_backfill 2 + §4.8 listing_management 2 + §4.10 forgot_password 1(5.1s) | `renewal_backfill_recovery.feature`、`listing_management.feature`、`forgot_password.feature` | pytest 綠且 **155 passed**;`npx vitest run src/components/PaymentResult.test.tsx src/utils/otpSession.test.ts` 全綠;**C 級的兩組必須額外確認接手方仍在**:`pytest -k "service_provider_detail"`(2 passed)與 `pytest -k "otp_verification and resend"`(1 passed) |
+| 4 | 回填量測與文件 | `.github/workflows/ci.yml` 檔頭與 e2e job 註解;`docs/plans/friction-log.md` | 情境數 182→155、計費分 ~7→實測 5–7 區間;xdist 註解的 182 前提同步修正;`python3 scripts/check-workflows.py` 綠 |
 | 5 | 刪除本規劃檔 | `docs/plans/e2e-scenario-dedup/` | 依 CLAUDE.md「規劃檔生命週期」,PR 前刪除;可複用的原則升級進 `e2e/README.md`——依審查 P2-7,新增對稱於「Adding a scenario」的 **「Removing a scenario」** 小節放 §3.1 三級判準,四旅程清單另立 **「Must-keep end-to-end coverage」** 小節;§3.3 的 guard 覆蓋缺口與 §6 Q8 的 auth 錯誤訊息缺口寫進 friction-log |
 
 **孤兒 step 的處理**:刪情境後,只被該情境用到的 `@given/@when/@then` 會變成
@@ -458,7 +488,24 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 ---
 
-## 6. 開放問題(等人裁決,實作不得自行決定)
+## 6. 開放問題
+
+> **全部已於 2026-08-07 人審裁決**(裁決紀錄與理由見 `review.md`「處置」節)。
+> 以下保留原問題文字以留下決策脈絡,每題前標示裁決結果。
+> **Q1、Q9 的裁決改變了範圍與判準,其餘皆裁定「留,不在本任務動」。**
+
+| 題 | 裁決 | 對範圍的影響 |
+|---|---|---|
+| Q1 | (a) 接受實得 + (b) 另開固定開銷任務 | 記錄「達標需放寬硬約束之一」 |
+| Q2 / Q6 | 留 | 無 |
+| Q3 | 另開任務補 `SystemAlerts.test.tsx` | 無 |
+| Q4 / Q5 / Q7 | 先留,待有人改該元件時順手補測再刪 | 無 |
+| Q8 | 另開任務抽映射 + vitest | 無 |
+| **Q9** | **C 級算證據(收窄:同元件同路徑、只有 mock 資料不同)** | **+3 條 / +3.61s** |
+| Q10 | (a) 全留——不以手機版覆蓋換 3.23s | 無 |
+| Q11 | (a) 採架構視角全留——判準一致性優先 | 無 |
+| Q12 | 先不動,另開 line_browser 整檔清查 | 無 |
+| Q13 | (a) route_guards 全留;缺口另開任務 | 無 |
 
 **Q1(最重要,關乎任務目標本身)** —— §1.3 算出:在「必須有下層證據」的
 約束下,審查後的實得是 **-24~-34s / ≈0.5 計費分**,月省 **≈300 分**,
