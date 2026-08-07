@@ -12,13 +12,19 @@ from __future__ import annotations
 
 def shifted_month_key(key: str, months_back: int) -> str:
     """'YYYY-MM' 往回平移 N 個月(N=0 原樣返回)。"""
-    raise NotImplementedError
+    year_s, month_s = key.split("-")
+    total = int(year_s) * 12 + (int(month_s) - 1) - months_back
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
 def merge_buckets(base: dict, incoming: dict) -> dict:
     """合併兩組月桶:同 key 以 append 合併並去重(保序),絕不整把覆寫
     ——覆寫會靜默吃掉歷史桶,打穿 M8「歷史桶永久保留」。"""
-    raise NotImplementedError
+    merged = {k: list(v) for k, v in base.items()}
+    for key, values in incoming.items():
+        bucket = merged.setdefault(key, [])
+        bucket.extend(v for v in values if v not in bucket)
+    return merged
 
 
 def shift_bucket_keys(buckets: dict, months_back: int) -> dict:
@@ -26,4 +32,7 @@ def shift_bucket_keys(buckets: dict, months_back: int) -> dict:
 
     回傳全新結構(值為複本,不與輸入共享 list);統一平移下 key 映射
     是單射,防禦性地仍走 merge_buckets 合流。"""
-    raise NotImplementedError
+    shifted: dict = {}
+    for key, values in buckets.items():
+        shifted = merge_buckets(shifted, {shifted_month_key(key, months_back): list(values)})
+    return shifted
