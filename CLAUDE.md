@@ -50,9 +50,9 @@ pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
 commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
 
 **hook 的每次決策都會被記錄**(`.claude/hooks/decision_log.py`):計數存在
-session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions.jsonl`
-的一行並自動暫存——Stop hook 跑在最後一次 commit 之後,落在那裡進不了 git,
-而 web session 的容器是拋棄式的。要關掉設 `HARNESS_METRICS=0`。
+session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions/<分支>.jsonl`
+的一行並自動暫存(Stop hook 在最後一次 commit 之後才跑,進不了 git;web 容器拋棄式)。
+**一分支一檔**是為了跨分支不重疊——共用單檔會讓 GitHub 誤判 PR 衝突。關掉設 `HARNESS_METRICS=0`。
 
 **驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
 看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——

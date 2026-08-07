@@ -1,0 +1,1 @@
+{"branch": "claude/sessions-jsonl-conflicts-nduamf", "ended": "2026-08-07T17:36:18+00:00", "fired": {"check-output-filter/collapse": 3}, "passed": {"bash-guard": 52, "check-output-filter": 49, "feature-plan-guard": 26, "tdd-test-guard": 26}, "session": "bd139f3b1ac3", "started": "2026-08-07T17:04:42+00:00"}
