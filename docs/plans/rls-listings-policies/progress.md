@@ -14,8 +14,8 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | ⬜ 未開始 | | |
-| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ✅ 綠 | `91b27d4` | (本 commit) |
+| 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | 🟡 CI 綠,突變驗證待補(B6) | 不適用(見 B3) | `97cbcfd` |
+| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ✅ 綠 | `91b27d4` | `9605af7` |
 | 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
 | 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
 
@@ -111,6 +111,22 @@ git commit -m "docs: 帶入已審過的規劃書與審查報告"
 
 **結論**:階段 1 的綠燈只能由 CI 的 api-tests 軌證明(那裡 jsr 與 Docker Hub 都通)。
 **B3 的突變驗證在本機做不到**——需要能起本地 Postgres 的環境。見下方 B6。
+
+### B7 —— 階段 1 的 CI 綠燈證據強度(誠實說明)
+
+`api-tests` 在 `97cbcfd` 上 **success**(`259 passed | 0 failed`),`static-checks`
+也綠(代表 `deno task check` 通過,型別無誤——那是本機因 jsr.io 403 驗不了的部分)。
+
+**但我沒能逐條讀到七個測試名**:GitHub 的 job log blob 主機
+(`*.blob.core.windows.net`)同樣被 proxy 擋(CONNECT 403),而 MCP 回傳的 log
+內容有長度上限,剛好截在 `rls-policies.test.ts` 之後的區段。
+
+所以「這七條真的跑了」是**由構造推得**而非直接目視:
+`deno task test:db` 是 `deno test --ignore=api/*.unit.test.ts`,會遞迴收集所有
+`*.test.ts`;`api/rls-policies.test.ts` 命中該 glob、不在 ignore 內,而 Deno 沒有
+「預設跳過」的機制——所以它只可能跑了。跑了而斷言失敗的話 job 會紅,但 job 是綠。
+
+這個推論鏈成立,但它比「看到測試名」弱一級,記在這裡以免日後被當成目視確認過。
 
 ### B6 —— 階段 1 的突變驗證待補【待人裁決】
 
