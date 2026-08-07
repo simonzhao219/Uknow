@@ -328,6 +328,21 @@ describe('PaymentCheckout 補繳制', () => {
     expect(sub.refresh).toHaveBeenCalled();
   });
 
+  it('續約者註冊資訊預設摺疊成一行摘要，點開後展開明細', async () => {
+    spyFetch();
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // 摺疊態：明細（生日/手機等）不可見，摘要列與編輯鈕在。
+    expect(screen.queryByText(/生日：1990-01-01/)).toBeNull();
+    expect(screen.getByTestId('edit-profile-button')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('profile-summary-toggle'));
+    expect(screen.getByText(/生日：1990-01-01/)).toBeTruthy();
+    expect(screen.getByText(/推薦人：王小明/)).toBeTruthy();
+  });
+
   it('renewal 載入中顯示載入態而非錯誤文案（四狀態表第 2 列）', async () => {
     spyFetch();
     setSubscription(null, false, { isLoading: true });
@@ -401,6 +416,27 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     // 一年——迄日落在 02-29 時會少一天）。
     expect(progress.textContent).toContain('已補至 2025/04/02');
     expect(progress.textContent).toContain('還差 2 筆');
+  });
+
+  it('選擇新約時補繳進度收於續約卡內，確認框仍唸出已付數字', async () => {
+    spyFetch();
+    setSubscription(RENEWAL_IN_PROGRESS);
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    // extend 選中時進度可見（plan §4：選項卡片內顯示）。
+    expect(screen.getByTestId('backfill-progress')).toBeTruthy();
+
+    // 切到 fresh：進度隨續約卡收合——關鍵資訊由 AC-15 確認框接手，
+    // 付款前仍會唸出已付筆數/金額/已補至日期，決策點不漏。
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.queryByTestId('backfill-progress')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('付款 1 筆');
+    expect(dialog.textContent).toContain('已補至 2025/04/02');
   });
 
   it('曾有進度、背景重整失敗時顯示進度暫時無法讀取並可重試（四狀態表第 4 列）', async () => {
