@@ -60,15 +60,15 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     And "W1" 的上代仍為 "K0"【DB】
 
   @journey @renewal_saga
-  Scenario: 第 5 章 B 樹下線——W2 掛 K0,X1 讓改樹後的三代鏈走到 U2
+  Scenario: 第 5 章 B 樹下線——W2 掛 K0,Y1 讓改樹後的三代鏈走到 U2
     When saga 演員 "W2" 以 "K0" 的推薦碼完成首購
     Then "K0" 因 "W2" 的首購獲得第 1 代獎勵【DB】
     And "K0" 的任務卡顯示進度 1/8
     And "U2" 因 "W2" 的首購獲得第 2 代獎勵【DB】
-    When saga 演員 "X1" 以 "W2" 的推薦碼完成首購
-    Then "W2" 因 "X1" 的首購獲得第 1 代獎勵【DB】
-    And "K0" 因 "X1" 的首購獲得第 2 代獎勵【DB】
-    And "U2" 因 "X1" 的首購獲得第 3 代獎勵【DB】
+    When saga 演員 "Y1" 以 "W2" 的推薦碼完成首購
+    Then "W2" 因 "Y1" 的首購獲得第 1 代獎勵【DB】
+    And "K0" 因 "Y1" 的首購獲得第 2 代獎勵【DB】
+    And "U2" 因 "Y1" 的首購獲得第 3 代獎勵【DB】
 
   @journey @renewal_saga
   Scenario: 第 6 章 Q9 防線——待審提領擋 fresh,駁回退點後解封
@@ -115,7 +115,7 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
 
   @journey @renewal_saga
   Scenario: 第 10 章 終章對帳——分類軸、免費續約註記與推導餘額
-    # 推導(帳本):K0 = ch2 +100(W1)→ ch4 歸零 → ch5 +200(W2/X1)→
+    # 推導(帳本):K0 = ch2 +100(W1)→ ch4 歸零 → ch5 +200(W2/Y1)→
     # ch6 +1000 −1015 +1015 → ch7 歸零後 +100(W2 補繳)→ ch8/ch9 不變
     # = 100P;任務 0/8(ch7 月桶平移後當月無配對)。U2 = ch4 +100 +
     # ch5 +200 + ch7 +200 + ch8 +200 = 700P(從未清空,持續 active)。
