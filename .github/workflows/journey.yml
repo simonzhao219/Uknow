@@ -9,7 +9,7 @@ name: Journey
 # 呼叫點有三個，共用這一份定義（曾經 main / develop 各有一份副本各自
 # 演化，假綠燈就是這樣長出來的）：
 #   1. ci.yml 的 journey job —— develop→main 晉升 PR 必跑（上線前閘門）
-#   2. journey-scheduled.yml —— 每晚台北 02:00 排程與手動觸發的薄外殼
+#   2. journey-scheduled.yml —— 每週台北週日 02:00 排程與手動觸發的薄外殼
 #      （它只負責 triggers 與 concurrency，邏輯全在這裡）
 #
 # ⚠️ 本 workflow 的第一設計要求是「不可能假綠」：
@@ -399,5 +399,7 @@ jobs:
                 '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
                 '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
                 '3. 同因重複失敗 ≥2 次 → 記入 docs/plans/friction-log.md',
+                '4. 短期修不動 → 到 Actions 頁停用 Journey Scheduled 排程，修好再開',
+                '   （排程失敗也計費——2026-07/08 連紅 12 晚無人接手，等於白燒）',
               ].join('\n'),
             });

@@ -64,7 +64,7 @@ jobs:
         run: |
           if [ -z "${{ secrets.SEED_ROOT_PASSWORD }}" ]; then
             echo "::error::缺 repository secret SEED_ROOT_PASSWORD——root 帳號的密碼。"
-            echo "::error::刻意不寫在檔案裡：這是公開 repo，而 workflow_dispatch 的"
+            echo "::error::刻意不寫在檔案裡：密碼不進版本庫，而 workflow_dispatch 的"
             echo "::error::input 值會出現在 run 的 UI 上，兩條路都會外洩。"
             exit 1
           fi
