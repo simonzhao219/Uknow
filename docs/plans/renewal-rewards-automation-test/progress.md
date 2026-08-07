@@ -15,7 +15,7 @@
 | 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ✅ 綠(run 31151243388,ch1-4 全過) | caba61f(rebase 前 1cda371) | 4a5a56a(rebase 前 242526d) |
 | 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ✅ 綠(run 31154748054,ch1-7 全過;迭代 5 輪:25e66b6 login 新簽名適配、2a2a456 提領前先加入推薦計畫、4fefa62 補 JoinReferralProgramDialog role="dialog"【產品 a11y 修復=計畫偏離,收尾審查需覆核】、ddcc804 「推入剛過期」@given/@when 雙註冊) | 40421b3 | ddcc804 |
 | 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ✅ 綠(run 31157279168,ch1-10 全過;迭代 1 輪:ch8 過期擋領取的 GUI 真相是 RequireMembershipRoute 重導、ch9 的 W1 原始首購被計為已付補繳→A15 照彈) | 0a58820 | c7ba75f |
-| 6 | 收尾:nightly 全綠+文件同步+命名/收集檢查 | ⬜ 未開始 | | |
+| 6 | 收尾:全套驗證+文件同步+四視角審查 | ✅ 綠(窄選 run 31160218658:10 章含審查新補斷言全過;full run 31160628867:70_ 十章全過、12 敗全屬 #217 既有範圍;X1→Y1 撞名修 ac178d8;審查修復 c837391) | (無) | ac178d8 |
 
 journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本機
 跑),請把 run URL 記在對應列或下方。
