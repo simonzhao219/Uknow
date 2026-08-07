@@ -18,8 +18,12 @@ import yaml
 from playwright.sync_api import Page, expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from datetime import datetime, timezone
+
+from builders import payment
 from builders.login import login_admin, login_via_gui
 from builders.org_builder import _build_one
+from pages.payment_checkout_page import PaymentCheckoutPage
 from run_state import JourneyUser
 from tools import seed_time_machine, twid
 
@@ -42,6 +46,28 @@ def _points_sum(admin, user_id: str) -> int:
         "reward_transactions", {"select": "amount", "user_id": f"eq.{user_id}"}
     )
     return sum(int(r["amount"]) for r in rows)
+
+
+def _task_monthly_count(admin, user_id: str) -> int:
+    """task_progress.monthly_referrals 全月桶的配對總數(saga 在同月內跑,
+    足以偵測「任務有沒有 +1」)。"""
+    rows = admin.rest_select(
+        "task_progress", {"select": "monthly_referrals", "user_id": f"eq.{user_id}"}
+    )
+    if not rows:
+        return 0
+    buckets = rows[0].get("monthly_referrals") or {}
+    return sum(len(v or []) for v in buckets.values())
+
+
+def _latest_end_date(admin, user_id: str) -> datetime:
+    rows = admin.rest_select(
+        "subscriptions",
+        {"select": "end_date", "user_id": f"eq.{user_id}",
+         "order": "end_date.desc", "limit": "1"},
+    )
+    assert rows, f"user {user_id} 沒有訂閱列"
+    return datetime.fromisoformat(rows[0]["end_date"].replace("Z", "+00:00"))
 
 
 def _ensure_actor(cfg, admin, run_state, node,
@@ -208,3 +234,160 @@ def active_checkout_redirects_to_dashboard(guarded_page, run_state, node):
     # 付款頁不渲染任何訊息(第 2 輪審查 UIUX P1-1 核實)。
     guarded_page.wait_for_url("**/dashboard**", timeout=30_000)
     expect(guarded_page.get_by_text("訂閱中").first).to_be_visible(timeout=15_000)
+
+
+# ===========================================================================
+# 第 3 章 補繳 extend——接續原效期、每筆各發獎、失效上線照收
+# ===========================================================================
+
+
+@given(parsers.parse('saga 將 "{node}" 推入剛過期'))
+def saga_push_recently_expired(saga, supabase_admin, run_state, node):
+    seed_time_machine.enter_recently_expired(supabase_admin, run_state.users[node].user_id)
+
+
+@given(parsers.parse('saga 將 "{node}" 推入過期超過一年並記下接續錨點'))
+def saga_push_expired_over_year(saga, supabase_admin, run_state, node):
+    row = seed_time_machine.enter_expired_over_a_year(supabase_admin, run_state.users[node].user_id)
+    saga["marks"]["k0_anchor_end"] = datetime.fromisoformat(
+        row["end_date"].replace("Z", "+00:00")
+    )
+
+
+@when(parsers.parse('"{node}" 開付款頁並以續約逐筆補繳 2 筆'))
+def saga_backfill_two_installments(saga, guarded_page, journey_config, supabase_admin,
+                                   run_state, node):
+    user = run_state.users[node]
+    # U1 是收獎方,補繳前快照它的點數與任務數,供「+200」與「任務不增」斷言。
+    u1 = run_state.users["U1"]
+    saga["marks"]["u1_points_before_backfill"] = _points_sum(supabase_admin, u1.user_id)
+    saga["marks"]["u1_tasks_before_backfill"] = _task_monthly_count(supabase_admin, u1.user_id)
+
+    # 過期會員登入落點由 resolveMembershipRedirect 決定(不是會員中心),
+    # 故 wait_for=None 後顯式導向付款頁。
+    _fresh_gui_login(guarded_page, user, None)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    guarded_page.get_by_test_id("renewal-mode-extend").click()
+    # A1 揭露:過期超過一年,補繳筆數/總額卡應可見。
+    expect(guarded_page.get_by_test_id("backfill-disclosure")).to_be_visible()
+
+    # 第一筆:仍未補到 active → backfill_progress;點「繼續補繳」回結帳頁。
+    payment.pay_backfill_installment(
+        guarded_page, journey_config, supabase_admin, user, expect_more=True
+    )
+    guarded_page.get_by_test_id("continue-backfill-button").click()
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    guarded_page.get_by_test_id("renewal-mode-extend").click()
+    # 第二筆:補到 active → success。
+    payment.pay_backfill_installment(
+        guarded_page, journey_config, supabase_admin, user, expect_more=False
+    )
+    saga["marks"]["u1_points_after_backfill"] = _points_sum(supabase_admin, u1.user_id)
+    saga["marks"]["u1_tasks_after_backfill"] = _task_monthly_count(supabase_admin, u1.user_id)
+
+
+@then(parsers.parse('"{node}" 的最新到期日接續原錨點約兩年【DB】'))
+def end_date_extends_two_years(saga, supabase_admin, run_state, node):
+    new_end = _latest_end_date(supabase_admin, run_state.users[node].user_id)
+    anchor = saga["marks"]["k0_anchor_end"]
+    days = (new_end - anchor).days
+    # 兩筆接續 = 錨點 +2 年(閏年容差);且必須落在未來(補到 active)。
+    assert 725 <= days <= 733, f"接續兩年迄日距錨點 {days} 天,非約兩年"
+    assert new_end > datetime.now(timezone.utc), "補繳後仍未 active"
+
+
+@then(parsers.parse('"{node}" 的上代仍為 "{referrer}"【DB】'))
+def upline_unchanged(supabase_admin, run_state, node, referrer):
+    edges = supabase_admin.rest_select(
+        "referral_edges",
+        {"select": "referrer_user_id",
+         "referee_user_id": f"eq.{run_state.users[node].user_id}"},
+    )
+    assert edges and edges[0]["referrer_user_id"] == run_state.users[referrer].user_id, (
+        f"{node} 的上代不是 {referrer}:{edges}"
+    )
+
+
+@then(parsers.parse('"{referrer}" 因 "{node}" 的補繳獲得續約獎勵合計 200P——即使 "{_dup}" 此刻已失效【DB】'))
+def backfill_renewal_reward_200(saga, supabase_admin, run_state, referrer, node, _dup):
+    before = saga["marks"]["u1_points_before_backfill"]
+    after = saga["marks"]["u1_points_after_backfill"]
+    assert after - before == 200, f"{referrer} 補繳續約獎增量 {after - before} != 200"
+
+
+@then(parsers.parse('"{referrer}" 因 "{node}" 的補繳任務進度不增加【DB】'))
+def backfill_task_unchanged(saga, supabase_admin, run_state, referrer, node):
+    before = saga["marks"]["u1_tasks_before_backfill"]
+    after = saga["marks"]["u1_tasks_after_backfill"]
+    assert after == before, f"{referrer} 補繳後任務數變了:{before} → {after}(續約不該 +1)"
+
+
+# ===========================================================================
+# 第 4 章 fresh 換樹清空——A14 揭露、A15 二次確認、U2 首次配對
+# ===========================================================================
+
+
+@when(parsers.parse('"{node}" 開付款頁選新約、填 "{referrer}" 的碼、經 A14 揭露與 A15 二次確認完成付款'))
+def saga_fresh_switch_tree(saga, guarded_page, journey_config, supabase_admin,
+                           run_state, node, referrer):
+    user = run_state.users[node]
+    new_ref = run_state.users[referrer]
+    # U2 是新配對收獎方,快照供 gen1 +100 與任務 1/8 斷言。
+    saga["marks"]["u2_points_before_fresh"] = _points_sum(supabase_admin, new_ref.user_id)
+
+    _fresh_gui_login(guarded_page, user, None)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    guarded_page.get_by_test_id("renewal-mode-fresh").click()
+    code_input = guarded_page.get_by_test_id("new-referral-code-input")
+    code_input.fill(new_ref.referral_code)
+    code_input.blur()
+    expect(guarded_page.get_by_test_id("new-referrer-name")).to_contain_text(
+        new_ref.name, timeout=10_000
+    )
+    # A14:清空揭露卡應可見(K0 帳上有 W1 帶來的 100P,forfeit 子句會唸出)。
+    expect(guarded_page.get_by_test_id("fresh-forfeit-disclosure")).to_be_visible()
+    # A15 二次確認在 pay_fresh_via_gui 內斷言對話框後確認。
+    payment.pay_fresh_via_gui(guarded_page, journey_config, supabase_admin, user)
+
+
+@then(parsers.parse('"{node}" 的上代已改為 "{referrer}"【DB】'))
+def upline_switched(supabase_admin, run_state, node, referrer):
+    edges = supabase_admin.rest_select(
+        "referral_edges",
+        {"select": "referrer_user_id",
+         "referee_user_id": f"eq.{run_state.users[node].user_id}"},
+    )
+    assert edges and edges[0]["referrer_user_id"] == run_state.users[referrer].user_id, (
+        f"{node} 的上代未 rewire 到 {referrer}:{edges}"
+    )
+
+
+@then(parsers.parse('"{node}" 的可提領點數已歸零【DB】'))
+def ledger_zeroed(supabase_admin, run_state, node):
+    # fresh 清空:ledger_reset 沖銷列讓帳本總和歸零(明細封存不刪,只增列)。
+    total = _points_sum(supabase_admin, run_state.users[node].user_id)
+    assert total == 0, f"{node} 帳本清空後總和應為 0,實為 {total}"
+
+
+@then(parsers.parse('"{node}" 的獎勵明細出現「新約重置」列'))
+def reward_history_shows_ledger_reset(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    guarded_page.goto("/rewards")
+    expect(guarded_page.get_by_role("heading", name="獎勵明細")).to_be_visible(timeout=15_000)
+    # rewardHistoryFilter.ts:REWARD_SOURCE_LABELS.ledger_reset = '新約重置'
+    expect(guarded_page.get_by_text("新約重置").first).to_be_visible(timeout=15_000)
+
+
+@then(parsers.parse('"{referrer}" 因 "{node}" 的新約獲得第 {gen:d} 代獎勵【DB】'))
+def fresh_referrer_rewarded(supabase_admin, run_state, reward_amount, referrer, node, gen):
+    rows = supabase_admin.rest_select(
+        "reward_transactions",
+        {"select": "amount,generation",
+         "user_id": f"eq.{run_state.users[referrer].user_id}",
+         "referee_user_id": f"eq.{run_state.users[node].user_id}",
+         "generation": f"eq.{gen}"},
+    )
+    assert rows, f"{referrer} 沒有因 {node} 的新約第 {gen} 代獎勵"
+    assert int(rows[0]["amount"]) == reward_amount, f"獎勵金額異常:{rows[0]}"

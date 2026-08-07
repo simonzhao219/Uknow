@@ -33,3 +33,23 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     And "K0" 的任務卡顯示進度 1/8
     And "U1" 因 "W1" 的首購獲得第 2 代獎勵【DB】
     And 預設推薦人本次事件的點數增量為 100P【DB】
+
+  @journey @renewal_saga
+  Scenario: 第 3 章 補繳 extend——接續原效期、每筆各發獎、失效上線照收
+    Given saga 將 "U1" 推入剛過期
+    And saga 將 "K0" 推入過期超過一年並記下接續錨點
+    When "K0" 開付款頁並以續約逐筆補繳 2 筆
+    Then "K0" 的最新到期日接續原錨點約兩年【DB】
+    And "K0" 的上代仍為 "U1"【DB】
+    And "U1" 因 "K0" 的補繳獲得續約獎勵合計 200P——即使 "U1" 此刻已失效【DB】
+    And "U1" 因 "K0" 的補繳任務進度不增加【DB】
+
+  @journey @renewal_saga
+  Scenario: 第 4 章 fresh 換樹清空——A14 揭露、A15 二次確認、U2 首次配對
+    Given saga 將 "K0" 推入剛過期
+    When "K0" 開付款頁選新約、填 "U2" 的碼、經 A14 揭露與 A15 二次確認完成付款
+    Then "K0" 的上代已改為 "U2"【DB】
+    And "K0" 的可提領點數已歸零【DB】
+    And "K0" 的獎勵明細出現「新約重置」列
+    And "U2" 因 "K0" 的新約獲得第 1 代獎勵【DB】
+    And "U2" 的任務卡顯示進度 1/8
