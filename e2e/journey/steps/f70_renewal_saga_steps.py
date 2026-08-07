@@ -525,3 +525,168 @@ def renewal_gen2_reward_delta(saga, supabase_admin, run_state, node, referee):
         - saga["marks"]["u2_points_before_w2_renewal"]
     )
     assert delta == 100, f"{node} 續約 gen2 增量 {delta} != 100"
+
+
+# ===========================================================================
+# 第 8 章 credit 與 A8——過期不能領,補繳復活後領取改現有列且雙事件各發獎
+# ===========================================================================
+
+
+@given(parsers.parse('saga 依 "{node}" 的既有月桶種一張未領取的推薦王 credit'))
+def saga_seed_king_credit(supabase_admin, run_state, node):
+    # month_key 取自該使用者**現有**月桶 key(含 ch7 平移後的),不自行
+    # 推算現在月份——與 age_monthly_bucket 同一準則(plan §2.3)。
+    user = run_state.users[node]
+    rows = supabase_admin.rest_select(
+        "task_progress", {"select": "monthly_referrals", "user_id": f"eq.{user.user_id}"}
+    )
+    buckets = (rows and rows[0].get("monthly_referrals")) or {}
+    assert buckets, f"{node} 沒有任何月桶,無法決定 credit 的 month_key"
+    seed_time_machine.seed_unclaimed_king_credit(
+        supabase_admin, user.user_id, max(buckets.keys())
+    )
+
+
+@then(parsers.parse('"{node}" 的任務中心顯示免費續約獎勵因會籍失效暫無法領取'))
+def claim_blocked_when_expired(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node])
+    guarded_page.goto("/tasks")
+    expect(guarded_page.get_by_role("heading", name="任務中心")).to_be_visible(timeout=15_000)
+    # TaskDashboard.claimBlockedReason(accountStatus=expired)——描述文案
+    # 與停用按鈕都要在,證明擋的是「這張 credit 的領取」而不是整區塊消失。
+    expect(
+        guarded_page.get_by_text("會籍已失效，請先續訂後再領取").first
+    ).to_be_visible(timeout=15_000)
+    blocked = guarded_page.get_by_role("button", name="暫無法領取").first
+    expect(blocked).to_be_visible()
+    expect(blocked).to_be_disabled()
+
+
+@when("saga 快照第 8 章收獎基準")
+def saga_snapshot_ch8(saga, supabase_admin, run_state):
+    u2 = run_state.users["U2"]
+    saga["marks"]["ch8_u2_points"] = _points_sum(supabase_admin, u2.user_id)
+    saga["marks"]["ch8_u2_tasks"] = _task_monthly_count(supabase_admin, u2.user_id)
+
+
+@then(parsers.parse('"{node}" 因 "{referee}" 的補繳獲得第 1 代續約獎勵增量 100P【DB】'))
+def ch8_backfill_gen1_delta(saga, supabase_admin, run_state, node, referee):
+    delta = (
+        _points_sum(supabase_admin, run_state.users[node].user_id)
+        - saga["marks"]["ch8_u2_points"]
+    )
+    assert delta == 100, f"{node} 補繳後增量 {delta} != 100"
+
+
+@when(parsers.parse('"{node}" 於任務中心領取免費續約獎勵'))
+def saga_claim_king_reward(saga, guarded_page, supabase_admin, run_state, node):
+    from builders import tasks
+
+    user = run_state.users[node]
+    # claim 前錨點:迄日與訂閱列數(M2 第三路徑=改現有列,不新增列)。
+    saga["marks"]["ch8_k0_end_before_claim"] = _latest_end_date(supabase_admin, user.user_id)
+    subs = supabase_admin.rest_select(
+        "subscriptions", {"select": "id", "user_id": f"eq.{user.user_id}"}
+    )
+    saga["marks"]["ch8_k0_sub_rows"] = len(subs)
+    _fresh_gui_login(guarded_page, user)
+    tasks.open_task_center(guarded_page)
+    tasks.claim_first_pending_reward(guarded_page, user)
+
+
+@then(parsers.parse('"{node}" 的最新到期日因領取再延長約一年且訂閱列數不變【DB】'))
+def claim_extends_year_same_rows(saga, supabase_admin, run_state, node):
+    user = run_state.users[node]
+    new_end = _latest_end_date(supabase_admin, user.user_id)
+    days = (new_end - saga["marks"]["ch8_k0_end_before_claim"]).days
+    assert 360 <= days <= 370, f"claim 後迄日延長 {days} 天,非約一年"
+    subs = supabase_admin.rest_select(
+        "subscriptions", {"select": "id", "user_id": f"eq.{user.user_id}"}
+    )
+    assert len(subs) == saga["marks"]["ch8_k0_sub_rows"], (
+        f"claim 改變訂閱列數 {saga['marks']['ch8_k0_sub_rows']} → {len(subs)}"
+        "(M2 第三路徑應改現有列)"
+    )
+
+
+@then(parsers.parse('"{node}" 因 "{referee}" 的領取獲得 claim 鍵第 1 代獎勵——兩事件合計增量 200P【DB】'))
+def ch8_claim_reward_dual_event(saga, supabase_admin, run_state, node, referee):
+    u2 = run_state.users[node]
+    claim_rows = supabase_admin.rest_select(
+        "reward_transactions",
+        {"select": "amount,generation,source_claim_id",
+         "user_id": f"eq.{u2.user_id}",
+         "referee_user_id": f"eq.{run_state.users[referee].user_id}",
+         "source_claim_id": "not.is.null"},
+    )
+    assert len(claim_rows) == 1, f"claim 鍵獎勵應恰一筆:{claim_rows}"
+    assert int(claim_rows[0]["amount"]) == 100 and int(claim_rows[0]["generation"]) == 1, (
+        f"claim 鍵獎勵內容異常:{claim_rows[0]}"
+    )
+    total = _points_sum(supabase_admin, u2.user_id) - saga["marks"]["ch8_u2_points"]
+    assert total == 200, f"{node} 兩事件合計增量 {total} != 200(補繳與 claim 各 100)"
+
+
+@then(parsers.parse('"{node}" 於第 8 章兩事件後任務進度不增加【DB】'))
+def ch8_tasks_unchanged(saga, supabase_admin, run_state, node):
+    now = _task_monthly_count(supabase_admin, run_state.users[node].user_id)
+    assert now == saga["marks"]["ch8_u2_tasks"], (
+        f"{node} 任務 {saga['marks']['ch8_u2_tasks']} → {now}"
+        "(付費續約與免費續約都不該 +1)"
+    )
+
+
+# ===========================================================================
+# 第 9 章 A10 fresh 版——不填碼的新約掛回預設推薦人,帳本清空
+# ===========================================================================
+
+
+@when(parsers.parse('"{node}" 開付款頁選新約且不填推薦碼完成付款——無清空資產不出二次確認'))
+def saga_fresh_no_code(saga, guarded_page, journey_config, supabase_admin,
+                       run_state, node):
+    user = run_state.users[node]
+    saga["marks"]["p_before_event"] = _points_sum(supabase_admin, saga["p"]["user_id"])
+    _fresh_gui_login(guarded_page, user)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    guarded_page.get_by_test_id("renewal-mode-fresh").click()
+    # 不填碼(A10 fresh 版)。W1 無點數、無下線配對,AC-15 的
+    # needsFreshConfirm 不成立 → 點付款直接送出。
+    payment.pay_fresh_no_confirm_via_gui(guarded_page, journey_config, supabase_admin, user)
+
+
+# ===========================================================================
+# 第 10 章 終章對帳——分類軸、免費續約註記與推導餘額
+# ===========================================================================
+
+
+@then(parsers.parse('"{node}" 的獎勵明細分類軸含推薦新人、子代續約與新約重置'))
+def history_axis_categories(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node])
+    guarded_page.goto("/rewards")
+    expect(guarded_page.get_by_role("heading", name="獎勵明細")).to_be_visible(timeout=15_000)
+    # REWARD_SOURCE_LABELS 的明細列 badge 全稱(rewardHistoryFilter.ts);
+    # 明細單次載入 50 筆,K0 全部歷史在第一頁內。
+    for label in ("獎勵-推薦新人", "獎勵-子代續約", "新約重置"):
+        expect(guarded_page.get_by_text(label).first).to_be_visible(timeout=15_000)
+
+
+@then(parsers.parse('"{node}" 的獎勵頁可提領餘額顯示 {amount:d}P'))
+def rewards_available_balance(guarded_page, run_state, node, amount):
+    _fresh_gui_login(guarded_page, run_state.users[node])
+    guarded_page.goto("/rewards")
+    expect(guarded_page.get_by_text("可提領").first).to_be_visible(timeout=15_000)
+    # RewardStats 的餘額格式是「{n}P」無空格(如 100P)。
+    expect(guarded_page.get_by_text(f"{amount}P", exact=True).first).to_be_visible(
+        timeout=15_000
+    )
+
+
+@then(parsers.parse('"{node}" 的獎勵明細出現「任務免費續約」註記'))
+def history_free_renewal_note(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node])
+    guarded_page.goto("/rewards")
+    expect(guarded_page.get_by_role("heading", name="獎勵明細")).to_be_visible(timeout=15_000)
+    # rewardHistory.ts 的 FREE_RENEWAL_NOTE:viaFreeRenewal(source_claim_id
+    # 鍵)的續約獎勵列第二行註記。
+    expect(guarded_page.get_by_text("任務免費續約").first).to_be_visible(timeout=15_000)
