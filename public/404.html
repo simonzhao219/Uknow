@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>找不到資源 - Uknow</title>
+  </head>
+  <body>
+    <!--
+      這頁的主要用途不是給人看的，而是給 _redirects 的 `/assets/* … 404`
+      當落點：缺席的資產檔要回一個誠實的 404，而不是掉進 SPA 後備、
+      被當成 HTML 餵給瀏覽器的 module loader。
+      一般使用者走錯路徑會被 `/* /index.html 200` 接住、交給前端路由。
+    -->
+    <main style="font-family: system-ui, sans-serif; text-align: center; padding: 4rem 1rem">
+      <h1 style="font-size: 1.25rem">找不到這個資源</h1>
+      <p style="color: #666">請回到 <a href="/">Uknow 首頁</a>。</p>
+    </main>
+  </body>
+</html>
