@@ -391,3 +391,128 @@ def fresh_referrer_rewarded(supabase_admin, run_state, reward_amount, referrer, 
     )
     assert rows, f"{referrer} 沒有因 {node} 的新約第 {gen} 代獎勵"
     assert int(rows[0]["amount"]) == reward_amount, f"獎勵金額異常:{rows[0]}"
+
+
+# ===========================================================================
+# 第 6 章 Q9 防線——待審提領擋 fresh,駁回退點後解封
+# ===========================================================================
+
+
+@given(parsers.parse('saga 種給 "{node}" {amount:d}P 種子點數'))
+def saga_seed_points(supabase_admin, run_state, node, amount):
+    # 「這些點怎麼賺來的」由 20_referral_rewards 覆蓋,saga 只驗封鎖
+    # (人審裁決 #4);種子額列入終章對帳推導。
+    seed_time_machine.seed_reward_points(
+        supabase_admin, run_state.users[node].user_id, amount, run_state.run_id
+    )
+
+
+@when(parsers.parse('"{node}" 完成身分驗證並申請提領 {amount:d}P'))
+def saga_apply_withdrawal(guarded_page, run_state, node, amount):
+    from builders import withdrawal
+
+    user = run_state.users[node]
+    _fresh_gui_login(guarded_page, user, "會員中心")
+    withdrawal.apply_via_gui(guarded_page, user, amount)
+
+
+@then(parsers.parse('"{node}" 的付款頁新約選項因待審提領被停用'))
+def fresh_blocked_by_pending_withdrawal(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    # PaymentCheckout 的 A16 文案(hasPendingWithdrawal)。
+    expect(
+        guarded_page.get_by_text("請等待審核完成，或聯繫客服").first
+    ).to_be_visible(timeout=15_000)
+
+
+@when("管理員在管理台駁回第一筆提領")
+def admin_rejects_first_withdrawal(guarded_page, run_state):
+    from pages.admin_dashboard_page import AdminDashboardPage
+
+    guarded_page.goto("/")
+    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
+    login_admin(guarded_page, run_state.users["admin"])
+    admin_page = AdminDashboardPage(guarded_page)
+    admin_page.open_tab("獎金提領管理")
+    admin_page.reject_first_withdrawal()
+
+
+@then(parsers.parse('"{node}" 的付款頁新約選項恢復可選'))
+def fresh_unblocked_after_rejection(guarded_page, run_state, node):
+    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    expect(guarded_page.get_by_text("請等待審核完成，或聯繫客服")).to_have_count(0)
+    guarded_page.get_by_test_id("renewal-mode-fresh").click()
+    # 解封的正向證據:fresh 面板真的展開(揭露卡或推薦碼輸入其一可見)。
+    expect(
+        guarded_page.get_by_test_id("fresh-forfeit-disclosure")
+        .or_(guarded_page.get_by_test_id("new-referral-code-input"))
+        .first
+    ).to_be_visible(timeout=15_000)
+
+
+# ===========================================================================
+# 第 7 章 S9 與 Q14a——填現任上代碼照樣清空,歷史桶跨清空保留
+# ===========================================================================
+
+
+@given(parsers.parse('saga 將 "{node}" 的任務月桶平移至上月'))
+def saga_age_monthly_bucket(supabase_admin, run_state, node):
+    # 平移在 fresh 清空**之前**做:W2 的配對記錄搬進歷史桶,清空只動
+    # 當月桶——之後 W2 續約仍不 +1,證明的才是「跨清空保留」(Q14a),
+    # 不是同月去重。
+    seed_time_machine.age_monthly_bucket(
+        supabase_admin, run_state.users[node].user_id, 1
+    )
+
+
+@when(parsers.parse('saga 快照收獎基準並將 "{node}" 推入剛過期'))
+def saga_snapshot_and_expire(saga, supabase_admin, run_state, node):
+    k0 = run_state.users["K0"]
+    u2 = run_state.users["U2"]
+    saga["marks"]["k0_points_before_w2_renewal"] = _points_sum(supabase_admin, k0.user_id)
+    saga["marks"]["k0_tasks_before_w2_renewal"] = _task_monthly_count(supabase_admin, k0.user_id)
+    saga["marks"]["u2_points_before_w2_renewal"] = _points_sum(supabase_admin, u2.user_id)
+    seed_time_machine.enter_recently_expired(supabase_admin, run_state.users[node].user_id)
+
+
+@when(parsers.parse('"{node}" 以續約完成一筆補繳'))
+def saga_single_backfill(guarded_page, journey_config, supabase_admin, run_state, node):
+    user = run_state.users[node]
+    _fresh_gui_login(guarded_page, user, None)
+    guarded_page.goto("/payment/checkout")
+    expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    guarded_page.get_by_test_id("renewal-mode-extend").click()
+    payment.pay_backfill_installment(
+        guarded_page, journey_config, supabase_admin, user, expect_more=False
+    )
+
+
+@then(parsers.parse('"{node}" 因 "{referee}" 的續約獎勵增量 100P 且任務不增加【DB】'))
+def renewal_reward_but_no_task(saga, supabase_admin, run_state, node, referee):
+    k0 = run_state.users[node]
+    points_delta = (
+        _points_sum(supabase_admin, k0.user_id)
+        - saga["marks"]["k0_points_before_w2_renewal"]
+    )
+    tasks_delta = (
+        _task_monthly_count(supabase_admin, k0.user_id)
+        - saga["marks"]["k0_tasks_before_w2_renewal"]
+    )
+    assert points_delta == 100, f"{node} 續約獎增量 {points_delta} != 100(M6 每筆事件都發)"
+    assert tasks_delta == 0, (
+        f"{node} 任務增量 {tasks_delta} != 0——歷史桶跨清空保留失效(Q14a)"
+    )
+
+
+@then(parsers.parse('"{node}" 因 "{referee}" 的續約獲得第 2 代獎勵增量 100P【DB】'))
+def renewal_gen2_reward_delta(saga, supabase_admin, run_state, node, referee):
+    u2 = run_state.users[node]
+    delta = (
+        _points_sum(supabase_admin, u2.user_id)
+        - saga["marks"]["u2_points_before_w2_renewal"]
+    )
+    assert delta == 100, f"{node} 續約 gen2 增量 {delta} != 100"

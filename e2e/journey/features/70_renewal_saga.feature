@@ -53,3 +53,34 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     And "K0" 的獎勵明細出現「新約重置」列
     And "U2" 因 "K0" 的新約獲得第 1 代獎勵【DB】
     And "U2" 的任務卡顯示進度 1/8
+
+  @journey @renewal_saga
+  Scenario: 第 5 章 B 樹下線——W2 掛 K0,X1 讓改樹後的三代鏈走到 U2
+    When saga 演員 "W2" 以 "K0" 的推薦碼完成首購
+    Then "K0" 因 "W2" 的首購獲得第 1 代獎勵【DB】
+    And "K0" 的任務卡顯示進度 1/8
+    And "U2" 因 "W2" 的首購獲得第 2 代獎勵【DB】
+    When saga 演員 "X1" 以 "W2" 的推薦碼完成首購
+    Then "W2" 因 "X1" 的首購獲得第 1 代獎勵【DB】
+    And "K0" 因 "X1" 的首購獲得第 2 代獎勵【DB】
+    And "U2" 因 "X1" 的首購獲得第 3 代獎勵【DB】
+
+  @journey @renewal_saga
+  Scenario: 第 6 章 Q9 防線——待審提領擋 fresh,駁回退點後解封
+    Given saga 種給 "K0" 1000P 種子點數
+    When "K0" 完成身分驗證並申請提領 1000P
+    And saga 將 "K0" 推入剛過期
+    Then "K0" 的付款頁新約選項因待審提領被停用
+    When 管理員在管理台駁回第一筆提領
+    Then "K0" 的付款頁新約選項恢復可選
+
+  @journey @renewal_saga
+  Scenario: 第 7 章 S9 與 Q14a——填現任上代碼照樣清空,歷史桶跨清空保留
+    Given saga 將 "K0" 的任務月桶平移至上月
+    When "K0" 開付款頁選新約、填 "U2" 的碼、經 A14 揭露與 A15 二次確認完成付款
+    Then "K0" 的上代已改為 "U2"【DB】
+    And "K0" 的可提領點數已歸零【DB】
+    When saga 快照收獎基準並將 "W2" 推入剛過期
+    And "W2" 以續約完成一筆補繳
+    Then "K0" 因 "W2" 的續約獎勵增量 100P 且任務不增加【DB】
+    And "U2" 因 "W2" 的續約獲得第 2 代獎勵增量 100P【DB】

@@ -12,8 +12,8 @@
 | 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | ✅ 綠(run 31147330315:`expr='orgbuild or timemachine' collected=10 ran=10 floor=1`,54 deselected,floor 未誤殺;run 本身紅是 60_ 既有情境失敗——fix/journey-scenario-failures 在修的那批,與窄選機制無關) | (無——CI 設定無測試落點) | af75999 |
 | 1 | 時光機四原語(純函式離線紅綠) | ✅ 綠 | e430c43 | 53978af |
 | 2 | saga cast+小型載入器+feature 第 1–2 章 | ✅ 綠(run 31149371380,ch1+ch2 全過;修了三個坑:admin 裸列 trigger、asyncio loop、多重登入 session) | 5edb1d4 | e23780f |
-| 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | 🟡 程式碼完成,等 dispatch 取證 | 1cda371 | |
-| 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ⬜ 未開始 | | |
+| 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ✅ 綠(run 31151243388,ch1-4 全過) | 1cda371 | 242526d |
+| 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | 🟡 程式碼完成,等 dispatch 取證 | (本 commit) | |
 | 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ⬜ 未開始 | | |
 | 6 | 收尾:nightly 全綠+文件同步+命名/收集檢查 | ⬜ 未開始 | | |
 
