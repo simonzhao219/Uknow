@@ -1,0 +1,104 @@
+# 平台管理後台 RWD 實作進度
+
+<!-- 外部記憶:每個紅綠循環結束即更新。全新 session 的 rehydrate 起點
+     ——寫給「完全沒有對話記憶的下一個 session」看,不要寫只有當下
+     session 才懂的簡稱。 -->
+
+分支:`claude/platform-admin-rwd-4fj79m`
+（平台在 session 啟動前開好的 web session 分支，非 `feature/*`；
+規劃書目錄 slug 為 `platform-admin-rwd`）
+規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
+
+## 階段狀態
+
+| # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
+|---|---|---|---|---|
+| 1 | 殼層與觸控原語（TabsList 兩列、標題字級、checkbox 觸控目標） | ⬜ 未開始 | | |
+| 2 | 提領管理手機版（卡片列表、工具列、作業面板、IdCardDialog） | ⬜ 未開始 | | |
+| 3 | 會員管理手機版（卡片列表、搜尋列、詳情 Sheet） | ⬜ 未開始 | | |
+| 4 | 系統告警與公告手機版 | ⬜ 未開始 | | |
+| 5 | 溢版守門回填（overflow sweep 逐分頁巡檢） | ⬜ 未開始 | | |
+
+## 目前位置與下一步
+
+規劃書已寫完、四視角審查已完成（`./review.md`），**尚未實作**。
+**現在停在人審。** 實作只能由人親自打 `/tdd-implement platform-admin-rwd`。
+
+審查結果:**P0 0 項、P1 8 項、P2 10 項**（四個 subagent ＋ 主 session 覆核）。
+無 P0，因此不觸發「修訂後重跑 /review-plan」的強制路徑。
+
+⚠️ **但主 session 的建議是不要照這份開工**，理由不是任何單項 P1，而是
+`review.md` 的 **M1：這是一份 RWD 規劃，卻把所有自動化驗證放在 jsdom 裡
+斷言 class 字串，而 jsdom 不跑版面引擎**。階段 1 的「checkbox 帶
+pointer-coarse class」斷言的是實作者剛打進去的字串，不可能為了正確的理由
+失敗；F2 那種讓修改完全失效的 class 錯誤，規劃內所有測試都照樣全綠。
+
+建議的下一步順序（非直接 `/tdd-implement`）:
+
+1. ~~先補驗證能力（M1 三點）~~ **✅ 已完成**（人審裁決「先補 M1」）。
+   見 `review.md` 的「M1 已處置」節。動到的檔案:
+   `e2e/test_overflow_sweep.py`（改）、`e2e/layout_probe.py`（新）、
+   `e2e/mocks/admin_console_mock.py`（新）、
+   `e2e/test_admin_mobile_layout.py`（新）。
+   **尚未動任何產品程式碼。** 驗證:27 passed / 3 xfailed、
+   `npm run check` 與 `framework-check` 全綠。
+2. 再處置 **F1**（手機卡片是否接手 `setActiveId`——不決定的話匯款作業面板
+   在手機上會釘死第一筆）、**F2**（TabsList 的 class 漏了 `grid` **與**
+   `w-full`）、**N1**（覆蓋率棘輪:CI 跑 test:coverage 但 npm run check 不跑，
+   functions 門檻只剩 1.2 點餘裕）、**N2**（規劃指定裸 `<details>`，但
+   `ui/collapsible.tsx` 已存在且有人在用）
+3. 重跑 `/review-plan`，人審通過後才由人親自打 `/tdd-implement`
+
+### M1 完成後浮現的新事實（影響後續階段，開工前必讀）
+
+- **P5 的症狀描述經實測不成立**（診斷與修法仍正確）。對話框在 375px 下
+  沒有溢出——`w-full` 已依視窗定寬。真正的退化是安全邊距歸零。
+  這實證了 `review.md` 的 F7。
+- **P10 是對的**（一度誤判為「實測 0 發現」）。合併 develop 時吸收了他們
+  的 `_setup_admin_alerts`（正式站真實的 `time_domain_backfill` 告警：長
+  中文 message ＋ 四欄 jsonb context），重量之下系統告警分頁**溢出 294px**。
+  我先前的「0 發現」是**測資太弱造成的假陰性**，已標 `known_overflow`。
+- **「寬表格永遠測不出來」的界線要講精確**：表格在 `overflow-x-auto` 裡
+  橫向捲動不算溢出（P2/P7 那種「要橫向捲才讀得完」測不出來），但
+  **單一儲存格裡斷不了行的長字串照樣會報**。所以階段 2/3/4 的
+  「表格→卡片」仍沒有完整的機械把關，但也不是完全沒有。
+- **教訓**：把路由標成上鎖之前，先確認測資真的取到產品允許的極端值——
+  否則量到的乾淨是假的。這是對檔頭「測資是最壞但可達」原則的實證。
+- 巡檢報告現在會標「🔒 已上鎖 / 🏷 已知債務」，債務清乾淨就刪掉該行
+  `known_overflow`——只准往少的方向走。
+
+其餘待裁決:`plan.md` §6 的 **Q1**（W8 行動端邊界——未裁決前一律走選項 (a)
+「維持現況」）、**Q2**、**Q3**，與 `review.md` 的 **Q4/Q5**。
+
+## Blockers(逃生口紀錄)
+
+<!-- 三種合法分支的紀錄處:
+     1. 紅燈測試一寫就綠(功能已存在)→ 記錄後跳過該階段,人審知悉
+     2. 實作中發現 plan 該階段有誤 → 停手記錄,求人工裁決,禁止私改 plan
+     3. 綠不了 → 記錄嘗試過什麼,求人工裁決,禁止改測試遷就實作 -->
+
+尚無。
+
+## 框架摩擦
+
+<!-- 被 hook 誤擋?規則互相矛盾?同一糾正重複兩次?
+     一句話記這裡,整併時搬去 docs/plans/friction-log.md。 -->
+
+本次 session 的 git CLI 只有讀取憑證，`git push` 一律失敗
+（`could not read Username for 'https://github.com'`），改走 GitHub API
+（`create_branch` + `push_files`）才推得上去。若此為 web session 常態，
+值得整併時記進 friction-log。
+
+**連帶教訓一**：`push_files` 的內容若手工做 `\uXXXX` JSON 轉義，會出現肉眼難
+察覺的錯字（本次 `review.md` 出現「要吗／包袟」，正確是「要嘛／包袱」，
+推送後才靠罕用字掃描抓到）。**直接寫 UTF-8 原文即可，不要手動轉義**；
+推送後用 `git fetch` + `git diff FETCH_HEAD` 逐位元組比對是最可靠的驗證
+（這次就靠它抓到一處 module docstring 的不一致）。
+
+**連帶教訓二（有設計後果，需人審知悉）**：`push_files` 一律要送**整檔內容**，
+所以「改一個 900 行的既有檔」的成本遠高於「新增一個 60 行的模組」。這次因此
+把兩段新程式碼放進新模組（`layout_probe.py`、`mocks/admin_console_mock.py`），
+而不是加進 `overflow_probe.py` 與 `mocks/backend_api_mock.py`。
+**兩個新模組各自都有獨立成立的理由**（前者與溢出偵測的失效方式相反、後者的
+函式有「呼叫順序有意義」這個共同限制），所以結論不算被工具扭曲；但**促成
+這個選擇的是傳輸成本**，記在這裡讓人審自己判斷要不要搬回去。
