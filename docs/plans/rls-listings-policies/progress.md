@@ -14,10 +14,12 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | L1 結構守衛(`api/rls-policies.test.ts`) | ⬜ 未開始 | | |
-| 2 | PostgREST 回應分類器純函式(`tools/rest_as_user.py` + `tools/test_rls_probe.py`) | ⬜ 未開始 | | |
-| 3 | L2 讀取邊界情境(驗收 1–4) | ⬜ 未開始 | | |
-| 4 | L2 寫入邊界情境(驗收 5–9) | ⬜ 未開始 | | |
+| 1 | L1 結構守衛(`api/rls-policies.test.ts`):集合 + 逐條角色 + 表達式 golden + 欄位集合不變式 | ⬜ 未開始 | | |
+| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`) | ⬜ 未開始 | | |
+| 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
+| 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
+
+情境數 28 → **39**。`MIN_FULL=20` 不動(理由見 plan.md §3)。
 
 ## 目前位置與下一步
 
