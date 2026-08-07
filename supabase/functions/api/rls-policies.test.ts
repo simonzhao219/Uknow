@@ -24,6 +24,11 @@
 // 「先 GRANT 再測」那個假綠陷阱換件衣服。GRANT 要釘就釘在 L2。
 //
 // 做法沿用 name-write-paths.test.ts 的原則:直接問 Postgres,中間不隔 PostgREST。
+//
+// 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test——「逐條角色範圍」
+// 拆成「三條 own policy 限 authenticated」與「insert_own/select_public 維持
+// PUBLIC」兩支,因為它們的期望值方向相反,混在一支裡失敗訊息會看不出是哪半邊。
+// 內容無增減。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
