@@ -3,26 +3,32 @@ name: CI
 # ============================================================================
 # 分層閘門：越便宜的檢查越早給訊號，重的軌並行跑。
 #
-# ⚠️ 本 repo 是**私有** repo：GitHub-hosted runner 按分鐘計費，且每個 job
-# 各自無條件進位到整分鐘——10 秒的 job 也算 1 分鐘。所以「job 數量 × push
-# 頻率」比「單 job 時長」更貴：秒級檢查一律併入既有 job 當 step，新開
-# job 前先讀 .claude/rules/github-actions.md 規則 8。
-# （2026-08-07 之前這裡寫著「公開 repo 免費無限」——錯誤前提，當天帳號
-#   分鐘數用罄+spending limit 觸頂，所有 workflow 停擺兩小時。）
+# 本 repo 於 **2026-08-07 轉為 public**：GitHub-hosted 標準 runner 對 public
+# repo 免費且無用量上限，所以這裡**不再有計費分鐘可省**。
+# （沿革：2026-08-07 之前是 private，當天帳號分鐘數用罄+spending limit
+#   觸頂、所有 workflow 停擺兩小時；那次事故留下的「每 job 進位計費」
+#   成本模型已隨轉 public 失效。此處刻意只記「現在是什麼」，不維護一份
+#   「以前不是什麼」的清單。）
 #
-#   費用與時長（計費分/次，2026-08 實測）：
-#   guards         ~1 分   路徑過濾＋框架健檢＋linear＋migration（秒級共乘）
-#   L1 static      ~1 分   biome / tsc / knip / deno fmt+lint+check
-#   L2 unit        ~2 分   vitest(+coverage) / deno unit（不需要 DB）
-#   L2 build       ~1 分   vite build + bundle 預算
-#   L3 api-tests   ~4 分   deno DB 測試（本地 supabase）
-#   L3 e2e-tests   ~7 分   pytest-bdd + Playwright（全 mock）
-#   L3 journey-offline ~1 分
+# 現在的稀缺資源是**牆鐘**——CI 回饋要多久才回得來，以及 runner 併發數。
+# 併軌與拆軌的取捨因此改看「最慢那條軌的時長」，不是 job 數量。
+#
+#   牆鐘（2026-08 實測，單次 run；runner 快慢差異可達 42%，見下）：
+#   guards         ~10s   路徑過濾＋框架健檢＋linear＋migration（共乘）
+#   L1 static      ~30s   biome / tsc / knip / deno fmt+lint+check
+#   L2 unit        ~45s   vitest(+coverage) / deno unit（不需要 DB）
+#   L2 build       ~20s   vite build + bundle 預算
+#   L3 api-tests   ~3 分  deno DB 測試（本地 supabase）
+#   L3 e2e-tests   ~4 分  pytest-bdd + Playwright（全 mock），155 個測試
+#   L3 journey-offline ~15s
 #   L4 journey     30-90 分  真後端全鏈路——只在 develop→main 晉升 PR 跑
-#   ci-ok          ~1 分   匯總（branch protection 的唯一 required check）
+#   ci-ok          ~5s    匯總（branch protection 的唯一 required check）
 #
-#   全量一次 ≈ 16 分、純文件 PR ≈ 2 分——成本與 push 次數線性相關，
-#   省錢的第一槓桿是「本地綠了才 push、湊批 push」（見 CLAUDE.md）。
+#   重軌並行，所以一次 run 的牆鐘 ≈ 最慢那條（e2e-tests），約 4 分鐘。
+#
+#   ⚠️ 量測時務必知道 **runner 快慢的變異比多數最佳化都大**：同一份 e2e
+#   套件在 2026-08-07 的兩次 run，pytest step 分別是 233s 與 330s（+42%）。
+#   單次量測不足以歸因任何改動，要比就多取樣。
 # ============================================================================
 on:
   pull_request:
@@ -47,12 +53,14 @@ jobs:
   # PR 會卡死無法合併；job 層 skip 則計為通過。
   #
   # guards 是四個秒級守衛（路徑過濾／框架健檢／linear／migration）的共乘
-  # job：以前拆成四個 job，每次 run 付 4 分鐘買不到 40 秒的運算（進位
-  # 損耗），合併後 1 分鐘。job id 刻意保持單字：outputs 被
+  # job：拆成四個 job 時，每個都要各自付 checkout + setup 的固定開銷來買
+  # 不到 40 秒的運算，合併後總牆鐘 ~10 秒。（併軌當初的理由是「每 job
+  # 進位計費」，那個前提已隨轉 public 失效；但共乘在牆鐘上依然划算，
+  # 所以結論不變、依據換了。）job id 刻意保持單字：outputs 被
   # needs.guards.outputs.* 引用，連字號會被表達式剖析器讀成減法
   # （見 .claude/rules/github-actions.md 的連字號陷阱）。
   # 代價（已接受）：linear/migration 紅燈時，等 guards 的重軌不會啟動，
-  # 該次 push 只拿到守衛訊號——但守衛紅本來就該先修，而且不啟動＝不計費。
+  # 該次 push 只拿到守衛訊號——但守衛紅本來就該先修。
   guards:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -387,10 +395,14 @@ jobs:
           done
           echo "::error::dev server 120s 內未就緒"; exit 1
 
-      # 刻意「不」用 pytest-xdist 平行化：實測全量 182 個情境同時跑時，
-      # 已經有兩個情境會因資源競爭失敗（單獨跑、單檔跑都穩定通過）。
-      # 這套件貼著時間懸崖，再加並發等於拿主閘門的可信度換 90 秒。
-      # 速度從「刪掉在下層已經驗過的重複情境」拿，不從並發拿。
+      # 刻意「不」用 pytest-xdist 平行化：實測全量同跑時，已經有情境會因
+      # 資源競爭失敗（單獨跑、單檔跑都穩定通過）。這套件貼著時間懸崖，
+      # 再加並發等於拿主閘門的可信度換 90 秒。
+      # 速度從「刪掉在下層已經驗過的重複情境」拿，不從並發拿——2026-08-07
+      # 依此刪掉 18 個情境（173 → 155），每一條都在 vitest 元件測試或
+      # api-tests 有指名的接手方；pytest step 實測 233s → 184s。
+      # ⚠️ 那條資源競爭 flake 仍在（`listing_management` 的建立刊登情境
+      # 曾在全量跑紅、單獨跑穩定綠）——全量紅了先單獨重跑一次再判斷。
       - name: e2e 情境測試（全 mock）
         working-directory: e2e
         env:
@@ -452,8 +464,8 @@ jobs:
   #   - 不讀 outputs：晉升 PR 就算只改文件也要跑全鏈路，路徑過濾不適用於
   #     這一軌（其餘重軌都掛 needs.guards.outputs.code == 'true'，這裡沒有）
   #   - 仍然 needs：guards 是秒級的，紅了就代表框架/linear/migration 已經
-  #     壞掉，此時再開一個拋棄式 Supabase 分支跑 30-90 分鐘是純浪費。
-  #     這是 guards 併軌時明訂的取捨（見該 job 註解：不啟動＝不計費）。
+  #     壞掉，此時再開一個拋棄式 Supabase 分支跑 30-90 分鐘是純浪費
+  #     （Supabase 分支不受 Actions 免費額度涵蓋，那是另一份帳單）。
   journey-full:
     needs: guards
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
