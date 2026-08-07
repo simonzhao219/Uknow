@@ -136,9 +136,13 @@ export function NotificationCard({
               <Icon className={style.iconColor} size={24} />
               <h3 className={`${style.titleColor}`}>{title}</h3>
             </div>
+            {/* 同 ToastCard：熱區只在觸控裝置放大（準則 §1）。size-11 是 44px，
+                -m-3 把四邊各吸回 12px，margin box 回到 size-5 的 20px——header
+                的版面不受影響。 */}
             <button
+              type="button"
               onClick={onClose}
-              className={`${style.textColor} hover:opacity-70 transition-opacity`}
+              className={`${style.textColor} hover:opacity-70 transition-opacity flex size-5 items-center justify-center rounded-full pointer-coarse:size-11 pointer-coarse:-m-3`}
               aria-label="關閉"
             >
               <X size={20} />
@@ -162,21 +166,26 @@ export function NotificationCard({
           </div>
 
           {/* Footer */}
+          {/* px-6 py-2 只有約 40px 高。頁尾這兩顆才是彈窗的主要觸控目標，
+              比右上角的關閉鈕更需要達標——用 min-h 而非固定高度，文字換行時
+              仍能長高。 */}
           <div className="px-6 pb-6 flex justify-end gap-2">
             {onCancel && (
               <button
+                type="button"
                 onClick={handleCancel}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors duration-200"
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors duration-200 pointer-coarse:min-h-[44px]"
               >
                 {cancelText}
               </button>
             )}
             <button
+              type="button"
               onClick={handleConfirm}
               className={`
                 ${style.buttonBg}
                 text-white px-6 py-2 rounded-lg
-                transition-colors duration-200
+                transition-colors duration-200 pointer-coarse:min-h-[44px]
               `}
             >
               {confirmText}
