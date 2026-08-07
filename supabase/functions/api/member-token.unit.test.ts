@@ -1,5 +1,5 @@
 // member-token 簽/驗純函式的行為契約（不碰資料庫，*.unit.test.ts 走 CI 最快軌）。
-// 核身 token 是身分邊界：簽發可驗、竄改必拒、逾時必拒、缺金鑰必拒（fail-closed）——
+// 驗證 token 是身分邊界：簽發可驗、竄改必拒、逾時必拒、缺金鑰必拒（fail-closed）——
 // 任何一條破功都等於「拿別人的碼或過期的碼也能被認成本人」。
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { signMemberToken, verifyMemberToken } from './member-token.ts';

@@ -188,7 +188,7 @@ export const SubscriptionStatusResponseSchema = obj({
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
 
-// 會員身分核身（member-verify-qr）——與推薦碼分離的另一組。
+// 會員身分驗證（member-verify-qr）——與推薦碼分離的另一組。
 // 會員自取的短效簽章碼；admin 掃碼解析後回會員身分＋會籍四態。
 export const MemberVerifyTokenResponseSchema = obj({
   success: bool(),

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// 核身碼取碼 hook 的行為契約：未啟用不取碼（不浪費請求）、成功回傳碼、
+// 驗證碼取碼 hook 的行為契約：未啟用不取碼（不浪費請求）、成功回傳碼、
 // 失敗給錯誤訊息且不留舊碼。自動換發的計時器不在此驗（時間相關，交由
 // 元件層與實機），這裡只釘住三個入口狀態。
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +50,6 @@ describe('useMemberVerifyToken', () => {
 
     const { result } = renderHook(() => useMemberVerifyToken(true));
 
-    await waitFor(() => expect(result.current.error).toBe('無法取得核身碼，請稍後再試'));
+    await waitFor(() => expect(result.current.error).toBe('無法取得驗證碼，請稍後再試'));
   });
 });

@@ -1,8 +1,8 @@
-// 會員身分核身端點的整合行為（需真 Postgres，走 CI api-tests 軌）。
+// 會員身分驗證端點的整合行為（需真 Postgres，走 CI api-tests 軌）。
 //   * GET /members/verify-token：登入會員自取短效碼。
 //   * POST /admin/members/verify：admin 掃碼 → 回身分＋會籍四態、寫稽核。
 // 守門本身（匿名 401 / 非 admin 403）由 admin-gate.test.ts 的 ADMIN_ROUTES 涵蓋，
-// 這裡測「核身結果正確、會籍四態、稽核有寫、token 過期與會籍過期不同語意」。
+// 這裡測「驗證結果正確、會籍四態、稽核有寫、token 過期與會籍過期不同語意」。
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
@@ -41,9 +41,9 @@ function verifyReq(adminToken: string, token: string) {
   });
 }
 
-Deno.test('member 自取核身碼 → admin 掃碼回身分與 active 會籍，並寫一筆稽核', async () => {
+Deno.test('member 自取驗證碼 → admin 掃碼回身分與 active 會籍，並寫一筆稽核', async () => {
   const client = adminClient();
-  const member = await createTestUser(client, { name: '核身測試員' });
+  const member = await createTestUser(client, { name: '驗證測試員' });
   const admin = await makeAdmin(client);
   try {
     await payForUser(client, member.id); // 會籍轉 active
@@ -58,13 +58,13 @@ Deno.test('member 自取核身碼 → admin 掃碼回身分與 active 會籍，�
     assertShape(MemberVerifyTokenResponseSchema, selfBody, 'GET /members/verify-token'); // SSOT 形狀把關
     assert(selfBody.data.token.length > 0);
 
-    // admin 掃碼核身
+    // admin 掃碼驗證
     const adminToken = await getUserAccessToken(client, admin.email);
     const res = await verifyReq(adminToken, selfBody.data.token);
     assertEquals(res.status, 200);
     const body = await res.json();
     assertShape(MemberVerifyResponseSchema, body, 'POST /admin/members/verify'); // SSOT 形狀把關
-    assertEquals(body.data.displayName, '核身測試員');
+    assertEquals(body.data.displayName, '驗證測試員');
     assertEquals(body.data.status, 'active');
 
     // 稽核有寫入一筆
@@ -81,7 +81,7 @@ Deno.test('member 自取核身碼 → admin 掃碼回身分與 active 會籍，�
   }
 });
 
-Deno.test('停權會員 → 核身回 status=suspended（不因效期內誤判 active）', async () => {
+Deno.test('停權會員 → 驗證回 status=suspended（不因效期內誤判 active）', async () => {
   const client = adminClient();
   const member = await createTestUser(client, { name: '停權員' });
   const admin = await makeAdmin(client);
@@ -104,7 +104,7 @@ Deno.test('停權會員 → 核身回 status=suspended（不因效期內誤判 a
   }
 });
 
-Deno.test('過期核身碼 → 400 且 code=token_expired（與會籍 expired 不同語意）', async () => {
+Deno.test('過期驗證碼 → 400 且 code=token_expired（與會籍 expired 不同語意）', async () => {
   const client = adminClient();
   const member = await createTestUser(client, { name: '過期碼員' });
   const admin = await makeAdmin(client);
@@ -118,7 +118,7 @@ Deno.test('過期核身碼 → 400 且 code=token_expired（與會籍 expired �
     assertEquals(body.success, false);
     assertEquals(body.error.code, 'token_expired');
 
-    // 過期核身不應留下稽核（沒有成功核到人）
+    // 過期驗證不應留下稽核（沒有驗證成功）
     const { data: logs } = await client
       .from('member_verify_logs')
       .select('id')
