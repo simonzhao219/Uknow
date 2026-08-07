@@ -132,19 +132,19 @@ jobs:
 
           # ⚠️ 只在 repository secret 真的有值時才覆寫 PayUni 憑證。
           #
-          # 舊版無條件帶入 repository secret 的 PAYUNI_TEST_* 三件套——GitHub 對不存在的
+          # 舊版無條件帶入 repository secret 的 PAYUNI_TEST_* 三件套——GitHub
+          # 對不存在的 secret 展開成空字串，於是這一步把分支上**原本設好的**
+          # 測試憑證洗成空的，然後 resolvePayuniConfig 在 sandbox 模式找不到
+          # 三件套就 500（run 30186374052 的真因，前五次執行都這樣洗過一次）。
           #
-          # ⚠️ 這幾行註解刻意完全不出現 GitHub 運算式的語法（雙大括號）：
+          # 憑證的主人是分支專案本身（人在 Supabase dashboard 設定），
+          # 這個 workflow 沒有理由代它決定；有 repo secret 才視為「CI 想覆寫」。
+          #
+          # ⚠️ 本 run 區塊的註解刻意完全不出現 GitHub 運算式的語法（雙大括號）：
           #    run 區塊裡任何位置的運算式都會被求值，連 shell 註解也算。
           #    2026-07-26 連續壞了兩次——先是寫了帶萬用字元的假運算式
           #    （Unexpected symbol），改完又留下一組空的（An expression was
           #    expected）。要示範語法就用文字描述，不要寫出那個符號。
-          # secret 展開成空字串，於是這一步把分支上**原本設好的**測試憑證
-          # 洗成空的，然後 resolvePayuniConfig 在 sandbox 模式找不到三件套
-          # 就 500（run 30186374052 的真因，前五次執行都這樣洗過一次）。
-          #
-          # 憑證的主人是分支專案本身（人在 Supabase dashboard 設定），
-          # 這個 workflow 沒有理由代它決定；有 repo secret 才視為「CI 想覆寫」。
           args=(PAYUNI_SANDBOX=true FRONTEND_URL="http://localhost:3100")
           if [ -n "$MER_ID" ] && [ -n "$HASH_KEY" ] && [ -n "$HASH_IV" ]; then
             args+=(PAYUNI_TEST_MER_ID="$MER_ID" PAYUNI_TEST_HASH_KEY="$HASH_KEY" PAYUNI_TEST_HASH_IV="$HASH_IV")
@@ -271,7 +271,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/requirements.txt') }}
+          # 同 journey.yml：裝哪一份 requirements，鍵就綁哪一份
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/journey/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
       - name: 安裝 Playwright 瀏覽器

@@ -290,7 +290,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/requirements.txt') }}
+          # 本 job 裝的是 e2e/journey/requirements.txt，快取鍵就得綁同一份——
+          # 綁到 e2e/requirements.txt 會讓 journey 的 playwright 版本改動不
+          # 失效快取（回退到 playwright install 自己重抓，等於白付一次下載）。
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/journey/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
       - name: 安裝 Playwright 瀏覽器

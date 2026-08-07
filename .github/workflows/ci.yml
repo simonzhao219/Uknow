@@ -448,6 +448,12 @@ jobs:
   # 30-90 分鐘完全付得起；日常 feature PR 則完全不受影響（skip）。
   # 與 nightly 共用同一份 reusable workflow，杜絕兩份定義漂移
   # （main / develop 兩個副本各自演化正是 2026-07 那次的成因）。
+  # needs: guards 但**不讀它的 outputs**——兩件事要分開看：
+  #   - 不讀 outputs：晉升 PR 就算只改文件也要跑全鏈路，路徑過濾不適用於
+  #     這一軌（其餘重軌都掛 needs.guards.outputs.code == 'true'，這裡沒有）
+  #   - 仍然 needs：guards 是秒級的，紅了就代表框架/linear/migration 已經
+  #     壞掉，此時再開一個拋棄式 Supabase 分支跑 30-90 分鐘是純浪費。
+  #     這是 guards 併軌時明訂的取捨（見該 job 註解：不啟動＝不計費）。
   journey-full:
     needs: guards
     if: github.event_name == 'pull_request' && github.base_ref == 'main'

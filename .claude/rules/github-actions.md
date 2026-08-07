@@ -96,8 +96,11 @@ be reported」永遠不綠——不是紅燈,是沒人送出那個名字的狀�
    *呼叫端*的排隊;呼叫端的 run 被 `cancel-in-progress` 取消後,該 group 的
    slot 不會乾淨釋放,之後每個 run 都永遠卡在 `pending` 且零 job。
    需要 concurrency 就放在薄外殼(見 `journey-scheduled.yml`)。
-2. **`workflow_run` 觸發的 workflow 定義一律取自預設分支**。改了
-   `deploy-supabase.yml` 要合進 main 才會生效,在 develop 上改不會有反應。
+2. **`workflow_run` 觸發的 workflow 定義一律取自預設分支**(不是被觸發那次
+   commit 的版本)。所以改 `deploy-supabase.yml` 要**合進預設分支**才生效,
+   在 feature 分支上改不會有反應。⚠️ 預設分支是 repo Settings → Branches
+   的設定,不是固定的 main——本 repo 已於 2026-07-25 改成 **develop**,
+   所以現在合進 develop 就生效,不必等晉升。改這條前先確認當下的預設分支。
 
 ## 新增 workflow 時
 
