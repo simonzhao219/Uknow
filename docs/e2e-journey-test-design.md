@@ -247,6 +247,13 @@ U2/K0/W1/W2/X1）獨立於 30 人主樹（`orgchart-saga.yaml`，不走 `load_no
 回填一律以 RUN_ID 圈定範圍、寫在獨立 scenario 的 Background，避免污染 §6 的帳本斷言
 （§6 先跑、§7 後跑，pytest 以 `--order` 固定順序）。
 
+70_ 為此擴充的原語（同檔）：`age_monthly_bucket`（平移 `monthly_referrals`
+月桶 key——讀現有 key 逐一平移不自推月份、目的地碰撞 append 合併不整把
+覆寫，純函式部分在 `tools/time_shift.py` 離線測試）、`seed_reward_points`
+（種 RUN_ID 標記的調整列墊提領門檻）、`seed_unclaimed_king_credit`
+（month_key 由呼叫端取自既有月桶）、`set_default_referrer_code`／
+`resolve_default_referrer_identity`（P0 自備的接線與身分解析，冪等）。
+
 ---
 
 ## 8. 測試資料管理
@@ -418,3 +425,4 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 | M2 | orgchart builder、30 人建樹、`10_`/`20_` feature（推薦＋獎勵） | 樹＋帳本斷言綠燈 |
 | M3 | `30_`–`50_`（任務/刊登/提領含 admin 端）、webhook 備援模式 | 六模組全綠 |
 | M4 | 時光機＋`60_`、cleanup.py＋零殘留斷言、nightly workflow | 全套 nightly 上線 |
+| M5 | `70_` 阿凱的七年（§6）＋時光機五原語（§7）＋`pytest_expr` 窄選（§11.5） | 十章 dispatch 綠燈、併入 nightly |

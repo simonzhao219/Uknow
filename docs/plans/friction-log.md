@@ -863,3 +863,12 @@ journey-offline 軌的 `--collect-only` 能證明「情境都收集得到」,但
 (2) **重複引號值變成第二個 capture**:parse 式步驟同一行出現兩個相同的
 引號值,第二個會被當成新參數,執行期報 fixture not found
 (run 31150698317)。撰寫 feature 時同一行避免重複引號值。
+
+## 2026-08-07｜被 e2e 斷言的 UI 文案缺 vitest 防線:A16 是唯一漏網
+
+70_renewal_saga 斷言的 UI 文案裡,「新約重置」「任務免費續約」都耦合到
+有 vitest 覆蓋的具名常數(REWARD_SOURCE_LABELS / FREE_RENEWAL_NOTE),
+文案漂移本地就紅;唯獨 A16「請等待審核完成,或聯繫客服」是
+PaymentCheckout.tsx 內嵌 JSX 字面字串,無常數無測試,漂移要等 30-90
+分鐘的 journey dispatch 才被抓到。建議小票:抽具名常數+一則輕量
+vitest。通則:**要被 e2e 拿來斷言的文案,先抽常數讓 vitest 看得到**。

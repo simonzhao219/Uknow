@@ -38,6 +38,11 @@ class AdminDashboardPage(BasePage):
         self.page.get_by_role("button", name="確認匯款").click()
 
     def reject_first_withdrawal(self, reason: str = "收款帳號與身分證姓名不符") -> None:
+        # ".first" relies on a cross-feature invariant: at this point exactly one
+        # pending withdrawal exists on the branch (50_ resolves its own to
+        # paid/rejected before 70_ starts, by filename order). If a future
+        # feature leaves a pending withdrawal behind, add a filter-by-member
+        # variant instead of stretching ".first" further.
         # exact=True so this doesn't also match the dialog's "確認退件" button.
         # The reason is mandatory: the backend rejects a blank note, and it is the
         # only text the member ever sees explaining why they were turned down.

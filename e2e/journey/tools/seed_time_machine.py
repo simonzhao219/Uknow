@@ -154,7 +154,11 @@ def set_default_referrer_code(admin: SupabaseAdmin, code: str) -> None:
 
     分支只 replay schema,正式站在資料層設定的預設碼不會跟過來——saga
     自備 P0 後用這支把它接上(人審 2026-08-07 裁決)。reward_config 是
-    單列表(id boolean primary key = true)。"""
+    單列表(id boolean primary key = true)。
+
+    已知的非阻擋性殘留:cleanup 的零殘留斷言只掃逐使用者 FK 表,這個
+    單列共享設定不在其中——刪除 P0 後碼會暫時指向已刪使用者。無實害:
+    拋棄式分支測完整個刪除,滿量重跑時本函式(冪等)會覆寫。"""
     updated = admin.rest_update(
         "reward_config", {"id": "eq.true"}, {"default_referrer_code": code.lower()}
     )

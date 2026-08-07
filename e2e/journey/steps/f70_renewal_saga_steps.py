@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 from builders import payment
 from builders.login import login_admin, login_via_gui
-from builders.org_builder import _build_one
+from builders.org_builder import build_single_actor
 from pages.payment_checkout_page import PaymentCheckoutPage
 from run_state import JourneyUser
 from tools import seed_time_machine, twid
@@ -75,7 +75,7 @@ def _ensure_actor(cfg, admin, run_state, node,
     """演員首次登場時經 GUI 建置(註冊三步+付款);已建置(有推薦碼)
     則跳過——與 org_builder 同一冪等原則,--lf 重跑不重建。
 
-    _build_one 必須丟 worker thread:pytest-playwright 的 sync API 讓
+    build_single_actor 必須丟 worker thread:pytest-playwright 的 sync API 讓
     主執行緒帶著 asyncio loop,主執行緒再開 sync_playwright() 會炸
     「Sync API inside asyncio loop」(run 31147957094 實測;10_org 的
     ThreadPoolExecutor 是同一個理由)。"""
@@ -86,7 +86,7 @@ def _ensure_actor(cfg, admin, run_state, node,
     if user is None:
         user = run_state.new_user(node, twid.generate_for_node(run_state.run_id, node))
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pool.submit(_build_one, cfg, admin, user, referral_code, referrer_name).result()
+        pool.submit(build_single_actor, cfg, admin, user, referral_code, referrer_name).result()
     run_state.save()
     return user
 
@@ -112,6 +112,13 @@ def saga_roster_ready(saga, journey_config, supabase_admin, run_state):
         f"預設碼解析到 {identity},不是 P0({p0.user_id})"
     )
     saga["p"] = identity
+    # feature 的聚合數字(300P/200P/700P…)全是單筆獎 100P 的倍數推導。
+    # 單筆斷言吃 reward_amount fixture 會跟調參,聚合寫死的必須在這裡
+    # 先炸出設定漂移——與 task_card 的門檻守衛同一原則。
+    amount = int(supabase_admin.reward_config()["referral_reward_amount"])
+    assert amount == 100, (
+        f"referral_reward_amount 是 {amount},與 feature 聚合斷言假設的 100 不符"
+    )
     # P0 的點數基準:在任何 saga 事件之前快照一次(setdefault 讓後續
     # 章節的 Background 不會覆蓋)。
     saga["marks"].setdefault(
@@ -336,8 +343,10 @@ def saga_fresh_switch_tree(saga, guarded_page, journey_config, supabase_admin,
                            run_state, node, referrer):
     user = run_state.users[node]
     new_ref = run_state.users[referrer]
-    # U2 是新配對收獎方,快照供 gen1 +100 與任務 1/8 斷言。
+    # U2 是新配對收獎方,快照供 gen1 +100 與任務斷言(ch4 首次配對 +1、
+    # ch7 S9 已配對不 +1 都吃這對 marks)。
     saga["marks"]["u2_points_before_fresh"] = _points_sum(supabase_admin, new_ref.user_id)
+    saga["marks"]["u2_tasks_before_fresh"] = _task_monthly_count(supabase_admin, new_ref.user_id)
 
     _fresh_gui_login(guarded_page, user)
     guarded_page.goto("/payment/checkout")
@@ -372,6 +381,29 @@ def ledger_zeroed(supabase_admin, run_state, node):
     # fresh 清空:ledger_reset 沖銷列讓帳本總和歸零(明細封存不刪,只增列)。
     total = _points_sum(supabase_admin, run_state.users[node].user_id)
     assert total == 0, f"{node} 帳本清空後總和應為 0,實為 {total}"
+
+
+@then(parsers.parse('"{node}" 的最新到期日為付款日起約一年【DB】'))
+def fresh_end_date_one_year_from_now(supabase_admin, run_state, node):
+    # fresh = 付款日起算一年(M2 第二路徑),不接續原效期。
+    days = (_latest_end_date(supabase_admin, run_state.users[node].user_id)
+            - datetime.now(timezone.utc)).days
+    assert 360 <= days <= 370, f"{node} fresh 後迄日距今 {days} 天,非約一年"
+
+
+@then(parsers.parse('"{node}" 因 "{referee}" 的 S9 付款獲得第 1 代獎勵增量 100P 且任務不增加【DB】'))
+def s9_gen1_reward_no_task(saga, supabase_admin, run_state, node, referee):
+    u2 = run_state.users[node]
+    points_delta = (
+        _points_sum(supabase_admin, u2.user_id)
+        - saga["marks"]["u2_points_before_fresh"]
+    )
+    tasks_delta = (
+        _task_monthly_count(supabase_admin, u2.user_id)
+        - saga["marks"]["u2_tasks_before_fresh"]
+    )
+    assert points_delta == 100, f"{node} S9 gen1 增量 {points_delta} != 100(M6 每筆事件都發)"
+    assert tasks_delta == 0, f"{node} S9 後任務增量 {tasks_delta} != 0(M7 已配對不重算)"
 
 
 @then(parsers.parse('"{node}" 的獎勵明細出現「新約重置」列'))

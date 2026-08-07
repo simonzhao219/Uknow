@@ -45,6 +45,22 @@ friction-log 整併、刪鷹架、PR 轉出 draft。
   **人審裁決(2026-08-07):「同意,照建議自備 P0 繼續」——已解除,
   依此實作。**
 
+## 偏離清單(/review-implementation 補記,詳見 implementation-review.md)
+
+- **builders/admin_bootstrap.py(f10-f70 共用)**:「不存在才插入」改
+  「一律 UPDATE 補齊 profiles」——修 handle_new_user trigger 裸列導致
+  UPDATE 0 列假成功的既存 bug,已核實下游無迴歸。實作期只記在 commit
+  message,審查判 P1 後補記於此。
+- **斷鏈自檢降級**:plan 承諾的「各章 Background 自檢+斷鏈於第 N 章」
+  未實作,以隱性防線(重導/逾時)+pytest 逐章命名定位取代——審查
+  裁決接受(implementation-review.md 需人工裁決 #2)。
+- **產品碼 a11y(4fefa62+收尾修正)**:JoinReferralProgramDialog 補
+  role="dialog"+aria-labelledby(收尾依 uiux 審查拿掉無 focus trap
+  配套的 aria-modal)。違反 plan「零產品碼」承諾,**待 PR 人審明文
+  核可**(implementation-review.md 需人工裁決 #1)。
+- 審查誤報澄清:builders/login.py 的簽名變更**不在本分支 diff**
+  (git 查證 0 commit),是 develop PR #205 經 rebase 帶入。
+
 ## 框架摩擦
 
 - 2026-08-03:bash-guard 誤擋 `git commit`——commit message 內含

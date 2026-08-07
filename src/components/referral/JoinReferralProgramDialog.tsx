@@ -79,17 +79,22 @@ export function JoinReferralProgramDialog({
             可視範圍、底部按鈕被切掉。overscroll-contain 讓卡片捲到頭尾時停住，
             不會把剩餘的捲動交給背景頁面。 */}
         {/* 手刻遮罩不像 Radix Dialog 會自帶 role="dialog"——沒有它，輔助技術
-            （與依 ARIA role 定位的測試）都看不出這是一個 modal。 */}
+            （與依 ARIA role 定位的測試）都看不出這是一個 modal。刻意不宣告
+            aria-modal：那是「焦點被困在對話框內」的承諾，本元件沒有 focus
+            trap，宣告了反而是不實資訊；可讀名稱用 aria-labelledby 綁標題，
+            文案改動時不會與獨立字串漂移。 */}
         <Card
           role="dialog"
-          aria-modal="true"
-          aria-label="加入推薦計畫"
+          aria-labelledby="join-referral-dialog-title"
           className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto overscroll-contain"
         >
           <div className="p-6">
             {/* 標題 */}
             <div className="mb-6">
-              <h2 className="text-2xl font-semibold mb-2 flex items-center gap-2">
+              <h2
+                id="join-referral-dialog-title"
+                className="text-2xl font-semibold mb-2 flex items-center gap-2"
+              >
                 <Shield className="h-6 w-6 text-purple-600" />
                 加入推薦計畫
               </h2>
