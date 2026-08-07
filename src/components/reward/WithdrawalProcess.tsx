@@ -20,6 +20,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import type { IdPhotosResponse } from '@contract';
 import { useNotification } from '../notifications/NotificationContext';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
@@ -47,10 +48,10 @@ interface SavedBankData {
   bankAccount: string;
 }
 
-interface IdPhoto {
-  frontUrl: string | null;
-  backUrl: string | null;
-}
+// 型別走契約(plan §2.4 的收斂原則):/rewards/id-photos 的回應形狀由
+// @contract 定義,手抄本不會跟著契約長欄位——verificationStatus 先前就是
+// 這樣被丟掉的,rejected 會員因此填完整張表才被守衛 #5a 打回。
+type IdPhotosData = IdPhotosResponse['data'];
 
 export function WithdrawalProcess({
   availableRewards,
@@ -76,8 +77,16 @@ export function WithdrawalProcess({
   const [isIdVerified, setIsIdVerified] = useState(false);
 
   // ✅ 已存儲的身分證照片
-  const [existingPhotos, setExistingPhotos] = useState<IdPhoto>({ frontUrl: null, backUrl: null });
+  const [existingPhotos, setExistingPhotos] = useState<Pick<IdPhotosData, 'frontUrl' | 'backUrl'>>({
+    frontUrl: null,
+    backUrl: null,
+  });
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+
+  // 證件被退回時的引導(守衛 #5a 只在送出時擋 rejected;不在這裡引導,
+  // 會員會填完整張表才被 toast 打回)。理由要到得了會員面前。
+  const [idRejected, setIdRejected] = useState(false);
+  const [idRejectReason, setIdRejectReason] = useState<string | null>(null);
 
   // ✅ 新上傳照片的預覽 URL
   const [idCardFrontPreview, setIdCardFrontPreview] = useState<string | null>(null);
@@ -118,12 +127,22 @@ export function WithdrawalProcess({
     const loadExistingPhotos = async () => {
       setIsLoadingPhotos(true);
       try {
-        const result = await apiRequestJson<{ success: boolean; data: IdPhoto }>(
-          buildApiUrl('/rewards/id-photos'),
-        );
+        const result = await apiRequestJson<IdPhotosResponse>(buildApiUrl('/rewards/id-photos'));
 
         if (result.success && result.data) {
-          setExistingPhotos(result.data);
+          if (result.data.verificationStatus === 'rejected') {
+            // 被退回的照片不予沿用——沿用等於重送同一份資料再被退一次
+            // (規格書 §10.1 點名的失敗模式;人審裁決:兩面都要新照片)。
+            // existingPhotos 維持空,validateStep2 與提交鍵的既有條件
+            // 自然強制兩面新上傳,守衛 #5a 在新照片轉 pending 後放行。
+            setIdRejected(true);
+            setIdRejectReason(result.data.rejectReason);
+          } else {
+            setExistingPhotos({
+              frontUrl: result.data.frontUrl,
+              backUrl: result.data.backUrl,
+            });
+          }
         }
       } catch (error) {
         console.error('載入身分證照片失敗:', error);
@@ -600,6 +619,23 @@ export function WithdrawalProcess({
         {/* 第三階段：身分驗證 */}
         {currentStep === 3 && (
           <div className="space-y-6">
+            {/* 證件退回警示——放步驟頂部:這一步的其他欄位都白填之前,
+                先讓會員知道要換照片。 */}
+            {idRejected && (
+              <Alert className="bg-red-50 border-red-200">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription>
+                  <strong className="text-red-900">證件審核未通過</strong>
+                  <p className="mt-1 text-sm text-red-800">
+                    {idRejectReason ?? '請聯繫客服了解原因'}
+                  </p>
+                  <p className="mt-1 text-sm text-red-800">
+                    請重新上傳身分證正反面（不可沿用先前的照片），送出申請時會一併重新送審。
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* 身分證字號 */}
             <div className="space-y-2">
               <Label htmlFor="idNumber">身分證字號 *</Label>
