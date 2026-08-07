@@ -40,6 +40,37 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      # ref 的單一真相在 git（deploy-supabase.yml 已是這個做法），儀表板的
+      # vars 只是可選覆蓋。這一步把「兩者必須一致」變成硬條件。
+      #
+      # 擋的不是「vars 沒設」——那會讓 URL 變成 https://.supabase.co/... ，
+      # curl -f 失敗、開 issue，本來就會叫。擋的是**靜默失效**：vars 被設成
+      # develop 分支的 ref 時，這支排程會去對 develop 的帳，端點照樣回
+      # 200 success、契約欄位齊全、issue 不會開，而正式站卡在 pending 的
+      # 訂單永遠沒人撿。付了錢的人停在「處理中」，沒有任何訊號。
+      - name: 確認對帳目標是正式專案
+        env:
+          REF_FROM_VARS: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          ref_from_git="$(python3 -c "import re,sys; print(re.search(r'projectId\s*=\s*[\'\"]([a-z0-9]+)[\'\"]', open('src/utils/supabase/info.tsx').read()).group(1))")"
+          if [ -z "$REF_FROM_VARS" ]; then
+            echo "::error::repository variable SUPABASE_PROJECT_REF 未設定。"
+            echo "::error::正式專案的 ref 是 $ref_from_git（來源：src/utils/supabase/info.tsx）。"
+            exit 1
+          fi
+          if [ "$REF_FROM_VARS" != "$ref_from_git" ]; then
+            echo "::error::對帳目標與 git 記載的正式專案不符——中止，不對任何帳。"
+            echo "::error::  vars.SUPABASE_PROJECT_REF = $REF_FROM_VARS"
+            echo "::error::  src/utils/supabase/info.tsx = $ref_from_git"
+            echo "::error::若正式專案真的換了 ref，先更新 info.tsx（它同時是前端建置的來源）。"
+            exit 1
+          fi
+          echo "對帳目標：$ref_from_git（vars 與 git 一致）"
+
       - name: 呼叫對帳端點
         env:
           ENDPOINT: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments

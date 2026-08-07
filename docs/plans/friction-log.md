@@ -817,3 +817,29 @@ commit 寫入、self-test 驗綠——沒有獨立的紅燈 commit。「紅燈 h
 文本對檢查器改動沒有紅燈要求。若認為檢查器也該比照(先提交會紅的案例、
 再提交讓它綠的規則),應把要求明文寫進 CLAUDE.md 或 rules,而不是留在
 個案 PR 的描述裡。裁決前維持現狀(表格案例+self-test)。
+
+## 2026-08-07｜判斷錯誤｜移除「冗餘」依賴前,要先確認被依賴者最近有沒有換過職責
+
+PR #211 盤點 CI 時發現 `ci.yml` 的 `journey-full` 掛著 `needs: changes`,但它的
+`if` 只看 `github.base_ref`、從不讀 `changes` 的任何 output——當時 `changes`
+就只是一個 `dorny/paths-filter` job,所以那條 needs 是純粹的空等(讓一軌
+30-90 分鐘的重活白等路徑過濾跑完才起跑)。判斷正確,於是移除。
+
+同一天稍晚 PR #216 把四個秒級守衛(路徑過濾／框架健檢／linear／migration)
+併成單一 `guards` job。rebase 上去時撞出衝突,才發現 `needs: guards` 的語意
+已經**完全不同**:它現在是**便宜失敗閘門**——守衛紅了就不該再開一個拋棄式
+Supabase 分支跑 30-90 分鐘(該 job 註解明訂:「不啟動＝不計費」)。原本冗餘
+的依賴,在被依賴者吸收了新職責之後變成必要。最後採用上游版本,只把「為什麼
+不讀它的 outputs、但仍然依賴它」寫成註解。
+
+**通則:`needs`(以及任何依賴宣告)有兩種語意——「我要你的產出」與「你先過我
+再跑」。只驗證了前者不成立,不足以判定這條依賴冗餘。移除前要問的是「被依賴
+的那個 job 現在到底在做什麼」,而不是「我有沒有讀它的 output」。**
+
+**同類風險面:** job 併軌／改名會同時讓 branch protection 的 required checks
+清單失效(舊名不再回報＝PR 永遠 pending,不是紅燈)。PR #116 的 `build` →
+`build-bundle`、PR #216 的 `changes`/`framework-check`/`linear-check`/
+`migration-guard` → `guards` 都屬於這一類。**動 job id 的 PR,收尾要同時檢查
+Settings → Rules 與 Settings → Branches 兩處的清單**(兩套系統獨立,required
+checks 取聯集)——這一條已寫在 `.claude/rules/github-actions.md`,此處只記
+「它今天又被觸發了一次」。

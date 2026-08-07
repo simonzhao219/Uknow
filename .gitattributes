@@ -6,4 +6,15 @@
 # 前提是每行都能獨立成立(一 session 一行、鍵序穩定),這由 decision_log.py 的
 # to_line() 保證;union 不會產生半行,最壞情況只是重複行,而 harness-metrics.py
 # 以 session id 去重。
+#
+# ⚠️ 這只在**本機**生效。GitHub 在算 PR 的 mergeable_state 時似乎不套用
+# .gitattributes 的 merge driver,所以 develop 一有新 commit 碰到這個檔案,
+# PR 就會被標成 `dirty`(UI 顯示「This branch has conflicts」)。此時本機
+# `git rebase origin/develop` 會直接 `Auto-merging` 過去、一次都不用手解——
+# **看到 dirty 不代表 union 壞了,那是誤報**,照常 rebase 再 force-with-lease
+# 推上去即可。
+#
+# 證據強度:這是 2026-08-07 PR #211 的行為觀察(該 PR 期間 develop 前進五次,
+# 前三次的唯一重疊檔就是本檔;本機每次自動解、GitHub 每次標 dirty),**不是**
+# 查證過的平台規格。GitHub 若改了行為,以實際觀察為準。
 .claude/metrics/sessions.jsonl merge=union
