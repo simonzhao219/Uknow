@@ -17,6 +17,8 @@
 的長字串——名稱 10 字是 `CreateServiceProvider.tsx` 的硬上限、類別取清單
 裡最長的、FB 存的是使用者貼上的原始網址（`contactValidation.ts` 只驗證
 不正規化）。用超出產品約束的假資料會做出假紅，反而讓報告不可信。
+**反過來也成立**：測資不夠壞、mock 少回欄位讓條件渲染整塊消失、或清單給空的，
+都會量出假的乾淨而把一條路由誤標成上鎖。上鎖前的自檢清單見 `README.md`。
 """
 
 import json
@@ -29,6 +31,7 @@ import pytest
 
 from mocks.admin_console_mock import route_admin_member_detail
 from mocks.backend_api_mock import (
+    build_admin_announcement,
     build_admin_member,
     build_admin_withdrawal,
     build_monthly_king_task,
@@ -287,12 +290,31 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     # 詳情 Sheet 用；**必須在 set_admin_members 之後**（見該模組的 docstring：
     # 列表的尾綴 glob 也吃得下詳情 URL，只是回錯形狀）。
     route_admin_member_detail(context, "mem-admin-1")
-    api_mock.set_admin_announcements([])
+    # 空清單只會渲染「尚無公告」——公告列一列裡有標題＋三顆 Badge＋刪除鍵
+    # （SystemNotifications.tsx:242-266），不給資料等於那一列從未被量過。
+    # title/message 後端都沒有長度上限（api/index.ts:1670-1671），實務上
+    # 公告內文會貼網址，長 token 不斷行。
+    api_mock.set_admin_announcements(
+        [
+            build_admin_announcement(
+                title="系統維護預告：2026/08/15 02:00-06:00 全站停機",
+                message=(
+                    "維護期間無法登入與付款，造成不便敬請見諒。詳細影響範圍請見 "
+                    "https://www.uknowplatform.com.tw/announcements/2026-08-maintenance"
+                ),
+                type="error",
+                endsAt="2026-08-15T06:00:00.000Z",
+            )
+        ]
+    )
     api_mock.set_system_alerts(
         alerts
         or [build_system_alert(message="Edge Function 回應逾時：/rewards/withdraw 連續失敗 5 次")]
     )
-    api_mock.set_admin_setup(is_admin=True)
+    # 管理員設置分頁的最壞但可達測資。Email 來自 Supabase Auth（無長度上限），
+    # 姓名吃 10 字上限，兩者在 `flex justify-between` 的同一列裡與固定寬的
+    # 標籤搶空間（AdminSetup.tsx:147-163）。
+    api_mock.set_admin_setup(is_admin=True, user_name=NAME_CJK_10, user_email=LONG_EMAIL)
 
 
 def _setup_admin_alerts(context, api_mock, rest_mock):
@@ -454,6 +476,10 @@ ROUTES = [
         "/admin",
         tags=["announcements"],
         after_load=_open_tab("公告管理"),
+        # 同上：這條先前也是靠空清單「上鎖」的。公告內文沒有 break-words，
+        # 貼一條網址就撐破（SystemNotifications.tsx:263）。規劃書 §4.0 的
+        # P1–P14 沒有這一項——是補齊測資之後才浮現的新證據。
+        known_overflow="公告內文的網址不斷行（+153px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
@@ -462,6 +488,11 @@ ROUTES = [
         "/admin",
         tags=["admin-setup"],
         after_load=_open_tab("管理員設置"),
+        # 這條先前是「上鎖」的——但 set_admin_setup 少回 userName，而
+        # AdminSetup.tsx:146 拿它當渲染條件，整個帳號資訊區塊從未進 DOM。
+        # 補齊後端真正會回的三欄（api/index.ts:1725-1727）之後才顯形。
+        known_overflow="Email 與標籤在 flex justify-between 的同一列裡不換行"
+        "（+119px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
