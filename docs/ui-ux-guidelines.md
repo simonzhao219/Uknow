@@ -113,7 +113,30 @@
 全站文案是中文，所有溢出行為都建立在中文字寬上。
 `e2e/test_overflow_sweep.py` 在 **375px** 下巡檢各路由，目前為 **report-only**
 （結果寫進 `test-results/overflow-report.{md,json}`）。新增路由時記得加進
-該檔的 `ROUTES`。
+該檔的 `ROUTES`；**tab 介面要另外帶 `after_load`**——Radix Tabs 只掛載 active
+面板，不切過去的 tab 從來沒被畫出來過，量不到不等於沒問題。
+
+**表格裡的長內容**：`TableCell` 基底帶 `whitespace-nowrap`
+（`ui/table.tsx`）。長度無上限的欄位（jsonb 原文、使用者貼上的網址、
+後端寫入的訊息）必須把**換行、限寬、`block` 三者放在同一個內層元素上**：
+
+```tsx
+<TableCell>
+  <code className="block max-w-xs whitespace-normal break-all">{…}</code>
+</TableCell>
+```
+
+三者缺一都會靜默失效，而且失效方式不是「沒生效」而是「畫到隔壁欄位上」：
+
+- `white-space: nowrap` 會取消所有換行機會，**`break-all` 在它之下完全無效**
+  ——不是優先序問題。內層自己宣告 `whitespace-normal` 即可（`white-space`
+  是繼承屬性，顯式宣告就勝出，不必和 td 比 specificity）
+- `max-width` 加在 `<td>` 上，auto table layout 只當提示
+  （CSS 2.1 §17.5.2 明訂 table cell 的 min/max-width 效果 undefined），
+  既不約束也不裁切
+- `max-width` 對 inline 元素無效，`<code>`/`<span>` 要補 `block`
+
+反向：識別字與時間戳（`2026/07/25 09:56:03`）維持 nowrap，折行更難讀。
 
 ---
 
