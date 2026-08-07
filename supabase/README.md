@@ -113,6 +113,40 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
 
+## RLS 結構守衛（`api/rls-policies.test.ts`）
+
+`public.listings` 的五條 policy 由這支測試每個 PR 釘住。它抓不到「policy 寫得
+對不對」，但抓得到**被刪掉、角色被放寬、條件被改寬、多出第 6 條 permissive、
+或整張表的 RLS 被關掉**——那才是實際會發生的迴歸。行為驗證在 journey 的
+hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-design.md` §14）。
+
+**這一層只能斷言環境無關的事實。** policy 的存在／角色／表達式／欄位集合全部
+來自 migration，每個環境相同；而 `has_table_privilege('anon', ...)` 這類 GRANT
+事實**本地與 hosted 不同**，在這一軌斷言它等於把錯的環境寫進測試。取 golden 的
+手法是直接問 `pg_policy`／`pg_get_expr`，中間不隔 PostgREST（同
+`name-write-paths.test.ts` 的理由）。
+
+⚠️ `pg_get_expr` 是把運算式**樹**反編譯回文字，不同 Postgres 大版本的間距可能
+有差異，而 `supabase/config.toml` **沒有 pin `[db] major_version`**——所以比對前
+先做空白正規化，失敗訊息帶上 `version()`。「條件被改寬」必然改變 token，
+正規化不會產生假陰性。
+
+### GRANT 現況（查證於 2026-08-07 的 develop 分支，PostgreSQL 17.6）
+
+這是**當時查證的歷史記錄**，用來解釋 0726 事故的成因類型，不是保證不變的現況：
+
+| 檢查 | 結果 |
+|---|---|
+| `authenticated` 對 `is_admin()` 的 EXECUTE | **true** |
+| `anon` 對 `is_admin()` 的 EXECUTE | false |
+| `anon` 對 `listings` 的 SELECT / INSERT | **true / true** |
+| `authenticated` 對 `listings` 的 S/I/U/D | 全部 true |
+
+兩件事因此成立:(a)`20260620000004` 的 `revoke ... from anon, public` 移除的是
+**隱含**的 PUBLIC 授權，而 hosted 的 default privileges 另給了 `authenticated`
+一份**明確**授權，revoke 動不到它——這正好解釋 0726 那次為何只有 anon 中招;
+(b)GRANT 層對 `listings` 全開，**RLS 是該表唯一的列級授權邊界**。
+
 ## 環境與部署
 
 兩個 Supabase 環境，由 CI 依分支對應。**部署目標的 ref 讀 git 內的檔案**，
