@@ -46,10 +46,13 @@ cd e2e && E2E_SKIP_DEV_SERVER=1 pytest --browser chromium -q --durations=0 --jun
 
 ### 1.2 CI 實測(不是估算——GitHub Actions API 取兩次 develop run 的逐 step 時間)
 
-| run | job 總時長 | 計費分 | 固定開銷(step 1–9) | **pytest step** |
-|---|---|---|---|---|
-| 31153673362(7ab9d46) | 290s | **5** | 57s | 233s |
-| 31151494251(df60c0d) | 385s | **7** | 50s | 330s |
+| run | job 總時長 | 計費分 | 固定開銷(step 1–9) | **pytest step** | post 步驟 |
+|---|---|---|---|---|---|
+| 31153673362(7ab9d46) | 290s | **5** | 53s | 233s | 4s |
+| 31151494251(df60c0d) | 385s | **7** | 50s | 330s | 5s |
+
+(53+233+4=290、50+330+5=385,兩列各自加總吻合。審查 P2-2 修正:
+初版漏列 post 步驟欄且 run 1 的固定開銷誤植為 57s。)
 
 兩次的 e2e 套件內容實質相同(兩個 commit 之間只動 CI 設定與文件),
 pytest step 卻差 **97s(+42%)**——runner 快慢的變異比整份候刪清單還大。
@@ -73,21 +76,29 @@ pytest step 卻差 **97s(+42%)**——runner 快慢的變異比整份候刪清�
   約占全套件一半。
 
 **在「每個候刪情境必須附下層覆蓋證據」的硬約束下,拿不到這個量。**
-本規劃實際找得到證據的候刪集合是 **29 個情境(31 個 test case)、
-本機 31.8s、佔 17%**,換算 CI 約 **-40~-56s**:
+
+> ⚠️ **審查後修訂(2026-08-07,見 `review.md`)**:四視角審查揪出 2 個 P0
+> 與 6 個 P1,全部是「證據等級標錯」——初版的 29 條候刪裡有 14 條的證據
+> 經不起查證(詳見 §4 各表的刪除線標註)。移出後的實得如下,**比初版少了
+> 四成**,Q1 的結論因此更強烈而非減弱。
+
+修訂後實際找得到證據的候刪集合是 **15 個情境(15 個 test case)、
+本機 19.4s、佔 10.3%**,換算 CI 約 **-24~-34s**:
 
 | 情境 | 現況 | 刪後(推估) | 計費分變化 |
 |---|---|---|---|
-| 快 runner | 290s | ~250s | 5 → **5**(不變) |
-| 慢 runner | 385s | ~334s | 7 → **6**(-1) |
+| 快 runner | 290s | ~261s | 5 → **5**(不變) |
+| 慢 runner | 385s | ~351s | 7 → **6**(-1,勉強跨線) |
 
-計費是無條件進位,省下的 40–56s 是否跨過分鐘邊界取決於落點,
-期望值 ≈ 40~56/60 ≈ **0.7–0.9 計費分/run**。
+計費是無條件進位,省下的 24–34s 是否跨過分鐘邊界取決於落點,
+期望值 ≈ 29/60 ≈ **0.5 計費分/run**。
 
 月估:friction-log 記 07-25~08-07 共 330 次 CI run(≈24/日 ⇒ ≈700/月),
-e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ ≈600 run/月。
+e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ **≈600 run/月**。
 
-> **月省 ≈ 0.8 × 600 ≈ 450–600 分**,而不是任務描述的 700–1,000 分。
+> **月省 ≈ 0.5 × 600 ≈ 300 分**(初版誤估為 450–600 分:一是候刪清單
+> 未經查證偏大,二是區間端點算術不一致——審查 P2-3 指出 0.7–0.9 × 600
+> 應為 420–540 而非 450–600)。任務描述的目標是 700–1,000 分。
 
 差額的來源不是「還沒找夠」,而是 §1.1 的平坦成本曲線 + §1.2 的固定開銷:
 **單靠刪重複情境到不了 4 計費分**。要再往下需要動 §1.2 的固定開銷或並發,
@@ -138,6 +149,18 @@ e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ ≈600 run/月�
 | **B** | 下層測試斷言同一個**決策函式/純函式**的輸出,且該決策在 e2e 只是被顯示出來 | `withdrawalValidation.test.ts::低於最低（999 / 500 / 0）→ 最低提領提示` 產出的正是 e2e 斷言的 `最低提領Point為 1,000P` |
 | **C** | 同一行為在 e2e 內部被兩個情境重複驗(跨 feature 檔) | `listing_management.feature` 與 `service_provider_detail.feature` 都驗公開詳情頁 |
 
+> **審查後修訂(P1-4)**:初版寫「只有 A、B 級可以刪」卻在 §4.8/§4.10 用
+> C 級刪了 3 條——自己違反自己剛定的判準。硬約束 1 的字面是「在**更便宜的
+> 層**被斷言」,C 級證的是**同一層**另一個情境,不滿足。這 3 條已改列存疑,
+> C 級的地位列為 Q9 待裁決。**現行有效判準:只有 A、B 級可以刪。**
+>
+> **套用 B 級時必須額外查證的一件事(P0-1 的教訓)**:確認 e2e 情境走的
+> 是**哪一個**決策函式。`RequireMembershipRoute` 有自己的
+> `resolveMembershipRedirect`,與 `registrationFlow.ts` 的
+> `resolveCheckoutPageRedirect` 是**兩張獨立決策表**;初版把後者的測試
+> 當成前者的證據,而前者全 repo 零覆蓋。**「名字看起來像同一件事」不是證據,
+> 要 grep 到實際 import 才算。**
+
 **不算證據(這幾條在盤點時擋掉了不少「看起來像重複」的候選):**
 
 - 字串在下層檔案出現過 ≠ 被斷言過(`王小明` 出現在 14 個測試檔,全是測資名字)。
@@ -159,19 +182,31 @@ e2e 只在 `guards.outputs.code == 'true'` 時跑(估 ≈85%)⇒ ≈600 run/月�
 ### 3.3 一個必須記下來的發現:route guard 的接線沒有下層防線
 
 `grep -rln "ProtectedRoute|RequireMembershipRoute|AdminRoute" src --include=*.test.tsx`
-→ 只有 `PaymentResult.test.tsx` 命中(而且是被測元件自己 import)。
+→ 只有 `PaymentResult.test.tsx` 命中(而且只出現在**註解**裡,沒有 import
+或 render)。也就是說:**沒有任何元件測試 render 過這三個 guard**。
 
-也就是說:**沒有任何元件測試 render 過這三個 guard**。
-`registrationFlow.test.ts` 測的是決策函式(`resolveMembershipAction` /
-`resolveCheckoutAction`),`route_guards.feature` 測的是「決策有沒有被接進
-router」。兩者不是同一件事。
+**比「沒有 render」更嚴重的一層(審查 P0-1 揪出)**:
+`RequireMembershipRoute.tsx:29` 有自己的決策函式 `resolveMembershipRedirect`,
+六個分支(isAdmin / active / paidAwaitingActivation / expired / step0 / catch-all)
+**全 repo 零測試覆蓋**——`grep -rn "resolveMembershipRedirect" src supabase`
+除定義處與同檔呼叫外零命中。初版誤把 `registrationFlow.test.ts` 對
+`resolveCheckoutPageRedirect` 的測試當成它的證據,兩者是**兩張獨立決策表**,
+從無互相 import。
 
-處置:route_guards 只刪「決策表的變體」,每個 guard 元件保留至少一條接線證明:
+(初版還寫了兩個不存在的函式名 `resolveMembershipAction` /
+`resolveCheckoutAction`——審查 P2-1 指出這個命名漂移很可能就是誤判成因。
+實際識別字是 `resolveMembershipRedirect` 與 `resolveCheckoutPageRedirect`。)
 
-- `ProtectedRoute` → 保留 `Anonymous user is redirected to login`
-- `RequireMembershipRoute` → 保留 `An active member reaches the member-only
-  route directly`(放行分支)+ `An expired former member is sent to checkout`(重導分支)
-- `AdminRoute` → 保留 `A logged-in non-admin is redirected away from /admin`
+處置(修訂後):**route_guards.feature 全數保留,一條不刪**。它是
+`resolveMembershipRedirect` 這張決策表在**任何層**的唯一防線,其中
+`paidAwaitingActivation` 分支守的是「絕不能把已付款的人送回結帳頁造成
+重複付款」——金流路由不變式,不是裝飾性行為。
+
+同理 `/payment/checkout` **只包 `ProtectedRoute`**(`App.tsx:371-375`),
+不包 `RequireMembershipRoute`;該頁的自我導頁由 `PaymentCheckout.tsx:94-104
+/ 154-164` 兩個 useEffect 呼叫 `resolveCheckoutPageRedirect` 驅動,而
+`PaymentCheckout.test.tsx` 的 21 個測試沒有任何一條驗這個 mount-time 導頁
+(審查 P0-2)。那 3 條 redirect 情境同樣改列存疑。
 
 ### 3.4 資料庫 / API / migration
 
@@ -257,20 +292,25 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 | 0.96 | District filters are scoped per city and never leak across cities | **刪** | B級 `districtSelection.test.ts::同名區不跨市誤配：基隆的選擇不會讓台北的大同區刊登通過`(**逐字對應本情境的斷言**)+ `::該市勾全區 → 該市所有刊登都過`、`::該市勾具體區 → 只有交集的刊登過`、`::縣市已勾但區清空（=只按縣市篩）→ 該市全部通過` |
 | 0.62 | Without location permission the newest listing stays on top | **留** | 地理排序**無任何下層測試**(grep 無命中) |
 | 0.78 | With location granted the directory sorts nearest-first | **留** | 同上 |
-| 0.58 | The directory renders mobile cards on a small screen | **刪** | A級 `MobilePhotoWallCard.test.tsx::整格是通往該服務者詳情頁的連結`、`::顯示照片（alt 為服務者名稱）、名稱與服務類別` + `test_overflow_sweep.py[/]` 已在 375px 載入首頁 |
-| 0.69 | The mobile directory defaults to the 3-column photo wall without overflow | **刪** | B級 `homeViewMode.test.ts::預設模式是 3 欄照片牆` + 溢版半邊由 `test_overflow_sweep.py[/]`(375px 全頁量測)涵蓋且更嚴格 |
-| 0.78 | A visitor can switch between the photo-wall and detailed views on mobile | **刪** | A級 `HomeViewToggle.test.tsx::點另一個模式會回報該模式`、`::以 aria-pressed 標示當前模式` |
-| 1.18 | The mobile view preference is remembered across reloads | **刪** | B級 `homeViewMode.test.ts::把偏好寫進儲存體`、`::讀回先前存的合法偏好`、`::儲存體裡是髒資料 → 收斂回預設` |
+| 0.58 | The directory renders mobile cards on a small screen | ~~刪~~ → **存疑** | **審查 P1-1 推翻**:`MobilePhotoWallCard.test.tsx` 只測孤立卡片元件,**沒有任何測試 render `HomePage`**;該情境驗的是 `block md:hidden` media query 在真瀏覽器 375px 下選了哪組 DOM,而 vitest 不載入編譯後 CSS、jsdom 無版面引擎,**結構性測不到** → Q10 |
+| 0.69 | The mobile directory defaults to the 3-column photo wall without overflow | ~~刪~~ → **存疑** | **審查 P1-1 + P1-2 推翻**:`homeViewMode.test.ts` 只測裸 localStorage 函式;溢版半邊引用的 `test_overflow_sweep.py[/]` 因 `E2E_OVERFLOW_STRICT` 未設而是 **report-only 不擋 CI**(初版寫「更嚴格」是錯的,那是**降級**),且它只偵測有無溢出、**不驗證欄數**(變 2 欄不觸發任何 finding) → Q10 |
+| 0.78 | A visitor can switch between the photo-wall and detailed views on mobile | ~~刪~~ → **存疑** | **審查 P1-1 推翻**:`HomeViewToggle.test.tsx` 測的是孤立 toggle 元件會不會回報事件,**不是切換有沒有真的換掉可見 DOM**——與 §3.3 的 guard 同一種「決策有測 ≠ 接進畫面」漏洞 → Q10 |
+| 1.18 | The mobile view preference is remembered across reloads | ~~刪~~ → **存疑** | **審查 P1-1 推翻**:`homeViewMode.test.ts` 驗的是讀寫函式,不是「重載後真的挑對初始檢視」 → Q10 |
 
-**小計:刪 5 條 / 4.19s**
+**小計(修訂後):刪 1 條 / 0.96s;存疑 4 條 / 3.23s**
+
+> **審查 P1-3(行動版優先)**:全庫 `grep "I am on a mobile-sized screen"` 只有
+> 5 處,其中 4 處就是上面這 4 條。若刪,首頁手機版在瀏覽器層將**完全沒有
+> 會擋 CI 的迴歸防線**,只剩 report-only 掃描。首頁是 LINE 導流第一入口,
+> 規格明訂手機優先——這是實質削弱,不是去重。已全數改列存疑。
 
 ### 4.5 payment_checkout.feature(13 情境 / 12.3s)
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 0.64 | A paid user awaiting activation is redirected to the result page | **刪** | B級 `registrationFlow.test.ts::已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 導向結果頁`(這正是 checkout 頁 mount 時呼叫的 `resolveCheckoutAction`)+ C級 route_guards 保留了 guard 接線 |
-| 0.70 | A step-2 user whose payment failed stays on checkout to retry | **刪** | B級 `registrationFlow.test.ts::付款失敗的 step 2（paidAwaitingActivation=false）→ 留在結帳頁重新付款`、`::結帳頁不彈走 step 1 使用者` |
-| 0.62 | An already-paid active member is redirected to the dashboard | **刪** | B級 `registrationFlow.test.ts::會籍有效（active）→ 導向會員中心`、`::active 優先於其它狀態（即使同時 paidAwaitingActivation）` |
+| 0.64 | A paid user awaiting activation is redirected to the result page | ~~刪~~ → **存疑** | **審查 P0-2 推翻**:`/payment/checkout` **只包 `ProtectedRoute`**(`App.tsx:371-375`),初版寫的「C級 route_guards 保留了 guard 接線」根本不在此路由執行。B 級證據(`registrationFlow.test.ts::已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 導向結果頁`,測的是 `resolveCheckoutPageRedirect`)本身成立,但缺 A 級 wiring 證明 → Q11 |
+| 0.70 | A step-2 user whose payment failed stays on checkout to retry | ~~刪~~ → **存疑** | 同上。B級 `registrationFlow.test.ts::付款失敗的 step 2（paidAwaitingActivation=false）→ 留在結帳頁重新付款` 成立,缺 wiring → Q11 |
+| 0.62 | An already-paid active member is redirected to the dashboard | ~~刪~~ → **存疑** | 同上。B級 `registrationFlow.test.ts::會籍有效（active）→ 導向會員中心` 成立,缺 wiring → Q11 |
 | 0.68 | An expired former member sees both renewal options | **刪** | A級 `PaymentCheckout.test.tsx::extend 選中時揭露補繳筆數、總額、補完到期日與已過期時長`、`::fresh 卡片顯示新約的具體效期迄日（AC-2）` + Deno `renewal-modes.test.ts::prepare：過期未滿一年選 extend 建單成功，訂單帶 renewal_mode` |
 | 0.73 | A member expired for over a year can still choose to extend | **刪** | A級 `PaymentCheckout.test.tsx::過期超過一年時續約仍可選且為預設，日期吃契約值非 localStorage 舊值`(斷言同一串 `無法接續原效期` 的不存在)+ Deno `renewal-modes.test.ts::prepare：過期超過一年選 extend 也能建單（A1 補繳制）；fresh 照舊` |
 | 0.66 | Referrer info is shown when the profile has an uncached referral code | **存疑** | `PaymentCheckout.test.tsx::手動填碼者：確認卡照常顯示推薦碼與快取的推薦人姓名` 測的是**已快取**路徑,「未快取 → 現場查」是本條獨有 → Q6 |
@@ -282,7 +322,7 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 | 2.20 | Editing returns to the profile form, stays there, and prefills the data | **留** | 回歸釘(feature 檔內註明的既有事故) |
 | 0.71 | A duplicate-subscription error is surfaced as a warning | **存疑** | `apiClient.test.ts::解析物件形信封 { error: { message } }` 覆蓋解析,toast 接線無下層 → Q6 |
 
-**小計:刪 5 條 / 3.37s;存疑 2 條 / 1.37s**
+**小計(修訂後):刪 2 條 / 1.41s;存疑 5 條 / 3.33s**
 
 ### 4.6 route_guards.feature(8 情境 / 5.8s)
 
@@ -291,13 +331,13 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 | 0.60 | Anonymous user is redirected to login | **留** | ProtectedRoute 唯一接線證明(§3.3) |
 | 0.75 | An active member reaches the member-only route directly | **留** | RequireMembershipRoute 放行分支接線 |
 | 0.73 | An admin without a subscription is not locked out | **留** | admin 例外分支,無下層 |
-| 0.59 | A paid user awaiting activation is sent to the activation-pending result page | **刪** | B級 `registrationFlow.test.ts::已付款、開通中（paidAwaitingActivation + lastTradeNo）→ 導向結果頁`;接線由同檔保留的兩條證明 |
-| 0.61 | A user whose payment failed is sent back to checkout | **刪** | B級 `registrationFlow.test.ts::付款失敗的 step 2（paidAwaitingActivation=false）→ 留在結帳頁重新付款` |
+| 0.59 | A paid user awaiting activation is sent to the activation-pending result page | ~~刪~~ → **留** | **審查 P0-1 推翻(系統+架構雙視角獨立發現)**:本情境走 `/dashboard` → `RequireMembershipRoute` → `resolveMembershipRedirect`,**不是** `registrationFlow.ts` 的 `resolveCheckoutPageRedirect`。前者全 repo **零測試覆蓋**,刪掉等於此金流路由不變式(「絕不能把已付款的人送回結帳頁造成重複付款」)四層皆無防線 |
+| 0.61 | A user whose payment failed is sent back to checkout | ~~刪~~ → **留** | 同上,`resolveMembershipRedirect` 的 catch-all 分支唯一防線 |
 | 0.62 | An expired former member is sent to checkout to renew | **留** | §3.2 會籍旅程 + RequireMembershipRoute **重導分支**的接線證明 |
-| 1.16 | Scenario Outline: The first-time funnel routes by registration step(2 列) | **刪** | B級 `registrationFlow.test.ts::尚未填基本資料（step 0）→ 導向完善資料頁`、`::step 1（首次待付款）→ 留在結帳頁`;首購漏斗的接線由同檔保留的 `A step-0 user who reaches checkout…` 與 auth_login 的登入導流 Outline 證明 |
+| 1.16 | Scenario Outline: The first-time funnel routes by registration step(2 列) | ~~刪~~ → **留** | 同上,`resolveMembershipRedirect` 的 step0 分支唯一防線 |
 | 0.70 | A step-0 user who reaches checkout is sent to complete their profile | **留** | 回歸釘(空白確認框事故),feature 檔內註明 |
 
-**小計:刪 3 條(4 個 test case)/ 2.36s**
+**小計(修訂後):刪 0 條。route_guards.feature 全數保留。**
 
 ### 4.7 renewal_backfill_recovery.feature(4 情境 / 3.3s)
 
@@ -314,35 +354,39 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 0.66 | Anyone can view a public listing detail without logging in | **刪** | C級 `service_provider_detail.feature::A known listing renders its details`(0.69s)驗同一頁同一條 `public_listings` 讀取;e2e README 也把該頁的擁有權指給 service_provider_detail |
-| 0.82 | A missing listing shows a not-found message | **刪** | C級 `service_provider_detail.feature::An unknown listing shows the not-found screen`(0.60s),兩者斷言同一串 `找不到此服務者` |
+| 0.66 | Anyone can view a public listing detail without logging in | ~~刪~~ → **存疑** | **審查 P1-4 推翻**:證據唯一來源是 C 級(`service_provider_detail.feature::A known listing renders its details`),而 §3.1 現行判準是「只有 A、B 級可以刪」,硬約束 1 也要求「在**更便宜的層**被斷言」——同層另一個 e2e 情境不滿足 → Q9 |
+| 0.82 | A missing listing shows a not-found message | ~~刪~~ → **存疑** | 同上(C 級對應 `service_provider_detail.feature::An unknown listing shows the not-found screen`)→ Q9 |
 | 其餘 8 條 | (empty state / summarised / expired 導向 / create 反彈 / 刪除 / 無權編輯 / 建立 / 上傳期間輸入不被清空) | **留** | 刊登 CRUD 的元件層無測試;最後一條是冷啟動間歇失敗的回歸釘 |
 
-**小計:刪 2 條 / 1.48s**
+**小計(修訂後):刪 0 條;存疑 2 條 / 1.48s**
+
+> 註:C 級所指的重複**內容為真**(兩檔確實驗同一頁),審查亦確認;
+> 爭點純粹是「同層重複算不算合格的刪除證據」,這是判準問題不是事實問題,
+> 故列 Q9 待裁決而非直接刪。
 
 ### 4.9 line_browser.feature(5 情境 / 5.8s)
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 1.30 | Scenario Outline: `<platform>` renders the full app instead of a block page(2 列) | **刪** | B級 `browserDetection.test.ts` 15 個測試涵蓋 Examples 表的每個平台(`::以 "Line/" token 辨識 iOS 的 LINE`、`::辨識一般 Android WebView（wv + android）`);「偵測結果接到渲染決策」的接線由同檔保留的 3 條(LIFF 全域 / 到得了註冊 / 走完付款)重複證明。**feature 檔自己的註解已寫明這個分工** |
+| 1.30 | Scenario Outline: `<platform>` renders the full app instead of a block page(2 列) | ~~刪~~ → **存疑** | **審查 P1-5 推翻**:全 src grep `detectInAppBrowser` 只命中 `referralInvite.ts` 與 `InviteFriendPanelContent.tsx`,App.tsx/路由層皆不引用——「偵測結果接到渲染決策」這條 wiring 似已整個移除,`browserDetection.test.ts` 驗的是**分類邏輯**而非渲染決策,證據等級標錯。且刪後 **Android WebView(非 LINE)UA 家族不再有任何 e2e 覆蓋**(保留的 3 條全綁 LINE UA) → Q12 |
 | 0.57 | An injected LINE LIFF SDK global no longer forces a block page | **留** | `window.liff` 這條偵測路徑的接線 |
 | 0.52 | A LINE user can reach the signup form | **留** | LINE 內註冊接線 |
 | 1.55 | A LINE user completes a successful PayUni payment end to end | **留** | LINE 內付款端到端(§3.2 付款旅程的 in-app 變體) |
 | 1.83 | A LINE user sees a failed PayUni payment result | **留** | 失敗分支對稱保留 |
 
-**小計:刪 1 條(2 個 test case)/ 1.30s**
+**小計(修訂後):刪 0 條;存疑 1 條(2 個 test case)/ 1.30s**
 
 ### 4.10 forgot_password.feature(14 情境 / 14.5s)
 
 | 秒 | 情境 | 決定 | 下層覆蓋證據 |
 |---|---|---|---|
-| 2.13 | Resend becomes available once the 3-minute window expires | **刪** | C級 `otp_verification.feature::Resend becomes available once the 3-minute window expires`(2.33s)——**同一個 `OTPVerificationPage` 元件、同一段倒數計時程式碼**,差別只在 `otpType`;該分支由本檔保留的 `A correct recovery code lands on the new-password page` 與 `An incorrect recovery code shows an error` 覆蓋。輔以 `otpSession.test.ts::save → get 能還原 email 與 otpType` |
+| 2.13 | Resend becomes available once the 3-minute window expires | ~~刪~~ → **存疑** | **審查 P1-4 推翻**:證據唯一來源是 C 級(`otp_verification.feature` 的同名情境),不滿足 §3.1 現行判準與硬約束 1 的「更便宜的層」。重複內容本身為真(同一個 `OTPVerificationPage`、同一段倒數計時,差別只在 `otpType`)→ Q9 |
 | 1.50 | Reopening the verification link in a new tab resumes an in-progress reset | **存疑** | 與 `otp_verification.feature::Reopening the verification link in a new tab resumes an in-progress signup` 同型,但 recovery session 的 rehydrate 路徑不同 → Q7 |
 | 0.71 | An invalid email is rejected before any request is made | **存疑** | 與 `auth_login.feature::Invalid email format is rejected` 同型但不同元件(ForgotPasswordPage vs AuthPage)→ Q7 |
 | 4 條錯誤訊息 (`A failed password update`、`Reusing the old password`、`A breached new password`、`A failed send`) | | **留** | **關鍵發現**:這些中文訊息硬編在 `AuthPage.tsx` / `ResetPasswordPage.tsx`,`grep` 全 repo **沒有任何單元測試**斷言它們。刪掉等於這層映射全裸 → §6 Q8 |
 | 其餘 7 條 | | **留** | 三頁串接流程,無下層 |
 
-**小計:刪 1 條 / 2.13s;存疑 2 條 / 2.21s**
+**小計(修訂後):刪 0 條;存疑 3 條 / 4.34s**
 
 ### 4.11 全數保留的檔案
 
@@ -362,13 +406,35 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 ### 4.12 合計
 
+**修訂後(審查處置完成)**:
+
 | | 情境數 | test case | 本機秒 | 佔比 |
 |---|---|---|---|---|
-| **刪** | **29** | **31** | **31.83** | **16.9%** |
-| **存疑**(待裁決) | 16 | 16 | 18.53 | 9.8% |
-| 留 | 102 | 126 | 138.1 | 73.3% |
+| **刪** | **15** | **15** | **19.37** | **10.3%** |
+| **存疑**(待裁決 Q4–Q7、Q9–Q12) | 27 | 28 | 28.63 | 15.2% |
+| 留 | 105 | 130 | 140.46 | 74.5% |
+| **合計** | **147** | **173** | **188.46** | 100% |
 
-刪後預期:**142 個 test case、~157s 本機**。
+刪後預期:**158 個 test case、~169s 本機**。
+
+修訂前後對照(初版 → 審查後):
+
+| | 初版 | 修訂後 | 差 |
+|---|---|---|---|
+| 刪 | 29 情境 / 31 case / 31.83s | **15 / 15 / 19.37s** | -14 情境 / -12.46s |
+| 存疑 | 16 / 16 / 18.53s | 27 / 28 / 28.63s | +11(P0-2、P1-1、P1-4、P1-5) |
+| 留 | 102 / 126 / 138.1s | 105 / 130 / 140.46s | +3(P0-1,route_guards 全留) |
+
+**保留下來的 15 條刪除清單**(全數為 A/B 級,且已逐條複驗實際 import 關係):
+
+| 檔案 | 條數 | 秒 |
+|---|---|---|
+| admin_dashboard(空態 / 待處理徽章 / 標記已匯款 / 退件) | 4 | 4.62 |
+| rewards_withdrawal(換照片 / 證件退回 / 低於最低 / 身分證驗證失敗) | 4 | 5.77 |
+| payment_result(pending 重試輪詢 / LINE 客服連結) | 2 | 5.14 |
+| payment_checkout(兩種續約選項 / 過期逾一年仍可續約) | 2 | 1.41 |
+| renewal_backfill_recovery(補繳進度 / 繼續補繳導向) | 2 | 1.47 |
+| home_listings(行政區跨市不外洩) | 1 | 0.96 |
 
 ---
 
@@ -380,11 +446,11 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | 刪 §4.1 admin + §4.2 rewards(8 條 / 10.4s) | `e2e/features/admin_dashboard.feature`、`rewards_withdrawal.feature`;清理孤兒 step | `cd e2e && pytest -q` 綠且 165 passed;`npm run check` 綠;逐條在 PR 描述貼證據測試的執行輸出 |
-| 2 | 刪 §4.3–4.5 payment/home(12 條 / 12.7s) | `payment_result.feature`、`home_listings.feature`、`payment_checkout.feature` | pytest 綠且 153 passed;`npx vitest run src/components/PaymentResult.test.tsx src/components/PaymentCheckout.test.tsx src/utils/homeViewMode.test.ts src/utils/districtSelection.test.ts` 全綠 |
-| 3 | 刪 §4.6–4.10 其餘(9 條 / 8.7s) | `route_guards`、`renewal_backfill_recovery`、`listing_management`、`line_browser`、`forgot_password` | pytest 綠且 **142 passed**;`npx vitest run src/utils/registrationFlow.test.ts src/utils/browserDetection.test.ts` 全綠 |
-| 4 | 回填量測與文件 | `.github/workflows/ci.yml` 檔頭與 e2e job 註解;`docs/plans/friction-log.md` | 情境數 182→142、計費分 ~7→實測區間;xdist 註解的 182 前提同步修正;`python3 scripts/check-workflows.py` 綠 |
-| 5 | 刪除本規劃檔 | `docs/plans/e2e-scenario-dedup/` | 依 CLAUDE.md「規劃檔生命週期」,PR 前刪除;可複用的原則(§3.1 三級證據判準、§3.3 guard 無下層防線)升級進 `e2e/README.md` 與 friction-log |
+| 1 | 刪 §4.1 admin 4 條 + §4.2 rewards 4 條(10.4s) | `e2e/features/admin_dashboard.feature`、`rewards_withdrawal.feature`;清理孤兒 step | `cd e2e && pytest -q` 綠且 **165 passed**;`npx vitest run src/components/admin/WithdrawalManagement.test.tsx src/components/reward/WithdrawalProcess.test.tsx src/components/reward/IdVerificationSection.test.tsx src/utils/withdrawalValidation.test.ts` 全綠;`npm run check` 綠 |
+| 2 | 刪 §4.3 payment_result 2 + §4.5 payment_checkout 2 + §4.4 home 1(7.5s) | `payment_result.feature`、`payment_checkout.feature`、`home_listings.feature` | pytest 綠且 **160 passed**;`npx vitest run src/components/PaymentResult.test.tsx src/components/PaymentCheckout.test.tsx src/utils/districtSelection.test.ts src/utils/externalLink.test.ts src/utils/repoHygiene.test.ts` 全綠(審查 P1-6:此清單初版漏了證據測試,已補齊) |
+| 3 | 刪 §4.7 renewal_backfill 2 條(1.5s) | `renewal_backfill_recovery.feature` | pytest 綠且 **158 passed**;`npx vitest run src/components/PaymentResult.test.tsx` 全綠 |
+| 4 | 回填量測與文件 | `.github/workflows/ci.yml` 檔頭與 e2e job 註解;`docs/plans/friction-log.md` | 情境數 182→158、計費分 ~7→實測 5–7 區間;xdist 註解的 182 前提同步修正;`python3 scripts/check-workflows.py` 綠 |
+| 5 | 刪除本規劃檔 | `docs/plans/e2e-scenario-dedup/` | 依 CLAUDE.md「規劃檔生命週期」,PR 前刪除;可複用的原則升級進 `e2e/README.md`——依審查 P2-7,新增對稱於「Adding a scenario」的 **「Removing a scenario」** 小節放 §3.1 三級判準,四旅程清單另立 **「Must-keep end-to-end coverage」** 小節;§3.3 的 guard 覆蓋缺口與 §6 Q8 的 auth 錯誤訊息缺口寫進 friction-log |
 
 **孤兒 step 的處理**:刪情境後,只被該情境用到的 `@given/@when/@then` 會變成
 死碼。`knip` 不掃 Python,所以每階段收尾要手動 grep 步驟片語確認無其他
@@ -395,13 +461,18 @@ job 結構,只刪 `e2e/features/*.feature` 的情境與隨之孤兒化的
 ## 6. 開放問題(等人裁決,實作不得自行決定)
 
 **Q1(最重要,關乎任務目標本身)** —— §1.3 算出:在「必須有下層證據」的
-約束下,刪重複最多換到 **-40~-56s / -0.7~0.9 計費分**,月省 ≈450–600 分,
+約束下,審查後的實得是 **-24~-34s / ≈0.5 計費分**,月省 **≈300 分**,
 **到不了任務描述的「~4-5 計費分」與「700–1,000 分/月」**。
 差額只能從固定開銷(50–57s)或並發拿,兩者都在授權邊界外。
-請裁決:(a) 接受本規劃的實得(≈500 分/月)並結案;(b) 另開任務處理固定
-開銷(例:把 `playwright install --with-deps` 的系統相依也納入 cache、
-`npm ci` 換 `--prefer-offline`);(c) 重新檢視 xdist 的否決(那 2 個不穩
-情境是否可個別隔離)。
+請裁決:(a) 接受本規劃的實得(**≈300 分/月**)並結案;(b) 另開任務處理
+固定開銷(例:把 `playwright install --with-deps` 的系統相依也納入 cache、
+`npm ci` 換 `--prefer-offline`)——**審查 P2-4 指出這個選項尚未量化**,
+裁決前應先實測一次 `--with-deps` 的單步秒差,否則是猜測性選項;
+(c) 重新檢視 xdist 的否決(那 2 個不穩情境是否可個別隔離)。
+
+Q9–Q12 若裁定「可刪」,最多可再加回 12.46s(回到初版的 31.83s 規模),
+但那需要先接受放寬判準或先補下層測試——兩者都改變本任務範圍,
+所以 Q1 的答案應該連同 Q9–Q12 一起定。
 
 **Q2** —— admin 分頁切換(§4.1)只在 e2e 有覆蓋。刪或留?
 若留,是否值得補一支 `AdminDashboard.test.tsx` 專測分頁切換,下次再刪?
@@ -432,11 +503,50 @@ rate limit / 舊密碼相同,共 8 條 e2e)硬編在 `AuthPage.tsx` 與
 
 ---
 
+### 審查後新增(Q9–Q13,對應 `review.md` 的 P0/P1)
+
+**Q9(判準級,連動 3 條 / 3.61s)** —— **C 級證據算不算合格的刪除依據?**
+硬約束 1 的字面是「在**更便宜的層**被斷言」,C 級(e2e 內部跨檔重複)證的是
+**同一層**另一個情境,不滿足;但那確實是真重複,跑兩次同一段程式碼。
+裁定「算」則 §4.8 兩條 + §4.10 一條可恢復刪除。
+
+**Q10(連動 4 條 / 3.23s)** —— home_listings 的 4 條手機檢視情境。
+審查 P1-1/P1-2/P1-3 證明 jsdom 結構性測不到 media query、沒有測試 render
+`HomePage`、overflow sweep 是 report-only 而非「更嚴格」。
+選項:(a) 全留;(b) 補一支 render `HomePage` 的整合測試後再刪;
+(c) 只保留「switch between views」與「preference remembered across reloads」
+這兩條接線/初始化行為,刪掉另兩條內容型斷言(UI/UX 視角的建議)。
+**注意**:選 (a) 以外的任何選項都會讓「會擋 CI 的手機視窗情境」從 5 條
+降到 2–3 條,而規格明訂手機優先——這是 Q10 真正要權衡的東西。
+
+**Q11(連動 3 條 / 1.96s)** —— payment_checkout 的 3 條 redirect 情境。
+**兩個視角判斷不同**(見 review.md「需人工裁決」第 1 項):系統視角認為
+B 級證據獨立成立(已讀 `PaymentCheckout.tsx:94-104/154-163` 確認
+`resolveCheckoutPageRedirect` 真的驅動 navigate),只是失效的 C 級 backup
+該拿掉;架構視角以「§3.3 自己立的 wiring 標準」判 P0。請裁決採哪一方。
+
+**Q12(連動 1 條 / 1.30s)** —— line_browser 的 Outline。
+`detectInAppBrowser` 已不在路由/渲染層被引用,「偵測接到渲染決策」這條
+wiring 看來已移除。若屬實,刪除的真正理由是「同一段無條件渲染的程式碼被
+不同 UA 字串重複跑」——那是 §3.1 未定義的第四類證據,要不要承認?
+另:刪後 Android WebView(非 LINE)UA 家族將無任何 e2e 覆蓋。
+
+**Q13(P0-1 的處置,連動 route_guards 4 個 case / 2.36s)** ——
+`resolveMembershipRedirect`(`RequireMembershipRoute.tsx:29`)六個分支
+**全 repo 零測試覆蓋**,route_guards.feature 是它唯一的防線,已全數改「留」。
+要恢復刪除必須先補測試,但 §2 明文排除「補下層測試再刪」。
+請裁決:(a) 維持全留結案;(b) 放寬 §2,把「補 `RequireMembershipRoute`
+測試」納入本任務。
+**不論選哪個,「這張決策表零覆蓋」本身是應該獨立處理的缺口**——它守的是
+「絕不能把已付款的人送回結帳頁造成重複付款」這條金流不變式。
+
+---
+
 ## 7. 風險與回滾
 
 | 風險 | 機率 | 影響 | 處置 |
 |---|---|---|---|
-| 刪錯:被刪情境的行為其實下層沒真的驗到 | 低 | 高(把關變弱且無人察覺) | §3.1 三級證據判準 + §4 逐條指名測試;階段收尾實跑該證據測試檔並貼輸出 |
+| 刪錯:被刪情境的行為其實下層沒真的驗到 | **已實現(初版 29 條中 14 條踩到)** | 高(把關變弱且無人察覺) | 四視角審查抓出 2 P0 + 6 P1,全數改列存疑;§3.1 已補「要 grep 到實際 import 才算」;階段收尾實跑證據測試檔並貼輸出 |
 | 孤兒 step 片語誤刪,連累其他 feature | 中 | 中(collection error,CI 立刻紅) | 刪前 grep 全 `features/` 確認無其他引用;pytest collection 會當場擋下 |
 | 省下的時間被 runner 變異吃掉,看起來沒效果 | **高** | 低 | §1.2 已把變異寫進基準;驗收看 **pytest step 秒數**而不是計費分 |
 | 未來有人以「反正下層有測」為由繼續刪到旅程斷掉 | 中 | 高 | §3.2 的四旅程保留清單升級進 `e2e/README.md`,成為長期規則 |
