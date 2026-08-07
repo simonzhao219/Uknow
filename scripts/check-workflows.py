@@ -121,6 +121,12 @@ BARE_WORDS = {
 # 這些 job id 進了 branch protection 的 required checks,改名要同步改保護規則
 FROZEN_JOB_IDS = {"ci-ok"}
 
+# 規則 9:required check 的名字不得被 push run 蓋章(2026-08-07 PR #236 事故)
+#        required status check 的鍵是 (commit SHA, check-run 名稱),不綁
+#        workflow run。晉升 PR 的 head SHA 就是 develop 的 tip,而那顆 SHA
+#        早已被 push run 跑過並蓋上同名的綠 ci-ok。
+PUSH_TRIGGER = re.compile(r"^\s+push\s*:\s*$", re.M)
+
 # 規則 8b:schedule 觸發的偵測(縮排開頭的 `schedule:` 行;註解行有 # 前綴
 # 不會命中)與頻率依據註記的存在檢查。
 # 用固定標籤而不是關鍵字啟發式:標籤難以意外滿足、也難以意外違反,而且
@@ -235,6 +241,39 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             found.append(
                 f"ci-ok 的 needs 漏了 {sorted(missing)}——那幾軌紅了也不會擋合併。"
                 "ci-ok 是唯一的 required check,新增 job 必須同步進它的 needs。"
+            )
+
+        # 規則 9:ci.yml 同時有 push 觸發時,ci-ok 的 check-run 名稱必須依事件區隔
+        #        否則 push run 會在同一顆 SHA 上蓋出一顆同名的綠 ci-ok,而晉升
+        #        PR 的 head 正是 develop 的 tip——綠章早在 PR 開啟前就在了,
+        #        required check 從頭到尾沒有東西可以擋(PR #236)。
+        if PUSH_TRIGGER.search(text):
+            name_line = next(
+                (l for l in ci_ok_block.splitlines() if re.match(r"^\s+name\s*:", l)), None
+            )
+            if name_line is None or "pull_request" not in name_line:
+                found.append(
+                    "ci.yml 有 push: 觸發,但 ci-ok 沒有依事件區隔的 name:——"
+                    "push run 會在同一顆 SHA 上蓋出同名的綠 ci-ok,而晉升 PR 的 head "
+                    "就是 develop 的 tip,綠章早在 PR 開啟前就在了,required check "
+                    "永遠不會 pending。修法:name: ${{ github.event_name == "
+                    "'pull_request' && 'ci-ok' || 'ci-ok-push' }}"
+                )
+
+        # 規則 10:ci-ok 必須把「晉升 PR 的 journey-full 不得 skipped」寫進匯總
+        #         skipped 算通過是為純文件 PR 設計的,但套在 journey-full 上等於
+        #         「上線前唯一的真後端閘門沒跑也算過」。這條防它被重構靜默刪掉。
+        #         只在真的有 journey-full 這一軌時才適用——沒有那一軌就沒有這個
+        #         閘門要保護。比對不分大小寫:表達式寫 github.base_ref、env 名寫
+        #         BASE_REF,兩種都算數。
+        lowered = ci_ok_block.lower()
+        has_journey_job = any(j == "journey-full" for j, _ in jobs)
+        if has_journey_job and ("base_ref" not in lowered or "journey-full" not in lowered):
+            found.append(
+                "ci-ok 的匯總沒有針對晉升 PR 檢查 journey-full——ci-ok 把 skipped "
+                "算通過(純文件 PR 需要),套在 journey-full 上就是「上線前唯一的"
+                "真後端閘門沒跑也算過」。修法:在匯總 step 加上 base_ref == 'main' "
+                "時 needs['journey-full'].result 必須為 success。"
             )
 
     return found
@@ -470,6 +509,60 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         ),
         "x.yml",
         0,
+    ),
+    # --- 規則 9／10:PR #236 的事故形態 ---
+    (
+        "ci.yml 有 push 觸發但 ci-ok 無事件區隔 name → 違規(PR #236 的事故形態)",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\n  push:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        1,
+    ),
+    (
+        "ci.yml 有 push 觸發且 ci-ok 有事件區隔 name → 通過",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\n  push:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n"
+            "    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}\n"
+            "    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+    (
+        "ci.yml 無 push 觸發 → 不要求事件區隔 name（規則 9 不適用）",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+    (
+        "ci-ok 沒有晉升 PR 的 journey-full 強制條款 → 違規(規則 10)",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: echo ok\n"
+        ),
+        "ci.yml",
+        1,
     ),
 ]
 
