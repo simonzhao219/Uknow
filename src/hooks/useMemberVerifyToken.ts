@@ -19,8 +19,8 @@ const RENEW_LEAD_MS = 15_000;
 const MIN_DELAY_MS = 3_000;
 
 /**
- * 會員自取「身分核身」短效碼，並在到期前自動換發。
- * @param enabled 只有核身碼分頁被選取時才取碼／輪替（未顯示不浪費請求）。
+ * 會員自取「身分驗證」短效碼，並在到期前自動換發。
+ * @param enabled 只有驗證碼分頁被選取時才取碼／輪替（未顯示不浪費請求）。
  */
 export function useMemberVerifyToken(enabled: boolean): UseMemberVerifyTokenResult {
   const [data, setData] = useState<MemberVerifyToken | null>(null);
@@ -37,7 +37,7 @@ export function useMemberVerifyToken(enabled: boolean): UseMemberVerifyTokenResu
       );
       setData(result.data);
     } catch (err: any) {
-      setError(err?.message || '無法取得核身碼，請稍後再試');
+      setError(err?.message || '無法取得驗證碼，請稍後再試');
     } finally {
       setLoading(false);
     }

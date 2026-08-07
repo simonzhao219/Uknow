@@ -2,10 +2,10 @@
 //
 // 「我的 QR」面板的分頁契約：
 //   - 已加入推薦計畫：兩個分頁，「邀請好友」在左且預設選中（分享是主動、頻繁的
-//     動作；核身碼多半是店家開口時才臨時要用）。
-//   - 未加入推薦計畫：只有會員核身碼，連分頁列都不出現（單一分頁的頁籤沒有意義）。
+//     動作；驗證碼多半是店家開口時才臨時要用）。
+//   - 未加入推薦計畫：只有會員驗證碼，連分頁列都不出現（單一分頁的頁籤沒有意義）。
 //     加入入口在推薦碼欄位的 CTA，不在面板裡。
-// 分頁偏好的「記住上次選擇」與「未加入時強制核身碼」的決策邏輯是純函式，
+// 分頁偏好的「記住上次選擇」與「未加入時強制驗證碼」的決策邏輯是純函式，
 // 已由 myQrTabPreference.test.ts 覆蓋；這裡只驗面板實際渲染出來的形狀。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -40,12 +40,12 @@ describe('MyQrDialog', () => {
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(2);
     expect(tabs[0].textContent).toContain('邀請好友');
-    expect(tabs[1].textContent).toContain('會員核身碼');
+    expect(tabs[1].textContent).toContain('會員驗證碼');
     expect(tabs[0].getAttribute('aria-selected')).toBe('true');
     expect(screen.getByTestId('invite-content')).toBeTruthy();
   });
 
-  it('未加入推薦計畫時只有核身碼，不出現分頁列與邀請分頁', () => {
+  it('未加入推薦計畫時只有驗證碼，不出現分頁列與邀請分頁', () => {
     render(<MyQrDialog {...baseProps} joined={false} referralCode={null} />);
 
     expect(screen.queryByRole('tablist')).toBeNull();
@@ -55,7 +55,7 @@ describe('MyQrDialog', () => {
   });
 
   it('標題下不放總述說明，對話框不帶 aria-describedby', () => {
-    // 分頁名稱已經說明用途，核身頁自己還有一句說明——標題下再放一句總述是重複，
+    // 分頁名稱已經說明用途，驗證頁自己還有一句說明——標題下再放一句總述是重複，
     // 而且在手機上會把 QR 擠出第一屏。用 aria-describedby 而不是比對字串來守：
     // 任何人重新加回 DialogDescription 都會被這條抓到，不管他寫的是哪句話。
     render(<MyQrDialog {...baseProps} joined />);
@@ -63,7 +63,7 @@ describe('MyQrDialog', () => {
     expect(screen.getByRole('dialog').getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('記住的偏好是核身碼時，開啟就停在核身碼分頁', () => {
+  it('記住的偏好是驗證碼時，開啟就停在驗證碼分頁', () => {
     localStorage.setItem('uknow:pref:my-qr-tab', 'verify');
     render(<MyQrDialog {...baseProps} joined />);
 

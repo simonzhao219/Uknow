@@ -26,7 +26,7 @@ vi.mock('../../App', () => ({ UserContext: UserCtx }));
 
 // 替身只需暴露「開著沒」，其餘內容不是本單元的責任。
 // （面板內原本還有一個「加入推薦計畫」引導，現已移除——未加入時面板只剩會員
-// 核身碼，加入入口統一在推薦碼欄位的 CTA，見 MyQrDialog 的分頁規則。）
+// 驗證碼，加入入口統一在推薦碼欄位的 CTA，見 MyQrDialog 的分頁規則。）
 vi.mock('./MyQrDialog', () => ({
   MyQrDialog: ({ open, accountStatus }: any) =>
     open ? <div data-testid="my-qr-dialog" data-account-status={accountStatus} /> : null,

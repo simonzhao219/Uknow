@@ -90,7 +90,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/tasks` | 任務中心 | 登入 + 會籍 + featureFlag |
 | `/rewards` | 獎勵回饋 / 提領 | 登入 + 會籍 + featureFlag |
 | `/admin` | 管理後台 | 管理員 |
-| `/admin/verify` | 掃碼核身（會員身分） | 管理員 |
+| `/admin/verify` | 會員驗證（會員身分） | 管理員 |
 | `*` | 未匹配路由導回首頁 | — |
 
 > 本表的第一欄由 `scripts/check-spec-drift.py` 與 `src/App.tsx` 的
@@ -583,23 +583,23 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 管理後台入口在導覽列本身（不藏在頭像下拉），帶待處理提領筆數的 badge。
 
-### 13.1 掃碼核身（會員身分）
+### 13.1 會員驗證（會員身分）
 
 **為什麼**：業主需要在線下（門市/活動）當場確認「來的人是不是會員、會籍還有沒有效」。
-推薦碼是公開可分享的，拿它當身分等於誰都能冒充，因此身分核身自成一套。
+推薦碼是公開可分享的，拿它當身分等於誰都能冒充，因此身分驗證自成一套。
 
-**流程**：會員在會員中心「我的 QR → 會員核身碼」出示**動態短效碼**（90 秒，到期前
+**流程**：會員在會員中心「我的 QR → 會員驗證碼」出示**動態短效碼**（90 秒，到期前
 自動換發）→ admin 在 `/admin/verify`（**獨立路由**，非 `AdminDashboard` 的 Tab）用相機
 掃描 → 後端驗簽後回**會員姓名 + 會籍四態**（`active`/`expiring`/`expired`/`suspended`，
 與推薦網絡節點同一套 `deriveNodeStatus`）。
 
 **安全**：QR 內容是 HMAC 簽章的不透明 token（payload 僅隨機 UUID + 到期，無姓名/電話/
 身分證），一律後端解析；解析端點 `POST /admin/members/verify` 需管理員權限；缺
-`MEMBER_TOKEN_SECRET` 一律 fail-closed（不以空金鑰簽發或驗證）。「核身碼過期」與
+`MEMBER_TOKEN_SECRET` 一律 fail-closed（不以空金鑰簽發或驗證）。「驗證碼過期」與
 「會籍過期」是不同語意，前端分別呈現。
 
-**稽核**：每次成功核身寫一筆 `member_verify_logs`（admin、會員、時間），寫入失敗即
-擋下核身（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
+**稽核**：每次成功驗證寫一筆 `member_verify_logs`（admin、會員、時間），寫入失敗即
+擋下驗證（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
 
 > **admin 功能放哪的判準**：需要全螢幕或裝置權限的即時互動（如相機掃碼）走**獨立路由**；
 > 資料管理類走 `AdminDashboard` 的 **Tabs**（桌面版是釘死的 5 欄 grid，硬加會壞版面）。
