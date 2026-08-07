@@ -68,6 +68,55 @@ test_overflow_sweep.py  # 375px 全路由溢字巡檢（非 BDD，見下節）
    page object; only add a `data-testid` to the source component when the
    text/role is ambiguous or state-dependent.
 
+## Removing a scenario
+
+這一層最貴（一個情境約 0.8–1.7 秒，整套約佔 CI 牆鐘的最長那一軌），所以
+「同一個行為已經在更便宜的層被驗過」的情境值得刪。但**刪錯的代價是把關
+靜默變弱、沒有人會發現**，所以要有證據，分三級：
+
+| 級 | 定義 | 例 |
+|---|---|---|
+| **A** | 下層測試 render 真元件、驅動同一組互動、斷言同一串文字 | `WithdrawalProcess.test.tsx` 的 `renderAndGoToStep3()` 完整重演 e2e 的四步 |
+| **B** | 下層測試斷言同一個**決策函式**的輸出，而該決策在 e2e 只是被顯示出來 | `withdrawalValidation.test.ts` 產出的正是 e2e 斷言的 `最低提領Point為 1,000P` |
+| **C** | 同一段程式碼路徑在 e2e 內部被兩個情境重複驗——**限「同元件、同路徑，只有被 mock 的資料不同」** | `listing_management` 與 `service_provider_detail` 都驗同一個公開詳情頁 |
+
+**不算證據**（這幾條擋掉的假重複比真重複還多）：
+
+- 字串在下層檔案出現過 ≠ 被斷言過（測資裡的人名到處都是）。
+- 後端有 API 測試 ≠ 前端有接上——e2e 的獨特價值正是這條接線。
+- 決策函式有測 ≠ 決策被接進 router / 元件。
+- **名字看起來像同一件事 ≠ 是同一件事。套用 B 級必須 `grep` 到被測情境
+  實際 import 的那個識別字**——`RequireMembershipRoute` 有自己的
+  `resolveMembershipRedirect`，與 `registrationFlow.ts` 的
+  `resolveCheckoutPageRedirect` 是兩張獨立決策表，從無互相 import。
+- 替代品若是 **report-only、不擋 CI**（如 `test_overflow_sweep.py` 在未設
+  `E2E_OVERFLOW_STRICT` 時），那是降級不是接手。
+- **jsdom 沒有版面引擎、也不載入編譯後 CSS**：任何依賴 media query、實際
+  尺寸、捲動、溢版的斷言，元件測試結構性地接不住。
+
+刪完要做的兩件事：**（1）**清掉只被該情境使用的孤兒 step——`knip` 不掃
+Python，得手動 `grep` 步驟片語確認 `features/` 內無其他引用；**page object
+不要動**，`journey/` 會 import `e2e/pages/`。**（2）**實跑一次被指名的下層
+測試，確認接手方真的還在（C 級尤其重要，它沒有下層兜底）。
+
+## Must-keep end-to-end coverage
+
+以下四條使用者關鍵旅程**各自至少保留一條端到端情境**，不論下層覆蓋到什麼
+程度都不刪——e2e 的獨特價值是「整條線串起來」，那不屬於重複：
+
+| 旅程 | 保留的情境 |
+|---|---|
+| 註冊 | `Successful signup navigates to OTP verification` → `Correct code verifies and proceeds` → `A fully valid submission proceeds to checkout` |
+| 付款 | `Clicking pay redirects through a simulated successful PayUni payment`、`A success status in the URL renders the success screen` |
+| 會籍 | `An expired former member is sent to checkout to renew`、`A paid arrival not yet activated shows the activating screen, then auto-advances` |
+| 提領 | `An eligible member can submit a withdrawal application end to end`、`A member confirms collection of an approved withdrawal` |
+
+另外 `route_guards.feature` **整檔保留**：`ProtectedRoute` /
+`RequireMembershipRoute` / `AdminRoute` 沒有任何元件測試 render 過，
+`resolveMembershipRedirect` 的六個分支在其他三層都不存在——其中
+`paidAwaitingActivation` 分支守的是「絕不能把已付款的人送回結帳頁造成
+重複付款」。
+
 ## 溢字/溢版巡檢（`test_overflow_sweep.py`）
 
 規格明訂「以手機瀏覽器為主要優化目標」，但這套 suite 預設跑

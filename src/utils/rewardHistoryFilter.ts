@@ -30,6 +30,7 @@ export const REWARD_SOURCE_LABELS: Record<RewardSourceCategory, string> = {
   withdrawal: '提領 Point',
   withdrawal_refund: '退還 Point',
   adjustment_manual: '其他調整',
+  ledger_reset: '新約重置',
 };
 
 /** 篩選 chip 用的短標籤：並排時前綴是雜訊，只留差異詞。 */
@@ -39,6 +40,7 @@ export const REWARD_FILTER_LABELS: Record<RewardSourceCategory, string> = {
   withdrawal: '提領',
   withdrawal_refund: '退還',
   adjustment_manual: '其他調整',
+  ledger_reset: '新約重置',
 };
 
 /** 顯示順序＝契約 enum 的順序（進帳 → 出帳 → 調整），CSV 也照這個序。 */

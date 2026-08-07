@@ -13,6 +13,7 @@ import {
   TrendingDown,
   RotateCcw,
   SlidersHorizontal,
+  Eraser,
 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
@@ -67,6 +68,11 @@ const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
   },
   adjustment_manual: {
     Icon: SlidersHorizontal,
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
+  },
+  // 新約重置是扣帳事件，但語意與提領（紅）不同：用中性灰避免誤讀成出金。
+  ledger_reset: {
+    Icon: Eraser,
     badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
 };

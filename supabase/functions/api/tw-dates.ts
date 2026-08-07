@@ -91,6 +91,78 @@ export function subscriptionLastDay(anchorDay: string): string {
   return a >= b ? a : b; // ISO 字串可直接字典序比較
 }
 
+export type BackfillInstallment = { anchorDay: string; endDay: string };
+
+export type BackfillPlan = {
+  extendAnchorDay: string;
+  extendEndDay: string;
+  backfillCount: number;
+  backfillFinalEndDay: string;
+  expiredForMonths: number;
+  installments: BackfillInstallment[];
+};
+
+/**
+ * 補繳計畫（A1-A4）：從最新訂閱的最後一天與「今天」（皆台灣日曆日）算出
+ * extend 錨點、要補幾筆才 active、每筆的起訖、補滿後到期日與已過期完整
+ * 月數。到期日當天仍 active。規則與案例見 _shared/backfill-cases.ts
+ * （兩側副本共用同一份案例表）。
+ */
+export function backfillPlan(lastEndDay: string | null, today: string): BackfillPlan | null {
+  if (!lastEndDay) return null;
+  parseDay(today);
+
+  const extendAnchorDay = twDayPlusDays(lastEndDay, 1);
+  const extendEndDay = subscriptionLastDay(extendAnchorDay);
+
+  // 到期日當天仍 active（隔天才 expired）→ 字典序比較即可。
+  const expired = lastEndDay < today;
+
+  // 逐筆接續到「這一筆的迄日 >= today」為止（那一筆付完就 active）。
+  const installments: BackfillInstallment[] = [];
+  if (expired) {
+    let anchor = extendAnchorDay;
+    while (true) {
+      const end = subscriptionLastDay(anchor);
+      installments.push({ anchorDay: anchor, endDay: end });
+      if (end >= today) break;
+      anchor = twDayPlusDays(end, 1);
+    }
+  }
+
+  // 已過期完整月數 = 最大的 m 使 (lastEndDay + m 個月，月底夾擠) <= today。
+  // 起手值 (年差×12 + 月差) 恆為上界，至多回退一次。
+  let expiredForMonths = 0;
+  if (expired) {
+    const [y1, m1] = parseDay(lastEndDay);
+    const [y2, m2] = parseDay(today);
+    let m = (y2 - y1) * 12 + (m2 - m1);
+    while (m > 0 && twDayPlusMonths(lastEndDay, m) > today) m--;
+    expiredForMonths = Math.max(m, 0);
+  }
+
+  return {
+    extendAnchorDay,
+    extendEndDay,
+    backfillCount: installments.length,
+    backfillFinalEndDay: installments.length > 0
+      ? installments[installments.length - 1].endDay
+      : lastEndDay,
+    expiredForMonths,
+    installments,
+  };
+}
+
+/** 日曆日 + n 月（與 twDayPlusYears 同語意：目標月較短時夾到月底）。 */
+function twDayPlusMonths(day: string, n: number): string {
+  const [y, m, d] = parseDay(day);
+  const total = y * 12 + (m - 1) + n;
+  const ty = Math.floor(total / 12);
+  const tm = (total % 12) + 1;
+  const daysInMonth = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+  return fmtDay(ty, tm, Math.min(d, daysInMonth));
+}
+
 /** 台灣某日 00:00:00 的時點 */
 export function twStartOfDayInstant(day: string): Date {
   parseDay(day); // 驗證格式

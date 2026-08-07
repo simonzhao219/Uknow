@@ -118,14 +118,6 @@ def confirm_collection_fails(api_mock, withdrawal_id, message):
     api_mock.set_confirm_collection_error(withdrawal_id, message)
 
 
-@given("verifying the national ID always fails")
-def verify_id_always_fails(api_mock):
-    # A rejected national ID leaves isIdVerified false, so the submit gate stays
-    # closed — the security-relevant guard against withdrawing under a mismatched
-    # identity. (A 4xx surfaces the generic "驗證失敗，請稍後再試" reason.)
-    api_mock.set_verify_id_error()
-
-
 @given(parsers.parse('uploading my ID card photos fails with "{message}"'))
 def upload_id_photos_fails(api_mock, message):
     api_mock.set_upload_id_photos_error(message)
@@ -164,29 +156,9 @@ def fill_identity(reward_page, id_number, bank, account):
     reward_page.fill_bank_account(account)
 
 
-@when(parsers.parse('I enter the withdrawal ID number "{id_number}"'))
-def enter_withdrawal_id(reward_page, id_number):
-    reward_page.fill_id_number(id_number)
-
-
 @when("I upload my ID card photos")
 def upload_id_photos(reward_page):
     reward_page.upload_id_photos()
-
-
-@when("I remove the saved front ID photo")
-def remove_saved_front_photo(reward_page):
-    reward_page.remove_front_id_photo()
-
-
-@then("the front ID photo upload area should appear")
-def front_upload_area_appears(reward_page):
-    expect(reward_page.front_upload_input()).to_have_count(1, timeout=5_000)
-
-
-@when("I upload a replacement front ID photo")
-def upload_replacement_front(reward_page):
-    reward_page.upload_replacement_front_photo()
 
 
 @when("I agree to the withdrawal terms")

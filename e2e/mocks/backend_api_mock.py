@@ -201,10 +201,19 @@ class BackendApiMock:
         order_status: str,
         payuni_response: Optional[dict] = None,
         completed_at: Optional[str] = None,
+        renewal: Optional[dict] = None,
     ):
+        # renewal（精簡版契約，renewal-backfill）：backfillCount > 0 時
+        # PaymentResult 走補繳進度分支而非開通輪詢；缺漏＝舊後端形狀，
+        # 走原開通輪詢（見 PaymentResult 的分類註解）。
         body = {
             "success": True,
-            "data": {"orderStatus": order_status, "completedAt": completed_at, "payuni": payuni_response},
+            "data": {
+                "orderStatus": order_status,
+                "completedAt": completed_at,
+                "payuni": payuni_response,
+                "renewal": renewal,
+            },
         }
         self._route(f"/payuni/result/{trade_no}", lambda route: _fulfill_json(route, body))
 
@@ -427,11 +436,33 @@ class BackendApiMock:
         }
         self._route("/rewards/history", lambda route: _fulfill_json(route, body))
 
-    def set_reward_id_photos(self, front_url: Optional[str] = None, back_url: Optional[str] = None):
+    def set_reward_id_photos(
+        self,
+        front_url: Optional[str] = None,
+        back_url: Optional[str] = None,
+        verification_status: Optional[str] = None,
+        reject_reason: Optional[str] = None,
+    ):
         # WithdrawalProcess 開機時讀「已上傳的身分證照片」；預先給網址就能
         # 讓提領申請走到底而不必真的上傳檔案（validateStep2 接受既有照片）。
         # 給 None/None 則模擬「尚未上傳」，強制走真正的 file-chooser 上傳路徑。
-        body = {"success": True, "data": {"frontUrl": front_url, "backUrl": back_url}}
+        #
+        # body 必須是 IdPhotosResponseSchema 的完整形狀——mock 曾漏掉
+        # verificationStatus/rejectReason（前端 `?? 'none'` 靜默吞掉），這正是
+        # friction-log 記的「三層測試共享盲區」型缺口：契約長了欄位，替身
+        # 沒跟上，rejected 分支在 e2e 就永遠測不到。預設鏡像後端語意：
+        # 雙面齊全＝已送審（pending），否則 none。
+        if verification_status is None:
+            verification_status = "pending" if (front_url and back_url) else "none"
+        body = {
+            "success": True,
+            "data": {
+                "frontUrl": front_url,
+                "backUrl": back_url,
+                "verificationStatus": verification_status,
+                "rejectReason": reject_reason,
+            },
+        }
         self._route_exact("/rewards/id-photos", lambda route: _fulfill_json(route, body))
 
     def set_upload_id_photos_success(
@@ -468,6 +499,8 @@ class BackendApiMock:
         history: Optional[list] = None,
         front_url: Optional[str] = None,
         back_url: Optional[str] = None,
+        verification_status: Optional[str] = None,
+        reject_reason: Optional[str] = None,
     ):
         """One call to wire every read the 獎勵回饋 page performs. Registered
         broadest-glob-first so the nested routes below win (last-registered
@@ -475,7 +508,7 @@ class BackendApiMock:
         self.set_reward_summary(available, pending, withdrawn, total_earned, has_withdrawn_today)
         self.set_reward_withdrawals(withdrawals)
         self.set_reward_history(history)
-        self.set_reward_id_photos(front_url, back_url)
+        self.set_reward_id_photos(front_url, back_url, verification_status, reject_reason)
         self.set_verify_id_success()
 
     def set_withdraw_success(self, withdrawal_id: str = "wd-e2e-new", amount: int = 1000, fee: int = 15):
@@ -528,7 +561,37 @@ class BackendApiMock:
 
         def handler(route):
             if route.request.method == "GET":
-                return _fulfill_json(route, {"success": True, "data": {"withdrawals": records}})
+                # Mirror the real contract: the console reads `total` for the
+                # "已顯示 X / Y 筆" counter and `stats` for the summary cards.
+                # Returning only `withdrawals` here is what let a shape drift
+                # slip past this layer once already.
+                pending = [r for r in records if r.get("status") == "pending"]
+                return _fulfill_json(
+                    route,
+                    {
+                        "success": True,
+                        "data": {
+                            "withdrawals": records,
+                            "total": len(records),
+                            "limit": 50,
+                            "offset": 0,
+                            "stats": {
+                                "pendingAmount": sum(r.get("amount", 0) for r in pending),
+                                "byStatus": {
+                                    status: len(
+                                        [r for r in records if r.get("status") == status]
+                                    )
+                                    for status in (
+                                        "pending",
+                                        "awaiting_collection",
+                                        "completed",
+                                        "rejected",
+                                    )
+                                },
+                            },
+                        },
+                    },
+                )
             return _fulfill_json(route, {"success": True})
 
         self._route("/admin/withdrawals", handler)
@@ -538,8 +601,34 @@ class BackendApiMock:
 
         def handler(route):
             if route.request.method == "GET":
+                # Mirror the real contract: `stats` is computed server-side over
+                # the whole filtered set, so the console can show site-wide
+                # numbers rather than a per-page tally.
+                def count(pred):
+                    return len([r for r in records if pred(r)])
+
                 return _fulfill_json(
-                    route, {"success": True, "data": {"members": records, "total": len(records)}}
+                    route,
+                    {
+                        "success": True,
+                        "data": {
+                            "members": records,
+                            "total": len(records),
+                            "stats": {
+                                "total": len(records),
+                                "active": count(
+                                    lambda r: not r.get("suspended")
+                                    and r.get("accountStatus") == "active"
+                                ),
+                                "expired": count(
+                                    lambda r: not r.get("suspended")
+                                    and r.get("accountStatus") != "active"
+                                ),
+                                "suspended": count(lambda r: r.get("suspended")),
+                                "admins": count(lambda r: r.get("isAdmin")),
+                            },
+                        },
+                    },
                 )
             return _fulfill_json(route, {"success": True})
 
@@ -607,10 +696,12 @@ def build_system_alert(alert_id: str = "alert-e2e-1", **overrides) -> dict:
 
 def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
     """A row for `/admin/withdrawals` (WithdrawalManagement). `pending` rows
-    render the 已匯款 / 退件 action buttons."""
+    render the 標記已匯款 / 退件 action buttons."""
     record = {
         "id": "wd-admin-1",
+        "userId": "user-admin-1",
         "userName": "王小明",
+        "userPhone": "0912345678",
         "idNumber": "A123456789",
         "idCardFrontUrl": None,
         "idCardBackUrl": None,
@@ -618,7 +709,11 @@ def build_admin_withdrawal(status: str = "pending", **overrides) -> dict:
         "fee": 15,
         "bankCode": "004",
         "bankAccount": "12345678901234",
+        "note": None,
+        "events": [],
         "requestedAt": "2026-07-16T00:00:00.000Z",
+        "processedAt": None,
+        "completedAt": None,
         "status": status,
     }
     record.update(overrides)
@@ -633,9 +728,13 @@ def build_admin_member(name: str = "陳大文", **overrides) -> dict:
         "email": "member@example.com",
         "phone": "0912345678",
         "accountStatus": "active",
+        "endDate": "2027-01-01T00:00:00.000Z",
+        "idVerificationStatus": "none",
         "listingCount": 0,
         "isAdmin": False,
         "suspended": False,
+        "suspendedAt": None,
+        "createdAt": "2026-07-01T00:00:00.000Z",
     }
     member.update(overrides)
     return member

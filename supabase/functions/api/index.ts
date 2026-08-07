@@ -13,11 +13,10 @@ import {
   type VerifyMemberTokenResult,
 } from './member-token.ts';
 import {
-  subscriptionLastDay,
+  backfillPlan,
   twCompactTimestamp,
   twDayOf,
   twDayPlusDays,
-  twEndOfDayInstant,
   twMonthKey,
 } from './tw-dates.ts';
 import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
@@ -30,6 +29,7 @@ import type {
   NetworkOverviewResponse,
   NetworkSearchResponse,
   NetworkSortMode,
+  PayuniResultRenewal,
   RewardHistoryResponse,
 } from '../_shared/api-contract.ts';
 
@@ -188,6 +188,22 @@ async function getRewardConfig(
     referralRewardAmount: data?.referral_reward_amount ?? 100,
     referralKingThreshold: data?.referral_king_monthly_threshold ?? 8,
   };
+}
+
+// ============================================================
+// 工具：是否有審核中（pending）的提領。A16 的 fresh 建單守衛與
+// /subscriptions/status 的 hasPendingWithdrawal 共用這一份（單一真相）。
+// ⚠️ 不得複用 reward_balances.pending——該欄位涵蓋 awaiting_collection，
+// 集合不同（只有 pending 可能被退件、退款落回帳本）。
+// ============================================================
+async function hasPendingWithdrawal(userId: string): Promise<boolean> {
+  const { data } = await sb()
+    .from('withdrawals')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .limit(1);
+  return (data?.length ?? 0) > 0;
 }
 
 // ============================================================
@@ -1037,15 +1053,38 @@ app.get('/admin/withdrawals', async (c) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
 
   const statusFilter = c.req.query('status');
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+  const search = c.req.query('search')?.trim();
   const limit = Math.min(parseInt(c.req.query('limit') || '200'), 500);
   const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
 
   const client = sb();
+
+  // 搜尋比對的是會員姓名，而姓名在 profiles——先解析出 user_id 集合再篩提領單。
+  // 空集合要當成「查無此人」而不是「不篩」，否則搜尋不到的字串會回傳全部。
+  let searchUserIds: string[] | null = null;
+  if (search) {
+    const { data: hits } = await client.from('profiles')
+      .select('id')
+      .ilike('name', `%${search}%`);
+    searchUserIds = (hits ?? []).map((p: any) => p.id);
+  }
+
   let query = client.from('withdrawals')
     .select('*', { count: 'exact' })
     .order('requested_at', { ascending: false })
     .range(offset, offset + limit - 1);
-  if (statusFilter) query = query.eq('status', statusFilter);
+  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+  if (from) query = query.gte('requested_at', from);
+  // to 是「當日含」：+1 天再取小於，否則當天申請的會被排除
+  if (to) {
+    const end = new Date(`${to}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    query = query.lt('requested_at', end.toISOString());
+  }
+  if (searchUserIds !== null) query = query.in('user_id', searchUserIds);
+
   const { data: rows, count, error: listErr } = await query;
   // 金流後台必須能區分「查詢失敗」與「真的沒有提領單」——DB 故障
   // 靜默轉成空 200 會讓 admin 以為沒有待審件，維運端零察覺。
@@ -1076,8 +1115,33 @@ app.get('/admin/withdrawals', async (c) => {
     }
   }
 
+  // 轉換歷史：一次 in 查詢後在應用層 group，不是逐筆打 DB（同上面證件照的
+  // 批次簽名作法）。逐筆會讓 200 列變成 200 次往返。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await client.from('withdrawal_events')
+      .select('*')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) {
+      (eventMap[e.withdrawal_id] ??= []).push({
+        fromStatus: e.from_status,
+        toStatus: e.to_status,
+        note: e.note,
+        bankRef: e.bank_ref,
+        transferredOn: e.transferred_on,
+        // admin_id 為 null = 會員自己的動作（查收確認）。不外洩 admin 身分,
+        // 只回布林——前端要區分的是「誰按的類別」不是「哪個 admin」。
+        byAdmin: e.admin_id !== null,
+        createdAt: e.created_at,
+      });
+    }
+  }
+
   const withdrawals = (rows ?? []).map((w: any) => {
     const p = profMap[w.user_id];
+    const events = eventMap[w.id] ?? [];
     return {
       id: w.id,
       userId: w.user_id,
@@ -1089,7 +1153,10 @@ app.get('/admin/withdrawals', async (c) => {
       status: w.status,
       bankCode: w.bank_code,
       bankAccount: w.bank_account,
-      note: w.note,
+      // 主表的 note 自 20260802000004 起 vestigial（讀它只會拿到 null）。
+      // 取事件表最新一筆——那才是「這筆現在的說明」。
+      note: events.length ? (events[events.length - 1].note ?? null) : null,
+      events,
       requestedAt: w.requested_at,
       processedAt: w.processed_at,
       completedAt: w.completed_at,
@@ -1098,7 +1165,33 @@ app.get('/admin/withdrawals', async (c) => {
     };
   });
 
-  return c.json({ success: true, data: { withdrawals, total: count ?? 0, limit, offset } });
+  // 彙總在 SQL 端對**整個篩選結果**算，不是對當前頁——後者會隨分頁改變，
+  // 等於一個會說謊的總額，而 admin 拿它去對網銀的轉出金額。
+  const { data: stats } = await client.rpc('admin_withdrawal_stats', {
+    p_status: statusFilter ?? null,
+    p_from: from ?? null,
+    p_to: to ?? null,
+    p_search: search ?? null,
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      withdrawals,
+      total: count ?? 0,
+      limit,
+      offset,
+      stats: {
+        pendingAmount: stats?.pending_amount ?? 0,
+        byStatus: stats?.by_status ?? {
+          pending: 0,
+          awaiting_collection: 0,
+          completed: 0,
+          rejected: 0,
+        },
+      },
+    },
+  });
 });
 
 // POST /admin/withdrawals/:id/status
@@ -1118,6 +1211,10 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
     p_withdrawal_id: c.req.param('id'),
     p_status: body?.status ?? '',
     p_note: body?.note ?? null,
+    // 交易序號與匯款日期是唯一能跟銀行對帳的錨點（plan §2.2）。少了這兩行，
+    // 前端就算送上來也會在這裡被靜默丟掉，事件表的欄位永遠是 null。
+    p_bank_ref: body?.bankRef ?? null,
+    p_transferred_on: body?.transferredOn ?? null,
   });
 
   if (error) {
@@ -1143,6 +1240,48 @@ app.post('/admin/withdrawals/:id/status', async (c) => {
   });
 });
 
+// POST /admin/withdrawals/batch-mark-paid
+// body: { items: [{ id, bankRef? }], transferredOn?, note? }
+//
+// admin 在網銀做完一批轉帳後一次標記。回傳逐筆明細而非只給筆數——批次裡
+// 有一筆狀態被別人改過時，admin 要知道**哪幾筆**需要重做。
+app.post('/admin/withdrawals/batch-mark-paid', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (!items.length) {
+    return c.json({ success: false, error: { message: '沒有選取任何提領單' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_batch_mark_paid', {
+    p_admin_id: user.id,
+    // 前端用 camelCase，SQL 側用 snake_case——在邊界轉換，不讓命名慣例洩到對面。
+    p_items: items.map((it: any) => ({ id: it?.id, bank_ref: it?.bankRef ?? null })),
+    p_transferred_on: body?.transferredOn ?? null,
+    p_note: body?.note ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/withdrawals/batch-mark-paid] rpc error:', error);
+    return c.json({ success: false, error: { message: '批次標記失敗' } }, 500);
+  }
+  if (!data?.success) {
+    return c.json({ success: false, error: { message: data?.message ?? '批次標記失敗' } }, 403);
+  }
+
+  return c.json({
+    success: true,
+    data: { succeeded: data.succeeded ?? [], failed: data.failed ?? [] },
+  });
+});
+
 // GET /admin/members?search=&limit=&offset=
 app.get('/admin/members', async (c) => {
   const user = await requireAuth(c);
@@ -1151,6 +1290,8 @@ app.get('/admin/members', async (c) => {
 
   const { data, error } = await sb().rpc('admin_list_members', {
     p_search: c.req.query('search') ?? null,
+    p_status: c.req.query('status') ?? null,
+    p_sort: c.req.query('sort') ?? 'created_desc',
     p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
     p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
   });
@@ -1169,11 +1310,177 @@ app.get('/admin/members', async (c) => {
     suspended: !!m.suspended_at,
     suspendedAt: m.suspended_at,
     accountStatus: m.account_status,
+    endDate: m.end_date ?? null,
+    idVerificationStatus: m.id_verification_status ?? 'none',
     listingCount: m.listing_count,
     createdAt: m.created_at,
   }));
 
-  return c.json({ success: true, data: { members, total: data?.total ?? 0 } });
+  return c.json({
+    success: true,
+    data: {
+      members,
+      total: data?.total ?? 0,
+      // stats 直通 SQL 算好的全站數字。**不要在這裡從 members 加總**——
+      // members 只有當前頁，那樣算出來的統計卡會隨分頁改變（M2 的反例）。
+      stats: data?.stats ?? {
+        total: 0,
+        active: 0,
+        expired: 0,
+        suspended: 0,
+        admins: 0,
+      },
+    },
+  });
+});
+
+// ============================================================
+// GET /admin/withdrawals/summary —— 入口 badge 用的輕量彙總
+//
+// badge 只要一個數字。走 `GET /admin/withdrawals?limit=1` 也拿得到，但那條
+// handler 會順便替該筆記錄的會員產身分證正反面的**簽名 URL**——每次 admin
+// 載入頁面都替某個人的證件開一次臨時外連，只為了讀一個計數。規劃書 §2.2
+// 把這支定性為「輕量」正是要避開它。
+// ============================================================
+app.get('/admin/withdrawals/summary', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_withdrawal_stats', {
+    p_status: 'pending',
+    p_from: null,
+    p_to: null,
+    p_search: null,
+  });
+
+  if (error) {
+    console.error('[admin-withdrawals-summary] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得提領彙總' } }, 500);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      pendingCount: data?.by_status?.pending ?? 0,
+      pendingAmount: data?.pending_amount ?? 0,
+    },
+  });
+});
+
+// ============================================================
+// GET /admin/members/:id —— 會員詳情（含近期提領記錄）
+//
+// §1.1 的頭號客服情境是「我提領怎麼還沒到」，`recentWithdrawals` 就是那句話的
+// 答案，不是附加資訊。
+//
+// **遮罩在這一層而不是 SQL**：同一份資料，提領作業台因匯款作業需要而回全碼、
+// 查詢台回遮罩值。規則烤進資料層就沒辦法讓兩個呼叫端有不同的答案。
+// 銀行代號不遮——它識別的是銀行不是個人，遮了反而讓客服對不出是哪一家。
+// ============================================================
+app.get('/admin/members/:id', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const { data, error } = await sb().rpc('admin_member_detail', {
+    p_user_id: c.req.param('id'),
+  });
+
+  if (error) {
+    console.error('[admin-member-detail] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得會員詳情' } }, 500);
+  }
+  if (!data) return c.json({ success: false, error: { message: '查無此會員' } }, 404);
+
+  const points = data.points ?? {};
+  return c.json({
+    success: true,
+    data: {
+      member: {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        isAdmin: data.is_admin,
+        suspended: !!data.suspended_at,
+        suspendedAt: data.suspended_at,
+        createdAt: data.created_at,
+        accountStatus: data.account_status,
+        endDate: data.end_date ?? null,
+        idVerificationStatus: data.id_verification_status ?? 'none',
+        idRejectReason: data.id_reject_reason ?? null,
+        idNumber: maskNationalId(data.national_id),
+        bankCode: data.bank_code ?? null,
+        bankAccount: maskBankAccount(data.bank_account),
+        referrerName: data.referrer_name ?? null,
+        directChildCount: data.direct_child_count ?? 0,
+        listingCount: data.listing_count ?? 0,
+        availablePoints: points.available ?? 0,
+        pendingPoints: points.pending ?? 0,
+        withdrawnPoints: points.withdrawn ?? 0,
+        recentWithdrawals: (data.recent_withdrawals ?? []).map((w: any) => ({
+          id: w.id,
+          amount: w.amount,
+          fee: w.fee,
+          status: w.status,
+          note: w.note ?? null,
+          requestedAt: w.requested_at,
+          processedAt: w.processed_at,
+          completedAt: w.completed_at,
+        })),
+      },
+    },
+  });
+});
+
+// ============================================================
+// POST /admin/members/:id/admin  body: { isAdmin: boolean }
+//
+// 授予／撤銷管理員。錯誤碼直通 SQL 的判定（cannot_demote_self / last_admin），
+// 前端據此顯示不同的說明——把它們壓成同一句「操作失敗」會讓 admin 不知道
+// 是自己不能撤自己，還是系統不允許歸零。
+// ============================================================
+app.post('/admin/members/:id/admin', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  if (typeof body?.isAdmin !== 'boolean') {
+    return c.json({ success: false, error: { message: 'isAdmin 必須是布林值' } }, 400);
+  }
+
+  const { data, error } = await sb().rpc('admin_set_member_admin', {
+    p_admin_id: user.id,
+    p_target_id: c.req.param('id'),
+    p_is_admin: body.isAdmin,
+  });
+
+  if (error) {
+    console.error('[admin-set-member-admin] rpc error:', error);
+    return c.json({ success: false, error: { message: '權限更新失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const messages: Record<string, string> = {
+      cannot_demote_self: '不能撤銷自己的管理員權限，請由其他管理員操作',
+      last_admin: '系統必須保留至少一位管理員',
+      member_not_found: '查無此會員',
+    };
+    return c.json({
+      success: false,
+      error: {
+        code: data?.error_code ?? 'unknown',
+        message: messages[data?.error_code] ?? '權限更新失敗',
+      },
+    }, 400);
+  }
+
+  return c.json({ success: true, data: { isAdmin: body.isAdmin } });
 });
 
 // POST /admin/members/:id/suspend  body: { suspend: boolean }
@@ -1202,6 +1509,99 @@ app.post('/admin/members/:id/suspend', async (c) => {
     return c.json({ success: false, error: { message: '停權狀態更新失敗' } }, 500);
   }
   return c.json({ success: true, data: { userId: targetId, suspended: suspend } });
+});
+
+// ============================================================
+// 證件審核（admin）——會員上傳雙面後進 pending 佇列，admin 核可或退回。
+// 審核結果只在 rejected 時擋提領（見 20260802000011 的守衛 #5a）。
+// ============================================================
+
+// GET /admin/id-reviews?status=&limit=&offset=
+app.get('/admin/id-reviews', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  const client = sb();
+  const { data, error } = await client.rpc('admin_list_id_reviews', {
+    p_status: c.req.query('status') ?? 'pending',
+    p_limit: Math.min(parseInt(c.req.query('limit') || '50'), 200),
+    p_offset: Math.max(parseInt(c.req.query('offset') || '0'), 0),
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews] rpc error:', error);
+    return c.json({ success: false, error: { message: '無法取得審核佇列' } }, 500);
+  }
+
+  // 批次簽名證件照網址（1 小時）——與 /admin/withdrawals 同模式，一次
+  // createSignedUrls 而不是逐列打 storage。
+  const rows = (data?.reviews ?? []) as Array<Record<string, unknown>>;
+  const paths = rows.flatMap((r) =>
+    [r.id_card_front_path, r.id_card_back_path].filter(Boolean) as string[]
+  );
+  const urlMap: Record<string, string> = {};
+  if (paths.length) {
+    const { data: signed } = await client.storage.from('id-cards').createSignedUrls(paths, 3600);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl;
+    }
+  }
+
+  const reviews = rows.map((r) => ({
+    userId: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    status: r.id_verification_status,
+    rejectReason: r.id_reject_reason,
+    reviewedAt: r.id_verified_at,
+    // 送審時間：佇列排序的依據，也是 admin 判斷「這個人等多久了」的數字。
+    // 舊列 backfill 成近似值，仍保底 fallback 到註冊時間。
+    submittedAt: r.id_submitted_at ?? r.created_at,
+    createdAt: r.created_at,
+    idCardFrontUrl: r.id_card_front_path ? (urlMap[r.id_card_front_path as string] ?? null) : null,
+    idCardBackUrl: r.id_card_back_path ? (urlMap[r.id_card_back_path as string] ?? null) : null,
+  }));
+
+  return c.json({ success: true, data: { reviews, total: data?.total ?? 0 } });
+});
+
+// POST /admin/id-reviews/:userId/review  body: { approve: boolean, reason?: string }
+app.post('/admin/id-reviews/:userId/review', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch { /* 空 body */ }
+
+  const { data, error } = await sb().rpc('admin_review_id', {
+    p_admin_id: user.id,
+    p_user_id: c.req.param('userId'),
+    p_approve: !!body?.approve,
+    p_reason: body?.reason ?? null,
+  });
+
+  if (error) {
+    console.error('[admin/id-reviews/review] rpc error:', error);
+    return c.json({ success: false, error: { message: '審核失敗' } }, 500);
+  }
+  if (!data?.success) {
+    const status = data?.error_code === 'not_found'
+      ? 404
+      : data?.error_code === 'forbidden'
+      ? 403
+      : 400;
+    return c.json(
+      { success: false, error: { message: data?.message ?? '審核失敗', code: data?.error_code } },
+      status,
+    );
+  }
+
+  return c.json({ success: true, data: { userId: c.req.param('userId'), status: data.status } });
 });
 
 // ============================================================
@@ -1377,10 +1777,11 @@ app.post('/payuni/prepare', async (c) => {
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
   if (renewalMode === 'extend') {
-    // extend 只有「曾是會員」且「接續後效期仍在未來」才有意義——過期
-    // 超過一年的人選 extend 會付了錢效期仍在過去，直接拒絕（前端也不
-    // 顯示該選項），process_successful_payment 才能對 renewal_mode
-    // 字面執行而不需要補救邏輯。
+    // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
+    // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
+    // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
+    // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
+    // 沒有可接續的效期。
     const { data: lastSub } = await client
       .from('subscriptions')
       .select('end_date')
@@ -1392,17 +1793,17 @@ app.post('/payuni/prepare', async (c) => {
     if (!lastSub?.end_date) {
       return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
     }
-    // 日領域計算，與 process_successful_payment 的 extend 分支
-    // （tw_day(前期迄) + 1 天起算）完全同語意——這裡通過的請求，
-    // 付款完成後端點算出來的效期保證仍在未來。
-    const anchorDay = twDayPlusDays(twDayOf(lastSub.end_date), 1);
-    const extendedEndDay = subscriptionLastDay(anchorDay);
-    if (twEndOfDayInstant(extendedEndDay).getTime() <= Date.now()) {
-      return c.json(
-        { success: false, error: '會籍已過期超過一年，無法接續原效期，請選擇新約' },
-        400,
-      );
-    }
+  }
+
+  // A16：有審核中（pending）提領時擋下 fresh——fresh 會清空帳本，而
+  // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
+  // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
+  // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
+  if (renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id))) {
+    return c.json(
+      { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
+      400,
+    );
   }
 
   // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
@@ -1435,6 +1836,50 @@ app.post('/payuni/prepare', async (c) => {
     if (refErr) {
       console.error('[prepare] 更新推薦人失敗:', refErr);
       return c.json({ success: false, error: '更新推薦人失敗' }, 500);
+    }
+  } else if (renewalMode === 'fresh') {
+    // A10：選新約 = 離開原本的樹；未填碼不等於「維持原狀」，而是比照
+    // 首購未填碼的既有語意——套用平台預設推薦碼，referred_by_is_default
+    // = true（前端據此隱藏這個碼，使用者視角就是「沒有上一代」）。
+    // A11：任一步失敗 → 維持原上代不變 + 告警，**絕不阻斷金流**。
+    // 碼的合法性唯一判準仍是 validate_referral_code（停權/失效都在裡面），
+    // 不複製 resolve_default_referrer 的分類。
+    const alertDefaultUnavailable = (reason: string, extra: Record<string, unknown> = {}) =>
+      logSystemAlert(
+        'payuni-prepare',
+        { user_id: user.id, reason, ...extra },
+        'default_referrer_unavailable_on_fresh',
+      );
+    const { data: cfgRow } = await client
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const defaultCode = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
+    if (!defaultCode) {
+      await alertDefaultUnavailable('unset');
+    } else {
+      const { data: codeRows, error: codeErr } = await client
+        .rpc('validate_referral_code', { p_code: defaultCode });
+      if (codeErr || !codeRows || codeRows.length === 0) {
+        // 不存在、已失效、推薦人停權都落在這裡（validate 的職責）。
+        await alertDefaultUnavailable('code_not_applicable', { code: defaultCode });
+      } else if (codeRows[0].referrer_user_id === user.id) {
+        // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
+        await alertDefaultUnavailable('self_referral', { code: defaultCode });
+      } else {
+        const { error: refErr } = await client
+          .from('profiles')
+          .update({
+            referred_by_code: defaultCode,
+            referred_by_user_id: codeRows[0].referrer_user_id,
+            referred_by_is_default: true,
+          })
+          .eq('id', user.id);
+        if (refErr) {
+          await alertDefaultUnavailable('profile_update_failed', { error: refErr.message });
+        }
+      }
     }
   }
 
@@ -1562,6 +2007,30 @@ app.get('/payuni/result/:tradeNo', async (c) => {
     }
   }
 
+  // 精簡版續約資訊（renewal-backfill）：PaymentResult 據此判斷「這是
+  // 補繳中間筆」（backfillCount > 0 → 顯示進度而非開通輪詢），不必另掛
+  // useSubscription()。以查詢當下 DB 的最新訂閱迄日計算剩餘補繳。
+  // 型別綁契約 PayuniResultRenewalSchema——欄位增減兩端都會被 TS 抓到。
+  let renewal: PayuniResultRenewal | null = null;
+  {
+    const { data: latestSub } = await sb()
+      .from('subscriptions')
+      .select('end_date')
+      .eq('user_id', user.id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestSub?.end_date) {
+      const plan = backfillPlan(twDayOf(latestSub.end_date), twDayOf(new Date()))!;
+      renewal = {
+        backfillCount: plan.backfillCount,
+        backfillAmount: plan.backfillCount * 1200,
+        extendAnchorDate: plan.extendAnchorDay,
+        extendEndDate: plan.extendEndDay,
+      };
+    }
+  }
+
   // orderStatus 只用來決定前端是否要繼續 polling；成功/失敗的實際原因與
   // 明細一律以 payuni（PayUni 原始回傳資料）為準，不再自創詞彙轉換。
   return c.json({
@@ -1574,6 +2043,7 @@ app.get('/payuni/result/:tradeNo', async (c) => {
       // 「開通處理中」而不是把使用者當成沒付錢。
       paidAwaitingActivation: order.status === 'pending' &&
         order.payuni_response?.Status === 'SUCCESS',
+      renewal,
     },
   });
 });
@@ -1648,6 +2118,9 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
     // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、
     // warning-only 沒寫成的上線續約獎勵。同樣 best-effort、冪等。
     await sb().rpc('repair_orphaned_claim_rewards', { p_user_id: userId });
+    // fresh 清空帳本的自癒：補回付款當下沖銷失敗的 ledger_reset 列，
+    // 金額取失敗時的告警快照（不是現值）。同樣 best-effort、冪等。
+    await sb().rpc('repair_orphaned_forfeitures', { p_user_id: userId });
   } catch (e) {
     console.error('[repairOrphanedPaymentsBestEffort]', e);
   }
@@ -2089,22 +2562,82 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct }, { data: sub }] = await Promise.all([
+  const [{ data: acct }, { data: subs }, pendingWithdrawal] = await Promise.all([
     sb().from('user_account_status')
       .select('status, end_date')
       .eq('user_id', user.id)
       .single(),
-    // 最新一筆訂閱的起訖——SubscriptionStatusCard 顯示「訂閱週期」用。
+    // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
     // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
-    // 「看不到」有延長）。
+    // 「看不到」有延長）。source_payment_order_id 供補繳簽名判定取對應
+    // 訂單的付款時點；取多筆是為了往前走出「本輪已付幾筆」（A15）。
     sb().from('subscriptions')
-      .select('start_date, end_date')
+      .select('start_date, end_date, source_payment_order_id')
       .eq('user_id', user.id)
       .order('end_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(40),
+    // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
+    hasPendingWithdrawal(user.id),
   ]);
+
+  // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
+  // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
+  // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
+  const sub = subs?.[0] ?? null;
+  let renewal: Record<string, unknown> | null = null;
+  if (sub?.end_date) {
+    const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
+
+    const srcOrderIds = (subs ?? [])
+      .map((s) => s.source_payment_order_id)
+      .filter((id): id is string => !!id);
+    const [{ data: srcOrders }, { data: bal }, { data: tp }] = await Promise.all([
+      srcOrderIds.length > 0
+        ? sb().from('payment_orders')
+          .select('id, completed_at')
+          .in('id', srcOrderIds)
+        : Promise.resolve({ data: [] as { id: string; completed_at: string | null }[] }),
+      sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
+      sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
+    ]);
+
+    // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
+    // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
+    // 不得被誤判成「本輪已補繳」）。從最新一筆往回走，連續帶著這個簽名
+    // 的筆數 = 本輪已付補繳筆數（A15 對話框要唸出具體數字）；一遇到
+    // 非補繳筆（那是上一輪的自然效期）就停。
+    const completedAtById = new Map(
+      (srcOrders ?? []).map((o) => [o.id, o.completed_at]),
+    );
+    let paidBackfillCount = 0;
+    for (const s of subs ?? []) {
+      const completedAt = s.source_payment_order_id
+        ? completedAtById.get(s.source_payment_order_id)
+        : null;
+      const isBackfill = !!(
+        completedAt &&
+        new Date(s.end_date).getTime() < new Date(completedAt).getTime()
+      );
+      if (!isBackfill) break;
+      paidBackfillCount++;
+    }
+    const hasPaidAnyBackfill = paidBackfillCount > 0;
+
+    renewal = {
+      extendAnchorDate: plan.extendAnchorDay,
+      extendEndDate: plan.extendEndDay,
+      backfillCount: plan.backfillCount,
+      backfillAmount: plan.backfillCount * 1200,
+      backfillFinalEndDate: plan.backfillFinalEndDay,
+      expiredForMonths: plan.expiredForMonths,
+      hasPaidAnyBackfill,
+      paidBackfillCount,
+      paidBackfillAmount: paidBackfillCount * 1200,
+      freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
+      freshForfeitReferrals: tp?.total_referrals ?? 0,
+    };
+  }
 
   return c.json({
     success: true,
@@ -2114,6 +2647,8 @@ app.get('/subscriptions/status', async (c) => {
       activeUntil: acct?.end_date ?? null,
       currentPeriodStart: sub?.start_date ?? null,
       currentPeriodEnd: sub?.end_date ?? null,
+      renewal,
+      hasPendingWithdrawal: pendingWithdrawal,
     },
   });
 });
@@ -2286,16 +2821,41 @@ app.get('/rewards/withdrawals', async (c) => {
     return c.json({ error: { message: '查詢提領紀錄失敗' } }, 500);
   }
 
-  const withdrawals = (rows ?? []).map((w: any) => ({
-    id: w.id,
-    userId: w.user_id,
-    amount: w.amount,
-    fee: w.fee,
-    status: w.status,
-    requestedAt: w.requested_at,
-    processedAt: w.processed_at,
-    completedAt: w.completed_at,
-  }));
+  // 事件表一次 in 查詢後在應用層 group（同 /admin/withdrawals）。會員端只
+  // 取得出兩個衍生值，不回整條 events——那條歷史裡有 bank_ref 之類的作業
+  // 欄位，是 admin 的作業紀錄，不是會員該讀的東西。
+  const withdrawalIds = (rows ?? []).map((w: any) => w.id);
+  const eventMap: Record<string, any[]> = {};
+  if (withdrawalIds.length) {
+    const { data: evts } = await sb().from('withdrawal_events')
+      .select('withdrawal_id, to_status, note, admin_id, created_at')
+      .in('withdrawal_id', withdrawalIds)
+      .order('created_at');
+    for (const e of evts ?? []) (eventMap[e.withdrawal_id] ??= []).push(e);
+  }
+
+  const withdrawals = (rows ?? []).map((w: any) => {
+    const events = eventMap[w.id] ?? [];
+    // 退件理由必須到得了會員面前：看不到理由的人只會重送一模一樣的東西，
+    // 再被退一次——admin 多做一次工、會員多等一輪，兩邊都沒拿到資訊。
+    // 主表的 note 自 20260802000004 起 vestigial，事件表最新一筆才是現況。
+    const latest = events.length ? events[events.length - 1] : null;
+    // 「誰結的案」看最後一筆 completed 事件：admin_id 非 null = 管理員代為
+    // 結案。讓會員以為自己按過查收，是規劃 §6 開放問題 #2 明確否決的做法。
+    const lastCompleted = [...events].reverse().find((e) => e.to_status === 'completed');
+    return {
+      id: w.id,
+      userId: w.user_id,
+      amount: w.amount,
+      fee: w.fee,
+      status: w.status,
+      note: latest?.note ?? null,
+      completedByAdmin: lastCompleted ? lastCompleted.admin_id !== null : false,
+      requestedAt: w.requested_at,
+      processedAt: w.processed_at,
+      completedAt: w.completed_at,
+    };
+  });
 
   return c.json({ success: true, data: { withdrawals } });
 });
@@ -2330,7 +2890,7 @@ app.get('/rewards/id-photos', async (c) => {
   const client = sb();
   const { data: profile } = await client
     .from('profiles')
-    .select('id_card_front_path, id_card_back_path')
+    .select('id_card_front_path, id_card_back_path, id_verification_status, id_reject_reason')
     .eq('id', user.id)
     .single();
 
@@ -2345,6 +2905,9 @@ app.get('/rewards/id-photos', async (c) => {
     data: {
       frontUrl: await sign(profile?.id_card_front_path ?? null),
       backUrl: await sign(profile?.id_card_back_path ?? null),
+      // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+      verificationStatus: profile?.id_verification_status ?? 'none',
+      rejectReason: profile?.id_reject_reason ?? null,
     },
   });
 });
@@ -2391,7 +2954,7 @@ app.post('/rewards/upload-id-photos', async (c) => {
   };
 
   try {
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | null> = {};
     let frontPath: string | null = null;
     let backPath: string | null = null;
     if (front) {
@@ -2402,6 +2965,32 @@ app.post('/rewards/upload-id-photos', async (c) => {
       backPath = await upload(back, 'back');
       patch.id_card_back_path = backPath;
     }
+
+    // 這次上傳後是否「雙面齊全」——要把既有路徑算進來,會員常分兩次補齊。
+    // 只有齊全才進審核佇列:沒交齊卻顯示「審核中」,會員會以為在等 admin,
+    // 實際上是他自己還沒傳完;admin 那邊也會收到一筆缺圖的送審紀錄。
+    const { data: current } = await client
+      .from('profiles')
+      .select('id_card_front_path, id_card_back_path')
+      .eq('id', user.id)
+      .single();
+    const finalFront = frontPath ?? current?.id_card_front_path ?? null;
+    const finalBack = backPath ?? current?.id_card_back_path ?? null;
+    if (finalFront && finalBack) {
+      patch.id_verification_status = 'pending';
+      // 換照片＝重新送審,上一輪的痕跡要一起清掉:
+      //   * 退回理由——否則會員會在「審核中」狀態下還看到舊的退件說明
+      //   * 審核時間——否則 admin 的審核佇列會顯示「已於 X 時審核」,
+      //     但那筆其實還沒被看過。在金流相鄰的稽核資料裡,一個會說謊的
+      //     時間戳比沒有時間戳更糟:沒有只是資訊不足,說謊會讓人據以決策。
+      patch.id_reject_reason = null;
+      patch.id_verified_at = null;
+      // 送審時刻——審核佇列依它排「等最久的」（B2 的裁決結果）。換照片＝
+      // 重新送審，所以這裡是覆寫而不是「只在第一次設」：重傳的人重新排隊，
+      // 不該帶著上一輪的等待時間插到最前面。
+      patch.id_submitted_at = new Date().toISOString();
+    }
+
     await client.from('profiles').update(patch).eq('id', user.id);
 
     return c.json({ success: true, data: { frontPath, backPath } });
@@ -3327,8 +3916,32 @@ app.get('/referrals/debug/:userId', async (c) => {
 // 兩個欄位都不是機密:mode 從使用者被導去哪個 PayUni 網域就看得出來,
 // configured 只回報布林、不回傳任何憑證內容（同 sha 的取捨——repo 公開,
 // 這些不是機密,而可觀測性的價值遠大於它）。
-app.get('/health', (c) => {
+app.get('/health', async (c) => {
   const read = (key: string) => Deno.env.get(key);
+
+  // A12：預設推薦碼（reward_config.default_referrer_code）只能人工 SQL
+  // 設定、沒有 admin UI 掛即時驗證；fresh 未填碼的 A10 機制若因此靜默
+  // 失效，只剩事後告警。部署 SOP 本來就會打 /health 比對 sha，順帶回報
+  // 三態讓失效「可見」。任何錯誤都不得讓 /health 失敗——無法驗證時回
+  // 'invalid'（寧可假警報引人檢查，不可沉默）。碼內容絕不回傳。
+  let defaultReferrer: 'ok' | 'unset' | 'invalid' = 'invalid';
+  try {
+    const { data: cfgRow } = await sb()
+      .from('reward_config')
+      .select('default_referrer_code')
+      .eq('id', true)
+      .maybeSingle();
+    const code = (cfgRow?.default_referrer_code ?? '').trim().toLowerCase();
+    if (!code) {
+      defaultReferrer = 'unset';
+    } else {
+      const { data: rows, error } = await sb().rpc('validate_referral_code', { p_code: code });
+      defaultReferrer = !error && rows && rows.length > 0 ? 'ok' : 'invalid';
+    }
+  } catch (e) {
+    console.error('[health] defaultReferrer 檢查失敗:', e);
+  }
+
   return c.json({
     ok: true,
     ts: new Date().toISOString(),
@@ -3337,9 +3950,10 @@ app.get('/health', (c) => {
     payuniConfigured: isPayuniConfigured(read),
     // 與 payuniConfigured 同一個理由：這個設定沒有任何外顯訊號。缺 secret 時
     // 核身端點會回 500，但那要有人真的去掃一次碼才會發現；Secrets 頁只看得到
-    // digest。回一個布林值（絕不回內容）讓「設好了沒」一個 curl 就能回答，
+    // digest。回一個布林值（絕不回傳任何憑證內容）讓「設好了沒」一個 curl 就能回答，
     // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
     memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
+    defaultReferrer,
   });
 });
 

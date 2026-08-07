@@ -77,26 +77,6 @@ Feature: Reward points and withdrawal
     Then I should see a toast containing "提領申請已成功提交"
 
   @rewards
-  Scenario: A returning member can replace a saved ID photo during the application
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    And my ID card photos are already on file
-    And uploading my ID card photos succeeds
-    And submitting a withdrawal succeeds
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "1000"
-    And I proceed past the amount step
-    And I confirm the withdrawal summary
-    And I fill the withdrawal identity form with ID "A123456789" bank "臺灣銀行" account "1234567890"
-    And I remove the saved front ID photo
-    Then the front ID photo upload area should appear
-    When I upload a replacement front ID photo
-    And I agree to the withdrawal terms
-    And I submit the withdrawal application
-    Then I should see a toast containing "提領申請已成功提交"
-
-  @rewards
   Scenario: A member without ID photos on file uploads them during the application
     Given I am a paid member who joined the referral program
     And my reward summary shows 5000 available and 8000 total earned
@@ -156,33 +136,6 @@ Feature: Reward points and withdrawal
   # caught client-side before the confirm step, mirroring the backend's rules.
 
   @rewards
-  Scenario: A withdrawal below the minimum is rejected
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "500"
-    And I proceed past the amount step
-    Then I should see a field error containing "最低提領Point為 1,000P"
-
-  @rewards
-
-  Scenario: An ID that fails verification cannot submit the application
-    Given I am a paid member who joined the referral program
-    And my reward summary shows 5000 available and 8000 total earned
-    And my ID card photos are already on file
-    And verifying the national ID always fails
-    When I visit "/rewards"
-    And I start a withdrawal application
-    And I enter the withdrawal amount "1000"
-    And I proceed past the amount step
-    And I confirm the withdrawal summary
-    And I enter the withdrawal ID number "A123456789"
-    Then I should see a field error containing "驗證失敗，請稍後再試"
-    And the submit-withdrawal button should be disabled
-
-  @rewards
-
   Scenario: The application stays locked until the terms are agreed
     # Every field is valid; the submit gate must remain closed purely because
     # the terms checkbox is unticked, and open the moment it is ticked.

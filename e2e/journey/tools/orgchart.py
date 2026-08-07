@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
@@ -16,34 +15,12 @@ import yaml
 JOURNEY_DIR = Path(__file__).resolve().parent.parent
 ORGCHART_PATH = JOURNEY_DIR / "orgchart.yaml"
 
-
-def active_orgchart_path() -> Path:
-    """這一輪要用哪張樹形圖。
-
-    預設是測試用的 orgchart.yaml；`JOURNEY_ORGCHART_PATH` 可換成別張
-    ——目前唯一的用途是 develop 的示範資料（orgchart-develop-seed.yaml，
-    形狀與生命週期都與測試樹不同，見該檔檔頭）。相對路徑以 journey 目錄
-    為基準，好讓 workflow 只寫檔名。
-
-    刻意做成「換檔案」而不是「加參數」：樹形是 builder 與斷言的單一真相，
-    兩邊都讀同一張圖才不會出現「建的樹」與「驗的樹」不一致。
-    """
-    override = os.environ.get("JOURNEY_ORGCHART_PATH")
-    if not override:
-        return ORGCHART_PATH
-    path = Path(override)
-    return path if path.is_absolute() else JOURNEY_DIR / path
-
 REWARD_GENERATIONS = 3  # 三代制：獎勵只往上發三層
 
 
-def load_nodes(path: Path | None = None) -> dict[str, str | None]:
-    """回傳 {節點: 上線節點或 None}。順便驗證結構完整性。
-
-    path 省略時走 active_orgchart_path()（預設測試樹，可用環境變數換成
-    develop 的示範資料樹）。
-    """
-    data = yaml.safe_load((path or active_orgchart_path()).read_text(encoding="utf-8"))
+def load_nodes() -> dict[str, str | None]:
+    """回傳 {節點: 上線節點或 None}。順便驗證結構完整性。"""
+    data = yaml.safe_load(ORGCHART_PATH.read_text(encoding="utf-8"))
     nodes: dict[str, str | None] = data["nodes"]
     for node, parent in nodes.items():
         if parent is not None and parent not in nodes:
@@ -54,8 +31,8 @@ def load_nodes(path: Path | None = None) -> dict[str, str | None]:
     return nodes
 
 
-def load_expected_rewards(path: Path | None = None) -> dict[str, int]:
-    data = yaml.safe_load((path or active_orgchart_path()).read_text(encoding="utf-8"))
+def load_expected_rewards() -> dict[str, int]:
+    data = yaml.safe_load(ORGCHART_PATH.read_text(encoding="utf-8"))
     return data.get("expected_rewards", {})
 
 

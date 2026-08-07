@@ -16,6 +16,9 @@ STATE_TESTIDS = {
     # 付款成功但會籍尚未生效（後端自癒收斂中）的開通中/逾時畫面
     "activating": "payment-result-activating",
     "activation_timeout": "payment-result-activation-timeout",
+    # 補繳中間筆（renewal-backfill）：expired 是正常終態，顯示進度與去路
+    "backfill_progress": "payment-result-backfill-progress",
+    "renewal_unavailable": "payment-result-renewal-unavailable",
 }
 
 

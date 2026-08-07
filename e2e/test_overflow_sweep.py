@@ -121,6 +121,11 @@ class SweepRoute:
     # 導頁後預期停留的路徑前綴；不符代表被守衛導走了，掃到的不是目標頁面。
     expect_prefix: Optional[str] = None
     tags: list = field(default_factory=list)
+    # 導頁後的必要互動（page → None）。被動載入只畫得到預設狀態，tab 介面
+    # 的其他面板從未被畫出來過——沒畫出來就量不到，報告會看起來比實際乾淨。
+    # 只放「切換到另一個持久畫面」這種互動；一次性彈出物（對話框、toast）
+    # 仍在盲區，見報告文末。
+    after_load: Optional[Callable] = None
 
 
 def _setup_home(context, api_mock, rest_mock):
@@ -227,7 +232,7 @@ def _setup_payment_result(context, api_mock, rest_mock):
     )
 
 
-def _setup_admin(context, api_mock, rest_mock):
+def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     _seed_member(context, isAdmin=True)
     api_mock.set_admin_withdrawals(
         [build_admin_withdrawal(status="pending", userName=NAME_CJK_10, amount=BIG_POINTS)]
@@ -237,9 +242,41 @@ def _setup_admin(context, api_mock, rest_mock):
     )
     api_mock.set_admin_announcements([])
     api_mock.set_system_alerts(
-        [build_system_alert(message="Edge Function 回應逾時：/rewards/withdraw 連續失敗 5 次")]
+        alerts
+        or [build_system_alert(message="Edge Function 回應逾時：/rewards/withdraw 連續失敗 5 次")]
     )
     api_mock.set_admin_setup(is_admin=True)
+
+
+def _setup_admin_alerts(context, api_mock, rest_mock):
+    """系統告警 tab 的最壞但可達測資。message 與 context 都由後端寫入、
+    長度無上限（context 是 jsonb），這串取自正式站實際出現過的
+    time_domain_backfill 告警——欄位數再多一點就是它。"""
+    _setup_admin(
+        context,
+        api_mock,
+        rest_mock,
+        alerts=[
+            build_system_alert(
+                source="time_domain_backfill",
+                severity="info",
+                message=(
+                    "backfill 完成：orders=0, subscriptions=0, 效期縮短=0，"
+                    "未偵測到需要人工介入的資料，下次排程於 2026-07-26 09:00 再次執行"
+                ),
+                context={
+                    "shrunk_count": 0,
+                    "subs_updated": 0,
+                    "orders_updated": 0,
+                    "shrunk_subscription_ids": [],
+                },
+            )
+        ],
+    )
+
+
+def _open_system_alerts_tab(page):
+    page.get_by_role("tab", name="系統告警").click()
 
 
 def _setup_complete_profile(context, api_mock, rest_mock):
@@ -282,6 +319,17 @@ ROUTES = [
         "/payment/result",
     ),
     SweepRoute("/admin", "平台管理", _setup_admin, "/admin"),
+    # 同一條路由掃第二次：Radix Tabs 只掛載 active 面板，預設 tab 之外的
+    # 內容不切過去就不存在於 DOM。系統告警的「詳細資訊」欄放的是 jsonb 原文，
+    # 是這個 console 裡唯一長度無上限的欄位。
+    SweepRoute(
+        "/admin",
+        "平台管理 · 系統告警",
+        _setup_admin_alerts,
+        "/admin",
+        tags=["system-alerts"],
+        after_load=_open_system_alerts_tab,
+    ),
 ]
 
 # 沒掃到的路由要寫出來，不能靜默略過——「報告沒提到」和「掃過沒問題」
@@ -350,6 +398,9 @@ def _write_report(results):
         "",
         "- **Toast**：要有操作才會出現，被動載入頁面掃不到。",
         "- **對話框／下拉／Sheet**：需要點擊才開啟（查收預覽、篩選面板、排序選單等）。",
+        "- **未指定的 tab 面板**：Radix Tabs 只掛載 active 面板，切不過去就不在 DOM 裡。",
+        "  只有帶 `after_load` 的 tab 會被畫出來（目前是 /admin 的系統告警），",
+        "  同一個 console 的其餘 tab（會員管理／公告管理／管理員設置）仍是盲區。",
         "- **極端數值**：點數與推薦人數用的是可達的量級；真要撐爆需要 5 位數以上，",
         "  目前測資到不了（推薦人數由 mock 的清單長度推導）。",
         "- **320px 與字級放大**：本輪只跑 375px 單一軸。",
@@ -370,7 +421,12 @@ def _write_report(results):
 
 
 @pytest.mark.compatibility
-@pytest.mark.parametrize("route", ROUTES, ids=lambda r: r.path)
+@pytest.mark.parametrize(
+    "route",
+    ROUTES,
+    # 同一條 path 可以掃多次（不同 tab），用 tag 區分才不會得到 /admin0、/admin1。
+    ids=lambda r: r.path if not r.tags else f"{r.path}#{r.tags[0]}",
+)
 def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_results, route):
     page.set_viewport_size(MOBILE_VIEWPORT)
 
@@ -379,6 +435,10 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
 
     page.goto(route.path)
     settle(page)
+
+    if route.after_load:
+        route.after_load(page)
+        settle(page)
 
     # 地基檢查:全站文案是中文，所有溢出數字都建立在中文字寬上。字沒有以
     # 全形畫出來，量到的就不是這個 app 在真實裝置上的樣子。這條是硬失敗、

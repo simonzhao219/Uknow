@@ -91,19 +91,6 @@ def enter_recovery_code(otp_page, code):
     otp_page.enter_code(code)
 
 
-@when("the reset code window expires")
-def reset_code_window_expires(page):
-    # The countdown compares Date.now() against a stored expiry, so the clock
-    # itself must advance past the 3-minute (180s) window.
-    page.clock.install()
-    page.clock.fast_forward(181_000)
-
-
-@when("I request the recovery code again")
-def request_recovery_code_again(otp_page):
-    otp_page.click_resend()
-
-
 @when(parsers.parse('I set the new password "{password}" and confirmation "{confirm}"'))
 def set_new_password(page, reset_password_page, password, confirm):
     # A successful recovery verify auto-navigates here; the auto-waiting

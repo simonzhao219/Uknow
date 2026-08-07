@@ -20,6 +20,7 @@ import {
   subscriptionLastDay,
   twDayOf,
   twDayPlusDays,
+  twDayPlusYears,
   twEndOfDayInstant,
   twStartOfDayInstant,
 } from './tw-dates.ts';
@@ -168,7 +169,7 @@ Deno.test('fresh / null：效期從付款當下起算（現行語意不變）', 
   }
 });
 
-Deno.test('prepare：過期超過一年選 extend 被拒絕；選 fresh 可以', async () => {
+Deno.test('prepare：過期超過一年選 extend 也能建單（A1 補繳制）；fresh 照舊', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Too Expired' });
 
@@ -179,9 +180,15 @@ Deno.test('prepare：過期超過一年選 extend 被拒絕；選 fresh 可以',
 
     const token = await getUserAccessToken(client, user.email);
 
+    // A1：「續約（接續原效期）」永遠可選，不因過期多久而消失。
     const extendRes = await postPrepare(token, { renewalMode: 'extend' });
-    assertEquals(extendRes.status, 400);
-    assertStringIncludes(extendRes.body.error ?? '', '過期超過一年');
+    assertEquals(extendRes.body.success, true, JSON.stringify(extendRes.body));
+    const { data: extendOrder } = await client
+      .from('payment_orders')
+      .select('renewal_mode')
+      .eq('transaction_id', extendRes.body.data.tradeNo)
+      .single();
+    assertEquals(extendOrder?.renewal_mode, 'extend');
 
     const freshRes = await postPrepare(token, { renewalMode: 'fresh' });
     assertEquals(freshRes.body.success, true);
@@ -194,6 +201,113 @@ Deno.test('prepare：過期超過一年選 extend 被拒絕；選 fresh 可以',
     assertEquals(order?.renewal_mode, 'fresh');
   } finally {
     await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('prepare：從未訂閱者選 extend 仍被拒（唯一保留的 extend 擋）', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Never Subscribed' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    const res = await postPrepare(token, { renewalMode: 'extend' });
+    assertEquals(res.status, 400);
+    assertStringIncludes(res.body.error ?? '', '沒有可接續的訂閱紀錄');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('AC-1：過期近三年連續三筆 extend，前兩筆仍 expired、第三筆 active', async () => {
+  const client = adminClient();
+  // 三層上代：g3 ← g2 ← g1 ← payer（AC-5 要驗三代獎勵各 3 筆）。
+  const g3 = await createTestUser(client, { name: 'AC1 Gen3' });
+  let g2: { id: string; email: string } | null = null;
+  let g1: { id: string; email: string } | null = null;
+  let payer: { id: string; email: string } | null = null;
+
+  try {
+    assertEquals((await payForUser(client, g3.id)).error, null);
+    g2 = await createTestUser(client, {
+      name: 'AC1 Gen2',
+      referredByCode: await getActiveReferralCode(client, g3.id),
+    });
+    assertEquals((await payForUser(client, g2.id)).error, null);
+    g1 = await createTestUser(client, {
+      name: 'AC1 Gen1',
+      referredByCode: await getActiveReferralCode(client, g2.id),
+    });
+    assertEquals((await payForUser(client, g1.id)).error, null);
+    payer = await createTestUser(client, {
+      name: 'AC1 Payer',
+      referredByCode: await getActiveReferralCode(client, g1.id),
+    });
+    assertEquals((await payForUser(client, payer.id)).error, null);
+
+    // 過期近三年（today − 3 年 + 45 天）→ 需連續補 3 筆才 active。
+    const lastEndDay = twDayPlusDays(twDayPlusYears(twDayOf(new Date()), -3), 45);
+    const endInstant = twEndOfDayInstant(lastEndDay).toISOString();
+    const { error: expErr } = await client
+      .from('subscriptions')
+      .update({ end_date: endInstant, grace_period_end: endInstant })
+      .eq('user_id', payer.id);
+    assertEquals(expErr, null);
+
+    const token = await getUserAccessToken(client, payer.email);
+    // 週年日保留：三筆迄日 = 原到期日 +1/+2/+3 年。
+    const expectedEnds = [1, 2, 3].map((k) => twDayPlusYears(lastEndDay, k));
+
+    for (let i = 0; i < 3; i++) {
+      const res = await postPrepare(token, { renewalMode: 'extend' });
+      assertEquals(res.body.success, true, `第 ${i + 1} 筆 prepare：${JSON.stringify(res.body)}`);
+      assertEquals(await payPendingOrder(client, payer.id, res.body.data.tradeNo), null);
+
+      const { data: latest } = await client
+        .from('subscriptions')
+        .select('end_date')
+        .eq('user_id', payer.id)
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .single();
+      assertEquals(twDayOf(latest!.end_date), expectedEnds[i], `第 ${i + 1} 筆迄日`);
+
+      const { data: acct } = await client
+        .from('user_account_status').select('status').eq('user_id', payer.id).single();
+      assertEquals(acct?.status, i < 2 ? 'expired' : 'active', `第 ${i + 1} 筆後帳號狀態`);
+    }
+
+    // AC-5：三筆補繳各發三代獎勵（每代 3 筆、全數綁補繳訂閱），任務不 +1。
+    const { data: backfillSubs } = await client
+      .from('subscriptions')
+      .select('id')
+      .eq('user_id', payer.id)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    const backfillSubIds = backfillSubs!.map((s) => s.id);
+    for (
+      const [gen, upline] of [[1, g1], [2, g2], [3, g3]] as const
+    ) {
+      const { data: rewards } = await client
+        .from('reward_transactions')
+        .select('user_id, subscription_id')
+        .eq('referee_user_id', payer.id)
+        .eq('generation', gen)
+        .in('subscription_id', backfillSubIds);
+      assertEquals(rewards?.length, 3, `第 ${gen} 代應收 3 筆補繳獎勵`);
+      for (const r of rewards ?? []) assertEquals(r.user_id, upline!.id);
+    }
+
+    const { data: tp } = await client
+      .from('task_progress')
+      .select('total_referrals')
+      .eq('user_id', g1.id)
+      .single();
+    assertEquals(tp?.total_referrals, 1, '補繳不得讓上代任務 +1（僅首購那次）');
+  } finally {
+    await deleteTestUsers(
+      client,
+      [g3.id, g2?.id, g1?.id, payer?.id].filter((x): x is string => !!x),
+    );
   }
 });
 

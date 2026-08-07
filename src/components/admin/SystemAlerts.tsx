@@ -116,9 +116,24 @@ export function SystemAlerts() {
                 <TableRow key={alert.id}>
                   <TableCell>{getSeverityBadge(alert.severity)}</TableCell>
                   <TableCell className="font-mono text-sm">{alert.source}</TableCell>
-                  <TableCell>{alert.message}</TableCell>
-                  <TableCell className="max-w-xs">
-                    <code className="text-xs text-muted-foreground break-all">
+                  {/*
+                    message 與 context 長度都無上限（context 是 jsonb，後端寫
+                    什麼就存什麼），而 TableCell 基底帶 whitespace-nowrap。
+                    換行、限寬、block 三者必須落在同一個內層元素上：
+                    - nowrap 會讓 break-all 完全失效，內層要自己宣告
+                      whitespace-normal（white-space 是繼承屬性，顯式宣告即勝出）
+                    - max-width 加在 <td> 上，auto table layout 只當提示
+                      （CSS 2.1 §17.5.2 明訂效果 undefined），既不約束也不裁切
+                    - max-width 對 inline 元素無效，所以要 block
+                    缺一項，長內容就會以單行畫到隔壁欄位的文字上面。
+                  */}
+                  <TableCell>
+                    <span className="block max-w-sm whitespace-normal break-words">
+                      {alert.message}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <code className="block max-w-xs whitespace-normal break-all text-xs text-muted-foreground">
                       {JSON.stringify(alert.context)}
                     </code>
                   </TableCell>

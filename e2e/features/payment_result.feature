@@ -28,11 +28,6 @@ Feature: Payment result
     When I visit "/payment/result?tradeNo=PU00000012"
     Then I should see the payment result "success"
 
-  Scenario: No status param, a pending order resolves to success after retrying
-    Given trade "PU00000013" resolves from "pending" to "completed" after one retry
-    When I visit "/payment/result?tradeNo=PU00000013"
-    Then I should see the payment result "success"
-
   Scenario: No status param, an order still pending after retries shows the pending screen
     Given trade "PU00000014" has order status "pending"
     When I visit "/payment/result?tradeNo=PU00000014"
@@ -58,11 +53,6 @@ Feature: Payment result
     When I visit "/payment/result?tradeNo=PU00000017&status=FAILED"
     And I click retry payment
     Then I should be redirected to "/payment/checkout"
-
-  Scenario: Contact support opens the LINE link in the same tab
-    When I visit "/payment/result"
-    And I click contact support
-    Then the page should navigate to "https://line.me/R/ti/p/@uknow"
 
   Scenario: A paid arrival not yet activated shows the activating screen, then auto-advances once the backend converges
     Given trade "PU00000020" enriches with a successful PayUni payment

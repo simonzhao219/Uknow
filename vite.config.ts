@@ -49,6 +49,8 @@ export default defineConfig({
         __dirname,
         './supabase/functions/_shared/name-validation-cases.ts',
       ),
+      // 補繳計畫的共用案例表。同上:物理放 Deno 側,前端經 alias 讀入。
+      '@backfill-cases': path.resolve(__dirname, './supabase/functions/_shared/backfill-cases.ts'),
     },
   },
   build: {

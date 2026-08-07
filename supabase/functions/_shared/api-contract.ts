@@ -138,6 +138,39 @@ export const ProfileResponseSchema = obj({
 });
 export type ProfileResponse = Infer<typeof ProfileResponseSchema>;
 
+/**
+ * 續約資訊（renewal-backfill）：補繳制的結帳頁揭露（A2/A7/A14）與
+ * 建單守衛前端對應所需的全部數字。從未訂閱過 = null。
+ * hasPaidAnyBackfill 定義：最新一筆訂閱的 end_date < 其對應訂單的
+ * completed_at（補繳付款的獨有特徵——付款當下算出的效期已在過去）。
+ */
+export const RenewalInfoSchema = obj({
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆的起算日
+  extendEndDate: str(), // 'YYYY-MM-DD' 下一筆付完的到期日
+  backfillCount: num(), // 還要付幾筆才會 active（active 時 0）
+  backfillAmount: num(), // backfillCount × 年費
+  backfillFinalEndDate: str(), // 補滿後的最終到期日（active 時 = 現到期日）
+  expiredForMonths: num(), // 已過期的完整月數（active 時固定 0）
+  hasPaidAnyBackfill: bool(),
+  // 本輪已付的補繳筆數與金額（A15 二次確認要唸出具體數字）。定義：從最新
+  // 訂閱往前走，連續滿足「end_date < 對應訂單 completed_at」的筆數；沒付過
+  // 恆為 0（hasPaidAnyBackfill === paidBackfillCount > 0）。
+  paidBackfillCount: num(),
+  paidBackfillAmount: num(), // paidBackfillCount × 年費
+  freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
+  freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
+});
+export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
+
+/** /payuni/result 的精簡版：PaymentResult 只需判斷補繳中間筆與去路文案。 */
+export const PayuniResultRenewalSchema = obj({
+  backfillCount: num(),
+  backfillAmount: num(),
+  extendAnchorDate: str(), // 'YYYY-MM-DD' 下一筆起算日——「已補至」= 它的前一天
+  extendEndDate: str(),
+});
+export type PayuniResultRenewal = Infer<typeof PayuniResultRenewalSchema>;
+
 export const SubscriptionStatusResponseSchema = obj({
   success: bool(),
   data: obj({
@@ -146,6 +179,11 @@ export const SubscriptionStatusResponseSchema = obj({
     activeUntil: nullable(str()),
     currentPeriodStart: nullable(str()),
     currentPeriodEnd: nullable(str()),
+    renewal: nullable(RenewalInfoSchema),
+    // A16 建單守衛的前端對應（是建單條件、不是續約概念，故在頂層）。
+    // 只認 status='pending'——不得複用 reward_balances.pending（涵蓋
+    // awaiting_collection，集合不同）。
+    hasPendingWithdrawal: bool(),
   }),
 });
 export type SubscriptionStatusResponse = Infer<typeof SubscriptionStatusResponseSchema>;
@@ -190,6 +228,10 @@ export const WithdrawalRecordSchema = obj({
   amount: num(),
   fee: num(),
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  /** 這筆現在的說明，取自 `withdrawal_events` 最新一筆。退件理由靠它到達會員。 */
+  note: nullable(str()),
+  /** 管理員代為結案（非會員本人查收）。誠實揭露，不讓會員誤以為自己按過。 */
+  completedByAdmin: bool(),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -212,12 +254,13 @@ export type WithdrawalsResponse = Infer<typeof WithdrawalsResponseSchema>;
  * 分辨/篩選點數來源的單一詞彙表，前後端共享：SQL 用 CASE 產出、edge 直通、
  * 前端讀 enum——取代前端切 description 反推分類的舊反模式。
  *
- * 分類軸是「拉新／續約」（規格書 §8.4 的語彙），不是冪等鍵：
+ * 分類軸是「拉新／續約」加「帳本事件」（規格書 §8.4 的語彙），不是冪等鍵：
  *   referral_signup    這位被推薦人第一次替我帶來獎勵（配對視角，非全域首購）
  *   referral_renewal   同一位被推薦人的後續獎勵——付款續約與任務免費續約皆是
  *   withdrawal         點數提領扣款
  *   withdrawal_refund  提領退件退還（adjustment 且綁 withdrawal_id）
  *   adjustment_manual  人工調整（目前無端點產生；有資料才會出現在篩選器）
+ *   ledger_reset       新約重置——選 fresh 續約時清空帳本的負額沖銷列
  *
  * 付款續約 vs 任務免費續約的差別沒有消失，改由 RewardHistoryRecord.viaFreeRenewal
  * 承載（明細第二行註記），不再佔一個分類。
@@ -228,6 +271,7 @@ export const REWARD_SOURCE_CATEGORIES = [
   'withdrawal',
   'withdrawal_refund',
   'adjustment_manual',
+  'ledger_reset',
 ] as const;
 export const RewardSourceCategorySchema = literals(...REWARD_SOURCE_CATEGORIES);
 export type RewardSourceCategory = Infer<typeof RewardSourceCategorySchema>;
@@ -468,11 +512,18 @@ export const PointsPreviewResponseSchema = obj({
 });
 export type PointsPreviewResponse = Infer<typeof PointsPreviewResponseSchema>;
 
+// 會員端看自己的證件狀態。`none` = 還沒交齊雙面。
+export const IdVerificationStatusSchema = literals('none', 'pending', 'approved', 'rejected');
+export type IdVerificationStatus = Infer<typeof IdVerificationStatusSchema>;
+
 export const IdPhotosResponseSchema = obj({
   success: bool(),
   data: obj({
     frontUrl: nullable(str()),
     backUrl: nullable(str()),
+    verificationStatus: IdVerificationStatusSchema,
+    // 退回理由必須到得了會員面前——看不到理由就只會重送一模一樣的照片。
+    rejectReason: nullable(str()),
   }),
 });
 export type IdPhotosResponse = Infer<typeof IdPhotosResponseSchema>;
@@ -538,6 +589,39 @@ export const SystemAlertsResponseSchema = obj({
 export type SystemAlert = Infer<typeof SystemAlertSchema>;
 export type SystemAlertsResponse = Infer<typeof SystemAlertsResponseSchema>;
 
+// 提領狀態轉換的一筆歷史（withdrawal_events）。
+// `byAdmin: false` = 會員自己的查收確認——只回類別，不外洩是哪個 admin。
+export const WithdrawalEventSchema = obj({
+  fromStatus: str(),
+  toStatus: str(),
+  note: nullable(str()),
+  bankRef: nullable(str()),
+  transferredOn: nullable(str()),
+  byAdmin: bool(),
+  createdAt: str(),
+});
+export type WithdrawalEvent = Infer<typeof WithdrawalEventSchema>;
+
+// 待匯款總額用 amount（銀行實付）而非 amount + fee——手續費是平台收的，
+// 不會匯出去。admin 拿這個數字去對網銀的轉出總額。
+export const AdminWithdrawalStatsSchema = obj({
+  pendingAmount: num(),
+  byStatus: obj({
+    pending: num(),
+    awaiting_collection: num(),
+    completed: num(),
+    rejected: num(),
+  }),
+});
+export type AdminWithdrawalStats = Infer<typeof AdminWithdrawalStatsSchema>;
+
+/** 入口 badge 用的輕量彙總。刻意不含列表——帶了就等於把整頁記錄搬到導覽列。 */
+export const AdminWithdrawalSummaryResponseSchema = obj({
+  success: bool(),
+  data: obj({ pendingCount: num(), pendingAmount: num() }),
+});
+export type AdminWithdrawalSummaryResponse = Infer<typeof AdminWithdrawalSummaryResponseSchema>;
+
 export const AdminWithdrawalRecordSchema = obj({
   id: str(),
   userId: str(),
@@ -549,7 +633,9 @@ export const AdminWithdrawalRecordSchema = obj({
   status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
   bankCode: nullable(str()),
   bankAccount: nullable(str()),
+  // 主表的 note 自 20260802000004 起 vestigial；這個值取自事件表最新一筆。
   note: nullable(str()),
+  events: arr(WithdrawalEventSchema),
   requestedAt: str(),
   processedAt: nullable(str()),
   completedAt: nullable(str()),
@@ -565,6 +651,7 @@ export const AdminWithdrawalsResponseSchema = obj({
     total: num(),
     limit: num(),
     offset: num(),
+    stats: AdminWithdrawalStatsSchema,
   }),
 });
 export type AdminWithdrawalsResponse = Infer<typeof AdminWithdrawalsResponseSchema>;
@@ -578,16 +665,121 @@ export const AdminMemberSchema = obj({
   suspended: bool(),
   suspendedAt: nullable(str()),
   accountStatus: literals('active', 'expired'),
+  /** 會籍到期日；從未付費者為 null。 */
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
   listingCount: num(),
   createdAt: str(),
 });
 export type AdminMember = Infer<typeof AdminMemberSchema>;
 
+/**
+ * 會員列表的統計卡數字。
+ *
+ * **全站，不是當前頁。** 在 SQL 的 filtered CTE 上算完再回來，`limit` 只作用
+ * 在 members 陣列——前端拿到後直接顯示，不得從 `members` 加總（那樣算出來的
+ * 數字會隨分頁改變，等於一組會說謊的統計卡）。
+ */
+export const AdminMemberStatsSchema = obj({
+  total: num(),
+  active: num(),
+  expired: num(),
+  suspended: num(),
+  admins: num(),
+});
+export type AdminMemberStats = Infer<typeof AdminMemberStatsSchema>;
+
 export const AdminMembersResponseSchema = obj({
   success: bool(),
-  data: obj({ members: arr(AdminMemberSchema), total: num() }),
+  data: obj({
+    members: arr(AdminMemberSchema),
+    total: num(),
+    stats: AdminMemberStatsSchema,
+  }),
 });
+
+/**
+ * 詳情面板裡的一筆提領記錄。
+ *
+ * §1.1 的頭號客服情境是「我提領怎麼還沒到」——這幾個欄位就是那句話的答案，
+ * 不是附加資訊。`note` 讀該筆事件表最新一筆，與 `/admin/withdrawals` 同源。
+ */
+export const AdminMemberWithdrawalSchema = obj({
+  id: str(),
+  amount: num(),
+  fee: num(),
+  status: literals('pending', 'awaiting_collection', 'completed', 'rejected'),
+  note: nullable(str()),
+  requestedAt: str(),
+  processedAt: nullable(str()),
+  completedAt: nullable(str()),
+});
+export type AdminMemberWithdrawal = Infer<typeof AdminMemberWithdrawalSchema>;
+
+/**
+ * 會員詳情。
+ *
+ * **`idNumber` 與 `bankAccount` 是遮罩值**（需求方裁決）。需要全碼時回提領
+ * 作業台看——那裡因匯款作業需要而維持完整值。`bankCode` 不遮：它識別的是
+ * 銀行不是個人，遮了反而讓客服對不出是哪一家。
+ */
+export const AdminMemberDetailSchema = obj({
+  id: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  isAdmin: bool(),
+  suspended: bool(),
+  suspendedAt: nullable(str()),
+  createdAt: str(),
+  accountStatus: literals('active', 'expired'),
+  endDate: nullable(str()),
+  idVerificationStatus: IdVerificationStatusSchema,
+  idRejectReason: nullable(str()),
+  /** 遮罩值（`A1****789`）。 */
+  idNumber: nullable(str()),
+  bankCode: nullable(str()),
+  /** 遮罩值（末四碼可見）。 */
+  bankAccount: nullable(str()),
+  referrerName: nullable(str()),
+  directChildCount: num(),
+  listingCount: num(),
+  availablePoints: num(),
+  pendingPoints: num(),
+  withdrawnPoints: num(),
+  recentWithdrawals: arr(AdminMemberWithdrawalSchema),
+});
+export type AdminMemberDetail = Infer<typeof AdminMemberDetailSchema>;
+
+export const AdminMemberDetailResponseSchema = obj({
+  success: bool(),
+  data: obj({ member: AdminMemberDetailSchema }),
+});
+export type AdminMemberDetailResponse = Infer<typeof AdminMemberDetailResponseSchema>;
 export type AdminMembersResponse = Infer<typeof AdminMembersResponseSchema>;
+
+// 證件審核佇列。`none`（照片沒交齊）不會出現在佇列裡，所以列舉不含它。
+export const AdminIdReviewSchema = obj({
+  userId: str(),
+  name: nullable(str()),
+  email: str(),
+  phone: nullable(str()),
+  status: literals('pending', 'approved', 'rejected'),
+  rejectReason: nullable(str()),
+  reviewedAt: nullable(str()),
+  /** 送審時間。佇列依它排「等最久的」——`createdAt` 是註冊時間，講的是另一件事。 */
+  submittedAt: str(),
+  createdAt: str(),
+  idCardFrontUrl: nullable(str()),
+  idCardBackUrl: nullable(str()),
+});
+export type AdminIdReview = Infer<typeof AdminIdReviewSchema>;
+
+export const AdminIdReviewsResponseSchema = obj({
+  success: bool(),
+  data: obj({ reviews: arr(AdminIdReviewSchema), total: num() }),
+});
+export type AdminIdReviewsResponse = Infer<typeof AdminIdReviewsResponseSchema>;
 
 export const API_PATHS = {
   profile: '/profile',

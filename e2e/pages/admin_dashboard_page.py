@@ -32,11 +32,20 @@ class AdminDashboardPage(BasePage):
 
     def mark_first_withdrawal_paid(self) -> None:
         # Money-state change goes through a confirmation dialog, same as 退件.
-        # exact=True so this doesn't also match the dialog's "確認匯款" button.
-        self.page.get_by_role("button", name="已匯款", exact=True).first.click()
+        # exact=True so this doesn't also match the dialog's "確認匯款" button,
+        # nor the batch bar's "批次標記已匯款".
+        self.page.get_by_role("button", name="標記已匯款", exact=True).first.click()
         self.page.get_by_role("button", name="確認匯款").click()
 
-    def reject_first_withdrawal(self) -> None:
+    def reject_first_withdrawal(self, reason: str = "收款帳號與身分證姓名不符") -> None:
+        # ".first" relies on a cross-feature invariant: at this point exactly one
+        # pending withdrawal exists on the branch (50_ resolves its own to
+        # paid/rejected before 70_ starts, by filename order). If a future
+        # feature leaves a pending withdrawal behind, add a filter-by-member
+        # variant instead of stretching ".first" further.
         # exact=True so this doesn't also match the dialog's "確認退件" button.
+        # The reason is mandatory: the backend rejects a blank note, and it is the
+        # only text the member ever sees explaining why they were turned down.
         self.page.get_by_role("button", name="退件", exact=True).first.click()
+        self.page.get_by_label("退件理由").fill(reason)
         self.page.get_by_role("button", name="確認退件").click()

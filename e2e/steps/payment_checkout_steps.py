@@ -11,6 +11,11 @@ from steps.common_steps import *  # noqa: F401,F403
 scenarios("payment_checkout.feature")
 
 
+@then(parsers.parse('I should not see the text "{text}"'))
+def should_not_see_text(page, text):
+    expect(page.get_by_text(text)).to_have_count(0)
+
+
 @given(parsers.parse('PayUni will report a successful payment for trade number "{trade_no}"'))
 def payuni_success(api_mock, trade_no):
     # activate_profile：付款成功導回時，profile 也切換成有效會員——

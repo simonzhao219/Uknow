@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from builders import payment
+from builders import payment, referral_tree
 from builders.login import login_via_gui
 from builders.registration import register_account_via_gui
 from pages.complete_profile_page import CompleteProfilePage
@@ -129,7 +129,7 @@ def scratch_verifies_code(guarded_page, supabase_admin, run_state, scratch, node
         user = run_state.new_user(scratch, twid.generate_for_node(run_state.run_id, scratch))
         register_account_via_gui(guarded_page, supabase_admin, user)
     else:
-        login_via_gui(guarded_page, user, wait_for=None)
+        login_via_gui(guarded_page, user)
         guarded_page.goto("/complete-profile")
         expect(guarded_page.locator("#name")).to_be_visible(timeout=30_000)
 
@@ -171,26 +171,32 @@ def withdrawal_blocked_hint(guarded_page):
 
 
 @when(parsers.parse('"{node}" 登入並開啟推薦頁'))
-def open_referrals(guarded_page, run_state, node):
+def open_referrals(guarded_page, run_state, scenario_memo, node):
     login_via_gui(guarded_page, run_state.users[node])
     guarded_page.goto("/referrals")
-    expect(guarded_page.get_by_text("一代", exact=True)).to_be_visible(timeout=15_000)
+    referral_tree.wait_tree(guarded_page)
+    scenario_memo["viewer"] = node
 
 
 @then(parsers.parse('推薦樹包含 "{node}" 的姓名與已失效標記'))
 def tree_shows_inactive_member(guarded_page, run_state, node):
-    # 一代預設展開；失效節點的卡片帶「已失效」標籤但仍在樹上
-    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+    # 檢視者的第一代＝root 列，失效節點仍在樹上（半透明＋灰點）；
+    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。
+    expect(
+        guarded_page.get_by_text(run_state.users[node].name, exact=True).first
+    ).to_be_visible()
     expect(guarded_page.get_by_text("已失效").first).to_be_visible()
 
 
 @then(parsers.parse('展開二代後推薦樹仍包含 "{node}" 的姓名'))
-def tree_structure_intact(guarded_page, run_state, node):
-    guarded_page.get_by_text("二代", exact=True).click()
+def tree_structure_intact(guarded_page, run_state, org_nodes, scenario_memo, node):
+    referral_tree.expand_ancestors(
+        guarded_page, org_nodes, run_state, scenario_memo["viewer"], node
+    )
     expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
 
 
-# --- 過期超過一年：僅能新約 --------------------------------------------------
+# --- 過期超過一年：補繳制（A1）下續約永遠可選 --------------------------------
 
 
 @when(parsers.parse('"{node}" 登入並開啟付款頁'))
@@ -200,15 +206,16 @@ def open_checkout(guarded_page, run_state, node):
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
 
 
-@then("付款頁顯示僅能以新約重新起算")
-def only_fresh_allowed(guarded_page):
-    expect(guarded_page.get_by_text("會籍已過期超過一年").first).to_be_visible()
-
-
-@then("付款頁沒有「續約（接續原效期）」選項")
-def no_extend_option(guarded_page):
-    expect(guarded_page.get_by_test_id("renewal-mode-extend")).to_have_count(0)
+@then("付款頁仍提供「續約（接續原效期）」選項")
+def extend_option_present(guarded_page):
+    expect(guarded_page.get_by_test_id("renewal-mode-extend")).to_be_visible()
     expect(guarded_page.get_by_test_id("renewal-mode-fresh")).to_be_visible()
+
+
+@then("付款頁顯示補繳筆數與總額揭露")
+def backfill_disclosure_visible(guarded_page):
+    # extend 是預設選項，揭露卡（筆數/總額/補完到期日）應直接可見。
+    expect(guarded_page.get_by_test_id("backfill-disclosure")).to_be_visible()
 
 
 # --- 新約復活：換推薦人、付款日起算、刊登重新公開 ----------------------------

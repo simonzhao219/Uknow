@@ -6,6 +6,7 @@ import { useNotification } from '../notifications/NotificationContext';
 import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface InviteFriendPanelContentProps {
   /** 會員專屬推薦碼；QR/連結都由它推導。空值時不渲染（呼叫端的按鈕會擋在加入計畫前）。 */
@@ -36,22 +37,9 @@ export function InviteFriendPanelContent({
   // 與 shareReferralInvite 一致地偵測後給長按另存的提示。
   const { isInAppBrowser } = detectInAppBrowser();
 
-  // 用隱藏 textarea + execCommand 複製（不受 Clipboard 權限限制，與專案其他複製一致）。
   const copyText = (text: string, successMsg: string) => {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      showToast(successMsg, 'success');
-    } catch {
-      showToast('複製失敗，請手動複製', 'error');
-    }
-    document.body.removeChild(textArea);
+    if (copyToClipboard(text)) showToast(successMsg, 'success');
+    else showToast('複製失敗，請手動複製', 'error');
   };
 
   /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結，不含任何按鈕）。 */

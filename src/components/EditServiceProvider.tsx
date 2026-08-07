@@ -318,11 +318,10 @@ export function EditServiceProvider() {
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => {
-                  if (e.target.value.length <= NAME_MAX_LENGTH) {
-                    setFormData({ ...formData, name: e.target.value });
-                  }
-                }}
+                // 上限交給 maxLength 屬性,onChange 原樣收下——原本多一層與
+                // maxLength 重複的 JS 拒收,會在 IME 組字期間把值倒帶並毀掉
+                // 組字狀態。見 docs/plans/friction-log.md 的 2026-08-07 條。
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="例：專業美髮師 Amy"
                 maxLength={NAME_MAX_LENGTH}
                 className={getInputErrorClass(!!errors.name)}
@@ -477,12 +476,10 @@ export function EditServiceProvider() {
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) => {
-                  if (e.target.value.length <= DESCRIPTION_MAX_LENGTH) {
-                    setFormData({ ...formData, description: e.target.value });
-                  }
-                }}
+                // 同上;這裡原本沒有 maxLength 屬性,一併補上作為唯一的上限。
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="簡單介紹您的專業服務..."
+                maxLength={DESCRIPTION_MAX_LENGTH}
                 className="resize-none"
                 rows={3}
               />

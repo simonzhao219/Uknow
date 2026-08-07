@@ -9,7 +9,7 @@ name: Journey
 # 呼叫點有三個，共用這一份定義（曾經 main / develop 各有一份副本各自
 # 演化，假綠燈就是這樣長出來的）：
 #   1. ci.yml 的 journey job —— develop→main 晉升 PR 必跑（上線前閘門）
-#   2. journey-scheduled.yml —— 每晚台北 02:00 排程與手動觸發的薄外殼
+#   2. journey-scheduled.yml —— 每週台北週日 02:00 排程與手動觸發的薄外殼
 #      （它只負責 triggers 與 concurrency，邏輯全在這裡）
 #
 # ⚠️ 本 workflow 的第一設計要求是「不可能假綠」：
@@ -36,6 +36,15 @@ on:
         description: 'sandbox=真刷測試卡；webhook=簽章注入備援'
         type: string
         default: sandbox
+      pytest_expr:
+        description: >-
+          可選的 pytest marker 運算式（自由字串，如 timemachine、
+          renewal_saga）。有值時取代 scope 的 marker 選擇、只跑命中的
+          feature，並自動附加 and not seed（CLI 的 -m 會整段蓋掉 ini 的
+          not seed 預設，這裡把排除補回來）；「跑了幾個」的下限同時降為
+          MIN_FILTERED。空值時行為與過去完全相同。
+        type: string
+        default: ''
 
 # ⚠️ 這裡刻意不設 concurrency。reusable workflow 的 workflow 層 concurrency
 # 會參與呼叫端的排隊:2026-07-25 實測,呼叫端 run 被 cancel-in-progress
@@ -60,6 +69,7 @@ jobs:
       PARENT_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       SCOPE: ${{ inputs.scope || 'full' }}
       PAYMENT_MODE: ${{ inputs.payment_mode || 'sandbox' }}
+      PYTEST_EXPR: ${{ inputs.pytest_expr || '' }}
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4
@@ -71,7 +81,14 @@ jobs:
 
       # ------------------------------------------------------------------
       # 1. 開拋棄式 preview branch（名稱帶 run id，殘留可辨識）
-      #    分支會自動套用 main 的全部 migrations。
+      #
+      #    ⚠️ 分支的 schema 是「replay 母專案 supabase_migrations.
+      #    schema_migrations 裡**存下來的語句**」，不是 git 裡的檔案。
+      #    兩者可以漂移：0008 當年以無防呆的舊版套進 production，git
+      #    檔案後來才補上存在性檢查——replay 在全新 DB 上炸掉，分支停在
+      #    MIGRATIONS_FAILED、schema 只到 0007，2026-07-26 起排程 7 晚
+      #    全紅就是這個。歷史語句已修復對齊 git（2026-08-02），這裡的
+      #    狀態硬斷言是防它復發的閘門：半套 schema 的分支絕不往下跑。
       # ------------------------------------------------------------------
       - name: 建立拋棄式 Supabase 分支
         id: branch
@@ -81,12 +98,34 @@ jobs:
           echo "name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
           supabase link --project-ref "$PARENT_PROJECT_REF"
           supabase branches create "$BRANCH_NAME" --experimental
-          # 等分支就緒並取連線資訊
-          for _ in $(seq 1 30); do
-            OUT="$(supabase branches get "$BRANCH_NAME" --experimental -o env 2>/dev/null || true)"
-            if echo "$OUT" | grep -q '^POSTGRES_URL\|^API_URL'; then break; fi
+
+          # 等 migration replay 到終態，並驗證它真的成功——「連得上」不等於
+          # 「schema 是全的」，只等連線資訊就往下跑正是 7 晚假訊號的溫床。
+          STATUS=''
+          for _ in $(seq 1 60); do
+            STATUS="$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$PARENT_PROJECT_REF/branches" \
+              | python3 -c 'import json,sys; bs=json.load(sys.stdin); print(next((b.get("status","") for b in bs if b.get("name")==sys.argv[1]), ""))' \
+                "$BRANCH_NAME" || true)"
+            case "$STATUS" in
+              MIGRATIONS_PASSED|FUNCTIONS_DEPLOYED|FUNCTIONS_FAILED) break ;;
+              MIGRATIONS_FAILED)
+                echo "::error::分支 migration replay 失敗（MIGRATIONS_FAILED）——分支只有半套 schema。"
+                echo "::error::常見原因：母專案 schema_migrations 的歷史語句與 git 漂移（手動套用後才改檔案）。"
+                echo "::error::修法：把該版本的 statements 更新成 git 檔案內容（git 檔案有 CI 在全新 DB 驗證過）。"
+                exit 1 ;;
+            esac
             sleep 10
           done
+          case "$STATUS" in
+            MIGRATIONS_PASSED|FUNCTIONS_DEPLOYED) ;;
+            FUNCTIONS_FAILED)
+              echo "::warning::分支函式自動部署失敗（FUNCTIONS_FAILED）——不影響本 run，下面會自行部署 api" ;;
+            *)
+              echo "::error::等了 10 分鐘分支仍未到終態（最後狀態：${STATUS:-查不到}）"
+              exit 1 ;;
+          esac
+
           supabase branches get "$BRANCH_NAME" --experimental -o env > branch.env
 
           # 欄位名會隨 CLI 版本變（2026-07 那次假綠就是 grep '^ANON_KEY='
@@ -96,6 +135,12 @@ jobs:
           [ -n "$BRANCH_REF" ] || BRANCH_REF="$(grep -oPm1 'https://\K[a-z0-9]+(?=\.supabase\.co)' branch.env || true)"
           ANON_KEY="$(extract 'ANON_KEY')"
           SERVICE_KEY="$(extract 'SERVICE_ROLE_KEY')"
+          # db push 走 pooler URL（POSTGRES_URL）：直連 URL（NON_POOLING，
+          # db.<ref>.supabase.co）只有 IPv6，GitHub runner 沒有 IPv6 路由，
+          # 2026-08-02 run 30761819572 實測 dial 直接 unreachable；CLI 的
+          # 錯誤訊息也明示改用 IPv4 pooler。
+          DB_URL="$(extract 'POSTGRES_URL')"
+          [ -n "$DB_URL" ] || DB_URL="$(extract 'POSTGRES_URL_NON_POOLING')"
 
           # 硬斷言：解析不到就當場失敗。傳空字串下去只會讓每個情境
           # 靜默 skip，然後整場「成功」——那比紅燈危險得多。
@@ -103,6 +148,7 @@ jobs:
           [ -n "$BRANCH_REF" ]   || missing="$missing BRANCH_REF"
           [ -n "$ANON_KEY" ]     || missing="$missing ANON_KEY"
           [ -n "$SERVICE_KEY" ]  || missing="$missing SERVICE_ROLE_KEY"
+          [ -n "$DB_URL" ]       || missing="$missing POSTGRES_URL"
           if [ -n "$missing" ]; then
             echo "::error::branch.env 解析不到:$missing —— CLI 欄位名可能已變"
             echo "branch.env 實際有的欄位名（不印值）:"
@@ -110,23 +156,44 @@ jobs:
             exit 1
           fi
 
-          # 這兩個是真密鑰,務必讓 Actions 遮蔽,以免任何 step 意外印出
+          # 這些是真密鑰,務必讓 Actions 遮蔽,以免任何 step 意外印出
+          # （DB_URL 內嵌 DB 密碼，整串遮蔽）
           echo "::add-mask::$ANON_KEY"
           echo "::add-mask::$SERVICE_KEY"
+          echo "::add-mask::$DB_URL"
 
           echo "ref=$BRANCH_REF" >> "$GITHUB_OUTPUT"
           {
             echo "JOURNEY_SUPABASE_PROJECT_REF=$BRANCH_REF"
             echo "JOURNEY_SUPABASE_ANON_KEY=$ANON_KEY"
             echo "JOURNEY_SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY"
+            echo "JOURNEY_BRANCH_DB_URL=$DB_URL"
           } >> "$GITHUB_ENV"
+
+      # replay 只到母專案（main）已套用的最後一版；本 run 測的卻是
+      # checkout（develop / 晉升 PR head）的程式碼。develop 獨有的
+      # migration 不補上，Edge Function 就是新程式打舊 schema。db push
+      # 只套「本地有、分支歷史沒有」的版本，等於預演晉升時 production
+      # 會做的 migration 套用——這裡紅了，晉升也會紅，早知道早修。
+      - name: 套用 checkout 的 migrations 到分支
+        run: |
+          set -euo pipefail
+          supabase db push --db-url "$JOURNEY_BRANCH_DB_URL"
 
       # ------------------------------------------------------------------
       # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
-      #    GoTrue email 限流放寬（GUI signUp 會發 OTP 郵件，內建 SMTP
-      #    額度極低；OTP 實際由 Admin API 取得，郵件收不收得到無所謂）
+      #    GoTrue 寄信改走 no-op send-email hook。
+      #
+      #    為什麼需要 hook（2026-08-02 run 30762264071 實測）：hosted
+      #    GoTrue 用內建 email 服務時，(a) 直接拒收 example/test 保留
+      #    網域（error_code=email_address_invalid）——journey 的
+      #    @uknow-journey.test 假帳號連 signup 都進不去；(b) 不掛自訂
+      #    寄送管道不准調 rate_limit_email_sent（401 Custom SMTP
+      #    required）。掛上 hook 後寄信不再經內建 mailer，兩個限制一起
+      #    解除；OTP 本來就由 Admin generate_link 取得，信件內容無所謂。
+      #    sink 函數用 psql 建在拋棄式分支上，不進 migration、不碰正式站。
       # ------------------------------------------------------------------
-      - name: 設定分支（函式 secrets 與 auth 限流）
+      - name: 設定分支（函式 secrets、email sink hook、auth 限流）
         run: |
           set -euo pipefail
           supabase secrets set --project-ref "${{ steps.branch.outputs.ref }}" \
@@ -135,11 +202,39 @@ jobs:
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
             FRONTEND_URL="http://localhost:3100"
-          curl -sf -X PATCH \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
-            -d '{"rate_limit_email_sent": 100}' || echo "::warning::auth rate limit 調整失敗——30 人建樹可能撞 email 限流"
+
+          psql "$JOURNEY_BRANCH_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create or replace function public.journey_email_sink(event jsonb)
+            returns jsonb language sql as 'select ''{}''::jsonb';
+          grant usage on schema public to supabase_auth_admin;
+          grant execute on function public.journey_email_sink(jsonb) to supabase_auth_admin;
+          SQL
+
+          patch_auth() {
+            curl -sS -w '\n%{http_code}' -X PATCH \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.supabase.com/v1/projects/${{ steps.branch.outputs.ref }}/config/auth" \
+              -d "$1" || true
+          }
+
+          # hook 是註冊能不能動的前提——失敗就硬停，帶回應失敗
+          resp="$(patch_auth '{"hook_send_email_enabled": true, "hook_send_email_uri": "pg-functions://postgres/public/journey_email_sink"}')"
+          code="${resp##*$'\n'}"
+          if [ "$code" != "200" ]; then
+            echo "::error::send-email hook 設定失敗（HTTP ${code}）——GUI 註冊將全滅:"
+            printf '%s\n' "$resp" | head -5
+            exit 1
+          fi
+          echo "send-email hook 已啟用"
+
+          # 限流放寬失敗降級為警告：skeleton 用不到，full 的 30 人建樹才會撞
+          resp="$(patch_auth '{"rate_limit_email_sent": 100}')"
+          code="${resp##*$'\n'}"
+          if [ "$code" != "200" ]; then
+            echo "::warning::auth rate limit 調整失敗（HTTP ${code}）——30 人建樹可能撞 email 限流"
+            printf '%s\n' "$resp" | head -5
+          fi
 
       # 分支是從 main 的 migrations 長出來的,但 Edge Function 不會自動
       # 跟上——不部署就是拿舊版函式測新版程式碼,測了也不算數。
@@ -147,6 +242,40 @@ jobs:
         run: |
           supabase functions deploy api \
             --project-ref "${{ steps.branch.outputs.ref }}" --no-verify-jwt
+
+      # GUI 註冊掛掉時只看得到「30 秒沒等到 OTP 框」——toast 早就消失，
+      # 錯誤原因蒸發（2026-08-02 run 30761921729）。先用 REST 直接探測
+      # signup：會失敗就在這裡帶著 GoTrue 的真實回應失敗，不要讓 55 個
+      # 情境去撞一個必死的註冊入口。探測帳號當場刪掉，不留殘留。
+      - name: auth 註冊健檢（signup 探測）
+        run: |
+          set -euo pipefail
+          BASE="https://${{ steps.branch.outputs.ref }}.supabase.co"
+          echo "GoTrue settings（節錄）:"
+          curl -sS "$BASE/auth/v1/settings" -H "apikey: $JOURNEY_SUPABASE_ANON_KEY" \
+            | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({k:s.get(k) for k in ("disable_signup","mailer_autoconfirm","external")}, ensure_ascii=False)[:500])' || true
+
+          PROBE_EMAIL="e2e+authprobe-${{ github.run_id }}@uknow-journey.test"
+          resp="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/auth/v1/signup" \
+            -H "apikey: $JOURNEY_SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
+            -d "{\"email\":\"$PROBE_EMAIL\",\"password\":\"Probe!Aa12345678\"}")"
+          code="${resp##*$'\n'}"
+          body="${resp%$'\n'*}"
+          if [ "$code" != "200" ]; then
+            echo "::error::signup 探測失敗（HTTP ${code}）——GUI 註冊必然全滅，先修這個:"
+            printf '%s\n' "$body" | head -5
+            exit 1
+          fi
+          echo "signup 探測通過（HTTP 200）"
+
+          # 清掉探測帳號（id 從回應撈；signup 回應頂層即 user 物件）
+          probe_id="$(printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or d.get("user",{}).get("id") or "")')"
+          if [ -n "$probe_id" ]; then
+            curl -sS -X DELETE "$BASE/auth/v1/admin/users/$probe_id" \
+              -H "apikey: $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Authorization: Bearer $JOURNEY_SUPABASE_SERVICE_ROLE_KEY" > /dev/null \
+              || echo "::warning::探測帳號刪除失敗（$PROBE_EMAIL）——不影響測試，分支測後即刪"
+          fi
 
       # ------------------------------------------------------------------
       # 3. 跑套件
@@ -171,7 +300,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/requirements.txt') }}
+          # 本 job 裝的是 e2e/journey/requirements.txt，快取鍵就得綁同一份——
+          # 綁到 e2e/requirements.txt 會讓 journey 的 playwright 版本改動不
+          # 失效快取（回退到 playwright install 自己重抓，等於白付一次下載）。
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/journey/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
       - name: 安裝 Playwright 瀏覽器
@@ -191,10 +323,17 @@ jobs:
           JOURNEY_BUILD_PARALLELISM: '8'
         run: |
           mkdir -p test-results
-          MARKER=''
-          if [ "$SCOPE" = 'skeleton' ]; then MARKER='-m skeleton'; fi
-          # shellcheck disable=SC2086
-          pytest $MARKER --browser chromium \
+          # marker 選擇的優先序：pytest_expr（窄選）> scope=skeleton > 全套。
+          # 窄選一律補 and not seed——CLI 的 -m 後出現者勝，會整段蓋掉 ini
+          # 的 -m "not seed" 預設，不補回來的話與 @seed 有交集的運算式會把
+          # seed 情境放進來白燒 CI。
+          ARGS=()
+          if [ -n "$PYTEST_EXPR" ]; then
+            ARGS+=(-m "($PYTEST_EXPR) and not seed")
+          elif [ "$SCOPE" = 'skeleton' ]; then
+            ARGS+=(-m skeleton)
+          fi
+          pytest "${ARGS[@]}" --browser chromium \
             --screenshot only-on-failure --tracing retain-on-failure \
             --output test-results \
             --junitxml=test-results/junit.xml \
@@ -209,6 +348,10 @@ jobs:
         env:
           MIN_SKELETON: '1'
           MIN_FULL: '20'
+          # 窄選（pytest_expr 非空）本來就只命中一小撮情境，套 MIN_FULL=20
+          # 會誤殺合法窄選;但下限不能歸零——「窄選卻一個都沒跑」仍是
+          # marker 打錯字或情境全 skip 的訊號,floor=1 保住這道防線。
+          MIN_FILTERED: '1'
         run: |
           python3 - <<'PY'
           import os, sys, xml.etree.ElementTree as ET
@@ -222,9 +365,13 @@ jobs:
           total   = sum(int(s.get('tests', 0))    for s in suites)
           skipped = sum(int(s.get('skipped', 0))  for s in suites)
           ran = total - skipped
-          floor = int(os.environ['MIN_SKELETON' if os.environ['SCOPE'] == 'skeleton' else 'MIN_FULL'])
+          if os.environ.get('PYTEST_EXPR'):
+              floor = int(os.environ['MIN_FILTERED'])
+          else:
+              floor = int(os.environ['MIN_SKELETON' if os.environ['SCOPE'] == 'skeleton' else 'MIN_FULL'])
 
-          print(f'scope={os.environ["SCOPE"]} collected={total} skipped={skipped} ran={ran} floor={floor}')
+          print(f'scope={os.environ["SCOPE"]} expr={os.environ.get("PYTEST_EXPR", "")!r} '
+                f'collected={total} skipped={skipped} ran={ran} floor={floor}')
           if ran < floor:
               sys.exit(
                   f'::error::journey 實際只執行 {ran} 個情境（下限 {floor}）——'
@@ -280,5 +427,7 @@ jobs:
                 '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
                 '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
                 '3. 同因重複失敗 ≥2 次 → 記入 docs/plans/friction-log.md',
+                '4. 短期修不動 → 到 Actions 頁停用 Journey Scheduled 排程，修好再開',
+                '   （排程失敗也計費——2026-07/08 連紅 12 晚無人接手，等於白燒）',
               ].join('\n'),
             });

@@ -149,7 +149,25 @@ if [ -f scripts/check-context-budget.py ]; then
   fi
 fi
 
-# 12. Harness 感測器的讀取器。前十一項驗的都是「閘門有沒有壞」,這一項驗的是
+# 12. 受控 input 的 IME 安全性。2026-08-07 的 iOS 注音災情(姓名欄位打不了字)
+#     在三層閘門下全綠通過:vitest 用 fireEvent.change、e2e 用 Playwright fill(),
+#     兩者模擬的都是「已組完字」的終點狀態,組字生命週期從來沒被走過;
+#     biome/typecheck 看不出「這個 setState 發生在組字期間」。
+#     **但「onChange 有沒有原樣接受 e.target.value」是靜態看得出來的**——這一軌
+#     守的是那個形狀,不證明 iOS 上不會壞(那只有真機能證明),而是證明沒有人
+#     再度引入它。同樣先驗檢查器自己再驗 repo。
+if [ -f scripts/check-ime-safe-inputs.py ]; then
+  if ! python3 scripts/check-ime-safe-inputs.py --self-test; then
+    echo "FAIL: IME 安全性檢查器自身的表格案例未過（scripts/check-ime-safe-inputs.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-ime-safe-inputs.py; then
+    echo "FAIL: 受控 input 的 IME 安全性檢查未過（scripts/check-ime-safe-inputs.py）"
+    fail=1
+  fi
+fi
+
+# 13. Harness 感測器的讀取器。前十一項驗的都是「閘門有沒有壞」,這一項驗的是
 #     「量測閘門的那支東西有沒有壞」——感測器故障是靜默的(閘門壞了會擋住人,
 #     感測器壞了只是不再記錄),所以它比閘門更需要機器盯著。
 #     repo 掃描本身不擋:「還沒有資料」是全新 clone 的正常狀態,只有「日誌裡

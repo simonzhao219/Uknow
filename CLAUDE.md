@@ -35,7 +35,7 @@
 | `npm run dev` | 開發伺服器(port 3000) |
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
 | `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
-| `npm run check:full` | check + build + Deno 型別檢查(送 PR 前跑) |
+| `npm run check:full` | check + **覆蓋率棘輪** + build + Deno 型別檢查(送 PR 前跑) |
 | `npm run test:watch` | vitest 監看模式 |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
@@ -123,8 +123,9 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   origin/develop && git push --force-with-lease`),**不要按 GitHub 的
   Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
-  branch protection 的 required check 只有 `ci-ok` 一個(它 needs 全部
-  軌),新增 CI job 只要進它的 needs,不必去動保護規則。
+  required check 只有 `ci-ok` 一個(needs 全部軌),新增 job 只要進它的 needs。
+  來源是 ruleset(Settings → **Rules**,非 Branches)。⚠️ **前提是 repo 為
+  public**:ruleset 在 private repo 是付費功能,設了也不執行(見規則 7)。
 - 環境對應:develop 有自己的 persistent Supabase **branch**(不是獨立
   project——由 Supabase Branching 從正式專案長出來,有自己的 DB/金鑰/
   Secrets,但掛在正式專案底下),main 是正式站。兩者的 ref 都**commit 在
@@ -179,6 +180,13 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 
 MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
 固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
+
+## CI 費用紀律
+
+⚠️ **2026-08-07 起 repo 為 public,標準 runner 不再計費**——原成本論證(私有
+repo 每 job 進位計費、08-07 分鐘數用罄停擺兩小時)已不成立,規則未鬆綁,改回
+private 即回復;細節與雙週盤點見 github-actions.md 規則 8。紀律照舊:本地
+`npm run check` 綠了才 push、紅燈先本地重現、TDD 相位 commit 累積湊檢查點。
 
 ## Compact instructions
 

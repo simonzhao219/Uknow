@@ -89,9 +89,13 @@ export function ToastCard({ id, message, type, duration = 2000, onClose }: Toast
               長 token（Email、網址、錯誤代碼）會把卡片撐爆。break-words 讓
               那種不可斷的字串換行而不是往外跑。 */}
           <span className="min-w-0 flex-1 break-words">{message}</span>
+          {/* 熱區只在觸控裝置放大（準則 §1：滑鼠維持精簡密度）。size-11 是
+              44px，-m-2.5 把四邊各吸回 10px，margin box 回到 size-6 的 24px
+              ——熱區長大但 toast 的高度與間距完全不變。 */}
           <button
+            type="button"
             onClick={handleClose}
-            className={`${style.textColor} hover:opacity-70 transition-opacity flex-shrink-0`}
+            className={`${style.textColor} hover:opacity-70 transition-opacity flex-shrink-0 flex size-6 items-center justify-center rounded-full pointer-coarse:size-11 pointer-coarse:-m-2.5`}
             aria-label="關閉"
           >
             <X size={16} />

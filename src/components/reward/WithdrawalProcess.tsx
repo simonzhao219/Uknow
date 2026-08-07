@@ -20,9 +20,11 @@ import {
   Shield,
 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import type { IdPhotosResponse } from '@contract';
 import { useNotification } from '../notifications/NotificationContext';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
+import { useImeComposition } from '../../hooks/useImeComposition';
 import {
   WITHDRAWAL_FEE,
   DAILY_WITHDRAWAL_LIMIT,
@@ -47,10 +49,10 @@ interface SavedBankData {
   bankAccount: string;
 }
 
-interface IdPhoto {
-  frontUrl: string | null;
-  backUrl: string | null;
-}
+// 型別走契約(plan §2.4 的收斂原則):/rewards/id-photos 的回應形狀由
+// @contract 定義,手抄本不會跟著契約長欄位——verificationStatus 先前就是
+// 這樣被丟掉的,rejected 會員因此填完整張表才被守衛 #5a 打回。
+type IdPhotosData = IdPhotosResponse['data'];
 
 export function WithdrawalProcess({
   availableRewards,
@@ -75,9 +77,43 @@ export function WithdrawalProcess({
   // ✅ 身分證驗證狀態（僅需追蹤是否已驗證成功）
   const [isIdVerified, setIsIdVerified] = useState(false);
 
+  // 身分證與銀行帳號兩個欄位都會改寫/拒收使用者打的字,在 IME 組字期間這麼做
+  // 會毀掉組字狀態(iOS Safari 尤其嚴重)。改寫延後到組字結束,組字期間原樣
+  // 收下——不收的話 React 會拿舊值寫回 DOM,那是更糟的路徑。
+  // 見 docs/plans/friction-log.md 的 2026-08-07 條。
+  const idNumberImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: (raw) => setPersonalData((prev) => ({ ...prev, idNumber: raw })),
+    onCommit: (raw) => setPersonalData((prev) => ({ ...prev, idNumber: raw.toUpperCase() })),
+  });
+
+  // 銀行帳號的「只收數字與連字號」是**拒收**:不符就整個丟掉。刻意保留這個
+  // 語意(不改成逐字元過濾),只把它移到組字結束後執行——那時已經沒有組字
+  // 狀態可以毀。組字期間一律原樣收下。
+  const commitBankAccount = (raw: string) => {
+    if (raw !== '' && !/^[\d-]+$/.test(raw)) return;
+    setPersonalData((prev) => ({ ...prev, bankAccount: raw }));
+    setErrors((prev) => {
+      if (!prev.bankAccount) return prev;
+      const { bankAccount: _removed, ...rest } = prev;
+      return rest;
+    });
+  };
+  const bankAccountImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: (raw) => setPersonalData((prev) => ({ ...prev, bankAccount: raw })),
+    onCommit: commitBankAccount,
+  });
+
   // ✅ 已存儲的身分證照片
-  const [existingPhotos, setExistingPhotos] = useState<IdPhoto>({ frontUrl: null, backUrl: null });
+  const [existingPhotos, setExistingPhotos] = useState<Pick<IdPhotosData, 'frontUrl' | 'backUrl'>>({
+    frontUrl: null,
+    backUrl: null,
+  });
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+
+  // 證件被退回時的引導(守衛 #5a 只在送出時擋 rejected;不在這裡引導,
+  // 會員會填完整張表才被 toast 打回)。理由要到得了會員面前。
+  const [idRejected, setIdRejected] = useState(false);
+  const [idRejectReason, setIdRejectReason] = useState<string | null>(null);
 
   // ✅ 新上傳照片的預覽 URL
   const [idCardFrontPreview, setIdCardFrontPreview] = useState<string | null>(null);
@@ -118,12 +154,22 @@ export function WithdrawalProcess({
     const loadExistingPhotos = async () => {
       setIsLoadingPhotos(true);
       try {
-        const result = await apiRequestJson<{ success: boolean; data: IdPhoto }>(
-          buildApiUrl('/rewards/id-photos'),
-        );
+        const result = await apiRequestJson<IdPhotosResponse>(buildApiUrl('/rewards/id-photos'));
 
         if (result.success && result.data) {
-          setExistingPhotos(result.data);
+          if (result.data.verificationStatus === 'rejected') {
+            // 被退回的照片不予沿用——沿用等於重送同一份資料再被退一次
+            // (規格書 §10.1 點名的失敗模式;人審裁決:兩面都要新照片)。
+            // existingPhotos 維持空,validateStep2 與提交鍵的既有條件
+            // 自然強制兩面新上傳,守衛 #5a 在新照片轉 pending 後放行。
+            setIdRejected(true);
+            setIdRejectReason(result.data.rejectReason);
+          } else {
+            setExistingPhotos({
+              frontUrl: result.data.frontUrl,
+              backUrl: result.data.backUrl,
+            });
+          }
         }
       } catch (error) {
         console.error('載入身分證照片失敗:', error);
@@ -600,6 +646,23 @@ export function WithdrawalProcess({
         {/* 第三階段：身分驗證 */}
         {currentStep === 3 && (
           <div className="space-y-6">
+            {/* 證件退回警示——放步驟頂部:這一步的其他欄位都白填之前,
+                先讓會員知道要換照片。 */}
+            {idRejected && (
+              <Alert className="bg-red-50 border-red-200">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription>
+                  <strong className="text-red-900">證件審核未通過</strong>
+                  <p className="mt-1 text-sm text-red-800">
+                    {idRejectReason ?? '請聯繫客服了解原因'}
+                  </p>
+                  <p className="mt-1 text-sm text-red-800">
+                    請重新上傳身分證正反面（不可沿用先前的照片），送出申請時會一併重新送審。
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* 身分證字號 */}
             <div className="space-y-2">
               <Label htmlFor="idNumber">身分證字號 *</Label>
@@ -607,9 +670,7 @@ export function WithdrawalProcess({
                 <Input
                   id="idNumber"
                   value={personalData.idNumber}
-                  onChange={(e) =>
-                    setPersonalData({ ...personalData, idNumber: e.target.value.toUpperCase() })
-                  }
+                  {...idNumberImeProps}
                   placeholder="A123456789"
                   maxLength={10}
                   className={getInputErrorClass(!!errors.idNumber)}
@@ -663,17 +724,7 @@ export function WithdrawalProcess({
               <Input
                 id="bankAccount"
                 value={personalData.bankAccount}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '' || /^[\d-]+$/.test(value)) {
-                    setPersonalData({ ...personalData, bankAccount: value });
-                    if (errors.bankAccount) {
-                      const newErrors = { ...errors };
-                      delete newErrors.bankAccount;
-                      setErrors(newErrors);
-                    }
-                  }
-                }}
+                {...bankAccountImeProps}
                 placeholder="請輸入完整銀行帳號"
                 className={getInputErrorClass(!!errors.bankAccount)}
               />

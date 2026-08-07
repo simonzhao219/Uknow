@@ -1,7 +1,7 @@
 name: Journey Scheduled
 
 # ============================================================================
-# journey 套件的排程／手動觸發入口——**薄外殼**：只負責 triggers 與
+# journey 套件的排程（每週）／手動觸發入口——**薄外殼**：只負責 triggers 與
 # concurrency，所有邏輯都在 journey.yml（單一定義，晉升 PR 與這裡共用）。
 #
 # 為什麼 concurrency 放在這裡而不是 journey.yml：
@@ -14,8 +14,14 @@ name: Journey Scheduled
 # ============================================================================
 on:
   schedule:
-    # 台北 02:00 = UTC 18:00
-    - cron: '0 18 * * *'
+    # 台北週日 02:00 = UTC 週六 18:00,每週一次。
+    # 費用:full journey 綠燈一場 30-90 計費分——每晚跑是 900-2700 分/月,
+    # 每週跑是 130-390 分/月。降頻的依據(2026-08-07 額度事故後盤點):
+    # 真正擋上線的是晉升 PR 上的 journey-full(ci.yml,不受此檔影響),
+    # 這裡只是 develop 真後端的漂移偵測;而它 2026-07-26 起連紅 12 晚、
+    # 訊號無人消費,日級頻率買不到日級價值。需要即時驗證時用下面的
+    # workflow_dispatch 手動觸發。
+    - cron: '0 18 * * 6'
   workflow_dispatch:
     inputs:
       scope:
@@ -28,10 +34,18 @@ on:
         type: choice
         options: [sandbox, webhook]
         default: sandbox
+      pytest_expr:
+        description: '可選 pytest marker 運算式（如 timemachine、renewal_saga）——只跑命中的 feature；空值=依 scope'
+        type: string
+        default: ''
 
 # 分支費用＋PayUni sandbox 共享狀態：同時最多一場
+# group 帶 -v2:2026-08-07 GitHub Actions 平台故障期間(所有 workflow
+# 都 3 秒零步驟 failure)一度誤診為 PR #114 的 slot 中毒而改名。事後
+# 確認是平台級故障、自行恢復;group 名是任意識別字,改名無害也無益,
+# 故障後已在此名稱下穩定跑過多場,維持現名即可。
 concurrency:
-  group: journey-scheduled
+  group: journey-scheduled-v2
   cancel-in-progress: false
 
 jobs:
@@ -43,4 +57,5 @@ jobs:
     with:
       scope: ${{ inputs.scope || 'full' }}
       payment_mode: ${{ inputs.payment_mode || 'sandbox' }}
+      pytest_expr: ${{ inputs.pytest_expr || '' }}
     secrets: inherit

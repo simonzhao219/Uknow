@@ -7,13 +7,16 @@
 //   * AdminSetup：首位管理員自助宣告（有管理員後鎖死）
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
+import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
+  createWithdrawableUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  requestWithdrawal,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -222,5 +225,418 @@ Deno.test('AdminSetup：無管理員時可自助宣告；已有管理員後鎖�
     await claim2.body?.cancel();
   } finally {
     await deleteTestUsers(client, [first.id, second.id]);
+  }
+});
+
+// ============================================================
+// CI 沒有設 SUPABASE_DB_URL，本地 supabase 的 DB 在 54322——所以全庫其他
+// 五個測試檔都是「env 優先、否則落到這個 fallback」。少了 fallback 會連到
+// 預設的 5432 而 ECONNREFUSED，斷言根本跑不到，等於一條沒有訊號的測試。
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
+// 會員查詢台（規劃書階段 3.1 / 驗收情境 M2、M3）
+//
+// **統計卡說的是全站，不是當前頁。** 這是 M2 的核心：admin 看到「停權 3 人」
+// 就會據此判斷要不要處理，而如果那個 3 只是「這一頁裡的 3」，數字就在說謊
+// ——第 2 頁還有 5 個停權的他永遠不知道。所以 stats 必須在 filtered CTE 上算，
+// 不受 limit 影響。這條測試刻意造 51 筆（> 預設 limit 50）來釘住這件事。
+// ============================================================
+
+Deno.test('admin_list_members：stats 算全站，不受 limit=50 截斷', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Stats Admin' });
+  const created: string[] = [admin.id];
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    // 51 筆 > 預設 limit 50：第 51 筆落在第二頁，若 stats 在分頁後才算就會漏掉。
+    for (let i = 0; i < 51; i++) {
+      const u = await createTestUser(client, { name: `Bulk Member ${i}` });
+      created.push(u.id);
+    }
+    // 把最後兩筆停權——它們一定在「第一頁」之外或邊界上。
+    await client
+      .from('profiles')
+      .update({ suspended_at: new Date().toISOString() })
+      .in('id', created.slice(-2));
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request('/api/admin/members?search=Bulk Member&limit=50', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+
+    assertEquals(res.status, 200);
+    assertEquals(body.data.members.length, 50, '一頁只回 50 筆');
+    assertEquals(body.data.total, 51, 'total 是篩選後的全部筆數');
+    assertEquals(body.data.stats.suspended, 2, 'stats.suspended 必須算全站而非當前頁');
+  } finally {
+    await deleteTestUsers(client, created);
+  }
+});
+
+Deno.test('admin_list_members：status 篩選只回該狀態的會員', async () => {
+  const client = adminClient();
+  // 同上：admin 的名字不含搜尋詞。這條目前只是碰巧沒壞——`status=suspended`
+  // 把未停權的 admin 濾掉了——但那是別的條件在保護它，換個 status 就會漏。
+  const admin = await createTestUser(client, { name: 'Selecting Admin' });
+  const active = await createTestUser(client, { name: 'Filter Active' });
+  const suspended = await createTestUser(client, { name: 'Filter Suspended' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, active.id);
+    await client
+      .from('profiles')
+      .update({ suspended_at: new Date().toISOString() })
+      .eq('id', suspended.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request('/api/admin/members?search=Filter&status=suspended', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+
+    const names = body.data.members.map((m: { name: string }) => m.name);
+    assert(names.includes('Filter Suspended'), `停權者應在結果內：${JSON.stringify(names)}`);
+    assert(!names.includes('Filter Active'), '未停權者不該出現在 status=suspended');
+  } finally {
+    await deleteTestUsers(client, [admin.id, active.id, suspended.id]);
+  }
+});
+
+Deno.test('admin_list_members：sort=created_asc 與 created_desc 排序相反', async () => {
+  const client = adminClient();
+  // admin 的名字刻意不含搜尋詞：`search=Sort` 會把它自己也撈進來，而它是
+  // 當下建立的（最新），於是 created_desc 的第一筆會是 admin 而不是受測資料。
+  const admin = await createTestUser(client, { name: 'Ordering Admin' });
+  const first = await createTestUser(client, { name: 'Sort Alpha' });
+  const second = await createTestUser(client, { name: 'Sort Beta' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    // 明確拉開註冊時間，避免同一毫秒造成排序不穩定。
+    await client
+      .from('profiles')
+      .update({ created_at: '2026-01-01T00:00:00Z' })
+      .eq('id', first.id);
+    await client
+      .from('profiles')
+      .update({ created_at: '2026-06-01T00:00:00Z' })
+      .eq('id', second.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const ask = async (sort: string) => {
+      const res = await app.request(`/api/admin/members?search=Sort&sort=${sort}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json();
+      return body.data.members.map((m: { name: string }) => m.name);
+    };
+
+    const asc = await ask('created_asc');
+    const desc = await ask('created_desc');
+    assertEquals(asc[0], 'Sort Alpha', 'created_asc 最早註冊的在前');
+    assertEquals(desc[0], 'Sort Beta', 'created_desc 最晚註冊的在前');
+  } finally {
+    await deleteTestUsers(client, [admin.id, first.id, second.id]);
+  }
+});
+
+Deno.test('admin_list_members：回應帶 endDate 與 idVerificationStatus', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Field Admin' });
+  const member = await createTestUser(client, { name: 'Field Member' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, member.id);
+    await client
+      .from('profiles')
+      .update({ id_verification_status: 'pending' })
+      .eq('id', member.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request('/api/admin/members?search=Field Member', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    const row = body.data.members[0];
+
+    assertEquals(row.idVerificationStatus, 'pending');
+    assert(row.endDate, `付費會員應有會籍到期日：${JSON.stringify(row)}`);
+  } finally {
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE 改寫後的 admin_list_members', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    // 直接問 Postgres 而非「打 rpc 看它被拒」——後者的 403 可能來自不相干的
+    // 權限，即使 REVOKE 沒生效也照樣「被拒」，斷言會失去辨別力。
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated',
+        'public.admin_list_members(text, text, text, int, int)',
+        'EXECUTE'
+      ) as can_execute
+    `;
+    assertEquals(row.can_execute, false);
+  } finally {
+    await sql.end();
+  }
+});
+
+// ============================================================
+// 會員詳情（規劃書階段 3.2 / 驗收情境 M1）
+//
+// §1.1 的頭號客服情境是「我提領怎麼還沒到」。**詳情面板答不出這句話就失去
+// 存在意義**——所以近期提領記錄（狀態／退件理由／匯款與查收時間）是這支
+// 端點的核心欄位，不是附加資訊。
+//
+// 遮罩（需求方裁決）：身分證與銀行帳號一律遮罩。需要全碼時回提領作業台看，
+// 那裡因匯款作業需要而維持完整值（profile-masking.test.ts 有 characterization
+// 把關）。查詢台是客服日常翻閱的地方，翻閱不需要全碼。
+// ============================================================
+
+Deno.test('admin_member_detail：回得到會籍、餘額、推薦人、下線數與證件狀態', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Detail Admin' });
+  const referrer = await createTestUser(client, { name: 'Detail Referrer' });
+  const member = await createTestUser(client, { name: 'Detail Member' });
+  const child = await createTestUser(client, { name: 'Detail Child' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, member.id);
+    await client
+      .from('profiles')
+      .update({ referred_by_user_id: referrer.id, id_verification_status: 'approved' })
+      .eq('id', member.id);
+    await client.from('profiles').update({ referred_by_user_id: member.id }).eq('id', child.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+
+    assertEquals(res.status, 200);
+    const d = body.data.member;
+    assertEquals(d.accountStatus, 'active');
+    assert(d.endDate, `付費會員應有會籍到期日：${JSON.stringify(d)}`);
+    assertEquals(d.idVerificationStatus, 'approved');
+    assertEquals(d.referrerName, 'Detail Referrer');
+    assertEquals(d.directChildCount, 1);
+    assertEquals(typeof d.availablePoints, 'number');
+  } finally {
+    await deleteTestUsers(client, [admin.id, referrer.id, member.id, child.id]);
+  }
+});
+
+Deno.test('admin_member_detail：身分證與銀行帳號一律遮罩', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Mask Admin' });
+  const member = await createTestUser(client, { name: 'Mask Member' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await client
+      .from('profiles')
+      .update({
+        national_id: 'A123456789',
+        bank_code: '822',
+        bank_account: '1234567890123',
+      })
+      .eq('id', member.id);
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const d = (await res.json()).data.member;
+
+    assert(!d.idNumber.includes('456'), `身分證中段不得外洩：${d.idNumber}`);
+    assert(d.idNumber.includes('*'), `身分證應遮罩：${d.idNumber}`);
+    assert(!d.bankAccount.includes('123456789'), `銀行帳號主體不得外洩：${d.bankAccount}`);
+    assert(d.bankAccount.endsWith('0123'), `末四碼保留供核對：${d.bankAccount}`);
+    // 銀行代號不遮罩：它識別的是銀行不是個人，遮了反而讓客服對不出是哪一家。
+    assertEquals(d.bankCode, '822');
+  } finally {
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('admin_member_detail：近期提領記錄帶狀態與退件理由', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Hist Admin' });
+  const member = await createWithdrawableUser(client, 5000);
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    const { data: req } = await requestWithdrawal(client, member.id, 1000);
+    await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '收款帳號與身分證姓名不符',
+    });
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request(`/api/admin/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const rows = (await res.json()).data.member.recentWithdrawals;
+
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, 'rejected');
+    // 「我提領怎麼還沒到」的答案就是這行字，答不出來詳情面板就沒有意義。
+    assertEquals(rows[0].note, '收款帳號與身分證姓名不符');
+  } finally {
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_member_detail', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated', 'public.admin_member_detail(uuid)', 'EXECUTE'
+      ) as can_execute
+    `;
+    assertEquals(row.can_execute, false);
+  } finally {
+    await sql.end();
+  }
+});
+
+// ============================================================
+// 管理員授予／撤銷（規劃書階段 3.3 / 驗收情境 M4）
+//
+// 這組測試守的是**系統不能失去所有管理員**。兩條路徑會造成那個結果：
+//   1. 最後一位管理員撤銷別人 → `last_admin`
+//   2. 管理員撤銷自己 → `cannot_demote_self`
+// 第 2 條單獨看像多餘（撤銷自己也會被 last_admin 擋），但兩位管理員時
+// last_admin 不會擋，而「我不小心把自己降級了」在只有兩人的系統裡等於
+// 把整個後台交給另一個人——那是不可自救的狀態。
+//
+// **最重要的是第三條：提權防線。** `admin_set_member_admin` 是 SECURITY
+// DEFINER，而 PostgREST 的 `rpc/` 端點繞過 Hono 的 /admin/* middleware——
+// 一般會員直呼它就能把自己變成管理員。`revoke execute` 才是真正的防線，
+// middleware 不是。
+// ============================================================
+
+Deno.test('admin_set_member_admin：可授予管理員，被授予者立刻通過守門', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Grant Admin' });
+  const target = await createTestUser(client, { name: 'Grant Target' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    const token = await getUserAccessToken(client, admin.email);
+
+    const res = await app.request(
+      `/api/admin/members/${target.id}/admin`,
+      authed(token, { method: 'POST', body: JSON.stringify({ isAdmin: true }) }),
+    );
+    assertEquals((await res.json()).success, true);
+
+    // 被授予者現在自己也過得了守門——這才是「授予」的實質意義。
+    const targetToken = await getUserAccessToken(client, target.email);
+    const gate = await app.request('/api/admin/features', {
+      headers: { Authorization: `Bearer ${targetToken}` },
+    });
+    assertEquals(gate.status, 200);
+    await gate.body?.cancel();
+  } finally {
+    await deleteTestUsers(client, [admin.id, target.id]);
+  }
+});
+
+Deno.test('admin_set_member_admin：不能撤銷自己 → cannot_demote_self', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Self Admin' });
+  const other = await createTestUser(client, { name: 'Other Admin' });
+
+  try {
+    // 兩位管理員：last_admin 不會擋，所以擋下來的必須是 cannot_demote_self。
+    await client.from('profiles').update({ is_admin: true }).in('id', [admin.id, other.id]);
+    const token = await getUserAccessToken(client, admin.email);
+
+    const res = await app.request(
+      `/api/admin/members/${admin.id}/admin`,
+      authed(token, { method: 'POST', body: JSON.stringify({ isAdmin: false }) }),
+    );
+    const body = await res.json();
+    assertEquals(body.success, false);
+    assertEquals(body.error?.code, 'cannot_demote_self');
+
+    // 確認真的沒被降級
+    const { data: p } = await client.from('profiles').select('is_admin').eq('id', admin.id)
+      .single();
+    assertEquals(p!.is_admin, true);
+  } finally {
+    await deleteTestUsers(client, [admin.id, other.id]);
+  }
+});
+
+Deno.test('admin_set_member_admin：撤到系統零管理員 → last_admin', async () => {
+  const client = adminClient();
+  const soleAdmin = await createTestUser(client, { name: 'Sole Admin' });
+
+  try {
+    // 清場成「全系統只有一位管理員」。
+    await client.from('profiles').update({ is_admin: false }).eq('is_admin', true);
+    await client.from('profiles').update({ is_admin: true }).eq('id', soleAdmin.id);
+
+    // **這條打 rpc 而不是 HTTP 端點，因為經由端點時 last_admin 到不了**：
+    // 只有管理員能呼叫該端點，系統只剩一位管理員時他唯一能撤銷的就是自己，
+    // 那會先撞 cannot_demote_self。last_admin 守的是呼叫者與目標不同人的
+    // 路徑（service_role 直呼、未來的批次流程），那才是它真正的守備範圍。
+    const { data } = await client.rpc('admin_set_member_admin', {
+      p_admin_id: soleAdmin.id,
+      p_target_id: soleAdmin.id,
+      p_is_admin: false,
+    });
+    assertEquals(data?.success, false, JSON.stringify(data));
+    assertEquals(data?.error_code, 'cannot_demote_self');
+
+    // 換一個「不是自己」的呼叫者身分：這時擋下來的才是 last_admin。
+    const ghost = await createTestUser(client, { name: 'Ghost Caller' });
+    try {
+      const { data: byOther } = await client.rpc('admin_set_member_admin', {
+        p_admin_id: ghost.id,
+        p_target_id: soleAdmin.id,
+        p_is_admin: false,
+      });
+      assertEquals(byOther?.success, false, JSON.stringify(byOther));
+      assertEquals(byOther?.error_code, 'last_admin');
+      const { data: p } = await client.from('profiles').select('is_admin')
+        .eq('id', soleAdmin.id).single();
+      assertEquals(p!.is_admin, true);
+    } finally {
+      await deleteTestUsers(client, [ghost.id]);
+    }
+  } finally {
+    await deleteTestUsers(client, [soleAdmin.id]);
+  }
+});
+
+Deno.test('GRANT：authenticated 不得 EXECUTE admin_set_member_admin', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    // 這是 P0-2 的真實漏洞路徑：PostgREST 的 rpc/ 端點繞過 Hono 的
+    // /admin/* middleware，一般會員直呼這支就能把自己變成管理員。
+    const [row] = await sql`
+      select has_function_privilege(
+        'authenticated', 'public.admin_set_member_admin(uuid, uuid, boolean)', 'EXECUTE'
+      ) as can_execute
+    `;
+    assertEquals(row.can_execute, false);
+  } finally {
+    await sql.end();
   }
 });

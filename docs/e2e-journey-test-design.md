@@ -13,7 +13,7 @@
 | 測試環境 | **每次測試跑在專屬 Supabase 測試分支/專案**，測完刪整個分支＝資料保證清乾淨；`cleanup.py` 為第二道保險 |
 | 金流模擬 | **真打 PayUni sandbox 刷卡頁**，使用測試卡 `4147631000000001`、有效期 `01/31`、CVV `123`；另備「簽章 webhook 注入」備援模式 |
 | 30 人建置 | **全部 30 人走 Web GUI**（純黑箱），以 nightly 排程執行 |
-| 跨時間情境 | **納入**：以 service-role 回填歷史資料（訂閱失效（兩態，見 0721）、補繳接續、逾期超過一年只能新約） |
+| 跨時間情境 | **納入**：以 service-role 回填歷史資料（訂閱失效（兩態，見 0721）、補繳接續、逾期超過一年仍可續約補繳） |
 
 ---
 
@@ -100,10 +100,14 @@ Root (A)                          ── 本次測試的主角，要能測到所
 │ 1. 由 main 專案建立 preview branch（supabase branches       │
 │    create / MCP create_branch），取得分支專屬的             │
 │    project_ref、anon key、service_role key、DB URL          │
-│ 2. 分支自動套用全部 migrations；harness 檢核               │
+│ 2. 分支 replay 母專案的 migration 歷史；workflow 驗證       │
+│    replay 成功（MIGRATIONS_FAILED 硬失敗）後，以 db push    │
+│    對齊 checkout 獨有的 migrations；harness 檢核            │
 │    reward_config 存在且 seed 值正確                         │
 │ 3. 設定分支的 Edge Function secrets：PAYUNI_SANDBOX=true、  │
-│    PayUni sandbox 商店代號/HashKey/HashIV                   │
+│    PayUni sandbox 商店代號/HashKey/HashIV；掛 no-op         │
+│    send-email hook（hosted GoTrue 內建 email 服務拒收       │
+│    .test 網域且鎖限流，走 hook 一併解除）；signup 探測健檢  │
 │ 4. 產生前端連線設定（見 §3.2），啟動 Vite dev server        │
 └────────────────────────────────────────────────────────────┘
 ┌─ Run ──────────────────────────────────────────────────────┐
@@ -214,6 +218,18 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 
 ### `60_time_scenarios.feature` — 跨時間情境（§7）
 
+### `70_renewal_saga.feature` — 阿凱的七年（續約獎勵任務機制組合劇本）
+
+依 `upline-pairing-lines/rules.md` M1–M8 重建的十章連續劇本，cast（P0/U1/
+U2/K0/W1/W2/X1）獨立於 30 人主樹（`orgchart-saga.yaml`，不走 `load_nodes()`
+單根管線），前章狀態是後章前提。覆蓋：A10 首購/fresh 兩版預設推薦人、
+補繳 extend 接續與逐筆發獎、fresh 換樹清空（A14/A15/`ledger_reset`）、
+改樹後三代鏈重走、Q9 待審提領擋 fresh 與駁回解封、S9 填現任上代碼照樣
+清空、Q14a 歷史桶跨清空保留、推薦王 credit 的 A8 與雙事件雙發獎
+（`subscription_id`/`source_claim_id` 兩鍵）、終章分類軸與推導餘額對帳。
+預設推薦人 P0 由 saga 自備（分支上無正式站資料層設定）；對 P0 的獎勵
+斷言一律用事件前後 delta。以 `@renewal_saga` marker 支援窄選 dispatch。
+
 ---
 
 ## 7. 跨時間情境：service-role 時光機
@@ -226,10 +242,17 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 | 剛失效（逾期未滿一年） | 把 C7 訂閱到期日改為 30 天前 | 刊登自首頁隱藏、推薦碼仍可用、**提領被擋**、可續約接續 |
 | 補繳接續原週期 | C7 走 GUI 補繳（§4 流程） | 新到期日＝原到期日 +1 年（不是付款日 +1 年） |
 | 完全失效（逾期，兩態無寬限期） | 把 C8 到期日改為 90 天前 | 刊登隱藏、**點數/任務保留不歸零**、**推薦碼不作廢仍可驗證**、其上線組織圖顯示 Inactive 節點但**結構不斷開** |
-| 逾期超過一年 | 把到期日改為 400 天前 | 只能走新約（fresh），效期從付款日起算、可換推薦人 |
+| 逾期超過一年 | 把到期日改為 400 天前 | 續約（extend）仍可選——付款頁揭露補繳筆數與總額（補繳制 A1）；新約（fresh）照舊可換推薦人、從付款日起算 |
 
 回填一律以 RUN_ID 圈定範圍、寫在獨立 scenario 的 Background，避免污染 §6 的帳本斷言
 （§6 先跑、§7 後跑，pytest 以 `--order` 固定順序）。
+
+70_ 為此擴充的原語（同檔）：`age_monthly_bucket`（平移 `monthly_referrals`
+月桶 key——讀現有 key 逐一平移不自推月份、目的地碰撞 append 合併不整把
+覆寫，純函式部分在 `tools/time_shift.py` 離線測試）、`seed_reward_points`
+（種 RUN_ID 標記的調整列墊提領門檻）、`seed_unclaimed_king_credit`
+（month_key 由呼叫端取自既有月桶）、`set_default_referrer_code`／
+`resolve_default_referrer_identity`（P0 自備的接線與身分解析，冪等）。
 
 ---
 
@@ -287,6 +310,7 @@ e2e/
 └── journey/
     ├── conftest.py              # 分支 setup/teardown、無 mock、正式站封鎖 guard
     ├── orgchart.yaml            # 30 人樹形宣告（單一真相，§2）
+    ├── orgchart-saga.yaml       # 70_ 的獨立 cast（不走單根管線）
     ├── run_state.py             # RUN_ID、憑證存取
     ├── builders/
     │   ├── org_builder.py       # BFS 建樹（呼叫共用 page objects）
@@ -294,7 +318,7 @@ e2e/
     │   └── admin_bootstrap.py
     ├── pages/
     │   └── payuni_sandbox_page.py   # 外部頁面選擇器，獨立封裝
-    ├── features/                # §6 的 10_ ~ 60_ feature files
+    ├── features/                # §6 的 10_ ~ 70_ feature files
     ├── steps/
     └── tools/
         ├── cleanup.py           # --run-id，獨立可執行
@@ -362,15 +386,19 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 是測試分支放寬限流參數（以 migration 外的 seed 調整，不動產品碼）；未放寬時 builder
 自動降回 3，內建 429 指數退避。
 
-### 11.5 編排與衛生條款（`.github/workflows/journey-nightly.yml`）
+### 11.5 編排與衛生條款（`journey-scheduled.yml`，呼叫可重用的 `journey.yml`）
 
-- 每日 02:00（Asia/Taipei）＋`workflow_dispatch`（inputs：`JOURNEY_PAYMENT_MODE`、
-  `reuse_tree`、`feature_filter` 只跑單一模組）；
+- 每日 02:00（Asia/Taipei）＋`workflow_dispatch`（inputs：`scope`＝
+  skeleton/full、`payment_mode`＝sandbox/webhook、`pytest_expr`＝可選
+  marker 運算式窄選——CLI 的 `-m` 會整段蓋掉 ini 的 `-m "not seed"`
+  預設，故窄選一律自動補 `and not seed`；窄選時「journey 真的跑了」
+  的最低情境數門檻降為 `MIN_FILTERED`）；
 - journey 的 `concurrency` group 上限 1（分支費用＋PayUni sandbox 共享狀態），
   每個 job 一律設 `timeout-minutes`；
 - Secrets：Supabase access token（開分支）、PayUni sandbox 憑證、測試卡號；
-- 失敗上傳 trace/screenshot/`run_state.json`/DB dump 為 artifacts，並**自動開啟或更新
-  一張 nightly 追蹤 issue**（附 artifacts 連結）；綠燈沉默，不製造通知噪音；
+- 失敗上傳 trace/screenshot/`run_state.json` 為 artifacts，並**每場失敗
+  自動開一張 triage issue**（`journey 失敗（run N）`，附 run 連結與
+  triage SOP）；綠燈沉默，不製造通知噪音；
 - flaky 情境以 `@quarantine` 標記隔離統計通過率，不讓單一 flake 把整晚判紅。
 
 ---
@@ -397,3 +425,4 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 | M2 | orgchart builder、30 人建樹、`10_`/`20_` feature（推薦＋獎勵） | 樹＋帳本斷言綠燈 |
 | M3 | `30_`–`50_`（任務/刊登/提領含 admin 端）、webhook 備援模式 | 六模組全綠 |
 | M4 | 時光機＋`60_`、cleanup.py＋零殘留斷言、nightly workflow | 全套 nightly 上線 |
+| M5 | `70_` 阿凱的七年（§6）＋時光機五原語（§7）＋`pytest_expr` 窄選（§11.5） | 十章 dispatch 綠燈、併入 nightly |

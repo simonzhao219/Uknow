@@ -5,23 +5,34 @@ import { dedupe } from '../utils/requestDedup';
 import { useRevalidateOnFocus } from './useRevalidateOnFocus';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient';
 import { useNotification } from '../components/notifications/NotificationContext';
+import type { RenewalInfo } from '@contract';
 
-// 會員兩態模型（見 0721 移除寬限期）：一次性年費、無自動扣款，
-// 沒有「取消／恢復／補繳／寬限期」——到期即失效，之後直接用
-// /payment/checkout 續訂或重新訂即可，效期由 process_successful_payment
-// 依 renewalMode 決定。
+// 會員兩態模型：一次性年費、無自動扣款、無取消／恢復／寬限期——到期即
+// 失效，之後用 /payment/checkout 續訂：extend 一筆一年從原到期日隔天
+// 字面接續（過期多久都可選，補繳到迄日回到未來為止），fresh 從付款日
+// 起算並清空帳本。效期由 process_successful_payment 依 renewalMode 決定；
+// 補繳數字（renewal）與建單守衛旗標（hasPendingWithdrawal）由
+// /subscriptions/status 提供（契約見 @contract RenewalInfoSchema）。
 export interface SubscriptionData {
   hasSubscription: boolean;
   status?: 'active' | 'expired';
   activeUntil?: string;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  renewal?: RenewalInfo | null;
+  hasPendingWithdrawal?: boolean;
 }
 
 export interface UseSubscriptionResult {
   subscriptionData: SubscriptionData | null;
   isLoading: boolean;
   isValidating: boolean;
+  /**
+   * 最近一次抓取失敗且尚未被成功蓋掉。搭配 subscriptionData 可區分
+   * 「從未取得」與「曾有資料、本次背景 revalidate 失敗（畫面上是舊資料）」
+   * ——結帳頁四狀態表第 4 列（補繳進度不得靜默過期）靠這個訊號。
+   */
+  lastFetchFailed: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -46,6 +57,7 @@ export function useSubscription(): UseSubscriptionResult {
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
+  const [lastFetchFailed, setLastFetchFailed] = useState(false);
   const hasDataRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
@@ -61,9 +73,12 @@ export function useSubscription(): UseSubscriptionResult {
       setCache('subscriptionStatus', result.data);
       setSubscriptionData(result.data);
       hasDataRef.current = true;
+      setLastFetchFailed(false);
     } catch (err) {
+      setLastFetchFailed(true);
       if (!(err instanceof ApiError && err.status === 401)) {
-        // 背景 revalidate 失敗不打擾使用者：畫面繼續顯示舊資料即可。
+        // 背景 revalidate 失敗預設不打擾使用者：畫面繼續顯示舊資料。
+        // 但訊號要曝露出去——補繳中的結帳頁不得讓進度靜默過期。
         if (!hasDataRef.current) showToast('無法獲取訂閱狀態', 'error');
         else console.error('[useSubscription] 背景重新請求失敗:', err);
       }
@@ -105,5 +120,5 @@ export function useSubscription(): UseSubscriptionResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { subscriptionData, isLoading, isValidating, refresh };
+  return { subscriptionData, isLoading, isValidating, lastFetchFailed, refresh };
 }

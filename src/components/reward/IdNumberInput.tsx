@@ -3,6 +3,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
+import { useImeComposition } from '../../hooks/useImeComposition';
 
 interface IdNumberInputProps {
   value: string;
@@ -33,6 +34,13 @@ export function IdNumberInput({
 }: IdNumberInputProps) {
   const [status, setStatus] = useState<VerificationStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // 組字期間原樣回拋(不轉大寫),組字結束才轉。原樣回拋不能省略成「不回拋」:
+  // 這是受控元件,父層不更新 value 的話 React 會拿舊值寫回 DOM,那更糟。
+  const idImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: onChange,
+    onCommit: (raw) => onChange(raw.toUpperCase()),
+  });
 
   // ✅ 當輸入值變化時，自動驗證
   useEffect(() => {
@@ -118,7 +126,11 @@ export function IdNumberInput({
           id="idNumber"
           placeholder={placeholder}
           value={value}
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          // 轉大寫延後到組字結束。對注音與漢字轉大寫是 identity,但對**全形
+          // 英數**不是(Ａ → ａ 是真的變了),而全形是中文輸入法的標準功能;
+          // 組字期間值一被改寫,iOS Safari 就丟失組字狀態。
+          // 見 docs/plans/friction-log.md 的 2026-08-07 條。
+          {...idImeProps}
           maxLength={10}
           className={`uppercase pr-10 ${getBorderClass()}`}
           disabled={disabled}

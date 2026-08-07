@@ -89,6 +89,17 @@
   首頁手機版為兩欄資訊卡（照片/性別/名稱/類別/地區）。
 - 依賴定位的功能（如距離排序）**只在取得真實定位後才啟用**，
   不要用寫死的座標當預設——對非該地區使用者是誤導。
+- **滿版橫條的內容必須對齊版面中軸**（`container` 的中線），不是貼齊視窗
+  邊緣。橫條鋪滿視窗、內容卻用 `flex-1` 撐開推到兩端時，手機上看起來正常
+  （窄螢幕文字本來就填滿整列），桌機寬版卻把訊息丟在視線動線之外——版面
+  主體全在中軸上，使用者不會往邊緣看。做法：`sm:` 以上 `justify-center`
+  ＋不讓文字 `flex-1`，關閉／動作鈕改絕對定位釘住邊緣（留在流排版裡會把
+  訊息擠離中軸），並給文字 `max-w-*` 行長上限。手機維持流式左對齊。
+  〔實作〕`src/components/MaintenanceBanner.tsx` 與其測試。
+
+**推論**：mobile-first 不等於「桌機不必驗收」。上面這條的失效模式正是
+「手機對、桌機錯」；滿版元素（橫幅、sticky bar、footer 條）新增時，
+寬版要當成獨立的驗收情境看過一次。
 
 ## 8. 可測試性（Design for Testing）
 
@@ -113,7 +124,30 @@
 全站文案是中文，所有溢出行為都建立在中文字寬上。
 `e2e/test_overflow_sweep.py` 在 **375px** 下巡檢各路由，目前為 **report-only**
 （結果寫進 `test-results/overflow-report.{md,json}`）。新增路由時記得加進
-該檔的 `ROUTES`。
+該檔的 `ROUTES`；**tab 介面要另外帶 `after_load`**——Radix Tabs 只掛載 active
+面板，不切過去的 tab 從來沒被畫出來過，量不到不等於沒問題。
+
+**表格裡的長內容**：`TableCell` 基底帶 `whitespace-nowrap`
+（`ui/table.tsx`）。長度無上限的欄位（jsonb 原文、使用者貼上的網址、
+後端寫入的訊息）必須把**換行、限寬、`block` 三者放在同一個內層元素上**：
+
+```tsx
+<TableCell>
+  <code className="block max-w-xs whitespace-normal break-all">{…}</code>
+</TableCell>
+```
+
+三者缺一都會靜默失效，而且失效方式不是「沒生效」而是「畫到隔壁欄位上」：
+
+- `white-space: nowrap` 會取消所有換行機會，**`break-all` 在它之下完全無效**
+  ——不是優先序問題。內層自己宣告 `whitespace-normal` 即可（`white-space`
+  是繼承屬性，顯式宣告就勝出，不必和 td 比 specificity）
+- `max-width` 加在 `<td>` 上，auto table layout 只當提示
+  （CSS 2.1 §17.5.2 明訂 table cell 的 min/max-width 效果 undefined），
+  既不約束也不裁切
+- `max-width` 對 inline 元素無效，`<code>`/`<span>` 要補 `block`
+
+反向：識別字與時間戳（`2026/07/25 09:56:03`）維持 nowrap，折行更難讀。
 
 ---
 

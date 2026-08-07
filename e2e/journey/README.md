@@ -38,7 +38,8 @@ pytest -m skeleton          # M1 walking skeleton（單人全流程）
 pytest                      # 全套：骨架 → 30 人建樹 → 樹/帳本斷言（依檔名 f00→f10→f20 定序）
 pytest -m orgbuild          # 只跑 30 人建樹（A0 未建置時會由 builder 一併補建）
 pytest -m rewards           # 只跑樹/帳本斷言（樹未建置時整批 skip 並提示）
-pytest tools/               # 離線單元測試（twid、orgchart——不需環境與瀏覽器）
+pytest -m renewal_saga      # 只跑 70_ 阿凱的七年（獨立 cast，不需 30 人樹）
+pytest tools/               # 離線單元測試（twid、orgchart、time_shift——不需環境與瀏覽器）
 ```
 
 **建樹的平行度**：`JOURNEY_BUILD_PARALLELISM`（預設 3）。同一代內的
@@ -91,26 +92,7 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 另一種用途：把資料**種進** develop（不是測試）
-
-同一套 GUI 建樹機制也用來替 develop 分支 DB 產生示範資料——生命週期
-與測試相反：**跑完留著**。走 `Seed Develop Data` workflow（手動觸發），
-形狀由 `orgchart-develop-seed.yaml` 定義（第 1 代 32、第 2 代 8、第 3 代 4）。
-
-三個開關缺一不可，任何一個沒到位都不會種：
-
-| 開關 | 作用 |
-|---|---|
-| `pytest -m seed` | `pytest.ini` 預設是 `-m "not seed"`，種資料情境不會混進任何測試執行 |
-| `JOURNEY_SEED=1` | 步驟裡的第二道保險（與 marker 分屬不同機制，不會被同一個手滑同時關掉） |
-| `JOURNEY_ORGCHART_PATH` | 沒設就是測試用的 30 人樹，此時步驟硬失敗而不是默默種錯樹 |
-
-搭配 `JOURNEY_KEEP_DATA=1` 略過 session 收尾的清理與零殘留斷言。
-root 帳號用 `JOURNEY_ROOT_EMAIL` / `JOURNEY_ROOT_PASSWORD` 指定固定憑證
-（要給人登入的帳號不能是一次性 email）——**只在種資料時設**：cleanup 靠
-`e2e+<run_id>+` 前綴掃描，固定 email 掃不到也就刪不掉。
-
-## 目前進度與範圍界線（M4 止）
+## 目前進度與範圍界線（M5 止）
 
 已落地：
 - **M1**：單人 walking skeleton（`00_skeleton.feature`）。
@@ -143,7 +125,19 @@ root 帳號用 `JOURNEY_ROOT_EMAIL` / `JOURNEY_ROOT_PASSWORD` 指定固定憑證
     拆掉 e2e 對 build 的 needs／新增 `journey-offline` job（純函數＋
     收集健全性）；`journey-nightly.yml` 一鍵開分支→設 secrets→跑套件
     →傳 artifacts→**always() 刪分支**；首跑校準（skeleton＋full 手動
-    觸發皆全綠）通過後，nightly schedule 已開啟（台北 02:00）。
+    觸發皆全綠）通過後，nightly schedule 已開啟（台北 02:00）
+    （現行檔案：`journey-scheduled.yml` 薄外殼＋可重用 `journey.yml`）。
+
+- **M5**：
+  - `70_renewal_saga`：「阿凱的七年」十章續約獎勵任務劇本（獨立 cast
+    `orgchart-saga.yaml`，P0 預設推薦人自備）——A10 首購/fresh、補繳
+    extend 逐筆發獎、fresh 換樹清空（A14/A15/新約重置）、改樹後三代
+    鏈、Q9 提領防線、S9/Q14a、推薦王 credit 的 A8 與雙事件雙發獎、
+    終章分類軸與推導餘額對帳；
+  - 時光機新原語：月桶平移（讀現有 key、append 合併）、種子點數、
+    種 credit、預設碼接線（見 `tools/seed_time_machine.py`）；
+  - CI 窄選：`pytest_expr` dispatch 輸入（自動補 `and not seed`、
+    `MIN_FILTERED` 三態 floor），供逐章 TDD 迭代取證。
 
 **已知產品落差**：測試設計過程發現的規格／實作落差已於 2026-07 全部
 回填規格書——現存落差集中列在**規格書 §14**（身分證字號唯一性、到期前
@@ -162,9 +156,9 @@ Email 提醒、credit 過期機制等），本檔不再另存一份清單。
 
 **到期後狀態覆蓋（60_time_scenarios，共 8 情境）**：刊登到期即隱藏、
 推薦碼仍可推廣、點數保留不歸零、上線組織圖已失效標記且結構不斷開、
-過期超過一年僅能新約、新約復活（換推薦人 rewire＋付款日起算＋刊登
-重新公開）、extend 補繳（接續原到期日＋權益恢復）、過期提領被擋
-（測後時光機還原效期）。
+過期超過一年續約仍可選（補繳制，付款頁揭露補繳筆數與總額）、新約復活
+（換推薦人 rewire＋付款日起算＋刊登重新公開）、extend 補繳（接續原
+到期日＋權益恢復）、過期提領被擋（測後時光機還原效期）。
 仍未覆蓋（後端實作範圍待確認，建議開 product issue）：到期前 5 日
 提醒 email、推薦王 credit 的過期機制。
 
