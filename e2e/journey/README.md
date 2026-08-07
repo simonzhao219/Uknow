@@ -91,25 +91,6 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 另一種用途：把資料**種進** develop（不是測試）
-
-同一套 GUI 建樹機制也用來替 develop 分支 DB 產生示範資料——生命週期
-與測試相反：**跑完留著**。走 `Seed Develop Data` workflow（手動觸發），
-形狀由 `orgchart-develop-seed.yaml` 定義（第 1 代 32、第 2 代 8、第 3 代 4）。
-
-三個開關缺一不可，任何一個沒到位都不會種：
-
-| 開關 | 作用 |
-|---|---|
-| `pytest -m seed` | `pytest.ini` 預設是 `-m "not seed"`，種資料情境不會混進任何測試執行 |
-| `JOURNEY_SEED=1` | 步驟裡的第二道保險（與 marker 分屬不同機制，不會被同一個手滑同時關掉） |
-| `JOURNEY_ORGCHART_PATH` | 沒設就是測試用的 30 人樹，此時步驟硬失敗而不是默默種錯樹 |
-
-搭配 `JOURNEY_KEEP_DATA=1` 略過 session 收尾的清理與零殘留斷言。
-root 帳號用 `JOURNEY_ROOT_EMAIL` / `JOURNEY_ROOT_PASSWORD` 指定固定憑證
-（要給人登入的帳號不能是一次性 email）——**只在種資料時設**：cleanup 靠
-`e2e+<run_id>+` 前綴掃描，固定 email 掃不到也就刪不掉。
-
 ## 目前進度與範圍界線（M4 止）
 
 已落地：

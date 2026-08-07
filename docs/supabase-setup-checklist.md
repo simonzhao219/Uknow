@@ -289,9 +289,7 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
       那是唯一會讓測試付款打進真金流的組合）
 - [ ] 步驟 1：**develop 的 `FRONTEND_URL` 是 `https://develop.uknow.pages.dev`**
       ——不是正式站網域，也不是 `http://localhost:3100`
-      （`seed-develop-data.yml` 建樹期間會暫時改成 localhost，收尾步驟
-      `if: always()` 負責設回。該 workflow 若被硬中止、收尾沒跑成，develop
-      就會停在 localhost：付款導回會落到不存在的位址）
+      （落到 localhost 的話，付款導回會導去一個不存在的位址）
 - [ ] 步驟 1：`api` 已重新部署，變數生效
 - [ ] 步驟 2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
