@@ -38,7 +38,8 @@ pytest -m skeleton          # M1 walking skeleton（單人全流程）
 pytest                      # 全套：骨架 → 30 人建樹 → 樹/帳本斷言（依檔名 f00→f10→f20 定序）
 pytest -m orgbuild          # 只跑 30 人建樹（A0 未建置時會由 builder 一併補建）
 pytest -m rewards           # 只跑樹/帳本斷言（樹未建置時整批 skip 並提示）
-pytest tools/               # 離線單元測試（twid、orgchart——不需環境與瀏覽器）
+pytest -m renewal_saga      # 只跑 70_ 阿凱的七年（獨立 cast，不需 30 人樹）
+pytest tools/               # 離線單元測試（twid、orgchart、time_shift——不需環境與瀏覽器）
 ```
 
 **建樹的平行度**：`JOURNEY_BUILD_PARALLELISM`（預設 3）。同一代內的

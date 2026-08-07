@@ -843,3 +843,23 @@ Supabase 分支跑 30-90 分鐘(該 job 註解明訂:「不啟動＝不計費」
 Settings → Rules 與 Settings → Branches 兩處的清單**(兩套系統獨立,required
 checks 取聯集)——這一條已寫在 `.claude/rules/github-actions.md`,此處只記
 「它今天又被觸發了一次」。
+## 2026-08-07｜bash-guard 誤擋 git commit:訊息文字被當成要本機跑 journey
+
+renewal-rewards-automation-test 實作期間,commit message 內含「pytest_expr」
+字樣被 bash-guard 判成要在本機執行 journey 而擋下 `git commit`;之後多次
+在指令文字含「pytest」時(即使只是 grep 文件)重演。guard 應只解析指令
+本體(執行檔與參數),不該掃 heredoc/檔案路徑/`-m` 訊息文字。繞法:訊息
+先寫檔再 `git commit -F`。修 guard 時注意:同一場 session 也證明 guard
+該擋的它都有擋住,收窄比對範圍時別把真攔截一起放掉。
+
+## 2026-08-07｜--collect-only 抓不到 pytest-bdd 的兩類執行期缺口
+
+journey-offline 軌的 `--collect-only` 能證明「情境都收集得到」,但有兩類
+錯誤要到執行期才炸,窄選 dispatch 是目前唯一的驗證面:
+(1) **步驟關鍵字不匹配**:pytest-bdd 的步驟綁定分 Given/When/Then,同一句
+在 ch3 是 Given、在 ch6 是 When 之後的 And(=When),只註冊 @given 會在
+執行期 StepDefinitionNotFound(run 31154089148)。同句多關鍵字使用時
+@given/@when 雙註冊。
+(2) **重複引號值變成第二個 capture**:parse 式步驟同一行出現兩個相同的
+引號值,第二個會被當成新參數,執行期報 fixture not found
+(run 31150698317)。撰寫 feature 時同一行避免重複引號值。

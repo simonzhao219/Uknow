@@ -218,6 +218,18 @@ admin（管理員也是測試資料，teardown 一併刪除）。
 
 ### `60_time_scenarios.feature` — 跨時間情境（§7）
 
+### `70_renewal_saga.feature` — 阿凱的七年（續約獎勵任務機制組合劇本）
+
+依 `upline-pairing-lines/rules.md` M1–M8 重建的十章連續劇本，cast（P0/U1/
+U2/K0/W1/W2/X1）獨立於 30 人主樹（`orgchart-saga.yaml`，不走 `load_nodes()`
+單根管線），前章狀態是後章前提。覆蓋：A10 首購/fresh 兩版預設推薦人、
+補繳 extend 接續與逐筆發獎、fresh 換樹清空（A14/A15/`ledger_reset`）、
+改樹後三代鏈重走、Q9 待審提領擋 fresh 與駁回解封、S9 填現任上代碼照樣
+清空、Q14a 歷史桶跨清空保留、推薦王 credit 的 A8 與雙事件雙發獎
+（`subscription_id`/`source_claim_id` 兩鍵）、終章分類軸與推導餘額對帳。
+預設推薦人 P0 由 saga 自備（分支上無正式站資料層設定）；對 P0 的獎勵
+斷言一律用事件前後 delta。以 `@renewal_saga` marker 支援窄選 dispatch。
+
 ---
 
 ## 7. 跨時間情境：service-role 時光機
@@ -291,6 +303,7 @@ e2e/
 └── journey/
     ├── conftest.py              # 分支 setup/teardown、無 mock、正式站封鎖 guard
     ├── orgchart.yaml            # 30 人樹形宣告（單一真相，§2）
+    ├── orgchart-saga.yaml       # 70_ 的獨立 cast（不走單根管線）
     ├── run_state.py             # RUN_ID、憑證存取
     ├── builders/
     │   ├── org_builder.py       # BFS 建樹（呼叫共用 page objects）
@@ -298,7 +311,7 @@ e2e/
     │   └── admin_bootstrap.py
     ├── pages/
     │   └── payuni_sandbox_page.py   # 外部頁面選擇器，獨立封裝
-    ├── features/                # §6 的 10_ ~ 60_ feature files
+    ├── features/                # §6 的 10_ ~ 70_ feature files
     ├── steps/
     └── tools/
         ├── cleanup.py           # --run-id，獨立可執行
@@ -366,15 +379,19 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 是測試分支放寬限流參數（以 migration 外的 seed 調整，不動產品碼）；未放寬時 builder
 自動降回 3，內建 429 指數退避。
 
-### 11.5 編排與衛生條款（`.github/workflows/journey-nightly.yml`）
+### 11.5 編排與衛生條款（`journey-scheduled.yml`，呼叫可重用的 `journey.yml`）
 
-- 每日 02:00（Asia/Taipei）＋`workflow_dispatch`（inputs：`JOURNEY_PAYMENT_MODE`、
-  `reuse_tree`、`feature_filter` 只跑單一模組）；
+- 每日 02:00（Asia/Taipei）＋`workflow_dispatch`（inputs：`scope`＝
+  skeleton/full、`payment_mode`＝sandbox/webhook、`pytest_expr`＝可選
+  marker 運算式窄選——CLI 的 `-m` 會整段蓋掉 ini 的 `-m "not seed"`
+  預設，故窄選一律自動補 `and not seed`；窄選時「journey 真的跑了」
+  的最低情境數門檻降為 `MIN_FILTERED`）；
 - journey 的 `concurrency` group 上限 1（分支費用＋PayUni sandbox 共享狀態），
   每個 job 一律設 `timeout-minutes`；
 - Secrets：Supabase access token（開分支）、PayUni sandbox 憑證、測試卡號；
-- 失敗上傳 trace/screenshot/`run_state.json`/DB dump 為 artifacts，並**自動開啟或更新
-  一張 nightly 追蹤 issue**（附 artifacts 連結）；綠燈沉默，不製造通知噪音；
+- 失敗上傳 trace/screenshot/`run_state.json` 為 artifacts，並**每場失敗
+  自動開一張 triage issue**（`journey 失敗（run N）`，附 run 連結與
+  triage SOP）；綠燈沉默，不製造通知噪音；
 - flaky 情境以 `@quarantine` 標記隔離統計通過率，不讓單一 flake 把整晚判紅。
 
 ---
