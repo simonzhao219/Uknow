@@ -185,6 +185,20 @@ describe('姓名欄位的 IME 組字', () => {
     expect(screen.getByText('已將分隔符號轉換為半形空格')).toBeTruthy();
   });
 
+  it('推薦碼組字期間不轉小寫,組字結束才轉', () => {
+    // 轉小寫對注音與漢字是 identity,所以中文 IME 打不中這個欄位——但**全形
+    // 英數**打得中(Ａ → ａ 是真的變了),而全形是中文輸入法的標準功能。
+    // 規則不容許「這個欄位大概沒人用 IME」這種例外:那種判斷無法機械把關。
+    renderForm();
+    const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+    fireEvent.compositionStart(code());
+    fireEvent.change(code(), { target: { value: 'ＡＢ' } });
+    expect(code().value).toBe('ＡＢ');
+
+    fireEvent.compositionEnd(code(), { target: { value: 'ABC123' } });
+    expect(code().value).toBe('abc123');
+  });
+
   it('組字期間的聲調符號不被當成分隔符號吃掉', () => {
     // 聲調 ˊˇˋ 是 Lm、輕聲 ˙ 是 Sk,都不在 \p{P}/\p{Z} 裡,本來就不該被轉換。
     // 釘住它是因為「加大轉換範圍」是這個 bug 最誘人也最錯的修法方向。
