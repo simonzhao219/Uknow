@@ -138,6 +138,18 @@ class SupabaseAdmin:
         resp.raise_for_status()
         return resp.json()
 
+    def rest_insert(self, table: str, values: dict) -> list[dict]:
+        """INSERT(service role 繞過 RLS)。僅供拋棄式分支上的時光機
+        種子資料(點數/credit)使用——正式環境沒有任何路徑會呼叫到這裡。"""
+        resp = self.session.post(
+            f"{self.base_url}/rest/v1/{table}",
+            headers={**self._service_headers, "Prefer": "return=representation"},
+            json=values,
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def rest_delete(self, table: str, params: dict) -> None:
         """帶條件刪除（service role 繞過 RLS）。僅供測試分支的
         基礎設施操作（如重置 rate_limits 計數）使用。"""

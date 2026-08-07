@@ -34,10 +34,18 @@ on:
         type: choice
         options: [sandbox, webhook]
         default: sandbox
+      pytest_expr:
+        description: '可選 pytest marker 運算式（如 timemachine、renewal_saga）——只跑命中的 feature；空值=依 scope'
+        type: string
+        default: ''
 
 # 分支費用＋PayUni sandbox 共享狀態：同時最多一場
+# group 帶 -v2:2026-08-07 GitHub Actions 平台故障期間(所有 workflow
+# 都 3 秒零步驟 failure)一度誤診為 PR #114 的 slot 中毒而改名。事後
+# 確認是平台級故障、自行恢復;group 名是任意識別字,改名無害也無益,
+# 故障後已在此名稱下穩定跑過多場,維持現名即可。
 concurrency:
-  group: journey-scheduled
+  group: journey-scheduled-v2
   cancel-in-progress: false
 
 jobs:
@@ -49,4 +57,5 @@ jobs:
     with:
       scope: ${{ inputs.scope || 'full' }}
       payment_mode: ${{ inputs.payment_mode || 'sandbox' }}
+      pytest_expr: ${{ inputs.pytest_expr || '' }}
     secrets: inherit

@@ -106,3 +106,58 @@ def assert_payment_success(page: Page) -> None:
     activating = result.state_container("activating")
     expect(success.or_(activating)).to_be_visible(timeout=60_000)
     expect(success).to_be_visible(timeout=120_000)
+
+
+# ---------------------------------------------------------------------------
+# renewal_saga(70_)的兩種變體付款——與 pay_via_gui 共用 sandbox/webhook
+# 底層機制,只是觸發序列不同:fresh 多一層 A15 二次確認;補繳中間筆的
+# 終態是 backfill_progress 而非 success。純加法,不動 pay_via_gui。
+# ---------------------------------------------------------------------------
+
+
+def _drive_payment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> None:
+    """把「表單已可送出」之後的 sandbox 刷卡 / webhook 注入跑完到 result。"""
+    if cfg.payment_mode == "sandbox":
+        PayuniSandboxPage(page).complete_payment(
+            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email
+        )
+    try:
+        page.wait_for_url("**/payment/result**", timeout=180_000)
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError(
+            f"送出付款後 180 秒內沒有回到 /payment/result（{user.node}）。\n"
+            f"{dump_page(page, f'payment-timeout-{user.node}')}"
+        ) from exc
+
+
+def pay_fresh_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> None:
+    """fresh 付款(已在 checkout、已選 fresh 並填妥碼):點付款 → A15 二次
+    確認對話框 → 確認 → 付款 → 斷言成功(fresh = 付款日 +1 年,直接 active)。"""
+    checkout = PaymentCheckoutPage(page)
+    expect(checkout.pay_button()).to_be_visible(timeout=30_000)
+    if cfg.payment_mode == "webhook":
+        _arm_webhook_gateway(page, cfg, admin, user)
+    checkout.click_pay()  # fresh 模式:開二次確認,不直接送出
+    expect(page.get_by_test_id("fresh-confirm-dialog")).to_be_visible(timeout=15_000)
+    page.get_by_test_id("fresh-confirm-action").click()
+    _drive_payment(page, cfg, admin, user)
+    assert_payment_success(page)
+
+
+def pay_backfill_installment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser,
+                             *, expect_more: bool) -> None:
+    """付一筆補繳(extend,已在 checkout)。expect_more=True → 終態是
+    backfill_progress(中間筆);False → success(補到 active)。extend 模式
+    點付款直接送出,不開對話框。"""
+    checkout = PaymentCheckoutPage(page)
+    expect(checkout.pay_button()).to_be_visible(timeout=30_000)
+    if cfg.payment_mode == "webhook":
+        _arm_webhook_gateway(page, cfg, admin, user)
+    checkout.click_pay()
+    _drive_payment(page, cfg, admin, user)
+    if expect_more:
+        expect(PaymentResultPage(page).state_container("backfill_progress")).to_be_visible(
+            timeout=120_000
+        )
+    else:
+        assert_payment_success(page)

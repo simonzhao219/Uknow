@@ -1,0 +1,26 @@
+# 70_renewal_saga 的獨立 cast——「阿凱的七年」,與 30 人主樹零交集。
+# 依據 docs/plans/renewal-rewards-automation-test/plan.md §2.1(git 歷史
+# 可取回)。
+#
+# ⚠️ 不走 tools/orgchart.load_nodes():P0 與(經 A10 掛上 P0 的)雙上線
+# 結構不符它的單根不變量;f70 steps 自帶載入,只共用 registration/payment
+# builder 層。value = 預期推薦人節點:
+#   - P0 是分支上自備的「平台預設推薦人」:harness 於 P0 首購後把它的
+#     推薦碼寫入 reward_config.default_referrer_code(僅拋棄式分支的
+#     seed 調整,人審 2026-08-07 裁決)。
+#   - U1/U2 標 P0 是「預期歸屬」——實際透過**不填碼首購**(A10)掛上,
+#     不是填 P0 的碼。
+# 建置順序由 feature 章節驅動(P0 → U1/U2/K0 → W1 → W2/Y1),不是 BFS。
+# ⚠️ 節點名是 run_state 的全域鍵(email 由它推導):不得與其他 feature
+# 的演員撞名——X1 已被 15_registration_negative 的臨時帳號佔用
+# (full 全套實測撞出 email 已存在,run 31158578254),故此處用 Y1。
+
+nodes:
+  P0: null   # 預設推薦人本體(不填碼、且早於預設碼設定 → 無上代)
+  U1: P0     # 上線甲(A 樹)——不填碼 → A10 掛 P0
+  U2: P0     # 上線乙(B 樹)——不填碼 → A10 掛 P0
+  K0: U1     # 主角阿凱——填 U1 的碼首購
+  W1: K0     # A 樹時期下線(第 2 章)
+  W2: K0     # B 樹時期下線(第 5 章,K0 fresh 換樹後加入)
+  Y1: W2     # W2 的下線(第 5 章)——讓改樹後存在鏈深 3 的首購,
+             # gen3 落在 U2(M6×M4/M5 組合)

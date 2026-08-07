@@ -38,7 +38,8 @@ pytest -m skeleton          # M1 walking skeleton（單人全流程）
 pytest                      # 全套：骨架 → 30 人建樹 → 樹/帳本斷言（依檔名 f00→f10→f20 定序）
 pytest -m orgbuild          # 只跑 30 人建樹（A0 未建置時會由 builder 一併補建）
 pytest -m rewards           # 只跑樹/帳本斷言（樹未建置時整批 skip 並提示）
-pytest tools/               # 離線單元測試（twid、orgchart——不需環境與瀏覽器）
+pytest -m renewal_saga      # 只跑 70_ 阿凱的七年（獨立 cast，不需 30 人樹）
+pytest tools/               # 離線單元測試（twid、orgchart、time_shift——不需環境與瀏覽器）
 ```
 
 **建樹的平行度**：`JOURNEY_BUILD_PARALLELISM`（預設 3）。同一代內的
@@ -91,7 +92,7 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 目前進度與範圍界線（M4 止）
+## 目前進度與範圍界線（M5 止）
 
 已落地：
 - **M1**：單人 walking skeleton（`00_skeleton.feature`）。
@@ -124,7 +125,19 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
     拆掉 e2e 對 build 的 needs／新增 `journey-offline` job（純函數＋
     收集健全性）；`journey-nightly.yml` 一鍵開分支→設 secrets→跑套件
     →傳 artifacts→**always() 刪分支**；首跑校準（skeleton＋full 手動
-    觸發皆全綠）通過後，nightly schedule 已開啟（台北 02:00）。
+    觸發皆全綠）通過後，nightly schedule 已開啟（台北 02:00）
+    （現行檔案：`journey-scheduled.yml` 薄外殼＋可重用 `journey.yml`）。
+
+- **M5**：
+  - `70_renewal_saga`：「阿凱的七年」十章續約獎勵任務劇本（獨立 cast
+    `orgchart-saga.yaml`，P0 預設推薦人自備）——A10 首購/fresh、補繳
+    extend 逐筆發獎、fresh 換樹清空（A14/A15/新約重置）、改樹後三代
+    鏈、Q9 提領防線、S9/Q14a、推薦王 credit 的 A8 與雙事件雙發獎、
+    終章分類軸與推導餘額對帳；
+  - 時光機新原語：月桶平移（讀現有 key、append 合併）、種子點數、
+    種 credit、預設碼接線（見 `tools/seed_time_machine.py`）；
+  - CI 窄選：`pytest_expr` dispatch 輸入（自動補 `and not seed`、
+    `MIN_FILTERED` 三態 floor），供逐章 TDD 迭代取證。
 
 **已知產品落差**：測試設計過程發現的規格／實作落差已於 2026-07 全部
 回填規格書——現存落差集中列在**規格書 §14**（身分證字號唯一性、到期前

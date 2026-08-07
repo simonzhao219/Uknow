@@ -42,7 +42,13 @@ def doc_in_page_dialog(page):
 @when("I close the document dialog")
 def close_doc_dialog(page):
     page.keyboard.press("Escape")
-    expect(page.get_by_role("dialog")).to_be_hidden(timeout=5_000)
+    # The join dialog underneath now legitimately carries role="dialog" as well
+    # (a11y fix) and is *supposed* to stay open — assert the document dialog
+    # (identified by its title) is gone, not that no dialog exists at all.
+    doc_dialog = page.get_by_role("dialog").filter(
+        has=page.get_by_role("heading", name="推廣獎勵規章")
+    )
+    expect(doc_dialog).to_be_hidden(timeout=5_000)
 
 
 @then("the join referral program dialog should still be open")

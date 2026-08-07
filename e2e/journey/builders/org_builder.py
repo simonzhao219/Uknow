@@ -80,6 +80,11 @@ def _build_one(cfg, admin: SupabaseAdmin, user: JourneyUser,
     return user.referral_code
 
 
+# 給非 BFS 呼叫方(f70 saga 逐演員建置)的公開名稱——單一節點的
+# 註冊+付款與樹形編排無關,不該逼外部依賴底線私名。
+build_single_actor = _build_one
+
+
 def build_tree(cfg, admin: SupabaseAdmin, state: RunState,
                nodes: dict[str, str | None] | None = None,
                progress=print) -> None:
