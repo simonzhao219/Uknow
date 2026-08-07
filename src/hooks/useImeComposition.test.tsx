@@ -3,7 +3,7 @@
 // 這支 hook 存在的唯一理由是一個瀏覽器行為:受控 input 在 IME 組字期間被
 // React 寫回 `value`,WebKit(iOS Safari)會丟掉 composition range 卻不清掉
 // IME 自己的緩衝,於是下一次按鍵把整個緩衝再插一次——注音符號累積殘留、
-// 選出來的漢字接在垃圾後面(見 docs/plans/fix-ime-composition-input/fix.md)。
+// 選出來的漢字接在垃圾後面(見 docs/plans/friction-log.md 的 2026-08-07 條)。
 //
 // jsdom 測得出**事件序列**的處置是否正確,測不出 WebKit 那個復原行為本身。
 // 所以這裡釘的契約是「組字期間不碰值」,不是「iOS 上不會壞」——後者只有

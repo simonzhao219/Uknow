@@ -69,7 +69,7 @@ const PUNCT_OR_SEPARATOR = '(?=[\\p{P}\\p{Z}])[^ ]';
 const SEPARATOR_LIKE = new RegExp(PUNCT_OR_SEPARATOR, 'u');
 
 // 同一條規則的 global 版,供表單在輸入/貼上當下把分隔符號**主動換成半形空格**
-// (見 CompleteProfile 的 handleNameChange)。刻意共用同一個字元集定義,
+// (見 CompleteProfile 的 commitName)。刻意共用同一個字元集定義,
 // 避免「驗證擋得住、轉換漏一個字元」這種兩邊各自為政的漂移。
 export const SEPARATOR_LIKE_GLOBAL = new RegExp(PUNCT_OR_SEPARATOR, 'gu');
 

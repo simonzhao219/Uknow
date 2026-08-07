@@ -722,3 +722,33 @@ fresh 換線（null → 真人）後歷史訂閱/claim 被整批回溯補發三�
 同場記錄:prepare 在付款前變更 `referred_by_*`（W3-at-prepare）是同根因
 的更深症狀（棄單殘留）,屬 #187 人審設計範圍,已列 PR #215 開放問題
 待裁決,不在 fix 私改。
+## 2026-08-07｜漏網｜三層閘門都測不到 IME 組字,注音使用者打不了姓名
+
+iPhone Safari + 內建注音在「完善資料」姓名欄位打字,注音符號整串累積殘留
+(8 → 32 字)、選出來的漢字接在垃圾後面。根因是受控 input 在 IME 組字期間
+被改寫值——React 把 `input.value` 蓋掉,WebKit 丟失 composition range 卻不清
+IME 緩衝(完整分析:`docs/plans/fix-ime-composition-input/fix.md`)。同類掃描
+另外揪出四個「拒收超長值讓輸入倒帶」的欄位,同源同症,一併修掉。
+
+**為什麼三層閘門都沒攔**:同一個原因——**沒有任何一層走過組字生命週期**。
+vitest 用 `fireEvent.change` 一次丟完整字串、e2e 用 Playwright `fill()`,
+兩者模擬的都是「已經組完字」的終點狀態;biome/typecheck/knip 看不出
+「這個 setState 發生在組字期間」,那是執行期的瀏覽器狀態,不是靜態性質。
+中文輸入是本站**絕大多數使用者的主要輸入方式**,而它的中間狀態從來沒被
+測過——這不是覆蓋率數字看得出來的洞。
+
+**處置**:抽出 `useImeComposition` 把「組字期間別碰值」變成有名字、有測試
+的原語;`useImeComposition.test.tsx` 與 `CompleteProfile.test.tsx` 直接驅動
+`compositionstart → 多次 input → compositionend`。
+
+**殘留落差(記債,不假裝補上了)**:jsdom 測得出**事件序列**的處置是否正確,
+測不出 WebKit「組字中被改寫 value 就丟失 composition range」這個**瀏覽器
+行為**本身。真正等價的防線是 iOS Safari 真機 e2e,本專案沒有。也就是說,
+若未來有人用別的方式在組字期間改寫值,現有測試不必然會紅。
+
+**通則:受控 input 的 `onChange` 只要沒有原樣接受 `e.target.value`——不論是
+改寫(`.replace`/`.toUpperCase`)還是拒收(`if (length <= N)`)——就是 IME
+不安全的。**長度上限交給 DOM 的 `maxLength` 屬性(瀏覽器不對組字中的文字
+套用長度限制,不需要 React 寫回 DOM);真的需要改寫值,就走
+`useImeComposition` 延後到組字結束。**「拒收」比「改寫」更糟**:它寫回的是
+上一個值,等於在組字中途把欄位整個倒帶。

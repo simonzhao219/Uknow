@@ -20,6 +20,7 @@ import {
   type NameMode,
 } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
+import { useImeComposition } from '../hooks/useImeComposition';
 import {
   loadProfileDraft,
   saveProfileDraft,
@@ -213,15 +214,35 @@ export function CompleteProfile() {
   //
   // 偵測用「非中文非英數非半形空格」而非碼點清單:只鎖三個常見間隔號會讓
   // bullet、半形中點等變體漏網,原地重現同一個死巷、只是換一個字元觸發。
-  const handleNameChange = (raw: string) => {
+  //
+  // **但這個轉換絕不能在 IME 組字期間跑**——組字中改寫受控值會讓 iOS Safari
+  // 丟失組字狀態,注音符號整串累積殘留。所以改寫延後到 useImeComposition 的
+  // onCommit(組字結束或一般輸入),組字期間只原樣收下。
+  // 見 docs/plans/friction-log.md 的 2026-08-07 條。
+  const commitName = (raw: string) => {
     const converted = raw.replace(SEPARATOR_LIKE_GLOBAL, ' ');
-    setFormData({ ...formData, name: converted });
-    setErrors({ ...errors, name: '' });
+    setFormData((prev) => ({ ...prev, name: converted }));
+    setErrors((prev) => ({ ...prev, name: '' }));
     setNameNotice(converted === raw ? '' : '已將分隔符號轉換為半形空格');
     // 姓名變動就撤銷「已確認」——否則使用者確認過一次後回頭改姓名再送出,
     // 確認框不會再跳出,新姓名從未被實際確認就送出去了。
     hasConfirmedSubmission.current = false;
   };
+
+  // 組字期間:原樣收下。不轉換(會毀掉組字狀態),也不顯示轉換提示——那句
+  // 提示掛的是 aria-live,對著一串還沒組完的注音宣稱「已改動你的姓名」,
+  // 對螢幕報讀器使用者是純噪音,而他們正是這個功能特別要服務的族群。
+  // setState 本身不能省:不收的話 React 會拿舊值寫回 DOM,那更糟。
+  const composeName = (raw: string) => {
+    setFormData((prev) => ({ ...prev, name: raw }));
+    setErrors((prev) => ({ ...prev, name: '' }));
+    hasConfirmedSubmission.current = false;
+  };
+
+  const nameImeProps = useImeComposition<HTMLInputElement>({
+    onCompose: composeName,
+    onCommit: commitName,
+  });
 
   // 切換模式時**保留已輸入文字**,只換驗證規則與提示(清空會讓誤觸切換鈕的人
   // 整串重打)。長度上限不回溯截斷,由計數器警示色 + blur 的長度訊息呈現。
@@ -633,7 +654,7 @@ export function CompleteProfile() {
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => handleNameChange(e.target.value)}
+                {...nameImeProps}
                 onBlur={() => handleBlur('name')}
                 placeholder={formData.nameMode === 'zh' ? '請輸入身分證上的姓名' : '例：John Smith'}
                 // maxLength 一律用較寬鬆的上限,不隨模式收緊:現行 onChange 守衛是

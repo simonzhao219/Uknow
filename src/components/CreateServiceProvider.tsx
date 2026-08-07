@@ -293,11 +293,15 @@ export function CreateServiceProvider() {
             <Input
               id="name"
               value={formData.name}
-              onChange={(e) => {
-                if (e.target.value.length <= 10) {
-                  setFormData({ ...formData, name: e.target.value });
-                }
-              }}
+              // 上限交給 maxLength 屬性,onChange 原樣收下。原本這裡多一層
+              // `if (length <= 10)` 的 JS 拒收:它與 maxLength 完全重複(DOM
+              // 根本產不出超長的值),卻會在 IME 組字期間把值倒帶回上一次
+              // ——組字中的注音很容易就超過 10 字(「專業美髮師」的注音是 13 字),
+              // 一超過就整串被拒,重現姓名欄位那個注音殘留的災情。
+              // maxLength 屬性本身是 IME 安全的:瀏覽器不對組字中的文字套用
+              // 長度限制,只在組字提交時截斷,全程不需要 React 寫回 DOM。
+              // 見 docs/plans/friction-log.md 的 2026-08-07 條。
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="例：專業美髮師 Amy"
               maxLength={10}
               className={getInputErrorClass(!!errors.name)}
@@ -456,12 +460,13 @@ export function CreateServiceProvider() {
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) => {
-                if (e.target.value.length <= 200) {
-                  setFormData({ ...formData, description: e.target.value });
-                }
-              }}
+              // 同「服務者名稱」:JS 拒收守衛會在 IME 組字期間把值倒帶。這裡
+              // 原本沒有 maxLength 屬性,所以補上——差別只在貼上超長文字時
+              // 由「整段被拒、欄位毫無反應」變成「截斷到上限」,與名稱欄位
+              // 既有行為一致,也比按了沒反應好。
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="簡單介紹您的專業服務..."
+              maxLength={200}
               className="resize-none"
               rows={3}
             />
