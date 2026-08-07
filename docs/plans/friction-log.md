@@ -703,3 +703,22 @@ migration、不碰正式站。另加「signup 探測健檢」:部署後先用 RE
 **通則:對外部 SaaS 的「設定調整」步驟,失敗必須帶回應可讀,不准 `-sf`
 吞掉**——這次的 401 早在第一晚就發生了,只是被靜音;若當時可讀,email
 服務的限制會提早七天現形。
+
+## 2026-08-07｜漏網｜自癒函數用「當下值」回答「歷史問題」（issue #167）
+
+`repair_orphaned_payments` / `repair_orphaned_claim_rewards` 的候選判準
+讀 `profiles.referred_by_user_id` 當下值決定「歷史事件當時該不該發獎」,
+fresh 換線（null → 真人）後歷史訂閱/claim 被整批回溯補發三代獎金。三層
+測試都沒攔到:repair 測試全部從「關係先存在、獎勵後補」方向寫,「關係
+後補、事件先發生」的反向從未入鏡;觸發需跨兩個 feature（fresh 換線 ×
+自癒重試）,單一 feature 驗收不會撞到。
+
+**可複用的教訓:自癒/補償類函數的候選判準必須用事件當時的事實,不能用
+可變欄位的當下值;資料模型沒有記「當時」,就先補時間軸（欄位＋觸發器）
+再寫自癒。** `repair_orphaned_forfeitures` 的告警快照設計是正例（同次
+掃描確認無病灶）;寫這類函數時自問:「這個欄位在事件發生後可能被改走
+嗎?」修法與完整分析:`git show <fix commit>:docs/plans/fix-repair-retro-rewards/fix.md`、PR #215。
+
+同場記錄:prepare 在付款前變更 `referred_by_*`（W3-at-prepare）是同根因
+的更深症狀（棄單殘留）,屬 #187 人審設計範圍,已列 PR #215 開放問題
+待裁決,不在 fix 私改。
