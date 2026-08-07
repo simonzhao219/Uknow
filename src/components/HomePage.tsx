@@ -12,6 +12,7 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
 import { FilterCountBadge } from './common/FilterCountBadge';
 import { CategoryFilterChips } from './home/CategoryFilterChips';
+import { CategoryBadge } from './common/CategoryBadge';
 import { useCustomCategories } from '../hooks/useCustomCategories';
 import { FilterChip } from './common/FilterChip';
 import {
@@ -770,9 +771,18 @@ function DesktopFilterPopover({
         <Button
           variant="outline"
           size="sm"
-          className={cn('h-9 gap-1.5 rounded-full', active && 'border-primary/60 bg-primary/5')}
+          className={cn(
+            'h-9 gap-1.5 rounded-full',
+            // max-w：摘要會把選中的值寫進按鈕文字（「類別：寵物美容」），
+            // 而自訂類別最長 10 字。Button 基底帶 whitespace-nowrap shrink-0，
+            // 沒有上限時這顆鈕會在同一列把搜尋框（md:flex-1）擠掉——768px
+            // 附近最明顯，又是一次「手機對、桌機錯」。
+            'max-w-[14rem]',
+            active && 'border-primary/60 bg-primary/5',
+          )}
+          title={summary ?? label}
         >
-          <span>{summary ?? label}</span>
+          <span className="truncate">{summary ?? label}</span>
           {/* 摘要已含選中的值時不再重複顯示數字 */}
           {!summary && <FilterCountBadge count={count} />}
           <ChevronDown className="h-4 w-4 opacity-60" aria-hidden="true" />
@@ -924,9 +934,7 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: Publi
           </div>
           <div className="p-2 space-y-1">
             <h3 className="font-medium text-sm line-clamp-1">{serviceProvider.name}</h3>
-            <Badge variant="secondary" className="text-xs">
-              {serviceProvider.category}
-            </Badge>
+            <CategoryBadge category={serviceProvider.category} className="text-xs" />
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="line-clamp-1">
@@ -962,9 +970,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
                 {/* 🆕 性别 Badge */}
                 <GenderBadge gender={serviceProvider.gender} className="text-xs shrink-0" />
               </div>
-              <Badge variant="secondary" className="shrink-0">
-                {serviceProvider.category}
-              </Badge>
+              <CategoryBadge category={serviceProvider.category} />
             </div>
 
             <p className="text-sm text-muted-foreground line-clamp-2">

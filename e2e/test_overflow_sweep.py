@@ -58,8 +58,11 @@ NAME_CJK_10 = "專業美髮師小美工作室"
 # Email 來自 Supabase Auth，前端沒有、也不該有長度上限。刻意不含連字號：
 # Chrome 只在 "-" 與 "/" 處斷長字，有連字號的 Email 會僥倖不溢出。
 LONG_EMAIL = "chienmingchangservice@uknowplatform.com.tw"
-# SERVICE_CATEGORIES 裡最長的兩個之一（utils/constants.ts:50）。
-LONGEST_CATEGORY = "各項運動教練"
+# 自訂服務類別上線後，最壞情況不再是內建清單裡最長的那個（「各項運動教練」，
+# 6 字）——使用者能自訂到 CUSTOM_CATEGORY_MAX_LENGTH（10 字，
+# utils/serviceCategories.ts）。測資原則是「最壞但可達」，所以這裡跟著上限走；
+# 內建清單再怎麼變動都不會超過它。
+LONGEST_CATEGORY = "寵物美容與行為訓練師"
 MANY_DISTRICTS = ["板橋區", "中和區", "永和區", "三重區", "新莊區", "土城區"]
 # 使用者從 FB 網址列貼上的原字串。validateFacebook() 會從中抽出
 # username（"profile.php"）來驗長度，但存檔存的是整串（含 query），
