@@ -183,29 +183,64 @@ golden 與情境 5,不會出現「migration 改了、測試沒人記得改」。
 
 ---
 
-## 處置(人審後填寫)
+## 處置(人審 2026-08-07 完成:**全部照建議**)
+
+> plan.md 已依此修訂為 **v3**,並第三度重跑 `/review-plan`(做事者不自評)。
+> 第三輪結果見 `./review-v3.md`。
 
 ### P1
 
-- [ ] 需求 B-5:§5 階段 1 加 `relrowsecurity` 斷言(比照 `withdrawals.test.ts:548-558`)
+- [x] 需求 B-5:§5 階段 1 **第 1 條**加 `relrowsecurity` 斷言(比照
+      `withdrawals.test.ts:548-558`),並寫明「DISABLE RLS 不會刪掉任何 policy,
+      2–6 全部照樣通過」這個理由
 
 ### P2
 
-- [ ] 系統 B-2:欄位集合比對寫明用 `EXCEPT`/排序後陣列比對 + `table_schema='public'`
-- [ ] 系統 B-4:「死碼」改成「未被前端使用」,擴大另開單的查證範圍
-- [ ] 架構 B1:`classify()` 拆進零網路依賴的檔案(或檔頭寫明分層例外理由)
-- [ ] 架構 B2:階段 1 第 6 條移出「驗證標準」編號清單,改標 housekeeping
-- [ ] 架構 B3:指定三塊知識的升級落點
-- [ ] UI/UX P2-1 + 需求 B-4(合併):假成功訊息升級到持久位置
-- [ ] UI/UX P2-2:補記 `EditServiceProvider.tsx:252-271` 的對稱瑕疵
-- [ ] 需求 B-1:§0 補寫「已涵蓋」的三段組合論證鏈
-- [ ] 需求 B-2:情境 5 加 characterization 顯式標記
+- [x] 系統 B-2:§5 階段 1 第 6 條寫明用 `EXCEPT`(雙向)或排序後陣列比對、
+      **必須是集合語意**、顯式加 `table_schema='public'`,並點名不要用
+      `ordinal_position` 逐列對應
+- [x] 系統 B-4:§7 措辭改成「**未被前端使用**」,並加一段說明它是
+      「可直接觸達的即時授權能力」、另開單的查證範圍要涵蓋「以 admin 身分
+      繞過前端直打 PostgREST」
+- [x] 架構 B1:拆成 `tools/rls_probe.py`(純函式,零網路,配對測試)與
+      `tools/rest_as_user.py`(網路 client,無測試檔,比照 `supa.py`);
+      §2 新素材改成表格並引用 PR #199 的 `time_shift.py` 先例
+- [x] 架構 B2:註解訂正移出編號清單,改標「同 commit 的 housekeeping
+      (非驗證標準,沒有紅綠訊號)」
+- [x] 架構 B3:新增 **§9 知識的持久歸宿**(四項落點表),progress.md 也加了
+      「收尾必做」段防止隨規劃檔一起蒸發
+- [x] UI/UX P2-1 + 需求 B-4(合併):§9 指定走 `document-writing.md` 殘跡例外、
+      在該行加最小事實註解,並附建議措辭
+- [x] UI/UX P2-2:§1「不做」改成**兩列表格**,對稱記錄
+      `EditServiceProvider.tsx:252-271`
+- [x] 需求 B-1:§0 改寫成三段組合論證(函式邏輯 / RLS 機制 / 綁定關係)
+- [x] 需求 B-2:情境 5 就地加 ⚠️ characterization 標記與 §7 指標
 
 ### 需人工裁決
 
-- [ ] `pg_get_expr` 比對策略:全文逐字 / **空白正規化後全文(彙整者建議)** / 子字串
-- [ ] §7 是否明講 update/delete 的 admin 繞過只有結構層級覆蓋
+- [x] `pg_get_expr` 比對策略 → **空白正規化後全文**;§2 新增專節說明
+      本地 Postgres 大版本未鎖定的事實,並要求失敗訊息帶 `version()`
+- [x] §7 補了「覆蓋不對稱的揭露」條目,明講 update/delete 的 admin 繞過
+      只有 L1 結構層級保護
+
+### 同批處理的 develop 漂移(非審查發現,但不改就是錯的)
+
+`origin/develop` 於審查期間前進(PR #199),hook 已 rebase。連帶修正:
+
+- [x] 既有情境數 28 → **38**(新增 `70_renewal_saga.feature` 10 條);
+      加完後 39 → **49**
+- [x] marker 清單補上 `renewal_saga`
+- [x] §3 新增警告:PR #199 的 `pytest_expr` 窄選**不是**合併前驗證的捷徑
+      ——RLS 情境的 Background 依賴 `組織樹已建置完成`,窄選會 deselect
+      `orgbuild` 導致全數 skip(`MIN_FILTERED=1` 會判硬失敗),而建樹正是
+      30-90 分的成本大頭
+- [x] §2 節點配置重新查證:`"B5"`/`"B6"`/`"B7"` 在 `e2e/journey/` 底下零匹配,
+      仍可用;`70_renewal_saga` 用自帶 cast(`orgchart-saga.yaml`),零交集。
+      並引用該檔記錄的 X1→Y1 撞名事故(run 31158578254)當作不變量依據
+- [x] §5 不動已套用 migration 的依據改引 **`supabase/README.md:113`**
+      (既有明文規則),原本的 `journey.yml` 漂移理由降為次要
 
 ### 結論
 
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
+- [x] 人審完成,裁決:**■ 修訂後通過** —— 全部照建議修訂為 v3 並重跑審查
+      (見 `./review-v3.md`)。實作仍須由人親自打 `/tdd-implement`。

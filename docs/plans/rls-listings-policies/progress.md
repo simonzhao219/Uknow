@@ -14,12 +14,24 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | L1 結構守衛(`api/rls-policies.test.ts`):集合 + 逐條角色 + 表達式 golden + 欄位集合不變式 | ⬜ 未開始 | | |
-| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`) | ⬜ 未開始 | | |
+| 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | ⬜ 未開始 | | |
+| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ⬜ 未開始 | | |
 | 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
 | 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
 
-情境數 28 → **39**。`MIN_FULL=20` 不動(理由見 plan.md §3)。
+情境數 **38 → 49**(develop 於 PR #199 新增 `70_renewal_saga.feature` 10 條後重數)。
+`MIN_FULL=20` 不動(理由見 plan.md §3)。
+
+## 收尾必做(不可隨規劃檔一起刪掉)
+
+plan.md **§9 知識的持久歸宿**列了四項升級動作(兩處程式碼最小事實註解、
+`docs/e2e-journey-test-design.md` 兩個小節、`supabase/README.md` 的 GRANT 現況表)。
+**先升級,再刪 `docs/plans/rls-listings-policies/`。** 這是 `/tdd-implement` 收尾
+步驟的一部分,漏做等於這次審查挖出來的東西全部蒸發。
+
+合併前另有一件:對 `feature/rls-listings-policies` 手動 `workflow_dispatch` 一次
+`journey-scheduled.yml`(**scope=full**,不要用 `pytest_expr` 窄選——理由見
+plan.md §3),拿到 L2 的真實紅綠證據。
 
 ## 目前位置與下一步
 
