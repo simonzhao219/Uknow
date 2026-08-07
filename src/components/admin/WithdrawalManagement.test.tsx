@@ -15,25 +15,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
+import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManagement';
 
 afterEach(cleanup);
 
 type Page = AdminWithdrawalsResponse['data'];
-
-// jsdom 沒有 matchMedia。預設回「桌機」，手機情境的測試自己覆寫。
-function stubMediaQuery(isDesktop: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: isDesktop,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia;
-}
 
 beforeEach(() => {
   stubMediaQuery(true);

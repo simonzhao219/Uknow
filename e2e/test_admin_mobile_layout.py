@@ -24,7 +24,14 @@
 
 import pytest
 
-from layout_probe import count_rows, viewport_fit
+from layout_probe import (
+    count_rows,
+    hit_area,
+    hit_areas_overlap,
+    ink_overflowing_children,
+    pointer_is_coarse,
+    viewport_fit,
+)
 from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
@@ -117,4 +124,101 @@ def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
     assert front["y"] + front["height"] <= back["y"] + 1, (
         f"兩張身分證照片並排（正面 y={front['y']:.0f} 高 {front['height']:.0f}、"
         f"反面 y={back['y']:.0f}），375px 下每張太窄、證件上的字看不清。"
+    )
+
+
+# --- 觸控目標（P13） ---------------------------------------------------------
+#
+# 這一組刻意跑在**觸控 context** 底下（見下方 `browser_context_args`）。
+# 沒有觸控，`(pointer: coarse)` 不成立，`pointer-coarse:` 的 class 全是死的
+# ——會量到一台不存在的裝置：375px 寬、用滑鼠。
+
+SELECT_ALL_CHECKBOX = '[aria-label="全選本頁的提領記錄"]'
+ROW_CHECKBOX = '[aria-label^="選取 "]'
+
+# ui-ux-guidelines.md §1：觸控目標 ≥44px（Apple HIG / Material 同一個數字）。
+MIN_TOUCH_TARGET_PX = 44
+
+
+@pytest.fixture
+def browser_context_args(browser_context_args):
+    """本模組專用：375px ＋ **觸控**。
+
+    conftest 的預設 context 是 1280×900、無觸控。這裡覆寫成行動裝置該有的
+    樣子——一份叫做「admin mobile layout」的測試跑在滑鼠裝置上，量出來的
+    版面不是使用者會看到的那個。
+    """
+    return {**browser_context_args, "viewport": MOBILE_VIEWPORT, "has_touch": True}
+
+
+def test_e2e_context_reports_a_coarse_pointer(admin_at_375):
+    """量測前提：瀏覽器必須回報粗指標，否則下面兩條測的是別的東西。
+
+    這條**不受任何 xfail 保護**——它壞掉代表量測工具失效，而工具失效時
+    報告不該裝作有效（同 `test_overflow_sweep.py` 的中文字寬硬失敗）。
+    """
+    assert pointer_is_coarse(admin_at_375), (
+        "browser context 沒有回報 (pointer: coarse)，所有 pointer-coarse: 的 class "
+        "都不會生效。檢查本模組的 browser_context_args 是否仍帶 has_touch=True。"
+    )
+
+
+@pytest.mark.compatibility
+@pytest.mark.xfail(
+    reason="P13 未實作：ui/checkbox.tsx 目前只有 size-4（16px），沒有任何觸控目標規則。"
+    "修法見 plan §4.1「觸控」——opt-in 的 touchTarget=\"expanded\" variant，"
+    "用透明 before: 偽元素撐熱區、可見方框維持 16px。"
+    "注意 class 必須含 before:content-['']，否則 ::before 不生成渲染盒、整個熱區是 no-op",
+    strict=True,
+)
+def test_admin_checkbox_hit_area_reaches_44px_on_touch(admin_at_375):
+    """P13：提領勾選框在觸控裝置上的**實際可點區**要到 44×44。
+
+    量的是命中而不是盒子——熱區由偽元素撐出來時 getBoundingClientRect 看不見
+    （見 layout_probe 的說明）。
+    """
+    area = hit_area(admin_at_375, SELECT_ALL_CHECKBOX)
+    assert area is not None, f"找不到 {SELECT_ALL_CHECKBOX}——選擇器過時了，不是版面問題"
+    assert not area.get("offscreen"), f"checkbox 捲不進視窗（{area}）——量測壞了，不是熱區太小"
+    assert not area.get("centerMiss"), (
+        "連 checkbox 中心都點不到——被別的元素蓋住或它不可見，這是量測壞了，不是熱區太小"
+    )
+    assert area["width"] >= MIN_TOUCH_TARGET_PX and area["height"] >= MIN_TOUCH_TARGET_PX, (
+        f"可點區只有 {area['width']}×{area['height']}px（期望 ≥{MIN_TOUCH_TARGET_PX}px）。"
+        f"可見方框是 {area['boxWidth']}×{area['boxHeight']}px——"
+        "兩者相等代表熱區完全沒有被撐開。"
+    )
+
+
+def test_admin_checkbox_hit_areas_do_not_overlap(admin_at_375):
+    """相鄰勾選框的熱區不得相交。
+
+    今天就該綠（熱區還沒撐開），它守的是**明天**：熱區一旦撐到 44px，
+    表頭全選與第一列的間距就不再有餘裕，而點錯的下游是不可回退的批次匯款。
+    現況的不重疊是「每列剛好有兩顆撐高的按鈕」這個副作用，不是被釘住的
+    不變量——這條測試就是把它變成不變量。
+    """
+    r = hit_areas_overlap(admin_at_375, SELECT_ALL_CHECKBOX, ROW_CHECKBOX)
+    assert r is not None, "找不到勾選框——選擇器過時了"
+    assert not r.get("offscreen"), "勾選框捲不進視窗，量測壞了"
+    assert not r.get("centerMiss"), "勾選框中心點不到，量測壞了"
+    assert not r["overlap"], (
+        f"表頭全選與第一列的熱區相交：全選 {r['a']}、第一列 {r['b']}。"
+        "點在交界帶會命中哪一個由繪製順序決定，使用者不會收到任何錯誤訊息。"
+    )
+
+
+def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
+    """分頁標籤不得畫到隔壁格子上。
+
+    今天就該綠（現況是 flex，格子被內容撐開）。它守的是 §4.1 改成
+    `grid-cols-3` 之後：grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，
+    標籤放不下時是 ink overflow——`count_rows` 照樣回報兩列、溢版巡檢
+    也不報，只有比對 scrollWidth 與 clientWidth 抓得到。實測餘裕只有
+    10.3px（可放文字 94.3px vs 最長標籤 84px），不厚。
+    """
+    overflowing = ink_overflowing_children(admin_at_375, TABS_LIST)
+    assert overflowing is not None, f"找不到 {TABS_LIST}——選擇器過時了"
+    assert overflowing == [], "分頁標籤的內容超出自己的格子：" + "；".join(
+        f"「{c['text']}」超出 {c['by']}px" for c in overflowing
     )
