@@ -763,3 +763,21 @@ vitest 用 `fireEvent.change` 一次丟完整字串、e2e 用 Playwright `fill()
 **一條需要逐案人工判斷才知道適不適用的規則,等於沒有規則**——這也是為什麼
 檢查器的 I1 用「接了任何方法呼叫」而不是窮舉方法名:窮舉一定會漏,而漏掉
 的那一個正是下次出事的那一個。
+## 2026-08-05｜同類第二例｜手建環境狀態未進 migration:這次是 Storage bucket
+
+journey full 首次全情境執行(run 30944836300)揪出 f40 四連敗的首因:
+`/listings/upload-photo` 寫入的 `make-5c6718b9-listings-photos` bucket
+從未被任何 migration 建立——它是 make-server 時代直接在 production 手動
+建的。全新環境(journey 分支、本地 supabase start)沒有它,上傳 500、
+「建立刊登」永遠 disabled。與 0008(手動套用的 migration 語句與 git
+漂移)同屬一類:**手動建立的環境狀態,炸的是下一個從零重建的環境**。
+
+處置:補 `20260805000001_add_listings_photos_bucket.sql`(照抄 production
+現值,冪等)。同類掃描:live 程式碼引用的 bucket 共 3 個,`id-cards`、
+`referral-signatures` 已有 migration,僅此 1 個漏網;`make-5c6718b9-id-cards`
+與 `make-5c6718b9-signatures` 是無程式碼引用的遺留,不動。
+
+**通則升級(涵蓋 0008 與本例):環境裡任何「手動做過的事」——套過的
+SQL、建過的 bucket、調過的設定——都必須有 git 側的對應物,否則它只
+存在於「碰巧還活著的那個環境」。journey 每晚從零重建環境,正是這類
+債的定期審計。**
