@@ -36,6 +36,15 @@ on:
         description: 'sandbox=真刷測試卡；webhook=簽章注入備援'
         type: string
         default: sandbox
+      pytest_expr:
+        description: >-
+          可選的 pytest marker 運算式（自由字串，如 timemachine、
+          renewal_saga）。有值時取代 scope 的 marker 選擇、只跑命中的
+          feature，並自動附加 and not seed（CLI 的 -m 會整段蓋掉 ini 的
+          not seed 預設，這裡把排除補回來）；「跑了幾個」的下限同時降為
+          MIN_FILTERED。空值時行為與過去完全相同。
+        type: string
+        default: ''
 
 # ⚠️ 這裡刻意不設 concurrency。reusable workflow 的 workflow 層 concurrency
 # 會參與呼叫端的排隊:2026-07-25 實測,呼叫端 run 被 cancel-in-progress
@@ -60,6 +69,7 @@ jobs:
       PARENT_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       SCOPE: ${{ inputs.scope || 'full' }}
       PAYMENT_MODE: ${{ inputs.payment_mode || 'sandbox' }}
+      PYTEST_EXPR: ${{ inputs.pytest_expr || '' }}
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4
@@ -313,10 +323,17 @@ jobs:
           JOURNEY_BUILD_PARALLELISM: '8'
         run: |
           mkdir -p test-results
-          MARKER=''
-          if [ "$SCOPE" = 'skeleton' ]; then MARKER='-m skeleton'; fi
-          # shellcheck disable=SC2086
-          pytest $MARKER --browser chromium \
+          # marker 選擇的優先序：pytest_expr（窄選）> scope=skeleton > 全套。
+          # 窄選一律補 and not seed——CLI 的 -m 後出現者勝，會整段蓋掉 ini
+          # 的 -m "not seed" 預設，不補回來的話與 @seed 有交集的運算式會把
+          # seed 情境放進來白燒 CI。
+          ARGS=()
+          if [ -n "$PYTEST_EXPR" ]; then
+            ARGS+=(-m "($PYTEST_EXPR) and not seed")
+          elif [ "$SCOPE" = 'skeleton' ]; then
+            ARGS+=(-m skeleton)
+          fi
+          pytest "${ARGS[@]}" --browser chromium \
             --screenshot only-on-failure --tracing retain-on-failure \
             --output test-results \
             --junitxml=test-results/junit.xml \
@@ -331,6 +348,10 @@ jobs:
         env:
           MIN_SKELETON: '1'
           MIN_FULL: '20'
+          # 窄選（pytest_expr 非空）本來就只命中一小撮情境，套 MIN_FULL=20
+          # 會誤殺合法窄選;但下限不能歸零——「窄選卻一個都沒跑」仍是
+          # marker 打錯字或情境全 skip 的訊號,floor=1 保住這道防線。
+          MIN_FILTERED: '1'
         run: |
           python3 - <<'PY'
           import os, sys, xml.etree.ElementTree as ET
@@ -344,9 +365,13 @@ jobs:
           total   = sum(int(s.get('tests', 0))    for s in suites)
           skipped = sum(int(s.get('skipped', 0))  for s in suites)
           ran = total - skipped
-          floor = int(os.environ['MIN_SKELETON' if os.environ['SCOPE'] == 'skeleton' else 'MIN_FULL'])
+          if os.environ.get('PYTEST_EXPR'):
+              floor = int(os.environ['MIN_FILTERED'])
+          else:
+              floor = int(os.environ['MIN_SKELETON' if os.environ['SCOPE'] == 'skeleton' else 'MIN_FULL'])
 
-          print(f'scope={os.environ["SCOPE"]} collected={total} skipped={skipped} ran={ran} floor={floor}')
+          print(f'scope={os.environ["SCOPE"]} expr={os.environ.get("PYTEST_EXPR", "")!r} '
+                f'collected={total} skipped={skipped} ran={ran} floor={floor}')
           if ran < floor:
               sys.exit(
                   f'::error::journey 實際只執行 {ran} 個情境（下限 {floor}）——'
