@@ -70,12 +70,14 @@ repo 的可見性與方案:ruleset／branch protection 在 **private repo 上是
 `e2e-tests` 與 `api-tests` 皆 `in_progress`、`ci-ok` 尚未建立)——全都源於
 **閘門根本沒有被詢問**。
 
-這與「清單漂移」是**兩種不同的故障,症狀相反**,診斷時先分辨:
+「CI 還在跑就合併成功」有**三種根因,症狀相近但機制完全不同**,診斷時先分辨
+(前兩種各被誤診過一次,代價是同一個缺陷重複發生):
 
-| 故障 | 症狀 |
-|---|---|
-| 規則未生效(private + 免費方案) | 合併暢通無阻,PR 上看不到任何 required 標記 |
-| 清單漂移(舊 job id 殘留) | PR 永遠 pending,卡在「Waiting for status to be reported」 |
+| 故障 | 症狀 | 分辨方法 |
+|---|---|---|
+| 規則未生效(private + 免費方案) | 合併暢通無阻,PR 上看不到任何 required 標記 | `gh api repos/:owner/:repo/rules/branches/<b>` 回 Upgrade 提示 |
+| 清單漂移(舊 job id 殘留) | PR 永遠 pending,卡在「Waiting for status to be reported」 | 清單裡的名字沒有任何 job 會回報 |
+| **綠章跨 run 冒名頂替**(規則 9) | required check 顯示綠、但那顆 check run 屬於**另一個 workflow run** | 點開 PR 上那顆 check,看它的 run id 是不是這個 PR 的 |
 
 **規則 8 — 軌道切分與排程頻率:依據要寫在檔案裡**
 
@@ -115,12 +117,50 @@ GitHub-hosted 標準 runner 免費且無用量上限,所以切分軌道時該問
   它的分鐘欄不代表金錢,讀的是**牆鐘與 job 數分佈**(哪一軌最慢、誰在
   拖長回饋)。
 
+**規則 9 — required check 的名字不得被 push run 蓋章**
+required status check 的鍵是 **(commit SHA, check-run 名稱)**,**不綁 workflow
+run**。`ci.yml` 同時有 `pull_request` 與 `push` 觸發、分支集合又重疊,所以同一顆
+SHA 會被跑兩次;兩個 run 的匯總點若同名,**較寬鬆的那個會冒名頂替嚴格的那個**。
+
+這在晉升 PR(develop→main)上是致命的:它的 head SHA 就是 develop 的 tip,
+早在 PR 開啟前就被 push run 蓋過一顆綠 `ci-ok`(那個 run 裡 `journey-full`
+必然 `skipped`,而 skipped 算通過)。而 PR run 自己的 `ci-ok` 因為 **GitHub 不
+為 `needs` 尚未完成的 job 建立 check run** 而根本不存在——保護規則從頭到尾看
+到的都是那顆廉價綠章,連黃燈都沒有。PR #236 就是這樣在 `journey-full` 還在跑
+時合併進 main 的。
+
+修法是讓 push run 的匯總點改名:
+
+```yaml
+  ci-ok:
+    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}
+```
+
+⚠️ **不能改用「把 `journey-full` 也列進 required checks」來修**——reusable
+workflow 的 check-run 名字會隨執行狀態變:真的跑(`uses: ./...journey.yml`)
+叫 `journey-full / journey-suite`,被 `if` 跳過時叫 `journey-full`。列前者會讓所有
+base=develop 的 PR 永遠 pending,列後者會被 push run 那顆 skipped 自動滿足。
+**required checks 清單無法表達這個閘門**,只能從 `ci-ok` 內部解決。
+
+**規則 10 — `ci-ok` 對晉升 PR 必須單獨要求 `journey-full` 為 `success`**
+`ci-ok` 把 `skipped` 算通過是刻意的(純文件 PR 會 skip 重的 job,不這樣做永遠
+合不了),但套在 `journey-full` 上就是「上線前唯一的真後端閘門沒跑也算過」。
+`base_ref == 'main'` 時把它從 `join(needs.*.result)` 拉出來單獨檢查:
+
+```yaml
+JOURNEY_RESULT: ${{ needs['journey-full'].result }}   # job id 帶連字號,須用索引語法
+```
+
+規則 9、10 都由 `check-workflows.py` 機械把關(各帶正反表格案例)——它們是
+**寫在註解裡就會被重構靜默撤回**的那種規則,必須有檢查器綁著。
+
 ## 不可改名的識別字
 
 | 名稱 | 改了會怎樣 |
 |---|---|
 | workflow `name: CI` | `deploy-supabase.yml` 的 `workflow_run.workflows: [CI]` 靜默失效——部署再也不會觸發 |
 | job id `ci-ok` | required status check 找不到回報者,PR 永遠 pending |
+| `ci-ok` 的 `name:` 表達式 | 拿掉或改成固定字串 → push run 的匯總點又與 PR run 同名,晉升 PR 的閘門靜默失效(規則 9)。`ci-ok-push` 這個名字本身可以換,但**兩個事件必須不同名** |
 | job id `guards` | 見上方連字號陷阱;且所有 `needs.guards.outputs.*` 要同步改 |
 
 ⚠️ **改名前務必檢查 required status checks 清單本身**,不能只看 CLAUDE.md
