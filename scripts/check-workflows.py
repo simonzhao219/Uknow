@@ -134,6 +134,14 @@ PUSH_TRIGGER = re.compile(r"^\s+push\s*:\s*$", re.M)
 SCHEDULE_TRIGGER = re.compile(r"^\s+schedule\s*:\s*$", re.M)
 FREQUENCY_RATIONALE = re.compile(r"頻率依據")
 
+# 規則 11:環境核准閘門 + 排隊式 concurrency = 無限期卡死(2026-08-07 實測)
+#         處於 `waiting`(等待部署核准)的 run **仍然占著 concurrency slot**,
+#         配上 cancel-in-progress: false,後續 run 會一路排在它後面。沒人按
+#         核准就等於部署管線永久停擺,而且沒有任何紅燈——狀態不是 failure,
+#         CI 也全綠。兩個鍵各自都合理,是「相乘」才出事,所以要一起看。
+ENVIRONMENT_KEY = re.compile(r"^\s+environment\s*:", re.M)
+CANCEL_IN_PROGRESS_FALSE = re.compile(r"^\s*cancel-in-progress\s*:\s*false\s*$", re.M)
+
 
 def _jobs(text: str) -> list[tuple[str, str]]:
     """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
@@ -224,6 +232,18 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             "有後果的決定(太密浪費資源、太疏讓問題晚被發現),請在檔頭註解"
             "寫明「頻率依據:<為什麼是這個頻率>」,並點出成本落在哪裡"
             "(GitHub 分鐘 / Supabase 分支 / 外部額度 / 訊號疲勞…)。"
+        )
+
+    # 規則 11:用了 environment 的 workflow 不得配 cancel-in-progress: false
+    if ENVIRONMENT_KEY.search(text) and CANCEL_IN_PROGRESS_FALSE.search(text):
+        found.append(
+            "workflow 同時用了 environment(部署核准閘門)與 "
+            "cancel-in-progress: false(排隊式 concurrency)——等待核准的 run "
+            "仍然占著 concurrency slot,沒人按核准就會把後續每一個部署無限期"
+            "擋在後面,而且沒有任何紅燈(狀態不是 failure、CI 也全綠)。"
+            "2026-08-07 實測:正式站因此停在 13 天前那一版。"
+            "修法:改成 cancel-in-progress: true——新部署淘汰舊部署,"
+            "語意上也才真的是「最新的那個贏」。"
         )
 
     # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
@@ -506,6 +526,45 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
             "name: CI\n"
             "on:\n  pull_request:\n    branches: [develop]\njobs:\n"
             "  unit-tests:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    # --- 規則 11:2026-08-07 正式站停擺 13 天的事故形態 ---
+    (
+        "environment + cancel-in-progress: false → 違規",
+        (
+            "name: Deploy Thing\n"
+            "concurrency:\n  group: deploy\n  cancel-in-progress: false\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n"
+            "    environment:\n      name: production\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "environment + cancel-in-progress: true → 通過",
+        (
+            "name: Deploy Thing\n"
+            "concurrency:\n  group: deploy\n  cancel-in-progress: true\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n"
+            "    environment:\n      name: production\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    (
+        "cancel-in-progress: false 但沒有 environment → 通過"
+        "(排隊本身沒問題,與核准閘門相乘才卡死)",
+        (
+            "name: Journey Scheduled\n"
+            "# 頻率依據:每週一次。\n"
+            "on:\n  schedule:\n    - cron: '0 18 * * 6'\n"
+            "concurrency:\n  group: journey\n  cancel-in-progress: false\njobs:\n"
+            "  journey-suite:\n    timeout-minutes: 90\n"
+            "    steps:\n      - name: a\n        run: b\n"
         ),
         "x.yml",
         0,

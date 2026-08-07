@@ -154,6 +154,25 @@ JOURNEY_RESULT: ${{ needs['journey-full'].result }}   # job id 帶連字號,須�
 規則 9、10 都由 `check-workflows.py` 機械把關(各帶正反表格案例)——它們是
 **寫在註解裡就會被重構靜默撤回**的那種規則,必須有檢查器綁著。
 
+**規則 11 — 用了 `environment:` 的 workflow 不得配 `cancel-in-progress: false`**
+處於 **`waiting`(等待部署核准)的 run 仍然占著 concurrency slot**。配上排隊式
+的 `cancel-in-progress: false`,只要有人忘了按核准,後續每一個部署都會無限期
+排在它後面——**而且沒有任何紅燈**:狀態不是 `failure`、CI 全綠、PR 也合併成功。
+
+2026-08-07 實測:`deploy-supabase.yml` 的正式站部署 run 30198752930 自 07-26 起
+卡在 `waiting` 沒人按,把之後每一次晉升的部署都擋住,**正式站的 Edge Function
+因此停在 13 天前那一版**,是靠一次無關的查證才發現的。
+
+改成 `cancel-in-progress: true` 語意反而更正確:新部署淘汰舊部署 =「最新的那個
+贏」,這正是「不得亂序部署」原本要的性質(排隊只保證順序,不保證最後贏的是新的)。
+
+⚠️ 兩個鍵**各自都合理**,是相乘才出事——所以檢查器同時看兩者,只有 `environment`
+或只有 `cancel-in-progress: false`(如 `journey-scheduled.yml`、
+`reconcile-payments.yml`)都不算違規。
+
+另一半防線是 `deployment-queue-audit.yml`:規則 11 治的是「被擋住」,那支治的是
+「沒有下一次 push 時,沒人核准的部署會無聲等下去」——超過 6 小時未推進就開 issue。
+
 ## 不可改名的識別字
 
 | 名稱 | 改了會怎樣 |
@@ -196,6 +215,15 @@ gh api repos/:owner/:repo/branches/develop --jq .protection   # classic 側
    在 feature 分支上改不會有反應。⚠️ 預設分支是 repo Settings → Branches
    的設定,不是固定的 main——本 repo 已於 2026-07-25 改成 **develop**,
    所以現在合進 develop 就生效,不必等晉升。改這條前先確認當下的預設分支。
+3. **`workflow_run` 觸發的 run,`head_branch`／`head_sha` 回報的是「預設分支」,
+   不是觸發它的那個分支**——診斷時極易誤判。實例:2026-08-07 查「正式站還有沒有
+   在部署」時用 `list_workflow_runs(branch: main)` 過濾 `deploy-supabase.yml`,
+   看到「07-25 之後就沒有部署了」,差點下錯結論。真相是預設分支在 07-25 從 main
+   改成 develop,之後每一個部署 run 都被標成 `develop`,不管它實際部署到哪裡。
+   **要判斷一個部署 run 的真實目標,看它的 `github.event.workflow_run.head_branch`
+   (workflow 內部)或用時間戳對回觸發它的那個 CI run**,不要信 run 自己的
+   `head_branch`。同理,`concurrency: group: deploy-${{ ...workflow_run.head_branch }}`
+   用的是**正確**的那一個(事件酬載),與 run 列表上顯示的分支不是同一件事。
 
 ## 新增 workflow 時
 
