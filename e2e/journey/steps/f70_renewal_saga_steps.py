@@ -91,13 +91,14 @@ def _ensure_actor(cfg, admin, run_state, node,
     return user
 
 
-def _fresh_gui_login(page: Page, user: JourneyUser, wait_for: str | None) -> None:
+def _fresh_gui_login(page: Page, user: JourneyUser) -> None:
     """清掉既有 session 再登入——saga 一個情境內會連續以 admin/演員多重
     身分登入同一個 guarded_page,不清的話 /login 的「已登入自動導向」
-    會把第二次登入直接彈走。"""
+    會把第二次登入直接彈走。登入成功信號=登入表單消失(login_via_gui
+    自帶);落點由會籍狀態決定,呼叫端一律自行 goto 目標頁。"""
     page.goto("/")
     page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
-    login_via_gui(page, user, wait_for=wait_for)
+    login_via_gui(page, user)
 
 
 @given("saga 演員名冊與預設推薦人 P0 已就緒")
@@ -202,7 +203,7 @@ def task_card_shows_progress(guarded_page, supabase_admin, run_state, node, coun
     # 漂移,而不是讓字串斷言神祕失敗。
     threshold = int(supabase_admin.reward_config()["referral_king_monthly_threshold"])
     assert threshold == 8, f"推薦王門檻是 {threshold},與 feature 寫死的 8 不符"
-    _fresh_gui_login(guarded_page, run_state.users[node], "會員中心")
+    _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/tasks")
     expect(guarded_page.get_by_role("heading", name="任務中心")).to_be_visible(
         timeout=15_000
@@ -228,7 +229,7 @@ def p_delta_last_event(saga, supabase_admin, amount):
 
 @then(parsers.parse('"{node}" 於 active 期間開啟付款頁被導回儀表板並顯示訂閱中'))
 def active_checkout_redirects_to_dashboard(guarded_page, run_state, node):
-    _fresh_gui_login(guarded_page, run_state.users[node], "會員中心")
+    _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/payment/checkout")
     # active 的真實訊號:resolveCheckoutPageRedirect 靜默導回 /dashboard,
     # 付款頁不渲染任何訊息(第 2 輪審查 UIUX P1-1 核實)。
@@ -263,9 +264,7 @@ def saga_backfill_two_installments(saga, guarded_page, journey_config, supabase_
     saga["marks"]["u1_points_before_backfill"] = _points_sum(supabase_admin, u1.user_id)
     saga["marks"]["u1_tasks_before_backfill"] = _task_monthly_count(supabase_admin, u1.user_id)
 
-    # 過期會員登入落點由 resolveMembershipRedirect 決定(不是會員中心),
-    # 故 wait_for=None 後顯式導向付款頁。
-    _fresh_gui_login(guarded_page, user, None)
+    _fresh_gui_login(guarded_page, user)
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     guarded_page.get_by_test_id("renewal-mode-extend").click()
@@ -336,7 +335,7 @@ def saga_fresh_switch_tree(saga, guarded_page, journey_config, supabase_admin,
     # U2 是新配對收獎方,快照供 gen1 +100 與任務 1/8 斷言。
     saga["marks"]["u2_points_before_fresh"] = _points_sum(supabase_admin, new_ref.user_id)
 
-    _fresh_gui_login(guarded_page, user, None)
+    _fresh_gui_login(guarded_page, user)
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     guarded_page.get_by_test_id("renewal-mode-fresh").click()
@@ -373,7 +372,7 @@ def ledger_zeroed(supabase_admin, run_state, node):
 
 @then(parsers.parse('"{node}" 的獎勵明細出現「新約重置」列'))
 def reward_history_shows_ledger_reset(guarded_page, run_state, node):
-    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/rewards")
     expect(guarded_page.get_by_role("heading", name="獎勵明細")).to_be_visible(timeout=15_000)
     # rewardHistoryFilter.ts:REWARD_SOURCE_LABELS.ledger_reset = '新約重置'
@@ -412,13 +411,13 @@ def saga_apply_withdrawal(guarded_page, run_state, node, amount):
     from builders import withdrawal
 
     user = run_state.users[node]
-    _fresh_gui_login(guarded_page, user, "會員中心")
+    _fresh_gui_login(guarded_page, user)
     withdrawal.apply_via_gui(guarded_page, user, amount)
 
 
 @then(parsers.parse('"{node}" 的付款頁新約選項因待審提領被停用'))
 def fresh_blocked_by_pending_withdrawal(guarded_page, run_state, node):
-    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     # PaymentCheckout 的 A16 文案(hasPendingWithdrawal)。
@@ -441,7 +440,7 @@ def admin_rejects_first_withdrawal(guarded_page, run_state):
 
 @then(parsers.parse('"{node}" 的付款頁新約選項恢復可選'))
 def fresh_unblocked_after_rejection(guarded_page, run_state, node):
-    _fresh_gui_login(guarded_page, run_state.users[node], None)
+    _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     expect(guarded_page.get_by_text("請等待審核完成，或聯繫客服")).to_have_count(0)
@@ -482,7 +481,7 @@ def saga_snapshot_and_expire(saga, supabase_admin, run_state, node):
 @when(parsers.parse('"{node}" 以續約完成一筆補繳'))
 def saga_single_backfill(guarded_page, journey_config, supabase_admin, run_state, node):
     user = run_state.users[node]
-    _fresh_gui_login(guarded_page, user, None)
+    _fresh_gui_login(guarded_page, user)
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     guarded_page.get_by_test_id("renewal-mode-extend").click()
