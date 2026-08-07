@@ -36,13 +36,12 @@
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
 | `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
 | `npm run check:full` | check + **覆蓋率棘輪** + build + Deno 型別檢查(送 PR 前跑) |
-| `npm run test:watch` | vitest 監看模式 |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
 | `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
-| `python3 scripts/check-migration-versions.py` | migration 版本號唯一與遞增(**rebase 後必跑**——撞號 git 不標成衝突,CI 也抓不到,只在正式站部署時靜默跳過) |
+| `python3 scripts/check-migration-versions.py` | migration 版本號唯一(**rebase 後必跑**——撞號 git 不標成衝突、CI 也抓不到,只在正式站部署時靜默跳過一支) |
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 | `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
