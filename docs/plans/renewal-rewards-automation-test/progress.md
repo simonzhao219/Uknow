@@ -14,7 +14,7 @@
 | 2 | saga cast+小型載入器+feature 第 1–2 章 | ✅ 綠(run 31149371380,ch1+ch2 全過;修了三個坑:admin 裸列 trigger、asyncio loop、多重登入 session) | 5edb1d4 | e23780f |
 | 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ✅ 綠(run 31151243388,ch1-4 全過) | caba61f(rebase 前 1cda371) | 4a5a56a(rebase 前 242526d) |
 | 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ✅ 綠(run 31154748054,ch1-7 全過;迭代 5 輪:25e66b6 login 新簽名適配、2a2a456 提領前先加入推薦計畫、4fefa62 補 JoinReferralProgramDialog role="dialog"【產品 a11y 修復=計畫偏離,收尾審查需覆核】、ddcc804 「推入剛過期」@given/@when 雙註冊) | 40421b3 | ddcc804 |
-| 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ⬜ 未開始 | | |
+| 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ✅ 綠(run 31157279168,ch1-10 全過;迭代 1 輪:ch8 過期擋領取的 GUI 真相是 RequireMembershipRoute 重導、ch9 的 W1 原始首購被計為已付補繳→A15 照彈) | 0a58820 | c7ba75f |
 | 6 | 收尾:nightly 全綠+文件同步+命名/收集檢查 | ⬜ 未開始 | | |
 
 journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本機
@@ -22,8 +22,10 @@ journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本�
 
 ## 目前位置與下一步
 
-階段 0–4 全綠(ch1-7 在真後端 GUI 全過)。續作階段 5(第 8–10 章:
-credit/A8 雙發獎、A10-fresh、終章對帳),之後階段 6 收尾。
+階段 0–5 全綠(**全 10 章在真後端 GUI 全過**,run 31157279168)。
+進行階段 6 收尾:full 全套 dispatch(驗 70_ 與 30 人樹共存;60_ 既有
+失敗屬 #217 範圍)、文件同步、check:full、/review-implementation、
+friction-log 整併、刪鷹架、PR 轉出 draft。
 注:965eb33 的 concurrency group 改名(-v2)是平台故障期間的誤診產物,
 無功能影響,收尾時再評估去留;4fefa62 動了產品碼(a11y),
 /review-implementation 時需特別覆核。
