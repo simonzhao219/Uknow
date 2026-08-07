@@ -1220,3 +1220,48 @@ workflow 的 check-run 名字會隨執行狀態變(真跑叫 `journey-full / jou
 「無鎖」案例假紅。**同一份檔案裡已經想清楚的隔離原則,沒有套用到它自己最
 特殊的那個參數上。** 已一併修(移開再放回,不刪——刪掉等於靜默解鎖)。
 
+
+## 2026-08-07｜漏網｜正式站靜默停擺 13 天:等待核准的 run 占著 concurrency slot
+
+查證「production 的 required reviewer 到底有沒有生效」時,意外挖出一個**沒有
+任何一層看得見**的正式站停擺:
+
+- 部署 run 30198752930 自 2026-07-26 起卡在 `waiting`(等 production 環境核准),
+  沒有人按。而 **`waiting` 的 run 仍然占著 concurrency slot**,配上
+  `cancel-in-progress: false`,之後每一次晉升的部署都排在它後面永遠不會開始。
+- 結果:正式站的 Edge Function 停在 13 天前那一版。今天(08-07)的晉升 PR #243
+  合併後,部署 run 31195702067 一建立就是 `pending` 且**零個 job**。
+- **為什麼沒有任何訊號**:狀態不是 `failure`(所以 deploy 自己的失敗開 issue 沒觸發)、
+  CI 全綠、PR 合併成功、部署 run 也確實存在。「已合併到 main」與「已經上線」之間
+  的落差,沒有任何一層在看。
+
+**兩半處置**(缺一不可,它們治的是不同的失敗):
+- 規則 11(機械把關):用了 `environment:` 的 workflow 不得配
+  `cancel-in-progress: false`。改成 `true` 語意反而更正確——新部署淘汰舊部署=
+  「最新的那個贏」,正是「不得亂序部署」原本要的性質(排隊只保證順序,不保證
+  最後贏的是新的)。**兩個鍵各自都合理,是相乘才出事**,所以檢查器同時看兩者。
+- `deployment-queue-audit.yml`:治另一半——「沒有下一次 push 時,沒人核准的部署
+  會無聲等下去」。超過 6 小時未推進就開 issue,佇列清空自動關閉。
+
+**通則:「不是 failure」不等於「沒事」。** 現有的失敗通報全都掛在 `failure()` 上,
+於是**卡住、排隊、等待核准**這一整類「停在半路但狀態健康」的故障沒有任何接收者。
+凡是有佇列或人工閘門的流程,都要另外問一句「它會不會安靜地不前進」,而不是只問
+「它會不會紅」。
+
+**同類掃描結果**:同一形態的還有 journey-scheduled 與 reconcile-payments(都有
+`cancel-in-progress: false`),但兩者都沒有 `environment:` 人工閘門,不會卡死——
+規則 11 因此刻意要求兩個條件同時成立才算違規,不誤傷它們。
+
+**診斷時踩到的坑(已寫進 rules 地雷段)**:`workflow_run` 觸發的 run,其
+`head_branch` 回報的是**預設分支**而不是觸發它的分支。用 `branch: main` 過濾
+部署 run 會看到「07-25 之後就沒有正式站部署了」——那是假象(預設分支 07-25 從
+main 改成 develop)。我自己在這次查證中先被誤導了一次,才用時間戳對回觸發它的
+CI run 才確認。
+
+**附帶澄清一個先前的錯誤推測**:friction-log 08-07「假閘門」條目推測 GitHub
+Environments 的 required reviewer 在 private 期間可能與 ruleset 一樣靜默失效。
+**實際上它沒有**——07-26 那次 `waiting` 正是它在擋,當時 repo 還是 private。
+`pending_deployments` API 確認:環境 `production`、reviewer `simonzhao219`、
+`wait_timer: 0`。真正沒有閘門的是 07-25 之前:那 29 次部署全部即刻執行、
+18-34 秒跑完,沒有任何一次停下來等核准。**「同類風險」的推測要逐條驗證,
+不能因為機制相似就併案結論。**
