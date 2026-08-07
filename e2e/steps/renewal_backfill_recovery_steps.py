@@ -63,11 +63,6 @@ def trade_completes_backfill(api_mock, trade_no):
     )
 
 
-@when("I click continue backfill")
-def click_continue_backfill(page):
-    page.get_by_test_id("continue-backfill-button").click()
-
-
 @then(parsers.parse('I should see the payment result "{state}"'))
 def should_see_payment_result(payment_result_page, state):
     expect(payment_result_page.state_container(state)).to_be_visible(timeout=6000)

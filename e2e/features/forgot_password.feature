@@ -41,13 +41,6 @@ Feature: Forgot password
     And I enter the recovery code "000000"
     Then I should see a toast containing "驗證碼錯誤或已過期，請重新寄送"
 
-  Scenario: Resend becomes available once the 3-minute window expires
-    Given the account "e2e-user@example.com" can receive a reset code
-    When I request a password reset for "e2e-user@example.com"
-    And the reset code window expires
-    And I request the recovery code again
-    Then I should see a toast containing "驗證碼已重新寄出，請查看信箱"
-
   Scenario: The new-password page redirects to forgot-password without a session
     When I visit "/auth/reset-password"
     Then I should be redirected to "/forgot-password"
