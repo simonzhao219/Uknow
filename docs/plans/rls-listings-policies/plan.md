@@ -392,11 +392,26 @@ journey 絕不在本機跑(hook 會擋),這兩階段本機只驗證得了「情�
 | 「L1 只能斷言環境無關事實」原則 + `pg_policy`/`pg_get_expr` golden 手法與正規化理由(§2) | `docs/e2e-journey-test-design.md` | 同上 |
 | GRANT 現況表與它對 0726 事故成因的解釋(§2) | `supabase/README.md` 既有事故記錄段落 | 併入 |
 
-**註解建議措辭**(兩處對稱,擇一改寫):
+**註解建議措辭 —— 兩處的保護機制不同,必須各寫各的,不可共用一段。**
+
+⚠️ 前半段(為什麼 0 列不是 error)兩處相同;**後半段(為什麼目前安全)兩處不同**,
+照抄會寫出一句引用錯機制的假事實:
+
+`ServiceProviderManagement.tsx:56` —— 保護來自**自我限定查詢**:
 
 > 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非 403,
 > 所以這裡的成功訊息在「沒刪到任何列」時也會顯示。目前安全,因為 `listing.id`
-> 恆為 `useUserListing()` 自我限定查詢的結果;**若未來改成接受外部傳入的 id,
+> 恆為 `useUserListing()`(`.eq('user_id', userId)`)自我限定查詢的結果;
+> **若未來改成接受外部傳入的 id,必須重新檢查這個假設**。
+
+`EditServiceProvider.tsx:266` —— 保護來自 **ownership check + redirect**
+(這裡的 `serviceProvider.id` 來自本元件以 URL `:id` 做的 `.eq('id', id)` 查詢,
+**沒有** `user_id` 限定,和上面那處不是同一個機制):
+
+> 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非 403,
+> 所以這裡的成功訊息在「沒更新到任何列」時也會顯示。目前安全,因為第 68-72 行
+> 的 ownership 檢查在 `setServiceProvider` 之前就把非本人的 `:id` redirect 離開,
+> `serviceProvider.id` 恆屬於目前登入的使用者;**若未來移除或改寫那段 redirect,
 > 必須重新檢查這個假設**。
 
 ⚠️ **這一節的程式碼註解不在規劃階段做**——`/plan-feature` 明令規劃階段不寫任何
