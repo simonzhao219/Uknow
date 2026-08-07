@@ -561,7 +561,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 
 **生命週期：沒有任何可見刊登在使用的類別會自動消失。**
 〔實作〕`public_listing_categories` view（migration
-`20260807000002_custom_service_categories.sql`）＝
+`20260807000003_custom_service_categories.sql`）＝
 `select category, count(*) from public_listings group by category`。
 
 這條規則**沒有對應的刪除程式碼**——類別集合是推導出來的，

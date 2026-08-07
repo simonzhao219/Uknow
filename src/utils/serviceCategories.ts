@@ -6,7 +6,7 @@ import { SERVICE_CATEGORIES } from './constants';
  * 類別詞彙**推導自實際使用中的刊登**,不另存一張表——需求「沒有任何人使用
  * 就直接刪除」因此是 `group by` 的恆等式,而不是一段要維護的清理邏輯。
  * 資料來源是 `public_listing_categories` view(見 migration
- * `20260807000002_custom_service_categories.sql`)。
+ * `20260807000003_custom_service_categories.sql`)。
  *
  * 這個檔案是**純函式層**:不碰網路、不碰 React。UI 只負責把使用者輸入交給
  * 這裡,再把結果放回 state。
