@@ -12,8 +12,9 @@
 | 1 | 刪 admin_dashboard 4 條 + rewards_withdrawal 4 條(10.4s,→165 passed) | ✅ 綠 | 不適用(見下) | `0ed6621` |
 | 2 | 刪 payment_result 2 + payment_checkout 2 + home_listings 1(7.5s,→160 passed) | ✅ 綠 | 不適用 | `8f5314d` |
 | 3 | 刪 renewal_backfill 2 + listing_management 2 + forgot_password 1(5.1s,→155 passed) | ✅ 綠 | 不適用 | `c9e35ab` |
-| 4 | 回填 ci.yml 檔頭量測與 friction-log | 🛑 **停,待裁決** | — | |
-| 5 | 刪除本規劃檔,原則升級進 e2e/README.md 與 friction-log | ⬜ 未開始 | — | |
+| 4 | 回填 ci.yml 檔頭量測與 friction-log | ✅ 綠(裁決 (a) 後執行) | 不適用 | `84d1691`→rebase 後 `168aae7`;數字修正 `6f91471` |
+| 5a | 原則升級進 e2e/README.md 與 friction-log | ✅ 綠 | 不適用 | 同上(併在階段 4 的 commit) |
+| 5b | 刪除本規劃檔(plan/review/progress/implementation-review) | ⬜ 未開始 | — | |
 
 (commit hash 為 rebase 後的值;分支已 rebase 到 `origin/develop` 的 `04abd26`。)
 
@@ -26,20 +27,25 @@
 
 ## 目前位置與下一步
 
-**階段 1-3 全綠並已 push(155 passed)。停在階段 4,等人裁決一個新發現的
-前提失效問題:本 repo 已轉 public,計費前提消失**(詳見 Blockers 第一條)。
+**階段 1–5a 全部完成並已 push。** e2e 刪 18 條情境(情境數 147 → 129),
+rebase 到最新 develop 後重跑驗證 **156 passed 全綠**
+(總數是 156 而非 155,因為同期 develop 為 `test_overflow_sweep.py`
+新增了一條路由——分母被別人推動了,見 friction-log)。
 
-下一步取決於裁決:
-- (a) 認定「回饋速度」本身仍值得 → 階段 4 改成回填**牆鐘與情境數**、
-  把「計費分」語彙整份撤掉,並修正 ci.yml 檔頭「本 repo 是私有 repo」
-  這句已過期的敘述(它與同檔 ci-ok 註解自相矛盾)
-- (b) 認定沒有計費壓力就不值得動 → 保留階段 1-3 的刪除(理由與計費無關),
-  階段 4 只修正 ci.yml 的自相矛盾,不寫任何省錢宣稱
-- (c) 認為 Q9 的判準放寬應隨前提一起收回 → revert 階段 3 的 3 條 C 級刪除
-  (`c9e35ab` 可單獨 revert),回到 15 條
+**前提失效已裁決**:施工中發現本 repo 已於 2026-08-07 轉 public、標準
+runner 免費無上限,「省計費分鐘」的授權前提不成立。依 `/tdd-implement`
+逃生口 2 停手求裁決,**人審於 2026-08-07 裁定 (a)**:改回填牆鐘與情境數、
+整份撤掉計費語彙、並修掉 ci.yml 檔頭「本 repo 是私有 repo」與同檔 ci-ok
+註解的自相矛盾。階段 4 依此執行。
 
-**禁止我自行決定**:這是規劃前提失效,照 `/tdd-implement` 的逃生口 2,
-停手記錄、求人工裁決,不得私改 plan。
+**因此本任務的效益改以牆鐘陳述,不再有金錢宣稱**:
+CI 實測 `e2e-tests` job 290s → 223s、pytest step 233s → 184s。
+⚠️ 同一份套件的 runner 變異可達 42%(233s vs 330s),**單次量測不足以
+歸因**;可靠數字是本機逐情境加總的 -22.98s。
+
+**下一步(階段 5b)**:刪除本規劃檔目錄,然後 `npm run check:full`、
+改寫 PR 描述(現行描述仍在講「規劃階段、不動 e2e」,已與事實不符)、
+取消 draft。
 
 最終範圍:**刪 18 條 / 18 case / 22.98s / 12.2%**,173 → **155 passed**,
 CI 約 -28~-40s ≈ 0.6 計費分/run ≈ **360 分/月**。
@@ -79,7 +85,8 @@ pytest step 對照較快的那次基準是 **-49s(-21%)**,方向與規劃 §1 �
 
 ## Blockers(逃生口紀錄)
 
-- 🛑 **逃生口 2:施工中發現規劃前提失效,停在階段 4 求裁決(禁止私改 plan)**
+- ✅ **已解決(逃生口 2)——施工中發現規劃前提失效,停手求裁決,人審 2026-08-07
+  裁定 (a),階段 4 依此執行。以下保留當時的記錄作為決策脈絡:**
 
   **本 repo 已於 2026-08-07 由 private 轉 public**(API 實測
   `visibility: "public"`;develop 的 `04abd26` 也在 ci-ok 註解寫下
