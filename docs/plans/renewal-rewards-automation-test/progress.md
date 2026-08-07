@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | 0 | CI 前置:renewal_saga marker + pytest_expr dispatch 輸入 | 🟡 已實作,等窄選 dispatch 取證 | (無——CI 設定無測試落點) | af75999 |
 | 1 | 時光機四原語(純函式離線紅綠) | ✅ 綠 | e430c43 | 53978af |
-| 2 | saga cast+小型載入器+feature 第 1–2 章 | ⬜ 未開始 | | |
+| 2 | saga cast+小型載入器+feature 第 1–2 章 | 🟡 程式碼完成,等 dispatch 取證 | 5edb1d4 | 9fa5877(code) |
 | 3 | 第 3–4 章(補繳 extend、fresh 清空+A14/A15+U2 首次配對) | ⬜ 未開始 | | |
 | 4 | 第 5–7 章(B 樹+X1 gen3、Q9+admin 駁回、S9+Q14a) | ⬜ 未開始 | | |
 | 5 | 第 8–10 章(credit/A8 雙發獎、A10-fresh、終章對帳) | ⬜ 未開始 | | |
@@ -22,9 +22,14 @@ journey 階段的紅綠取證是 workflow_dispatch run 連結(journey 絕不本�
 
 ## 目前位置與下一步
 
-規劃書第 3 版已處置兩輪審查(第 2 輪 P0:階段 0 擴充為連動修改
-journey.yml 的 MARKER/floor 邏輯)。第 3 輪針對性覆核(架構視角驗證
-P0 處置)後停等人審裁決(開放問題 #1、#2a/#2b/#2c、#3–#6)。未開工。
+人審通過已開工。階段 0/2 程式碼完成、等窄選 dispatch 取證;階段 1 全綠。
+**GitHub Actions 平台故障中**(2026-08-07 01:48 起所有 run 3 秒零步驟
+failure、無 log,含從未紅過的 changes/linear-check——與我方改動無關,
+actionlint/check-workflows 本機全綠);已排自動恢復檢查,恢復後:
+(a) rerun 最新 head 的 ci 失敗 jobs;(b) dispatch `orgbuild or
+timemachine` 驗收階段 0;(c) dispatch `renewal_saga` 驗收階段 2;
+(d) 續作階段 3(第 3–4 章)。另:65eb33 的 concurrency group 改名
+(-v2)是故障期間的誤診產物,無功能影響,收尾時再評估去留。
 
 ## Blockers(逃生口紀錄)
 
