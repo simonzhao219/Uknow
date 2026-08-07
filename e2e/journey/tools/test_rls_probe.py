@@ -59,8 +59,11 @@ def test_function_grant_denial_is_denied_by_grant():
 
 
 def test_unclassifiable_42501_raises_instead_of_guessing():
-    # 歸錯類等於讓斷言失去辨別力——寧可吵也不要靜默猜
-    body = {"code": "42501", "message": "permission denied for something new"}
+    # 歸錯類等於讓斷言失去辨別力——寧可吵也不要靜默猜。
+    # 注意這裡要用「兩個標記都不含」的裸 42501:"permission denied for X"
+    # 不論 X 是 table/function/schema/sequence 都是合法的 GRANT 形狀,
+    # 拿它當「無法歸類」的例子,測的其實是 denied_by_grant。
+    body = {"code": "42501", "message": "insufficient privilege"}
     with pytest.raises(ValueError):
         rls_probe.classify(403, body)
 

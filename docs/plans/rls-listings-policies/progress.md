@@ -15,7 +15,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | ⬜ 未開始 | | |
-| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | 🔴 紅燈中 | (見下) | |
+| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ✅ 綠 | `91b27d4` | (本 commit) |
 | 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
 | 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
 
@@ -33,7 +33,37 @@ plan.md **§9 知識的持久歸宿**列了四項升級動作(兩處程式碼最
 `journey-scheduled.yml`(**scope=full**,不要用 `pytest_expr` 窄選——理由見
 plan.md §3),拿到 L2 的真實紅綠證據。
 
+### B4 —— 階段 2 的測試 fixture 自相矛盾(已裁決:修正)
+
+`test_unclassifiable_42501_raises_instead_of_guessing` 原本的「無法歸類」例子是
+`{"code":"42501","message":"permission denied for something new"}`,但那串**含
+`permission denied for`**——不論後面是 table/function/schema/sequence 都是合法的
+GRANT 形狀,所以 `classify()` 正確回 `denied_by_grant`,測試 DID NOT RAISE。
+
+**實作是對的,fixture 與它自己的測試名不符。** 依逃生口 2 停手求裁決(不自行改
+測試遷就實作),人裁示修正。改成裸 42501(`insufficient privilege`,兩個標記都不含),
+並在該處留註解說明為何不能拿 `permission denied for X` 當反例。
+這是**加強**而非放寬:原本那條根本沒測到它宣稱要測的東西。
+
+### B5 —— 本容器 `test_payuni_crypto.py` 收集失敗(環境,非本分支造成)
+
+`pyo3_runtime.PanicException`;`cryptography 41.0.7` 符合 `requirements.txt` 的
+`>=41.0`,但本容器是 **Python 3.11.15**,而 `journey.yml` 與 `ci.yml` 的
+journey-offline 軌都固定 **3.12**。**已由 CI 證實是環境差異**:CI(3.12.13)上
+`pytest tools/ -q` 跑出 `1 failed, 32 passed`,payuni 在那 32 之中。
+本機驗證因此排除該檔,跑其餘 5 個模組(29 passed)。不在本 feature 範圍,不處理。
+
 ## 目前位置與下一步
+
+**階段 2 已綠**(紅燈 `91b27d4`)。三輪審查全數完成:P0=0、P1=7 全處置、P2=25
+(見 `./review.md`、`./review-v2.md`、`./review-v3.md`,四視角一致「可開工」)。
+
+**下一步:階段 1**(L1 結構守衛)。⚠️ 開工前要先解 B1——本容器沒有 `deno` 與
+`supabase` CLI,階段 1 是 Deno 測試 + `supabase start` 的本地 Postgres,裝好才
+跑得動。階段 1/3/4 依 B3 裁決走**突變驗證的紅**(寫測試 → 綠 → 打壞不變式 →
+確認紅 → 還原 → 綠),commit 用 `test:`,突變前後輸出貼進本檔與 PR。
+
+<details><summary>規劃階段的原始紀錄</summary>
 
 規劃與四視角審查都已完成,**待人審**。審查結果:P0 = 0、P1 = 5、P2 = 9
 (見 `./review.md`)。
@@ -55,6 +85,8 @@ plan.md §3),拿到 L2 的真實紅綠證據。
 git checkout claude/rls-listings-policies-plan-afn43h -- docs/plans/rls-listings-policies
 git commit -m "docs: 帶入已審過的規劃書與審查報告"
 ```
+
+</details>
 
 ## Blockers(逃生口紀錄)
 
