@@ -1,6 +1,6 @@
 # fresh 換線後 repair 函數回溯補發歷史事件獎金（issue #167）修復紀錄
 
-分支:`fix/repair-retro-rewards`|重現測試(紅燈 commit):（待補）
+分支:`fix/repair-retro-rewards`|重現測試(紅燈 commit):`7969f14`（CI run 31149316657:恰三條紅、既有 249 綠）
 
 ## 1. 症狀與重現
 
