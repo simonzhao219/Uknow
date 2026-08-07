@@ -21,8 +21,26 @@
 
 ## 目前位置與下一步
 
-規劃已完成並待人審(`/review-plan` 報告見 `./review.md`)。
-下一步:人裁決 §6 的四個開放問題 → 人親自打 `/tdd-implement rls-listings-policies`。
+規劃與四視角審查都已完成,**待人審**。審查結果:P0 = 0、P1 = 5、P2 = 9
+(見 `./review.md`)。
+
+下一步(順序不可換):
+
+1. 人裁決 `review.md`〈處置〉節的 P1/P2 與規劃書 §6 的四個開放問題
+2. 依裁決更新 `plan.md` 的 §1 與 §5 —— 5 條 P1 裡至少 3 條會**改變階段切分
+   的內容**(新增擁有者 update 正面情境、admin 繞過情境、欄位集合比對測試),
+   不先更新的話實作期必然撞牆
+3. 人親自打 `/tdd-implement rls-listings-policies`
+
+⚠️ **開工前的分支動作**(review.md 架構 P1-1):`/tdd-implement` 從 develop 切出的
+`feature/rls-listings-policies` 不含 `docs/plans/rls-listings-policies/`
+(它只在規劃分支上),`feature-plan-guard.py` 只看當前分支,會擋下 Stage 1 的
+第一次寫入並印出誤導性的「先跑 `/plan-feature`」。切完分支第一步先把規劃檔帶過去:
+
+```
+git checkout claude/rls-listings-policies-plan-afn43h -- docs/plans/rls-listings-policies
+git commit -m "docs: 帶入已審過的規劃書與審查報告"
+```
 
 ## Blockers(逃生口紀錄)
 
