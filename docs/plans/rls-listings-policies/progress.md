@@ -14,10 +14,10 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | 🟡 CI 綠,突變驗證待補(B6) | 不適用(見 B3) | `97cbcfd` |
+| 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | ✅ 綠(CI api-tests;突變驗證依 B6 裁決不做,缺口寫進 PR) | 不適用(見 B3) | `97cbcfd` |
 | 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ✅ 綠 | `91b27d4` | `9605af7` |
-| 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
-| 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
+| 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | 🟡 情境齊全,行為真值待 CI | 不適用(見 B3) | (本 commit) |
+| 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | 🟡 情境齊全,行為真值待 CI | 不適用(見 B3) | (本 commit) |
 
 情境數 **38 → 49**(develop 於 PR #199 新增 `70_renewal_saga.feature` 10 條後重數)。
 `MIN_FULL=20` 不動(理由見 plan.md §3)。
@@ -55,13 +55,23 @@ journey-offline 軌都固定 **3.12**。**已由 CI 證實是環境差異**:CI(3
 
 ## 目前位置與下一步
 
-**階段 2 已綠**(紅燈 `91b27d4`)。三輪審查全數完成:P0=0、P1=7 全處置、P2=25
+**四個階段的程式碼都已寫完。** 三輪審查:P0=0、P1=7 全處置、P2=25
 (見 `./review.md`、`./review-v2.md`、`./review-v3.md`,四視角一致「可開工」)。
 
-**下一步:階段 1**(L1 結構守衛)。⚠️ 開工前要先解 B1——本容器沒有 `deno` 與
-`supabase` CLI,階段 1 是 Deno 測試 + `supabase start` 的本地 Postgres,裝好才
-跑得動。階段 1/3/4 依 B3 裁決走**突變驗證的紅**(寫測試 → 綠 → 打壞不變式 →
-確認紅 → 還原 → 綠),commit 用 `test:`,突變前後輸出貼進本檔與 PR。
+- 階段 1、2:綠(階段 1 由 CI api-tests 證明;突變驗證依 B6 裁決不做,缺口寫進 PR)
+- 階段 3、4:11 條情境全數收集到、步驟定義齊全(`--collect-only` 驗證),
+  **行為真值等 CI/journey**——本機一律跑不了 journey
+
+**下一步(收尾,順序不可換)**:
+
+1. `npm run check:full`(本機 build + Deno 型別檢查;`deno check` 本機因 jsr.io
+   403 會降級,交給 CI)
+2. **plan.md §9 的四項知識升級**——必須排在 `/review-implementation` **之前**,
+   否則本 PR 唯一動到 `src/**` 的兩處註解不會進入四視角審查的 diff(見 plan §9
+   的「執行時機」)
+3. `/review-implementation rls-listings-policies`
+4. 刪 `docs/plans/rls-listings-policies/`
+5. 合併前手動 `workflow_dispatch` 一次 `journey-scheduled.yml`(**scope=full**)
 
 <details><summary>規劃階段的原始紀錄</summary>
 
@@ -128,7 +138,22 @@ git commit -m "docs: 帶入已審過的規劃書與審查報告"
 
 這個推論鏈成立,但它比「看到測試名」弱一級,記在這裡以免日後被當成目視確認過。
 
-### B6 —— 階段 1 的突變驗證待補【待人裁決】
+### ✅ B6 已裁決(2026-08-07,人:「接受 CI 綠,PR 註明缺口」)
+
+採選項 (c)。階段 1 的驗證止於「`api-tests` 在真 Postgres 上六項斷言全過」,
+**不含**「打壞不變式會變紅」的突變證明——本容器 Docker Hub 429,`supabase start`
+起不來,沒有本地 Postgres 可打壞。這個缺口要寫進 PR 描述,不是靜靜跳過。
+
+補的辦法(留給日後有 Docker Hub 存取的環境,一次就夠):
+
+```sql
+-- 逐條驗證斷言有牙齒,每次改完還原
+alter table public.listings disable row level security;  -- 斷言 1 應紅
+drop policy listings_select_own on public.listings;      -- 斷言 2、3 應紅
+alter policy listings_select_own on public.listings to public;  -- 斷言 3 應紅
+```
+
+### B6 —— 階段 1 的突變驗證待補【已裁決,見上】
 
 依 B3 裁決,階段 1 要「寫測試 → 綠 → 打壞不變式 → 確認紅 → 還原 → 綠」。
 本機起不了 Postgres(見 B1-2),CI 也不可能替我們打壞 schema。所以目前只能
