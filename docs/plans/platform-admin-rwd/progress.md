@@ -16,8 +16,8 @@
 | 1 | 殼層與觸控原語（TabsList 兩列、標題字級、checkbox 觸控目標） | ⬜ 未開始 | | |
 | 2 | 提領管理手機版（卡片列表、工具列、作業面板、IdCardDialog） | ⬜ 未開始 | | |
 | 3 | 會員管理手機版（卡片列表、搜尋列、詳情 Sheet） | ⬜ 未開始 | | |
-| 4 | 系統告警與公告手機版 | ⬜ 未開始 | | |
-| 5 | 溢版守門回填（overflow sweep 逐分頁巡檢） | ⬜ 未開始 | | |
+| 4 | 系統告警與公告手機版（＋公告內文長網址 P15、管理員設置 Email 列 P16） | ⬜ 未開始 | | |
+| 5 | 驗收棘輪歸零（admin 的 8 條 `known_overflow` ＋ 3 條 xfail marker 全清） | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
@@ -42,12 +42,19 @@ pointer-coarse class」斷言的是實作者剛打進去的字串，不可能為
    `e2e/test_admin_mobile_layout.py`（新）。
    **尚未動任何產品程式碼。** 驗證:27 passed / 3 xfailed、
    `npm run check` 與 `framework-check` 全綠。
-2. 再處置 **F1**（手機卡片是否接手 `setActiveId`——不決定的話匯款作業面板
+2. ~~F3 的文字回填~~ **✅ 已完成**（人審裁決「綠了就做」）。`plan.md` 動到
+   §4.0（補 P15/P16 兩條由量測發現的證據）、§4.3（jsdom 量不出版面、兩支
+   探針的分工）、§5（每階段驗證標準改成真實幾何量測，並明列該刪哪幾條
+   `known_overflow` 與 xfail marker；階段 5 從「補巡檢能力」改成「驗收棘輪
+   歸零」）、§7（風險表兩列）。
+3. 再處置 **F1**（手機卡片是否接手 `setActiveId`——不決定的話匯款作業面板
    在手機上會釘死第一筆）、**F2**（TabsList 的 class 漏了 `grid` **與**
-   `w-full`）、**N1**（覆蓋率棘輪:CI 跑 test:coverage 但 npm run check 不跑，
-   functions 門檻只剩 1.2 點餘裕）、**N2**（規劃指定裸 `<details>`，但
-   `ui/collapsible.tsx` 已存在且有人在用）
-3. 重跑 `/review-plan`，人審通過後才由人親自打 `/tdd-implement`
+   `w-full`）、**F4**（`ui/checkbox.tsx` 的 blast radius，＝Q5）、
+   **N1**（覆蓋率棘輪:CI 跑 test:coverage 但 npm run check 不跑；
+   2026-08-07 門檻已收緊兩次，現為 42/42/65/80，**branches 餘裕最小**，
+   而 RWD 要加的 `isDesktop ? 卡片 : 表格` 三元運算子正是打在 branches 上）、
+   **N2**（規劃指定裸 `<details>`，但 `ui/collapsible.tsx` 已存在且有人在用）
+4. 重跑 `/review-plan`，人審通過後才由人親自打 `/tdd-implement`
 
 ### M1 完成後浮現的新事實（影響後續階段，開工前必讀）
 

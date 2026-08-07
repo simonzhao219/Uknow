@@ -126,6 +126,8 @@
 | P12 | `SystemNotifications.tsx:243` 公告列表項 | `flex items-start justify-between`，右側塞兩個 badge + 刪除鍵 | 標題被擠成單字換行 |
 | P13 | `ui/checkbox.tsx:18` | `size-4`（16px），**無 `pointer-coarse` 規則** | 違反 §1「觸控 ≥44px」。提領批次全選／單選在手機上點不準——而它的下一步是**不可回退**的批次匯款 |
 | P14 | 全域 | `BottomNav` 是 `md:hidden fixed bottom-0 z-40`，main 有 `pb-24 md:pb-6` | 手機底部已被佔用：admin **不得**新增底部固定工具列 |
+| P15 | `SystemNotifications.tsx:263` 公告內文 | `<p className="text-sm text-muted-foreground mb-2">`，無 `break-words` | 公告內文貼一條網址就撐破——**實測 +153px**。長 token 不斷行，這是 §4.0 唯一由量測而非閱讀發現的一條 |
+| P16 | `AdminSetup.tsx:152-155` 帳號資訊的 Email 列 | `flex items-center justify-between`，標籤與值同列不換行 | Email 來自 Supabase Auth、長度無上限——**實測 +119px**。這條原本只在 §3 出現而沒有證據項（審查的 F5），量測後補上 |
 
 ### 4.1 手機版設計（對照 §7 既有模式）
 
@@ -167,24 +169,48 @@
 卡片沿用既有 `aria-label` 慣例（`選取 ${userName} 的提領記錄`、
 `查看 ${name} 的詳情`），Playwright 的 `get_by_role` 查詢在兩套版面下皆可用。
 
+**jsdom 量不出版面**，所以凡是「使用者看得到的幾何」都不能只靠元件測試釘住
+——斷言一個剛打進去的 class 字串是套套邏輯，不可能為了正確的理由失敗。
+真實幾何由 `e2e/layout_probe.py` 量（`count_rows` 數列數、`viewport_fit`
+量盒子與視窗邊界的間距），與溢出探針刻意分家：**兩者的失效方式相反**。
+溢出探針問「有沒有畫到框外」，對 `overflow-x: auto` 的容器刻意不報；
+`layout_probe` 問「有沒有長成該有的樣子」。只靠前者，「沒壞但也沒對」的
+版面（例如擠成單行捲動的 TabsList）永遠不會被發現。
+
 ---
 
 ## 5. 階段切分（每階段 = 一個 TDD 紅綠循環）
 
 先修殼層再修內容：手機上連分頁都切不動時，後面四個分頁的改動無從人工驗證。
 
+**驗證能力已經先補齊**（人審裁決「先補 M1」，PR #242 已合入這條分支）：
+375px 的真實幾何量測、逐路由溢版棘輪、Dialog/Sheet/分頁的點開掛鉤都已存在，
+**而且會擋 CI**。所以下表的驗證標準不再只是 jsdom 的 class 斷言——凡是
+「使用者看得到的版面」都由真瀏覽器量盒子把關。兩支工具的分工：
+
+- `e2e/test_overflow_sweep.py`：問「**有沒有畫到框外**」。沒標
+  `known_overflow` 的路由一律硬失敗；清乾淨一條就刪掉那行，只准往少走。
+- `e2e/test_admin_mobile_layout.py` ＋ `e2e/layout_probe.py`：問「**有沒有
+  長成該有的樣子**」。U2/U3 的終局已寫成 `xfail(strict=True)`——今天 xfail，
+  改版做完會 XPASS 讓 CI 紅，**逼實作者回來刪 marker**。刪 marker 是每個
+  相關階段的收尾動作，不是可選項。
+
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | 殼層與觸控原語：TabsList 兩列（P1）、標題字級、`checkbox` 觸控目標（P13） | `src/components/AdminDashboard.test.tsx`（新檔，jsdom）＋ `src/components/ui/checkbox.test.tsx`（新檔） | 五個 TabsTrigger 皆在文件中且可點；checkbox 帶 `pointer-coarse` class |
-| 2 | 提領管理手機版：卡片列表（P2）、工具列換行（P3）、作業面板摺疊（P4）、Dialog 寬度與雙圖（P5/P6） | `WithdrawalManagement.test.tsx`（既有檔擴充，`stubMediaQuery(false)`） | 手機：無 `<table>`、每筆有會員＋金額＋狀態＋操作；桌面：既有 26 條測試全綠不改 |
-| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9） | `MemberManagement.test.tsx`（既有檔擴充） | 手機：每位會員一張卡且三顆操作鍵可達；桌面測試不動 |
-| 4 | 系統告警與公告手機版：告警卡片（P10）、header 換行（P11）、公告列表項（P12） | `src/components/admin/SystemAlerts.test.tsx`（新檔）＋ `SystemNotifications.test.tsx`（新檔） | 手機：告警訊息全文可讀、`context` 預設收合；標記已處理可點 |
-| 5 | 溢版守門回填：`test_overflow_sweep.py` 的 `SweepRoute` 加 `post_nav` 掛鉤，五個分頁各掃一次 | `e2e/test_overflow_sweep.py`（report-only） | 375px 報告涵蓋五個分頁；`AdminSetup` 長 Email 一併納入巡檢 |
+| 1 | 殼層與觸控原語：TabsList 兩列（P1）、標題字級、`checkbox` 觸控目標（P13） | `src/components/AdminDashboard.test.tsx`（新檔，jsdom）＋ `e2e/test_admin_mobile_layout.py`（既有） | 五個 TabsTrigger 皆在文件中且可點（jsdom）；**TabsList 在 375px 下實測分兩列**（`count_rows`，刪掉 `test_admin_tabs_wrap_to_two_rows_at_375px` 的 xfail marker）；**checkbox 的實際可點區實測 ≥44px**（`viewport_fit` 量盒子，不是斷言剛打進去的 class 字串） |
+| 2 | 提領管理手機版：卡片列表（P2）、工具列換行（P3）、作業面板摺疊（P4）、Dialog 寬度與雙圖（P5/P6） | `WithdrawalManagement.test.tsx`（既有檔擴充，`stubMediaQuery(false)`）＋ `e2e/test_admin_mobile_layout.py` | 手機：無 `<table>`、每筆有會員＋金額＋狀態＋操作；桌面：既有 26 條測試全綠不改；**IdCardDialog 左右安全邊距實測 ≥8px、雙圖實測垂直堆疊**（刪掉那兩條 xfail marker）；**巡檢的 `/admin`、`#id-card-dialog`、`#history-dialog` 三條 `known_overflow` 刪除** |
+| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9） | `MemberManagement.test.tsx`（既有檔擴充） | 手機：每位會員一張卡且三顆操作鍵可達（≥44px 由量測釘住，**拇指熱區位置屬人工目視驗收**——見 review.md 的 F12）；桌面測試不動；**巡檢的 `#members`、`#member-sheet` 兩條 `known_overflow` 刪除** |
+| 4 | 系統告警與公告手機版：告警卡片（P10）、header 換行（P11）、公告列表項（P12）、**公告內文長網址斷行（P15）**、**管理員設置的 Email 列（P16）** | `src/components/admin/SystemAlerts.test.tsx`（**develop 已補 8 條，改為擴充**）＋ `SystemNotifications.test.tsx`（新檔）＋ `AdminSetup.test.tsx`（新檔） | 手機：告警訊息全文可讀、`context` 預設收合；標記已處理可點；**巡檢的 `#system-alerts`、`#announcements`、`#admin-setup` 三條 `known_overflow` 刪除** |
+| 5 | 收尾：確認棘輪真的往少的方向走了 | `e2e/test_overflow_sweep.py`、`e2e/test_admin_mobile_layout.py` | **admin 相關的 8 條 `known_overflow` 全數刪除**、**3 條 xfail marker 全數刪除**，且 `cd e2e && pytest` 全綠——任何一條沒清掉就代表該階段沒做完 |
 
-**階段 5 的取捨**：另一條路是讓分頁變成 URL 可定址（`/admin?tab=members`），
-巡檢就能直接導頁。那確實更好（可深連結、重整不掉分頁），但它改的是產品行為
-而非版面，**超出本規劃的 RWD 範圍**，故選 `post_nav`。若人審認為值得，
-應另開一個 feature，不要塞進這裡。
+**階段 5 已經不是「補巡檢能力」了**（那是 M1 做掉的），而是**驗收棘輪歸零**。
+原規劃寫的 `post_nav` 掛鉤在合併 develop 時改用了他們的命名 `after_load`
+（同一個想法被獨立實作了兩次），路由也從 20 條擴到 27 條。
+
+**分頁定址的取捨（原樣保留）**：另一條路是讓分頁變成 URL 可定址
+（`/admin?tab=members`），巡檢就能直接導頁。那確實更好（可深連結、重整不掉
+分頁），但它改的是產品行為而非版面，**超出本規劃的 RWD 範圍**，故走
+`after_load`。若人審認為值得，應另開一個 feature，不要塞進這裡。
 
 ---
 
@@ -219,7 +245,8 @@
 | `useMediaQuery` 相依 | 測試環境缺 `matchMedia` → 整檔炸掉 | `stubMediaQuery` 已是現成樣板（`WithdrawalManagement.test.tsx:24`），新測試檔一律在 `beforeEach` 掛上 |
 | 既有 975 行 admin 測試誤紅 | 改版把桌面行為也改掉了卻沒發現 | 桌面既有測試**一行都不准改**；要改代表改到了桌面行為，那就不是 RWD 而是改需求，退回人審 |
 | `checkbox` 觸控放大影響其他頁 | 桌面表單的 checkbox 變大、版面走樣 | 只加 `pointer-coarse:`（觸控裝置專屬），滑鼠裝置的 `size-4` 完全不變——與 `button.tsx:24-31` 同一手法 |
-| 分頁兩列擠不下 | 中文標籤在 3 欄下仍溢出 | 階段 1 的 jsdom 測試**只驗結構**（五個 TabsTrigger 存在且可點），量不出真實版面；是否溢出要到階段 5 的 Playwright 巡檢才看得到，而該巡檢預設 report-only。擠不下就退回 2 欄三列（仍優於現況的橫向捲動） |
+| 分頁兩列擠不下 | 中文標籤在 3 欄下仍溢出 | jsdom 測試只驗結構、量不出真實版面，但**不再是唯一防線**：`test_admin_mobile_layout.py` 在真瀏覽器量 TabsList 的列數、溢版巡檢量 `/admin` 是否畫到框外，兩者都會擋 CI。擠不下就退回 2 欄三列（仍優於現況的橫向捲動） |
+| 巡檢量出「假的乾淨」 | 一條路由被誤標成上鎖，實際上要守的東西從未進 DOM，退化了也沒人知道 | 已發生過三次（系統告警的測資太弱、管理員設置的 mock 少回 `userName`、公告管理給空清單），三條都已補測資並標為債務。上鎖前的兩層自檢寫在 `e2e/README.md`：**mock 形狀要與後端一致**、**清單不能是空的** |
 
 **回滾**：純前端版面改動，`git revert` 該次 merge commit 即可，
 無 migration、無資料遷移、無不可逆步驟。每階段獨立成 commit，可單階段回退。
