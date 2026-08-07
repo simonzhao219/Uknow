@@ -144,19 +144,6 @@ def pay_fresh_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) 
     assert_payment_success(page)
 
 
-def pay_fresh_no_confirm_via_gui(page: Page, cfg, admin: SupabaseAdmin,
-                                 user: JourneyUser) -> None:
-    """fresh 但無可清空資產(AC-15 的 needsFreshConfirm 不成立):點付款
-    直接送出,不開二次確認對話框——A10 fresh 版(不填碼)的付款序列。"""
-    checkout = PaymentCheckoutPage(page)
-    expect(checkout.pay_button()).to_be_visible(timeout=30_000)
-    if cfg.payment_mode == "webhook":
-        _arm_webhook_gateway(page, cfg, admin, user)
-    checkout.click_pay()
-    _drive_payment(page, cfg, admin, user)
-    assert_payment_success(page)
-
-
 def pay_backfill_installment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser,
                              *, expect_more: bool) -> None:
     """付一筆補繳(extend,已在 checkout)。expect_more=True → 終態是

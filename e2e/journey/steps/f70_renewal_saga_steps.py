@@ -547,19 +547,21 @@ def saga_seed_king_credit(supabase_admin, run_state, node):
     )
 
 
-@then(parsers.parse('"{node}" 的任務中心顯示免費續約獎勵因會籍失效暫無法領取'))
-def claim_blocked_when_expired(guarded_page, run_state, node):
-    _fresh_gui_login(guarded_page, run_state.users[node])
+@then(parsers.parse('"{node}" 因會籍失效連任務中心也進不了——credit 仍未領取【DB】'))
+def claim_blocked_when_expired(guarded_page, supabase_admin, run_state, node):
+    user = run_state.users[node]
+    _fresh_gui_login(guarded_page, user)
     guarded_page.goto("/tasks")
-    expect(guarded_page.get_by_role("heading", name="任務中心")).to_be_visible(timeout=15_000)
-    # TaskDashboard.claimBlockedReason(accountStatus=expired)——描述文案
-    # 與停用按鈕都要在,證明擋的是「這張 credit 的領取」而不是整區塊消失。
-    expect(
-        guarded_page.get_by_text("會籍已失效，請先續訂後再領取").first
-    ).to_be_visible(timeout=15_000)
-    blocked = guarded_page.get_by_role("button", name="暫無法領取").first
-    expect(blocked).to_be_visible()
-    expect(blocked).to_be_disabled()
+    # A8 的 GUI 真相:RequireMembershipRoute 把過期會員一律導回
+    # /payment/checkout——過期時到不了任務中心,claim 從入口就被擋
+    # (run 31156146124 實測;TaskDashboard 的「暫無法領取」文案只有
+    # 非過期的封鎖態才看得到)。
+    guarded_page.wait_for_url("**/payment/checkout**", timeout=30_000)
+    rows = supabase_admin.rest_select(
+        "referral_king_rewards",
+        {"select": "status", "user_id": f"eq.{user.user_id}"},
+    )
+    assert rows and rows[0]["status"] == "unclaimed", f"credit 狀態異常:{rows}"
 
 
 @when("saga 快照第 8 章收獎基準")
@@ -641,7 +643,7 @@ def ch8_tasks_unchanged(saga, supabase_admin, run_state, node):
 # ===========================================================================
 
 
-@when(parsers.parse('"{node}" 開付款頁選新約且不填推薦碼完成付款——無清空資產不出二次確認'))
+@when(parsers.parse('"{node}" 開付款頁選新約且不填推薦碼、經 A15 二次確認完成付款'))
 def saga_fresh_no_code(saga, guarded_page, journey_config, supabase_admin,
                        run_state, node):
     user = run_state.users[node]
@@ -650,9 +652,11 @@ def saga_fresh_no_code(saga, guarded_page, journey_config, supabase_admin,
     guarded_page.goto("/payment/checkout")
     expect(guarded_page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
     guarded_page.get_by_test_id("renewal-mode-fresh").click()
-    # 不填碼(A10 fresh 版)。W1 無點數、無下線配對,AC-15 的
-    # needsFreshConfirm 不成立 → 點付款直接送出。
-    payment.pay_fresh_no_confirm_via_gui(guarded_page, journey_config, supabase_admin, user)
+    # 不填碼(A10 fresh 版)。W1 雖無可清空資產,但它的原始首購被
+    # renewal info 計為「本輪已付過補繳 1 筆」→ AC-15 的
+    # needsFreshConfirm 仍成立、二次確認照樣彈出(run 31156146124
+    # 實測),與 ch4 走同一個 pay_fresh_via_gui 序列。
+    payment.pay_fresh_via_gui(guarded_page, journey_config, supabase_admin, user)
 
 
 # ===========================================================================
