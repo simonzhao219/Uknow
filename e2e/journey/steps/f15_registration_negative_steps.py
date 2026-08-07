@@ -27,7 +27,7 @@ def scratch_user_on_profile(guarded_page, supabase_admin, run_state, node):
     else:
         # 後續情境：已有帳號但未完成資料——登入後被 ProtectedRoute 帶回
         # 完善資料頁。
-        login_via_gui(guarded_page, user, wait_for=None)
+        login_via_gui(guarded_page, user)
         guarded_page.goto("/complete-profile")
         expect(guarded_page.locator("#name")).to_be_visible(timeout=30_000)
 

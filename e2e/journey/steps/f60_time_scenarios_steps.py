@@ -129,7 +129,7 @@ def scratch_verifies_code(guarded_page, supabase_admin, run_state, scratch, node
         user = run_state.new_user(scratch, twid.generate_for_node(run_state.run_id, scratch))
         register_account_via_gui(guarded_page, supabase_admin, user)
     else:
-        login_via_gui(guarded_page, user, wait_for=None)
+        login_via_gui(guarded_page, user)
         guarded_page.goto("/complete-profile")
         expect(guarded_page.locator("#name")).to_be_visible(timeout=30_000)
 
