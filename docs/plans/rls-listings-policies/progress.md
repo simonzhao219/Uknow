@@ -15,7 +15,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | L1 結構守衛(`api/rls-policies.test.ts`):**relrowsecurity** + 集合 + 逐條角色 + 表達式(空白正規化)+ permissive + 欄位集合不變式 | ⬜ 未開始 | | |
-| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | ⬜ 未開始 | | |
+| 2 | `classify()` 純函式(`tools/rls_probe.py` + `tools/test_rls_probe.py`;網路 client 另放 `tools/rest_as_user.py`) | 🔴 紅燈中 | (見下) | |
 | 3 | L2 讀取邊界情境(驗收 1–5,**5 條**) | ⬜ 未開始 | | |
 | 4 | L2 寫入邊界情境(驗收 6–11,**6 條**) | ⬜ 未開始 | | |
 
@@ -71,7 +71,16 @@ git commit -m "docs: 帶入已審過的規劃書與審查報告"
 「可開工」;架構仍在跑。它被指派的第 6 題正是**「階段 1 現在有 6 條驗證標準
 + housekeeping,會不會該拆?」**——那會改變第一個 commit 的形狀。
 
-### B3 —— 紅綠循環對本 feature 的三個階段不成立【需人工裁決】
+### ✅ B1 / B3 已裁決(2026-08-07,人:「照建議做」)
+
+- **B3 → 採突變驗證的紅**:階段 1/3/4 寫完測試會直接綠(characterization),
+  改成「寫測試 → 綠 → 本地打壞不變式 → 確認紅 → 還原 → 綠」,突變前後輸出
+  貼進本檔與 PR 當證據;commit 用 `test:` 而非 `test(red):`(沒有真紅燈可指,
+  硬造一個是假證據)。**階段 2 不受影響,照原樣 `test(red)` 走。**
+- **B1 → 先做階段 2**(唯一在本容器可跑、且是真正紅綠循環的階段),
+  階段 1 的 deno + supabase CLI 工具鏈之後再處理。
+
+### B3 —— 紅綠循環對本 feature 的三個階段不成立【已裁決,見上】
 
 **這是規劃三輪都沒處理到的缺口,依逃生口 2 停手記錄,不自行修改 plan。**
 
