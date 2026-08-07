@@ -58,9 +58,14 @@ export function MemberVerifyScanner() {
   const [verifying, setVerifying] = useState(false);
   const [cameraFailed, setCameraFailed] = useState(false);
   const [manualToken, setManualToken] = useState('');
+  // 解碼迴圈的閘門。放 ref 不放 state：迴圈跑在 rAF 上，每幀都要讀最新值，
+  // 走 state 會讀到掛載當下那份閉包的舊值。
+  const pausedRef = useRef(false);
+  const verifiedTokenRef = useRef<string | null>(null);
 
   const verifyToken = useCallback(async (token: string) => {
     if (!token) return;
+    pausedRef.current = true; // 送出核身就停止解碼，結果顯示期間不再吃影格
     setVerifying(true);
     setError(null);
     setResult(null);
@@ -69,6 +74,10 @@ export function MemberVerifyScanner() {
         buildApiUrl('/admin/members/verify'),
         { method: 'POST', body: JSON.stringify({ token }) },
       );
+      // 記下成功核身的碼：按「繼續」時它多半還在鏡頭前，不記就會在下一幀
+      // 又跳出同一個人（按鈕看起來沒作用），後端也多寫一筆稽核。
+      // 失敗的碼刻意不記——那時「再送一次」正是店家要的重試。
+      verifiedTokenRef.current = token;
       setResult(res.data);
     } catch (err: any) {
       // 「核身碼過期/無效」與「會籍過期」是不同語意——錯誤態獨立呈現，
@@ -104,17 +113,18 @@ export function MemberVerifyScanner() {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+        // 迴圈只在卸載時結束，掃到碼是「暫停」而非「停止」——一旦 return 掉
+        // 就沒有東西能把它接回來（本 effect 相依 verifyToken，那是常數）。
         const scan = () => {
           if (cancelled) return;
-          if (ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
+          if (!pausedRef.current && ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const found = jsQR(image.data, image.width, image.height);
-            if (found?.data) {
+            if (found?.data && found.data !== verifiedTokenRef.current) {
               verifyToken(found.data);
-              return; // 掃到就停；按「繼續掃描下一位」會重新掛載掃描迴圈
             }
           }
           rafId = requestAnimationFrame(scan);
@@ -235,6 +245,7 @@ export function MemberVerifyScanner() {
                 setResult(null);
                 setError(null);
                 setManualToken('');
+                pausedRef.current = false; // 迴圈一直活著，這裡放行的是解碼
               }}
             >
               繼續掃描下一位
