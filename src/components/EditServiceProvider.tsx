@@ -267,6 +267,13 @@ export function EditServiceProvider() {
 
       if (updateError) throw new Error(updateError.message || '更新失敗');
 
+      // 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非
+      // 403，所以下面這句成功訊息在「沒更新到任何列」時也會顯示。
+      // 這裡的保護機制與 ServiceProviderManagement 的刪除路徑**不同**：
+      // serviceProvider.id 來自本元件以 URL :id 做的 .eq('id', id) 查詢（沒有
+      // user_id 限定），真正擋住他人刊登的是上方 ownership 檢查在
+      // setServiceProvider 之前就 redirect；
+      // **若未來移除或改寫那段 redirect，必須重新檢查這個假設**。
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
     } catch (error: any) {
