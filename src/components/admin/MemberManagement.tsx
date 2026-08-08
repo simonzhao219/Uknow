@@ -21,6 +21,8 @@ import { StatCardGrid } from '../ui/stat-card-grid';
 import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { IdReviewQueue } from './IdReviewQueue';
+import { MemberCardList } from './MemberCardList';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
 import type {
   AdminIdReview,
@@ -117,6 +119,10 @@ export function MemberManagement({
   loadIdReviews,
   submitIdReview,
 }: MemberManagementProps) {
+  // 版面切換用 JS 判定而非 CSS 雙套版面（plan §3 的刻意偏離，Q3 已裁決接受）:
+  // 兩套都掛在 DOM 上，jsdom 的 getByText 會立刻變成 found multiple elements，
+  // 既有測試會整批誤紅，而那個紅燈不代表任何真實缺陷。
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -269,7 +275,8 @@ export function MemberManagement({
               <SheetDescription>{detailFor.email}</SheetDescription>
             </SheetHeader>
 
-            <dl className="grid grid-cols-2 gap-3 py-4 text-sm">
+            {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">會籍</dt>
                 <dd>{detailFor.accountStatus === 'active' ? '有效會員' : '已失效'}</dd>
@@ -442,7 +449,8 @@ export function MemberManagement({
         {/* 會員列表 */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-4">
+            {/* P8:375px 下標題與 w-56 的搜尋框互相擠壓（實測 +9px）。 */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <CardTitle>會員管理</CardTitle>
                 <CardDescription>管理平台所有會員帳號</CardDescription>
@@ -485,6 +493,17 @@ export function MemberManagement({
               </div>
             ) : members.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
+            ) : !isDesktop ? (
+              <MemberCardList
+                members={members}
+                accountBadge={(status) =>
+                  ACCOUNT_STATUS_BADGE[status] ?? ACCOUNT_STATUS_BADGE.expired
+                }
+                onOpenDetail={openDetail}
+                onToggleAdmin={toggleAdmin}
+                onToggleSuspend={handleSuspendToggle}
+                processingId={processingId}
+              />
             ) : (
               <Table>
                 <TableHeader>

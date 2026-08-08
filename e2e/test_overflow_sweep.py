@@ -489,11 +489,6 @@ ROUTES = [
         "/admin",
         tags=["members"],
         after_load=_open_tab("會員管理"),
-        # 只有 +9px 的 CardHeader（標題與搜尋框擠一列）。8 欄表格**量不到**
-        # ——它在 Table 原語的 overflow-x-auto 裡捲動，探針刻意不報那種（明示
-        # 要捲動 = 有意為之）。「要橫向捲才讀得完一列」是可用性問題，不是
-        # 溢出，這支永遠測不出來，別誤以為它有守住。
-        known_overflow="標題與搜尋框擠一列（+9px）；待 platform-admin-rwd 的 P8 處置",
     ),
     SweepRoute(
         "/admin",
@@ -543,7 +538,6 @@ ROUTES = [
         "/admin",
         tags=["member-sheet"],
         after_load=_open_member_detail_sheet,
-        known_overflow="繼承會員管理分頁的標題列溢出（Sheet 自身無溢出）",
     ),
 ]
 
