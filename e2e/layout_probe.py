@@ -287,3 +287,29 @@ def first_screen_position(page, selector: str) -> dict[str, Any] | None:
     而那不會被溢版巡檢報成任何問題:版面完全沒有壞，只是**不好用**。
     """
     return page.evaluate(_FIRST_SCREEN_JS, selector)
+
+
+_CARD_DENSITY_JS = """
+(selector) => {
+  const cards = [...document.querySelectorAll(selector)];
+  if (!cards.length) return null;
+  return cards.map((c) => ({
+    height: Math.round(c.getBoundingClientRect().height),
+    // 只算看得見的:收進選單裡的按鈕不佔畫面，也不參與掃視成本。
+    visibleButtons: [...c.querySelectorAll('button')]
+      .filter((b) => b.offsetParent !== null)
+      .map((b) => (b.textContent || '').trim())
+      .filter(Boolean),
+  }));
+}
+"""
+
+
+def card_density(page, selector: str) -> list[dict[str, Any]] | None:
+    """列表卡片的**掃視成本**:每張多高、直接可見幾顆按鈕。
+
+    「所有資訊都攤平呈現」不會被溢版巡檢報成任何問題——版面完全正確，
+    只是每張卡都很高、每張卡都有一排按鈕，於是一屏放不下兩筆、
+    而且每一筆都要重新讀一次按鈕列。這條把那個成本變成數字。
+    """
+    return page.evaluate(_CARD_DENSITY_JS, selector)

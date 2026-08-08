@@ -603,30 +603,36 @@ export function WithdrawalManagement({
           {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
             數字去對網銀的轉出總額，混進手續費就對不起來。 */}
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待匯款總額</p>
+            {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
+                為了處理那一筆，不是看儀表板——四張卡各佔 100px 高會把第一筆
+                記錄推到第一屏之外（實測 y=832 vs 視窗 812）。桌面維持原樣。
+                共用原語 StatCardGrid 不動:它也服務會員端的 RewardStats 與
+                ReferralStats，那兩處不在本 feature 範圍內。 */}
+            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
+              <p className="text-xs sm:text-sm text-muted-foreground">待匯款總額</p>
               {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
-                  前端無上限，所以縮字級而不是指望數字不會變大。桌面維持 text-2xl。
-                  另外三張是筆數（個位數），不需要動。 */}
-              <p className="text-xl sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+                  前端無上限，所以縮字級而不是指望數字不會變大。 */}
+              <p className="text-base sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待處理</p>
-              <p className="text-2xl font-bold">{stats.byStatus.pending}</p>
+            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
+              <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+              <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待查收</p>
-              <p className="text-2xl font-bold">{stats.byStatus.awaiting_collection}</p>
+            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
+              <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+              <p className="text-base sm:text-2xl font-bold">
+                {stats.byStatus.awaiting_collection}
+              </p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">已完成</p>
-              <p className="text-2xl font-bold">{stats.byStatus.completed}</p>
+            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
+              <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+              <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
             </CardContent>
           </Card>
         </StatCardGrid>
@@ -638,7 +644,9 @@ export function WithdrawalManagement({
         <Card>
           <CardHeader>
             <CardTitle>匯款作業面板</CardTitle>
-            <CardDescription>照這五欄打進網銀，帳號可一鍵複製</CardDescription>
+            <CardDescription className="hidden sm:block">
+              照這五欄打進網銀，帳號可一鍵複製
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {/* 五欄與手機版共用同一份 render（審查 R6）——各自手刻會長出
@@ -676,15 +684,19 @@ export function WithdrawalManagement({
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={downloadCSV}
-                disabled={!withdrawals.length}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                下載CSV
-              </Button>
+              {/* 下載 CSV 只在桌面:手機下載一份要拿去對帳的試算表沒有下一步，
+                  留著只是佔掉工具列一整列。 */}
+              {isDesktop && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={downloadCSV}
+                  disabled={!withdrawals.length}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  下載CSV
+                </Button>
+              )}
             </div>
             {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
                 只寫「共 N 筆」會讓人以為 N 就是全部。 */}
@@ -712,7 +724,7 @@ export function WithdrawalManagement({
       <Card>
         <CardHeader>
           <CardTitle>獎金提領申請</CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             匯款完成後標記「已匯款」，會員確認查收後自動轉為已完成；退件會自動退回點數
           </CardDescription>
         </CardHeader>

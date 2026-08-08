@@ -131,7 +131,9 @@ export function AdminSetup() {
             <Shield className="h-5 w-5" />
             管理員權限設置
           </CardTitle>
-          <CardDescription>管理平台的所有功能需要管理員權限</CardDescription>
+          <CardDescription className="hidden sm:block">
+            管理平台的所有功能需要管理員權限
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 用戶信息 */}

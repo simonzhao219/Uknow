@@ -143,7 +143,7 @@ export function SystemNotifications() {
             <Send className="h-5 w-5" />
             發布全站公告
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             公告會顯示在全站頂部橫幅（例如系統維護預告）；生效區間外自動消失
           </CardDescription>
         </CardHeader>
@@ -227,7 +227,7 @@ export function SystemNotifications() {
             <Bell className="h-5 w-5" />
             公告列表
           </CardTitle>
-          <CardDescription>查看與管理所有公告</CardDescription>
+          <CardDescription className="hidden sm:block">查看與管理所有公告</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (

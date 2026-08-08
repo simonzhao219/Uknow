@@ -25,6 +25,7 @@
 import pytest
 
 from layout_probe import (
+    card_density,
     count_rows,
     first_screen_position,
     hit_area,
@@ -250,3 +251,41 @@ def test_first_member_is_reachable_without_scrolling(admin_at_375):
         f"第一位會員在 y={pos['top']}px，第一屏只有 {pos['viewportHeight']}px"
         f"——還差 {pos['below']}px。"
     )
+
+
+# --- 掃視成本（階段 6） ------------------------------------------------------
+#
+# 人審看完 375px 實機截圖的三點意見:「所有資訊都呈現，所以畫面很長」、
+# 「按鈕卡片很多，都擠在一起」、「三格統計在手機變成上面兩格下面一格」。
+# 前兩點的根因是同一個:**沒有做漸進揭露**——每張卡把所有欄位與所有動作
+# 都攤平，於是一屏放不下兩筆，而且每一筆都要重新掃一次按鈕列。
+#
+# 收合態的預算（實測基準:812px 視窗扣掉頁首/分頁/統計/工具列約剩 470px）:
+MAX_COLLAPSED_CARD_PX = 150  # 兩筆 = 300px，第一屏塞得下且還看得到第三筆的開頭
+MAX_VISIBLE_BUTTONS = 2  # 主要動作 ＋「更多」選單;其餘收進選單
+
+
+def _assert_scannable(cards, kind: str):
+    assert cards is not None, f"找不到{kind}卡片——選擇器過時了"
+    for i, c in enumerate(cards):
+        assert c["height"] <= MAX_COLLAPSED_CARD_PX, (
+            f"第 {i + 1} 張{kind}卡收合態高 {c['height']}px（上限 {MAX_COLLAPSED_CARD_PX}px）"
+            "——一屏放不下兩筆，使用者要一直捲。"
+        )
+        assert len(c["visibleButtons"]) <= MAX_VISIBLE_BUTTONS, (
+            f"第 {i + 1} 張{kind}卡有 {len(c['visibleButtons'])} 顆可見按鈕"
+            f"{c['visibleButtons']}（上限 {MAX_VISIBLE_BUTTONS}）"
+            "——次要動作應收進「更多」選單，不要每張卡都攤一排。"
+        )
+
+
+def test_withdrawal_cards_are_scannable(admin_at_375):
+    """提領卡收合態要夠矮、按鈕夠少，一屏掃得完兩筆。"""
+    _assert_scannable(card_density(admin_at_375, FIRST_WITHDRAWAL_CARD), "提領")
+
+
+def test_member_cards_are_scannable(admin_at_375):
+    """會員卡同理。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_scannable(card_density(admin_at_375, FIRST_MEMBER_CARD), "會員")
