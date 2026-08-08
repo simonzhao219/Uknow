@@ -10,8 +10,11 @@ Feature: 刊登 RLS — 直打 PostgREST 的授權邊界
   被評估之前就吃 42501,只有 hosted 分支測得到。
 
   兩種拒絕形狀不同,不可混為一談:
-  - 違反 WITH CHECK(INSERT/UPDATE)→ 403 + code 42501
+  - 違反 WITH CHECK(INSERT/UPDATE)→ 4xx + code 42501
   - 被 USING 過濾(SELECT/UPDATE/DELETE)→ **不是錯誤**,200/204 + 0 列
+
+  4xx 不寫死成 403:authenticated 收到 403、anon 收到 401,同一句
+  RLS 訊息、不同狀態碼。判讀以 message 為準,見 tools/rls_probe.py。
 
   節點:B5 有效擁有者、B6 攻擊者、B7 失效擁有者、B8 無刊登(偽造目標)。
 

@@ -458,10 +458,13 @@ L1 的設計原則與 golden 值取法見 `supabase/README.md` 的〈RLS 結構�
 
 ### 14.3 寫這類情境時最容易踩的三個坑
 
-1. **兩種拒絕形狀不同**：違反 WITH CHECK（INSERT/UPDATE）→ 403 + `code 42501`；
+1. **兩種拒絕形狀不同**：違反 WITH CHECK（INSERT/UPDATE）→ 4xx + `code 42501`；
    被 USING 過濾（SELECT/UPDATE/DELETE）→ **不是錯誤**，200/204 + 0 列。
    只斷言「請求失敗」的測試在 policy 全開時也會過。
    判讀邏輯集中在零網路依賴的 `tools/rls_probe.py`，離線可測。
+   **狀態碼分不出拒絕的來源**：同一句 `violates row-level security policy`，
+   authenticated 收到 403、anon 收到 401——狀態碼反映請求者是誰，不是誰
+   擋下了請求，所以歸類一律以 message 優先。
 2. **RLS 拒絕與 GRANT 拒絕共用 SQLSTATE 42501**，只能靠 message 辨別。分不出來
    就失去辨別力——即使 policy 沒生效、拒絕來自不相干的權限層，測試也照樣綠。
 3. **「影響 0 列」需要成對的正面情境才有區辨力**：0 列在「policy 正確」與
