@@ -16,9 +16,10 @@
 //      不收（破壞力 ~0）。授予在資料層面不可逆——他當下就讀得到全站身分證與
 //      收款帳號，撤回權限撤不回已經看過的東西。失敗時要說出是哪一種失敗。
 //   6. 空／錯／載入三態。
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminMember, AdminMemberDetail, AdminMembersResponse } from '@contract';
+import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 import { MemberManagement } from './MemberManagement';
 
 afterEach(cleanup);
@@ -448,5 +449,39 @@ describe('MemberManagement', () => {
     renderConsole();
     const box = await screen.findByPlaceholderText('搜尋姓名 / Email / 電話');
     expect(box.getAttribute('type')).toBe('search');
+  });
+});
+
+// --- 手機版（階段 3） --------------------------------------------------------
+//
+// 與提領管理同一個原則：表格換卡片時，**互動不能被悄悄拿掉**。這裡的三顆
+// 操作鍵（查看／設為管理員／暫停）都是顯式按鈕、不依賴 <tr> 結構，所以沒有
+// F1 那種隱性耦合；要守的是「資訊量不低於桌面關鍵欄位」與「三顆鍵都在」。
+describe('MemberManagement 手機版', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('不渲染 table，改以每位會員一張卡呈現', async () => {
+    const { container } = renderConsole();
+    await screen.findByText('陳大文');
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('每張卡帶姓名、Email、會籍、角色、狀態與刊登數', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('陳大文')).toBeTruthy();
+    expect(within(card).getByText('a@b.c')).toBeTruthy();
+    expect(within(card).getByText('一般會員')).toBeTruthy();
+    expect(within(card).getByText('正常')).toBeTruthy();
+  });
+
+  it('三顆操作鍵都在卡片內', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByRole('button', { name: /查看 .* 的詳情/ })).toBeTruthy();
+    expect(within(card).getByRole('button', { name: '設為管理員' })).toBeTruthy();
+    expect(within(card).getByRole('button', { name: '暫停' })).toBeTruthy();
   });
 });
