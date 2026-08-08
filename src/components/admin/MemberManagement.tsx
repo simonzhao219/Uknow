@@ -277,6 +277,13 @@ export function MemberManagement({
 
             {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4 text-sm">
+              {/* 電話:詳情面板原本就缺這一欄（桌面只在表格列上有）。手機是
+                  JS 擇一渲染，表格根本不掛 DOM——沒補這欄的話，admin 用電話
+                  搜到人之後在手機上完全看不到號碼，也無法回撥。 */}
+              <div>
+                <dt className="text-muted-foreground">電話</dt>
+                <dd className="font-mono">{detailFor.phone ?? '—'}</dd>
+              </div>
               <div>
                 <dt className="text-muted-foreground">會籍</dt>
                 <dd>{detailFor.accountStatus === 'active' ? '有效會員' : '已失效'}</dd>
@@ -505,7 +512,6 @@ export function MemberManagement({
                   ACCOUNT_STATUS_BADGE[status] ?? ACCOUNT_STATUS_BADGE.expired
                 }
                 onOpenDetail={openDetail}
-                onToggleSuspend={handleSuspendToggle}
                 processingId={processingId}
               />
             ) : (

@@ -6,6 +6,11 @@ import { Card, CardContent } from '../ui/card';
 /**
  * 會員管理的**手機版**列表：一位會員一張卡。
  *
+ * **卡上只有一顆操作鍵（查看）。** 停權／恢復與管理員授予／撤銷都在詳情
+ * 面板裡，走同一個 `MemberAction` 路徑（同一種確認框、同一處錯誤顯示）
+ * ——依 `ui-ux-guidelines.md` §11.1:改「一個人的狀態」的動作一律移進詳情
+ * 面板，且同類動作必須用同一套邏輯與設計。
+ *
  * **只有兩顆操作鍵**（查看、暫停·恢復）。「設為／撤銷管理員」不在這裡——
  * 它已在 PR #258 移出列表、改放進詳情 Sheet 的「權限」區，理由是動作位階:
  * 罕用、破壞力最高、而且**在資料層面不可逆**（授予的當下他就讀得到全站
@@ -23,7 +28,6 @@ interface MemberCardListProps {
   members: AdminMember[];
   accountBadge: (status: string) => { label: string; className: string };
   onOpenDetail: (id: string) => void;
-  onToggleSuspend: (member: AdminMember) => void;
   processingId: string | null;
 }
 
@@ -31,7 +35,6 @@ export function MemberCardList({
   members,
   accountBadge,
   onOpenDetail,
-  onToggleSuspend,
   processingId,
 }: MemberCardListProps) {
   return (
@@ -62,7 +65,16 @@ export function MemberCardList({
                   變動（實測長 Email 讓卡片從 130px 變 154px）。列表的工作是
                   「找到那個人」，截斷仍然認得出來，完整值在詳情 Sheet 裡一點就有
                   ——換來的是固定的卡高與可預測的掃視節奏。 */}
-              <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+              {/* 電話與 Email 併成一行，不多佔一列——收合態預算只剩 12px。
+                  搜尋框 placeholder 寫的是「搜尋姓名 / Email / 電話」，admin 用
+                  來電號碼搜到人之後，得看得到命中的是哪個號碼才能確認是同一人，
+                  而手機是唯一能一鍵撥號的裝置。
+                  ⚠️ `truncate` 當 flex item 時 `min-width:auto` 會讓它不縮反溢，
+                  `min-w-0` 不可省。 */}
+              <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
+                <span className="min-w-0 truncate">{member.email}</span>
+                {member.phone && <span className="shrink-0 font-mono">{member.phone}</span>}
+              </div>
 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -73,15 +85,13 @@ export function MemberCardList({
                 </div>
                 {/* 卡片上唯一留下的動作:查看詳情——這個列表存在的理由就是
                     「找到那個人」。設為管理員／停權都是低頻且危險的，進選單。 */}
-                {/* 兩顆鍵，**不用溢出選單**（ui-ux-guidelines §11 規則 3）:
-                    「設為管理員」已移出列表、改在詳情 Sheet 的權限區
-                    （罕用＋破壞力最高、且在資料層面不可逆），剩下的選單只裝
-                    一項——那是把一次點擊變兩次而沒換到任何東西。
-                    停權也**不收進選單**:§11 明列它是時效性動作，與「退件與
-                    代為完成不鎖」同一類。
-                    視覺權重跟頻率走（§11 規則 1）:每天要按的「查看」用
-                    outline，偶爾用的「暫停」用 ghost＋紅字——紅字足以讀出
-                    危險，真正的防線是確認框，不是把它做成視線磁鐵。 */}
+                {/* **卡上只有「查看」一顆**（ui-ux-guidelines §11.1）:
+                    停權改的是**一個人的狀態**，不是一筆資料——這類動作一律
+                    移進詳情面板，做之前本來就該先看清楚他是誰。
+                    先前這裡留著停權，理由是「時效性」（援引提領台的
+                    「退件與代為完成不鎖」）。**那個先例不轉移**:提領台改的是
+                    一筆交易，會員管理改的是一個人；分類不同，先例就不適用。
+                    §11.1 已明文廢止該理由，桌面表格也同步只剩「查看」。 */}
                 <div className="flex shrink-0 items-center gap-1">
                   <Button
                     size="sm"
@@ -91,17 +101,6 @@ export function MemberCardList({
                     onClick={() => onOpenDetail(member.id)}
                   >
                     查看
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className={
-                      member.suspended ? undefined : 'text-destructive hover:text-destructive'
-                    }
-                    onClick={() => onToggleSuspend(member)}
-                    disabled={processingId === member.id}
-                  >
-                    {member.suspended ? '恢復' : '暫停'}
                   </Button>
                 </div>
               </div>

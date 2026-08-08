@@ -499,14 +499,24 @@ describe('MemberManagement 手機版', () => {
     expect(within(card).getByText('已暫停')).toBeTruthy();
   });
 
-  it('卡片上只有兩顆操作鍵——設為管理員在詳情面板，不在列上', async () => {
-    // ui-ux-guidelines §11:罕用＋高破壞力的動作移進詳情面板。授予管理員
-    // 一個平台設好一次幾乎不再動，卻在資料層面不可逆（他當下就讀得到全站
-    // 身分證與收款帳號）。
+  it('卡片上只有一顆操作鍵——改「一個人的狀態」的動作全在詳情面板', async () => {
+    // ui-ux-guidelines §11.1:分類看動作的對象。停權與管理員切換改的都是
+    // 「一個人的狀態」，一律移進詳情面板，且走同一個 MemberAction 路徑
+    // （同一種確認框、同一處錯誤顯示）。曾經替停權開的「時效性」例外已被
+    // §11.1 明文廢止——提領台改的是一筆交易，會員管理改的是一個人。
     renderConsole();
     const card = await screen.findByRole('group', { name: /陳大文/ });
     expect(within(card).getByRole('button', { name: /查看 .* 的詳情/ })).toBeTruthy();
-    expect(within(card).getByRole('button', { name: '暫停' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: '暫停' })).toBeNull();
     expect(within(card).queryByRole('button', { name: '設為管理員' })).toBeNull();
+  });
+
+  it('卡片顯示電話——admin 用來電號碼搜到人之後要認得出是同一個人', async () => {
+    // 搜尋框 placeholder 就寫著「搜尋姓名 / Email / 電話」，後端 RPC 也真的
+    // 有 phone ilike。手機是 JS 擇一渲染、表格不掛 DOM，卡片不顯示就等於
+    // 手機上完全看不到號碼，也無法回撥。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('0912345678')).toBeTruthy();
   });
 });
