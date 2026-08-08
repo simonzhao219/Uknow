@@ -35,6 +35,23 @@ def latest_withdrawal(admin, user_id: str) -> dict:
     return rows[0]
 
 
+def refund_adjustments(admin, withdrawal_id: str) -> list[dict]:
+    """該筆提領的退件補償入帳(`admin_update_withdrawal_status` 在轉
+    rejected 時插入的 `adjustment`)。
+
+    有它而餘額沒回 → 帳本彙總(reward_balances.available)的問題;
+    沒有它而狀態是 rejected → SQL 函數沒插補償。兩者的修法完全不同,
+    所以斷言失敗時要能分辨,不能只報「點數沒退回」。
+    """
+    return admin.rest_select(
+        "reward_transactions",
+        {
+            "select": "id,type,amount,description",
+            "withdrawal_id": f"eq.{withdrawal_id}",
+        },
+    )
+
+
 def backdate_todays_withdrawals(admin, user_id: str, days: int = 1) -> int:
     """把該使用者「今天」的提領紀錄往前挪,解除一天一次的限制。
 

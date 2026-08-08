@@ -352,6 +352,13 @@ jobs:
           # 會誤殺合法窄選;但下限不能歸零——「窄選卻一個都沒跑」仍是
           # marker 打錯字或情境全 skip 的訊號,floor=1 保住這道防線。
           MIN_FILTERED: '1'
+          # 下限管不到「跑得夠多、但跑的不是目標」:2026-08-08 的 run
+          # 31253115394 裡 f00 的 A0 付款失敗 → f10 建樹倒 → f20/f30/f40/
+          # f45/f50/f60 全數 skip(39 條),只剩 f70 的連鎖失敗在「跑」,
+          # ran=72 遠高於 20,下限完全沒感覺。full 跑正常時 skip 應趨近 0
+          # (窄選與 skeleton 靠的是 deselect,不是 skip),所以 skip 佔比
+          # 本身就是「上游倒了、下游根本沒驗到」的訊號。
+          MAX_SKIP_RATIO_FULL: '0.1'
         run: |
           python3 - <<'PY'
           import os, sys, xml.etree.ElementTree as ET
@@ -378,6 +385,22 @@ jobs:
                   '視為未執行。常見原因:分支連線資訊沒帶進來導致情境全 skip,'
                   '或 marker 沒命中導致全數 deselect。'
               )
+
+          # 「跑了很多」不等於「驗到了」:上游章節倒下時,下游情境是 skip 而非
+          # fail,總量看起來照樣健康。full 才查——窄選/skeleton 少跑是靠
+          # deselect,skip 佔比對它們沒有意義。
+          full = not os.environ.get('PYTEST_EXPR') and os.environ['SCOPE'] != 'skeleton'
+          if full and total:
+              ratio = skipped / total
+              limit = float(os.environ['MAX_SKIP_RATIO_FULL'])
+              print(f'skip_ratio={ratio:.1%} limit={limit:.0%}')
+              if ratio > limit:
+                  sys.exit(
+                      f'::error::journey full 有 {skipped}/{total} 個情境被 skip'
+                      f'（{ratio:.0%} > {limit:.0%}）——多半是前置章節倒了讓整批'
+                      '下游情境沒執行到。這一場對「被 skip 的那些情境」不具驗證'
+                      '效力,別把它讀成「只剩幾條紅」。'
+                  )
           print('OK:journey 確實執行了')
           PY
 
