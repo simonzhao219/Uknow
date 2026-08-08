@@ -170,14 +170,11 @@ def hit_area(page, selector: str, max_reach: int = 60) -> dict[str, Any] | None:
 
 _HIT_OVERLAP_JS = """
 (args) => {
-  const { selectorA, selectorB, maxReach } = args;
+  const { selectorA, selectorB } = args;
   const a = document.querySelector(selectorA);
   const b = document.querySelector(selectorB);
   if (!a || !b) return null;
 
-  // **只捲一次**，然後在同一個渲染狀態下量兩個元素。相交是同一畫面的性質；
-  // 各自 scrollIntoView 再比對，等於拿兩個不同捲動位置的視窗座標互相比——
-  // 而 block:'center' 會把每個元素都放到畫面正中，兩者必然「重疊」。
   a.scrollIntoView({ block: 'center', inline: 'center' });
 
   const inView = (el) => {
@@ -187,49 +184,65 @@ _HIT_OVERLAP_JS = """
   };
   if (!inView(a) || !inView(b)) return { offscreen: true };
 
-  const areaOf = (el) => {
+  // 量**宣告熱區**（::before 的計算樣式），不是「有效命中領地」。
+  //
+  // 為什麼改:elementFromPoint 對每個座標只回一個最上層元素，所以兩個熱區
+  // 真的重疊時，命中歸屬是**平面的分割**——回報的兩個矩形必然相鄰而永不
+  // 相交。這支測試量的那一對（表頭全選與第一列）x 中心完全相同（都是 73，
+  // 同屬第一欄、同一組 pointer-coarse:pl-6），是軸向共線的最壞情況:實測
+  // 注入 25px 真重疊仍回 overlap:false，而現況餘裕只有 15px——docstring
+  // 自稱要守的回歸（列高掉回 40px）整段都在漏抓區間內。
+  const declared = (el) => {
     const r = el.getBoundingClientRect();
-    const cx = Math.round(r.left + r.width / 2);
-    const cy = Math.round(r.top + r.height / 2);
-    const hits = (x, y) => {
-      const t = document.elementFromPoint(x, y);
-      return !!t && (t === el || el.contains(t));
+    const cs = getComputedStyle(el, '::before');
+    // 沒有偽元素熱區時退回元素自己的盒子。
+    if (!cs || cs.content === 'none' || !cs.content) {
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, source: 'box' };
+    }
+    const px = (v) => (v && v.endsWith('px') ? parseFloat(v) : 0);
+    // ::before 是 absolute、參考宿主的 padding box。
+    const bl = px(getComputedStyle(el).borderLeftWidth);
+    const bt = px(getComputedStyle(el).borderTopWidth);
+    const left = r.left + bl + px(cs.left);
+    const top = r.top + bt + px(cs.top);
+    return {
+      left, top,
+      right: left + px(cs.width),
+      bottom: top + px(cs.height),
+      source: 'pseudo',
     };
-    if (!hits(cx, cy)) return null;
-    const reach = (dx, dy) => {
-      let n = 0;
-      for (let i = 1; i <= maxReach; i += 1) {
-        if (!hits(cx + dx * i, cy + dy * i)) break;
-        n = i;
-      }
-      return n;
-    };
-    const l = reach(-1, 0), rt = reach(1, 0), u = reach(0, -1), d = reach(0, 1);
-    return { left: cx - l, right: cx + rt, top: cy - u, bottom: cy + d };
   };
 
-  const ra = areaOf(a), rb = areaOf(b);
-  if (!ra || !rb) return { centerMiss: true };
-  const overlap = !(ra.right < rb.left || rb.right < ra.left
-                 || ra.bottom < rb.top || rb.bottom < ra.top);
-  return { overlap, a: ra, b: rb };
+  const ra = declared(a), rb = declared(b);
+  const overlap = !(ra.right <= rb.left || rb.right <= ra.left
+                 || ra.bottom <= rb.top || rb.bottom <= ra.top);
+  return {
+    overlap,
+    a: { left: Math.round(ra.left), right: Math.round(ra.right),
+         top: Math.round(ra.top), bottom: Math.round(ra.bottom), source: ra.source },
+    b: { left: Math.round(rb.left), right: Math.round(rb.right),
+         top: Math.round(rb.top), bottom: Math.round(rb.bottom), source: rb.source },
+  };
 }
 """
 
 
-def hit_areas_overlap(page, selector_a: str, selector_b: str, max_reach: int = 60):
-    """兩個元素的**可點區**在畫面上是否相交（同一個渲染狀態下量）。
+def hit_areas_overlap(page, selector_a: str, selector_b: str):
+    """兩個元素的**宣告熱區**在畫面上是否相交。
 
     相鄰的勾選框各自把熱區撐到 44×44 時很容易吃到對方的地盤——點下去命中誰
     由繪製順序決定，使用者只會看到「勾錯了」而沒有任何錯誤訊息。
 
-    回 `None` = 選擇器過時；`{"offscreen": True}` / `{"centerMiss": True}` =
-    量測失效（與「有沒有相交」是不同的問題）；否則回
-    `{"overlap": bool, "a": {...}, "b": {...}}`。
+    量的是 `::before` 的計算樣式而不是 `elementFromPoint` 的命中領地:後者是
+    平面的分割，兩個熱區真重疊時回報的矩形反而必然相鄰、永不相交（軸向共線
+    時尤其明顯，而這支測的正是那種情況）。
+
+    回 `None` = 選擇器過時；`{"offscreen": True}` = 捲了還是不在視窗內；
+    否則回 `{"overlap": bool, "a": {...}, "b": {...}}`，其中 `source` 標明
+    量到的是 `pseudo`（偽元素熱區）還是 `box`（沒有偽元素時的元素盒子）。
     """
     return page.evaluate(
-        _HIT_OVERLAP_JS,
-        {"selectorA": selector_a, "selectorB": selector_b, "maxReach": max_reach},
+        _HIT_OVERLAP_JS, {"selectorA": selector_a, "selectorB": selector_b}
     )
 
 

@@ -405,48 +405,64 @@ export function MemberManagement({
         {/* 統計卡片：讀伺服器算好的**全站** stats。改版前是
             `members.filter(...).length`——那個數字會隨分頁改變。 */}
         <section aria-label="會員統計">
-          {/* 手機一列三格:三張卡在預設的兩欄格線裡會排成 2+1，第三張獨佔一列、
-              右半留白，統計區整整吃掉半屏。admin 打開手機是為了找那個人，
-              不是看總數。共用原語 StatCardGrid 不動（會員端的 RewardStats 與
-              ReferralStats 也在用），只從呼叫端覆寫欄數——`cn()` 是 twMerge，
-              同一組的後者勝出。 */}
-          <StatCardGrid className="grid-cols-3 gap-2 sm:gap-4">
-            <Card>
-              <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                  <Users className="h-3.5 w-3.5 shrink-0 text-blue-600 sm:h-5 sm:w-5" />
-                  <span className="truncate">總會員數</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                <div className="text-lg font-bold sm:text-3xl text-blue-600">{stats.total}</div>
-              </CardContent>
-            </Card>
+          {/* 手機整組換成一行摘要，與提領彙總同一個理由:壓扁過的三張卡仍佔
+              一屏的可觀比例，而 admin 打開手機是為了找那個人。桌面維持卡片。 */}
+          {!isDesktop ? (
+            <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+              <div className="flex items-baseline gap-1">
+                <dt className="text-xs text-muted-foreground">總會員</dt>
+                <dd className="font-bold text-blue-600">{stats.total}</dd>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <dt className="text-xs text-muted-foreground">暫停</dt>
+                <dd className="font-bold text-red-600">{stats.suspended}</dd>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <dt className="text-xs text-muted-foreground">管理員</dt>
+                <dd className="font-bold text-green-600">{stats.admins}</dd>
+              </div>
+            </dl>
+          ) : (
+            <StatCardGrid className="grid-cols-3 gap-2 sm:gap-4">
+              <Card>
+                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
+                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
+                    <Users className="h-3.5 w-3.5 shrink-0 text-blue-600 sm:h-5 sm:w-5" />
+                    <span className="truncate">總會員數</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
+                  <div className="text-lg font-bold sm:text-3xl text-blue-600">{stats.total}</div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                  <UserX className="h-3.5 w-3.5 shrink-0 text-red-600 sm:h-5 sm:w-5" />
-                  <span className="truncate">暫停會員</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                <div className="text-lg font-bold sm:text-3xl text-red-600">{stats.suspended}</div>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
+                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
+                    <UserX className="h-3.5 w-3.5 shrink-0 text-red-600 sm:h-5 sm:w-5" />
+                    <span className="truncate">暫停會員</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
+                  <div className="text-lg font-bold sm:text-3xl text-red-600">
+                    {stats.suspended}
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                  <Shield className="h-3.5 w-3.5 shrink-0 text-green-600 sm:h-5 sm:w-5" />
-                  <span className="truncate">管理員</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                <div className="text-lg font-bold sm:text-3xl text-green-600">{stats.admins}</div>
-              </CardContent>
-            </Card>
-          </StatCardGrid>
+              <Card>
+                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
+                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
+                    <Shield className="h-3.5 w-3.5 shrink-0 text-green-600 sm:h-5 sm:w-5" />
+                    <span className="truncate">管理員</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
+                  <div className="text-lg font-bold sm:text-3xl text-green-600">{stats.admins}</div>
+                </CardContent>
+              </Card>
+            </StatCardGrid>
+          )}
         </section>
 
         {actionError && (
@@ -464,7 +480,8 @@ export function MemberManagement({
             {/* P8:375px 下標題與 w-56 的搜尋框互相擠壓（實測 +9px）。 */}
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <CardTitle>會員管理</CardTitle>
+                {/* 手機隱藏:分頁標籤已經寫著「會員管理」。 */}
+                <CardTitle className="hidden sm:block">會員管理</CardTitle>
                 <CardDescription className="hidden sm:block">管理平台所有會員帳號</CardDescription>
               </div>
               <form

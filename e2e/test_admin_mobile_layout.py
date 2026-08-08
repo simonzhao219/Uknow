@@ -264,27 +264,52 @@ def test_first_member_is_reachable_without_scrolling(admin_at_375):
 # 前兩點的根因是同一個:**沒有做漸進揭露**——每張卡把所有欄位與所有動作
 # 都攤平，於是一屏放不下兩筆，而且每一筆都要重新掃一次按鈕列。
 #
-# 收合態的預算（實測基準:812px 視窗扣掉頁首/分頁/統計/工具列約剩 470px）:
-MAX_COLLAPSED_CARD_PX = 150  # 兩筆 = 300px，第一屏塞得下且還看得到第三筆的開頭
-# 上限 3 而不是 2:`ui-ux-guidelines.md` §11 規則 3 明列**時效性動作不得收進
-# 溢出選單**（並直接引用「退件與代為完成不鎖——那是客服接到電話當下就該能
-# 處理的事」），所以提領卡至少是「主要動作 ＋ 時效性動作 ＋ 選單」三顆。
+# 收合態的高度預算。**這個數字沒有餘裕**（實測提領卡正好 150），留著只是
+# 擋「卡片變胖」的下界，不是「一屏兩筆」的代理——後者現在直接量，見下方。
+MAX_COLLAPSED_CARD_PX = 150
+# 上限 3 而不是 2:`ui-ux-guidelines.md` §11 明列**時效性動作不得收進溢出
+# 選單**（並直接引用「退件與代為完成不鎖——那是客服接到電話當下就該能處理
+# 的事」），所以提領卡至少是「主要動作 ＋ 時效性動作 ＋ 選單」三顆。
 # 這個數字是準則推導出來的，不是視覺偏好——把它壓到 2 只能靠違反 §11 達成。
-MAX_VISIBLE_BUTTONS = 3
+# 逐列表分開給:會員卡改「一個人的狀態」的動作全在詳情面板（§11.1），只剩一顆。
+MAX_VISIBLE_BUTTONS = {"提領": 3, "會員": 1}
 
 
 def _assert_scannable(cards, kind: str):
     assert cards is not None, f"找不到{kind}卡片——選擇器過時了"
+    assert len(cards) >= 2, (
+        f"{kind}測資只有 {len(cards)} 筆——「一屏看得完兩筆」在單筆測資下"
+        "**結構上量不到**，請補 _setup_admin 的測資"
+    )
+    limit = MAX_VISIBLE_BUTTONS[kind]
     for i, c in enumerate(cards):
         assert c["height"] <= MAX_COLLAPSED_CARD_PX, (
             f"第 {i + 1} 張{kind}卡收合態高 {c['height']}px（上限 {MAX_COLLAPSED_CARD_PX}px）"
-            "——一屏放不下兩筆，使用者要一直捲。"
         )
-        assert len(c["visibleButtons"]) <= MAX_VISIBLE_BUTTONS, (
+        assert len(c["visibleButtons"]) <= limit, (
             f"第 {i + 1} 張{kind}卡有 {len(c['visibleButtons'])} 顆可見按鈕"
-            f"{c['visibleButtons']}（上限 {MAX_VISIBLE_BUTTONS}）"
-            "——次要動作應收進「更多」選單，不要每張卡都攤一排。"
+            f"{c['visibleButtons']}（上限 {limit}）——次要動作應收進「更多」選單"
+            "，改「一個人的狀態」的動作應移進詳情面板（§11.1）。"
         )
+
+
+def _assert_two_fit_first_screen(page, selector: str, kind: str):
+    """第一屏看得完兩筆——直接量，不用高度上限當代理。
+
+    ⚠️ **不要改用「第二張卡 visible」**:第二張卡只露 25px 也算 visible，
+    那量的是「有沒有露出來」，不是「看得完」。
+    """
+    pos = first_screen_position(page, selector)
+    cards = card_density(page, selector)
+    assert pos is not None and cards, f"找不到{kind}卡片——選擇器過時了"
+    need = 2 * cards[0]["height"]
+    have = pos["viewportHeight"] - pos["top"]
+    assert have >= need, (
+        f"第一屏放不下兩筆{kind}:第一張卡從 y={pos['top']} 開始，"
+        f"視窗 {pos['viewportHeight']}px 只剩 {have}px，兩筆需要 {need}px（差 {need - have}px）。"
+        "卡片本身已經壓到極限，要再省得從它**上方**下手——"
+        "統計區塊是最大的一塊。"
+    )
 
 
 def test_withdrawal_cards_are_scannable(admin_at_375):
@@ -297,3 +322,21 @@ def test_member_cards_are_scannable(admin_at_375):
     _open_tab("會員管理")(admin_at_375)
     settle(admin_at_375)
     _assert_scannable(card_density(admin_at_375, FIRST_MEMBER_CARD), "會員")
+
+
+def test_two_withdrawals_fit_the_first_screen(admin_at_375):
+    """打開提領管理，第一屏要看得完**兩筆**，不是勉強露出第一筆。
+
+    這條是階段 6 的真正目標。先前用「卡片高度 ≤150px」當代理，而那個代理的
+    推導寫錯了（註解說第一屏剩 470px，實測只剩 187px），於是門檻全綠、
+    失敗訊息「一屏放不下兩筆」卻仍然為真——數字看起來被把關了，被把關的
+    卻不是那件事。
+    """
+    _assert_two_fit_first_screen(admin_at_375, FIRST_WITHDRAWAL_CARD, "提領")
+
+
+def test_two_members_fit_the_first_screen(admin_at_375):
+    """會員管理同理。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_two_fit_first_screen(admin_at_375, FIRST_MEMBER_CARD, "會員")
