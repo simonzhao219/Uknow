@@ -74,6 +74,71 @@ for cmd, want, why in BASH_CASES:
     expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
 
 
+# 文字酬載:commit message 與 heredoc 內文是**資料**,不是要執行的指令。
+# 2026-08-07 同一天撞兩次(friction-log):(1) commit message 提到 journey 與
+# pytest → 被 e2e 那條擋下,即使指令只是 git commit;(2) 用 heredoc 把那次
+# 違規寫進 friction-log 時,內文引用了繞閘門的旗標字面 → 被 commit 那條擋下。
+# 「記錄違規」被當成違規,等於用閘門懲罰誠實。
+#
+# 這組案例的兩半同等重要:剝得不夠會誤擋,剝過頭會把**真旗標**吃掉變成漏網。
+PAYLOAD_CASES = [
+    # (指令, 應否 deny, 說明)
+    # ↓ 每一條的訊息內文都刻意帶著會觸發某條規則的字面——不帶的話,這個案例
+    #   在「有剝」與「沒剝」兩種實作下都會通過,就不構成證據。
+    ("git commit -m 'docs: 記錄 --no-verify 的危害'", False, "訊息提到繞閘門旗標"),
+    ("cd e2e && git commit -m 'test: journey 情境改用 pytest 收集'", False, "訊息提到 journey"),
+    ("git commit -m 'fix: 修正 push --force 的說明'", False, "訊息提到 force push"),
+    ("git commit -am 'chore: 移除 --no-verify 的殘留說明'", False, "-am 合併短旗標"),
+    ("git commit --message='docs: --no-verify 的危害'", False, "--message= 等號形式"),
+    (
+        "git commit -m 'docs: 別用 git checkout -b x main 當 base'",
+        False,
+        "訊息提到以 main 為 base",
+    ),
+    (
+        "cat <<'EOF' >> docs/plans/friction-log.md\n用 git commit --no-verify 繞過閘門\nEOF",
+        False,
+        "heredoc 內文寫的是紀錄不是指令",
+    ),
+    (
+        "git commit -F - <<'MSG'\ndocs: 別在本機用 pytest 跑 journey\nMSG",
+        False,
+        "-F 讀 heredoc:旗標與內文都要剝",
+    ),
+    # ↓ 剝過頭就會漏掉這些——訊息之後的真旗標必須存活
+    ("git commit -m 'feat: x' --no-verify", True, "訊息後面的真旗標不得被吃掉"),
+    ("git commit -m x --no-verify", True, "未加引號的訊息只吃一個詞"),
+    ("git commit -m 'feat: x' && git push --force origin f", True, "&& 之後的真指令要存活"),
+    ("git commit -m '未關的引號會吃到底", False, "引號沒關:整段當訊息,不當機"),
+]
+
+for cmd, want, why in PAYLOAD_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
+
+
+# core.hooksPath:繞過 pre-commit 的第二種寫法(friction-log 2026-08-07,自犯)。
+# 本專案的 hooksPath 指向 scripts/git-hooks,覆寫它就等於 --no-verify——
+# 而守衛原本只認 --no-verify 那個字面。同一個效果三種寫法,只擋一種等於沒擋。
+HOOKS_PATH_CASES = [
+    # (指令, 應否 deny, 說明)
+    ("git -c core.hooksPath=.git/hooks commit -m x", True, "指向空目錄(我實際踩的那個)"),
+    ("git -c core.hooksPath=/dev/null commit -m x", True, "指向 /dev/null"),
+    ("git -c core.hookspath=/tmp/h commit -m x", True, "設定鍵不分大小寫"),
+    ("git -c core.hooksPath= commit -m x", True, "設成空值"),
+    ("GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp git commit -m x", True, "env 寫法"),
+    ("git config core.hooksPath /dev/null", True, "寫進設定檔:永久版"),
+    ("git config --unset core.hooksPath", True, "unset 會退回空的 .git/hooks"),
+    ("git config core.hooksPath scripts/git-hooks", False, "設回本專案的正解(npm prepare 做的事)"),
+    ("git config --get core.hooksPath", False, "讀取是診斷,不是繞過"),
+    ("git config --list", False, "列出全部設定"),
+    ("git -c user.name=x commit -m y", False, "其他 -c 設定不受影響"),
+    ("git commit -m 'docs: 說明 core.hooksPath=/dev/null 的危害'", False, "訊息提到不算違規"),
+]
+
+for cmd, want, why in HOOKS_PATH_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
+
+
 # bash-guard 第 5 類:新分支的 base 檢查。head_matches_develop 由呼叫方
 # (main() 的 git rev-parse)量測後傳入,這裡直接餵布林值,不需要真的建 repo。
 BRANCH_CASES = [

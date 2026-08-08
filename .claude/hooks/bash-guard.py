@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""PreToolUse hook(Bash):擋五種確定性後門。
+"""PreToolUse hook(Bash):擋六種確定性後門。
 
 這些不是「風格偏好」而是框架的完整性條件:
+0. 覆寫 core.hooksPath——繞過 pre-commit 閘門的**第二種寫法**。本專案的
+   hooksPath 指向 scripts/git-hooks(由 npm ci 的 prepare 掛載),把它改指
+   別處(含還原成預設的 .git/hooks)效果等同第 1 條:跳過 npm run check,
+   也跳過 metrics 落檔(pre-commit 是 metrics 唯一進得了 git 的落點)。
+   2026-08-07 我自己用這個寫法連下四個 commit 才發現守衛只認第 1 條——
+   同一個效果、三種寫法(-c / GIT_CONFIG_KEY_n / git config 寫入),
+   只擋一種等於沒擋。
 1. git commit --no-verify——繞過 pre-commit 閘門(閘門存在的意義歸零)
 2. git push --force / -f——改寫共享歷史(--force-with-lease 除外)
 3. 直接 push main/develop——git-flow 的底線:main/develop 只吃 PR,
@@ -20,6 +27,12 @@
 main() 用本地(不觸發 fetch)的 git rev-parse 取得後,以現成的布林值傳入
 decide()——decide() 本身仍是純函式,不自己做 I/O(與 tdd-test-guard.py
 的 lock_exists 同慣例)。
+
+**比對前一律先剝掉「文字酬載」**(commit message、heredoc 內文)——見
+strip_payloads()。守衛掃的是整串指令文字,分不出「要執行」與「在描述裡
+提到」;不剝的話,寫一句提到 journey 的 commit message 就會被 e2e 那條
+擋下,而「把違規記進 friction-log」本身也會被當成違規(2026-08-07 同一天
+撞兩次)。那正好會勸退寫紀錄的人,等於用閘門懲罰誠實。
 """
 
 import json
@@ -31,9 +44,31 @@ PROTECTED_BRANCHES = ("main", "develop")
 
 BRANCH_CREATE = re.compile(r"\bgit\b[^\n|;&]*\b(?:checkout\s+-b|switch\s+-c)\b(?P<rest>[^\n|;&]*)")
 
+# heredoc:`<<EOF` / `<<'EOF'` / `<<-EOF` 到單獨成行的 EOF 為止,整段是資料不是指令。
+HEREDOC_BODY = re.compile(
+    r"<<-?\s*(?P<q>['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)(?P=q)(?P<body>.*?)^\s*(?P=tag)\s*$",
+    re.DOTALL | re.MULTILINE,
+)
+# -m / --message / -F / --file 的下一個 shell 詞是訊息本體。-[A-Za-z]*[mF] 收
+# `-am`、`-aF` 這類合併短旗標;刻意只認大寫 F(小寫 -f 是 push 的 force,不是檔案)。
+MESSAGE_FLAG = re.compile(r"(?<!\S)(?:--message|--file|-[A-Za-z]*[mF])(?:=|\s+)")
+
+# core.hooksPath 的三種寫法。git 的設定鍵不分大小寫,所以一律 IGNORECASE。
+HOOKS_PATH = "scripts/git-hooks"  # 本專案唯一合法的 hooksPath(npm ci 的 prepare 掛載)
+HOOKS_PATH_INLINE = re.compile(r"\bgit\b[^\n|;&]*\s-c\s*core\.hookspath\s*=", re.IGNORECASE)
+HOOKS_PATH_ENV = re.compile(r"\bGIT_CONFIG_KEY_\d+\s*=\s*['\"]?core\.hookspath", re.IGNORECASE)
+GIT_CONFIG = re.compile(r"\bgit\b[^\n|;&]*\bconfig\b(?P<rest>[^\n|;&]*)", re.IGNORECASE)
+CONFIG_READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l")
+
 # deny 理由上提成具名常數,decide() 回傳常數本身,main() 據此查出 rule id 記錄。
 # 本檔是五個 hook 裡唯一有多條規則的,不分辨 rule 的話「bash-guard 擋了 40 次」
 # 這個讀數沒有可行動性——擋的是 --no-verify 還是誤判了分支 base,處置完全不同。
+REASON_HOOKS_PATH = (
+    "覆寫 core.hooksPath 等同繞過 pre-commit 閘門——跳過 npm run check,也跳過 metrics 落檔。"
+    f"本專案的 hooksPath 固定指向 {HOOKS_PATH}(npm ci 的 prepare 掛載),"
+    "不需要、也不該在指令裡改它。commit 被擋代表 check 紅,修到綠再提交;"
+    "紅燈測試 commit 走 .claude/tdd-lock 紅燈通道(見 CLAUDE.md)。"
+)
 REASON_NO_VERIFY = (
     "git commit --no-verify 會繞過 pre-commit 閘門。commit 被擋代表 check 紅,"
     "修到綠再提交;紅燈測試 commit 走 .claude/tdd-lock 紅燈通道(見 CLAUDE.md)。"
@@ -64,6 +99,7 @@ REASON_BASE_STALE = (
 )
 
 RULE_IDS = {
+    REASON_HOOKS_PATH: "hooks-path",
     REASON_NO_VERIFY: "no-verify",
     REASON_FORCE_PUSH: "force-push",
     REASON_PROTECTED_BRANCH: "protected-branch",
@@ -92,6 +128,81 @@ def _branch_create_start_point(cmd: str) -> tuple[str, str | None] | None:
     return name, start_point
 
 
+def _consume_word(text: str, start: int) -> int:
+    """回傳一個 shell 詞的結束位置。引號感知——引號內的空白不算分隔。
+
+    不做跳脫處理以外的解析:目的是「別把訊息當指令」,不是實作一個 shell。
+    parser 越聰明,越可能在奇怪的輸入上把**真旗標**吃掉,那是把誤擋換成漏網。
+    """
+    if start >= len(text):
+        return start
+    quote = text[start]
+    if quote in "'\"":
+        i = start + 1
+        while i < len(text):
+            if quote == '"' and text[i] == "\\":
+                i += 2
+                continue
+            if text[i] == quote:
+                return i + 1
+            i += 1
+        return len(text)  # 引號沒關:整段都當訊息
+    match = re.compile(r"\S*").match(text, start)
+    return match.end() if match else start
+
+
+def strip_payloads(cmd: str) -> str:
+    """剝掉 heredoc 內文與 -m/-F 的訊息本體,回傳只剩「指令骨架」的字串。
+
+    只用於關鍵字比對。被剝掉的位置留一個空白,不留空字串——否則
+    `git commit -m x --no-verify` 會黏成 `git commit --no-verify` 以外的形狀,
+    影響後續 token 切分。
+    """
+    cmd = HEREDOC_BODY.sub(lambda m: f"<<{m.group('tag')} ", cmd)
+
+    out: list[str] = []
+    pos = 0
+    while True:
+        match = MESSAGE_FLAG.search(cmd, pos)
+        if match is None:
+            out.append(cmd[pos:])
+            return "".join(out)
+        out.append(cmd[pos : match.end()])
+        pos = _consume_word(cmd, match.end())
+        out.append(" ")
+
+
+def _overrides_hooks_path(cmd: str) -> bool:
+    """指令是否把 core.hooksPath 指向 scripts/git-hooks 以外的地方(含還原預設)。
+
+    三種寫法都認,但**讀取不擋**——`git config --get core.hooksPath` 是診斷用的
+    正常操作,擋它只會逼人改用別的方式看同一個值,毫無防護價值。
+    """
+    if HOOKS_PATH_INLINE.search(cmd) or HOOKS_PATH_ENV.search(cmd):
+        return True
+
+    for match in GIT_CONFIG.finditer(cmd):
+        rest = match.group("rest")
+        tokens = rest.split()
+        if not any(t.lower().endswith("core.hookspath") for t in tokens):
+            continue
+        if any(t in CONFIG_READ_FLAGS for t in tokens):
+            continue
+        # 寫入形式:鍵之後的第一個非旗標詞是新值。--unset 沒有值,一律視為違規
+        # ——把 hooksPath 拿掉會退回預設的 .git/hooks,那裡是空的,效果同繞過。
+        values = [t for t in tokens if not t.startswith("-")]
+        key_index = next(
+            (i for i, t in enumerate(values) if t.lower().endswith("core.hookspath")), None
+        )
+        if key_index is None:
+            continue
+        new_value = values[key_index + 1] if key_index + 1 < len(values) else None
+        if new_value is None or new_value.strip("'\"").rstrip("/") != HOOKS_PATH:
+            return True
+
+    return False
+
+
 def decide(cmd: str, head_matches_develop: bool | None = None) -> str | None:
     """回傳 deny 理由,或 None 表示放行。
 
@@ -99,6 +210,11 @@ def decide(cmd: str, head_matches_develop: bool | None = None) -> str | None:
     方預先量測後傳入(None = 量不到,如沒有 origin/develop 時一律放行——
     guard 壞掉不該把人鎖死)。只有第 5 類檢查會用到這個參數。
     """
+    cmd = strip_payloads(cmd)
+
+    if _overrides_hooks_path(cmd):
+        return REASON_HOOKS_PATH
+
     if re.search(r"\bgit\b[^\n|;&]*\bcommit\b", cmd) and "--no-verify" in cmd:
         return REASON_NO_VERIFY
 
@@ -171,7 +287,9 @@ def main() -> None:
     # 只有指令文字看起來像建分支時才付 git rev-parse 的 I/O 成本——
     # bash-guard 掛在每一次 Bash 呼叫上,不能讓其餘 99% 的指令(commit、
     # npm test……)平白多兩個 subprocess。
-    head_matches_develop = _head_matches_develop() if BRANCH_CREATE.search(cmd) else None
+    head_matches_develop = (
+        _head_matches_develop() if BRANCH_CREATE.search(strip_payloads(cmd)) else None
+    )
 
     reason = decide(cmd, head_matches_develop)
     _record(RULE_IDS.get(reason) if reason else None)
