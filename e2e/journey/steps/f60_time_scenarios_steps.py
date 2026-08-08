@@ -12,6 +12,7 @@ from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from builders import payment, referral_tree
+from builders.listing import listing_name as _listing_name_for_run
 from builders.login import login_via_gui
 from builders.registration import register_account_via_gui
 from pages.complete_profile_page import CompleteProfilePage
@@ -25,7 +26,8 @@ scenarios("60_time_scenarios.feature")
 
 
 def _listing_name(run_state, node: str) -> str:
-    return f"服務{run_state.run_id}{node}"
+    """與 f40 共用同一個產生器——長度上限的理由見 builders/listing.py。"""
+    return _listing_name_for_run(run_state.run_id, node)
 
 
 def _parse_ts(value: str) -> datetime:
@@ -179,21 +181,19 @@ def open_referrals(guarded_page, run_state, scenario_memo, node):
 
 
 @then(parsers.parse('推薦樹包含 "{node}" 的姓名與已失效標記'))
-def tree_shows_inactive_member(guarded_page, run_state, node):
+def tree_shows_inactive_member(guarded_page, run_state, org_nodes, scenario_memo, node):
     # 檢視者的第一代＝root 列，失效節點仍在樹上（半透明＋灰點）；
-    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。
-    expect(
-        guarded_page.get_by_text(run_state.users[node].name, exact=True).first
-    ).to_be_visible()
+    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。橫幅也印同一個
+    # 姓名，所以「在樹上」要用 treeitem 定位，不是 get_by_text().first。
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, scenario_memo["viewer"], node)
     expect(guarded_page.get_by_text("已失效").first).to_be_visible()
 
 
 @then(parsers.parse('展開二代後推薦樹仍包含 "{node}" 的姓名'))
 def tree_structure_intact(guarded_page, run_state, org_nodes, scenario_memo, node):
-    referral_tree.expand_ancestors(
-        guarded_page, org_nodes, run_state, scenario_memo["viewer"], node
-    )
-    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+    viewer = scenario_memo["viewer"]
+    referral_tree.expand_ancestors(guarded_page, org_nodes, run_state, viewer, node)
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, viewer, node)
 
 
 # --- 過期超過一年：補繳制（A1）下續約永遠可選 --------------------------------
@@ -239,7 +239,12 @@ def renew_fresh_with_new_referrer(guarded_page, journey_config, supabase_admin,
     )
 
     scenario_memo["paid_at"] = datetime.now(timezone.utc)
-    payment.pay_via_gui(guarded_page, journey_config, supabase_admin, user)
+    # fresh 模式**必須**走 pay_fresh_via_gui:點「前往付款」開的是 A15 二次
+    # 確認對話框,不直接送出。用一般的 pay_via_gui 會停在對話框上,永遠等不到
+    # 往 PayUni sandbox 的跳轉,最後以 60 秒逾時收場(run 31235468231)——
+    # 症狀看起來像「外部金流沒回應」,實際上根本沒送出去。
+    # 70_renewal_saga 的同款情境一直是對的,這裡是兩處相同流程分岔的那一處。
+    payment.pay_fresh_via_gui(guarded_page, journey_config, supabase_admin, user)
 
 
 @then(parsers.parse('"{node}" 的新到期日自付款日起算約一年'))

@@ -24,10 +24,23 @@ on:
     types: [completed]
     branches: [main, develop]
 
-# 兩次快速合併不得亂序部署（舊的後到會覆蓋新的）
+# 兩次快速合併不得亂序部署（舊的後到會覆蓋新的）。
+#
+# ⚠️ cancel-in-progress **必須是 true**（規則 11 機械把關）。
+# 2026-08-07 實測:本檔同時有 `environment:`（正式站要人工核准）與排隊式
+# concurrency，兩者相乘會無限期卡死——**處於 `waiting`（等待核准）的 run
+# 仍然占著 slot**，於是 07-26 那個沒人按的正式站部署，把之後每一次晉升的
+# 部署都擋在後面。正式站的 Edge Function 因此停在 13 天前那一版，而且
+# 沒有任何紅燈:CI 全綠、PR 合併成功、部署 run 存在且狀態不是 failure。
+#
+# 改成 true 之後語意反而更正確:新的部署淘汰舊的＝**永遠是最新的那個贏**，
+# 這正是「不得亂序」原本要的東西（排隊只能保證順序，不能保證最後贏的是
+# 新的）。代價是極罕見的情況——舊部署正在跑到一半被新的取消，可能停在
+# 「secrets 設好但函式沒換」的中間態；但緊接著的新部署會完整跑完，且
+# 部署後的 /health sha 比對會抓到沒換成功的情況。
 concurrency:
   group: deploy-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write
 # (失敗時開 triage issue)。權限一律逐 job 宣告,語意最清楚。

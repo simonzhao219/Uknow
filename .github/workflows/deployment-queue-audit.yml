@@ -1,0 +1,131 @@
+name: Deployment Queue Audit
+
+# ============================================================================
+# 部署佇列健檢:找出卡在「等待核准」或「排隊中」太久的部署 run。
+#
+# 存在理由(2026-08-07 事故):正式站部署 run 30198752930 自 2026-07-26 起
+# 卡在 `waiting`(等 production 環境核准)沒有人按,而 waiting 的 run **仍然
+# 占著 concurrency slot**,於是之後每一次晉升的部署都排在它後面永遠不會開始。
+# 結果是**正式站的 Edge Function 停在 13 天前那一版,卻沒有任何紅燈**——
+# CI 全綠、PR 合併成功、部署 run 存在且狀態不是 failure。這種停擺沒有任何
+# 一層看得見,最後是靠一次無關的查證才發現的。
+#
+# concurrency 那一半已由 deploy-supabase.yml 改成 cancel-in-progress: true
+# 治本(新部署淘汰舊的)。這支補的是另一半:**沒有下一次 push 時,沒人核准
+# 的部署會無聲地一直等下去**——那時「已合併到 main」與「已經上線」之間的
+# 落差,沒有任何機制會叫。
+#
+# 頻率依據:每 6 小時,閾值同為 6 小時。晉升到正式站的部署應該在同一個工作
+# 時段內被核准,超過半天沒動就是忘了而不是刻意等待;最慢 12 小時內會叫。
+# 成本落在**訊號疲勞**而不是 runner(public repo 標準 runner 免費、單次
+# 十幾秒)——閾值刻意不設更短,寧可晚半天叫也不要讓它變成每天的雜訊。
+# ============================================================================
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+# ⚠️ 刻意不設 workflow 層 permissions:底下的 job 需要 issues: write。
+# 權限一律逐 job 宣告(規則 3)。
+
+jobs:
+  deployment-queue-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: 盤點卡住的部署並開/關 issue
+        uses: actions/github-script@v7
+        env:
+          # 卡多久算「卡住」。與 cron 間隔同值,見檔頭頻率依據。
+          STUCK_HOURS: '6'
+        with:
+          script: |
+            const title = '部署佇列卡住';
+            const stuckHours = Number(process.env.STUCK_HOURS);
+            const cutoff = Date.now() - stuckHours * 3600 * 1000;
+
+            // waiting=等環境核准;pending/queued=被 concurrency 或 runner 擋住。
+            // 三種都要看:它們的共同點是「部署沒有推進,而且不是失敗」——
+            // 失敗有 deploy-supabase.yml 自己的 issue 接住,不歸這裡管。
+            const stuck = [];
+            for (const status of ['waiting', 'pending', 'queued']) {
+              const res = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-supabase.yml',
+                status,
+                per_page: 50,
+              });
+              for (const r of res.data.workflow_runs) {
+                if (new Date(r.created_at).getTime() < cutoff) {
+                  const hours = Math.round((Date.now() - new Date(r.created_at).getTime()) / 3600000);
+                  stuck.push({ id: r.id, status, hours, url: r.html_url, sha: r.head_sha.slice(0, 7) });
+                }
+              }
+            }
+
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+            });
+            const dup = open.data.find((i) => i.title === title);
+
+            // 沒有卡住的就把舊 issue 關掉——watchdog 的 issue 留著不關,下次
+            // 真的卡住時就分不出「還沒修」和「又卡了」。
+            if (stuck.length === 0) {
+              if (dup) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: dup.number,
+                  body: '佇列已清空(本次健檢沒有找到卡住的部署),自動關閉。',
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: dup.number, state: 'closed', state_reason: 'completed',
+                });
+                core.info(`佇列已清空,關閉 issue #${dup.number}`);
+              } else {
+                core.info('佇列健康,無卡住的部署');
+              }
+              return;
+            }
+
+            const rows = stuck
+              .map((s) => `| [${s.id}](${s.url}) | \`${s.status}\` | ${s.hours} 小時 | \`${s.sha}\` |`)
+              .join('\n');
+            const body = [
+              '## 部署佇列有 run 卡住',
+              '',
+              `閾值:超過 ${stuckHours} 小時未推進。`,
+              '',
+              '| Run | 狀態 | 已卡 | commit |',
+              '|---|---|---|---|',
+              rows,
+              '',
+              '**影響**:合進 main 的程式碼沒有真正上線——CI 綠、PR 合併成功,',
+              '但正式站的 Edge Function 還是舊版,而這個落差沒有其他訊號。',
+              '',
+              '處置:',
+              `1. \`waiting\` = 等 production 環境核准 → 到該 run 頁面按 Review deployments`,
+              '2. **核准前先確認它要部署的 commit 是不是最新的**——若是舊 commit,',
+              '   應該**取消**它而不是核准(核准等於把舊版推上正式站)',
+              '3. `pending`/`queued` 且前面沒有東西擋 → 可能是 runner 額度或',
+              '   concurrency 設定問題,查 deploy-supabase.yml 的 concurrency',
+              '',
+              '佇列清空後這張 issue 會由下次健檢自動關閉。',
+            ].join('\n');
+
+            if (dup) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: dup.number, body,
+              });
+              core.info(`已有未關閉的同名 issue #${dup.number},更新內容`);
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+              });
+            }
+            core.setFailed(`${stuck.length} 個部署卡住超過 ${stuckHours} 小時`);

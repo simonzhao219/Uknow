@@ -69,16 +69,16 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `PAYUNI_(TEST_)HASH_IV` | （16 字元） | PayUni 後台「Hash IV」 |
 | `PAYUNI_SANDBOX` | `true` / `false` | develop 填 `true`；正式站填 `false` |
 | `FRONTEND_URL` | 見上表 | **結尾不要加 `/`**；用於 CORS 白名單與付款完成導回頁 |
-| `MEMBER_TOKEN_SECRET` | 自行產生的隨機字串 | 會員核身碼的簽章密鑰，見下方說明 |
+| `MEMBER_TOKEN_SECRET` | 自行產生的隨機字串 | 會員驗證碼的簽章密鑰，見下方說明 |
 
-> **`MEMBER_TOKEN_SECRET`**（會員核身 QR，規格書 §13.1）不是跟誰申請的憑證，
-> 是**你自己產生**的隨機字串——後端用它對核身碼做 HMAC 簽章與驗章，等同「防偽
+> **`MEMBER_TOKEN_SECRET`**（會員驗證 QR，規格書 §13.1）不是跟誰申請的憑證，
+> 是**你自己產生**的隨機字串——後端用它對驗證碼做 HMAC 簽章與驗章，等同「防偽
 > 印章」。產生方式：`openssl rand -base64 32`，把輸出貼進來即可。
 >
 > **develop 與正式站各設一把、且值要不同**：這樣 develop 的密鑰外流也偽造不了
-> 正式站的碼。缺這把時核身端點一律回 500（fail-closed）——刻意不以空字串當
+> 正式站的碼。缺這把時驗證端點一律回 500（fail-closed）——刻意不以空字串當
 > 密鑰硬跑，否則任何人都能自算出「合法」的碼，等於完全沒有防偽。
-> 密鑰可隨時更換；換掉當下未被掃描的碼會失效，但核身碼壽命只有 90 秒，
+> 密鑰可隨時更換；換掉當下未被掃描的碼會失效，但驗證碼壽命只有 90 秒，
 > 實務影響幾乎為零，這也是外流時最簡單的補救。
 
 > ⚠️ **`FRONTEND_URL` 同時決定「要不要放行 Cloudflare Pages 預覽網域」**
@@ -115,7 +115,7 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `FRONTEND_URL` | **你** | 導回頁 + CORS 白名單（見上方警告） |
 | `PAYUNI_SANDBOX` | **你** | 決定用哪一套憑證與端點 |
 | `PAYUNI_(TEST_)MER_ID` / `_HASH_KEY` / `_HASH_IV` | **你** | 依 mode 擇一套，成套或整組失敗 |
-| `MEMBER_TOKEN_SECRET` | **你** | 會員核身碼（§13.1）的簽章密鑰；缺了核身端點一律 500 |
+| `MEMBER_TOKEN_SECRET` | **你** | 會員驗證碼（§13.1）的簽章密鑰；缺了驗證端點一律 500 |
 | `RECONCILE_SECRET` | **你（僅正式站）** | 對帳排程的門票；排程只打正式站 |
 | `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
 | `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
@@ -209,7 +209,7 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 | `memberTokenConfigured` | `true` | `true` |
 
 `memberTokenConfigured` 是同一個道理的延伸：`MEMBER_TOKEN_SECRET` 設了沒也
-**沒有外顯訊號**——Secrets 頁只看得到 digest，而缺了要等到有人真的掃一次核身碼、
+**沒有外顯訊號**——Secrets 頁只看得到 digest，而缺了要等到有人真的掃一次驗證碼、
 吃到 500 才會發現。它同樣只回布林值、不回傳金鑰內容。**Secrets 逐分支獨立、
 不從母專案繼承**，所以 develop 與正式站要各自 curl 確認一次，別假設設了一邊
 另一邊就有。

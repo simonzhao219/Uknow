@@ -6,8 +6,12 @@ from playwright.sync_api import Page
 
 from pages.base_page import BasePage
 
-# A tiny but validly-typed JPEG payload; only File.type (image/jpeg) and size
-# (<5MB) are checked client-side before upload, and the upload itself is mocked.
+# A tiny but validly-typed JPEG payload. Only File.type (image/jpeg) and size
+# (<5MB) are checked before the bytes leave the browser, and nothing downstream
+# decodes them — so a 20-byte stub is enough for both suites. Note this page
+# object is shared: e2e/ mocks the upload, but e2e/journey/ posts these bytes to
+# a real Supabase Storage bucket, so it must stay a genuinely valid payload.
+
 _FAKE_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
 
 
@@ -29,7 +33,8 @@ class CreateServiceProviderPage(BasePage):
         city: str = "台北市",
         instagram: str = "valid_ig",
     ) -> "CreateServiceProviderPage":
-        self.page.locator("#name").fill(name)
+        # 名稱欄位有 maxLength：走 fill_exact，超長輸入當場炸掉而不是被靜默截斷
+        self.fill_exact(self.page.locator("#name"), name, "#name")
         self._select("服務類別", category)
         self._select("性別", gender)
         self._select("服務城市", city)  # auto-selects 全區 + every district
@@ -47,7 +52,8 @@ class CreateServiceProviderPage(BasePage):
     ) -> "CreateServiceProviderPage":
         """與 fill_valid_form 同內容，但把照片上傳排在聯絡方式之前——
         搭配 deferred upload mock，聯絡方式是在「上傳仍在途」時輸入的。"""
-        self.page.locator("#name").fill(name)
+        # 名稱欄位有 maxLength：走 fill_exact，超長輸入當場炸掉而不是被靜默截斷
+        self.fill_exact(self.page.locator("#name"), name, "#name")
         self._select("服務類別", category)
         self._select("性別", gender)
         self._select("服務城市", city)

@@ -39,16 +39,20 @@ Feature: 提領 — 雙視角全生命週期
     And 記下 "A0" 的可提領點數
     When "A0" 透過 GUI 申請提領 1000 點
     Then "A0" 的可提領點數減少 1015
-    When 管理員在提領管理將第一筆申請標記已匯款
+    When 管理員在提領管理將 "A0" 的申請標記已匯款
     And "A0" 透過 GUI 完成查收
     Then 資料庫中 "A0" 最新一筆提領狀態為 "completed"
 
+  # 一天一次的限制不看狀態（has_withdrawn_today 只比對 requested_at 的日期），
+  # 而上一個情境已經讓 A0 提領過一次——不解除當日額度，這裡的「申請Point提領」
+  # 永遠是 disabled。規則沒錯、產品沒錯，是兩個情境共用了同一個人的當日額度。
   @journey @withdrawal
   Scenario: 退件路徑 — 點數退回
     Given "A0" 已透過 GUI 加入推薦計畫
+    And "A0" 當日的提領額度已解除
     And 記下 "A0" 的可提領點數
     When "A0" 透過 GUI 申請提領 1000 點
     Then "A0" 的可提領點數減少 1015
-    When 管理員在提領管理退件第一筆申請
+    When 管理員在提領管理退件 "A0" 的申請
     Then "A0" 的可提領點數恢復為記下的數值
     And 資料庫中 "A0" 最新一筆提領狀態為 "rejected"

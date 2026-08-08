@@ -70,34 +70,108 @@ repo 的可見性與方案:ruleset／branch protection 在 **private repo 上是
 `e2e-tests` 與 `api-tests` 皆 `in_progress`、`ci-ok` 尚未建立)——全都源於
 **閘門根本沒有被詢問**。
 
-這與「清單漂移」是**兩種不同的故障,症狀相反**,診斷時先分辨:
+「CI 還在跑就合併成功」有**三種根因,症狀相近但機制完全不同**,診斷時先分辨
+(前兩種各被誤診過一次,代價是同一個缺陷重複發生):
 
-| 故障 | 症狀 |
-|---|---|
-| 規則未生效(private + 免費方案) | 合併暢通無阻,PR 上看不到任何 required 標記 |
-| 清單漂移(舊 job id 殘留) | PR 永遠 pending,卡在「Waiting for status to be reported」 |
+| 故障 | 症狀 | 分辨方法 |
+|---|---|---|
+| 規則未生效(private + 免費方案) | 合併暢通無阻,PR 上看不到任何 required 標記 | `gh api repos/:owner/:repo/rules/branches/<b>` 回 Upgrade 提示 |
+| 清單漂移(舊 job id 殘留) | PR 永遠 pending,卡在「Waiting for status to be reported」 | 清單裡的名字沒有任何 job 會回報 |
+| **綠章跨 run 冒名頂替**(規則 9) | required check 顯示綠、但那顆 check run 屬於**另一個 workflow run** | 點開 PR 上那顆 check,看它的 run id 是不是這個 PR 的 |
 
-**規則 8 — 費用視角(每個 job 各自進位計費)**
-GitHub-hosted runner 對**私有** repo 按分鐘計費,且**每個 job 無條件進位到
-整分鐘**——10 秒的 job 也算 1 分鐘,所以「job 數量 × run 頻率」比「單 job
-時長」更貴(2026-08-07 帳號分鐘數用罄事故:全量 CI 一次 19-20 計費分,
-其中 42% 是 8 個秒級 job 的進位損耗)。
+**規則 8 — 軌道切分與排程頻率:依據要寫在檔案裡**
 
-⚠️ **前提已於 2026-08-07 變更,本規則的力度待裁決**:repo 改為 **public**
-之後,標準 runner 不再計費,上面的成本論證對現況不成立。8a 的「秒級檢查
-不開新 job」仍有非費用面的價值(牆鐘、check 清單可讀性),8b 的排程費用
-註記則失去依據。**維持現狀不動**——鬆綁與否是人的決定,而且 8b 有
-`check-workflows.py` 的表格自測綁著,改規則要同時改檢查器與自測案例。
-若日後改回 private,這段前提自動回復成立。
+**稀缺的是牆鐘,不是分鐘**。本 repo 於 2026-08-07 轉為 **public**,
+GitHub-hosted 標準 runner 免費且無用量上限,所以切分軌道時該問的是
+「回饋要多久才回得來」,不是「開了幾個 job」。
+
+<details><summary>沿革:本規則原為「費用視角」(2026-08-07 裁決前)</summary>
+
+原依據是私有 repo **每個 job 無條件進位到整分鐘**計費(10 秒的 job 也算
+1 分鐘),當天帳號分鐘數用罄、所有 workflow 停擺兩小時。同日轉 public,
+計費論證失效——但兩條子規則的**行為要求都不變**,只是依據換成牆鐘與
+決策可追溯性(8a)、以及成本的多元性(8b)。若日後改回 private,計費
+論證自動回復成立,規則力度只會更強不會更弱。
+
+</details>
 
 - **8a(審查原則)**:秒級檢查**不開新 job**,併入既有 job 當 step、用
-  step 層 `if:` 控制條件——新開一個 job = 每次 run 至少 +1 分鐘 × run
-  頻率(ci.yml 高峰月是數百 run)。開新 job 的正當理由只有:需要不同的
-  runner 環境、需要與其他軌真並行的分鐘級工作、或需要獨立的 skip 語意。
+  step 層 `if:` 控制條件。理由是**固定開銷**:每個 job 都要各自付 runner
+  啟動 + checkout + 工具鏈安裝(本 repo 15-40 秒),拿它買不到 40 秒的
+  運算不划算;而且 required check 清單每多一個名字,判讀成本就多一分。
+  開新 job 的正當理由:需要不同的 runner 環境、需要與其他軌真並行的
+  **分鐘級**工作、或需要獨立的 skip 語意。
+  ⚠️ **判準是「固定開銷 > 運算量」,不是「job 數量多」**。2026-08-07 曾
+  提案把 `static-checks`/`build-bundle`/`unit-tests`/`journey-offline`
+  併軌,理由是省計費分鐘;轉 public 後那個理由消失,而四軌**並行**的牆鐘
+  優於串行,提案作廢。同一個動作在兩種前提下結論相反,所以要看依據不是
+  看形狀。
 - **8b(機械把關)**:帶 `schedule:` 觸發的 workflow,檔內必須有
-  「費用」註記——寫明「頻率 × 單次計費分 ≈ 分/月」與選這個頻率的理由。
-  排程頻率是費用決策,決策要留下依據。
-- **盤點**:雙週整併時跑 `python3 scripts/actions-usage.py`。
+  **`頻率依據:`** 註記——寫明為什麼是這個頻率,以及**成本落在哪裡**
+  (GitHub 分鐘 / Supabase 分支時數 / 外部 API 額度 / 訊號疲勞…)。
+  排程頻率是有後果的決定:太密浪費資源、太疏讓問題晚被發現,而後果落在
+  哪裡逐個 workflow 不同——journey 的成本是付費的 Supabase preview
+  branch,reconcile 的成本趨近零而延遲直接影響付了錢的使用者。依據要留在
+  檔案裡,不是留在某次對話裡:下一個要改頻率的人只讀得到檔案。
+- **盤點**:雙週整併時跑 `python3 scripts/actions-usage.py`——public 期間
+  它的分鐘欄不代表金錢,讀的是**牆鐘與 job 數分佈**(哪一軌最慢、誰在
+  拖長回饋)。
+
+**規則 9 — required check 的名字不得被 push run 蓋章**
+required status check 的鍵是 **(commit SHA, check-run 名稱)**,**不綁 workflow
+run**。`ci.yml` 同時有 `pull_request` 與 `push` 觸發、分支集合又重疊,所以同一顆
+SHA 會被跑兩次;兩個 run 的匯總點若同名,**較寬鬆的那個會冒名頂替嚴格的那個**。
+
+這在晉升 PR(develop→main)上是致命的:它的 head SHA 就是 develop 的 tip,
+早在 PR 開啟前就被 push run 蓋過一顆綠 `ci-ok`(那個 run 裡 `journey-full`
+必然 `skipped`,而 skipped 算通過)。而 PR run 自己的 `ci-ok` 因為 **GitHub 不
+為 `needs` 尚未完成的 job 建立 check run** 而根本不存在——保護規則從頭到尾看
+到的都是那顆廉價綠章,連黃燈都沒有。PR #236 就是這樣在 `journey-full` 還在跑
+時合併進 main 的。
+
+修法是讓 push run 的匯總點改名:
+
+```yaml
+  ci-ok:
+    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}
+```
+
+⚠️ **不能改用「把 `journey-full` 也列進 required checks」來修**——reusable
+workflow 的 check-run 名字會隨執行狀態變:真的跑(`uses: ./...journey.yml`)
+叫 `journey-full / journey-suite`,被 `if` 跳過時叫 `journey-full`。列前者會讓所有
+base=develop 的 PR 永遠 pending,列後者會被 push run 那顆 skipped 自動滿足。
+**required checks 清單無法表達這個閘門**,只能從 `ci-ok` 內部解決。
+
+**規則 10 — `ci-ok` 對晉升 PR 必須單獨要求 `journey-full` 為 `success`**
+`ci-ok` 把 `skipped` 算通過是刻意的(純文件 PR 會 skip 重的 job,不這樣做永遠
+合不了),但套在 `journey-full` 上就是「上線前唯一的真後端閘門沒跑也算過」。
+`base_ref == 'main'` 時把它從 `join(needs.*.result)` 拉出來單獨檢查:
+
+```yaml
+JOURNEY_RESULT: ${{ needs['journey-full'].result }}   # job id 帶連字號,須用索引語法
+```
+
+規則 9、10 都由 `check-workflows.py` 機械把關(各帶正反表格案例)——它們是
+**寫在註解裡就會被重構靜默撤回**的那種規則,必須有檢查器綁著。
+
+**規則 11 — 用了 `environment:` 的 workflow 不得配 `cancel-in-progress: false`**
+處於 **`waiting`(等待部署核准)的 run 仍然占著 concurrency slot**。配上排隊式
+的 `cancel-in-progress: false`,只要有人忘了按核准,後續每一個部署都會無限期
+排在它後面——**而且沒有任何紅燈**:狀態不是 `failure`、CI 全綠、PR 也合併成功。
+
+2026-08-07 實測:`deploy-supabase.yml` 的正式站部署 run 30198752930 自 07-26 起
+卡在 `waiting` 沒人按,把之後每一次晉升的部署都擋住,**正式站的 Edge Function
+因此停在 13 天前那一版**,是靠一次無關的查證才發現的。
+
+改成 `cancel-in-progress: true` 語意反而更正確:新部署淘汰舊部署 =「最新的那個
+贏」,這正是「不得亂序部署」原本要的性質(排隊只保證順序,不保證最後贏的是新的)。
+
+⚠️ 兩個鍵**各自都合理**,是相乘才出事——所以檢查器同時看兩者,只有 `environment`
+或只有 `cancel-in-progress: false`(如 `journey-scheduled.yml`、
+`reconcile-payments.yml`)都不算違規。
+
+另一半防線是 `deployment-queue-audit.yml`:規則 11 治的是「被擋住」,那支治的是
+「沒有下一次 push 時,沒人核准的部署會無聲等下去」——超過 6 小時未推進就開 issue。
 
 ## 不可改名的識別字
 
@@ -105,6 +179,7 @@ GitHub-hosted runner 對**私有** repo 按分鐘計費,且**每個 job 無條�
 |---|---|
 | workflow `name: CI` | `deploy-supabase.yml` 的 `workflow_run.workflows: [CI]` 靜默失效——部署再也不會觸發 |
 | job id `ci-ok` | required status check 找不到回報者,PR 永遠 pending |
+| `ci-ok` 的 `name:` 表達式 | 拿掉或改成固定字串 → push run 的匯總點又與 PR run 同名,晉升 PR 的閘門靜默失效(規則 9)。`ci-ok-push` 這個名字本身可以換,但**兩個事件必須不同名** |
 | job id `guards` | 見上方連字號陷阱;且所有 `needs.guards.outputs.*` 要同步改 |
 
 ⚠️ **改名前務必檢查 required status checks 清單本身**,不能只看 CLAUDE.md
@@ -140,6 +215,15 @@ gh api repos/:owner/:repo/branches/develop --jq .protection   # classic 側
    在 feature 分支上改不會有反應。⚠️ 預設分支是 repo Settings → Branches
    的設定,不是固定的 main——本 repo 已於 2026-07-25 改成 **develop**,
    所以現在合進 develop 就生效,不必等晉升。改這條前先確認當下的預設分支。
+3. **`workflow_run` 觸發的 run,`head_branch`／`head_sha` 回報的是「預設分支」,
+   不是觸發它的那個分支**——診斷時極易誤判。實例:2026-08-07 查「正式站還有沒有
+   在部署」時用 `list_workflow_runs(branch: main)` 過濾 `deploy-supabase.yml`,
+   看到「07-25 之後就沒有部署了」,差點下錯結論。真相是預設分支在 07-25 從 main
+   改成 develop,之後每一個部署 run 都被標成 `develop`,不管它實際部署到哪裡。
+   **要判斷一個部署 run 的真實目標,看它的 `github.event.workflow_run.head_branch`
+   (workflow 內部)或用時間戳對回觸發它的那個 CI run**,不要信 run 自己的
+   `head_branch`。同理,`concurrency: group: deploy-${{ ...workflow_run.head_branch }}`
+   用的是**正確**的那一個(事件酬載),與 run 列表上顯示的分支不是同一件事。
 
 ## 新增 workflow 時
 

@@ -8,8 +8,14 @@
 //      永遠不知道。後端在階段 3.1 已經把全站 `stats` 送上來了。
 //   2. **不得靜默截斷**（ui-ux-guidelines §5）——「已顯示 X / Y 筆」＋加載更多。
 //   3. **詳情面板要答得出「我提領怎麼還沒到」**（M1）：§1.1 的頭號客服情境。
-//   4. **管理員切換**（M4）：撤銷失敗時要說出是哪一種失敗。
-//   5. 空／錯／載入三態。
+//   4. **會改變狀態的動作全部只在詳情面板裡，且走同一條路徑**
+//      （ui-ux-guidelines §11）：停權與授予管理員是同一類事——**對一個人做的
+//      判斷**，不是對一筆資料做的修改。同類的東西用同一套邏輯與設計：同一個
+//      確認框、同一個執行器、同一處錯誤顯示。列上只有「查看」。
+//   5. **確認框逐方向看破壞力**（M4）：暫停／授予／撤銷都要確認，只有「恢復」
+//      不收（破壞力 ~0）。授予在資料層面不可逆——他當下就讀得到全站身分證與
+//      收款帳號，撤回權限撤不回已經看過的東西。失敗時要說出是哪一種失敗。
+//   6. 空／錯／載入三態。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminMember, AdminMemberDetail, AdminMembersResponse } from '@contract';
@@ -182,25 +188,77 @@ describe('MemberManagement', () => {
     expect(within(panel).queryByText('A123456789')).toBeNull();
   });
 
-  it('停權與恢復按下後重抓列表', async () => {
+  it('停權確認後重抓列表', async () => {
     const load = vi.fn(async () => page({ members: [member({ suspended: false })] }));
     const suspend = vi.fn(async () => {});
     renderConsole({ loadMembers: load, suspendMember: suspend });
 
-    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
     await waitFor(() => expect(suspend).toHaveBeenCalledWith('m1', true));
     // 重抓而不是就地改：停權會連帶影響刊登可見性等衍生欄位，本地猜測會失真。
     await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(1));
   });
 
-  it('停權失敗時把原因說出來', async () => {
+  // 停權會立刻凍結對方的刊登可見性與提領（規格書 §5.2），誤觸的代價落在
+  // 會員身上而不是 admin 身上——他不會知道自己被停過。
+  it('停權走確認框，取消不送出', async () => {
+    const suspend = vi.fn(async () => {});
+    renderConsole({ suspendMember: suspend });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/刊登將立即隱藏/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(suspend).not.toHaveBeenCalled();
+  });
+
+  // 四個方向裡只有「恢復」的破壞力是 ~0（把凍結的東西還回去）。可逆又無傷的
+  // 動作也收確認框，只會把確認框訓練成無腦點掉的一步，真正危險的那次就攔不住。
+  it('恢復不走確認框，直接送出', async () => {
+    const suspend = vi.fn(async () => {});
+    renderConsole({
+      loadMemberDetail: async () => detail({ suspended: true }),
+      suspendMember: suspend,
+    });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
+    await waitFor(() => expect(suspend).toHaveBeenCalledWith('m1', false));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('停權失敗時把哪一種失敗印在詳情面板裡', async () => {
     renderConsole({
       suspendMember: async () => {
         throw new Error('該會員已被其他管理員處理');
       },
     });
-    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
-    expect(await screen.findByText(/該會員已被其他管理員處理/)).toBeTruthy();
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    expect(await within(panel).findByText(/該會員已被其他管理員處理/)).toBeTruthy();
+  });
+
+  // 停權與授予管理員是同一類事——對一個人做的判斷，不是對一筆資料做的修改。
+  // 同類的東西走同一套邏輯與設計：同一個面板、同一個確認框、同一處錯誤顯示。
+  it('停權成功後詳情面板的管理區跟著更新', async () => {
+    let suspended = false;
+    renderConsole({
+      loadMemberDetail: async () => detail({ suspended }),
+      suspendMember: async () => {
+        suspended = true;
+      },
+    });
+
+    const panel = await openDetail();
+    expect(within(panel).getByText('帳號正常')).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    expect(await within(panel).findByText('帳號已暫停')).toBeTruthy();
   });
 
   it('搜尋送出後以關鍵字重新查詢', async () => {
@@ -273,28 +331,70 @@ describe('MemberManagement', () => {
     await screen.findByText('林小美');
     expect(screen.getByText('已暫停')).toBeTruthy();
     expect(screen.getByText('已失效')).toBeTruthy();
-    // 停權者的動作是「恢復」而不是「暫停」——按錯會讓客服再停一次。
-    expect(screen.getByRole('button', { name: '恢復' })).toBeTruthy();
   });
 
-  it('一般會員顯示設為管理員，管理員顯示撤銷管理員', async () => {
-    renderConsole({ loadMembers: async () => page({ members: [member({ isAdmin: false })] }) });
-    expect(await screen.findByRole('button', { name: '設為管理員' })).toBeTruthy();
+  // 列上只有「查看」一個動作，誤觸的上限就是開錯一個面板。停權與授予管理員
+  // 都是**對一個人做的判斷**，做之前本來就該先看清楚他是誰——那道摩擦是流程
+  // 本身，不是人工加的關卡。改版前這裡有三顆等寬平排的鍵。
+  it('列表上按不到任何會改變會員狀態的鍵', async () => {
+    renderConsole({
+      loadMembers: async () =>
+        page({ members: [member({ isAdmin: false }), member({ id: 'm2', suspended: true })] }),
+    });
+    await screen.findAllByText('陳大文');
+
+    for (const name of ['設為管理員', '撤銷管理員', '暫停', '恢復']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
   });
 
-  // 撤銷管理員是 plan §4 明列的四個危險動作之一（退件、代為完成、批次標記、
-  // 撤銷管理員都走 AlertDialog）——它把整個後台的一把鑰匙收回來，誤觸的代價
-  // 是那個人瞬間失去所有管理能力。
-  it('撤銷管理員走確認框，取消不送出', async () => {
+  async function openDetail() {
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    return screen.findByRole('dialog');
+  }
+
+  it('詳情面板的管理區可把一般會員設為管理員', async () => {
     const setAdmin = vi.fn(async () => {});
     renderConsole({
-      loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
+      loadMemberDetail: async () => detail({ isAdmin: false }),
       setMemberAdmin: setAdmin,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '設為管理員' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認授予' }));
+    await waitFor(() => expect(setAdmin).toHaveBeenCalledWith('m1', true));
+  });
+
+  // 授予的代價不對稱地重，而且方向和直覺相反：他當下就讀得到全站的身分證與
+  // 收款帳號，撤回權限撤不回已經被看過的資料。「授錯了撤回即可」只在權限層
+  // 成立，在個資層不成立——所以授予也要一道確認框，而且要把這件事講出來。
+  it('授予管理員的確認框說明存取無法追溯撤回', async () => {
+    const setAdmin = vi.fn(async () => {});
+    renderConsole({
+      loadMemberDetail: async () => detail({ isAdmin: false }),
+      setMemberAdmin: setAdmin,
+    });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '設為管理員' }));
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/王小明|陳大文/)).toBeTruthy();
+    expect(within(dialog).getByText(/無法追溯撤回/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(setAdmin).not.toHaveBeenCalled();
+  });
+
+  // 撤銷把整個後台的一把鑰匙收回來，誤觸的代價是那個人瞬間失去所有管理能力。
+  it('撤銷管理員走確認框，取消不送出', async () => {
+    const setAdmin = vi.fn(async () => {});
+    renderConsole({
+      loadMemberDetail: async () => detail({ isAdmin: true }),
+      setMemberAdmin: setAdmin,
+    });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '撤銷管理員' }));
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
     expect(setAdmin).not.toHaveBeenCalled();
   });
@@ -302,26 +402,46 @@ describe('MemberManagement', () => {
   it('撤銷管理員確認後才送出', async () => {
     const setAdmin = vi.fn(async () => {});
     renderConsole({
-      loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
+      loadMemberDetail: async () => detail({ isAdmin: true }),
       setMemberAdmin: setAdmin,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '撤銷管理員' }));
     fireEvent.click(await screen.findByRole('button', { name: '確認撤銷' }));
     await waitFor(() => expect(setAdmin).toHaveBeenCalledWith('m1', false));
   });
 
-  it('撤銷管理員失敗時說出是哪一種失敗，不壓成一句操作失敗', async () => {
+  // 錯誤要出現在動作發生的地方。詳情面板蓋在列表上，把訊息印在列表區等於
+  // 印在看不見的地方——admin 只會覺得按了沒反應，然後再按一次。
+  it('撤銷管理員失敗時把哪一種失敗印在詳情面板裡', async () => {
     renderConsole({
-      loadMembers: async () => page({ members: [member({ isAdmin: true })] }),
+      loadMemberDetail: async () => detail({ isAdmin: true }),
       setMemberAdmin: async () => {
         throw new Error('不能撤銷自己的管理員權限，請由其他管理員操作');
       },
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '撤銷管理員' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '撤銷管理員' }));
     fireEvent.click(await screen.findByRole('button', { name: '確認撤銷' }));
-    expect(await screen.findByText(/不能撤銷自己的管理員權限/)).toBeTruthy();
+    expect(await within(panel).findByText(/不能撤銷自己的管理員權限/)).toBeTruthy();
+  });
+
+  // 面板停在舊狀態會讓 admin 以為沒生效而再按一次。
+  it('授予成功後詳情面板的管理區跟著更新', async () => {
+    let isAdmin = false;
+    renderConsole({
+      loadMemberDetail: async () => detail({ isAdmin }),
+      setMemberAdmin: async () => {
+        isAdmin = true;
+      },
+    });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '設為管理員' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認授予' }));
+    expect(await within(panel).findByRole('button', { name: '撤銷管理員' })).toBeTruthy();
   });
 
   it('搜尋框是 search 型別，輔助科技辨識得出來', async () => {

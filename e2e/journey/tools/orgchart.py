@@ -54,6 +54,32 @@ def generation_levels(nodes: dict[str, str | None]) -> list[list[str]]:
     return levels
 
 
+def ancestor_chain(nodes: dict[str, str | None], viewer: str, target: str) -> list[str]:
+    """viewer 與 target 之間的祖先，**由淺到深、不含兩端**。
+
+    第 i 個元素（0-based）相對 viewer 的代數是 i+1；展開推薦樹時需要這個代數
+    才算得出遮罩後的顯示名（見 tools/name_mask.py）。
+
+    target 不在 viewer 的下線鏈上時**擲錯**，不回傳部分結果：先前的實作在這種
+    情況下會一路走到 root，交出一串根本不在該檢視者樹上的節點，最後在 UI 上
+    找不到而以逾時收場——錯誤訊息離現場很遠。
+    """
+    chain: list[str] = []
+    cur = nodes.get(target)
+    while cur is not None and cur != viewer:
+        chain.append(cur)
+        cur = nodes.get(cur)
+    if cur != viewer:
+        raise ValueError(f"{target} 不在 {viewer} 的下線鏈上")
+    chain.reverse()
+    return chain
+
+
+def generation_of(nodes: dict[str, str | None], viewer: str, target: str) -> int:
+    """target 相對 viewer 的代數——直推 = 1。"""
+    return len(ancestor_chain(nodes, viewer, target)) + 1
+
+
 def downline_by_generation(nodes: dict[str, str | None], node: str,
                            depth: int = REWARD_GENERATIONS) -> list[list[str]]:
     """以 node 為根往下爬 depth 層：[一代成員, 二代成員, ...]。"""

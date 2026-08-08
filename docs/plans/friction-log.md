@@ -9,6 +9,119 @@
 
 ---
 
+## 2026-08-07｜漏網｜修法做出來過卻沒推廣：journey 登入的 session 清理
+
+journey-full 的 19 條紅燈,根因是 `builders/login.py` 的 `login_via_gui`
+假設「呼叫時沒有既有 session」。`page` fixture 是 function-scoped——跨情境
+換新 context(乾淨),**情境內是同一個 context**,而多個情境會在一個情境裡
+以不同身分連續登入(f50「完整生命週期」= 會員申請 → 管理員標記已匯款 →
+會員查收)。第二次 `goto("/login")` 被前端「已登入自動導向」彈走,
+`auth-login-button` 永遠不出現,停在 timeout。
+
+**真正值得記的不是這個 bug,是它的形狀:修法做出來過,卻沒有推廣。**
+
+f70 最早撞到,就地寫了 `_fresh_gui_login`(清 storage 再登入),它的 docstring
+把機制講得清清楚楚:「不清的話 /login 的『已登入自動導向』會把第二次登入
+直接彈走」。**知識完全正確、記錄完整、就是沒有回到共用 builder。** 於是
+f15/f20/f30/f40/f50/f60 六章繼續用不清 session 的版本,又壞了不知道多久
+——`ci-ok` 直到 #240 修好「push run 綠章冒名頂替」才第一次真的擋下來。
+
+這與 friction-log 既有那條「PR #119 自我糾正過卻沒推廣成同類掃描」是**同一個
+失效模式**:糾正只綁定當下那個 diff。差別是這次連「寫進未來讀得到的地方」
+都做到了(docstring 寫得比多數註解都好),仍然沒有推廣——**光是把原因寫下來
+不夠,要把修法搬到唯一的共用點上。**
+
+推論:修一個 bug 時,除了問「同類還有誰」,還要問**「這個修法現在住在哪裡?
+它是唯一的入口嗎?」** 住在呼叫端就會漏,住在被呼叫端才會全中。
+
+處置:清理移進 `login_via_gui`(37 個呼叫點一次到位),f70 私有 helper 縮成
+薄轉呼叫;同類掃描另找到該檔三處同形狀的冗餘清理,一併移除。防線是
+`e2e/journey/tools/test_login_session_isolation.py` 三條結構守衛(跑在
+journey-offline 軌,秒級,不必等 30–90 分鐘的真後端)。
+
+**事後驗證(run 31232337950,2026-08-08)**:重跑 journey-full,
+**19 failed / 67 passed → 13 failed / 76 passed**,死在 `auth-login-button`
+的情境 **4 條 → 0 條**。上面的根因判定成立。但同一輪也顯示登入**不是唯一的
+鏈頭**——「透過 GUI 建立刊登」的 5 條(f40 三條 + f60 兩條)原樣還在,
+與登入無關,追蹤見 `docs/plans/fix-journey-f40-listing/fix.md`。
+記在這裡是因為「修好主鏈頭之後還剩什麼」本身就該被量化,
+否則下一次很容易把「失敗數下降」直接當成「問題解決」。
+
+守衛自身的教訓:第一版用正則掃檔案文字,被 docstring 裡解釋機制的那句
+`goto("/login")` 匹配到,報出假違規。改用 AST(`ast.unparse` 天然去註解、
+docstring 另外剝掉)。**守衛被散文騙比沒有守衛更糟——它會讓人開始不信任紅燈。**
+
+---
+
+## 2026-08-07｜待裁決｜journey 紅燈不區分「外部相依抖動」與「真迴歸」
+
+晉升 PR #249 的 `journey-full` 紅：**19 failed / 67 passed**（86 情境全數執行、
+0 skip）。其中一條的失敗原因是
+`waiting for navigation to "https://sandbox-api.payuni.com.tw/**"` 逾時 60 秒
+——PayUni sandbox 抖了一下。
+
+**問題不是它會抖，是紅燈本身不帶歸屬資訊。** 失敗集中在 `f60_time_scenarios`
+與 `f70_renewal_saga` 兩個最長的付款鏈章節：付款一卡住，後續的開通、刊登可見、
+獎勵入帳、組織圖節點全部連鎖失敗。一個外部逾時放大成 19 條紅燈，而畫面上
+看起來就像「這個 PR 弄壞了一堆東西」。
+
+代價是**每次紅燈都要有人花時間判斷歸屬**，而晉升 PR 正好是同時帶著多個 PR
+上正式站的那一刻——歸屬判斷最貴、也最容易判錯的時候。
+
+### 這次用的歸屬判定法（可複用，比讀完 19 份 log 便宜）
+
+不去逐條讀失敗，而是**列出「我的改動能造成影響的全部機制」，逐一用同一個
+commit 上的其他綠燈閘門排除**：
+
+| 我的改動可能波及的路徑 | 排除依據（同 commit 上的綠燈） |
+|---|---|
+| 新 trigger 擋掉 `listings` 寫入 → 依賴刊登的情境連鎖失敗 | `api-tests` 綠——12 條 Deno 測試對真 Postgres 驗 INSERT/UPDATE 兩條路徑 |
+| 改了類別欄位的 DOM → 共用 page object 選不到 → 建刊登失敗 | `e2e-tests` 綠——journey 用的 `fill_valid_form` 就是 mock 版套件在用的同一支 |
+
+兩條都被排除，就不必逐條讀。**關鍵在於列的是「機制」不是「情境」**——機制數量
+有限且可窮舉，情境數量隨套件成長。
+
+### 可考慮的處置（未裁決）
+
+journey 的失敗摘要目前不分類。若能把「外部相依逾時／連線失敗」與「斷言失敗」
+在 job summary 分開統計，紅燈第一眼就能看出是哪一種——不需要改測試，只需要
+在收斂 junit.xml 時看 message 是不是 `TimeoutError` 且目標是外部網域。
+
+〔需人工裁決：要不要做、做在 journey 這一支還是抽成共用〕
+
+---
+
+## 2026-08-07｜漏網｜migration 版本號撞號，三層閘門全綠通過
+
+PR #246（自訂服務類別）rebase 到 develop 後，它的
+`20260807000002_custom_service_categories.sql` 與 #247 的
+`20260807000002_member_verify_logs_comment.sql` **共用同一個版本號**。
+
+漏網的完整性是重點——每一層都「正確地」沒有意見：
+
+| 層 | 為什麼沒攔到 |
+|---|---|
+| git | 兩個不同檔名、各自新增。rebase 乾乾淨淨，不標成衝突 |
+| CI `api-tests` | 本地 `supabase start` 從零重播，兩支都跑得到、都綠 |
+| biome / tsc / vitest / knip | 與檔名無關 |
+| journey 拋棄式分支 | 同樣是從零重播，同樣兩支都跑得到 |
+
+**失效只發生在正式站部署那一刻**：Supabase 以檔名的數字前綴當版本鍵寫進
+`supabase_migrations.schema_migrations`，重複版本會讓其中一支被當成已套用而
+靜默跳過——沒有錯誤訊息，只有一個永遠不會被建立的 view 與線上 404。
+
+這次是靠人工比對 `ls supabase/migrations/` 的輸出才發現的，而發現它的動作
+（rebase 後主動找「git 看不見的衝突」）不在任何 SOP 裡。**通則：兩個分支
+各自新增檔案、而該檔案的*名稱*本身帶語意（版本號、排序鍵、唯一 ID）時，
+git 的無衝突不代表沒有衝突。** 同類還有：`.github/workflows/` 的 job id、
+e2e 的 `NN_<domain>.feature` 里程碑序號。
+
+處置：新增 `scripts/check-migration-versions.py`（M1 版本號唯一、M2 檔名格式、
+M3 版本號遞增，10 條表格案例），接上 framework-check 軌第 10b 項。
+表格案例直接收錄這次的真實檔名組合當迴歸。
+
+---
+
 ## 2026-07-25｜存量債｜biome 導入時降為 warn 的規則
 
 導入 biome 時 error 歸零的手段是把「需人工判斷的存量問題」降級 warn：
@@ -1151,3 +1264,398 @@ console 的原話:
 瀏覽器手上的舊 index.html 仍可能指向已消失的 chunk,「重新整理」也救不回來。
 已補。另外把 `/assets/*` 的缺檔改成誠實回 404(`public/404.html`),避免
 瀏覽器把一份 HTML 快取在 `.js` 的網址底下、修好之後還繼續壞。
+
+## 2026-08-07｜裁決｜規則 8 的前提換了,行為要求不變——依據跟著換,不是廢掉
+
+轉 public 後「每 job 進位計費」失效,規則 8 標註了「力度待裁決」。裁決結果是
+**兩條子規則都保留,但依據重寫**:
+
+- **8a**:判準從「省計費分鐘」改成**固定開銷 > 運算量**——每個 job 各自付
+  runner 啟動 + checkout + 工具鏈(本 repo 15-40 秒),拿它買不到 40 秒的運算
+  不划算。校準用的反例寫進規則本身:同一份「把 static/build/unit/journey-offline
+  併軌」的提案,在計費前提下成立、在牆鐘前提下**不成立**(四軌並行優於串行),
+  提案作廢。**同一個動作在兩種前提下結論相反,所以規則要寫依據不能只寫形狀。**
+- **8b**:從「費用註記」泛化成 **`頻率依據:` 註記**——排程頻率的後果逐個
+  workflow 不同(journey 是付費的 Supabase preview branch、reconcile 趨近零成本
+  但延遲直接影響付了錢的使用者、security 是人的評估頻寬),要求寫的是「為什麼
+  是這個頻率、成本落在哪裡」。檢查器同步改,並補一條表格案例釘住
+  **只寫舊的「費用」字樣不再算數**;三支排程 workflow 以突變驗證確認新規則
+  對真實檔案會紅(拿掉 `頻率依據` → 各 1 筆違規)。
+
+連帶處置:reconcile 降頻的唯一理由是省分鐘,理由消失即**改回每小時**
+(金流安全網,撿回越快越好;但註解保留「排程器會丟觸發、實測中位 1.7h」
+這個事實,免得下一個人把名目當保證)。
+
+**通則:前提失效時,先問「要求本身還成立嗎」再決定廢或改。**這次兩條要求都
+獨立於計費成立,廢掉會平白失去把關;而若只留規則不動依據,文件就會留著一段
+已知為假的論證——那正是 08-07 那次「三處引用只掃到兩處」的同型問題。
+
+## 2026-08-07｜假閘門(第三個根因)｜required check 的綠章會跨 workflow run 冒名頂替
+
+〈假閘門〉那則記了「CI 還在跑就合併成功」的兩次歸因:#109 的「清單漂移」
+(錯的)、以及「private repo 的 ruleset 靜默降級」(對的,08-07 轉 public 後
+一般 PR 的閘門確實開始生效)。**同一個症狀今天第三次發生,而且是第三個根因**
+——公開 repo、ruleset 正常運作,晉升 PR #236 照樣在 `journey-full` 還
+`in_progress` 時合併進 main(187 commits、14 個 migration 沒過全鏈路驗證)。
+
+根因:**required status check 的鍵是 (commit SHA, check-run 名稱),不綁
+workflow run**。晉升 PR 的 head SHA 就是 develop 的 tip,而 `ci.yml` 同時有
+`pull_request` 與 `push` 觸發——那顆 SHA 在 PR 開啟前 6 分鐘就已被 push run
+蓋上一顆同名的綠 `ci-ok`。該綠章廉價的原因是 `journey-full` 的條件是
+`event_name == 'pull_request' && base_ref == 'main'`,push 事件必然
+`skipped`,而 `ci-ok` 把 skipped 算通過。
+
+**串起來的第二個機制才是關鍵:GitHub 不為 `needs` 尚未完成的 job 建立
+check run。** 所以 PR run 自己的 `ci-ok` 當時根本不存在(實測該 run 只有 8 個
+job,沒有 ci-ok)。在保護規則的視角裡,「還沒跑完」不是 pending,而是「已經
+綠了(那顆舊的)」——**沒有黃燈可以擋人**。
+
+**通則(三次事故的共同上位原則):驗證閘門時,不能只問「該紅的時候會不會
+紅」,還要問「該擋的時候,那個綠是誰給的」。** 前兩次的診斷都停在「規則有沒有
+被詢問」,這次的教訓是規則被詢問了、答案也是綠的,但**回答問題的不是這次
+執行**。可驗證的問法:點開 PR 上那顆 required check,確認它的 run id 就是這個
+PR 的 run。
+
+**為什麼樣本這麼久才出現:** 只有晉升 PR 會踩到——一般 feature PR 的 head 是
+feature 分支,`push: branches: [main, develop]` 不涵蓋,沒有預先蓋好的綠章。
+晉升幾週一次,而且前幾次都在 ruleset 根本沒生效的期間,症狀被前一個根因蓋住。
+
+**修法**(規則 9 / 10,`check-workflows.py` 機械把關):push run 的匯總點改名
+`ci-ok-push`;`ci-ok` 在 `base_ref == 'main'` 時單獨要求 `journey-full` 為
+success。**不能改用「把 journey-full 列進 required checks」**——reusable
+workflow 的 check-run 名字會隨執行狀態變(真跑叫 `journey-full / journey-suite`、
+被 skip 叫 `journey-full`),兩個名字都修不了。
+
+**同類掃描順手找到的第二個洞:** `scripts/test-hooks.py` 的 `pre_commit_dryrun`
+對 `staged` / `deno` / `doc_diff` 都做了環境隔離(檔內註解還特別寫了理由:
+「行為測試才不會受此刻剛好暫存了什麼影響」),**唯獨漏了 tdd-lock 自己**——
+`lock=False` 只是「不建立」而非「確保沒有」。於是開發者真的處在紅燈期時,兩條
+「無鎖」案例假紅。**同一份檔案裡已經想清楚的隔離原則,沒有套用到它自己最
+特殊的那個參數上。** 已一併修(移開再放回,不刪——刪掉等於靜默解鎖)。
+
+## 2026-08-07｜漏網｜正式站靜默停擺 13 天:等待核准的 run 占著 concurrency slot
+
+查證「production 的 required reviewer 到底有沒有生效」時,意外挖出一個**沒有
+任何一層看得見**的正式站停擺:
+
+- 部署 run 30198752930 自 2026-07-26 起卡在 `waiting`(等 production 環境核准),
+  沒有人按。而 **`waiting` 的 run 仍然占著 concurrency slot**,配上
+  `cancel-in-progress: false`,之後每一次晉升的部署都排在它後面永遠不會開始。
+- 結果:正式站的 Edge Function 停在 13 天前那一版。今天(08-07)的晉升 PR #243
+  合併後,部署 run 31195702067 一建立就是 `pending` 且**零個 job**。
+- **為什麼沒有任何訊號**:狀態不是 `failure`(所以 deploy 自己的失敗開 issue 沒觸發)、
+  CI 全綠、PR 合併成功、部署 run 也確實存在。「已合併到 main」與「已經上線」之間
+  的落差,沒有任何一層在看。
+
+**兩半處置**(缺一不可,它們治的是不同的失敗):
+- 規則 11(機械把關):用了 `environment:` 的 workflow 不得配
+  `cancel-in-progress: false`。改成 `true` 語意反而更正確——新部署淘汰舊部署=
+  「最新的那個贏」,正是「不得亂序部署」原本要的性質(排隊只保證順序,不保證
+  最後贏的是新的)。**兩個鍵各自都合理,是相乘才出事**,所以檢查器同時看兩者。
+- `deployment-queue-audit.yml`:治另一半——「沒有下一次 push 時,沒人核准的部署
+  會無聲等下去」。超過 6 小時未推進就開 issue,佇列清空自動關閉。
+
+**通則:「不是 failure」不等於「沒事」。** 現有的失敗通報全都掛在 `failure()` 上,
+於是**卡住、排隊、等待核准**這一整類「停在半路但狀態健康」的故障沒有任何接收者。
+凡是有佇列或人工閘門的流程,都要另外問一句「它會不會安靜地不前進」,而不是只問
+「它會不會紅」。
+
+**同類掃描結果**:同一形態的還有 journey-scheduled 與 reconcile-payments(都有
+`cancel-in-progress: false`),但兩者都沒有 `environment:` 人工閘門,不會卡死——
+規則 11 因此刻意要求兩個條件同時成立才算違規,不誤傷它們。
+
+**診斷時踩到的坑(已寫進 rules 地雷段)**:`workflow_run` 觸發的 run,其
+`head_branch` 回報的是**預設分支**而不是觸發它的分支。用 `branch: main` 過濾
+部署 run 會看到「07-25 之後就沒有正式站部署了」——那是假象(預設分支 07-25 從
+main 改成 develop)。我自己在這次查證中先被誤導了一次,才用時間戳對回觸發它的
+CI run 才確認。
+
+**附帶澄清一個先前的錯誤推測**:friction-log 08-07「假閘門」條目推測 GitHub
+Environments 的 required reviewer 在 private 期間可能與 ruleset 一樣靜默失效。
+**實際上它沒有**——07-26 那次 `waiting` 正是它在擋,當時 repo 還是 private。
+`pending_deployments` API 確認:環境 `production`、reviewer `simonzhao219`、
+`wait_timer: 0`。真正沒有閘門的是 07-25 之前:那 29 次部署全部即刻執行、
+18-34 秒跑完,沒有任何一次停下來等核准。**「同類風險」的推測要逐條驗證,
+不能因為機制相似就併案結論。**
+
+## 2026-08-07｜誤擋（工具鏈層）｜union merge 解掉了衝突，卻沒解掉「被判定有衝突」
+
+`.claude/metrics/sessions.jsonl` 是所有分支共寫的 append-only 日誌。第一版靠
+`.gitattributes` 的 `merge=union` 處理跨分支的尾端衝突——**而它真的有效**：本機
+`git rebase origin/develop` 每次都 `Auto-merging` 過去，一次都不用手解。
+
+但症狀沒有消失。develop 一有 commit 碰到這個檔，每個開著的 PR 就被 GitHub 標成
+「This branch has conflicts that must be resolved」。原因是 GitHub 算
+`mergeable_state` 時不套用 repo 的 merge driver（2026-08-07 PR #211 的行為觀察：
+該 PR 期間 develop 前進五次，前三次的唯一重疊檔就是這個日誌，本機每次自動解、
+GitHub 每次標 dirty）。
+
+**當時的處置是把這個觀察寫進 `.gitattributes` 的註解**——十行，講清楚了「看到
+dirty 不代表 union 壞了，那是誤報，照常 rebase 即可」。文件是對的，但它把一個
+**每次都要人判斷一次**的成本合理化了：誤報跟真衝突在 UI 上長得一模一樣，所以
+「知道它可能是誤報」並不能讓人跳過判斷，只是讓判斷多一個分支。三個月後、或換
+一個人來看，那十行註解要先被讀到才有用。
+
+處置：分片。日誌改成一分支一個檔（`.claude/metrics/sessions/<分支>.jsonl`），
+兩條分支不再有共同的寫入區域，衝突**不會產生**而不是產生了再解。分片鍵取
+flush 當下的分支（不是 session 起始分支——落檔的下游是正在做的那個 commit，
+它落在當下的分支上）。舊的共享單檔就地凍結、不刪不改名：delete/modify 會讓當時
+開著的每個 PR 各撞一次，正是要消滅的症狀。union 降級成同分支 rebase 的保底。
+
+**通則：把一個已知的誤報寫進文件，是處置的下限，不是處置。** 判準是「這個成本
+從此不需要人參與了嗎」——註解讓誤報變得可解釋，但每次仍要一個人讀懂、判斷、
+按下 rebase；分片讓它不再發生。文件化適合用在「無法消除、但需要辨識」的狀況，
+一旦發現根因其實是可消除的結構（這裡是：共享寫入區域），文件就從解法退化成了
+繞路指南。**留意自己寫下「這是誤報，照常處理即可」的時刻——那句話本身就是還沒
+修到根的訊號。**
+
+**第二個訊號同樣值得記：** 上游工具（這裡是 GitHub）不照你的設定走時，與其推論
+它的規格、再依賴那個推論，不如選一個**不依賴該推論成立**的解法。分片對「GitHub
+到底套不套用 merge driver」完全不敏感——沒有重疊，誰來算都算不出衝突。
+## 2026-08-07｜漏網｜PR 有衝突時 CI 完全不跑——是「沒有燈」不是紅燈
+
+PR #228 推上新 head 之後,四分鐘沒有任何 GitHub CI check 出現(只有 Cloudflare
+與 Supabase Preview 這兩個外部整合)。第一直覺是排隊或額度用罄(當天稍早才發生
+過一次額度事故),但同一時刻 PR #245/#246 的 CI 跑得好好的——Actions 是健康的。
+
+**根因**:develop 前進讓這個 PR 變成 conflicted,而 conflicted 的 PR 建不出
+`refs/pull/<n>/merge` ref,`pull_request` 觸發的 workflow **完全不會啟動**。
+rebase 後 CI 立刻出現,診斷確認。
+
+**為什麼危險**:PR 不會變紅,只是空白。在 develop 高頻變動的日子(當天動了
+十幾次,多個平行 session 在合 PR),「沒有 CI」很容易被讀成「還在排隊」而一直等,
+而 auto-merge 也永遠不會完成——看起來像卡住,實際上是沒人送出那個狀態。
+
+**判準**:PR 沒有任何 CI check ≠ 排隊。先看 `mergeable_state`——
+`dirty` 是衝突(CI 不會跑),`blocked` 才是「可合併但等 required checks」。
+
+**連帶效應**:每次 rebase + force-push 會被 `ci.yml` 的
+`concurrency: ci-<ref>, cancel-in-progress: true` 取消掉正在跑的那一輪,而
+`ci-ok` 把 `cancelled` 判為不通過(只接受 success|skipped),於是被取代的那個
+SHA 會留下一顆看起來很嚇人、實際毫無意義的紅 `ci-ok`。看 log 的
+`各軌結果:` 那行——出現 `cancelled` 就是被後續 push 取代,不是壞掉。
+(這個設計是對的:把 cancelled 當通過,PR 就能在慢軌從未跑完的情況下合併。)
+
+## 2026-08-07｜漏網｜收尾被 auto-merge 搶先:規劃檔與錯誤註解一起上了 develop
+
+PR #228 的 `/tdd-implement` 收尾跑到一半(§9 知識升級已完成、
+`/review-implementation` 的四個 subagent 還在跑),使用者開了 auto-merge,
+CI 一綠就合併了。結果三件事進了 develop:
+
+1. **5 個規劃檔、1410 行鷹架**——CLAUDE.md 明訂要在 PR 前刪除
+2. **一段講錯保護機制的安全註解**(見下)
+3. PR 描述停留在「本 PR 只有規劃書,不含任何實作」,與 18 檔 diff 不符
+
+第 2 項最貴:`EditServiceProvider.tsx` 的註解寫「真正擋住他人刊登的是 ownership
+檢查的 redirect」,但那支 UPDATE 本身就帶 `.eq('user_id', user!.id)`。照它理解的
+人可能把那個 filter 當多餘拿掉——那就是 IDOR,而註解會讓 review 也跟著放行。
+這與同一份規劃第三輪審查抓到的 UI/UX P1 是**同一類**(寫錯機制的安全論證比不寫
+更糟),只是那次是寫反、這次是遺漏,而且是四輪審查(三輪規劃 + 一輪實作)裡
+前三輪都沒看出來——實作審查才抓到,而它跑完時已經來不及。
+
+**啟示**:`/review-implementation` 的價值恰恰在「規劃審過、實作走偏」,所以它
+**必須跑完**才進合併路徑。auto-merge 與「收尾尚未完成」是互斥的——要嘛收尾做完
+再開 auto-merge,要嘛接受收尾債。這不是誰的錯,是流程順序沒有機械保護:
+沒有任何閘門知道「這個 PR 的 /tdd-implement 收尾還沒跑完」。
+
+**可考慮的機械化**(待整併時裁決):PR 內若仍存在 `docs/plans/<slug>/`,
+guards 軌印警告(不硬擋——規劃階段的 PR 本來就該有規劃檔,關鍵是**帶著實作**
+的 PR 不該有)。
+
+## 2026-08-08｜漏網｜離線測試與被測程式同源於一個錯誤假設,全綠不代表對
+
+`tools/rls_probe.py` 的 `classify()` 把 PostgREST 回應歸成五種形狀,配對的
+9 支離線測試**全綠**、`npm run check` 綠、journey-offline 軌綠、四視角實作
+審查(P0=0)也沒抓到。第一次真跑(journey run 31231809650)才發現它把
+「訪客的 insert 被 RLS 的 WITH CHECK 擋下」歸成了 `unauthenticated`。
+
+根因不是筆誤:PostgREST 對 anon 身分回 **401 而非 403**,而 `classify()`
+第一行就 `if status == 401: return UNAUTHENTICATED`,在讀 body 之前短路。
+**狀態碼反映的是請求者是誰,不是誰擋下了請求。**
+
+**為什麼所有閘門都放行**:那 9 支測試是我用「anon 被拒 → 401 代表沒認證」
+這個假設寫的,被測程式也是用同一個假設寫的。**斷言與實作同源時,測試只
+證明了我前後一致,沒證明我對。** 覆蓋率、審查視角數量都不會發現這件事
+——兩邊是同一個心智模型的兩份副本。
+
+**啟示**:規劃階段對「環境事實」的查證(這次查了 hosted 的 GRANT 真值)
+必須延伸到**回應形狀**,不能只查授權設定。做不到就承認那層是未驗證的,
+別讓「離線測試全綠」冒充行為證據。
+
+**連帶一**:新增的 L2 層在**第一次真跑之前不算完成**。這次是靠人明確要求
+「繼續到功能完成」才手動 `workflow_dispatch` 一場,否則會等到每週排程
+——而排程紅燈開的是 triage issue,那時已無人在 context 裡。
+
+**連帶二:兩個 session 平行修了同一個 bug,而且同類掃描都只掃了一半。**
+本 session 從 run 31231809650 診斷、PR #261;另一個 session 從 run
+31232337950 診斷、PR #257 先合進 develop。兩邊的修法完全一致,連兩支新
+測試的函式名都一字不差(`test_anon_rls_violation_is_denied_by_rls_despite_401`
+等)——同一份證據會收斂到同一個結論,重複的是工,不是判斷。
+
+真正的教訓在掃描範圍:#257 的同類掃描結論寫「classify() 是本套件唯一的
+分類點……沒有同形狀的第二處」,那是**只掃了程式碼**。同一個「403」事實
+另有兩份副本躺在 `45_listing_rls.feature` 檔頭與
+`docs/e2e-journey-test-design.md` §14.3,兩份都還寫著 403。這正是
+`document-writing.md` 當初被寫出來的那個形狀——**修了症狀、沒推廣到
+同一事實的其他副本**——只是這次副本在文件而非程式碼裡。
+
+可操作的收斂:同類掃描的預設範圍是**該事實的所有副本**,不是「同一個
+模組裡的同形狀程式碼」。查法就是拿那個具體字串去 `grep -rn`
+(這次是 `403`),而不是靠讀模組結構推論。
+
+避免重工的部分:動手修一個從 CI/journey 診斷出來的 bug 之前,先
+`git fetch origin develop && git log --oneline HEAD..origin/develop` 看一眼
+——develop 高頻變動的日子,別人可能已經在修同一件事。
+
+## 2026-08-08｜漏網｜靜默截斷:錯誤訊息把兩個 session 帶離現場
+
+journey f40/f60 六個刊登情境連敗。真因是測試名稱 `服務{run_id}{node}`(17 字)
+被 `#name` 的 `maxLength={10}` **靜默截斷**成 10 字:表單驗證通過、刊登真的
+建起來了,只有名字短了一截,於是失敗以「某個 `get_by_text` 找不到東西」的
+形式出現在 30 秒後的遠處。
+
+**代價不在難修(改一行格式),在難找。** 連續兩個 session 往「照片上傳失敗 →
+送出鈕 disabled」的方向查——那個假說之所以合理,是因為它**曾經是真的**:
+2026-08-07 之前 `#name` 用 `if (length <= 10)` 的 JS 拒收,17 字會被整串拒收、
+名稱留空、鈕真的 disabled。PR #212 為了 IME 注音把拒收換成 `maxLength` 屬性
+(那個改動本身是對的),同一個根因就換了一張臉,而舊臉還留在所有人的直覺裡。
+
+**啟示三條**:
+
+1. **「值進去了嗎」要在填的當下就驗,不要留給下游斷言。** 已補
+   `BasePage.fill_exact()`:填完比對 `input_value()`,不符就當場失敗並印出
+   實際收到的值。這對所有有上限的欄位有效,不只名稱。
+2. **同一個產生器被複製兩份就會一起錯**:f40 與 f60 各有一份逐字相同的
+   `f"服務{run_id}{node}"`。已收斂成 `builders/listing.py`。
+3. **測試裡抄產品常數會靜默過期**:`test_listing_name.py` 改成直接從
+   `src/utils/constants.ts` 讀 `NAME_MAX_LENGTH` 比對,產品改上限就會紅。
+
+**同場浮現、尚未償還的債**:
+
+- **artifact 下載可能被 egress 政策擋住**(本次 `productionresultssa4.blob.
+  core.windows.net` 回 403),journey 的失敗診斷因此不能只靠 trace/screenshot。
+  `builders/page_diagnostics.py` 的設計理由(「log 讀得到,不必下載 artifact」)
+  值得推廣到 GUI 情境的失敗路徑——本次全靠 job log 推出根因,是可複製的做法,
+  但目前靠人肉推理而非工具落地。
+- ~~`CreateServiceProvider.tsx` 硬寫 `maxLength={10}`~~ **已償還**:改用
+  `NAME_MAX_LENGTH`,並補上 `CreateServiceProvider.test.tsx` 釘住「元件真的
+  套用了那個常數」。原本這一層是空的——上限的值在 `constants.ts`、journey
+  離線測試也讀它,但沒有任何一層確認元件套上去了,兩邊各自「正確」而中間裂開。
+- ~~f45「訪客不能建立刊登」的 `rls_probe.classify`~~ **已由 PR #257 修掉**
+  (42501 先讀訊息再看狀態碼)。本輪一度把它列為待辦,是因為當時手上的
+  clone 沒有那條分支——見下面「同一個 bug 被兩個 session 平行追」。
+- **mock 版 e2e 缺「insert 失敗時 UI 怎麼表現」的覆蓋**(前一份交接文件的
+  §7 提案)。它守的是假說 B,而 B 已被排除,所以不隨本次修法一起做——
+  沒有壞掉的東西不該用測試釘住。但那塊覆蓋確實是零,值得單獨排。
+
+## 2026-08-08｜重複｜同一個 bug 被兩個 session 平行追,交接文件在另一條分支上
+
+接手 session 開場找不到約定的 `docs/plans/fix-journey-f40-listing/fix.md`,
+`git log --all` 也搜不到,於是判定「前一個 session 的容器在推送前被回收、
+文件蒸發」,從零重查。
+
+**判斷錯了,而且錯得很有代表性**:文件確實 commit 了,只是在
+`claude/custom-service-category-cdss2f` 這條**當時還沒被 fetch 的遠端分支**上
+(隨 PR #257 併入 develop)。`git log --all` 只看**本地 refs**——web session 的
+clone 只帶了 develop 與自己的分支,那條分支的 objects 根本不在本地,
+`--all` 當然搜不到。**「`--all` 搜不到」不等於「不存在」。**
+
+代價:兩個 session 平行做了同一份靜態分析(所幸結論一致——都獨立推翻了
+假說 A,論證幾乎逐字相同),而且接手方一度把 f45 的 `rls_probe` 列為待辦,
+其實 #257 已經修好了。
+
+**下次的動作**:上一條已經寫了「動手前先 `git fetch origin develop` 看別人
+在修什麼」——這裡補的是**另一個方向**:要找的東西可能還沒進 develop,而在
+一條沒被 fetch 的分支上。認定「交接文件不存在」之前,先
+`git ls-remote --heads origin` 看有哪些遠端分支。成本是一次呼叫,
+省下的是整輪重查。
+
+**反過來也有收穫**:平行的第二輪不是全白費——它推翻了第一份留下的假說 B/D
+二選一(答案是兩者皆非),也訂正了第一份把「下架後找不到刊登」判成假陰性的
+結論(那條 PASSED 反而是刊登確實建成的證據)。獨立重查有它的價值,
+只是不該是**意外**發生的。
+
+## 2026-08-07｜不對稱｜「刪」立了規則,「加」沒有——省下的 49s 當天被加回 47s
+
+e2e 去重(PR #225)刪了 18 條情境,CI 的 pytest step 233s → 184s。同一天
+稍晚回頭量:**231s**。
+
+不是去重失效——Gherkin 那層一條沒動(129 條,`e2e/features/` 位元組層級
+零變動)。長回來的是**非 Gherkin 的探針**:`test_overflow_sweep.py` 從 21
+條路由長到 27 條,外加全新的 `test_admin_mobile_layout.py`。156 + 9 = 165,
+對得上;新探針是真的新覆蓋,不是重複。
+
+**問題不在那 9 條,在於沒有人會注意到這件事發生。** 我在 `e2e/README.md`
+立的規則只管「刪一條要什麼證據」,**加一條要付多少沒有任何規則**。於是這一
+層的成本是單向棘輪:每次有人加探針都合理、每一次都沒人反對,累積起來就把
+上一次去重的成果吃光——而且吃光的過程沒有任何一條紅線會亮。
+
+同一個形狀在別處也成立(bundle 有 `檢查 bundle 預算`、覆蓋率有棘輪),
+唯獨 e2e 這一層只有「刪的規則」。**一個只約束減少、不約束增加的規則,
+長期效果是零。**
+
+尚未裁決要不要接閘門(選項:e2e-tests 軌加牆鐘上限、或把「新增探針要在
+PR 描述寫清成本」變成 checklist)。先記形狀,不急著發明機制——現在 repo
+是 public、runner 免費,痛的是回饋延遲不是錢,而 302s 仍在可忍受範圍。
+**要動的時機是它變成「最長那一軌且開始拖累每個 PR」的時候。**
+
+## 2026-08-07｜同類掃描｜同一個效果三種寫法,只擋一種等於沒擋
+
+補上一則的後續處置(見「覆寫 `core.hooksPath` 是繞過 pre-commit 的第二種
+寫法」)。動手時才發現不是兩種是**四種**:`--no-verify`、`git -c` 單次覆寫、
+`GIT_CONFIG_KEY_n` 環境變數、以及 `git config` 寫進設定檔(含 `--unset`
+——拿掉之後退回空的 `.git/hooks`,效果一模一樣)。
+
+**教訓不是「補齊清單」,是清單本身要從「效果」列舉而不是從「寫法」列舉。**
+原本的規則寫的是「擋 `--no-verify` 這個字面」,那是寫法;正確的表述是
+「擋一切讓 pre-commit 不執行的手段」,從那裡出發才會問「還有什麼寫法能
+達到同一個效果」。我在寫那條 friction 時只想到自己踩的那一種,是在實作
+時逐條推敲效果才補出另外兩種。
+
+順帶:守衛的**誤擋**與**漏網**必須同一批修完。這次先做誤擋(剝掉 commit
+message 與 heredoc 內文再比對)才做漏網,不是優先序排錯——是相依:新規則
+要認 `core.hooksPath` 這個字面,而我接著就要在 commit message 與本檔裡
+大量書寫它。誤擋沒先修,「記錄違規」會被當成違規,連這條 log 都寫不進來。
+
+## 2026-08-08｜重複｜同一天三個 bug 同一個形狀:測試相信了產品從未承諾的值
+
+追一條 journey 失敗(`A0 透過 GUI 建立刊登`)追出四個根因,其中**三個是
+同一個形狀**,而第四個(推薦樹)也是:
+
+| bug | 產品實際做的轉換 | 測試以為的值 |
+|---|---|---|
+| f40 刊登名稱 | `#name` 的 `maxLength` 截斷成 10 字 | 原始 17 字 |
+| f50 提領查詢 | 欄位叫 `requested_at` | `created_at` |
+| f20/f60 推薦樹 | `maskNameByGen` 對 gen≥2 遮罩 | 原名 |
+
+三次都是**測試斷言了一個產品從未承諾的值**,而且三次的錯誤訊息都指向
+**遠處**——某個 `get_by_text` 找不到東西、一句 `400 Client Error`——
+沒有任何一個指回真正出錯的那一行。代價不在難修(都是一兩行),在難找:
+f40 那條讓兩個 session 各查了一輪。
+
+**可操作的收斂:斷言一個值之前,先確認產品在那條路徑上不會轉換它。**
+長度上限、遮罩、正規化 trigger、欄位改名都算。查法是去讀那個值**寫入端
+與讀出端之間**的程式碼,而不是假設「我填什麼就會存什麼」。
+
+已機械化的只有一個:`BasePage.fill_exact()`——填完回頭比對 `input_value()`,
+把「靜默截斷」變成當場失敗。其餘(遮罩、欄位名)目前靠人,
+`tools/test_withdrawal_query.py` 那種「直接解析 migration 比對」的做法
+是可複製的樣板:**不要在測試裡另抄一份產品常數/欄位清單,去讀真的那份**。
+
+**連帶一:兩個根因疊在一起時,第一個會完全蓋住第二個。** f40 修好名稱截斷
+之後只有「整頁重載才讀刊登」的情境轉綠,「同一個 SPA session 內建立完直接
+導頁」的三條原樣還在——第二個根因(建立後沒清 `userListing` 快取,**產品
+bug**)因此被單獨隔離出來。逐個剝開比一次想清楚兩個容易得多,所以**修完
+第一個要重跑、看剩下什麼**,不要假設「應該都好了」。
+
+**連帶二:斷言「不存在」的情境會靜默放行。** 今天抓到兩條:
+「下架後訪客找不到刊登」在刊登根本沒建成時照樣通過;
+`f20 頁面上不出現 E1 的姓名` 斷言的是**原名**,而遮罩後原名本來就不會出現
+——第四代真的漏出來也照樣綠。**斷言不存在之前必須先確認存在過**,
+或改成不會被轉換影響的結構性斷言(例:沒有 `aria-level=4` 的 treeitem)。
+
+**連帶三:`git log --all` 只看本地 refs。** 接手 session 找不到約定的交接
+文件就判定「前一個 session 沒推上來」,從零重查——其實它 commit 在一條
+還沒被 fetch 的遠端分支上。認定「不存在」之前先
+`git ls-remote --heads origin`。這次的交接改為直接落在 develop
+(`docs/plans/journey-remaining-failures/handoff.md`),不再依賴某條分支。

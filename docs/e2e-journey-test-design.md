@@ -426,3 +426,57 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 | M3 | `30_`–`50_`（任務/刊登/提領含 admin 端）、webhook 備援模式 | 六模組全綠 |
 | M4 | 時光機＋`60_`、cleanup.py＋零殘留斷言、nightly workflow | 全套 nightly 上線 |
 | M5 | `70_` 阿凱的七年（§6）＋時光機五原語（§7）＋`pytest_expr` 窄選（§11.5） | 十章 dispatch 綠燈、併入 nightly |
+| M6 | `45_listing_rls`（§14）——直打 PostgREST 的 RLS 授權邊界 | listings 五條 policy 行為綠燈 |
+
+---
+
+## 14. RLS 授權邊界：為什麼需要 journey，以及後續順序
+
+### 14.1 為什麼這一層非 journey 不可
+
+前端**直連 PostgREST** 讀寫 `listings`（`CreateServiceProvider` /
+`EditServiceProvider` / `ServiceProviderManagement`），而 Edge Function 的
+`sb()` 一律用 SERVICE_ROLE **繞過 RLS**——所以 api-tests 再多也碰不到 policy。
+anon key 又隨前端 bundle 公開出貨。**RLS 是那條路徑上唯一的列級授權機制。**
+
+它測不了本地的原因不是懶：本專案刻意只把 table 權限 GRANT 給 `service_role`
+（`20260717000001`），`anon`/`authenticated` 依賴 hosted 的平台預設授權，本地
+`supabase start` 不補那層 grant——直連在 **RLS 被評估之前**就吃 42501。
+⚠️ 因此**絕不可**為了「讓本地測得到」而在測試環境補 GRANT：那是在測一個與
+正式站設定不同的環境，綠燈不代表線上安全。
+
+### 14.2 兩層分工（結構 vs 行為）
+
+| 層 | 位置 | 證明什麼 | 頻率 |
+|---|---|---|---|
+| L1 結構 | `supabase/functions/api/rls-policies.test.ts` | policy 集合／角色／條件表達式／`relrowsecurity` 未被改動 | 每個 PR |
+| L2 行為 | `e2e/journey/features/45_listing_rls.feature` | 真 hosted 上 anon/authenticated/admin 真的被允許或拒絕 | 每週＋晉升 PR |
+
+L1 抓不到「policy 寫得對不對」，但抓得到「被刪掉、角色被放寬、條件被改寬、
+多出第 6 條 permissive、整張表 RLS 被關掉」——那才是實際會發生的迴歸。
+L1 的設計原則與 golden 值取法見 `supabase/README.md` 的〈RLS 結構守衛〉。
+
+### 14.3 寫這類情境時最容易踩的三個坑
+
+1. **兩種拒絕形狀不同**：違反 WITH CHECK（INSERT/UPDATE）→ 4xx + `code 42501`；
+   被 USING 過濾（SELECT/UPDATE/DELETE）→ **不是錯誤**，200/204 + 0 列。
+   只斷言「請求失敗」的測試在 policy 全開時也會過。
+   判讀邏輯集中在零網路依賴的 `tools/rls_probe.py`，離線可測。
+   **狀態碼分不出拒絕的來源**：同一句 `violates row-level security policy`，
+   authenticated 收到 403、anon 收到 401——狀態碼反映請求者是誰，不是誰
+   擋下了請求，所以歸類一律以 message 優先。
+2. **RLS 拒絕與 GRANT 拒絕共用 SQLSTATE 42501**，只能靠 message 辨別。分不出來
+   就失去辨別力——即使 policy 沒生效、拒絕來自不相干的權限層，測試也照樣綠。
+3. **「影響 0 列」需要成對的正面情境才有區辨力**：0 列在「policy 正確」與
+   「policy 整條被刪」兩種情況下觀察結果相同，要有「擁有者自己操作會成功」
+   那一條，兩者合看才分得出來。
+
+### 14.4 後續 11 張表的補齊順序
+
+`listings` 先做是因為它最適合當**骨架**（現成的 journey 情境與 per-user 登入
+狀態，讀寫兩種邊界都有），不是因為它風險最高。骨架建好後**改按曝險排序**——
+攻擊面不受「前端目前是否呼叫該表」限制，anon key 本來就公開：
+
+1. `profiles`——存 `national_id` / `bank_account`，只有 self-only policy
+2. `withdrawals`——INSERT 的 WITH CHECK 內嵌業務規則（僅允許 `status='pending'`）
+3. 其餘各表

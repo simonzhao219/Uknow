@@ -104,12 +104,12 @@ export function AdminDashboard() {
           <h1 className="text-3xl font-bold">平台管理</h1>
           <p className="text-muted-foreground">管理 Uknow 平台的所有功能</p>
         </div>
-        {/* 掃碼核身是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
+        {/* 會員驗證是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
             入口放這裡，避免變成沒有站內連結可達的孤兒頁。 */}
         <Button asChild variant="outline">
           <Link to="/admin/verify">
             <ScanLine className="mr-1 h-4 w-4" />
-            掃碼核身
+            會員驗證
           </Link>
         </Button>
       </div>

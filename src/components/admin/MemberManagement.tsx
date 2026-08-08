@@ -68,6 +68,47 @@ const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
   rejected: '已退件',
 };
 
+/**
+ * 詳情面板裡會改變會員狀態的動作。兩種動作**共用同一條路徑**——同一個確認框、
+ * 同一個執行器、同一處錯誤顯示。相同的東西用相同的邏輯，才不會日後其中一個
+ * 被改了另一個沒跟上（改版前正是如此：停權在列上、管理員在面板裡，兩套流程）。
+ */
+type MemberAction = { kind: 'admin' | 'suspend'; next: boolean };
+
+/**
+ * 判準是**逐方向看破壞力**，不是逐動作。四個方向裡只有「恢復」是 ~0——
+ * 把凍結的東西還回去。可逆又無傷的動作也收確認框，只會把確認框訓練成
+ * 無腦點掉的一步，真正危險的那次就攔不住了。
+ */
+function needsConfirm(action: MemberAction) {
+  return !(action.kind === 'suspend' && action.next === false);
+}
+
+/**
+ * 確認框文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是這件事會對
+ * 那個人造成什麼，不是重複一次自己剛按了什麼。
+ */
+function actionCopy(action: MemberAction, name: string) {
+  if (action.kind === 'admin') {
+    return action.next
+      ? {
+          title: '授予管理員權限？',
+          confirm: '確認授予',
+          body: `${name} 將可存取平台管理後台，並讀取全站會員的身分證字號與收款帳號。權限隨時可以撤回，但他在這段期間看過的資料無法追溯撤回。`,
+        }
+      : {
+          title: '撤銷管理員權限？',
+          confirm: '確認撤銷',
+          body: `${name} 將立即失去平台管理後台的全部存取權（提領作業、會員管理、證件審核）。`,
+        };
+  }
+  return {
+    title: '暫停這個帳號？',
+    confirm: '確認暫停',
+    body: `${name} 的刊登將立即隱藏，且無法提領點數或領取免費續約 credit。會員區瀏覽不受影響，解除暫停後即恢復。`,
+  };
+}
+
 export function MemberManagement({
   loadMembers,
   loadMemberDetail,
@@ -82,10 +123,26 @@ export function MemberManagement({
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
-  // 撤銷管理員是 plan §4 明列的危險動作：它把整個後台的一把鑰匙收回來，
-  // 誤觸的代價是那個人瞬間失去所有管理能力。授予不用確認框——授錯了撤回
-  // 即可，兩個方向的代價不對稱。
-  const [demoteTarget, setDemoteTarget] = useState<AdminMember | null>(null);
+  // **會改變會員狀態的動作全部只在詳情面板裡，走同一條路徑**：同一個
+  // pendingAction、同一個確認框、同一個執行器。列上一顆都不放。
+  //
+  // 為什麼兩個動作同規格：停權與授予管理員是同一類事——**對一個人做的判斷**，
+  // 不是對一筆資料做的修改。做這種判斷之前本來就該先看清楚他是誰，而那些
+  // 資訊全在面板裡。曾經替停權開過例外（理由是「客服接到電話當下就該能處理」，
+  // 援引 `WithdrawalManagement` 的退件不鎖），那個先例不轉移：提領台的動作是
+  // 對**一筆交易**做的，交易該看的欄位整列都在，看不看詳情不影響判斷品質。
+  //
+  // 為什麼授予也要確認框（推翻更早的「授錯了撤回即可」不對稱推理）：那個
+  // 推理只在權限層成立。管理員當下就讀得到全站的身分證字號與收款帳號
+  // （提領作業台維持全碼），撤回權限撤不回已經被看過的資料——**授予在資料層
+  // 面是不可逆的**，方向和直覺相反。
+  //
+  // 唯一不收確認框的是「恢復」：四個方向裡只有它的破壞力是 ~0（把東西還
+  // 回去）。判準是逐方向看破壞力，不是逐動作——所以「撤銷管理員」雖然也是
+  // 還原方向，照樣要確認（對方瞬間失去全部管理能力）。
+  const [pendingAction, setPendingAction] = useState<MemberAction | null>(null);
+  // 面板蓋在列表上，面板內動作的錯誤印在列表區等於印在看不見的地方。
+  const [panelError, setPanelError] = useState<string | null>(null);
 
   // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
   // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
@@ -110,6 +167,7 @@ export function MemberManagement({
 
   const openDetail = async (id: string) => {
     setActionError(null);
+    setPanelError(null);
     try {
       setDetailFor(await loadMemberDetail(id));
     } catch (err) {
@@ -117,41 +175,39 @@ export function MemberManagement({
     }
   };
 
-  const toggleAdmin = async (m: AdminMember) => {
-    // 撤銷走確認框；授予直接執行（代價不對稱，見 demoteTarget 註解）。
-    if (m.isAdmin) {
-      setDemoteTarget(m);
+  const requestAction = (action: MemberAction) => {
+    if (needsConfirm(action)) {
+      setPendingAction(action);
       return;
     }
-    await runAdminChange(m, true);
+    runAction(action);
   };
 
-  const runAdminChange = async (m: AdminMember, isAdmin: boolean) => {
-    setProcessingId(m.id);
-    setActionError(null);
+  const runAction = async (action: MemberAction) => {
+    const target = detailFor;
+    if (!target) return;
+    setProcessingId(target.id);
+    setPanelError(null);
     try {
-      await setMemberAdmin(m.id, isAdmin);
-      await list.reload();
+      await (action.kind === 'admin'
+        ? setMemberAdmin(target.id, action.next)
+        : suspendMember(target.id, action.next));
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
       // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      setActionError(err instanceof Error ? err.message : '權限更新失敗');
-    } finally {
+      setPanelError(err instanceof Error ? err.message : '操作失敗');
       setProcessingId(null);
+      return;
     }
-  };
-
-  const handleSuspendToggle = async (member: AdminMember) => {
-    setProcessingId(member.id);
-    setActionError(null);
+    // 變更已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的
+    // 標籤都隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
     try {
-      await suspendMember(member.id, !member.suspended);
-      await list.reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : '操作失敗');
-    } finally {
-      setProcessingId(null);
+      setDetailFor(await loadMemberDetail(target.id));
+    } catch {
+      setPanelError('已更新，但重新讀取詳情失敗，請關閉面板後重開');
     }
+    await list.reload();
+    setProcessingId(null);
   };
 
   return (
@@ -167,28 +223,36 @@ export function MemberManagement({
         <IdReviewQueue loadReviews={loadIdReviews} submitReview={submitIdReview} />
       </TabsContent>
 
-      {demoteTarget && (
-        <AlertDialog open onOpenChange={() => setDemoteTarget(null)}>
+      {/* 確認框的文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是
+          這件事會對那個人造成什麼，不是重複一次自己剛按了什麼。 */}
+      {/* 一個確認框服務兩種動作。文案來自 actionCopy 的單一來源——兩個分開的
+          對話框各自演化的那天，就會有一個忘了把後果講清楚。 */}
+      {pendingAction && detailFor && (
+        <AlertDialog open onOpenChange={() => setPendingAction(null)}>
           <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>撤銷管理員權限？</AlertDialogTitle>
-              <AlertDialogDescription>
-                {demoteTarget.name ?? demoteTarget.email} 將立即失去平台管理後台的
-                全部存取權（提領作業、會員管理、證件審核）。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  const target = demoteTarget;
-                  setDemoteTarget(null);
-                  if (target) runAdminChange(target, false);
-                }}
-              >
-                確認撤銷
-              </AlertDialogAction>
-            </AlertDialogFooter>
+            {(() => {
+              const copy = actionCopy(pendingAction, detailFor.name ?? detailFor.email);
+              return (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{copy.title}</AlertDialogTitle>
+                    <AlertDialogDescription>{copy.body}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        const action = pendingAction;
+                        setPendingAction(null);
+                        runAction(action);
+                      }}
+                    >
+                      {copy.confirm}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              );
+            })()}
           </AlertDialogContent>
         </AlertDialog>
       )}
@@ -270,6 +334,53 @@ export function MemberManagement({
                     </li>
                   ))}
                 </ul>
+              )}
+            </div>
+
+            {/* 管理。**所有會改變狀態的動作都在這裡**，放在面板最底、以分隔線
+                隔開——位置要讓人「走到」而不是「路過」。兩列同構：左邊說現況、
+                右邊是切換鍵，破壞性方向一律紅字。 */}
+            <div className="mt-6 space-y-4 border-t pt-4">
+              <h3 className="text-sm font-medium">管理</h3>
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {detailFor.suspended ? '帳號已暫停' : '帳號正常'}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={
+                    detailFor.suspended ? undefined : 'text-destructive hover:text-destructive'
+                  }
+                  onClick={() => requestAction({ kind: 'suspend', next: !detailFor.suspended })}
+                  disabled={processingId === detailFor.id}
+                >
+                  {detailFor.suspended ? '恢復' : '暫停'}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {detailFor.isAdmin ? '目前是平台管理員' : '一般會員'}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={
+                    detailFor.isAdmin ? 'text-destructive hover:text-destructive' : undefined
+                  }
+                  onClick={() => requestAction({ kind: 'admin', next: !detailFor.isAdmin })}
+                  disabled={processingId === detailFor.id}
+                >
+                  {detailFor.isAdmin ? '撤銷管理員' : '設為管理員'}
+                </Button>
+              </div>
+
+              {panelError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {panelError}
+                </p>
               )}
             </div>
           </SheetContent>
@@ -418,32 +529,19 @@ export function MemberManagement({
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              aria-label={`查看 ${member.name ?? member.email} 的詳情`}
-                              onClick={() => openDetail(member.id)}
-                            >
-                              查看
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => toggleAdmin(member)}
-                              disabled={processingId === member.id}
-                            >
-                              {member.isAdmin ? '撤銷管理員' : '設為管理員'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={member.suspended ? 'default' : 'destructive'}
-                              onClick={() => handleSuspendToggle(member)}
-                              disabled={processingId === member.id}
-                            >
-                              {member.suspended ? '恢復' : '暫停'}
-                            </Button>
-                          </div>
+                          {/* 列上只有一個動作：進去看。**沒有任何會改變狀態的
+                              鍵可以從列表直接按到**——誤觸的上限就是開錯一個面板。
+                              改版前是三顆等寬平排，而且視覺權重和使用頻率相反：
+                              每天要按的「查看」是最輕的 ghost，偶爾才用的「暫停」
+                              卻是滿版紅底、在掃描時最搶眼。 */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                            onClick={() => openDetail(member.id)}
+                          >
+                            查看
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );

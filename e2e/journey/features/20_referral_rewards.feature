@@ -23,7 +23,7 @@ Feature: 推薦與獎勵 — 樹與帳本
     When "A0" 登入並開啟推薦頁
     Then 推薦樹三個世代區塊各顯示 8 人
     And 展開全部世代後名單包含 "D8" 的姓名
-    And 頁面上不出現 "E1" 的姓名
+    And 推薦樹沒有第四代節點
 
   @journey @rewards
   Scenario Outline: 中間節點帳本交叉驗證
