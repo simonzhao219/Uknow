@@ -1,226 +1,276 @@
 # journey「透過 GUI 建立刊登」失敗 修復紀錄
 
-分支:`fix/journey-f40-listing`|重現測試(紅燈 commit):**尚未開始**
+分支:`claude/journey-f40-listing-failure-87hc8t`|重現測試(紅燈 commit):`83c066f`
 
-> **本檔是交接文件,由前一個 session 預填。** 該 session 在處理「自訂服務類別」
-> 功能(#246)時,因晉升 PR #249 卡在 journey 紅燈而追到這裡,但**沒有動手修**
-> ——理由見 §7。下一個 session 從這裡接手。
+> **本檔由兩個 session 接力寫成。** 前一個 session(處理「自訂服務類別」#246 時
+> 因晉升 PR #249 卡在 journey 紅燈而追到這裡)完成了 §0–§4、§8–§11 的偵查,
+> 但**刻意沒有動手修**——理由見 §8,那是正確的判斷。
 >
-> ⚠️ **未經驗證的都標成「假說」。** 前一個 session 跑不了 journey,
-> 除了 §2 的「已排除」與 §4 之外,全部是靜態分析的推論,不是實測結論。
+> 接手的 session 補上 §2 的**結論**(前一份把它留成假說 B/D 的二選一,
+> 而答案其實是**兩者皆非**)與 §5–§7、§9 的修正。
+>
+> 前一份標「假說」的都已在本輪處理:推翻的明確標為推翻,確立的附上實據。
 
-## 0. 最新狀態(run 31232337950,2026-08-08 01:19–01:44)
+## 0. 狀態
 
-**13 failed / 76 passed**(collected 89)。前一輪(#256 登入修法之前)是
-**19 failed / 67 passed**(collected 86)。
+**已定位、已修、已補防線;等真後端複驗。**
 
-登入修法有效且已驗證:**死在 `auth-login-button` 的情境從 4 條降到 0 條**,
-下游連鎖跟著解開。但 **f40 這一組沒有跟著綠**,而且這一輪暴露出更重要的事:
+觀測到的兩場失敗(形狀完全一致):
 
-**失敗範圍不是 3 條,是 5 條——而且跨兩個 feature 檔。**
+| Run | 時間 | 結果 | 備註 |
+|---|---|---|---|
+| 31231809650 | 08-08 01:05–01:28 | 13 failed / 73 passed | 本輪據以定位(develop @ `8bfa50f`) |
+| 31232337950 | 08-08 01:19–01:44 | 13 failed / 76 passed | 前一份據以偵查(#256 登入修法之後) |
+
+**失敗範圍不是 3 條,是 5 條,而且跨兩個 feature 檔**(前一份的關鍵發現):
 
 | 情境 | 檔案 | 等不到的東西 |
 |---|---|---|
-| `A0 透過 GUI 建立刊登` | f40 | `服務gh31232337950A0` |
+| `A0 透過 GUI 建立刊登` | f40 | `服務gh…A0` |
 | `訪客可在公開首頁搜尋到 A0 的刊登並開啟詳情` | f40 | `a[href^='/service-providers/']`(下游) |
-| `一個帳號僅能有一筆刊登` | f40 | `服務gh31232337950A0`(下游) |
-| `刊登可見性隨會籍狀態變化(active→expired)` | **f60** | `服務gh31232337950C7` |
-| `過期補繳:效期接續原到期日而非付款日,權益隨之恢復` | **f60** | `服務gh31232337950C8` |
+| `一個帳號僅能有一筆刊登` | f40 | `服務gh…A0`(下游) |
+| `刊登可見性隨會籍狀態變化(active→expired)` | **f60** | `服務gh…C7` |
+| `過期補繳:效期接續原到期日而非付款日` | **f60** | `服務gh…C8` |
 
-f40 與 f60 用的是**不同的步驟檔、不同的使用者、不同的節點**
-(`f40_listing_steps.py` vs `f60_time_scenarios_steps.py:58`),
-共同因子只有一個:**`e2e/pages/create_service_provider_page.py` 這個共用
-page object,以及它背後的 `CreateServiceProvider.tsx` 送出流程**。
+f40 與 f60 用不同步驟檔、不同使用者、不同節點,共同因子只有共用的
+`create_service_provider_page.py` 與 `CreateServiceProvider.tsx`。
+這排除了「A0 這個帳號特別」「f40 那支步驟檔寫壞了」。**這個縮小範圍的
+推論是對的,而且直接指向了真正的共同因子:兩支步驟檔各有一份逐字相同的
+名稱產生器。**
 
-這排除了「A0 這個帳號特別」「f40 這支步驟檔寫壞了」這類解釋。
+## 1. 症狀
 
-## 1. 症狀與重現
-
-**失敗形狀**(五條完全一致):
+五條的形狀完全一致:
 
 ```
 form.fill_valid_form(name=...)     ← 沒拋錯
 form.submit()                      ← 沒拋錯
 expect(page.get_by_text(名字)).to_be_visible(timeout=30_000)   ← 死在這
-  AssertionError: Locator expected to be visible / element(s) not found
 ```
 
-也就是:**點了「建立刊登」之後,刊登管理頁上沒有出現那筆刊登。**
+## 2. 根因
 
-步驟檔在 `submit()` 之後**不自己 goto**,靠產品端 `navigate('/service-providers')`
-帶過去。所以「名字沒出現」有兩種可能:根本沒導頁(留在建立頁),
-或導了但管理頁讀不到那筆。§2 的判別法就是分這兩種。
+**`#name` 的 `maxLength={10}` 把 17 字的測試名稱靜默截斷成 10 字,
+之後每一條以「全名」做的斷言都必然失配。**
 
-(f40 第四條「下架後訪客在首頁找不到刊登」反而**通過**——因為它斷言的是
-「找不到」,而刊登本來就沒建成。**假陰性**,見 §9。)
+`listing_name()` 產生 `f"服務{run_id}{node}"`,例如 `服務gh31231809650A0`
+= **17 字**。`CreateServiceProvider.tsx` 的 `#name` 有 `maxLength={10}`
+(產品規則,`src/utils/constants.ts` 的 `NAME_MAX_LENGTH`,畫面上也寫著
+「最多10字」)。
 
-### 為什麼這條特別重要
-
-「會員透過 GUI 建立刊登」是**主線功能**。如果這是產品 bug 而不是測試 bug,
-代表真實使用者也可能建不了刊登。**在確定是哪一種之前,不要假設它只是測試問題。**
-
-## 2. 根因分析
-
-### ❌ 假說 A(前一輪的主嫌)已被推翻:照片其實上傳完成了
-
-原本的推論是:page object 檔頭自己寫著「the upload itself is mocked」,
-而 `_upload_three_photos()` 設完檔案就返回、不等上傳完成,打真 Storage 時
-按鈕還是 disabled。**這個推論不成立**,三步論證:
-
-1. 送出鈕的 disabled 條件含 `formData.photos.length !== 3`
-   (`CreateServiceProvider.tsx:582`)。
-2. `formData.photos` 只在 `await Promise.all(uploadPromises)` **resolve 之後**
-   才被填(同檔 199–211 行的 functional update)——所以 `length === 3`
-   等價於「三張都上傳完了」。
-3. `submit()` 是 `get_by_role("button", name="建立刊登").click()`,
-   而 Playwright 的 click **會自動等 enabled,等不到就拋 `Locator.click timeout`**
-   (同一輪的 f50「退件路徑」正是這樣紅的,log 裡看得到
-   `element is not enabled / retrying click action`)。
-   五條失敗**沒有任何一條**拋這個。
-
-∴ 點下去的當下按鈕是 enabled 的 ⇒ 三張照片都上傳成功了。
-**假說 A 與「純粹逾時不足」的假說 C 一併作廢**——症狀不是「慢」,是「沒發生」。
-
-> 這段推論本身也還沒被 trace 證實,但它只依賴三個可直接讀到的事實
-> (disabled 條件、setState 時機、Playwright click 的等待語意),
-> 比原本的假說 A 紮實得多。§3 的第一件事仍應拿 trace 覆核。
-
-### 假說 B(領先):insert 失敗,而錯誤被吞掉
-
-`handleFinalSubmit`(`CreateServiceProvider.tsx:233–`)是**前端直打 PostgREST**
-(`supabase.from('listings').insert(...)`),不走 Edge Function。失敗時:
-
-```ts
-if (insertError) {
-  showError('刊登建立失敗', insertError.message || '請稍後再試');
-  return;              // ← 不 throw、不導頁
-}
-```
-
-測試看不到任何異常,只會在後面「找不到刊登」時才死——與觀察到的症狀相符。
-
-### 假說 D(新增):insert 成功,但管理頁讀不回來
-
-`listings` 上有兩條 SELECT policy:`listings_select_own`(自己的,
-`20260620000002`)與 `listings_select_public`(`has_active_subscription(user_id)`,
-`20260620000004`)。A0 在 f40 當下是有效會員,理論上兩條都通——但**理論通
-不等於實際通**,而 B 與 D 的症狀完全一樣,不能靠猜。
-
-### **一行 console log 就能分開 B 和 D**
-
-`handleFinalSubmit` 在 insert 成功後才印:
+本機以 Playwright 1.62 + 同版 Chromium 實測——`fill()` 是否受 maxlength 限制
+是整條推論的關鍵前提,不能靠記憶:
 
 ```
-[Create Listing] ✅ 刊登建立完成
+test 想填的名稱        : '服務gh31231809650A0'  (len=17)
+maxlength=10 欄位實際值 : '服務gh312318'         (len=10)
+無 maxlength 對照組     : '服務gh31231809650A0'  (len=17)
+React state 會收到      : '服務gh312318'
 ```
 
-- trace 的 Console 裡**有這行** → insert 成功 ⇒ **假說 D**(讀回來的問題)
-- **沒有這行** → insert 失敗 ⇒ **假說 B**,同一份 log 裡的
-  `showError` 內容就是 PostgREST 的原始 message
+`fill()` 走 DOM 設值,瀏覽器**照樣套用 maxlength**。於是:
 
-這是 §3 拿到 trace 後**第一個要看的東西**,比翻 Network 快。
+1. 表單拿到合法的 10 字名稱 → 驗證通過、送出鈕 enabled;
+2. 刊登**真的被建立**,只是名字叫 `服務gh312318`;
+3. 之後 `get_by_text("服務gh31231809650A0")` 永遠找不到東西。
 
-## 3. 下一個 session 的第一步:拿 trace
+而且 A0/C7/C8 截斷後**是同一個名字**(節點碼在第 10 字之後),連
+「首頁只搜到一張卡片」這種斷言都會互相干擾。
 
-失敗 run 的 artifact **含 Playwright trace 與截圖**:
+### 假說 A(照片沒上傳完就送出)——**推翻,兩個 session 獨立得到同一結論**
 
-| Run | Artifact | 備註 |
-|---|---|---|
-| **31232337950** | `journey-results-31232337950`(**artifact ID 9014571465**,32MB) | **最新,#256 登入修法之後**,優先用這個 |
-| 31204057428 | `journey-results-31204057428`(artifact ID 9004823100) | 修法前 |
-| 31208164464 | `journey-results-31208164464` | 修法前 |
+前一份的三步論證完全成立,這裡照錄並補上實證:
 
-下載頁:`https://github.com/simonzhao219/Uknow/actions/runs/31232337950/artifacts/9014571465`
+1. 送出鈕的 disabled 條件含 `formData.photos.length !== 3`;
+2. `formData.photos` 只在 `await Promise.all(uploadPromises)` resolve 之後才被填;
+3. Playwright 的 `click` 會自動等 enabled,等不到就拋 `Locator.click timeout`
+   ——同一場的 f50「退件路徑」正是這樣紅的(`element is not enabled`),
+   而這五條**沒有任何一條**拋這個。
 
-```
-npx playwright show-trace <解壓後 test-results/ 裡 f40 那條的 trace.zip>
-```
+∴ 點下去時按鈕是 enabled 的 ⇒ 三張照片都上傳成功 ⇒ storage bucket 與
+`upload-photo` 端點無恙(2026-08-05 的 bucket migration 已修好那條)。
 
-**要看的三件事,依優先序**:
+### 假說 B(insert 失敗被吞掉)與 D(insert 成功但讀不回來)——**兩者皆非**
 
-1. **Console** ——`[Create Listing] ✅ 刊登建立完成` 在不在?(§2 的判別法)
-   同時看 `[Upload Photos] ✅ 所有照片上傳完成,共 3 張` 是否出現,
-   順帶把假說 A 的推翻做成實證。
-2. **Network** ——`POST /rest/v1/listings` 有沒有發出、狀態碼與 response body。
-   若是 4xx,body 裡的 PostgREST message 直接給出根因。
-3. **截圖時間軸** ——點下「建立刊登」之後停在哪一頁。留在
-   `/service-providers/create` ⇒ 假說 B;到了 `/service-providers` 但列表空 ⇒ 假說 D。
+前一份把答案留成 B/D 二選一,並設計了「看 `[Create Listing] ✅` 這行 console log」
+的判別法。那個判別法是對的,但**不必等 trace 就能回答**,而且答案在兩個選項之外:
 
-## 4. 已排除(有實據)
+- **insert 成功了**:job log 裡失敗當下的
+  `guarded_page = <Page url='http://localhost:3100/service-providers'>`。
+  `handleFinalSubmit` 只有在 `insertError` 為空時才 `navigate('/service-providers')`,
+  出錯路徑會 `return` 而停在 `/service-providers/create`。**⇒ 排除 B。**
+- **讀回來也成功了**:見下面 §9——第四條情境點得到「刪除刊登」鈕。
+  **⇒ 排除 D。**
+
+insert 成功、讀取成功、畫面也畫出來了,唯一對不上的是**名字**。
+
+### 為什麼當時沒被發現
+
+1. **mock 套件從不踩到**:`e2e/` 呼叫 `fill_valid_form()` 用預設名
+   `測試服務者`(5 字);只有 journey 傳入由 `run_id` 導出的長名稱。
+2. **截斷完全無聲**:沒有 console error、沒有 toast、表單驗證通過、
+   資料真的寫進去了。
+3. **失敗形狀在 2026-08-07 剛換過一次臉**:在那之前 `#name` 用
+   `if (length <= 10)` 的 JS 拒收(PR #212 為了 IME 注音改成 `maxLength` 屬性)。
+   舊寫法下 17 字會被**整串拒收** → 名稱空 → 送出鈕 disabled →
+   失敗形狀是「點不到鈕」。**前一份的原假說 A 描述的正是舊形狀**,
+   那也是它「看起來很合理卻與觀察不符」的來源。
+
+## 3. 證據怎麼取得的(trace 下載不到)
+
+前一份規劃的第一步是下載 artifact 看 trace。**這條路在本輪走不通**:
+GitHub 的 artifact 一律轉址到 `productionresultssa4.blob.core.windows.net`,
+該網域被 session 的 egress 政策擋掉(403),依 `/root/.ccr/README.md` 的
+指示不繞道。
+
+改用三種等價證據,結論一樣硬:
+
+1. **job log 的 fixture 傾印**——失敗當下的 `guarded_page` repr 帶著 URL,
+   等於前一份想從「截圖時間軸」拿的那一件事;
+2. **失敗形狀的鑑別**——`Locator.click timeout` vs `expect` 失敗,
+   等於「送出鈕當時 enabled 嗎」;
+3. **本機真瀏覽器實測**——`fill()` 與 `maxlength` 的互動(§2)。
+
+**教訓已記入 friction-log**:journey 的失敗診斷不該只有 artifact 一條路。
+`builders/page_diagnostics.py` 的設計理由(「log 讀得到,不必下載 artifact」)
+值得推廣到 GUI 情境的失敗路徑。
+
+## 4. 已排除(有實據,前一份的成果照錄)
 
 | 假設 | 排除依據 |
 |---|---|
-| **#246 自訂服務類別造成的** | **決定性**:#249 內文以上一次晉升 #243(即現在的 main)逐條比對,f40 這三條**在 #243 就已失敗**,早於 #246 |
-| **登入沒清 session(#256 修的那個)** | **決定性,本輪新增**:#256 合併後重跑,`auth-login-button` 逾時從 4 條降到 0、總失敗 19→13,而這五條**原樣還在**。登入不是這條的鏈頭 |
-| **照片沒上傳完就送出(原假說 A)** | 見 §2 的三步論證(disabled 條件 + setState 時機 + Playwright click 語意)。待 trace 覆核 |
-| `normalize_listing_category` trigger 擋掉寫入 | journey 用內建類別「美髮」,normalize 後不變、非空、未逾 20 字,不 raise——對 journey 是 no-op。且 `api-tests` 綠(12 條 Deno 測試驗 INSERT/UPDATE 兩條路徑) |
-| `CategorySelectField` 改了 DOM 導致選不到類別 | `e2e-tests` 綠;且若選不到,`fill_valid_form` 會先拋錯,而它沒有 |
+| **#246 自訂服務類別造成的** | **決定性**:#249 內文以上一次晉升 #243 逐條比對,f40 這三條**在 #243 就已失敗**,早於 #246 |
+| **登入沒清 session(#256 修的那個)** | **決定性**:#256 合併後重跑,`auth-login-button` 逾時從 4 條降到 0、總失敗 19→13,而這五條**原樣還在** |
+| **照片沒上傳完就送出(原假說 A)** | 見 §2 三步論證,本輪並以「沒有任何一條拋 click timeout」實證 |
+| `normalize_listing_category` trigger 擋掉寫入 | journey 用內建類別「美髮」,normalize 後不變,對 journey 是 no-op;且 `api-tests` 綠 |
+| `CategorySelectField` 改了 DOM 導致選不到類別 | `e2e-tests` 綠;若選不到,`fill_valid_form` 會先拋錯 |
+| **insert 被 RLS 擋下(假說 B)** | 本輪新增:失敗當下 URL 已是 `/service-providers`,而出錯路徑不會導頁 |
+| **管理頁讀不回來(假說 D)** | 本輪新增:第四條情境點得到「刪除刊登」鈕,見 §9 |
 
-## 5. 同類掃描(**待做**)
+## 5. 同類掃描
 
-若根因落在假說 B/D(前端直打 PostgREST + 錯誤只進 toast),pattern 是
-**「寫入失敗只 showError 不 throw,測試與使用者都只看得到『沒反應』」**。
+- **根因抽象成的 pattern**:*測試往有長度上限的欄位填入超長值,被瀏覽器
+  靜默截斷,失敗在遠處現身。*
+- **掃描方式**:`grep -rn "maxLength" src/` 取得全部有上限的欄位,逐一對照
+  journey 實際填進去的值長度。
+- **結果**:☑ 找到——一併修。
 
-```bash
-grep -rn "showError\|showToast" src/components --include=*.tsx -A2 | grep -B2 "return;"
-```
+| 欄位 | 上限 | 測試填的值 | 判定 |
+|---|---|---|---|
+| `CreateServiceProvider` `#name` | 10 | 17 字 | ✗ **本 bug** |
+| `f60_time_scenarios_steps._listing_name` | 10 | 17 字 | ✗ **同一個 bug 的第二份逐字複製** |
+| `CompleteProfile` 身分證 / 手機 | 10 | 各 10 字 | ✓ |
+| `IdNumberInput` / `WithdrawalProcess` 身分證 | 10 | 10 字 | ✓ |
+| `OTPVerificationPage` | 6 | 6 碼 | ✓ |
+| `CreateServiceProvider` 服務介紹 | 200 | 未填 | ✓ |
+| `CategorySelectField` 自訂類別 | 10 | journey 未填 | ✓ |
+| `EditServiceProvider` 名稱 / 介紹 | 10 / 200 | 編輯流程尚無 journey 情境 | ✓ |
 
-若根因落在「共用 page object 假設上傳被 mock」,pattern 是
-**「`e2e/pages/` 的 page object 被 journey 拿去打真後端,但它是為 mock 寫的」**:
+前一份預想的另一條 pattern(「`e2e/pages/` 的 page object 被 journey 拿去打
+真後端,但它是為 mock 寫的」)**有實體**但不是根因:該 page object 檔頭
+確實寫著「the upload itself is mocked」——那句話對 journey 是錯的,已一併訂正。
 
-```bash
-grep -rn "^from pages\.\|^from pages import" e2e/journey/ --include="*.py"
-```
+## 6. 修法與驗證
 
-## 6. 修法與驗證(**待做**)
+產品端完全正確,**不動任何產品行為**。10 字是規格(畫面標示、`NAME_MAX_LENGTH`
+有自己的單元測試)。改產品去遷就測試會刪掉一條真規則,是最糟的修法。
 
-## 7. 防線回填(**待做**)
+1. **`e2e/journey/builders/listing.py`(新)** —— 唯一的名稱產生器,格式改為
+   `服務{run_id 尾 4 碼}{node}`(如 `服務9650A0`,8 字):保住決定性、逐節點
+   唯一,超過上限直接 `ValueError`。f40 與 f60 兩份逐字相同的複製一併收斂過去。
+2. **`e2e/pages/base_page.py`** —— 新增 `fill_exact()`:填完回頭比對
+   `input_value()`,把「靜默截斷」變成**當場失敗**,對所有有上限的欄位有效。
+3. **`create_service_provider_page.py`** —— `#name` 改走 `fill_exact`;
+   訂正檔頭「the upload itself is mocked」的註解(兩套共用,journey 打真 Storage)。
+4. **`CreateServiceProvider.tsx`** —— `maxLength` 與字數計數器改用
+   `NAME_MAX_LENGTH`(`EditServiceProvider` 早就這樣寫,這裡是唯一的例外)。
 
-先想這題:**為什麼 `e2e-tests`(mock 版)全綠,journey 卻死?**
-mock 版把 `POST /rest/v1/listings` 一律 mock 成成功,所以「insert 被拒絕時
-UI 怎麼表現」在 mock 版是零覆蓋——而那正是真實使用者會遇到的情況。
-防線大機率要加在 mock 版:mock 一個失敗回應,斷言使用者看得到、
-且**留在原頁**而不是靜默不動。
+**為什麼這樣修是對的**(對照根因,不是對照症狀):根因是「送進表單的值超過
+欄位上限」。修法讓那個值合規(1)、讓同一個錯誤不可能再從第二個地方長出來(2)、
+讓「值沒被完整收下」在發生的當下就失敗而不是 30 秒後的遠處(3)。
+症狀式修法(斷言只比前 10 字、或加長 timeout)會讓測試繼續綠著跑一個
+名字是錯的的刊登。
 
-## 8. 前一個 session 為什麼沒動手
+### 驗證
 
-**跑不了 journey,而這題的決定性證據在 trace 裡。**
+- `cd e2e/journey && pytest tools/ -q` → 新增 6 條全綠;紅燈期時
+  訊息為 `'服務gh31231809650A0' 有 17 字,超過 #name 的 maxLength=10`。
+- 真瀏覽器實測 `fill_exact`:17 字被攔下並印出實際只收到 `'服務gh312318'`;
+  8 字順利通過。**這個守衛能在當初出錯的那一行就攔到本 bug。**
+- `npm run check` 全綠;`CreateServiceProvider.test.tsx` 經**變異驗證**
+  (把 `maxLength` 改成字面量 20 → 當場紅;改回即綠)。
+- ⏳ **真後端複驗**:journey full run 31234221750。本機不得跑 journey,
+  這是唯一能證明五條轉綠的方式。
 
-- journey 只在 CI 的拋棄式 Supabase 分支上跑;**PreToolUse hook 會擋本機執行**
-  (見 `.claude/rules/e2e-tests.md`),而且會產生真資料、耗分支費用
-- **憑猜測改一個驗證不了的東西,比誠實說「需要 trace」更糟**——尤其這條
-  可能是產品 bug,猜錯會讓真實的使用者問題被一個假修法蓋掉
+## 7. 防線回填
 
-## 9. 一併處理:那條假陰性
+**為什麼既有閘門沒攔到**:沒有任何一層在檢查「填進去的值有沒有被完整收下」。
+mock 套件用短名永遠踩不到;journey 一個月只跑幾次,而且失敗訊息指向的是
+遠處的 `get_by_text`,連續兩個 session 都被帶離現場——**錯誤訊息把人帶錯方向,
+是這個 bug 真正的成本**。
 
-`下架後訪客在首頁找不到刊登` 在刊登根本沒建成時**照樣通過**。
-「斷言不存在」的情境必須先確認「存在過」,否則它在上游壞掉時會靜默放行。
-這與 `e2e/README.md`「Removing a scenario」談的證據強度是同一類問題。
+補了三層,彼此獨立,都不需要真後端:
+
+| 層 | 攔的是 | 在哪跑 |
+|---|---|---|
+| `src/components/CreateServiceProvider.test.tsx` | 元件不再套用產品常數 | vitest |
+| `e2e/journey/tools/test_listing_name.py` | 測試資料超過上限 / 產品改了上限 | journey-offline |
+| `BasePage.fill_exact()` | **任何**有上限的欄位被靜默截斷 | 兩套 e2e,填的當下 |
+
+中間那層原本是空的:上限的「值」定義在 `constants.ts`,journey 的離線測試
+也讀它,但**沒有任何一層確認元件真的把那個常數套上去**。有人把 `maxLength`
+改回字面量時,`constants.ts` 沒變、離線測試照樣綠,兩邊各自「正確」而中間
+裂開——那正是本次 bug 的形狀。
+
+前一份預想的防線(在 mock 版 e2e 補一個「insert 失敗時 UI 怎麼表現」的情境)
+**仍然值得做,但不屬於本 bug**:它守的是假說 B,而 B 已被排除。已記入
+friction-log 當待償還項,不在本次修法內——沒有壞掉的東西不該用測試釘住。
+
+## 8. 前一個 session 為什麼沒動手(判斷正確,照錄)
+
+**跑不了 journey,而當時判定決定性證據在 trace 裡。**
+
+> 憑猜測改一個驗證不了的東西,比誠實說「需要 trace」更糟——尤其這條
+> 可能是產品 bug,猜錯會讓真實的使用者問題被一個假修法蓋掉。
+
+這個判斷是對的,而且救了一次:當時的領先假說 B(insert 被擋)若真動手,
+會往 RLS policy 或錯誤處理去改——那會在一個完全正常的產品路徑上留下改動。
+
+## 9. 那條「假陰性」——**前一份的判斷需要訂正**
+
+前一份說 `下架後訪客在首頁找不到刊登` 是假陰性,因為「刊登本來就沒建成」。
+**這一點不成立,而且它正好是解開本題的鑰匙。**
+
+該情境的 `delete_listing` 會先點「刪除刊登」鈕,而那顆鈕**只有在管理頁
+真的有一筆刊登時才存在**;沒有刊登時管理頁顯示的是空狀態與建立 CTA。
+它 PASSED ⇒ 刊登存在、讀得回來、也畫得出來。它同時是五條裡**唯一不引用
+名稱**的——那正是分界線。
+
+不過前一份提出的**原則完全正確**,只是不適用於這條:
+「斷言不存在」的情境必須先確認「存在過」,否則上游壞掉時會靜默放行。
+本次修好之後這條情境的前置狀態才是真的,原則本身已記入 friction-log。
 
 ## 10. 相關檔案
 
 | 路徑 | 為什麼 |
 |---|---|
-| `e2e/journey/features/40_listing.feature` | 失敗情境 |
-| `e2e/journey/steps/f40_listing_steps.py` | `create_listing` / `listing_shown` |
-| `e2e/journey/steps/f60_time_scenarios_steps.py:46-58` | **同形狀的第二處**,證明不是 f40 專屬 |
-| `e2e/pages/create_service_provider_page.py` | 共用 page object(`submit()` = 純 click) |
-| `src/components/CreateServiceProvider.tsx` | 產品端:582 行 disabled 條件、199–211 上傳 setState、233– `handleFinalSubmit` 的吞錯 |
-| `supabase/migrations/20260620000002_rls_policies.sql` | `listings_insert_own` / `listings_select_own` |
-| `supabase/migrations/20260620000004_security_hardening.sql` | `listings_select_public` + `has_active_subscription` |
+| `e2e/journey/builders/listing.py` | **本次新增**:唯一的名稱產生器 |
+| `e2e/journey/tools/test_listing_name.py` | **本次新增**:長度不變式 |
+| `e2e/pages/base_page.py` | **本次新增** `fill_exact()` |
+| `src/components/CreateServiceProvider.test.tsx` | **本次新增**:元件套用常數的契約 |
+| `e2e/journey/steps/f40_listing_steps.py` / `f60_time_scenarios_steps.py` | 兩處重複的名稱產生器,已收斂 |
+| `src/utils/constants.ts` | `NAME_MAX_LENGTH` = 上限的單一事實來源 |
 | `.claude/rules/e2e-tests.md` | journey 的執行限制 |
 
-## 11. 這一輪其餘 8 條失敗(不在本檔範圍,但同一個晉升 PR 卡著)
-
-留在這裡讓接手的人知道「修完這 5 條還剩什麼」,不要誤以為 journey 會就此全綠。
+## 11. 這一輪其餘失敗(不在本檔範圍)
 
 | 群 | 情境 | 症狀 | 初判 |
 |---|---|---|---|
-| 推薦樹 | f20 `Root 推薦樹只顯示三代且第四代不出現` | 展開 B3 之後等不到 **C7** 的 `treeitem` | 世代統計卡(一/二/三代各 8)**是綠的**,所以資料形狀對;問題在懶載入渲染或展開時序 |
-| 推薦樹 | f60 `上線的組織圖顯示已失效節點且結構不斷開` | 等不到 **D4** 的姓名 | 同上,同一支 `referral_tree.expand_ancestors` |
-| 獎勵頁 | f60 `過期會員的點數保留不歸零` | `/rewards` 上等不到「獎勵回饋」heading,失敗當下停在 `/payment/checkout` | **像是產品規則而非測試 bug**:過期會員被路由守衛導去續約頁,但情境預期他看得到獎勵頁。動手前先讀規格書 §7–§10 確認哪邊才對 |
-| 獎勵頁 | f60 `過期會員提領被擋,點數保留,僅擋提領` | 同上 | 同上 |
-| 提領 | f50 `完整生命週期:申請→匯款→查收` | `GET /rest/v1/withdrawals?...` 回 **400** | 查詢本身壞了(欄位/語法),不是 RLS |
-| 提領 | f50 `退件路徑:點數退回` | 「申請Point提領」按鈕 **disabled** 20 秒 | 前置狀態沒到位(點數/資格),或退件後沒回復可申請 |
-| 金流 | f60 `新約復活:換推薦人,效期自付款日起算,刊登重新公開` | 等不到導向 `sandbox-api.payuni.com.tw`,60 秒逾時 | PayUni sandbox 外部相依,可能是環境而非程式 |
-| RLS | f45 `訪客不能建立刊登` | `assert 'unauthenticated' == 'denied_by_rls'` | ✅ **已修**(本 PR):PostgREST 把 42501 對匿名角色映成 401,`rls_probe.classify()` 在讀訊息前就被狀態碼短路。policy 其實有生效,是判讀錯了 |
+| 推薦樹 | f20 `Root 推薦樹只顯示三代且第四代不出現` | 展開 B3 後等不到 C7 的 `treeitem` | 世代統計卡是綠的,資料形狀對;問題在懶載入渲染或展開時序 |
+| 推薦樹 | f60 `上線的組織圖顯示已失效節點且結構不斷開` | 等不到 D4 姓名 | 同上,同一支 `expand_ancestors` |
+| 獎勵頁 | f60 `過期會員的點數保留不歸零` | `/rewards` 等不到 heading,停在 `/payment/checkout` | **像產品規則而非測試 bug**:過期會員被路由守衛導去續約頁,但情境預期他看得到獎勵頁。動手前先讀規格書 §7–§10 |
+| 獎勵頁 | f60 `過期會員提領被擋` | 同上 | 同上 |
+| 提領 | f50 `完整生命週期` | `GET /rest/v1/withdrawals` 回 **400** | 查詢本身壞了(欄位/語法),不是 RLS |
+| 提領 | f50 `退件路徑:點數退回` | 「申請Point提領」鈕 disabled 20 秒 | 前置狀態沒到位,或退件後沒回復可申請 |
+| 金流 | f60 `新約復活` | 等不到導向 PayUni sandbox,60 秒逾時 | 外部相依,可能是環境而非程式 |
+| RLS | f45 `訪客不能建立刊登` | `assert 'unauthenticated' == 'denied_by_rls'` | ✅ **已修**(PR #257):PostgREST 把 42501 對匿名角色映成 401,`rls_probe.classify()` 在讀訊息前就被狀態碼短路 |
