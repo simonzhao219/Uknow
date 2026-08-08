@@ -1659,3 +1659,96 @@ bug**)因此被單獨隔離出來。逐個剝開比一次想清楚兩個容易�
 還沒被 fetch 的遠端分支上。認定「不存在」之前先
 `git ls-remote --heads origin`。這次的交接改為直接落在 develop
 (`docs/plans/journey-remaining-failures/handoff.md`),不再依賴某條分支。
+
+## 2026-08-07｜技術債（已裁決不做）｜checkbox 原語的觸控目標只做了 admin 一處
+
+`platform-admin-rwd` 的 P13 要把提領勾選框做到 44px 觸控目標。第二輪審查
+（R2）發現不能改 `ui/checkbox.tsx` 的**預設值**：它被 5 個會員端頁面共用，
+其中 `CreateServiceProvider.tsx:413` 與 `EditServiceProvider.tsx` 的服務區域
+選擇器是 `grid grid-cols-2 gap-2`，列高 20px ＋ gap 8px ＝ **相鄰列中心距約
+28px**；44px 熱區上下各延伸 22px，**重疊 16px**。使用者想勾第 5 區、手指落在
+交界帶會勾到第 4 或第 6 區，沒有任何錯誤訊息，而它寫進的是 `districts`——
+決定這個服務者在哪些地區被搜尋到。**這是資料正確性問題，不是外觀問題。**
+
+降低 inset 救不了：28px 列距下不重疊的上限是每邊 6px，熱區只有 28px。
+
+人審裁決改成 **opt-in variant**（`touchTarget="expanded"`），只有 admin 的提領
+勾選用它。**那 5 個會員端頁面的 checkbox 仍是 16px、仍不符 §1 的觸控要求**
+——這是既有債務，明文不在該 feature 範圍內。要清它得先解決密集格的列距，
+那是版面決定，不該搭 RWD 的便車。
+
+順帶記一個踩過的坑：`-inset-[Npx]` 的參考是 **padding box**，`size-4` 帶 1px
+邊框，所以 `-inset-[14px]` 只做出 42×42。另外 `ui/table.tsx` 的
+`[&:has([role=checkbox])]:pr-0`（specificity (0,2,0)、不受 media query 限制）
+會蓋掉 `pointer-coarse:px-6` 的 padding-right——實測 computed 值是 0px。
+
+## 2026-08-07｜技術債（已裁決不做）｜`isDesktop` 是寬度判準，不是輸入方式
+
+全站的版面切換與 W8 的行動端權限邊界都用
+`useMediaQuery('(min-width: 768px)')`。**那是寬度，不是輸入方式**：768px 寬的
+觸控平板會被判為 `isDesktop`、看得到「標記已匯款」，而那顆按鈕背後「同時開著
+網銀」的假設在單一觸控平板上未必成立。
+
+`platform-admin-rwd` 的 Q4 裁決**本次不改**：這不是該 feature 引入的問題
+（W8 本來就用同一個判準），改判準會動到既有的權限邊界行為，與 Q1(a)
+「RWD 不改行為邊界」一致。要改另開 feature。
+
+連帶事實（實作時才發現）：**e2e 全套跑在 `(pointer: fine)` 下**——
+`e2e/conftest.py:130` 的 `browser_context_args` 只設 locale 與 1280×900，沒有
+`has_touch`。所以 `button`/`input`/`select` 早就有的 `pointer-coarse:min-h-[44px]`
+從未被量過，**溢版巡檢的 27 條路由量的都是「375px 寬、用滑鼠」這台不存在的
+裝置**。目前只有 `test_admin_mobile_layout.py` 在模組層覆寫成觸控 context。
+要不要讓巡檢也改成觸控是另一個決定：那會改變全部 27 條路由的量測基準，
+可能翻出一批新的溢出，值得單獨做一次。
+
+## 2026-08-08｜漏網（方法論）｜量不到的東西，寫幾條測試都是同義反覆
+
+`platform-admin-rwd` 的第一版規劃裡，五個階段的驗證標準全是「jsdom 斷言
+class 字串」——例如「checkbox 帶 `pointer-coarse` class」。**jsdom 不跑版面
+引擎**，所以那條測試斷言的是實作者剛打進去的那個字串：它不可能為了正確的
+理由失敗。審查以此擋下開工（review.md 的 M1），先補「會擋 CI 的真瀏覽器
+量測」才准進實作。事後看，這是整個 feature 最值得留下的一件事。
+
+**「全綠 ≠ 正確」在這個 feature 出現了五種形狀，每一種都會安靜地放行：**
+
+| 形狀 | 這次的實例 |
+|---|---|
+| 同義反覆斷言 | 斷言「class 字串存在」，而那個字串是實作者剛打的 |
+| 測資太弱造成假陰性 | mock 少回 `userName`，整塊條件渲染沒出現 → 溢出量到 0（補齊後 +119px） |
+| 空清單造成假陰性 | 公告給 `[]` 只渲染「尚無公告」（補齊後 +153px） |
+| 門檻被搬到實作值上 | 目標是「第一屏放得下兩筆」，斷言卻寫成「第一張卡在第一屏內」——一筆也算過 |
+| 探針本身壞掉 | 重疊檢查只看 border box，對「74px 觸控區、59px 間距」回傳 False |
+
+**可操作的收斂（三條，按成本排序）：**
+
+1. **每一支新探針都要突變驗證**——故意把產品改壞，確認它會紅。這次每一項
+   都做了，也因此抓到最後那一列：舊的重疊檢查是空的，寫了等於沒寫。
+2. **測資要是「最壞但可達」**，而且自檢分兩層:**形狀要與後端一致**（缺欄位
+   → 條件渲染整塊消失）、**清單不能是空的**。這條已寫進 `e2e/README.md`。
+3. **斷言要重述目標本身，不要重述當下的實作值。** 「第一屏放得下兩筆」寫成
+   `viewportHeight - firstCardTop >= 2 * cardHeight`；寫成「第一張卡看得到」
+   就是把門檻搬去貼著現況——那種紅燈永遠不會出現。
+
+連帶:jsdom 測試不是沒有價值，是**分工要講清楚**。它管的是「互動與資訊在不在」
+（按鈕數、欄位數、狀態切換），版面幾何一律交給 Playwright 量
+`getBoundingClientRect`。這次的分法是 vitest 104 條管前者、`layout_probe.py`
+的八支探針管後者。
+
+## 2026-08-07｜工具鏈層｜web session 沒有 push 憑證，傳輸成本會反過來扭曲設計
+
+本次 web session 的 git CLI 只有讀取憑證，`git push` 一律失敗
+（`could not read Username for 'https://github.com'`），只能改走 GitHub API
+（`create_branch` + `push_files`）。兩個連帶後果值得記:
+
+- **`push_files` 一律要送整檔內容**，所以「改一個 900 行的既有檔」的成本
+  遠高於「新增一個 60 行的模組」。這次因此把兩段新程式碼放進新模組
+  （`layout_probe.py`、`mocks/admin_console_mock.py`）而不是加進既有檔。
+  兩個新模組各自都有獨立成立的理由，所以結論不算被扭曲——但**促成那個
+  選擇的是傳輸成本**。看到「新模組」時要多問一句是不是這個原因。
+- **不要手工做 `\uXXXX` JSON 轉義**：會出現肉眼難察覺的錯字（本次
+  `review.md` 出現「要吗／包袟」，正確是「要嘛／包袱」，推送後才靠罕用字
+  掃描抓到）。直接寫 UTF-8 原文，推送後用 `git fetch` +
+  `git diff FETCH_HEAD` 逐位元組比對。
+
+（後續 session 的 CLI push 是正常的，所以這不是常態，是**會偶發**——
+遇到時知道有這條路、也知道它的兩個坑就夠了。）

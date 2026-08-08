@@ -16,12 +16,20 @@
 //      不收（破壞力 ~0）。授予在資料層面不可逆——他當下就讀得到全站身分證與
 //      收款帳號，撤回權限撤不回已經看過的東西。失敗時要說出是哪一種失敗。
 //   6. 空／錯／載入三態。
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminMember, AdminMemberDetail, AdminMembersResponse } from '@contract';
+import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 import { MemberManagement } from './MemberManagement';
 
 afterEach(cleanup);
+
+// MemberManagement 從階段 3 起用 useMediaQuery 決定表格/卡片，而 jsdom 沒有
+// matchMedia——沒有替身整個檔案會炸，而那個紅燈不代表任何真實缺陷
+// （plan §7 風險表已預期）。預設回「桌機」，手機情境的 describe 自己覆寫。
+beforeEach(() => {
+  stubMediaQuery(true);
+});
 
 type Page = AdminMembersResponse['data'];
 
@@ -448,5 +456,81 @@ describe('MemberManagement', () => {
     renderConsole();
     const box = await screen.findByPlaceholderText('搜尋姓名 / Email / 電話');
     expect(box.getAttribute('type')).toBe('search');
+  });
+});
+
+// --- 手機版（階段 3） --------------------------------------------------------
+//
+// 與提領管理同一個原則：表格換卡片時，**互動不能被悄悄拿掉**。這裡的三顆
+// 操作鍵（查看／設為管理員／暫停）都是顯式按鈕、不依賴 <tr> 結構，所以沒有
+// F1 那種隱性耦合；要守的是「資訊量不低於桌面關鍵欄位」與「三顆鍵都在」。
+describe('MemberManagement 手機版', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('不渲染 table，改以每位會員一張卡呈現', async () => {
+    const { container } = renderConsole();
+    await screen.findByText('陳大文');
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('每張卡帶姓名、Email、會籍與刊登數', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('陳大文')).toBeTruthy();
+    expect(within(card).getByText('a@b.c')).toBeTruthy();
+    expect(within(card).getByText('有效會員')).toBeTruthy();
+    expect(within(card).getByText(/刊登/)).toBeTruthy();
+  });
+
+  it('正常狀態不顯示 badge——只有需要注意的才佔位', async () => {
+    // 「一般會員」「正常」是預設值:佔了位置卻沒有資訊量，而六個 badge 擠在
+    // 一起反而讓真正需要注意的那個消失在噪音裡。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).queryByText('一般會員')).toBeNull();
+    expect(within(card).queryByText('正常')).toBeNull();
+  });
+
+  it('暫停中的會員才顯示已暫停 badge', async () => {
+    renderConsole({ loadMembers: async () => page({ members: [member({ suspended: true })] }) });
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('已暫停')).toBeTruthy();
+  });
+
+  it('卡片上只有一顆操作鍵——改「一個人的狀態」的動作全在詳情面板', async () => {
+    // ⚠️ 主斷言是**數數**。先前這條測試名字叫「只有兩顆」，三條斷言卻是
+    // 「查看在、暫停在、設為管理員不在」——沒有一條在數數，插入第三顆按鈕
+    // 三層閘門全綠。`.claude/rules/test-naming.md` 的反例正是同型。
+    // ui-ux-guidelines §11.1:分類看動作的對象。停權與管理員切換改的都是
+    // 「一個人的狀態」，一律移進詳情面板，且走同一個 MemberAction 路徑
+    // （同一種確認框、同一處錯誤顯示）。曾經替停權開的「時效性」例外已被
+    // §11.1 明文廢止——提領台改的是一筆交易，會員管理改的是一個人。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getAllByRole('button')).toHaveLength(1);
+    expect(within(card).getByRole('button', { name: /查看 .* 的詳情/ })).toBeTruthy();
+    // 負向斷言留著:它不是套套邏輯——這兩顆鍵兩個 commit 前真的在卡片上，
+    // 把它們貼回去這裡就會紅。
+    expect(within(card).queryByRole('button', { name: '暫停' })).toBeNull();
+    expect(within(card).queryByRole('button', { name: '設為管理員' })).toBeNull();
+  });
+
+  it('管理員的卡片一樣只有一顆鍵——動態標籤鍵不得從這裡繞回來', async () => {
+    // isAdmin 的卡片渲染的是「撤銷管理員」，上一條的負向斷言抓不到它。
+    renderConsole({ loadMembers: async () => page({ members: [member({ isAdmin: true })] }) });
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getAllByRole('button')).toHaveLength(1);
+    expect(within(card).queryByRole('button', { name: '撤銷管理員' })).toBeNull();
+  });
+
+  it('卡片顯示電話——admin 用來電號碼搜到人之後要認得出是同一個人', async () => {
+    // 搜尋框 placeholder 就寫著「搜尋姓名 / Email / 電話」，後端 RPC 也真的
+    // 有 phone ilike。手機是 JS 擇一渲染、表格不掛 DOM，卡片不顯示就等於
+    // 手機上完全看不到號碼，也無法回撥。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('0912345678')).toBeTruthy();
   });
 });

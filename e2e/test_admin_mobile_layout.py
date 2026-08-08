@@ -24,12 +24,21 @@
 
 import pytest
 
-from layout_probe import count_rows, viewport_fit
+from layout_probe import (
+    card_density,
+    count_rows,
+    first_screen_position,
+    hit_area,
+    hit_areas_overlap,
+    ink_overflowing_children,
+    pointer_is_coarse,
+    viewport_fit,
+)
 from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
-from test_overflow_sweep import _setup_admin
+from test_overflow_sweep import _open_id_card_dialog, _open_tab, _setup_admin
 
 # Radix 的 TabsList 掛 data-slot；DialogContent 沒有，但 Radix 會給 role=dialog
 # （AlertDialog 是 role=alertdialog，不會誤中）。
@@ -51,11 +60,6 @@ def admin_at_375(page, context, api_mock, rest_mock):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U2 未實作：TabsList 目前是 flex + overflow-x-auto，五個分頁擠成單行橫向捲動。"
-    "修法見 plan §4.1（注意 class 需含無前綴 grid 與 w-full，見 review.md 的『補 F2』）",
-    strict=True,
-)
 def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
     """U2：五個分頁標籤在 375px 下同時可見（＝排成兩列，不是單行捲動）。"""
     rows = count_rows(admin_at_375, TABS_LIST)
@@ -68,21 +72,15 @@ def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U3 未實作：IdCardDialog 的 max-w-3xl 經 twMerge 蓋掉 dialog 原語的行動端護欄"
-    " max-w-[calc(100%-2rem)]，安全邊距歸零、對話框貼齊螢幕邊緣。"
-    "（注意：實測**沒有**溢出——w-full 在 fixed 元素上已依視窗定寬 375px，"
-    "max-w-3xl 比它大所以不生效。規劃書 P5 寫的『寬 768px、左右溢出視窗』不成立，"
-    "見 review.md 的 F7。）修法見 plan §4.1（P5）",
-    strict=True,
-)
 def test_id_card_dialog_keeps_safe_margins_at_375px(admin_at_375):
     """U3：身分證對話框左右都留有安全邊距（不貼齊螢幕、更不超出）。
 
     這條**測不出**「頁面有沒有橫向捲軸」——`position: fixed` 的對話框不會把
     頁面撐出捲軸。必須直接量盒子相對視窗的間距。
     """
-    admin_at_375.get_by_role("button", name="查看", exact=True).first.click()
+    # 查看證件已依 ui-ux-guidelines §11 規則 3 收進手機卡片的溢出選單
+    # （唯讀、罕用、無時效性）。桌面表格仍是直接的按鈕。
+    _open_id_card_dialog(admin_at_375)
     settle(admin_at_375)
 
     fit = viewport_fit(admin_at_375, DIALOG)
@@ -95,11 +93,6 @@ def test_id_card_dialog_keeps_safe_margins_at_375px(admin_at_375):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U3 未實作：身分證雙圖是無斷點的 grid-cols-2，375px 下每張僅約 160px 寬，"
-    "看不清證件上的字。修法見 plan §4.1（P6）",
-    strict=True,
-)
 def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
     """U3：兩張身分證照片在 375px 下上下堆疊，各自佔滿可用寬度。
 
@@ -107,7 +100,9 @@ def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
     對話框裡，每張其實有 ~350px，寬度門檻會因為版面壞掉而僥倖通過。
     「有沒有堆疊」才分得出修好與沒修好。
     """
-    admin_at_375.get_by_role("button", name="查看", exact=True).first.click()
+    # 查看證件已依 ui-ux-guidelines §11 規則 3 收進手機卡片的溢出選單
+    # （唯讀、罕用、無時效性）。桌面表格仍是直接的按鈕。
+    _open_id_card_dialog(admin_at_375)
     settle(admin_at_375)
 
     photos = admin_at_375.locator(f"{DIALOG} img")
@@ -118,3 +113,230 @@ def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
         f"兩張身分證照片並排（正面 y={front['y']:.0f} 高 {front['height']:.0f}、"
         f"反面 y={back['y']:.0f}），375px 下每張太窄、證件上的字看不清。"
     )
+
+
+# --- 觸控目標（P13） ---------------------------------------------------------
+#
+# 這一組刻意跑在**觸控 context** 底下（見下方 `browser_context_args`）。
+# 沒有觸控，`(pointer: coarse)` 不成立，`pointer-coarse:` 的 class 全是死的
+# ——會量到一台不存在的裝置：375px 寬、用滑鼠。
+
+# 觸控平板:768x1024。**刻意不是 375px**——Q2 裁決「勾選只在 isDesktop 下
+# 渲染」，而 isDesktop 是 `(min-width: 768px)`，所以手機上根本不會有這個
+# 勾選框（階段 2 之後手機是卡片、沒有表格）。P13 實際適用的是**寬度判為
+# 桌面、輸入方式卻是觸控**的那批裝置——iPad 直向正好是 768px。
+# 在 375px 量它，量的是一個做完 RWD 就會消失的東西。
+TABLET_TOUCH_VIEWPORT = {"width": 768, "height": 1024}
+
+SELECT_ALL_CHECKBOX = '[aria-label="全選本頁的提領記錄"]'
+ROW_CHECKBOX = '[aria-label^="選取 "]'
+
+# ui-ux-guidelines.md §1：觸控目標 ≥44px（Apple HIG / Material 同一個數字）。
+MIN_TOUCH_TARGET_PX = 44
+
+
+@pytest.fixture
+def browser_context_args(browser_context_args):
+    """本模組專用：375px ＋ **觸控**。
+
+    conftest 的預設 context 是 1280×900、無觸控。這裡覆寫成行動裝置該有的
+    樣子——一份叫做「admin mobile layout」的測試跑在滑鼠裝置上，量出來的
+    版面不是使用者會看到的那個。
+    """
+    return {**browser_context_args, "viewport": MOBILE_VIEWPORT, "has_touch": True}
+
+
+@pytest.fixture
+def admin_tablet_touch(page, context, api_mock, rest_mock):
+    """觸控平板：768px（isDesktop 為真、桌面表格會渲染）＋ 粗指標。"""
+    page.set_viewport_size(TABLET_TOUCH_VIEWPORT)
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    return page
+
+
+def test_e2e_context_reports_a_coarse_pointer(admin_at_375):
+    """量測前提：瀏覽器必須回報粗指標，否則下面兩條測的是別的東西。
+
+    這條**不受任何 xfail 保護**——它壞掉代表量測工具失效，而工具失效時
+    報告不該裝作有效（同 `test_overflow_sweep.py` 的中文字寬硬失敗）。
+    """
+    assert pointer_is_coarse(admin_at_375), (
+        "browser context 沒有回報 (pointer: coarse)，所有 pointer-coarse: 的 class "
+        "都不會生效。檢查本模組的 browser_context_args 是否仍帶 has_touch=True。"
+    )
+
+
+@pytest.mark.compatibility
+def test_admin_checkbox_hit_area_reaches_44px_on_touch(admin_tablet_touch):
+    """P13：提領勾選框在觸控裝置上的**實際可點區**要到 44×44。
+
+    量的是命中而不是盒子——熱區由偽元素撐出來時 getBoundingClientRect 看不見
+    （見 layout_probe 的說明）。
+    """
+    area = hit_area(admin_tablet_touch, SELECT_ALL_CHECKBOX)
+    assert area is not None, f"找不到 {SELECT_ALL_CHECKBOX}——選擇器過時了，不是版面問題"
+    assert not area.get("offscreen"), f"checkbox 捲不進視窗（{area}）——量測壞了，不是熱區太小"
+    assert not area.get("centerMiss"), (
+        "連 checkbox 中心都點不到——被別的元素蓋住或它不可見，這是量測壞了，不是熱區太小"
+    )
+    assert area["width"] >= MIN_TOUCH_TARGET_PX and area["height"] >= MIN_TOUCH_TARGET_PX, (
+        f"可點區只有 {area['width']}×{area['height']}px（期望 ≥{MIN_TOUCH_TARGET_PX}px）。"
+        f"可見方框是 {area['boxWidth']}×{area['boxHeight']}px——"
+        "兩者相等代表熱區完全沒有被撐開。"
+    )
+
+
+def test_admin_checkbox_hit_areas_do_not_overlap(admin_tablet_touch):
+    """相鄰勾選框的熱區不得相交。
+
+    今天就該綠（熱區還沒撐開），它守的是**明天**：熱區一旦撐到 44px，
+    表頭全選與第一列的間距就不再有餘裕，而點錯的下游是不可回退的批次匯款。
+    現況的不重疊是「每列剛好有兩顆撐高的按鈕」這個副作用，不是被釘住的
+    不變量——這條測試就是把它變成不變量。
+    """
+    r = hit_areas_overlap(admin_tablet_touch, SELECT_ALL_CHECKBOX, ROW_CHECKBOX)
+    assert r is not None, "找不到勾選框——選擇器過時了"
+    assert not r.get("offscreen"), "勾選框捲不進視窗，量測壞了"
+    assert not r.get("centerMiss"), "勾選框中心點不到，量測壞了"
+    assert not r["overlap"], (
+        f"表頭全選與第一列的熱區相交：全選 {r['a']}、第一列 {r['b']}。"
+        "點在交界帶會命中哪一個由繪製順序決定，使用者不會收到任何錯誤訊息。"
+    )
+
+
+def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
+    """分頁標籤不得畫到隔壁格子上。
+
+    今天就該綠（現況是 flex，格子被內容撐開）。它守的是 §4.1 改成
+    `grid-cols-3` 之後：grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，
+    標籤放不下時是 ink overflow——`count_rows` 照樣回報兩列、溢版巡檢
+    也不報，只有比對 scrollWidth 與 clientWidth 抓得到。實測餘裕只有
+    10.3px（可放文字 94.3px vs 最長標籤 84px），不厚。
+    """
+    overflowing = ink_overflowing_children(admin_at_375, TABS_LIST)
+    assert overflowing is not None, f"找不到 {TABS_LIST}——選擇器過時了"
+    assert overflowing == [], "分頁標籤的內容超出自己的格子：" + "；".join(
+        f"「{c['text']}」超出 {c['by']}px" for c in overflowing
+    )
+
+
+# --- 第一屏可工作（階段 6） --------------------------------------------------
+#
+# 前面幾條測的是「版面有沒有壞」。這一組測的是「好不好用」——打開就能開始
+# 做事，還是要先滑過一整屏的儀表板。admin 在外面接到電話用手機開後台，
+# 要的是那一筆記錄，不是統計數字。
+#
+# 這個失效模式**溢版巡檢完全報不出來**:版面沒有任何一處畫到框外，
+# 它只是把工作內容推到第一屏之外。
+
+FIRST_WITHDRAWAL_CARD = '[role="group"][aria-label$="的提領記錄"]'
+FIRST_MEMBER_CARD = '[role="group"][aria-label$="的會員資料"]'
+
+
+def test_first_withdrawal_record_is_reachable_without_scrolling(admin_at_375):
+    """375px 打開提領管理，第一筆記錄要在第一屏內。"""
+    pos = first_screen_position(admin_at_375, FIRST_WITHDRAWAL_CARD)
+    assert pos is not None, f"找不到 {FIRST_WITHDRAWAL_CARD}——選擇器過時了"
+    assert pos["visible"], (
+        f"第一筆提領記錄在 y={pos['top']}px，第一屏只有 {pos['viewportHeight']}px"
+        f"——還差 {pos['below']}px。打開後要先滑過統計卡才看得到工作內容。"
+    )
+
+
+def test_first_member_is_reachable_without_scrolling(admin_at_375):
+    """375px 切到會員管理，第一位會員要在第一屏內。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    pos = first_screen_position(admin_at_375, FIRST_MEMBER_CARD)
+    assert pos is not None, f"找不到 {FIRST_MEMBER_CARD}——選擇器過時了"
+    assert pos["visible"], (
+        f"第一位會員在 y={pos['top']}px，第一屏只有 {pos['viewportHeight']}px"
+        f"——還差 {pos['below']}px。"
+    )
+
+
+# --- 掃視成本（階段 6） ------------------------------------------------------
+#
+# 人審看完 375px 實機截圖的三點意見:「所有資訊都呈現，所以畫面很長」、
+# 「按鈕卡片很多，都擠在一起」、「三格統計在手機變成上面兩格下面一格」。
+# 前兩點的根因是同一個:**沒有做漸進揭露**——每張卡把所有欄位與所有動作
+# 都攤平，於是一屏放不下兩筆，而且每一筆都要重新掃一次按鈕列。
+#
+# 收合態的高度預算。**這個數字沒有餘裕**（實測提領卡正好 150），留著只是
+# 擋「卡片變胖」的下界，不是「一屏兩筆」的代理——後者現在直接量，見下方。
+MAX_COLLAPSED_CARD_PX = 150
+# 上限 3 而不是 2:`ui-ux-guidelines.md` §11 明列**時效性動作不得收進溢出
+# 選單**（並直接引用「退件與代為完成不鎖——那是客服接到電話當下就該能處理
+# 的事」），所以提領卡至少是「主要動作 ＋ 時效性動作 ＋ 選單」三顆。
+# 這個數字是準則推導出來的，不是視覺偏好——把它壓到 2 只能靠違反 §11 達成。
+# 逐列表分開給:會員卡改「一個人的狀態」的動作全在詳情面板（§11.1），只剩一顆。
+MAX_VISIBLE_BUTTONS = {"提領": 3, "會員": 1}
+
+
+def _assert_scannable(cards, kind: str):
+    assert cards is not None, f"找不到{kind}卡片——選擇器過時了"
+    assert len(cards) >= 2, (
+        f"{kind}測資只有 {len(cards)} 筆——「一屏看得完兩筆」在單筆測資下"
+        "**結構上量不到**，請補 _setup_admin 的測資"
+    )
+    limit = MAX_VISIBLE_BUTTONS[kind]
+    for i, c in enumerate(cards):
+        assert c["height"] <= MAX_COLLAPSED_CARD_PX, (
+            f"第 {i + 1} 張{kind}卡收合態高 {c['height']}px（上限 {MAX_COLLAPSED_CARD_PX}px）"
+        )
+        assert len(c["visibleButtons"]) <= limit, (
+            f"第 {i + 1} 張{kind}卡有 {len(c['visibleButtons'])} 顆可見按鈕"
+            f"{c['visibleButtons']}（上限 {limit}）——次要動作應收進「更多」選單"
+            "，改「一個人的狀態」的動作應移進詳情面板（§11.1）。"
+        )
+
+
+def _assert_two_fit_first_screen(page, selector: str, kind: str):
+    """第一屏看得完兩筆——直接量，不用高度上限當代理。
+
+    ⚠️ **不要改用「第二張卡 visible」**:第二張卡只露 25px 也算 visible，
+    那量的是「有沒有露出來」，不是「看得完」。
+    """
+    pos = first_screen_position(page, selector)
+    cards = card_density(page, selector)
+    assert pos is not None and cards, f"找不到{kind}卡片——選擇器過時了"
+    need = 2 * cards[0]["height"]
+    have = pos["viewportHeight"] - pos["top"]
+    assert have >= need, (
+        f"第一屏放不下兩筆{kind}:第一張卡從 y={pos['top']} 開始，"
+        f"視窗 {pos['viewportHeight']}px 只剩 {have}px，兩筆需要 {need}px（差 {need - have}px）。"
+        "卡片本身已經壓到極限，要再省得從它**上方**下手——"
+        "統計區塊是最大的一塊。"
+    )
+
+
+def test_withdrawal_cards_are_scannable(admin_at_375):
+    """提領卡收合態要夠矮、按鈕夠少，一屏掃得完兩筆。"""
+    _assert_scannable(card_density(admin_at_375, FIRST_WITHDRAWAL_CARD), "提領")
+
+
+def test_member_cards_are_scannable(admin_at_375):
+    """會員卡同理。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_scannable(card_density(admin_at_375, FIRST_MEMBER_CARD), "會員")
+
+
+def test_two_withdrawals_fit_the_first_screen(admin_at_375):
+    """打開提領管理，第一屏要看得完**兩筆**，不是勉強露出第一筆。
+
+    這條是階段 6 的真正目標。先前用「卡片高度 ≤150px」當代理，而那個代理的
+    推導寫錯了（註解說第一屏剩 470px，實測只剩 187px），於是門檻全綠、
+    失敗訊息「一屏放不下兩筆」卻仍然為真——數字看起來被把關了，被把關的
+    卻不是那件事。
+    """
+    _assert_two_fit_first_screen(admin_at_375, FIRST_WITHDRAWAL_CARD, "提領")
+
+
+def test_two_members_fit_the_first_screen(admin_at_375):
+    """會員管理同理。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_two_fit_first_screen(admin_at_375, FIRST_MEMBER_CARD, "會員")

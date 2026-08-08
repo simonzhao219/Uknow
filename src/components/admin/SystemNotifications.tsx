@@ -143,7 +143,7 @@ export function SystemNotifications() {
             <Send className="h-5 w-5" />
             發布全站公告
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             公告會顯示在全站頂部橫幅（例如系統維護預告）；生效區間外自動消失
           </CardDescription>
         </CardHeader>
@@ -227,7 +227,7 @@ export function SystemNotifications() {
             <Bell className="h-5 w-5" />
             公告列表
           </CardTitle>
-          <CardDescription>查看與管理所有公告</CardDescription>
+          <CardDescription className="hidden sm:block">查看與管理所有公告</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -240,8 +240,9 @@ export function SystemNotifications() {
             <div className="space-y-4">
               {announcements.map((a) => (
                 <div key={a.id} className="border rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className="font-medium">{a.title}</h4>
+                  {/* P12:標題與右側三個 badge ＋ 刪除鍵在 375px 下互相擠壓。 */}
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                    <h4 className="font-medium break-words">{a.title}</h4>
                     <div className="flex items-center gap-2">
                       {getTypeBadge(a.type)}
                       {isCurrentlyActive(a) ? (
@@ -260,7 +261,9 @@ export function SystemNotifications() {
                       </Button>
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-2">{a.message}</p>
+                  {/* P15:公告內文沒有長度上限，實務上會貼網址——長 token 不斷行
+                      實測撐破 +153px。 */}
+                  <p className="text-sm text-muted-foreground mb-2 break-words">{a.message}</p>
                   <p className="text-xs text-muted-foreground">
                     生效：{formatTwTimestamp(a.startsAt)}
                     {a.endsAt ? ` ~ ${formatTwTimestamp(a.endsAt)}` : '（無期限）'}
