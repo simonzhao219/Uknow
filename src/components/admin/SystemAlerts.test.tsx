@@ -181,24 +181,27 @@ describe('SystemAlerts 手機版', () => {
   });
 
   it('不渲染 table，改以每筆一張卡呈現', async () => {
+    mockApi([alert()]);
     const { container } = render(<SystemAlerts />);
     await screen.findByText('付款處理失敗，需人工介入');
     expect(container.querySelector('table')).toBeNull();
   });
 
   it('訊息全文可讀，context 收在預設收合的 Collapsible 裡', async () => {
+    mockApi([alert()]);
     render(<SystemAlerts />);
-    const card = await screen.findByRole('group', { name: /resolveOrderFromPayUni/ });
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
     expect(within(card).getByText('付款處理失敗，需人工介入')).toBeTruthy();
     // 預設收合:context 是 jsonb 原文，長度無上限，攤開會把卡片撐爆。
-    expect(within(card).queryByText(/merTradeNo/)).toBeNull();
+    expect(within(card).queryByText(/PU00000001/)).toBeNull();
     fireEvent.click(within(card).getByRole('button', { name: '詳細資訊' }));
-    await waitFor(() => expect(within(card).getByText(/merTradeNo/)).toBeTruthy());
+    await waitFor(() => expect(within(card).getByText(/PU00000001/)).toBeTruthy());
   });
 
   it('標記已處理在卡片內可點', async () => {
+    mockApi([alert()]);
     render(<SystemAlerts />);
-    const card = await screen.findByRole('group', { name: /resolveOrderFromPayUni/ });
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
     expect(within(card).getByRole('button', { name: '標記已處理' })).toBeTruthy();
   });
 });

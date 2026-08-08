@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Skeleton } from '../ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
 import { formatTwTimestamp } from '../../utils/twDate';
@@ -28,6 +31,7 @@ export function SystemAlerts() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const { showToast } = useNotification();
 
   const fetchAlerts = useCallback(async () => {
@@ -66,7 +70,8 @@ export function SystemAlerts() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      {/* P11:長 CardDescription 與「重新整理」鍵在 375px 下對撞。 */}
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <div>
           <CardTitle>系統告警</CardTitle>
           <CardDescription>
@@ -81,8 +86,14 @@ export function SystemAlerts() {
       </CardHeader>
       <CardContent>
         {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <div className="py-4">
+            {/* F14:列表載入用骨架屏，不要單一置中 spinner（ui-ux-guidelines §5）。
+                原本是 Loader2，本階段順手還債（碰到的檔案）。 */}
+            <div className="w-full space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
           </div>
         )}
 
@@ -99,24 +110,75 @@ export function SystemAlerts() {
           <p className="text-center py-12 text-muted-foreground">目前沒有未處理的告警</p>
         )}
 
-        {!isLoading && !loadError && alerts.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>等級</TableHead>
-                <TableHead>來源</TableHead>
-                <TableHead>訊息</TableHead>
-                <TableHead>詳細資訊</TableHead>
-                <TableHead>發生時間</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        {!isLoading &&
+          !loadError &&
+          alerts.length > 0 &&
+          (!isDesktop ? (
+            <div className="space-y-3">
               {alerts.map((alert) => (
-                <TableRow key={alert.id}>
-                  <TableCell>{getSeverityBadge(alert.severity)}</TableCell>
-                  <TableCell className="font-mono text-sm">{alert.source}</TableCell>
-                  {/*
+                <div
+                  key={alert.id}
+                  role="group"
+                  aria-label={`${alert.source} 的系統告警`}
+                  className="space-y-2 rounded-lg border p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getSeverityBadge(alert.severity)}
+                    <span className="font-mono text-xs break-all">{alert.source}</span>
+                  </div>
+                  {/* 訊息全文可讀:break-words 而不是截斷——告警看不完等於沒看。 */}
+                  <p className="text-sm break-words">{alert.message}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatTwTimestamp(alert.created_at)}
+                  </p>
+                  {/* context 是 jsonb 原文、長度無上限（正式站的
+                      time_domain_backfill 告警有四個欄位），攤開會把卡片撐爆
+                      ——這條路由實測溢出 294px。預設收合，要看再展開。
+                      用 Collapsible 而不是裸 <details>:全站 details 用量 0，
+                      Collapsible 已有三個使用點，開合狀態也受 React 控制
+                      （審查 N2）。 */}
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full">
+                        詳細資訊
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <code className="mt-2 block break-all text-xs text-muted-foreground">
+                        {JSON.stringify(alert.context)}
+                      </code>
+                    </CollapsibleContent>
+                  </Collapsible>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => resolveAlert(alert)}
+                    disabled={resolvingId === alert.id}
+                  >
+                    標記已處理
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>等級</TableHead>
+                  <TableHead>來源</TableHead>
+                  <TableHead>訊息</TableHead>
+                  <TableHead>詳細資訊</TableHead>
+                  <TableHead>發生時間</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.map((alert) => (
+                  <TableRow key={alert.id}>
+                    <TableCell>{getSeverityBadge(alert.severity)}</TableCell>
+                    <TableCell className="font-mono text-sm">{alert.source}</TableCell>
+                    {/*
                     message 與 context 長度都無上限（context 是 jsonb，後端寫
                     什麼就存什麼），而 TableCell 基底帶 whitespace-nowrap。
                     換行、限寬、block 三者必須落在同一個內層元素上：
@@ -127,34 +189,34 @@ export function SystemAlerts() {
                     - max-width 對 inline 元素無效，所以要 block
                     缺一項，長內容就會以單行畫到隔壁欄位的文字上面。
                   */}
-                  <TableCell>
-                    <span className="block max-w-sm whitespace-normal break-words">
-                      {alert.message}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <code className="block max-w-xs whitespace-normal break-all text-xs text-muted-foreground">
-                      {JSON.stringify(alert.context)}
-                    </code>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
-                    {formatTwTimestamp(alert.created_at)}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => resolveAlert(alert)}
-                      disabled={resolvingId === alert.id}
-                    >
-                      標記已處理
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                    <TableCell>
+                      <span className="block max-w-sm whitespace-normal break-words">
+                        {alert.message}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <code className="block max-w-xs whitespace-normal break-all text-xs text-muted-foreground">
+                        {JSON.stringify(alert.context)}
+                      </code>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {formatTwTimestamp(alert.created_at)}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolveAlert(alert)}
+                        disabled={resolvingId === alert.id}
+                      >
+                        標記已處理
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ))}
       </CardContent>
     </Card>
   );

@@ -149,9 +149,12 @@ export function AdminSetup() {
                   <span className="text-sm text-muted-foreground">姓名</span>
                   <span className="text-sm font-medium">{adminStatus.userName}</span>
                 </div>
-                <div className="flex items-center justify-between">
+                {/* P16:Email 來自 Supabase Auth、長度無上限，與固定寬的標籤
+                    擠同一列時實測溢出 +119px。手機改成標籤在上、值在下並允許
+                    斷行；桌面維持同列對齊。 */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                   <span className="text-sm text-muted-foreground">Email</span>
-                  <span className="text-sm font-medium">{adminStatus.userEmail}</span>
+                  <span className="text-sm font-medium break-all">{adminStatus.userEmail}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">用戶 ID</span>
