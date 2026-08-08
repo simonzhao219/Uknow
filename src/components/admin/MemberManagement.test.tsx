@@ -8,13 +8,13 @@
 //      永遠不知道。後端在階段 3.1 已經把全站 `stats` 送上來了。
 //   2. **不得靜默截斷**（ui-ux-guidelines §5）——「已顯示 X / Y 筆」＋加載更多。
 //   3. **詳情面板要答得出「我提領怎麼還沒到」**（M1）：§1.1 的頭號客服情境。
-//   4. **動作位階依「頻率 × 破壞力」分層**（ui-ux-guidelines §11）：列上只留
-//      每天在用的「查看」與偶爾要用的「暫停」；管理員授予／撤銷設好之後幾乎
-//      不會再動，卻是破壞力最大的一顆，只在詳情面板出現——按它之前必須先看到
-//      這個人是誰，那道摩擦就是防線。
-//   5. **管理員切換**（M4）：兩個方向都走確認框（授予在資料層面不可逆——他當下
-//      就讀得到全站身分證與收款帳號，撤回權限撤不回已經看過的東西），
-//      失敗時要說出是哪一種失敗。
+//   4. **會改變狀態的動作全部只在詳情面板裡，且走同一條路徑**
+//      （ui-ux-guidelines §11）：停權與授予管理員是同一類事——**對一個人做的
+//      判斷**，不是對一筆資料做的修改。同類的東西用同一套邏輯與設計：同一個
+//      確認框、同一個執行器、同一處錯誤顯示。列上只有「查看」。
+//   5. **確認框逐方向看破壞力**（M4）：暫停／授予／撤銷都要確認，只有「恢復」
+//      不收（破壞力 ~0）。授予在資料層面不可逆——他當下就讀得到全站身分證與
+//      收款帳號，撤回權限撤不回已經看過的東西。失敗時要說出是哪一種失敗。
 //   6. 空／錯／載入三態。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -193,7 +193,8 @@ describe('MemberManagement', () => {
     const suspend = vi.fn(async () => {});
     renderConsole({ loadMembers: load, suspendMember: suspend });
 
-    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
     fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
     await waitFor(() => expect(suspend).toHaveBeenCalledWith('m1', true));
     // 重抓而不是就地改：停權會連帶影響刊登可見性等衍生欄位，本地猜測會失真。
@@ -206,35 +207,58 @@ describe('MemberManagement', () => {
     const suspend = vi.fn(async () => {});
     renderConsole({ suspendMember: suspend });
 
-    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/刊登將立即隱藏/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
     expect(suspend).not.toHaveBeenCalled();
   });
 
-  // 恢復是把東西還回去，代價與停權不對稱，不該收同一道過路費。
+  // 四個方向裡只有「恢復」的破壞力是 ~0（把凍結的東西還回去）。可逆又無傷的
+  // 動作也收確認框，只會把確認框訓練成無腦點掉的一步，真正危險的那次就攔不住。
   it('恢復不走確認框，直接送出', async () => {
     const suspend = vi.fn(async () => {});
     renderConsole({
-      loadMembers: async () => page({ members: [member({ suspended: true })] }),
+      loadMemberDetail: async () => detail({ suspended: true }),
       suspendMember: suspend,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '恢復' }));
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
     await waitFor(() => expect(suspend).toHaveBeenCalledWith('m1', false));
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
-  it('停權失敗時把原因說出來', async () => {
+  it('停權失敗時把哪一種失敗印在詳情面板裡', async () => {
     renderConsole({
       suspendMember: async () => {
         throw new Error('該會員已被其他管理員處理');
       },
     });
-    fireEvent.click(await screen.findByRole('button', { name: '暫停' }));
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
     fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
-    expect(await screen.findByText(/該會員已被其他管理員處理/)).toBeTruthy();
+    expect(await within(panel).findByText(/該會員已被其他管理員處理/)).toBeTruthy();
+  });
+
+  // 停權與授予管理員是同一類事——對一個人做的判斷，不是對一筆資料做的修改。
+  // 同類的東西走同一套邏輯與設計：同一個面板、同一個確認框、同一處錯誤顯示。
+  it('停權成功後詳情面板的管理區跟著更新', async () => {
+    let suspended = false;
+    renderConsole({
+      loadMemberDetail: async () => detail({ suspended }),
+      suspendMember: async () => {
+        suspended = true;
+      },
+    });
+
+    const panel = await openDetail();
+    expect(within(panel).getByText('帳號正常')).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    expect(await within(panel).findByText('帳號已暫停')).toBeTruthy();
   });
 
   it('搜尋送出後以關鍵字重新查詢', async () => {
@@ -307,20 +331,21 @@ describe('MemberManagement', () => {
     await screen.findByText('林小美');
     expect(screen.getByText('已暫停')).toBeTruthy();
     expect(screen.getByText('已失效')).toBeTruthy();
-    // 停權者的動作是「恢復」而不是「暫停」——按錯會讓客服再停一次。
-    expect(screen.getByRole('button', { name: '恢復' })).toBeTruthy();
   });
 
-  // 「設為管理員」原本是列上第三顆鍵：一個平台設好一次、之後幾乎不再動的
-  // 動作，卻和每天要按的「查看」並排等寬，手機上還會折行和「暫停」擠在一起。
-  // 移進詳情面板不是把它藏起來——授權前本來就該先看清楚這個人是誰，
-  // 而那些資訊全在面板裡，那道摩擦是流程本身，不是人工加的關卡。
-  it('列表操作區沒有管理員切換鍵', async () => {
-    renderConsole({ loadMembers: async () => page({ members: [member({ isAdmin: false })] }) });
+  // 列上只有「查看」一個動作，誤觸的上限就是開錯一個面板。停權與授予管理員
+  // 都是**對一個人做的判斷**，做之前本來就該先看清楚他是誰——那道摩擦是流程
+  // 本身，不是人工加的關卡。改版前這裡有三顆等寬平排的鍵。
+  it('列表上按不到任何會改變會員狀態的鍵', async () => {
+    renderConsole({
+      loadMembers: async () =>
+        page({ members: [member({ isAdmin: false }), member({ id: 'm2', suspended: true })] }),
+    });
     await screen.findAllByText('陳大文');
 
-    expect(screen.queryByRole('button', { name: '設為管理員' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '撤銷管理員' })).toBeNull();
+    for (const name of ['設為管理員', '撤銷管理員', '暫停', '恢復']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
   });
 
   async function openDetail() {
@@ -328,7 +353,7 @@ describe('MemberManagement', () => {
     return screen.findByRole('dialog');
   }
 
-  it('詳情面板的權限區可把一般會員設為管理員', async () => {
+  it('詳情面板的管理區可把一般會員設為管理員', async () => {
     const setAdmin = vi.fn(async () => {});
     renderConsole({
       loadMemberDetail: async () => detail({ isAdmin: false }),
@@ -389,7 +414,7 @@ describe('MemberManagement', () => {
 
   // 錯誤要出現在動作發生的地方。詳情面板蓋在列表上，把訊息印在列表區等於
   // 印在看不見的地方——admin 只會覺得按了沒反應，然後再按一次。
-  it('權限變更失敗時把哪一種失敗印在詳情面板裡', async () => {
+  it('撤銷管理員失敗時把哪一種失敗印在詳情面板裡', async () => {
     renderConsole({
       loadMemberDetail: async () => detail({ isAdmin: true }),
       setMemberAdmin: async () => {
@@ -404,7 +429,7 @@ describe('MemberManagement', () => {
   });
 
   // 面板停在舊狀態會讓 admin 以為沒生效而再按一次。
-  it('授予成功後詳情面板的權限區跟著更新', async () => {
+  it('授予成功後詳情面板的管理區跟著更新', async () => {
     let isAdmin = false;
     renderConsole({
       loadMemberDetail: async () => detail({ isAdmin }),
