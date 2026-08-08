@@ -198,6 +198,19 @@ describe('SystemAlerts 手機版', () => {
     await waitFor(() => expect(within(card).getByText(/PU00000001/)).toBeTruthy());
   });
 
+  it('context 的 code 帶 break-all——長 jsonb 不得單行畫出容器', async () => {
+    // 回歸釘。桌面那顆 code 已有同型斷言（本檔上方），手機這顆先前只斷言
+    // 「點開後文字出現」，零 class 斷言:拿掉 break-all 時 vitest、溢版巡檢、
+    // 版面測試三道閘門全綠，而展開態實測 +309px。巡檢已補展開態路由，
+    // 這條是成本更低的第二道網。
+    mockApi([alert()]);
+    render(<SystemAlerts />);
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
+    fireEvent.click(within(card).getByRole('button', { name: '詳細資訊' }));
+    const code = await within(card).findByText(/PU00000001/);
+    expect(code.className).toContain('break-all');
+  });
+
   it('標記已處理在卡片內可點', async () => {
     mockApi([alert()]);
     render(<SystemAlerts />);

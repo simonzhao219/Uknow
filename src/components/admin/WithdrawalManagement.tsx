@@ -599,43 +599,68 @@ export function WithdrawalManagement({
       )}
 
       <section aria-label="提領彙總">
-        <StatCardGrid>
-          {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
+        {/* 手機不是把卡片壓扁，而是**整組換成一行摘要**。壓扁過的四張卡仍佔
+            153px，把第一筆記錄推到 y=677——第一屏只剩 135px，兩筆要 300px。
+            admin 打開手機是為了處理那一筆，統計是背景資訊，一行就夠。
+            桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
+        {!isDesktop ? (
+          <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待匯款</dt>
+              <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待處理</dt>
+              <dd className="font-bold">{stats.byStatus.pending}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待查收</dt>
+              <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">已完成</dt>
+              <dd className="font-bold">{stats.byStatus.completed}</dd>
+            </div>
+          </dl>
+        ) : (
+          <StatCardGrid>
+            {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
             數字去對網銀的轉出總額，混進手續費就對不起來。 */}
-          <Card>
-            {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
+            <Card>
+              {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
                 為了處理那一筆，不是看儀表板——四張卡各佔 100px 高會把第一筆
                 記錄推到第一屏之外（實測 y=832 vs 視窗 812）。桌面維持原樣。
                 共用原語 StatCardGrid 不動:它也服務會員端的 RewardStats 與
                 ReferralStats，那兩處不在本 feature 範圍內。 */}
-            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground">待匯款總額</p>
-              {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待匯款總額</p>
+                {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
                   前端無上限，所以縮字級而不是指望數字不會變大。 */}
-              <p className="text-base sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
-              <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
-              <p className="text-base sm:text-2xl font-bold">
-                {stats.byStatus.awaiting_collection}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
-              <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
-            </CardContent>
-          </Card>
-        </StatCardGrid>
+                <p className="text-base sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+                <p className="text-base sm:text-2xl font-bold">
+                  {stats.byStatus.awaiting_collection}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
+              </CardContent>
+            </Card>
+          </StatCardGrid>
+        )}
       </section>
 
       {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額
@@ -726,7 +751,9 @@ export function WithdrawalManagement({
       </Card>
 
       <Card>
-        <CardHeader>
+        {/* 手機隱藏:分頁標籤已經寫著「獎金提領管理」，再標一次「獎金提領申請」
+            是重複，而它佔掉的 70px 正是第一屏放不下第二筆的原因之一。 */}
+        <CardHeader className="hidden sm:flex">
           <CardTitle>獎金提領申請</CardTitle>
           <CardDescription className="hidden sm:block">
             匯款完成後標記「已匯款」，會員確認查收後自動轉為已完成；退件會自動退回點數

@@ -266,6 +266,9 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     _seed_member(context, isAdmin=True)
     api_mock.set_admin_withdrawals(
         [
+            # 兩筆而不是一筆:「第一屏看得完兩筆」在單筆測資下**結構上量不到**，
+            # card_density 的長度恆為 1，高度上限就成了唯一代理——而代理推導錯了
+            # 也沒人會發現（實測第一屏只剩 187px，不是註解寫的 470px）。
             build_admin_withdrawal(
                 status="pending",
                 userName=NAME_CJK_10,
@@ -284,11 +287,21 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
                         "createdAt": "2026-07-25T14:30:12.000Z",
                     }
                 ],
-            )
+            ),
+            build_admin_withdrawal(
+                status="pending",
+                userName="李小華",
+                amount=3000,
+                idCardFrontUrl=ID_CARD_IMAGE,
+                idCardBackUrl=ID_CARD_IMAGE,
+            ),
         ]
     )
     api_mock.set_admin_members(
-        [build_admin_member(name=NAME_CJK_10, email=LONG_EMAIL, listingCount=3)]
+        [
+            build_admin_member(name=NAME_CJK_10, email=LONG_EMAIL, listingCount=3),
+            build_admin_member(name="李小華", email="b@c.d"),
+        ]
     )
     # 詳情 Sheet 用；**必須在 set_admin_members 之後**（見該模組的 docstring：
     # 列表的尾綴 glob 也吃得下詳情 URL，只是回錯形狀）。
@@ -362,6 +375,26 @@ def _open_tab(name: str):
         page.get_by_role("tab", name=name).click()
 
     return go
+
+
+def _expand_alert_context(page):
+    """切到系統告警並**展開**第一筆的「詳細資訊」。
+
+    Radix 的 `CollapsibleContent` 在關閉時**不掛載子節點**
+    （`react-collapsible` 的 `children: isOpen && children`），所以收合態
+    量不到 `context` 的 jsonb 原文——那正是這條路由要守的東西。
+    實測:拿掉 `SystemAlerts.tsx` 手機版那顆 `code` 的 `break-all`，
+    收合態 0 findings、展開態 +309px。**收合就是盲區**，不是乾淨。
+    """
+    _open_system_alerts_tab(page)
+    page.get_by_role("button", name="詳細資訊").first.click()
+    settle(page)
+
+
+def _expand_withdrawal_funding(page):
+    """展開第一張提領卡的「匯款資訊」——同樣是預設收合、預設量不到。"""
+    page.get_by_role("button", name="匯款資訊").first.click()
+    settle(page)
 
 
 def _open_card_overflow_menu(page):
@@ -491,6 +524,22 @@ ROUTES = [
     # 重複 path 不會互相覆蓋；pytest 的 id 則靠 tags 區分。
     SweepRoute(
         "/admin",
+        "平台管理 · 系統告警（展開 context）",
+        _setup_admin_alerts,
+        "/admin",
+        tags=["system-alerts-expanded"],
+        after_load=_expand_alert_context,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領卡（展開匯款資訊）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawal-funding-expanded"],
+        after_load=_expand_withdrawal_funding,
+    ),
+    SweepRoute(
+        "/admin",
         "平台管理 · 會員管理",
         _setup_admin,
         "/admin",
@@ -610,6 +659,9 @@ def _write_report(results):
         "## 已知盲區（這支掃不到）",
         "",
         "- **Toast**：要有操作才會出現，被動載入頁面掃不到。",
+        "- **預設收合的 `Collapsible` 內容**：Radix 關閉時**不掛載子節點**，"
+        "所以收合態量到的 0 findings 不代表乾淨。系統告警的 `context` 與提領卡的"
+        "匯款資訊已各補一條展開態路由（tag 帶 `-expanded`），其餘收合區仍在盲區。",
         "- **未接 `after_load` 的 tab 面板／對話框／下拉／Sheet**：Radix Tabs 只掛載",
         "  active 面板，切不過去就不在 DOM 裡；對話框與下拉要點擊才開啟",
         "  （查收預覽、篩選面板、排序選單等）。`after_load` 已讓這類畫面**可以**",

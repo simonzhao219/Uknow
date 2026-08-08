@@ -500,15 +500,29 @@ describe('MemberManagement 手機版', () => {
   });
 
   it('卡片上只有一顆操作鍵——改「一個人的狀態」的動作全在詳情面板', async () => {
+    // ⚠️ 主斷言是**數數**。先前這條測試名字叫「只有兩顆」，三條斷言卻是
+    // 「查看在、暫停在、設為管理員不在」——沒有一條在數數，插入第三顆按鈕
+    // 三層閘門全綠。`.claude/rules/test-naming.md` 的反例正是同型。
     // ui-ux-guidelines §11.1:分類看動作的對象。停權與管理員切換改的都是
     // 「一個人的狀態」，一律移進詳情面板，且走同一個 MemberAction 路徑
     // （同一種確認框、同一處錯誤顯示）。曾經替停權開的「時效性」例外已被
     // §11.1 明文廢止——提領台改的是一筆交易，會員管理改的是一個人。
     renderConsole();
     const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getAllByRole('button')).toHaveLength(1);
     expect(within(card).getByRole('button', { name: /查看 .* 的詳情/ })).toBeTruthy();
+    // 負向斷言留著:它不是套套邏輯——這兩顆鍵兩個 commit 前真的在卡片上，
+    // 把它們貼回去這裡就會紅。
     expect(within(card).queryByRole('button', { name: '暫停' })).toBeNull();
     expect(within(card).queryByRole('button', { name: '設為管理員' })).toBeNull();
+  });
+
+  it('管理員的卡片一樣只有一顆鍵——動態標籤鍵不得從這裡繞回來', async () => {
+    // isAdmin 的卡片渲染的是「撤銷管理員」，上一條的負向斷言抓不到它。
+    renderConsole({ loadMembers: async () => page({ members: [member({ isAdmin: true })] }) });
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getAllByRole('button')).toHaveLength(1);
+    expect(within(card).queryByRole('button', { name: '撤銷管理員' })).toBeNull();
   });
 
   it('卡片顯示電話——admin 用來電號碼搜到人之後要認得出是同一個人', async () => {
