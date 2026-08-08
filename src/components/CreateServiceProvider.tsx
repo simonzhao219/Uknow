@@ -16,6 +16,7 @@ import {
   MAX_PHOTO_SIZE,
   MAX_PHOTO_COUNT,
   ALLOWED_PHOTO_FORMATS,
+  NAME_MAX_LENGTH,
 } from '../utils/constants';
 import { CategorySelectField } from './listing/CategorySelectField';
 import { useCustomCategories } from '../hooks/useCustomCategories';
@@ -305,11 +306,11 @@ export function CreateServiceProvider() {
               // 見 docs/plans/friction-log.md 的 2026-08-07 條。
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="例：專業美髮師 Amy"
-              maxLength={10}
+              maxLength={NAME_MAX_LENGTH}
               className={getInputErrorClass(!!errors.name)}
             />
             <div className="text-right text-sm text-muted-foreground">
-              {formData.name.length}/10
+              {formData.name.length}/{NAME_MAX_LENGTH}
             </div>
             <FieldError error={errors.name} />
           </div>
