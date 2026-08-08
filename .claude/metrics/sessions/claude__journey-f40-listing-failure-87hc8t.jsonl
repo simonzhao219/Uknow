@@ -1,0 +1,1 @@
+{"branch": "claude/journey-f40-listing-failure-87hc8t", "ended": "2026-08-08T02:39:08+00:00", "fired": {}, "passed": {"bash-guard": 150, "check-output-filter": 150, "deletion-residue-check": 8, "feature-plan-guard": 41, "tdd-test-guard": 41}, "session": "d53d2aa7e431", "started": "2026-08-08T01:28:15+00:00"}

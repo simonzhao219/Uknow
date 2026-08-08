@@ -16,6 +16,7 @@ import {
   MAX_PHOTO_SIZE,
   MAX_PHOTO_COUNT,
   ALLOWED_PHOTO_FORMATS,
+  NAME_MAX_LENGTH,
 } from '../utils/constants';
 import { CategorySelectField } from './listing/CategorySelectField';
 import { useCustomCategories } from '../hooks/useCustomCategories';
@@ -25,6 +26,7 @@ import { handleDistrictSelection } from '../utils/districtSelection';
 import { validateContacts } from '../utils/contactValidation';
 import { FieldError, getInputErrorClass } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
+import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
 
@@ -38,6 +40,7 @@ export function CreateServiceProvider() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const { showSuccess, showError, showToast } = useNotification();
+  const { invalidate } = useDataCache();
 
   // ✅ 只有 1 个步骤，直接填写后提交
   const [formData, setFormData] = useState({
@@ -255,6 +258,13 @@ export function CreateServiceProvider() {
 
       console.log('[Create Listing] ✅ 刊登建立完成');
 
+      // 必須在導頁前清掉 userListing——管理頁的 useUserListing 是
+      // stale-while-revalidate,而進建立頁之前它已經把「這個人沒有刊登」
+      // 快取成 null。SOFT_TTL(30 秒)內不會重新請求,於是剛建好的刊登
+      // 會顯示成「尚未刊登服務者」+ 建立 CTA,使用者以為沒成功而再建一次。
+      // journey f40「A0 透過 GUI 建立刊登」在 run 31234221750 逮到的就是這個。
+      invalidate('listingChange');
+
       showToast('刊登建立成功！', 'success');
 
       navigate('/service-providers');
@@ -305,11 +315,11 @@ export function CreateServiceProvider() {
               // 見 docs/plans/friction-log.md 的 2026-08-07 條。
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="例：專業美髮師 Amy"
-              maxLength={10}
+              maxLength={NAME_MAX_LENGTH}
               className={getInputErrorClass(!!errors.name)}
             />
             <div className="text-right text-sm text-muted-foreground">
-              {formData.name.length}/10
+              {formData.name.length}/{NAME_MAX_LENGTH}
             </div>
             <FieldError error={errors.name} />
           </div>

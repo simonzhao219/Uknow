@@ -12,6 +12,7 @@ from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from builders import payment, referral_tree
+from builders.listing import listing_name as _listing_name_for_run
 from builders.login import login_via_gui
 from builders.registration import register_account_via_gui
 from pages.complete_profile_page import CompleteProfilePage
@@ -25,7 +26,8 @@ scenarios("60_time_scenarios.feature")
 
 
 def _listing_name(run_state, node: str) -> str:
-    return f"服務{run_state.run_id}{node}"
+    """與 f40 共用同一個產生器——長度上限的理由見 builders/listing.py。"""
+    return _listing_name_for_run(run_state.run_id, node)
 
 
 def _parse_ts(value: str) -> datetime:

@@ -7,6 +7,7 @@ import re
 from playwright.sync_api import expect
 from pytest_bdd import parsers, scenarios, then, when
 
+from builders.listing import listing_name as _listing_name_for_run
 from builders.login import login_via_gui
 from pages.create_service_provider_page import CreateServiceProviderPage
 from pages.home_page import HomePage
@@ -17,8 +18,8 @@ scenarios("40_listing.feature")
 
 def listing_name(run_state, node: str) -> str:
     """刊登名稱由 run_id 決定性導出——跨情境（不同瀏覽器 context）
-    不需要共享狀態就能重建。"""
-    return f"服務{run_state.run_id}{node}"
+    不需要共享狀態就能重建。長度上限的理由見 builders/listing.py。"""
+    return _listing_name_for_run(run_state.run_id, node)
 
 
 def _open_management(page, run_state, node):

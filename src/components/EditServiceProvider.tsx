@@ -21,6 +21,7 @@ import { validateContacts } from '../utils/contactValidation';
 import { NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH } from '../utils/constants';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
+import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
 import type { ListingRow } from '../types/listing';
@@ -30,6 +31,7 @@ export function EditServiceProvider() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast, showInfo } = useNotification();
+  const { invalidate } = useDataCache();
   const supabase = createClient();
 
   const [formData, setFormData] = useState({
@@ -279,6 +281,10 @@ export function EditServiceProvider() {
       // 上方 68-74 行的 ownership 檢查（在 setServiceProvider 之前 redirect）
       // 擋的是**另一個**曝險——他人的刊登資料被讀進表單顯示；那條路徑的
       // 查詢（.eq('id', id)）本來就沒有 user_id 限定。兩者別混為一談。
+      // 同 CreateServiceProvider:管理頁的 useUserListing 在 SOFT_TTL 內
+      // 沿用快取,不清的話剛改完的內容在管理頁上還是舊的。
+      invalidate('listingChange');
+
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
     } catch (error: any) {

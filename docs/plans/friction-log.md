@@ -1506,3 +1506,71 @@ guards 軌印警告(不硬擋——規劃階段的 PR 本來就該有規劃檔,�
 避免重工的部分:動手修一個從 CI/journey 診斷出來的 bug 之前,先
 `git fetch origin develop && git log --oneline HEAD..origin/develop` 看一眼
 ——develop 高頻變動的日子,別人可能已經在修同一件事。
+
+## 2026-08-08｜漏網｜靜默截斷:錯誤訊息把兩個 session 帶離現場
+
+journey f40/f60 六個刊登情境連敗。真因是測試名稱 `服務{run_id}{node}`(17 字)
+被 `#name` 的 `maxLength={10}` **靜默截斷**成 10 字:表單驗證通過、刊登真的
+建起來了,只有名字短了一截,於是失敗以「某個 `get_by_text` 找不到東西」的
+形式出現在 30 秒後的遠處。
+
+**代價不在難修(改一行格式),在難找。** 連續兩個 session 往「照片上傳失敗 →
+送出鈕 disabled」的方向查——那個假說之所以合理,是因為它**曾經是真的**:
+2026-08-07 之前 `#name` 用 `if (length <= 10)` 的 JS 拒收,17 字會被整串拒收、
+名稱留空、鈕真的 disabled。PR #212 為了 IME 注音把拒收換成 `maxLength` 屬性
+(那個改動本身是對的),同一個根因就換了一張臉,而舊臉還留在所有人的直覺裡。
+
+**啟示三條**:
+
+1. **「值進去了嗎」要在填的當下就驗,不要留給下游斷言。** 已補
+   `BasePage.fill_exact()`:填完比對 `input_value()`,不符就當場失敗並印出
+   實際收到的值。這對所有有上限的欄位有效,不只名稱。
+2. **同一個產生器被複製兩份就會一起錯**:f40 與 f60 各有一份逐字相同的
+   `f"服務{run_id}{node}"`。已收斂成 `builders/listing.py`。
+3. **測試裡抄產品常數會靜默過期**:`test_listing_name.py` 改成直接從
+   `src/utils/constants.ts` 讀 `NAME_MAX_LENGTH` 比對,產品改上限就會紅。
+
+**同場浮現、尚未償還的債**:
+
+- **artifact 下載可能被 egress 政策擋住**(本次 `productionresultssa4.blob.
+  core.windows.net` 回 403),journey 的失敗診斷因此不能只靠 trace/screenshot。
+  `builders/page_diagnostics.py` 的設計理由(「log 讀得到,不必下載 artifact」)
+  值得推廣到 GUI 情境的失敗路徑——本次全靠 job log 推出根因,是可複製的做法,
+  但目前靠人肉推理而非工具落地。
+- ~~`CreateServiceProvider.tsx` 硬寫 `maxLength={10}`~~ **已償還**:改用
+  `NAME_MAX_LENGTH`,並補上 `CreateServiceProvider.test.tsx` 釘住「元件真的
+  套用了那個常數」。原本這一層是空的——上限的值在 `constants.ts`、journey
+  離線測試也讀它,但沒有任何一層確認元件套上去了,兩邊各自「正確」而中間裂開。
+- ~~f45「訪客不能建立刊登」的 `rls_probe.classify`~~ **已由 PR #257 修掉**
+  (42501 先讀訊息再看狀態碼)。本輪一度把它列為待辦,是因為當時手上的
+  clone 沒有那條分支——見下面「同一個 bug 被兩個 session 平行追」。
+- **mock 版 e2e 缺「insert 失敗時 UI 怎麼表現」的覆蓋**(前一份交接文件的
+  §7 提案)。它守的是假說 B,而 B 已被排除,所以不隨本次修法一起做——
+  沒有壞掉的東西不該用測試釘住。但那塊覆蓋確實是零,值得單獨排。
+
+## 2026-08-08｜重複｜同一個 bug 被兩個 session 平行追,交接文件在另一條分支上
+
+接手 session 開場找不到約定的 `docs/plans/fix-journey-f40-listing/fix.md`,
+`git log --all` 也搜不到,於是判定「前一個 session 的容器在推送前被回收、
+文件蒸發」,從零重查。
+
+**判斷錯了,而且錯得很有代表性**:文件確實 commit 了,只是在
+`claude/custom-service-category-cdss2f` 這條**當時還沒被 fetch 的遠端分支**上
+(隨 PR #257 併入 develop)。`git log --all` 只看**本地 refs**——web session 的
+clone 只帶了 develop 與自己的分支,那條分支的 objects 根本不在本地,
+`--all` 當然搜不到。**「`--all` 搜不到」不等於「不存在」。**
+
+代價:兩個 session 平行做了同一份靜態分析(所幸結論一致——都獨立推翻了
+假說 A,論證幾乎逐字相同),而且接手方一度把 f45 的 `rls_probe` 列為待辦,
+其實 #257 已經修好了。
+
+**下次的動作**:上一條已經寫了「動手前先 `git fetch origin develop` 看別人
+在修什麼」——這裡補的是**另一個方向**:要找的東西可能還沒進 develop,而在
+一條沒被 fetch 的分支上。認定「交接文件不存在」之前,先
+`git ls-remote --heads origin` 看有哪些遠端分支。成本是一次呼叫,
+省下的是整輪重查。
+
+**反過來也有收穫**:平行的第二輪不是全白費——它推翻了第一份留下的假說 B/D
+二選一(答案是兩者皆非),也訂正了第一份把「下架後找不到刊登」判成假陰性的
+結論(那條 PASSED 反而是刊登確實建成的證據)。獨立重查有它的價值,
+只是不該是**意外**發生的。
