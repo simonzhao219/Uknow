@@ -73,12 +73,45 @@ describe('chunk 載入失效的恢復契約', () => {
     expect(app).not.toMatch(/lazy\(\(\) => loader\(\)\.then/);
   });
 
-  it('_headers 必須讓 HTML 每次重新驗證，重載才拿得到新的資產清單', () => {
-    // index.html 被瀏覽器快取住的話，「重新整理」拿回的還是舊的檔名清單，
-    // 自癒路徑就失效了。hash 過的 /assets/* 才可以長快取。
-    expect(headers).toMatch(/no-cache/i);
+  it('hash 過的 /assets/* 必須宣告長快取，重複下載會拖慢每一次進站', () => {
     expect(headers).toMatch(/\/assets\/\*/);
     expect(headers).toMatch(/immutable/i);
+  });
+});
+
+// _headers 的重複宣告陷阱（與上面同一個根因：把平台行為寫進註解卻沒查文件）。
+//
+// 官方 Custom headers 文件兩句話決定了這件事：
+//   「An incoming request which matches multiple rules' URL patterns will
+//    inherit **all** rules' headers.」
+//   「If a header is applied twice in the `_headers` file, the values are
+//    **joined with a comma separator**.」
+//
+// 也就是說 `/*` 與 `/assets/*` 兩個區塊都寫 Cache-Control 時，`/assets/x.js`
+// 兩條都命中，拿到的是 `no-cache, public, max-age=31536000, immutable`——
+// **不是覆寫，是相加**。而 `no-cache` 要求每次都回源驗證，於是那個一年期的
+// immutable 完全失效，每個 chunk 每次進站都重新驗證一遍。
+//
+// 舊註解寫的是「後面的規則會覆寫前面同名的標頭」，舊測試也只斷言字串
+// `immutable` 有出現——**兩者都不會因為這個缺陷而變紅**。
+//
+// HTML 的重新驗證改為倚賴 Pages 的預設值（Serving Pages 文件：cacheable 的
+// 回應會帶 `Cache-Control: public, max-age=0, must-revalidate`），語意與
+// no-cache 等價且不需要一條會與 /assets/* 相撞的 `/*` 規則。這一項靜態檢查
+// 驗不到，由部署後 smoke 對真實回應標頭把關。
+describe('_headers 重複宣告契約', () => {
+  it('同一個標頭不得跨規則重複宣告，Cloudflare 是逗號合併而非覆寫', () => {
+    const declared = headers
+      .split('\n')
+      .filter((line) => /^\s+\S/.test(line) && !line.trimStart().startsWith('#'))
+      .map((line) => line.trim().split(':')[0].trim().toLowerCase());
+    const seen = new Set<string>();
+    const duplicated = declared.filter((name) => {
+      if (seen.has(name)) return true;
+      seen.add(name);
+      return false;
+    });
+    expect(duplicated).toEqual([]);
   });
 });
 
