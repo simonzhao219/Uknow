@@ -476,3 +476,59 @@ describe('WithdrawalManagement', () => {
     expect(within(history).getByText(/收款帳號與身分證姓名不符/)).toBeTruthy();
   });
 });
+
+// --- 手機版（階段 2） --------------------------------------------------------
+//
+// 這一組全部跑在 `stubMediaQuery(false)` 底下。守的是「表格換成卡片時，
+// **互動不能被悄悄拿掉**」——排版變更最危險的失效方式不是版面難看，是某個
+// 只存在於 <tr> 結構裡的職責在轉卡片時蒸發了（審查 F1）。
+describe('WithdrawalManagement 手機版', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('不渲染 table，改以每筆一張卡呈現', async () => {
+    const { container } = renderConsole();
+    await screen.findByText('專業美髮師小美');
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('每張卡都帶會員、匯款金額與狀態，資訊量不低於桌面表格的關鍵欄位', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /專業美髮師小美/ });
+    expect(within(card).getByText('專業美髮師小美')).toBeTruthy();
+    expect(within(card).getByText(/1,000/)).toBeTruthy();
+    expect(within(card).getByText('待處理')).toBeTruthy();
+  });
+
+  it('展開鍵把該筆設為作業對象並就地顯示匯款五欄', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({
+          withdrawals: [
+            record({ id: 'w-1', userName: '甲會員' }),
+            record({ id: 'w-2', userName: '乙會員', bankAccount: '99988877766' }),
+          ],
+        }),
+    });
+    const card = await screen.findByRole('group', { name: /乙會員/ });
+    fireEvent.click(within(card).getByRole('button', { name: '匯款資訊' }));
+    // 第二筆的帳號要出現——出現代表 activeId 真的被寫進去了。若卡片沒有接手
+    // setActiveId，畫面永遠停在 withdrawals[0]（甲會員）。
+    await waitFor(() => expect(within(card).getByText('99988877766')).toBeTruthy());
+  });
+
+  it('展開鍵是按鈕，鍵盤可達', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /專業美髮師小美/ });
+    const trigger = within(card).getByRole('button', { name: '匯款資訊' });
+    expect(trigger.tagName).toBe('BUTTON');
+  });
+
+  it('不渲染勾選框——批次匯款鎖在桌面，留一個按了沒用的控制項只會誤導', async () => {
+    renderConsole();
+    await screen.findByText('專業美髮師小美');
+    expect(screen.queryByLabelText(/選取 .* 的提領記錄/)).toBeNull();
+    expect(screen.queryByLabelText('全選本頁的提領記錄')).toBeNull();
+  });
+});
