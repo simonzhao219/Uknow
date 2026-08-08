@@ -24,6 +24,13 @@ import { MemberManagement } from './MemberManagement';
 
 afterEach(cleanup);
 
+// MemberManagement 從階段 3 起用 useMediaQuery 決定表格/卡片，而 jsdom 沒有
+// matchMedia——沒有替身整個檔案會炸，而那個紅燈不代表任何真實缺陷
+// （plan §7 風險表已預期）。預設回「桌機」，手機情境的 describe 自己覆寫。
+beforeEach(() => {
+  stubMediaQuery(true);
+});
+
 type Page = AdminMembersResponse['data'];
 
 function member(over: Partial<AdminMember> = {}): AdminMember {
