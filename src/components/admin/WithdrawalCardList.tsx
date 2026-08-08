@@ -1,8 +1,8 @@
-import { Copy } from 'lucide-react';
 import type { AdminWithdrawalRecord } from '@contract';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import { WithdrawalFundingFields } from './WithdrawalFundingFields';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -27,7 +27,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 interface WithdrawalCardListProps {
   records: AdminWithdrawalRecord[];
   activeId: string | null;
-  onActivate: (id: string) => void;
+  onActivate: (id: string | null) => void;
   onCopyAccount: (account: string) => void;
   onOpenIdCard: (record: AdminWithdrawalRecord) => void;
   onOpenHistory: (record: AdminWithdrawalRecord) => void;
@@ -74,47 +74,26 @@ export function WithdrawalCardList({
 
             {/* W1 的同屏契約在手機版由「就地展開」承接:展開的是這一筆，
                 不需要捲回頁首去看另一個區塊。 */}
-            <Collapsible open={activeId === w.id} onOpenChange={() => onActivate(w.id)}>
+            {/* onOpenChange 收到的是**使用者想要的結果**（目前 open 的相反值），
+                不是「該不該設成這張卡」。忽略它會讓已展開的卡片點不掉——
+                setActiveId(w.id) 在 activeId 已經是 w.id 時不改變任何狀態，
+                open 永遠停在 true，aria-expanded 也跟著說謊。 */}
+            <Collapsible
+              open={activeId === w.id}
+              onOpenChange={(open) => onActivate(open ? w.id : null)}
+            >
               <CollapsibleTrigger asChild>
                 <Button variant="outline" size="sm" className="w-full">
                   匯款資訊
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <dl className="mt-3 space-y-2 rounded-md border p-3">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">戶名</dt>
-                    <dd className="font-medium break-words">{w.userName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">身分證字號</dt>
-                    <dd className="font-mono break-all">{w.idNumber ?? '未設定'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">銀行代號</dt>
-                    <dd className="font-mono">{w.bankCode ?? '未設定'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">收款帳號</dt>
-                    <dd className="flex items-center gap-1">
-                      <span className="font-mono break-all">{w.bankAccount ?? '未設定'}</span>
-                      {w.bankAccount && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label="複製收款帳號"
-                          onClick={() => onCopyAccount(w.bankAccount ?? '')}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">匯款金額</dt>
-                    <dd className="text-xl font-bold">{formatAmount(w.amount)}</dd>
-                  </div>
-                </dl>
+                <WithdrawalFundingFields
+                  record={w}
+                  onCopyAccount={onCopyAccount}
+                  formatAmount={formatAmount}
+                  className="mt-3 space-y-2 rounded-md border p-3"
+                />
               </CollapsibleContent>
             </Collapsible>
 

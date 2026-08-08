@@ -1659,3 +1659,44 @@ bug**)因此被單獨隔離出來。逐個剝開比一次想清楚兩個容易�
 還沒被 fetch 的遠端分支上。認定「不存在」之前先
 `git ls-remote --heads origin`。這次的交接改為直接落在 develop
 (`docs/plans/journey-remaining-failures/handoff.md`),不再依賴某條分支。
+
+## 2026-08-07｜技術債（已裁決不做）｜checkbox 原語的觸控目標只做了 admin 一處
+
+`platform-admin-rwd` 的 P13 要把提領勾選框做到 44px 觸控目標。第二輪審查
+（R2）發現不能改 `ui/checkbox.tsx` 的**預設值**：它被 5 個會員端頁面共用，
+其中 `CreateServiceProvider.tsx:413` 與 `EditServiceProvider.tsx` 的服務區域
+選擇器是 `grid grid-cols-2 gap-2`，列高 20px ＋ gap 8px ＝ **相鄰列中心距約
+28px**；44px 熱區上下各延伸 22px，**重疊 16px**。使用者想勾第 5 區、手指落在
+交界帶會勾到第 4 或第 6 區，沒有任何錯誤訊息，而它寫進的是 `districts`——
+決定這個服務者在哪些地區被搜尋到。**這是資料正確性問題，不是外觀問題。**
+
+降低 inset 救不了：28px 列距下不重疊的上限是每邊 6px，熱區只有 28px。
+
+人審裁決改成 **opt-in variant**（`touchTarget="expanded"`），只有 admin 的提領
+勾選用它。**那 5 個會員端頁面的 checkbox 仍是 16px、仍不符 §1 的觸控要求**
+——這是既有債務，明文不在該 feature 範圍內。要清它得先解決密集格的列距，
+那是版面決定，不該搭 RWD 的便車。
+
+順帶記一個踩過的坑：`-inset-[Npx]` 的參考是 **padding box**，`size-4` 帶 1px
+邊框，所以 `-inset-[14px]` 只做出 42×42。另外 `ui/table.tsx` 的
+`[&:has([role=checkbox])]:pr-0`（specificity (0,2,0)、不受 media query 限制）
+會蓋掉 `pointer-coarse:px-6` 的 padding-right——實測 computed 值是 0px。
+
+## 2026-08-07｜技術債（已裁決不做）｜`isDesktop` 是寬度判準，不是輸入方式
+
+全站的版面切換與 W8 的行動端權限邊界都用
+`useMediaQuery('(min-width: 768px)')`。**那是寬度，不是輸入方式**：768px 寬的
+觸控平板會被判為 `isDesktop`、看得到「標記已匯款」，而那顆按鈕背後「同時開著
+網銀」的假設在單一觸控平板上未必成立。
+
+`platform-admin-rwd` 的 Q4 裁決**本次不改**：這不是該 feature 引入的問題
+（W8 本來就用同一個判準），改判準會動到既有的權限邊界行為，與 Q1(a)
+「RWD 不改行為邊界」一致。要改另開 feature。
+
+連帶事實（實作時才發現）：**e2e 全套跑在 `(pointer: fine)` 下**——
+`e2e/conftest.py:130` 的 `browser_context_args` 只設 locale 與 1280×900，沒有
+`has_touch`。所以 `button`/`input`/`select` 早就有的 `pointer-coarse:min-h-[44px]`
+從未被量過，**溢版巡檢的 27 條路由量的都是「375px 寬、用滑鼠」這台不存在的
+裝置**。目前只有 `test_admin_mobile_layout.py` 在模組層覆寫成觸控 context。
+要不要讓巡檢也改成觸控是另一個決定：那會改變全部 27 條路由的量測基準，
+可能翻出一批新的溢出，值得單獨做一次。

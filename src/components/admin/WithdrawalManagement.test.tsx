@@ -13,9 +13,9 @@
 //      不到；但退件與代為完成是客服當下就該能處理的事，不該一起鎖。
 //   5. **不得靜默截斷**（ui-ux-guidelines §5）——「已顯示 X / Y 筆」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
-import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
+import { stubMediaQuery, stubMediaQueryWithControl } from '../../test-utils/stubMediaQuery';
 import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManagement';
 
 afterEach(cleanup);
@@ -485,6 +485,25 @@ describe('WithdrawalManagement', () => {
 // 這一組全部跑在 `stubMediaQuery(false)` 底下。守的是「表格換成卡片時，
 // **互動不能被悄悄拿掉**」——排版變更最危險的失效方式不是版面難看，是某個
 // 只存在於 <tr> 結構裡的職責在轉卡片時蒸發了（審查 F1）。
+describe('WithdrawalManagement 跨斷點', () => {
+  it('視窗從桌面縮到手機時清空已選取的筆數', async () => {
+    // useMediaQuery 是即時訂閱 change 事件的。Q2 裁決手機不渲染勾選框，
+    // 但 selected 不會自己消失——「已選取 N 筆」橫幅還在、卻沒有任何逐筆
+    // 取消的入口。不會寫壞資料（批次動作仍鎖在 isDesktop 之後），但那是
+    // 一個看得到、動不了的殭屍狀態（審查 R7）。
+    const setDesktop = stubMediaQueryWithControl(true);
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+    });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+
+    act(() => setDesktop(false));
+    await waitFor(() => expect(screen.queryByText('已選取 2 筆')).toBeNull());
+  });
+});
+
 describe('WithdrawalManagement 手機版', () => {
   beforeEach(() => {
     stubMediaQuery(false);
@@ -528,10 +547,17 @@ describe('WithdrawalManagement 手機版', () => {
     expect(trigger.tagName).toBe('BUTTON');
   });
 
-  it('不渲染勾選框——批次匯款鎖在桌面，留一個按了沒用的控制項只會誤導', async () => {
+  it('已展開的卡片再點一次會收合', async () => {
+    // onOpenChange 收到的是「使用者想要的結果」（目前 open 的相反值），
+    // 忽略它會讓卡片永遠關不掉——setActiveId(w.id) 在 activeId 已是 w.id 時
+    // 不改變任何狀態。aria-expanded 也會跟著說謊。
     renderConsole();
-    await screen.findByText('王小明');
-    expect(screen.queryByLabelText(/選取 .* 的提領記錄/)).toBeNull();
-    expect(screen.queryByLabelText('全選本頁的提領記錄')).toBeNull();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    const trigger = within(card).getByRole('button', { name: '匯款資訊' });
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
   });
 });
