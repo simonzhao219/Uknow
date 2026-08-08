@@ -403,16 +403,19 @@ describe('WithdrawalManagement', () => {
     await screen.findByText('已顯示 2 / 2 筆');
   });
 
-  it('手機上勾選後不出現批次標記已匯款', async () => {
+  it('手機上完全沒有批次匯款這條路徑——連勾選框都不渲染', async () => {
     stubMediaQuery(false);
     renderConsole({
       loadWithdrawals: async () =>
         page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
     });
+    await screen.findByText('李小華');
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
-    // 計數照顯示（勾選本身不鎖），但批次匯款那顆鍵鎖在桌面（W8）。
-    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+    // 這條測試原本是「勾了之後批次鍵不出現」——當時手機仍渲染勾選框。
+    // Q2 裁決後手機不再渲染它（勾選唯一的下游是批次匯款，而批次鎖在桌面
+    // ＝ 留一個按了沒有用的控制項）。它保護的行為（W8:手機不得有批次匯款
+    // 路徑）沒有變，而且變得更強:現在連入口都不存在。
+    expect(screen.queryByRole('checkbox', { name: '全選本頁的提領記錄' })).toBeNull();
     expect(screen.queryByRole('button', { name: '批次標記已匯款' })).toBeNull();
   });
 
@@ -489,14 +492,14 @@ describe('WithdrawalManagement 手機版', () => {
 
   it('不渲染 table，改以每筆一張卡呈現', async () => {
     const { container } = renderConsole();
-    await screen.findByText('專業美髮師小美');
+    await screen.findByText('王小明');
     expect(container.querySelector('table')).toBeNull();
   });
 
   it('每張卡都帶會員、匯款金額與狀態，資訊量不低於桌面表格的關鍵欄位', async () => {
     renderConsole();
-    const card = await screen.findByRole('group', { name: /專業美髮師小美/ });
-    expect(within(card).getByText('專業美髮師小美')).toBeTruthy();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    expect(within(card).getByText('王小明')).toBeTruthy();
     expect(within(card).getByText(/1,000/)).toBeTruthy();
     expect(within(card).getByText('待處理')).toBeTruthy();
   });
@@ -520,14 +523,14 @@ describe('WithdrawalManagement 手機版', () => {
 
   it('展開鍵是按鈕，鍵盤可達', async () => {
     renderConsole();
-    const card = await screen.findByRole('group', { name: /專業美髮師小美/ });
+    const card = await screen.findByRole('group', { name: /王小明/ });
     const trigger = within(card).getByRole('button', { name: '匯款資訊' });
     expect(trigger.tagName).toBe('BUTTON');
   });
 
   it('不渲染勾選框——批次匯款鎖在桌面，留一個按了沒用的控制項只會誤導', async () => {
     renderConsole();
-    await screen.findByText('專業美髮師小美');
+    await screen.findByText('王小明');
     expect(screen.queryByLabelText(/選取 .* 的提領記錄/)).toBeNull();
     expect(screen.queryByLabelText('全選本頁的提領記錄')).toBeNull();
   });
