@@ -364,12 +364,25 @@ def _open_tab(name: str):
     return go
 
 
+def _open_card_overflow_menu(page):
+    """手機卡片的「更多」選單。
+
+    查看證件與查看歷史都是**唯讀、罕用、無時效性**的動作，依
+    `ui-ux-guidelines.md` §11 規則 3 收進溢出選單（放得下兩項以上才值得）。
+    桌面表格仍是直接的按鈕，所以這個 helper 只用在 375px 的路由上。
+    """
+    page.get_by_role("button", name="的更多操作").first.click()
+    settle(page)
+
+
 def _open_id_card_dialog(page):
-    page.get_by_role("button", name="查看", exact=True).first.click()
+    _open_card_overflow_menu(page)
+    page.get_by_role("menuitem", name="查看證件").click()
 
 
 def _open_history_dialog(page):
-    page.get_by_role("button", name="查看歷史").first.click()
+    _open_card_overflow_menu(page)
+    page.get_by_role("menuitem", name="查看歷史").click()
 
 
 def _open_member_detail_sheet(page):

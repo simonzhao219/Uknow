@@ -38,7 +38,7 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
-from test_overflow_sweep import _open_tab, _setup_admin
+from test_overflow_sweep import _open_id_card_dialog, _open_tab, _setup_admin
 
 # Radix 的 TabsList 掛 data-slot；DialogContent 沒有，但 Radix 會給 role=dialog
 # （AlertDialog 是 role=alertdialog，不會誤中）。
@@ -78,7 +78,9 @@ def test_id_card_dialog_keeps_safe_margins_at_375px(admin_at_375):
     這條**測不出**「頁面有沒有橫向捲軸」——`position: fixed` 的對話框不會把
     頁面撐出捲軸。必須直接量盒子相對視窗的間距。
     """
-    admin_at_375.get_by_role("button", name="查看", exact=True).first.click()
+    # 查看證件已依 ui-ux-guidelines §11 規則 3 收進手機卡片的溢出選單
+    # （唯讀、罕用、無時效性）。桌面表格仍是直接的按鈕。
+    _open_id_card_dialog(admin_at_375)
     settle(admin_at_375)
 
     fit = viewport_fit(admin_at_375, DIALOG)
@@ -98,7 +100,9 @@ def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
     對話框裡，每張其實有 ~350px，寬度門檻會因為版面壞掉而僥倖通過。
     「有沒有堆疊」才分得出修好與沒修好。
     """
-    admin_at_375.get_by_role("button", name="查看", exact=True).first.click()
+    # 查看證件已依 ui-ux-guidelines §11 規則 3 收進手機卡片的溢出選單
+    # （唯讀、罕用、無時效性）。桌面表格仍是直接的按鈕。
+    _open_id_card_dialog(admin_at_375)
     settle(admin_at_375)
 
     photos = admin_at_375.locator(f"{DIALOG} img")
@@ -262,7 +266,11 @@ def test_first_member_is_reachable_without_scrolling(admin_at_375):
 #
 # 收合態的預算（實測基準:812px 視窗扣掉頁首/分頁/統計/工具列約剩 470px）:
 MAX_COLLAPSED_CARD_PX = 150  # 兩筆 = 300px，第一屏塞得下且還看得到第三筆的開頭
-MAX_VISIBLE_BUTTONS = 2  # 主要動作 ＋「更多」選單;其餘收進選單
+# 上限 3 而不是 2:`ui-ux-guidelines.md` §11 規則 3 明列**時效性動作不得收進
+# 溢出選單**（並直接引用「退件與代為完成不鎖——那是客服接到電話當下就該能
+# 處理的事」），所以提領卡至少是「主要動作 ＋ 時效性動作 ＋ 選單」三顆。
+# 這個數字是準則推導出來的，不是視覺偏好——把它壓到 2 只能靠違反 §11 達成。
+MAX_VISIBLE_BUTTONS = 3
 
 
 def _assert_scannable(cards, kind: str):

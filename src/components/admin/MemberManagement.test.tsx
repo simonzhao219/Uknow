@@ -475,20 +475,38 @@ describe('MemberManagement 手機版', () => {
     expect(container.querySelector('table')).toBeNull();
   });
 
-  it('每張卡帶姓名、Email、會籍、角色、狀態與刊登數', async () => {
+  it('每張卡帶姓名、Email、會籍與刊登數', async () => {
     renderConsole();
     const card = await screen.findByRole('group', { name: /陳大文/ });
     expect(within(card).getByText('陳大文')).toBeTruthy();
     expect(within(card).getByText('a@b.c')).toBeTruthy();
-    expect(within(card).getByText('一般會員')).toBeTruthy();
-    expect(within(card).getByText('正常')).toBeTruthy();
+    expect(within(card).getByText('有效會員')).toBeTruthy();
+    expect(within(card).getByText(/刊登/)).toBeTruthy();
   });
 
-  it('三顆操作鍵都在卡片內', async () => {
+  it('正常狀態不顯示 badge——只有需要注意的才佔位', async () => {
+    // 「一般會員」「正常」是預設值:佔了位置卻沒有資訊量，而六個 badge 擠在
+    // 一起反而讓真正需要注意的那個消失在噪音裡。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).queryByText('一般會員')).toBeNull();
+    expect(within(card).queryByText('正常')).toBeNull();
+  });
+
+  it('暫停中的會員才顯示已暫停 badge', async () => {
+    renderConsole({ loadMembers: async () => page({ members: [member({ suspended: true })] }) });
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    expect(within(card).getByText('已暫停')).toBeTruthy();
+  });
+
+  it('卡片上只有兩顆操作鍵——設為管理員在詳情面板，不在列上', async () => {
+    // ui-ux-guidelines §11:罕用＋高破壞力的動作移進詳情面板。授予管理員
+    // 一個平台設好一次幾乎不再動，卻在資料層面不可逆（他當下就讀得到全站
+    // 身分證與收款帳號）。
     renderConsole();
     const card = await screen.findByRole('group', { name: /陳大文/ });
     expect(within(card).getByRole('button', { name: /查看 .* 的詳情/ })).toBeTruthy();
-    expect(within(card).getByRole('button', { name: '設為管理員' })).toBeTruthy();
     expect(within(card).getByRole('button', { name: '暫停' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: '設為管理員' })).toBeNull();
   });
 });

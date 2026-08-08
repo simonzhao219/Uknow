@@ -474,7 +474,15 @@ describe('WithdrawalManagement', () => {
         }),
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看歷史' }));
+    // 手機版:查看歷史依 ui-ux-guidelines §11 規則 3 收進溢出選單（唯讀、罕用、
+    // 無時效性）。它仍然到得了——只是多一次點擊，而列表頁的工作是「找到那一筆」，
+    // 不是對每一筆都做決定。
+    // 用鍵盤開選單:Radix 的 DropdownMenuTrigger 監聽 pointerdown，jsdom 的
+    // fireEvent.click 觸發不了它。走 Enter 順帶證明這顆選單是鍵盤可達的。
+    fireEvent.keyDown(await screen.findByRole('button', { name: /的更多操作/ }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '查看歷史' }));
     const history = await screen.findByRole('dialog');
     expect(within(history).getByText(/收款帳號與身分證姓名不符/)).toBeTruthy();
   });

@@ -1,6 +1,7 @@
 import type { AdminWithdrawalRecord } from '@contract';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { CardOverflowMenu } from './CardOverflowMenu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
 
@@ -55,26 +56,25 @@ export function WithdrawalCardList({
     <div className="space-y-3">
       {records.map((w) => (
         <Card key={w.id} role="group" aria-label={`${w.userName} 的提領記錄`}>
-          <CardContent className="space-y-3 pt-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-medium break-words">{w.userName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(w.requestedAt).toLocaleDateString('zh-TW')}
-                </p>
-              </div>
+          <CardContent className="space-y-2 p-3">
+            {/* 收合態一眼要回答的三件事:誰、多少錢、什麼狀態。其餘（日期、
+                扣點、五欄匯款資訊）要求一次額外點擊——列表頁的工作是「找到
+                那一筆」，不是「對每一筆都做決定」。 */}
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 font-medium break-words">{w.userName}</p>
               {statusBadge(w.status)}
             </div>
 
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <span className="text-xs text-muted-foreground">匯款金額</span>
+            <div className="flex items-baseline justify-between gap-2">
               <span className="text-xl font-bold">{formatAmount(w.amount)}</span>
-              <span className="text-xs text-muted-foreground">扣點 {w.amount + w.fee} P</span>
+              <span className="text-xs text-muted-foreground">
+                {new Date(w.requestedAt).toLocaleDateString('zh-TW')}
+              </span>
             </div>
 
             {/* W1 的同屏契約在手機版由「就地展開」承接:展開的是這一筆，
-                不需要捲回頁首去看另一個區塊。 */}
-            {/* onOpenChange 收到的是**使用者想要的結果**（目前 open 的相反值），
+                不需要捲回頁首去看另一個區塊。
+                onOpenChange 收到的是**使用者想要的結果**（目前 open 的相反值），
                 不是「該不該設成這張卡」。忽略它會讓已展開的卡片點不掉——
                 setActiveId(w.id) 在 activeId 已經是 w.id 時不改變任何狀態，
                 open 永遠停在 true，aria-expanded 也跟著說謊。 */}
@@ -82,57 +82,68 @@ export function WithdrawalCardList({
               open={activeId === w.id}
               onOpenChange={(open) => onActivate(open ? w.id : null)}
             >
-              <CollapsibleTrigger asChild>
-                {/* ghost 而非 outline:它只是展開，視覺重量不該等同「退件」
-                    「代為完成」這些真的會改狀態的操作。 */}
-                <Button variant="ghost" size="sm" className="w-full justify-start px-0">
-                  匯款資訊
-                </Button>
-              </CollapsibleTrigger>
+              <div className="flex flex-wrap items-center gap-1">
+                <CollapsibleTrigger asChild>
+                  {/* 常用＋破壞力低 → 列上、主要視覺權重（§11 規則 1 要求
+                      outline 以上）。它就是這個列表存在的理由:admin 要照著
+                      這五欄打進網銀。 */}
+                  <Button variant="outline" size="sm">
+                    匯款資訊
+                  </Button>
+                </CollapsibleTrigger>
+
+                {/* 退件／代為完成**留在卡片上，不收進選單**:§11 規則 3 明列
+                    時效性動作不進選單，並直接引用了這裡的原始理由——
+                    「退件與代為完成不鎖，那是客服接到電話當下就該能處理的事」
+                    （WithdrawalManagement.tsx:167-168）。用 ghost＋紅字而非
+                    destructive 實心:紅字足以讀出危險，防線是既有的 AlertDialog，
+                    不是把它做成視線磁鐵（§11 規則 1）。
+                    W8:「標記已匯款」在手機不出現（Q1(a)）——它需要同時開著網銀。 */}
+                {w.status === 'pending' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => onReject(w)}
+                    disabled={processingId === w.id}
+                  >
+                    退件
+                  </Button>
+                )}
+                {w.status === 'awaiting_collection' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onComplete(w)}
+                    disabled={processingId === w.id}
+                  >
+                    代為完成
+                  </Button>
+                )}
+
+                {/* 選單裡只有兩個**唯讀**動作:罕用、破壞力零、沒有時效性
+                    ——正好是 §11 規則 3 說「值得」的那種選單（放得下兩項以上）。 */}
+                <div className="ml-auto">
+                  <CardOverflowMenu
+                    label={`${w.userName} 的更多操作`}
+                    actions={[
+                      { label: '查看證件', onSelect: () => onOpenIdCard(w) },
+                      { label: '查看歷史', onSelect: () => onOpenHistory(w) },
+                    ]}
+                  />
+                </div>
+              </div>
               <CollapsibleContent>
+                {/* 扣點在展開態才出現:對帳時才需要，掃視時不需要。 */}
+                <p className="mt-2 text-xs text-muted-foreground">扣點 {w.amount + w.fee} P</p>
                 <WithdrawalFundingFields
                   record={w}
                   onCopyAccount={onCopyAccount}
                   formatAmount={formatAmount}
-                  className="mt-3 space-y-2 rounded-md border p-3"
+                  className="mt-2 space-y-2 rounded-md border p-3"
                 />
               </CollapsibleContent>
             </Collapsible>
-
-            {/* P14:底部已被 BottomNav 佔用，操作鍵一律在卡片內。 */}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={() => onOpenIdCard(w)}>
-                查看
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => onOpenHistory(w)}>
-                查看歷史
-              </Button>
-              {/* W8:「標記已匯款」在手機不出現（Q1(a) 維持現況）——它需要同時
-                  開著網銀。退件與代為完成不鎖:那是客服接到電話當下就該能處理
-                  的事（WithdrawalManagement.tsx:167-168 的原始理由）。 */}
-              {w.status === 'pending' && (
-                <Button
-                  size="sm"
-                  // 退件不用 destructive 實心:見 MemberCardList 同位置的說明。
-                  variant="outline"
-                  className="text-destructive"
-                  onClick={() => onReject(w)}
-                  disabled={processingId === w.id}
-                >
-                  退件
-                </Button>
-              )}
-              {w.status === 'awaiting_collection' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onComplete(w)}
-                  disabled={processingId === w.id}
-                >
-                  代為完成
-                </Button>
-              )}
-            </div>
           </CardContent>
         </Card>
       ))}

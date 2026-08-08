@@ -505,7 +505,6 @@ export function MemberManagement({
                   ACCOUNT_STATUS_BADGE[status] ?? ACCOUNT_STATUS_BADGE.expired
                 }
                 onOpenDetail={openDetail}
-                onToggleAdmin={toggleAdmin}
                 onToggleSuspend={handleSuspendToggle}
                 processingId={processingId}
               />

@@ -295,11 +295,12 @@ _CARD_DENSITY_JS = """
   if (!cards.length) return null;
   return cards.map((c) => ({
     height: Math.round(c.getBoundingClientRect().height),
-    // 只算看得見的:收進選單裡的按鈕不佔畫面，也不參與掃視成本。
+    // 只算看得見的:收進選單裡的項目不佔畫面，也不參與掃視成本。
+    // **圖示按鈕要算**——它一樣佔位、一樣是一個要判斷的目標。用 textContent
+    // 過濾會把「⋯」這種只有 aria-label 的按鈕靜默排除，量出偏低的數字。
     visibleButtons: [...c.querySelectorAll('button')]
       .filter((b) => b.offsetParent !== null)
-      .map((b) => (b.textContent || '').trim())
-      .filter(Boolean),
+      .map((b) => (b.textContent || '').trim() || b.getAttribute('aria-label') || '(無名稱按鈕)'),
   }));
 }
 """
