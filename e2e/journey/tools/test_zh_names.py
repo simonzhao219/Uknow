@@ -13,14 +13,13 @@ journey 會在 Step 2 全滅,而 journey 依規則不能在本機跑,只有排�
 
 import re
 
+from tools.name_mask import HAN_RANGE as HAN
 from tools.zh_names import zh_name_for
 
-# 與 profileValidation.ts / index.ts 的 HAN_RANGE 對齊。
-# **必須用 \u 跳脫寫死,不可寫字面漢字**——index.ts 該常數上方的註解記載過
-# 一次真實事故:字面「豈」(U+F900) 曾被編輯器 NFC 正規化成同形的 U+8C48,
-# 範圍尾端因此悄悄涵蓋全部 surrogate。這是第三份複製品,表示法也要一致,
-# 否則等於把已經記取的教訓又複製回來。
-HAN = "\u3400-\u9fff\uf900-\ufaff"
+# 漢字範圍不在這裡再抄一份——Python 側只留 `tools/name_mask.py` 那一個常數,
+# 由 `test_name_mask.py` 讀 index.ts 源碼比對。原本這裡是第三份複製品,而
+# index.ts 的註解記載過:表示法一漂(字面「豈」U+F900 被編輯器 NFC 正規化成
+# 同形的 U+8C48)範圍尾端就悄悄涵蓋全部 surrogate。少一份複製品就少一處會漂。
 ZH_NAME = re.compile(f"^(?:[{HAN}]+|[{HAN}]{{2,}} [{HAN}]{{2,}})$")
 MAX_LEN = 10
 

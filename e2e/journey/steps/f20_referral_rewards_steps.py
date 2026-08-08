@@ -81,12 +81,11 @@ def tree_generation_counts(guarded_page):
 
 @then(parsers.parse('展開全部世代後名單包含 "{node}" 的姓名'))
 def tree_contains(guarded_page, run_state, org_nodes, scenario_memo, node):
-    referral_tree.expand_ancestors(
-        guarded_page, org_nodes, run_state, scenario_memo["viewer"], node
-    )
-    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+    viewer = scenario_memo["viewer"]
+    referral_tree.expand_ancestors(guarded_page, org_nodes, run_state, viewer, node)
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, viewer, node)
 
 
-@then(parsers.parse('頁面上不出現 "{node}" 的姓名'))
-def tree_excludes(guarded_page, run_state, node):
-    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_have_count(0)
+@then("推薦樹沒有第四代節點")
+def tree_stops_at_the_third_generation(guarded_page):
+    referral_tree.expect_three_generation_ceiling(guarded_page)

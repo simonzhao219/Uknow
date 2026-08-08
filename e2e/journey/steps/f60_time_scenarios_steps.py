@@ -181,21 +181,19 @@ def open_referrals(guarded_page, run_state, scenario_memo, node):
 
 
 @then(parsers.parse('推薦樹包含 "{node}" 的姓名與已失效標記'))
-def tree_shows_inactive_member(guarded_page, run_state, node):
+def tree_shows_inactive_member(guarded_page, run_state, org_nodes, scenario_memo, node):
     # 檢視者的第一代＝root 列，失效節點仍在樹上（半透明＋灰點）；
-    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。
-    expect(
-        guarded_page.get_by_text(run_state.users[node].name, exact=True).first
-    ).to_be_visible()
+    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。橫幅也印同一個
+    # 姓名，所以「在樹上」要用 treeitem 定位，不是 get_by_text().first。
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, scenario_memo["viewer"], node)
     expect(guarded_page.get_by_text("已失效").first).to_be_visible()
 
 
 @then(parsers.parse('展開二代後推薦樹仍包含 "{node}" 的姓名'))
 def tree_structure_intact(guarded_page, run_state, org_nodes, scenario_memo, node):
-    referral_tree.expand_ancestors(
-        guarded_page, org_nodes, run_state, scenario_memo["viewer"], node
-    )
-    expect(guarded_page.get_by_text(run_state.users[node].name, exact=True)).to_be_visible()
+    viewer = scenario_memo["viewer"]
+    referral_tree.expand_ancestors(guarded_page, org_nodes, run_state, viewer, node)
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, viewer, node)
 
 
 # --- 過期超過一年：補繳制（A1）下續約永遠可選 --------------------------------
