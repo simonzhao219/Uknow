@@ -85,6 +85,20 @@
 ## 7. 響應式版面策略
 
 - 雙套版面（`md:hidden` / `hidden md:*`）+ Sheet 抽屜，是本專案的成熟模式。
+- **重列表改用 `useMediaQuery` 擇一渲染，而不是 CSS 雙套版面**——判準兩條，
+  兩條都成立才換：
+  1. **DOM 成本不對稱**：雙套版面把兩棵樹同時掛上。輕卡片無所謂（`HomePage`
+     就是這樣），但 6～11 欄 × 數十列的表格再加上幾個 Dialog，兩份都在
+     DOM 裡是實打實的浪費。
+  2. **可測試性**：jsdom 不套用 Tailwind，CSS 雙套版面下兩棵樹同時存在，
+     `getByText` 立刻變成 "found multiple elements"，既有元件測試會整批
+     誤紅——而那個紅燈不代表任何真實缺陷。
+  代價要一起接受：`window.matchMedia` 成為必要相依，測試側一律在
+  `beforeEach` 掛 `src/test-utils/stubMediaQuery`；跨越斷點時元件會即時
+  重渲染成另一套，**只在其中一套渲染的控制項，它的 state 要一併處置**
+  （否則會留下看得到、動不了的殭屍狀態）。
+  〔實作〕`src/components/admin/WithdrawalManagement.tsx`、`MemberManagement.tsx`、
+  `SystemAlerts.tsx` 與其測試。
 - **手機卡片資訊量不得低於桌面到「只剩照片+名字」的程度**。
   首頁手機版為兩欄資訊卡（照片/性別/名稱/類別/地區）。
 - 依賴定位的功能（如距離排序）**只在取得真實定位後才啟用**，

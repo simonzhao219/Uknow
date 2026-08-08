@@ -10,7 +10,7 @@
 // 收到通知**——維運以為沒事，其實是看板壞了。所以這裡釘的是三態
 // （載入／錯誤／空）與「標記已處理之後真的從清單消失」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SystemAlert, SystemAlertsResponse } from '@contract';
 
 const apiRequestJson = vi.fn();
@@ -24,6 +24,7 @@ vi.mock('../notifications/NotificationContext', () => ({
   useNotification: () => ({ showToast }),
 }));
 
+import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 import { SystemAlerts } from './SystemAlerts';
 
 function alert(over: Partial<SystemAlert> = {}): SystemAlert {
@@ -59,6 +60,10 @@ beforeEach(() => {
   showToast.mockReset();
 });
 afterEach(cleanup);
+
+beforeEach(() => {
+  stubMediaQuery(true);
+});
 
 describe('SystemAlerts', () => {
   it('載入失敗時顯示錯誤態與重新載入,不是假裝沒有告警', async () => {
@@ -166,5 +171,50 @@ describe('SystemAlerts', () => {
     expect(contextEl.className).toContain('whitespace-normal');
     expect(contextEl.className).toMatch(/break-(words|all)/);
     expect(contextEl.className).toMatch(/max-w-/);
+  });
+});
+
+// --- 手機版（階段 4） --------------------------------------------------------
+describe('SystemAlerts 手機版', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('不渲染 table，改以每筆一張卡呈現', async () => {
+    mockApi([alert()]);
+    const { container } = render(<SystemAlerts />);
+    await screen.findByText('付款處理失敗，需人工介入');
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('訊息全文可讀，context 收在預設收合的 Collapsible 裡', async () => {
+    mockApi([alert()]);
+    render(<SystemAlerts />);
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
+    expect(within(card).getByText('付款處理失敗，需人工介入')).toBeTruthy();
+    // 預設收合:context 是 jsonb 原文，長度無上限，攤開會把卡片撐爆。
+    expect(within(card).queryByText(/PU00000001/)).toBeNull();
+    fireEvent.click(within(card).getByRole('button', { name: '詳細資訊' }));
+    await waitFor(() => expect(within(card).getByText(/PU00000001/)).toBeTruthy());
+  });
+
+  it('context 的 code 帶 break-all——長 jsonb 不得單行畫出容器', async () => {
+    // 回歸釘。桌面那顆 code 已有同型斷言（本檔上方），手機這顆先前只斷言
+    // 「點開後文字出現」，零 class 斷言:拿掉 break-all 時 vitest、溢版巡檢、
+    // 版面測試三道閘門全綠，而展開態實測 +309px。巡檢已補展開態路由，
+    // 這條是成本更低的第二道網。
+    mockApi([alert()]);
+    render(<SystemAlerts />);
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
+    fireEvent.click(within(card).getByRole('button', { name: '詳細資訊' }));
+    const code = await within(card).findByText(/PU00000001/);
+    expect(code.className).toContain('break-all');
+  });
+
+  it('標記已處理在卡片內可點', async () => {
+    mockApi([alert()]);
+    render(<SystemAlerts />);
+    const card = await screen.findByRole('group', { name: /process_successful_payment/ });
+    expect(within(card).getByRole('button', { name: '標記已處理' })).toBeTruthy();
   });
 });

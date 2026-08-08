@@ -266,6 +266,9 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     _seed_member(context, isAdmin=True)
     api_mock.set_admin_withdrawals(
         [
+            # 兩筆而不是一筆:「第一屏看得完兩筆」在單筆測資下**結構上量不到**，
+            # card_density 的長度恆為 1，高度上限就成了唯一代理——而代理推導錯了
+            # 也沒人會發現（實測第一屏只剩 187px，不是註解寫的 470px）。
             build_admin_withdrawal(
                 status="pending",
                 userName=NAME_CJK_10,
@@ -284,11 +287,21 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
                         "createdAt": "2026-07-25T14:30:12.000Z",
                     }
                 ],
-            )
+            ),
+            build_admin_withdrawal(
+                status="pending",
+                userName="李小華",
+                amount=3000,
+                idCardFrontUrl=ID_CARD_IMAGE,
+                idCardBackUrl=ID_CARD_IMAGE,
+            ),
         ]
     )
     api_mock.set_admin_members(
-        [build_admin_member(name=NAME_CJK_10, email=LONG_EMAIL, listingCount=3)]
+        [
+            build_admin_member(name=NAME_CJK_10, email=LONG_EMAIL, listingCount=3),
+            build_admin_member(name="李小華", email="b@c.d"),
+        ]
     )
     # 詳情 Sheet 用；**必須在 set_admin_members 之後**（見該模組的 docstring：
     # 列表的尾綴 glob 也吃得下詳情 URL，只是回錯形狀）。
@@ -364,12 +377,45 @@ def _open_tab(name: str):
     return go
 
 
+def _expand_alert_context(page):
+    """切到系統告警並**展開**第一筆的「詳細資訊」。
+
+    Radix 的 `CollapsibleContent` 在關閉時**不掛載子節點**
+    （`react-collapsible` 的 `children: isOpen && children`），所以收合態
+    量不到 `context` 的 jsonb 原文——那正是這條路由要守的東西。
+    實測:拿掉 `SystemAlerts.tsx` 手機版那顆 `code` 的 `break-all`，
+    收合態 0 findings、展開態 +309px。**收合就是盲區**，不是乾淨。
+    """
+    _open_system_alerts_tab(page)
+    page.get_by_role("button", name="詳細資訊").first.click()
+    settle(page)
+
+
+def _expand_withdrawal_funding(page):
+    """展開第一張提領卡的「匯款資訊」——同樣是預設收合、預設量不到。"""
+    page.get_by_role("button", name="匯款資訊").first.click()
+    settle(page)
+
+
+def _open_card_overflow_menu(page):
+    """手機卡片的「更多」選單。
+
+    查看證件與查看歷史都是**唯讀、罕用、無時效性**的動作，依
+    `ui-ux-guidelines.md` §11 規則 3 收進溢出選單（放得下兩項以上才值得）。
+    桌面表格仍是直接的按鈕，所以這個 helper 只用在 375px 的路由上。
+    """
+    page.get_by_role("button", name="的更多操作").first.click()
+    settle(page)
+
+
 def _open_id_card_dialog(page):
-    page.get_by_role("button", name="查看", exact=True).first.click()
+    _open_card_overflow_menu(page)
+    page.get_by_role("menuitem", name="查看證件").click()
 
 
 def _open_history_dialog(page):
-    page.get_by_role("button", name="查看歷史").first.click()
+    _open_card_overflow_menu(page)
+    page.get_by_role("menuitem", name="查看歷史").click()
 
 
 def _open_member_detail_sheet(page):
@@ -462,8 +508,6 @@ ROUTES = [
         "平台管理",
         _setup_admin,
         "/admin",
-        known_overflow="工具列未換行（篩選+2 鍵+筆數擠一列，+95px）與統計卡六位數金額"
-        "（+13px）；待 platform-admin-rwd 的 P3 處置",
     ),
     # 同一條路由掃第二次：Radix Tabs 只掛載 active 面板，預設 tab 之外的
     # 內容不切過去就不存在於 DOM。系統告警的「詳細資訊」欄放的是 jsonb 原文，
@@ -475,15 +519,25 @@ ROUTES = [
         "/admin",
         tags=["system-alerts"],
         after_load=_open_system_alerts_tab,
-        # 這條測資（正式站真實的 time_domain_backfill 告警）一量就爆，而換成
-        # 一句短訊息時是 0 發現——**「測資是最壞但可達」反過來也成立：測資
-        # 不夠壞會量出假的乾淨**。`Table` 原語的每個 td 都帶 whitespace-nowrap
-        # （`ui/table.tsx:86`），裡面的 jsonb 原文因此斷不了行。
-        known_overflow="系統告警的 context jsonb 原文在 whitespace-nowrap 的 td 裡"
-        "不斷行（+294px）；待 platform-admin-rwd 的 P10 處置",
     ),
     # 其餘 admin 分頁與彈出物。報告以 label+path 呈現、results 是 list，
     # 重複 path 不會互相覆蓋；pytest 的 id 則靠 tags 區分。
+    SweepRoute(
+        "/admin",
+        "平台管理 · 系統告警（展開 context）",
+        _setup_admin_alerts,
+        "/admin",
+        tags=["system-alerts-expanded"],
+        after_load=_expand_alert_context,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領卡（展開匯款資訊）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawal-funding-expanded"],
+        after_load=_expand_withdrawal_funding,
+    ),
     SweepRoute(
         "/admin",
         "平台管理 · 會員管理",
@@ -491,11 +545,6 @@ ROUTES = [
         "/admin",
         tags=["members"],
         after_load=_open_tab("會員管理"),
-        # 只有 +9px 的 CardHeader（標題與搜尋框擠一列）。8 欄表格**量不到**
-        # ——它在 Table 原語的 overflow-x-auto 裡捲動，探針刻意不報那種（明示
-        # 要捲動 = 有意為之）。「要橫向捲才讀得完一列」是可用性問題，不是
-        # 溢出，這支永遠測不出來，別誤以為它有守住。
-        known_overflow="標題與搜尋框擠一列（+9px）；待 platform-admin-rwd 的 P8 處置",
     ),
     SweepRoute(
         "/admin",
@@ -504,10 +553,6 @@ ROUTES = [
         "/admin",
         tags=["announcements"],
         after_load=_open_tab("公告管理"),
-        # 同上：這條先前也是靠空清單「上鎖」的。公告內文沒有 break-words，
-        # 貼一條網址就撐破（SystemNotifications.tsx:263）。規劃書 §4.0 的
-        # P1–P14 沒有這一項——是補齊測資之後才浮現的新證據。
-        known_overflow="公告內文的網址不斷行（+153px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
@@ -516,11 +561,6 @@ ROUTES = [
         "/admin",
         tags=["admin-setup"],
         after_load=_open_tab("管理員設置"),
-        # 這條先前是「上鎖」的——但 set_admin_setup 少回 userName，而
-        # AdminSetup.tsx:146 拿它當渲染條件，整個帳號資訊區塊從未進 DOM。
-        # 補齊後端真正會回的三欄（api/index.ts:1725-1727）之後才顯形。
-        known_overflow="Email 與標籤在 flex justify-between 的同一列裡不換行"
-        "（+119px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
@@ -529,11 +569,6 @@ ROUTES = [
         "/admin",
         tags=["id-card-dialog"],
         after_load=_open_id_card_dialog,
-        # 量到的是**底下那頁**的債務，不是對話框自己的。對話框本身沒有溢出
-        # ——`w-full` 在 fixed 元素上已依視窗定寬 375px，`max-w-3xl`(768px)
-        # 比它大所以不生效。真正的退化是失去 calc(100%-2rem) 的安全邊距、
-        # 貼齊螢幕邊緣，而那要量盒子才看得到 → test_admin_mobile_layout.py。
-        known_overflow="繼承提領分頁的工具列/統計卡溢出（對話框自身無溢出）",
     ),
     SweepRoute(
         "/admin",
@@ -542,10 +577,6 @@ ROUTES = [
         "/admin",
         tags=["history-dialog"],
         after_load=_open_history_dialog,
-        # 探針掃整份 document 而不是只掃對話框，這是刻意的——使用者看到的是
-        # 整個視窗，開著對話框時底下畫壞了一樣是畫壞了。代價是開在提領分頁
-        # 之上的對話框都會繼承該頁的債務，兩邊要一起清才能上鎖。
-        known_overflow="繼承提領分頁的工具列/統計卡溢出（對話框自身無溢出）",
     ),
     SweepRoute(
         "/admin",
@@ -554,7 +585,6 @@ ROUTES = [
         "/admin",
         tags=["member-sheet"],
         after_load=_open_member_detail_sheet,
-        known_overflow="繼承會員管理分頁的標題列溢出（Sheet 自身無溢出）",
     ),
 ]
 
@@ -629,6 +659,9 @@ def _write_report(results):
         "## 已知盲區（這支掃不到）",
         "",
         "- **Toast**：要有操作才會出現，被動載入頁面掃不到。",
+        "- **預設收合的 `Collapsible` 內容**：Radix 關閉時**不掛載子節點**，"
+        "所以收合態量到的 0 findings 不代表乾淨。系統告警的 `context` 與提領卡的"
+        "匯款資訊已各補一條展開態路由（tag 帶 `-expanded`），其餘收合區仍在盲區。",
         "- **未接 `after_load` 的 tab 面板／對話框／下拉／Sheet**：Radix Tabs 只掛載",
         "  active 面板，切不過去就不在 DOM 裡；對話框與下拉要點擊才開啟",
         "  （查收預覽、篩選面板、排序選單等）。`after_load` 已讓這類畫面**可以**",

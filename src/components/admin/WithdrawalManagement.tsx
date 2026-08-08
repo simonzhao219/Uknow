@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
+import { WithdrawalCardList } from './WithdrawalCardList';
+import { WithdrawalFundingFields } from './WithdrawalFundingFields';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -65,7 +67,12 @@ interface IdCardDialogProps {
 function IdCardDialog({ record, onClose }: IdCardDialogProps) {
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      {/* P5:max-w-3xl 經 twMerge 會蓋掉 dialog 原語的行動端護欄
+          `max-w-[calc(100%-2rem)]`（ui/dialog.tsx:41），安全邊距歸零、對話框
+          貼齊螢幕邊緣。實測**沒有**溢出（w-full 在 fixed 元素上已依視窗定寬
+          375px，max-w-3xl 比它大所以不生效），所以「有沒有水平捲軸」永遠測
+          不出這個退化——要量盒子與視窗邊界的間距。 */}
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>身分證照片查閱</DialogTitle>
           <DialogDescription>
@@ -79,7 +86,9 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
             提醒：原住民／新住民姓名可能以半形空格取代身分證上的間隔號，屬正常註冊規則。
           </p>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 py-4">
+        {/* P6:375px 下雙欄每張只有約 160px 寬，證件上的字看不清——
+            而看清楚正是審核的實質工作。手機單欄大圖。 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證正面</p>
             {record.idCardFrontUrl ? (
@@ -191,6 +200,14 @@ export function WithdrawalManagement({
   // 交易序號選填（需求方裁決）：網銀不一定當下給得出來，強制必填會逼 admin
   // 亂填。但它是唯一能跟銀行對帳的錨點，所以要有地方可以填。
   const [bankRefInput, setBankRefInput] = useState('');
+
+  // R7:useMediaQuery 是即時訂閱 change 事件的，視窗跨過 768px 會即時重渲染
+  // 成另一套版面。Q2 裁決手機不渲染勾選框，但 `selected` 不會自己消失——
+  // 「已選取 N 筆」橫幅還在、卻沒有任何逐筆取消的入口。不會寫壞資料（批次
+  // 動作仍鎖在 isDesktop 之後），但那是一個看得到、動不了的殭屍狀態。
+  useEffect(() => {
+    if (!isDesktop) setSelected(new Set());
+  }, [isDesktop]);
 
   const fetchWithdrawals = useCallback(async () => {
     setIsLoading(true);
@@ -582,87 +599,100 @@ export function WithdrawalManagement({
       )}
 
       <section aria-label="提領彙總">
-        <StatCardGrid>
-          {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
+        {/* 手機不是把卡片壓扁，而是**整組換成一行摘要**。壓扁過的四張卡仍佔
+            153px，把第一筆記錄推到 y=677——第一屏只剩 135px，兩筆要 300px。
+            admin 打開手機是為了處理那一筆，統計是背景資訊，一行就夠。
+            桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
+        {!isDesktop ? (
+          <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待匯款</dt>
+              <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待處理</dt>
+              <dd className="font-bold">{stats.byStatus.pending}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">待查收</dt>
+              <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dt className="text-xs text-muted-foreground">已完成</dt>
+              <dd className="font-bold">{stats.byStatus.completed}</dd>
+            </div>
+          </dl>
+        ) : (
+          <StatCardGrid>
+            {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
             數字去對網銀的轉出總額，混進手續費就對不起來。 */}
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待匯款總額</p>
-              <p className="text-2xl font-bold">{twd(stats.pendingAmount)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待處理</p>
-              <p className="text-2xl font-bold">{stats.byStatus.pending}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">待查收</p>
-              <p className="text-2xl font-bold">{stats.byStatus.awaiting_collection}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">已完成</p>
-              <p className="text-2xl font-bold">{stats.byStatus.completed}</p>
-            </CardContent>
-          </Card>
-        </StatCardGrid>
+            <Card>
+              {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
+                為了處理那一筆，不是看儀表板——四張卡各佔 100px 高會把第一筆
+                記錄推到第一屏之外（實測 y=832 vs 視窗 812）。桌面維持原樣。
+                共用原語 StatCardGrid 不動:它也服務會員端的 RewardStats 與
+                ReferralStats，那兩處不在本 feature 範圍內。 */}
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待匯款總額</p>
+                {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
+                  前端無上限，所以縮字級而不是指望數字不會變大。 */}
+                <p className="text-base sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+                <p className="text-base sm:text-2xl font-bold">
+                  {stats.byStatus.awaiting_collection}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
+              </CardContent>
+            </Card>
+          </StatCardGrid>
+        )}
       </section>
 
       {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額
           必須同時在眼前。要捲動或點開才看得到，就是逼人在兩個視窗間來回對帳。 */}
-      {activeRecord && (
+      {isDesktop && activeRecord && (
         <Card>
           <CardHeader>
             <CardTitle>匯款作業面板</CardTitle>
-            <CardDescription>照這五欄打進網銀，帳號可一鍵複製</CardDescription>
+            <CardDescription className="hidden sm:block">
+              照這五欄打進網銀，帳號可一鍵複製
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <section aria-label="匯款作業面板" className="grid gap-3 md:grid-cols-5">
-              <div>
-                <p className="text-xs text-muted-foreground">戶名</p>
-                <p className="font-medium">{activeRecord.userName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">身分證字號</p>
-                <p className="font-mono">{activeRecord.idNumber ?? '未設定'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">銀行代號</p>
-                <p className="font-mono">{activeRecord.bankCode ?? '未設定'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">收款帳號</p>
-                <div className="flex items-center gap-1">
-                  <p className="font-mono">{activeRecord.bankAccount ?? '未設定'}</p>
-                  {activeRecord.bankAccount && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="複製收款帳號"
-                      onClick={() => copyAccount(activeRecord.bankAccount ?? '')}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">匯款金額</p>
-                <p className="text-xl font-bold">{twd(activeRecord.amount)}</p>
-              </div>
-            </section>
+            {/* 五欄與手機版共用同一份 render（審查 R6）——各自手刻會長出
+                兩份會各自演化的 JSX，而「手機少一欄」在桌面開發時看不見。 */}
+            <WithdrawalFundingFields
+              record={activeRecord}
+              onCopyAccount={copyAccount}
+              formatAmount={twd}
+              ariaLabel="匯款作業面板"
+              className="grid gap-3 md:grid-cols-5"
+            />
           </CardContent>
         </Card>
       )}
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          {/* P3:375px 下 Select(w-36) + 兩顆按鈕 + 筆數擠成一列（實測 +95px）。
+              flex-wrap 讓它們換行，筆數在手機自己成一列。 */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36">
                   <SelectValue placeholder="全部狀態" />
@@ -679,6 +709,14 @@ export function WithdrawalManagement({
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
+              {/* 不用 isDesktop 閘掉:曾經以「手機下載試算表沒有下一步」為由
+                  只留桌面，但那既不在規劃書裡、也沒有任何 reviewer 看過，而且
+                  isDesktop 是**寬度**判準（Q4 已裁決不改成觸控偵測）——767px 的
+                  桌機視窗、分割畫面、高縮放比都會失去唯一的匯出路徑。
+                  CSV 匯出是規格書 §13 明列的職責（連 2,000 筆上限都寫進規格），
+                  要移除得走 §6 的開放問題流程並同步改規格書，不是一行註解。
+                  實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
+                  第一筆提領卡仍在第一屏內。 */}
               <Button
                 variant="default"
                 size="sm"
@@ -713,9 +751,11 @@ export function WithdrawalManagement({
       </Card>
 
       <Card>
-        <CardHeader>
+        {/* 手機隱藏:分頁標籤已經寫著「獎金提領管理」，再標一次「獎金提領申請」
+            是重複，而它佔掉的 70px 正是第一屏放不下第二筆的原因之一。 */}
+        <CardHeader className="hidden sm:flex">
           <CardTitle>獎金提領申請</CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             匯款完成後標記「已匯款」，會員確認查收後自動轉為已完成；退件會自動退回點數
           </CardDescription>
         </CardHeader>
@@ -737,12 +777,41 @@ export function WithdrawalManagement({
             </div>
           ) : withdrawals.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
+          ) : !isDesktop ? (
+            <WithdrawalCardList
+              records={withdrawals}
+              activeId={activeId}
+              onActivate={setActiveId}
+              onCopyAccount={copyAccount}
+              onOpenIdCard={setViewRecord}
+              onOpenHistory={setHistoryRecord}
+              onReject={setRejectTarget}
+              onComplete={setCompleteTarget}
+              processingId={processingId}
+              statusBadge={getStatusBadge}
+              formatAmount={twd}
+            />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
+                  {/* 觸控裝置上把勾選欄讓寬讓高，44px 熱區才有地方伸展。
+                      熱區靠 checkbox 的負 inset 偽元素撐出來，而 Table 原語的
+                      overflow-x-auto 容器會**裁掉伸出容器左緣的部分**——實測
+                      左側只剩 16px 可用、可點區被削成 37px。
+
+                      ⚠️ 只寫 pl-6 不寫 px-6:`ui/table.tsx` 的 TableHead/TableCell
+                      基底帶 `[&:has([role=checkbox])]:pr-0`，specificity (0,2,0)
+                      恆常生效，會蓋掉 `pointer-coarse:px-6` (0,1,0) 的
+                      padding-right（實測 computed padding-right = 0px）。寫 px-6
+                      會讓註解與實際行為不符——右側本來也不需要，熱區往右伸進的是
+                      隔壁儲存格、不在容器邊緣。
+
+                      垂直:表頭原語是釘死的 h-10（40px），放不下 44px（實測 44×42），
+                      觸控時放大到 h-14。滑鼠裝置的密度完全不變。 */}
+                  <TableHead className="w-10 pointer-coarse:pl-6 pointer-coarse:h-14">
                     <Checkbox
+                      touchTarget="expanded"
                       aria-label="全選本頁的提領記錄"
                       checked={allPageSelected}
                       onCheckedChange={toggleAllOnPage}
@@ -767,8 +836,10 @@ export function WithdrawalManagement({
                     data-state={w.id === activeRecord?.id ? 'selected' : undefined}
                     onClick={() => setActiveId(w.id)}
                   >
-                    <TableCell>
+                    {/* 與表頭同理，見上方 TableHead 的說明 */}
+                    <TableCell className="pointer-coarse:pl-6 pointer-coarse:py-4">
                       <Checkbox
+                        touchTarget="expanded"
                         aria-label={`選取 ${w.userName} 的提領記錄`}
                         checked={selected.has(w.id)}
                         onCheckedChange={() => toggleOne(w.id)}
