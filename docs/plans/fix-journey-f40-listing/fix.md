@@ -202,6 +202,17 @@ GitHub 的 artifact 一律轉址到 `productionresultssa4.blob.core.windows.net`
 - ⏳ **真後端複驗**:journey full run 31234221750。本機不得跑 journey,
   這是唯一能證明五條轉綠的方式。
 
+⚠️ **要窄選複驗的話,不能只帶 `pytest_expr: listing`**:f40 的 Background 有
+「組織樹已建置完成」,而該 Given 在 `run_state.users` 沒被 `@orgbuild` 的
+30 人建樹填起來時會 `pytest.skip`。只選 `listing` 的結果是四條全 skip →
+工作流的「實際執行量」下限斷言以**「實際只執行 0 個情境」硬失敗**,整場白燒。
+最小可用運算式是 `orgbuild or listing`;要一併涵蓋 f60 那兩條則是
+`orgbuild or listing or timemachine`(f60 的刊登可見性掛的是 `@timemachine`)。
+
+而真正吃掉牆鐘的是 30 人 GUI 建樹,窄選省不掉它(上一場 full 86 個情境也才
+20 分鐘),分支費用兩者相同。**所以直接跑 full 通常更划算**:多約 8 分鐘就
+能同時看到 §11 那些失敗是否仍在,還不必賭 marker 運算式有沒有寫對。
+
 ## 7. 防線回填
 
 **為什麼既有閘門沒攔到**:沒有任何一層在檢查「填進去的值有沒有被完整收下」。
