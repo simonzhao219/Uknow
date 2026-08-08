@@ -462,8 +462,6 @@ ROUTES = [
         "平台管理",
         _setup_admin,
         "/admin",
-        known_overflow="工具列未換行（篩選+2 鍵+筆數擠一列，+95px）與統計卡六位數金額"
-        "（+13px）；待 platform-admin-rwd 的 P3 處置",
     ),
     # 同一條路由掃第二次：Radix Tabs 只掛載 active 面板，預設 tab 之外的
     # 內容不切過去就不存在於 DOM。系統告警的「詳細資訊」欄放的是 jsonb 原文，
@@ -529,11 +527,6 @@ ROUTES = [
         "/admin",
         tags=["id-card-dialog"],
         after_load=_open_id_card_dialog,
-        # 量到的是**底下那頁**的債務，不是對話框自己的。對話框本身沒有溢出
-        # ——`w-full` 在 fixed 元素上已依視窗定寬 375px，`max-w-3xl`(768px)
-        # 比它大所以不生效。真正的退化是失去 calc(100%-2rem) 的安全邊距、
-        # 貼齊螢幕邊緣，而那要量盒子才看得到 → test_admin_mobile_layout.py。
-        known_overflow="繼承提領分頁的工具列/統計卡溢出（對話框自身無溢出）",
     ),
     SweepRoute(
         "/admin",
@@ -542,10 +535,6 @@ ROUTES = [
         "/admin",
         tags=["history-dialog"],
         after_load=_open_history_dialog,
-        # 探針掃整份 document 而不是只掃對話框，這是刻意的——使用者看到的是
-        # 整個視窗，開著對話框時底下畫壞了一樣是畫壞了。代價是開在提領分頁
-        # 之上的對話框都會繼承該頁的債務，兩邊要一起清才能上鎖。
-        known_overflow="繼承提領分頁的工具列/統計卡溢出（對話框自身無溢出）",
     ),
     SweepRoute(
         "/admin",

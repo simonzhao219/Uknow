@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
+import { WithdrawalCardList } from './WithdrawalCardList';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -65,7 +66,12 @@ interface IdCardDialogProps {
 function IdCardDialog({ record, onClose }: IdCardDialogProps) {
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      {/* P5:max-w-3xl 經 twMerge 會蓋掉 dialog 原語的行動端護欄
+          `max-w-[calc(100%-2rem)]`（ui/dialog.tsx:41），安全邊距歸零、對話框
+          貼齊螢幕邊緣。實測**沒有**溢出（w-full 在 fixed 元素上已依視窗定寬
+          375px，max-w-3xl 比它大所以不生效），所以「有沒有水平捲軸」永遠測
+          不出這個退化——要量盒子與視窗邊界的間距。 */}
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>身分證照片查閱</DialogTitle>
           <DialogDescription>
@@ -79,7 +85,9 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
             提醒：原住民／新住民姓名可能以半形空格取代身分證上的間隔號，屬正常註冊規則。
           </p>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 py-4">
+        {/* P6:375px 下雙欄每張只有約 160px 寬，證件上的字看不清——
+            而看清楚正是審核的實質工作。手機單欄大圖。 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
           <div className="space-y-2">
             <p className="text-sm font-medium">身分證正面</p>
             {record.idCardFrontUrl ? (
@@ -588,7 +596,10 @@ export function WithdrawalManagement({
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">待匯款總額</p>
-              <p className="text-2xl font-bold">{twd(stats.pendingAmount)}</p>
+              {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
+                  前端無上限，所以縮字級而不是指望數字不會變大。桌面維持 text-2xl。
+                  另外三張是筆數（個位數），不需要動。 */}
+              <p className="text-xl sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -614,7 +625,7 @@ export function WithdrawalManagement({
 
       {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額
           必須同時在眼前。要捲動或點開才看得到，就是逼人在兩個視窗間來回對帳。 */}
-      {activeRecord && (
+      {isDesktop && activeRecord && (
         <Card>
           <CardHeader>
             <CardTitle>匯款作業面板</CardTitle>
@@ -661,8 +672,10 @@ export function WithdrawalManagement({
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          {/* P3:375px 下 Select(w-36) + 兩顆按鈕 + 筆數擠成一列（實測 +95px）。
+              flex-wrap 讓它們換行，筆數在手機自己成一列。 */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36">
                   <SelectValue placeholder="全部狀態" />
@@ -737,6 +750,20 @@ export function WithdrawalManagement({
             </div>
           ) : withdrawals.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
+          ) : !isDesktop ? (
+            <WithdrawalCardList
+              records={withdrawals}
+              activeId={activeId}
+              onActivate={setActiveId}
+              onCopyAccount={copyAccount}
+              onOpenIdCard={setViewRecord}
+              onOpenHistory={setHistoryRecord}
+              onReject={setRejectTarget}
+              onComplete={setCompleteTarget}
+              processingId={processingId}
+              statusBadge={getStatusBadge}
+              formatAmount={twd}
+            />
           ) : (
             <Table>
               <TableHeader>

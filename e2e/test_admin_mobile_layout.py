@@ -70,14 +70,6 @@ def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U3 未實作：IdCardDialog 的 max-w-3xl 經 twMerge 蓋掉 dialog 原語的行動端護欄"
-    " max-w-[calc(100%-2rem)]，安全邊距歸零、對話框貼齊螢幕邊緣。"
-    "（注意：實測**沒有**溢出——w-full 在 fixed 元素上已依視窗定寬 375px，"
-    "max-w-3xl 比它大所以不生效。規劃書 P5 寫的『寬 768px、左右溢出視窗』不成立，"
-    "見 review.md 的 F7。）修法見 plan §4.1（P5）",
-    strict=True,
-)
 def test_id_card_dialog_keeps_safe_margins_at_375px(admin_at_375):
     """U3：身分證對話框左右都留有安全邊距（不貼齊螢幕、更不超出）。
 
@@ -97,11 +89,6 @@ def test_id_card_dialog_keeps_safe_margins_at_375px(admin_at_375):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U3 未實作：身分證雙圖是無斷點的 grid-cols-2，375px 下每張僅約 160px 寬，"
-    "看不清證件上的字。修法見 plan §4.1（P6）",
-    strict=True,
-)
 def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
     """U3：兩張身分證照片在 375px 下上下堆疊，各自佔滿可用寬度。
 
