@@ -76,7 +76,7 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     When "K0" 完成身分驗證並申請提領 1000P
     And saga 將 "K0" 推入剛過期
     Then "K0" 的付款頁新約選項因待審提領被停用
-    When 管理員在管理台駁回第一筆提領
+    When 管理員在管理台駁回 "K0" 的提領
     Then "K0" 的付款頁新約選項恢復可選
 
   @journey @renewal_saga

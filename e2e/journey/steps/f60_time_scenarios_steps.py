@@ -239,7 +239,12 @@ def renew_fresh_with_new_referrer(guarded_page, journey_config, supabase_admin,
     )
 
     scenario_memo["paid_at"] = datetime.now(timezone.utc)
-    payment.pay_via_gui(guarded_page, journey_config, supabase_admin, user)
+    # fresh 模式**必須**走 pay_fresh_via_gui:點「前往付款」開的是 A15 二次
+    # 確認對話框,不直接送出。用一般的 pay_via_gui 會停在對話框上,永遠等不到
+    # 往 PayUni sandbox 的跳轉,最後以 60 秒逾時收場(run 31235468231)——
+    # 症狀看起來像「外部金流沒回應」,實際上根本沒送出去。
+    # 70_renewal_saga 的同款情境一直是對的,這裡是兩處相同流程分岔的那一處。
+    payment.pay_fresh_via_gui(guarded_page, journey_config, supabase_admin, user)
 
 
 @then(parsers.parse('"{node}" 的新到期日自付款日起算約一年'))

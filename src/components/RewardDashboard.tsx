@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
 import { RewardStats } from './reward/RewardStats';
 import { WithdrawalSection } from './reward/WithdrawalSection';
@@ -43,6 +44,7 @@ async function uploadIdPhotos(files: { front?: File; back?: File }) {
 
 export function RewardDashboard() {
   const { user } = useContext(UserContext);
+  const navigate = useNavigate();
   const handleBack = useBackNavigation();
   usePageRestoration();
   const { showError } = useNotification();
@@ -166,6 +168,26 @@ export function RewardDashboard() {
           <p className="text-muted-foreground">管理您的Point和提領申請</p>
         </div>
       </div>
+
+      {/* 失效會員看得到這一頁（路由的 allowExpired），因為規格 §5 承諾點數
+          「保留不歸零」——看不到的承諾等於不存在。但要一眼看出自己現在的
+          狀態與唯一出路，所以續約提示常駐在最上方、不可關閉；提領被擋的
+          細節由 WithdrawalSection 自己說明，這裡不重複。 */}
+      {subscriptionStatus === 'expired' && (
+        <div
+          role="status"
+          data-testid="expired-renewal-banner"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4"
+        >
+          <p className="text-sm text-amber-900">
+            您的會籍已到期。<span className="font-medium">Point 全數保留不會歸零</span>
+            ，但續約後才能提領。
+          </p>
+          <Button size="sm" onClick={() => navigate('/payment/checkout')}>
+            立即續約
+          </Button>
+        </div>
+      )}
 
       <RewardStats
         availableRewards={rewardsData?.availableRewards || 0}
