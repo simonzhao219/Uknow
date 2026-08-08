@@ -687,3 +687,50 @@ Q3 沒有等價的預設值或否決後備案——但 §3／§4.1／§5 已經�
   **P0 0 項**，兩輪皆然;所有 P1 與開放問題均有明文處置或裁決，
   無帶著未處置發現進實作的情形。人審於 2026-08-07 親自啟動
   `/tdd-implement platform-admin-rwd`。
+
+
+---
+
+# 實作審查（`/review-implementation`，四視角審 diff）
+
+審查對象:`feature/platform-admin-rwd` 相對 `origin/develop` 的實作 diff。
+重點是「實作有沒有偏離審核通過的規劃」——**CI 證明不了這件事**。
+
+## 結論:**P0 0 項、P1 5 項（全數修正）**
+
+五項 P1 **全部是主 session 漏執行或做錯的裁決**，沒有一項是規劃本身的問題。
+這正是這道閘門存在的理由:所有測試都綠、CI 也會綠，但裁決沒被執行。
+
+| # | 發現 | 誰抓到 | 處置 |
+|---|---|---|---|
+| I1 | **R7 未執行**:`isDesktop` 轉 false 時沒有清空 `selected`，「已選取 N 筆」橫幅變成看得到、動不了的殭屍狀態 | 架構＋系統＋需求（**三個視角獨立收斂**） | 補 `useEffect`；並補 `stubMediaQueryWithControl`（可觸發的 matchMedia 替身）與跨斷點測試 |
+| I2 | **R6 未執行**:五欄 markup 沒有與桌面共用，是兩份各自手刻的 JSX | 架構 | 抽出 `WithdrawalFundingFields.tsx`，桌面與手機共用 |
+| I3 | **Collapsible 收不起來**:`onOpenChange` 忽略 Radix 傳回的布林值，已展開的卡片點不掉，`aria-expanded` 跟著說謊 | 系統（追進 Radix 原始碼查證） | `onOpenChange={(open) => onActivate(open ? w.id : null)}`；補測試 |
+| I4 | **Q3 的配套未執行**:`ui-ux-guidelines.md` §7 沒補 JS 判定的判準 | UI/UX ＋ 需求 | 已補，且照裁決只用理由 2（DOM 成本）／理由 3（可測試性）立論 |
+| I5 | **兩筆 friction-log 未落地**:原語層觸控債務、Q4 裝置判準 | UI/UX ＋ 需求 | 兩則都已寫入 |
+
+## 需人工裁決 → 實測後直接處置
+
+UI/UX 指出 `pointer-coarse:px-6` 可能被 `ui/table.tsx` 的
+`[&:has([role=checkbox])]:pr-0`（specificity (0,2,0)、不受 media query 限制）
+蓋掉右側 padding。**實測 computed `padding-right` = 0px，疑慮成立。**
+熱區仍達 44×44（靠左側 24px ＋ 偽元素往右伸進鄰格，右側不在容器邊緣所以
+不被裁），所以行為沒錯，**錯的是註解**——它宣稱加寬了「左右」內距。
+已改成只寫 `pointer-coarse:pl-6`（寫實際生效的那個），並把 specificity
+的來龍去脈寫進註解，免得日後動 `ui/table.tsx` 時無聲失效。
+
+## 三個視角一致確認為**正當**的一項
+
+`WithdrawalManagement.test.tsx` 的 `手機上勾選後不出現批次標記已匯款` 被改寫。
+需求視角**獨立判斷**（明講不採信 progress.md 的自我陳述）後認定正當:
+因果是「Q2 這個人審裁決讓舊測試的前提消失」，不是實作走偏回頭改測試；
+且新斷言比舊的**更嚴格**（舊的允許「有 checkbox 但點了沒用」，新的要求
+連 checkbox 都不該出現）。它另指出同一斷言在手機版 describe 裡重複了一次，
+已刪除冗餘那條。
+
+## 無缺口面向（四視角合計）
+
+資訊量（三處卡片對照桌面欄位逐一核對，一欄不少）、危險操作（手機與桌面
+走同一組 AlertDialog 與同一套必填理由驗證）、三態共用同一組節點、
+appShell／lazy 契約、API/端點/payload 零變更、`stubMediaQuery` 無殘留重複、
+`<details>` 全站用量仍為 0、棘輪與 xfail marker 確實歸零。

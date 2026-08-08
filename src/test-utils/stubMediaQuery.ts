@@ -23,3 +23,38 @@ export function stubMediaQuery(isDesktop: boolean): void {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+/**
+ * 可觸發版本：回傳一個把 `matches` 切換掉並派送 `change` 的函式。
+ *
+ * `stubMediaQuery` 換掉的是 `window.matchMedia` 這個**函式**，而
+ * `useMediaQuery`（`hooks/useMediaQuery.ts:16`）在 effect 裡拿到 MediaQueryList
+ * 物件後就只訂閱它——事後替換那個函式不會讓已經掛上的元件重讀，所以
+ * 「跨越斷點」測不出來。這裡把同一個 MediaQueryList 實例留著，切換
+ * `matches` 之後對它派送 `change`，走的正是瀏覽器真實的那條路徑。
+ */
+export function stubMediaQueryWithControl(initialIsDesktop: boolean): (next: boolean) => void {
+  const listeners = new Set<() => void>();
+  let matches = initialIsDesktop;
+  const mql = {
+    get matches() {
+      return matches;
+    },
+    media: '',
+    onchange: null,
+    addEventListener: (_: string, cb: () => void) => {
+      listeners.add(cb);
+    },
+    removeEventListener: (_: string, cb: () => void) => {
+      listeners.delete(cb);
+    },
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  };
+  window.matchMedia = (() => mql) as unknown as typeof window.matchMedia;
+  return (next: boolean) => {
+    matches = next;
+    for (const cb of listeners) cb();
+  };
+}

@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { WithdrawalCardList } from './WithdrawalCardList';
+import { WithdrawalFundingFields } from './WithdrawalFundingFields';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -199,6 +200,14 @@ export function WithdrawalManagement({
   // 交易序號選填（需求方裁決）：網銀不一定當下給得出來，強制必填會逼 admin
   // 亂填。但它是唯一能跟銀行對帳的錨點，所以要有地方可以填。
   const [bankRefInput, setBankRefInput] = useState('');
+
+  // R7:useMediaQuery 是即時訂閱 change 事件的，視窗跨過 768px 會即時重渲染
+  // 成另一套版面。Q2 裁決手機不渲染勾選框，但 `selected` 不會自己消失——
+  // 「已選取 N 筆」橫幅還在、卻沒有任何逐筆取消的入口。不會寫壞資料（批次
+  // 動作仍鎖在 isDesktop 之後），但那是一個看得到、動不了的殭屍狀態。
+  useEffect(() => {
+    if (!isDesktop) setSelected(new Set());
+  }, [isDesktop]);
 
   const fetchWithdrawals = useCallback(async () => {
     setIsLoading(true);
@@ -632,40 +641,15 @@ export function WithdrawalManagement({
             <CardDescription>照這五欄打進網銀，帳號可一鍵複製</CardDescription>
           </CardHeader>
           <CardContent>
-            <section aria-label="匯款作業面板" className="grid gap-3 md:grid-cols-5">
-              <div>
-                <p className="text-xs text-muted-foreground">戶名</p>
-                <p className="font-medium">{activeRecord.userName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">身分證字號</p>
-                <p className="font-mono">{activeRecord.idNumber ?? '未設定'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">銀行代號</p>
-                <p className="font-mono">{activeRecord.bankCode ?? '未設定'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">收款帳號</p>
-                <div className="flex items-center gap-1">
-                  <p className="font-mono">{activeRecord.bankAccount ?? '未設定'}</p>
-                  {activeRecord.bankAccount && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="複製收款帳號"
-                      onClick={() => copyAccount(activeRecord.bankAccount ?? '')}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">匯款金額</p>
-                <p className="text-xl font-bold">{twd(activeRecord.amount)}</p>
-              </div>
-            </section>
+            {/* 五欄與手機版共用同一份 render（審查 R6）——各自手刻會長出
+                兩份會各自演化的 JSX，而「手機少一欄」在桌面開發時看不見。 */}
+            <WithdrawalFundingFields
+              record={activeRecord}
+              onCopyAccount={copyAccount}
+              formatAmount={twd}
+              ariaLabel="匯款作業面板"
+              className="grid gap-3 md:grid-cols-5"
+            />
           </CardContent>
         </Card>
       )}
@@ -768,12 +752,21 @@ export function WithdrawalManagement({
             <Table>
               <TableHeader>
                 <TableRow>
-                  {/* pointer-coarse:px-6:勾選框的 44px 熱區靠負 inset 伸出格子，而 Table
-                      原語的 overflow-x-auto 容器會把伸出容器左緣的部分裁掉——實測
-                      左側只剩 16px 可用、可點區被削成 37px。把第一欄的左右內距在
-                      觸控裝置上加寬，熱區才有地方伸展。垂直同理——表頭原語是釘死的 h-10（40px）、
-                      放不下 44px，所以觸控時放大到 h-14。滑鼠裝置維持原本的密度。 */}
-                  <TableHead className="w-10 pointer-coarse:px-6 pointer-coarse:h-14">
+                  {/* 觸控裝置上把勾選欄讓寬讓高，44px 熱區才有地方伸展。
+                      熱區靠 checkbox 的負 inset 偽元素撐出來，而 Table 原語的
+                      overflow-x-auto 容器會**裁掉伸出容器左緣的部分**——實測
+                      左側只剩 16px 可用、可點區被削成 37px。
+
+                      ⚠️ 只寫 pl-6 不寫 px-6:`ui/table.tsx` 的 TableHead/TableCell
+                      基底帶 `[&:has([role=checkbox])]:pr-0`，specificity (0,2,0)
+                      恆常生效，會蓋掉 `pointer-coarse:px-6` (0,1,0) 的
+                      padding-right（實測 computed padding-right = 0px）。寫 px-6
+                      會讓註解與實際行為不符——右側本來也不需要，熱區往右伸進的是
+                      隔壁儲存格、不在容器邊緣。
+
+                      垂直:表頭原語是釘死的 h-10（40px），放不下 44px（實測 44×42），
+                      觸控時放大到 h-14。滑鼠裝置的密度完全不變。 */}
+                  <TableHead className="w-10 pointer-coarse:pl-6 pointer-coarse:h-14">
                     <Checkbox
                       touchTarget="expanded"
                       aria-label="全選本頁的提領記錄"
@@ -801,7 +794,7 @@ export function WithdrawalManagement({
                     onClick={() => setActiveId(w.id)}
                   >
                     {/* 與表頭同理，見上方 TableHead 的說明 */}
-                    <TableCell className="pointer-coarse:px-6 pointer-coarse:py-4">
+                    <TableCell className="pointer-coarse:pl-6 pointer-coarse:py-4">
                       <Checkbox
                         touchTarget="expanded"
                         aria-label={`選取 ${w.userName} 的提領記錄`}
