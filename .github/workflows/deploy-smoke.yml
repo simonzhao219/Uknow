@@ -1,0 +1,107 @@
+name: Deploy Smoke
+
+# ============================================================================
+# 部署後 smoke:對**真實網址**驗證這次部署是完整且可用的。
+#
+# 存在理由——這三件事沒有任何靜態檢查或 CI 驗得到,它們只在「檔案已經上傳
+# 到 Cloudflare」之後才成立或不成立:
+#
+#   1. 上傳完整(2026-08-07 事故):那次 Pages 部署少上傳了三個 chunk,同一個
+#      commit 在本機建置三個檔都在、hash 也一致——建置正確、上傳不完整。
+#      單元測試/型別/build 全綠,admin 後台卻整頁進不去。
+#   2. 深層路徑仍交回 SPA(2026-08-08 事故):public/404.html 的存在會把 Pages
+#      從 SPA 模式切成 Not Found 模式,/admin 這類前端路由在硬導航時回 404 頁。
+#      appShell.test.ts 擋得住「那個檔案再度出現」,擋不住 Pages 行為改變或
+#      dashboard 設定被人動過。
+#   3. 快取標頭真的生效:index.html 必須每次重新驗證,否則使用者重整拿回的
+#      還是舊的資產清單,lazyWithRetry 的自癒路徑就死了。
+#
+# 判準刻意是 **Content-Type 而不是狀態碼**:SPA 後備會把缺檔翻成
+# 「200 + text/html」,只看狀態碼會全綠——那正是 08-07 事故的形狀。
+# (開發本檢查時用「搬走一個 chunk」實測,只看狀態碼的版本照樣通過。)
+#
+# 頻率依據:每 6 小時。理由不是部署頻率而是**資產本身會消失**——官方
+# Serving Pages 文件寫「Assets have a time-to-live (TTL) of one week but
+# **can also disappear at any time**」,所以這不是一次性的部署閘門,而是需要
+# 持續量測的性質。成本落在**訊號疲勞**而不是 runner(public repo 標準 runner
+# 免費、單次十幾秒、只打自家網域幾個 HEAD):使用者可見的故障最慢 6 小時內
+# 會叫,再密只會讓紅燈變成背景雜訊。
+#
+# deployment_status 是額外的快路徑:Cloudflare Pages 的 GitHub 整合部署完成
+# 時會發這個事件,拿得到就能在部署後幾秒內驗完。⚠️ 它是否真的送達沒有在本
+# repo 實測過,所以**排程才是保證下限**,不要把它當成唯一的閘門。
+# ============================================================================
+on:
+  deployment_status:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 要驗的網址（留空＝develop 與正式站都驗）
+        required: false
+        default: ''
+
+# ⚠️ 刻意不設 workflow 層 permissions（規則 3）：它是上限不是預設值。
+
+jobs:
+  deployed-assets-smoke:
+    # deployment_status 對每一種狀態各發一次事件（pending/in_progress/…），
+    # 只有部署真的成功才值得驗。
+    if: >-
+      github.event_name != 'deployment_status'
+      || github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      - name: 安裝 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 決定要驗哪些網址
+        id: targets
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_URL: ${{ inputs.base_url }}
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
+          # develop 分支別名與正式站。兩者的部署路徑不同,但這支檢查的
+          # 判準完全一樣,所以共用。
+          DEFAULT_TARGETS: 'https://develop.uknow.pages.dev https://uknow.com.tw'
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              targets="${DISPATCH_URL:-$DEFAULT_TARGETS}" ;;
+            deployment_status)
+              targets="$DEPLOYMENT_URL" ;;
+            *)
+              targets="$DEFAULT_TARGETS" ;;
+          esac
+          if [ -z "${targets// /}" ]; then
+            echo "::notice::deployment_status 沒有帶 environment_url，這次沒有可驗的目標"
+          fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "本次目標：${targets:-（無）}"
+
+      - name: 驗證線上部署完整且可用
+        if: steps.targets.outputs.targets != ''
+        # ⚠️ 目標網址一律經由 env 傳入,不用 ${{ }} 直接內插進 run:。
+        # deployment_status 的 environment_url 來自事件酬載(非本 repo 控制),
+        # 內插等於把它當 shell 原始碼執行。
+        env:
+          TARGETS: ${{ steps.targets.outputs.targets }}
+        run: |
+          set -uo pipefail
+          failed=0
+          for url in $TARGETS; do
+            echo "::group::$url"
+            python3 scripts/check-deployed-assets.py "$url" || failed=1
+            echo "::endgroup::"
+          done
+          exit "$failed"
