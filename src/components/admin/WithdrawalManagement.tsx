@@ -401,7 +401,10 @@ export function WithdrawalManagement({
   };
 
   return (
-    <div className="space-y-6">
+    // 手機的區塊間距 12px、桌面維持 24px:卡片列表本身就是 `space-y-3`，
+    // 區塊之間卻是它的兩倍，同一頁上兩套節奏。24px × 兩個間隔在 812px 的
+    // 視窗裡是純浪費，而桌面空間充裕、24px 幫助分群。
+    <div className="space-y-3 sm:space-y-6">
       {viewRecord && <IdCardDialog record={viewRecord} onClose={() => setViewRecord(null)} />}
 
       {/* 「已匯款」與「退件」同屬金錢狀態操作，一律先確認——兩顆按鈕
@@ -688,7 +691,14 @@ export function WithdrawalManagement({
       )}
 
       <Card>
-        <CardContent className="pt-6">
+        {/* 手機內距減半:工具列在 375px 實測 174px 高，其中 48px 是純內距
+            （`pt-6` ＋ 原語的 `[&:last-child]:pb-6`）。桌面的留白節奏在手機
+            是最貴的東西——同一個理由已經讓統計卡換成一行摘要、讓重複的
+            CardHeader 收起來。
+            ⚠️ `[&:last-child]:pb-6` 的 specificity 是 (0,2,0)，`p-3` 的
+            (0,1,0) 蓋不掉它（同 `ui/table.tsx` 那個踩過的坑），所以下方
+            內距要用同形狀的 `[&:last-child]:pb-3` 才壓得住。 */}
+        <CardContent className="px-3 pt-3 [&:last-child]:pb-3 sm:px-6 sm:pt-6 sm:[&:last-child]:pb-6">
           {/* P3:375px 下 Select(w-36) + 兩顆按鈕 + 筆數擠成一列（實測 +95px）。
               flex-wrap 讓它們換行，筆數在手機自己成一列。 */}
           <div className="flex flex-wrap items-center justify-between gap-2">

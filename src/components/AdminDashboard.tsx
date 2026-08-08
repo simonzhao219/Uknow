@@ -133,8 +133,17 @@ export function AdminDashboard() {
             餘裕不厚而且字型跨環境會變，所以 grid 的 ink overflow（標籤畫到
             隔壁格子、元素自己的 boundingClientRect 完全正常）另有真瀏覽器
             量測把關:e2e/test_admin_mobile_layout.py 的
-            test_admin_tab_labels_do_not_ink_overflow。 */}
-        <TabsList className="w-full grid grid-cols-3 md:grid-cols-5 h-auto">
+            test_admin_tab_labels_do_not_ink_overflow。
+
+            `h-auto` 的代價是格子高度完全由內容決定——原語的 `py-1` ＋
+            `text-sm` 只撐得出 30px，低於 §1 的 44px。分頁列是這一頁最上層
+            的導覽，按它的頻率高於卡片上的任何一顆按鈕，所以在這裡補回來。
+            **只補在 admin、不動 `ui/tabs.tsx` 基底**:比照 checkbox 與
+            CardOverflowMenu 的先例，改基底會連帶把會員中心、獎勵頁等所有
+            分頁列各加 14px，那是範圍外的視覺變更。
+            寫在 TabsList 而不是五顆 TabsTrigger 上:同一條規則貼五次，
+            日後加第六個分頁時漏貼不會有任何東西提醒你。 */}
+        <TabsList className="w-full grid grid-cols-3 md:grid-cols-5 h-auto pointer-coarse:[&>[role=tab]]:min-h-[44px]">
           <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
           <TabsTrigger value="members">會員管理</TabsTrigger>
           <TabsTrigger value="announcements">公告管理</TabsTrigger>

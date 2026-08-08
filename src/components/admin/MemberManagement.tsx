@@ -219,7 +219,11 @@ export function MemberManagement({
   return (
     // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 6 個
     // 頂層 Tab（規格書 §13 註記：那是釘死的 5 欄 grid，硬加會壞版面）。
-    <Tabs defaultValue="members" className="space-y-6">
+    //
+    // 手機 12px / 桌面 24px 的區塊間距與提領台一致（理由寫在
+    // `WithdrawalManagement.tsx` 的同一處，不重述）。兩個分頁在同一個
+    // AdminDashboard 底下，節奏不同會被讀成「其中一頁壞了」。
+    <Tabs defaultValue="members" className="space-y-3 sm:space-y-6">
       <TabsList>
         <TabsTrigger value="members">會員列表</TabsTrigger>
         <TabsTrigger value="id-reviews">證件審核</TabsTrigger>
@@ -401,7 +405,7 @@ export function MemberManagement({
         </Sheet>
       )}
 
-      <TabsContent value="members" className="space-y-6">
+      <TabsContent value="members" className="space-y-3 sm:space-y-6">
         {/* 統計卡片：讀伺服器算好的**全站** stats。改版前是
             `members.filter(...).length`——那個數字會隨分頁改變。 */}
         <section aria-label="會員統計">
