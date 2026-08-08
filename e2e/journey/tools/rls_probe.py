@@ -35,10 +35,14 @@ def classify(status: int, body: object) -> str:
     回傳:allowed / filtered_empty / denied_by_rls / denied_by_grant /
     unauthenticated。42501 但訊息無法歸類時 raise ValueError——寧可吵,
     也不要靜默歸錯類。
-    """
-    if status == 401:
-        return UNAUTHENTICATED
 
+    **狀態碼是線索,訊息才是判準。** 401 不能直接當成 unauthenticated:
+    PostgREST 把 42501 對**匿名角色**映成 401、對已認證角色才映成 403,
+    所以訪客踩到 RLS 時拿到的是 401 + RLS 訊息。先看狀態碼就會把它歸成
+    「沒登入」,而那正好是這個分類器要避免的失去辨別力(2026-08-08 run
+    31232337950 的 `訪客不能建立刊登` 就是這樣紅的——policy 有生效,
+    是判讀錯了)。
+    """
     if 200 <= status < 300:
         # 204 無 body、200 帶空陣列:兩者都是「被 USING 過濾成 0 列」的樣子。
         # 這**不是**錯誤——只斷言「請求失敗」的測試在 policy 全開時也會過。
@@ -51,6 +55,11 @@ def classify(status: int, body: object) -> str:
         return DENIED_BY_RLS
     if _GRANT_MARKER in message:
         return DENIED_BY_GRANT
+
+    # 訊息不是兩種 42501 的任一種,401 才真的是「沒帶/帶了壞的 JWT」
+    # (PostgREST 回 JWSError…、JWT expired 之類)。
+    if status == 401:
+        return UNAUTHENTICATED
 
     # 歸不了類就吵。靜默猜一個等於讓「被拒絕」的斷言失去辨別力,
     # 而那正是這個分類器存在的理由。

@@ -74,3 +74,30 @@ def test_unclassifiable_42501_raises_instead_of_guessing():
 def test_missing_jwt_is_unauthenticated():
     body = {"message": "JWSError JWSInvalidSignature"}
     assert rls_probe.classify(401, body) == "unauthenticated"
+
+
+# --- anon 的 42501 是 401 不是 403 ------------------------------------------
+#
+# 2026-08-08 run 31232337950:`訪客不能建立刊登` 紅在
+# `assert 'unauthenticated' == 'denied_by_rls'`,而回應 body 明明白白寫著
+# `new row violates row-level security policy`。原因是 PostgREST 把 42501
+# 對**匿名角色**映成 401、對已認證角色才映成 403,而分類器在讀訊息之前
+# 就被 `status == 401` 短路了。
+#
+# 這一組把「狀態碼是線索、訊息才是判準」釘住。順序改回去就會紅。
+
+
+def test_anon_rls_violation_is_denied_by_rls_despite_401():
+    body = {
+        "code": "42501",
+        "details": None,
+        "hint": None,
+        "message": 'new row violates row-level security policy for table "listings"',
+    }
+    assert rls_probe.classify(401, body) == "denied_by_rls"
+
+
+def test_anon_grant_denial_is_denied_by_grant_despite_401():
+    # 同一個短路也會吃掉 GRANT 形狀——只修 RLS 那條等於留一半的洞。
+    body = {"code": "42501", "message": "permission denied for table listings"}
+    assert rls_probe.classify(401, body) == "denied_by_grant"
