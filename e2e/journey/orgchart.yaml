@@ -51,6 +51,3 @@ expected_rewards:
   C1: 700    # D1-D3 / E1-E3 / F1
   F1: 100    # G1
   G1: 0      # 葉節點
-
-expected_tree_visible:
-  A0: 24     # 推薦樹 UI 只顯示三代；E1 不得出現

@@ -17,6 +17,7 @@
 | 提領查詢用了不存在的 `withdrawals.created_at` | 測試 | #265 |
 | 兩個情境搶同一個人的當日提領額度 | 測試 | #265 |
 | f45 `rls_probe.classify` 把 42501 判成 unauthenticated | 測試 | #257 |
+| **S1** 推薦樹以未遮罩原名比對 UI(gen ≥ 2 會遮) | 測試 | 見下方 §S1 |
 
 前兩條的完整紀錄見 `docs/plans/fix-journey-f40-listing/fix.md`(已結案,
 兩個根因都經真後端複驗)。
@@ -37,7 +38,14 @@ Background 都需要 `@orgbuild` 的 30 人建樹,少了它情境會全 skip,
 
 ---
 
-## S1 — 推薦樹展開(根因已確診,可直接施工)
+## S1 — 推薦樹展開(**已修,待下一場 journey 複驗**)
+
+修法與根因如下,保留是因為 S3/S5 若碰到推薦網絡的任何斷言都適用同一組結論。
+**動樹上的斷言一律走 `builders/referral_tree` 的 `expect_node` /
+`expand_ancestors` / `tree_row`**,不要自己 `get_by_text(真名)`。
+
+施工當下多發現一件規劃沒預料到的事,記在下方「額外發現」——照原規劃直接
+把原名換成遮罩名會從逾時變成 strict mode violation,一樣是紅的。
 
 **失敗情境**(2 條,同一個根因):
 
@@ -65,18 +73,34 @@ f60 等的是 D4(gen 3)—— 同一個根因。
 **產品是對的**,遮罩是刻意的隱私設計(見 `/referrals/network/search`
 端點註解:「回傳遮罩後顯示名…又不洩漏真名」)。**要改的是測試。**
 
-### 施工步驟
+### 額外發現:遮罩後的姓名**不再唯一**
 
-1. `e2e/journey/tools/` 新增 `masked_name(name, gen)` 純函式,鏡射
-   `maskNameByGen`,配離線單元測試(journey-offline 軌會跑)
-2. `builders/referral_tree.py` 的 `_row` / `expand_node` 改用遮罩後的名字
-   ——需要知道該節點的 generation,`expand_ancestors` 走鏈時本來就數得出來
-3. `f20` 的 `tree_contains`(D8)與 `f60` 對 D4 的斷言一併改
-4. **`f20` 的 `tree_excludes(E1)` 是空洞斷言** —— 它斷言 E1 的**原名**不出現,
-   而遮罩之後原名本來就永遠不會出現,**第四代真的漏出來時它也會照樣綠**。
-   改成結構性斷言:**沒有 `aria-level=4` 的 treeitem**。
-   (同一類問題今天已出現過一次:「下架後訪客找不到刊登」在刊登沒建成時
-   照樣通過。斷言「不存在」之前必須先確認「存在過」。)
+journey 的姓名是 `測 + run_id 尾段 + 節點代號`(`tools/zh_names.py`),遮罩
+只留首尾字,而尾字正是節點編號的數字——於是 **C7 與 D7 都遮成
+`測○○○○○○○○柒`**。f20 展開到第三代之後,`測○…○捌` 同時命中 C8 與 D8,
+只用姓名定位會撞上 Playwright 的 strict mode:症狀從逾時換成另一種紅。
+
+定位鍵因此是**兩把鑰匙:遮罩後的顯示名 + `aria-level`**。orgchart 是嚴格
+分層樹,某檢視者的第 k 代必定落在同一個絕對層,而**同一層之內遮罩後仍唯一**
+——這個不變式由 `tools/test_name_mask.py` 的
+`test_masked_names_stay_unique_within_each_generation` 鎖住,離線軌就會紅。
+
+### 實際做的
+
+1. `tools/name_mask.py` —— `maskNameByGen` 的鏡像;`tools/test_name_mask.py`
+   直接讀 `index.ts` 源碼比對 `HAN_RANGE` 與遮罩規則的關鍵字面值,規則漂了
+   在秒級的離線軌就紅(同 `test_listing_name.py` 讀 `NAME_MAX_LENGTH` 的做法)。
+   順手把 `test_zh_names.py` 裡第三份 `HAN_RANGE` 複製品改成引用,Python 側只剩一份
+2. `tools/orgchart.py` —— `ancestor_chain()` / `generation_of()`;target 不在
+   viewer 下線鏈上時**擲錯**,先前會一路走到 root 交出不在該樹上的節點
+3. `builders/referral_tree.py` —— `tree_row` / `expand_node` / `expand_ancestors`
+   / `expect_node` 一律吃代數
+4. `f20` 的 `tree_excludes(E1)` 是空洞斷言(它斷言 E1 的**原名**不出現,而遮罩
+   之後原名本來就永遠不會出現,第四代真的漏出來時它也照樣綠),改成
+   `推薦樹沒有第四代節點`:先確認第三代**已渲染**,再斷言沒有 `aria-level=4`
+   的 treeitem,且第三代**沒有展開鈕**——把「此刻沒有」升級成「到不了」
+5. `orgchart.yaml` 的 `expected_tree_visible` 沒有任何程式讀,其註解描述的正是
+   被換掉的那條 E1 斷言,一併刪除
 
 ---
 
@@ -155,3 +179,8 @@ develop。「上一場沒有、這場有」本身就是訊號,拖越久越難歸
 ——長度上限、遮罩、正規化 trigger、欄位改名都算。已補的
 `BasePage.fill_exact()` 是這條原則的第一個機械化實例(填完回頭比對),
 其餘目前仍靠人。
+
+S1 施工時長出第二句:**轉換之後還要確認轉換後的值仍然唯一。** 遮罩、截斷、
+正規化都會壓縮資訊,原本能認人的值壓縮完可能認到兩個人——那時失敗訊息會從
+「找不到」變成「找到太多」(Playwright strict mode),一樣離現場很遠。
+定位一個東西時,識別鍵撐不住轉換就補一把結構性的鑰匙(S1 補的是 `aria-level`)。
