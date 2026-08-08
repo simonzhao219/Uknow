@@ -39,6 +39,14 @@ f15/f20/f30/f40/f50/f60 六章繼續用不清 session 的版本,又壞了不知�
 `e2e/journey/tools/test_login_session_isolation.py` 三條結構守衛(跑在
 journey-offline 軌,秒級,不必等 30–90 分鐘的真後端)。
 
+**事後驗證(run 31232337950,2026-08-08)**:重跑 journey-full,
+**19 failed / 67 passed → 13 failed / 76 passed**,死在 `auth-login-button`
+的情境 **4 條 → 0 條**。上面的根因判定成立。但同一輪也顯示登入**不是唯一的
+鏈頭**——「透過 GUI 建立刊登」的 5 條(f40 三條 + f60 兩條)原樣還在,
+與登入無關,追蹤見 `docs/plans/fix-journey-f40-listing/fix.md`。
+記在這裡是因為「修好主鏈頭之後還剩什麼」本身就該被量化,
+否則下一次很容易把「失敗數下降」直接當成「問題解決」。
+
 守衛自身的教訓:第一版用正則掃檔案文字,被 docstring 裡解釋機制的那句
 `goto("/login")` 匹配到,報出假違規。改用 AST(`ast.unparse` 天然去註解、
 docstring 另外剝掉)。**守衛被散文騙比沒有守衛更糟——它會讓人開始不信任紅燈。**
