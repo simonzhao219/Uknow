@@ -47,7 +47,7 @@
 | `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
-commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
+commit 被擋時修到綠:`--no-verify` 與覆寫 `core.hooksPath` 都會被 hook 擋。
 
 **hook 的每次決策都會被記錄**(`.claude/hooks/decision_log.py`):計數存在
 session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions/<分支>.jsonl`

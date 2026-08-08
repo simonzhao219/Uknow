@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""PreToolUse hook(Bash):擋五種確定性後門。
+"""PreToolUse hook(Bash):擋六種確定性後門。
 
 這些不是「風格偏好」而是框架的完整性條件:
+0. 覆寫 core.hooksPath——繞過 pre-commit 閘門的**第二種寫法**。本專案的
+   hooksPath 指向 scripts/git-hooks(由 npm ci 的 prepare 掛載),把它改指
+   別處(含還原成預設的 .git/hooks)效果等同第 1 條:跳過 npm run check,
+   也跳過 metrics 落檔(pre-commit 是 metrics 唯一進得了 git 的落點)。
+   2026-08-07 我自己用這個寫法連下四個 commit 才發現守衛只認第 1 條——
+   同一個效果、三種寫法(-c / GIT_CONFIG_KEY_n / git config 寫入),
+   只擋一種等於沒擋。
 1. git commit --no-verify——繞過 pre-commit 閘門(閘門存在的意義歸零)
 2. git push --force / -f——改寫共享歷史(--force-with-lease 除外)
 3. 直接 push main/develop——git-flow 的底線:main/develop 只吃 PR,
@@ -46,9 +53,22 @@ HEREDOC_BODY = re.compile(
 # `-am`、`-aF` 這類合併短旗標;刻意只認大寫 F(小寫 -f 是 push 的 force,不是檔案)。
 MESSAGE_FLAG = re.compile(r"(?<!\S)(?:--message|--file|-[A-Za-z]*[mF])(?:=|\s+)")
 
+# core.hooksPath 的三種寫法。git 的設定鍵不分大小寫,所以一律 IGNORECASE。
+HOOKS_PATH = "scripts/git-hooks"  # 本專案唯一合法的 hooksPath(npm ci 的 prepare 掛載)
+HOOKS_PATH_INLINE = re.compile(r"\bgit\b[^\n|;&]*\s-c\s*core\.hookspath\s*=", re.IGNORECASE)
+HOOKS_PATH_ENV = re.compile(r"\bGIT_CONFIG_KEY_\d+\s*=\s*['\"]?core\.hookspath", re.IGNORECASE)
+GIT_CONFIG = re.compile(r"\bgit\b[^\n|;&]*\bconfig\b(?P<rest>[^\n|;&]*)", re.IGNORECASE)
+CONFIG_READ_FLAGS = ("--get", "--get-all", "--get-regexp", "--list", "-l")
+
 # deny 理由上提成具名常數,decide() 回傳常數本身,main() 據此查出 rule id 記錄。
 # 本檔是五個 hook 裡唯一有多條規則的,不分辨 rule 的話「bash-guard 擋了 40 次」
 # 這個讀數沒有可行動性——擋的是 --no-verify 還是誤判了分支 base,處置完全不同。
+REASON_HOOKS_PATH = (
+    "覆寫 core.hooksPath 等同繞過 pre-commit 閘門——跳過 npm run check,也跳過 metrics 落檔。"
+    f"本專案的 hooksPath 固定指向 {HOOKS_PATH}(npm ci 的 prepare 掛載),"
+    "不需要、也不該在指令裡改它。commit 被擋代表 check 紅,修到綠再提交;"
+    "紅燈測試 commit 走 .claude/tdd-lock 紅燈通道(見 CLAUDE.md)。"
+)
 REASON_NO_VERIFY = (
     "git commit --no-verify 會繞過 pre-commit 閘門。commit 被擋代表 check 紅,"
     "修到綠再提交;紅燈測試 commit 走 .claude/tdd-lock 紅燈通道(見 CLAUDE.md)。"
@@ -79,6 +99,7 @@ REASON_BASE_STALE = (
 )
 
 RULE_IDS = {
+    REASON_HOOKS_PATH: "hooks-path",
     REASON_NO_VERIFY: "no-verify",
     REASON_FORCE_PUSH: "force-push",
     REASON_PROTECTED_BRANCH: "protected-branch",
@@ -151,6 +172,37 @@ def strip_payloads(cmd: str) -> str:
         out.append(" ")
 
 
+def _overrides_hooks_path(cmd: str) -> bool:
+    """指令是否把 core.hooksPath 指向 scripts/git-hooks 以外的地方(含還原預設)。
+
+    三種寫法都認,但**讀取不擋**——`git config --get core.hooksPath` 是診斷用的
+    正常操作,擋它只會逼人改用別的方式看同一個值,毫無防護價值。
+    """
+    if HOOKS_PATH_INLINE.search(cmd) or HOOKS_PATH_ENV.search(cmd):
+        return True
+
+    for match in GIT_CONFIG.finditer(cmd):
+        rest = match.group("rest")
+        tokens = rest.split()
+        if not any(t.lower().endswith("core.hookspath") for t in tokens):
+            continue
+        if any(t in CONFIG_READ_FLAGS for t in tokens):
+            continue
+        # 寫入形式:鍵之後的第一個非旗標詞是新值。--unset 沒有值,一律視為違規
+        # ——把 hooksPath 拿掉會退回預設的 .git/hooks,那裡是空的,效果同繞過。
+        values = [t for t in tokens if not t.startswith("-")]
+        key_index = next(
+            (i for i, t in enumerate(values) if t.lower().endswith("core.hookspath")), None
+        )
+        if key_index is None:
+            continue
+        new_value = values[key_index + 1] if key_index + 1 < len(values) else None
+        if new_value is None or new_value.strip("'\"").rstrip("/") != HOOKS_PATH:
+            return True
+
+    return False
+
+
 def decide(cmd: str, head_matches_develop: bool | None = None) -> str | None:
     """回傳 deny 理由,或 None 表示放行。
 
@@ -159,6 +211,9 @@ def decide(cmd: str, head_matches_develop: bool | None = None) -> str | None:
     guard 壞掉不該把人鎖死)。只有第 5 類檢查會用到這個參數。
     """
     cmd = strip_payloads(cmd)
+
+    if _overrides_hooks_path(cmd):
+        return REASON_HOOKS_PATH
 
     if re.search(r"\bgit\b[^\n|;&]*\bcommit\b", cmd) and "--no-verify" in cmd:
         return REASON_NO_VERIFY

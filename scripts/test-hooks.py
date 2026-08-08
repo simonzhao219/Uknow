@@ -116,6 +116,29 @@ for cmd, want, why in PAYLOAD_CASES:
     expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
 
 
+# core.hooksPath:繞過 pre-commit 的第二種寫法(friction-log 2026-08-07,自犯)。
+# 本專案的 hooksPath 指向 scripts/git-hooks,覆寫它就等於 --no-verify——
+# 而守衛原本只認 --no-verify 那個字面。同一個效果三種寫法,只擋一種等於沒擋。
+HOOKS_PATH_CASES = [
+    # (指令, 應否 deny, 說明)
+    ("git -c core.hooksPath=.git/hooks commit -m x", True, "指向空目錄(我實際踩的那個)"),
+    ("git -c core.hooksPath=/dev/null commit -m x", True, "指向 /dev/null"),
+    ("git -c core.hookspath=/tmp/h commit -m x", True, "設定鍵不分大小寫"),
+    ("git -c core.hooksPath= commit -m x", True, "設成空值"),
+    ("GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp git commit -m x", True, "env 寫法"),
+    ("git config core.hooksPath /dev/null", True, "寫進設定檔:永久版"),
+    ("git config --unset core.hooksPath", True, "unset 會退回空的 .git/hooks"),
+    ("git config core.hooksPath scripts/git-hooks", False, "設回本專案的正解(npm prepare 做的事)"),
+    ("git config --get core.hooksPath", False, "讀取是診斷,不是繞過"),
+    ("git config --list", False, "列出全部設定"),
+    ("git -c user.name=x commit -m y", False, "其他 -c 設定不受影響"),
+    ("git commit -m 'docs: 說明 core.hooksPath=/dev/null 的危害'", False, "訊息提到不算違規"),
+]
+
+for cmd, want, why in HOOKS_PATH_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
+
+
 # bash-guard 第 5 類:新分支的 base 檢查。head_matches_develop 由呼叫方
 # (main() 的 git rev-parse)量測後傳入,這裡直接餵布林值,不需要真的建 repo。
 BRANCH_CASES = [
