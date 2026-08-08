@@ -24,7 +24,7 @@
 | U1 | 客服在外面接到「我的提領怎麼還沒到」，用手機開 `/admin` 查得到該筆的狀態與轉換歷史 | 375px 下不需橫向捲動即可讀完一筆提領的會員／金額／狀態，並開得了「查看歷史」 |
 | U2 | 管理員在手機上找得到並切得動全部五個分頁 | 375px 下五個分頁標籤**同時可見**，不需橫向捲動探索 |
 | U3 | 管理員用手機審證件（`/admin` → 會員管理 → 證件審核） | 身分證照片以單欄大圖呈現，寬度貼齊螢幕 |
-| U4 | 管理員在手機上查會員、停權／恢復、授予／撤銷管理員 | 每位會員一張卡，三顆操作鍵都在拇指可及處且 ≥44px |
+| U4 | 管理員在手機上查會員、停權／恢復、授予／撤銷管理員 | 每位會員一張卡，**兩顆**操作鍵（查看／暫停·恢復）都在拇指可及處且 ≥44px；授予／撤銷管理員在詳情面板內（見 §4.1 的註記） |
 | U5 | 管理員在手機上看得懂系統告警並標記已處理 | 告警訊息完整可讀、`context` JSON 不撐爆版面 |
 | U6 | 管理員在手機上發布／刪除公告 | 表單欄位單欄堆疊，公告列表的標題與 badge 不互相擠壓；**公告內文含長網址時不撐破版面（P15）** |
 | U7 | 管理員在手機上看得懂「管理員設置」分頁的帳號資訊 | 長 Email 不撐破版面（P16 實測 +119px）——規格書 §13 的五個模組裡，只有這個模組原本沒有任何故事覆蓋 |
@@ -136,7 +136,7 @@
 | P4 | 同上 `:624` 匯款作業面板 | `grid gap-3 md:grid-cols-5` | 手機直向堆成五段，把整份提領列表推到第一屏之外 |
 | P5 | 同上 `:68` `IdCardDialog` | `DialogContent className="max-w-3xl"` | twMerge 讓 `max-w-3xl` **蓋掉** dialog 原語的行動端護欄 `max-w-[calc(100%-2rem)]`（`dialog.tsx:41`）→ **失去左右各 1rem 的安全邊距、對話框貼齊螢幕邊緣**。⚠️ 初版寫的「寬 768px、左右溢出視窗」**經實測不成立**——`w-full` 在 `fixed` 元素上已依視窗定寬 375px，`max-w-3xl`（768px）比它大所以不生效。診斷與修法不變，錯的只有後果描述（審查 F7，M1 量測證實）|
 | P6 | 同上 `:82` 身分證雙圖 | `grid grid-cols-2` 無斷點 | 每張約 160px 寬，證件上的字**看不清**——而看清楚正是審核的實質工作 |
-| P7 | `MemberManagement.tsx:378` 會員表格 | 8 欄 + 末欄三顆操作鍵 | 同 P2；操作鍵要捲到最右才點得到 |
+| P7 | `MemberManagement.tsx:378` 會員表格 | 8 欄 + 末欄兩顆操作鍵（原為三顆，見 §4.1 註記） | 同 P2；操作鍵要捲到最右才點得到 |
 | P8 | 同上 `:334` 標題／搜尋列 | `flex items-center justify-between` + `Input w-56` | 375px 下標題與搜尋框互相擠壓 |
 | P9 | 同上 `:208` 詳情 Sheet 的 `dl` | `grid-cols-2` 無斷點 | 「收款帳號」`銀行代號 / 帳號` 在半寬欄裡折行破碎 |
 | P10 | `SystemAlerts.tsx` 告警表格 | 6 欄，其中 `context` 是 `JSON.stringify` 塞進 `max-w-xs` | 訊息與 JSON 都被推到捲動區右側，手機上等於看不到 |
@@ -159,7 +159,17 @@
   **勾選 checkbox：依 Q2 決定，預設不渲染**（Q2 裁決為「只在 `isDesktop` 下渲染」，
   所以手機卡片沒有這一項）——比照 Q1 明標，不要用「清單裡沒列」來默認裁決（審查 R9）
 - 會員卡：姓名 / Email / 電話 / 會籍 badge / 角色 badge / 狀態 badge /
-  刊登數 / 三顆操作鍵
+  刊登數 / **兩顆**操作鍵（查看、暫停·恢復）
+
+  > ⚠️ **前提已變更（本規劃書開工前）**：原本寫的是「三顆操作鍵」，第三顆是
+  > 「設為／撤銷管理員」。該鍵已在 `claude/member-admin-button-ux` 移出列表、
+  > 改放進詳情 Sheet 的「權限」區（兩個方向都走確認框），停權也補了確認框。
+  > 理由是動作位階：授予管理員一個平台設好一次之後幾乎不再動，卻是破壞力最大
+  > 的一顆，而且**在資料層面不可逆**（他當下就讀得到全站身分證與收款帳號）。
+  > 準則已寫進 `ui-ux-guidelines.md` §11。
+  >
+  > 對本規劃的影響：卡片少一顆鍵（密度問題本來就少一顆更好解），詳情 Sheet
+  > 底部多一個「權限」區——**P9 的 `dl` 單欄改動要把它一起算進面板高度**。
 - 告警卡：等級 badge / 來源 / 訊息全文 / 發生時間 / 「標記已處理」；
   `context` JSON 收進 `Collapsible`（預設收合、`break-all`）
 
@@ -371,7 +381,7 @@ border box，所以它量到的永遠是那個 16px 方框。改成在 -14px 偏
 |---|---|---|---|
 | 1 | 殼層與觸控原語：TabsList 兩列（P1）、`checkbox` 的 opt-in 觸控 variant（P13）、抽出共用 `stubMediaQuery`（F9） | `src/components/AdminDashboard.test.tsx`（新檔，jsdom）＋ `e2e/test_admin_mobile_layout.py`（既有，需擴充 `layout_probe`:命中測試＋熱區相交） | 五個 TabsTrigger 皆在文件中且可點（jsdom）；**TabsList 在 375px 下實測分兩列**（`count_rows`，刪掉 `test_admin_tabs_wrap_to_two_rows_at_375px` 的 xfail marker）；**逐 `TabsTrigger` 的 `scrollWidth` 不超出自身 `clientWidth`**（審查 R4:`grid` 的 ink overflow 疊到隔壁分頁時 `count_rows` 照樣回報兩列，餘裕只有 10.3px）；**checkbox 的可點區以點擊命中測試驗證**（-14px 四角 `elementFromPoint` 仍命中 checkbox——**不是** `viewport_fit`，那量不到偽元素）；**相鄰互動元件熱區不相交**（審查 R12）；**`ui/checkbox.tsx` 的預設渲染一個位元組都沒變**（5 個會員端頁面零回歸，由 opt-in variant 保證）；`npm run test:coverage` 四項門檻不降 |
 | 2 | 提領管理手機版：卡片列表（P2）、工具列換行（P3）、作業面板摺疊（P4）、Dialog 寬度與雙圖（P5/P6） | `WithdrawalManagement.test.tsx`（既有檔擴充，`stubMediaQuery(false)`）＋ `e2e/test_admin_mobile_layout.py` | 手機：無 `<table>`、每筆有會員＋金額＋狀態＋操作；桌面：**既有測試全綠、一行都不准改**（不寫條數——這個數字已經漂過兩次，而真正的閘門是「不准改」，不是條數）；**IdCardDialog 左右安全邊距實測 ≥8px、雙圖實測垂直堆疊**（刪掉那兩條 xfail marker）；**巡檢的 `/admin`、`#id-card-dialog`、`#history-dialog` 三條 `known_overflow` 刪除**；手機點 `Collapsible` trigger 能切換就地展開的那一筆（釘住 F1 的修法：`setActiveId` 在手機仍有寫入路徑），且該 trigger 可鍵盤操作（審查 R5）；**`isDesktop` 由 true 轉 false 時 `selected` 被清空**（審查 R7:否則「已選取 N 筆」橫幅還在，但看不到是哪幾筆、也無法逐筆取消）；`test:coverage` 四項門檻不降 |
-| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9） | `MemberManagement.test.tsx`（既有檔擴充） | 手機：每位會員一張卡且三顆操作鍵可達。**驗收明確切分**（審查 F12）:「存在性與 ≥44px」由測試機械把關；**「拇指可及處」是人因判準、jsdom 與探針都量不出，屬人工目視驗收**——U4 的複合驗收標準不假裝全部可自動驗證；桌面測試不動；**巡檢的 `#members`、`#member-sheet` 兩條 `known_overflow` 刪除**；`test:coverage` 四項門檻不降 |
+| 3 | 會員管理手機版：卡片列表（P7）、搜尋列換行（P8）、詳情 `dl` 單欄（P9，**含面板底部的「權限」區**） | `MemberManagement.test.tsx`（既有檔擴充，**已有 24 條，其中 10 條是動作位階改版時補的——擴充不得改動它們**） | 手機：每位會員一張卡且**兩顆**操作鍵可達（第三顆已移進詳情面板，見 §4.1 註記）。**驗收明確切分**（審查 F12）:「存在性與 ≥44px」由測試機械把關；**「拇指可及處」是人因判準、jsdom 與探針都量不出，屬人工目視驗收**——U4 的複合驗收標準不假裝全部可自動驗證；桌面測試不動；**巡檢的 `#members`、`#member-sheet` 兩條 `known_overflow` 刪除**；`test:coverage` 四項門檻不降 |
 | 4 | 系統告警與公告手機版：告警卡片（P10）、header 換行（P11）、公告列表項（P12）、**公告內文長網址斷行（P15）**、**管理員設置的 Email 列（P16）** | `src/components/admin/SystemAlerts.test.tsx`（**develop 已補 8 條，改為擴充**）＋ `SystemNotifications.test.tsx`（新檔）＋ `AdminSetup.test.tsx`（新檔） | 手機：告警訊息全文可讀、`context` 以 `Collapsible` 預設收合；標記已處理可點；**U7 的驗收（長 Email 不撐破）由 `AdminSetup.test.tsx` ＋巡檢共同釘住**；**`SystemAlerts` 的載入態順手從置中 spinner 換成 `Skeleton`**（審查 F14，童子軍原則——該檔本來就在本階段）；**巡檢的 `#system-alerts`、`#announcements`、`#admin-setup` 三條 `known_overflow` 刪除**；`test:coverage` 四項門檻不降 |
 | 5 | 收尾：確認棘輪真的往少的方向走了 | `e2e/test_overflow_sweep.py`、`e2e/test_admin_mobile_layout.py` | **admin 相關的 8 條 `known_overflow` 全數刪除**、**3 條 xfail marker 全數刪除**，且 `cd e2e && pytest` 全綠——任何一條沒清掉就代表該階段沒做完；`npm run check:full` 全綠 |
 

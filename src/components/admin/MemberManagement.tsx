@@ -82,10 +82,24 @@ export function MemberManagement({
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
-  // 撤銷管理員是 plan §4 明列的危險動作：它把整個後台的一把鑰匙收回來，
-  // 誤觸的代價是那個人瞬間失去所有管理能力。授予不用確認框——授錯了撤回
-  // 即可，兩個方向的代價不對稱。
-  const [demoteTarget, setDemoteTarget] = useState<AdminMember | null>(null);
+  // 管理員授予／撤銷**兩個方向都走確認框**，且都只在詳情面板裡出現。
+  //
+  // 位階：一個平台的管理員設好一次之後幾乎不再動，但它是這個查詢台破壞力
+  // 最大的動作——把它和每天要按的「查看」並排等寬，等於讓使用頻率最低、
+  // 代價最高的一顆鍵長期停在誤觸範圍內（手機上還會和「暫停」折行擠在一起）。
+  // 移進面板不是藏起來：要把後台鑰匙交給一個人，本來就該先看清楚他是誰，
+  // 而那些資訊全在面板裡，那道摩擦是流程本身。
+  //
+  // 為什麼授予也要確認框（推翻先前「授錯了撤回即可」的不對稱推理）：那個
+  // 推理只在權限層成立。管理員當下就讀得到全站的身分證字號與收款帳號
+  // （提領作業台維持全碼），撤回權限撤不回已經被看過的資料——**授予在資料層
+  // 面是不可逆的**，方向和直覺相反。
+  const [adminIntent, setAdminIntent] = useState<'grant' | 'revoke' | null>(null);
+  // 面板蓋在列表上，權限操作的錯誤印在列表區等於印在看不見的地方。
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  // 停權會立刻凍結對方的刊登可見性與提領（§5.2），而代價落在會員身上——
+  // 他不會知道自己被誤停過。恢復不收這道過路費：那是把東西還回去。
+  const [suspendTarget, setSuspendTarget] = useState<AdminMember | null>(null);
 
   // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
   // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
@@ -110,6 +124,7 @@ export function MemberManagement({
 
   const openDetail = async (id: string) => {
     setActionError(null);
+    setPermissionError(null);
     try {
       setDetailFor(await loadMemberDetail(id));
     } catch (err) {
@@ -117,35 +132,45 @@ export function MemberManagement({
     }
   };
 
-  const toggleAdmin = async (m: AdminMember) => {
-    // 撤銷走確認框；授予直接執行（代價不對稱，見 demoteTarget 註解）。
-    if (m.isAdmin) {
-      setDemoteTarget(m);
-      return;
-    }
-    await runAdminChange(m, true);
-  };
-
-  const runAdminChange = async (m: AdminMember, isAdmin: boolean) => {
-    setProcessingId(m.id);
-    setActionError(null);
+  const runAdminChange = async (isAdmin: boolean) => {
+    const target = detailFor;
+    if (!target) return;
+    setProcessingId(target.id);
+    setPermissionError(null);
     try {
-      await setMemberAdmin(m.id, isAdmin);
-      await list.reload();
+      await setMemberAdmin(target.id, isAdmin);
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
       // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      setActionError(err instanceof Error ? err.message : '權限更新失敗');
-    } finally {
+      setPermissionError(err instanceof Error ? err.message : '權限更新失敗');
       setProcessingId(null);
+      return;
     }
+    // 變更已成立。之後的重讀失敗**不得**回報成「權限更新失敗」——這顆鈕的
+    // 標籤隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
+    try {
+      setDetailFor(await loadMemberDetail(target.id));
+    } catch {
+      setPermissionError('權限已更新，但重新讀取詳情失敗，請關閉面板後重開');
+    }
+    await list.reload();
+    setProcessingId(null);
   };
 
   const handleSuspendToggle = async (member: AdminMember) => {
+    // 暫停走確認框；恢復直接執行（代價不對稱，見 suspendTarget 註解）。
+    if (!member.suspended) {
+      setSuspendTarget(member);
+      return;
+    }
+    await runSuspend(member, false);
+  };
+
+  const runSuspend = async (member: AdminMember, suspend: boolean) => {
     setProcessingId(member.id);
     setActionError(null);
     try {
-      await suspendMember(member.id, !member.suspended);
+      await suspendMember(member.id, suspend);
       await list.reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失敗');
@@ -167,26 +192,56 @@ export function MemberManagement({
         <IdReviewQueue loadReviews={loadIdReviews} submitReview={submitIdReview} />
       </TabsContent>
 
-      {demoteTarget && (
-        <AlertDialog open onOpenChange={() => setDemoteTarget(null)}>
+      {/* 確認框的文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是
+          這件事會對那個人造成什麼，不是重複一次自己剛按了什麼。 */}
+      {adminIntent && detailFor && (
+        <AlertDialog open onOpenChange={() => setAdminIntent(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>撤銷管理員權限？</AlertDialogTitle>
+              <AlertDialogTitle>
+                {adminIntent === 'grant' ? '授予管理員權限？' : '撤銷管理員權限？'}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                {demoteTarget.name ?? demoteTarget.email} 將立即失去平台管理後台的
-                全部存取權（提領作業、會員管理、證件審核）。
+                {adminIntent === 'grant'
+                  ? `${detailFor.name ?? detailFor.email} 將可存取平台管理後台，並讀取全站會員的身分證字號與收款帳號。權限隨時可以撤回，但他在這段期間看過的資料無法追溯撤回。`
+                  : `${detailFor.name ?? detailFor.email} 將立即失去平台管理後台的全部存取權（提領作業、會員管理、證件審核）。`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  const target = demoteTarget;
-                  setDemoteTarget(null);
-                  if (target) runAdminChange(target, false);
+                  const grant = adminIntent === 'grant';
+                  setAdminIntent(null);
+                  runAdminChange(grant);
                 }}
               >
-                確認撤銷
+                {adminIntent === 'grant' ? '確認授予' : '確認撤銷'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {suspendTarget && (
+        <AlertDialog open onOpenChange={() => setSuspendTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>暫停這個帳號？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {`${suspendTarget.name ?? suspendTarget.email} 的刊登將立即隱藏，且無法提領點數或領取免費續約 credit。會員區瀏覽不受影響，解除暫停後即恢復。`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = suspendTarget;
+                  setSuspendTarget(null);
+                  if (target) runSuspend(target, true);
+                }}
+              >
+                確認暫停
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -270,6 +325,33 @@ export function MemberManagement({
                     </li>
                   ))}
                 </ul>
+              )}
+            </div>
+
+            {/* 權限。放在面板最底、以分隔線隔開——這是全查詢台破壞力最大的
+                動作，位置要讓人「走到」而不是「路過」。 */}
+            <div className="mt-6 space-y-3 border-t pt-4">
+              <h3 className="text-sm font-medium">權限</h3>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {detailFor.isAdmin ? '目前是平台管理員' : '一般會員'}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={
+                    detailFor.isAdmin ? 'text-destructive hover:text-destructive' : undefined
+                  }
+                  onClick={() => setAdminIntent(detailFor.isAdmin ? 'revoke' : 'grant')}
+                  disabled={processingId === detailFor.id}
+                >
+                  {detailFor.isAdmin ? '撤銷管理員' : '設為管理員'}
+                </Button>
+              </div>
+              {permissionError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {permissionError}
+                </p>
               )}
             </div>
           </SheetContent>
@@ -418,10 +500,16 @@ export function MemberManagement({
                           )}
                         </TableCell>
                         <TableCell>
+                          {/* 兩顆鍵，視覺權重跟著使用頻率走。改版前是三顆等寬
+                              平排，而且權重和頻率相反：每天要按的「查看」是最輕的
+                              ghost，偶爾才用的「暫停」卻是滿版紅底、在掃描時最搶眼。
+                              現在「查看」拿 outline 的實線邊框當主要動作，「暫停」
+                              退成 ghost＋紅字——紅字仍讀得出危險，但不再當視線磁鐵，
+                              真正的防線是它的確認框。 */}
                           <div className="flex flex-wrap gap-2">
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="outline"
                               aria-label={`查看 ${member.name ?? member.email} 的詳情`}
                               onClick={() => openDetail(member.id)}
                             >
@@ -429,15 +517,12 @@ export function MemberManagement({
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => toggleAdmin(member)}
-                              disabled={processingId === member.id}
-                            >
-                              {member.isAdmin ? '撤銷管理員' : '設為管理員'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={member.suspended ? 'default' : 'destructive'}
+                              variant="ghost"
+                              className={
+                                member.suspended
+                                  ? undefined
+                                  : 'text-destructive hover:text-destructive'
+                              }
                               onClick={() => handleSuspendToggle(member)}
                               disabled={processingId === member.id}
                             >
