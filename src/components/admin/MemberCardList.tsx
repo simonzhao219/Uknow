@@ -86,7 +86,10 @@ export function MemberCardList({
                 </Button>
                 <Button
                   size="sm"
-                  variant={member.suspended ? 'default' : 'destructive'}
+                  // 停權不用 destructive 實心:整張卡裡最搶眼的不該是最危險的
+                  // 那顆（掃視時最先被點到的就是它）。防線是確認框，不是紅色。
+                  variant={member.suspended ? 'default' : 'outline'}
+                  className={member.suspended ? undefined : 'text-destructive'}
                   onClick={() => onToggleSuspend(member)}
                   disabled={processingId === member.id}
                 >

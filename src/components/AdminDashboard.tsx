@@ -101,8 +101,10 @@ export function AdminDashboard() {
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">平台管理</h1>
-          <p className="text-muted-foreground">管理 Uknow 平台的所有功能</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">平台管理</h1>
+          {/* 副標在手機隱藏:它沒有可操作的資訊，而第一屏的每一像素都該
+              留給工作內容（見 e2e 的 first_screen_position 斷言）。 */}
+          <p className="hidden sm:block text-muted-foreground">管理 Uknow 平台的所有功能</p>
         </div>
         {/* 會員驗證是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
             入口放這裡，避免變成沒有站內連結可達的孤兒頁。 */}

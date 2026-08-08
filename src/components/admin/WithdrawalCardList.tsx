@@ -83,7 +83,9 @@ export function WithdrawalCardList({
               onOpenChange={(open) => onActivate(open ? w.id : null)}
             >
               <CollapsibleTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full">
+                {/* ghost 而非 outline:它只是展開，視覺重量不該等同「退件」
+                    「代為完成」這些真的會改狀態的操作。 */}
+                <Button variant="ghost" size="sm" className="w-full justify-start px-0">
                   匯款資訊
                 </Button>
               </CollapsibleTrigger>
@@ -111,7 +113,9 @@ export function WithdrawalCardList({
               {w.status === 'pending' && (
                 <Button
                   size="sm"
-                  variant="destructive"
+                  // 退件不用 destructive 實心:見 MemberCardList 同位置的說明。
+                  variant="outline"
+                  className="text-destructive"
                   onClick={() => onReject(w)}
                   disabled={processingId === w.id}
                 >

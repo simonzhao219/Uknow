@@ -74,7 +74,7 @@ export function SystemAlerts() {
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <div>
           <CardTitle>系統告警</CardTitle>
-          <CardDescription>
+          <CardDescription className="hidden sm:block">
             需要人工介入的事件（付款處理失敗、對帳錯誤、金額不符）。處理完成後標記，
             同類事件才會再次告警。
           </CardDescription>
