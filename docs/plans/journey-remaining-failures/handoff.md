@@ -32,7 +32,30 @@
 | **S4 fresh 付款沒過二次確認** | ✅ 已修(PR #268) |
 
 **五組全部修完,不要重做。** 唯一剩下的是**批次 journey 驗證**:
-全部進 develop 之後跑一場 full,一次驗完九條。
+全部進 develop 之後跑一場 full,一次驗完九條。**驗證尚未完成**,進度見下表。
+
+### 批次驗證的場次紀錄
+
+| run | 模式 | 結果 | 有效性 |
+|---|---|---|---|
+| 31253115394(develop @ `31388da`) | sandbox | 12 failed / 60 passed / **39 skipped**,3:54 | ❌ **無效** |
+| 31263854444(同 SHA) | webhook | 進行中 | — |
+
+第一場之所以無效:`f00_skeleton` 的 A0 付款在 PayUni sandbox 導頁後卡住
+(`dump_page` 顯示欄位都正確填入、`確定鍵在送出前就可見:False`,停在
+`sandbox-api.payuni.com.tw/api/upp`),於是 f10 建樹 `第 0 代有 1 個節點建置失敗`,
+f20/f30/f40/f45/f50/f60 **全數 skip(38 條)**,f70 連鎖 10 條失敗。
+**九條待驗情境有八條根本沒執行**——這場不是「還有 12 條紅」,是「什麼都沒驗到」。
+
+已排除產品回歸:上一場成功的 run 之後 `src/**` 沒有任何改動碰到付款路徑
+(`PaymentCheckout.tsx` 未動)。改走工作流內建的 `payment_mode: webhook`
+(簽章注入備援)重跑;它仍會經過 S4 修的 A15 二次確認對話框
+(`pay_fresh_via_gui` → `_arm_webhook_gateway` → `click_pay()` →
+`fresh-confirm-dialog` → `_drive_payment`),所以 S4 的修法照樣被驗到。
+
+⚠️ **`MIN_FULL=20` 的下限斷言擋不住這種場次**:整棵樹死了,但連鎖失敗仍
+被計為「有執行」,所以下限過關、工作流不覺得異常。要判斷一場批次驗證有沒有
+效力,看的是 **skipped 數**與**目標情境是否真的執行**,不是總數。
 
 原訂順序 **S1 → S5 → S3 → S4**,一次一個 session、一個 PR 一個根因。
 develop 高頻變動(今天一小時內合了 5 個 PR),**開工前先
