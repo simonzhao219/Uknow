@@ -11,6 +11,7 @@ from builders.referral_program import ensure_joined_via_gui
 from builders.verification import available_points
 from pages.admin_dashboard_page import AdminDashboardPage
 from pages.reward_page import RewardPage
+from tools import withdrawal_query
 
 scenarios("50_withdrawal.feature")
 
@@ -27,14 +28,17 @@ def not_joined_hint(guarded_page):
     expect(guarded_page.get_by_text("尚未加入推薦計畫").first).to_be_visible(timeout=15_000)
 
 
-def _latest_withdrawal(supabase_admin, user_id: str) -> dict:
-    rows = supabase_admin.rest_select(
-        "withdrawals",
-        {"select": "id,status,amount", "user_id": f"eq.{user_id}",
-         "order": "created_at.desc", "limit": "1"},
+@given(parsers.parse('"{node}" 當日的提領額度已解除'))
+def clear_daily_withdrawal_quota(supabase_admin, run_state, node):
+    withdrawal_query.backdate_todays_withdrawals(
+        supabase_admin, run_state.users[node].user_id
     )
-    assert rows, "沒有提領紀錄"
-    return rows[0]
+
+
+def _latest_withdrawal(supabase_admin, user_id: str) -> dict:
+    # 查詢與欄位名收在 tools/withdrawal_query.py,由離線測試比對 migration
+    # ——欄位打錯時在 journey-offline 軌就紅,不必等真後端回一句 400。
+    return withdrawal_query.latest_withdrawal(supabase_admin, user_id)
 
 
 @when(parsers.parse('"{node}" 登入並開啟獎勵頁'))
