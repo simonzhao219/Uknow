@@ -375,7 +375,10 @@ function AppContent() {
                       path="/rewards"
                       element={
                         <ProtectedRoute featureRequired="rewardSystem">
-                          <RequireMembershipRoute>
+                          {/* allowExpired：規格 §5 的狀態表承諾失效會員「獎勵收益
+                              保留不歸零、僅提領不可」——擋掉整頁的話那個承諾看不到。
+                              提領仍由 WithdrawalSection 擋，停權仍由守衛擋。 */}
+                          <RequireMembershipRoute allowExpired>
                             <RewardDashboard />
                           </RequireMembershipRoute>
                         </ProtectedRoute>

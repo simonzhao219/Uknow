@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 
 interface RequireMembershipRouteProps {
   children: React.ReactNode;
+  /** 見 resolveMembershipRedirect：只放寬「曾訂閱、已到期」那一格。 */
+  allowExpired?: boolean;
 }
 
 /**
@@ -25,10 +27,15 @@ interface RequireMembershipRouteProps {
  *   4. 曾有訂閱（已過期）             → /payment/checkout（續約）
  *   5. step 0 或資料不完整            → /auth/complete-profile（首次漏斗）
  *   6. 其餘（step 1、step 2 但付款失敗）→ /payment/checkout
+ *
+ * @param opts.allowExpired 只放寬第 4 格（獎勵頁專用）。規格 §5 的狀態表對
+ *   失效會員承諾「獎勵收益保留不歸零、僅提領不可」——獎勵頁若被會籍守衛
+ *   擋掉，那個承諾使用者根本看不到。放寬**不含**停權（由下方 suspendedBlocked
+ *   處理）、不含待開通、也不含從未訂閱過的人（那是註冊漏斗，不是過期會員）。
  */
 export function resolveMembershipRedirect(
   user: any,
-  _opts?: { allowExpired?: boolean },
+  opts?: { allowExpired?: boolean },
 ): string | null {
   if (user.isAdmin) return null;
   if (user.accountStatus === 'active') return null;
@@ -41,7 +48,9 @@ export function resolveMembershipRedirect(
   }
 
   // 曾是會員、已過期 → 直接續約，不重走註冊漏斗。
-  if (user.subscriptionEndDate) return '/payment/checkout';
+  // allowExpired 的頁面(獎勵頁)在這一格放行,讓失效會員看得到被保留的點數;
+  // 提領本身仍由 WithdrawalSection 的 isSubscriptionInvalid 擋住。
+  if (user.subscriptionEndDate) return opts?.allowExpired ? null : '/payment/checkout';
 
   const profileComplete = !!(user.name && user.phone && user.birthDate);
   if ((user.registrationStep ?? 0) === 0 || !profileComplete) {
@@ -54,11 +63,11 @@ export function resolveMembershipRedirect(
   return '/payment/checkout';
 }
 
-export function RequireMembershipRoute({ children }: RequireMembershipRouteProps) {
+export function RequireMembershipRoute({ children, allowExpired }: RequireMembershipRouteProps) {
   const { user, isLoggedIn } = useContext(UserContext);
   const navigate = useNavigate();
 
-  const redirect = isLoggedIn && user ? resolveMembershipRedirect(user) : null;
+  const redirect = isLoggedIn && user ? resolveMembershipRedirect(user, { allowExpired }) : null;
   const suspendedBlocked = !!(isLoggedIn && user?.suspended && !user?.isAdmin);
 
   // 沿用原本 useEffect + render-time Navigate 的雙保險寫法，
