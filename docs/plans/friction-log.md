@@ -1659,3 +1659,108 @@ bug**)因此被單獨隔離出來。逐個剝開比一次想清楚兩個容易�
 還沒被 fetch 的遠端分支上。認定「不存在」之前先
 `git ls-remote --heads origin`。這次的交接改為直接落在 develop
 (`docs/plans/journey-remaining-failures/handoff.md`),不再依賴某條分支。
+
+## 2026-08-08｜漏網｜修 08-07 事故的那個修法,自己造成了 08-08 事故
+
+使用者回報:`develop.uknow.pages.dev` 上「很常」拿到一張純靜態的
+「找不到這個資源」。實際規律是**任何硬導航到深層路徑**——在 `/admin` 按
+重新整理、直接貼網址、掃 QR、從 LINE 點連結進來、金流導回
+`/payment/result`、信箱連結進 `/auth/reset-password`。進站後在站內點擊
+完全正常(react-router 客戶端處理,不碰伺服器),所以症狀像是間歇的。
+
+根因是 08-07 那則(「正式站 admin 進不去」)的修法自己帶進來的,而且**兩條
+都與 Cloudflare 官方文件寫的相反**:
+
+1. 為了讓缺檔回 404 而新增的 `public/404.html`,**存在本身就是關掉 SPA 模式
+   的開關**。Serving Pages 文件:「If your project does **not** include a
+   top-level `404.html` file, Pages assumes that you are deploying a
+   single-page application.」建置會把 `public/` 原樣複製到輸出根目錄,於是
+   Pages 改用 Not Found 模式,所有非實體檔案的路徑一律回 404 頁。
+2. `/assets/* /404.html 404` **從未生效**。Redirects 文件的支援表把
+   「Rewrites (other status codes)」列為 ❌,官方舉的不支援範例正是
+   `/blog/* /blog/404.html 404`——與我們寫的同形。
+
+也就是說:那次修復**想要的效果一項都沒拿到,卻換來深層路徑全掛**,而且
+develop 與 main 都已經帶著它。
+
+### 這是同一個形狀的第三次
+
+08-07「註解宣稱的機制不存在」、08-08「離線測試與被測程式同源於一個錯誤
+假設」,加上這次——三次都是「**把一個未經查證的假設同時寫進實作、註解和
+測試,於是三者互相印證**」。這次多了一層值得單獨記的:
+
+**假設的對象是第三方平台的行為,而那是查得到的。** `_redirects` 的註解白紙
+黑字寫著「靜態檔存在時 Pages 一律先送檔,這裡的規則只在沒有對應檔案時才
+生效」;官方文件寫的是「**Redirects are always followed, regardless of
+whether or not an asset matches the incoming request**」。查證成本是分鐘級
+(一次 `curl` 官方 docs 原始碼),猜錯的成本是兩次線上事故。
+
+**而且那個錯誤模型還被一條綠燈測試釘住了**:`appShell.test.ts` 當時斷言
+`/^\/assets\/\*\s+\S+\s+404$/`,守著一條平台根本不執行的規則。**宣稱守著
+不存在行為的測試,比沒有測試更糟**——它讓後續的人不會再去問。
+
+可操作的收斂:**動平台設定檔(`_redirects`/`_headers`/`wrangler.toml`/
+workflow 觸發條件)之前,先讀該產品的官方文件原文,並把引用的原文貼進
+註解裡。** 貼原文不是為了好看,是為了讓下一個人能一眼判斷「這個宣稱有沒有
+來源」——本次兩條錯誤註解的共同特徵就是**言之鑿鑿但沒有出處**。
+
+### 同類掃描:在 `_headers` 命中第二個實例
+
+pattern 抽象成「把平台行為的假設寫進註解卻沒查文件」之後,`public/_headers`
+立刻中槍。它寫著「後面的規則會覆寫前面同名的標頭」,而官方 Custom headers
+文件說的是:「An incoming request which matches multiple rules' URL patterns
+will inherit **all** rules' headers」+「If a header is applied twice in the
+`_headers` file, the values are **joined with a comma separator**」。
+
+`/*` 與 `/assets/*` 兩個區塊都宣告 Cache-Control,於是 `/assets/x.js` 兩條都
+命中,實際收到的是 `no-cache, public, max-age=31536000, immutable`——**相加
+不是覆寫**。`no-cache` 一到,那個一年期的 immutable 完全失效,每個 chunk
+每次進站都回源驗證一次。行動優先的產品,這是實質的速度成本。
+
+舊測試只斷言字串 `immutable` 有出現,同樣不會因為這個缺陷變紅。
+
+### 四面向裡真正有價值的那一項:架構
+
+這不是點狀 bug,是一個**架構層缺口的第三個症狀**:專案沒有任何一層在驗證
+「部署之後線上的實際狀態」。三次事故同一個形狀——07-26 部署卡在等待核准
+(靜默停擺 13 天)、08-07 部署缺檔、08-08 SPA 模式被關掉——**全部都是
+「CI 全綠、PR 合併成功、線上壞掉」**。單元測試驗的是原始碼,build 驗的是
+產物,兩者都碰不到「Cloudflare 拿到這些檔案之後會怎麼做」。
+
+08-07 那則自己就列了這個缺口當第 3 項建議,但沒有補。這次補了。
+
+### 處置
+
+- 刪 `public/404.html`、`_redirects` 只留 `/* /index.html 200`,註解全部改成
+  直接引官方原文並寫明「不要新增 404.html」的理由。
+- `_headers` 拿掉 `/*` 區塊(HTML 走 Pages 預設的
+  `public, max-age=0, must-revalidate`,語意與 no-cache 等價且不會相撞)。
+- `appShell.test.ts` 換掉三條錯誤斷言,新增「Pages 服務模式契約」(禁止
+  `public/404.html`、SPA 後備必須在、不得出現非 200/3xx 的改寫)與
+  「`_headers` 重複宣告契約」。
+- 新增 `scripts/check-deployed-assets.py` + `.github/workflows/deploy-smoke.yml`
+  ——補上「驗證線上實際狀態」這一層。
+
+### 寫這支 smoke 時自己踩到同一個坑,值得記
+
+初版用「HEAD 回不回 200」判斷資產在不在。用「搬走一個 chunk」實測時它
+**照樣全綠**——因為 SPA 後備把缺檔翻成 `200 + text/html`,狀態碼確實是 200。
+那正是 08-07 事故的機制本身,而我寫檢查器時又忘了它。改成判 **Content-Type**
+才紅。
+
+教訓有兩層。表層:**檢查缺檔要看型別不是狀態碼**。深層:**如果不實際製造一次
+故障來驗證,這支檢查器會以「永遠綠燈」的姿態存在,和它要取代的那個假閘門
+一模一樣**。四個情境(完整/缺 chunk/404.html 存在/Cache-Control 被合併)都
+對本機模擬的 Pages 實測過紅綠,才算數。
+
+同一次還抓到自己寫的斷言用了 `!seen.add(name)` ——`Set.add` 回傳的是 Set
+不是 boolean,那條測試恆綠。**新寫的測試必須先看它紅一次**,這條規矩這次
+兩度救場。
+
+### 未驗證的部分(誠實標註)
+
+本次分析在 web session 容器內完成,而 egress policy 擋掉了
+`develop.uknow.pages.dev`(gateway 對 CONNECT 回 403),所以**線上實測沒有
+跑到**——根因是從官方文件原文 + repo 歷史推出來的。合併後應手動跑一次
+`python3 scripts/check-deployed-assets.py https://develop.uknow.pages.dev`
+確認,那也正是 deploy-smoke 存在的意義。

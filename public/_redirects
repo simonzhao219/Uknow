@@ -1,14 +1,29 @@
-# Cloudflare Pages 路由規則。**順序即優先序**，第一條命中就停。
+# Cloudflare Pages 路由規則。
 #
-# 靜態檔存在時 Pages 一律先送檔，這裡的規則只在「沒有對應檔案」時才生效。
+# ⚠️ 這個檔案只該有 SPA 後備這一條。想加規則之前先讀完下面三段——
+# 2026-08-07 加的兩條「看起來很合理」的規則，隔天就讓深層路徑全掛。
 #
-# /assets/* 的 404：hash 過的資產檔要嘛存在、要嘛就是部署缺檔——不論哪種，
-# 它都不該掉進下面的 SPA 後備。2026-08-07 正式站事故正是這樣爆的：某次
-# 部署少上傳了三個 chunk，後備規則把它們變成「200 + text/html」，瀏覽器
-# 的 module loader 收到 HTML 直接拒絕（Strict MIME type checking），admin
-# 後台整頁進不去。回 404 至少讓錯誤誠實、可診斷，也避免瀏覽器把一份 HTML
-# 快取在 .js 的網址底下、修好之後還繼續壞。
-/assets/* /404.html 404
+# 1. **不要新增 `public/404.html`**。官方 Serving Pages 文件：
+#    「If your project does **not** include a top-level `404.html` file,
+#    Pages assumes that you are deploying a single-page application.」
+#    也就是說 404.html 的存在本身就是**關掉 SPA 模式的開關**——加了它，
+#    `/admin`、`/dashboard`、`/payment/result` 這些前端路由在硬導航
+#    （重新整理／貼網址／掃 QR／金流導回）時一律回 404 頁。
+#    由 src/appShell.test.ts 的「Pages 服務模式契約」機械把關。
+#
+# 2. **改寫只支援 200 與 3xx**。官方 Redirects 文件的支援表把
+#    「Rewrites (other status codes)」列為 ❌，舉的例子正是
+#    `/blog/* /blog/404.html 404`。寫了不會報錯，只會靜默失效。
+#
+# 3. **規則不是「只在檔案不存在時才生效」**。官方 Redirects 文件：
+#    「Redirects are always followed, regardless of whether or not an
+#    asset matches the incoming request.」本檔曾有一段註解宣稱相反的
+#    行為，還配了一條測試把它釘成綠燈——那比沒有註解更危險。
+#
+# 那「部署少上傳 chunk」怎麼辦？（2026-08-07 事故的原始問題）
+# 那件事**修不到這裡**：靜態設定檔無法得知線上少了哪個檔案。它由
+# scripts/check-deployed-assets.py 在部署後對真實網址驗證，見
+# .github/workflows/deploy-smoke.yml。
 
-# SPA 後備：其餘路徑一律交給前端路由。
+# SPA 後備：所有路徑交給前端路由（src/App.tsx 的 <Routes>）。
 /* /index.html 200

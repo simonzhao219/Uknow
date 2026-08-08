@@ -1,11 +1,26 @@
-# Cloudflare Pages 快取標頭。後面的規則會覆寫前面同名的標頭。
+# Cloudflare Pages 快取標頭。
 #
-# 預設 no-cache（＝可以存，但每次都要回源驗證）。這條的對象是 HTML：
-# index.html 內嵌的是**這次部署的資產檔名清單**，被瀏覽器快取住的話，
-# 使用者「重新整理」拿回的還是舊清單，指向的 chunk 早已被新部署換掉，
-# 於是怎麼重整都進不去——自癒路徑（見 src/utils/lazyWithRetry.ts）就死了。
-/*
-  Cache-Control: no-cache
+# ⚠️ **同一個標頭不得在兩個區塊各寫一次**。官方 Custom headers 文件：
+#   「An incoming request which matches multiple rules' URL patterns will
+#    inherit **all** rules' headers.」
+#   「If a header is applied twice in the `_headers` file, the values are
+#    **joined with a comma separator**.」
+# 這是「相加」不是「覆寫」。本檔曾經同時在 `/*` 與 `/assets/*` 宣告
+# Cache-Control，於是 /assets/x.js 兩條都命中，實際收到
+# `no-cache, public, max-age=31536000, immutable`——`no-cache` 要求每次
+# 回源驗證，那個一年期的 immutable 完全失效。
+# 由 src/appShell.test.ts 的「_headers 重複宣告契約」機械把關。
+#
+# HTML 為什麼沒有規則：Pages 的**預設值**已經是每次重新驗證。Serving
+# Pages 文件列出 cacheable 回應會自動帶
+# `Cache-Control: public, max-age=0, must-revalidate`，語意與 no-cache
+# 等價。為了它多寫一條 `/*` 規則，換來的是與下面這條相撞。
+#
+# 這件事很重要不能只靠預設值默默成立——index.html 內嵌的是**這次部署的
+# 資產檔名清單**，被瀏覽器快取住的話，使用者「重新整理」拿回的還是舊清單，
+# 指向的 chunk 早已被新部署換掉，自癒路徑（src/utils/lazyWithRetry.ts）
+# 就死了。所以改由部署後 smoke 對**真實回應標頭**驗證，見
+# scripts/check-deployed-assets.py。
 
 # 資產檔名帶內容 hash，改動必換名，因此可以放心長快取。
 /assets/*
