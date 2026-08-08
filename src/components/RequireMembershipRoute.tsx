@@ -26,7 +26,10 @@ interface RequireMembershipRouteProps {
  *   5. step 0 或資料不完整            → /auth/complete-profile（首次漏斗）
  *   6. 其餘（step 1、step 2 但付款失敗）→ /payment/checkout
  */
-export function resolveMembershipRedirect(user: any): string | null {
+export function resolveMembershipRedirect(
+  user: any,
+  _opts?: { allowExpired?: boolean },
+): string | null {
   if (user.isAdmin) return null;
   if (user.accountStatus === 'active') return null;
 
