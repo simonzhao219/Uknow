@@ -1,5 +1,6 @@
 import { MoreHorizontal } from 'lucide-react';
 import { Button } from '../ui/button';
+import { cn } from '../ui/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,13 +17,15 @@ import {
  * 重新讀一次同樣的按鈕列。列表頁的工作是「找到那一筆」，不是「對每一筆
  * 都做決定」，所以次要動作應該要求一次額外點擊。
  *
- * 判準（寫在這裡是因為它會被三個列表共用）:**留在卡片上的只有「這個列表
- * 存在的理由」那一個動作**——提領是「看匯款資訊」（admin 要照著打進網銀）、
- * 會員是「查看詳情」。其餘進選單。
+ * **目前只有提領卡在用**（不是「三個列表共用」——會員卡與告警卡都沒有選單）。
+ * 判準以 `ui-ux-guidelines.md` §11 為準，不在這裡另立一套:
  *
- * destructive 動作（退件、停權）**放在選單裡而不是卡片上**:掃視時最先被
- * 點到的不該是最危險的那顆。真正的防線仍是既有的 AlertDialog 確認框——
- * 收進選單只是不讓它搶視線，不是拿它當安全機制。
+ * - 進選單的是**唯讀、罕用、無時效性**的動作。提領卡是「查看證件」與
+ *   「查看歷史」，正好兩項——§11.2 要求選單放得下兩項以上才值得，只裝一項
+ *   是把一次點擊變兩次而沒換到任何東西。
+ * - **destructive 與時效性動作不進選單**:退件留在卡片上（它改的是一筆交易、
+ *   客服接到電話當下就要能處理）。改「一個人的狀態」的動作（停權、授予權限）
+ *   則連卡片都不該有，一律進詳情面板（§11.1）——那也是會員卡沒有選單的原因。
  */
 
 export interface CardOverflowAction {
@@ -52,7 +55,15 @@ export function CardOverflowMenu({ label, actions }: CardOverflowMenuProps) {
             key={a.label}
             onSelect={a.onSelect}
             disabled={a.disabled}
-            className={a.destructive ? 'text-destructive focus:text-destructive' : undefined}
+            // §1 觸控 ≥44px。DropdownMenuItem 基底是 px-2 py-1.5（實測 32px），
+            // 而 ⋯ trigger 本身已經是 44×44——入口 44、開出來 32 是說不通的。
+            // 只補在這裡、**不動 ui/dropdown-menu.tsx 基底**:比照 R2 的
+            // checkbox opt-in 先例，改基底會連帶把 Navbar 的六個選單項各加
+            // 12px，那是範圍外的視覺變更。
+            className={cn(
+              'pointer-coarse:min-h-[44px]',
+              a.destructive && 'text-destructive focus:text-destructive',
+            )}
           >
             {a.label}
           </DropdownMenuItem>

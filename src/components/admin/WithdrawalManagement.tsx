@@ -684,19 +684,23 @@ export function WithdrawalManagement({
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
-              {/* 下載 CSV 只在桌面:手機下載一份要拿去對帳的試算表沒有下一步，
-                  留著只是佔掉工具列一整列。 */}
-              {isDesktop && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={downloadCSV}
-                  disabled={!withdrawals.length}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  下載CSV
-                </Button>
-              )}
+              {/* 不用 isDesktop 閘掉:曾經以「手機下載試算表沒有下一步」為由
+                  只留桌面，但那既不在規劃書裡、也沒有任何 reviewer 看過，而且
+                  isDesktop 是**寬度**判準（Q4 已裁決不改成觸控偵測）——767px 的
+                  桌機視窗、分割畫面、高縮放比都會失去唯一的匯出路徑。
+                  CSV 匯出是規格書 §13 明列的職責（連 2,000 筆上限都寫進規格），
+                  要移除得走 §6 的開放問題流程並同步改規格書，不是一行註解。
+                  實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
+                  第一筆提領卡仍在第一屏內。 */}
+              <Button
+                variant="default"
+                size="sm"
+                onClick={downloadCSV}
+                disabled={!withdrawals.length}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                下載CSV
+              </Button>
             </div>
             {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
                 只寫「共 N 筆」會讓人以為 N 就是全部。 */}
