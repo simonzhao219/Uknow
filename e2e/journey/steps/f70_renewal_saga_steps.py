@@ -466,14 +466,14 @@ def fresh_blocked_by_pending_withdrawal(guarded_page, run_state, node):
     ).to_be_visible(timeout=15_000)
 
 
-@when("管理員在管理台駁回第一筆提領")
-def admin_rejects_first_withdrawal(guarded_page, run_state):
+@when(parsers.parse('管理員在管理台駁回 "{node}" 的提領'))
+def admin_rejects_withdrawal_of(guarded_page, run_state, node):
     from pages.admin_dashboard_page import AdminDashboardPage
 
     login_admin(guarded_page, run_state.users["admin"])
     admin_page = AdminDashboardPage(guarded_page)
     admin_page.open_tab("獎金提領管理")
-    admin_page.reject_first_withdrawal()
+    admin_page.reject_withdrawal(run_state.users[node].name)
 
 
 @then(parsers.parse('"{node}" 的付款頁新約選項恢復可選'))

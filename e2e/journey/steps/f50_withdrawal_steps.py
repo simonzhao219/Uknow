@@ -97,16 +97,16 @@ def points_decreased(supabase_admin, run_state, scenario_memo, node, delta):
     assert now == expected, f"可提領 {now}P ≠ {scenario_memo['points']} - {delta}"
 
 
-@when("管理員在提領管理將第一筆申請標記已匯款")
-def admin_marks_paid(guarded_page, run_state):
+@when(parsers.parse('管理員在提領管理將 "{node}" 的申請標記已匯款'))
+def admin_marks_paid(guarded_page, run_state, node):
     admin_page = _open_admin_withdrawals(guarded_page, run_state)
-    admin_page.mark_first_withdrawal_paid()
+    admin_page.mark_withdrawal_paid(run_state.users[node].name)
 
 
-@when("管理員在提領管理退件第一筆申請")
-def admin_rejects(guarded_page, run_state):
+@when(parsers.parse('管理員在提領管理退件 "{node}" 的申請'))
+def admin_rejects(guarded_page, run_state, node):
     admin_page = _open_admin_withdrawals(guarded_page, run_state)
-    admin_page.reject_first_withdrawal()
+    admin_page.reject_withdrawal(run_state.users[node].name)
 
 
 def _open_admin_withdrawals(page, run_state) -> AdminDashboardPage:
