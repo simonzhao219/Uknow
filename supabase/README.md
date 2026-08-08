@@ -131,6 +131,31 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 先做空白正規化，失敗訊息帶上 `version()`。「條件被改寬」必然改變 token，
 正規化不會產生假陰性。
 
+### 突變驗證（2026-08-08，PostgreSQL 17.6）
+
+七支斷言全是 characterization——寫的當下就是綠的，所以「綠」本身不證明它們
+擋得住什麼。逐一打壞不變式跑過一輪，每一發都紅，且各自被預期的那條抓到：
+
+| 打壞什麼 | 紅的斷言 |
+|---|---|
+| `disable row level security` | 資料表已啟用 RLS |
+| `drop policy listings_select_own` | policy 集合、own policy 角色 |
+| `alter policy listings_select_own to public` | own policy 角色、PUBLIC 範圍 |
+| 新增一條 `for select to public using (true)` | policy 集合、PUBLIC 範圍、條件 golden |
+| 把 `listings_delete_own` 改成 restrictive | 五條全是 permissive |
+| `listings_select_public` 條件加 `or true` | 條件 golden |
+| `listings` 加欄位但沒同步 view | 欄位集合與 `public_listings` 相同 |
+
+一個值得記住的分工:**「條件 golden」那支抓不到 policy 被刪掉**——它只走訪
+現存的列，被刪的那條根本不會被迭代。擋刪除的是「policy 集合恰好是這五條」。
+兩支都在，才是完整的。
+
+跑法（`supabase start` 起不來的環境也可用）:只起一顆 `supabase/postgres`
+容器、以 `supabase_admin` 依序套用 `migrations/` 全部 SQL、把 `SUPABASE_DB_URL`
+指過去即可——這支測試只問 `pg_policy` 與 `information_schema`，不需要 PostgREST
+／Kong／gotrue。若 `storage.buckets` 不存在（那張表平常由 storage 容器建立），
+先補一張同形狀的空表，`20260716000003` 才過得去。
+
 ### GRANT 現況（查證於 2026-08-07 的 develop 分支，PostgreSQL 17.6）
 
 這是**當時查證的歷史記錄**，用來解釋 0726 事故的成因類型，不是保證不變的現況：
