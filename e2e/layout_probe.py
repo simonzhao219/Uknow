@@ -259,3 +259,31 @@ def ink_overflowing_children(page, selector: str) -> list[dict[str, Any]] | None
     只有比對 `scrollWidth` 與 `clientWidth` 抓得到。
     """
     return page.evaluate(_INK_OVERFLOW_JS, selector)
+
+
+_FIRST_SCREEN_JS = """
+(selector) => {
+  const el = document.querySelector(selector);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  // 量的是「不捲動時看不看得到」，所以用文件座標扣掉目前捲動位置——
+  // 呼叫端保證是剛載入、尚未捲動的狀態。
+  return {
+    top: Math.round(r.top),
+    viewportHeight: window.innerHeight,
+    visible: r.top < window.innerHeight,
+    // 距離第一屏底部還差多少（負值 = 已經在第一屏內）
+    below: Math.round(r.top - window.innerHeight),
+  };
+}
+"""
+
+
+def first_screen_position(page, selector: str) -> dict[str, Any] | None:
+    """`selector` 在**不捲動**的情況下是否落在第一屏內。
+
+    這條問的是「打開就能開始做事嗎」——admin 打開手機是為了處理事情，不是
+    看儀表板。統計卡、頁首、說明文字都可能把真正的工作內容推到第一屏之外，
+    而那不會被溢版巡檢報成任何問題:版面完全沒有壞，只是**不好用**。
+    """
+    return page.evaluate(_FIRST_SCREEN_JS, selector)
