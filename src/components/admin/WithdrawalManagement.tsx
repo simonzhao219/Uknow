@@ -741,8 +741,14 @@ export function WithdrawalManagement({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
+                  {/* pointer-coarse:px-6:勾選框的 44px 熱區靠負 inset 伸出格子，而 Table
+                      原語的 overflow-x-auto 容器會把伸出容器左緣的部分裁掉——實測
+                      左側只剩 16px 可用、可點區被削成 37px。把第一欄的左右內距在
+                      觸控裝置上加寬，熱區才有地方伸展。垂直同理——表頭原語是釘死的 h-10（40px）、
+                      放不下 44px，所以觸控時放大到 h-14。滑鼠裝置維持原本的密度。 */}
+                  <TableHead className="w-10 pointer-coarse:px-6 pointer-coarse:h-14">
                     <Checkbox
+                      touchTarget="expanded"
                       aria-label="全選本頁的提領記錄"
                       checked={allPageSelected}
                       onCheckedChange={toggleAllOnPage}
@@ -767,8 +773,10 @@ export function WithdrawalManagement({
                     data-state={w.id === activeRecord?.id ? 'selected' : undefined}
                     onClick={() => setActiveId(w.id)}
                   >
-                    <TableCell>
+                    {/* 與表頭同理，見上方 TableHead 的說明 */}
+                    <TableCell className="pointer-coarse:px-6 pointer-coarse:py-4">
                       <Checkbox
+                        touchTarget="expanded"
                         aria-label={`選取 ${w.userName} 的提領記錄`}
                         checked={selected.has(w.id)}
                         onCheckedChange={() => toggleOne(w.id)}
