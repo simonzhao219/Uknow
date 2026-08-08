@@ -1,0 +1,1 @@
+{"branch": "claude/rls-listings-policies-plan-afn43h", "ended": "2026-08-07T22:02:35+00:00", "fired": {}, "passed": {"bash-guard": 12, "check-output-filter": 12}, "session": "66a49119dc27", "started": "2026-08-07T21:59:16+00:00"}

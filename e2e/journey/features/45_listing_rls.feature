@@ -71,7 +71,7 @@ Feature: 刊登 RLS — 直打 PostgREST 的授權邊界
   @journey @listing @rls @negative
   Scenario: 訪客不能建立刊登
     When 訪客嘗試以 "B8" 的身分建立刊登
-    Then 該次寫入被拒絕
+    Then 該次寫入被 RLS 拒絕
     And "B8" 名下沒有任何刊登
 
   @journey @listing @rls @negative

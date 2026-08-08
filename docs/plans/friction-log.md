@@ -1368,3 +1368,52 @@ flush 當下的分支（不是 session 起始分支——落檔的下游是正�
 **第二個訊號同樣值得記：** 上游工具（這裡是 GitHub）不照你的設定走時，與其推論
 它的規格、再依賴那個推論，不如選一個**不依賴該推論成立**的解法。分片對「GitHub
 到底套不套用 merge driver」完全不敏感——沒有重疊，誰來算都算不出衝突。
+## 2026-08-07｜漏網｜PR 有衝突時 CI 完全不跑——是「沒有燈」不是紅燈
+
+PR #228 推上新 head 之後,四分鐘沒有任何 GitHub CI check 出現(只有 Cloudflare
+與 Supabase Preview 這兩個外部整合)。第一直覺是排隊或額度用罄(當天稍早才發生
+過一次額度事故),但同一時刻 PR #245/#246 的 CI 跑得好好的——Actions 是健康的。
+
+**根因**:develop 前進讓這個 PR 變成 conflicted,而 conflicted 的 PR 建不出
+`refs/pull/<n>/merge` ref,`pull_request` 觸發的 workflow **完全不會啟動**。
+rebase 後 CI 立刻出現,診斷確認。
+
+**為什麼危險**:PR 不會變紅,只是空白。在 develop 高頻變動的日子(當天動了
+十幾次,多個平行 session 在合 PR),「沒有 CI」很容易被讀成「還在排隊」而一直等,
+而 auto-merge 也永遠不會完成——看起來像卡住,實際上是沒人送出那個狀態。
+
+**判準**:PR 沒有任何 CI check ≠ 排隊。先看 `mergeable_state`——
+`dirty` 是衝突(CI 不會跑),`blocked` 才是「可合併但等 required checks」。
+
+**連帶效應**:每次 rebase + force-push 會被 `ci.yml` 的
+`concurrency: ci-<ref>, cancel-in-progress: true` 取消掉正在跑的那一輪,而
+`ci-ok` 把 `cancelled` 判為不通過(只接受 success|skipped),於是被取代的那個
+SHA 會留下一顆看起來很嚇人、實際毫無意義的紅 `ci-ok`。看 log 的
+`各軌結果:` 那行——出現 `cancelled` 就是被後續 push 取代,不是壞掉。
+(這個設計是對的:把 cancelled 當通過,PR 就能在慢軌從未跑完的情況下合併。)
+
+## 2026-08-07｜漏網｜收尾被 auto-merge 搶先:規劃檔與錯誤註解一起上了 develop
+
+PR #228 的 `/tdd-implement` 收尾跑到一半(§9 知識升級已完成、
+`/review-implementation` 的四個 subagent 還在跑),使用者開了 auto-merge,
+CI 一綠就合併了。結果三件事進了 develop:
+
+1. **5 個規劃檔、1410 行鷹架**——CLAUDE.md 明訂要在 PR 前刪除
+2. **一段講錯保護機制的安全註解**(見下)
+3. PR 描述停留在「本 PR 只有規劃書,不含任何實作」,與 18 檔 diff 不符
+
+第 2 項最貴:`EditServiceProvider.tsx` 的註解寫「真正擋住他人刊登的是 ownership
+檢查的 redirect」,但那支 UPDATE 本身就帶 `.eq('user_id', user!.id)`。照它理解的
+人可能把那個 filter 當多餘拿掉——那就是 IDOR,而註解會讓 review 也跟著放行。
+這與同一份規劃第三輪審查抓到的 UI/UX P1 是**同一類**(寫錯機制的安全論證比不寫
+更糟),只是那次是寫反、這次是遺漏,而且是四輪審查(三輪規劃 + 一輪實作)裡
+前三輪都沒看出來——實作審查才抓到,而它跑完時已經來不及。
+
+**啟示**:`/review-implementation` 的價值恰恰在「規劃審過、實作走偏」,所以它
+**必須跑完**才進合併路徑。auto-merge 與「收尾尚未完成」是互斥的——要嘛收尾做完
+再開 auto-merge,要嘛接受收尾債。這不是誰的錯,是流程順序沒有機械保護:
+沒有任何閘門知道「這個 PR 的 /tdd-implement 收尾還沒跑完」。
+
+**可考慮的機械化**(待整併時裁決):PR 內若仍存在 `docs/plans/<slug>/`,
+guards 軌印警告(不硬擋——規劃階段的 PR 本來就該有規劃檔,關鍵是**帶著實作**
+的 PR 不該有)。

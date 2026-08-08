@@ -228,17 +228,14 @@ def write_denied_by_rls(scenario_memo):
     # 形狀要精確:GRANT 拒絕與 RLS 拒絕共用 SQLSTATE 42501,只認「被拒」
     # 會讓斷言失去辨別力——即使 policy 沒生效、拒絕來自不相干的權限層,
     # 測試也照樣綠(見 name-write-paths.test.ts 檔頭的同款教訓)。
+    #
+    # 訪客路徑同樣釘死 RLS 形狀。曾一度放寬成「三種被拒形狀都算過」,理由是
+    # 「anon 的 INSERT GRANT 是環境相依事實」——那是把 L1 的顧慮誤搬到 L2:
+    # **L2 只在 hosted 分支跑,從不在本地跑**,而 plan §2 已實測 hosted 上
+    # anon 對 listings 的 INSERT GRANT = true,所以它必然走到 RLS 才被拒。
+    # 放寬等於放掉「RLS 是唯一列級授權邊界」這個本 feature 的核心主張。
     assert scenario_memo["kind"] == "denied_by_rls", (
         f"應被 RLS 的 WITH CHECK 擋下,實際是 {scenario_memo['kind']}:{scenario_memo['body']}"
-    )
-
-
-@then("該次寫入被拒絕")
-def write_denied(scenario_memo):
-    # 訪客路徑不釘死形狀:hosted 上 anon 有 INSERT 的 table GRANT,所以預期
-    # 走到 RLS;但這個 GRANT 是環境相依的事實,釘死會讓測試綁上某個環境設定。
-    assert scenario_memo["kind"] in ("denied_by_rls", "denied_by_grant", "unauthenticated"), (
-        f"訪客不該寫得進去,實際是 {scenario_memo['kind']}:{scenario_memo['body']}"
     )
 
 

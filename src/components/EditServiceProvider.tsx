@@ -271,12 +271,14 @@ export function EditServiceProvider() {
       if (updateError) throw new Error(updateError.message || '更新失敗');
 
       // 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非
-      // 403，所以下面這句成功訊息在「沒更新到任何列」時也會顯示。
-      // 這裡的保護機制與 ServiceProviderManagement 的刪除路徑**不同**：
-      // serviceProvider.id 來自本元件以 URL :id 做的 .eq('id', id) 查詢（沒有
-      // user_id 限定），真正擋住他人刊登的是上方 ownership 檢查在
-      // setServiceProvider 之前就 redirect；
-      // **若未來移除或改寫那段 redirect，必須重新檢查這個假設**。
+      // 403，所以這句成功訊息在「沒更新到任何列」時也會顯示。
+      // 這個情境的直接防線是上面那行 .eq('user_id', user!.id)：跨使用者的
+      // PATCH 在送出前就被自我限定掉，與 ServiceProviderManagement 的刪除
+      // 路徑同一種機制。**若未來拿掉那個 filter，必須重新檢查這個假設**。
+      //
+      // 上方 68-74 行的 ownership 檢查（在 setServiceProvider 之前 redirect）
+      // 擋的是**另一個**曝險——他人的刊登資料被讀進表單顯示；那條路徑的
+      // 查詢（.eq('id', id)）本來就沒有 user_id 限定。兩者別混為一談。
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
     } catch (error: any) {
