@@ -116,15 +116,20 @@ Python，得手動 `grep` 步驟片語確認 `features/` 內無其他引用；**
 | 旅程 | 保留的情境 |
 |---|---|
 | 註冊 | `Successful signup navigates to OTP verification` → `Correct code verifies and proceeds` → `A fully valid submission proceeds to checkout` |
-| 付款 | `Clicking pay redirects through a simulated successful PayUni payment`、`A success status in the URL renders the success screen` |
-| 會籍 | `An expired former member is sent to checkout to renew`、`A paid arrival not yet activated shows the activating screen, then auto-advances` |
+| 付款 | `Clicking pay redirects through a simulated successful PayUni payment`、`A success status in the URL renders the success screen with PayUni details` |
+| 會籍 | `An expired former member is sent to checkout to renew, not the registration funnel`、`A paid arrival not yet activated shows the activating screen, then auto-advances once the backend converges` |
 | 提領 | `An eligible member can submit a withdrawal application end to end`、`A member confirms collection of an approved withdrawal` |
 
-另外 `route_guards.feature` **整檔保留**：`ProtectedRoute` /
-`RequireMembershipRoute` / `AdminRoute` 沒有任何元件測試 render 過，
-`resolveMembershipRedirect` 的六個分支在其他三層都不存在——其中
-`paidAwaitingActivation` 分支守的是「絕不能把已付款的人送回結帳頁造成
-重複付款」。
+另外 `route_guards.feature` **整檔保留（目前 8 條，只准增不准減）**：
+`resolveMembershipRedirect` 的六個分支已於 2026-08-07 補上元件測試
+（`src/components/RequireMembershipRoute.test.tsx`），但那證的是**決策函式
+給出正確的目的地**；「這個 guard 真的掛在 `App.tsx` 的那條路由上」只有
+e2e 證得到——決策對、沒接線，畫面照樣是壞的。其中 `paidAwaitingActivation`
+分支守的是「絕不能把已付款的人送回結帳頁造成重複付款」。
+
+**這一節有機械把關**：`scripts/check-e2e-mustkeep.py`（framework-check 軌）
+會把上表的情境名逐字比對到 `features/*.feature`，並確認整檔保留的檔案沒有
+縮水。改寫這一節的措辭導致抽取失配也會紅——閘門不容許靜默失效。
 
 ## 溢字/溢版巡檢（`test_overflow_sweep.py`）
 
