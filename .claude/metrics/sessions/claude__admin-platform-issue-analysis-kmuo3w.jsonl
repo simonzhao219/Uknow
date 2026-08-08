@@ -1,0 +1,1 @@
+{"branch": "claude/admin-platform-issue-analysis-kmuo3w", "ended": "2026-08-08T02:40:02+00:00", "fired": {}, "passed": {"bash-guard": 62, "check-output-filter": 62, "deletion-residue-check": 1, "feature-plan-guard": 14, "tdd-test-guard": 14}, "session": "a46c8fd36aef", "started": "2026-08-08T02:12:04+00:00"}
