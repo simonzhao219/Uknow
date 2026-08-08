@@ -473,12 +473,6 @@ ROUTES = [
         "/admin",
         tags=["system-alerts"],
         after_load=_open_system_alerts_tab,
-        # 這條測資（正式站真實的 time_domain_backfill 告警）一量就爆，而換成
-        # 一句短訊息時是 0 發現——**「測資是最壞但可達」反過來也成立：測資
-        # 不夠壞會量出假的乾淨**。`Table` 原語的每個 td 都帶 whitespace-nowrap
-        # （`ui/table.tsx:86`），裡面的 jsonb 原文因此斷不了行。
-        known_overflow="系統告警的 context jsonb 原文在 whitespace-nowrap 的 td 裡"
-        "不斷行（+294px）；待 platform-admin-rwd 的 P10 處置",
     ),
     # 其餘 admin 分頁與彈出物。報告以 label+path 呈現、results 是 list，
     # 重複 path 不會互相覆蓋；pytest 的 id 則靠 tags 區分。
@@ -497,10 +491,6 @@ ROUTES = [
         "/admin",
         tags=["announcements"],
         after_load=_open_tab("公告管理"),
-        # 同上：這條先前也是靠空清單「上鎖」的。公告內文沒有 break-words，
-        # 貼一條網址就撐破（SystemNotifications.tsx:263）。規劃書 §4.0 的
-        # P1–P14 沒有這一項——是補齊測資之後才浮現的新證據。
-        known_overflow="公告內文的網址不斷行（+153px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
@@ -509,11 +499,6 @@ ROUTES = [
         "/admin",
         tags=["admin-setup"],
         after_load=_open_tab("管理員設置"),
-        # 這條先前是「上鎖」的——但 set_admin_setup 少回 userName，而
-        # AdminSetup.tsx:146 拿它當渲染條件，整個帳號資訊區塊從未進 DOM。
-        # 補齊後端真正會回的三欄（api/index.ts:1725-1727）之後才顯形。
-        known_overflow="Email 與標籤在 flex justify-between 的同一列裡不換行"
-        "（+119px）；待 platform-admin-rwd 處置",
     ),
     SweepRoute(
         "/admin",
