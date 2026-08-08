@@ -58,11 +58,6 @@ def admin_at_375(page, context, api_mock, rest_mock):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="U2 未實作：TabsList 目前是 flex + overflow-x-auto，五個分頁擠成單行橫向捲動。"
-    "修法見 plan §4.1（注意 class 需含無前綴 grid 與 w-full，見 review.md 的『補 F2』）",
-    strict=True,
-)
 def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
     """U2：五個分頁標籤在 375px 下同時可見（＝排成兩列，不是單行捲動）。"""
     rows = count_rows(admin_at_375, TABS_LIST)
@@ -133,6 +128,13 @@ def test_id_card_photos_stack_vertically_at_375px(admin_at_375):
 # 沒有觸控，`(pointer: coarse)` 不成立，`pointer-coarse:` 的 class 全是死的
 # ——會量到一台不存在的裝置：375px 寬、用滑鼠。
 
+# 觸控平板:768x1024。**刻意不是 375px**——Q2 裁決「勾選只在 isDesktop 下
+# 渲染」，而 isDesktop 是 `(min-width: 768px)`，所以手機上根本不會有這個
+# 勾選框（階段 2 之後手機是卡片、沒有表格）。P13 實際適用的是**寬度判為
+# 桌面、輸入方式卻是觸控**的那批裝置——iPad 直向正好是 768px。
+# 在 375px 量它，量的是一個做完 RWD 就會消失的東西。
+TABLET_TOUCH_VIEWPORT = {"width": 768, "height": 1024}
+
 SELECT_ALL_CHECKBOX = '[aria-label="全選本頁的提領記錄"]'
 ROW_CHECKBOX = '[aria-label^="選取 "]'
 
@@ -151,6 +153,16 @@ def browser_context_args(browser_context_args):
     return {**browser_context_args, "viewport": MOBILE_VIEWPORT, "has_touch": True}
 
 
+@pytest.fixture
+def admin_tablet_touch(page, context, api_mock, rest_mock):
+    """觸控平板：768px（isDesktop 為真、桌面表格會渲染）＋ 粗指標。"""
+    page.set_viewport_size(TABLET_TOUCH_VIEWPORT)
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    return page
+
+
 def test_e2e_context_reports_a_coarse_pointer(admin_at_375):
     """量測前提：瀏覽器必須回報粗指標，否則下面兩條測的是別的東西。
 
@@ -164,20 +176,13 @@ def test_e2e_context_reports_a_coarse_pointer(admin_at_375):
 
 
 @pytest.mark.compatibility
-@pytest.mark.xfail(
-    reason="P13 未實作：ui/checkbox.tsx 目前只有 size-4（16px），沒有任何觸控目標規則。"
-    "修法見 plan §4.1「觸控」——opt-in 的 touchTarget=\"expanded\" variant，"
-    "用透明 before: 偽元素撐熱區、可見方框維持 16px。"
-    "注意 class 必須含 before:content-['']，否則 ::before 不生成渲染盒、整個熱區是 no-op",
-    strict=True,
-)
-def test_admin_checkbox_hit_area_reaches_44px_on_touch(admin_at_375):
+def test_admin_checkbox_hit_area_reaches_44px_on_touch(admin_tablet_touch):
     """P13：提領勾選框在觸控裝置上的**實際可點區**要到 44×44。
 
     量的是命中而不是盒子——熱區由偽元素撐出來時 getBoundingClientRect 看不見
     （見 layout_probe 的說明）。
     """
-    area = hit_area(admin_at_375, SELECT_ALL_CHECKBOX)
+    area = hit_area(admin_tablet_touch, SELECT_ALL_CHECKBOX)
     assert area is not None, f"找不到 {SELECT_ALL_CHECKBOX}——選擇器過時了，不是版面問題"
     assert not area.get("offscreen"), f"checkbox 捲不進視窗（{area}）——量測壞了，不是熱區太小"
     assert not area.get("centerMiss"), (
@@ -190,7 +195,7 @@ def test_admin_checkbox_hit_area_reaches_44px_on_touch(admin_at_375):
     )
 
 
-def test_admin_checkbox_hit_areas_do_not_overlap(admin_at_375):
+def test_admin_checkbox_hit_areas_do_not_overlap(admin_tablet_touch):
     """相鄰勾選框的熱區不得相交。
 
     今天就該綠（熱區還沒撐開），它守的是**明天**：熱區一旦撐到 44px，
@@ -198,7 +203,7 @@ def test_admin_checkbox_hit_areas_do_not_overlap(admin_at_375):
     現況的不重疊是「每列剛好有兩顆撐高的按鈕」這個副作用，不是被釘住的
     不變量——這條測試就是把它變成不變量。
     """
-    r = hit_areas_overlap(admin_at_375, SELECT_ALL_CHECKBOX, ROW_CHECKBOX)
+    r = hit_areas_overlap(admin_tablet_touch, SELECT_ALL_CHECKBOX, ROW_CHECKBOX)
     assert r is not None, "找不到勾選框——選擇器過時了"
     assert not r.get("offscreen"), "勾選框捲不進視窗，量測壞了"
     assert not r.get("centerMiss"), "勾選框中心點不到，量測壞了"
