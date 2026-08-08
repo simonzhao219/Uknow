@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
+from builders.auth_gate import submit_email_and_expect
 from pages.auth_page import AuthPage
 from run_state import JourneyUser
 
@@ -46,8 +47,9 @@ def login_via_gui(page: Page, user: JourneyUser) -> None:
     auth = AuthPage(page)
     page.goto("/login")
     auth.fill_email(user.email)
-    auth.submit_email()
-    expect(page.get_by_test_id("auth-login-button")).to_be_visible()
+    # 步驟 1 的送出與等待走 auth_gate:check-email 的 per-IP 配額是全 session
+    # 共用的,用完之後這裡看到的只是「按鈕不出現」(見 check_email_quota)。
+    submit_email_and_expect(page, auth, "auth-login-button")
     auth.fill_login_password(user.password)
     auth.submit_login()
     expect(page.get_by_test_id("auth-login-button")).to_be_hidden(timeout=30_000)

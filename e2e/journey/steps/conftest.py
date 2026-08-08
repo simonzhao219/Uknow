@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given
 
+from builders import check_email_quota
 from builders.admin_bootstrap import ensure_admin
 from tools import orgchart
 
@@ -46,8 +47,15 @@ def _fresh_check_email_quota(supabase_admin):
     情境就會撞滿——2026-08-04 run 30944836300 有 12 個情境死在
     「登入按鈕不出現」，首因全是 check-email 429。builder 只在建樹
     波次之間重置；這裡把同一個基礎設施操作擴大到每個情境的起點。
+
+    **起點重置擋不住情境內用完。** 一個情境裡連續換身分登入好幾次是
+    常態（f50 的完整生命週期是 會員 → 管理員 → 會員），10 次配額在
+    情境中途就會見底，症狀與這裡要修的一模一樣。所以同時把 admin 綁給
+    `builders.check_email_quota`，讓真正消耗配額的那一步（auth_gate）
+    在撞到限流時能自己重置——這裡負責起點，那裡負責中途。
     """
     supabase_admin.reset_check_email_rate_limit()
+    check_email_quota.bind(supabase_admin)
 
 
 @pytest.fixture(scope="session")

@@ -131,7 +131,18 @@ def withdrawal_status(supabase_admin, run_state, node, status):
 
 @then("\"A0\" 的可提領點數恢復為記下的數值")
 def points_restored(supabase_admin, run_state, scenario_memo):
-    now = available_points(supabase_admin, run_state.users["A0"])
-    assert now == scenario_memo["points"], (
-        f"退件後可提領 {now}P，未恢復為 {scenario_memo['points']}P——點數未退回"
+    user = run_state.users["A0"]
+    now = available_points(supabase_admin, user)
+    if now == scenario_memo["points"]:
+        return
+
+    # 到這裡代表狀態已經是 rejected(前一步斷言過)卻沒退回點數,所以差別
+    # 只剩「補償入帳有沒有寫進去」。把它一起帶進訊息:沒有補償列 = SQL
+    # 函數沒插;有補償列卻不見餘額 = 帳本彙總的問題。
+    row = _latest_withdrawal(supabase_admin, user.user_id)
+    adjustments = withdrawal_query.refund_adjustments(supabase_admin, row["id"])
+    raise AssertionError(
+        f"退件後可提領 {now}P，未恢復為 {scenario_memo['points']}P——點數未退回。\n"
+        f"提領紀錄：{row}\n"
+        f"該筆提領的補償入帳（adjustment）：{adjustments or '無'}"
     )
