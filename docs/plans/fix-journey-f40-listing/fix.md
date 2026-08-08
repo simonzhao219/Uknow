@@ -13,14 +13,25 @@
 
 ## 0. 狀態
 
-**已定位、已修、已補防線;等真後端複驗。**
-
-觀測到的兩場失敗(形狀完全一致):
+**兩個根因,都已修、都已補防線;第二個等真後端複驗。**
 
 | Run | 時間 | 結果 | 備註 |
 |---|---|---|---|
 | 31231809650 | 08-08 01:05–01:28 | 13 failed / 73 passed | 本輪據以定位(develop @ `8bfa50f`) |
 | 31232337950 | 08-08 01:19–01:44 | 13 failed / 76 passed | 前一份據以偵查(#256 登入修法之後) |
+| **31234221750** | 08-08 02:06–02:28 | **11 failed / 84 passed** | **根因一修法的複驗**,見下 |
+
+**這一場證明了兩件事**:根因一(名稱截斷)確實是對的,而且它蓋住了根因二。
+
+| f40 情境 | 修法前 | 31234221750 |
+|---|---|---|
+| 訪客可在公開首頁搜尋到 A0 的刊登 | FAILED | ✅ **PASSED** |
+| 一個帳號僅能有一筆刊登 | FAILED | ✅ **PASSED** |
+| **A0 透過 GUI 建立刊登** | FAILED | ❌ **仍 FAILED** |
+
+第 2、3 條是**整頁重載後**才讀刊登的,它們轉綠 ⇒ 刊登以正確名稱建立、
+讀得到、畫得出來。只剩「同一個 SPA session 內建立完直接導頁」那條——
+根因二因此被單獨隔離出來(§2b)。
 
 **失敗範圍不是 3 條,是 5 條,而且跨兩個 feature 檔**(前一份的關鍵發現):
 
@@ -100,9 +111,41 @@ React state 會收到      : '服務gh312318'
   `handleFinalSubmit` 只有在 `insertError` 為空時才 `navigate('/service-providers')`,
   出錯路徑會 `return` 而停在 `/service-providers/create`。**⇒ 排除 B。**
 - **讀回來也成功了**:見下面 §9——第四條情境點得到「刪除刊登」鈕。
-  **⇒ 排除 D。**
+  **⇒ 排除 D 的原始形式**(「管理頁根本讀不到」)。
 
 insert 成功、讀取成功、畫面也畫出來了,唯一對不上的是**名字**。
+
+⚠️ **但假說 D 的方向沒有完全錯**:排除的是「讀不到」,不是「顯示的不是最新的」。
+run 31234221750 證明後者真實存在——見 §2b。當初據以排除 D 的第四條情境
+是**整頁重載**的路徑,它碰不到快取那條路。
+
+## 2b. 根因二:建立成功後沒清快取,管理頁沿用「還沒有刊登」(**產品 bug**)
+
+根因一修好之後,f40 只剩第一條紅,而它的形狀把第二個根因單獨隔離了出來:
+
+管理頁的 `useUserListing` 是 stale-while-revalidate,快取還會寫進
+`sessionStorage`。流程是:
+
+1. `_open_management` 載入 `/service-providers` → 查不到刊登 →
+   `setCache('userListing', null)`;
+2. 點「刊登新服務」→ SPA 導頁到建立頁(**同一個 document,快取還活著**);
+3. 填表、送出、insert 成功 → `navigate('/service-providers')`;
+4. 管理頁 mount → `hasCache('userListing')` 為真 → 直接畫那個 `null` →
+   **「尚未刊登服務者」+ 建立 CTA**;
+5. 只有 `isStale`(`SOFT_TTL` = 30 秒)才會重新請求,而且 30 秒的 `expect`
+   等待期間沒有任何東西會觸發 revalidate(沒有輪詢,focus 事件也不會發生)。
+
+**這是產品 bug,不是測試 bug**:真實使用者建完刊登會看到「還沒有刊登」,
+很可能以為沒成功而再建一次(然後撞上「一個帳號僅能有一筆刊登」)。
+
+`DataCacheContext` 早就備好 `listingChange: ['userListing']` 這組對照,
+但**沒有任何寫入流程呼叫它**——`payment` / `rewardClaim` / `withdrawal`
+都有呼叫者,只有 listing 這組是死的。一組定義了卻沒人用的 mutation group,
+本身就是這個 bug 的形狀。
+
+**同類掃描**:`EditServiceProvider` 存檔後同樣 `navigate('/service-providers')`
+而不清快取——改完的內容在管理頁上同樣是舊的,一併補上。刪除路徑本來就對
+(直接呼叫 `refetchListing()`),不動。
 
 ### 為什麼當時沒被發現
 
@@ -227,6 +270,15 @@ mock 套件用短名永遠踩不到;journey 一個月只跑幾次,而且失敗�
 | `src/components/CreateServiceProvider.test.tsx` | 元件不再套用產品常數 | vitest |
 | `e2e/journey/tools/test_listing_name.py` | 測試資料超過上限 / 產品改了上限 | journey-offline |
 | `BasePage.fill_exact()` | **任何**有上限的欄位被靜默截斷 | 兩套 e2e,填的當下 |
+| `CreateServiceProvider.test.tsx`(建立流程那條) | 建立成功後沒清 `userListing` 快取(根因二) | vitest |
+
+根因二那條測試會把整份表單驅動到送出(Radix Select 需要 `hasPointerCapture`
+等三個 jsdom 替身,做法照 `CategorySelectField.test.tsx`),斷言
+`invalidate('listingChange')` 有被呼叫。紅燈時的訊息是
+`expected "spy" to be called with [ 'listingChange' ]`。
+
+**根因二本來只有 journey 攔得到**,而 journey 一場 20 分鐘、一週一次——
+補進 vitest 之後,同樣的疏漏在 `npm run check` 就會紅。
 
 中間那層原本是空的:上限的「值」定義在 `constants.ts`,journey 的離線測試
 也讀它,但**沒有任何一層確認元件真的把那個常數套上去**。有人把 `maxLength`
