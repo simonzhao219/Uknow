@@ -26,6 +26,7 @@ import pytest
 
 from layout_probe import (
     count_rows,
+    first_screen_position,
     hit_area,
     hit_areas_overlap,
     ink_overflowing_children,
@@ -36,7 +37,7 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
-from test_overflow_sweep import _setup_admin
+from test_overflow_sweep import _open_tab, _setup_admin
 
 # Radix 的 TabsList 掛 data-slot；DialogContent 沒有，但 Radix 會給 role=dialog
 # （AlertDialog 是 role=alertdialog，不會誤中）。
@@ -213,4 +214,39 @@ def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
     assert overflowing is not None, f"找不到 {TABS_LIST}——選擇器過時了"
     assert overflowing == [], "分頁標籤的內容超出自己的格子：" + "；".join(
         f"「{c['text']}」超出 {c['by']}px" for c in overflowing
+    )
+
+
+# --- 第一屏可工作（階段 6） --------------------------------------------------
+#
+# 前面幾條測的是「版面有沒有壞」。這一組測的是「好不好用」——打開就能開始
+# 做事，還是要先滑過一整屏的儀表板。admin 在外面接到電話用手機開後台，
+# 要的是那一筆記錄，不是統計數字。
+#
+# 這個失效模式**溢版巡檢完全報不出來**:版面沒有任何一處畫到框外，
+# 它只是把工作內容推到第一屏之外。
+
+FIRST_WITHDRAWAL_CARD = '[role="group"][aria-label$="的提領記錄"]'
+FIRST_MEMBER_CARD = '[role="group"][aria-label$="的會員資料"]'
+
+
+def test_first_withdrawal_record_is_reachable_without_scrolling(admin_at_375):
+    """375px 打開提領管理，第一筆記錄要在第一屏內。"""
+    pos = first_screen_position(admin_at_375, FIRST_WITHDRAWAL_CARD)
+    assert pos is not None, f"找不到 {FIRST_WITHDRAWAL_CARD}——選擇器過時了"
+    assert pos["visible"], (
+        f"第一筆提領記錄在 y={pos['top']}px，第一屏只有 {pos['viewportHeight']}px"
+        f"——還差 {pos['below']}px。打開後要先滑過統計卡才看得到工作內容。"
+    )
+
+
+def test_first_member_is_reachable_without_scrolling(admin_at_375):
+    """375px 切到會員管理，第一位會員要在第一屏內。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    pos = first_screen_position(admin_at_375, FIRST_MEMBER_CARD)
+    assert pos is not None, f"找不到 {FIRST_MEMBER_CARD}——選擇器過時了"
+    assert pos["visible"], (
+        f"第一位會員在 y={pos['top']}px，第一屏只有 {pos['viewportHeight']}px"
+        f"——還差 {pos['below']}px。"
     )
