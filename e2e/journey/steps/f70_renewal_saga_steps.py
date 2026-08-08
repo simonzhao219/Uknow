@@ -92,12 +92,14 @@ def _ensure_actor(cfg, admin, run_state, node,
 
 
 def _fresh_gui_login(page: Page, user: JourneyUser) -> None:
-    """清掉既有 session 再登入——saga 一個情境內會連續以 admin/演員多重
-    身分登入同一個 guarded_page,不清的話 /login 的「已登入自動導向」
-    會把第二次登入直接彈走。登入成功信號=登入表單消失(login_via_gui
-    自帶);落點由會籍狀態決定,呼叫端一律自行 goto 目標頁。"""
-    page.goto("/")
-    page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
+    """登入(session 清理已內建於 login_via_gui)。
+
+    這支曾經是「清 session 再登入」的私有版本——saga 一個情境內會連續以
+    admin/演員多重身分登入同一個 guarded_page,不清的話 /login 的「已登入
+    自動導向」會把第二次登入直接彈走。但那個認知留在這裡沒有推廣,
+    f15/f50/f60 用的共用 builder 一直沒清,繼續逾時(2026-08-07)。
+    清理已移進 builders/login.py,這裡只留薄轉呼叫,避免兩份行為再度分岔。
+    """
     login_via_gui(page, user)
 
 
@@ -145,8 +147,6 @@ def saga_purchase_with_code(saga, journey_config, supabase_admin, run_state, nod
 @then(parsers.parse('"{node}" 的上代在管理台會員詳情顯示為預設推薦人'))
 def admin_detail_shows_default_referrer(guarded_page, run_state, saga, node):
     member = run_state.users[node]
-    guarded_page.goto("/")
-    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
     login_admin(guarded_page, run_state.users["admin"])
     guarded_page.get_by_role("tab", name="會員管理").click()
     search = guarded_page.get_by_placeholder("搜尋姓名 / Email / 電話")
@@ -450,8 +450,6 @@ def saga_apply_withdrawal(guarded_page, supabase_admin, run_state, node, amount)
     # 提領硬前置:profiles.referral_program_joined(推薦碼在付款時就有,
     # 但 joined 要走簽名對話框;未加入時提領按鈕直接 disabled——
     # run 31152461663 實測)。ensure_joined 自帶登入,先清 session。
-    guarded_page.goto("/")
-    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
     referral_program.ensure_joined_via_gui(guarded_page, supabase_admin, user)
     _fresh_gui_login(guarded_page, user)
     withdrawal.apply_via_gui(guarded_page, user, amount)
@@ -472,8 +470,6 @@ def fresh_blocked_by_pending_withdrawal(guarded_page, run_state, node):
 def admin_rejects_first_withdrawal(guarded_page, run_state):
     from pages.admin_dashboard_page import AdminDashboardPage
 
-    guarded_page.goto("/")
-    guarded_page.evaluate("window.localStorage.clear(); window.sessionStorage.clear()")
     login_admin(guarded_page, run_state.users["admin"])
     admin_page = AdminDashboardPage(guarded_page)
     admin_page.open_tab("獎金提領管理")

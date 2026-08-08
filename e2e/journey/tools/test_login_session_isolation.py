@@ -32,6 +32,7 @@ journey 有多個情境會在**同一個情境內以不同身分連續登入**�
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -44,13 +45,34 @@ CLEARS_SESSION = re.compile(r"(localStorage|sessionStorage)\s*\.\s*clear\s*\(\s*
 GOTO_LOGIN = re.compile(r"""goto\(\s*["']/login["']\s*\)""")
 
 
-def _login_via_gui_source() -> str:
-    """挖出 login_via_gui 的函式本體（到下一個 top-level def 為止）。"""
-    source = LOGIN_BUILDER.read_text(encoding="utf-8")
-    start = source.index("def login_via_gui(")
-    rest = source[start + 1 :]
-    match = re.search(r"^def ", rest, re.MULTILINE)
-    return rest[: match.start()] if match else rest
+def _code_only(node: ast.AST) -> str:
+    """回傳去掉 docstring 與註解的原始碼。
+
+    **不能用純正則掃檔案文字**：這支守衛的第一版就是那樣寫的，結果被
+    `login_via_gui` docstring 裡解釋機制的那句 `goto("/login")` 匹配到，
+    報出「清 session 在導頁之後」的假違規。守衛自己被散文騙，比沒有守衛
+    更糟——它會讓人開始不信任紅燈。
+
+    `ast.unparse` 天然丟掉註解，docstring 則另外剝掉；而 `page.evaluate(...)`
+    的字串引數會保留，`localStorage.clear()` 正是寫在那裡面。
+    """
+    body = list(getattr(node, "body", []))
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]  # 剝掉 docstring
+    return "\n".join(ast.unparse(stmt) for stmt in body)
+
+
+def _login_via_gui_code() -> str:
+    tree = ast.parse(LOGIN_BUILDER.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "login_via_gui":
+            return _code_only(node)
+    raise AssertionError("builders/login.py 找不到 login_via_gui")
 
 
 def test_login_via_gui_clears_session_before_navigating_to_login():
@@ -59,7 +81,7 @@ def test_login_via_gui_clears_session_before_navigating_to_login():
     這條是本守衛的核心。放在 builder 裡，37 個呼叫點就一次到位；
     放在呼叫端，就會像 2026-08-07 那樣只有 f70 記得做。
     """
-    body = _login_via_gui_source()
+    body = _login_via_gui_code()
     assert CLEARS_SESSION.search(body), (
         "login_via_gui 沒有清掉既有 session。同一情境內第二次登入時，"
         "/login 會因『已登入自動導向』把使用者彈走，auth-login-button "
@@ -73,7 +95,7 @@ def test_session_is_cleared_before_goto_login_not_after():
     反過來寫（先 goto /login 再清）沒有意義——導頁當下就已經被彈走了，
     清完 storage 也回不到登入頁。這條抓的是「看起來有做」的假修法。
     """
-    body = _login_via_gui_source()
+    body = _login_via_gui_code()
     clear_at = CLEARS_SESSION.search(body)
     goto_at = GOTO_LOGIN.search(body)
     assert clear_at and goto_at, "login_via_gui 應同時有清 session 與 goto('/login')"
@@ -91,8 +113,8 @@ def test_no_step_file_reimplements_its_own_clear_then_login():
     """
     offenders = []
     for path in sorted(STEPS_DIR.glob("*.py")):
-        source = path.read_text(encoding="utf-8")
-        if CLEARS_SESSION.search(source):
+        code = _code_only(ast.parse(path.read_text(encoding="utf-8")))
+        if CLEARS_SESSION.search(code):
             offenders.append(path.name)
     assert not offenders, (
         f"這些步驟檔自己清了 session：{offenders}。"
