@@ -119,9 +119,9 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   自己切一個 `feature/<slug>` 分支。
   連帶效果:`workflow_run` 觸發的 workflow(deploy-supabase.yml)定義取自
   default branch,所以改它**合進 develop 就生效**,不必等晉升 main。
-- 合併規矩:PR **只用 rebase 更新**(`git fetch origin develop && git rebase
-  origin/develop && git push --force-with-lease`),**不要按 GitHub 的
-  Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
+- 合併規矩:落後 base 時 **Claude 自己 rebase、不等人開口**(`git fetch origin
+  develop && git rebase origin/develop && git push --force-with-lease`);**不要
+  按 Update branch**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
   required check 只有 `ci-ok`(needs 全部軌);push run 那顆叫 `ci-ok-push`,見規則 9。
   來源是 ruleset(Settings → **Rules**,非 Branches)。⚠️ **前提是 repo 為
