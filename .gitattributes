@@ -8,9 +8,21 @@
 # 撞上,那是真的 append-only 衝突,保留兩邊的行正是想要的語意。前提是每行都能
 # 獨立成立(一 session 一行、鍵序穩定),由 decision_log.py 的 to_line() 保證;
 # union 不會產生半行,最壞情況只是重複行,而 harness-metrics.py 以 session id 去重。
+#
+# 「最壞情況只是重複行」在分片上實測是安全的:2026-08-08 量到 36 行 / 35 個
+# 唯一 session(冗餘 1.03x)——單一 writer 讓 merge_lines 的「取代自己那一行」
+# 正常運作,union 幾乎沒有介入的機會。這個數字是下面那條規則被拿掉的對照組。
 .claude/metrics/sessions/*.jsonl merge=union
 
 # 分片前的共享單檔。已凍結(decision_log.py 不再寫它),留著是因為刪除或改名
 # 都是 delete/modify,會讓當時開著的每個 PR 各撞一次衝突——正是分片要消滅的
-# 症狀。union 留著純粹是保險:它不該再被任何人寫。
-.claude/metrics/sessions.jsonl merge=union
+# 症狀。
+#
+# **刻意不設 merge driver**(2026-08-08 拿掉原本的 union)。對一個凍結的檔案,
+# union 不是保險而是風險:共用單檔的年代裡它累積出 5.36x 的冗餘(991 行只有
+# 185 個唯一 session,其中一個 session 存了 512 份),那 806 行重複已在同一次
+# 改動壓實掉。而 union 的語意就是「保留兩邊的行」——之後任何一次跨 main/
+# develop 的本機合併,都會把刪掉的 806 行原樣加回來,壓實等於白做。
+#
+# 它不該再被任何人寫,所以交給預設的 merge driver:真有人寫了,衝突就該被看見,
+# 那是「有分支還在跑分片前的舊程式碼」的訊號,不是應該被自動吞掉的雜訊。
