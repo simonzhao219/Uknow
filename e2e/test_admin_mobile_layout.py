@@ -222,6 +222,37 @@ def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
     )
 
 
+@pytest.mark.compatibility
+def test_admin_tabs_reach_44px_touch_target(admin_at_375):
+    """五個分頁標籤在觸控裝置上都要有 ≥44px 的可點高度（§1）。
+
+    分頁列是 admin 手機版**最上層的導覽**——每一次要換分頁都得先按到它，
+    頻率高於卡片上的任何一顆按鈕。原語 `ui/tabs.tsx` 的 base 是
+    `py-1` ＋ `text-sm`（行高 20px）＋ 1px 邊框 ＝ 30px，而
+    `TabsList` 在 admin 被改成 `h-auto`（為了讓五個標籤排成兩列），
+    所以格子高度由內容決定、沒有任何一處把它撐到 44px。
+
+    **寬度不測**：`grid-cols-3` 下每格 112px，本來就遠超過 44px，
+    寫進斷言只會製造一條永遠為真的條件。
+
+    量的是命中而不是盒子（同 checkbox 那條的理由）——真正決定使用者按不按
+    得到的是 `elementFromPoint`，不是 `getBoundingClientRect`。
+    """
+    too_small = []
+    for i in range(1, 6):
+        selector = f'{TABS_LIST} > [role="tab"]:nth-child({i})'
+        area = hit_area(admin_at_375, selector)
+        assert area is not None, f"找不到第 {i} 個分頁（{selector}）——選擇器過時了，不是版面問題"
+        assert not area.get("offscreen"), f"第 {i} 個分頁捲不進視窗（{area}）——量測壞了"
+        assert not area.get("centerMiss"), f"連第 {i} 個分頁的中心都點不到（{area}）——量測壞了"
+        if area["height"] < MIN_TOUCH_TARGET_PX:
+            too_small.append((i, area))
+
+    assert not too_small, "分頁標籤的可點高度不足 " + f"{MIN_TOUCH_TARGET_PX}px：" + "；".join(
+        f"第 {i} 個只有 {a['height']}px（可見方框 {a['boxHeight']}px）" for i, a in too_small
+    )
+
+
 # --- 第一屏可工作（階段 6） --------------------------------------------------
 #
 # 前面幾條測的是「版面有沒有壞」。這一組測的是「好不好用」——打開就能開始
