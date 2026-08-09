@@ -31,6 +31,16 @@
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/model-effort-advisor.py\""
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

@@ -201,6 +201,28 @@ for branch, path, plan, want, why in PLAN_CASES:
     expect(f"feature-plan-guard[{why}]", plan_guard.decide(branch, path, plan) is not None, want)
 
 
+# ------------------------------------------------------ model-effort-advisor
+# 這個 hook 不擋東西、只建議,所以驗的是 classify() 回傳的 rule,不是 deny。
+advisor = load("model-effort-advisor")
+
+ADVISOR_CASES = [
+    # (prompt, 預期 rule 或 None, 說明)
+    ("幫我調整金流退款流程的 PayUni 串接", "opus-tier", "金流關鍵字命中"),
+    ("api/index.ts 要做跨層契約調整", "opus-tier", "跨層契約關鍵字命中"),
+    ("首頁文案有個錯字要修", "light-tier", "文案/錯字關鍵字命中"),
+    ("幫忙加個 log 追蹤這個錯誤", "light-tier", "log 關鍵字命中"),
+    ("修一下收藏功能的 bug", None, "一般 bug 修復,維持預設不提醒"),
+    ("", None, "空字串不誤觸"),
+]
+
+for prompt, want_rule, why in ADVISOR_CASES:
+    checked += 1
+    got = advisor.classify(prompt)
+    got_rule = got["rule"] if got else None
+    if got_rule != want_rule:
+        failures.append(f"model-effort-advisor[{why}]: 預期 rule={want_rule!r},實得 {got_rule!r}")
+
+
 # ----------------------------------------------------- deletion-residue-check
 residue = load("deletion-residue-check")
 
