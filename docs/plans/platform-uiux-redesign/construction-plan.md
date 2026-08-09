@@ -30,7 +30,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 |---|---|---|---|---|---|---|
 | S1 | 設計語言地基 | D1+D2 | `feature/design-language-foundation` | 三段式落檔（動全站 token，階段 ≥3） | **Opus** 規劃/審查、Sonnet 實作 | 中 |
 | S2 | 全站色彩收斂 | D3 | `fix/color-token-sweep` | 輕量 Plan Mode（機械替換，守門腳本兜底） | Sonnet | 中 |
-| S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動路由級結構） | Sonnet（規劃審查跑 /review-plan） | 中 |
+| S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
 | S6 | 前台門面 | F1 | `fix/frontend-p1-polish` | 輕量 Plan Mode | Sonnet | 輕 |
@@ -55,10 +55,13 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
 執行 S1（工項 D1+D2）：/plan-feature design-language-foundation
-規劃範圍：globals.css 語義色 token（success/warning，深淺兩版）、
+規劃範圍：globals.css 語義色 token（success/warning，深淺兩版；
+深色版須附 plan.md §4 第 6 點的 devtools 驗證 checklist）、
 ui-ux-guidelines.md 新增「色彩與設計語言」章節（黑白極簡規範，
-內容依 plan.md §4）、scripts/check-color-usage.py 守門腳本接進
-framework-check 軌。規劃完跑 /review-plan 後停等我審。
+內容依 plan.md §4，含「非狀態計數去色」判準）、
+scripts/check-color-usage.py 守門腳本接進 framework-check 軌
+（比照既有 checker 的 --self-test 雙軌慣例：先自測表格案例再掃 repo）。
+規劃完跑 /review-plan 後停等我審。
 ```
 
 **S2**：
@@ -74,8 +77,17 @@ framework-check 軌。規劃完跑 /review-plan 後停等我審。
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
 執行 S3（工項 A1+A2）：/plan-feature admin-ia-refactor
-範圍：移除 AdminSetup Tab（bootstrap 改條件式引導）、四 Tab 單列布局、
-AdminToolbar 元件（先套用在提領管理）。規格書 §13 若提及五 Tab 需同步。
+範圍與硬約束（先讀 plan.md §2.1 的兩個 ⚠️ 審查發現與 §3 A1/A2 全文）：
+1) bootstrap 可達性：AdminRoute 現況把非管理員全擋在 /admin 外，
+   「尚無管理員可自助宣告」畫面是不可達死路——規劃必須裁決
+   「AdminRoute 例外放行」或「定案只走 API、GUI 退場」，當獨立子項審。
+2) Tab 標籤縮短為二字（提領/會員/公告/告警）後才有四 Tab 單列，
+   用 AdminDashboard.tsx:118-152 的量測法與
+   test_admin_tab_labels_do_not_ink_overflow 驗證；不過則退 2+2 兩列。
+3) AdminToolbar 只重構版面（套提領＋會員管理兩頁），CSV 鈕只在已有
+   匯出邏輯的頁面渲染；icon 鈕附 aria-label；權重按頻率重排；
+   CSV 收集中補忙碌態。
+4) 規格書 §13 人工同步四處（無機械把關，清單見 plan.md §2.6）。
 規劃完跑 /review-plan 後停等我審。
 ```
 
@@ -92,9 +104,13 @@ ui-ux-guidelines §11 的動作位階與確認框契約原樣保留、測試不�
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
 執行 S5（工項 A4）：/plan-feature admin-data-cache
-範圍：把 DataCacheContext 的 stale-while-revalidate 模式延伸進 admin
-各分頁（切回分頁顯示舊資料＋背景刷新），loading 統一為骨架屏。
-不動 API、不動請求時序、不做預載。規劃完跑 /review-plan 後停等我審。
+範圍：stale-while-revalidate 模式延伸進 admin 各分頁（切回分頁顯示
+舊資料＋背景刷新），loading 統一為骨架屏。不動 API、不動請求時序、
+不做預載。四條硬約束照 plan.md §3 A4 全文執行，規劃書必須交付：
+(1) 記憶體內快取設計（絕不落 sessionStorage——admin 提領資料含
+未遮罩 PII）；(2) 快取排除清單（即時資料與寫入確認框依據欄位）；
+(3) admin 版 mutation→invalidation 對照表；(4) 對 AdminDashboard 的
+DI 慣例（檔頭註解）的明確裁決。規劃完跑 /review-plan 後停等我審。
 ```
 
 **S6**：
@@ -150,7 +166,7 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收站 | 在哪之後 | 業主看什麼 |
 |---|---|---|
 | 驗收 1 | S2 合併 | develop 環境全站走一圈：色彩是否收斂、觀感是否一致、有無改壞的地方 |
-| 驗收 2 | S4 合併 | 後台：四 Tab 單列、工具列、會員詳情分區——用手機實際操作一次 |
+| 驗收 2 | S4 合併 | 後台：四 Tab 單列（375px 實機確認標籤不溢字不換行）、工具列、會員詳情分區——手機與桌機各實際操作一次（後台兩者並重） |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感（切回不再等 loading） |
 | 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主 |
 
