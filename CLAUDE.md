@@ -178,13 +178,6 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 | 金流·會籍·獎勵規則、跨層契約、`api/index.ts` 結構調整 | Opus |
 | 四個 plan-reviewer subagent | Sonnet(已寫進各 agent 的 frontmatter) |
 
-`.claude/hooks/model-effort-advisor.py`(`UserPromptSubmit` hook)把這張表的
-兩端做成機械提醒:prompt 命中金流/會籍/獎勵/跨層契約關鍵字時建議切
-Opus,命中文案/log/typo 關鍵字時建議 `/effort` 降級;命中不到就是預設
-(Sonnet、預設 effort),不主動打擾。這是建議、不是 gate——`/model`
-`/effort` 是互動式指令,hook 只能塞 context,切不切由人決定。改了這張表
-記得同步 hook 裡的關鍵字清單,兩者才不會漂移。
-
 MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
 固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
 
