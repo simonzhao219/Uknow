@@ -101,25 +101,49 @@ export function AdminDashboard() {
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">平台管理</h1>
-          <p className="text-muted-foreground">管理 Uknow 平台的所有功能</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">平台管理</h1>
+          {/* 副標在手機隱藏:它沒有可操作的資訊，而第一屏的每一像素都該
+              留給工作內容（見 e2e 的 first_screen_position 斷言）。 */}
+          <p className="hidden sm:block text-muted-foreground">管理 Uknow 平台的所有功能</p>
         </div>
-        {/* 掃碼核身是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
+        {/* 會員驗證是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
             入口放這裡，避免變成沒有站內連結可達的孤兒頁。 */}
         <Button asChild variant="outline">
           <Link to="/admin/verify">
             <ScanLine className="mr-1 h-4 w-4" />
-            掃碼核身
+            會員驗證
           </Link>
         </Button>
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">
-        {/* grid-cols-5 的欄是 minmax(0,1fr)，會把五個中文標籤壓到比文字還窄
-            （375px 下每格僅約 69px，最長的「獎金提領管理」需要約 100px）。
-            桌面寬度夠、等寬排列好看，所以只在 md 以上維持 grid；手機交回
-            TabsList 的 flex + 橫向捲動，標籤保持完整可讀。 */}
-        <TabsList className="w-full md:grid md:grid-cols-5">
+        {/* 手機排成兩列 3+2，桌面維持五欄等寬。
+            **四個 class 缺一不可**——TabsList 原語的 base 是
+            `inline-flex h-9 w-fit ... flex overflow-x-auto`（ui/tabs.tsx:32）:
+            少了無前綴的 `grid`，grid-cols-3 對 display:flex 容器毫無作用；
+            少了 `w-full`，容器縮成 w-fit 的內容寬度、三欄等分不會發生；
+            少了 `h-auto`，釘死的 h-9 放不下兩列。
+
+            實測（375px、真瀏覽器）:main 內容寬 343px，扣 TabsList 的 p-[3px]
+            後三欄 track 各 112.3px，再扣 TabsTrigger 的 px-2+border 共 18px，
+            可放文字 94.3px；最長標籤「獎金提領管理」實測 84px——**餘裕
+            10.3px**。五欄的 track 只有 67.4px、可放文字 49.4px，這就是先前
+            退回橫向捲動的原因。
+
+            餘裕不厚而且字型跨環境會變，所以 grid 的 ink overflow（標籤畫到
+            隔壁格子、元素自己的 boundingClientRect 完全正常）另有真瀏覽器
+            量測把關:e2e/test_admin_mobile_layout.py 的
+            test_admin_tab_labels_do_not_ink_overflow。
+
+            `h-auto` 的代價是格子高度完全由內容決定——原語的 `py-1` ＋
+            `text-sm` 只撐得出 30px，低於 §1 的 44px。分頁列是這一頁最上層
+            的導覽，按它的頻率高於卡片上的任何一顆按鈕，所以在這裡補回來。
+            **只補在 admin、不動 `ui/tabs.tsx` 基底**:比照 checkbox 與
+            CardOverflowMenu 的先例，改基底會連帶把會員中心、獎勵頁等所有
+            分頁列各加 14px，那是範圍外的視覺變更。
+            寫在 TabsList 而不是五顆 TabsTrigger 上:同一條規則貼五次，
+            日後加第六個分頁時漏貼不會有任何東西提醒你。 */}
+        <TabsList className="w-full grid grid-cols-3 md:grid-cols-5 h-auto pointer-coarse:[&>[role=tab]]:min-h-[44px]">
           <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
           <TabsTrigger value="members">會員管理</TabsTrigger>
           <TabsTrigger value="announcements">公告管理</TabsTrigger>

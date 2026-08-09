@@ -216,15 +216,22 @@ Deno.test('public_listings：停權後該會員的刊登消失', async () => {
   }
 });
 
-// public_listings 是**唯一**對 anon 開放 select 的資料表面
-// （0620000003 / 0620000004 的 grant select ... to anon, authenticated）。
-// 它現在是顯式欄位清單，但只要有人把它改成 select l.*，listings 之後
-// 新增的任何欄位都會立刻對全世界可見——而那種 diff 在 review 時看起來
-// 只是「簡化」。這條把可見欄位釘成白名單。
+// public_listings 現在是顯式欄位清單，但只要有人把它改成 select l.*，
+// listings 之後新增的任何欄位都會立刻對全世界可見——而那種 diff 在 review
+// 時看起來只是「簡化」。這條把可見欄位釘成白名單。
 //
-// ⚠️ 這不等於「RLS 已被驗證」：本地 supabase 的 anon/authenticated 缺
-// table GRANT（見檔頭），policy 本身在這個環境測不到。RLS 的行為驗證
-// 只能在 hosted 環境做，是 journey 套件的待補項。
+// ⚠️ public_listings **不是**唯一對 anon 開放 select 的資料表面。0620000004
+// 把它改成 security_invoker view 之後，底層 listings 需要一條可見性 policy
+// （listings_select_public）才回得了資料，而那條 policy 的範圍是 PUBLIC——
+// 也就是 anon 直打 /rest/v1/listings 一樣讀得到有效會員的刊登，由該 policy
+// 決定可見範圍（20260726000001 明文重申這是刻意設計）。兩者欄位集合相同，
+// 所以直連不會多洩欄位；那個對稱關係由 rls-policies.test.ts 釘住，本檔只護
+// 得住 view 這一側。
+//
+// ⚠️ 這條也不等於「RLS 已被驗證」：本地 supabase 的 anon/authenticated 缺
+// table GRANT（見檔頭），policy 的**行為**在這個環境測不到。結構由
+// rls-policies.test.ts 釘（同一軌），行為驗證在 journey 的 hosted 分支
+// （45_listing_rls.feature）。
 Deno.test('public_listings: 對外可見欄位是白名單，不得無聲增加', async () => {
   const admin = adminClient();
   const user = await createTestUser(admin, { name: '欄位白名單' });

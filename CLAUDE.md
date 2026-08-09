@@ -36,23 +36,23 @@
 | `npm run check` | **統一閘門**:biome + typecheck + vitest + knip(改完必跑) |
 | `npm run test:coverage` | vitest + 覆蓋率(門檻是棘輪,只准往上) |
 | `npm run check:full` | check + **覆蓋率棘輪** + build + Deno 型別檢查(送 PR 前跑) |
-| `npm run test:watch` | vitest 監看模式 |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
 | `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
+| `python3 scripts/check-migration-versions.py` | migration 版本號唯一(**rebase 後必跑**——撞號 git 不標成衝突、CI 也抓不到,只在正式站部署時靜默跳過一支) |
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 | `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
-commit 被擋時修到綠,不要用 `--no-verify` 繞(hook 也會擋)。
+commit 被擋時修到綠:`--no-verify` 與覆寫 `core.hooksPath` 都會被 hook 擋。
 
 **hook 的每次決策都會被記錄**(`.claude/hooks/decision_log.py`):計數存在
-session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions.jsonl`
-的一行並自動暫存——Stop hook 跑在最後一次 commit 之後,落在那裡進不了 git,
-而 web session 的容器是拋棄式的。要關掉設 `HARNESS_METRICS=0`。
+session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions/<分支>.jsonl`
+的一行並自動暫存(Stop hook 在最後一次 commit 之後才跑,進不了 git;web 容器拋棄式)。
+**一分支一檔**是為了跨分支不重疊——共用單檔會讓 GitHub 誤判 PR 衝突。關掉設 `HARNESS_METRICS=0`。
 
 **驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
 看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——
@@ -119,11 +119,11 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   自己切一個 `feature/<slug>` 分支。
   連帶效果:`workflow_run` 觸發的 workflow(deploy-supabase.yml)定義取自
   default branch,所以改它**合進 develop 就生效**,不必等晉升 main。
-- 合併規矩:PR **只用 rebase 更新**(`git fetch origin develop && git rebase
-  origin/develop && git push --force-with-lease`),**不要按 GitHub 的
-  Update branch 預設**——那塞的是 merge commit,`linear-check` 軌會紅。
+- 合併規矩:落後 base 時 **Claude 自己 rebase、不等人開口**(`git fetch origin
+  develop && git rebase origin/develop && git push --force-with-lease`);**不要
+  按 Update branch**——那塞的是 merge commit,`linear-check` 軌會紅。
   合併一律 merge commit(`--no-ff`),不 squash 不 rebase merge。
-  required check 只有 `ci-ok` 一個(needs 全部軌),新增 job 只要進它的 needs。
+  required check 只有 `ci-ok`(needs 全部軌);push run 那顆叫 `ci-ok-push`,見規則 9。
   來源是 ruleset(Settings → **Rules**,非 Branches)。⚠️ **前提是 repo 為
   public**:ruleset 在 private repo 是付費功能,設了也不執行(見規則 7)。
 - 環境對應:develop 有自己的 persistent Supabase **branch**(不是獨立
@@ -143,9 +143,9 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   在 Settings → Environments 設 required reviewer。核准前不會動到線上。
 - 晉升 SOP(develop→main):(a) develop 上 CI 綠;(b) 開晉升 PR
   (develop→main)——**journey 全套會自動在這個 PR 上跑**(30-90 分鐘,
-  真後端拋棄式分支),不再需要手動 workflow_dispatch;(c) 綠了以
-  merge commit 合併。**main 收到 push = 正式站部署**(migration 由
-  Supabase 原生整合套用),不可逆的東西都在這一步。
+  真後端拋棄式分支);(c) 綠了以 merge commit 合併——`journey-full` 沒
+  success 就是 `ci-ok` 紅(規則 10),不靠人記得等。**main 收到 push =
+  正式站部署**(migration 由 Supabase 原生整合套用),不可逆的都在這步。
   注:`linear-check` 在 base=main 時自動跳過(晉升 PR 帶的正是 develop
   上累積的 feature merge commit)。
 - Commit:Conventional Commits(`feat:` `fix:` `test:` `docs:` `refactor:`
@@ -181,12 +181,12 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
 MCP:優先用 CLI(`supabase` / `gh`)——CLI 不佔工具清單,MCP server 每台都有
 固定開銷。對本 repo 只有 GitHub 與 Supabase 是常用的,其餘按需開,用完關掉。
 
-## CI 費用紀律
+## CI 紀律
 
-⚠️ **2026-08-07 起 repo 為 public,標準 runner 不再計費**——原成本論證(私有
-repo 每 job 進位計費、08-07 分鐘數用罄停擺兩小時)已不成立,規則未鬆綁,改回
-private 即回復;細節與雙週盤點見 github-actions.md 規則 8。紀律照舊:本地
-`npm run check` 綠了才 push、紅燈先本地重現、TDD 相位 commit 累積湊檢查點。
+**2026-08-07 起 repo 為 public,標準 runner 免費且無上限**——稀缺的是牆鐘不是
+分鐘;切軌與排程頻率的依據見 github-actions.md 規則 8(8a 固定開銷判準、8b
+`頻率依據:` 註記,有機械把關)。push 紀律照舊、理由改成回饋品質:本地
+`npm run check` 綠了才 push、紅燈先本地重現一次修完、TDD 相位 commit 湊批再推。
 
 ## Compact instructions
 

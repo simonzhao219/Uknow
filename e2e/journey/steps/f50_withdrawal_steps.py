@@ -11,6 +11,7 @@ from builders.referral_program import ensure_joined_via_gui
 from builders.verification import available_points
 from pages.admin_dashboard_page import AdminDashboardPage
 from pages.reward_page import RewardPage
+from tools import withdrawal_query
 
 scenarios("50_withdrawal.feature")
 
@@ -27,14 +28,17 @@ def not_joined_hint(guarded_page):
     expect(guarded_page.get_by_text("尚未加入推薦計畫").first).to_be_visible(timeout=15_000)
 
 
-def _latest_withdrawal(supabase_admin, user_id: str) -> dict:
-    rows = supabase_admin.rest_select(
-        "withdrawals",
-        {"select": "id,status,amount", "user_id": f"eq.{user_id}",
-         "order": "created_at.desc", "limit": "1"},
+@given(parsers.parse('"{node}" 當日的提領額度已解除'))
+def clear_daily_withdrawal_quota(supabase_admin, run_state, node):
+    withdrawal_query.backdate_todays_withdrawals(
+        supabase_admin, run_state.users[node].user_id
     )
-    assert rows, "沒有提領紀錄"
-    return rows[0]
+
+
+def _latest_withdrawal(supabase_admin, user_id: str) -> dict:
+    # 查詢與欄位名收在 tools/withdrawal_query.py,由離線測試比對 migration
+    # ——欄位打錯時在 journey-offline 軌就紅,不必等真後端回一句 400。
+    return withdrawal_query.latest_withdrawal(supabase_admin, user_id)
 
 
 @when(parsers.parse('"{node}" 登入並開啟獎勵頁'))
@@ -93,16 +97,16 @@ def points_decreased(supabase_admin, run_state, scenario_memo, node, delta):
     assert now == expected, f"可提領 {now}P ≠ {scenario_memo['points']} - {delta}"
 
 
-@when("管理員在提領管理將第一筆申請標記已匯款")
-def admin_marks_paid(guarded_page, run_state):
+@when(parsers.parse('管理員在提領管理將 "{node}" 的申請標記已匯款'))
+def admin_marks_paid(guarded_page, run_state, node):
     admin_page = _open_admin_withdrawals(guarded_page, run_state)
-    admin_page.mark_first_withdrawal_paid()
+    admin_page.mark_withdrawal_paid(run_state.users[node].name)
 
 
-@when("管理員在提領管理退件第一筆申請")
-def admin_rejects(guarded_page, run_state):
+@when(parsers.parse('管理員在提領管理退件 "{node}" 的申請'))
+def admin_rejects(guarded_page, run_state, node):
     admin_page = _open_admin_withdrawals(guarded_page, run_state)
-    admin_page.reject_first_withdrawal()
+    admin_page.reject_withdrawal(run_state.users[node].name)
 
 
 def _open_admin_withdrawals(page, run_state) -> AdminDashboardPage:
@@ -127,7 +131,18 @@ def withdrawal_status(supabase_admin, run_state, node, status):
 
 @then("\"A0\" 的可提領點數恢復為記下的數值")
 def points_restored(supabase_admin, run_state, scenario_memo):
-    now = available_points(supabase_admin, run_state.users["A0"])
-    assert now == scenario_memo["points"], (
-        f"退件後可提領 {now}P，未恢復為 {scenario_memo['points']}P——點數未退回"
+    user = run_state.users["A0"]
+    now = available_points(supabase_admin, user)
+    if now == scenario_memo["points"]:
+        return
+
+    # 到這裡代表狀態已經是 rejected(前一步斷言過)卻沒退回點數,所以差別
+    # 只剩「補償入帳有沒有寫進去」。把它一起帶進訊息:沒有補償列 = SQL
+    # 函數沒插;有補償列卻不見餘額 = 帳本彙總的問題。
+    row = _latest_withdrawal(supabase_admin, user.user_id)
+    adjustments = withdrawal_query.refund_adjustments(supabase_admin, row["id"])
+    raise AssertionError(
+        f"退件後可提領 {now}P，未恢復為 {scenario_memo['points']}P——點數未退回。\n"
+        f"提領紀錄：{row}\n"
+        f"該筆提領的補償入帳（adjustment）：{adjustments or '無'}"
     )

@@ -1,4 +1,4 @@
-// 會員身分「核身」用的短效簽章 token —— 與推薦碼、PayUni 全部分離的獨立原語。
+// 會員身分「驗證」用的短效簽章 token —— 與推薦碼、PayUni 全部分離的獨立原語。
 //
 // 為什麼獨立成檔：crypto.ts 是 PayUni 專屬（AES-GCM），沒有可共用的 HMAC/簽章
 // 抽象；全專案在此之前沒有 signToken/verifyToken 慣例。這是全新原語，獨立成檔
@@ -36,7 +36,7 @@ function base64UrlDecode(input: string): Uint8Array<ArrayBuffer> {
 function readSecret(read: (key: string) => string | undefined): string {
   const secret = read('MEMBER_TOKEN_SECRET');
   if (!secret) {
-    throw new Error('MEMBER_TOKEN_SECRET 未設定：拒絕以空金鑰簽發／驗證會員核身碼');
+    throw new Error('MEMBER_TOKEN_SECRET 未設定：拒絕以空金鑰簽發／驗章會員驗證碼');
   }
   return secret;
 }
@@ -63,7 +63,7 @@ export type VerifyMemberTokenResult =
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' };
 
 /**
- * 簽發會員核身 token。
+ * 簽發會員驗證 token。
  * @param nowMs 現在時間（毫秒）——由呼叫端傳入以利測試決定性；端點傳 Date.now()。
  */
 export async function signMemberToken(
@@ -82,7 +82,7 @@ export async function signMemberToken(
 }
 
 /**
- * 驗證會員核身 token。回傳判別式結果；到期／竄改／格式錯各有明確 reason。
+ * 驗章會員驗證 token。回傳判別式結果；到期／竄改／格式錯各有明確 reason。
  * 先驗簽再驗到期：竄改過的 payload 會在簽章這關就被擋（回 bad_signature）。
  */
 export async function verifyMemberToken(

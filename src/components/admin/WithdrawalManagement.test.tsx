@@ -13,27 +13,14 @@
 //      不到；但退件與代為完成是客服當下就該能處理的事，不該一起鎖。
 //   5. **不得靜默截斷**（ui-ux-guidelines §5）——「已顯示 X / Y 筆」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
+import { stubMediaQuery, stubMediaQueryWithControl } from '../../test-utils/stubMediaQuery';
 import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManagement';
 
 afterEach(cleanup);
 
 type Page = AdminWithdrawalsResponse['data'];
-
-// jsdom 沒有 matchMedia。預設回「桌機」，手機情境的測試自己覆寫。
-function stubMediaQuery(isDesktop: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: isDesktop,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia;
-}
 
 beforeEach(() => {
   stubMediaQuery(true);
@@ -416,16 +403,19 @@ describe('WithdrawalManagement', () => {
     await screen.findByText('已顯示 2 / 2 筆');
   });
 
-  it('手機上勾選後不出現批次標記已匯款', async () => {
+  it('手機上完全沒有批次匯款這條路徑——連勾選框都不渲染', async () => {
     stubMediaQuery(false);
     renderConsole({
       loadWithdrawals: async () =>
         page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
     });
+    await screen.findByText('李小華');
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
-    // 計數照顯示（勾選本身不鎖），但批次匯款那顆鍵鎖在桌面（W8）。
-    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+    // 這條測試原本是「勾了之後批次鍵不出現」——當時手機仍渲染勾選框。
+    // Q2 裁決後手機不再渲染它（勾選唯一的下游是批次匯款，而批次鎖在桌面
+    // ＝ 留一個按了沒有用的控制項）。它保護的行為（W8:手機不得有批次匯款
+    // 路徑）沒有變，而且變得更強:現在連入口都不存在。
+    expect(screen.queryByRole('checkbox', { name: '全選本頁的提領記錄' })).toBeNull();
     expect(screen.queryByRole('button', { name: '批次標記已匯款' })).toBeNull();
   });
 
@@ -484,8 +474,98 @@ describe('WithdrawalManagement', () => {
         }),
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看歷史' }));
+    // 手機版:查看歷史依 ui-ux-guidelines §11 規則 3 收進溢出選單（唯讀、罕用、
+    // 無時效性）。它仍然到得了——只是多一次點擊，而列表頁的工作是「找到那一筆」，
+    // 不是對每一筆都做決定。
+    // 用鍵盤開選單:Radix 的 DropdownMenuTrigger 監聽 pointerdown，jsdom 的
+    // fireEvent.click 觸發不了它。走 Enter 順帶證明這顆選單是鍵盤可達的。
+    fireEvent.keyDown(await screen.findByRole('button', { name: /的更多操作/ }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '查看歷史' }));
     const history = await screen.findByRole('dialog');
     expect(within(history).getByText(/收款帳號與身分證姓名不符/)).toBeTruthy();
+  });
+});
+
+// --- 手機版（階段 2） --------------------------------------------------------
+//
+// 這一組全部跑在 `stubMediaQuery(false)` 底下。守的是「表格換成卡片時，
+// **互動不能被悄悄拿掉**」——排版變更最危險的失效方式不是版面難看，是某個
+// 只存在於 <tr> 結構裡的職責在轉卡片時蒸發了（審查 F1）。
+describe('WithdrawalManagement 跨斷點', () => {
+  it('視窗從桌面縮到手機時清空已選取的筆數', async () => {
+    // useMediaQuery 是即時訂閱 change 事件的。Q2 裁決手機不渲染勾選框，
+    // 但 selected 不會自己消失——「已選取 N 筆」橫幅還在、卻沒有任何逐筆
+    // 取消的入口。不會寫壞資料（批次動作仍鎖在 isDesktop 之後），但那是
+    // 一個看得到、動不了的殭屍狀態（審查 R7）。
+    const setDesktop = stubMediaQueryWithControl(true);
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+    });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+
+    act(() => setDesktop(false));
+    await waitFor(() => expect(screen.queryByText('已選取 2 筆')).toBeNull());
+  });
+});
+
+describe('WithdrawalManagement 手機版', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('不渲染 table，改以每筆一張卡呈現', async () => {
+    const { container } = renderConsole();
+    await screen.findByText('王小明');
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('每張卡都帶會員、匯款金額與狀態，資訊量不低於桌面表格的關鍵欄位', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    expect(within(card).getByText('王小明')).toBeTruthy();
+    expect(within(card).getByText(/1,000/)).toBeTruthy();
+    expect(within(card).getByText('待處理')).toBeTruthy();
+  });
+
+  it('展開鍵把該筆設為作業對象並就地顯示匯款五欄', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({
+          withdrawals: [
+            record({ id: 'w-1', userName: '甲會員' }),
+            record({ id: 'w-2', userName: '乙會員', bankAccount: '99988877766' }),
+          ],
+        }),
+    });
+    const card = await screen.findByRole('group', { name: /乙會員/ });
+    fireEvent.click(within(card).getByRole('button', { name: '匯款資訊' }));
+    // 第二筆的帳號要出現——出現代表 activeId 真的被寫進去了。若卡片沒有接手
+    // setActiveId，畫面永遠停在 withdrawals[0]（甲會員）。
+    await waitFor(() => expect(within(card).getByText('99988877766')).toBeTruthy());
+  });
+
+  it('展開鍵是按鈕，鍵盤可達', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    const trigger = within(card).getByRole('button', { name: '匯款資訊' });
+    expect(trigger.tagName).toBe('BUTTON');
+  });
+
+  it('已展開的卡片再點一次會收合', async () => {
+    // onOpenChange 收到的是「使用者想要的結果」（目前 open 的相反值），
+    // 忽略它會讓卡片永遠關不掉——setActiveId(w.id) 在 activeId 已是 w.id 時
+    // 不改變任何狀態。aria-expanded 也會跟著說謊。
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    const trigger = within(card).getByRole('button', { name: '匯款資訊' });
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
   });
 });

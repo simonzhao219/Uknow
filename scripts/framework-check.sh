@@ -134,6 +134,38 @@ if [ -f scripts/check-document-naming.py ]; then
   fi
 fi
 
+# 10b. Supabase migration 版本號。2026-08-07（PR #246）的撞號在三層閘門下
+#      全綠通過——git 不標成衝突（兩個不同檔名）、CI 的 api-tests 抓不到
+#      （本地從零重播，兩支都跑得到），只有在正式站部署那一刻才靜默跳過
+#      其中一支。同樣先驗檢查器自己再驗 repo。
+if [ -f scripts/check-migration-versions.py ]; then
+  if ! python3 scripts/check-migration-versions.py --self-test; then
+    echo "FAIL: migration 版本號檢查器自身的表格案例未過（scripts/check-migration-versions.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-migration-versions.py; then
+    echo "FAIL: migration 版本號檢查未過（scripts/check-migration-versions.py）"
+    fail=1
+  fi
+fi
+
+# 10c. e2e 的必留情境。2026-08-07 的去重立了兩條規則:刪一條要什麼證據
+#      （A/B/C 三級，審查會看），以及四條關鍵旅程各自至少保留一條端到端情境
+#      （**只是一段散文**）。後者逐條審查看不見——「下層有覆蓋」在單條情境的
+#      層次上永遠成立，「這條線要從頭串到尾」是跨情境的性質。刪掉之後 CI 全綠，
+#      要等有人在正式站走完一次註冊才發現中間斷了。放本軌而非 e2e 軌是刻意的:
+#      本軌無路徑過濾，e2e 軌有。
+if [ -f scripts/check-e2e-mustkeep.py ]; then
+  if ! python3 scripts/check-e2e-mustkeep.py --self-test; then
+    echo "FAIL: e2e 必留情境檢查器自身的表格案例未過（scripts/check-e2e-mustkeep.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-e2e-mustkeep.py; then
+    echo "FAIL: e2e 必留情境檢查未過（scripts/check-e2e-mustkeep.py）"
+    fail=1
+  fi
+fi
+
 # 11. Context 預算與讀取成本。其餘各軌驗「設定寫對了沒」，這一軌驗「這個
 #     repo 對 agent 來說貴不貴」——啟動固定成本、單檔讀取成本（軟警戒）、
 #     以及 rule 的 paths 是否真的匹配得到檔案（匹配不到＝宣告了但永遠不

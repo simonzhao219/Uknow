@@ -41,7 +41,7 @@ function ToneIcon({ tone }: { tone: StatusTone }) {
 }
 
 /**
- * admin 掃碼核身頁（獨立路由 /admin/verify）。
+ * admin 會員驗證頁（獨立路由 /admin/verify）。
  *
  * 為何獨立路由而非 AdminDashboard 第 6 個 Tab：相機需要全螢幕沉浸式體驗，
  * 且 AdminDashboard 桌面版是釘死的 5 欄 grid，硬插第 6 個會壞版面。
@@ -66,7 +66,7 @@ export function MemberVerifyScanner() {
 
   const verifyToken = useCallback(async (token: string) => {
     if (!token) return;
-    pausedRef.current = true; // 送出核身就停止解碼，結果顯示期間不再吃影格
+    pausedRef.current = true; // 送出驗證就停止解碼，結果顯示期間不再吃影格
     setVerifying(true);
     setError(null);
     setResult(null);
@@ -75,12 +75,12 @@ export function MemberVerifyScanner() {
         buildApiUrl('/admin/members/verify'),
         { method: 'POST', body: JSON.stringify({ token }) },
       );
-      // 記下成功核身的碼：按「繼續」時它多半還在鏡頭前，不記就會在下一幀
+      // 記下成功驗證的碼：按「繼續」時它多半還在鏡頭前，不記就會在下一幀
       // 又跳出同一個人（按鈕看起來沒作用），後端也多寫一筆稽核。
       // 失敗的碼刻意不記——那時「再送一次」正是店家要的重試。
       verifiedTokenRef.current = token;
       setResult(res.data);
-      // 震動分級：核身成功（API 有回）不等於這個人可以放行。舉著手機對客人的碼、
+      // 震動分級：驗證成功（API 有回）不等於這個人可以放行。舉著手機對客人的碼、
       // 眼睛看客人不看螢幕時，觸覺是唯一到得了的通道——兩種結果若震得一樣，
       // 「已過期」會被當成「有效」放行。
       if (memberVerifyStatusDisplay(res.data.status).tone === 'good') {
@@ -89,9 +89,9 @@ export function MemberVerifyScanner() {
         hapticAlert();
       }
     } catch (err: any) {
-      // 「核身碼過期/無效」與「會籍過期」是不同語意——錯誤態獨立呈現，
+      // 「驗證碼過期/無效」與「會籍過期」是不同語意——錯誤態獨立呈現，
       // 不能讓店家把碼過期誤讀成這個人會籍過期。
-      setError(err?.message || '核身失敗，請重新掃描');
+      setError(err?.message || '驗證失敗，請重新掃描');
       hapticAlert();
     } finally {
       setVerifying(false);
@@ -178,13 +178,13 @@ export function MemberVerifyScanner() {
       {verifying ? (
         <div className="flex items-center gap-2 rounded-lg bg-background p-3 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          核身中…
+          驗證中…
         </div>
       ) : error ? (
         <div className="flex items-center gap-3 rounded-lg border-2 border-orange-500 bg-orange-50 p-4 text-orange-900">
           <AlertTriangle className="h-6 w-6 shrink-0" aria-hidden />
           <div className="min-w-0">
-            <p className="font-semibold">無法核身</p>
+            <p className="font-semibold">無法驗證</p>
             <p className="text-sm">{error}</p>
           </div>
         </div>
@@ -228,11 +228,11 @@ export function MemberVerifyScanner() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">掃碼核身</h1>
+          <h1 className="text-2xl font-bold">會員驗證</h1>
           {/* 手機隱藏副標：這頁的垂直空間全部要留給取景框與結果，而 CardHeader
-              的「對準會員的核身 QR」已經把同一件事說完了。 */}
+              的「對準會員的驗證 QR」已經把同一件事說完了。 */}
           <p className="hidden text-sm text-muted-foreground sm:block">
-            掃描會員出示的核身碼，確認身分與會籍
+            掃描會員出示的驗證碼，確認身分與會籍
           </p>
         </div>
       </div>
@@ -241,7 +241,7 @@ export function MemberVerifyScanner() {
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <ScanLine className="h-5 w-5" />
-            {cameraFailed ? '手動輸入核身碼' : '對準會員的核身 QR'}
+            {cameraFailed ? '手動輸入驗證碼' : '對準會員的驗證 QR'}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -300,20 +300,20 @@ export function MemberVerifyScanner() {
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                此裝置無法使用相機掃描，請貼上會員畫面上的核身碼。
+                此裝置無法使用相機掃描，請貼上會員畫面上的驗證碼。
               </p>
               <div className="flex gap-2">
                 <Input
                   value={manualToken}
                   onChange={(e) => setManualToken(e.target.value)}
-                  placeholder="貼上核身碼"
-                  aria-label="核身碼"
+                  placeholder="貼上驗證碼"
+                  aria-label="驗證碼"
                 />
                 <Button
                   onClick={() => verifyToken(manualToken.trim())}
                   disabled={!manualToken.trim()}
                 >
-                  核身
+                  驗證
                 </Button>
               </div>
 

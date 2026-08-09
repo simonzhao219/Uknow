@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
+from builders.auth_gate import submit_email_and_expect
 from builders.page_diagnostics import dump_page
 from pages.auth_page import AuthPage
 from pages.complete_profile_page import CompleteProfilePage
@@ -26,10 +27,10 @@ def register_account_via_gui(page: Page, admin: SupabaseAdmin, user: JourneyUser
     auth = AuthPage(page)
     page.goto("/register")
 
-    # Step 0：email 檢核 → 新帳號進入設定密碼
+    # Step 0：email 檢核 → 新帳號進入設定密碼。與登入共用 auth_gate：
+    # 這一步消耗的是同一個 check-email per-IP 配額（見 check_email_quota）。
     auth.fill_email(user.email)
-    auth.submit_email()
-    expect(page.get_by_test_id("auth-signup-button")).to_be_visible()
+    submit_email_and_expect(page, auth, "auth-signup-button")
 
     # Step 1：設定密碼 → email OTP
     auth.fill_signup_passwords(user.password, user.password)

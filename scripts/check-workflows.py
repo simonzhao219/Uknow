@@ -121,10 +121,26 @@ BARE_WORDS = {
 # 這些 job id 進了 branch protection 的 required checks,改名要同步改保護規則
 FROZEN_JOB_IDS = {"ci-ok"}
 
+# 規則 9:required check 的名字不得被 push run 蓋章(2026-08-07 PR #236 事故)
+#        required status check 的鍵是 (commit SHA, check-run 名稱),不綁
+#        workflow run。晉升 PR 的 head SHA 就是 develop 的 tip,而那顆 SHA
+#        早已被 push run 跑過並蓋上同名的綠 ci-ok。
+PUSH_TRIGGER = re.compile(r"^\s+push\s*:\s*$", re.M)
+
 # 規則 8b:schedule 觸發的偵測(縮排開頭的 `schedule:` 行;註解行有 # 前綴
-# 不會命中)與費用註記的存在檢查
+# 不會命中)與頻率依據註記的存在檢查。
+# 用固定標籤而不是關鍵字啟發式:標籤難以意外滿足、也難以意外違反,而且
+# 自我說明——看到 `頻率依據:` 就知道下面那段在回答什麼問題。
 SCHEDULE_TRIGGER = re.compile(r"^\s+schedule\s*:\s*$", re.M)
-COST_NOTE = re.compile(r"費用")
+FREQUENCY_RATIONALE = re.compile(r"頻率依據")
+
+# 規則 11:環境核准閘門 + 排隊式 concurrency = 無限期卡死(2026-08-07 實測)
+#         處於 `waiting`(等待部署核准)的 run **仍然占著 concurrency slot**,
+#         配上 cancel-in-progress: false,後續 run 會一路排在它後面。沒人按
+#         核准就等於部署管線永久停擺,而且沒有任何紅燈——狀態不是 failure,
+#         CI 也全綠。兩個鍵各自都合理,是「相乘」才出事,所以要一起看。
+ENVIRONMENT_KEY = re.compile(r"^\s+environment\s*:", re.M)
+CANCEL_IN_PROGRESS_FALSE = re.compile(r"^\s*cancel-in-progress\s*:\s*false\s*$", re.M)
 
 
 def _jobs(text: str) -> list[tuple[str, str]]:
@@ -201,17 +217,33 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                     "UI 會顯示成 'Run actions/xxx',與真正的閘門混在一起難以判讀"
                 )
 
-    # 規則 8b:帶 schedule 的 workflow 必須有費用註記
-    #        私有 repo 每個 job 各自進位到整分鐘計費,排程 workflow 的成本
-    #        =頻率 × ceil(單次時長),與有沒有做事無關(11 秒也計 1 分)。
-    #        頻率是費用決策,決策要留下依據——檔內必須有「費用」註記
-    #        (頻率 × 單次計費分 ≈ 分/月,與選這個頻率的理由)。
-    #        2026-08-07 帳號分鐘數用罄事故的防線回填。
-    if SCHEDULE_TRIGGER.search(text) and not COST_NOTE.search(text):
+    # 規則 8b:帶 schedule 的 workflow 必須有「頻率依據」註記
+    #        排程頻率是有後果的決定:太密浪費資源、太疏讓問題晚被發現,
+    #        而「後果落在哪裡」逐個 workflow 不同(GitHub 分鐘、Supabase
+    #        分支時數、外部 API 額度、訊號疲勞…)。依據要留在檔案裡,不是
+    #        留在某次對話裡——下一個要改頻率的人只讀得到檔案。
+    #        沿革:本檢查原本要求的是「費用註記」,依據是私有 repo 每 job
+    #        進位計費(2026-08-07 分鐘數用罄事故);同日 repo 轉為 public、
+    #        標準 runner 不再計費,該框架失效而**要求本身仍然成立**,
+    #        故泛化為頻率依據。
+    if SCHEDULE_TRIGGER.search(text) and not FREQUENCY_RATIONALE.search(text):
         found.append(
-            "workflow 帶 schedule 觸發但沒有費用註記——排程頻率是費用決策"
-            "(每 job 進位計費,頻率 × 1 分起跳),請在檔頭註解寫明"
-            "「費用:頻率 × 單次計費分 ≈ 分/月」與選這個頻率的理由。"
+            "workflow 帶 schedule 觸發但沒有「頻率依據」註記——排程頻率是"
+            "有後果的決定(太密浪費資源、太疏讓問題晚被發現),請在檔頭註解"
+            "寫明「頻率依據:<為什麼是這個頻率>」,並點出成本落在哪裡"
+            "(GitHub 分鐘 / Supabase 分支 / 外部額度 / 訊號疲勞…)。"
+        )
+
+    # 規則 11:用了 environment 的 workflow 不得配 cancel-in-progress: false
+    if ENVIRONMENT_KEY.search(text) and CANCEL_IN_PROGRESS_FALSE.search(text):
+        found.append(
+            "workflow 同時用了 environment(部署核准閘門)與 "
+            "cancel-in-progress: false(排隊式 concurrency)——等待核准的 run "
+            "仍然占著 concurrency slot,沒人按核准就會把後續每一個部署無限期"
+            "擋在後面,而且沒有任何紅燈(狀態不是 failure、CI 也全綠)。"
+            "2026-08-07 實測:正式站因此停在 13 天前那一版。"
+            "修法:改成 cancel-in-progress: true——新部署淘汰舊部署,"
+            "語意上也才真的是「最新的那個贏」。"
         )
 
     # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
@@ -229,6 +261,39 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             found.append(
                 f"ci-ok 的 needs 漏了 {sorted(missing)}——那幾軌紅了也不會擋合併。"
                 "ci-ok 是唯一的 required check,新增 job 必須同步進它的 needs。"
+            )
+
+        # 規則 9:ci.yml 同時有 push 觸發時,ci-ok 的 check-run 名稱必須依事件區隔
+        #        否則 push run 會在同一顆 SHA 上蓋出一顆同名的綠 ci-ok,而晉升
+        #        PR 的 head 正是 develop 的 tip——綠章早在 PR 開啟前就在了,
+        #        required check 從頭到尾沒有東西可以擋(PR #236)。
+        if PUSH_TRIGGER.search(text):
+            name_line = next(
+                (l for l in ci_ok_block.splitlines() if re.match(r"^\s+name\s*:", l)), None
+            )
+            if name_line is None or "pull_request" not in name_line:
+                found.append(
+                    "ci.yml 有 push: 觸發,但 ci-ok 沒有依事件區隔的 name:——"
+                    "push run 會在同一顆 SHA 上蓋出同名的綠 ci-ok,而晉升 PR 的 head "
+                    "就是 develop 的 tip,綠章早在 PR 開啟前就在了,required check "
+                    "永遠不會 pending。修法:name: ${{ github.event_name == "
+                    "'pull_request' && 'ci-ok' || 'ci-ok-push' }}"
+                )
+
+        # 規則 10:ci-ok 必須把「晉升 PR 的 journey-full 不得 skipped」寫進匯總
+        #         skipped 算通過是為純文件 PR 設計的,但套在 journey-full 上等於
+        #         「上線前唯一的真後端閘門沒跑也算過」。這條防它被重構靜默刪掉。
+        #         只在真的有 journey-full 這一軌時才適用——沒有那一軌就沒有這個
+        #         閘門要保護。比對不分大小寫:表達式寫 github.base_ref、env 名寫
+        #         BASE_REF,兩種都算數。
+        lowered = ci_ok_block.lower()
+        has_journey_job = any(j == "journey-full" for j, _ in jobs)
+        if has_journey_job and ("base_ref" not in lowered or "journey-full" not in lowered):
+            found.append(
+                "ci-ok 的匯總沒有針對晉升 PR 檢查 journey-full——ci-ok 把 skipped "
+                "算通過(純文件 PR 需要),套在 journey-full 上就是「上線前唯一的"
+                "真後端閘門沒跑也算過」。修法:在匯總 step 加上 base_ref == 'main' "
+                "時 needs['journey-full'].result 必須為 success。"
             )
 
     return found
@@ -422,7 +487,7 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         0,
     ),
     (
-        "schedule 觸發但無費用註記 → 違規(2026-08-07 額度事故的防線)",
+        "schedule 觸發但無頻率依據註記 → 違規",
         (
             "name: Nightly Sweep\n"
             "on:\n  schedule:\n    - cron: '0 18 * * *'\njobs:\n"
@@ -432,10 +497,11 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         1,
     ),
     (
-        "schedule 觸發且有費用註記 → 通過",
+        "schedule 觸發且有頻率依據註記 → 通過",
         (
             "name: Nightly Sweep\n"
-            "# 費用:每天 1 次 × 1 分 ≈ 30 分/月——秒級 job,頻率即成本。\n"
+            "# 頻率依據:每天一次。掃出來的東西要人接手,日級節奏接得住;\n"
+            "# 成本落在下游 API 額度而不是 runner。\n"
             "on:\n  schedule:\n    - cron: '0 18 * * *'\njobs:\n"
             "  data-sweep:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
         ),
@@ -443,7 +509,19 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         0,
     ),
     (
-        "無 schedule 的 workflow 不要求費用註記 → 通過",
+        "只寫費用註記、沒寫頻率依據 → 違規(2026-08-07 轉 public 後,"
+        "光講計費分鐘不再是有效依據)",
+        (
+            "name: Nightly Sweep\n"
+            "# 費用:每天 1 次 × 1 分 ≈ 30 分/月。\n"
+            "on:\n  schedule:\n    - cron: '0 18 * * *'\njobs:\n"
+            "  data-sweep:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "無 schedule 的 workflow 不要求頻率依據註記 → 通過",
         (
             "name: CI\n"
             "on:\n  pull_request:\n    branches: [develop]\njobs:\n"
@@ -451,6 +529,99 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         ),
         "x.yml",
         0,
+    ),
+    # --- 規則 11:2026-08-07 正式站停擺 13 天的事故形態 ---
+    (
+        "environment + cancel-in-progress: false → 違規",
+        (
+            "name: Deploy Thing\n"
+            "concurrency:\n  group: deploy\n  cancel-in-progress: false\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n"
+            "    environment:\n      name: production\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "environment + cancel-in-progress: true → 通過",
+        (
+            "name: Deploy Thing\n"
+            "concurrency:\n  group: deploy\n  cancel-in-progress: true\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n"
+            "    environment:\n      name: production\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    (
+        "cancel-in-progress: false 但沒有 environment → 通過"
+        "(排隊本身沒問題,與核准閘門相乘才卡死)",
+        (
+            "name: Journey Scheduled\n"
+            "# 頻率依據:每週一次。\n"
+            "on:\n  schedule:\n    - cron: '0 18 * * 6'\n"
+            "concurrency:\n  group: journey\n  cancel-in-progress: false\njobs:\n"
+            "  journey-suite:\n    timeout-minutes: 90\n"
+            "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    # --- 規則 9／10:PR #236 的事故形態 ---
+    (
+        "ci.yml 有 push 觸發但 ci-ok 無事件區隔 name → 違規(PR #236 的事故形態)",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\n  push:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        1,
+    ),
+    (
+        "ci.yml 有 push 觸發且 ci-ok 有事件區隔 name → 通過",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\n  push:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n"
+            "    name: ${{ github.event_name == 'pull_request' && 'ci-ok' || 'ci-ok-push' }}\n"
+            "    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+    (
+        "ci.yml 無 push 觸發 → 不要求事件區隔 name（規則 9 不適用）",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: |\n"
+            "          [ \"$BASE_REF\" = main ] && echo journey-full\n"
+        ),
+        "ci.yml",
+        0,
+    ),
+    (
+        "ci-ok 沒有晉升 PR 的 journey-full 強制條款 → 違規(規則 10)",
+        (
+            "name: CI\n"
+            "on:\n  pull_request:\n    branches: [main]\njobs:\n"
+            "  journey-full:\n    timeout-minutes: 5\n    steps:\n      - name: a\n        run: b\n"
+            "  ci-ok:\n    timeout-minutes: 5\n    needs:\n      - journey-full\n"
+            "    steps:\n      - name: a\n        run: echo ok\n"
+        ),
+        "ci.yml",
+        1,
     ),
 ]
 

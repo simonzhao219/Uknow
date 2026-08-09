@@ -57,7 +57,7 @@ describe('haptics', () => {
   });
 
   it('vibrate 實作擲錯時吞掉而不冒到呼叫端', () => {
-    // 部分瀏覽器在缺少使用者手勢的情境下會直接擲錯。核身結果是主線功能，
+    // 部分瀏覽器在缺少使用者手勢的情境下會直接擲錯。驗證結果是主線功能，
     // 不能因為震動失敗而中斷。
     stubVibrate('throws');
     expect(() => hapticSuccess()).not.toThrow();

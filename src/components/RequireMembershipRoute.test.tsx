@@ -85,6 +85,41 @@ describe('resolveMembershipRedirect', () => {
     ).toBe('/payment/checkout');
   });
 
+  describe('allowExpired（獎勵頁專用的放寬)', () => {
+    // 規格 §5 狀態表對失效會員承諾「獎勵收益保留不歸零、僅提領不可」,
+    // 但獎勵頁若被會籍守衛擋掉,那個承諾使用者根本看不到。放寬只針對
+    // 「曾訂閱、已到期」這一格,其餘決策一律不動。
+
+    it('曾訂閱過已到期 + allowExpired → 放行,看得到自己被保留的點數', () => {
+      expect(
+        resolveMembershipRedirect(member({ subscriptionEndDate: '2026-01-01T00:00:00.000Z' }), {
+          allowExpired: true,
+        }),
+      ).toBeNull();
+    });
+
+    it('allowExpired 不放行從未訂閱過的人——那是註冊漏斗,不是過期會員', () => {
+      expect(
+        resolveMembershipRedirect(member({ subscriptionEndDate: null, registrationStep: 0 }), {
+          allowExpired: true,
+        }),
+      ).toBe('/auth/complete-profile');
+    });
+
+    it('allowExpired 不蓋過「已付款待開通」——那個人要看的是開通中的結果頁', () => {
+      expect(
+        resolveMembershipRedirect(
+          member({
+            paidAwaitingActivation: true,
+            lastTradeNo: 'T123',
+            subscriptionEndDate: '2026-01-01T00:00:00.000Z',
+          }),
+          { allowExpired: true },
+        ),
+      ).toBe('/payment/result?tradeNo=T123');
+    });
+  });
+
   it('step 0 → 先去填資料', () => {
     expect(resolveMembershipRedirect(member({ registrationStep: 0 }))).toBe(
       '/auth/complete-profile',

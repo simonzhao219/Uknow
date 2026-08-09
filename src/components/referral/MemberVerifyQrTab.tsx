@@ -12,7 +12,7 @@ interface MemberVerifyQrTabProps {
 }
 
 /**
- * 會員中心「我的 QR」的「會員核身碼」分頁：出示動態短效碼給店家（admin）掃描核身。
+ * 會員中心「我的 QR」的「會員驗證碼」分頁：出示動態短效碼給店家（admin）掃描驗證。
  * QR 內容是不透明簽章 token（非推薦碼、非連結）：一般相機掃到也無意義，只有後端
  * 授權端點解得開。到期前 hook 會自動換發，倒數不歸零。
  */
@@ -65,7 +65,7 @@ export function MemberVerifyQrTab({ active, accountStatus }: MemberVerifyQrTabPr
         <>
           <div
             role="img"
-            aria-label="會員核身 QR Code（動態短效，出示給店家掃描）"
+            aria-label="會員驗證 QR Code（動態短效，出示給店家掃描）"
             className="rounded-xl border bg-white p-4 shadow-sm"
             data-testid="member-verify-qrcode"
           >

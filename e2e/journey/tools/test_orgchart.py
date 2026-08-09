@@ -38,6 +38,26 @@ def test_expected_reward_counts_match_yaml_ledger(nodes):
         assert count * 100 == points, f"{node}: 筆數 {count}×100 ≠ yaml {points}"
 
 
+def test_ancestor_chain_runs_shallow_to_deep_without_either_endpoint(nodes):
+    # 展開推薦樹只能由淺到深——上一層沒展開，下一層根本還沒渲染。
+    assert orgchart.ancestor_chain(nodes, "A0", "D8") == ["B3", "C7"]
+    assert orgchart.ancestor_chain(nodes, "B2", "D4") == ["C4"]
+    assert orgchart.ancestor_chain(nodes, "C4", "D4") == []
+
+
+def test_generation_is_relative_to_the_viewer_not_absolute(nodes):
+    # 同一個 D4：對 root 是第三代（遮罩），對 C4 是直推（不遮）。
+    assert orgchart.generation_of(nodes, "A0", "D4") == 3
+    assert orgchart.generation_of(nodes, "B2", "D4") == 2
+    assert orgchart.generation_of(nodes, "C4", "D4") == 1
+
+
+def test_node_outside_the_viewer_subtree_raises_instead_of_walking_to_root(nodes):
+    # 回傳部分結果會讓錯誤在很遠的地方才爆（在 UI 上找不到某個節點而逾時）。
+    with pytest.raises(ValueError, match="不在"):
+        orgchart.ancestor_chain(nodes, "B2", "D8")
+
+
 def test_every_non_root_has_reachable_parent_chain(nodes):
     for node in nodes:
         seen, cur = set(), node

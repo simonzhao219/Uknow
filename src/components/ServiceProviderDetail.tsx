@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
+import { CategoryBadge } from './common/CategoryBadge';
 import {
   ArrowLeft,
   MapPin,
@@ -160,15 +160,21 @@ export function ServiceProviderDetail() {
         {/* 詳細資訊區域 */}
         <div className="space-y-6">
           <div>
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold">{serviceProvider.name}</h1>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              {/* min-w-0 + truncate：徽章帶 shrink-0，沒有這兩個的話長類別
+                  會把名稱擠到 0 寬（只補外層 min-w-0 不夠——真正需要縮的是
+                  <h1> 自己）。 */}
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <h1 className="text-3xl font-bold truncate">{serviceProvider.name}</h1>
                 {/* 🆕 性别 Badge */}
-                <GenderBadge gender={serviceProvider.gender} className="text-base" />
+                <GenderBadge gender={serviceProvider.gender} className="text-base shrink-0" />
               </div>
-              <Badge variant="default" className="text-lg px-3 py-1">
-                {serviceProvider.category}
-              </Badge>
+              {/* 與 h1 同列競爭寬度，故封頂在 45% */}
+              <CategoryBadge
+                category={serviceProvider.category}
+                variant="default"
+                className="text-lg px-3 py-1 max-w-[45%]"
+              />
             </div>
 
             <div className="space-y-3">

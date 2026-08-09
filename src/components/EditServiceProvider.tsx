@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Badge } from './ui/badge';
 import { UserContext } from '../App';
-import { SERVICE_CATEGORIES, TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
+import { TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
+import { CategorySelectField } from './listing/CategorySelectField';
+import { useCustomCategories } from '../hooks/useCustomCategories';
 import { ArrowLeft, Upload, X, Save, Info } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
@@ -19,6 +21,7 @@ import { validateContacts } from '../utils/contactValidation';
 import { NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH } from '../utils/constants';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
+import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
 import type { ListingRow } from '../types/listing';
@@ -28,6 +31,7 @@ export function EditServiceProvider() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const { showToast, showInfo } = useNotification();
+  const { invalidate } = useDataCache();
   const supabase = createClient();
 
   const [formData, setFormData] = useState({
@@ -49,6 +53,7 @@ export function EditServiceProvider() {
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
   const [serviceProvider, setServiceProvider] = useState<ListingRow | null>(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const { customCategories } = useCustomCategories();
 
   // ✅ 从后端 API 获取刊登数据
   useEffect(() => {
@@ -98,7 +103,7 @@ export function EditServiceProvider() {
     const newErrors: { [key: string]: string } = {};
 
     if (!formData.name.trim()) newErrors.name = '請輸入服務者名稱';
-    if (!formData.category) newErrors.category = '請選擇服務類別';
+    if (!formData.category) newErrors.category = '請選擇或輸入服務類別';
     if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
@@ -267,6 +272,19 @@ export function EditServiceProvider() {
 
       if (updateError) throw new Error(updateError.message || '更新失敗');
 
+      // 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非
+      // 403，所以這句成功訊息在「沒更新到任何列」時也會顯示。
+      // 這個情境的直接防線是上面那行 .eq('user_id', user!.id)：跨使用者的
+      // PATCH 在送出前就被自我限定掉，與 ServiceProviderManagement 的刪除
+      // 路徑同一種機制。**若未來拿掉那個 filter，必須重新檢查這個假設**。
+      //
+      // 上方 68-74 行的 ownership 檢查（在 setServiceProvider 之前 redirect）
+      // 擋的是**另一個**曝險——他人的刊登資料被讀進表單顯示；那條路徑的
+      // 查詢（.eq('id', id)）本來就沒有 user_id 限定。兩者別混為一談。
+      // 同 CreateServiceProvider:管理頁的 useUserListing 在 SOFT_TTL 內
+      // 沿用快取,不清的話剛改完的內容在管理頁上還是舊的。
+      invalidate('listingChange');
+
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
     } catch (error: any) {
@@ -332,25 +350,12 @@ export function EditServiceProvider() {
               <FieldError error={errors.name} />
             </div>
 
-            <div className="space-y-2">
-              <Label>服務類別 *</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(value) => setFormData({ ...formData, category: value })}
-              >
-                <SelectTrigger className={getInputErrorClass(!!errors.category)}>
-                  <SelectValue placeholder="選擇服務類別" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60 overflow-y-auto">
-                  {SERVICE_CATEGORIES.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldError error={errors.category} />
-            </div>
+            <CategorySelectField
+              value={formData.category}
+              onChange={(category) => setFormData({ ...formData, category })}
+              customCategories={customCategories}
+              error={errors.category}
+            />
 
             {/* ✅ 性别选择器（可编辑） */}
             <div className="space-y-2">

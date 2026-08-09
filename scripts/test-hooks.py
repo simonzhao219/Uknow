@@ -74,6 +74,71 @@ for cmd, want, why in BASH_CASES:
     expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
 
 
+# 文字酬載:commit message 與 heredoc 內文是**資料**,不是要執行的指令。
+# 2026-08-07 同一天撞兩次(friction-log):(1) commit message 提到 journey 與
+# pytest → 被 e2e 那條擋下,即使指令只是 git commit;(2) 用 heredoc 把那次
+# 違規寫進 friction-log 時,內文引用了繞閘門的旗標字面 → 被 commit 那條擋下。
+# 「記錄違規」被當成違規,等於用閘門懲罰誠實。
+#
+# 這組案例的兩半同等重要:剝得不夠會誤擋,剝過頭會把**真旗標**吃掉變成漏網。
+PAYLOAD_CASES = [
+    # (指令, 應否 deny, 說明)
+    # ↓ 每一條的訊息內文都刻意帶著會觸發某條規則的字面——不帶的話,這個案例
+    #   在「有剝」與「沒剝」兩種實作下都會通過,就不構成證據。
+    ("git commit -m 'docs: 記錄 --no-verify 的危害'", False, "訊息提到繞閘門旗標"),
+    ("cd e2e && git commit -m 'test: journey 情境改用 pytest 收集'", False, "訊息提到 journey"),
+    ("git commit -m 'fix: 修正 push --force 的說明'", False, "訊息提到 force push"),
+    ("git commit -am 'chore: 移除 --no-verify 的殘留說明'", False, "-am 合併短旗標"),
+    ("git commit --message='docs: --no-verify 的危害'", False, "--message= 等號形式"),
+    (
+        "git commit -m 'docs: 別用 git checkout -b x main 當 base'",
+        False,
+        "訊息提到以 main 為 base",
+    ),
+    (
+        "cat <<'EOF' >> docs/plans/friction-log.md\n用 git commit --no-verify 繞過閘門\nEOF",
+        False,
+        "heredoc 內文寫的是紀錄不是指令",
+    ),
+    (
+        "git commit -F - <<'MSG'\ndocs: 別在本機用 pytest 跑 journey\nMSG",
+        False,
+        "-F 讀 heredoc:旗標與內文都要剝",
+    ),
+    # ↓ 剝過頭就會漏掉這些——訊息之後的真旗標必須存活
+    ("git commit -m 'feat: x' --no-verify", True, "訊息後面的真旗標不得被吃掉"),
+    ("git commit -m x --no-verify", True, "未加引號的訊息只吃一個詞"),
+    ("git commit -m 'feat: x' && git push --force origin f", True, "&& 之後的真指令要存活"),
+    ("git commit -m '未關的引號會吃到底", False, "引號沒關:整段當訊息,不當機"),
+]
+
+for cmd, want, why in PAYLOAD_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
+
+
+# core.hooksPath:繞過 pre-commit 的第二種寫法(friction-log 2026-08-07,自犯)。
+# 本專案的 hooksPath 指向 scripts/git-hooks,覆寫它就等於 --no-verify——
+# 而守衛原本只認 --no-verify 那個字面。同一個效果三種寫法,只擋一種等於沒擋。
+HOOKS_PATH_CASES = [
+    # (指令, 應否 deny, 說明)
+    ("git -c core.hooksPath=.git/hooks commit -m x", True, "指向空目錄(我實際踩的那個)"),
+    ("git -c core.hooksPath=/dev/null commit -m x", True, "指向 /dev/null"),
+    ("git -c core.hookspath=/tmp/h commit -m x", True, "設定鍵不分大小寫"),
+    ("git -c core.hooksPath= commit -m x", True, "設成空值"),
+    ("GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp git commit -m x", True, "env 寫法"),
+    ("git config core.hooksPath /dev/null", True, "寫進設定檔:永久版"),
+    ("git config --unset core.hooksPath", True, "unset 會退回空的 .git/hooks"),
+    ("git config core.hooksPath scripts/git-hooks", False, "設回本專案的正解(npm prepare 做的事)"),
+    ("git config --get core.hooksPath", False, "讀取是診斷,不是繞過"),
+    ("git config --list", False, "列出全部設定"),
+    ("git -c user.name=x commit -m y", False, "其他 -c 設定不受影響"),
+    ("git commit -m 'docs: 說明 core.hooksPath=/dev/null 的危害'", False, "訊息提到不算違規"),
+]
+
+for cmd, want, why in HOOKS_PATH_CASES:
+    expect(f"bash-guard[{why}]", bash_guard.decide(cmd) is not None, want)
+
+
 # bash-guard 第 5 類:新分支的 base 檢查。head_matches_develop 由呼叫方
 # (main() 的 git rev-parse)量測後傳入,這裡直接餵布林值,不需要真的建 repo。
 BRANCH_CASES = [
@@ -362,12 +427,22 @@ def pre_commit_dryrun(
     harness_metrics: str | None = None,
 ) -> str:
     """跑 pre-commit 的 dry-run,回傳 DRYRUN: 決策行(空白分隔)。"""
+    # 鎖檔要**兩個方向都控制**:只做「要鎖時建立」的話,開發者真的處在紅燈期
+    # (鎖存在)時,所有 lock=False 的案例都會假紅——與下面 staged/deno/doc_diff
+    # 各自隔離的理由完全相同,當初漏了這一個。lock=False 時先把既有鎖移開,
+    # finally 一定放回去(移開而不是刪除:鎖是 session 狀態,弄丟等於靜默解鎖)。
     lock_path = ROOT / ".claude" / "tdd-lock"
+    stash_path = lock_path.with_name("tdd-lock.testhooks-stash")
     created = False
-    if lock and not lock_path.exists():
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path.touch()
-        created = True
+    stashed = False
+    if lock:
+        if not lock_path.exists():
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path.touch()
+            created = True
+    elif lock_path.exists():
+        lock_path.replace(stash_path)
+        stashed = True
     try:
         env = dict(os.environ, PRE_COMMIT_DRY_RUN="1")
         if fake_merge:
@@ -403,6 +478,8 @@ def pre_commit_dryrun(
     finally:
         if created:
             lock_path.unlink(missing_ok=True)
+        if stashed:
+            stash_path.replace(lock_path)
 
 
 def expect_in(label: str, needle: str, haystack: str) -> None:
@@ -564,16 +641,56 @@ expect_eq(
     decision_log.to_line({"a": 2, "b": 1}),
 )
 
+# shard_name():分支名 → 分片檔名。這是「跨分支不再寫同一個檔」的全部機制,
+# 所以它只有兩個責任——**同分支必得同名**(否則同一條分支自己就分裂成好幾個
+# 檔)、**輸出必是安全檔名**(否則感測器會在別人的 commit 裡炸出怪檔案)。
+SHARD_CASES = [
+    ("develop", "develop", "一般分支名原樣"),
+    (
+        "claude/e2e-scenario-dedup-owwsip",
+        "claude__e2e-scenario-dedup-owwsip",
+        "斜線換成雙底線:分片攤平成單層目錄,不長出跟分支同構的目錄樹",
+    ),
+    ("feature/renewal-backfill", "feature__renewal-backfill", "feature 分支同慣例"),
+    ("fix/a b?c*d", "fix__a-b-c-d", "檔名不安全的字元一律換成 -"),
+    ("hotfix/客訴", "hotfix__--", "非 ASCII 也換掉——檔名編碼跨平台不可靠"),
+    (".hidden", "-hidden", "開頭的點換掉:分片不得變成隱藏檔,否則 git add 看得到、人看不到"),
+    ("", "_unknown", "抓不到分支(detached HEAD / 非 git):落到固定檔名,絕不寫出空檔名"),
+    ("   ", "_unknown", "只有空白等同抓不到"),
+    ("a" * 200, "a" * 100, "過長截斷(碰撞只會讓兩條分支共用一檔,退回 union 保底,不會壞)"),
+]
+
+for branch, want, why in SHARD_CASES:
+    expect_eq(f"decision_log.shard_name[{why}]", decision_log.shard_name(branch), want)
+
+# 同一條分支必須永遠映到同一個檔:分片鍵若不穩定,同分支的 session 會散成
+# 好幾個檔,而 merge_lines 的「取代自己那一行」就再也找不到自己那一行。
+expect_eq(
+    "decision_log.shard_name[同分支冪等]",
+    decision_log.shard_name("claude/foo-bar"),
+    decision_log.shard_name("claude/foo-bar"),
+)
+
 
 def test_decision_log_io() -> None:
     """record → flush → 讀回的真實 I/O,以及關閉開關。
 
     純函式測不到的部分:落檔點是否真的寫出一行、同 session 多次 flush 是否
     仍是一行、HARNESS_METRICS=0 是否真的完全不碰檔案系統。全部指到 temp 目錄,
-    所以跑測試不會污染 repo 的 sessions.jsonl。
+    所以跑測試不會污染 repo 的分片日誌。
     """
     global checked
     hook_path = str(HOOKS / "decision_log.py")
+
+    def shard(target: Path) -> Path:
+        """分片目錄裡唯一的那個 .jsonl。
+
+        刻意不寫死檔名:分片鍵是「flush 當下的分支」,寫死等於把測試綁在跑測試
+        的那條分支上——本機在 feature 分支綠、CI 在別的分支紅,而紅的原因與
+        被測行為無關。glob 也正好是 harness-metrics.py 真正的讀取方式。
+        """
+        found = sorted((target / "sessions").glob("*.jsonl"))
+        return found[0] if found else target / "sessions" / "<沒有任何分片>"
 
     def run(env_extra: dict, body: str, tmp: str) -> Path:
         """在子行程裡 import 記錄器並執行 body,回傳它被指到的 metrics 目錄。
@@ -612,10 +729,10 @@ def test_decision_log_io() -> None:
         target = run(
             {}, "m.record('bash-guard', 'no-verify')\nm.record('bash-guard', None)\nm.flush()\n", tmp
         )
-        log = target / "sessions.jsonl"
+        log = shard(target)
         checked += 1
         if not log.exists():
-            failures.append("decision_log[record→flush]: sessions.jsonl 沒被建立")
+            failures.append("decision_log[record→flush]: 分片檔沒被建立")
         else:
             rows = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
             expect_eq("decision_log[record→flush] 行數", len(rows), 1)
@@ -625,13 +742,25 @@ def test_decision_log_io() -> None:
     # 3. 同一個 session flush 兩次仍是一行(pre-commit 每次 commit 都會 flush)
     with tempfile.TemporaryDirectory() as tmp:
         target = run({}, "m.record('h', None)\nm.flush()\nm.record('h', None)\nm.flush()\n", tmp)
-        rows = [
-            ln
-            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
-            if ln.strip()
-        ]
+        rows = [ln for ln in shard(target).read_text(encoding="utf-8").splitlines() if ln.strip()]
         expect_eq("decision_log[同 session 兩次 flush 仍是一行]", len(rows), 1)
         expect_eq("decision_log[第二次 flush 的計數有累加]", json.loads(rows[0])["passed"], {"h": 2})
+        # 同一條分支的兩次 flush 必須落回同一個檔。分片鍵若不穩定,同分支會散成
+        # 好幾個檔——那不只是檔案變多,是 merge_lines 再也找不到「自己那一行」,
+        # 於是每次 commit 都附加一筆半成品,日誌從此只增不收斂。
+        expect_eq(
+            "decision_log[同分支的多次 flush 只產生一個分片]",
+            len(list((target / "sessions").glob("*.jsonl"))),
+            1,
+        )
+        # 落檔位置必須是分片目錄,不是舊的共享單檔。這條就是這次改動的全部目的:
+        # 共享單檔 = 每條分支都寫同一個檔尾 = GitHub 每次都判 PR 有衝突。
+        checked += 1
+        if (target / "sessions.jsonl").exists():
+            failures.append(
+                "decision_log[不得再寫共享單檔]: sessions.jsonl 又被寫了"
+                "——那個檔已凍結為歷史,再寫就把跨分支衝突請回來"
+            )
 
     # 4. 關閉開關:HARNESS_METRICS=0 必須完全不碰檔案系統
     with tempfile.TemporaryDirectory() as tmp:
@@ -653,9 +782,9 @@ def test_decision_log_io() -> None:
         if (target / ".session.json").exists():
             failures.append("decision_log[rotate]: buffer 沒被清掉")
         checked += 1
-        if (target / "sessions.jsonl").exists():
+        if list((target / "sessions").glob("*.jsonl")):
             failures.append(
-                "decision_log[rotate 不得寫受版控檔案]: sessions.jsonl 被建立了"
+                "decision_log[rotate 不得寫受版控檔案]: 分片檔被建立了"
                 "——唯讀 session 會因此留下髒工作區"
             )
         checked += 1
@@ -673,7 +802,7 @@ def test_decision_log_io() -> None:
         run({}, "m.record('new', None)\nm.flush()\n", tmp)
         rows = [
             json.loads(ln)
-            for ln in (target / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
+            for ln in shard(target).read_text(encoding="utf-8").splitlines()
             if ln.strip()
         ]
         expect_eq("decision_log[跨 session 累積:兩個 session 各一行]", len(rows), 2)
@@ -726,13 +855,13 @@ def test_decision_log_io() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "metrics"
         run({}, "m.record('h', None)\nm.flush()\n", tmp)
-        log_path = target / "sessions.jsonl"
+        log_path = shard(target)
         before = log_path.stat().st_ino
         run({}, "m.record('h', None)\nm.flush()\n", tmp)
         checked += 1
         if log_path.stat().st_ino == before:
             failures.append(
-                "decision_log[sessions.jsonl 必須換檔寫入]: inode 沒變,代表是就地覆寫"
+                "decision_log[分片檔必須換檔寫入]: inode 沒變,代表是就地覆寫"
                 "——不上鎖的讀取器會讀到半截 JSON"
             )
 

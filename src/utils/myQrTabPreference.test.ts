@@ -1,5 +1,5 @@
 // 「我的 QR」分頁偏好的行為契約：預設是邀請好友、記得上次選擇、髒資料收斂回預設、
-// 儲存體不可用時不炸；以及最關鍵的一條——未加入推薦計畫時一律停在核身碼分頁
+// 儲存體不可用時不炸；以及最關鍵的一條——未加入推薦計畫時一律停在驗證碼分頁
 // （那時邀請分頁根本不存在，停在它上面會是一片空白）。
 import { describe, expect, it } from 'vitest';
 import {
@@ -76,7 +76,7 @@ describe('resolveMyQrTab', () => {
     expect(resolveMyQrTab(true, 'verify')).toBe('verify');
   });
 
-  it('不可邀請（未加入推薦計畫）時一律核身碼，即使偏好記著邀請', () => {
+  it('不可邀請（未加入推薦計畫）時一律驗證碼，即使偏好記著邀請', () => {
     expect(resolveMyQrTab(false, 'invite')).toBe('verify');
     expect(resolveMyQrTab(false, 'verify')).toBe('verify');
   });

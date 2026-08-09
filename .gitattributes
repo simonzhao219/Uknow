@@ -1,20 +1,28 @@
-# harness 感測器的 session 日誌是 append-only 的:每條分支各自附加自己的
-# session 行,合併時尾端衝突是必然而不是意外。union 會保留兩邊的行,正是
-# append-only log 想要的語意——用預設的 merge driver 只會讓每次合併都停下來
-# 要人手解一個沒有內容爭議的衝突。
+# harness 感測器的 session 日誌是 append-only 的。真正在解跨分支衝突的機制是
+# **分片**:日誌一分支一個檔,兩條分支沒有共同的寫入區域,所以衝突不會產生,
+# 而不是產生了再解。完整理由——包含「為什麼光有 union 不夠」那段 GitHub 把
+# 開著的 PR 誤標成有衝突的來龍去脈——寫在 `.claude/hooks/decision_log.py`
+# 檔頭〈為什麼一分支一個檔〉,這裡不重複一份。
 #
-# 前提是每行都能獨立成立(一 session 一行、鍵序穩定),這由 decision_log.py 的
-# to_line() 保證;union 不會產生半行,最壞情況只是重複行,而 harness-metrics.py
-# 以 session id 去重。
+# union 在分片之後降級成**同分支**的保底:同一條分支自己 rebase 時尾端仍可能
+# 撞上,那是真的 append-only 衝突,保留兩邊的行正是想要的語意。前提是每行都能
+# 獨立成立(一 session 一行、鍵序穩定),由 decision_log.py 的 to_line() 保證;
+# union 不會產生半行,最壞情況只是重複行,而 harness-metrics.py 以 session id 去重。
 #
-# ⚠️ 這只在**本機**生效。GitHub 在算 PR 的 mergeable_state 時似乎不套用
-# .gitattributes 的 merge driver,所以 develop 一有新 commit 碰到這個檔案,
-# PR 就會被標成 `dirty`(UI 顯示「This branch has conflicts」)。此時本機
-# `git rebase origin/develop` 會直接 `Auto-merging` 過去、一次都不用手解——
-# **看到 dirty 不代表 union 壞了,那是誤報**,照常 rebase 再 force-with-lease
-# 推上去即可。
+# 「最壞情況只是重複行」在分片上實測是安全的:2026-08-08 量到 36 行 / 35 個
+# 唯一 session(冗餘 1.03x)——單一 writer 讓 merge_lines 的「取代自己那一行」
+# 正常運作,union 幾乎沒有介入的機會。這個數字是下面那條規則被拿掉的對照組。
+.claude/metrics/sessions/*.jsonl merge=union
+
+# 分片前的共享單檔。已凍結(decision_log.py 不再寫它),留著是因為刪除或改名
+# 都是 delete/modify,會讓當時開著的每個 PR 各撞一次衝突——正是分片要消滅的
+# 症狀。
 #
-# 證據強度:這是 2026-08-07 PR #211 的行為觀察(該 PR 期間 develop 前進五次,
-# 前三次的唯一重疊檔就是本檔;本機每次自動解、GitHub 每次標 dirty),**不是**
-# 查證過的平台規格。GitHub 若改了行為,以實際觀察為準。
-.claude/metrics/sessions.jsonl merge=union
+# **刻意不設 merge driver**(2026-08-08 拿掉原本的 union)。對一個凍結的檔案,
+# union 不是保險而是風險:共用單檔的年代裡它累積出 5.36x 的冗餘(991 行只有
+# 185 個唯一 session,其中一個 session 存了 512 份),那 806 行重複已在同一次
+# 改動壓實掉。而 union 的語意就是「保留兩邊的行」——之後任何一次跨 main/
+# develop 的本機合併,都會把刪掉的 806 行原樣加回來,壓實等於白做。
+#
+# 它不該再被任何人寫,所以交給預設的 merge driver:真有人寫了,衝突就該被看見,
+# 那是「有分支還在跑分片前的舊程式碼」的訊號,不是應該被自動吞掉的雜訊。

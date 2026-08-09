@@ -2,7 +2,7 @@ import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { CategoryBadge } from './common/CategoryBadge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +56,11 @@ export function ServiceProviderManagement() {
       if (deleteError) throw new Error(deleteError.message || '刪除失敗');
       console.log(`[刪除刊登] ✅ 成功`);
 
+      // 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非
+      // 403，所以下面這句成功訊息在「沒刪到任何列」時也會顯示。
+      // 目前安全，因為 listing.id 恆為 useUserListing()（.eq('user_id', userId)）
+      // 自我限定查詢的結果，本頁路由也沒有 :id 參數可供指定他人刊登；
+      // **若未來改成接受外部傳入的 id，必須重新檢查這個假設**。
       showToast('刊登已成功刪除', 'success');
 
       // ✅ 重新獲取（應該會變成 null）——refetch 成功時會覆寫快取，
@@ -177,11 +182,13 @@ export function ServiceProviderManagement() {
 
                 {/* 內容 */}
                 <div className="flex-1 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold">{listing.name}</h3>
+                  <div className="flex items-start justify-between gap-3">
+                    {/* min-w-0 + truncate：長自訂類別與長名稱並列時，需要縮的是
+                        名稱本身，只在外層補 min-w-0 只是把擠壓換個位置發生。 */}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xl font-semibold truncate">{listing.name}</h3>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="default">{listing.category}</Badge>
+                        <CategoryBadge category={listing.category} variant="default" />
                       </div>
                     </div>
 

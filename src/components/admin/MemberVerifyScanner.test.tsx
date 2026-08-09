@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// 掃碼核身頁的「連續掃描」契約。
+// 會員驗證頁的「連續掃描」契約。
 //
 // bug 的形狀：解碼迴圈掃到碼就 `return`，不再排下一個 animation frame——
 // 迴圈自我終止。而「繼續掃描下一位」只重設 React state，沒有任何機制把迴圈
@@ -10,7 +10,7 @@
 //
 // 修法是讓迴圈永遠活著、改用「暫停」旗標控制解不解碼。這使兩件事變成
 // 新的載重契約，兩者都在下面釘住：(1) 結果顯示期間不能繼續吃影格，
-// 否則 60fps 打爆核身 API；(2) 核身成功的同一張碼還在鏡頭前時不能重複觸發，
+// 否則 60fps 打爆驗證 API；(2) 驗證成功的同一張碼還在鏡頭前時不能重複觸發，
 // 否則按下繼續的當幀又跳出同一個人、並多寫一筆稽核。
 //
 // jsdom 沒有相機也沒有 canvas 2D context，所以整條硬體鏈路（getUserMedia /
@@ -122,7 +122,7 @@ async function mountManualScanner() {
       <MemberVerifyScanner />
     </MemoryRouter>,
   );
-  await screen.findByLabelText('核身碼');
+  await screen.findByLabelText('驗證碼');
 }
 
 function clickScanNext() {
@@ -130,7 +130,7 @@ function clickScanNext() {
 }
 
 describe('MemberVerifyScanner', () => {
-  it('按「繼續掃描下一位」後，下一個人的 QR 仍會被解碼並送出核身', async () => {
+  it('按「繼續掃描下一位」後，下一個人的 QR 仍會被解碼並送出驗證', async () => {
     apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
     jsQR.mockReturnValue({ data: 'token-a' });
 
@@ -146,7 +146,7 @@ describe('MemberVerifyScanner', () => {
     await waitFor(() => expect(apiRequestJson).toHaveBeenCalledTimes(2));
   });
 
-  it('核身結果還顯示在畫面上時，後續影格不再送出核身請求', async () => {
+  it('驗證結果還顯示在畫面上時，後續影格不再送出驗證請求', async () => {
     apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
     jsQR.mockReturnValue({ data: 'token-a' });
 
@@ -160,7 +160,7 @@ describe('MemberVerifyScanner', () => {
     expect(apiRequestJson).toHaveBeenCalledTimes(1);
   });
 
-  it('已核身成功的同一張 QR 還在鏡頭前時，按繼續不會重複送出核身', async () => {
+  it('已驗證成功的同一張 QR 還在鏡頭前時，按繼續不會重複送出驗證', async () => {
     apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
     jsQR.mockReturnValue({ data: 'token-a' }); // 鏡頭沒移開，一直解到同一張
 
@@ -176,13 +176,13 @@ describe('MemberVerifyScanner', () => {
     expect(screen.queryByTestId('verify-result')).toBeNull();
   });
 
-  it('核身失敗後按繼續，同一張 QR 可以再送一次重試', async () => {
-    apiRequestJson.mockRejectedValueOnce(new Error('核身碼已過期，請會員重新出示'));
+  it('驗證失敗後按繼續，同一張 QR 可以再送一次重試', async () => {
+    apiRequestJson.mockRejectedValueOnce(new Error('驗證碼已過期，請會員重新出示'));
     jsQR.mockReturnValue({ data: 'token-a' });
 
     await mountScanner();
     await flushFrame();
-    await screen.findByText('核身碼已過期，請會員重新出示');
+    await screen.findByText('驗證碼已過期，請會員重新出示');
 
     apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
     clickScanNext();
@@ -201,7 +201,7 @@ describe('MemberVerifyScanner', () => {
     // jsdom 不套用 Tailwind，量不出真實版面，所以「不需捲動」測不到。
     // 這裡能釘的是它的結構前提：結果與繼續鈕都在取景容器**之內**。
     // 一旦有人把它們搬回取景框外的流排版，症狀就會原樣回來。
-    it('核身結果與繼續鈕都渲染在取景框容器之內', async () => {
+    it('驗證結果與繼續鈕都渲染在取景框容器之內', async () => {
       apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
       jsQR.mockReturnValue({ data: 'token-a' });
 
@@ -227,7 +227,7 @@ describe('MemberVerifyScanner', () => {
     });
 
     it('會籍已過期時送出警示震動而非成功震動', async () => {
-      // 核身成功（API 有回）不等於這個人可以進場。兩者若震得一樣，
+      // 驗證成功（API 有回）不等於這個人可以進場。兩者若震得一樣，
       // 不看螢幕的店家會把「已過期」當成「有效」放行。
       apiRequestJson.mockResolvedValue({ success: true, data: EXPIRED_MEMBER });
       jsQR.mockReturnValue({ data: 'token-a' });
@@ -240,13 +240,13 @@ describe('MemberVerifyScanner', () => {
       expect(hapticSuccess).not.toHaveBeenCalled();
     });
 
-    it('核身碼無效導致核身失敗時送出警示震動', async () => {
-      apiRequestJson.mockRejectedValue(new Error('核身碼已過期，請會員重新出示'));
+    it('驗證碼無效導致驗證失敗時送出警示震動', async () => {
+      apiRequestJson.mockRejectedValue(new Error('驗證碼已過期，請會員重新出示'));
       jsQR.mockReturnValue({ data: 'token-a' });
 
       await mountScanner();
       await flushFrame();
-      await screen.findByText('核身碼已過期，請會員重新出示');
+      await screen.findByText('驗證碼已過期，請會員重新出示');
 
       expect(hapticAlert).toHaveBeenCalledTimes(1);
       expect(hapticSuccess).not.toHaveBeenCalled();
@@ -258,8 +258,8 @@ describe('MemberVerifyScanner', () => {
       apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
 
       await mountManualScanner();
-      fireEvent.change(screen.getByLabelText('核身碼'), { target: { value: 'token-a' } });
-      fireEvent.click(screen.getByRole('button', { name: '核身' }));
+      fireEvent.change(screen.getByLabelText('驗證碼'), { target: { value: 'token-a' } });
+      fireEvent.click(screen.getByRole('button', { name: '驗證' }));
 
       await screen.findByTestId('verify-result');
       expect(screen.queryByTestId('scanner-viewport')).toBeNull();
