@@ -478,7 +478,15 @@ jobs:
     uses: ./.github/workflows/journey.yml
     with:
       scope: full
-      payment_mode: sandbox
+      # ⚠️ 暫時改用 webhook（原為 sandbox）：PayUni sandbox 商店額度
+      # 2026-08-08~09 連續三次真跑（含跨日）在第一筆交易就回「商店信用卡
+      # 收款額度已達上限」，webhook 模式當天已驗證過能跑出全 119 情境
+      # 皆綠（run 31283424267），含原本存疑的退件路徑。webhook 模式走的是
+      # 真的 /payuni/prepare → 簽章 /webhooks/payuni/notify → 真的
+      # process_successful_payment，只略過 PayUni 自家頁面渲染，本次晉升
+      # 未動這段。詳見 PR #275 討論。sandbox 額度恢復（有真跑成功證據）後
+      # 應改回 sandbox——見 friction-log 待辦，不要讓這行暫時的變成永久的。
+      payment_mode: webhook
     secrets: inherit
 
   # 唯一該列入 required status checks 的項目(來源:ruleset
