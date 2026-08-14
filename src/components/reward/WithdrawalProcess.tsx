@@ -22,6 +22,8 @@ import {
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import type { IdPhotosResponse } from '@contract';
 import { useNotification } from '../notifications/NotificationContext';
+import { LegalDialog } from '../LegalDialog';
+import { businessManualContent } from '../../content/businessManual';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
 import { useImeComposition } from '../../hooks/useImeComposition';
@@ -841,9 +843,17 @@ export function WithdrawalProcess({
                 />
                 <Label htmlFor="agreeToTerms" className="cursor-pointer text-sm flex-1">
                   我已閱讀並同意{' '}
-                  <a href="/business-manual" className="text-blue-600 underline mx-1">
-                    事業手冊
-                  </a>
+                  {/* 就地彈窗，而非會換頁的 <a href>：提領是多步驟表單，走到這一步
+                      已經填了銀行帳號、身分證字號、上傳了照片，而這些全在元件本地
+                      useState（沒有草稿持久化）。換頁會卸載表單、把它們清成空白
+                      （本次修的 bug）。彈窗讓表單留在底下，讀完關掉即可續填。 */}
+                  <LegalDialog
+                    triggerLabel="事業手冊"
+                    title="事業手冊"
+                    content={businessManualContent}
+                    triggerClassName="text-blue-600 underline mx-1"
+                    triggerTestId="withdrawal-manual-link"
+                  />
                 </Label>
               </div>
               <FieldError error={errors.agreeToTerms} />

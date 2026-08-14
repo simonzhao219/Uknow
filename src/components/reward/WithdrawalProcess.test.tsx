@@ -237,4 +237,26 @@ describe('WithdrawalProcess', () => {
     // 回到步驟 1:金額輸入欄仍在且保留原值。
     expect((screen.getByLabelText(/提領Point \*/) as HTMLInputElement).value).toBe('1000');
   });
+
+  // 提領是多步驟表單,步驟 3 已經填了銀行帳號、身分證字號、上傳了照片。
+  // 同意款的文件連結若是會換頁的 <a href>,點下去整個表單會被卸載、useState
+  // 全部清空——這正是 CompleteProfile 與 JoinReferralProgramDialog 修過兩次
+  // 的同一個 bug(見 LegalDialog docblock),提領頁當初漏改。
+  it('點同意款的事業手冊連結時不換頁且已填欄位不流失', async () => {
+    mockIdPhotos(idPhotosResponse());
+    await renderAndGoToStep3();
+
+    const bankAccount = screen.getByLabelText(/銀行帳號 \*/) as HTMLInputElement;
+    fireEvent.change(bankAccount, { target: { value: '1234567890' } });
+
+    const trigger = screen.getByTestId('withdrawal-manual-link');
+    // 觸發元件必須是就地彈窗的 <button>,不是會離開本頁的 <a href>。
+    expect(trigger.tagName).toBe('BUTTON');
+
+    fireEvent.click(trigger);
+
+    // 文件就地讀得到,且底下的表單仍掛載、值原封不動。
+    expect(await screen.findByTestId('legal-dialog-body')).toBeTruthy();
+    expect((screen.getByLabelText(/銀行帳號 \*/) as HTMLInputElement).value).toBe('1234567890');
+  });
 });

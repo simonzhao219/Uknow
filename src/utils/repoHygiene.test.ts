@@ -95,6 +95,48 @@ describe('外部連結一律在原分頁開啟', () => {
   });
 });
 
+describe('法遵文件一律就地彈窗閱讀', () => {
+  it('src/ 內指向法遵內容路由的導覽連結只允許出現在 Footer 與 App 路由表', () => {
+    // 背景：表單裡放一條會離開本頁的法遵連結，點下去會卸載整張表單、清空
+    // 使用者填到一半的 useState。這個 bug 修過三次——CompleteProfile（換頁）、
+    // JoinReferralProgramDialog（開新分頁害返回鈕變死鈕）、WithdrawalProcess
+    // （提領步驟 3 的銀行帳號與已上傳照片全歸零）。前兩次的結論只寫進
+    // LegalDialog 的 docblock，沒有任何閘門，於是第三次照樣發生。
+    //
+    // 既有的「外部連結一律在原分頁開啟」只擋 target="_blank"，規則比要守的
+    // 行為窄：同分頁導航不帶 target，擋不到。這條補的就是那個缺口。
+    //
+    // 白名單的兩個檔案是這些頁「正當的」導覽入口：Footer 的快速連結本來就
+    // 是要換頁，App.tsx 則是路由定義與舊 slug 轉址。其餘任何檔案要呈現法遵
+    // 文件，一律走 LegalDialog（content/*.ts 直接餵給彈窗，不經路由）。
+    const LEGAL_ROUTES = [
+      '/terms-of-service',
+      '/listing-plans',
+      '/business-manual',
+      '/participation-contract',
+    ];
+    // 只抓導覽屬性（href= / to=），不抓 path=（那是路由「定義」不是導覽），
+    // 也不抓字串裡剛好提到路由的註解。
+    const navToLegalRoute = new RegExp(`(href|to)=["'](${LEGAL_ROUTES.join('|')})["']`);
+    const allowed = new Set([
+      join('src', 'components', 'Footer.tsx'),
+      join('src', 'App.tsx'),
+      join('src', 'utils', 'repoHygiene.test.ts'),
+    ]);
+    const offenders: string[] = [];
+    for (const rel of walk('src', ['.ts', '.tsx'])) {
+      if (allowed.has(rel)) continue;
+      const text = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      if (navToLegalRoute.test(text)) offenders.push(rel);
+    }
+    expect(
+      offenders,
+      '法遵文件請用 <LegalDialog> 就地彈窗呈現，不要用會離開本頁的 <a href> / ' +
+        '<Link to>——表單頁換頁會清空使用者填到一半的資料（見 LegalDialog docblock）',
+    ).toEqual([]);
+  });
+});
+
 describe('官方 LINE 帳號代稱統一', () => {
   it('src/ 內不得出現大寫版官方 LINE 帳號代稱，一律透過 utils/constants 的共用常數呈現小寫 @uknow', () => {
     // 拆字組出 pattern，避免這行本身的字面量被自己的掃描規則命中。
