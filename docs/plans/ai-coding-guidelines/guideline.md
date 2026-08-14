@@ -1,65 +1,164 @@
-# AI Coding Guideline（草案 v0.1）
+# AI Coding Guideline（草案 v0.2・Q&A 版）
 
 > 本規範針對「用 AI（如 Claude Code）產出程式碼」的開發流程，解決三個
 > 實際痛點：**沒人 review code、寫一大坨就上 PR、聲稱測試都過但涵蓋不夠**。
-> 結構分三部分：Part 1 單頁原則（給所有人）、Part 2 官方文件與相關文獻的
-> 最佳機制（規範依據）、Part 3 我們的範例專案「EP實作」的對應範例與未來
-> 優化（落地參考）。
 >
-> 不熟的名詞（hook、subagent、Plan Mode…）見文末〈附錄：名詞速查〉，
-> 每個都有一句話說明與延伸閱讀連結。
+> 全文採 Q&A：每個問題都是團隊裡真實會出現的疑問，先想一下你的答案，
+> 再看規範怎麼回答。結構分三部分：Part 1 原則 Q&A＋單頁速查表（給所有人）、
+> Part 2 官方文件怎麼說（規範依據，附英文原文）、Part 3 我們的範例專案
+> 「EP實作」怎麼做到（落地參考與未來優化）。
+>
+> 不熟的名詞（hook、subagent、Plan Mode…）見文末〈附錄：名詞速查〉。
 
 ---
 
-## Part 1：單頁原則
+## Part 1：原則 Q&A
 
-### 三條元原則
+### 起點：為什麼需要這份規範？
 
-1. **瓶頸是驗證器，不是模型**——AI 產碼速度已超過我們驗證它的速度。
-   規範的每一條都應該回答「這讓驗證變強了嗎」，而不是「這限制了 AI 什麼」。
-2. **證據不是聲稱**——「做完了」「測試都過」一律不可採信；可採信的是
-   獨立於作者之外的檢驗來源（測試套件、CI、覆蓋率數字）的輸出，與可查驗
-   的證據鏈（紅燈 commit、CI 連結、部署版本比對）。
-3. **寫在文件裡的約定會衰減，必守規則要機械承載**——重要規則放進
-   hook／CI／合併規則（ruleset），讓它「做不到」而不是「不該做」；
-   而且承載規則的閘門自己也要被驗證（改壞它要會紅）。
+**Q1. AI 寫碼又快又多，問題到底出在哪？**
 
-### 十一條行為準則
+不在 AI 寫太多，在**我們驗證它的速度跟不上它產出的速度**。所以這份規範
+的每一條都在回答同一個問題：「這讓驗證變強了嗎」——而不是「這限制了 AI
+什麼」。記住一句話：**瓶頸是驗證器，不是模型**。
 
-| # | 準則 | 一句話理由 |
+**Q2. 訂了規範、宣導過了，為什麼還是沒人遵守？**
+
+因為寫在文件裡的約定，對 AI 和對人一樣**會衰減**。官方對此講得很直白：
+提示層的規則是「建議」，AI 可能忽略（見 Part 2 Q11）。所以本規範的達標
+判準是「**有機械承載**」——重要規則要放進 hook／CI／合併規則（ruleset），
+讓違規「做不到」而不是「不該做」。同一條約定被違反第二次，就該升級成
+機械檢查，不再靠提醒（**準則 7**）。
+
+---
+
+### 給寫碼的人（人＋AI）
+
+**Q3. 我可以直接叫 AI 開寫嗎？什麼時候要先出計畫？**
+
+判準抄官方的：**「如果你能用一句話描述這個 diff，就不用計畫」**。反過來，
+範圍不確定、要動多個檔案、或你不熟那段程式碼——先讓 AI 用 Plan Mode
+（唯讀模式）出計畫、**人審過計畫才實作**（**準則 1**）。理由：攔截點放在
+最便宜的階段——改一份計畫，比改一坨已經寫出來的程式碼便宜得多。
+「寫一大坨就上 PR」的病因通常不是下游沒擋，是上游沒有這個計畫審查點。
+
+**Q4. 那 PR 應該多大？**
+
+同一個判準：**一句話描述不了，就拆**。一個 PR 一個邏輯功能（**準則 2**）。
+審得動的 PR 才會有真審查；巨型 PR 得到的只會是橡皮圖章——你其實是在
+懲罰認真審你 code 的同事。
+
+**Q5. AI 會不會為了讓測試變綠，偷偷去改測試？**
+
+會，這是官方點名的已知行為。防法不是叮嚀它，是走 TDD 的順序（**準則 3**）：
+先讓 AI 寫**會失敗**的測試 → **確認真的紅**（防「本來就會過」的假測試）→
+**把紅燈測試 commit 起來** → 再實作到綠。紅燈 commit 是證據：之後 AI 若動了
+測試，diff 一眼就看得出來。
+
+**Q6. 我跑過測試都綠了，PR 描述寫「測試都過」可以嗎？**
+
+不夠。「測試都過」是**聲稱**，規範採信的是**證據**：測試輸出或 CI 連結、
+覆蓋率變化、（UI 改動）截圖（**準則 4**）。這不是刁難——審查者看證據比
+自己重跑驗證快，而且證據會留在 PR 上成為紀錄。官方的說法：「Have Claude
+show evidence rather than asserting success」（見 Part 2 Q8）。
+
+---
+
+### 給 reviewer（我們每個專案有兩位）
+
+**Q7. AI 都會自我審查了，人還需要 review 嗎？**
+
+需要，但角色變了：**AI 找碴，人裁決**（**準則 5**）。AI 審查便宜、可以
+大量做、不會累——但它從不核准（官方連自家 Code Review 產品都設計成
+「從不 approve、從不擋合併」，見 Part 2 Q9）。人的裁決不能省，而且
+**人不對 AI 沒看過的 diff 簽名**：每個 PR 都應先過 AI 審查、結論附在
+PR 上，reviewer 拿著 AI 的發現做判斷，而不是空手在巨型 diff 裡找蟲。
+
+**Q8. 我收到一個沒附證據、或大到審不動的 PR，怎麼辦？**
+
+你有兩個正當動作，都不是硬著頭皮審（**準則 6**）：
+
+- **缺證據** → 先請作者補上（或直接請 AI 補跑審查與測試——通常幾分鐘），
+  補齊再開始審。
+- **審不動** → 要求拆分後再送。
+
+橡皮圖章的根源是「暫停審查沒有正當性」；這條就是給你的正當性。
+
+**Q9. AI 審查報了一堆問題，每條都要修嗎？**
+
+不用，而且官方明確警告過：被要求找問題的 AI**一定找得出問題**，照單全收
+會走向過度工程（多餘的抽象層、防禦不可能發生的情況）。只處理影響
+**正確性與明訂需求**的發現，其餘視為可選建議（見 Part 2 Q9 的原文）。
+
+---
+
+### 給維護流程的人
+
+**Q10. 覆蓋率有門檻了，為什麼測試還是越來越少？**
+
+因為門檻的**參數**可能被悄悄調低——閘門還在，門變寬了。規範：品質指標
+（覆蓋率、bundle 大小…）**只准向好**，門檻由 CI 持有；要調低必須在 PR
+寫明理由給人裁決（**準則 9**，這種機制叫「棘輪」——只朝一個方向轉的齒輪）。
+
+**Q11. 我們加了一堆自動檢查，這樣就安全了吧？**
+
+先問一個問題：**你的檢查空轉時，看起來像什麼？** 大多數時候答案是
+「像全部通過」。所以新增任何檢查都要做**突變驗證**：故意把它該擋的東西
+弄壞一次，證明它真的會紅（**準則 8**）。EP實作有過實證：12 條突變測試
+抓出 2 條「看起來在跑、實際空轉」的檢查——這層若不存在，那兩個假檢查
+會永遠綠著（見 Part 3）。
+
+**Q12. 又有 bug 漏到線上了。修完就結案？**
+
+不行，還差兩步（**準則 11**）：(a) **同類掃描**——同一個病灶通常不只一處，
+grep 全庫找兄弟；(b) **防線回填**——回答「為什麼既有的測試／CI／hook
+沒攔到它」，把答案變成新防線。這讓每次漏網自動強化系統，而不是只修這一次。
+
+**Q13. AI 越用越笨、同一個錯講了三次還在犯，怎麼辦？**
+
+這通常不是模型問題，是 **context（AI 的工作記憶）塞滿了失敗嘗試**。
+規範（**準則 10**）：換任務就清空（`/clear`）；同一錯誤糾正兩次還錯，
+停止拉鋸——重開 session、把學到的東西寫進更好的初始提示；CLAUDE.md
+（AI 每次開工自動讀的專案說明書）保持 200 行內，太肥 AI 會整份忽略。
+
+---
+
+### 單頁速查表（Q&A 的濃縮版，可單獨列印）
+
+**三條元原則**：① 瓶頸是驗證器，不是模型 ② 證據不是聲稱
+③ 約定會衰減，必守規則要機械承載（且閘門自己也要被驗證）。
+
+| # | 準則 | 出處 Q |
 |---|---|---|
-| 1 | **計畫先行**：範圍不確定、跨多檔、或不熟的程式碼，先讓 AI 出計畫、人審過才實作（用 Plan Mode）；一句話能描述的 diff 可直接做 | 攔截點放在最便宜的階段——改計畫比改一坨程式碼便宜 |
-| 2 | **小步交付**：PR 一句話描述不了就拆；一個 PR 一個邏輯功能 | 審得動的 PR 才有真審查；巨型 PR 只會得到橡皮圖章 |
-| 3 | **測試先紅後綠**：AI 實作走 TDD——先寫會失敗的測試、確認真的紅、把紅燈測試 commit 起來，再實作到綠 | 紅燈 commit 是證據：AI 若改測試遷就實作，diff 會揭露 |
-| 4 | **PR 必附證據**：測試輸出或 CI 連結、覆蓋率變化；只寫「測試都過」＝未完成 | 元原則 2 的落地；審查者看證據比重跑驗證快 |
-| 5 | **AI 找碴＋人裁決**：每個 PR 先過 AI 審查（結論附在 PR 上），再由兩位 reviewer 裁決；人不對 AI 沒看過的 diff 簽名 | AI 審查便宜可大量做，但從不核准——裁決永遠是人的事 |
-| 6 | **補證據再審**：PR 缺 AI 審查結論或測試證據時，reviewer 可先請作者補上（或直接請 AI 補跑審查與測試）再開始審；規模大到審不動的 PR 則要求拆分後再送——兩種情況都不必硬著頭皮審 | 給 reviewer 低摩擦的補救路徑，同時保住底線：橡皮圖章的根源是「暫停審查沒有正當性」 |
-| 7 | **必守規則機械化**：同一條約定被違反第二次，就升級成 hook／CI 檢查／ruleset，不再靠提醒 | AI 與人都會忽略提示層規則；機器不會 |
-| 8 | **閘門也要驗證**：新增任何自動檢查，要證明「故意改壞它會紅」（突變驗證）；寫檢查前先問「它空轉時看起來像什麼」 | 看起來在跑、實際空轉的檢查比沒有檢查更危險 |
-| 9 | **品質指標只准向好**：測試覆蓋率門檻由 CI 持有、只准調高；要調低必須在 PR 寫明理由給人裁決 | 防止測試量在「都有過 CI」的表象下無聲退步 |
-| 10 | **Context 衛生**：換任務就清空對話（`/clear`）；同一錯誤糾正兩次還錯就重開並改寫初始提示；CLAUDE.md 保持 200 行內 | AI 的腦容量（context）塞滿會變笨——官方多數最佳實踐都源自這個限制 |
-| 11 | **防線回填**：每個漏到線上的 bug，修復時必答「為什麼既有的測試／CI／hook 沒攔到」，並把答案變成新防線 | 讓每次漏網自動強化系統，而不是只修這一次 |
-
-### 三個痛點 → 準則對照
+| 1 | 計畫先行：範圍不確定／跨多檔／不熟的改動，先出計畫給人審；一句話能描述的 diff 直接做 | Q3 |
+| 2 | 小步交付：PR 一句話描述不了就拆 | Q4 |
+| 3 | 測試先紅後綠：紅燈測試先 commit 當證據 | Q5 |
+| 4 | PR 必附證據：測試輸出／CI 連結；只寫「測試都過」＝未完成 | Q6 |
+| 5 | AI 找碴＋人裁決：AI 審查結論附在 PR，兩位 reviewer 裁決；人不對 AI 沒看過的 diff 簽名 | Q7 |
+| 6 | 補證據再審：缺證據先請 AI 補、審不動要求拆分——不硬審 | Q8 |
+| 7 | 必守規則機械化：被違反第二次就升級成 hook／CI 檢查 | Q2 |
+| 8 | 閘門也要驗證：新檢查要證明「改壞它會紅」 | Q11 |
+| 9 | 指標只准向好：門檻由 CI 持有，調低要書面理由 | Q10 |
+| 10 | Context 衛生：換任務就清空；糾正兩次就重開；CLAUDE.md ≤200 行 | Q13 |
+| 11 | 防線回填：漏網 bug 必答「為什麼沒攔到」並補防線＋同類掃描 | Q12 |
 
 | 痛點 | 對應準則 |
 |---|---|
-| 沒人 review code | #5 AI 找碴＋人裁決、#6 補證據再審、#4 必附證據 |
-| 寫一大坨就上 PR | #1 計畫先行、#2 小步交付、#6 補證據再審（審不動要求拆分） |
-| 聲稱測試都過但涵蓋不夠 | #3 先紅後綠、#4 必附證據、#9 指標只准向好 |
+| 沒人 review code | #5、#6、#4 |
+| 寫一大坨就上 PR | #1、#2、#6 |
+| 聲稱測試都過但涵蓋不夠 | #3、#4、#9 |
 
 ---
 
-## Part 2：官方文件與相關文獻的最佳機制
+## Part 2：官方文件怎麼說？
 
-以下每個機制附官方英文原文與出處，是 Part 1 各準則的依據。
 （引句均逐字核對自 [code.claude.com 官方文件](https://code.claude.com/docs/en/best-practices)；
 標〔部落格〕者出自 Anthropic 工程部落格，經搜尋交叉確認。）
 
-### 2.1 給 AI 一個能自己跑的驗證迴圈（→ 準則 3、4）
+**Q7'. AI 怎麼知道自己「做完了」？**（支撐準則 3、4）
 
-AI 判斷「做完了」的預設依據是「看起來完成」；給它一個會回報紅綠的檢查
-（測試、build、lint、截圖比對），它才能自我迭代、人才不用當人肉驗證器：
+預設依據是「看起來完成」——這正是「聲稱測試都過」的來源。官方的解法是
+給它一個會回報紅綠的檢查，讓迴圈自己閉合：
 
 > "Claude stops when the work looks done. Without a check it can run, 'looks
 > done' is the only signal available, and you become the verification loop:
@@ -67,39 +166,30 @@ AI 判斷「做完了」的預設依據是「看起來完成」；給它一個�
 > produces a pass or fail, and the loop closes on its own."
 > — [Best practices › Give Claude a way to verify its work](https://code.claude.com/docs/en/best-practices)
 
-成果要求出示證據而非宣稱成功：
+**Q8'. 官方怎麼看「聲稱 vs 證據」？**（支撐準則 4）
 
 > "Have Claude show evidence rather than asserting success: the test output,
 > the command it ran and what it returned, or a screenshot of the result."
 > — 同上
 
-官方也點名了不驗證就出貨的反模式：
+> "**The trust-then-verify gap.** ... **Fix**: Always provide verification
+> (tests, scripts, screenshots). If you can't verify it, don't ship it."
+> — [Best practices › Avoid common failure patterns](https://code.claude.com/docs/en/best-practices)
 
-> "**The trust-then-verify gap.** Claude produces a plausible-looking
-> implementation that doesn't handle edge cases. **Fix**: Always provide
-> verification (tests, scripts, screenshots). If you can't verify it, don't
-> ship it." — [Best practices › Avoid common failure patterns](https://code.claude.com/docs/en/best-practices)
+**Q3'. 官方推薦的工作流長怎樣？什麼時候可以跳過計畫？**（支撐準則 1、2）
 
-### 2.2 計畫先行、探索與實作分離（→ 準則 1、2）
-
-Plan Mode（AI 唯讀、只能提計畫，人核准才放行實作）是官方推薦工作流
-Explore → Plan → Implement → Commit 的支點：
+Explore → Plan → Implement → Commit，用 Plan Mode 把探索與實作分開：
 
 > "Letting Claude jump straight to coding can produce code that solves the
 > wrong problem. Use plan mode to separate exploration from execution."
 > — [Best practices › Explore first, then plan, then code](https://code.claude.com/docs/en/best-practices)
-
-何時可以跳過計畫，官方給了清楚的判準（同時也是「PR 該多小」的判準）：
 
 > "Planning is most useful when you're uncertain about the approach, when the
 > change modifies multiple files, or when you're unfamiliar with the code
 > being modified. If you could describe the diff in one sentence, skip the
 > plan." — 同上
 
-### 2.3 TDD：先紅、commit、再綠（→ 準則 3）
-
-〔部落格〕官方把 TDD 列為 agentic coding 的最強模式之一，關鍵動作是
-**把紅燈測試先 commit 起來**，讓「AI 改測試遷就實作」無所遁形：
+**Q5'. 官方的 TDD 怎麼做？**（支撐準則 3）〔部落格〕
 
 > "Ask Claude to write tests based on expected input/output pairs. Be
 > explicit about the fact that you're doing test-driven development so that
@@ -109,20 +199,10 @@ Explore → Plan → Implement → Commit 的支點：
 
 > "Ask Claude to commit the tests when it's satisfied with them." — 同上
 
-### 2.4 獨立審查：AI 找碴、人裁決（→ 準則 5、6）
+**Q9'. AI 可以核准 PR 嗎？審查者需要什麼條件？**（支撐準則 5、6、Q9）
 
-審查者必須是**乾淨腦袋**（fresh context 的 subagent 或另一個 session），
-不能讓寫碼的那個 AI 自己審自己：
-
-> "A fresh context improves code review since Claude won't be biased toward
-> code it just wrote."
-> — [Best practices › Run multiple Claude sessions](https://code.claude.com/docs/en/best-practices)
-
-> "...a verification subagent ... has a fresh model try to refute the result,
-> so the agent doing the work isn't the one grading it." — 同上
-
-官方的 [Code Review](https://code.claude.com/docs/en/code-review) 產品
-（多個特化 AI 並行審 PR、驗證後才留言）把「AI 不做裁決」寫死在設計裡：
+不行——官方自家的 [Code Review](https://code.claude.com/docs/en/code-review)
+產品（多個特化 AI 並行審 PR）把這條寫死在設計裡：
 
 > "Findings are tagged by severity and don't approve or block your PR, so
 > existing review workflows stay intact."
@@ -130,17 +210,22 @@ Explore → Plan → Implement → Commit 的支點：
 > "The check run always completes with a neutral conclusion so it never
 > blocks merging through branch protection rules."
 
-同時官方警告：被要求找問題的 AI 審查者一定找得出問題，別把每條發現都
-當聖旨（過度工程的來源）：
+審查者必須是**乾淨腦袋**，不能讓寫碼的那個 AI 自己審自己：
+
+> "A fresh context improves code review since Claude won't be biased toward
+> code it just wrote."
+> — [Best practices › Run multiple Claude sessions](https://code.claude.com/docs/en/best-practices)
+
+以及對「照單全收 AI 發現」的警告：
 
 > "A reviewer prompted to find gaps will usually report some, even when the
 > work is sound, because that is what it was asked to do. Chasing every
 > finding leads to over-engineering."
 > — [Best practices › Add an adversarial review step](https://code.claude.com/docs/en/best-practices)
 
-### 2.5 機械守衛：必守規則不靠提示（→ 準則 7）
+**Q11'. 哪些規則放 CLAUDE.md，哪些要用 hook？**（支撐準則 7）
 
-hook（掛在 AI 工作流程固定節點自動跑的腳本）與提示層規則的本質差異：
+官方的分界線就是「建議 vs 保證」：
 
 > "Unlike CLAUDE.md instructions which are advisory, hooks are deterministic
 > and guarantee the action happens."
@@ -151,19 +236,17 @@ hook（掛在 AI 工作流程固定節點自動跑的腳本）與提示層規則
 > hard enforcement layer."
 > — [Memory › Manage CLAUDE.md for large teams](https://code.claude.com/docs/en/memory)
 
-權限預設從嚴、責任在人（→ 準則 5 的「人不對沒看過的 diff 簽名」）：
-
-> "Claude Code only has the permissions you grant it. You're responsible for
-> reviewing proposed code and commands for safety before approval."
-> — [Security](https://code.claude.com/docs/en/security)
-
-有副作用的自動化工作流程，官方明講要鎖成「只有人能觸發」：
+有副作用的自動化流程要鎖成只有人能觸發；核可的責任在人：
 
 > "Use `disable-model-invocation: true` for workflows with side effects that
 > you want to trigger manually."
 > — [Best practices › Create skills](https://code.claude.com/docs/en/best-practices)
 
-### 2.6 Context 衛生（→ 準則 10）
+> "Claude Code only has the permissions you grant it. You're responsible for
+> reviewing proposed code and commands for safety before approval."
+> — [Security](https://code.claude.com/docs/en/security)
+
+**Q13'. Context 管理有什麼鐵則？**（支撐準則 10）
 
 > "Most best practices are based on one constraint: Claude's context window
 > fills up fast, and performance degrades as it fills."
@@ -171,83 +254,79 @@ hook（掛在 AI 工作流程固定節點自動跑的腳本）與提示層規則
 
 > "Keep it concise. For each line, ask: *'Would removing this cause Claude to
 > make mistakes?'* If not, cut it. Bloated CLAUDE.md files cause Claude to
-> ignore your actual instructions!" — 同上（CLAUDE.md 的行數判準：
-> "target under 200 lines"，出自 [Memory](https://code.claude.com/docs/en/memory)）
+> ignore your actual instructions!" — 同上（行數判準 "target under 200
+> lines" 出自 [Memory](https://code.claude.com/docs/en/memory)）
 
 > "If you've corrected Claude more than twice on the same issue in one
 > session, the context is cluttered with failed approaches. Run `/clear` and
 > start fresh with a more specific prompt that incorporates what you learned."
 > — 同上
 
-### 2.7 前沿：Loop / Evaluation / Observability（→ 準則 8、11 的延伸）
+**Q14'. 業界前沿還在談什麼？**（準則 8、11 的延伸）
 
-（社群前沿，非官方文件：Addy Osmani "[Loop
+（社群觀點，非官方：Addy Osmani "[Loop
 Engineering](https://www.oreilly.com/radar/loop-engineering/)"，2026-06。）
-核心主張：與其一句句提示 AI，不如設計「什麼觸發 AI、誰驗證產出、何時
-停止」的迴路。對規範最有用的三點：
+與其一句句提示 AI，不如設計「什麼觸發 AI、誰驗證產出、何時停止」的迴路。
+三個可直接入規範的觀念：
 
-1. 任何**無人值守**的 AI 自動化，必備四個控制：迭代上限、預算上限、
-   agent 自己能評估的成功條件、失敗升級路徑——缺一不放手。
-2. 依賴順序：**先觀測（量得到）→ 再評估（有基準）→ 才自動化**；
-   你不能自動化一個你量不到的東西。
-3. 感測器（量測設施）的失效是靜默的——閘門壞了會擋住人，感測器壞了
-   只是不再記錄；量測設施需要的機械驗證比閘門更多。
+1. 無人值守的 AI 自動化必備四控制：**迭代上限、預算上限、agent 可自評的
+   成功條件、失敗升級路徑**——缺一不放手。
+2. 依賴順序：**先觀測 → 再評估 → 才自動化**；量不到的東西不能自動化。
+3. **感測器的失效是靜默的**——閘門壞了會擋住人，感測器壞了只是不再記錄；
+   量測設施需要的機械驗證比閘門更多。
 
 ---
 
-## Part 3：EP實作的對應範例、更仔細之處、未來優化
+## Part 3：EP實作怎麼做到？
 
-EP實作是我們的範例專案（單人＋AI 開發），把 Part 2 的機制全部落了地，
-並在幾處走得比官方基線更遠。以下對應供各專案導入時參考；檔案路徑為
-EP實作 repo 內的相對路徑。
+EP實作是我們的範例專案（單人＋AI 開發），Part 1 的準則在那裡全部落了地。
+檔案路徑為 EP實作 repo 內的相對路徑。
 
-### 3.1 官方機制 → EP實作落地對照
+**Q15. 這些原則聽起來很理想，真的做得到嗎？**
 
-| 官方機制（Part 2） | EP實作的落地 | 關鍵檔案／範例 |
+做得到——每條準則在 EP實作都有對應的機械承載：
+
+| 準則 | EP實作的落地 | 關鍵檔案 |
 |---|---|---|
-| 驗證迴圈（2.1） | 統一閘門 `npm run check`（lint＋型別＋測試＋死碼偵測），pre-commit 強制紅燈擋 commit | `package.json`、`scripts/git-hooks/pre-commit` |
-| 計畫先行（2.2） | 三段式流程：`/plan-feature` 規劃 → `/review-plan` AI 四視角審 → **停等人審** → 人親自啟動實作；且 hook 機械擋「沒有規劃書就寫產品碼」 | `.claude/skills/plan-feature/`、`.claude/hooks/feature-plan-guard.py` |
-| TDD 先紅後綠（2.3） | 紅燈期上鎖：紅燈測試 commit（`test(red)`）後建立鎖檔，期間 hook **禁止編輯測試檔**；唯一解鎖路徑是 check 全綠 | `.claude/hooks/tdd-test-guard.py`、`scripts/tdd-unlock.sh` |
-| 獨立審查（2.4） | 四個唯讀、乾淨腦袋的 reviewer subagent（系統／架構／UIUX／需求視角），輸出契約統一 P0（阻擋）／P1（應改）／P2（建議）；彙整者明文禁止改判 | `.claude/agents/plan-reviewer-*.md`、`docs/_templates/review.md` |
-| 機械守衛（2.5） | 9 支 hook 擋 git 後門（`--no-verify`、force push、直推主幹）、TDD 相位違規、無規劃寫碼；實作 skill 設 `disable-model-invocation: true`——AI 無法自己啟動實作 | `.claude/hooks/bash-guard.py`、`.claude/skills/tdd-implement/SKILL.md` |
-| Context 衛生（2.6） | CLAUDE.md 維持 200 行內，且用腳本把「啟動固定成本上限」變成 CI 檢查 | `scripts/check-context-budget.py` |
-| 部署驗證（2.1 延伸） | 部署後打 `/api/health` 比對 git commit sha，確認線上跑的就是這個版本；正式站部署需人工核准 | `.github/workflows/deploy-supabase.yml` |
-| 觀測／評估（2.7） | 每次 hook 決策記錄成 metrics（誤擋率、命中率），隨 commit 進 git 可彙總 | `.claude/hooks/decision_log.py`、`scripts/harness-metrics.py` |
+| 1 計畫先行 | 三段式流程：`/plan-feature` 規劃 → `/review-plan` AI 四視角審 → **停等人審** → 人親自啟動實作；hook 機械擋「沒有規劃書就寫產品碼」 | `.claude/skills/plan-feature/`、`.claude/hooks/feature-plan-guard.py` |
+| 3 先紅後綠 | 紅燈測試 commit（`test(red)`）後建立鎖檔，紅燈期 hook **禁止編輯測試檔**；唯一解鎖路徑是檢查全綠 | `.claude/hooks/tdd-test-guard.py`、`scripts/tdd-unlock.sh` |
+| 4 必附證據 | PR 範本要求附規劃／審查結論與紅燈 commit hash；部署後打 `/api/health` 比對版本 sha | `.github/pull_request_template.md`、`deploy-supabase.yml` |
+| 5 AI 找碴 | 四個唯讀、乾淨腦袋的 reviewer subagent（系統／架構／UIUX／需求），輸出統一 P0／P1／P2 契約；彙整者明文禁止改判 | `.claude/agents/plan-reviewer-*.md`、`docs/_templates/review.md` |
+| 7 機械化 | 9 支 hook 擋 git 後門（`--no-verify`、force push、直推主幹）、TDD 違規、無規劃寫碼；實作 skill 設 `disable-model-invocation: true`——AI 無法自己啟動實作 | `.claude/hooks/bash-guard.py`、`.claude/skills/tdd-implement/SKILL.md` |
+| 8 閘門驗證 | 所有自撰檢查器先跑自己的測試案例再實掃；hook 行為有表格化測試；新檢查要求突變驗證 | `scripts/test-hooks.py`、`scripts/framework-check.sh` |
+| 9 棘輪 | 覆蓋率門檻設在實測值下緣、紅了擋 commit；bundle 大小同樣走棘輪 | `vitest.config.ts`、`scripts/check-bundle-budget.mjs` |
+| 10 Context | CLAUDE.md 維持 200 行內，「啟動固定成本上限」做成 CI 檢查 | `scripts/check-context-budget.py` |
+| 11 回填 | 修 bug 流程強制含根因分析＋同類掃描＋防線回填；hook 決策有量測（誤擋率、命中率） | `.claude/skills/fix-bug/`、`scripts/harness-metrics.py` |
 
-### 3.2 EP實作走得比官方基線更仔細的五件事
+**Q16. EP實作哪些做法超出官方基線，值得直接抄？**
 
-1. **「約定會被忽略」當設計公理**：官方說必守規則用 hook 承載；EP實作
-   進一步形成方法論——**被違反過的約定就升級成機械檢查**（防線回填），
-   並用 friction-log（摩擦日誌）追蹤誤擋與漏網、每雙週整併成框架修訂。
-   範例：`git commit --no-verify` 曾是繞過檢查的口子 → 現在被 hook 直接擋。
-2. **審查獨立性的結構化**：官方說「用乾淨 context 審」；EP實作加上
-   視角分工（四視角各查各的）、嚴重度契約（P0 未處置不得進實作）、
-   「主彙整者禁止改判」、「需求對不到規格書＝一律 P0」等硬規則。
-3. **閘門的閘門**：所有自撰檢查器都先跑自己的測試案例再實掃；hook 行為
-   有表格化測試（`scripts/test-hooks.py`）；新增檢查要求**突變驗證**
-   （證明改壞它會紅）。實證：某次改版抓到 12 條突變中 2 條「檢查看起來
-   在跑、實際空轉」——這層若不存在，兩個假檢查會永遠綠著。
-4. **全程證據鏈**：紅燈 commit hash 是 TDD 的證據；PR 範本要求附規劃／
-   審查結論；覆蓋率門檻是「棘輪」（只准向上）；journey 測試套件設計成
-   「不可能假綠」（連不上就硬失敗、情境數低於下限就硬失敗——源自一次
-   「27 個情境全 skip 卻顯示全綠」的真實事故）。
-5. **流程自身有迭代迴圈**：hook 決策量測＋friction-log＋定期框架修訂 PR
-   ——規範跟程式碼一樣有 bug、要量測、要修，不是寫完就完。
+1. **「約定會被忽略」當設計公理**：被違反過的約定就升級成機械檢查
+   （防線回填），並用摩擦日誌（friction-log）追蹤誤擋與漏網、定期整併成
+   框架修訂。範例：`git commit --no-verify` 曾是繞過檢查的口子 → 現在被
+   hook 直接擋。
+2. **審查獨立性的結構化**：官方只說「用乾淨 context 審」；EP實作加上
+   視角分工、嚴重度契約（P0 未處置不得進實作）、「彙整者禁止改判」、
+   「需求對不到規格書＝一律 P0」等硬規則。
+3. **閘門的閘門**：突變驗證抓出過「12 條突變中 2 條檢查空轉」的實證——
+   寫檢查前先問「它空轉時看起來像什麼」。
+4. **不可能假綠的測試設計**：全鏈路測試連不上就硬失敗、情境數低於下限
+   就硬失敗——源自一次「27 個情境全 skip 卻顯示全綠」的真實事故。
+5. **流程自身有迭代迴圈**：hook 決策量測＋摩擦日誌＋定期框架修訂 PR——
+   規範跟程式碼一樣有 bug、要量測、要修。
 
-### 3.3 未來要導入的優化
-
-**EP實作自身**（依優先序）：
+**Q17. EP實作還缺什麼？接下來要導入什麼？**
 
 | 優先 | 項目 | 補什麼縫 |
 |---|---|---|
-| P1 | 覆蓋率棘輪的「只准調高」目前是註解裡的約定——新增 CI 檢查：門檻被調低即紅，除非 PR 附豁免理由 | 測試閘門的參數可被寫碼方悄悄放鬆（正是痛點 3 的縫隙型態） |
-| P1 | 合併規則（ruleset）加入人類 approve 要求（EP實作目前唯一 required check 是 CI） | AI 審查再強，人的裁決點也要機械要求——組織其他專案已有兩位 reviewer，EP實作應對齊 |
+| P1 | 覆蓋率棘輪「只准調高」目前是註解約定——新增 CI 檢查：門檻被調低即紅，除非附豁免理由 | 閘門參數可被悄悄放鬆（痛點 3 的縫隙型態） |
+| P1 | 合併規則加入人類 approve 要求（EP實作目前唯一 required check 是 CI；組織其他專案已有兩位 reviewer，應對齊） | 人的裁決點要機械要求 |
 | P2 | PR 規模軟警戒：diff 超標時 CI 留言建議拆分（不硬擋——硬擋會逼出湊行數的壞行為） | 「小步交付」目前只是約定 |
-| P2 | 試點官方 [Code Review](https://code.claude.com/docs/en/code-review)＋`REVIEW.md`（把 P0/P1/P2 語義翻譯過去），作為 PR 開啟後的第二道獨立防線 | 官方新功能未整合；注意其 check run 永遠中性、要 gate 需自行解析 |
-| P3 | 外迴路建設依既定順序：感測器資料累積 → skill 觸發命中率評估 → 摩擦日誌整併排程化 → 第一條唯讀自動迴路（先補迭代與預算上限） | Loop/Eval/Observability 仍在初期（見 2.7 的依賴順序） |
+| P2 | 試點官方 [Code Review](https://code.claude.com/docs/en/code-review)＋`REVIEW.md` 作為 PR 開啟後的第二道獨立防線（注意其 check run 永遠中性，要 gate 需自行解析） | 官方新功能未整合 |
+| P3 | 外迴路依序建設：感測器資料累積 → skill 觸發命中率評估 → 摩擦日誌整併排程化 → 第一條唯讀自動迴路（先補迭代與預算上限） | Loop/Eval/Observability 仍在初期（Q14' 的依賴順序） |
 
-**組織導入路徑建議**（各專案按成熟度分級採用；每級的達標判準是
-「有機械承載」，不是「已宣導」）：
+**Q18. 其他專案想開始，第一步做什麼？**
+
+按成熟度分級導入，每級的達標判準是「有機械承載」，不是「已宣導」：
 
 - **L0（一天）**：精簡 CLAUDE.md（≤200 行）＋PR 範本要求測試證據＋
   既有兩位 reviewer 制度寫進 ruleset（required approvals＋CI 綠才可合併）
@@ -255,14 +334,13 @@ EP實作 repo 內的相對路徑。
 - **L1（一週）**：pre-commit 統一閘門（lint＋型別＋測試）且擋繞過手段；
   CI 單一匯總 required check；覆蓋率門檻。
 - **L2（一個月）**：計畫先行（Plan Mode 或 plan 檔＋人審）；TDD 紅燈
-  證據 commit；AI 多視角審查＋嚴重度契約（P0 阻擋語義）。
-- **L3（持續）**：防線回填；friction-log；閘門自檢＋突變驗證；棘輪指標。
-- **L4（前沿，選配）**：先觀測、再評估、才自動化；無人值守迴路必備
-  四控制（迭代上限、預算上限、可自評的成功條件、失敗升級路徑）。
+  證據 commit；AI 多視角審查＋嚴重度契約。
+- **L3（持續）**：防線回填；摩擦日誌；閘門自檢＋突變驗證；棘輪指標。
+- **L4（前沿，選配）**：先觀測、再評估、才自動化；無人值守迴路必備四控制。
 
 推行方式：找 1–2 個種子團隊照 L0→L1 跑出成功案例再擴散；指定 DRI
-（明確負責人）維護組織層 `.claude/` 共用資產；每季回訪剪枝——規則太多
-會互相稀釋，這點對本規範自身同樣成立。
+（明確負責人）維護組織層共用資產；每季回訪剪枝——規則太多會互相稀釋，
+這點對本規範自身同樣成立。
 
 ---
 
