@@ -2,7 +2,7 @@
 //
 // 這些斷言釘住 Wave 3 的三個架構決策，防止日後被無意間退回：
 // 1. code splitting——admin 後台與法務內容不得同步打進首屏 bundle
-//    （訪客開首頁不需要下載提領審核介面與整份推薦獎勵合約）。
+//    （訪客開首頁不需要下載提領審核介面與整份事業手冊）。
 // 2. 全站必須有 ErrorBoundary（render 錯誤不得白屏）。
 // 3. 未捕獲的 promise rejection 必須有全域記錄點。
 import { describe, expect, it } from 'vitest';

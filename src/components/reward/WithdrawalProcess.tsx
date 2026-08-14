@@ -841,8 +841,8 @@ export function WithdrawalProcess({
                 />
                 <Label htmlFor="agreeToTerms" className="cursor-pointer text-sm flex-1">
                   我已閱讀並同意{' '}
-                  <a href="/referral-reward-rules" className="text-blue-600 underline mx-1">
-                    推薦獎勵規則
+                  <a href="/business-manual" className="text-blue-600 underline mx-1">
+                    事業手冊
                   </a>
                 </Label>
               </div>

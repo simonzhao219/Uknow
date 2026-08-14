@@ -6,7 +6,7 @@ import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../util
 const QUICK_LINKS = [
   { to: '/listing-plans', label: '刊登方案', icon: Package },
   { to: '/terms-of-service', label: '服務條款', icon: FileText },
-  { to: '/referral-reward-rules', label: '推薦獎勵規則', icon: Gift },
+  { to: '/business-manual', label: '事業手冊', icon: Gift },
 ];
 
 export function Footer() {

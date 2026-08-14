@@ -8,8 +8,8 @@ import { SignaturePad } from './SignaturePad';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
 import { LegalDialog } from '../LegalDialog';
-import { referralRewardRulesContent } from '../../content/referralRewardRules';
-import { referralRewardContractContent } from '../../content/referralRewardContract';
+import { businessManualContent } from '../../content/businessManual';
+import { participationContractContent } from '../../content/participationContract';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface JoinReferralProgramDialogProps {
@@ -124,27 +124,27 @@ export function JoinReferralProgramDialog({
                         鈕 navigate(-1) 無處可回而變死鈕（本次修的 bug）。改用彈窗後
                         關掉即回到本對話框、簽名與勾選狀態原封不動，根本不需要返回鈕。 */}
                     {/* leading-relaxed 讓換行後的行距不擠；每個文件連結各自
-                        whitespace-nowrap + inline-block，保證「推廣獎勵規章」「推廣獎勵契約書」
+                        whitespace-nowrap + inline-block，保證「事業手冊」「參加契約書」
                         這種專有名詞永遠整組不斷字。整句仍可換行，但只會在
-                        「我已詳閱並同意 / 規章 / 和 / 契約書」這些完整詞塊之間斷，
-                        不會再把一兩個字（章、書）擠到下一行造成排版怪異。 */}
+                        「我已詳閱並同意 / 手冊 / 和 / 契約書」這些完整詞塊之間斷，
+                        不會再把一兩個字（冊、書）擠到下一行造成排版怪異。 */}
                     <Label
                       htmlFor="terms"
                       className="text-sm cursor-pointer flex-1 leading-relaxed"
                     >
                       <span className="whitespace-nowrap">我已詳閱並同意</span>
                       <LegalDialog
-                        triggerLabel="推廣獎勵規章"
-                        title="推廣獎勵規章"
-                        content={referralRewardRulesContent}
+                        triggerLabel="事業手冊"
+                        title="事業手冊"
+                        content={businessManualContent}
                         triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-rules-link"
                       />
                       <span className="whitespace-nowrap">和</span>
                       <LegalDialog
-                        triggerLabel="推廣獎勵契約書"
-                        title="推廣獎勵契約書"
-                        content={referralRewardContractContent}
+                        triggerLabel="參加契約書"
+                        title="參加契約書"
+                        content={participationContractContent}
                         triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-contract-link"
                       />
