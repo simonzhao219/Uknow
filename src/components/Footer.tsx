@@ -53,7 +53,7 @@ export function Footer() {
               <li>
                 {/* 375px 下這一欄只有約 163px（頁尾 nav 是 grid-cols-2），而 Email
                     是不可斷的長 token——瀏覽器預設不在 "@" 與 "." 斷字，整串會畫到
-                    框外（375px 巡檢實測溢出 25px）。所以位址本身允許 break-all 換行，
+                    框外（375px 巡檢實測溢出 19px）。所以位址本身允許 break-all 換行，
                     圖示改 shrink-0 + 對齊首行，換成兩行時不會被擠扁或飄到中間。 */}
                 <a
                   href={OFFICIAL_EMAIL_URL}

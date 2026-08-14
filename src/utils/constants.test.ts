@@ -27,8 +27,8 @@ describe('listing numeric / photo constants', () => {
 });
 
 describe('OFFICIAL_EMAIL', () => {
-  it('官方信箱位址為 service@uknow.com.tw，mailto 由它推導', () => {
-    expect(OFFICIAL_EMAIL).toBe('service@uknow.com.tw');
+  it('官方信箱位址為 admin@uknow.com.tw，mailto 由它推導', () => {
+    expect(OFFICIAL_EMAIL).toBe('admin@uknow.com.tw');
     expect(OFFICIAL_EMAIL_URL).toBe(`mailto:${OFFICIAL_EMAIL}`);
   });
 });
