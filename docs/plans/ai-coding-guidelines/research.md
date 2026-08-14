@@ -10,6 +10,41 @@
 > 3. 聲稱 test 都沒問題，但 unit test 跑的項目根本不夠
 >
 > **鷹架聲明**：本檔屬 `docs/plans/` 鷹架（D 級），Guideline 定稿後應升級／刪除。
+>
+> **給第一次接觸這些概念的讀者**：本文件的推廣對象可能不熟 AI Native
+> Engineering 或 Claude 的官方作法，所以 §0 提供全部專有名詞的一句話速查
+> （附延伸閱讀連結），正文首次出現重要名詞時也會補行內說明。
+
+---
+
+## 0. 名詞速查（給第一次接觸的讀者）
+
+每個名詞一句話講清楚它是什麼、為什麼在這份文件裡重要；想深入再點連結。
+
+| 名詞 | 一句話說明 | 延伸閱讀 |
+|---|---|---|
+| **AI Native Engineering** | 把 AI agent 當成主要的寫碼勞動力、人類轉為負責「決策、審查、驗證」的工程方法論（業界通稱，尚無單一官方定義） | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
+| **Claude Code** | Anthropic 官方的 AI 開發代理：在終端機／網頁裡讀你的程式碼、跑指令、改檔案、自己迭代到任務完成 | [官方總覽](https://code.claude.com/docs/en/overview) |
+| **Agentic coding / agent** | AI 不只「回答問題」，而是自主連續行動（讀檔→改碼→跑測試→修正）直到完成任務的工作型態 | [How Claude Code works](https://code.claude.com/docs/en/how-claude-code-works) |
+| **Harness** | 圍繞 AI 搭起來的整套工作環境（工具、權限、守衛腳本、CI），決定 AI 能做什麼、不能做什麼——本專案的 `.claude/` 目錄就是一套 harness | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
+| **Context window** | 模型單次能「記在腦中」的內容上限（對話＋讀過的檔案），塞太滿表現會下降——官方多數最佳實踐都源自這個限制 | [Context window](https://code.claude.com/docs/en/context-window) |
+| **CLAUDE.md** | 放在 repo 裡、AI 每次開工都自動讀的「專案說明書」，寫團隊慣例與指令；屬於「建議」層級，AI 可能忽略 | [Memory](https://code.claude.com/docs/en/memory) |
+| **Plan Mode** | Claude Code 的唯讀模式：AI 只能讀檔和提出計畫、不能改任何東西，人核准計畫後才放行實作 | [Permission modes](https://code.claude.com/docs/en/permission-modes) |
+| **Hook** | 掛在 AI 工作流程固定節點（如「執行指令前」「回合結束時」）自動跑的腳本——保證執行、不靠 AI 自覺，是「必守規則」的承載處 | [Hooks guide](https://code.claude.com/docs/en/hooks-guide) |
+| **Subagent** | 派出去的「分身」AI：在獨立的乾淨腦袋（context）裡做探查或審查、只回報結論——「寫碼者與審查者分離」的機制基礎 | [Subagents](https://code.claude.com/docs/en/sub-agents) |
+| **Skill / slash command** | 打包成檔案、可用 `/名字` 呼叫的可重複工作流程（如本專案的 `/plan-feature`），可設定成「只有人能觸發」 | [Skills](https://code.claude.com/docs/en/skills) |
+| **Permission / allowlist / deny** | Claude Code 的權限系統：預設唯讀、有動作要人核准；可用白名單放行安全指令、用 deny 封鎖敏感檔案 | [Permissions](https://code.claude.com/docs/en/permissions) |
+| **Headless mode（`claude -p`）** | 不開互動介面、下一條指令就執行完的模式，用來把 AI 塞進 CI 或自動化腳本 | [Non-interactive mode](https://code.claude.com/docs/en/headless) |
+| **Code Review（官方功能）** | Anthropic 的 PR 自動審查服務：多個特化 AI 並行找碴、驗證後在 PR 上留言，但從不核准也不擋合併——裁決留給人 | [Code Review](https://code.claude.com/docs/en/code-review) |
+| **REVIEW.md** | 放在 repo 根目錄、專門指揮上述審查 AI 的最高優先指示檔（調整嚴重度定義、略過範圍等） | [Code Review › REVIEW.md](https://code.claude.com/docs/en/code-review#review-md) |
+| **MCP** | Model Context Protocol：讓 AI 連接外部工具（GitHub、資料庫、Figma…）的開放標準 | [MCP](https://code.claude.com/docs/en/mcp) |
+| **TDD（測試驅動開發）** | 先寫「會失敗的測試」定義正確行為，再寫實作讓它變綠；對 AI 特別有效——紅綠燈給了 AI 明確的自我驗證訊號 | [Claude Code Best Practices（部落格）](https://www.anthropic.com/engineering/claude-code-best-practices) |
+| **覆蓋率棘輪（coverage ratchet）** | 測試覆蓋率門檻「只准調高、不准調低」的機制（棘輪＝只朝一個方向轉的齒輪），防止測試量無聲退步 | 本專案 `vitest.config.ts` 的做法（§2.6） |
+| **pre-commit hook（git）** | git 原生機制：每次 commit 前自動跑檢查、紅燈就擋下 commit（注意：與上面 Claude Code 的 hook 是兩套東西） | [Git Hooks](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) |
+| **CI / required check / ruleset** | CI＝每次 push 自動跑的檢查流水線；required check 與 ruleset 是 GitHub 上「哪些檢查必須綠、要幾個人 approve 才准合併」的強制設定 | [GitHub: About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) |
+| **Loop Engineering** | 2026 年興起的觀念：與其一句句提示 AI，不如設計「什麼觸發 AI、誰驗證產出、何時停止」的自動迴路 | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
+| **Evaluation / Observability（對 agent）** | 對 AI 行為本身的量測（它多常做對？）與觀測（它實際做了什麼？）——想放手自動化之前的前提建設 | 同上（§1.9） |
+| **P0 / P1 / P2** | 本專案審查發現的嚴重度分級：P0＝阻擋（不修不准前進）、P1＝應改、P2＝建議 | 本專案 `docs/_templates/review.md`（§2.4） |
 
 ---
 
@@ -300,9 +335,10 @@ actions."。敏感路徑用 `permissions.deny` 保護、危險指令用 PreToolU
 - CI 整合走 headless（[Best practices](https://code.claude.com/docs/en/best-practices)）：
   > "Non-interactive mode is how you integrate Claude into CI pipelines,
   > pre-commit hooks, or any automated workflow."
-- 指定 DRI 管配置演進、用黑客松／種子使用者模式推行——出自 How Anthropic
-  teams use Claude Code 與企業採用文章〔本環境無法直達原頁核對，發布前請
-  點連結確認措辭〕。
+- 指定 DRI（Directly Responsible Individual，明確指定一位對配置負責的人）
+  管 CLAUDE.md／權限／hooks 的演進、用黑客松／種子使用者模式推行——出自
+  How Anthropic teams use Claude Code 與企業採用文章〔本環境無法直達原頁
+  核對，發布前請點連結確認措辭〕。
 
 ### 1.8 官方點名的反模式
 
@@ -363,7 +399,9 @@ prompt agent 的迴路」。完整分層：
 
 ## 2. Uknow 專案的實際做法
 
-（完整盤點含檔案路徑見附錄 A；此節按機制濃縮，並標注**機械強制**或**約定**。）
+（完整盤點含檔案路徑見附錄 A；此節按機制濃縮，並標注**機械強制**（hook
+或 CI 會實際擋下）或**約定**（寫在文件裡、靠人與 AI 自覺）。hook、skill、
+subagent 等名詞的白話說明見 §0。）
 
 ### 2.1 三段式流程：規劃 → 審查 → 停等人審 → 實作 → 終審
 
@@ -371,6 +409,8 @@ prompt agent 的迴路」。完整分層：
 /plan-feature <slug>          四面向（需求/系統/架構/UIUX）規劃、階段切分
       ↓ 自動接
 /review-plan                  四個 fresh-context subagent 平行審規劃
+                              （fresh context＝審查者是全新乾淨腦袋的分身
+                              AI，不帶寫碼過程的偏見）
       ↓                       主 session 只彙整不改判，產出 P0/P1/P2
    【停：等人審】              P0 未處置不得進實作
       ↓ 人親自打
@@ -381,9 +421,10 @@ prompt agent 的迴路」。完整分層：
 
 支撐這條流程的兩道**機械**鎖：
 
-- `feature-plan-guard.py`（PreToolUse hook）：`feature/*` 分支上不曾存在
-  `docs/plans/<slug>/plan.md` 就**擋掉** `src/**`、`supabase/functions/**` 寫入
-  ——「規劃先行」不是叮嚀，是寫不進去。
+- `feature-plan-guard.py`（PreToolUse hook——掛在「AI 執行任何工具動作前」
+  的攔截點）：`feature/*` 分支上不曾存在 `docs/plans/<slug>/plan.md` 就
+  **擋掉** `src/**`、`supabase/functions/**` 寫入——「規劃先行」不是叮嚀，
+  是寫不進去。
 - `/tdd-implement` 的 frontmatter 設 `disable-model-invocation: true`：
   AI **無法自己觸發實作階段**，只有人打得動——「人審通過才實作」的保證
   來自這一行，而非流程圖上的箭頭。
@@ -409,7 +450,8 @@ prompt agent 的迴路」。完整分層：
   紅燈通道只跑 biome/tsc/knip（紅燈定義：編譯過、斷言失敗）。
 - 綠燈：`scripts/tdd-unlock.sh` 是**唯一合法解鎖**，`npm run check` 全綠才刪鎖。
 - pre-commit 由 `npm ci` 的 prepare 自動掛載，跑統一閘門 `npm run check`
-  （biome＋typecheck＋vitest＋knip）；`--no-verify` 被 bash-guard 擋。
+  （biome＝lint 與格式檢查、typecheck＝TypeScript 型別檢查、vitest＝單元
+  測試、knip＝偵測沒人用的死程式碼）；`--no-verify` 繞過手段被 bash-guard 擋。
 
 ### 2.4 審查層：做事者不自評（結構機械、內容 AI）
 
@@ -425,7 +467,8 @@ prompt agent 的迴路」。完整分層：
 
 ### 2.5 CI 軌道與部署（機械）
 
-- 分層閘門：guards（秒級：框架健檢＋linear history＋migration 守衛）→
+- 分層閘門：guards（秒級：框架健檢＋linear history 檢查（分支歷史須保持
+  一直線、不含 merge commit）＋migration 守衛）→
   static / unit / build / api / e2e / journey-offline 並行 → 匯總到唯一
   required check `ci-ok`。
 - 晉升 develop→main 的 PR 自動跑 `journey-full`（30–90 分鐘、真後端拋棄式
@@ -461,9 +504,11 @@ prompt agent 的迴路」。完整分層：
 
 前次 session 用 §1.9 的概念地圖對本專案評分：AI-Native / Context / Harness
 9 分（頂尖——框架自己像 code 一樣走 PR＋CI 演進），Spec / Permission /
-Prompt 8，Sandbox 6（無 worktree），**Loop Engineering 4（內迴路一流、
-外迴路不存在）、Evaluation 3（驗軟體、驗設定，唯獨不驗 agent 行為）、
-Observability 2**。核心診斷：
+Prompt 8，Sandbox 6（無 [worktree](https://code.claude.com/docs/en/worktrees)
+——同一 repo 的多份獨立工作副本，讓多個 AI 並行改碼不互撞），
+**Loop Engineering 4（內迴路一流、外迴路不存在）、Evaluation 3（驗軟體、
+驗設定，唯獨不驗 agent 行為）、Observability 2**（三者的白話說明見 §0）。
+核心診斷：
 
 > **這是一套全部由閘門構成、（當時）沒有任何感測器的 harness。**
 
@@ -484,8 +529,9 @@ Observability 2**。核心診斷：
 
 待辦路線（依序，不可跳）：等感測器累積約一週資料 → **Step 2** skill 觸發
 eval（量「該觸發的 skill 沒觸發」的機率）→ **Step 3** friction-log 整併排程化
-→ **Step 4** 第一條真外迴路（claude-code-action 讀 triage issue 產唯讀診斷），
-且必須先補齊四個生產控制中缺的兩個（迭代上限、預算上限）。
+→ **Step 4** 第一條真外迴路（用 claude-code-action——把 Claude 跑在 GitHub
+CI 裡的[官方整合](https://code.claude.com/docs/en/github-actions)——讀 triage
+issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個（迭代上限、預算上限）。
 
 ---
 
@@ -607,9 +653,10 @@ eval（量「該觸發的 skill 沒觸發」的機率）→ **Step 3** friction-
 **成熟度階梯**，讓不同團隊按能力分級採用，但每一級都以「機械承載」為
 達標判準，而不是「已宣導」：
 
-- **L0 起步（一天內可完成）**：repo 有精簡 CLAUDE.md（≤200 行）；PR 範本
-  要求附「測試證據」（輸出貼文或 CI 連結）；ruleset 要求 1 人類 approve＋
-  CI 綠才可合併。→ 直接處理三個痛點的最低配。
+- **L0 起步（一天內可完成）**：repo 有精簡 CLAUDE.md（≤200 行，見 §0）；
+  PR 範本要求附「測試證據」（輸出貼文或 CI 連結）；GitHub ruleset（合併
+  強制規則，見 §0）要求 1 人類 approve＋CI 綠才可合併。→ 直接處理三個
+  痛點的最低配。
 - **L1 閘門（一週）**：pre-commit 統一閘門（lint＋型別＋測試）且擋
   `--no-verify`；CI 單一 required 匯總 check；覆蓋率門檻（先有，再談棘輪）。
 - **L2 流程（一個月）**：計畫先行（Plan Mode 或 plan 檔）＋人審計畫才實作；
@@ -628,7 +675,8 @@ eval（量「該觸發的 skill 沒觸發」的機率）→ **Step 3** friction-
 1. **瓶頸是驗證器，不是模型**——規範的每一條都應該回答「這讓驗證變強了
    嗎」，而不是「這限制了 AI 什麼」。
 2. **證據不是聲稱**——「做完了」「測試都過」不可採信，採信的是外部 oracle
-   的輸出與可查驗的證據鏈（紅燈 commit、CI 連結、覆蓋率數字、部署 sha）。
+   （＝獨立於作者之外、能客觀判定對錯的檢驗來源，如測試套件或 CI）的輸出
+   與可查驗的證據鏈（紅燈 commit、CI 連結、覆蓋率數字、部署 sha）。
 3. **advisory 會衰減，重要規則要機械承載**——且承載規則的閘門與感測器
    自己也要被驗證（突變驗證；感測器的失效是靜默的，需要比閘門更多的
    機械檢查）。
