@@ -216,6 +216,20 @@ Explore → Plan → Implement → Commit，用 Plan Mode 把探索與實作分�
 > code it just wrote."
 > — [Best practices › Run multiple Claude sessions](https://code.claude.com/docs/en/best-practices)
 
+實作這種「乾淨腦袋審查者」的官方機制就是 **custom subagent**（在
+`.claude/agents/` 放定義檔，指定它的專長、可用工具與模型——EP實作的
+四視角 reviewer 正是這樣做的，見 Part 3 Q15）：
+
+> "Subagents run in their own context with their own set of allowed tools.
+> They're useful for tasks that read many files or need specialized focus
+> without cluttering your main conversation."
+> — [Best practices › Create custom subagents](https://code.claude.com/docs/en/best-practices)
+
+subagent 同時也是探查工具——大量讀檔隔離在分身的 context 裡、只回摘要：
+
+> "Subagents run in separate context windows and report back summaries."
+> — [Best practices › Use subagents for investigation](https://code.claude.com/docs/en/best-practices)
+
 以及對「照單全收 AI 發現」的警告：
 
 > "A reviewer prompted to find gaps will usually report some, even when the
@@ -288,14 +302,16 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的準則在�
 
 | 準則 | EP實作的落地 | 關鍵檔案 |
 |---|---|---|
-| 1 計畫先行 | 三段式流程：`/plan-feature` 規劃 → `/review-plan` AI 四視角審 → **停等人審** → 人親自啟動實作；hook 機械擋「沒有規劃書就寫產品碼」 | `.claude/skills/plan-feature/`、`.claude/hooks/feature-plan-guard.py` |
+| 1 計畫先行 | 三段式流程：`/plan-feature` 規劃 → `/review-plan` AI 四視角審 → **停等人審** → 人親自啟動實作；實作完成後 `/review-implementation` 用同四視角審 diff，專攔「規劃審過、實作走偏」。hook 機械擋「沒有規劃書就寫產品碼」 | `.claude/skills/plan-feature/`、`.claude/skills/review-implementation/`、`.claude/hooks/feature-plan-guard.py` |
+| 2 小步交付 | 規劃書強制「階段切分」，一階段對應一次紅綠循環；CI 檢查分支歷史保持一直線（linear history），鼓勵小步 rebase 而非堆積 | `.claude/skills/plan-feature/`、`.github/workflows/ci.yml`（guards） |
 | 3 先紅後綠 | 紅燈測試 commit（`test(red)`）後建立鎖檔，紅燈期 hook **禁止編輯測試檔**；唯一解鎖路徑是檢查全綠 | `.claude/hooks/tdd-test-guard.py`、`scripts/tdd-unlock.sh` |
-| 4 必附證據 | PR 範本要求附規劃／審查結論與紅燈 commit hash；部署後打 `/api/health` 比對版本 sha | `.github/pull_request_template.md`、`deploy-supabase.yml` |
-| 5 AI 找碴 | 四個唯讀、乾淨腦袋的 reviewer subagent（系統／架構／UIUX／需求），輸出統一 P0／P1／P2 契約；彙整者明文禁止改判 | `.claude/agents/plan-reviewer-*.md`、`docs/_templates/review.md` |
-| 7 機械化 | 9 支 hook 擋 git 後門（`--no-verify`、force push、直推主幹）、TDD 違規、無規劃寫碼；實作 skill 設 `disable-model-invocation: true`——AI 無法自己啟動實作 | `.claude/hooks/bash-guard.py`、`.claude/skills/tdd-implement/SKILL.md` |
+| 4 必附證據 | PR 範本要求附規劃／審查結論與紅燈 commit hash；部署後打 `/api/health` 比對版本 sha；正式站部署另需**人工核准**（GitHub production environment） | `.github/pull_request_template.md`、`deploy-supabase.yml` |
+| 5 AI 找碴 | 用 Claude Code 的 **custom subagent** 功能實作審查分身：`.claude/agents/` 下每個 agent 一個定義檔，frontmatter 限定**唯讀工具**（Read/Grep/Glob）與模型，確保審查者「只能看、不能改、乾淨腦袋」。四個 reviewer（系統／架構／UIUX／需求）輸出統一 P0／P1／P2 契約、彙整者明文禁止改判；另有第五個探查用 agent `codebase-scout`，把大量讀檔隔離在自己的 context、只回結論，不污染主對話 | `.claude/agents/plan-reviewer-*.md`、`.claude/agents/codebase-scout.md`、`docs/_templates/review.md` |
+| 6 補證據再審 | PR 範本的「流程證據」欄位（規劃／審查結論、紅燈 commit、CI）就是 reviewer 開審前的檢核清單——缺哪項一目瞭然，請 AI 補或退回都有依據 | `.github/pull_request_template.md` |
+| 7 機械化 | 9 支 hook 擋 git 後門（`--no-verify`、force push、直推主幹）、TDD 違規、無規劃寫碼；實作 skill 設 `disable-model-invocation: true`——AI 無法自己啟動實作；命名／CI 結構等守則放 `.claude/rules/`（動到對應路徑才自動載入），且各有對應機械檢查 | `.claude/hooks/bash-guard.py`、`.claude/skills/tdd-implement/SKILL.md`、`.claude/rules/` |
 | 8 閘門驗證 | 所有自撰檢查器先跑自己的測試案例再實掃；hook 行為有表格化測試；新檢查要求突變驗證 | `scripts/test-hooks.py`、`scripts/framework-check.sh` |
 | 9 棘輪 | 覆蓋率門檻設在實測值下緣、紅了擋 commit；bundle 大小同樣走棘輪 | `vitest.config.ts`、`scripts/check-bundle-budget.mjs` |
-| 10 Context | CLAUDE.md 維持 200 行內，「啟動固定成本上限」做成 CI 檢查 | `scripts/check-context-budget.py` |
+| 10 Context | CLAUDE.md 維持 200 行內，「啟動固定成本上限」做成 CI 檢查；探查交給 codebase-scout subagent 隔離（見準則 5 列） | `scripts/check-context-budget.py` |
 | 11 回填 | 修 bug 流程強制含根因分析＋同類掃描＋防線回填；hook 決策有量測（誤擋率、命中率） | `.claude/skills/fix-bug/`、`scripts/harness-metrics.py` |
 
 **Q16. EP實作哪些做法超出官方基線，值得直接抄？**
@@ -313,6 +329,11 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的準則在�
    就硬失敗——源自一次「27 個情境全 skip 卻顯示全綠」的真實事故。
 5. **流程自身有迭代迴圈**：hook 決策量測＋摩擦日誌＋定期框架修訂 PR——
    規範跟程式碼一樣有 bug、要量測、要修。
+6. **規格書防漂移的機械比對**：業務常數、路由、狀態機列舉與規格書逐條
+   機械比對，不同步就 CI 紅；連「比對規則抽取不到值」也算失敗——防止
+   閘門靜默變空轉。規格書因此能一直當「單一事實來源」用，AI 審查的
+   需求視角（「對不到規格書＝P0」）也才有可靠的溯源對象
+   （`scripts/check-spec-drift.py`）。
 
 **Q17. EP實作還缺什麼？接下來要導入什麼？**
 
