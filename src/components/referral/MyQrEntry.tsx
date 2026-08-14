@@ -40,7 +40,7 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   const [joinOpen, setJoinOpen] = useState(false);
 
   // 碼在付款成功時就已產生（process_successful_payment），但「加入推薦計畫」才是
-  // 簽了推廣獎勵契約書的憑據——沒加入就不該看到自己的碼，更不該拿去邀請人。
+  // 簽了參加契約書的憑據——沒加入就不該看到自己的碼，更不該拿去邀請人。
   const canShowCode = !!user?.referralProgramJoined && !!user?.referralCode;
 
   const openJoin = () => {
