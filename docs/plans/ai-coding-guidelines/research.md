@@ -1,8 +1,14 @@
-# AI Coding 規範前期研究：官方最佳實踐 × Uknow 實作 × 差距與建議
+# AI Coding 規範前期研究：官方最佳實踐 × EP實作 × 差距與建議
 
 > **這份文件是什麼**：為「制定組織級 AI coding 規範」做的前期研究。依序涵蓋
-> (1) Anthropic 官方文件的人機協作最佳實踐、(2) 本專案（Uknow）的實際做法、
-> (3) 兩者逐項比較、(4) 初擬優化建議。Guideline 本體的形式與內容待人工決定後另行撰寫。
+> (1) Anthropic 官方文件的人機協作最佳實踐、(2) 我們的範例專案（下稱
+> 「**EP實作**」）的實際做法、(3) 兩者逐項比較、(4) 初擬優化建議。
+> Guideline 本體的形式與內容待人工決定後另行撰寫。
+>
+> **組織現況補充**：EP實作是單人＋AI 的範例專案；組織**其他專案的 PR 已有
+> 固定兩位 reviewer 的人審制度**。因此本文建議的重點不是「從零建立人審」，
+> 而是讓既有的兩位 reviewer **審得動 AI 產出**（PR 附上 AI 審查結論與測試
+> 證據），並確認人審是機械強制而非慣例。
 >
 > **要解的三個痛點**（來自需求方主管的觀察）：
 > 1. 沒有人在 review code
@@ -26,25 +32,25 @@
 | **AI Native Engineering** | 把 AI agent 當成主要的寫碼勞動力、人類轉為負責「決策、審查、驗證」的工程方法論（業界通稱，尚無單一官方定義） | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
 | **Claude Code** | Anthropic 官方的 AI 開發代理：在終端機／網頁裡讀你的程式碼、跑指令、改檔案、自己迭代到任務完成 | [官方總覽](https://code.claude.com/docs/en/overview) |
 | **Agentic coding / agent** | AI 不只「回答問題」，而是自主連續行動（讀檔→改碼→跑測試→修正）直到完成任務的工作型態 | [How Claude Code works](https://code.claude.com/docs/en/how-claude-code-works) |
-| **Harness** | 圍繞 AI 搭起來的整套工作環境（工具、權限、守衛腳本、CI），決定 AI 能做什麼、不能做什麼——本專案的 `.claude/` 目錄就是一套 harness | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
+| **Harness** | 圍繞 AI 搭起來的整套工作環境（工具、權限、守衛腳本、CI），決定 AI 能做什麼、不能做什麼——EP實作的 `.claude/` 目錄就是一套 harness | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
 | **Context window** | 模型單次能「記在腦中」的內容上限（對話＋讀過的檔案），塞太滿表現會下降——官方多數最佳實踐都源自這個限制 | [Context window](https://code.claude.com/docs/en/context-window) |
 | **CLAUDE.md** | 放在 repo 裡、AI 每次開工都自動讀的「專案說明書」，寫團隊慣例與指令；屬於「建議」層級，AI 可能忽略 | [Memory](https://code.claude.com/docs/en/memory) |
 | **Plan Mode** | Claude Code 的唯讀模式：AI 只能讀檔和提出計畫、不能改任何東西，人核准計畫後才放行實作 | [Permission modes](https://code.claude.com/docs/en/permission-modes) |
 | **Hook** | 掛在 AI 工作流程固定節點（如「執行指令前」「回合結束時」）自動跑的腳本——保證執行、不靠 AI 自覺，是「必守規則」的承載處 | [Hooks guide](https://code.claude.com/docs/en/hooks-guide) |
 | **Subagent** | 派出去的「分身」AI：在獨立的乾淨腦袋（context）裡做探查或審查、只回報結論——「寫碼者與審查者分離」的機制基礎 | [Subagents](https://code.claude.com/docs/en/sub-agents) |
-| **Skill / slash command** | 打包成檔案、可用 `/名字` 呼叫的可重複工作流程（如本專案的 `/plan-feature`），可設定成「只有人能觸發」 | [Skills](https://code.claude.com/docs/en/skills) |
+| **Skill / slash command** | 打包成檔案、可用 `/名字` 呼叫的可重複工作流程（如EP實作的 `/plan-feature`），可設定成「只有人能觸發」 | [Skills](https://code.claude.com/docs/en/skills) |
 | **Permission / allowlist / deny** | Claude Code 的權限系統：預設唯讀、有動作要人核准；可用白名單放行安全指令、用 deny 封鎖敏感檔案 | [Permissions](https://code.claude.com/docs/en/permissions) |
 | **Headless mode（`claude -p`）** | 不開互動介面、下一條指令就執行完的模式，用來把 AI 塞進 CI 或自動化腳本 | [Non-interactive mode](https://code.claude.com/docs/en/headless) |
 | **Code Review（官方功能）** | Anthropic 的 PR 自動審查服務：多個特化 AI 並行找碴、驗證後在 PR 上留言，但從不核准也不擋合併——裁決留給人 | [Code Review](https://code.claude.com/docs/en/code-review) |
 | **REVIEW.md** | 放在 repo 根目錄、專門指揮上述審查 AI 的最高優先指示檔（調整嚴重度定義、略過範圍等） | [Code Review › REVIEW.md](https://code.claude.com/docs/en/code-review#review-md) |
 | **MCP** | Model Context Protocol：讓 AI 連接外部工具（GitHub、資料庫、Figma…）的開放標準 | [MCP](https://code.claude.com/docs/en/mcp) |
 | **TDD（測試驅動開發）** | 先寫「會失敗的測試」定義正確行為，再寫實作讓它變綠；對 AI 特別有效——紅綠燈給了 AI 明確的自我驗證訊號 | [Claude Code Best Practices（部落格）](https://www.anthropic.com/engineering/claude-code-best-practices) |
-| **覆蓋率棘輪（coverage ratchet）** | 測試覆蓋率門檻「只准調高、不准調低」的機制（棘輪＝只朝一個方向轉的齒輪），防止測試量無聲退步 | 本專案 `vitest.config.ts` 的做法（§2.6） |
+| **覆蓋率棘輪（coverage ratchet）** | 測試覆蓋率門檻「只准調高、不准調低」的機制（棘輪＝只朝一個方向轉的齒輪），防止測試量無聲退步 | EP實作 `vitest.config.ts` 的做法（§2.6） |
 | **pre-commit hook（git）** | git 原生機制：每次 commit 前自動跑檢查、紅燈就擋下 commit（注意：與上面 Claude Code 的 hook 是兩套東西） | [Git Hooks](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) |
 | **CI / required check / ruleset** | CI＝每次 push 自動跑的檢查流水線；required check 與 ruleset 是 GitHub 上「哪些檢查必須綠、要幾個人 approve 才准合併」的強制設定 | [GitHub: About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) |
 | **Loop Engineering** | 2026 年興起的觀念：與其一句句提示 AI，不如設計「什麼觸發 AI、誰驗證產出、何時停止」的自動迴路 | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
 | **Evaluation / Observability（對 agent）** | 對 AI 行為本身的量測（它多常做對？）與觀測（它實際做了什麼？）——想放手自動化之前的前提建設 | 同上（§1.9） |
-| **P0 / P1 / P2** | 本專案審查發現的嚴重度分級：P0＝阻擋（不修不准前進）、P1＝應改、P2＝建議 | 本專案 `docs/_templates/review.md`（§2.4） |
+| **P0 / P1 / P2** | EP實作審查發現的嚴重度分級：P0＝阻擋（不修不准前進）、P1＝應改、P2＝建議 | EP實作 `docs/_templates/review.md`（§2.4） |
 
 ---
 
@@ -325,7 +331,7 @@ actions."。敏感路徑用 `permissions.deny` 保護、危險指令用 PreToolU
   > OpenTelemetry metrics"
 - 共享資產進 git：團隊共用的 skills / agents / hooks / rules 放進 repo 的
   `.claude/`，讓「流程」跟著 checkout 走。有副作用的流程 skill 官方明講要
-  鎖成只有人能觸發——與本專案 `/tdd-implement` 的鎖完全同款：
+  鎖成只有人能觸發——與EP實作 `/tdd-implement` 的鎖完全同款：
   > "Use `disable-model-invocation: true` for workflows with side effects
   > that you want to trigger manually."
   > — [Best practices › Create skills](https://code.claude.com/docs/en/best-practices)
@@ -397,7 +403,7 @@ prompt agent 的迴路」。完整分層：
 
 ---
 
-## 2. Uknow 專案的實際做法
+## 2. EP實作（範例專案）的實際做法
 
 （完整盤點含檔案路徑見附錄 A；此節按機制濃縮，並標注**機械強制**（hook
 或 CI 會實際擋下）或**約定**（寫在文件裡、靠人與 AI 自覺）。hook、skill、
@@ -435,7 +441,7 @@ subagent 等名詞的白話說明見 §0。）
   --no-verify`、`--force` push（只准 `--force-with-lease`）、直推
   main/develop、本機跑 journey、開分支不指定 base 或以 main 為 base。
 - `tdd-test-guard.py`：紅燈期（`.claude/tdd-lock` 存在）**禁改測試檔**——
-  官方靠「commit 測試後看 diff」事後揭露竄改，本專案直接事前擋掉。
+  官方靠「commit 測試後看 diff」事後揭露竄改，EP實作直接事前擋掉。
 - `pre-push-rebase.sh`：push／開 PR 前自動 rebase 到 origin/develop；會改寫
   遠端歷史時停下來要求人明確下令。
 - `check-output-filter.py`：驗證指令綠燈輸出折疊成一行、紅燈原樣——降低
@@ -485,7 +491,7 @@ subagent 等名詞的白話說明見 §0。）
 - 「只准往上、調低必須在 PR 寫明理由」這條規則本身**沒有機械檢查**，
   目前是註解裡的社會契約＋人工 review 把關（已知縫隙，見 §4.1）。
 
-### 2.7 框架自檢與長期記憶（本專案特色）
+### 2.7 框架自檢與長期記憶（EP實作特色）
 
 - `framework-check.sh` 統籌十餘支檢查器：hook 行為表格測試（`test-hooks.py`
   ——**守衛自己也有紅綠燈**）、workflow 命名結構、測試命名分層、規格書漂移
@@ -502,7 +508,7 @@ subagent 等名詞的白話說明見 §0。）
 
 ### 2.8 已知的自我診斷：閘門強、迴路弱（前次 session 的架構檢視結論）
 
-前次 session 用 §1.9 的概念地圖對本專案評分：AI-Native / Context / Harness
+前次 session 用 §1.9 的概念地圖對EP實作評分：AI-Native / Context / Harness
 9 分（頂尖——框架自己像 code 一樣走 PR＋CI 演進），Spec / Permission /
 Prompt 8，Sandbox 6（無 [worktree](https://code.claude.com/docs/en/worktrees)
 ——同一 repo 的多份獨立工作副本，讓多個 AI 並行改碼不互撞），
@@ -535,11 +541,11 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 
 ---
 
-## 3. 官方 × Uknow 逐項比較
+## 3. 官方 × EP實作逐項比較
 
 ### 3.1 對照總表
 
-| 官方原則 | 官方建議的做法 | Uknow 的落地 | 評註 |
+| 官方原則 | 官方建議的做法 | EP實作的落地 | 評註 |
 |---|---|---|---|
 | 計畫先行，人審計畫 | Plan Mode＋人核可後實作（自律） | 三段式 skill＋`feature-plan-guard` 機械擋無規劃寫碼＋`disable-model-invocation` 鎖實作入口 | **超越**：官方的自律約定被升級為機械前提 |
 | TDD、防改測試遷就實作 | 紅燈測試先 commit，靠 diff 事後揭露 | `test(red)` commit 為證據＋紅燈期 hook **事前禁改**測試檔＋唯一解鎖腳本 | **超越**：事後揭露 → 事前不可能 |
@@ -553,9 +559,9 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 | 人是最終裁決者 | AI 找問題不核准，人簽核 PR | AI 四視角審查完備；**但 repo 是否要求人工 approve 未機械化**，required check 只有 `ci-ok` | **缺口**（見 3.3） |
 | 組織採用：DRI、共享配置、種子推行 | 全組織 `.claude/` 資產、黑客松 | 單 repo 內完整，**未抽出可跨 repo 複用的組織層** | **缺口**＝這次要做的事 |
 
-### 3.2 Uknow 超越官方基線的五個做法（值得寫進組織規範的「輸出品」）
+### 3.2 EP實作超越官方基線的五個做法（值得寫進組織規範的「輸出品」）
 
-1. **「advisory 會被忽略」當作設計公理**：官方說重要規則用 hooks；本專案
+1. **「advisory 會被忽略」當作設計公理**：官方說重要規則用 hooks；EP實作
    進一步把「哪些規則值得機械化」做成方法論——被違反過的約定就升級成
    hook／CI 檢查（防線回填），並用 friction-log 追蹤誤擋率。
 2. **做事者不自評的結構化**：審查者 fresh context＋唯讀＋輸出契約＋
@@ -571,46 +577,56 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 5. **流程有自己的迭代迴圈**：harness metrics＋friction-log＋雙週框架修訂
    PR。規範不是寫完就完，跟程式碼一樣有 bug、要量測、要修。
 
-### 3.3 Uknow 相對官方（或相對痛點）的缺口
+### 3.3 EP實作相對官方（或相對痛點）的缺口
 
-1. **人審 PR 沒有機械保證**：唯一 required check 是 `ci-ok`（CI）；AI 四視角
-   審查很強，但「至少一個人類 approve 才能合併」目前不在 ruleset 裡強制。
-   對照痛點 1（沒人 review），官方立場明確：AI 找問題、**人做裁決**——
-   人的裁決點應該被機械要求，而不只是文化。
+1. **人審 PR 沒有機械保證**（EP實作特有——它是單人＋AI 的範例專案）：
+   唯一 required check 是 `ci-ok`（CI）；AI 四視角審查很強，但「至少一個
+   人類 approve 才能合併」不在 ruleset 裡強制。對照痛點 1，官方立場明確：
+   AI 找問題、**人做裁決**——人的裁決點應該被機械要求，而不只是文化。
+   **組織其他專案已有兩位 reviewer 的人審制度**，所以對組織而言這個缺口
+   反過來：人審制度已存在，缺的是 (a) 兩位 reviewer 拿到的 PR 未必附
+   AI 審查結論與測試證據（面對一大坨 diff 只能橡皮圖章）、(b) 需確認
+   「2 個 approve」是 ruleset 機械強制還是靠慣例。
 2. **PR／階段規模沒有機械上限**：階段切分是 skill 裡的約定，diff 行數、
    單 PR 檔案數沒有檢查。官方也只有原則（一句話描述不了就拆）沒有機制，
    兩邊在此都停在約定層。
 3. **覆蓋率棘輪的「只准往上」未機械化**：門檻值本身可被調低，只靠註解與
    人工 review 守著——這正是痛點 3 的縫隙型態（測試閘門存在，但閘門的
    參數可被寫碼方悄悄放鬆）。
-4. **官方 Code Review 功能（`/code-review`／REVIEW.md）未整合**：本專案的
+4. **官方 Code Review 功能（`/code-review`／REVIEW.md）未整合**：EP實作的
    四視角審查發生在 merge 前的 session 內；PR 開啟後的自動 inline 審查
    （官方新功能）可作為第二道獨立防線，兩者互補不重複。
 5. **組織層抽象不存在**：一切都在單 repo。要給其他團隊用，需要抽出
-   「與 Uknow 業務無關的可複用層」（見 4.2 的分層建議）。
+   「與 EP實作業務無關的可複用層」（見 4.2 的分層建議）。
 6. **外迴路（Loop / Eval / Observability）仍在建設初期**（§2.8 的自我診斷）：
    感測器（Step 1）剛上線、資料還不足以當訊號；skill 觸發命中率沒被量過
    （`feature-plan-guard` 自承啟發式觸發「不保證每次都中」）；排程 workflow
    失敗開的 triage issue 沒有任何東西會去讀。依賴順序是 Observability →
    Evaluation → Loop，不能跳著補。這一條同時是對官方文件的補充：官方
    內容集中在層 0–2（方法論／輸入／環境），層 3–4 目前主要靠社群前沿
-   （§1.9）與本專案自己的實證。
+   （§1.9）與EP實作自己的實證。
 
-### 3.4 三個痛點的官方解法 × Uknow 解法對照
+### 3.4 三個痛點的官方解法 × EP實作解法對照
 
 **痛點 1：沒人 review code**
 
-| 官方 | Uknow |
+| 官方 | EP實作 |
 |---|---|
 | 多 agent 自動審查 PR、人做最終裁決；審查用獨立 context | 規劃審（4 subagent）＋實作審（同 4 視角對 diff）＋P0 阻擋＋停等人審的機械鎖 |
 
 → 共同結論：**review 要拆成「AI 找碴（可以很多、很便宜）」與「人裁決
 （不能省、要機械要求）」兩件事**。組織規範應同時規定兩者，只推其一都會失敗
 （只有 AI 審＝沒人負責；只要求人審＝回到人力瓶頸，然後大家開始橡皮圖章）。
+對我們組織的具體含義：其他專案**已有兩位 reviewer**，「人裁決」的制度面
+不缺——缺的是**餵給人審的輸入品質**。「有 reviewer」和「review 得動」是
+兩回事：一大坨 diff＋一句「測試都過」會把任何 reviewer 推向橡皮圖章。
+規範的重心應是：reviewer 收到的 PR 必須已附 AI 審查結論、測試證據、且
+規模可審（審不動就退回要求拆分），讓兩位 reviewer 的時間花在裁決、
+不是在巨型 diff 裡自己找蟲。
 
 **痛點 2：寫一大坨就想上 PR**
 
-| 官方 | Uknow |
+| 官方 | EP實作 |
 |---|---|
 | Explore→Plan 先行，人審計畫；子任務小到可獨立驗證；一 PR 一邏輯功能 | 規劃未過人審寫不了碼（hook 擋）；階段切分＋一階段一紅綠；linear history |
 
@@ -619,7 +635,7 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 
 **痛點 3：聲稱測試都過，但涵蓋不夠**
 
-| 官方 | Uknow |
+| 官方 | EP實作 |
 |---|---|
 | TDD（測試先紅、commit 為證）；驗證外部化；要求出示證據 | 紅燈證據 commit＋紅燈期禁改測試＋覆蓋率棘輪＋假綠防禦＋review 核對「行為有對應測試」 |
 
@@ -631,7 +647,7 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 
 ## 4. 初擬優化建議
 
-### 4.1 對 Uknow 本身（回填 §3.3 的縫隙）
+### 4.1 對 EP實作本身（回填 §3.3 的縫隙）
 
 | 優先 | 建議 | 對應縫隙 |
 |---|---|---|
@@ -647,15 +663,16 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 
 ### 4.2 對組織規範的方向建議（給主管的初步框架）
 
-**核心主張：規範的單位不是「條文」，是「機制」。** Uknow 的經驗與官方文件
+**核心主張：規範的單位不是「條文」，是「機制」。** EP實作的經驗與官方文件
 一致指向：寫在文件裡的約定（advisory）在 AI 高速產碼的環境下衰減極快，
 存活下來的規則全是有 hook／CI／ruleset 承載的。因此建議 Guideline 採
 **成熟度階梯**，讓不同團隊按能力分級採用，但每一級都以「機械承載」為
 達標判準，而不是「已宣導」：
 
 - **L0 起步（一天內可完成）**：repo 有精簡 CLAUDE.md（≤200 行，見 §0）；
-  PR 範本要求附「測試證據」（輸出貼文或 CI 連結）；GitHub ruleset（合併
-  強制規則，見 §0）要求 1 人類 approve＋CI 綠才可合併。→ 直接處理三個
+  PR 範本要求附「測試證據」（輸出貼文或 CI 連結）；沿用組織既有的
+  **兩位 reviewer** 制度，並確認它寫進 GitHub ruleset（合併強制規則，
+  見 §0：required approvals＋CI 綠才可合併）而非靠慣例。→ 直接處理三個
   痛點的最低配。
 - **L1 閘門（一週）**：pre-commit 統一閘門（lint＋型別＋測試）且擋
   `--no-verify`；CI 單一 required 匯總 check；覆蓋率門檻（先有，再談棘輪）。
@@ -683,8 +700,11 @@ issue 產唯讀診斷），且必須先補齊四個生產控制中缺的兩個�
 
 **三個痛點在規範中的對應條目（最小集）**：
 
-1. 沒人 review → 「AI 找碴＋人裁決」雙軌都是合併的機械前提（ruleset），
-   AI 審查結論必須附在 PR 上供人裁決，人不對 AI 沒看過的 diff 簽名。
+1. 沒人 review → 「AI 找碴＋人裁決」雙軌都是合併的機械前提（ruleset）。
+   人裁決沿用既有兩位 reviewer 制度；AI 審查結論必須附在 PR 上供 reviewer
+   裁決，人不對 AI 沒看過的 diff 簽名；未附 AI 審查結論與測試證據、或
+   規模審不動的 PR，reviewer 有權直接退回——這條要寫明，橡皮圖章的根源
+   就是「退回沒有正當性」。
 2. 一大坨上 PR → 計畫審查點前置（L2）；PR 一句話描述不了就拆；規模軟警戒。
 3. 測試聲稱 → 「證據不是聲稱」入規範：PR 必附測試輸出／CI 連結；測試
    先紅後綠（紅燈 commit 為證）；覆蓋率門檻由 CI 持有、調低需書面理由。
@@ -702,8 +722,8 @@ L0→L1 跑出成功案例（黑客松形式），種子成員當導師擴散；
 
 1. Guideline 的**受眾與形式**：給主管參考的組織級文件？單頁原則＋附錄機制？
    還是可直接發給工程師的操作規範？
-2. Guideline 的**語言與長度**、是否包含 Uknow 的具體檔案作為範例附錄。
-3. §4.1 的 Uknow 自身優化是否另開 issue／feature 處理（與 Guideline 分開；
+2. Guideline 的**語言與長度**、是否包含 EP實作的具體檔案作為範例附錄。
+3. §4.1 的 EP實作自身優化是否另開 issue／feature 處理（與 Guideline 分開；
    外迴路的 Step 2–4 已有既定順序，不在本次範圍）。
 
 > 注：前次 session（AI-Native 架構檢視 → Step 1 感測器）的交接內容已整合
@@ -712,7 +732,7 @@ L0→L1 跑出成功案例（黑客松形式），種子成員當導師擴散；
 
 ---
 
-## 附錄 A：Uknow 機制的關鍵檔案索引
+## 附錄 A：EP實作機制的關鍵檔案索引（路徑為 EP實作 repo 內的相對路徑）
 
 - 流程總覽：`CLAUDE.md`；hook 掛載：`.claude/settings.json`
 - Hooks：`.claude/hooks/{bash-guard,tdd-test-guard,feature-plan-guard,check-output-filter,deletion-residue-check,model-effort-advisor,decision_log}.py`、`{pre-push-rebase,session-bootstrap}.sh`
