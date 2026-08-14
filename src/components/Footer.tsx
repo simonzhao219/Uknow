@@ -1,6 +1,11 @@
 import { Link } from 'react-router-dom';
-import { MessageCircle, FileText, Package, Gift } from 'lucide-react';
-import { LINE_OFFICIAL_ACCOUNT_HANDLE, LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
+import { MessageCircle, FileText, Package, Gift, Mail } from 'lucide-react';
+import {
+  LINE_OFFICIAL_ACCOUNT_HANDLE,
+  LINE_OFFICIAL_ACCOUNT_URL,
+  OFFICIAL_EMAIL,
+  OFFICIAL_EMAIL_URL,
+} from '../utils/constants';
 
 // 快速連結：讓訪客也能從頁尾探索靜態內容頁（原本整段被註解、導覽有死角）。
 const QUICK_LINKS = [
@@ -43,6 +48,15 @@ export function Footer() {
                 >
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />
                   <span>官方客服：{LINE_OFFICIAL_ACCOUNT_HANDLE}</span>
+                </a>
+              </li>
+              <li>
+                <a
+                  href={OFFICIAL_EMAIL_URL}
+                  className="inline-flex items-center gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Mail className="h-4 w-4" aria-hidden="true" />
+                  <span>官方信箱：{OFFICIAL_EMAIL}</span>
                 </a>
               </li>
             </ul>

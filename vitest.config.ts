@@ -47,22 +47,22 @@ export default mergeConfig(
         // 新的實測值減 1；**不准為了讓紅燈變綠而調低**——那等於這道
         // 閘門不存在。真的需要調低必須在 PR 內寫明理由。
         thresholds: {
-          // 2026-08-08（platform-admin-rwd rebase 後）實測：
-          // lines/statements 51.54、branches 82.28、functions 66.92。
-          // 前一次校準是 45.65/82.86/68.83。
+          // 2026-08-14（contact-us-email）實測：
+          // lines/statements 52.25、branches 82.4、functions 67.76。
+          // 前一次校準是 51.54/82.28/66.92（更早：45.65/82.86/68.83）。
           // 依「只准往上」的棘輪規則提到實測值減約 2（沿用本檔既有的緩衝慣例）；
           // branches 與 functions 減 2 後都落在現行值以下，維持不動——調低是
           // 禁止的，算出來低於現值就照現值留著。
           //
-          // ⚠️ functions 這次是**降**的（68.83 → 66.92），因為 admin RWD 拆出
-          // 的元件（CardOverflowMenu / WithdrawalFundingFields / 兩個 CardList）
-          // 主要由 e2e 版面測試覆蓋，不進 vitest 的函式分母以外。仍在 66 之上，
-          // 但緩衝只剩 0.92——下一個動 admin 元件的 PR 要留意這格。
+          // functions 上次因 admin RWD 拆出的元件（CardOverflowMenu /
+          // WithdrawalFundingFields / 兩個 CardList，主要由 e2e 版面測試覆蓋）
+          // 從 68.83 掉到 66.92，緩衝只剩 0.92；Footer 這次補回到 67.76，
+          // 緩衝回到 1.76。動 admin 元件的 PR 仍要留意這格。
           //
           // lines/statements 從 20 一口氣跳到 39（07-26）、再到 43、49，是持續
           // 償還累積的鬆弛。棘輪的價值全在「貼著實測值」，落後的棘輪等於沒有。
-          lines: 49,
-          statements: 49,
+          lines: 50,
+          statements: 50,
           functions: 66,
           branches: 80,
         },
