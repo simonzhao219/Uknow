@@ -126,8 +126,10 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 （`VITE_` 是前端建置期前綴，放在這裡不會被任何人讀到）、
 `PASSWORD_ENCRYPTION_KEY`、`RESEND_API_KEY`（零引用，git 歷史裡也從未出現）。
 
-> 💡 掛 custom SMTP 時憑證是填進 **Authentication → SMTP Settings**，
-> 不是 Edge Function Secrets——Auth 服務不讀這裡的變數。
+> 💡 **寄信憑證不在這裡。** 掛 custom SMTP 時帳密是填進 **Authentication →
+> Emails → SMTP Settings**（步驟 2-1），不是 Edge Function Secrets——
+> Auth 服務不讀這裡的變數。上面那個零引用的 `RESEND_API_KEY` 就是誤填在
+> 此處的遺留物，設了也不會有任何效果。
 
 ### ⚠️ 存檔後需重新部署
 
@@ -137,7 +139,81 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 
 ---
 
-## ☑️ 步驟 2：設定 Email OTP 模板
+## ☑️ 步驟 2：設定寄信（寄件信箱 ＋ OTP 模板）
+
+信**不是** `api` Edge Function 寄的——是 Supabase Auth（GoTrue）寄的。
+所以「改寄件者」改的是本步驟的 Dashboard 設定，**不是程式碼**；
+步驟 1 的 Secrets 也與寄信無關（Auth 服務不讀 Edge Function 的變數）。
+
+### 2-1 寄件信箱：掛 Custom SMTP
+
+**沒掛 custom SMTP＝真實用戶收不到驗證碼。** 內建寄信服務有兩個限制，
+第一個是硬阻斷、不是配額問題：
+
+1. **只寄得到專案 organization 的團隊成員信箱**，其他一律失敗並回
+   `Email address not authorized`（[官方文件](https://supabase.com/docs/guides/auth/auth-smtp)）。
+   也就是說沒掛之前，只有你自己收得到信，外部註冊者一個都收不到。
+2. 每小時個位數配額、且**明示無 SLA**，官方定位是「試玩與團隊內部測試用」。
+
+本專案寄件身分用官方帳號 `admin@uknow.com.tw`（Google Workspace），
+走 Google 自己的 SMTP。
+
+**先決條件（Google 側，做一次即可，非逐環境）**
+
+| 順序 | 在哪 | 做什麼 |
+|---|---|---|
+| 1 | Admin console → **安全性 → 驗證 → 兩步驟驗證** | 確認「**允許使用者產生應用程式密碼**」為開啟 |
+| 2 | `admin@uknow.com.tw` 本人 → `myaccount.google.com` | 該帳號**開啟兩步驟驗證**（沒開就產不出應用程式密碼） |
+| 3 | `myaccount.google.com/apppasswords` | 產生應用程式密碼，名稱填 `Supabase SMTP`，得到 **16 碼** |
+
+> ⚠️ 2025 年起 Google 已不接受用帳號登入密碼對 `smtp.gmail.com` 驗證，
+> 「低安全性應用程式存取」選項也已移除。**只有應用程式密碼或 OAuth 2.0 可行**，
+> 填錯的症狀是 Supabase 測試寄信回 `535 Username and Password not accepted`。
+
+**Supabase 側（⚠️ 兩個環境各做一次，分支不繼承母專案的 SMTP 設定）**
+
+**導覽**：Dashboard → **Authentication** → **Emails** → **SMTP Settings**
+（ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/smtp` ）
+
+| 欄位 | 值 |
+|---|---|
+| Enable Custom SMTP | 開 |
+| Sender email | `admin@uknow.com.tw` |
+| Sender name | `Uknow` |
+| Host | `smtp.gmail.com` |
+| Port | `587`（STARTTLS；用 `465` 則是 SSL，兩者皆可） |
+| Username | `admin@uknow.com.tw`（**完整位址**，不是 `admin`） |
+| Password | 上面產生的 **16 碼應用程式密碼**（不是 Google 登入密碼） |
+
+> ⚠️ **存檔後一定要接著調限流**，否則會從「幾乎不能寄」換成「每小時只能寄 30 封」：
+> Supabase 對新掛上的 custom SMTP 一律先壓到 **30 封／小時**保護寄件信譽。
+> 到 **Authentication → Rate Limits**
+> （ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/rate-limits` ）
+> 把 *Rate limit for sending emails* 調到符合實際註冊量。漏調的症狀是註冊
+> 尖峰時段部分用戶收不到信，且**只在 Auth logs 看得到**，前端只會顯示逾時。
+
+**DNS（Cloudflare，做一次即可，非逐環境）**
+
+Google Workspace 收信正常**不代表**這三項齊全——DKIM 預設是關的，
+要自己去產。缺了信不會退，只會安靜掉進垃圾桶。
+
+| 記錄 | 值 | 怎麼確認 |
+|---|---|---|
+| SPF（`uknow.com.tw` TXT） | 需含 `include:_spf.google.com` | **全網域只能有一筆 SPF**；已有第三方就併進同一筆，不要新增第二筆（兩筆＝SPF 直接失效） |
+| DKIM（`google._domainkey` TXT） | Admin console → **應用程式 → Google Workspace → Gmail → 驗證電子郵件** 產生後貼上 | 產完要回 Admin console 按**開始驗證**，只加 DNS 不算完成 |
+| DMARC（`_dmarc` TXT） | `v=DMARC1; p=none; rua=mailto:admin@uknow.com.tw` | 先用 `p=none` 收報告，確認 SPF/DKIM 都過再考慮收緊 |
+
+> ⚠️ 若該網域同時開了 **Cloudflare Email Routing**，它會自行接管 MX 並插入
+> 自己的 SPF——與 Google Workspace 併用時先確認 MX 仍指向 Google，
+> 且 SPF 沒有被改寫成只認 Cloudflare。
+
+**寄送額度**：`smtp.gmail.com` 在 Google Workspace 是**每日 2,000 封**。
+撞到上限時改走 SMTP relay：Admin console → **應用程式 → Google Workspace →
+Gmail → 路由 → SMTP 中繼服務**，開啟並選「需要 SMTP 驗證」，
+Supabase 的 Host 改成 `smtp-relay.gmail.com`（同樣 587／應用程式密碼），
+額度提升到每日 10,000 封。Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
+
+### 2-2 Email OTP 模板
 
 註冊／登入使用 **6 位數驗證碼（OTP）**，而非點擊連結。
 模板需改成顯示 `{{ .Token }}`。
@@ -145,27 +221,26 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 **導覽**：Dashboard → **Authentication** → **Emails**（或 **Email Templates**）
 （ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/templates` ）
 
+現成模板已在 repo 內，直接複製貼上即可，不要在 Dashboard 手寫：
+`supabase/email-templates/confirm-signup.html`、`reset-password.html`。
+改動請改 repo 這兩份再貼上去，Dashboard 那份沒有版本控制。
+
 | 模板 | 用途 | 必改內容 |
 |------|------|----------|
 | **Magic Link** | OTP 登入寄送 | 內文加入 `{{ .Token }}`，移除（或保留為輔助）`{{ .ConfirmationURL }}` |
 | **Confirm signup** | 新用戶驗證 | 同上，改用 `{{ .Token }}` 顯示驗證碼 |
 | **Reset Password** | 重設密碼 | 程式碼已走 OTP，確認模板使用 `{{ .Token }}` |
 
-### 範例內文片段
-
-```html
-<h2>您的 Uknow 驗證碼</h2>
-<p>請在 App 中輸入以下 6 位數驗證碼：</p>
-<p style="font-size:28px; font-weight:bold; letter-spacing:6px;">{{ .Token }}</p>
-<p>驗證碼 3 分鐘內有效。若非您本人操作請忽略此信。</p>
-```
+唯一不可缺的變數是 `{{ .Token }}`（6 位數驗證碼本體）。模板漏了它，
+信會照常寄出但內容沒有驗證碼，前端只會停在「等待輸入」——查起來很費工。
 
 > 💡 確認 **Authentication → Providers → Email** 已啟用、且 **Confirm email**
 > 設定符合預期（OTP 流程需要 Email 為啟用狀態）。
 
-> ⚠️ **寄信配額**：Supabase 內建 SMTP 的預設額度極低（每小時個位數）。
-> 需要大量註冊的環境（如 journey 分支）請掛 custom SMTP 或調高 Auth
-> 的 email rate limit。
+> 💡 journey 的拋棄式分支**刻意不走這條**：它用 pg-functions send-email hook
+> 把寄信導進 no-op sink，繞開內建 mailer 的保留網域檢查與限流
+> （見 `.github/workflows/journey.yml`）。OTP 由 Admin `generate_link` 取得，
+> 信件內容無所謂，所以拋棄式分支不需要設 SMTP。
 
 ---
 
@@ -291,7 +366,11 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
       ——不是正式站網域，也不是 `http://localhost:3100`
       （落到 localhost 的話，付款導回會導去一個不存在的位址）
 - [ ] 步驟 1：`api` 已重新部署，變數生效
-- [ ] 步驟 2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
+- [ ] 步驟 2-1：Custom SMTP 已啟用，寄件者為 `admin@uknow.com.tw`
+- [ ] 步驟 2-1：**Auth 的寄信限流已從預設 30 封／小時調高**（掛上 SMTP 後才准調）
+- [ ] 步驟 2-1（全網域一次）：SPF 含 `_spf.google.com` 且只有一筆、DKIM 已在
+      Admin console 按下「開始驗證」、DMARC 已建立
+- [ ] 步驟 2-2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信

@@ -1,0 +1,1 @@
+{"branch": "claude/official-account-email-setup-qzq7fw", "ended": "2026-08-14T10:42:42+00:00", "fired": {}, "passed": {"bash-guard": 19, "check-output-filter": 19, "feature-plan-guard": 4, "model-effort-advisor": 1, "tdd-test-guard": 4}, "session": "6ab9025bf40c", "started": "2026-08-14T10:34:15+00:00"}
