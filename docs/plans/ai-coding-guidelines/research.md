@@ -15,16 +15,24 @@
 
 ## 1. Anthropic 官方最佳實踐整理
 
-### 1.0 資訊信度說明
+### 1.0 資訊信度說明（引句已逐一回查原文）
 
-- **一手來源**（可直接引用為規範依據）：code.claude.com/docs 官方文件（best
-  practices、hooks、memory、permissions、security、code review）、anthropic.com
-  的 engineering / research 文章（Building Effective Agents、How Anthropic teams
-  use Claude Code、Effective harnesses for long-running agents）。
-- **二手來源**（僅作旁證，寫進 Guideline 前應回查原文）：devops.com、tembo.io
-  等第三方整理；本文中涉及的**具體成效數字**（如審查誤判率、評論品質提升
-  百分比）出自官方部落格對自家產品的描述，屬廠商自述，引用時應標明出處而
-  非當成中立實證。
+- **已直接抓取、逐字核對**的一手來源（以下英文引句均為原文複製）：
+  [Best practices](https://code.claude.com/docs/en/best-practices)、
+  [Hooks guide](https://code.claude.com/docs/en/hooks-guide)、
+  [Memory / CLAUDE.md](https://code.claude.com/docs/en/memory)、
+  [Security](https://code.claude.com/docs/en/security)、
+  [Code Review](https://code.claude.com/docs/en/code-review)、
+  [Common workflows](https://code.claude.com/docs/en/common-workflows)。
+- **本環境網路無法直達**（egress proxy 封鎖 `www.anthropic.com` 與
+  `claude.com`）：工程部落格文章（[Claude Code Best Practices 部落格版](https://www.anthropic.com/engineering/claude-code-best-practices)、
+  [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)、
+  How Anthropic teams use Claude Code）的引句以搜尋結果的原文片段交叉確認，
+  下文標注〔搜尋交叉確認〕；寫進正式 Guideline 前建議再點開連結核對一次。
+- 先前二手轉述流傳的**具體成效數字**（如「84% 的千行 PR 被找出問題」
+  「實質審查評論 16%→54%」）在官方文件頁**查無此文**，本文件已剔除、
+  不作為規範依據。官方文件中可引用的量化事實只有:「Each review averages
+  \$15-25 in cost」與「completing in 20 minutes on average」（Code Review 頁）。
 
 ### 1.1 核心哲學：人做決策，AI 做執行，機器做把關
 
@@ -36,91 +44,265 @@
 | **執行**（怎麼做、寫碼、跑測試、自我迭代） | AI | agentic loop + 回饋迴圈（測試、lint、build） |
 | **把關**（絕不允許的事） | 確定性程式 | hooks、permission deny、CI required checks |
 
-關鍵引述（Best Practices）：CLAUDE.md 這類提示層規則是**建議性**的，模型可能
-在長對話中忽略；**必須遵守的規則要用 hooks（確定性程式碼）承載**，因為
-hooks 保證執行、不依賴模型記得。這是官方對「靠叮嚀 vs 靠機制」最明確的表態。
+官方對「靠叮嚀 vs 靠機制」的表態非常明確——提示層規則是建議性的，必守
+規則要用確定性程式承載：
+
+> "Unlike CLAUDE.md instructions which are advisory, hooks are deterministic
+> and guarantee the action happens."
+> — [Best practices › Set up hooks](https://code.claude.com/docs/en/best-practices)
+
+> "Hooks are user-defined shell commands. Claude Code runs them at specific
+> points in its lifecycle, which gives you deterministic control: certain
+> actions always happen rather than relying on the LLM to choose to run them."
+> — [Hooks guide](https://code.claude.com/docs/en/hooks-guide)
+
+> "Both are loaded at the start of every conversation. Claude treats them as
+> context, not enforced configuration. To block an action regardless of what
+> Claude decides, use a PreToolUse hook instead."
+> — [Memory](https://code.claude.com/docs/en/memory)（指 CLAUDE.md 與 auto memory）
+
+> "Use hooks for actions that must happen every time with zero exceptions."
+> — [Best practices › Set up hooks](https://code.claude.com/docs/en/best-practices)
 
 ### 1.2 Explore → Plan → Code → Commit：計畫先行
 
-官方推薦的標準工作流（Best Practices）：
+官方推薦的四階段工作流（[Best practices › Explore first, then plan, then
+code](https://code.claude.com/docs/en/best-practices)：Explore → Plan →
+Implement → Commit，Plan Mode 下模型只能讀不能改）。病因診斷原文：
 
-1. **Explore**：先讓 Claude 讀相關檔案、理解現況，**明確要求先不要寫碼**
-   （Plan Mode 下模型只能讀不能改，是這一步的結構化版本）。
-2. **Plan**：要求產出實作計畫；複雜任務用延伸思考。**人在這裡審計畫**——
-   這是整個流程中投報率最高的人審點，因為改計畫比改一坨程式碼便宜得多。
-3. **Code**：依審過的計畫實作，實作中要求邊做邊驗證。
-4. **Commit / PR**：提交、開 PR、更新文件。
+> "Letting Claude jump straight to coding can produce code that solves the
+> wrong problem. Use plan mode to separate exploration from execution."
 
-官方明講：跳過前兩步「直接叫 AI 寫」對簡單任務可以，但對需要前期思考的
-問題，**省掉探索與規劃會讓 Claude 解決錯誤的問題**——這正是「寫一大坨就上
-PR」的官方病因診斷：不是 AI 寫太多，是沒有在便宜的階段（計畫）攔截。
+> "Separate research and planning from implementation to avoid solving the
+> wrong problem."
 
-任務切分層面，Building Effective Agents 給出可組合的分解模式：
-**prompt chaining**（步驟間插驗證閘）、**orchestrator-workers**（動態拆子任務
-派工）、**parallelization**（獨立子任務並行／同一任務多視角投票）。共同原則：
-**每個子單元要小到可獨立驗證**，複雜度只有在明確帶來效益時才增加。
+這正是「寫一大坨就上 PR」的官方病因：不是 AI 寫太多，是沒有在便宜的階段
+（計畫）設人審點——改計畫比改一坨程式碼便宜得多。人在 Plan 階段可直接
+編輯計畫（"Press `Ctrl+G` to open the plan in your text editor for direct
+editing before Claude proceeds."）。何時可跳過計畫，官方也給了判準：
+
+> "Planning is most useful when you're uncertain about the approach, when the
+> change modifies multiple files, or when you're unfamiliar with the code
+> being modified. If you could describe the diff in one sentence, skip the
+> plan."
+
+規格先行的大功能，官方建議先訪談出 spec、再開乾淨 session 實作：
+
+> "Once the spec is complete, start a fresh session to execute it. ... The
+> most useful specs are self-contained: they name the files and interfaces
+> involved, state what is out of scope, and end with an end-to-end
+> verification step that proves the feature works."
+> — [Best practices › Let Claude interview you](https://code.claude.com/docs/en/best-practices)
+
+任務切分層面，[Building Effective
+Agents](https://www.anthropic.com/engineering/building-effective-agents) 給出
+可組合的分解模式（prompt chaining 步驟間插驗證閘、orchestrator-workers
+動態拆子任務、parallelization 並行／多視角投票），總原則〔搜尋交叉確認〕：
+
+> "Consistently, the most successful implementations use simple, composable
+> patterns rather than complex frameworks."
 
 ### 1.3 TDD 與驗證紀律：證據，不是聲稱
 
-官方把 TDD 稱為「與 agentic coding 協作最有效的模式之一」（Best Practices），
-流程重點：
+**驗證迴圈是官方最佳實踐的第一原則**。[Best practices › Give Claude a way
+to verify its work](https://code.claude.com/docs/en/best-practices) 的原文，
+直接解釋了「聲稱 test 都沒問題」為什麼會發生：
 
-1. 先寫**會失敗的測試**，明確告訴 AI「先不要寫實作」。
-2. **確認測試真的紅**——防「本來就會過」的假測試。
-3. **把紅燈測試 commit 起來當檢查點**——之後若 AI 改測試遷就實作，diff 會揭露。
-4. 再讓 AI 實作到綠，過程中 AI 以測試結果自我迭代。
-5. 人審時核對「實作沒有動測試」。
+> "Claude stops when the work looks done. Without a check it can run, 'looks
+> done' is the only signal available, and you become the verification loop:
+> every mistake waits for you to notice it. Give Claude something that
+> produces a pass or fail, and the loop closes on its own."
 
-背後的通用原則（Best Practices／Effective Harnesses）：**給 AI 一個它可以
-自己跑的驗證迴圈**（測試、型別檢查、lint、截圖比對），成果的判準是
-**外部預言（oracle）的輸出**，不是模型自己的宣稱。對應到痛點 3：
-「聲稱 test 都沒問題」之所以成立，是因為驗證標準掌握在寫程式的那一方手上
-——官方解法是把判準外部化（獨立測試、CI、覆蓋率門檻），並要求**出示證據**
-（測試輸出、指令回傳、截圖），而非接受「已完成」三個字。
+> "Give Claude a check it can run: tests, a build, a screenshot to compare.
+> It's the difference between a session you watch and one you walk away from."
+
+而且判準是**證據，不是聲稱**：
+
+> "Have Claude show evidence rather than asserting success: the test output,
+> the command it ran and what it returned, or a screenshot of the result.
+> Reviewing evidence is faster than re-running the verification yourself, and
+> it works for sessions you weren't watching."
+
+驗證的強度分級（同頁）：同一 prompt 內自驗 → 整個 session 的 `/goal` 條件 →
+Stop hook 確定性閘門 → 獨立 subagent 二次意見：
+
+> "**By a second opinion**: a verification subagent or a dynamic workflow
+> that checks its own findings has a fresh model try to refute the result, so
+> the agent doing the work isn't the one grading it."
+
+TDD 的具體操作出自 [Claude Code Best Practices 部落格版](https://www.anthropic.com/engineering/claude-code-best-practices)
+〔搜尋交叉確認；本環境無法直達原頁〕：
+
+> "Ask Claude to write tests based on expected input/output pairs. Be
+> explicit about the fact that you're doing test-driven development so that
+> it avoids creating mock implementations, even for functionality that
+> doesn't exist yet in the codebase."
+
+> "Ask Claude to commit the tests when it's satisfied with them."
+
+流程重點（同源）：先寫會失敗的測試 → **確認真的紅**（防「本來就會過」的
+假測試）→ **紅燈測試先 commit 當檢查點**（之後 AI 若改測試遷就實作，diff
+會揭露）→ 實作到綠、不准動測試 → 人審時核對測試未被竄改。
+
+對應痛點 3 的官方結論（[Best practices › Avoid common failure
+patterns](https://code.claude.com/docs/en/best-practices)）：
+
+> "**The trust-then-verify gap.** Claude produces a plausible-looking
+> implementation that doesn't handle edge cases.
+> **Fix**: Always provide verification (tests, scripts, screenshots). If you
+> can't verify it, don't ship it."
 
 ### 1.4 Review：獨立視角、自動找碴、人做裁決
 
-- 官方 Code Review 功能的設計：PR 開啟時派**多個特化 agent 並行**檢查
-  （邏輯錯誤、邊界條件、API 誤用、安全、慣例），發現先經**驗證步驟**再彙整
-  去重、按嚴重度分級（Important / Nit / Pre-existing）評論到 PR 上。
-  **agent 不核准 PR**——找問題是 AI 的事，處置是人的事。
-- 官方部落格自述的成效（廠商自述，引用需標明）：千行級 PR 有 84% 被找出
-  問題、誤判率 <1%、部署後 PR 上實質審查評論比例 16%→54%。
-- Subagents 文件的通則：審查應由**乾淨 context 的獨立 agent** 執行，避免
-  寫碼者的偏誤污染審查（同一 context 既寫又審，等於自己改自己的考卷）。
-- 多 Claude 協作模式（Best Practices）：一個寫碼、另一個獨立 review、第三個
-  依 review 修改——「分離的 context 帶來更好的結果」。
+官方 [Code Review](https://code.claude.com/docs/en/code-review) 功能的設計，
+原文：
+
+> "A fleet of specialized agents examine the code changes in the context of
+> your full codebase, looking for logic errors, security vulnerabilities,
+> broken edge cases, and subtle regressions."
+
+> "Each agent looks for a different class of issue, then a verification step
+> checks candidates against actual code behavior to filter out false
+> positives. The results are deduplicated, ranked by severity, and posted as
+> inline comments on the specific lines where issues were found."
+
+**AI 找問題、人做裁決**——findings 從不核准也從不阻擋 PR：
+
+> "Findings are tagged by severity and don't approve or block your PR, so
+> existing review workflows stay intact."
+
+> "The check run always completes with a neutral conclusion so it never
+> blocks merging through branch protection rules. If you want to gate merges
+> on Code Review findings, read the severity breakdown from the check run
+> output in your own CI."
+
+嚴重度定義（原文）：🔴 Important = "A bug that should be fixed before
+merging"；🟡 Nit = "A minor issue, worth fixing but not blocking"；
+🟣 Pre-existing = "A bug that exists in the codebase but was not introduced
+by this PR"。可用 `REVIEW.md` 客製（"Its contents are injected into the
+system prompt of every agent in the review pipeline as the highest-priority
+instruction block"）。
+
+**審查者要用乾淨 context**（[Best practices › Run multiple Claude
+sessions](https://code.claude.com/docs/en/best-practices)）：
+
+> "A fresh context improves code review since Claude won't be biased toward
+> code it just wrote."
+
+> "The longer Claude works unattended, the more an independent check matters
+> before you count the work as done. A reviewer running in a fresh subagent
+> context sees only the diff and the criteria you give it, not the reasoning
+> that produced the change, so it evaluates the result on its own terms."
+> — [Best practices › Add an adversarial review step](https://code.claude.com/docs/en/best-practices)
+
+官方也警告 AI 審查的過度工程風險（規範裡值得原样引用）：
+
+> "A reviewer prompted to find gaps will usually report some, even when the
+> work is sound, because that is what it was asked to do. Chasing every
+> finding leads to over-engineering. ... Tell the reviewer to flag only gaps
+> that affect correctness or the stated requirements, and treat the rest as
+> optional."
 
 ### 1.5 Context 管理：CLAUDE.md 是憲法，不是百科
 
-- CLAUDE.md 是每個 session 唯一自動載入的檔案，應**精簡**（官方社群共識約
-  ~200 行量級）：只放 AI 猜不到的指令、偏離預設的慣例、repo 禮儀、已知陷阱；
-  不放 AI 讀碼就能推斷的東西。判準：「刪掉這行 AI 會出錯嗎？不會就刪」。
-- 階層式載入：全域 `~/.claude/CLAUDE.md` → 專案根 → 子目錄（讀到才載入），
-  組織標準與專案特化可以分層共存。
-- Context 衛生：換任務就 `/clear`；同一錯誤糾正兩次仍錯就重開 session 換更好
-  的初始提示，不要在髒 context 裡拉鋸；大範圍探索用 subagent 隔離，別讓
-  主 context 塞滿檔案內容。
+整份 Best practices 的前提是 context 是稀缺資源：
+
+> "Most best practices are based on one constraint: Claude's context window
+> fills up fast, and performance degrades as it fills."
+> — [Best practices](https://code.claude.com/docs/en/best-practices)
+
+CLAUDE.md 應精簡，判準與行數上限都有原文：
+
+> "Keep it concise. For each line, ask: *'Would removing this cause Claude to
+> make mistakes?'* If not, cut it. Bloated CLAUDE.md files cause Claude to
+> ignore your actual instructions!"
+> — [Best practices › Write an effective CLAUDE.md](https://code.claude.com/docs/en/best-practices)
+
+> "**Size**: target under 200 lines per CLAUDE.md file. Longer files consume
+> more context and reduce adherence."
+> — [Memory › Write effective instructions](https://code.claude.com/docs/en/memory)
+
+何時該加一條進 CLAUDE.md（[Memory](https://code.claude.com/docs/en/memory)）：
+"Claude makes the same mistake a second time"、"A code review catches
+something Claude should have known about this codebase"、"You type the same
+correction or clarification into chat that you typed last session"。
+
+階層式載入：managed policy（全組織）→ `~/.claude/CLAUDE.md`（個人）→
+專案根（進 git 與團隊共享）→ 子目錄（讀到該目錄檔案才載入）；另有
+`.claude/rules/` 可用 `paths:` frontmatter 做 path-scoped 規則。
+
+Context 衛生與糾偏（[Best practices › Course-correct early and
+often](https://code.claude.com/docs/en/best-practices)）：
+
+> "If you've corrected Claude more than twice on the same issue in one
+> session, the context is cluttered with failed approaches. Run `/clear` and
+> start fresh with a more specific prompt that incorporates what you learned.
+> A clean session with a better prompt almost always outperforms a long
+> session with accumulated corrections."
 
 ### 1.6 權限與安全邊界
 
-- 權限模式從「每步都問」到「全自動」是一條信任光譜（plan / default /
-  acceptEdits / dontAsk / bypassPermissions…），官方建議**從嚴起步、隨信任
-  放寬**，且自動化程度越高越要有沙箱與 deny 清單兜底。
-- 敏感路徑用 permission deny 保護（如 `.env`、金鑰檔、CI 設定），危險指令用
-  PreToolUse hook 硬擋。官方安全文件明講：分類器與模型判斷都有漏接率，
-  它們是**縱深防禦的其中一層**，不是沙箱或 review 的替代品。
+預設從嚴（[Security](https://code.claude.com/docs/en/security)）：
+
+> "Claude Code uses strict read-only permissions by default. When additional
+> actions are needed (editing files, running tests, executing commands),
+> Claude Code requests explicit permission."
+
+責任歸屬在人——這條對「沒人 review」的痛點是直接引據：
+
+> "Claude Code only has the permissions you grant it. You're responsible for
+> reviewing proposed code and commands for safety before approval."
+
+官方同時承認「逐一點核可」會退化成橡皮圖章，所以要用 allowlist／sandbox／
+auto mode 降噪、把人的注意力留給真正要緊的核可（[Best practices › Configure
+permissions](https://code.claude.com/docs/en/best-practices)）：
+
+> "This is safe but tedious. After the tenth approval you're not really
+> reviewing anymore, you're just clicking through."
+
+自動化程度越高越要有兜底層，且沒有任何一層是萬靈丹：
+
+> "While these protections significantly reduce risk, no system is completely
+> immune to all attacks. Always maintain good security practices when working
+> with any AI tool."
+> — [Security](https://code.claude.com/docs/en/security)
+
+權限模式是一條信任光譜（plan / default / acceptEdits / auto / dontAsk /
+bypassPermissions，見 [Permission
+modes](https://code.claude.com/docs/en/permission-modes)）；auto mode 的
+機制與邊界（[Best practices](https://code.claude.com/docs/en/best-practices)）：
+"a separate classifier model reviews commands and blocks only what looks
+risky: scope escalation, unknown infrastructure, or hostile-content-driven
+actions."。敏感路徑用 `permissions.deny` 保護、危險指令用 PreToolUse hook
+硬擋——settings 與 CLAUDE.md 的分工有明文（[Memory](https://code.claude.com/docs/en/memory)）：
+
+> "Settings rules are enforced by the client regardless of what Claude
+> decides to do. CLAUDE.md instructions shape Claude's behavior but are not a
+> hard enforcement layer."
 
 ### 1.7 團隊層面採用
 
-- 指定 **DRI**（配置負責人）管 CLAUDE.md、permissions、hooks、skills 的演進；
-  大組織用跨職能小組（工程＋資安＋治理）。
-- 共享資產進 git：團隊共用的 slash commands / skills / agents / hooks 放進
-  repo 的 `.claude/`，讓「流程」跟著 checkout 走，而不是留在個人腦裡。
-- 推行方式：官方經驗偏好**黑客松／種子使用者**模式（先讓一小群人做出成功
-  案例、變成導師，靠網路效應擴散），勝過由上而下的分階段強制。
-- CI 整合：headless（`claude -p`）跑自動化任務；配置要**定期回訪剪枝**
-  （規則太多會互相稀釋）。
+- 組織標準的機械承載與共享（[Security › Team
+  security](https://code.claude.com/docs/en/security)，原文條列）：
+  > "Use managed settings to enforce organizational standards / Share
+  > approved permission configurations through version control / Train team
+  > members on security best practices / Monitor Claude Code usage through
+  > OpenTelemetry metrics"
+- 共享資產進 git：團隊共用的 skills / agents / hooks / rules 放進 repo 的
+  `.claude/`，讓「流程」跟著 checkout 走。有副作用的流程 skill 官方明講要
+  鎖成只有人能觸發——與本專案 `/tdd-implement` 的鎖完全同款：
+  > "Use `disable-model-invocation: true` for workflows with side effects
+  > that you want to trigger manually."
+  > — [Best practices › Create skills](https://code.claude.com/docs/en/best-practices)
+- 全組織強制的instructions可放 managed policy CLAUDE.md（`/etc/claude-code/
+  CLAUDE.md` 等路徑，個人設定無法排除；見 [Memory › Manage CLAUDE.md for
+  large teams](https://code.claude.com/docs/en/memory)）。
+- CI 整合走 headless（[Best practices](https://code.claude.com/docs/en/best-practices)）：
+  > "Non-interactive mode is how you integrate Claude into CI pipelines,
+  > pre-commit hooks, or any automated workflow."
+- 指定 DRI 管配置演進、用黑客松／種子使用者模式推行——出自 How Anthropic
+  teams use Claude Code 與企業採用文章〔本環境無法直達原頁核對，發布前請
+  點連結確認措辭〕。
 
 ### 1.8 官方點名的反模式
 
@@ -133,11 +315,26 @@ PR」的官方病因診斷：不是 AI 寫太多，是沒有在便宜的階段�
 | 無界限探索 | 「幫我看看整個 codebase」→ 讀兩百個檔 | 用 subagent 隔離、縮小範圍 |
 | AI 改測試遷就實作 | 測試「都過了」但斷言被動過 | 紅燈測試先 commit，diff 揭露竄改 |
 
+前五項出自 [Best practices › Avoid common failure
+patterns](https://code.claude.com/docs/en/best-practices)，關鍵修法原文：
+
+> "**Fix**: After two failed corrections, `/clear` and write a better initial
+> prompt incorporating what you learned."（反覆糾正迴圈）
+
+> "If your CLAUDE.md is too long, Claude ignores half of it because important
+> rules get lost in the noise. **Fix**: Ruthlessly prune. If Claude already
+> does something correctly without the instruction, delete it or convert it
+> to a hook."（CLAUDE.md 過肥——注意官方的修法之一是「轉成 hook」）
+
 ### 1.9 2026 概念地圖：從 Prompt 到 Loop（社群前沿，官方文件之外）
 
-（此節整理自前次 session 的統整，來源含 Anthropic 的 Boris Cherny、Peter
-Steinberger、Addy Osmani 等——屬**業界前沿共識**而非官方文件，寫進規範時
-應標注來源層級。）
+（此節屬**業界前沿共識**而非官方文件，寫進規範時應標注來源層級。主要
+出處：Addy Osmani, "Loop Engineering", 2026-06 發表於
+[addyo.substack.com](https://addyo.substack.com/p/loop-engineering)、
+[O'Reilly Radar 轉載](https://www.oreilly.com/radar/loop-engineering/)；
+同期論述來自 Peter Steinberger 與 Anthropic 的 Boris Cherny。核心主張
+〔搜尋交叉確認〕："Loop engineering is replacing yourself as the person who
+prompts the agent. You design the system that does it instead."）
 
 世代遞進：**Prompt**（語言）→ **Context**（資訊）→ **Harness**（環境）→
 **Loop**（控制）。2026 年 6 月的分水嶺論述：「不要再 prompt agent，要設計
@@ -395,7 +592,7 @@ eval（量「該觸發的 skill 沒觸發」的機率）→ **Step 3** friction-
 | P1 | Ruleset 加「至少 1 個人類 approval」為合併條件（AI 審查結論附在 PR 供人裁決） | 人審無機械保證 |
 | P1 | 新增 `check-coverage-ratchet.py`：比對本 PR 與 base 的 thresholds，調低即紅、除非 commit message／PR 帶豁免標記與理由（接進 framework-check 軌） | 棘輪可被靜默調低 |
 | P2 | guards 軌加 PR diff 規模**軟警戒**（如 >800 行非鎖檔變更時留言提示拆分，不硬擋——硬擋會逼出湊行數的壞行為） | PR 規模無檢查 |
-| P2 | 試點官方 `/code-review`＋`REVIEW.md`（把 review.md 契約的 P0/P1/P2 語義翻譯過去），作為 PR 開啟後的第二道獨立防線 | 官方新功能未整合 |
+| P2 | 試點官方 `/code-review`＋`REVIEW.md`（把 review.md 契約的 P0/P1/P2 語義翻譯過去），作為 PR 開啟後的第二道獨立防線。注意官方 check run 永遠是 neutral、從不擋合併——要 gate 需自行在 CI 解析 check run 的 severity 輸出（官方文件提供機械可讀格式） | 官方新功能未整合 |
 | P3 | 把「同類掃描／防線回填」從 fix-bug skill 的內文抽成 checklist，供無框架的 repo 也能人工執行 | 組織化前置 |
 | （已排程） | 外迴路建設照前次 session 的 Step 2→3→4 依序走：等感測器資料約一週 → skill 觸發 eval（CI 上、只在 `.claude/**` 變更時跑、軟警戒不硬擋）→ friction-log 整併排程化 → 第一條唯讀外迴路（claude-code-action 讀 triage issue），Step 4 前先補迭代與預算上限 | Loop/Eval/Observability |
 
@@ -477,18 +674,28 @@ L0→L1 跑出成功案例（黑客松形式），種子成員當導師擴散；
 - CI／部署：`.github/workflows/{ci,deploy-supabase,journey,deployment-queue-audit}.yml`；規則：`.claude/rules/github-actions.md`
 - 覆蓋率棘輪：`vitest.config.ts`；文件分級：`docs/README.md`；摩擦紀錄：`docs/plans/friction-log.md`
 
-## 附錄 B：官方來源清單
+## 附錄 B：來源清單（含驗證狀態）
 
-一手（規範依據）：
+**一手・已逐字核對**（本文所有未標注的英文引句均複製自這些頁面）：
 - Best practices：https://code.claude.com/docs/en/best-practices
-- Hooks：https://code.claude.com/docs/en/hooks-guide
+- Hooks guide：https://code.claude.com/docs/en/hooks-guide
 - Memory / CLAUDE.md：https://code.claude.com/docs/en/memory
-- Permissions：https://code.claude.com/docs/en/permissions ・ Security：https://code.claude.com/docs/en/security
+- Security：https://code.claude.com/docs/en/security
 - Code Review：https://code.claude.com/docs/en/code-review
-- Building Effective Agents：https://www.anthropic.com/engineering/building-effective-agents
-- Claude Code Best Practices（blog）：https://www.anthropic.com/engineering/claude-code-best-practices
-- How Anthropic teams use Claude Code：https://www.anthropic.com/news/how-anthropic-teams-use-claude-code
+- Common workflows：https://code.claude.com/docs/en/common-workflows
+- Permission modes：https://code.claude.com/docs/en/permission-modes（僅引用連結，未逐字抓取）
+
+**一手・搜尋交叉確認**（原頁被本環境 egress proxy 封鎖，引句經搜尋結果
+比對；發布前建議人工點開核對）：
+- Claude Code Best Practices（工程部落格）：https://www.anthropic.com/engineering/claude-code-best-practices（TDD 段引句）
+- Building Effective Agents：https://www.anthropic.com/engineering/building-effective-agents（"simple, composable patterns" 引句）
+
+**一手・未能核對**（僅作方向性摘要，本文已標注）：
+- How Anthropic teams use Claude Code、企業採用（DRI／黑客松）相關文章
 - Effective harnesses for long-running agents：https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
 
-二手（旁證，引用前回查）：devops.com、tembo.io 等第三方整理；官方部落格中
-關於 Code Review 成效的自述數字。
+**社群前沿**（非官方，§1.9 的來源層級）：
+- Addy Osmani, "Loop Engineering"：https://addyo.substack.com/p/loop-engineering ・ O'Reilly Radar 轉載：https://www.oreilly.com/radar/loop-engineering/
+
+**已剔除**：devops.com、tembo.io 等第三方整理，及無法在官方頁面回查的
+成效數字（84%、<1% 誤判、16%→54% 等）——不作為規範依據。
