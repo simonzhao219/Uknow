@@ -35,7 +35,7 @@ def doc_in_page_dialog(page):
     # It opens as a modal (not a route change / new tab): the dialog is visible
     # AND the URL is unchanged — we never left the dashboard.
     expect(page.get_by_role("dialog")).to_be_visible(timeout=5_000)
-    expect(page.get_by_role("heading", name="推廣獎勵規章").first).to_be_visible()
+    expect(page.get_by_role("heading", name="事業手冊").first).to_be_visible()
     expect(page).to_have_url(re.compile(r"/dashboard"))
 
 
@@ -46,7 +46,7 @@ def close_doc_dialog(page):
     # (a11y fix) and is *supposed* to stay open — assert the document dialog
     # (identified by its title) is gone, not that no dialog exists at all.
     doc_dialog = page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name="推廣獎勵規章")
+        has=page.get_by_role("heading", name="事業手冊")
     )
     expect(doc_dialog).to_be_hidden(timeout=5_000)
 

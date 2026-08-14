@@ -79,13 +79,13 @@ const TermsOfServicePage = lazyNamed(
   'TermsOfServicePage',
 );
 const ListingPlansPage = lazyNamed(() => import('./components/ContentPages'), 'ListingPlansPage');
-const ReferralRewardRulesPage = lazyNamed(
+const BusinessManualPage = lazyNamed(
   () => import('./components/ContentPages'),
-  'ReferralRewardRulesPage',
+  'BusinessManualPage',
 );
-const ReferralRewardContractPage = lazyNamed(
+const ParticipationContractPage = lazyNamed(
   () => import('./components/ContentPages'),
-  'ReferralRewardContractPage',
+  'ParticipationContractPage',
 );
 
 function RouteLoader() {
@@ -420,10 +420,18 @@ function AppContent() {
                     {/* Public Content Pages（lazy：見 ContentPages.tsx 的 chunk 邊界說明） */}
                     <Route path="/terms-of-service" element={<TermsOfServicePage />} />
                     <Route path="/listing-plans" element={<ListingPlansPage />} />
-                    <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />
+                    <Route path="/business-manual" element={<BusinessManualPage />} />
+                    <Route path="/participation-contract" element={<ParticipationContractPage />} />
+                    {/* 舊網址轉址：這兩份文件 2026-08 由「推廣獎勵規章／契約書」換成
+                        向公平會報備的「事業手冊／傳銷商參加契約書」，slug 一併正名。
+                        站外既有連結（LINE 分享、書籤）不該因此變 404。 */}
+                    <Route
+                      path="/referral-reward-rules"
+                      element={<Navigate to="/business-manual" replace />}
+                    />
                     <Route
                       path="/referral-reward-contract"
-                      element={<ReferralRewardContractPage />}
+                      element={<Navigate to="/participation-contract" replace />}
                     />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
