@@ -51,12 +51,18 @@ export function Footer() {
                 </a>
               </li>
               <li>
+                {/* 375px 下這一欄只有約 163px（頁尾 nav 是 grid-cols-2），而 Email
+                    是不可斷的長 token——瀏覽器預設不在 "@" 與 "." 斷字，整串會畫到
+                    框外（375px 巡檢實測溢出 25px）。所以位址本身允許 break-all 換行，
+                    圖示改 shrink-0 + 對齊首行，換成兩行時不會被擠扁或飄到中間。 */}
                 <a
                   href={OFFICIAL_EMAIL_URL}
-                  className="inline-flex items-center gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
+                  className="inline-flex items-start gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <Mail className="h-4 w-4" aria-hidden="true" />
-                  <span>官方信箱：{OFFICIAL_EMAIL}</span>
+                  <Mail className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    官方信箱：<span className="break-all">{OFFICIAL_EMAIL}</span>
+                  </span>
                 </a>
               </li>
             </ul>
