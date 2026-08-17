@@ -8,6 +8,8 @@ import {
   SERVICE_CATEGORIES,
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
+  OFFICIAL_EMAIL,
+  OFFICIAL_EMAIL_URL,
 } from './constants';
 
 describe('listing numeric / photo constants', () => {
@@ -21,6 +23,13 @@ describe('listing numeric / photo constants', () => {
     expect(MAX_PHOTO_SIZE).toBe(5242880);
     expect(MAX_PHOTO_COUNT).toBe(3);
     expect(ALLOWED_PHOTO_FORMATS).toEqual(['image/jpeg', 'image/png', 'image/webp']);
+  });
+});
+
+describe('OFFICIAL_EMAIL', () => {
+  it('官方信箱位址為 admin@uknow.com.tw，mailto 由它推導', () => {
+    expect(OFFICIAL_EMAIL).toBe('admin@uknow.com.tw');
+    expect(OFFICIAL_EMAIL_URL).toBe(`mailto:${OFFICIAL_EMAIL}`);
   });
 });
 
