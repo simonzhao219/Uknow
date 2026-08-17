@@ -277,7 +277,10 @@ export function WithdrawalProcess({
     }
 
     if (!agreeToTerms) {
-      newErrors.agreeToTerms = '請閱讀並同意服務條款和隱私政策';
+      // 訊息必須點名這個勾選框實際連的那份文件。原文寫「服務條款和隱私政策」——
+      // 服務條款不是這裡連的（那是註冊關卡），隱私政策全站根本不存在，等於
+      // 叫使用者去讀兩份他點不到的東西。
+      newErrors.agreeToTerms = '請閱讀並同意推薦獎勵規則';
     }
 
     setErrors(newErrors);
