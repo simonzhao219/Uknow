@@ -185,6 +185,20 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 | Username | `admin@uknow.com.tw`（**完整位址**，不是 `admin`） |
 | Password | 上面產生的 **16 碼應用程式密碼**（不是 Google 登入密碼） |
 
+> ℹ️ Host 填 `smtp.gmail.com` 時 Supabase 會顯示黃色提示「the SMTP provider
+> you entered is designed for sending personal rather than transactional email」。
+> 那只是依 host 名稱判斷，**不影響功能**；它警告的 deliverability 風險正是
+> 下面 DNS 那四筆在解決，補齊後風險就消掉了（提示文字會一直在）。
+
+> ⚠️ **develop 刻意用不同的寄件者**（`ThinkSeek2026@gmail.com` / `Uknow Dev`），
+> 不是漏設。理由是隔離寄件信譽：dev 的測試信若走 `admin@uknow.com.tw`，
+> 會吃掉正式站每日 2,000 封的額度，退信與垃圾申訴也會累積到正式網域頭上。
+>
+> **代價要知道：develop 驗不出寄信驗證性的問題。** 它的 `From:` 網域是
+> `gmail.com`，SPF/DKIM/DMARC 全部由 Google 自己的記錄擔保，必然通過——
+> 跟 `uknow.com.tw` 的 DNS 狀態完全無關。所以「develop 收得到信」**不構成**
+> 正式站收得到信的證據。這一項要靠下面的 mail-tester 直接驗網域，
+> 不要用 develop 註冊流程代替。
 > ⚠️ **存檔後一定要接著調限流**，否則會從「幾乎不能寄」換成「每小時只能寄 30 封」：
 > Supabase 對新掛上的 custom SMTP 一律先壓到 **30 封／小時**保護寄件信譽。
 > 到 **Authentication → Rate Limits**
@@ -237,11 +251,19 @@ Auth logs 也乾淨，信照樣進垃圾桶。
    （收信方用 **Outlook 或 Yahoo**，不要用 Gmail——Google 寄給 Google
    走內部路由會放寬，可能照樣進收件匣，把問題遮掉）
 
-**寄送額度**：`smtp.gmail.com` 在 Google Workspace 是**每日 2,000 封**。
-撞到上限時改走 SMTP relay：Admin console → **應用程式 → Google Workspace →
-Gmail → 路由 → SMTP 中繼服務**，開啟並選「需要 SMTP 驗證」，
-Supabase 的 Host 改成 `smtp-relay.gmail.com`（同樣 587／應用程式密碼），
-額度提升到每日 10,000 封。Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
+**寄送額度：兩道獨立的天花板，先撞到的是 Google 那道。**
+
+| 誰的限制 | 值 | 撞到的症狀 |
+|---|---|---|
+| Supabase（Auth → Rate Limits） | 正式站目前 **300 封／小時** | Supabase 直接不寄，**Auth logs 有記錄** |
+| Google（`smtp.gmail.com`） | Workspace **每日 2,000 封** | Google 回 `550 daily limit exceeded`，Auth logs 顯示 SMTP 錯誤 |
+
+300 封／小時連續跑滿 7 小時就會超過 Google 的日額度，所以調高 Supabase 那道
+並不會提高實際上限——**真正的瓶頸是 Google**。撞到時改走 SMTP relay：
+Admin console → **應用程式 → Google Workspace → Gmail → 路由 → SMTP 中繼服務**，
+開啟並選「需要 SMTP 驗證」，Supabase 的 Host 改成 `smtp-relay.gmail.com`
+（同樣 587／應用程式密碼），額度提升到每日 10,000 封。
+Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 
 ### 2-2 Email OTP 模板
 
