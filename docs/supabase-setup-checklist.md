@@ -216,6 +216,12 @@ Auth logs 也乾淨，信照樣進垃圾桶。
 |---|---|---|
 | SPF（`uknow.com.tw` TXT） | `v=spf1 include:_spf.google.com ~all` | **全網域只能有一筆 SPF**；已有第三方就併進同一筆加 `include`，不要新增第二筆（兩筆＝SPF 直接失效） |
 | DKIM（`google._domainkey` TXT） | Admin console → **應用程式 → Google Workspace → Gmail → 驗證電子郵件**，金鑰長度 2048，產生後貼上 | 產完要回 Admin console 按**開始驗證**，只加 DNS 不算完成 |
+
+> ℹ️ **2048 位元金鑰在 zone 檔裡會呈現成兩段引號，那是正確的、不是被截斷。**
+> DNS 單一 TXT 字串上限 255 字元，而 2048-bit RSA 公鑰的 base64 是 392 字元，
+> Cloudflare 會自動切分（第一段是 `v=DKIM1; k=rsa; p=` 加 237 字元剛好湊滿
+> 255），收信方會自己接回去。**貼上時整串貼一次就好，不要自己加引號分段。**
+> 想確認沒被截斷就把兩段接起來數長度：392 字元 = 完整的 2048-bit 金鑰。
 | DMARC（`_dmarc` TXT） | `v=DMARC1; p=quarantine; rua=mailto:admin@uknow.com.tw` | policy 比 `p=none` 嚴時，SPF/DKIM 不是建議而是**前提**；`rua` 要指向自己收得到的信箱 |
 | MX（`uknow.com.tw`） | `smtp.google.com`，priority `1` | 與寄信無關，但**沒有 MX 就收不到退信通知**——見下方 |
 
@@ -228,11 +234,18 @@ Auth logs 也乾淨，信照樣進垃圾桶。
 > Auth logs 顯示寄送成功、寄件信箱收不到退信。**「沒有人反映問題」在這個
 > 狀態下不是證據**，因為唯一會反映問題的那條線被斷掉了。
 
-> ⚠️ 2026-08-17 盤點：這四筆當時**一筆都不存在**（僅有 `_dmarc` 與一筆
-> `google-site-verification`），而正式站的 custom SMTP 早已啟用、寄件者
-> 已是 `admin@uknow.com.tw`。也就是說 DMARC 一直在 fail，而上面說的
-> 三重靜默讓它完全不可見。**改寄件者之前先把 DNS 補齊**，順序顛倒的症狀
-> 是「改完之後所有人收不到驗證碼」，且會被誤判成 Supabase 設錯。
+> ⚠️ 2026-08-17 盤點：SPF / DKIM / MX 當時**一筆都不存在**（只有 `_dmarc`
+> 與一筆 `google-site-verification`），而正式站的 custom SMTP 早已啟用、
+> 寄件者已是 `admin@uknow.com.tw`。也就是說 DMARC 一直在 fail，而上面說的
+> 三重靜默讓它完全不可見。**同日已補齊四筆並端到端驗證通過**：拿一封
+> 真實的正式站 OTP 信跑 mail-tester，10/10、SpamAssassin 0.1（門檻 −5），
+> `SPF_PASS` ＋ `DKIM_VALID` ＋ `DKIM_VALID_AU` ＋ `DKIM_VALID_EF` 皆命中，
+> 即 DKIM 已用 `d=uknow.com.tw` 簽名並與 `From`／envelope-from 雙向對齊。
+>
+> 留這條紀錄是因為結論不在「缺了記錄」，而在**發現機制的缺口**：整件事是
+> 靠人去讀 zone 檔才浮上來的，沒有任何一層在監看。要記得的教訓是
+> **改寄件者之前先把 DNS 補齊**——順序顛倒的症狀是「改完之後所有人收不到
+> 驗證碼」，而且會被誤判成 Supabase 設錯。
 
 > ⚠️ 若該網域同時開了 **Cloudflare Email Routing**，它會自行接管 MX 並插入
 > 自己的 SPF——與 Google Workspace 併用時先確認 MX 仍指向 Google，
@@ -245,8 +258,63 @@ Auth logs 也乾淨，信照樣進垃圾桶。
    四個都要有值
 2. [Google Admin Toolbox CheckMX](https://toolbox.googleapps.com/apps/checkmx/)
    無紅字（Google 用自己的標準檢查自己的服務）
-3. 從 `admin@uknow.com.tw` 寄一封到 [mail-tester.com](https://www.mail-tester.com/)，
-   **SPF / DKIM / DMARC 三個都要 pass**
+3. 從 `admin@uknow.com.tw` 寄一封到 [mail-tester.com](https://www.mail-tester.com/)。
+   **別只看總分**——DMARC 只靠 SPF 也能過，DKIM 沒對齊時總分仍可能滿分。
+   展開 SpamAssassin 明細找這條：
+
+   > `DKIM_VALID_AU` — *valid DKIM signature from author's domain*
+
+   **有這條才代表 DKIM 對齊到 `uknow.com.tw`**（只有 `DKIM_VALID` 不夠，
+   Google 用預設 `*.gappssmtp.com` 金鑰簽時也會通過那條）。這是「耐用」
+   與「勉強及格」的分界：SPF 遇到使用者設自動轉寄就會失效，DKIM 不會
+
+4. **最後拿一封真實的 OTP 信重跑一次 mail-tester**。mail-tester 只驗到
+   「Google 用這個網域寄信」這一段，Supabase 產生的信件本體是另一段——
+   模板的 MIME 結構與字級只有真實信件測得出來（下表最後兩條就是這樣浮現的）
+
+明細裡的橘色負分**一條都不用處理**。判準是「可控 **且** 量級有意義」，
+兩個條件要同時成立；判垃圾信的門檻是 −5，下面全部加起來還不到 −0.3：
+
+| 規則 | 分 | 可控？ | 處置 |
+|---|---|---|---|
+| `DKIM_SIGNED` | −0.1 | — | 任何帶簽名的信都會觸發的基準線，已被 `DKIM_VALID*` 三條 **+0.3** 蓋過 |
+| `SPF_HELO_NONE` | −0.001 | ❌ | 講的是 **Google 出口主機**的 HELO 名稱沒有 SPF，不是我們的網域 |
+| `RCVD_IN_MSPIKE_H2` | −0.001 | ❌ | Google 出口 IP 的信譽評級（average，且在白名單內） |
+| `HTML_MESSAGE` | −0.001 | — | 模板本來就是 HTML |
+| `HTML_FONT_SIZE_HUGE` | −0.001 | ⚠️ | 來自 OTP 碼**刻意放大的字級**——那是 UX 要的，不要為了 0.001 改小 |
+| `MIME_HTML_ONLY` | −0.1 | ❌ | 見下方 |
+
+> ℹ️ **`MIME_HTML_ONLY` 在 Supabase 的模板體系下無法解。** 它建議附一份
+> `text/plain` 版本，但 GoTrue 的 Dashboard 模板只吃單一 HTML 內容，
+> 沒有純文字欄位、不產生 `multipart/alternative`。要控制整個 MIME 結構
+> 只能改走 **Send Email Hook** 自己實作寄送——為了 −0.1（門檻 −5）
+> 換掉整條寄信管道並不划算。**記錄成已知取捨，不是待辦。**
+
+黑名單區塊也會有一條橘的：**Hostkarma `Yellow listed`**。Hostkarma 的
+yellow 是「這個 IP 同時寄正常信與垃圾信」，專門用來標大型 webmail 的
+**共用出口 IP**——`209.85.x.x` 是 Google 的共用 IP，被 yellow 標記是
+預期狀態，Hostkarma 自己的定義也是「別封鎖、也別白名單」。要脫離
+共用 IP 名單只能買專用寄件 IP，量級完全不成比例。真正的黑名單
+（Spamhaus SBL/PBL 等）沒中——若中了 SpamAssassin 會觸發 `RCVD_IN_SBL`
+之類的重分規則，而明細裡一條都沒有。
+
+> ⚠️ **mail-tester 的中文界面在黑名單區塊會把「未列入」誤譯成「列入」**，
+> 看起來像中了一排黑名單。判斷看**顏色與區塊標題**（綠勾＋「不在黑名單中」
+> ＝乾淨），或直接把介面切成英文。
+
+**「全部綠燈」不是目標，也做不到。** 剩下的橘燈分兩類，都不該追：
+
+- **不可控**：Hostkarma yellow、`SPF_HELO_NONE`、`RCVD_IN_MSPIKE_H2`
+  是 Google 共用基礎設施；`MIME_HTML_ONLY` 受限於 GoTrue 模板；
+  `DKIM_SIGNED` 對每封簽名信都會觸發（不簽才不會，那更糟）
+- **可控但改了更糟**：`List-Unsubscribe` 是給大量行銷信的退訂標頭，
+  加到驗證碼信上等於暗示使用者可以退訂安全通知；`HTML_FONT_SIZE_HUGE`
+  來自刻意放大的 OTP 字級，改小是拿 UX 換 0.001 分
+
+**mail-tester 的建議是針對大量行銷信調校的**，其中幾條套到 transactional
+信上是反向建議。判準回到那四項驗證機制：**SPF pass、DKIM valid 且
+`DKIM_VALID_AU`（對齊自家網域）、DMARC pass、不在真黑名單** ——
+這四項全綠就是完成，總分 0.1 對門檻 −5 已有近 50 倍餘裕。
 4. 最後看一封**真實的**驗證碼信的 `Authentication-Results` 標頭
    （收信方用 **Outlook 或 Yahoo**，不要用 Gmail——Google 寄給 Google
    走內部路由會放寬，可能照樣進收件匣，把問題遮掉）
