@@ -10,6 +10,7 @@ import { termsOfServiceContent } from '../content/termsOfService';
 import { listingPlansContent } from '../content/listingPlans';
 import { businessManualContent } from '../content/businessManual';
 import { participationContractContent } from '../content/participationContract';
+import { referralRewardRulesContent } from '../content/referralRewardRules';
 
 export function TermsOfServicePage() {
   return <MarkdownContent content={termsOfServiceContent} title="服務條款" />;
@@ -25,4 +26,8 @@ export function BusinessManualPage() {
 
 export function ParticipationContractPage() {
   return <MarkdownContent content={participationContractContent} title="參加契約書" />;
+}
+
+export function ReferralRewardRulesPage() {
+  return <MarkdownContent content={referralRewardRulesContent} title="推薦獎勵規則" />;
 }

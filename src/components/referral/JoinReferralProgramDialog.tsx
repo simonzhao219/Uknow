@@ -126,13 +126,13 @@ export function JoinReferralProgramDialog({
                     {/* leading-relaxed 讓換行後的行距不擠；每個文件連結各自
                         whitespace-nowrap + inline-block，保證「事業手冊」「參加契約書」
                         這種專有名詞永遠整組不斷字。整句仍可換行，但只會在
-                        「我已詳閱並同意 / 手冊 / 和 / 契約書」這些完整詞塊之間斷，
+                        「我已閱讀並同意 / 手冊 / 和 / 契約書」這些完整詞塊之間斷，
                         不會再把一兩個字（冊、書）擠到下一行造成排版怪異。 */}
                     <Label
                       htmlFor="terms"
                       className="text-sm cursor-pointer flex-1 leading-relaxed"
                     >
-                      <span className="whitespace-nowrap">我已詳閱並同意</span>
+                      <span className="whitespace-nowrap">我已閱讀並同意</span>
                       <LegalDialog
                         triggerLabel="事業手冊"
                         title="事業手冊"

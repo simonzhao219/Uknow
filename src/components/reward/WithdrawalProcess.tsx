@@ -23,7 +23,7 @@ import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import type { IdPhotosResponse } from '@contract';
 import { useNotification } from '../notifications/NotificationContext';
 import { LegalDialog } from '../LegalDialog';
-import { businessManualContent } from '../../content/businessManual';
+import { referralRewardRulesContent } from '../../content/referralRewardRules';
 import { FieldError, getInputErrorClass } from '../../utils/formHelpers';
 import { TAIWAN_BANKS } from '../../utils/constants';
 import { useImeComposition } from '../../hooks/useImeComposition';
@@ -277,7 +277,10 @@ export function WithdrawalProcess({
     }
 
     if (!agreeToTerms) {
-      newErrors.agreeToTerms = '請閱讀並同意服務條款和隱私政策';
+      // 訊息必須點名這個勾選框實際連的那份文件。原文寫「服務條款和隱私政策」——
+      // 服務條款不是這裡連的（那是註冊關卡），隱私政策全站根本不存在，等於
+      // 叫使用者去讀兩份他點不到的東西。
+      newErrors.agreeToTerms = '請閱讀並同意推薦獎勵規則';
     }
 
     setErrors(newErrors);
@@ -847,12 +850,17 @@ export function WithdrawalProcess({
                       已經填了銀行帳號、身分證字號、上傳了照片，而這些全在元件本地
                       useState（沒有草稿持久化）。換頁會卸載表單、把它們清成空白
                       （本次修的 bug）。彈窗讓表單留在底下，讀完關掉即可續填。 */}
+                  {/* 掛推薦獎勵規則而非事業手冊：本頁強制執行的三個數字——最低 1,000 點
+                      （MIN_WITHDRAWAL）、每次 15 點手續費（WITHDRAWAL_FEE）、每日上限
+                      8,000 點（DAILY_WITHDRAWAL_LIMIT）——只有推薦獎勵規則第六條逐條寫齊。
+                      事業手冊 §8-2 沒有每日上限，且把手續費寫成「每筆匯費 15 元」（從匯款
+                      金額扣），與本頁「從點數扣 15 點」的算法不符，會員照它算不出畫面數字。 */}
                   <LegalDialog
-                    triggerLabel="事業手冊"
-                    title="事業手冊"
-                    content={businessManualContent}
+                    triggerLabel="推薦獎勵規則"
+                    title="推薦獎勵規則"
+                    content={referralRewardRulesContent}
                     triggerClassName="text-blue-600 underline mx-1"
-                    triggerTestId="withdrawal-manual-link"
+                    triggerTestId="withdrawal-rules-link"
                   />
                 </Label>
               </div>

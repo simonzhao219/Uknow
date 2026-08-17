@@ -87,6 +87,10 @@ const ParticipationContractPage = lazyNamed(
   () => import('./components/ContentPages'),
   'ParticipationContractPage',
 );
+const ReferralRewardRulesPage = lazyNamed(
+  () => import('./components/ContentPages'),
+  'ReferralRewardRulesPage',
+);
 
 function RouteLoader() {
   return (
@@ -422,13 +426,12 @@ function AppContent() {
                     <Route path="/listing-plans" element={<ListingPlansPage />} />
                     <Route path="/business-manual" element={<BusinessManualPage />} />
                     <Route path="/participation-contract" element={<ParticipationContractPage />} />
-                    {/* 舊網址轉址：這兩份文件 2026-08 由「推廣獎勵規章／契約書」換成
-                        向公平會報備的「事業手冊／傳銷商參加契約書」，slug 一併正名。
-                        站外既有連結（LINE 分享、書籤）不該因此變 404。 */}
-                    <Route
-                      path="/referral-reward-rules"
-                      element={<Navigate to="/business-manual" replace />}
-                    />
+                    {/* 推薦獎勵規則是對外的獎勵說明頁（頁尾快速連結與提領同意款都指它），
+                        與簽名關卡的事業手冊是不同讀者的不同文件——前者給還在瀏覽的訪客，
+                        後者是傳銷商契約。2026-08 一度誤把這條 slug 轉去事業手冊，已還原。 */}
+                    <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />
+                    {/* 舊網址轉址：推廣獎勵契約書已由向公平會報備的「傳銷商參加契約書」
+                        取代，站外既有連結（LINE 分享、書籤）不該因此變 404。 */}
                     <Route
                       path="/referral-reward-contract"
                       element={<Navigate to="/participation-contract" replace />}
