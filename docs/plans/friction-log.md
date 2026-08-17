@@ -1954,6 +1954,67 @@ SPF/DKIM/MX 的存在性,難處在於它驗的是**外部 DNS 狀態**、不隨 
 判準)。依上一則的判準 1,擋不到就要說明為什麼——這裡的理由是**受管物件
 不在 repo 內**,先記為待裁決,不假裝已關閉。
 
-順帶浮現的同類掃描題(尚未做):專案裡還有哪些路徑是「失敗靜默、且回饋
-管道不在我們手上」?候選是 PayUni 的 `notify` 回調失敗、對帳排程、
-以及前端 lazy chunk 載入失敗——都與這次同形。
+順帶浮現的同類掃描題**已於同日執行完畢**,結果見下一則。
+
+## 2026-08-17｜同類掃描｜金流失敗出口沒有告警判準,而 TDD 鎖對 Deno 改動是空訊號
+
+上一則留的掃描題的執行結果。掃法:`console.error`(47 處)逐一問三個問題
+——沒有使用者在看?有持久後果?既有機制不會回報?——並與 `logSystemAlert`
+(4 處)對照。
+
+**回饋管道本身是存在的**(`system_alerts` + `logSystemAlert` + admin
+SystemAlerts 頁,兩層測試都有),所以這次不是缺機制。結果:
+
+| 路徑 | 判定 |
+|---|---|
+| `resolveOrderFromPayUni` 的 `order_not_found` / `amount_mismatch` / `missing_mer_trade_no` | 缺告警 → 本次補(`93f8c67`) |
+| notify 驗章/解密失敗 | 缺告警 → 本次補,**去重版** |
+| reconcile heal pass 失敗 | 缺告警,且端點仍回 `success: true` 對排程說謊 → **記債**,見下 |
+| 前端 lazy chunk 載入失敗 | **已有閘門**,不需處理 |
+
+**根因不是「誰忘了加」,是判準從來不存在。** 證據在同一個函式的視野內:
+`resolveOrderFromPayUni` 四個失敗出口,只有 RPC 失敗那個有告警(還刻意標
+`error` 並寫了理由),另外三個從第一天就沒有——有告警的那個是「當下正在修
+的那個」。這與 PR #119「自我糾正只綁定當下 diff」同形,差別是這次連不一致
+都在同一個函式裡,只是沒有任何一層在看。故修法除了補告警,也把三條判準
+寫進 `logSystemAlert` 定義處(否則就是 08-14「結論寫進註解 = 沒有閘門」的
+重演——但寫在被呼叫者旁邊,比寫在某個元件的 docblock 裡命中率高)。
+
+**掃描的一半價值在「已經有閘門」那一格**:lazy chunk 那條本來列為候選,
+查下去發現 `lazyWithRetry.ts` 有重試+一次整頁重載+拋給 ErrorBoundary
+(使用者看得到 = 使用者就是回饋管道),而 2026-08-07 少上傳 chunk 的事故
+已由 `scripts/check-deployed-assets.py` + `deploy-smoke.yml` 把關,該
+workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同類掃描要能
+回報「這條不必修」,否則它會退化成重複造輪子的清單。**
+
+### 附帶發現(比原本三個缺口更值得記):TDD 鎖對純 Deno 改動是空訊號
+
+`scripts/tdd-unlock.sh` 的解鎖條件是 `npm run check` 全綠,而
+`npm run check` = `biome + tsc + vitest + knip`,**一行 deno 都沒有**
+(`check:deno` 只掛在 `check:full`)。vitest 設定又刻意不 include
+`supabase/**`。所以**純 Deno 改動可以在零 Deno 型別檢查、零 Deno 測試的
+情況下解鎖**,而該腳本自己的註解寫著「這讓『宣稱綠燈』和『真的綠燈』
+之間沒有縫隙」。
+
+**這不是容器的怪癖,任何機器上都成立**(本次容器 jsr.io 被 egress 封鎖只是
+讓它更明顯)。形狀與本日主題完全相同:**一道回報綠燈、卻從未看過它該守的
+東西的閘門**——比沒有閘門更貴,因為它會讓人停止懷疑。
+
+處置:本次改用「分兩次 push,由 CI 的 `api-tests` 軌提供紅→綠證據」繞過
+(紅燈 `3d0988f` 4 failed / 271 passed、全部是 `Actual 0 / Expected 1`;
+綠燈 `93f8c67`)。**繞過不是修好**——建議的修法是讓 `tdd-unlock.sh` 在
+`supabase/functions/**` 有改動時一併跑 Deno 閘門,並沿用 pre-commit 既有的
+「相依解析不到就降為警告」降級路徑(那段邏輯已經寫好,直接複用)。
+未在本次一併做的理由:改的是框架自身的解鎖條件,而本容器只驗得到降級
+那一半路徑,無法依 08-14 判準 2「新閘門要先證明它會紅」完整驗證。
+
+### 記債清單(下次框架整併)
+
+1. reconcile 的 heal pass 告警 + 讓 `success: true` 不再對排程說謊。
+   要測「RPC 自己失敗」需 DDL 級 fault injection(drop/revoke
+   `complete_paid_pending_orders`),且改動的是錢的安全網的回應契約,
+   弄錯會變成每小時假紅或假綠——不在跑不了測試的環境動。
+2. 「金流失敗出口不得只寫 `console.error`」的機械化閘門。判準已成文,
+   但成文不等於把關(這正是本則的主題)。
+3. `tdd-unlock.sh` 的 Deno 缺口(見上)。**三項裡這項優先**:它影響的不是
+   某個功能,是所有 Deno 改動的證據鏈可信度。
