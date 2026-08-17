@@ -6,7 +6,8 @@
 > 全文採 Q&A：每個問題都是團隊裡真實會出現的疑問，先想一下你的答案，
 > 再看規範怎麼回答。結構分三部分：Part 1 原則 Q&A＋單頁速查表（給所有人）、
 > Part 2 官方文件怎麼說（規範依據，附英文原文）、Part 3 我們的範例專案
-> 「EP實作」怎麼做到（落地參考與未來優化）。
+> 「EP實作」怎麼做到（落地參考、未來優化，以及各階段對應哪一種
+> Engineering 學科——見 Q19）。
 >
 > 不熟的名詞（hook、subagent、Plan Mode…）見文末〈附錄：名詞速查〉。
 
@@ -43,39 +44,66 @@ enforced，不再靠提醒（**準則 7**）。
 最便宜的階段——改一份計畫，比改一坨已經寫出來的程式碼便宜得多。
 「寫一大坨就上 PR」的病因通常不是下游沒擋，是上游沒有這個計畫審查點。
 
-**Q4. 那 PR 應該多大？**
+**Q4. 我怎麼知道 spec／計畫寫得夠清楚？**
+
+官方對「好的 spec」給過結構判準：自足（點名涉及的檔案與介面）、寫明
+**out of scope**、並以一個端到端的驗證步驟收尾（原文見 Part 2 Q4'）。
+落到日常，用這四個測試自檢：
+
+1. **可驗證性測試（最硬的一條）**：spec 的每句話，能不能翻成一個「現在
+   會紅、做完會綠」的測試？寫不出失敗案例的句子（「體驗要流暢」「要
+   安全」）就是不清楚的句子。TDD 的紅燈其實就是 spec 清楚度的試金石——
+   紅燈寫不出來，先回去改 spec，不是開始寫碼。
+2. **Fresh context 測試**：開一個全新 session（或找一個沒參與討論的人），
+   只給 spec，請它複述要做什麼、列出測試案例清單。複述和你的意圖一致
+   就夠清楚。EP實作把這件事制度化了：三段式流程的每一段都能在全新
+   session 執行，狀態全在 `docs/plans/<slug>/` 檔案裡，plan.md 因此天生
+   必須通過這個測試。
+3. **訪談窮盡測試（事前）**：讓 AI 先訪談你再寫 spec（官方作法，見
+   Part 2 Q4'）。**AI 問到你答不出來的問題，就是 spec 的洞**；連續幾輪
+   問不出新問題，才算收斂。
+4. **審查殘留測試（事後指標）**：AI 審查產出裡「需人工裁決」與「需求
+   對不到規格書」的條目數量，以及實作終審的「偏離規劃說明」常常不是
+   「無」——這兩個都是 spec 不清的落後指標，可以持續追蹤。
+
+補一個最常漏的維度：spec 除了說「要做什麼」，還要明寫 **out of scope**
+與錯誤／邊界路徑（EP實作的 UIUX 審查硬規則「三態完備：空／錯誤／載入」
+就是這個的落地）。範圍沒寫清楚時 AI 不會停下來問，它會自己補——那是
+「寫一大坨」的另一個來源。
+
+**Q5. 那 PR 應該多大？**
 
 同一個判準：**一句話描述不了，就拆**。一個 PR 一個邏輯功能（**準則 2**）。
 審得動的 PR 才會有真審查；巨型 PR 得到的只會是橡皮圖章——你其實是在
 懲罰認真審你 code 的同事。
 
-**Q5. AI 會不會為了讓測試變綠，偷偷去改測試？**
+**Q6. AI 會不會為了讓測試變綠，偷偷去改測試？**
 
 會，這是官方點名的已知行為。防法不是叮嚀它，是走 TDD 的順序（**準則 3**）：
 先讓 AI 寫**會失敗**的測試 → **確認真的紅**（防「本來就會過」的假測試）→
 **把紅燈測試 commit 起來** → 再實作到綠。紅燈 commit 是證據：之後 AI 若動了
 測試，diff 一眼就看得出來。
 
-**Q6. 我跑過測試都綠了，PR 描述寫「測試都過」可以嗎？**
+**Q7. 我跑過測試都綠了，PR 描述寫「測試都過」可以嗎？**
 
 不夠。「測試都過」是**聲稱**，規範採信的是**證據**：測試輸出或 CI 連結、
 覆蓋率變化、（UI 改動）截圖（**準則 4**）。這不是刁難——審查者看證據比
 自己重跑驗證快，而且證據會留在 PR 上成為紀錄。官方的說法：「Have Claude
-show evidence rather than asserting success」（見 Part 2 Q8）。
+show evidence rather than asserting success」（見 Part 2 Q8'）。
 
 ---
 
 ### 給 reviewer（我們每個專案有兩位）
 
-**Q7. AI 都會自我審查了，人還需要 review 嗎？**
+**Q8. AI 都會自我審查了，人還需要 review 嗎？**
 
 需要，但角色變了：**AI 找碴，人裁決**（**準則 5**）。AI 審查便宜、可以
 大量做、不會累——但它從不核准（官方連自家 Code Review 產品都設計成
-「從不 approve、從不擋合併」，見 Part 2 Q9）。人的裁決不能省，而且
+「從不 approve、從不擋合併」，見 Part 2 Q9'）。人的裁決不能省，而且
 **人不對 AI 沒看過的 diff 簽名**：每個 PR 都應先過 AI 審查、結論附在
 PR 上，reviewer 拿著 AI 的發現做判斷，而不是空手在巨型 diff 裡找蟲。
 
-**Q8. 我收到一個沒附證據、或大到審不動的 PR，怎麼辦？**
+**Q9. 我收到一個沒附證據、或大到審不動的 PR，怎麼辦？**
 
 你有兩個正當動作，都不是硬著頭皮審（**準則 6**）：
 
@@ -85,24 +113,24 @@ PR 上，reviewer 拿著 AI 的發現做判斷，而不是空手在巨型 diff �
 
 橡皮圖章的根源是「暫停審查沒有正當性」；這條就是給你的正當性。
 
-**Q9. AI 審查報了一堆問題，每條都要修嗎？**
+**Q10. AI 審查報了一堆問題，每條都要修嗎？**
 
 不用，而且官方明確警告過：被要求找問題的 AI**一定找得出問題**，照單全收
 會走向過度工程（多餘的抽象層、防禦不可能發生的情況）。只處理影響
-**正確性與明訂需求**的發現，其餘視為可選建議（見 Part 2 Q9 的原文）。
+**正確性與明訂需求**的發現，其餘視為可選建議（見 Part 2 Q9' 的原文）。
 
 ---
 
 ### 給維護流程的人
 
-**Q10. 覆蓋率有門檻了，為什麼測試還是越來越少？**
+**Q11. 覆蓋率有門檻了，為什麼測試還是越來越少？**
 
 因為門檻的**參數**可能被悄悄調低——閘門還在，門變寬了。規範：品質指標
 （覆蓋率、bundle 大小…）**只准向好**，門檻由 CI 持有；要調低必須在 PR
 寫明理由給人裁決（**準則 9**，這種機制叫 ratchet——像棘輪齒只朝一個
 方向轉）。
 
-**Q11. 我們加了一堆自動檢查，這樣就安全了吧？**
+**Q12. 我們加了一堆自動檢查，這樣就安全了吧？**
 
 先問一個問題：**你的檢查空轉時，看起來像什麼？** 大多數時候答案是
 「像全部通過」。所以新增任何檢查都要做 **mutation testing**：故意把它
@@ -111,13 +139,13 @@ PR 上，reviewer 拿著 AI 的發現做判斷，而不是空手在巨型 diff �
 抓出 2 條「看起來在跑、實際空轉」的檢查——這層若不存在，那兩個假檢查
 會永遠綠著（見 Part 3）。
 
-**Q12. 又有 bug 漏到線上了。修完就結案？**
+**Q13. 又有 bug 漏到線上了。修完就結案？**
 
 不行，還差兩步（**準則 11**）：(a) **同類掃描**——同一個病灶通常不只一處，
 grep 全庫找兄弟；(b) **防線回填**——回答「為什麼既有的測試／CI／hook
 沒攔到它」，把答案變成新防線。這讓每次漏網自動強化系統，而不是只修這一次。
 
-**Q13. AI 越用越笨、同一個錯講了三次還在犯，怎麼辦？**
+**Q14. AI 越用越笨、同一個錯講了三次還在犯，怎麼辦？**
 
 這通常不是模型問題，是 **context（AI 的工作記憶）塞滿了失敗嘗試**。
 規範（**準則 10**）：換任務就清空（`/clear`）；同一錯誤糾正兩次還錯，
@@ -133,17 +161,17 @@ grep 全庫找兄弟；(b) **防線回填**——回答「為什麼既有的測�
 
 | # | 準則 | 出處 Q |
 |---|---|---|
-| 1 | 計畫先行：範圍不確定／跨多檔／不熟的改動，先出計畫給人審；一句話能描述的 diff 直接做 | Q3 |
-| 2 | 小步交付：PR 一句話描述不了就拆 | Q4 |
-| 3 | 測試先紅後綠：紅燈測試先 commit 當證據 | Q5 |
-| 4 | PR 必附證據：測試輸出／CI 連結；只寫「測試都過」＝未完成 | Q6 |
-| 5 | AI 找碴＋人裁決：AI 審查結論附在 PR，兩位 reviewer 裁決；人不對 AI 沒看過的 diff 簽名 | Q7 |
-| 6 | 補證據再審：缺證據先請 AI 補、審不動要求拆分——不硬審 | Q8 |
+| 1 | 計畫先行：範圍不確定／跨多檔／不熟的改動，先出計畫給人審；一句話能描述的 diff 直接做。Spec 清楚度用四個測試自檢 | Q3、Q4 |
+| 2 | 小步交付：PR 一句話描述不了就拆 | Q5 |
+| 3 | 測試先紅後綠：紅燈測試先 commit 當證據 | Q6 |
+| 4 | PR 必附證據：測試輸出／CI 連結；只寫「測試都過」＝未完成 | Q7 |
+| 5 | AI 找碴＋人裁決：AI 審查結論附在 PR，兩位 reviewer 裁決；人不對 AI 沒看過的 diff 簽名 | Q8 |
+| 6 | 補證據再審：缺證據先請 AI 補、審不動要求拆分——不硬審 | Q9 |
 | 7 | 必守規則機械化：被違反第二次就升級成 hook／CI 檢查 | Q2 |
-| 8 | 閘門也要驗證：新檢查要證明「改壞它會紅」 | Q11 |
-| 9 | 指標只准向好：門檻由 CI 持有，調低要書面理由 | Q10 |
-| 10 | Context 衛生：換任務就清空；糾正兩次就重開；CLAUDE.md ≤200 行 | Q13 |
-| 11 | 防線回填：漏網 bug 必答「為什麼沒攔到」並補防線＋同類掃描 | Q12 |
+| 8 | 閘門也要驗證：新檢查要證明「改壞它會紅」 | Q12 |
+| 9 | 指標只准向好：門檻由 CI 持有，調低要書面理由 | Q11 |
+| 10 | Context 衛生：換任務就清空；糾正兩次就重開；CLAUDE.md ≤200 行 | Q14 |
+| 11 | 防線回填：漏網 bug 必答「為什麼沒攔到」並補防線＋同類掃描 | Q13 |
 
 | 痛點 | 對應準則 |
 |---|---|
@@ -192,6 +220,23 @@ Explore → Plan → Implement → Commit，用 Plan Mode 把探索與實作分�
 > being modified. If you could describe the diff in one sentence, skip the
 > plan." — 同上
 
+**Q4'. 一份好的 spec 長什麼樣？**（支撐準則 1、Q4）
+
+> "The most useful specs are self-contained: they name the files and
+> interfaces involved, state what is out of scope, and end with an
+> end-to-end verification step that proves the feature works. Time spent
+> making the spec precise pays off more than time spent watching the
+> implementation."
+> — [Best practices › Let Claude interview you](https://code.claude.com/docs/en/best-practices)
+
+官方也建議「讓 AI 先訪談你」再寫 spec，且寫完換乾淨 session 執行：
+
+> "Claude asks about things you might not have considered yet, including
+> technical implementation, UI/UX, edge cases, and tradeoffs." ...
+> "Once the spec is complete, start a fresh session to execute it. The new
+> session has clean context focused entirely on implementation, and you have
+> a written spec to reference." — 同上
+
 **Q5'. 官方的 TDD 怎麼做？**（支撐準則 3）〔部落格〕
 
 > "Ask Claude to write tests based on expected input/output pairs. Be
@@ -202,7 +247,7 @@ Explore → Plan → Implement → Commit，用 Plan Mode 把探索與實作分�
 
 > "Ask Claude to commit the tests when it's satisfied with them." — 同上
 
-**Q9'. AI 可以核准 PR 嗎？審查者需要什麼條件？**（支撐準則 5、6、Q9）
+**Q9'. AI 可以核准 PR 嗎？審查者需要什麼條件？**（支撐準則 5、6、Q10）
 
 不行——官方自家的 [Code Review](https://code.claude.com/docs/en/code-review)
 產品（多個特化 AI 並行審 PR）把這條寫死在設計裡：
@@ -365,6 +410,30 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的準則在�
 推行方式：找 1–2 個種子團隊照 L0→L1 跑出成功案例再擴散；指定 DRI
 （明確負責人）維護組織層共用資產；每季回訪剪枝——規則太多會互相稀釋，
 這點對本規範自身同樣成立。
+
+**Q19. 我們每個階段做的到底是哪一種 Engineering？**
+
+2026 的概念地圖把 AI 開發拆成五層（層 0 方法論／層 1 輸入／層 2 環境／
+層 3 控制／層 4 回饋）。對照我們實際在做的事：
+
+| 我們做的事 | 學科 | 層 |
+|---|---|---|
+| 訪談需求、寫 plan.md、對齊規格書、階段切分 | **Spec Engineering** | 1 輸入 |
+| 寫 CLAUDE.md、rules、skill 與 reviewer agent 的指示措辭 | **Prompt Engineering**（措辭）＋**Context Engineering**（何時載入什麼：path-scoped rules、context budget、探查隔離、輸出折疊） | 1 |
+| friction log、auto-memory 紀律、「決策寫進 git」 | **Memory Engineering** | 1 |
+| hooks、permissions、pre-commit、CI 軌道、TDD 鎖、`disable-model-invocation` | **Harness Engineering**（Tool／Permission／Sandbox 都是其子項） | 2 環境 |
+| TDD 紅→綠、統一檢查閘門、四視角審查、coverage ratchet、spec drift 檢查、mutation testing | **Evaluation Engineering** 的 verifier 建設；紅綠循環同時是 **inner loop** | 3＋4 |
+| hook 決策記錄、誤擋率／命中率彙總 | **Observability Engineering** | 4 回饋 |
+| PR 事件訂閱、排程自查、未來的自動診斷迴路 | **Loop Engineering**（outer loop：觸發器、停止規則、升級路徑） | 3 控制 |
+
+一句話：**規劃＝Spec Engineering，日常指示＝Prompt／Context Engineering，
+守衛體系＝Harness Engineering，紅綠與審查＝Evaluation＋inner loop，
+metrics＝Observability，自動觸發＝outer loop 的 Loop Engineering。**
+
+實務含義：多數團隊（包含 EP實作）在層 1–2 最成熟，層 3–4 的外迴路最弱。
+**這不是缺點，是順序**——Q14' 的依賴關係說得很清楚：沒有 Observability
+就沒有 Evaluation 基準，沒有基準就不該放手做 Loop。想知道自己該補哪一層，
+先問「這一層我量得到嗎」。
 
 ---
 
