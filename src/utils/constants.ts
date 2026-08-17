@@ -27,6 +27,11 @@ export const ALLOWED_PHOTO_FORMATS = ['image/jpeg', 'image/png', 'image/webp']; 
 export const LINE_OFFICIAL_ACCOUNT_HANDLE = '@uknow';
 export const LINE_OFFICIAL_ACCOUNT_URL = `https://line.me/R/ti/p/${LINE_OFFICIAL_ACCOUNT_HANDLE}`;
 
+// 官方客服信箱——與 LINE 同理，位址只在這裡寫死一次，顯示處一律引用；
+// mailto: 也一併在這裡組好，避免各處自己拼接時漏字或帶上多餘參數。
+export const OFFICIAL_EMAIL = 'admin@uknow.com.tw';
+export const OFFICIAL_EMAIL_URL = `mailto:${OFFICIAL_EMAIL}`;
+
 // ============================================
 // 服務相關常數
 // ============================================
