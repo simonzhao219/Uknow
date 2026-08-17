@@ -194,18 +194,48 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 
 **DNS（Cloudflare，做一次即可，非逐環境）**
 
-Google Workspace 收信正常**不代表**這三項齊全——DKIM 預設是關的，
-要自己去產。缺了信不會退，只會安靜掉進垃圾桶。
+**Dashboard 設對了不代表信到得了。** SMTP 那頁只決定「用誰的伺服器寄」，
+收信方要不要採信是 DNS 說的。這四筆缺任何一筆，Supabase 側全綠、
+Auth logs 也乾淨，信照樣進垃圾桶。
 
 | 記錄 | 值 | 怎麼確認 |
 |---|---|---|
-| SPF（`uknow.com.tw` TXT） | 需含 `include:_spf.google.com` | **全網域只能有一筆 SPF**；已有第三方就併進同一筆，不要新增第二筆（兩筆＝SPF 直接失效） |
-| DKIM（`google._domainkey` TXT） | Admin console → **應用程式 → Google Workspace → Gmail → 驗證電子郵件** 產生後貼上 | 產完要回 Admin console 按**開始驗證**，只加 DNS 不算完成 |
-| DMARC（`_dmarc` TXT） | `v=DMARC1; p=none; rua=mailto:admin@uknow.com.tw` | 先用 `p=none` 收報告，確認 SPF/DKIM 都過再考慮收緊 |
+| SPF（`uknow.com.tw` TXT） | `v=spf1 include:_spf.google.com ~all` | **全網域只能有一筆 SPF**；已有第三方就併進同一筆加 `include`，不要新增第二筆（兩筆＝SPF 直接失效） |
+| DKIM（`google._domainkey` TXT） | Admin console → **應用程式 → Google Workspace → Gmail → 驗證電子郵件**，金鑰長度 2048，產生後貼上 | 產完要回 Admin console 按**開始驗證**，只加 DNS 不算完成 |
+| DMARC（`_dmarc` TXT） | `v=DMARC1; p=quarantine; rua=mailto:admin@uknow.com.tw` | policy 比 `p=none` 嚴時，SPF/DKIM 不是建議而是**前提**；`rua` 要指向自己收得到的信箱 |
+| MX（`uknow.com.tw`） | `smtp.google.com`，priority `1` | 與寄信無關，但**沒有 MX 就收不到退信通知**——見下方 |
+
+四筆都要 **DNS only**（Cloudflare 的雲要灰色）。MX 與 TXT 本來就不能走 proxy。
+
+> ⚠️ **沒有 MX 的真正代價是失去回饋管道，不是收不到信。** 寄信透過
+> `smtp.gmail.com` 不查 MX，所以缺 MX 不會讓任何一封信寄不出去。但退信
+> 通知（bounce）是寄回寄件者信箱的——沒有 MX，這些通知全部蒸發。於是
+> 「使用者收不到驗證碼」不會產生任何可觀測訊號：前端只是停在等待輸入、
+> Auth logs 顯示寄送成功、寄件信箱收不到退信。**「沒有人反映問題」在這個
+> 狀態下不是證據**，因為唯一會反映問題的那條線被斷掉了。
+
+> ⚠️ 2026-08-17 盤點：這四筆當時**一筆都不存在**（僅有 `_dmarc` 與一筆
+> `google-site-verification`），而正式站的 custom SMTP 早已啟用、寄件者
+> 已是 `admin@uknow.com.tw`。也就是說 DMARC 一直在 fail，而上面說的
+> 三重靜默讓它完全不可見。**改寄件者之前先把 DNS 補齊**，順序顛倒的症狀
+> 是「改完之後所有人收不到驗證碼」，且會被誤判成 Supabase 設錯。
 
 > ⚠️ 若該網域同時開了 **Cloudflare Email Routing**，它會自行接管 MX 並插入
 > 自己的 SPF——與 Google Workspace 併用時先確認 MX 仍指向 Google，
 > 且 SPF 沒有被改寫成只認 Cloudflare。
+
+**驗證方式**（Supabase 那頁按 Save 不算驗證）：
+
+1. `nslookup -type=MX uknow.com.tw`、`-type=TXT uknow.com.tw`、
+   `-type=TXT google._domainkey.uknow.com.tw`、`-type=TXT _dmarc.uknow.com.tw`
+   四個都要有值
+2. [Google Admin Toolbox CheckMX](https://toolbox.googleapps.com/apps/checkmx/)
+   無紅字（Google 用自己的標準檢查自己的服務）
+3. 從 `admin@uknow.com.tw` 寄一封到 [mail-tester.com](https://www.mail-tester.com/)，
+   **SPF / DKIM / DMARC 三個都要 pass**
+4. 最後看一封**真實的**驗證碼信的 `Authentication-Results` 標頭
+   （收信方用 **Outlook 或 Yahoo**，不要用 Gmail——Google 寄給 Google
+   走內部路由會放寬，可能照樣進收件匣，把問題遮掉）
 
 **寄送額度**：`smtp.gmail.com` 在 Google Workspace 是**每日 2,000 封**。
 撞到上限時改走 SMTP relay：Admin console → **應用程式 → Google Workspace →
@@ -368,8 +398,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 1：`api` 已重新部署，變數生效
 - [ ] 步驟 2-1：Custom SMTP 已啟用，寄件者為 `admin@uknow.com.tw`
 - [ ] 步驟 2-1：**Auth 的寄信限流已從預設 30 封／小時調高**（掛上 SMTP 後才准調）
-- [ ] 步驟 2-1（全網域一次）：SPF 含 `_spf.google.com` 且只有一筆、DKIM 已在
-      Admin console 按下「開始驗證」、DMARC 已建立
+- [ ] 步驟 2-1（全網域一次）：SPF / DKIM / DMARC / MX 四筆齊全，且
+      mail-tester 上 SPF、DKIM、DMARC **三個都 pass**（不是「Supabase 存檔成功」）
 - [ ] 步驟 2-2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
