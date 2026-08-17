@@ -96,12 +96,21 @@ fault injection(drop/revoke `complete_paid_pending_orders`)。本 session
 
 ## 5. 修法與驗證
 
-- 修了什麼(綠燈 commit):待填
+- 修了什麼(綠燈 commit):`api/index.ts` 純新增 —— 四個告警呼叫、
+  新的 `logSystemAlertOnce`(去重版)、以及寫在 `logSystemAlert` 定義處的
+  三條判準。不改控制流、不改任何回應形狀。
 - 為什麼這樣修是對的(對照根因):根因是「沒有判準」,所以修法除了補上
   四個告警,也把判準寫在 `logSystemAlert` 定義處——下一個加失敗出口的人
   在同一個視野內就看得到。**只補告警不寫判準,就是 08-14 那條
   「結論寫進註解 = 沒有閘門」的重演**;判準寫在函式旁是最小成本的改善,
   真正的閘門記債待裁決。
+
+**紅燈是因為正確的理由紅**(這一步不能跳過——本機跑不了測試時,
+「紅了」與「因為該紅的原因紅了」差別很大):四支全部是
+`AssertionError: Actual 0 / Expected 1`,即「期待一筆告警、實際零筆」,
+沒有語法錯或查詢錯,其餘 **271 支照樣綠**。這同時證實了幾件本機無法驗證
+的事:`context->>merTradeNo` 的 jsonb 過濾語法正確(回 0 筆而不是報錯)、
+`system_alerts` 的 delete 有權限、env 設定與 `app` 匯入都對。
 
 ### ⚠️ 驗證能力的誠實揭露
 
@@ -118,7 +127,9 @@ fault injection(drop/revoke `complete_paid_pending_orders`)。本 session
 先只推測試(該軌應紅),再推實作(該軌應綠)。兩次 run 的網址記在下方,
 車尾燈就是證據。
 
-- 紅燈 CI run:待填
+- 紅燈 CI run:`3d0988f` →
+  [run 32041943837](https://github.com/simonzhao219/Uknow/actions/runs/32041943837)
+  (`api-tests` job 95422900679)
 - 綠燈 CI run:待填
 
 ## 6. 防線回填

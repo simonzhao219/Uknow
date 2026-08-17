@@ -2077,6 +2077,24 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
 // 地方可查。跟 SQL 那邊的 log_system_alert() 是同一張表，只是這裡是
 // TypeScript 端自己失敗時用的——絕不能讓告警本身害呼叫端也失敗。
 // ============================================================
+// 判準:什麼情況該寫 system_alerts,什麼情況 console.error 就夠。
+//
+// 2026-08-17 盤點:logSystemAlert 只有 4 個呼叫點、console.error 有 47 個,
+// 而同一個函式(resolveOrderFromPayUni)的四個失敗出口只有一個有告警。
+// 缺的不是機制,是判準——沒有判準時新的失敗出口一律落到阻力最小的
+// console.error。三個條件**同時**成立就必須寫告警:
+//
+//   1. 沒有使用者在看 —— server-to-server、webhook、排程。使用者看得到
+//      錯誤且能重試時,使用者本身就是回饋管道,再寫告警只是噪音。
+//   2. 有持久後果 —— 錢、會籍、資料完整性。單一請求失敗而狀態沒變的不算。
+//   3. 既有機制不會回報 —— 不會退信、不會重試到成功、不會有人抱怨。
+//
+// 三條都成立卻只寫 console.error,就是 friction-log 2026-08-17
+// 「沒有人反映問題不構成證據」那條的形狀:Edge Function log 沒有人主動讀,
+// 於是故障可以長期存在而沒有任何症狀。
+//
+// ⚠️ 失敗出口在**驗證之前**(公開端點、還沒過簽章)時改用
+// logSystemAlertOnce——用這一支等於給未驗證端點開一條無上限寫入路徑。
 async function logSystemAlert(
   source: string,
   context: Record<string, unknown>,
@@ -2087,6 +2105,48 @@ async function logSystemAlert(
     await sb().from('system_alerts').insert({ source, severity, message, context });
   } catch (e) {
     console.error('[logSystemAlert] failed to persist alert', e);
+  }
+}
+
+/**
+ * 去重版:同 source + 同 reason 已有未解決告警時就不再寫。
+ *
+ * 給**未經驗證就能觸發**的失敗出口用(例如 notify 的驗章失敗——那一步在
+ * 簽章比對之前,任何人 POST 垃圾都會走到)。無條件寫入會讓公開端點變成
+ * 告警表的寫入管道,真實告警被洗掉——那正是告警機制自身的失效模式,
+ * 與「沒有告警」等價。
+ *
+ * 語意上去重也更正確:這類故障(金鑰設錯/輪替)會讓**每一筆**回調都失敗,
+ * 真正的訊號是「持續失敗」而不是「某一筆失敗」。一筆未解決的告警正好
+ * 表達這件事;人工解決後才會再開新的一筆。
+ *
+ * 範式取自 `complete_paid_pending_orders`(migration 20260716000007)的
+ * 「同訂單已有未解決告警就不重寫」。SELECT 與 INSERT 之間有競態,併發
+ * 爆量時可能多寫幾筆——與 Postgres 側那版同一個取捨:上限從「無上限」
+ * 降到「併發數」就達到目的了,不值得為此上鎖。
+ */
+async function logSystemAlertOnce(
+  source: string,
+  reason: string,
+  context: Record<string, unknown>,
+  message = 'edge function alert',
+  severity: 'info' | 'warning' | 'error' = 'warning',
+) {
+  try {
+    const { data: open } = await sb()
+      .from('system_alerts')
+      .select('id')
+      .eq('source', source)
+      .eq('context->>reason', reason)
+      .is('resolved_at', null)
+      .limit(1);
+    if (open && open.length > 0) return;
+
+    await sb()
+      .from('system_alerts')
+      .insert({ source, severity, message, context: { ...context, reason } });
+  } catch (e) {
+    console.error('[logSystemAlertOnce] failed to persist alert', e);
   }
 }
 
@@ -2153,6 +2213,14 @@ async function resolveOrderFromPayUni(
   const { Status, MerTradeNo, TradeNo } = data;
 
   if (!MerTradeNo) {
+    // 已過簽章驗證才會走到這裡,所以送出者是 PayUni(或持有金鑰者)——
+    // 不是攻擊面,不需去重。內容畸形屬整合異常:不直接損失,但沒有人會
+    // 主動發現,故 warning 級。
+    await logSystemAlert(
+      'resolveOrderFromPayUni',
+      { reason: 'missing_mer_trade_no', tradeNo: TradeNo ?? null, status: Status ?? null },
+      'notify 內容缺少 MerTradeNo,無法對應訂單',
+    );
     return { ok: false, message: 'missing MerTradeNo' };
   }
 
@@ -2183,6 +2251,20 @@ async function resolveOrderFromPayUni(
 
   if (!order) {
     await persistRawResponseBestEffort(MerTradeNo, data);
+    // PayUni 回報付款成功、我方卻沒有這筆訂單:錢已經收了。存檔(上一行)
+    // 讓資料留得住,但沒有任何流程會把它變成會籍——reconcile 掃的是**我方
+    // 的** pending 訂單,這筆不在裡面,永遠掃不到。只有人能處理。
+    await logSystemAlert(
+      'resolveOrderFromPayUni',
+      {
+        reason: 'order_not_found',
+        merTradeNo: MerTradeNo,
+        tradeNo: TradeNo ?? null,
+        tradeAmt: data.TradeAmt ?? null,
+      },
+      'PayUni 回報付款成功但找不到對應訂單——錢已收、會籍沒開,需人工介入',
+      'error',
+    );
     return { ok: false, message: 'order not found' };
   }
   if (order.status === 'completed') {
@@ -2192,6 +2274,22 @@ async function resolveOrderFromPayUni(
   // 金額驗證
   if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
     await persistRawResponseBestEffort(MerTradeNo, data);
+    // 訂單維持 pending,所以 reconcile 會掃到它——但 reconcile 的告警說的是
+    // 「這筆卡著」,不是「金額不符」。診斷若被錯位到下游,查的人會先懷疑
+    // webhook 沒送達。在事發點點名原因,省掉那一輪。
+    // 註:`complete_paid_pending_orders` 對同一情境已有 Postgres 側告警,
+    // 兩者 source 不同(那支是自癒 pass 掃到時記),不是重複。
+    await logSystemAlert(
+      'resolveOrderFromPayUni',
+      {
+        reason: 'amount_mismatch',
+        merTradeNo: MerTradeNo,
+        tradeAmt: data.TradeAmt,
+        expected: 1200,
+      },
+      'PayUni 回報金額與方案價不符,訂單維持 pending 待人工裁決',
+      'error',
+    );
     return { ok: false, message: 'amount mismatch' };
   }
 
@@ -2478,6 +2576,17 @@ app.post('/webhooks/payuni/notify', async (c) => {
   const decrypted = await decryptPayUniFormBody(body, config);
   if (!decrypted.ok) {
     console.error('[notify]', decrypted.message);
+    // 這一步在簽章比對**之前**——公開端點,任何人 POST 垃圾都會走到,
+    // 所以必須用去重版(理由見 logSystemAlertOnce)。值得告警的原因是
+    // 另一種情境:HashKey/IV 設錯或輪替時,**每一筆**真實回調都死在這裡,
+    // 訂單全部卡 pending,而 reconcile 的告警只會說「訂單卡住」。
+    await logSystemAlertOnce(
+      'payuni-notify',
+      'decrypt_failed',
+      { detail: decrypted.message },
+      'notify 驗章或解密失敗;若持續發生請檢查 PayUni HashKey/IV 設定',
+      'error',
+    );
     return c.json({ Status: 'FAILED', Message: decrypted.message });
   }
 
