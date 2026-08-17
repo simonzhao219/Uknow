@@ -829,7 +829,7 @@ export function CompleteProfile() {
                   }}
                 />
                 <Label htmlFor="terms" className="text-sm cursor-pointer">
-                  我已詳讀並同意{' '}
+                  我已閱讀並同意{' '}
                   {/* 就地彈窗，而非 <Link> 換頁：換頁會卸載本表單、清空使用者
                       填到一半的資料（本次修的 bug）。彈窗讓表單留在底下，
                       讀完關掉即可繼續，於 LINE 等內建瀏覽器也一致可用。 */}
