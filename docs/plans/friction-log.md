@@ -2008,6 +2008,36 @@ workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同
 未在本次一併做的理由:改的是框架自身的解鎖條件,而本容器只驗得到降級
 那一半路徑,無法依 08-14 判準 2「新閘門要先證明它會紅」完整驗證。
 
+### 同一天的四次「紅燈不是它看起來的意思」
+
+紅→綠證據鏈最後成立(紅 `3d0988f`:4 failed / 271 passed、全部
+`Actual 0 / Expected 1`;綠 `71a0443` 的 attempt 3:`api-tests` success),
+但中間為了拿到綠燈試了三次,每一次失敗都**與程式碼無關**,而且在摘要畫面
+上都長得像「實作壞了」:
+
+| # | 看到的 | 實際原因 |
+|---|---|---|
+| 1 | 正式站沒有人反映收不到驗證碼 | 回饋管道(退信)本身被關掉了 —— 本則主題 |
+| 2 | `ci-ok` 在 `93f8c67` 紅 | `api-tests` 被**我自己的下一個 push** 依 concurrency 取消,狀態是 `cancelled` |
+| 3 | `guards` 紅、`api-tests` **`skipped`** | GitHub 的 codeload CDN 回 429,連 `dorny/paths-filter@v3` 都沒下載成功,job 從未開始;而 `guards` 算 path filter,它死掉下游全部 skip |
+| 4 | 輪詢腳本回報「還是紅」 | 我的重跑 POST 用了沒有 `actions: write` 的 token,**而我把 stderr 丟進 `/dev/null`** ——`run_attempt` 一直停在 2,讀到的是上一次的殘留 |
+
+**可複用的判準:紅燈的含義要從機制推,不能從顏色讀。**
+`cancelled` / `skipped` / 基礎設施掛掉 / 真的測試失敗,在 PR 的 checks 摘要
+上是同一種紅(或同一種灰),但處置完全不同。其中 **`skipped` 最危險**——
+它讀起來像「不需要跑」,實際可能是「它的前置 job 死了」。
+
+兩條當場付出代價的操作規則:
+
+1. **等驗證 run 的期間不要 push。** 本專案 CI 的 concurrency 會取消
+   in-progress 的 run,所以「分兩次 push 拿紅綠證據」這個做法(見上面
+   tdd-unlock 的 Deno 缺口)必須**等前一次跑完再推下一次**,否則證據會被
+   自己毀掉。第 2 次就是這樣沒的。
+2. **不要把待會要據以斷言的腳本的 stderr 丟掉。** 第 4 次是自作自受:
+   `curl ... >/dev/null 2>&1` 讓一個權限不足的失敗看起來像成功,於是
+   「靜默失敗 + 讀到殘留狀態」在我處理**這個主題**的過程中又發生一次。
+   這正是本則主題的同構重演,只是舞台從正式站換到我自己的除錯腳本。
+
 ### 記債清單(下次框架整併)
 
 1. reconcile 的 heal pass 告警 + 讓 `success: true` 不再對排程說謊。
@@ -2018,3 +2048,26 @@ workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同
    但成文不等於把關(這正是本則的主題)。
 3. `tdd-unlock.sh` 的 Deno 缺口(見上)。**三項裡這項優先**:它影響的不是
    某個功能,是所有 Deno 改動的證據鏈可信度。
+4. **開放問題(需人裁決)**:規格書沒有定義「哪些金流失敗必須留告警、
+   該用什麼 severity」。本次的分級是**從既有實作反推**的——
+   `resolveOrderFromPayUni` 的 RPC 失敗路徑已標 `error` 並註明「必須人工
+   介入」,故後果同級的 `order_not_found` / `amount_mismatch` 同樣 `error`;
+   `missing_mer_trade_no` 是 PayUni 送來畸形資料、屬整合異常但不直接損失,
+   故 `warning`。**這是判斷不是規格**,要不要寫進規格書由人決定。
+5. **本次的 SOP 降級**:`/fix-bug` 對金流 bug 要求派四個 plan-reviewer
+   agent 審修法,本次改用輕量的自問自答——原因是該 session 的系統指示
+   禁止未經使用者要求就呼叫 Agent 工具。記在這裡而不是只留在被刪掉的
+   fix.md 裡,因為「四視角審查被跳過」是這個 PR 的已知缺口,不是流程雜訊。
+6. **`docs/plans/` 的鷹架清理規則沒有把關**(刪本次 fix.md 時順手發現)。
+   CLAUDE.md 明寫「平常只該有 `friction-log.md`」,實際還躺著三個:
+   `fix-journey-f40-listing/`(2026-08-08)、`journey-remaining-failures/`
+   (2026-08-08)、`upline-pairing-lines/`(2026-08-07,最後一次改動還是
+   PR #205 的 merge commit)。三者的工作都已完成——commit message 自己
+   寫著「六條刊登情境全綠」「以兩把鑰匙鎖定」——就是收尾時沒刪。
+   **又是同一個形狀:規則寫得清楚,沒有任何一層在執行。**
+   沒在本次一併刪的理由:(a) 與本 PR 主題無關,混進來讓 diff 更難審;
+   (b) 更該做的是閘門而不是再一次的一次性清理——`docs/plans/` 只允許
+   `friction-log.md` 的機械檢查(接在 framework-check 軌)才能防復發,
+   而依 08-14 判準 2,新閘門要先證明它會紅,那需要與清理同一個 PR 一起做。
+   照 CLAUDE.md 自己的理由,留著的代價不小:舊 plan 描述的是「當初想做
+   什麼」,會被誤當成規格,比沒有文件更糟。
