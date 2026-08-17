@@ -242,14 +242,14 @@ describe('WithdrawalProcess', () => {
   // 同意款的文件連結若是會換頁的 <a href>,點下去整個表單會被卸載、useState
   // 全部清空——這正是 CompleteProfile 與 JoinReferralProgramDialog 修過兩次
   // 的同一個 bug(見 LegalDialog docblock),提領頁當初漏改。
-  it('點同意款的事業手冊連結時不換頁且已填欄位不流失', async () => {
+  it('點同意款的推薦獎勵規則連結時不換頁且已填欄位不流失', async () => {
     mockIdPhotos(idPhotosResponse());
     await renderAndGoToStep3();
 
     const bankAccount = screen.getByLabelText(/銀行帳號 \*/) as HTMLInputElement;
     fireEvent.change(bankAccount, { target: { value: '1234567890' } });
 
-    const trigger = screen.getByTestId('withdrawal-manual-link');
+    const trigger = screen.getByTestId('withdrawal-rules-link');
     // 觸發元件必須是就地彈窗的 <button>,不是會離開本頁的 <a href>。
     expect(trigger.tagName).toBe('BUTTON');
 

@@ -462,6 +462,7 @@ ROUTES = [
     SweepRoute("/terms-of-service", "服務條款", None, "/terms-of-service"),
     SweepRoute("/listing-plans", "刊登方案", None, "/listing-plans"),
     SweepRoute("/business-manual", "事業手冊", None, "/business-manual"),
+    SweepRoute("/referral-reward-rules", "推廣獎勵規章", None, "/referral-reward-rules"),
     SweepRoute("/participation-contract", "參加契約書", None, "/participation-contract"),
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),

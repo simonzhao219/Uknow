@@ -17,7 +17,7 @@ const [OFFICIAL_EMAIL_LOCAL, OFFICIAL_EMAIL_DOMAIN] = OFFICIAL_EMAIL.split('@');
 const QUICK_LINKS = [
   { to: '/listing-plans', label: '刊登方案', icon: Package },
   { to: '/terms-of-service', label: '服務條款', icon: FileText },
-  { to: '/business-manual', label: '事業手冊', icon: Gift },
+  { to: '/referral-reward-rules', label: '推薦獎勵規則', icon: Gift },
 ];
 
 export function Footer() {

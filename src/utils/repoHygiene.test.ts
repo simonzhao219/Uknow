@@ -114,6 +114,7 @@ describe('法遵文件一律就地彈窗閱讀', () => {
       '/listing-plans',
       '/business-manual',
       '/participation-contract',
+      '/referral-reward-rules',
     ];
     // 只抓導覽屬性（href= / to=），不抓 path=（那是路由「定義」不是導覽），
     // 也不抓字串裡剛好提到路由的註解。
