@@ -28,19 +28,30 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
             p: ({ node, ...props }) => (
               <p className="mb-4 leading-relaxed text-muted-foreground" {...props} />
             ),
+            // list-outside 而非 list-inside：markdown 的清單分「緊湊」與「鬆散」
+            // 兩種——項目之間有空行、或項目內含巢狀清單時，react-markdown 會把
+            // 每個 <li> 的內容包進 <p>。<p> 是區塊元素，配 list-inside（標記算在
+            // 內容流裡）會把「1.」單獨留在一行、內容掉到下一行，同一份文件裡因此
+            // 出現兩種列點外觀（推薦獎勵規則第四節就是這樣）。list-outside 把標記
+            // 移到縮排溝槽，不論內容是行內還是區塊都對齊第一行，兩種清單長得一樣。
+            // 附帶好處：長條文換行後有懸掛縮排，不會回貼左緣與標記混在一起。
+            //
+            // ps-6 是標記的溝槽寬度（用 padding-inline-start，非 ml-*，才不會讓
+            // 標記被裁掉）；[&>li>p]:mb-0 抵銷鬆散清單那層 <p> 的 mb-4，項目間距
+            // 一律交給 space-y-1，緊湊與鬆散的行距因此一致。
             ul: ({ node, ...props }) => (
               <ul
-                className="list-disc list-inside mb-4 space-y-1 text-muted-foreground"
+                className="list-disc list-outside ps-6 mb-4 space-y-1 text-muted-foreground [&>li>p]:mb-0 [&>li>ul]:mt-1 [&>li>ul]:mb-0 [&>li>ol]:mt-1 [&>li>ol]:mb-0"
                 {...props}
               />
             ),
             ol: ({ node, ...props }) => (
               <ol
-                className="list-decimal list-inside mb-4 space-y-1 text-muted-foreground"
+                className="list-decimal list-outside ps-6 mb-4 space-y-1 text-muted-foreground [&>li>p]:mb-0 [&>li>ul]:mt-1 [&>li>ul]:mb-0 [&>li>ol]:mt-1 [&>li>ol]:mb-0"
                 {...props}
               />
             ),
-            li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+            li: ({ node, ...props }) => <li {...props} />,
             a: ({ node, ...props }) => <a className="text-primary hover:underline" {...props} />,
             blockquote: ({ node, ...props }) => (
               <blockquote
