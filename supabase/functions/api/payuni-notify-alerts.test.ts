@@ -1,0 +1,193 @@
+// ============================================================
+// notify 的失敗出口必須留下 system_alerts —— 觀測性契約。
+//
+// 由 friction-log 2026-08-17「沒有人反映問題不構成證據」的同類掃描產出。
+// `payuni-notify.test.ts` 已經釘住「這些失敗一律不得開通」；本檔釘住的是
+// 另一半:**拒絕之後有沒有人會知道**。
+//
+// 為什麼這四個出口值得告警(判準見 index.ts 的 logSystemAlert 定義處):
+// 都是 server-to-server、沒有使用者在看、涉及金錢,而 console.error 只進
+// Edge Function log,沒有人主動讀 = 等於靜默。
+//
+// 為什麼解密失敗那條必須去重:它在**簽章驗證之前**,公開端點任何人都能
+// 觸發。無條件寫入等於給未驗證端點開一條無上限寫入路徑,真實告警會被
+// 洗掉——那正是本次要防的失效模式。範式取自
+// complete_paid_pending_orders(migration 20260716000007)。
+// ============================================================
+import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { encryptPayUni, generatePayUniHash } from './crypto.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  ensureEdgeFunctionEnv,
+} from './test-helpers.ts';
+
+// 與 payuni-notify.test.ts / payuni-return-status.test.ts 同一組值:三支都在
+// 模組載入時寫環境變數,值一致才不會因為載入順序不同而互相踩到。
+const KEY = '0123456789abcdef0123456789abcdef';
+const IV = '0123456789ab';
+const FRONTEND = 'https://frontend.test';
+const PRICE = 1200;
+
+ensureEdgeFunctionEnv();
+Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
+Deno.env.set('PAYUNI_HASH_KEY', KEY);
+Deno.env.set('PAYUNI_HASH_IV', IV);
+Deno.env.set('PAYUNI_SANDBOX', 'false');
+Deno.env.set('FRONTEND_URL', FRONTEND);
+
+const { app } = await import('./index.ts');
+
+let seq = 0;
+
+function uniqueTradeNo(tag: string): string {
+  return `ALERT-${tag}-${Date.now()}-${seq++}`;
+}
+
+async function seedPendingOrder(
+  client: ReturnType<typeof adminClient>,
+  userId: string,
+  tradeNo: string,
+): Promise<void> {
+  const { error } = await client.from('payment_orders').insert({
+    user_id: userId,
+    amount: PRICE,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+  });
+  if (error) throw new Error(`seedPendingOrder failed: ${error.message}`);
+}
+
+async function postRaw(fields: Record<string, string>) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.set(k, v);
+  return await app.request('/api/webhooks/payuni/notify', { method: 'POST', body: form });
+}
+
+/** 用正確的 HashKey/IV 簽一份合法 notify(內容可以是壞的)。 */
+async function postNotify(data: Record<string, string | number>) {
+  const encryptInfo = await encryptPayUni(data, KEY, IV);
+  const hashInfo = await generatePayUniHash(encryptInfo, KEY, IV);
+  return await postRaw({ EncryptInfo: encryptInfo, HashInfo: hashInfo });
+}
+
+/**
+ * 取本次情境產生的告警。用 context 裡的識別欄位過濾而不是數總量——
+ * 同一個測試資料庫裡別的測試也在寫 system_alerts,數總量會互相干擾。
+ */
+async function alertsByContext(
+  client: ReturnType<typeof adminClient>,
+  key: string,
+  value: string,
+) {
+  const { data, error } = await client
+    .from('system_alerts')
+    .select('source, severity, message, context')
+    .eq(`context->>${key}`, value)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`alertsByContext failed: ${error.message}`);
+  return data ?? [];
+}
+
+// ── 已過簽章驗證的三個出口:只有 PayUni(或持有金鑰者)觸發得到 ──────
+
+Deno.test('notify 找不到訂單：拒絕之外要留一筆 error 級告警(錢已收、會籍沒開)', async () => {
+  const client = adminClient();
+  const tradeNo = uniqueTradeNo('GHOST');
+
+  const res = await postNotify({
+    Status: 'SUCCESS',
+    MerTradeNo: tradeNo,
+    TradeNo: `PU-${tradeNo}`,
+    TradeAmt: String(PRICE),
+  });
+  assertEquals((await res.json()).Status, 'FAILED');
+
+  const alerts = await alertsByContext(client, 'merTradeNo', tradeNo);
+  assertEquals(alerts.length, 1, 'order not found 應留下恰好一筆告警');
+  assertEquals(alerts[0].source, 'resolveOrderFromPayUni');
+  assertEquals(alerts[0].severity, 'error');
+  assertEquals((alerts[0].context as Record<string, unknown>).reason, 'order_not_found');
+});
+
+Deno.test('notify 金額不符：拒絕之外要留一筆 error 級告警(靜默拒絕真實付款)', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Alert Underpaid' });
+  const tradeNo = uniqueTradeNo('AMT');
+
+  try {
+    await seedPendingOrder(client, user.id, tradeNo);
+
+    const res = await postNotify({
+      Status: 'SUCCESS',
+      MerTradeNo: tradeNo,
+      TradeNo: `PU-${tradeNo}`,
+      TradeAmt: '1',
+    });
+    assertEquals((await res.json()).Status, 'FAILED');
+
+    const alerts = await alertsByContext(client, 'merTradeNo', tradeNo);
+    assertEquals(alerts.length, 1, 'amount mismatch 應留下恰好一筆告警');
+    assertEquals(alerts[0].source, 'resolveOrderFromPayUni');
+    assertEquals(alerts[0].severity, 'error');
+    const ctx = alerts[0].context as Record<string, unknown>;
+    assertEquals(ctx.reason, 'amount_mismatch');
+    assertEquals(String(ctx.tradeAmt), '1');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('notify 缺 MerTradeNo：簽章合法但內容畸形,要留一筆告警', async () => {
+  const client = adminClient();
+  // 沒有 MerTradeNo 可當識別鍵,改用 TradeNo——告警的 context 必須帶上它,
+  // 否則這種畸形回調除了「有一筆壞掉」之外什麼線索都留不下。
+  const tradeNo = uniqueTradeNo('NOMER');
+
+  const res = await postNotify({ Status: 'SUCCESS', TradeNo: tradeNo, TradeAmt: String(PRICE) });
+  assertEquals((await res.json()).Status, 'FAILED');
+
+  const alerts = await alertsByContext(client, 'tradeNo', tradeNo);
+  assertEquals(alerts.length, 1, 'missing MerTradeNo 應留下恰好一筆告警');
+  assertEquals(alerts[0].source, 'resolveOrderFromPayUni');
+  assertEquals((alerts[0].context as Record<string, unknown>).reason, 'missing_mer_trade_no');
+});
+
+// ── 簽章驗證之前的出口:公開可觸發,必須去重 ──────────────────────
+
+Deno.test('notify 驗章失敗：留一筆告警,但重複的壞請求不得把告警表灌爆', async () => {
+  const client = adminClient();
+
+  // 乾淨起點:這個 source 的未解決告警在別的測試也可能留下(偽造簽章、
+  // 竄改密文兩支),先清掉才問得出「兩次壞請求只留一筆」。
+  await client.from('system_alerts').delete().eq('source', 'payuni-notify');
+
+  const bogus = await encryptPayUni({ Status: 'SUCCESS', MerTradeNo: 'X' }, KEY, IV);
+  for (let i = 0; i < 2; i++) {
+    const res = await postRaw({ EncryptInfo: bogus, HashInfo: 'DEADBEEF'.repeat(8) });
+    assertEquals((await res.json()).Status, 'FAILED');
+  }
+
+  const { data } = await client
+    .from('system_alerts')
+    .select('source, severity, context, resolved_at')
+    .eq('source', 'payuni-notify')
+    .is('resolved_at', null);
+
+  assertEquals(
+    data?.length,
+    1,
+    '兩次驗章失敗只該留一筆未解決告警——金鑰錯誤時每一筆回調都會死在這裡,' +
+      '真正的訊號是「持續失敗」而不是「某一筆失敗」',
+  );
+  assertEquals(data?.[0].severity, 'error');
+  assertEquals((data?.[0].context as Record<string, unknown>).reason, 'decrypt_failed');
+  assert(
+    typeof (data?.[0].context as Record<string, unknown>).detail === 'string',
+    'context 要帶 detail,否則看得到「驗章失敗」卻查不出是哪一步失敗',
+  );
+
+  await client.from('system_alerts').delete().eq('source', 'payuni-notify');
+});
