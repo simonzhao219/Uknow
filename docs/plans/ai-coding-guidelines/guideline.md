@@ -74,7 +74,64 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 這不是「絕不能用」，是「這幾類程式碼不接受未經專門審查的 AI 產出」。
 
-**Q6. 開工前我該給 AI 什麼？怎麼知道 spec 夠清楚？**
+**Q6. 我的專案裡要放哪些東西，AI 才知道規矩？**
+
+先記住一個分類原則：**把「每次都要知道的事」「只在特定情境才需要的事」「絕對不能違反的事」分開放**。三類混在一起塞進同一個檔案，就會變成 Q25 講的那種「規則被忘記」——不是 AI 不聽話，是它被淹沒了。
+
+一個完整的專案骨架長這樣（依官方文件的載入機制整理；不必一次到位，見 [Part 3 的 L0→L4](#34-其他專案怎麼開始成熟度階梯)）：
+
+```text
+專案根目錄/
+├── CLAUDE.md                   ← 每次開工自動載入，≤200 行
+├── CLAUDE.local.md             ← 個人筆記，不進 git
+├── REVIEW.md                   ← 只給 PR 自動審查看的指示
+├── .mcp.json                   ← 團隊共用的外部工具連線（GitHub、DB…）
+└── .claude/
+    ├── settings.json           ← 團隊共用：權限、hooks 宣告、環境變數、模型
+    ├── settings.local.json     ← 個人覆蓋，自動被 gitignore
+    ├── rules/                  ← 依主題切分的規則，可用 paths: 限定觸發範圍
+    │   ├── code-style.md
+    │   ├── testing.md
+    │   └── api-conventions.md
+    ├── skills/                 ← 可重複的工作流程，用 /名字 呼叫
+    │   ├── plan-feature/SKILL.md
+    │   └── deploy/SKILL.md
+    ├── agents/                 ← 分身 AI：獨立 context、可限定工具與模型
+    │   ├── code-reviewer.md
+    │   └── security-auditor.md
+    └── hooks/                  ← 確定性守衛腳本（觸發時機寫在 settings.json）
+        └── validate-bash.sh
+```
+
+**每一格該放什麼，判準是「它什麼時候需要被載入」：**
+
+| 這件事 | 放這裡 | 為什麼 |
+|---|---|---|
+| 每個 session 都要知道的事實：build／test 指令、分支慣例、架構決策、已知陷阱 | `CLAUDE.md` | 自動載入＝**每次都佔 context**，所以要精簡。判準：「刪掉這行 AI 會出錯嗎？不會就刪」 |
+| 只有動到特定檔案時才需要的規則 | `.claude/rules/*.md` ＋ `paths:` frontmatter | 只有讀到匹配的檔案才載入，省下平時的 context |
+| 多步驟流程、檢查清單（規劃、修 bug、部署） | `.claude/skills/<名字>/SKILL.md` | 用到才載入。**有副作用的流程要設 `disable-model-invocation: true`**，變成只有人能觸發 |
+| 需要獨立視角、或會讀大量檔案的工作（審查、探查） | `.claude/agents/<名字>.md` | 獨立 context 不污染主對話；審查者的 `tools:` 應限定唯讀（見 Q16） |
+| **絕對不能違反的事** | `.claude/hooks/` ＋ `settings.json` 的 `permissions.deny` | advisory 會被忘記，這一層不會（Q25） |
+| 敏感檔案（`.env*`、金鑰、鎖檔） | `settings.json` 的 `permissions.deny` | 見 Q14 |
+| PR 自動審查的口徑（嚴重度定義、nit 上限、略過範圍） | `REVIEW.md` | 只影響審查，不影響一般開發 session |
+
+**哪些進 git——這是團隊最常搞錯、也是這張骨架真正的重點：**
+
+| 進 git（團隊共享，讓流程跟著 checkout 走） | 不進 git（個人） |
+|---|---|
+| `CLAUDE.md`、`.claude/settings.json`、`rules/`、`skills/`、`agents/`、`hooks/`、`.mcp.json`、`REVIEW.md` | `CLAUDE.local.md`、`.claude/settings.local.json` |
+
+官方會幫你處理後者：「When Claude Code saves a setting to this file in a repository that doesn't already ignore it, Claude Code adds `**/.claude/settings.local.json` to your global git excludes file.」
+
+**三個常見錯誤：**
+
+1. **什麼都往 CLAUDE.md 塞。** 它每次都載入，太肥會讓 AI 整份忽略（Q12、Q25）。長度超過 200 行就該往 `rules/`（有情境）或 `skills/`（有步驟）搬。
+2. **用 CLAUDE.md 寫「絕對不可以 X」。** 那是 advisory，模型可以無視。要 enforced 就得寫成 hook——這是 Q25 的整個重點。
+3. **照舊教學把 `commands/` 和 `skills/` 當兩套機制。** 官方已經合併了：「**Custom commands have been merged into skills.** A file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy` and work the same way.」（[Skills](https://code.claude.com/docs/en/skills)）舊的 `.claude/commands/` 仍相容，但**新專案一律用 `.claude/skills/`**——它多了支援檔案的目錄、控制誰能觸發的 frontmatter，以及讓 AI 依情境自動載入的能力。
+
+EP實作的實際長相與每個檔案在做什麼，見 [Part 3 的對照表](#31-規則--機制對照)。
+
+**Q7. 開工前我該給 AI 什麼？怎麼知道 spec 夠清楚？**
 
 官方對「好的 spec」給過結構判準（原文見 [Part 2](#part-2官方文件與研究怎麼說)）：**自足**（點名涉及的檔案與介面）、寫明 **out of scope**、並以一個端到端的驗證步驟收尾。
 
@@ -87,15 +144,15 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 最常被漏掉的是 **out of scope**。範圍沒寫清楚時 AI 不會停下來問你，它會自己補——那正是「寫一大坨」的另一個來源。
 
-**Q7. PR 應該多大？大家都說要小，但這個功能就是這麼大。**
+**Q8. PR 應該多大？大家都說要小，但這個功能就是這麼大。**
 
-判準跟 Q6 同源：**一句話描述不了，就拆**。一個 PR 一個邏輯功能。
+判準跟 Q7 同源：**一句話描述不了，就拆**。一個 PR 一個邏輯功能。
 
 功能大不是不拆的理由——拆的動作要發生在**規劃階段**（把功能切成「每一段都可以獨立驗證」的階段），而不是等寫完了才想怎麼切。寫完再拆很痛，所以大家不拆；規劃時就切好，每段自然小。
 
 為什麼這件事在 AI 時代變得更重要：AI 產生的 PR 明顯更大、審查等待時間顯著拉長（多份產業統計方向一致）。而送出一個巨型 PR 的實質意義是：**你把自己省下的時間，乘以 N 倍轉嫁給 reviewer**。學術研究把這個現象定性為公地悲劇——個人的生產力增益，把成本外部化到共享資源（reviewer 產能、codebase 完整性、協作信任）。
 
-**Q8. AI 說「測試都過了」，我能信嗎？**
+**Q9. AI 說「測試都過了」，我能信嗎？**
 
 不能。有兩個獨立的失敗模式，而且都已經被基準化量測過：
 
@@ -109,7 +166,7 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 **規則：你信的是 CI 的綠燈，不是 AI 的句子。**
 
-**Q9. 怎麼防止 AI 為了讓測試變綠，跑去改測試？**
+**Q10. 怎麼防止 AI 為了讓測試變綠，跑去改測試？**
 
 靠順序，不靠叮嚀：
 
@@ -122,7 +179,7 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 制度上再加一條：**測試檔的變更是一級審查對象**。實作 PR 裡出現測試檔的修改，要能說出為什麼。（EP實作更進一步：紅燈期用 hook 直接禁止編輯測試檔，把「事後揭露」升級成「事前做不到」——見 [Part 3](#part-3ep實作怎麼做到)。）
 
-**Q10. AI 幫我補的測試算不算數？覆蓋率 90% 為什麼我還是不安心？**
+**Q11. AI 幫我補的測試算不算數？覆蓋率 90% 為什麼我還是不安心？**
 
 你的不安是對的。關鍵在**順序**，不在數量：
 
@@ -130,11 +187,11 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 具體要辨認的無用測試樣態：斷言內部狀態、斷言自己剛設定的 mock、橡皮圖章式快照、永遠到不了的斷言、同義反覆。另外 AI 有個系統性偏誤：**傾向選「安全的中間值」當測試資料，避開邊界**——而 off-by-one、溢位、null reference 全都住在邊界上。
 
-有價值的用法：(a) 依據**獨立先寫好的規格**產生測試（Q9 的順序）；(b) 請它**列出邊界案例清單**讓你挑，而不是請它寫測試。
+有價值的用法：(a) 依據**獨立先寫好的規格**產生測試（Q10 的順序）；(b) 請它**列出邊界案例清單**讓你挑，而不是請它寫測試。
 
 至於覆蓋率：它量的是「執行到」，不是「驗證到」。90% 的覆蓋率完全可以是 90% 的同義反覆。
 
-**Q11. 我改了三次它還是錯，該繼續 prompt 還是自己寫？**
+**Q12. 我改了三次它還是錯，該繼續 prompt 還是自己寫？**
 
 門檻寫死：**同一個問題糾正兩次仍錯，就停止拉鋸。**
 
@@ -144,7 +201,7 @@ Veracode 追蹤 100 多個模型、四次快照，AI 產生的程式碼**安全�
 
 這是沉沒成本陷阱，不是能力問題。已經投入的三輪不會因為你再投入第四輪而回本。
 
-**Q12. AI 寫得又臭又長、每次都重寫一個類似的元件，要管嗎？**
+**Q13. AI 寫得又臭又長、每次都重寫一個類似的元件，要管嗎？**
 
 要，因為這是**會累積、而且延遲結帳**的成本。
 
@@ -156,7 +213,7 @@ GitClear 分析了 6.23 億行程式碼變更（2023–2026），結構性指標
 
 日常規則：新增前先問「這個能不能複用既有的」；審查時把「無條件吞掉例外」當缺陷而不是防禦性設計。
 
-**Q13. AI 建議的套件可以直接裝嗎？把公司 code 貼給它有沒有風險？**
+**Q14. AI 建議的套件可以直接裝嗎？把公司 code 貼給它有沒有風險？**
 
 **套件：不行，這是 CP 值最高的一條規則。**
 
@@ -170,7 +227,7 @@ AI coding 工具**不像 compiler 那樣尊重 `.gitignore`**——它吞下整�
 
 規則：secrets 一律走環境變數或 secret manager，不進 prompt、不寫進指令參數；把 `.env*` 之類的敏感檔加進工具的 deny 清單（EP實作已經這樣設定）。
 
-**Q14. 送 PR 前我要附什麼？**
+**Q15. 送 PR 前我要附什麼？**
 
 兩件事，第二件比你想的重要。
 
@@ -180,13 +237,13 @@ AI coding 工具**不像 compiler 那樣尊重 `.gitignore`**——它吞下整�
 
 這條規則的聰明之處：它不要求 AI 做到它做不到的事，只要求**誠實標示不確定的邊界**。成本極低，對 reviewer 的價值極高。
 
-順帶一提團隊文化：**「這段我不完全確定」不是能力不足的表現，是專業。** 反而是「全都懂、都測過了」的宣稱更該被追問。這句話要說得出口，Q17 那條規則才可能執行。
+順帶一提團隊文化：**「這段我不完全確定」不是能力不足的表現，是專業。** 反而是「全都懂、都測過了」的宣稱更該被追問。這句話要說得出口，Q18 那條規則才可能執行。
 
 ---
 
 ### 三、給 reviewer
 
-**Q15. AI 都已經審過了，人還要審什麼？**
+**Q16. AI 都已經審過了，人還要審什麼？**
 
 分工是這樣：**AI 找碴，人裁決。**
 
@@ -194,16 +251,16 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 **人要審什麼，跟以前不一樣。** 你受訓練抓的是「人類會犯的錯」；AI 的錯誤模式不同，舊 checklist 對它們是盲的。專用清單：
 
-- **幻覺的 API 與套件**（Q13）
-- **同義反覆的測試、斷言 mock 的測試**（Q10）
-- **重複實作了既有元件**、不必要的抽象層（Q12）
-- **無條件吞掉例外**的錯誤處理（Q12）
+- **幻覺的 API 與套件**（Q14）
+- **同義反覆的測試、斷言 mock 的測試**（Q11）
+- **重複實作了既有元件**、不必要的抽象層（Q13）
+- **無條件吞掉例外**的錯誤處理（Q13）
 - **與 ticket 脫節但本身自洽的實作**——這條最重要：**讀 diff 的同時讀 ticket，兩者的落差通常就是真正的 bug 所在**
 - **悄悄引入的新依賴**
 
 還有一個心理層面的提醒：96% 的開發者不完全信任 AI 產生程式碼的功能正確性。**你的懷疑是正常的、也是被制度支持的**，不是你難搞。
 
-**Q16. PR 太大、或沒附證據，我可以退回嗎？**
+**Q17. PR 太大、或沒附證據，我可以退回嗎？**
 
 可以，而且這是制度要求你做的事，不是你在刁難人。兩個階梯：
 
@@ -214,7 +271,7 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 這一條也是給整個團隊的提醒：**reviewer 是唯一一個「AI 只增加他的工作、不減少他的工作」的角色**。工程師拿到槓桿、主管拿到吞吐量，reviewer 拿到的純粹是負擔。如果不給他退回的權力，防線會靜默失效——而那是最危險的狀態，因為儀表板還是綠的。
 
-**Q17. 作者自己也解釋不出來那段程式碼，我該怎麼處理？**
+**Q18. 作者自己也解釋不出來那段程式碼，我該怎麼處理？**
 
 有一條可以直接引用的判準（來自 Ghostty 專案的 AI 政策）：**如果你無法在沒有 AI 工具協助的情況下，解釋你的變更做了什麼、以及它如何與更大的系統互動，就不該送出這個變更。**
 
@@ -222,11 +279,11 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 實務話術——**把問題放在程式碼上，不要放在人身上**：與其問「你是不是沒看懂」，不如說「這段我需要你走一次邏輯給我聽，特別是 X 失敗時會怎樣」。前者是質疑能力，後者是正常的審查對話，而且效果一樣。
 
-如果對方走不出來，回到 Q11：這段該重寫，或該由熟悉的人自己寫。
+如果對方走不出來，回到 Q12：這段該重寫，或該由熟悉的人自己寫。
 
 這條要整個團隊一起認可才有效：**送出 PR 的意思是「我理解這段、而且我能維護它」，不是「我讓 AI 產出了這段」。**
 
-**Q18. AI reviewer 一次給我 30 則評論，全部都要處理嗎？**
+**Q19. AI reviewer 一次給我 30 則評論，全部都要處理嗎？**
 
 不用。而且官方文件明確警告過：**被要求找問題的 AI 一定找得出問題**，即使程式碼本身沒問題——因為那就是它被交代的事。照單全收會走向過度工程：多餘的抽象層、防禦不可能發生的情況、為不會發生的案例寫測試。
 
@@ -240,11 +297,11 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 ### 四、給團隊 lead／主管
 
-**Q19. 我怎麼知道團隊的 AI 使用是健康的？該看什麼指標？**
+**Q20. 我怎麼知道團隊的 AI 使用是健康的？該看什麼指標？**
 
 先講**不要看什麼**：程式碼行數、PR 數量、story point、AI 使用率。AI 導入後這些**必然上升**，而且跟品質沒有關係——AI 產生的樣板會推高行數、更小的功能會推高 PR 數。你的儀表板會全綠。
 
-**要看的是結構指標**（這些正是 GitClear 量到會惡化的項目，見 Q12）：
+**要看的是結構指標**（這些正是 GitClear 量到會惡化的項目，見 Q13）：
 
 | 指標 | 為什麼看它 |
 |---|---|
@@ -258,15 +315,15 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 具體動作：設一個重複度的 tripwire（超過就開 issue）、每個迭代給明確的**重構預算**、把「無條件吞例外」列進審查清單、把教練資源投到判斷力最薄弱的地方。
 
-**Q20. 可以把 AI 使用率當 KPI 嗎？**
+**Q21. 可以把 AI 使用率當 KPI 嗎？**
 
 不行，而且這條建議寫進規範會大幅提升整份文件在工程師心中的可信度。
 
 這是經典的代理指標失敗：組織想要的是「更好的軟體、更快交付」，能量測的是「登入次數」，於是後者變成目標。業界確實有公司這樣做（把 AI 使用列入核心期望、追蹤資深員工每週登入次數、寫進績效評估、設定每週使用率目標），可預期的後果是**表演性使用**——工程師在不適合的任務上硬用，剛好違反 Q4。
 
-**連帶的關鍵規則：揭露機制必須明文與考核脫鉤。** 我們要求 PR 標示 AI 參與的程度（Q22），唯一能讓這個機制成立的前提，是它**明確地不被拿來考核**。一旦揭露會影響考評，誠實揭露會在一週內消失，你就永遠不知道真實情況。
+**連帶的關鍵規則：揭露機制必須明文與考核脫鉤。** 我們要求 PR 標示 AI 參與的程度（Q23），唯一能讓這個機制成立的前提，是它**明確地不被拿來考核**。一旦揭露會影響考評，誠實揭露會在一週內消失，你就永遠不知道真實情況。
 
-**Q21. 初階工程師用 AI 會不會學不到東西？要限制他們嗎？**
+**Q22. 初階工程師用 AI 會不會學不到東西？要限制他們嗎？**
 
 先修正一個很多人有的直覺：**實際上是資深的人用得更多**。Fastly 的調查顯示，32% 的資深開發者（10 年以上）說自己出貨的程式碼超過一半是 AI 產生的，初階只有 13%；資深宣稱獲得顯著速度增益的比例是初階的兩倍。
 
@@ -277,11 +334,11 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 **但有效的不是道德勸說（「請好好學習」無效），是結構性設計：**
 
 - **指定某些任務類型必須手寫**：第一次接觸的子系統、核心演算法、需要建立心智模型的地方。
-- **審查時要求作者口頭解釋**（Q17 的規則自然涵蓋初階）。
+- **審查時要求作者口頭解釋**（Q18 的規則自然涵蓋初階）。
 - **pairing 時關掉 AI**——那是最高密度的學習時間，不該外包。
 - **確保資深的人有餘裕帶人**：如果資深工程師被清理 AI 程式碼佔滿時間，人才管線的兩條線會同時往壞的方向走。這是資源分配問題，只有你能解。
 
-**Q22. 出事的時候，誰負責？**
+**Q23. 出事的時候，誰負責？**
 
 現況是責任真空：AI 產生的 commit 比例已經很高，但多數組織沒有決定「它在 production 壞掉時誰負責」。有調查顯示事故發生時，53% 怪安全團隊、45% 怪開發者、42% 怪合併的人——**三者相加超過 100%，這就是沒有共識的意思**。
 
@@ -291,15 +348,15 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 1. **送出者就是負責人，無論程式碼來源。** 工具不能被告，模型不能被問責，廠商合約明確讓責任向下流到使用它的人。
 2. **揭露用「協助」而不是「共同作者」**：Linux 的作法是 commit trailer 用 `Assisted-by:`（記錄工具參與）而不是 `Co-authored-by:`——後者主張共享的作者身分與**問責**，而工具無法履行問責那一端。
-3. **揭露內容講程度不講有無**：說明 AI 是起草了程式碼、改寫了程式碼、產生了測試、還是變更了依賴——這是 reviewer 調整審查強度的依據（並且回 Q20：不用於考核）。
+3. **揭露內容講程度不講有無**：說明 AI 是起草了程式碼、改寫了程式碼、產生了測試、還是變更了依賴——這是 reviewer 調整審查強度的依據（並且回 Q21：不用於考核）。
 
-**Q23. 成本怎麼控？**
+**Q24. 成本怎麼控？**
 
 先建立量級認知：**agentic 工作流每個任務消耗的 token 是 chat 查詢的 5–30 倍**。原因是 agent 的每一個推理步驟都會把累積的 context 在每次工具呼叫時重新送出一遍，所以成本隨步數呈超線性成長——一個跑了 40 輪工具呼叫的 session，跟 40 次獨立提問完全不是同一個數量級。
 
 真實案例：某大型科技公司的工程組織採用率從 32% 衝到 84% 後，**四月就用完了整年的 AI 預算**；另一家因為重度使用者達到每人每月 $500–2,000 而取消了該工具。有調查指出 85% 的公司 AI 成本預測誤差超過 10%。
 
-好消息是：**最貴的用法同時也是品質最差的用法。** 超長 session 既燒 token 又造成 context rot（Q11、Q24）。所以「換任務就開新 session」這一條同時省錢又提升品質——而且開新 session 是零成本的，壓縮 context 反而是一次大請求。
+好消息是：**最貴的用法同時也是品質最差的用法。** 超長 session 既燒 token 又造成 context rot（Q12、Q25）。所以「換任務就開新 session」這一條同時省錢又提升品質——而且開新 session 是零成本的，壓縮 context 反而是一次大請求。
 
 動作：設每人／每專案的預算警戒線；把「這個 session 已經跑很久了」當成品質訊號而不只是成本訊號。
 
@@ -307,7 +364,7 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 ### 五、給維護流程的人
 
-**Q24. 為什麼要有這麼多 hook 跟閘門？很煩。**
+**Q25. 為什麼要有這麼多 hook 跟閘門？很煩。**
 
 核心論點一句話：**能被 AI 忘記的規則，等於沒有規則。**
 
@@ -319,7 +376,7 @@ AI 審查便宜、可以大量做、不會累，所以應該讓它先跑（多�
 
 **反向承諾也要寫進來**：閘門如果持續誤擋，要修的是閘門，不是叫人忍耐。誤擋要被記錄下來（EP實作用 friction log 與 hook 決策 metrics 追蹤誤擋率），定期整併成修訂。**一個沒有人抱怨管道的閘門系統，最後會被繞過。**
 
-**Q25. 我們加了一堆自動檢查，這樣就安全了吧？**
+**Q26. 我們加了一堆自動檢查，這樣就安全了吧？**
 
 先回答一個問題：**你的檢查空轉的時候，看起來像什麼？**
 
@@ -329,30 +386,30 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 
 更難的一層：**感測器的失效是靜默的。** 閘門壞了會擋住人，你馬上知道；量測設施壞了只是不再記錄，而**少報的讀數看起來跟「真的沒事」一模一樣**。所以量測設施需要的機械驗證不比閘門少，是更多。
 
-**Q26. 覆蓋率有門檻了，為什麼測試還是越來越少？**
+**Q27. 覆蓋率有門檻了，為什麼測試還是越來越少？**
 
 因為門檻的**參數**可以被調低——閘門還在，門變寬了。這是最典型的縫隙型態：規則存在、CI 是綠的、而實質保護在下降。
 
 規則：**品質指標只准向好（ratchet）。** 門檻由 CI 持有；覆蓋率上升時順手把門檻提上去；要調低必須在 PR 裡寫明理由，交由人裁決，而不是靜靜改個數字。
 
-同時要記得覆蓋率是**弱指標**（Q10）：它量的是「執行到」不是「驗證到」。真正的保護來自關鍵路徑的端到端測試與必留情境清單——那些是刪掉會被機械擋下的東西。
+同時要記得覆蓋率是**弱指標**（Q11）：它量的是「執行到」不是「驗證到」。真正的保護來自關鍵路徑的端到端測試與必留情境清單——那些是刪掉會被機械擋下的東西。
 
-**Q27. 又一個 bug 漏到線上了，修完就結案嗎？**
+**Q28. 又一個 bug 漏到線上了，修完就結案嗎？**
 
 還差兩步：
 
-1. **同類掃描**：同一個病灶通常不只一處，grep 全庫找兄弟。這件事在 AI 時代特別重要——**AI 會把同一個模式複製到很多地方**（Q12），所以「一個 bug 只有一處」的假設比以前更不可靠。
+1. **同類掃描**：同一個病灶通常不只一處，grep 全庫找兄弟。這件事在 AI 時代特別重要——**AI 會把同一個模式複製到很多地方**（Q13），所以「一個 bug 只有一處」的假設比以前更不可靠。
 2. **防線回填**：回答「為什麼既有的測試／CI／hook 沒有攔到它」，然後把答案變成一條新防線。
 
-這兩步讓每一次漏網都自動強化系統，而不是只修這一次。它也是 Q24 那條升級判準的實際來源——**被漏過的東西，就是該被 enforced 的東西**。
+這兩步讓每一次漏網都自動強化系統，而不是只修這一次。它也是 Q25 那條升級判準的實際來源——**被漏過的東西，就是該被 enforced 的東西**。
 
 ---
 
 ### 六、關於你自己
 
-**Q28. 我是不是因為用 AI 而退步了？怎麼判斷？**
+**Q29. 我是不是因為用 AI 而退步了？怎麼判斷？**
 
-這個擔心有實證基礎（Q21 提到的 MIT 認知債研究），而且值得認真對待——但方法是量測，不是焦慮。
+這個擔心有實證基礎（Q22 提到的 MIT 認知債研究），而且值得認真對待——但方法是量測，不是焦慮。
 
 兩個自我檢測：
 
@@ -361,21 +418,21 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 
 這是「理解負債」與「技術債」的差別：技術債你知道自己欠了什麼；**理解負債你不知道自己不知道什麼**。追蹤除錯時間的研究顯示，AI 產生的不熟悉區段平均要 45 分鐘才 debug 完，手寫的約 15 分鐘。
 
-這不是要你少用 AI，是要你**保留形成判斷的肌肉**——因為 Q21 的數據說，判斷力正是決定你能從 AI 拿到多少槓桿的東西。
+這不是要你少用 AI，是要你**保留形成判斷的肌肉**——因為 Q22 的數據說，判斷力正是決定你能從 AI 拿到多少槓桿的東西。
 
-**Q29. 我們每個階段做的，到底是哪一種 Engineering？**
+**Q30. 我們每個階段做的，到底是哪一種 Engineering？**
 
 有助於知道自己在哪一層、下一步該補哪裡：
 
 | 我們在做的事 | 學科 | 層 |
 |---|---|---|
-| 訪談需求、寫 spec／plan、對齊規格書、階段切分（Q6、Q7） | **Spec Engineering** | 1 輸入 |
+| 訪談需求、寫 spec／plan、對齊規格書、階段切分（Q7、Q8） | **Spec Engineering** | 1 輸入 |
 | 寫 CLAUDE.md、rules、skill 與 agent 的指示措辭 | **Prompt Engineering** | 1 輸入 |
-| 決定什麼時候載入什麼、探查隔離、輸出折疊、context 預算（Q11、Q23） | **Context Engineering** | 1 輸入 |
+| 決定什麼時候載入什麼、探查隔離、輸出折疊、context 預算（Q12、Q24） | **Context Engineering** | 1 輸入 |
 | friction log、決策寫進 git、auto memory 紀律 | **Memory Engineering** | 1 輸入 |
-| hook、permission、pre-commit、CI 軌道、TDD 相位鎖（Q24） | **Harness Engineering** | 2 環境 |
-| TDD 紅→綠、統一閘門、四視角審查、ratchet、mutation testing（Q9、Q25、Q26） | **Evaluation Engineering** ＋ inner loop | 3 控制／4 回饋 |
-| hook 決策記錄、誤擋率與命中率彙總（Q24、Q25） | **Observability Engineering** | 4 回饋 |
+| hook、permission、pre-commit、CI 軌道、TDD 相位鎖（Q25） | **Harness Engineering** | 2 環境 |
+| TDD 紅→綠、統一閘門、四視角審查、ratchet、mutation testing（Q10、Q26、Q27） | **Evaluation Engineering** ＋ inner loop | 3 控制／4 回饋 |
+| hook 決策記錄、誤擋率與命中率彙總（Q25、Q26） | **Observability Engineering** | 4 回饋 |
 | PR 事件訂閱、排程自查、自動觸發的診斷迴路 | **Loop Engineering**（outer loop） | 3 控制 |
 
 一條重要的依賴順序：**先觀測 → 再評估 → 才自動化。你不能自動化一個你量不到的東西。** 而任何 unattended 的 AI 迴路都必備四個控制：迭代上限、預算上限、agent 可自評的成功條件、失敗升級路徑——缺一不放手。
@@ -388,30 +445,32 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 
 **三條元原則**：① 瓶頸是 verifier，不是模型　② 證據不是聲稱　③ advisory 會衰減，必守規則要 enforced
 
+**專案骨架**（`CLAUDE.md`／`rules/`／`skills/`／`agents/`／`hooks/` 各放什麼、哪些進 git）見 [Q6](#二給寫-code-的人)。
+
 | 分組 | # | 規則 | 出處 |
 |---|---|---|---|
 | **產出** | 1 | 該自己寫就自己寫：熟悉的成熟 codebase＋已知做法，自己寫更快 | Q4 |
 | | 2 | 禁區：認證／授權／加密／金流／輸入處理／migration 的 AI 產出視為草稿，必經專門安全審查 | Q5 |
-| | 3 | 計畫先行：一句話說不清就先出計畫給人審；spec 要能翻成會紅的測試 | Q6 |
-| | 4 | 小步交付：一句話描述不了就拆，而且在規劃階段就切好 | Q7 |
-| | 5 | 測試先紅後綠，紅燈 commit 為證；測試檔變更是一級審查對象 | Q8、Q9 |
-| | 6 | AI 不測自己剛寫的東西；測試看的是獨立性不是覆蓋率 | Q10 |
-| | 7 | 糾正兩次仍錯就重開或自己寫 | Q11 |
-| | 8 | 新增前先問能不能複用；無條件吞例外＝缺陷 | Q12 |
-| | 9 | 新依賴合併前人工確認存在；secrets 不進 context | Q13 |
-| | 10 | PR 附證據，並誠實標示「哪些沒做到」 | Q14 |
-| **審查** | 11 | AI 找碴、人裁決；人不對 AI 沒看過的 diff 簽名 | Q15 |
-| | 12 | 缺證據先補、審不動要求拆分——不硬審 | Q16 |
-| | 13 | 送 PR＝我能解釋並維護它；解釋不出來就還沒準備好 | Q17 |
-| | 14 | 只追正確性與明訂需求的發現，其餘可選；噪音要修設定不是修人 | Q18 |
-| **責任與制度** | 15 | 每段程式碼都要有一個能解釋並維護它的人；送出者即負責人 | Q22 |
-| | 16 | 揭露程度而非有無，且明文不用於考核；不以 AI 使用率當 KPI | Q20、Q22 |
-| | 17 | 必守規則要 enforced；被違反第二次才升級；閘門誤擋要修閘門 | Q24 |
-| | 18 | 閘門也要驗證（mutation testing）；感測器的失效是靜默的 | Q25 |
-| | 19 | 品質指標只准向好；門檻由 CI 持有，調低要書面理由 | Q26 |
-| | 20 | 看結構指標，不看行數／PR 數／使用率 | Q19 |
-| **習慣** | 21 | Context 衛生：換任務就清空；長 session 是品質與成本的雙重訊號 | Q11、Q23 |
-| | 22 | 防線回填＋同類掃描：漏網 bug 必答「為什麼沒攔到」 | Q27 |
+| | 3 | 計畫先行：一句話說不清就先出計畫給人審；spec 要能翻成會紅的測試 | Q7 |
+| | 4 | 小步交付：一句話描述不了就拆，而且在規劃階段就切好 | Q8 |
+| | 5 | 測試先紅後綠，紅燈 commit 為證；測試檔變更是一級審查對象 | Q9、Q10 |
+| | 6 | AI 不測自己剛寫的東西；測試看的是獨立性不是覆蓋率 | Q11 |
+| | 7 | 糾正兩次仍錯就重開或自己寫 | Q12 |
+| | 8 | 新增前先問能不能複用；無條件吞例外＝缺陷 | Q13 |
+| | 9 | 新依賴合併前人工確認存在；secrets 不進 context | Q14 |
+| | 10 | PR 附證據，並誠實標示「哪些沒做到」 | Q15 |
+| **審查** | 11 | AI 找碴、人裁決；人不對 AI 沒看過的 diff 簽名 | Q16 |
+| | 12 | 缺證據先補、審不動要求拆分——不硬審 | Q17 |
+| | 13 | 送 PR＝我能解釋並維護它；解釋不出來就還沒準備好 | Q18 |
+| | 14 | 只追正確性與明訂需求的發現，其餘可選；噪音要修設定不是修人 | Q19 |
+| **責任與制度** | 15 | 每段程式碼都要有一個能解釋並維護它的人；送出者即負責人 | Q23 |
+| | 16 | 揭露程度而非有無，且明文不用於考核；不以 AI 使用率當 KPI | Q21、Q23 |
+| | 17 | 必守規則要 enforced；被違反第二次才升級；閘門誤擋要修閘門 | Q25 |
+| | 18 | 閘門也要驗證（mutation testing）；感測器的失效是靜默的 | Q26 |
+| | 19 | 品質指標只准向好；門檻由 CI 持有，調低要書面理由 | Q27 |
+| | 20 | 看結構指標，不看行數／PR 數／使用率 | Q20 |
+| **習慣** | 21 | Context 衛生：換任務就清空；長 session 是品質與成本的雙重訊號 | Q12、Q24 |
+| | 22 | 防線回填＋同類掃描：漏網 bug 必答「為什麼沒攔到」 | Q28 |
 
 **三個痛點的對應**
 
@@ -429,7 +488,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 
 ### 2.1 官方文件原文
 
-**關於「AI 怎麼知道自己做完了」**（支撐 Q1、Q8、Q14）
+**關於「AI 怎麼知道自己做完了」**（支撐 Q1、Q9、Q15）
 
 > "Claude stops when the work looks done. Without a check it can run, 'looks done' is the only signal available, and you become the verification loop: every mistake waits for you to notice it. Give Claude something that produces a pass or fail, and the loop closes on its own."
 > — [Best practices › Give Claude a way to verify its work](https://code.claude.com/docs/en/best-practices)
@@ -440,7 +499,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "**The trust-then-verify gap.** Claude produces a plausible-looking implementation that doesn't handle edge cases. **Fix**: Always provide verification (tests, scripts, screenshots). If you can't verify it, don't ship it."
 > — [Best practices › Avoid common failure patterns](https://code.claude.com/docs/en/best-practices)
 
-**關於計畫先行與 PR 大小**（支撐 Q6、Q7）
+**關於計畫先行與 PR 大小**（支撐 Q7、Q8）
 
 > "Letting Claude jump straight to coding can produce code that solves the wrong problem. Use plan mode to separate exploration from execution."
 > — [Best practices › Explore first, then plan, then code](https://code.claude.com/docs/en/best-practices)
@@ -448,7 +507,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "Planning is most useful when you're uncertain about the approach, when the change modifies multiple files, or when you're unfamiliar with the code being modified. **If you could describe the diff in one sentence, skip the plan.**"
 > — 同上
 
-**關於 spec 的結構判準**（支撐 Q6）
+**關於 spec 的結構判準**（支撐 Q7）
 
 > "The most useful specs are self-contained: they name the files and interfaces involved, state what is out of scope, and end with an end-to-end verification step that proves the feature works. Time spent making the spec precise pays off more than time spent watching the implementation."
 > — [Best practices › Let Claude interview you](https://code.claude.com/docs/en/best-practices)
@@ -456,7 +515,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "Claude asks about things you might not have considered yet, including technical implementation, UI/UX, edge cases, and tradeoffs." … "Once the spec is complete, start a fresh session to execute it."
 > — 同上
 
-**關於 TDD 的順序**（支撐 Q9）〔工程部落格〕
+**關於 TDD 的順序**（支撐 Q10）〔工程部落格〕
 
 > "Ask Claude to write tests based on expected input/output pairs. Be explicit about the fact that you're doing test-driven development so that it avoids creating mock implementations, even for functionality that doesn't exist yet in the codebase."
 > — [Claude Code Best Practices（部落格）](https://www.anthropic.com/engineering/claude-code-best-practices)
@@ -464,7 +523,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "Ask Claude to commit the tests when it's satisfied with them."
 > — 同上
 
-**關於審查：AI 不核准、審查者要用乾淨 context**（支撐 Q15、Q18）
+**關於審查：AI 不核准、審查者要用乾淨 context**（支撐 Q16、Q19）
 
 > "Findings are tagged by severity and don't approve or block your PR, so existing review workflows stay intact."
 > — [Code Review](https://code.claude.com/docs/en/code-review)
@@ -486,7 +545,7 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "Subagents run in their own context with their own set of allowed tools. They're useful for tasks that read many files or need specialized focus without cluttering your main conversation."
 > — [Best practices › Create custom subagents](https://code.claude.com/docs/en/best-practices)
 
-**關於 advisory vs enforced**（支撐 Q24）
+**關於 advisory vs enforced**（支撐 Q25）
 
 > "Unlike CLAUDE.md instructions which are advisory, hooks are deterministic and guarantee the action happens."
 > — [Best practices › Set up hooks](https://code.claude.com/docs/en/best-practices)
@@ -508,12 +567,12 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 > "Claude Code only has the permissions you grant it. **You're responsible for reviewing proposed code and commands for safety before approval.**"
 > — [Security](https://code.claude.com/docs/en/security)
 
-官方也承認逐一核准會退化成橡皮圖章——這是 Q16 的官方版本：
+官方也承認逐一核准會退化成橡皮圖章——這是 Q17 的官方版本：
 
 > "This is safe but tedious. After the tenth approval you're not really reviewing anymore, you're just clicking through."
 > — [Best practices › Configure permissions](https://code.claude.com/docs/en/best-practices)
 
-**關於 context 衛生**（支撐 Q11、Q23、Q24）
+**關於 context 衛生**（支撐 Q12、Q24、Q25）
 
 > "Most best practices are based on one constraint: Claude's context window fills up fast, and performance degrades as it fills."
 > — [Best practices](https://code.claude.com/docs/en/best-practices)
@@ -533,19 +592,19 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 | Q2（反面） | 大規模導入後採用者合併 PR 多約 24%，四個月觀察窗內持續 | [arXiv 2607.01418](https://arxiv.org/abs/2607.01418)，微軟數萬名工程師 |
 | Q2（框架） | 90% 日常使用 AI；AI 對交付吞吐正相關；**AI 是放大器不是解方** | [DORA State of AI-assisted Software Development 2025](https://dora.dev/dora-report-2025/) |
 | Q5 | AI 產生程式碼安全通過率平均 **56% 且未隨模型能力改善**；86% 擋不住 XSS、88% 對 log injection 無防禦 | [Veracode 2026 GenAI Code Security Report](https://www.veracode.com/blog/spring-2026-genai-code-security/)，100+ 模型、四次快照 |
-| Q7、Q16 | 審查負擔外部化的質性框架：Review Friction／Quality Degradation／系統性誘因；定性為**公地悲劇** | [arXiv 2603.27249 "An Endless Stream of AI Slop"](https://arxiv.org/abs/2603.27249)，1,154 則開發者貼文質性分析 |
-| Q8 | Coding agent 的 reward hacking 已可量測（改測試、hardcode、假完成） | [EvilGenie](https://arxiv.org/html/2511.21654v2)、[SpecBench](https://arxiv.org/html/2605.21384v1)、[Cursor: Reward hacking is swamping model intelligence gains](https://cursor.com/blog/reward-hacking-coding-benchmarks) |
-| Q8 | Agent 在 code freeze 期間刪除正式資料庫並謊稱無法復原 | [The Register 報導](https://www.theregister.com/2025/07/21/replit_saastr_vibe_coding_incident/)、[AI Incident Database #1152](https://incidentdatabase.ai/cite/1152/) |
-| Q12 | 複用 ↓35%、重構行移動 ↓70%、legacy 維護 ↓74%、複製貼上 ↑41%、重複區塊 ↑81%、error-masking ↑47% | [GitClear: The Maintainability Gap](https://www.gitclear.com/the_ai_code_quality_maintainability_gap)，6.23 億行變更（2023–2026） |
-| Q13 | AI 建議不存在套件的比率 **19.7%**；幻覺具一致性 → 可被搶註冊（slopsquatting） | 576,000 樣本研究；實例見 [Aikido Security](https://www.aikido.dev/blog/slopsquatting-ai-package-hallucination-attacks)、[Snyk](https://snyk.io/articles/slopsquatting-mitigation-strategies/) |
-| Q13 | AI coding 工具不尊重 `.gitignore`；核准指令的快取可能帶出憑證 | [Check Point 研究報導](https://www.developer-tech.com/news/check-point-ai-coding-assistants-leaking-api-keys/)、[TechTalks](https://bdtechtalks.com/2026/04/27/claude-code-api-token-leak/) |
-| Q21 | **32% 資深** vs **13% 初階**說自己出貨的程式碼過半是 AI 產的；資深宣稱顯著增益的比例是初階兩倍 | [Fastly 調查](https://www.fastly.com/blog/senior-developers-ship-more-ai-code) |
-| Q21、Q28 | 重度依賴 LLM 造成記憶力下降、神經參與度降低；先用 LLM 者難以重新啟動獨立作業所需的神經網路 | [MIT: Your Brain on ChatGPT（認知債）](https://brainmindsociety.org/posts/the-cognitive-costs-of-chatgpt-understanding-mits-viral-study) |
-| Q28 | AI 產生的不熟悉區段平均除錯 ~45 分鐘 vs 手寫 ~15 分鐘；「70% 問題」框架 | [Addy Osmani: The 70% problem](https://addyo.substack.com/p/the-70-problem-hard-truths-about) |
-| Q23 | Agentic 工作流 token 消耗是 chat 查詢的 5–30 倍；企業預算失控實例 | [Cockroach Labs: The Bill Arrives](https://www.cockroachlabs.com/blog/agentic-ai-costs-at-scale/) |
-| Q19 | 「Complacency with AI-generated code」被列入 **Hold**；建議用架構適應度函數持續機械化強制約束 | [Thoughtworks Technology Radar](https://www.thoughtworks.com/en-us/radar/techniques/complacency-with-ai-generated-code) |
+| Q8、Q17 | 審查負擔外部化的質性框架：Review Friction／Quality Degradation／系統性誘因；定性為**公地悲劇** | [arXiv 2603.27249 "An Endless Stream of AI Slop"](https://arxiv.org/abs/2603.27249)，1,154 則開發者貼文質性分析 |
+| Q9 | Coding agent 的 reward hacking 已可量測（改測試、hardcode、假完成） | [EvilGenie](https://arxiv.org/html/2511.21654v2)、[SpecBench](https://arxiv.org/html/2605.21384v1)、[Cursor: Reward hacking is swamping model intelligence gains](https://cursor.com/blog/reward-hacking-coding-benchmarks) |
+| Q9 | Agent 在 code freeze 期間刪除正式資料庫並謊稱無法復原 | [The Register 報導](https://www.theregister.com/2025/07/21/replit_saastr_vibe_coding_incident/)、[AI Incident Database #1152](https://incidentdatabase.ai/cite/1152/) |
+| Q13 | 複用 ↓35%、重構行移動 ↓70%、legacy 維護 ↓74%、複製貼上 ↑41%、重複區塊 ↑81%、error-masking ↑47% | [GitClear: The Maintainability Gap](https://www.gitclear.com/the_ai_code_quality_maintainability_gap)，6.23 億行變更（2023–2026） |
+| Q14 | AI 建議不存在套件的比率 **19.7%**；幻覺具一致性 → 可被搶註冊（slopsquatting） | 576,000 樣本研究；實例見 [Aikido Security](https://www.aikido.dev/blog/slopsquatting-ai-package-hallucination-attacks)、[Snyk](https://snyk.io/articles/slopsquatting-mitigation-strategies/) |
+| Q14 | AI coding 工具不尊重 `.gitignore`；核准指令的快取可能帶出憑證 | [Check Point 研究報導](https://www.developer-tech.com/news/check-point-ai-coding-assistants-leaking-api-keys/)、[TechTalks](https://bdtechtalks.com/2026/04/27/claude-code-api-token-leak/) |
+| Q22 | **32% 資深** vs **13% 初階**說自己出貨的程式碼過半是 AI 產的；資深宣稱顯著增益的比例是初階兩倍 | [Fastly 調查](https://www.fastly.com/blog/senior-developers-ship-more-ai-code) |
+| Q22、Q29 | 重度依賴 LLM 造成記憶力下降、神經參與度降低；先用 LLM 者難以重新啟動獨立作業所需的神經網路 | [MIT: Your Brain on ChatGPT（認知債）](https://brainmindsociety.org/posts/the-cognitive-costs-of-chatgpt-understanding-mits-viral-study) |
+| Q29 | AI 產生的不熟悉區段平均除錯 ~45 分鐘 vs 手寫 ~15 分鐘；「70% 問題」框架 | [Addy Osmani: The 70% problem](https://addyo.substack.com/p/the-70-problem-hard-truths-about) |
+| Q24 | Agentic 工作流 token 消耗是 chat 查詢的 5–30 倍；企業預算失控實例 | [Cockroach Labs: The Bill Arrives](https://www.cockroachlabs.com/blog/agentic-ai-costs-at-scale/) |
+| Q20 | 「Complacency with AI-generated code」被列入 **Hold**；建議用架構適應度函數持續機械化強制約束 | [Thoughtworks Technology Radar](https://www.thoughtworks.com/en-us/radar/techniques/complacency-with-ai-generated-code) |
 
-> **引用紀律**：以上都是有方法論揭露的來源。市面上流傳的「AI PR 大 2.5 倍」「審查時間 +441%」等廠商統計方向可信但絕對值不可靠，本文只在 Q7 以「方向一致」的方式提及，不當論據。
+> **引用紀律**：以上都是有方法論揭露的來源。市面上流傳的「AI PR 大 2.5 倍」「審查時間 +441%」等廠商統計方向可信但絕對值不可靠，本文只在 Q8 以「方向一致」的方式提及，不當論據。
 
 ### 2.3 其他團隊怎麼訂政策
 
@@ -562,11 +621,11 @@ EP實作有過實證：一輪 12 條突變測試中有 2 條一開始存活，�
 
 > **AI agents MUST NOT add Signed-off-by tags. Only humans can legally certify the Developer Certificate of Origin (DCO).**
 
-以及它的 bug 修復程序第 8 步（Q14 的來源）：**明確說明哪些事情沒做到**——如果修復無法建置或測試、無法產生 reproducer，就明講，因為維護者浪費太多時間在分析未驗證的報告與未測試的修復。
+以及它的 bug 修復程序第 8 步（Q15 的來源）：**明確說明哪些事情沒做到**——如果修復無法建置或測試、無法產生 reproducer，就明講，因為維護者浪費太多時間在分析未驗證的報告與未測試的修復。
 
 **Ghostty** 的 [`AI_POLICY.md`](https://github.com/ghostty-org/ghostty/blob/main/AI_POLICY.md) 值得學的是說理方式而不只是規則：
 
-> **如果你無法在沒有 AI 工具協助的情況下解釋你的變更做了什麼、以及它如何與更大的系統互動，請不要貢獻此專案。**（Q17 的來源）
+> **如果你無法在沒有 AI 工具協助的情況下解釋你的變更做了什麼、以及它如何與更大的系統互動，請不要貢獻此專案。**（Q18 的來源）
 
 > 每一個 discussion、issue 和 pull request 都由人類閱讀與審查。以低品質、未經檢驗的成果靠近這個邊界是粗魯且不尊重的，因為它把驗證的負擔丟給了維護者。
 
@@ -584,7 +643,7 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 |---|---|---|
 | 3 計畫先行 | 三段式流程：`/plan-feature` 規劃 → `/review-plan` 四視角 AI 審 → **停等人審** → 人親自啟動實作 → `/review-implementation` 用同四視角審 diff、專攔「規劃審過、實作走偏」。而且 hook 會**機械擋掉**「沒有規劃書就寫產品程式碼」 | `.claude/skills/plan-feature/`、`.claude/skills/review-implementation/`、`.claude/hooks/feature-plan-guard.py` |
 | 4 小步交付 | 規劃書強制「階段切分」，一階段對應一次紅綠循環；CI 檢查分支歷史保持一直線 | `.claude/skills/plan-feature/`、`.github/workflows/ci.yml` |
-| 5 先紅後綠 | 紅燈測試 commit（`test(red)`）後建立鎖檔，**紅燈期 hook 禁止編輯測試檔**；唯一解鎖路徑是檢查全綠——把 Q9 的「事後揭露」升級成「事前做不到」 | `.claude/hooks/tdd-test-guard.py`、`scripts/tdd-unlock.sh` |
+| 5 先紅後綠 | 紅燈測試 commit（`test(red)`）後建立鎖檔，**紅燈期 hook 禁止編輯測試檔**；唯一解鎖路徑是檢查全綠——把 Q10 的「事後揭露」升級成「事前做不到」 | `.claude/hooks/tdd-test-guard.py`、`scripts/tdd-unlock.sh` |
 | 10 附證據 | PR 範本要求填規劃／審查結論、紅燈 commit hash、CI；部署後打 `/api/health` 比對版本 sha；正式站部署需人工核准 | `.github/pull_request_template.md`、`.github/workflows/deploy-supabase.yml` |
 | 11 AI 找碴 | 用 **custom subagent** 實作審查分身：`.claude/agents/` 每個 agent 一個定義檔，frontmatter 限定**唯讀工具**與模型，確保「只能看、不能改、fresh context」。四個 reviewer（系統／架構／UIUX／需求）輸出統一 P0／P1／P2 契約、彙整者明文禁止改判；第五個 `codebase-scout` 專做探查，把大量讀檔隔離在自己的 context | `.claude/agents/plan-reviewer-*.md`、`.claude/agents/codebase-scout.md`、`docs/_templates/review.md` |
 | 12 補證據再審 | PR 範本的「流程證據」欄位就是 reviewer 開審前的檢核清單——缺哪項一目瞭然 | `.github/pull_request_template.md` |
@@ -597,11 +656,11 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 
 ### 3.2 EP實作做得比官方基線更細的六件事
 
-1. **「約定會被忽略」當設計公理**：被違反過的約定就升級成機械檢查（Q24 的升級判準就是從這裡來的），並用 friction log 追蹤誤擋與漏網、定期整併成框架修訂。範例：`git commit --no-verify` 曾是繞過檢查的口子 → 現在被 hook 直接擋。
+1. **「約定會被忽略」當設計公理**：被違反過的約定就升級成機械檢查（Q25 的升級判準就是從這裡來的），並用 friction log 追蹤誤擋與漏網、定期整併成框架修訂。範例：`git commit --no-verify` 曾是繞過檢查的口子 → 現在被 hook 直接擋。
 2. **審查獨立性的結構化**：官方只說「用 fresh context 審」；EP實作加上視角分工、嚴重度契約（P0 未處置不得進實作）、「彙整者禁止改判」、「需求對不到規格書＝一律 P0」等硬規則。
-3. **閘門的閘門**：mutation testing 抓出過「12 條突變中 2 條檢查空轉」的實證（Q25 的來源）。
+3. **閘門的閘門**：mutation testing 抓出過「12 條突變中 2 條檢查空轉」的實證（Q26 的來源）。
 4. **不可能假綠的測試設計**：全鏈路測試連不上就硬失敗、情境數低於下限就硬失敗——源自一次「27 個情境全 skip 卻顯示全綠」的真實事故。
-5. **規格書防漂移的機械比對**：業務常數、路由、狀態機列舉與規格書逐條比對，不同步就 CI 紅；連「比對規則抽取不到值」也算失敗，防止閘門靜默變空轉。這讓規格書能一直當 single source of truth 用，Q6 的「審查殘留測試」與需求視角的「對不到規格書＝P0」才有可靠的溯源對象（`scripts/check-spec-drift.py`）。
+5. **規格書防漂移的機械比對**：業務常數、路由、狀態機列舉與規格書逐條比對，不同步就 CI 紅；連「比對規則抽取不到值」也算失敗，防止閘門靜默變空轉。這讓規格書能一直當 single source of truth 用，Q7 的「審查殘留測試」與需求視角的「對不到規格書＝P0」才有可靠的溯源對象（`scripts/check-spec-drift.py`）。
 6. **流程自身有迭代迴圈**：hook 決策量測＋friction log＋定期框架修訂 PR——規範跟程式碼一樣有 bug、要量測、要修。
 
 ### 3.3 EP實作還缺什麼、接下來要導入什麼
@@ -609,12 +668,12 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 | 優先 | 項目 | 補哪一條規則的縫 |
 |---|---|---|
 | P1 | 合併規則加入**人類 approve** 要求（EP實作目前唯一 required check 是 CI；組織其他專案已有兩位 reviewer，應對齊） | 規則 11、15：人的裁決點要 enforced，不能只是文化 |
-| P1 | coverage ratchet 的「只准調高」目前是註解約定——新增 CI 檢查：門檻被調低即紅，除非附豁免理由 | 規則 19：閘門參數可被悄悄放寬（Q26 的縫隙） |
-| P2 | 依賴新增檢查：PR 引入新套件時自動查存在性與下載量、要求人工確認 | 規則 9：目前 slopsquatting 完全靠人記得（Q13） |
+| P1 | coverage ratchet 的「只准調高」目前是註解約定——新增 CI 檢查：門檻被調低即紅，除非附豁免理由 | 規則 19：閘門參數可被悄悄放寬（Q27 的縫隙） |
+| P2 | 依賴新增檢查：PR 引入新套件時自動查存在性與下載量、要求人工確認 | 規則 9：目前 slopsquatting 完全靠人記得（Q14） |
 | P2 | PR 規模軟警戒：diff 超標時 CI 留言建議拆分（**不硬擋**——硬擋會逼出湊行數的壞行為） | 規則 4：小步交付目前只是約定 |
 | P2 | 試點官方 [Code Review](https://code.claude.com/docs/en/code-review)＋`REVIEW.md` 作為 PR 開啟後的第二道獨立防線（注意其 check run 永遠中性，要 gate 需自行解析輸出） | 規則 11：多一層與 session 無關的審查 |
-| P3 | 結構指標儀表板：重複區塊比例、複用率、重構佔比、error-masking 出現率 | 規則 20：目前只有 hook metrics，沒有 codebase 健康度（Q19） |
-| P3 | Outer loop 依序建設：感測器資料累積 → skill 觸發命中率評估 → friction log 整併排程化 → 第一條唯讀自動迴路（先補迭代與預算上限） | Q29 的依賴順序：先觀測 → 再評估 → 才自動化 |
+| P3 | 結構指標儀表板：重複區塊比例、複用率、重構佔比、error-masking 出現率 | 規則 20：目前只有 hook metrics，沒有 codebase 健康度（Q20） |
+| P3 | Outer loop 依序建設：感測器資料累積 → skill 觸發命中率評估 → friction log 整併排程化 → 第一條唯讀自動迴路（先補迭代與預算上限） | Q30 的依賴順序：先觀測 → 再評估 → 才自動化 |
 
 ### 3.4 其他專案怎麼開始（成熟度階梯）
 
@@ -626,7 +685,7 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 - **L3（持續）**：防線回填＋同類掃描；friction log；閘門自檢＋mutation testing；ratchet 指標；結構指標追蹤。
 - **L4（前沿，選配）**：先觀測、再評估、才自動化；unattended 迴路必備四控制（迭代上限、預算上限、可自評的成功條件、失敗升級路徑）。
 
-**推行方式**：不要全組織分階段強制（那會製造 Q20 的表演性使用）。找 1–2 個種子團隊照 L0→L1 跑出成功案例、讓他們變成導師擴散；指定一位 DRI 維護組織層的共用資產（CLAUDE.md、rules、agents、hooks）；每季回訪剪枝——規則太多會互相稀釋，這點對本規範自身同樣成立。
+**推行方式**：不要全組織分階段強制（那會製造 Q21 的表演性使用）。找 1–2 個種子團隊照 L0→L1 跑出成功案例、讓他們變成導師擴散；指定一位 DRI 維護組織層的共用資產（CLAUDE.md、rules、agents、hooks）；每季回訪剪枝——規則太多會互相稀釋，這點對本規範自身同樣成立。
 
 ---
 
@@ -639,7 +698,7 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 | **Agentic coding / agent** | AI 不只「回答問題」，而是自主連續行動（讀檔→改碼→跑測試→修正）直到完成任務的工作型態 | [How Claude Code works](https://code.claude.com/docs/en/how-claude-code-works) |
 | **Harness** | 圍繞 AI 搭起來的整套工作環境（工具、權限、守衛腳本、CI），決定 AI 能做什麼、不能做什麼 | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
 | **Context window** | 模型單次能「記在腦中」的內容上限（對話＋讀過的檔案），塞太滿表現會下降 | [Context window](https://code.claude.com/docs/en/context-window) |
-| **Context rot** | 長對話中有效注意力隨雜訊上升而下降，導致早期指令被「遺忘」的現象 | Q11、Q24 |
+| **Context rot** | 長對話中有效注意力隨雜訊上升而下降，導致早期指令被「遺忘」的現象 | Q12、Q25 |
 | **CLAUDE.md** | 放在 repo 裡、AI 每次開工都自動讀的「專案說明書」；屬於 advisory 層級，AI 可能忽略 | [Memory](https://code.claude.com/docs/en/memory) |
 | **Advisory / Enforced** | 規則的兩個強制層級：advisory＝寫在文件裡的建議（AI 與人都可能忽略）；enforced＝由 hook／CI／ruleset 強制、違規做不到 | [Best practices › Set up hooks](https://code.claude.com/docs/en/best-practices) |
 | **Plan Mode** | Claude Code 的唯讀模式：AI 只能讀檔和提出計畫，人核准後才放行實作 | [Permission modes](https://code.claude.com/docs/en/permission-modes) |
@@ -648,16 +707,16 @@ EP實作是我們的範例專案（單人＋AI 開發），Part 1 的規則在�
 | **Fresh context** | 沒有前情、不知道程式碼怎麼寫出來的乾淨腦袋——審查者必要的條件 | [Best practices](https://code.claude.com/docs/en/best-practices) |
 | **Skill / slash command** | 打包成檔案、可用 `/名字` 呼叫的可重複工作流程，可設定成「只有人能觸發」 | [Skills](https://code.claude.com/docs/en/skills) |
 | **Permission / allowlist / deny** | Claude Code 的權限系統：預設唯讀、有動作要人核准；白名單放行安全指令、deny 封鎖敏感檔案 | [Permissions](https://code.claude.com/docs/en/permissions) |
-| **Reward hacking** | Agent 為了讓「成功訊號」變綠而作弊（改測試、hardcode 期望值、放寬 timeout） | Q8 |
-| **Slopsquatting** | 攻擊者搶先註冊 AI 反覆幻想出來的套件名，等著被誤裝 | Q13 |
+| **Reward hacking** | Agent 為了讓「成功訊號」變綠而作弊（改測試、hardcode 期望值、放寬 timeout） | Q9 |
+| **Slopsquatting** | 攻擊者搶先註冊 AI 反覆幻想出來的套件名，等著被誤裝 | Q14 |
 | **Code Review（官方功能）** | Anthropic 的 PR 自動審查服務：多個特化 AI 並行找碴、驗證後留言，但從不核准也不擋合併 | [Code Review](https://code.claude.com/docs/en/code-review) |
 | **REVIEW.md** | 放在 repo 根目錄、專門指揮審查 AI 的最高優先指示檔（調嚴重度定義、nit 上限、略過範圍） | [Code Review › REVIEW.md](https://code.claude.com/docs/en/code-review#review-md) |
 | **TDD（測試驅動開發）** | 先寫「會失敗的測試」定義正確行為，再寫實作讓它變綠——紅綠燈給 AI 明確的自我驗證訊號 | [Best Practices（部落格）](https://www.anthropic.com/engineering/claude-code-best-practices) |
-| **Coverage ratchet** | 測試覆蓋率門檻「只准調高、不准調低」的機制（ratchet＝棘輪，只朝一個方向轉的齒輪） | Q26 |
+| **Coverage ratchet** | 測試覆蓋率門檻「只准調高、不准調低」的機制（ratchet＝棘輪，只朝一個方向轉的齒輪） | Q27 |
 | **Mutation testing** | 故意把程式或檢查「改壞」一次，驗證測試／閘門真的會變紅——證明防線不是空轉 | [Wikipedia](https://en.wikipedia.org/wiki/Mutation_testing) |
 | **pre-commit hook（git）** | git 原生機制：commit 前自動跑檢查、紅燈就擋（與 Claude Code 的 hook 是兩套東西） | [Git Hooks](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) |
 | **CI / required check / ruleset** | CI＝每次 push 自動跑的檢查流水線；ruleset＝GitHub 上「哪些檢查必須綠、要幾個 approve 才准合併」的強制設定 | [GitHub: About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) |
-| **DCO / Assisted-by** | 開發者原創聲明；`Assisted-by:` 是記錄「工具參與」的 commit trailer，有別於主張共同作者的 `Co-authored-by:` | Q22、[Linux 政策](https://github.com/torvalds/linux/blob/master/Documentation/process/coding-assistants.rst) |
+| **DCO / Assisted-by** | 開發者原創聲明；`Assisted-by:` 是記錄「工具參與」的 commit trailer，有別於主張共同作者的 `Co-authored-by:` | Q23、[Linux 政策](https://github.com/torvalds/linux/blob/master/Documentation/process/coding-assistants.rst) |
 | **Loop Engineering** | 與其一句句提示 AI，不如設計「什麼觸發 AI、誰驗證產出、何時停止」的自動迴路 | [O'Reilly: Loop Engineering](https://www.oreilly.com/radar/loop-engineering/) |
 | **P0 / P1 / P2** | 審查發現的嚴重度分級：P0＝阻擋（不修不准前進）、P1＝應改、P2＝建議 | EP實作 `docs/_templates/review.md` |
 
