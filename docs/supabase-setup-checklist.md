@@ -157,7 +157,7 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 <h2>您的 Uknow 驗證碼</h2>
 <p>請在 App 中輸入以下 6 位數驗證碼：</p>
 <p style="font-size:28px; font-weight:bold; letter-spacing:6px;">{{ .Token }}</p>
-<p>驗證碼 1 小時內有效。若非您本人操作請忽略此信。</p>
+<p>驗證碼 3 分鐘內有效。若非您本人操作請忽略此信。</p>
 ```
 
 > 💡 確認 **Authentication → Providers → Email** 已啟用、且 **Confirm email**
