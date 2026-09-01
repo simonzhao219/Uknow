@@ -6,25 +6,26 @@
 
 分支:`claude/qr-code-member-dashboard-qs36st`（web session 由平台開的分支，
 非 `feature/*`，規劃書守衛不啟動；規劃仍照三段式走）
-規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
+規劃書:`./plan.md`（第 3 版，方案 B）|審查:`./review.md`(P0 須全數處置才可開工)
+PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 
 ## 階段狀態
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan` 與 URL 優先序） | ⬜ 未開始 | | |
-| 2 | 掃描頁改面板（`admin/MemberVerifyScanner` 去頁首、卸載停相機） | ⬜ 未開始 | | |
-| 3 | `MyQrPage` 新頁（分頁組合、深連結、偏好寫回） | ⬜ 未開始 | | |
-| 4 | 接線（`MyQrEntry` 改 Link、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
-| 5 | 文件與 e2e 同步（規格書 §3／§13.1、溢版巡檢路由與 mock、步驟註解） | ⬜ 未開始 | | |
+| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ⬜ 未開始 | | |
+| 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、稽核 `verifier_id`）＋ migration 改名；**紅綠以 CI api-tests 軌為準（本機無 deno）** | ⬜ 未開始 | | |
+| 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ⬜ 未開始 | | |
+| 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ⬜ 未開始 | | |
+| 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
+| 6 | 文件與 e2e 同步（規格書 §2.1／§3／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃書已寫、`/review-plan` 四視角已跑完（`./review.md`：P0 0／P1 9／P2 9），
-規劃書已依審查修訂（plan.md 末段「修訂紀錄」逐條對應 review.md 的編號）。
-**待人審裁決**：review.md「處置」節的勾選項（含開放問題 #1–#3 與相機啟動時機）。
-人審通過後由人親自 `/tdd-implement qr-code-member-dashboard` 啟動實作；
-若人要求，對修訂版重跑 `/review-plan`（因無 P0，非強制）。
+2026-09-01：人審裁決五題（掃描開放會員＝方案 B、不放縮圖、保留 `/admin` 捷徑、
+切到分頁即啟動相機、非管理員看遮罩名），規劃書改寫為第 3 版；依人審要求對第 3 版
+**重跑一輪四視角審查**，結果附在 `./review.md`「第 2 輪審查」。
+**開工條件**：第 2 輪無未處置 P0 → 由人親自 `/tdd-implement qr-code-member-dashboard`。
 
 ## Blockers(逃生口紀錄)
 
@@ -32,6 +33,10 @@
      1. 紅燈測試一寫就綠(功能已存在)→ 記錄後跳過該階段,人審知悉
      2. 實作中發現 plan 該階段有誤 → 停手記錄,求人工裁決,禁止私改 plan
      3. 綠不了 → 記錄嘗試過什麼,求人工裁決,禁止改測試遷就實作 -->
+
+- 階段 2 的 Deno 測試在本容器跑不了（無 deno、無 supabase CLI）：紅燈 commit 以
+  「測試檔已改、CI api-tests 軌紅」為證據，綠燈同理。實作時把該軌的 run 連結記在
+  這裡。
 
 ## 框架摩擦
 
