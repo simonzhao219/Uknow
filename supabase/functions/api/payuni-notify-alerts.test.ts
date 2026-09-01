@@ -140,7 +140,7 @@ Deno.test('notify 金額不符：拒絕之外要留一筆 error 級告警(靜默
   }
 });
 
-Deno.test('notify 缺 MerTradeNo：簽章合法但內容畸形,要留一筆告警', async () => {
+Deno.test('notify 缺 MerTradeNo 但 Status 為 SUCCESS：錢已收卻無法歸戶,標 error', async () => {
   const client = adminClient();
   // 沒有 MerTradeNo 可當識別鍵,改用 TradeNo——告警的 context 必須帶上它,
   // 否則這種畸形回調除了「有一筆壞掉」之外什麼線索都留不下。
@@ -152,7 +152,78 @@ Deno.test('notify 缺 MerTradeNo：簽章合法但內容畸形,要留一筆告�
   const alerts = await alertsByContext(client, 'tradeNo', tradeNo);
   assertEquals(alerts.length, 1, 'missing MerTradeNo 應留下恰好一筆告警');
   assertEquals(alerts[0].source, 'resolveOrderFromPayUni');
-  assertEquals((alerts[0].context as Record<string, unknown>).reason, 'missing_mer_trade_no');
+  const ctx = alerts[0].context as Record<string, unknown>;
+  assertEquals(ctx.reason, 'missing_mer_trade_no');
+  // Status=SUCCESS 代表 PayUni 說錢收了,但缺 MerTradeNo 就無法歸戶——
+  // 財務後果與 order_not_found 同級,不能只標 warning。
+  assertEquals(alerts[0].severity, 'error', 'Status=SUCCESS 時財務風險等同查無訂單');
+  assertEquals(String(ctx.tradeAmt), String(PRICE), 'context 要帶金額,否則人工比對少一個關鍵欄位');
+});
+
+// ── 重送去重:PayUni 對非 SUCCESS 回應會無限重送 ──────────────────────
+//
+// 既有測試檔 payuni-notify.test.ts 自己寫了兩次:「回錯 PayUni 會無限重送」
+// (第 13 行)、「PayUni 在沒收到 SUCCESS 回應時會重送」(第 281 行)。
+// 上面那三個出口全部回 Status:'FAILED',所以每一次重送都會再走一次告警。
+// 第一版只想到「攻擊者能不能灌爆」,漏了「PayUni 自己的重送也是同一個
+// 放大機制」——同一起事故會在 system_alerts 疊出無數列,把其他更急的
+// 告警擠出畫面。這正是 logSystemAlertOnce 要防的失效模式。
+
+Deno.test('notify 同一筆查無訂單重送兩次：只留一筆,不因 PayUni 重送而洗版', async () => {
+  const client = adminClient();
+  const tradeNo = uniqueTradeNo('RETRY');
+  const payload = {
+    Status: 'SUCCESS',
+    MerTradeNo: tradeNo,
+    TradeNo: `PU-${tradeNo}`,
+    TradeAmt: String(PRICE),
+  };
+
+  for (let i = 0; i < 2; i++) {
+    const res = await postNotify(payload);
+    assertEquals((await res.json()).Status, 'FAILED');
+  }
+
+  const alerts = await alertsByContext(client, 'merTradeNo', tradeNo);
+  assertEquals(alerts.length, 1, '同一筆訂單重送兩次只該留一筆未解決告警');
+});
+
+Deno.test('notify 兩筆不同訂單金額不符：各留一筆,去重鍵必須含 merTradeNo', async () => {
+  const client = adminClient();
+  const userA = await createTestUser(client, { name: 'Alert DedupeA' });
+  const userB = await createTestUser(client, { name: 'Alert DedupeB' });
+  const tradeA = uniqueTradeNo('DEDUPA');
+  const tradeB = uniqueTradeNo('DEDUPB');
+
+  try {
+    await seedPendingOrder(client, userA.id, tradeA);
+    await seedPendingOrder(client, userB.id, tradeB);
+
+    for (const t of [tradeA, tradeB]) {
+      const res = await postNotify({
+        Status: 'SUCCESS',
+        MerTradeNo: t,
+        TradeNo: `PU-${t}`,
+        TradeAmt: '1',
+      });
+      assertEquals((await res.json()).Status, 'FAILED');
+    }
+
+    // 去重只該壓「同一筆訂單的重送」,不該把兩位使用者的獨立事故壓成一筆
+    // ——那會讓其中一個人的錢無聲消失。
+    assertEquals(
+      (await alertsByContext(client, 'merTradeNo', tradeA)).length,
+      1,
+      'A 應有自己的告警',
+    );
+    assertEquals(
+      (await alertsByContext(client, 'merTradeNo', tradeB)).length,
+      1,
+      'B 應有自己的告警',
+    );
+  } finally {
+    await deleteTestUsers(client, [userA.id, userB.id]);
+  }
 });
 
 // ── 簽章驗證之前的出口:公開可觸發,必須去重 ──────────────────────
