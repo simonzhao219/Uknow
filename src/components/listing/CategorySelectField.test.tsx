@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CategorySelectField } from './CategorySelectField';
+import { CUSTOM_CATEGORY_MAX_LENGTH } from '../../utils/serviceCategories';
 
 afterEach(cleanup);
 
@@ -185,13 +186,16 @@ describe('CategorySelectField 自訂輸入', () => {
     // JS 拒收會在 IME 組字期間把值倒帶(比改寫更糟);瀏覽器不對組字中的
     // 文字套用 maxLength,所以這個屬性是 IME 安全的。見 PR #212。
     renderField({ startInCustomMode: true });
-    expect(customInput().getAttribute('maxLength')).toBe('10');
+    // 期望值從常數推導而不是寫死:上限是產品規則、會被調整(2026-09-01 由
+    // 10 收到 6),而這兩條斷言驗的是「屬性等於上限」與「計數器顯示 n/上限」
+    // ——那兩件事與上限的具體數字無關。寫死只會讓調數字連帶弄紅無關的測試。
+    expect(customInput().getAttribute('maxLength')).toBe(String(CUSTOM_CATEGORY_MAX_LENGTH));
   });
 
   it('顯示字數計數器', () => {
     renderField({ startInCustomMode: true });
     fireEvent.change(customInput(), { target: { value: '寵物溝通' } });
-    expect(screen.getByText('4/10')).toBeTruthy();
+    expect(screen.getByText(`4/${CUSTOM_CATEGORY_MAX_LENGTH}`)).toBeTruthy();
   });
 });
 

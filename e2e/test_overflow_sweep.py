@@ -58,11 +58,16 @@ NAME_CJK_10 = "專業美髮師小美工作室"
 # Email 來自 Supabase Auth，前端沒有、也不該有長度上限。刻意不含連字號：
 # Chrome 只在 "-" 與 "/" 處斷長字，有連字號的 Email 會僥倖不溢出。
 LONG_EMAIL = "chienmingchangservice@uknowplatform.com.tw"
-# 自訂服務類別上線後，最壞情況不再是內建清單裡最長的那個（「各項運動教練」，
-# 6 字）——使用者能自訂到 CUSTOM_CATEGORY_MAX_LENGTH（10 字，
-# utils/serviceCategories.ts）。測資原則是「最壞但可達」，所以這裡跟著上限走；
-# 內建清單再怎麼變動都不會超過它。
-LONGEST_CATEGORY = "寵物美容與行為訓練師"
+# 自訂服務類別的最壞情況要分兩個方向看，因為「能輸入多長」與「畫面上會出現
+# 多長」在 CUSTOM_CATEGORY_MAX_LENGTH 從 10 收到 6 之後就不再是同一件事：
+#
+#   * 顯示端：調降只約束新輸入，不回頭清資料。調降前建立的 10 字類別仍在
+#     listings 裡、仍會被 public_listing_categories 推導出來、仍出現在卡片
+#     徽章與篩選 chip 上。所以顯示路由的測資維持 10 字——那才是「最壞但可達」。
+#   * 輸入端：輸入框帶 maxLength=6，填 10 字只會進去 6 個，量到的是假的最壞值。
+#     所以輸入路由跟著現行上限走。
+LONGEST_CATEGORY_DISPLAY = "寵物美容與行為訓練師"  # 10 字：調降前建立的既有類別
+LONGEST_CATEGORY_INPUT = "寵物美容師傅"  # 6 字：CUSTOM_CATEGORY_MAX_LENGTH
 MANY_DISTRICTS = ["板橋區", "中和區", "永和區", "三重區", "新莊區", "土城區"]
 # 使用者從 FB 網址列貼上的原字串。validateFacebook() 會從中抽出
 # username（"profile.php"）來驗長度，但存檔存的是整串（含 query），
@@ -94,7 +99,7 @@ def _hostile_public_listing(listing_id: str = "11111111-1111-1111-1111-111111111
     return build_public_listing(
         listing_id,
         name=NAME_CJK_10,
-        category=LONGEST_CATEGORY,
+        category=LONGEST_CATEGORY_DISPLAY,
         city="新北市",
         districts=MANY_DISTRICTS,
         description=LONG_DESCRIPTION,
@@ -105,7 +110,7 @@ def _hostile_public_listing(listing_id: str = "11111111-1111-1111-1111-111111111
 def _hostile_listing() -> dict:
     return build_listing(
         name=NAME_CJK_10,
-        category=LONGEST_CATEGORY,
+        category=LONGEST_CATEGORY_DISPLAY,
         city="新北市",
         districts=MANY_DISTRICTS,
         description=LONG_DESCRIPTION,
@@ -428,7 +433,7 @@ def _open_member_detail_sheet(page):
 def _open_custom_category_input(page):
     """打開服務類別下拉、選到「自訂類別…」，讓漸進揭露的輸入框真的被畫出來。
 
-    沒有這一步，自訂類別輸入框（含 n/10 計數器、收斂提示）從未被這支巡檢
+    沒有這一步，自訂類別輸入框（含 n/6 計數器、收斂提示）從未被這支巡檢
     渲染過——那是這個 feature 裡唯一長度不受開發者控制的輸入型 UI，
     「量不到」不等於「沒問題」。編輯路由的類別雖是自訂值，但 A9 不變式讓它
     直接顯示在 trigger 上（isCustomMode 預設 False），同樣不會經過這條路徑。
@@ -440,7 +445,7 @@ def _open_custom_category_input(page):
     settle(page)
     page.get_by_role("option", name="自訂類別…").click()
     settle(page)
-    page.get_by_label("自訂類別名稱").fill(LONGEST_CATEGORY)
+    page.get_by_label("自訂類別名稱").fill(LONGEST_CATEGORY_INPUT)
 
 
 def _setup_complete_profile(context, api_mock, rest_mock):

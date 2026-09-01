@@ -25,9 +25,11 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
       title={label}
       className={cn(
         'inline-flex min-h-10 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
-        // max-w-full：自訂服務類別上線後，chip 的文字長度不再由開發者決定
-        // （內建類別最長 6 字，自訂上限 10 字）。沒有上限時，長標籤會把
-        // flex-wrap 容器撐得比篩選面板還寬。
+        // max-w-full：自訂服務類別上線後，chip 的文字長度不再由開發者決定。
+        // 自訂上限已對齊內建最長值（皆 6 字，見 CUSTOM_CATEGORY_MAX_LENGTH），
+        // 但調降前建立的類別最長仍有 10 字、資料層的濫用上界是 20 字，所以
+        // 界限不能靠「上限夠小」——沒有 max-w 時，長標籤會把 flex-wrap 容器
+        // 撐得比篩選面板還寬。
         'max-w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         selected

@@ -11,6 +11,10 @@
 // (實測 560px 面板下,30 個內建 chip 約 314px,再加 30 個自訂 chip 就到 794px)。
 // PopoverContent 是 portal + fixed,長過視窗又沒有捲軸時,底部的 chip 點不到——
 // 那不是視覺瑕疵,是篩選條件永久不可及。
+//
+// `CategoryFilterChips` 的收合(CUSTOM_CATEGORY_VISIBLE_LIMIT = 8)不是這一層的
+// 替代品,兩者互補:收合管的是**預設看到的**面板,展開時 `visibleCustom = custom`
+// ——所有自訂 chip 回到同一個面板裡,高度上界又只剩這一層。
 import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
