@@ -48,3 +48,10 @@
   的理由擋掉那條**不是 push** 的指令。症狀輕（重跑即過、訊息誤導），但表示
   「只在 push 前 rebase」這條契約的觸發條件不可靠；整併時考慮把 `git push` 的
   判斷搬進腳本本身（讀 `tool_input.command`），不依賴 `if`。
+- 同一支 hook 的 `had_remote_branch` 是看**本機追蹤 ref**（`git rev-parse origin/<branch>`），
+  不是看遠端。web session 由平台預建的 `origin/claude/*` 追蹤 ref 指著開局的 develop
+  head，但 GitHub 上根本沒有這條分支（`git ls-remote --heads` 為空）——於是第一次
+  push 被以「遠端已有舊歷史、會 non-fast-forward」擋下並要求 `--force-with-lease`，
+  而裸的 `--force-with-lease` 又因追蹤 ref 與遠端不符回 `stale info`。解法是
+  `git ls-remote` 取真實遠端值後 `--force-with-lease=<branch>:<值或空>`；整併時
+  hook 應改用 `git ls-remote --heads origin <branch>` 判斷遠端分支是否存在。
