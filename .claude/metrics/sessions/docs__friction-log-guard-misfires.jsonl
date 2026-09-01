@@ -1,0 +1,1 @@
+{"branch": "fix/legal-list-marker-rendering", "ended": "2026-09-01T22:24:58+00:00", "fired": {}, "passed": {"bash-guard": 11, "check-output-filter": 11, "deletion-residue-check": 1, "model-effort-advisor": 2}, "session": "d04397084999", "started": "2026-09-01T22:08:09+00:00"}
