@@ -1850,13 +1850,29 @@ will inherit **all** rules' headers」+「If a header is applied twice in the
 不是 boolean,那條測試恆綠。**新寫的測試必須先看它紅一次**,這條規矩這次
 兩度救場。
 
-### 未驗證的部分(誠實標註)
+### 線上驗證結果(2026-09-01 回填)
 
-本次分析在 web session 容器內完成,而 egress policy 擋掉了
-`develop.uknow.pages.dev`(gateway 對 CONNECT 回 403),所以**線上實測沒有
-跑到**——根因是從官方文件原文 + repo 歷史推出來的。合併後應手動跑一次
-`python3 scripts/check-deployed-assets.py https://develop.uknow.pages.dev`
-確認,那也正是 deploy-smoke 存在的意義。
+寫這則的當下,分析是在 web session 容器裡完成的,而 egress policy 擋掉了
+`*.uknow.pages.dev`(gateway 對 CONNECT 回 403),所以根因只能從官方文件
+原文 + repo 歷史推出來,**線上實測當時沒有跑到**。原文因此標註為未驗證。
+
+後來的證據把兩件事都補上了:
+
+- **修法成立**:合併後 deploy-smoke 對真實部署跑過——develop(run 1)、
+  正式站晉升後(run 20,PR #275)、以及 2026-09-01 重跑正式站,四項檢查
+  (SPA 外殼 / 資產完整且型別正確 / 深層路徑交回 SPA / 快取標頭)全綠。
+  截至回填時**已累積 90 場排程,連續綠**。
+- **`deployment_status` 快路徑成立**:當時檔頭寫「是否真的送達沒有實測過」,
+  結果是**會送達**——36 場由它觸發的 run(非 success 的部署狀態被 `if`
+  濾成 skipped,正是設計行為)。Cloudflare Pages 確實會建 GitHub Deployment。
+
+**這段回填本身是第二次教訓**:上面那段「未驗證」寫下時完全誠實,是**後來的
+證據把它變成假的**。而它躺在原地兩週,任何人讀到都會以為這個修復從未被線上
+驗證、以為快路徑不可靠——與本則痛陳的「把未經證實的宣稱寫進註解、後人拿它
+當事實」是同一個形狀,只是這次的錯誤來源不是猜測而是**過期**。
+
+可操作的收斂:**寫下「未驗證/待確認」時,就等於欠了一筆回填**。證據到手的
+那一刻要回頭改,不能等下次整併——誠實標註的保鮮期只到證據出現為止。
 
 ## 2026-08-14｜同類掃描｜結論寫進註解 = 沒有閘門,第三次照樣發生
 
