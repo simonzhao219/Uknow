@@ -2090,17 +2090,23 @@ merge commit。兩次都得先自己查 `git rev-list --count origin/develop..HE
 不存在時不報。現在這個寫法在「PR 合併 → 分支刪除」這條最常見的路徑上必然誤報，
 而那正是每支 PR 收尾都會走到的地方。
 
-## 2026-08-17｜誤擋｜bash-guard 把 curl 輪詢誤判成 rebase＋push
+## 2026-08-17｜誤擋｜bash-guard 在 rebase 之後，對不相干指令補上過期的 push 攔截
 
-同一輪內兩次，送出的是「輪詢 GitHub check-runs API 直到 CI 收工」的迴圈，
+同一輪內三次，前兩次送出的是「輪詢 GitHub check-runs API 直到 CI 收工」的迴圈，
 卻收到「Rebased <branch> onto origin/develop… this push would be rejected as
 non-fast-forward」的攔截訊息——指令裡沒有 rebase 也沒有 push。
 
-兩次的共通點：**同一個 bash 呼叫裡混了 git 讀取指令與長迴圈**
-（`SHA=$(git rev-parse origin/develop)` 後面接 `for i in $(seq 1 30); do curl …`）。
-把 git 指令拿掉、SHA 寫死之後，同樣的迴圈就過了。
+**共通點不是指令內容，是 session 狀態。** 起初以為是「同一個 bash 呼叫裡混了
+git 讀取指令與長迴圈」，因為前兩次都長那樣，把 git 指令拿掉就過了。第三次推翻了
+這個假設：那道指令**完全沒有 git**（純 `curl` + `python3` 讀 API），照樣被擋，
+訊息還指名了一支我幾分鐘前才 rebase 過的分支。
+
+真正的形狀是：**session 內發生過 rebase 之後，後續不相干的 Bash 指令會被補上
+一則早該過期的「你需要 force-push」攔截。** 三次都符合——每次都在該 session
+已經 rebase 過某分支之後才發生，而被擋的指令與那支分支無關。
 
 誤擋的代價是**訊息與現實無關**，讀的人會先去查一輪「我什麼時候 rebase 了」，
 而那正是 friction-log 記過的「靜默截斷把 session 帶離現場」的鄰居——這次不是
-資訊不足，是資訊錯誤，成本更高。建議把判準收斂到「真的出現 push 動詞」，
-而不是從迴圈或組合指令的形狀去推測意圖。
+資訊不足，是資訊錯誤，成本更高。建議把判準收斂到「這道指令自己有沒有 push」，並讓 rebase 造成的
+「待 force-push」狀態在該分支真的被推上去之後就清掉——否則它會一路跟著整個
+session，攔在任何一道不相干的指令上。

@@ -1,1 +1,1 @@
-{"branch": "fix/legal-list-marker-rendering", "ended": "2026-09-01T22:24:58+00:00", "fired": {}, "passed": {"bash-guard": 11, "check-output-filter": 11, "deletion-residue-check": 1, "model-effort-advisor": 2}, "session": "d04397084999", "started": "2026-09-01T22:08:09+00:00"}
+{"branch": "fix/legal-list-marker-rendering", "ended": "2026-09-01T22:40:31+00:00", "fired": {}, "passed": {"bash-guard": 28, "check-output-filter": 28, "deletion-residue-check": 8, "model-effort-advisor": 9}, "session": "d04397084999", "started": "2026-09-01T22:08:09+00:00"}
