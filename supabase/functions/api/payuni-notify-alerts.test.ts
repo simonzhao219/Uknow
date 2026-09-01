@@ -9,10 +9,12 @@
 // 都是 server-to-server、沒有使用者在看、涉及金錢,而 console.error 只進
 // Edge Function log,沒有人主動讀 = 等於靜默。
 //
-// 為什麼解密失敗那條必須去重:它在**簽章驗證之前**,公開端點任何人都能
-// 觸發。無條件寫入等於給未驗證端點開一條無上限寫入路徑,真實告警會被
-// 洗掉——那正是本次要防的失效模式。範式取自
-// complete_paid_pending_orders(migration 20260716000007)。
+// 為什麼四個出口全部要去重:同一起事故會被重複觸發的機制有兩種——公開端點
+// (未過簽章、任何人可打)與**合法寄件者的重送**(PayUni 對非 SUCCESS 回應
+// 會無限重送)。無條件寫入會讓真實告警被同一件事洗掉,那正是本次要防的
+// 失效模式。範式取自 complete_paid_pending_orders(migration 20260716000007)
+// 的「同**訂單**已有未解決告警就不重寫」——重點是**實體鍵**,只用 reason
+// 去重會把兩位使用者各自的事故壓成一筆,等於讓其中一個人的錢無聲消失。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { encryptPayUni, generatePayUniHash } from './crypto.ts';
