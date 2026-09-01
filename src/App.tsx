@@ -426,7 +426,7 @@ function AppContent() {
                     <Route path="/listing-plans" element={<ListingPlansPage />} />
                     <Route path="/business-manual" element={<BusinessManualPage />} />
                     <Route path="/participation-contract" element={<ParticipationContractPage />} />
-                    {/* 推薦獎勵規則是對外的獎勵說明頁（頁尾快速連結與提領同意款都指它），
+                    {/* 推廣獎勵規章是對外的獎勵說明頁（頁尾快速連結與提領同意款都指它），
                         與簽名關卡的事業手冊是不同讀者的不同文件——前者給還在瀏覽的訪客，
                         後者是傳銷商契約。2026-08 一度誤把這條 slug 轉去事業手冊，已還原。 */}
                     <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />

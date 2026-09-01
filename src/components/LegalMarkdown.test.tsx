@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { LegalMarkdown } from './LegalMarkdown';
 
-// 鬆散清單：項目間有空行，且第 1 項含巢狀清單——正是推薦獎勵規則第四節的形狀。
+// 鬆散清單：項目間有空行，且第 1 項含巢狀清單——正是推廣獎勵規章第四節的形狀。
 const LOOSE_LIST = `1. 第一項，後面接巢狀清單：
    * 巢狀一
    * 巢狀二
@@ -28,7 +28,7 @@ const LOOSE_LIST = `1. 第一項，後面接巢狀清單：
 3. 第三項
 `;
 
-// 緊湊清單：項目之間沒有空行——推薦獎勵規則第五節的形狀。
+// 緊湊清單：項目之間沒有空行——推廣獎勵規章第五節的形狀。
 const TIGHT_LIST = `1. 第一項
 2. 第二項
 `;

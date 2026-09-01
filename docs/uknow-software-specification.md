@@ -79,7 +79,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/login`、`/register` | 登入 / 註冊 | 公開 |
 | `/auth/verify-otp` | OTP 驗證碼 | 公開（流程中） |
 | `/forgot-password`、`/auth/reset-password` | 忘記 / 重設密碼 | 公開 |
-| `/terms-of-service`、`/listing-plans`、`/business-manual`、`/participation-contract`、`/referral-reward-rules`、`/referral-reward-contract` | 條款 / 方案 / 事業手冊 / 參加契約書 / 推薦獎勵規則內容頁（`/referral-reward-contract` 是舊 slug，轉址到 `/participation-contract`） | 公開 |
+| `/terms-of-service`、`/listing-plans`、`/business-manual`、`/participation-contract`、`/referral-reward-rules`、`/referral-reward-contract` | 條款 / 方案 / 事業手冊 / 參加契約書 / 推廣獎勵規章內容頁（`/referral-reward-contract` 是舊 slug，轉址到 `/participation-contract`） | 公開 |
 | `/auth/complete-profile` | 完善個資 | 登入 |
 | `/payment/checkout`、`/payment/result` | 結帳 / 付款結果 | 登入 |
 | `/dashboard` | 會員儀表板 | 登入 + 會籍 |
