@@ -2071,3 +2071,42 @@ workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同
    而依 08-14 判準 2,新閘門要先證明它會紅,那需要與清理同一個 PR 一起做。
    照 CLAUDE.md 自己的理由,留著的代價不小:舊 plan 描述的是「當初想做
    什麼」,會被誤當成規格,比沒有文件更糟。
+
+## 2026-08-17｜誤擋｜守衛拿「已不存在的 upstream」當比較基準，兩次誤報未推送
+
+同一輪工作內，`stop-hook-git-check.sh` 兩次報「分支上有 1 個未推送的 commit」，
+兩次都是假的。形狀完全一樣：
+
+1. PR 合併後，遠端分支被刪除，`origin/<branch>` 這個 remote-tracking ref 成為孤兒
+2. 但本地分支的 upstream 仍指著它
+3. 期間另一個守衛把本地分支 rebase 到 base tip，於是本地 HEAD == `origin/develop`
+4. hook 拿 HEAD 去比那個**已不存在**的 upstream，算出「有東西沒推」
+
+代價不只是雜訊：**照著它做會復活一支已刪除的分支**，內容還是 develop 自己的
+merge commit。兩次都得先自己查 `git rev-list --count origin/develop..HEAD`
+（都是 0）與 `git ls-remote --heads origin <branch>`（都是 0 筆）才敢無視它。
+
+**判準應該是「與 base 比較」，而不是與 upstream 比較**；或至少在 upstream ref
+不存在時不報。現在這個寫法在「PR 合併 → 分支刪除」這條最常見的路徑上必然誤報，
+而那正是每支 PR 收尾都會走到的地方。
+
+## 2026-08-17｜誤擋｜bash-guard 在 rebase 之後，對不相干指令補上過期的 push 攔截
+
+同一輪內三次，前兩次送出的是「輪詢 GitHub check-runs API 直到 CI 收工」的迴圈，
+卻收到「Rebased <branch> onto origin/develop… this push would be rejected as
+non-fast-forward」的攔截訊息——指令裡沒有 rebase 也沒有 push。
+
+**共通點不是指令內容，是 session 狀態。** 起初以為是「同一個 bash 呼叫裡混了
+git 讀取指令與長迴圈」，因為前兩次都長那樣，把 git 指令拿掉就過了。第三次推翻了
+這個假設：那道指令**完全沒有 git**（純 `curl` + `python3` 讀 API），照樣被擋，
+訊息還指名了一支我幾分鐘前才 rebase 過的分支。
+
+真正的形狀是：**session 內發生過 rebase 之後，後續不相干的 Bash 指令會被補上
+一則早該過期的「你需要 force-push」攔截。** 三次都符合——每次都在該 session
+已經 rebase 過某分支之後才發生，而被擋的指令與那支分支無關。
+
+誤擋的代價是**訊息與現實無關**，讀的人會先去查一輪「我什麼時候 rebase 了」，
+而那正是 friction-log 記過的「靜默截斷把 session 帶離現場」的鄰居——這次不是
+資訊不足，是資訊錯誤，成本更高。建議把判準收斂到「這道指令自己有沒有 push」，並讓 rebase 造成的
+「待 force-push」狀態在該分支真的被推上去之後就清掉——否則它會一路跟著整個
+session，攔在任何一道不相干的指令上。
