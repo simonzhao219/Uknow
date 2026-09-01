@@ -2077,6 +2077,32 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
 // 地方可查。跟 SQL 那邊的 log_system_alert() 是同一張表，只是這裡是
 // TypeScript 端自己失敗時用的——絕不能讓告警本身害呼叫端也失敗。
 // ============================================================
+// 判準:什麼情況該寫 system_alerts,什麼情況 console.error 就夠。
+//
+// 2026-08-17 盤點:logSystemAlert 只有 4 個呼叫點、console.error 有 47 個,
+// 而同一個函式(resolveOrderFromPayUni)的四個失敗出口只有一個有告警。
+// 缺的不是機制,是判準——沒有判準時新的失敗出口一律落到阻力最小的
+// console.error。三個條件**同時**成立就必須寫告警:
+//
+//   1. 沒有使用者在看 —— server-to-server、webhook、排程。使用者看得到
+//      錯誤且能重試時,使用者本身就是回饋管道,再寫告警只是噪音。
+//   2. 有持久後果 —— 錢、會籍、資料完整性。單一請求失敗而狀態沒變的不算。
+//   3. 既有機制不會回報 —— 不會退信、不會重試到成功、不會有人抱怨。
+//
+// 三條都成立卻只寫 console.error,就是 friction-log 2026-08-17
+// 「沒有人反映問題不構成證據」那條的形狀:Edge Function log 沒有人主動讀,
+// 於是故障可以長期存在而沒有任何症狀。
+//
+// ⚠️ 失敗出口**會被同一起事故重複觸發**時改用 logSystemAlertOnce——
+// 兩種放大機制:公開端點(未過簽章、任何人可打)、以及合法寄件者的重送
+// (PayUni 對非 SUCCESS 回應會無限重送)。用這一支等於開一條無上限寫入路徑。
+//
+// 為什麼這三條判準沒有寫成 lint 規則:它們問的是「有沒有人在看」「後果
+// 是否持久」「既有機制會不會回報」,都是業務判斷而非語法可辨識的性質,
+// 靜態分析看不出來。真正機械化的只有 `payuni-notify-alerts.test.ts` ——
+// 它釘住的是**已判定的這幾個決策不會被改回去**(防規退),不是「未來第 N
+// 個失敗出口有沒有做過判斷」(防遺漏)。後者目前沒有閘門,這是已知缺口,
+// 見 friction-log 2026-08-17 的記債清單。
 async function logSystemAlert(
   source: string,
   context: Record<string, unknown>,
@@ -2087,6 +2113,64 @@ async function logSystemAlert(
     await sb().from('system_alerts').insert({ source, severity, message, context });
   } catch (e) {
     console.error('[logSystemAlert] failed to persist alert', e);
+  }
+}
+
+/**
+ * 去重版:`dedupe` 的每個欄位都相同、且尚未被人工 resolve 的告警已存在時,
+ * 就不再寫第二筆。
+ *
+ * **會重複觸發同一起事故的失敗出口都該用這一支**,不只是攻擊面。有兩種
+ * 放大機制,漏掉任一種都會讓告警表被同一件事洗版,真實告警被擠出畫面——
+ * 那正是告警機制自身的失效模式,與「沒有告警」等價:
+ *
+ *   1. **未經驗證就能觸發** —— notify 的驗章失敗在簽章比對之前,任何人
+ *      POST 垃圾都會走到。
+ *   2. **合法寄件者的重送** —— PayUni 對非 SUCCESS 的回應會無限重送
+ *      (見 `payuni-notify.test.ts` 的既有契約說明)。凡是回
+ *      `Status:'FAILED'` 的分支,同一筆卡單每被重送一次就會再命中一次。
+ *
+ * 第一版只想到 (1) 而漏了 (2),四視角審查揪出來——所以判準寫成「會不會
+ * 重複觸發」而不是「是不是攻擊面」。
+ *
+ * **去重鍵要含實體識別碼(訂單編號之類),不能只用 reason。** 只用 reason
+ * 會把「兩位使用者各自的 amount_mismatch」壓成一筆,等於讓其中一個人的錢
+ * 無聲消失。拿不到識別碼時(例如解密失敗,連 MerTradeNo 都讀不出來)才退
+ * 而求其次只用 reason——那種情況下「持續失敗」本來就是唯一有意義的訊號。
+ *
+ * 範式取自 `complete_paid_pending_orders`(migration 20260716000007):
+ * 它是按 **order_id** 去重,不是按 reason——實體鍵才是那個範式的重點。
+ * SELECT 與 INSERT 之間有競態,併發爆量時可能多寫幾筆——與 Postgres 側
+ * 那版同一個取捨:上限從「無上限」降到「併發數」就達到目的了,不值得上鎖。
+ */
+async function logSystemAlertOnce(
+  source: string,
+  dedupe: Record<string, string>,
+  context: Record<string, unknown>,
+  message = 'edge function alert',
+  severity: 'info' | 'warning' | 'error' = 'warning',
+) {
+  try {
+    let q = sb().from('system_alerts').select('id').eq('source', source);
+    for (const [k, v] of Object.entries(dedupe)) q = q.eq(`context->>${k}`, v);
+    const { data: open, error } = await q.is('resolved_at', null).limit(1);
+
+    // supabase-js 查詢失敗是回 { data: null, error },不是拋例外——外層的
+    // try/catch 接不到。不檢查 error 的話,「查詢出錯」會被當成「沒有既有
+    // 告警」而直接往下寫,去重靜默退化成無條件寫入,恰好是這支函式唯一
+    // 要防的事,而且最可能在資料庫承壓(最需要它生效)時發生。
+    // 出錯時選擇**照樣寫入**:漏掉告警比多一筆重複嚴重得多。
+    if (error) {
+      console.error('[logSystemAlertOnce] 去重查詢失敗,改為直接寫入(寧可重複也不要漏)', error);
+    } else if (open && open.length > 0) {
+      return;
+    }
+
+    await sb()
+      .from('system_alerts')
+      .insert({ source, severity, message, context: { ...context, ...dedupe } });
+  } catch (e) {
+    console.error('[logSystemAlertOnce] failed to persist alert', e);
   }
 }
 
@@ -2153,6 +2237,22 @@ async function resolveOrderFromPayUni(
   const { Status, MerTradeNo, TradeNo } = data;
 
   if (!MerTradeNo) {
+    // 嚴重度依 Status 分流:PayUni 說錢收了(SUCCESS)卻沒給 MerTradeNo,
+    // 財務後果等同 order_not_found——錢已收、無法歸戶,必須人工介入;
+    // 其餘情況是整合異常,不直接損失,warning 即可。
+    //
+    // 去重鍵用 TradeNo(PayUni 的交易序號)。連 TradeNo 都沒有時只能退回
+    // 只用 reason,那代表這個回調畸形到沒有任何識別碼,重複的也是同一類。
+    const paidButUnattributable = Status === 'SUCCESS';
+    await logSystemAlertOnce(
+      'resolveOrderFromPayUni',
+      { reason: 'missing_mer_trade_no', tradeNo: TradeNo ?? '(none)' },
+      { status: Status ?? null, tradeAmt: data.TradeAmt ?? null, raw: data },
+      paidButUnattributable
+        ? 'PayUni 回報付款成功但沒有 MerTradeNo——錢已收、無法歸戶,需人工介入'
+        : 'notify 內容缺少 MerTradeNo,無法對應訂單',
+      paidButUnattributable ? 'error' : 'warning',
+    );
     return { ok: false, message: 'missing MerTradeNo' };
   }
 
@@ -2182,7 +2282,21 @@ async function resolveOrderFromPayUni(
     .single();
 
   if (!order) {
+    // ⚠️ 上一行的 persistRawResponseBestEffort 在**這個分支必然是 no-op**:
+    // 它是 `.update().eq('transaction_id', MerTradeNo)`,而「找不到訂單」的
+    // 定義就是沒有任何一列的 transaction_id 等於這個值。留著它是因為呼叫
+    // 便宜且無害,但**不要以為原始回應被存下來了**——這裡的 context 是這筆
+    // 資料唯一留得住的地方,所以整包 raw 一起寫進去。
     await persistRawResponseBestEffort(MerTradeNo, data);
+    // 錢已經收了,而沒有任何流程會把它變成會籍——reconcile 掃的是**我方的**
+    // pending 訂單,這筆不在裡面,永遠掃不到。只有人能處理。
+    await logSystemAlertOnce(
+      'resolveOrderFromPayUni',
+      { reason: 'order_not_found', merTradeNo: MerTradeNo },
+      { tradeNo: TradeNo ?? null, tradeAmt: data.TradeAmt ?? null, raw: data },
+      'PayUni 回報付款成功但找不到對應訂單——錢已收、會籍沒開,需人工介入',
+      'error',
+    );
     return { ok: false, message: 'order not found' };
   }
   if (order.status === 'completed') {
@@ -2192,6 +2306,19 @@ async function resolveOrderFromPayUni(
   // 金額驗證
   if (data.TradeAmt && Number(data.TradeAmt) !== 1200) {
     await persistRawResponseBestEffort(MerTradeNo, data);
+    // 訂單維持 pending,所以 reconcile 會掃到它——但 reconcile 的告警說的是
+    // 「這筆卡著」,不是「金額不符」。診斷若被錯位到下游,查的人會先懷疑
+    // webhook 沒送達。在事發點點名原因,省掉那一輪。
+    // 註:`complete_paid_pending_orders` 對同一情境已有 Postgres 側告警,
+    // 兩者 source 不同(那支是自癒 pass 掃到時記),不是重複。⚠️ 但兩側的
+    // 識別欄位命名不一致(這裡 merTradeNo、那裡 trade_no),人工比對時要注意。
+    await logSystemAlertOnce(
+      'resolveOrderFromPayUni',
+      { reason: 'amount_mismatch', merTradeNo: MerTradeNo },
+      { tradeAmt: data.TradeAmt, expected: 1200, userId: order.user_id, orderId: order.id },
+      'PayUni 回報金額與方案價不符,訂單維持 pending 待人工裁決',
+      'error',
+    );
     return { ok: false, message: 'amount mismatch' };
   }
 
@@ -2414,6 +2541,12 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
     // pending，下面的掃描自然不會再碰到。
     const { data: healSummary, error: healError } = await sb()
       .rpc('complete_paid_pending_orders', { p_user_id: null });
+    // ⚠️ 已知缺口(已評估、刻意延後,見 friction-log 2026-08-17 記債清單):
+    // 這裡只寫 console.error,而且執行會繼續、端點仍回 { success: true }——
+    // 對排程說謊:安全網的第一段靜默沒跑,reconcile-payments.yml 的回應形狀
+    // 斷言照樣過。沒有一併修的原因是要測「RPC 自己失敗」需要 DDL 級的
+    // fault injection,且改回應契約會動到錢的安全網的監控。
+    // 下一個做 console.error 掃描的人:這個坑已經被看過了,不用重新發現。
     if (healError) console.error('[reconcile-pending-payments] heal pass 失敗:', healError);
 
     const summary = await reconcilePendingOrders(
@@ -2478,6 +2611,19 @@ app.post('/webhooks/payuni/notify', async (c) => {
   const decrypted = await decryptPayUniFormBody(body, config);
   if (!decrypted.ok) {
     console.error('[notify]', decrypted.message);
+    // 這一步在簽章比對**之前**——公開端點,任何人 POST 垃圾都會走到,
+    // 所以必須用去重版(理由見 logSystemAlertOnce)。值得告警的原因是
+    // 另一種情境:HashKey/IV 設錯或輪替時,**每一筆**真實回調都死在這裡,
+    // 訂單全部卡 pending,而 reconcile 的告警只會說「訂單卡住」。
+    // 去重鍵只有 reason:解密失敗時連 MerTradeNo 都讀不出來,沒有實體識別碼
+    // 可用。這個情境下「持續失敗」本來就是唯一有意義的訊號,粗粒度剛好。
+    await logSystemAlertOnce(
+      'payuni-notify',
+      { reason: 'decrypt_failed' },
+      { detail: decrypted.message },
+      'notify 驗章或解密失敗;若持續發生請檢查 PayUni HashKey/IV 設定',
+      'error',
+    );
     return c.json({ Status: 'FAILED', Message: decrypted.message });
   }
 

@@ -1907,3 +1907,167 @@ will inherit **all** rules' headers」+「If a header is applied twice in the
    點名了它才刪掉。沒驗過的閘門與沒有閘門的差別只是心理上的——而
    `check-spec-drift` 的 docstring 早就寫過:宣稱有的治理若不生效,比沒有
    治理更貴。
+
+## 2026-08-17｜漏網（觀測性）｜正式站寄信 DMARC 一直 fail,連使用者都不會反映
+
+正式站的 custom SMTP 早已啟用、寄件者已是 `admin@uknow.com.tw`,但
+`uknow.com.tw` 的 DNS **沒有 SPF、沒有 DKIM、沒有 MX**,而 `_dmarc` 是
+`p=quarantine`。SPF 結果是 `none`(不是 pass)、DKIM 由 Google 用預設
+`*.gappssmtp.com` 金鑰簽而與 `From` 網域不對齊——兩條都不成立,
+policy 是 quarantine。**驗證碼信一直在被丟垃圾桶。**
+
+不知道多久。這件事是靠人去讀 Cloudflare 的 zone 匯出檔才浮上來的。
+
+**值得記的不是缺了記錄,是為什麼它可以長期沒有任何症狀。三層獨立的遮蔽
+同時成立:**
+
+| 層 | 遮蔽方式 |
+|---|---|
+| 前端 | 收不到驗證碼只是停在「等待輸入」。不長得像 bug,長得像使用者放棄了——在後台是**註冊轉換率**,不是錯誤 |
+| Auth logs | 交付給 Google 就算成功。收信方**收下之後才**判 DMARC 並丟垃圾桶,那已在 Supabase 與 Google 的視野之外 |
+| 退信通知 | 退信是寄回**寄件者信箱**的,而該網域沒有 MX ⇒ 全部蒸發 |
+
+第三層是關鍵,而且最反直覺:**缺 MX 不會讓任何一封信寄不出去**
+(`smtp.gmail.com` 不查 MX),它斷掉的是唯一會回報失敗的那條線。
+
+**可複用的原則:「沒有人反映問題」不構成沒有問題的證據——當失敗是靜默的、
+且回饋管道本身也被關掉時,沒有抱怨只證明抱怨管道不存在。** 這條與 08-08
+「量不到的東西,寫幾條測試都是同義反覆」同源(都是觀測性缺口),差別在
+那條講的是**測不到**,這條講的是**連現場回報都被關掉**——後者更難發現,
+因為它會偽裝成「一切正常」。
+
+排查時另一個教訓:一開始把它判成「潛伏問題,改寄件者才會發作」,是因為
+假設了 custom SMTP 還沒設。**看一眼 Dashboard 就能推翻的假設,不要用推論
+代替。** 同一輪還高估了 MX 對寄信的影響(它只管收信),低估了它對可觀測性
+的影響——嚴重度排序錯了一次。
+
+處置:DNS 四筆補齊,拿**真實的正式站 OTP 信**跑 mail-tester 端到端驗證通過
+(10/10、`DKIM_VALID_AU` 命中,即 DKIM 已對齊自家網域)。
+`docs/supabase-setup-checklist.md` 的驗證判準從「記錄存在 / Dashboard 存檔
+成功」改成「mail-tester 三項 pass 且有 `DKIM_VALID_AU`」——**存檔成功不等於
+驗證通過**,這正是這次的形狀。
+
+**待裁決(下次整併):這件事目前仍沒有任何機械閘門。** DMARC 的 `rua` 已改到
+`admin@uknow.com.tw`,是第一條回饋線,但那是人工讀報告。候選閘門是定期查
+SPF/DKIM/MX 的存在性,難處在於它驗的是**外部 DNS 狀態**、不隨 commit 變動,
+不屬於既有 CI 軌的守備範圍(排程頻率還要過 github-actions.md 規則 8 的
+判準)。依上一則的判準 1,擋不到就要說明為什麼——這裡的理由是**受管物件
+不在 repo 內**,先記為待裁決,不假裝已關閉。
+
+順帶浮現的同類掃描題**已於同日執行完畢**,結果見下一則。
+
+## 2026-08-17｜同類掃描｜金流失敗出口沒有告警判準,而 TDD 鎖對 Deno 改動是空訊號
+
+上一則留的掃描題的執行結果。掃法:`console.error`(47 處)逐一問三個問題
+——沒有使用者在看?有持久後果?既有機制不會回報?——並與 `logSystemAlert`
+(4 處)對照。
+
+**回饋管道本身是存在的**(`system_alerts` + `logSystemAlert` + admin
+SystemAlerts 頁,兩層測試都有),所以這次不是缺機制。結果:
+
+| 路徑 | 判定 |
+|---|---|
+| `resolveOrderFromPayUni` 的 `order_not_found` / `amount_mismatch` / `missing_mer_trade_no` | 缺告警 → 本次補(`93f8c67`) |
+| notify 驗章/解密失敗 | 缺告警 → 本次補,**去重版** |
+| reconcile heal pass 失敗 | 缺告警,且端點仍回 `success: true` 對排程說謊 → **記債**,見下 |
+| 前端 lazy chunk 載入失敗 | **已有閘門**,不需處理 |
+
+**根因不是「誰忘了加」,是判準從來不存在。** 證據在同一個函式的視野內:
+`resolveOrderFromPayUni` 四個失敗出口,只有 RPC 失敗那個有告警(還刻意標
+`error` 並寫了理由),另外三個從第一天就沒有——有告警的那個是「當下正在修
+的那個」。這與 PR #119「自我糾正只綁定當下 diff」同形,差別是這次連不一致
+都在同一個函式裡,只是沒有任何一層在看。故修法除了補告警,也把三條判準
+寫進 `logSystemAlert` 定義處(否則就是 08-14「結論寫進註解 = 沒有閘門」的
+重演——但寫在被呼叫者旁邊,比寫在某個元件的 docblock 裡命中率高)。
+
+**掃描的一半價值在「已經有閘門」那一格**:lazy chunk 那條本來列為候選,
+查下去發現 `lazyWithRetry.ts` 有重試+一次整頁重載+拋給 ErrorBoundary
+(使用者看得到 = 使用者就是回饋管道),而 2026-08-07 少上傳 chunk 的事故
+已由 `scripts/check-deployed-assets.py` + `deploy-smoke.yml` 把關,該
+workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同類掃描要能
+回報「這條不必修」,否則它會退化成重複造輪子的清單。**
+
+### 附帶發現(比原本三個缺口更值得記):TDD 鎖對純 Deno 改動是空訊號
+
+`scripts/tdd-unlock.sh` 的解鎖條件是 `npm run check` 全綠,而
+`npm run check` = `biome + tsc + vitest + knip`,**一行 deno 都沒有**
+(`check:deno` 只掛在 `check:full`)。vitest 設定又刻意不 include
+`supabase/**`。所以**純 Deno 改動可以在零 Deno 型別檢查、零 Deno 測試的
+情況下解鎖**,而該腳本自己的註解寫著「這讓『宣稱綠燈』和『真的綠燈』
+之間沒有縫隙」。
+
+**這不是容器的怪癖,任何機器上都成立**(本次容器 jsr.io 被 egress 封鎖只是
+讓它更明顯)。形狀與本日主題完全相同:**一道回報綠燈、卻從未看過它該守的
+東西的閘門**——比沒有閘門更貴,因為它會讓人停止懷疑。
+
+處置:本次改用「分兩次 push,由 CI 的 `api-tests` 軌提供紅→綠證據」繞過
+(紅燈 `3d0988f` 4 failed / 271 passed、全部是 `Actual 0 / Expected 1`;
+綠燈 `93f8c67`)。**繞過不是修好**——建議的修法是讓 `tdd-unlock.sh` 在
+`supabase/functions/**` 有改動時一併跑 Deno 閘門,並沿用 pre-commit 既有的
+「相依解析不到就降為警告」降級路徑(那段邏輯已經寫好,直接複用)。
+未在本次一併做的理由:改的是框架自身的解鎖條件,而本容器只驗得到降級
+那一半路徑,無法依 08-14 判準 2「新閘門要先證明它會紅」完整驗證。
+
+### 同一天的四次「紅燈不是它看起來的意思」
+
+紅→綠證據鏈最後成立(紅 `3d0988f`:4 failed / 271 passed、全部
+`Actual 0 / Expected 1`;綠 `71a0443` 的 attempt 3:`api-tests` success),
+但中間為了拿到綠燈試了三次,每一次失敗都**與程式碼無關**,而且在摘要畫面
+上都長得像「實作壞了」:
+
+| # | 看到的 | 實際原因 |
+|---|---|---|
+| 1 | 正式站沒有人反映收不到驗證碼 | 回饋管道(退信)本身被關掉了 —— 本則主題 |
+| 2 | `ci-ok` 在 `93f8c67` 紅 | `api-tests` 被**我自己的下一個 push** 依 concurrency 取消,狀態是 `cancelled` |
+| 3 | `guards` 紅、`api-tests` **`skipped`** | GitHub 的 codeload CDN 回 429,連 `dorny/paths-filter@v3` 都沒下載成功,job 從未開始;而 `guards` 算 path filter,它死掉下游全部 skip |
+| 4 | 輪詢腳本回報「還是紅」 | 我的重跑 POST 用了沒有 `actions: write` 的 token,**而我把 stderr 丟進 `/dev/null`** ——`run_attempt` 一直停在 2,讀到的是上一次的殘留 |
+
+**可複用的判準:紅燈的含義要從機制推,不能從顏色讀。**
+`cancelled` / `skipped` / 基礎設施掛掉 / 真的測試失敗,在 PR 的 checks 摘要
+上是同一種紅(或同一種灰),但處置完全不同。其中 **`skipped` 最危險**——
+它讀起來像「不需要跑」,實際可能是「它的前置 job 死了」。
+
+兩條當場付出代價的操作規則:
+
+1. **等驗證 run 的期間不要 push。** 本專案 CI 的 concurrency 會取消
+   in-progress 的 run,所以「分兩次 push 拿紅綠證據」這個做法(見上面
+   tdd-unlock 的 Deno 缺口)必須**等前一次跑完再推下一次**,否則證據會被
+   自己毀掉。第 2 次就是這樣沒的。
+2. **不要把待會要據以斷言的腳本的 stderr 丟掉。** 第 4 次是自作自受:
+   `curl ... >/dev/null 2>&1` 讓一個權限不足的失敗看起來像成功,於是
+   「靜默失敗 + 讀到殘留狀態」在我處理**這個主題**的過程中又發生一次。
+   這正是本則主題的同構重演,只是舞台從正式站換到我自己的除錯腳本。
+
+### 記債清單(下次框架整併)
+
+1. reconcile 的 heal pass 告警 + 讓 `success: true` 不再對排程說謊。
+   要測「RPC 自己失敗」需 DDL 級 fault injection(drop/revoke
+   `complete_paid_pending_orders`),且改動的是錢的安全網的回應契約,
+   弄錯會變成每小時假紅或假綠——不在跑不了測試的環境動。
+2. 「金流失敗出口不得只寫 `console.error`」的機械化閘門。判準已成文,
+   但成文不等於把關(這正是本則的主題)。
+3. `tdd-unlock.sh` 的 Deno 缺口(見上)。**三項裡這項優先**:它影響的不是
+   某個功能,是所有 Deno 改動的證據鏈可信度。
+4. **開放問題(需人裁決)**:規格書沒有定義「哪些金流失敗必須留告警、
+   該用什麼 severity」。本次的分級是**從既有實作反推**的——
+   `resolveOrderFromPayUni` 的 RPC 失敗路徑已標 `error` 並註明「必須人工
+   介入」,故後果同級的 `order_not_found` / `amount_mismatch` 同樣 `error`;
+   `missing_mer_trade_no` 是 PayUni 送來畸形資料、屬整合異常但不直接損失,
+   故 `warning`。**這是判斷不是規格**,要不要寫進規格書由人決定。
+5. **本次的 SOP 降級**:`/fix-bug` 對金流 bug 要求派四個 plan-reviewer
+   agent 審修法,本次改用輕量的自問自答——原因是該 session 的系統指示
+   禁止未經使用者要求就呼叫 Agent 工具。記在這裡而不是只留在被刪掉的
+   fix.md 裡,因為「四視角審查被跳過」是這個 PR 的已知缺口,不是流程雜訊。
+6. **`docs/plans/` 的鷹架清理規則沒有把關**(刪本次 fix.md 時順手發現)。
+   CLAUDE.md 明寫「平常只該有 `friction-log.md`」,實際還躺著三個:
+   `fix-journey-f40-listing/`(2026-08-08)、`journey-remaining-failures/`
+   (2026-08-08)、`upline-pairing-lines/`(2026-08-07,最後一次改動還是
+   PR #205 的 merge commit)。三者的工作都已完成——commit message 自己
+   寫著「六條刊登情境全綠」「以兩把鑰匙鎖定」——就是收尾時沒刪。
+   **又是同一個形狀:規則寫得清楚,沒有任何一層在執行。**
+   沒在本次一併刪的理由:(a) 與本 PR 主題無關,混進來讓 diff 更難審;
+   (b) 更該做的是閘門而不是再一次的一次性清理——`docs/plans/` 只允許
+   `friction-log.md` 的機械檢查(接在 framework-check 軌)才能防復發,
+   而依 08-14 判準 2,新閘門要先證明它會紅,那需要與清理同一個 PR 一起做。
+   照 CLAUDE.md 自己的理由,留著的代價不小:舊 plan 描述的是「當初想做
+   什麼」,會被誤當成規格,比沒有文件更糟。

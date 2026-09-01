@@ -126,8 +126,10 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 （`VITE_` 是前端建置期前綴，放在這裡不會被任何人讀到）、
 `PASSWORD_ENCRYPTION_KEY`、`RESEND_API_KEY`（零引用，git 歷史裡也從未出現）。
 
-> 💡 掛 custom SMTP 時憑證是填進 **Authentication → SMTP Settings**，
-> 不是 Edge Function Secrets——Auth 服務不讀這裡的變數。
+> 💡 **寄信憑證不在這裡。** 掛 custom SMTP 時帳密是填進 **Authentication →
+> Emails → SMTP Settings**（步驟 2-1），不是 Edge Function Secrets——
+> Auth 服務不讀這裡的變數。上面那個零引用的 `RESEND_API_KEY` 就是誤填在
+> 此處的遺留物，設了也不會有任何效果。
 
 ### ⚠️ 存檔後需重新部署
 
@@ -137,7 +139,201 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 
 ---
 
-## ☑️ 步驟 2：設定 Email OTP 模板
+## ☑️ 步驟 2：設定寄信（寄件信箱 ＋ OTP 模板）
+
+信**不是** `api` Edge Function 寄的——是 Supabase Auth（GoTrue）寄的。
+所以「改寄件者」改的是本步驟的 Dashboard 設定，**不是程式碼**；
+步驟 1 的 Secrets 也與寄信無關（Auth 服務不讀 Edge Function 的變數）。
+
+### 2-1 寄件信箱：掛 Custom SMTP
+
+**沒掛 custom SMTP＝真實用戶收不到驗證碼。** 內建寄信服務有兩個限制，
+第一個是硬阻斷、不是配額問題：
+
+1. **只寄得到專案 organization 的團隊成員信箱**，其他一律失敗並回
+   `Email address not authorized`（[官方文件](https://supabase.com/docs/guides/auth/auth-smtp)）。
+   也就是說沒掛之前，只有你自己收得到信，外部註冊者一個都收不到。
+2. 每小時個位數配額、且**明示無 SLA**，官方定位是「試玩與團隊內部測試用」。
+
+本專案寄件身分用官方帳號 `admin@uknow.com.tw`（Google Workspace），
+走 Google 自己的 SMTP。
+
+**先決條件（Google 側，做一次即可，非逐環境）**
+
+| 順序 | 在哪 | 做什麼 |
+|---|---|---|
+| 1 | Admin console → **安全性 → 驗證 → 兩步驟驗證** | 確認「**允許使用者產生應用程式密碼**」為開啟 |
+| 2 | `admin@uknow.com.tw` 本人 → `myaccount.google.com` | 該帳號**開啟兩步驟驗證**（沒開就產不出應用程式密碼） |
+| 3 | `myaccount.google.com/apppasswords` | 產生應用程式密碼，名稱填 `Supabase SMTP`，得到 **16 碼** |
+
+> ⚠️ 2025 年起 Google 已不接受用帳號登入密碼對 `smtp.gmail.com` 驗證，
+> 「低安全性應用程式存取」選項也已移除。**只有應用程式密碼或 OAuth 2.0 可行**，
+> 填錯的症狀是 Supabase 測試寄信回 `535 Username and Password not accepted`。
+
+**Supabase 側（⚠️ 兩個環境各做一次，分支不繼承母專案的 SMTP 設定）**
+
+**導覽**：Dashboard → **Authentication** → **Emails** → **SMTP Settings**
+（ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/smtp` ）
+
+| 欄位 | 值 |
+|---|---|
+| Enable Custom SMTP | 開 |
+| Sender email | `admin@uknow.com.tw` |
+| Sender name | `Uknow` |
+| Host | `smtp.gmail.com` |
+| Port | `587`（STARTTLS；用 `465` 則是 SSL，兩者皆可） |
+| Username | `admin@uknow.com.tw`（**完整位址**，不是 `admin`） |
+| Password | 上面產生的 **16 碼應用程式密碼**（不是 Google 登入密碼） |
+
+> ℹ️ Host 填 `smtp.gmail.com` 時 Supabase 會顯示黃色提示「the SMTP provider
+> you entered is designed for sending personal rather than transactional email」。
+> 那只是依 host 名稱判斷，**不影響功能**；它警告的 deliverability 風險正是
+> 下面 DNS 那四筆在解決，補齊後風險就消掉了（提示文字會一直在）。
+
+> ⚠️ **develop 刻意用不同的寄件者**（`ThinkSeek2026@gmail.com` / `Uknow Dev`），
+> 不是漏設。理由是隔離寄件信譽：dev 的測試信若走 `admin@uknow.com.tw`，
+> 會吃掉正式站每日 2,000 封的額度，退信與垃圾申訴也會累積到正式網域頭上。
+>
+> **代價要知道：develop 驗不出寄信驗證性的問題。** 它的 `From:` 網域是
+> `gmail.com`，SPF/DKIM/DMARC 全部由 Google 自己的記錄擔保，必然通過——
+> 跟 `uknow.com.tw` 的 DNS 狀態完全無關。所以「develop 收得到信」**不構成**
+> 正式站收得到信的證據。這一項要靠下面的 mail-tester 直接驗網域，
+> 不要用 develop 註冊流程代替。
+> ⚠️ **存檔後一定要接著調限流**，否則會從「幾乎不能寄」換成「每小時只能寄 30 封」：
+> Supabase 對新掛上的 custom SMTP 一律先壓到 **30 封／小時**保護寄件信譽。
+> 到 **Authentication → Rate Limits**
+> （ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/rate-limits` ）
+> 把 *Rate limit for sending emails* 調到符合實際註冊量。漏調的症狀是註冊
+> 尖峰時段部分用戶收不到信，且**只在 Auth logs 看得到**，前端只會顯示逾時。
+
+**DNS（Cloudflare，做一次即可，非逐環境）**
+
+**Dashboard 設對了不代表信到得了。** SMTP 那頁只決定「用誰的伺服器寄」，
+收信方要不要採信是 DNS 說的。這四筆缺任何一筆，Supabase 側全綠、
+Auth logs 也乾淨，信照樣進垃圾桶。
+
+| 記錄 | 值 | 怎麼確認 |
+|---|---|---|
+| SPF（`uknow.com.tw` TXT） | `v=spf1 include:_spf.google.com ~all` | **全網域只能有一筆 SPF**；已有第三方就併進同一筆加 `include`，不要新增第二筆（兩筆＝SPF 直接失效） |
+| DKIM（`google._domainkey` TXT） | Admin console → **應用程式 → Google Workspace → Gmail → 驗證電子郵件**，金鑰長度 2048，產生後貼上 | 產完要回 Admin console 按**開始驗證**，只加 DNS 不算完成 |
+
+> ℹ️ **2048 位元金鑰在 zone 檔裡會呈現成兩段引號，那是正確的、不是被截斷。**
+> DNS 單一 TXT 字串上限 255 字元，而 2048-bit RSA 公鑰的 base64 是 392 字元，
+> Cloudflare 會自動切分（第一段是 `v=DKIM1; k=rsa; p=` 加 237 字元剛好湊滿
+> 255），收信方會自己接回去。**貼上時整串貼一次就好，不要自己加引號分段。**
+> 想確認沒被截斷就把兩段接起來數長度：392 字元 = 完整的 2048-bit 金鑰。
+| DMARC（`_dmarc` TXT） | `v=DMARC1; p=quarantine; rua=mailto:admin@uknow.com.tw` | policy 比 `p=none` 嚴時，SPF/DKIM 不是建議而是**前提**；`rua` 要指向自己收得到的信箱 |
+| MX（`uknow.com.tw`） | `smtp.google.com`，priority `1` | 與寄信無關，但**沒有 MX 就收不到退信通知**——見下方 |
+
+四筆都要 **DNS only**（Cloudflare 的雲要灰色）。MX 與 TXT 本來就不能走 proxy。
+
+> ⚠️ **沒有 MX 的真正代價是失去回饋管道，不是收不到信。** 寄信透過
+> `smtp.gmail.com` 不查 MX，所以缺 MX 不會讓任何一封信寄不出去。但退信
+> 通知（bounce）是寄回寄件者信箱的——沒有 MX，這些通知全部蒸發。於是
+> 「使用者收不到驗證碼」不會產生任何可觀測訊號：前端只是停在等待輸入、
+> Auth logs 顯示寄送成功、寄件信箱收不到退信。**「沒有人反映問題」在這個
+> 狀態下不是證據**，因為唯一會反映問題的那條線被斷掉了。
+
+> ⚠️ 2026-08-17 盤點：SPF / DKIM / MX 當時**一筆都不存在**（只有 `_dmarc`
+> 與一筆 `google-site-verification`），而正式站的 custom SMTP 早已啟用、
+> 寄件者已是 `admin@uknow.com.tw`。也就是說 DMARC 一直在 fail，而上面說的
+> 三重靜默讓它完全不可見。**同日已補齊四筆並端到端驗證通過**：拿一封
+> 真實的正式站 OTP 信跑 mail-tester，10/10、SpamAssassin 0.1（門檻 −5），
+> `SPF_PASS` ＋ `DKIM_VALID` ＋ `DKIM_VALID_AU` ＋ `DKIM_VALID_EF` 皆命中，
+> 即 DKIM 已用 `d=uknow.com.tw` 簽名並與 `From`／envelope-from 雙向對齊。
+>
+> 留這條紀錄是因為結論不在「缺了記錄」，而在**發現機制的缺口**：整件事是
+> 靠人去讀 zone 檔才浮上來的，沒有任何一層在監看。要記得的教訓是
+> **改寄件者之前先把 DNS 補齊**——順序顛倒的症狀是「改完之後所有人收不到
+> 驗證碼」，而且會被誤判成 Supabase 設錯。
+
+> ⚠️ 若該網域同時開了 **Cloudflare Email Routing**，它會自行接管 MX 並插入
+> 自己的 SPF——與 Google Workspace 併用時先確認 MX 仍指向 Google，
+> 且 SPF 沒有被改寫成只認 Cloudflare。
+
+**驗證方式**（Supabase 那頁按 Save 不算驗證）：
+
+1. `nslookup -type=MX uknow.com.tw`、`-type=TXT uknow.com.tw`、
+   `-type=TXT google._domainkey.uknow.com.tw`、`-type=TXT _dmarc.uknow.com.tw`
+   四個都要有值
+2. [Google Admin Toolbox CheckMX](https://toolbox.googleapps.com/apps/checkmx/)
+   無紅字（Google 用自己的標準檢查自己的服務）
+3. 從 `admin@uknow.com.tw` 寄一封到 [mail-tester.com](https://www.mail-tester.com/)。
+   **別只看總分**——DMARC 只靠 SPF 也能過，DKIM 沒對齊時總分仍可能滿分。
+   展開 SpamAssassin 明細找這條：
+
+   > `DKIM_VALID_AU` — *valid DKIM signature from author's domain*
+
+   **有這條才代表 DKIM 對齊到 `uknow.com.tw`**（只有 `DKIM_VALID` 不夠，
+   Google 用預設 `*.gappssmtp.com` 金鑰簽時也會通過那條）。這是「耐用」
+   與「勉強及格」的分界：SPF 遇到使用者設自動轉寄就會失效，DKIM 不會
+
+4. **最後拿一封真實的 OTP 信重跑一次 mail-tester**。mail-tester 只驗到
+   「Google 用這個網域寄信」這一段，Supabase 產生的信件本體是另一段——
+   模板的 MIME 結構與字級只有真實信件測得出來（下表最後兩條就是這樣浮現的）
+
+明細裡的橘色負分**一條都不用處理**。判準是「可控 **且** 量級有意義」，
+兩個條件要同時成立；判垃圾信的門檻是 −5，下面全部加起來還不到 −0.3：
+
+| 規則 | 分 | 可控？ | 處置 |
+|---|---|---|---|
+| `DKIM_SIGNED` | −0.1 | — | 任何帶簽名的信都會觸發的基準線，已被 `DKIM_VALID*` 三條 **+0.3** 蓋過 |
+| `SPF_HELO_NONE` | −0.001 | ❌ | 講的是 **Google 出口主機**的 HELO 名稱沒有 SPF，不是我們的網域 |
+| `RCVD_IN_MSPIKE_H2` | −0.001 | ❌ | Google 出口 IP 的信譽評級（average，且在白名單內） |
+| `HTML_MESSAGE` | −0.001 | — | 模板本來就是 HTML |
+| `HTML_FONT_SIZE_HUGE` | −0.001 | ⚠️ | 來自 OTP 碼**刻意放大的字級**——那是 UX 要的，不要為了 0.001 改小 |
+| `MIME_HTML_ONLY` | −0.1 | ❌ | 見下方 |
+
+> ℹ️ **`MIME_HTML_ONLY` 在 Supabase 的模板體系下無法解。** 它建議附一份
+> `text/plain` 版本，但 GoTrue 的 Dashboard 模板只吃單一 HTML 內容，
+> 沒有純文字欄位、不產生 `multipart/alternative`。要控制整個 MIME 結構
+> 只能改走 **Send Email Hook** 自己實作寄送——為了 −0.1（門檻 −5）
+> 換掉整條寄信管道並不划算。**記錄成已知取捨，不是待辦。**
+
+黑名單區塊也會有一條橘的：**Hostkarma `Yellow listed`**。Hostkarma 的
+yellow 是「這個 IP 同時寄正常信與垃圾信」，專門用來標大型 webmail 的
+**共用出口 IP**——`209.85.x.x` 是 Google 的共用 IP，被 yellow 標記是
+預期狀態，Hostkarma 自己的定義也是「別封鎖、也別白名單」。要脫離
+共用 IP 名單只能買專用寄件 IP，量級完全不成比例。真正的黑名單
+（Spamhaus SBL/PBL 等）沒中——若中了 SpamAssassin 會觸發 `RCVD_IN_SBL`
+之類的重分規則，而明細裡一條都沒有。
+
+> ⚠️ **mail-tester 的中文界面在黑名單區塊會把「未列入」誤譯成「列入」**，
+> 看起來像中了一排黑名單。判斷看**顏色與區塊標題**（綠勾＋「不在黑名單中」
+> ＝乾淨），或直接把介面切成英文。
+
+**「全部綠燈」不是目標，也做不到。** 剩下的橘燈分兩類，都不該追：
+
+- **不可控**：Hostkarma yellow、`SPF_HELO_NONE`、`RCVD_IN_MSPIKE_H2`
+  是 Google 共用基礎設施；`MIME_HTML_ONLY` 受限於 GoTrue 模板；
+  `DKIM_SIGNED` 對每封簽名信都會觸發（不簽才不會，那更糟）
+- **可控但改了更糟**：`List-Unsubscribe` 是給大量行銷信的退訂標頭，
+  加到驗證碼信上等於暗示使用者可以退訂安全通知；`HTML_FONT_SIZE_HUGE`
+  來自刻意放大的 OTP 字級，改小是拿 UX 換 0.001 分
+
+**mail-tester 的建議是針對大量行銷信調校的**，其中幾條套到 transactional
+信上是反向建議。判準回到那四項驗證機制：**SPF pass、DKIM valid 且
+`DKIM_VALID_AU`（對齊自家網域）、DMARC pass、不在真黑名單** ——
+這四項全綠就是完成，總分 0.1 對門檻 −5 已有近 50 倍餘裕。
+4. 最後看一封**真實的**驗證碼信的 `Authentication-Results` 標頭
+   （收信方用 **Outlook 或 Yahoo**，不要用 Gmail——Google 寄給 Google
+   走內部路由會放寬，可能照樣進收件匣，把問題遮掉）
+
+**寄送額度：兩道獨立的天花板，先撞到的是 Google 那道。**
+
+| 誰的限制 | 值 | 撞到的症狀 |
+|---|---|---|
+| Supabase（Auth → Rate Limits） | 正式站目前 **300 封／小時** | Supabase 直接不寄，**Auth logs 有記錄** |
+| Google（`smtp.gmail.com`） | Workspace **每日 2,000 封** | Google 回 `550 daily limit exceeded`，Auth logs 顯示 SMTP 錯誤 |
+
+300 封／小時連續跑滿 7 小時就會超過 Google 的日額度，所以調高 Supabase 那道
+並不會提高實際上限——**真正的瓶頸是 Google**。撞到時改走 SMTP relay：
+Admin console → **應用程式 → Google Workspace → Gmail → 路由 → SMTP 中繼服務**，
+開啟並選「需要 SMTP 驗證」，Supabase 的 Host 改成 `smtp-relay.gmail.com`
+（同樣 587／應用程式密碼），額度提升到每日 10,000 封。
+Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
+
+### 2-2 Email OTP 模板
 
 註冊／登入使用 **6 位數驗證碼（OTP）**，而非點擊連結。
 模板需改成顯示 `{{ .Token }}`。
@@ -145,27 +341,26 @@ Secrets 變更後，正在執行的函數實例不會立即生效。
 **導覽**：Dashboard → **Authentication** → **Emails**（或 **Email Templates**）
 （ `https://supabase.com/dashboard/project/<PROJECT_REF>/auth/templates` ）
 
+現成模板已在 repo 內，直接複製貼上即可，不要在 Dashboard 手寫：
+`supabase/email-templates/confirm-signup.html`、`reset-password.html`。
+改動請改 repo 這兩份再貼上去，Dashboard 那份沒有版本控制。
+
 | 模板 | 用途 | 必改內容 |
 |------|------|----------|
 | **Magic Link** | OTP 登入寄送 | 內文加入 `{{ .Token }}`，移除（或保留為輔助）`{{ .ConfirmationURL }}` |
 | **Confirm signup** | 新用戶驗證 | 同上，改用 `{{ .Token }}` 顯示驗證碼 |
 | **Reset Password** | 重設密碼 | 程式碼已走 OTP，確認模板使用 `{{ .Token }}` |
 
-### 範例內文片段
-
-```html
-<h2>您的 Uknow 驗證碼</h2>
-<p>請在 App 中輸入以下 6 位數驗證碼：</p>
-<p style="font-size:28px; font-weight:bold; letter-spacing:6px;">{{ .Token }}</p>
-<p>驗證碼 3 分鐘內有效。若非您本人操作請忽略此信。</p>
-```
+唯一不可缺的變數是 `{{ .Token }}`（6 位數驗證碼本體）。模板漏了它，
+信會照常寄出但內容沒有驗證碼，前端只會停在「等待輸入」——查起來很費工。
 
 > 💡 確認 **Authentication → Providers → Email** 已啟用、且 **Confirm email**
 > 設定符合預期（OTP 流程需要 Email 為啟用狀態）。
 
-> ⚠️ **寄信配額**：Supabase 內建 SMTP 的預設額度極低（每小時個位數）。
-> 需要大量註冊的環境（如 journey 分支）請掛 custom SMTP 或調高 Auth
-> 的 email rate limit。
+> 💡 journey 的拋棄式分支**刻意不走這條**：它用 pg-functions send-email hook
+> 把寄信導進 no-op sink，繞開內建 mailer 的保留網域檢查與限流
+> （見 `.github/workflows/journey.yml`）。OTP 由 Admin `generate_link` 取得，
+> 信件內容無所謂，所以拋棄式分支不需要設 SMTP。
 
 ---
 
@@ -291,7 +486,11 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
       ——不是正式站網域，也不是 `http://localhost:3100`
       （落到 localhost 的話，付款導回會導去一個不存在的位址）
 - [ ] 步驟 1：`api` 已重新部署，變數生效
-- [ ] 步驟 2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
+- [ ] 步驟 2-1：Custom SMTP 已啟用，寄件者為 `admin@uknow.com.tw`
+- [ ] 步驟 2-1：**Auth 的寄信限流已從預設 30 封／小時調高**（掛上 SMTP 後才准調）
+- [ ] 步驟 2-1（全網域一次）：SPF / DKIM / DMARC / MX 四筆齊全，且
+      mail-tester 上 SPF、DKIM、DMARC **三個都 pass**（不是「Supabase 存檔成功」）
+- [ ] 步驟 2-2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
