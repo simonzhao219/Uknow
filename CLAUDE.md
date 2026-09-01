@@ -27,6 +27,10 @@
   消失——`git show <hash>:docs/plans/<slug>/plan.md` 永遠取得回,PR 也是紀錄
 - 理由:功能上線後,程式碼與測試才是真相。留著的舊 plan 描述的是「當初
   想做什麼」,會被誤當成規格——那比沒有文件更糟
+- **這條由 `scripts/check-plans-scaffold.py` 機械把關**(framework-check 軌)。
+  真的不是鷹架時(某規則在別處誕生前的唯一落腳處),在檔案裡加一行
+  `<!-- plans-keep: 為什麼要留、什麼條件下可以刪 -->` 豁免——寫得出退場
+  條件,豁免才不會變成永久居留
 
 ## 指令
 
@@ -43,6 +47,7 @@
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
 | `python3 scripts/check-migration-versions.py` | migration 版本號唯一(**rebase 後必跑**——撞號 git 不標成衝突、CI 也抓不到,只在正式站部署時靜默跳過一支) |
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
+| `python3 scripts/check-plans-scaffold.py` | `docs/plans/` 只留 friction-log 與宣告保留的檔(收尾清理後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
 | `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
 
