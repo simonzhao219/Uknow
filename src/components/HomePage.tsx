@@ -667,7 +667,7 @@ function MobileSearchFilterBar({
           <SheetContent side="top" className="gap-0 p-0">
             <SheetHeader className="px-4 pt-4 pb-2">
               <SheetTitle>搜尋服務者</SheetTitle>
-              <SheetDescription>輸入名稱、服務內容或標籤，結果即時更新</SheetDescription>
+              <SheetDescription>輸入名稱、服務內容或類別，結果即時更新</SheetDescription>
             </SheetHeader>
             <div className="px-4 pb-4">
               <div className="relative">
