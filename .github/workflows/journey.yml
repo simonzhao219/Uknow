@@ -128,6 +128,22 @@ jobs:
 
           supabase branches get "$BRANCH_NAME" --experimental -o env > branch.env
 
+          # 診斷用,一律印出(不只在解析失敗時)——不印值,只印欄位名。
+          # 2026-09-02 起 db push 反覆撞 SQLSTATE 42P05(prepared statement
+          # already exists):查證後這不是暫時性競態,是 db push 內部執行
+          # SET session_replication_role,需要 session 一致性,而 POSTGRES_URL
+          # 目前拿到的是 transaction-mode pooler,結構上不支援。官方建議
+          # migrations 用 direct URL,但本檔已證實 direct URL 在 GitHub
+          # runner 上因為只有 IPv6 而連不上(見下方 DB_URL 註解)。若 CLI
+          # 這個版本的 branch env 有額外提供 session-mode pooler(IPv4 相容
+          # 但走 session 而非 transaction pooling,通常是同一個 pooler
+          # hostname、port 5432)的欄位,這裡先印出來確認欄位名長怎樣,
+          # 再決定要不要改抓那個欄位當 DB_URL——不要用猜的,上一次猜欄位名
+          # 錯了就是靜默傳空字串然後全數 skip(2026-07 那次假綠)。
+          echo "::group::branch.env 實際欄位名(診斷用,不印值)"
+          grep -oP '^[A-Z0-9_]+(?==)' branch.env | sed 's/^/  /' || true
+          echo "::endgroup::"
+
           # 欄位名會隨 CLI 版本變（2026-07 那次假綠就是 grep '^ANON_KEY='
           # 撈不到而靜默傳了空字串）——改成比對「尾綴」，容忍任意前綴。
           extract() { grep -oPm1 "^[A-Z0-9_]*${1}=\K.*" branch.env | tr -d '"' || true; }
@@ -141,6 +157,15 @@ jobs:
           # 錯誤訊息也明示改用 IPv4 pooler。
           DB_URL="$(extract 'POSTGRES_URL')"
           [ -n "$DB_URL" ] || DB_URL="$(extract 'POSTGRES_URL_NON_POOLING')"
+
+          # 診斷用:印出 host:port(user:password 先自己剝掉,不靠事後
+          # ::add-mask:: ——遮蔽是「之後才生效」,印出當下就已經外洩了)。
+          # 目的是直接確認 POSTGRES_URL 現在給的到底是不是 transaction-mode
+          # pooler(慣例 port 6543),還是這個 CLI 版本其實已經給別的。
+          echo "::group::DB_URL 結構(診斷用,已剝除帳密)"
+          echo "POSTGRES_URL host:port = $(printf '%s' "$(extract 'POSTGRES_URL')" | sed -E 's#^[a-z]+://[^@]*@##; s#/.*##' || true)"
+          echo "POSTGRES_URL_NON_POOLING host:port = $(printf '%s' "$(extract 'POSTGRES_URL_NON_POOLING')" | sed -E 's#^[a-z]+://[^@]*@##; s#/.*##' || true)"
+          echo "::endgroup::"
 
           # 硬斷言：解析不到就當場失敗。傳空字串下去只會讓每個情境
           # 靜默 skip，然後整場「成功」——那比紅燈危險得多。
