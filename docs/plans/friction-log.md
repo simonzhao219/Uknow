@@ -2307,3 +2307,28 @@ production 累積的 migration 數量增長而放大。2026-08-02 當時 migrati
 決策摘要保留在此)——把 `db push` 包進重試迴圈,拿它自己撞到的主鍵重複當重試
 訊號(資料庫當下真實狀態的第一手證據),而不是另外接一個 API 去查「replay
 到底做完了沒」——那只是把同一種「訊號有滯後」的風險換一個地方,不是消除它。
+
+## 2026-09-02｜驗證方法落差｜同一個修復合進 develop 後,重試迴圈自己被 errexit 吃掉
+
+緊接著上一則條目:PR #303 合進 develop、晉升 PR #302 重新觸發 journey-full 後,
+`db push` 依然秒級失敗——但這次連重試迴圈的 `::warning::` 都沒印出來。
+
+根因:GitHub Actions 對 `run:` step 一律用 `bash -e {0}` 呼叫 script,errexit
+在 script 第一行執行前就已經開著。上一版修復寫 `set -uo pipefail`,語意上只
+**加開** `nounset`/`pipefail`,不含 `+e`,不會清掉外部帶進來的 errexit——`db
+push | tee push.log` 這條獨立陳述式一失敗,errexit 當場終止整支 script,永遠到
+不了下面讀 `PUSH_STATUS`、判斷重試的邏輯,重試機制形同虛設。
+
+**為什麼上一版的「本機驗證」沒攔到**:驗證時用 `bash scriptfile.sh` 跑三個模擬
+情境,邏輯本身沒錯;但 GitHub Actions 實際呼叫方式是 `bash -e scriptfile.sh`——
+少了這一個 flag,同一段邏輯在兩種呼叫方式下行為完全不同。驗證了「邏輯對不對」,
+沒驗證「這段邏輯在它實際執行的環境裡會不會被跳過」,這是驗證*方法*本身的落差,
+不是邏輯本身的缺陷。
+
+**通則:本機重現/驗證 CI 用的 shell 邏輯時,必須用與 CI 完全相同的呼叫方式——
+差一個 shell flag(這裡是 `-e`),同一段邏輯就可能表現出完全不同的行為。「跑起來
+邏輯對」不等於「在它實際被呼叫的環境裡對」,這正是本次要修的原則(訊號與它要
+證明的目標之間不能有轉譯層)在「驗證方法」這個角色上的重演。**
+
+處置:見 `docs/plans/fix-journey-db-push-errexit/fix.md`(隨該 PR 收尾清理)——
+加一行 `set +e` 明確蓋掉繼承的 errexit,並改用 `bash -e` 重新驗證三個情境。

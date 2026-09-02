@@ -190,6 +190,14 @@ jobs:
       # 模式的失敗（例如 migration 內容本身有問題）不重試，直接紅燈。
       - name: 套用 checkout 的 migrations 到分支
         run: |
+          # GitHub Actions 的 run: 一律用 `bash -e {0}` 呼叫這支 script——
+          # errexit 在 script 第一行執行前就已經開著。下面 set -uo pipefail
+          # 不含 +e，蓋不掉繼承來的 -e：db push 一失敗，errexit 當場終止
+          # 整支 script，永遠到不了下面 PUSH_STATUS 那行，重試邏輯形同虛設
+          # （2026-09-02 實測:PR #302 撞到,失敗訊息只有 supabase CLI 自己
+          # 印的錯誤,沒有下面任何一行 ::warning:: 或 ::error::,秒級失敗)。
+          # 必須先 set +e 明確蓋掉繼承的 -e。
+          set +e
           set -uo pipefail
           ATTEMPT=0
           MAX_ATTEMPTS=10
