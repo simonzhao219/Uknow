@@ -2332,3 +2332,23 @@ push | tee push.log` 這條獨立陳述式一失敗,errexit 當場終止整支 s
 
 處置:見 `docs/plans/fix-journey-db-push-errexit/fix.md`(隨該 PR 收尾清理)——
 加一行 `set +e` 明確蓋掉繼承的 errexit,並改用 `bash -e` 重新驗證三個情境。
+
+## 2026-09-02｜CI 盲區(第三層)｜重試迴圈本身在 PgBouncer 連線池上撞見殘留狀態
+
+errexit 修好後,PR #302 第三次觸發 journey-full,重試邏輯確實執行了(第 1 次
+撞 `schema_migrations_pkey` 並正確重試),但第 2 次嘗試撞到不同錯誤:
+`prepared statement "lrupsc_1_0" already exists (SQLSTATE 42P05)`。
+
+根因:`db push` 走 PgBouncer pooler 連線(transaction-mode pooling)。第 1 次
+嘗試被中斷時,CLI process 沒機會 DEALLOCATE 它 PREPARE 過的 statement;連線
+還回池子後,第 2 次嘗試若分到同一條底層連線,同名 PREPARE 就撞見殘留。
+
+**通則:重試機制本身會製造新的時序窗口**——不重試就不會有「上一次留下的
+殘留狀態,這一次撞見」這種故事。`23505`(schema_migrations 主鍵重複)與
+`42P05`(prepared statement 已存在)是同一個「快速重試撞見連線池/資料庫
+殘留痕跡」原則的兩種表現,不是各自獨立的新問題。
+
+處置:見 `docs/plans/fix-journey-db-push-pgbouncer-retry/fix.md`(隨該 PR
+收尾清理)——可重試錯誤的判斷從比對訊息字串改成比對 SQLSTATE 代碼
+(`23505|42P05`),更精確也更容易擴充。若未來再出現第三種可重試的
+SQLSTATE,比照這個模式擴充清單即可。
