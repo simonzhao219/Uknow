@@ -61,6 +61,17 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 
 ## 框架摩擦
 
+- **`check-plans-scaffold.py`（2026-09-01 進 develop）讓「施工中的分支」必然紅。**
+  它擋 `docs/plans/<slug>/` 的存在，理由是「舊 plan 會被誤當成規格」——但本專案的
+  三段式流程要求**先把規劃書推上去給人審**（`/plan-feature` → `/review-plan` → 停等
+  人審），人審通過前後那段時間，分支上必然有鷹架、CI 的 guards 軌必然紅，其餘軌
+  全部 skip。本次實測：規劃階段的三次 push 都綠（守衛還沒進 develop），rebase 之後
+  第一次 push 就紅在這裡。
+  豁免標記 `<!-- plans-keep: -->` 不適用——它的語意是「這份不是施工鷹架」，我的是。
+  **本次處置**：照 `/tdd-implement` 收尾流程在最後刪鷹架，期間不再 push（TDD 相位
+  湊批再推）。整併時該想的是：守衛要不要放行「分支上有 plan 但 PR 仍是 draft／
+  或 commit 訊息帶 TDD 相位標記」，否則規劃審查那一段的 PR 注定紅。
+
 <!-- 被 hook 誤擋?規則互相矛盾?同一糾正重複兩次?
      一句話記這裡,整併時搬去 docs/plans/friction-log.md。 -->
 
