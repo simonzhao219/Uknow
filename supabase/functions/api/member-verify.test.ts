@@ -176,11 +176,12 @@ Deno.test('POST /members/verify：掃描者會籍 30 天內到期（expiring）�
     // 效期縮到 10 天後：user_account_status 仍是 active（now <= end_date），
     // 但 deriveNodeStatus 會推導成 expiring。
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
-    const { error } = await client.from('subscriptions').update({ end_date: soon }).eq(
-      'user_id',
-      scanner.id,
-    );
+    const { data: updated, error } = await client.from('subscriptions').update({ end_date: soon })
+      .eq('user_id', scanner.id).select('id');
     if (error) throw new Error(`縮短效期失敗: ${error.message}`);
+    // 沒有 .select() 就分不出「更新成功」與「一列都沒命中」——後者會讓掃描者
+    // 仍是 active，這條測試就為了錯的理由變綠（它宣稱守的是 expiring 那一格）。
+    assertEquals(updated?.length, 1, '掃描者的訂閱效期沒有被改到');
 
     const token = await signMemberToken(member.id, 90, Date.now());
     const scannerToken = await getUserAccessToken(client, scanner.email);
@@ -190,7 +191,10 @@ Deno.test('POST /members/verify：掃描者會籍 30 天內到期（expiring）�
     // 但仍有效的會員，而其餘八格測試一格都不會紅。
     assertEquals(res.status, 200);
     const body = await res.json();
-    assertEquals(body.data.status, 'expiring');
+    // 回應裡的 status 是**被掃者**的（他正常付款、仍是 active），不是掃描者的。
+    // 掃描者是不是 expiring 由上面的效期更新與這裡的 200 共同證明——403 才是
+    // 「掃描者沒資格」的表現。
+    assertEquals(body.data.status, 'active');
   } finally {
     await cleanup(client, [member.id, scanner.id], member.id);
   }
