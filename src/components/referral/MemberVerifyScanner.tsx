@@ -277,13 +277,28 @@ export function MemberVerifyScanner() {
             <track kind="captions" />
           </video>
 
-          {/* 取景輔助：只畫四角、不畫實框。實框會被讀成「只有框內有效」，
-              與上面那句「解碼吃的是完整影格」剛好相反。 */}
-          <div className="pointer-events-none absolute inset-0" aria-hidden>
-            <div className="absolute left-4 top-4 h-8 w-8 rounded-tl-lg border-l-4 border-t-4 border-white/60" />
-            <div className="absolute right-4 top-4 h-8 w-8 rounded-tr-lg border-r-4 border-t-4 border-white/60" />
-            <div className="absolute bottom-4 left-4 h-8 w-8 rounded-bl-lg border-b-4 border-l-4 border-white/60" />
-            <div className="absolute bottom-4 right-4 h-8 w-8 rounded-br-lg border-b-4 border-r-4 border-white/60" />
+          {/* 取景輔助：四個角標圍出一個**正方形**，置中疊在長方形的相機畫面上。
+              為什麼是正方形：QR 碼本身是正方形，準星跟著方，使用者才知道要把碼
+              對進哪一塊；角標若跟著 4:3 的畫面走，圍出來的是長方形，和碼的形狀
+              對不上。
+              為什麼仍然只畫四角、不畫實框：實框會被讀成「只有框內掃得到」，
+              與上面那句「解碼吃的是完整影格」剛好相反——準星是對準的輔助，
+              不是有效範圍的宣告。
+              邊長取容器高度再內縮 2rem：相機畫面是 4:3（寬永遠大於高），所以
+              以高度為準的正方形一定放得進去，不必再判斷方向。 */}
+          <div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            aria-hidden
+          >
+            <div
+              className="relative aspect-square h-[calc(100%-2rem)]"
+              data-testid="scanner-reticle"
+            >
+              <div className="absolute left-0 top-0 h-8 w-8 rounded-tl-lg border-l-4 border-t-4 border-white/60" />
+              <div className="absolute right-0 top-0 h-8 w-8 rounded-tr-lg border-r-4 border-t-4 border-white/60" />
+              <div className="absolute bottom-0 left-0 h-8 w-8 rounded-bl-lg border-b-4 border-l-4 border-white/60" />
+              <div className="absolute bottom-0 right-0 h-8 w-8 rounded-br-lg border-b-4 border-r-4 border-white/60" />
+            </div>
           </div>
 
           {/* 釘在取景框內而非視窗底部：手機底部已被 BottomNav 佔用

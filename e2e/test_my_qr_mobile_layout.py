@@ -27,6 +27,7 @@ from test_overflow_sweep import _setup_my_qr
 
 TABS_LIST = '[data-slot="tabs-list"]'
 SCANNER_VIEWPORT = '[data-testid="scanner-viewport"]'
+SCANNER_RETICLE = '[data-testid="scanner-reticle"]'
 BOTTOM_NAV = 'nav[aria-label="主要導覽"]'
 
 
@@ -70,4 +71,30 @@ def test_scanner_viewport_fits_above_bottom_nav(my_qr_at_375):
     # 內距共同決定，寫死會在裝置安全區改變時變成假綠。
     assert viewport["bottom"] <= nav["top"], (
         f"取景框底邊在 {viewport['bottom']}px，已被底部導覽（頂邊 {nav['top']}px）遮住"
+    )
+
+
+def test_scanner_reticle_is_square(my_qr_at_375):
+    """四個角標圍出來的取景區是正方形——相機畫面本身仍是長方形。
+
+    QR 碼本身是正方形，準星跟著方，使用者才知道要把碼對進哪一塊；角標若跟著
+    4:3 的相機畫面走，圍出來的是長方形，對準的心理模型就和碼的形狀對不上。
+
+    只有真瀏覽器量得到：jsdom 沒有排版引擎，`aspect-square` 在那裡量出來是 0×0，
+    斷言會變成「0 等於 0」的套套邏輯。
+    """
+    my_qr_at_375.goto("/dashboard/qr?tab=scan")
+    settle(my_qr_at_375)
+
+    box = my_qr_at_375.locator(SCANNER_RETICLE).bounding_box()
+    assert box is not None, f"找不到取景準星 {SCANNER_RETICLE}"
+    # 容許 1px：瀏覽器對 aspect-ratio 的計算會有次像素捨入。
+    assert abs(box["width"] - box["height"]) <= 1, (
+        f"準星不是正方形：{round(box['width'])}×{round(box['height'])}px"
+    )
+
+    viewport = my_qr_at_375.locator(SCANNER_VIEWPORT).bounding_box()
+    assert viewport is not None
+    assert box["width"] <= viewport["width"] + 1 and box["height"] <= viewport["height"] + 1, (
+        "準星超出取景框——它應該內縮在相機畫面之內"
     )
