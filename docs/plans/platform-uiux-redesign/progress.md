@@ -1,5 +1,7 @@
 # 平台 UI/UX 全面重設計——進度看板
 
+<!-- plans-keep: 進行中的跨 session 施工鷹架（S1–S8 尚未完工，工序見 construction-plan.md）；退場條件＝S8（G2）收尾時整個目錄刪除 -->
+
 > 每個 session 開工先讀本檔，收工必更新。遺留事項只准記在這裡。
 
 ## Session 狀態
