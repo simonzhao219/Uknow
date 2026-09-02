@@ -33,9 +33,21 @@ export interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
+/**
+ * 嚴格解析：認得就回該分頁，認不得回 null。
+ *
+ * 與 normalizeMyQrTab 的差別全在「認不得」怎麼辦：normalize 收斂回預設（用在
+ * 讀偏好——髒資料不該讓面板停在不存在的分頁上），這支回 null（用在讀 URL 的
+ * `?tab=`——`?tab=垃圾` 必須等同「沒有指定」，收斂成預設等於讓髒 URL 反過來
+ * 蓋掉使用者自己的偏好）。兩種語意共用一份合法值清單，不會漂移。
+ */
+function parseMyQrTab(raw: unknown): MyQrTab | null {
+  return raw === 'invite' || raw === 'verify' || raw === 'scan' ? raw : null;
+}
+
 /** 把任意值收斂成合法的 MyQrTab；無法辨識一律回預設。 */
 export function normalizeMyQrTab(raw: unknown): MyQrTab {
-  return raw === 'invite' || raw === 'verify' ? raw : DEFAULT_MY_QR_TAB;
+  return parseMyQrTab(raw) ?? DEFAULT_MY_QR_TAB;
 }
 
 /**
@@ -47,12 +59,25 @@ export function normalizeMyQrTab(raw: unknown): MyQrTab {
  * 的事故正是兩份幾乎相同的邏輯只改了一邊——推薦管理頁因此把推薦碼提前印給
  * 尚未加入推薦計畫的人看。第三份只會讓同一個形狀再發生一次。
  */
-export function availableMyQrTabs(_input: {
+export function availableMyQrTabs({
+  joined,
+  referralCode,
+  canScan,
+}: {
+  /** 是否已加入推薦計畫（簽過參加契約書）。 */
   joined?: boolean | null;
+  /** 推薦碼；付款成功時就已產生，但沒加入計畫之前不該拿出來用。 */
   referralCode?: string | null;
+  /** 是否可掃描他人的驗證碼＝管理員或會籍有效（與後端授權同一把尺）。 */
   canScan?: boolean | null;
 }): MyQrTabAvailability {
-  return { invite: false, verify: true, scan: false };
+  return {
+    invite: !!joined && !!referralCode,
+    // 驗證碼恆存在：能進到「我的 QR」的人都是會員本人，出示自己的身分碼永遠
+    // 合法。它同時是 resolveMyQrTab 的最後退路，兩者要一起看。
+    verify: true,
+    scan: !!canScan,
+  };
 }
 
 function defaultStorage(): StorageLike | null {
@@ -98,9 +123,12 @@ export function writeMyQrTab(tab: MyQrTab, storage: StorageLike | null = default
  * 交會點，放在元件裡就只能靠 e2e 才驗得到。
  */
 export function resolveMyQrTab(
-  _available: MyQrTabAvailability,
-  _requested: string | null | undefined,
+  available: MyQrTabAvailability,
+  requested: string | null | undefined,
   preferred: MyQrTab,
 ): MyQrTab {
-  return preferred;
+  const requestedTab = parseMyQrTab(requested);
+  if (requestedTab && available[requestedTab]) return requestedTab;
+  if (available[preferred]) return preferred;
+  return 'verify';
 }

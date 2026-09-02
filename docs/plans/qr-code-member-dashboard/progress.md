@@ -13,7 +13,7 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ⬜ 未開始 | | |
+| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ✅ 綠 | c29101f | (下一個 commit) |
 | 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、稽核 `verifier_id`）＋ migration 改名；**紅綠以 CI api-tests 軌為準（本機無 deno）** | ⬜ 未開始 | | |
 | 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ⬜ 未開始 | | |
 | 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ⬜ 未開始 | | |
@@ -27,8 +27,14 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 2026-09-02：第 2 輪四視角審查完成（P0 0／P1 8／P2 13，見 `./review.md`），人審追加裁決
 「誰掃過我」本次不做；規劃書依全部發現修訂為**第 4 版**（節流、`activationMode="manual"`、
 `nameMasked` 說明列、e2e 底邊與 ink-overflow 探針、§13.1 四段與 §5.2 同步等）。
-**開工條件已備**：無 P0、開放問題全數裁決 → 由人親自 `/tdd-implement qr-code-member-dashboard`。
-階段仍為六個（第 4 版把規格書 §3 路由表移到階段 5 同批改）。
+2026-09-02：人親自啟動 `/tdd-implement`，開工。**階段 1 綠**（紅燈 c29101f）：
+`myQrTabPreference` 加 `scan` 分頁、`parseMyQrTab` 嚴格解析（URL 髒值＝沒指定，
+不收斂成預設）、`availableMyQrTabs` 成為「哪些分頁存在」的單一事實來源、
+`resolveMyQrTab` 三層優先序（深連結 > 偏好 > 驗證碼）；`MyQrDialog` 同批換新簽名。
+
+**下一步：階段 2（後端 `POST /members/verify` ＋ migration 改名）。**
+本機無 deno／supabase CLI，紅綠以 CI `api-tests` 軌為準——紅燈 commit 的證據是
+「測試檔已改、該軌紅」，綠燈同理，run 連結記在本節。
 
 ## Blockers(逃生口紀錄)
 
