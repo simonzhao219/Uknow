@@ -143,6 +143,17 @@ export function extractApiErrorMessage(errorData: unknown, fallback: string): st
   return fallback;
 }
 
+/**
+ * 把後端錯誤信封組成 ApiError（訊息＋狀態＋**錯誤碼**）。
+ *
+ * 抽成純函式而不是寫在 apiRequestJson 裡，是為了讓「碼有沒有被帶出來」這件事
+ * 可以在 node 測試裡直接驗——包在 fetch 流程裡就得連 supabase client 一起替身，
+ * 那種測試通常不會被寫，於是這條線就沒有人守。
+ */
+export function apiErrorFromBody(_errorData: unknown, status: number): ApiError {
+  return new ApiError(`請求失敗 (${status})`, status);
+}
+
 export async function apiRequestJson<T = any>(url: string, options: RequestInit = {}): Promise<T> {
   try {
     const response = await apiRequest(url, options);

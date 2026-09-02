@@ -71,7 +71,7 @@ const AdminDashboard = lazyNamed(() => import('./components/AdminDashboard'), 'A
 // 會員驗證獨立成頁（相機需全螢幕，且 AdminDashboard 是釘死的 5 欄 Tabs）；
 // lazy 讓 @zxing 掃碼庫只在進這頁時才下載，不拖累其他 admin 操作。
 const MemberVerifyScanner = lazyNamed(
-  () => import('./components/admin/MemberVerifyScanner'),
+  () => import('./components/referral/MemberVerifyScanner'),
   'MemberVerifyScanner',
 );
 const TermsOfServicePage = lazyNamed(
