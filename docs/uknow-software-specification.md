@@ -83,6 +83,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/auth/complete-profile` | 完善個資 | 登入 |
 | `/payment/checkout`、`/payment/result` | 結帳 / 付款結果 | 登入 |
 | `/dashboard` | 會員儀表板 | 登入 + 會籍 |
+| `/dashboard/qr` | 我的 QR（邀請好友／會員驗證碼／掃描驗證三分頁） | 登入 + 會籍 |
 | `/service-providers` | 刊登管理 | 登入 + 會籍 + featureFlag |
 | `/service-providers/create` | 新增刊登 | 登入 + 會籍 + featureFlag |
 | `/service-providers/edit/:id` | 編輯刊登 | 登入 + 會籍 + featureFlag |
@@ -90,7 +91,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/tasks` | 任務中心 | 登入 + 會籍 + featureFlag |
 | `/rewards` | 獎勵回饋 / 提領 | 登入 + 會籍 + featureFlag |
 | `/admin` | 管理後台 | 管理員 |
-| `/admin/verify` | 會員驗證（會員身分） | 管理員 |
+| `/admin/verify` | 舊路徑，轉址至 `/dashboard/qr?tab=scan` | 公開（純轉址，不再單獨守門；守門在目的地） |
 | `*` | 未匹配路由導回首頁 | — |
 
 > 本表的第一欄由 `scripts/check-spec-drift.py` 與 `src/App.tsx` 的

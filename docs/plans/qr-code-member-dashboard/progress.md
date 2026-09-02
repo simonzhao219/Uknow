@@ -17,7 +17,7 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 | 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、節流、稽核 `verifier_id`）＋ migration 改名 | 🟡 待 CI 確認 | 41fb1e8 | (本 commit) |
 | 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ✅ 綠 | 31ac447 | (本 commit) |
 | 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ✅ 綠 | 05caae1 | (本 commit) |
-| 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
+| 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ✅ 綠 | bf37bf0 | (本 commit) |
 | 6 | 文件與 e2e 同步（規格書 §2.1／§3／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
@@ -47,8 +47,14 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 `useBackNavigation` 的 `'/dashboard/qr'` 對照表項目提前到本階段（階段 4 的行為就依賴
 它，見 Blockers）。
 
-**下一步：階段 5（接線：`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、`App.tsx` 路由與
-轉址、`AdminDashboard` 捷徑、規格書 §3 路由表同批改）。**
+**階段 5 綠**（紅燈 bf37bf0）：`MyQrEntry` 改成帶 `state.from` 的連結並在
+hover／touch／focus 預熱 chunk、`MyQrDialog` 連同測試刪除、`App.tsx` 以 lazy 掛
+`/dashboard/qr` 並把 `/admin/verify` 改成帶來源的轉址、`AdminDashboard` 捷徑改連掃描
+分頁、規格書 §3 路由表同批改（spec-drift 綠）。
+
+**下一步：階段 6（文件與 e2e：規格書 §2.1／§5.2／§13.1 四段／§13 判準註、ui-ux §7
+路徑、溢版巡檢三條路由＋mock、fake camera 與底邊探針、新檔 test_my_qr_mobile_layout.py、
+dashboard_steps.py 註解）。**
 
 ## Blockers(逃生口紀錄)
 
