@@ -17,6 +17,11 @@ const ROUTE_HIERARCHY: Record<string, string> = {
   '/rewards': '/dashboard', // 奖励回馈
   '/subscriptions': '/dashboard', // 订阅管理
 
+  // 「我的 QR」→ 会员中心。**必须显式列出**：前缀比对回圈会先命中既有的
+  // '/dashboard': '/'（'/dashboard/qr'.startsWith('/dashboard/') 为真），
+  // 不加这一行按返回会被送回首页，不是会员中心。
+  '/dashboard/qr': '/dashboard',
+
   // 第四层 → 第三层
   '/service-providers/create': '/service-providers',
   '/service-providers/edit': '/service-providers', // 动态路由前缀
@@ -109,6 +114,7 @@ export function useBreadcrumbs() {
     '/rewards': '奖励回馈',
     '/subscriptions': '订阅管理',
     '/service-providers/create': '建立刊登',
+    '/dashboard/qr': '我的 QR',
     '/register': '注册',
     '/login': '登入',
   };

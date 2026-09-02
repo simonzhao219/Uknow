@@ -147,7 +147,9 @@ describe('MyQrPage', () => {
 
     it('切換分頁後把選擇記起來，下次開頁才停得回去', () => {
       renderPage(FULL_MEMBER);
-      fireEvent.click(screen.getByTestId('scan-tab'));
+      // mouseDown 而非 click：Radix 的 TabsTrigger 聽的是 onMouseDown，
+      // click 事件不含 mousedown，那一下根本進不到元件（同 AdminDashboard.test）。
+      fireEvent.mouseDown(screen.getByTestId('scan-tab'));
       expect(localStorage.getItem(MY_QR_TAB_KEY)).toBe('scan');
     });
   });

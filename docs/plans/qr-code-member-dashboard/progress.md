@@ -16,7 +16,7 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 | 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ✅ 綠 | c29101f | ae994bc |
 | 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、節流、稽核 `verifier_id`）＋ migration 改名 | 🟡 待 CI 確認 | 41fb1e8 | (本 commit) |
 | 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ✅ 綠 | 31ac447 | (本 commit) |
-| 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ⬜ 未開始 | | |
+| 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ✅ 綠 | 05caae1 | (本 commit) |
 | 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
 | 6 | 文件與 e2e 同步（規格書 §2.1／§3／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ⬜ 未開始 | | |
 
@@ -42,10 +42,27 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 依 code 分流、相機競態修掉（resolve 前卸載也會 stop）。順帶讓 `ApiError.code` 真的
 被填——它一直存在卻從沒被寫入，呼叫端想分流只能比對中文訊息字串。
 
-**下一步：階段 4（`MyQrPage` 新頁：頁首、分頁組合、深連結、偏好寫回、依來源返回、
-`activationMode="manual"`）。**
+**階段 4 綠**（紅燈 05caae1，19 條）：`MyQrPage` 落地——四格分頁矩陣、`?tab=` 深連結、
+偏好寫回、依 `state.from` 白名單返回、`activationMode="manual"`、圖示只在三分頁時退場。
+`useBackNavigation` 的 `'/dashboard/qr'` 對照表項目提前到本階段（階段 4 的行為就依賴
+它，見 Blockers）。
+
+**下一步：階段 5（接線：`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、`App.tsx` 路由與
+轉址、`AdminDashboard` 捷徑、規格書 §3 路由表同批改）。**
 
 ## Blockers(逃生口紀錄)
+
+- **階段 4 的一條測試用錯了互動手法（等人裁決是否解鎖修測試）。**
+  `切換分頁後把選擇記起來` 用 `fireEvent.click(scan-tab)` 驅動 Radix 分頁，但 Radix
+  的 TabsTrigger 是聽 `onMouseDown`（`click` 事件不含 mousedown），所以那一下點擊
+  **根本沒有進到元件**——`onValueChange` 沒被呼叫，偏好當然沒寫入。本 repo 既有
+  慣例是 `fireEvent.mouseDown`（`AdminDashboard.test.tsx:62`），我寫成了 click。
+  斷言本身（切分頁要寫回偏好）沒有問題，要改的只有驅動方式，**不是**改測試遷就
+  實作。依 `tdd-test-guard` 的指示記在這裡並求裁決。
+  另：同階段兩條返回鍵測試原本也紅，那不是測試的錯——`useBackNavigation` 的
+  `'/dashboard/qr': '/dashboard'` 被規劃排在階段 5，但階段 4 的行為就依賴它。
+  已在階段 4 補上（**與 plan 的階段邊界有出入，屬順序修正、非設計變更**），
+  規劃書預定的 `useBackNavigation.test.tsx` 仍留在階段 5。
 
 <!-- 三種合法分支的紀錄處:
      1. 紅燈測試一寫就綠(功能已存在)→ 記錄後跳過該階段,人審知悉
