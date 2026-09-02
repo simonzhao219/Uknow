@@ -181,6 +181,12 @@ def _setup_dashboard(context, api_mock, rest_mock):
     rest_mock.set_user_listing(_hostile_listing())
 
 
+def _setup_my_qr(context, api_mock, rest_mock):
+    """「我的 QR」頁：已加入推薦計畫、會籍有效 → 三個分頁都在（多數人的樣子）。"""
+    _seed_member(context)
+    api_mock.set_member_verify_token()
+
+
 def _setup_listing_mgmt(context, api_mock, rest_mock):
     _seed_member(context)
     rest_mock.set_user_listing(_hostile_listing())
@@ -471,6 +477,23 @@ ROUTES = [
     SweepRoute("/participation-contract", "參加契約書", None, "/participation-contract"),
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),
+    # 三條而不是一條：預設停在「邀請好友」，那一頁有不斷行的推薦連結與長姓名，
+    # 是本次真正從對話框盲區變成可直達路由的畫面；另外兩個分頁不切過去就從來
+    # 沒被畫出來過（Radix 只掛載 active 面板）。
+    SweepRoute("/dashboard/qr", "我的 QR（邀請好友）", _setup_my_qr, "/dashboard/qr"),
+    SweepRoute(
+        "/dashboard/qr",
+        "我的 QR（會員驗證碼）",
+        _setup_my_qr,
+        "/dashboard/qr",
+        after_load=_open_tab("會員驗證碼"),
+    ),
+    SweepRoute(
+        "/dashboard/qr?tab=scan",
+        "我的 QR（掃描驗證）",
+        _setup_my_qr,
+        "/dashboard/qr",
+    ),
     SweepRoute("/service-providers", "刊登管理", _setup_listing_mgmt, "/service-providers"),
     SweepRoute(
         "/service-providers/create",
