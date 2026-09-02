@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { MemberVerifyQrTab } from './MemberVerifyQrTab';
 import { InviteFriendPanelContent } from './InviteFriendPanelContent';
 import {
+  availableMyQrTabs,
   type MyQrTab,
   readMyQrTab,
   resolveMyQrTab,
@@ -42,14 +43,26 @@ export function MyQrDialog({
   memberName,
   accountStatus,
 }: MyQrDialogProps) {
-  const canShareInvite = joined && !!referralCode;
-  const [tab, setTab] = useState<MyQrTab>(() => resolveMyQrTab(canShareInvite, readMyQrTab()));
+  // 可用分頁一律問 availableMyQrTabs，不在這裡自己寫 joined && referralCode——
+  // 那個判斷式被複製成兩份的後果就是 3967f69 那次事故。canScan 固定 false：
+  // 掃描分頁只存在於「我的 QR」獨立頁，本對話框在該頁上線時一併刪除。
+  const available = availableMyQrTabs({ joined, referralCode, canScan: false });
+  const canShareInvite = available.invite;
+  const [tab, setTab] = useState<MyQrTab>(() => resolveMyQrTab(available, null, readMyQrTab()));
 
   // 每次開啟都重新決定停在哪一頁：偏好可能在上次開啟時被改過，而 canShareInvite
   // 也可能在這期間變了（剛加入推薦計畫）。
   useEffect(() => {
-    if (open) setTab(resolveMyQrTab(canShareInvite, readMyQrTab()));
-  }, [open, canShareInvite]);
+    if (open) {
+      setTab(
+        resolveMyQrTab(
+          availableMyQrTabs({ joined, referralCode, canScan: false }),
+          null,
+          readMyQrTab(),
+        ),
+      );
+    }
+  }, [open, joined, referralCode]);
 
   const handleTabChange = (value: string) => {
     const next: MyQrTab = value === 'verify' ? 'verify' : 'invite';
