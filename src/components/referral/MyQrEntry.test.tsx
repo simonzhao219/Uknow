@@ -6,8 +6,9 @@
 // 它守的是本次修的 bug：推薦管理頁曾經在「尚未加入推薦計畫」時就把推薦碼印出來
 // （會員中心有 gate、推薦管理沒有，因為當初的共用元件在一側被換掉了）。
 //
-// MyQrDialog / JoinReferralProgramDialog 都替身掉：它們各有自己的關注點
-// （Radix portal、簽名板、API 呼叫），這裡只驗 MyQrEntry 自己的狀態與接線。
+// JoinReferralProgramDialog 替身掉：它有自己的關注點（簽名板、API 呼叫），
+// 這裡只驗 MyQrEntry 自己的狀態與接線。「我的 QR」不再是對話框而是連結，
+// 目的地與帶出去的 state 靠 MemoryRouter 的落點探針觀察。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -112,14 +113,14 @@ describe('MyQrEntry', () => {
     expect(screen.getByTestId('my-qr-button').getAttribute('href')).toBe('/dashboard/qr');
   });
 
-  it('由推薦碼欄位的 CTA 開加入流程時同時關掉面板', () => {
+  it('由推薦碼欄位的 CTA 開加入流程', () => {
+    // 「我的 QR」變成獨立頁之後，兩個遮罩疊在一起的風險消失了（加入流程是這一頁
+    // 唯一的對話框），所以原本那條「開加入流程前先關掉 QR 面板」的斷言連同
+    // my-qr-dialog 這個 test id 一起退場——它現在恆真，守不住任何東西。
     renderEntry({ referralProgramJoined: false, referralCode: null });
 
     fireEvent.click(screen.getByTestId('join-referral-button'));
 
-    // 兩者是不同層的遮罩（Radix portal vs 手刻 fixed），疊在一起會吃掉點擊，
-    // 使用者按不到簽名與同意條款——所以開加入流程前一律先關掉面板。
-    expect(screen.queryByTestId('my-qr-dialog')).toBeNull();
     expect(screen.getByTestId('join-dialog-submit')).toBeTruthy();
   });
 

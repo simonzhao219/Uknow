@@ -166,6 +166,36 @@ Deno.test('POST /members/verify：過期驗證碼 → 400 token_expired 且不�
   }
 });
 
+Deno.test('POST /members/verify：掃描者會籍 30 天內到期（expiring）→ 仍放行', async () => {
+  const client = adminClient();
+  const member = await createTestUser(client, { name: '驗證測試員' });
+  const scanner = await createTestUser(client, { name: '將到期掃描者' });
+  try {
+    await payForUser(client, member.id);
+    await payForUser(client, scanner.id);
+    // 效期縮到 10 天後：user_account_status 仍是 active（now <= end_date），
+    // 但 deriveNodeStatus 會推導成 expiring。
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    const { error } = await client.from('subscriptions').update({ end_date: soon }).eq(
+      'user_id',
+      scanner.id,
+    );
+    if (error) throw new Error(`縮短效期失敗: ${error.message}`);
+
+    const token = await signMemberToken(member.id, 90, Date.now());
+    const scannerToken = await getUserAccessToken(client, scanner.email);
+    const res = await verifyReq(scannerToken, token);
+    // 守的是 `!== 'active' && !== 'expiring'` 這個雙重否定：它讀起來正確，但正是
+    // 日後最容易被「簡化」成只判 !== 'active' 的地方——那一改就會悄悄擋掉快到期
+    // 但仍有效的會員，而其餘八格測試一格都不會紅。
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.data.status, 'expiring');
+  } finally {
+    await cleanup(client, [member.id, scanner.id], member.id);
+  }
+});
+
 Deno.test('POST /members/verify：掃描者會籍過期 → 403 verifier_not_eligible', async () => {
   const client = adminClient();
   const member = await createTestUser(client, { name: '驗證測試員' });

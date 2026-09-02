@@ -18,6 +18,12 @@
 
 alter table public.member_verify_logs rename column admin_id to verifier_id;
 alter index member_verify_logs_admin_idx rename to member_verify_logs_verifier_idx;
+-- 隱式 FK 約束的名字是建表時自動長出來的，改欄名不會跟著改。留著的話，
+-- `\d member_verify_logs` 與 Studio 上仍看得到 admin_id 字樣——而「查表的人不該
+-- 把一般會員的掃描讀成管理員行為」正是這支 migration 的動機，漏掉它等於只改了
+-- 一半。純命名，不影響功能與資料。
+alter table public.member_verify_logs
+  rename constraint member_verify_logs_admin_id_fkey to member_verify_logs_verifier_id_fkey;
 
 comment on table public.member_verify_logs is
   '會員身分驗證稽核：會籍有效的會員或管理員掃碼驗證成功時逐次寫入（append-only）。查閱走 Supabase Studio，本期無前端介面。';
