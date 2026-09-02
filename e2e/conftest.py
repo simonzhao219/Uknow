@@ -126,6 +126,29 @@ def base_url():
     return BASE_URL
 
 
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """全域掛上假相機。
+
+    「我的 QR」的掃描分頁一掛載就呼叫 getUserMedia；headless 沒有相機時元件會
+    退到手動輸入模式，於是**取景框根本不存在**——量得到的永遠是另一個版面，
+    而取景框與結果卡的垂直關係正是那一頁唯一真正的版面問題。
+
+    放在 conftest 而不是單一測試模組：`browser_type_launch_args` 是 session
+    scope，第一個叫起瀏覽器的模組決定了整個 session 的啟動參數，在模組層覆寫
+    會變成「看測試執行順序決定有沒有生效」。其餘測試不用相機，多這兩個旗標
+    沒有副作用（fake-ui 讓權限請求自動放行，不會跳出對話框卡住）。
+    """
+    return {
+        **browser_type_launch_args,
+        "args": [
+            *browser_type_launch_args.get("args", []),
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+        ],
+    }
+
+
 @pytest.fixture
 def browser_context_args(browser_context_args):
     return {

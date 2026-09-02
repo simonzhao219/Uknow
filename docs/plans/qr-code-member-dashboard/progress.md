@@ -18,7 +18,7 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 | 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ✅ 綠 | 31ac447 | (本 commit) |
 | 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ✅ 綠 | 05caae1 | (本 commit) |
 | 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ✅ 綠 | bf37bf0 | (本 commit) |
-| 6 | 文件與 e2e 同步（規格書 §2.1／§3／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ⬜ 未開始 | | |
+| 6 | 文件與 e2e 同步（規格書 §2.1／§5.2／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ✅ 綠 | （新測試一寫就綠，見 Blockers） | (本 commit) |
 
 ## 目前位置與下一步
 
@@ -52,9 +52,13 @@ hover／touch／focus 預熱 chunk、`MyQrDialog` 連同測試刪除、`App.tsx`
 `/dashboard/qr` 並把 `/admin/verify` 改成帶來源的轉址、`AdminDashboard` 捷徑改連掃描
 分頁、規格書 §3 路由表同批改（spec-drift 綠）。
 
-**下一步：階段 6（文件與 e2e：規格書 §2.1／§5.2／§13.1 四段／§13 判準註、ui-ux §7
-路徑、溢版巡檢三條路由＋mock、fake camera 與底邊探針、新檔 test_my_qr_mobile_layout.py、
-dashboard_steps.py 註解）。**
+**六個階段全綠。** 階段 6 完成文件與 e2e 同步：規格書 §2.1／§5.2／§13.1 四段／§13
+判準註、ui-ux §7 路徑、溢版巡檢三條路由＋`/members/verify-token` mock、conftest 掛
+假相機、`layout_probe` 補底邊、新檔 `test_my_qr_mobile_layout.py`。
+本機實測：`npm run check` 綠、e2e 全套 **184 passed**（含新增 2 條版面斷言與 3 條巡檢路由）。
+
+**下一步：收尾**——`npm run check:full`、UI 視覺自查、`/review-implementation`、
+把值得長期保存的決策升級進正式文件、刪鷹架、push、開 PR、盯 CI。
 
 ## Blockers(逃生口紀錄)
 
@@ -81,6 +85,11 @@ dashboard_steps.py 註解）。**
   相依。pre-commit 偵測到這點會降為警告交給 CI（規則已預期這種沙箱）。
   紅燈 41fb1e8 未被機器觀察到紅——它的紅是結構性的（`/api/members/verify` 當時
   還不存在，九條斷言全落在 404），綠由 CI `api-tests` 軌確認，run 連結記在這裡。
+
+  - 階段 6 的兩條新版面斷言**一寫就綠**（逃生口 1）：它們釘的是階段 3／4 已經
+    做出來的行為（三分頁時圖示退場、取景框留在底部導覽之上），本來就該綠。留著
+    的價值是回歸——那兩件事都屬於「改壞了不會有人發現」的類型（ink overflow 的
+    盒子量測完全正常；沒有假相機時取景框根本不存在、量到的是另一個版面）。
 
 ## 框架摩擦
 

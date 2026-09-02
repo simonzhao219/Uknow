@@ -283,6 +283,10 @@ _FIRST_SCREEN_JS = """
   // 呼叫端保證是剛載入、尚未捲動的狀態。
   return {
     top: Math.round(r.top),
+    // 高度與底邊：只看頂邊會讓「頂邊在第一屏、整個盒子卻超出去」的情形
+    // 靜默通過——取景框正是這種東西（頂邊約 300px、高度還有 250px）。
+    height: Math.round(r.height),
+    bottom: Math.round(r.bottom),
     viewportHeight: window.innerHeight,
     visible: r.top < window.innerHeight,
     // 距離第一屏底部還差多少（負值 = 已經在第一屏內）

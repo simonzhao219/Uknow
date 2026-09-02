@@ -157,6 +157,18 @@ class BackendApiMock:
         body = {"success": True, "data": data}
         self._route("/subscriptions/status", lambda route: _fulfill_json(route, body))
 
+    def set_member_verify_token(self, token: str = "fake-member-verify-token"):
+        """「我的 QR → 會員驗證碼」分頁一掛載就取碼；沒有這個 mock 只量得到錯誤態。
+
+        expiresAt 給足夠遠的未來，避免 hook 在量測期間排出換發、讓畫面在探針
+        跑到一半時抽換。
+        """
+        body = {
+            "success": True,
+            "data": {"token": token, "expiresAt": "2099-01-01T00:00:00.000Z"},
+        }
+        self._route("/members/verify-token", lambda route: _fulfill_json(route, body))
+
     def set_subscription_status_sequence(self, responses: list):
         """`responses` is a list of `data` dicts for /subscriptions/status.
         Each successive request advances (staying on the last) — used to model
