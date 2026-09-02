@@ -1,0 +1,3 @@
+{"branch": "fix/journey-session-mode-pooler", "ended": "2026-09-02T22:23:58+00:00", "fired": {}, "passed": {"bash-guard": 7, "check-output-filter": 7, "deletion-residue-check": 2, "feature-plan-guard": 5, "model-effort-advisor": 2, "tdd-test-guard": 5}, "session": "9d907ab2fb5c", "started": "2026-09-02T22:17:19+00:00"}
+{"branch": "fix/journey-session-mode-pooler", "ended": "2026-09-02T22:32:01+00:00", "fired": {}, "passed": {"deletion-residue-check": 5, "model-effort-advisor": 6}, "session": "86c3fc3ba900", "started": "2026-09-02T22:30:00+00:00"}
+{"branch": "fix/journey-session-mode-pooler", "ended": "2026-09-02T22:42:01+00:00", "fired": {}, "passed": {"bash-guard": 21, "check-output-filter": 21}, "session": "ef2f35ab2130", "started": "2026-09-02T22:34:53+00:00"}
