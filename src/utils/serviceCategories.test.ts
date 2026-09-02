@@ -60,6 +60,22 @@ describe('findCanonicalCategory', () => {
   });
 });
 
+describe('CUSTOM_CATEGORY_MAX_LENGTH', () => {
+  it('等於內建類別的最長值——自訂不該比內建更難完整呈現', () => {
+    // 這條斷言把常數釘在一個**可推導的事實**上,而不是一個記在註解裡的數字。
+    // 判準:自訂類別與內建類別在所有顯示點並列(下拉選單、首頁篩選 chip、
+    // 卡片徽章),同一個位置卻有兩套長度預期,長的那套必然先撞牆。
+    //
+    // 實測佐證(Chromium,依實際 class 量測):手機首頁預設是 3 欄照片牆
+    // (DEFAULT_HOME_VIEW_MODE = 'photo'),375px 下磚寬 113px、類別膠囊可用
+    // 105px;6 個全形字約 78px 有餘裕,10 個全形字要 122px、在 320–412px
+    // 全數截斷。截斷有 truncate + title 兜底不會破版,但「上限訂在使用者
+    // 實際看不完的長度」是規則設計錯誤,不是顯示層的事。
+    const longestBuiltIn = Math.max(...SERVICE_CATEGORIES.map((c) => c.length));
+    expect(CUSTOM_CATEGORY_MAX_LENGTH).toBe(longestBuiltIn);
+  });
+});
+
 describe('validateCustomCategory', () => {
   it('空白輸入被拒並要求輸入', () => {
     const result = validateCustomCategory('  ', SERVICE_CATEGORIES);

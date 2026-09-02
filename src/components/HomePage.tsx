@@ -332,7 +332,7 @@ export function HomePage() {
             label="服務地區"
             summary={selectedCities.length === 1 ? `地區：${selectedCities[0]}` : undefined}
             count={selectedCities.length}
-            panelClassName="w-[min(640px,90vw)] max-h-[70vh] overflow-y-auto"
+            panelClassName="w-[min(640px,90vw)]"
           >
             <LocationFilterChips
               selectedCities={selectedCities}

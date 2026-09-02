@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 //
-// 篩選 chip 的寬度界限。自訂類別上線後,chip 的文字長度不再由開發者決定
-// ——內建類別最長 6 字,自訂上限 10 字,而 chip 原本沒有任何寬度上限。
+// 篩選 chip 的寬度界限。自訂類別上線後,chip 的文字長度不再由開發者決定,
+// 而 chip 原本沒有任何寬度上限。新輸入的上限雖已收到 6 字(對齊內建最長值),
+// 調降前建立的類別最長仍有 10 字、資料層的濫用上界是 20 字——所以界限要由
+// 建構保證,不能靠「上限夠小」。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { FilterChip } from './FilterChip';

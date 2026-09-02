@@ -535,7 +535,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | 名稱長度 | 最多 10 字（手機首頁顯示截至 8 字，桌面 10 字） |
 | 服務介紹 | 最多 200 字 |
 | 照片 | 最多 3 張，單張 ≤ 5 MB，格式 jpeg / png / webp |
-| 自訂類別長度 | 最多 10 字〔實作〕`src/utils/serviceCategories.ts` 的 `CUSTOM_CATEGORY_MAX_LENGTH`（資料庫 trigger 另有 20 字硬上限，那是防繞過 UI 的濫用上界，不是產品規則） |
+| 自訂類別長度 | 最多 6 字〔實作〕`src/utils/serviceCategories.ts` 的 `CUSTOM_CATEGORY_MAX_LENGTH`。判準是**對齊內建類別的最長值**（§12.1 的「各項運動教練」「各類音樂老師」）——自訂與內建在每個顯示點都並排，長度預期分兩套時長的先撞牆。**只約束新輸入**：調降前建立的 7–10 字類別仍在資料裡、仍會顯示（顯示端有 truncate + title）。資料庫 trigger 另有 20 字硬上限，那是防繞過 UI 的濫用上界，不是產品規則，刻意不跟著調降 |
 
 ---
 

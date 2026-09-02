@@ -11,8 +11,14 @@ import { allKnownCategories } from '../../utils/serviceCategories';
  * 判準是 375px 的手機篩選面板:3～4 字的 chip 一列約放 3 顆,8 顆約 3 列
  * (連同小標不到 100px),不會把面板裡的「服務地區」區塊推出視野。門檻以下
  * 完全不觸發收合——今天自訂類別還少,這個機制在多數情境是 no-op,它存在的
- * 理由是**這是全站唯一沒有上限的清單**(內建 30 類是常數,自訂是 `count(*)`),
- * 收合是唯一能保證面板高度有上界的東西。
+ * 理由是**這是全站唯一沒有上限的清單**(內建 30 類是常數,自訂是 `count(*)`)。
+ *
+ * 界限有兩層,這是**上面那層**:收合讓「預設看到的面板」高度有上界。它管不到
+ * 展開態——展開時 `visibleCustom = custom`,所有自訂 chip 都渲染在同一個
+ * 面板裡。下面那層在 `ui/popover.tsx`:`PopoverContent` 帶
+ * `max-h-(--radix-popover-content-available-height) + overflow-y-auto`,
+ * 保證面板無論多長都不會超出視窗、底部 chip 永遠點得到。缺了那層,展開
+ * 就是把收合擋下的問題原樣放回來(portal + fixed 沒有捲軸)。
  */
 export const CUSTOM_CATEGORY_VISIBLE_LIMIT = 8;
 
