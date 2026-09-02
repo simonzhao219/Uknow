@@ -207,8 +207,16 @@ jobs:
             PUSH_STATUS=${PIPESTATUS[0]}
             [ "$PUSH_STATUS" -eq 0 ] && break
 
-            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ] && grep -q 'schema_migrations_pkey' push.log; then
-              echo "::warning::分支背景 migration replay 尚未追上母專案(第 $ATTEMPT 次撞到 schema_migrations_pkey),15 秒後重試"
+            # SQLSTATE 23505＝schema_migrations 主鍵重複(replay 追不上,見上）；
+            # 42P05＝prepared statement 已存在——PgBouncer transaction-mode
+            # pooling 下,上一次嘗試的 CLI process 被 errexit 中斷前沒機會
+            # DEALLOCATE,連線被交還連線池後,下一次嘗試若拿回同一條底層
+            # connection 就會撞到殘留的 prepared statement（2026-09-02 PR
+            # #302 第二次重跑實測:第 1 次撞 23505 重試後,第 2 次撞
+            # 42P05）。兩者都是「重試本身」在連線池上引發的殘留狀態，不是
+            # migration 內容有問題，一併視為可重試訊號。
+            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ] && grep -qE 'SQLSTATE (23505|42P05)' push.log; then
+              echo "::warning::分支背景 migration replay 尚未追上母專案,或連線池殘留前次嘗試的狀態(第 $ATTEMPT 次),15 秒後重試"
               sleep 15
               continue
             fi
