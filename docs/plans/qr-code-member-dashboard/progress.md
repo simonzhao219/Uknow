@@ -13,8 +13,8 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ✅ 綠 | c29101f | (下一個 commit) |
-| 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、稽核 `verifier_id`）＋ migration 改名；**紅綠以 CI api-tests 軌為準（本機無 deno）** | ⬜ 未開始 | | |
+| 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ✅ 綠 | c29101f | ae994bc |
+| 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、節流、稽核 `verifier_id`）＋ migration 改名 | 🟡 待 CI 確認 | 41fb1e8 | (本 commit) |
 | 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ⬜ 未開始 | | |
 | 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ⬜ 未開始 | | |
 | 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
@@ -32,9 +32,12 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 不收斂成預設）、`availableMyQrTabs` 成為「哪些分頁存在」的單一事實來源、
 `resolveMyQrTab` 三層優先序（深連結 > 偏好 > 驗證碼）；`MyQrDialog` 同批換新簽名。
 
-**下一步：階段 2（後端 `POST /members/verify` ＋ migration 改名）。**
-本機無 deno／supabase CLI，紅綠以 CI `api-tests` 軌為準——紅燈 commit 的證據是
-「測試檔已改、該軌紅」，綠燈同理，run 連結記在本節。
+**階段 2 實作完成，等 CI `api-tests` 軌確認**（紅燈 41fb1e8）：新端點
+`POST /members/verify`（掃描者資格 → 節流 → 驗簽 → 查人 → 稽核，全部在 handler 內
+授權）、舊 `POST /admin/members/verify` 移除、migration `20260902000001` 把稽核欄位
+`admin_id` 改名 `verifier_id`、契約加 `nameMasked`。
+
+**下一步：CI 綠了就進階段 3（掃描面板搬到 `referral/`、改面板、端點改路徑、卸載停相機）。**
 
 ## Blockers(逃生口紀錄)
 
@@ -43,9 +46,12 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
      2. 實作中發現 plan 該階段有誤 → 停手記錄,求人工裁決,禁止私改 plan
      3. 綠不了 → 記錄嘗試過什麼,求人工裁決,禁止改測試遷就實作 -->
 
-- 階段 2 的 Deno 測試在本容器跑不了（無 deno、無 supabase CLI）：紅燈 commit 以
-  「測試檔已改、CI api-tests 軌紅」為證據，綠燈同理。實作時把該軌的 run 連結記在
-  這裡。
+- 階段 2 的 Deno 測試在本容器跑不了：deno 可用 `npm i -g deno` 裝起來（fmt/lint
+  可跑、也讓 pre-commit 放行），但 **jsr.io 在本環境不可達**（noProxy 清單裡走直連、
+  直連被擋；改走代理同樣失敗），所以 `deno task check` 與 `deno test` 都解析不到
+  相依。pre-commit 偵測到這點會降為警告交給 CI（規則已預期這種沙箱）。
+  紅燈 41fb1e8 未被機器觀察到紅——它的紅是結構性的（`/api/members/verify` 當時
+  還不存在，九條斷言全落在 404），綠由 CI `api-tests` 軌確認，run 連結記在這裡。
 
 ## 框架摩擦
 

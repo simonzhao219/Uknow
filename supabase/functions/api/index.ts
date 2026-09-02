@@ -2800,12 +2800,34 @@ app.get('/subscriptions/status', async (c) => {
 });
 
 // ============================================================
-// 會員身分驗證（member-verify-qr）——線下 admin 掃會員動態短效碼確認身分＋會籍。
+// 會員身分驗證（member-verify-qr）——線下當面掃對方的動態短效碼確認身分＋會籍。
 // 與推薦碼完全分離：推薦碼是公開可分享的，綁身分＝可冒充；這裡用簽章短效 token。
+// 掃描開放給**會籍有效的會員或管理員**（規格 §13.1）：業主要在門市確認來客，
+// 會員之間也需要當面確認對方是不是有效會員。
 // ============================================================
 
 /** 驗證碼短效期（秒）。現場出示→掃描的時間窗；集中一處便於日後調整。 */
 const MEMBER_VERIFY_TTL_SECONDS = 90;
+
+/**
+ * 掃描節流：同一掃描者每分鐘 30 次。
+ *
+ * 猜 token 本來就不可行（HMAC 簽章、90 秒到期），這道防的是另一件事：開放互掃
+ * 之後，任何會籍有效的會員都能呼叫這支端點，「側錄一批他人正在顯示的 QR 再批次
+ * 驗證」變成可行的個資收集手段。人工掃描一次至少兩三秒，30 次／分鐘碰不到；
+ * 批次濫用則會撞牆。fail-open 與 /auth/check-email 一致：限流器故障不擋正常使用。
+ */
+const MEMBER_VERIFY_RATE_MAX = 30;
+const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
+
+/**
+ * 一般會員掃到的姓名一律走推薦網絡「二代以上」的那一種遮罩樣式。
+ *
+ * 具名而不是直接寫 2：`maskNameByGen` 的 gen 參數語意是推薦網絡的「第幾代」，
+ * 而掃描者與被掃者之間並沒有任何代數關係——這裡只是借用它的遮罩樣式。日後若
+ * maskNameByGen 為推薦網絡新增依 gen 值變化的行為，這個常數就是該回頭看的地方。
+ */
+const MEMBER_VERIFY_MASK_GEN = 2;
 
 // GET /members/verify-token —— 會員自取「身分驗證」短效碼（登入會員本人）。
 app.get('/members/verify-token', async (c) => {
@@ -2825,13 +2847,47 @@ app.get('/members/verify-token', async (c) => {
   }
 });
 
-// POST /admin/members/verify —— admin 掃會員驗證碼：驗簽＋查會籍＋寫稽核＋回身分。
+// POST /members/verify —— 掃對方的驗證碼：驗簽＋查會籍＋寫稽核＋回身分。
 // 用 POST（非 GET）因為有稽核寫入：GET 語意上可被自動重試而重複寫入稽核。
-// 守門：requireAuth + isAdminUser（本專案逐路由手貼；已登記進 admin-gate.test 的 ADMIN_ROUTES）。
-app.post('/admin/members/verify', async (c) => {
+//
+// **這支不在 /admin/* 命名空間下，沒有 middleware 幫忙守門——授權完全是本 handler
+// 自己的責任**（同 /tasks/claim-reward 的慣例）。判斷順序刻意固定：先確認掃描者
+// 有資格（不合格的人連節流配額都不該消耗），再節流，最後才驗簽與查人。
+app.post('/members/verify', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
-  if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
+
+  // 1) 掃描者資格：管理員一律放行（可能沒有訂閱，與 RequireMembershipRoute 的
+  //    isAdmin 放行一致）；其餘人用 deriveNodeStatus 判定——它把停權放在最前面，
+  //    所以「停權」與「會籍過期」兩個獨立欄位一次涵蓋，不會漏掉效期內被停權的人。
+  const isAdmin = await isAdminUser(user.id);
+  if (!isAdmin) {
+    const [{ data: me }, { data: myAcct }] = await Promise.all([
+      sb().from('profiles').select('suspended_at').eq('id', user.id).maybeSingle(),
+      sb().from('user_account_status').select('status, end_date').eq('user_id', user.id)
+        .maybeSingle(),
+    ]);
+    const { status: verifierStatus } = deriveNodeStatus(myAcct, me?.suspended_at ?? null);
+    if (verifierStatus !== 'active' && verifierStatus !== 'expiring') {
+      return c.json({
+        success: false,
+        error: { code: 'verifier_not_eligible', message: '會籍有效的會員才能掃描驗證' },
+      }, 403);
+    }
+  }
+
+  // 2) 節流（per 掃描者，非 per IP：要擋的是「一個人驗一堆碼」，換 IP 沒有意義）。
+  const { data: rateAllowed } = await sb().rpc('bump_rate_limit', {
+    p_key: `verify:${user.id}`,
+    p_max: MEMBER_VERIFY_RATE_MAX,
+    p_window_seconds: MEMBER_VERIFY_RATE_WINDOW_SECONDS,
+  });
+  if (rateAllowed === false) {
+    return c.json({
+      success: false,
+      error: { code: 'rate_limited', message: '掃描過於頻繁，請稍後再試' },
+    }, 429);
+  }
 
   let body: any = {};
   try {
@@ -2843,13 +2899,13 @@ app.post('/admin/members/verify', async (c) => {
   try {
     verified = await verifyMemberToken(token, Date.now());
   } catch (e) {
-    console.error('[admin/members/verify] 驗章失敗（可能缺 MEMBER_TOKEN_SECRET）:', e);
+    console.error('[members/verify] 驗章失敗（可能缺 MEMBER_TOKEN_SECRET）:', e);
     return c.json({ success: false, error: { message: '系統設定錯誤' } }, 500);
   }
 
   if (!verified.ok) {
     // token 過期/竄改/格式錯——與「會籍 expired」是不同語意，前端需區分顯示，
-    // 別讓店家把「碼過期」誤讀成「這個人會籍過期」。
+    // 別讓掃描者把「碼過期」誤讀成「這個人會籍過期」。
     const message = verified.reason === 'expired' ? '驗證碼已過期，請對方重新出示' : '驗證碼無效';
     return c.json({ success: false, error: { code: `token_${verified.reason}`, message } }, 400);
   }
@@ -2870,20 +2926,27 @@ app.post('/admin/members/verify', async (c) => {
 
   // 稽核 fail-closed：寫不進去就擋下驗證（回 5xx 要求重試），保證每次成功驗證都有紀錄。
   const { error: auditErr } = await sb().from('member_verify_logs').insert({
-    admin_id: user.id,
+    verifier_id: user.id,
     member_id: memberId,
     result: 'ok',
   });
   if (auditErr) {
-    console.error('[admin/members/verify] 稽核寫入失敗，拒絕回應（fail-closed）:', auditErr);
+    console.error('[members/verify] 稽核寫入失敗，拒絕回應（fail-closed）:', auditErr);
     return c.json({ success: false, error: { message: '驗證暫時無法完成，請重試' } }, 500);
   }
 
+  // 一般會員只拿得到遮罩名：確認「是不是有效會員」靠的是會籍狀態，不需要真實全名；
+  // 開放互掃之後不遮罩等於任何人都能靠掃碼收集他人姓名。管理員維持全名——他們本來
+  // 就在會員管理裡看得到，且線下核對證件是管理員的工作。
+  const nameMasked = !isAdmin;
   return c.json(
     {
       success: true,
       data: {
-        displayName: profile.name ?? '',
+        displayName: nameMasked
+          ? maskNameByGen(profile.name, MEMBER_VERIFY_MASK_GEN)
+          : profile.name ?? '',
+        nameMasked,
         status,
         activeUntil: acct?.end_date ?? null,
       },
