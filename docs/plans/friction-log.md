@@ -2281,3 +2281,29 @@ draft、`progress.md` 的階段狀態是不是全綠、分支有沒有產品程�
    head，但 GitHub 上根本沒有那條分支——於是第一次 push 被以「遠端已有舊歷史」擋下
    並要求 `--force-with-lease`，而裸的 `--force-with-lease` 又因追蹤 ref 與遠端不符
    回 `stale info`。要問遠端就該問遠端：`git ls-remote --heads origin <branch>`。
+
+## 2026-09-02｜CI 盲區｜journey-full 建分支後 db push 撞主鍵重複：STATUS 終態訊號本身有滯後
+
+銜接 2026-08-02 那則「journey 排程 7 晚全紅」條目——同一個「連得上不等於 schema
+是全的」原則,在那次修復加上的驗證訊號自己身上又重演了一層。
+
+晉升 PR #302(develop→main)上 `journey-full / journey-suite` 連續紅兩次(含用掉的
+唯一一次盲目重跑)。兩次都死在建立拋棄式分支之後、`supabase db push` 撞
+`schema_migrations_pkey` 主鍵重複——兩次撞號的版本不同(第 6 支、重跑後第 8
+支),證明分支背景 replay(把母專案既有 70 支 migration 套進新分支)在兩次嘗試
+之間持續推進,只是永遠追不上 `db push` 開跑的時間點。
+
+根因:2026-08-02 加的 STATUS 輪詢(等 `MIGRATIONS_PASSED`)驗證的是「Supabase
+Management API 怎麼描述這個分支」,不是「這個分支的 `schema_migrations` 資料表
+實際有什麼」——兩者在 replay 剛完成的瞬間會有一段落差,而這段落差的寬度隨
+production 累積的 migration 數量增長而放大。2026-08-02 當時 migration 數量少,
+落差窗口小到沒被撞過;跑到 70 支才第一次撞見。
+
+**通則:一個驗證訊號本身也可能是間接的、有自己的滯後——修好「完全沒驗證」不等於
+修好「驗證」,除非驗證訊號與它要證明的目標之間沒有轉譯層。這類滯後不會在當下
+現形,只會隨它所監控的系統規模增長而窗口變寬,直到某天剛好被撞到。**
+
+處置:見 `docs/plans/fix-journey-branch-replay-race/fix.md`(隨該 PR 收尾清理,
+決策摘要保留在此)——把 `db push` 包進重試迴圈,拿它自己撞到的主鍵重複當重試
+訊號(資料庫當下真實狀態的第一手證據),而不是另外接一個 API 去查「replay
+到底做完了沒」——那只是把同一種「訊號有滯後」的風險換一個地方,不是消除它。

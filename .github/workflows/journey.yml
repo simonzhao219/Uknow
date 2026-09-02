@@ -175,10 +175,39 @@ jobs:
       # migration 不補上，Edge Function 就是新程式打舊 schema。db push
       # 只套「本地有、分支歷史沒有」的版本，等於預演晉升時 production
       # 會做的 migration 套用——這裡紅了，晉升也會紅，早知道早修。
+      #
+      # 上面的 STATUS 輪詢只證明 replay「已收斂到某個終態」，不保證
+      # 「這一刻資料庫已經追上母專案的全部歷史」——2026-09-02 promote PR
+      # #302 實測兩次撞到 schema_migrations_pkey 重複鍵，兩次撞號的版本
+      # 各不同（第 6 支、重跑後第 8 支），證明背景 replay 在兩次嘗試之間
+      # 持續推進，只是永遠追不上 db push 開跑的時間點：STATUS API 回報
+      # 終態的時間點，早於 replay 真正寫完全部歷史列的時間點。
+      #
+      # 撞到這個特定的主鍵重複，恰恰是「這個版本剛被背景 replay 插入」的
+      # 即時證據，比重新輪詢 STATUS 更可靠——所以直接拿它當重試訊號：
+      # 短暫等待後重新呼叫 db push，它會用資料庫當下的真實狀態重新判斷
+      # 「本地有、分支沒有」，自然收斂到只剩真正新增的版本。非這個錯誤
+      # 模式的失敗（例如 migration 內容本身有問題）不重試，直接紅燈。
       - name: 套用 checkout 的 migrations 到分支
         run: |
-          set -euo pipefail
-          supabase db push --db-url "$JOURNEY_BRANCH_DB_URL"
+          set -uo pipefail
+          ATTEMPT=0
+          MAX_ATTEMPTS=10
+          while :; do
+            ATTEMPT=$((ATTEMPT + 1))
+            supabase db push --db-url "$JOURNEY_BRANCH_DB_URL" 2>&1 | tee push.log
+            PUSH_STATUS=${PIPESTATUS[0]}
+            [ "$PUSH_STATUS" -eq 0 ] && break
+
+            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ] && grep -q 'schema_migrations_pkey' push.log; then
+              echo "::warning::分支背景 migration replay 尚未追上母專案(第 $ATTEMPT 次撞到 schema_migrations_pkey),15 秒後重試"
+              sleep 15
+              continue
+            fi
+
+            echo "::error::db push 失敗(第 $ATTEMPT 次,結束碼 $PUSH_STATUS)——非已知的 replay 競態模式,或已達重試上限 $MAX_ATTEMPTS 次"
+            exit 1
+          done
 
       # ------------------------------------------------------------------
       # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
