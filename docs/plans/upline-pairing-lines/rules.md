@@ -1,5 +1,10 @@
 # 續約 × 推薦樹機制規則書(單一事實來源)
 
+<!-- plans-keep: M4/M6/M7(樹結構/發獎走訪/任務樹檢查)在別處誕生前的唯一
+     落腳處;裁決見 friction-log 2026-08-02「rules.md 的跨包存活義務」。
+     退場條件:另一包 /plan-feature upline-pairing-lines 跑完、M4/M6/M7
+     升級進其 plan.md 之後,此檔即可依一般鷹架生命週期處理。 -->
+
 > ⚠️ **此檔在另一包 `upline-pairing-lines` 的 plan.md 承接 M4/M6/M7 之前
 > 不得刪除**——那三節(樹結構/發獎走訪/任務樹檢查)目前唯一的落腳處就是
 > 這裡。`renewal-backfill` 收尾清理(`git rm -r docs/plans/renewal-backfill`)

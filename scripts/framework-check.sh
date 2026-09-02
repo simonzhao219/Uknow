@@ -134,6 +134,23 @@ if [ -f scripts/check-document-naming.py ]; then
   fi
 fi
 
+# 10a-2. docs/plans/ 的鷹架生命週期。CLAUDE.md 早就寫明「平常只該有
+#        friction-log.md」「落檔的在 PR 前刪除」，但沒有任何一層在執行——
+#        2026-09-01 盤點時躺著兩個自己寫著「本檔可以結案」「五組全部修完」
+#        的目錄。與文件命名同源：訂了規則卻沒有閘門，等於沒訂。
+#        帶豁免機制（<!-- plans-keep: ... -->），因為 docs/plans/ 確實有
+#        正當的長期居民（見 upline-pairing-lines/rules.md 的跨包存活義務）。
+if [ -f scripts/check-plans-scaffold.py ]; then
+  if ! python3 scripts/check-plans-scaffold.py --self-test; then
+    echo "FAIL: 規劃檔生命週期檢查器自身的表格案例未過（scripts/check-plans-scaffold.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-plans-scaffold.py; then
+    echo "FAIL: docs/plans/ 有未清理的施工鷹架（scripts/check-plans-scaffold.py）"
+    fail=1
+  fi
+fi
+
 # 10b. Supabase migration 版本號。2026-08-07（PR #246）的撞號在三層閘門下
 #      全綠通過——git 不標成衝突（兩個不同檔名）、CI 的 api-tests 抓不到
 #      （本地從零重播，兩支都跑得到），只有在正式站部署那一刻才靜默跳過
