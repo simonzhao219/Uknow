@@ -2217,3 +2217,28 @@ commit 上的 `ci-ok` 確實存在且 success,不是這個原因**(最可能是 
 同族的既有紀錄:08-17「三重靜默」那則的第三層(沒有 MX 所以退信蒸發)、
 以及本輪 `logSystemAlertOnce` 的 error 吞噬。三次都是同一件事:
 **沉默被當成正常。**
+
+## 2026-09-02｜漏網（驗證方式）｜`bash -n` 不是「跑過了」,是「解析得動」
+
+PR #301 的 `guards` 軌紅,唯一一行失敗訊息是 `FAIL: CLAUDE.md 共 205 行,
+超過 200 行上限`——framework-check.sh 的第 2 項檢查,而我送 PR 前**沒有跑
+過 framework-check.sh**。我跑的是:自己新增的 `check-plans-scaffold.py`
+(self-test + 實跑)、順手的 `check-document-naming` / `check-spec-drift` /
+`check-context-budget`,以及 `bash -n scripts/framework-check.sh`。
+
+最後那個是問題所在。`bash -n` 只驗語法能不能被解析,**不執行任何一項檢查**。
+我把它當成「這軌我驗過了」,但它連 CLAUDE.md 有幾行都沒數。
+
+判準:**改動會被哪一軌跑到,就跑那一整軌,不要只跑自己新增的那一支。**
+我驗的是「我寫的東西對不對」,而漏掉的是「我的改動讓別人那支變得不對」——
+這次改的 CLAUDE.md 由同軌的另一項檢查(行數上限)管,不歸我新增的閘門管。
+**影響面 ≠ 新增面。**
+
+同族第三次(前兩次見 09-01 兩則):都是拿一個較弱、較便宜的信號代替真正的
+驗證,然後把它讀成通過。紅燈顏色、輪詢器的「沒有壞消息」、`bash -n`。
+
+附帶的結構事實:CLAUDE.md 當時**正好卡在 200/200**,所以「新增一道閘門」
+必然變成「搬走一段」——這是行數上限設計時就寫在註解裡的意圖(「超過＝該搬去
+rules/ 或 docs/」)。搬走的是 hook 決策記錄那段:它是 `decision_log.py`
+docstring 的失真摘要,而那份 docstring 就在它描述的程式碼旁邊、寫得完整得多,
+且那段內容是被動的(Claude 不會因為它而做任何事),不該佔常駐 context 預算。

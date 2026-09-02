@@ -49,15 +49,10 @@
 | `python3 scripts/check-context-budget.py` | context 預算與讀取成本(改 CLAUDE.md/rules 後必跑) |
 | `python3 scripts/check-plans-scaffold.py` | `docs/plans/` 只留 friction-log 與宣告保留的檔(收尾清理後必跑) |
 | `scripts/tdd-unlock.sh` | TDD 紅燈期唯一合法解鎖(check 綠才刪鎖) |
-| `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率) |
+| `python3 scripts/harness-metrics.py` | hook 決策彙總(誤擋率、skill 命中率)——計數由 pre-commit 落檔成 `.claude/metrics/sessions/<分支>.jsonl` 並自動暫存,一分支一檔的理由與 `HARNESS_METRICS=0` 開關見 `.claude/hooks/decision_log.py` docstring |
 
 pre-commit hook 會跑 `npm run check`(由 `npm ci` 的 prepare 自動掛載)。
 commit 被擋時修到綠:`--no-verify` 與覆寫 `core.hooksPath` 都會被 hook 擋。
-
-**hook 的每次決策都會被記錄**(`.claude/hooks/decision_log.py`):計數存在
-session 內的 buffer,由 **pre-commit** 落檔成 `.claude/metrics/sessions/<分支>.jsonl`
-的一行並自動暫存(Stop hook 在最後一次 commit 之後才跑,進不了 git;web 容器拋棄式)。
-**一分支一檔**是為了跨分支不重疊——共用單檔會讓 GitHub 誤判 PR 衝突。關掉設 `HARNESS_METRICS=0`。
 
 **驗證指令的綠燈輸出會被折疊成一行**(`.claude/hooks/check-output-filter.py`):
 看到 `[check-filter] 綠燈（N 行輸出已折疊）` 就是全綠,**不需要重跑確認**——
