@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, QrCode, ScanLine, Share2, Shield } from 'lucide-react';
+import { ArrowLeft, ScanLine, Share2, Shield } from 'lucide-react';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { cn } from './ui/utils';
@@ -113,10 +113,7 @@ export function MyQrPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
-            <QrCode className="h-6 w-6" aria-hidden="true" />
-            我的 QR
-          </h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">我的 QR</h1>
           {/* 手機隱藏副標：第一屏的每一像素都要留給 QR 與取景框。各分頁自己那句
               說明不得與這裡重複——重複等於把同一件事講兩遍，還把 QR 擠下去。 */}
           <p className="hidden text-sm text-muted-foreground sm:block">

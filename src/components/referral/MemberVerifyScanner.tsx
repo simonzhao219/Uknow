@@ -284,14 +284,17 @@ export function MemberVerifyScanner() {
               為什麼仍然只畫四角、不畫實框：實框會被讀成「只有框內掃得到」，
               與上面那句「解碼吃的是完整影格」剛好相反——準星是對準的輔助，
               不是有效範圍的宣告。
-              邊長取容器高度再內縮 2rem：相機畫面是 4:3（寬永遠大於高），所以
-              以高度為準的正方形一定放得進去，不必再判斷方向。 */}
+              邊長取容器高度再內縮 2rem：4:3 之下寬永遠大於高，以高度為準的正方形
+              一定放得進去（h−32 < 4h/3 恆成立），max-w 不會生效。但取景框還有
+              `min-h-[16rem]` 這道下限——視窗窄到取景框實際寬度低於約 224px 時
+              高度會被下限撐開、反過來大於寬度，這時 max-w 讓準星退化成放得進去的
+              長方形，而不是溢出到取景框外面。 */}
           <div
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
             aria-hidden
           >
             <div
-              className="relative aspect-square h-[calc(100%-2rem)]"
+              className="relative aspect-square h-[calc(100%-2rem)] max-w-[calc(100%-2rem)]"
               data-testid="scanner-reticle"
             >
               <div className="absolute left-0 top-0 h-8 w-8 rounded-tl-lg border-l-4 border-t-4 border-white/60" />
