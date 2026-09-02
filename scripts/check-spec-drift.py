@@ -133,6 +133,15 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "src/utils/constants.ts",
         r"MAX_PHOTO_SIZE = (\d+) \* 1024 \* 1024",
     ),
+    # 這條是回填的防線:這個常數不在 constants.ts,原本不在監看範圍內,
+    # 於是「改了數字、規格書沒同步」不會被任何閘門攔到——2026-09-01 把它
+    # 從 10 調到 6 時才發現。§11 那一列與這裡是同一個事實的兩個副本。
+    ConstantRule(
+        "自訂服務類別長度上限",
+        r"自訂類別長度 \| 最多 ([\d,]+) 字",
+        "src/utils/serviceCategories.ts",
+        r"CUSTOM_CATEGORY_MAX_LENGTH = (\d+)",
+    ),
 )
 
 
@@ -548,6 +557,7 @@ def self_test() -> int:
 def _load_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for pattern in ("supabase/migrations/*.sql", "src/utils/constants.ts",
+                    "src/utils/serviceCategories.ts",
                     "supabase/functions/_shared/api-contract.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")

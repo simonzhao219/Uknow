@@ -121,7 +121,8 @@
   兩個容易踩的細節：`dvh` 而非 `vh`（同 §附錄的網址列收合問題）；面板所在的
   容器**不要** `overflow-hidden`，視窗極矮時寧可讓它溢出多捲一點，也不要
   被裁掉——看不到結果就是原本要修的症狀。
-  〔實作〕`src/components/admin/MemberVerifyScanner.tsx` 與其測試。
+  〔實作〕`src/components/referral/MemberVerifyScanner.tsx` 與其測試（掃描開放給
+  會籍有效的會員後，它從 admin 區搬到 `referral/`，成為「我的 QR」頁的一個分頁）。
 
 **推論**：mobile-first 不等於「桌機不必驗收」。上面這條的失效模式正是
 「手機對、桌機錯」；滿版元素（橫幅、sticky bar、footer 條）新增時，

@@ -143,21 +143,47 @@ export function extractApiErrorMessage(errorData: unknown, fallback: string): st
   return fallback;
 }
 
+/**
+ * 把後端錯誤信封組成 ApiError（訊息＋狀態＋**錯誤碼**）。
+ *
+ * 抽成純函式而不是寫在 apiRequestJson 裡，是為了讓「碼有沒有被帶出來」這件事
+ * 可以在 node 測試裡直接驗——包在 fetch 流程裡就得連 supabase client 一起替身，
+ * 那種測試通常不會被寫，於是這條線就沒有人守。
+ */
+export function apiErrorFromBody(errorData: unknown, status: number): ApiError {
+  return new ApiError(
+    extractApiErrorMessage(errorData, `請求失敗 (${status})`),
+    status,
+    extractApiErrorCode(errorData),
+  );
+}
+
+/** 取物件形信封的錯誤碼（`{ error: { code } }`）；沒有或不是字串一律 undefined。 */
+export function extractApiErrorCode(errorData: unknown): string | undefined {
+  if (errorData && typeof errorData === 'object') {
+    const { error } = errorData as { error?: unknown };
+    if (error && typeof error === 'object') {
+      const code = (error as { code?: unknown }).code;
+      if (typeof code === 'string' && code) return code;
+    }
+  }
+  return undefined;
+}
+
 export async function apiRequestJson<T = any>(url: string, options: RequestInit = {}): Promise<T> {
   try {
     const response = await apiRequest(url, options);
 
     if (!response.ok) {
-      let errorMessage = `請求失敗 (${response.status})`;
+      let apiError = apiErrorFromBody(null, response.status);
 
       try {
-        const errorData = await response.json();
-        errorMessage = extractApiErrorMessage(errorData, errorMessage);
+        apiError = apiErrorFromBody(await response.json(), response.status);
       } catch {
         // 無法解析錯誤訊息，使用預設訊息
       }
 
-      throw new ApiError(errorMessage, response.status);
+      throw apiError;
     }
 
     return response.json();

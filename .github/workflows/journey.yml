@@ -142,6 +142,35 @@ jobs:
           DB_URL="$(extract 'POSTGRES_URL')"
           [ -n "$DB_URL" ] || DB_URL="$(extract 'POSTGRES_URL_NON_POOLING')"
 
+          # ------------------------------------------------------------
+          # 但 pooler 有兩種模式，而 db push 只能用其中一種：
+          #
+          #   port 6543 = transaction mode（Supavisor 預設，POSTGRES_URL 給的）
+          #   port 5432 = session mode（同一個 pooler hostname，同樣走 IPv4）
+          #
+          # `supabase db push` 內部會執行 `SET session_replication_role`，
+          # 那是 session 層級的狀態；transaction pooling 每個 transaction
+          # 都可能換一條後端連線，**結構上就承載不了**，同理它也不支援
+          # prepared statement——CLI 用的 pgx driver 會自動 prepare，於是
+          # 撞 `prepared statement "lrupsc_1_0" already exists`（SQLSTATE
+          # 42P05）。這不是偶發競態：2026-09-02 PR #302 第四、五次嘗試
+          # 各連撞 9 次、每次訊息一字不差，重試到上限也不會收斂。
+          #
+          # 官方對 migrations 的建議是改用 direct URL，但那條路被上面的
+          # IPv6 問題堵死。解法是留在同一個已證實 IPv4 可達的 pooler
+          # hostname 上，只把 port 換成 session mode——2026-09-02 的診斷
+          # run（33687189543）確認 branch.env 只有 POSTGRES_URL
+          # （aws-0-<region>.pooler.supabase.com:6543）與
+          # POSTGRES_URL_NON_POOLING（db.<ref>.supabase.co:5432）兩個欄位，
+          # 沒有第三個 session-mode 欄位可抓，所以只能自己換 port。
+          #
+          # 換不到（Supabase 日後改了 port 慣例）不硬失敗：那時 URL 原樣
+          # 送下去，連不上會在 db push 當場報明確的連線錯誤，比在這裡猜錯
+          # 然後靜默用錯模式好。下面那行 log 就是給那天的人看的。
+          # ------------------------------------------------------------
+          DB_URL="${DB_URL/:6543/:5432}"
+          echo "db push 連線目標（已剝除帳密）：$(printf '%s' "$DB_URL" | sed -E 's#^[a-z]+://[^@]*@##; s#/.*##' || true)"
+
           # 硬斷言：解析不到就當場失敗。傳空字串下去只會讓每個情境
           # 靜默 skip，然後整場「成功」——那比紅燈危險得多。
           missing=''
@@ -170,15 +199,135 @@ jobs:
             echo "JOURNEY_BRANCH_DB_URL=$DB_URL"
           } >> "$GITHUB_ENV"
 
+      # ------------------------------------------------------------------
+      # 1.5 等背景 replay 真的寫完——STATUS 說的「終態」比事實早
+      #
+      #     上面那圈 STATUS 輪詢只證明分支「已收斂到某個終態」，不保證
+      #     「母專案的歷史 migration 已全部寫進這個分支」。這段空窗期會讓
+      #     下面的 db push 與背景 replay 對同一批版本同時動手，症狀有兩張
+      #     臉，2026-09-02 promote PR #302 兩張都撞過：
+      #       SQLSTATE 23505（schema_migrations_pkey）——版本列被 replay 搶先插入
+      #       SQLSTATE 42701（column ... already exists）——DDL 被 replay 搶先套用
+      #     第二張臉的機制值得寫下來：replay 是「先套語句、後寫版本列」，
+      #     中間那一瞬間 db push 讀到的「已套用清單」還是舊的，於是把同一支
+      #     migration 再套一次，撞上剛被建好的欄位。
+      #
+      #     兩者是同一個根因的兩張臉，所以這裡**不再逐一把 SQLSTATE 加進
+      #     重試白名單**——那是修症狀，而症狀會一直換臉。改成從源頭讓兩邊
+      #     不要重疊：直接問資料庫本人，等 schema_migrations 的列數連續
+      #     不再變動，才開始 db push。問資料庫比再問一次 STATUS API 可靠：
+      #     API 回報的是控制平面的狀態機，這裡要的是資料平面的事實。
+      #
+      #     等不到不硬失敗：replay 慢不是缺陷，而 db push 自己的重試迴圈
+      #     還在後面接著；這裡硬紅只會多造一類假失敗。
+      # ------------------------------------------------------------------
+      - name: 等分支 migration replay 收斂
+        run: |
+          set -uo pipefail
+          POLL_SECONDS=15
+          STABLE_ROUNDS=4   # 連續 4 次不變 = 整整 60 秒沒有新版本寫進來
+          MAX_ROUNDS=24     # 上限 6 分鐘（相對 30-90 分鐘的整場，代價可忽略）
+
+          # ⚠️ 結尾的 `|| true` 不可省：run: 是 `bash -e {0}` 起跑的，分支剛
+          # 開好的前幾十秒 psql 連不上很正常，pipefail 會讓整個管線回非零，
+          # errexit 當場終止整支 script，下面一行判斷都不會執行——2026-09-02
+          # 下一步的重試迴圈就是這樣形同虛設過一次，別再拿掉。
+          applied_count() {
+            psql "$JOURNEY_BRANCH_DB_URL" -At \
+              -c "select case when to_regclass('supabase_migrations.schema_migrations') is null then -1 else (select count(*) from supabase_migrations.schema_migrations) end" \
+              2>replay-poll.err | tr -dc '0-9-' || true
+          }
+
+          PREV='none'
+          STABLE=0
+          CUR=''
+          CONVERGED=0
+          for ROUND in $(seq 1 "$MAX_ROUNDS"); do
+            CUR="$(applied_count)"
+            if [ -z "$CUR" ] || [ "$CUR" = '-1' ] || [ "$CUR" = '0' ]; then
+              # -1＝schema_migrations 還沒建、空字串＝還連不上，都算「還沒開始」
+              echo "第 $ROUND 次：分支還沒開始記錄 migration（回應：${CUR:-連不上}）"
+              [ -n "$CUR" ] || sed -n '1,3p' replay-poll.err
+              PREV='none'
+              STABLE=0
+            elif [ "$CUR" = "$PREV" ]; then
+              STABLE=$((STABLE + 1))
+              echo "第 $ROUND 次：分支已記錄 $CUR 支 migration（連續不變 $STABLE/$STABLE_ROUNDS）"
+            else
+              STABLE=0
+              echo "第 $ROUND 次：分支已記錄 $CUR 支 migration（仍在推進）"
+            fi
+            if [ "$STABLE" -ge "$STABLE_ROUNDS" ]; then
+              CONVERGED=1
+              break
+            fi
+            PREV="$CUR"
+            sleep "$POLL_SECONDS"
+          done
+
+          if [ "$CONVERGED" -eq 1 ]; then
+            echo "replay 已收斂：$CUR 支 migration，連續 $((POLL_SECONDS * STABLE_ROUNDS)) 秒沒有變化"
+          else
+            echo "::warning::等了 $((POLL_SECONDS * MAX_ROUNDS)) 秒 replay 仍在推進（最後記錄 ${CUR:-未知} 支）——照樣往下跑，db push 的重試迴圈是第二道防線"
+          fi
+
       # replay 只到母專案（main）已套用的最後一版；本 run 測的卻是
       # checkout（develop / 晉升 PR head）的程式碼。develop 獨有的
       # migration 不補上，Edge Function 就是新程式打舊 schema。db push
       # 只套「本地有、分支歷史沒有」的版本，等於預演晉升時 production
       # 會做的 migration 套用——這裡紅了，晉升也會紅，早知道早修。
+      #
+      # 與背景 replay 的重疊由上一個 step 擋掉（理由寫在那裡，不重複）。
+      # 下面的重試迴圈是第二道防線：收斂偵測等不到時仍會往下跑，而殘留的
+      # 競態撞出的錯誤，恰恰是「這個版本剛被背景 replay 寫入」的即時證據，
+      # 比重新輪詢任何 API 都可靠——短暫等待後重新呼叫 db push，它會用
+      # 資料庫當下的真實狀態重新判斷「本地有、分支沒有」，自然往前收斂。
       - name: 套用 checkout 的 migrations 到分支
         run: |
-          set -euo pipefail
-          supabase db push --db-url "$JOURNEY_BRANCH_DB_URL"
+          # GitHub Actions 的 run: 一律用 `bash -e {0}` 呼叫這支 script——
+          # errexit 在 script 第一行執行前就已經開著。下面 set -uo pipefail
+          # 不含 +e，蓋不掉繼承來的 -e：db push 一失敗，errexit 當場終止
+          # 整支 script，永遠到不了下面 PUSH_STATUS 那行，重試邏輯形同虛設
+          # （2026-09-02 實測:PR #302 撞到,失敗訊息只有 supabase CLI 自己
+          # 印的錯誤,沒有下面任何一行 ::warning:: 或 ::error::,秒級失敗)。
+          # 必須先 set +e 明確蓋掉繼承的 -e。
+          set +e
+          set -uo pipefail
+          ATTEMPT=0
+          MAX_ATTEMPTS=10
+          while :; do
+            ATTEMPT=$((ATTEMPT + 1))
+            supabase db push --db-url "$JOURNEY_BRANCH_DB_URL" 2>&1 | tee push.log
+            PUSH_STATUS=${PIPESTATUS[0]}
+            [ "$PUSH_STATUS" -eq 0 ] && break
+
+            # 只有 SQLSTATE 23505（schema_migrations 主鍵重複）是真的可以靠
+            # 重試收斂的——它代表「這個版本剛被背景 replay 插入」，下一次
+            # db push 會用資料庫當下的真實狀態重新判斷，自然往前推進。
+            #
+            # 42P05（prepared statement 已存在）也在清單裡，但**它不該再出現**：
+            # 那是 transaction-mode pooler 的結構性限制，已用 session mode
+            # （port 5432）根治。留著只是萬一 Supabase 又改了 port 慣例、
+            # 悄悄掉回 transaction mode 時，能讓紅燈訊息指向這裡而不是從頭
+            # 再查一次。⚠️ 一度誤以為它是「重試自己造成的連線池殘留、等一下
+            # 就好」——2026-09-02 PR #302 第四、五次嘗試各連撞 9 次、訊息
+            # 一字不差，證明重試對它完全無效，別再往這個方向想。
+            #
+            # ⚠️ 42701（欄位已存在）**刻意不加進來**。它確實也曾是 replay
+            # 重疊的臉之一，但收斂偵測就位後，replay 已經寫完還撞得到它，
+            # 意思就完全不同了：那是 migration 內容本身重複建欄位的真缺陷，
+            # 必須當場紅燈。把它加進白名單只會讓真缺陷重試十次後才紅，
+            # 而且紅在一個誤導人的訊息上。白名單只收「重試真的會收斂」的
+            # 錯誤，不收「看起來像競態」的錯誤。
+            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ] && grep -qE 'SQLSTATE (23505|42P05)' push.log; then
+              echo "::warning::分支背景 migration replay 尚未追上母專案(第 $ATTEMPT 次),15 秒後重試"
+              sleep 15
+              continue
+            fi
+
+            echo "::error::db push 失敗(第 $ATTEMPT 次,結束碼 $PUSH_STATUS)——非已知的 replay 競態模式,或已達重試上限 $MAX_ATTEMPTS 次"
+            exit 1
+          done
 
       # ------------------------------------------------------------------
       # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋

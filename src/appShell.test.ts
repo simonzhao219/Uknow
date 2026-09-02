@@ -6,8 +6,8 @@
 // 2. 全站必須有 ErrorBoundary（render 錯誤不得白屏）。
 // 3. 未捕獲的 promise rejection 必須有全域記錄點。
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 const SRC = resolve(__dirname);
 const PUBLIC = resolve(SRC, '..', 'public');
@@ -28,6 +28,60 @@ describe('code splitting 契約', () => {
 
   it('會員區頁面不得同步 import（MemberDashboard 為代表）', () => {
     expect(app).not.toMatch(/^import\s*{\s*MemberDashboard\s*}/m);
+  });
+
+  it('MyQrPage 走 lazy——掃碼庫與相機邏輯不該進首屏 bundle', () => {
+    expect(app).not.toMatch(/^import\s*{\s*MyQrPage\s*}/m);
+    expect(app).toMatch(/lazyNamed\(\s*\(\) => import\('\.\/components\/MyQrPage'\)/);
+  });
+});
+
+// /admin/verify 是管理員可能加在手機主畫面的舊網址。轉址本身不守門（守門在
+// 目的地），但**必須帶 state.from**：漏了的話掃完按返回會落到會員中心，而
+// 管理員平常是在後台工作的。state 不會反映在網址上，只有這裡看得到。
+describe('舊路由轉址契約', () => {
+  it('/admin/verify 轉址到掃描分頁並帶上來源', () => {
+    expect(app).toMatch(/path="\/admin\/verify"/);
+    expect(app).toMatch(/to="\/dashboard\/qr\?tab=scan"/);
+    expect(app).toMatch(/state=\{\{\s*from:\s*'\/admin'\s*\}\}/);
+  });
+});
+
+// admin/ 底下的元件只該被 AdminDashboard（或 App.tsx 的 admin 路由）組裝。
+// 這條不變式在本次搬遷前被打破過一次：掃描器住在 admin/ 卻要給會員區的頁面用，
+// 於是它搬去了 referral/。不變式本身一直沒有守衛——再有人把某個 admin/* 匯入
+// 其他頁面時，不會有任何測試變紅，只會在下一次盤點時才被發現。
+//
+// 比對的是**解析後的路徑**而不是字串樣式：`src/components/` 底下的檔案寫的是
+// `./admin/Foo`，`src/` 其他地方寫的是 `../components/admin/Foo`，只認其中一種
+// 的正則會漏掉另一種——而漏掉的那一種恰好是最可能發生的（同層的相對匯入）。
+describe('admin/ 組裝邊界契約', () => {
+  it('admin/ 底下的元件只被 AdminDashboard 匯入', () => {
+    const adminDir = join(SRC, 'components', 'admin');
+    const assembler = join(SRC, 'components', 'AdminDashboard.tsx');
+    const offenders: string[] = [];
+
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name)) continue;
+        // AdminDashboard 自己與 admin/ 內部互相引用都合法。
+        if (full === assembler || full.startsWith(adminDir)) continue;
+
+        for (const [, spec] of readFileSync(full, 'utf8').matchAll(/from\s+'(\.[^']+)'/g)) {
+          if (resolve(dirname(full), spec).startsWith(adminDir)) {
+            offenders.push(`${full.slice(SRC.length + 1)} → ${spec}`);
+          }
+        }
+      }
+    };
+    walk(SRC);
+
+    expect(offenders).toEqual([]);
   });
 });
 

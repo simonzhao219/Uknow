@@ -29,5 +29,5 @@ export function ParticipationContractPage() {
 }
 
 export function ReferralRewardRulesPage() {
-  return <MarkdownContent content={referralRewardRulesContent} title="推薦獎勵規則" />;
+  return <MarkdownContent content={referralRewardRulesContent} title="推廣獎勵規章" />;
 }

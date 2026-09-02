@@ -1850,13 +1850,29 @@ will inherit **all** rules' headers」+「If a header is applied twice in the
 不是 boolean,那條測試恆綠。**新寫的測試必須先看它紅一次**,這條規矩這次
 兩度救場。
 
-### 未驗證的部分(誠實標註)
+### 線上驗證結果(2026-09-01 回填)
 
-本次分析在 web session 容器內完成,而 egress policy 擋掉了
-`develop.uknow.pages.dev`(gateway 對 CONNECT 回 403),所以**線上實測沒有
-跑到**——根因是從官方文件原文 + repo 歷史推出來的。合併後應手動跑一次
-`python3 scripts/check-deployed-assets.py https://develop.uknow.pages.dev`
-確認,那也正是 deploy-smoke 存在的意義。
+寫這則的當下,分析是在 web session 容器裡完成的,而 egress policy 擋掉了
+`*.uknow.pages.dev`(gateway 對 CONNECT 回 403),所以根因只能從官方文件
+原文 + repo 歷史推出來,**線上實測當時沒有跑到**。原文因此標註為未驗證。
+
+後來的證據把兩件事都補上了:
+
+- **修法成立**:合併後 deploy-smoke 對真實部署跑過——develop(run 1)、
+  正式站晉升後(run 20,PR #275)、以及 2026-09-01 重跑正式站,四項檢查
+  (SPA 外殼 / 資產完整且型別正確 / 深層路徑交回 SPA / 快取標頭)全綠。
+  截至回填時**已累積 90 場排程,連續綠**。
+- **`deployment_status` 快路徑成立**:當時檔頭寫「是否真的送達沒有實測過」,
+  結果是**會送達**——36 場由它觸發的 run(非 success 的部署狀態被 `if`
+  濾成 skipped,正是設計行為)。Cloudflare Pages 確實會建 GitHub Deployment。
+
+**這段回填本身是第二次教訓**:上面那段「未驗證」寫下時完全誠實,是**後來的
+證據把它變成假的**。而它躺在原地兩週,任何人讀到都會以為這個修復從未被線上
+驗證、以為快路徑不可靠——與本則痛陳的「把未經證實的宣稱寫進註解、後人拿它
+當事實」是同一個形狀,只是這次的錯誤來源不是猜測而是**過期**。
+
+可操作的收斂:**寫下「未驗證/待確認」時,就等於欠了一筆回填**。證據到手的
+那一刻要回頭改,不能等下次整併——誠實標註的保鮮期只到證據出現為止。
 
 ## 2026-08-14｜同類掃描｜結論寫進註解 = 沒有閘門,第三次照樣發生
 
@@ -1891,3 +1907,515 @@ will inherit **all** rules' headers」+「If a header is applied twice in the
    點名了它才刪掉。沒驗過的閘門與沒有閘門的差別只是心理上的——而
    `check-spec-drift` 的 docstring 早就寫過:宣稱有的治理若不生效,比沒有
    治理更貴。
+
+## 2026-08-17｜漏網（觀測性）｜正式站寄信 DMARC 一直 fail,連使用者都不會反映
+
+正式站的 custom SMTP 早已啟用、寄件者已是 `admin@uknow.com.tw`,但
+`uknow.com.tw` 的 DNS **沒有 SPF、沒有 DKIM、沒有 MX**,而 `_dmarc` 是
+`p=quarantine`。SPF 結果是 `none`(不是 pass)、DKIM 由 Google 用預設
+`*.gappssmtp.com` 金鑰簽而與 `From` 網域不對齊——兩條都不成立,
+policy 是 quarantine。**驗證碼信一直在被丟垃圾桶。**
+
+不知道多久。這件事是靠人去讀 Cloudflare 的 zone 匯出檔才浮上來的。
+
+**值得記的不是缺了記錄,是為什麼它可以長期沒有任何症狀。三層獨立的遮蔽
+同時成立:**
+
+| 層 | 遮蔽方式 |
+|---|---|
+| 前端 | 收不到驗證碼只是停在「等待輸入」。不長得像 bug,長得像使用者放棄了——在後台是**註冊轉換率**,不是錯誤 |
+| Auth logs | 交付給 Google 就算成功。收信方**收下之後才**判 DMARC 並丟垃圾桶,那已在 Supabase 與 Google 的視野之外 |
+| 退信通知 | 退信是寄回**寄件者信箱**的,而該網域沒有 MX ⇒ 全部蒸發 |
+
+第三層是關鍵,而且最反直覺:**缺 MX 不會讓任何一封信寄不出去**
+(`smtp.gmail.com` 不查 MX),它斷掉的是唯一會回報失敗的那條線。
+
+**可複用的原則:「沒有人反映問題」不構成沒有問題的證據——當失敗是靜默的、
+且回饋管道本身也被關掉時,沒有抱怨只證明抱怨管道不存在。** 這條與 08-08
+「量不到的東西,寫幾條測試都是同義反覆」同源(都是觀測性缺口),差別在
+那條講的是**測不到**,這條講的是**連現場回報都被關掉**——後者更難發現,
+因為它會偽裝成「一切正常」。
+
+排查時另一個教訓:一開始把它判成「潛伏問題,改寄件者才會發作」,是因為
+假設了 custom SMTP 還沒設。**看一眼 Dashboard 就能推翻的假設,不要用推論
+代替。** 同一輪還高估了 MX 對寄信的影響(它只管收信),低估了它對可觀測性
+的影響——嚴重度排序錯了一次。
+
+處置:DNS 四筆補齊,拿**真實的正式站 OTP 信**跑 mail-tester 端到端驗證通過
+(10/10、`DKIM_VALID_AU` 命中,即 DKIM 已對齊自家網域)。
+`docs/supabase-setup-checklist.md` 的驗證判準從「記錄存在 / Dashboard 存檔
+成功」改成「mail-tester 三項 pass 且有 `DKIM_VALID_AU`」——**存檔成功不等於
+驗證通過**,這正是這次的形狀。
+
+**待裁決(下次整併):這件事目前仍沒有任何機械閘門。** DMARC 的 `rua` 已改到
+`admin@uknow.com.tw`,是第一條回饋線,但那是人工讀報告。候選閘門是定期查
+SPF/DKIM/MX 的存在性,難處在於它驗的是**外部 DNS 狀態**、不隨 commit 變動,
+不屬於既有 CI 軌的守備範圍(排程頻率還要過 github-actions.md 規則 8 的
+判準)。依上一則的判準 1,擋不到就要說明為什麼——這裡的理由是**受管物件
+不在 repo 內**,先記為待裁決,不假裝已關閉。
+
+順帶浮現的同類掃描題**已於同日執行完畢**,結果見下一則。
+
+## 2026-08-17｜同類掃描｜金流失敗出口沒有告警判準,而 TDD 鎖對 Deno 改動是空訊號
+
+上一則留的掃描題的執行結果。掃法:`console.error`(47 處)逐一問三個問題
+——沒有使用者在看?有持久後果?既有機制不會回報?——並與 `logSystemAlert`
+(4 處)對照。
+
+**回饋管道本身是存在的**(`system_alerts` + `logSystemAlert` + admin
+SystemAlerts 頁,兩層測試都有),所以這次不是缺機制。結果:
+
+| 路徑 | 判定 |
+|---|---|
+| `resolveOrderFromPayUni` 的 `order_not_found` / `amount_mismatch` / `missing_mer_trade_no` | 缺告警 → 本次補(`93f8c67`) |
+| notify 驗章/解密失敗 | 缺告警 → 本次補,**去重版** |
+| reconcile heal pass 失敗 | 缺告警,且端點仍回 `success: true` 對排程說謊 → **記債**,見下 |
+| 前端 lazy chunk 載入失敗 | **已有閘門**,不需處理 |
+
+**根因不是「誰忘了加」,是判準從來不存在。** 證據在同一個函式的視野內:
+`resolveOrderFromPayUni` 四個失敗出口,只有 RPC 失敗那個有告警(還刻意標
+`error` 並寫了理由),另外三個從第一天就沒有——有告警的那個是「當下正在修
+的那個」。這與 PR #119「自我糾正只綁定當下 diff」同形,差別是這次連不一致
+都在同一個函式裡,只是沒有任何一層在看。故修法除了補告警,也把三條判準
+寫進 `logSystemAlert` 定義處(否則就是 08-14「結論寫進註解 = 沒有閘門」的
+重演——但寫在被呼叫者旁邊,比寫在某個元件的 docblock 裡命中率高)。
+
+**掃描的一半價值在「已經有閘門」那一格**:lazy chunk 那條本來列為候選,
+查下去發現 `lazyWithRetry.ts` 有重試+一次整頁重載+拋給 ErrorBoundary
+(使用者看得到 = 使用者就是回饋管道),而 2026-08-07 少上傳 chunk 的事故
+已由 `scripts/check-deployed-assets.py` + `deploy-smoke.yml` 把關,該
+workflow 的註解還記載開發時用「搬走一個 chunk」實測過。**同類掃描要能
+回報「這條不必修」,否則它會退化成重複造輪子的清單。**
+
+### 附帶發現(比原本三個缺口更值得記):TDD 鎖對純 Deno 改動是空訊號
+
+`scripts/tdd-unlock.sh` 的解鎖條件是 `npm run check` 全綠,而
+`npm run check` = `biome + tsc + vitest + knip`,**一行 deno 都沒有**
+(`check:deno` 只掛在 `check:full`)。vitest 設定又刻意不 include
+`supabase/**`。所以**純 Deno 改動可以在零 Deno 型別檢查、零 Deno 測試的
+情況下解鎖**,而該腳本自己的註解寫著「這讓『宣稱綠燈』和『真的綠燈』
+之間沒有縫隙」。
+
+**這不是容器的怪癖,任何機器上都成立**(本次容器 jsr.io 被 egress 封鎖只是
+讓它更明顯)。形狀與本日主題完全相同:**一道回報綠燈、卻從未看過它該守的
+東西的閘門**——比沒有閘門更貴,因為它會讓人停止懷疑。
+
+處置:本次改用「分兩次 push,由 CI 的 `api-tests` 軌提供紅→綠證據」繞過
+(紅燈 `3d0988f` 4 failed / 271 passed、全部是 `Actual 0 / Expected 1`;
+綠燈 `93f8c67`)。**繞過不是修好**——建議的修法是讓 `tdd-unlock.sh` 在
+`supabase/functions/**` 有改動時一併跑 Deno 閘門,並沿用 pre-commit 既有的
+「相依解析不到就降為警告」降級路徑(那段邏輯已經寫好,直接複用)。
+未在本次一併做的理由:改的是框架自身的解鎖條件,而本容器只驗得到降級
+那一半路徑,無法依 08-14 判準 2「新閘門要先證明它會紅」完整驗證。
+
+### 同一天的四次「紅燈不是它看起來的意思」
+
+紅→綠證據鏈最後成立(紅 `3d0988f`:4 failed / 271 passed、全部
+`Actual 0 / Expected 1`;綠 `71a0443` 的 attempt 3:`api-tests` success),
+但中間為了拿到綠燈試了三次,每一次失敗都**與程式碼無關**,而且在摘要畫面
+上都長得像「實作壞了」:
+
+| # | 看到的 | 實際原因 |
+|---|---|---|
+| 1 | 正式站沒有人反映收不到驗證碼 | 回饋管道(退信)本身被關掉了 —— 本則主題 |
+| 2 | `ci-ok` 在 `93f8c67` 紅 | `api-tests` 被**我自己的下一個 push** 依 concurrency 取消,狀態是 `cancelled` |
+| 3 | `guards` 紅、`api-tests` **`skipped`** | GitHub 的 codeload CDN 回 429,連 `dorny/paths-filter@v3` 都沒下載成功,job 從未開始;而 `guards` 算 path filter,它死掉下游全部 skip |
+| 4 | 輪詢腳本回報「還是紅」 | 我的重跑 POST 用了沒有 `actions: write` 的 token,**而我把 stderr 丟進 `/dev/null`** ——`run_attempt` 一直停在 2,讀到的是上一次的殘留 |
+
+**可複用的判準:紅燈的含義要從機制推,不能從顏色讀。**
+`cancelled` / `skipped` / 基礎設施掛掉 / 真的測試失敗,在 PR 的 checks 摘要
+上是同一種紅(或同一種灰),但處置完全不同。其中 **`skipped` 最危險**——
+它讀起來像「不需要跑」,實際可能是「它的前置 job 死了」。
+
+兩條當場付出代價的操作規則:
+
+1. **等驗證 run 的期間不要 push。** 本專案 CI 的 concurrency 會取消
+   in-progress 的 run,所以「分兩次 push 拿紅綠證據」這個做法(見上面
+   tdd-unlock 的 Deno 缺口)必須**等前一次跑完再推下一次**,否則證據會被
+   自己毀掉。第 2 次就是這樣沒的。
+2. **不要把待會要據以斷言的腳本的 stderr 丟掉。** 第 4 次是自作自受:
+   `curl ... >/dev/null 2>&1` 讓一個權限不足的失敗看起來像成功,於是
+   「靜默失敗 + 讀到殘留狀態」在我處理**這個主題**的過程中又發生一次。
+   這正是本則主題的同構重演,只是舞台從正式站換到我自己的除錯腳本。
+
+### 記債清單(下次框架整併)
+
+1. reconcile 的 heal pass 告警 + 讓 `success: true` 不再對排程說謊。
+   要測「RPC 自己失敗」需 DDL 級 fault injection(drop/revoke
+   `complete_paid_pending_orders`),且改動的是錢的安全網的回應契約,
+   弄錯會變成每小時假紅或假綠——不在跑不了測試的環境動。
+2. 「金流失敗出口不得只寫 `console.error`」的機械化閘門。判準已成文,
+   但成文不等於把關(這正是本則的主題)。
+3. `tdd-unlock.sh` 的 Deno 缺口(見上)。**三項裡這項優先**:它影響的不是
+   某個功能,是所有 Deno 改動的證據鏈可信度。
+4. **開放問題(需人裁決)**:規格書沒有定義「哪些金流失敗必須留告警、
+   該用什麼 severity」。本次的分級是**從既有實作反推**的——
+   `resolveOrderFromPayUni` 的 RPC 失敗路徑已標 `error` 並註明「必須人工
+   介入」,故後果同級的 `order_not_found` / `amount_mismatch` 同樣 `error`;
+   `missing_mer_trade_no` 是 PayUni 送來畸形資料、屬整合異常但不直接損失,
+   故 `warning`。**這是判斷不是規格**,要不要寫進規格書由人決定。
+5. **本次的 SOP 降級**:`/fix-bug` 對金流 bug 要求派四個 plan-reviewer
+   agent 審修法,本次改用輕量的自問自答——原因是該 session 的系統指示
+   禁止未經使用者要求就呼叫 Agent 工具。記在這裡而不是只留在被刪掉的
+   fix.md 裡,因為「四視角審查被跳過」是這個 PR 的已知缺口,不是流程雜訊。
+6. **`docs/plans/` 的鷹架清理規則沒有把關**(刪本次 fix.md 時順手發現)。
+   CLAUDE.md 明寫「平常只該有 `friction-log.md`」,實際還躺著三個:
+   `fix-journey-f40-listing/`(2026-08-08)、`journey-remaining-failures/`
+   (2026-08-08)、`upline-pairing-lines/`(2026-08-07,最後一次改動還是
+   PR #205 的 merge commit)。三者的工作都已完成——commit message 自己
+   寫著「六條刊登情境全綠」「以兩把鑰匙鎖定」——就是收尾時沒刪。
+   **又是同一個形狀:規則寫得清楚,沒有任何一層在執行。**
+   沒在本次一併刪的理由:(a) 與本 PR 主題無關,混進來讓 diff 更難審;
+   (b) 更該做的是閘門而不是再一次的一次性清理——`docs/plans/` 只允許
+   `friction-log.md` 的機械檢查(接在 framework-check 軌)才能防復發,
+   而依 08-14 判準 2,新閘門要先證明它會紅,那需要與清理同一個 PR 一起做。
+   照 CLAUDE.md 自己的理由,留著的代價不小:舊 plan 描述的是「當初想做
+   什麼」,會被誤當成規格,比沒有文件更糟。
+
+## 2026-08-17｜誤擋｜守衛拿「已不存在的 upstream」當比較基準，兩次誤報未推送
+
+同一輪工作內，`stop-hook-git-check.sh` 兩次報「分支上有 1 個未推送的 commit」，
+兩次都是假的。形狀完全一樣：
+
+1. PR 合併後，遠端分支被刪除，`origin/<branch>` 這個 remote-tracking ref 成為孤兒
+2. 但本地分支的 upstream 仍指著它
+3. 期間另一個守衛把本地分支 rebase 到 base tip，於是本地 HEAD == `origin/develop`
+4. hook 拿 HEAD 去比那個**已不存在**的 upstream，算出「有東西沒推」
+
+代價不只是雜訊：**照著它做會復活一支已刪除的分支**，內容還是 develop 自己的
+merge commit。兩次都得先自己查 `git rev-list --count origin/develop..HEAD`
+（都是 0）與 `git ls-remote --heads origin <branch>`（都是 0 筆）才敢無視它。
+
+**判準應該是「與 base 比較」，而不是與 upstream 比較**；或至少在 upstream ref
+不存在時不報。現在這個寫法在「PR 合併 → 分支刪除」這條最常見的路徑上必然誤報，
+而那正是每支 PR 收尾都會走到的地方。
+
+## 2026-08-17｜誤擋｜bash-guard 在 rebase 之後，對不相干指令補上過期的 push 攔截
+
+同一輪內三次，前兩次送出的是「輪詢 GitHub check-runs API 直到 CI 收工」的迴圈，
+卻收到「Rebased <branch> onto origin/develop… this push would be rejected as
+non-fast-forward」的攔截訊息——指令裡沒有 rebase 也沒有 push。
+
+**共通點不是指令內容，是 session 狀態。** 起初以為是「同一個 bash 呼叫裡混了
+git 讀取指令與長迴圈」，因為前兩次都長那樣，把 git 指令拿掉就過了。第三次推翻了
+這個假設：那道指令**完全沒有 git**（純 `curl` + `python3` 讀 API），照樣被擋，
+訊息還指名了一支我幾分鐘前才 rebase 過的分支。
+
+真正的形狀是：**session 內發生過 rebase 之後，後續不相干的 Bash 指令會被補上
+一則早該過期的「你需要 force-push」攔截。** 三次都符合——每次都在該 session
+已經 rebase 過某分支之後才發生，而被擋的指令與那支分支無關。
+
+誤擋的代價是**訊息與現實無關**，讀的人會先去查一輪「我什麼時候 rebase 了」，
+而那正是 friction-log 記過的「靜默截斷把 session 帶離現場」的鄰居——這次不是
+資訊不足，是資訊錯誤，成本更高。建議把判準收斂到「這道指令自己有沒有 push」，並讓 rebase 造成的
+「待 force-push」狀態在該分支真的被推上去之後就清掉——否則它會一路跟著整個
+session，攔在任何一道不相干的指令上。
+## 2026-09-01｜防線回填｜監看清單漏一個檔＝那個檔裡的常數沒有閘門
+
+`CUSTOM_CATEGORY_MAX_LENGTH` 從 10 調到 6 時發現:`check-spec-drift.py` 的
+`_load_sources()` 只掃 `supabase/migrations/*.sql`、`src/utils/constants.ts`、
+`supabase/functions/_shared/api-contract.ts`。這個常數住在
+`src/utils/serviceCategories.ts`(當初刻意分家——類別的領域規則不屬於通用
+constants),於是規格書 §11「自訂類別長度」那一列**從上線第一天起就沒有任何
+閘門守著**,改了數字不同步規格書,CI 不會紅。
+
+形狀與上一則同型但成因相反:上一則是「規則從寫法列舉,比要守的行為窄」,
+這則是「規則對的,但**掃描範圍**沒跟著新檔案長」。ConstantRule 一條條寫得很
+仔細,可是 `_load_sources()` 是個寫死的 tuple——新增一個放業務常數的檔案時,
+沒有任何東西提醒你回頭把它加進去。
+
+處置:加一條 `自訂服務類別長度上限` 的 ConstantRule,並把
+`src/utils/serviceCategories.ts` 補進 `_load_sources()`。**照上一則的第 2 條
+判準驗過會紅**:把規格書那一列暫時改回 10,`check-spec-drift` 確實點名
+「規格書寫 10,但 src/utils/serviceCategories.ts 是 6」,再還原。
+
+**可複用的判準:抽出一個新的常數檔時,順手問「這裡面的數字有沒有出現在規格
+書裡」。** 有就要同時把檔名加進 spec-drift 的監看清單——常數搬家會讓閘門
+靜默失效,而閘門失效不會有任何症狀。
+
+### 同一次的另外兩件事(記錄,不在本 PR 處理)
+
+**1. 自訂類別的數量無上限。** 這一項在本 PR 進行期間由 **#295** 平行解決掉
+大半——它把自訂類別分區並收合在 `CUSTOM_CATEGORY_VISIBLE_LIMIT = 8`。留下的
+殘餘是**展開態**:展開時 `visibleCustom = custom`,所有 chip 回到同一個面板。
+本 PR 的 popover 高度界限正好補這一層,兩者互補(收合管預設態、捲軸管展開態)。
+
+順帶記一個協作教訓:#295 與本 PR 在同一天各自從「自訂類別會不會爆掉」出發,
+獨立做出**同一個** `src/utils/listingSearch.ts`(函式名與參數順序不同、行為
+等價),rebase 時撞成 add/add 衝突。兩邊都對,但有一邊的工作是白做的。這不是
+流程能完全避免的(兩個 session 平行推進本來就是刻意的),但**開工前掃一眼
+`git log origin/develop --oneline -20` 與開著的 PR 標題**成本極低,值得養成。
+
+**2. 自訂類別的內容沒有任何字元類別限制,也沒有針對性的下架手段。**
+`validateCustomCategory` 只擋空白、超長、`__custom__` /「全部類別」,所以
+`0912345678`、`加LINE享9折優惠`、`🔥🔥超便宜🔥` 都是合法類別,且會出現在
+所有人的下拉選單與首頁篩選器。admin 側沒有任何 listing 路由(`/admin/*` 只有
+提領/會員/公告/證件/警示),唯一手段是停權整個會員讓刊登連帶消失——粒度太粗。
+
+**這次刻意不做**(人工裁決):現階段刊登量小且需付費才能刊登,濫用成本不低;
+而字元類別黑名單容易誤傷正當類別(「B&B 民宿」「3C 維修」)。觸發條件記在
+這裡——**真的出現一次濫用,或刊登量成長到 admin 掃不完人工檢視時**,再回來
+處理(選項:字元類別驗證 / admin 改單一刊登類別的路由 / 顯示門檻)。
+## 2026-09-01｜誤判｜差點刪掉一份「不得刪除」的規則書,理由是我沒讀它
+
+上一則記債第 6 項寫「三者的工作都已完成」,並據此規劃「寫閘門 + 刪三個
+目錄」。**那句話有三分之一是錯的,而且錯的那份差點被刪掉。**
+
+`docs/plans/upline-pairing-lines/rules.md` 不是鷹架,是 M4/M6/M7(樹結構/
+發獎走訪/任務樹檢查)在另一包 plan 誕生前的**唯一落腳處**。檔頭寫著
+「不得刪除……做 `docs/plans/` 一般性整理時也請跳過本檔」,friction-log
+2026-08-02 還有一條正式裁決(第 4 輪架構視角 P1)專門記這件事。
+
+**我怎麼判成「已完成」的:看 `git log -1` 的日期(2026-08-07)與那次改動
+是 PR #205 的 merge commit,就推論工作結束了。我沒有打開檔案。** 另外兩份
+確實在自己檔案裡寫了「本檔可以結案」「五組全部修完,不要重做」——但那也是
+**打開才看得到的**,我當時同樣沒看,只是碰巧猜對。
+
+一個為了防止「舊文件被誤當成規格」而寫的閘門,第一版會刪掉一份真正的
+規則單一事實來源。**閘門的破壞力與它的覆蓋面成正比,所以立閘門前的盤點
+要比一般盤點更嚴——一次性清理錯了是一份檔案,閘門錯了是每次 CI 都逼人錯。**
+
+處置:
+
+1. 閘門改成帶豁免(`<!-- plans-keep: 理由與退場條件 -->`),並在
+   `rules.md` 補上該標記。豁免不是補丁——這條規則本來就有例外,只是從來
+   沒有被寫下來,所以每次有人做一般性整理都要重新靠讀散文發現它。
+2. 豁免用**機器可讀標記**而非中文散文比對。`.claude/rules/document-writing.md`
+   已經記過:關鍵字比對分不出語意,硬擋只會製造假陽性。既有的
+   「不得刪除」散文留著給人讀,標記給機器讀,兩者並存。
+3. 標記要求寫**退場條件**。只寫「要留」會讓豁免變成永久居留,那等於在
+   `docs/plans/` 開一個沒有生命週期的角落——正好是這條規則要防的東西。
+
+**可複用的判準:「最後修改時間」與「所屬 PR 已合併」都不是「這份文件死了」
+的證據。** 文件會不會死,只有內容說了算。這與本輪另一條(「紅燈的含義要從
+機制推,不能從顏色讀」)是同一個病:**拿旁證當本證**。
+
+## 2026-09-01｜漏網（自建檢查器）｜「沒有壞消息」不等於「好消息存在」
+
+合併 PR #286 時被 GitHub 擋下:`Required status check "ci-ok" is expected`。
+當下我的判斷是「輪詢器有 bug,沒確認 required 那顆存在」——**查了才發現那個
+commit 上的 `ci-ok` 確實存在且 success,不是這個原因**(最可能是 draft→ready
+轉換與 ruleset 重新評估之間的競態,無直接證據,記為推測)。
+
+但那次自我懷疑順手揭出一個真的 bug:我寫的 CI 輪詢器判準是
+
+    pend = 還在跑的; bad = 已完成但非綠
+    if not pend and key: → 報「綠」
+
+`key` 只要求 `api-tests`/`ci-ok`/`guards` **任一存在**。也就是說 `ci-ok`
+整個缺席時,「沒有 pending」與「沒有非綠」兩個條件依然成立,輪詢器照樣報綠。
+**它檢查的是「沒有壞消息」,不是「該有的好消息在不在」。**
+
+這與同一個 PR 修掉的 `logSystemAlertOnce` bug 是同一個形狀:那支把「去重
+查詢出錯」(`error` 非 null)當成「沒有既有告警」(`data` 為空),於是防線
+靜默退化。**空集合與失敗長得一樣,而預設把兩者都當成「沒事」。**
+
+判準:**寫檢查時,先問「如果我要驗的那個東西根本不存在,這段程式會說什麼」。**
+答案是「會說沒事」的話,就是把缺席當成通過。正確寫法是對**存在性**下斷言
+(`ci-ok` 必須存在且 completed),而不是對**否定**下斷言(沒有紅的)。
+
+同族的既有紀錄:08-17「三重靜默」那則的第三層(沒有 MX 所以退信蒸發)、
+以及本輪 `logSystemAlertOnce` 的 error 吞噬。三次都是同一件事:
+**沉默被當成正常。**
+
+## 2026-09-02｜漏網（驗證方式）｜`bash -n` 不是「跑過了」,是「解析得動」
+
+PR #301 的 `guards` 軌紅,唯一一行失敗訊息是 `FAIL: CLAUDE.md 共 205 行,
+超過 200 行上限`——framework-check.sh 的第 2 項檢查,而我送 PR 前**沒有跑
+過 framework-check.sh**。我跑的是:自己新增的 `check-plans-scaffold.py`
+(self-test + 實跑)、順手的 `check-document-naming` / `check-spec-drift` /
+`check-context-budget`,以及 `bash -n scripts/framework-check.sh`。
+
+最後那個是問題所在。`bash -n` 只驗語法能不能被解析,**不執行任何一項檢查**。
+我把它當成「這軌我驗過了」,但它連 CLAUDE.md 有幾行都沒數。
+
+判準:**改動會被哪一軌跑到,就跑那一整軌,不要只跑自己新增的那一支。**
+我驗的是「我寫的東西對不對」,而漏掉的是「我的改動讓別人那支變得不對」——
+這次改的 CLAUDE.md 由同軌的另一項檢查(行數上限)管,不歸我新增的閘門管。
+**影響面 ≠ 新增面。**
+
+同族第三次(前兩次見 09-01 兩則):都是拿一個較弱、較便宜的信號代替真正的
+驗證,然後把它讀成通過。紅燈顏色、輪詢器的「沒有壞消息」、`bash -n`。
+
+附帶的結構事實:CLAUDE.md 當時**正好卡在 200/200**,所以「新增一道閘門」
+必然變成「搬走一段」——這是行數上限設計時就寫在註解裡的意圖(「超過＝該搬去
+rules/ 或 docs/」)。搬走的是 hook 決策記錄那段:它是 `decision_log.py`
+docstring 的失真摘要,而那份 docstring 就在它描述的程式碼旁邊、寫得完整得多,
+且那段內容是被動的(Claude 不會因為它而做任何事),不該佔常駐 context 預算。
+
+## 2026-09-02｜框架摩擦｜`check-plans-scaffold` 讓「規劃已推、實作進行中」的 PR 必然紅
+
+`check-plans-scaffold.py`（同日稍早由 PR #301 加進 develop）擋 `docs/plans/<slug>/`
+的存在，理由成立：舊 plan 會被誤當成規格。但它與**本專案自己的三段式流程**互相
+衝突，而衝突面在寫它的時候沒有被看到：
+
+`/plan-feature` → `/review-plan` → **停等人審** → `/tdd-implement`。中間那個「停等
+人審」不是在對話裡等——規劃書要推上分支、開 PR，人才看得到；`plan.md` / `review.md` /
+`progress.md` 三個檔在**跨 session 的容器裡是唯一的狀態載體**（CLAUDE.md 自己寫的
+「git 是唯一能跨 session 的通道」）。於是從規劃推上去到收尾刪鷹架的整段期間，
+`guards` 軌必然紅、其餘軌全部 skip——本次實測：規劃階段三次 push 都綠（守衛尚未進
+develop），rebase 之後第一次 push 就紅在這裡，而那時分支上一行產品程式碼都還沒有。
+
+豁免標記 `<!-- plans-keep: -->` 不適用：它的語意是「這份**不是**施工鷹架」，施工中
+的鷹架正是它要擋的東西。用它等於說謊。
+
+**本次處置**：照 `/tdd-implement` 收尾流程在最後刪鷹架，期間不再 push（CLAUDE.md
+的「TDD 相位 commit 湊批再推」剛好同向）。但這個處置有代價：實作期間的 commit 全部
+壓在本機，容器一被回收就沒了——而那正是鷹架檔存在的理由，繞了一圈回到原點。
+
+**整併時要決定的是判準，不是補丁**：守衛現在問「檔案在不在」，而它真正想擋的是
+「**已完成的功能**還留著鷹架」。兩者不等價。可分辨的訊號至少有三個：PR 是不是
+draft、`progress.md` 的階段狀態是不是全綠、分支有沒有產品程式碼的 commit。取任何
+一個都比「檔案在不在」貼近意圖。在那之前，這條守衛的效果是**懲罰照流程走的人**
+——不落檔的輕量改動反而不會踩到。
+
+順帶兩則同源的小摩擦（都在本次實作期間踩到，都與「hook 判斷用的訊號不是它想問的
+那件事」同形）：
+
+1. `pre-push-rebase.sh` 掛在 `matcher: "Bash"` 下、靠 settings.json 的
+   `"if": "Bash(git push*)"` 篩選，但**本 harness 不尊重 `if`**——一條純等待用的
+   `grep`/`sleep` 迴圈也觸發了它，把分支 rebase 掉並以「push 會被拒」擋下一條不是
+   push 的指令。判斷 `git push` 的邏輯應該搬進腳本本身（讀 `tool_input.command`）。
+2. 同一支 hook 用**本機追蹤 ref**（`git rev-parse origin/<branch>`）判斷遠端分支
+   存不存在。web session 由平台預建的 `origin/claude/*` 追蹤 ref 指著開局的 develop
+   head，但 GitHub 上根本沒有那條分支——於是第一次 push 被以「遠端已有舊歷史」擋下
+   並要求 `--force-with-lease`，而裸的 `--force-with-lease` 又因追蹤 ref 與遠端不符
+   回 `stale info`。要問遠端就該問遠端：`git ls-remote --heads origin <branch>`。
+
+## 2026-09-02｜CI 盲區｜journey-full 建分支後 db push 撞主鍵重複：STATUS 終態訊號本身有滯後
+
+銜接 2026-08-02 那則「journey 排程 7 晚全紅」條目——同一個「連得上不等於 schema
+是全的」原則,在那次修復加上的驗證訊號自己身上又重演了一層。
+
+晉升 PR #302(develop→main)上 `journey-full / journey-suite` 連續紅兩次(含用掉的
+唯一一次盲目重跑)。兩次都死在建立拋棄式分支之後、`supabase db push` 撞
+`schema_migrations_pkey` 主鍵重複——兩次撞號的版本不同(第 6 支、重跑後第 8
+支),證明分支背景 replay(把母專案既有 70 支 migration 套進新分支)在兩次嘗試
+之間持續推進,只是永遠追不上 `db push` 開跑的時間點。
+
+根因:2026-08-02 加的 STATUS 輪詢(等 `MIGRATIONS_PASSED`)驗證的是「Supabase
+Management API 怎麼描述這個分支」,不是「這個分支的 `schema_migrations` 資料表
+實際有什麼」——兩者在 replay 剛完成的瞬間會有一段落差,而這段落差的寬度隨
+production 累積的 migration 數量增長而放大。2026-08-02 當時 migration 數量少,
+落差窗口小到沒被撞過;跑到 70 支才第一次撞見。
+
+**通則:一個驗證訊號本身也可能是間接的、有自己的滯後——修好「完全沒驗證」不等於
+修好「驗證」,除非驗證訊號與它要證明的目標之間沒有轉譯層。這類滯後不會在當下
+現形,只會隨它所監控的系統規模增長而窗口變寬,直到某天剛好被撞到。**
+
+處置:見 `docs/plans/fix-journey-branch-replay-race/fix.md`(隨該 PR 收尾清理,
+決策摘要保留在此)——把 `db push` 包進重試迴圈,拿它自己撞到的主鍵重複當重試
+訊號(資料庫當下真實狀態的第一手證據),而不是另外接一個 API 去查「replay
+到底做完了沒」——那只是把同一種「訊號有滯後」的風險換一個地方,不是消除它。
+
+## 2026-09-02｜驗證方法落差｜同一個修復合進 develop 後,重試迴圈自己被 errexit 吃掉
+
+緊接著上一則條目:PR #303 合進 develop、晉升 PR #302 重新觸發 journey-full 後,
+`db push` 依然秒級失敗——但這次連重試迴圈的 `::warning::` 都沒印出來。
+
+根因:GitHub Actions 對 `run:` step 一律用 `bash -e {0}` 呼叫 script,errexit
+在 script 第一行執行前就已經開著。上一版修復寫 `set -uo pipefail`,語意上只
+**加開** `nounset`/`pipefail`,不含 `+e`,不會清掉外部帶進來的 errexit——`db
+push | tee push.log` 這條獨立陳述式一失敗,errexit 當場終止整支 script,永遠到
+不了下面讀 `PUSH_STATUS`、判斷重試的邏輯,重試機制形同虛設。
+
+**為什麼上一版的「本機驗證」沒攔到**:驗證時用 `bash scriptfile.sh` 跑三個模擬
+情境,邏輯本身沒錯;但 GitHub Actions 實際呼叫方式是 `bash -e scriptfile.sh`——
+少了這一個 flag,同一段邏輯在兩種呼叫方式下行為完全不同。驗證了「邏輯對不對」,
+沒驗證「這段邏輯在它實際執行的環境裡會不會被跳過」,這是驗證*方法*本身的落差,
+不是邏輯本身的缺陷。
+
+**通則:本機重現/驗證 CI 用的 shell 邏輯時,必須用與 CI 完全相同的呼叫方式——
+差一個 shell flag(這裡是 `-e`),同一段邏輯就可能表現出完全不同的行為。「跑起來
+邏輯對」不等於「在它實際被呼叫的環境裡對」,這正是本次要修的原則(訊號與它要
+證明的目標之間不能有轉譯層)在「驗證方法」這個角色上的重演。**
+
+處置:見 `docs/plans/fix-journey-db-push-errexit/fix.md`(隨該 PR 收尾清理)——
+加一行 `set +e` 明確蓋掉繼承的 errexit,並改用 `bash -e` 重新驗證三個情境。
+
+## 2026-09-02｜CI 盲區(第三層)｜重試迴圈本身在 PgBouncer 連線池上撞見殘留狀態
+
+errexit 修好後,PR #302 第三次觸發 journey-full,重試邏輯確實執行了(第 1 次
+撞 `schema_migrations_pkey` 並正確重試),但第 2 次嘗試撞到不同錯誤:
+`prepared statement "lrupsc_1_0" already exists (SQLSTATE 42P05)`。
+
+根因:`db push` 走 PgBouncer pooler 連線(transaction-mode pooling)。第 1 次
+嘗試被中斷時,CLI process 沒機會 DEALLOCATE 它 PREPARE 過的 statement;連線
+還回池子後,第 2 次嘗試若分到同一條底層連線,同名 PREPARE 就撞見殘留。
+
+當時的判讀是:「`23505` 與 `42P05` 是同一個『快速重試撞見殘留痕跡』原則的
+兩種表現」,處置是把重試白名單從比對訊息字串改成比對 SQLSTATE
+(`23505|42P05`)。
+
+⚠️ **上面這段對 42P05 的歸因是錯的,已被下一則條目的證據推翻**——留著是
+因為它示範了一個很容易再犯的錯:**看到「同一個現象的第二種形式」就順手
+歸進同一類,而沒有先問「重試對它到底有沒有效」**。當時只觀察到 42P05
+出現「一次」(第 2 次嘗試),就外推它和 23505 同性質;真正該做的是先確認
+重試會不會收斂,而那需要讓它真的重試看看——下一輪就打臉了。
+
+## 2026-09-02｜根因(終)｜journey 的 db push 一直打在 transaction-mode pooler 上,那條路本來就走不通
+
+把 42P05 放進重試白名單之後,PR #302 第四、五次 journey-full 各自**連撞 9 次、
+訊息一字不差**(`prepared statement "lrupsc_1_0" already exists`),用滿重試上限。
+重試對它零效果——這才推翻了上一則的歸因。
+
+**真根因**:`supabase db push` 內部要跑 `SET session_replication_role`,那是
+session 層級狀態;而 `POSTGRES_URL` 給的是 **transaction-mode pooler(port
+6543)**,每個 transaction 都可能換一條後端連線,**結構上就承載不了 session
+狀態**,同理也不支援 prepared statement(CLI 的 pgx driver 會自動 prepare)。
+這不是競態、不是殘留、不是時序——是**這條連線根本不該用來跑 migration**。
+Supabase 官方對 migrations 的建議正是「用 direct URL」,而本 repo 早在
+2026-08-02 就記過 direct URL(`db.<ref>.supabase.co`)只有 IPv6、GitHub
+runner 連不上,於是一路都用 pooler,從此埋著這顆雷。
+
+**修法**:留在同一個已證實 IPv4 可達的 pooler hostname 上,只把 port 從 6543
+換成 **5432(session mode)**。Supavisor 的兩種模式是同一個 hostname、只差
+port,所以這一步同時滿足「IPv4 連得到」與「session 狀態撐得住」兩個限制。
+
+**為什麼這一步是靠診斷而不是靠猜**:先合一個「只印 `branch.env` 欄位名與
+host:port(帳密自己剝掉)」的純診斷 PR(#306)跑一輪,才確認 branch.env 只有
+`POSTGRES_URL`(pooler:6543)與 `POSTGRES_URL_NON_POOLING`(direct:5432)
+兩個欄位、**沒有**第三個 session-mode 欄位可抓,只能自己換 port。這個 repo
+先前吃過「猜欄位名猜錯 → 靜默傳空字串 → 全場 skip 假綠」的虧(2026-07),
+所以寧可多花一輪 CI 拿真實資料。
+
+**通則(這次真正的教訓,比上面任何一則都重要)**:
+**連撞三輪都在同一個 step,就不要再修「這一次的錯誤訊息」,要回頭問
+「這條路本身對不對」。** 前三次修復(errexit、SQLSTATE 白名單、擴充白名單)
+每一個單獨看都正確、都有證據、也都真的修好了它針對的那件事,但它們全都
+建立在「用 pooler 跑 db push 是對的、只是偶爾會抖」這個沒被檢驗過的前提上。
+**症狀連續換面貌,通常是前提錯了,不是症狀難纏。**
+
+## 2026-09-02｜根因(補完)｜真正該等的是「資料平面寫完了」,不是「控制平面說終態了」
+
+session mode 那一修**確實有效**:第六次 journey-full 的 log 印出
+`...pooler.supabase.com:5432`,42P05 一次都沒再出現。但同一個 step 換上第三張
+臉紅了——第 2 次嘗試套 `20260802000000_id_verification.sql` 時
+`column "id_verification_status" of relation "profiles" already exists`
+(SQLSTATE 42701)。
+
+**這不是新問題,是最早那個競態的另一張臉。** 背景 replay 是「先套語句、後寫
+版本列」;在那一瞬間 `supabase_migrations.schema_migrations` 還沒有這一列,
+`db push` 讀到的「已套用清單」是舊的,於是把同一支 migration 再套一次,撞上
+剛被 replay 建好的欄位。同一個根因,在版本列上是 23505、在 DDL 上是 42701。
+佐證:兩次嘗試之間待推清單從 60 支縮到 19 支,replay 明顯還在推進。
+
+**修法(這次修的是前提,不是訊息)**:db push 之前加一個 step,直接 `psql` 問
+分支資料庫 `schema_migrations` 的列數,**連續 4 次(60 秒)不變才往下走**,
+上限 6 分鐘、等不到只發 warning 不硬失敗(重試迴圈仍是第二道防線)。
+問資料庫而不是再問一次 STATUS API,是因為 API 回報的是**控制平面**的狀態機,
+而我們要的是**資料平面**的事實——這正是整串失敗最初的誤差來源。
+
+**刻意沒做的事**:沒有把 42701 加進重試白名單。收斂偵測就位後,replay 已經
+寫完還撞得到 42701,語意就完全不同了——那是 migration 自己重複建欄位的真
+缺陷,必須當場紅燈。**白名單只收「重試真的會收斂」的錯誤,不收「看起來像
+競態」的錯誤**;把後者放進去,代價是真缺陷要重試十次才紅,而且紅在一個誤導
+人的訊息上。
+
+**驗證方式(補上兩則之前的教訓)**:把 YAML 裡那個 step 的 `run:` 用 PyYAML
+**原樣抽出來**,配合假的 `psql`／`sleep` 跑 7 個情境(一路推進、表還沒建、
+先連不上再恢復、到上限仍在推進、一開始就是終值、全程連不上、停一下又動的
+假收斂),**全部用 `bash -e` 呼叫**。抽出來跑而不是照著寫一份,才驗得到「CI
+上真的會執行的那份」。第一版就這樣抓到一個 errexit 缺陷:psql 連不上時
+`pipefail` 讓命令替換回非零,整支 script 當場被 errexit 終止——與前一則同一個
+形狀,差別只在這次是在合進 develop **之前**抓到的。

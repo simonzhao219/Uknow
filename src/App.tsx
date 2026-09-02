@@ -68,12 +68,9 @@ const ReferralManagement = lazyNamed(
 const TaskDashboard = lazyNamed(() => import('./components/TaskDashboard'), 'TaskDashboard');
 const RewardDashboard = lazyNamed(() => import('./components/RewardDashboard'), 'RewardDashboard');
 const AdminDashboard = lazyNamed(() => import('./components/AdminDashboard'), 'AdminDashboard');
-// 會員驗證獨立成頁（相機需全螢幕，且 AdminDashboard 是釘死的 5 欄 Tabs）；
-// lazy 讓 @zxing 掃碼庫只在進這頁時才下載，不拖累其他 admin 操作。
-const MemberVerifyScanner = lazyNamed(
-  () => import('./components/admin/MemberVerifyScanner'),
-  'MemberVerifyScanner',
-);
+// 「我的 QR」獨立成頁（掃描分頁要開相機，需全螢幕與裝置權限——規格 §13 的判準）；
+// lazy 讓 jsQR 掃碼庫與相機邏輯只在進這頁時才下載，不進首屏 bundle。
+const MyQrPage = lazyNamed(() => import('./components/MyQrPage'), 'MyQrPage');
 const TermsOfServicePage = lazyNamed(
   () => import('./components/ContentPages'),
   'TermsOfServicePage',
@@ -326,6 +323,16 @@ function AppContent() {
                       }
                     />
                     <Route
+                      path="/dashboard/qr"
+                      element={
+                        <ProtectedRoute>
+                          <RequireMembershipRoute>
+                            <MyQrPage />
+                          </RequireMembershipRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
                       path="/service-providers"
                       element={
                         <ProtectedRoute featureRequired="serviceProviderManagement">
@@ -413,12 +420,13 @@ function AppContent() {
                         </AdminRoute>
                       }
                     />
+                    {/* 舊網址：管理員很可能把它加在手機主畫面。轉址本身不守門
+                        （守門在目的地的 RequireMembershipRoute），但要帶 state.from，
+                        掃完按返回才回得了管理後台。 */}
                     <Route
                       path="/admin/verify"
                       element={
-                        <AdminRoute>
-                          <MemberVerifyScanner />
-                        </AdminRoute>
+                        <Navigate to="/dashboard/qr?tab=scan" replace state={{ from: '/admin' }} />
                       }
                     />
                     {/* Public Content Pages（lazy：見 ContentPages.tsx 的 chunk 邊界說明） */}
@@ -426,7 +434,7 @@ function AppContent() {
                     <Route path="/listing-plans" element={<ListingPlansPage />} />
                     <Route path="/business-manual" element={<BusinessManualPage />} />
                     <Route path="/participation-contract" element={<ParticipationContractPage />} />
-                    {/* 推薦獎勵規則是對外的獎勵說明頁（頁尾快速連結與提領同意款都指它），
+                    {/* 推廣獎勵規章是對外的獎勵說明頁（頁尾快速連結與提領同意款都指它），
                         與簽名關卡的事業手冊是不同讀者的不同文件——前者給還在瀏覽的訪客，
                         後者是傳銷商契約。2026-08 一度誤把這條 slug 轉去事業手冊，已還原。 */}
                     <Route path="/referral-reward-rules" element={<ReferralRewardRulesPage />} />

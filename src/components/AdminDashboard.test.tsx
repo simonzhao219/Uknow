@@ -12,7 +12,7 @@
 // 所以本檔刻意**不驗 class**，只驗「五個分頁都在、都切得動」這個結構事實。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { NotificationProvider } from './notifications/NotificationContext';
 import { stubMediaQuery } from '../test-utils/stubMediaQuery';
 
@@ -67,5 +67,32 @@ describe('平台管理的分頁導覽', () => {
   it('沒有第六個分頁——§13 的五欄判準不得被悄悄擴充', () => {
     renderDashboard();
     expect(screen.getAllByRole('tab')).toHaveLength(TAB_LABELS.length);
+  });
+});
+
+// 「會員驗證」捷徑改連到會員區的「我的 QR」頁（掃描已不是 admin 專屬功能）。
+// 這顆按鈕的目的地從來沒有被任何測試守過——href 改錯不會有人發現，而 state
+// 更不會反映在 href 上：漏帶 state.from 的症狀是掃完按返回落到會員中心，
+// 管理員得再點一次才回得了後台。
+describe('會員驗證捷徑', () => {
+  function LandedAt() {
+    const loc = useLocation();
+    return <div data-testid="landed-at">{`${loc.search}|${(loc.state as any)?.from ?? ''}`}</div>;
+  }
+
+  it('點下去落在掃描分頁，並把來源記成管理後台', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <NotificationProvider>
+          <Routes>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/dashboard/qr" element={<LandedAt />} />
+          </Routes>
+        </NotificationProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: /會員驗證/ }));
+    expect(screen.getByTestId('landed-at').textContent).toBe('?tab=scan|/admin');
   });
 });

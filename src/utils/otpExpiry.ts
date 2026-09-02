@@ -2,6 +2,11 @@
 // 每寄出一封驗證碼就重新開始倒數；驗證碼到期後才可重新寄送。
 // 倒數狀態以到期時間戳記保存，重新整理頁面不會重新計算。
 
+// ⚠️ 這個數字被信件模板以中文文案鏡射了一份(supabase/email-templates/
+// confirm-signup.html、reset-password.html 的「有效期限 N 分鐘」),而模板是
+// **手動貼進 Dashboard** 的(見 supabase/README.md),不會隨這裡的改動上線。
+// 改這個常數時要一併改兩份模板、並重新貼進 Dashboard——否則信上承諾的期限
+// 會比使用者實際拿到的長,人照信件說明回來輸入時輸入框已經鎖住。
 export const OTP_VALID_SECONDS = 180; // 3 minutes
 
 const KEY_PREFIX = 'otp_expiry_';

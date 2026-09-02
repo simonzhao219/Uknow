@@ -37,7 +37,7 @@ export function MemberVerifyQrTab({ active, accountStatus }: MemberVerifyQrTabPr
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-center text-sm text-muted-foreground">
-        出示這組碼給店家掃描，即可確認您的會員身分與會籍。
+        出示這組碼供對方掃描，即可確認您的會員身分與會籍。
       </p>
 
       {accountStatus ? (

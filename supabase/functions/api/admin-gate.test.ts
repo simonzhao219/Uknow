@@ -40,7 +40,6 @@ const ADMIN_ROUTES = [
   ['GET', '/api/admin/announcements'],
   ['POST', '/api/admin/announcements'],
   ['GET', '/api/admin/system-alerts'],
-  ['POST', '/api/admin/members/verify'],
   ['GET', '/api/admin/members/00000000-0000-0000-0000-000000000000'],
   ['POST', '/api/admin/members/00000000-0000-0000-0000-000000000000/admin'],
   ['GET', '/api/admin/id-reviews'],

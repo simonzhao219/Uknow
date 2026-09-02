@@ -35,6 +35,7 @@ import {
   listingMatchesDistricts,
   type DistrictSelectionByCity,
 } from '../utils/districtSelection';
+import { listingMatchesSearch } from '../utils/listingSearch';
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
@@ -170,16 +171,10 @@ export function HomePage() {
 
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
-      // 關鍵字搜尋（名稱／服務介紹）
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const haystack = [serviceProvider.name, serviceProvider.description]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        if (!haystack.includes(q)) {
-          return false;
-        }
+      // 關鍵字搜尋（名稱／服務介紹／服務類別）。判定抽在 utils/listingSearch.ts，
+      // 那裡才驗得到「placeholder 承諾的三個範圍都真的比對得到」。
+      if (!listingMatchesSearch(searchQuery, serviceProvider)) {
+        return false;
       }
 
       // 服務類別篩選（單選）
@@ -300,7 +295,7 @@ export function HomePage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜尋服務者名稱、服務內容或標籤"
+            placeholder="搜尋服務者名稱、服務內容或類別"
             className="pl-9"
           />
         </div>
@@ -337,7 +332,7 @@ export function HomePage() {
             label="服務地區"
             summary={selectedCities.length === 1 ? `地區：${selectedCities[0]}` : undefined}
             count={selectedCities.length}
-            panelClassName="w-[min(640px,90vw)] max-h-[70vh] overflow-y-auto"
+            panelClassName="w-[min(640px,90vw)]"
           >
             <LocationFilterChips
               selectedCities={selectedCities}
@@ -672,7 +667,7 @@ function MobileSearchFilterBar({
           <SheetContent side="top" className="gap-0 p-0">
             <SheetHeader className="px-4 pt-4 pb-2">
               <SheetTitle>搜尋服務者</SheetTitle>
-              <SheetDescription>輸入名稱、服務內容或標籤，結果即時更新</SheetDescription>
+              <SheetDescription>輸入名稱、服務內容或類別，結果即時更新</SheetDescription>
             </SheetHeader>
             <div className="px-4 pb-4">
               <div className="relative">
@@ -684,7 +679,7 @@ function MobileSearchFilterBar({
                   type="search"
                   value={searchQuery}
                   onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="搜尋服務者名稱、服務內容或標籤"
+                  placeholder="搜尋服務者名稱、服務內容或類別"
                   className="pl-9"
                   aria-label="搜尋服務者"
                   autoFocus

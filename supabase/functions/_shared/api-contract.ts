@@ -202,7 +202,10 @@ export type MemberVerifyTokenResponse = Infer<typeof MemberVerifyTokenResponseSc
 export const MemberVerifyResponseSchema = obj({
   success: bool(),
   data: obj({
+    // 一般會員拿到的是遮罩名（王○明），管理員拿全名——nameMasked 讓前端知道
+    // 該不該在結果卡上加那句「姓名部分遮蔽以保護隱私」，而不是自己猜。
     displayName: str(),
+    nameMasked: bool(),
     // 會籍四態，與推薦網絡節點狀態同一套（deriveNodeStatus）。
     status: literals('active', 'expiring', 'expired', 'suspended'),
     activeUntil: nullable(str()),

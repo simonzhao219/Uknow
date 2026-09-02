@@ -242,7 +242,7 @@ describe('WithdrawalProcess', () => {
   // 同意款的文件連結若是會換頁的 <a href>,點下去整個表單會被卸載、useState
   // 全部清空——這正是 CompleteProfile 與 JoinReferralProgramDialog 修過兩次
   // 的同一個 bug(見 LegalDialog docblock),提領頁當初漏改。
-  it('點同意款的推薦獎勵規則連結時不換頁且已填欄位不流失', async () => {
+  it('點同意款的推廣獎勵規章連結時不換頁且已填欄位不流失', async () => {
     mockIdPhotos(idPhotosResponse());
     await renderAndGoToStep3();
 

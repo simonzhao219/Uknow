@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 //
-// 會員驗證頁的「連續掃描」契約。
+// 會員驗證**面板**的契約（規格 §13.1：掃描開放給會籍有效的會員或管理員）。
+// 它從 admin 獨立路由改成「我的 QR」頁的一個分頁，所以多了三件要釘的事：
+//   1. **不依賴 Router**——本檔刻意不包 MemoryRouter。它一旦又用了 useNavigate
+//      就會在這裡炸開，而不是等到別人把它放進沒有 Router 的地方才發現。
+//   2. **卸載就關相機**——過去只有整頁導航才會卸載，現在切個分頁就卸載，
+//      漏關的症狀是相機指示燈常亮、下次進來 getUserMedia 因裝置忙碌而失敗。
+//   3. **錯誤要分流**——掃描者自己沒資格 / 太頻繁 / 其他，三種在現場是不同的事。
+//
+// 以下是搬家前就有的「連續掃描」契約。
 //
 // bug 的形狀：解碼迴圈掃到碼就 `return`，不再排下一個 animation frame——
 // 迴圈自我終止。而「繼續掃描下一位」只重設 React state，沒有任何機制把迴圈
@@ -18,7 +26,6 @@
 // 讓「第幾影格發生什麼」變成確定性的。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
 
 const jsQR = vi.hoisted(() => vi.fn());
 vi.mock('jsqr', () => ({ default: jsQR }));
@@ -38,9 +45,23 @@ const { MemberVerifyScanner } = await import('./MemberVerifyScanner');
 
 const ACTIVE_MEMBER = {
   displayName: '四米特 阿里哈',
+  nameMasked: false,
   status: 'active' as const,
   activeUntil: '2027-07-25T00:00:00.000Z',
 };
+
+/** 一般會員掃到的樣子：姓名遮罩，且後端明說遮過（nameMasked）。 */
+const MASKED_MEMBER = {
+  displayName: '四○○○哈',
+  nameMasked: true,
+  status: 'active' as const,
+  activeUntil: '2027-07-25T00:00:00.000Z',
+};
+
+/** 後端錯誤：帶 code 的 Error，形狀比照 apiRequestJson 丟出的 ApiError。 */
+function apiError(message: string, code?: string) {
+  return Object.assign(new Error(message), { code });
+}
 
 const EXPIRED_MEMBER = {
   displayName: '四米特 阿里哈',
@@ -95,12 +116,9 @@ afterEach(() => {
 
 /** 掛載元件並等到解碼迴圈排上第一個影格（相機初始化是 async 的）。 */
 async function mountScanner() {
-  render(
-    <MemoryRouter>
-      <MemberVerifyScanner />
-    </MemoryRouter>,
-  );
+  const view = render(<MemberVerifyScanner />);
   await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+  return view;
 }
 
 /** 推進一個影格：跑掉目前排隊的 callback，讓它們有機會排下一個。 */
@@ -117,11 +135,7 @@ async function mountManualScanner() {
   (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockRejectedValue(
     new Error('permission denied'),
   );
-  render(
-    <MemoryRouter>
-      <MemberVerifyScanner />
-    </MemoryRouter>,
-  );
+  render(<MemberVerifyScanner />);
   await screen.findByLabelText('驗證碼');
 }
 
@@ -192,6 +206,89 @@ describe('MemberVerifyScanner', () => {
     expect(apiRequestJson).toHaveBeenCalledTimes(2);
   });
 
+  describe('端點與授權分流', () => {
+    it('掃碼打的是 /members/verify（已不是 admin 專屬端點）', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: MASKED_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      expect(apiRequestJson).toHaveBeenCalledWith(
+        'https://api.test/members/verify',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('掃描者自己沒資格時標題說是自己的問題，不是對方的', async () => {
+      // 現場最怕的誤讀：舉著手機的人以為「這個人有問題」，其實是自己會籍到期或
+      // 被停權（相機開著的期間狀態才變的情形，不是純理論分支）。
+      apiRequestJson.mockRejectedValue(
+        apiError('會籍有效的會員才能掃描驗證', 'verifier_not_eligible'),
+      );
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+
+      expect(await screen.findByText('您目前無法掃描')).toBeTruthy();
+      expect(screen.getByText('會籍有效的會員才能掃描驗證')).toBeTruthy();
+    });
+
+    it('觸發節流時標題是「掃描過於頻繁」', async () => {
+      apiRequestJson.mockRejectedValue(apiError('掃描過於頻繁，請稍後再試', 'rate_limited'));
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+
+      expect(await screen.findByText('掃描過於頻繁')).toBeTruthy();
+    });
+
+    it('沒有錯誤碼的失敗維持通用標題「無法驗證」', async () => {
+      apiRequestJson.mockRejectedValue(apiError('驗證碼已過期，請對方重新出示'));
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+
+      expect(await screen.findByText('無法驗證')).toBeTruthy();
+    });
+  });
+
+  describe('相機生命週期', () => {
+    it('卸載時停止所有相機軌道', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+      const view = await mountScanner();
+
+      view.unmount();
+
+      await waitFor(() => expect(trackStop).toHaveBeenCalled());
+    });
+
+    it('相機還沒開好就卸載，開好之後仍要把串流關掉', async () => {
+      // 從獨立路由改成分頁之後，「切走」比「整頁導航」快得多，這個窄時間窗會
+      // 常態發生。漏關的話 cleanup 當下 stream 還是 null（stop 是 no-op），
+      // 之後才拿到的那條串流永遠沒有人關——相機指示燈就一直亮著。
+      let resolveStream: (s: MediaStream) => void = () => {};
+      (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Promise<MediaStream>((resolve) => {
+          resolveStream = resolve;
+        }),
+      );
+      const lateStop = vi.fn();
+
+      const view = render(<MemberVerifyScanner />);
+      view.unmount(); // 相機都還沒回來就切走
+      await act(async () => {
+        resolveStream({ getTracks: () => [{ stop: lateStop }] } as unknown as MediaStream);
+      });
+
+      await waitFor(() => expect(lateStop).toHaveBeenCalled());
+    });
+  });
+
   describe('結果呈現與回饋', () => {
     // 手機上的原始症狀：掃到碼之後結果落在第一屏之外，店家要往下滑才看得到
     // 「這個人會籍有沒有效」——而那是這頁存在的唯一理由。根因是取景框沒有
@@ -212,6 +309,38 @@ describe('MemberVerifyScanner', () => {
       const viewport = within(screen.getByTestId('scanner-viewport'));
       expect(viewport.getByTestId('verify-result')).toBeTruthy();
       expect(viewport.getByRole('button', { name: '繼續掃描下一位' })).toBeTruthy();
+    });
+
+    it('後端說姓名遮過時補一行隱私說明', async () => {
+      // 未加入推薦計畫的人從沒在推薦網絡看過遮罩名，「四○○○哈」在需要對結果
+      // 有信心的當下很容易被讀成掃錯人或系統壞掉。
+      apiRequestJson.mockResolvedValue({ success: true, data: MASKED_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      expect(screen.getByText('姓名部分遮蔽以保護隱私')).toBeTruthy();
+    });
+
+    it('管理員看到全名時不出現隱私說明', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+      jsQR.mockReturnValue({ data: 'token-a' });
+
+      await mountScanner();
+      await flushFrame();
+      await screen.findByTestId('verify-result');
+
+      expect(screen.queryByText('姓名部分遮蔽以保護隱私')).toBeNull();
+    });
+
+    it('面板裡不再有返回管理後台的入口（它已不是 admin 頁）', async () => {
+      apiRequestJson.mockResolvedValue({ success: true, data: ACTIVE_MEMBER });
+      await mountScanner();
+
+      expect(screen.queryByRole('button', { name: '返回管理後台' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: '會員驗證' })).toBeNull();
     });
 
     it('會籍有效時送出成功震動', async () => {

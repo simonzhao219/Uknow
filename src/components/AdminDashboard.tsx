@@ -106,10 +106,11 @@ export function AdminDashboard() {
               留給工作內容（見 e2e 的 first_screen_position 斷言）。 */}
           <p className="hidden sm:block text-muted-foreground">管理 Uknow 平台的所有功能</p>
         </div>
-        {/* 會員驗證是獨立路由（相機需全螢幕，且下方 Tabs 是釘死的 5 欄）——
-            入口放這裡，避免變成沒有站內連結可達的孤兒頁。 */}
+        {/* 掃描已不是 admin 專屬功能，入口搬到會員區的「我的 QR」頁；這顆捷徑
+            保留，因為管理員平常就在後台工作，少走「會員中心 → 我的 QR → 掃描」
+            三步。state.from 讓掃完按返回回得了這裡。 */}
         <Button asChild variant="outline">
-          <Link to="/admin/verify">
+          <Link to="/dashboard/qr?tab=scan" state={{ from: '/admin' }}>
             <ScanLine className="mr-1 h-4 w-4" />
             會員驗證
           </Link>

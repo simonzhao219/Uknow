@@ -55,7 +55,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | 角色 | 能做什麼 |
 |---|---|
 | **訪客** | 瀏覽/搜尋服務提供者、查看詳情、註冊登入、閱讀條款與規則頁 |
-| **會員（會籍有效）** | 刊登管理、推薦系統、任務、獎勵與提領 |
+| **會員（會籍有效）** | 刊登管理、推薦系統、任務、獎勵與提領、掃碼驗證其他會員的身分（§13.1） |
 | **會員（會籍失效）** | 可登入，但會籍限定功能被導向續約；刊登隱藏、不可提領。**獎勵頁例外**：可讀（見 §5 的「保留不歸零」），頁首常駐續約提示，提領動作仍擋 |
 | **管理員** | 會員管理、提領審核、系統公告 |
 
@@ -79,10 +79,11 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/login`、`/register` | 登入 / 註冊 | 公開 |
 | `/auth/verify-otp` | OTP 驗證碼 | 公開（流程中） |
 | `/forgot-password`、`/auth/reset-password` | 忘記 / 重設密碼 | 公開 |
-| `/terms-of-service`、`/listing-plans`、`/business-manual`、`/participation-contract`、`/referral-reward-rules`、`/referral-reward-contract` | 條款 / 方案 / 事業手冊 / 參加契約書 / 推薦獎勵規則內容頁（`/referral-reward-contract` 是舊 slug，轉址到 `/participation-contract`） | 公開 |
+| `/terms-of-service`、`/listing-plans`、`/business-manual`、`/participation-contract`、`/referral-reward-rules`、`/referral-reward-contract` | 條款 / 方案 / 事業手冊 / 參加契約書 / 推廣獎勵規章內容頁（`/referral-reward-contract` 是舊 slug，轉址到 `/participation-contract`） | 公開 |
 | `/auth/complete-profile` | 完善個資 | 登入 |
 | `/payment/checkout`、`/payment/result` | 結帳 / 付款結果 | 登入 |
 | `/dashboard` | 會員儀表板 | 登入 + 會籍 |
+| `/dashboard/qr` | 我的 QR（邀請好友／會員驗證碼／掃描驗證三分頁） | 登入 + 會籍 |
 | `/service-providers` | 刊登管理 | 登入 + 會籍 + featureFlag |
 | `/service-providers/create` | 新增刊登 | 登入 + 會籍 + featureFlag |
 | `/service-providers/edit/:id` | 編輯刊登 | 登入 + 會籍 + featureFlag |
@@ -90,7 +91,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | `/tasks` | 任務中心 | 登入 + 會籍 + featureFlag |
 | `/rewards` | 獎勵回饋 / 提領 | 登入 + 會籍 + featureFlag |
 | `/admin` | 管理後台 | 管理員 |
-| `/admin/verify` | 會員驗證（會員身分） | 管理員 |
+| `/admin/verify` | 舊路徑，轉址至 `/dashboard/qr?tab=scan` | 公開（純轉址，不再單獨守門；守門在目的地） |
 | `*` | 未匹配路由導回首頁 | — |
 
 > 本表的第一欄由 `scripts/check-spec-drift.py` 與 `src/App.tsx` 的
@@ -179,9 +180,11 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 （由訂閱日期算）是**正交兩軸**——會籍本體仍只有 active/expired 兩態。
 
 - **效果**：凍結金錢／福利相關動作——刊登可見、提領、領取免費續約 credit 皆擋。
-- **不硬鎖會員區**：`RequireMembershipRoute` 只看 `accountStatus`，停權但仍在
-  效期內的會員可照常瀏覽會員區。此為刻意取捨（凍結價值出口即可，不必全站封鎖）；
-  若日後需硬鎖定，於守衛加一道 `suspended` 判斷即可。
+- **會員區硬鎖**：`RequireMembershipRoute` 的 `suspendedBlocked` 對非管理員的停權
+  會員直接顯示「帳號已停權」，不放行任何會員區頁面（含 `allowExpired` 的獎勵頁）。
+  本節原本寫的是「不硬鎖、只凍結價值出口」，與守衛實際行為不符——依「程式碼為準」
+  更正。後端 `POST /members/verify` 同樣把停權者擋在掃描之外（`deriveNodeStatus`
+  把停權放在最前面，所以停權與會籍過期一次涵蓋）。
 - 停權會員的**推薦碼不得通過驗證**（`validate_referral_code` 排除停權推薦人）。
 
 ### 5.3 守衛順序（三處逐字對齊）
@@ -535,7 +538,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | 名稱長度 | 最多 10 字（手機首頁顯示截至 8 字，桌面 10 字） |
 | 服務介紹 | 最多 200 字 |
 | 照片 | 最多 3 張，單張 ≤ 5 MB，格式 jpeg / png / webp |
-| 自訂類別長度 | 最多 10 字〔實作〕`src/utils/serviceCategories.ts` 的 `CUSTOM_CATEGORY_MAX_LENGTH`（資料庫 trigger 另有 20 字硬上限，那是防繞過 UI 的濫用上界，不是產品規則） |
+| 自訂類別長度 | 最多 6 字〔實作〕`src/utils/serviceCategories.ts` 的 `CUSTOM_CATEGORY_MAX_LENGTH`。判準是**對齊內建類別的最長值**（§12.1 的「各項運動教練」「各類音樂老師」）——自訂與內建在每個顯示點都並排，長度預期分兩套時長的先撞牆。**只約束新輸入**：調降前建立的 7–10 字類別仍在資料裡、仍會顯示（顯示端有 truncate + title）。資料庫 trigger 另有 20 字硬上限，那是防繞過 UI 的濫用上界，不是產品規則，刻意不跟著調降 |
 
 ---
 
@@ -557,7 +560,21 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 
 刊登者可在下拉選單選「自訂類別…」自行輸入(上限見 §11)。
 自訂類別是**全站共享的詞彙**：建立後其他刊登者可在下拉選單直接選用，
-首頁篩選器也把它與內建類別並列。
+首頁篩選器也篩得到。
+
+**呈現：與內建類別分區，不平鋪。** 刊登表單的下拉選單與首頁篩選器都是
+內建在前、一條分隔線與小標「自訂創意類別」之後才是自訂類別。
+分區的理由不是標示出身（對搜尋方而言「這個類別是誰定義的」不是有用的資訊），
+而是這是全站唯一沒有上限的清單、其順序按使用數浮動、且內容品質不齊——
+把它混進順序固定的內建 30 類裡，會讓整條清單都失去位置記憶。
+首頁篩選器的自訂類別超過 8 個時預設只露出使用數前 8 名，
+其餘收在「顯示全部 (N)」之後；**目前套用中的類別即使落在收合段也一定看得到**。
+〔實作〕`src/components/home/CategoryFilterChips.tsx`（含檔頭的完整取捨）、
+`src/components/listing/CategorySelectField.tsx`。
+
+首頁搜尋框的比對範圍是**名稱／服務介紹／服務類別**三者
+〔實作〕`src/utils/listingSearch.ts`——類別必須在內，
+否則被收合的冷門自訂類別在 UI 上就完全找不到（chip 收起來、搜尋又打不到）。
 
 **生命週期：沒有任何可見刊登在使用的類別會自動消失。**
 〔實作〕`public_listing_categories` view（migration
@@ -617,24 +634,33 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 ### 13.1 會員驗證（會員身分）
 
-**為什麼**：業主需要在線下（門市/活動）當場確認「來的人是不是會員、會籍還有沒有效」。
-推薦碼是公開可分享的，拿它當身分等於誰都能冒充，因此身分驗證自成一套。
+**為什麼**：業主需要在線下（門市/活動）當場確認「來的人是不是會員、會籍還有沒有效」；
+會員之間在活動或合作場合也需要當面確認對方是不是有效會員。推薦碼是公開可分享的，
+拿它當身分等於誰都能冒充，因此身分驗證自成一套。
 
-**流程**：會員在會員中心「我的 QR → 會員驗證碼」出示**動態短效碼**（90 秒，到期前
-自動換發）→ admin 在 `/admin/verify`（**獨立路由**，非 `AdminDashboard` 的 Tab）用相機
-掃描 → 後端驗簽後回**會員姓名 + 會籍四態**（`active`/`expiring`/`expired`/`suspended`，
-與推薦網絡節點同一套 `deriveNodeStatus`）。
+**流程**：會員在「我的 QR」（`/dashboard/qr`）的**會員驗證碼**分頁出示**動態短效碼**
+（90 秒，到期前自動換發）→ **會籍有效的會員或管理員**在同一頁的**掃描驗證**分頁用
+相機掃描 → 後端驗簽後回**姓名 + 會籍四態**（`active`/`expiring`/`expired`/`suspended`，
+與推薦網絡節點同一套 `deriveNodeStatus`）。**一般會員看到的姓名是遮罩的**（王○明，
+與推薦網絡二代以上同一支 `maskNameByGen`），管理員看全名；回應以 `nameMasked` 明示，
+前端據此加上隱私說明。舊路徑 `/admin/verify` 轉址到掃描分頁。
 
 **安全**：QR 內容是 HMAC 簽章的不透明 token（payload 僅隨機 UUID + 到期，無姓名/電話/
-身分證），一律後端解析；解析端點 `POST /admin/members/verify` 需管理員權限；缺
-`MEMBER_TOKEN_SECRET` 一律 fail-closed（不以空金鑰簽發或驗證）。「驗證碼過期」與
+身分證），一律後端解析；解析端點 `POST /members/verify` **不在 `/admin/*` 命名空間下**，
+授權寫在 handler 內：管理員放行，其餘人以 `deriveNodeStatus` 判定必須是
+`active`/`expiring`（停權與會籍過期一次涵蓋），否則 403 `verifier_not_eligible`。
+同一掃描者每分鐘上限 30 次（`bump_rate_limit`，fail-open），超過回 429 `rate_limited`
+——猜 token 本來就不可行，這道防的是「側錄一批他人正在顯示的 QR 再批次驗證」。
+缺 `MEMBER_TOKEN_SECRET` 一律 fail-closed（不以空金鑰簽發或驗證）。「驗證碼過期」與
 「會籍過期」是不同語意，前端分別呈現。
 
-**稽核**：每次成功驗證寫一筆 `member_verify_logs`（admin、會員、時間），寫入失敗即
-擋下驗證（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
+**稽核**：每次成功驗證寫一筆 `member_verify_logs`（`verifier_id`＝掃描者、會員、時間），
+寫入失敗即擋下驗證（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
 
-> **admin 功能放哪的判準**：需要全螢幕或裝置權限的即時互動（如相機掃碼）走**獨立路由**；
+> **相機頁放哪的判準**：需要全螢幕或裝置權限的即時互動（如相機掃碼）走**獨立路由**；
 > 資料管理類走 `AdminDashboard` 的 **Tabs**（桌面版是釘死的 5 欄 grid，硬加會壞版面）。
+> 掃描開放給一般會員之後，那條獨立路由從 admin 區搬到會員區的 `/dashboard/qr`，
+> 判準本身不變。
 
 ---
 

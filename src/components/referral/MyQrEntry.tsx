@@ -1,10 +1,23 @@
 import { useContext, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { QrCode, Shield } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
 import { UserContext } from '../../App';
-import { MyQrDialog } from './MyQrDialog';
 import { JoinReferralProgramDialog } from './JoinReferralProgramDialog';
+import { availableMyQrTabs } from '../../utils/myQrTabPreference';
+
+/**
+ * 預熱「我的 QR」頁的 chunk。對話框時代點下去是零網路的本地切換，改成路由之後
+ * 多了一次 chunk 下載——而最典型的情境正是「對方當面等你出示驗證碼」，全流程
+ * 最不能轉圈的一刻，使用者又多在 LINE 內建瀏覽器裡。
+ * 同一個模組的動態 import 回同一個 promise，所以這裡抓過之後路由層是即時的。
+ */
+const preheatMyQrPage = () => {
+  import('../MyQrPage').catch(() => {
+    /* 預熱失敗無所謂：路由層的 lazy 會自己再抓一次 */
+  });
+};
 
 interface MyQrEntryProps {
   /** 外框樣式依版面脈絡給。狀態與行為一律由本元件決定——刻意不開任何行為 prop。 */
@@ -36,22 +49,20 @@ interface MyQrEntryProps {
  */
 export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   const { user, refreshUser } = useContext(UserContext);
-  const [qrOpen, setQrOpen] = useState(false);
+  const location = useLocation();
   const [joinOpen, setJoinOpen] = useState(false);
 
   // 碼在付款成功時就已產生（process_successful_payment），但「加入推薦計畫」才是
   // 簽了參加契約書的憑據——沒加入就不該看到自己的碼，更不該拿去邀請人。
-  const canShowCode = !!user?.referralProgramJoined && !!user?.referralCode;
+  // 判斷式問 availableMyQrTabs（它同時決定「我的 QR」頁有沒有邀請分頁）：這條規則
+  // 在本專案被複製成兩份的後果就是 3967f69 那次事故。
+  const canShowCode = availableMyQrTabs({
+    joined: user?.referralProgramJoined,
+    referralCode: user?.referralCode,
+    canScan: false,
+  }).invite;
 
-  const openJoin = () => {
-    // 加入的入口現在只有推薦碼欄位這顆 CTA（QR 面板未加入時只剩驗證碼、沒有加入
-    // 引導），照理不會在面板開著時觸發。仍保留關閉動作當防線：
-    // JoinReferralProgramDialog 是手刻的 fixed z-50 遮罩，MyQrDialog 是 Radix
-    // Dialog（portal 到 body、同樣 z-50），兩者一旦疊起來 Radix 會蓋住加入流程
-    // 並吃掉點擊，使用者按不到簽名與同意條款。
-    setQrOpen(false);
-    setJoinOpen(true);
-  };
+  const openJoin = () => setJoinOpen(true);
 
   const handleJoinSuccess = async () => {
     setJoinOpen(false);
@@ -86,25 +97,21 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
       </div>
 
       <div className="ml-auto shrink-0">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setQrOpen(true)}
-          data-testid="my-qr-button"
-        >
-          <QrCode className="mr-1 h-4 w-4" />
-          我的 QR
+        {/* 連結而不是按鈕：可長按開新分頁、可被預熱，也讓返回鍵知道來源。 */}
+        <Button asChild variant="outline" size="sm">
+          <Link
+            to="/dashboard/qr"
+            state={{ from: location.pathname }}
+            data-testid="my-qr-button"
+            onPointerEnter={preheatMyQrPage}
+            onTouchStart={preheatMyQrPage}
+            onFocus={preheatMyQrPage}
+          >
+            <QrCode className="mr-1 h-4 w-4" />
+            我的 QR
+          </Link>
         </Button>
       </div>
-
-      <MyQrDialog
-        open={qrOpen}
-        onOpenChange={setQrOpen}
-        joined={!!user?.referralProgramJoined}
-        referralCode={user?.referralCode}
-        memberName={user?.name}
-        accountStatus={user?.accountStatus}
-      />
 
       <JoinReferralProgramDialog
         open={joinOpen}
