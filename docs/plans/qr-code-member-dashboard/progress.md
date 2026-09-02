@@ -15,7 +15,7 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 |---|---|---|---|---|
 | 1 | 分頁決策純函式（`myQrTabPreference` 加 `scan`、URL 優先序、同批改 `MyQrDialog` 呼叫） | ✅ 綠 | c29101f | ae994bc |
 | 2 | 後端 `POST /members/verify` 取代 admin 端點（授權矩陣、遮罩、節流、稽核 `verifier_id`）＋ migration 改名 | 🟡 待 CI 確認 | 41fb1e8 | (本 commit) |
-| 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ⬜ 未開始 | | |
+| 3 | 掃描面板搬到 `referral/`、去頁首、端點改路徑、卸載停相機（含競態） | ✅ 綠 | 31ac447 | (本 commit) |
 | 4 | `MyQrPage` 新頁（`joined × canScan` 矩陣、深連結、偏好寫回、依來源返回） | ⬜ 未開始 | | |
 | 5 | 接線（`MyQrEntry` 改 Link＋預熱、刪 `MyQrDialog`、路由與轉址、`/admin` 捷徑、返回層級表） | ⬜ 未開始 | | |
 | 6 | 文件與 e2e 同步（規格書 §2.1／§3／§13.1／§13 註、ui-ux §7 路徑、溢版巡檢三條、fake camera 第一屏斷言） | ⬜ 未開始 | | |
@@ -37,7 +37,13 @@ PR:#300（草稿轉 ready-for-review，目前只含規劃鷹架）
 授權）、舊 `POST /admin/members/verify` 移除、migration `20260902000001` 把稽核欄位
 `admin_id` 改名 `verifier_id`、契約加 `nameMasked`。
 
-**下一步：CI 綠了就進階段 3（掃描面板搬到 `referral/`、改面板、端點改路徑、卸載停相機）。**
+**階段 3 綠**（紅燈 31ac447）：掃描器搬到 `referral/` 並改成面板（無頁首、無 Card、
+不碰 react-router）、端點改 `/members/verify`、`nameMasked` 補隱私說明列、錯誤標題
+依 code 分流、相機競態修掉（resolve 前卸載也會 stop）。順帶讓 `ApiError.code` 真的
+被填——它一直存在卻從沒被寫入，呼叫端想分流只能比對中文訊息字串。
+
+**下一步：階段 4（`MyQrPage` 新頁：頁首、分頁組合、深連結、偏好寫回、依來源返回、
+`activationMode="manual"`）。**
 
 ## Blockers(逃生口紀錄)
 
