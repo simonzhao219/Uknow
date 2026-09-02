@@ -2343,12 +2343,45 @@ errexit 修好後,PR #302 第三次觸發 journey-full,重試邏輯確實執行�
 嘗試被中斷時,CLI process 沒機會 DEALLOCATE 它 PREPARE 過的 statement;連線
 還回池子後,第 2 次嘗試若分到同一條底層連線,同名 PREPARE 就撞見殘留。
 
-**通則:重試機制本身會製造新的時序窗口**——不重試就不會有「上一次留下的
-殘留狀態,這一次撞見」這種故事。`23505`(schema_migrations 主鍵重複)與
-`42P05`(prepared statement 已存在)是同一個「快速重試撞見連線池/資料庫
-殘留痕跡」原則的兩種表現,不是各自獨立的新問題。
+當時的判讀是:「`23505` 與 `42P05` 是同一個『快速重試撞見殘留痕跡』原則的
+兩種表現」,處置是把重試白名單從比對訊息字串改成比對 SQLSTATE
+(`23505|42P05`)。
 
-處置:見 `docs/plans/fix-journey-db-push-pgbouncer-retry/fix.md`(隨該 PR
-收尾清理)——可重試錯誤的判斷從比對訊息字串改成比對 SQLSTATE 代碼
-(`23505|42P05`),更精確也更容易擴充。若未來再出現第三種可重試的
-SQLSTATE,比照這個模式擴充清單即可。
+⚠️ **上面這段對 42P05 的歸因是錯的,已被下一則條目的證據推翻**——留著是
+因為它示範了一個很容易再犯的錯:**看到「同一個現象的第二種形式」就順手
+歸進同一類,而沒有先問「重試對它到底有沒有效」**。當時只觀察到 42P05
+出現「一次」(第 2 次嘗試),就外推它和 23505 同性質;真正該做的是先確認
+重試會不會收斂,而那需要讓它真的重試看看——下一輪就打臉了。
+
+## 2026-09-02｜根因(終)｜journey 的 db push 一直打在 transaction-mode pooler 上,那條路本來就走不通
+
+把 42P05 放進重試白名單之後,PR #302 第四、五次 journey-full 各自**連撞 9 次、
+訊息一字不差**(`prepared statement "lrupsc_1_0" already exists`),用滿重試上限。
+重試對它零效果——這才推翻了上一則的歸因。
+
+**真根因**:`supabase db push` 內部要跑 `SET session_replication_role`,那是
+session 層級狀態;而 `POSTGRES_URL` 給的是 **transaction-mode pooler(port
+6543)**,每個 transaction 都可能換一條後端連線,**結構上就承載不了 session
+狀態**,同理也不支援 prepared statement(CLI 的 pgx driver 會自動 prepare)。
+這不是競態、不是殘留、不是時序——是**這條連線根本不該用來跑 migration**。
+Supabase 官方對 migrations 的建議正是「用 direct URL」,而本 repo 早在
+2026-08-02 就記過 direct URL(`db.<ref>.supabase.co`)只有 IPv6、GitHub
+runner 連不上,於是一路都用 pooler,從此埋著這顆雷。
+
+**修法**:留在同一個已證實 IPv4 可達的 pooler hostname 上,只把 port 從 6543
+換成 **5432(session mode)**。Supavisor 的兩種模式是同一個 hostname、只差
+port,所以這一步同時滿足「IPv4 連得到」與「session 狀態撐得住」兩個限制。
+
+**為什麼這一步是靠診斷而不是靠猜**:先合一個「只印 `branch.env` 欄位名與
+host:port(帳密自己剝掉)」的純診斷 PR(#306)跑一輪,才確認 branch.env 只有
+`POSTGRES_URL`(pooler:6543)與 `POSTGRES_URL_NON_POOLING`(direct:5432)
+兩個欄位、**沒有**第三個 session-mode 欄位可抓,只能自己換 port。這個 repo
+先前吃過「猜欄位名猜錯 → 靜默傳空字串 → 全場 skip 假綠」的虧(2026-07),
+所以寧可多花一輪 CI 拿真實資料。
+
+**通則(這次真正的教訓,比上面任何一則都重要)**:
+**連撞三輪都在同一個 step,就不要再修「這一次的錯誤訊息」,要回頭問
+「這條路本身對不對」。** 前三次修復(errexit、SQLSTATE 白名單、擴充白名單)
+每一個單獨看都正確、都有證據、也都真的修好了它針對的那件事,但它們全都
+建立在「用 pooler 跑 db push 是對的、只是偶爾會抖」這個沒被檢驗過的前提上。
+**症狀連續換面貌,通常是前提錯了,不是症狀難纏。**
