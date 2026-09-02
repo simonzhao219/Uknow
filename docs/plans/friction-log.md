@@ -2242,3 +2242,42 @@ PR #301 的 `guards` 軌紅,唯一一行失敗訊息是 `FAIL: CLAUDE.md 共 205
 rules/ 或 docs/」)。搬走的是 hook 決策記錄那段:它是 `decision_log.py`
 docstring 的失真摘要,而那份 docstring 就在它描述的程式碼旁邊、寫得完整得多,
 且那段內容是被動的(Claude 不會因為它而做任何事),不該佔常駐 context 預算。
+
+## 2026-09-02｜框架摩擦｜`check-plans-scaffold` 讓「規劃已推、實作進行中」的 PR 必然紅
+
+`check-plans-scaffold.py`（同日稍早由 PR #301 加進 develop）擋 `docs/plans/<slug>/`
+的存在，理由成立：舊 plan 會被誤當成規格。但它與**本專案自己的三段式流程**互相
+衝突，而衝突面在寫它的時候沒有被看到：
+
+`/plan-feature` → `/review-plan` → **停等人審** → `/tdd-implement`。中間那個「停等
+人審」不是在對話裡等——規劃書要推上分支、開 PR，人才看得到；`plan.md` / `review.md` /
+`progress.md` 三個檔在**跨 session 的容器裡是唯一的狀態載體**（CLAUDE.md 自己寫的
+「git 是唯一能跨 session 的通道」）。於是從規劃推上去到收尾刪鷹架的整段期間，
+`guards` 軌必然紅、其餘軌全部 skip——本次實測：規劃階段三次 push 都綠（守衛尚未進
+develop），rebase 之後第一次 push 就紅在這裡，而那時分支上一行產品程式碼都還沒有。
+
+豁免標記 `<!-- plans-keep: -->` 不適用：它的語意是「這份**不是**施工鷹架」，施工中
+的鷹架正是它要擋的東西。用它等於說謊。
+
+**本次處置**：照 `/tdd-implement` 收尾流程在最後刪鷹架，期間不再 push（CLAUDE.md
+的「TDD 相位 commit 湊批再推」剛好同向）。但這個處置有代價：實作期間的 commit 全部
+壓在本機，容器一被回收就沒了——而那正是鷹架檔存在的理由，繞了一圈回到原點。
+
+**整併時要決定的是判準，不是補丁**：守衛現在問「檔案在不在」，而它真正想擋的是
+「**已完成的功能**還留著鷹架」。兩者不等價。可分辨的訊號至少有三個：PR 是不是
+draft、`progress.md` 的階段狀態是不是全綠、分支有沒有產品程式碼的 commit。取任何
+一個都比「檔案在不在」貼近意圖。在那之前，這條守衛的效果是**懲罰照流程走的人**
+——不落檔的輕量改動反而不會踩到。
+
+順帶兩則同源的小摩擦（都在本次實作期間踩到，都與「hook 判斷用的訊號不是它想問的
+那件事」同形）：
+
+1. `pre-push-rebase.sh` 掛在 `matcher: "Bash"` 下、靠 settings.json 的
+   `"if": "Bash(git push*)"` 篩選，但**本 harness 不尊重 `if`**——一條純等待用的
+   `grep`/`sleep` 迴圈也觸發了它，把分支 rebase 掉並以「push 會被拒」擋下一條不是
+   push 的指令。判斷 `git push` 的邏輯應該搬進腳本本身（讀 `tool_input.command`）。
+2. 同一支 hook 用**本機追蹤 ref**（`git rev-parse origin/<branch>`）判斷遠端分支
+   存不存在。web session 由平台預建的 `origin/claude/*` 追蹤 ref 指著開局的 develop
+   head，但 GitHub 上根本沒有那條分支——於是第一次 push 被以「遠端已有舊歷史」擋下
+   並要求 `--force-with-lease`，而裸的 `--force-with-lease` 又因追蹤 ref 與遠端不符
+   回 `stale info`。要問遠端就該問遠端：`git ls-remote --heads origin <branch>`。
