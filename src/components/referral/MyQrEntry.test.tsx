@@ -10,6 +10,7 @@
 // （Radix portal、簽名板、API 呼叫），這裡只驗 MyQrEntry 自己的狀態與接線。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 // vi.hoisted 的內容會被提到所有 import 之前執行，所以 React 要在區塊內自己
 // import——用檔案頂端那個 binding 會踩到 TDZ（同 BottomNav.test.tsx）。
@@ -24,13 +25,6 @@ const { UserCtx } = await vi.hoisted(async () => {
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 
-// 替身只需暴露「開著沒」，其餘內容不是本單元的責任。
-// （面板內原本還有一個「加入推薦計畫」引導，現已移除——未加入時面板只剩會員
-// 驗證碼，加入入口統一在推薦碼欄位的 CTA，見 MyQrDialog 的分頁規則。）
-vi.mock('./MyQrDialog', () => ({
-  MyQrDialog: ({ open, accountStatus }: any) =>
-    open ? <div data-testid="my-qr-dialog" data-account-status={accountStatus} /> : null,
-}));
 vi.mock('./JoinReferralProgramDialog', () => ({
   JoinReferralProgramDialog: ({ open, onSuccess }: any) =>
     open ? (
@@ -47,11 +41,26 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderEntry(user: any, extra: { refreshUser?: any; onJoined?: () => void } = {}) {
+/** 點下「我的 QR」之後停在哪、帶了什麼 state——連結的目的地只能這樣觀察。 */
+function LandedAt() {
+  const loc = useLocation();
+  return <div data-testid="landed-at">{`${loc.pathname}|${(loc.state as any)?.from ?? ''}`}</div>;
+}
+
+function renderEntry(
+  user: any,
+  extra: { refreshUser?: any; onJoined?: () => void; at?: string } = {},
+) {
   const refreshUser = extra.refreshUser ?? vi.fn().mockResolvedValue(user);
   render(
     <UserCtx.Provider value={{ user, refreshUser }}>
-      <MyQrEntry onJoined={extra.onJoined} />
+      <MemoryRouter initialEntries={[extra.at ?? '/dashboard']}>
+        <Routes>
+          <Route path="/dashboard" element={<MyQrEntry onJoined={extra.onJoined} />} />
+          <Route path="/referrals" element={<MyQrEntry onJoined={extra.onJoined} />} />
+          <Route path="/dashboard/qr" element={<LandedAt />} />
+        </Routes>
+      </MemoryRouter>
     </UserCtx.Provider>,
   );
   return { refreshUser };
@@ -90,24 +99,17 @@ describe('MyQrEntry', () => {
     expect(screen.getByTestId('my-qr-button')).toBeTruthy();
   });
 
-  it('點「我的 QR」開啟面板', () => {
-    renderEntry({ referralProgramJoined: true, referralCode: 'zld310438' });
-
-    expect(screen.queryByTestId('my-qr-dialog')).toBeNull();
+  it('點「我的 QR」進到獨立頁，並把來源記在 state 裡', () => {
+    // 對話框時代關掉就留在原頁；改成獨立頁之後，返回鍵要靠這個 state 才知道
+    // 該回哪裡——不記的話從推薦管理進去、按返回會被丟回會員中心。
+    renderEntry({ referralProgramJoined: true, referralCode: 'abc123' }, { at: '/referrals' });
     fireEvent.click(screen.getByTestId('my-qr-button'));
-    expect(screen.getByTestId('my-qr-dialog')).toBeTruthy();
+    expect(screen.getByTestId('landed-at').textContent).toBe('/dashboard/qr|/referrals');
   });
 
-  it('會籍狀態取自 user.accountStatus，不另外掛 useSubscription', () => {
-    // 掛第二個 useSubscription 會讓 dedupe 餓死會員中心那一份（見該 hook 檔頭）。
-    renderEntry({
-      referralProgramJoined: true,
-      referralCode: 'zld310438',
-      accountStatus: 'active',
-    });
-
-    fireEvent.click(screen.getByTestId('my-qr-button'));
-    expect(screen.getByTestId('my-qr-dialog').getAttribute('data-account-status')).toBe('active');
+  it('「我的 QR」是連結而不是按鈕（可長按開新分頁、可預熱）', () => {
+    renderEntry({ referralProgramJoined: true, referralCode: 'abc123' });
+    expect(screen.getByTestId('my-qr-button').getAttribute('href')).toBe('/dashboard/qr');
   });
 
   it('由推薦碼欄位的 CTA 開加入流程時同時關掉面板', () => {

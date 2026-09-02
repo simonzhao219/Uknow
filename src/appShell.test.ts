@@ -29,6 +29,22 @@ describe('code splitting 契約', () => {
   it('會員區頁面不得同步 import（MemberDashboard 為代表）', () => {
     expect(app).not.toMatch(/^import\s*{\s*MemberDashboard\s*}/m);
   });
+
+  it('MyQrPage 走 lazy——掃碼庫與相機邏輯不該進首屏 bundle', () => {
+    expect(app).not.toMatch(/^import\s*{\s*MyQrPage\s*}/m);
+    expect(app).toMatch(/lazyNamed\(\s*\(\) => import\('\.\/components\/MyQrPage'\)/);
+  });
+});
+
+// /admin/verify 是管理員可能加在手機主畫面的舊網址。轉址本身不守門（守門在
+// 目的地），但**必須帶 state.from**：漏了的話掃完按返回會落到會員中心，而
+// 管理員平常是在後台工作的。state 不會反映在網址上，只有這裡看得到。
+describe('舊路由轉址契約', () => {
+  it('/admin/verify 轉址到掃描分頁並帶上來源', () => {
+    expect(app).toMatch(/path="\/admin\/verify"/);
+    expect(app).toMatch(/to="\/dashboard\/qr\?tab=scan"/);
+    expect(app).toMatch(/state=\{\{\s*from:\s*'\/admin'\s*\}\}/);
+  });
 });
 
 describe('會籍守衛新鮮度契約', () => {
