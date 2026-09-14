@@ -219,9 +219,25 @@ def evaluate(
 # ---------------------------------------------------------------------------
 
 
-def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str]]:
+# §1.3 驗收情境 1：「訊息指出檔名行號與『改用哪個 token』」。三條規則對應
+# 三種不同的修法，不能只給一句泛用的「見 §12」——那正是本規劃反覆點名的
+# 「宣稱驗過但沒驗到」同一種失效模式，這次差點發生在守門腳本自己身上。
+TOKEN_HINT = {
+    "c1": "改用語義色 token（§12.3 三形狀對照表，灰階見 §12.2 對照表）",
+    "c2": "改單色/灰階，或依 §12.4 三類判準決定去留（功能性遮罩可留）",
+    "c3": "改用語義色 token 或去色（§12.3）——原始色值不應該繼續存在",
+}
+
+
+def format_violation_detail(path: str, rule: str, hits: list[Hit]) -> list[str]:
+    """§1.3 驗收情境 1 的訊息格式：檔名:行號 命中片段——改用哪個 token。"""
+    hint = TOKEN_HINT.get(rule, "")
+    return [f"    {path}:{line} {rule} 命中 `{snippet}` — {hint}" for line, snippet in hits]
+
+
+def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str], dict[str, dict[str, list[Hit]]]]:
     """回傳 (current 稀疊命中表, 本次掃描範圍內所有檔案的相對路徑集合,
-    掃到的灰階 class 聯集)。
+    掃到的灰階 class 聯集, 每個有命中檔案的行號明細)。
 
     業主裁決 Q3：掃描範圍含 `.test.*`——色不只住在 JSX 裡，測試檔也可能
     直接斷言 class string 或是回傳 class 的純函式。
@@ -229,6 +245,7 @@ def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str]]:
     current: dict[str, dict[str, int]] = {}
     existing: set[str] = set()
     grays: set[str] = set()
+    hits_by_file: dict[str, dict[str, list[Hit]]] = {}
     files = sorted(SRC.rglob("*.ts")) + sorted(SRC.rglob("*.tsx"))
     for path in sorted(set(files)):
         rel = str(path.relative_to(ROOT))
@@ -238,8 +255,9 @@ def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str]]:
         counts = counts_of(hits)
         if any(counts.values()):
             current[rel] = counts
+            hits_by_file[rel] = hits
         grays |= gray_classes_used(source)
-    return current, existing, grays
+    return current, existing, grays, hits_by_file
 
 
 def load_baseline() -> dict[str, dict[str, int]]:
@@ -248,8 +266,22 @@ def load_baseline() -> dict[str, dict[str, int]]:
     return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
 
+def _paths_with_new_hits(
+    current: dict[str, dict[str, int]], baseline: dict[str, dict[str, int]]
+) -> list[str]:
+    """current 裡「有規則命中數比 baseline 多」的檔案——只有這種情況需要
+    印行號明細指出改哪裡；命中數變少（收緊）或孤兒條目改的是 baseline 本身
+    的數字，不是某一行程式碼，指行號沒有意義。"""
+    out = []
+    for path, cur in sorted(current.items()):
+        base = baseline.get(path, {})
+        if any(cur.get(rule, 0) > base.get(rule, 0) for rule in ("c1", "c2", "c3")):
+            out.append(path)
+    return out
+
+
 def scan() -> int:
-    current, existing, used_gray = scan_repo()
+    current, existing, used_gray, hits_by_file = scan_repo()
     baseline = load_baseline()
     problems = evaluate(current, baseline, existing)
 
@@ -261,6 +293,15 @@ def scan() -> int:
         ok = False
         print("check-color-usage 發現問題:")
         print("\n".join(f"  {p}" for p in problems))
+        detail_lines = []
+        for path in _paths_with_new_hits(current, baseline):
+            base = baseline.get(path, {})
+            for rule, hits in hits_by_file.get(path, {}).items():
+                if hits and len(hits) > base.get(rule, 0):
+                    detail_lines += format_violation_detail(path, rule, hits)
+        if detail_lines:
+            print("\n違規位置:")
+            print("\n".join(detail_lines))
         print(
             "\n修法:新增/超出的命中改用語義色 token（見 docs/ui-ux-guidelines.md §12）；"
             "\n收緊/孤兒的 baseline 項目照訊息把 scripts/color-usage-baseline.json 對應行改掉。"
@@ -420,6 +461,35 @@ G1_CASES: list[tuple[str, set[str], str, int]] = [
     ),
 ]
 
+# §1.3 驗收情境 1：違規訊息要指名檔名行號與改用哪個 token。
+# (標籤, current, baseline, 預期回傳「需要印行號明細」的路徑清單)
+DETAIL_CASES: list[tuple[str, dict, dict, list[str]]] = [
+    (
+        "新債（不在 baseline）要印明細",
+        {"a.tsx": {"c1": 1, "c2": 0, "c3": 0}},
+        {},
+        ["a.tsx"],
+    ),
+    (
+        "超出 baseline 要印明細",
+        {"a.tsx": {"c1": 3, "c2": 0, "c3": 0}},
+        {"a.tsx": {"c1": 2, "c2": 0, "c3": 0}},
+        ["a.tsx"],
+    ),
+    (
+        "只是低於 baseline（收斂完）不印明細——沒有新增的那一行可指",
+        {"a.tsx": {"c1": 1, "c2": 0, "c3": 0}},
+        {"a.tsx": {"c1": 2, "c2": 0, "c3": 0}},
+        [],
+    ),
+    (
+        "命中數與 baseline 一致不印明細",
+        {"a.tsx": {"c1": 2, "c2": 0, "c3": 0}},
+        {"a.tsx": {"c1": 2, "c2": 0, "c3": 0}},
+        [],
+    ),
+]
+
 
 def self_test() -> int:
     failures: list[str] = []
@@ -436,6 +506,15 @@ def self_test() -> int:
                 f"  FAIL(evaluate): {label} — 預期 {want_n} 筆問題，實得 {len(got)}：{got}"
             )
 
+    for label, current, baseline, want_paths in DETAIL_CASES:
+        got = _paths_with_new_hits(current, baseline)
+        if got != want_paths:
+            failures.append(f"  FAIL(detail): {label} — 預期 {want_paths}，實得 {got}")
+
+    detail = format_violation_detail("a.tsx", "c1", [(3, "text-blue-600")])
+    if detail != ["    a.tsx:3 c1 命中 `text-blue-600` — " + TOKEN_HINT["c1"]]:
+        failures.append(f"  FAIL(format_violation_detail): 格式跑掉了 — {detail}")
+
     for label, used, markdown_text, want_n in G1_CASES:
         got = missing_gray_rows(used, parse_documented_gray_classes(markdown_text))
         if len(got) != want_n:
@@ -447,7 +526,8 @@ def self_test() -> int:
         return 1
     print(
         f"check-color-usage self-test: OK（{len(SCAN_CASES)} 條掃描案例 + "
-        f"{len(EVAL_CASES)} 條判定案例 + {len(G1_CASES)} 條 G1 案例）"
+        f"{len(EVAL_CASES)} 條判定案例 + {len(DETAIL_CASES)} 條訊息明細案例 + "
+        f"{len(G1_CASES)} 條 G1 案例）"
     )
     return 0
 

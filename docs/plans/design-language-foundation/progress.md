@@ -65,6 +65,34 @@ session 之間搬到 PR 之間。**實作仍用 Sonnet**，但
 
 （無）
 
+## /review-implementation 發現與處置（2026-09-14）
+
+四視角審查（系統/架構/UIUX/需求）全部完成，P0 × 0。收斂後處置：
+
+- **修掉**：(1) `check-color-usage.py` 違規訊息缺行號與具體 token 建議，
+  未滿足 plan.md §1.3 驗收情境 1 的字面要求（需求視角）——補
+  `format_violation_detail()`，訊息現含檔名:行號+命中片段+對應章節建議。
+  (2) `vitest.config.ts` 覆蓋率棘輪異動：三位 reviewer（架構/需求/UIUX）
+  獨立收斂到同一發現——與 `origin/develop` 對照後確認漲幅**與本 PR 無關**
+  （develop 本身已是 53.04/83.14/68.24，早於本分支任何 commit），
+  `globals.test.ts` 本就被 `coverage.exclude` 排除，不可能是漲幅來源。
+  判定為誤植的順手改動，**已完整還原** `vitest.config.ts`，plan.md §3.3
+  「不影響覆蓋率棘輪」的斷言維持成立。(3) UIUX 視角指出 R2-UIUX-1
+  的「S2 驗收站 1 需明列世代灰/已失效灰碰撞檢查」只活在即將刪除的
+  plan.md 裡——已升級進 `docs/plans/platform-uiux-redesign/construction-plan.md`
+  §4.3 驗收 1 那一列。(4) §12.8 checklist 補窄版（375px）重跑第 1、2 步的
+  要求（UIUX 視角：常設規範若不含手機情境，跟專案「手機為主」的前提脫節）。
+  (5) 兩處次要 P2（href 防呆固定視窗、動態拼接色相盲點）補進 §12.9；
+  `--destructive-border` 選色差異補 CSS 註解說明（.dark 版無法比照
+  success/warning 重用 A 值，會跌破 3:1）；§9 補 → §12 指路。
+- **記錄但不改規劃書內容**：系統視角指出 plan.md §2.4 對 C3(b)「現況 0 處」
+  的宣稱與實況不符——`IdNumberVerification.tsx:145`、
+  `ThreeStepDialog.tsx:258,363` 三處 `bg-[rgb(0,0,0)]` 在本次改動前就存在。
+  機制本身沒有問題（這 3 處已被腳本正確掃出並吸收進 baseline 起點值），
+  純粹是規劃書當初的現況調查有遺漏。plan.md 即將隨本目錄刪除，不回頭改
+  歷史規劃文字；正確現況已經由 `scripts/color-usage-baseline.json`
+  （腳本掃出、不是規劃書手寫的數字）承接，該檔案不受影響。
+
 ## 框架摩擦
 
 1. web session 預設生在 `claude/*` 分支，三段式守衛只認 `feature/<slug>`——

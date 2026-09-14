@@ -37,6 +37,10 @@
   --warning-border: #b45309;
   --destructive-subtle: #fef2f2;
   --destructive-subtle-foreground: #991b1b;
+  /* success/warning 的 border 重用各自 A 形狀的實心底色；destructive 在此
+     不能比照——.dark 版 A 色（#82181a）對 .dark 版 subtle 底（#450a0a）只有
+     ≈1.6:1，遠低於 3:1 門檻，border 必須是獨立選色，淺深兩版皆同理選一致
+     的獨立色階（見 .dark 區塊同名 token 的對稱說明）。 */
   --destructive-border: #b91c1c;
   --border: rgba(0, 0, 0, 0.1);
   --input: transparent;
