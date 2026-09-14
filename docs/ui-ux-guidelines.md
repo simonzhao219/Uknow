@@ -35,6 +35,8 @@
 - **深色模式**：`.dark` 的 `--card`/`--popover` 需比 `--background` 亮一階
   （0.145→0.205），否則卡片與背景同色、完全沒有層次。
   目前無使用者切換入口（`next-themes` 已具備底層，要開放需補切換 UI）。
+- **色彩與設計語言**（語義色 token、灰階對照表、對比度門檻、深色/色盲驗證
+  checklist）→ 見 §12。
 
 ## 3. 導覽與資訊架構
 
@@ -236,6 +238,156 @@
 在資料層不可逆（他已經讀過全站身分證與收款帳號）——判斷時取兩者中較嚴的那個。
 
 〔實作〕`src/components/admin/MemberManagement.tsx` 與其測試。
+
+---
+
+## 12. 色彩與設計語言
+
+> 本節是 design-language-foundation（S1）的交付物：token 定義在
+> `src/styles/globals.css`，用法由 `scripts/check-color-usage.py` 機械把關
+> （`npm run check` 之外，framework-check 軌每次 CI 都會跑）。**S1 本身
+> 不改任何元件、畫面零變化**——這節寫的是 S2（實際把手刻色收斂進 token）
+> 動工時要照哪份規範，以及守門腳本怎麼讀、怎麼用。
+
+### 12.1 基底不變
+
+`--primary: #030213` 與 logo 相符，保留；根字級/觸控目標/表單規範（§1）
+不動。這節談的是**彩色語義色**的收斂，不是重新設計。
+
+### 12.2 層次靠灰階不靠顏色
+
+字重、字級、`--muted-foreground`、留白——這是 logo 的語言。灰階本身也在
+`check-color-usage.py` 的 C1 掃描範圍內（Tailwind 官方 22 色全表含
+slate/gray/zinc/neutral/stone 五個灰階家族，不挑選）。但灰階**不是**發新
+token，是**對照到既有 token**，而且不是 1:1 替換：
+
+| 現況 class | 對照 token | 色差（目視） | 不確定時怎麼辦 |
+|---|---|---|---|
+| `gray-50` | `--background`（`#ffffff`）或 `--muted`（`#ececf0`） | `gray-50`（`#f9fafb`）介於兩者之間 | S2 逐案判斷：大面積底色用 `--background`，卡片內分隔區塊用 `--muted` |
+| `gray-100` | `--muted`（`#ececf0`） | 接近，`gray-100`（`#f3f4f6`）略淺 | 可視為等效替換 |
+| `gray-200` | `--muted` 或 `--border`（`rgba(0,0,0,0.1)`） | `gray-200`（`#e5e7eb`）界於兩者之間 | 依用途（底色 vs 邊框）擇一 |
+| `gray-300` | `--border` | `gray-300`（`#d1d5db`）比現行 `--border` 實色明顯深 | S2 逐案目視，色差過大時提報新增灰階 token |
+| `gray-400` | `--muted-foreground`（`#717182`），偏淺一階 | `gray-400`（`#9ca3af`）較淺 | 多用於次要圖示/停用態，S2 逐案判斷 |
+| `gray-500` | `--muted-foreground` | 非常接近 | 可視為等效替換 |
+| `gray-600` | `--muted-foreground`，偏深一階 | `gray-600`（`#4b5563`）較深 | S2 逐案目視 |
+| `gray-700` | `--foreground`，偏淺一階 | `gray-700`（`#374151`）明顯比 `--foreground`（近黑）淺 | S2 逐案目視，色差過大時提報新增灰階 token（例如 `--foreground-muted`） |
+| `gray-800` | `--foreground` | 接近但仍偏淺 | 多用於次要標題文字，S2 逐案判斷 |
+| `gray-900` | `--foreground` | 非常接近 | 可視為等效替換 |
+
+最後一欄是重點：色差明顯時**不強迫替換**——S2 逐案目視，必要時提報新增
+灰階 token，不留各自詮釋空間，也不假裝「反正都是灰的」。
+
+### 12.3 語義色是唯一的彩色
+
+三類語義各有 token，每一類最多三種形狀（A 實心底、B 淺底提示框、C 裸字）：
+
+| # | 形狀 | token | 對比門檻 |
+|---|---|---|---|
+| A | 實心底 | `--success` / `--warning` / `--destructive` | — |
+| A | 實心底上的字 | `--success-foreground` / `--warning-foreground` / `--destructive-foreground` | 對 A **4.5:1** |
+| B | 淺底提示框 | `--success-subtle` / `--warning-subtle` / `--destructive-subtle` | — |
+| B | 淺底上的字/圖示 | `--success-subtle-foreground` / `--warning-subtle-foreground` / `--destructive-subtle-foreground` | 對 B **4.5:1** |
+| B | 淺底的框 | `--success-border` / `--warning-border` / `--destructive-border` | 對 B **3:1** |
+| C | 裸字/裸圖示（無 bg 包裹） | 重用 B 的 `*-subtle-foreground`——本來就是為「淺底上的文字」設計、對比已驗證 | 對 `--background` **與** `--card` 各 **4.5:1** |
+
+對照：成功 → `--success`；警示 → `--warning`；危險 → `--destructive`；
+**資訊/進行中 → 灰階或 `--primary`，不再用藍**（見 12.7 色盲防線）。
+
+### 12.4 漸層退場
+
+三類判準，不靠語感：
+
+- **功能性遮罩**（讓疊在上面的字看得見）→ **可留**。例：照片上的文字遮罩。
+- **裝飾性漸層** → 退場，改單色或灰階。
+- **狀態驅動的連續漸層**（依進度/百分比切換）→ 退場，改為**離散的語義
+  token 分段對應**（例：依同一組門檻對應到 `--success` / `--warning` / 灰階，
+  不再連續漸變）。
+
+**可操作的檢驗步驟**：把漸層換成等亮度純色，疊在上面的文字對比度是否仍達
+4.5:1？**仍達標 = 裝飾，可退場；不達標 = 功能性，保留。**
+
+### 12.5 統計數字去色 + 非狀態判準
+
+只有明確落在語義色三類的**狀態呈現**才上色，其餘四類歸「非狀態 → 純黑/灰」：
+
+- **(a) 計數與量值**：總會員數、管理員人數、累積獎勵金額。
+- **(b) 身分／分類標記**：性別、方案別、角色。
+- **(c) 多值分類色**（結構屬性，不是狀態）：例如推薦樹的世代色（一代/二代/
+  三代）→ 去色走灰階三階，**不走 `--chart-*`**（`--chart-*` 用途是「同一
+  量綱的多個資料序列」，是圖表工項，世代是結構屬性；辨識負擔已由文字標籤
+  承擔，不需要色相再承擔一次）。⚠️ **碰撞防呆**：若同一畫面已有「已失效」
+  類的專屬灰（例：狀態點用 `gray-400` 表示已失效），多階去色的世代灰**必須
+  與那個既有的狀態灰保持可辨識的亮度差距**，否則會被稀釋成分不出語意的
+  一片灰。
+- **(d) 純裝飾**：icon 底色、卡片點綴。
+
+### 12.6 深色模式
+
+每個新語義 token 都有 `.dark` 版（三處齊備：`:root`、`.dark`、
+`@theme inline`），對比度門檻由自動測試驗證（`src/styles/globals.test.ts`）。
+devtools checklist 見 12.8。
+
+### 12.7 對比門檻分兩種 + 色盲防線
+
+**文字**走 WCAG 1.4.3，門檻 **4.5:1**；**邊框、圖示等非文字元素**走
+WCAG 1.4.11，門檻 **3:1**——不是一律套 4.5:1，border 只驗過存在、沒排進
+對比矩陣等於沒驗。
+
+**WCAG 1.4.1（Use of Color）**：狀態不可只靠色相傳遞，必須同時有文字或
+圖示搭配。這是藍色退場後的安全網——拿掉藍之後只剩紅/綠/黃橙，而紅綠正是
+紅綠色盲（約占男性 8%）最難區分的組合。
+
+### 12.8 深色模式與色盲驗證 checklist（常設規範）
+
+現況 `.dark` 從未被實際套用（無切換入口、無任何 import），深色 token 沒有
+執行期驗證管道，機械層只能驗對比度數字（12.6），**語意層（這個 badge 是否
+只靠顏色傳遞語意）抓不到**——`check-color-usage.py` 的 C1–C3 是語法層規則，
+判斷不了這件事，這是技術限制，不是規劃疏漏。所以還有一層人工 checklist：
+
+1. **深色**：devtools 的 Elements 面板給 `<html>` 加 `class="dark"`，逐頁
+   目視。頁面清單：首頁、服務詳情、會員中心、獎勵、後台四分頁。看什麼：
+   卡片與背景是否有層次、提示框的字是否讀得到、badge 是否還分得出語義。
+2. **色盲**：devtools 的 Rendering → Emulate vision deficiencies，逐一套用
+   protanopia / deuteranopia / tritanopia，走同一份頁面清單。驗收標準不是
+   「顏色還分得出來」——那不可能——而是**「即使完全分不出顏色，狀態仍然
+   讀得懂」**（靠文字標籤與圖示）。
+3. **對比**：抽查幾處實際渲染色，確認與測試算出的值一致（防止 token 被
+   某處 `opacity` 或疊層稀釋）。
+
+**這份 checklist 是常設規範，不是一次性驗收工具**：任何新增或修改狀態
+視覺呈現時都要跑，不是只在某次收斂完就結束——WCAG 1.4.1 這條防線抓不到
+機械把關，只能靠人記得，所以規則本身必須不會過期。
+
+### 12.9 守門腳本怎麼用
+
+`python3 scripts/check-color-usage.py` 掃 `src/**/*.ts(x)`（含 `.test.*`，
+色不只住在 JSX 裡）三條規則：
+
+- **C1** 具名 Tailwind 調色盤 class（`text-blue-600` 這類，含 `hover:`/
+  `dark:`/`md:` 等變體前綴）。
+- **C2** 裝飾性漸層（`bg-gradient-to-*` / `bg-linear-to-*`）。
+- **C3** 原始色值：(a) JS/TS 字串裡的 hex 字面值（含 3 位簡寫如 `'#000'`）；
+  (b) Tailwind 任意值色彩語法（`bg-[#16a34a]`）。
+
+棘輪 baseline 在 `scripts/color-usage-baseline.json`，`{相對路徑: {c1, c2,
+c3}}`，依規則類型分列（同一檔案 C1 減一、C2 加一，淨數不變也會各自被抓到）。
+四條判定：不在 baseline 的檔出現命中 → 紅（新債）；命中數比 baseline
+多 → 紅；**命中數比 baseline 少也紅**（棘輪只准收緊，訊息會印出可貼上的
+JSON 行）；baseline 有紀錄但檔案已不存在 → 紅（孤兒條目，多半是刪除或
+rename 後 baseline 沒跟著更新——**rename 時舊 key 要一併改名**）。
+
+**刻意不提供 `--update-baseline` 旗標，也不提供行內豁免標記**——自動更新
+是棘輪腐爛的標準路徑，豁免會變成壓力下最方便的逃逸路徑。真的出現例外
+（品牌色、第三方 embed）再加標記，比照 `docs/plans/` 的 `plans-keep`
+慣例：機器可讀、寫得出退場條件。
+
+### 12.10 灰階對照表完整性（機械把關）
+
+12.2 的灰階對照表必須涵蓋 `check-color-usage.py` 掃到的**每一個**灰階
+class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
+缺一列，`check-color-usage.py` 就紅。這是 C1–C3 之外的第二類檢查（驗
+文件與程式碼一致，不進 baseline），存在理由：「對照表涵蓋掃到的 class」
+是可數、可枚舉的宣稱，沒有測試落點的宣稱等於沒驗過。
 
 ---
 

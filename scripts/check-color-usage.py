@@ -43,6 +43,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 BASELINE_PATH = ROOT / "scripts" / "color-usage-baseline.json"
+GUIDELINES_PATH = ROOT / "docs" / "ui-ux-guidelines.md"
 
 # Tailwind 官方 22 色相全表(§7:「不挑選」)——5 個灰階家族 + 17 個彩色家族。
 TAILWIND_HUES = [
@@ -138,6 +139,27 @@ def gray_classes_used(source: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# G1（灰階對照表完整性，二審回填 R2-架構-1）：C1–C3 之外的第二類檢查——
+# 驗「文件與程式碼一致」，不是掃違規，不進 baseline。
+# ---------------------------------------------------------------------------
+
+# ui-ux-guidelines.md §12.2 的灰階對照表用 `| \`gray-50\` | ... |` 這種列，
+# 第一欄反引號內容就是已登記的 class。
+DOCUMENTED_GRAY_ROW = re.compile(
+    r"^\|\s*`((?:" + "|".join(sorted(GRAY_HUES)) + r")-(?:" + SHADES + r"))`\s*\|", re.MULTILINE
+)
+
+
+def parse_documented_gray_classes(markdown_text: str) -> set[str]:
+    return {m.group(1) for m in DOCUMENTED_GRAY_ROW.finditer(markdown_text)}
+
+
+def missing_gray_rows(used: set[str], documented: set[str]) -> list[str]:
+    # TODO(紅燈):判定邏輯還沒寫，表格案例先落地。
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Baseline 判定（四條，見 plan.md §2.4「判定」表）。
 # ---------------------------------------------------------------------------
 
@@ -192,23 +214,27 @@ def evaluate(
 # ---------------------------------------------------------------------------
 
 
-def scan_repo() -> tuple[dict[str, dict[str, int]], set[str]]:
-    """回傳 (current 稀疊命中表, 本次掃描範圍內所有檔案的相對路徑集合)。
+def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str]]:
+    """回傳 (current 稀疊命中表, 本次掃描範圍內所有檔案的相對路徑集合,
+    掃到的灰階 class 聯集)。
 
     業主裁決 Q3：掃描範圍含 `.test.*`——色不只住在 JSX 裡，測試檔也可能
     直接斷言 class string 或是回傳 class 的純函式。
     """
     current: dict[str, dict[str, int]] = {}
     existing: set[str] = set()
+    grays: set[str] = set()
     files = sorted(SRC.rglob("*.ts")) + sorted(SRC.rglob("*.tsx"))
     for path in sorted(set(files)):
         rel = str(path.relative_to(ROOT))
         existing.add(rel)
-        hits = scan_source(path.read_text(encoding="utf-8"))
+        source = path.read_text(encoding="utf-8")
+        hits = scan_source(source)
         counts = counts_of(hits)
         if any(counts.values()):
             current[rel] = counts
-    return current, existing
+        grays |= gray_classes_used(source)
+    return current, existing, grays
 
 
 def load_baseline() -> dict[str, dict[str, int]]:
@@ -218,11 +244,16 @@ def load_baseline() -> dict[str, dict[str, int]]:
 
 
 def scan() -> int:
-    current, existing = scan_repo()
+    current, existing, used_gray = scan_repo()
     baseline = load_baseline()
     problems = evaluate(current, baseline, existing)
 
+    guidelines_text = GUIDELINES_PATH.read_text(encoding="utf-8") if GUIDELINES_PATH.exists() else ""
+    g1_problems = missing_gray_rows(used_gray, parse_documented_gray_classes(guidelines_text))
+
+    ok = True
     if problems:
+        ok = False
         print("check-color-usage 發現問題:")
         print("\n".join(f"  {p}" for p in problems))
         print(
@@ -230,8 +261,18 @@ def scan() -> int:
             "\n收緊/孤兒的 baseline 項目照訊息把 scripts/color-usage-baseline.json 對應行改掉。"
             "\n刻意不提供 --update-baseline 與行內豁免——收緊要看得見改了什麼。"
         )
+    if g1_problems:
+        ok = False
+        print("check-color-usage G1（灰階對照表完整性）發現問題:")
+        print("\n".join(f"  {p}" for p in g1_problems))
+        print("\n修法:在 docs/ui-ux-guidelines.md §12.2 的灰階對照表補上缺列的 class。")
+
+    if not ok:
         return 1
-    print(f"check-color-usage: OK（{len(current)} 個檔案有命中，全數在 baseline 內）")
+    print(
+        f"check-color-usage: OK（{len(current)} 個檔案有命中，全數在 baseline 內；"
+        f"{len(used_gray)} 個灰階 class，對照表全數涵蓋）"
+    )
     return 0
 
 
@@ -351,6 +392,29 @@ EVAL_CASES: list[tuple[str, dict, dict, set[str], int]] = [
     ),
 ]
 
+# G1 案例：(標籤, 掃到的灰階 class 集合, 文件裡的 markdown 表格片段, 預期問題數)
+G1_CASES: list[tuple[str, set[str], str, int]] = [
+    (
+        "對照表涵蓋掃到的所有灰階 class → 無問題",
+        {"gray-50", "gray-900"},
+        "| 現況 class | 對照 token |\n|---|---|\n| `gray-50` | `--background` |\n"
+        "| `gray-900` | `--foreground` |\n",
+        0,
+    ),
+    (
+        "對照表缺一列 → 報",
+        {"gray-50", "gray-400"},
+        "| 現況 class | 對照 token |\n|---|---|\n| `gray-50` | `--background` |\n",
+        1,
+    ),
+    (
+        "沒有掃到任何灰階 class → 無問題（不倒著要求表格是空的）",
+        set(),
+        "| 現況 class | 對照 token |\n|---|---|\n| `gray-50` | `--background` |\n",
+        0,
+    ),
+]
+
 
 def self_test() -> int:
     failures: list[str] = []
@@ -367,11 +431,19 @@ def self_test() -> int:
                 f"  FAIL(evaluate): {label} — 預期 {want_n} 筆問題，實得 {len(got)}：{got}"
             )
 
+    for label, used, markdown_text, want_n in G1_CASES:
+        got = missing_gray_rows(used, parse_documented_gray_classes(markdown_text))
+        if len(got) != want_n:
+            failures.append(f"  FAIL(G1): {label} — 預期 {want_n} 筆問題，實得 {len(got)}：{got}")
+
     if failures:
         print("check-color-usage 表格案例未過:")
         print("\n".join(failures))
         return 1
-    print(f"check-color-usage self-test: OK（{len(SCAN_CASES)} 條掃描案例 + {len(EVAL_CASES)} 條判定案例）")
+    print(
+        f"check-color-usage self-test: OK（{len(SCAN_CASES)} 條掃描案例 + "
+        f"{len(EVAL_CASES)} 條判定案例 + {len(G1_CASES)} 條 G1 案例）"
+    )
     return 0
 
 
