@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import re
-
 from run_state import JourneyUser
+from tools.referral_code import is_sequence_code
 from tools.supa import SupabaseAdmin
-
-REFERRAL_CODE_PATTERN = re.compile(r"^[a-z]{3}\d{6}$")  # 3 碼小寫英文 + 6 碼數字
 
 
 def available_points(admin: SupabaseAdmin, user: JourneyUser) -> int:
@@ -43,5 +40,5 @@ def fetch_backend_landing(admin: SupabaseAdmin, user: JourneyUser) -> None:
     )
     assert codes, f"{user.node} 沒有 active 推薦碼"
     code = codes[0]["code"]
-    assert REFERRAL_CODE_PATTERN.fullmatch(code), f"{user.node} 推薦碼格式不符：{code}"
+    assert is_sequence_code(code), f"{user.node} 推薦碼格式不符：{code}"
     user.referral_code = code
