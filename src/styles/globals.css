@@ -77,9 +77,13 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  /* 深色模式錯誤文字改用近白，提升在紅底上的對比（原本紅字紅底對比不足） */
-  --destructive-foreground: oklch(0.985 0 0);
+  /* 表示法改 hex（原 oklch(0.396 0.141 25.723)，值不變）：P1-8/R2-系統-1——
+     閘門的對比度公式只支援 hex 與 C=0 的灰階 oklch，含彩度的 oklch 讀不到
+     可解析色值會直接紅。工具換算（devtools 取色），非手算。 */
+  --destructive: #82181a;
+  /* 深色模式錯誤文字改用近白，提升在紅底上的對比（原本紅字紅底對比不足）。
+     表示法改 hex（原 oklch(0.985 0 0)，值不變），理由同上。 */
+  --destructive-foreground: #fafafa;
   /* 語義色深色版（S1）：A 形狀（success/warning 的實心底+字）沿用淺色值——
      這對是自洽的（對比只算彼此），S2 實際套用時如需依 devtools checklist
      微調再改。B 形狀（淺底提示框）改用深色慣例的 *-950 底 + *-300 字
