@@ -7,7 +7,7 @@
 
 | # | 視角 | 發現 | 處置 |
 |---|---|---|---|
-| P0-1 | 系統 | **A4 快取會把未遮罩 PII 寫進 sessionStorage**：`GET /admin/withdrawals` 回傳未遮罩的身分證字號與完整銀行帳號（供匯款核對，`api/index.ts:1150,1155`），目前只存在元件記憶體；`DataCacheContext` 會整包序列化進 sessionStorage——照字面延伸等於新增一條 PII 落地管道（XSS/擴充功能/devtools 可讀） | A4 改為**記憶體內快取、不落 sessionStorage**（admin 快取一律不 persist），並在 S5 prompt 釘死，不留給實作自行判斷 |
+| P0-1 | 系統 | **A4 快取會把未遮罩 PII 寫進 sessionStorage**：`GET /admin/withdrawals` 回傳未遮罩的身分證字號與完整銀行帳號（供匯款核對，`api/index.ts:1152,1157`），目前只存在元件記憶體；`DataCacheContext` 會整包序列化進 sessionStorage——照字面延伸等於新增一條 PII 落地管道（XSS/擴充功能/devtools 可讀） | A4 改為**記憶體內快取、不落 sessionStorage**（admin 快取一律不 persist），並在 S5 prompt 釘死，不留給實作自行判斷 |
 | P0-2 | 需求＋UIUX＋系統（三視角同時命中） | **「保留 bootstrap 條件式引導」的前提不成立**：`AdminRoute.tsx:24-26` 對非管理員一律導回 `/dashboard`，而「系統尚無管理員、可自助宣告」畫面正是給非管理員看的——這條 GUI 路徑現況**不可達**（journey 測試是直接打 API bootstrap 的）；照原描述施工會「搬移一個死畫面」還以為完成承諾 | A1 重寫：S3 必須先查證並裁決可達路徑（建議方案：`AdminRoute` 在「系統尚無管理員」時例外放行），並在 §5 明列為**本工程唯一的存取控制行為變更**，S3 的 /plan-feature 把它當獨立子項審 |
 
 ## P1（重要，均已回填）

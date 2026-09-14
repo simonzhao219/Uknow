@@ -155,8 +155,8 @@
   （見 A1）。規格書 §13 需**人工**同 PR 更新——審查已查證
   `check-spec-drift.py` 抓不到 §13 元件表的裸元件名，**沒有機械把關**，
   S3 必須逐處修：§13 模組表的 AdminSetup 列
-  （`uknow-software-specification.md:596`）、§13.1「釘死的 5 欄 grid」句
-  （同檔 :636-637）、`AdminDashboard.tsx:109-110` 與 `App.tsx:71` 的
+  （`uknow-software-specification.md:625`）、§13.1「釘死的 5 欄 grid」句
+  （同檔 :673）、`AdminDashboard.tsx:109-110` 與 `App.tsx:71` 的
   同措辭註解。
 
 ### 2.7 架構視角總結（plan-reviewer-architecture 溯源點）
@@ -187,7 +187,7 @@
 | **A1 資訊架構重構** | 移除 AdminSetup Tab；**bootstrap 可達性裁決**（§2.1 P0-2）：建議方案是 `AdminRoute` 在「系統尚無管理員」時例外放行並顯示初始化畫面（本工程唯一的存取控制行為變更，S3 規劃須當獨立子項審），替代方案是定案「bootstrap 只走 API/SQL」並讓 GUI 死碼退場＋同步規格書；Tab 標籤縮短為二字（提領/會員/公告/告警）後四 Tab 單列，以量測法與 ink-overflow 測試驗證（§2.1 P1-1）；規格書 §13 四處人工同步（§2.6） | P4 | **高** |
 | **A2 AdminToolbar 元件** | 統一的列表**工具列版面**：手機單行「篩選 Select（flex-1）＋重新整理 icon 鈕＋CSV icon 鈕」（44px 觸控目標、icon 鈕必附 `aria-label`），桌機帶文字標籤；視覺權重按使用頻率重排（重新整理＞下載CSV，現況倒置）；CSV 多頁收集期間補忙碌/停用態。套用於提領管理與會員管理兩頁；**CSV 鈕只在已具匯出邏輯的頁面渲染**（現況僅提領管理）——把匯出能力複製到其他頁是新功能，明列 scope out（§5） | P4 | **高** |
 | **A3 會員詳情重設計** | 詳情 Sheet 分區：頂部身分卡（姓名＋狀態 Badge＋會籍）→ 分組區塊（帳號/會籍與金流/推薦關係/敏感資料/近期提領）→ 底部管理動作區；手機全螢幕、分區標題建立視覺層次；點「查看」到 Sheet 出現之間補觸發鈕 loading/disabled 回饋（現況無任何回饋）；動作位階與確認框契約（§11）原樣保留 | P4 | **高** |
-| **A4 admin 資料快取** | 把 stale-while-revalidate **模式**延伸進 admin 各分頁：切回分頁瞬間顯示舊資料＋背景刷新（§2.5 根因）；loading 統一為骨架屏。四條硬約束（審查 P0-1、P1-3/4/5）：(1) **記憶體內快取、絕不落 sessionStorage**——admin 提領資料含未遮罩身分證/銀行帳號（`api/index.ts:1150,1155`，供匯款核對），落地即新增 PII 曝險；(2) 附**快取排除清單**：告警、待審佇列數等即時資料，與寫入確認框依據的欄位——後者要嘛不快取、要嘛開啟確認框時強制同步 revalidate；(3) 附 admin 版 **mutation→invalidation 對照表**（比照 `MUTATION_GROUPS` 的教訓，不手動散清）；(4) 先讀 `AdminDashboard.tsx` 開頭的 DI 慣例註解，明確裁決「hook 內含 fetch」vs「注入式 fetcher 快取 hook」哪條路，不默默打破 props 注入慣例 | P4 | **高**（切頁不再等） |
+| **A4 admin 資料快取** | 把 stale-while-revalidate **模式**延伸進 admin 各分頁：切回分頁瞬間顯示舊資料＋背景刷新（§2.5 根因）；loading 統一為骨架屏。四條硬約束（審查 P0-1、P1-3/4/5）：(1) **記憶體內快取、絕不落 sessionStorage**——admin 提領資料含未遮罩身分證/銀行帳號（`api/index.ts:1152,1157`，供匯款核對），落地即新增 PII 曝險；(2) 附**快取排除清單**：告警、待審佇列數等即時資料，與寫入確認框依據的欄位——後者要嘛不快取、要嘛開啟確認框時強制同步 revalidate；(3) 附 admin 版 **mutation→invalidation 對照表**（比照 `MUTATION_GROUPS` 的教訓，不手動散清）；(4) 先讀 `AdminDashboard.tsx` 開頭的 DI 慣例註解，明確裁決「hook 內含 fetch」vs「注入式 fetcher 快取 hook」哪條路，不默默打破 props 注入慣例 | P4 | **高**（切頁不再等） |
 
 ### Phase 2・前台四情境
 
