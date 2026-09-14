@@ -155,8 +155,13 @@ def parse_documented_gray_classes(markdown_text: str) -> set[str]:
 
 
 def missing_gray_rows(used: set[str], documented: set[str]) -> list[str]:
-    # TODO(紅燈):判定邏輯還沒寫，表格案例先落地。
-    return []
+    missing = sorted(used - documented)
+    if not missing:
+        return []
+    return [
+        "G1: docs/ui-ux-guidelines.md §12 灰階對照表缺列（掃到但表格沒有對應列）："
+        + "、".join(f"`{c}`" for c in missing)
+    ]
 
 
 # ---------------------------------------------------------------------------
