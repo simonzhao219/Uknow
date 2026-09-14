@@ -100,3 +100,186 @@ describe('globals.css 語義色 token 三處齊備（success / warning / destruc
     expect(darkTokens.has('--destructive-foreground')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 階段 2：對比度門檻（§2.3.1）。
+//
+// 自我指涉陷阱：驗證 token 的測試與被測的 contrastRatio() 共用同一個公式，
+// 公式寫錯（例如漏掉 WCAG 相對亮度的 gamma 校正分段）不會報錯，測試照樣
+// 全綠，但證明的是「這些色值在錯公式下達標」，不是「達標」。所以分兩段，
+// 順序不可顛倒：2a 先用與本專案 token 無關的已知參考值錨定公式（含兩個
+// 跨門檻的臨界案例），公式綠了才在 2b 驗 token。
+// ---------------------------------------------------------------------------
+
+function hexToRgb(hex: string): [number, number, number] {
+  const clean = hex.trim().replace(/^#/, '');
+  const full =
+    clean.length === 3
+      ? clean
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : clean;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) {
+    throw new Error(`不是合法的 hex 色值：${hex}`);
+  }
+  const num = Number.parseInt(full, 16);
+  return [(num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff];
+}
+
+function srgbChannelToLinear(channel255: number): number {
+  const c = channel255 / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(rgb: [number, number, number]): number {
+  const [r, g, b] = rgb.map(srgbChannelToLinear);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 2.x 對比度公式。純函式，與本檔其餘部分無關，可獨立錨定。 */
+function contrastRatio(hexA: string, hexB: string): number {
+  const lA = relativeLuminance(hexToRgb(hexA));
+  const lB = relativeLuminance(hexToRgb(hexB));
+  const lighter = Math.max(lA, lB);
+  const darker = Math.min(lA, lB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * 只支援 oklch(L C H) 裡 C≈0 的灰階（本 repo `--background`/`--card` 深色版
+ * 的實際形式）。這不是通用 oklch→sRGB 轉換——那條路要寫整套色彩空間矩陣，
+ * bug 會讓閘門說謊（§2.3）。彩度非零時直接丟錯，不猜、不靜默跳過。
+ * 推導：C=0 時 OKLab a=b=0，Björn Ottosson 的 OKLab→線性 sRGB 矩陣三列
+ * 係數各自加總為 1，化簡成 r=g=b=L³（線性光），再套 sRGB gamma 分段函數。
+ */
+function parseOklchGrayToHex(value: string): string {
+  const match = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/.exec(value.trim());
+  if (!match) {
+    throw new Error(`不是可解析的 oklch(...) 語法：${value}`);
+  }
+  const l = Number.parseFloat(match[1]);
+  const c = Number.parseFloat(match[2]);
+  if (c > 1e-6) {
+    throw new Error(`oklch 色值含非零彩度（${value}），本函式只支援灰階，需人工擴充或改存 hex`);
+  }
+  const x = l ** 3;
+  const channel = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+  const byte = Math.round(Math.min(1, Math.max(0, channel)) * 255);
+  const hexByte = byte.toString(16).padStart(2, '0');
+  return `#${hexByte}${hexByte}${hexByte}`;
+}
+
+/** 讀到不可解析的色值格式（例：rgba()）直接丟錯——不靜默跳過（§7 風險表）。 */
+function resolveToHex(value: string): string {
+  const trimmed = value.trim();
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('oklch(')) {
+    return parseOklchGrayToHex(trimmed);
+  }
+  throw new Error(`讀不到可解析的色值：${value}`);
+}
+
+describe('對比度公式錨定（階段 2a，與專案 token 無關的已知參考值）', () => {
+  it('#000000 對 #ffffff 是 WCAG 定義的上界 21:1', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 1);
+  });
+
+  it('任一色對自己是下界 1:1', () => {
+    expect(contrastRatio('#3366cc', '#3366cc')).toBeCloseTo(1, 5);
+  });
+
+  it('#777777 對 #ffffff 落在 4.5:1 門檻之下（約 4.48，差一點點不過）', () => {
+    const ratio = contrastRatio('#777777', '#ffffff');
+    expect(ratio).toBeCloseTo(4.48, 1);
+    expect(ratio).toBeLessThan(4.5);
+  });
+
+  it('#767676 對 #ffffff 剛好跨過 4.5:1 門檻（約 4.54）', () => {
+    const ratio = contrastRatio('#767676', '#ffffff');
+    expect(ratio).toBeCloseTo(4.54, 1);
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('oklch 灰階解析錨定（只認 C=0，讀不到就直接紅）', () => {
+  it('oklch(1 0 0) 解析為白', () => {
+    expect(parseOklchGrayToHex('oklch(1 0 0)')).toBe('#ffffff');
+  });
+
+  it('oklch(0 0 0) 解析為黑', () => {
+    expect(parseOklchGrayToHex('oklch(0 0 0)')).toBe('#000000');
+  });
+
+  it('非零彩度的 oklch 直接丟錯，不當成灰階猜', () => {
+    expect(() => parseOklchGrayToHex('oklch(0.5 0.2 30)')).toThrow();
+  });
+
+  it('resolveToHex 讀到不支援的 rgba 語法直接丟錯', () => {
+    expect(() => resolveToHex('rgba(0, 0, 0, 0.1)')).toThrow();
+  });
+});
+
+type Mode = 'light' | 'dark';
+const MODES: readonly Mode[] = ['light', 'dark'];
+const FAMILIES = ['success', 'warning', 'destructive'] as const;
+
+function tokensFor(mode: Mode): Map<string, string> {
+  return mode === 'light' ? rootTokens : darkTokens;
+}
+
+function hexOf(mode: Mode, tokenName: string): string {
+  const tokens = tokensFor(mode);
+  const raw = tokens.get(`--${tokenName}`);
+  if (raw === undefined) {
+    throw new Error(`${mode} 缺少 --${tokenName}`);
+  }
+  return resolveToHex(raw);
+}
+
+describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 × 淺深兩版）', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+
+    for (const family of FAMILIES) {
+      it(`${modeLabel}：${family} A 形狀（實心底+字）達 4.5:1`, () => {
+        const ratio = contrastRatio(hexOf(mode, family), hexOf(mode, `${family}-foreground`));
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+
+      it(`${modeLabel}：${family} B 形狀（淺底字對淺底）達 4.5:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `${family}-subtle-foreground`),
+          hexOf(mode, `${family}-subtle`),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+
+      it(`${modeLabel}：${family}-border 對 ${family}-subtle 達 3:1（非文字元素）`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `${family}-border`),
+          hexOf(mode, `${family}-subtle`),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(3);
+      });
+
+      it(`${modeLabel}：${family} 裸字對 --background 達 4.5:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `${family}-subtle-foreground`),
+          hexOf(mode, 'background'),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+
+      it(`${modeLabel}：${family} 裸字對 --card 達 4.5:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `${family}-subtle-foreground`),
+          hexOf(mode, 'card'),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+});
