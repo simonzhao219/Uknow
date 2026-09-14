@@ -2501,3 +2501,36 @@ skip 0 條(`collected=119 skipped=0 ran=119`),晉升 PR 隨即合併。
 persona 描述與檔名**，而本 session 全程只寫 markdown。與上面完全同形——
 **hook 判斷用的訊號（提示詞字面）不是它想問的那件事（改動的性質）**。
 可考慮改看本次 session 實際碰過的檔案路徑。
+
+---
+
+## 2026-09-14｜漏網｜契約副本放在只有晉升 PR 才跑的軌上,等於沒有閘門
+
+#311 把推薦碼從亂數字串改成 `referral_code_seq` 的數字流水號,規格書 §7.2
+與 migration 都同步了,`npm run check`、framework-check、e2e(mock)全綠,
+PR 合進 develop。**但格式在第三處還有一份副本**:
+`e2e/journey/builders/verification.py` 的 `REFERRAL_CODE_PATTERN =
+^[a-z]{3}\d{6}$`。它直到晉升 PR #317 才第一次被執行,一紅就是 12 條 fail、
+39 條 skip(skip 率 33%),整場 journey 對那 39 條不具驗證效力。
+
+**值得記的是「為什麼這份副本躲得掉」**:`journey-full` 的 `if` 是
+`base_ref == 'main'`,只在 develop→main 的晉升 PR 跑。凡是只活在 journey
+裡的斷言,對 feature PR 的 CI 而言等於不存在——它不是漏掉某個檢查,是那個
+檢查**在錯的軌上**。回饋延遲從「一支 PR」拉長到「一次晉升」,而晉升是
+週級頻率、又剛好是最不想處理意外的時刻。
+
+**處置(本次已做)**:把格式契約抽成 `e2e/journey/tools/referral_code.py`
+的純函式 + `tools/test_referral_code.py` 離線測試。`tools/` 是
+`journey-offline` 軌(`pytest tools/ -q`),**每一支 PR 都跑**。同樣是一份
+副本,換到跑得到的軌上,格式漂移就會在 feature PR 當場紅。
+順手把 `15_registration_negative.feature` 的假碼 `zzz999999` 改成 `8099999`
+——新制下前者只測得到「格式不合法」,測不到「格式合法但查無此碼」那條
+真正的使用者路徑。
+
+**可複用的原則**:斷言的價值 = 它守的東西 × 它被執行的頻率。把一個契約
+放進只在特定 base 才跑的軌,等於把後面那個乘數調成接近零。**跨層契約要落
+在最頻繁執行的那一軌上**,重鏈路測試只負責它獨有的東西(真後端、真金流、
+真瀏覽器)。
+
+**同類待掃**:journey 的 `builders/` 與 `steps/` 裡還有多少「純格式/純計算」
+的斷言可以下放到 `tools/`?這次只處理了推薦碼。下次整併時掃一遍。
