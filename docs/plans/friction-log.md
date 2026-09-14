@@ -2599,3 +2599,21 @@ GRANT 確實是環境相依的。前提變了之後,那行註解從正確變成�
 測試」——**修一個環境假設的過程中又立了一個新的環境假設**。改成釘
 「至少有哪些」＋「anon 不可寫」之後才是真正環境無關的。教訓:當一個值在不同
 環境會不同時,能斷言的是**不變式**(下限、禁止項),不是**快照**。
+
+**再一層:`is_admin()`。** 補上 listings 的表授權之後,第四輪 journey 的錯誤從
+`permission denied for table listings` 變成 `permission denied for function is_admin`
+(17 條)。`20260620000004` 收掉了 CREATE FUNCTION 隱含給 PUBLIC 的那份,正式站的
+authenticated 之所以還有,又是平台預設另給的明確授權。`20260914000003` 補上宣告。
+
+**我的同類掃描做了一半。** 第一次掃描只查了 `role_table_grants`(資料表),
+沒查 routine privileges(函數)——於是修完第一層又撞第二層,多燒一輪 25 分鐘的
+拋棄式分支。`/fix-bug` 的「把根因抽象成 pattern」這一步,pattern 抽得不夠高:
+真正的 pattern 不是「listings 的表授權沒宣告」,是「**任何**靠平台預設而非
+migration 宣告的授權」——那涵蓋表、函數、序列、view、schema 五類物件。
+第二次才把五類都對帳完(結論:只有 `is_admin()` 還缺)。
+
+**下次的做法**:與其逐層試,不如一次把正式站的
+`role_table_grants` / `has_function_privilege` / `has_sequence_privilege` /
+`has_schema_privilege` 全量拉出來,與 migration 宣告對帳。那支腳本值得寫進
+framework-check——它把「環境漂移」從一個要靠 journey 才發現的問題,變成每次 CI
+都查得到的問題。
