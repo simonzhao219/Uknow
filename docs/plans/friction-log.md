@@ -2534,3 +2534,68 @@ PR 合進 develop。**但格式在第三處還有一份副本**:
 
 **同類待掃**:journey 的 `builders/` 與 `steps/` 裡還有多少「純格式/純計算」
 的斷言可以下放到 `tools/`?這次只處理了推薦碼。下次整併時掃一遍。
+
+---
+
+## 2026-09-14｜漏網｜修法做過一半:`20260717000001` 修了 service_role,另一半留在原地
+
+晉升 PR #317 的第三輪 journey-full:124 條全跑、skip 0 條(推薦碼那個根因已由
+#318 修掉),但 18 條紅,錯誤一律是
+`42501 permission denied for table listings`——**GRANT 層就被擋,根本沒走到 RLS**。
+
+根因:全 repo 的 migration 從來沒有 grant 過 `public.listings` 這張表給
+`anon`/`authenticated`(只 grant 過 `public_listings` 這個 view)。正式站有那些
+授權,是建表當下 Supabase 的 default privileges 補的;**從零重播 migration 的
+環境補不回來**。
+
+**值得記的是它的形狀,而這個形狀在本 repo 已經出現第四次。**
+
+`20260717000001` 的檔頭把病因寫得一清二楚:「新版 CLI 建立的全新本地資料庫沒有
+這組預設值」,並把 service_role 的表權限從隱含預設改成明確宣告。**同一份檔頭
+接著寫:刻意只授權 service_role,anon/authenticated 維持依賴 hosted 的預設授權。**
+那個決定在當時完全正確(理由是不做 blanket grant、不回退既有的安全強化),
+但它把「隱含預設會一直在」這個假設留在原地,只是換了個環境繼續賭。
+
+2026-09-14 那個賭注輸了:hosted 的**拋棄式分支**也不再帶 default privileges。
+同一套 journey 在 9/02 的晉升(#302)是綠的,f45 檔案與 listings 的 migration
+一個字都沒變——變的是分支供裝。最後一個還靠隱含預設的環境沒了。
+
+這與既有那三條(PR #119 自我糾正沒推廣成同類掃描、2026-08-07 journey 登入修法
+沒回到共用 builder、2026-09-14 `toLowerCase()` 不摺全形)是同一個失效模式,
+但這次的變體更難察覺:**前三次是「解法沒離開發現它的那個檔案」,這次是解法
+寫進了共用的地方、卻明文只做一半**,而那個「只做一半」還附了正確的理由。
+理由正確不等於範圍正確——**當一個修法的理由是「某個隱含預設不可靠」,那條
+理由適用於所有依賴該預設的東西,不只你當下被咬到的那一個。**
+
+**處置(本次已做)**:`20260914000002` 把 `listings` 的 anon SELECT 與
+authenticated S/I/U/D 明確寫進 migration,值逐項取自正式站實測、不放寬,
+維持「不做 blanket grant」。同時補 `rls-policies.test.ts` 第 7 節——GRANT 從
+「環境事實」變成「migration 事實」之後,它就釘得起來了,而且是 api-tests 軌、
+**每支 PR 都跑**,不必再等晉升那天。
+
+**閘門為什麼攔不到**:這條與上一條(契約放在只有晉升 PR 才跑的軌上)是同一個
+結構問題的兩面。差別在於上一條是斷言放錯軌,這次是**斷言根本不存在**——
+`rls-policies.test.ts` 的檔頭甚至明文寫著「GRANT 要釘就釘在 L2」,理由是當時
+GRANT 確實是環境相依的。前提變了之後,那行註解從正確變成誤導,而註解不會自己
+過期。本次一併修掉了它、`listings.test.ts` 檔頭、`supabase/README.md`〈GRANT
+現況〉與 `docs/e2e-journey-test-design.md` §14.1 四處同源敘述。
+
+**同類待掃**:還有哪些「正式站靠平台預設、migration 沒宣告」的授權?本次只查到
+`listings` 需要補(其餘表的 `anon:SELECT` 是預設殘留、被 RLS 蓋住,不在本次範圍)。
+下次整併時值得寫一支腳本,拿正式站的 `role_table_grants` 與 migration 宣告對帳。
+
+**尾聲:第一版斷言自己踩了同一個坑。** 補上去的 GRANT 測試第一次在 CI 就紅了
+——它釘的是**精確集合** `anon=SELECT`,而本地 `supabase start` 實際是
+`REFERENCES,SELECT,TRIGGER,TRUNCATE`。三個環境實測:
+
+| 環境 | `anon` | `authenticated` |
+|---|---|---|
+| 本地 CLI | REFERENCES, SELECT, TRIGGER, TRUNCATE | 上列 + DELETE, INSERT, UPDATE |
+| 正式站 | SELECT | SELECT, INSERT, UPDATE, DELETE |
+| hosted 拋棄式分支 | 空 | 空 |
+
+也就是說「本地不補 grant」這個寫在四處的說法**本來就已經失真**,只是沒人去量。
+而我改的第一版把正式站那一組當成普世事實釘死,正是本檔頭警告的「把錯的環境寫進
+測試」——**修一個環境假設的過程中又立了一個新的環境假設**。改成釘
+「至少有哪些」＋「anon 不可寫」之後才是真正環境無關的。教訓:當一個值在不同
+環境會不同時,能斷言的是**不變式**(下限、禁止項),不是**快照**。
