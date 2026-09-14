@@ -1,0 +1,2 @@
+{"branch": "claude/uknow-links-to-text-43c11l", "ended": "2026-09-14T13:30:19+00:00", "fired": {}, "passed": {"model-effort-advisor": 1}, "session": "a9bd06e77682", "started": "2026-09-14T13:30:19+00:00"}
+{"branch": "claude/uknow-links-to-text-43c11l", "ended": "2026-09-14T13:53:36+00:00", "fired": {}, "passed": {"bash-guard": 18, "check-output-filter": 18, "feature-plan-guard": 8, "model-effort-advisor": 1, "tdd-test-guard": 8}, "session": "173205f29a5d", "started": "2026-09-14T13:49:10+00:00"}

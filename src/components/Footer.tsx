@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { MessageCircle, FileText, Package, Gift, Mail } from 'lucide-react';
 import {
   LINE_OFFICIAL_ACCOUNT_HANDLE,
-  LINE_OFFICIAL_ACCOUNT_URL,
   OFFICIAL_EMAIL,
   OFFICIAL_EMAIL_URL,
 } from '../utils/constants';
@@ -48,13 +47,10 @@ export function Footer() {
             <h2 className="font-semibold text-lg">聯絡我們</h2>
             <ul className="space-y-1 text-sm">
               <li>
-                <a
-                  href={LINE_OFFICIAL_ACCOUNT_URL}
-                  className="inline-flex items-center gap-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
-                >
+                <span className="inline-flex items-center gap-2 py-1 text-muted-foreground">
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />
                   <span>官方客服：{LINE_OFFICIAL_ACCOUNT_HANDLE}</span>
-                </a>
+                </span>
               </li>
               <li>
                 {/* 375px 下這一欄只有約 163px（頁尾 nav 是 grid-cols-2），而 Email

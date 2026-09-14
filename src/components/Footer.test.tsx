@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 //
 // 頁尾「聯絡我們」的聯絡管道契約。這裡釘的是「使用者找得到官方窗口」這件事：
-//   1. 每個管道都是可點的連結（不是純文字），且位址取自 utils/constants
-//      的共用常數——顯示處自己寫死位址正是 LINE 帳號曾經大小寫漂移的原因。
-//   2. 信箱走 mailto:，點了直接開郵件程式，不換頁也不開新分頁
-//      （新分頁由 repoHygiene 的「外部連結一律在原分頁開啟」另外把關）。
+//   1. 信箱是可點連結，位址取自 utils/constants 的共用常數——顯示處自己
+//      寫死位址正是 LINE 帳號曾經大小寫漂移的原因。走 mailto:，點了直接
+//      開郵件程式，不換頁也不開新分頁（新分頁由 repoHygiene 的
+//      「外部連結一律在原分頁開啟」另外把關）。
+//   2. LINE 官方帳號代稱以純文字呈現（不是連結），使用者需自行至 LINE
+//      搜尋加入；代稱仍取自共用常數，不在顯示處寫死。
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import {
   LINE_OFFICIAL_ACCOUNT_HANDLE,
-  LINE_OFFICIAL_ACCOUNT_URL,
   OFFICIAL_EMAIL,
   OFFICIAL_EMAIL_URL,
 } from '../utils/constants';
@@ -69,10 +70,11 @@ describe('Footer 聯絡我們', () => {
     expect(textFrom(wbr as Element)).toBe(domain);
   });
 
-  it('官方 LINE 客服連結未被信箱取代', () => {
-    const link = contactSection().getByRole('link', {
-      name: `官方客服：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
-    });
-    expect(link.getAttribute('href')).toBe(LINE_OFFICIAL_ACCOUNT_URL);
+  it('官方 LINE 客服以純文字呈現（不是連結），且未被信箱取代', () => {
+    const section = contactSection();
+    expect(section.getByText(`官方客服：${LINE_OFFICIAL_ACCOUNT_HANDLE}`)).toBeTruthy();
+    expect(
+      section.queryByRole('link', { name: `官方客服：${LINE_OFFICIAL_ACCOUNT_HANDLE}` }),
+    ).toBeNull();
   });
 });
