@@ -275,3 +275,32 @@ Deno.test('listings：對外欄位集合與 public_listings 完全相同', async
     await sql.end();
   }
 });
+
+// ============================================================
+// 7. table GRANT：RLS 之前的那道門
+// ============================================================
+
+Deno.test('listings GRANT：anon 僅 SELECT、authenticated 可增刪改查', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const rows = await sql<{ grantee: string; privs: string }[]>`
+      select g.grantee, string_agg(g.privilege_type, ',' order by g.privilege_type) as privs
+      from information_schema.role_table_grants g
+      where g.table_schema = 'public' and g.table_name = 'listings'
+        and g.grantee in ('anon', 'authenticated')
+      group by g.grantee
+      order by g.grantee
+    `;
+    // GRANT 決定「走不走得到 RLS」。缺了它,PostgREST 一律回 42501
+    // permission denied——而 42501 與 RLS 拒絕共用同一個 SQLSTATE,
+    // 症狀看起來像「policy 寫錯」,實際上根本沒走到 policy。
+    // 2026-09-14 的晉升 PR #317 就是這樣紅了 18 條(詳見 20260914000002)。
+    assertEquals(
+      rows.map((r) => `${r.grantee}=${r.privs}`),
+      ['anon=SELECT', 'authenticated=DELETE,INSERT,SELECT,UPDATE'],
+      'listings 的 anon/authenticated 授權與 20260914000002 宣告的不符',
+    );
+  } finally {
+    await sql.end();
+  }
+});
