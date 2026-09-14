@@ -50,7 +50,7 @@
 〔實作/契約〕`src/components/BottomNav.test.tsx` 檔頭。新增會員區入口前
 先讀那份契約，再決定放哪。
 
-其他：`Navbar` 為 `sticky`；`Footer` 保留快速連結與聯絡方式；
+其他：`Navbar` 為 `sticky`；`Footer` 保留快速連結；
 已登入的功能入口不應只藏在右上頭像下拉裡。
 
 ## 4. 表單
