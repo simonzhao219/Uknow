@@ -15,7 +15,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 語義色 token 進 globals.css（三處齊備） | ⬜ 未開始 | | |
+| 1 | 語義色 token 進 globals.css（三處齊備） | ✅ 完成 | bddc4ba | （待填） |
 | 2 | 對比度門檻（淺/深各 ≥4.5:1） | ⬜ 未開始 | | |
 | 3 | check-color-usage.py 判定邏輯（--self-test） | ⬜ 未開始 | | |
 | 4 | baseline 產生 + 接進 framework-check | ⬜ 未開始 | | |
