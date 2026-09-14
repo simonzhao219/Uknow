@@ -18,7 +18,7 @@
 | 1 | 語義色 token 進 globals.css（三處齊備） | ✅ 完成 | bddc4ba | d862878 |
 | 2 | 對比度門檻（淺/深各 ≥4.5:1） | ✅ 完成 | 57e2681 | 90e78b7 |
 | 3 | check-color-usage.py 判定邏輯（--self-test） | ✅ 完成 | bc4bfc0 | 7a41f64 |
-| 4 | baseline 產生 + 接進 framework-check | ✅ 完成 |（非 TDD 相位——接線與文件，驗證靠既有閘門）| （待填） |
+| 4 | baseline 產生 + 接進 framework-check | ✅ 完成 |（非 TDD 相位——接線與文件，驗證靠既有閘門）| 71fef3e |
 | 5 | ui-ux-guidelines 色彩章節 + devtools checklist | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
