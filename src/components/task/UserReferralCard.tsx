@@ -23,7 +23,7 @@ interface UserReferralCardProps {
  * 範例：
  * ┌─────────────────┐
  * │ 👤 張小明       │  ← 被推薦人名稱
- * │ 🎟️ abc123456    │  ← 被推薦人的推薦碼
+ * │ 🎟️ 8048876      │  ← 被推薦人的推薦碼
  * └─────────────────┘
  *
  * 不顯示刊登資訊（listingName, city, serviceType）
