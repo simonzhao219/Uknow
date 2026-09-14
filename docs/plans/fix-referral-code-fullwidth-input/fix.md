@@ -1,6 +1,6 @@
 # 推薦碼輸入框沒有全形數字正規化 修復紀錄
 
-分支:`fix/referral-code-fullwidth-input`|重現測試(紅燈 commit):待填
+分支:`fix/referral-code-fullwidth-input`|重現測試(紅燈 commit):`c81b96a`
 
 ## 1. 症狀與重現
 
@@ -53,6 +53,19 @@
   | 8 | `api/index.ts` `/referrals/validate/:code` | `.toLowerCase().trim()` | 插入 `.normalize('NFKC')` |
   | 9 | `api/index.ts` `/listings/verify-referral-code` | `.toLowerCase().trim()` | 同上 |
   | 10 | `api/index.ts` `/auth/register` | `.toLowerCase().trim()` | 同上 |
+  | 11 | `CompleteProfile.tsx` `/auth/register` 實際送出 | **送原始值** | 改走 `normalizeReferralCode` |
+  | 12 | `api/index.ts` `/payuni/prepare` 換線碼 | `.toLowerCase().trim()` | 插入 `.normalize('NFKC')` |
+
+  11 與 12 是**列完清單後再跑一次機械 grep 才浮出來的**——手動編目漏了兩個
+  使用者輸入觸點(其中 11 送的還是完全未正規化的原始值)。記錄這件事本身:
+  同類掃描的清單不能只靠閱讀,要以 grep 結果收斂。
+
+  **刻意不動**:`api/index.ts:1860`、`:4145` 的 `default_referrer_code` 是
+  **營運以 SQL 寫入的設定值**,不是使用者輸入。SQL 側的
+  `resolve_default_referrer` 只做 `lower(trim())`,單方面在 Edge Function 加
+  NFKC 會讓兩側對「同一個設定」有不同解讀,比全形設定值本身更危險。而全形
+  設定值今天就會**大聲失敗**(驗證查無此碼 → 寫 `system_alerts`
+  `default_referrer_code_invalid`),不是靜默——可接受。
 
   非推薦碼的同形寫法(`IdNumberInput` 的 `toUpperCase`、姓名欄位)**不在本次
   範圍**——身分證與姓名有各自的驗證規則與既有測試,混進來會讓這支 PR 失焦。
@@ -69,17 +82,29 @@
 
 ## 5. 修法與驗證
 
-- 修了什麼(綠燈 commit):待填
-- 為什麼這樣修是對的:對照的是根因「缺少單一正規化事實來源」,不是症狀
+- **修了什麼**:新增 `src/utils/referralCode.ts` 的 `normalizeReferralCode()`
+  (NFKC → 小寫 → trim,idempotent),前端 8 個觸點全部改道;Deno 與 Vite 是
+  獨立 runtime 無法共用模組,後端 4 個使用者輸入觸點以最小改動插入
+  `.normalize('NFKC')`。規格書 §7.1 補「比對規則」一條(§7.1 原本只定義
+  編碼格式,沒定義「什麼算同一個碼」)。
+- **為什麼這樣修是對的**:對照的是根因「缺少單一正規化事實來源」,不是症狀
   「全形打不進去」。若只對照症狀,修法會是在 onCommit 加一個 `.normalize()`,
-  留下另外九個觸點繼續各自為政——下一個正規化需求(例如去除使用者貼上時
+  留下另外十一個觸點繼續各自為政——下一個正規化需求(例如去除使用者貼上時
   夾帶的不可見字元)會再犯一次同樣的錯。
+- **驗證**:`npm run check` 全綠(79 檔 920 測試),紅燈期經
+  `scripts/tdd-unlock.sh` 解除(check 綠才刪鎖)。⚠️ **Deno 側未在本機驗證**
+  ——本環境的網路政策擋掉 `deno.land`(403),裝不了 deno。後端改動因此
+  刻意壓到「在既有運算式插入一個 `.normalize('NFKC')`」,不新增檔案或型別,
+  由 CI 的 `api-tests` 軌把關。
 
 ## 6. 防線回填
 
 - **為什麼既有閘門沒攔到**:全形碼在系統中與「打錯碼」完全同形(查表查不到),
   沒有任何一層有辦法區分。這不是閘門漏掉,是**閘門原理上攔不到**的類別。
 - 處置:□ 已補閘門 ■ 攔不到,記 friction-log □ 其他
-  —— 可記的一般化教訓:「`toLowerCase()` 不摺全形」這件事在本 repo 已經
-  被踩過兩次(姓名欄位、推薦碼),而 `serviceCategories.ts` 早就有正確作法
-  (`normalize('NFKC').toLowerCase()`)卻沒有被其他欄位沿用。
+  —— 已寫入 `docs/plans/friction-log.md` 2026-09-14 條。記的重點不是這個
+  bug,是它的**形狀**:`serviceCategories.ts` 早就寫對了(`categoryMatchKey`
+  的 NFKC),知識完整、就是沒有離開那個檔案——與既有兩條(PR #119、
+  2026-08-07 journey 登入)是同一個失效模式。另記一層:「全形」這個詞在
+  `CompleteProfile.tsx` 同時指 IME 議題與正規化議題,前者解決後後者看起來
+  也像被處理過了。

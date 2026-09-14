@@ -614,7 +614,9 @@ app.post('/auth/register', async (c) => {
 
   // 若有填推薦碼，先查出推薦人 user_id
   let referrerUserId: string | null = null;
-  const cleanCode = referralCode?.toLowerCase().trim() || null;
+  // NFKC 先摺全形再轉小寫——全形數字對 toLowerCase() 是 identity，
+  // 少了它，全形碼在後端與「查無此碼」同形（前端已同步正規化）。
+  const cleanCode = referralCode?.normalize('NFKC').toLowerCase().trim() || null;
   if (cleanCode) {
     const { data: rc } = await client
       .from('referral_codes')
@@ -818,7 +820,7 @@ app.post('/auth/reset-registration', async (c) => {
 // CompleteProfile / PaymentCheckout 驗證推薦碼
 // ============================================================
 app.get('/referrals/validate/:code', async (c) => {
-  const code = c.req.param('code')?.toLowerCase().trim();
+  const code = c.req.param('code')?.normalize('NFKC').toLowerCase().trim();
   if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
 
   const { data, error } = await sb().rpc('validate_referral_code', { p_code: code });
@@ -950,7 +952,7 @@ app.post('/listings/verify-referral-code', async (c) => {
   } catch {
     return c.json({ valid: false });
   }
-  const code = (body?.referralCode || body?.code || '').toLowerCase().trim();
+  const code = (body?.referralCode || body?.code || '').normalize('NFKC').toLowerCase().trim();
   if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
 
   const { data, error } = await sb().rpc('validate_referral_code', { p_code: code });
@@ -1810,7 +1812,7 @@ app.post('/payuni/prepare', async (c) => {
   // apply_referral_side_effects 會把推薦邊 rewire 到新推薦人（0008），
   // 之後的推薦獎勵歸新推薦人；舊推薦人的歷史獎勵不受影響。
   const referredByCode: string = typeof body?.referredByCode === 'string'
-    ? body.referredByCode.toLowerCase().trim()
+    ? body.referredByCode.normalize('NFKC').toLowerCase().trim()
     : '';
   if (renewalMode === 'fresh' && referredByCode) {
     const { data: codeRows, error: codeErr } = await client

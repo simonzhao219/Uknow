@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
+import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
   AlertDialog,
@@ -919,7 +920,8 @@ export function PaymentCheckout() {
                             : '輸入推薦碼'
                         }
                         onChange={(e) => {
-                          setNewReferralCode(e.target.value);
+                          // 續約換線的碼與註冊走同一組規則——全形數字一樣要摺。
+                          setNewReferralCode(normalizeReferralCode(e.target.value));
                           setNewCodeStatus('idle');
                           setNewReferrerName(null);
                         }}

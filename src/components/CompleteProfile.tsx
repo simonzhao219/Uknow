@@ -13,6 +13,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError, getInputAriaProps } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
+import { normalizeReferralCode } from '../utils/referralCode';
 import {
   validateProfileForm,
   NAME_MAX_LENGTH,
@@ -95,7 +96,7 @@ export function CompleteProfile() {
       const raw = localStorage.getItem('pendingUser');
       if (!raw) return;
       const snapshot = JSON.parse(raw);
-      const boundCode = (snapshot.referredByCode || '').toLowerCase();
+      const boundCode = normalizeReferralCode(snapshot.referredByCode);
       setFormData((prev) => ({
         ...prev,
         name: snapshot.name || '',
@@ -260,7 +261,7 @@ export function CompleteProfile() {
   };
   const referralImeProps = useImeComposition<HTMLInputElement>({
     onCompose: applyReferralCode,
-    onCommit: (raw) => applyReferralCode(raw.toLowerCase()),
+    onCommit: (raw) => applyReferralCode(normalizeReferralCode(raw)),
   });
 
   // 切換模式時**保留已輸入文字**,只換驗證規則與提示(清空會讓誤觸切換鈕的人
@@ -394,7 +395,7 @@ export function CompleteProfile() {
         }>(buildApiUrl('/listings/verify-referral-code'), {
           method: 'POST',
           body: JSON.stringify({
-            referralCode: formData.referralCode.toLowerCase().trim(),
+            referralCode: normalizeReferralCode(formData.referralCode),
             currentUserId: null,
           }),
         });
@@ -456,7 +457,7 @@ export function CompleteProfile() {
           nationalId: formData.nationalId, // ✅ 新增身分證字號欄位
           phone: formData.phone,
           birthDate: formData.birthDate,
-          referralCode: formData.referralCode,
+          referralCode: normalizeReferralCode(formData.referralCode),
         }),
       });
 
@@ -584,7 +585,7 @@ export function CompleteProfile() {
       }>(buildApiUrl('/listings/verify-referral-code'), {
         method: 'POST',
         body: JSON.stringify({
-          referralCode: code.toLowerCase().trim(),
+          referralCode: normalizeReferralCode(code),
           currentUserId: null, // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
         }),
       });
@@ -592,7 +593,9 @@ export function CompleteProfile() {
       if (result.valid && result.referrerName) {
         setCodeVerified(true);
         setCodeError('');
-        setVerifiedReferralCode(code); // ✅ 儲存已驗證的推薦碼
+        // 存正規化值:與 formData.referralCode 同基準,
+        // 「驗證後有沒有被改過」的比對才成立。
+        setVerifiedReferralCode(normalizeReferralCode(code));
         setReferrerName(result.referrerName); // ✅ 儲存推薦人姓名
         showToast('推薦碼驗證成功', 'success'); // ✅ 只顯示簡單訊息
       } else {
