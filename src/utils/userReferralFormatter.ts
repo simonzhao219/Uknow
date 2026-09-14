@@ -10,7 +10,7 @@
 
 /**
  * 格式化被推薦人資訊（會員推薦格式）
- * @example formatUserReferral('張三', 'abc123456') → '張三-abc123456'
+ * @example formatUserReferral('張三', '8048876') → '張三-8048876'
  */
 export function formatUserReferral(userName: string, userReferralCode: string): string {
   return `${userName}-${userReferralCode}`;
