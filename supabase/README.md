@@ -122,9 +122,10 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 
 **這一層只能斷言環境無關的事實。** policy 的存在／角色／表達式／欄位集合全部
 來自 migration，每個環境相同；`listings` 的 `anon`／`authenticated` GRANT 自
-`20260914000002` 起也是（在那之前它本地與 hosted 不同，當時在這一軌斷言它等於
-把錯的環境寫進測試）。取 golden 的手法是直接問 `pg_policy`／`pg_get_expr`，
-中間不隔 PostgREST（同 `name-write-paths.test.ts` 的理由）。
+`20260914000002` 起有了 migration 宣告的**下限**，因此也釘得起來——但只釘下限
+與「`anon` 不可寫」，**不釘精確集合**：平台的 default privileges 會在宣告之外
+多給，各環境多給的還不一樣（見下）。取 golden 的手法是直接問 `pg_policy`／
+`pg_get_expr`，中間不隔 PostgREST（同 `name-write-paths.test.ts` 的理由）。
 
 ⚠️ `pg_get_expr` 是把運算式**樹**反編譯回文字，不同 Postgres 大版本的間距可能
 有差異，而 `supabase/config.toml` **沒有 pin `[db] major_version`**——所以比對前
@@ -172,14 +173,24 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 一份**明確**授權，revoke 動不到它——這正好解釋 0726 那次為何只有 anon 中招;
 (b)GRANT 層對 `listings` 放行，**RLS 是該表唯一的列級授權邊界**。
 
-**2026-09-14 更新**:上表那份「hosted 一定會補 default privileges」的依賴已經
-失效。晉升 PR #317 的 journey-full 在 hosted 的**拋棄式分支**上,18 條情境全數
-以 42501 `permission denied for table listings` 失敗（同一套 journey 在 9/02 的
+**2026-09-14 更新**:「依賴平台 default privileges」這件事本身已經不可靠。
+晉升 PR #317 的 journey-full 在 hosted 的**拋棄式分支**上,18 條情境全數以
+42501 `permission denied for table listings` 失敗（同一套 journey 在 9/02 的
 晉升是綠的,檔案與 migration 都沒變）。`20260914000002` 因此把 `listings` 的
 `anon` SELECT 與 `authenticated` S/I/U/D 明確寫進 migration——值逐項取自正式站
-實測、不放寬,並維持 `20260717000001` 的「不做 blanket grant」原則。現況因此
-不再是「查證的歷史記錄」而是 migration 宣告的事實,由
-`rls-policies.test.ts` 第 7 節每個 PR 釘住。
+實測、不放寬,並維持 `20260717000001` 的「不做 blanket grant」原則。
+
+三個環境的實測值（2026-09-14）說明為什麼只能釘下限:
+
+| 環境 | `anon` | `authenticated` |
+|---|---|---|
+| 本地 `supabase start` | REFERENCES, SELECT, TRIGGER, TRUNCATE | 上列 + DELETE, INSERT, UPDATE |
+| 正式站 | SELECT | SELECT, INSERT, UPDATE, DELETE |
+| hosted 拋棄式分支 | **（空）** | **（空）** |
+
+平台在 migration 宣告之外**多給**的那些（REFERENCES／TRIGGER／TRUNCATE）
+不影響資料存取,也各環境不同;釘精確集合等於把某一個環境寫進測試。
+`rls-policies.test.ts` 第 7 節因此只釘「至少有哪些」與「`anon` 不可寫」。
 
 ## 環境與部署
 

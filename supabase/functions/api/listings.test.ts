@@ -11,8 +11,9 @@
 //
 // 註（2026-09-14 修正）：這裡原本寫著「本專案刻意只把 table 權限 GRANT 給
 // service_role，authenticated/anon 依賴 hosted Supabase 的預設授權，本地
-// supabase start 不會補這層 grant」——20260914000002 之後不再成立，
-// listings 的 anon/authenticated 授權已明確寫進 migration（起因見其檔頭）。
+// supabase start 不會補這層 grant」。實測推翻了它——平台預設各環境不一致
+// （本地給得比正式站多、hosted 拋棄式分支完全不給），20260914000002 因此把
+// listings 的 anon/authenticated 授權明確寫進 migration（起因見其檔頭）。
 // 擁有權寫入保護由 RLS 的 listings_insert/update/delete_own 負責（hosted 端
 // 生效），此處不重複以行為測試涵蓋。
 // ============================================================

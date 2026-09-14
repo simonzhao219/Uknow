@@ -2583,3 +2583,19 @@ GRANT 確實是環境相依的。前提變了之後,那行註解從正確變成�
 **同類待掃**:還有哪些「正式站靠平台預設、migration 沒宣告」的授權?本次只查到
 `listings` 需要補(其餘表的 `anon:SELECT` 是預設殘留、被 RLS 蓋住,不在本次範圍)。
 下次整併時值得寫一支腳本,拿正式站的 `role_table_grants` 與 migration 宣告對帳。
+
+**尾聲:第一版斷言自己踩了同一個坑。** 補上去的 GRANT 測試第一次在 CI 就紅了
+——它釘的是**精確集合** `anon=SELECT`,而本地 `supabase start` 實際是
+`REFERENCES,SELECT,TRIGGER,TRUNCATE`。三個環境實測:
+
+| 環境 | `anon` | `authenticated` |
+|---|---|---|
+| 本地 CLI | REFERENCES, SELECT, TRIGGER, TRUNCATE | 上列 + DELETE, INSERT, UPDATE |
+| 正式站 | SELECT | SELECT, INSERT, UPDATE, DELETE |
+| hosted 拋棄式分支 | 空 | 空 |
+
+也就是說「本地不補 grant」這個寫在四處的說法**本來就已經失真**,只是沒人去量。
+而我改的第一版把正式站那一組當成普世事實釘死,正是本檔頭警告的「把錯的環境寫進
+測試」——**修一個環境假設的過程中又立了一個新的環境假設**。改成釘
+「至少有哪些」＋「anon 不可寫」之後才是真正環境無關的。教訓:當一個值在不同
+環境會不同時,能斷言的是**不變式**(下限、禁止項),不是**快照**。

@@ -445,12 +445,13 @@ anon key 又隨前端 bundle 公開出貨。**RLS 是那條路徑上唯一的列
 設定不同的環境，綠燈不代表線上安全。
 
 **2026-09-14 修正**：這一節原本寫著「`anon`/`authenticated` 依賴 hosted 的平台
-預設授權，本地 `supabase start` 不補那層 grant」。那個依賴已經失效——hosted 的
-**拋棄式分支**也不再帶 default privileges，晉升 PR #317 的 journey-full 因此
-18 條全紅（42501，GRANT 層就被擋，根本沒走到 RLS）。`20260914000002` 把
-`listings` 的 `anon`/`authenticated` 授權明確寫進 migration，值逐項取自正式站
-實測。這**不違反**上面那條禁令：補的不是「測試環境」，是 migration 本身，所以
-正式站與本地從此共用同一份宣告（對正式站是冪等 no-op），環境差異反而消失了。
+預設授權，本地 `supabase start` 不補那層 grant」。實測推翻了它——平台預設**各
+環境不一致且會變**：本地 CLI 現在給得比正式站還多，hosted 的**拋棄式分支**則
+一個都不給，晉升 PR #317 的 journey-full 因此 18 條全紅（42501，GRANT 層就被
+擋，根本沒走到 RLS）。`20260914000002` 把 `listings` 的 `anon`/`authenticated`
+授權明確寫進 migration，值逐項取自正式站實測。這**不違反**上面那條禁令：
+補的不是「測試環境」，是 migration 本身，正式站與本地從此共用同一份宣告
+（對正式站是冪等 no-op），環境差異因此收斂成一個有保證的下限。
 
 ### 14.2 兩層分工（結構 vs 行為）
 
