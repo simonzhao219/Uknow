@@ -28,7 +28,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 
 | # | Session | 工項 | 分支 | 流程 | 模型 | 重量 |
 |---|---|---|---|---|---|---|
-| S1 | 設計語言地基 | D1+D2 | `feature/design-language-foundation` | 三段式落檔（動全站 token，階段 ≥3） | **Opus** 規劃/審查、Sonnet 實作 | 中 |
+| S1 | 設計語言地基 | D1+D2 | `feature/design-language-foundation` | 三段式落檔（動全站 token，階段 ≥3） | **Opus** 規劃/審查、Sonnet 實作 | 中偏重 ※ |
 | S2 | 全站色彩收斂 | D3 | `fix/color-token-sweep` | 輕量 Plan Mode（機械替換，守門腳本兜底） | Sonnet | 中 |
 | S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
@@ -36,6 +36,13 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S6 | 前台門面 | F1 | `fix/frontend-p1-polish` | 輕量 Plan Mode | Sonnet | 輕 |
 | S7 | 會員區收尾 | F2+F3 | `fix/frontend-member-polish` | 輕量 Plan Mode | Sonnet | 中 |
 | S8 | 制度化收尾 | G1+G2 | `claude/uiux-program-closeout` | 輕量（改文件與 skill 模板、刪鷹架） | Sonnet | 輕 |
+
+※ **S1 重量異動（2026-09-14）**：兩輪四視角審查回填後範圍變大（C3 原始色值
+規則、`--destructive` 兩組 token、對比斷言翻倍、灰階對照表 39 處、G1 完整性
+檢查、色盲 checklist）。裁決**不拆 session**——S2 同時依賴 token 與守門腳本，
+拆開只是把依賴從 session 之間搬到 PR 之間。實作仍用 Sonnet，但**可能需要兩次
+對話**（中途 `/clear` 續作屬預期內，狀態在
+`docs/plans/design-language-foundation/progress.md`）。
 
 模型配置理由：
 - **Opus 只出現在兩處**：S1（design token 是全站契約，錯了每站返工）與
