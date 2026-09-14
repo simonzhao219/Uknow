@@ -1,0 +1,1 @@
+{"branch": "claude/design-language-foundation-7cunir", "ended": "2026-09-14T20:22:55+00:00", "fired": {}, "passed": {"bash-guard": 17, "check-output-filter": 17, "feature-plan-guard": 2, "model-effort-advisor": 1, "tdd-test-guard": 2}, "session": "a1a9d1d697d9", "started": "2026-09-14T20:14:30+00:00"}

@@ -321,5 +321,6 @@ badge 灰字」三重堆疊，稀釋掉負面訊號。而該檔 `:84` 的註解�
 
 - [x] P1 × 3、P2 × 3 **全數回填**進 `plan.md` 修訂 3，以〔二審回填 R2-?-?〕標記。
 - [x] 業主兩項裁決已執行。
-- [ ] **停等人審**：修訂 3 核准後，由業主親自打
-      `/tdd-implement design-language-foundation` 啟動實作。
+- [x] **停等人審**：業主於 2026-09-14 親自打
+      `/tdd-implement design-language-foundation` 啟動實作——這個動作本身
+      即核准信號（`progress.md` 明文：核准後由業主親自打本指令啟動）。
