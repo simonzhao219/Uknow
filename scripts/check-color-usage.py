@@ -95,18 +95,23 @@ def _line_of(source: str, index: int) -> int:
 
 
 def find_c1(source: str) -> list[Hit]:
-    # TODO(紅燈):判定邏輯還沒寫，表格案例先落地（同 check-ime-safe-inputs.py 建立方式）。
-    return []
+    return [(_line_of(source, m.start()), m.group(0)) for m in C1_PATTERN.finditer(source)]
 
 
 def find_c2(source: str) -> list[Hit]:
-    # TODO(紅燈):判定邏輯還沒寫。
-    return []
+    return [(_line_of(source, m.start()), m.group(0)) for m in C2_PATTERN.finditer(source)]
 
 
 def find_c3(source: str) -> list[Hit]:
-    # TODO(紅燈):判定邏輯還沒寫。
-    return []
+    hits: list[Hit] = []
+    for m in C3_HEX_LITERAL.finditer(source):
+        prefix = source[max(0, m.start() - 20) : m.start()]
+        if HREF_PRECEDING.search(prefix):
+            continue
+        hits.append((_line_of(source, m.start()), m.group(0)))
+    for m in C3_ARBITRARY.finditer(source):
+        hits.append((_line_of(source, m.start()), m.group(0)))
+    return hits
 
 
 def scan_source(source: str) -> dict[str, list[Hit]]:
@@ -150,8 +155,36 @@ def evaluate(
     「檔案被刪除/改名」（孤兒條目，P2-2）這兩種同樣會讓 current 沒有該路徑
     的情況。
     """
-    # TODO(紅燈):四條判定邏輯還沒寫，表格案例先落地。
-    return []
+    problems: list[str] = []
+
+    for path, base in sorted(baseline.items()):
+        if path not in existing_paths:
+            problems.append(
+                f"{path}: 孤兒條目——baseline 有紀錄但檔案已不存在"
+                "（刪除或 rename 後 baseline 要跟著更新；rename 時舊 key 要一併改名）"
+            )
+            continue
+        cur = current.get(path, {"c1": 0, "c2": 0, "c3": 0})
+        for rule in ("c1", "c2", "c3"):
+            cur_n = cur.get(rule, 0)
+            base_n = base.get(rule, 0)
+            if cur_n > base_n:
+                problems.append(f"{path}: {rule} 命中數 {cur_n} 超過 baseline {base_n}（新債）")
+            elif cur_n < base_n:
+                new_entry = json.dumps(
+                    {"c1": cur.get("c1", 0), "c2": cur.get("c2", 0), "c3": cur.get("c3", 0)},
+                    ensure_ascii=False,
+                )
+                problems.append(
+                    f"{path}: {rule} 命中數 {cur_n} 低於 baseline {base_n}——棘輪只准收緊，"
+                    f'把這行改成 "{path}": {new_entry}'
+                )
+
+    for path, cur in sorted(current.items()):
+        if path not in baseline and any(cur.get(rule, 0) > 0 for rule in ("c1", "c2", "c3")):
+            problems.append(f"{path}: 不在 baseline 的檔出現命中 {cur}（新債）")
+
+    return problems
 
 
 # ---------------------------------------------------------------------------
