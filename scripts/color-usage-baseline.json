@@ -1,0 +1,272 @@
+{
+  "src/components/CompleteProfile.tsx": {
+    "c1": 2,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/MaintenanceBanner.test.tsx": {
+    "c1": 1,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/MaintenanceBanner.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/MemberDashboard.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/PaymentCheckout.tsx": {
+    "c1": 20,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/PaymentResult.tsx": {
+    "c1": 66,
+    "c2": 1,
+    "c3": 0
+  },
+  "src/components/ProtectedRoute.tsx": {
+    "c1": 2,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/RequireMembershipRoute.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/RewardDashboard.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/ServiceProviderDetail.tsx": {
+    "c1": 3,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/TaskDashboard.tsx": {
+    "c1": 16,
+    "c2": 2,
+    "c3": 0
+  },
+  "src/components/admin/AdminSetup.tsx": {
+    "c1": 17,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/admin/MemberManagement.tsx": {
+    "c1": 15,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/admin/SystemAlerts.tsx": {
+    "c1": 1,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/admin/SystemNotifications.tsx": {
+    "c1": 2,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/admin/WithdrawalManagement.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/common/IdNumberVerification.tsx": {
+    "c1": 14,
+    "c2": 0,
+    "c3": 1
+  },
+  "src/components/common/ThreeStepDialog.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 2
+  },
+  "src/components/common/verification-configs/claimRewardConfig.tsx": {
+    "c1": 77,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/figma/ImageWithFallback.tsx": {
+    "c1": 1,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/home/MobilePhotoWallCard.tsx": {
+    "c1": 0,
+    "c2": 1,
+    "c3": 0
+  },
+  "src/components/notifications/NotificationCard.test.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/notifications/NotificationCard.tsx": {
+    "c1": 31,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/notifications/ToastCard.test.tsx": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/notifications/ToastCard.tsx": {
+    "c1": 16,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/referral/InviteFriendPanelContent.tsx": {
+    "c1": 1,
+    "c2": 0,
+    "c3": 2
+  },
+  "src/components/referral/JoinReferralProgramDialog.tsx": {
+    "c1": 6,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/referral/MemberVerifyQrTab.tsx": {
+    "c1": 1,
+    "c2": 0,
+    "c3": 2
+  },
+  "src/components/referral/MemberVerifyScanner.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/referral/MyQrEntry.tsx": {
+    "c1": 3,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/referral/ReferralStats.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/referral/ReferralTreeView.tsx": {
+    "c1": 47,
+    "c2": 0,
+    "c3": 4
+  },
+  "src/components/referral/SignaturePad.tsx": {
+    "c1": 3,
+    "c2": 0,
+    "c3": 1
+  },
+  "src/components/reward/CollectionConfirmDialog.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/CollectionPreviewDialog.tsx": {
+    "c1": 20,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/CollectionVerifyDialog.tsx": {
+    "c1": 5,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/IdNumberInput.tsx": {
+    "c1": 10,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/IdVerificationSection.tsx": {
+    "c1": 5,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/RewardHistory.tsx": {
+    "c1": 20,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/RewardStats.tsx": {
+    "c1": 8,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/WithdrawalProcess.tsx": {
+    "c1": 20,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/reward/WithdrawalSection.tsx": {
+    "c1": 9,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/subscription/SubscriptionStatusCard.tsx": {
+    "c1": 18,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/task/MonthlyKingProgress.tsx": {
+    "c1": 13,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/task/PendingRewardsSection.tsx": {
+    "c1": 17,
+    "c2": 3,
+    "c3": 0
+  },
+  "src/components/task/ProgressBar.tsx": {
+    "c1": 9,
+    "c2": 2,
+    "c3": 0
+  },
+  "src/components/task/TaskBadge.tsx": {
+    "c1": 12,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/task/TaskGuide.tsx": {
+    "c1": 7,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/task/UserReferralCard.tsx": {
+    "c1": 3,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/styles/globals.test.ts": {
+    "c1": 0,
+    "c2": 0,
+    "c3": 10
+  },
+  "src/utils/gender.test.ts": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/utils/gender.ts": {
+    "c1": 4,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/utils/inviteCardImage.ts": {
+    "c1": 0,
+    "c2": 0,
+    "c3": 5
+  },
+  "src/utils/userReferralFormatter.ts": {
+    "c1": 12,
+    "c2": 4,
+    "c3": 0
+  }
+}
