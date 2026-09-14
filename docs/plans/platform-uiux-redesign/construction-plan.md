@@ -54,6 +54,8 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 **S1**（模型選 Opus 起手，規劃審過後可換 Sonnet session 實作）：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+先 git checkout -B feature/design-language-foundation origin/develop
+（web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S1（工項 D1+D2）：/plan-feature design-language-foundation
 規劃範圍：globals.css 語義色 token（success/warning，深淺兩版；
 深色版須附 plan.md §4 第 6 點的 devtools 驗證 checklist）、
@@ -76,6 +78,8 @@ scripts/check-color-usage.py 守門腳本接進 framework-check 軌
 **S3**：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+先 git checkout -B feature/admin-ia-refactor origin/develop
+（web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S3（工項 A1+A2）：/plan-feature admin-ia-refactor
 範圍與硬約束（先讀 plan.md §2.1 的兩個 ⚠️ 審查發現與 §3 A1/A2 全文）：
 1) bootstrap 可達性：AdminRoute 現況把非管理員全擋在 /admin 外，
@@ -94,6 +98,8 @@ scripts/check-color-usage.py 守門腳本接進 framework-check 軌
 **S4**：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+先 git checkout -B feature/member-detail-redesign origin/develop
+（web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S4（工項 A3）：/plan-feature member-detail-redesign
 範圍：會員詳情 Sheet 分區重設計（依 plan.md §3 A3 描述）。
 ui-ux-guidelines §11 的動作位階與確認框契約原樣保留、測試不得弱化。
@@ -103,6 +109,8 @@ ui-ux-guidelines §11 的動作位階與確認框契約原樣保留、測試不�
 **S5**（模型選 Opus 起手）：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+先 git checkout -B feature/admin-data-cache origin/develop
+（web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S5（工項 A4）：/plan-feature admin-data-cache
 範圍：stale-while-revalidate 模式延伸進 admin 各分頁（切回分頁顯示
 舊資料＋背景刷新），loading 統一為骨架屏。不動 API、不動請求時序、
