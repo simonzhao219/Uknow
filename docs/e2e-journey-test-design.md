@@ -439,11 +439,18 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 `sb()` 一律用 SERVICE_ROLE **繞過 RLS**——所以 api-tests 再多也碰不到 policy。
 anon key 又隨前端 bundle 公開出貨。**RLS 是那條路徑上唯一的列級授權機制。**
 
-它測不了本地的原因不是懶：本專案刻意只把 table 權限 GRANT 給 `service_role`
-（`20260717000001`），`anon`/`authenticated` 依賴 hosted 的平台預設授權，本地
-`supabase start` 不補那層 grant——直連在 **RLS 被評估之前**就吃 42501。
-⚠️ 因此**絕不可**為了「讓本地測得到」而在測試環境補 GRANT：那是在測一個與
-正式站設定不同的環境，綠燈不代表線上安全。
+它測不了本地的原因不是懶：policy 的條件要有真實資料與身分才驗得出來，
+而 api-tests 那一軌的既有模式是用 service-role 播種（因此繞過 RLS）。
+⚠️ **絕不可**為了「讓本地測得到」而在測試環境補 GRANT：那是在測一個與正式站
+設定不同的環境，綠燈不代表線上安全。
+
+**2026-09-14 修正**：這一節原本寫著「`anon`/`authenticated` 依賴 hosted 的平台
+預設授權，本地 `supabase start` 不補那層 grant」。那個依賴已經失效——hosted 的
+**拋棄式分支**也不再帶 default privileges，晉升 PR #317 的 journey-full 因此
+18 條全紅（42501，GRANT 層就被擋，根本沒走到 RLS）。`20260914000002` 把
+`listings` 的 `anon`/`authenticated` 授權明確寫進 migration，值逐項取自正式站
+實測。這**不違反**上面那條禁令：補的不是「測試環境」，是 migration 本身，所以
+正式站與本地從此共用同一份宣告（對正式站是冪等 no-op），環境差異反而消失了。
 
 ### 14.2 兩層分工（結構 vs 行為）
 

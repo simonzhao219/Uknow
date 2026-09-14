@@ -5,12 +5,14 @@
 //       只有「有效訂閱且未停權」的擁有者，其刊登才對外可見。
 //
 // 為什麼不在這裡用 per-user（authenticated）client 直接測 listings 的 RLS
-// insert/update/delete？本專案刻意只把 table 權限 GRANT 給 service_role
-// （見 migration 20260717000001），authenticated/anon 依賴 hosted Supabase 的
-// 預設授權；本地 `supabase start` 不會補這層 grant，所以 authenticated 直連
-// listings 會在「權限（GRANT）」層就被擋（42501），測不到 RLS policy 本身。
-// 既有測試套件也因此一律用 service-role 播種、透過 public_listings 檢視表
-// （其 WHERE 對所有角色生效）驗證對外能見度——本檔沿用同一套可靠模式。
+// insert/update/delete？既有測試套件一律用 service-role 播種、透過
+// public_listings 檢視表（其 WHERE 對所有角色生效）驗證對外能見度——本檔沿用
+// 同一套可靠模式；policy 的行為驗證放在 journey（45_listing_rls.feature）。
+//
+// 註（2026-09-14 修正）：這裡原本寫著「本專案刻意只把 table 權限 GRANT 給
+// service_role，authenticated/anon 依賴 hosted Supabase 的預設授權，本地
+// supabase start 不會補這層 grant」——20260914000002 之後不再成立，
+// listings 的 anon/authenticated 授權已明確寫進 migration（起因見其檔頭）。
 // 擁有權寫入保護由 RLS 的 listings_insert/update/delete_own 負責（hosted 端
 // 生效），此處不重複以行為測試涵蓋。
 // ============================================================

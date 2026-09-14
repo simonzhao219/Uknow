@@ -1,0 +1,36 @@
+-- ============================================================
+-- Uknow — 0914 (2) listings 的 anon/authenticated 授權寫進 migration
+-- ============================================================
+--
+-- 這是 20260717000001 的後半段。那支的背景是「新版 CLI 建立的全新本地資料庫
+-- 沒有 Supabase 的 default privileges」,於是把 service_role 的表權限從隱含
+-- 預設改成明確宣告;它**刻意只處理 service_role**,把 anon/authenticated 留著
+-- 繼續依賴 hosted 的預設授權（理由是不做 blanket grant、不回退既有的安全強化）。
+--
+-- 2026-09-14 那個「hosted 一定會補」的假設也失效了:晉升 PR #317 的
+-- journey-full 在**hosted 的拋棄式分支**上,18 條情境全數以 42501
+-- `permission denied for table listings` 失敗（f45 直讀 11 條、f40 的 GUI
+-- 建立／搜尋 4 條、f60 3 條）。同一套 journey 在 2026-09-02 的晉升（#302）
+-- 是綠的,f45 檔案與 listings 的 migration 一個字都沒變——變的是分支供裝
+-- 不再帶 default privileges。最後一個還靠隱含預設的環境也沒了。
+--
+-- 授權值逐項取自正式站實測,不放寬:
+--   anon           SELECT
+--   authenticated  SELECT, INSERT, UPDATE, DELETE
+--
+-- 維持 20260717000001 的原則——**不做 blanket grant**。其餘資料表的
+-- anon/authenticated 授權一律不動（system_alerts / referral_king_rewards 的
+-- revoke all、profiles 的欄位級 update 都保持原樣）。
+--
+-- GRANT 不是授權機制,RLS 才是:listings 啟用 RLS 且有五條 policy
+-- （結構由 rls-policies.test.ts 釘住）。GRANT 只決定「走不走得到 RLS」,
+-- 走到之後誰看得到哪幾列由 policy 決定。少了 GRANT 的症狀特別容易誤診——
+-- 42501 與 RLS 拒絕共用同一個 SQLSTATE,看起來像 policy 寫錯,
+-- 實際上根本沒走到 policy（e2e/journey/tools/rls_probe.py 的分類器就是
+-- 為了分開這兩者而存在的）。
+--
+-- grant 是冪等的,對已有 default privileges 的環境（正式站）是 no-op。
+-- ============================================================
+
+grant select on public.listings to anon;
+grant select, insert, update, delete on public.listings to authenticated;

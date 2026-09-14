@@ -121,10 +121,10 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-design.md` §14）。
 
 **這一層只能斷言環境無關的事實。** policy 的存在／角色／表達式／欄位集合全部
-來自 migration，每個環境相同；而 `has_table_privilege('anon', ...)` 這類 GRANT
-事實**本地與 hosted 不同**，在這一軌斷言它等於把錯的環境寫進測試。取 golden 的
-手法是直接問 `pg_policy`／`pg_get_expr`，中間不隔 PostgREST（同
-`name-write-paths.test.ts` 的理由）。
+來自 migration，每個環境相同；`listings` 的 `anon`／`authenticated` GRANT 自
+`20260914000002` 起也是（在那之前它本地與 hosted 不同，當時在這一軌斷言它等於
+把錯的環境寫進測試）。取 golden 的手法是直接問 `pg_policy`／`pg_get_expr`，
+中間不隔 PostgREST（同 `name-write-paths.test.ts` 的理由）。
 
 ⚠️ `pg_get_expr` 是把運算式**樹**反編譯回文字，不同 Postgres 大版本的間距可能
 有差異，而 `supabase/config.toml` **沒有 pin `[db] major_version`**——所以比對前
@@ -170,7 +170,16 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 兩件事因此成立:(a)`20260620000004` 的 `revoke ... from anon, public` 移除的是
 **隱含**的 PUBLIC 授權，而 hosted 的 default privileges 另給了 `authenticated`
 一份**明確**授權，revoke 動不到它——這正好解釋 0726 那次為何只有 anon 中招;
-(b)GRANT 層對 `listings` 全開，**RLS 是該表唯一的列級授權邊界**。
+(b)GRANT 層對 `listings` 放行，**RLS 是該表唯一的列級授權邊界**。
+
+**2026-09-14 更新**:上表那份「hosted 一定會補 default privileges」的依賴已經
+失效。晉升 PR #317 的 journey-full 在 hosted 的**拋棄式分支**上,18 條情境全數
+以 42501 `permission denied for table listings` 失敗（同一套 journey 在 9/02 的
+晉升是綠的,檔案與 migration 都沒變）。`20260914000002` 因此把 `listings` 的
+`anon` SELECT 與 `authenticated` S/I/U/D 明確寫進 migration——值逐項取自正式站
+實測、不放寬,並維持 `20260717000001` 的「不做 blanket grant」原則。現況因此
+不再是「查證的歷史記錄」而是 migration 宣告的事實,由
+`rls-policies.test.ts` 第 7 節每個 PR 釘住。
 
 ## 環境與部署
 

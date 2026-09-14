@@ -8,24 +8,30 @@
 // 身分讀寫 listings(CreateServiceProvider / EditServiceProvider /
 // ServiceProviderManagement),anon key 又隨 bundle 公開出貨。
 //
-// 但**本地測不到 policy 的行為**:本專案刻意只把 table 權限 GRANT 給
-// service_role(20260717000001),authenticated/anon 依賴 hosted Supabase 的預設
-// 授權;本地 `supabase start` 不補那層 grant,所以 authenticated 直連 listings
-// 會在 GRANT 層就被擋(42501),根本走不到 RLS(詳見 listings.test.ts 檔頭)。
-// 行為驗證因此放在 journey 的 hosted 分支(L2,45_listing_rls.feature)。
+// 但**本地測不到 policy 的行為**:policy 的條件要有真實資料與身分才驗得出來。
+// 行為驗證因此放在 journey 的 hosted 分支(L2,45_listing_rls.feature),
+// 這一軌只釘結構。
+//
+// 註(2026-09-14 修正):這裡原本寫著「authenticated/anon 依賴 hosted Supabase
+// 的預設授權,本地 supabase start 不補那層 grant」——20260914000002 之後不再
+// 成立。hosted 的拋棄式分支也不再帶 default privileges(晉升 PR #317 因此 18
+// 條全紅),那支 migration 把 listings 的 anon/authenticated 授權明確寫進版本
+// 控制,GRANT 從此是環境無關的事實。
 //
 // 這個檔案是另一道防線:**釘住 policy 的結構**。它抓不到「policy 寫錯」,
 // 但抓得到「被刪掉、角色被放寬、條件被改寬、多出第 6 條 permissive、
 // 或整張表的 RLS 被關掉」——那才是實際會發生的迴歸,而且每個 PR 都跑得到。
 //
 // ⚠️ 只斷言**環境無關**的事實。policy 的存在/角色/表達式/欄位集合全部來自
-// migration,每個環境相同;而 has_table_privilege('anon', ...) 這種 GRANT 事實
-// 本地是 false、hosted 是 true,在這一軌斷言它等於把錯的環境寫進測試——就是
-// 「先 GRANT 再測」那個假綠陷阱換件衣服。GRANT 要釘就釘在 L2。
+// migration,每個環境相同;GRANT 自 20260914000002 起也是。判準沒有變——變的
+// 是 GRANT 進了 migration,於是它從「環境事實」變成「migration 事實」,第 7 節
+// 因此釘得起來。在那之前它本地 false、hosted true,當時斷言它確實等於把錯的
+// 環境寫進測試。
 //
 // 做法沿用 name-write-paths.test.ts 的原則:直接問 Postgres,中間不隔 PostgREST。
 //
-// 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test——「逐條角色範圍」
+// 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test（第 8 支是 2026-09-14
+// 補的 GRANT 守衛,不在原規劃內）——「逐條角色範圍」
 // 拆成「三條 own policy 限 authenticated」與「insert_own/select_public 維持
 // PUBLIC」兩支,因為它們的期望值方向相反,混在一支裡失敗訊息會看不出是哪半邊。
 // 內容無增減。
@@ -143,8 +149,8 @@ Deno.test('listings RLS：資料表已啟用 row level security', async () => {
     // ALTER TABLE ... DISABLE ROW LEVEL SECURITY **不會刪除任何一條 policy**:
     // 下面 2-6 條全部讀 pg_policy / information_schema,會照樣回報「5 條齊全、
     // 角色與表達式完全正確」,但 RLS 一點都沒生效。而 anon/authenticated 對
-    // listings 的 table GRANT 在 hosted 是全開的,所以那等於任何人都能讀寫
-    // 任意會員的刊登。這條是唯一抓得到該退化的斷言。
+    // listings 有 table GRANT(20260914000002:anon 讀、authenticated 增刪改查),
+    // 所以那等於任何人都能讀寫任意會員的刊登。這條是唯一抓得到該退化的斷言。
     assertEquals(row.rls_enabled, true, 'listings 必須啟用 RLS');
   } finally {
     await sql.end();
