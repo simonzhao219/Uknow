@@ -143,7 +143,7 @@ afterEach(() => {
 describe('PaymentCheckout', () => {
   it('自動綁定者：確認卡不顯示推薦碼，且不發 /referrals/validate 請求', async () => {
     const calls = spyFetch();
-    seedPendingUser({ referredByCode: 'abc123456', isAutoReferral: true });
+    seedPendingUser({ referredByCode: '8048876', isAutoReferral: true });
     renderPage();
 
     // 等 localStorage 分支跑完（確認卡出現）
@@ -160,20 +160,20 @@ describe('PaymentCheckout', () => {
   it('手動填碼者：確認卡照常顯示推薦碼與快取的推薦人姓名', async () => {
     spyFetch();
     seedPendingUser({
-      referredByCode: 'xyz987654',
+      referredByCode: '8048901',
       isAutoReferral: false,
       referrerName: '王小明',
     });
     renderPage();
 
-    await waitFor(() => expect(screen.getByText(/推薦碼：xyz987654/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/推薦碼：8048901/)).toBeTruthy());
     expect(screen.getByText(/推薦人：王小明/)).toBeTruthy();
   });
 
   it('自動綁定者選新約：推薦碼輸入框 placeholder 不外洩預設碼', async () => {
     spyFetch();
     seedPendingUser({
-      referredByCode: 'abc123456',
+      referredByCode: '8048876',
       isAutoReferral: true,
       subscriptionEndDate: recentEnd,
     });
@@ -189,7 +189,7 @@ describe('PaymentCheckout', () => {
   it('手動填碼者選新約：placeholder 維持「目前：<碼>」提示', async () => {
     spyFetch();
     seedPendingUser({
-      referredByCode: 'xyz987654',
+      referredByCode: '8048901',
       isAutoReferral: false,
       referrerName: '王小明',
       subscriptionEndDate: recentEnd,
@@ -200,7 +200,7 @@ describe('PaymentCheckout', () => {
     fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
 
     const input = screen.getByTestId('new-referral-code-input') as HTMLInputElement;
-    expect(input.placeholder).toBe('目前：xyz987654');
+    expect(input.placeholder).toBe('目前：8048901');
   });
 });
 
@@ -208,7 +208,7 @@ describe('PaymentCheckout', () => {
 describe('PaymentCheckout 補繳制', () => {
   function seedLongExpired(overrides: Record<string, unknown> = {}) {
     seedPendingUser({
-      referredByCode: 'xyz987654',
+      referredByCode: '8048901',
       isAutoReferral: false,
       referrerName: '王小明',
       subscriptionEndDate: longExpiredEnd,
@@ -382,7 +382,7 @@ describe('PaymentCheckout 補繳制', () => {
 describe('PaymentCheckout 補繳進度與付款確認', () => {
   function seedLongExpired(overrides: Record<string, unknown> = {}) {
     seedPendingUser({
-      referredByCode: 'xyz987654',
+      referredByCode: '8048901',
       isAutoReferral: false,
       referrerName: '王小明',
       subscriptionEndDate: longExpiredEnd,

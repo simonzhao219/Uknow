@@ -2419,3 +2419,219 @@ session mode 那一修**確實有效**:第六次 journey-full 的 log 印出
 上真的會執行的那份」。第一版就這樣抓到一個 errexit 缺陷:psql 連不上時
 `pipefail` 讓命令替換回非零,整支 script 當場被 errexit 終止——與前一則同一個
 形狀,差別只在這次是在合進 develop **之前**抓到的。
+
+**線上驗證結果(2026-09-02 回填,PR #302 第七次 journey-full)**:
+run 33692230614 的 step 計時是這條修法的直接證據——
+
+| step | 起訖 | 耗時 |
+|---|---|---|
+| 建立拋棄式 Supabase 分支 | 22:49:57→22:50:25 | 28 秒 |
+| **等分支 migration replay 收斂** | 22:50:25→22:52:06 | **101 秒** |
+| **套用 checkout 的 migrations 到分支** | 22:52:06→22:52:10 | **4 秒** |
+
+101 秒的意義:前 ~40 秒列數還在推進,之後才湊滿 4 次不變(60 秒)——**沒有
+走到 6 分鐘上限的 warning 放行路徑,是真的偵測到收斂**。db push 隨後 4 秒
+一次過,連一次重試都沒有(重試至少要多 15 秒)。整套 journey 119 情境全過、
+skip 0 條(`collected=119 skipped=0 ran=119`),晉升 PR 隨即合併。
+
+代價是每場 journey 多付約 100 秒牆鐘,相對整場 20 分鐘可忽略;而它換掉的是
+連續六次、每次都要人回來判讀的紅燈。
+
+---
+
+## 2026-09-14｜漏網｜`toLowerCase()` 不摺全形:正確作法早就有,就是沒被沿用
+
+推薦碼輸入框在中文輸入法全形模式下打出的 `８０４８８７６` 不會被摺成
+`8048876`,驗證回「推薦碼不存在或已失效」。根因不是某一行寫錯——
+`toLowerCase()` 只處理大小寫,對全形數字是 identity,摺全形要的是
+`normalize('NFKC')`。
+
+**值得記的是它的形狀,而且這個形狀在本 repo 已經出現第三次。**
+
+`src/utils/serviceCategories.ts` 的 `categoryMatchKey()` **早就寫對了**,
+註解甚至明說「NFKC 把全形英數摺成半形(Ａ→A),再轉小寫」。那份知識完全
+正確、記錄完整,**就是沒有離開那個檔案**。於是推薦碼的十一個觸點各自手寫
+`.toLowerCase().trim()`,摺全形這一步在任何一處都不存在。
+
+這與既有那兩條(PR #119「自我糾正過卻沒推廣成同類掃描」、2026-08-07
+「journey 登入修法做出來過卻沒回到共用 builder」)是**同一個失效模式**:
+解法綁定在發現它的那個檔案裡,沒有被抽成可重用的東西。差別只在這次的
+解法甚至不需要抽象——`normalize('NFKC')` 就是一個標準 API 呼叫。
+
+**另一層**:註解裡的「全形」曾經誤導過。`CompleteProfile.tsx` 原本就有
+一句「全形英數打得中(Ａ → ａ 是真的變了)」,但它講的是 **IME 議題**
+(全形英數會觸發改寫,所以轉小寫要延後到組字結束),不是**正規化議題**
+(全形要被摺成半形)。兩個議題共用「全形」這個詞,於是前者被解決之後,
+後者看起來也像被處理過了。同一個詞在同一份檔案裡指兩件事,是註解能造成的
+最貴的誤導。
+
+**閘門為什麼攔不到**:全形碼在系統中與「使用者真的打錯碼」完全同形——
+`referral_codes.code` 沒有格式約束,`validate_referral_code` 是查表比對而非
+格式驗證,兩者都只是「查無此碼」。這不是漏掉,是**原理上攔不到**的類別;
+唯一的防線是正規化本身,所以它必須有單一事實來源(`src/utils/referralCode.ts`)。
+
+**未償還**:`IdNumberInput.tsx` 的 `toUpperCase()` 與姓名欄位有同形寫法。
+身分證與姓名各有驗證規則與既有測試,混進推薦碼的 PR 會失焦,留待後續掃描。
+
+## 2026-09-14｜框架摩擦｜`plans-keep` 正在變成三段式流程的萬用通行證（第二次）
+
+2026-09-02 那條記過：`check-plans-scaffold.py` 讓「規劃已推、實作進行中」的 PR
+必然紅，而豁免標記 `<!-- plans-keep: -->` **不適用**——「它的語意是『這份**不是**
+施工鷹架』，施工中的鷹架正是它要擋的東西。用它等於說謊」。當時的處置是
+「收尾前不 push、commit 壓在本機」，並把真正的修法留給整併時決定判準
+（draft PR／`progress.md` 是否全綠／分支有無產品 commit，而不是「有沒有標記」）。
+
+**那個修法至今沒有做**（`has_keep_marker()` 仍只檢查字串存在），於是：
+
+- 上游 `platform-uiux-redesign/progress.md:3` 貼了一個（PR #315 已合併）
+- 本次 S1 的 `design-language-foundation/progress.md` 又貼了一個
+
+兩次都寫著「施工鷹架…退場條件＝收尾時刪除」——**檔案自己承認它正是標記
+要擋的東西**，而標記照樣放行。這不是某個 session 偷懶：三段式流程規定
+「規劃完停等人審」，人要在 PR 上看規劃，規劃就得推上去，推上去 guards 軌就紅。
+照流程走的人被懲罰，於是每個人都會找到同一條繞路。
+
+本次業主裁決：**保留標記讓 CI 綠，但明文記錄衝突並排入下次框架整併**
+（S1 的 PR 不夾帶框架改動）。整併時要做的是 2026-09-02 已經寫下的那件事——
+**改判準，不是再加補丁**。判準一改，兩處既有標記要一併移除，否則它們會
+留在 repo 裡示範錯誤用法。
+
+附帶一則同源的小摩擦：`model-effort-advisor` hook 在本次 session 誤報三次。
+命中的關鍵字（金流／會籍／獎勵／migration／payuni）來自**審查報告引用的上游
+persona 描述與檔名**，而本 session 全程只寫 markdown。與上面完全同形——
+**hook 判斷用的訊號（提示詞字面）不是它想問的那件事（改動的性質）**。
+可考慮改看本次 session 實際碰過的檔案路徑。
+
+---
+
+## 2026-09-14｜漏網｜契約副本放在只有晉升 PR 才跑的軌上,等於沒有閘門
+
+#311 把推薦碼從亂數字串改成 `referral_code_seq` 的數字流水號,規格書 §7.2
+與 migration 都同步了,`npm run check`、framework-check、e2e(mock)全綠,
+PR 合進 develop。**但格式在第三處還有一份副本**:
+`e2e/journey/builders/verification.py` 的 `REFERRAL_CODE_PATTERN =
+^[a-z]{3}\d{6}$`。它直到晉升 PR #317 才第一次被執行,一紅就是 12 條 fail、
+39 條 skip(skip 率 33%),整場 journey 對那 39 條不具驗證效力。
+
+**值得記的是「為什麼這份副本躲得掉」**:`journey-full` 的 `if` 是
+`base_ref == 'main'`,只在 develop→main 的晉升 PR 跑。凡是只活在 journey
+裡的斷言,對 feature PR 的 CI 而言等於不存在——它不是漏掉某個檢查,是那個
+檢查**在錯的軌上**。回饋延遲從「一支 PR」拉長到「一次晉升」,而晉升是
+週級頻率、又剛好是最不想處理意外的時刻。
+
+**處置(本次已做)**:把格式契約抽成 `e2e/journey/tools/referral_code.py`
+的純函式 + `tools/test_referral_code.py` 離線測試。`tools/` 是
+`journey-offline` 軌(`pytest tools/ -q`),**每一支 PR 都跑**。同樣是一份
+副本,換到跑得到的軌上,格式漂移就會在 feature PR 當場紅。
+順手把 `15_registration_negative.feature` 的假碼 `zzz999999` 改成 `8099999`
+——新制下前者只測得到「格式不合法」,測不到「格式合法但查無此碼」那條
+真正的使用者路徑。
+
+**可複用的原則**:斷言的價值 = 它守的東西 × 它被執行的頻率。把一個契約
+放進只在特定 base 才跑的軌,等於把後面那個乘數調成接近零。**跨層契約要落
+在最頻繁執行的那一軌上**,重鏈路測試只負責它獨有的東西(真後端、真金流、
+真瀏覽器)。
+
+**同類待掃**:journey 的 `builders/` 與 `steps/` 裡還有多少「純格式/純計算」
+的斷言可以下放到 `tools/`?這次只處理了推薦碼。下次整併時掃一遍。
+
+---
+
+## 2026-09-14｜漏網｜修法做過一半:`20260717000001` 修了 service_role,另一半留在原地
+
+晉升 PR #317 的第三輪 journey-full:124 條全跑、skip 0 條(推薦碼那個根因已由
+#318 修掉),但 18 條紅,錯誤一律是
+`42501 permission denied for table listings`——**GRANT 層就被擋,根本沒走到 RLS**。
+
+根因:全 repo 的 migration 從來沒有 grant 過 `public.listings` 這張表給
+`anon`/`authenticated`(只 grant 過 `public_listings` 這個 view)。正式站有那些
+授權,是建表當下 Supabase 的 default privileges 補的;**從零重播 migration 的
+環境補不回來**。
+
+**值得記的是它的形狀,而這個形狀在本 repo 已經出現第四次。**
+
+`20260717000001` 的檔頭把病因寫得一清二楚:「新版 CLI 建立的全新本地資料庫沒有
+這組預設值」,並把 service_role 的表權限從隱含預設改成明確宣告。**同一份檔頭
+接著寫:刻意只授權 service_role,anon/authenticated 維持依賴 hosted 的預設授權。**
+那個決定在當時完全正確(理由是不做 blanket grant、不回退既有的安全強化),
+但它把「隱含預設會一直在」這個假設留在原地,只是換了個環境繼續賭。
+
+2026-09-14 那個賭注輸了:hosted 的**拋棄式分支**也不再帶 default privileges。
+同一套 journey 在 9/02 的晉升(#302)是綠的,f45 檔案與 listings 的 migration
+一個字都沒變——變的是分支供裝。最後一個還靠隱含預設的環境沒了。
+
+這與既有那三條(PR #119 自我糾正沒推廣成同類掃描、2026-08-07 journey 登入修法
+沒回到共用 builder、2026-09-14 `toLowerCase()` 不摺全形)是同一個失效模式,
+但這次的變體更難察覺:**前三次是「解法沒離開發現它的那個檔案」,這次是解法
+寫進了共用的地方、卻明文只做一半**,而那個「只做一半」還附了正確的理由。
+理由正確不等於範圍正確——**當一個修法的理由是「某個隱含預設不可靠」,那條
+理由適用於所有依賴該預設的東西,不只你當下被咬到的那一個。**
+
+**處置(本次已做)**:`20260914000002` 把 `listings` 的 anon SELECT 與
+authenticated S/I/U/D 明確寫進 migration,值逐項取自正式站實測、不放寬,
+維持「不做 blanket grant」。同時補 `rls-policies.test.ts` 第 7 節——GRANT 從
+「環境事實」變成「migration 事實」之後,它就釘得起來了,而且是 api-tests 軌、
+**每支 PR 都跑**,不必再等晉升那天。
+
+**閘門為什麼攔不到**:這條與上一條(契約放在只有晉升 PR 才跑的軌上)是同一個
+結構問題的兩面。差別在於上一條是斷言放錯軌,這次是**斷言根本不存在**——
+`rls-policies.test.ts` 的檔頭甚至明文寫著「GRANT 要釘就釘在 L2」,理由是當時
+GRANT 確實是環境相依的。前提變了之後,那行註解從正確變成誤導,而註解不會自己
+過期。本次一併修掉了它、`listings.test.ts` 檔頭、`supabase/README.md`〈GRANT
+現況〉與 `docs/e2e-journey-test-design.md` §14.1 四處同源敘述。
+
+**同類待掃**:還有哪些「正式站靠平台預設、migration 沒宣告」的授權?本次只查到
+`listings` 需要補(其餘表的 `anon:SELECT` 是預設殘留、被 RLS 蓋住,不在本次範圍)。
+下次整併時值得寫一支腳本,拿正式站的 `role_table_grants` 與 migration 宣告對帳。
+
+**尾聲:第一版斷言自己踩了同一個坑。** 補上去的 GRANT 測試第一次在 CI 就紅了
+——它釘的是**精確集合** `anon=SELECT`,而本地 `supabase start` 實際是
+`REFERENCES,SELECT,TRIGGER,TRUNCATE`。三個環境實測:
+
+| 環境 | `anon` | `authenticated` |
+|---|---|---|
+| 本地 CLI | REFERENCES, SELECT, TRIGGER, TRUNCATE | 上列 + DELETE, INSERT, UPDATE |
+| 正式站 | SELECT | SELECT, INSERT, UPDATE, DELETE |
+| hosted 拋棄式分支 | 空 | 空 |
+
+也就是說「本地不補 grant」這個寫在四處的說法**本來就已經失真**,只是沒人去量。
+而我改的第一版把正式站那一組當成普世事實釘死,正是本檔頭警告的「把錯的環境寫進
+測試」——**修一個環境假設的過程中又立了一個新的環境假設**。改成釘
+「至少有哪些」＋「anon 不可寫」之後才是真正環境無關的。教訓:當一個值在不同
+環境會不同時,能斷言的是**不變式**(下限、禁止項),不是**快照**。
+
+**再一層:`is_admin()`。** 補上 listings 的表授權之後,第四輪 journey 的錯誤從
+`permission denied for table listings` 變成 `permission denied for function is_admin`
+(17 條)。`20260620000004` 收掉了 CREATE FUNCTION 隱含給 PUBLIC 的那份,正式站的
+authenticated 之所以還有,又是平台預設另給的明確授權。`20260914000003` 補上宣告。
+
+**我的同類掃描做了一半。** 第一次掃描只查了 `role_table_grants`(資料表),
+沒查 routine privileges(函數)——於是修完第一層又撞第二層,多燒一輪 25 分鐘的
+拋棄式分支。`/fix-bug` 的「把根因抽象成 pattern」這一步,pattern 抽得不夠高:
+真正的 pattern 不是「listings 的表授權沒宣告」,是「**任何**靠平台預設而非
+migration 宣告的授權」——那涵蓋表、函數、序列、view、schema 五類物件。
+第二次才把五類都對帳完(結論:只有 `is_admin()` 還缺)。
+
+**下次的做法**:與其逐層試,不如一次把正式站的
+`role_table_grants` / `has_function_privilege` / `has_sequence_privilege` /
+`has_schema_privilege` 全量拉出來,與 migration 宣告對帳。那支腳本值得寫進
+framework-check——它把「環境漂移」從一個要靠 journey 才發現的問題,變成每次 CI
+都查得到的問題。
+
+**最後一層是一條測試,而它的註解正是這整條記錄的縮影。**
+`f45_listing_rls_steps.py` 的「訪客不能建立刊登」原本釘死 `denied_by_rls`,
+而且註解明文記載:它曾被放寬成「三種被拒形狀都算過」、隨後**被推翻**,理由是
+「plan §2 已實測 hosted 上 anon 對 listings 的 INSERT GRANT = true,所以它必然
+走到 RLS 才被拒」。
+
+那個論證完全正確。過期的是它立基的那個實測值——今天正式站的 anon 只有 SELECT。
+
+**這是本檔最值得記的一條**:一個被否決過的提案,不會因為它當年被否決就永遠是錯的;
+論證的效期等於它所引用的事實的效期。反過來也一樣——這次的處置刻意**不是**回頭
+放寬(那才會再犯一次當年被推翻的錯),而是改釘更早、更強、且現在由 migration
+保證的那道線(`denied_by_grant`)。已登入路徑維持 `denied_by_rls`,因為對它而言
+RLS 確實仍是列級邊界。
+
+推論:**凡是註解裡寫著「實測 X = 某值」的決策,都帶著一個看不見的到期日。**
+值得在那種註解旁邊標上量測日期與重測方式——本次已為 `supabase/README.md`
+〈GRANT 現況〉那張表補上更正與日期。

@@ -199,6 +199,33 @@ describe('姓名欄位的 IME 組字', () => {
     expect(code().value).toBe('abc123');
   });
 
+  it('推薦碼的全形數字在組字結束後摺成半形', () => {
+    // toLowerCase() 對全形數字是 identity('８'.toLowerCase() === '８')——
+    // 摺全形靠的是 NFKC。推薦碼自 2026-09 起是純數字流水號(規格書 §7.1),
+    // 碼短、可口述,手動輸入從邊緣路徑變成主要路徑,全形命中率隨之上升。
+    // 沒有這一步,全形碼會靜默變成「推薦碼不存在或已失效」,與真的打錯碼同形。
+    renderForm();
+    const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+
+    fireEvent.compositionStart(code());
+    fireEvent.change(code(), { target: { value: '８０４' } });
+    // 組字期間照舊原樣收下——摺全形是改寫,同樣不能在組字中做。
+    expect(code().value).toBe('８０４');
+
+    fireEvent.compositionEnd(code(), { target: { value: '８０４８８７６' } });
+    expect(code().value).toBe('8048876');
+  });
+
+  it('推薦碼貼上全形數字時也摺成半形', () => {
+    // 沒在組字的一般輸入/貼上走 onChange 的 else 分支,與 compositionend
+    // 是兩條路徑;口述推薦碼後貼上是真實路徑,兩條都要釘。
+    renderForm();
+    const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+
+    fireEvent.change(code(), { target: { value: '８０４８８７６' } });
+    expect(code().value).toBe('8048876');
+  });
+
   it('組字期間的聲調符號不被當成分隔符號吃掉', () => {
     // 聲調 ˊˇˋ 是 Lm、輕聲 ˙ 是 Sk,都不在 \p{P}/\p{Z} 裡,本來就不該被轉換。
     // 釘住它是因為「加大轉換範圍」是這個 bug 最誘人也最錯的修法方向。

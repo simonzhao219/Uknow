@@ -10,6 +10,7 @@
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
 import { detectInAppBrowser } from './browserDetection';
+import { normalizeReferralCode } from './referralCode';
 
 type ShowToast = (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
@@ -100,9 +101,10 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
 
 // --- 推薦碼跨步驟帶入（撐過註冊漏斗）---
 
-/** 記住邀請連結帶進來的推薦碼；存前一律轉小寫去空白（比對後端小寫慣例）。空值不寫入。 */
+/** 記住邀請連結帶進來的推薦碼；存前一律正規化（NFKC + 小寫 + 去空白）。空值不寫入。 */
 export function savePendingReferral(code: string): void {
-  const normalized = (code ?? '').toLowerCase().trim();
+  // `?ref=` 來自使用者可編輯的網址，全形數字同樣進得來。
+  const normalized = normalizeReferralCode(code);
   if (!normalized) return;
   try {
     localStorage.setItem(PENDING_KEY, normalized);

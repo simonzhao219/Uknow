@@ -229,13 +229,32 @@ def write_denied_by_rls(scenario_memo):
     # 會讓斷言失去辨別力——即使 policy 沒生效、拒絕來自不相干的權限層,
     # 測試也照樣綠(見 name-write-paths.test.ts 檔頭的同款教訓)。
     #
-    # 訪客路徑同樣釘死 RLS 形狀。曾一度放寬成「三種被拒形狀都算過」,理由是
-    # 「anon 的 INSERT GRANT 是環境相依事實」——那是把 L1 的顧慮誤搬到 L2:
-    # **L2 只在 hosted 分支跑,從不在本地跑**,而 plan §2 已實測 hosted 上
-    # anon 對 listings 的 INSERT GRANT = true,所以它必然走到 RLS 才被拒。
-    # 放寬等於放掉「RLS 是唯一列級授權邊界」這個本 feature 的核心主張。
+    # 這條現在只服務**已登入**路徑。authenticated 對 listings 有完整的
+    # 增刪改查 GRANT(20260914000002 宣告),所以寫入必然走到 RLS 才被拒,
+    # 「RLS 是列級授權邊界」對它成立。
+    #
+    # 訪客路徑曾經也用這條,並且曾一度放寬成「三種被拒形狀都算過」、
+    # 隨後被推翻,理由是「plan §2 已實測 hosted 上 anon 對 listings 的
+    # INSERT GRANT = true,所以它必然走到 RLS」。那個論證本身沒錯,錯的是
+    # 它立基的實測事實已經過期:今天正式站的 anon 只有 SELECT。
+    # 處置不是回頭放寬(那會再犯一次當年被推翻的錯),而是改釘更早、更強、
+    # 而且現在由 migration 保證的那道線——見 write_denied_by_grant。
     assert scenario_memo["kind"] == "denied_by_rls", (
         f"應被 RLS 的 WITH CHECK 擋下,實際是 {scenario_memo['kind']}:{scenario_memo['body']}"
+    )
+
+
+@then("該次寫入在 GRANT 層被拒絕")
+def write_denied_by_grant(scenario_memo):
+    # 訪客連 INSERT 的 GRANT 都沒有(20260914000002:anon 只有 SELECT),
+    # 所以請求在 RLS 被求值**之前**就結束了。這比「RLS 擋下」更早也更強:
+    # 少一層可以寫錯的東西。
+    #
+    # 仍然釘精確形狀而不是「有被拒就算過」:allowed / filtered_empty 必須
+    # 是紅的,denied_by_rls 也必須是紅的——後者代表 anon 被補了 INSERT
+    # GRANT,那是真的把防線往後退了一格,正是這條要抓的退化。
+    assert scenario_memo["kind"] == "denied_by_grant", (
+        f"應在 GRANT 層就被擋下,實際是 {scenario_memo['kind']}:{scenario_memo['body']}"
     )
 
 

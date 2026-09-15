@@ -1,0 +1,35 @@
+-- ============================================================
+-- Uknow — 0914 (3) is_admin() 的 authenticated 執行權寫進 migration
+-- ============================================================
+--
+-- 與 20260914000002 同一個根因的下一層。那支補上 listings 的表授權之後,
+-- 晉升 PR #317 的 journey-full 從
+--   `permission denied for table listings`
+-- 變成
+--   `permission denied for function is_admin`
+-- ——關卡往後移了一格,因為 listings 的三條 own policy 的 USING 是
+-- `((user_id = auth.uid()) OR is_admin())`:authenticated 一讀 listings 就會
+-- 求值 is_admin(),沒有 EXECUTE 就在 RLS 評估中途 42501。f45 八條直接失敗,
+-- f40／f60 七條是同一條鏈的下游。
+--
+-- 為什麼 migration 裡沒有它:`20260620000004` 的
+--   `revoke execute on function public.is_admin() from anon, public;`
+-- 收掉的是 CREATE FUNCTION 隱含給 PUBLIC 的那份。正式站的 authenticated
+-- 之所以還有,是平台 default privileges 另外給的一份**明確**授權——
+-- 這件事 `20260726000001` 的檔頭早就寫過（它說「grant execute on function
+-- public.is_admin() to anon」不在任何 migration 裡）,當時處理的是 anon 那半邊,
+-- authenticated 這半邊就留在隱含預設上。從零重播的環境因此拿不到。
+--
+-- 授權值取自正式站實測,逐項對齊:
+--   anon           false  ← 維持不變（0004 收緊、0726 再次 revoke 的結果）
+--   authenticated  true   ← 本檔補上宣告
+--
+-- **刻意只給 authenticated。** 給 anon 會回退 0726 修的東西:訪客瀏覽首頁時
+-- own policy 若對 anon 生效就會踩到 is_admin(),那次事故的修法是把 own policy
+-- 收斂到 authenticated,而不是把 is_admin 開放給 anon（見 20260726000001 檔頭
+-- 明文拒絕的那條路）。
+--
+-- grant 是冪等的,對已有平台預設的環境（正式站）是 no-op。
+-- ============================================================
+
+grant execute on function public.is_admin() to authenticated;

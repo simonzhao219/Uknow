@@ -8,24 +8,30 @@
 // 身分讀寫 listings(CreateServiceProvider / EditServiceProvider /
 // ServiceProviderManagement),anon key 又隨 bundle 公開出貨。
 //
-// 但**本地測不到 policy 的行為**:本專案刻意只把 table 權限 GRANT 給
-// service_role(20260717000001),authenticated/anon 依賴 hosted Supabase 的預設
-// 授權;本地 `supabase start` 不補那層 grant,所以 authenticated 直連 listings
-// 會在 GRANT 層就被擋(42501),根本走不到 RLS(詳見 listings.test.ts 檔頭)。
-// 行為驗證因此放在 journey 的 hosted 分支(L2,45_listing_rls.feature)。
+// 但**本地測不到 policy 的行為**:policy 的條件要有真實資料與身分才驗得出來。
+// 行為驗證因此放在 journey 的 hosted 分支(L2,45_listing_rls.feature),
+// 這一軌只釘結構。
+//
+// 註(2026-09-14 修正):這裡原本寫著「authenticated/anon 依賴 hosted Supabase
+// 的預設授權,本地 supabase start 不補那層 grant」。實測推翻了它——平台的
+// default privileges **各環境不一致且會變**:本地 CLI 現在給得比正式站還多,
+// hosted 的拋棄式分支則一個都不給(晉升 PR #317 因此 18 條全紅)。
+// 20260914000002 把 listings 的 anon/authenticated 授權明確寫進版本控制,
+// migration 宣告的那組因此成為環境無關的**下限**,第 7 節釘的就是它。
 //
 // 這個檔案是另一道防線:**釘住 policy 的結構**。它抓不到「policy 寫錯」,
 // 但抓得到「被刪掉、角色被放寬、條件被改寬、多出第 6 條 permissive、
 // 或整張表的 RLS 被關掉」——那才是實際會發生的迴歸,而且每個 PR 都跑得到。
 //
 // ⚠️ 只斷言**環境無關**的事實。policy 的存在/角色/表達式/欄位集合全部來自
-// migration,每個環境相同;而 has_table_privilege('anon', ...) 這種 GRANT 事實
-// 本地是 false、hosted 是 true,在這一軌斷言它等於把錯的環境寫進測試——就是
-// 「先 GRANT 再測」那個假綠陷阱換件衣服。GRANT 要釘就釘在 L2。
+// migration,每個環境相同;GRANT 自 20260914000002 起有了 migration 宣告的
+// 下限,第 7 節釘的是那個下限與「anon 不可寫」,**不是**精確集合——平台預設
+// 會在宣告之外多給,各環境多給的還不一樣,釘精確集合等於把環境寫進測試。
 //
 // 做法沿用 name-write-paths.test.ts 的原則:直接問 Postgres,中間不隔 PostgREST。
 //
-// 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test——「逐條角色範圍」
+// 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test（第 8、9 支是
+// 2026-09-14 補的 GRANT 守衛,不在原規劃內）——「逐條角色範圍」
 // 拆成「三條 own policy 限 authenticated」與「insert_own/select_public 維持
 // PUBLIC」兩支,因為它們的期望值方向相反,混在一支裡失敗訊息會看不出是哪半邊。
 // 內容無增減。
@@ -143,8 +149,8 @@ Deno.test('listings RLS：資料表已啟用 row level security', async () => {
     // ALTER TABLE ... DISABLE ROW LEVEL SECURITY **不會刪除任何一條 policy**:
     // 下面 2-6 條全部讀 pg_policy / information_schema,會照樣回報「5 條齊全、
     // 角色與表達式完全正確」,但 RLS 一點都沒生效。而 anon/authenticated 對
-    // listings 的 table GRANT 在 hosted 是全開的,所以那等於任何人都能讀寫
-    // 任意會員的刊登。這條是唯一抓得到該退化的斷言。
+    // listings 有 table GRANT(20260914000002:anon 讀、authenticated 增刪改查),
+    // 所以那等於任何人都能讀寫任意會員的刊登。這條是唯一抓得到該退化的斷言。
     assertEquals(row.rls_enabled, true, 'listings 必須啟用 RLS');
   } finally {
     await sql.end();
@@ -271,6 +277,100 @@ Deno.test('listings：對外欄位集合與 public_listings 完全相同', async
     // (listings.test.ts)只護得住 view 那一側,護不到這個對稱關係。
     assertEquals(row.only_in_table, null, 'listings 有 public_listings 沒有的欄位');
     assertEquals(row.only_in_view, null, 'public_listings 有 listings 沒有的欄位');
+  } finally {
+    await sql.end();
+  }
+});
+
+// ============================================================
+// 7. table GRANT：RLS 之前的那道門
+// ============================================================
+
+/** `listings` 上某個角色實際持有的權限集合。 */
+async function listingsPrivs(
+  sql: ReturnType<typeof postgres>,
+  grantee: 'anon' | 'authenticated',
+): Promise<Set<string>> {
+  const rows = await sql<{ privilege_type: string }[]>`
+    select distinct g.privilege_type
+    from information_schema.role_table_grants g
+    where g.table_schema = 'public' and g.table_name = 'listings'
+      and g.grantee = ${grantee}
+  `;
+  return new Set(rows.map((r) => r.privilege_type));
+}
+
+// ⚠️ 斷言的是**下限與禁止項**,不是精確集合。平台的 default privileges 會在
+// migration 宣告之外**多給**東西,而且各環境給的不一樣——2026-09-14 實測:
+//
+//   本地 supabase start   anon: REFERENCES,SELECT,TRIGGER,TRUNCATE
+//                         authenticated: 上列 + DELETE,INSERT,UPDATE
+//   正式站                anon: SELECT
+//                         authenticated: SELECT,INSERT,UPDATE,DELETE
+//   hosted 拋棄式分支      兩者皆**空**（PR #317 的 18 條紅燈就是這樣來的）
+//
+// 釘精確集合等於把某一個環境的平台噪音寫進測試——正是本檔檔頭警告的那件事。
+// migration 能保證的是「至少有這些」,那才是環境無關的事實。
+// REFERENCES/TRIGGER/TRUNCATE 不影響資料存取,不在斷言範圍。
+
+Deno.test('listings GRANT：anon 至少有 SELECT,且沒有任何寫入權', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const privs = await listingsPrivs(sql, 'anon');
+    // 缺 SELECT → 訪客瀏覽在 RLS 之前就吃 42501(#317 的 f45/f40/f60)。
+    assertEquals(privs.has('SELECT'), true, 'anon 缺 SELECT(20260914000002 應授與)');
+    // 有寫入權 → listings_insert_own 的 WITH CHECK 是唯一防線,太薄。
+    // 20260620000004 的 revoke 與正式站現況都是「anon 不可寫」。
+    assertEquals(
+      ['INSERT', 'UPDATE', 'DELETE'].filter((p) => privs.has(p)),
+      [],
+      'anon 不該有 listings 的寫入權',
+    );
+  } finally {
+    await sql.end();
+  }
+});
+
+Deno.test('listings GRANT：authenticated 具備增刪改查四項', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const privs = await listingsPrivs(sql, 'authenticated');
+    // 缺任何一項,對應的 own policy 就永遠走不到——症狀是 42501,
+    // 看起來像 policy 寫錯,實際上根本沒走到 policy(rls_probe 的分類器
+    // 就是為了分開這兩者而存在)。
+    assertEquals(
+      ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].filter((p) => !privs.has(p)),
+      [],
+      'authenticated 缺 listings 的增刪改查(20260914000002 應授與)',
+    );
+  } finally {
+    await sql.end();
+  }
+});
+
+// ============================================================
+// 8. is_admin() 的執行權：own policy 能不能被求值
+// ============================================================
+
+// 三條 own policy 的 USING 是 ((user_id = auth.uid()) OR is_admin())，所以
+// authenticated 少了 EXECUTE 就會在 RLS 評估中途 42501——症狀與「policy 寫錯」
+// 同形（PR #317 第四輪 17 條紅燈，詳見 20260914000003）。
+// anon 反過來必須**沒有**：0726 事故的修法是把 own policy 收斂到 authenticated，
+// 不是把 is_admin 開放給 anon；給了就是回退那次修正。
+
+Deno.test('is_admin：authenticated 可執行、anon 不可', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql<{ anon_exec: boolean; auth_exec: boolean }[]>`
+      select has_function_privilege('anon', 'public.is_admin()', 'EXECUTE') as anon_exec,
+             has_function_privilege('authenticated', 'public.is_admin()', 'EXECUTE') as auth_exec
+    `;
+    assertEquals(
+      row.auth_exec,
+      true,
+      'authenticated 缺 is_admin() 的 EXECUTE（20260914000003 應授與）',
+    );
+    assertEquals(row.anon_exec, false, 'anon 不該能執行 is_admin()（0726 事故的不變式）');
   } finally {
     await sql.end();
   }

@@ -1,0 +1,1 @@
+{"branch": "claude/referral-code-sequence-rnunwu", "ended": "2026-09-14T13:57:31+00:00", "fired": {}, "passed": {"bash-guard": 46, "check-output-filter": 46, "model-effort-advisor": 1}, "session": "85b278ea66df", "started": "2026-09-14T13:40:21+00:00"}

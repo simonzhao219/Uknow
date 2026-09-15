@@ -439,32 +439,52 @@ NT$24,000，實際入帳 0 元——是靠人工反推 digest 才看出來的，
 
 規格書 §7.4：未填推薦碼的**首購**會員自動綁定平台指定的預設推薦人。
 機制預設**停用**（`reward_config.default_referrer_code` 為 `null`），
-要啟用需在**每個環境**各做一次以下三步（帳號 uuid 逐環境不同，
+要啟用需在**每個環境**各做一次以下兩步（帳號 uuid 逐環境不同，
 所以是營運動作、不是 migration）：
 
 1. **建立專用平台帳號**：走正常註冊 + 付款流程（不要用個人帳號——它會
    出現在所有自然流量會員的上線位置並累積大量點數，帳務分開較乾淨）。
-   付款成功會自動產生一個隨機推薦碼。
-2. **把推薦碼改成指定值**（SQL Editor，service role）：
+
+   ⚠️ **這必須是該環境第一個付款成功的帳號**。推薦碼是 `referral_code_seq`
+   發的流水號（規格書 §7.1），第一個發出的碼就是 `8048876`；若已經有別人
+   先付款成功，`8048876` 已經被領走，這個帳號拿到的會是別的號碼。先用下面
+   的「確認號源狀態」查一次再決定。
+2. **啟用機制**（SQL Editor，service role）：
 
    ```sql
-   update public.referral_codes
-   set code = 'asa899869'          -- 平台指定的碼
-   where user_id = '<該帳號 uuid>' and status = 'active';
-   ```
-
-   ⚠️ 僅在該帳號**尚無下線**時執行才乾淨——`profiles.referred_by_code`
-   存字串快照，已用舊碼註冊者的稽核欄位會指向不存在的碼。
-3. **啟用機制**：
-
-   ```sql
-   update public.reward_config set default_referrer_code = 'asa899869';
+   update public.reward_config set default_referrer_code = '8048876';
    ```
 
 **順序不可顛倒**（先有碼再啟用）。先啟用而碼不存在不會出錯——機制安全地
 靜默不生效並寫 `system_alerts`（`default_referrer_code_invalid`）；
 推薦人被停權則寫 `default_referrer_suspended`。漏做一個環境不會無聲失敗，
 告警可在後台系統告警看到。
+
+**確認號源狀態**（隨時可查，唯讀）：
+
+```sql
+select last_value, is_called from public.referral_code_seq;   -- 下一個要發的號
+select code, user_id, status from public.referral_codes order by code;
+```
+
+`is_called = false` 表示一個碼都還沒發過，下一個就是 `last_value`
+（`8048876`）；`is_called = true` 表示 `last_value` 已經發出去了。
+
+**重設號源**（⚠️ **僅限 develop 等非正式環境**，用於清掉測試碼後讓
+`8048876` 回到可發狀態）：
+
+```sql
+begin;
+delete from public.referral_codes;   -- subscriptions.referral_code_id 會被設為 null
+alter sequence public.referral_code_seq restart with 8048876;
+commit;
+```
+
+**正式站絕不執行**——序列倒轉會讓之後發出的碼與已發出的碼重疊，撞上
+`referral_codes.code` 的 unique 約束就變成「付款成功但沒拿到推薦碼」
+（`apply_referral_side_effects` 的 3a 段把它攔成 warning，不擋金流）。
+另外 `profiles.referred_by_code` 存的是字串快照，刪碼會讓已用該碼註冊者的
+稽核欄位指向不存在的碼——所以這段只在「整批測試資料一起清掉」時才乾淨。
 
 **停用/回滾**：`update public.reward_config set default_referrer_code = null;`
 ——即時生效、不必部署。已產生的推薦邊與獎勵不會自動撤銷（與換線語意一致）。
@@ -494,6 +514,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
+- [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
+      拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
 
 ### 兩個環境都設完後，再驗一次「沒有交叉」
 

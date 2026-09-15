@@ -29,7 +29,7 @@ vi.mock('../../App', () => ({ UserContext: UserCtx }));
 vi.mock('./JoinReferralProgramDialog', () => ({
   JoinReferralProgramDialog: ({ open, onSuccess }: any) =>
     open ? (
-      <button type="button" data-testid="join-dialog-submit" onClick={() => onSuccess('abc123456')}>
+      <button type="button" data-testid="join-dialog-submit" onClick={() => onSuccess('8048877')}>
         送出加入
       </button>
     ) : null,
@@ -70,17 +70,17 @@ function renderEntry(
 describe('MyQrEntry', () => {
   it('未加入推薦計畫時不顯示推薦碼，改顯示加入 CTA', () => {
     // referralCode 刻意給值：碼在付款成功時就已產生，閘門是 referralProgramJoined。
-    renderEntry({ name: '王小明', referralProgramJoined: false, referralCode: 'zld310438' });
+    renderEntry({ name: '王小明', referralProgramJoined: false, referralCode: '8048877' });
 
-    expect(screen.queryByText('zld310438')).toBeNull();
+    expect(screen.queryByText('8048877')).toBeNull();
     expect(screen.queryByTestId('my-referral-code')).toBeNull();
     expect(screen.getByTestId('join-referral-button')).toBeTruthy();
   });
 
   it('已加入且有推薦碼時顯示碼，不顯示加入 CTA', () => {
-    renderEntry({ name: '王小明', referralProgramJoined: true, referralCode: 'zld310438' });
+    renderEntry({ name: '王小明', referralProgramJoined: true, referralCode: '8048877' });
 
-    expect(screen.getByTestId('my-referral-code').textContent).toBe('zld310438');
+    expect(screen.getByTestId('my-referral-code').textContent).toBe('8048877');
     expect(screen.queryByTestId('join-referral-button')).toBeNull();
   });
 
@@ -96,7 +96,7 @@ describe('MyQrEntry', () => {
     expect(screen.getByTestId('my-qr-button')).toBeTruthy();
     cleanup();
 
-    renderEntry({ referralProgramJoined: true, referralCode: 'zld310438' });
+    renderEntry({ referralProgramJoined: true, referralCode: '8048877' });
     expect(screen.getByTestId('my-qr-button')).toBeTruthy();
   });
 
