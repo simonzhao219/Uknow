@@ -165,7 +165,7 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 |---|---|
 | `authenticated` 對 `is_admin()` 的 EXECUTE | **true** |
 | `anon` 對 `is_admin()` 的 EXECUTE | false |
-| `anon` 對 `listings` 的 SELECT / INSERT | **true / true** |
+| `anon` 對 `listings` 的 SELECT / INSERT | **true / true**（⚠️ INSERT 已於 2026-09-14 實測為 false，見下） |
 | `authenticated` 對 `listings` 的 S/I/U/D | 全部 true |
 
 兩件事因此成立:(a)`20260620000004` 的 `revoke ... from anon, public` 移除的是
@@ -191,6 +191,16 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 平台在 migration 宣告之外**多給**的那些（REFERENCES／TRIGGER／TRUNCATE）
 不影響資料存取,也各環境不同;釘精確集合等於把某一個環境寫進測試。
 `rls-policies.test.ts` 第 7 節因此只釘「至少有哪些」與「`anon` 不可寫」。
+
+**連帶更正上表一格**:2026-08-07 記的 `anon` 對 `listings` 的 INSERT = true,
+2026-09-14 實測已是 **false**（只剩 SELECT）。這一格撐著 journey
+`45_listing_rls.feature` 的一條斷言——「訪客不能建立刊登」原本釘死
+`denied_by_rls`,理由正是「anon 有 INSERT GRANT 所以必然走到 RLS 才被拒」。
+事實變了,該情境因此改釘 `denied_by_grant`（更早、更強,而且現在由
+`20260914000002` 保證,不再是環境偶然）。已登入路徑維持 `denied_by_rls` 不變。
+
+**同一節還有一支函數授權**:`is_admin()` 的 `authenticated` EXECUTE 同樣只存在於
+平台預設,`20260914000003` 補上宣告;`anon` 維持 false（`20260726000001` 的不變式）。
 
 ## 環境與部署
 
