@@ -9,7 +9,7 @@
 | # | Session | 工項 | 狀態 | PR | 備註 |
 |---|---|---|---|---|---|
 | S0 | 總綱與施工計畫 | — | ✅ 完成 | （本 PR） | 四個方向決策已與業主核對（plan.md §0）；四視角審查完成、P0×2/P1×7/P2×7 全數回填（review.md） |
-| S1 | 設計語言地基 | D1+D2 | 🟡 規劃完成，停等人審 | [#316](https://github.com/simonzhao219/Uknow/pull/316) | 兩輪 `/review-plan` 皆無 P0；業主裁決六項。規劃書在 `docs/plans/design-language-foundation/`，實作由業主打 `/tdd-implement` 啟動 |
+| S1 | 設計語言地基 | D1+D2 | ✅ 實作完成，等 PR 合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
 | S2 | 全站色彩收斂 | D3 | ⬜ 未開工 | — | 驗收站 1 |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
