@@ -347,3 +347,31 @@ Deno.test('listings GRANT：authenticated 具備增刪改查四項', async () =>
     await sql.end();
   }
 });
+
+// ============================================================
+// 8. is_admin() 的執行權：own policy 能不能被求值
+// ============================================================
+
+// 三條 own policy 的 USING 是 ((user_id = auth.uid()) OR is_admin())，所以
+// authenticated 少了 EXECUTE 就會在 RLS 評估中途 42501——症狀與「policy 寫錯」
+// 同形（PR #317 第四輪 17 條紅燈，詳見 20260914000003）。
+// anon 反過來必須**沒有**：0726 事故的修法是把 own policy 收斂到 authenticated，
+// 不是把 is_admin 開放給 anon；給了就是回退那次修正。
+
+Deno.test('is_admin：authenticated 可執行、anon 不可', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql<{ anon_exec: boolean; auth_exec: boolean }[]>`
+      select has_function_privilege('anon', 'public.is_admin()', 'EXECUTE') as anon_exec,
+             has_function_privilege('authenticated', 'public.is_admin()', 'EXECUTE') as auth_exec
+    `;
+    assertEquals(
+      row.auth_exec,
+      true,
+      'authenticated 缺 is_admin() 的 EXECUTE（20260914000003 應授與）',
+    );
+    assertEquals(row.anon_exec, false, 'anon 不該能執行 is_admin()（0726 事故的不變式）');
+  } finally {
+    await sql.end();
+  }
+});

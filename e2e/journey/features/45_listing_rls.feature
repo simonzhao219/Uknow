@@ -71,10 +71,12 @@ Feature: 刊登 RLS — 直打 PostgREST 的授權邊界
     Then 該次寫入被 RLS 拒絕
     And "B8" 名下沒有任何刊登
 
+  # 訪客連 INSERT 的 GRANT 都沒有（20260914000002：anon 只有 SELECT），
+  # 所以請求在 RLS 被求值之前就結束——比 RLS 擋下更早也更強。
   @journey @listing @rls @negative
   Scenario: 訪客不能建立刊登
     When 訪客嘗試以 "B8" 的身分建立刊登
-    Then 該次寫入被 RLS 拒絕
+    Then 該次寫入在 GRANT 層被拒絕
     And "B8" 名下沒有任何刊登
 
   @journey @listing @rls @negative

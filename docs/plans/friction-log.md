@@ -2599,3 +2599,39 @@ GRANT 確實是環境相依的。前提變了之後,那行註解從正確變成�
 測試」——**修一個環境假設的過程中又立了一個新的環境假設**。改成釘
 「至少有哪些」＋「anon 不可寫」之後才是真正環境無關的。教訓:當一個值在不同
 環境會不同時,能斷言的是**不變式**(下限、禁止項),不是**快照**。
+
+**再一層:`is_admin()`。** 補上 listings 的表授權之後,第四輪 journey 的錯誤從
+`permission denied for table listings` 變成 `permission denied for function is_admin`
+(17 條)。`20260620000004` 收掉了 CREATE FUNCTION 隱含給 PUBLIC 的那份,正式站的
+authenticated 之所以還有,又是平台預設另給的明確授權。`20260914000003` 補上宣告。
+
+**我的同類掃描做了一半。** 第一次掃描只查了 `role_table_grants`(資料表),
+沒查 routine privileges(函數)——於是修完第一層又撞第二層,多燒一輪 25 分鐘的
+拋棄式分支。`/fix-bug` 的「把根因抽象成 pattern」這一步,pattern 抽得不夠高:
+真正的 pattern 不是「listings 的表授權沒宣告」,是「**任何**靠平台預設而非
+migration 宣告的授權」——那涵蓋表、函數、序列、view、schema 五類物件。
+第二次才把五類都對帳完(結論:只有 `is_admin()` 還缺)。
+
+**下次的做法**:與其逐層試,不如一次把正式站的
+`role_table_grants` / `has_function_privilege` / `has_sequence_privilege` /
+`has_schema_privilege` 全量拉出來,與 migration 宣告對帳。那支腳本值得寫進
+framework-check——它把「環境漂移」從一個要靠 journey 才發現的問題,變成每次 CI
+都查得到的問題。
+
+**最後一層是一條測試,而它的註解正是這整條記錄的縮影。**
+`f45_listing_rls_steps.py` 的「訪客不能建立刊登」原本釘死 `denied_by_rls`,
+而且註解明文記載:它曾被放寬成「三種被拒形狀都算過」、隨後**被推翻**,理由是
+「plan §2 已實測 hosted 上 anon 對 listings 的 INSERT GRANT = true,所以它必然
+走到 RLS 才被拒」。
+
+那個論證完全正確。過期的是它立基的那個實測值——今天正式站的 anon 只有 SELECT。
+
+**這是本檔最值得記的一條**:一個被否決過的提案,不會因為它當年被否決就永遠是錯的;
+論證的效期等於它所引用的事實的效期。反過來也一樣——這次的處置刻意**不是**回頭
+放寬(那才會再犯一次當年被推翻的錯),而是改釘更早、更強、且現在由 migration
+保證的那道線(`denied_by_grant`)。已登入路徑維持 `denied_by_rls`,因為對它而言
+RLS 確實仍是列級邊界。
+
+推論:**凡是註解裡寫著「實測 X = 某值」的決策,都帶著一個看不見的到期日。**
+值得在那種註解旁邊標上量測日期與重測方式——本次已為 `supabase/README.md`
+〈GRANT 現況〉那張表補上更正與日期。
