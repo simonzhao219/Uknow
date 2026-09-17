@@ -177,7 +177,7 @@
 | 工項 | 內容 | 服務誰 | 有感度 |
 |---|---|---|---|
 | **D1 色彩系統重建** | `globals.css` 補齊語義色 token（success/warning/info，destructive 已有）＋灰階層次規範；黑白極簡原則寫進 `ui-ux-guidelines.md` 新章節（規則只寫一份，本 plan 完工即刪） | 全部 | 中（間接） |
-| **D2 色彩守門腳本** | 新增 `scripts/check-color-usage.py`：掃 `src/**` 對 Tailwind 調色盤 class（`text-blue-600` 這類）建立白名單機制，接進 framework-check 軌——沒有這條，D3 收斂完必然再漂 | 開發 | 低（防線） |
+| **D2 色彩守門腳本** | 新增 `scripts/check-color-usage.py`：掃 `src/**` 的具名調色盤 class、裝飾性漸層與原始色值（C1/C2/C3），以**棘輪 baseline** 把關（不在 baseline 的新命中即紅、命中數只准減少、無行內豁免——S1 規劃時刻意由「白名單」改成這個機制，用法見 `ui-ux-guidelines.md` §12.9），接進 framework-check 軌——沒有這條，D3 收斂完必然再漂 | 開發 | 低（防線） |
 | **D3 全站手刻色收斂** | 按 D1 規範替換 §2.4 列出的手刻色與漸層：語義的改語義 token，裝飾的收斂為黑白灰；Badge/提示框 variant 化（`ui/badge.tsx` 擴充 + 新 `StatusCallout` 元件） | 全部 | **高**（全站觀感煥然一新） |
 
 ### Phase 1・後台六痛點

@@ -90,6 +90,20 @@ C3_ARBITRARY = re.compile(
 
 Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 
+# 掃描排除清單——只收「檔案裡的色值不是色彩用途」的檔，不是豁免。
+# globals.test.ts 是對比度公式的錨定測試，`#777777`/`#767676` 這些 hex 是
+# WCAG 參考值、必須以原始色值寫，它們本身就是閘門的一部分；把它算進
+# baseline 會讓 S2 收斂到最後永遠剩這一筆「債」，且每加一條錨定案例都要
+# 動 baseline。這裡的判準與 §12.9「刻意不提供行內豁免」不衝突：豁免是
+# 「色彩用途但先放過」，排除是「根本不是色彩用途」。新增條目必須附理由。
+EXCLUDED_PATHS = {
+    "src/styles/globals.test.ts": "對比度公式錨定測試，hex 是 WCAG 參考值而非手刻色",
+}
+
+
+def is_excluded(rel_path: str) -> bool:
+    return rel_path in EXCLUDED_PATHS
+
 
 def _line_of(source: str, index: int) -> int:
     return source.count("\n", 0, index) + 1
@@ -249,6 +263,8 @@ def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str], dict[str
     files = sorted(SRC.rglob("*.ts")) + sorted(SRC.rglob("*.tsx"))
     for path in sorted(set(files)):
         rel = str(path.relative_to(ROOT))
+        if is_excluded(rel):
+            continue
         existing.add(rel)
         source = path.read_text(encoding="utf-8")
         hits = scan_source(source)
@@ -514,6 +530,9 @@ def self_test() -> int:
     detail = format_violation_detail("a.tsx", "c1", [(3, "text-blue-600")])
     if detail != ["    a.tsx:3 c1 命中 `text-blue-600` — " + TOKEN_HINT["c1"]]:
         failures.append(f"  FAIL(format_violation_detail): 格式跑掉了 — {detail}")
+
+    if not is_excluded("src/styles/globals.test.ts") or is_excluded("src/styles/globals.css"):
+        failures.append("  FAIL(exclude): 排除清單只該命中 globals.test.ts")
 
     for label, used, markdown_text, want_n in G1_CASES:
         got = missing_gray_rows(used, parse_documented_gray_classes(markdown_text))

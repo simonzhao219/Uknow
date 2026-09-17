@@ -244,11 +244,6 @@
     "c2": 0,
     "c3": 0
   },
-  "src/styles/globals.test.ts": {
-    "c1": 0,
-    "c2": 0,
-    "c3": 10
-  },
   "src/utils/gender.test.ts": {
     "c1": 4,
     "c2": 0,

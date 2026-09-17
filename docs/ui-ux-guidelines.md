@@ -368,7 +368,8 @@ WCAG 1.4.11，門檻 **3:1**——不是一律套 4.5:1，border 只驗過存在
 ### 12.9 守門腳本怎麼用
 
 `python3 scripts/check-color-usage.py` 掃 `src/**/*.ts(x)`（含 `.test.*`，
-色不只住在 JSX 裡）三條規則：
+色不只住在 JSX 裡；唯一例外是腳本內 `EXCLUDED_PATHS` 列出、附了理由的檔——
+目前只有對比度公式的錨定測試，那裡的 hex 是 WCAG 參考值不是手刻色）三條規則：
 
 - **C1** 具名 Tailwind 調色盤 class（`text-blue-600` 這類，含 `hover:`/
   `dark:`/`md:` 等變體前綴）。
