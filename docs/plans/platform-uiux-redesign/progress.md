@@ -9,7 +9,7 @@
 | # | Session | 工項 | 狀態 | PR | 備註 |
 |---|---|---|---|---|---|
 | S0 | 總綱與施工計畫 | — | ✅ 完成 | （本 PR） | 四個方向決策已與業主核對（plan.md §0）；四視角審查完成、P0×2/P1×7/P2×7 全數回填（review.md） |
-| S1 | 設計語言地基 | D1+D2 | ✅ 實作完成，等 PR 合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
+| S1 | 設計語言地基 | D1+D2 | ✅ 已合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
 | S2 | 全站色彩收斂 | D3 | ⬜ 未開工 | — | 驗收站 1 |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
@@ -28,6 +28,7 @@
 | 2026-09-14 | rebase 到 develop（#310–#313 之後）並重新評估：計畫內容不受影響（Footer 精簡/聯絡改純文字/推薦碼改數字流水號皆不與工項重疊），僅更新四處行號引用（規格書 §13 兩處、`api/index.ts` PII 兩處） | develop 前進造成引用位移；週期性重評估 |
 | 2026-09-14 | S1/S3/S4/S5 開工 prompt 補「先切 `feature/<slug>` 分支」一行 | web session 預設生在 `claude/*` 分支，三段式守衛只認 `feature/<slug>`，prompt 不該依賴 session 記得讀 CLAUDE.md 那段 |
 | 2026-09-14 | S1 重量由「中」調整為「中偏重」，實作模型維持 Sonnet；施工中的 session 可能需兩次對話（中途 `/clear` 續作），狀態靠 `docs/plans/design-language-foundation/progress.md` 接續 | S1 兩輪四視角審查共回填 P1×12 / P2×13，新增 C3 原始色值規則、`--destructive` 兩組 token、對比斷言翻倍（border 3:1、裸字對兩底色）、灰階對照表（39 處/15 檔）與 G1 完整性檢查、色盲 checklist。依 construction-plan §4.4「計畫要改就在 progress.md 記一行異動」 |
+| 2026-09-17 | S1 合併後對照檢查的兩處收尾：plan.md D2 列措辭由「白名單」改為實際交付的「棘輪 baseline」；`check-color-usage.py` 新增掃描排除清單，`globals.test.ts`（對比度公式錨定測試）不再計入 baseline | 前者是 S1 規劃書 P2-8 記錄的刻意偏離，規劃書刪除後上游未同步；後者是 WCAG 參考值被當成色彩債，S2 收斂到最後會永遠剩這一筆 |
 
 ## 遺留事項
 
