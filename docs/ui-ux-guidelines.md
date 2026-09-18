@@ -295,6 +295,15 @@ token，是**對照到既有 token**，而且不是 1:1 替換：
 對照：成功 → `--success`；警示 → `--warning`；危險 → `--destructive`；
 **資訊/進行中 → 灰階或 `--primary`，不再用藍**（見 12.7 色盲防線）。
 
+**B 形狀不手刻三件組，走元件**（S2 收斂時建立，之後新寫的一律照用）：
+整塊提示框用 `StatusCallout`（`src/components/ui/status-callout.tsx`，
+`variant` = `success`/`warning`/`destructive`/`neutral`；原本是真標題的
+傳 `titleAs`，互動元素放 `action` slot）；狀態 pill 用 `Badge` 的
+`success`/`warning`（A 形狀）與 `success-subtle`/`warning-subtle`/
+`destructive-subtle`（B 形狀）variant。手刻 `bg-*-subtle border-*-border
+text-*-subtle-foreground` 三件組守門腳本抓不到（都是 token class），
+只能靠這條規則與 code review。
+
 ### 12.4 漸層退場
 
 三類判準，不靠語感：
@@ -322,6 +331,28 @@ token，是**對照到既有 token**，而且不是 1:1 替換：
   與那個既有的狀態灰保持可辨識的亮度差距**，否則會被稀釋成分不出語意的
   一片灰。
 - **(d) 純裝飾**：icon 底色、卡片點綴。
+
+S2 全站收斂時規則字面沒說死、逐案裁決過的情境，沉澱成判準（之後遇到
+同型情境直接套，不重新裁決）：
+
+- **金額正負保留語義**：收入 `--success`、支出 `--destructive`（裸字走
+  `*-subtle-foreground`），不受 (a)「計數與量值去色」約束——正負是狀態，
+  不是量值。
+- **CTA／連結可用 `--primary`**：資訊/進行中類去色走灰階之後，需要視覺
+  焦點的動作入口用 `--primary`（近黑），不另找強調色；跨檔案的紫色/藍色
+  強調一律收斂到這裡。
+- **第四種狀態沒有第四種顏色**：語義色只有三類，多出來的狀態（例：掃碼
+  驗證的「錯誤但可重試」）併入最接近的一類（通常是 `warning`），靠文案
+  區隔，不引入新色相。
+- **`destructive` 留給破壞性動作與失敗**：正常流程裡「不可逆」的提醒
+  （例：領獎前的確認事項）走 `warning`，不用紅——紅在這裡會稀釋掉真正
+  失敗態的訊號。
+- **進度/度量類去色**：進度條、統計卡走 `--foreground`/`--muted-foreground`；
+  只有「達標／將達標」這種狀態分段才對應到 `--success`/`--warning`
+  （見 12.4 離散分段）。
+- **品牌 icon 色是唯一的色相例外**（FB/IG/LINE 這類第三方品牌色），
+  留在 baseline 並附行內註解說明；除此之外沒有「品牌色」——本平台的
+  品牌語言就是黑白灰。
 
 ### 12.6 深色模式
 
