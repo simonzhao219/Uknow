@@ -42,6 +42,19 @@
      ≈1.6:1，遠低於 3:1 門檻，border 必須是獨立選色，淺深兩版皆同理選一致
      的獨立色階（見 .dark 區塊同名 token 的對稱說明）。 */
   --destructive-border: #b91c1c;
+  /* 推薦樹世代色收斂（S2，僅供 ReferralTreeView 使用，plan.md D3 §2.4）：世代是
+     多值分類色（結構屬性,非狀態),依規則應去色走灰階,但 avatar(實心底配白字)
+     與 badge/line(淺底提示框)兩種形狀對亮度的需求相反,無法共用一套值——
+     另闢一組專用 token,且與既有「已失效」狀態灰(→ --muted-foreground)保持
+     可辨識距離,對比度由 globals.test.ts 驗證。 */
+  --tree-gen-avatar-1: #1f2937;
+  --tree-gen-avatar-2: #374151;
+  --tree-gen-avatar-3: #4b5563;
+  --tree-gen-avatar-foreground: #ffffff;
+  --tree-gen-badge-1: #e5e7eb;
+  --tree-gen-badge-2: #f3f4f6;
+  --tree-gen-badge-3: #f9fafb;
+  --tree-gen-badge-foreground: #1f2937;
   --border: rgba(0, 0, 0, 0.1);
   --input: transparent;
   --input-background: #f3f3f5;
@@ -105,6 +118,17 @@
   --destructive-subtle: #450a0a;
   --destructive-subtle-foreground: #fca5a5;
   --destructive-border: #dc2626;
+  /* 推薦樹世代色深色版：avatar 沿用「深底配白字」邏輯但整體調亮，才能與更深的
+     深色頁面背景（--background/--card）有可辨識落差；badge 改用深色慣例的
+     暗底配亮字（比照既有 success-subtle 深色版 #052e16/#86efac 的寫法）。 */
+  --tree-gen-avatar-1: oklch(0.3 0 0);
+  --tree-gen-avatar-2: oklch(0.51 0 0);
+  --tree-gen-avatar-3: oklch(0.55 0 0);
+  --tree-gen-avatar-foreground: oklch(1 0 0);
+  --tree-gen-badge-1: oklch(0.24 0 0);
+  --tree-gen-badge-2: oklch(0.31 0 0);
+  --tree-gen-badge-3: oklch(0.38 0 0);
+  --tree-gen-badge-foreground: oklch(0.92 0 0);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.439 0 0);
@@ -155,6 +179,14 @@
   --color-destructive-subtle: var(--destructive-subtle);
   --color-destructive-subtle-foreground: var(--destructive-subtle-foreground);
   --color-destructive-border: var(--destructive-border);
+  --color-tree-gen-avatar-1: var(--tree-gen-avatar-1);
+  --color-tree-gen-avatar-2: var(--tree-gen-avatar-2);
+  --color-tree-gen-avatar-3: var(--tree-gen-avatar-3);
+  --color-tree-gen-avatar-foreground: var(--tree-gen-avatar-foreground);
+  --color-tree-gen-badge-1: var(--tree-gen-badge-1);
+  --color-tree-gen-badge-2: var(--tree-gen-badge-2);
+  --color-tree-gen-badge-3: var(--tree-gen-badge-3);
+  --color-tree-gen-badge-foreground: var(--tree-gen-badge-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-background: var(--input-background);

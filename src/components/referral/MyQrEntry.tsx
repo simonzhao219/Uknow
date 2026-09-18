@@ -79,17 +79,12 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
         {canShowCode ? (
           <p
             data-testid="my-referral-code"
-            className="truncate font-mono text-lg font-semibold tracking-wider text-purple-600"
+            className="truncate font-mono text-lg font-semibold tracking-wider text-primary"
           >
             {user.referralCode}
           </p>
         ) : (
-          <Button
-            size="sm"
-            className="mt-1 bg-purple-600 text-white hover:bg-purple-700"
-            onClick={openJoin}
-            data-testid="join-referral-button"
-          >
+          <Button size="sm" className="mt-1" onClick={openJoin} data-testid="join-referral-button">
             <Shield className="mr-1 h-4 w-4" />
             加入推薦計畫
           </Button>

@@ -34,8 +34,6 @@ export interface GenderDisplay {
   symbolWithLabel: string;
   /** 對應的 lucide 圖示名稱 */
   iconName: GenderIconName;
-  /** outline 樣式 Badge 的邊框 / 文字配色 */
-  colorClass: string;
 }
 
 const MALE: GenderDisplay = {
@@ -44,7 +42,6 @@ const MALE: GenderDisplay = {
   symbol: `♂${TEXT_PRESENTATION}`,
   symbolWithLabel: `♂${TEXT_PRESENTATION} 男`,
   iconName: 'mars',
-  colorClass: 'border-blue-500 text-blue-600',
 };
 
 const FEMALE: GenderDisplay = {
@@ -53,7 +50,6 @@ const FEMALE: GenderDisplay = {
   symbol: `♀${TEXT_PRESENTATION}`,
   symbolWithLabel: `♀${TEXT_PRESENTATION} 女`,
   iconName: 'venus',
-  colorClass: 'border-pink-500 text-pink-600',
 };
 
 /**

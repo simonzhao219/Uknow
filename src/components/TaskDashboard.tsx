@@ -100,7 +100,7 @@ export function TaskDashboard() {
           </div>
         </div>
         <div className="text-center py-12">
-          <p className="text-red-600 mb-4">{error}</p>
+          <p className="text-destructive-subtle-foreground mb-4">{error}</p>
           <Button onClick={() => window.location.reload()}>重新載入</Button>
         </div>
       </div>
@@ -148,12 +148,12 @@ export function TaskDashboard() {
                 key={task.id}
                 className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow"
               >
-                <div className="absolute top-0 right-0 w-32 h-32 opacity-10 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-full -mr-16 -mt-16" />
+                <div className="absolute top-0 right-0 w-32 h-32 opacity-10 bg-muted-foreground rounded-full -mr-16 -mt-16" />
 
                 <CardHeader className="relative">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2 flex-1">
-                      <Trophy className="h-6 w-6 text-yellow-500 shrink-0" />
+                      <Trophy className="h-6 w-6 text-muted-foreground shrink-0" />
                       <div>
                         <CardTitle className="text-xl">{task.title}</CardTitle>
                         <CardDescription className="mt-1">{task.description}</CardDescription>
@@ -175,7 +175,7 @@ export function TaskDashboard() {
                         {rounds.currentRoundCount} / {task.target}
                       </span>
                     </div>
-                    <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="relative h-3 bg-muted rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-all duration-500 ${getProgressBarStyle(rounds.roundProgressPct)}`}
                         style={{ width: `${Math.min(rounds.roundProgressPct, 100)}%` }}
@@ -185,19 +185,21 @@ export function TaskDashboard() {
                   </div>
 
                   {rounds.roundsThisMonth > 0 && (
-                    <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800 flex items-center justify-center gap-2">
+                    <div className="p-2 bg-success-subtle border border-success-border rounded text-sm text-success-subtle-foreground flex items-center justify-center gap-2">
                       🎉 本月已達成 {rounds.roundsThisMonth} 輪
                       {task.unclaimedRewardCount > 0 &&
                         `（可領 ${task.unclaimedRewardCount} 張免費續約）`}
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-center justify-between p-3 bg-warning-subtle rounded-lg border border-warning-border">
                     <div className="flex items-center gap-2">
-                      <Gift className="h-5 w-5 text-yellow-600" />
+                      <Gift className="h-5 w-5 text-warning-subtle-foreground" />
                       <span className="text-sm font-medium">任務獎勵</span>
                     </div>
-                    <span className="text-lg font-bold text-yellow-600">{task.reward.label}</span>
+                    <span className="text-lg font-bold text-warning-subtle-foreground">
+                      {task.reward.label}
+                    </span>
                   </div>
 
                   {task.details && (
@@ -211,7 +213,7 @@ export function TaskDashboard() {
                         </div>
                       )}
                       {task.details.totalCredits > 0 && (
-                        <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700 flex items-center gap-2">
+                        <div className="p-2 bg-success-subtle border border-success-border rounded text-sm text-success-subtle-foreground flex items-center gap-2">
                           累計獲得 {task.details.totalCredits} 張免費續約
                         </div>
                       )}

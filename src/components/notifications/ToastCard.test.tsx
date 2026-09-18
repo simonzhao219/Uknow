@@ -61,10 +61,10 @@ describe('ToastCard', () => {
 
   it('四種 type 各自帶出自己的配色與圖示', () => {
     const expected: Record<ToastType, string> = {
-      success: 'bg-green-50',
-      error: 'bg-red-50',
-      warning: 'bg-orange-50',
-      info: 'bg-blue-50',
+      success: 'bg-success-subtle',
+      error: 'bg-destructive-subtle',
+      warning: 'bg-warning-subtle',
+      info: 'bg-muted',
     };
     for (const [type, bg] of Object.entries(expected)) {
       renderToast({ type: type as ToastType });

@@ -117,7 +117,7 @@ export function SystemNotifications() {
       case 'info':
         return <Badge variant="default">資訊</Badge>;
       case 'warning':
-        return <Badge className="bg-orange-500">警告</Badge>;
+        return <Badge variant="warning">警告</Badge>;
       case 'error':
         return <Badge variant="destructive">錯誤</Badge>;
       default:
@@ -246,7 +246,7 @@ export function SystemNotifications() {
                     <div className="flex items-center gap-2">
                       {getTypeBadge(a.type)}
                       {isCurrentlyActive(a) ? (
-                        <Badge className="bg-green-600">生效中</Badge>
+                        <Badge variant="success">生效中</Badge>
                       ) : (
                         <Badge variant="outline">未生效</Badge>
                       )}

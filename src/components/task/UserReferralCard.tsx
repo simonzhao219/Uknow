@@ -34,7 +34,7 @@ export function UserReferralCard({
   createdAt,
   className = '',
   isCompleted = false,
-  completionBorderColor = 'border-yellow-500',
+  completionBorderColor = 'border-success-border',
 }: UserReferralCardProps) {
   return (
     <div
@@ -44,17 +44,9 @@ export function UserReferralCard({
     >
       {/* 使用者名稱 */}
       <div className="flex items-center gap-2 mb-2">
-        <User className="h-4 w-4 text-blue-600 shrink-0" />
+        <User className="h-4 w-4 text-muted-foreground shrink-0" />
         <p className="font-medium truncate">{userName}</p>
       </div>
-
-      {/* 推薦碼 */}
-      {/* <div className="flex items-center gap-2 mb-2">
-        <Ticket className="h-4 w-4 text-purple-600 shrink-0" />
-        <p className="text-sm font-mono text-muted-foreground truncate">
-          {userReferralCode}
-        </p>
-      </div> */}
 
       {/* 時間戳 */}
       <div className="flex items-center gap-2">

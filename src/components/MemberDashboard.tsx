@@ -103,7 +103,7 @@ export function MemberDashboard() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Settings className="h-5 w-5 text-blue-600" />
+                <Settings className="h-5 w-5 text-muted-foreground" />
                 刊登管理
               </CardTitle>
               <CardDescription className="truncate">
@@ -134,7 +134,7 @@ export function MemberDashboard() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5 text-purple-600" />
+                <Users className="h-5 w-5 text-muted-foreground" />
                 推薦管理
               </CardTitle>
               <CardDescription>推薦好友賺Point</CardDescription>
@@ -151,7 +151,7 @@ export function MemberDashboard() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <CheckSquare className="h-5 w-5 text-green-600" />
+                <CheckSquare className="h-5 w-5 text-muted-foreground" />
                 任務中心
               </CardTitle>
               <CardDescription>完成任務賺Point</CardDescription>
@@ -168,7 +168,7 @@ export function MemberDashboard() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Gift className="h-5 w-5 text-orange-600" />
+                <Gift className="h-5 w-5 text-muted-foreground" />
                 獎勵回饋
               </CardTitle>
               <CardDescription>查看Point收益</CardDescription>

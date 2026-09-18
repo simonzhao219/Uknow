@@ -196,7 +196,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
 
   return (
     <div className="space-y-2">
-      <div className="relative border-2 border-dashed border-gray-300 rounded-lg bg-white">
+      <div className="relative border-2 border-dashed border-border rounded-lg bg-white">
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -214,7 +214,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
         />
         {!hasSigned && !disabled && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-sm text-gray-400">請在此處簽名</p>
+            <p className="text-sm text-muted-foreground">請在此處簽名</p>
           </div>
         )}
       </div>
@@ -232,7 +232,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
         </Button>
 
         {hasSigned && (
-          <div className="flex items-center gap-1 text-green-600 text-sm">
+          <div className="flex items-center gap-1 text-success-subtle-foreground text-sm">
             <Check className="h-4 w-4" />
             已完成簽名
           </div>

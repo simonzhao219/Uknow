@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
+import { StatusCallout } from '../ui/status-callout';
 import { CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { formatTimestamp } from '../../utils/referralFormatter';
 
@@ -40,7 +41,7 @@ export function CollectionPreviewDialog({
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-blue-600" />
+            <CheckCircle className="h-5 w-5 text-muted-foreground" />
             預覽統計變化 - 步驟 2/3
           </CardTitle>
           <CardDescription>確認查收後的點數統計變化</CardDescription>
@@ -60,7 +61,9 @@ export function CollectionPreviewDialog({
               </div>
               <div className="border-t pt-2 flex justify-between font-medium">
                 <span>總計扣除：</span>
-                <span className="text-red-600">-{totalDeduction.toLocaleString()}P</span>
+                <span className="text-destructive-subtle-foreground">
+                  -{totalDeduction.toLocaleString()}P
+                </span>
               </div>
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
                 <span>申請日期：</span>
@@ -74,26 +77,26 @@ export function CollectionPreviewDialog({
           </div>
 
           {/* 統計數據變化預覽 */}
-          <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-3">
-            <h3 className="font-medium text-blue-900 flex items-center gap-2">
+          <div className="border-2 border-border bg-muted p-4 rounded-lg space-y-3">
+            <h3 className="font-medium text-foreground flex items-center gap-2">
               <CheckCircle className="h-4 w-4" />
               統計數據變化預覽
             </h3>
 
             {/* 處理中Point變化 */}
             <div className="space-y-2">
-              <div className="text-sm text-blue-800 font-medium">處理中Point</div>
+              <div className="text-sm text-muted-foreground font-medium">處理中Point</div>
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <div className="flex-1 bg-white p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">當前</div>
-                  <div className="text-lg font-bold text-blue-600">
+                  <div className="text-lg font-bold text-foreground">
                     {pendingRewards.toLocaleString()}P
                   </div>
                 </div>
-                <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <ArrowRight className="h-5 w-5 text-foreground shrink-0" />
+                <div className="flex-1 bg-white p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">查收後</div>
-                  <div className="text-lg font-bold text-green-600">
+                  <div className="text-lg font-bold text-foreground">
                     {afterPendingRewards.toLocaleString()}P
                   </div>
                 </div>
@@ -102,18 +105,18 @@ export function CollectionPreviewDialog({
 
             {/* 已提領Point變化 */}
             <div className="space-y-2">
-              <div className="text-sm text-blue-800 font-medium">已提領Point</div>
+              <div className="text-sm text-muted-foreground font-medium">已提領Point</div>
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <div className="flex-1 bg-white p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">當前</div>
-                  <div className="text-lg font-bold text-blue-600">
+                  <div className="text-lg font-bold text-foreground">
                     {withdrawnRewards.toLocaleString()}P
                   </div>
                 </div>
-                <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <ArrowRight className="h-5 w-5 text-foreground shrink-0" />
+                <div className="flex-1 bg-white p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">查收後</div>
-                  <div className="text-lg font-bold text-purple-600">
+                  <div className="text-lg font-bold text-foreground">
                     {afterWithdrawnRewards.toLocaleString()}P
                   </div>
                 </div>
@@ -122,11 +125,10 @@ export function CollectionPreviewDialog({
           </div>
 
           {/* 重要說明 */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <p className="text-sm text-yellow-800">
-              📌 確認查收後，點數將從「處理中」轉為「已提領」，此操作無法撤銷。
-            </p>
-          </div>
+          <StatusCallout
+            variant="warning"
+            title="📌 確認查收後，點數將從「處理中」轉為「已提領」，此操作無法撤銷。"
+          />
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">

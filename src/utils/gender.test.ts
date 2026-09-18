@@ -17,7 +17,6 @@ describe('getGenderDisplay', () => {
     expect(result.value).toBe('男');
     expect(result.label).toBe('男');
     expect(result.iconName).toBe('mars');
-    expect(result.colorClass).toBe('border-blue-500 text-blue-600');
   });
 
   it('maps 女 to the female display data', () => {
@@ -26,7 +25,6 @@ describe('getGenderDisplay', () => {
     expect(result.value).toBe('女');
     expect(result.label).toBe('女');
     expect(result.iconName).toBe('venus');
-    expect(result.colorClass).toBe('border-pink-500 text-pink-600');
   });
 
   it('強制 ♂／♀ 以文字呈現，不被畫成 emoji', () => {

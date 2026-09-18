@@ -19,7 +19,7 @@ import { Card, CardContent } from '../ui/card';
 
 interface MemberCardListProps {
   members: AdminMember[];
-  accountBadge: (status: string) => { label: string; className: string };
+  accountBadge: (status: string) => { label: string; variant: 'success-subtle' | 'secondary' };
   onOpenDetail: (id: string) => void;
   processingId: string | null;
 }
@@ -69,9 +69,7 @@ export function MemberCardList({
 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant="outline" className={`${acct.className} border`}>
-                    {acct.label}
-                  </Badge>
+                  <Badge variant={acct.variant}>{acct.label}</Badge>
                   <span className="text-xs text-muted-foreground">刊登 {member.listingCount}</span>
                 </div>
                 {/* **卡上只有「查看」一顆**（ui-ux-guidelines §11.1）:
