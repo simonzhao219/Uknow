@@ -98,9 +98,9 @@ export function IdNumberInput({
       case 'verifying':
         return <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />;
       case 'success':
-        return <CheckCircle className="h-5 w-5 text-success" />;
+        return <CheckCircle className="h-5 w-5 text-success-subtle-foreground" />;
       case 'error':
-        return <XCircle className="h-5 w-5 text-destructive" />;
+        return <XCircle className="h-5 w-5 text-destructive-subtle-foreground" />;
       default:
         return null;
     }
@@ -110,9 +110,9 @@ export function IdNumberInput({
   const getBorderClass = () => {
     switch (status) {
       case 'success':
-        return 'border-success focus-visible:ring-success';
+        return 'border-success-border focus-visible:ring-success-border';
       case 'error':
-        return 'border-destructive focus-visible:ring-destructive';
+        return 'border-destructive-border focus-visible:ring-destructive-border';
       default:
         return '';
     }
@@ -143,11 +143,13 @@ export function IdNumberInput({
 
       {/* 錯誤提示 */}
       {status === 'error' && errorMessage && (
-        <p className="text-sm text-destructive">{errorMessage}</p>
+        <p className="text-sm text-destructive-subtle-foreground">{errorMessage}</p>
       )}
 
       {/* 成功提示 */}
-      {status === 'success' && <p className="text-sm text-success">✓ 身分證驗證成功</p>}
+      {status === 'success' && (
+        <p className="text-sm text-success-subtle-foreground">✓ 身分證驗證成功</p>
+      )}
 
       {/* 格式說明 */}
       {status === 'idle' && (

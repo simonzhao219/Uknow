@@ -98,6 +98,21 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 # 「色彩用途但先放過」，排除是「根本不是色彩用途」。新增條目必須附理由。
 EXCLUDED_PATHS = {
     "src/styles/globals.test.ts": "對比度公式錨定測試，hex 是 WCAG 參考值而非手刻色",
+    # S2（D3 全站手刻色收斂）新增兩筆：只收「檔案裡幾乎全部內容都是功能性繪圖」
+    # 的窄範圍檔案——canvas 2D context 的 fillStyle/strokeStyle 決定實際畫出來的
+    # 像素顏色，不是裝飾性 class。同樣命中 C3 的 InviteFriendPanelContent.tsx／
+    # MemberVerifyQrTab.tsx（QRCodeCanvas 的 bgColor/fgColor）刻意**不**收進來：
+    # 那兩個是一般頁面/面板元件，只是恰好嵌了一個 QR code，檔案其餘部分仍可能
+    # 長出手刻色，整檔排除會讓那部分永遠不受棘輪保護；改成把目前命中數留在
+    # baseline（各 2 筆），保留對「檔案其餘部分」的機械把關。
+    "src/components/referral/SignaturePad.tsx": (
+        "canvas 2D context 的簽名筆畫顏色（ctx.strokeStyle），全檔幾乎都是"
+        "簽名板繪圖邏輯，非裝飾性 UI 色"
+    ),
+    "src/utils/inviteCardImage.ts": (
+        "canvas 2D context 產生下載用邀請卡圖片的顏色（ctx.fillStyle），"
+        "全檔就是畫圖工具函式，非裝飾性 UI 色"
+    ),
 }
 
 
@@ -531,8 +546,17 @@ def self_test() -> int:
     if detail != ["    a.tsx:3 c1 命中 `text-blue-600` — " + TOKEN_HINT["c1"]]:
         failures.append(f"  FAIL(format_violation_detail): 格式跑掉了 — {detail}")
 
-    if not is_excluded("src/styles/globals.test.ts") or is_excluded("src/styles/globals.css"):
-        failures.append("  FAIL(exclude): 排除清單只該命中 globals.test.ts")
+    if (
+        not is_excluded("src/styles/globals.test.ts")
+        or not is_excluded("src/components/referral/SignaturePad.tsx")
+        or not is_excluded("src/utils/inviteCardImage.ts")
+        or is_excluded("src/styles/globals.css")
+        or is_excluded("src/components/referral/InviteFriendPanelContent.tsx")
+    ):
+        failures.append(
+            "  FAIL(exclude): 排除清單應命中 globals.test.ts / SignaturePad.tsx / "
+            "inviteCardImage.ts，不該命中 globals.css 或 InviteFriendPanelContent.tsx"
+        )
 
     for label, used, markdown_text, want_n in G1_CASES:
         got = missing_gray_rows(used, parse_documented_gray_classes(markdown_text))

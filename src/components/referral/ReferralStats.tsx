@@ -42,7 +42,7 @@ export function ReferralStats({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5 text-foreground shrink-0" />
+                <Users className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span>總推薦數</span>
               </CardTitle>
             </CardHeader>
@@ -57,7 +57,7 @@ export function ReferralStats({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-foreground shrink-0" />
+                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span>一代</span>
               </CardTitle>
             </CardHeader>
@@ -72,7 +72,7 @@ export function ReferralStats({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-foreground shrink-0" />
+                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span>二代</span>
               </CardTitle>
             </CardHeader>
@@ -87,7 +87,7 @@ export function ReferralStats({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-foreground shrink-0" />
+                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span>三代</span>
               </CardTitle>
             </CardHeader>

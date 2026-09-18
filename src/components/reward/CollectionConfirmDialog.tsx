@@ -44,28 +44,35 @@ export function CollectionConfirmDialog({
           />
 
           {/* 提領資訊 */}
-          <div className="bg-muted border rounded-lg p-4 space-y-2">
-            <h4 className="font-medium mb-2">提領資訊</h4>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">提領點數：</span>
-                <span className="font-medium">{withdrawal.amount.toLocaleString()}P</span>
+          <StatusCallout
+            variant="neutral"
+            title="提領資訊"
+            titleAs="h4"
+            description={
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">提領點數：</span>
+                  <span className="font-medium text-foreground">
+                    {withdrawal.amount.toLocaleString()}P
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">申請日期：</span>
+                  <span>{formatTimestamp(withdrawal.requestedAt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">處理日期：</span>
+                  <span>{formatTimestamp(withdrawal.processedAt)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">申請日期：</span>
-                <span>{formatTimestamp(withdrawal.requestedAt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">處理日期：</span>
-                <span>{formatTimestamp(withdrawal.processedAt)}</span>
-              </div>
-            </div>
-          </div>
+            }
+          />
 
           {/* 客服資訊 */}
           <StatusCallout
             variant="neutral"
             title="如有問題請聯絡客服"
+            titleAs="h4"
             description={
               <>
                 <p>📞 LINE 客服：{LINE_OFFICIAL_ACCOUNT_HANDLE}</p>

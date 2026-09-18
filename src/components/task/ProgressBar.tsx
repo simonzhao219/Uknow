@@ -60,8 +60,10 @@ export function ProgressBar({
         </span>
       </div>
 
-      {/* 進度條 */}
-      <div className="h-3 bg-muted rounded-full overflow-hidden mb-2">
+      {/* 進度條：軌道與外層容器同用 --muted 會讓「未完成」的部分視覺上消失
+          （review 抓到的發現），軌道改用同一個填充色的低透明度版本——
+          track 與 fill 永遠有落差，且深淺模式下都成立，不必分別調兩組值 */}
+      <div className="h-3 bg-muted-foreground/20 rounded-full overflow-hidden mb-2">
         <div
           className="h-full bg-muted-foreground transition-all duration-500"
           style={{ width: `${percentage}%` }}

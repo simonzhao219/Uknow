@@ -100,7 +100,7 @@ export function TaskDashboard() {
           </div>
         </div>
         <div className="text-center py-12">
-          <p className="text-destructive mb-4">{error}</p>
+          <p className="text-destructive-subtle-foreground mb-4">{error}</p>
           <Button onClick={() => window.location.reload()}>重新載入</Button>
         </div>
       </div>

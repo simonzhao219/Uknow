@@ -334,7 +334,7 @@ function StepTwoCard({
             <StatusCallout
               variant="destructive"
               title={error}
-              description={
+              action={
                 <button onClick={onRetry} className="text-destructive-subtle-foreground underline">
                   重試
                 </button>

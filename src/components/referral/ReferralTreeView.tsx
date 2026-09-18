@@ -53,11 +53,14 @@ const GEN_BADGE: Record<number, string> = {
   2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground)]',
   3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground)]',
 };
-// 分支連接線依「子代」上色，重用 GEN_BADGE 同一組 token 當邊框色
-// （世代線索綁在結構上；深淺模式已內含在 token 裡，不必另寫 dark:）
+// 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
+// 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
+// ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的深階，
+// 對比達 7.5:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在結構上；
+// 深淺模式已內含在 token 裡，不必另寫 dark:）。
 const GEN_LINE: Record<number, string> = {
-  2: 'border-[var(--tree-gen-badge-2)]',
-  3: 'border-[var(--tree-gen-badge-3)]',
+  2: 'border-[var(--tree-gen-avatar-2)]',
+  3: 'border-[var(--tree-gen-avatar-3)]',
 };
 
 const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: string }> = {
@@ -270,7 +273,7 @@ function AttentionBanner({
       variant="warning"
       icon={AlertTriangle}
       title={`${attention.total} 位下線需要關注`}
-      description={
+      action={
         <div className="flex flex-wrap items-center gap-2">
           {attention.items.map((n) => (
             <button

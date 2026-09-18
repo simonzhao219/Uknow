@@ -215,7 +215,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {/* 錯誤狀態 */}
         {error && (
           <div className="text-center py-8">
-            <p className="text-destructive mb-4">{error}</p>
+            <p className="text-destructive-subtle-foreground mb-4">{error}</p>
             <Button onClick={() => window.location.reload()} size="sm">
               重新載入
             </Button>
@@ -278,7 +278,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                       {/* 右側：金額 +（未篩選時）餘額 */}
                       <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
                         <span
-                          className={`font-medium ${record.amount >= 0 ? 'text-success' : 'text-destructive'}`}
+                          className={`font-medium ${record.amount >= 0 ? 'text-success-subtle-foreground' : 'text-destructive-subtle-foreground'}`}
                         >
                           {record.amount >= 0 ? '+' : ''}
                           {record.amount}P

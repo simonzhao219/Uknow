@@ -89,6 +89,7 @@ export function RequireMembershipRoute({ children, allowExpired }: RequireMember
         <StatusCallout
           variant="destructive"
           title="帳號已停權"
+          titleAs="h2"
           description="您的帳號目前處於停權狀態，會員功能與刊登已暫停。 若有疑問請聯繫客服。"
         />
       </div>

@@ -79,7 +79,7 @@ export function CollectionVerifyDialog({
           />
 
           {/* 總錯誤提示 */}
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive-subtle-foreground">{error}</p>}
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">

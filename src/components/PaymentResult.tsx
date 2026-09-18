@@ -730,21 +730,21 @@ export function PaymentResult() {
                   </p>
                   <div className="flex items-start gap-2 border-t border-warning-border/60 pt-3">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-                    <div>
-                      <p className="text-xs">
-                        如果過一段時間後會員中心仍未更新，歡迎聯繫客服協助確認。
-                      </p>
-                      <Button
-                        onClick={handleContactSupport}
-                        variant="link"
-                        className="underline p-0 h-auto mt-1"
-                        data-testid="contact-support-button"
-                      >
-                        聯繫客服
-                      </Button>
-                    </div>
+                    <p className="text-xs">
+                      如果過一段時間後會員中心仍未更新，歡迎聯繫客服協助確認。
+                    </p>
                   </div>
                 </div>
+              }
+              action={
+                <Button
+                  onClick={handleContactSupport}
+                  variant="link"
+                  className="underline p-0 h-auto"
+                  data-testid="contact-support-button"
+                >
+                  聯繫客服
+                </Button>
               }
             />
           </CardContent>

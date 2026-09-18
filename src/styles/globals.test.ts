@@ -306,6 +306,24 @@ describe('推薦樹世代色對比度（階段 2b 之後，公式已錨定）', 
       });
     }
 
+    // GEN_LINE（分支連接線）只用二、三代（一代是根節點無入線），且重用
+    // avatar 的深階當邊框色，不是 badge 的淺階——淺階配文字的極淺底畫在
+    // --card/--background 上對比接近 1:1，線會幾乎看不見（見 S2 review 發現）。
+    for (const tier of [2, 3] as const) {
+      it(`${modeLabel}：GEN_LINE 借用 avatar 第 ${tier} 階邊框對 --card 達 3:1`, () => {
+        const ratio = contrastRatio(hexOf(mode, `tree-gen-avatar-${tier}`), hexOf(mode, 'card'));
+        expect(ratio).toBeGreaterThanOrEqual(3);
+      });
+
+      it(`${modeLabel}：GEN_LINE 借用 avatar 第 ${tier} 階邊框對 --background 達 3:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `tree-gen-avatar-${tier}`),
+          hexOf(mode, 'background'),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(3);
+      });
+    }
+
     it(`${modeLabel}：avatar 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
       const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-avatar-${t}`));
       expect(l1).toBeLessThan(l2);

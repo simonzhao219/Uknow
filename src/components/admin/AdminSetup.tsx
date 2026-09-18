@@ -112,7 +112,7 @@ export function AdminSetup() {
       <Card>
         <CardContent className="py-12">
           <div className="flex flex-col items-center gap-4">
-            <AlertCircle className="h-8 w-8 text-destructive" />
+            <AlertCircle className="h-8 w-8 text-destructive-subtle-foreground" />
             <p className="text-sm text-muted-foreground">無法檢查管理員狀態</p>
             <Button onClick={checkAdminStatus} variant="outline">
               重試
@@ -175,6 +175,7 @@ export function AdminSetup() {
               variant="success"
               icon={CheckCircle}
               title="您已是管理員"
+              titleAs="h3"
               description="您擁有完整的平台管理權限，可以使用所有管理功能。"
             />
           )}
@@ -186,6 +187,7 @@ export function AdminSetup() {
                 variant="neutral"
                 icon={UserCog}
                 title="系統尚未有管理員"
+                titleAs="h3"
                 description="您可以將自己設為平台管理員，獲得完整的管理權限。"
               />
 
@@ -218,6 +220,7 @@ export function AdminSetup() {
               variant="warning"
               icon={AlertCircle}
               title="需要管理員授權"
+              titleAs="h3"
               description="系統已有管理員，您需要聯繫現有管理員為您設置權限。"
             />
           )}

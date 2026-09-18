@@ -61,7 +61,9 @@ export function CollectionPreviewDialog({
               </div>
               <div className="border-t pt-2 flex justify-between font-medium">
                 <span>總計扣除：</span>
-                <span className="text-destructive">-{totalDeduction.toLocaleString()}P</span>
+                <span className="text-destructive-subtle-foreground">
+                  -{totalDeduction.toLocaleString()}P
+                </span>
               </div>
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
                 <span>申請日期：</span>

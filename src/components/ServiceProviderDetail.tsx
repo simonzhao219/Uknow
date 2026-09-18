@@ -208,6 +208,10 @@ export function ServiceProviderDetail() {
               <CardTitle>聯絡方式</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Facebook 藍／Instagram 粉／LINE 綠：第三方品牌識別色，S2 色彩
+                  收斂（D3）刻意排除在外——業界慣例是保留品牌色以利使用者一眼
+                  找到聯絡方式，不受「彩色只留語義色」規則約束（見
+                  scripts/color-usage-baseline.json 對這個檔案的 baseline 條目）。 */}
               {serviceProvider.contacts.facebook && (
                 <Button
                   variant="outline"

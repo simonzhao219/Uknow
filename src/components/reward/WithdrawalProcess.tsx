@@ -629,7 +629,7 @@ export function WithdrawalProcess({
                 </div>
                 <div className="border-t pt-2 flex justify-between font-medium text-lg">
                   <span>總計需扣除</span>
-                  <span className="text-destructive">
+                  <span className="text-destructive-subtle-foreground">
                     -{(amountNum + WITHDRAWAL_FEE).toLocaleString()}P
                   </span>
                 </div>
@@ -685,12 +685,14 @@ export function WithdrawalProcess({
                 {/* 驗證狀態指示器 */}
                 {isIdVerified && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <CheckCircle className="h-4 w-4 text-success" />
+                    <CheckCircle className="h-4 w-4 text-success-subtle-foreground" />
                   </div>
                 )}
               </div>
               {/* ✅ 驗證訊息（統一顯示，避免重複）*/}
-              {isIdVerified && <p className="text-sm text-success">✓ 身分證驗證成功</p>}
+              {isIdVerified && (
+                <p className="text-sm text-success-subtle-foreground">✓ 身分證驗證成功</p>
+              )}
               {/* ✅ 只在沒有驗證訊息時顯示表單驗證錯誤 */}
               {!isIdVerified && <FieldError error={errors.idNumber} />}
             </div>

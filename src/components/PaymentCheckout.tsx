@@ -729,7 +729,7 @@ export function PaymentCheckout() {
                   data-testid="backfill-progress-stale"
                   variant="warning"
                   title="進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。"
-                  description={
+                  action={
                     <Button
                       variant="outline"
                       size="sm"

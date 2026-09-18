@@ -180,15 +180,15 @@ export function RewardDashboard() {
           variant="warning"
           title="您的會籍已到期"
           description={
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span>
-                <span className="font-medium">Point 全數保留不會歸零</span>
-                ，但續約後才能提領。
-              </span>
-              <Button size="sm" onClick={() => navigate('/payment/checkout')}>
-                立即續約
-              </Button>
-            </div>
+            <>
+              <span className="font-medium">Point 全數保留不會歸零</span>
+              ，但續約後才能提領。
+            </>
+          }
+          action={
+            <Button size="sm" onClick={() => navigate('/payment/checkout')}>
+              立即續約
+            </Button>
           }
         />
       )}

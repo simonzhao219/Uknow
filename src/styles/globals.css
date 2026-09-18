@@ -122,8 +122,8 @@
      深色頁面背景（--background/--card）有可辨識落差；badge 改用深色慣例的
      暗底配亮字（比照既有 success-subtle 深色版 #052e16/#86efac 的寫法）。 */
   --tree-gen-avatar-1: oklch(0.3 0 0);
-  --tree-gen-avatar-2: oklch(0.4 0 0);
-  --tree-gen-avatar-3: oklch(0.5 0 0);
+  --tree-gen-avatar-2: oklch(0.51 0 0);
+  --tree-gen-avatar-3: oklch(0.55 0 0);
   --tree-gen-avatar-foreground: oklch(1 0 0);
   --tree-gen-badge-1: oklch(0.24 0 0);
   --tree-gen-badge-2: oklch(0.31 0 0);

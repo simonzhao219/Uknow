@@ -86,6 +86,7 @@ export function MonthlyKingProgress({
               variant="success"
               icon={CheckCircle}
               title="✨ 本月成就"
+              titleAs="h3"
               description={
                 <div className="space-y-2">
                   {Array.from({ length: completedCount }).map((_, index) => (
