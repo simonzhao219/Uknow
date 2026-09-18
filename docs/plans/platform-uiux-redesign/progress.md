@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | S0 | 總綱與施工計畫 | — | ✅ 完成 | （本 PR） | 四個方向決策已與業主核對（plan.md §0）；四視角審查完成、P0×2/P1×7/P2×7 全數回填（review.md） |
 | S1 | 設計語言地基 | D1+D2 | ✅ 已合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
-| S2 | 全站色彩收斂 | D3 | ✅ 實作完成，PR 待開 | — | 53 個 baseline 檔案（含開工時漏列的 `TaskDashboard.tsx`，收尾核對時補上）全數收斂到 0，僅留 4 個已核准例外（品牌 icon 色、QR 功能色；canvas 專用檔已收進 `EXCLUDED_PATHS`）；Badge 新增 5 個 variant、新增 `StatusCallout` 元件（含 `action`/`titleAs` slot）；四視角 `/review-implementation` 跑完，P1 全數修掉（見下方異動記錄）；`npm run check`／`framework-check.sh`／`npm run build` 全綠。人工實測（驗收站 1：全站走一圈看觀感、深色模式與色盲模擬 checklist）待 PR 合併到 develop 後進行 |
+| S2 | 全站色彩收斂 | D3 | ✅ 實作完成，等 CI/人審 | [#325](https://github.com/simonzhao219/Uknow/pull/325) | 53 個 baseline 檔案（含開工時漏列的 `TaskDashboard.tsx`，收尾核對時補上）全數收斂到 0，僅留 4 個已核准例外（品牌 icon 色、QR 功能色；canvas 專用檔已收進 `EXCLUDED_PATHS`）；Badge 新增 5 個 variant、新增 `StatusCallout` 元件（含 `action`/`titleAs` slot）；四視角 `/review-implementation` 跑完，P1 全數修掉（見下方異動記錄）；`npm run check`／`framework-check.sh`／`npm run build` 全綠。人工實測（驗收站 1：全站走一圈看觀感、深色模式與色盲模擬 checklist）待 PR 合併到 develop 後進行 |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
 | S5 | admin 資料快取 | A4 | ⬜ 未開工 | — | 驗收站 3 |
