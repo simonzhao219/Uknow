@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { StatusCallout } from '../ui/status-callout';
 import { CreditCard, AlertTriangle, Loader2 } from 'lucide-react';
 import type { SubscriptionData } from '../../hooks/useSubscription';
 import { formatTwDate } from '../../utils/twDate';
@@ -14,9 +15,12 @@ interface Props {
 
 // 會員兩態模型：付款即訂閱 / 續訂（到期後付款接續）/ 重新訂。
 // 一次性年費、無自動扣款——沒有「取消／恢復／補繳／寬限期」，到期即失效。
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  active: { label: '訂閱中', color: 'bg-green-100 text-green-800 border-green-300' },
-  expired: { label: '已失效', color: 'bg-red-100 text-red-800 border-red-300' },
+const STATUS_MAP: Record<
+  string,
+  { label: string; variant: 'success-subtle' | 'destructive-subtle' }
+> = {
+  active: { label: '訂閱中', variant: 'success-subtle' },
+  expired: { label: '已失效', variant: 'destructive-subtle' },
 };
 
 // 一律以台灣日曆日顯示——訂閱效期存的是精確時點（見時間領域重設計），
@@ -42,9 +46,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           <CreditCard className="h-5 w-5" />
           <span>我的訂閱</span>
           {!isLoading && cardState !== 'none' && (
-            <Badge variant="outline" className={`${statusInfo.color} border`}>
-              {statusInfo.label}
-            </Badge>
+            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
           )}
         </CardTitle>
 
@@ -54,7 +56,12 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           </Button>
         )}
         {!isLoading && noticeDaysLeft !== null && (
-          <Button variant="default" size="sm" className="bg-amber-600 hover:bg-amber-700" asChild>
+          <Button
+            variant="default"
+            size="sm"
+            className="bg-warning hover:bg-warning/90 text-warning-foreground"
+            asChild
+          >
             <Link to="/payment/checkout">立即續訂</Link>
           </Button>
         )}
@@ -75,18 +82,12 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           </div>
         ) : cardState === 'expired-former' ? (
           <div className="space-y-3">
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-medium text-red-900">會籍已失效</p>
-                  <p className="text-sm text-red-800 mt-1">
-                    您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。
-                    請續訂以恢復服務——過期未滿一年可「續約」接續原效期。
-                  </p>
-                </div>
-              </div>
-            </div>
+            <StatusCallout
+              variant="destructive"
+              icon={AlertTriangle}
+              title="會籍已失效"
+              description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務——過期未滿一年可「續約」接續原效期。"
+            />
 
             {subscriptionData?.activeUntil && (
               <div className="text-sm">
@@ -98,18 +99,12 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
         ) : (
           <div className="space-y-3">
             {noticeDaysLeft !== null && (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium text-amber-900">會籍即將到期</p>
-                    <p className="text-sm text-amber-800 mt-1">
-                      您的會籍將於 {noticeDaysLeft} 天後到期。到期即失效（無寬限期），
-                      請儘早續訂，以免會員功能與刊登中斷。
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <StatusCallout
+                variant="warning"
+                icon={AlertTriangle}
+                title="會籍即將到期"
+                description={`您的會籍將於 ${noticeDaysLeft} 天後到期。到期即失效（無寬限期），請儘早續訂，以免會員功能與刊登中斷。`}
+              />
             )}
 
             {subscriptionData?.currentPeriodStart && subscriptionData?.currentPeriodEnd && (

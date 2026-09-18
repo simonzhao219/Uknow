@@ -7,6 +7,7 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
+import { StatusCallout } from '../ui/status-callout';
 import {
   ArrowLeft,
   ArrowRight,
@@ -556,7 +557,7 @@ export function WithdrawalProcess({
                   <span>最大提領Point (1000倍數)</span>
                   <span>{maxWithdrawal.toLocaleString()}P</span>
                 </div>
-                <div className="flex justify-between text-blue-600">
+                <div className="flex justify-between text-foreground">
                   <span>每日提領上限</span>
                   <span>{DAILY_WITHDRAWAL_LIMIT.toLocaleString()}P</span>
                 </div>
@@ -581,9 +582,9 @@ export function WithdrawalProcess({
             </div>
 
             {/* 提領說明 */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-2">提領說明</h4>
-              <div className="space-y-1 text-sm text-blue-800">
+            <div className="bg-muted p-4 rounded-lg">
+              <h4 className="font-medium text-foreground mb-2">提領說明</h4>
+              <div className="space-y-1 text-sm text-muted-foreground">
                 <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
                   <li>最低提領Point為 {MIN_WITHDRAWAL.toLocaleString()}P（必須為1000的倍數）</li>
                   <li>每次提領收取 {WITHDRAWAL_FEE}P 手續費</li>
@@ -628,7 +629,7 @@ export function WithdrawalProcess({
                 </div>
                 <div className="border-t pt-2 flex justify-between font-medium text-lg">
                   <span>總計需扣除</span>
-                  <span className="text-red-600">
+                  <span className="text-destructive">
                     -{(amountNum + WITHDRAWAL_FEE).toLocaleString()}P
                   </span>
                 </div>
@@ -654,18 +655,19 @@ export function WithdrawalProcess({
             {/* 證件退回警示——放步驟頂部:這一步的其他欄位都白填之前,
                 先讓會員知道要換照片。 */}
             {idRejected && (
-              <Alert className="bg-red-50 border-red-200">
-                <AlertCircle className="h-4 w-4 text-red-600" />
-                <AlertDescription>
-                  <strong className="text-red-900">證件審核未通過</strong>
-                  <p className="mt-1 text-sm text-red-800">
-                    {idRejectReason ?? '請聯繫客服了解原因'}
-                  </p>
-                  <p className="mt-1 text-sm text-red-800">
-                    請重新上傳身分證正反面（不可沿用先前的照片），送出申請時會一併重新送審。
-                  </p>
-                </AlertDescription>
-              </Alert>
+              <StatusCallout
+                variant="destructive"
+                icon={AlertCircle}
+                title="證件審核未通過"
+                description={
+                  <>
+                    <p>{idRejectReason ?? '請聯繫客服了解原因'}</p>
+                    <p className="mt-1">
+                      請重新上傳身分證正反面（不可沿用先前的照片），送出申請時會一併重新送審。
+                    </p>
+                  </>
+                }
+              />
             )}
 
             {/* 身分證字號 */}
@@ -683,12 +685,12 @@ export function WithdrawalProcess({
                 {/* 驗證狀態指示器 */}
                 {isIdVerified && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <CheckCircle className="h-4 w-4 text-success" />
                   </div>
                 )}
               </div>
               {/* ✅ 驗證訊息（統一顯示，避免重複）*/}
-              {isIdVerified && <p className="text-sm text-green-600">✓ 身分證驗證成功</p>}
+              {isIdVerified && <p className="text-sm text-success">✓ 身分證驗證成功</p>}
               {/* ✅ 只在沒有驗證訊息時顯示表單驗證錯誤 */}
               {!isIdVerified && <FieldError error={errors.idNumber} />}
             </div>
@@ -813,11 +815,12 @@ export function WithdrawalProcess({
             </div>
 
             {/* 身分證照片儲存提示 */}
-            <Alert className="bg-orange-50 border-orange-200">
-              <Shield className="h-4 w-4 text-orange-600" />
-              <AlertDescription>
-                <strong className="text-orange-900">重要提醒：</strong>
-                <ul className="list-disc list-inside mt-2 space-y-1 text-sm text-orange-800">
+            <StatusCallout
+              variant="warning"
+              icon={Shield}
+              title="重要提醒："
+              description={
+                <ul className="list-disc list-inside space-y-1">
                   <li>身分證照片將會被儲存，下次提領自動帶入</li>
                   <li>如需更新照片，可重新上傳覆蓋舊照片</li>
                   {/* <li><strong>建議您在身分證照片上加上浮水印</strong>（例如：「僅供Uknow提領使用」）</li> */}
@@ -826,12 +829,12 @@ export function WithdrawalProcess({
                   <li>提領申請送出後無法修改</li>
                   <li>若上述資料皆已正確輸入但仍提領失敗,請您來信Uknow客服中心</li>
                 </ul>
-              </AlertDescription>
-            </Alert>
+              }
+            />
 
             {/* 同意款 */}
             <div className="space-y-2">
-              <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center space-x-2 p-3 bg-muted rounded-lg">
                 <Checkbox
                   id="agreeToTerms"
                   checked={agreeToTerms}
@@ -859,7 +862,7 @@ export function WithdrawalProcess({
                     triggerLabel="推廣獎勵規章"
                     title="推廣獎勵規章"
                     content={referralRewardRulesContent}
-                    triggerClassName="text-blue-600 underline mx-1"
+                    triggerClassName="text-primary underline mx-1"
                     triggerTestId="withdrawal-rules-link"
                   />
                 </Label>

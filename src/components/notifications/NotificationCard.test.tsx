@@ -129,10 +129,10 @@ describe('NotificationCard', () => {
 
   it('四種 type 各自帶出自己的配色', () => {
     const expected: Record<NotificationType, string> = {
-      success: 'bg-green-500',
-      error: 'bg-red-500',
-      warning: 'bg-orange-500',
-      info: 'bg-blue-500',
+      success: 'bg-success',
+      error: 'bg-destructive',
+      warning: 'bg-warning',
+      info: 'bg-primary',
     };
     for (const [type, buttonBg] of Object.entries(expected)) {
       renderCard({ type: type as NotificationType });

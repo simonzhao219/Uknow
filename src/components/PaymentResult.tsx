@@ -11,6 +11,7 @@ import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 import { openExternalLink } from '../utils/externalLink';
 import { formatTwDate, twDayPlusDays, twDayPlusYears } from '../utils/twDate';
 import type { PayuniResultRenewal } from '@contract';
+import { StatusCallout } from './ui/status-callout';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -321,7 +322,7 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Loader2 className="h-16 w-16 text-blue-600 animate-spin" />
+              <Loader2 className="h-16 w-16 text-muted-foreground animate-spin" />
             </div>
             <CardTitle className="text-2xl">查詢付款結果中</CardTitle>
             <CardDescription>請稍候，正在確認您的付款狀態</CardDescription>
@@ -349,22 +350,29 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <CheckCircle className="h-16 w-16 text-green-600" />
+              <CheckCircle className="h-16 w-16 text-success-subtle-foreground" />
             </div>
             <CardTitle className="text-2xl">付款成功，已補至 {paidUpToDay}</CardTitle>
             <CardDescription>您的會籍仍在補繳中</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
-              <p className="text-sm text-green-800">
-                訂單編號：<span className="font-mono">{tradeNo}</span>
-              </p>
-              <p className="text-sm text-green-800">
-                還差 <span className="font-bold">{slimRenewal.backfillCount} 筆</span>
-                （NT$ {slimRenewal.backfillAmount.toLocaleString('en-US')}）會籍才會生效。
-              </p>
-              <p className="text-sm text-green-800">這筆款項已完成，不會重複扣款。</p>
-            </div>
+            <StatusCallout
+              variant="success"
+              title={
+                <>
+                  訂單編號：<span className="font-mono">{tradeNo}</span>
+                </>
+              }
+              description={
+                <div className="space-y-1">
+                  <p>
+                    還差 <span className="font-bold">{slimRenewal.backfillCount} 筆</span>
+                    （NT$ {slimRenewal.backfillAmount.toLocaleString('en-US')}）會籍才會生效。
+                  </p>
+                  <p>這筆款項已完成，不會重複扣款。</p>
+                </div>
+              }
+            />
             <div className="flex gap-3">
               <Button
                 onClick={handleRetryPayment}
@@ -401,20 +409,21 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <CheckCircle className="h-16 w-16 text-green-600" />
+              <CheckCircle className="h-16 w-16 text-success-subtle-foreground" />
             </div>
             <CardTitle className="text-2xl">付款成功</CardTitle>
             <CardDescription>補繳進度暫時無法讀取</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
-              <p className="text-sm text-green-800">
-                訂單編號：<span className="font-mono">{tradeNo}</span>
-              </p>
-              <p className="text-sm text-green-800">
-                這筆款項已完成，不會重複扣款。進度暫時無法讀取，請稍後重試。
-              </p>
-            </div>
+            <StatusCallout
+              variant="success"
+              title={
+                <>
+                  訂單編號：<span className="font-mono">{tradeNo}</span>
+                </>
+              }
+              description="這筆款項已完成，不會重複扣款。進度暫時無法讀取，請稍後重試。"
+            />
             <Button
               onClick={handleRetryRenewal}
               className="w-full"
@@ -441,20 +450,21 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Loader2 className="h-16 w-16 text-green-600 animate-spin" />
+              <Loader2 className="h-16 w-16 text-success-subtle-foreground animate-spin" />
             </div>
             <CardTitle className="text-2xl">付款成功，正在開通會員資格</CardTitle>
             <CardDescription>通常數秒內完成，開通後將自動前往會員中心</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-sm text-green-800">
-                訂單編號：<span className="font-mono">{tradeNo}</span>
-              </p>
-              <p className="text-sm text-green-800 mt-1">
-                您的款項已受理，不會重複扣款，請稍候片刻。
-              </p>
-            </div>
+            <StatusCallout
+              variant="success"
+              title={
+                <>
+                  訂單編號：<span className="font-mono">{tradeNo}</span>
+                </>
+              }
+              description="您的款項已受理，不會重複扣款，請稍候片刻。"
+            />
           </CardContent>
         </Card>
       </div>
@@ -472,20 +482,21 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Clock className="h-16 w-16 text-orange-600" />
+              <Clock className="h-16 w-16 text-warning-subtle-foreground" />
             </div>
             <CardTitle className="text-2xl">付款成功，開通處理中</CardTitle>
             <CardDescription>您的款項已收到，會員資格開通比預期久一些</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
-              <p className="text-sm text-orange-800">
-                訂單編號：<span className="font-mono">{tradeNo}</span>
-              </p>
-              <p className="text-sm text-orange-800">
-                這不會造成您重複扣款或款項遺失。您可以稍後再回來，或聯繫客服為您立即處理。
-              </p>
-            </div>
+            <StatusCallout
+              variant="warning"
+              title={
+                <>
+                  訂單編號：<span className="font-mono">{tradeNo}</span>
+                </>
+              }
+              description="這不會造成您重複扣款或款項遺失。您可以稍後再回來，或聯繫客服為您立即處理。"
+            />
             <div className="flex gap-3">
               <Button
                 onClick={() => {
@@ -530,39 +541,43 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <CheckCircle className="h-16 w-16 text-green-600" />
+              <CheckCircle className="h-16 w-16 text-success-subtle-foreground" />
             </div>
             <CardTitle className="text-2xl">付款成功！</CardTitle>
             <CardDescription>您的付款已成功處理，帳號已完成註冊</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {paymentData && (
-              <div className="bg-gradient-to-br from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 space-y-4">
-                <div className="flex items-center gap-2 pb-3 border-b border-green-200">
-                  <CreditCard className="h-5 w-5 text-green-600" />
-                  <h3 className="text-base font-semibold text-green-800">付款資訊</h3>
+              // 退場漸層（S2 色收斂 D3）：原本綠到藍的雙色斜向漸層背景
+              // 改單色 success-subtle，不再新增/沿用漸層裝飾。
+              <div className="bg-success-subtle border border-success-border rounded-lg p-4 space-y-4">
+                <div className="flex items-center gap-2 pb-3 border-b border-success-border">
+                  <CreditCard className="h-5 w-5 text-success-subtle-foreground" />
+                  <h3 className="text-base font-semibold text-success-subtle-foreground">
+                    付款資訊
+                  </h3>
                 </div>
 
                 {(paymentData.PayerName || paymentData.PayerPhone || paymentData.PayerEmail) && (
-                  <div className="border-b border-green-200 p-3 space-y-2">
+                  <div className="border-b border-success-border p-3 space-y-2">
                     {paymentData.PayerName && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">付款人姓名</span>
-                        <span className="text-sm text-gray-900 font-medium">
+                        <span className="text-sm text-muted-foreground">付款人姓名</span>
+                        <span className="text-sm text-foreground font-medium">
                           {paymentData.PayerName}
                         </span>
                       </div>
                     )}
                     {paymentData.PayerPhone && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">付款人電話</span>
-                        <span className="text-sm text-gray-900">{paymentData.PayerPhone}</span>
+                        <span className="text-sm text-muted-foreground">付款人電話</span>
+                        <span className="text-sm text-foreground">{paymentData.PayerPhone}</span>
                       </div>
                     )}
                     {paymentData.PayerEmail && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">付款人Email</span>
-                        <span className="text-sm text-gray-900 break-all">
+                        <span className="text-sm text-muted-foreground">付款人Email</span>
+                        <span className="text-sm text-foreground break-all">
                           {paymentData.PayerEmail}
                         </span>
                       </div>
@@ -571,27 +586,27 @@ export function PaymentResult() {
                 )}
 
                 {(paymentData.AuthBankName || paymentData.Card6No) && (
-                  <div className="border-b border-green-200 p-3 space-y-2">
+                  <div className="border-b border-success-border p-3 space-y-2">
                     {paymentData.AuthBankName && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">信用卡銀行</span>
-                        <span className="text-sm text-gray-900 font-medium">
+                        <span className="text-sm text-muted-foreground">信用卡銀行</span>
+                        <span className="text-sm text-foreground font-medium">
                           {paymentData.AuthBankName}
                         </span>
                       </div>
                     )}
                     {paymentData.Card6No && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">信用卡號</span>
-                        <span className="text-sm text-gray-900 font-mono">
+                        <span className="text-sm text-muted-foreground">信用卡號</span>
+                        <span className="text-sm text-foreground font-mono">
                           {paymentData.Card6No} ****** {paymentData.Card4No}
                         </span>
                       </div>
                     )}
                     {paymentData.CardExpired && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">到期日</span>
-                        <span className="text-sm text-gray-900">
+                        <span className="text-sm text-muted-foreground">到期日</span>
+                        <span className="text-sm text-foreground">
                           {formatCardExpiry(paymentData.CardExpired)}
                         </span>
                       </div>
@@ -601,14 +616,14 @@ export function PaymentResult() {
 
                 <div className="p-3 space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">訂單編號</span>
-                    <span className="text-sm text-gray-900 font-mono">
+                    <span className="text-sm text-muted-foreground">訂單編號</span>
+                    <span className="text-sm text-foreground font-mono">
                       {paymentData.TradeNo || tradeNo}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">付款金額</span>
-                    <span className="text-lg text-green-600 font-bold">
+                    <span className="text-sm text-muted-foreground">付款金額</span>
+                    <span className="text-lg text-success-subtle-foreground font-bold">
                       NT$ {paymentData.AuthAmt || '1,200'}
                     </span>
                   </div>
@@ -638,22 +653,25 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <XCircle className="h-16 w-16 text-red-600" />
+              <XCircle className="h-16 w-16 text-destructive-subtle-foreground" />
             </div>
             <CardTitle className="text-2xl">付款失敗</CardTitle>
             <CardDescription>很抱歉，您的付款未成功</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {failReason && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-800 font-medium">錯誤原因：</p>
-                <p className="text-sm text-red-800 mt-1">{failReason}</p>
-                {orderResult?.payuni?.ResCode && (
-                  <p className="text-xs text-red-600 mt-2">
-                    錯誤代碼：{orderResult.payuni.ResCode}
-                  </p>
-                )}
-              </div>
+              <StatusCallout
+                variant="destructive"
+                title="錯誤原因："
+                description={
+                  <>
+                    <p>{failReason}</p>
+                    {orderResult?.payuni?.ResCode && (
+                      <p className="text-xs mt-2">錯誤代碼：{orderResult.payuni.ResCode}</p>
+                    )}
+                  </>
+                }
+              />
             )}
 
             <div className="flex gap-3">
@@ -689,39 +707,46 @@ export function PaymentResult() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Clock className="h-16 w-16 text-orange-600 animate-pulse" />
+              <Clock className="h-16 w-16 text-warning-subtle-foreground animate-pulse" />
             </div>
             <CardTitle className="text-2xl">款項確認中</CardTitle>
             <CardDescription>您的付款已受理，系統正在確認中</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
-              <p className="text-sm text-orange-800">
-                訂單編號：<span className="font-mono">{tradeNo}</span>
-              </p>
-              <p className="text-sm text-orange-800">
-                這不會造成您重複扣款或款項遺失，您可以安心先關閉此頁——完成確認後，會員中心會自動顯示最新狀態。
-              </p>
-            </div>
-
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs text-yellow-700">
-                    如果過一段時間後會員中心仍未更新，歡迎聯繫客服協助確認。
+            {/* 原本橘（主要說明）＋黃（客服提示）兩色分層，S2 色收斂（D3）
+                合併成單一 warning 色票——主次改靠字重/間距/圖示區分，不再
+                靠顏色分層。 */}
+            <StatusCallout
+              variant="warning"
+              title={
+                <>
+                  訂單編號：<span className="font-mono">{tradeNo}</span>
+                </>
+              }
+              description={
+                <div className="space-y-3">
+                  <p>
+                    這不會造成您重複扣款或款項遺失，您可以安心先關閉此頁——完成確認後，會員中心會自動顯示最新狀態。
                   </p>
-                  <Button
-                    onClick={handleContactSupport}
-                    variant="link"
-                    className="text-yellow-800 underline p-0 h-auto mt-1"
-                    data-testid="contact-support-button"
-                  >
-                    聯繫客服
-                  </Button>
+                  <div className="flex items-start gap-2 border-t border-warning-border/60 pt-3">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <p className="text-xs">
+                        如果過一段時間後會員中心仍未更新，歡迎聯繫客服協助確認。
+                      </p>
+                      <Button
+                        onClick={handleContactSupport}
+                        variant="link"
+                        className="underline p-0 h-auto mt-1"
+                        data-testid="contact-support-button"
+                      >
+                        聯繫客服
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              }
+            />
           </CardContent>
         </Card>
       </div>
@@ -737,9 +762,7 @@ export function PaymentResult() {
           <CardDescription>無法查詢到訂單資訊</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <p className="text-sm text-gray-800">訂單編號：{tradeNo}</p>
-          </div>
+          <StatusCallout variant="neutral" title={`訂單編號：${tradeNo}`} />
           <Button
             onClick={handleContactSupport}
             className="w-full"

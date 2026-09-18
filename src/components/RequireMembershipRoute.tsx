@@ -2,6 +2,7 @@ import type React from 'react';
 import { useContext, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
+import { StatusCallout } from './ui/status-callout';
 
 interface RequireMembershipRouteProps {
   children: React.ReactNode;
@@ -84,11 +85,12 @@ export function RequireMembershipRoute({ children, allowExpired }: RequireMember
   // 刊登的下架由後端 has_active_subscription() 處理，這裡只管畫面。
   if (suspendedBlocked) {
     return (
-      <div className="max-w-md mx-auto mt-16 text-center space-y-3 p-6 border rounded-lg bg-red-50 border-red-200">
-        <h2 className="text-xl font-bold text-red-800">帳號已停權</h2>
-        <p className="text-sm text-red-700">
-          您的帳號目前處於停權狀態，會員功能與刊登已暫停。 若有疑問請聯繫客服。
-        </p>
+      <div className="max-w-md mx-auto mt-16">
+        <StatusCallout
+          variant="destructive"
+          title="帳號已停權"
+          description="您的帳號目前處於停權狀態，會員功能與刊登已暫停。 若有疑問請聯繫客服。"
+        />
       </div>
     );
   }

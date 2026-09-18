@@ -22,6 +22,7 @@ import {
 } from './ui/alert-dialog';
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
+import { StatusCallout } from './ui/status-callout';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -724,22 +725,21 @@ export function PaymentCheckout() {
               {/* plan §4 第 4 列：曾有資料、本次背景重整失敗。已付過補繳時
                   不得靜默降級——畫面上的進度可能已過期，明講並給重試。 */}
               {renewal?.hasPaidAnyBackfill && renewalFetchFailed && (
-                <div
-                  className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2"
+                <StatusCallout
                   data-testid="backfill-progress-stale"
-                >
-                  <p className="text-sm text-amber-800">
-                    進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => refreshSubscription()}
-                    data-testid="backfill-progress-refresh"
-                  >
-                    重新整理進度
-                  </Button>
-                </div>
+                  variant="warning"
+                  title="進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。"
+                  description={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => refreshSubscription()}
+                      data-testid="backfill-progress-refresh"
+                    >
+                      重新整理進度
+                    </Button>
+                  }
+                />
               )}
 
               {/* 選項＝一個容器：標頭列可點選，選中才在容器內展開自己的
@@ -778,49 +778,43 @@ export function PaymentCheckout() {
                         ——已付 2 筆剩 1 筆的人同樣 count=1，用數值判斷會與進度卡打架。 */}
                     {renewal.backfillCount > 0 &&
                       (!renewal.hasPaidAnyBackfill && renewal.backfillCount === 1 ? (
-                        <div
-                          className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1"
+                        <StatusCallout
                           data-testid="backfill-disclosure"
-                        >
-                          <p className="text-sm text-amber-800">
-                            您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}。
-                          </p>
-                          <p className="text-sm text-amber-800">
-                            接續原效期 NT$ 1,200，付款後效期至{' '}
-                            {formatTwDate(renewal.backfillFinalEndDate)}。
-                          </p>
-                        </div>
+                          variant="warning"
+                          title={`您的會籍已過期 ${formatExpiredMonths(renewal.expiredForMonths)}。`}
+                          description={`接續原效期 NT$ 1,200，付款後效期至 ${formatTwDate(renewal.backfillFinalEndDate)}。`}
+                        />
                       ) : (
-                        <div
-                          className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1"
+                        <StatusCallout
                           data-testid="backfill-disclosure"
-                        >
-                          <p className="text-sm text-amber-800">
-                            您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}
-                            ，接續原效期需補繳{' '}
-                            <span className="font-bold">{renewal.backfillCount} 筆</span>， 共 NT${' '}
-                            {renewal.backfillAmount.toLocaleString('en-US')}；補繳完成後效期至{' '}
-                            {formatTwDate(renewal.backfillFinalEndDate)}。
-                          </p>
-                          <p className="text-xs text-amber-700">
-                            每筆 NT$ 1,200 需分次付款，每一筆都會立即入帳、不會重複扣款。
-                          </p>
-                        </div>
+                          variant="warning"
+                          title={
+                            <>
+                              您的會籍已過期 {formatExpiredMonths(renewal.expiredForMonths)}
+                              ，接續原效期需補繳{' '}
+                              <span className="font-bold">{renewal.backfillCount} 筆</span>， 共 NT${' '}
+                              {renewal.backfillAmount.toLocaleString('en-US')}；補繳完成後效期至{' '}
+                              {formatTwDate(renewal.backfillFinalEndDate)}。
+                            </>
+                          }
+                          description="每筆 NT$ 1,200 需分次付款，每一筆都會立即入帳、不會重複扣款。"
+                        />
                       ))}
 
                     {/* AC-7 前端面：本輪已付過補繳 → 顯示接續進度，回來就接得上
                         （plan §4 原文即「選項卡片內顯示」）。 */}
                     {renewal.hasPaidAnyBackfill && paidUpToDay && (
-                      <div
-                        className="p-3 bg-green-50 border border-green-200 rounded-lg"
+                      <StatusCallout
                         data-testid="backfill-progress"
-                      >
-                        <p className="text-sm text-green-800">
-                          已補至 {formatTwDate(paidUpToDay)}，還差{' '}
-                          <span className="font-bold">{renewal.backfillCount} 筆</span>（NT${' '}
-                          {renewal.backfillAmount.toLocaleString('en-US')}）即可恢復會籍。
-                        </p>
-                      </div>
+                        variant="success"
+                        title={
+                          <>
+                            已補至 {formatTwDate(paidUpToDay)}，還差{' '}
+                            <span className="font-bold">{renewal.backfillCount} 筆</span>（NT${' '}
+                            {renewal.backfillAmount.toLocaleString('en-US')}）即可恢復會籍。
+                          </>
+                        }
+                      />
                     )}
                   </div>
                 )}
@@ -879,31 +873,34 @@ export function PaymentCheckout() {
                   <div className="px-4 pb-4 space-y-2">
                     {/* A14：清空揭露——選新約前先看見將失去什麼（具體數字）。 */}
                     {(renewal.freshForfeitPoints > 0 || renewal.freshForfeitReferrals > 0) && (
-                      <div
-                        className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1"
+                      <StatusCallout
                         data-testid="fresh-forfeit-disclosure"
-                      >
-                        <p className="text-sm text-red-800 font-medium">選擇新約將清空目前累積：</p>
-                        {/* 只唸出非零的項目，避免「0 點」這種贅句。 */}
-                        <p className="text-sm text-red-800">
-                          {renewal.freshForfeitPoints > 0 && (
-                            <>
-                              可提領回饋{' '}
-                              <span className="font-bold">{renewal.freshForfeitPoints} 點</span>
-                            </>
-                          )}
-                          {renewal.freshForfeitPoints > 0 &&
-                            renewal.freshForfeitReferrals > 0 &&
-                            '、'}
-                          {renewal.freshForfeitReferrals > 0 && (
-                            <>
-                              累積推薦{' '}
-                              <span className="font-bold">{renewal.freshForfeitReferrals} 位</span>
-                            </>
-                          )}
-                          將全部歸零，且無法復原。
-                        </p>
-                      </div>
+                        variant="destructive"
+                        title="選擇新約將清空目前累積："
+                        // 只唸出非零的項目，避免「0 點」這種贅句。
+                        description={
+                          <>
+                            {renewal.freshForfeitPoints > 0 && (
+                              <>
+                                可提領回饋{' '}
+                                <span className="font-bold">{renewal.freshForfeitPoints} 點</span>
+                              </>
+                            )}
+                            {renewal.freshForfeitPoints > 0 &&
+                              renewal.freshForfeitReferrals > 0 &&
+                              '、'}
+                            {renewal.freshForfeitReferrals > 0 && (
+                              <>
+                                累積推薦{' '}
+                                <span className="font-bold">
+                                  {renewal.freshForfeitReferrals} 位
+                                </span>
+                              </>
+                            )}
+                            將全部歸零，且無法復原。
+                          </>
+                        }
+                      />
                     )}
 
                     <div className="space-y-1 p-3 bg-muted rounded-lg">
@@ -935,12 +932,17 @@ export function PaymentCheckout() {
                         </p>
                       )}
                       {newCodeStatus === 'valid' && newReferrerName && (
-                        <p className="text-xs text-green-600" data-testid="new-referrer-name">
+                        <p
+                          className="text-xs text-success-subtle-foreground"
+                          data-testid="new-referrer-name"
+                        >
                           推薦人：{newReferrerName}
                         </p>
                       )}
                       {newCodeStatus === 'invalid' && (
-                        <p className="text-xs text-red-600">推薦碼不存在或已失效</p>
+                        <p className="text-xs text-destructive-subtle-foreground">
+                          推薦碼不存在或已失效
+                        </p>
                       )}
                       {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道
                           「這會改變既有推薦關係」；不解釋預設推薦碼機制。 */}

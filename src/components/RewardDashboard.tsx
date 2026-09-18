@@ -15,6 +15,7 @@ import { useRewardData } from '../hooks/useRewardData';
 import { useSubscription } from '../hooks/useSubscription';
 import { useNotification } from './notifications/NotificationContext';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
+import { StatusCallout } from './ui/status-callout';
 import type { IdPhotosResponse } from '@contract';
 
 /** 證件狀態的取讀與上傳。抽在元件外，讓 IdVerificationSection 保持可單元測試。 */
@@ -114,7 +115,7 @@ export function RewardDashboard() {
           </div>
         </div>
         <div className="text-center py-12">
-          <p className="text-red-600 mb-4">{error}</p>
+          <p className="text-destructive-subtle-foreground mb-4">{error}</p>
           {/* 只重抓本頁資料，不整頁 reload（reload 會重開整個 SPA：
               重解析 session、清光快取、白畫面閃爍） */}
           <Button onClick={clearAndRefetch}>重新載入</Button>
@@ -174,19 +175,22 @@ export function RewardDashboard() {
           狀態與唯一出路，所以續約提示常駐在最上方、不可關閉；提領被擋的
           細節由 WithdrawalSection 自己說明，這裡不重複。 */}
       {subscriptionStatus === 'expired' && (
-        <div
-          role="status"
+        <StatusCallout
           data-testid="expired-renewal-banner"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4"
-        >
-          <p className="text-sm text-amber-900">
-            您的會籍已到期。<span className="font-medium">Point 全數保留不會歸零</span>
-            ，但續約後才能提領。
-          </p>
-          <Button size="sm" onClick={() => navigate('/payment/checkout')}>
-            立即續約
-          </Button>
-        </div>
+          variant="warning"
+          title="您的會籍已到期"
+          description={
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                <span className="font-medium">Point 全數保留不會歸零</span>
+                ，但續約後才能提領。
+              </span>
+              <Button size="sm" onClick={() => navigate('/payment/checkout')}>
+                立即續約
+              </Button>
+            </div>
+          }
+        />
       )}
 
       <RewardStats

@@ -1,6 +1,7 @@
 import { X, CheckCircle, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { StatusCallout } from '../ui/status-callout';
 import { UserReferralCard } from './UserReferralCard';
 import { ProgressBar } from './ProgressBar'; // ✅ 導入統一進度條組件
 
@@ -68,35 +69,39 @@ export function MonthlyKingProgress({
             showStats={false}
             extraInfo={
               currentProgress < target ? (
-                <p className="text-blue-700">
+                <p className="text-muted-foreground">
                   💡 再推薦 {target - currentProgress} 人可再獲得免費續約 1 年！
                 </p>
               ) : (
-                <p className="text-green-700">✅ 已達成本輪目標！完成 {target} 人推薦</p>
+                <p className="text-success-subtle-foreground">
+                  ✅ 已達成本輪目標！完成 {target} 人推薦
+                </p>
               )
             }
           />
 
           {/* 本月成就 */}
           {completedCount > 0 && (
-            <div className="p-4 bg-green-50 border-2 border-green-300 rounded-lg">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-                <h3 className="font-medium text-green-900">✨ 本月成就</h3>
-              </div>
-
-              <div className="space-y-2">
-                {Array.from({ length: completedCount }).map((_, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm">
-                    <Zap className="h-4 w-4 text-yellow-600" />
-                    <span className="text-green-700">第 {index + 1} 次完成（+免費續約 1 年）</span>
-                    <span className="text-xs text-muted-foreground">
-                      {`第 ${(index + 1) * target} 人達成`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <StatusCallout
+              variant="success"
+              icon={CheckCircle}
+              title="✨ 本月成就"
+              description={
+                <div className="space-y-2">
+                  {Array.from({ length: completedCount }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm">
+                      <Zap className="h-4 w-4 text-success-subtle-foreground" />
+                      <span className="text-success-subtle-foreground">
+                        第 {index + 1} 次完成（+免費續約 1 年）
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {`第 ${(index + 1) * target} 人達成`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              }
+            />
           )}
 
           {/* 推薦列表 */}
@@ -111,7 +116,7 @@ export function MonthlyKingProgress({
                 <div key={index} className="relative">
                   {/* 完成標記（每 target 人一個標記）*/}
                   {(index + 1) % target === 0 && (
-                    <div className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full z-10 flex items-center gap-1">
+                    <div className="absolute -top-2 -right-2 bg-success text-success-foreground text-xs px-2 py-1 rounded-full z-10 flex items-center gap-1">
                       <CheckCircle className="h-3 w-3" />第{(index + 1) / target}次完成
                     </div>
                   )}
@@ -121,7 +126,7 @@ export function MonthlyKingProgress({
                     userReferralCode={referral.userReferralCode}
                     createdAt={referral.createdAt}
                     isCompleted={(index + 1) % target === 0}
-                    completionBorderColor="border-yellow-500"
+                    completionBorderColor="border-success-border"
                   />
                 </div>
               ))}
@@ -129,13 +134,11 @@ export function MonthlyKingProgress({
           </div>
 
           {/* 溢出說明 */}
-          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
-            <p className="text-yellow-900">
-              💡 <strong>溢出機制說明：</strong>
-              每推薦滿 {target} 人即可獲得免費續約 1 年，計數器自動扣除 {target} 人。
-              剩餘人數累計至下一輪，下月 1 日歸零重新計算。
-            </p>
-          </div>
+          <StatusCallout
+            variant="neutral"
+            title="💡 溢出機制說明"
+            description={`每推薦滿 ${target} 人即可獲得免費續約 1 年，計數器自動扣除 ${target} 人。剩餘人數累計至下一輪，下月 1 日歸零重新計算。`}
+          />
 
           <div className="flex justify-center pt-4">
             <Button onClick={onClose}>關閉</Button>

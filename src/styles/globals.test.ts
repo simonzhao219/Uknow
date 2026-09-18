@@ -239,6 +239,103 @@ function hexOf(mode: Mode, tokenName: string): string {
   return resolveToHex(raw);
 }
 
+// ---------------------------------------------------------------------------
+// 推薦樹世代色（S2，僅供 ReferralTreeView 使用，plan.md D3）：avatar（實心底配
+// 白字）與 badge/line（淺底提示框，深色模式反轉為暗底亮字）兩組，各 3 階；
+// 且兩組都要與「已失效」狀態灰（已收斂為 --muted-foreground）保持可辨識距離，
+// 避免深色模式下分不出「第幾代」還是「已失效」（S1 二審 R2-UIUX-1）。
+// ---------------------------------------------------------------------------
+
+const TREE_GEN_TIERS = [1, 2, 3] as const;
+// 相對亮度差的最低距離——不是 WCAG 標準門檻，是本專案為「避免多值分類色與既有
+// 狀態灰混淆」自訂的可辨識基準（棘輪式判準的一種：寫得出具體數字才可驗）。
+const TREE_GEN_MIN_LUMINANCE_GAP = 0.08;
+
+function luminanceOf(mode: Mode, tokenName: string): number {
+  return relativeLuminance(hexToRgb(hexOf(mode, tokenName)));
+}
+
+describe('推薦樹世代色 token 三處齊備', () => {
+  const TREE_GEN_TOKENS = [
+    'tree-gen-avatar-1',
+    'tree-gen-avatar-2',
+    'tree-gen-avatar-3',
+    'tree-gen-avatar-foreground',
+    'tree-gen-badge-1',
+    'tree-gen-badge-2',
+    'tree-gen-badge-3',
+    'tree-gen-badge-foreground',
+  ];
+
+  for (const name of TREE_GEN_TOKENS) {
+    it(`--${name} 在 :root 有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+    });
+
+    it(`--${name} 在 .dark 有定義`, () => {
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+
+    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
+      const key = `--color-${name}`;
+      expect(themeTokens.has(key), `@theme inline 缺少 ${key}`).toBe(true);
+      expect(themeTokens.get(key)).toBe(`var(--${name})`);
+    });
+  }
+});
+
+describe('推薦樹世代色對比度（階段 2b 之後，公式已錨定）', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+
+    for (const tier of TREE_GEN_TIERS) {
+      it(`${modeLabel}：avatar 第 ${tier} 階對 avatar-foreground 達 4.5:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `tree-gen-avatar-${tier}`),
+          hexOf(mode, 'tree-gen-avatar-foreground'),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+
+      it(`${modeLabel}：badge 第 ${tier} 階對 badge-foreground 達 4.5:1`, () => {
+        const ratio = contrastRatio(
+          hexOf(mode, `tree-gen-badge-${tier}`),
+          hexOf(mode, 'tree-gen-badge-foreground'),
+        );
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+
+    it(`${modeLabel}：avatar 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
+      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-avatar-${t}`));
+      expect(l1).toBeLessThan(l2);
+      expect(l2).toBeLessThan(l3);
+    });
+
+    it(`${modeLabel}：badge 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
+      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-badge-${t}`));
+      expect(l1).toBeLessThan(l2);
+      expect(l2).toBeLessThan(l3);
+    });
+
+    for (const tier of TREE_GEN_TIERS) {
+      it(`${modeLabel}：avatar 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
+        const gap = Math.abs(
+          luminanceOf(mode, `tree-gen-avatar-${tier}`) - luminanceOf(mode, 'muted-foreground'),
+        );
+        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
+      });
+
+      it(`${modeLabel}：badge 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
+        const gap = Math.abs(
+          luminanceOf(mode, `tree-gen-badge-${tier}`) - luminanceOf(mode, 'muted-foreground'),
+        );
+        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
+      });
+    }
+  }
+});
+
 describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 × 淺深兩版）', () => {
   for (const mode of MODES) {
     const modeLabel = mode === 'light' ? '淺色' : '深色';

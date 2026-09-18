@@ -44,8 +44,8 @@ export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProp
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-100 rounded-full">
-                <AlertCircle className="h-6 w-6 text-orange-600" />
+              <div className="p-2 bg-warning-subtle rounded-full">
+                <AlertCircle className="h-6 w-6 text-warning-subtle-foreground" />
               </div>
               <div>
                 <CardTitle>功能暫時關閉</CardTitle>

@@ -43,7 +43,13 @@ export function MemberVerifyQrTab({ active, accountStatus }: MemberVerifyQrTabPr
       {accountStatus ? (
         <p className="text-xs text-muted-foreground">
           您的會籍：
-          <span className={accountStatus === 'active' ? 'text-green-600' : 'text-muted-foreground'}>
+          <span
+            className={
+              accountStatus === 'active'
+                ? 'text-success-subtle-foreground'
+                : 'text-muted-foreground'
+            }
+          >
             {accountStatus === 'active' ? '有效' : '已過期'}
           </span>
         </p>

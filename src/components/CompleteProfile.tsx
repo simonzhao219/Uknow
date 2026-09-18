@@ -807,14 +807,20 @@ export function CompleteProfile() {
 
               {/* 已填但尚未驗證：主動提示，避免使用者以為「填了就好」卻在按鈕卡住 */}
               {referralNeedsVerify && !codeError && (
-                <p className="text-sm text-amber-600" data-testid="referral-code-hint">
+                <p
+                  className="text-sm text-warning-subtle-foreground"
+                  data-testid="referral-code-hint"
+                >
                   尚未驗證，請點右側「驗證」，或清空此欄位後即可繼續
                 </p>
               )}
 
               {/* ✅ 推薦人姓名顯示 */}
               {referrerName && !referralNeedsVerify && (
-                <p className="text-sm text-green-600" data-testid="referral-code-status">
+                <p
+                  className="text-sm text-success-subtle-foreground"
+                  data-testid="referral-code-status"
+                >
                   推薦人：{referrerName}
                 </p>
               )}

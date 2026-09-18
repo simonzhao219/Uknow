@@ -41,7 +41,8 @@ interface RewardHistoryProps {
 
 // 來源分類 → 圖示 / 顏色（KEY 來自 @contract 的 enum＝單一真相；這裡只放視覺）。
 // 文字標籤在 utils/rewardHistoryFilter 的 REWARD_SOURCE_LABELS（純資料、可測、
-// 與篩選器共用同一份用詞）。退款用琥珀色與收入分家，避免被誤讀為新收入。
+// 與篩選器共用同一份用詞）。分類一律走中性灰階徽章——不靠顏色分家,
+// 靠來源名稱文字本身區分（S2 色彩收斂 D3：計數/分類一律去色）。
 type SourceMeta = {
   Icon: React.ComponentType<{ className?: string }>;
   badgeClass: string;
@@ -49,28 +50,24 @@ type SourceMeta = {
 const SOURCE_META: Record<RewardSourceCategory, SourceMeta> = {
   referral_signup: {
     Icon: UserPlus,
-    badgeClass:
-      'border-transparent bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
   referral_renewal: {
     Icon: RefreshCw,
-    badgeClass:
-      'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
   withdrawal: {
     Icon: TrendingDown,
-    badgeClass: 'border-transparent bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
   withdrawal_refund: {
     Icon: RotateCcw,
-    badgeClass:
-      'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
   adjustment_manual: {
     Icon: SlidersHorizontal,
     badgeClass: 'border-transparent bg-muted text-muted-foreground',
   },
-  // 新約重置是扣帳事件，但語意與提領（紅）不同：用中性灰避免誤讀成出金。
   ledger_reset: {
     Icon: Eraser,
     badgeClass: 'border-transparent bg-muted text-muted-foreground',
@@ -218,7 +215,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {/* 錯誤狀態 */}
         {error && (
           <div className="text-center py-8">
-            <p className="text-red-600 mb-4">{error}</p>
+            <p className="text-destructive mb-4">{error}</p>
             <Button onClick={() => window.location.reload()} size="sm">
               重新載入
             </Button>
@@ -281,7 +278,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                       {/* 右側：金額 +（未篩選時）餘額 */}
                       <div className="flex flex-col items-end justify-center gap-1 shrink-0 self-center">
                         <span
-                          className={`font-medium ${record.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                          className={`font-medium ${record.amount >= 0 ? 'text-success' : 'text-destructive'}`}
                         >
                           {record.amount >= 0 ? '+' : ''}
                           {record.amount}P
@@ -289,7 +286,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                         {/* 逐列餘額是「全域」流水餘額；篩選時中間紀錄被隱藏會讓餘額看似跳動，
                             故只在「全部」檢視顯示，避免誤導。 */}
                         {!isFiltered && record.balance !== undefined && (
-                          <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground font-medium">
                             {record.balance.toLocaleString()}P
                           </span>
                         )}

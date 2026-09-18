@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
@@ -49,7 +50,7 @@ function getStatusBadge(status: string) {
     case 'pending':
       return <Badge variant="secondary">待處理</Badge>;
     case 'awaiting_collection':
-      return <Badge className="bg-orange-500">待查收</Badge>;
+      return <Badge variant="warning">待查收</Badge>;
     case 'completed':
       return <Badge variant="outline">已完成</Badge>;
     case 'rejected':
@@ -590,11 +591,8 @@ export function WithdrawalManagement({
       )}
 
       {actionMessage && (
-        <div
-          role="status"
-          className="flex items-center justify-between rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900"
-        >
-          <span>{actionMessage}</span>
+        <div className="flex items-center gap-2">
+          <StatusCallout variant="success" title={actionMessage} className="flex-1 py-2" />
           <Button variant="ghost" size="sm" onClick={() => setActionMessage(null)}>
             知道了
           </Button>

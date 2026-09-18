@@ -20,35 +20,35 @@ export function TaskBadge({ progress, target, className = '' }: TaskBadgeProps) 
       return {
         icon: '⭐⭐⭐',
         name: '推薦王',
-        color: 'text-yellow-600',
-        bgColor: 'bg-yellow-50',
-        borderColor: 'border-yellow-300',
+        color: 'text-success-subtle-foreground',
+        bgColor: 'bg-success-subtle',
+        borderColor: 'border-success-border',
       };
     }
     if (progress >= halfway) {
       return {
         icon: '⭐⭐',
         name: '推薦達人',
-        color: 'text-blue-600',
-        bgColor: 'bg-blue-50',
-        borderColor: 'border-blue-300',
+        color: 'text-muted-foreground',
+        bgColor: 'bg-muted',
+        borderColor: 'border-border',
       };
     }
     if (progress >= 1) {
       return {
         icon: '⭐',
         name: '推薦新星',
-        color: 'text-green-600',
-        bgColor: 'bg-green-50',
-        borderColor: 'border-green-300',
+        color: 'text-muted-foreground',
+        bgColor: 'bg-muted',
+        borderColor: 'border-border',
       };
     }
     return {
       icon: '🔰',
       name: '見習推薦',
-      color: 'text-gray-600',
-      bgColor: 'bg-gray-50',
-      borderColor: 'border-gray-300',
+      color: 'text-muted-foreground',
+      bgColor: 'bg-muted',
+      borderColor: 'border-border',
     };
   };
 

@@ -88,15 +88,15 @@ export function WithdrawalSection({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
+        return <Clock className="h-4 w-4 text-warning" />;
       case 'awaiting_collection':
-        return <Eye className="h-4 w-4 text-blue-600" />;
+        return <Eye className="h-4 w-4 text-muted-foreground" />;
       case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-success" />;
       case 'rejected':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-destructive" />;
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-400" />;
+        return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -105,17 +105,9 @@ export function WithdrawalSection({
       case 'pending':
         return <Badge variant="secondary">處理中</Badge>;
       case 'awaiting_collection':
-        return (
-          <Badge variant="outline" className="bg-blue-100 text-blue-800">
-            待查收
-          </Badge>
-        );
+        return <Badge variant="secondary">待查收</Badge>;
       case 'completed':
-        return (
-          <Badge variant="default" className="bg-green-100 text-green-800">
-            已完成
-          </Badge>
-        );
+        return <Badge variant="success-subtle">已完成</Badge>;
       case 'rejected':
         return <Badge variant="destructive">已拒絕</Badge>;
       default:

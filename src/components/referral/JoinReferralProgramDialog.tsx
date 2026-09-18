@@ -95,7 +95,7 @@ export function JoinReferralProgramDialog({
                 id="join-referral-dialog-title"
                 className="text-2xl font-semibold mb-2 flex items-center gap-2"
               >
-                <Shield className="h-6 w-6 text-purple-600" />
+                <Shield className="h-6 w-6 text-primary" />
                 加入推薦計畫
               </h2>
               <p className="text-sm text-muted-foreground">
@@ -158,13 +158,6 @@ export function JoinReferralProgramDialog({
                 <h3 className="font-medium">簽名確認（中文正楷）</h3>
                 <SignaturePad onSignatureChange={setSignatureData} disabled={isSubmitting} />
               </div>
-
-              {/* 說明 */}
-              {/* <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-sm text-purple-900">
-                  加入推薦計畫後，您將獲得專屬推薦碼，可以邀請好友註冊並獲得推薦獎勵。
-                </p>
-              </div> */}
             </div>
 
             {/* 按鈕 */}
@@ -172,11 +165,7 @@ export function JoinReferralProgramDialog({
               <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
                 取消
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-              >
+              <Button onClick={handleSubmit} disabled={!canSubmit}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

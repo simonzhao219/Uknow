@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
+import { StatusCallout } from '../ui/status-callout';
 import { Shield, Loader2, ArrowLeft } from 'lucide-react';
 import { IdNumberInput } from './IdNumberInput';
 
@@ -53,18 +54,17 @@ export function CollectionVerifyDialog({
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-600" />
+            <Shield className="h-5 w-5 text-muted-foreground" />
             身分證驗證 - 步驟 3/3
           </CardTitle>
           <CardDescription>請輸入您註冊時使用的身分證字號</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 說明 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-800">
-              為確保帳戶安全，請輸入您的身分證字號進行身分驗證
-            </p>
-          </div>
+          <StatusCallout
+            variant="neutral"
+            title="為確保帳戶安全，請輸入您的身分證字號進行身分驗證"
+          />
 
           {/* 身分證輸入驗證組件 */}
           <IdNumberInput
@@ -79,7 +79,7 @@ export function CollectionVerifyDialog({
           />
 
           {/* 總錯誤提示 */}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
