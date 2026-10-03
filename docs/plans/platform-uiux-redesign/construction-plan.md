@@ -18,6 +18,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 - **一個 session = 一條分支 = 一個 PR**，各自合回 develop 才開下一個。
   避免平行施工：全是 UI 改動，平行必撞檔案。
 - 每 2 個 session 是一個**驗收站**（見 §4），業主上 develop 環境實看。
+- **S2b（2026-10-03 追加）**：驗收站 1 之後業主裁決加強調色與語義色升亮（plan.md §0 第 6 列、§3 D4）。插在 S2 之後、S3 之前（追加時 S3 尚未開工）；它只動 token 與幾個原語，不碰 S3 的檔案。
 
 ## 2. Session 分工表
 
@@ -30,6 +31,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 |---|---|---|---|---|---|---|
 | S1 | 設計語言地基 | D1+D2 | `feature/design-language-foundation` | 三段式落檔（動全站 token，階段 ≥3） | **Opus** 規劃/審查、Sonnet 實作 | 中偏重 ※ |
 | S2 | 全站色彩收斂 | D3 | `fix/color-token-sweep` | 輕量 Plan Mode（機械替換，守門腳本兜底） | Sonnet | 中 |
+| S2b | 強調色與語義色升亮 | D4 | `fix/brand-accent` | 輕量 Plan Mode（token 值已由業主定案，session 只做落地與消費點替換） | Sonnet | 輕 |
 | S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
@@ -80,6 +82,47 @@ scripts/check-color-usage.py 守門腳本接進 framework-check 軌
 列出的位置與 §4 規範，全站收斂手刻色與漸層；Badge variant 化、
 新增 StatusCallout 元件。用 Plan Mode 先列出完整替換清單給我看過再動工。
 守門腳本（S1 產物）必須全綠。
+```
+
+**S2b**（Sonnet；token 值已定案，不需要再提方案）：
+```
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+執行 S2b（工項 D4）：在 fix/brand-accent 分支上落地業主裁決的配色 A
+（plan.md §0 第 6 列、§4 第 7 點）。用 Plan Mode 先列出替換清單給我看過再動工，
+守門腳本必須全綠，globals.test.ts 的對比度測試必須擴到新 token。
+
+一、globals.css 新增 brand 系列（三處齊備：:root／.dark／@theme inline；
+   名字不能用 --accent，那是 shadcn 既有的 hover 灰）：
+   淺色 --brand #4f46e5、--brand-hover #4338ca、--brand-foreground #ffffff、
+         --brand-subtle #e0e7ff、--brand-subtle-foreground #3730a3
+   深色 --brand #818cf8、--brand-hover #a5b4fc、--brand-foreground #0a0a0a、
+         --brand-subtle #1e1b4b、--brand-subtle-foreground #c7d2fe
+   --ring 淺深兩版都改成 var(--brand)（焦點框跟著變）。
+二、語義色實心層改亮底黑字（淺深兩版同值；淺底 B 與裸字 C 的 token 不動）：
+   --success #22c55e／--success-foreground #0a0a0a
+   --warning #fbbf24／--warning-foreground #0a0a0a
+   --destructive #f87171／--destructive-foreground #0a0a0a
+   連帶必改：ui/badge.tsx 與 ui/button.tsx 的 destructive variant 把寫死的
+   text-white 換成 text-destructive-foreground，並拿掉 dark:bg-destructive/60
+   （六成透明的淺紅配黑字過不了對比）；aria-invalid:border-destructive 這類
+   表單錯誤邊框改用 border-destructive-border（#f87171 當邊框對白底只有 2.5:1）。
+三、消費點改指 brand（只有這些，不擴散）：
+   ui/button.tsx link variant text-primary → text-brand；新增 brand variant
+   （bg-brand text-brand-foreground hover:bg-brand-hover）給次要行動鈕用；
+   ui/tabs.tsx 選中分頁 data-[state=active] 加 text-brand（底線或底色擇一，
+   量測法不變、不得讓四 Tab 換行）；task/ProgressBar.tsx 填色與
+   utils/userReferralFormatter.ts getProgressBarStyle 的 40–69% 段
+   bg-muted-foreground → bg-brand。checkbox/switch 的選取態維持 primary 黑。
+四、測試：globals.test.ts 的三處齊備與 @theme 值字面檢查納入 brand 五個 token；
+   對比斷言新增 brand 字對 --background 與 --card ≥4.5:1、brand 當邊框 ≥3:1、
+   brand-subtle-foreground 對 brand-subtle ≥4.5:1，淺深各一輪；既有 A 形狀
+   字/底斷言自動覆蓋新值。既有元件測試若斷言 text-white 字串，同步更新。
+五、ui-ux-guidelines.md §12：12.3 新增「強調色」段——--brand 的用途清單
+   （連結、選中分頁、進度填色、焦點框、次要行動鈕）、「強調色 ≠ 資訊狀態色，
+   資訊/進行中仍走灰階」、A 形狀改亮底黑字的理由；12.5 的「CTA／連結可用
+   --primary」改為「主行動用 --primary 黑，次要行動與連結用 --brand」。
+   12.8 的 devtools checklist 不變，實作完自己跑一次深色與色盲。
+六、收尾更新 progress.md（S2b 列、異動記錄）；PR 描述附淺深兩版對比度表。
 ```
 
 **S3**：
@@ -181,6 +224,7 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收站 | 在哪之後 | 業主看什麼 |
 |---|---|---|
 | 驗收 1 | S2 合併 | develop 環境全站走一圈：色彩是否收斂、觀感是否一致、有無改壞的地方；**含**深色模式下推薦樹的世代頭像灰是否與「已失效」狀態點的灰混淆（S1 design-language-foundation 二審 R2-UIUX-1 的裁決——世代色去色走灰階三階，業主可在此站推翻） |
+| 驗收 1b | S2b 合併 | 快速走一輪（不必全站）：連結／選中分頁／進度條／輸入框焦點是否出現靛藍且只出現在這些地方；成功／警示／危險的實心徽章與危險按鈕是否為亮底黑字且讀得清楚；devtools `.dark` 看一次同樣幾處 |
 | 驗收 2 | S4 合併 | 後台：四 Tab 單列（375px 實機確認標籤不溢字不換行）、工具列、會員詳情分區——手機與桌機各實際操作一次（後台兩者並重） |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感（切回不再等 loading） |
 | 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主 |
