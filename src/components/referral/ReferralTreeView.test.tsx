@@ -368,6 +368,28 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
   });
 });
 
+// 三個世代是三個色相（teal／violet／pink）：徽章的淺底與字色都要隨世代，一個共用的
+// foreground token 配不了三個色相。token 存在與對比度由 globals.test.ts 驗；元件有沒有
+// 用對（-1/-2/-3 對應世代 1/2/3）只能在這裡驗。
+describe('詳情面板的世代徽章（底與字色都隨世代）', () => {
+  const CASES = [
+    [1, '一代'],
+    [2, '二代'],
+    [3, '三代'],
+  ] as const;
+
+  for (const [gen, label] of CASES) {
+    it(`${label}徽章用 badge-${gen} 的底與 badge-foreground-${gen} 的字`, () => {
+      renderTree(makeOverview({ roots: [makeNode({ name: '王大明', generation: gen })] }));
+      fireEvent.click(screen.getByRole('treeitem', { name: '王大明 詳情' }));
+
+      const badge = screen.getByText(label);
+      expect(badge.className).toContain(`bg-[var(--tree-gen-badge-${gen})]`);
+      expect(badge.className).toContain(`text-[var(--tree-gen-badge-foreground-${gen})]`);
+    });
+  }
+});
+
 // 切排序時：晶片文字立刻變、已展開分支立刻收合，但清單原地維持舊順序直到
 // 回應才默默重排。改預設後「老使用者上線第一件事就是切回最新加入」會大量
 // 觸發這段無回饋空窗（LINE 內建瀏覽器更慢）。
