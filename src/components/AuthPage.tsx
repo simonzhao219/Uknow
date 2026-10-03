@@ -418,7 +418,7 @@ export function AuthPage() {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-sm text-primary hover:underline"
+                    className="text-sm text-brand hover:underline"
                     data-testid="forgot-password-link"
                   >
                     忘記密碼？

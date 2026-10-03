@@ -52,7 +52,7 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
               />
             ),
             li: ({ node, ...props }) => <li {...props} />,
-            a: ({ node, ...props }) => <a className="text-primary hover:underline" {...props} />,
+            a: ({ node, ...props }) => <a className="text-brand hover:underline" {...props} />,
             blockquote: ({ node, ...props }) => (
               <blockquote
                 className="border-l-4 border-primary pl-4 italic my-4 text-muted-foreground"

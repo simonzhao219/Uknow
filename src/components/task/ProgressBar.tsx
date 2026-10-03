@@ -37,7 +37,7 @@ interface ProgressBarProps {
  * 統一的進度條組件 ⭐
  *
  * 用於「連續推薦達人」和「推薦王」的進度顯示
- * 純中性灰階樣式（進度/度量類語境去色，不用品牌色或語義色強調）
+ * 填色用強調色 --brand（進度填色是 §12.3 的強調色用途之一），軌道維持灰階
  */
 export function ProgressBar({
   current,
@@ -61,11 +61,11 @@ export function ProgressBar({
       </div>
 
       {/* 進度條：軌道與外層容器同用 --muted 會讓「未完成」的部分視覺上消失
-          （review 抓到的發現），軌道改用同一個填充色的低透明度版本——
-          track 與 fill 永遠有落差，且深淺模式下都成立，不必分別調兩組值 */}
+          （review 抓到的發現），軌道改用 --muted-foreground 的低透明度版本，
+          與 brand 填色永遠有落差（實算淺 4.2:1／深 3.5:1，皆過 3:1），不必分別調兩組值 */}
       <div className="h-3 bg-muted-foreground/20 rounded-full overflow-hidden mb-2">
         <div
-          className="h-full bg-muted-foreground transition-all duration-500"
+          className="h-full bg-brand transition-all duration-500"
           style={{ width: `${percentage}%` }}
         ></div>
       </div>
