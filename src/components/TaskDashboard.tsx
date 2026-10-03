@@ -10,11 +10,7 @@ import { PendingRewardsSection } from './task/PendingRewardsSection';
 import { TaskGuide } from './task/TaskGuide';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
 import { TaskBadge } from './task/TaskBadge';
-import {
-  getMotivationText,
-  getProgressColor,
-  getProgressBarStyle,
-} from '../utils/userReferralFormatter';
+import { getMotivationText, getProgressColor } from '../utils/userReferralFormatter';
 import { computeKingRounds } from '../utils/kingProgress';
 
 function formatMonth(monthStr: string) {
@@ -175,9 +171,11 @@ export function TaskDashboard() {
                         {rounds.currentRoundCount} / {task.target}
                       </span>
                     </div>
+                    {/* 進度條填色一律 brand，不依進度換色：亮底 success/warning 對淺軌道
+                        不到 3:1，達標狀態由旁邊的 x / y 數字（getProgressColor）承擔 */}
                     <div className="relative h-3 bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full transition-all duration-500 ${getProgressBarStyle(rounds.roundProgressPct)}`}
+                        className="h-full bg-brand transition-all duration-500"
                         style={{ width: `${Math.min(rounds.roundProgressPct, 100)}%` }}
                       />
                     </div>

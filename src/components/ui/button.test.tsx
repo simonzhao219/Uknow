@@ -22,10 +22,17 @@ describe('buttonVariants', () => {
     expect(cls).toContain('hover:bg-brand-hover');
   });
 
-  it('link 用強調色 brand，不再用 primary', () => {
+  it('link 用強調色 brand 並常駐底線，不只靠顏色（1.4.1）', () => {
     const cls = buttonVariants({ variant: 'link' });
     expect(cls).toContain('text-brand');
     expect(cls).not.toContain('text-primary');
+    expect(cls.split(' ')).toContain('underline');
+  });
+
+  it('焦點環全不透明，不用 /50（brand/50 對白底不到 3:1）', () => {
+    const cls = buttonVariants({});
+    expect(cls.split(' ')).toContain('focus-visible:ring-ring');
+    expect(cls).not.toContain('ring-ring/50');
   });
 
   it('default 主按鈕維持 primary 黑', () => {
