@@ -309,10 +309,11 @@ class BackendApiMock:
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
         status_counts: Optional[dict] = None,
+        attention: Optional[dict] = None,
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
-        # status_counts 不給就由 roots 推算（見 build_network_overview）。
+        # status_counts／attention 不給就由 roots 推算（見 build_network_overview）。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -321,6 +322,7 @@ class BackendApiMock:
                 third_gen_count=len(third_generation or []),
                 user_referral_code=user_referral_code,
                 status_counts=status_counts,
+                attention=attention,
             ),
         }
         self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
@@ -809,6 +811,12 @@ def build_referral_member(name: str, **overrides) -> dict:
     return member
 
 
+# 真後端的 ATTENTION_LIMIT（需要關注橫幅最多列幾位）。
+_ATTENTION_LIMIT = 6
+# 橫幅的緊急度次序：expiring → expired → suspended。
+_ATTENTION_RANK = {"expiring": 0, "expired": 1, "suspended": 2}
+
+
 def build_network_overview(
     roots: list,
     second_gen_count: int = 0,
@@ -820,9 +828,11 @@ def build_network_overview(
 ) -> dict:
     # GET /referrals/network/overview 的 data 形狀（useReferralData 快取同形）。
     #
-    # statusCounts 是全樹計數（真後端算）。沒指定時由 roots 的狀態推算，二、三代只有
-    # 人數、沒有節點，一律當 active——這樣真後端有測試釘住的不變式
-    # 「四數之和 = totalReferrals」在 mock 裡也成立，不會做出一個真後端不可能回的世界。
+    # statusCounts 與 attention 在真後端是由「同一批節點」算出的，所以彼此有兩條不變式：
+    #   四數之和 = totalReferrals；非 active 三項之和 = attention.total。
+    # 沒指定時兩者都由 roots 的狀態推算（二、三代只有人數、沒有節點，一律當 active），
+    # 讓預設值維持這兩條不變式、不做出一個真後端不可能回的世界。個別情境自己傳
+    # status_counts／attention 時，兩者的一致性由該情境自己負責。
     if status_counts is None:
         status_counts = {
             "active": second_gen_count + third_gen_count,
@@ -832,11 +842,17 @@ def build_network_overview(
         }
         for root in roots:
             status_counts[root["status"]] += 1
+    if attention is None:
+        flagged = sorted(
+            (r for r in roots if r["status"] != "active"),
+            key=lambda r: _ATTENTION_RANK[r["status"]],
+        )
+        attention = {"total": len(flagged), "items": flagged[:_ATTENTION_LIMIT]}
     return {
         "userReferralCode": user_referral_code,
         "sort": sort,
         "roots": roots,
-        "attention": attention or {"total": 0, "items": []},
+        "attention": attention,
         "summary": {
             "firstGenCount": len(roots),
             "secondGenCount": second_gen_count,

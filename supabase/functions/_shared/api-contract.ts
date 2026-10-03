@@ -334,11 +334,17 @@ export type RewardHistoryResponse = Infer<typeof RewardHistoryResponseSchema>;
 // 節點姓名於伺服器端遮罩（二、三代），前端不持有未遮罩資料。
 // status 由帳戶兩態（active/expired）+ suspended_at + 距到期天數推導：
 //   active｜expiring（active 且 ≤30 天到期）｜expired｜suspended
+// 狀態值只在這裡列一次：節點的 status 與 summary.statusCounts 的 key 都由它產生，
+// 日後新增第五種狀態時兩邊同步長出來——statusCounts 不會悄悄少一桶（obj() 放行多餘
+// 欄位、Record 又能賦值給少 key 的型別，手寫兩份是不會報錯的）。
+export const NETWORK_NODE_STATUSES = ['active', 'expiring', 'expired', 'suspended'] as const;
+type NetworkNodeStatusValue = (typeof NETWORK_NODE_STATUSES)[number];
+
 const ReferralNodeFields = {
   userId: str(),
   name: str(), // 已遮罩（二、三代）
   generation: num(),
-  status: literals('active', 'expiring', 'expired', 'suspended'),
+  status: literals(...NETWORK_NODE_STATUSES),
   daysToExpiry: nullable(num()), // 僅 active/expiring 有值
   endDate: nullable(str()),
   joinedAt: str(),
@@ -347,17 +353,18 @@ const ReferralNodeFields = {
 } as const;
 
 // 依訂閱狀態的全樹計數。由伺服器算：children 懶載入，前端只握有已展開的節點，
-// 算不出全樹。四個狀態互斥且窮盡（停權優先，見上方 status 註解），所以
-// 四數之和恆等於 totalReferrals、expiring+expired+suspended 恆等於 attention.total
-// ——network-endpoints.test.ts 把這兩條釘成不變式。
+// 算不出全樹。狀態互斥且窮盡（停權優先，見上方 status 註解），而伺服器的 roots、
+// attention、statusCounts 取自同一批節點，所以四數之和恆等於 totalReferrals、
+// 非 active 的三項之和恆等於 attention.total——network-endpoints.test.ts 把這兩條
+// 釘成不變式。
 // ⚠️ 型別說必填，執行期不保證：sessionStorage 裡部署前存的舊快取、以及前端先於
 // Edge Function 部署的時差，都會讓前端讀到 undefined，讀取端必須容忍缺席。
-const StatusCountsSchema = obj({
-  active: num(),
-  expiring: num(),
-  expired: num(),
-  suspended: num(),
-});
+const StatusCountsSchema = obj(
+  Object.fromEntries(NETWORK_NODE_STATUSES.map((s) => [s, num()])) as Record<
+    NetworkNodeStatusValue,
+    Schema<number>
+  >,
+);
 
 const ReferralSummarySchema = obj({
   firstGenCount: num(),

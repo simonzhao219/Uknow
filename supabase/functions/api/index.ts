@@ -3404,11 +3404,17 @@ app.get('/rewards/history', async (c) => {
 // active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
 // ============================================================
 const RENEWAL_DAYS = 30;
-function deriveNodeStatus(acct: any, suspendedAt: string | null) {
+// export + 注入 nowMs：讓邊界（30／31 天、停權優先、帳戶缺席）能用表格測試釘住；
+// 也讓 overview 一個請求只取一次 now，「同一批節點快照」由結構保證，不靠呼叫紀律。
+export function deriveNodeStatus(
+  acct: any,
+  suspendedAt: string | null,
+  nowMs: number = Date.now(),
+) {
   if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
   if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
   const dl = acct?.end_date
-    ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
+    ? Math.ceil((new Date(acct.end_date).getTime() - nowMs) / 86_400_000)
     : null;
   if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) {
     return { status: 'expiring' as const, daysToExpiry: dl };
@@ -3419,7 +3425,7 @@ function deriveNodeStatus(acct: any, suspendedAt: string | null) {
 // 依狀態計數（overview 的 summary.statusCounts）。export 是為了讓 unit test 不碰 DB 就能
 // 釘住它。初始值逐一列出：新增第五種狀態時，這裡缺 key 是編譯錯誤，不會靜默漏算。
 export function countNodesByStatus(
-  nodes: Iterable<Pick<NetworkNode, 'status'>>,
+  nodes: ReadonlyArray<Pick<NetworkNode, 'status'>>,
 ): Record<NetworkNode['status'], number> {
   const counts: Record<NetworkNode['status'], number> = {
     active: 0,
@@ -3560,11 +3566,12 @@ async function loadNetwork(client: any, viewerId: string) {
 type Network = Awaited<ReturnType<typeof loadNetwork>>;
 
 // 扁平節點（/referrals/network/* 的 payload；children 由前端懶載入組裝）
-function buildFlatNode(net: Network, uid: string): NetworkNode {
+function buildFlatNode(net: Network, uid: string, nowMs: number = Date.now()): NetworkNode {
   const gen = net.genOf.get(uid) ?? 0;
   const { status, daysToExpiry } = deriveNodeStatus(
     net.acctMap[uid],
     net.profMap[uid]?.suspended_at ?? null,
+    nowMs,
   );
   const kids = gen < 3 ? (net.childrenOf[uid] ?? []) : [];
   return {
@@ -3640,12 +3647,19 @@ app.get('/referrals/network/overview', async (c) => {
     const net = await loadNetwork(client, user.id);
     const code = await myReferralCode(client, user.id);
 
-    // 狀態只推導一次：roots、attention、statusCounts 共用同一批節點快照。
-    // deriveNodeStatus 每次呼叫都讀 Date.now()，分幾輪算的話，剛好跨過 30 天邊界的節點
-    // 會在不同輪得到不同答案，於是 chip 計數與樹上的列、橫幅對不上。
-    const nodes = net.allIds.map((uid) => buildFlatNode(net, uid));
+    // 狀態只推導一次：roots、attention、statusCounts 共用同一批節點快照，且整個請求只取
+    // 一次 now。分幾輪算（或每個節點各讀一次時鐘）的話，剛好跨過 30 天邊界的節點會在
+    // 不同輪得到不同答案，於是 chip 計數與樹上的列、橫幅對不上。
+    const now = Date.now();
+    const nodes = net.allIds.map((uid) => buildFlatNode(net, uid, now));
     const nodeOf = new Map(nodes.map((n) => [n.userId, n] as const));
-    const roots = sortNodeIds(net, net.gen1Ids, sort).flatMap((uid) => nodeOf.get(uid) ?? []);
+    const roots = sortNodeIds(net, net.gen1Ids, sort).map((uid) => {
+      const node = nodeOf.get(uid);
+      // gen1Ids ⊆ allIds 是 loadNetwork 的結構保證。不成立代表那邊壞了——要大聲失敗，
+      // 不能靜默少一個 root（statusCounts 還算著他，樹上卻看不到）。
+      if (!node) throw new Error(`overview：一代節點 ${uid} 不在 allIds 內`);
+      return node;
+    });
 
     // 需要關注：expiring（依剩餘天數）→ expired（依最近到期）→ suspended。
     const rank: Record<string, number> = { expiring: 0, expired: 1, suspended: 2 };
