@@ -15,7 +15,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom';
 import { ReferralTreeView } from './ReferralTreeView';
 import { DEFAULT_NETWORK_SORT } from '../../utils/referralNetwork';
-import type { NetworkNode, NetworkOverview } from '../../utils/referralNetwork';
+import type { NetworkNode, NetworkOverview, NetworkSortMode } from '../../utils/referralNetwork';
 
 afterEach(cleanup);
 
@@ -30,23 +30,27 @@ beforeEach(() => {
     removeListener: () => {},
     onchange: null,
     dispatchEvent: () => false,
-  })) as any;
+  })) as unknown as typeof window.matchMedia;
   // Radix popper 內容（DropdownMenu）在 jsdom 缺的 API
-  (window as any).ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  Object.assign(window, {
+    ResizeObserver: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
   window.HTMLElement.prototype.scrollIntoView = () => {};
-  (window.HTMLElement.prototype as any).hasPointerCapture = () => false;
-  (window.HTMLElement.prototype as any).releasePointerCapture = () => {};
+  Object.assign(window.HTMLElement.prototype, {
+    hasPointerCapture: () => false,
+    releasePointerCapture: () => {},
+  });
 });
 
 const DAY = 86_400_000;
 
 function makeNode(over: Partial<NetworkNode> = {}): NetworkNode {
   return {
-    userId: 'u-' + Math.random().toString(36).slice(2, 8),
+    userId: `u-${Math.random().toString(36).slice(2, 8)}`,
     name: '王大明',
     generation: 1,
     status: 'active',
@@ -84,7 +88,7 @@ function renderTree(
       q: string,
       offset: number,
     ) => Promise<{ matches: { node: NetworkNode; ancestorPath: string[] }[]; total: number }>;
-    onSortChange?: (m: any) => void;
+    onSortChange?: (m: NetworkSortMode) => void;
   } = {},
 ) {
   return render(
