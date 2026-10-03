@@ -689,7 +689,7 @@ export function CompleteProfile() {
               />
               <div
                 className={`text-right text-sm ${
-                  nameOverLimit ? 'text-destructive' : 'text-muted-foreground'
+                  nameOverLimit ? 'text-destructive-subtle-foreground' : 'text-muted-foreground'
                 }`}
               >
                 {[...formData.name].length}/{NAME_MAX_LENGTH[formData.nameMode]}

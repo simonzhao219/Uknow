@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { StatusCallout } from '../ui/status-callout';
 import { CreditCard, Clock, CheckCircle, XCircle, AlertCircle, Eye } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
 import { CollectionConfirmDialog } from './CollectionConfirmDialog';
@@ -263,10 +264,12 @@ export function WithdrawalSection({
                           </p>
                         )}
                         {withdrawal.status === 'rejected' && withdrawal.note && (
-                          <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2">
-                            <p className="text-sm font-medium text-destructive">退件原因</p>
-                            <p className="text-sm text-destructive/90">{withdrawal.note}</p>
-                          </div>
+                          <StatusCallout
+                            variant="destructive"
+                            className="mt-2 rounded-md p-2 text-sm"
+                            title="退件原因"
+                            description={withdrawal.note}
+                          />
                         )}
                       </div>
                     </div>

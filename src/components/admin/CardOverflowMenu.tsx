@@ -62,7 +62,8 @@ export function CardOverflowMenu({ label, actions }: CardOverflowMenuProps) {
             // 12px，那是範圍外的視覺變更。
             className={cn(
               'pointer-coarse:min-h-[44px]',
-              a.destructive && 'text-destructive focus:text-destructive',
+              a.destructive &&
+                'text-destructive-subtle-foreground focus:text-destructive-subtle-foreground',
             )}
           >
             {a.label}

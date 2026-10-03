@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { StatCardGrid } from '../ui/stat-card-grid';
+import { StatusCallout } from '../ui/status-callout';
 import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { IdReviewQueue } from './IdReviewQueue';
@@ -354,7 +355,7 @@ export function MemberManagement({
                         申請 {formatTwTimestamp(w.requestedAt)}
                       </p>
                       {/* 客服要的就是這一行 */}
-                      {w.note && <p className="text-destructive">{w.note}</p>}
+                      {w.note && <p className="text-destructive-subtle-foreground">{w.note}</p>}
                     </li>
                   ))}
                 </ul>
@@ -375,7 +376,9 @@ export function MemberManagement({
                   size="sm"
                   variant="outline"
                   className={
-                    detailFor.suspended ? undefined : 'text-destructive hover:text-destructive'
+                    detailFor.suspended
+                      ? undefined
+                      : 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
                   }
                   onClick={() => requestAction({ kind: 'suspend', next: !detailFor.suspended })}
                   disabled={processingId === detailFor.id}
@@ -392,7 +395,9 @@ export function MemberManagement({
                   size="sm"
                   variant="outline"
                   className={
-                    detailFor.isAdmin ? 'text-destructive hover:text-destructive' : undefined
+                    detailFor.isAdmin
+                      ? 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
+                      : undefined
                   }
                   onClick={() => requestAction({ kind: 'admin', next: !detailFor.isAdmin })}
                   disabled={processingId === detailFor.id}
@@ -402,7 +407,7 @@ export function MemberManagement({
               </div>
 
               {panelError && (
-                <p role="alert" className="text-sm text-destructive">
+                <p role="alert" className="text-sm text-destructive-subtle-foreground">
                   {panelError}
                 </p>
               )}
@@ -478,12 +483,12 @@ export function MemberManagement({
         </section>
 
         {actionError && (
-          <div
+          <StatusCallout
+            variant="destructive"
             role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-          >
-            {actionError}
-          </div>
+            className="px-3 py-2 text-sm"
+            title={actionError}
+          />
         )}
 
         {/* 會員列表 */}
@@ -527,7 +532,7 @@ export function MemberManagement({
               // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
               // 以為系統裡沒有這個人，而不是「沒讀到」。
               <div className="py-12 text-center space-y-3">
-                <p className="text-destructive">{list.error}</p>
+                <p className="text-destructive-subtle-foreground">{list.error}</p>
                 <Button variant="outline" onClick={list.reload}>
                   重試
                 </Button>

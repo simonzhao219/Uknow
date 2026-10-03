@@ -253,7 +253,7 @@ export function SystemNotifications() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-destructive"
+                        className="h-7 w-7 text-destructive-subtle-foreground"
                         onClick={() => handleDelete(a.id)}
                         aria-label="刪除公告"
                       >

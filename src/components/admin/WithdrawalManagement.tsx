@@ -778,7 +778,7 @@ export function WithdrawalManagement({
             // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
             // 以為今天沒人申請提領，而不是「沒讀到」。
             <div className="py-12 text-center space-y-3">
-              <p className="text-destructive">{loadError}</p>
+              <p className="text-destructive-subtle-foreground">{loadError}</p>
               <Button variant="outline" onClick={fetchWithdrawals}>
                 重試
               </Button>

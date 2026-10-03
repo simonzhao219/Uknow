@@ -73,7 +73,7 @@ export function ReferralManagement() {
         <Card>
           <CardContent className="py-12">
             <div className="text-center">
-              <p className="text-destructive mb-4">{error}</p>
+              <p className="text-destructive-subtle-foreground mb-4">{error}</p>
               <Button onClick={refetch}>重試</Button>
             </div>
           </CardContent>

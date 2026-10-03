@@ -124,7 +124,7 @@ describe('姓名欄位的分隔符號與長度', () => {
     renderForm();
     fireEvent.change(nameInput(), { target: { value: '王'.repeat(12) } });
     const counter = screen.getByText('12/10');
-    expect(counter.className).toContain('text-destructive');
+    expect(counter.className).toContain('text-destructive-subtle-foreground');
   });
 
   it('缺字姓名走專屬的客服出口,不是誤導的「須為中文字」', () => {
