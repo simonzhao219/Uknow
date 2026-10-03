@@ -12,6 +12,7 @@
 | S1 | 設計語言地基 | D1+D2 | ✅ 已合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
 | S2 | 全站色彩收斂 | D3 | ✅ 已合併，驗收站 1 通過（2026-09-18） | [#325](https://github.com/simonzhao219/Uknow/pull/325) | 53 個 baseline 檔案（含開工時漏列的 `TaskDashboard.tsx`，收尾核對時補上）全數收斂到 0，僅留 4 個已核准例外（品牌 icon 色、QR 功能色；canvas 專用檔已收進 `EXCLUDED_PATHS`）；Badge 新增 5 個 variant、新增 `StatusCallout` 元件（含 `action`/`titleAs` slot）；四視角 `/review-implementation` 跑完，P1 全數修掉（見下方異動記錄）；`npm run check`／`framework-check.sh`／`npm run build` 全綠。驗收站 1 業主於 develop 環境實測通過（含公告橫幅依嚴重度對應三態色的確認），可進 S3 |
 | S2b | 強調色與語義色升亮 | D4 | ⬜ 未開工 | — | 業主裁決配色 A（2026-10-03）；驗收站 1b |
+| S2c | 推薦樹狀態視覺化 | D5 | ⬜ 未開工 | — | 業主裁決（2026-10-03）；S2b 合併後才開；驗收站 1c |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
 | S5 | admin 資料快取 | A4 | ⬜ 未開工 | — | 驗收站 3 |
@@ -36,6 +37,7 @@
 | 2026-09-18 | S2 合併後對照檢查：業主核准的 15 項判準中可複用的 6 條沉澱進 `ui-ux-guidelines.md` §12.5，§12.3 補「B 形狀走 `StatusCallout`／`Badge` variant、不手刻三件組」；既有 `text-destructive` 裸字記入遺留事項 | 判準原本只存在 PR #325 描述裡，S3 起的 session 讀 §12 看不到，同型情境會重新裁決一次；元件化的規則沒進 §12，後續 session 很可能又手刻三件組 |
 | 2026-09-18 | `MaintenanceBanner.tsx` 刻意不套用 `StatusCallout`（只換色票），因為該橫幅有獨立關閉鈕與置中版面契約，`MaintenanceBanner.test.tsx` 逐條釘住版面結構，硬套會拆版面；理由已寫在程式碼註解裡，這裡補記一筆讓它也出現在異動記錄，不只留在程式碼裡 | 架構視角 review 指出這個偏離只留在程式碼註解、未出現在 progress.md，依契約「未記錄的偏離」要處置 |
 | 2026-10-03 | 追加工項 D4／session S2b「強調色與語義色升亮」：業主驗收站 1 後覺得整體太黯淡，比較「現況／A 墨黑＋靛藍／B 墨黑＋青碧／C 暖墨＋紫羅蘭」四組後裁決 **A**。新增 `--brand` 系列 token、`--ring` 改指 brand、語義色實心層改亮底黑字；淺深兩版對比度已預先算過全數過門檻（文字 4.5:1、邊框 3:1）。插在 S2 與 S3 之間 | 黯淡的根因是三件事疊加：冷灰低彩度、語義色用 700 階深土色、全站無強調色。方案只動後兩項，黑白骨架與主按鈕不變。比較板：https://claude.ai/artifact/2gDFw89N4X5GtRnahvzTGg |
+| 2026-10-03 | 追加工項 D5／session S2c「推薦樹狀態視覺化」：頭像底色由世代改綁訂閱狀態、世代只留縮排與連接線、狀態計數 chip 兼圖例與過濾、即將到期列整列淡黃；`--tree-gen-*` 八個 token 退場 | 業主要求推薦樹「用顏色一目了然」。三代獎勵同額（§8.1），世代不影響收入而狀態直接等於收入，現況卻把最大面積的顏色給了世代、狀態只剩 11px 小點。與 §12.5 (c)／§12.7 相容、不新增色相；對照頁：https://claude.ai/artifact/CP9ay4KMZ6v7rND5r4NKPP |
 
 ## 遺留事項
 
