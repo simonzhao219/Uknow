@@ -38,8 +38,38 @@ for p in (str(JOURNEY_DIR), str(E2E_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from playwright.sync_api import expect  # noqa: E402
+
+from builders import page_diagnostics  # noqa: E402
 from run_state import RunState  # noqa: E402
+from tools.failure_digest import digest  # noqa: E402
 from tools.supa import SupabaseAdmin  # noqa: E402
+
+
+EXPECT_TIMEOUT_MS = 20_000
+
+
+# --- 失敗當下即時輸出 ---------------------------------------------------------
+#
+# pytest 的失敗詳情要等整場結束才印。journey 一場 20–90 分鐘,runner 中途被收掉
+# (2026-10-03 run 37143906920:f30 在 18:33:05 FAILED,18:42:55 runner 收到
+# shutdown 訊號)時,先前失敗的情境只剩一行結果,死因永遠不見。這裡在每個失敗
+# 發生的當下就把摘要寫到終端機(走 terminalreporter,不被 pytest 擷取)。
+
+
+def pytest_sessionstart(session):
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        page_diagnostics.set_live_writer(lambda line: reporter.write_line("\n" + line))
+
+
+def pytest_runtest_logreport(report):
+    if report.when not in ("setup", "call") or not report.failed:
+        return
+    page_diagnostics.live(
+        f"失敗當下摘要（{report.nodeid}，{report.when}，{report.duration:.1f}s）：\n"
+        + digest(report.longreprtext)
+    )
 
 
 # --- 設定 -------------------------------------------------------------------
@@ -259,4 +289,11 @@ def guarded_page(page, dev_server, journey_config):
         page.context.route(pattern, _abort)
 
     page.set_default_timeout(20_000)
+    # expect 的逾時是另一個旋鈕,set_default_timeout 管不到——它預設 5 秒。這個
+    # fixture 說「打真網路、預設放寬到 20 秒」,斷言卻仍是 5 秒:API 回得比 5 秒
+    # 慢的頁面(2026-09-26 run 36269079479 的 f50 管理台列表)就紅在這個不一致上。
+    expect.set_options(timeout=EXPECT_TIMEOUT_MS)
+    # 瀏覽器端事件(整頁導航、HTTP 錯誤、慢請求、console error)——失敗時
+    # dump_page 才讀得到「過去發生了什麼」,不只是失敗瞬間的快照。
+    page_diagnostics.attach_event_log(page)
     return page
