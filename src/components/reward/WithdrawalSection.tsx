@@ -44,7 +44,7 @@ export function WithdrawalSection({
   subscriptionStatus,
   referralProgramJoined, // ✅ 新增
 }: WithdrawalSectionProps) {
-  const { showToast, showSuccess, showError } = useNotification();
+  const { showSuccess, showError } = useNotification();
 
   // ✅ 查收流程狀態
   const [collectionStep, setCollectionStep] = useState<CollectionStep>(null);

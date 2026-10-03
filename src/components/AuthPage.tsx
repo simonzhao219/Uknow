@@ -292,7 +292,7 @@ export function AuthPage() {
       console.log('Email:', email);
       console.log('Redirect URL:', `${window.location.origin}/auth/callback`);
 
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
       });

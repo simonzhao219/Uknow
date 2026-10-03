@@ -59,7 +59,6 @@ type IdPhotosData = IdPhotosResponse['data'];
 
 export function WithdrawalProcess({
   availableRewards,
-  pendingRewards,
   onSuccess,
   onCancel,
 }: WithdrawalProcessProps) {
@@ -111,7 +110,7 @@ export function WithdrawalProcess({
     frontUrl: null,
     backUrl: null,
   });
-  const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+  const [, setIsLoadingPhotos] = useState(false);
 
   // 證件被退回時的引導(守衛 #5a 只在送出時擋 rejected;不在這裡引導,
   // 會員會填完整張表才被 toast 打回)。理由要到得了會員面前。
@@ -124,7 +123,6 @@ export function WithdrawalProcess({
 
   // ✅ 確保數值有效（防止 undefined）
   const safeAvailableRewards = availableRewards || 0;
-  const safePendingRewards = pendingRewards || 0;
 
   // ✅ 提領計算（規則收斂於 utils/withdrawalValidation，並有單元測試釘死邊界）
   // 可以提領Point = 可提領Point - 手續費
@@ -133,7 +131,7 @@ export function WithdrawalProcess({
   // 最大提領Point = min(floor(可以提領Point / 1000) * 1000, 8000P)
   const maxWithdrawal = computeMaxWithdrawal(safeAvailableRewards);
 
-  const amountNum = parseInt(amount) || 0;
+  const amountNum = parseInt(amount, 10) || 0;
 
   // ✅ 載入已儲存的銀行帳號（不載入身分證字號）
   useEffect(() => {

@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
+import { Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
