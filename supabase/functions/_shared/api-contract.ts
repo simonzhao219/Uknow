@@ -346,11 +346,25 @@ const ReferralNodeFields = {
   childCount: num(),
 } as const;
 
+// 依訂閱狀態的全樹計數。由伺服器算：children 懶載入，前端只握有已展開的節點，
+// 算不出全樹。四個狀態互斥且窮盡（停權優先，見上方 status 註解），所以
+// 四數之和恆等於 totalReferrals、expiring+expired+suspended 恆等於 attention.total
+// ——network-endpoints.test.ts 把這兩條釘成不變式。
+// ⚠️ 型別說必填，執行期不保證：sessionStorage 裡部署前存的舊快取、以及前端先於
+// Edge Function 部署的時差，都會讓前端讀到 undefined，讀取端必須容忍缺席。
+const StatusCountsSchema = obj({
+  active: num(),
+  expiring: num(),
+  expired: num(),
+  suspended: num(),
+});
+
 const ReferralSummarySchema = obj({
   firstGenCount: num(),
   secondGenCount: num(),
   thirdGenCount: num(),
   totalReferrals: num(),
+  statusCounts: StatusCountsSchema,
 });
 
 // ------------------------------------------------------------

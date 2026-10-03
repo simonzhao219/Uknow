@@ -308,9 +308,11 @@ class BackendApiMock:
         second_generation: Optional[list] = None,
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
+        status_counts: Optional[dict] = None,
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
+        # status_counts 不給就由 roots 推算（見 build_network_overview）。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -318,6 +320,7 @@ class BackendApiMock:
                 second_gen_count=len(second_generation or []),
                 third_gen_count=len(third_generation or []),
                 user_referral_code=user_referral_code,
+                status_counts=status_counts,
             ),
         }
         self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
@@ -813,8 +816,22 @@ def build_network_overview(
     user_referral_code: str = "MYCODE",
     sort: str = "updated_asc",
     attention: Optional[dict] = None,
+    status_counts: Optional[dict] = None,
 ) -> dict:
     # GET /referrals/network/overview 的 data 形狀（useReferralData 快取同形）。
+    #
+    # statusCounts 是全樹計數（真後端算）。沒指定時由 roots 的狀態推算，二、三代只有
+    # 人數、沒有節點，一律當 active——這樣真後端有測試釘住的不變式
+    # 「四數之和 = totalReferrals」在 mock 裡也成立，不會做出一個真後端不可能回的世界。
+    if status_counts is None:
+        status_counts = {
+            "active": second_gen_count + third_gen_count,
+            "expiring": 0,
+            "expired": 0,
+            "suspended": 0,
+        }
+        for root in roots:
+            status_counts[root["status"]] += 1
     return {
         "userReferralCode": user_referral_code,
         "sort": sort,
@@ -825,6 +842,7 @@ def build_network_overview(
             "secondGenCount": second_gen_count,
             "thirdGenCount": third_gen_count,
             "totalReferrals": len(roots) + second_gen_count + third_gen_count,
+            "statusCounts": status_counts,
         },
     }
 

@@ -250,6 +250,24 @@ Deno.test('overview：attention——停權的深代下線入列且遮罩', asyn
   assert(parsed.data.attention.items.length <= 6, 'attention 有上限');
 });
 
+Deno.test('overview：statusCounts——四態互斥且窮盡，與摘要、attention 對得上', async () => {
+  const { body } = await getJson('/referrals/network/overview', token);
+  const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview statusCounts');
+  const { statusCounts: c, totalReferrals } = parsed.data.summary;
+
+  // 種子：十位下線都已付款（active），只有陳小華被停權。停權優先於 active，
+  // 所以他只會落進 suspended、不會同時被算進 active（與上面 attention 測試同一個前提）。
+  assertEquals(c, { active: 9, expiring: 0, expired: 0, suspended: 1 });
+
+  // 不變式（不綁種子數字，種子改了它們仍必須成立）：
+  assertEquals(c.active + c.expiring + c.expired + c.suspended, totalReferrals, '互斥且窮盡');
+  assertEquals(
+    c.expiring + c.expired + c.suspended,
+    parsed.data.attention.total,
+    '非 active 三項之和＝attention.total（兩者必須來自同一批節點）',
+  );
+});
+
 Deno.test('children：二代層內依自身加入時間排（子樹新血不影響同層次序）', async () => {
   const { body } = await getJson(
     `/referrals/network/children?parentId=${g1a.id}&sort=updated_asc`,

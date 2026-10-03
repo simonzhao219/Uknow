@@ -3416,6 +3416,21 @@ function deriveNodeStatus(acct: any, suspendedAt: string | null) {
   return { status: 'active' as const, daysToExpiry: dl };
 }
 
+// 依狀態計數（overview 的 summary.statusCounts）。export 是為了讓 unit test 不碰 DB 就能
+// 釘住它。初始值逐一列出：新增第五種狀態時，這裡缺 key 是編譯錯誤，不會靜默漏算。
+export function countNodesByStatus(
+  nodes: Iterable<Pick<NetworkNode, 'status'>>,
+): Record<NetworkNode['status'], number> {
+  const counts: Record<NetworkNode['status'], number> = {
+    active: 0,
+    expiring: 0,
+    expired: 0,
+    suspended: 0,
+  };
+  for (const n of nodes) counts[n.status] += 1;
+  return counts;
+}
+
 // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
 // 英數保留首末、中間固定 •••（不洩漏長度）。
 // HAN_RANGE/HAS_HAN/HAN_LEAD 已搬到檔頭共用工具段（與 validateNameFormat 同段）。
@@ -3612,7 +3627,8 @@ async function myReferralCode(client: any, userId: string): Promise<string> {
 
 // ============================================================
 // GET /referrals/network/overview?sort=
-// 懶載入入口：推薦碼 + 三代摘要 + 一代節點（排序後）+ 需要關注清單。
+// 懶載入入口：推薦碼 + 三代摘要（含依訂閱狀態的全樹計數）+ 一代節點（排序後）+
+// 需要關注清單。
 // ============================================================
 app.get('/referrals/network/overview', async (c) => {
   const user = await requireAuth(c);
@@ -3624,12 +3640,16 @@ app.get('/referrals/network/overview', async (c) => {
     const net = await loadNetwork(client, user.id);
     const code = await myReferralCode(client, user.id);
 
-    const roots = sortNodeIds(net, net.gen1Ids, sort).map((uid) => buildFlatNode(net, uid));
+    // 狀態只推導一次：roots、attention、statusCounts 共用同一批節點快照。
+    // deriveNodeStatus 每次呼叫都讀 Date.now()，分幾輪算的話，剛好跨過 30 天邊界的節點
+    // 會在不同輪得到不同答案，於是 chip 計數與樹上的列、橫幅對不上。
+    const nodes = net.allIds.map((uid) => buildFlatNode(net, uid));
+    const nodeOf = new Map(nodes.map((n) => [n.userId, n] as const));
+    const roots = sortNodeIds(net, net.gen1Ids, sort).flatMap((uid) => nodeOf.get(uid) ?? []);
 
     // 需要關注：expiring（依剩餘天數）→ expired（依最近到期）→ suspended。
     const rank: Record<string, number> = { expiring: 0, expired: 1, suspended: 2 };
-    const attentionAll = net.allIds
-      .map((uid) => buildFlatNode(net, uid))
+    const attentionAll = nodes
       .filter((n) => n.status !== 'active')
       .sort((a, b) =>
         (rank[a.status] - rank[b.status]) ||
@@ -3646,7 +3666,7 @@ app.get('/referrals/network/overview', async (c) => {
           sort,
           roots,
           attention: { total: attentionAll.length, items: attentionAll.slice(0, ATTENTION_LIMIT) },
-          summary: net.summary,
+          summary: { ...net.summary, statusCounts: countNodesByStatus(nodes) },
         },
       } satisfies NetworkOverviewResponse,
     );

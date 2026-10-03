@@ -65,7 +65,13 @@ function makeOverview(over: Partial<NetworkOverview> = {}): NetworkOverview {
     sort: 'updated_desc',
     roots: [],
     attention: { total: 0, items: [] },
-    summary: { firstGenCount: 0, secondGenCount: 0, thirdGenCount: 0, totalReferrals: 0 },
+    summary: {
+      firstGenCount: 0,
+      secondGenCount: 0,
+      thirdGenCount: 0,
+      totalReferrals: 0,
+      statusCounts: { active: 0, expiring: 0, expired: 0, suspended: 0 },
+    },
     ...over,
   };
 }
