@@ -48,16 +48,17 @@ import {
 // ============================================================
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
+// 徽章字色隨世代（與各自的淺底同色相）：一個 foreground token 無法同時配三個色相。
 const GEN_BADGE: Record<number, string> = {
-  1: 'bg-[var(--tree-gen-badge-1)] text-[var(--tree-gen-badge-foreground)]',
-  2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground)]',
-  3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground)]',
+  1: 'bg-[var(--tree-gen-badge-1)] text-[var(--tree-gen-badge-foreground-1)]',
+  2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground-2)]',
+  3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground-3)]',
 };
 // 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
 // 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
-// ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的深階，
-// 對比達 7.5:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在結構上；
-// 深淺模式已內含在 token 裡，不必另寫 dark:）。
+// ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的色，
+// 對比淺色 5.7:1 以上、深色 6.6:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在
+// 結構上；深淺模式已內含在 token 裡，不必另寫 dark:）。
 const GEN_LINE: Record<number, string> = {
   2: 'border-[var(--tree-gen-avatar-2)]',
   3: 'border-[var(--tree-gen-avatar-3)]',
@@ -85,7 +86,8 @@ const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: str
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色階，由深到淺對應一／二／三代）。
+// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色相：一代 teal、二代 violet、三代 pink；
+// ui-ux-guidelines.md §12.5 (c) 核准的世代色例外，不得擴散到其他頁面）。
 // 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
 const GEN_AVATAR: Record<number, string> = {
   1: 'var(--tree-gen-avatar-1)',
