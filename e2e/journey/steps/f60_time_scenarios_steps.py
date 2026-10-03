@@ -182,11 +182,16 @@ def open_referrals(guarded_page, run_state, scenario_memo, node):
 
 @then(parsers.parse('推薦樹包含 "{node}" 的姓名與已失效標記'))
 def tree_shows_inactive_member(guarded_page, run_state, org_nodes, scenario_memo, node):
-    # 檢視者的第一代＝root 列，失效節點仍在樹上（半透明＋灰點）；
-    # 「已失效」文字由需要關注橫幅（AttentionBanner）承載。橫幅也印同一個
-    # 姓名，所以「在樹上」要用 treeitem 定位，不是 get_by_text().first。
-    referral_tree.expect_node(guarded_page, org_nodes, run_state, scenario_memo["viewer"], node)
-    expect(guarded_page.get_by_text("已失效").first).to_be_visible()
+    # 檢視者的第一代＝root 列，失效節點仍在樹上（頭像為失效灰、頭像與名字淡化）。
+    # 橫幅也印同一個姓名，所以「在樹上」要用 treeitem 定位，不是 get_by_text().first。
+    # 「已失效」文字同理要在**那一列**裡找：它還會出現在樹上方的狀態 chip（計數為 0
+    # 也渲染「已失效 0」）與需要關注橫幅，全頁 get_by_text("已失效").first 會變成
+    # 不管有沒有失效節點都過。
+    viewer = scenario_memo["viewer"]
+    referral_tree.expect_node(guarded_page, org_nodes, run_state, viewer, node)
+    gen = orgchart.generation_of(org_nodes, viewer, node)
+    row = referral_tree.tree_row(guarded_page, run_state.users[node].name, gen)
+    expect(row.get_by_text("已失效", exact=True)).to_be_visible()
 
 
 @then(parsers.parse('展開二代後推薦樹仍包含 "{node}" 的姓名'))

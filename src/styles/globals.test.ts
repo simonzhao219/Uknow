@@ -280,118 +280,49 @@ function hexOf(mode: Mode, tokenName: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 推薦樹世代色（S2，僅供 ReferralTreeView 使用，plan.md D3）：avatar（實心底配
-// 白字）與 badge/line（淺底提示框，深色模式反轉為暗底亮字）兩組，各 3 階；
-// 且兩組都要與「已失效」狀態灰（已收斂為 --muted-foreground）保持可辨識距離，
-// 避免深色模式下分不出「第幾代」還是「已失效」（S1 二審 R2-UIUX-1）。
+// 推薦樹連接線（S2c，ReferralTreeView 的 GEN_LINE）：世代是結構屬性，走灰階。頭像底色
+// 已讓給訂閱狀態，連接線改用 --muted-foreground 疊透明度（越深代越淡），不再有專屬
+// token。線是承擔世代線索的非文字元素（§12.7），最淡一階仍要對背景達 3:1——
+// 「縮排已經表達了」是把門檻往下拉的標準理由，要放寬得由業主明確裁決，不能默默鬆。
 // ---------------------------------------------------------------------------
 
-const TREE_GEN_TIERS = [1, 2, 3] as const;
-// 相對亮度差的最低距離——不是 WCAG 標準門檻，是本專案為「避免多值分類色與既有
-// 狀態灰混淆」自訂的可辨識基準（棘輪式判準的一種：寫得出具體數字才可驗）。
-const TREE_GEN_MIN_LUMINANCE_GAP = 0.08;
+// 與 ReferralTreeView 的 GEN_LINE[3]（border-muted-foreground/80）同一個數字。兩邊各寫
+// 一份字面量，改透明度時必須同時改，否則這裡綠、畫面其實早已不達標。
+const TREE_LINE_LIGHTEST_ALPHA = 0.8;
 
-function luminanceOf(mode: Mode, tokenName: string): number {
-  return relativeLuminance(hexToRgb(hexOf(mode, tokenName)));
+/** fg 以 alpha 疊在 bg 上的不透明結果。逐通道線性內插，與瀏覽器對 sRGB 值的合成一致。 */
+function blendOver(fgHex: string, bgHex: string, alpha: number): string {
+  const fg = hexToRgb(fgHex);
+  const bg = hexToRgb(bgHex);
+  const mixed = fg.map((c, i) => Math.round(alpha * c + (1 - alpha) * bg[i]));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
-describe('推薦樹世代色 token 三處齊備', () => {
-  const TREE_GEN_TOKENS = [
-    'tree-gen-avatar-1',
-    'tree-gen-avatar-2',
-    'tree-gen-avatar-3',
-    'tree-gen-avatar-foreground',
-    'tree-gen-badge-1',
-    'tree-gen-badge-2',
-    'tree-gen-badge-3',
-    'tree-gen-badge-foreground',
-  ];
+describe('推薦樹連接線（--muted-foreground 疊透明度）對比度', () => {
+  it('blendOver 錨定：50% 的黑疊在白上是 #808080（內插公式沒寫錯）', () => {
+    expect(blendOver('#000000', '#ffffff', 0.5)).toBe('#808080');
+  });
 
-  for (const name of TREE_GEN_TOKENS) {
-    it(`--${name} 在 :root 有定義`, () => {
-      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
-    });
-
-    it(`--${name} 在 .dark 有定義`, () => {
-      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
-    });
-
-    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
-      const key = `--color-${name}`;
-      expect(themeTokens.has(key), `@theme inline 缺少 ${key}`).toBe(true);
-      expect(themeTokens.get(key)).toBe(`var(--${name})`);
-    });
-  }
-});
-
-describe('推薦樹世代色對比度（階段 2b 之後，公式已錨定）', () => {
   for (const mode of MODES) {
     const modeLabel = mode === 'light' ? '淺色' : '深色';
 
-    for (const tier of TREE_GEN_TIERS) {
-      it(`${modeLabel}：avatar 第 ${tier} 階對 avatar-foreground 達 4.5:1`, () => {
-        const ratio = contrastRatio(
-          hexOf(mode, `tree-gen-avatar-${tier}`),
-          hexOf(mode, 'tree-gen-avatar-foreground'),
+    for (const surface of ['background', 'card'] as const) {
+      it(`${modeLabel}：最淡一階（80%）疊在 --${surface} 上達非文字 3:1`, () => {
+        const line = blendOver(
+          hexOf(mode, 'muted-foreground'),
+          hexOf(mode, surface),
+          TREE_LINE_LIGHTEST_ALPHA,
         );
-        expect(ratio).toBeGreaterThanOrEqual(4.5);
-      });
-
-      it(`${modeLabel}：badge 第 ${tier} 階對 badge-foreground 達 4.5:1`, () => {
-        const ratio = contrastRatio(
-          hexOf(mode, `tree-gen-badge-${tier}`),
-          hexOf(mode, 'tree-gen-badge-foreground'),
-        );
-        expect(ratio).toBeGreaterThanOrEqual(4.5);
-      });
-    }
-
-    // GEN_LINE（分支連接線）只用二、三代（一代是根節點無入線），且重用
-    // avatar 的深階當邊框色，不是 badge 的淺階——淺階配文字的極淺底畫在
-    // --card/--background 上對比接近 1:1，線會幾乎看不見（見 S2 review 發現）。
-    for (const tier of [2, 3] as const) {
-      it(`${modeLabel}：GEN_LINE 借用 avatar 第 ${tier} 階邊框對 --card 達 3:1`, () => {
-        const ratio = contrastRatio(hexOf(mode, `tree-gen-avatar-${tier}`), hexOf(mode, 'card'));
-        expect(ratio).toBeGreaterThanOrEqual(3);
-      });
-
-      it(`${modeLabel}：GEN_LINE 借用 avatar 第 ${tier} 階邊框對 --background 達 3:1`, () => {
-        const ratio = contrastRatio(
-          hexOf(mode, `tree-gen-avatar-${tier}`),
-          hexOf(mode, 'background'),
-        );
-        expect(ratio).toBeGreaterThanOrEqual(3);
-      });
-    }
-
-    it(`${modeLabel}：avatar 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
-      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-avatar-${t}`));
-      expect(l1).toBeLessThan(l2);
-      expect(l2).toBeLessThan(l3);
-    });
-
-    it(`${modeLabel}：badge 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
-      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-badge-${t}`));
-      expect(l1).toBeLessThan(l2);
-      expect(l2).toBeLessThan(l3);
-    });
-
-    for (const tier of TREE_GEN_TIERS) {
-      it(`${modeLabel}：avatar 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
-        const gap = Math.abs(
-          luminanceOf(mode, `tree-gen-avatar-${tier}`) - luminanceOf(mode, 'muted-foreground'),
-        );
-        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
-      });
-
-      it(`${modeLabel}：badge 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
-        const gap = Math.abs(
-          luminanceOf(mode, `tree-gen-badge-${tier}`) - luminanceOf(mode, 'muted-foreground'),
-        );
-        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
+        expect(contrastRatio(line, hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
       });
     }
   }
+
+  it('門檻真的會擋：55% 疊在淺色 --background 上低於 3:1（為何不照 80／55／35）', () => {
+    const bg = hexOf('light', 'background');
+    const line = blendOver(hexOf('light', 'muted-foreground'), bg, 0.55);
+    expect(contrastRatio(line, bg)).toBeLessThan(3);
+  });
 });
 
 describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 × 淺深兩版）', () => {

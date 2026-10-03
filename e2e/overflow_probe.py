@@ -35,8 +35,8 @@ SETTLE_MS = 400
 _PROBE_JS = """
 () => {
   // 2px 容差。1px 是子像素排版（transform、border 的 .5px）的雜訊；2px 則
-  // 多半來自刻意外掛的小裝飾（例如推薦樹頭像的 `-bottom-0.5 -right-0.5`
-  // 狀態點）。真正的溢字沒有這麼小——實測最小的真案例是 3px。
+  // 多半來自刻意外掛的小裝飾（例如 `-bottom-0.5 -right-0.5` 這類角落小點）。
+  // 真正的溢字沒有這麼小——實測最小的真案例是 3px。
   const TOL = 2;
   const vw = document.documentElement.clientWidth;
   const SKIP_TAGS = new Set(['HTML','BODY','SCRIPT','STYLE','HEAD','META','LINK','TITLE','NOSCRIPT','BR','HR']);

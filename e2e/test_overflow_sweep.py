@@ -24,6 +24,7 @@
 import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -205,14 +206,47 @@ def _setup_listing_edit(context, api_mock, rest_mock):
 
 def _setup_referrals(context, api_mock, rest_mock):
     _seed_member(context)
+
+    # 推薦樹的狀態視覺（S2c）：頭像底色綁訂閱狀態、列右側每個狀態都有文字、樹上方四顆
+    # 狀態 chip、30 天內加入的「新」tag。測資取「最壞但可達」，且要真的把這些畫出來——
+    # 舊測資一代全是 active、沒有 chip、沒有狀態文字，量出來的「乾淨」是假的。
+    #   * 一代四人各取一種列右側內容，且都用 10 字名（真實姓名的硬上限，見 NAME_CJK_10）。
+    #     倒數文字取 expiring 的上限 30 天，是最寬的情形。
+    #   * 「新」只配在 active 與 suspended：年費制（一筆一年）下，30 天內加入的人距到期
+    #     還有約 11 個月，不可能同時是「剩 N 天到期」——那種組合是不可達的假最壞，
+    #     照它量只會做出沒有使用者會看到的紅燈。
+    #   * 計數取三位數：全樹 150 人（4＋100＋46）可達，chip 內容最寬。
+    #   * statusCounts 與 attention 一致（真後端由同一批節點算出）：四數之和 = 150、
+    #     非 active 三項之和 = 22 = attention.total。橫幅只列得出已知的三位，
+    #     其餘算進「還有 N 位」。
+    now = datetime.now(timezone.utc)
+    iso = lambda dt: dt.isoformat().replace("+00:00", "Z")  # noqa: E731
+    expiring = build_referral_member(
+        NAME_CJK_10,
+        status="expiring",
+        daysToExpiry=30,
+        endDate=iso(now + timedelta(days=30)),
+        childCount=12,
+    )
+    suspended = build_referral_member(
+        "資深攝影師阿明工作室",
+        status="suspended",
+        daysToExpiry=None,
+        joinedAt=iso(now - timedelta(days=2)),
+    )
+    expired = build_referral_member("親子教育顧問小花老師", status="expired", daysToExpiry=None)
+    active = build_referral_member(
+        "居家整理收納達人阿珍",
+        joinedAt=iso(now - timedelta(days=5)),
+        childCount=120,
+    )
     api_mock.set_referral_tree(
-        first_generation=[
-            build_referral_member(NAME_CJK_10),
-            build_referral_member("王大明"),
-        ],
-        second_generation=[build_referral_member("李小華")] * 3,
-        third_generation=[build_referral_member("張美玲")] * 2,
+        first_generation=[expiring, suspended, expired, active],
+        second_generation=[build_referral_member("李小華")] * 100,
+        third_generation=[build_referral_member("張美玲")] * 46,
         user_referral_code="UK8K3M9Q2X",
+        status_counts={"active": 128, "expiring": 12, "expired": 7, "suspended": 3},
+        attention={"total": 22, "items": [expiring, expired, suspended]},
     )
 
 

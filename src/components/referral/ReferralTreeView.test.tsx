@@ -11,7 +11,7 @@
 //   * 搜尋：debounce 300ms 呼叫伺服器、渲染遮罩結果
 //   * a11y：tree/treeitem 語意在改寫後不退化
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ReferralTreeView } from './ReferralTreeView';
 import { DEFAULT_NETWORK_SORT } from '../../utils/referralNetwork';
@@ -354,13 +354,32 @@ describe('伺服器搜尋（debounce）', () => {
   });
 });
 
-describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
-  const avatarBg = (initial: string) =>
-    (screen.getByText(initial) as HTMLElement).style.backgroundColor;
+// ---------- 顏色分工（S2c）：頭像＝訂閱狀態；世代＝縮排＋連接線 ----------
+// 三代獎勵同額（規格書 §8.1）：世代不影響收入，狀態直接等於收入。所以最大面積的
+// 顏色（頭像）給狀態；世代是結構，由縮排與連接線承擔，不再用頭像色重複編碼。
+const rowOf = (name: string) => screen.getByRole('treeitem', { name: `${name} 詳情` });
+const circleOf = (initial: string) => screen.getByText(initial) as HTMLElement;
 
-  it('同世代同色（不因 userId 而異）、跨世代異色', async () => {
+describe('頭像顏色語意（綁訂閱狀態，不再表示世代）', () => {
+  const AVATAR_CLASSES = [
+    ['active', 'bg-success', 'text-success-foreground'],
+    ['expiring', 'bg-warning', 'text-warning-foreground'],
+    ['expired', 'bg-muted', 'text-muted-foreground'],
+    ['suspended', 'bg-destructive', 'text-destructive-foreground'],
+  ] as const;
+
+  for (const [status, bg, fg] of AVATAR_CLASSES) {
+    it(`${status} 的頭像底色 ${bg}、字色 ${fg}`, () => {
+      renderTree(makeOverview({ roots: [makeNode({ name: '甲一', status })] }));
+      const el = circleOf('甲');
+      expect(el.classList.contains(bg)).toBe(true);
+      expect(el.classList.contains(fg)).toBe(true);
+    });
+  }
+
+  it('同狀態不同世代頭像同色，同世代不同狀態頭像異色', async () => {
     const parent = makeNode({ userId: 'u1', name: '甲一', generation: 1, childCount: 1 });
-    const sibling = makeNode({ userId: 'u2', name: '乙二', generation: 1 });
+    const sibling = makeNode({ userId: 'u2', name: '乙二', generation: 1, status: 'expired' });
     const child = makeNode({ userId: 'u3', name: '丙三', generation: 2 });
     const loadChildren = vi.fn().mockResolvedValue([child]);
 
@@ -369,8 +388,372 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
       fireEvent.click(screen.getByRole('button', { name: '展開' }));
     });
 
-    expect(avatarBg('甲')).toBe(avatarBg('乙'));
-    expect(avatarBg('丙')).not.toBe(avatarBg('甲'));
+    // 甲（一代）與丙（二代）都是 active → 同色；乙與甲同為一代但已失效 → 異色
+    expect(circleOf('甲').className).toBe(circleOf('丙').className);
+    expect(circleOf('乙').className).not.toBe(circleOf('甲').className);
+  });
+
+  it('頭像是單一圓形：沒有右下角狀態小點，也沒有包它的外層', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '甲一', status: 'suspended' })] }));
+    const el = circleOf('甲');
+    expect(el.children.length).toBe(0);
+    expect(el.parentElement?.getAttribute('role')).toBe('treeitem');
+  });
+});
+
+describe('列右側狀態文字（色盲防線：非訂閱中的狀態都有文字，不只靠顏色）', () => {
+  it('已失效顯示「已失效」並取代分支數', () => {
+    renderTree(
+      makeOverview({ roots: [makeNode({ name: '周美玲', status: 'expired', childCount: 3 })] }),
+    );
+    expect(within(rowOf('周美玲')).getByText('已失效')).toBeTruthy();
+    expect(screen.queryByText('3 位')).toBeNull();
+  });
+
+  it('已停權顯示 Ban 圖示與「已停權」並取代分支數', () => {
+    renderTree(
+      makeOverview({ roots: [makeNode({ name: '黃○真', status: 'suspended', childCount: 3 })] }),
+    );
+    const row = rowOf('黃○真');
+    expect(within(row).getByText('已停權')).toBeTruthy();
+    expect(row.querySelector('svg.lucide-ban')).not.toBeNull();
+    expect(screen.queryByText('3 位')).toBeNull();
+  });
+
+  it('訂閱中維持顯示分支數，不加任何狀態文字', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明', childCount: 3 })] }));
+    const row = rowOf('王大明');
+    expect(within(row).getByText('3 位')).toBeTruthy();
+    for (const word of ['已失效', '已停權', '即將到期']) {
+      expect(within(row).queryByText(new RegExp(word))).toBeNull();
+    }
+  });
+
+  it('即將到期但算不出剩餘天數時，仍顯示「即將到期」文字', () => {
+    const node = makeNode({
+      name: '林快到期',
+      status: 'expiring',
+      endDate: null,
+      daysToExpiry: null,
+    });
+    renderTree(makeOverview({ roots: [node] }));
+    expect(within(rowOf('林快到期')).getByText('即將到期')).toBeTruthy();
+  });
+});
+
+describe('整列底色：即將到期淡黃、選中靛藍淺底', () => {
+  const expiringNode = (name: string) =>
+    makeNode({
+      name,
+      status: 'expiring',
+      daysToExpiry: 5,
+      endDate: new Date(Date.now() + 5 * DAY).toISOString(),
+    });
+
+  it('即將到期的列整列 bg-warning-subtle，其他狀態的列沒有', () => {
+    renderTree(
+      makeOverview({
+        roots: [
+          expiringNode('林快到期'),
+          makeNode({ name: '王大明' }),
+          makeNode({ name: '周美玲', status: 'expired' }),
+        ],
+      }),
+    );
+    expect(rowOf('林快到期').classList.contains('bg-warning-subtle')).toBe(true);
+    expect(rowOf('王大明').classList.contains('bg-warning-subtle')).toBe(false);
+    expect(rowOf('周美玲').classList.contains('bg-warning-subtle')).toBe(false);
+  });
+
+  it('選中列用 bg-brand-subtle，不再用 bg-muted', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }));
+    fireEvent.click(rowOf('王大明'));
+    const row = rowOf('王大明');
+    expect(row.getAttribute('aria-selected')).toBe('true');
+    expect(row.classList.contains('bg-brand-subtle')).toBe(true);
+    expect(row.classList.contains('bg-muted')).toBe(false);
+  });
+
+  it('選中的即將到期列以選中色為準，不同時帶兩種底色', () => {
+    renderTree(makeOverview({ roots: [expiringNode('林快到期')] }));
+    fireEvent.click(rowOf('林快到期'));
+    const row = rowOf('林快到期');
+    expect(row.classList.contains('bg-brand-subtle')).toBe(true);
+    expect(row.classList.contains('bg-warning-subtle')).toBe(false);
+  });
+});
+
+// 整列套 opacity-55 會把狀態文字一起稀釋：「已失效」2.13:1、「已停權」3.02:1，都低於
+// 4.5:1，而這兩段字正是 §12.7 的色盲防線（§12.8 第 3 步也明列要防 opacity 稀釋）。
+// 所以只淡化頭像與名字，狀態文字維持不透明。
+describe('已失效／已停權的淡化範圍（狀態文字不得被稀釋）', () => {
+  it('頭像與名字淡化 opacity-55，整列根節點與狀態文字不淡化', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '周美玲', status: 'expired' })] }));
+    const row = rowOf('周美玲');
+    expect(row.classList.contains('opacity-55')).toBe(false);
+    expect(within(row).getByText('周').classList.contains('opacity-55')).toBe(true);
+    expect(within(row).getByText('周美玲').classList.contains('opacity-55')).toBe(true);
+    expect(within(row).getByText('已失效').className).not.toContain('opacity');
+  });
+
+  it('已停權的狀態文字同樣不淡化', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '黃○真', status: 'suspended' })] }));
+    expect(within(rowOf('黃○真')).getByText('已停權').className).not.toContain('opacity');
+  });
+
+  it('訂閱中的列完全不淡化', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }));
+    const row = rowOf('王大明');
+    expect(within(row).getByText('王').className).not.toContain('opacity');
+    expect(within(row).getByText('王大明').className).not.toContain('opacity');
+  });
+});
+
+describe('世代只剩縮排與連接線（灰階），不再占用頭像顏色', () => {
+  it('二、三代連接線用 --muted-foreground 兩階透明度，越深代越淡', async () => {
+    const g1 = makeNode({ userId: 'g1', name: '甲一', generation: 1, childCount: 1 });
+    const g2 = makeNode({ userId: 'g2', name: '乙二', generation: 2, childCount: 1 });
+    const g3 = makeNode({ userId: 'g3', name: '丙三', generation: 3 });
+    const loadChildren = vi.fn(async (id: string) => (id === 'g1' ? [g2] : [g3]));
+
+    renderTree(makeOverview({ roots: [g1] }), { loadChildren });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+
+    const groups = document.querySelectorAll('[id^="rtn-group-"]');
+    expect(groups.length).toBe(2);
+    expect(groups[0].classList.contains('border-muted-foreground')).toBe(true);
+    // 最淡一階 80%：globals.test.ts 以同一公式釘住它對背景仍達非文字 3:1
+    expect(groups[1].classList.contains('border-muted-foreground/80')).toBe(true);
+  });
+
+  it('詳情面板的世代徽章是灰階 bg-muted text-muted-foreground', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明', generation: 1 })] }));
+    fireEvent.click(rowOf('王大明'));
+    const badge = screen.getByText('一代');
+    expect(badge.classList.contains('bg-muted')).toBe(true);
+    expect(badge.classList.contains('text-muted-foreground')).toBe(true);
+  });
+});
+
+describe('狀態 chip（計數由伺服器提供，點選過濾，兼作圖例）', () => {
+  const COUNTS = { active: 6, expiring: 1, expired: 2, suspended: 1 };
+  const overviewWith = (roots: NetworkNode[], statusCounts = COUNTS) =>
+    makeOverview({
+      roots,
+      summary: {
+        firstGenCount: roots.length,
+        secondGenCount: 0,
+        thirdGenCount: 0,
+        totalReferrals: roots.length,
+        statusCounts,
+      },
+    });
+  const chip = (label: string, count: number) =>
+    screen.getByRole('button', { name: `${label} ${count}` }) as HTMLButtonElement;
+  const expiringNode = (name: string, over: Partial<NetworkNode> = {}) =>
+    makeNode({
+      name,
+      status: 'expiring',
+      daysToExpiry: 5,
+      endDate: new Date(Date.now() + 5 * DAY).toISOString(),
+      ...over,
+    });
+
+  it('樹上方顯示四顆 chip：狀態名稱加伺服器給的全樹計數', () => {
+    renderTree(overviewWith([makeNode()]));
+    expect(screen.getByRole('group', { name: '依訂閱狀態篩選' })).toBeTruthy();
+    expect(chip('訂閱中', 6)).toBeTruthy();
+    expect(chip('即將到期', 1)).toBeTruthy();
+    expect(chip('已失效', 2)).toBeTruthy();
+    expect(chip('已停權', 1)).toBeTruthy();
+  });
+
+  it('chip 在搜尋列下方：隱藏或顯示 chip 時，輸入框不會位移', () => {
+    renderTree(overviewWith([makeNode()]));
+    const input = screen.getByPlaceholderText('搜尋下線姓名');
+    const group = screen.getByRole('group', { name: '依訂閱狀態篩選' });
+    expect(input.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('點 chip 切換過濾（aria-pressed），再點一次取消', () => {
+    renderTree(overviewWith([makeNode()]));
+    const c = chip('即將到期', 1);
+    expect(c.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(c);
+    expect(c.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(c);
+    expect(c.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('過濾只留符合狀態的列，不符的葉節點隱藏；取消後全部回來', () => {
+    const a = makeNode({ userId: 'a', name: '甲甲' });
+    const b = expiringNode('乙乙', { userId: 'b' });
+    const c = makeNode({ userId: 'c', name: '丙丙', status: 'expired' });
+    renderTree(overviewWith([a, b, c]));
+
+    fireEvent.click(chip('即將到期', 1));
+    expect(screen.queryByRole('treeitem', { name: '乙乙 詳情' })).not.toBeNull();
+    expect(screen.queryByRole('treeitem', { name: '甲甲 詳情' })).toBeNull();
+    expect(screen.queryByRole('treeitem', { name: '丙丙 詳情' })).toBeNull();
+
+    fireEvent.click(chip('即將到期', 1));
+    expect(screen.getAllByRole('treeitem').length).toBe(3);
+  });
+
+  it('符合者的祖先留著當脈絡、分支數不變，不符的兄弟隱藏，展開狀態不動', async () => {
+    const parent = makeNode({ userId: 'p', name: '祖先甲', childCount: 2 });
+    const hit = expiringNode('符合乙', { userId: 'h', generation: 2 });
+    const miss = makeNode({ userId: 'm', name: '路人丙', generation: 2 });
+    renderTree(overviewWith([parent]), { loadChildren: vi.fn().mockResolvedValue([hit, miss]) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+
+    fireEvent.click(chip('即將到期', 1));
+
+    expect(within(rowOf('祖先甲')).getByText('2 位')).toBeTruthy(); // 分支數仍是伺服器的 childCount
+    expect(screen.queryByRole('treeitem', { name: '符合乙 詳情' })).not.toBeNull();
+    expect(screen.queryByRole('treeitem', { name: '路人丙 詳情' })).toBeNull();
+    expect(screen.getByRole('button', { name: '收合' })).toBeTruthy(); // 沒有被收合
+  });
+
+  it('子代尚未載入的節點保留（可能藏著符合者），確定沒有的葉節點隱藏', () => {
+    const unloaded = makeNode({ userId: 'q', name: '未載入', childCount: 3 });
+    const leaf = makeNode({ userId: 'r', name: '葉節點' });
+    renderTree(overviewWith([unloaded, leaf]));
+
+    fireEvent.click(chip('已失效', 2));
+
+    expect(screen.queryByRole('treeitem', { name: '未載入 詳情' })).not.toBeNull();
+    expect(screen.queryByRole('treeitem', { name: '葉節點 詳情' })).toBeNull();
+  });
+
+  it('子代已載入且全都不符時，該節點也隱藏；全部隱藏時提示沒有符合者', async () => {
+    const s = makeNode({ userId: 's', name: '甲乙', childCount: 1 });
+    const x = makeNode({ userId: 'x', name: '丙丁', generation: 2 });
+    renderTree(overviewWith([s]), { loadChildren: vi.fn().mockResolvedValue([x]) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+
+    fireEvent.click(chip('已失效', 2));
+
+    expect(screen.queryByRole('treeitem', { name: '甲乙 詳情' })).toBeNull();
+    expect(screen.getByText('沒有符合的下線')).toBeTruthy();
+  });
+
+  it('符合的節點展開後沒有符合的子代時，分支內顯示「沒有符合的下線」', async () => {
+    const t = makeNode({ userId: 't', name: '失效甲', status: 'expired', childCount: 1 });
+    const kid = makeNode({ userId: 'k', name: '訂閱乙', generation: 2 });
+    renderTree(overviewWith([t]), { loadChildren: vi.fn().mockResolvedValue([kid]) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+
+    fireEvent.click(chip('已失效', 2));
+
+    expect(screen.queryByRole('treeitem', { name: '失效甲 詳情' })).not.toBeNull();
+    expect(screen.queryByRole('treeitem', { name: '訂閱乙 詳情' })).toBeNull();
+    expect(screen.getByText('沒有符合的下線')).toBeTruthy();
+  });
+
+  it('計數為 0 的 chip 不能點（沒有東西可過濾），其餘可點', () => {
+    renderTree(overviewWith([makeNode()], { active: 1, expiring: 0, expired: 0, suspended: 0 }));
+    expect(chip('即將到期', 0).disabled).toBe(true);
+    expect(chip('訂閱中', 1).disabled).toBe(false);
+  });
+
+  it('選中的狀態計數歸零時自動解除過濾，不卡在空畫面', () => {
+    const nodes = [
+      makeNode({ userId: 'a', name: '甲甲' }),
+      makeNode({ userId: 'b', name: '乙乙', status: 'expired' }),
+    ];
+    const element = (overview: NetworkOverview) => (
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={overview}
+          sort={overview.sort}
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+        />
+      </MemoryRouter>
+    );
+    const { rerender } = render(
+      element(overviewWith(nodes, { active: 1, expiring: 0, expired: 1, suspended: 0 })),
+    );
+    fireEvent.click(chip('已失效', 1));
+    expect(screen.queryByRole('treeitem', { name: '甲甲 詳情' })).toBeNull();
+
+    rerender(element(overviewWith(nodes, { active: 1, expiring: 0, expired: 0, suspended: 0 })));
+
+    expect(screen.queryByRole('treeitem', { name: '甲甲 詳情' })).not.toBeNull();
+  });
+
+  it('statusCounts 缺席（舊快取或部署時差）時不渲染 chip，樹照常顯示', () => {
+    const overview = makeOverview({ roots: [makeNode({ name: '王大明' })] });
+    // 舊快取的形狀：只有三代人數與總數。型別說必填、執行期不保證，這裡刻意繞過型別。
+    const stale = {
+      ...overview,
+      summary: { firstGenCount: 1, secondGenCount: 0, thirdGenCount: 0, totalReferrals: 1 },
+    } as unknown as NetworkOverview;
+    renderTree(stale);
+    expect(screen.queryByRole('group', { name: '依訂閱狀態篩選' })).toBeNull();
+    expect(screen.getByRole('treeitem', { name: '王大明 詳情' })).toBeTruthy();
+  });
+
+  it('搜尋中隱藏 chip；清除搜尋後 chip 回來且過濾狀態保留', () => {
+    const nodes = [makeNode({ name: '王大明' }), makeNode({ name: '乙乙', status: 'expired' })];
+    renderTree(overviewWith(nodes));
+    fireEvent.click(chip('已失效', 2));
+
+    fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '王' } });
+    expect(screen.queryByRole('group', { name: '依訂閱狀態篩選' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '清除搜尋' }));
+    expect(chip('已失效', 2).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('過濾中顯示一行提示（只列出已載入的下線），取消後提示消失', () => {
+    renderTree(overviewWith([makeNode()]));
+    fireEvent.click(chip('已失效', 2));
+    expect(screen.getByText(/只列出已載入的/)).toBeTruthy();
+    fireEvent.click(chip('已失效', 2));
+    expect(screen.queryByText(/只列出已載入的/)).toBeNull();
+  });
+});
+
+describe('「新」tag（加入 30 天內）', () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString();
+
+  it('加入 10 天的節點在名字旁顯示「新」，樣式用 brand-subtle', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明', joinedAt: daysAgo(10) })] }));
+    const tag = within(rowOf('王大明')).getByText('新');
+    expect(tag.classList.contains('bg-brand-subtle')).toBe(true);
+    expect(tag.classList.contains('text-brand-subtle-foreground')).toBe(true);
+  });
+
+  it('加入超過 30 天不顯示「新」', () => {
+    renderTree(makeOverview({ roots: [makeNode({ name: '王大明', joinedAt: daysAgo(31) })] }));
+    expect(within(rowOf('王大明')).queryByText('新')).toBeNull();
+  });
+
+  it('joinedAt 為空字串或非法值時不顯示「新」（Date.parse 得 NaN，不崩潰）', () => {
+    renderTree(
+      makeOverview({
+        roots: [
+          makeNode({ userId: 'e', name: '空日期', joinedAt: '' }),
+          makeNode({ userId: 'f', name: '壞日期', joinedAt: 'not-a-date' }),
+        ],
+      }),
+    );
+    expect(within(rowOf('空日期')).queryByText('新')).toBeNull();
+    expect(within(rowOf('壞日期')).queryByText('新')).toBeNull();
   });
 });
 

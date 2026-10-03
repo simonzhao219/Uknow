@@ -35,6 +35,7 @@ import {
   type NetworkOverview,
   type NetworkSearchMatch,
   type NetworkSortMode,
+  type NetworkSummary,
 } from '../../utils/referralNetwork';
 
 // ============================================================
@@ -44,60 +45,108 @@ import {
 // - 搜尋：debounce 300ms 打伺服器（真名比對在後端，深代遮罩也搜得到）
 // - 對齊（方案 A）：前導槽固定寬只放 chevron；分支數移列右側，
 //   即將到期的倒數優先於分支數
-// - 顏色語意：頭像底色＝世代、右下角圓點＝訂閱狀態，兩者各自單一職責
+// - 顏色分工（S2c）：一個畫面裡顏色只做一件事。頭像底色＝訂閱狀態（唯一跟收入
+//   直接相關的維度：三代獎勵同額，規格書 §8.1，下線續約就發獎）；世代是結構，
+//   由縮排與連接線承擔，不再用頭像色重複編碼。狀態文字是色盲防線（§12.7）。
+// - 過濾：樹上方的狀態 chip 只隱藏「確定沒有符合者」的節點，見 keepUnderFilter
 // ============================================================
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
-const GEN_BADGE: Record<number, string> = {
-  1: 'bg-[var(--tree-gen-badge-1)] text-[var(--tree-gen-badge-foreground)]',
-  2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground)]',
-  3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground)]',
-};
-// 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
-// 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
-// ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的深階，
-// 對比達 7.5:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在結構上；
-// 深淺模式已內含在 token 裡，不必另寫 dark:）。
+// 世代是結構屬性（§12.5 (c)）：走灰階，不占用頭像顏色。
+const GEN_BADGE = 'bg-muted text-muted-foreground';
+// 分支連接線依「子代」上色（一代是根、沒有入線，所以只有二、三代）：--muted-foreground
+// 疊透明度，越深代越淡。最淡一階（80%）對 --background／--card 仍達非文字 3:1
+// （淺 3.27／深 4.86），globals.test.ts 以同一公式釘住——要調透明度，先改那邊的常數。
+// 不能再往下淡：55% 在淺色只剩 2.1:1。
 const GEN_LINE: Record<number, string> = {
-  2: 'border-[var(--tree-gen-avatar-2)]',
-  3: 'border-[var(--tree-gen-avatar-3)]',
+  2: 'border-muted-foreground',
+  3: 'border-muted-foreground/80',
 };
 
-const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: string }> = {
+// 訂閱狀態的視覺語彙——單一事實來源：頭像、chip、詳情 pill、需要關注橫幅都從這裡取。
+// class 一律寫字面量（Tailwind 靠掃原始碼產生 CSS，不能在執行期拼字串）。
+//   avatar：頭像底＋字。實心底（A 形狀）＝亮底黑字；已失效沒有語義色，用中性灰。
+//   pill／chip：淺底三件組（B 形狀）。已失效用 text-foreground 而非 text-muted-foreground
+//     ——後者疊在 bg-muted 上只有 4.06:1，這是新增的文字，不該明知故犯。
+//   dot：8px 色點，顏色與頭像底色對得上，所以 chip 兼作圖例，不必另畫顏色說明。
+const STATUS: Record<
+  NetworkNodeStatus,
+  { label: string; dot: string; avatar: string; pill: string; chip: string }
+> = {
   active: {
-    dot: 'bg-success',
     label: '訂閱中',
-    badge: 'bg-success-subtle text-success-subtle-foreground',
+    dot: 'bg-success',
+    avatar: 'bg-success text-success-foreground',
+    pill: 'bg-success-subtle text-success-subtle-foreground',
+    chip: 'border-success-border bg-success-subtle text-success-subtle-foreground',
   },
   expiring: {
-    dot: 'bg-warning',
     label: '即將到期',
-    badge: 'bg-warning-subtle text-warning-subtle-foreground',
+    dot: 'bg-warning',
+    avatar: 'bg-warning text-warning-foreground',
+    pill: 'bg-warning-subtle text-warning-subtle-foreground',
+    chip: 'border-warning-border bg-warning-subtle text-warning-subtle-foreground',
   },
-  expired: { dot: 'bg-muted-foreground', label: '已失效', badge: 'bg-muted text-muted-foreground' },
+  expired: {
+    label: '已失效',
+    dot: 'bg-muted-foreground',
+    avatar: 'bg-muted text-muted-foreground',
+    pill: 'bg-muted text-foreground',
+    chip: 'border-border bg-muted text-foreground',
+  },
   suspended: {
-    dot: 'bg-destructive',
     label: '已停權',
-    badge: 'bg-destructive-subtle text-destructive-subtle-foreground',
+    dot: 'bg-destructive',
+    avatar: 'bg-destructive text-destructive-foreground',
+    pill: 'bg-destructive-subtle text-destructive-subtle-foreground',
+    chip: 'border-destructive-border bg-destructive-subtle text-destructive-subtle-foreground',
   },
 };
+const CHIP_ORDER: readonly NetworkNodeStatus[] = ['active', 'expiring', 'expired', 'suspended'];
 
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色階，由深到淺對應一／二／三代）。
-// 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
-const GEN_AVATAR: Record<number, string> = {
-  1: 'var(--tree-gen-avatar-1)',
-  2: 'var(--tree-gen-avatar-2)',
-  3: 'var(--tree-gen-avatar-3)',
-};
-const GEN_AVATAR_FALLBACK = 'var(--muted-foreground)'; // 世代超出 1–3 時的中性色
-function avatarColor(generation: number): string {
-  return GEN_AVATAR[generation] ?? GEN_AVATAR_FALLBACK;
-}
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '?';
+}
+
+const NEW_MEMBER_DAYS = 30;
+/** 加入 30 天內。伺服器缺值時 joinedAt 是 ''，Date.parse 得 NaN → 不算新（不顯示、不崩潰）。 */
+function isNewMember(joinedAt: string, now = Date.now()): boolean {
+  const ms = Date.parse(joinedAt);
+  return Number.isFinite(ms) && now - ms <= NEW_MEMBER_DAYS * 86_400_000;
+}
+
+/** 整列底色：選中（brand-subtle）勝過即將到期（warning-subtle）；兩者都不被 hover 蓋掉。 */
+function rowTone(status: NetworkNodeStatus, selected: boolean): string | undefined {
+  if (selected) return 'bg-brand-subtle hover:bg-brand-subtle';
+  if (status === 'expiring') return 'bg-warning-subtle hover:bg-warning-subtle';
+  return undefined;
+}
+
+type ChildrenMap = Record<string, NetworkNode[] | 'loading'>;
+type NodeStatusFilter = NetworkNodeStatus | null;
+type StatusCounts = NetworkSummary['statusCounts'];
+
+/**
+ * 過濾下這個節點留不留：只隱藏「確定沒有符合者」的節點。
+ * 樹是懶載入的，前端看不到未展開的子孫，所以以下都要留：
+ *   - 自己符合；
+ *   - 已載入的子孫裡有符合者（祖先留著當脈絡，符合者才找得到路）；
+ *   - 子代尚未載入（可能藏著符合者——藏起來，使用者就找不到展開入口了）。
+ * 葉節點（含第三代）沒有子孫，不符就是確定沒有。
+ */
+function keepUnderFilter(
+  node: NetworkNode,
+  childrenMap: ChildrenMap,
+  filter: NetworkNodeStatus,
+): boolean {
+  if (node.status === filter) return true;
+  if (node.generation >= 3 || node.childCount === 0) return false;
+  const kids = childrenMap[node.userId];
+  if (kids === undefined || kids === 'loading') return true;
+  return kids.some((k) => keepUnderFilter(k, childrenMap, filter));
 }
 
 const INTERACTIVE_ROW = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -110,37 +159,68 @@ function rowKeyActivate(handler: () => void) {
   };
 }
 
-// ---------- 頭像 ----------
-function Avatar({ node, size = 36 }: { node: NetworkNode; size?: number }) {
-  const s = STATUS[node.status];
+// ---------- 頭像：底色＝訂閱狀態（單一圓形，沒有角落小點） ----------
+// dimmed 只淡化頭像本身：整列套 opacity 會把狀態文字一起稀釋（見 RowAside）。
+function Avatar({
+  node,
+  size = 36,
+  dimmed = false,
+}: {
+  node: NetworkNode;
+  size?: number;
+  dimmed?: boolean;
+}) {
   return (
-    <span className="relative shrink-0" style={{ width: size, height: size }}>
-      <span
-        className="grid h-full w-full place-items-center rounded-full font-semibold text-[var(--tree-gen-avatar-foreground)]"
-        style={{ backgroundColor: avatarColor(node.generation), fontSize: size * 0.38 }}
-      >
-        {initial(node.name)}
-      </span>
-      <span
-        className={cn('absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-card', s.dot)}
-        style={{ width: size * 0.3, height: size * 0.3 }}
-        aria-hidden
-      />
+    <span
+      className={cn(
+        'grid shrink-0 place-items-center rounded-full font-semibold',
+        STATUS[node.status].avatar,
+        dimmed && 'opacity-55',
+      )}
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+    >
+      {initial(node.name)}
     </span>
   );
 }
 
-// ---------- 列右側：到期倒數優先，其次分支數 ----------
+// ---------- 名字＋「新」tag ----------
+// 名字 truncate、tag shrink-0：窄版（375px）空間不夠時由名字吸收，tag 不換行也不被擠掉。
+function NameLine({ node, dimmed = false }: { node: NetworkNode; dimmed?: boolean }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className={cn('truncate font-medium', dimmed && 'opacity-55')}>{node.name}</span>
+      {isNewMember(node.joinedAt) && (
+        <span className="shrink-0 rounded-full bg-brand-subtle px-1.5 py-px text-[10.5px] font-semibold text-brand-subtle-foreground">
+          新
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------- 列右側：每個非訂閱中的狀態都有文字（色盲防線 §12.7），訂閱中顯示分支數 ----------
+// 這段文字刻意不跟著列淡化：已失效淡到 55% 只剩 2.13:1、已停權 3.02:1，都過不了 4.5:1，
+// 而它正是「完全分不出顏色時，狀態仍讀得懂」唯一的依靠。
 function RowAside({ node }: { node: NetworkNode }) {
   if (node.status === 'expiring') {
     const d = nodeDaysLeft(node);
-    if (d != null) {
-      return (
-        <span className="shrink-0 text-xs font-semibold text-warning-subtle-foreground">
-          剩 {d} 天到期
-        </span>
-      );
-    }
+    return (
+      <span className="shrink-0 text-xs font-semibold text-warning-subtle-foreground">
+        {d != null ? `剩 ${d} 天到期` : '即將到期'}
+      </span>
+    );
+  }
+  if (node.status === 'expired') {
+    return <span className="shrink-0 text-xs text-muted-foreground">已失效</span>;
+  }
+  if (node.status === 'suspended') {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-destructive-subtle-foreground">
+        <Ban className="h-3 w-3" aria-hidden />
+        已停權
+      </span>
+    );
   }
   if (node.childCount > 0) {
     return (
@@ -155,18 +235,30 @@ function RowAside({ node }: { node: NetworkNode }) {
 // ---------- 樹的一列（懶載入） ----------
 interface NodeRowProps {
   node: NetworkNode;
-  childrenMap: Record<string, NetworkNode[] | 'loading'>;
+  childrenMap: ChildrenMap;
   expanded: Set<string>;
   onToggle: (node: NetworkNode) => void;
   selectedId: string | null;
   onSelect: (n: NetworkNode) => void;
+  /** 狀態過濾（null＝不過濾）。只影響「顯示哪些列」，不動排序與展開狀態。 */
+  filter: NodeStatusFilter;
 }
 
-function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }: NodeRowProps) {
+function NodeRow({
+  node,
+  childrenMap,
+  expanded,
+  onToggle,
+  selectedId,
+  onSelect,
+  filter,
+}: NodeRowProps) {
   const expandable = node.generation < 3 && node.childCount > 0;
   const isOpen = expanded.has(node.userId);
   const kids = childrenMap[node.userId];
   const groupId = `rtn-group-${node.userId}`;
+  const inactive = listingHidden(node.status);
+  const selected = selectedId === node.userId;
 
   return (
     <div>
@@ -174,15 +266,14 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
         role="treeitem"
         tabIndex={0}
         aria-level={node.generation}
-        aria-selected={selectedId === node.userId}
+        aria-selected={selected}
         aria-expanded={expandable ? isOpen : undefined}
         aria-owns={expandable && isOpen ? groupId : undefined}
         aria-label={`${node.name} 詳情`}
         className={cn(
           'group flex items-center gap-2 rounded-lg py-2 pl-1 pr-2 cursor-pointer transition-colors hover:bg-muted/60',
           INTERACTIVE_ROW,
-          selectedId === node.userId && 'bg-muted',
-          listingHidden(node.status) && 'opacity-55',
+          rowTone(node.status, selected),
         )}
         onClick={() => onSelect(node)}
         onKeyDown={rowKeyActivate(() => onSelect(node))}
@@ -205,10 +296,10 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
           <span className="h-6 w-6 shrink-0" />
         )}
 
-        <Avatar node={node} />
+        <Avatar node={node} dimmed={inactive} />
 
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{node.name}</span>
+          <NameLine node={node} dimmed={inactive} />
         </span>
 
         <RowAside node={node} />
@@ -232,21 +323,82 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
               </div>
             </div>
           ) : (
-            kids.map((child) => (
-              <NodeRow
-                key={child.userId}
-                node={child}
-                childrenMap={childrenMap}
-                expanded={expanded}
-                onToggle={onToggle}
-                selectedId={selectedId}
-                onSelect={onSelect}
-              />
-            ))
+            <ChildRows
+              kids={kids}
+              childrenMap={childrenMap}
+              expanded={expanded}
+              onToggle={onToggle}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              filter={filter}
+            />
           )}
         </div>
       )}
     </div>
+  );
+}
+
+// 已載入的子列；過濾時只留 keepUnderFilter 的，全被隱藏就明說（空框線會像壞掉）。
+function ChildRows({
+  kids,
+  filter,
+  ...rest
+}: Omit<NodeRowProps, 'node'> & { kids: NetworkNode[] }) {
+  const shown = filter ? kids.filter((k) => keepUnderFilter(k, rest.childrenMap, filter)) : kids;
+  if (filter && shown.length === 0) {
+    return <p className="py-2 pl-1 text-xs text-muted-foreground">沒有符合的下線</p>;
+  }
+  return (
+    <>
+      {shown.map((child) => (
+        <NodeRow key={child.userId} node={child} filter={filter} {...rest} />
+      ))}
+    </>
+  );
+}
+
+// ---------- 狀態 chip：四顆「狀態 N」，點選＝只顯示該狀態（再點取消），兼作圖例 ----------
+// 計數由伺服器給全樹的數字（children 懶載入，前端算不出來）。選中態用 outline：
+// 形狀線索（粗框）加 aria-pressed，不靠顏色；與 focus-visible 的 ring 並存、可分辨。
+// 計數 0 的 chip 不能點（沒有東西可過濾）；選中的那顆除外，才取消得掉。
+function StatusChips({
+  counts,
+  selected,
+  onSelect,
+}: {
+  counts: StatusCounts;
+  selected: NodeStatusFilter;
+  onSelect: (status: NodeStatusFilter) => void;
+}) {
+  return (
+    <fieldset
+      aria-label="依訂閱狀態篩選"
+      className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0"
+    >
+      {CHIP_ORDER.map((status) => {
+        const s = STATUS[status];
+        const on = selected === status;
+        return (
+          <button
+            key={status}
+            type="button"
+            aria-pressed={on}
+            disabled={counts[status] === 0 && !on}
+            onClick={() => onSelect(on ? null : status)}
+            className={cn(
+              'inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium tabular-nums transition-colors pointer-coarse:min-h-[44px]',
+              'focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+              s.chip,
+              on && 'outline-2 outline-offset-2 outline-brand',
+            )}
+          >
+            <span aria-hidden className={cn('h-2 w-2 rounded-full', s.dot)} />
+            {s.label} {counts[status]}
+          </button>
+        );
+      })}
+    </fieldset>
   );
 }
 
@@ -304,15 +456,10 @@ function NodeDetail({ node }: { node: NetworkNode }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
-        <span
-          className={cn(
-            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
-            GEN_BADGE[node.generation],
-          )}
-        >
+        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', GEN_BADGE)}>
           {GEN_LABEL[node.generation]}
         </span>
-        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', s.badge)}>
+        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', s.pill)}>
           ● {s.label}
         </span>
         {node.generation < 3 && (
@@ -396,9 +543,10 @@ export function ReferralTreeView({
 }: ReferralTreeViewProps) {
   const [selected, setSelected] = useState<NetworkNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [childrenMap, setChildrenMap] = useState<Record<string, NetworkNode[] | 'loading'>>({});
+  const [childrenMap, setChildrenMap] = useState<ChildrenMap>({});
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<SearchState>({ status: 'idle' });
+  const [statusFilter, setStatusFilter] = useState<NodeStatusFilter>(null);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   // 切排序：伺服器是排序權威，已展開的分支順序作廢 → 收合重來
@@ -406,6 +554,17 @@ export function ReferralTreeView({
     setExpanded(new Set());
     setChildrenMap({});
   }, [sort]);
+
+  // 全樹的狀態計數由伺服器給。型別說必填、執行期不保證：部署前存進 sessionStorage 的
+  // 舊快取、以及前端先於 Edge Function 上線的時差，都讀得到 undefined——此時不渲染 chip，
+  // 且一律視為不過濾（沒有 chip 就沒有取消過濾的入口，不能讓使用者卡在過濾畫面）。
+  const statusCounts = overview?.summary.statusCounts;
+  const activeFilter = statusCounts ? statusFilter : null;
+
+  // 選中的狀態計數歸零（例如背景重新驗證後最後一位也續約了）→ 自動解除，不卡在空畫面
+  useEffect(() => {
+    if (statusFilter && statusCounts?.[statusFilter] === 0) setStatusFilter(null);
+  }, [statusFilter, statusCounts]);
 
   // 伺服器搜尋（debounce 300ms；過時回應丟棄）
   useEffect(() => {
@@ -451,6 +610,9 @@ export function ReferralTreeView({
   }, [search, searchNetwork, query]);
 
   const roots = overview?.roots ?? [];
+  const visibleRoots = activeFilter
+    ? roots.filter((n) => keepUnderFilter(n, childrenMap, activeFilter))
+    : roots;
   const onSelect = (n: NetworkNode) => setSelected(n);
 
   const onToggle = (node: NetworkNode) => {
@@ -570,6 +732,17 @@ export function ReferralTreeView({
         </DropdownMenu>
       </div>
 
+      {/* 狀態 chip（兼圖例）。放在搜尋列下方：搜尋中把它隱藏時，輸入框不會跟著位移。
+          搜尋結果是伺服器端的扁平清單，不吃這個過濾，所以搜尋中不顯示（過濾狀態保留）。 */}
+      {!searching && statusCounts && (
+        <StatusChips counts={statusCounts} selected={activeFilter} onSelect={setStatusFilter} />
+      )}
+      {!searching && activeFilter && (
+        <p className="text-xs text-muted-foreground">
+          只列出已載入的「{STATUS[activeFilter].label}」下線，展開分支可看到更多
+        </p>
+      )}
+
       {searching ? (
         search.status === 'loading' ? (
           <div className="space-y-2 py-2">
@@ -595,13 +768,13 @@ export function ReferralTreeView({
                 className={cn(
                   'flex cursor-pointer items-center gap-2 rounded-lg py-2 pl-1 pr-2 transition-colors hover:bg-muted/60',
                   INTERACTIVE_ROW,
-                  selected?.userId === node.userId && 'bg-muted',
+                  rowTone(node.status, selected?.userId === node.userId),
                 )}
               >
                 <Avatar node={node} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{node.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <NameLine node={node} />
+                  <span className="block text-xs text-muted-foreground">
                     {GEN_LABEL[node.generation]}
                   </span>
                 </span>
@@ -629,6 +802,8 @@ export function ReferralTreeView({
             )}
           </div>
         ) : null
+      ) : activeFilter && visibleRoots.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">沒有符合的下線</p>
       ) : (
         // 背景重新請求中：清單仍是舊排序的資料，降透明度 + aria-busy 讓
         // 「還沒重排完」看得見也聽得見。切排序時 setSort 走的是
@@ -642,7 +817,7 @@ export function ReferralTreeView({
             isValidating && 'opacity-50 pointer-events-none',
           )}
         >
-          {roots.map((node) => (
+          {visibleRoots.map((node) => (
             <NodeRow
               key={node.userId}
               node={node}
@@ -651,6 +826,7 @@ export function ReferralTreeView({
               onToggle={onToggle}
               selectedId={selected?.userId ?? null}
               onSelect={onSelect}
+              filter={activeFilter}
             />
           ))}
         </div>
