@@ -5,7 +5,7 @@
  * 用法: className={getInputErrorClass(!!errors.fieldName)}
  */
 export function getInputErrorClass(hasError: boolean): string {
-  return hasError ? 'border-destructive focus-visible:ring-destructive' : '';
+  return hasError ? 'border-destructive-border focus-visible:ring-destructive-border' : '';
 }
 
 /**
@@ -22,7 +22,7 @@ export function FieldError({ error, id }: { error?: string; id?: string }) {
   return (
     <div id={id} role="alert">
       {lines.map((line) => (
-        <p key={line} className="text-sm text-destructive mt-1">
+        <p key={line} className="text-sm text-destructive-subtle-foreground mt-1">
           {line}
         </p>
       ))}

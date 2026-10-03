@@ -103,7 +103,7 @@ export function WithdrawalCardList({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive-subtle-foreground hover:text-destructive-subtle-foreground"
                     onClick={() => onReject(w)}
                     disabled={processingId === w.id}
                   >

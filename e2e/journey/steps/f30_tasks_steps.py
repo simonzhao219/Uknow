@@ -8,6 +8,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from builders import tasks
 from builders.login import login_via_gui
+from builders.page_diagnostics import phase
 
 scenarios("30_tasks.feature")
 
@@ -44,9 +45,14 @@ def memo_end_date(supabase_admin, run_state, scenario_memo, node):
 @when(parsers.parse('"{node}" 登入並於任務中心領取免費續約獎勵'))
 def claim_king_reward(guarded_page, run_state, node):
     user = run_state.users[node]
-    login_via_gui(guarded_page, user)
-    tasks.open_task_center(guarded_page)
-    tasks.claim_first_pending_reward(guarded_page, user)
+    # 分階段:這個情境曾經 FAILED 在 3 分 47 秒(正常 15 秒),死因讀不出來
+    # (2026-10-03 run 37143906920)。每段耗時即時印出、失敗時指出死在哪一段。
+    with phase(guarded_page, "登入"):
+        login_via_gui(guarded_page, user)
+    with phase(guarded_page, "開啟任務中心"):
+        tasks.open_task_center(guarded_page)
+    with phase(guarded_page, "領取推薦王獎勵"):
+        tasks.claim_first_pending_reward(guarded_page, user)
 
 
 @then(parsers.parse('"{node}" 的最晚訂閱到期日比領取前延長約一年'))

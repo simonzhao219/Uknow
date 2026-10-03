@@ -2635,3 +2635,63 @@ RLS 確實仍是列級邊界。
 推論:**凡是註解裡寫著「實測 X = 某值」的決策,都帶著一個看不見的到期日。**
 值得在那種註解旁邊標上量測日期與重測方式——本次已為 `supabase/README.md`
 〈GRANT 現況〉那張表補上更正與日期。
+
+## 2026-10-03｜漏網｜journey 偶發紅燈:兩個旋鈕沒對齊、診斷本身會卡、失敗詳情等整場才印
+
+issue #288 記的兩個偶發失敗,**都不是產品 bug**,而是測試 harness 的三個形狀:
+
+1. **兩個逾時旋鈕沒對齊**(f50,run 36269079479)。`guarded_page` 寫「打真網路,預設
+   放寬到 20 秒」,但 `page.set_default_timeout` 管不到 `expect`——它仍是 5 秒。管理台
+   提領列表是掛載時一次性抓取,載入中是骨架;`_actionable_row_of` 對 0 列的表格套
+   5 秒,把「API 還在回」讀成「那一列不存在」。同一份 log 的下個情境(暖機)也要輪詢
+   約 3 秒才看到列,餘裕本來就薄。第一個情境冷啟動超過就紅,它沒處理掉的待處理申請
+   留給下一個情境,於是「0 列」之後接「2 列」。**不是重複送出**:兩列來自兩個情境各
+   一次申請(相隔 15 秒),第一列顯示 09/26 是因為下個情境的「解除當日額度」步驟把它
+   往前挪了一天;後端 `request_withdrawal` 對 profiles 列 `for update` 後才檢查
+   `already_withdrawn_today`,同日重複申請會被擋。
+2. **診斷本身會卡**(f30,run 37143906920,FAILED 耗時 3 分 47 秒)。`dump_page` 的
+   `content()`／`eval_on_selector_all` 沒有 timeout 參數,`inner_text`／`screenshot`
+   沒給 timeout——頁面卡住時,失敗後的診斷比失敗更久。
+3. **失敗詳情等整場結束才印**。f30 在 18:33:05 就 FAILED,18:42:55 runner 收到
+   shutdown 訊號,詳情從未輸出;「錯誤訊息被吞掉」的是 pytest 的輸出時機,不是 runner。
+
+f30 的 3 分 47 秒**在現有證據下無法定位**(log 只有 FAILED 一行,其餘情境同一場正常)。
+這次補的是讓下次一定讀得出:`phase()` 分階段即時印耗時、`attach_event_log` 記整頁導航／
+HTTP 錯誤／慢請求／console error、`faulthandler_timeout=180` 印卡住時的堆疊、
+`pytest_runtest_logreport` 失敗當下印摘要、dump_page 加上限並在頁面無回應時略過。
+
+處置:`expect` 逾時對齊 20 秒(同類掃描:f20/f40/f60/f70 另有 10+ 處靠 5 秒預設等 API
+後內容);管理台動作先等列表載入完成。防線是 `tools/test_admin_row_targeting.py`、
+`test_page_diagnostics.py`、`test_failure_digest.py`(離線軌,秒級)。
+
+推論:修 harness 的逾時時,要問**「這個等待的上限由誰決定、和同一檔案裡別的上限一致嗎?」**
+——兩個預設值不同的旋鈕,比一個寫錯的數字更難發現。
+
+## 2026-10-03｜誤擋｜唯讀的 `git config core.hooksPath` 被當成「覆寫」擋掉
+
+S2c session 想順手確認 hooks 掛載是否正常，執行了 `git config core.hooksPath`（單一參數，git 的
+讀取語法）。bash-guard 第 0 類回「覆寫 core.hooksPath 等同繞過 pre-commit 閘門」——指令是讀，
+訊息說覆寫。守衛只認明確的讀取旗標（`--get`／`--get-all`／`--get-regexp`／`--list`／`-l`）才放行：
+單一參數（讀）與兩個參數（寫）在不解析 git 語法的前提下分不開，保守擋下是設計取捨，不是 bug。
+**摩擦在 deny 訊息**：它只講「為什麼不能改」，沒講「只是想讀請改用 `--get`」，使用者與 agent
+都得靠猜。這次直接拿掉那一行（它只是順手的檢查，不影響後續），沒有改寫成別種寫法硬繞，
+沒有任何防線被削弱。
+
+處置:本次不動守衛，待整併。建議框架修訂時在 `REASON_HOOKS_PATH` 補一句「只是想讀取請用
+`git config --get core.hooksPath`」，並在 `test-hooks.py` 補單一參數讀取的案例（釘住「擋，且訊息
+含 --get 提示」）。
+
+推論:守衛的 deny 訊息要回答兩題——**為什麼擋**與**我該怎麼做才不會被擋**；只答前者，對誤判者
+是死路。
+
+## 2026-10-03｜漏網｜check-output-filter 折疊的是整串指令的輸出，不只驗證指令自己的那幾行
+
+把唯讀指令與驗證指令用 `&&` 串在同一個 Bash 呼叫（例：`git status --short && … && npm run check`），
+綠燈時整串輸出只剩一行 `[check-filter] 綠燈（N 行輸出已折疊）`——`git status` 的結果一起被吞，
+連尾端的 `echo "exit=$?"` 也不見。CLAUDE.md 寫了「只影響 Claude 執行的指令」與「自帶 pipe 的指令
+不會被改寫」，沒寫「複合指令會整串被折疊」。
+
+處置:本次改成分開呼叫（先 `git status`、再 `npm run check`）。建議 CLAUDE.md 該段補一句：想看
+其他輸出，不要與驗證指令串在同一個呼叫；或讓過濾器只折疊驗證指令自己的輸出段。
+
+推論:折疊是為了降噪，但降噪的邊界要與「資訊來源」對齊——整串折疊等於把別的指令的輸出也當成噪音。

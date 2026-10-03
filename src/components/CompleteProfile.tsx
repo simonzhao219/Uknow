@@ -74,7 +74,7 @@ export function CompleteProfile() {
   const { setUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-  const { showToast, showSuccess, showNotification } = useNotification();
+  const { showToast, showNotification } = useNotification();
   const supabase = createClient();
 
   // 「編輯」意圖：從結帳頁按「編輯」回來的人，資料本來就填齊了。若守衛只看
@@ -689,7 +689,7 @@ export function CompleteProfile() {
               />
               <div
                 className={`text-right text-sm ${
-                  nameOverLimit ? 'text-destructive' : 'text-muted-foreground'
+                  nameOverLimit ? 'text-destructive-subtle-foreground' : 'text-muted-foreground'
                 }`}
               >
                 {[...formData.name].length}/{NAME_MAX_LENGTH[formData.nameMode]}

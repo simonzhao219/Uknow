@@ -210,7 +210,7 @@ export function OTPVerificationPage() {
             {/* Expiry countdown */}
             <div role="status" aria-live="polite" aria-atomic="true" className="text-sm">
               {isOtpExpired ? (
-                <span className="text-destructive">驗證碼已過期，請重新寄送</span>
+                <span className="text-destructive-subtle-foreground">驗證碼已過期，請重新寄送</span>
               ) : (
                 <span className="text-muted-foreground">
                   驗證碼有效期限：

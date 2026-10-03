@@ -292,7 +292,7 @@ export function AuthPage() {
       console.log('Email:', email);
       console.log('Redirect URL:', `${window.location.origin}/auth/callback`);
 
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
       });
@@ -418,7 +418,7 @@ export function AuthPage() {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-sm text-primary hover:underline"
+                    className="text-sm text-brand hover:underline"
                     data-testid="forgot-password-link"
                   >
                     忘記密碼？

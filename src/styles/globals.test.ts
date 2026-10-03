@@ -102,6 +102,46 @@ describe('globals.css 語義色 token 三處齊備（success / warning / destruc
 });
 
 // ---------------------------------------------------------------------------
+// 強調色 --brand（S2b／D4，業主裁決配色 A）。與語義色同一個靜默失效風險：
+// `bg-brand` 只有在 `@theme inline` 有 `--color-brand` 時才存在。檢查法同上
+// （三處齊備＋值字面）。名字不能用 --accent：那是 shadcn 既有的 hover 灰。
+// ---------------------------------------------------------------------------
+const BRAND_TOKENS = [
+  'brand',
+  'brand-hover',
+  'brand-foreground',
+  'brand-subtle',
+  'brand-subtle-foreground',
+];
+
+describe('globals.css 強調色 brand token 三處齊備', () => {
+  for (const name of BRAND_TOKENS) {
+    it(`--${name} 在 :root 有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+    });
+
+    it(`--${name} 在 .dark 有定義`, () => {
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+
+    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
+      const key = `--color-${name}`;
+      expect(themeTokens.has(key), `@theme inline 缺少 ${key}`).toBe(true);
+      expect(themeTokens.get(key)).toBe(`var(--${name})`);
+    });
+  }
+
+  // 兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的淺色值不會跟著變。
+  it('淺色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
+    expect(rootTokens.get('--ring')).toBe('var(--brand)');
+  });
+
+  it('深色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
+    expect(darkTokens.get('--ring')).toBe('var(--brand)');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 階段 2：對比度門檻（§2.3.1）。
 //
 // 自我指涉陷阱：驗證 token 的測試與被測的 contrastRatio() 共用同一個公式，
@@ -240,20 +280,14 @@ function hexOf(mode: Mode, tokenName: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 推薦樹世代色（S2，僅供 ReferralTreeView 使用，plan.md D3）：avatar（實心底配
-// 白字）與 badge/line（淺底提示框，深色模式反轉為暗底亮字）兩組，各 3 階；
-// 且兩組都要與「已失效」狀態灰（已收斂為 --muted-foreground）保持可辨識距離，
-// 避免深色模式下分不出「第幾代」還是「已失效」（S1 二審 R2-UIUX-1）。
+// 推薦樹世代色（僅供 ReferralTreeView 使用）：世代是該頁的主要閱讀鍵，§12.5 (c) 核准的
+// 唯一例外——三個專用色相（一代 teal、二代 violet、三代 pink），避開語義色與 brand 的
+// 家族。avatar（實心底配字）與 badge/line（淺底提示框，深色模式反轉為暗底亮字）兩組，
+// 各 3 階；badge 的字色隨世代（-1/-2/-3）。三代靠色相彼此分辨，所以不再有「亮度遞增」
+// 或「與已失效灰保持亮度差」這類為灰階時代設計的斷言（S2c 業主裁決）。
 // ---------------------------------------------------------------------------
 
 const TREE_GEN_TIERS = [1, 2, 3] as const;
-// 相對亮度差的最低距離——不是 WCAG 標準門檻，是本專案為「避免多值分類色與既有
-// 狀態灰混淆」自訂的可辨識基準（棘輪式判準的一種：寫得出具體數字才可驗）。
-const TREE_GEN_MIN_LUMINANCE_GAP = 0.08;
-
-function luminanceOf(mode: Mode, tokenName: string): number {
-  return relativeLuminance(hexToRgb(hexOf(mode, tokenName)));
-}
 
 describe('推薦樹世代色 token 三處齊備', () => {
   const TREE_GEN_TOKENS = [
@@ -264,7 +298,9 @@ describe('推薦樹世代色 token 三處齊備', () => {
     'tree-gen-badge-1',
     'tree-gen-badge-2',
     'tree-gen-badge-3',
-    'tree-gen-badge-foreground',
+    'tree-gen-badge-foreground-1',
+    'tree-gen-badge-foreground-2',
+    'tree-gen-badge-foreground-3',
   ];
 
   for (const name of TREE_GEN_TOKENS) {
@@ -297,18 +333,18 @@ describe('推薦樹世代色對比度（階段 2b 之後，公式已錨定）', 
         expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
 
-      it(`${modeLabel}：badge 第 ${tier} 階對 badge-foreground 達 4.5:1`, () => {
+      it(`${modeLabel}：badge 第 ${tier} 階對 badge-foreground-${tier} 達 4.5:1`, () => {
         const ratio = contrastRatio(
           hexOf(mode, `tree-gen-badge-${tier}`),
-          hexOf(mode, 'tree-gen-badge-foreground'),
+          hexOf(mode, `tree-gen-badge-foreground-${tier}`),
         );
         expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
     }
 
-    // GEN_LINE（分支連接線）只用二、三代（一代是根節點無入線），且重用
-    // avatar 的深階當邊框色，不是 badge 的淺階——淺階配文字的極淺底畫在
-    // --card/--background 上對比接近 1:1，線會幾乎看不見（見 S2 review 發現）。
+    // GEN_LINE（分支連接線）只用二、三代（一代是根節點無入線），且重用 avatar 的色當
+    // 邊框，不是 badge 的淺色——淺色是配文字的極淺底，畫在 --card/--background 上對比
+    // 接近 1:1，線會幾乎看不見（見 S2 review 發現）。
     for (const tier of [2, 3] as const) {
       it(`${modeLabel}：GEN_LINE 借用 avatar 第 ${tier} 階邊框對 --card 達 3:1`, () => {
         const ratio = contrastRatio(hexOf(mode, `tree-gen-avatar-${tier}`), hexOf(mode, 'card'));
@@ -321,34 +357,6 @@ describe('推薦樹世代色對比度（階段 2b 之後，公式已錨定）', 
           hexOf(mode, 'background'),
         );
         expect(ratio).toBeGreaterThanOrEqual(3);
-      });
-    }
-
-    it(`${modeLabel}：avatar 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
-      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-avatar-${t}`));
-      expect(l1).toBeLessThan(l2);
-      expect(l2).toBeLessThan(l3);
-    });
-
-    it(`${modeLabel}：badge 三階彼此的相對亮度嚴格遞增（三代可互相分辨）`, () => {
-      const [l1, l2, l3] = TREE_GEN_TIERS.map((t) => luminanceOf(mode, `tree-gen-badge-${t}`));
-      expect(l1).toBeLessThan(l2);
-      expect(l2).toBeLessThan(l3);
-    });
-
-    for (const tier of TREE_GEN_TIERS) {
-      it(`${modeLabel}：avatar 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
-        const gap = Math.abs(
-          luminanceOf(mode, `tree-gen-avatar-${tier}`) - luminanceOf(mode, 'muted-foreground'),
-        );
-        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
-      });
-
-      it(`${modeLabel}：badge 第 ${tier} 階與失效灰亮度差 ≥ ${TREE_GEN_MIN_LUMINANCE_GAP}`, () => {
-        const gap = Math.abs(
-          luminanceOf(mode, `tree-gen-badge-${tier}`) - luminanceOf(mode, 'muted-foreground'),
-        );
-        expect(gap).toBeGreaterThanOrEqual(TREE_GEN_MIN_LUMINANCE_GAP);
       });
     }
   }
@@ -396,5 +404,45 @@ describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 
         expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
     }
+  }
+});
+
+// 強調色對比度（S2b／D4）。brand 當文字走 1.4.3（4.5:1），當邊框／焦點框／
+// 進度填色這類非文字元素走 1.4.11（3:1）；對 --background 與 --card 各驗一次。
+// 既有 FAMILIES 迴圈已自動覆蓋語義色 A 形狀的新值（亮底黑字），brand 沒有
+// -border token（brand 本身就是邊框色），所以另開一輪。
+describe('強調色 brand 對比度（淺深各一輪，公式已錨定）', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+
+    for (const surface of ['background', 'card'] as const) {
+      it(`${modeLabel}：brand 字對 --${surface} 達 4.5:1`, () => {
+        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      });
+
+      it(`${modeLabel}：brand 當邊框／焦點框對 --${surface} 達 3:1（非文字元素）`, () => {
+        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+    }
+
+    it(`${modeLabel}：brand 實心底配 brand-foreground 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'brand-foreground')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${modeLabel}：brand-hover 實心底配 brand-foreground 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-hover'), hexOf(mode, 'brand-foreground')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${modeLabel}：brand-subtle-foreground 對 brand-subtle 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, 'brand-subtle')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
   }
 });

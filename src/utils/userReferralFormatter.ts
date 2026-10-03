@@ -62,22 +62,3 @@ export function getProgressColor(progress: number): string {
   if (progress >= 40) return 'text-muted-foreground';
   return 'text-muted-foreground';
 }
-
-/**
- * 獲取進度條樣式
- *
- * @param progress - 進度百分比（0-100+）
- * @returns 進度條樣式類別（離散分段的語義色 token，不再用漸層）
- */
-export function getProgressBarStyle(progress: number): string {
-  if (progress >= 100) {
-    return 'bg-success';
-  }
-  if (progress >= 70) {
-    return 'bg-warning';
-  }
-  if (progress >= 40) {
-    return 'bg-muted-foreground';
-  }
-  return 'bg-muted-foreground';
-}

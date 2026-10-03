@@ -15,7 +15,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { ReferralTreeView } from './ReferralTreeView';
 import { DEFAULT_NETWORK_SORT } from '../../utils/referralNetwork';
-import type { NetworkNode, NetworkOverview } from '../../utils/referralNetwork';
+import type { NetworkNode, NetworkOverview, NetworkSortMode } from '../../utils/referralNetwork';
 
 afterEach(cleanup);
 
@@ -30,23 +30,27 @@ beforeEach(() => {
     removeListener: () => {},
     onchange: null,
     dispatchEvent: () => false,
-  })) as any;
+  })) as unknown as typeof window.matchMedia;
   // Radix popper 內容（DropdownMenu）在 jsdom 缺的 API
-  (window as any).ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  Object.assign(window, {
+    ResizeObserver: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
   window.HTMLElement.prototype.scrollIntoView = () => {};
-  (window.HTMLElement.prototype as any).hasPointerCapture = () => false;
-  (window.HTMLElement.prototype as any).releasePointerCapture = () => {};
+  Object.assign(window.HTMLElement.prototype, {
+    hasPointerCapture: () => false,
+    releasePointerCapture: () => {},
+  });
 });
 
 const DAY = 86_400_000;
 
 function makeNode(over: Partial<NetworkNode> = {}): NetworkNode {
   return {
-    userId: 'u-' + Math.random().toString(36).slice(2, 8),
+    userId: `u-${Math.random().toString(36).slice(2, 8)}`,
     name: '王大明',
     generation: 1,
     status: 'active',
@@ -78,7 +82,7 @@ function renderTree(
       q: string,
       offset: number,
     ) => Promise<{ matches: { node: NetworkNode; ancestorPath: string[] }[]; total: number }>;
-    onSortChange?: (m: any) => void;
+    onSortChange?: (m: NetworkSortMode) => void;
   } = {},
 ) {
   return render(
@@ -366,6 +370,28 @@ describe('頭像顏色語意（綁世代，非 userId 雜湊）', () => {
     expect(avatarBg('甲')).toBe(avatarBg('乙'));
     expect(avatarBg('丙')).not.toBe(avatarBg('甲'));
   });
+});
+
+// 三個世代是三個色相（teal／violet／pink）：徽章的淺底與字色都要隨世代，一個共用的
+// foreground token 配不了三個色相。token 存在與對比度由 globals.test.ts 驗；元件有沒有
+// 用對（-1/-2/-3 對應世代 1/2/3）只能在這裡驗。
+describe('詳情面板的世代徽章（底與字色都隨世代）', () => {
+  const CASES = [
+    [1, '一代'],
+    [2, '二代'],
+    [3, '三代'],
+  ] as const;
+
+  for (const [gen, label] of CASES) {
+    it(`${label}徽章用 badge-${gen} 的底與 badge-foreground-${gen} 的字`, () => {
+      renderTree(makeOverview({ roots: [makeNode({ name: '王大明', generation: gen })] }));
+      fireEvent.click(screen.getByRole('treeitem', { name: '王大明 詳情' }));
+
+      const badge = screen.getByText(label);
+      expect(badge.className).toContain(`bg-[var(--tree-gen-badge-${gen})]`);
+      expect(badge.className).toContain(`text-[var(--tree-gen-badge-foreground-${gen})]`);
+    });
+  }
 });
 
 // 切排序時：晶片文字立刻變、已展開分支立刻收合，但清單原地維持舊順序直到
