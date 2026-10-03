@@ -20,6 +20,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 - 每 2 個 session 是一個**驗收站**（見 §4），業主上 develop 環境實看。
 - **S2b（2026-10-03 追加）**：驗收站 1 之後業主裁決加強調色與語義色升亮（plan.md §0 第 6 列、§3 D4）。插在 S2 之後、S3 之前（追加時 S3 尚未開工）；它只動 token 與幾個原語，不碰 S3 的檔案。
 - **S2c（2026-10-03 追加）**：推薦樹狀態視覺化（plan.md §0 第 7 列、§3 D5、§4 第 8 點），排在 S2b 之後（依賴 D4 的亮底黑字 token），S3 之前或之後皆可——只動 `ReferralTreeView` 與其測試，與 S3 的後台檔案不重疊。
+- **S2d（2026-10-03 追加）**：會員中心狀態總覽（plan.md §0 第 8 列、§3 F4），排在 S2c 之後（需要 S2c 加進 overview 的 `statusCounts`）；只動會員中心與推薦統計兩個前端檔，不碰 S3。
 
 ## 2. Session 分工表
 
@@ -34,11 +35,12 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S2 | 全站色彩收斂 | D3 | `fix/color-token-sweep` | 輕量 Plan Mode（機械替換，守門腳本兜底） | Sonnet | 中 |
 | S2b | 強調色與語義色升亮 | D4 | `fix/brand-accent` | 輕量 Plan Mode（token 值已由業主定案，session 只做落地與消費點替換） | Sonnet | 輕 |
 | S2c | 推薦樹狀態視覺化 | D5 | `fix/referral-tree-status` | 輕量 Plan Mode（設計已由業主定案，session 做落地） | Sonnet | 輕 |
+| S2d | 會員中心狀態總覽 | F4 | `fix/dashboard-status-overview` | 輕量 Plan Mode（設計已由業主定案） | Sonnet | 中 |
 | S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
 | S6 | 前台門面 | F1 | `fix/frontend-p1-polish` | 輕量 Plan Mode | Sonnet | 輕 |
-| S7 | 會員區收尾 | F2+F3 | `fix/frontend-member-polish` | 輕量 Plan Mode | Sonnet | 中 |
+| S7 | 會員區資訊層次 | F2+F3 | `fix/frontend-member-hierarchy` | 輕量 Plan Mode（照 §13 三條通則與 F4 的樣板） | Sonnet | 中 |
 | S8 | 制度化收尾 | G1+G2 | `claude/uiux-program-closeout` | 輕量（改文件與 skill 模板、刪鷹架） | Sonnet | 輕 |
 
 ※ **S1 重量異動（2026-09-14）**：兩輪四視角審查回填後範圍變大（C3 原始色值
@@ -168,6 +170,47 @@ scripts/check-color-usage.py 守門腳本接進 framework-check 軌
    「世代灰與已失效灰互撞」遺留事項因頭像不再表示世代而關閉）。
 ```
 
+**S2d**（Sonnet；S2c 合併後才開）：
+```
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+執行 S2d（工項 F4）：在 fix/dashboard-status-overview 分支上把會員中心從導覽
+選單改成狀態總覽（plan.md §0 第 8 列、§3 F4）。用 Plan Mode 先列出版面與資料
+對應給我看過再動工；守門腳本、既有元件測試、e2e overflow sweep 必須全綠。
+
+一、MemberDashboard.tsx 版面（由上到下）：
+   1) 「需要注意」區：有事才渲染，用 StatusCallout variant="warning"（titleAs 依
+      頁面標題層級）列出每條一個動作連結（brand）：即將到期的下線 N 位 → /referrals
+      （帶狀態過濾）、待查收提領 N 筆 → /rewards、刊登審核退件 → /service-providers。
+      資料：overview.attention（既有）、useRewardData 的提領狀態、useUserListing。
+   2) 四張狀態卡，每張一個主數字或主狀態，整張可點（Link 包卡，鍵盤可達、
+      aria-label 完整），右側 chevron，不再放重複標題的按鈕：
+      刊登：刊登名稱＋狀態徽章（上架中 success-subtle／審核中 warning-subtle／
+            已隱藏 secondary）＋「會籍至 yyyy/mm/dd」；沒有刊登時才出現唯一的
+            黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
+      推薦網絡：下線總數主數字＋ statusCounts 的四顆 chip（與 S2c 樹同一組樣式）。
+      本月任務：進行中任務的 x / y 主數字＋ brand 進度條；全部達標時顯示
+            success-subtle「本月已達標」。
+      可提領點數：主數字（P）＋待查收 N 筆 warning-subtle 徽章；有可提領額度時
+            顯示黑色主按鈕「申請提領」（整頁只有這一顆主按鈕）。
+   3) SubscriptionStatusCard 與 MyQrEntry 維持，位置依 Plan Mode 提案。
+二、ReferralManagement 的 ReferralStats：四個等大數字改成「一個主數字（下線總數）
+   ＋ statusCounts chip（點了過濾樹，與 S2c 同一套狀態）＋ 一行小字『一代 7 ·
+   二代 4 · 三代 1』」。
+三、數字一律 --foreground 黑（§12.5），語義由徽章承擔；brand 只用在連結、進度
+   填色、選中態；主按鈕黑且整頁至多一顆。載入中用 Skeleton 占位（不閃「0」），
+   讀取失敗該卡顯示中性錯誤態，不整頁報錯。
+四、ui-ux-guidelines.md 新增「§13 資訊層次」三條通則（規則只寫一份，S7 照此）：
+   (1) 每頁一個主數字或主狀態，字級明顯大於其他，其餘數字降級；
+   (2) 卡片不得零資訊——至少回答「現在什麼狀態」；純導覽入口交給導覽列不做成卡片；
+       整張卡可點時不另放重複標題的按鈕；只有「現在就能做的事」才出現按鈕，
+       主行動黑、次行動 brand；
+   (3) 需要注意的事集中放最上面，warning 淺底框，每條帶一個可點的動作。
+   §3 導覽段補一句：會員中心是儀表板不是選單，任務／推薦／獎勵的入口在 BottomNav。
+五、測試：MemberDashboard 補四張卡的狀態渲染（三態）、需要注意區有事才出現、
+   主按鈕至多一顆；ReferralStats 測試更新；375px overflow sweep。
+   收尾更新 progress.md（S2d 列、異動記錄）。
+```
+
 **S3**：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
@@ -225,9 +268,14 @@ Plan Mode 過目後動工。
 **S7**：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
-執行 S7（工項 F2+F3）：會員區（刊登管理、推薦/任務/獎勵）視覺對齊，
-全站三態完備性巡檢＋補缺，overflow sweep 過一輪。
-Plan Mode 過目後動工。
+執行 S7（工項 F2+F3）：在 fix/frontend-member-hierarchy 分支上，照
+ui-ux-guidelines §13 的三條通則與 S2d 做好的會員中心樣板，重做任務中心、
+獎勵回饋、刊登管理三頁的資訊層次：每頁一個主數字或主狀態（獎勵＝可提領
+點數、任務＝進行中任務進度、刊登＝刊登狀態），其餘降級；達標／已完成的
+卡收起、進行中排前面；主行動一顆黑、次行動 brand；會籍失效狀態的呈現
+（續約 banner、功能導向提示、獎勵頁例外可讀）是一級對象。接著 F3：全站
+三態完備性巡檢＋補缺、既有 text-destructive 裸字若仍有殘留一併收掉、
+overflow sweep 過一輪。Plan Mode 先列每頁的主數字與降級清單給我看過再動工。
 ```
 
 **S8**：
@@ -269,9 +317,10 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收 1 | S2 合併 | develop 環境全站走一圈：色彩是否收斂、觀感是否一致、有無改壞的地方；**含**深色模式下推薦樹的世代頭像灰是否與「已失效」狀態點的灰混淆（S1 design-language-foundation 二審 R2-UIUX-1 的裁決——世代色去色走灰階三階，業主可在此站推翻） |
 | 驗收 1b | S2b 合併 | 快速走一輪（不必全站）：連結／選中分頁／進度條／輸入框焦點是否出現靛藍且只出現在這些地方；成功／警示／危險的實心徽章與危險按鈕是否為亮底黑字且讀得清楚；devtools `.dark` 看一次同樣幾處 |
 | 驗收 1c | S2c 合併 | 推薦網絡頁：不看圖例能否一眼分出誰訂閱中、誰快到期、誰已失效；點狀態 chip 過濾是否符合直覺；375px 下列右側文字不換行；devtools `.dark` 看一次頭像四色與淡黃列 |
+| 驗收 1d | S2d 合併 | 會員中心：不滑動就看得到「需要注意」與四個主數字；每張卡一眼知道狀態；整頁只有一顆黑色主按鈕；推薦管理統計一眼看出訂閱中／快到期各幾位；375px 與 devtools `.dark` 各看一次 |
 | 驗收 2 | S4 合併 | 後台：四 Tab 單列（375px 實機確認標籤不溢字不換行）、工具列、會員詳情分區——手機與桌機各實際操作一次（後台兩者並重） |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感（切回不再等 loading） |
-| 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主 |
+| 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主；任務／獎勵／刊登三頁各自的主數字是否一眼就看到、達標的卡有沒有收起、會籍失效狀態的 banner 與提示是否正確 |
 
 驗收不過 → 開 `fix/*` session 修正，修完該站重驗，才進下一個 session。
 

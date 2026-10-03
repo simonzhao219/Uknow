@@ -13,11 +13,12 @@
 | S2 | 全站色彩收斂 | D3 | ✅ 已合併，驗收站 1 通過（2026-09-18） | [#325](https://github.com/simonzhao219/Uknow/pull/325) | 53 個 baseline 檔案（含開工時漏列的 `TaskDashboard.tsx`，收尾核對時補上）全數收斂到 0，僅留 4 個已核准例外（品牌 icon 色、QR 功能色；canvas 專用檔已收進 `EXCLUDED_PATHS`）；Badge 新增 5 個 variant、新增 `StatusCallout` 元件（含 `action`/`titleAs` slot）；四視角 `/review-implementation` 跑完，P1 全數修掉（見下方異動記錄）；`npm run check`／`framework-check.sh`／`npm run build` 全綠。驗收站 1 業主於 develop 環境實測通過（含公告橫幅依嚴重度對應三態色的確認），可進 S3 |
 | S2b | 強調色與語義色升亮 | D4 | 🔄 PR 待合併 | [#331](https://github.com/simonzhao219/Uknow/pull/331) | 業主裁決配色 A（2026-10-03）；驗收站 1b。`--brand` 五 token＋`--ring`＋語義色實心層亮底黑字落地；連帶收斂 13 檔約 21 行裸 `text-destructive`（遺留事項第 1 條結案）；連結範圍含 4 處手刻連結（`Button variant="link"` 全站僅 1 處使用）。驗收站 1b 待業主，請目視：後台操作錯誤框改走 `StatusCallout` 後略有視覺差異（標題字重、無 icon）。業主裁決（PR 留言）已補：進度填色一律 brand、焦點環全不透明、段落內連結一律底線。預建待消費：`Button variant="brand"`、`--brand-subtle`、`--brand-subtle-foreground` 目前零消費者（S2c 的選中列與「新」tag、次要行動鈕會用），S2c／S3 若沒用到應移除 |
 | S2c | 推薦樹狀態視覺化 | D5 | ⬜ 未開工 | — | 業主裁決（2026-10-03）；S2b 合併後才開；驗收站 1c |
+| S2d | 會員中心狀態總覽 | F4 | ⬜ 未開工 | — | 業主裁決（2026-10-03）；S2c 合併後才開；驗收站 1d |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
 | S5 | admin 資料快取 | A4 | ⬜ 未開工 | — | 驗收站 3 |
 | S6 | 前台門面 | F1 | ⬜ 未開工 | — | |
-| S7 | 會員區收尾 | F2+F3 | ⬜ 未開工 | — | 驗收站 4 |
+| S7 | 會員區資訊層次 | F2+F3 | ⬜ 未開工 | — | 驗收站 4；F2 已由「視覺對齊」改寫為「資訊層次重設計」（2026-10-03） |
 | S8 | 制度化收尾 | G1+G2 | ⬜ 未開工 | — | 完工後刪除本目錄 |
 
 ## 計畫異動記錄
@@ -40,6 +41,7 @@
 | 2026-10-03 | 追加工項 D5／session S2c「推薦樹狀態視覺化」：頭像底色由世代改綁訂閱狀態、世代只留縮排與連接線、狀態計數 chip 兼圖例與過濾、即將到期列整列淡黃；`--tree-gen-*` 八個 token 退場 | 業主要求推薦樹「用顏色一目了然」。三代獎勵同額（§8.1），世代不影響收入而狀態直接等於收入，現況卻把最大面積的顏色給了世代、狀態只剩 11px 小點。與 §12.5 (c)／§12.7 相容、不新增色相；對照頁：https://claude.ai/artifact/CP9ay4KMZ6v7rND5r4NKPP |
 | 2026-10-03 | S2b 業主裁決三項（PR #331 留言）：(1) `getProgressBarStyle` 移除、任務頁進度填色一律 `bg-brand`（亮底 success/warning 對淺軌道 1.3／1.8:1，狀態由 `x / y` 數字承擔）；(2) 8 個原語 `ring-ring/50` → `ring-ring`（brand/50 對白底 2.3:1）；(3) 段落內連結一律底線，`Button variant="link"` 常駐底線、`LegalMarkdown` 內文連結補底線（獨立成行的忘記密碼連結不加）。規則寫進 §12.3／§12.5 | 深色 brand 對內文僅 2.86:1 不足 1.4.1，不能只靠顏色 |
 | 2026-10-03 | S2b 落地時兩項擴範圍（業主於 Plan Mode 逐題核准）：(1) `--destructive` 改亮紅後，裸 `text-destructive` 淺色對比 5.25→2.77:1，S2b 一併把 13 檔約 21 行收斂到 `*-subtle-foreground`／`*-border`（原排 S7）；(2) 連結改 brand 的範圍加 4 處手刻連結。另：`*-border` token 不能再重用 A 色（新 A 色對 subtle 底僅 1.6–2.5:1）；`ui-ux-guidelines.md` §12.3 標題、§12.5 三條與 §11 一處與新規範矛盾，同 PR 修正。實作期偏離一項：12.8 色盲實測發現深色選中分頁的 `dark:bg-input/30` 與軌道同色，文字改 brand 後選中態在 achromatopsia 下分不出（§12.7），故刪掉該覆寫、深色 pill 沿用 `bg-card`（brand 字對它 6.01:1）。童子軍：只還行為中性的 8 條 biome warning，`useExhaustiveDependencies` ×10、`noExplicitAny` ×8、`useSemanticElements` ×1 未動 | 純色彩 PR 不夾帶 effect 依賴與型別重構；其餘依實算對比度（與測試同公式）而非估值 |
+| 2026-10-03 | 追加工項 F4／session S2d「會員中心狀態總覽」（需要注意區＋四張狀態卡、ReferralStats 改主數字＋狀態分解、`ui-ux-guidelines.md` 新增 §13 資訊層次三條通則）；S7 的 F2 由「會員區視覺對齊」改寫為「會員區資訊層次重設計」，分支改 `fix/frontend-member-hierarchy`，驗收 4 補主數字檢查 | 業主看了會員中心與推薦樹截圖，覺得「一片黑白、看不到重點」。根因不是色票：四張卡零資訊、與底部導覽重複，顏色沒有地方附著；資料（useUserListing／useReferralData／useTaskData／useRewardData）都在，只是沒拿出來放。S2b/S2c 解「有重點但看不見」，S2d/S7 解「根本沒有重點」。對照頁：https://claude.ai/artifact/4ckevNaHQv3JF217sjZive |
 
 ## 遺留事項
 
