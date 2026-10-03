@@ -142,7 +142,7 @@ describe('MaintenanceBanner', () => {
 
   it('未知 type 降級成 info 呈現，不讓沒對到的嚴重度炸掉整頁', async () => {
     const banner = await renderBanner({ announcement: { type: 'critical' } });
-    expect(banner.className).toContain('bg-blue-50');
+    expect(banner.className).toContain('bg-muted');
   });
 
   it('關閉後橫幅消失，並記入 sessionStorage 讓同一則不再出現', async () => {

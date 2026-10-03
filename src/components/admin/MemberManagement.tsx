@@ -49,9 +49,15 @@ export interface MemberManagementProps {
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
 
-const ACCOUNT_STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  active: { label: '有效會員', className: 'bg-green-100 text-green-800 border-green-300' },
-  expired: { label: '已失效', className: 'bg-gray-100 text-gray-800 border-gray-300' },
+// S2 色彩收斂（D3）：狀態走 Badge variant，不再手刻 className。
+// active 是「這人現在能用」的正向狀態 → success-subtle；expired 是中性的
+// 過期事實，不是警示，走 secondary（灰階已合規）。
+const ACCOUNT_STATUS_BADGE: Record<
+  string,
+  { label: string; variant: 'success-subtle' | 'secondary' }
+> = {
+  active: { label: '有效會員', variant: 'success-subtle' },
+  expired: { label: '已失效', variant: 'secondary' },
 };
 
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
@@ -415,15 +421,15 @@ export function MemberManagement({
             <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
               <div className="flex items-baseline gap-1">
                 <dt className="text-xs text-muted-foreground">總會員</dt>
-                <dd className="font-bold text-blue-600">{stats.total}</dd>
+                <dd className="font-bold text-foreground">{stats.total}</dd>
               </div>
               <div className="flex items-baseline gap-1">
                 <dt className="text-xs text-muted-foreground">暫停</dt>
-                <dd className="font-bold text-red-600">{stats.suspended}</dd>
+                <dd className="font-bold text-foreground">{stats.suspended}</dd>
               </div>
               <div className="flex items-baseline gap-1">
                 <dt className="text-xs text-muted-foreground">管理員</dt>
-                <dd className="font-bold text-green-600">{stats.admins}</dd>
+                <dd className="font-bold text-foreground">{stats.admins}</dd>
               </div>
             </dl>
           ) : (
@@ -431,24 +437,24 @@ export function MemberManagement({
               <Card>
                 <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
                   <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <Users className="h-3.5 w-3.5 shrink-0 text-blue-600 sm:h-5 sm:w-5" />
+                    <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
                     <span className="truncate">總會員數</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-blue-600">{stats.total}</div>
+                  <div className="text-lg font-bold sm:text-3xl text-foreground">{stats.total}</div>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
                   <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <UserX className="h-3.5 w-3.5 shrink-0 text-red-600 sm:h-5 sm:w-5" />
+                    <UserX className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
                     <span className="truncate">暫停會員</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-red-600">
+                  <div className="text-lg font-bold sm:text-3xl text-foreground">
                     {stats.suspended}
                   </div>
                 </CardContent>
@@ -457,12 +463,14 @@ export function MemberManagement({
               <Card>
                 <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
                   <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <Shield className="h-3.5 w-3.5 shrink-0 text-green-600 sm:h-5 sm:w-5" />
+                    <Shield className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
                     <span className="truncate">管理員</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-green-600">{stats.admins}</div>
+                  <div className="text-lg font-bold sm:text-3xl text-foreground">
+                    {stats.admins}
+                  </div>
                 </CardContent>
               </Card>
             </StatCardGrid>
@@ -559,9 +567,7 @@ export function MemberManagement({
                         <TableCell className="text-sm">{member.email}</TableCell>
                         <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={`${acct.className} border`}>
-                            {acct.label}
-                          </Badge>
+                          <Badge variant={acct.variant}>{acct.label}</Badge>
                         </TableCell>
                         <TableCell>{member.listingCount}</TableCell>
                         <TableCell>

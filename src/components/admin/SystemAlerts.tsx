@@ -20,7 +20,7 @@ function getSeverityBadge(severity: SystemAlert['severity']) {
     case 'error':
       return <Badge variant="destructive">error</Badge>;
     case 'warning':
-      return <Badge className="bg-orange-500">warning</Badge>;
+      return <Badge variant="warning">warning</Badge>;
     default:
       return <Badge variant="outline">info</Badge>;
   }

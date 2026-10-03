@@ -24,9 +24,9 @@ interface VerifyError {
 }
 
 const TONE_CLASS: Record<StatusTone, string> = {
-  good: 'border-green-500 bg-green-50 text-green-800',
-  warn: 'border-yellow-500 bg-yellow-50 text-yellow-800',
-  bad: 'border-red-500 bg-red-50 text-red-800',
+  good: 'border-success-border bg-success-subtle text-success-subtle-foreground',
+  warn: 'border-warning-border bg-warning-subtle text-warning-subtle-foreground',
+  bad: 'border-destructive-border bg-destructive-subtle text-destructive-subtle-foreground',
   neutral: 'border-muted bg-muted text-foreground',
 };
 
@@ -199,7 +199,7 @@ export function MemberVerifyScanner() {
           驗證中…
         </div>
       ) : error ? (
-        <div className="flex items-center gap-3 rounded-lg border-2 border-orange-500 bg-orange-50 p-4 text-orange-900">
+        <div className="flex items-center gap-3 rounded-lg border-2 border-warning-border bg-warning-subtle p-4 text-warning-subtle-foreground">
           <AlertTriangle className="h-6 w-6 shrink-0" aria-hidden />
           <div className="min-w-0">
             <p className="font-semibold">{error.title}</p>

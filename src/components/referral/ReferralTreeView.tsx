@@ -21,6 +21,7 @@ import {
 } from '../ui/dropdown-menu';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
+import { StatusCallout } from '../ui/status-callout';
 import { cn } from '../ui/utils';
 import { formatTwDate } from '../../utils/twDate';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -48,46 +49,50 @@ import {
 
 const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
 const GEN_BADGE: Record<number, string> = {
-  1: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
-  2: 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300',
-  3: 'bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
+  1: 'bg-[var(--tree-gen-badge-1)] text-[var(--tree-gen-badge-foreground)]',
+  2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground)]',
+  3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground)]',
 };
-// 分支連接線依「子代」低飽和上色（世代線索綁在結構上）
+// 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
+// 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
+// ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的深階，
+// 對比達 7.5:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在結構上；
+// 深淺模式已內含在 token 裡，不必另寫 dark:）。
 const GEN_LINE: Record<number, string> = {
-  2: 'border-purple-300 dark:border-purple-900',
-  3: 'border-orange-300 dark:border-orange-900',
+  2: 'border-[var(--tree-gen-avatar-2)]',
+  3: 'border-[var(--tree-gen-avatar-3)]',
 };
 
 const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: string }> = {
   active: {
-    dot: 'bg-green-500',
+    dot: 'bg-success',
     label: '訂閱中',
-    badge: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300',
+    badge: 'bg-success-subtle text-success-subtle-foreground',
   },
   expiring: {
-    dot: 'bg-amber-500',
+    dot: 'bg-warning',
     label: '即將到期',
-    badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+    badge: 'bg-warning-subtle text-warning-subtle-foreground',
   },
-  expired: { dot: 'bg-gray-400', label: '已失效', badge: 'bg-muted text-muted-foreground' },
+  expired: { dot: 'bg-muted-foreground', label: '已失效', badge: 'bg-muted text-muted-foreground' },
   suspended: {
-    dot: 'bg-red-500',
+    dot: 'bg-destructive',
     label: '已停權',
-    badge: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+    badge: 'bg-destructive-subtle text-destructive-subtle-foreground',
   },
 };
 
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色系）：一代綠、二代紫、三代橘。
+// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色階，由深到淺對應一／二／三代）。
 // 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
 const GEN_AVATAR: Record<number, string> = {
-  1: '#16a34a',
-  2: '#7c3aed',
-  3: '#ea580c',
+  1: 'var(--tree-gen-avatar-1)',
+  2: 'var(--tree-gen-avatar-2)',
+  3: 'var(--tree-gen-avatar-3)',
 };
-const GEN_AVATAR_FALLBACK = '#64748b'; // 世代超出 1–3 時的中性色
+const GEN_AVATAR_FALLBACK = 'var(--muted-foreground)'; // 世代超出 1–3 時的中性色
 function avatarColor(generation: number): string {
   return GEN_AVATAR[generation] ?? GEN_AVATAR_FALLBACK;
 }
@@ -111,7 +116,7 @@ function Avatar({ node, size = 36 }: { node: NetworkNode; size?: number }) {
   return (
     <span className="relative shrink-0" style={{ width: size, height: size }}>
       <span
-        className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
+        className="grid h-full w-full place-items-center rounded-full font-semibold text-[var(--tree-gen-avatar-foreground)]"
         style={{ backgroundColor: avatarColor(node.generation), fontSize: size * 0.38 }}
       >
         {initial(node.name)}
@@ -131,7 +136,7 @@ function RowAside({ node }: { node: NetworkNode }) {
     const d = nodeDaysLeft(node);
     if (d != null) {
       return (
-        <span className="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
+        <span className="shrink-0 text-xs font-semibold text-warning-subtle-foreground">
           剩 {d} 天到期
         </span>
       );
@@ -264,29 +269,28 @@ function AttentionBanner({
   const overflow = attention.total - attention.items.length;
 
   return (
-    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
-        <AlertTriangle className="h-4 w-4" />
-        {attention.total} 位下線需要關注
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {attention.items.map((n) => (
-          <button
-            key={n.userId}
-            type="button"
-            onClick={() => onSelect(n)}
-            className="flex items-center gap-2 rounded-full border border-amber-300 bg-card px-2.5 py-1 text-xs transition-colors hover:bg-muted dark:border-amber-800"
-          >
-            <span className={cn('h-2 w-2 rounded-full', STATUS[n.status].dot)} aria-hidden />
-            <span className="font-medium">{n.name}</span>
-            <span className="text-muted-foreground">· {reason(n)}</span>
-          </button>
-        ))}
-        {overflow > 0 && (
-          <span className="text-xs text-amber-800 dark:text-amber-300">還有 {overflow} 位</span>
-        )}
-      </div>
-    </div>
+    <StatusCallout
+      variant="warning"
+      icon={AlertTriangle}
+      title={`${attention.total} 位下線需要關注`}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          {attention.items.map((n) => (
+            <button
+              key={n.userId}
+              type="button"
+              onClick={() => onSelect(n)}
+              className="flex items-center gap-2 rounded-full border border-warning-border bg-card px-2.5 py-1 text-xs transition-colors hover:bg-muted"
+            >
+              <span className={cn('h-2 w-2 rounded-full', STATUS[n.status].dot)} aria-hidden />
+              <span className="font-medium">{n.name}</span>
+              <span className="text-muted-foreground">· {reason(n)}</span>
+            </button>
+          ))}
+          {overflow > 0 && <span className="text-xs">還有 {overflow} 位</span>}
+        </div>
+      }
+    />
   );
 }
 
@@ -328,7 +332,7 @@ function NodeDetail({ node }: { node: NetworkNode }) {
           <dd
             className={cn(
               'font-medium',
-              node.status === 'expiring' && 'text-amber-600 dark:text-amber-400',
+              node.status === 'expiring' && 'text-warning-subtle-foreground',
             )}
           >
             {node.endDate ? formatTwDate(node.endDate) : '—'}
@@ -547,7 +551,7 @@ export function ReferralTreeView({
               <span
                 data-testid="sort-active-dot"
                 aria-hidden
-                className="absolute right-0 top-0 h-2 w-2 rounded-full bg-amber-500 sm:hidden"
+                className="absolute right-0 top-0 h-2 w-2 rounded-full bg-muted-foreground sm:hidden"
               />
             )}
           </DropdownMenuTrigger>

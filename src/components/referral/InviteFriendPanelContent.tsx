@@ -131,7 +131,7 @@ export function InviteFriendPanelContent({
       {/* 推薦碼 + 複製鈕（icon-only：文字標籤在這裡是多餘的，碼就在左邊。
           icon-only 必須有可存取名稱，否則螢幕閱讀器只會念出「按鈕」）。 */}
       <div className="flex items-center justify-center gap-1">
-        <span className="font-mono text-lg tracking-wider text-purple-600">{code}</span>
+        <span className="font-mono text-lg tracking-wider text-primary">{code}</span>
         <Button
           variant="ghost"
           size="icon"

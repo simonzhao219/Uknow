@@ -54,34 +54,30 @@ export function getMotivationText(progress: number): string {
  * 獲取進度顏色
  *
  * @param progress - 進度百分比（0-100+）
- * @returns Tailwind 顏色類別
+ * @returns Tailwind 語義色 token 類別（達標=success，將達=warning，其餘去色為中性）
  */
 export function getProgressColor(progress: number): string {
-  if (progress >= 100) return 'text-green-600';
-  if (progress >= 70) return 'text-yellow-600';
-  if (progress >= 40) return 'text-blue-600';
-  return 'text-gray-600';
+  if (progress >= 100) return 'text-success-subtle-foreground';
+  if (progress >= 70) return 'text-warning-subtle-foreground';
+  if (progress >= 40) return 'text-muted-foreground';
+  return 'text-muted-foreground';
 }
 
 /**
  * 獲取進度條樣式
  *
  * @param progress - 進度百分比（0-100+）
- * @returns 進度條樣式類別
+ * @returns 進度條樣式類別（離散分段的語義色 token，不再用漸層）
  */
 export function getProgressBarStyle(progress: number): string {
   if (progress >= 100) {
-    // 超過100%：橙色高光
-    return 'bg-gradient-to-r from-orange-500 to-yellow-500';
+    return 'bg-success';
   }
   if (progress >= 70) {
-    // 70-99%：黃色漸變
-    return 'bg-gradient-to-r from-yellow-500 to-orange-400';
+    return 'bg-warning';
   }
   if (progress >= 40) {
-    // 40-69%：藍色漸變
-    return 'bg-gradient-to-r from-blue-500 to-purple-500';
+    return 'bg-muted-foreground';
   }
-  // 0-39%：灰色漸變
-  return 'bg-gradient-to-r from-gray-400 to-gray-500';
+  return 'bg-muted-foreground';
 }

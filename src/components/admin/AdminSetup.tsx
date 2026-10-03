@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { StatusCallout } from '../ui/status-callout';
 import { Shield, CheckCircle, AlertCircle, Loader, UserCog } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
@@ -111,7 +112,7 @@ export function AdminSetup() {
       <Card>
         <CardContent className="py-12">
           <div className="flex flex-col items-center gap-4">
-            <AlertCircle className="h-8 w-8 text-red-600" />
+            <AlertCircle className="h-8 w-8 text-destructive-subtle-foreground" />
             <p className="text-sm text-muted-foreground">無法檢查管理員狀態</p>
             <Button onClick={checkAdminStatus} variant="outline">
               重試
@@ -137,7 +138,7 @@ export function AdminSetup() {
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 用戶信息 */}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+          <div className="bg-muted rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">當前用戶</span>
               <Badge variant={adminStatus.isAdmin ? 'default' : 'secondary'}>
@@ -170,33 +171,25 @@ export function AdminSetup() {
 
           {/* 已是管理員 */}
           {adminStatus.isAdmin && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex gap-3">
-                <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-medium text-green-900 mb-1">您已是管理員</h3>
-                  <p className="text-sm text-green-800">
-                    您擁有完整的平台管理權限，可以使用所有管理功能。
-                  </p>
-                </div>
-              </div>
-            </div>
+            <StatusCallout
+              variant="success"
+              icon={CheckCircle}
+              title="您已是管理員"
+              titleAs="h3"
+              description="您擁有完整的平台管理權限，可以使用所有管理功能。"
+            />
           )}
 
           {/* 可以成為管理員 */}
           {!adminStatus.isAdmin && adminStatus.canBecomeAdmin && (
             <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex gap-3">
-                  <UserCog className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-blue-900 mb-1">系統尚未有管理員</h3>
-                    <p className="text-sm text-blue-800">
-                      您可以將自己設為平台管理員，獲得完整的管理權限。
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <StatusCallout
+                variant="neutral"
+                icon={UserCog}
+                title="系統尚未有管理員"
+                titleAs="h3"
+                description="您可以將自己設為平台管理員，獲得完整的管理權限。"
+              />
 
               <div className="flex justify-center">
                 <Button
@@ -223,17 +216,13 @@ export function AdminSetup() {
 
           {/* 已有其他管理員 */}
           {!adminStatus.isAdmin && !adminStatus.canBecomeAdmin && adminStatus.hasExistingAdmin && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex gap-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-medium text-yellow-900 mb-1">需要管理員授權</h3>
-                  <p className="text-sm text-yellow-800">
-                    系統已有管理員，您需要聯繫現有管理員為您設置權限。
-                  </p>
-                </div>
-              </div>
-            </div>
+            <StatusCallout
+              variant="warning"
+              icon={AlertCircle}
+              title="需要管理員授權"
+              titleAs="h3"
+              description="系統已有管理員，您需要聯繫現有管理員為您設置權限。"
+            />
           )}
         </CardContent>
       </Card>

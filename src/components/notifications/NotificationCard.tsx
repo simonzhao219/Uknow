@@ -22,39 +22,39 @@ interface NotificationCardProps extends NotificationConfig {
 const notificationStyles = {
   success: {
     icon: CheckCircle,
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-500',
-    titleColor: 'text-green-900',
-    textColor: 'text-green-800',
-    iconColor: 'text-green-500',
-    buttonBg: 'bg-green-500 hover:bg-green-600',
+    bgColor: 'bg-success-subtle',
+    borderColor: 'border-success-border',
+    titleColor: 'text-success-subtle-foreground',
+    textColor: 'text-success-subtle-foreground',
+    iconColor: 'text-success-subtle-foreground',
+    buttonBg: 'bg-success hover:bg-success/90 text-success-foreground',
   },
   error: {
     icon: XCircle,
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-500',
-    titleColor: 'text-red-900',
-    textColor: 'text-red-800',
-    iconColor: 'text-red-500',
-    buttonBg: 'bg-red-500 hover:bg-red-600',
+    bgColor: 'bg-destructive-subtle',
+    borderColor: 'border-destructive-border',
+    titleColor: 'text-destructive-subtle-foreground',
+    textColor: 'text-destructive-subtle-foreground',
+    iconColor: 'text-destructive-subtle-foreground',
+    buttonBg: 'bg-destructive hover:bg-destructive/90 text-destructive-foreground',
   },
   warning: {
     icon: AlertTriangle,
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-500',
-    titleColor: 'text-orange-900',
-    textColor: 'text-orange-800',
-    iconColor: 'text-orange-500',
-    buttonBg: 'bg-orange-500 hover:bg-orange-600',
+    bgColor: 'bg-warning-subtle',
+    borderColor: 'border-warning-border',
+    titleColor: 'text-warning-subtle-foreground',
+    textColor: 'text-warning-subtle-foreground',
+    iconColor: 'text-warning-subtle-foreground',
+    buttonBg: 'bg-warning hover:bg-warning/90 text-warning-foreground',
   },
   info: {
     icon: Info,
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-500',
-    titleColor: 'text-blue-900',
-    textColor: 'text-blue-800',
-    iconColor: 'text-blue-500',
-    buttonBg: 'bg-blue-500 hover:bg-blue-600',
+    bgColor: 'bg-muted',
+    borderColor: 'border-border',
+    titleColor: 'text-foreground',
+    textColor: 'text-foreground',
+    iconColor: 'text-muted-foreground',
+    buttonBg: 'bg-primary hover:bg-primary/90 text-primary-foreground',
   },
 };
 
@@ -174,7 +174,7 @@ export function NotificationCard({
               <button
                 type="button"
                 onClick={handleCancel}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors duration-200 pointer-coarse:min-h-[44px]"
+                className="bg-muted hover:bg-muted/80 text-foreground px-6 py-2 rounded-lg transition-colors duration-200 pointer-coarse:min-h-[44px]"
               >
                 {cancelText}
               </button>
@@ -184,7 +184,7 @@ export function NotificationCard({
               onClick={handleConfirm}
               className={`
                 ${style.buttonBg}
-                text-white px-6 py-2 rounded-lg
+                px-6 py-2 rounded-lg
                 transition-colors duration-200 pointer-coarse:min-h-[44px]
               `}
             >

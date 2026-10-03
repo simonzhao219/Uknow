@@ -96,11 +96,11 @@ export function IdNumberInput({
   const getStatusIcon = () => {
     switch (status) {
       case 'verifying':
-        return <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />;
+        return <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />;
       case 'success':
-        return <CheckCircle className="h-5 w-5 text-green-600" />;
+        return <CheckCircle className="h-5 w-5 text-success-subtle-foreground" />;
       case 'error':
-        return <XCircle className="h-5 w-5 text-red-600" />;
+        return <XCircle className="h-5 w-5 text-destructive-subtle-foreground" />;
       default:
         return null;
     }
@@ -110,9 +110,9 @@ export function IdNumberInput({
   const getBorderClass = () => {
     switch (status) {
       case 'success':
-        return 'border-green-500 focus-visible:ring-green-500';
+        return 'border-success-border focus-visible:ring-success-border';
       case 'error':
-        return 'border-red-500 focus-visible:ring-red-500';
+        return 'border-destructive-border focus-visible:ring-destructive-border';
       default:
         return '';
     }
@@ -142,10 +142,14 @@ export function IdNumberInput({
       </div>
 
       {/* 錯誤提示 */}
-      {status === 'error' && errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {status === 'error' && errorMessage && (
+        <p className="text-sm text-destructive-subtle-foreground">{errorMessage}</p>
+      )}
 
       {/* 成功提示 */}
-      {status === 'success' && <p className="text-sm text-green-600">✓ 身分證驗證成功</p>}
+      {status === 'success' && (
+        <p className="text-sm text-success-subtle-foreground">✓ 身分證驗證成功</p>
+      )}
 
       {/* 格式說明 */}
       {status === 'idle' && (
@@ -155,7 +159,7 @@ export function IdNumberInput({
       )}
 
       {/* 驗證中提示 */}
-      {status === 'verifying' && <p className="text-sm text-blue-600">驗證中...</p>}
+      {status === 'verifying' && <p className="text-sm text-muted-foreground">驗證中...</p>}
     </div>
   );
 }

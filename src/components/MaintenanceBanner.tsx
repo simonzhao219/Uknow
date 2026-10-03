@@ -12,22 +12,27 @@ import type { Announcement } from '@contract';
  * Info 等於把最強的注意力線索接到常數上。srLabel 則補上「顏色與圖示都
  * 拿不到」的讀屏使用者——嚴重度不能只由顏色承載。
  */
+// S2 色彩收斂（D3）：三態改走 globals.css 的語義色 token。info 依規則屬
+// 「資訊/進行中」語境，去藍改中性（bg-muted/border-border/text-foreground），
+// 不新增 primary-subtle token。這裡沒有直接套用 StatusCallout 元件本身——
+// 本橫幅有獨立的關閉按鈕與置中/行長版面規則（見 MaintenanceBanner.test.tsx），
+// 不是單純的 bg+border+icon+文字提示框，硬套會拆掉那套版面契約。
 const SEVERITY: Record<string, { bar: string; icon: string; Icon: LucideIcon; srLabel: string }> = {
   info: {
-    bar: 'bg-blue-50 border-blue-200 text-blue-800',
-    icon: 'text-blue-600',
+    bar: 'bg-muted border-border text-foreground',
+    icon: 'text-muted-foreground',
     Icon: Info,
     srLabel: '網站公告',
   },
   warning: {
-    bar: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    icon: 'text-yellow-600',
+    bar: 'bg-warning-subtle border-warning-border text-warning-subtle-foreground',
+    icon: 'text-warning-subtle-foreground',
     Icon: TriangleAlert,
     srLabel: '網站公告（注意）',
   },
   error: {
-    bar: 'bg-red-50 border-red-200 text-red-800',
-    icon: 'text-red-600',
+    bar: 'bg-destructive-subtle border-destructive-border text-destructive-subtle-foreground',
+    icon: 'text-destructive-subtle-foreground',
     Icon: CircleAlert,
     srLabel: '網站公告（重要）',
   },

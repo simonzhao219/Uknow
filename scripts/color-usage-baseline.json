@@ -1,0 +1,22 @@
+{
+  "src/components/ServiceProviderDetail.tsx": {
+    "c1": 3,
+    "c2": 0,
+    "c3": 0
+  },
+  "src/components/home/MobilePhotoWallCard.tsx": {
+    "c1": 0,
+    "c2": 1,
+    "c3": 0
+  },
+  "src/components/referral/InviteFriendPanelContent.tsx": {
+    "c1": 0,
+    "c2": 0,
+    "c3": 2
+  },
+  "src/components/referral/MemberVerifyQrTab.tsx": {
+    "c1": 0,
+    "c2": 0,
+    "c3": 2
+  }
+}

@@ -921,7 +921,6 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: Publi
             <GenderBadge
               gender={serviceProvider.gender}
               showLabel={false}
-              applyColor={false}
               variant="secondary"
               className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 shadow-sm"
             />

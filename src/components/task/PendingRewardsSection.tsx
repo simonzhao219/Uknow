@@ -42,14 +42,17 @@ export function PendingRewardsSection({
 
   return (
     <>
-      <Card className="border-2 border-yellow-300 bg-gradient-to-r from-yellow-50 to-orange-50 animate-pulse">
+      <Card className="border-2 border-warning-border bg-warning-subtle animate-pulse">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-yellow-600" />
+              <Sparkles className="h-6 w-6 text-warning-subtle-foreground" />
               <CardTitle className="text-xl">🎁 待領取任務獎勵</CardTitle>
             </div>
-            <Badge variant="default" className="bg-yellow-600 text-white text-base px-3 py-1">
+            <Badge
+              variant="default"
+              className="bg-warning text-warning-foreground text-base px-3 py-1"
+            >
               {pendingRewards.length} 個待領取
             </Badge>
           </div>
@@ -65,7 +68,7 @@ export function PendingRewardsSection({
               disabled={isBlocked}
               title={claimBlockedReason ?? undefined}
               onClick={() => setShowClaimAllDialog(true)}
-              className="mt-2 w-full sm:w-auto bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-2 w-full sm:w-auto bg-warning hover:bg-warning/90 text-warning-foreground gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Gift className="h-5 w-5" />
               一次領取全部（{pendingRewards.length} 張）
@@ -79,19 +82,19 @@ export function PendingRewardsSection({
           {pendingRewards.map((reward) => (
             <div
               key={reward.id}
-              className="p-4 bg-white border-2 border-yellow-200 rounded-lg shadow-sm hover:shadow-md transition-shadow"
+              className="p-4 bg-white border-2 border-warning-border rounded-lg shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-yellow-600 shrink-0" />
+                    <Trophy className="h-5 w-5 text-warning-subtle-foreground shrink-0" />
                     <p className="font-bold text-lg">{reward.description}</p>
                   </div>
                   <div className="flex items-center gap-4 text-sm flex-wrap">
                     <div className="flex items-center gap-1">
-                      <Gift className="h-4 w-4 text-yellow-600" />
+                      <Gift className="h-4 w-4 text-warning-subtle-foreground" />
                       <span className="text-muted-foreground">獎勵:</span>
-                      <span className="font-bold text-yellow-600 text-base">
+                      <span className="font-bold text-warning-subtle-foreground text-base">
                         {reward.rewardType === 'free_renewal_year'
                           ? '免費續約 1 年'
                           : `${reward.amount} P`}
@@ -113,7 +116,7 @@ export function PendingRewardsSection({
                     setSelectedReward(reward);
                     setShowClaimDialog(true);
                   }}
-                  className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white gap-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-warning hover:bg-warning/90 text-warning-foreground gap-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Gift className="h-5 w-5" />
                   {isBlocked ? '暫無法領取' : '立即領取'}

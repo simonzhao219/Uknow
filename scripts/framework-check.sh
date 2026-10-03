@@ -216,6 +216,23 @@ if [ -f scripts/check-ime-safe-inputs.py ]; then
   fi
 fi
 
+# 12a. 色彩守門（design-language-foundation S1，D1 token + D2 守門腳本）。
+#      上游診斷：--primary 等基底色方向本來就對，但沒人守門——沒有 token
+#      與守門腳本，S2 色彩收斂完必然再漂。C1 具名調色盤 class／C2 裝飾性
+#      漸層／C3 原始色值（hex 字面值＋Tailwind 任意值語法）三條規則各自
+#      獨立計數，棘輪 baseline 存在 scripts/color-usage-baseline.json。
+#      同樣先驗檢查器自己再驗 repo。
+if [ -f scripts/check-color-usage.py ]; then
+  if ! python3 scripts/check-color-usage.py --self-test; then
+    echo "FAIL: 色彩守門檢查器自身的表格案例未過（scripts/check-color-usage.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-color-usage.py; then
+    echo "FAIL: 色彩使用未過守門（scripts/check-color-usage.py）"
+    fail=1
+  fi
+fi
+
 # 13. Harness 感測器的讀取器。前十一項驗的都是「閘門有沒有壞」,這一項驗的是
 #     「量測閘門的那支東西有沒有壞」——感測器故障是靜默的(閘門壞了會擋住人,
 #     感測器壞了只是不再記錄),所以它比閘門更需要機器盯著。

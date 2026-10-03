@@ -37,7 +37,7 @@ interface ProgressBarProps {
  * 統一的進度條組件 ⭐
  *
  * 用於「連續推薦達人」和「推薦王」的進度顯示
- * 採用藍紫色漸變樣式，視覺統一
+ * 純中性灰階樣式（進度/度量類語境去色，不用品牌色或語義色強調）
  */
 export function ProgressBar({
   current,
@@ -51,19 +51,21 @@ export function ProgressBar({
   const percentage = Math.min(Math.round((current / target) * 100), 100);
 
   return (
-    <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg">
+    <div className="p-4 bg-muted border border-border rounded-lg">
       {/* 標題和數值 */}
       <div className="flex items-center justify-between mb-3">
         <span className="font-medium">{title}</span>
-        <span className="text-2xl font-bold text-blue-600">
+        <span className="text-2xl font-bold text-foreground">
           {current} / {target}
         </span>
       </div>
 
-      {/* 進度條 */}
-      <div className="h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
+      {/* 進度條：軌道與外層容器同用 --muted 會讓「未完成」的部分視覺上消失
+          （review 抓到的發現），軌道改用同一個填充色的低透明度版本——
+          track 與 fill 永遠有落差，且深淺模式下都成立，不必分別調兩組值 */}
+      <div className="h-3 bg-muted-foreground/20 rounded-full overflow-hidden mb-2">
         <div
-          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+          className="h-full bg-muted-foreground transition-all duration-500"
           style={{ width: `${percentage}%` }}
         ></div>
       </div>
@@ -71,8 +73,10 @@ export function ProgressBar({
       {/* 統計文字 */}
       {showStats && (
         <div className="flex items-center justify-between text-sm">
-          <span className="text-green-600">✓ 已完成: {current} 個月</span>
-          {missedCount > 0 && <span className="text-red-600">✗ 斷續: {missedCount} 個月</span>}
+          <span className="text-success-subtle-foreground">✓ 已完成: {current} 個月</span>
+          {missedCount > 0 && (
+            <span className="text-destructive-subtle-foreground">✗ 斷續: {missedCount} 個月</span>
+          )}
         </div>
       )}
 

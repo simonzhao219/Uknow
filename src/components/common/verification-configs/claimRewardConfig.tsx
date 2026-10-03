@@ -1,4 +1,5 @@
 import type { ThreeStepConfig } from '../ThreeStepDialog';
+import { StatusCallout } from '../../ui/status-callout';
 import { AlertTriangle, ArrowRight, CheckCircle } from 'lucide-react';
 import { formatTimestamp } from '../../../utils/referralFormatter';
 import { twDayOf, twDayPlusYears, formatTwDate } from '../../../utils/twDate';
@@ -53,30 +54,29 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
       description: '請仔細閱讀以下說明後再繼續',
       content: (
         <div className="space-y-4">
-          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+          <div className="p-4 bg-muted border border-border rounded-lg space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">🎁 獎勵內容</span>
-              <span className="font-bold text-yellow-600">免費續約 1 年 × {count}</span>
+              <span className="font-bold text-foreground">免費續約 1 年 × {count}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">📅 合計延展</span>
-              <span className="font-bold text-green-600">{count} 年</span>
+              <span className="font-bold text-foreground">{count} 年</span>
             </div>
           </div>
 
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium mb-2 text-red-900">⚠️ 重要提醒：</p>
-                <ul className="space-y-1 text-sm text-red-800">
-                  <li>• 領取後無法撤回</li>
-                  <li>• 領取後將立即延長您的會員到期日 {count} 年</li>
-                  <li>• 驗證一次即一次領完全部 {count} 張</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+          <StatusCallout
+            variant="warning"
+            icon={AlertTriangle}
+            title="⚠️ 重要提醒"
+            description={
+              <ul className="space-y-1">
+                <li>• 領取後無法撤回</li>
+                <li>• 領取後將立即延長您的會員到期日 {count} 年</li>
+                <li>• 驗證一次即一次領完全部 {count} 張</li>
+              </ul>
+            }
+          />
         </div>
       ),
       nextButtonText: '下一步',
@@ -100,39 +100,37 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
 
         return (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
-                以下是領取全部 {count} 張任務獎勵後，您的會員到期日變化：
-              </p>
-            </div>
+            <StatusCallout
+              variant="neutral"
+              title={`以下是領取全部 ${count} 張任務獎勵後，您的會員到期日變化：`}
+            />
 
-            <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-4">
-              <h3 className="font-medium text-blue-900 flex items-center gap-2">
+            <div className="border-2 border-border bg-muted p-4 rounded-lg space-y-4">
+              <h3 className="font-medium text-foreground flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
                 會員到期日
               </h3>
 
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <div className="flex-1 bg-card p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">目前</div>
-                  <div className="text-lg font-bold text-blue-600">{formatDate(currentEndDay)}</div>
+                  <div className="text-lg font-bold text-foreground">
+                    {formatDate(currentEndDay)}
+                  </div>
                 </div>
-                <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div className="flex-1 bg-card p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">領取後（+{count} 年）</div>
-                  <div className="text-lg font-bold text-green-600">{formatDate(afterEndDay)}</div>
+                  <div className="text-lg font-bold text-foreground">{formatDate(afterEndDay)}</div>
                 </div>
               </div>
             </div>
 
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-green-900">
-                  ✅ 確認後將立即延長您的會員到期日 {count} 年
-                </p>
-              </div>
-            </div>
+            <StatusCallout
+              variant="success"
+              icon={CheckCircle}
+              title={`✅ 確認後將立即延長您的會員到期日 ${count} 年`}
+            />
           </div>
         );
       },
@@ -157,14 +155,14 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
       description: '請仔細閱讀以下說明後再繼續',
       content: (
         <div className="space-y-4">
-          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+          <div className="p-4 bg-muted border border-border rounded-lg space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">🏅 任務名稱</span>
               <span className="font-medium">{reward.description}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">🎁 獎勵內容</span>
-              <span className="font-bold text-yellow-600">免費續約 1 年</span>
+              <span className="font-bold text-foreground">免費續約 1 年</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">📅 達成時間</span>
@@ -172,18 +170,17 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
             </div>
           </div>
 
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium mb-2 text-red-900">⚠️ 重要提醒：</p>
-                <ul className="space-y-1 text-sm text-red-800">
-                  <li>• 領取後無法撤回</li>
-                  <li>• 領取後將立即延長您的會員到期日 1 年</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+          <StatusCallout
+            variant="warning"
+            icon={AlertTriangle}
+            title="⚠️ 重要提醒"
+            description={
+              <ul className="space-y-1">
+                <li>• 領取後無法撤回</li>
+                <li>• 領取後將立即延長您的會員到期日 1 年</li>
+              </ul>
+            }
+          />
         </div>
       ),
       nextButtonText: '下一步',
@@ -207,35 +204,34 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
 
         return (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">以下是領取任務獎勵後，您的會員到期日變化：</p>
-            </div>
+            <StatusCallout variant="neutral" title="以下是領取任務獎勵後，您的會員到期日變化：" />
 
-            <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-4">
-              <h3 className="font-medium text-blue-900 flex items-center gap-2">
+            <div className="border-2 border-border bg-muted p-4 rounded-lg space-y-4">
+              <h3 className="font-medium text-foreground flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
                 會員到期日
               </h3>
 
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <div className="flex-1 bg-card p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">目前</div>
-                  <div className="text-lg font-bold text-blue-600">{formatDate(currentEndDay)}</div>
+                  <div className="text-lg font-bold text-foreground">
+                    {formatDate(currentEndDay)}
+                  </div>
                 </div>
-                <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div className="flex-1 bg-card p-3 rounded border border-border">
                   <div className="text-xs text-muted-foreground mb-1">領取後</div>
-                  <div className="text-lg font-bold text-green-600">{formatDate(afterEndDay)}</div>
+                  <div className="text-lg font-bold text-foreground">{formatDate(afterEndDay)}</div>
                 </div>
               </div>
             </div>
 
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-green-900">✅ 確認後將立即延長您的會員到期日</p>
-              </div>
-            </div>
+            <StatusCallout
+              variant="success"
+              icon={CheckCircle}
+              title="✅ 確認後將立即延長您的會員到期日"
+            />
           </div>
         );
       },
@@ -262,14 +258,14 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
       content: (
         <div className="space-y-4">
           {/* 獎勵資訊 */}
-          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+          <div className="p-4 bg-muted border border-border rounded-lg space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">🏅 任務名稱</span>
               <span className="font-medium">{reward.description}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">💰 獎勵金額</span>
-              <span className="font-bold text-yellow-600">{reward.amount} P</span>
+              <span className="font-bold text-foreground">{reward.amount} P</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">📅 達成時間</span>
@@ -278,18 +274,17 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
           </div>
 
           {/* 重要提醒 */}
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium mb-2 text-red-900">⚠️ 重要提醒：</p>
-                <ul className="space-y-1 text-sm text-red-800">
-                  <li>• 領取後無法撤回</li>
-                  <li>• 獎勵將立即加入可提領點數</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+          <StatusCallout
+            variant="warning"
+            icon={AlertTriangle}
+            title="⚠️ 重要提醒"
+            description={
+              <ul className="space-y-1">
+                <li>• 領取後無法撤回</li>
+                <li>• 獎勵將立即加入可提領點數</li>
+              </ul>
+            }
+          />
         </div>
       ),
       nextButtonText: '下一步',
@@ -314,13 +309,11 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
         return (
           <div className="space-y-4">
             {/* 說明 */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">以下是領取任務獎勵後，您的點數變化：</p>
-            </div>
+            <StatusCallout variant="neutral" title="以下是領取任務獎勵後，您的點數變化：" />
 
             {/* 點數變化預覽 */}
-            <div className="border-2 border-blue-200 bg-blue-50 p-4 rounded-lg space-y-4">
-              <h3 className="font-medium text-blue-900 flex items-center gap-2">
+            <div className="border-2 border-border bg-muted p-4 rounded-lg space-y-4">
+              <h3 className="font-medium text-foreground flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
                 點數變化
               </h3>
@@ -328,18 +321,18 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
               <div className="space-y-4">
                 {/* 可提領點數變化 */}
                 <div>
-                  <div className="text-sm text-blue-800 font-medium mb-2">可提領點數</div>
+                  <div className="text-sm text-foreground font-medium mb-2">可提領點數</div>
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                    <div className="flex-1 bg-card p-3 rounded border border-border">
                       <div className="text-xs text-muted-foreground mb-1">目前</div>
-                      <div className="text-lg font-bold text-blue-600">
+                      <div className="text-lg font-bold text-foreground">
                         {currentAvailable.toLocaleString()} P
                       </div>
                     </div>
-                    <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                    <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                    <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 bg-card p-3 rounded border border-border">
                       <div className="text-xs text-muted-foreground mb-1">領取後</div>
-                      <div className="text-lg font-bold text-green-600">
+                      <div className="text-lg font-bold text-foreground">
                         {afterAvailable.toLocaleString()} P
                       </div>
                     </div>
@@ -348,18 +341,18 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
 
                 {/* 總累積點數變化 */}
                 <div>
-                  <div className="text-sm text-blue-800 font-medium mb-2">總累積點數</div>
+                  <div className="text-sm text-foreground font-medium mb-2">總累積點數</div>
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                    <div className="flex-1 bg-card p-3 rounded border border-border">
                       <div className="text-xs text-muted-foreground mb-1">目前</div>
-                      <div className="text-lg font-bold text-blue-600">
+                      <div className="text-lg font-bold text-foreground">
                         {currentTotal.toLocaleString()} P
                       </div>
                     </div>
-                    <ArrowRight className="h-5 w-5 text-blue-600 shrink-0" />
-                    <div className="flex-1 bg-white p-3 rounded border border-blue-200">
+                    <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 bg-card p-3 rounded border border-border">
                       <div className="text-xs text-muted-foreground mb-1">領取後</div>
-                      <div className="text-lg font-bold text-green-600">
+                      <div className="text-lg font-bold text-foreground">
                         {afterTotal.toLocaleString()} P
                       </div>
                     </div>
@@ -369,12 +362,11 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
             </div>
 
             {/* 確認提示 */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-green-900">✅ 確認後將立即更新您的點數</p>
-              </div>
-            </div>
+            <StatusCallout
+              variant="success"
+              icon={CheckCircle}
+              title="✅ 確認後將立即更新您的點數"
+            />
           </div>
         );
       },

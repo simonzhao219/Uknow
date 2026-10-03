@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
+import { StatusCallout } from '../ui/status-callout';
 import { AlertCircle, Upload } from 'lucide-react';
 import type { IdPhotosResponse } from '@contract';
 
@@ -67,18 +68,19 @@ export function IdVerificationSection({ loadStatus, uploadPhotos }: IdVerificati
   if (info?.verificationStatus !== 'rejected') return null;
 
   return (
-    <Card className="border-red-200">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertCircle className="h-5 w-5 text-red-600" />
-          證件審核未通過
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:bg-red-950/30">
-          <p className="text-xs text-muted-foreground mb-1">退回原因</p>
-          <p className="text-sm font-medium">{info.rejectReason ?? '請聯繫客服了解原因'}</p>
-        </div>
+    <Card>
+      <CardContent className="pt-6 space-y-4">
+        <StatusCallout
+          variant="destructive"
+          icon={AlertCircle}
+          title="證件審核未通過"
+          description={
+            <>
+              <p className="text-xs mb-1">退回原因</p>
+              <p className="font-medium">{info.rejectReason ?? '請聯繫客服了解原因'}</p>
+            </>
+          }
+        />
 
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">

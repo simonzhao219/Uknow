@@ -22,6 +22,19 @@ const badgeVariants = cva(
           "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // S2 色彩收斂新增（D3）：實心（A 形狀）比照上面 destructive 的寫法。
+        success:
+          "border-transparent bg-success text-success-foreground [a&]:hover:bg-success/90",
+        warning:
+          "border-transparent bg-warning text-warning-foreground [a&]:hover:bg-warning/90",
+        // 淺底（B 形狀）比照 token 的 *-subtle 三件組——全站多處手刻的
+        // 淺底徽章（狀態 pill）改走這裡，不再各自拼 className。
+        "success-subtle":
+          "border-success-border bg-success-subtle text-success-subtle-foreground [a&]:hover:bg-success-subtle/90",
+        "warning-subtle":
+          "border-warning-border bg-warning-subtle text-warning-subtle-foreground [a&]:hover:bg-warning-subtle/90",
+        "destructive-subtle":
+          "border-destructive-border bg-destructive-subtle text-destructive-subtle-foreground [a&]:hover:bg-destructive-subtle/90",
       },
     },
     defaultVariants: {
