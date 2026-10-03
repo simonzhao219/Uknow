@@ -8,6 +8,11 @@ from playwright.sync_api import Locator, Page, expect
 from pages.base_page import BasePage
 
 
+# 列表載入的上限。這是「載入完成」的等待,不是「那一列存在」的期望值:慢到超過
+# 就是要的診斷(骨架還在),不是更長的等待。
+_LIST_SETTLE_TIMEOUT_MS = 30_000
+
+
 class AdminDashboardPage(BasePage):
     PATH = "/admin"
 
@@ -55,7 +60,52 @@ class AdminDashboardPage(BasePage):
     #
     # 鎖不到唯一一列時**擲錯而不是取 .first**:取第一列正是這個修法要移除的
     # 假設,再套一次只會換個地方重演。
+    # 列表是**掛載時一次性抓取**(WithdrawalManagement 的 fetchWithdrawals),載入中
+    # 顯示骨架、失敗顯示「重試」、真的沒資料才顯示空訊息。對 0 列的表格直接套
+    # expect 的 5 秒預設逾時,等於把「API 還在回」讀成「那一列不存在」:2026-09-26
+    # 排程 run 36269079479 的 f50 就是這樣紅的(同一份 log 的下一個情境暖機後也要
+    # 輪詢約 3 秒才看到列,5 秒的餘裕本來就薄)。所以先等列表**確實載入完成**,
+    # 再去數列;並且失敗時說明畫面屬於哪一態,而不是只丟一個 0。
+    def _wait_list_settled(self) -> None:
+        skeleton = self.page.get_by_role("status", name="載入提領申請中")
+        table = self.page.get_by_role("table")
+        empty = self.page.get_by_text("目前沒有提領申請")
+        retry = self.page.get_by_role("button", name="重試", exact=True)
+        # 先等「任一終態或骨架」出現:分頁剛切過去、元件還沒掛上時骨架也不在,
+        # 直接等骨架消失會在那一刻空轉成立。
+        expect(skeleton.or_(table).or_(empty).or_(retry)).to_be_visible(
+            timeout=_LIST_SETTLE_TIMEOUT_MS
+        )
+        try:
+            expect(skeleton).to_be_hidden(timeout=_LIST_SETTLE_TIMEOUT_MS)
+        except AssertionError as exc:
+            raise AssertionError(
+                f"提領列表 {_LIST_SETTLE_TIMEOUT_MS // 1000} 秒後仍在載入中（骨架未消失）——"
+                "管理台 GET /admin/withdrawals 太慢或卡住,不是那一列不存在。"
+                f"\n{self._list_state()}"
+            ) from exc
+        if retry.count():
+            raise AssertionError(
+                "提領列表載入失敗（畫面出現「重試」鈕）——不是那一列不存在。"
+                f"\n{self._list_state()}"
+            )
+
+    def _list_state(self) -> str:
+        """目前列表屬於哪一態,供失敗訊息使用(任何一段取不到只降級成一行)。"""
+        try:
+            if self.page.get_by_role("status", name="載入提領申請中").count():
+                return "列表狀態：載入中（骨架）"
+            if self.page.get_by_role("button", name="重試", exact=True).count():
+                text = " ".join(self.page.get_by_role("tabpanel").inner_text(timeout=3_000).split())
+                return f"列表狀態：載入失敗——{text[:300]}"
+            if self.page.get_by_text("目前沒有提領申請").count():
+                return "列表狀態：載入完成但是空的（目前沒有提領申請）"
+            return f"列表狀態：載入完成，共 {self.page.get_by_role('row').count() - 1} 列資料"
+        except Exception as exc:
+            return f"（列表狀態取得失敗：{exc}）"
+
     def _actionable_row_of(self, member_name: str, action: str) -> Locator:
+        self._wait_list_settled()
         rows = (
             self.page.get_by_role("row")
             .filter(has_text=member_name)
@@ -66,13 +116,16 @@ class AdminDashboardPage(BasePage):
         except AssertionError as exc:
             raise AssertionError(
                 f"「{member_name}」可執行「{action}」的列有 {rows.count()} 列，"
-                f"無法唯一鎖定。該會員在提領管理上的所有列：\n"
+                f"無法唯一鎖定。{self._list_state()}\n"
+                "該會員在提領管理上的所有列：\n"
                 + "\n".join(
                     f"  - {' '.join(row.split())}"
                     for row in self.page.get_by_role("row")
                     .filter(has_text=member_name)
                     .all_inner_texts()
                 )
+                + "\n（若這裡有不屬於本情境的待處理列，先看**上一個**失敗的情境——"
+                "它沒處理完的申請會留到這裡。）"
             ) from exc
         return rows
 
