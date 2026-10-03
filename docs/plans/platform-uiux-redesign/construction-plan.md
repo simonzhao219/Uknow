@@ -208,6 +208,14 @@ scripts/check-color-usage.py 守門腳本接進 framework-check 軌
    §3 導覽段補一句：會員中心是儀表板不是選單，任務／推薦／獎勵的入口在 BottomNav。
 五、測試：MemberDashboard 補四張卡的狀態渲染（三態）、需要注意區有事才出現、
    主按鈕至多一顆；ReferralStats 測試更新；375px overflow sweep。
+六、StatusCallout 狀態圖示跟著 variant 走（業主 2026-10-03 指出任務中心
+   「領取說明」是灰底配 ⚠——S2 只換色沒換圖示，S2 之前就是藍底配 ⚠）：
+   元件依 variant 給預設圖示 success→CircleCheck、warning→TriangleAlert、
+   destructive→CircleAlert、neutral→Info，呼叫端不傳 icon 就自動一致，只有
+   非狀態圖示（Shield、UserCog 這類）才自訂；status-callout 測試補四個預設。
+   順手修兩處：task/TaskGuide.tsx 領取說明拿掉 icon={AlertTriangle}（內容是
+   操作說明，neutral＋ⓘ 正確）；subscription/SubscriptionStatusCard.tsx
+   destructive 用 ⚠ 改走預設。§12.3 補一句「狀態圖示跟著 variant 走，不另傳」。
    收尾更新 progress.md（S2d 列、異動記錄）。
 ```
 
