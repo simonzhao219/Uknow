@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Copy, Download, Eye, RefreshCw } from 'lucide-react';
+import { Download, Eye, RefreshCw } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
@@ -778,7 +778,7 @@ export function WithdrawalManagement({
             // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
             // 以為今天沒人申請提領，而不是「沒讀到」。
             <div className="py-12 text-center space-y-3">
-              <p className="text-destructive">{loadError}</p>
+              <p className="text-destructive-subtle-foreground">{loadError}</p>
               <Button variant="outline" onClick={fetchWithdrawals}>
                 重試
               </Button>

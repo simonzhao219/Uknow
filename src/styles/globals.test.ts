@@ -102,6 +102,46 @@ describe('globals.css 語義色 token 三處齊備（success / warning / destruc
 });
 
 // ---------------------------------------------------------------------------
+// 強調色 --brand（S2b／D4，業主裁決配色 A）。與語義色同一個靜默失效風險：
+// `bg-brand` 只有在 `@theme inline` 有 `--color-brand` 時才存在。檢查法同上
+// （三處齊備＋值字面）。名字不能用 --accent：那是 shadcn 既有的 hover 灰。
+// ---------------------------------------------------------------------------
+const BRAND_TOKENS = [
+  'brand',
+  'brand-hover',
+  'brand-foreground',
+  'brand-subtle',
+  'brand-subtle-foreground',
+];
+
+describe('globals.css 強調色 brand token 三處齊備', () => {
+  for (const name of BRAND_TOKENS) {
+    it(`--${name} 在 :root 有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+    });
+
+    it(`--${name} 在 .dark 有定義`, () => {
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+
+    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
+      const key = `--color-${name}`;
+      expect(themeTokens.has(key), `@theme inline 缺少 ${key}`).toBe(true);
+      expect(themeTokens.get(key)).toBe(`var(--${name})`);
+    });
+  }
+
+  // 兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的淺色值不會跟著變。
+  it('淺色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
+    expect(rootTokens.get('--ring')).toBe('var(--brand)');
+  });
+
+  it('深色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
+    expect(darkTokens.get('--ring')).toBe('var(--brand)');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 階段 2：對比度門檻（§2.3.1）。
 //
 // 自我指涉陷阱：驗證 token 的測試與被測的 contrastRatio() 共用同一個公式，
@@ -396,5 +436,45 @@ describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 
         expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
     }
+  }
+});
+
+// 強調色對比度（S2b／D4）。brand 當文字走 1.4.3（4.5:1），當邊框／焦點框／
+// 進度填色這類非文字元素走 1.4.11（3:1）；對 --background 與 --card 各驗一次。
+// 既有 FAMILIES 迴圈已自動覆蓋語義色 A 形狀的新值（亮底黑字），brand 沒有
+// -border token（brand 本身就是邊框色），所以另開一輪。
+describe('強調色 brand 對比度（淺深各一輪，公式已錨定）', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+
+    for (const surface of ['background', 'card'] as const) {
+      it(`${modeLabel}：brand 字對 --${surface} 達 4.5:1`, () => {
+        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      });
+
+      it(`${modeLabel}：brand 當邊框／焦點框對 --${surface} 達 3:1（非文字元素）`, () => {
+        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+    }
+
+    it(`${modeLabel}：brand 實心底配 brand-foreground 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'brand-foreground')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${modeLabel}：brand-hover 實心底配 brand-foreground 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-hover'), hexOf(mode, 'brand-foreground')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${modeLabel}：brand-subtle-foreground 對 brand-subtle 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, 'brand-subtle')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
   }
 });

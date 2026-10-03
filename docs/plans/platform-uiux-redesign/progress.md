@@ -11,7 +11,7 @@
 | S0 | 總綱與施工計畫 | — | ✅ 完成 | （本 PR） | 四個方向決策已與業主核對（plan.md §0）；四視角審查完成、P0×2/P1×7/P2×7 全數回填（review.md） |
 | S1 | 設計語言地基 | D1+D2 | ✅ 已合併 | [#321](https://github.com/simonzhao219/Uknow/pull/321) | 五階段 TDD 紅綠循環全過；`/review-implementation` 四視角 P0×0/P1×3/P2×5 全數修掉；規劃檔已隨收尾清理，值得保存的決策已升級進 `construction-plan.md` §4.3、`ui-ux-guidelines.md` §12、`globals.css` 註解 |
 | S2 | 全站色彩收斂 | D3 | ✅ 已合併，驗收站 1 通過（2026-09-18） | [#325](https://github.com/simonzhao219/Uknow/pull/325) | 53 個 baseline 檔案（含開工時漏列的 `TaskDashboard.tsx`，收尾核對時補上）全數收斂到 0，僅留 4 個已核准例外（品牌 icon 色、QR 功能色；canvas 專用檔已收進 `EXCLUDED_PATHS`）；Badge 新增 5 個 variant、新增 `StatusCallout` 元件（含 `action`/`titleAs` slot）；四視角 `/review-implementation` 跑完，P1 全數修掉（見下方異動記錄）；`npm run check`／`framework-check.sh`／`npm run build` 全綠。驗收站 1 業主於 develop 環境實測通過（含公告橫幅依嚴重度對應三態色的確認），可進 S3 |
-| S2b | 強調色與語義色升亮 | D4 | ⬜ 未開工 | — | 業主裁決配色 A（2026-10-03）；驗收站 1b |
+| S2b | 強調色與語義色升亮 | D4 | 🔄 PR 待合併 | [#331](https://github.com/simonzhao219/Uknow/pull/331) | 業主裁決配色 A（2026-10-03）；驗收站 1b。`--brand` 五 token＋`--ring`＋語義色實心層亮底黑字落地；連帶收斂 13 檔約 21 行裸 `text-destructive`（遺留事項第 1 條結案）；連結範圍含 4 處手刻連結（`Button variant="link"` 全站僅 1 處使用）。驗收站 1b 待業主，請目視：後台操作錯誤框改走 `StatusCallout` 後略有視覺差異（標題字重、無 icon）。業主裁決（PR 留言）已補：進度填色一律 brand、焦點環全不透明、段落內連結一律底線。預建待消費：`Button variant="brand"`、`--brand-subtle`、`--brand-subtle-foreground` 目前零消費者（S2c 的選中列與「新」tag、次要行動鈕會用），S2c／S3 若沒用到應移除 |
 | S2c | 推薦樹狀態視覺化 | D5 | ⬜ 未開工 | — | 業主裁決（2026-10-03）；S2b 合併後才開；驗收站 1c |
 | S3 | 後台資訊架構 | A1+A2 | ⬜ 未開工 | — | |
 | S4 | 會員詳情重設計 | A3 | ⬜ 未開工 | — | 驗收站 2 |
@@ -38,15 +38,14 @@
 | 2026-09-18 | `MaintenanceBanner.tsx` 刻意不套用 `StatusCallout`（只換色票），因為該橫幅有獨立關閉鈕與置中版面契約，`MaintenanceBanner.test.tsx` 逐條釘住版面結構，硬套會拆版面；理由已寫在程式碼註解裡，這裡補記一筆讓它也出現在異動記錄，不只留在程式碼裡 | 架構視角 review 指出這個偏離只留在程式碼註解、未出現在 progress.md，依契約「未記錄的偏離」要處置 |
 | 2026-10-03 | 追加工項 D4／session S2b「強調色與語義色升亮」：業主驗收站 1 後覺得整體太黯淡，比較「現況／A 墨黑＋靛藍／B 墨黑＋青碧／C 暖墨＋紫羅蘭」四組後裁決 **A**。新增 `--brand` 系列 token、`--ring` 改指 brand、語義色實心層改亮底黑字；淺深兩版對比度已預先算過全數過門檻（文字 4.5:1、邊框 3:1）。插在 S2 與 S3 之間 | 黯淡的根因是三件事疊加：冷灰低彩度、語義色用 700 階深土色、全站無強調色。方案只動後兩項，黑白骨架與主按鈕不變。比較板：https://claude.ai/artifact/2gDFw89N4X5GtRnahvzTGg |
 | 2026-10-03 | 追加工項 D5／session S2c「推薦樹狀態視覺化」：頭像底色由世代改綁訂閱狀態、世代只留縮排與連接線、狀態計數 chip 兼圖例與過濾、即將到期列整列淡黃；`--tree-gen-*` 八個 token 退場 | 業主要求推薦樹「用顏色一目了然」。三代獎勵同額（§8.1），世代不影響收入而狀態直接等於收入，現況卻把最大面積的顏色給了世代、狀態只剩 11px 小點。與 §12.5 (c)／§12.7 相容、不新增色相；對照頁：https://claude.ai/artifact/CP9ay4KMZ6v7rND5r4NKPP |
+| 2026-10-03 | S2b 業主裁決三項（PR #331 留言）：(1) `getProgressBarStyle` 移除、任務頁進度填色一律 `bg-brand`（亮底 success/warning 對淺軌道 1.3／1.8:1，狀態由 `x / y` 數字承擔）；(2) 8 個原語 `ring-ring/50` → `ring-ring`（brand/50 對白底 2.3:1）；(3) 段落內連結一律底線，`Button variant="link"` 常駐底線、`LegalMarkdown` 內文連結補底線（獨立成行的忘記密碼連結不加）。規則寫進 §12.3／§12.5 | 深色 brand 對內文僅 2.86:1 不足 1.4.1，不能只靠顏色 |
+| 2026-10-03 | S2b 落地時兩項擴範圍（業主於 Plan Mode 逐題核准）：(1) `--destructive` 改亮紅後，裸 `text-destructive` 淺色對比 5.25→2.77:1，S2b 一併把 13 檔約 21 行收斂到 `*-subtle-foreground`／`*-border`（原排 S7）；(2) 連結改 brand 的範圍加 4 處手刻連結。另：`*-border` token 不能再重用 A 色（新 A 色對 subtle 底僅 1.6–2.5:1）；`ui-ux-guidelines.md` §12.3 標題、§12.5 三條與 §11 一處與新規範矛盾，同 PR 修正。實作期偏離一項：12.8 色盲實測發現深色選中分頁的 `dark:bg-input/30` 與軌道同色，文字改 brand 後選中態在 achromatopsia 下分不出（§12.7），故刪掉該覆寫、深色 pill 沿用 `bg-card`（brand 字對它 6.01:1）。童子軍：只還行為中性的 8 條 biome warning，`useExhaustiveDependencies` ×10、`noExplicitAny` ×8、`useSemanticElements` ×1 未動 | 純色彩 PR 不夾帶 effect 依賴與型別重構；其餘依實算對比度（與測試同公式）而非估值 |
 
 ## 遺留事項
 
-- **既有的 `text-destructive` 裸字約 19 處守門抓不到**（`formHelpers.tsx`、
-  `WithdrawalManagement.tsx:781`、`MemberManagement.tsx` 多處、
-  `OTPVerificationPage.tsx` 等，幾乎全是表單/載入錯誤態）：§12.3 要求裸字走
-  `*-subtle-foreground`，淺色模式 `#d4183d` 對白底約 4.9:1 過關，深色模式
-  `#82181a` 對深底只有約 1.7:1。這些不是 S2 造成（S2 只修了自己引入的 16 處），
-  而且 `check-color-usage.py` 的 C1–C3 只抓調色盤 class、**抓不到「token 用錯
-  形狀」**。深色模式目前無切換入口所以無實際影響；排進 S7 的 F3 三態巡檢
-  一併處理（它們就是錯誤態）。
+- **守門抓不到「token 用錯形狀」仍是結構性缺口**：`check-color-usage.py` 的 C1–C3 只抓
+  調色盤 class，抓不到「A 形狀配寫死白字」「A 色當裸字/邊框」這類 token 誤用。S2b 已把
+  當時既有的裸 `text-destructive`（約 21 行）全數收掉，並用 `button.test.tsx`／
+  `badge.test.tsx` 釘住原語端；之後是否在 `check-color-usage.py` 加 C4 規則（A 形狀 bg
+  與裸 `text-destructive` 的靜態檢查）可於 S7 評估。深色模式目前無切換入口所以無實際影響。
 - **`awaiting_collection`（待查收）狀態在 admin 與會員兩處顏色語意不一致**：`WithdrawalManagement.tsx`（admin 視角）用 `variant="warning"`（醒目黃，規劃當時就是這樣寫），`WithdrawalSection.tsx`（會員視角，本次 S2 業主核准的政策 13）用 `variant="secondary"`（中性灰）。需求視角 review 指出：業務流程上真正「需要動作」的其實是會員（要去確認收款），admin 端反而是等待中，兩邊的顏色安排恰好相反。兩處目前都各自忠實反映了規劃書的逐字指示，不是實作錯誤，但業主應在下一次接觸這兩個檔案時確認是否要拉平（同一狀態、同一注意力層級），或維持現狀（admin 用醒目色提醒「這筆在等會員」、會員視角用中性色標示「這是流程正常的一步」也是站得住腳的設計理由，需業主定調）。
