@@ -12,7 +12,9 @@ import type { ListingRow } from '../types/listing';
  *
  * 刊登刻意沒有「活躍／過期」狀態欄位——是否對外顯示完全由帳號訂閱決定，
  * 在資料層一處守門（HomePage 讀 public_listings view）。因此這裡只回
- * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。
+ * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。唯一的例外是
+ * 由會籍推導的可見性：會員中心在會籍失效時標「已隱藏」（規格書 §11），
+ * 那讀的是 useSubscription，不是刊登自己的欄位。
  */
 export interface UseUserListingResult {
   /** null 有兩種意思，必須配合 loading／error 一起讀：資料還沒到、或確實沒有刊登。 */
