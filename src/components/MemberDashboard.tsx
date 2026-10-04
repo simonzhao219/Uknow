@@ -18,7 +18,12 @@ import { MyQrEntry } from './referral/MyQrEntry';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
-import { DashboardStatCard, StatCardAction, StatCardError } from './dashboard/DashboardStatCard';
+import {
+  DashboardStatCard,
+  StatCardAction,
+  StatCardError,
+  StatValue,
+} from './dashboard/DashboardStatCard';
 import { AttentionCallout, type AttentionItem } from './dashboard/AttentionCallout';
 import {
   countAwaitingCollection,
@@ -216,9 +221,7 @@ export function MemberDashboard() {
               <StatCardError>暫時無法取得推薦資料</StatCardError>
             ) : (
               <>
-                <p className="text-3xl font-bold leading-none text-foreground">
-                  {referral.overview.summary.totalReferrals}
-                </p>
+                <StatValue>{referral.overview.summary.totalReferrals}</StatValue>
                 <p className="text-xs text-muted-foreground">位下線</p>
                 {expiring.count > 0 && (
                   <Badge variant="warning-subtle">{expiringText} 位即將到期</Badge>
@@ -240,9 +243,9 @@ export function MemberDashboard() {
               <StatCardError>暫時無法取得任務進度</StatCardError>
             ) : currentTask ? (
               <>
-                <p className="text-3xl font-bold leading-none text-foreground">
+                <StatValue>
                   {currentTask.current} / {currentTask.target}
-                </p>
+                </StatValue>
                 {/* 進度填色用強調色 brand、軌道灰階（§12.5，同 task/ProgressBar）。 */}
                 <div className="h-2 overflow-hidden rounded-full bg-muted-foreground/20">
                   <div
@@ -272,10 +275,10 @@ export function MemberDashboard() {
               <StatCardError>暫時無法取得點數</StatCardError>
             ) : (
               <>
-                <p className="text-3xl font-bold leading-none text-foreground">
+                <StatValue>
                   {rewardsData.availableRewards.toLocaleString()}
                   <span className="ml-1 text-base font-medium text-muted-foreground">P</span>
-                </p>
+                </StatValue>
                 {awaitingCount > 0 && (
                   <Badge variant="warning-subtle">待查收 {awaitingCount} 筆</Badge>
                 )}

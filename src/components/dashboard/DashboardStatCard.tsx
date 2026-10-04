@@ -89,3 +89,16 @@ export function StatCardAction({
     </span>
   );
 }
+
+/**
+ * 卡片的主數字（§13 第 1 條：字級明顯大於其他）。手機 2×2 每張卡內寬只有約
+ * 130px，六位數點數在 text-3xl 會溢出（overflow sweep 量到 +21px），所以手機用
+ * text-2xl、md 起才放大。顏色一律 --foreground（§12.5），語義交給徽章。
+ */
+export function StatValue({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-2xl font-bold leading-none tabular-nums text-foreground md:text-3xl">
+      {children}
+    </p>
+  );
+}
