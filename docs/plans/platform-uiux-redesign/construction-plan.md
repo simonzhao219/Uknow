@@ -155,14 +155,17 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
 一、MemberDashboard.tsx 版面（由上到下）：
    1) 「需要注意」區：有事才渲染，用 StatusCallout variant="warning"（titleAs 依
       頁面標題層級）列出每條一個動作連結（brand）：即將到期的下線 N 位 → /referrals
-      （該頁上方的需要關注橫幅就列出這些人；樹沒有狀態過濾）、待查收提領 N 筆 → /rewards、刊登審核退件 → /service-providers。
+      （該頁上方的需要關注橫幅就列出這些人；樹沒有狀態過濾）、待查收提領 N 筆 → /rewards。
+      只列後端真的有的狀態：listings 表沒有審核／退件欄位（規格書 §11，可見性
+      由 has_active_subscription 即時推導、不存 isActive），所以沒有「審核退件」這條。
       資料：overview.attention.items（既有，伺服器已依緊急度排序、即將到期在前，
       最多 6 筆＋total）、useRewardData 的提領狀態、useUserListing。
    2) 四張狀態卡，每張一個主數字或主狀態，整張可點（Link 包卡，鍵盤可達、
       aria-label 完整），右側 chevron，不再放重複標題的按鈕：
-      刊登：刊登名稱＋狀態徽章（上架中 success-subtle／審核中 warning-subtle／
-            已隱藏 secondary）＋「會籍至 yyyy/mm/dd」；沒有刊登時才出現唯一的
-            黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
+      刊登：刊登名稱＋「會籍至 yyyy/mm/dd」；可見性只有後端真有的兩種——會籍有效
+            ＝上架中（不另加徽章，正常態不上色）、會籍失效＝「已隱藏」secondary 徽章
+            （由 useSubscription 推導，與規格書 §11 一致；不存在「審核中」「退件」）；
+            沒有刊登時才出現唯一的黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
       推薦網絡：下線總數主數字（summary.totalReferrals）＋「M 位需關注」徽章
             （M = overview.attention.total，warning-subtle，M 為 0 時不顯示；文案
             固定四字「需關注」，與推薦頁橫幅同一份資料）；點卡片到 /referrals。
