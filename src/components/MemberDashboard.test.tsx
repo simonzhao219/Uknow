@@ -63,7 +63,9 @@ function setLoaded() {
     error: null,
   };
   state.task = {
-    tasks: [{ id: 't1', title: '推薦王', current: 3, target: 8, completed: false }],
+    tasks: [
+      { id: 't1', type: 'monthly_king', title: '推薦王', current: 3, target: 8, completed: false },
+    ],
     isLoading: false,
     error: null,
   };
@@ -175,13 +177,47 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(card(/^推薦網絡/)).queryByText(/即將到期/)).toBeNull();
   });
 
-  it('本月任務卡顯示進度並在達標時標示', () => {
-    state.task.tasks = [{ id: 't1', title: '推薦王', current: 8, target: 8, completed: true }];
+  it('本月任務卡以本輪顯示推薦進度並標明單位', () => {
     renderPage();
 
     const taskCard = card(/^本月任務/);
-    expect(within(taskCard).getByText('8 / 8')).toBeTruthy();
+    expect(taskCard.textContent).toContain('本輪推薦3 / 8位');
+    expect(within(taskCard).queryByText(/本月已完成/)).toBeNull();
+    expect(taskCard.getAttribute('aria-label')).toBe('本月任務：推薦王本輪推薦 3 / 8 位');
+  });
+
+  it('本月推薦超過一輪時與任務中心同口徑顯示本輪與已完成次數', () => {
+    state.task.tasks = [
+      { id: 't1', type: 'monthly_king', title: '推薦王', current: 17, target: 8, completed: true },
+    ];
+    renderPage();
+
+    const taskCard = card(/^本月任務/);
+    expect(taskCard.textContent).toContain('1 / 8位');
+    expect(taskCard.textContent).not.toContain('17 / 8');
+    expect(within(taskCard).getByText('本月已完成 2 次')).toBeTruthy();
     expect(within(taskCard).getByText('本月已達標')).toBeTruthy();
+  });
+
+  it('只取推薦王任務，沒有時顯示空態而非錯誤態', () => {
+    state.task.tasks = [{ id: 'x', type: 'other', title: '其他', current: 1, target: 2 }];
+    renderPage();
+
+    const taskCard = card(/^本月任務：目前沒有任務/);
+    expect(within(taskCard).getByText('目前沒有任務').className).toContain('text-foreground');
+  });
+
+  it('任務讀取失敗時本月任務卡顯示中性錯誤態', () => {
+    state.task = { tasks: [], isLoading: false, error: '網路錯誤' };
+    renderPage();
+    expect(within(card(/^本月任務/)).getByText('暫時無法取得任務進度')).toBeTruthy();
+  });
+
+  it('點數讀取失敗時可提領點數卡顯示中性錯誤態且沒有申請提領', () => {
+    state.reward = { rewardsData: null, withdrawals: [], isLoading: false, error: '網路錯誤' };
+    renderPage();
+    expect(within(card(/^可提領點數/)).getByText('暫時無法取得點數')).toBeTruthy();
+    expect(screen.queryByText('申請提領')).toBeNull();
   });
 
   it('可提領點數卡顯示待查收筆數', () => {
@@ -192,6 +228,23 @@ describe('MemberDashboard 狀態卡', () => {
   });
 
   it('餘額未達提領門檻時不出現申請提領', () => {
+    renderPage();
+    expect(screen.queryByText('申請提領')).toBeNull();
+  });
+
+  it('今日已提領過時即使餘額足夠也不出現申請提領', () => {
+    state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: true };
+    renderPage();
+    expect(screen.queryByText('申請提領')).toBeNull();
+  });
+
+  it('會籍已失效時即使餘額足夠也不出現申請提領', () => {
+    state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
+    state.subscription.subscriptionData = {
+      hasSubscription: false,
+      status: 'expired',
+      activeUntil: '2026-09-01T04:00:00.000Z',
+    };
     renderPage();
     expect(screen.queryByText('申請提領')).toBeNull();
   });
@@ -250,11 +303,11 @@ describe('MemberDashboard 需要注意區', () => {
   });
 });
 
-describe('MemberDashboard 主按鈕', () => {
+describe('MemberDashboard 卡片區主按鈕', () => {
   const primaryButtons = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('.bg-primary'));
 
-  it('可提領且尚未刊登時只有申請提領是黑色主按鈕', () => {
+  it('可提領且尚未刊登時卡片區只有申請提領一顆黑色主按鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
     const { container } = renderPage();
@@ -265,7 +318,7 @@ describe('MemberDashboard 主按鈕', () => {
     expect(screen.getByText('立即刊登').classList.contains('bg-brand')).toBe(true);
   });
 
-  it('只有尚未刊登時立即刊登是唯一的黑色主按鈕', () => {
+  it('只有尚未刊登時卡片區至多一顆且是立即刊登', () => {
     state.listing = { listing: null, loading: false, error: null };
     const { container } = renderPage();
 
@@ -274,7 +327,7 @@ describe('MemberDashboard 主按鈕', () => {
     expect(primaries[0].textContent).toBe('立即刊登');
   });
 
-  it('有刊登且不能提領時沒有主按鈕', () => {
+  it('有刊登且不能提領時卡片區沒有主按鈕', () => {
     const { container } = renderPage();
     expect(primaryButtons(container)).toHaveLength(0);
   });

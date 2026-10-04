@@ -18,6 +18,7 @@ import { MyQrEntry } from './referral/MyQrEntry';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
+import { computeKingRounds } from '../utils/kingProgress';
 import {
   DashboardStatCard,
   StatCardAction,
@@ -106,7 +107,11 @@ export function MemberDashboard() {
     ? formatTwDate(subscriptionData.activeUntil)
     : null;
 
-  const currentTask = task.tasks[0];
+  // 後端 /tasks 目前只有推薦王；以 type 取而不是取第一個，日後多了任務不會換錯卡。
+  const currentTask = task.tasks.find((t) => t.type === 'monthly_king');
+  // current 是本月累計新推薦數；與任務中心同一套換算成「本輪 x / y＋本月已完成 N 次」，
+  // 避免滿一輪後這裡顯示 17 / 8、任務中心卻是 1 / 8。
+  const rounds = currentTask ? computeKingRounds(currentTask.current, currentTask.target) : null;
 
   const handleShowProfileInfo = () => {
     showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
@@ -139,8 +144,11 @@ export function MemberDashboard() {
   const taskLabel = () => {
     if (task.isLoading) return '本月任務：讀取中';
     if (task.error) return '本月任務：暫時無法取得任務進度';
-    if (!currentTask) return '本月任務：目前沒有任務';
-    const parts = [`本月任務：${currentTask.title} ${currentTask.current} / ${currentTask.target}`];
+    if (!currentTask || !rounds) return '本月任務：目前沒有任務';
+    const parts = [
+      `本月任務：${currentTask.title}本輪推薦 ${rounds.currentRoundCount} / ${currentTask.target} 位`,
+    ];
+    if (rounds.roundsThisMonth > 0) parts.push(`本月已完成 ${rounds.roundsThisMonth} 次`);
     if (currentTask.completed) parts.push('本月已達標');
     return parts.join('，');
   };
@@ -242,24 +250,30 @@ export function MemberDashboard() {
           >
             {task.error ? (
               <StatCardError>暫時無法取得任務進度</StatCardError>
-            ) : currentTask ? (
+            ) : currentTask && rounds ? (
               <>
+                <p className="text-xs text-muted-foreground">本輪推薦</p>
                 <StatValue>
-                  {currentTask.current} / {currentTask.target}
+                  {rounds.currentRoundCount} / {currentTask.target}
+                  <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
                 </StatValue>
                 {/* 進度填色用強調色 brand、軌道灰階（§12.5，同 task/ProgressBar）。 */}
                 <div className="h-2 overflow-hidden rounded-full bg-muted-foreground/20">
                   <div
                     className="h-full bg-brand"
-                    style={{
-                      width: `${Math.min(100, Math.round((currentTask.current / Math.max(currentTask.target, 1)) * 100))}%`,
-                    }}
+                    style={{ width: `${Math.min(100, Math.round(rounds.roundProgressPct))}%` }}
                   />
                 </div>
+                {rounds.roundsThisMonth > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    本月已完成 {rounds.roundsThisMonth} 次
+                  </p>
+                )}
                 {currentTask.completed && <Badge variant="success-subtle">本月已達標</Badge>}
               </>
             ) : (
-              <StatCardError>目前沒有任務</StatCardError>
+              // 空態不是錯誤：用一般文字，不借錯誤態的樣式。
+              <p className="text-base font-semibold text-foreground">目前沒有任務</p>
             )}
           </DashboardStatCard>
         )}

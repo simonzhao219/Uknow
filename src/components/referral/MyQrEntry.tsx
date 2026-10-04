@@ -42,10 +42,10 @@ interface MyQrEntryProps {
  * 而它同時是 refreshUser() 維護的那一份。推薦網絡端點也回一份 userReferralCode，
  * 但兩份快取的更新時機不同，加入推薦計畫後會出現一頁已更新、一頁還是舊值。
  *
- * 會籍狀態刻意**不用** useSubscription：那個 hook 的 dedupe 只會跑「先到者」的
- * fetchStatus，同一頁掛第二個實例時，後到的那個自己的 setState 永遠不會執行。
- * React 的 effect 子先父後，所以本元件（子）會把會員中心（父）那份餓死，
- * SubscriptionStatusCard 就永遠停在載入中（e2e 的 free_renewal_year 情境抓到）。
+ * 會籍狀態刻意**不用** useSubscription，理由同上：單一來源。這裡要的是與推薦碼、
+ * 加入狀態同一份 `/profile` 快照（refreshUser() 會一起更新），換成另一個端點的
+ * 快取，加入或續約後就可能一個已更新、一個還是舊值。（早年另一個理由——同頁第二個
+ * 實例會被 dedupe 餓死——已由 useSubscription 的 adoptShared 修掉。）
  */
 export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
   const { user, refreshUser } = useContext(UserContext);

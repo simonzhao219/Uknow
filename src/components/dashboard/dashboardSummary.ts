@@ -1,10 +1,9 @@
 // 會員中心狀態總覽的純計算——從既有 API 回應推出卡片與「需要注意」區要顯示的
 // 數字。全部是前端推導，不新增後端欄位（業主 2026-10-03 裁決）。
+// 型別取自契約（status 是字面量聯集），拼錯狀態名 tsc 會擋。
 
-/** 下線節點的最小形狀（/referrals/network/overview 的 attention.items）。 */
-interface AttentionNodeLike {
-  status: string;
-}
+import type { WithdrawalRecord } from '@contract';
+import type { NetworkAttention, NetworkNodeStatus } from '../../utils/referralNetwork';
 
 export interface ExpiringCount {
   count: number;
@@ -18,7 +17,10 @@ export interface ExpiringCount {
 
 /** 即將到期的下線人數（業主裁決：會員中心只統計即將到期，已失效／停權不列）。 */
 export function countExpiring(
-  attention: { total: number; items: AttentionNodeLike[] } | null | undefined,
+  attention:
+    | (Pick<NetworkAttention, 'total'> & { items: { status: NetworkNodeStatus }[] })
+    | null
+    | undefined,
 ): ExpiringCount {
   if (!attention) return { count: 0, atLeast: false };
   const count = attention.items.filter((n) => n.status === 'expiring').length;
@@ -33,7 +35,7 @@ export function formatExpiringCount({ count, atLeast }: ExpiringCount): string {
 }
 
 /** 待查收（已匯款、等會員確認收款）的提領筆數。 */
-export function countAwaitingCollection(withdrawals: { status: string }[]): number {
+export function countAwaitingCollection(withdrawals: Pick<WithdrawalRecord, 'status'>[]): number {
   return withdrawals.filter((w) => w.status === 'awaiting_collection').length;
 }
 

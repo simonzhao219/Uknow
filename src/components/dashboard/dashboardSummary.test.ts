@@ -5,8 +5,12 @@ import {
   formatExpiringCount,
   pickPrimaryAction,
 } from './dashboardSummary';
+import type { NetworkNodeStatus } from '../../utils/referralNetwork';
 
-const node = (status: string) => ({ status });
+const node = (status: NetworkNodeStatus) => ({ status });
+const withdrawal = (status: 'pending' | 'awaiting_collection' | 'completed' | 'rejected') => ({
+  status,
+});
 
 describe('countExpiring', () => {
   it('沒有推薦資料時為 0', () => {
@@ -47,10 +51,10 @@ describe('formatExpiringCount', () => {
 describe('countAwaitingCollection', () => {
   it('只計待查收的提領', () => {
     const list = [
-      node('awaiting_collection'),
-      node('pending'),
-      node('completed'),
-      node('awaiting_collection'),
+      withdrawal('awaiting_collection'),
+      withdrawal('pending'),
+      withdrawal('completed'),
+      withdrawal('awaiting_collection'),
     ];
     expect(countAwaitingCollection(list)).toBe(2);
   });
