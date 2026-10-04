@@ -114,7 +114,8 @@ export function useReferralData(): UseReferralDataResult {
       dedupe(DEDUP_KEY, fetchOverview, adoptShared);
       return;
     } else if (!hasDataRef.current) {
-      setError('載入失敗，請稍後再試');
+      // 同一實例自己發的請求失敗時，catch 已設好具體錯誤（例如 401）——不要用泛用文字蓋掉。
+      setError((prev) => prev ?? '載入失敗，請稍後再試');
     }
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps

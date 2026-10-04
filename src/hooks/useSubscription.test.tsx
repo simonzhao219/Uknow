@@ -75,6 +75,33 @@ describe('useSubscription', () => {
     expect(seen.b.subscriptionData?.status).toBe('active');
   });
 
+  it('有舊快取而共用請求失敗時，後到者仍標記抓取失敗', async () => {
+    // F5 後 sessionStorage 復原的舊會籍狀態：畫面可以先用它，但這次請求失敗了，
+    // 結帳頁靠 lastFetchFailed 揭露「補繳進度可能已過期」（四契約第 4 列）。
+    sessionStorage.setItem(
+      'uknow_data_cache',
+      JSON.stringify({
+        subscriptionStatus: {
+          data: { hasSubscription: true, status: 'active' },
+          timestamp: Date.now() - 60_000,
+        },
+      }),
+    );
+    const status = deferred<unknown>();
+    mockRequest.mockImplementation((() => status.promise) as never);
+
+    render(<Harness showA showB />);
+
+    await act(async () => {
+      status.reject(new Error('網路錯誤'));
+    });
+
+    await waitFor(() => expect(seen.b.isLoading).toBe(false));
+    expect(seen.b.subscriptionData?.status).toBe('active');
+    expect(seen.b.lastFetchFailed).toBe(true);
+    expect(seen.a.lastFetchFailed).toBe(true);
+  });
+
   it('接上的請求失敗時，結束載入並標記抓取失敗', async () => {
     const status = deferred<unknown>();
     mockRequest.mockImplementation((() => status.promise) as never);

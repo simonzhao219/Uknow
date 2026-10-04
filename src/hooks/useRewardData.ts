@@ -94,7 +94,8 @@ export function useRewardData(): UseRewardDataResult {
       hasDataRef.current = true;
       setError(null);
     } else if (!hasDataRef.current) {
-      setError('獲取資料失敗');
+      // 同一實例自己發的請求失敗時，catch 已設好具體錯誤（例如 401）——不要用泛用文字蓋掉。
+      setError((prev) => prev ?? '獲取資料失敗');
     }
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps

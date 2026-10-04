@@ -116,7 +116,8 @@ export function useUserListing({
       hasDataRef.current = true;
       setError(null);
     } else if (!hasDataRef.current) {
-      setError('獲取刊登失敗，請稍後再試');
+      // 同一實例自己發的請求失敗時，catch 已設好具體錯誤（例如 401）——不要用泛用文字蓋掉。
+      setError((prev) => prev ?? '獲取刊登失敗，請稍後再試');
     }
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
