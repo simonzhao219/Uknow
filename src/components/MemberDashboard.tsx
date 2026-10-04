@@ -99,7 +99,8 @@ export function MemberDashboard() {
 
   // 刊登可見性只有後端真有的兩種（規格書 §11）：會籍有效＝上架中（正常態不加徽章）、
   // 會籍失效＝已隱藏。失效會員多半被 RequireMembershipRoute 導去續約，這裡是
-  // 頁面開著時剛好到期的邊界。
+  // 頁面開著時剛好到期的邊界。停權也會讓刊登下架（public_listings），但停權帳號
+  // 被 RequireMembershipRoute 擋在會員區外，進不到這頁，所以不另判。
   const listingHidden = subscriptionData?.status === 'expired';
   const memberUntil = subscriptionData?.activeUntil
     ? formatTwDate(subscriptionData.activeUntil)

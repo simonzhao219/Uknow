@@ -21,12 +21,12 @@ export function AttentionCallout({ items }: { items: AttentionItem[] }) {
       title="需要注意"
       titleAs="h2"
       action={
-        <ul className="space-y-1">
+        <ul className="md:space-y-1">
           {items.map((item) => (
             <li key={item.key}>
               <Link
                 to={item.to}
-                className="inline-flex items-center gap-1 text-sm font-medium text-brand underline underline-offset-4"
+                className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-brand underline underline-offset-4 md:min-h-0"
               >
                 {item.label}
                 <ChevronRight className="size-4 shrink-0" aria-hidden="true" />

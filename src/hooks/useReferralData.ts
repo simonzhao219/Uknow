@@ -109,6 +109,10 @@ export function useReferralData(): UseReferralDataResult {
       setOverview(cached);
       hasDataRef.current = true;
       setError(null);
+    } else if (cached && cached.sort !== sortRef.current) {
+      // 接上的是舊排序的請求（setSort 時另一個請求還在飛）——結果不能用，再抓一次。
+      dedupe(DEDUP_KEY, fetchOverview, adoptShared);
+      return;
     } else if (!hasDataRef.current) {
       setError('載入失敗，請稍後再試');
     }
