@@ -83,6 +83,23 @@ export function useRewardData(): UseRewardDataResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 接上別人飛行中的請求時（見 utils/requestDedup.ts），自己的 fetchData 不會
+  // 跑——請求結束後從快取補回結果；快取裡沒有就是那次請求失敗了。
+  const adoptShared = useCallback(() => {
+    const cachedRewards = getCache('rewards');
+    const cachedWithdrawals = getCache('withdrawals');
+    if (cachedRewards && cachedWithdrawals) {
+      setRewardsData(cachedRewards.rewardsData);
+      setWithdrawals(cachedWithdrawals);
+      hasDataRef.current = true;
+      setError(null);
+    } else if (!hasDataRef.current) {
+      setError('獲取資料失敗');
+    }
+    setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     // stale-while-revalidate：兩把 key 都有快取才先畫（部分資料寧可
     // 走一次冷啟動），任一 stale 就背景重新請求。
@@ -95,21 +112,24 @@ export function useRewardData(): UseRewardDataResult {
       setIsLoading(false);
     }
     if (!cachedRewards || !cachedWithdrawals || isStale('rewards') || isStale('withdrawals')) {
-      dedupe(DEDUP_KEY, fetchData);
+      dedupe(DEDUP_KEY, fetchData, adoptShared);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('rewards') || isStale('withdrawals'),
-    () => dedupe(DEDUP_KEY, fetchData),
+    () => dedupe(DEDUP_KEY, fetchData, adoptShared),
   );
 
-  const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchData), [fetchData]);
+  const refetch = useCallback(
+    () => dedupe(DEDUP_KEY, fetchData, adoptShared),
+    [fetchData, adoptShared],
+  );
 
   const clearAndRefetch = useCallback(async () => {
     invalidate('withdrawal'); // 清 rewards + withdrawals
-    await dedupe(DEDUP_KEY, fetchData);
+    await dedupe(DEDUP_KEY, fetchData, adoptShared);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -135,6 +135,23 @@ export function useTaskData(): UseTaskDataResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 接上別人飛行中的請求時（見 utils/requestDedup.ts），自己的 fetchAllData
+  // 不會跑——請求結束後從快取補回結果；快取裡沒有就是那次請求失敗了。
+  const adoptShared = useCallback(() => {
+    const cachedTasks = getCache('tasks');
+    const cachedPending = getCache('pendingRewards');
+    if (cachedTasks) {
+      setTasks(cachedTasks);
+      if (cachedPending) setPendingRewards(cachedPending);
+      hasDataRef.current = true;
+      setError(null);
+    } else if (!hasDataRef.current) {
+      setError('獲取任務資料失敗');
+    }
+    setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     // stale-while-revalidate：有快取先畫（秒開），同時背景重新請求——
     // 推薦王的本月推薦數在 F5 後一個 round-trip 內就是最新值。
@@ -147,14 +164,14 @@ export function useTaskData(): UseTaskDataResult {
       setIsLoading(false);
     }
     if (!cachedTasks || !cachedPending || isStale('tasks') || isStale('pendingRewards')) {
-      dedupe(DEDUP_KEY, fetchAllData);
+      dedupe(DEDUP_KEY, fetchAllData, adoptShared);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('tasks') || isStale('pendingRewards'),
-    () => dedupe(DEDUP_KEY, fetchAllData),
+    () => dedupe(DEDUP_KEY, fetchAllData, adoptShared),
   );
 
   const fetchCurrentMonthTop = useCallback(async (): Promise<CurrentMonthReferrals | null> => {
