@@ -155,7 +155,7 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
 一、MemberDashboard.tsx 版面（由上到下）：
    1) 「需要注意」區：有事才渲染，用 StatusCallout variant="warning"（titleAs 依
       頁面標題層級）列出每條一個動作連結（brand）：即將到期的下線 N 位 → /referrals
-      （帶狀態過濾）、待查收提領 N 筆 → /rewards、刊登審核退件 → /service-providers。
+      （該頁上方的需要關注橫幅就列出這些人；樹沒有狀態過濾）、待查收提領 N 筆 → /rewards、刊登審核退件 → /service-providers。
       資料：overview.attention.items（既有，伺服器已依緊急度排序、即將到期在前，
       最多 6 筆＋total）、useRewardData 的提領狀態、useUserListing。
    2) 四張狀態卡，每張一個主數字或主狀態，整張可點（Link 包卡，鍵盤可達、
