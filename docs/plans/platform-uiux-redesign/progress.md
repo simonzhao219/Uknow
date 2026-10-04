@@ -48,6 +48,7 @@
 | 2026-10-04 | S2d 的「推薦網絡」卡：下線總數＋「M 位需關注」徽章（文案由「需要關注」改為「需關注」），資料用既有 `overview.attention.total` | 業主裁決；該數字是推薦頁橫幅本來就有的資訊（2026-08-08 起在 main），卡片只是再呈現一次，不新增 API |
 | 2026-10-04 | S2d prompt 拿掉「刊登審核退件」與「審核中」兩個狀態：listings 表沒有審核／退件欄位，可見性由 `has_active_subscription` 即時推導（規格書 §11）；刊登卡只呈現「已隱藏（會籍失效）」這一種後端真有的非正常態 | 業主原則：不做既有後端沒有的狀態顯示。prompt 初稿把提領的審核／退件語彙誤套到刊登上 |
 | 2026-10-04 | 主 session 對照檢查 S2d（#343）：實作未走偏；裁決「推薦計數只算即將到期」照現況合併、推薦頁橫幅本 PR 不改，兩者列遺留事項給 S7；plan.md F4、S2d prompt、驗收 1d 同步改成「N 位即將到期」 | 業主裁決（2026-10-04，PR #343 留言）。資料限制屬實：overview 只回一代節點＋attention 前 6 筆，精確人數需後端新增欄位，本 PR 不動 `supabase/functions/` |
+| 2026-10-04 | 主 session 對 #343 跑 `/review-implementation` 四視角（獨立於 S2d 自審）：P0×0、P1×5（任務卡輪次、useSubscription 補回蓋掉失敗旗標、§13 措辭、驗收 1d 帳號條件、StatusCallout 範圍目視）、P2 約 25 項；業主裁決 a 接受全站預設圖示不加關閉出口、b 會籍到期不進需要注意區、c 證件退件者仍見黑鈕列遺留、d 0 空態不加引導、e 登記摘要端點。S2d 在本 PR 處理 P1 與順手 P2，其餘整併進 S7 prompt 與遺留事項；驗收 1d 補帳號條件與目視項 | 審查報告與 S2d 待辦都在 PR #343 留言。兩輪審查結論一致（無未記錄偏離），差在第二輪抓到 plan 自身的缺口（任務卡用累計數與任務中心矛盾） |
 | 2026-10-04 | 同類掃描：plan.md §1 P2 的「刊登狀態（審核中/上架/隱藏）」改為「上架中／已隱藏」；驗收 1d 的「訂閱中／快到期各幾位」改為「下線總數與一／二／三代各幾位」（前者是已撤回的 statusCounts 案，與 S2d prompt 第二條矛盾）；本月任務卡註明 /tasks 只有推薦王一個任務 | 承 #342 的原則往上游掃：persona 描述與驗收標準若寫了後端沒有的狀態，施工 session 會照做 |
 
 ## 遺留事項
@@ -64,4 +65,9 @@
   會員中心只算即將到期。業主 2026-10-04 判斷已失效／停權對使用者沒有意義；S7 重做會員區資訊層次時拉齊。
 - **「整頁至多一顆黑色主按鈕」在會員中心有兩個共用元件例外**（S2d，#343）：MyQrEntry 的「加入推薦計畫」
   （未加入者可見）與 SubscriptionStatusCard 的「開始訂閱／續訂」（失效者多半被導離，少見）。S7 處理。
+- **S2d 審查遺留**（#343 四視角 P2，業主 2026-10-04 裁決不在該 PR 做；前端項已寫進 S7 prompt）：
+  - 前端（S7）：`WithdrawalSection` 四個停用原因旗標與 `canRequestWithdrawal` 並行→收成 `withdrawalBlockReason()`；`dashboardSummary.ts` 搬 `utils/`；`DataCacheProvider` 三個寫入點各寫 ref＋state→單一 `commit()`＋provider 測試；五份 `adoptShared` 共用化、`onJoined` 改必填；`canWithdraw` 在會籍未取得時當有效（空窗先亮黑鈕）；mutation 後 `clearAndRefetch` 可能 join 到變更前在途請求；需要注意區資料到位後才擠進頁面；整卡 `<a>` 內 span 畫按鈕無 role／無 `active:`；Badge `text-ellipsis` 截斷 sweep 偵測不到（360px 餘裕約 9px）；§3「入口在 BottomNav」只對手機成立；ReferralStats 手機高約 40px 未記取捨；點數寫法三處不一（「1,500 P」／「1500P」／「Point」）。
+  - 後端（另開工項）：`/subscriptions/status` 查 `user_account_status` 失敗時回 `'expired'` 而非 5xx（本 PR 讓它多了「誤標已隱藏」的可見後果）；會員中心摘要端點（一個聚合 API 取代五 hook 扇出；冷啟動 7 個請求、overview 全網路載入只為兩個數字、`pending-rewards` 抓了沒用）；`attention.expiringTotal`（見上一條）。
+  - 規格書：§7.2 補下線四態（active／expiring／expired／suspended）與 `expiring`＝會籍 ≤30 天的定義，目前只在後端與 api-contract 註解。
+  - 產品取捨（業主裁決接受現狀）：證件 rejected／缺照片者仍會看到黑色「申請提領」（§10.1 #5a/#5b 前端不可知，與獎勵頁同判斷式，進流程才被擋）；三個 hook 不讀功能旗標（旗標目前寫死全開）。
 - **`awaiting_collection`（待查收）狀態在 admin 與會員兩處顏色語意不一致**：`WithdrawalManagement.tsx`（admin 視角）用 `variant="warning"`（醒目黃，規劃當時就是這樣寫），`WithdrawalSection.tsx`（會員視角，本次 S2 業主核准的政策 13）用 `variant="secondary"`（中性灰）。需求視角 review 指出：業務流程上真正「需要動作」的其實是會員（要去確認收款），admin 端反而是等待中，兩邊的顏色安排恰好相反。兩處目前都各自忠實反映了規劃書的逐字指示，不是實作錯誤，但業主應在下一次接觸這兩個檔案時確認是否要拉平（同一狀態、同一注意力層級），或維持現狀（admin 用醒目色提醒「這筆在等會員」、會員視角用中性色標示「這是流程正常的一步」也是站得住腳的設計理由，需業主定調）。
