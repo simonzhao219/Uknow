@@ -163,9 +163,10 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
       刊登：刊登名稱＋狀態徽章（上架中 success-subtle／審核中 warning-subtle／
             已隱藏 secondary）＋「會籍至 yyyy/mm/dd」；沒有刊登時才出現唯一的
             黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
-      推薦網絡：下線總數主數字＋「M 位需要關注」（M = overview.attention.total，
-            warning-subtle 徽章，M 為 0 時不顯示）；點卡片到 /referrals。不做依狀態
-            的四顆 chip——statusCounts 不存在也不新增（業主裁決，PR #335 留言）。
+      推薦網絡：下線總數主數字（summary.totalReferrals）＋「M 位需關注」徽章
+            （M = overview.attention.total，warning-subtle，M 為 0 時不顯示；文案
+            固定四字「需關注」，與推薦頁橫幅同一份資料）；點卡片到 /referrals。
+            不做依狀態的四顆 chip（業主裁決 2026-10-04）。
       本月任務：進行中任務的 x / y 主數字＋ brand 進度條；全部達標時顯示
             success-subtle「本月已達標」。
       可提領點數：主數字（P）＋待查收 N 筆 warning-subtle 徽章；有可提領額度時
