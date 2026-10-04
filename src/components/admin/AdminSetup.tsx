@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
-import { Shield, CheckCircle, AlertCircle, Loader, UserCog } from 'lucide-react';
+import { Shield, AlertCircle, Loader, UserCog } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
 
@@ -173,7 +173,6 @@ export function AdminSetup() {
           {adminStatus.isAdmin && (
             <StatusCallout
               variant="success"
-              icon={CheckCircle}
               title="您已是管理員"
               titleAs="h3"
               description="您擁有完整的平台管理權限，可以使用所有管理功能。"
@@ -218,7 +217,6 @@ export function AdminSetup() {
           {!adminStatus.isAdmin && !adminStatus.canBecomeAdmin && adminStatus.hasExistingAdmin && (
             <StatusCallout
               variant="warning"
-              icon={AlertCircle}
               title="需要管理員授權"
               titleAs="h3"
               description="系統已有管理員，您需要聯繫現有管理員為您設置權限。"

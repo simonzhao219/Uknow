@@ -39,19 +39,16 @@ export interface UseSubscriptionResult {
 const DEDUP_KEY = 'subscriptionStatus';
 
 /**
- * ⚠️ **同一個畫面只准掛一個實例。**
+ * dedupe(DEDUP_KEY, …) 只會執行「先到者」的 fetchStatus；後到的實例（同頁第二處、
+ * 或跨頁接力）靠 adoptShared 在請求結束後從快取補回結果——過去缺這一步時，後到者
+ * 會卡在載入中，所以曾有「同一個畫面只准掛一個實例」的禁令。
  *
- * dedupe(DEDUP_KEY, …) 只會執行「先到者」的 fetchStatus，後到的實例拿到同一個
- * promise，但它自己的 setSubscriptionData / setIsLoading(false) 永遠不會跑——
- * 於是那個實例的 subscriptionData 卡在 null、isLoading 卡在 true，畫面永遠停在
- * 載入中。而 React 的 effect 是子先父後，所以「餓死的」通常是父層那個。
- *
- * 需要在子元件顯示會籍狀態時，改讀 UserContext 的 `user.accountStatus`
- * （`/profile` 已回傳同一份資料），不要再掛一個本 hook。
+ * 子元件只需要會籍狀態時，仍優先讀 UserContext 的 `user.accountStatus`
+ * （`/profile` 已回傳同一份資料），省一個實例。
  */
 export function useSubscription(): UseSubscriptionResult {
   const { user } = useContext(UserContext);
-  const { getCache, setCache, clearCache, isStale } = useDataCache();
+  const { getCache, getEntry, setCache, clearCache, isStale } = useDataCache();
   const { showToast } = useNotification();
 
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(null);
@@ -59,6 +56,10 @@ export function useSubscription(): UseSubscriptionResult {
   const [isValidating, setIsValidating] = useState(false);
   const [lastFetchFailed, setLastFetchFailed] = useState(false);
   const hasDataRef = useRef(false);
+  // 最近一次呼叫 dedupe 的時間。接上別人的請求時，只有晚於這個時間寫進快取的
+  // 資料才算「這次請求成功」；更早的是舊快取（或 storage 復原），不能拿來把
+  // lastFetchFailed 蓋回 false。
+  const joinedAtRef = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     if (hasDataRef.current) {
@@ -89,6 +90,32 @@ export function useSubscription(): UseSubscriptionResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 接上別人飛行中的請求時，自己的 fetchStatus 不會跑——請求結束後從快取補回
+  // 結果；快取裡沒有就是那次請求失敗了（訊號照樣曝露給呼叫端）。
+  const adoptShared = useCallback(() => {
+    const entry = getEntry('subscriptionStatus');
+    const writtenAt = entry ? Date.now() - entry.ageMs : -1;
+    if (entry && !entry.fromStorage && writtenAt >= joinedAtRef.current) {
+      setSubscriptionData(entry.data as SubscriptionData);
+      hasDataRef.current = true;
+      setLastFetchFailed(false);
+    } else {
+      // 請求失敗：舊快取照樣可以畫（stale-while-revalidate），但失敗訊號要留著。
+      if (entry && !hasDataRef.current) {
+        setSubscriptionData(entry.data as SubscriptionData);
+        hasDataRef.current = true;
+      }
+      setLastFetchFailed(true);
+    }
+    setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const joinShared = () => {
+    joinedAtRef.current = Date.now();
+    return dedupe(DEDUP_KEY, fetchStatus, adoptShared);
+  };
+
   useEffect(() => {
     if (!user?.id) {
       setIsLoading(false);
@@ -104,19 +131,19 @@ export function useSubscription(): UseSubscriptionResult {
     // 新請求一次——F5 後一個 round-trip 內就能看到最新的會員效期，不用
     // 再靠登出登入或等 5 分鐘的舊機制。
     if (!cached || isStale('subscriptionStatus')) {
-      dedupe(DEDUP_KEY, fetchStatus);
+      joinShared();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useRevalidateOnFocus(
     () => isStale('subscriptionStatus'),
-    () => dedupe(DEDUP_KEY, fetchStatus),
+    () => joinShared(),
   );
 
   const refresh = useCallback(async () => {
     clearCache('subscriptionStatus');
-    await dedupe(DEDUP_KEY, fetchStatus);
+    await joinShared();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

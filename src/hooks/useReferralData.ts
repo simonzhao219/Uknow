@@ -100,6 +100,27 @@ export function useReferralData(): UseReferralDataResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 接上別人飛行中的請求時（見 utils/requestDedup.ts），自己的 fetchOverview
+  // 不會跑——請求結束後從快取補回結果。會員中心與本頁共用這個請求：冷啟動時
+  // 點會員中心的推薦卡進來，若不補，這頁會停在沒有重試鈕的載入畫面。
+  const adoptShared = useCallback(() => {
+    const cached = getCache('referralNetwork') as NetworkOverview | null;
+    if (cached && cached.sort === sortRef.current && Array.isArray(cached.roots)) {
+      setOverview(cached);
+      hasDataRef.current = true;
+      setError(null);
+    } else if (cached && cached.sort !== sortRef.current) {
+      // 接上的是舊排序的請求（setSort 時另一個請求還在飛）——結果不能用，再抓一次。
+      dedupe(DEDUP_KEY, fetchOverview, adoptShared);
+      return;
+    } else if (!hasDataRef.current) {
+      // 同一實例自己發的請求失敗時，catch 已設好具體錯誤（例如 401）——不要用泛用文字蓋掉。
+      setError((prev) => prev ?? '載入失敗，請稍後再試');
+    }
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     // stale-while-revalidate：有快取先畫（秒開），同時背景重新請求——
     // F5 後一個 round-trip 內就能看到新付款的下線出現，不必登出登入。
@@ -111,17 +132,20 @@ export function useReferralData(): UseReferralDataResult {
       setLoading(false);
     }
     if (!cached || cached.sort !== sortRef.current || isStale('referralNetwork')) {
-      dedupe(DEDUP_KEY, fetchOverview);
+      dedupe(DEDUP_KEY, fetchOverview, adoptShared);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRevalidateOnFocus(
     () => isStale('referralNetwork'),
-    () => dedupe(DEDUP_KEY, fetchOverview),
+    () => dedupe(DEDUP_KEY, fetchOverview, adoptShared),
   );
 
-  const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchOverview), [fetchOverview]);
+  const refetch = useCallback(
+    () => dedupe(DEDUP_KEY, fetchOverview, adoptShared),
+    [fetchOverview, adoptShared],
+  );
 
   const setSort = useCallback(
     (mode: NetworkSortMode) => {
@@ -131,9 +155,9 @@ export function useReferralData(): UseReferralDataResult {
       sortRef.current = mode;
       childrenCache.current.clear(); // 排序是伺服器權威：舊排序的分支整張作廢
       childrenInflight.current.clear();
-      dedupe(DEDUP_KEY, fetchOverview);
+      dedupe(DEDUP_KEY, fetchOverview, adoptShared);
     },
-    [fetchOverview],
+    [fetchOverview, adoptShared],
   );
 
   const loadChildren = useCallback(async (parentId: string): Promise<NetworkNode[]> => {

@@ -39,7 +39,7 @@ export function CollectionConfirmDialog({
           {/* 警告訊息 */}
           <StatusCallout
             variant="warning"
-            title="⚠️ 請務必確認已收到款項"
+            title="請務必確認已收到款項"
             description="一旦確認查收，操作不可逆轉"
           />
 

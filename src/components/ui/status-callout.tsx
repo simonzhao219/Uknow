@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority@0.7.1";
 import type { LucideIcon } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react@0.487.0";
 
 import { cn } from "./utils";
 
@@ -22,9 +23,21 @@ const statusCalloutVariants = cva("rounded-lg border p-4 flex gap-3 items-start"
   },
 });
 
+// 狀態圖示跟著 variant 走（ui-ux-guidelines §12.3）：呼叫端不傳 icon 就由這裡
+// 決定，同一種狀態全站同一個圖示。S2 收斂時只換了色、沒換圖示，留下「灰底
+// 配 ⚠」這種錯配（任務中心領取說明）——收進元件之後就不會再發生。
+// 只有非狀態圖示（Shield、UserCog 這類表達主題而非狀態的）才由呼叫端自訂。
+const DEFAULT_ICONS: Record<"success" | "warning" | "destructive" | "neutral", LucideIcon> = {
+  success: CircleCheck,
+  warning: TriangleAlert,
+  destructive: CircleAlert,
+  neutral: Info,
+};
+
 interface StatusCalloutProps
   extends Omit<React.ComponentProps<"div">, "title">,
     VariantProps<typeof statusCalloutVariants> {
+  /** 只給非狀態圖示用；不傳時依 variant 取預設（見 DEFAULT_ICONS）。 */
   icon?: LucideIcon;
   title: React.ReactNode;
   /**
@@ -47,7 +60,7 @@ interface StatusCalloutProps
 
 function StatusCallout({
   variant,
-  icon: Icon,
+  icon,
   title,
   titleAs: TitleTag = "p",
   description,
@@ -55,6 +68,7 @@ function StatusCallout({
   className,
   ...props
 }: StatusCalloutProps) {
+  const Icon = icon ?? DEFAULT_ICONS[variant ?? "neutral"];
   return (
     <div
       data-slot="status-callout"
@@ -62,7 +76,7 @@ function StatusCallout({
       className={cn(statusCalloutVariants({ variant }), className)}
       {...props}
     >
-      {Icon && <Icon className="size-5 shrink-0 mt-0.5" aria-hidden="true" />}
+      <Icon className="size-5 shrink-0 mt-0.5" aria-hidden="true" />
       <div className="space-y-1 min-w-0 flex-1">
         <TitleTag className="font-medium">{title}</TitleTag>
         {description && <div className="text-sm opacity-90">{description}</div>}

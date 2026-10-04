@@ -177,8 +177,26 @@ def _setup_detail(context, api_mock, rest_mock):
 
 
 def _setup_dashboard(context, api_mock, rest_mock):
+    # 狀態總覽的最壞情境：四張卡全是最長的值、「需要注意」兩條都在、徽章與
+    # 「申請提領」按鈕都出現（手機 2×2 每張卡只有約 160px 寬）。
     _seed_member(context)
     rest_mock.set_user_listing(_hostile_listing())
+    expiring = [
+        build_referral_member(NAME_CJK_10, status="expiring", daysToExpiry=3)
+        for _ in range(6)
+    ]
+    api_mock.set_referral_tree(
+        first_generation=[build_referral_member(NAME_CJK_10)] * 6,
+        second_generation=[build_referral_member("李小華")] * 300,
+        third_generation=[build_referral_member("張美玲")] * 700,
+        user_referral_code="UK8K3M9Q2X",
+        attention={"total": 9, "items": expiring},
+    )
+    api_mock.set_task_center(tasks=[build_monthly_king_task(current=8)])
+    api_mock.set_reward_summary(available=BIG_POINTS, total_earned=BIG_POINTS * 2)
+    api_mock.set_reward_withdrawals(
+        [build_withdrawal_record(status="awaiting_collection", amount=1000)] * 12
+    )
 
 
 def _setup_my_qr(context, api_mock, rest_mock):

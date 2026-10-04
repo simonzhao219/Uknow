@@ -49,6 +49,9 @@
    ——導覽列在不同帳號狀態下漂移，使用者的位置記憶就失效了。
 4. **刊登不在導覽列裡**（主入口在會員中心）。
 
+**會員中心是儀表板，不是選單**：任務／推薦／獎勵的入口在 BottomNav，會員中心
+不再放一排導覽卡，而是各區塊「現在什麼狀態」的總覽（版面規則見 §13）。
+
 〔實作/契約〕`src/components/BottomNav.test.tsx` 檔頭。新增會員區入口前
 先讀那份契約，再決定放哪。
 
@@ -74,7 +77,7 @@
 
 - **列表載入用骨架屏**（與卡片同形 + `aria-busy`），不要單一置中 spinner
   ——spinner 等待感強，且資料到位時版面會跳動。`Skeleton` 元件已存在。
-  已套用：首頁。可延伸：`MemberDashboard`、獎勵/推薦/後台列表。
+  已套用：首頁、會員中心。可延伸：獎勵/推薦/後台列表。
 - **重新驗證中的清單**（例如切換伺服器端排序）以降透明度 + `aria-busy` 標示，
   保留舊資料，不要清空——避免看似無回應的空窗。
 - **不得靜默截斷**：分頁或搜尋只回前 N 筆而不揭露總數，會讓使用者以為
@@ -336,7 +339,10 @@ WCAG 4.5:1 門檻，換到鮮得多的顏色。連帶規則：
 **B 形狀不手刻三件組，走元件**（S2 收斂時建立，之後新寫的一律照用）：
 整塊提示框用 `StatusCallout`（`src/components/ui/status-callout.tsx`，
 `variant` = `success`/`warning`/`destructive`/`neutral`；原本是真標題的
-傳 `titleAs`，互動元素放 `action` slot）；狀態 pill 用 `Badge` 的
+傳 `titleAs`，互動元素放 `action` slot；**狀態圖示跟著 variant 走，不另傳**——
+元件依 variant 給預設圖示 success→CircleCheck、warning→TriangleAlert、
+destructive→CircleAlert、neutral→Info，只有 Shield、UserCog 這類非狀態圖示
+才傳 `icon`，標題也不再用 ⚠️／✅ 這類與圖示同義的 emoji）；狀態 pill 用 `Badge` 的
 `success`/`warning`（A 形狀）與 `success-subtle`/`warning-subtle`/
 `destructive-subtle`（B 形狀）variant。手刻 `bg-*-subtle border-*-border
 text-*-subtle-foreground` 三件組守門腳本抓不到（都是 token class），
@@ -480,6 +486,39 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
 缺一列，`check-color-usage.py` 就紅。這是 C1–C3 之外的第二類檢查（驗
 文件與程式碼一致，不進 baseline），存在理由：「對照表涵蓋掃到的 class」
 是可數、可枚舉的宣稱，沒有測試落點的宣稱等於沒驗過。
+
+---
+
+## 13. 資訊層次
+
+> 來源：會員中心狀態總覽（platform-uiux-redesign S2d／F4）。業主看到會員中心
+> 「一片黑白、看不到重點」，根因不是色票，是頁面根本沒有重點——四張卡只有
+> 標題和重複標題的按鈕，顏色沒有地方附著。這四條是之後任務／獎勵／刊登等頁
+> 重做資訊層次（S7）的依據。〔實作〕`src/components/MemberDashboard.tsx`、
+> `src/components/dashboard/`、`src/components/referral/ReferralStats.tsx` 與其測試。
+
+1. **主數字與降級——依頁型判斷**：
+   - **內容頁一個主數字或主狀態**，字級明顯大於其他，其餘數字降級成小字一行
+     （例：推薦管理的「下線總數」為主，「一代 7 · 二代 4 · 三代 1」為輔）。
+   - **並列多區塊、各一主狀態的總覽型頁面**（會員中心即此類）：每個區塊內一個
+     主數字，區塊之間的主次由需要注意區與徽章承擔，不靠放大某一張卡。
+
+   主數字一律 `--foreground` 黑（§12.5），語義由旁邊的徽章承擔。
+2. **卡片不得零資訊**——至少回答「現在什麼狀態」；純導覽入口交給導覽列，不做
+   成卡片。整張卡可點時不另放重複標題的按鈕（卡本身是連結，`aria-label` 要把
+   卡上看得到的狀態說完、以標題開頭）。**只有「現在就能做的事」才出現按鈕**：
+   判斷式與目的頁共用同一個（例：「申請提領」只在 `canRequestWithdrawal` 為真時
+   出現），不讓使用者點進去才發現不能做。主行動黑（`--primary`），次行動
+   brand；**頁面主體至多一顆黑色主按鈕**——頁面主體指該頁元件自己渲染的狀態卡區，
+   兩個主行動同時成立時要有明確的優先序（會員中心卡片區：申請提領 > 立即刊登）。
+3. **需要注意的事集中放最上面**，用 `StatusCallout variant="warning"`（淺底框），
+   每條帶一個可點的動作連結（brand），點了就到能處理它的地方。沒有事就整塊
+   不渲染——常駐的空提醒框只會訓練使用者忽略它。只列後端真的有的狀態，
+   不為了填版面發明狀態。
+
+4. **區塊各自三態，失敗不連坐**：載入中用與內容同形的 `Skeleton`，不先閃「0」
+   再跳成真值（§5）；單一區塊讀取失敗只在該區塊顯示中性錯誤字（不上紅、不整頁
+   報錯），其他區塊照常顯示；空態（例：目前沒有任務）是一般文字，不借錯誤態的樣式。
 
 ---
 

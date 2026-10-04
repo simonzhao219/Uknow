@@ -1,6 +1,6 @@
 import type { ThreeStepConfig } from '../ThreeStepDialog';
 import { StatusCallout } from '../../ui/status-callout';
-import { AlertTriangle, ArrowRight, CheckCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle } from 'lucide-react';
 import { formatTimestamp } from '../../../utils/referralFormatter';
 import { twDayOf, twDayPlusYears, formatTwDate } from '../../../utils/twDate';
 
@@ -67,8 +67,7 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
 
           <StatusCallout
             variant="warning"
-            icon={AlertTriangle}
-            title="⚠️ 重要提醒"
+            title="重要提醒"
             description={
               <ul className="space-y-1">
                 <li>• 領取後無法撤回</li>
@@ -126,11 +125,7 @@ export function createClaimAllRewardsConfig(count: number): ThreeStepConfig {
               </div>
             </div>
 
-            <StatusCallout
-              variant="success"
-              icon={CheckCircle}
-              title={`✅ 確認後將立即延長您的會員到期日 ${count} 年`}
-            />
+            <StatusCallout variant="success" title={`確認後將立即延長您的會員到期日 ${count} 年`} />
           </div>
         );
       },
@@ -172,8 +167,7 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
 
           <StatusCallout
             variant="warning"
-            icon={AlertTriangle}
-            title="⚠️ 重要提醒"
+            title="重要提醒"
             description={
               <ul className="space-y-1">
                 <li>• 領取後無法撤回</li>
@@ -227,11 +221,7 @@ function createFreeRenewalYearConfig(reward: PendingMissionReward): ThreeStepCon
               </div>
             </div>
 
-            <StatusCallout
-              variant="success"
-              icon={CheckCircle}
-              title="✅ 確認後將立即延長您的會員到期日"
-            />
+            <StatusCallout variant="success" title="確認後將立即延長您的會員到期日" />
           </div>
         );
       },
@@ -276,8 +266,7 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
           {/* 重要提醒 */}
           <StatusCallout
             variant="warning"
-            icon={AlertTriangle}
-            title="⚠️ 重要提醒"
+            title="重要提醒"
             description={
               <ul className="space-y-1">
                 <li>• 領取後無法撤回</li>
@@ -362,11 +351,7 @@ function createPointsRewardConfig(reward: PendingMissionReward): ThreeStepConfig
             </div>
 
             {/* 確認提示 */}
-            <StatusCallout
-              variant="success"
-              icon={CheckCircle}
-              title="✅ 確認後將立即更新您的點數"
-            />
+            <StatusCallout variant="success" title="確認後將立即更新您的點數" />
           </div>
         );
       },

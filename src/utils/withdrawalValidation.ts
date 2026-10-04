@@ -104,3 +104,31 @@ export function validateBankAccount(bankAccount: string): string | null {
 export function isValidIdNumberFormat(idNumber: string): boolean {
   return ID_NUMBER_PATTERN.test(idNumber.trim().toUpperCase());
 }
+
+export interface WithdrawalEligibilityInput {
+  availableRewards: number;
+  hasWithdrawnToday: boolean;
+  /** useSubscription 的 status；只有明確 'expired' 才擋（尚未取得不當成失效）。 */
+  subscriptionStatus?: string | null;
+  referralProgramJoined?: boolean;
+}
+
+/**
+ * 「現在能不能按申請提領」——獎勵頁的提領鈕與會員中心的「申請提領」共用這一個
+ * 判斷，兩處才不會各寫一份而在邊界互相矛盾（會員中心只在這裡為真時才顯示按鈕，
+ * ui-ux-guidelines §13：只有現在就能做的事才出現按鈕）。
+ * 前端只做即時回饋；後端 request_withdrawal 的守衛（規格書 §10.1）仍是最終真相。
+ */
+export function canRequestWithdrawal({
+  availableRewards,
+  hasWithdrawnToday,
+  subscriptionStatus,
+  referralProgramJoined,
+}: WithdrawalEligibilityInput): boolean {
+  return (
+    !!referralProgramJoined &&
+    subscriptionStatus !== 'expired' &&
+    !hasWithdrawnToday &&
+    canWithdrawFromBalance(availableRewards)
+  );
+}

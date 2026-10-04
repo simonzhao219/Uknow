@@ -70,13 +70,11 @@ def open_referrals(guarded_page, run_state, scenario_memo, node):
 
 @then("推薦樹三個世代區塊各顯示 8 人")
 def tree_generation_counts(guarded_page):
-    # UI 改版後世代人數由 ReferralStats 桌面卡片承載（journey 跑桌面
-    # viewport）：一代/二代/三代各一張卡，數值即該代人數。
-    for label in ("一代", "二代", "三代"):
-        card = guarded_page.locator('[data-slot="card"]').filter(
-            has=guarded_page.locator('[data-slot="card-title"]', has_text=label)
-        )
-        expect(card.locator('[data-slot="card-content"]')).to_have_text("8", timeout=15_000)
+    # 世代人數由 ReferralStats 的世代小字行承載（S2d 起統計區是「下線總數＋
+    # 一行世代分布」，手機桌機同一套）。
+    expect(guarded_page.get_by_test_id("referral-stats-generations")).to_have_text(
+        "一代 8 · 二代 8 · 三代 8", timeout=15_000
+    )
 
 
 @then(parsers.parse('展開全部世代後名單包含 "{node}" 的姓名'))

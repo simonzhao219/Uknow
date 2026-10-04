@@ -12,7 +12,9 @@ import type { ListingRow } from '../types/listing';
  *
  * 刊登刻意沒有「活躍／過期」狀態欄位——是否對外顯示完全由帳號訂閱決定，
  * 在資料層一處守門（HomePage 讀 public_listings view）。因此這裡只回
- * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。
+ * 「有沒有刊登」與刊登本身的內容，不要在 UI 上發明狀態徽章。唯一的例外是
+ * 由會籍推導的可見性：會員中心在會籍失效時標「已隱藏」（規格書 §11），
+ * 那讀的是 useSubscription，不是刊登自己的欄位。
  */
 export interface UseUserListingResult {
   /** null 有兩種意思，必須配合 loading／error 一起讀：資料還沒到、或確實沒有刊登。 */
@@ -105,6 +107,22 @@ export function useUserListing({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 接上別人飛行中的查詢時（見 utils/requestDedup.ts），自己的 fetchListing
+  // 不會跑——查詢結束後從快取補回結果（null 也是查證過的結果，所以用 hasCache
+  // 判斷）；快取裡沒有就是那次查詢失敗了。
+  const adoptShared = useCallback(() => {
+    if (hasCache(CACHE_KEY)) {
+      setListing(getCache(CACHE_KEY));
+      hasDataRef.current = true;
+      setError(null);
+    } else if (!hasDataRef.current) {
+      // 同一實例自己發的請求失敗時，catch 已設好具體錯誤（例如 401）——不要用泛用文字蓋掉。
+      setError((prev) => prev ?? '獲取刊登失敗，請稍後再試');
+    }
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
@@ -124,17 +142,20 @@ export function useUserListing({
       setLoading(false);
     }
     if (!hasCache(CACHE_KEY) || isStale(CACHE_KEY)) {
-      dedupe(DEDUP_KEY, fetchListing);
+      dedupe(DEDUP_KEY, fetchListing, adoptShared);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, enabled]);
 
   useRevalidateOnFocus(
     () => enabled && !!userIdRef.current && isStale(CACHE_KEY),
-    () => dedupe(DEDUP_KEY, fetchListing),
+    () => dedupe(DEDUP_KEY, fetchListing, adoptShared),
   );
 
-  const refetch = useCallback(() => dedupe(DEDUP_KEY, fetchListing), [fetchListing]);
+  const refetch = useCallback(
+    () => dedupe(DEDUP_KEY, fetchListing, adoptShared),
+    [fetchListing, adoptShared],
+  );
 
   return { listing, loading, isValidating, error, refetch };
 }

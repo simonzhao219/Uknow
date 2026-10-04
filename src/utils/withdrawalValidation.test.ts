@@ -7,6 +7,7 @@ import {
   computeWithdrawablePoints,
   computeMaxWithdrawal,
   canWithdrawFromBalance,
+  canRequestWithdrawal,
   validateWithdrawalAmount,
   validateBankAccount,
   isValidIdNumberFormat,
@@ -189,5 +190,40 @@ describe('isValidIdNumberFormat — 台灣身分證格式', () => {
 
   it('空字串 → false', () => {
     expect(isValidIdNumberFormat('')).toBe(false);
+  });
+});
+
+describe('canRequestWithdrawal', () => {
+  const eligible = {
+    availableRewards: MIN_REQUIRED_BALANCE,
+    hasWithdrawnToday: false,
+    subscriptionStatus: 'active',
+    referralProgramJoined: true,
+  };
+
+  it('餘額達門檻、今日未提領、會籍有效且已加入推薦計畫時可申請', () => {
+    expect(canRequestWithdrawal(eligible)).toBe(true);
+  });
+
+  it('餘額差 1 點未達 1015 時不可申請', () => {
+    expect(canRequestWithdrawal({ ...eligible, availableRewards: MIN_REQUIRED_BALANCE - 1 })).toBe(
+      false,
+    );
+  });
+
+  it('今日已提領過時不可申請', () => {
+    expect(canRequestWithdrawal({ ...eligible, hasWithdrawnToday: true })).toBe(false);
+  });
+
+  it('會籍已失效時不可申請', () => {
+    expect(canRequestWithdrawal({ ...eligible, subscriptionStatus: 'expired' })).toBe(false);
+  });
+
+  it('會籍狀態尚未取得時不當成失效', () => {
+    expect(canRequestWithdrawal({ ...eligible, subscriptionStatus: null })).toBe(true);
+  });
+
+  it('未加入推薦計畫時不可申請', () => {
+    expect(canRequestWithdrawal({ ...eligible, referralProgramJoined: false })).toBe(false);
   });
 });
