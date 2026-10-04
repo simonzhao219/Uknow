@@ -14,6 +14,7 @@ import {
   MIN_WITHDRAWAL,
   WITHDRAWAL_FEE,
   MIN_REQUIRED_BALANCE,
+  canRequestWithdrawal,
 } from '../../utils/withdrawalValidation';
 // 型別走契約，不在元件裡手抄一份（plan §2.4）：抄本不會跟著契約長欄位，
 // 而多出來的欄位對元件只是「沒讀」，tsc 不會叫——那正是契約要防的靜默漂移。
@@ -59,11 +60,14 @@ export function WithdrawalSection({
   const isSubscriptionInvalid = subscriptionStatus === 'expired';
   const hasNotJoinedReferral = !referralProgramJoined; // ✅ 新增：未加入推薦計畫
 
-  const canWithdraw =
-    !isInsufficientBalance &&
-    !hasReachedDailyLimit &&
-    !isSubscriptionInvalid &&
-    !hasNotJoinedReferral; // ✅ 新增條件
+  // 判斷式與會員中心的「申請提領」共用（utils/withdrawalValidation），上面四個
+  // 旗標只用來挑選停用原因的文案。
+  const canWithdraw = canRequestWithdrawal({
+    availableRewards,
+    hasWithdrawnToday,
+    subscriptionStatus,
+    referralProgramJoined,
+  });
 
   // ✅ 生成提示訊息
   const getDisabledReason = () => {

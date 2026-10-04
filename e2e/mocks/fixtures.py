@@ -71,6 +71,8 @@ def seed_authenticated_session(
         renewal=renewal,
         hasPendingWithdrawal=False,
     )
+    # 會員中心是登入後的落點，會讀推薦／任務／獎勵；同理預設回空資料（可覆寫）。
+    api_mock.set_member_area_defaults()
     return profile
 
 

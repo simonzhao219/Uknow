@@ -427,6 +427,13 @@ describe('強調色 brand 對比度（淺深各一輪，公式已錨定）', () 
       });
     }
 
+    // 會員中心「需要注意」框（StatusCallout warning）裡的動作連結是 brand 字。
+    it(`${modeLabel}：brand 字對 --warning-subtle 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'warning-subtle')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
     it(`${modeLabel}：brand 實心底配 brand-foreground 達 4.5:1`, () => {
       expect(
         contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'brand-foreground')),

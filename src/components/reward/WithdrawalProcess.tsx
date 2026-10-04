@@ -655,7 +655,6 @@ export function WithdrawalProcess({
             {idRejected && (
               <StatusCallout
                 variant="destructive"
-                icon={AlertCircle}
                 title="證件審核未通過"
                 description={
                   <>

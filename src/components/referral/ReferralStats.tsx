@@ -1,6 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { StatCardGrid } from '../ui/stat-card-grid';
-import { Users, UserPlus } from 'lucide-react';
+import { Card, CardContent } from '../ui/card';
+import { Users } from 'lucide-react';
 
 interface ReferralStatsProps {
   firstLevelCount: number;
@@ -8,6 +7,12 @@ interface ReferralStatsProps {
   thirdLevelCount: number;
 }
 
+/**
+ * 推薦管理頁的統計區：一個主數字（下線總數）＋一行世代小字（ui-ux-guidelines
+ * §13 第 1 條：每頁一個主數字，其餘降級）。即將到期等需要處理的人由同頁推薦樹
+ * 上方的橫幅承擔，這裡不重複。手機與桌機同一套版面——原本的四張等大卡把主次
+ * 拉平了，手機版也只是把同樣四個數字擠成一列。
+ */
 export function ReferralStats({
   firstLevelCount,
   secondLevelCount,
@@ -15,91 +20,21 @@ export function ReferralStats({
 }: ReferralStatsProps) {
   const totalReferrals = firstLevelCount + secondLevelCount + thirdLevelCount;
 
-  // 手機：瘦身成單列四欄精簡條，把黃金版位讓給推薦樹（不再用 2×2 大卡占版面）。
-  const compact = [
-    { label: '總推薦', value: totalReferrals },
-    { label: '一代', value: firstLevelCount },
-    { label: '二代', value: secondLevelCount },
-    { label: '三代', value: thirdLevelCount },
-  ];
-
   return (
-    <>
-      <Card className="sm:hidden">
-        <CardContent className="grid grid-cols-4 divide-x divide-border px-0 py-3">
-          {compact.map((s) => (
-            <div key={s.label} className="flex flex-col items-center gap-0.5 px-1">
-              <span className="text-2xl font-bold text-foreground">{s.value}</span>
-              <span className="text-xs text-muted-foreground">{s.label}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* 桌面 / 平板：維持四張卡 */}
-      <div className="hidden sm:block">
-        <StatCardGrid>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span>總推薦數</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground">{totalReferrals}</div>
-              {/*<p className="text-sm text-muted-foreground mt-1">
-            所有推薦
-          </p>*/}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span>一代</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground">{firstLevelCount}</div>
-              {/*<p className="text-sm text-muted-foreground mt-1">
-            直接推薦
-          </p>*/}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span>二代</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground">{secondLevelCount}</div>
-              {/*<p className="text-sm text-muted-foreground mt-1">
-            一代推薦
-          </p>*/}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span>三代</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground">{thirdLevelCount}</div>
-              {/*<p className="text-sm text-muted-foreground mt-1">
-            二代推薦
-          </p>*/}
-            </CardContent>
-          </Card>
-        </StatCardGrid>
-      </div>
-    </>
+    <Card data-testid="referral-stats">
+      <CardContent className="flex items-center gap-4 py-4 [&:last-child]:pb-4">
+        <Users className="h-6 w-6 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground">下線總數</p>
+          <p className="text-3xl font-bold leading-tight text-foreground">
+            {totalReferrals}
+            <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
+          </p>
+          <p data-testid="referral-stats-generations" className="text-sm text-muted-foreground">
+            一代 {firstLevelCount} · 二代 {secondLevelCount} · 三代 {thirdLevelCount}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

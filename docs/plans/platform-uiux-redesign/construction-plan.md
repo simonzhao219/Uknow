@@ -20,7 +20,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 - 每 2 個 session 是一個**驗收站**（見 §4），業主上 develop 環境實看。
 - **S2b（2026-10-03 追加）**：驗收站 1 之後業主裁決加強調色與語義色升亮（plan.md §0 第 6 列、§3 D4）。插在 S2 之後、S3 之前（追加時 S3 尚未開工）；它只動 token 與幾個原語，不碰 S3 的檔案。
 - **S2c（2026-10-03 追加，同日改向）**：推薦樹世代配色（plan.md §0 第 7 列、§3 D5、§4 第 8 點），排在 S2b 之後，S3 之前或之後皆可。原案「頭像綁訂閱狀態」經業主看過預覽後撤回，改為維持世代表示、把 `--tree-gen-*` 三階灰換成三個專用色相；只動 token、對應測試與文件，不碰 `supabase/functions/`，與 S3 的後台檔案不重疊。
-- **S2d（2026-10-03 追加）**：會員中心狀態總覽（plan.md §0 第 8 列、§3 F4），排在 S2c 之後（原本需要 S2c 加進 overview 的 `statusCounts`，⚠️ S2c 改向後該欄位不存在，此依賴待業主裁決，見 progress.md 遺留事項）；只動會員中心與推薦統計兩個前端檔，不碰 S3。
+- **S2d（2026-10-03 追加）**：會員中心狀態總覽（plan.md §0 第 8 列、§3 F4），排在 S2c 之後；資料全用既有 API（`overview.attention` 等），不新增後端（業主 2026-10-03 於 PR #335 裁決）；只動會員中心與推薦統計兩個前端檔，不碰 S3。
 
 ## 2. Session 分工表
 
@@ -40,7 +40,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
 | S6 | 前台門面 | F1 | `fix/frontend-p1-polish` | 輕量 Plan Mode | Sonnet | 輕 |
-| S7 | 會員區資訊層次 | F2+F3 | `fix/frontend-member-hierarchy` | 輕量 Plan Mode（照 §13 三條通則與 F4 的樣板） | Sonnet | 中 |
+| S7 | 會員區資訊層次 | F2+F3＋S2d 審查遺留 | `fix/frontend-member-hierarchy` | 輕量 Plan Mode（照 §13 通則與 F4 的樣板） | Sonnet | 中 |
 | S8 | 制度化收尾 | G1+G2 | `claude/uiux-program-closeout` | 輕量（改文件與 skill 模板、刪鷹架） | Sonnet | 輕 |
 
 ※ **S1 重量異動（2026-09-14）**：兩輪四視角審查回填後範圍變大（C3 原始色值
@@ -155,26 +155,35 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
 一、MemberDashboard.tsx 版面（由上到下）：
    1) 「需要注意」區：有事才渲染，用 StatusCallout variant="warning"（titleAs 依
       頁面標題層級）列出每條一個動作連結（brand）：即將到期的下線 N 位 → /referrals
-      （帶狀態過濾）、待查收提領 N 筆 → /rewards、刊登審核退件 → /service-providers。
-      資料：overview.attention（既有）、useRewardData 的提領狀態、useUserListing。
+      （該頁上方的需要關注橫幅就列出這些人；樹沒有狀態過濾）、待查收提領 N 筆 → /rewards。
+      只列後端真的有的狀態：listings 表沒有審核／退件欄位（規格書 §11，可見性
+      由 has_active_subscription 即時推導、不存 isActive），所以沒有「審核退件」這條。
+      資料：overview.attention.items（既有，伺服器已依緊急度排序、即將到期在前，
+      最多 6 筆＋total）、useRewardData 的提領狀態、useUserListing。
    2) 四張狀態卡，每張一個主數字或主狀態，整張可點（Link 包卡，鍵盤可達、
       aria-label 完整），右側 chevron，不再放重複標題的按鈕：
-      刊登：刊登名稱＋狀態徽章（上架中 success-subtle／審核中 warning-subtle／
-            已隱藏 secondary）＋「會籍至 yyyy/mm/dd」；沒有刊登時才出現唯一的
-            黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
-      推薦網絡：下線總數主數字＋ statusCounts 的四顆 chip（與 S2c 樹同一組樣式）。
-      本月任務：進行中任務的 x / y 主數字＋ brand 進度條；全部達標時顯示
+      刊登：刊登名稱＋「會籍至 yyyy/mm/dd」；可見性只有後端真有的兩種——會籍有效
+            ＝上架中（不另加徽章，正常態不上色）、會籍失效＝「已隱藏」secondary 徽章
+            （由 useSubscription 推導，與規格書 §11 一致；不存在「審核中」「退件」）；
+            沒有刊登時才出現唯一的黑色主按鈕「立即刊登」（三態邏輯沿用檔內既有註解）。
+      推薦網絡：下線總數主數字（summary.totalReferrals）＋「N 位即將到期」徽章
+            （N = attention.items 中 status === 'expiring' 的筆數，warning-subtle，
+            N 為 0 時不顯示；items 全是即將到期且 total 更大時顯示「至少 N 位」——
+            業主 2026-10-04 於 Plan Mode 裁決只算即將到期，不用 attention.total、
+            不寫「需關注」）；點卡片到 /referrals。不做依狀態的四顆 chip。
+      本月任務：x / y 主數字＋ brand 進度條（後端 /tasks 目前只有「推薦王」一個
+            任務，x = current、y = target，用既有 useTaskData）；completed 為真時顯示
             success-subtle「本月已達標」。
       可提領點數：主數字（P）＋待查收 N 筆 warning-subtle 徽章；有可提領額度時
             顯示黑色主按鈕「申請提領」（整頁只有這一顆主按鈕）。
    3) SubscriptionStatusCard 與 MyQrEntry 維持，位置依 Plan Mode 提案。
 二、ReferralManagement 的 ReferralStats：四個等大數字改成「一個主數字（下線總數）
-   ＋ statusCounts chip（點了過濾樹，與 S2c 同一套狀態）＋ 一行小字『一代 7 ·
-   二代 4 · 三代 1』」。
+   ＋ 一行小字『一代 7 · 二代 4 · 三代 1』」；需要關注的人數已由同頁既有的
+   需要關注橫幅承擔，統計區不重複。不做狀態 chip、不做過濾。
 三、數字一律 --foreground 黑（§12.5），語義由徽章承擔；brand 只用在連結、進度
    填色、選中態；主按鈕黑且整頁至多一顆。載入中用 Skeleton 占位（不閃「0」），
    讀取失敗該卡顯示中性錯誤態，不整頁報錯。
-四、ui-ux-guidelines.md 新增「§13 資訊層次」三條通則（規則只寫一份，S7 照此）：
+四、ui-ux-guidelines.md 新增「§13 資訊層次」三條通則（規則只寫一份，S7 照此；審查後補第 4 條「單區塊失敗中性錯誤態」，第 1 條改寫成判準）：
    (1) 每頁一個主數字或主狀態，字級明顯大於其他，其餘數字降級；
    (2) 卡片不得零資訊——至少回答「現在什麼狀態」；純導覽入口交給導覽列不做成卡片；
        整張卡可點時不另放重複標題的按鈕；只有「現在就能做的事」才出現按鈕，
@@ -252,13 +261,21 @@ Plan Mode 過目後動工。
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
 執行 S7（工項 F2+F3）：在 fix/frontend-member-hierarchy 分支上，照
-ui-ux-guidelines §13 的三條通則與 S2d 做好的會員中心樣板，重做任務中心、
+ui-ux-guidelines §13 的通則與 S2d 做好的會員中心樣板，重做任務中心、
 獎勵回饋、刊登管理三頁的資訊層次：每頁一個主數字或主狀態（獎勵＝可提領
 點數、任務＝進行中任務進度、刊登＝刊登狀態），其餘降級；達標／已完成的
 卡收起、進行中排前面；主行動一顆黑、次行動 brand；會籍失效狀態的呈現
 （續約 banner、功能導向提示、獎勵頁例外可讀）是一級對象。接著 F3：全站
 三態完備性巡檢＋補缺、既有 text-destructive 裸字若仍有殘留一併收掉、
-overflow sweep 過一輪。Plan Mode 先列每頁的主數字與降級清單給我看過再動工。
+overflow sweep 過一輪。另外承接 progress.md 遺留事項「S2d 審查遺留」那條的前端
+項目（withdrawalBlockReason 收斂、dashboardSummary 搬 utils/、DataCacheProvider
+單一 commit＋provider 測試、adoptShared 共用化、canWithdraw 等會籍 settled、
+mutation 後 refetch 繞過 join、需要注意區位移、span 畫按鈕語意、Badge 截斷
+sweep 盲點、§3 桌機入口補句、ReferralStats 手機高度、點數寫法統一、推薦頁
+橫幅口徑拉齊、MyQrEntry／SubscriptionStatusCard 的黑鈕納入 §13）；後端項
+（attention.expiringTotal、/subscriptions/status 查詢失敗回 5xx、會員中心摘要
+端點）與規格書 §7.2 下線四態定義不在 S7，另開工項。Plan Mode 先列每頁的
+主數字與降級清單給我看過再動工。
 ```
 
 **S8**：
@@ -300,7 +317,7 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收 1 | S2 合併 | develop 環境全站走一圈：色彩是否收斂、觀感是否一致、有無改壞的地方；**含**深色模式下推薦樹的世代頭像灰是否與「已失效」狀態點的灰混淆（S1 design-language-foundation 二審 R2-UIUX-1 的裁決——世代色去色走灰階三階，業主可在此站推翻；已於 2026-10-03 推翻，見 S2c） |
 | 驗收 1b | S2b 合併 | 快速走一輪（不必全站）：連結／選中分頁／進度條／輸入框焦點是否出現靛藍且只出現在這些地方；成功／警示／危險的實心徽章與危險按鈕是否為亮底黑字且讀得清楚；devtools `.dark` 看一次同樣幾處 |
 | 驗收 1c | S2c 合併 | 推薦網絡頁：一代／二代／三代的頭像是否一眼分得出（teal／violet／pink）；詳情徽章與連接線是否與頭像同色相；右下角狀態小點與列右側文字沒有被新顏色干擾；devtools `.dark` 看一次三色頭像與徽章 |
-| 驗收 1d | S2d 合併 | 會員中心：不滑動就看得到「需要注意」與四個主數字；每張卡一眼知道狀態；整頁只有一顆黑色主按鈕；推薦管理統計一眼看出訂閱中／快到期各幾位；375px 與 devtools `.dark` 各看一次 |
+| 驗收 1d | S2d 合併 | **用「已加入推薦計畫、會籍非 30 天內到期」的帳號驗**（新會員會同時看到「立即刊登」與 MyQrEntry 的「加入推薦計畫」兩顆黑鈕，是 §13 已知的共用元件例外，不是缺陷）。會員中心：不滑動就看得到「需要注意」與四個主數字（LINE 內瀏覽器首屏高度只能人眼驗）；每張卡一眼知道狀態；卡片區只有一顆黑色主按鈕；本月任務卡顯示本輪 x / y 與「本月已完成 N 次」，與任務中心數字一致；推薦管理統計一眼看出下線總數與一／二／三代各幾位（不是訂閱中／快到期——那是已撤回的 statusCounts 案）；推薦網絡卡與需要注意區寫的是「N 位即將到期」，不是「需關注」；**StatusCallout 全站改走預設圖示**（46 處用法、約 30 處原本沒圖示）——付款結果頁、付款頁、領獎與查收對話框、後台錯誤框各看一眼圖示與色框是否相稱（業主 2026-10-04 裁決接受，不加關閉出口）；375px 與 devtools `.dark` 各看一次 |
 | 驗收 2 | S4 合併 | 後台：四 Tab 單列（375px 實機確認標籤不溢字不換行）、工具列、會員詳情分區——手機與桌機各實際操作一次（後台兩者並重） |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感（切回不再等 loading） |
 | 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主；任務／獎勵／刊登三頁各自的主數字是否一眼就看到、達標的卡有沒有收起、會籍失效狀態的 banner 與提示是否正確 |

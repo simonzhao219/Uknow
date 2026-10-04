@@ -155,11 +155,10 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
 
   // ref 鏡射 state，讓所有 getter 用穩定的 function identity（[] deps）
   // 實作——focus/visibilitychange 這類長壽命 listener 才不會抓到掛載當下
-  // 的舊快取快照（stale closure）。
+  // 的舊快取快照（stale closure）。所有寫入（set/clear/invalidate）都同步
+  // 更新這個 ref，所以不再用 effect 把 state 抄回來——effect 晚於 commit 執行，
+  // 中間若有新的寫入，抄回來的舊 state 會把它蓋掉。
   const cacheRef = useRef(cache);
-  useEffect(() => {
-    cacheRef.current = cache;
-  }, [cache]);
 
   // 每次快取變更時同步至 SessionStorage（存進去的資料不帶
   // fromStorage——那個旗標只在「讀取時是否為本次 mount 首次復原」的
@@ -190,21 +189,26 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
     return Date.now() - item.timestamp > softTtl;
   }, []);
 
+  // 寫入時同步更新 cacheRef，不等 re-render 後的 effect：dedupe 的後到者在
+  // 請求結束的同一個 microtask 裡就會讀快取（見 utils/requestDedup.ts 的
+  // onJoined），若只靠 effect 鏡射，它會讀到寫入前的舊值。
   const setCacheData = useCallback((key: CacheKey, value: any) => {
-    setCache((prev) => ({
-      ...prev,
-      [key]: { data: value, timestamp: Date.now() }, // fromStorage 不設 = false：這是親自 fetch 的新鮮資料
-    }));
+    const item: CacheItem = { data: value, timestamp: Date.now() }; // fromStorage 不設 = false：這是親自 fetch 的新鮮資料
+    cacheRef.current = { ...cacheRef.current, [key]: item };
+    setCache((prev) => ({ ...prev, [key]: item }));
   }, []);
 
   const clearCacheData = useCallback((key?: CacheKey) => {
     if (key) {
+      const { [key]: _removed, ...rest } = cacheRef.current;
+      cacheRef.current = rest;
       setCache((prev) => {
         const newCache = { ...prev };
         delete newCache[key];
         return newCache;
       });
     } else {
+      cacheRef.current = {};
       setCache({});
       try {
         sessionStorage.removeItem(STORAGE_KEY);
@@ -216,6 +220,9 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
 
   const invalidate = useCallback((event: MutationEvent) => {
     const keys = MUTATION_GROUPS[event];
+    const nextRef = { ...cacheRef.current };
+    for (const k of keys) delete nextRef[k];
+    cacheRef.current = nextRef;
     setCache((prev) => {
       const next = { ...prev };
       for (const k of keys) delete next[k];
