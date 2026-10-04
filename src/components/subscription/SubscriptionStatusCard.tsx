@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
-import { CreditCard, AlertTriangle, Loader2 } from 'lucide-react';
+import { CreditCard, Loader2 } from 'lucide-react';
 import type { SubscriptionData } from '../../hooks/useSubscription';
 import { formatTwDate } from '../../utils/twDate';
 import { renewalNoticeDaysLeft, subscriptionCardState } from '../../utils/subscriptionNotice';
@@ -84,7 +84,6 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           <div className="space-y-3">
             <StatusCallout
               variant="destructive"
-              icon={AlertTriangle}
               title="會籍已失效"
               description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務——過期未滿一年可「續約」接續原效期。"
             />
@@ -101,7 +100,6 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
             {noticeDaysLeft !== null && (
               <StatusCallout
                 variant="warning"
-                icon={AlertTriangle}
                 title="會籍即將到期"
                 description={`您的會籍將於 ${noticeDaysLeft} 天後到期。到期即失效（無寬限期），請儘早續訂，以免會員功能與刊登中斷。`}
               />

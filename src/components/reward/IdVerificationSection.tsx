@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
-import { AlertCircle, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import type { IdPhotosResponse } from '@contract';
 
 export type IdPhotosData = IdPhotosResponse['data'];
@@ -72,7 +72,6 @@ export function IdVerificationSection({ loadStatus, uploadPhotos }: IdVerificati
       <CardContent className="pt-6 space-y-4">
         <StatusCallout
           variant="destructive"
-          icon={AlertCircle}
           title="證件審核未通過"
           description={
             <>

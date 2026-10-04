@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { StatusCallout } from '../ui/status-callout';
-import { Target, AlertTriangle } from 'lucide-react';
+import { Target } from 'lucide-react';
 
 export function TaskGuide() {
   return (
@@ -36,7 +36,6 @@ export function TaskGuide() {
 
         <StatusCallout
           variant="neutral"
-          icon={AlertTriangle}
           title="領取說明"
           description="任務完成後，獎勵將出現在「待領取獎勵」區域。請完成 3 步驟驗證流程後，會員效期將立即延長 1 年；累積多張時可用「一次領取全部」驗證一次、批次領完。"
         />

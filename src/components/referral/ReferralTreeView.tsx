@@ -1,16 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ChevronRight,
-  Users,
-  ExternalLink,
-  Ban,
-  Search,
-  AlertTriangle,
-  X,
-  ArrowUpDown,
-} from 'lucide-react';
+import { ChevronRight, Users, ExternalLink, Ban, Search, X, ArrowUpDown } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 import {
   DropdownMenu,
@@ -273,7 +264,6 @@ function AttentionBanner({
   return (
     <StatusCallout
       variant="warning"
-      icon={AlertTriangle}
       title={`${attention.total} 位下線需要關注`}
       action={
         <div className="flex flex-wrap items-center gap-2">

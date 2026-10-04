@@ -84,7 +84,6 @@ export function MonthlyKingProgress({
           {completedCount > 0 && (
             <StatusCallout
               variant="success"
-              icon={CheckCircle}
               title="✨ 本月成就"
               titleAs="h3"
               description={
