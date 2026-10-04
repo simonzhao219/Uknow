@@ -308,9 +308,12 @@ class BackendApiMock:
         second_generation: Optional[list] = None,
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
+        attention: Optional[dict] = None,
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
+        # attention：需要關注的下線（{total, items}），會員中心「需要注意」與
+        # 推薦頁橫幅都讀它；不給 = 沒有人需要關注。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -318,6 +321,7 @@ class BackendApiMock:
                 second_gen_count=len(second_generation or []),
                 third_gen_count=len(third_generation or []),
                 user_referral_code=user_referral_code,
+                attention=attention,
             ),
         }
         self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
@@ -344,6 +348,16 @@ class BackendApiMock:
                 },
             ),
         )
+
+    def set_member_area_defaults(self):
+        """會員中心（狀態總覽）同時讀推薦網絡、任務、獎勵三組資料。預設回空資料，
+        讓沒有特別 mock 的情境不會撞上 safety net 而跳錯誤 toast；需要資料的情境
+        之後再呼叫 set_referral_tree／set_task_center／set_reward_* 覆寫
+        （Playwright 後註冊的路由優先）。"""
+        self.set_referral_tree()
+        self.set_task_center()
+        self.set_reward_summary()
+        self.set_reward_withdrawals()
 
     def set_task_center(self, tasks: Optional[list] = None, pending_rewards: Optional[list] = None):
         # Registration order matters: later-registered routes win in
