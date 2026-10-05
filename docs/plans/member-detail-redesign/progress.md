@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-規劃完成、`/review-plan` 審查中；Q1–Q5 待業主裁決，裁決後由業主親自打 `/tdd-implement member-detail-redesign`。
+四視角審查完成（review.md：P0×0、P1×10、P2×23）；等業主裁決 Q1–Q5 與 review.md「需人工裁決」A–K，主 session 回填 plan.md 後，由業主親自打 `/tdd-implement member-detail-redesign`。
 
 ## Blockers（逃生口紀錄）
 
