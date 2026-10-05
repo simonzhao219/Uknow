@@ -243,7 +243,7 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
   );
 }
 
-// ---------- 需要關注橫幅（伺服器算好：依緊急度排序 + 上限） ----------
+// ---------- 需要關注橫幅（伺服器算好：一代且即將到期，依剩餘天數排序 + 上限） ----------
 function AttentionBanner({
   attention,
   onSelect,
@@ -264,7 +264,7 @@ function AttentionBanner({
   return (
     <StatusCallout
       variant="warning"
-      title={`${attention.total} 位需要關注`}
+      title={`${attention.total} 位一代即將到期`}
       action={
         <div className="flex flex-wrap items-center gap-2">
           {attention.items.map((n) => (

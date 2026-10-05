@@ -8,14 +8,13 @@ import type { NetworkAttention, NetworkNodeStatus } from '../../utils/referralNe
 export interface ExpiringCount {
   count: number;
   /**
-   * 後端 attention.items 依緊急度排序、即將到期排最前、最多 6 筆，但 total 也算
-   * 已失效與停權。items 全是即將到期且 total 比 items 多時，被截掉的那些可能還有
-   * 即將到期的人——此時只知道「至少 count 位」。
+   * 後端 attention 只收一代即將到期（B1 起）：items 最多 6 筆、total 是精確人數。
+   * 本函式仍只數 items，total 比 items 多時顯示「至少 count 位」。
    */
   atLeast: boolean;
 }
 
-/** 即將到期的下線人數（業主裁決：會員中心只統計即將到期，已失效／停權不列）。 */
+/** 一代即將到期的人數（業主裁決：會員中心只統計即將到期，已失效／停權不列）。 */
 export function countExpiring(
   attention:
     | (Pick<NetworkAttention, 'total'> & { items: { status: NetworkNodeStatus }[] })

@@ -161,10 +161,10 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(listing).queryByText('立即刊登')).toBeNull();
   });
 
-  it('推薦網絡卡的徽章只計即將到期的人數', () => {
+  it('推薦網絡卡的徽章顯示一代即將到期的人數', () => {
     state.referral.overview.attention = {
-      total: 4,
-      items: [node('expiring'), node('expiring'), node('expiring'), node('expired')],
+      total: 3,
+      items: [node('expiring'), node('expiring'), node('expiring')],
     };
     renderPage();
 
@@ -175,7 +175,7 @@ describe('MemberDashboard 狀態卡', () => {
   });
 
   it('推薦網絡沒有人即將到期時卡片不顯示徽章', () => {
-    state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
+    state.referral.overview.attention = { total: 0, items: [] };
     renderPage();
 
     expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
@@ -306,10 +306,7 @@ describe('MemberDashboard 需要注意區', () => {
   });
 
   it('有人即將到期與有待查收提領時各列一條動作連結', () => {
-    state.referral.overview.attention = {
-      total: 3,
-      items: [node('expiring'), node('expired'), node('suspended')],
-    };
+    state.referral.overview.attention = { total: 1, items: [node('expiring')] };
     state.reward.withdrawals = [node('awaiting_collection'), node('awaiting_collection')];
     renderPage();
 
@@ -322,8 +319,8 @@ describe('MemberDashboard 需要注意區', () => {
     );
   });
 
-  it('推薦網絡只有已失效與停權時不列推薦那條', () => {
-    state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
+  it('推薦網絡沒有一代即將到期時不列推薦那條', () => {
+    state.referral.overview.attention = { total: 0, items: [] };
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });

@@ -12,11 +12,8 @@ describe('countExpiring', () => {
     expect(countExpiring(null)).toEqual({ count: 0, atLeast: false });
   });
 
-  it('只計即將到期，不計已失效與停權', () => {
-    const attention = {
-      total: 4,
-      items: [node('expiring'), node('expiring'), node('expired'), node('suspended')],
-    };
+  it('未被截斷時人數等於清單筆數', () => {
+    const attention = { total: 2, items: [node('expiring'), node('expiring')] };
     expect(countExpiring(attention)).toEqual({ count: 2, atLeast: false });
   });
 
@@ -30,9 +27,8 @@ describe('countExpiring', () => {
     expect(countExpiring(attention)).toEqual({ count: 6, atLeast: false });
   });
 
-  it('沒有即將到期的人時即使總數被截斷也是 0', () => {
-    const attention = { total: 10, items: Array.from({ length: 6 }, () => node('expired')) };
-    expect(countExpiring(attention)).toEqual({ count: 0, atLeast: false });
+  it('後端回空清單時為 0', () => {
+    expect(countExpiring({ total: 0, items: [] })).toEqual({ count: 0, atLeast: false });
   });
 });
 

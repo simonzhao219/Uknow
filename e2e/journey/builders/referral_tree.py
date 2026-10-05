@@ -75,9 +75,22 @@ def expect_node(
     """target 以「該代應有的顯示名」出現在樹上的正確層級。
 
     刻意不用 `get_by_text(真名)`：那既比對錯字串，也分不清樹上的列與
-    AttentionBanner 裡的同名 chip。"""
+    AttentionBanner 裡的同名 chip（橫幅只收一代即將到期，但一代全顯真名，
+    撞名照樣會發生）。"""
     gen = orgchart.generation_of(org_nodes, viewer, target)
     expect(tree_row(page, state.users[target].name, gen)).to_be_visible(timeout=TREE_TIMEOUT_MS)
+
+
+def open_node_detail(
+    page: Page,
+    org_nodes: dict[str, str | None],
+    state: RunState,
+    viewer: str,
+    target: str,
+) -> None:
+    """點 target 的樹列，打開它的詳情（桌機右欄、手機 bottom sheet 同一份 NodeDetail）。"""
+    gen = orgchart.generation_of(org_nodes, viewer, target)
+    tree_row(page, state.users[target].name, gen).click()
 
 
 def expect_three_generation_ceiling(page: Page) -> None:

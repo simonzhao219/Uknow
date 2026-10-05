@@ -312,8 +312,8 @@ class BackendApiMock:
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
-        # attention：需要關注的下線（{total, items}），會員中心「需要注意」與
-        # 推薦頁橫幅都讀它；不給 = 沒有人需要關注。
+        # attention：需要關注＝一代且即將到期（{total, items}；items 最多 6 筆、
+        # total 是精確人數），會員中心與推薦頁橫幅都讀它；不給 = 沒有人。
         body = {
             "success": True,
             "data": build_network_overview(
