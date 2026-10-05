@@ -107,3 +107,9 @@
 - **其他浮在內容上的元件改用浮起表面**（S2e 只做首頁搜尋鈕與工具列，業主 2026-10-05 裁決其餘留給 S7）：底部導覽 BottomNav、toast（`NotificationCard`／`ToastCard`）、彈出選單（popover／dropdown／select 的內容用 `--popover`）、Sheet／對話框（`bg-background`）在深色同樣看不出浮起感，改 `bg-raised border-raised-border shadow-raised`（對話框與 Sheet 有遮罩，可只換表面）。規則見 `ui-ux-guidelines.md` §12.6。
 - **S7 接 B1 的端點**：推薦管理橫幅的「全部 N 位 ›」接 `API_PATHS.networkAttention`（`GET /referrals/network/attention?limit=&offset=`，契約 `NetworkAttentionResponseSchema`，分頁形狀同搜尋，可直接用 `usePagedList`）；橫幅的 chip 原因文字（`reason()` 的已停權／已失效分支）在新口徑下已是死碼，S7 重做橫幅時一併拿掉；前端接上 attention 端點時 `e2e/mocks/backend_api_mock.py` 的 `set_referral_tree` 要補註冊該路由（現只有 overview／children／search）。橫幅不再收已失效／停權後，樹列層級沒有任何文字狀態（色點 `aria-hidden`、列淡化），「已失效」只在點開的詳情——S7 重做列時決定是否把狀態寫進 treeitem 的 `aria-label`（§12.7，WCAG 1.4.1）。任務等級門檻只在前端 `TaskBadge.tsx`，歸 S7。
 - **`awaiting_collection`（待查收）狀態在 admin 與會員兩處顏色語意不一致**：`WithdrawalManagement.tsx`（admin 視角）用 `variant="warning"`（醒目黃，規劃當時就是這樣寫），`WithdrawalSection.tsx`（會員視角，本次 S2 業主核准的政策 13）用 `variant="secondary"`（中性灰）。需求視角 review 指出：業務流程上真正「需要動作」的其實是會員（要去確認收款），admin 端反而是等待中，兩邊的顏色安排恰好相反。兩處目前都各自忠實反映了規劃書的逐字指示，不是實作錯誤，但業主應在下一次接觸這兩個檔案時確認是否要拉平（同一狀態、同一注意力層級），或維持現狀（admin 用醒目色提醒「這筆在等會員」、會員視角用中性色標示「這是流程正常的一步」也是站得住腳的設計理由，需業主定調）。
+- **S3 審查遺留 → S5**（#359 實作審查 P2，業主 2026-10-05 裁決留給 S5）：
+  - 匯出 CSV 失敗或超過上限走 `setLoadError`，整張提領列表被換成錯誤區，而「重試」是重讀列表、不是重新匯出
+    （`WithdrawalManagement.tsx` 的 `collectAndDownload`）→ 匯出錯誤改成獨立狀態，列表照常顯示。
+  - `AdminToolbar` 的重新整理按下後 `disabled`、焦點掉到 body，且沒有狀態宣告（CSV 有）→ S5 改 SWR 後刷新不再換骨架，屆時一併設計。
+  - 「已匯出 N 筆」callout 出現在工具列上方，造成版面位移（可接受，順手時移到工具列下方）。
+  - 驗收站 2 目視項：會員搜尋框內嵌放大鏡的鍵盤焦點環、`type="search"` 原生清除鈕是否與放大鏡擠在同一側。
