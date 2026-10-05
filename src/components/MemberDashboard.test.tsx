@@ -288,6 +288,17 @@ describe('MemberDashboard 引導鈕讓位', () => {
   });
 });
 
+// 給使用者確認的資料不截斷、只換行（#354 範圍外發現第 2 條）：Email 走 BreakableEmail。
+describe('MemberDashboard 基本資料', () => {
+  it('長 Email 完整顯示、在 @ 後可換行，不截斷', () => {
+    const email = 'chienmingchangservice@uknowplatform.com.tw';
+    renderPage({ name: '王小明', email, referralProgramJoined: true });
+    const node = screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === email);
+    expect(node.innerHTML).toContain('@<wbr>');
+    expect(node.closest('.truncate')).toBeNull();
+  });
+});
+
 describe('MemberDashboard 需要注意區', () => {
   it('沒有需要處理的事時整塊不渲染', () => {
     renderPage();

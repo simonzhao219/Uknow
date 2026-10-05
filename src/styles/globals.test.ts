@@ -186,6 +186,15 @@ describe('base 層焦點外框', () => {
   });
 });
 
+// 不截斷、只換行（#354 範圍外發現第 2 條）：Email、網址、訂單編號這類不可斷字串
+// 在段落裡要自己換行。break-word 只在字放不下時才生效，不改變任何放得下的版面。
+describe('base 層長字串換行', () => {
+  it('body 預設 overflow-wrap: break-word', () => {
+    const base = stripComments(css);
+    expect(base).toMatch(/body\s*\{[^}]*overflow-wrap:\s*break-word;/);
+  });
+});
+
 describe('選取色與焦點環的指向', () => {
   for (const [label, tokens] of [
     ['淺色', rootTokens],
