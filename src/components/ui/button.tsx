@@ -15,7 +15,7 @@ const SECONDARY_SURFACE =
 const CONTAINER_SECONDARY = "border bg-card";
 
 const buttonVariants = cva(
-  // 焦點只有鍵盤淡環（focus-visible 的 3px ring-ring，§12.12），不再同時改框線色——
+  // 焦點只有鍵盤焦點環（focus-visible 的 3px ring-ring，§12.12），不再同時改框線色——
   // 選取與聚焦一個訊號，不疊加。
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-ring focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-border",
   {

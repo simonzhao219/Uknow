@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // OTP 目前格＝有框元件的選取態（ui-ux-guidelines §12.12）：框線變灰字 --sel，外加 1px
-// 同色環合成單圈 2px；不疊 3px 淡環（焦點與選中同一種外觀）。slots 由 OTPInputContext
+// 同色環合成單圈 2px；不疊 3px 焦點環（焦點與選中同一種外觀）。slots 由 OTPInputContext
 // 直接提供，不靠 jsdom 模擬輸入焦點——那條路依賴瀏覽器的選取事件，測的會是函式庫而不是
 // 這裡的樣式契約。
 import { afterEach, describe, expect, it } from 'vitest';
@@ -51,7 +51,7 @@ describe('InputOTPSlot', () => {
     }
   });
 
-  it('目前格不疊 3px 淡環，也不用焦點環 token', () => {
+  it('目前格不疊 3px 焦點環，也不改用 --ring 的顏色', () => {
     const { current } = renderSlots();
     expect(current.classList.contains('data-[active=true]:ring-[3px]')).toBe(false);
     expect(current.className).not.toMatch(/data-\[active=true\]:(border|ring)-ring/);

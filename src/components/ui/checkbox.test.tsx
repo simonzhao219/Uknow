@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 勾選框是「值」，不走選取的灰字規則（ui-ux-guidelines §12.12）：未勾＝白底框線，
-// 已勾＝--primary 墨黑底配反白勾。焦點只有鍵盤淡環。
+// 已勾＝--primary 墨黑底配反白勾。焦點只有鍵盤焦點環。
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { Checkbox } from './checkbox';
@@ -32,7 +32,7 @@ describe('Checkbox', () => {
     expect(box.className).not.toMatch(/bg-sel/);
   });
 
-  it('焦點只有鍵盤淡環，不另改框線色', () => {
+  it('焦點只有鍵盤焦點環，不另改框線色', () => {
     render(<Checkbox aria-label="同意條款" />);
     const box = screen.getByRole('checkbox', { name: '同意條款' });
     expect(box.classList.contains('focus-visible:ring-ring')).toBe(true);

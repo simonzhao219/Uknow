@@ -301,7 +301,9 @@ token，是**對照到既有 token**，而且不是 1:1 替換：
 | 紅 destructive | `#fff1f1` | `#ffd9d9` | `#c73838` | `#d92d2d` 配白字 | `#a12020` |
 | 蔚藍 brand | `#ecf8fd` `--brand-faint` | `#cfeefb` `--brand-subtle` | `#519cc3` `--brand-border` | `#0369a1` `--brand` 配白字 | `#0c3d5c` `--brand-subtle-foreground` |
 
-版面底 `--background` 是白 `#ffffff`，墨色 50 列在表上、未對應 token。深色：底
+版面底 `--background` 是白 `#ffffff`，墨色 50 列在表上、未對應 token（業主裁決 D2，
+#354：畫面稿 47 格手機畫面都是白底，灰的是稿紙不是頁面）。輸入格休息態是白底＋墨色
+300 細框，與勾選框未勾態同一語言（裁決 D3）。深色：底
 `#16161f`、卡 `#1f1f2b`、淡灰底 `#2a2a3a`、框 `#33334a`、灰字 `#a9a9bd`、字
 `#f2f2f7`；綠／琥珀／紅的淡底 `#0d3b24`／`#43290a`／`#4a1414`、淡底字
 `#8be0ad`／`#ffd066`／`#ffa8a8`、框 `#2fa968`／`#d99a00`／`#dc4a4a`、實色維持
@@ -528,7 +530,9 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
 | 破壞性 | `destructive` | 紅框字 | 紅框字 | 刪除、退回、退件 |
 
 - **紅實心**（`variant="destructive"`）只給**不可逆的確認框**，以及疊在照片上的移除鈕
-  （外框在圖上看不見）。
+  （外框在圖上看不見）。列內的觸發鈕一律紅框字，按下去跳出的確認框才紅實心：刊登卡
+  「刪除」→ 確認刪除、證件審核「退回」→ 確認退回、提領管理「退件」→ 確認退件（業主
+  裁決 D4，#354）。`AlertDialogAction` 預設是流程鈕，不可逆確認傳 `variant="destructive"`。
 - `container` 有 `warning`／`success`／`destructive`／`brand`（重點淡底）。按鈕放進
   `StatusCallout` 或重點淡底時，跟著容器傳同一個值——例：黃框裡的續訂
   `tone="guide" container="warning"` 是黃實心黑字。不傳＝黑白卡片。
@@ -556,10 +560,11 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
 - **不疊加**：不加勾號、淡環、粗體、陰影或淡底——方案框選中已經有外框，就不再打勾。
 - **「值」不適用這條**：勾選框打勾＝`--primary` 墨黑（未勾＝白底框線）；底部導覽
   目前頁＝墨黑（休息態本來就是灰字）。
-- **鍵盤焦點**：按鈕、分頁格、chip、勾選框在 `focus-visible` 時加 3px 淡環
-  `ring-ring`（`--ring` 指向 `--sel`，全不透明：對白底 5.78:1、深色 7.78:1，過 WCAG
-  1.4.11 的 3:1）。瀏覽器只在鍵盤操作時顯示它。輸入格類滑鼠點也算 focus-visible，
-  所以只用上面的單圈 2px，不疊淡環。
+- **鍵盤焦點**：按鈕、分頁格、chip、勾選框在 `focus-visible` 時加 3px 焦點環
+  `ring-ring`（`--ring` 指向 `--sel`），**全不透明**：對白底 5.78:1、深色 7.78:1，過 WCAG
+  1.4.11 的 3:1（業主裁決 D1，#354）。畫面稿原寫 30% 透明的淡環，對白底只有 1.54:1，
+  過不了 1.4.11，所以不採；S2b 起「焦點環全不透明」這條維持。瀏覽器只在鍵盤操作時
+  顯示它。輸入格類滑鼠點也算 focus-visible，所以只用上面的單圈 2px，不疊焦點環。
 
 〔實作〕`src/components/ui/{tabs,input,select,textarea,input-otp,checkbox,button,badge}.tsx`、
 `src/components/common/FilterChip.tsx` 與其測試。

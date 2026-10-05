@@ -77,7 +77,7 @@ describe('buttonVariants', () => {
     expect(cls).not.toContain('text-brand');
   });
 
-  it('焦點只有鍵盤淡環：3px ring-ring，不另改框線色', () => {
+  it('焦點只有鍵盤焦點環：3px ring-ring，不另改框線色', () => {
     const cls = classesOf(buttonVariants({}));
     expect(cls).toContain('focus-visible:ring-ring');
     expect(cls).toContain('focus-visible:ring-[3px]');

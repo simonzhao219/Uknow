@@ -50,7 +50,7 @@ describe('TabsTrigger', () => {
     }
   });
 
-  it('焦點只有鍵盤淡環，不另改框線或外框線', () => {
+  it('焦點只有鍵盤焦點環，不另改框線或外框線', () => {
     const { inactive } = renderTabs();
     expect(inactive.classList.contains('focus-visible:ring-ring')).toBe(true);
     expect(inactive.className).not.toMatch(/focus-visible:(border|outline)-ring/);

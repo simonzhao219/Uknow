@@ -6,10 +6,10 @@
   /* 根字級 16px：對齊 Tailwind 預設字階，rem 尺寸（字級/間距/元件高度）回到設計原意，
      手機閱讀更舒適，並讓觸控目標達標。原本 14px 使全站等比縮小約 12.5%。 */
   --font-size: 16px;
-  /* 墨色五層（S2e／D6，業主 2026-10-05 定案，ui-ux-guidelines.md §12.3）：50 版面底
+  /* 墨色五層（S2e／D6，業主 2026-10-05 定案，ui-ux-guidelines.md §12.3）：50 淡底
      #f7f7fb、100 淡灰底、300 邊框、600 灰字、800 墨字，帶一點藍調。墨字同時是
-     --primary（流程主要動作鈕）——互動色與文字墨黑合併，不另設互動色。版面底暫維持
-     畫面稿實際渲染的白（待業主裁決，見 progress.md）。 */
+     --primary（流程主要動作鈕）——互動色與文字墨黑合併，不另設互動色。版面底用白、
+     不用墨色 50（業主裁決 D2，#354）：畫面稿 47 格手機畫面都是白底，灰的是稿紙不是頁面。 */
   --background: #ffffff;
   --foreground: #121223;
   --card: #ffffff;
@@ -79,14 +79,15 @@
   --tree-gen-badge-foreground-2: #4c1d95;
   --tree-gen-badge-foreground-3: #9d174d;
   --border: #e3e4ee;
-  /* 輸入格休息態：白底＋邊框色細框（畫面稿；待業主裁決，見 progress.md）。 */
+  /* 輸入格休息態：白底＋邊框色細框，與勾選框未勾態同一語言（業主裁決 D3，#354）。 */
   --input: #e3e4ee;
   --input-background: #ffffff;
   --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  /* 鍵盤焦點淡環（focus-visible 的 3px ring-ring，§12.12）；輸入格的單圈走 --sel，不吃
-     這個 token。濃淡待業主裁決：暫採全不透明——/30 對白底只有 1.54:1，不過 WCAG 1.4.11。 */
+  /* 鍵盤焦點環（focus-visible 的 3px ring-ring，§12.12）全不透明（業主裁決 D1，#354）：
+     /30 對白底只有 1.54:1，過不了 WCAG 1.4.11，S2b「焦點環全不透明」維持。輸入格的單圈
+     走 --sel，不吃這個 token。 */
   --ring: var(--sel);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
