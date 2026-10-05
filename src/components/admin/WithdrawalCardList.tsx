@@ -95,15 +95,15 @@ export function WithdrawalCardList({
                 {/* 退件／代為完成**留在卡片上，不收進選單**:§11 規則 3 明列
                     時效性動作不進選單，並直接引用了這裡的原始理由——
                     「退件與代為完成不鎖，那是客服接到電話當下就該能處理的事」
-                    （WithdrawalManagement.tsx:167-168）。用 ghost＋紅字而非
-                    destructive 實心:紅字足以讀出危險，防線是既有的 AlertDialog，
-                    不是把它做成視線磁鐵（§11 規則 1）。
+                    （WithdrawalManagement.tsx:167-168）。退件是紅框字而非
+                    destructive 實心:紅框字足以讀出危險，防線是既有的 AlertDialog
+                    （確認退件才紅實心），不是把它做成視線磁鐵（§11.2、§12.11）；
+                    與桌機表格的退件同一種外觀（業主裁決 D4，#354）。
                     W8:「標記已匯款」在手機不出現（Q1(a)）——它需要同時開著網銀。 */}
                 {w.status === 'pending' && (
                   <Button
                     size="sm"
-                    variant="ghost"
-                    className="text-destructive-subtle-foreground hover:text-destructive-subtle-foreground"
+                    tone="destructive"
                     onClick={() => onReject(w)}
                     disabled={processingId === w.id}
                   >

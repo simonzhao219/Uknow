@@ -255,6 +255,25 @@ describe('WithdrawalManagement', () => {
     expect(screen.getByRole('button', { name: '代為完成' })).toBeTruthy();
   });
 
+  // 業主裁決 D4（#354）：列內的退件是紅框字（tone="destructive"），紅實心只留給
+  // 確認退件那一步。手機卡片與桌機表格是同一個動作，外觀也要同一套（§11.1）——
+  // 兩邊各有一份實作，只改一邊就會分岔。
+  it.each([
+    ['手機卡片', false],
+    ['桌機表格', true],
+  ])('%s的退件鈕是紅框字，紅實心只在確認框', async (_where, desktop) => {
+    stubMediaQuery(desktop);
+    renderConsole();
+    const reject = await screen.findByRole('button', { name: '退件' });
+    for (const c of ['border-destructive-border', 'text-destructive-subtle-foreground']) {
+      expect(reject.classList.contains(c), c).toBe(true);
+    }
+    expect(reject.classList.contains('bg-destructive')).toBe(false);
+    fireEvent.click(reject);
+    const confirm = await screen.findByRole('button', { name: '確認退件' });
+    expect(confirm.classList.contains('bg-destructive')).toBe(true);
+  });
+
   it('桌機上待處理的申請看得到標記已匯款', async () => {
     renderConsole();
     expect(await screen.findByRole('button', { name: '標記已匯款' })).toBeTruthy();
