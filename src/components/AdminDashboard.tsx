@@ -6,7 +6,6 @@ import { WithdrawalManagement } from './admin/WithdrawalManagement';
 import { MemberManagement } from './admin/MemberManagement';
 import { SystemNotifications } from './admin/SystemNotifications';
 import { SystemAlerts } from './admin/SystemAlerts';
-import { AdminSetup } from './admin/AdminSetup';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import type {
   AdminIdReviewsResponse,
@@ -96,6 +95,32 @@ async function submitIdReview(userId: string, approve: boolean, reason?: string)
   });
 }
 
+// 分頁的兩個名字：畫面上的二字（四欄一列放得下），與完整的無障礙名稱。
+const ADMIN_TABS = [
+  { value: 'withdrawals', visible: '提領', name: '獎金提領管理' },
+  { value: 'members', visible: '會員', name: '會員管理' },
+  { value: 'announcements', visible: '公告', name: '系統公告' },
+  { value: 'system-alerts', visible: '告警', name: '系統告警' },
+] as const;
+
+// 完整名稱整串放在一個 sr-only 節點、由 TabsTrigger 的 aria-labelledby 指過來，
+// 而不是把缺的字拆成幾段 sr-only 補在二字前後：sr-only 是 position:absolute，
+// Chromium 計算名稱時會把它當區塊、在前後插空白，「會員<sr-only>管理」念成
+// 「會員 管理」，`get_by_role(name="會員管理")` 就找不到了（jsdom 不排版，
+// vitest 抓不到，只有真瀏覽器的 e2e 會紅）。也不用 aria-label——名稱寫在屬性
+// 裡，跟畫面上的字分屬兩處，改了一處另一處不會有任何東西提醒你；這裡兩個
+// 名字並排在同一份資料裡。可見字一律是名稱的子字串（WCAG 2.5.3）。
+function AdminTabLabel({ id, visible, name }: { id: string; visible: string; name: string }) {
+  return (
+    <>
+      {visible}
+      <span id={id} className="sr-only">
+        {name}
+      </span>
+    </>
+  );
+}
+
 export function AdminDashboard() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -118,23 +143,24 @@ export function AdminDashboard() {
       </div>
 
       <Tabs defaultValue="withdrawals" className="w-full">
-        {/* 手機排成兩列 3+2，桌面維持五欄等寬。
+        {/* 手機與桌面都是四欄一列。
             **四個 class 缺一不可**——TabsList 原語的 base 是
             `inline-flex h-9 w-fit ... flex overflow-x-auto`（ui/tabs.tsx:32）:
-            少了無前綴的 `grid`，grid-cols-3 對 display:flex 容器毫無作用；
-            少了 `w-full`，容器縮成 w-fit 的內容寬度、三欄等分不會發生；
-            少了 `h-auto`，釘死的 h-9 放不下兩列。
+            少了無前綴的 `grid`，grid-cols-4 對 display:flex 容器毫無作用；
+            少了 `w-full`，容器縮成 w-fit 的內容寬度、四欄等分不會發生；
+            少了 `h-auto`，釘死的 h-9 撐不出下面補的 44px。
 
-            實測（375px、真瀏覽器）:main 內容寬 343px，扣 TabsList 的 p-[3px]
-            後三欄 track 各 112.3px，再扣 TabsTrigger 的 px-2+border 共 18px，
-            可放文字 94.3px；最長標籤「獎金提領管理」實測 84px——**餘裕
-            10.3px**。五欄的 track 只有 67.4px、可放文字 49.4px，這就是先前
-            退回橫向捲動的原因。
+            一列成立靠的是**可見標籤只有二字**。實測（375px）:四欄 track 各
+            84.25px，扣 TabsTrigger 的 px-2+border 共 18px，可放文字約 66px；
+            二字 `text-sm` 約 28px。原本的「獎金提領管理」要 84px，四欄放不下
+            ——那是過去只能排成 3+2 兩列的原因。320px 下可放文字仍有約 52px。
+            真瀏覽器量測把關:e2e/test_admin_mobile_layout.py 的一列、ink
+            overflow 與 320px 三條。
 
-            餘裕不厚而且字型跨環境會變，所以 grid 的 ink overflow（標籤畫到
-            隔壁格子、元素自己的 boundingClientRect 完全正常）另有真瀏覽器
-            量測把關:e2e/test_admin_mobile_layout.py 的
-            test_admin_tab_labels_do_not_ink_overflow。
+            **無障礙名稱維持完整**（獎金提領管理／會員管理／系統公告／系統告警，
+            見下方 AdminTabLabel）:e2e 與 journey 都以
+            `get_by_role("tab", name=…)` 找分頁——journey 只在晉升 PR 上跑，
+            名稱漂掉要到那時才紅。
 
             `h-auto` 的代價是格子高度完全由內容決定——原語的 `py-1` ＋
             `text-sm` 只撐得出 30px，低於 §1 的 44px。分頁列是這一頁最上層
@@ -142,14 +168,18 @@ export function AdminDashboard() {
             **只補在 admin、不動 `ui/tabs.tsx` 基底**:比照 checkbox 與
             CardOverflowMenu 的先例，改基底會連帶把會員中心、獎勵頁等所有
             分頁列各加 14px，那是範圍外的視覺變更。
-            寫在 TabsList 而不是五顆 TabsTrigger 上:同一條規則貼五次，
-            日後加第六個分頁時漏貼不會有任何東西提醒你。 */}
-        <TabsList className="w-full grid grid-cols-3 md:grid-cols-5 h-auto pointer-coarse:[&>[role=tab]]:min-h-[44px]">
-          <TabsTrigger value="withdrawals">獎金提領管理</TabsTrigger>
-          <TabsTrigger value="members">會員管理</TabsTrigger>
-          <TabsTrigger value="announcements">公告管理</TabsTrigger>
-          <TabsTrigger value="system-alerts">系統告警</TabsTrigger>
-          <TabsTrigger value="admin-setup">管理員設置</TabsTrigger>
+            寫在 TabsList 而不是四顆 TabsTrigger 上:同一條規則貼四次，
+            日後加第五個分頁時漏貼不會有任何東西提醒你。 */}
+        <TabsList className="w-full grid grid-cols-4 h-auto pointer-coarse:[&>[role=tab]]:min-h-[44px]">
+          {ADMIN_TABS.map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              aria-labelledby={`admin-tab-${tab.value}`}
+            >
+              <AdminTabLabel id={`admin-tab-${tab.value}`} {...tab} />
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="withdrawals">
@@ -177,10 +207,6 @@ export function AdminDashboard() {
 
         <TabsContent value="system-alerts">
           <SystemAlerts />
-        </TabsContent>
-
-        <TabsContent value="admin-setup">
-          <AdminSetup />
         </TabsContent>
       </Tabs>
     </div>

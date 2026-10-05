@@ -39,7 +39,10 @@ export function SystemAlerts() {
     setLoadError(false);
     try {
       const res = await apiRequestJson<SystemAlertsResponse>(buildApiUrl('/admin/system-alerts'));
-      setAlerts(res.data.alerts);
+      // 形狀不合就當空清單，不讓 undefined 往下讀——同 WithdrawalManagement 的
+      // 理由：一個面板的 payload 形狀不合，不該把整個後台一起弄壞。S3 把告警
+      // 換成最後一個分頁後，AdminDashboard.test 切過來就停在這裡，才浮出來。
+      setAlerts(res.data?.alerts ?? []);
     } catch (error) {
       console.error('SystemAlerts: 載入告警失敗:', error);
       setLoadError(true);
