@@ -2737,3 +2737,27 @@ f70_renewal_saga_steps.py` 正是用 `get_by_placeholder("搜尋姓名 / Email /
 推論：**任何可見文案（placeholder、按鈕字、標題）都可能是某支測試的定位器**——改字的 PR 要對
 `e2e/`（含 `journey/`）grep 舊字串，不只 grep 當下被認定為「契約」的那幾種。更好的是 journey 一律
 用 role＋名稱定位：名稱是無障礙契約、改它本來就要想清楚；placeholder 是文案，會被當成純 UI 修改。
+
+## 2026-10-05｜漏網｜部署步驟沒有重試，ECR 匿名拉映像被限流，連正式站部署都被打掛
+
+`supabase functions deploy api` 在 runner 上要起 Docker、從 `public.ecr.aws` 匿名拉 `edge-runtime`
+映像；共用 IP 撞上限流（`docker: toomanyrequests: Rate exceeded`），部署在上傳之前整支失敗。
+10/03～10/05 共 7 次（#337 #339 #341 #346 #353 #357 #362），#357 是正式站——晉升 #356 合併、
+production 核准之後掛掉，手動重跑才過。
+
+**為什麼拖到第 7 次才處理**：每次都長得像偶發，而 develop 的失敗會被下一次 push 自癒，issue 開了沒人
+收（另外 6 則至今還開著）。「失敗自動開 issue」只是訊號、不會歸納；7 則的日誌一模一樣，是順手查
+#357 才第一次並排看。main 沒有「下一次 push」可以自癒，而下次晉升會帶 `supabase/functions` 的
+改動（#360）——那時才撞到，就是新前端配舊後端。
+
+處置：兩處部署步驟（`deploy-supabase.yml`、`journey.yml`）改成 4 次退避重試（30／60／90 秒）；
+規則 12（`check-workflows.py`）機械要求執行 `supabase functions deploy` 的 step 有 for 迴圈＋sleep。
+重試邏輯用假的 `supabase`／`sleep` 模擬過三種情境（一次成功、被限流兩次後成功、四次都失敗）。
+**未驗證**：真實的 ECR 限流視窗多長，退避夠不夠要等下一次真的撞到才知道；若 4 次仍不夠，下一步是改走
+不需要 Docker 的伺服器端打包（尚未確認 CLI 2.109.1 是否支援）。
+
+觀察（不改）：`ci.yml` api-tests 的 `supabase start` 也會匿名拉一整批映像，屬同類風險；目前沒有失敗
+紀錄，不預先動 CI 主閘門。
+
+推論：**一組長得一樣的失敗 issue 就是同類掃描的現成材料**——第 2 則出現時就該把日誌並排看，不要等到
+第 7 則。另外，開 issue 的步驟不知道「同一個失敗簽名已經開著幾則」（待評估，未做）。
