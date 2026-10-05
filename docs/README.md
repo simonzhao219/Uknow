@@ -25,7 +25,7 @@
 | 文件 | 何時讀 |
 |---|---|
 | [`uknow-software-specification.md`](uknow-software-specification.md) | **動任何功能前。** 需求與業務規則的單一事實來源——會員/訂閱/推薦/獎勵/任務/提領/刊登的規則都在這裡。`plan-reviewer-requirements` 以它為溯源對象 |
-| [`ui-ux-guidelines.md`](ui-ux-guidelines.md) | 動任何 UI。尺寸/觸控/導覽契約/表單/三態/可測試性慣例 |
+| [`ui-ux-guidelines.md`](ui-ux-guidelines.md) | 動任何 UI。尺寸/觸控/導覽契約/表單/三態/可測試性慣例；色彩、按鈕三分法、選取與聚焦、文案（§12） |
 | [`multi-step-flow-recovery.md`](multi-step-flow-recovery.md) | 動多步驟表單或金流頁。四條可恢復性契約 + 全站連續流程盤點 |
 
 ### B・現況說明
