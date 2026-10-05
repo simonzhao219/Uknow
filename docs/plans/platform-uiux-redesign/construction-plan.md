@@ -330,15 +330,51 @@ Deno 測試（supabase/functions/api/*.test.ts）先紅後綠，前端 npm run c
 規劃完跑 /review-plan 後停等我審。
 ```
 
-**S4**：
+**S4**（2026-10-05 依 S3 收尾狀態改寫為八條）：
 ```
-讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md
+（母計畫；S4 列、遺留事項、plan.md §2.3 與 §3 A3 尤其要看）。
 先 git checkout -B feature/member-detail-redesign origin/develop
 （web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S4（工項 A3）：/plan-feature member-detail-redesign
-範圍：會員詳情 Sheet 分區重設計（依 plan.md §3 A3 描述）。
-ui-ux-guidelines §11 的動作位階與確認框契約原樣保留、測試不得弱化。
-規劃完跑 /review-plan 後停等我審。
+範圍：會員詳情 Sheet 分區重設計，三段式落檔。規劃書必須交代下列八條：
+1) 分區結構：頂部身分卡（姓名＋狀態 Badge＋會籍與到期）→ 分組區塊
+   （帳號／會籍與金流／推薦關係／敏感資料／近期提領）→ 底部管理動作區。
+   資訊層次照 ui-ux-guidelines §13：每區一個主狀態、區塊各自三態且失敗
+   不連坐、空態是一般文字不借錯誤態樣式。資料只用現有 AdminMemberDetail
+   契約欄位（_shared/api-contract.ts:753）；本 PR supabase/functions 零變更
+   ——缺欄位記遺留，不擴 API。
+2) 動作位階與確認框契約（ui-ux-guidelines §11）原樣保留：停權／恢復／
+   授予／撤銷仍共用同一個 MemberAction、同一個確認框與執行器，逐方向的
+   確認規則不變；MemberManagement.test.tsx 既有測試只能增不能弱化，改到
+   任何現有 it 的理由寫進偏離說明。管理動作區按鈕依三分法（§12.11）：
+   停權與撤銷 tone="destructive" 紅框字、其餘 secondary；後台沒有引導鈕
+   不用品牌色；面板內至多一顆實心鈕（可以零顆）。
+3) 「查看」→Sheet 出現之間補回饋：觸發鈕用 Button 的 loading prop 並
+   disabled，同列不得重複觸發；詳情取失敗維持現在的錯誤態路徑
+   （test 367 行「詳情取不到時顯示錯誤，不留一個空面板」）。
+4) 手機：375px Sheet 全螢幕、分區標題建立層次；桌機維持 sm:max-w-lg
+   側欄。補 e2e/test_admin_mobile_layout.py 一條 375px 正向版面斷言
+   （開詳情後分區標題全部可見、無橫向溢出）。Sheet 的浮起表面
+   （--raised）業主已裁決留給 S7，本 PR 不碰。
+5) 敏感資料區：身分證與收款帳號仍是後端遮罩值（test 190 行）；分區
+   標題要讓人一眼知道這區是敏感資料；不得加任何前端「顯示完整」。
+6) 近期提領區的狀態：現況是 WITHDRAWAL_STATUS_LABEL 純文字。若改成
+   Badge，顏色對應必須與 WithdrawalManagement 的 getStatusBadge 同源
+   （遺留事項「awaiting_collection 兩處顏色語意不一致」在此裁決，或
+   維持純文字並記錄理由）。
+7) 定位器契約（S3 的教訓，friction-log 2026-10-05「漏網」）：journey
+   f70（e2e/journey/steps/f70_renewal_saga_steps.py:159-166）靠按鈕名稱
+   「查看 {name} 的詳情」與 Sheet 內 get_by_text("推薦人", exact=True)
+   定位。改任何 dt 標籤、按鈕名稱、aria-label 之前，先對 e2e/（含
+   journey/）與 src/**/*.test.tsx grep 舊字串；journey 只在晉升 PR 跑，
+   漏掉要到那時才紅。規劃書列出會動到的字串與對應的定位器。
+8) 文件：規格書 §13 會員管理列（uknow-software-specification.md:653）
+   敘述若因分區改變要同步；ui-ux-guidelines §11〔實作〕指向不變；
+   construction-plan §4.3 驗收 2 的「S4 部分」補成可勾的清單（手機、
+   桌機各一組）；progress S4 列。收尾前刪 docs/plans/member-detail-redesign/
+   （/tdd-implement 收尾負責）。
+模型 Sonnet。規劃完跑 /review-plan 後停等我審。
 ```
 
 **S5**（模型選 Opus 起手）：
