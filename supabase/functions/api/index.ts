@@ -196,14 +196,17 @@ async function getRewardConfig(
 // /subscriptions/status 的 hasPendingWithdrawal 共用這一份（單一真相）。
 // ⚠️ 不得複用 reward_balances.pending——該欄位涵蓋 awaiting_collection，
 // 集合不同（只有 pending 可能被退件、退款落回帳本）。
+// 查詢失敗一律擲出，不得當成 false：守衛那端 false 就是放行 fresh，
+// 正是這個守衛要擋的風險；狀態端點那端 false 是捏造的資訊。
 // ============================================================
 async function hasPendingWithdrawal(userId: string): Promise<boolean> {
-  const { data } = await sb()
+  const { data, error } = await sb()
     .from('withdrawals')
     .select('id')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .limit(1);
+  if (error) throw new Error(`withdrawals 查詢失敗: ${error.message}`);
   return (data?.length ?? 0) > 0;
 }
 
@@ -1802,7 +1805,15 @@ app.post('/payuni/prepare', async (c) => {
   // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
   // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
   // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
-  if (renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id))) {
+  let pendingWithdrawal: boolean;
+  try {
+    pendingWithdrawal = renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id));
+  } catch (err) {
+    // fail-closed：查不到提領狀態就不建單（見 hasPendingWithdrawal 註解）。
+    console.error('[payuni/prepare] 提領狀態查詢失敗:', err);
+    return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
+  }
+  if (pendingWithdrawal) {
     return c.json(
       { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
       400,
@@ -2711,30 +2722,39 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct, error: acctErr }, { data: subs }, pendingWithdrawal] = await Promise.all([
-    // maybeSingle：查無列（沒有 profile）照舊當從未訂閱；只有真正的查詢失敗
-    // 才回 500。先前 .single() 的錯誤被吞掉、回 200 + status:'expired'，
-    // 前端就把有效會員顯示成已失效、刊登誤標已隱藏。
-    sb().from('user_account_status')
-      .select('status, end_date')
-      .eq('user_id', user.id)
-      .maybeSingle(),
-    // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
-    // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
-    // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
-    // 「看不到」有延長）。source_payment_order_id 供補繳簽名判定取對應
-    // 訂單的付款時點；取多筆是為了往前走出「本輪已付幾筆」（A15）。
-    sb().from('subscriptions')
-      .select('start_date, end_date, source_payment_order_id')
-      .eq('user_id', user.id)
-      .order('end_date', { ascending: false })
-      .limit(40),
-    // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
-    hasPendingWithdrawal(user.id),
-  ]);
-
-  if (acctErr) {
-    console.error('[subscriptions/status] user_account_status 查詢失敗:', acctErr);
+  // 三個讀取任一失敗都回 500：200 帶捏造的 expired／renewal=null／
+  // hasPendingWithdrawal=false 比錯誤更糟——前端會照實顯示。
+  let results;
+  try {
+    results = await Promise.all([
+      // maybeSingle：查無列（沒有 profile）照舊當從未訂閱；只有真正的查詢失敗
+      // 才回 500。先前 .single() 的錯誤被吞掉、回 200 + status:'expired'，
+      // 前端就把有效會員顯示成已失效、刊登誤標已隱藏。
+      sb().from('user_account_status')
+        .select('status, end_date')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
+      // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
+      // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
+      // 「看不到」有延長）。source_payment_order_id 供補繳簽名判定取對應
+      // 訂單的付款時點；取多筆是為了往前走出「本輪已付幾筆」（A15）。
+      sb().from('subscriptions')
+        .select('start_date, end_date, source_payment_order_id')
+        .eq('user_id', user.id)
+        .order('end_date', { ascending: false })
+        .limit(40),
+      // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
+      hasPendingWithdrawal(user.id),
+    ]);
+  } catch (err) {
+    console.error('[subscriptions/status] 提領狀態查詢失敗:', err);
+    return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
+  }
+  const [{ data: acct, error: acctErr }, { data: subs, error: subsErr }, pendingWithdrawal] =
+    results;
+  if (acctErr || subsErr) {
+    console.error('[subscriptions/status] 查詢失敗:', acctErr ?? subsErr);
     return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
   }
 
@@ -2749,15 +2769,28 @@ app.get('/subscriptions/status', async (c) => {
     const srcOrderIds = (subs ?? [])
       .map((s) => s.source_payment_order_id)
       .filter((id): id is string => !!id);
-    const [{ data: srcOrders }, { data: bal }, { data: tp }] = await Promise.all([
+    const [
+      { data: srcOrders, error: ordErr },
+      { data: bal, error: balErr },
+      { data: tp, error: tpErr },
+    ] = await Promise.all([
       srcOrderIds.length > 0
         ? sb().from('payment_orders')
           .select('id, completed_at')
           .in('id', srcOrderIds)
-        : Promise.resolve({ data: [] as { id: string; completed_at: string | null }[] }),
+        : Promise.resolve({
+          data: [] as { id: string; completed_at: string | null }[],
+          error: null,
+        }),
       sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
       sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
     ]);
+    // 失敗時不得回 0：freshForfeitPoints／Referrals 是新約對話框告知「會失去多少」
+    // 的依據，捏造的 0 會讓人以為選新約沒有代價。
+    if (ordErr || balErr || tpErr) {
+      console.error('[subscriptions/status] 續約資訊查詢失敗:', ordErr ?? balErr ?? tpErr);
+      return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
+    }
 
     // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
     // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
