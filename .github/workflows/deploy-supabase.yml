@@ -121,10 +121,31 @@ jobs:
           supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
             DEPLOY_SHA="$DEPLOY_SHA"
 
+      # CLI 打包函式時要在 runner 上起 Docker、從 public.ecr.aws 匿名拉
+      # edge-runtime 映像。runner 是共用 IP，撞上 ECR 的匿名速率限制
+      # （`toomanyrequests: Rate exceeded`）時，部署會在上傳之前整支失敗——
+      # 2026-10-03～05 連續 7 次，其中一次是正式站（#357），而 main 沒有
+      # 「下一次 push」可以自癒。部署冪等（同一包推到同一個 project），所以
+      # 重試只有好處；用退避，不要連環硬打限流。
+      # 規則 12 機械把關：執行 supabase functions deploy 的 step 必須有
+      # 「for 迴圈＋sleep」。重試在同一個 job 內，不會再要一次 production 核准。
       - name: 部署 Edge Function
         run: |
-          supabase functions deploy api \
-            --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          set -uo pipefail
+          max_attempts=4
+          for attempt in $(seq 1 "$max_attempts"); do
+            if supabase functions deploy api \
+              --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              wait_s=$((attempt * 30))
+              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（多半是拉 edge-runtime 映像被限流）"
+              sleep "$wait_s"
+            fi
+          done
+          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是映像限流還是函式本身有問題"
+          exit 1
 
       # 部署「成功」不等於線上是對的：secrets 沒生效、cold start 就炸、
       # 推到錯的 project——這些在 deploy 指令的退出碼上都是 0。
