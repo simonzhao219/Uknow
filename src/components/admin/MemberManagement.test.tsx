@@ -274,14 +274,80 @@ describe('MemberManagement', () => {
     renderConsole({ loadMembers: load });
     await screen.findAllByText('陳大文');
 
-    fireEvent.change(screen.getByPlaceholderText('搜尋姓名 / Email / 電話'), {
+    fireEvent.change(screen.getByRole('searchbox'), {
       target: { value: '王小明' },
     });
-    fireEvent.submit(screen.getByPlaceholderText('搜尋姓名 / Email / 電話').closest('form')!);
+    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
 
     await waitFor(() =>
       expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '王小明' })),
     );
+  });
+
+  // 工具列（S3 A2）：搜尋＋重新整理，沒有 CSV——會員資料的匯出不存在，
+  // 規則見 ui-ux-guidelines §3（CSV 鈕只在已有匯出邏輯的頁面傳入）。
+  it('工具列有重新整理、沒有 CSV 鈕', async () => {
+    renderConsole();
+    await screen.findAllByText('陳大文');
+    expect(screen.getByRole('button', { name: '重新整理' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /CSV/ })).toBeNull();
+  });
+
+  it('重新整理以同一個關鍵字重讀列表', async () => {
+    const load = vi.fn(async () => page());
+    renderConsole({ loadMembers: load });
+    await screen.findAllByText('陳大文');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '王小明' } });
+    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ search: '王小明' })),
+    );
+    load.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '王小明', offset: 0 }));
+  });
+
+  it('載入更多進行中按不到重新整理——兩者交錯會把舊頁尾接到新列表上', async () => {
+    let releaseMore!: () => void;
+    const load = vi.fn(async ({ offset }: { offset: number }) => {
+      if (offset > 0) await new Promise<void>((r) => (releaseMore = r));
+      return page({ members: [member({ id: `m${offset}`, name: `會員${offset}` })], total: 2 });
+    });
+    renderConsole({ loadMembers: load as never });
+    await screen.findByText('已顯示 1 / 2 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true),
+    );
+    releaseMore();
+    await screen.findByText('已顯示 2 / 2 筆');
+    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('搜尋框內的放大鏡可送出，有名稱；沒有另一顆獨立的送出鈕', async () => {
+    const load = vi.fn(async () => page());
+    renderConsole({ loadMembers: load });
+    await screen.findAllByText('陳大文');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '0912' } });
+
+    const submit = screen.getByRole('button', { name: '搜尋' });
+    expect(submit.getAttribute('type')).toBe('submit');
+    expect(submit.closest('form')).toBe(screen.getByRole('searchbox').closest('form'));
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '0912' })),
+    );
+  });
+
+  it('搜尋框的名稱說出可搜的欄位，placeholder 縮短成「搜尋會員」', async () => {
+    renderConsole();
+    const box = await screen.findByRole('searchbox', { name: /姓名.*Email.*電話/ });
+    expect(box.getAttribute('placeholder')).toBe('搜尋會員');
   });
 
   it('載入更多把下一頁接在後面，不是取代', async () => {
@@ -454,7 +520,7 @@ describe('MemberManagement', () => {
 
   it('搜尋框是 search 型別，輔助科技辨識得出來', async () => {
     renderConsole();
-    const box = await screen.findByPlaceholderText('搜尋姓名 / Email / 電話');
+    const box = await screen.findByRole('searchbox');
     expect(box.getAttribute('type')).toBe('search');
   });
 });
@@ -526,7 +592,7 @@ describe('MemberManagement 手機版', () => {
   });
 
   it('卡片顯示電話——admin 用來電號碼搜到人之後要認得出是同一個人', async () => {
-    // 搜尋框 placeholder 就寫著「搜尋姓名 / Email / 電話」，後端 RPC 也真的
+    // 搜尋框的名稱就寫著「姓名、Email 或電話」，後端 RPC 也真的
     // 有 phone ilike。手機是 JS 擇一渲染、表格不掛 DOM，卡片不顯示就等於
     // 手機上完全看不到號碼，也無法回撥。
     renderConsole();

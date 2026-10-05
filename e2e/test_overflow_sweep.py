@@ -357,10 +357,6 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
         alerts
         or [build_system_alert(message="Edge Function 回應逾時：/rewards/withdraw 連續失敗 5 次")]
     )
-    # 管理員設置分頁的最壞但可達測資。Email 來自 Supabase Auth（無長度上限），
-    # 姓名吃 10 字上限，兩者在 `flex justify-between` 的同一列裡與固定寬的
-    # 標籤搶空間（AdminSetup.tsx:147-163）。
-    api_mock.set_admin_setup(is_admin=True, user_name=NAME_CJK_10, user_email=LONG_EMAIL)
 
 
 def _setup_admin_alerts(context, api_mock, rest_mock):
@@ -592,19 +588,11 @@ ROUTES = [
     ),
     SweepRoute(
         "/admin",
-        "平台管理 · 公告管理",
+        "平台管理 · 系統公告",
         _setup_admin,
         "/admin",
         tags=["announcements"],
-        after_load=_open_tab("公告管理"),
-    ),
-    SweepRoute(
-        "/admin",
-        "平台管理 · 管理員設置",
-        _setup_admin,
-        "/admin",
-        tags=["admin-setup"],
-        after_load=_open_tab("管理員設置"),
+        after_load=_open_tab("系統公告"),
     ),
     SweepRoute(
         "/admin",
@@ -720,7 +708,7 @@ def _write_report(results):
         "  目前測資到不了（推薦人數由 mock 的清單長度推導）。",
         "- **320px 與字級放大**：本輪只跑 375px 單一軸。",
         "- **正向版面斷言**：這支只量「有沒有溢出」，不量「該長成什麼樣」",
-        "  （分頁標籤是否排成兩列、對話框是否留有安全邊距）。那類期望走",
+        "  （分頁是否排成一列、對話框是否留有安全邊距）。那類期望走",
         "  `layout_probe.py`，寫在 `test_admin_mobile_layout.py`。",
         "",
     ]

@@ -57,7 +57,7 @@ export function MemberCardList({
                   變動（實測長 Email 讓卡片從 130px 變 154px）。列表的工作是
                   「找到那個人」，截斷仍然認得出來，完整值在詳情 Sheet 裡一點就有。
                   電話與 Email 併成一行，不多佔一列——收合態預算只剩 12px。
-                  搜尋框 placeholder 寫的是「搜尋姓名 / Email / 電話」，admin 用
+                  搜尋框的名稱寫的是「搜尋會員（姓名、Email 或電話）」，admin 用
                   來電號碼搜到人之後，得看得到命中的是哪個號碼才能確認是同一人，
                   而手機是唯一能一鍵撥號的裝置。
                   ⚠️ `truncate` 當 flex item 時 `min-width:auto` 會讓它不縮反溢，

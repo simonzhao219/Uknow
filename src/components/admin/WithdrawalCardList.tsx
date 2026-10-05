@@ -35,6 +35,8 @@ interface WithdrawalCardListProps {
   onReject: (record: AdminWithdrawalRecord) => void;
   onComplete: (record: AdminWithdrawalRecord) => void;
   processingId: string | null;
+  /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
+  actionsDisabled?: boolean;
   statusBadge: (status: string) => React.ReactNode;
   formatAmount: (n: number) => string;
 }
@@ -49,6 +51,7 @@ export function WithdrawalCardList({
   onReject,
   onComplete,
   processingId,
+  actionsDisabled = false,
   statusBadge,
   formatAmount,
 }: WithdrawalCardListProps) {
@@ -105,7 +108,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="destructive"
                     onClick={() => onReject(w)}
-                    disabled={processingId === w.id}
+                    disabled={actionsDisabled || processingId === w.id}
                   >
                     退件
                   </Button>
@@ -115,7 +118,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="secondary"
                     onClick={() => onComplete(w)}
-                    disabled={processingId === w.id}
+                    disabled={actionsDisabled || processingId === w.id}
                   >
                     代為完成
                   </Button>

@@ -1,6 +1,8 @@
 """`AdminDashboard.tsx` — the admin-only console at `/admin` (guarded by
-AdminRoute). A Radix `Tabs` with four triggers (獎金提領管理 / 會員管理 /
-公告管理 / 管理員設置); only the active tab's panel is mounted, so switching
+AdminRoute). A Radix `Tabs` with four triggers whose accessible names are
+獎金提領管理 / 會員管理 / 系統公告 / 系統告警 (only the two-character tail —
+提領 / 會員 / 公告 / 告警 — is visible; the rest is sr-only so the names stay
+stable for e2e and journey); only the active tab's panel is mounted, so switching
 tabs is what triggers each management component's data fetch."""
 
 from playwright.sync_api import Locator, Page, expect
@@ -27,8 +29,10 @@ class AdminDashboardPage(BasePage):
         return self.page.get_by_role("heading", name="平台管理")
 
     def tab(self, name: str) -> Locator:
-        # Radix TabsTrigger exposes ARIA role "tab".
-        return self.page.get_by_role("tab", name=name)
+        # Radix TabsTrigger exposes ARIA role "tab". exact=True: name matching is
+        # substring by default, and the members panel mounts its own inner tabs
+        # (會員列表 / 證件審核) — a future rename must not silently match two.
+        return self.page.get_by_role("tab", name=name, exact=True)
 
     def open_tab(self, name: str) -> None:
         self.tab(name).click()

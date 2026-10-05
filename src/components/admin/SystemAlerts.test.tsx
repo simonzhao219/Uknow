@@ -77,6 +77,16 @@ describe('SystemAlerts', () => {
     expect(screen.getByRole('button', { name: '重新載入' })).toBeTruthy();
   });
 
+  it('回應形狀不對時也是錯誤態，不是「目前沒有未處理的告警」', async () => {
+    // 監控面板的「空」必須是真的空。形狀不合（契約漂移、代理回了別的東西）
+    // 若退回空清單，維運看到的是一切正常——fail-open 的監控等於沒有監控。
+    apiRequestJson.mockResolvedValue({ data: { items: [], total: 0 } });
+    render(<SystemAlerts />);
+
+    expect(await screen.findByText('載入告警失敗，請檢查網路後再試')).toBeTruthy();
+    expect(screen.queryByText('目前沒有未處理的告警')).toBeNull();
+  });
+
   it('載入失敗後按重新載入會重抓', async () => {
     apiRequestJson.mockRejectedValueOnce(new Error('network down'));
     render(<SystemAlerts />);
