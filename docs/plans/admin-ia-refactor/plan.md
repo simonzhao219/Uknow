@@ -1,5 +1,7 @@
 # 後台資訊架構重構（S3：A1＋A2）規劃書
 
+<!-- plans-keep: S3 施工中的三段式鷹架（規劃待人審、實作未開始）；退場條件＝/tdd-implement 收尾、PR 合併前整個 docs/plans/admin-ia-refactor/ 刪除 -->
+
 > 母計畫：`docs/plans/platform-uiux-redesign/plan.md` §2.1／§2.2／§2.6、§3 A1／A2、§5。
 > 本檔只寫 S3 的施工細節；母計畫已有的理由不重述。
 > **狀態：草稿——§6 開放問題 Q1–Q3 待業主裁決後定稿，再跑 `/review-plan`。**

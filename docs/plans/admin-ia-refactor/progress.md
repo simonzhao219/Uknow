@@ -1,5 +1,7 @@
 # 後台資訊架構重構（S3）實作進度
 
+<!-- plans-keep: S3 施工中的三段式鷹架（規劃待人審、實作未開始）；退場條件＝/tdd-implement 收尾、PR 合併前整個 docs/plans/admin-ia-refactor/ 刪除 -->
+
 分支:`feature/admin-ia-refactor`
 規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
 
