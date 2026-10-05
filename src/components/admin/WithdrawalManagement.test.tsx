@@ -545,6 +545,19 @@ describe('WithdrawalManagement', () => {
 // 產出的檔案是拿去跟銀行轉出紀錄對帳的——重複的一份、或跟畫面篩選不一致的
 // 一份，都會在對帳時變成「多一筆／少一筆」的假警報。
 describe('WithdrawalManagement 工具列與匯出', () => {
+  // 匯出完成的回報文案依瀏覽器而定（內建瀏覽器改說補救方式）。jsdom 預設的 UA
+  // 「AppleWebKit 但沒有 Safari」會被 detectInAppBrowser 的 iOS WebView 啟發式
+  // 判成內建瀏覽器，所以這組固定扮演一般桌機瀏覽器；LINE 那條自己換掉。
+  const DESKTOP_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+  let uaSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    uaSpy = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(DESKTOP_UA);
+  });
+  afterEach(() => {
+    uaSpy.mockRestore();
+  });
+
   // 第一次載入回第 1 頁（共 3 筆）；之後每次呼叫（匯出收集）先掛著，由測試放行。
   function pagedLoaderWithGate() {
     const gates: Array<() => void> = [];
@@ -711,20 +724,14 @@ describe('WithdrawalManagement 工具列與匯出', () => {
   });
 
   it('LINE 等內建瀏覽器裡不說「已匯出」——下載是否落檔偵測不到，說了可能是假成功', async () => {
-    const ua = vi
-      .spyOn(navigator, 'userAgent', 'get')
-      .mockReturnValue('Mozilla/5.0 (iPhone) Line/13.0.0');
-    try {
-      renderConsole({
-        loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }),
-      });
-      await screen.findByText('已顯示 1 / 1 筆');
-      fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
-      expect(await screen.findByText('已產生 1 筆，若沒收到檔案請用外部瀏覽器開啟')).toBeTruthy();
-      expect(screen.queryByText('已匯出 1 筆')).toBeNull();
-    } finally {
-      ua.mockRestore();
-    }
+    uaSpy.mockReturnValue('Mozilla/5.0 (iPhone) Line/13.0.0');
+    renderConsole({
+      loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }),
+    });
+    await screen.findByText('已顯示 1 / 1 筆');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText('已產生 1 筆，若沒收到檔案請用外部瀏覽器開啟')).toBeTruthy();
+    expect(screen.queryByText('已匯出 1 筆')).toBeNull();
   });
 
   it('換篩選後清掉上一次的匯出回報——那個筆數屬於舊篩選', async () => {

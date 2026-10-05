@@ -28,6 +28,7 @@ import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
 import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
   AdminWithdrawalRecord,
@@ -407,11 +408,19 @@ export function WithdrawalManagement({
     link.click();
     URL.revokeObjectURL(link.href);
     setLoadError(null);
-    setActionMessage(`已匯出 ${rows.length} 筆`);
+    // LINE 等內建瀏覽器的下載常無聲無息、甚至根本沒落檔，而 link.click() 偵測不到
+    // ——那裡說「已匯出」可能是假成功，改成說出怎麼補救。
+    setActionMessage(
+      detectInAppBrowser().isInAppBrowser
+        ? `已產生 ${rows.length} 筆，若沒收到檔案請用外部瀏覽器開啟`
+        : `已匯出 ${rows.length} 筆`,
+    );
   };
 
   // 收集可能要好幾秒（逐頁）。期間篩選與重新整理一併停用：收集迴圈用的是
-  // 按下當下的 statusFilter，中途換篩選會下載一份跟畫面不一致的檔案。
+  // 按下當下的 statusFilter，中途換篩選會下載一份跟畫面不一致的檔案。列上的
+  // 寫入動作、批次匯款與載入更多也停用：中途有列狀態改變而離開篩選，offset
+  // 分頁會整體前移，對帳檔靜默漏列。
   // try/finally 包住整段——上限拒絕、收集失敗兩條提早 return 都要解除忙碌。
   const downloadCSV = async () => {
     if (exportingRef.current) return;
@@ -728,7 +737,15 @@ export function WithdrawalManagement({
               isDesktop 是**寬度**判準，767px 的桌機視窗也會失去唯一的匯出路徑。 */}
           <AdminToolbar
             filter={
-              <Select value={statusFilter} onValueChange={setStatusFilter} disabled={isExporting}>
+              <Select
+                value={statusFilter}
+                onValueChange={(next) => {
+                  // 上一次的匯出回報（「已匯出 N 筆」）屬於舊篩選，換篩選就收掉。
+                  setActionMessage(null);
+                  setStatusFilter(next);
+                }}
+                disabled={isExporting}
+              >
                 <SelectTrigger className="w-full md:w-36">
                   <SelectValue placeholder="全部狀態" />
                 </SelectTrigger>
@@ -747,7 +764,7 @@ export function WithdrawalManagement({
             isRefreshing={isLoading || isLoadingMore}
             onExport={downloadCSV}
             // 重新整理中 total／列表都是舊值，收集迴圈會照舊 total 收。
-            canExport={withdrawals.length > 0 && !isLoading}
+            canExport={withdrawals.length > 0 && !isLoading && !isLoadingMore}
             isExporting={isExporting}
             disabled={isExporting}
           />
@@ -762,7 +779,7 @@ export function WithdrawalManagement({
             <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">
               <span className="text-sm font-medium">已選取 {selected.size} 筆</span>
               {isDesktop && (
-                <Button size="sm" onClick={() => setBatchOpen(true)}>
+                <Button size="sm" onClick={() => setBatchOpen(true)} disabled={isExporting}>
                   批次標記已匯款
                 </Button>
               )}
@@ -810,6 +827,7 @@ export function WithdrawalManagement({
               onReject={setRejectTarget}
               onComplete={setCompleteTarget}
               processingId={processingId}
+              actionsDisabled={isExporting}
               statusBadge={getStatusBadge}
               formatAmount={twd}
             />
@@ -895,7 +913,7 @@ export function WithdrawalManagement({
                             <Button
                               size="sm"
                               onClick={() => setPaidTarget(w)}
-                              disabled={processingId === w.id}
+                              disabled={isExporting || processingId === w.id}
                             >
                               標記已匯款
                             </Button>
@@ -904,7 +922,7 @@ export function WithdrawalManagement({
                             size="sm"
                             tone="destructive"
                             onClick={() => setRejectTarget(w)}
-                            disabled={processingId === w.id}
+                            disabled={isExporting || processingId === w.id}
                           >
                             退件
                           </Button>
@@ -914,7 +932,7 @@ export function WithdrawalManagement({
                           size="sm"
                           tone="secondary"
                           onClick={() => setCompleteTarget(w)}
-                          disabled={processingId === w.id}
+                          disabled={isExporting || processingId === w.id}
                         >
                           代為完成
                         </Button>
@@ -930,7 +948,7 @@ export function WithdrawalManagement({
 
           {!isLoading && !loadError && withdrawals.length < total && (
             <div className="pt-4 text-center">
-              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore}>
+              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore || isExporting}>
                 {isLoadingMore ? '載入中…' : '載入更多'}
               </Button>
             </div>

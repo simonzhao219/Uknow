@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { ScanLine } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -103,21 +104,17 @@ const ADMIN_TABS = [
   { value: 'system-alerts', visible: '告警', name: '系統告警' },
 ] as const;
 
-// 完整名稱整串放在一個 sr-only 節點、由 TabsTrigger 的 aria-labelledby 指過來，
-// 而不是把缺的字拆成幾段 sr-only 補在二字前後：sr-only 是 position:absolute，
-// Chromium 計算名稱時會把它當區塊、在前後插空白，「會員<sr-only>管理」念成
-// 「會員 管理」，`get_by_role(name="會員管理")` 就找不到了（jsdom 不排版，
-// vitest 抓不到，只有真瀏覽器的 e2e 會紅）。也不用 aria-label——名稱寫在屬性
-// 裡，跟畫面上的字分屬兩處，改了一處另一處不會有任何東西提醒你；這裡兩個
-// 名字並排在同一份資料裡。可見字一律是名稱的子字串（WCAG 2.5.3）。
-function AdminTabLabel({ id, visible, name }: { id: string; visible: string; name: string }) {
+// 可見二字＋完整名稱整串放一個 sr-only 節點、由 aria-labelledby 指過來——寫法與
+// 理由見 ui-ux-guidelines §9。id 由 useId 在同一處產生並同時給兩端，不手組字串。
+function AdminTab({ value, visible, name }: { value: string; visible: string; name: string }) {
+  const nameId = useId();
   return (
-    <>
+    <TabsTrigger value={value} aria-labelledby={nameId}>
       {visible}
-      <span id={id} className="sr-only">
+      <span id={nameId} className="sr-only">
         {name}
       </span>
-    </>
+    </TabsTrigger>
   );
 }
 
@@ -158,7 +155,7 @@ export function AdminDashboard() {
             overflow 與 320px 三條。
 
             **無障礙名稱維持完整**（獎金提領管理／會員管理／系統公告／系統告警，
-            見下方 AdminTabLabel）:e2e 與 journey 都以
+            見上方 AdminTab）:e2e 與 journey 都以
             `get_by_role("tab", name=…)` 找分頁——journey 只在晉升 PR 上跑，
             名稱漂掉要到那時才紅。
 
@@ -172,13 +169,7 @@ export function AdminDashboard() {
             日後加第五個分頁時漏貼不會有任何東西提醒你。 */}
         <TabsList className="w-full grid grid-cols-4 h-auto pointer-coarse:[&>[role=tab]]:min-h-[44px]">
           {ADMIN_TABS.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              aria-labelledby={`admin-tab-${tab.value}`}
-            >
-              <AdminTabLabel id={`admin-tab-${tab.value}`} {...tab} />
-            </TabsTrigger>
+            <AdminTab key={tab.value} {...tab} />
           ))}
         </TabsList>
 
