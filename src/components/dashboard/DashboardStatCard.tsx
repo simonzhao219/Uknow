@@ -67,23 +67,15 @@ export function StatCardError({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * 卡內的行動提示：點擊落在整張卡的連結上（目的地相同）。primary 是整頁唯一的
- * 黑色主按鈕（由 pickPrimaryAction 決定），其餘降為 brand 次行動（§13）。
+ * 卡內的行動提示：點擊落在整張卡的連結上（目的地相同）。申請提領、立即刊登都是
+ * 流程的起點，按鈕三分法歸次要（白底框線，ui-ux-guidelines §12.11）——進了流程才有
+ * 墨黑的流程鈕；會員中心沒有要引導的事，所以卡片區沒有實心鈕。
  */
-export function StatCardAction({
-  primary,
-  children,
-}: {
-  primary: boolean;
-  children: React.ReactNode;
-}) {
+export function StatCardAction({ children }: { children: React.ReactNode }) {
   return (
     <span
       data-testid="stat-card-action"
-      className={cn(
-        buttonVariants({ variant: primary ? 'default' : 'brand', size: 'sm' }),
-        'mt-1 w-full',
-      )}
+      className={cn(buttonVariants({ tone: 'secondary', size: 'sm' }), 'mt-1 w-full')}
     >
       {children}
     </span>

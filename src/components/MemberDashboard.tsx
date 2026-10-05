@@ -30,7 +30,6 @@ import {
   countAwaitingCollection,
   countExpiring,
   formatExpiringCount,
-  pickPrimaryAction,
 } from './dashboard/dashboardSummary';
 
 /**
@@ -80,7 +79,6 @@ export function MemberDashboard() {
       subscriptionStatus: subscriptionData?.status ?? null,
       referralProgramJoined: user?.referralProgramJoined,
     });
-  const primaryAction = pickPrimaryAction({ canWithdraw, hasNoListing });
 
   const attentionItems: AttentionItem[] = [];
   if (referralEnabled && expiring.count > 0) {
@@ -210,9 +208,7 @@ export function MemberDashboard() {
             ) : (
               <>
                 <p className="text-base font-semibold text-foreground">尚未建立刊登</p>
-                <StatCardAction primary={primaryAction === 'create-listing'}>
-                  立即刊登
-                </StatCardAction>
+                <StatCardAction>立即刊登</StatCardAction>
               </>
             )}
           </DashboardStatCard>
@@ -297,9 +293,7 @@ export function MemberDashboard() {
                 {awaitingCount > 0 && (
                   <Badge variant="warning-subtle">待查收 {awaitingCount} 筆</Badge>
                 )}
-                {canWithdraw && (
-                  <StatCardAction primary={primaryAction === 'withdraw'}>申請提領</StatCardAction>
-                )}
+                {canWithdraw && <StatCardAction>申請提領</StatCardAction>}
               </>
             )}
           </DashboardStatCard>

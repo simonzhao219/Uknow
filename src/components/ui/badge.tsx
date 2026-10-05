@@ -10,7 +10,7 @@ const badgeVariants = cva(
   // 徽章會整個溢出容器（overflow-hidden 只裁自己的子元素，裁不到撐開自己的文字）。
   // 補上 max-w-full 讓寬度封頂在父層內容盒，text-overflow 才有作用點、長標籤
   // 以「…」收尾而不是跑出去。
-  "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit max-w-full whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-border transition-[color,box-shadow] overflow-hidden text-ellipsis",
+  "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit max-w-full whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:ring-ring focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-border transition-[color,box-shadow] overflow-hidden text-ellipsis",
   {
     variants: {
       variant: {
@@ -19,7 +19,7 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
+          "border-transparent bg-destructive text-destructive-foreground [a&]:hover:bg-destructive/90",
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         // S2 色彩收斂新增（D3）：實心（A 形狀）比照上面 destructive 的寫法。

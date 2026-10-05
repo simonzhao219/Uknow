@@ -50,12 +50,11 @@ function TabsTrigger({
         // 配上 whitespace-nowrap 就是文字滿出格子、與隔壁疊在一起。flex-auto 的
         // basis auto 使 min-content（＝整串不可斷的標籤）成為寬度下限，擠不下時
         // 由 TabsList 的 overflow-x-auto 接手捲動。
-        // 選中分頁：文字用強調色 --brand（§12.3），既有的 pill 底色維持——不只靠顏色
-        // 傳遞狀態（§12.7），也不改盒模型，admin 分頁列的量測法不受影響。dark 變體
-        // 要保留：specificity 才贏得過 dark:text-muted-foreground。深色的 pill 底沿用
-        // bg-card（比 --muted 軌道暗一階）：原本的 dark:bg-input/30 與軌道幾乎同色，
-        // 選中態靠白字對灰字的亮度差撐著，改 brand 後亮度差沒了，色盲下會分不出來。
-        "data-[state=active]:bg-card data-[state=active]:text-brand dark:data-[state=active]:text-brand focus-visible:border-ring focus-visible:ring-ring focus-visible:outline-ring dark:data-[state=active]:border-input text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-auto items-center justify-center gap-1.5 rounded-xl border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        // 選中分頁＝無框元件的選取態（§12.12）：底色 --sel（灰字）、文字反白，不靠字色或
+        // 粗體——選中與否在色盲下仍是「實心 vs 透明」的明度差。只換顏色、不改盒模型，
+        // admin 分頁列的量測法（AdminDashboard.tsx 註解）不受影響。dark 變體要保留：
+        // specificity 才贏得過 dark:text-muted-foreground。焦點只有鍵盤淡環。
+        "data-[state=active]:bg-sel data-[state=active]:text-sel-foreground dark:data-[state=active]:text-sel-foreground focus-visible:ring-ring text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-auto items-center justify-center gap-1.5 rounded-xl border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

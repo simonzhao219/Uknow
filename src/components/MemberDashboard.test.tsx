@@ -303,32 +303,31 @@ describe('MemberDashboard 需要注意區', () => {
   });
 });
 
-describe('MemberDashboard 卡片區主按鈕', () => {
-  const primaryButtons = (container: HTMLElement) =>
-    Array.from(container.querySelectorAll('.bg-primary'));
+describe('MemberDashboard 卡片區按鈕', () => {
+  const cardActions = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-testid="stat-card-action"]'));
 
-  it('可提領且尚未刊登時卡片區只有申請提領一顆黑色主按鈕', () => {
+  it('可提領且尚未刊登時兩顆都是次要外框鈕，卡片區沒有實心鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
     const { container } = renderPage();
 
-    const primaries = primaryButtons(container);
-    expect(primaries).toHaveLength(1);
-    expect(primaries[0].textContent).toBe('申請提領');
-    expect(screen.getByText('立即刊登').classList.contains('bg-brand')).toBe(true);
+    const actions = cardActions(container);
+    expect(actions.map((a) => a.textContent)).toEqual(['立即刊登', '申請提領']);
+    for (const action of actions) {
+      expect(action.classList.contains('bg-card')).toBe(true);
+      expect(action.classList.contains('bg-primary')).toBe(false);
+    }
   });
 
-  it('只有尚未刊登時卡片區至多一顆且是立即刊登', () => {
+  it('只有尚未刊登時卡片區只有立即刊登一顆行動鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     const { container } = renderPage();
-
-    const primaries = primaryButtons(container);
-    expect(primaries).toHaveLength(1);
-    expect(primaries[0].textContent).toBe('立即刊登');
+    expect(cardActions(container).map((a) => a.textContent)).toEqual(['立即刊登']);
   });
 
-  it('有刊登且不能提領時卡片區沒有主按鈕', () => {
+  it('有刊登且不能提領時卡片區沒有行動鈕', () => {
     const { container } = renderPage();
-    expect(primaryButtons(container)).toHaveLength(0);
+    expect(cardActions(container)).toHaveLength(0);
   });
 });
