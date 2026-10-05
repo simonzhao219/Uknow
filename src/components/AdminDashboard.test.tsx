@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 //
 // 平台管理殼層。這支守的是**分頁導覽本身**，不是任何一個分頁的內容
-// （那些各自有測試）。階段 1 要把 TabsList 從「手機橫向捲動」改成「兩列
-// grid」，而那是一次純 class 的改動——最容易的失敗模式是「改了 class，
-// 但某個 TabsTrigger 在重排時被弄丟了」。
+// （那些各自有測試）。分頁列的版面是一次純 class 的事（四欄一列的 grid）——
+// 最容易的失敗模式是「改了 class，但某個 TabsTrigger 在重排時被弄丟了」。
 //
 // ⚠️ **這支測不出版面**。jsdom 沒有排版引擎，`getBoundingClientRect` 一律回
-// 0，所以「有沒有真的排成兩列」「標籤有沒有畫到隔壁格子」只有真瀏覽器
+// 0，所以「有沒有真的排成一列」「標籤有沒有畫到隔壁格子」只有真瀏覽器
 // 量得到（`e2e/test_admin_mobile_layout.py`）。在這裡斷言 class 字串是套套
 // 邏輯——它斷言的是實作者剛打進去的那串字，不可能為了正確的理由失敗。
 // 所以本檔刻意**不驗版面 class**，只驗「四個分頁都在、都切得動」這個結構事實，
@@ -30,7 +29,7 @@ import { AdminDashboard } from './AdminDashboard';
 // 每個分頁兩個名字：畫面上看得到的二字，與無障礙名稱（螢幕閱讀器念的、e2e
 // 與 journey 用 `get_by_role("tab", name=…)` 找分頁靠的）。二字是為了讓四個
 // 分頁在 375px 排成一列；完整名稱不跟著縮，是因為 journey 只在晉升 PR 上跑，
-// 名稱漂掉要到那時才紅（規劃 admin-ia-refactor R1）。
+// 名稱漂掉要到那時才紅（寫法見 ui-ux-guidelines §9）。
 const TABS = [
   { name: '獎金提領管理', visible: '提領' },
   { name: '會員管理', visible: '會員' },
@@ -81,7 +80,7 @@ describe('平台管理的分頁導覽', () => {
     }
   });
 
-  it('管理員設置分頁已移除——第一位管理員改走 API（規劃 Q1）', () => {
+  it('管理員設置分頁已移除——第一位管理員改走 API（supabase-setup-checklist 步驟 7）', () => {
     renderDashboard();
     expect(screen.queryByRole('tab', { name: /管理員設置/ })).toBeNull();
   });

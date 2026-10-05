@@ -2723,3 +2723,17 @@ dom-accessibility-api 拿不到 computed display，只能當行內處理。
 推論：凡是「名稱怎麼算」跟 CSS 有關的斷言（`sr-only`、`display:contents`、`hidden` 子樹），
 vitest 的綠燈不算數，要有一條真瀏覽器的 `get_by_role` 斷言兜底——本 repo 的 e2e 剛好有，
 不然這個缺陷會一路活到 journey 的晉升 PR 才爆。
+
+## 2026-10-05｜漏網｜改可見文案沒掃 journey 的 placeholder 定位，差點留到晉升 PR 才紅
+
+S3（#359）把會員搜尋框的 placeholder 由「搜尋姓名 / Email / 電話」縮成「搜尋會員」。規劃與收尾 grep
+只掃了**分頁名稱**——因為分頁名稱被明列為跨層契約——沒掃 placeholder；而 `e2e/journey/steps/
+f70_renewal_saga_steps.py` 正是用 `get_by_placeholder("搜尋姓名 / Email / 電話")` 找搜尋框。journey 只在
+晉升 PR 跑、本機 `pytest tools/` 碰不到 step 內容，所以 mock e2e 全綠、`ci-ok` 全綠，四視角實作審查
+（reviewer 沒有 Bash、讀不到 diff）也沒抓到，是主 session 的第二輪審查才發現（P0）。
+
+處置：f70 改用 `get_by_role("searchbox", name="搜尋會員")`；收尾 grep 補上舊 placeholder 字串。
+
+推論：**任何可見文案（placeholder、按鈕字、標題）都可能是某支測試的定位器**——改字的 PR 要對
+`e2e/`（含 `journey/`）grep 舊字串，不只 grep 當下被認定為「契約」的那幾種。更好的是 journey 一律
+用 role＋名稱定位：名稱是無障礙契約、改它本來就要想清楚；placeholder 是文案，會被當成純 UI 修改。

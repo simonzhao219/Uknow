@@ -653,7 +653,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 |---|---|---|
 | **會員管理** | `MemberManagement` | 會員列表（全站統計／狀態篩選／排序；**列上唯一動作是「查看」**）、會員詳情（含近期提領記錄，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
-| **系統通知** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
+| **系統公告** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
 | **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。

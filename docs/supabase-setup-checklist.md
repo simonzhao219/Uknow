@@ -504,29 +504,42 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 `/admin-setup/set-self-admin` 對「全新資料庫的第一個呼叫者」開放：**新環境部署後
 應立即由預定的管理員帳號完成這一步**，不要讓空窗留著。
 
-1. **前置**：該帳號先在前台完成註冊並**補完個人資料**，再做下一步。註冊只會
-   建出一筆空白的 profile（`name` 為空）；API 不檢查資料是否補完，空白 profile
-   照樣宣告成功、用掉唯一的首位名額，但前端的資料完整性守衛會擋住它進
-   `/admin`——順序反了就得用 SQL 收拾。
+1. **前置**：該帳號先在前台完成註冊並**補完個人資料**。註冊只會建出一筆空白的
+   profile（`name` 為空），前端的資料完整性守衛會擋住資料沒補完的帳號進 `/admin`；
+   API 本身不檢查這件事。
 2. **取得 access token**：用該帳號登入前台 → DevTools → Application →
    Local Storage → `sb-<ref>-auth-token`，複製其中的 `access_token`。
-3. **呼叫**（`<ref>`：develop 取 `config/supabaseTarget.ts` 的 `projectId`，
-   正式站取 `src/utils/supabase/info.tsx` 的 `projectId`）：
+   `<ref>`：develop 取 `config/supabaseTarget.ts` 的 `projectId`，正式站取
+   `src/utils/supabase/info.tsx` 的 `projectId`。
+3. **宣告前先確認**（名額只有一個，宣告到錯的帳號才是真正麻煩的情況）：
+
+   ```bash
+   curl "https://<ref>.supabase.co/functions/v1/api/admin-setup/check" \
+     -H "Authorization: Bearer <access_token>"
+   ```
+
+   確認 `hasExistingAdmin` 是 `false`、`userName` 不是空字串、`userEmail` 就是預定
+   的管理員信箱，再往下。
+4. **宣告**：
 
    ```bash
    curl -X POST "https://<ref>.supabase.co/functions/v1/api/admin-setup/set-self-admin" \
      -H "Authorization: Bearer <access_token>"
    ```
 
-4. **看回應**：
+5. **看回應**：
    - `200` `{"success":true}`：成功。
    - `403`：系統**已經有管理員**（請既有管理員在後台授予）；極少數情況是該帳號
      連 profile 列都沒有（註冊觸發器沒跑），回應訊息是「找不到使用者」。
    - `401`：token 過期或貼錯（access token 約一小時失效）——重新登入取新的。
    - `500`：「設置失敗，請稍後再試」——看 Edge Function `api` 的日誌。
-5. **自驗**：同一個 token 打
-   `GET https://<ref>.supabase.co/functions/v1/api/admin-setup/check`，回應的
-   `isAdmin` 是 `true`；重新整理前台後 `/admin` 進得去。
+6. **自驗**：再打一次第 3 步的 `check`，`isAdmin` 是 `true`；重新整理前台後
+   `/admin` 進得去。資料沒補完的帳號宣告成功後進不了 `/admin`，補完資料即可。
+7. **宣告到錯的帳號時**：用那個帳號登入後台，在「會員」分頁的會員詳情把正確的帳號
+   設為管理員，再由正確的帳號撤銷錯的那個（規格書 §13 的授予／撤銷路徑；不能撤銷
+   自己）。那個帳號登不進後台時，在 SQL Editor 執行
+   `update public.profiles set is_admin = false where id = '<錯的帳號 uuid>';`
+   ——系統回到沒有管理員的狀態，從第 1 步重來。
 
 ## 快速檢查表（每個環境各一份）
 
@@ -549,8 +562,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
 - [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
-- [ ] 步驟 7（僅全新資料庫）：預定的管理員帳號已補完資料並宣告，
-      `GET /admin-setup/check` 回 `isAdmin: true`
+- [ ] 步驟 7（僅全新資料庫）：宣告前 `check` 確認是預定的帳號且 `userName` 非空；
+      宣告後 `check` 回 `isAdmin: true`
 
 ### 兩個環境都設完後，再驗一次「沒有交叉」
 

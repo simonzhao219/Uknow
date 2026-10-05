@@ -285,7 +285,7 @@ describe('MemberManagement', () => {
   });
 
   // 工具列（S3 A2）：搜尋＋重新整理，沒有 CSV——會員資料的匯出不存在，
-  // 把工具列的 CSV 鈕帶過來等於憑空多一條個資外流路徑（規劃 §1 不做）。
+  // 規則見 ui-ux-guidelines §3（CSV 鈕只在已有匯出邏輯的頁面傳入）。
   it('工具列有重新整理、沒有 CSV 鈕', async () => {
     renderConsole();
     await screen.findAllByText('陳大文');

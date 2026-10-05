@@ -63,7 +63,7 @@ def admin_at_375(page, context, api_mock, rest_mock):
 def test_admin_tabs_fit_one_row_at_375px(admin_at_375):
     """U2：四個分頁在 375px 排成一列，四個都看得到。
 
-    一列成立的前提是可見標籤只有二字（提領／會員／公告／告警，S3 規劃 A1）。
+    一列成立的前提是可見標籤只有二字（提領／會員／公告／告警，ui-ux-guidelines §3）。
     「一列」本身分不出「四欄 grid」與「單行橫向捲動」——後者第 4 個分頁會被
     捲到框外，所以另外斷言每個分頁都完整落在 TabsList 的可視範圍內。
     """

@@ -505,8 +505,8 @@ export function MemberManagement({
                 <CardTitle>會員管理</CardTitle>
                 <CardDescription>管理平台所有會員帳號</CardDescription>
               </div>
-              {/* 同提領頁的 AdminToolbar（S3 A2）:搜尋吃剩餘寬度＋重新整理，
-                  沒有 CSV——會員資料沒有匯出能力，工具列不附贈一條個資外流路徑。
+              {/* 同提領頁的 AdminToolbar:搜尋吃剩餘寬度＋重新整理，沒有 CSV
+                  （規則見 ui-ux-guidelines §3）。
                   載入更多進行中也停用重新整理:兩者交錯，loadMore 晚回來會把
                   舊頁尾接到剛重設的列表上（usePagedList 沒有序列保護）。 */}
               <div className="w-full sm:w-auto sm:min-w-80 sm:max-w-md sm:flex-1">
