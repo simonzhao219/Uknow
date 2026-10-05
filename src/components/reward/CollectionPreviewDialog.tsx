@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
-import { CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react';
+import { CheckCircle, ArrowRight } from 'lucide-react';
 import { formatTimestamp } from '../../utils/referralFormatter';
 
 interface CollectionPreviewDialogProps {
@@ -133,12 +133,10 @@ export function CollectionPreviewDialog({
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
             <Button variant="outline" onClick={onBack} className="flex-1">
-              <ArrowLeft className="h-4 w-4 mr-2" />
               上一步
             </Button>
             <Button onClick={onNext} className="flex-1">
               下一步
-              <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </div>
         </CardContent>

@@ -128,7 +128,7 @@ describe('懶載入展開', () => {
 });
 
 describe('列右側資訊（方案 A 對齊）', () => {
-  it('有下線的節點於列右側顯示「N 位」', () => {
+  it('有直接推薦的節點於列右側顯示「N 位」', () => {
     renderTree(makeOverview({ roots: [makeNode({ name: '王大明', childCount: 3 })] }));
     expect(screen.getByText('3 位')).toBeTruthy();
   });
@@ -154,7 +154,7 @@ describe('需要關注橫幅（伺服器上限）', () => {
       makeNode({ userId: 'a2', name: '林○樺', generation: 2, status: 'expired' }),
     ];
     renderTree(makeOverview({ attention: { total: 8, items } }));
-    expect(screen.getByText('8 位下線需要關注')).toBeTruthy();
+    expect(screen.getByText('8 位需要關注')).toBeTruthy();
     expect(screen.getByText('陳○華')).toBeTruthy();
     expect(screen.getByText('還有 6 位')).toBeTruthy();
   });
@@ -281,7 +281,7 @@ describe('伺服器搜尋（debounce）', () => {
       });
       renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }), { searchNetwork });
 
-      fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '小' } });
+      fireEvent.change(screen.getByPlaceholderText('搜尋姓名'), { target: { value: '小' } });
       expect(searchNetwork).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -311,7 +311,7 @@ describe('伺服器搜尋（debounce）', () => {
       .mockResolvedValueOnce({ matches: [mk('s3')], total: 3 });
 
     renderTree(makeOverview({ roots: [makeNode({ name: '王大明' })] }), { searchNetwork });
-    fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '林' } });
+    fireEvent.change(screen.getByPlaceholderText('搜尋姓名'), { target: { value: '林' } });
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 350));
@@ -341,7 +341,7 @@ describe('伺服器搜尋（debounce）', () => {
       total: 1,
     });
     renderTree(makeOverview({ roots: [makeNode()] }), { searchNetwork });
-    fireEvent.change(screen.getByPlaceholderText('搜尋下線姓名'), { target: { value: '陳' } });
+    fireEvent.change(screen.getByPlaceholderText('搜尋姓名'), { target: { value: '陳' } });
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 350));

@@ -869,7 +869,7 @@ def build_monthly_king_task(current: int = 0, **overrides) -> dict:
 
 def build_withdrawal_record(status: str = "awaiting_collection", **overrides) -> dict:
     """A row for GET /rewards/withdrawals (WithdrawalRecordSchema). Defaults to
-    `awaiting_collection` — the only status that renders a 查收 button."""
+    `awaiting_collection` — the only status that renders the 確認收款 button."""
     record = {
         "id": "wd-e2e-1",
         "userId": DEFAULT_USER_ID,

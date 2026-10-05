@@ -111,7 +111,7 @@ describe('MemberDashboard 狀態卡', () => {
     state.referral = { overview: null, loading: false, error: '網路錯誤' };
     renderPage();
 
-    expect(within(card(/^推薦網絡/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
+    expect(within(card(/^推薦網絡：/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
     expect(within(card(/^可提領點數/)).getByText('500')).toBeTruthy();
   });
 
@@ -157,24 +157,24 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(listing).queryByText('立即刊登')).toBeNull();
   });
 
-  it('推薦網絡卡的徽章只計即將到期的下線', () => {
+  it('推薦網絡卡的徽章只計即將到期的人數', () => {
     state.referral.overview.attention = {
       total: 4,
       items: [node('expiring'), node('expiring'), node('expiring'), node('expired')],
     };
     renderPage();
 
-    const referral = card(/^推薦網絡/);
+    const referral = card(/^推薦網絡：/);
     expect(within(referral).getByText('12')).toBeTruthy();
     expect(within(referral).getByText('3 位即將到期')).toBeTruthy();
-    expect(referral.getAttribute('aria-label')).toBe('推薦網絡：12 位下線，3 位即將到期');
+    expect(referral.getAttribute('aria-label')).toBe('推薦網絡：12 位，3 位即將到期');
   });
 
-  it('沒有即將到期的下線時推薦網絡卡不顯示徽章', () => {
+  it('推薦網絡沒有人即將到期時卡片不顯示徽章', () => {
     state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
     renderPage();
 
-    expect(within(card(/^推薦網絡/)).queryByText(/即將到期/)).toBeNull();
+    expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
   });
 
   it('本月任務卡以本輪顯示推薦進度並標明單位', () => {
@@ -262,7 +262,7 @@ describe('MemberDashboard 需要注意區', () => {
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });
 
-  it('有即將到期下線與待查收提領時各列一條動作連結', () => {
+  it('有人即將到期與有待查收提領時各列一條動作連結', () => {
     state.referral.overview.attention = {
       total: 3,
       items: [node('expiring'), node('expired'), node('suspended')],
@@ -271,7 +271,7 @@ describe('MemberDashboard 需要注意區', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: '需要注意' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '1 位下線即將到期' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: '推薦網絡 1 位即將到期' }).getAttribute('href')).toBe(
       '/referrals',
     );
     expect(screen.getByRole('link', { name: '2 筆提領待查收' }).getAttribute('href')).toBe(
@@ -279,7 +279,7 @@ describe('MemberDashboard 需要注意區', () => {
     );
   });
 
-  it('只有已失效與停權的下線時不列推薦那條', () => {
+  it('推薦網絡只有已失效與停權時不列推薦那條', () => {
     state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
@@ -291,7 +291,7 @@ describe('MemberDashboard 需要注意區', () => {
       items: Array.from({ length: 6 }, () => node('expiring')),
     };
     renderPage();
-    expect(screen.getByRole('link', { name: '至少 6 位下線即將到期' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '推薦網絡 至少 6 位即將到期' })).toBeTruthy();
   });
 
   it('功能旗標關閉時不列該功能的注意事項', () => {

@@ -380,7 +380,7 @@ export function AuthPage() {
                 className="w-full"
                 data-testid="auth-continue-button"
               >
-                {isLoading ? '檢查中...' : '繼續'}
+                {isLoading ? '檢查中...' : '下一步'}
               </Button>
             </form>
           )}

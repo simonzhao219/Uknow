@@ -316,8 +316,8 @@ export function MemberManagement({
                 <dd>{detailFor.referrerName ?? '—'}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">直接下線</dt>
-                <dd>{detailFor.directChildCount} 人</dd>
+                <dt className="text-muted-foreground">直接推薦</dt>
+                <dd>{detailFor.directChildCount} 位</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">證件審核</dt>

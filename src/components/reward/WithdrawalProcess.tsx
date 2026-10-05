@@ -9,7 +9,6 @@ import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { StatusCallout } from '../ui/status-callout';
 import {
-  ArrowLeft,
   ArrowRight,
   CheckCircle,
   AlertCircle,
@@ -601,7 +600,6 @@ export function WithdrawalProcess({
               </Button>
               <Button onClick={handleNext} className="flex-1" disabled={!amount}>
                 下一步
-                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </div>
@@ -636,12 +634,10 @@ export function WithdrawalProcess({
 
             <div className="flex gap-4">
               <Button variant="outline" onClick={handleBack} className="flex-1">
-                <ArrowLeft className="h-4 w-4 mr-2" />
                 上一步
               </Button>
               <Button onClick={() => setCurrentStep(3)} className="flex-1">
-                確認並繼續
-                <ArrowRight className="h-4 w-4 ml-2" />
+                下一步
               </Button>
             </div>
           </div>
@@ -876,7 +872,6 @@ export function WithdrawalProcess({
                 className="flex-1"
                 disabled={isSubmitting}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" />
                 上一步
               </Button>
               <Button

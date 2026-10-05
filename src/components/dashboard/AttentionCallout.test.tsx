@@ -24,14 +24,14 @@ describe('AttentionCallout', () => {
       <MemoryRouter>
         <AttentionCallout
           items={[
-            { key: 'a', to: '/referrals', label: '2 位下線即將到期' },
+            { key: 'a', to: '/referrals', label: '推薦網絡 2 位即將到期' },
             { key: 'b', to: '/rewards', label: '1 筆提領待查收' },
           ]}
         />
       </MemoryRouter>,
     );
     expect(screen.getByRole('heading', { level: 2, name: '需要注意' })).toBeTruthy();
-    const link = screen.getByRole('link', { name: '2 位下線即將到期' });
+    const link = screen.getByRole('link', { name: '推薦網絡 2 位即將到期' });
     expect(link.getAttribute('href')).toBe('/referrals');
     expect(link.classList.contains('text-primary')).toBe(true);
     expect(link.classList.contains('underline')).toBe(true);

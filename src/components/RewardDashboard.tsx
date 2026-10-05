@@ -192,7 +192,7 @@ export function RewardDashboard() {
               size="sm"
               onClick={() => navigate('/payment/checkout')}
             >
-              立即續約
+              續訂
             </Button>
           }
         />

@@ -52,12 +52,12 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
 
         {!isLoading && cardState === 'expired-former' && (
           <Button tone="guide" size="sm" asChild>
-            <Link to="/payment/checkout">續訂 / 重新訂閱</Link>
+            <Link to="/payment/checkout">續訂</Link>
           </Button>
         )}
         {!isLoading && noticeDaysLeft !== null && (
           <Button tone="guide" size="sm" asChild>
-            <Link to="/payment/checkout">立即續訂</Link>
+            <Link to="/payment/checkout">續訂</Link>
           </Button>
         )}
       </CardHeader>
@@ -78,7 +78,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
         ) : cardState === 'expired-former' ? (
           <div className="space-y-3">
             <StatusCallout
-              variant="destructive"
+              variant="warning"
               title="會籍已失效"
               description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務——過期未滿一年可「續約」接續原效期。"
             />

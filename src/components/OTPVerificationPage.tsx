@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from './ui/input-otp';
-import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
@@ -246,14 +245,12 @@ export function OTPVerificationPage() {
 
           {/* Back to login */}
           <div className="text-center">
-            <button
-              type="button"
-              onClick={() => navigate('/login')}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            <Link
+              to="/login"
+              className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
             >
-              <ArrowLeft className="w-3 h-3 inline mr-1" />
               返回登入
-            </button>
+            </Link>
           </div>
         </CardContent>
       </Card>

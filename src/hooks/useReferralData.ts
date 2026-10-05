@@ -173,7 +173,7 @@ export function useReferralData(): UseReferralDataResult {
           `/referrals/network/children?parentId=${encodeURIComponent(parentId)}&sort=${sortRef.current}`,
         ),
       );
-      if (!result.success) throw new Error('載入下線失敗');
+      if (!result.success) throw new Error('載入推薦清單失敗');
       childrenCache.current.set(key, result.data.nodes);
       return result.data.nodes;
     })();

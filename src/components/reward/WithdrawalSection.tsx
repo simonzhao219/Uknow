@@ -287,7 +287,7 @@ export function WithdrawalSection({
                           onClick={() => handleClickCollection(withdrawal)}
                           className="text-xs"
                         >
-                          查收
+                          確認收款
                         </Button>
                       )}
                     </div>
