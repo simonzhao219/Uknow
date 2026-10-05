@@ -379,6 +379,14 @@ export type NetworkSortMode = Infer<typeof NetworkSortModeSchema>;
  */
 export const DEFAULT_NETWORK_SORT: NetworkSortMode = 'updated_asc';
 
+/**
+ * 「即將到期」的窗：會籍有效且距到期 ≤ 這麼多天（剩餘天數＝距 end_date 無條件進位）。
+ * 前後端共用的**單一來源**：推薦網絡節點的 expiring（後端 deriveNodeStatus）與
+ * 會員端續訂提醒（前端 renewalNoticeDaysLeft）是同一個窗，規格書 §7.2 也這樣寫——
+ * 先前兩邊各寫一個 30，改一邊不會有任何檢查報錯。
+ */
+export const RENEWAL_NOTICE_DAYS = 30;
+
 export const NetworkNodeSchema = obj(ReferralNodeFields);
 export type NetworkNode = Infer<typeof NetworkNodeSchema>;
 

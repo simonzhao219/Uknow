@@ -19,7 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
-import { DEFAULT_NETWORK_SORT } from '../_shared/api-contract.ts';
+import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
   MemberVerifyResponse,
@@ -208,6 +208,32 @@ async function hasPendingWithdrawal(userId: string): Promise<boolean> {
     .limit(1);
   if (error) throw new Error(`withdrawals 查詢失敗: ${error.message}`);
   return (data?.length ?? 0) > 0;
+}
+
+// ============================================================
+// 工具：讀取失敗一律擲出（守衛與狀態端點的 fail-closed）。
+// 讀不到不是「尚未確認」也不是「沒有」——退化成 null／false／0 會被當成業務
+// 結論（放行建單、顯示已失效、告知新約沒有代價）。呼叫端整個 handler 包一個
+// catch 回 5xx，與推薦網絡區 selectInChunks「失敗擲出、handler 統一回 500」同形。
+// ============================================================
+function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
+  if (res.error) throw new Error(`${what} 查詢失敗: ${res.error.message}`);
+  return res.data;
+}
+
+// 會員現在的會籍（user_account_status，兩態）。查無列（沒有 profile）回 null，
+// 語意同從未訂閱；查詢失敗擲出。/subscriptions/status 與 /payuni/prepare 共用。
+async function readAccountStatus(
+  client: any,
+  userId: string,
+): Promise<{ status: string; end_date: string | null } | null> {
+  return must(
+    await client.from('user_account_status')
+      .select('status, end_date')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    'user_account_status',
+  );
 }
 
 // ============================================================
@@ -1759,18 +1785,6 @@ app.post('/payuni/prepare', async (c) => {
 
   const client = sb();
 
-  // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
-  // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
-  // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
-  const { data: acct } = await client
-    .from('user_account_status')
-    .select('status')
-    .eq('user_id', user.id)
-    .single();
-  if (acct?.status === 'active') {
-    return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
-  }
-
   // 過期會員續費雙模式（見 migration 0008）：
   //   extend = 續約，效期接續前一筆訂閱的最後一天；
   //   fresh  = 新約，效期從付款日起算、可換新推薦人。
@@ -1782,42 +1796,53 @@ app.post('/payuni/prepare', async (c) => {
   const renewalMode: 'extend' | 'fresh' | null =
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
-  if (renewalMode === 'extend') {
-    // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
-    // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
-    // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
-    // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
-    // 沒有可接續的效期。
-    const { data: lastSub } = await client
-      .from('subscriptions')
-      .select('end_date')
-      .eq('user_id', user.id)
-      .order('end_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!lastSub?.end_date) {
-      return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
-    }
-  }
-
-  // A16：有審核中（pending）提領時擋下 fresh——fresh 會清空帳本，而
-  // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
-  // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
-  // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
-  let pendingWithdrawal: boolean;
+  // 建單前守衛：三道讀取全部在任何寫入之前，任一讀取失敗即回 500、不建單
+  // （fail-closed，見 must()）。先前防重複讀失敗就當「非 active」放行，有效會員
+  // 可再付一次；extend 讀失敗回 400「請選擇新約」，把故障說成業務拒絕，還把人
+  // 導向會清空帳本的新約。
   try {
-    pendingWithdrawal = renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id));
+    // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
+    // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
+    // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
+    const acct = await readAccountStatus(client, user.id);
+    if (acct?.status === 'active') {
+      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+    }
+
+    if (renewalMode === 'extend') {
+      // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
+      // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
+      // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
+      // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
+      // 沒有可接續的效期。
+      const lastSub = must(
+        await client
+          .from('subscriptions')
+          .select('end_date')
+          .eq('user_id', user.id)
+          .order('end_date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        'subscriptions',
+      ) as { end_date: string | null } | null;
+      if (!lastSub?.end_date) {
+        return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
+      }
+    }
+
+    // A16：有審核中（pending）提領時擋下 fresh——fresh 會清空帳本，而
+    // pending 的提領之後可能被退件，退款會落進已清空的帳本。只擋 pending：
+    // awaiting_collection 依狀態機不可再轉 rejected（錢已核准匯出）。
+    // 必須擋在 W3 寫入之前，避免 400 前就先動了上代。
+    if (renewalMode === 'fresh' && (await hasPendingWithdrawal(user.id))) {
+      return c.json(
+        { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
+        400,
+      );
+    }
   } catch (err) {
-    // fail-closed：查不到提領狀態就不建單（見 hasPendingWithdrawal 註解）。
-    console.error('[payuni/prepare] 提領狀態查詢失敗:', err);
+    console.error('[payuni/prepare] 建單前守衛讀取失敗:', err);
     return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
-  }
-  if (pendingWithdrawal) {
-    return c.json(
-      { success: false, error: '您有一筆提領正在審核中，請等待審核完成，或聯繫客服' },
-      400,
-    );
   }
 
   // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
@@ -2722,18 +2747,14 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  // 三個讀取任一失敗都回 500：200 帶捏造的 expired／renewal=null／
-  // hasPendingWithdrawal=false 比錯誤更糟——前端會照實顯示。
-  let results;
+  // 任一讀取失敗整支回 500（業主 2026-10-05 #360 裁決：不做部分降級）：200 帶
+  // 捏造的 expired／renewal=null／hasPendingWithdrawal=false／freshForfeitPoints=0
+  // 比錯誤更糟——前端會照實顯示。讀取一律經 must() 擲出，由下方單一 catch 回 500。
   try {
-    results = await Promise.all([
-      // maybeSingle：查無列（沒有 profile）照舊當從未訂閱；只有真正的查詢失敗
-      // 才回 500。先前 .single() 的錯誤被吞掉、回 200 + status:'expired'，
-      // 前端就把有效會員顯示成已失效、刊登誤標已隱藏。
-      sb().from('user_account_status')
-        .select('status, end_date')
-        .eq('user_id', user.id)
-        .maybeSingle(),
+    const [acct, subs, pendingWithdrawal] = await Promise.all([
+      // 查無列（沒有 profile）照舊當從未訂閱；先前 .single() 的錯誤被吞掉、回
+      // 200 + status:'expired'，前端就把有效會員顯示成已失效、刊登誤標已隱藏。
+      readAccountStatus(sb(), user.id),
       // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
       // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
       // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
@@ -2743,104 +2764,91 @@ app.get('/subscriptions/status', async (c) => {
         .select('start_date, end_date, source_payment_order_id')
         .eq('user_id', user.id)
         .order('end_date', { ascending: false })
-        .limit(40),
+        .limit(40)
+        .then((r) => must(r, 'subscriptions')),
       // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
       hasPendingWithdrawal(user.id),
     ]);
-  } catch (err) {
-    console.error('[subscriptions/status] 提領狀態查詢失敗:', err);
-    return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
-  }
-  const [{ data: acct, error: acctErr }, { data: subs, error: subsErr }, pendingWithdrawal] =
-    results;
-  if (acctErr || subsErr) {
-    console.error('[subscriptions/status] 查詢失敗:', acctErr ?? subsErr);
-    return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
-  }
 
-  // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
-  // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
-  // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
-  const sub = subs?.[0] ?? null;
-  let renewal: Record<string, unknown> | null = null;
-  if (sub?.end_date) {
-    const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
+    // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
+    // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
+    // compute_subscription_period 的鏡射，最終寫進 DB 的值一律出自 SQL）。
+    const sub = subs?.[0] ?? null;
+    let renewal: Record<string, unknown> | null = null;
+    if (sub?.end_date) {
+      const plan = backfillPlan(twDayOf(sub.end_date), twDayOf(new Date()))!;
 
-    const srcOrderIds = (subs ?? [])
-      .map((s) => s.source_payment_order_id)
-      .filter((id): id is string => !!id);
-    const [
-      { data: srcOrders, error: ordErr },
-      { data: bal, error: balErr },
-      { data: tp, error: tpErr },
-    ] = await Promise.all([
-      srcOrderIds.length > 0
-        ? sb().from('payment_orders')
-          .select('id, completed_at')
-          .in('id', srcOrderIds)
-        : Promise.resolve({
-          data: [] as { id: string; completed_at: string | null }[],
-          error: null,
-        }),
-      sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle(),
-      sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle(),
-    ]);
-    // 失敗時不得回 0：freshForfeitPoints／Referrals 是新約對話框告知「會失去多少」
-    // 的依據，捏造的 0 會讓人以為選新約沒有代價。
-    if (ordErr || balErr || tpErr) {
-      console.error('[subscriptions/status] 續約資訊查詢失敗:', ordErr ?? balErr ?? tpErr);
-      return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
-    }
+      const srcOrderIds = (subs ?? [])
+        .map((s) => s.source_payment_order_id)
+        .filter((id): id is string => !!id);
+      // 失敗時不得回 0：freshForfeitPoints／Referrals 是新約對話框告知「會失去多少」
+      // 的依據，捏造的 0 會讓人以為選新約沒有代價。
+      const [srcOrders, bal, tp] = await Promise.all([
+        srcOrderIds.length > 0
+          ? sb().from('payment_orders')
+            .select('id, completed_at')
+            .in('id', srcOrderIds)
+            .then((r) => must(r, 'payment_orders'))
+          : Promise.resolve([] as { id: string; completed_at: string | null }[]),
+        sb().from('reward_balances').select('available').eq('user_id', user.id).maybeSingle()
+          .then((r) => must(r, 'reward_balances')),
+        sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle()
+          .then((r) => must(r, 'task_progress')),
+      ]);
 
-    // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
-    // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
-    // 不得被誤判成「本輪已補繳」）。從最新一筆往回走，連續帶著這個簽名
-    // 的筆數 = 本輪已付補繳筆數（A15 對話框要唸出具體數字）；一遇到
-    // 非補繳筆（那是上一輪的自然效期）就停。
-    const completedAtById = new Map(
-      (srcOrders ?? []).map((o) => [o.id, o.completed_at]),
-    );
-    let paidBackfillCount = 0;
-    for (const s of subs ?? []) {
-      const completedAt = s.source_payment_order_id
-        ? completedAtById.get(s.source_payment_order_id)
-        : null;
-      const isBackfill = !!(
-        completedAt &&
-        new Date(s.end_date).getTime() < new Date(completedAt).getTime()
+      // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
+      // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
+      // 不得被誤判成「本輪已補繳」）。從最新一筆往回走，連續帶著這個簽名
+      // 的筆數 = 本輪已付補繳筆數（A15 對話框要唸出具體數字）；一遇到
+      // 非補繳筆（那是上一輪的自然效期）就停。
+      const completedAtById = new Map(
+        (srcOrders ?? []).map((o) => [o.id, o.completed_at]),
       );
-      if (!isBackfill) break;
-      paidBackfillCount++;
+      let paidBackfillCount = 0;
+      for (const s of subs ?? []) {
+        const completedAt = s.source_payment_order_id
+          ? completedAtById.get(s.source_payment_order_id)
+          : null;
+        const isBackfill = !!(
+          completedAt &&
+          new Date(s.end_date).getTime() < new Date(completedAt).getTime()
+        );
+        if (!isBackfill) break;
+        paidBackfillCount++;
+      }
+      const hasPaidAnyBackfill = paidBackfillCount > 0;
+
+      renewal = {
+        extendAnchorDate: plan.extendAnchorDay,
+        extendEndDate: plan.extendEndDay,
+        backfillCount: plan.backfillCount,
+        backfillAmount: plan.backfillCount * 1200,
+        backfillFinalEndDate: plan.backfillFinalEndDay,
+        expiredForMonths: plan.expiredForMonths,
+        hasPaidAnyBackfill,
+        paidBackfillCount,
+        paidBackfillAmount: paidBackfillCount * 1200,
+        freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
+        freshForfeitReferrals: tp?.total_referrals ?? 0,
+      };
     }
-    const hasPaidAnyBackfill = paidBackfillCount > 0;
 
-    renewal = {
-      extendAnchorDate: plan.extendAnchorDay,
-      extendEndDate: plan.extendEndDay,
-      backfillCount: plan.backfillCount,
-      backfillAmount: plan.backfillCount * 1200,
-      backfillFinalEndDate: plan.backfillFinalEndDay,
-      expiredForMonths: plan.expiredForMonths,
-      hasPaidAnyBackfill,
-      paidBackfillCount,
-      paidBackfillAmount: paidBackfillCount * 1200,
-      freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
-      freshForfeitReferrals: tp?.total_referrals ?? 0,
-    };
+    return c.json({
+      success: true,
+      data: {
+        hasSubscription: acct?.status === 'active',
+        status: acct?.status ?? 'expired',
+        activeUntil: acct?.end_date ?? null,
+        currentPeriodStart: sub?.start_date ?? null,
+        currentPeriodEnd: sub?.end_date ?? null,
+        renewal,
+        hasPendingWithdrawal: pendingWithdrawal,
+      },
+    });
+  } catch (err) {
+    console.error('[subscriptions/status] 讀取失敗:', err);
+    return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
   }
-
-  return c.json({
-    success: true,
-    data: {
-      hasSubscription: acct?.status === 'active',
-      status: acct?.status ?? 'expired',
-      activeUntil: acct?.end_date ?? null,
-      currentPeriodStart: sub?.start_date ?? null,
-      currentPeriodEnd: sub?.end_date ?? null,
-      renewal,
-      hasPendingWithdrawal: pendingWithdrawal,
-    },
-  });
 });
 
 // ============================================================
@@ -3443,16 +3451,16 @@ app.get('/rewards/history', async (c) => {
 // 推薦網絡：共用機制（/referrals/network/* 三端點同一份真相）
 //
 // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
-// active 且距 end_date ≤30 天 → expiring（對齊 subscriptionNotice 的續訂提醒窗）。
+// active 且距 end_date ≤30 天 → expiring（RENEWAL_NOTICE_DAYS，與前端續訂提醒同一個
+// 契約常數）。
 // ============================================================
-const RENEWAL_DAYS = 30;
 function deriveNodeStatus(acct: any, suspendedAt: string | null) {
   if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
   if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
   const dl = acct?.end_date
     ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
     : null;
-  if (dl !== null && dl >= 0 && dl <= RENEWAL_DAYS) {
+  if (dl !== null && dl >= 0 && dl <= RENEWAL_NOTICE_DAYS) {
     return { status: 'expiring' as const, daysToExpiry: dl };
   }
   return { status: 'active' as const, daysToExpiry: dl };

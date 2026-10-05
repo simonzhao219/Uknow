@@ -4,7 +4,10 @@
 // 「到期前」：active 會員距到期日在 30 天內時，於 dashboard 顯示倒數與
 // 續訂 CTA，讓使用者在斷崖前完成續訂，避免會員區存取與刊登無預警中斷。
 
-export const RENEWAL_NOTICE_DAYS = 30;
+import { RENEWAL_NOTICE_DAYS } from '@contract';
+
+// 門檻與推薦網絡的「即將到期」同一個窗，單一來源在契約（@contract）。
+export { RENEWAL_NOTICE_DAYS };
 
 /**
  * 回傳「距到期剩餘天數」——僅在 active 且剩餘天數落在 [0, 30] 時回傳，
