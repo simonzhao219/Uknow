@@ -1,0 +1,2 @@
+{"branch": "claude/admin-ia-refactor-plan-klg6ok", "ended": "2026-10-05T12:12:54+00:00", "fired": {"model-effort-advisor/opus-tier": 1}, "passed": {"bash-guard": 21, "check-output-filter": 21}, "session": "36af4fcf3c2c", "started": "2026-10-05T12:11:52+00:00"}
+{"branch": "feature/admin-ia-refactor", "ended": "2026-10-05T12:25:20+00:00", "fired": {}, "passed": {"bash-guard": 2, "check-output-filter": 2, "feature-plan-guard": 2, "model-effort-advisor": 1, "tdd-test-guard": 2}, "session": "5401a5093951", "started": "2026-10-05T12:24:10+00:00"}
