@@ -332,7 +332,10 @@ function StepTwoCard({
               variant="destructive"
               title={error}
               action={
-                <button onClick={onRetry} className="text-primary underline underline-offset-4">
+                <button
+                  onClick={onRetry}
+                  className="inline-flex items-center text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
+                >
                   重試
                 </button>
               }

@@ -184,10 +184,15 @@ def scan_source(
 def approved_gradient_problems(
     approved: dict[str, str], existing_paths: set[str], medal_users: set[str]
 ) -> list[str]:
-    """核准漸層清單的兩條判定：檔案已不存在（孤兒）、檔案不再引用（過期）。
-    兩種都代表退場條件已經成立，清單不該繼續替它保留位置。"""
+    """核准漸層清單的三條判定：理由與退場條件空白、檔案已不存在（孤兒）、檔案不再
+    引用（過期）。後兩種代表退場條件已經成立，清單不該繼續替它保留位置；第一種讓
+    例外說不出為什麼存在、什麼時候能拿掉——那就是永久居留。"""
     problems: list[str] = []
     for path in sorted(approved):
+        if not approved[path].strip():
+            problems.append(
+                f"{path}: 核准漸層清單的理由是空的——寫出為什麼可以用漸層、什麼條件下可以拿掉"
+            )
         if path not in existing_paths:
             problems.append(
                 f"{path}: 核准漸層清單的孤兒條目——檔案已不存在"
@@ -513,6 +518,7 @@ APPROVED_GRADIENT_CASES: list[tuple[str, dict[str, str], set[str], set[str], int
     ("登記的檔已不存在 → 孤兒", {"gone.tsx": "理由"}, set(), set(), 1),
     ("登記了卻沒引用 → 過期", {"a.tsx": "理由"}, {"a.tsx"}, set(), 1),
     ("清單為空 → 無問題（S7 建徽章前的狀態）", {}, {"a.tsx"}, {"a.tsx"}, 0),
+    ("理由空白 → 報", {"a.tsx": "  "}, {"a.tsx"}, {"a.tsx"}, 1),
 ]
 
 # baseline 判定案例：(標籤, current, baseline, existing_paths, 預期問題數)
