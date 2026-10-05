@@ -16,7 +16,7 @@
 
 ## 目前位置與下一步
 
-規劃已定稿（Q1 B／Q2 一律二字／Q3 加，業主於 #359 裁決）→ `/review-plan` → 停等人審。
+規劃已定稿（Q1 B／Q2 一律二字／Q3 加，業主於 #359 裁決）；`/review-plan` 完成（P0×0／P1×9／P2×9，見 review.md）→ **停等人審**：裁決 review.md「需人工裁決」5 項、決定 P1 回填方式後，才由人打 `/tdd-implement admin-ia-refactor`。
 
 ## Blockers(逃生口紀錄)
 
