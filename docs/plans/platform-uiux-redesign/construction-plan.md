@@ -358,7 +358,10 @@ sweep 盲點、§3 桌機入口補句、ReferralStats 手機高度、點數寫�
 (3) 任務中心：四顆徽章放進「本月已推薦」淡底卡取代進度條（plan.md §4 第 13 點：
     一顆 2 人、奇數半亮、偶數全亮、--medal-gradient 填色、徽章下只放名稱），
     等級小標籤、人數、鼓勵文案拿掉；「任務獎勵」框改 neutral；等級門檻 2／4／6／8
-    依賴後端 TaskBadge 工項先合併；
+    依賴後端 TaskBadge 工項先合併；徽章元件建好後把路徑登記到
+    scripts/check-color-usage.py 的 APPROVED_GRADIENT_FILES（理由＋退場條件，S2e #354 備好的機制），
+    有色容器裡的按鈕用 Button 的 container（黃框續訂 tone="guide" container="warning"、
+    綠框領取獎勵 tone="secondary" container="success"，ui-ux-guidelines §12.11）；
 (4) 獎勵回饋：可提領卡為該頁唯一淡底主區、「申請提領」外框在卡內；提領申請列
     「待查收」黃徽章＋「確認收款」引導鈕靠右；明細的世代 chip 用世代色、負項紅字；
     待查收徽章在 admin 與會員兩處統一 warning（遺留事項最後一條就此結案）；
