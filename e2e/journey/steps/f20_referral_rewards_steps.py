@@ -70,7 +70,7 @@ def open_referrals(guarded_page, run_state, scenario_memo, node):
 
 @then("推薦樹三個世代區塊各顯示 8 人")
 def tree_generation_counts(guarded_page):
-    # 世代人數由 ReferralStats 的世代小字行承載（S2d 起統計區是「下線總數＋
+    # 世代人數由 ReferralStats 的世代小字行承載（S2d 起統計區是「推薦總人數＋
     # 一行世代分布」，手機桌機同一套）。
     expect(guarded_page.get_by_test_id("referral-stats-generations")).to_have_text(
         "一代 8 · 二代 8 · 三代 8", timeout=15_000

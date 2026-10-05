@@ -690,6 +690,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`src/contexts/FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
 | 5 | 姓名格式規則的兩項未結清查證（§4.2） | ①`HAN_RANGE`（`㐀-鿿`＋`豈-﫿`）不含擴充 B 區以上與造字區，即戶政「缺字」問題——該正則原本只決定遮罩樣式，改當註冊關卡後同一落差的後果變成「完全無法註冊」。目前僅以「罕用字請聯繫客服」的錯誤訊息當逃生口，**未以既有 `profiles.name` 樣本查證實際族群規模**。②純羅馬拼音登記姓名（依《姓名條例》部分原住民族可單獨以羅馬拼音登記法定姓名）的分隔慣例未查證；外文模式目前只允許英文字母與單一半形空格，若官方轉寫慣例另有分隔符號則會誤擋 |
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
+| 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效且 30 天內到期的會員按「續訂」會被結帳頁導回 `/dashboard`：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回會員中心，到期前續訂實際走不通，只能等失效後再續 |
 
 ---
 

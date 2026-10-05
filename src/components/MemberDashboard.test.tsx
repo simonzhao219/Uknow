@@ -3,7 +3,7 @@
 // 會員中心狀態總覽的契約（plan F4、ui-ux-guidelines §13）：
 // - 四張狀態卡各自有載入（骨架、不閃 0）／錯誤（中性字、不整頁報錯）／有資料三態；
 // - 「需要注意」有事才出現，推薦那條只算即將到期（業主裁決 2026-10-04）；
-// - 整頁至多一顆黑色主按鈕，申請提領與立即刊登同時成立時提領優先。
+// - 卡片區的行動提示（申請提領、立即刊登）一律是次要外框鈕（ui-ux-guidelines §12.11）。
 // 資料 hook 全部 mock 成可變狀態：這裡驗的是版面與推導，不是取數。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
