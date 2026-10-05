@@ -163,6 +163,21 @@
 該檔的 `ROUTES`；**tab 介面要另外帶 `after_load`**——Radix Tabs 只掛載 active
 面板，不切過去的 tab 從來沒被畫出來過，量不到不等於沒問題。
 
+**不可斷字串**（Email、網址、訂單／交易編號、社群帳號）：給使用者確認的資料
+**不截斷、只換行**（業主 2026-10-05 裁決）。中文本來就能斷行，這類沒有空白的
+字串才會整串撐破版面，所以分三層處理：
+
+- **段落**：`body` 預設 `overflow-wrap: break-word`（`globals.css` base 層），
+  字放不下才斷，放得下的版面不受影響
+- **flex 子項與按鈕**：`break-word` 不縮小最小寬度，值欄要自己加
+  `min-w-0 wrap-anywhere`（`label : value` 列的標籤加 `shrink-0`）；`Button`
+  自帶 `whitespace-nowrap` 與固定高度，放使用者內容時改 `h-auto whitespace-normal`
+- **Email** 一律用 `common/BreakableEmail`：@ 後放 `<wbr>` 讓它優先在網域前斷，
+  `wrap-anywhere` 保底。後台列表掃讀用的 `truncate` 可以保留，點進詳情要完整
+
+數字不斷行（`256920P` 斷成兩行沒人看得懂）：放不下時讓版面讓位，例如手機兩欄
+統計卡的內距縮成 `px-4`。
+
 **表格裡的長內容**：`TableCell` 基底帶 `whitespace-nowrap`
 （`ui/table.tsx`）。長度無上限的欄位（jsonb 原文、使用者貼上的網址、
 後端寫入的訊息）必須把**換行、限寬、`block` 三者放在同一個內層元素上**：
