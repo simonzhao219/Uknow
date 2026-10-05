@@ -55,6 +55,13 @@
 〔實作/契約〕`src/components/BottomNav.test.tsx` 檔頭。新增會員區入口前
 先讀那份契約，再決定放哪。
 
+**後台（`AdminDashboard`）**：四個頂層分頁，手機與桌面都是一列——一列成立靠的是
+**可見標籤二字**（提領／會員／公告／告警），加第五個分頁會壞版面；新的資料管理
+功能先找現有分頁的次分頁（例：證件審核在會員底下）。列表頁的「篩選＋重新整理
+＋（選配）CSV」一律用 `AdminToolbar`：手機一行、icon 鈕觸控 44px、CSV 鈕只在
+已有匯出邏輯的頁面傳入（匯出是功能，不是工具列附贈的）。〔實作〕
+`src/components/AdminDashboard.tsx`、`src/components/admin/AdminToolbar.tsx`。
+
 其他：`Navbar` 為 `sticky`；`Footer` 保留快速連結與聯絡方式（LINE 帳號代稱、
 信箱皆為純文字，不提供可點連結）；已登入的功能入口不應只藏在右上頭像
 下拉裡。
@@ -151,6 +158,14 @@
 等規則降為 warn，見 [`plans/friction-log.md`](plans/friction-log.md)）。
 **不要再添新債**：新互動元件的語意與鍵盤可達性要一起想；碰到的檔案順手
 還債（童子軍原則）。
+- **可見字縮短、名稱維持完整時**（例：後台分頁看到「會員」、念「會員管理」）：
+  完整名稱整串放進**一個** `sr-only` 節點，由元素的 `aria-labelledby` 指過去；
+  可見字必須是名稱的子字串（WCAG 2.5.3）。**不要把缺的字拆成幾段 `sr-only`
+  補在可見字前後**——`sr-only` 是 `position:absolute`，Chromium 計算名稱時把它當
+  區塊、在前後插空白，「會員管理」會變成「會員 管理」，`get_by_role(name=…)`
+  就找不到了；jsdom 不排版，vitest 照樣綠，只有真瀏覽器的 e2e 會紅。
+  也不用 `aria-label`：名稱寫在屬性裡、跟畫面上的字分屬兩處，改了一處沒有
+  東西提醒另一處。〔實作〕`src/components/AdminDashboard.tsx` 的 `AdminTabLabel`。
 - **色彩對比度／色盲驗證** → 見 §12（WCAG 1.4.1/1.4.3/1.4.11 與深色/色盲
   驗證 checklist）。
 

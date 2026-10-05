@@ -2695,3 +2695,31 @@ S2c session 想順手確認 hooks 掛載是否正常，執行了 `git config cor
 其他輸出，不要與驗證指令串在同一個呼叫；或讓過濾器只折疊驗證指令自己的輸出段。
 
 推論:折疊是為了降噪，但降噪的邊界要與「資訊來源」對齊——整串折疊等於把別的指令的輸出也當成噪音。
+
+## 2026-10-05｜漏網｜`/review-implementation` 的四個 reviewer 沒有 Bash，讀不到 diff
+
+S3（admin-ia-refactor）收尾跑 `/review-implementation`：skill 要 reviewer「審實作 diff」並在 prompt 給
+`git diff origin/develop...HEAD`，但四個 `plan-reviewer-*` agent 的工具只有 Read／Grep／Glob。四位都
+在報告開頭聲明「沒有 Bash，改讀工作樹現況比對 plan」——**被刪除的行、被改掉的舊行它們看不到**，
+而「實作有沒有偏離 plan」恰恰最常藏在被改掉的那一行。這次靠的是 reviewer 自己去讀 migration 與現行
+檔案，才抓到 checklist 措辭與 RPC 實際行為不符（P1）。
+
+處置：本次照常彙整，限制寫進 implementation-review.md 開頭。建議二選一：skill 的步驟 1 由主 session
+先把完整 diff 寫進 scratchpad 檔（`git diff … > <file>`），把路徑交給 reviewer 用 Read 讀；或給
+reviewer agent 唯讀的 `git diff`／`git show` 權限。前者不擴權，較符合「reviewer 只讀」的設計。
+
+推論：審查閘門的輸入要跟審查任務對齊——叫人「審 diff」卻只給得到成品的工具，審的其實是成品。
+
+## 2026-10-05｜漏網｜無障礙名稱在 jsdom 與 Chromium 算法不同，vitest 綠、e2e 紅
+
+S3 把後台分頁的可見字縮成二字、缺的字用幾段 `sr-only` 補回（`會員<sr-only>管理</sr-only>`）。
+`AdminDashboard.test.tsx` 的 `getByRole('tab', {name:'會員管理'})` 綠；e2e 的 `get_by_role` 30 秒逾時——
+Chromium 把 `position:absolute` 的 `sr-only` 當區塊，名稱算成「會員 管理」。jsdom 沒有排版，
+dom-accessibility-api 拿不到 computed display，只能當行內處理。
+
+處置：改成完整名稱整串一個 `sr-only` 節點、`aria-labelledby` 指向它；規則升級進
+`ui-ux-guidelines.md` §9。
+
+推論：凡是「名稱怎麼算」跟 CSS 有關的斷言（`sr-only`、`display:contents`、`hidden` 子樹），
+vitest 的綠燈不算數，要有一條真瀏覽器的 `get_by_role` 斷言兜底——本 repo 的 e2e 剛好有，
+不然這個缺陷會一路活到 journey 的晉升 PR 才爆。
