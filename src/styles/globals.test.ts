@@ -140,6 +140,23 @@ describe('globals.css 品牌色與選取色 token 三處齊備', () => {
   });
 });
 
+// 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件（首頁搜尋鈕與工具列）用。
+// 陰影值不是顏色，不進 --color-*；它走 Tailwind 的 --shadow-* 命名空間成為 shadow-raised。
+describe('浮起表面 token 三處齊備', () => {
+  for (const name of ['raised', 'raised-border', 'raised-shadow']) {
+    it(`--${name} 在 :root 與 .dark 都有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+  }
+
+  it('@theme inline 的 --color-raised、--color-raised-border、--shadow-raised 指向同名 token', () => {
+    expect(themeTokens.get('--color-raised')).toBe('var(--raised)');
+    expect(themeTokens.get('--color-raised-border')).toBe('var(--raised-border)');
+    expect(themeTokens.get('--shadow-raised')).toBe('var(--raised-shadow)');
+  });
+});
+
 // 選取與聚焦一條規則（ui-ux-guidelines §12.12）：--sel 就是灰字、反白字就是版面底；
 // 焦點環 --ring 指向 --sel。兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的
 // 淺色值不會跟著變。
@@ -521,6 +538,36 @@ describe('墨色與選取色對比度（淺深各一輪，公式已錨定）', (
 
 // 品牌色（S2e）：只剩引導鈕（實心＋字）與重點淡底（淡底＋字、進度填色、徽章框線）。
 // 連結與焦點框不再用品牌色，所以不驗「brand 當內文字」。
+// 浮起表面的層次（業主 2026-10-05 裁決）：淺色靠陰影，所以表面與卡片同白、邊框同一般邊框；
+// 深色的陰影在近黑底上看不出來，改靠「越浮越亮」——浮起表面比卡片亮、卡片比頁面底亮，
+// 邊框也比一般邊框亮一階。比的是相對亮度的順序，不是對比門檻：浮動鈕靠圖示與文字辨識。
+describe('浮起表面的層次', () => {
+  const lum = (mode: Mode, token: string) => relativeLuminance(hexToRgb(hexOf(mode, token)));
+
+  it('淺色：浮起表面與卡片同白、邊框同一般邊框，層次交給陰影', () => {
+    expect(hexOf('light', 'raised')).toBe(hexOf('light', 'card'));
+    expect(hexOf('light', 'raised-border')).toBe(hexOf('light', 'border'));
+  });
+
+  it('深色：浮起表面比卡片亮、卡片比頁面底亮（越浮越亮）', () => {
+    expect(lum('dark', 'raised')).toBeGreaterThan(lum('dark', 'card'));
+    expect(lum('dark', 'card')).toBeGreaterThan(lum('dark', 'background'));
+  });
+
+  it('深色：浮起邊框比一般邊框亮一階，輪廓在浮起表面上仍看得出', () => {
+    expect(lum('dark', 'raised-border')).toBeGreaterThan(lum('dark', 'border'));
+    expect(contrastRatio(hexOf('dark', 'raised-border'), hexOf('dark', 'raised'))).toBeGreaterThan(
+      contrastRatio(hexOf('dark', 'border'), hexOf('dark', 'raised')),
+    );
+  });
+
+  it('深色：浮起表面上的墨字仍過 4.5:1', () => {
+    expect(
+      contrastRatio(hexOf('dark', 'foreground'), hexOf('dark', 'raised')),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
 describe('品牌色蔚藍對比度（淺深各一輪，公式已錨定）', () => {
   for (const mode of MODES) {
     const modeLabel = mode === 'light' ? '淺色' : '深色';

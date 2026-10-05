@@ -82,6 +82,12 @@
   /* 輸入格休息態：白底＋邊框色細框，與勾選框未勾態同一語言（業主裁決 D3，#354）。 */
   --input: #e3e4ee;
   --input-background: #ffffff;
+  /* 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件用（首頁搜尋鈕與工具列）。
+     淺色靠陰影——白底＋一般邊框＋shadow-lg 那組陰影；深色靠變亮——見 .dark 同名 token。
+     業主 2026-10-05 裁決：深色的陰影在近黑底上看不出來，浮動鈕會和頁面融成一片。 */
+  --raised: #ffffff;
+  --raised-border: var(--border);
+  --raised-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -165,6 +171,11 @@
   --tree-gen-badge-foreground-3: #f9a8d4;
   --border: #33334a;
   --input: #33334a;
+  /* 越浮越亮：浮起表面比頁面底 #16161f 與卡片 #1f1f2b 都亮一階（墨色 100），邊框再亮一階，
+     陰影加重——陰影在深色裡只是輔助，層次主要靠表面亮度。 */
+  --raised: #2a2a3a;
+  --raised-border: #46465f;
+  --raised-shadow: 0 12px 28px -6px rgb(0 0 0 / 0.7), 0 4px 10px -4px rgb(0 0 0 / 0.6);
   --ring: var(--sel);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -234,6 +245,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-background: var(--input-background);
+  --color-raised: var(--raised);
+  --color-raised-border: var(--raised-border);
+  --shadow-raised: var(--raised-shadow);
   --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);

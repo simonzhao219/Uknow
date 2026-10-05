@@ -630,7 +630,7 @@ function MobileSearchFilterBar({
           onClick={() => setExpanded(true)}
           aria-label="展開搜尋與篩選"
           aria-expanded={false}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-90 duration-200"
+          className="relative flex h-14 w-14 items-center justify-center rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-90 duration-200"
         >
           <Search className="h-5 w-5" aria-hidden="true" />
           {activeCount > 0 && (
@@ -646,7 +646,7 @@ function MobileSearchFilterBar({
 
   return (
     <div className={cn('md:hidden fixed inset-x-4 z-40', offsetClass)}>
-      <div className="flex items-stretch rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-95 duration-200">
+      <div className="flex items-stretch rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-95 duration-200">
         {/* 搜尋入口：顯示目前搜尋字樣作為狀態回饋 */}
         <Sheet>
           <SheetTrigger asChild>
@@ -697,7 +697,7 @@ function MobileSearchFilterBar({
           </SheetContent>
         </Sheet>
 
-        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="my-2 w-px shrink-0 bg-raised-border" aria-hidden="true" />
 
         {/* 篩選入口：單一整合面板 */}
         <MobileFilterSheet
@@ -720,7 +720,7 @@ function MobileSearchFilterBar({
           {children}
         </MobileFilterSheet>
 
-        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="my-2 w-px shrink-0 bg-raised-border" aria-hidden="true" />
 
         {/* 收合：縮成圓形按鈕，避免長條遮住底下的內容 */}
         <button
