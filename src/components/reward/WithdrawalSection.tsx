@@ -160,7 +160,7 @@ export function WithdrawalSection({
       );
 
       if (result.success) {
-        showSuccess('查收確認成功！', '獎勵明細已更新');
+        showSuccess('收款確認成功！', '獎勵明細已更新');
         setCollectionStep(null);
         setSelectedWithdrawal(null);
 
@@ -198,6 +198,14 @@ export function WithdrawalSection({
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
     .slice(0, RECENT_COMPLETED);
   const activeWithdrawals = [...withdrawals.filter((w) => w.status !== 'completed'), ...completed];
+  // 引導鈕一頁一顆（ui-ux-guidelines §12.11，業主裁決 E2）：待查收可能累積好幾筆（每日可
+  // 申請一筆），只有最早申請的那筆用引導鈕，其餘次要外框——先處理等最久的那筆。
+  const guideCollectionId = withdrawals
+    .filter((w) => w.status === 'awaiting_collection')
+    .reduce<WithdrawalRecord | null>(
+      (earliest, w) => (earliest === null || w.requestedAt < earliest.requestedAt ? w : earliest),
+      null,
+    )?.id;
 
   return (
     <>
@@ -283,7 +291,7 @@ export function WithdrawalSection({
                       {withdrawal.status === 'awaiting_collection' && (
                         <Button
                           size="sm"
-                          tone="guide"
+                          tone={withdrawal.id === guideCollectionId ? 'guide' : 'secondary'}
                           onClick={() => handleClickCollection(withdrawal)}
                           className="text-xs"
                         >

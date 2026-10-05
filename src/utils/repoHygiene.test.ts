@@ -167,9 +167,11 @@ describe('引導鈕只有三種', () => {
       join('src', 'components', 'reward', 'WithdrawalSection.tsx'),
       join('src', 'components', 'subscription', 'SubscriptionStatusCard.tsx'),
     ].sort();
+    // 字面值與條件式都要抓：tone="guide"、tone={x ? 'guide' : 'secondary'}。
+    const guideTone = /tone=(?:"guide"|\{[^}]*['"]guide['"])/;
     const users = walk('src', ['.tsx'])
       .filter((rel) => !rel.endsWith('.test.tsx'))
-      .filter((rel) => readFileSync(join(REPO_ROOT, rel), 'utf8').includes('tone="guide"'))
+      .filter((rel) => guideTone.test(readFileSync(join(REPO_ROOT, rel), 'utf8')))
       .sort();
     expect(users, '新增引導鈕前先對照 §12.11 的三種與一頁一顆').toEqual(allowed);
   });

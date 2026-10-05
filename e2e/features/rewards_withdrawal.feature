@@ -196,4 +196,4 @@ Feature: Reward points and withdrawal
     And I advance through the collection reminder
     And I advance through the collection preview
     And I verify collection with ID "A123456789"
-    Then I should see the text "查收確認成功"
+    Then I should see the text "收款確認成功"
