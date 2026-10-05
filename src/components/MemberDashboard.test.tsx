@@ -299,6 +299,20 @@ describe('MemberDashboard 基本資料', () => {
   });
 });
 
+describe('MemberDashboard 我的訂閱卡', () => {
+  it('訂閱狀態讀取失敗時不顯示尚未訂閱，改顯示中性錯誤', () => {
+    state.subscription = {
+      subscriptionData: null,
+      isLoading: false,
+      lastFetchFailed: true,
+      refresh: vi.fn(),
+    };
+    renderPage();
+    expect(screen.getByText('暫時無法取得訂閱狀態')).toBeTruthy();
+    expect(screen.queryByText('您尚未訂閱任何服務')).toBeNull();
+  });
+});
+
 describe('MemberDashboard 需要注意區', () => {
   it('沒有需要處理的事時整塊不渲染', () => {
     renderPage();

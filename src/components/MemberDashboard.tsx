@@ -50,7 +50,12 @@ export function MemberDashboard() {
   const taskEnabled = isFeatureEnabled('taskCenter');
   const rewardEnabled = isFeatureEnabled('rewardSystem');
 
-  const { subscriptionData, isLoading } = useSubscription();
+  const {
+    subscriptionData,
+    isLoading,
+    lastFetchFailed: subscriptionFailed,
+    refresh: refreshSubscription,
+  } = useSubscription();
   const {
     listing,
     loading: listingLoading,
@@ -295,7 +300,14 @@ export function MemberDashboard() {
         )}
       </StatCardGrid>
 
-      <SubscriptionStatusCard subscriptionData={subscriptionData} isLoading={isLoading} />
+      <SubscriptionStatusCard
+        subscriptionData={subscriptionData}
+        isLoading={isLoading}
+        loadFailed={subscriptionFailed}
+        onRetry={() => {
+          void refreshSubscription();
+        }}
+      />
 
       {/* 會員基本資訊：不會變的靜態資料，放在狀態之後 */}
       <Card>

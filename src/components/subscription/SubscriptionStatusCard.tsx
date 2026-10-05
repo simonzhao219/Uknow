@@ -15,6 +15,13 @@ import {
 interface Props {
   subscriptionData: SubscriptionData | null;
   isLoading: boolean;
+  /**
+   * 讀取失敗且手上沒有任何資料（useSubscription 的 lastFetchFailed 且資料為 null）。
+   * 沒有資料不等於沒有訂閱：此時不能落到「您尚未訂閱任何服務／開始訂閱」，
+   * 改顯示中性錯誤字＋重新載入（ui-ux-guidelines §13 第 4 條）。
+   */
+  loadFailed?: boolean;
+  onRetry?: () => void;
 }
 
 // 會員兩態模型：付款即訂閱 / 續訂（到期後付款接續）/ 重新訂。
@@ -33,7 +40,13 @@ function formatDate(dateStr: string) {
   return formatTwDate(dateStr);
 }
 
-export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
+export function SubscriptionStatusCard({
+  subscriptionData,
+  isLoading,
+  loadFailed,
+  onRetry,
+}: Props) {
+  const unknown = !isLoading && loadFailed === true && !subscriptionData;
   const cardState = subscriptionCardState(subscriptionData);
   // active 顯示「訂閱中」；expired 老會員顯示「已失效」；never 不顯示徽章。
   const statusInfo = cardState === 'active' ? STATUS_MAP.active : STATUS_MAP.expired;
@@ -50,7 +63,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
         <CardTitle className="flex items-center gap-3">
           <CreditCard className="h-5 w-5" />
           <span>我的訂閱</span>
-          {!isLoading && cardState !== 'none' && (
+          {!isLoading && !unknown && cardState !== 'none' && (
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
           )}
         </CardTitle>
@@ -69,6 +82,11 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <span className="ml-2 text-sm text-muted-foreground">載入訂閱資訊中...</span>
+          </div>
+        ) : unknown ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground mb-4">暫時無法取得訂閱狀態</p>
+            {onRetry && <Button onClick={onRetry}>重新載入</Button>}
           </div>
         ) : cardState === 'none' ? (
           <div className="text-center py-8">
