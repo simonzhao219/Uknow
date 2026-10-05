@@ -11,7 +11,9 @@
      (text|bg|border|from|via|to|ring|fill|stroke|divide|shadow|outline|
       decoration|accent|caret)-<Tailwind 官方 22 色相>-<階>
      變體前綴(hover: dark: md: focus-visible: …)一律照抓,不管有幾層。
-  C2 裝飾性漸層:bg-gradient-to-* / bg-linear-to-*(Tailwind v4 兩種寫法)。
+  C2 裝飾性漸層:bg-gradient-to-* / bg-linear-to-*(Tailwind v4 兩種寫法);引用
+     漸層 token `--medal-gradient` 也算一筆,除非該檔登記在 APPROVED_GRADIENT_FILES
+     (§12.4 唯一核准的漸層:任務徽章填色)。
   C3 原始色值——色值的表達形式換一種就繞過閘門,等於沒有閘門:
      (a) JS/TS 字串字面量裡的 hex(`'#16a34a'`、3 位簡寫 `'#000'` 皆算)。
          非色彩用途的 hex-like 字串(`href="#a1b2c3"` 錨點)不誤報。
@@ -90,6 +92,16 @@ C3_ARBITRARY = re.compile(
 
 Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 
+# C2 的核准例外(ui-ux-guidelines §12.4,S2e/D6 業主定案):任務徽章填色是唯一核准的
+# 漸層,寫成 globals.css 的 token `--medal-gradient`(brand 300 → 600)。token 的引用
+# 長得不像 bg-*-to-*,C2 原本的正則抓不到——所以「引用 --medal-gradient」本身就算一筆
+# C2,只有登記在這裡的檔不算。這不是行內豁免:清單機器可讀、每條必須寫理由與退場
+# 條件(比照 docs/plans/ 的 plans-keep),登記的檔已不存在(孤兒)或不再引用(過期)
+# 都會紅。登記的檔照樣抓 bg-linear-to-* 這類一般漸層——核准的只有那個 token。
+# 起始為空:徽章元件由 S7 建立,建好時把路徑加進來。
+MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
+APPROVED_GRADIENT_FILES: dict[str, str] = {}
+
 # 掃描排除清單——只收「檔案裡的色值不是色彩用途」的檔，不是豁免。
 # globals.test.ts 是對比度公式的錨定測試，`#777777`/`#767676` 這些 hex 是
 # WCAG 參考值、必須以原始色值寫，它們本身就是閘門的一部分；把它算進
@@ -128,8 +140,18 @@ def find_c1(source: str) -> list[Hit]:
     return [(_line_of(source, m.start()), m.group(0)) for m in C1_PATTERN.finditer(source)]
 
 
-def find_c2(source: str) -> list[Hit]:
-    return [(_line_of(source, m.start()), m.group(0)) for m in C2_PATTERN.finditer(source)]
+def find_c2(source: str, *, medal_gradient_allowed: bool = False) -> list[Hit]:
+    hits = [(_line_of(source, m.start()), m.group(0)) for m in C2_PATTERN.finditer(source)]
+    if not medal_gradient_allowed:
+        hits += [
+            (_line_of(source, m.start()), m.group(0))
+            for m in MEDAL_GRADIENT_PATTERN.finditer(source)
+        ]
+    return sorted(hits)
+
+
+def uses_medal_gradient(source: str) -> bool:
+    return MEDAL_GRADIENT_PATTERN.search(source) is not None
 
 
 def find_c3(source: str) -> list[Hit]:
@@ -144,9 +166,39 @@ def find_c3(source: str) -> list[Hit]:
     return hits
 
 
-def scan_source(source: str) -> dict[str, list[Hit]]:
-    """回傳這份原始碼在 C1/C2/C3 三條規則各自的命中清單（含行號）。"""
-    return {"c1": find_c1(source), "c2": find_c2(source), "c3": find_c3(source)}
+def scan_source(
+    source: str,
+    rel_path: str | None = None,
+    approved_gradient_files: dict[str, str] = APPROVED_GRADIENT_FILES,
+) -> dict[str, list[Hit]]:
+    """回傳這份原始碼在 C1/C2/C3 三條規則各自的命中清單（含行號）。
+    rel_path 登記在核准漸層清單時，引用 --medal-gradient 不算 C2。"""
+    allowed = rel_path is not None and rel_path in approved_gradient_files
+    return {
+        "c1": find_c1(source),
+        "c2": find_c2(source, medal_gradient_allowed=allowed),
+        "c3": find_c3(source),
+    }
+
+
+def approved_gradient_problems(
+    approved: dict[str, str], existing_paths: set[str], medal_users: set[str]
+) -> list[str]:
+    """核准漸層清單的兩條判定：檔案已不存在（孤兒）、檔案不再引用（過期）。
+    兩種都代表退場條件已經成立，清單不該繼續替它保留位置。"""
+    problems: list[str] = []
+    for path in sorted(approved):
+        if path not in existing_paths:
+            problems.append(
+                f"{path}: 核准漸層清單的孤兒條目——檔案已不存在"
+                "（刪除或 rename 後 APPROVED_GRADIENT_FILES 要跟著改）"
+            )
+        elif path not in medal_users:
+            problems.append(
+                f"{path}: 登記在核准漸層清單卻沒有引用 --medal-gradient——"
+                "退場條件已成立，把它從 APPROVED_GRADIENT_FILES 移除"
+            )
+    return problems
 
 
 def counts_of(hits: dict[str, list[Hit]]) -> dict[str, int]:
@@ -253,7 +305,8 @@ def evaluate(
 # 「宣稱驗過但沒驗到」同一種失效模式，這次差點發生在守門腳本自己身上。
 TOKEN_HINT = {
     "c1": "改用語義色 token（§12.3 三形狀對照表，灰階見 §12.2 對照表）",
-    "c2": "改單色/灰階，或依 §12.4 三類判準決定去留（功能性遮罩可留）",
+    "c2": "改單色/灰階，或依 §12.4 三類判準決定去留（功能性遮罩可留；"
+    "--medal-gradient 只准 APPROVED_GRADIENT_FILES 登記過的徽章檔引用）",
     "c3": "改用語義色 token 或去色（§12.3）——原始色值不應該繼續存在",
 }
 
@@ -264,9 +317,11 @@ def format_violation_detail(path: str, rule: str, hits: list[Hit]) -> list[str]:
     return [f"    {path}:{line} {rule} 命中 `{snippet}` — {hint}" for line, snippet in hits]
 
 
-def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str], dict[str, dict[str, list[Hit]]]]:
+def scan_repo() -> tuple[
+    dict[str, dict[str, int]], set[str], set[str], dict[str, dict[str, list[Hit]]], set[str]
+]:
     """回傳 (current 稀疊命中表, 本次掃描範圍內所有檔案的相對路徑集合,
-    掃到的灰階 class 聯集, 每個有命中檔案的行號明細)。
+    掃到的灰階 class 聯集, 每個有命中檔案的行號明細, 引用 --medal-gradient 的檔)。
 
     業主裁決 Q3：掃描範圍含 `.test.*`——色不只住在 JSX 裡，測試檔也可能
     直接斷言 class string 或是回傳 class 的純函式。
@@ -275,6 +330,7 @@ def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str], dict[str
     existing: set[str] = set()
     grays: set[str] = set()
     hits_by_file: dict[str, dict[str, list[Hit]]] = {}
+    medal_users: set[str] = set()
     files = sorted(SRC.rglob("*.ts")) + sorted(SRC.rglob("*.tsx"))
     for path in sorted(set(files)):
         rel = str(path.relative_to(ROOT))
@@ -282,13 +338,15 @@ def scan_repo() -> tuple[dict[str, dict[str, int]], set[str], set[str], dict[str
             continue
         existing.add(rel)
         source = path.read_text(encoding="utf-8")
-        hits = scan_source(source)
+        hits = scan_source(source, rel)
+        if uses_medal_gradient(source):
+            medal_users.add(rel)
         counts = counts_of(hits)
         if any(counts.values()):
             current[rel] = counts
             hits_by_file[rel] = hits
         grays |= gray_classes_used(source)
-    return current, existing, grays, hits_by_file
+    return current, existing, grays, hits_by_file, medal_users
 
 
 def load_baseline() -> dict[str, dict[str, int]]:
@@ -312,9 +370,10 @@ def _paths_with_new_hits(
 
 
 def scan() -> int:
-    current, existing, used_gray, hits_by_file = scan_repo()
+    current, existing, used_gray, hits_by_file, medal_users = scan_repo()
     baseline = load_baseline()
     problems = evaluate(current, baseline, existing)
+    problems += approved_gradient_problems(APPROVED_GRADIENT_FILES, existing, medal_users)
 
     guidelines_text = GUIDELINES_PATH.read_text(encoding="utf-8") if GUIDELINES_PATH.exists() else ""
     g1_problems = missing_gray_rows(used_gray, parse_documented_gray_classes(guidelines_text))
@@ -414,6 +473,46 @@ SCAN_CASES: list[tuple[str, str, dict[str, int]]] = [
         "<a href={'#a1b2c3'}>錨點</a>",
         {"c1": 0, "c2": 0, "c3": 0},
     ),
+]
+
+# 核准漸層案例：(標籤, 原始碼片段, 檔案路徑, 核准清單, 預期 c2 命中數)
+GRADIENT_CASES: list[tuple[str, str, str, dict[str, str], int]] = [
+    (
+        "沒登記的檔引用 --medal-gradient 算一筆 C2",
+        '<span className="bg-(image:--medal-gradient)" />',
+        "src/x.tsx",
+        {},
+        1,
+    ),
+    (
+        "登記過的徽章檔引用 --medal-gradient 不算",
+        '<span className="bg-(image:--medal-gradient)" />',
+        "src/medal.tsx",
+        {"src/medal.tsx": "任務徽章填色；退場：徽章改單色時移除"},
+        0,
+    ),
+    (
+        "登記過的檔照樣抓一般漸層（核准的只有那個 token）",
+        '<span className="bg-(image:--medal-gradient) bg-linear-to-r from-brand to-brand-subtle" />',
+        "src/medal.tsx",
+        {"src/medal.tsx": "任務徽章填色；退場：徽章改單色時移除"},
+        1,
+    ),
+    (
+        "名字只是前綴相同的 token 不誤抓",
+        "const x = 'var(--medal-gradient-shadow)';",
+        "src/x.tsx",
+        {},
+        0,
+    ),
+]
+
+# 核准漸層清單判定案例：(標籤, 核准清單, existing_paths, 引用者, 預期問題數)
+APPROVED_GRADIENT_CASES: list[tuple[str, dict[str, str], set[str], set[str], int]] = [
+    ("登記的檔存在且有引用 → 無問題", {"a.tsx": "理由"}, {"a.tsx"}, {"a.tsx"}, 0),
+    ("登記的檔已不存在 → 孤兒", {"gone.tsx": "理由"}, set(), set(), 1),
+    ("登記了卻沒引用 → 過期", {"a.tsx": "理由"}, {"a.tsx"}, set(), 1),
+    ("清單為空 → 無問題（S7 建徽章前的狀態）", {}, {"a.tsx"}, {"a.tsx"}, 0),
 ]
 
 # baseline 判定案例：(標籤, current, baseline, existing_paths, 預期問題數)
@@ -530,6 +629,18 @@ def self_test() -> int:
         if got != want:
             failures.append(f"  FAIL(scan): {label} — 預期 {want}，實得 {got}")
 
+    for label, snippet, rel_path, approved, want_c2 in GRADIENT_CASES:
+        got = len(scan_source(snippet, rel_path, approved)["c2"])
+        if got != want_c2:
+            failures.append(f"  FAIL(gradient): {label} — 預期 c2={want_c2}，實得 {got}")
+
+    for label, approved, existing, users, want_n in APPROVED_GRADIENT_CASES:
+        got = approved_gradient_problems(approved, existing, users)
+        if len(got) != want_n:
+            failures.append(
+                f"  FAIL(approved-gradient): {label} — 預期 {want_n} 筆問題，實得 {len(got)}：{got}"
+            )
+
     for label, current, baseline, existing, want_n in EVAL_CASES:
         got = evaluate(current, baseline, existing)
         if len(got) != want_n:
@@ -569,6 +680,7 @@ def self_test() -> int:
         return 1
     print(
         f"check-color-usage self-test: OK（{len(SCAN_CASES)} 條掃描案例 + "
+        f"{len(GRADIENT_CASES)} 條核准漸層案例 + {len(APPROVED_GRADIENT_CASES)} 條核准清單案例 + "
         f"{len(EVAL_CASES)} 條判定案例 + {len(DETAIL_CASES)} 條訊息明細案例 + "
         f"{len(G1_CASES)} 條 G1 案例）"
     )
