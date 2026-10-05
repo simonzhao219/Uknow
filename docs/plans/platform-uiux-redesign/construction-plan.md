@@ -259,6 +259,18 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
 七、測試：button.test.tsx 補 tone 三種；globals.test.ts 新色表全組；Tabs／OTP／
    Checkbox 選中態快照；文案 sweep 的 e2e 文字斷言同步改（grep 「繼續」「確認並繼續」
    「下線」「上線」）。375px overflow sweep 與 devtools .dark 各看一輪。
+八、按鈕 tone 消費點 sweep（2026-10-05 補，原語改了語意就要同 PR 改消費點，
+   不留給 S7）：引導鈕掛 tone="guide" 只有三處——續訂（SubscriptionStatusCard、
+   RequireMembershipRoute、PaymentCheckout 之外凡是到 /payment/checkout 的續訂鈕）、
+   加入推薦計畫（MyQrEntry 卡上那顆；對話框裡的送出是流程鈕維持黑）、確認收款
+   （WithdrawalSection 提領申請列）。目前是黑色主鈕或 variant="brand" 但三分法歸
+   次要的改 tone="secondary"：會員中心與 WithdrawalSection 的「申請提領」、
+   會員中心與刊登管理的「立即刊登／刊登新服務」、任務中心的「領取獎勵」「查看本月
+   推薦詳情」、刊登卡的「查看」「編輯」、我的 QR 的「分享」「邀請好友」。流程鈕
+   （繼續／登入／註冊／下一步／前往付款／建立刊登／儲存變更／提交申請／確認領取／
+   確認查收、後台通過／標記已匯款／確認匯款／發布公告／設為管理員）維持 default 黑。
+   grep variant="brand" 與 <Button> 無 variant 的用法逐一歸類，清單放進 Plan Mode。
+   §13 第 2 條「主行動黑、次行動 brand」同 PR 改成三分法措辭（六已列）。
    收尾更新 progress.md（S2e 列、異動記錄）。
 ```
 
