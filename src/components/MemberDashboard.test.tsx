@@ -325,13 +325,13 @@ describe('MemberDashboard 需要注意區', () => {
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });
 
-  it('即將到期人數被後端截斷時顯示至少幾位', () => {
+  it('清單被截在六筆時仍顯示精確人數', () => {
     state.referral.overview.attention = {
       total: 9,
       items: Array.from({ length: 6 }, () => node('expiring')),
     };
     renderPage();
-    expect(screen.getByRole('link', { name: '推薦網絡 至少 6 位即將到期' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '推薦網絡 9 位即將到期' })).toBeTruthy();
   });
 
   it('功能旗標關閉時不列該功能的注意事項', () => {

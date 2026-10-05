@@ -27,11 +27,7 @@ import {
   StatValue,
 } from './dashboard/DashboardStatCard';
 import { AttentionCallout, type AttentionItem } from './dashboard/AttentionCallout';
-import {
-  countAwaitingCollection,
-  countExpiring,
-  formatExpiringCount,
-} from './dashboard/dashboardSummary';
+import { countAwaitingCollection, countExpiring } from './dashboard/dashboardSummary';
 import { BreakableEmail } from './common/BreakableEmail';
 
 /**
@@ -69,7 +65,6 @@ export function MemberDashboard() {
   const hasNoListing = listingEnabled && !listingLoading && !listingError && listing === null;
 
   const expiring = countExpiring(referral.overview?.attention);
-  const expiringText = formatExpiringCount(expiring);
   const awaitingCount = countAwaitingCollection(reward.withdrawals);
   const rewardsData = reward.rewardsData;
   const canWithdraw =
@@ -83,11 +78,11 @@ export function MemberDashboard() {
     });
 
   const attentionItems: AttentionItem[] = [];
-  if (referralEnabled && expiring.count > 0) {
+  if (referralEnabled && expiring > 0) {
     attentionItems.push({
       key: 'expiring',
       to: '/referrals',
-      label: `推薦網絡 ${expiringText} 位即將到期`,
+      label: `推薦網絡 ${expiring} 位即將到期`,
     });
   }
   if (rewardEnabled && awaitingCount > 0) {
@@ -137,7 +132,7 @@ export function MemberDashboard() {
     if (referral.loading) return '推薦網絡：讀取中';
     if (referral.error || !referral.overview) return '推薦網絡：暫時無法取得推薦資料';
     const parts = [`推薦網絡：${referral.overview.summary.totalReferrals} 位`];
-    if (expiring.count > 0) parts.push(`${expiringText} 位即將到期`);
+    if (expiring > 0) parts.push(`${expiring} 位即將到期`);
     return parts.join('，');
   };
 
@@ -230,9 +225,7 @@ export function MemberDashboard() {
               <>
                 <StatValue>{referral.overview.summary.totalReferrals}</StatValue>
                 <p className="text-xs text-muted-foreground">位</p>
-                {expiring.count > 0 && (
-                  <Badge variant="warning-subtle">{expiringText} 位即將到期</Badge>
-                )}
+                {expiring > 0 && <Badge variant="warning-subtle">{expiring} 位即將到期</Badge>}
               </>
             )}
           </DashboardStatCard>
