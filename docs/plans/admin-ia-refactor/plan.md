@@ -17,7 +17,7 @@
   `ui-ux-guidelines.md` §1（44px 觸控）、§5（不得靜默截斷）、§11.2（視覺權重）、§12.11（按鈕三分法：後台工具列動作皆次要）。服務 P4（母計畫 §1）。
 - 驗收情境：
   1. 管理員 375px 與 320px 進 `/admin`：**四個分頁畫面上寫「提領／會員／公告／告警」、排成一列**，標籤不溢字、
-     觸控可點高度 ≥44px；桌機四欄等寬、同一套可見字。螢幕閱讀器念完整名稱「獎金提領管理／會員管理／公告管理／系統告警」。
+     觸控可點高度 ≥44px；桌機四欄等寬、同一套可見字。螢幕閱讀器念完整名稱「獎金提領管理／會員管理／系統公告／系統告警」（「系統公告」取代現名「公告管理」，業主 2026-10-05 裁決）。
   2. 提領管理工具列在 375px **單行**：篩選 Select 吃剩餘寬度＋重新整理鈕＋CSV 鈕；手機只顯示 icon、`md:` 起帶文字；
      兩鈕間距 ≥8px；CSV 鈕的名稱含「（含身分證與帳號）」。
   3. 按 CSV 後到檔案出來之前，CSV 鈕顯示忙碌，篩選與重新整理也停用；連按只下載一份；
@@ -73,7 +73,7 @@
 - 路由 lazy 結構不變；`AdminRoute` 不動；`App.tsx` **經核對無需改動**（母計畫 §2.6 所列 `App.tsx:71` 行號已失效，現無「5 欄」措辭）。
 - **分頁名稱是跨層契約**：e2e（mock）與 journey（真後端）都以 `get_by_role("tab", name=…)` 找分頁（子字串比對）。
   R1 裁決以 **sr-only 補字讓無障礙名稱維持現名**（例：`<span className="sr-only">獎金</span>提領<span className="sr-only">管理</span>`），
-  所以 e2e／journey 找分頁的名稱**一個都不用改**；不用 `aria-label`（會蓋掉可見文字，違反 WCAG 2.5.3）。
+  所以 e2e／journey 找分頁的名稱**只改一個**：公告分頁由「公告管理」改為「系統公告」（可見「公告」、sr-only 前綴「系統」；業主裁決）。已核對 journey 沒有呼叫端用它，只有 mock e2e 的 `test_overflow_sweep.py:594/598`；其餘三個名稱不變；不用 `aria-label`（會蓋掉可見文字，違反 WCAG 2.5.3）。
   另將 `e2e/pages/admin_dashboard_page.py:31` 的 `tab()` 加 `exact=True`（防將來撞名：二字可見名本身不入名稱，但「會員管理」
   與會員頁內層「會員列表」若未來改名可能重疊）。
 - 按鈕沿用原語：icon 版以 `size="icon"`（`size-9 pointer-coarse:size-[44px]`，`button.tsx:62`）為基底，
@@ -112,15 +112,15 @@
 | 3 | 套用兩頁＋CSV 正確性＋會員頁重新整理與搜尋 | `WithdrawalManagement.test.tsx`：同 tick 連按兩次只跑一輪 `loadWithdrawals` 序列；收集期間 CSV／篩選／重新整理 disabled；完成顯示「已匯出 N 筆」；收集 reject 後恢復且顯示錯誤；上限拒絕後恢復；既有 `:181/193` 的 `name: '下載CSV'` 查詢改新名稱。`MemberManagement.test.tsx`：無 CSV 鈕；重新整理觸發重讀並保留搜尋字串；loadMore 期間重新整理 disabled；內嵌放大鏡與 Enter 都能送出。e2e：375px 兩頁工具列單行、無橫向溢出、icon 鈕觸控可點 ≥44px、會員頁 placeholder 完整可見 | vitest 綠；e2e 於 CI 綠 |
 | 4 | 文件與註解人工同步 | 無機械把關（`check-spec-drift.py` 抓不到），逐項勾下方清單 | 清單全勾；`framework-check.sh` 綠 |
 
-**階段 1 清單**（分頁的無障礙名稱不變，所以只處理「管理員設置」的移除與測試本身）：
-- [ ] `src/components/AdminDashboard.test.tsx`：`:28` `TAB_LABELS` 去掉「管理員設置」、`:39` 註解、`:51-69` 的「五個」措辭與長度斷言
-- [ ] `e2e/features/admin_dashboard.feature:3` 描述改四分頁（:18-19／:26／:34 的名稱不變）
-- [ ] `e2e/pages/admin_dashboard_page.py:2-3` docstring；`:31` `tab()` 加 `exact=True`
-- [ ] `e2e/test_overflow_sweep.py`：移除「管理員設置」SweepRoute（:600-607）與 :359-362 的 `set_admin_setup` 呼叫及註解
+**階段 1 清單**（四個無障礙名稱中只有公告改名，其餘不變；主要處理「管理員設置」的移除與測試本身）：
+- [ ] `src/components/AdminDashboard.test.tsx`：`:28` `TAB_LABELS` 去掉「管理員設置」、「公告管理」→「系統公告」、`:39` 註解、`:51-69` 的「五個」措辭與長度斷言
+- [ ] `e2e/features/admin_dashboard.feature:3` 描述改四分頁、公告名稱改「系統公告」（:18-19／:26／:34 的名稱不變）
+- [ ] `e2e/pages/admin_dashboard_page.py:2-3` docstring（含「系統公告」）；`:31` `tab()` 加 `exact=True`
+- [ ] `e2e/test_overflow_sweep.py`：`:594` 標題與 `:598` `_open_tab("公告管理")` → 「系統公告」；移除「管理員設置」SweepRoute（:600-607）與 :359-362 的 `set_admin_setup` 呼叫及註解
       （已核對不在 `e2e/README.md` 必留清單／`check-e2e-mustkeep.py`）
 - [ ] `e2e/mocks/backend_api_mock.py:691-721` `set_admin_setup` 刪除（再無呼叫者）
 - [ ] `e2e/test_admin_mobile_layout.py`：:63-72 兩列斷言、:209-223 docstring、:226-250 迴圈與 docstring
-- [ ] journey（`f50:18`、`f70:151/475`）**不用改**——名稱不變；以 `pytest tools/` 與收尾 grep 確認
+- [ ] journey（`f50:18`、`f70:151/475`）**不用改**——它們用的名稱不變，且 journey 沒有呼叫端用公告分頁；以 `pytest tools/` 與收尾 grep 確認
 
 **階段 4 文件清單**：
 - [ ] 規格書 §13 模組表刪「管理員設定 / `AdminSetup`」列（:630），守門段後補 bootstrap 一句（見 §2）
@@ -131,6 +131,7 @@
 - [ ] `SystemNotifications.test.tsx:3` 引用 `AdminSetup.test.tsx` 的註解改寫
 - [ ] `WithdrawalManagement.tsx:765`「分頁標籤已經寫著『獎金提領管理』」→ 可見字「提領」
 - [ ] `e2e/README.md:168` 管理員設置分頁的例子：教訓保留，補「（該分頁已於 S3 移除）」
+- [ ] `MaintenanceBanner.tsx:44`、`SystemNotifications.tsx:26`、`SystemNotifications.test.tsx:3` 註解裡的「公告管理」→「系統公告」
 - [ ] `App.tsx`：已核對無殘留（母計畫行號失效），不改
 - [ ] 確認不用改：`docs/e2e-journey-test-design.md:186`、`.claude/rules/supabase-functions.md:51`、`docs/supabase-setup-checklist.md:461`
 - [ ] 看板 `platform-uiux-redesign/progress.md`：`--brand-subtle` 遺留項結案
@@ -141,7 +142,7 @@
 - [x] **Q1** bootstrap → **B 只走 API、GUI 退場**（業主 2026-10-05，#359）
 - [x] **Q2** 分頁標籤 → **手機桌機一律可見二字**
 - [x] **Q3** 會員管理重新整理鈕 → **加**（S5 快取的手動刷新入口也靠它）
-- [x] **R1** 分頁名稱 → **可見二字＋sr-only 補成完整名稱**（e2e／journey 名稱不改）
+- [x] **R1** 分頁名稱 → **可見二字＋sr-only 補成完整名稱**；公告的完整名稱改為「系統公告」（業主追加裁決），其餘三個名稱不變
 - [x] **R2** 會員頁搜尋 → **拿掉獨立送出鈕、輸入框右側內嵌放大鏡 submit、placeholder「搜尋會員」**
 - [x] **R3** CSV 防誤觸 → **間距 ≥8px＋名稱含「（含身分證與帳號）」，不加確認框**
 - [x] **R4** `App.tsx` 項 → **降 P2，已核對無殘留**
@@ -150,7 +151,7 @@
 
 - 分頁名稱漂移 → 晉升 PR 的 `journey-full` 紅。緩解：R1 讓名稱不變；收尾跑
   `grep -rn "AdminSetup\|admin-setup\|管理員設置" src e2e`（只允許 journey builder 與 e2e/README 教訓段）
-  及 `grep -rn "獎金提領管理\|會員管理\|公告管理\|系統告警" e2e`（確認呼叫端與 DOM 名稱一致）。
+  及 `grep -rn "獎金提領管理\|會員管理\|公告管理\|系統公告\|系統告警" src e2e`（「公告管理」應歸零；確認呼叫端與 DOM 名稱一致）。
 - 全新環境 bootstrap 卡關 → checklist 六項（前置、token、URL、兩種 403、自驗、時機）。
 - sr-only span 干擾 ink overflow 量測 → 階段 1 以真瀏覽器驗證；不過則改用 `aria-labelledby` 指向隱藏完整名稱（名稱仍含可見字）。
 - 二字標籤量測不過 → 退 2+2，不影響其他階段。
