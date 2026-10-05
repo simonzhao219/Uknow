@@ -78,13 +78,17 @@ describe('subscriptionCardState — 訂閱卡片顯示狀態分類', () => {
 });
 
 describe('showsRenewalCta', () => {
-  it('已失效的老會員與 30 天內到期的 active 會員會出現續訂引導鈕', () => {
+  it('已失效的老會員會出現續訂引導鈕', () => {
     expect(
       showsRenewalCta({ hasSubscription: false, status: 'expired', activeUntil: inDays(-3) }, NOW),
     ).toBe(true);
+  });
+
+  // 到期前續訂暫停開放（業主 2026-10-05，規格書 §14 第 7 列）：30 天內只倒數、不放續訂鈕。
+  it('30 天內到期的 active 會員暫不出現續訂引導鈕', () => {
     expect(
       showsRenewalCta({ hasSubscription: true, status: 'active', activeUntil: inDays(10) }, NOW),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('到期還遠或從未訂閱時不出現續訂引導鈕', () => {
