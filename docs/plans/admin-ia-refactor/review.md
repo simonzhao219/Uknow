@@ -1,6 +1,6 @@
 # 後台資訊架構重構（S3）規劃書審查報告
 
-<!-- plans-keep: S3 施工中的三段式鷹架（審查待人裁決）；退場條件＝/tdd-implement 收尾、PR 合併前整個 docs/plans/admin-ia-refactor/ 刪除 -->
+<!-- plans-keep: S3 施工中的三段式鷹架（審查已回填，待人審）；退場條件＝/tdd-implement 收尾、PR 合併前整個 docs/plans/admin-ia-refactor/ 刪除 -->
 
 > 審查對象：`./plan.md`（定稿版，commit 於 #359）。四個 fresh-context reviewer 平行審查，2026-10-05。
 > 聚合規則：只彙整、去重、排序，不改判；重複發現以最高嚴重度保留並標出來源。
@@ -86,5 +86,26 @@
 
 <!-- P0 的處置規則:必須改 plan 並重跑 /review-plan,或由人在此明文豁免。
      tdd-implement 開工前會檢查:存在未處置 P0 → 拒絕開工。 -->
+
+**需人工裁決**（業主 2026-10-05，#359 留言）：R1 a、R2 a（含修正：放大鏡內嵌輸入框右側當 submit）、R3 a、R4 a；第 5 項已核對（不在必留清單）。
+
+**P0**：無。
+
+**P1 回填對照**（全數寫進 plan.md）：
+
+| # | 處置 | plan.md 落點 |
+|---|---|---|
+| 1 撞名 | R1：sr-only 補字讓名稱維持現名，e2e／journey 不改名；`AdminDashboardPage.tab()` 仍加 `exact=True` | §3、§5 階段 1 清單 |
+| 2 bootstrap checklist | 六項必備內容（前置／token／URL／兩種 403／自驗／時機）＋快速檢查表；驗收 5 改為可檢核 | §1 驗收 5、§2 A1-a |
+| 3 CSV 重入與一致性 | `useRef` 同步守門、`try/finally` 包整段、匯出期間停用篩選與重新整理、測試連按／reject／上限 | §2、§5 階段 3 |
+| 4 aria-label | 不設 aria-label；`sr-only md:not-sr-only` 承擔名稱；既有測試 `:181/193` 名稱查詢列入改動 | §4、§5 階段 3 |
+| 5 忙碌態 | 沿用 `Button loading`、sr-only `role="status"`、完成「已匯出 N 筆」、錯誤位置確認 | §2、§4 |
+| 6 會員頁 375px | R2：拿掉獨立送出鈕、內嵌放大鏡 submit（aria-label「搜尋」）、placeholder「搜尋會員」；e2e 斷言同列無溢出、placeholder 完整；兩鈕 `type="button"` | §4、§5 階段 3 |
+| 7 icon 尺寸 | 以 `size="icon"` 為基底、`md:` 覆寫 `w-auto px-3` | §3 |
+| 8 App.tsx | R4：降 P2，已核對無殘留 | §3、§5 階段 4 清單 |
+| 9 AdminDashboard.test | 明列 `:28/:39/:51-69` | §5 階段 1 清單 |
+
+**P2 採納**：10（`isRefreshing` 來源與 loadMore 停用）、11（措辭最小事實）、12（收尾 grep 補齊）、13（桌機等寬斷言）、
+14（`--brand-subtle` 結案入階段 4）、15（R3）、16（R1）、17（320px 斷言）、18（SystemAlerts 列入不做並附理由）——全數採納。
 
 - [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
