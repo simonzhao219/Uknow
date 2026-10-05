@@ -1,4 +1,5 @@
-// 設計語言地基（S1，docs/plans/design-language-foundation/plan.md）階段 1+2。
+// 設計語言地基（S1，docs/plans/design-language-foundation/plan.md）階段 1+2；
+// S2e（D6）換成新五層色表、品牌色改蔚藍並縮減用途、新增選取色 --sel。
 //
 // 守的是 §2.2 點名的靜默失效：Tailwind v4 的 `bg-success` 只有在
 // `@theme inline` 有 `--color-success` 時才存在——沒有的話那個 class
@@ -102,20 +103,22 @@ describe('globals.css 語義色 token 三處齊備（success / warning / destruc
 });
 
 // ---------------------------------------------------------------------------
-// 強調色 --brand（S2b／D4，業主裁決配色 A）。與語義色同一個靜默失效風險：
-// `bg-brand` 只有在 `@theme inline` 有 `--color-brand` 時才存在。檢查法同上
-// （三處齊備＋值字面）。名字不能用 --accent：那是 shadcn 既有的 hover 灰。
+// 品牌色 --brand（S2e／D6 改蔚藍，只給引導鈕與重點淡底）與選取色 --sel。與語義色同一個
+// 靜默失效風險：`bg-brand`、`bg-sel` 只有在 `@theme inline` 有對應 `--color-*` 時才存在。
+// 檢查法同上（三處齊備＋值字面）。名字不能用 --accent：那是 shadcn 既有的 hover 灰。
 // ---------------------------------------------------------------------------
 const BRAND_TOKENS = [
   'brand',
-  'brand-hover',
   'brand-foreground',
   'brand-subtle',
   'brand-subtle-foreground',
+  'brand-border',
+  'brand-faint',
 ];
+const SELECTION_TOKENS = ['sel', 'sel-foreground'];
 
-describe('globals.css 強調色 brand token 三處齊備', () => {
-  for (const name of BRAND_TOKENS) {
+describe('globals.css 品牌色與選取色 token 三處齊備', () => {
+  for (const name of [...BRAND_TOKENS, ...SELECTION_TOKENS]) {
     it(`--${name} 在 :root 有定義`, () => {
       expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
     });
@@ -131,14 +134,95 @@ describe('globals.css 強調色 brand token 三處齊備', () => {
     });
   }
 
-  // 兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的淺色值不會跟著變。
-  it('淺色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
-    expect(rootTokens.get('--ring')).toBe('var(--brand)');
+  it('--brand-hover 已退場：引導鈕 hover 改用 bg-brand/90，與主按鈕同手法', () => {
+    expect(rootTokens.has('--brand-hover')).toBe(false);
+    expect(themeTokens.has('--color-brand-hover')).toBe(false);
   });
+});
 
-  it('深色：--ring 指向 var(--brand)，焦點框跟著強調色', () => {
-    expect(darkTokens.get('--ring')).toBe('var(--brand)');
+// 輸入格與框線、焦點環的 token（#354 二次審查 #3／#15）：--input-background 有四個原語
+// 消費者（input／textarea／select／input-otp），指錯時 bg-input-background 會靜默消失；
+// --input／--ring／--border 的 @theme 值字面也一起釘住。
+describe('輸入格、框線與焦點環 token 的三處齊備', () => {
+  for (const name of ['input-background', 'input', 'ring', 'border']) {
+    it(`--${name} 在 :root 與 .dark 都有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+
+    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
+      expect(themeTokens.get(`--color-${name}`)).toBe(`var(--${name})`);
+    });
+  }
+});
+
+// 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件（首頁搜尋鈕與工具列）用。
+// 陰影值不是顏色，不進 --color-*；它走 Tailwind 的 --shadow-* 命名空間成為 shadow-raised。
+describe('浮起表面 token 三處齊備', () => {
+  for (const name of ['raised', 'raised-border', 'raised-shadow']) {
+    it(`--${name} 在 :root 與 .dark 都有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+  }
+
+  it('@theme inline 的浮起表面三個 token 指向同名變數', () => {
+    expect(themeTokens.get('--color-raised')).toBe('var(--raised)');
+    expect(themeTokens.get('--color-raised-border')).toBe('var(--raised-border)');
+    expect(themeTokens.get('--shadow-raised')).toBe('var(--raised-shadow)');
   });
+});
+
+// 選取與聚焦一條規則（ui-ux-guidelines §12.12）：--sel 就是灰字、反白字就是版面底；
+// 焦點環 --ring 指向 --sel。兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的
+// 淺色值不會跟著變。
+describe('base 層焦點外框', () => {
+  // 沒有自帶焦點 class 的元素（段落內連結、分段切換鈕）吃 base 層的 outline。
+  // 業主裁決 D1（#354）：焦點環全不透明——半透明的灰對白底只有 2:1 上下，過不了 1.4.11。
+  it('base 層的 outline 用 --ring 全不透明，不留半透明', () => {
+    const base = stripComments(css);
+    expect(base).toContain('@apply border-border outline-ring;');
+    expect(base).not.toMatch(/outline-ring\/\d/);
+  });
+});
+
+// 不截斷、只換行（#354 範圍外發現第 2 條）：Email、網址、訂單編號這類不可斷字串
+// 在段落裡要自己換行。break-word 只在字放不下時才生效，不改變任何放得下的版面。
+describe('base 層長字串換行', () => {
+  it('body 預設 overflow-wrap: break-word', () => {
+    const base = stripComments(css);
+    expect(base).toMatch(/body\s*\{[^}]*overflow-wrap:\s*break-word;/);
+  });
+});
+
+describe('選取色與焦點環的指向', () => {
+  for (const [label, tokens] of [
+    ['淺色', rootTokens],
+    ['深色', darkTokens],
+  ] as const) {
+    it(`${label}：--sel 指向 var(--muted-foreground)`, () => {
+      expect(tokens.get('--sel')).toBe('var(--muted-foreground)');
+    });
+
+    it(`${label}：--sel-foreground 指向 var(--background)`, () => {
+      expect(tokens.get('--sel-foreground')).toBe('var(--background)');
+    });
+
+    it(`${label}：--ring 指向 var(--sel)，焦點環與選取同一個灰`, () => {
+      expect(tokens.get('--ring')).toBe('var(--sel)');
+    });
+
+    it(`${label}：--primary 與 --foreground 同值（互動色與文字墨黑合併）`, () => {
+      expect(tokens.get('--primary')).toBe(tokens.get('--foreground'));
+    });
+
+    // 任務徽章的唯一核准漸層（§12.4）。值是漸層不是顏色，不進 @theme。
+    it(`${label}：--medal-gradient 是 brand-border → brand 的漸層`, () => {
+      expect(tokens.get('--medal-gradient')).toBe(
+        'linear-gradient(135deg, var(--brand-border), var(--brand))',
+      );
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -270,11 +354,19 @@ function tokensFor(mode: Mode): Map<string, string> {
   return mode === 'light' ? rootTokens : darkTokens;
 }
 
-function hexOf(mode: Mode, tokenName: string): string {
+/** 讀 token 的 hex；值是 `var(--x)` 時在同一個模式裡往下追（--sel 這類別名 token）。 */
+function hexOf(mode: Mode, tokenName: string, seen: readonly string[] = []): string {
   const tokens = tokensFor(mode);
   const raw = tokens.get(`--${tokenName}`);
   if (raw === undefined) {
     throw new Error(`${mode} 缺少 --${tokenName}`);
+  }
+  const alias = /^var\(--([\w-]+)\)$/.exec(raw.trim());
+  if (alias) {
+    if (seen.includes(alias[1])) {
+      throw new Error(`${mode} 的 --${tokenName} 互相指涉：${[...seen, alias[1]].join(' → ')}`);
+    }
+    return hexOf(mode, alias[1], [...seen, tokenName]);
   }
   return resolveToHex(raw);
 }
@@ -407,49 +499,170 @@ describe('token 對比度（階段 2b，公式錨定後才驗，§2.1 三形狀 
   }
 });
 
-// 強調色對比度（S2b／D4）。brand 當文字走 1.4.3（4.5:1），當邊框／焦點框／
-// 進度填色這類非文字元素走 1.4.11（3:1）；對 --background 與 --card 各驗一次。
-// 既有 FAMILIES 迴圈已自動覆蓋語義色 A 形狀的新值（亮底黑字），brand 沒有
-// -border token（brand 本身就是邊框色），所以另開一輪。
-describe('強調色 brand 對比度（淺深各一輪，公式已錨定）', () => {
+describe('token 對比度：語義色框線放在白卡上、提示框內的墨色連結', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+    for (const family of FAMILIES) {
+      it(`${modeLabel}：${family}-border 對 --card 達 3:1（容器色外框鈕的框）`, () => {
+        expect(
+          contrastRatio(hexOf(mode, `${family}-border`), hexOf(mode, 'card')),
+        ).toBeGreaterThanOrEqual(3);
+      });
+
+      it(`${modeLabel}：墨色連結對 ${family}-subtle 達 4.5:1（提示框內的連結）`, () => {
+        expect(
+          contrastRatio(hexOf(mode, 'foreground'), hexOf(mode, `${family}-subtle`)),
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+});
+
+// 墨色五層（S2e）：文字對三種底、選取色當框線與反白底。
+describe('墨色與選取色對比度（淺深各一輪，公式已錨定）', () => {
   for (const mode of MODES) {
     const modeLabel = mode === 'light' ? '淺色' : '深色';
 
-    for (const surface of ['background', 'card'] as const) {
-      it(`${modeLabel}：brand 字對 --${surface} 達 4.5:1`, () => {
-        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(
-          4.5,
-        );
+    for (const surface of ['background', 'card', 'secondary'] as const) {
+      it(`${modeLabel}：墨字對 --${surface} 達 4.5:1`, () => {
+        expect(
+          contrastRatio(hexOf(mode, 'foreground'), hexOf(mode, surface)),
+        ).toBeGreaterThanOrEqual(4.5);
       });
 
-      it(`${modeLabel}：brand 當邊框／焦點框對 --${surface} 達 3:1（非文字元素）`, () => {
-        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      it(`${modeLabel}：灰字對 --${surface} 達 4.5:1`, () => {
+        expect(
+          contrastRatio(hexOf(mode, 'muted-foreground'), hexOf(mode, surface)),
+        ).toBeGreaterThanOrEqual(4.5);
       });
     }
 
-    // 會員中心「需要注意」框（StatusCallout warning）裡的動作連結是 brand 字。
-    it(`${modeLabel}：brand 字對 --warning-subtle 達 4.5:1`, () => {
+    it(`${modeLabel}：流程鈕白字對 --primary 達 4.5:1`, () => {
       expect(
-        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'warning-subtle')),
+        contrastRatio(hexOf(mode, 'primary-foreground'), hexOf(mode, 'primary')),
       ).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`${modeLabel}：brand 實心底配 brand-foreground 達 4.5:1`, () => {
+    for (const surface of ['background', 'card'] as const) {
+      it(`${modeLabel}：--sel 當選取框線對 --${surface} 達 3:1`, () => {
+        expect(contrastRatio(hexOf(mode, 'sel'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+    }
+
+    it(`${modeLabel}：選中反白字 --sel-foreground 對 --sel 達 4.5:1`, () => {
       expect(
-        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'brand-foreground')),
+        contrastRatio(hexOf(mode, 'sel-foreground'), hexOf(mode, 'sel')),
       ).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`${modeLabel}：brand-hover 實心底配 brand-foreground 達 4.5:1`, () => {
+    it(`${modeLabel}：選中分頁 --sel 對分頁軌道 --muted 達 3:1`, () => {
+      expect(contrastRatio(hexOf(mode, 'sel'), hexOf(mode, 'muted'))).toBeGreaterThanOrEqual(3);
+    });
+  }
+});
+
+// 品牌色（S2e）：只剩引導鈕（實心＋字）與重點淡底（淡底＋字、進度填色、徽章框線）。
+// 連結與焦點框不再用品牌色，所以不驗「brand 當內文字」。
+// 浮起表面的層次（業主 2026-10-05 裁決）：淺色靠陰影，所以表面與卡片同白、邊框同一般邊框；
+// 深色的陰影在近黑底上看不出來，改靠「越浮越亮」——浮起表面比卡片亮、卡片比頁面底亮，
+// 邊框也比一般邊框亮一階。比的是相對亮度的順序，不是對比門檻：浮動鈕靠圖示與文字辨識。
+describe('浮起表面的層次', () => {
+  const lum = (mode: Mode, token: string) => relativeLuminance(hexToRgb(hexOf(mode, token)));
+
+  it('淺色：浮起表面與卡片同白、邊框同一般邊框，層次交給陰影', () => {
+    expect(hexOf('light', 'raised')).toBe(hexOf('light', 'card'));
+    expect(hexOf('light', 'raised-border')).toBe(hexOf('light', 'border'));
+  });
+
+  it('深色：浮起表面比卡片亮、卡片比頁面底亮（越浮越亮）', () => {
+    expect(lum('dark', 'raised')).toBeGreaterThan(lum('dark', 'card'));
+    expect(lum('dark', 'card')).toBeGreaterThan(lum('dark', 'background'));
+  });
+
+  it('深色：浮起邊框比一般邊框亮一階，輪廓在浮起表面上仍看得出', () => {
+    expect(lum('dark', 'raised-border')).toBeGreaterThan(lum('dark', 'border'));
+    expect(contrastRatio(hexOf('dark', 'raised-border'), hexOf('dark', 'raised'))).toBeGreaterThan(
+      contrastRatio(hexOf('dark', 'border'), hexOf('dark', 'raised')),
+    );
+  });
+
+  it('深色：浮起表面上的墨字仍過 4.5:1', () => {
+    expect(
+      contrastRatio(hexOf('dark', 'foreground'), hexOf('dark', 'raised')),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// 可互動元件的邊界框線（業主裁決 D3＋E1，ui-ux-guidelines §12.7）：輸入格、下拉、勾選框同一圈
+// --input，對底必須 ≥3:1——未勾的勾選框只有這圈線可辨識、輸入格填值後 placeholder 也消失。
+// 純版面分隔（卡片、分隔線）用 --border，維持淡；兩者分開，加深框線不會讓整頁變重。
+describe('可互動元件框線 --input', () => {
+  for (const mode of MODES) {
+    for (const surface of ['background', 'card', 'input-background'] as const) {
+      it(`${mode === 'light' ? '淺色' : '深色'}：--input 對 --${surface} ≥ 3:1`, () => {
+        expect(contrastRatio(hexOf(mode, 'input'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+    }
+
+    it(`${mode === 'light' ? '淺色' : '深色'}：--border 與 --input 分開，版面分隔維持比框線淡`, () => {
+      expect(hexOf(mode, 'border')).not.toBe(hexOf(mode, 'input'));
+      expect(contrastRatio(hexOf(mode, 'border'), hexOf(mode, 'background'))).toBeLessThan(
+        contrastRatio(hexOf(mode, 'input'), hexOf(mode, 'background')),
+      );
+    });
+  }
+
+  it('深色有自己的 --input-background，填色不再靠 --input 疊透明度', () => {
+    expect(darkTokens.has('--input-background')).toBe(true);
+  });
+});
+
+// 重點淡底容器裡的次要鈕（container="brand"）：白底 bg-card 上的字是 brand-subtle-foreground，
+// 也要過文字門檻（#354 二次審查 #15）。
+describe('重點淡底容器次要鈕的字色', () => {
+  for (const mode of MODES) {
+    it(`${mode === 'light' ? '淺色' : '深色'}：brand-subtle-foreground 對 card ≥ 4.5:1`, () => {
       expect(
-        contrastRatio(hexOf(mode, 'brand-hover'), hexOf(mode, 'brand-foreground')),
+        contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, 'card')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});
+
+describe('品牌色蔚藍對比度（淺深各一輪，公式已錨定）', () => {
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+
+    it(`${modeLabel}：引導鈕 brand-foreground 對 brand 達 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-foreground'), hexOf(mode, 'brand')),
       ).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`${modeLabel}：brand-subtle-foreground 對 brand-subtle 達 4.5:1`, () => {
+    for (const surface of ['brand-subtle', 'brand-faint'] as const) {
+      it(`${modeLabel}：重點淡底字 brand-subtle-foreground 對 --${surface} 達 4.5:1`, () => {
+        expect(
+          contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, surface)),
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+
+    it(`${modeLabel}：brand 當淡底內外框鈕的框對 brand-subtle 達 3:1`, () => {
       expect(
-        contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, 'brand-subtle')),
-      ).toBeGreaterThanOrEqual(4.5);
+        contrastRatio(hexOf(mode, 'brand'), hexOf(mode, 'brand-subtle')),
+      ).toBeGreaterThanOrEqual(3);
     });
+
+    for (const surface of ['background', 'card'] as const) {
+      it(`${modeLabel}：brand 當進度填色對 --${surface} 達 3:1（非文字元素）`, () => {
+        expect(contrastRatio(hexOf(mode, 'brand'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+
+      it(`${modeLabel}：brand-border 當徽章框線對 --${surface} 達 3:1`, () => {
+        expect(
+          contrastRatio(hexOf(mode, 'brand-border'), hexOf(mode, surface)),
+        ).toBeGreaterThanOrEqual(3);
+      });
+    }
   }
 });

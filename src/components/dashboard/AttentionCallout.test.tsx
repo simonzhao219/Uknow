@@ -19,21 +19,22 @@ describe('AttentionCallout', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('每個項目是一條連到處理頁的 brand 連結', () => {
+  it('每個項目是一條連到處理頁的墨色底線連結', () => {
     render(
       <MemoryRouter>
         <AttentionCallout
           items={[
-            { key: 'a', to: '/referrals', label: '2 位下線即將到期' },
+            { key: 'a', to: '/referrals', label: '推薦網絡 2 位即將到期' },
             { key: 'b', to: '/rewards', label: '1 筆提領待查收' },
           ]}
         />
       </MemoryRouter>,
     );
     expect(screen.getByRole('heading', { level: 2, name: '需要注意' })).toBeTruthy();
-    const link = screen.getByRole('link', { name: '2 位下線即將到期' });
+    const link = screen.getByRole('link', { name: '推薦網絡 2 位即將到期' });
     expect(link.getAttribute('href')).toBe('/referrals');
-    expect(link.classList.contains('text-brand')).toBe(true);
+    expect(link.classList.contains('text-primary')).toBe(true);
+    expect(link.classList.contains('underline')).toBe(true);
     expect(screen.getByRole('link', { name: '1 筆提領待查收' }).getAttribute('href')).toBe(
       '/rewards',
     );

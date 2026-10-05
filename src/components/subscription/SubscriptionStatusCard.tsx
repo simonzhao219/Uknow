@@ -6,7 +6,11 @@ import { StatusCallout } from '../ui/status-callout';
 import { CreditCard, Loader2 } from 'lucide-react';
 import type { SubscriptionData } from '../../hooks/useSubscription';
 import { formatTwDate } from '../../utils/twDate';
-import { renewalNoticeDaysLeft, subscriptionCardState } from '../../utils/subscriptionNotice';
+import {
+  renewalNoticeDaysLeft,
+  showsRenewalCta,
+  subscriptionCardState,
+} from '../../utils/subscriptionNotice';
 
 interface Props {
   subscriptionData: SubscriptionData | null;
@@ -34,6 +38,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
   // active 顯示「訂閱中」；expired 老會員顯示「已失效」；never 不顯示徽章。
   const statusInfo = cardState === 'active' ? STATUS_MAP.active : STATUS_MAP.expired;
   // 到期前 30 天倒數提醒（active 會員）——到期即失效無寬限期，提醒往前移。
+  // 暫時只倒數不放續訂鈕，文字因此說明到期後怎麼續（規格書 §14 第 7 列）。
   const noticeDaysLeft = renewalNoticeDaysLeft(
     subscriptionData?.status,
     subscriptionData?.activeUntil,
@@ -50,19 +55,11 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
           )}
         </CardTitle>
 
-        {!isLoading && cardState === 'expired-former' && (
-          <Button variant="default" size="sm" asChild>
-            <Link to="/payment/checkout">續訂 / 重新訂閱</Link>
-          </Button>
-        )}
-        {!isLoading && noticeDaysLeft !== null && (
-          <Button
-            variant="default"
-            size="sm"
-            className="bg-warning hover:bg-warning/90 text-warning-foreground"
-            asChild
-          >
-            <Link to="/payment/checkout">立即續訂</Link>
+        {/* 續訂鈕只給已失效的老會員，判斷與會員中心的引導鈕讓位共用 showsRenewalCta。
+            30 天內到期暫不放鈕：結帳頁會把 active 會員導回會員中心（規格書 §14 第 7 列）。 */}
+        {!isLoading && showsRenewalCta(subscriptionData) && (
+          <Button tone="guide" size="sm" asChild>
+            <Link to="/payment/checkout">續訂</Link>
           </Button>
         )}
       </CardHeader>
@@ -83,9 +80,9 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
         ) : cardState === 'expired-former' ? (
           <div className="space-y-3">
             <StatusCallout
-              variant="destructive"
+              variant="warning"
               title="會籍已失效"
-              description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務——過期未滿一年可「續約」接續原效期。"
+              description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務，可選「續約」接續原效期或「新約」重新起算。"
             />
 
             {subscriptionData?.activeUntil && (
@@ -101,7 +98,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
               <StatusCallout
                 variant="warning"
                 title="會籍即將到期"
-                description={`您的會籍將於 ${noticeDaysLeft} 天後到期。到期即失效（無寬限期），請儘早續訂，以免會員功能與刊登中斷。`}
+                description={`您的會籍將於 ${noticeDaysLeft} 天後到期。到期即失效（無寬限期），會員功能與刊登會暫停；到期後進入會員中心會直接帶您到續訂頁，選「續約」從原到期日隔天接續一年。`}
               />
             )}
 

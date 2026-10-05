@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function ForgotPasswordPage() {
   const location = useLocation();
@@ -101,11 +101,13 @@ export function ForgotPasswordPage() {
             <>
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p className="font-medium">{email}</p>
+                <p className="font-medium">
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setIsEditing(true)} className="flex-1">
+                <Button tone="secondary" onClick={() => setIsEditing(true)} className="flex-1">
                   更改 Email
                 </Button>
                 <Button onClick={handleSubmit} loading={isLoading} className="flex-1">
@@ -114,14 +116,12 @@ export function ForgotPasswordPage() {
               </div>
 
               <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => navigate('/login')}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                <Link
+                  to="/login"
+                  className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                 >
-                  <ArrowLeft className="w-3 h-3 inline mr-1" />
                   返回登入
-                </button>
+                </Link>
               </div>
             </>
           ) : (
@@ -146,19 +146,22 @@ export function ForgotPasswordPage() {
                 <FieldError id="forgot-email-error" error={errors.email} />
               </div>
 
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => navigate('/login')} className="flex-1">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  返回登入
-                </Button>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!email}
-                  loading={isLoading}
-                  className="flex-1"
+              <Button
+                onClick={handleSubmit}
+                disabled={!email}
+                loading={isLoading}
+                className="w-full"
+              >
+                {isLoading ? '發送中...' : '發送驗證碼'}
+              </Button>
+
+              <div className="text-center">
+                <Link
+                  to="/login"
+                  className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                 >
-                  {isLoading ? '發送中...' : '發送驗證碼'}
-                </Button>
+                  返回登入
+                </Link>
               </div>
             </>
           )}

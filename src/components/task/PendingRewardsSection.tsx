@@ -68,7 +68,9 @@ export function PendingRewardsSection({
               disabled={isBlocked}
               title={claimBlockedReason ?? undefined}
               onClick={() => setShowClaimAllDialog(true)}
-              className="mt-2 w-full sm:w-auto bg-warning hover:bg-warning/90 text-warning-foreground gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              tone="secondary"
+              container="warning"
+              className="mt-2 w-full sm:w-auto gap-2"
             >
               <Gift className="h-5 w-5" />
               一次領取全部（{pendingRewards.length} 張）
@@ -116,7 +118,8 @@ export function PendingRewardsSection({
                     setSelectedReward(reward);
                     setShowClaimDialog(true);
                   }}
-                  className="bg-warning hover:bg-warning/90 text-warning-foreground gap-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  tone="secondary"
+                  className="gap-2 shrink-0"
                 >
                   <Gift className="h-5 w-5" />
                   {isBlocked ? '暫無法領取' : '立即領取'}

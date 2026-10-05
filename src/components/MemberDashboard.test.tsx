@@ -3,7 +3,7 @@
 // 會員中心狀態總覽的契約（plan F4、ui-ux-guidelines §13）：
 // - 四張狀態卡各自有載入（骨架、不閃 0）／錯誤（中性字、不整頁報錯）／有資料三態；
 // - 「需要注意」有事才出現，推薦那條只算即將到期（業主裁決 2026-10-04）；
-// - 整頁至多一顆黑色主按鈕，申請提領與立即刊登同時成立時提領優先。
+// - 卡片區的行動提示（申請提領、立即刊登）一律是次要外框鈕（ui-ux-guidelines §12.11）。
 // 資料 hook 全部 mock 成可變狀態：這裡驗的是版面與推導，不是取數。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -37,7 +37,11 @@ vi.mock('../hooks/useUserListing', () => ({ useUserListing: () => state.listing 
 vi.mock('../hooks/useReferralData', () => ({ useReferralData: () => state.referral }));
 vi.mock('../hooks/useTaskData', () => ({ useTaskData: () => state.task }));
 vi.mock('../hooks/useRewardData', () => ({ useRewardData: () => state.reward }));
-vi.mock('./referral/MyQrEntry', () => ({ MyQrEntry: () => <div data-testid="my-qr-entry" /> }));
+vi.mock('./referral/MyQrEntry', () => ({
+  MyQrEntry: ({ yieldsGuide }: { yieldsGuide?: boolean }) => (
+    <div data-testid="my-qr-entry" data-yields-guide={String(Boolean(yieldsGuide))} />
+  ),
+}));
 
 import { MemberDashboard } from './MemberDashboard';
 
@@ -111,7 +115,7 @@ describe('MemberDashboard 狀態卡', () => {
     state.referral = { overview: null, loading: false, error: '網路錯誤' };
     renderPage();
 
-    expect(within(card(/^推薦網絡/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
+    expect(within(card(/^推薦網絡：/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
     expect(within(card(/^可提領點數/)).getByText('500')).toBeTruthy();
   });
 
@@ -157,24 +161,24 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(listing).queryByText('立即刊登')).toBeNull();
   });
 
-  it('推薦網絡卡的徽章只計即將到期的下線', () => {
+  it('推薦網絡卡的徽章只計即將到期的人數', () => {
     state.referral.overview.attention = {
       total: 4,
       items: [node('expiring'), node('expiring'), node('expiring'), node('expired')],
     };
     renderPage();
 
-    const referral = card(/^推薦網絡/);
+    const referral = card(/^推薦網絡：/);
     expect(within(referral).getByText('12')).toBeTruthy();
     expect(within(referral).getByText('3 位即將到期')).toBeTruthy();
-    expect(referral.getAttribute('aria-label')).toBe('推薦網絡：12 位下線，3 位即將到期');
+    expect(referral.getAttribute('aria-label')).toBe('推薦網絡：12 位，3 位即將到期');
   });
 
-  it('沒有即將到期的下線時推薦網絡卡不顯示徽章', () => {
+  it('推薦網絡沒有人即將到期時卡片不顯示徽章', () => {
     state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
     renderPage();
 
-    expect(within(card(/^推薦網絡/)).queryByText(/即將到期/)).toBeNull();
+    expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
   });
 
   it('本月任務卡以本輪顯示推薦進度並標明單位', () => {
@@ -256,13 +260,52 @@ describe('MemberDashboard 狀態卡', () => {
   });
 });
 
+// 引導鈕一頁一顆（ui-ux-guidelines §12.11，#354 裁決 #1）：我的訂閱卡出現續訂時，
+// MyQrEntry 的加入推薦計畫讓位成次要；沒有續訂時維持引導鈕。到期前續訂暫停開放
+// （業主 2026-10-05，規格書 §14 第 7 列），30 天內到期的卡片不放續訂鈕，所以也不讓位。
+describe('MemberDashboard 引導鈕讓位', () => {
+  const DAY = 86_400_000;
+  const yields = () => screen.getByTestId('my-qr-entry').getAttribute('data-yields-guide');
+
+  it('會籍 30 天內到期時訂閱卡不放續訂，加入推薦計畫維持引導鈕', () => {
+    state.subscription.subscriptionData = {
+      hasSubscription: true,
+      status: 'active',
+      activeUntil: new Date(Date.now() + 10 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('false');
+  });
+
+  it('到期還遠時加入推薦計畫維持引導鈕', () => {
+    state.subscription.subscriptionData = {
+      hasSubscription: true,
+      status: 'active',
+      activeUntil: new Date(Date.now() + 200 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('false');
+  });
+});
+
+// 給使用者確認的資料不截斷、只換行（#354 範圍外發現第 2 條）：Email 走 BreakableEmail。
+describe('MemberDashboard 基本資料', () => {
+  it('長 Email 完整顯示、在 @ 後可換行，不截斷', () => {
+    const email = 'chienmingchangservice@uknowplatform.com.tw';
+    renderPage({ name: '王小明', email, referralProgramJoined: true });
+    const node = screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === email);
+    expect(node.innerHTML).toContain('@<wbr>');
+    expect(node.closest('.truncate')).toBeNull();
+  });
+});
+
 describe('MemberDashboard 需要注意區', () => {
   it('沒有需要處理的事時整塊不渲染', () => {
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });
 
-  it('有即將到期下線與待查收提領時各列一條動作連結', () => {
+  it('有人即將到期與有待查收提領時各列一條動作連結', () => {
     state.referral.overview.attention = {
       total: 3,
       items: [node('expiring'), node('expired'), node('suspended')],
@@ -271,7 +314,7 @@ describe('MemberDashboard 需要注意區', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: '需要注意' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '1 位下線即將到期' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: '推薦網絡 1 位即將到期' }).getAttribute('href')).toBe(
       '/referrals',
     );
     expect(screen.getByRole('link', { name: '2 筆提領待查收' }).getAttribute('href')).toBe(
@@ -279,7 +322,7 @@ describe('MemberDashboard 需要注意區', () => {
     );
   });
 
-  it('只有已失效與停權的下線時不列推薦那條', () => {
+  it('推薦網絡只有已失效與停權時不列推薦那條', () => {
     state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
@@ -291,7 +334,7 @@ describe('MemberDashboard 需要注意區', () => {
       items: Array.from({ length: 6 }, () => node('expiring')),
     };
     renderPage();
-    expect(screen.getByRole('link', { name: '至少 6 位下線即將到期' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '推薦網絡 至少 6 位即將到期' })).toBeTruthy();
   });
 
   it('功能旗標關閉時不列該功能的注意事項', () => {
@@ -303,32 +346,31 @@ describe('MemberDashboard 需要注意區', () => {
   });
 });
 
-describe('MemberDashboard 卡片區主按鈕', () => {
-  const primaryButtons = (container: HTMLElement) =>
-    Array.from(container.querySelectorAll('.bg-primary'));
+describe('MemberDashboard 卡片區按鈕', () => {
+  const cardActions = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-testid="stat-card-action"]'));
 
-  it('可提領且尚未刊登時卡片區只有申請提領一顆黑色主按鈕', () => {
+  it('可提領且尚未刊登時兩顆都是次要外框鈕，卡片區沒有實心鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
     const { container } = renderPage();
 
-    const primaries = primaryButtons(container);
-    expect(primaries).toHaveLength(1);
-    expect(primaries[0].textContent).toBe('申請提領');
-    expect(screen.getByText('立即刊登').classList.contains('bg-brand')).toBe(true);
+    const actions = cardActions(container);
+    expect(actions.map((a) => a.textContent)).toEqual(['立即刊登', '申請提領']);
+    for (const action of actions) {
+      expect(action.classList.contains('bg-card')).toBe(true);
+      expect(action.classList.contains('bg-primary')).toBe(false);
+    }
   });
 
-  it('只有尚未刊登時卡片區至多一顆且是立即刊登', () => {
+  it('只有尚未刊登時卡片區只有立即刊登一顆行動鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     const { container } = renderPage();
-
-    const primaries = primaryButtons(container);
-    expect(primaries).toHaveLength(1);
-    expect(primaries[0].textContent).toBe('立即刊登');
+    expect(cardActions(container).map((a) => a.textContent)).toEqual(['立即刊登']);
   });
 
-  it('有刊登且不能提領時卡片區沒有主按鈕', () => {
+  it('有刊登且不能提領時卡片區沒有行動鈕', () => {
     const { container } = renderPage();
-    expect(primaryButtons(container)).toHaveLength(0);
+    expect(cardActions(container)).toHaveLength(0);
   });
 });

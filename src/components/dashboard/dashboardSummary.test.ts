@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  countAwaitingCollection,
-  countExpiring,
-  formatExpiringCount,
-  pickPrimaryAction,
-} from './dashboardSummary';
+import { countAwaitingCollection, countExpiring, formatExpiringCount } from './dashboardSummary';
 import type { NetworkNodeStatus } from '../../utils/referralNetwork';
 
 const node = (status: NetworkNodeStatus) => ({ status });
@@ -57,19 +52,5 @@ describe('countAwaitingCollection', () => {
       withdrawal('awaiting_collection'),
     ];
     expect(countAwaitingCollection(list)).toBe(2);
-  });
-});
-
-describe('pickPrimaryAction', () => {
-  it('可提領與未刊登同時成立時提領優先', () => {
-    expect(pickPrimaryAction({ canWithdraw: true, hasNoListing: true })).toBe('withdraw');
-  });
-
-  it('只有未刊登時主行動是立即刊登', () => {
-    expect(pickPrimaryAction({ canWithdraw: false, hasNoListing: true })).toBe('create-listing');
-  });
-
-  it('兩者都不成立時沒有主按鈕', () => {
-    expect(pickPrimaryAction({ canWithdraw: false, hasNoListing: false })).toBeNull();
   });
 });

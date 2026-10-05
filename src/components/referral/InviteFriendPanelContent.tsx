@@ -152,11 +152,12 @@ export function InviteFriendPanelContent({
           Android 分享目標丟掉（見 shareQrCode 的說明）。「邀請好友」永遠只送
           文字，推薦連結與推薦碼保證送達。 */}
       <div className="flex flex-wrap justify-center gap-2">
-        <Button variant="outline" size="sm" onClick={shareQrCode}>
+        <Button tone="secondary" size="sm" onClick={shareQrCode}>
           <Download className="mr-1 h-4 w-4" />
           分享 QR Code
         </Button>
         <Button
+          tone="secondary"
           size="sm"
           onClick={() => shareReferralInvite(code, showToast)}
           data-testid="share-referral-button"

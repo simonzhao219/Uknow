@@ -82,7 +82,7 @@ export function MemberCardList({
                 <div className="flex shrink-0 items-center gap-1">
                   <Button
                     size="sm"
-                    variant="outline"
+                    tone="secondary"
                     className="px-2"
                     aria-label={`查看 ${member.name ?? member.email} 的詳情`}
                     onClick={() => onOpenDetail(member.id)}

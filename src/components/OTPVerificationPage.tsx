@@ -1,15 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from './ui/input-otp';
-import { ArrowLeft } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
 import { nextRouteForStep } from '../utils/registrationFlow';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function OTPVerificationPage() {
   const location = useLocation();
@@ -180,7 +180,7 @@ export function OTPVerificationPage() {
             {otpType === 'recovery' ? '重設密碼驗證' : '驗證您的 Email'}
           </CardTitle>
           <CardDescription>
-            驗證碼已寄送至 <span className="font-medium text-foreground">{email}</span>
+            驗證碼已寄送至 <BreakableEmail email={email} className="font-medium text-foreground" />
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -246,14 +246,12 @@ export function OTPVerificationPage() {
 
           {/* Back to login */}
           <div className="text-center">
-            <button
-              type="button"
-              onClick={() => navigate('/login')}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            <Link
+              to="/login"
+              className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
             >
-              <ArrowLeft className="w-3 h-3 inline mr-1" />
               返回登入
-            </button>
+            </Link>
           </div>
         </CardContent>
       </Card>

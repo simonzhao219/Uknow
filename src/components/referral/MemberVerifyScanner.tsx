@@ -233,7 +233,7 @@ export function MemberVerifyScanner() {
 
   const scanNextButton =
     result || error ? (
-      <Button variant="outline" className="w-full bg-background" onClick={reset}>
+      <Button tone="secondary" className="w-full bg-background" onClick={reset}>
         繼續掃描下一位
       </Button>
     ) : null;

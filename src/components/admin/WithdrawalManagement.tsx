@@ -120,7 +120,9 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button onClick={onClose}>關閉</Button>
+          <Button tone="secondary" onClick={onClose}>
+            關閉
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -474,6 +476,7 @@ export function WithdrawalManagement({
             <AlertDialogFooter>
               <AlertDialogCancel onClick={closeReasonDialog}>取消</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
                 disabled={!reasonFilled}
                 onClick={() => {
                   const target = rejectTarget;
@@ -713,7 +716,7 @@ export function WithdrawalManagement({
                   <SelectItem value="rejected">已退件</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
+              <Button tone="secondary" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
@@ -726,7 +729,7 @@ export function WithdrawalManagement({
                   實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
                   第一筆提領卡仍在第一屏內。 */}
               <Button
-                variant="default"
+                tone="secondary"
                 size="sm"
                 onClick={downloadCSV}
                 disabled={!withdrawals.length}
@@ -779,9 +782,7 @@ export function WithdrawalManagement({
             // 以為今天沒人申請提領，而不是「沒讀到」。
             <div className="py-12 text-center space-y-3">
               <p className="text-destructive-subtle-foreground">{loadError}</p>
-              <Button variant="outline" onClick={fetchWithdrawals}>
-                重試
-              </Button>
+              <Button onClick={fetchWithdrawals}>重試</Button>
             </div>
           ) : withdrawals.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
@@ -888,7 +889,7 @@ export function WithdrawalManagement({
                           )}
                           <Button
                             size="sm"
-                            variant="destructive"
+                            tone="destructive"
                             onClick={() => setRejectTarget(w)}
                             disabled={processingId === w.id}
                           >
@@ -898,7 +899,7 @@ export function WithdrawalManagement({
                       ) : w.status === 'awaiting_collection' ? (
                         <Button
                           size="sm"
-                          variant="outline"
+                          tone="secondary"
                           onClick={() => setCompleteTarget(w)}
                           disabled={processingId === w.id}
                         >
@@ -916,7 +917,7 @@ export function WithdrawalManagement({
 
           {!isLoading && !loadError && withdrawals.length < total && (
             <div className="pt-4 text-center">
-              <Button variant="outline" onClick={loadMore} disabled={isLoadingMore}>
+              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore}>
                 {isLoadingMore ? '載入中…' : '載入更多'}
               </Button>
             </div>

@@ -9,7 +9,6 @@ import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { StatusCallout } from '../ui/status-callout';
 import {
-  ArrowLeft,
   ArrowRight,
   CheckCircle,
   AlertCircle,
@@ -451,7 +450,7 @@ export function WithdrawalProcess({
               請繼續推薦好友增加Point餘額。
             </AlertDescription>
           </Alert>
-          <Button variant="outline" onClick={onCancel} className="w-full mt-4">
+          <Button tone="secondary" onClick={onCancel} className="w-full mt-4">
             返回
           </Button>
         </CardContent>
@@ -596,12 +595,11 @@ export function WithdrawalProcess({
             </div>
 
             <div className="flex gap-4">
-              <Button variant="outline" onClick={onCancel} className="flex-1">
+              <Button tone="secondary" onClick={onCancel} className="flex-1">
                 取消
               </Button>
               <Button onClick={handleNext} className="flex-1" disabled={!amount}>
                 下一步
-                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </div>
@@ -635,13 +633,11 @@ export function WithdrawalProcess({
             </div>
 
             <div className="flex gap-4">
-              <Button variant="outline" onClick={handleBack} className="flex-1">
-                <ArrowLeft className="h-4 w-4 mr-2" />
+              <Button tone="secondary" onClick={handleBack} className="flex-1">
                 上一步
               </Button>
               <Button onClick={() => setCurrentStep(3)} className="flex-1">
-                確認並繼續
-                <ArrowRight className="h-4 w-4 ml-2" />
+                下一步
               </Button>
             </div>
           </div>
@@ -861,7 +857,7 @@ export function WithdrawalProcess({
                     triggerLabel="推廣獎勵規章"
                     title="推廣獎勵規章"
                     content={referralRewardRulesContent}
-                    triggerClassName="text-brand underline mx-1"
+                    triggerClassName="text-primary underline underline-offset-4 mx-1"
                     triggerTestId="withdrawal-rules-link"
                   />
                 </Label>
@@ -871,12 +867,11 @@ export function WithdrawalProcess({
 
             <div className="flex gap-4">
               <Button
-                variant="outline"
+                tone="secondary"
                 onClick={handleBack}
                 className="flex-1"
                 disabled={isSubmitting}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" />
                 上一步
               </Button>
               <Button

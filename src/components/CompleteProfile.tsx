@@ -665,7 +665,7 @@ export function CompleteProfile() {
                     // 流程上,點不到的代價是流失。
                     className={`flex-1 min-h-10 pointer-coarse:min-h-[44px] rounded-md px-3 py-1.5 text-sm transition-colors ${
                       formData.nameMode === mode
-                        ? 'bg-background shadow-sm font-medium'
+                        ? 'bg-sel text-sel-foreground'
                         : 'text-muted-foreground'
                     }`}
                   >
@@ -784,7 +784,7 @@ export function CompleteProfile() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => verifyReferralCode()}
                   disabled={
                     isVerifyingCode ||
@@ -874,7 +874,7 @@ export function CompleteProfile() {
             {/* 稍後註冊按鈕 */}
             <Button
               type="button"
-              variant="outline"
+              tone="secondary"
               className="w-full mt-2"
               onClick={handleLaterSignup}
             >

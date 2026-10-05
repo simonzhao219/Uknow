@@ -137,7 +137,7 @@ export function JoinReferralProgramDialog({
                         triggerLabel="事業手冊"
                         title="事業手冊"
                         content={businessManualContent}
-                        triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
+                        triggerClassName="text-primary underline underline-offset-4 mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-rules-link"
                       />
                       <span className="whitespace-nowrap">和</span>
@@ -145,7 +145,7 @@ export function JoinReferralProgramDialog({
                         triggerLabel="參加契約書"
                         title="參加契約書"
                         content={participationContractContent}
-                        triggerClassName="text-foreground hover:underline mx-1 whitespace-nowrap inline-block"
+                        triggerClassName="text-primary underline underline-offset-4 mx-1 whitespace-nowrap inline-block"
                         triggerTestId="referral-contract-link"
                       />
                     </Label>
@@ -162,7 +162,7 @@ export function JoinReferralProgramDialog({
 
             {/* 按鈕 */}
             <div className="flex justify-end gap-3 mt-6">
-              <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+              <Button tone="secondary" onClick={onClose} disabled={isSubmitting}>
                 取消
               </Button>
               <Button onClick={handleSubmit} disabled={!canSubmit}>

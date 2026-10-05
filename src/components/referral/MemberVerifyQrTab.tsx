@@ -62,7 +62,7 @@ export function MemberVerifyQrTab({ active, accountStatus }: MemberVerifyQrTabPr
       ) : error ? (
         <div className="flex flex-col items-center gap-3 py-8 text-center" aria-live="polite">
           <p className="text-sm text-destructive-subtle-foreground">{error}</p>
-          <Button variant="outline" size="sm" onClick={refresh}>
+          <Button tone="secondary" size="sm" onClick={refresh}>
             <RefreshCw className="mr-1 h-4 w-4" />
             重試
           </Button>

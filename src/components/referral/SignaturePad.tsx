@@ -222,7 +222,7 @@ export function SignaturePad({ onSignatureChange, disabled = false }: SignatureP
       <div className="flex justify-between items-center">
         <Button
           type="button"
-          variant="outline"
+          tone="secondary"
           size="sm"
           onClick={clearSignature}
           disabled={!hasSigned || disabled}

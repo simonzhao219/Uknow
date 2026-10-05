@@ -53,7 +53,7 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
             ),
             li: ({ node, ...props }) => <li {...props} />,
             a: ({ node, ...props }) => (
-              <a className="text-brand underline underline-offset-4" {...props} />
+              <a className="text-primary underline underline-offset-4" {...props} />
             ),
             blockquote: ({ node, ...props }) => (
               <blockquote

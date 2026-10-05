@@ -209,7 +209,8 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 ### 6.1 方案
 
 - **年繳 $1,200**（唯一方案，`YEARLY_PRICE`），**一次性付款、不自動續扣**。
-- **續約提醒**：會員中心於**到期前 30 天起**顯示倒數 banner 與「立即續訂」CTA。
+- **續約提醒**：會員中心於**到期前 30 天起**顯示倒數 banner；到期前續訂暫未開放
+  （banner 不放「續訂」CTA，見 §14 第 7 列）。
   〔實作〕`src/utils/subscriptionNotice.ts`
   到期前 Email 提醒**尚未實作**（見 §14）。
 
@@ -245,6 +246,10 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 ---
 
 ## 7. 推薦與組織系統
+
+> **術語對照**：本規格書與 API 契約沿用「上線／下線」作業務術語；產品 UI 一律說
+> 「推薦人」（上線）與「一代／二代／三代」（下線，依相對自己的世代）——見
+> `docs/ui-ux-guidelines.md` §12.13。
 
 ### 7.1 推薦碼
 
@@ -690,6 +695,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 4 | `FeatureContext` 功能旗標（§3） | **兩側都是 stub 且未接線**：`src/contexts/FeatureContext.tsx` 回傳硬編全 true、`refreshFeatures` 是 no-op；後端 `/admin/features` 也回硬編全 true，且無人呼叫。因此 `ProtectedRoute` 的「功能停用」UI 路徑目前不可達、無 e2e 情境 |
 | 5 | 姓名格式規則的兩項未結清查證（§4.2） | ①`HAN_RANGE`（`㐀-鿿`＋`豈-﫿`）不含擴充 B 區以上與造字區，即戶政「缺字」問題——該正則原本只決定遮罩樣式，改當註冊關卡後同一落差的後果變成「完全無法註冊」。目前僅以「罕用字請聯繫客服」的錯誤訊息當逃生口，**未以既有 `profiles.name` 樣本查證實際族群規模**。②純羅馬拼音登記姓名（依《姓名條例》部分原住民族可單獨以羅馬拼音登記法定姓名）的分隔慣例未查證；外文模式目前只允許英文字母與單一半形空格，若官方轉寫慣例另有分隔符號則會誤擋 |
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
+| 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
 
 ---
 

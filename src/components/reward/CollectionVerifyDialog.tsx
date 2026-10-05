@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
-import { Shield, Loader2, ArrowLeft } from 'lucide-react';
+import { Shield, Loader2 } from 'lucide-react';
 import { IdNumberInput } from './IdNumberInput';
 
 interface CollectionVerifyDialogProps {
@@ -44,7 +44,7 @@ export function CollectionVerifyDialog({
       setError('');
       await onConfirm(idNumber);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '確認查收失敗');
+      setError(err instanceof Error ? err.message : '收款確認失敗');
       setIsSubmitting(false);
     }
   };
@@ -83,9 +83,8 @@ export function CollectionVerifyDialog({
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={onBack} className="flex-1" disabled={isSubmitting}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              返回
+            <Button tone="secondary" onClick={onBack} className="flex-1" disabled={isSubmitting}>
+              上一步
             </Button>
             <Button
               onClick={handleSubmit}

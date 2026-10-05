@@ -41,7 +41,10 @@ function record(over: Partial<WithdrawalRecord> = {}): WithdrawalRecord {
   };
 }
 
-function renderSection(withdrawals: WithdrawalRecord[]) {
+function renderSection(
+  withdrawals: WithdrawalRecord[],
+  subscriptionStatus: 'active' | 'expired' = 'active',
+) {
   return render(
     <WithdrawalSection
       availableRewards={5000}
@@ -51,7 +54,7 @@ function renderSection(withdrawals: WithdrawalRecord[]) {
       withdrawals={withdrawals}
       onStartWithdrawal={() => {}}
       onRefresh={() => {}}
-      subscriptionStatus="active"
+      subscriptionStatus={subscriptionStatus}
       referralProgramJoined
     />,
   );
@@ -93,5 +96,78 @@ describe('WithdrawalSection', () => {
     renderSection([record({ status: 'pending', note: '這是內部備註' })]);
     expect(screen.queryByText(/退件原因/)).toBeNull();
     expect(screen.queryByText(/這是內部備註/)).toBeNull();
+  });
+
+  // 引導鈕一頁一顆（ui-ux-guidelines §12.11，業主裁決 E2）：待查收可能累積好幾筆（每日可
+  // 申請一筆），只有最早申請的那筆是引導鈕（蔚藍實心），其餘是次要外框。
+  it('多筆待查收時只有最早申請的那筆是引導鈕，其餘是次要外框', () => {
+    renderSection([
+      record({
+        id: 'w-new',
+        status: 'awaiting_collection',
+        amount: 2000,
+        requestedAt: '2026-08-03T02:00:00Z',
+      }),
+      record({
+        id: 'w-old',
+        status: 'awaiting_collection',
+        amount: 1000,
+        requestedAt: '2026-08-01T02:00:00Z',
+      }),
+    ]);
+    const buttons = screen.getAllByRole('button', { name: '確認收款' });
+    expect(buttons).toHaveLength(2);
+    const [guide, ...rest] = [...buttons].sort(
+      (a, b) => Number(b.classList.contains('bg-brand')) - Number(a.classList.contains('bg-brand')),
+    );
+    expect(guide.classList.contains('bg-brand')).toBe(true);
+    expect(guide.closest('[class*="justify-between"]')?.textContent).toContain('1,000P');
+    for (const other of rest) {
+      expect(other.classList.contains('bg-brand')).toBe(false);
+      expect(other.classList.contains('bg-card')).toBe(true);
+    }
+  });
+
+  it('只有一筆待查收時它就是引導鈕', () => {
+    renderSection([record({ status: 'awaiting_collection' })]);
+    expect(screen.getByRole('button', { name: '確認收款' }).classList.contains('bg-brand')).toBe(
+      true,
+    );
+  });
+
+  it('最早的判斷看時間不看陣列順序，同一時點不同寫法也比得出先後', () => {
+    renderSection([
+      record({
+        id: 'w-old',
+        status: 'awaiting_collection',
+        amount: 1000,
+        requestedAt: '2026-08-01T02:00:00+00:00',
+      }),
+      record({
+        id: 'w-new',
+        status: 'awaiting_collection',
+        amount: 2000,
+        requestedAt: '2026-08-01T03:00:00Z',
+      }),
+      record({
+        id: 'w-pending',
+        status: 'pending',
+        amount: 3000,
+        requestedAt: '2026-07-01T00:00:00Z',
+      }),
+    ]);
+    const guide = screen
+      .getAllByRole('button', { name: '確認收款' })
+      .filter((b) => b.classList.contains('bg-brand'));
+    expect(guide).toHaveLength(1);
+    expect(guide[0].closest('[class*="justify-between"]')?.textContent).toContain('1,000P');
+  });
+
+  // 會籍失效時獎勵頁橫幅的續訂優先（續訂＞加入推薦計畫＞確認收款），確認收款全部讓位。
+  it('會籍失效時確認收款全部是次要外框，引導鈕讓給橫幅的續訂', () => {
+    renderSection([record({ status: 'awaiting_collection' })], 'expired');
+    const button = screen.getByRole('button', { name: '確認收款' });
+    expect(button.classList.contains('bg-brand')).toBe(false);
+    expect(button.classList.contains('bg-card')).toBe(true);
   });
 });

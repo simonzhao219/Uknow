@@ -47,4 +47,15 @@ describe('HomeViewToggle', () => {
     render(<HomeViewToggle value="photo" onChange={() => {}} />);
     expect(screen.getByRole('group', { name: '檢視方式' })).toBeTruthy();
   });
+
+  // 選取與聚焦一條規則（ui-ux-guidelines §12.12）：分段切換是無框元件，選中＝底色灰字
+  // --sel、文字反白，不是 primary 墨黑（那是勾選框與流程鈕的顏色）。
+  it('當前模式以 --sel 實心反白標示，不用 primary 墨黑', () => {
+    render(<HomeViewToggle value="photo" onChange={() => {}} />);
+    const current = screen.getByRole('button', { name: '照片檢視' });
+    for (const c of ['bg-sel', 'text-sel-foreground']) {
+      expect(current.classList.contains(c), c).toBe(true);
+    }
+    expect(current.classList.contains('bg-primary')).toBe(false);
+  });
 });

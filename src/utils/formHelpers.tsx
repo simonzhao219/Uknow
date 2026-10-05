@@ -4,8 +4,13 @@
  * 生成輸入框錯誤樣式的 className
  * 用法: className={getInputErrorClass(!!errors.fieldName)}
  */
+// 與 ui 原語的 aria-invalid:* 是同一組紅色單圈配方（框線與 1px 環同為 destructive-border，
+// ui-ux-guidelines §12.12）——改其中一邊要同步改另一邊；能掛 aria-invalid 的欄位優先用
+// getInputAriaProps，讓原語自己畫。
 export function getInputErrorClass(hasError: boolean): string {
-  return hasError ? 'border-destructive-border focus-visible:ring-destructive-border' : '';
+  return hasError
+    ? 'border-destructive-border focus-visible:border-destructive-border focus-visible:ring-destructive-border'
+    : '';
 }
 
 /**

@@ -15,6 +15,7 @@ import { resolvePostLoginAction, classifyLoginError } from '../utils/registratio
 import { isWeakPasswordError, translateSignUpError } from '../utils/authErrors';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
 import { savePendingReferral } from '../utils/referralInvite';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -380,7 +381,7 @@ export function AuthPage() {
                 className="w-full"
                 data-testid="auth-continue-button"
               >
-                {isLoading ? '檢查中...' : '繼續'}
+                {isLoading ? '檢查中...' : '下一步'}
               </Button>
             </form>
           )}
@@ -397,7 +398,9 @@ export function AuthPage() {
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p>{email}</p>
+                <p>
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -418,7 +421,7 @@ export function AuthPage() {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-sm text-brand hover:underline"
+                    className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                     data-testid="forgot-password-link"
                   >
                     忘記密碼？
@@ -429,7 +432,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');
@@ -465,7 +468,9 @@ export function AuthPage() {
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p>{email}</p>
+                <p>
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -507,7 +512,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');

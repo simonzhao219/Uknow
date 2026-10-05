@@ -217,7 +217,7 @@ export function TaskDashboard() {
                       )}
                       {task.current > 0 ? (
                         <Button
-                          variant="outline"
+                          tone="secondary"
                           size="sm"
                           onClick={handleViewCurrentMonthTop}
                           loading={loadingCurrent}

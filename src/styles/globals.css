@@ -6,79 +6,97 @@
   /* 根字級 16px：對齊 Tailwind 預設字階，rem 尺寸（字級/間距/元件高度）回到設計原意，
      手機閱讀更舒適，並讓觸控目標達標。原本 14px 使全站等比縮小約 12.5%。 */
   --font-size: 16px;
+  /* 墨色五層（S2e／D6，業主 2026-10-05 定案，ui-ux-guidelines.md §12.3）：50 淡底
+     #f7f7fb、100 淡灰底、300 邊框、600 灰字、800 墨字，帶一點藍調。墨字同時是
+     --primary（流程主要動作鈕）——互動色與文字墨黑合併，不另設互動色。版面底用白、
+     不用墨色 50（業主裁決 D2，#354）：畫面稿 47 格手機畫面都是白底，灰的是稿紙不是頁面。 */
   --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
+  --foreground: #121223;
   --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  /* 語義色（S1，docs/plans/design-language-foundation/）：success/warning 各補 A（實心底）
-     B（淺底提示框）兩形狀；destructive 補 B 的 subtle 三件組（業主裁決 Q1）。
-     裸字（形狀 C）不發新 token，重用 *-subtle-foreground（見 ui-ux-guidelines.md §12）。
-     S2b（D4）起 A 形狀改亮底黑字：亮色配近黑字的對比 7–12:1，反而高於深色配白字
-     的 5:1，同一道 WCAG 門檻換到鮮得多的顏色。淺深兩版同值。 */
-  --destructive: #f87171;
-  --destructive-foreground: #0a0a0a;
-  --success: #22c55e;
-  --success-foreground: #0a0a0a;
-  --success-subtle: #f0fdf4;
-  --success-subtle-foreground: #166534;
-  --success-border: #15803d;
-  --warning: #fbbf24;
+  --card-foreground: #121223;
+  --popover: #ffffff;
+  --popover-foreground: #121223;
+  --primary: #121223;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2f7;
+  --secondary-foreground: #121223;
+  --muted: #f1f2f7;
+  --muted-foreground: #646478;
+  --accent: #f1f2f7;
+  --accent-foreground: #121223;
+  /* 選取與聚焦一條規則（§12.12）：一個顏色＝灰字。有框元件框線變 --sel 單圈 2px，
+     無框元件底色 --sel、文字反白 --sel-foreground。.dark 區塊必須再寫一次：.dark 若掛在
+     子孫元素而非 html，這裡已代換好的淺色值不會跟著變（--ring、--medal-gradient 同理）。 */
+  --sel: var(--muted-foreground);
+  --sel-foreground: var(--background);
+  /* 語義色（S1 建立三形狀，S2e 換成新五層色表）：A 實心＝600、B 淡底＝50＋300 框線＋
+     800 字、C 裸字＝800（重用 *-subtle-foreground，見 ui-ux-guidelines.md §12.3）。
+     淺色的 A：綠、紅 600 配白字，琥珀 600 配黑字（琥珀亮，白字過不了 4.5:1）。 */
+  --destructive: #d92d2d;
+  --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --success-subtle: #effaf3;
+  --success-subtle-foreground: #116a3a;
+  --success-border: #22914f;
+  --warning: #f2a900;
   --warning-foreground: #0a0a0a;
-  --warning-subtle: #fffbeb;
-  --warning-subtle-foreground: #92400e;
-  --warning-border: #b45309;
-  --destructive-subtle: #fef2f2;
-  --destructive-subtle-foreground: #991b1b;
-  /* *-border 一律獨立選色，不重用 A 色：S2b 起 A 色改亮，對各自 subtle 底只剩
-     1.6–2.5:1，遠低於 3:1 門檻。淺深兩版皆同理選一致的獨立色階
-     （見 .dark 區塊同名 token）。 */
-  --destructive-border: #b91c1c;
-  /* 強調色（S2b／D4，業主裁決配色 A）：全站唯一的強調色（非語義），只表示「可互動／
-     正在看這裡」（連結、選中分頁、進度填色、焦點框、次要行動鈕），不表示任何
-     狀態——資訊/進行中仍走灰階（ui-ux-guidelines.md §12.3）。推薦樹的世代三色是
-     §12.5 (c) 核准的分類色例外，不是強調色。名字不能叫 --accent：那是 shadcn 既有的
-     hover 灰。 */
-  --brand: #4f46e5;
-  --brand-hover: #4338ca;
+  --warning-subtle: #fff8e8;
+  --warning-subtle-foreground: #8a5a00;
+  --warning-border: #b87400;
+  --destructive-subtle: #fff1f1;
+  --destructive-subtle-foreground: #a12020;
+  /* *-border 一律獨立選色，不重用 A 色：框線要對淡底 3:1，A 色的明度是為了配字選的，
+     兩個需求不同（淺深兩版皆然，見 .dark 區塊同名 token）。 */
+  --destructive-border: #c73838;
+  /* 品牌色蔚藍 Ocean（S2e／D6）：只出現在兩處——引導鈕（Button tone="guide"：續訂＞
+     加入推薦計畫＞確認收款，一頁一顆）與「重點與進度」（每頁一塊主區淡底
+     --brand-subtle、進度填色 --brand、任務徽章 --medal-gradient）。連結、選中分頁、
+     焦點框都不用它（§12.3）。名字不能叫 --accent：那是 shadcn 既有的 hover 灰。 */
+  --brand: #0369a1;
   --brand-foreground: #ffffff;
-  --brand-subtle: #e0e7ff;
-  --brand-subtle-foreground: #3730a3;
-  /* 推薦樹世代色（僅供 ReferralTreeView 使用）：世代是多值分類色（結構屬性，非狀態），
-     依規則應去色走灰階（ui-ux-guidelines.md §12.5 (c)）；但推薦樹的世代是該頁的主要
-     閱讀鍵，業主於 S2c 核准為唯一例外，用三個專用色相：一代 teal、二代 violet、
-     三代 pink。條件：避開 success／warning／destructive 與 brand 靛藍的家族、結構
-     同時由縮排承擔、不得擴散到其他頁面。avatar（實心底配字）與 badge／line（淺底
-     提示框）兩種形狀對亮度的需求相反，無法共用一套值，所以各一組；badge 的字色
-     隨世代（-1/-2/-3），與各自的淺底同色相。對比度由 globals.test.ts 驗證。 */
+  --brand-subtle: #cfeefb;
+  --brand-subtle-foreground: #0c3d5c;
+  --brand-border: #519cc3;
+  --brand-faint: #ecf8fd;
+  /* 任務徽章填色：§12.4 唯一核准的漸層（brand 300 → 600）。只准
+     scripts/check-color-usage.py 的 APPROVED_GRADIENT_FILES 登記過的檔引用。 */
+  --medal-gradient: linear-gradient(135deg, var(--brand-border), var(--brand));
+  /* 推薦樹世代色：世代是多值分類色（結構屬性，非狀態），依規則應去色走灰階
+     （ui-ux-guidelines.md §12.5 (c)）；業主核准為唯一例外，用三個專用色相：一代 teal、
+     二代 violet、三代 pink，S2e 起對齊 700 明度階。條件：避開 success／warning／
+     destructive 與品牌蔚藍的家族（與蔚藍只靠形狀分開）、結構同時由縮排或文字承擔。
+     avatar（實心底配字）與 badge／line（淺底）兩種形狀對亮度的需求相反，各一組；
+     badge 的字色隨世代（-1/-2/-3）。對比度由 globals.test.ts 驗證。 */
   --tree-gen-avatar-1: #0f766e;
-  --tree-gen-avatar-2: #7c3aed;
+  --tree-gen-avatar-2: #6d28d9;
   --tree-gen-avatar-3: #be185d;
   --tree-gen-avatar-foreground: #ffffff;
-  --tree-gen-badge-1: #ccfbf1;
-  --tree-gen-badge-2: #ede9fe;
-  --tree-gen-badge-3: #fce7f3;
-  --tree-gen-badge-foreground-1: #115e59;
-  --tree-gen-badge-foreground-2: #5b21b6;
+  --tree-gen-badge-1: #ccf4ee;
+  --tree-gen-badge-2: #ebe3fb;
+  --tree-gen-badge-3: #fde2ec;
+  --tree-gen-badge-foreground-1: #0f5a54;
+  --tree-gen-badge-foreground-2: #4c1d95;
   --tree-gen-badge-foreground-3: #9d174d;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
+  --border: #e3e4ee;
+  /* 可互動元件的邊界框線（輸入格、下拉、勾選框同一圈）：白底＋--input 框（業主裁決 D3＋E1，
+     #354）。--input 必須對底 ≥3:1（WCAG 1.4.11）——未勾的勾選框只有這圈線可辨識，輸入格
+     填值後 placeholder 也消失，所以不開例外。純版面分隔（卡片、分隔線）用 --border。 */
+  --input: #8f8fa5;
+  --input-background: #ffffff;
+  /* 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件用（首頁搜尋鈕與工具列）。
+     淺色靠陰影——白底＋一般邊框＋shadow-lg 那組陰影；深色靠變亮——見 .dark 同名 token。
+     業主 2026-10-05 裁決：深色的陰影在近黑底上看不出來，浮動鈕會和頁面融成一片。 */
+  --raised: #ffffff;
+  --raised-border: var(--border);
+  --raised-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  /* 焦點框跟著強調色。.dark 區塊必須再寫一次：.dark 若掛在子孫元素而非 html，
-     這裡已代換好的淺色值不會跟著變。 */
-  --ring: var(--brand);
+  /* 鍵盤焦點環（focus-visible 的 3px ring-ring，§12.12）全不透明（業主裁決 D1，#354）：
+     /30 對白底只有 1.54:1，過不了 WCAG 1.4.11，S2b「焦點環全不透明」維持。輸入格的單圈
+     走 --sel，不吃這個 token。 */
+  --ring: var(--sel);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -96,61 +114,74 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  /* 卡片/彈出層比背景亮一階，深色模式下才有層次與邊界（原本與背景同色，深度消失） */
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  /* 語義色深色版：A 形狀（實心底＋字）與淺色版同值，亮底黑字（S2b／D4）；B 形狀
-     （淺底提示框）用深色慣例的 *-950 底＋*-300 字。色值一律寫 hex：對比度公式只
-     支援 hex 與 C=0 的灰階 oklch，含彩度的 oklch 讀不到會直接紅。 */
+  /* 卡片/彈出層比背景亮一階，深色模式下才有層次與邊界（與背景同色時深度消失）。
+     色值一律寫 hex：對比度公式只支援 hex 與 C=0 的灰階 oklch，含彩度的 oklch 讀不到
+     會直接紅。 */
+  --background: #16161f;
+  --foreground: #f2f2f7;
+  --card: #1f1f2b;
+  --card-foreground: #f2f2f7;
+  --popover: #1f1f2b;
+  --popover-foreground: #f2f2f7;
+  --primary: #f2f2f7;
+  --primary-foreground: #16161f;
+  --secondary: #2a2a3a;
+  --secondary-foreground: #f2f2f7;
+  --muted: #2a2a3a;
+  --muted-foreground: #a9a9bd;
+  --accent: #2a2a3a;
+  --accent-foreground: #f2f2f7;
+  --sel: var(--muted-foreground);
+  --sel-foreground: var(--background);
+  /* 語義色深色版：A 形狀維持亮底黑字（亮色配近黑字的對比反而高於深色配白字）；
+     B 形狀暗底亮字。 */
   --destructive: #f87171;
   --destructive-foreground: #0a0a0a;
   --success: #22c55e;
   --success-foreground: #0a0a0a;
-  --success-subtle: #052e16;
-  --success-subtle-foreground: #86efac;
-  --success-border: #16a34a;
+  --success-subtle: #0d3b24;
+  --success-subtle-foreground: #8be0ad;
+  --success-border: #2fa968;
   --warning: #fbbf24;
   --warning-foreground: #0a0a0a;
-  --warning-subtle: #451a03;
-  --warning-subtle-foreground: #fcd34d;
-  --warning-border: #d97706;
-  --destructive-subtle: #450a0a;
-  --destructive-subtle-foreground: #fca5a5;
-  --destructive-border: #dc2626;
-  --brand: #818cf8;
-  --brand-hover: #a5b4fc;
+  --warning-subtle: #43290a;
+  --warning-subtle-foreground: #ffd066;
+  --warning-border: #d99a00;
+  --destructive-subtle: #4a1414;
+  --destructive-subtle-foreground: #ffa8a8;
+  --destructive-border: #dc4a4a;
+  --brand: #4cc3f0;
   --brand-foreground: #0a0a0a;
-  --brand-subtle: #1e1b4b;
-  --brand-subtle-foreground: #c7d2fe;
-  /* 推薦樹世代色深色版：avatar 用亮色相配近黑字（與語義色實心層同一個邏輯：亮底
-     黑字的對比反而更高）；badge 用深色慣例的暗底配亮字（比照既有 success-subtle
-     深色版 #052e16/#86efac 的寫法）。色值一律寫 hex：對比度公式只認 hex 與 C=0 的
-     灰階 oklch，含彩度的 oklch 讀不到會直接紅。 */
+  --brand-subtle: #0b2f44;
+  --brand-subtle-foreground: #a8e0f7;
+  /* 300 框線深色版：畫面稿用 #0369a1，對深色卡只有 2.75:1，提亮到 #1b80b8
+     （對卡 3.74、對淡底 3.21）。 */
+  --brand-border: #1b80b8;
+  --brand-faint: #0b2f44;
+  --medal-gradient: linear-gradient(135deg, var(--brand-border), var(--brand));
+  /* 推薦樹世代色深色版：avatar 亮色相配近黑字（與語義色實心層同一個邏輯）；badge
+     暗底配亮字。 */
   --tree-gen-avatar-1: #2dd4bf;
   --tree-gen-avatar-2: #a78bfa;
   --tree-gen-avatar-3: #f472b6;
   --tree-gen-avatar-foreground: #0a0a0a;
-  --tree-gen-badge-1: #042f2e;
+  --tree-gen-badge-1: #0c3b37;
   --tree-gen-badge-2: #2e1065;
   --tree-gen-badge-3: #500724;
-  --tree-gen-badge-foreground-1: #5eead4;
+  --tree-gen-badge-foreground-1: #7ee7da;
   --tree-gen-badge-foreground-2: #c4b5fd;
   --tree-gen-badge-foreground-3: #f9a8d4;
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: var(--brand);
+  --border: #33334a;
+  /* 可互動元件框線對底與卡片都 ≥3:1；輸入格底色與卡片同階（原本 dark:bg-input/30 疊出來的值，
+     改成 token 後框線色加深不會連帶把填色變亮）。 */
+  --input: #6a6a84;
+  --input-background: #1f1f2b;
+  /* 越浮越亮：浮起表面比頁面底 #16161f 與卡片 #1f1f2b 都亮一階（墨色 100），邊框再亮一階，
+     陰影加重——陰影在深色裡只是輔助，層次主要靠表面亮度。 */
+  --raised: #2a2a3a;
+  --raised-border: #46465f;
+  --raised-shadow: 0 12px 28px -6px rgb(0 0 0 / 0.7), 0 4px 10px -4px rgb(0 0 0 / 0.6);
+  --ring: var(--sel);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --chart-1: oklch(0.488 0.243 264.376);
@@ -199,10 +230,13 @@
   --color-destructive-subtle-foreground: var(--destructive-subtle-foreground);
   --color-destructive-border: var(--destructive-border);
   --color-brand: var(--brand);
-  --color-brand-hover: var(--brand-hover);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-subtle: var(--brand-subtle);
   --color-brand-subtle-foreground: var(--brand-subtle-foreground);
+  --color-brand-border: var(--brand-border);
+  --color-brand-faint: var(--brand-faint);
+  --color-sel: var(--sel);
+  --color-sel-foreground: var(--sel-foreground);
   --color-tree-gen-avatar-1: var(--tree-gen-avatar-1);
   --color-tree-gen-avatar-2: var(--tree-gen-avatar-2);
   --color-tree-gen-avatar-3: var(--tree-gen-avatar-3);
@@ -216,6 +250,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-background: var(--input-background);
+  --color-raised: var(--raised);
+  --color-raised-border: var(--raised-border);
+  --shadow-raised: var(--raised-shadow);
   --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
@@ -239,11 +276,14 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
 
   body {
     @apply bg-background text-foreground;
+    /* 不可斷字串（Email、網址、訂單編號）放不下時換行，不撐破版面（ui-ux-guidelines §10）。
+       只在字放不下時生效；flex 子項與按鈕另需 min-w-0 wrap-anywhere。 */
+    overflow-wrap: break-word;
   }
 }
 

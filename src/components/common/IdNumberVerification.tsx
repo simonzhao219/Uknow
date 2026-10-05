@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card } from '../ui/card';
 import { IdNumberInput } from '../reward/IdNumberInput';
 import { StatusCallout } from '../ui/status-callout';
+import { Button } from '../ui/button';
 import { Shield, Loader2 } from 'lucide-react';
 
 interface IdNumberVerificationProps {
@@ -103,28 +104,12 @@ export function IdNumberVerification({
           )}
         </div>
 
-        {/* 按鈕 */}
+        {/* 按鈕：走 Button 原語，才吃得到三分法、焦點環與 44px 觸控熱區（§12.11）。 */}
         <div className="flex justify-between gap-3">
-          <button
-            onClick={onBack}
-            disabled={isSubmitting}
-            className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
+          <Button tone="secondary" onClick={onBack} disabled={isSubmitting}>
             上一步
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting || !isVerified}
-            className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting || !isVerified}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -136,7 +121,7 @@ export function IdNumberVerification({
                 {confirmButtonText}
               </>
             )}
-          </button>
+          </Button>
         </div>
       </div>
     </Card>

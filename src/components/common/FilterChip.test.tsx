@@ -40,4 +40,28 @@ describe('FilterChip', () => {
     render(<FilterChip label="美髮" selected onToggle={() => {}} />);
     expect(screen.getByRole('button', { name: '美髮' }).getAttribute('aria-pressed')).toBe('true');
   });
+
+  // 選取與聚焦一條規則（ui-ux-guidelines §12.12）：chip 是無框元件，選中＝底色灰字
+  // --sel、文字反白；不再是墨黑 primary（那是勾選框與流程鈕的顏色）。
+  it('選中時底色灰字 --sel、文字反白，不用 primary 墨黑', () => {
+    render(<FilterChip label="美髮" selected onToggle={() => {}} />);
+    const chip = screen.getByRole('button', { name: '美髮' });
+    for (const c of ['bg-sel', 'text-sel-foreground', 'border-sel']) {
+      expect(chip.classList.contains(c), c).toBe(true);
+    }
+    expect(chip.classList.contains('bg-primary')).toBe(false);
+  });
+
+  it('鍵盤焦點環與按鈕同為 3px，並與選中底色隔 1px', () => {
+    const chip = chipOf('美髮');
+    for (const c of [
+      'focus-visible:ring-[3px]',
+      'focus-visible:ring-ring',
+      'focus-visible:ring-offset-1',
+      'focus-visible:ring-offset-background',
+    ]) {
+      expect(chip.classList.contains(c), c).toBe(true);
+    }
+    expect(chip.classList.contains('focus-visible:ring-2')).toBe(false);
+  });
 });

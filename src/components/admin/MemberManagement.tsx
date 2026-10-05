@@ -31,6 +31,7 @@ import type {
   AdminMemberDetail,
   AdminMembersResponse,
 } from '@contract';
+import { BreakableEmail } from '../common/BreakableEmail';
 
 const PAGE_SIZE = 50;
 
@@ -283,7 +284,9 @@ export function MemberManagement({
           <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
             <SheetHeader>
               <SheetTitle>{detailFor.name ?? detailFor.email}</SheetTitle>
-              <SheetDescription>{detailFor.email}</SheetDescription>
+              <SheetDescription>
+                <BreakableEmail email={detailFor.email} />
+              </SheetDescription>
             </SheetHeader>
 
             {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}
@@ -316,8 +319,8 @@ export function MemberManagement({
                 <dd>{detailFor.referrerName ?? '—'}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">直接下線</dt>
-                <dd>{detailFor.directChildCount} 人</dd>
+                <dt className="text-muted-foreground">直接推薦</dt>
+                <dd>{detailFor.directChildCount} 位</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">證件審核</dt>
@@ -374,7 +377,7 @@ export function MemberManagement({
                 </p>
                 <Button
                   size="sm"
-                  variant="outline"
+                  tone="secondary"
                   className={
                     detailFor.suspended
                       ? undefined
@@ -393,7 +396,7 @@ export function MemberManagement({
                 </p>
                 <Button
                   size="sm"
-                  variant="outline"
+                  tone="secondary"
                   className={
                     detailFor.isAdmin
                       ? 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
@@ -515,7 +518,7 @@ export function MemberManagement({
                   placeholder="搜尋姓名 / Email / 電話"
                   className="w-56"
                 />
-                <Button type="submit" variant="outline" size="sm">
+                <Button type="submit" tone="secondary" size="sm">
                   <Search className="h-4 w-4" />
                 </Button>
               </form>
@@ -533,7 +536,7 @@ export function MemberManagement({
               // 以為系統裡沒有這個人，而不是「沒讀到」。
               <div className="py-12 text-center space-y-3">
                 <p className="text-destructive-subtle-foreground">{list.error}</p>
-                <Button variant="outline" onClick={list.reload}>
+                <Button tone="secondary" onClick={list.reload}>
                   重試
                 </Button>
               </div>
@@ -597,7 +600,7 @@ export function MemberManagement({
                               卻是滿版紅底、在掃描時最搶眼。 */}
                           <Button
                             size="sm"
-                            variant="outline"
+                            tone="secondary"
                             aria-label={`查看 ${member.name ?? member.email} 的詳情`}
                             onClick={() => openDetail(member.id)}
                           >
@@ -618,7 +621,7 @@ export function MemberManagement({
                   已顯示 {members.length} / {total} 筆
                 </p>
                 {list.hasMore && (
-                  <Button variant="outline" onClick={list.loadMore} disabled={list.isLoadingMore}>
+                  <Button tone="secondary" onClick={list.loadMore} disabled={list.isLoadingMore}>
                     {list.isLoadingMore ? '載入中…' : '載入更多'}
                   </Button>
                 )}
