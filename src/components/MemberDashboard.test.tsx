@@ -37,7 +37,11 @@ vi.mock('../hooks/useUserListing', () => ({ useUserListing: () => state.listing 
 vi.mock('../hooks/useReferralData', () => ({ useReferralData: () => state.referral }));
 vi.mock('../hooks/useTaskData', () => ({ useTaskData: () => state.task }));
 vi.mock('../hooks/useRewardData', () => ({ useRewardData: () => state.reward }));
-vi.mock('./referral/MyQrEntry', () => ({ MyQrEntry: () => <div data-testid="my-qr-entry" /> }));
+vi.mock('./referral/MyQrEntry', () => ({
+  MyQrEntry: ({ yieldsGuide }: { yieldsGuide?: boolean }) => (
+    <div data-testid="my-qr-entry" data-yields-guide={String(Boolean(yieldsGuide))} />
+  ),
+}));
 
 import { MemberDashboard } from './MemberDashboard';
 
@@ -253,6 +257,33 @@ describe('MemberDashboard 狀態卡', () => {
     state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
     renderPage({ name: '王小明', referralProgramJoined: false });
     expect(screen.queryByText('申請提領')).toBeNull();
+  });
+});
+
+// 引導鈕一頁一顆（ui-ux-guidelines §12.11，#354 裁決 #1）：我的訂閱卡出現續訂時，
+// MyQrEntry 的加入推薦計畫讓位成次要；沒有續訂時維持引導鈕。
+describe('MemberDashboard 引導鈕讓位', () => {
+  const DAY = 86_400_000;
+  const yields = () => screen.getByTestId('my-qr-entry').getAttribute('data-yields-guide');
+
+  it('會籍 30 天內到期（訂閱卡出現續訂）時加入推薦計畫讓位', () => {
+    state.subscription.subscriptionData = {
+      hasSubscription: true,
+      status: 'active',
+      activeUntil: new Date(Date.now() + 10 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('true');
+  });
+
+  it('到期還遠時加入推薦計畫維持引導鈕', () => {
+    state.subscription.subscriptionData = {
+      hasSubscription: true,
+      status: 'active',
+      activeUntil: new Date(Date.now() + 200 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('false');
   });
 });
 

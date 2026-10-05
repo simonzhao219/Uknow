@@ -44,7 +44,7 @@ export function CollectionVerifyDialog({
       setError('');
       await onConfirm(idNumber);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '確認查收失敗');
+      setError(err instanceof Error ? err.message : '收款確認失敗');
       setIsSubmitting(false);
     }
   };

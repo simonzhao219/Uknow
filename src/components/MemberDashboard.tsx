@@ -15,6 +15,7 @@ import { useTaskData } from '../hooks/useTaskData';
 import { useRewardData } from '../hooks/useRewardData';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { MyQrEntry } from './referral/MyQrEntry';
+import { showsRenewalCta } from '../utils/subscriptionNotice';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
@@ -335,7 +336,8 @@ export function MemberDashboard() {
           {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
               呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
               所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
-          <MyQrEntry />
+          {/* 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。 */}
+          <MyQrEntry yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)} />
         </CardContent>
       </Card>
     </div>

@@ -183,7 +183,7 @@ Feature: Reward points and withdrawal
     And I advance through the collection reminder
     And I advance through the collection preview
     And I verify collection with ID "A123456789"
-    Then I should see the text "確認查收失敗"
+    Then I should see the text "收款確認失敗"
 
   @rewards
   Scenario: A member confirms collection of an approved withdrawal

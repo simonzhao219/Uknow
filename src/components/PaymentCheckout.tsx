@@ -1061,7 +1061,9 @@ export function PaymentCheckout() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel data-testid="fresh-confirm-cancel">再想想</AlertDialogCancel>
+                {/* 新約會清空累積且無法復原＝不可逆確認框，確認鈕紅實心（§12.11，#354 裁決 #10）。 */}
                 <AlertDialogAction
+                  variant="destructive"
                   data-testid="fresh-confirm-action"
                   onClick={() => {
                     setFreshConfirmOpen(false);
