@@ -415,3 +415,65 @@ def test_two_members_fit_the_first_screen(admin_at_375):
     _open_tab("會員管理")(admin_at_375)
     settle(admin_at_375)
     _assert_two_fit_first_screen(admin_at_375, FIRST_MEMBER_CARD, "會員")
+
+
+# --- 工具列（S3 A2） ----------------------------------------------------------
+#
+# 改版前提領頁的「狀態篩選＋重新整理＋下載CSV」靠 flex-wrap 任其換行，
+# 375px 下擠成兩行、斷點附近忽一行忽兩行。AdminToolbar 把它收成一行：
+# 篩選吃剩餘寬度、兩顆 icon 鈕在觸控裝置上 44px。
+
+TOOLBAR = '[data-slot="admin-toolbar"]'
+
+
+def _toolbar_buttons(page):
+    return page.evaluate(
+        """(sel) => [...document.querySelector(sel).querySelectorAll(':scope > button')]
+              .map((b, i) => `${sel} > button:nth-of-type(${i + 1})`)""",
+        TOOLBAR,
+    )
+
+
+def _assert_toolbar_one_row(page, kind: str):
+    rows = count_rows(page, TOOLBAR)
+    assert rows is not None, f"找不到 {TOOLBAR}——{kind}沒有用 AdminToolbar"
+    assert rows == 1, f"{kind}工具列在 375px 排成 {rows} 行（期望 1 行）"
+    fit = viewport_fit(page, TOOLBAR)
+    assert fit["left"] >= 0 and fit["right"] >= 0, f"{kind}工具列超出視窗：{fit}"
+    too_small = []
+    for selector in _toolbar_buttons(page):
+        area = hit_area(page, selector)
+        assert area is not None and not area.get("centerMiss"), f"{selector} 量不到（{area}）"
+        if area["height"] < MIN_TOUCH_TARGET_PX or area["width"] < MIN_TOUCH_TARGET_PX:
+            too_small.append((selector, area))
+    assert not too_small, f"{kind}工具列按鈕可點範圍不足 44px：{too_small}"
+
+
+def test_withdrawal_toolbar_is_one_row_at_375px(admin_at_375):
+    _assert_toolbar_one_row(admin_at_375, "提領管理")
+
+
+def test_member_toolbar_is_one_row_at_375px(admin_at_375):
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_toolbar_one_row(admin_at_375, "會員管理")
+
+
+def test_member_search_placeholder_is_not_truncated_at_375px(admin_at_375):
+    """搜尋框放進工具列後被兩顆鈕夾著——placeholder 被截斷就是在說「這裡能搜什麼」只說一半。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    fit = admin_at_375.evaluate(
+        """() => {
+          const input = document.querySelector('input[type="search"]');
+          if (!input) return null;
+          const cs = getComputedStyle(input);
+          const ctx = document.createElement('canvas').getContext('2d');
+          ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+          const text = ctx.measureText(input.placeholder).width;
+          const room = input.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          return { text: Math.ceil(text), room: Math.floor(room) };
+        }"""
+    )
+    assert fit is not None, "找不到會員搜尋框"
+    assert fit["text"] <= fit["room"], f"placeholder 要 {fit['text']}px，框內只有 {fit['room']}px"
