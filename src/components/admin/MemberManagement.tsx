@@ -31,6 +31,7 @@ import type {
   AdminMemberDetail,
   AdminMembersResponse,
 } from '@contract';
+import { BreakableEmail } from '../common/BreakableEmail';
 
 const PAGE_SIZE = 50;
 
@@ -283,7 +284,9 @@ export function MemberManagement({
           <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
             <SheetHeader>
               <SheetTitle>{detailFor.name ?? detailFor.email}</SheetTitle>
-              <SheetDescription>{detailFor.email}</SheetDescription>
+              <SheetDescription>
+                <BreakableEmail email={detailFor.email} />
+              </SheetDescription>
             </SheetHeader>
 
             {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}

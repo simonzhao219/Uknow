@@ -32,6 +32,7 @@ import {
   countExpiring,
   formatExpiringCount,
 } from './dashboard/dashboardSummary';
+import { BreakableEmail } from './common/BreakableEmail';
 
 /**
  * 會員中心＝狀態總覽，不是導覽選單（ui-ux-guidelines §13；任務／推薦／獎勵的
@@ -331,7 +332,9 @@ export function MemberDashboard() {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Email</p>
-            <p className="font-medium truncate">{user?.email}</p>
+            <p className="font-medium">
+              <BreakableEmail email={user?.email} />
+            </p>
           </div>
           {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
               呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，

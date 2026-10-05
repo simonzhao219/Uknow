@@ -208,6 +208,8 @@ export function ServiceProviderDetail() {
               <CardTitle>聯絡方式</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* 聯絡鈕的文字是使用者貼上的帳號或原始網址，不截斷、只換行：按鈕自帶
+                  whitespace-nowrap 與固定高度，這裡改回可換行、高度隨內容。 */}
               {/* Facebook 藍／Instagram 粉／LINE 綠：第三方品牌識別色，S2 色彩
                   收斂（D3）刻意排除在外——業界慣例是保留品牌色以利使用者一眼
                   找到聯絡方式，不受「彩色只留語義色」規則約束（見
@@ -215,11 +217,13 @@ export function ServiceProviderDetail() {
               {serviceProvider.contacts.facebook && (
                 <Button
                   tone="secondary"
-                  className="w-full justify-start"
+                  className="w-full h-auto justify-start whitespace-normal"
                   onClick={() => handleContactClick('facebook', serviceProvider.contacts.facebook)}
                 >
                   <Facebook className="h-5 w-5 mr-3 text-blue-600" />
-                  <span className="flex-1 text-left">{serviceProvider.contacts.facebook}</span>
+                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                    {serviceProvider.contacts.facebook}
+                  </span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               )}
@@ -227,13 +231,15 @@ export function ServiceProviderDetail() {
               {serviceProvider.contacts.instagram && (
                 <Button
                   tone="secondary"
-                  className="w-full justify-start"
+                  className="w-full h-auto justify-start whitespace-normal"
                   onClick={() =>
                     handleContactClick('instagram', serviceProvider.contacts.instagram)
                   }
                 >
                   <Instagram className="h-5 w-5 mr-3 text-pink-500" />
-                  <span className="flex-1 text-left">{serviceProvider.contacts.instagram}</span>
+                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                    {serviceProvider.contacts.instagram}
+                  </span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               )}
@@ -241,11 +247,13 @@ export function ServiceProviderDetail() {
               {serviceProvider.contacts.line && (
                 <Button
                   tone="secondary"
-                  className="w-full justify-start"
+                  className="w-full h-auto justify-start whitespace-normal"
                   onClick={() => copyLineId(serviceProvider.contacts.line)}
                 >
                   <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
-                  <span className="flex-1 text-left">{serviceProvider.contacts.line}</span>
+                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                    {serviceProvider.contacts.line}
+                  </span>
                   <Copy className="h-4 w-4" />
                 </Button>
               )}

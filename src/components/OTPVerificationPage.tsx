@@ -9,6 +9,7 @@ import { buildApiUrl } from '../utils/apiClient';
 import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
 import { nextRouteForStep } from '../utils/registrationFlow';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function OTPVerificationPage() {
   const location = useLocation();
@@ -179,7 +180,7 @@ export function OTPVerificationPage() {
             {otpType === 'recovery' ? '重設密碼驗證' : '驗證您的 Email'}
           </CardTitle>
           <CardDescription>
-            驗證碼已寄送至 <span className="font-medium text-foreground">{email}</span>
+            驗證碼已寄送至 <BreakableEmail email={email} className="font-medium text-foreground" />
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

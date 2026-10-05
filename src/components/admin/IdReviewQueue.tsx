@@ -15,6 +15,7 @@ import {
 import { FieldError } from '../../utils/formHelpers';
 import { usePagedList } from '../../hooks/usePagedList';
 import type { AdminIdReview } from '@contract';
+import { BreakableEmail } from '../common/BreakableEmail';
 
 export interface IdReviewQueueProps {
   /** 取回審核佇列。注入而非直接呼叫 apiClient——與 ReferralTreeView 同慣例。 */
@@ -164,7 +165,7 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{r.name ?? '（未填姓名）'}</CardTitle>
             <CardDescription>
-              {r.email}
+              <BreakableEmail email={r.email} />
               {r.phone ? ` ｜ ${r.phone}` : ''}
             </CardDescription>
           </CardHeader>

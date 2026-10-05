@@ -23,6 +23,7 @@ import {
 import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
 import { StatusCallout } from './ui/status-callout';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -670,7 +671,10 @@ export function PaymentCheckout() {
                 <p>生日：{pendingUser.birthDate}</p>
                 <p>身分字號：{pendingUser.nationalId}</p>
                 <p>手機：{pendingUser.phone}</p>
-                <p>Email：{pendingUser.email}</p>
+                <p>
+                  Email：
+                  <BreakableEmail email={pendingUser.email} />
+                </p>
                 {pendingUser.referredByCode && !pendingUser.isAutoReferral && (
                   <>
                     <p>推薦碼：{pendingUser.referredByCode}</p>
