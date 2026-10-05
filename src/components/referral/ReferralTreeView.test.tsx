@@ -177,6 +177,29 @@ describe('需要關注橫幅（一代即將到期，伺服器上限）', () => {
   });
 });
 
+describe('節點詳情的失效說明', () => {
+  // journey f60「上線的組織圖顯示已失效節點」斷言的就是這段文案（B1 起橫幅不收
+  // 已失效者）；這裡把它釘在 CI 每次都跑的層，改文案不必等晉升 PR 才紅。
+  it('點已失效的一代列，詳情顯示此帳號已失效、刊登已下架', () => {
+    const node = makeNode({ userId: 'x1', name: '林失效', status: 'expired', daysToExpiry: null });
+    renderTree(makeOverview({ roots: [node] }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '林失效 詳情' }));
+    expect(screen.getAllByText('此帳號已失效，刊登已下架').length).toBeGreaterThan(0);
+  });
+
+  it('點已停權的一代列，詳情顯示此帳號已停權、刊登已下架', () => {
+    const node = makeNode({
+      userId: 's1',
+      name: '王停權',
+      status: 'suspended',
+      daysToExpiry: null,
+    });
+    renderTree(makeOverview({ roots: [node] }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '王停權 詳情' }));
+    expect(screen.getAllByText('此帳號已停權，刊登已下架').length).toBeGreaterThan(0);
+  });
+});
+
 describe('排序控制（Radix DropdownMenu：選單面板站內風格，原生 select 退役）', () => {
   it('無原生 select（OS 面板不一致的根因）；觸發器為選單按鈕、手機 icon-only', () => {
     renderTree(makeOverview({ roots: [makeNode()], sort: 'name_desc' }));
