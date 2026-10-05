@@ -12,6 +12,7 @@ import { openExternalLink } from '../utils/externalLink';
 import { formatTwDate, twDayPlusDays, twDayPlusYears } from '../utils/twDate';
 import type { PayuniResultRenewal } from '@contract';
 import { StatusCallout } from './ui/status-callout';
+import { BreakableEmail } from './common/BreakableEmail';
 
 // 我們自己的訂單生命週期，只用來在沒有 status 參數時判斷該顯示什麼畫面——
 // 實際成功/失敗的判斷與明細一律以 payuni（PayUni 原始回傳資料）為準。
@@ -576,11 +577,12 @@ export function PaymentResult() {
                       </div>
                     )}
                     {paymentData.PayerEmail && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">付款人Email</span>
-                        <span className="text-sm text-foreground break-all">
-                          {paymentData.PayerEmail}
-                        </span>
+                      <div className="flex justify-between items-center gap-3">
+                        <span className="text-sm text-muted-foreground shrink-0">付款人Email</span>
+                        <BreakableEmail
+                          email={paymentData.PayerEmail}
+                          className="min-w-0 text-right text-sm text-foreground"
+                        />
                       </div>
                     )}
                   </div>
@@ -616,9 +618,10 @@ export function PaymentResult() {
                 )}
 
                 <div className="p-3 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">訂單編號</span>
-                    <span className="text-sm text-foreground font-mono">
+                  {/* 值欄是 flex 子項：min-w-0 + wrap-anywhere 才縮得下，29 字編號才會換行。 */}
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-sm text-muted-foreground shrink-0">訂單編號</span>
+                    <span className="min-w-0 text-right text-sm text-foreground font-mono wrap-anywhere">
                       {paymentData.TradeNo || tradeNo}
                     </span>
                   </div>

@@ -281,6 +281,9 @@
 
   body {
     @apply bg-background text-foreground;
+    /* 不可斷字串（Email、網址、訂單編號）放不下時換行，不撐破版面（ui-ux-guidelines §10）。
+       只在字放不下時生效；flex 子項與按鈕另需 min-w-0 wrap-anywhere。 */
+    overflow-wrap: break-word;
   }
 }
 

@@ -8,6 +8,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function ForgotPasswordPage() {
   const location = useLocation();
@@ -100,7 +101,9 @@ export function ForgotPasswordPage() {
             <>
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p className="font-medium">{email}</p>
+                <p className="font-medium">
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="flex gap-3">

@@ -15,6 +15,7 @@ import { resolvePostLoginAction, classifyLoginError } from '../utils/registratio
 import { isWeakPasswordError, translateSignUpError } from '../utils/authErrors';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
 import { savePendingReferral } from '../utils/referralInvite';
+import { BreakableEmail } from './common/BreakableEmail';
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -397,7 +398,9 @@ export function AuthPage() {
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p>{email}</p>
+                <p>
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -465,7 +468,9 @@ export function AuthPage() {
               {/* 顯示 Email */}
               <div className="bg-muted p-3 rounded space-y-1">
                 <Label className="text-sm text-muted-foreground">Email</Label>
-                <p>{email}</p>
+                <p>
+                  <BreakableEmail email={email} />
+                </p>
               </div>
 
               <div className="space-y-2">
