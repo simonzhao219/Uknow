@@ -504,9 +504,10 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 `/admin-setup/set-self-admin` 對「全新資料庫的第一個呼叫者」開放：**新環境部署後
 應立即由預定的管理員帳號完成這一步**，不要讓空窗留著。
 
-1. **前置**：該帳號先在前台完成註冊並**補完個人資料**。註冊只會建出一筆空白的
-   profile（`name` 為空），資料沒補完的帳號 RPC 會回 `not_found`，前端也進不了
-   `/admin`。
+1. **前置**：該帳號先在前台完成註冊並**補完個人資料**，再做下一步。註冊只會
+   建出一筆空白的 profile（`name` 為空）；API 不檢查資料是否補完，空白 profile
+   照樣宣告成功、用掉唯一的首位名額，但前端的資料完整性守衛會擋住它進
+   `/admin`——順序反了就得用 SQL 收拾。
 2. **取得 access token**：用該帳號登入前台 → DevTools → Application →
    Local Storage → `sb-<ref>-auth-token`，複製其中的 `access_token`。
 3. **呼叫**（`<ref>`：develop 取 `config/supabaseTarget.ts` 的 `projectId`，
@@ -519,8 +520,10 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 
 4. **看回應**：
    - `200` `{"success":true}`：成功。
-   - `403`：兩種情況——系統**已經有管理員**（請既有管理員在後台授予），或該帳號
-     **沒有 profile**（回到第 1 步補完資料）。
+   - `403`：系統**已經有管理員**（請既有管理員在後台授予）；極少數情況是該帳號
+     連 profile 列都沒有（註冊觸發器沒跑），回應訊息是「找不到使用者」。
+   - `401`：token 過期或貼錯（access token 約一小時失效）——重新登入取新的。
+   - `500`：「設置失敗，請稍後再試」——看 Edge Function `api` 的日誌。
 5. **自驗**：同一個 token 打
    `GET https://<ref>.supabase.co/functions/v1/api/admin-setup/check`，回應的
    `isAdmin` 是 `true`；重新整理前台後 `/admin` 進得去。

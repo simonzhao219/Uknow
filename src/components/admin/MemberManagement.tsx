@@ -528,13 +528,13 @@ export function MemberManagement({
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                         placeholder="搜尋會員"
-                        aria-label="搜尋姓名、Email 或電話"
-                        className="pr-10"
+                        aria-label="搜尋會員（姓名、Email 或電話）"
+                        className="pr-10 pointer-coarse:pr-11"
                       />
                       <button
                         type="submit"
                         aria-label="搜尋"
-                        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring outline-none"
+                        className="absolute inset-y-0 right-0 flex w-10 pointer-coarse:w-11 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring outline-none"
                       >
                         <Search className="h-4 w-4" aria-hidden="true" />
                       </button>

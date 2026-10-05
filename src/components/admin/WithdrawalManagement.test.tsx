@@ -634,6 +634,29 @@ describe('WithdrawalManagement 工具列與匯出', () => {
     expect(csv.getAttribute('aria-busy')).toBeNull();
   });
 
+  it('載入更多進行中按不到重新整理與匯出——交錯會把舊頁尾接到新列表上', async () => {
+    let releaseMore!: () => void;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (offset > 0) await new Promise<void>((r) => (releaseMore = r));
+      return page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 2,
+        limit: 1,
+        offset,
+      });
+    });
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 2 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true),
+    );
+    releaseMore();
+    await screen.findByText('已顯示 2 / 2 筆');
+    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(false);
+  });
+
   it('重新整理是工具列上的 icon 鈕，名稱由文字承擔', async () => {
     const load = vi.fn(async () => page());
     renderConsole({ loadWithdrawals: load });

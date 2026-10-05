@@ -742,9 +742,12 @@ export function WithdrawalManagement({
               </Select>
             }
             onRefresh={fetchWithdrawals}
-            isRefreshing={isLoading}
+            // 載入更多進行中也停用：loadMore 晚回來會把舊頁尾接到剛重設的列表上
+            // （同會員頁）；這頁是批次匯款的依據，重複或錯位的列不能出現。
+            isRefreshing={isLoading || isLoadingMore}
             onExport={downloadCSV}
-            canExport={withdrawals.length > 0}
+            // 重新整理中 total／列表都是舊值，收集迴圈會照舊 total 收。
+            canExport={withdrawals.length > 0 && !isLoading}
             isExporting={isExporting}
             disabled={isExporting}
           />

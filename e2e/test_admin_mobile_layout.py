@@ -1,7 +1,7 @@
 """375px 下「平台管理」的**正向版面期望**（U2／U3）。
 
 **與 `test_overflow_sweep.py` 的分工**：那支問「有沒有畫到框外」，這支問
-「該長成什麼樣」。兩者不可互相取代——一個把五個中文分頁擠成單行橫向捲動的
+「該長成什麼樣」。兩者不可互相取代——一個把一排中文分頁擠成單行橫向捲動的
 `TabsList` **沒有任何溢出**（`overflow-x: auto` 是明示要捲動，探針刻意不報），
 但它正是行動版要修掉的東西。
 
@@ -9,7 +9,7 @@
 超出視窗」。在 jsdom 裡能寫的只有「斷言 class 字串存在」，而那是套套邏輯——
 它斷言的是實作者剛打進去的那串字，不可能為了正確的理由失敗。真正的反例：
 `grid-cols-3` 少了無前綴的 `grid` 時對 `display:flex` 的 `TabsList` 毫無作用，
-版面完全沒變，但「class 存在」與「五個 TabsTrigger 都在文件中」照樣全綠。
+版面完全沒變，但「class 存在」與「所有 TabsTrigger 都在文件中」照樣全綠。
 
 **為什麼是 `xfail(strict=True)` 而不是先註解掉**：這些期望描述的是
 `docs/plans/platform-admin-rwd/` 要做到的終局，今天還做不到。`strict=True`
@@ -447,6 +447,14 @@ def _assert_toolbar_one_row(page, kind: str):
         if area["height"] < MIN_TOUCH_TARGET_PX or area["width"] < MIN_TOUCH_TARGET_PX:
             too_small.append((selector, area))
     assert not too_small, f"{kind}工具列按鈕可點範圍不足 44px：{too_small}"
+    gaps = page.evaluate(
+        """(sel) => {
+          const r = [...document.querySelector(sel).children].map((c) => c.getBoundingClientRect());
+          return r.slice(1).map((b, i) => Math.round(b.left - r[i].right));
+        }""",
+        TOOLBAR,
+    )
+    assert all(g >= 8 for g in gaps), f"{kind}工具列相鄰元件間距不足 8px（防誤觸）：{gaps}"
 
 
 def test_withdrawal_toolbar_is_one_row_at_375px(admin_at_375):
@@ -457,6 +465,17 @@ def test_member_toolbar_is_one_row_at_375px(admin_at_375):
     _open_tab("會員管理")(admin_at_375)
     settle(admin_at_375)
     _assert_toolbar_one_row(admin_at_375, "會員管理")
+
+
+def test_member_search_submit_reaches_44px_on_touch(admin_at_375):
+    """內嵌在搜尋框裡的放大鏡是手機上看得到的送出入口（鍵盤的 Enter 常被收起）。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    area = hit_area(admin_at_375, 'form button[type="submit"][aria-label="搜尋"]')
+    assert area is not None and not area.get("centerMiss"), f"量不到放大鏡送出鈕（{area}）"
+    assert area["width"] >= MIN_TOUCH_TARGET_PX and area["height"] >= MIN_TOUCH_TARGET_PX, (
+        f"放大鏡送出鈕可點範圍 {area['width']}×{area['height']}px，不足 44px"
+    )
 
 
 def test_member_search_placeholder_is_not_truncated_at_375px(admin_at_375):

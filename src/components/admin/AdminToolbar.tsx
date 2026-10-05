@@ -19,6 +19,8 @@ export interface AdminToolbarProps {
 // icon 鈕：手機只有 icon（`size="icon"` 在觸控裝置撐到 44px），md 起帶文字。
 // 名稱一律由文字承擔——文字放在 `sr-only md:not-sr-only` 裡、不另設 aria-label：
 // 手機與桌機的可及名稱同源，忙碌時換掉的文字（匯出中…）也會被念出來。
+// `md:pointer-coarse:w-auto`：`size="icon"` 的 `pointer-coarse:size-[44px]` 在觸控的
+// md 以上（平板）會蓋掉 `md:w-auto`，帶文字的鈕被擠回 44px 寬。
 const ICON_TO_LABELED = 'md:w-auto md:px-3 md:pointer-coarse:w-auto';
 
 /**

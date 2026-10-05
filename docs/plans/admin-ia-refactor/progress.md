@@ -33,5 +33,8 @@
    `disabled={!withdrawals.length}`），不讓版面跳；匯出名稱只有提領一處用，不需要可配。`role="status"` 改為只在匯出中掛上——
    常駐的空 status 會撞到既有「載入完成後畫面不再有 status」的測試，語意上也會被當成整頁在載入。
 4. 階段 3｜會員頁搜尋框加 `aria-label="搜尋姓名、Email 或電話"`：placeholder 縮成「搜尋會員」後，能搜哪些欄位改由名稱說（報讀念得到）。
+5. 收尾（實作審查）｜會員頁放大鏡送出鈕用原生 `<button>`（絕對定位貼齊輸入框；Button 原語的 size 會撐高），觸控 `w-11`；
+   搜尋框名稱改「搜尋會員（姓名、Email 或電話）」含可見字；提領頁 `isRefreshing` 加 `isLoadingMore`、`canExport` 加 `!isLoading`
+   （plan 只寫會員頁，同類掃描補上）。見 implementation-review.md。
 
 ## 框架摩擦
