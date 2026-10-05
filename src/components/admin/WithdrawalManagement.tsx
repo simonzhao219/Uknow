@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Download, Eye, RefreshCw } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
+import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
 import { Skeleton } from '../ui/skeleton';
@@ -188,6 +189,10 @@ export function WithdrawalManagement({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  // 匯出中。state 驅動畫面；ref 擋重入——setState 要等 re-render 才讓按鈕
+  // disabled，同一個 tick 連按兩次會並行跑兩輪收集、下載兩份對帳檔。
+  const [isExporting, setIsExporting] = useState(false);
+  const exportingRef = useRef(false);
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [historyRecord, setHistoryRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -331,7 +336,7 @@ export function WithdrawalManagement({
     }
   };
 
-  const downloadCSV = async () => {
+  const collectAndDownload = async () => {
     // W6：匯出的是**符合當前篩選的全部資料**，不是畫面上已載入的那幾列。
     // 給半份比明示拒絕糟得多——對帳是拿這份檔案去比銀行的轉出紀錄，少的
     // 那幾筆不會自己浮出來。超過上限就明說，並告訴 admin 怎麼縮小範圍。
@@ -401,6 +406,23 @@ export function WithdrawalManagement({
     link.download = `獎金提領申請_${twDayOf()}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
+    setLoadError(null);
+    setActionMessage(`已匯出 ${rows.length} 筆`);
+  };
+
+  // 收集可能要好幾秒（逐頁）。期間篩選與重新整理一併停用：收集迴圈用的是
+  // 按下當下的 statusFilter，中途換篩選會下載一份跟畫面不一致的檔案。
+  // try/finally 包住整段——上限拒絕、收集失敗兩條提早 return 都要解除忙碌。
+  const downloadCSV = async () => {
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setIsExporting(true);
+    try {
+      await collectAndDownload();
+    } finally {
+      exportingRef.current = false;
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -700,12 +722,14 @@ export function WithdrawalManagement({
             (0,1,0) 蓋不掉它（同 `ui/table.tsx` 那個踩過的坑），所以下方
             內距要用同形狀的 `[&:last-child]:pb-3` 才壓得住。 */}
         <CardContent className="px-3 pt-3 [&:last-child]:pb-3 sm:px-6 sm:pt-6 sm:[&:last-child]:pb-6">
-          {/* P3:375px 下 Select(w-36) + 兩顆按鈕 + 筆數擠成一列（實測 +95px）。
-              flex-wrap 讓它們換行，筆數在手機自己成一列。 */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36">
+          {/* 篩選吃剩餘寬度、兩顆 icon 鈕在右，手機一行（S3 A2）。改版前三件
+              平鋪靠 flex-wrap 換行，375px 下擠成兩行、斷點附近忽一行忽兩行。
+              CSV 匯出是規格書 §13 明列的職責（含 2,000 筆上限），手機照樣有——
+              isDesktop 是**寬度**判準，767px 的桌機視窗也會失去唯一的匯出路徑。 */}
+          <AdminToolbar
+            filter={
+              <Select value={statusFilter} onValueChange={setStatusFilter} disabled={isExporting}>
+                <SelectTrigger className="w-full md:w-36">
                   <SelectValue placeholder="全部狀態" />
                 </SelectTrigger>
                 <SelectContent>
@@ -716,34 +740,20 @@ export function WithdrawalManagement({
                   <SelectItem value="rejected">已退件</SelectItem>
                 </SelectContent>
               </Select>
-              <Button tone="secondary" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                重新整理
-              </Button>
-              {/* 不用 isDesktop 閘掉:曾經以「手機下載試算表沒有下一步」為由
-                  只留桌面，但那既不在規劃書裡、也沒有任何 reviewer 看過，而且
-                  isDesktop 是**寬度**判準（Q4 已裁決不改成觸控偵測）——767px 的
-                  桌機視窗、分割畫面、高縮放比都會失去唯一的匯出路徑。
-                  CSV 匯出是規格書 §13 明列的職責（連 2,000 筆上限都寫進規格），
-                  要移除得走 §6 的開放問題流程並同步改規格書，不是一行註解。
-                  實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
-                  第一筆提領卡仍在第一屏內。 */}
-              <Button
-                tone="secondary"
-                size="sm"
-                onClick={downloadCSV}
-                disabled={!withdrawals.length}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                下載CSV
-              </Button>
-            </div>
-            {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
-                只寫「共 N 筆」會讓人以為 N 就是全部。 */}
-            <p className="text-sm text-muted-foreground">
-              已顯示 {withdrawals.length} / {total} 筆
-            </p>
-          </div>
+            }
+            onRefresh={fetchWithdrawals}
+            isRefreshing={isLoading}
+            onExport={downloadCSV}
+            canExport={withdrawals.length > 0}
+            isExporting={isExporting}
+            disabled={isExporting}
+          />
+          {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
+              只寫「共 N 筆」會讓人以為 N 就是全部。移出工具列自成一行，
+              不再參與工具列的寬度競爭。 */}
+          <p className="mt-2 text-sm text-muted-foreground">
+            已顯示 {withdrawals.length} / {total} 筆
+          </p>
 
           {selected.size > 0 && (
             <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">

@@ -21,6 +21,7 @@ import { StatCardGrid } from '../ui/stat-card-grid';
 import { StatusCallout } from '../ui/status-callout';
 import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -497,31 +498,52 @@ export function MemberManagement({
         {/* 會員列表 */}
         <Card>
           <CardHeader>
-            {/* P8:375px 下標題與 w-56 的搜尋框互相擠壓（實測 +9px）。 */}
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                {/* 手機隱藏:分頁標籤已經寫著「會員管理」。 */}
-                <CardTitle className="hidden sm:block">會員管理</CardTitle>
-                <CardDescription className="hidden sm:block">管理平台所有會員帳號</CardDescription>
+              {/* 手機整塊隱藏:分頁標籤已經寫著「會員」。隱藏在外層 div，
+                  不然空的 div 照樣佔一個 flex item 加 gap，擠掉工具列 16px。 */}
+              <div className="hidden sm:block">
+                <CardTitle>會員管理</CardTitle>
+                <CardDescription>管理平台所有會員帳號</CardDescription>
               </div>
-              <form
-                className="flex items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setSearch(searchInput.trim());
-                }}
-              >
-                <Input
-                  type="search"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="搜尋姓名 / Email / 電話"
-                  className="w-56"
+              {/* 同提領頁的 AdminToolbar（S3 A2）:搜尋吃剩餘寬度＋重新整理，
+                  沒有 CSV——會員資料沒有匯出能力，工具列不附贈一條個資外流路徑。
+                  載入更多進行中也停用重新整理:兩者交錯，loadMore 晚回來會把
+                  舊頁尾接到剛重設的列表上（usePagedList 沒有序列保護）。 */}
+              <div className="w-full sm:w-auto sm:min-w-80 sm:max-w-md sm:flex-1">
+                <AdminToolbar
+                  filter={
+                    <form
+                      className="relative"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        setSearch(searchInput.trim());
+                      }}
+                    >
+                      {/* 送出鈕內嵌在框的右側:不佔工具列寬度（375px 下
+                          placeholder 才放得下），滑鼠使用者仍看得到送出入口；
+                          鍵盤 Enter 照常送出。placeholder 縮成「搜尋會員」，
+                          能搜哪些欄位改由名稱說（報讀念得到）。 */}
+                      <Input
+                        type="search"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="搜尋會員"
+                        aria-label="搜尋姓名、Email 或電話"
+                        className="pr-10"
+                      />
+                      <button
+                        type="submit"
+                        aria-label="搜尋"
+                        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring outline-none"
+                      >
+                        <Search className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </form>
+                  }
+                  onRefresh={list.reload}
+                  isRefreshing={list.isLoading || list.isLoadingMore}
                 />
-                <Button type="submit" tone="secondary" size="sm">
-                  <Search className="h-4 w-4" />
-                </Button>
-              </form>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

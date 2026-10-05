@@ -10,6 +10,8 @@ export interface AdminToolbarProps {
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（匯出是功能，不是工具列附贈的）。 */
   onExport?: () => void;
   isExporting?: boolean;
+  /** 有匯出能力但目前沒東西可匯（空清單）：鈕照樣在、只是按不下去，版面不跳。 */
+  canExport?: boolean;
   /** 整列停用（匯出期間）：收集迴圈用的是按下當下的篩選，期間重新整理會讓檔案與畫面不一致。 */
   disabled?: boolean;
 }
@@ -31,10 +33,11 @@ export function AdminToolbar({
   isRefreshing,
   onExport,
   isExporting = false,
+  canExport = true,
   disabled = false,
 }: AdminToolbarProps) {
   return (
-    <div className="flex flex-nowrap items-center gap-2">
+    <div data-slot="admin-toolbar" className="flex flex-nowrap items-center gap-2">
       <div className="min-w-0 flex-1">{filter}</div>
       <Button
         type="button"
@@ -54,7 +57,7 @@ export function AdminToolbar({
           size="icon"
           className={ICON_TO_LABELED}
           onClick={onExport}
-          disabled={disabled}
+          disabled={disabled || !canExport}
           loading={isExporting}
           // 桌機滑過時看得到「含敏感資料」；手機與報讀靠名稱裡的同一段字。
           title="下載 CSV（含身分證與帳號）"
@@ -72,10 +75,13 @@ export function AdminToolbar({
           </span>
         </Button>
       )}
-      {/* 匯出可能要好幾秒（多頁收集）。按鈕一 disabled 焦點就掉了，狀態另外宣告。 */}
-      <span role="status" className="sr-only">
-        {isExporting ? '匯出中' : ''}
-      </span>
+      {/* 匯出可能要好幾秒（多頁收集）。按鈕一 disabled 焦點就掉了，狀態另外宣告；
+          只在匯出中掛上——常駐的空 status 會被當成「這頁正在載入」。 */}
+      {isExporting && (
+        <span role="status" className="sr-only">
+          匯出中
+        </span>
+      )}
     </div>
   );
 }
