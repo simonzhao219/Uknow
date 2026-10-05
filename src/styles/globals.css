@@ -79,8 +79,10 @@
   --tree-gen-badge-foreground-2: #4c1d95;
   --tree-gen-badge-foreground-3: #9d174d;
   --border: #e3e4ee;
-  /* 輸入格休息態：白底＋邊框色細框，與勾選框未勾態同一語言（業主裁決 D3，#354）。 */
-  --input: #e3e4ee;
+  /* 可互動元件的邊界框線（輸入格、下拉、勾選框同一圈）：白底＋--input 框（業主裁決 D3＋E1，
+     #354）。--input 必須對底 ≥3:1（WCAG 1.4.11）——未勾的勾選框只有這圈線可辨識，輸入格
+     填值後 placeholder 也消失，所以不開例外。純版面分隔（卡片、分隔線）用 --border。 */
+  --input: #8f8fa5;
   --input-background: #ffffff;
   /* 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件用（首頁搜尋鈕與工具列）。
      淺色靠陰影——白底＋一般邊框＋shadow-lg 那組陰影；深色靠變亮——見 .dark 同名 token。
@@ -170,7 +172,10 @@
   --tree-gen-badge-foreground-2: #c4b5fd;
   --tree-gen-badge-foreground-3: #f9a8d4;
   --border: #33334a;
-  --input: #33334a;
+  /* 可互動元件框線對底與卡片都 ≥3:1；輸入格底色與卡片同階（原本 dark:bg-input/30 疊出來的值，
+     改成 token 後框線色加深不會連帶把填色變亮）。 */
+  --input: #6a6a84;
+  --input-background: #1f1f2b;
   /* 越浮越亮：浮起表面比頁面底 #16161f 與卡片 #1f1f2b 都亮一階（墨色 100），邊框再亮一階，
      陰影加重——陰影在深色裡只是輔助，層次主要靠表面亮度。 */
   --raised: #2a2a3a;

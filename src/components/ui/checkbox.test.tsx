@@ -15,6 +15,8 @@ describe('Checkbox', () => {
     expect(box.getAttribute('data-state')).toBe('unchecked');
     expect(box.classList.contains('bg-card')).toBe(true);
     expect(box.classList.contains('border')).toBe(true);
+    // 業主裁決 E1：未勾的勾選框只有這圈線可辨識，框線走 --input（對底 ≥3:1），不是版面分隔的 --border。
+    expect(box.classList.contains('border-input')).toBe(true);
     expect(box.className).not.toMatch(/bg-input-background/);
   });
 

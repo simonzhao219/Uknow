@@ -7,9 +7,10 @@ import { cn } from "./utils";
 
 // 次要動作的外觀（白底、邊框色框線、墨字）。variant="outline" 與 tone="secondary"
 // 共用這一串，兩種寫法畫出來一模一樣；新程式碼用 tone（ui-ux-guidelines §12.11）。
-// 底色用 bg-card 而非 bg-background：版面底若改淡灰，外框鈕仍要是白的。
+// 底色用 bg-card 而非 bg-background：版面底若改淡灰，外框鈕仍要是白的。框線用 --border
+// 不用 --input：按鈕靠文字辨識，框線屬裝飾；--input 是輸入格、下拉、勾選框那一圈（§12.7）。
 const SECONDARY_SURFACE =
-  "border bg-card text-foreground hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50";
+  "border bg-card text-foreground hover:bg-accent hover:text-accent-foreground";
 
 // 有色容器裡的次要鈕：白底，框線與字取容器的 300／800 層。
 const CONTAINER_SECONDARY = "border bg-card";

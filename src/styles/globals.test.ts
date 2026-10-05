@@ -150,7 +150,7 @@ describe('浮起表面 token 三處齊備', () => {
     });
   }
 
-  it('@theme inline 的 --color-raised、--color-raised-border、--shadow-raised 指向同名 token', () => {
+  it('@theme inline 的浮起表面三個 token 指向同名變數', () => {
     expect(themeTokens.get('--color-raised')).toBe('var(--raised)');
     expect(themeTokens.get('--color-raised-border')).toBe('var(--raised-border)');
     expect(themeTokens.get('--shadow-raised')).toBe('var(--raised-shadow)');
@@ -565,6 +565,30 @@ describe('浮起表面的層次', () => {
     expect(
       contrastRatio(hexOf('dark', 'foreground'), hexOf('dark', 'raised')),
     ).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// 可互動元件的邊界框線（業主裁決 D3＋E1，ui-ux-guidelines §12.7）：輸入格、下拉、勾選框同一圈
+// --input，對底必須 ≥3:1——未勾的勾選框只有這圈線可辨識、輸入格填值後 placeholder 也消失。
+// 純版面分隔（卡片、分隔線）用 --border，維持淡；兩者分開，加深框線不會讓整頁變重。
+describe('可互動元件框線 --input', () => {
+  for (const mode of MODES) {
+    for (const surface of ['background', 'card', 'input-background'] as const) {
+      it(`${mode === 'light' ? '淺色' : '深色'}：--input 對 --${surface} ≥ 3:1`, () => {
+        expect(contrastRatio(hexOf(mode, 'input'), hexOf(mode, surface))).toBeGreaterThanOrEqual(3);
+      });
+    }
+
+    it(`${mode === 'light' ? '淺色' : '深色'}：--border 與 --input 分開，版面分隔維持比框線淡`, () => {
+      expect(hexOf(mode, 'border')).not.toBe(hexOf(mode, 'input'));
+      expect(contrastRatio(hexOf(mode, 'border'), hexOf(mode, 'background'))).toBeLessThan(
+        contrastRatio(hexOf(mode, 'input'), hexOf(mode, 'background')),
+      );
+    });
+  }
+
+  it('深色有自己的 --input-background，填色不再靠 --input 疊透明度', () => {
+    expect(darkTokens.has('--input-background')).toBe(true);
   });
 });
 

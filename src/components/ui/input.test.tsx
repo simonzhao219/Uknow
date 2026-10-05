@@ -27,4 +27,15 @@ describe('Input', () => {
     }
     expect(input.className).not.toMatch(/destructive\/\d/);
   });
+
+  // 業主裁決 E1：休息態框線走 --input（對底 ≥3:1）；深色的底色走 --input-background，
+  // 不再用 dark:bg-input/30 疊——否則框線色一加深，填色也跟著變亮。
+  it('休息態框線走 --input，底色走 --input-background 不疊框線色', () => {
+    render(<Input aria-label="手機號碼" />);
+    const input = screen.getByRole('textbox', { name: '手機號碼' });
+    for (const c of ['border-input', 'bg-input-background']) {
+      expect(input.classList.contains(c), c).toBe(true);
+    }
+    expect(input.className).not.toMatch(/bg-input\//);
+  });
 });
