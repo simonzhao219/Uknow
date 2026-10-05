@@ -130,6 +130,35 @@ export async function getUserAccessToken(client: SupabaseClient, email: string):
   return otpData.session.access_token;
 }
 
+// 讓 index.ts 對某張表（或 view）的 PostgREST 讀取回 500，其餘請求照常——
+// 驗證「查詢失敗必須 fail-closed」的 handler。可行的前提：index.ts 的 sb()
+// 每次呼叫都新建 client，而 supabase-js 在建立 client 時才取用全域 fetch；
+// 測試端的 adminClient() 早已建好、拿的是原本的 fetch，不受影響。
+export async function withRestTableFailure<T>(
+  tables: string[],
+  run: () => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  const hit = new RegExp(`/rest/v1/(${tables.join('|')})(\\?|$)`);
+  globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (hit.test(url)) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ code: 'XX000', message: 'injected failure' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+    return original(input, init);
+  }) as typeof fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
 export async function getActiveReferralCode(
   client: SupabaseClient,
   userId: string,

@@ -388,7 +388,9 @@ export const NetworkOverviewResponseSchema = obj({
     userReferralCode: str(),
     sort: NetworkSortModeSchema,
     roots: arr(NetworkNodeSchema), // 一代（排序後；children 走懶載入）
-    attention: obj({ // 需要關注：伺服器依緊急度排序 + 上限
+    // 需要關注＝**一代且即將到期**（業主 2026-10-04 定案），依剩餘天數升冪。
+    // total 是精確人數；items 只取前 6 筆（完整清單走 networkAttention 分頁）。
+    attention: obj({
       total: num(),
       items: arr(NetworkNodeSchema),
     }),
@@ -424,6 +426,20 @@ export const NetworkSearchResponseSchema = obj({
   }),
 });
 export type NetworkSearchResponse = Infer<typeof NetworkSearchResponseSchema>;
+
+// GET /referrals/network/attention?limit=&offset=：overview.attention 的完整清單
+// （同一判準、同一排序），供推薦管理橫幅「全部 N 位」。分頁慣例同搜尋：
+// total 永遠是全部命中數、不受 limit/offset 影響；越界 offset 回空頁。
+export const NetworkAttentionResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    total: num(),
+    limit: num(), // 本頁大小（回聲；夾在 1..200）
+    offset: num(), // 本頁起點（回聲）
+    items: arr(NetworkNodeSchema),
+  }),
+});
+export type NetworkAttentionResponse = Infer<typeof NetworkAttentionResponseSchema>;
 
 export const TaskSchema = obj({
   id: str(),
@@ -793,6 +809,7 @@ export const API_PATHS = {
   networkOverview: '/referrals/network/overview',
   networkChildren: '/referrals/network/children',
   networkSearch: '/referrals/network/search',
+  networkAttention: '/referrals/network/attention',
   tasks: '/tasks',
   tasksPendingRewards: '/tasks/pending-rewards',
   tasksCurrentMonthTop: '/tasks/current-month-top',
