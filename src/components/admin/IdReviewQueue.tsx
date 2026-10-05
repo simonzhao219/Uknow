@@ -201,7 +201,7 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
                 通過
               </Button>
               <Button
-                variant="destructive"
+                tone="destructive"
                 disabled={busyId === r.userId}
                 onClick={() => {
                   setReason('');

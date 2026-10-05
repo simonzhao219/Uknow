@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog@1.1.6";
+import type { VariantProps } from "class-variance-authority@0.7.1";
 
 import { cn } from "./utils";
 import { buttonVariants } from "./button";
@@ -120,13 +121,17 @@ function AlertDialogDescription({
   );
 }
 
+// 確認鈕預設是流程鈕（墨黑）；不可逆的破壞性確認（刪除刊登、退件）傳
+// variant="destructive" 才是紅實心——紅實心只出現在這種確認框裡（ui-ux-guidelines §12.11）。
 function AlertDialogAction({
   className,
+  variant,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> &
+  Pick<VariantProps<typeof buttonVariants>, "variant">) {
   return (
     <AlertDialogPrimitive.Action
-      className={cn(buttonVariants(), className)}
+      className={cn(buttonVariants({ variant }), className)}
       {...props}
     />
   );

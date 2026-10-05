@@ -92,6 +92,7 @@ export function ServiceProviderManagement() {
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   handleDeleteListing();
@@ -206,7 +207,7 @@ export function ServiceProviderManagement() {
                       </Button>
 
                       <Button
-                        variant="destructive"
+                        tone="destructive"
                         size="sm"
                         onClick={() => setShowDeleteConfirm(true)}
                         disabled={isDeleting}

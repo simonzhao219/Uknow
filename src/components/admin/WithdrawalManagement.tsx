@@ -476,6 +476,7 @@ export function WithdrawalManagement({
             <AlertDialogFooter>
               <AlertDialogCancel onClick={closeReasonDialog}>取消</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
                 disabled={!reasonFilled}
                 onClick={() => {
                   const target = rejectTarget;
@@ -890,7 +891,7 @@ export function WithdrawalManagement({
                           )}
                           <Button
                             size="sm"
-                            variant="destructive"
+                            tone="destructive"
                             onClick={() => setRejectTarget(w)}
                             disabled={processingId === w.id}
                           >
