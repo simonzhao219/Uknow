@@ -52,7 +52,7 @@ paths:
 | 7 | 金流 | `/payuni/prepare`、`/payuni/result/:tradeNo`、`/payuni/return`、`/webhooks/payuni/notify`、`/internal/reconcile-pending-payments` |
 | 8 | 會籍 | `/subscriptions/status` |
 | 9 | 獎勵/提領 | `/rewards`、`/rewards/points-preview`、`/rewards/withdrawals`、`/rewards/verify-id`、`/rewards/id-photos`、`/rewards/upload-id-photos`、`/rewards/withdraw`、`/rewards/withdrawals/:id/confirm`、`/rewards/history` |
-| 10 | 推薦網絡 | `/referrals/network/overview`、`/children`、`/search` |
+| 10 | 推薦網絡 | `/referrals/network/overview`、`/children`、`/search`、`/attention` |
 | 11 | 任務 | `/tasks`、`/tasks/pending-rewards`、`/tasks/current-month-top`、`/tasks/claim-reward/:id` |
 | 12 | 其他 | `/listings/upload-photo`、`/referrals/debug/:userId`、`/health` |
 

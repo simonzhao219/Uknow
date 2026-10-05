@@ -88,7 +88,11 @@ def open_node_detail(
     viewer: str,
     target: str,
 ) -> None:
-    """點 target 的樹列，打開它的詳情（桌機右欄、手機 bottom sheet 同一份 NodeDetail）。"""
+    """點 target 的樹列，打開它的詳情。
+
+    **僅適用桌機 viewport**（journey 固定 1280×900）：桌機詳情在右欄、只有一份
+    NodeDetail；手機 viewport 下 DOM 同時有隱藏的右欄與 bottom sheet 兩份，
+    以文字斷言會撞 strict mode。"""
     gen = orgchart.generation_of(org_nodes, viewer, target)
     tree_row(page, state.users[target].name, gen).click()
 

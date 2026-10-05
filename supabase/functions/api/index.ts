@@ -3448,7 +3448,7 @@ app.get('/rewards/history', async (c) => {
 });
 
 // ============================================================
-// 推薦網絡：共用機制（/referrals/network/* 三端點同一份真相）
+// 推薦網絡：共用機制（/referrals/network/* 四端點同一份真相）
 //
 // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
 // active 且距 end_date ≤30 天 → expiring（RENEWAL_NOTICE_DAYS，與前端續訂提醒同一個
@@ -3509,8 +3509,9 @@ async function selectInChunks(
 }
 
 // 觀看者的 3 代子樹（edges + enrichment）一次載齊。
-// edges 三條索引查詢極便宜；enrichment 目前一律全撈（attention 需要全體狀態、
-// search 需要全體真名），日後若 profiling 顯示 children 端點太重再細分。
+// edges 三條索引查詢極便宜；enrichment 目前一律全撈（search 需要全體真名）。
+// attention 只需要一代的狀態，卻同樣載整張三代樹——日後若 profiling 顯示
+// attention／children 端點太重，從這裡細分（attention 只撈一代是第一刀）。
 async function loadNetwork(client: any, viewerId: string) {
   const { data: gen1Raw, error: gen1Err } = await client
     .from('referral_edges')
