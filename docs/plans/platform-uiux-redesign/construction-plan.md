@@ -22,6 +22,8 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 - **S2c（2026-10-03 追加，同日改向）**：推薦樹世代配色（plan.md §0 第 7 列、§3 D5、§4 第 8 點），排在 S2b 之後，S3 之前或之後皆可。原案「頭像綁訂閱狀態」經業主看過預覽後撤回，改為維持世代表示、把 `--tree-gen-*` 三階灰換成三個專用色相；只動 token、對應測試與文件，不碰 `supabase/functions/`，與 S3 的後台檔案不重疊。
 - **S2d（2026-10-03 追加）**：會員中心狀態總覽（plan.md §0 第 8 列、§3 F4），排在 S2c 之後；資料全用既有 API（`overview.attention` 等），不新增後端（業主 2026-10-03 於 PR #335 裁決）；只動會員中心與推薦統計兩個前端檔，不碰 S3。
 
+- **S2e（2026-10-05 追加）**：設計定案落地（plan.md §0 第 9 列、§3 D6、§4 第 9–14 點），排在 S2d 之後、S3 之前；只動 `globals.css`、ui 原語（Button／Checkbox／Badge／Tabs／InputOTP）、全站文案 sweep 與 `ui-ux-guidelines.md`，不碰 S3 的後台檔案；任務中心徽章與會員區頁面改動留給 S7。
+
 ## 2. Session 分工表
 
 > 模型依 CLAUDE.md 分級表；「重量」是對額度的粗估（輕≈半小時內、
@@ -36,6 +38,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S2b | 強調色與語義色升亮 | D4 | `fix/brand-accent` | 輕量 Plan Mode（token 值已由業主定案，session 只做落地與消費點替換） | Sonnet | 輕 |
 | S2c | 推薦樹世代配色 | D5 | `fix/referral-tree-gen-colors` | 輕量 Plan Mode（設計已由業主定案；原案撤回改向） | Sonnet | 輕 |
 | S2d | 會員中心狀態總覽 | F4 | `fix/dashboard-status-overview` | 輕量 Plan Mode（設計已由業主定案） | Sonnet | 中 |
+| S2e | 設計定案落地 | D6 | `fix/design-decisions-2026-10` | 輕量 Plan Mode（token 值與規則已由畫面稿定案，session 只做落地） | **Opus** 規劃（token 與 Button 原語是全站契約）、Sonnet 實作 | 中 |
 | S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
@@ -203,6 +206,62 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
    收尾更新 progress.md（S2d 列、異動記錄）。
 ```
 
+**S2e**（S2d 合併後才開；模型選 Opus 起手，Plan Mode 列完清單後可換 Sonnet 實作）：
+```
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md 與
+全站畫面稿 https://claude.ai/artifact/RzXCDXTrHetn8Ua4xkXor3（定案載體，淺深兩版都看）。
+執行 S2e（工項 D6）：在 fix/design-decisions-2026-10 分支上把 plan.md §4
+第 9–14 點的定案落到 token 與 ui 原語。用 Plan Mode 先列 token 對照表、原語
+改動清單、消費點清單給我看過再動工；globals.test.ts、守門腳本、既有元件
+測試、e2e overflow sweep 必須全綠。只動 globals.css、src/components/ui/、
+全站文案 sweep 與 ui-ux-guidelines.md；任務中心徽章與會員區頁面是 S7。
+
+一、globals.css 換成新五層色表（plan.md §4 第 12 點，淺深兩版）：
+   墨色五層對應 --background／--secondary／--border／--muted-foreground／
+   --foreground，--primary 與 --foreground 同值（#121223，深 #f2f2f7）；
+   success／warning／destructive 各自的 A（600）／B（50 淡底＋300 框線＋800 字）／
+   C（裸字＝800）；--brand 系列換成蔚藍（600 實色、50／100 淡底、300 框線、800
+   淡底字，深色一組）；--tree-gen-* 對齊 700 階。globals.test.ts 以同一公式重驗
+   每一組（文字 4.5、框線 3），數字以測試為準、plan.md 的值若不過就改值並回填。
+二、新 token：--sel（＝--muted-foreground）與 --sel-foreground（＝--background），
+   供選取／聚焦；--medal-gradient（brand-300 → brand，淺深各一）供任務徽章；
+   --ring 改指 --sel。§12.4 開一條例外「任務徽章填色可用 --medal-gradient」，
+   check-color-usage.py 的 C2 把徽章元件（S7 會建）列入 baseline 例外的機制先備好。
+三、Button（src/components/ui/button.tsx）：default 維持黑（流程主要動作），新增
+   tone="guide"（bg-brand text-brand-foreground，只給續訂／加入推薦計畫／確認收款）
+   與 tone="secondary"（白底、容器色外框與字；黑白卡片＝border text-foreground）；
+   brand variant 併入 guide、link variant 改墨色底線；destructive 維持紅框字、實心紅
+   只在不可逆確認框。focus-visible 只保留 3px 淡環（ring-sel/30），其餘單圈。
+   位置規則不進 Button，寫進 §12 的「按鈕」一節供頁面套用。
+四、選取／聚焦改走 --sel（plan.md §4 第 9 點第三條）：Tabs 選中格、chip／Badge 的
+   選中 variant、縮圖與方案框的選中框線（2px --sel）、InputOTP 目前格；Checkbox
+   未勾白底框線、已勾 --primary 不動；BottomNav 目前頁墨黑不動；首頁搜尋 FAB
+   維持白底框線陰影（main 現行）。方案框選中不加勾號。
+五、全站文案 sweep（plan.md §4 第 10 點「文案」）：
+   (1) 流程鈕去箭頭：WithdrawalProcess 三顆、CollectionPreviewDialog 兩顆、
+       CollectionVerifyDialog 一顆、IdNumberVerification 手刻 SVG 箭頭、
+       ForgotPasswordPage「返回登入」改連結；
+   (2) 中間步驟一律「下一步」：AuthPage 步驟 1「繼續」、WithdrawalProcess 步驟 2
+       「確認並繼續」；最後一步的動詞（註冊／送出驗證碼／提交申請／建立刊登／
+       確認領取／確認並前往付款）不動；
+   (3) 行為一致的續訂鈕統一「續訂」（立即續訂／續訂 / 重新訂閱 都到
+       /payment/checkout），「開始訂閱」只給從未訂閱者；SubscriptionStatusCard
+       會籍已失效框改 warning；
+   (4) 「上線／下線」改「推薦人／一代／二代／三代」，相對子代寫「N 位」或「直接推薦
+       N 位」；事業手冊、參加契約、刊登方案三份 LegalMarkdown 內容不改（7b）。
+六、ui-ux-guidelines.md 以程式碼為準同 PR 改寫：§12.3 強調色一節改成「品牌色蔚藍
+   只出現在引導鈕與重點淡底」、A 形狀依新色表（綠紅 600 配白字、琥珀 600 配黑字）、
+   §12.5 的「次要行動與連結用 brand」改成三分法、§12.4 補徽章漸層例外、新增
+   「按鈕三分法與位置」「選取與聚焦」「文案」三節（規則只寫一份，寫在這裡，
+   plan.md §4 第 9–14 點在 S8 刪鷹架時隨目錄消失）；§13 第 2 條的「主行動黑、
+   次行動 brand」改成三分法的措辭。規格書 §9 等級門檻改 2／4／6／8 與後端
+   TaskBadge 同步**不在 S2e**（屬 supabase/functions/，S7 前另開後端工項）。
+七、測試：button.test.tsx 補 tone 三種；globals.test.ts 新色表全組；Tabs／OTP／
+   Checkbox 選中態快照；文案 sweep 的 e2e 文字斷言同步改（grep 「繼續」「確認並繼續」
+   「下線」「上線」）。375px overflow sweep 與 devtools .dark 各看一輪。
+   收尾更新 progress.md（S2e 列、異動記錄）。
+```
+
 **S3**：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
@@ -276,6 +335,23 @@ sweep 盲點、§3 桌機入口補句、ReferralStats 手機高度、點數寫�
 （attention.expiringTotal、/subscriptions/status 查詢失敗回 5xx、會員中心摘要
 端點）與規格書 §7.2 下線四態定義不在 S7，另開工項。Plan Mode 先列每頁的
 主數字與降級清單給我看過再動工。
+另外承接 2026-10-04～05 畫面稿定案中屬於頁面層的項目（S2e 只做 token 與原語）：
+(1) 會員中心：四卡標題改目的頁名（刊登管理／推薦管理／任務中心／獎勵回饋）、
+    推薦卡只留總數＋狀態徽章、**拿掉「需要注意」區**（§13 第 3 條在會員中心不適用，
+    規則措辭同 PR 改）；
+(2) 推薦管理橫幅：只算一代且即將到期，標題「N 位一代即將到期」、無副標、chip 不帶
+    小圓點、只列最緊急 3 位＋「全部 N 位 ›」（分頁清單端點與 attention 改
+    generation===1 && status==='expiring' 是後端工項，S7 開工前要先合併；若未就緒，
+    橫幅先用 items 過濾一代即將到期並顯示「至少 N 位」）；
+(3) 任務中心：四顆徽章放進「本月已推薦」淡底卡取代進度條（plan.md §4 第 13 點：
+    一顆 2 人、奇數半亮、偶數全亮、--medal-gradient 填色、徽章下只放名稱），
+    等級小標籤、人數、鼓勵文案拿掉；「任務獎勵」框改 neutral；等級門檻 2／4／6／8
+    依賴後端 TaskBadge 工項先合併；
+(4) 獎勵回饋：可提領卡為該頁唯一淡底主區、「申請提領」外框在卡內；提領申請列
+    「待查收」黃徽章＋「確認收款」引導鈕靠右；明細的世代 chip 用世代色、負項紅字；
+    待查收徽章在 admin 與會員兩處統一 warning（遺留事項最後一條就此結案）；
+(5) 全站提到「代」的地方（推薦詳情、明細、後台會員詳情）用世代 chip／小圓點元件，
+    會員中心卡片不放世代。
 ```
 
 **S8**：
@@ -318,6 +394,7 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收 1b | S2b 合併 | 快速走一輪（不必全站）：連結／選中分頁／進度條／輸入框焦點是否出現靛藍且只出現在這些地方；成功／警示／危險的實心徽章與危險按鈕是否為亮底黑字且讀得清楚；devtools `.dark` 看一次同樣幾處 |
 | 驗收 1c | S2c 合併 | 推薦網絡頁：一代／二代／三代的頭像是否一眼分得出（teal／violet／pink）；詳情徽章與連接線是否與頭像同色相；右下角狀態小點與列右側文字沒有被新顏色干擾；devtools `.dark` 看一次三色頭像與徽章 |
 | 驗收 1d | S2d 合併 | **用「已加入推薦計畫、會籍非 30 天內到期」的帳號驗**（新會員會同時看到「立即刊登」與 MyQrEntry 的「加入推薦計畫」兩顆黑鈕，是 §13 已知的共用元件例外，不是缺陷）。會員中心：不滑動就看得到「需要注意」與四個主數字（LINE 內瀏覽器首屏高度只能人眼驗）；每張卡一眼知道狀態；卡片區只有一顆黑色主按鈕；本月任務卡顯示本輪 x / y 與「本月已完成 N 次」，與任務中心數字一致；推薦管理統計一眼看出下線總數與一／二／三代各幾位（不是訂閱中／快到期——那是已撤回的 statusCounts 案）；推薦網絡卡與需要注意區寫的是「N 位即將到期」，不是「需關注」；**StatusCallout 全站改走預設圖示**（46 處用法、約 30 處原本沒圖示）——付款結果頁、付款頁、領獎與查收對話框、後台錯誤框各看一眼圖示與色框是否相稱（業主 2026-10-04 裁決接受，不加關閉出口）；375px 與 devtools `.dark` 各看一次 |
+| 驗收 1e | S2e 合併 | 對照全站畫面稿（https://claude.ai/artifact/RzXCDXTrHetn8Ua4xkXor3）走一輪：引導鈕只有續訂／加入推薦計畫／確認收款是蔚藍、一頁一顆；流程鈕黑、次要鈕白底框線；chip／分頁／OTP 目前格的選中是灰字不是黑也不是藍；Tab 鍵盤操作時才看到淡環；登入步驟 1 與提領步驟 2 的鈕都叫「下一步」且沒有箭頭；全站找不到「上線／下線」（法規三份除外）；375px 與 devtools `.dark` 各看一次 |
 | 驗收 2 | S4 合併 | 後台：四 Tab 單列（375px 實機確認標籤不溢字不換行）、工具列、會員詳情分區——手機與桌機各實際操作一次（後台兩者並重） |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感（切回不再等 loading） |
 | 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主；任務／獎勵／刊登三頁各自的主數字是否一眼就看到、達標的卡有沒有收起、會籍失效狀態的 banner 與提示是否正確 |
