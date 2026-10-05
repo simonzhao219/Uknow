@@ -113,7 +113,7 @@ export function WithdrawalCardList({
                 {w.status === 'awaiting_collection' && (
                   <Button
                     size="sm"
-                    variant="ghost"
+                    tone="secondary"
                     onClick={() => onComplete(w)}
                     disabled={processingId === w.id}
                   >

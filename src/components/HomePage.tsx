@@ -452,9 +452,7 @@ export function HomePage() {
             <p className="text-sm text-muted-foreground mb-4">
               無法取得服務者列表，請檢查網路連線後再試一次
             </p>
-            <Button onClick={fetchAllListings} variant="outline">
-              重新載入
-            </Button>
+            <Button onClick={fetchAllListings}>重新載入</Button>
           </div>
         )}
 
@@ -773,7 +771,7 @@ function DesktopFilterPopover({
             // 附近最明顯，又是一次「手機對、桌機錯」。
             'max-w-[14rem]',
             // 有套用篩選＝有框元件的選取態（§12.12）：框線灰字單圈 2px，不疊底色。
-            active && 'border-sel ring-1 ring-sel',
+            active && 'border-sel dark:border-sel ring-1 ring-sel',
           )}
           title={summary ?? label}
         >

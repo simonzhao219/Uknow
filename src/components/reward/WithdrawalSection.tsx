@@ -78,7 +78,7 @@ export function WithdrawalSection({
 
     // ✅ 檢查訂閱狀態
     if (isSubscriptionInvalid) {
-      return '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
+      return '訂閱已失效，無法申請提領。請續訂以恢復服務。';
     }
 
     if (isInsufficientBalance) {

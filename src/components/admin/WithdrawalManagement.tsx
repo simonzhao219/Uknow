@@ -782,9 +782,7 @@ export function WithdrawalManagement({
             // 以為今天沒人申請提領，而不是「沒讀到」。
             <div className="py-12 text-center space-y-3">
               <p className="text-destructive-subtle-foreground">{loadError}</p>
-              <Button variant="outline" onClick={fetchWithdrawals}>
-                重試
-              </Button>
+              <Button onClick={fetchWithdrawals}>重試</Button>
             </div>
           ) : withdrawals.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>

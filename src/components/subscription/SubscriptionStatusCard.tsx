@@ -80,7 +80,7 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
             <StatusCallout
               variant="warning"
               title="會籍已失效"
-              description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務——過期未滿一年可「續約」接續原效期。"
+              description="您的會籍已到期失效（到期即失效，無寬限期），會員功能與刊登已暫停。請續訂以恢復服務，可選「續約」接續原效期或「新約」重新起算。"
             />
 
             {subscriptionData?.activeUntil && (

@@ -274,6 +274,22 @@ describe('WithdrawalManagement', () => {
     expect(confirm.classList.contains('bg-destructive')).toBe(true);
   });
 
+  // 畫面稿後台一節：代為完成是次要外框，手機卡片與桌機表格同一種外觀（§11.1）。
+  it.each([
+    ['手機卡片', false],
+    ['桌機表格', true],
+  ])('%s的代為完成是白底外框的次要鈕', async (_where, desktop) => {
+    stubMediaQuery(desktop);
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record({ status: 'awaiting_collection' })] }),
+    });
+    const complete = await screen.findByRole('button', { name: '代為完成' });
+    for (const c of ['border', 'bg-card', 'text-foreground']) {
+      expect(complete.classList.contains(c), c).toBe(true);
+    }
+  });
+
   it('桌機上待處理的申請看得到標記已匯款', async () => {
     renderConsole();
     expect(await screen.findByRole('button', { name: '標記已匯款' })).toBeTruthy();

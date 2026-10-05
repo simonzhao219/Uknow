@@ -84,7 +84,7 @@ export function CollectionVerifyDialog({
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
             <Button variant="outline" onClick={onBack} className="flex-1" disabled={isSubmitting}>
-              返回
+              上一步
             </Button>
             <Button
               onClick={handleSubmit}

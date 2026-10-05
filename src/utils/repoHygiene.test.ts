@@ -154,3 +154,39 @@ describe('官方 LINE 帳號代稱統一', () => {
     ).toEqual([]);
   });
 });
+
+describe('引導鈕只有三種', () => {
+  it('tone="guide" 只出現在續訂、加入推薦計畫、確認收款三種鈕所在的元件', () => {
+    // ui-ux-guidelines §12.11：品牌色實心的引導鈕只給續訂＞加入推薦計畫＞確認收款，
+    // 一頁一顆。它一出現只有一個意思——系統在引導你；多一處就稀釋一次。文件寫得
+    // 再清楚也擋不住順手加的第四種，所以釘成白名單：真的要新增（或搬家），同一個
+    // PR 改這份清單，審查時就看得到。
+    const allowed = [
+      join('src', 'components', 'RewardDashboard.tsx'),
+      join('src', 'components', 'referral', 'MyQrEntry.tsx'),
+      join('src', 'components', 'reward', 'WithdrawalSection.tsx'),
+      join('src', 'components', 'subscription', 'SubscriptionStatusCard.tsx'),
+    ].sort();
+    const users = walk('src', ['.tsx'])
+      .filter((rel) => !rel.endsWith('.test.tsx'))
+      .filter((rel) => readFileSync(join(REPO_ROOT, rel), 'utf8').includes('tone="guide"'))
+      .sort();
+    expect(users, '新增引導鈕前先對照 §12.11 的三種與一頁一顆').toEqual(allowed);
+  });
+});
+
+describe('焦點環與錯誤環一律全不透明', () => {
+  it('src/ 的元件不得用帶透明度的 ring 色（例：ring-ring/50、ring-destructive/20）', () => {
+    // 業主裁決 D1（#354）：焦點環全不透明——灰字 --sel 打三成透明對白底只剩 1.54:1，
+    // 過不了 WCAG 1.4.11 的 3:1。錯誤欄位聚焦時的紅環同理（兩成透明的紅等於沒有環）。
+    // S2b 收過一次 ring-ring/50、S2e 又在錯誤環找到同一型，所以改成全 repo 掃。
+    const translucentRing = /\bring-[a-z][\w-]*\/\d+/;
+    const offenders = walk('src', ['.tsx'])
+      .filter((rel) => !rel.endsWith('.test.tsx'))
+      .filter((rel) => translucentRing.test(readFileSync(join(REPO_ROOT, rel), 'utf8')));
+    expect(
+      offenders,
+      '焦點與錯誤環請用全不透明的 token（ring-ring、ring-destructive-border）',
+    ).toEqual([]);
+  });
+});

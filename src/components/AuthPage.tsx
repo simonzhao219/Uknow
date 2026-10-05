@@ -418,7 +418,7 @@ export function AuthPage() {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-sm text-primary underline underline-offset-4"
+                    className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                     data-testid="forgot-password-link"
                   >
                     忘記密碼？

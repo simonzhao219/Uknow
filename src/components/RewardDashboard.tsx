@@ -61,7 +61,7 @@ export function RewardDashboard() {
 
   const handleStartWithdrawal = () => {
     if (subscriptionStatus === 'expired') {
-      showError('無法申請提領', '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。');
+      showError('無法申請提領', '訂閱已失效，無法申請提領。請續訂以恢復服務。');
       return;
     }
     setShowWithdrawalProcess(true);
@@ -182,7 +182,7 @@ export function RewardDashboard() {
           description={
             <>
               <span className="font-medium">Point 全數保留不會歸零</span>
-              ，但續約後才能提領。
+              ，但續訂後才能提領。
             </>
           }
           action={

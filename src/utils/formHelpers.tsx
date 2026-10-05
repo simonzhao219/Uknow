@@ -5,7 +5,9 @@
  * 用法: className={getInputErrorClass(!!errors.fieldName)}
  */
 export function getInputErrorClass(hasError: boolean): string {
-  return hasError ? 'border-destructive-border focus-visible:ring-destructive-border' : '';
+  return hasError
+    ? 'border-destructive-border focus-visible:border-destructive-border focus-visible:ring-destructive-border'
+    : '';
 }
 
 /**

@@ -148,7 +148,6 @@ export function ServiceProviderManagement() {
             <h3 className="text-lg font-medium mb-2">暫時無法取得刊登狀態</h3>
             <p className="text-muted-foreground mb-6">{listingError}</p>
             <Button
-              variant="outline"
               onClick={() => {
                 void refetchListing();
               }}

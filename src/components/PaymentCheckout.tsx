@@ -731,7 +731,8 @@ export function PaymentCheckout() {
                   title="進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。"
                   action={
                     <Button
-                      variant="outline"
+                      tone="secondary"
+                      container="warning"
                       size="sm"
                       onClick={() => refreshSubscription()}
                       data-testid="backfill-progress-refresh"
