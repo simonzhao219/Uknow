@@ -19,6 +19,7 @@ import {
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  withRestTableFailure,
 } from './test-helpers.ts';
 import { twDayOf, twDayPlusDays, twDayPlusYears } from './tw-dates.ts';
 
@@ -33,7 +34,7 @@ async function getStatus(token: string) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const body = await res.json();
-  return { status: res.status, data: body.data };
+  return { status: res.status, data: body.data, body };
 }
 
 /**
@@ -249,3 +250,33 @@ Deno.test('status：hasPendingWithdrawal 在 data 頂層，只認 pending 提領
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+// 查詢失敗不得偽裝成「已失效」：先前 user_account_status 失敗時回 200 +
+// status:'expired'，前端照實顯示失效、刊登卡誤標已隱藏（S2d #343 審查）。
+// 同一 handler 的其他讀取同理——200 帶捏造的 renewal=null／
+// hasPendingWithdrawal=false／freshForfeitPoints=0 一樣是錯的資訊（後者會讓
+// 人以為選新約沒有代價）。active 會員一定走到續約資訊那段，六張表都摸得到。
+for (
+  const table of [
+    'user_account_status',
+    'subscriptions',
+    'withdrawals',
+    'payment_orders',
+    'reward_balances',
+    'task_progress',
+  ]
+) {
+  Deno.test(`status：${table} 查詢失敗 → 500，不捏造狀態`, async () => {
+    const client = adminClient();
+    const user = await createTestUser(client, { name: `Status Fail ${table}` });
+    try {
+      assertEquals((await payForUser(client, user.id)).error, null);
+      const token = await getUserAccessToken(client, user.email);
+      const res = await withRestTableFailure([table], () => getStatus(token));
+      assertEquals(res.status, 500, JSON.stringify(res.body));
+      assertEquals(res.data, undefined, '失敗時不得回 data');
+    } finally {
+      await deleteTestUsers(client, [user.id]);
+    }
+  });
+}

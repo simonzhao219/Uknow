@@ -202,6 +202,9 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 （§10.1 #5a）只擋 `rejected` 而不擋 `pending`，同一條理由——把「還沒輪到審核」
 當成不合格，會讓等待本身變成懲罰，而真正的關卡在後面那道人工動作上。
 
+**讀取失敗不是「尚未確認」**：守衛與狀態端點讀不到資料時一律 fail-closed
+回 5xx，不放行，也不退化成預設值（「非 active」「沒有提領」「0 點」）。
+
 ---
 
 ## 6. 訂閱系統
@@ -236,7 +239,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 接續顯示進度，前端不留自己的進度副本。
 
 **fresh 的護欄**：存在審核中（`pending`）提領時不可選 fresh（§10.1，
-建單 400）；選 fresh 前結帳頁揭露將清空的具體數字（點數、累積推薦
+建單 400）；查不到提領狀態或會籍時建單回 500、不建單（§5.3）；選 fresh 前結帳頁揭露將清空的具體數字（點數、累積推薦
 人數），送出付款前需二次確認——補繳中途改選 fresh 時另列「已付款項
 不退還、效期不保留」警語。
 
@@ -279,6 +282,30 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
   的獎勵歸新上線。
 - **姓名同步**：組織圖姓名一律透過 User ID 關聯查詢，確保顯示最新真實姓名。
   第二、三代顯示名已**遮罩**（`陳○華`）。
+
+**節點狀態（四態）**：由會籍兩態（§5）、停權（§5.2）與距到期天數即時推導，
+不另存欄位。
+
+| 狀態 | 條件（依序判斷） |
+|---|---|
+| `suspended` 已停權 | `profiles.suspended_at` 有值——正交於會籍，優先 |
+| `expired` 已失效 | 會籍不在效期內 |
+| `expiring` 即將到期 | 會籍有效，且距到期 **≤30 天**（剩餘天數＝距 `end_date` 的天數無條件進位；與會員端續訂提醒同一個窗，常數 `RENEWAL_NOTICE_DAYS` 在前後端共享契約） |
+| `active` 訂閱中 | 會籍有效，距到期 >30 天 |
+
+邊界例：`end_date` 一律是到期日 D 的台灣日終，所以從 D−29 日 00:00 起剩餘天數
+≤30、進入即將到期；最後一天顯示「剩 1 天」。
+
+**需要關注＝一代且即將到期**（2026-10-04 業主定案）：只收自己的直接下線
+（一代）中 `expiring` 者。這是產品決策——需要關注只做到期前的事前提醒，
+已失效、停權與二、三代不列入；窗內被停權者依上表「停權優先」，同樣不列入
+（2026-10-05 業主裁決）。排序依剩餘天數升冪（最急的在前），同天數再依到期
+時間、userId 決勝。推薦網絡入口回**精確總數**與前 6 位；完整清單另有分頁端點，
+慣例同 §7.3 的搜尋——每頁預設 50、上限 200，總數不受分頁影響、越界只是空頁，
+不得靜默截斷。
+
+〔實作〕`supabase/functions/api/index.ts` 的 `deriveNodeStatus`、`attentionIds`；
+`/referrals/network/overview`（`attention`）與 `/referrals/network/attention`
 
 ### 7.3 推薦網絡的排序與搜尋
 
@@ -533,7 +560,8 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
 fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已清空的帳本。
 只擋 `pending`：`awaiting_collection` 依上表不可再轉 `rejected`（錢已
 核准匯出），無此風險（比照 §9.3 對 §5.3 的守衛對齊寫法，前後端共用
-同一個 `hasPendingWithdrawal` 判準）。
+同一個 `hasPendingWithdrawal` 判準）。查不到提領狀態時建單回 500、不建單——
+不能當成「沒有 pending」放行（§5.3）。
 
 ### 10.4 隱私取捨
 
@@ -696,6 +724,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 5 | 姓名格式規則的兩項未結清查證（§4.2） | ①`HAN_RANGE`（`㐀-鿿`＋`豈-﫿`）不含擴充 B 區以上與造字區，即戶政「缺字」問題——該正則原本只決定遮罩樣式，改當註冊關卡後同一落差的後果變成「完全無法註冊」。目前僅以「罕用字請聯繫客服」的錯誤訊息當逃生口，**未以既有 `profiles.name` 樣本查證實際族群規模**。②純羅馬拼音登記姓名（依《姓名條例》部分原住民族可單獨以羅馬拼音登記法定姓名）的分隔慣例未查證；外文模式目前只允許英文字母與單一半形空格，若官方轉寫慣例另有分隔符號則會誤擋 |
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 | 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
+| 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/profile` 的 `accountStatus`（`buildProfileResponse` 讀 `user_account_status` 不看 error，暫時性錯誤時路由守衛把有效會員導去續訂；失敗策略應是「未知態」或保留舊 profile，不是 5xx 當未登入）②`buildProfileResponse` 的 `profiles` 讀取失敗回 null → 404 → 前端 `signOut`，暫時性錯誤會登出有效會員 ③`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）④`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status` 與 `/payuni/prepare` 已改 fail-closed（#360） |
 
 ---
 

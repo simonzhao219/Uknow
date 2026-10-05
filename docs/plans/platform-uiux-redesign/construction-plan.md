@@ -489,6 +489,10 @@ python3 scripts/test-hooks.py 與 framework-check。
    自動打 `/api/health` 比對 `sha` 確認線上就是這個 commit。**您不用做
    任何事，合併後幾分鐘 develop 環境就是最新版**——§4.3 四個驗收站都
    在這個環境做。
+   ⚠️ 前端（Pages）隨 push 即部署、Edge Function 要等 CI 綠才部署，兩者之間有
+   新前端配舊後端的窗口（B1 #360 的 attention 口徑就會在窗口內算錯）：**合併後
+   立刻核准 Edge Function 部署；驗收一律先以 `/api/health` 的 sha 確認後端已換版**。
+   PR 預覽站吃的是舊的 develop 後端，不作驗收依據。
 2. **正式站上線走晉升 SOP**（建議整個工程驗收完成後一次晉升，中途不上
    正式站）：開 develop→main 晉升 PR → journey-full 全套自動跑
    （30-90 分鐘，真後端拋棄式分支）→ 綠了以 merge commit 合併，合併需

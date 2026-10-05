@@ -161,10 +161,10 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(listing).queryByText('立即刊登')).toBeNull();
   });
 
-  it('推薦網絡卡的徽章只計即將到期的人數', () => {
+  it('推薦網絡卡的徽章顯示一代即將到期的人數', () => {
     state.referral.overview.attention = {
-      total: 4,
-      items: [node('expiring'), node('expiring'), node('expiring'), node('expired')],
+      total: 3,
+      items: [node('expiring'), node('expiring'), node('expiring')],
     };
     renderPage();
 
@@ -175,7 +175,7 @@ describe('MemberDashboard 狀態卡', () => {
   });
 
   it('推薦網絡沒有人即將到期時卡片不顯示徽章', () => {
-    state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
+    state.referral.overview.attention = { total: 0, items: [] };
     renderPage();
 
     expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
@@ -299,6 +299,20 @@ describe('MemberDashboard 基本資料', () => {
   });
 });
 
+describe('MemberDashboard 我的訂閱卡', () => {
+  it('訂閱狀態讀取失敗時不顯示尚未訂閱，改顯示中性錯誤', () => {
+    state.subscription = {
+      subscriptionData: null,
+      isLoading: false,
+      lastFetchFailed: true,
+      refresh: vi.fn(),
+    };
+    renderPage();
+    expect(screen.getByText('暫時無法取得訂閱狀態')).toBeTruthy();
+    expect(screen.queryByText('您尚未訂閱任何服務')).toBeNull();
+  });
+});
+
 describe('MemberDashboard 需要注意區', () => {
   it('沒有需要處理的事時整塊不渲染', () => {
     renderPage();
@@ -306,10 +320,7 @@ describe('MemberDashboard 需要注意區', () => {
   });
 
   it('有人即將到期與有待查收提領時各列一條動作連結', () => {
-    state.referral.overview.attention = {
-      total: 3,
-      items: [node('expiring'), node('expired'), node('suspended')],
-    };
+    state.referral.overview.attention = { total: 1, items: [node('expiring')] };
     state.reward.withdrawals = [node('awaiting_collection'), node('awaiting_collection')];
     renderPage();
 
@@ -322,19 +333,19 @@ describe('MemberDashboard 需要注意區', () => {
     );
   });
 
-  it('推薦網絡只有已失效與停權時不列推薦那條', () => {
-    state.referral.overview.attention = { total: 2, items: [node('expired'), node('suspended')] };
+  it('推薦網絡沒有一代即將到期時不列推薦那條', () => {
+    state.referral.overview.attention = { total: 0, items: [] };
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });
 
-  it('即將到期人數被後端截斷時顯示至少幾位', () => {
+  it('清單被截在六筆時仍顯示精確人數', () => {
     state.referral.overview.attention = {
       total: 9,
       items: Array.from({ length: 6 }, () => node('expiring')),
     };
     renderPage();
-    expect(screen.getByRole('link', { name: '推薦網絡 至少 6 位即將到期' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '推薦網絡 9 位即將到期' })).toBeTruthy();
   });
 
   it('功能旗標關閉時不列該功能的注意事項', () => {

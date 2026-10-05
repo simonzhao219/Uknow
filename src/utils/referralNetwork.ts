@@ -1,7 +1,7 @@
 // ============================================================
 // 推薦網絡（Tier B 懶載入版）：前端型別 + 排序/倒數工具
 //
-// 後端三端點（/referrals/network/overview|children|search）為唯一資料
+// 後端四端點（/referrals/network/overview|children|search|attention）為唯一資料
 // 來源；節點為「扁平」形狀（無 children），樹由前端依 childCount 懶載入
 // 組裝。排序在伺服器算：name_* 必須留在伺服器（前端只有遮罩後的顯示名），
 // 而 updated_* 的鍵 joinedAt 雖然前端也拿得到，仍不下放——兩套排序等於
@@ -25,6 +25,7 @@ export { DEFAULT_NETWORK_SORT };
 export type { NetworkNode, NetworkSortMode };
 
 export type NetworkNodeStatus = NetworkNode['status'];
+/** 需要關注＝一代且即將到期：total 是精確人數，items 只有前 6 筆（完整清單走 attention 端點）。 */
 export type NetworkAttention = NetworkOverviewResponse['data']['attention'];
 export type NetworkSummary = NetworkOverviewResponse['data']['summary'];
 export type NetworkOverview = NetworkOverviewResponse['data'];

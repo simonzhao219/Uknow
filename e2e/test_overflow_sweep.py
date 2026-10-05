@@ -190,7 +190,8 @@ def _setup_dashboard(context, api_mock, rest_mock):
         second_generation=[build_referral_member("李小華")] * 300,
         third_generation=[build_referral_member("張美玲")] * 700,
         user_referral_code="UK8K3M9Q2X",
-        attention={"total": 9, "items": expiring},
+        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是徽章與注意列的最寬情境
+        attention={"total": 999, "items": expiring},
     )
     api_mock.set_task_center(tasks=[build_monthly_king_task(current=8)])
     api_mock.set_reward_summary(available=BIG_POINTS, total_earned=BIG_POINTS * 2)
