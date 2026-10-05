@@ -51,17 +51,12 @@ export function SubscriptionStatusCard({ subscriptionData, isLoading }: Props) {
         </CardTitle>
 
         {!isLoading && cardState === 'expired-former' && (
-          <Button variant="default" size="sm" asChild>
+          <Button tone="guide" size="sm" asChild>
             <Link to="/payment/checkout">續訂 / 重新訂閱</Link>
           </Button>
         )}
         {!isLoading && noticeDaysLeft !== null && (
-          <Button
-            variant="default"
-            size="sm"
-            className="bg-warning hover:bg-warning/90 text-warning-foreground"
-            asChild
-          >
+          <Button tone="guide" size="sm" asChild>
             <Link to="/payment/checkout">立即續訂</Link>
           </Button>
         )}

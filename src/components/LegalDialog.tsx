@@ -35,7 +35,7 @@ export function LegalDialog({
   triggerLabel,
   title,
   content,
-  triggerClassName = 'text-brand underline',
+  triggerClassName = 'text-primary underline underline-offset-4',
   triggerTestId,
 }: LegalDialogProps) {
   const [open, setOpen] = useState(false);

@@ -124,7 +124,7 @@ export function ServiceProviderManagement() {
             讀取失敗時 listing 同樣是 null，此時放行會讓已有刊登的人建出
             第二則，違反單一刊登模式。 */}
         {!loading && !listingError && listing === null && (
-          <Button asChild>
+          <Button tone="secondary" asChild>
             <Link to="/service-providers/create">
               <Plus className="h-4 w-4 mr-2" />
               刊登新服務
@@ -193,13 +193,13 @@ export function ServiceProviderManagement() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" asChild>
+                      <Button tone="secondary" size="sm" asChild>
                         <Link to={`/service-providers/${listing.id}`} aria-label="查看刊登">
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
 
-                      <Button variant="outline" size="sm" asChild>
+                      <Button tone="secondary" size="sm" asChild>
                         <Link to={`/service-providers/edit/${listing.id}`} aria-label="編輯刊登">
                           <Edit className="h-4 w-4" />
                         </Link>

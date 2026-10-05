@@ -186,7 +186,12 @@ export function RewardDashboard() {
             </>
           }
           action={
-            <Button size="sm" onClick={() => navigate('/payment/checkout')}>
+            <Button
+              tone="guide"
+              container="warning"
+              size="sm"
+              onClick={() => navigate('/payment/checkout')}
+            >
               立即續約
             </Button>
           }

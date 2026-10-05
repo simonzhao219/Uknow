@@ -143,7 +143,7 @@ export function ServiceProviderDetail() {
                   key={index}
                   onClick={() => setCurrentImageIndex(index)}
                   className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
-                    currentImageIndex === index ? 'border-primary' : 'border-transparent'
+                    currentImageIndex === index ? 'border-sel' : 'border-transparent'
                   }`}
                 >
                   <ImageWithFallback

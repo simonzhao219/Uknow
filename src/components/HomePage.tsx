@@ -772,7 +772,8 @@ function DesktopFilterPopover({
             // 沒有上限時這顆鈕會在同一列把搜尋框（md:flex-1）擠掉——768px
             // 附近最明顯，又是一次「手機對、桌機錯」。
             'max-w-[14rem]',
-            active && 'border-primary/60 bg-primary/5',
+            // 有套用篩選＝有框元件的選取態（§12.12）：框線灰字單圈 2px，不疊底色。
+            active && 'border-sel ring-1 ring-sel',
           )}
           title={summary ?? label}
         >

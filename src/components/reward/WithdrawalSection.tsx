@@ -213,6 +213,7 @@ export function WithdrawalSection({
           {/* 提領按鈕區域 */}
           <div className="border-b pb-4">
             <Button
+              tone="secondary"
               onClick={onStartWithdrawal}
               className="w-full"
               size="lg"
@@ -282,7 +283,7 @@ export function WithdrawalSection({
                       {withdrawal.status === 'awaiting_collection' && (
                         <Button
                           size="sm"
-                          variant="outline"
+                          tone="guide"
                           onClick={() => handleClickCollection(withdrawal)}
                           className="text-xs"
                         >

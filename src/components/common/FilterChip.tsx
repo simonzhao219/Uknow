@@ -32,11 +32,10 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
         // 撐得比篩選面板還寬。
         'max-w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+        // 選中＝無框元件的選取態（ui-ux-guidelines §12.12）：底色灰字 --sel、文字反白。
         selected
-          ? 'border-primary bg-primary text-primary-foreground'
-          : // 未選用 border-border 而非 border-input：本專案亮色主題的
-            // --input 是 transparent，會讓未選 chip 看起來像純文字、失去可點的暗示。
-            'border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
+          ? 'border-sel bg-sel text-sel-foreground'
+          : 'border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
         className,
       )}
     >

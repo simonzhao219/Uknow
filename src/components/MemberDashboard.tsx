@@ -253,7 +253,7 @@ export function MemberDashboard() {
                   {rounds.currentRoundCount} / {currentTask.target}
                   <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
                 </StatValue>
-                {/* 進度填色用強調色 brand、軌道灰階（§12.5，同 task/ProgressBar）。 */}
+                {/* 進度填色用品牌色 brand（重點與進度）、軌道灰階（§12.5，同 task/ProgressBar）。 */}
                 <div className="h-2 overflow-hidden rounded-full bg-muted-foreground/20">
                   <div
                     className="h-full bg-brand"

@@ -120,7 +120,9 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button onClick={onClose}>關閉</Button>
+          <Button tone="secondary" onClick={onClose}>
+            關閉
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -726,7 +728,7 @@ export function WithdrawalManagement({
                   實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
                   第一筆提領卡仍在第一屏內。 */}
               <Button
-                variant="default"
+                tone="secondary"
                 size="sm"
                 onClick={downloadCSV}
                 disabled={!withdrawals.length}

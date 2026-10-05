@@ -861,7 +861,7 @@ export function WithdrawalProcess({
                     triggerLabel="推廣獎勵規章"
                     title="推廣獎勵規章"
                     content={referralRewardRulesContent}
-                    triggerClassName="text-brand underline mx-1"
+                    triggerClassName="text-primary underline underline-offset-4 mx-1"
                     triggerTestId="withdrawal-rules-link"
                   />
                 </Label>

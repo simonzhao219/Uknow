@@ -302,6 +302,7 @@ export function PaymentResult() {
           </CardHeader>
           <CardContent>
             <Button
+              tone="secondary"
               onClick={handleContactSupport}
               className="w-full"
               size="lg"
@@ -764,6 +765,7 @@ export function PaymentResult() {
         <CardContent className="space-y-4">
           <StatusCallout variant="neutral" title={`訂單編號：${tradeNo}`} />
           <Button
+            tone="secondary"
             onClick={handleContactSupport}
             className="w-full"
             size="lg"
