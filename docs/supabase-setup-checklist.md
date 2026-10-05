@@ -495,6 +495,36 @@ KYC 身分證照片、金額門檻、當日一次）——要能領出點數，�
 KYC。稽核查詢（誰被自動綁定）：`select id from profiles where referred_by_is_default`，
 走 SQL、不建 admin UI。
 
+## ☑️ 步驟 7：建立第一位管理員（全新資料庫才需要）
+
+後台 `/admin` 只讓管理員進入，而第一位管理員要靠 API 產生——之後新增的管理員
+一律由既有管理員在後台「會員」分頁的會員詳情裡授予（規格書 §13）。**develop
+與正式站各做一次**，資料庫已經有管理員就跳過。
+
+`/admin-setup/set-self-admin` 對「全新資料庫的第一個呼叫者」開放：**新環境部署後
+應立即由預定的管理員帳號完成這一步**，不要讓空窗留著。
+
+1. **前置**：該帳號先在前台完成註冊並**補完個人資料**。註冊只會建出一筆空白的
+   profile（`name` 為空），資料沒補完的帳號 RPC 會回 `not_found`，前端也進不了
+   `/admin`。
+2. **取得 access token**：用該帳號登入前台 → DevTools → Application →
+   Local Storage → `sb-<ref>-auth-token`，複製其中的 `access_token`。
+3. **呼叫**（`<ref>`：develop 取 `config/supabaseTarget.ts` 的 `projectId`，
+   正式站取 `src/utils/supabase/info.tsx` 的 `projectId`）：
+
+   ```bash
+   curl -X POST "https://<ref>.supabase.co/functions/v1/api/admin-setup/set-self-admin" \
+     -H "Authorization: Bearer <access_token>"
+   ```
+
+4. **看回應**：
+   - `200` `{"success":true}`：成功。
+   - `403`：兩種情況——系統**已經有管理員**（請既有管理員在後台授予），或該帳號
+     **沒有 profile**（回到第 1 步補完資料）。
+5. **自驗**：同一個 token 打
+   `GET https://<ref>.supabase.co/functions/v1/api/admin-setup/check`，回應的
+   `isAdmin` 是 `true`；重新整理前台後 `/admin` 進得去。
+
 ## 快速檢查表（每個環境各一份）
 
 - [ ] 步驟 1：6 個 Edge Function Secrets 已新增並 Save
@@ -516,6 +546,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
 - [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
+- [ ] 步驟 7（僅全新資料庫）：預定的管理員帳號已補完資料並宣告，
+      `GET /admin-setup/check` 回 `isAdmin: true`
 
 ### 兩個環境都設完後，再驗一次「沒有交叉」
 

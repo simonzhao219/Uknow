@@ -227,7 +227,7 @@ export function WithdrawalManagement({
       // 缺欄位就退回保守值，不要讓它變成 undefined 再往下讀。這一段是 e2e
       // 教出來的：舊 mock 不回 total／stats，`stats.pendingAmount` 直接擲錯，
       // 而 WithdrawalManagement 是 AdminDashboard 的預設分頁——一個面板的
-      // payload 形狀不合，**五個分頁一起打不開**。爆炸半徑不該這麼大。
+      // payload 形狀不合，**整個後台的分頁一起打不開**。爆炸半徑不該這麼大。
       setTotal(data.total ?? rows.length);
       setStats(data.stats ?? EMPTY_STATS);
       // 換一批資料就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在
@@ -772,7 +772,7 @@ export function WithdrawalManagement({
       </Card>
 
       <Card>
-        {/* 手機隱藏:分頁標籤已經寫著「獎金提領管理」，再標一次「獎金提領申請」
+        {/* 手機隱藏:分頁標籤已經寫著「提領」，再標一次「獎金提領申請」
             是重複，而它佔掉的 70px 正是第一屏放不下第二筆的原因之一。 */}
         <CardHeader className="hidden sm:flex">
           <CardTitle>獎金提領申請</CardTitle>

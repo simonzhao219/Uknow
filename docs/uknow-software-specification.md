@@ -655,9 +655,12 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統通知** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
 | **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
-| **管理員設定** | `AdminSetup` | 初次指派管理員 |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
+
+第一位管理員由 `/admin-setup/*` 產生（不在 `/admin/**` 命名空間、只在全新資料庫
+使用，`admin_setup_claim` 在已有管理員時拒絕）；程序見
+`docs/supabase-setup-checklist.md` 步驟 7。
 
 **但 middleware 不是唯一防線**：PostgREST 的 `rpc/` 端點繞過它，所以每個
 `security definer` 的 admin 函數都必須 `revoke execute from anon, authenticated,
@@ -703,7 +706,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 寫入失敗即擋下驗證（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
 
 > **相機頁放哪的判準**：需要全螢幕或裝置權限的即時互動（如相機掃碼）走**獨立路由**；
-> 資料管理類走 `AdminDashboard` 的 **Tabs**（桌面版是釘死的 5 欄 grid，硬加會壞版面）。
+> 資料管理類走 `AdminDashboard` 的 **Tabs**（手機與桌面都是釘死的 4 欄一列，硬加會壞版面）。
 > 掃描開放給一般會員之後，那條獨立路由從 admin 區搬到會員區的 `/dashboard/qr`，
 > 判準本身不變。
 

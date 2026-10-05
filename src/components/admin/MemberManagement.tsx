@@ -226,8 +226,8 @@ export function MemberManagement({
   };
 
   return (
-    // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 6 個
-    // 頂層 Tab（規格書 §13 註記：那是釘死的 5 欄 grid，硬加會壞版面）。
+    // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 5 個
+    // 頂層 Tab（規格書 §13 註記：那是釘死的 4 欄一列，硬加會壞版面）。
     //
     // 手機 12px / 桌面 24px 的區塊間距與提領台一致（理由寫在
     // `WithdrawalManagement.tsx` 的同一處，不重述）。兩個分頁在同一個
