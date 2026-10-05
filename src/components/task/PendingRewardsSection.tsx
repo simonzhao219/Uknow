@@ -69,6 +69,7 @@ export function PendingRewardsSection({
               title={claimBlockedReason ?? undefined}
               onClick={() => setShowClaimAllDialog(true)}
               tone="secondary"
+              container="warning"
               className="mt-2 w-full sm:w-auto gap-2"
             >
               <Gift className="h-5 w-5" />

@@ -450,7 +450,7 @@ export function WithdrawalProcess({
               請繼續推薦好友增加Point餘額。
             </AlertDescription>
           </Alert>
-          <Button variant="outline" onClick={onCancel} className="w-full mt-4">
+          <Button tone="secondary" onClick={onCancel} className="w-full mt-4">
             返回
           </Button>
         </CardContent>
@@ -595,7 +595,7 @@ export function WithdrawalProcess({
             </div>
 
             <div className="flex gap-4">
-              <Button variant="outline" onClick={onCancel} className="flex-1">
+              <Button tone="secondary" onClick={onCancel} className="flex-1">
                 取消
               </Button>
               <Button onClick={handleNext} className="flex-1" disabled={!amount}>
@@ -633,7 +633,7 @@ export function WithdrawalProcess({
             </div>
 
             <div className="flex gap-4">
-              <Button variant="outline" onClick={handleBack} className="flex-1">
+              <Button tone="secondary" onClick={handleBack} className="flex-1">
                 上一步
               </Button>
               <Button onClick={() => setCurrentStep(3)} className="flex-1">
@@ -867,7 +867,7 @@ export function WithdrawalProcess({
 
             <div className="flex gap-4">
               <Button
-                variant="outline"
+                tone="secondary"
                 onClick={handleBack}
                 className="flex-1"
                 disabled={isSubmitting}

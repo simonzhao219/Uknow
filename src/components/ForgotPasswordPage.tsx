@@ -104,7 +104,7 @@ export function ForgotPasswordPage() {
               </div>
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setIsEditing(true)} className="flex-1">
+                <Button tone="secondary" onClick={() => setIsEditing(true)} className="flex-1">
                   更改 Email
                 </Button>
                 <Button onClick={handleSubmit} loading={isLoading} className="flex-1">

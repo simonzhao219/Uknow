@@ -385,7 +385,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleBackfillLater}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="backfill-later-button"
@@ -512,7 +512,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleContactSupport}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="contact-support-button"
@@ -686,7 +686,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleContactSupport}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="contact-support-button"

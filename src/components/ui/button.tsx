@@ -5,8 +5,8 @@ import { Loader2 } from "lucide-react@0.487.0";
 
 import { cn } from "./utils";
 
-// 次要動作的外觀（白底、邊框色框線、墨字）。variant="outline" 與 tone="secondary"
-// 共用這一串，兩種寫法畫出來一模一樣；新程式碼用 tone（ui-ux-guidelines §12.11）。
+// 次要動作的外觀（白底、邊框色框線、墨字），tone="secondary" 用。原本的 variant="outline"
+// 是同一串外觀，#354 全站搬到 tone 後移除——主次只有 tone 一種寫法（ui-ux-guidelines §12.11）。
 // 底色用 bg-card 而非 bg-background：版面底若改淡灰，外框鈕仍要是白的。框線用 --border
 // 不用 --input：按鈕靠文字辨識，框線屬裝飾；--input 是輸入格、下拉、勾選框那一圈（§12.7）。
 const SECONDARY_SURFACE =
@@ -14,6 +14,9 @@ const SECONDARY_SURFACE =
 
 // 有色容器裡的次要鈕：白底，框線與字取容器的 300／800 層。
 const CONTAINER_SECONDARY = "border bg-card";
+
+// 紅框字：破壞性鈕（任何容器）與紅色容器裡的次要鈕是同一串。
+const DESTRUCTIVE_OUTLINE = `${CONTAINER_SECONDARY} border-destructive-border text-destructive-subtle-foreground hover:bg-destructive-subtle`;
 
 const buttonVariants = cva(
   // 焦點只有鍵盤焦點環（focus-visible 的 3px ring-ring，§12.12），不再同時改框線色——
@@ -25,9 +28,9 @@ const buttonVariants = cva(
       variant: {
         default: "",
         // 紅實心：只給不可逆的確認框，以及疊在照片上的移除鈕（外框在圖上看不見）。
-        // 一般破壞性動作用 tone="destructive"（紅框字），§12.11。
+        // 與 tone="destructive"（紅框字，一般破壞性動作）同名不同義——variant 管形狀，
+        // tone 管主次；列內觸發鈕用 tone，按下去跳出的不可逆確認才用 variant，§12.11。
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: SECONDARY_SURFACE,
         ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         // 連結＝墨色加常駐底線：顏色與內文相同，底線是唯一的區分（§12.3）。
         link: "text-primary underline underline-offset-4",
@@ -126,13 +129,13 @@ const buttonVariants = cva(
         variant: "default",
         tone: "secondary",
         container: "destructive",
-        class: `${CONTAINER_SECONDARY} border-destructive-border text-destructive-subtle-foreground hover:bg-destructive-subtle`,
+        class: DESTRUCTIVE_OUTLINE,
       },
       // 破壞性一律紅框字，不分容器。
       {
         variant: "default",
         tone: "destructive",
-        class: `${CONTAINER_SECONDARY} border-destructive-border text-destructive-subtle-foreground hover:bg-destructive-subtle`,
+        class: DESTRUCTIVE_OUTLINE,
       },
     ],
     defaultVariants: {

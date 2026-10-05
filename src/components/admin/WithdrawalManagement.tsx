@@ -716,7 +716,7 @@ export function WithdrawalManagement({
                   <SelectItem value="rejected">已退件</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
+              <Button tone="secondary" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重新整理
               </Button>
@@ -899,7 +899,7 @@ export function WithdrawalManagement({
                       ) : w.status === 'awaiting_collection' ? (
                         <Button
                           size="sm"
-                          variant="outline"
+                          tone="secondary"
                           onClick={() => setCompleteTarget(w)}
                           disabled={processingId === w.id}
                         >
@@ -917,7 +917,7 @@ export function WithdrawalManagement({
 
           {!isLoading && !loadError && withdrawals.length < total && (
             <div className="pt-4 text-center">
-              <Button variant="outline" onClick={loadMore} disabled={isLoadingMore}>
+              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore}>
                 {isLoadingMore ? '載入中…' : '載入更多'}
               </Button>
             </div>

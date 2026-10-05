@@ -59,7 +59,7 @@ export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProp
             </p>
             <div className="flex gap-2">
               <Button onClick={() => navigate('/dashboard')}>返回會員中心</Button>
-              <Button variant="outline" onClick={() => navigate('/')}>
+              <Button tone="secondary" onClick={() => navigate('/')}>
                 返回首頁
               </Button>
             </div>

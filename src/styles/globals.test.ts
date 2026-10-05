@@ -140,6 +140,22 @@ describe('globals.css 品牌色與選取色 token 三處齊備', () => {
   });
 });
 
+// 輸入格與框線、焦點環的 token（#354 二次審查 #3／#15）：--input-background 有四個原語
+// 消費者（input／textarea／select／input-otp），指錯時 bg-input-background 會靜默消失；
+// --input／--ring／--border 的 @theme 值字面也一起釘住。
+describe('輸入格、框線與焦點環 token 的三處齊備', () => {
+  for (const name of ['input-background', 'input', 'ring', 'border']) {
+    it(`--${name} 在 :root 與 .dark 都有定義`, () => {
+      expect(rootTokens.has(`--${name}`), `:root 缺少 --${name}`).toBe(true);
+      expect(darkTokens.has(`--${name}`), `.dark 缺少 --${name}`).toBe(true);
+    });
+
+    it(`@theme inline 的 --color-${name} 值字面等於 var(--${name})`, () => {
+      expect(themeTokens.get(`--color-${name}`)).toBe(`var(--${name})`);
+    });
+  }
+});
+
 // 浮起表面（ui-ux-guidelines §12.6）：浮在內容上的元件（首頁搜尋鈕與工具列）用。
 // 陰影值不是顏色，不進 --color-*；它走 Tailwind 的 --shadow-* 命名空間成為 shadow-raised。
 describe('浮起表面 token 三處齊備', () => {
@@ -590,6 +606,18 @@ describe('可互動元件框線 --input', () => {
   it('深色有自己的 --input-background，填色不再靠 --input 疊透明度', () => {
     expect(darkTokens.has('--input-background')).toBe(true);
   });
+});
+
+// 重點淡底容器裡的次要鈕（container="brand"）：白底 bg-card 上的字是 brand-subtle-foreground，
+// 也要過文字門檻（#354 二次審查 #15）。
+describe('重點淡底容器次要鈕的字色', () => {
+  for (const mode of MODES) {
+    it(`${mode === 'light' ? '淺色' : '深色'}：brand-subtle-foreground 對 card ≥ 4.5:1`, () => {
+      expect(
+        contrastRatio(hexOf(mode, 'brand-subtle-foreground'), hexOf(mode, 'card')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });
 
 describe('品牌色蔚藍對比度（淺深各一輪，公式已錨定）', () => {

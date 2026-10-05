@@ -712,7 +712,7 @@ export function PaymentCheckout() {
                     暫時無法載入續約資訊，請稍後重試。
                   </p>
                   <Button
-                    variant="outline"
+                    tone="secondary"
                     size="sm"
                     onClick={() => refreshSubscription()}
                     data-testid="renewal-info-retry"
@@ -1014,7 +1014,7 @@ export function PaymentCheckout() {
             )}
 
             <Button
-              variant="outline"
+              tone="secondary"
               onClick={handleCancel}
               disabled={isLoading || isButtonLocked}
               className="w-full"

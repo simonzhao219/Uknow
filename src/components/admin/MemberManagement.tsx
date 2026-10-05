@@ -374,7 +374,7 @@ export function MemberManagement({
                 </p>
                 <Button
                   size="sm"
-                  variant="outline"
+                  tone="secondary"
                   className={
                     detailFor.suspended
                       ? undefined
@@ -393,7 +393,7 @@ export function MemberManagement({
                 </p>
                 <Button
                   size="sm"
-                  variant="outline"
+                  tone="secondary"
                   className={
                     detailFor.isAdmin
                       ? 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
@@ -515,7 +515,7 @@ export function MemberManagement({
                   placeholder="搜尋姓名 / Email / 電話"
                   className="w-56"
                 />
-                <Button type="submit" variant="outline" size="sm">
+                <Button type="submit" tone="secondary" size="sm">
                   <Search className="h-4 w-4" />
                 </Button>
               </form>
@@ -533,7 +533,7 @@ export function MemberManagement({
               // 以為系統裡沒有這個人，而不是「沒讀到」。
               <div className="py-12 text-center space-y-3">
                 <p className="text-destructive-subtle-foreground">{list.error}</p>
-                <Button variant="outline" onClick={list.reload}>
+                <Button tone="secondary" onClick={list.reload}>
                   重試
                 </Button>
               </div>
@@ -597,7 +597,7 @@ export function MemberManagement({
                               卻是滿版紅底、在掃描時最搶眼。 */}
                           <Button
                             size="sm"
-                            variant="outline"
+                            tone="secondary"
                             aria-label={`查看 ${member.name ?? member.email} 的詳情`}
                             onClick={() => openDetail(member.id)}
                           >
@@ -618,7 +618,7 @@ export function MemberManagement({
                   已顯示 {members.length} / {total} 筆
                 </p>
                 {list.hasMore && (
-                  <Button variant="outline" onClick={list.loadMore} disabled={list.isLoadingMore}>
+                  <Button tone="secondary" onClick={list.loadMore} disabled={list.isLoadingMore}>
                     {list.isLoadingMore ? '載入中…' : '載入更多'}
                   </Button>
                 )}

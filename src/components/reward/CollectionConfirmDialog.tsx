@@ -89,7 +89,7 @@ export function CollectionConfirmDialog({
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={onCancel} className="flex-1">
+            <Button tone="secondary" onClick={onCancel} className="flex-1">
               取消
             </Button>
             <Button onClick={onNext} className="flex-1">

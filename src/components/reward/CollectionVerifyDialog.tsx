@@ -83,7 +83,7 @@ export function CollectionVerifyDialog({
 
           {/* 按鈕 */}
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={onBack} className="flex-1" disabled={isSubmitting}>
+            <Button tone="secondary" onClick={onBack} className="flex-1" disabled={isSubmitting}>
               上一步
             </Button>
             <Button

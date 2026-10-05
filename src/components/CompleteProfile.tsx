@@ -784,7 +784,7 @@ export function CompleteProfile() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => verifyReferralCode()}
                   disabled={
                     isVerifyingCode ||
@@ -874,7 +874,7 @@ export function CompleteProfile() {
             {/* 稍後註冊按鈕 */}
             <Button
               type="button"
-              variant="outline"
+              tone="secondary"
               className="w-full mt-2"
               onClick={handleLaterSignup}
             >

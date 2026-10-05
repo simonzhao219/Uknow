@@ -471,7 +471,7 @@ export function HomePage() {
                 : '請稍後再來看看，或許會有新的服務者加入'}
             </p>
             {(totalFilters > 0 || searchQuery.trim()) && (
-              <Button onClick={clearFilters} variant="outline">
+              <Button onClick={clearFilters} tone="secondary">
                 清除搜尋與篩選
               </Button>
             )}
@@ -761,7 +761,7 @@ function DesktopFilterPopover({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          tone="secondary"
           size="sm"
           className={cn(
             'h-9 gap-1.5 rounded-full',
@@ -771,7 +771,7 @@ function DesktopFilterPopover({
             // 附近最明顯，又是一次「手機對、桌機錯」。
             'max-w-[14rem]',
             // 有套用篩選＝有框元件的選取態（§12.12）：框線灰字單圈 2px，不疊底色。
-            active && 'border-sel dark:border-sel ring-1 ring-sel',
+            active && 'border-sel ring-1 ring-sel',
           )}
           title={summary ?? label}
         >

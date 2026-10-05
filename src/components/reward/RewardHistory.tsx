@@ -216,7 +216,8 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {error && (
           <div className="text-center py-8">
             <p className="text-destructive-subtle-foreground mb-4">{error}</p>
-            <Button onClick={() => window.location.reload()} size="sm">
+            {/* 區塊內的重試：頁面上還有提領等主要動作，用次要（§12.11）。 */}
+            <Button tone="secondary" onClick={() => window.location.reload()} size="sm">
               重新載入
             </Button>
           </div>
@@ -309,7 +310,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
         {/* 加載更多按鈕 */}
         {!isLoading && !error && offset < total && (
           <div className="text-center">
-            <Button onClick={handleLoadMore} variant="outline" size="sm" disabled={isLoadingMore}>
+            <Button onClick={handleLoadMore} tone="secondary" size="sm" disabled={isLoadingMore}>
               {isLoadingMore ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />

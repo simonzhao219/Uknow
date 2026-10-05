@@ -87,7 +87,7 @@ export function WithdrawalCardList({
                   {/* 常用＋破壞力低 → 列上、主要視覺權重（§11 規則 1 要求
                       outline 以上）。它就是這個列表存在的理由:admin 要照著
                       這五欄打進網銀。 */}
-                  <Button variant="outline" size="sm">
+                  <Button tone="secondary" size="sm">
                     匯款資訊
                   </Button>
                 </CollapsibleTrigger>

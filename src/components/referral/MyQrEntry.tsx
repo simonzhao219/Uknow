@@ -105,7 +105,7 @@ export function MyQrEntry({ className, onJoined, yieldsGuide = false }: MyQrEntr
 
       <div className="ml-auto shrink-0">
         {/* 連結而不是按鈕：可長按開新分頁、可被預熱，也讓返回鍵知道來源。 */}
-        <Button asChild variant="outline" size="sm">
+        <Button asChild tone="secondary" size="sm">
           <Link
             to="/dashboard/qr"
             state={{ from: location.pathname }}

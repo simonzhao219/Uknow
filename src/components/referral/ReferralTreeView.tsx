@@ -611,7 +611,7 @@ export function ReferralTreeView({
               <div className="text-center">
                 <Button
                   onClick={loadMoreMatches}
-                  variant="outline"
+                  tone="secondary"
                   size="sm"
                   disabled={search.loadingMore}
                 >

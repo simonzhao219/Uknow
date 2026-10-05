@@ -429,7 +429,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');
@@ -507,7 +507,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');

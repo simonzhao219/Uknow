@@ -23,12 +23,18 @@ describe('buttonVariants', () => {
     expect(cls).not.toContain('bg-primary');
   });
 
-  it('secondary 是白底框線墨字，與 variant="outline" 同一串外觀', () => {
+  it('secondary 是白底框線墨字', () => {
     const secondary = classesOf(buttonVariants({ tone: 'secondary' }));
     expect(secondary).toEqual(expect.arrayContaining(['border', 'bg-card', 'text-foreground']));
     expect(secondary).not.toContain('bg-primary');
-    const outline = classesOf(buttonVariants({ variant: 'outline' }));
-    expect([...secondary].sort()).toEqual([...outline].sort());
+  });
+
+  // #354 二次審查裁決 #11：全站 outline 搬到 tone="secondary" 後移除 outline variant——
+  // 主次只有 tone 一種寫法，不留兩條路畫同一個外觀。
+  it('outline variant 已移除，主次只能用 tone 表達', () => {
+    // @ts-expect-error outline 不再是合法的 variant
+    const cls = classesOf(buttonVariants({ variant: 'outline' }));
+    expect(cls).not.toContain('bg-card');
   });
 
   it('destructive tone 是紅框字，不是紅實心', () => {
@@ -100,5 +106,34 @@ describe('buttonVariants', () => {
     const cls = classesOf(buttonVariants({}));
     expect(cls).toContain('aria-invalid:ring-destructive-border');
     expect(cls.filter((c) => /destructive\/\d/.test(c))).toEqual([]);
+  });
+
+  // #354 二次審查 #16：compoundVariants 每一列都釘住——token 名打錯不會報錯，只會畫不出來。
+  it.each([
+    ['flow', 'neutral', ['bg-primary', 'text-primary-foreground']],
+    ['flow', 'brand', ['bg-brand', 'text-brand-foreground']],
+    ['flow', 'warning', ['bg-warning', 'text-warning-foreground']],
+    ['flow', 'success', ['bg-success', 'text-success-foreground']],
+    ['flow', 'destructive', ['bg-destructive', 'text-destructive-foreground']],
+    ['guide', 'neutral', ['bg-brand', 'text-brand-foreground']],
+    ['guide', 'brand', ['bg-brand', 'text-brand-foreground']],
+    ['guide', 'warning', ['bg-warning', 'text-warning-foreground']],
+    ['guide', 'success', ['bg-success', 'text-success-foreground']],
+    ['guide', 'destructive', ['bg-destructive', 'text-destructive-foreground']],
+    ['secondary', 'neutral', ['bg-card', 'text-foreground']],
+    ['secondary', 'brand', ['bg-card', 'border-brand', 'text-brand-subtle-foreground']],
+    ['secondary', 'warning', ['bg-card', 'border-warning-border', 'text-warning-subtle-foreground']],
+    ['secondary', 'success', ['bg-card', 'border-success-border', 'text-success-subtle-foreground']],
+    ['secondary', 'destructive', ['bg-card', 'border-destructive-border', 'text-destructive-subtle-foreground']],
+    ['destructive', 'neutral', ['bg-card', 'border-destructive-border', 'text-destructive-subtle-foreground']],
+    ['destructive', 'warning', ['bg-card', 'border-destructive-border', 'text-destructive-subtle-foreground']],
+  ] as const)('tone %s 放在 %s 容器時畫出預期的底色與字色', (tone, container, expected) => {
+    const cls = classesOf(buttonVariants({ tone, container }));
+    for (const c of expected) {
+      expect(cls, c).toContain(c);
+    }
+    if (!(tone === 'flow' && container === 'neutral')) {
+      expect(cls).not.toContain('bg-primary');
+    }
   });
 });
