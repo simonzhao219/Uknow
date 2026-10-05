@@ -51,4 +51,17 @@ describe('FilterChip', () => {
     }
     expect(chip.classList.contains('bg-primary')).toBe(false);
   });
+
+  it('鍵盤焦點環與按鈕同為 3px，並與選中底色隔 1px', () => {
+    const chip = chipOf('美髮');
+    for (const c of [
+      'focus-visible:ring-[3px]',
+      'focus-visible:ring-ring',
+      'focus-visible:ring-offset-1',
+      'focus-visible:ring-offset-background',
+    ]) {
+      expect(chip.classList.contains(c), c).toBe(true);
+    }
+    expect(chip.classList.contains('focus-visible:ring-2')).toBe(false);
+  });
 });

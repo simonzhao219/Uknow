@@ -95,4 +95,10 @@ describe('buttonVariants', () => {
     expect(cls).toContain('aria-invalid:border-destructive-border');
     expect(cls).not.toMatch(/aria-invalid:border-destructive(?![\w-])/);
   });
+
+  it('錯誤態聚焦環用全不透明的 destructive-border，不留兩成透明的紅', () => {
+    const cls = classesOf(buttonVariants({}));
+    expect(cls).toContain('aria-invalid:ring-destructive-border');
+    expect(cls.filter((c) => /destructive\/\d/.test(c))).toEqual([]);
+  });
 });

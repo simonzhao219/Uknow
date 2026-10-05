@@ -15,7 +15,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           // 聚焦＝有框元件的選取態（§12.12）：框線變灰字、外加 1px 同色環，合成單圈 2px；
           // 文字輸入框滑鼠點也算 focus-visible，所以不疊鍵盤的 3px 焦點環。
           "focus-visible:border-sel focus-visible:ring-1 focus-visible:ring-sel",
-          "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive-border",
+          "aria-invalid:ring-destructive-border aria-invalid:border-destructive-border",
           className,
         )}
         ref={ref}

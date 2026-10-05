@@ -55,4 +55,19 @@ describe('TabsTrigger', () => {
     expect(inactive.classList.contains('focus-visible:ring-ring')).toBe(true);
     expect(inactive.className).not.toMatch(/focus-visible:(border|outline)-ring/);
   });
+
+  // 分頁列 Tab 進來，焦點必落在選中格；選中底色就是 --sel，與焦點環同色。沒有間隙時
+  // 環與底色融成一塊，只看得到格子外擴 3px。outline-hidden 是透明外框，平常看不到，
+  // Windows 強制色彩模式會把它畫出來（box-shadow 的環在那個模式下會被拿掉）。
+  it('焦點環與選中底色之間留 1px 間隙，強制色彩模式仍有外框', () => {
+    const { active } = renderTabs();
+    for (const c of [
+      'focus-visible:ring-offset-1',
+      'focus-visible:ring-offset-background',
+      'outline-hidden',
+    ]) {
+      expect(active.classList.contains(c), c).toBe(true);
+    }
+    expect(active.classList.contains('outline-none')).toBe(false);
+  });
 });

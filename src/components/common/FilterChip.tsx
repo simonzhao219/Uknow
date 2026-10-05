@@ -31,7 +31,7 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
         // 界限不能靠「上限夠小」——沒有 max-w 時，長標籤會把 flex-wrap 容器
         // 撐得比篩選面板還寬。
         'max-w-full',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+        'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         // 選中＝無框元件的選取態（ui-ux-guidelines §12.12）：底色灰字 --sel、文字反白。
         selected
           ? 'border-sel bg-sel text-sel-foreground'

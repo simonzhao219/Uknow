@@ -38,4 +38,11 @@ describe('Checkbox', () => {
     expect(box.classList.contains('focus-visible:ring-ring')).toBe(true);
     expect(box.className).not.toMatch(/focus-visible:border-ring/);
   });
+
+  it('錯誤態聚焦環用全不透明的 destructive-border', () => {
+    render(<Checkbox aria-label="同意條款" aria-invalid />);
+    const box = screen.getByRole('checkbox', { name: '同意條款' });
+    expect(box.classList.contains('aria-invalid:ring-destructive-border')).toBe(true);
+    expect(box.className).not.toMatch(/destructive\/\d/);
+  });
 });

@@ -54,7 +54,7 @@ function TabsTrigger({
         // 粗體——選中與否在色盲下仍是「實心 vs 透明」的明度差。只換顏色、不改盒模型，
         // admin 分頁列的量測法（AdminDashboard.tsx 註解）不受影響。dark 變體要保留：
         // specificity 才贏得過 dark:text-muted-foreground。焦點只有鍵盤焦點環。
-        "data-[state=active]:bg-sel data-[state=active]:text-sel-foreground dark:data-[state=active]:text-sel-foreground focus-visible:ring-ring text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-auto items-center justify-center gap-1.5 rounded-xl border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "data-[state=active]:bg-sel data-[state=active]:text-sel-foreground dark:data-[state=active]:text-sel-foreground focus-visible:ring-ring text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-auto items-center justify-center gap-1.5 rounded-xl border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-hidden focus-visible:ring-[3px] focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

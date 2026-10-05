@@ -56,4 +56,15 @@ describe('InputOTPSlot', () => {
     expect(current.classList.contains('data-[active=true]:ring-[3px]')).toBe(false);
     expect(current.className).not.toMatch(/data-\[active=true\]:(border|ring)-ring/);
   });
+
+  it('錯誤時目前格的環與框線同為全不透明的 destructive-border', () => {
+    const { current } = renderSlots();
+    for (const c of [
+      'data-[active=true]:aria-invalid:ring-destructive-border',
+      'data-[active=true]:aria-invalid:border-destructive-border',
+    ]) {
+      expect(current.classList.contains(c), c).toBe(true);
+    }
+    expect(current.className).not.toMatch(/destructive\/\d/);
+  });
 });

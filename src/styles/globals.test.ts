@@ -143,6 +143,16 @@ describe('globals.css 品牌色與選取色 token 三處齊備', () => {
 // 選取與聚焦一條規則（ui-ux-guidelines §12.12）：--sel 就是灰字、反白字就是版面底；
 // 焦點環 --ring 指向 --sel。兩處都要寫：.dark 若掛在子孫元素，:root 已代換好的
 // 淺色值不會跟著變。
+describe('base 層焦點外框', () => {
+  // 沒有自帶焦點 class 的元素（段落內連結、分段切換鈕）吃 base 層的 outline。
+  // 業主裁決 D1（#354）：焦點環全不透明——半透明的灰對白底只有 2:1 上下，過不了 1.4.11。
+  it('base 層的 outline 用 --ring 全不透明，不留半透明', () => {
+    const base = stripComments(css);
+    expect(base).toContain('@apply border-border outline-ring;');
+    expect(base).not.toMatch(/outline-ring\/\d/);
+  });
+});
+
 describe('選取色與焦點環的指向', () => {
   for (const [label, tokens] of [
     ['淺色', rootTokens],
