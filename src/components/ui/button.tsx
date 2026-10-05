@@ -21,7 +21,7 @@ const buttonVariants = cva(
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-brand underline underline-offset-4",
         // 次要行動鈕（強調色 --brand，§12.3）；主行動仍是 default 的 primary 黑。
-        brand: "bg-brand text-brand-foreground hover:bg-brand-hover",
+        brand: "bg-brand text-brand-foreground hover:bg-brand/90",
       },
       // pointer-coarse:* 讓觸控裝置的點擊目標達 44px（Apple HIG / Material 建議），
       // 滑鼠（fine pointer）維持原本精簡尺寸，不影響桌機密度。

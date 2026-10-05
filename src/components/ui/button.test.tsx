@@ -15,11 +15,11 @@ describe('buttonVariants', () => {
     expect(buttonVariants({ variant: 'destructive' })).not.toContain('dark:bg-destructive/60');
   });
 
-  it('brand 是 brand 實心底配 brand-foreground，hover 走 brand-hover', () => {
+  it('brand 是 brand 實心底配 brand-foreground，hover 降透明度', () => {
     const cls = buttonVariants({ variant: 'brand' });
     expect(cls).toContain('bg-brand');
     expect(cls).toContain('text-brand-foreground');
-    expect(cls).toContain('hover:bg-brand-hover');
+    expect(cls).toContain('hover:bg-brand/90');
   });
 
   it('link 用強調色 brand 並常駐底線，不只靠顏色（1.4.1）', () => {
