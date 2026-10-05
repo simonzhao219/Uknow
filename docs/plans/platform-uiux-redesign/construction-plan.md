@@ -24,6 +24,8 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 
 - **S2e（2026-10-05 追加）**：設計定案落地（plan.md §0 第 9 列、§3 D6、§4 第 9–14 點），排在 S2d 之後、S3 之前；只動 `globals.css`、ui 原語（Button／Checkbox／Badge／Tabs／InputOTP）、全站文案 sweep 與 `ui-ux-guidelines.md`，不碰 S3 的後台檔案；任務中心徽章與會員區頁面改動留給 S7。
 
+- **B1（2026-10-05 追加）**：S7 依賴的後端工項（attention 改一代即將到期＋分頁端點、後端回 UI 的「下線」字串、`/subscriptions/status` 查詢失敗回 5xx），與 S3 平行施工——B1 只動 `supabase/functions/`、api-contract 與兩處前端文案，S3 只動後台前端，不撞檔。任務等級門檻（0／1／4／8 → 2／4／6／8）經盤點只存在前端 `TaskBadge.tsx`，後端與規格書 §9 無等級定義，歸 S7 做徽章時處理，不在 B1。
+
 ## 2. Session 分工表
 
 > 模型依 CLAUDE.md 分級表；「重量」是對額度的粗估（輕≈半小時內、
@@ -39,6 +41,7 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S2c | 推薦樹世代配色 | D5 | `fix/referral-tree-gen-colors` | 輕量 Plan Mode（設計已由業主定案；原案撤回改向） | Sonnet | 輕 |
 | S2d | 會員中心狀態總覽 | F4 | `fix/dashboard-status-overview` | 輕量 Plan Mode（設計已由業主定案） | Sonnet | 中 |
 | S2e | 設計定案落地 | D6 | `fix/design-decisions-2026-10` | 輕量 Plan Mode（token 值與規則已由畫面稿定案，session 只做落地） | **Opus** 規劃（token 與 Button 原語是全站契約）、Sonnet 實作 | 中 |
+| B1 | S7 依賴的後端工項 | attention 口徑＋分頁端點、後端用語、/subscriptions/status 5xx | `fix/referral-attention-backend` | 輕量 Plan Mode（口徑已定案）；可與 S3 平行（只動 `supabase/functions/`、api-contract 與兩處前端文案，不碰 `src/components/admin/`） | Sonnet | 輕 |
 | S3 | 後台資訊架構 | A1+A2 | `feature/admin-ia-refactor` | 三段式落檔（動後台資訊架構與存取閘門——A1 含 AdminRoute bootstrap 例外的裁決） | Sonnet（規劃審查跑 /review-plan） | 中 |
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 中 |
@@ -273,6 +276,38 @@ globals.test.ts 改驗新值：三處齊備、字對底 ≥4.5:1、連接線對 
    grep variant="brand" 與 <Button> 無 variant 的用法逐一歸類，清單放進 Plan Mode。
    §13 第 2 條「主行動黑、次行動 brand」同 PR 改成三分法措辭（六已列）。
    收尾更新 progress.md（S2e 列、異動記錄）。
+```
+
+**B1**（後端工項，與 S3 **平行**；Sonnet；只動 `supabase/functions/`、api-contract 與兩處前端消費點的文案）：
+```
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md、supabase/README.md、
+docs/uknow-software-specification.md §7.2 與 §10。
+先 git checkout -B fix/referral-attention-backend origin/develop。
+執行 B1（S7 依賴的後端工項）：三件事，用 Plan Mode 先列契約差異與消費點給我看過再動工；
+Deno 測試（supabase/functions/api/*.test.ts）先紅後綠，前端 npm run check、e2e mock 同步全綠。
+一、/referrals/network/overview 的 attention 改口徑（plan.md §4 第 11 點，業主 2026-10-04 定案）：
+   只算「一代且即將到期」——supabase/functions/api/index.ts 約 3626–3650 行的 attentionAll
+   改為 generation === 1 && status === 'expiring'，依剩餘天數升冪；total 即精確人數；
+   items 仍取前 ATTENTION_LIMIT（6）筆（前端目前依 items 數即將到期、total > items 時顯示
+   「至少 N 位」，改口徑後兩者相等，截斷文案自然消失）。規格書 §7.2 補下線四態
+   （active／expiring／expired／suspended）與 expiring＝會籍 ≤30 天的定義（目前只在後端註解）。
+二、新增分頁清單端點 GET /referrals/network/attention?page=&size=（預設 50、上限 200，
+   與搜尋分頁同慣例；total 永遠是全部命中數），回傳同一組「一代即將到期」節點，
+   供 S7 的推薦管理橫幅「全部 N 位 ›」。授權與 overview 相同；加 network-endpoints.test.ts
+   的案例（空、單頁、跨頁、非一代與非 expiring 不入列）。api-contract（@contract 別名）
+   補型別與路由表，docs/api 若有端點清單一併補。
+三、後端回給 UI 的字串改用語（plan.md §4 第 14 點）：index.ts:3691「載入下線失敗」→
+   「載入推薦資料失敗」；grep 整個 supabase/functions/ 的字串常值（不含註解）裡的
+   「上線／下線」，有回到 UI 的一律改「推薦人／一代／二代／三代」。
+四、既有遺留順手收：/subscriptions/status（index.ts 約 2706 行）查 user_account_status
+   失敗時回 'expired' 而非 5xx——改回 500，前端 useSubscription 的 lastFetchFailed 路徑
+   已能承接；subscriptions-status.test.ts 補案例。
+五、前端只做最小同步，不重做版面（版面是 S7）：ReferralTreeView 橫幅文案
+   「N 位需要關注」→「N 位一代即將到期」（口徑變了文案不能留）、e2e 與 vitest 的
+   overview mock 依新口徑改資料、MemberDashboard 的 countExpiring／formatExpiringCount
+   不動（邏輯仍成立）。不碰 src/components/admin/（S3 在改）。
+六、會員中心摘要端點（一個聚合 API 取代五 hook 扇出）**不在 B1**：效能議題，S7 看完
+   實際載入狀況再決定要不要開。收尾更新 progress.md（B1 列、異動記錄、遺留事項改寫）。
 ```
 
 **S3**：
