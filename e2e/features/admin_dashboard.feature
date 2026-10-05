@@ -1,6 +1,7 @@
 Feature: Admin dashboard
-  "/admin" (AdminRoute — admins only) is a five-tab management console:
-  獎金提領管理 / 會員管理 / 公告管理 / 系統告警 / 管理員設置. A logged-in
+  "/admin" (AdminRoute — admins only) is a four-tab management console:
+  獎金提領管理 / 會員管理 / 系統公告 / 系統告警 (accessible names; the tabs
+  show only 提領 / 會員 / 公告 / 告警). A logged-in
   non-admin is redirected to their dashboard rather than seeing it.
 
   @smoke @route_guard @negative

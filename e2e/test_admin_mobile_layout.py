@@ -60,15 +60,60 @@ def admin_at_375(page, context, api_mock, rest_mock):
 
 
 @pytest.mark.compatibility
-def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
-    """U2：五個分頁標籤在 375px 下同時可見（＝排成兩列，不是單行捲動）。"""
+def test_admin_tabs_fit_one_row_at_375px(admin_at_375):
+    """U2：四個分頁在 375px 排成一列，四個都看得到。
+
+    一列成立的前提是可見標籤只有二字（提領／會員／公告／告警，S3 規劃 A1）。
+    「一列」本身分不出「四欄 grid」與「單行橫向捲動」——後者第 4 個分頁會被
+    捲到框外，所以另外斷言每個分頁都完整落在 TabsList 的可視範圍內。
+    """
     rows = count_rows(admin_at_375, TABS_LIST)
     assert rows is not None, f"找不到 {TABS_LIST}——選擇器過時了，不是版面問題"
-    assert rows == 2, (
-        f"五個分頁標籤排成 {rows} 列（期望 2 列）。"
-        "1 列代表仍在橫向捲動（第 4、5 個分頁看不到）；"
-        "3 列以上代表欄數設定塌了。"
+    assert rows == 1, (
+        f"四個分頁排成 {rows} 列（期望 1 列）。"
+        "2 列代表欄數設定退回了兩列版面（若量測不過才退 2+2，見規劃 §4）。"
     )
+    clipped = admin_at_375.evaluate(
+        """(sel) => {
+          const list = document.querySelector(sel);
+          const box = list.getBoundingClientRect();
+          return [...list.querySelectorAll('[role="tab"]')]
+            .map((t) => ({ text: t.textContent, r: t.getBoundingClientRect() }))
+            .filter(({ r }) => r.left < box.left - 0.5 || r.right > box.right + 0.5)
+            .map(({ text }) => text);
+        }""",
+        TABS_LIST,
+    )
+    assert clipped == [], f"這些分頁超出分頁列的可視範圍（在橫向捲動）：{clipped}"
+
+
+@pytest.mark.compatibility
+def test_admin_tabs_fit_one_row_at_320px(page, context, api_mock, rest_mock):
+    """最窄的常見手機（320px）也要一列、標籤不溢字——375px 的餘裕不代表 320px 也有。"""
+    page.set_viewport_size({"width": 320, "height": 640})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    assert count_rows(page, TABS_LIST) == 1, "320px 下四個分頁不在同一列"
+    overflowing = ink_overflowing_children(page, TABS_LIST)
+    assert overflowing == [], "320px 下分頁標籤超出自己的格子：" + "；".join(
+        f"「{c['text']}」超出 {c['by']}px" for c in overflowing
+    )
+
+
+def test_admin_tabs_are_equal_width_on_desktop(page, context, api_mock, rest_mock):
+    """桌機四欄等寬：二字標籤不得讓 grid 退回依內容撐寬的 flex。"""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    widths = page.evaluate(
+        """(sel) => [...document.querySelectorAll(sel + ' > [role="tab"]')]
+              .map((t) => t.getBoundingClientRect().width)""",
+        TABS_LIST,
+    )
+    assert len(widths) == 4, f"桌機應有 4 個分頁，實際 {len(widths)}"
+    assert max(widths) - min(widths) <= 1, f"四個分頁寬度不一致：{widths}"
 
 
 @pytest.mark.compatibility
@@ -209,11 +254,10 @@ def test_admin_checkbox_hit_areas_do_not_overlap(admin_tablet_touch):
 def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
     """分頁標籤不得畫到隔壁格子上。
 
-    今天就該綠（現況是 flex，格子被內容撐開）。它守的是 §4.1 改成
-    `grid-cols-3` 之後：grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，
-    標籤放不下時是 ink overflow——`count_rows` 照樣回報兩列、溢版巡檢
-    也不報，只有比對 scrollWidth 與 clientWidth 抓得到。實測餘裕只有
-    10.3px（可放文字 94.3px vs 最長標籤 84px），不厚。
+    grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，標籤放不下時是 ink
+    overflow——`count_rows` 照樣回報一列、溢版巡檢也不報，只有比對
+    scrollWidth 與 clientWidth 抓得到。四欄時每格可放文字約 66px，二字
+    可見標籤約 28px；sr-only 補字（無障礙名稱）不得撐出 scrollWidth。
     """
     overflowing = ink_overflowing_children(admin_at_375, TABS_LIST)
     assert overflowing is not None, f"找不到 {TABS_LIST}——選擇器過時了"
@@ -224,22 +268,22 @@ def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
 
 @pytest.mark.compatibility
 def test_admin_tabs_reach_44px_touch_target(admin_at_375):
-    """五個分頁標籤在觸控裝置上都要有 ≥44px 的可點高度（§1）。
+    """四個分頁標籤在觸控裝置上都要有 ≥44px 的可點高度（§1）。
 
     分頁列是 admin 手機版**最上層的導覽**——每一次要換分頁都得先按到它，
     頻率高於卡片上的任何一顆按鈕。原語 `ui/tabs.tsx` 的 base 是
     `py-1` ＋ `text-sm`（行高 20px）＋ 1px 邊框 ＝ 30px，而
-    `TabsList` 在 admin 被改成 `h-auto`（為了讓五個標籤排成兩列），
+    `TabsList` 在 admin 被改成 `h-auto`（為了讓 grid 由內容決定高度），
     所以格子高度由內容決定、沒有任何一處把它撐到 44px。
 
-    **寬度不測**：`grid-cols-3` 下每格 112px，本來就遠超過 44px，
+    **寬度不測**：`grid-cols-4` 下每格 84px，本來就遠超過 44px，
     寫進斷言只會製造一條永遠為真的條件。
 
     量的是命中而不是盒子（同 checkbox 那條的理由）——真正決定使用者按不按
     得到的是 `elementFromPoint`，不是 `getBoundingClientRect`。
     """
     too_small = []
-    for i in range(1, 6):
+    for i in range(1, 5):
         selector = f'{TABS_LIST} > [role="tab"]:nth-child({i})'
         area = hit_area(admin_at_375, selector)
         assert area is not None, f"找不到第 {i} 個分頁（{selector}）——選擇器過時了，不是版面問題"
