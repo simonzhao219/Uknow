@@ -24,6 +24,7 @@ import type {
   CurrentMonthReferralsResponse,
   MemberVerifyResponse,
   MemberVerifyTokenResponse,
+  NetworkAttentionResponse,
   NetworkChildrenResponse,
   NetworkNode,
   NetworkOverviewResponse,
@@ -2710,11 +2711,14 @@ app.get('/subscriptions/status', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [{ data: acct }, { data: subs }, pendingWithdrawal] = await Promise.all([
+  const [{ data: acct, error: acctErr }, { data: subs }, pendingWithdrawal] = await Promise.all([
+    // maybeSingle：查無列（沒有 profile）照舊當從未訂閱；只有真正的查詢失敗
+    // 才回 500。先前 .single() 的錯誤被吞掉、回 200 + status:'expired'，
+    // 前端就把有效會員顯示成已失效、刊登誤標已隱藏。
     sb().from('user_account_status')
       .select('status, end_date')
       .eq('user_id', user.id)
-      .single(),
+      .maybeSingle(),
     // 訂閱列表（新→舊）——[0] 供 SubscriptionStatusCard 顯示「訂閱週期」。
     // 過去只回 activeUntil，前端卡片的 currentPeriodStart/End 永遠拿不到
     // 值，會員在儀表板上根本看不到自己的到期日（領獎延長會籍後也就
@@ -2728,6 +2732,11 @@ app.get('/subscriptions/status', async (c) => {
     // A16 的前端對應：與 /payuni/prepare 守衛共用同一 helper（單一真相）。
     hasPendingWithdrawal(user.id),
   ]);
+
+  if (acctErr) {
+    console.error('[subscriptions/status] user_account_status 查詢失敗:', acctErr);
+    return c.json({ error: { message: '載入訂閱狀態失敗' } }, 500);
+  }
 
   // 續約資訊（renewal-backfill）：從未訂閱過 = null。日期算術與
   // process_successful_payment 的 extend 錨點同語意（backfillPlan 是
@@ -3596,13 +3605,41 @@ function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string
   return sorted;
 }
 
+// 需要關注＝**一代且即將到期**（業主 2026-10-04 定案，規格書 §7.2）：
+// 已失效／停權對使用者沒有可採取的動作，二、三代不是自己直接經營的人。
+// 依剩餘天數升冪（最急的在前）→ 到期時間升冪（同一天數內更早到期者在前）
+// → userId（全序）。overview 取前 ATTENTION_LIMIT 筆、/referrals/network/attention
+// 分頁走完全部——兩端點同一函式，判準與排序不會各寫一份。
 const ATTENTION_LIMIT = 6;
-// 搜尋分頁：預設頁大小 50、上限 200（與 /rewards/history 同慣例）。
-// total 永遠是全部命中數、不受這兩者影響——「符合條件的都要搜得到」是靠
-// 分頁走得完，不是靠把單頁放大；先前在排序後才 slice(0, 50)，排序方向一改
-// 就換一批人搜得到，而前端不顯示 total，截斷完全無感。
-const SEARCH_PAGE_SIZE = 50;
-const SEARCH_PAGE_MAX = 200;
+function attentionIds(net: Network): string[] {
+  const nodes = (net.gen1Ids as string[]).map((uid) => buildFlatNode(net, uid))
+    .filter((n) => n.generation === 1 && n.status === 'expiring');
+  return nodes
+    .sort((a, b) =>
+      ((a.daysToExpiry ?? Infinity) - (b.daysToExpiry ?? Infinity)) ||
+      ((Date.parse(a.endDate ?? '') || 0) - (Date.parse(b.endDate ?? '') || 0)) ||
+      (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0)
+    )
+    .map((n) => n.userId);
+}
+
+// 清單分頁（search、attention 共用）：預設頁大小 50、上限 200（與
+// /rewards/history 同慣例）。total 永遠是全部命中數、不受這兩者影響——
+// 「符合條件的都要看得到」是靠分頁走得完，不是靠把單頁放大；先前搜尋在排序後
+// 才 slice(0, 50)，排序方向一改就換一批人搜得到，而前端不顯示 total，截斷完全無感。
+// 壞值一律回落而非報錯：清單是高頻互動，limit=abc 不該讓使用者看到 400。
+// Number('') / Number(undefined) 皆為 NaN → `|| 預設`；負 offset 由 max 夾到 0；
+// 越界 offset 由 slice 自然回空陣列——是「空的一頁」，不是錯誤。
+const LIST_PAGE_SIZE = 50;
+const LIST_PAGE_MAX = 200;
+function parsePageParams(c: any): { limit: number; offset: number } {
+  const limit = Math.min(
+    Math.max(Number(c.req.query('limit')) || LIST_PAGE_SIZE, 1),
+    LIST_PAGE_MAX,
+  );
+  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+  return { limit, offset };
+}
 
 async function myReferralCode(client: any, userId: string): Promise<string> {
   const { data } = await client.from('referral_codes')
@@ -3612,7 +3649,7 @@ async function myReferralCode(client: any, userId: string): Promise<string> {
 
 // ============================================================
 // GET /referrals/network/overview?sort=
-// 懶載入入口：推薦碼 + 三代摘要 + 一代節點（排序後）+ 需要關注清單。
+// 懶載入入口：推薦碼 + 三代摘要 + 一代節點（排序後）+ 需要關注（前 6 筆＋總數）。
 // ============================================================
 app.get('/referrals/network/overview', async (c) => {
   const user = await requireAuth(c);
@@ -3626,17 +3663,7 @@ app.get('/referrals/network/overview', async (c) => {
 
     const roots = sortNodeIds(net, net.gen1Ids, sort).map((uid) => buildFlatNode(net, uid));
 
-    // 需要關注：expiring（依剩餘天數）→ expired（依最近到期）→ suspended。
-    const rank: Record<string, number> = { expiring: 0, expired: 1, suspended: 2 };
-    const attentionAll = net.allIds
-      .map((uid) => buildFlatNode(net, uid))
-      .filter((n) => n.status !== 'active')
-      .sort((a, b) =>
-        (rank[a.status] - rank[b.status]) ||
-        ((a.daysToExpiry ?? Infinity) - (b.daysToExpiry ?? Infinity)) ||
-        ((Date.parse(b.endDate ?? '') || 0) - (Date.parse(a.endDate ?? '') || 0)) ||
-        (a.userId < b.userId ? -1 : 1)
-      );
+    const attentionAll = attentionIds(net);
 
     return c.json(
       {
@@ -3645,7 +3672,10 @@ app.get('/referrals/network/overview', async (c) => {
           userReferralCode: code,
           sort,
           roots,
-          attention: { total: attentionAll.length, items: attentionAll.slice(0, ATTENTION_LIMIT) },
+          attention: {
+            total: attentionAll.length,
+            items: attentionAll.slice(0, ATTENTION_LIMIT).map((uid) => buildFlatNode(net, uid)),
+          },
           summary: net.summary,
         },
       } satisfies NetworkOverviewResponse,
@@ -3688,7 +3718,7 @@ app.get('/referrals/network/children', async (c) => {
     );
   } catch (err) {
     console.error('[referrals/network/children] 失敗:', err);
-    return c.json({ error: { message: '載入下線失敗' } }, 500);
+    return c.json({ error: { message: '載入推薦資料失敗' } }, 500);
   }
 });
 
@@ -3723,14 +3753,7 @@ app.get('/referrals/network/search', async (c) => {
       return path.reverse();
     };
 
-    // 壞值一律回落而非報錯：搜尋是高頻互動，limit=abc 不該讓使用者看到 400。
-    // Number('') / Number(undefined) 皆為 NaN → `|| 預設`；負 offset 由 max 夾到 0。
-    const limit = Math.min(
-      Math.max(Number(c.req.query('limit')) || SEARCH_PAGE_SIZE, 1),
-      SEARCH_PAGE_MAX,
-    );
-    const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
-    // 越界 offset 由 slice 自然回空陣列——是「空的一頁」，不是錯誤。
+    const { limit, offset } = parsePageParams(c);
     const matches = sortNodeIds(net, hitIds, sort)
       .slice(offset, offset + limit)
       .map((uid) => ({ node: buildFlatNode(net, uid), ancestorPath: pathTo(uid) }));
@@ -3744,6 +3767,33 @@ app.get('/referrals/network/search', async (c) => {
   } catch (err) {
     console.error('[referrals/network/search] 失敗:', err);
     return c.json({ error: { message: '搜尋失敗' } }, 500);
+  }
+});
+
+// ============================================================
+// GET /referrals/network/attention?limit=&offset=
+// 需要關注的完整清單（overview.attention 只帶前 6 筆）：同一判準、同一排序，
+// 供推薦管理橫幅「全部 N 位」。授權同 overview——只看得到自己的網絡。
+// ============================================================
+app.get('/referrals/network/attention', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  try {
+    const net = await loadNetwork(sb(), user.id);
+    const ids = attentionIds(net);
+    const { limit, offset } = parsePageParams(c);
+    const items = ids.slice(offset, offset + limit).map((uid) => buildFlatNode(net, uid));
+
+    return c.json(
+      {
+        success: true,
+        data: { total: ids.length, limit, offset, items },
+      } satisfies NetworkAttentionResponse,
+    );
+  } catch (err) {
+    console.error('[referrals/network/attention] 失敗:', err);
+    return c.json({ error: { message: '載入推薦資料失敗' } }, 500);
   }
 });
 
