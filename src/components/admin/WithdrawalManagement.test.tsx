@@ -20,6 +20,16 @@ import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManageme
 
 afterEach(cleanup);
 
+// Radix Select 在 jsdom 開選單要用到的 API（同 CategorySelectField.test）。
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+HTMLElement.prototype.hasPointerCapture ??= () => false;
+HTMLElement.prototype.releasePointerCapture ??= () => {};
+HTMLElement.prototype.scrollIntoView ??= () => {};
+
 type Page = AdminWithdrawalsResponse['data'];
 
 beforeEach(() => {
@@ -95,7 +105,10 @@ describe('WithdrawalManagement', () => {
 
     expect(screen.getByRole('status', { name: '載入提領申請中' })).toBeTruthy();
     resolve(page({ withdrawals: [] }));
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    // 只看列表區的載入狀態：工具列另有一個常駐（平時為空）的匯出狀態宣告區。
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull(),
+    );
   });
 
   it('取資料失敗時顯示錯誤態並提供重試', async () => {
@@ -560,7 +573,7 @@ describe('WithdrawalManagement 工具列與匯出', () => {
     return { load, releaseAll };
   }
 
-  it('連按兩次只收集一輪——同一份對帳檔不得下載兩次', async () => {
+  it('同一個事件迴圈內連按兩次只收集一輪——同一份對帳檔不得下載兩次', async () => {
     const pages = vi.fn(async ({ offset }: WithdrawalQuery) =>
       page({
         withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
@@ -569,17 +582,24 @@ describe('WithdrawalManagement 工具列與匯出', () => {
         offset,
       }),
     );
+    const createUrl = vi.fn(() => 'blob:test');
+    URL.createObjectURL = createUrl;
     renderConsole({ loadWithdrawals: pages });
     await screen.findByText('已顯示 1 / 3 筆');
     pages.mockClear();
 
     const csv = screen.getByRole('button', { name: /下載 CSV/ });
-    // 同一個 tick 連按：state 還沒 re-render，按鈕還沒 disabled。
-    fireEvent.click(csv);
-    fireEvent.click(csv);
+    // 兩次點擊包在同一個 act 裡：中間不 re-render，按鈕還沒 disabled——
+    // 擋得住的只有 handler 入口那個同步的 ref（fireEvent 分兩次呼叫的話，
+    // 第二次點到的已經是 disabled 的鈕，量不到 ref）。
+    act(() => {
+      csv.click();
+      csv.click();
+    });
 
     expect(await screen.findByText('已匯出 3 筆')).toBeTruthy();
     expect(pages).toHaveBeenCalledTimes(3);
+    expect(createUrl).toHaveBeenCalledTimes(1);
   });
 
   it('收集期間 CSV 忙碌，篩選與重新整理一併停用；完成後恢復並回報筆數', async () => {
@@ -652,9 +672,71 @@ describe('WithdrawalManagement 工具列與匯出', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true),
     );
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(true);
     releaseMore();
     await screen.findByText('已顯示 2 / 2 筆');
     expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('匯出期間列上的寫入動作與載入更多都停用——中途有列離開篩選會讓收集的 offset 錯位', async () => {
+    const { load, releaseAll } = pagedLoaderWithGate();
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByRole('button', { name: '匯出中…' });
+
+    for (const name of ['標記已匯款', '退件', '載入更多']) {
+      expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(true);
+    }
+
+    await releaseAll();
+    await screen.findByText('已匯出 3 筆');
+    for (const name of ['標記已匯款', '退件', '載入更多']) {
+      expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(false);
+    }
+  });
+
+  it('手機卡片上的退件在匯出期間也停用', async () => {
+    stubMediaQuery(false);
+    const { load, releaseAll } = pagedLoaderWithGate();
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByRole('button', { name: '匯出中…' });
+    expect(screen.getByRole('button', { name: '退件' }).hasAttribute('disabled')).toBe(true);
+    await releaseAll();
+  });
+
+  it('LINE 等內建瀏覽器裡不說「已匯出」——下載是否落檔偵測不到，說了可能是假成功', async () => {
+    const ua = vi
+      .spyOn(navigator, 'userAgent', 'get')
+      .mockReturnValue('Mozilla/5.0 (iPhone) Line/13.0.0');
+    try {
+      renderConsole({
+        loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }),
+      });
+      await screen.findByText('已顯示 1 / 1 筆');
+      fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+      expect(await screen.findByText('已產生 1 筆，若沒收到檔案請用外部瀏覽器開啟')).toBeTruthy();
+      expect(screen.queryByText('已匯出 1 筆')).toBeNull();
+    } finally {
+      ua.mockRestore();
+    }
+  });
+
+  it('換篩選後清掉上一次的匯出回報——那個筆數屬於舊篩選', async () => {
+    renderConsole({ loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }) });
+    await screen.findByText('已顯示 1 / 1 筆');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByText('已匯出 1 筆');
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+
+    await waitFor(() => expect(screen.queryByText('已匯出 1 筆')).toBeNull());
   });
 
   it('重新整理是工具列上的 icon 鈕，名稱由文字承擔', async () => {

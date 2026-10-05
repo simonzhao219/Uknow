@@ -71,9 +71,16 @@ def test_admin_tabs_fit_one_row_at_375px(admin_at_375):
     assert rows is not None, f"找不到 {TABS_LIST}——選擇器過時了，不是版面問題"
     assert rows == 1, (
         f"四個分頁排成 {rows} 列（期望 1 列）。"
-        "2 列代表欄數設定退回了兩列版面（若量測不過才退 2+2，見規劃 §4）。"
+        "2 列代表欄數設定退回了兩列版面。可見標籤放不下時的退路是 2+2"
+        "（grid-cols-2 md:grid-cols-4），這條斷言要一起改成 2。"
     )
-    clipped = admin_at_375.evaluate(
+    clipped = _clipped_tabs(admin_at_375)
+    assert clipped == [], f"這些分頁超出分頁列的可視範圍（在橫向捲動）：{clipped}"
+
+
+def _clipped_tabs(page):
+    """超出分頁列可視範圍的分頁（一列分不出「四欄 grid」與「單行橫向捲動」）。"""
+    return page.evaluate(
         """(sel) => {
           const list = document.querySelector(sel);
           const box = list.getBoundingClientRect();
@@ -84,7 +91,6 @@ def test_admin_tabs_fit_one_row_at_375px(admin_at_375):
         }""",
         TABS_LIST,
     )
-    assert clipped == [], f"這些分頁超出分頁列的可視範圍（在橫向捲動）：{clipped}"
 
 
 @pytest.mark.compatibility
@@ -95,6 +101,7 @@ def test_admin_tabs_fit_one_row_at_320px(page, context, api_mock, rest_mock):
     page.goto("/admin")
     settle(page)
     assert count_rows(page, TABS_LIST) == 1, "320px 下四個分頁不在同一列"
+    assert _clipped_tabs(page) == [], "320px 下有分頁被捲到分頁列外"
     overflowing = ink_overflowing_children(page, TABS_LIST)
     assert overflowing == [], "320px 下分頁標籤超出自己的格子：" + "；".join(
         f"「{c['text']}」超出 {c['by']}px" for c in overflowing
@@ -496,3 +503,44 @@ def test_member_search_placeholder_is_not_truncated_at_375px(admin_at_375):
     )
     assert fit is not None, "找不到會員搜尋框"
     assert fit["text"] <= fit["room"], f"placeholder 要 {fit['text']}px，框內只有 {fit['room']}px"
+
+
+# --- 工具列：真瀏覽器的名稱、桌機與觸控平板 -------------------------------------
+#
+# 按鈕的名稱跟 CSS 有關（sr-only、aria-labelledby），jsdom 算的跟 Chromium
+# 不一樣（ui-ux-guidelines §9）——名稱斷言要在真瀏覽器上各斷點跑一次。
+
+TOOLBAR_BUTTON_NAMES = ["重新整理", "下載 CSV（含身分證與帳號）"]
+
+
+def _assert_toolbar_button_names(page, where: str):
+    for name in TOOLBAR_BUTTON_NAMES:
+        count = page.get_by_role("button", name=name, exact=True).count()
+        assert count == 1, f"{where}找不到名稱恰為「{name}」的按鈕（{count} 個）"
+
+
+def test_toolbar_button_names_at_375px(admin_at_375):
+    _assert_toolbar_button_names(admin_at_375, "375px ")
+
+
+def test_toolbar_is_one_labeled_row_on_desktop(page, context, api_mock, rest_mock):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    _assert_toolbar_button_names(page, "1280px ")
+    assert count_rows(page, TOOLBAR) == 1, "桌機工具列不在同一行"
+    assert page.get_by_text("下載 CSV", exact=True).is_visible(), "桌機的 CSV 鈕應帶可見文字"
+
+
+def test_toolbar_labels_are_not_squeezed_on_touch_tablet(admin_tablet_touch):
+    """768px 觸控：`size="icon"` 的觸控 44px 寬會蓋掉 md 的 w-auto——帶文字的鈕不得被擠回 44px。"""
+    page = admin_tablet_touch
+    assert count_rows(page, TOOLBAR) == 1, "平板工具列不在同一行"
+    squeezed = page.evaluate(
+        """(sel) => [...document.querySelector(sel).querySelectorAll(':scope > button')]
+              .filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().height < 44)
+              .map((b) => b.textContent)""",
+        TOOLBAR,
+    )
+    assert squeezed == [], f"平板觸控下這些工具列按鈕被擠壓或不足 44px 高：{squeezed}"

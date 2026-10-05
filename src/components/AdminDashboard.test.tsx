@@ -20,7 +20,8 @@ import { stubMediaQuery } from '../test-utils/stubMediaQuery';
 // AdminDashboard 掛載時 Radix 只渲染 active 的那個 TabsContent，但那一個
 // （提領管理）會打 API。整個網路層替身掉，讓這支專心測導覽。
 vi.mock('../utils/apiClient', () => ({
-  apiRequestJson: vi.fn(async () => ({ data: { items: [], total: 0 } })),
+  // alerts:[] 給系統告警分頁——它對形狀不合的回應顯示錯誤態（不退回空清單）。
+  apiRequestJson: vi.fn(async () => ({ data: { items: [], total: 0, alerts: [] } })),
   buildApiUrl: (p: string) => p,
 }));
 
