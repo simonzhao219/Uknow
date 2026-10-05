@@ -141,7 +141,9 @@ export function MonthlyKingProgress({
           />
 
           <div className="flex justify-center pt-4">
-            <Button onClick={onClose}>關閉</Button>
+            <Button tone="secondary" onClick={onClose}>
+              關閉
+            </Button>
           </div>
         </CardContent>
       </Card>

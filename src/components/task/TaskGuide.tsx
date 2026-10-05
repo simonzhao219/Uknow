@@ -24,7 +24,7 @@ export function TaskGuide() {
             <li className="flex items-start gap-2">
               <span className="text-muted-foreground shrink-0">•</span>
               <span>
-                計當月<strong>新推薦</strong>的下線人數（同一位下線續約不重複計）
+                計當月<strong>新推薦</strong>的人數（同一人續約不重複計）
               </span>
             </li>
             <li className="flex items-start gap-2">

@@ -79,7 +79,7 @@ export function SystemAlerts() {
             同類事件才會再次告警。
           </CardDescription>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchAlerts} disabled={isLoading}>
+        <Button tone="secondary" size="sm" onClick={fetchAlerts} disabled={isLoading}>
           <RefreshCw className="h-4 w-4 mr-1" />
           重新整理
         </Button>
@@ -100,7 +100,7 @@ export function SystemAlerts() {
         {!isLoading && loadError && (
           <div className="text-center py-12 space-y-4">
             <p className="text-muted-foreground">載入告警失敗，請檢查網路後再試</p>
-            <Button variant="outline" onClick={fetchAlerts}>
+            <Button tone="secondary" onClick={fetchAlerts}>
               重新載入
             </Button>
           </div>
@@ -139,7 +139,7 @@ export function SystemAlerts() {
                       （審查 N2）。 */}
                   <Collapsible>
                     <CollapsibleTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full">
+                      <Button tone="secondary" size="sm" className="w-full">
                         詳細資訊
                       </Button>
                     </CollapsibleTrigger>
@@ -151,7 +151,7 @@ export function SystemAlerts() {
                   </Collapsible>
                   <Button
                     size="sm"
-                    variant="outline"
+                    tone="secondary"
                     className="w-full"
                     onClick={() => resolveAlert(alert)}
                     disabled={resolvingId === alert.id}
@@ -205,7 +205,7 @@ export function SystemAlerts() {
                     <TableCell>
                       <Button
                         size="sm"
-                        variant="outline"
+                        tone="secondary"
                         onClick={() => resolveAlert(alert)}
                         disabled={resolvingId === alert.id}
                       >

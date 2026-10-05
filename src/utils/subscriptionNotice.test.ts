@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   renewalNoticeDaysLeft,
   RENEWAL_NOTICE_DAYS,
+  showsRenewalCta,
   subscriptionCardState,
 } from './subscriptionNotice';
 
@@ -73,5 +74,28 @@ describe('subscriptionCardState — 訂閱卡片顯示狀態分類', () => {
 
   it('無 status 無 activeUntil（全新使用者）→ none', () => {
     expect(subscriptionCardState({ hasSubscription: false })).toBe('none');
+  });
+});
+
+describe('showsRenewalCta', () => {
+  it('已失效的老會員會出現續訂引導鈕', () => {
+    expect(
+      showsRenewalCta({ hasSubscription: false, status: 'expired', activeUntil: inDays(-3) }, NOW),
+    ).toBe(true);
+  });
+
+  // 到期前續訂暫停開放（業主 2026-10-05，規格書 §14 第 7 列）：30 天內只倒數、不放續訂鈕。
+  it('30 天內到期的 active 會員暫不出現續訂引導鈕', () => {
+    expect(
+      showsRenewalCta({ hasSubscription: true, status: 'active', activeUntil: inDays(10) }, NOW),
+    ).toBe(false);
+  });
+
+  it('到期還遠或從未訂閱時不出現續訂引導鈕', () => {
+    expect(
+      showsRenewalCta({ hasSubscription: true, status: 'active', activeUntil: inDays(90) }, NOW),
+    ).toBe(false);
+    expect(showsRenewalCta({ hasSubscription: false }, NOW)).toBe(false);
+    expect(showsRenewalCta(null, NOW)).toBe(false);
   });
 });

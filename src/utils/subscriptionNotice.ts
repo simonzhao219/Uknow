@@ -30,6 +30,23 @@ export function renewalNoticeDaysLeft(
 // （activeUntil 有值），該顯示「會籍已失效，續訂以恢復」而非「尚未訂閱」。
 export type SubscriptionCardState = 'active' | 'expired-former' | 'none';
 
+/**
+ * 我的訂閱卡會不會出現「續訂」引導鈕：已失效的老會員。
+ * 會員中心用它決定同頁的「加入推薦計畫」要不要讓位（引導鈕一頁一顆，續訂優先，
+ * ui-ux-guidelines §12.11）——與卡片本身用同一個判斷，兩邊不會各算各的。
+ *
+ * active 且 30 天內到期**暫不**放續訂鈕：結帳頁的 `resolveCheckoutPageRedirect`
+ * 會把 active 會員導回會員中心，到期前續訂走不通（規格書 §14 第 7 列）。業主
+ * 2026-10-05 裁決先藏鈕、UI/UX 改版完成後再修；修好時把
+ * `renewalNoticeDaysLeft(...) !== null` 加回這裡，卡片與讓位會一起恢復。
+ */
+export function showsRenewalCta(
+  data: { hasSubscription: boolean; status?: 'active' | 'expired'; activeUntil?: string } | null,
+  now: number = Date.now(),
+): boolean {
+  return subscriptionCardState(data) === 'expired-former';
+}
+
 export function subscriptionCardState(
   data: { hasSubscription: boolean; status?: 'active' | 'expired'; activeUntil?: string } | null,
 ): SubscriptionCardState {

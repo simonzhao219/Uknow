@@ -498,6 +498,10 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     expect(dialog.textContent).toContain('2 位');
     // 未點確認前不得送單。
     expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
+    // 新約清空累積且無法復原＝不可逆確認框，確認鈕紅實心（§12.11，#354 裁決 #10）。
+    expect(screen.getByTestId('fresh-confirm-action').classList.contains('bg-destructive')).toBe(
+      true,
+    );
 
     fireEvent.click(screen.getByTestId('fresh-confirm-action'));
     await waitFor(() => {

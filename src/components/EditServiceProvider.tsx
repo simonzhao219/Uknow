@@ -400,7 +400,7 @@ export function EditServiceProvider() {
                   <Label>服務區域 * (可選擇多個區域)</Label>
                   <Collapsible open={isDistrictSectionOpen} onOpenChange={setIsDistrictSectionOpen}>
                     <CollapsibleTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between" type="button">
+                      <Button tone="secondary" className="w-full justify-between" type="button">
                         {formData.districts.length > 0
                           ? `已選擇 ${formData.districts.length} 個區域`
                           : '點擊選擇區域'}
@@ -610,7 +610,7 @@ export function EditServiceProvider() {
             <div className="flex gap-4">
               <Button
                 type="button"
-                variant="outline"
+                tone="secondary"
                 onClick={() => navigate('/service-providers')}
                 className="flex-1"
               >

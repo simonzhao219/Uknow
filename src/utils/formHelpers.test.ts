@@ -4,7 +4,7 @@ import { getInputErrorClass, getInputAriaProps } from './formHelpers';
 describe('getInputErrorClass', () => {
   it('有錯誤時回傳 destructive-border 樣式類別（A 色當邊框對白底不到 3:1）', () => {
     expect(getInputErrorClass(true)).toBe(
-      'border-destructive-border focus-visible:ring-destructive-border',
+      'border-destructive-border focus-visible:border-destructive-border focus-visible:ring-destructive-border',
     );
   });
 

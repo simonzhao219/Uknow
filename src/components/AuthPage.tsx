@@ -380,7 +380,7 @@ export function AuthPage() {
                 className="w-full"
                 data-testid="auth-continue-button"
               >
-                {isLoading ? '檢查中...' : '繼續'}
+                {isLoading ? '檢查中...' : '下一步'}
               </Button>
             </form>
           )}
@@ -418,7 +418,7 @@ export function AuthPage() {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-sm text-brand hover:underline"
+                    className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                     data-testid="forgot-password-link"
                   >
                     忘記密碼？
@@ -429,7 +429,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');
@@ -507,7 +507,7 @@ export function AuthPage() {
               <div className="flex gap-3">
                 <Button
                   type="button"
-                  variant="outline"
+                  tone="secondary"
                   onClick={() => {
                     setStep(1);
                     setPassword('');

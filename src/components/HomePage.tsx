@@ -452,9 +452,7 @@ export function HomePage() {
             <p className="text-sm text-muted-foreground mb-4">
               無法取得服務者列表，請檢查網路連線後再試一次
             </p>
-            <Button onClick={fetchAllListings} variant="outline">
-              重新載入
-            </Button>
+            <Button onClick={fetchAllListings}>重新載入</Button>
           </div>
         )}
 
@@ -473,7 +471,7 @@ export function HomePage() {
                 : '請稍後再來看看，或許會有新的服務者加入'}
             </p>
             {(totalFilters > 0 || searchQuery.trim()) && (
-              <Button onClick={clearFilters} variant="outline">
+              <Button onClick={clearFilters} tone="secondary">
                 清除搜尋與篩選
               </Button>
             )}
@@ -632,7 +630,7 @@ function MobileSearchFilterBar({
           onClick={() => setExpanded(true)}
           aria-label="展開搜尋與篩選"
           aria-expanded={false}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-90 duration-200"
+          className="relative flex h-14 w-14 items-center justify-center rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-90 duration-200"
         >
           <Search className="h-5 w-5" aria-hidden="true" />
           {activeCount > 0 && (
@@ -648,7 +646,7 @@ function MobileSearchFilterBar({
 
   return (
     <div className={cn('md:hidden fixed inset-x-4 z-40', offsetClass)}>
-      <div className="flex items-stretch rounded-full border bg-background shadow-lg animate-in fade-in zoom-in-95 duration-200">
+      <div className="flex items-stretch rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-95 duration-200">
         {/* 搜尋入口：顯示目前搜尋字樣作為狀態回饋 */}
         <Sheet>
           <SheetTrigger asChild>
@@ -699,7 +697,7 @@ function MobileSearchFilterBar({
           </SheetContent>
         </Sheet>
 
-        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="my-2 w-px shrink-0 bg-raised-border" aria-hidden="true" />
 
         {/* 篩選入口：單一整合面板 */}
         <MobileFilterSheet
@@ -722,7 +720,7 @@ function MobileSearchFilterBar({
           {children}
         </MobileFilterSheet>
 
-        <div className="my-2 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="my-2 w-px shrink-0 bg-raised-border" aria-hidden="true" />
 
         {/* 收合：縮成圓形按鈕，避免長條遮住底下的內容 */}
         <button
@@ -763,7 +761,7 @@ function DesktopFilterPopover({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          tone="secondary"
           size="sm"
           className={cn(
             'h-9 gap-1.5 rounded-full',
@@ -772,7 +770,8 @@ function DesktopFilterPopover({
             // 沒有上限時這顆鈕會在同一列把搜尋框（md:flex-1）擠掉——768px
             // 附近最明顯，又是一次「手機對、桌機錯」。
             'max-w-[14rem]',
-            active && 'border-primary/60 bg-primary/5',
+            // 有套用篩選＝有框元件的選取態（§12.12）：框線灰字單圈 2px，不疊底色。
+            active && 'border-sel ring-1 ring-sel',
           )}
           title={summary ?? label}
         >

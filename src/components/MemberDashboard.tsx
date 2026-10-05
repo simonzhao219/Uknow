@@ -15,6 +15,7 @@ import { useTaskData } from '../hooks/useTaskData';
 import { useRewardData } from '../hooks/useRewardData';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { MyQrEntry } from './referral/MyQrEntry';
+import { showsRenewalCta } from '../utils/subscriptionNotice';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
@@ -30,7 +31,6 @@ import {
   countAwaitingCollection,
   countExpiring,
   formatExpiringCount,
-  pickPrimaryAction,
 } from './dashboard/dashboardSummary';
 
 /**
@@ -80,14 +80,13 @@ export function MemberDashboard() {
       subscriptionStatus: subscriptionData?.status ?? null,
       referralProgramJoined: user?.referralProgramJoined,
     });
-  const primaryAction = pickPrimaryAction({ canWithdraw, hasNoListing });
 
   const attentionItems: AttentionItem[] = [];
   if (referralEnabled && expiring.count > 0) {
     attentionItems.push({
       key: 'expiring',
       to: '/referrals',
-      label: `${expiringText} 位下線即將到期`,
+      label: `推薦網絡 ${expiringText} 位即將到期`,
     });
   }
   if (rewardEnabled && awaitingCount > 0) {
@@ -136,7 +135,7 @@ export function MemberDashboard() {
   const referralLabel = () => {
     if (referral.loading) return '推薦網絡：讀取中';
     if (referral.error || !referral.overview) return '推薦網絡：暫時無法取得推薦資料';
-    const parts = [`推薦網絡：${referral.overview.summary.totalReferrals} 位下線`];
+    const parts = [`推薦網絡：${referral.overview.summary.totalReferrals} 位`];
     if (expiring.count > 0) parts.push(`${expiringText} 位即將到期`);
     return parts.join('，');
   };
@@ -210,9 +209,7 @@ export function MemberDashboard() {
             ) : (
               <>
                 <p className="text-base font-semibold text-foreground">尚未建立刊登</p>
-                <StatCardAction primary={primaryAction === 'create-listing'}>
-                  立即刊登
-                </StatCardAction>
+                <StatCardAction>立即刊登</StatCardAction>
               </>
             )}
           </DashboardStatCard>
@@ -231,7 +228,7 @@ export function MemberDashboard() {
             ) : (
               <>
                 <StatValue>{referral.overview.summary.totalReferrals}</StatValue>
-                <p className="text-xs text-muted-foreground">位下線</p>
+                <p className="text-xs text-muted-foreground">位</p>
                 {expiring.count > 0 && (
                   <Badge variant="warning-subtle">{expiringText} 位即將到期</Badge>
                 )}
@@ -257,7 +254,7 @@ export function MemberDashboard() {
                   {rounds.currentRoundCount} / {currentTask.target}
                   <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
                 </StatValue>
-                {/* 進度填色用強調色 brand、軌道灰階（§12.5，同 task/ProgressBar）。 */}
+                {/* 進度填色用品牌色 brand（重點與進度）、軌道灰階（§12.5，同 task/ProgressBar）。 */}
                 <div className="h-2 overflow-hidden rounded-full bg-muted-foreground/20">
                   <div
                     className="h-full bg-brand"
@@ -297,9 +294,7 @@ export function MemberDashboard() {
                 {awaitingCount > 0 && (
                   <Badge variant="warning-subtle">待查收 {awaitingCount} 筆</Badge>
                 )}
-                {canWithdraw && (
-                  <StatCardAction primary={primaryAction === 'withdraw'}>申請提領</StatCardAction>
-                )}
+                {canWithdraw && <StatCardAction>申請提領</StatCardAction>}
               </>
             )}
           </DashboardStatCard>
@@ -341,7 +336,8 @@ export function MemberDashboard() {
           {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
               呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
               所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
-          <MyQrEntry />
+          {/* 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。 */}
+          <MyQrEntry yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)} />
         </CardContent>
       </Card>
     </div>

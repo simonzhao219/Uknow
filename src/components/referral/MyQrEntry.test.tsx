@@ -50,14 +50,17 @@ function LandedAt() {
 
 function renderEntry(
   user: any,
-  extra: { refreshUser?: any; onJoined?: () => void; at?: string } = {},
+  extra: { refreshUser?: any; onJoined?: () => void; at?: string; yieldsGuide?: boolean } = {},
 ) {
   const refreshUser = extra.refreshUser ?? vi.fn().mockResolvedValue(user);
   render(
     <UserCtx.Provider value={{ user, refreshUser }}>
       <MemoryRouter initialEntries={[extra.at ?? '/dashboard']}>
         <Routes>
-          <Route path="/dashboard" element={<MyQrEntry onJoined={extra.onJoined} />} />
+          <Route
+            path="/dashboard"
+            element={<MyQrEntry onJoined={extra.onJoined} yieldsGuide={extra.yieldsGuide} />}
+          />
           <Route path="/referrals" element={<MyQrEntry onJoined={extra.onJoined} />} />
           <Route path="/dashboard/qr" element={<LandedAt />} />
         </Routes>
@@ -135,5 +138,16 @@ describe('MyQrEntry', () => {
     await vi.waitFor(() => expect(refreshUser).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(onJoined).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('join-dialog-submit')).toBeNull();
+  });
+
+  // 引導鈕一頁一顆（§12.11，#354 裁決 #1）：同頁有續訂時，加入推薦計畫讓位成次要外框。
+  it('預設是引導鈕，同頁有續訂而讓位時改次要外框', () => {
+    renderEntry({ name: '王小明', referralProgramJoined: false });
+    expect(screen.getByTestId('join-referral-button').classList.contains('bg-brand')).toBe(true);
+    cleanup();
+    renderEntry({ name: '王小明', referralProgramJoined: false }, { yieldsGuide: true });
+    const join = screen.getByTestId('join-referral-button');
+    expect(join.classList.contains('bg-brand')).toBe(false);
+    expect(join.classList.contains('bg-card')).toBe(true);
   });
 });

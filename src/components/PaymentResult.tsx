@@ -302,6 +302,7 @@ export function PaymentResult() {
           </CardHeader>
           <CardContent>
             <Button
+              tone="secondary"
               onClick={handleContactSupport}
               className="w-full"
               size="lg"
@@ -384,7 +385,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleBackfillLater}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="backfill-later-button"
@@ -511,7 +512,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleContactSupport}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="contact-support-button"
@@ -685,7 +686,7 @@ export function PaymentResult() {
               </Button>
               <Button
                 onClick={handleContactSupport}
-                variant="outline"
+                tone="secondary"
                 className="flex-1"
                 size="lg"
                 data-testid="contact-support-button"
@@ -764,6 +765,7 @@ export function PaymentResult() {
         <CardContent className="space-y-4">
           <StatusCallout variant="neutral" title={`訂單編號：${tradeNo}`} />
           <Button
+            tone="secondary"
             onClick={handleContactSupport}
             className="w-full"
             size="lg"

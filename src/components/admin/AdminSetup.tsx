@@ -114,7 +114,7 @@ export function AdminSetup() {
           <div className="flex flex-col items-center gap-4">
             <AlertCircle className="h-8 w-8 text-destructive-subtle-foreground" />
             <p className="text-sm text-muted-foreground">無法檢查管理員狀態</p>
-            <Button onClick={checkAdminStatus} variant="outline">
+            <Button onClick={checkAdminStatus} tone="secondary">
               重試
             </Button>
           </div>

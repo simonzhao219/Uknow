@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
-import { Loader2, CheckCircle, CreditCard, Edit } from 'lucide-react';
+import { Loader2, CreditCard, Edit } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
@@ -712,7 +712,7 @@ export function PaymentCheckout() {
                     暫時無法載入續約資訊，請稍後重試。
                   </p>
                   <Button
-                    variant="outline"
+                    tone="secondary"
                     size="sm"
                     onClick={() => refreshSubscription()}
                     data-testid="renewal-info-retry"
@@ -731,7 +731,8 @@ export function PaymentCheckout() {
                   title="進度暫時無法讀取，以下顯示的可能是稍早的補繳進度。"
                   action={
                     <Button
-                      variant="outline"
+                      tone="secondary"
+                      container="warning"
                       size="sm"
                       onClick={() => refreshSubscription()}
                       data-testid="backfill-progress-refresh"
@@ -748,8 +749,8 @@ export function PaymentCheckout() {
               <div
                 className={`rounded-lg border transition-colors ${
                   renewalMode === 'extend'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border hover:border-primary/50'
+                    ? 'border-sel ring-1 ring-sel'
+                    : 'border-border hover:border-sel/50'
                 } ${!renewal ? 'opacity-50' : ''}`}
               >
                 <button
@@ -762,7 +763,6 @@ export function PaymentCheckout() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">續約（接續原效期）</span>
-                    {renewalMode === 'extend' && <CheckCircle className="h-5 w-5 text-primary" />}
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     保留原帳號脈絡，效期自 {renewal ? formatTwDate(renewal.extendAnchorDate) : '—'}{' '}
@@ -823,8 +823,8 @@ export function PaymentCheckout() {
               <div
                 className={`rounded-lg border transition-colors ${
                   renewalMode === 'fresh'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border hover:border-primary/50'
+                    ? 'border-sel ring-1 ring-sel'
+                    : 'border-border hover:border-sel/50'
                 } ${!renewal || hasPendingWithdrawal ? 'opacity-50' : ''}`}
               >
                 <button
@@ -839,7 +839,6 @@ export function PaymentCheckout() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">新約（重新起算）</span>
-                    {renewalMode === 'fresh' && <CheckCircle className="h-5 w-5 text-primary" />}
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     NT$ 1,200，效期自付款日起算一年（至 {formatTwDate(freshLastDay)}
@@ -1015,7 +1014,7 @@ export function PaymentCheckout() {
             )}
 
             <Button
-              variant="outline"
+              tone="secondary"
               onClick={handleCancel}
               disabled={isLoading || isButtonLocked}
               className="w-full"
@@ -1062,7 +1061,9 @@ export function PaymentCheckout() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel data-testid="fresh-confirm-cancel">再想想</AlertDialogCancel>
+                {/* 新約會清空累積且無法復原＝不可逆確認框，確認鈕紅實心（§12.11，#354 裁決 #10）。 */}
                 <AlertDialogAction
+                  variant="destructive"
                   data-testid="fresh-confirm-action"
                   onClick={() => {
                     setFreshConfirmOpen(false);

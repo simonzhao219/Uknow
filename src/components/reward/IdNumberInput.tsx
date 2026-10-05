@@ -110,9 +110,9 @@ export function IdNumberInput({
   const getBorderClass = () => {
     switch (status) {
       case 'success':
-        return 'border-success-border focus-visible:ring-success-border';
+        return 'border-success-border focus-visible:border-success-border focus-visible:ring-success-border';
       case 'error':
-        return 'border-destructive-border focus-visible:ring-destructive-border';
+        return 'border-destructive-border focus-visible:border-destructive-border focus-visible:ring-destructive-border';
       default:
         return '';
     }

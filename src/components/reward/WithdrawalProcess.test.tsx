@@ -54,7 +54,10 @@ async function renderAndGoToStep3() {
   );
   fireEvent.change(screen.getByLabelText(/提領Point \*/), { target: { value: '1000' } });
   fireEvent.click(screen.getByRole('button', { name: /下一步/ }));
-  fireEvent.click(await screen.findByRole('button', { name: /確認並繼續/ }));
+  // 步驟 1、2 的前進鈕都叫「下一步」（中間步驟一律下一步）；先等步驟 2 才有的「上一步」
+  // 出現，確定換頁了再按，免得按到的是步驟 1 那顆。
+  await screen.findByRole('button', { name: /上一步/ });
+  fireEvent.click(screen.getByRole('button', { name: /下一步/ }));
   await screen.findByLabelText('身分證字號 *');
 }
 
@@ -215,8 +218,8 @@ describe('WithdrawalProcess', () => {
     fireEvent.click(screen.getByRole('button', { name: /下一步/ }));
 
     await screen.findByText('提領Point必須為 1000 的倍數');
-    // 沒進步驟 2:提領明細不在畫面上。
-    expect(screen.queryByText('確認並繼續')).toBeNull();
+    // 沒進步驟 2:步驟 2 才有的「上一步」不在畫面上。
+    expect(screen.queryByRole('button', { name: /上一步/ })).toBeNull();
   });
 
   it('步驟 2 按上一步回到金額設定', async () => {

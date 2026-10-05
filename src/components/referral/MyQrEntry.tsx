@@ -24,6 +24,12 @@ interface MyQrEntryProps {
   className?: string;
   /** 加入成功後的額外副作用（推薦管理頁重抓網絡）。會員狀態同步已由本元件處理。 */
   onJoined?: () => void;
+  /**
+   * 同頁已有更優先的引導鈕（會員中心的續訂）時，「加入推薦計畫」讓位成次要外框——
+   * 引導鈕一頁一顆，優先序續訂＞加入推薦計畫＞確認收款（ui-ux-guidelines §12.11）。
+   * 只改按鈕的視覺權重，不改顯示條件與行為。
+   */
+  yieldsGuide?: boolean;
 }
 
 /**
@@ -36,7 +42,7 @@ interface MyQrEntryProps {
  *
  * 所以這裡刻意**不開任何行為 prop**：joined / referralCode / accountStatus 全部
  * 由元件自己從單一來源取，呼叫端連傳錯的機會都沒有。className 只影響外框、
- * onJoined 只是副作用掛鉤，兩者都無法造成兩頁行為分歧。
+ * onJoined 只是副作用掛鉤、yieldsGuide 只降按鈕的視覺權重，三者都無法造成兩頁行為分歧。
  *
  * 狀態一律取自 UserContext（`/profile`）——推薦碼、是否已加入、會籍狀態都在那裡，
  * 而它同時是 refreshUser() 維護的那一份。推薦網絡端點也回一份 userReferralCode，
@@ -47,7 +53,7 @@ interface MyQrEntryProps {
  * 快取，加入或續約後就可能一個已更新、一個還是舊值。（早年另一個理由——同頁第二個
  * 實例會被 dedupe 餓死——已由 useSubscription 的 adoptShared 修掉。）
  */
-export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
+export function MyQrEntry({ className, onJoined, yieldsGuide = false }: MyQrEntryProps) {
   const { user, refreshUser } = useContext(UserContext);
   const location = useLocation();
   const [joinOpen, setJoinOpen] = useState(false);
@@ -84,7 +90,13 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
             {user.referralCode}
           </p>
         ) : (
-          <Button size="sm" className="mt-1" onClick={openJoin} data-testid="join-referral-button">
+          <Button
+            tone={yieldsGuide ? 'secondary' : 'guide'}
+            size="sm"
+            className="mt-1"
+            onClick={openJoin}
+            data-testid="join-referral-button"
+          >
             <Shield className="mr-1 h-4 w-4" />
             加入推薦計畫
           </Button>
@@ -93,7 +105,7 @@ export function MyQrEntry({ className, onJoined }: MyQrEntryProps) {
 
       <div className="ml-auto shrink-0">
         {/* 連結而不是按鈕：可長按開新分頁、可被預熱，也讓返回鍵知道來源。 */}
-        <Button asChild variant="outline" size="sm">
+        <Button asChild tone="secondary" size="sm">
           <Link
             to="/dashboard/qr"
             state={{ from: location.pathname }}

@@ -142,7 +142,7 @@ def proceed_amount(reward_page):
 
 @when("I confirm the withdrawal summary")
 def confirm_summary(reward_page):
-    reward_page.confirm_and_continue()
+    reward_page.next_from_review_step()
 
 
 @when(

@@ -75,7 +75,8 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
       <Card>
         <CardContent className="pt-6 flex items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">無法取得審核佇列</p>
-          <Button variant="outline" size="sm" onClick={() => void refresh()}>
+          {/* 整區載入失敗時唯一的出路＝流程鈕，與提領台的重試一致（§12.11）。 */}
+          <Button size="sm" onClick={() => void refresh()}>
             重試
           </Button>
         </CardContent>
@@ -201,7 +202,7 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
                 通過
               </Button>
               <Button
-                variant="destructive"
+                tone="destructive"
                 disabled={busyId === r.userId}
                 onClick={() => {
                   setReason('');
@@ -221,7 +222,7 @@ export function IdReviewQueue({ loadReviews, submitReview }: IdReviewQueueProps)
           已顯示 {rows.length} / {list.total} 筆
         </p>
         {list.hasMore && (
-          <Button variant="outline" size="sm" onClick={list.loadMore} disabled={list.isLoadingMore}>
+          <Button tone="secondary" size="sm" onClick={list.loadMore} disabled={list.isLoadingMore}>
             {list.isLoadingMore ? '載入中…' : '載入更多'}
           </Button>
         )}

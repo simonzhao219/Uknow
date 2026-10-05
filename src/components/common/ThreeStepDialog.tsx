@@ -259,9 +259,6 @@ function StepOneCard({
             className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md transition-colors flex items-center gap-2"
           >
             {nextButtonText}
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
           </button>
         </div>
       </div>
@@ -335,7 +332,10 @@ function StepTwoCard({
               variant="destructive"
               title={error}
               action={
-                <button onClick={onRetry} className="text-destructive-subtle-foreground underline">
+                <button
+                  onClick={onRetry}
+                  className="inline-flex items-center text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
+                >
                   重試
                 </button>
               }
@@ -352,14 +352,6 @@ function StepTwoCard({
             disabled={isLoading}
             className="px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
             上一步
           </button>
           <button
@@ -368,9 +360,6 @@ function StepTwoCard({
             className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {nextButtonText}
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
           </button>
         </div>
       </div>

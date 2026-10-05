@@ -109,7 +109,7 @@ export function AdminDashboard() {
         {/* 掃描已不是 admin 專屬功能，入口搬到會員區的「我的 QR」頁；這顆捷徑
             保留，因為管理員平常就在後台工作，少走「會員中心 → 我的 QR → 掃描」
             三步。state.from 讓掃完按返回回得了這裡。 */}
-        <Button asChild variant="outline">
+        <Button asChild tone="secondary">
           <Link to="/dashboard/qr?tab=scan" state={{ from: '/admin' }}>
             <ScanLine className="mr-1 h-4 w-4" />
             會員驗證

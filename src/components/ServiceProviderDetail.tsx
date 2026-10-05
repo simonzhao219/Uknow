@@ -143,7 +143,7 @@ export function ServiceProviderDetail() {
                   key={index}
                   onClick={() => setCurrentImageIndex(index)}
                   className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
-                    currentImageIndex === index ? 'border-primary' : 'border-transparent'
+                    currentImageIndex === index ? 'border-sel' : 'border-transparent'
                   }`}
                 >
                   <ImageWithFallback
@@ -214,7 +214,7 @@ export function ServiceProviderDetail() {
                   scripts/color-usage-baseline.json 對這個檔案的 baseline 條目）。 */}
               {serviceProvider.contacts.facebook && (
                 <Button
-                  variant="outline"
+                  tone="secondary"
                   className="w-full justify-start"
                   onClick={() => handleContactClick('facebook', serviceProvider.contacts.facebook)}
                 >
@@ -226,7 +226,7 @@ export function ServiceProviderDetail() {
 
               {serviceProvider.contacts.instagram && (
                 <Button
-                  variant="outline"
+                  tone="secondary"
                   className="w-full justify-start"
                   onClick={() =>
                     handleContactClick('instagram', serviceProvider.contacts.instagram)
@@ -240,7 +240,7 @@ export function ServiceProviderDetail() {
 
               {serviceProvider.contacts.line && (
                 <Button
-                  variant="outline"
+                  tone="secondary"
                   className="w-full justify-start"
                   onClick={() => copyLineId(serviceProvider.contacts.line)}
                 >

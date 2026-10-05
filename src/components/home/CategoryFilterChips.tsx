@@ -135,7 +135,7 @@ export function CategoryFilterChips({
             {collapsible && (
               <Button
                 type="button"
-                variant="outline"
+                tone="secondary"
                 size="sm"
                 aria-expanded={!collapsed}
                 onClick={() => setExpanded((previous) => !previous)}

@@ -1,7 +1,7 @@
 """提領的 GUI 操作——會員端三步申請與查收（管理員端用 AdminDashboardPage）。
 
 步驟序照抄 mocked 套件 reward_steps 的實測順序：
-金額 → 下一步 → 確認並繼續 → 身分資料＋銀行＋證件照＋同意 → 提交申請。
+金額 → 下一步 → 下一步（確認資訊）→ 身分資料＋銀行＋證件照＋同意 → 提交申請。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def apply_via_gui(page: Page, user: JourneyUser, amount: int) -> None:
     reward.start_withdrawal()
     reward.fill_amount(str(amount))
     reward.next_step()
-    reward.confirm_and_continue()
+    reward.next_from_review_step()
     reward.fill_id_number(user.national_id)
     reward.select_bank(BANK_NAME)
     reward.fill_bank_account(BANK_ACCOUNT)

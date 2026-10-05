@@ -38,21 +38,3 @@ export function formatExpiringCount({ count, atLeast }: ExpiringCount): string {
 export function countAwaitingCollection(withdrawals: Pick<WithdrawalRecord, 'status'>[]): number {
   return withdrawals.filter((w) => w.status === 'awaiting_collection').length;
 }
-
-export type PrimaryAction = 'withdraw' | 'create-listing' | null;
-
-/**
- * 整頁至多一顆黑色主按鈕（ui-ux-guidelines §13）。「申請提領」與「立即刊登」
- * 同時成立時提領優先（業主裁決 2026-10-04），刊登降為 brand 次行動。
- */
-export function pickPrimaryAction({
-  canWithdraw,
-  hasNoListing,
-}: {
-  canWithdraw: boolean;
-  hasNoListing: boolean;
-}): PrimaryAction {
-  if (canWithdraw) return 'withdraw';
-  if (hasNoListing) return 'create-listing';
-  return null;
-}

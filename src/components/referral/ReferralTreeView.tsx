@@ -264,7 +264,7 @@ function AttentionBanner({
   return (
     <StatusCallout
       variant="warning"
-      title={`${attention.total} 位下線需要關注`}
+      title={`${attention.total} 位需要關注`}
       action={
         <div className="flex flex-wrap items-center gap-2">
           {attention.items.map((n) => (
@@ -309,7 +309,7 @@ function NodeDetail({ node }: { node: NetworkNode }) {
         </span>
         {node.generation < 3 && (
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-            {node.childCount} 位直接下線
+            直接推薦 {node.childCount} 位
           </span>
         )}
       </div>
@@ -499,7 +499,7 @@ export function ReferralTreeView({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜尋下線姓名"
+            placeholder="搜尋姓名"
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           {query && (
@@ -611,7 +611,7 @@ export function ReferralTreeView({
               <div className="text-center">
                 <Button
                   onClick={loadMoreMatches}
-                  variant="outline"
+                  tone="secondary"
                   size="sm"
                   disabled={search.loadingMore}
                 >
@@ -670,7 +670,7 @@ export function ReferralTreeView({
               <p className="py-12 text-center text-sm text-muted-foreground">
                 點選任一節點
                 <br />
-                查看該下線的詳情
+                查看詳情
               </p>
             )}
           </div>

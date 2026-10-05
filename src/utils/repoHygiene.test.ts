@@ -154,3 +154,73 @@ describe('官方 LINE 帳號代稱統一', () => {
     ).toEqual([]);
   });
 });
+
+// 兩條規則的比對式拉出來，下方各有正反例自測：比對式寫錯時，「掃完沒有違規」會是假綠。
+// 引導鈕三種寫法都要抓：tone="guide"、tone={x ? 'guide' : ...}、buttonVariants({ tone: 'guide' })。
+const GUIDE_TONE = /tone=(?:"guide"|\{[^}]*['"]guide['"])|tone:\s*['"]guide['"]/;
+// 帶透明度的 ring／outline 色：ring-ring/50、ring-destructive/20、outline-ring/50。
+const TRANSLUCENT_RING = /\b(?:ring|outline)-[a-z][\w-]*\/\d+/;
+
+const isSource = (rel: string) => !/\.test\.tsx?$/.test(rel);
+
+describe('守門比對式自測', () => {
+  it.each([
+    ['<Button tone="guide">', true],
+    ["tone={yieldsGuide ? 'secondary' : 'guide'}", true],
+    ["buttonVariants({ tone: 'guide', size: 'sm' })", true],
+    ['<Button tone="secondary">', false],
+    ["buttonVariants({ tone: 'secondary' })", false],
+  ])('引導鈕比對式：%s → %s', (text, hit) => {
+    expect(GUIDE_TONE.test(text)).toBe(hit);
+  });
+
+  it.each([
+    ['focus-visible:ring-ring/50', true],
+    ['aria-invalid:ring-destructive/20', true],
+    ['@apply border-border outline-ring/50;', true],
+    ['focus-visible:ring-ring focus-visible:ring-[3px]', false],
+    ['@apply border-border outline-ring;', false],
+    ['bg-black/50', false],
+  ])('半透明環比對式：%s → %s', (text, hit) => {
+    expect(TRANSLUCENT_RING.test(text)).toBe(hit);
+  });
+});
+
+describe('引導鈕只有三種', () => {
+  it('tone="guide" 只出現在續訂、加入推薦計畫、確認收款三種鈕所在的元件', () => {
+    // ui-ux-guidelines §12.11：品牌色實心的引導鈕只給續訂＞加入推薦計畫＞確認收款，
+    // 一頁一顆。它一出現只有一個意思——系統在引導你；多一處就稀釋一次。文件寫得
+    // 再清楚也擋不住順手加的第四種，所以釘成白名單：真的要新增（或搬家），同一個
+    // PR 改這份清單，審查時就看得到。
+    const allowed = [
+      join('src', 'components', 'RewardDashboard.tsx'),
+      join('src', 'components', 'referral', 'MyQrEntry.tsx'),
+      join('src', 'components', 'reward', 'WithdrawalSection.tsx'),
+      join('src', 'components', 'subscription', 'SubscriptionStatusCard.tsx'),
+    ].sort();
+    // button.tsx 是 tone 的定義處（compoundVariants），不是使用者。
+    const definition = join('src', 'components', 'ui', 'button.tsx');
+    const users = walk('src', ['.ts', '.tsx'])
+      .filter(isSource)
+      .filter((rel) => rel !== definition)
+      .filter((rel) => GUIDE_TONE.test(readFileSync(join(REPO_ROOT, rel), 'utf8')))
+      .sort();
+    expect(users, '新增引導鈕前先對照 §12.11 的三種與一頁一顆').toEqual(allowed);
+  });
+});
+
+describe('焦點環與錯誤環一律全不透明', () => {
+  it('src/ 的元件與樣式不得用帶透明度的 ring／outline 色', () => {
+    // 業主裁決 D1（#354）：焦點環全不透明——灰字 --sel 打三成透明對白底只剩 1.54:1，
+    // 過不了 WCAG 1.4.11 的 3:1。錯誤欄位聚焦時的紅環同理（兩成透明的紅等於沒有環）。
+    // S2b 收過一次 ring-ring/50、S2e 又在錯誤環與 base 層 outline 各找到一次，所以連
+    // .ts 與 .css 一起掃。
+    const offenders = walk('src', ['.ts', '.tsx', '.css'])
+      .filter(isSource)
+      .filter((rel) => TRANSLUCENT_RING.test(readFileSync(join(REPO_ROOT, rel), 'utf8')));
+    expect(
+      offenders,
+      '焦點與錯誤環請用全不透明的 token（ring-ring、ring-destructive-border、outline-ring）',
+    ).toEqual([]);
+  });
+});

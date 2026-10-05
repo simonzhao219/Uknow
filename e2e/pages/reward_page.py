@@ -57,8 +57,11 @@ class RewardPage(BasePage):
     def next_step(self) -> None:
         self.page.get_by_role("button", name="下一步").click()
 
-    def confirm_and_continue(self) -> None:
-        self.page.get_by_role("button", name="確認並繼續").click()
+    def next_from_review_step(self) -> None:
+        # 步驟 2（確認資訊）的前進鈕也叫「下一步」（中間步驟一律下一步）。先等步驟 2
+        # 才有的「上一步」出現，確定已換頁，免得按到步驟 1 那顆。
+        self.page.get_by_role("button", name="上一步").wait_for()
+        self.page.get_by_role("button", name="下一步").click()
 
     def fill_id_number(self, id_number: str) -> None:
         self.page.get_by_label("身分證字號", exact=False).first.fill(id_number)
@@ -122,7 +125,7 @@ class RewardPage(BasePage):
     # --- Collection (查收) flow — CollectionConfirm/Preview/Verify dialogs ----
 
     def collect_button(self) -> Locator:
-        return self.page.get_by_role("button", name="查收")
+        return self.page.get_by_role("button", name="確認收款")
 
     def collection_next(self) -> None:
         # Both the confirm (步驟 1/3) and preview (步驟 2/3) dialogs advance

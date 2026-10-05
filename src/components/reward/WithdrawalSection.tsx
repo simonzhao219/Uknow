@@ -78,7 +78,7 @@ export function WithdrawalSection({
 
     // ✅ 檢查訂閱狀態
     if (isSubscriptionInvalid) {
-      return '訂閱已失效，無法申請提領。請重新訂閱以恢復服務。';
+      return '訂閱已失效，無法申請提領。請續訂以恢復服務。';
     }
 
     if (isInsufficientBalance) {
@@ -160,22 +160,22 @@ export function WithdrawalSection({
       );
 
       if (result.success) {
-        showSuccess('查收確認成功！', '獎勵明細已更新');
+        showSuccess('收款確認成功！', '獎勵明細已更新');
         setCollectionStep(null);
         setSelectedWithdrawal(null);
 
         // ✅ 刷新數據
         onRefresh();
       } else {
-        throw new Error('確認查收失敗');
+        throw new Error('收款確認失敗');
       }
     } catch (err) {
       console.error('確認查收錯誤:', err);
 
       if (err instanceof ApiError) {
-        showError('確認查收失敗', err.message);
+        showError('收款確認失敗', err.message);
       } else {
-        showError('確認查收失敗', err instanceof Error ? err.message : '請稍後再試');
+        showError('收款確認失敗', err instanceof Error ? err.message : '請稍後再試');
       }
 
       throw err; // 拋出錯誤讓 Dialog 保持打開並顯示錯誤
@@ -198,6 +198,21 @@ export function WithdrawalSection({
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
     .slice(0, RECENT_COMPLETED);
   const activeWithdrawals = [...withdrawals.filter((w) => w.status !== 'completed'), ...completed];
+  // 引導鈕一頁一顆（ui-ux-guidelines §12.11，業主裁決 E2）：待查收可能累積好幾筆（每日可
+  // 申請一筆），只有最早申請的那筆用引導鈕，其餘次要外框——先處理等最久的那筆。會籍失效時
+  // 獎勵頁橫幅的續訂優先（續訂＞加入推薦計畫＞確認收款），確認收款全部讓位成次要。
+  // 時間用 Date.parse 比：同一時點可能寫成 Z 或 +00:00，字串字典序不可靠；平手取先出現的。
+  const guideCollectionId = isSubscriptionInvalid
+    ? undefined
+    : withdrawals
+        .filter((w) => w.status === 'awaiting_collection')
+        .reduce<WithdrawalRecord | null>(
+          (earliest, w) =>
+            earliest === null || Date.parse(w.requestedAt) < Date.parse(earliest.requestedAt)
+              ? w
+              : earliest,
+          null,
+        )?.id;
 
   return (
     <>
@@ -213,6 +228,7 @@ export function WithdrawalSection({
           {/* 提領按鈕區域 */}
           <div className="border-b pb-4">
             <Button
+              tone="secondary"
               onClick={onStartWithdrawal}
               className="w-full"
               size="lg"
@@ -282,11 +298,11 @@ export function WithdrawalSection({
                       {withdrawal.status === 'awaiting_collection' && (
                         <Button
                           size="sm"
-                          variant="outline"
+                          tone={withdrawal.id === guideCollectionId ? 'guide' : 'secondary'}
                           onClick={() => handleClickCollection(withdrawal)}
                           className="text-xs"
                         >
-                          查收
+                          確認收款
                         </Button>
                       )}
                     </div>

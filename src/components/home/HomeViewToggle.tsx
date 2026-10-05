@@ -44,11 +44,9 @@ export function HomeViewToggle({ value, onChange, className }: HomeViewTogglePro
             aria-pressed={active}
             onClick={() => onChange(mode)}
             className={cn(
-              // 44px 拇指熱區；未選態透明、選中態實心浮起（iOS 分段控制的視覺語言）
+              // 44px 拇指熱區；未選態透明、選中態底色灰字文字反白（§12.12 無框元件）
               'flex h-9 w-11 items-center justify-center rounded-md transition-colors',
-              active
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-sel text-sel-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
