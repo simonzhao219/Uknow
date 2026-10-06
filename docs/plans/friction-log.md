@@ -2761,3 +2761,31 @@ production 核准之後掛掉，手動重跑才過。
 
 推論：**一組長得一樣的失敗 issue 就是同類掃描的現成材料**——第 2 則出現時就該把日誌並排看，不要等到
 第 7 則。另外，開 issue 的步驟不知道「同一個失敗簽名已經開著幾則」（待評估，未做）。
+
+## 2026-10-06｜待裁決｜Stop hook 要 push，`/review-implementation` 要「P0 清掉才 push」
+
+S4（member-detail-redesign）跑完五階段後派出四視角實作審查，等待期間 stop hook
+（`stop-hook-git-check.sh`）以「14 個 commit 未推」擋下結束。skill 收尾第 3 步寫「P0 修掉才可 push」，
+兩條規則在「審查進行中」這段時間正面衝突。
+
+處置：PR 本來就是 draft，推上去不會被合併；web session 容器是拋棄式的，未推的 commit 有遺失風險——
+所以先推，審查結果回來再處理（結果 P0×0）。
+
+建議（待整併時裁決）：skill 改寫成「P0 未清前不得**轉為 ready / 請求合併**」，push 到 draft PR 不受限；
+或 stop hook 在 `docs/plans/<slug>/implementation-review.md` 不存在時（審查進行中）放行。另一個觀察：2026-10-05
+那條「reviewer 沒有 Bash」的建議一（主 session 先把完整 diff 寫進 scratchpad 檔、交路徑給 reviewer 用 Read 讀）
+本次實際採用，四位都讀到被刪除的行（需求視角據此驗證既有 `it` 零刪除），可以直接寫進 skill 步驟 1。
+
+## 2026-10-06｜漏網｜Tailwind class 用子字串斷言，「variant 一換就紅」其實不成立
+
+S4 新寫的徽章測試用 `className.toContain('bg-warning')` 釘「待查收＝warning」——但 `bg-warning-subtle` 也含這個
+子字串，variant 換成淺底版本照樣綠。同一批另一條寫 `className.not.toContain('destructive')` 想證明「不帶紅色」，
+卻因 Button base class 帶 `aria-invalid:border-destructive-border`，**永遠紅**（寫的當下就被自己的紅燈抓到）。
+前者是實作審查（架構視角）抓到的。
+
+處置：一律改 `classList.contains('<token>')` 逐 token 比；「沒有底色」寫成 `[...classList].some(c => c.startsWith('bg-'))`
+為 false。`tabs.test.tsx`、`alert-dialog.test.tsx` 早就是逐 token 的寫法，只是沒有成為規則。
+
+推論：**class 斷言一律逐 token**——Tailwind 的語義 token 普遍互為前綴（`bg-x` 與 `bg-x-subtle`、`text-x` 與
+`text-x-foreground`），還有帶前綴修飾的變體（`hover:`、`aria-invalid:`）。可考慮在 `check-test-names.py` 同軌加一條
+靜態檢查：`*.test.tsx` 出現 `className).toContain('bg-` / `('text-` 就提醒。
