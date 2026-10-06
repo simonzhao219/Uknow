@@ -149,6 +149,19 @@ describe('MemberDetailSheet 身分卡', () => {
     expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('a@b.c');
     expect((panel.textContent ?? '').split('a@b.c').length - 1).toBe(1);
   });
+
+  // profiles.name 是 `not null default ''`：註冊 Step 2 之前是空字串，這種會員照樣出現在
+  // 列表、照樣按得到暫停。`?? Email` 擋不住空字串——標題會變成空的 h2。
+  it('姓名是空字串時標題用 Email，且 Email 不再印第二次', () => {
+    const { panel } = renderSheet(detail({ name: '' }));
+    expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('a@b.c');
+    expect((panel.textContent ?? '').split('a@b.c').length - 1).toBe(1);
+  });
+
+  it('姓名只有空白時視同沒有姓名', () => {
+    const { panel } = renderSheet(detail({ name: '  ' }));
+    expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('a@b.c');
+  });
 });
 
 describe('MemberDetailSheet 帳號與點數', () => {
@@ -175,12 +188,19 @@ describe('MemberDetailSheet 帳號與點數', () => {
     expect(within(section(suspended, '帳號')).getByText('暫停時間')).toBeTruthy();
   });
 
-  it('點數區的主數字是可提領，處理中標明含手續費', () => {
+  it('暫停時間以台灣時間顯示，跨日界時是隔天', () => {
+    const { panel } = renderSheet(detail({ suspended: true, suspendedAt: '2026-07-19T16:30:00Z' }));
+    expect(within(section(panel, '帳號')).getByText('2026/07/20 00:30:00')).toBeTruthy();
+  });
+
+  // 處理中與已提領都是 sum(amount + fee)（get_reward_summary），只標一邊，客服會以為
+  // 另一邊是實付金額。
+  it('點數區的主數字是可提領，處理中與已提領都標明含手續費', () => {
     const { panel } = renderSheet();
     const points = section(panel, '點數');
     expect(within(points).getByText('3,000 P')).toBeTruthy();
     expect(within(points).getByText('處理中 1,015 P（含手續費）')).toBeTruthy();
-    expect(within(points).getByText('已提領 1,000 P')).toBeTruthy();
+    expect(within(points).getByText('已提領 1,000 P（含手續費）')).toBeTruthy();
   });
 });
 
@@ -218,10 +238,48 @@ describe('MemberDetailSheet 近期提領', () => {
     expect(within(list).getByText(/完成時間 2026\/07\/03/)).toBeTruthy();
   });
 
+  // 日期若用 UTC 切會差一天：UTC 16:30 是台灣隔天 00:30。
+  it('匯款與完成時間以台灣時間顯示，跨日界時是隔天', () => {
+    const { panel } = renderSheet(
+      detail({
+        recentWithdrawals: [
+          withdrawal({
+            id: 'w1',
+            status: 'awaiting_collection',
+            processedAt: '2026-08-01T16:30:00Z',
+          }),
+          withdrawal({
+            id: 'w2',
+            status: 'completed',
+            processedAt: '2026-07-01T16:30:00Z',
+            completedAt: '2026-07-02T16:30:00Z',
+          }),
+        ],
+      }),
+    );
+    const list = section(panel, '近期提領');
+    expect(within(list).getByText('匯款時間 2026/08/02 00:30:00')).toBeTruthy();
+    expect(within(list).getByText('完成時間 2026/07/03 00:30:00')).toBeTruthy();
+  });
+
   // 點數區的「處理中」含手續費；列上只有金額時客服對不上，逐筆寫出手續費才加得回去。
   it('每筆提領都寫出手續費', () => {
     const { panel } = renderSheet(detail({ recentWithdrawals: [withdrawal({ fee: 15 })] }));
     expect(within(section(panel, '近期提領')).getByText('手續費 15 P')).toBeTruthy();
+  });
+
+  // 退件時點數與手續費都退還（規格書 §10.3）；列上仍寫「手續費 15 P」，客服會以為
+  // 這筆被收了手續費。
+  it('已退件列不顯示手續費，其他狀態照列', () => {
+    const { panel } = renderSheet(
+      detail({
+        recentWithdrawals: [
+          withdrawal({ id: 'w1', status: 'rejected', note: '帳號錯誤' }),
+          withdrawal({ id: 'w2', status: 'pending' }),
+        ],
+      }),
+    );
+    expect(within(section(panel, '近期提領')).getAllByText(/手續費/)).toHaveLength(1);
   });
 
   it('匯款時間只在待查收列、完成時間只在已完成列', () => {
@@ -315,6 +373,46 @@ describe('MemberDetailSheet 推薦關係與敏感資料', () => {
     const sensitive = section(panel, '敏感資料');
     expect(within(sensitive).getAllByText('未設定')).toHaveLength(1);
     expect(within(sensitive).queryByText(/—/)).toBeNull();
+  });
+});
+
+describe('MemberDetailSheet 管理區的送出狀態', () => {
+  type Props = Parameters<typeof MemberDetailSheet>[0];
+  function renderWith(over: Partial<Props> = {}) {
+    const props: Props = {
+      detail: detail(),
+      processingKind: null,
+      panelError: null,
+      panelNotice: null,
+      onRequestAction: () => {},
+      onClose: () => {},
+      ...over,
+    };
+    const view = render(<MemberDetailSheet {...props} />);
+    return {
+      manage: section(screen.getByRole('dialog'), '管理'),
+      rerender: (next: Partial<Props>) => view.rerender(<MemberDetailSheet {...props} {...next} />),
+    };
+  }
+
+  // 常駐、只換文字的 live region 報讀器才可靠；隨文字一起新插入 DOM 的不保證播報
+  // （與列表上方「正在讀取」同一個理由）。
+  it('提示區常駐在管理區，有提示時只換文字', () => {
+    const { manage, rerender } = renderWith();
+    const status = within(manage).getByRole('status');
+    expect(status.textContent).toBe('');
+    rerender({ panelNotice: '已更新，但重新讀取詳情失敗，請關閉面板後重開' });
+    expect(within(manage).getByRole('status')).toBe(status);
+    expect(status.textContent).toContain('重新讀取詳情失敗');
+  });
+
+  it('送出中被按的那顆鈕轉圈，另一顆只停用', () => {
+    const { manage } = renderWith({ processingKind: 'suspend' });
+    const suspend = within(manage).getByRole('button', { name: '暫停' });
+    const admin = within(manage).getByRole('button', { name: '設為管理員' });
+    expect(suspend.getAttribute('aria-busy')).toBe('true');
+    expect(admin.hasAttribute('disabled')).toBe(true);
+    expect(admin.hasAttribute('aria-busy')).toBe(false);
   });
 });
 
