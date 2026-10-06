@@ -23,6 +23,7 @@
 """
 
 import pytest
+from playwright.sync_api import expect
 
 from layout_probe import (
     card_density,
@@ -38,7 +39,12 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
-from test_overflow_sweep import _open_id_card_dialog, _open_tab, _setup_admin
+from test_overflow_sweep import (
+    _open_id_card_dialog,
+    _open_member_detail_sheet,
+    _open_tab,
+    _setup_admin,
+)
 
 # Radix 的 TabsList 掛 data-slot；DialogContent 沒有，但 Radix 會給 role=dialog
 # （AlertDialog 是 role=alertdialog，不會誤中）。
@@ -544,3 +550,93 @@ def test_toolbar_labels_are_not_squeezed_on_touch_tablet(admin_tablet_touch):
         TOOLBAR,
     )
     assert squeezed == [], f"平板觸控下這些工具列按鈕被擠壓或不足 44px 高：{squeezed}"
+
+
+# --- 會員詳情 Sheet（S4／A3） ------------------------------------------------
+#
+# 375px 下 Sheet 全螢幕、身分卡固定在上、分區內文捲動。測資是 `_setup_admin` 的
+# 最壞資料（長姓名、無空白長 Email、停權＋管理員、10 筆提領含長退件理由、證件
+# 退回長理由）——短測資下「間距 0」「沒有橫向溢出」在改版前就是綠的。
+
+MEMBER_SHEET_SECTIONS = ("帳號", "點數", "近期提領", "推薦關係", "敏感資料", "管理")
+
+
+@pytest.fixture
+def member_sheet_at_375(admin_at_375):
+    _open_member_detail_sheet(admin_at_375)
+    expect(admin_at_375.locator(DIALOG)).to_be_visible()
+    settle(admin_at_375)
+    return admin_at_375
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_fills_the_screen_at_375px(member_sheet_at_375):
+    fit = viewport_fit(member_sheet_at_375, DIALOG)
+    assert fit is not None, f"找不到 {DIALOG}——Sheet 沒開起來，不是版面問題"
+    assert fit["left"] == 0 and fit["right"] == 0, (
+        f"Sheet 寬 {fit['width']}px、視窗寬 {fit['viewportWidth']}px，"
+        f"左右間距 {fit['left']}px / {fit['right']}px（手機應全螢幕）"
+    )
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_section_headings_are_all_present_at_375px(member_sheet_at_375):
+    """六個分區標題都在，而且內文有左右留白（Sheet 原語沒有內距，改版前貼邊）。
+
+    `exact=True` 不可省：「帳號」「管理」以子字串比對會誤中其他字。
+    """
+    dialog = member_sheet_at_375.locator(DIALOG)
+    for name in MEMBER_SHEET_SECTIONS:
+        heading = dialog.get_by_role("heading", name=name, exact=True)
+        expect(heading).to_be_visible()
+        box = heading.bounding_box()
+        assert box is not None and box["x"] >= MIN_SAFE_MARGIN_PX, (
+            f"分區標題「{name}」離視窗左緣只有 {box and box['x']}px（期望 ≥ {MIN_SAFE_MARGIN_PX}px）"
+        )
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_has_no_horizontal_overflow_at_375px(member_sheet_at_375):
+    """Sheet 與它裡面的捲動容器都不得橫向捲動——長 Email、長退件理由要換行，不是撐寬。"""
+    overflowing = member_sheet_at_375.evaluate(
+        """(sel) => {
+          const root = document.querySelector(sel);
+          if (!root) return null;
+          return [root, ...root.querySelectorAll('*')]
+            .filter((el) => {
+              const ox = getComputedStyle(el).overflowX;
+              return el === root || ox === 'auto' || ox === 'scroll';
+            })
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => `${el.tagName.toLowerCase()} ${el.scrollWidth}>${el.clientWidth}`);
+        }""",
+        DIALOG,
+    )
+    assert overflowing is not None, f"找不到 {DIALOG}"
+    assert overflowing == [], f"Sheet 內有橫向溢出的容器：{overflowing}"
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_title_clears_the_close_button_at_375px(member_sheet_at_375):
+    """長姓名不得鑽到右上角關閉鈕底下（關閉鈕實占右緣約 12–62px）。"""
+    dialog = member_sheet_at_375.locator(DIALOG)
+    title = dialog.get_by_role("heading", level=2).bounding_box()
+    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
+    assert title is not None and close is not None, "量不到標題或關閉鈕"
+    assert title["x"] + title["width"] <= close["x"], (
+        f"標題右緣 {title['x'] + title['width']:.0f}px 超過關閉鈕左緣 {close['x']:.0f}px"
+    )
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_close_button_stays_put_when_scrolled_at_375px(member_sheet_at_375):
+    """內文捲到底，關閉鈕與身分卡仍在畫面上——做完管理動作不用捲回頂端才能關。"""
+    page = member_sheet_at_375
+    dialog = page.locator(DIALOG)
+    manage = dialog.get_by_role("heading", name="管理", exact=True)
+    manage.scroll_into_view_if_needed()
+    settle(page)
+    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
+    title = dialog.get_by_role("heading", level=2).bounding_box()
+    assert close is not None and close["y"] >= 0, f"捲到底後關閉鈕被捲出畫面（{close}）"
+    assert title is not None and title["y"] >= 0, f"捲到底後身分卡被捲出畫面（{title}）"
