@@ -55,16 +55,30 @@ const RECENT_WITHDRAWALS_LIMIT = 10;
 
 const points = (n: number) => `${n.toLocaleString()} P`;
 
-/** 標籤左、值右的一列。值可能是長 Email、長理由，一律可斷行、不撐寬。 */
+/**
+ * 標籤左、值右的一列。值可能是長 Email、長理由，一律可斷行、不撐寬。
+ * `stacked`：長自由文字（證件退回理由，後端沒有長度上限）改成標籤在上、值整寬靠左——
+ * 多行右對齊時左緣參差難讀，也和近期提領的「退件理由」版式不一致。
+ */
 function Field({
   label,
   children,
   valueClassName,
+  stacked = false,
 }: {
   label: string;
   children: ReactNode;
   valueClassName?: string;
+  stacked?: boolean;
 }) {
+  if (stacked) {
+    return (
+      <div className="space-y-0.5 py-1">
+        <dt className="text-muted-foreground">{label}</dt>
+        <dd className={cn('wrap-anywhere', valueClassName)}>{children}</dd>
+      </div>
+    );
+  }
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
@@ -262,7 +276,9 @@ export function MemberDetailSheet({
             <dl>
               <Field label="證件審核">{ID_STATUS_LABEL[detail.idVerificationStatus]}</Field>
               {detail.idVerificationStatus === 'rejected' && detail.idRejectReason && (
-                <Field label="退回理由">{detail.idRejectReason}</Field>
+                <Field label="退回理由" stacked>
+                  {detail.idRejectReason}
+                </Field>
               )}
               <Field label="身分證字號" valueClassName="font-mono">
                 {detail.idNumber ?? '未設定'}

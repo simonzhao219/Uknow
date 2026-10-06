@@ -130,3 +130,9 @@
     `apiClient` 加 `AbortSignal.timeout` 落地。
   - `ui/dialog.tsx` 關閉鈕的無障礙名稱仍是英文「Close」（S4 只改了 `ui/sheet.tsx`，因為 `e2e/steps/profile_steps.py:95`
     依賴 Dialog 的「Close」）。退場條件：改成「關閉」並同步該 e2e 定位器。
+  - 會員詳情「最後意圖勝出」的請求序號是元件內手寫（`MemberManagement.tsx` 的 `detailSeq`），S5 預定在 `usePagedList` 另加序號
+    （#359 審查 #10）——會並存兩種寫法。退場條件：S5 動 admin 狀態層時收斂成一個 hook（例：`useLatestRequest`）。
+  - 管理動作後 `list.reload()` 期間列表換成骨架、「查看」鈕卸載，這個窗口內關面板焦點落回 body（只影響鍵盤使用者）。退場條件：S5 改
+    stale-while-revalidate 後重新整理不再換骨架，屆時自然消失；S5 收尾時確認。
+  - 停權端點每次都覆寫 `profiles.suspended_at`（非冪等，`api/index.ts` 的停權 handler）：兩位 admin 或雙分頁其一是舊面板時再按「暫停」，
+    會改寫會員詳情新顯示的「暫停時間」。S4 零 API 變更，未修。退場條件：後端改成 `suspended_at` 已非 null 時不覆寫（另開 `/fix-bug`）。
