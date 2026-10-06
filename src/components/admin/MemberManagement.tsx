@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
+import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { withdrawalStatusLabel } from './WithdrawalStatusBadge';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
@@ -52,17 +53,6 @@ export interface MemberManagementProps {
   }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
-
-// S2 色彩收斂（D3）：狀態走 Badge variant，不再手刻 className。
-// active 是「這人現在能用」的正向狀態 → success-subtle；expired 是中性的
-// 過期事實，不是警示，走 secondary（灰階已合規）。
-const ACCOUNT_STATUS_BADGE: Record<
-  string,
-  { label: string; variant: 'success-subtle' | 'secondary' }
-> = {
-  active: { label: '有效會員', variant: 'success-subtle' },
-  expired: { label: '已失效', variant: 'secondary' },
-};
 
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
 
@@ -559,14 +549,7 @@ export function MemberManagement({
             ) : members.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
             ) : !isDesktop ? (
-              <MemberCardList
-                members={members}
-                accountBadge={(status) =>
-                  ACCOUNT_STATUS_BADGE[status] ?? ACCOUNT_STATUS_BADGE.expired
-                }
-                onOpenDetail={openDetail}
-                processingId={processingId}
-              />
+              <MemberCardList members={members} onOpenDetail={openDetail} />
             ) : (
               <Table>
                 <TableHeader>
@@ -583,27 +566,25 @@ export function MemberManagement({
                 </TableHeader>
                 <TableBody>
                   {members.map((member) => {
-                    const acct =
-                      ACCOUNT_STATUS_BADGE[member.accountStatus] ?? ACCOUNT_STATUS_BADGE.expired;
                     return (
                       <TableRow key={member.id}>
                         <TableCell>{member.name ?? '—'}</TableCell>
                         <TableCell className="text-sm">{member.email}</TableCell>
                         <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
                         <TableCell>
-                          <Badge variant={acct.variant}>{acct.label}</Badge>
+                          <AccountStatusBadge status={member.accountStatus} />
                         </TableCell>
                         <TableCell>{member.listingCount}</TableCell>
                         <TableCell>
                           {member.isAdmin ? (
-                            <Badge variant="default">管理員</Badge>
+                            <AdminBadge />
                           ) : (
                             <Badge variant="outline">一般會員</Badge>
                           )}
                         </TableCell>
                         <TableCell>
                           {member.suspended ? (
-                            <Badge variant="destructive">已暫停</Badge>
+                            <SuspendedBadge />
                           ) : (
                             <Badge variant="default">正常</Badge>
                           )}

@@ -1,7 +1,7 @@
 import type { AdminMember } from '@contract';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 
 /**
  * 會員管理的**手機版**列表：一位會員一張卡。
@@ -19,21 +19,13 @@ import { Card, CardContent } from '../ui/card';
 
 interface MemberCardListProps {
   members: AdminMember[];
-  accountBadge: (status: string) => { label: string; variant: 'success-subtle' | 'secondary' };
   onOpenDetail: (id: string) => void;
-  processingId: string | null;
 }
 
-export function MemberCardList({
-  members,
-  accountBadge,
-  onOpenDetail,
-  processingId,
-}: MemberCardListProps) {
+export function MemberCardList({ members, onOpenDetail }: MemberCardListProps) {
   return (
     <div className="space-y-3">
       {members.map((member) => {
-        const acct = accountBadge(member.accountStatus);
         return (
           <Card
             key={member.id}
@@ -48,8 +40,8 @@ export function MemberCardList({
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 font-medium break-words">{member.name ?? '—'}</p>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
-                  {member.isAdmin && <Badge variant="default">管理員</Badge>}
-                  {member.suspended && <Badge variant="destructive">已暫停</Badge>}
+                  {member.isAdmin && <AdminBadge />}
+                  {member.suspended && <SuspendedBadge />}
                 </div>
               </div>
 
@@ -69,7 +61,7 @@ export function MemberCardList({
 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant={acct.variant}>{acct.label}</Badge>
+                  <AccountStatusBadge status={member.accountStatus} />
                   <span className="text-xs text-muted-foreground">刊登 {member.listingCount}</span>
                 </div>
                 {/* **卡上只有「查看」一顆**（ui-ux-guidelines §11.1）:
