@@ -13,20 +13,22 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `useLatestRequest`；`usePagedList` 序號守衛、背景重讀、`meta`、`isRefreshing` | ⬜ 未開始 | | |
-| 2 | `createAdminCache`＋對照表；`usePagedList` 快取水合；PII 靜態守衛 | ⬜ 未開始 | | |
-| 3 | `AdminToolbar` 背景更新語意（`aria-disabled`、宣告區、`filter` 選填） | ⬜ 未開始 | | |
-| 4 | 提領頁改走 `usePagedList`＋寫入閘門＋骨架＋錯誤拆分 | ⬜ 未開始 | | |
-| 5 | 會員頁（快取、`useLatestRequest`、補讀）＋證件審核（閘門、`memberLabel`） | ⬜ 未開始 | | |
+| 1 | `createLatestRequest`／`useLatestRequest`；`usePagedList` 序號（兩個方向）、旗標綁 ticket、背景重讀、`meta`、`isConfirmed`、`dataVersion`、`fetchedAt`、`loadMoreError`、`initial`／`onLanded`、15 秒慢更新 | ⬜ 未開始 | | |
+| 2 | `createAdminCache`（鍵 builder、fence、view、空結果不寫、`accessLost`、dispose）＋`useAdminList`＋PII 守衛 | ⬜ 未開始 | | |
+| 3 | `AdminToolbar` 新契約（`isUpdating`／`refreshDisabled`／`updateError`／`exportProgress`、宣告區、`filter` 選填），兩個呼叫端同步改接 | ⬜ 未開始 | | |
+| 4a | 提領頁純遷移到 `usePagedList`（綠到綠，既有測試一字不改） | ⬜ 未開始 | — | |
+| 4b | 提領頁行為：快取、確認閘門、勾選清除、統計與作業面板、資料時間、骨架、錯誤區、回報位置與焦點、失敗重讀、失效、篩選保留 | ⬜ 未開始 | | |
+| 5 | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀）＋證件審核（閘門、錯誤區、`memberLabel`、按鈕順序） | ⬜ 未開始 | | |
 | 6 | 公告（快取、骨架、錯誤態）＋告警（`AdminToolbar`、閘門） | ⬜ 未開始 | | |
-| 7 | 殼層：store 建立與注入、使用者 key、匯出鎖分頁、卸載停止匯出 | ⬜ 未開始 | | |
-| 8 | e2e 兩個情境＋journey page object 與 offline 檢查 | ⬜ 未開始 | | |
-| 9 | 文件（規格書 §13、ui-ux §5、母計畫驗收 3 清單與 progress）＋清理本目錄 | ⬜ 未開始 | | |
+| 7 | 殼層：`UserContext`、`user.id` key、store 注入與 dispose、匯出鎖分頁與進度、卸載停止匯出 | ⬜ 未開始 | | |
+| 8 | e2e 三個情境＋journey page object 與 offline 檢查 | ⬜ 未開始 | | |
+| 9 | 文件（規格書 §13 新段、ui-ux §5、檔頭理由、母計畫 §1／§2／驗收 3／progress）＋清理本目錄 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃與四視角審查完成，等業主審（開放問題 Q1–Q3 與審查報告的裁決）。核准後由業主親自打
-`/tdd-implement admin-data-cache`，從階段 1 開始。
+規劃第二版（依第一輪審查與業主裁決 D1–D8 修訂）已完成，第二輪四視角審查進行中／待業主審。
+核准後由業主親自打 `/tdd-implement admin-data-cache`，從階段 1 開始。範圍比開工 prompt 預估大
+（十個階段），可能需要兩次對話——中途 `/clear` 續作屬預期內，從本表找回位置。
 
 ## Blockers（逃生口紀錄）
 
