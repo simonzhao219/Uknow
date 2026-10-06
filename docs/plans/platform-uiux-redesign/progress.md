@@ -17,7 +17,7 @@
 | S2e | 設計定案落地 | D6 | ✅ 已合併（2026-10-05）；D1–D4、E1–E4 與主 session 二次審查 11 題裁決全數套用；E4 改為先藏到期前的續訂鈕、不擋晉升（業主 2026-10-05） | [#354](https://github.com/simonzhao219/Uknow/pull/354) | 分支 `fix/design-decisions-2026-10`，Plan Mode 經業主核准（token 對照表、原語、消費點與 56 顆按鈕的 tone 歸類）。**落地**：globals.css 新五層色表（墨色＝--primary＝--foreground #121223）、品牌色改蔚藍並新增 --brand-border／--brand-faint、刪 --brand-hover；新增 --sel／--sel-foreground（--ring 指向 --sel）與 --medal-gradient；`Button` 加 `tone`（flow／guide／secondary／destructive）× `container`（compoundVariants，刪 brand 與零消費者的 secondary variant，link 改墨色底線）；Tabs／Input／Select／Textarea／OTP／Checkbox／Badge／對話框關閉鈕的選取與聚焦改走 --sel；第八條 tone 消費點 sweep（會員中心卡片兩顆改次要、`pickPrimaryAction` 隨之刪除）；選取態與連結消費點；文案 sweep（去箭頭、下一步、續訂、代／推薦人、查收→確認收款）；`check-color-usage.py` 核准漸層例外機制（`APPROVED_GRADIENT_FILES`，起始為空）；`ui-ux-guidelines.md` §12 改寫並新增 12.11 按鈕三分法與位置、12.12 選取與聚焦、12.13 文案。**業主裁決（2026-10-05，#354 留言）全選 A**：D1 鍵盤焦點 3px 環全不透明 `--sel`、D2 版面底白、D3 輸入格白底細框、D4 列內破壞性鈕紅框字＋不可逆確認框紅實心（理由見異動記錄）。驗收站 1e 待業主；分支預覽 https://fix-design-decisions-2026-10.uknow.pages.dev |
 | B1 | S7 依賴的後端工項 | attention 口徑＋分頁端點、後端用語、/subscriptions/status 5xx | ✅ 已合併，業主驗收通過（2026-10-05）；九題裁決全數套用，主 session 最後對照無未補項（#360 留言 6002803626） | [#360](https://github.com/simonzhao219/Uknow/pull/360) | 分支 `fix/referral-attention-backend`。`overview.attention` 改一代且即將到期（`attentionIds`，total＝精確人數）、新增 `GET /referrals/network/attention?limit=&offset=`（S7「全部 N 位 ›」用，前端尚未接）、children 錯誤訊息改「載入推薦資料失敗」；`/subscriptions/status` 與 `/payuni/prepare` 建單前守衛的讀取一律 fail-closed（`must()`／`readAccountStatus()`＋handler 單一 catch）；我的訂閱卡讀取失敗顯示中性錯誤；30 天窗 `RENEWAL_NOTICE_DAYS` 移進契約；規格書 §5.3／§6.2／§7.2／§10.3／§14 第 8 列；推薦頁橫幅「N 位一代即將到期」；journey f60「已失效標記」改看節點詳情。紅燈 `3053a3b`、`f417e56`。驗收以 `/api/health` 的 sha 確認後端已換版後進行，七條全過；journey 時光機情境前移 run 37332799162 全綠（webhook 模式） |
 | S3 | 後台資訊架構 | A1+A2 | ✅ 已合併（2026-10-05，merge `44fda732`）；兩輪審查共 P0×1／P1×9 全修、九題裁決全數套用；驗收站 2 待 S4 合併後一起驗 | [#359](https://github.com/simonzhao219/Uknow/pull/359) | 三段式：Q1–Q3、R1–R4 業主裁決（#359）；四分頁一列（可見二字＋完整無障礙名稱，公告改「系統公告」）、管理員設置退場（bootstrap 只走 API，checklist 步驟 7）、AdminToolbar 套提領＋會員兩頁。看板遺留項「`--brand-subtle(-foreground)` 零消費者，S3 決定去留」結案：S2e 後已有消費者（Button brand tone），保留 |
-| S4 | 會員詳情重設計 | A3 | ⬜ 開工 prompt 已備（construction-plan §3 S4，八條） | — | 驗收站 2 與 S3 一起驗 |
+| S4 | 會員詳情重設計 | A3 | 🔨 實作完成待審（2026-10-06） | [#365](https://github.com/simonzhao219/Uknow/pull/365) | 三段式：規劃四視角 P0×0／P1×10／P2×23 全數處置，業主裁決 Q1（session 內）與 D1–D13（#365 留言 6008679860）；五階段 TDD（重構綠到綠→查看回饋與請求序號→分區與身分卡→管理區與確認鈕→文件）。固定身分卡＋帳號／點數／近期提領／推薦關係／敏感資料／管理；`WithdrawalStatusBadge`、`MemberStatusBadges` 單一來源；不動 `supabase/functions/`。驗收站 2 與 S3 一起驗，S4 清單見 construction-plan §4.3 表格下方 |
 | S5 | admin 資料快取 | A4 | ⬜ 未開工 | — | 驗收站 3 |
 | S6 | 前台門面 | F1 | ⬜ 未開工 | — | |
 | S7 | 會員區資訊層次 | F2+F3 | ⬜ 未開工 | — | 驗收站 4；F2 已由「視覺對齊」改寫為「資訊層次重設計」（2026-10-03） |
@@ -78,6 +78,7 @@
 | 2026-10-05 | **B1 合併並驗收通過（#360，merge `39246739`）**：主 session 最後對照（留言 6002803626）確認九題裁決全部落地——`prepare-fail-closed.test.ts` 三案皆斷言不建單、`.claude/rules/supabase-functions.md` 與 `referralNetwork.ts` 檔頭已列 `/attention`；業主以 `/api/health` sha 確認後端換版後七條驗收全過。同 commit 前三次 journey 紅是切 webhook 模式前的手動 run，非程式問題 | S7 可接 `API_PATHS.networkAttention`；後端其餘 fail-open 端點另開 `/fix-bug`（遺留事項）；晉升 main 前 #288 需先解 |
 | 2026-10-05 | **S3 Q1：管理員設置分頁退場，bootstrap 只走 API**（業主於 #359 裁決）：plan.md §0 第 3 列由「保留條件式引導」改為移除；`AdminSetup` 畫面刪除、`AdminRoute` 不動，後端 `/admin-setup/*` 保留（journey 依賴），程序寫進 `supabase-setup-checklist.md` 步驟 7 | 原決策假設 GUI 路徑可達；審查發現 `AdminRoute` 自上線起就擋住非管理員，畫面不可達且無人回報。bootstrap 只在全新資料庫發生一次，唯一的實際使用者（journey）本來就走 API；改走 API 讓本工程維持零權限閘門變更 |
 | 2026-10-05 | **S3 合併（#359，merge `44fda732`）**：主 session 最後對照（留言 6003832963）確認九題裁決與 P1／P2 全部落地——P0 的 journey f70 改 role 定位、CSV 鈕單一 sr-only＋`aria-labelledby`（e2e 三斷點真瀏覽器斷言）、SystemAlerts 形狀不合走錯誤態、匯出期間列動作／批次／載入更多停用、內建瀏覽器文案；S3 自行 rebase 解掉 progress.md 與 develop 的兩處衝突。規劃鷹架 `docs/plans/admin-ia-refactor/` 已清理（取回：`git show b621dcf:docs/plans/admin-ia-refactor/plan.md`） | 驗收站 2 要等 S4；S5 承接七項遺留（見遺留事項「S3 審查遺留 → S5」） |
+| 2026-10-06 | **S4 業主裁決（#365）**：Q1 會員詳情「會籍與金流」區改名「點數」（契約沒有付款／訂閱交易欄位，金流實質只剩點數）；D2 分區順序改為身分卡→帳號→點數→近期提領→推薦關係→敏感資料→管理（plan.md §3 A3 同步）；D3 確認鈕跟觸發鈕同類（紅框字觸發→紅實心確認，`ui-ux-guidelines.md` §12.11 改寫判準：紅實心看破壞性，資料層可逆性只決定要不要確認框）；D4 面板裡的設為管理員是次要，§12.11 表格、plan.md §4 第 10 點、construction-plan S2e 第八條的「設為管理員」改為「確認授予（確認框內）」；D6 暫停確認框文案對齊規格書 §5.2（停權後無法進入會員區）；D9 規格書 §13 會員管理列「狀態篩選／排序」改「搜尋」並登 §14 第 9 列 | 業主於 #365 留言 6008679860 裁決 D1–D13；理由與審查發現見該 PR |
 
 ## 遺留事項
 
@@ -121,3 +122,11 @@
     S3 只停用了重新整理）→ hook 加請求序號（#359 審查 #10）。
   - `SystemAlerts` 的重新整理鈕是後台第三套自刻的（`SystemAlerts.tsx` 告警清單上方），S3 沒套 AdminToolbar：該頁沒有篩選、
     版面無收益。退場條件：S5 若統一手動刷新入口（SWR 化）就一併收進 AdminToolbar（#359 審查 #15）。
+- **S4 遺留**（#365，業主裁決 D1／D12 與審查第 1 項）：
+  - 會員詳情的近期提領只有最近 10 筆、沒有總筆數（`admin_member_detail` SQL `limit 10`），UI 也看不到單一會員的完整提領史——
+    提領管理沒有搜尋框（後端 `/admin/withdrawals?search=` 已支援、前端沒接）。面板只寫「最多列出最近 10 筆」。
+    退場條件：後端加 total（改成「已顯示 X / Y 筆」）或提領管理接上依會員搜尋。
+  - `apiClient` 沒有逾時／abort：網路卡住時會員列表的「查看」會一直轉圈且停用（照 S4 指定的停用）。退場條件：全站
+    `apiClient` 加 `AbortSignal.timeout` 落地。
+  - `ui/dialog.tsx` 關閉鈕的無障礙名稱仍是英文「Close」（S4 只改了 `ui/sheet.tsx`，因為 `e2e/steps/profile_steps.py:95`
+    依賴 Dialog 的「Close」）。退場條件：改成「關閉」並同步該 e2e 定位器。

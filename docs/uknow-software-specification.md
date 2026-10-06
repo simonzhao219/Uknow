@@ -651,7 +651,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 
 | 模組 | 元件 | 功能 |
 |---|---|---|
-| **會員管理** | `MemberManagement` | 會員列表（全站統計／狀態篩選／排序；**列上唯一動作是「查看」**）、會員詳情（含近期提領記錄，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
+| **會員管理** | `MemberManagement` | 會員列表（全站統計／搜尋；**列上唯一動作是「查看」**）、會員詳情（`MemberDetailSheet`：固定身分卡＝姓名＋狀態徽章＋會籍到期，下接帳號／點數／近期提領／推薦關係／敏感資料分區，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統公告** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
 | **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
@@ -728,6 +728,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 | 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
 | 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/profile` 的 `accountStatus`（`buildProfileResponse` 讀 `user_account_status` 不看 error，暫時性錯誤時路由守衛把有效會員導去續訂；失敗策略應是「未知態」或保留舊 profile，不是 5xx 當未登入）②`buildProfileResponse` 的 `profiles` 讀取失敗回 null → 404 → 前端 `signOut`，暫時性錯誤會登出有效會員 ③`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）④`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status` 與 `/payuni/prepare` 已改 fail-closed（#360） |
+| 9 | 會員列表的狀態篩選／排序（§13） | 後端 `GET /admin/members` 已收 `status`／`sort` 參數，`MemberManagement` 只接了搜尋（`search`），畫面上沒有篩選與排序 |
 
 ---
 
