@@ -4,6 +4,7 @@ import { Card, CardContent } from '../ui/card';
 import { CardOverflowMenu } from './CardOverflowMenu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -37,7 +38,6 @@ interface WithdrawalCardListProps {
   processingId: string | null;
   /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
   actionsDisabled?: boolean;
-  statusBadge: (status: string) => React.ReactNode;
   formatAmount: (n: number) => string;
 }
 
@@ -52,7 +52,6 @@ export function WithdrawalCardList({
   onComplete,
   processingId,
   actionsDisabled = false,
-  statusBadge,
   formatAmount,
 }: WithdrawalCardListProps) {
   return (
@@ -65,7 +64,7 @@ export function WithdrawalCardList({
                 那一筆」，不是「對每一筆都做決定」。 */}
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-medium break-words">{w.userName}</p>
-              {statusBadge(w.status)}
+              <WithdrawalStatusBadge status={w.status} />
             </div>
 
             <div className="flex items-baseline justify-between gap-2">

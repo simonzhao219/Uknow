@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
@@ -10,6 +9,11 @@ import { Checkbox } from '../ui/checkbox';
 import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import {
+  WITHDRAWAL_STATUS_VALUES,
+  WithdrawalStatusBadge,
+  withdrawalStatusLabel,
+} from './WithdrawalStatusBadge';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -35,32 +39,6 @@ import type {
   AdminWithdrawalStats,
   AdminWithdrawalsResponse,
 } from '@contract';
-
-// 提領生命週期（與後端 SQL 函數一致）：
-//   pending（待處理）→ awaiting_collection（已匯款，待查收）
-//                   → completed（用戶已確認查收）
-//   pending → rejected（退件，點數自動退回）
-const STATUS_LABEL: Record<string, string> = {
-  pending: '待處理',
-  awaiting_collection: '待查收',
-  completed: '已完成',
-  rejected: '已退件',
-};
-
-function getStatusBadge(status: string) {
-  switch (status) {
-    case 'pending':
-      return <Badge variant="secondary">待處理</Badge>;
-    case 'awaiting_collection':
-      return <Badge variant="warning">待查收</Badge>;
-    case 'completed':
-      return <Badge variant="outline">已完成</Badge>;
-    case 'rejected':
-      return <Badge variant="destructive">已退件</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-}
 
 interface IdCardDialogProps {
   record: AdminWithdrawalRecord;
@@ -394,7 +372,7 @@ export function WithdrawalManagement({
       w.bankAccount ?? '未設定',
       w.idNumber ?? '未設定',
       formatTwTimestamp(w.requestedAt),
-      STATUS_LABEL[w.status] ?? w.status,
+      withdrawalStatusLabel(w.status),
     ]);
 
     // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
@@ -605,8 +583,7 @@ export function WithdrawalManagement({
                 historyRecord.events.map((e) => (
                   <li key={e.createdAt} className="border-l-2 pl-3">
                     <p>
-                      {STATUS_LABEL[e.fromStatus] ?? e.fromStatus} →{' '}
-                      {STATUS_LABEL[e.toStatus] ?? e.toStatus}
+                      {withdrawalStatusLabel(e.fromStatus)} → {withdrawalStatusLabel(e.toStatus)}
                       <span className="text-muted-foreground ml-2">
                         {e.byAdmin ? '（管理員）' : '（會員本人）'}
                       </span>
@@ -645,15 +622,19 @@ export function WithdrawalManagement({
               <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待處理</dt>
+              <dt className="text-xs text-muted-foreground">{withdrawalStatusLabel('pending')}</dt>
               <dd className="font-bold">{stats.byStatus.pending}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待查收</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('awaiting_collection')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">已完成</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('completed')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.completed}</dd>
             </div>
           </dl>
@@ -676,13 +657,17 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('pending')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('awaiting_collection')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">
                   {stats.byStatus.awaiting_collection}
                 </p>
@@ -690,7 +675,9 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('completed')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
               </CardContent>
             </Card>
@@ -751,10 +738,11 @@ export function WithdrawalManagement({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部狀態</SelectItem>
-                  <SelectItem value="pending">待處理</SelectItem>
-                  <SelectItem value="awaiting_collection">待查收</SelectItem>
-                  <SelectItem value="completed">已完成</SelectItem>
-                  <SelectItem value="rejected">已退件</SelectItem>
+                  {WITHDRAWAL_STATUS_VALUES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {withdrawalStatusLabel(status)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             }
@@ -828,7 +816,6 @@ export function WithdrawalManagement({
               onComplete={setCompleteTarget}
               processingId={processingId}
               actionsDisabled={isExporting}
-              statusBadge={getStatusBadge}
               formatAmount={twd}
             />
           ) : (
@@ -891,7 +878,9 @@ export function WithdrawalManagement({
                     <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
                     <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
                     <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
-                    <TableCell>{getStatusBadge(w.status)}</TableCell>
+                    <TableCell>
+                      <WithdrawalStatusBadge status={w.status} />
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="sm" onClick={() => setViewRecord(w)}>
                         <Eye className="h-4 w-4 mr-1" />
