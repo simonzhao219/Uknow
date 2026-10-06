@@ -173,6 +173,26 @@ JOURNEY_RESULT: ${{ needs['journey-full'].result }}   # job id 帶連字號,須�
 另一半防線是 `deployment-queue-audit.yml`:規則 11 治的是「被擋住」,那支治的是
 「沒有下一次 push 時,沒人核准的部署會無聲等下去」——超過 6 小時未推進就開 issue。
 
+**規則 12 — `supabase functions deploy` 的 step 必須有退避重試**
+CLI 打包函式時要在 runner 上起 Docker、從 `public.ecr.aws` **匿名**拉
+`edge-runtime` 映像。runner 是共用 IP,撞上 ECR 的匿名速率限制
+(`docker: toomanyrequests: Rate exceeded`)時,部署會在**上傳之前**整支失敗。
+
+2026-10-03～05 連續 7 次(#337 #339 #341 #346 #353 #357 #362),其中 #357 是
+正式站。develop 的失敗會被下一次 push 自癒,main 沒有「下一次 push」,要等
+下次晉升才補得上,期間是前端新、後端舊。每次的錯誤都長得像偶發,所以沒人
+去找共同根因。
+
+部署冪等(同一包推到同一個 project),重試只有好處。判準是**同一個 step
+內有 for 迴圈且有 sleep**——沒有 sleep 的迴圈是連環硬打限流,等於沒有重試。
+重試在同一個 job 內,不會再要一次 production 核准。現行寫法見
+`deploy-supabase.yml`(4 次,退避 30／60／90 秒),`journey.yml` 的部署步驟
+同款。
+
+⚠️ 規則只管 `supabase functions deploy`。同樣會拉映像的 `supabase start`
+(ci.yml 的 api-tests)目前沒有失敗紀錄,記在 friction-log 觀察、不預先改——
+那是 CI 主閘門,沒有證據就不動。
+
 ## 不可改名的識別字
 
 | 名稱 | 改了會怎樣 |

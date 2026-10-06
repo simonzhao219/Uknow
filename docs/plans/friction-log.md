@@ -2695,3 +2695,97 @@ S2c session 想順手確認 hooks 掛載是否正常，執行了 `git config cor
 其他輸出，不要與驗證指令串在同一個呼叫；或讓過濾器只折疊驗證指令自己的輸出段。
 
 推論:折疊是為了降噪，但降噪的邊界要與「資訊來源」對齊——整串折疊等於把別的指令的輸出也當成噪音。
+
+## 2026-10-05｜漏網｜`/review-implementation` 的四個 reviewer 沒有 Bash，讀不到 diff
+
+S3（admin-ia-refactor）收尾跑 `/review-implementation`：skill 要 reviewer「審實作 diff」並在 prompt 給
+`git diff origin/develop...HEAD`，但四個 `plan-reviewer-*` agent 的工具只有 Read／Grep／Glob。四位都
+在報告開頭聲明「沒有 Bash，改讀工作樹現況比對 plan」——**被刪除的行、被改掉的舊行它們看不到**，
+而「實作有沒有偏離 plan」恰恰最常藏在被改掉的那一行。這次靠的是 reviewer 自己去讀 migration 與現行
+檔案，才抓到 checklist 措辭與 RPC 實際行為不符（P1）。
+
+處置：本次照常彙整，限制寫進 implementation-review.md 開頭。建議二選一：skill 的步驟 1 由主 session
+先把完整 diff 寫進 scratchpad 檔（`git diff … > <file>`），把路徑交給 reviewer 用 Read 讀；或給
+reviewer agent 唯讀的 `git diff`／`git show` 權限。前者不擴權，較符合「reviewer 只讀」的設計。
+
+推論：審查閘門的輸入要跟審查任務對齊——叫人「審 diff」卻只給得到成品的工具，審的其實是成品。
+
+## 2026-10-05｜漏網｜無障礙名稱在 jsdom 與 Chromium 算法不同，vitest 綠、e2e 紅
+
+S3 把後台分頁的可見字縮成二字、缺的字用幾段 `sr-only` 補回（`會員<sr-only>管理</sr-only>`）。
+`AdminDashboard.test.tsx` 的 `getByRole('tab', {name:'會員管理'})` 綠；e2e 的 `get_by_role` 30 秒逾時——
+Chromium 把 `position:absolute` 的 `sr-only` 當區塊，名稱算成「會員 管理」。jsdom 沒有排版，
+dom-accessibility-api 拿不到 computed display，只能當行內處理。
+
+處置：改成完整名稱整串一個 `sr-only` 節點、`aria-labelledby` 指向它；規則升級進
+`ui-ux-guidelines.md` §9。
+
+推論：凡是「名稱怎麼算」跟 CSS 有關的斷言（`sr-only`、`display:contents`、`hidden` 子樹），
+vitest 的綠燈不算數，要有一條真瀏覽器的 `get_by_role` 斷言兜底——本 repo 的 e2e 剛好有，
+不然這個缺陷會一路活到 journey 的晉升 PR 才爆。
+
+## 2026-10-05｜漏網｜改可見文案沒掃 journey 的 placeholder 定位，差點留到晉升 PR 才紅
+
+S3（#359）把會員搜尋框的 placeholder 由「搜尋姓名 / Email / 電話」縮成「搜尋會員」。規劃與收尾 grep
+只掃了**分頁名稱**——因為分頁名稱被明列為跨層契約——沒掃 placeholder；而 `e2e/journey/steps/
+f70_renewal_saga_steps.py` 正是用 `get_by_placeholder("搜尋姓名 / Email / 電話")` 找搜尋框。journey 只在
+晉升 PR 跑、本機 `pytest tools/` 碰不到 step 內容，所以 mock e2e 全綠、`ci-ok` 全綠，四視角實作審查
+（reviewer 沒有 Bash、讀不到 diff）也沒抓到，是主 session 的第二輪審查才發現（P0）。
+
+處置：f70 改用 `get_by_role("searchbox", name="搜尋會員")`；收尾 grep 補上舊 placeholder 字串。
+
+推論：**任何可見文案（placeholder、按鈕字、標題）都可能是某支測試的定位器**——改字的 PR 要對
+`e2e/`（含 `journey/`）grep 舊字串，不只 grep 當下被認定為「契約」的那幾種。更好的是 journey 一律
+用 role＋名稱定位：名稱是無障礙契約、改它本來就要想清楚；placeholder 是文案，會被當成純 UI 修改。
+
+## 2026-10-05｜漏網｜部署步驟沒有重試，ECR 匿名拉映像被限流，連正式站部署都被打掛
+
+`supabase functions deploy api` 在 runner 上要起 Docker、從 `public.ecr.aws` 匿名拉 `edge-runtime`
+映像；共用 IP 撞上限流（`docker: toomanyrequests: Rate exceeded`），部署在上傳之前整支失敗。
+10/03～10/05 共 7 次（#337 #339 #341 #346 #353 #357 #362），#357 是正式站——晉升 #356 合併、
+production 核准之後掛掉，手動重跑才過。
+
+**為什麼拖到第 7 次才處理**：每次都長得像偶發，而 develop 的失敗會被下一次 push 自癒，issue 開了沒人
+收（另外 6 則至今還開著）。「失敗自動開 issue」只是訊號、不會歸納；7 則的日誌一模一樣，是順手查
+#357 才第一次並排看。main 沒有「下一次 push」可以自癒，而下次晉升會帶 `supabase/functions` 的
+改動（#360）——那時才撞到，就是新前端配舊後端。
+
+處置：兩處部署步驟（`deploy-supabase.yml`、`journey.yml`）改成 4 次退避重試（30／60／90 秒）；
+規則 12（`check-workflows.py`）機械要求執行 `supabase functions deploy` 的 step 有 for 迴圈＋sleep。
+重試邏輯用假的 `supabase`／`sleep` 模擬過三種情境（一次成功、被限流兩次後成功、四次都失敗）。
+**未驗證**：真實的 ECR 限流視窗多長，退避夠不夠要等下一次真的撞到才知道；若 4 次仍不夠，下一步是改走
+不需要 Docker 的伺服器端打包（尚未確認 CLI 2.109.1 是否支援）。
+
+觀察（不改）：`ci.yml` api-tests 的 `supabase start` 也會匿名拉一整批映像，屬同類風險；目前沒有失敗
+紀錄，不預先動 CI 主閘門。
+
+推論：**一組長得一樣的失敗 issue 就是同類掃描的現成材料**——第 2 則出現時就該把日誌並排看，不要等到
+第 7 則。另外，開 issue 的步驟不知道「同一個失敗簽名已經開著幾則」（待評估，未做）。
+
+## 2026-10-06｜待裁決｜Stop hook 要 push，`/review-implementation` 要「P0 清掉才 push」
+
+S4（member-detail-redesign）跑完五階段後派出四視角實作審查，等待期間 stop hook
+（`stop-hook-git-check.sh`）以「14 個 commit 未推」擋下結束。skill 收尾第 3 步寫「P0 修掉才可 push」，
+兩條規則在「審查進行中」這段時間正面衝突。
+
+處置：PR 本來就是 draft，推上去不會被合併；web session 容器是拋棄式的，未推的 commit 有遺失風險——
+所以先推，審查結果回來再處理（結果 P0×0）。
+
+建議（待整併時裁決）：skill 改寫成「P0 未清前不得**轉為 ready / 請求合併**」，push 到 draft PR 不受限；
+或 stop hook 在 `docs/plans/<slug>/implementation-review.md` 不存在時（審查進行中）放行。另一個觀察：2026-10-05
+那條「reviewer 沒有 Bash」的建議一（主 session 先把完整 diff 寫進 scratchpad 檔、交路徑給 reviewer 用 Read 讀）
+本次實際採用，四位都讀到被刪除的行（需求視角據此驗證既有 `it` 零刪除），可以直接寫進 skill 步驟 1。
+
+## 2026-10-06｜漏網｜Tailwind class 用子字串斷言，「variant 一換就紅」其實不成立
+
+S4 新寫的徽章測試用 `className.toContain('bg-warning')` 釘「待查收＝warning」——但 `bg-warning-subtle` 也含這個
+子字串，variant 換成淺底版本照樣綠。同一批另一條寫 `className.not.toContain('destructive')` 想證明「不帶紅色」，
+卻因 Button base class 帶 `aria-invalid:border-destructive-border`，**永遠紅**（寫的當下就被自己的紅燈抓到）。
+前者是實作審查（架構視角）抓到的。
+
+處置：一律改 `classList.contains('<token>')` 逐 token 比；「沒有底色」寫成 `[...classList].some(c => c.startsWith('bg-'))`
+為 false。`tabs.test.tsx`、`alert-dialog.test.tsx` 早就是逐 token 的寫法，只是沒有成為規則。
+
+推論：**class 斷言一律逐 token**——Tailwind 的語義 token 普遍互為前綴（`bg-x` 與 `bg-x-subtle`、`text-x` 與
+`text-x-foreground`），還有帶前綴修飾的變體（`hover:`、`aria-invalid:`）。可考慮在 `check-test-names.py` 同軌加一條
+靜態檢查：`*.test.tsx` 出現 `className).toContain('bg-` / `('text-` 就提醒。

@@ -1,7 +1,7 @@
 """375px 下「平台管理」的**正向版面期望**（U2／U3）。
 
 **與 `test_overflow_sweep.py` 的分工**：那支問「有沒有畫到框外」，這支問
-「該長成什麼樣」。兩者不可互相取代——一個把五個中文分頁擠成單行橫向捲動的
+「該長成什麼樣」。兩者不可互相取代——一個把一排中文分頁擠成單行橫向捲動的
 `TabsList` **沒有任何溢出**（`overflow-x: auto` 是明示要捲動，探針刻意不報），
 但它正是行動版要修掉的東西。
 
@@ -9,7 +9,7 @@
 超出視窗」。在 jsdom 裡能寫的只有「斷言 class 字串存在」，而那是套套邏輯——
 它斷言的是實作者剛打進去的那串字，不可能為了正確的理由失敗。真正的反例：
 `grid-cols-3` 少了無前綴的 `grid` 時對 `display:flex` 的 `TabsList` 毫無作用，
-版面完全沒變，但「class 存在」與「五個 TabsTrigger 都在文件中」照樣全綠。
+版面完全沒變，但「class 存在」與「所有 TabsTrigger 都在文件中」照樣全綠。
 
 **為什麼是 `xfail(strict=True)` 而不是先註解掉**：這些期望描述的是
 `docs/plans/platform-admin-rwd/` 要做到的終局，今天還做不到。`strict=True`
@@ -23,6 +23,7 @@
 """
 
 import pytest
+from playwright.sync_api import expect
 
 from layout_probe import (
     card_density,
@@ -38,7 +39,16 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
-from test_overflow_sweep import _open_id_card_dialog, _open_tab, _setup_admin
+from mocks.admin_console_mock import build_admin_member_detail, route_admin_member_detail
+from mocks.backend_api_mock import build_admin_member
+from test_overflow_sweep import (
+    LONG_EMAIL,
+    NAME_CJK_10,
+    _open_id_card_dialog,
+    _open_member_detail_sheet,
+    _open_tab,
+    _setup_admin,
+)
 
 # Radix 的 TabsList 掛 data-slot；DialogContent 沒有，但 Radix 會給 role=dialog
 # （AlertDialog 是 role=alertdialog，不會誤中）。
@@ -60,15 +70,67 @@ def admin_at_375(page, context, api_mock, rest_mock):
 
 
 @pytest.mark.compatibility
-def test_admin_tabs_wrap_to_two_rows_at_375px(admin_at_375):
-    """U2：五個分頁標籤在 375px 下同時可見（＝排成兩列，不是單行捲動）。"""
+def test_admin_tabs_fit_one_row_at_375px(admin_at_375):
+    """U2：四個分頁在 375px 排成一列，四個都看得到。
+
+    一列成立的前提是可見標籤只有二字（提領／會員／公告／告警，ui-ux-guidelines §3）。
+    「一列」本身分不出「四欄 grid」與「單行橫向捲動」——後者第 4 個分頁會被
+    捲到框外，所以另外斷言每個分頁都完整落在 TabsList 的可視範圍內。
+    """
     rows = count_rows(admin_at_375, TABS_LIST)
     assert rows is not None, f"找不到 {TABS_LIST}——選擇器過時了，不是版面問題"
-    assert rows == 2, (
-        f"五個分頁標籤排成 {rows} 列（期望 2 列）。"
-        "1 列代表仍在橫向捲動（第 4、5 個分頁看不到）；"
-        "3 列以上代表欄數設定塌了。"
+    assert rows == 1, (
+        f"四個分頁排成 {rows} 列（期望 1 列）。"
+        "2 列代表欄數設定退回了兩列版面。可見標籤放不下時的退路是 2+2"
+        "（grid-cols-2 md:grid-cols-4），這條斷言要一起改成 2。"
     )
+    clipped = _clipped_tabs(admin_at_375)
+    assert clipped == [], f"這些分頁超出分頁列的可視範圍（在橫向捲動）：{clipped}"
+
+
+def _clipped_tabs(page):
+    """超出分頁列可視範圍的分頁（一列分不出「四欄 grid」與「單行橫向捲動」）。"""
+    return page.evaluate(
+        """(sel) => {
+          const list = document.querySelector(sel);
+          const box = list.getBoundingClientRect();
+          return [...list.querySelectorAll('[role="tab"]')]
+            .map((t) => ({ text: t.textContent, r: t.getBoundingClientRect() }))
+            .filter(({ r }) => r.left < box.left - 0.5 || r.right > box.right + 0.5)
+            .map(({ text }) => text);
+        }""",
+        TABS_LIST,
+    )
+
+
+@pytest.mark.compatibility
+def test_admin_tabs_fit_one_row_at_320px(page, context, api_mock, rest_mock):
+    """最窄的常見手機（320px）也要一列、標籤不溢字——375px 的餘裕不代表 320px 也有。"""
+    page.set_viewport_size({"width": 320, "height": 640})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    assert count_rows(page, TABS_LIST) == 1, "320px 下四個分頁不在同一列"
+    assert _clipped_tabs(page) == [], "320px 下有分頁被捲到分頁列外"
+    overflowing = ink_overflowing_children(page, TABS_LIST)
+    assert overflowing == [], "320px 下分頁標籤超出自己的格子：" + "；".join(
+        f"「{c['text']}」超出 {c['by']}px" for c in overflowing
+    )
+
+
+def test_admin_tabs_are_equal_width_on_desktop(page, context, api_mock, rest_mock):
+    """桌機四欄等寬：二字標籤不得讓 grid 退回依內容撐寬的 flex。"""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    widths = page.evaluate(
+        """(sel) => [...document.querySelectorAll(sel + ' > [role="tab"]')]
+              .map((t) => t.getBoundingClientRect().width)""",
+        TABS_LIST,
+    )
+    assert len(widths) == 4, f"桌機應有 4 個分頁，實際 {len(widths)}"
+    assert max(widths) - min(widths) <= 1, f"四個分頁寬度不一致：{widths}"
 
 
 @pytest.mark.compatibility
@@ -209,11 +271,10 @@ def test_admin_checkbox_hit_areas_do_not_overlap(admin_tablet_touch):
 def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
     """分頁標籤不得畫到隔壁格子上。
 
-    今天就該綠（現況是 flex，格子被內容撐開）。它守的是 §4.1 改成
-    `grid-cols-3` 之後：grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，
-    標籤放不下時是 ink overflow——`count_rows` 照樣回報兩列、溢版巡檢
-    也不報，只有比對 scrollWidth 與 clientWidth 抓得到。實測餘裕只有
-    10.3px（可放文字 94.3px vs 最長標籤 84px），不厚。
+    grid 的 `minmax(0, 1fr)` 會把格子寬度鎖死，標籤放不下時是 ink
+    overflow——`count_rows` 照樣回報一列、溢版巡檢也不報，只有比對
+    scrollWidth 與 clientWidth 抓得到。四欄時每格可放文字約 66px，二字
+    可見標籤約 28px；sr-only 補字（無障礙名稱）不得撐出 scrollWidth。
     """
     overflowing = ink_overflowing_children(admin_at_375, TABS_LIST)
     assert overflowing is not None, f"找不到 {TABS_LIST}——選擇器過時了"
@@ -224,22 +285,22 @@ def test_admin_tab_labels_do_not_ink_overflow(admin_at_375):
 
 @pytest.mark.compatibility
 def test_admin_tabs_reach_44px_touch_target(admin_at_375):
-    """五個分頁標籤在觸控裝置上都要有 ≥44px 的可點高度（§1）。
+    """四個分頁標籤在觸控裝置上都要有 ≥44px 的可點高度（§1）。
 
     分頁列是 admin 手機版**最上層的導覽**——每一次要換分頁都得先按到它，
     頻率高於卡片上的任何一顆按鈕。原語 `ui/tabs.tsx` 的 base 是
     `py-1` ＋ `text-sm`（行高 20px）＋ 1px 邊框 ＝ 30px，而
-    `TabsList` 在 admin 被改成 `h-auto`（為了讓五個標籤排成兩列），
+    `TabsList` 在 admin 被改成 `h-auto`（為了讓 grid 由內容決定高度），
     所以格子高度由內容決定、沒有任何一處把它撐到 44px。
 
-    **寬度不測**：`grid-cols-3` 下每格 112px，本來就遠超過 44px，
+    **寬度不測**：`grid-cols-4` 下每格 84px，本來就遠超過 44px，
     寫進斷言只會製造一條永遠為真的條件。
 
     量的是命中而不是盒子（同 checkbox 那條的理由）——真正決定使用者按不按
     得到的是 `elementFromPoint`，不是 `getBoundingClientRect`。
     """
     too_small = []
-    for i in range(1, 6):
+    for i in range(1, 5):
         selector = f'{TABS_LIST} > [role="tab"]:nth-child({i})'
         area = hit_area(admin_at_375, selector)
         assert area is not None, f"找不到第 {i} 個分頁（{selector}）——選擇器過時了，不是版面問題"
@@ -371,3 +432,313 @@ def test_two_members_fit_the_first_screen(admin_at_375):
     _open_tab("會員管理")(admin_at_375)
     settle(admin_at_375)
     _assert_two_fit_first_screen(admin_at_375, FIRST_MEMBER_CARD, "會員")
+
+
+# --- 工具列（S3 A2） ----------------------------------------------------------
+#
+# 改版前提領頁的「狀態篩選＋重新整理＋下載CSV」靠 flex-wrap 任其換行，
+# 375px 下擠成兩行、斷點附近忽一行忽兩行。AdminToolbar 把它收成一行：
+# 篩選吃剩餘寬度、兩顆 icon 鈕在觸控裝置上 44px。
+
+TOOLBAR = '[data-slot="admin-toolbar"]'
+
+
+def _toolbar_buttons(page):
+    return page.evaluate(
+        """(sel) => [...document.querySelector(sel).querySelectorAll(':scope > button')]
+              .map((b, i) => `${sel} > button:nth-of-type(${i + 1})`)""",
+        TOOLBAR,
+    )
+
+
+def _assert_toolbar_one_row(page, kind: str):
+    rows = count_rows(page, TOOLBAR)
+    assert rows is not None, f"找不到 {TOOLBAR}——{kind}沒有用 AdminToolbar"
+    assert rows == 1, f"{kind}工具列在 375px 排成 {rows} 行（期望 1 行）"
+    fit = viewport_fit(page, TOOLBAR)
+    assert fit["left"] >= 0 and fit["right"] >= 0, f"{kind}工具列超出視窗：{fit}"
+    too_small = []
+    for selector in _toolbar_buttons(page):
+        area = hit_area(page, selector)
+        assert area is not None and not area.get("centerMiss"), f"{selector} 量不到（{area}）"
+        if area["height"] < MIN_TOUCH_TARGET_PX or area["width"] < MIN_TOUCH_TARGET_PX:
+            too_small.append((selector, area))
+    assert not too_small, f"{kind}工具列按鈕可點範圍不足 44px：{too_small}"
+    gaps = page.evaluate(
+        """(sel) => {
+          const r = [...document.querySelector(sel).children].map((c) => c.getBoundingClientRect());
+          return r.slice(1).map((b, i) => Math.round(b.left - r[i].right));
+        }""",
+        TOOLBAR,
+    )
+    assert all(g >= 8 for g in gaps), f"{kind}工具列相鄰元件間距不足 8px（防誤觸）：{gaps}"
+
+
+def test_withdrawal_toolbar_is_one_row_at_375px(admin_at_375):
+    _assert_toolbar_one_row(admin_at_375, "提領管理")
+
+
+def test_member_toolbar_is_one_row_at_375px(admin_at_375):
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    _assert_toolbar_one_row(admin_at_375, "會員管理")
+
+
+def test_member_search_submit_reaches_44px_on_touch(admin_at_375):
+    """內嵌在搜尋框裡的放大鏡是手機上看得到的送出入口（鍵盤的 Enter 常被收起）。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    area = hit_area(admin_at_375, 'form button[type="submit"][aria-label="搜尋"]')
+    assert area is not None and not area.get("centerMiss"), f"量不到放大鏡送出鈕（{area}）"
+    assert area["width"] >= MIN_TOUCH_TARGET_PX and area["height"] >= MIN_TOUCH_TARGET_PX, (
+        f"放大鏡送出鈕可點範圍 {area['width']}×{area['height']}px，不足 44px"
+    )
+
+
+def test_member_search_placeholder_is_not_truncated_at_375px(admin_at_375):
+    """搜尋框放進工具列後被兩顆鈕夾著——placeholder 被截斷就是在說「這裡能搜什麼」只說一半。"""
+    _open_tab("會員管理")(admin_at_375)
+    settle(admin_at_375)
+    fit = admin_at_375.evaluate(
+        """() => {
+          const input = document.querySelector('input[type="search"]');
+          if (!input) return null;
+          const cs = getComputedStyle(input);
+          const ctx = document.createElement('canvas').getContext('2d');
+          ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+          const text = ctx.measureText(input.placeholder).width;
+          const room = input.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          return { text: Math.ceil(text), room: Math.floor(room) };
+        }"""
+    )
+    assert fit is not None, "找不到會員搜尋框"
+    assert fit["text"] <= fit["room"], f"placeholder 要 {fit['text']}px，框內只有 {fit['room']}px"
+
+
+# --- 工具列：真瀏覽器的名稱、桌機與觸控平板 -------------------------------------
+#
+# 按鈕的名稱跟 CSS 有關（sr-only、aria-labelledby），jsdom 算的跟 Chromium
+# 不一樣（ui-ux-guidelines §9）——名稱斷言要在真瀏覽器上各斷點跑一次。
+
+TOOLBAR_BUTTON_NAMES = ["重新整理", "下載 CSV（含身分證與帳號）"]
+
+
+def _assert_toolbar_button_names(page, where: str):
+    for name in TOOLBAR_BUTTON_NAMES:
+        count = page.get_by_role("button", name=name, exact=True).count()
+        assert count == 1, f"{where}找不到名稱恰為「{name}」的按鈕（{count} 個）"
+
+
+def test_toolbar_button_names_at_375px(admin_at_375):
+    _assert_toolbar_button_names(admin_at_375, "375px ")
+
+
+def test_toolbar_is_one_labeled_row_on_desktop(page, context, api_mock, rest_mock):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _setup_admin(context, api_mock, rest_mock)
+    page.goto("/admin")
+    settle(page)
+    _assert_toolbar_button_names(page, "1280px ")
+    assert count_rows(page, TOOLBAR) == 1, "桌機工具列不在同一行"
+    assert page.get_by_text("下載 CSV", exact=True).is_visible(), "桌機的 CSV 鈕應帶可見文字"
+
+
+def test_toolbar_labels_are_not_squeezed_on_touch_tablet(admin_tablet_touch):
+    """768px 觸控：`size="icon"` 的觸控 44px 寬會蓋掉 md 的 w-auto——帶文字的鈕不得被擠回 44px。"""
+    page = admin_tablet_touch
+    assert count_rows(page, TOOLBAR) == 1, "平板工具列不在同一行"
+    squeezed = page.evaluate(
+        """(sel) => [...document.querySelector(sel).querySelectorAll(':scope > button')]
+              .filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().height < 44)
+              .map((b) => b.textContent)""",
+        TOOLBAR,
+    )
+    assert squeezed == [], f"平板觸控下這些工具列按鈕被擠壓或不足 44px 高：{squeezed}"
+
+
+# --- 會員詳情 Sheet（S4／A3） ------------------------------------------------
+#
+# 375px 下 Sheet 全螢幕、身分卡固定在上、分區內文捲動。測資是 `_setup_admin` 的
+# 最壞資料（50 字無空白外文姓名、無空白長 Email、停權＋管理員、10 筆提領含長備註、
+# 證件退回長理由）——短測資下「間距 0」「沒有橫向溢出」在改版前就是綠的。
+
+MEMBER_SHEET_SECTIONS = ("帳號", "點數", "近期提領", "推薦關係", "敏感資料", "管理")
+
+# 身分卡固定在上、不捲動，高度直接從內文的可視範圍扣掉（業主裁決 C：≤ 視窗 25%）。
+MAX_IDENTITY_CARD_RATIO = 0.25
+
+# 標題文字的實際右緣。h2 是區塊元素，盒子右緣只是內距邊界、永遠在關閉鈕左邊——量盒子
+# 量不到「字有沒有鑽到關閉鈕底下」，要量文字本身（Range 的每一行）。
+_TITLE_TEXT_RIGHT = """(sel) => {
+  const title = document.querySelector(sel)?.querySelector('h2');
+  if (!title) return null;
+  const range = document.createRange();
+  range.selectNodeContents(title);
+  const rects = [...range.getClientRects()];
+  return { right: Math.max(...rects.map((r) => r.right)), lines: new Set(rects.map((r) => Math.round(r.top))).size };
+}"""
+
+
+def _assert_title_clears_close_button(page):
+    dialog = page.locator(DIALOG)
+    text = page.evaluate(_TITLE_TEXT_RIGHT, DIALOG)
+    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
+    assert text is not None and close is not None, "量不到標題文字或關閉鈕"
+    assert text["right"] <= close["x"], (
+        f"標題文字右緣 {text['right']:.0f}px 超過關閉鈕左緣 {close['x']:.0f}px"
+    )
+    return text
+
+
+def _assert_identity_card_fits(page):
+    measured = page.evaluate(
+        """(sel) => {
+          const header = document.querySelector(sel)?.querySelector('[data-slot="sheet-header"]');
+          return header ? { height: header.getBoundingClientRect().height, viewport: window.innerHeight } : null;
+        }""",
+        DIALOG,
+    )
+    assert measured is not None, "找不到身分卡（sheet-header）"
+    limit = measured["viewport"] * MAX_IDENTITY_CARD_RATIO
+    assert measured["height"] <= limit, (
+        f"身分卡高 {measured['height']:.0f}px，超過視窗 {measured['viewport']}px 的 "
+        f"{MAX_IDENTITY_CARD_RATIO:.0%}（{limit:.0f}px）"
+    )
+
+
+@pytest.fixture
+def member_sheet_at_375(admin_at_375):
+    _open_member_detail_sheet(admin_at_375)
+    expect(admin_at_375.locator(DIALOG)).to_be_visible()
+    settle(admin_at_375)
+    return admin_at_375
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_fills_the_screen_at_375px(member_sheet_at_375):
+    fit = viewport_fit(member_sheet_at_375, DIALOG)
+    assert fit is not None, f"找不到 {DIALOG}——Sheet 沒開起來，不是版面問題"
+    assert fit["left"] == 0 and fit["right"] == 0, (
+        f"Sheet 寬 {fit['width']}px、視窗寬 {fit['viewportWidth']}px，"
+        f"左右間距 {fit['left']}px / {fit['right']}px（手機應全螢幕）"
+    )
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_section_headings_are_all_present_at_375px(member_sheet_at_375):
+    """六個分區標題都在，而且內文有左右留白（Sheet 原語沒有內距，改版前貼邊）。
+
+    `exact=True` 不可省：「帳號」「管理」以子字串比對會誤中其他字。
+    """
+    dialog = member_sheet_at_375.locator(DIALOG)
+    for name in MEMBER_SHEET_SECTIONS:
+        heading = dialog.get_by_role("heading", name=name, exact=True)
+        expect(heading).to_be_visible()
+        box = heading.bounding_box()
+        assert box is not None and box["x"] >= MIN_SAFE_MARGIN_PX, (
+            f"分區標題「{name}」離視窗左緣只有 {box and box['x']}px（期望 ≥ {MIN_SAFE_MARGIN_PX}px）"
+        )
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_has_no_horizontal_overflow_at_375px(member_sheet_at_375):
+    """Sheet 與它裡面的捲動容器都不得橫向捲動——長 Email、長退件理由要換行，不是撐寬。"""
+    overflowing = member_sheet_at_375.evaluate(
+        """(sel) => {
+          const root = document.querySelector(sel);
+          if (!root) return null;
+          return [root, ...root.querySelectorAll('*')]
+            .filter((el) => {
+              const ox = getComputedStyle(el).overflowX;
+              return el === root || ox === 'auto' || ox === 'scroll';
+            })
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => `${el.tagName.toLowerCase()} ${el.scrollWidth}>${el.clientWidth}`);
+        }""",
+        DIALOG,
+    )
+    assert overflowing is not None, f"找不到 {DIALOG}"
+    assert overflowing == [], f"Sheet 內有橫向溢出的容器：{overflowing}"
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_title_clears_the_close_button_at_375px(member_sheet_at_375):
+    """長姓名不得鑽到右上角關閉鈕底下（關閉鈕實占右緣約 12–62px）。
+
+    前提是姓名真的長到要折行——不折行時這條量不到 `wrap-anywhere` 與 `pr-16`。
+    """
+    text = _assert_title_clears_close_button(member_sheet_at_375)
+    assert text["lines"] >= 2, "測資姓名沒有折行，量不到長姓名的避讓"
+
+
+@pytest.mark.compatibility
+def test_member_detail_identity_card_stays_within_a_quarter_of_the_screen_at_375px(
+    member_sheet_at_375,
+):
+    """身分卡固定不捲，最壞資料下也不得吃掉超過視窗 25%（業主裁決 C）。"""
+    _assert_identity_card_fits(member_sheet_at_375)
+
+
+@pytest.mark.compatibility
+def test_member_detail_sheet_close_button_stays_put_when_scrolled_at_375px(member_sheet_at_375):
+    """內文捲到底，關閉鈕與身分卡仍在畫面上——做完管理動作不用捲回頂端才能關。"""
+    page = member_sheet_at_375
+    dialog = page.locator(DIALOG)
+    manage = dialog.get_by_role("heading", name="管理", exact=True)
+    manage.scroll_into_view_if_needed()
+    settle(page)
+    scrolled = page.evaluate(
+        """(sel) => document.querySelector(sel)?.querySelector('section[aria-label="詳情內容"]')?.scrollTop ?? null""",
+        DIALOG,
+    )
+    assert scrolled is not None and scrolled > 0, (
+        f"內文沒有捲動（scrollTop={scrolled}）——測資不夠長，這條量不到東西"
+    )
+    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
+    title = dialog.get_by_role("heading", level=2).bounding_box()
+    heading = manage.bounding_box()
+    viewport_height = page.evaluate("() => window.innerHeight")
+    assert close is not None and close["y"] >= 0, f"捲到底後關閉鈕被捲出畫面（{close}）"
+    assert title is not None and title["y"] >= 0, f"捲到底後身分卡被捲出畫面（{title}）"
+    assert heading is not None and heading["y"] + heading["height"] <= viewport_height, (
+        f"捲動後「管理」標題底緣 {heading and heading['y'] + heading['height']:.0f}px "
+        f"仍在視窗 {viewport_height}px 之外"
+    )
+
+
+# 沒有姓名的會員：profiles.name 是 `not null default ''`，註冊 Step 2 之前是空字串。
+# 標題改用 Email——無空白長 Email 要在關閉鈕左邊折行，身分卡仍要守 25%。
+@pytest.fixture
+def nameless_member_sheet_at_375(page, context, api_mock, rest_mock):
+    page.set_viewport_size(MOBILE_VIEWPORT)
+    _setup_admin(context, api_mock, rest_mock)
+    # 覆寫列表後要重掛要點開的那位的詳情（列表的尾綴 glob 也吃得下詳情 URL，後掛的贏）。
+    api_mock.set_admin_members(
+        [
+            build_admin_member(name=NAME_CJK_10, email="first@example.com", listingCount=3),
+            build_admin_member(name="", email=LONG_EMAIL, id="mem-admin-2"),
+        ]
+    )
+    route_admin_member_detail(
+        context,
+        "mem-admin-2",
+        build_admin_member_detail(id="mem-admin-2", name="", email=LONG_EMAIL),
+    )
+    page.goto("/admin")
+    settle(page)
+    page.get_by_role("tab", name="會員管理").click()
+    settle(page)
+    page.get_by_role("button", name=f"查看 {LONG_EMAIL} 的詳情").click()
+    expect(page.locator(DIALOG)).to_be_visible()
+    settle(page)
+    return page
+
+
+@pytest.mark.compatibility
+def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sheet_at_375):
+    """無名會員的標題就是 Email，文字不鑽到關閉鈕底下，身分卡守 25%。"""
+    page = nameless_member_sheet_at_375
+    title = page.locator(DIALOG).get_by_role("heading", level=2)
+    expect(title).to_have_text(LONG_EMAIL)
+    _assert_title_clears_close_button(page)
+    _assert_identity_card_fits(page)

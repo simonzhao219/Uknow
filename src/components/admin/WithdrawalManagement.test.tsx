@@ -20,6 +20,16 @@ import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManageme
 
 afterEach(cleanup);
 
+// Radix Select 在 jsdom 開選單要用到的 API（同 CategorySelectField.test）。
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+HTMLElement.prototype.hasPointerCapture ??= () => false;
+HTMLElement.prototype.releasePointerCapture ??= () => {};
+HTMLElement.prototype.scrollIntoView ??= () => {};
+
 type Page = AdminWithdrawalsResponse['data'];
 
 beforeEach(() => {
@@ -95,7 +105,10 @@ describe('WithdrawalManagement', () => {
 
     expect(screen.getByRole('status', { name: '載入提領申請中' })).toBeTruthy();
     resolve(page({ withdrawals: [] }));
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    // 只看列表區的載入狀態：工具列另有一個常駐（平時為空）的匯出狀態宣告區。
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull(),
+    );
   });
 
   it('取資料失敗時顯示錯誤態並提供重試', async () => {
@@ -178,7 +191,7 @@ describe('WithdrawalManagement', () => {
 
     await screen.findByText('已顯示 1 / 3 筆');
     pages.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: '下載CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
 
     // 匯出必須自己把剩下的頁補齊，而不是拿畫面上現有的那筆交差。
     await waitFor(() => expect(pages.mock.calls.length).toBeGreaterThan(1));
@@ -190,7 +203,7 @@ describe('WithdrawalManagement', () => {
     });
 
     await screen.findByText('已顯示 1 / 2500 筆');
-    fireEvent.click(screen.getByRole('button', { name: '下載CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
 
     expect(await screen.findByText(/超過匯出上限/)).toBeTruthy();
   });
@@ -528,6 +541,224 @@ describe('WithdrawalManagement', () => {
 // 這一組全部跑在 `stubMediaQuery(false)` 底下。守的是「表格換成卡片時，
 // **互動不能被悄悄拿掉**」——排版變更最危險的失效方式不是版面難看，是某個
 // 只存在於 <tr> 結構裡的職責在轉卡片時蒸發了（審查 F1）。
+// 工具列（S3 A2）與匯出的狀態正確性。匯出要逐頁收集（可能好幾秒），而它
+// 產出的檔案是拿去跟銀行轉出紀錄對帳的——重複的一份、或跟畫面篩選不一致的
+// 一份，都會在對帳時變成「多一筆／少一筆」的假警報。
+describe('WithdrawalManagement 工具列與匯出', () => {
+  // 匯出完成的回報文案依瀏覽器而定（內建瀏覽器改說補救方式）。jsdom 預設的 UA
+  // 「AppleWebKit 但沒有 Safari」會被 detectInAppBrowser 的 iOS WebView 啟發式
+  // 判成內建瀏覽器，所以這組固定扮演一般桌機瀏覽器；LINE 那條自己換掉。
+  const DESKTOP_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+  let uaSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    uaSpy = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(DESKTOP_UA);
+  });
+  afterEach(() => {
+    uaSpy.mockRestore();
+  });
+
+  // 第一次載入回第 1 頁（共 3 筆）；之後每次呼叫（匯出收集）先掛著，由測試放行。
+  function pagedLoaderWithGate() {
+    const gates: Array<() => void> = [];
+    let calls = 0;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      calls += 1;
+      const result = page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 3,
+        limit: 1,
+        offset,
+      });
+      if (calls === 1) return result;
+      await new Promise<void>((r) => gates.push(r));
+      return result;
+    });
+    // 收集是逐頁 await 的：放行一頁、等它觸發下一頁，直到第 1 次載入＋3 頁收集都放行。
+    const releaseAll = async () => {
+      while (gates.length || load.mock.calls.length < 4) {
+        await act(async () => {
+          for (const release of gates.splice(0)) release();
+          await Promise.resolve();
+        });
+      }
+    };
+    return { load, releaseAll };
+  }
+
+  it('同一個事件迴圈內連按兩次只收集一輪——同一份對帳檔不得下載兩次', async () => {
+    const pages = vi.fn(async ({ offset }: WithdrawalQuery) =>
+      page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 3,
+        limit: 1,
+        offset,
+      }),
+    );
+    const createUrl = vi.fn(() => 'blob:test');
+    URL.createObjectURL = createUrl;
+    renderConsole({ loadWithdrawals: pages });
+    await screen.findByText('已顯示 1 / 3 筆');
+    pages.mockClear();
+
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    // 兩次點擊包在同一個 act 裡：中間不 re-render，按鈕還沒 disabled——
+    // 擋得住的只有 handler 入口那個同步的 ref（fireEvent 分兩次呼叫的話，
+    // 第二次點到的已經是 disabled 的鈕，量不到 ref）。
+    act(() => {
+      csv.click();
+      csv.click();
+    });
+
+    expect(await screen.findByText('已匯出 3 筆')).toBeTruthy();
+    expect(pages).toHaveBeenCalledTimes(3);
+    expect(createUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('收集期間 CSV 忙碌，篩選與重新整理一併停用；完成後恢復並回報筆數', async () => {
+    const { load, releaseAll } = pagedLoaderWithGate();
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+
+    const busy = await screen.findByRole('button', { name: /匯出中/ });
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(true);
+
+    await releaseAll();
+
+    expect(await screen.findByText('已匯出 3 筆')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('收集失敗時說出原因，按鈕恢復可再試', async () => {
+    let calls = 0;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      calls += 1;
+      if (calls > 1) throw new Error('第 2 頁讀取失敗');
+      return page({ withdrawals: [record({ id: `w${offset}` })], total: 3, limit: 1, offset });
+    });
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+
+    expect(await screen.findByText('第 2 頁讀取失敗')).toBeTruthy();
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    expect(csv.hasAttribute('disabled')).toBe(false);
+    expect(csv.getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('超過上限被拒後按鈕恢復，不卡在忙碌', async () => {
+    renderConsole({
+      loadWithdrawals: async () => page({ withdrawals: [record()], total: 2500 }),
+    });
+    await screen.findByText('已顯示 1 / 2500 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+
+    expect(await screen.findByText(/超過匯出上限/)).toBeTruthy();
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    expect(csv.hasAttribute('disabled')).toBe(false);
+    expect(csv.getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('載入更多進行中按不到重新整理與匯出——交錯會把舊頁尾接到新列表上', async () => {
+    let releaseMore!: () => void;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (offset > 0) await new Promise<void>((r) => (releaseMore = r));
+      return page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 2,
+        limit: 1,
+        offset,
+      });
+    });
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 2 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: '載入更多' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true),
+    );
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(true);
+    releaseMore();
+    await screen.findByText('已顯示 2 / 2 筆');
+    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('匯出期間列上的寫入動作與載入更多都停用——中途有列離開篩選會讓收集的 offset 錯位', async () => {
+    const { load, releaseAll } = pagedLoaderWithGate();
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByRole('button', { name: '匯出中…' });
+
+    for (const name of ['標記已匯款', '退件', '載入更多']) {
+      expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(true);
+    }
+
+    await releaseAll();
+    await screen.findByText('已匯出 3 筆');
+    for (const name of ['標記已匯款', '退件', '載入更多']) {
+      expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(false);
+    }
+  });
+
+  it('手機卡片上的退件在匯出期間也停用', async () => {
+    stubMediaQuery(false);
+    const { load, releaseAll } = pagedLoaderWithGate();
+    renderConsole({ loadWithdrawals: load });
+    await screen.findByText('已顯示 1 / 3 筆');
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByRole('button', { name: '匯出中…' });
+    expect(screen.getByRole('button', { name: '退件' }).hasAttribute('disabled')).toBe(true);
+    await releaseAll();
+  });
+
+  it('LINE 等內建瀏覽器裡不說「已匯出」——下載是否落檔偵測不到，說了可能是假成功', async () => {
+    uaSpy.mockReturnValue('Mozilla/5.0 (iPhone) Line/13.0.0');
+    renderConsole({
+      loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }),
+    });
+    await screen.findByText('已顯示 1 / 1 筆');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText('已產生 1 筆，若沒收到檔案請用外部瀏覽器開啟')).toBeTruthy();
+    expect(screen.queryByText('已匯出 1 筆')).toBeNull();
+  });
+
+  it('換篩選後清掉上一次的匯出回報——那個筆數屬於舊篩選', async () => {
+    renderConsole({ loadWithdrawals: async () => page({ withdrawals: [record()], total: 1 }) });
+    await screen.findByText('已顯示 1 / 1 筆');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await screen.findByText('已匯出 1 筆');
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+
+    await waitFor(() => expect(screen.queryByText('已匯出 1 筆')).toBeNull());
+  });
+
+  it('重新整理是工具列上的 icon 鈕，名稱由文字承擔', async () => {
+    const load = vi.fn(async () => page());
+    renderConsole({ loadWithdrawals: load });
+    await screen.findAllByText('王小明');
+    load.mockClear();
+
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+    expect(refresh.getAttribute('aria-label')).toBeNull();
+    fireEvent.click(refresh);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  });
+});
+
 describe('WithdrawalManagement 跨斷點', () => {
   it('視窗從桌面縮到手機時清空已選取的筆數', async () => {
     // useMediaQuery 是即時訂閱 change 事件的。Q2 裁決手機不渲染勾選框，

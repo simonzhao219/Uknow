@@ -4,6 +4,7 @@ import { Card, CardContent } from '../ui/card';
 import { CardOverflowMenu } from './CardOverflowMenu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -35,7 +36,8 @@ interface WithdrawalCardListProps {
   onReject: (record: AdminWithdrawalRecord) => void;
   onComplete: (record: AdminWithdrawalRecord) => void;
   processingId: string | null;
-  statusBadge: (status: string) => React.ReactNode;
+  /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
+  actionsDisabled?: boolean;
   formatAmount: (n: number) => string;
 }
 
@@ -49,7 +51,7 @@ export function WithdrawalCardList({
   onReject,
   onComplete,
   processingId,
-  statusBadge,
+  actionsDisabled = false,
   formatAmount,
 }: WithdrawalCardListProps) {
   return (
@@ -62,7 +64,7 @@ export function WithdrawalCardList({
                 那一筆」，不是「對每一筆都做決定」。 */}
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 font-medium break-words">{w.userName}</p>
-              {statusBadge(w.status)}
+              <WithdrawalStatusBadge status={w.status} />
             </div>
 
             <div className="flex items-baseline justify-between gap-2">
@@ -105,7 +107,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="destructive"
                     onClick={() => onReject(w)}
-                    disabled={processingId === w.id}
+                    disabled={actionsDisabled || processingId === w.id}
                   >
                     退件
                   </Button>
@@ -115,7 +117,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="secondary"
                     onClick={() => onComplete(w)}
-                    disabled={processingId === w.id}
+                    disabled={actionsDisabled || processingId === w.id}
                   >
                     代為完成
                   </Button>

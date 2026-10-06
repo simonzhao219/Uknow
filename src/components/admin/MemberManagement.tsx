@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -6,7 +6,6 @@ import { Input } from '../ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Search, Shield, UserX, Users } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,10 +18,14 @@ import {
 } from '../ui/alert-dialog';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import { StatusCallout } from '../ui/status-callout';
-import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
+import { findMemberDetailTrigger, memberDetailTriggerProps } from './memberDetailTrigger';
+import { MemberDetailSheet } from './MemberDetailSheet';
+import { memberLabel, memberName } from './memberName';
+import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
 import type {
@@ -31,7 +34,6 @@ import type {
   AdminMemberDetail,
   AdminMembersResponse,
 } from '@contract';
-import { BreakableEmail } from '../common/BreakableEmail';
 
 const PAGE_SIZE = 50;
 
@@ -51,39 +53,14 @@ export interface MemberManagementProps {
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
 }
 
-// S2 色彩收斂（D3）：狀態走 Badge variant，不再手刻 className。
-// active 是「這人現在能用」的正向狀態 → success-subtle；expired 是中性的
-// 過期事實，不是警示，走 secondary（灰階已合規）。
-const ACCOUNT_STATUS_BADGE: Record<
-  string,
-  { label: string; variant: 'success-subtle' | 'secondary' }
-> = {
-  active: { label: '有效會員', variant: 'success-subtle' },
-  expired: { label: '已失效', variant: 'secondary' },
-};
-
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
-
-const ID_STATUS_LABEL: Record<string, string> = {
-  none: '未上傳',
-  pending: '審核中',
-  approved: '已通過',
-  rejected: '已退回',
-};
-
-const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
-  pending: '待處理',
-  awaiting_collection: '待查收',
-  completed: '已完成',
-  rejected: '已退件',
-};
 
 /**
  * 詳情面板裡會改變會員狀態的動作。兩種動作**共用同一條路徑**——同一個確認框、
  * 同一個執行器、同一處錯誤顯示。相同的東西用相同的邏輯，才不會日後其中一個
  * 被改了另一個沒跟上（改版前正是如此：停權在列上、管理員在面板裡，兩套流程）。
  */
-type MemberAction = { kind: 'admin' | 'suspend'; next: boolean };
+export type MemberAction = { kind: 'admin' | 'suspend'; next: boolean };
 
 /**
  * 判準是**逐方向看破壞力**，不是逐動作。四個方向裡只有「恢復」是 ~0——
@@ -97,25 +74,36 @@ function needsConfirm(action: MemberAction) {
 /**
  * 確認框文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是這件事會對
  * 那個人造成什麼，不是重複一次自己剛按了什麼。
+ *
+ * `destructive`：確認鈕要不要紅實心——規則見 ui-ux-guidelines §12.11「確認鈕跟觸發鈕
+ * 同類」。這裡是它在會員管理的唯一落點。
  */
-function actionCopy(action: MemberAction, name: string) {
+function actionCopy(action: MemberAction, target: AdminMemberDetail) {
+  const name = memberLabel(target);
   if (action.kind === 'admin') {
     return action.next
       ? {
           title: '授予管理員權限？',
           confirm: '確認授予',
+          destructive: false,
           body: `${name} 將可存取平台管理後台，並讀取全站會員的身分證字號與收款帳號。權限隨時可以撤回，但他在這段期間看過的資料無法追溯撤回。`,
         }
       : {
           title: '撤銷管理員權限？',
           confirm: '確認撤銷',
+          destructive: true,
           body: `${name} 將立即失去平台管理後台的全部存取權（提領作業、會員管理、證件審核）。`,
         };
   }
+  // 後果與規格書 §5.2 一致：非管理員的停權會員進不了會員區（RequireMembershipRoute 的
+  // suspendedBlocked 是 `suspended && !isAdmin`），不只是凍結提領與刊登。管理員不受這條
+  // 限制，對他就不寫這句——守衛本來就不擋他，不必另寫例外。
+  const lockout = target.isAdmin ? '' : '，也無法進入會員區';
   return {
     title: '暫停這個帳號？',
     confirm: '確認暫停',
-    body: `${name} 的刊登將立即隱藏，且無法提領點數或領取免費續約 credit。會員區瀏覽不受影響，解除暫停後即恢復。`,
+    destructive: true,
+    body: `${name} 的刊登將立即隱藏，無法提領點數或領取免費續約 credit${lockout}。解除暫停後即恢復。`,
   };
 }
 
@@ -133,7 +121,11 @@ export function MemberManagement({
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  // 送出中的管理動作，逐位會員記（面板用種類決定哪顆鈕轉圈）。單值做不到：A 在途時
+  // 對 B 送出，A 的那筆就被蓋掉，關掉再重開 A 時鈕是活的，可以重複送出。
+  const [processing, setProcessing] = useState<ReadonlyMap<string, MemberAction['kind']>>(
+    () => new Map(),
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
@@ -157,6 +149,57 @@ export function MemberManagement({
   const [pendingAction, setPendingAction] = useState<MemberAction | null>(null);
   // 面板蓋在列表上，面板內動作的錯誤印在列表區等於印在看不見的地方。
   const [panelError, setPanelError] = useState<string | null>(null);
+  // 動作成功、只是重讀失敗：區塊讀取失敗用中性字（ui-ux-guidelines §13 第 4 條），
+  // 紅色 alert 只給動作本身的失敗。
+  const [panelNotice, setPanelNotice] = useState<string | null>(null);
+  // 別人（A）的動作失敗晚到、面板已換成 B：寫進 B 的管理區（前綴 A 的姓名）。列表上方
+  // 的錯誤框此時被 modal 蓋住、報讀器也念不到。B 自己的動作不清它，B 關閉時轉到列表上方。
+  const [otherNotice, setOtherNotice] = useState<string | null>(null);
+
+  // 「查看」→ 面板的請求狀態。**只有最後一次意圖算數**：
+  // - `openingIds`：在途的列各自轉圈、停用；每個請求結算時只移除自己的 id。單值
+  //   做不到——點 B 會讓 A 的鈕提前放開，A 的結算又會清掉 B 的轉圈。
+  // - `detailSeq`：最新意圖的序號。每次點「查看」遞增；回應只有序號仍為最新時才
+  //   可寫面板或錯誤。動作後的重讀共用同一個序號（開頭取號、不遞增），關閉面板
+  //   時遞增——否則關掉之後晚到的重讀會把面板重新打開，或把別人的面板換掉。
+  const [openingIds, setOpeningIds] = useState<string[]>([]);
+  const detailSeq = useRef(0);
+  // 開出目前面板的那顆「查看」屬於哪一列（關閉時把焦點還給它）。
+  const openedFromId = useRef<string | null>(null);
+  const isLatest = (seq: number) => seq === detailSeq.current;
+  // 序號的遞增與在途 id 的進出收在這幾個 helper：「查看」、關閉與 runAction 共用。
+  const bumpSeq = () => ++detailSeq.current;
+  const startOpening = (id: string) =>
+    setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
+  const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
+  const errorRef = useRef<HTMLDivElement>(null);
+  // 錯誤框的捲動與聚焦只給「剛按查看就失敗」——那是使用者正在等的結果。晚到的動作失敗
+  // 印在同一個框，但不搶焦點：admin 可能正在搜尋框打字，被拉走、列表跟著跳。
+  const focusErrorOnShow = useRef(false);
+  // 送出後焦點的落點。被按的鈕送出中是停用的，留在它身上等於掉到 body。
+  const manageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusManageArea = () => manageHeadingRef.current?.focus();
+  // 確認框沒有 AlertDialogTrigger（由面板內的鈕開），Radix 關閉時只會把焦點還給
+  // Trigger——沒有就掉到 body。所以落點自己記：取消回到開框的鈕，確認落到管理區。
+  const confirmReturnFocus = useRef<HTMLElement | null>(null);
+  const confirmed = useRef(false);
+  // 目前開著的面板是哪一位（runAction 的閉包只看得到送出當下的 detailFor）。與
+  // `setDetailFor` 一起在 `showDetail` 裡**同步**寫，不用 effect 鏡像：effect 要等 commit
+  // 之後才跑，在那之前結算的請求會讀到上一位。
+  const shownId = useRef<string | null>(null);
+  const showDetail = (next: AdminMemberDetail | null) => {
+    shownId.current = next?.id ?? null;
+    setDetailFor(next);
+  };
+
+  // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
+  // 時那裡在畫面外，使用者只會看到鈕停止轉圈——等於「按了沒反應」。
+  useEffect(() => {
+    if (!actionError || !focusErrorOnShow.current) return;
+    focusErrorOnShow.current = false;
+    errorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    errorRef.current?.focus();
+  }, [actionError]);
 
   // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
   // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
@@ -180,28 +223,93 @@ export function MemberManagement({
   const isLoading = list.isLoading;
 
   const openDetail = async (id: string) => {
+    const seq = bumpSeq();
     setActionError(null);
     setPanelError(null);
+    setPanelNotice(null);
+    setOtherNotice(null);
+    startOpening(id);
     try {
-      setDetailFor(await loadMemberDetail(id));
+      const detail = await loadMemberDetail(id);
+      if (isLatest(seq)) {
+        openedFromId.current = id;
+        showDetail(detail);
+      }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+      if (isLatest(seq)) {
+        focusErrorOnShow.current = true;
+        setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+      }
+    } finally {
+      settleOpening(id);
     }
   };
 
+  const closeDetail = () => {
+    bumpSeq();
+    showDetail(null);
+    // 面板上那則「別人的失敗」不隨面板消失：轉到列表上方（不搶焦點）。
+    if (otherNotice) {
+      setActionError(otherNotice);
+      setOtherNotice(null);
+    }
+  };
+
+  // 關閉後焦點回到同一位會員的「查看」鈕。不能交給 Radix 自己還原：載入期間
+  // 觸發鈕是停用的，焦點早就掉到 body，Radix 記到的就是 body。
+  const returnFocusToTrigger = (event: Event) => {
+    const id = openedFromId.current;
+    if (!id) return;
+    const trigger = findMemberDetailTrigger(id);
+    if (!trigger) return;
+    event.preventDefault();
+    trigger.focus();
+  };
+
+  const latestOpeningId = openingIds[openingIds.length - 1];
+  const latestOpening = latestOpeningId ? members.find((m) => m.id === latestOpeningId) : undefined;
+
   const requestAction = (action: MemberAction) => {
     if (needsConfirm(action)) {
+      confirmReturnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setPendingAction(action);
       return;
     }
     runAction(action);
+    focusManageArea();
+  };
+
+  // 確認框關閉後的焦點落點（見 confirmReturnFocus）。
+  const restoreFocusAfterConfirm = (event: Event) => {
+    event.preventDefault();
+    if (confirmed.current) {
+      confirmed.current = false;
+      focusManageArea();
+    } else {
+      confirmReturnFocus.current?.focus();
+    }
   };
 
   const runAction = async (action: MemberAction) => {
     const target = detailFor;
     if (!target) return;
-    setProcessingId(target.id);
+    // 與「查看」共用序號（取號、不遞增）：面板關掉或換人之後，這個動作晚到的
+    // 結果不得寫進別人的面板。
+    const seq = detailSeq.current;
+    // 面板還開著同一個人（沒關，或關了又重開同一位）：結果照樣寫回面板。
+    const panelShowsTarget = () => isLatest(seq) || shownId.current === target.id;
+    // 結算只清自己的 processing：A 在途時關面板、開 B 並對 B 動作，A 的結算不得
+    // 解鎖 B 的鈕。
+    const settle = () =>
+      setProcessing((prev) => {
+        const next = new Map(prev);
+        next.delete(target.id);
+        return next;
+      });
+    setProcessing((prev) => new Map(prev).set(target.id, action.kind));
     setPanelError(null);
+    setPanelNotice(null);
     try {
       await (action.kind === 'admin'
         ? setMemberAdmin(target.id, action.next)
@@ -209,24 +317,41 @@ export function MemberManagement({
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
       // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      setPanelError(err instanceof Error ? err.message : '操作失敗');
-      setProcessingId(null);
+      const message = err instanceof Error ? err.message : '操作失敗';
+      if (panelShowsTarget()) {
+        setPanelError(message);
+      } else {
+        // 不能靜默——admin 會以為已經成功。兩種情況：
+        // - 面板已關：印在列表上方（不搶焦點，見 focusErrorOnShow）；
+        // - 已換到 B：寫進 B 的管理區（見 otherNotice），B 關閉時再轉到列表上方。
+        // 兩種都重讀列表，讓徽章回到真實狀態。
+        const text = `${memberLabel(target)}：${message}`;
+        if (shownId.current) setOtherNotice(text);
+        else setActionError(text);
+        await list.reload();
+      }
+      settle();
       return;
     }
     // 變更已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的
     // 標籤都隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
-    try {
-      setDetailFor(await loadMemberDetail(target.id));
-    } catch {
-      setPanelError('已更新，但重新讀取詳情失敗，請關閉面板後重開');
+    if (panelShowsTarget()) {
+      // 關了又重開同一位時，重開那次讀取可能早於變更提交：以當下的序號再讀一次。
+      const refreshSeq = detailSeq.current;
+      try {
+        const fresh = await loadMemberDetail(target.id);
+        if (isLatest(refreshSeq)) showDetail(fresh);
+      } catch {
+        if (isLatest(refreshSeq)) setPanelNotice('已更新，但重新讀取詳情失敗，請關閉面板後重開');
+      }
     }
     await list.reload();
-    setProcessingId(null);
+    settle();
   };
 
   return (
-    // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 6 個
-    // 頂層 Tab（規格書 §13 註記：那是釘死的 5 欄 grid，硬加會壞版面）。
+    // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 5 個
+    // 頂層 Tab（規格書 §13 註記：那是釘死的 4 欄一列，硬加會壞版面）。
     //
     // 手機 12px / 桌面 24px 的區塊間距與提領台一致（理由寫在
     // `WithdrawalManagement.tsx` 的同一處，不重述）。兩個分頁在同一個
@@ -247,9 +372,9 @@ export function MemberManagement({
           對話框各自演化的那天，就會有一個忘了把後果講清楚。 */}
       {pendingAction && detailFor && (
         <AlertDialog open onOpenChange={() => setPendingAction(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={restoreFocusAfterConfirm}>
             {(() => {
-              const copy = actionCopy(pendingAction, detailFor.name ?? detailFor.email);
+              const copy = actionCopy(pendingAction, detailFor);
               return (
                 <>
                   <AlertDialogHeader>
@@ -259,8 +384,10 @@ export function MemberManagement({
                   <AlertDialogFooter>
                     <AlertDialogCancel>取消</AlertDialogCancel>
                     <AlertDialogAction
+                      variant={copy.destructive ? 'destructive' : undefined}
                       onClick={() => {
                         const action = pendingAction;
+                        confirmed.current = true;
                         setPendingAction(null);
                         runAction(action);
                       }}
@@ -275,148 +402,18 @@ export function MemberManagement({
         </AlertDialog>
       )}
 
-      {/* 詳情面板。§1.1 的頭號客服情境是「我提領怎麼還沒到」——近期提領記錄
-          （含退件理由）是這個面板存在的理由，不是附加資訊。
-          身分證與銀行帳號是**遮罩值**：需要全碼時回提領作業台看，那裡因匯款
-          作業需要而維持完整值。查詢台是客服日常翻閱的地方，翻閱不需要全碼。 */}
       {detailFor && (
-        <Sheet open onOpenChange={() => setDetailFor(null)}>
-          <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle>{detailFor.name ?? detailFor.email}</SheetTitle>
-              <SheetDescription>
-                <BreakableEmail email={detailFor.email} />
-              </SheetDescription>
-            </SheetHeader>
-
-            {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4 text-sm">
-              {/* 電話:詳情面板原本就缺這一欄（桌面只在表格列上有）。手機是
-                  JS 擇一渲染，表格根本不掛 DOM——沒補這欄的話，admin 用電話
-                  搜到人之後在手機上完全看不到號碼，也無法回撥。 */}
-              <div>
-                <dt className="text-muted-foreground">電話</dt>
-                <dd className="font-mono">{detailFor.phone ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">會籍</dt>
-                <dd>{detailFor.accountStatus === 'active' ? '有效會員' : '已失效'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">到期日</dt>
-                <dd>{detailFor.endDate ? formatTwTimestamp(detailFor.endDate) : '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">可提領點數</dt>
-                <dd>{detailFor.availablePoints.toLocaleString()} P</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">已提領</dt>
-                <dd>{detailFor.withdrawnPoints.toLocaleString()} P</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">推薦人</dt>
-                <dd>{detailFor.referrerName ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">直接推薦</dt>
-                <dd>{detailFor.directChildCount} 位</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">證件審核</dt>
-                <dd>{ID_STATUS_LABEL[detailFor.idVerificationStatus]}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">刊登數</dt>
-                <dd>{detailFor.listingCount}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">身分證字號</dt>
-                <dd className="font-mono">{detailFor.idNumber ?? '未設定'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">收款帳號</dt>
-                <dd className="font-mono">
-                  {detailFor.bankCode ?? '—'} / {detailFor.bankAccount ?? '未設定'}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">近期提領記錄</h3>
-              {detailFor.recentWithdrawals.length === 0 ? (
-                <p className="text-sm text-muted-foreground">尚無提領記錄</p>
-              ) : (
-                <ul className="space-y-2 text-sm">
-                  {detailFor.recentWithdrawals.map((w) => (
-                    <li key={w.id} className="rounded-md border p-2">
-                      <div className="flex justify-between">
-                        <span>{w.amount.toLocaleString()} P</span>
-                        <span>{WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        申請 {formatTwTimestamp(w.requestedAt)}
-                      </p>
-                      {/* 客服要的就是這一行 */}
-                      {w.note && <p className="text-destructive-subtle-foreground">{w.note}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* 管理。**所有會改變狀態的動作都在這裡**，放在面板最底、以分隔線
-                隔開——位置要讓人「走到」而不是「路過」。兩列同構：左邊說現況、
-                右邊是切換鍵，破壞性方向一律紅字。 */}
-            <div className="mt-6 space-y-4 border-t pt-4">
-              <h3 className="text-sm font-medium">管理</h3>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">
-                  {detailFor.suspended ? '帳號已暫停' : '帳號正常'}
-                </p>
-                <Button
-                  size="sm"
-                  tone="secondary"
-                  className={
-                    detailFor.suspended
-                      ? undefined
-                      : 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
-                  }
-                  onClick={() => requestAction({ kind: 'suspend', next: !detailFor.suspended })}
-                  disabled={processingId === detailFor.id}
-                >
-                  {detailFor.suspended ? '恢復' : '暫停'}
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">
-                  {detailFor.isAdmin ? '目前是平台管理員' : '一般會員'}
-                </p>
-                <Button
-                  size="sm"
-                  tone="secondary"
-                  className={
-                    detailFor.isAdmin
-                      ? 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
-                      : undefined
-                  }
-                  onClick={() => requestAction({ kind: 'admin', next: !detailFor.isAdmin })}
-                  disabled={processingId === detailFor.id}
-                >
-                  {detailFor.isAdmin ? '撤銷管理員' : '設為管理員'}
-                </Button>
-              </div>
-
-              {panelError && (
-                <p role="alert" className="text-sm text-destructive-subtle-foreground">
-                  {panelError}
-                </p>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
+        <MemberDetailSheet
+          detail={detailFor}
+          processingKind={processing.get(detailFor.id) ?? null}
+          panelError={panelError}
+          panelNotice={panelNotice}
+          otherNotice={otherNotice}
+          manageHeadingRef={manageHeadingRef}
+          onRequestAction={requestAction}
+          onClose={closeDetail}
+          onCloseAutoFocus={returnFocusToTrigger}
+        />
       )}
 
       <TabsContent value="members" className="space-y-3 sm:space-y-6">
@@ -486,42 +483,73 @@ export function MemberManagement({
         </section>
 
         {actionError && (
-          <StatusCallout
-            variant="destructive"
-            role="alert"
-            className="px-3 py-2 text-sm"
-            title={actionError}
-          />
+          <div ref={errorRef} tabIndex={-1} className="outline-none">
+            <StatusCallout
+              variant="destructive"
+              role="alert"
+              className="px-3 py-2 text-sm"
+              title={actionError}
+            />
+          </div>
         )}
+        {/* 按鈕上的 aria-busy 多數報讀器不播報，另放一句。live region 常駐、只換文字：
+            隨文字一起新插入的 live region 報讀器不保證播報。不用 role="status"，因為列表
+            載入態已經用了它。 */}
+        <div aria-live="polite" className="sr-only">
+          {latestOpeningId
+            ? `正在讀取 ${latestOpening ? memberLabel(latestOpening) : '會員'} 的詳情`
+            : ''}
+        </div>
 
         {/* 會員列表 */}
         <Card>
           <CardHeader>
-            {/* P8:375px 下標題與 w-56 的搜尋框互相擠壓（實測 +9px）。 */}
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                {/* 手機隱藏:分頁標籤已經寫著「會員管理」。 */}
-                <CardTitle className="hidden sm:block">會員管理</CardTitle>
-                <CardDescription className="hidden sm:block">管理平台所有會員帳號</CardDescription>
+              {/* 手機整塊隱藏:分頁標籤已經寫著「會員」。隱藏在外層 div，
+                  不然空的 div 照樣佔一個 flex item 加 gap，擠掉工具列 16px。 */}
+              <div className="hidden sm:block">
+                <CardTitle>會員管理</CardTitle>
+                <CardDescription>管理平台所有會員帳號</CardDescription>
               </div>
-              <form
-                className="flex items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setSearch(searchInput.trim());
-                }}
-              >
-                <Input
-                  type="search"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="搜尋姓名 / Email / 電話"
-                  className="w-56"
+              {/* 同提領頁的 AdminToolbar:搜尋吃剩餘寬度＋重新整理，沒有 CSV
+                  （規則見 ui-ux-guidelines §3）。
+                  載入更多進行中也停用重新整理:兩者交錯，loadMore 晚回來會把
+                  舊頁尾接到剛重設的列表上（usePagedList 沒有序列保護）。 */}
+              <div className="w-full sm:w-auto sm:min-w-80 sm:max-w-md sm:flex-1">
+                <AdminToolbar
+                  filter={
+                    <form
+                      className="relative"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        setSearch(searchInput.trim());
+                      }}
+                    >
+                      {/* 送出鈕內嵌在框的右側:不佔工具列寬度（375px 下
+                          placeholder 才放得下），滑鼠使用者仍看得到送出入口；
+                          鍵盤 Enter 照常送出。placeholder 縮成「搜尋會員」，
+                          能搜哪些欄位改由名稱說（報讀念得到）。 */}
+                      <Input
+                        type="search"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="搜尋會員"
+                        aria-label="搜尋會員（姓名、Email 或電話）"
+                        className="pr-10 pointer-coarse:pr-11"
+                      />
+                      <button
+                        type="submit"
+                        aria-label="搜尋"
+                        className="absolute inset-y-0 right-0 flex w-10 pointer-coarse:w-11 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring outline-none"
+                      >
+                        <Search className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </form>
+                  }
+                  onRefresh={list.reload}
+                  isRefreshing={list.isLoading || list.isLoadingMore}
                 />
-                <Button type="submit" tone="secondary" size="sm">
-                  <Search className="h-4 w-4" />
-                </Button>
-              </form>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -543,14 +571,7 @@ export function MemberManagement({
             ) : members.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
             ) : !isDesktop ? (
-              <MemberCardList
-                members={members}
-                accountBadge={(status) =>
-                  ACCOUNT_STATUS_BADGE[status] ?? ACCOUNT_STATUS_BADGE.expired
-                }
-                onOpenDetail={openDetail}
-                processingId={processingId}
-              />
+              <MemberCardList members={members} onOpenDetail={openDetail} openingIds={openingIds} />
             ) : (
               <Table>
                 <TableHeader>
@@ -567,27 +588,25 @@ export function MemberManagement({
                 </TableHeader>
                 <TableBody>
                   {members.map((member) => {
-                    const acct =
-                      ACCOUNT_STATUS_BADGE[member.accountStatus] ?? ACCOUNT_STATUS_BADGE.expired;
                     return (
                       <TableRow key={member.id}>
-                        <TableCell>{member.name ?? '—'}</TableCell>
+                        <TableCell>{memberName(member.name) ?? '—'}</TableCell>
                         <TableCell className="text-sm">{member.email}</TableCell>
                         <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
                         <TableCell>
-                          <Badge variant={acct.variant}>{acct.label}</Badge>
+                          <AccountStatusBadge status={member.accountStatus} />
                         </TableCell>
                         <TableCell>{member.listingCount}</TableCell>
                         <TableCell>
                           {member.isAdmin ? (
-                            <Badge variant="default">管理員</Badge>
+                            <AdminBadge />
                           ) : (
                             <Badge variant="outline">一般會員</Badge>
                           )}
                         </TableCell>
                         <TableCell>
                           {member.suspended ? (
-                            <Badge variant="destructive">已暫停</Badge>
+                            <SuspendedBadge />
                           ) : (
                             <Badge variant="default">正常</Badge>
                           )}
@@ -601,7 +620,9 @@ export function MemberManagement({
                           <Button
                             size="sm"
                             tone="secondary"
-                            aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                            aria-label={`查看 ${memberLabel(member)} 的詳情`}
+                            {...memberDetailTriggerProps(member.id)}
+                            loading={openingIds.includes(member.id)}
                             onClick={() => openDetail(member.id)}
                           >
                             查看

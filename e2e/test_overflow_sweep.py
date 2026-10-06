@@ -29,7 +29,7 @@ from typing import Callable, Optional
 
 import pytest
 
-from mocks.admin_console_mock import route_admin_member_detail
+from mocks.admin_console_mock import build_worst_case_member_detail, route_admin_member_detail
 from mocks.backend_api_mock import (
     build_admin_announcement,
     build_admin_member,
@@ -51,10 +51,14 @@ REPORT_DIR = Path(__file__).parent / "test-results"
 
 # --- 「最壞但可達」測資 -------------------------------------------------------
 
-# 服務者名稱與真實姓名都硬上限 10 字（CreateServiceProvider.tsx:297、
+# 服務者名稱與中文真實姓名都硬上限 10 字（CreateServiceProvider.tsx:297、
 # formDraft.ts:37）。10 個中日韓字在 text-3xl 下比 10 個拉丁字寬得多，
 # 所以中文版才是這裡的最壞情況。
 NAME_CJK_10 = "專業美髮師小美工作室"
+# 外文真實姓名上限是 50 字（profileValidation.ts 的 NAME_MAX_LENGTH.foreign），格式只要
+# 「大寫開頭的英文字、以單一空白分隔」——一個 50 字、沒有空白可斷的姓氏是可達的，在
+# 會員詳情 text-lg 的標題裡比任何 10 個中文字都寬。17 個全形字反而不可達。
+NAME_FOREIGN_50 = "Wolfeschlegelsteinhausenbergerdorffvoralternwareng"
 # Email 來自 Supabase Auth，前端沒有、也不該有長度上限。刻意不含連字號：
 # Chrome 只在 "-" 與 "/" 處斷長字，有連字號的 Email 會僥倖不溢出。
 LONG_EMAIL = "chienmingchangservice@uknowplatform.com.tw"
@@ -190,7 +194,8 @@ def _setup_dashboard(context, api_mock, rest_mock):
         second_generation=[build_referral_member("李小華")] * 300,
         third_generation=[build_referral_member("張美玲")] * 700,
         user_referral_code="UK8K3M9Q2X",
-        attention={"total": 9, "items": expiring},
+        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是徽章與注意列的最寬情境
+        attention={"total": 999, "items": expiring},
     )
     api_mock.set_task_center(tasks=[build_monthly_king_task(current=8)])
     api_mock.set_reward_summary(available=BIG_POINTS, total_earned=BIG_POINTS * 2)
@@ -329,12 +334,18 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     api_mock.set_admin_members(
         [
             build_admin_member(name=NAME_CJK_10, email=LONG_EMAIL, listingCount=3),
-            build_admin_member(name="李小華", email="b@c.d"),
+            # 兩位會員的 id 必須不同：「查看」的轉圈以 id 為鍵，同 id 會兩列一起轉。
+            build_admin_member(name="李小華", email="b@c.d", id="mem-admin-2"),
         ]
     )
     # 詳情 Sheet 用；**必須在 set_admin_members 之後**（見該模組的 docstring：
-    # 列表的尾綴 glob 也吃得下詳情 URL，只是回錯形狀）。
-    route_admin_member_detail(context, "mem-admin-1")
+    # 列表的尾綴 glob 也吃得下詳情 URL，只是回錯形狀）。最壞資料與
+    # test_admin_mobile_layout 的 375px 正向斷言共用同一份。
+    route_admin_member_detail(
+        context,
+        "mem-admin-1",
+        build_worst_case_member_detail(name=NAME_FOREIGN_50, email=LONG_EMAIL, points=BIG_POINTS),
+    )
     # 空清單只會渲染「尚無公告」——公告列一列裡有標題＋三顆 Badge＋刪除鍵
     # （SystemNotifications.tsx:242-266），不給資料等於那一列從未被量過。
     # title/message 後端都沒有長度上限（api/index.ts:1670-1671），實務上
@@ -356,10 +367,6 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
         alerts
         or [build_system_alert(message="Edge Function 回應逾時：/rewards/withdraw 連續失敗 5 次")]
     )
-    # 管理員設置分頁的最壞但可達測資。Email 來自 Supabase Auth（無長度上限），
-    # 姓名吃 10 字上限，兩者在 `flex justify-between` 的同一列裡與固定寬的
-    # 標籤搶空間（AdminSetup.tsx:147-163）。
-    api_mock.set_admin_setup(is_admin=True, user_name=NAME_CJK_10, user_email=LONG_EMAIL)
 
 
 def _setup_admin_alerts(context, api_mock, rest_mock):
@@ -591,19 +598,11 @@ ROUTES = [
     ),
     SweepRoute(
         "/admin",
-        "平台管理 · 公告管理",
+        "平台管理 · 系統公告",
         _setup_admin,
         "/admin",
         tags=["announcements"],
-        after_load=_open_tab("公告管理"),
-    ),
-    SweepRoute(
-        "/admin",
-        "平台管理 · 管理員設置",
-        _setup_admin,
-        "/admin",
-        tags=["admin-setup"],
-        after_load=_open_tab("管理員設置"),
+        after_load=_open_tab("系統公告"),
     ),
     SweepRoute(
         "/admin",
@@ -719,7 +718,7 @@ def _write_report(results):
         "  目前測資到不了（推薦人數由 mock 的清單長度推導）。",
         "- **320px 與字級放大**：本輪只跑 375px 單一軸。",
         "- **正向版面斷言**：這支只量「有沒有溢出」，不量「該長成什麼樣」",
-        "  （分頁標籤是否排成兩列、對話框是否留有安全邊距）。那類期望走",
+        "  （分頁是否排成一列、對話框是否留有安全邊距）。那類期望走",
         "  `layout_probe.py`，寫在 `test_admin_mobile_layout.py`。",
         "",
     ]

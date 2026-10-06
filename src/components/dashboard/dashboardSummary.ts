@@ -3,35 +3,16 @@
 // 型別取自契約（status 是字面量聯集），拼錯狀態名 tsc 會擋。
 
 import type { WithdrawalRecord } from '@contract';
-import type { NetworkAttention, NetworkNodeStatus } from '../../utils/referralNetwork';
+import type { NetworkAttention } from '../../utils/referralNetwork';
 
-export interface ExpiringCount {
-  count: number;
-  /**
-   * 後端 attention.items 依緊急度排序、即將到期排最前、最多 6 筆，但 total 也算
-   * 已失效與停權。items 全是即將到期且 total 比 items 多時，被截掉的那些可能還有
-   * 即將到期的人——此時只知道「至少 count 位」。
-   */
-  atLeast: boolean;
-}
-
-/** 即將到期的下線人數（業主裁決：會員中心只統計即將到期，已失效／停權不列）。 */
+/**
+ * 一代即將到期的人數（業主裁決：會員中心只統計即將到期，已失效／停權不列）。
+ * 後端 attention 只收一代即將到期，total 就是精確人數——items 最多 6 筆，不能拿來數。
+ */
 export function countExpiring(
-  attention:
-    | (Pick<NetworkAttention, 'total'> & { items: { status: NetworkNodeStatus }[] })
-    | null
-    | undefined,
-): ExpiringCount {
-  if (!attention) return { count: 0, atLeast: false };
-  const count = attention.items.filter((n) => n.status === 'expiring').length;
-  const atLeast =
-    count > 0 && count === attention.items.length && attention.total > attention.items.length;
-  return { count, atLeast };
-}
-
-/** 「3」或「至少 6」——數字後面接量詞由呼叫端決定。 */
-export function formatExpiringCount({ count, atLeast }: ExpiringCount): string {
-  return atLeast ? `至少 ${count}` : `${count}`;
+  attention: Pick<NetworkAttention, 'total'> | null | undefined,
+): number {
+  return attention?.total ?? 0;
 }
 
 /** 待查收（已匯款、等會員確認收款）的提領筆數。 */

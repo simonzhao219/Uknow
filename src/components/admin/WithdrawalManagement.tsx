@@ -1,14 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { Download, Eye, RefreshCw } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
+import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import {
+  WITHDRAWAL_STATUS_VALUES,
+  WithdrawalStatusBadge,
+  withdrawalStatusLabel,
+} from './WithdrawalStatusBadge';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -27,38 +32,13 @@ import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
 import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
   AdminWithdrawalRecord,
   AdminWithdrawalStats,
   AdminWithdrawalsResponse,
 } from '@contract';
-
-// 提領生命週期（與後端 SQL 函數一致）：
-//   pending（待處理）→ awaiting_collection（已匯款，待查收）
-//                   → completed（用戶已確認查收）
-//   pending → rejected（退件，點數自動退回）
-const STATUS_LABEL: Record<string, string> = {
-  pending: '待處理',
-  awaiting_collection: '待查收',
-  completed: '已完成',
-  rejected: '已退件',
-};
-
-function getStatusBadge(status: string) {
-  switch (status) {
-    case 'pending':
-      return <Badge variant="secondary">待處理</Badge>;
-    case 'awaiting_collection':
-      return <Badge variant="warning">待查收</Badge>;
-    case 'completed':
-      return <Badge variant="outline">已完成</Badge>;
-    case 'rejected':
-      return <Badge variant="destructive">已退件</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-}
 
 interface IdCardDialogProps {
   record: AdminWithdrawalRecord;
@@ -188,6 +168,10 @@ export function WithdrawalManagement({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  // 匯出中。state 驅動畫面；ref 擋重入——setState 要等 re-render 才讓按鈕
+  // disabled，同一個 tick 連按兩次會並行跑兩輪收集、下載兩份對帳檔。
+  const [isExporting, setIsExporting] = useState(false);
+  const exportingRef = useRef(false);
   const [viewRecord, setViewRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [historyRecord, setHistoryRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -222,7 +206,7 @@ export function WithdrawalManagement({
       // 缺欄位就退回保守值，不要讓它變成 undefined 再往下讀。這一段是 e2e
       // 教出來的：舊 mock 不回 total／stats，`stats.pendingAmount` 直接擲錯，
       // 而 WithdrawalManagement 是 AdminDashboard 的預設分頁——一個面板的
-      // payload 形狀不合，**五個分頁一起打不開**。爆炸半徑不該這麼大。
+      // payload 形狀不合，**整個後台的分頁一起打不開**。爆炸半徑不該這麼大。
       setTotal(data.total ?? rows.length);
       setStats(data.stats ?? EMPTY_STATS);
       // 換一批資料就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在
@@ -331,7 +315,7 @@ export function WithdrawalManagement({
     }
   };
 
-  const downloadCSV = async () => {
+  const collectAndDownload = async () => {
     // W6：匯出的是**符合當前篩選的全部資料**，不是畫面上已載入的那幾列。
     // 給半份比明示拒絕糟得多——對帳是拿這份檔案去比銀行的轉出紀錄，少的
     // 那幾筆不會自己浮出來。超過上限就明說，並告訴 admin 怎麼縮小範圍。
@@ -388,7 +372,7 @@ export function WithdrawalManagement({
       w.bankAccount ?? '未設定',
       w.idNumber ?? '未設定',
       formatTwTimestamp(w.requestedAt),
-      STATUS_LABEL[w.status] ?? w.status,
+      withdrawalStatusLabel(w.status),
     ]);
 
     // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
@@ -401,6 +385,31 @@ export function WithdrawalManagement({
     link.download = `獎金提領申請_${twDayOf()}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
+    setLoadError(null);
+    // LINE 等內建瀏覽器的下載常無聲無息、甚至根本沒落檔，而 link.click() 偵測不到
+    // ——那裡說「已匯出」可能是假成功，改成說出怎麼補救。
+    setActionMessage(
+      detectInAppBrowser().isInAppBrowser
+        ? `已產生 ${rows.length} 筆，若沒收到檔案請用外部瀏覽器開啟`
+        : `已匯出 ${rows.length} 筆`,
+    );
+  };
+
+  // 收集可能要好幾秒（逐頁）。期間篩選與重新整理一併停用：收集迴圈用的是
+  // 按下當下的 statusFilter，中途換篩選會下載一份跟畫面不一致的檔案。列上的
+  // 寫入動作、批次匯款與載入更多也停用：中途有列狀態改變而離開篩選，offset
+  // 分頁會整體前移，對帳檔靜默漏列。
+  // try/finally 包住整段——上限拒絕、收集失敗兩條提早 return 都要解除忙碌。
+  const downloadCSV = async () => {
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setIsExporting(true);
+    try {
+      await collectAndDownload();
+    } finally {
+      exportingRef.current = false;
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -574,8 +583,7 @@ export function WithdrawalManagement({
                 historyRecord.events.map((e) => (
                   <li key={e.createdAt} className="border-l-2 pl-3">
                     <p>
-                      {STATUS_LABEL[e.fromStatus] ?? e.fromStatus} →{' '}
-                      {STATUS_LABEL[e.toStatus] ?? e.toStatus}
+                      {withdrawalStatusLabel(e.fromStatus)} → {withdrawalStatusLabel(e.toStatus)}
                       <span className="text-muted-foreground ml-2">
                         {e.byAdmin ? '（管理員）' : '（會員本人）'}
                       </span>
@@ -614,15 +622,19 @@ export function WithdrawalManagement({
               <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待處理</dt>
+              <dt className="text-xs text-muted-foreground">{withdrawalStatusLabel('pending')}</dt>
               <dd className="font-bold">{stats.byStatus.pending}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待查收</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('awaiting_collection')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">已完成</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('completed')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.completed}</dd>
             </div>
           </dl>
@@ -645,13 +657,17 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('pending')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('awaiting_collection')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">
                   {stats.byStatus.awaiting_collection}
                 </p>
@@ -659,7 +675,9 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('completed')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
               </CardContent>
             </Card>
@@ -700,56 +718,56 @@ export function WithdrawalManagement({
             (0,1,0) 蓋不掉它（同 `ui/table.tsx` 那個踩過的坑），所以下方
             內距要用同形狀的 `[&:last-child]:pb-3` 才壓得住。 */}
         <CardContent className="px-3 pt-3 [&:last-child]:pb-3 sm:px-6 sm:pt-6 sm:[&:last-child]:pb-6">
-          {/* P3:375px 下 Select(w-36) + 兩顆按鈕 + 筆數擠成一列（實測 +95px）。
-              flex-wrap 讓它們換行，筆數在手機自己成一列。 */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36">
+          {/* 篩選吃剩餘寬度、兩顆 icon 鈕在右，手機一行（S3 A2）。改版前三件
+              平鋪靠 flex-wrap 換行，375px 下擠成兩行、斷點附近忽一行忽兩行。
+              CSV 匯出是規格書 §13 明列的職責（含 2,000 筆上限），手機照樣有——
+              isDesktop 是**寬度**判準，767px 的桌機視窗也會失去唯一的匯出路徑。 */}
+          <AdminToolbar
+            filter={
+              <Select
+                value={statusFilter}
+                onValueChange={(next) => {
+                  // 上一次的匯出回報（「已匯出 N 筆」）屬於舊篩選，換篩選就收掉。
+                  setActionMessage(null);
+                  setStatusFilter(next);
+                }}
+                disabled={isExporting}
+              >
+                <SelectTrigger className="w-full md:w-36">
                   <SelectValue placeholder="全部狀態" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部狀態</SelectItem>
-                  <SelectItem value="pending">待處理</SelectItem>
-                  <SelectItem value="awaiting_collection">待查收</SelectItem>
-                  <SelectItem value="completed">已完成</SelectItem>
-                  <SelectItem value="rejected">已退件</SelectItem>
+                  {WITHDRAWAL_STATUS_VALUES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {withdrawalStatusLabel(status)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <Button tone="secondary" size="sm" onClick={fetchWithdrawals} disabled={isLoading}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                重新整理
-              </Button>
-              {/* 不用 isDesktop 閘掉:曾經以「手機下載試算表沒有下一步」為由
-                  只留桌面，但那既不在規劃書裡、也沒有任何 reviewer 看過，而且
-                  isDesktop 是**寬度**判準（Q4 已裁決不改成觸控偵測）——767px 的
-                  桌機視窗、分割畫面、高縮放比都會失去唯一的匯出路徑。
-                  CSV 匯出是規格書 §13 明列的職責（連 2,000 筆上限都寫進規格），
-                  要移除得走 §6 的開放問題流程並同步改規格書，不是一行註解。
-                  實測放回來零代價:工具列 36→76px（flex-wrap 自己換行、無溢出），
-                  第一筆提領卡仍在第一屏內。 */}
-              <Button
-                tone="secondary"
-                size="sm"
-                onClick={downloadCSV}
-                disabled={!withdrawals.length}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                下載CSV
-              </Button>
-            </div>
-            {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
-                只寫「共 N 筆」會讓人以為 N 就是全部。 */}
-            <p className="text-sm text-muted-foreground">
-              已顯示 {withdrawals.length} / {total} 筆
-            </p>
-          </div>
+            }
+            onRefresh={fetchWithdrawals}
+            // 載入更多進行中也停用：loadMore 晚回來會把舊頁尾接到剛重設的列表上
+            // （同會員頁）；這頁是批次匯款的依據，重複或錯位的列不能出現。
+            isRefreshing={isLoading || isLoadingMore}
+            onExport={downloadCSV}
+            // 重新整理中 total／列表都是舊值，收集迴圈會照舊 total 收。
+            canExport={withdrawals.length > 0 && !isLoading && !isLoadingMore}
+            isExporting={isExporting}
+            disabled={isExporting}
+          />
+          {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
+              只寫「共 N 筆」會讓人以為 N 就是全部。移出工具列自成一行，
+              不再參與工具列的寬度競爭。 */}
+          <p className="mt-2 text-sm text-muted-foreground">
+            已顯示 {withdrawals.length} / {total} 筆
+          </p>
 
           {selected.size > 0 && (
             <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">
               <span className="text-sm font-medium">已選取 {selected.size} 筆</span>
               {isDesktop && (
-                <Button size="sm" onClick={() => setBatchOpen(true)}>
+                <Button size="sm" onClick={() => setBatchOpen(true)} disabled={isExporting}>
                   批次標記已匯款
                 </Button>
               )}
@@ -762,7 +780,7 @@ export function WithdrawalManagement({
       </Card>
 
       <Card>
-        {/* 手機隱藏:分頁標籤已經寫著「獎金提領管理」，再標一次「獎金提領申請」
+        {/* 手機隱藏:分頁標籤已經寫著「提領」，再標一次「獎金提領申請」
             是重複，而它佔掉的 70px 正是第一屏放不下第二筆的原因之一。 */}
         <CardHeader className="hidden sm:flex">
           <CardTitle>獎金提領申請</CardTitle>
@@ -797,7 +815,7 @@ export function WithdrawalManagement({
               onReject={setRejectTarget}
               onComplete={setCompleteTarget}
               processingId={processingId}
-              statusBadge={getStatusBadge}
+              actionsDisabled={isExporting}
               formatAmount={twd}
             />
           ) : (
@@ -860,7 +878,9 @@ export function WithdrawalManagement({
                     <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
                     <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
                     <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
-                    <TableCell>{getStatusBadge(w.status)}</TableCell>
+                    <TableCell>
+                      <WithdrawalStatusBadge status={w.status} />
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="sm" onClick={() => setViewRecord(w)}>
                         <Eye className="h-4 w-4 mr-1" />
@@ -882,7 +902,7 @@ export function WithdrawalManagement({
                             <Button
                               size="sm"
                               onClick={() => setPaidTarget(w)}
-                              disabled={processingId === w.id}
+                              disabled={isExporting || processingId === w.id}
                             >
                               標記已匯款
                             </Button>
@@ -891,7 +911,7 @@ export function WithdrawalManagement({
                             size="sm"
                             tone="destructive"
                             onClick={() => setRejectTarget(w)}
-                            disabled={processingId === w.id}
+                            disabled={isExporting || processingId === w.id}
                           >
                             退件
                           </Button>
@@ -901,7 +921,7 @@ export function WithdrawalManagement({
                           size="sm"
                           tone="secondary"
                           onClick={() => setCompleteTarget(w)}
-                          disabled={processingId === w.id}
+                          disabled={isExporting || processingId === w.id}
                         >
                           代為完成
                         </Button>
@@ -917,7 +937,7 @@ export function WithdrawalManagement({
 
           {!isLoading && !loadError && withdrawals.length < total && (
             <div className="pt-4 text-center">
-              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore}>
+              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore || isExporting}>
                 {isLoadingMore ? '載入中…' : '載入更多'}
               </Button>
             </div>

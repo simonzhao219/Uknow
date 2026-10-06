@@ -35,7 +35,10 @@
 //   * name 混排：英文組在前（A→Z），降冪 = 升冪完全反轉（核定規則）
 //   * 遮罩：一代全顯、深代遮罩；search 用「真名」比對得到被遮字元
 //   * children 授權：陌生節點 403、gen3 空、self = 一代
-//   * attention：非 active 入列、依緊急度、有上限
+//   * attention：只收「一代且即將到期」（業主 2026-10-04 定案），依剩餘天數升冪；
+//     overview 取前 6、/referrals/network/attention 分頁走完全部，total 永遠是全部命中數。
+//     主種子 V 底下只有停權的二代（陳小華）——在新口徑下不入列，正好是「空」案例；
+//     入列／排除的組合用下方獨立的 viewer2 種子。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
@@ -50,10 +53,12 @@ import {
 import {
   assertShape,
   DEFAULT_NETWORK_SORT,
+  NetworkAttentionResponseSchema,
   NetworkChildrenResponseSchema,
   NetworkOverviewResponseSchema,
   NetworkSearchResponseSchema,
 } from '../_shared/api-contract.ts';
+import { twDayOf, twDayPlusDays, twEndOfDayInstant } from './tw-dates.ts';
 
 ensureEdgeFunctionEnv();
 Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
@@ -130,12 +135,87 @@ seeded.push(stranger.id);
 
 const token = await getUserAccessToken(client, viewer.email);
 
+// -- attention 種子：viewer2（與主種子 V 完全分離，不影響排序案例）--
+// 先全部付款建好推薦邊，再改 subscriptions.end_date 擺出各狀態。
+// 剩餘天數由 ceil((end - now) / 1 天) 推導，所以 end 設在「N 天減半天」，
+// 測試執行期間的幾秒漂移不會讓 ceil 跨格。
+const DAY_MS = 86_400_000;
+async function setEndInDays(userId: string, days: number) {
+  const end = new Date(Date.now() + days * DAY_MS).toISOString();
+  const { error } = await client.from('subscriptions')
+    .update({ end_date: end, grace_period_end: end }).eq('user_id', userId);
+  if (error) throw new Error(`setEndInDays failed: ${error.message}`);
+}
+
+const viewer2 = await seedPaidUser('Attention Viewer');
+const v2Code = await getActiveReferralCode(client, viewer2.id);
+const e3a = await seedPaidUser('剩三天甲', v2Code);
+const e3b = await seedPaidUser('剩三天乙', v2Code);
+const e5 = await seedPaidUser('剩五天', v2Code);
+const e8 = await seedPaidUser('剩八天', v2Code);
+const e13 = await seedPaidUser('剩十三天', v2Code);
+const e21 = await seedPaidUser('剩廿一天', v2Code);
+const e29 = await seedPaidUser('剩廿九天', v2Code);
+// 正式資料形狀：end_date 一律是台灣日終（subscriptionLastDay）。同一天加入的
+// 一代 end_date 逐位元相同，排序只能靠 userId 決勝——小數天數的種子測不到。
+const tieA = await seedPaidUser('同日到期甲', v2Code);
+const tieB = await seedPaidUser('同日到期乙', v2Code);
+const b29 = await seedPaidUser('日終廿九天', v2Code); // 今日+29 日終 → 剩 30 天 → 入列
+const b30 = await seedPaidUser('日終三十天', v2Code); // 今日+30 日終 → 剩 31 天 → 窗外
+const a31 = await seedPaidUser('剩三十一天', v2Code); // 一代 active（30 天窗外）
+const x1 = await seedPaidUser('已到期', v2Code); // 一代 expired
+const s1 = await seedPaidUser('停權將到期', v2Code); // 一代 suspended（end 在窗內，停權優先）
+const e5Code = await getActiveReferralCode(client, e5.id);
+const g2exp = await seedPaidUser('二代將到期', e5Code); // 二代 expiring（非一代不入列）
+
+await setEndInDays(e3a.id, 2.2); // ceil → 3
+await setEndInDays(e3b.id, 2.8); // ceil → 3，與 e3a 同天數 → endDate 升冪決勝
+await setEndInDays(e5.id, 4.5);
+await setEndInDays(e8.id, 7.5);
+await setEndInDays(e13.id, 12.5);
+await setEndInDays(e21.id, 20.5);
+await setEndInDays(e29.id, 28.5); // ceil → 29
+await setEndInDays(a31.id, 30.5); // ceil → 31：窗外 → active
+async function setEndTwDayEnd(userId: string, plusDays: number) {
+  const end = twEndOfDayInstant(twDayPlusDays(twDayOf(), plusDays)).toISOString();
+  const { error } = await client.from('subscriptions')
+    .update({ end_date: end, grace_period_end: end }).eq('user_id', userId);
+  if (error) throw new Error(`setEndTwDayEnd failed: ${error.message}`);
+}
+await setEndTwDayEnd(tieA.id, 10); // 剩 11 天，兩人 end_date 完全相同
+await setEndTwDayEnd(tieB.id, 10);
+await setEndTwDayEnd(b29.id, 29); // 30 天窗的最後一格（到期日 D 的 D−29 日 00:00 起）
+await setEndTwDayEnd(b30.id, 30);
+await setEndInDays(x1.id, -1);
+await setEndInDays(s1.id, 4.5);
+await setEndInDays(g2exp.id, 4.5);
+{
+  const { error } = await client.from('profiles')
+    .update({ suspended_at: new Date().toISOString() }).eq('id', s1.id);
+  if (error) throw new Error(`suspend seed failed: ${error.message}`);
+}
+// 依剩餘天數升冪 → 同天數 endDate 升冪 → userId
+const tiePair = [tieA.id, tieB.id].sort();
+const attentionOrder = [
+  e3a.id,
+  e3b.id,
+  e5.id,
+  e8.id,
+  ...tiePair,
+  e13.id,
+  e21.id,
+  e29.id,
+  b29.id,
+];
+const token2 = await getUserAccessToken(client, viewer2.email);
+
 Deno.test('未帶 token 一律 401', async () => {
   for (
     const path of [
       '/referrals/network/overview',
       `/referrals/network/children?parentId=${viewer.id}`,
       '/referrals/network/search?q=x',
+      '/referrals/network/attention',
     ]
   ) {
     const { status } = await getJson(path);
@@ -239,15 +319,105 @@ Deno.test('children / search：預設同樣回落 DEFAULT_NETWORK_SORT', async (
   assertEquals(foundParsed.data.sort, DEFAULT_NETWORK_SORT);
 });
 
-Deno.test('overview：attention——停權的深代下線入列且遮罩', async () => {
+Deno.test('overview：attention 只收一代即將到期——停權的二代不入列，無人時為空', async () => {
   const { body } = await getJson('/referrals/network/overview', token);
-  const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview attention');
-  assertEquals(parsed.data.attention.total, 1, '種子中僅陳小華非 active');
-  const item = parsed.data.attention.items[0];
-  assertEquals(item.userId, g2a.id);
-  assertEquals(item.status, 'suspended');
-  assertEquals(item.name, '陳○華', '二代姓名應遮罩');
-  assert(parsed.data.attention.items.length <= 6, 'attention 有上限');
+  const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview attention empty');
+  assertEquals(parsed.data.attention, { total: 0, items: [] }, '陳小華是二代且停權，新口徑不入列');
+});
+
+Deno.test('overview：attention 依剩餘天數升冪取前 6，total 為精確人數', async () => {
+  const { body } = await getJson('/referrals/network/overview', token2);
+  const parsed = assertShape(NetworkOverviewResponseSchema, body, 'GET overview attention v2');
+  assertEquals(parsed.data.attention.total, 10, '一代即將到期共 10 位（含 30 天邊界）');
+  assertEquals(
+    parsed.data.attention.items.map((n) => n.userId),
+    attentionOrder.slice(0, 6),
+    '同天數以 endDate 升冪決勝；items 上限 6',
+  );
+  for (const n of parsed.data.attention.items) {
+    assertEquals(n.generation, 1);
+    assertEquals(n.status, 'expiring');
+  }
+  assertEquals(parsed.data.attention.items[0].daysToExpiry, 3);
+});
+
+Deno.test('attention：無一代即將到期時回空清單，total 為 0', async () => {
+  const { status, body } = await getJson('/referrals/network/attention', token);
+  assertEquals(status, 200);
+  const parsed = assertShape(NetworkAttentionResponseSchema, body, 'GET attention empty');
+  assertEquals(parsed.data.total, 0);
+  assertEquals(parsed.data.items, []);
+});
+
+Deno.test('attention：預設頁大小一頁取完，非一代、active、expired、停權不入列', async () => {
+  const { body } = await getJson('/referrals/network/attention', token2);
+  const parsed = assertShape(NetworkAttentionResponseSchema, body, 'GET attention single page');
+  assertEquals(parsed.data.limit, 50);
+  assertEquals(parsed.data.offset, 0);
+  assertEquals(parsed.data.total, 10);
+  assertEquals(parsed.data.items.map((n) => n.userId), attentionOrder);
+  const ids = new Set(parsed.data.items.map((n) => n.userId));
+  for (
+    const [who, id] of [
+      ['a31', a31.id],
+      ['b30', b30.id],
+      ['x1', x1.id],
+      ['s1', s1.id],
+      ['g2exp', g2exp.id],
+    ]
+  ) {
+    assert(!ids.has(id), `${who} 不得入列`);
+  }
+});
+
+Deno.test('attention：跨頁走完等於完整順序，total 不受分頁影響', async () => {
+  const collected: string[] = [];
+  for (let offset = 0; offset < 12; offset += 3) {
+    const { body } = await getJson(`/referrals/network/attention?limit=3&offset=${offset}`, token2);
+    const page = assertShape(NetworkAttentionResponseSchema, body, `attention offset=${offset}`);
+    assertEquals(page.data.total, 10, '每一頁的 total 都是全部命中數');
+    assertEquals(page.data.limit, 3);
+    assertEquals(page.data.offset, offset);
+    collected.push(...page.data.items.map((n) => n.userId));
+  }
+  assertEquals(collected, attentionOrder, '四頁（3+3+3+1）串起來＝完整清單，不重不漏');
+});
+
+Deno.test('attention：日終資料的同分以 userId 決勝，limit=1 逐頁不重不漏', async () => {
+  const collected: string[] = [];
+  for (let offset = 0; offset < 10; offset++) {
+    const { body } = await getJson(`/referrals/network/attention?limit=1&offset=${offset}`, token2);
+    const page = assertShape(NetworkAttentionResponseSchema, body, `attention limit=1 #${offset}`);
+    assertEquals(page.data.items.length, 1);
+    collected.push(page.data.items[0].userId);
+  }
+  assertEquals(collected, attentionOrder);
+  const tieAt = collected.indexOf(tiePair[0]);
+  assertEquals(collected[tieAt + 1], tiePair[1], 'end_date 完全相同的兩位依 userId 升冪相鄰');
+});
+
+Deno.test('attention：台灣日終邊界——今日+29 日終入列（剩 30 天），+30 日終不入', async () => {
+  const { body } = await getJson('/referrals/network/attention', token2);
+  const parsed = assertShape(NetworkAttentionResponseSchema, body, 'attention tw day-end edge');
+  const last = parsed.data.items.at(-1)!;
+  assertEquals(last.userId, b29.id);
+  assertEquals(last.daysToExpiry, 30);
+  assertEquals(parsed.data.items.some((n) => n.userId === b30.id), false);
+});
+
+Deno.test('attention：越界 offset 回空頁；limit 夾在 1..200；壞值回落預設', async () => {
+  const beyond = await getJson('/referrals/network/attention?offset=99', token2);
+  const b = assertShape(NetworkAttentionResponseSchema, beyond.body, 'attention beyond');
+  assertEquals(b.data.items, []);
+  assertEquals(b.data.total, 10);
+
+  const huge = await getJson('/referrals/network/attention?limit=9999', token2);
+  assertEquals(assertShape(NetworkAttentionResponseSchema, huge.body, 'huge').data.limit, 200);
+
+  const junk = await getJson('/referrals/network/attention?limit=abc&offset=-5', token2);
+  const j = assertShape(NetworkAttentionResponseSchema, junk.body, 'attention junk paging');
+  assertEquals(j.data.limit, 50);
+  assertEquals(j.data.offset, 0);
 });
 
 Deno.test('children：二代層內依自身加入時間排（子樹新血不影響同層次序）', async () => {

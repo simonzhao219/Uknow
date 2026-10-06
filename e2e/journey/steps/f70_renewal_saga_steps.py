@@ -149,7 +149,9 @@ def admin_detail_shows_default_referrer(guarded_page, run_state, saga, node):
     member = run_state.users[node]
     login_admin(guarded_page, run_state.users["admin"])
     guarded_page.get_by_role("tab", name="會員管理").click()
-    search = guarded_page.get_by_placeholder("搜尋姓名 / Email / 電話")
+    # 以角色＋名稱找搜尋框，不靠 placeholder：可見字是 UI 文案、隨改版漂移
+    # （S3 把 placeholder 縮成「搜尋會員」時這行就是靠它才會在晉升 PR 才紅）。
+    search = guarded_page.get_by_role("searchbox", name="搜尋會員")
     expect(search).to_be_visible(timeout=15_000)
     search.fill(member.email)
     search.press("Enter")

@@ -39,7 +39,12 @@ export function SystemAlerts() {
     setLoadError(false);
     try {
       const res = await apiRequestJson<SystemAlertsResponse>(buildApiUrl('/admin/system-alerts'));
-      setAlerts(res.data.alerts);
+      // 形狀不合（契約漂移、代理回了別的東西）走錯誤態，不退回空清單：監控
+      // 面板的「沒有未處理的告警」必須是真的沒有——fail-open 等於沒有監控。
+      // 也不讓 undefined 往下讀把整個後台弄壞（同 WithdrawalManagement 的理由）。
+      const list = res?.data?.alerts;
+      if (!Array.isArray(list)) throw new Error('system-alerts 回應形狀不符');
+      setAlerts(list);
     } catch (error) {
       console.error('SystemAlerts: 載入告警失敗:', error);
       setLoadError(true);

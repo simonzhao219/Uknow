@@ -1,7 +1,9 @@
 import type { AdminMember } from '@contract';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { memberDetailTriggerProps } from './memberDetailTrigger';
+import { memberLabel, memberName } from './memberName';
+import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 
 /**
  * 會員管理的**手機版**列表：一位會員一張卡。
@@ -19,37 +21,28 @@ import { Card, CardContent } from '../ui/card';
 
 interface MemberCardListProps {
   members: AdminMember[];
-  accountBadge: (status: string) => { label: string; variant: 'success-subtle' | 'secondary' };
   onOpenDetail: (id: string) => void;
-  processingId: string | null;
+  /** 正在取詳情的會員：該卡的「查看」轉圈、停用，連點不重送。 */
+  openingIds: string[];
 }
 
-export function MemberCardList({
-  members,
-  accountBadge,
-  onOpenDetail,
-  processingId,
-}: MemberCardListProps) {
+export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCardListProps) {
   return (
     <div className="space-y-3">
       {members.map((member) => {
-        const acct = accountBadge(member.accountStatus);
         return (
-          <Card
-            key={member.id}
-            role="group"
-            aria-label={`${member.name ?? member.email} 的會員資料`}
-          >
+          <Card key={member.id} role="group" aria-label={`${memberLabel(member)} 的會員資料`}>
             <CardContent className="space-y-2 p-3">
               {/* 收合態一眼要回答的：是誰、有沒有異常。**正常狀態不顯示 badge**
                   ——「一般會員」「正常」是預設值，佔了位置卻沒有資訊量，
                   六個 badge 擠在一起反而讓真正需要注意的那個消失在噪音裡。
                   會籍與刊登數留著（會籍決定他能不能用、刊登數是他的活躍度）。 */}
               <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 font-medium break-words">{member.name ?? '—'}</p>
+                <p className="min-w-0 font-medium break-words">{memberName(member.name) ?? '—'}</p>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
-                  {member.isAdmin && <Badge variant="default">管理員</Badge>}
-                  {member.suspended && <Badge variant="destructive">已暫停</Badge>}
+                  {/* 異常在前，與詳情身分卡（MemberStatusBadges）同序。 */}
+                  {member.suspended && <SuspendedBadge />}
+                  {member.isAdmin && <AdminBadge />}
                 </div>
               </div>
 
@@ -57,7 +50,7 @@ export function MemberCardList({
                   變動（實測長 Email 讓卡片從 130px 變 154px）。列表的工作是
                   「找到那個人」，截斷仍然認得出來，完整值在詳情 Sheet 裡一點就有。
                   電話與 Email 併成一行，不多佔一列——收合態預算只剩 12px。
-                  搜尋框 placeholder 寫的是「搜尋姓名 / Email / 電話」，admin 用
+                  搜尋框的名稱寫的是「搜尋會員（姓名、Email 或電話）」，admin 用
                   來電號碼搜到人之後，得看得到命中的是哪個號碼才能確認是同一人，
                   而手機是唯一能一鍵撥號的裝置。
                   ⚠️ `truncate` 當 flex item 時 `min-width:auto` 會讓它不縮反溢，
@@ -69,7 +62,7 @@ export function MemberCardList({
 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant={acct.variant}>{acct.label}</Badge>
+                  <AccountStatusBadge status={member.accountStatus} />
                   <span className="text-xs text-muted-foreground">刊登 {member.listingCount}</span>
                 </div>
                 {/* **卡上只有「查看」一顆**（ui-ux-guidelines §11.1）:
@@ -84,7 +77,9 @@ export function MemberCardList({
                     size="sm"
                     tone="secondary"
                     className="px-2"
-                    aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                    aria-label={`查看 ${memberLabel(member)} 的詳情`}
+                    {...memberDetailTriggerProps(member.id)}
+                    loading={openingIds.includes(member.id)}
                     onClick={() => onOpenDetail(member.id)}
                   >
                     查看

@@ -6,7 +6,7 @@
 //   * 懶載入：展開呼叫 loadChildren(parentId)、等待中有 skeleton、回來後渲染子列
 //   * 對齊（方案 A）：分支數移列右側「N 位」；即將到期以倒數取代且優先
 //   * 倒數以 endDate 前端重算（不吃伺服器過時快照）
-//   * 需要關注橫幅：伺服器上限 + 「還有 N 位」
+//   * 需要關注橫幅（一代即將到期）：伺服器上限 + 「還有 N 位」
 //   * 排序：原生 select、值受控、變更回報
 //   * 搜尋：debounce 300ms 呼叫伺服器、渲染遮罩結果
 //   * a11y：tree/treeitem 語意在改寫後不退化
@@ -147,21 +147,56 @@ describe('列右側資訊（方案 A 對齊）', () => {
   });
 });
 
-describe('需要關注橫幅（伺服器上限）', () => {
-  it('顯示 total、上限內的 chips 與「還有 N 位」', () => {
+describe('需要關注橫幅（一代即將到期，伺服器上限）', () => {
+  it('標題為一代即將到期的總數，上限內的 chips 之外顯示「還有 N 位」', () => {
     const items = [
-      makeNode({ userId: 'a1', name: '陳○華', generation: 2, status: 'suspended' }),
-      makeNode({ userId: 'a2', name: '林○樺', generation: 2, status: 'expired' }),
+      makeNode({
+        userId: 'a1',
+        name: '陳大華',
+        status: 'expiring',
+        daysToExpiry: 3,
+        endDate: new Date(Date.now() + 3 * DAY).toISOString(),
+      }),
+      makeNode({
+        userId: 'a2',
+        name: '林美樺',
+        status: 'expiring',
+        daysToExpiry: 9,
+        endDate: new Date(Date.now() + 9 * DAY).toISOString(),
+      }),
     ];
     renderTree(makeOverview({ attention: { total: 8, items } }));
-    expect(screen.getByText('8 位需要關注')).toBeTruthy();
-    expect(screen.getByText('陳○華')).toBeTruthy();
+    expect(screen.getByText('8 位一代即將到期')).toBeTruthy();
+    expect(screen.getByText('陳大華')).toBeTruthy();
     expect(screen.getByText('還有 6 位')).toBeTruthy();
   });
 
-  it('無需要關注者不渲染橫幅', () => {
+  it('無一代即將到期者不渲染橫幅', () => {
     renderTree(makeOverview({ roots: [makeNode()] }));
-    expect(screen.queryByText(/需要關注/)).toBeNull();
+    expect(screen.queryByText(/一代即將到期/)).toBeNull();
+  });
+});
+
+describe('節點詳情的失效說明', () => {
+  // journey f60「上線的組織圖顯示已失效節點」斷言的就是這段文案（B1 起橫幅不收
+  // 已失效者）；這裡把它釘在 CI 每次都跑的層，改文案不必等晉升 PR 才紅。
+  it('點已失效的一代列，詳情顯示此帳號已失效、刊登已下架', () => {
+    const node = makeNode({ userId: 'x1', name: '林失效', status: 'expired', daysToExpiry: null });
+    renderTree(makeOverview({ roots: [node] }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '林失效 詳情' }));
+    expect(screen.getAllByText('此帳號已失效，刊登已下架').length).toBeGreaterThan(0);
+  });
+
+  it('點已停權的一代列，詳情顯示此帳號已停權、刊登已下架', () => {
+    const node = makeNode({
+      userId: 's1',
+      name: '王停權',
+      status: 'suspended',
+      daysToExpiry: null,
+    });
+    renderTree(makeOverview({ roots: [node] }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '王停權 詳情' }));
+    expect(screen.getAllByText('此帳號已停權，刊登已下架').length).toBeGreaterThan(0);
   });
 });
 

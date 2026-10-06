@@ -142,6 +142,17 @@ FREQUENCY_RATIONALE = re.compile(r"頻率依據")
 ENVIRONMENT_KEY = re.compile(r"^\s+environment\s*:", re.M)
 CANCEL_IN_PROGRESS_FALSE = re.compile(r"^\s*cancel-in-progress\s*:\s*false\s*$", re.M)
 
+# 規則 12:`supabase functions deploy` 的 step 必須有退避重試(2026-10-03~05
+#         連續 7 次事故,其中一次是正式站)。CLI 打包函式要在 runner 上起
+#         Docker、從 public.ecr.aws 匿名拉 edge-runtime 映像;runner 是共用
+#         IP,撞上 ECR 的匿名速率限制(`toomanyrequests: Rate exceeded`)時,
+#         部署在上傳之前就整支失敗。部署冪等,重試只有好處。
+#         判準是「同一個 step 內有 for 迴圈且有 sleep」:沒有 sleep 的迴圈是
+#         連環硬打限流,等於沒有重試。
+FUNCTIONS_DEPLOY = re.compile(r"supabase\s+functions\s+deploy\b")
+RETRY_LOOP = re.compile(r"^\s*for\s+\w+\s+in\b", re.M)
+SLEEP_CALL = re.compile(r"\bsleep\s+\S")
+
 
 def _jobs(text: str) -> list[tuple[str, str]]:
     """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
@@ -245,6 +256,21 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             "修法:改成 cancel-in-progress: true——新部署淘汰舊部署,"
             "語意上也才真的是「最新的那個贏」。"
         )
+
+    # 規則 12:`supabase functions deploy` 的 step 必須有退避重試
+    #         只看 step 內的非註解行——step 之前的說明註解會被 _steps() 歸給
+    #         上一個 step,若提到指令名稱就會誤判。
+    for bl in _steps(text):
+        code = "\n".join(l for l in bl.splitlines() if not l.lstrip().startswith("#"))
+        if FUNCTIONS_DEPLOY.search(code) and not (RETRY_LOOP.search(code) and SLEEP_CALL.search(code)):
+            found.append(
+                "有 step 執行 supabase functions deploy 但沒有退避重試——CLI 打包時"
+                "要從 public.ecr.aws 匿名拉 edge-runtime 映像,共用 runner 的 IP "
+                "常撞上 `toomanyrequests: Rate exceeded`,部署在上傳前就整支失敗"
+                "(2026-10-03~05 連續 7 次,含正式站一次)。部署冪等,重試無害。"
+                "修法:同一個 step 內用 for 迴圈包住指令,失敗時 sleep 後重試"
+                "(迴圈沒有 sleep 等於連環硬打限流)。"
+            )
 
     # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
     #        漏一個 = 那一軌不擋合併(2026-07-25 PR #109 就是這樣被 auto-merge 掉的)
@@ -565,6 +591,59 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
             "concurrency:\n  group: journey\n  cancel-in-progress: false\njobs:\n"
             "  journey-suite:\n    timeout-minutes: 90\n"
             "    steps:\n      - name: a\n        run: b\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    # --- 規則 12:ECR 限流造成部署失敗的事故形態(2026-10-03~05,7 次) ---
+    (
+        "supabase functions deploy 沒有重試 → 違規(ECR 限流的事故形態)",
+        (
+            "name: Deploy Thing\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n    steps:\n"
+            "      - name: 部署 Edge Function\n        run: |\n"
+            "          supabase functions deploy api --project-ref x --no-verify-jwt\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "supabase functions deploy 包在 for 迴圈且失敗時 sleep → 通過",
+        (
+            "name: Deploy Thing\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n    steps:\n"
+            "      - name: 部署 Edge Function\n        run: |\n"
+            "          for attempt in 1 2 3; do\n"
+            "            supabase functions deploy api --project-ref x --no-verify-jwt && exit 0\n"
+            "            sleep 30\n"
+            "          done\n"
+            "          exit 1\n"
+        ),
+        "x.yml",
+        0,
+    ),
+    (
+        "有 for 迴圈但沒有 sleep → 違規(連環硬打限流等於沒有重試)",
+        (
+            "name: Deploy Thing\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n    steps:\n"
+            "      - name: 部署 Edge Function\n        run: |\n"
+            "          for attempt in 1 2 3; do\n"
+            "            supabase functions deploy api --project-ref x --no-verify-jwt && exit 0\n"
+            "          done\n"
+            "          exit 1\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "step 之前的註解提到指令名稱,不可誤判給上一個 step → 通過",
+        (
+            "name: Deploy Thing\njobs:\n"
+            "  deploy-edge-function:\n    timeout-minutes: 5\n    steps:\n"
+            "      - name: 寫入 sha\n        run: echo ok\n"
+            "      # 接著的 supabase functions deploy 會讀到這個 sha\n"
+            "      - name: 煙霧測試\n        run: curl -sS https://example.test/health\n"
         ),
         "x.yml",
         0,

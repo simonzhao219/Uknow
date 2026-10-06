@@ -23,7 +23,7 @@ interface AdminAnnouncement {
 }
 
 /**
- * 公告管理：建立/刪除全站公告橫幅（前台 MaintenanceBanner 讀
+ * 系統公告：建立/刪除全站公告橫幅（前台 MaintenanceBanner 讀
  * GET /announcements/active）。取代過去寫死在 constants.ts 的
  * 系統維護預告。
  */

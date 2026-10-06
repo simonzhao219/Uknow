@@ -495,6 +495,52 @@ KYC 身分證照片、金額門檻、當日一次）——要能領出點數，�
 KYC。稽核查詢（誰被自動綁定）：`select id from profiles where referred_by_is_default`，
 走 SQL、不建 admin UI。
 
+## ☑️ 步驟 7：建立第一位管理員（全新資料庫才需要）
+
+後台 `/admin` 只讓管理員進入，而第一位管理員要靠 API 產生——之後新增的管理員
+一律由既有管理員在後台「會員」分頁的會員詳情裡授予（規格書 §13）。**develop
+與正式站各做一次**，資料庫已經有管理員就跳過。
+
+`/admin-setup/set-self-admin` 對「全新資料庫的第一個呼叫者」開放：**新環境部署後
+應立即由預定的管理員帳號完成這一步**，不要讓空窗留著。
+
+1. **前置**：該帳號先在前台完成註冊並**補完個人資料**。註冊只會建出一筆空白的
+   profile（`name` 為空），前端的資料完整性守衛會擋住資料沒補完的帳號進 `/admin`；
+   API 本身不檢查這件事。
+2. **取得 access token**：用該帳號登入前台 → DevTools → Application →
+   Local Storage → `sb-<ref>-auth-token`，複製其中的 `access_token`。
+   `<ref>`：develop 取 `config/supabaseTarget.ts` 的 `projectId`，正式站取
+   `src/utils/supabase/info.tsx` 的 `projectId`。
+3. **宣告前先確認**（名額只有一個，宣告到錯的帳號才是真正麻煩的情況）：
+
+   ```bash
+   curl "https://<ref>.supabase.co/functions/v1/api/admin-setup/check" \
+     -H "Authorization: Bearer <access_token>"
+   ```
+
+   確認 `hasExistingAdmin` 是 `false`、`userName` 不是空字串、`userEmail` 就是預定
+   的管理員信箱，再往下。
+4. **宣告**：
+
+   ```bash
+   curl -X POST "https://<ref>.supabase.co/functions/v1/api/admin-setup/set-self-admin" \
+     -H "Authorization: Bearer <access_token>"
+   ```
+
+5. **看回應**：
+   - `200` `{"success":true}`：成功。
+   - `403`：系統**已經有管理員**（請既有管理員在後台授予）；極少數情況是該帳號
+     連 profile 列都沒有（註冊觸發器沒跑），回應訊息是「找不到使用者」。
+   - `401`：token 過期或貼錯（access token 約一小時失效）——重新登入取新的。
+   - `500`：「設置失敗，請稍後再試」——看 Edge Function `api` 的日誌。
+6. **自驗**：再打一次第 3 步的 `check`，`isAdmin` 是 `true`；重新整理前台後
+   `/admin` 進得去。資料沒補完的帳號宣告成功後進不了 `/admin`，補完資料即可。
+7. **宣告到錯的帳號時**：用那個帳號登入後台，在「會員」分頁的會員詳情把正確的帳號
+   設為管理員，再由正確的帳號撤銷錯的那個（規格書 §13 的授予／撤銷路徑；不能撤銷
+   自己）。那個帳號登不進後台時，在 SQL Editor 執行
+   `update public.profiles set is_admin = false where id = '<錯的帳號 uuid>';`
+   ——系統回到沒有管理員的狀態，從第 1 步重來。
+
 ## 快速檢查表（每個環境各一份）
 
 - [ ] 步驟 1：6 個 Edge Function Secrets 已新增並 Save
@@ -516,6 +562,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
 - [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
+- [ ] 步驟 7（僅全新資料庫）：宣告前 `check` 確認是預定的帳號且 `userName` 非空；
+      宣告後 `check` 回 `isAdmin: true`
 
 ### 兩個環境都設完後，再驗一次「沒有交叉」
 

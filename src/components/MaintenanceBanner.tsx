@@ -41,7 +41,7 @@ const SEVERITY: Record<string, { bar: string; icon: string; Icon: LucideIcon; sr
 /**
  * 全站公告橫幅組件
  *
- * 資料來源：GET /announcements/active（admin 後台「公告管理」建立，
+ * 資料來源：GET /announcements/active（admin 後台「系統公告」分頁建立，
  * 取代過去寫死在 constants.ts 的維護預告）。
  *
  * 顯示邏輯：

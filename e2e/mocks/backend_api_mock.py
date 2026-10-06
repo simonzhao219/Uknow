@@ -312,8 +312,8 @@ class BackendApiMock:
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
-        # attention：需要關注的下線（{total, items}），會員中心「需要注意」與
-        # 推薦頁橫幅都讀它；不給 = 沒有人需要關注。
+        # attention：需要關注＝一代且即將到期（{total, items}；items 最多 6 筆、
+        # total 是精確人數），會員中心與推薦頁橫幅都讀它；不給 = 沒有人。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -687,38 +687,6 @@ class BackendApiMock:
             )
 
         self._route("/admin/system-alerts", handler)
-
-    def set_admin_setup(
-        self,
-        is_admin=True,
-        can_become_admin=False,
-        has_existing_admin=True,
-        user_id=DEFAULT_USER_ID,
-        user_name="陳大文",
-        user_email=DEFAULT_EMAIL,
-    ):
-        # userId/userName/userEmail 三欄是後端一定會回的（api/index.ts:1725-1727），
-        # 而 AdminSetup.tsx:146 用 `adminStatus.userName && (...)` 當渲染條件——漏掉
-        # userName 的話，整個帳號資訊區塊（含 Email 那列）根本不會進 DOM。溢版巡檢
-        # 因此曾把「管理員設置」分頁量成 0 發現並上鎖，而它其實從未渲染過要守的東西。
-        # 這是與系統告警那條同型的假陰性：**測資沒取到產品允許的值，量出的乾淨是假的**。
-        body = {
-            "success": True,
-            "isAdmin": is_admin,
-            "canBecomeAdmin": can_become_admin,
-            "hasExistingAdmin": has_existing_admin,
-            "userId": user_id,
-            "userName": user_name,
-            "userEmail": user_email,
-        }
-
-        def handler(route):
-            if route.request.method == "GET":
-                return _fulfill_json(route, body)
-            return _fulfill_json(route, {"success": True})
-
-        self._route("/admin-setup/check", handler)
-        self._route("/admin-setup/set-self-admin", handler)
 
 
 def build_admin_announcement(announcement_id: str = "ann-e2e-1", **overrides) -> dict:

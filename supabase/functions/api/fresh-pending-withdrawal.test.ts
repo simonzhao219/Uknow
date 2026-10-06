@@ -17,6 +17,7 @@ import {
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  withRestTableFailure,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -135,6 +136,33 @@ Deno.test('prepare：提領轉 completed 或 rejected 後 fresh 恢復可建單'
     assertEquals(rejErr, null);
     const afterRej = await postPrepare(token, { renewalMode: 'fresh' });
     assertEquals(afterRej.body.success, true, JSON.stringify(afterRej.body));
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// 守衛查不到提領狀態時不得當成「沒有 pending」放行：fresh 會清空帳本，
+// 放行後若那筆 pending 被退件，退款就落進已清空的帳本（A16 的風險本身）。
+Deno.test('prepare：withdrawals 查詢失敗時 fresh 回 500 且不建單', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'A16 Query Fail' });
+
+  try {
+    assertEquals((await payForUser(client, user.id)).error, null);
+    await expireSubscriptions(client, user.id, 90);
+    const token = await getUserAccessToken(client, user.email);
+
+    const res = await withRestTableFailure(
+      ['withdrawals'],
+      () => postPrepare(token, { renewalMode: 'fresh' }),
+    );
+    assertEquals(res.status, 500, JSON.stringify(res.body));
+    assertEquals(res.body.success, false);
+
+    const { count } = await client.from('payment_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('status', 'pending');
+    assertEquals(count, 0, '守衛失敗時不得建出待付款訂單');
   } finally {
     await deleteTestUsers(client, [user.id]);
   }

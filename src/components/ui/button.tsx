@@ -27,9 +27,9 @@ const buttonVariants = cva(
       // 結構形狀。default 形狀的顏色交給 tone × container（見 compoundVariants）。
       variant: {
         default: "",
-        // 紅實心：只給不可逆的確認框，以及疊在照片上的移除鈕（外框在圖上看不見）。
+        // 紅實心：只給紅框字觸發的確認框（確認鈕跟觸發鈕同類），以及疊在照片上的移除鈕（外框在圖上看不見）。
         // 與 tone="destructive"（紅框字，一般破壞性動作）同名不同義——variant 管形狀，
-        // tone 管主次；列內觸發鈕用 tone，按下去跳出的不可逆確認才用 variant，§12.11。
+        // tone 管主次；列內觸發鈕用 tone，按下去跳出的確認才用 variant，§12.11。
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         // 連結＝墨色加常駐底線：顏色與內文相同，底線是唯一的區分（§12.3）。
