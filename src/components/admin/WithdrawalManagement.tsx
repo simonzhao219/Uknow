@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
@@ -10,6 +9,7 @@ import { Checkbox } from '../ui/checkbox';
 import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { WithdrawalStatusBadge, withdrawalStatusLabel } from './WithdrawalStatusBadge';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -35,32 +35,6 @@ import type {
   AdminWithdrawalStats,
   AdminWithdrawalsResponse,
 } from '@contract';
-
-// 提領生命週期（與後端 SQL 函數一致）：
-//   pending（待處理）→ awaiting_collection（已匯款，待查收）
-//                   → completed（用戶已確認查收）
-//   pending → rejected（退件，點數自動退回）
-const STATUS_LABEL: Record<string, string> = {
-  pending: '待處理',
-  awaiting_collection: '待查收',
-  completed: '已完成',
-  rejected: '已退件',
-};
-
-function getStatusBadge(status: string) {
-  switch (status) {
-    case 'pending':
-      return <Badge variant="secondary">待處理</Badge>;
-    case 'awaiting_collection':
-      return <Badge variant="warning">待查收</Badge>;
-    case 'completed':
-      return <Badge variant="outline">已完成</Badge>;
-    case 'rejected':
-      return <Badge variant="destructive">已退件</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-}
 
 interface IdCardDialogProps {
   record: AdminWithdrawalRecord;
@@ -394,7 +368,7 @@ export function WithdrawalManagement({
       w.bankAccount ?? '未設定',
       w.idNumber ?? '未設定',
       formatTwTimestamp(w.requestedAt),
-      STATUS_LABEL[w.status] ?? w.status,
+      withdrawalStatusLabel(w.status),
     ]);
 
     // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
@@ -605,8 +579,7 @@ export function WithdrawalManagement({
                 historyRecord.events.map((e) => (
                   <li key={e.createdAt} className="border-l-2 pl-3">
                     <p>
-                      {STATUS_LABEL[e.fromStatus] ?? e.fromStatus} →{' '}
-                      {STATUS_LABEL[e.toStatus] ?? e.toStatus}
+                      {withdrawalStatusLabel(e.fromStatus)} → {withdrawalStatusLabel(e.toStatus)}
                       <span className="text-muted-foreground ml-2">
                         {e.byAdmin ? '（管理員）' : '（會員本人）'}
                       </span>
@@ -828,7 +801,7 @@ export function WithdrawalManagement({
               onComplete={setCompleteTarget}
               processingId={processingId}
               actionsDisabled={isExporting}
-              statusBadge={getStatusBadge}
+              statusBadge={(status) => <WithdrawalStatusBadge status={status} />}
               formatAmount={twd}
             />
           ) : (
@@ -891,7 +864,9 @@ export function WithdrawalManagement({
                     <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
                     <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
                     <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
-                    <TableCell>{getStatusBadge(w.status)}</TableCell>
+                    <TableCell>
+                      <WithdrawalStatusBadge status={w.status} />
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="sm" onClick={() => setViewRecord(w)}>
                         <Eye className="h-4 w-4 mr-1" />

@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
+import { withdrawalStatusLabel } from './WithdrawalStatusBadge';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
 import type {
@@ -70,13 +71,6 @@ const ID_STATUS_LABEL: Record<string, string> = {
   pending: '審核中',
   approved: '已通過',
   rejected: '已退回',
-};
-
-const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
-  pending: '待處理',
-  awaiting_collection: '待查收',
-  completed: '已完成',
-  rejected: '已退件',
 };
 
 /**
@@ -353,7 +347,7 @@ export function MemberManagement({
                     <li key={w.id} className="rounded-md border p-2">
                       <div className="flex justify-between">
                         <span>{w.amount.toLocaleString()} P</span>
-                        <span>{WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}</span>
+                        <span>{withdrawalStatusLabel(w.status)}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         申請 {formatTwTimestamp(w.requestedAt)}
