@@ -260,9 +260,8 @@ export function MemberDetailSheet({
           </Section>
 
           {/* 管理。**所有會改變狀態的動作都在這裡**，放在最底、以分隔線隔開——位置要讓人
-              「走到」而不是「路過」。兩列同構：左邊說現況、右邊是切換鍵。
-              按鈕三分法（ui-ux-guidelines §12.11）：暫停、撤銷是破壞性 → 紅框字；恢復、
-              設為管理員是流程起點 → 次要。面板內零顆實心鈕，後台沒有引導鈕。 */}
+              「走到」而不是「路過」。兩列同構：左邊說現況、右邊是切換鍵；外觀依
+              ui-ux-guidelines §12.11 按鈕三分法。 */}
           <Section title="管理">
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">

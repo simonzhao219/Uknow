@@ -21,7 +21,11 @@ import { StatusCallout } from '../ui/status-callout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
-import { MemberCardList } from './MemberCardList';
+import {
+  MemberCardList,
+  findMemberDetailTrigger,
+  memberDetailTriggerProps,
+} from './MemberCardList';
 import { MemberDetailSheet } from './MemberDetailSheet';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -73,9 +77,8 @@ function needsConfirm(action: MemberAction) {
  * 確認框文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是這件事會對
  * 那個人造成什麼，不是重複一次自己剛按了什麼。
  *
- * `destructive`：確認鈕跟觸發鈕同類（ui-ux-guidelines §12.11）。暫停、撤銷的觸發鈕
- * 是紅框字，確認鈕就是紅實心；授予的觸發鈕是次要，確認鈕維持墨黑。顏色看的是對那個
- * 人造成的失去，資料層可不可逆只決定要不要確認框（§11.3），不決定顏色。
+ * `destructive`：確認鈕要不要紅實心——規則見 ui-ux-guidelines §12.11「確認鈕跟觸發鈕
+ * 同類」。這裡是它在會員管理的唯一落點。
  */
 function actionCopy(action: MemberAction, name: string) {
   if (action.kind === 'admin') {
@@ -153,6 +156,11 @@ export function MemberManagement({
   // 開出目前面板的那顆「查看」屬於哪一列（關閉時把焦點還給它）。
   const openedFromId = useRef<string | null>(null);
   const isLatest = (seq: number) => seq === detailSeq.current;
+  // 序號的遞增與在途 id 的進出收在這幾個 helper：「查看」、關閉與 runAction 共用。
+  const bumpSeq = () => ++detailSeq.current;
+  const startOpening = (id: string) =>
+    setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
+  const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
   const errorRef = useRef<HTMLDivElement>(null);
 
   // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
@@ -185,10 +193,10 @@ export function MemberManagement({
   const isLoading = list.isLoading;
 
   const openDetail = async (id: string) => {
-    const seq = ++detailSeq.current;
+    const seq = bumpSeq();
     setActionError(null);
     setPanelError(null);
-    setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
+    startOpening(id);
     try {
       const detail = await loadMemberDetail(id);
       if (isLatest(seq)) {
@@ -198,12 +206,12 @@ export function MemberManagement({
     } catch (err) {
       if (isLatest(seq)) setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
     } finally {
-      setOpeningIds((prev) => prev.filter((x) => x !== id));
+      settleOpening(id);
     }
   };
 
   const closeDetail = () => {
-    detailSeq.current += 1;
+    bumpSeq();
     setDetailFor(null);
   };
 
@@ -212,7 +220,7 @@ export function MemberManagement({
   const returnFocusToTrigger = (event: Event) => {
     const id = openedFromId.current;
     if (!id) return;
-    const trigger = document.querySelector<HTMLElement>(`[data-member-detail-trigger="${id}"]`);
+    const trigger = findMemberDetailTrigger(id);
     if (!trigger) return;
     event.preventDefault();
     trigger.focus();
@@ -526,7 +534,7 @@ export function MemberManagement({
                             size="sm"
                             tone="secondary"
                             aria-label={`查看 ${member.name ?? member.email} 的詳情`}
-                            data-member-detail-trigger={member.id}
+                            {...memberDetailTriggerProps(member.id)}
                             loading={openingIds.includes(member.id)}
                             onClick={() => openDetail(member.id)}
                           >

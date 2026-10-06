@@ -17,6 +17,16 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
  * 的對照組。這裡要守的是**資訊量**：`plan.md` §4.1 明列的欄位一項都不能少。
  */
 
+/**
+ * 「查看」觸發鈕的標記：父層關閉面板時用它把焦點還給開出面板的那顆鈕（載入期間鈕
+ * 被停用，Radix 記不到它）。桌機表格與手機卡片兩處都掛同一個，只在這裡定義一次。
+ */
+export const memberDetailTriggerProps = (id: string) => ({ 'data-member-detail-trigger': id });
+
+export function findMemberDetailTrigger(id: string) {
+  return document.querySelector<HTMLElement>(`[data-member-detail-trigger="${id}"]`);
+}
+
 interface MemberCardListProps {
   members: AdminMember[];
   onOpenDetail: (id: string) => void;
@@ -79,7 +89,7 @@ export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCard
                     tone="secondary"
                     className="px-2"
                     aria-label={`查看 ${member.name ?? member.email} 的詳情`}
-                    data-member-detail-trigger={member.id}
+                    {...memberDetailTriggerProps(member.id)}
                     loading={openingIds.includes(member.id)}
                     onClick={() => onOpenDetail(member.id)}
                   >

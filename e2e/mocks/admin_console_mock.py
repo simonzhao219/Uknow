@@ -118,6 +118,7 @@ def build_worst_case_member_detail(*, name: str, email: str, points: int) -> dic
         "completed",
         "rejected",
     ]
+    # 真端點依 requested_at **降冪**（新的在上，admin_member_detail SQL 的 order by）。
     withdrawals = [
         build_admin_member_withdrawal(
             id=f"wd-{i}",
@@ -129,7 +130,7 @@ def build_worst_case_member_detail(*, name: str, email: str, points: int) -> dic
             completedAt=f"2026-08-{i + 2:02d}T09:00:00.000Z" if status == "completed" else None,
         )
         for i, status in enumerate(statuses)
-    ]
+    ][::-1]
     return build_admin_member_detail(
         name=name,
         email=email,

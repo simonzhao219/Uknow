@@ -330,7 +330,7 @@ Deno 測試（supabase/functions/api/*.test.ts）先紅後綠，前端 npm run c
 規劃完跑 /review-plan 後停等我審。
 ```
 
-**S4**（2026-10-05 依 S3 收尾狀態改寫為八條）：
+**S4**（2026-10-05 依 S3 收尾狀態改寫為八條；2026-10-06 註：區塊命名與順序已依業主裁決 Q1／D2 調整，以 plan.md §3 A3 為準）：
 ```
 讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md
 （母計畫；S4 列、遺留事項、plan.md §2.3 與 §3 A3 尤其要看）。

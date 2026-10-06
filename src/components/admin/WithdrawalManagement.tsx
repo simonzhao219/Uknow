@@ -9,7 +9,11 @@ import { Checkbox } from '../ui/checkbox';
 import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
 import { WithdrawalFundingFields } from './WithdrawalFundingFields';
-import { WithdrawalStatusBadge, withdrawalStatusLabel } from './WithdrawalStatusBadge';
+import {
+  WITHDRAWAL_STATUS_VALUES,
+  WithdrawalStatusBadge,
+  withdrawalStatusLabel,
+} from './WithdrawalStatusBadge';
 import { Skeleton } from '../ui/skeleton';
 import { Textarea } from '../ui/textarea';
 import { FieldError } from '../../utils/formHelpers';
@@ -724,10 +728,11 @@ export function WithdrawalManagement({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部狀態</SelectItem>
-                  <SelectItem value="pending">待處理</SelectItem>
-                  <SelectItem value="awaiting_collection">待查收</SelectItem>
-                  <SelectItem value="completed">已完成</SelectItem>
-                  <SelectItem value="rejected">已退件</SelectItem>
+                  {WITHDRAWAL_STATUS_VALUES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {withdrawalStatusLabel(status)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             }
@@ -801,7 +806,6 @@ export function WithdrawalManagement({
               onComplete={setCompleteTarget}
               processingId={processingId}
               actionsDisabled={isExporting}
-              statusBadge={(status) => <WithdrawalStatusBadge status={status} />}
               formatAmount={twd}
             />
           ) : (
