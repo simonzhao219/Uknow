@@ -600,3 +600,207 @@ describe('MemberManagement 手機版', () => {
     expect(within(card).getByText('0912345678')).toBeTruthy();
   });
 });
+
+// --- 「查看」→ 詳情面板（S4 階段 2） ------------------------------------------
+//
+// 點「查看」到面板出現之間要有回饋，而且**只有最後一次意圖算數**：
+//   - 在途的那一列轉圈、停用，同列連點不重送；
+//   - 他列照常可點，誰最後被點，面板就開誰——較早的回應晚到，不得蓋掉面板、
+//     不得把自己的錯誤印出來；
+//   - 動作後的重讀與「查看」共用同一個序號：面板關掉之後，晚到的重讀不得把它
+//     重新打開，也不得把別人的面板換掉。
+// 取詳情失敗時錯誤框要捲進視窗並取得焦點——手機上停在長列表深處按「查看」，
+// 錯誤若印在畫面外，使用者看到的就是「按了沒反應」。
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const TWO_MEMBERS = page({
+  members: [member(), member({ id: 'm2', name: '林小美', email: 'lin@b.c' })],
+});
+
+function viewButton(name: string) {
+  // 面板開著時 Radix 會把列表設成 aria-hidden，所以要 hidden: true 才找得到。
+  return screen.getByRole('button', { name: `查看 ${name} 的詳情`, hidden: true });
+}
+
+describe('MemberManagement 查看與請求順序', () => {
+  it('取詳情期間該列的查看鈕轉圈且停用，連點不重送', async () => {
+    const pending = deferred<AdminMemberDetail>();
+    const load = vi.fn(() => pending.promise);
+    renderConsole({ loadMemberDetail: load });
+
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const btn = viewButton('陳大文');
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(btn);
+    expect(load).toHaveBeenCalledTimes(1);
+
+    pending.resolve(detail());
+    await screen.findByRole('dialog');
+  });
+
+  it('取詳情期間報讀器聽得到正在讀取誰', async () => {
+    const pending = deferred<AdminMemberDetail>();
+    renderConsole({ loadMemberDetail: () => pending.promise });
+
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const status = screen.getByText('正在讀取 陳大文 的詳情');
+    expect(status.closest('[role="status"]')).toBeTruthy();
+    pending.resolve(detail());
+    await screen.findByRole('dialog');
+  });
+
+  it('A 在途時點 B、B 先回 A 後失敗時，開 B 且不印 A 的錯誤', async () => {
+    const a = deferred<AdminMemberDetail>();
+    const b = deferred<AdminMemberDetail>();
+    renderConsole({
+      loadMembers: async () => TWO_MEMBERS,
+      loadMemberDetail: (id) => (id === 'm1' ? a.promise : b.promise),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    fireEvent.click(viewButton('林小美'));
+    b.resolve(detail({ id: 'm2', name: '林小美', email: 'lin@b.c' }));
+    const panel = await screen.findByRole('dialog');
+    a.reject(new Error('A 的錯誤'));
+
+    await waitFor(() => expect(viewButton('陳大文').hasAttribute('disabled')).toBe(false));
+    expect(within(panel).getByRole('heading', { name: '林小美' })).toBeTruthy();
+    expect(screen.queryByText('A 的錯誤')).toBeNull();
+  });
+
+  it('A 在途時點 B、B 先回 A 後成功時，面板仍是 B', async () => {
+    const a = deferred<AdminMemberDetail>();
+    const b = deferred<AdminMemberDetail>();
+    renderConsole({
+      loadMembers: async () => TWO_MEMBERS,
+      loadMemberDetail: (id) => (id === 'm1' ? a.promise : b.promise),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    fireEvent.click(viewButton('林小美'));
+    b.resolve(detail({ id: 'm2', name: '林小美', email: 'lin@b.c' }));
+    const panel = await screen.findByRole('dialog');
+    a.resolve(detail());
+
+    await waitFor(() => expect(viewButton('陳大文').hasAttribute('disabled')).toBe(false));
+    expect(within(panel).getByRole('heading', { name: '林小美' })).toBeTruthy();
+  });
+
+  it('動作後重讀途中關掉面板時，重讀回來不會把面板重新打開', async () => {
+    const reread = deferred<AdminMemberDetail>();
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(detail({ suspended: true }))
+      .mockReturnValueOnce(reread.promise);
+    renderConsole({ loadMemberDetail: load });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    reread.resolve(detail({ suspended: false }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('關掉 A 後開 B，A 的重讀晚到不會把 B 的面板換掉', async () => {
+    const reread = deferred<AdminMemberDetail>();
+    let aCalls = 0;
+    renderConsole({
+      loadMembers: async () => TWO_MEMBERS,
+      loadMemberDetail: async (id) => {
+        if (id === 'm2') return detail({ id: 'm2', name: '林小美', email: 'lin@b.c' });
+        aCalls += 1;
+        return aCalls === 1 ? detail({ suspended: true }) : reread.promise;
+      },
+    });
+
+    const panelA = await openDetail();
+    fireEvent.click(within(panelA).getByRole('button', { name: '恢復' }));
+    await waitFor(() => expect(aCalls).toBe(2));
+    fireEvent.keyDown(panelA, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(viewButton('林小美'));
+    const panelB = await screen.findByRole('dialog');
+    reread.resolve(detail({ suspended: false }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(within(panelB).getByRole('heading', { name: '林小美' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '陳大文' })).toBeNull();
+  });
+
+  it('取詳情失敗時錯誤框被捲進視窗並取得焦點', async () => {
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderConsole({
+        loadMemberDetail: async () => {
+          throw new Error('查無此會員');
+        },
+      });
+      fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+      const alert = await screen.findByRole('alert');
+      await waitFor(() => expect(document.activeElement?.contains(alert)).toBe(true));
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(viewButton('陳大文').hasAttribute('disabled')).toBe(false);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('面板開啟時焦點落在姓名標題，不是畫面外的管理鈕', async () => {
+    renderConsole();
+    const panel = await openDetail();
+    const title = within(panel).getByRole('heading', { name: '陳大文' });
+    await waitFor(() => expect(document.activeElement).toBe(title));
+  });
+
+  it('面板關閉後焦點回到同一位會員的查看鈕', async () => {
+    renderConsole({ loadMembers: async () => TWO_MEMBERS });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 林小美/ }));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(viewButton('林小美')));
+  });
+
+  async function openDetail() {
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    return screen.findByRole('dialog');
+  }
+});
+
+describe('MemberManagement 手機版的查看回饋', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('卡片上的查看鈕在取詳情期間轉圈且停用，連點不重送', async () => {
+    const pending = deferred<AdminMemberDetail>();
+    const load = vi.fn(() => pending.promise);
+    renderConsole({ loadMemberDetail: load });
+
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    fireEvent.click(within(card).getByRole('button', { name: /查看 陳大文/ }));
+    const btn = within(card).getByRole('button', { name: /查看 陳大文/ });
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(btn);
+    expect(load).toHaveBeenCalledTimes(1);
+
+    pending.resolve(detail());
+    await screen.findByRole('dialog');
+  });
+});
