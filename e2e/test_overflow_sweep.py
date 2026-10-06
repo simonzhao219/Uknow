@@ -51,10 +51,14 @@ REPORT_DIR = Path(__file__).parent / "test-results"
 
 # --- 「最壞但可達」測資 -------------------------------------------------------
 
-# 服務者名稱與真實姓名都硬上限 10 字（CreateServiceProvider.tsx:297、
+# 服務者名稱與中文真實姓名都硬上限 10 字（CreateServiceProvider.tsx:297、
 # formDraft.ts:37）。10 個中日韓字在 text-3xl 下比 10 個拉丁字寬得多，
 # 所以中文版才是這裡的最壞情況。
 NAME_CJK_10 = "專業美髮師小美工作室"
+# 外文真實姓名上限是 50 字（profileValidation.ts 的 NAME_MAX_LENGTH.foreign），格式只要
+# 「大寫開頭的英文字、以單一空白分隔」——一個 50 字、沒有空白可斷的姓氏是可達的，在
+# 會員詳情 text-lg 的標題裡比任何 10 個中文字都寬。17 個全形字反而不可達。
+NAME_FOREIGN_50 = "Wolfeschlegelsteinhausenbergerdorffvoralternwareng"
 # Email 來自 Supabase Auth，前端沒有、也不該有長度上限。刻意不含連字號：
 # Chrome 只在 "-" 與 "/" 處斷長字，有連字號的 Email 會僥倖不溢出。
 LONG_EMAIL = "chienmingchangservice@uknowplatform.com.tw"
@@ -340,7 +344,7 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     route_admin_member_detail(
         context,
         "mem-admin-1",
-        build_worst_case_member_detail(name=NAME_CJK_10, email=LONG_EMAIL, points=BIG_POINTS),
+        build_worst_case_member_detail(name=NAME_FOREIGN_50, email=LONG_EMAIL, points=BIG_POINTS),
     )
     # 空清單只會渲染「尚無公告」——公告列一列裡有標題＋三顆 Badge＋刪除鍵
     # （SystemNotifications.tsx:242-266），不給資料等於那一列從未被量過。

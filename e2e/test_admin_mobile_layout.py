@@ -39,7 +39,11 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
+from mocks.admin_console_mock import build_admin_member_detail, route_admin_member_detail
+from mocks.backend_api_mock import build_admin_member
 from test_overflow_sweep import (
+    LONG_EMAIL,
+    NAME_CJK_10,
     _open_id_card_dialog,
     _open_member_detail_sheet,
     _open_tab,
@@ -555,10 +559,51 @@ def test_toolbar_labels_are_not_squeezed_on_touch_tablet(admin_tablet_touch):
 # --- 會員詳情 Sheet（S4／A3） ------------------------------------------------
 #
 # 375px 下 Sheet 全螢幕、身分卡固定在上、分區內文捲動。測資是 `_setup_admin` 的
-# 最壞資料（長姓名、無空白長 Email、停權＋管理員、10 筆提領含長退件理由、證件
-# 退回長理由）——短測資下「間距 0」「沒有橫向溢出」在改版前就是綠的。
+# 最壞資料（50 字無空白外文姓名、無空白長 Email、停權＋管理員、10 筆提領含長備註、
+# 證件退回長理由）——短測資下「間距 0」「沒有橫向溢出」在改版前就是綠的。
 
 MEMBER_SHEET_SECTIONS = ("帳號", "點數", "近期提領", "推薦關係", "敏感資料", "管理")
+
+# 身分卡固定在上、不捲動，高度直接從內文的可視範圍扣掉（業主裁決 C：≤ 視窗 25%）。
+MAX_IDENTITY_CARD_RATIO = 0.25
+
+# 標題文字的實際右緣。h2 是區塊元素，盒子右緣只是內距邊界、永遠在關閉鈕左邊——量盒子
+# 量不到「字有沒有鑽到關閉鈕底下」，要量文字本身（Range 的每一行）。
+_TITLE_TEXT_RIGHT = """(sel) => {
+  const title = document.querySelector(sel)?.querySelector('h2');
+  if (!title) return null;
+  const range = document.createRange();
+  range.selectNodeContents(title);
+  const rects = [...range.getClientRects()];
+  return { right: Math.max(...rects.map((r) => r.right)), lines: new Set(rects.map((r) => Math.round(r.top))).size };
+}"""
+
+
+def _assert_title_clears_close_button(page):
+    dialog = page.locator(DIALOG)
+    text = page.evaluate(_TITLE_TEXT_RIGHT, DIALOG)
+    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
+    assert text is not None and close is not None, "量不到標題文字或關閉鈕"
+    assert text["right"] <= close["x"], (
+        f"標題文字右緣 {text['right']:.0f}px 超過關閉鈕左緣 {close['x']:.0f}px"
+    )
+    return text
+
+
+def _assert_identity_card_fits(page):
+    measured = page.evaluate(
+        """(sel) => {
+          const header = document.querySelector(sel)?.querySelector('[data-slot="sheet-header"]');
+          return header ? { height: header.getBoundingClientRect().height, viewport: window.innerHeight } : null;
+        }""",
+        DIALOG,
+    )
+    assert measured is not None, "找不到身分卡（sheet-header）"
+    limit = measured["viewport"] * MAX_IDENTITY_CARD_RATIO
+    assert measured["height"] <= limit, (
+        f"身分卡高 {measured['height']:.0f}px，超過視窗 {measured['viewport']}px 的 "
+        f"{MAX_IDENTITY_CARD_RATIO:.0%}（{limit:.0f}px）"
+    )
 
 
 @pytest.fixture
@@ -618,14 +663,20 @@ def test_member_detail_sheet_has_no_horizontal_overflow_at_375px(member_sheet_at
 
 @pytest.mark.compatibility
 def test_member_detail_sheet_title_clears_the_close_button_at_375px(member_sheet_at_375):
-    """長姓名不得鑽到右上角關閉鈕底下（關閉鈕實占右緣約 12–62px）。"""
-    dialog = member_sheet_at_375.locator(DIALOG)
-    title = dialog.get_by_role("heading", level=2).bounding_box()
-    close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
-    assert title is not None and close is not None, "量不到標題或關閉鈕"
-    assert title["x"] + title["width"] <= close["x"], (
-        f"標題右緣 {title['x'] + title['width']:.0f}px 超過關閉鈕左緣 {close['x']:.0f}px"
-    )
+    """長姓名不得鑽到右上角關閉鈕底下（關閉鈕實占右緣約 12–62px）。
+
+    前提是姓名真的長到要折行——不折行時這條量不到 `wrap-anywhere` 與 `pr-16`。
+    """
+    text = _assert_title_clears_close_button(member_sheet_at_375)
+    assert text["lines"] >= 2, "測資姓名沒有折行，量不到長姓名的避讓"
+
+
+@pytest.mark.compatibility
+def test_member_detail_identity_card_stays_within_a_quarter_of_the_screen_at_375px(
+    member_sheet_at_375,
+):
+    """身分卡固定不捲，最壞資料下也不得吃掉超過視窗 25%（業主裁決 C）。"""
+    _assert_identity_card_fits(member_sheet_at_375)
 
 
 @pytest.mark.compatibility
@@ -636,7 +687,58 @@ def test_member_detail_sheet_close_button_stays_put_when_scrolled_at_375px(membe
     manage = dialog.get_by_role("heading", name="管理", exact=True)
     manage.scroll_into_view_if_needed()
     settle(page)
+    scrolled = page.evaluate(
+        """(sel) => document.querySelector(sel)?.querySelector('section[aria-label="詳情內容"]')?.scrollTop ?? null""",
+        DIALOG,
+    )
+    assert scrolled is not None and scrolled > 0, (
+        f"內文沒有捲動（scrollTop={scrolled}）——測資不夠長，這條量不到東西"
+    )
     close = dialog.get_by_role("button", name="關閉", exact=True).bounding_box()
     title = dialog.get_by_role("heading", level=2).bounding_box()
+    heading = manage.bounding_box()
+    viewport_height = page.evaluate("() => window.innerHeight")
     assert close is not None and close["y"] >= 0, f"捲到底後關閉鈕被捲出畫面（{close}）"
     assert title is not None and title["y"] >= 0, f"捲到底後身分卡被捲出畫面（{title}）"
+    assert heading is not None and heading["y"] + heading["height"] <= viewport_height, (
+        f"捲動後「管理」標題底緣 {heading and heading['y'] + heading['height']:.0f}px "
+        f"仍在視窗 {viewport_height}px 之外"
+    )
+
+
+# 沒有姓名的會員：profiles.name 是 `not null default ''`，註冊 Step 2 之前是空字串。
+# 標題改用 Email——無空白長 Email 要在關閉鈕左邊折行，身分卡仍要守 25%。
+@pytest.fixture
+def nameless_member_sheet_at_375(page, context, api_mock, rest_mock):
+    page.set_viewport_size(MOBILE_VIEWPORT)
+    _setup_admin(context, api_mock, rest_mock)
+    # 覆寫列表後要重掛要點開的那位的詳情（列表的尾綴 glob 也吃得下詳情 URL，後掛的贏）。
+    api_mock.set_admin_members(
+        [
+            build_admin_member(name=NAME_CJK_10, email="first@example.com", listingCount=3),
+            build_admin_member(name="", email=LONG_EMAIL, id="mem-admin-2"),
+        ]
+    )
+    route_admin_member_detail(
+        context,
+        "mem-admin-2",
+        build_admin_member_detail(id="mem-admin-2", name="", email=LONG_EMAIL),
+    )
+    page.goto("/admin")
+    settle(page)
+    page.get_by_role("tab", name="會員管理").click()
+    settle(page)
+    page.get_by_role("button", name=f"查看 {LONG_EMAIL} 的詳情").click()
+    expect(page.locator(DIALOG)).to_be_visible()
+    settle(page)
+    return page
+
+
+@pytest.mark.compatibility
+def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sheet_at_375):
+    """無名會員的標題就是 Email，文字不鑽到關閉鈕底下，身分卡守 25%。"""
+    page = nameless_member_sheet_at_375
+    title = page.locator(DIALOG).get_by_role("heading", level=2)
+    expect(title).to_have_text(LONG_EMAIL)
+    _assert_title_clears_close_button(page)
+    _assert_identity_card_fits(page)

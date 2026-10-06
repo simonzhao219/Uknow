@@ -103,20 +103,24 @@ def build_worst_case_member_detail(*, name: str, email: str, points: int) -> dic
     """會員詳情 Sheet 的**最壞但可達**測資：375px 版面量測與溢版巡檢共用。
 
     長姓名、無空白長 Email、停權＋管理員（身分卡徽章最多）、證件退回＋長理由、
-    10 筆提領（SQL 上限，會出尾註）含長退件理由與待查收／已完成的時間列、
+    10 筆提領（SQL 上限，會出尾註）含長備註與待查收／已完成的時間列、
     大額點數。短測資下「間距 0」「沒有橫向溢出」在改版前就是綠的，量不到東西。
+
+    `note` 是該筆最新事件的備註，**任何狀態都可能有**：退件理由、匯款備註、代為完成
+    的必填原因。代為完成（pending 直接標已完成）沒有匯款那一步，`processedAt` 是 null。
     """
-    statuses = [
-        "rejected",
-        "awaiting_collection",
-        "completed",
-        "pending",
-        "rejected",
-        "completed",
-        "awaiting_collection",
-        "pending",
-        "completed",
-        "rejected",
+    # (狀態, 有沒有長備註, 是不是代為完成)
+    rows = [
+        ("rejected", True, False),
+        ("awaiting_collection", True, False),
+        ("completed", True, True),
+        ("pending", False, False),
+        ("rejected", True, False),
+        ("completed", False, False),
+        ("awaiting_collection", False, False),
+        ("pending", False, False),
+        ("completed", True, False),
+        ("rejected", True, False),
     ]
     # 真端點依 requested_at **降冪**（新的在上，admin_member_detail SQL 的 order by）。
     withdrawals = [
@@ -124,12 +128,16 @@ def build_worst_case_member_detail(*, name: str, email: str, points: int) -> dic
             id=f"wd-{i}",
             amount=8000,
             status=status,
-            note=_LONG_NOTE if status == "rejected" else None,
+            note=_LONG_NOTE if long_note else None,
             requestedAt=f"2026-08-{i + 1:02d}T08:30:00.000Z",
-            processedAt=None if status == "pending" else f"2026-08-{i + 1:02d}T10:00:00.000Z",
+            processedAt=(
+                None
+                if status == "pending" or proxy_completed
+                else f"2026-08-{i + 1:02d}T10:00:00.000Z"
+            ),
             completedAt=f"2026-08-{i + 2:02d}T09:00:00.000Z" if status == "completed" else None,
         )
-        for i, status in enumerate(statuses)
+        for i, (status, long_note, proxy_completed) in enumerate(rows)
     ][::-1]
     return build_admin_member_detail(
         name=name,
