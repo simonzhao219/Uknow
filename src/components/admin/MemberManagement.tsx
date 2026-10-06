@@ -72,6 +72,10 @@ function needsConfirm(action: MemberAction) {
 /**
  * 確認框文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是這件事會對
  * 那個人造成什麼，不是重複一次自己剛按了什麼。
+ *
+ * `destructive`：確認鈕跟觸發鈕同類（ui-ux-guidelines §12.11）。暫停、撤銷的觸發鈕
+ * 是紅框字，確認鈕就是紅實心；授予的觸發鈕是次要，確認鈕維持墨黑。顏色看的是對那個
+ * 人造成的失去，資料層可不可逆只決定要不要確認框（§11.3），不決定顏色。
  */
 function actionCopy(action: MemberAction, name: string) {
   if (action.kind === 'admin') {
@@ -79,18 +83,23 @@ function actionCopy(action: MemberAction, name: string) {
       ? {
           title: '授予管理員權限？',
           confirm: '確認授予',
+          destructive: false,
           body: `${name} 將可存取平台管理後台，並讀取全站會員的身分證字號與收款帳號。權限隨時可以撤回，但他在這段期間看過的資料無法追溯撤回。`,
         }
       : {
           title: '撤銷管理員權限？',
           confirm: '確認撤銷',
+          destructive: true,
           body: `${name} 將立即失去平台管理後台的全部存取權（提領作業、會員管理、證件審核）。`,
         };
   }
   return {
     title: '暫停這個帳號？',
     confirm: '確認暫停',
-    body: `${name} 的刊登將立即隱藏，且無法提領點數或領取免費續約 credit。會員區瀏覽不受影響，解除暫停後即恢復。`,
+    destructive: true,
+    // 後果與規格書 §5.2 一致：停權會員進不了會員區（RequireMembershipRoute 的
+    // suspendedBlocked 一律顯示「帳號已停權」），不只是凍結提領與刊登。
+    body: `${name} 的刊登將立即隱藏，無法提領點數或領取免費續約 credit，也無法進入會員區。解除暫停後即恢復。`,
   };
 }
 
@@ -286,6 +295,7 @@ export function MemberManagement({
                   <AlertDialogFooter>
                     <AlertDialogCancel>取消</AlertDialogCancel>
                     <AlertDialogAction
+                      variant={copy.destructive ? 'destructive' : undefined}
                       onClick={() => {
                         const action = pendingAction;
                         setPendingAction(null);
