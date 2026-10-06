@@ -6,7 +6,6 @@ import { Input } from '../ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Search, Shield, UserX, Users } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,13 +18,12 @@ import {
 } from '../ui/alert-dialog';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import { StatusCallout } from '../ui/status-callout';
-import { formatTwTimestamp } from '../../utils/twDate';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
+import { MemberDetailSheet } from './MemberDetailSheet';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
-import { withdrawalStatusLabel } from './WithdrawalStatusBadge';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
 import type {
@@ -34,7 +32,6 @@ import type {
   AdminMemberDetail,
   AdminMembersResponse,
 } from '@contract';
-import { BreakableEmail } from '../common/BreakableEmail';
 
 const PAGE_SIZE = 50;
 
@@ -56,19 +53,12 @@ export interface MemberManagementProps {
 
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
 
-const ID_STATUS_LABEL: Record<string, string> = {
-  none: '未上傳',
-  pending: '審核中',
-  approved: '已通過',
-  rejected: '已退回',
-};
-
 /**
  * 詳情面板裡會改變會員狀態的動作。兩種動作**共用同一條路徑**——同一個確認框、
  * 同一個執行器、同一處錯誤顯示。相同的東西用相同的邏輯，才不會日後其中一個
  * 被改了另一個沒跟上（改版前正是如此：停權在列上、管理員在面板裡，兩套流程）。
  */
-type MemberAction = { kind: 'admin' | 'suspend'; next: boolean };
+export type MemberAction = { kind: 'admin' | 'suspend'; next: boolean };
 
 /**
  * 判準是**逐方向看破壞力**，不是逐動作。四個方向裡只有「恢復」是 ~0——
@@ -260,148 +250,14 @@ export function MemberManagement({
         </AlertDialog>
       )}
 
-      {/* 詳情面板。§1.1 的頭號客服情境是「我提領怎麼還沒到」——近期提領記錄
-          （含退件理由）是這個面板存在的理由，不是附加資訊。
-          身分證與銀行帳號是**遮罩值**：需要全碼時回提領作業台看，那裡因匯款
-          作業需要而維持完整值。查詢台是客服日常翻閱的地方，翻閱不需要全碼。 */}
       {detailFor && (
-        <Sheet open onOpenChange={() => setDetailFor(null)}>
-          <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle>{detailFor.name ?? detailFor.email}</SheetTitle>
-              <SheetDescription>
-                <BreakableEmail email={detailFor.email} />
-              </SheetDescription>
-            </SheetHeader>
-
-            {/* P9:「收款帳號」這類 `銀行代號 / 帳號` 的值在半寬欄裡會折行破碎。 */}
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4 text-sm">
-              {/* 電話:詳情面板原本就缺這一欄（桌面只在表格列上有）。手機是
-                  JS 擇一渲染，表格根本不掛 DOM——沒補這欄的話，admin 用電話
-                  搜到人之後在手機上完全看不到號碼，也無法回撥。 */}
-              <div>
-                <dt className="text-muted-foreground">電話</dt>
-                <dd className="font-mono">{detailFor.phone ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">會籍</dt>
-                <dd>{detailFor.accountStatus === 'active' ? '有效會員' : '已失效'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">到期日</dt>
-                <dd>{detailFor.endDate ? formatTwTimestamp(detailFor.endDate) : '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">可提領點數</dt>
-                <dd>{detailFor.availablePoints.toLocaleString()} P</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">已提領</dt>
-                <dd>{detailFor.withdrawnPoints.toLocaleString()} P</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">推薦人</dt>
-                <dd>{detailFor.referrerName ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">直接推薦</dt>
-                <dd>{detailFor.directChildCount} 位</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">證件審核</dt>
-                <dd>{ID_STATUS_LABEL[detailFor.idVerificationStatus]}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">刊登數</dt>
-                <dd>{detailFor.listingCount}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">身分證字號</dt>
-                <dd className="font-mono">{detailFor.idNumber ?? '未設定'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">收款帳號</dt>
-                <dd className="font-mono">
-                  {detailFor.bankCode ?? '—'} / {detailFor.bankAccount ?? '未設定'}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">近期提領記錄</h3>
-              {detailFor.recentWithdrawals.length === 0 ? (
-                <p className="text-sm text-muted-foreground">尚無提領記錄</p>
-              ) : (
-                <ul className="space-y-2 text-sm">
-                  {detailFor.recentWithdrawals.map((w) => (
-                    <li key={w.id} className="rounded-md border p-2">
-                      <div className="flex justify-between">
-                        <span>{w.amount.toLocaleString()} P</span>
-                        <span>{withdrawalStatusLabel(w.status)}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        申請 {formatTwTimestamp(w.requestedAt)}
-                      </p>
-                      {/* 客服要的就是這一行 */}
-                      {w.note && <p className="text-destructive-subtle-foreground">{w.note}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* 管理。**所有會改變狀態的動作都在這裡**，放在面板最底、以分隔線
-                隔開——位置要讓人「走到」而不是「路過」。兩列同構：左邊說現況、
-                右邊是切換鍵，破壞性方向一律紅字。 */}
-            <div className="mt-6 space-y-4 border-t pt-4">
-              <h3 className="text-sm font-medium">管理</h3>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">
-                  {detailFor.suspended ? '帳號已暫停' : '帳號正常'}
-                </p>
-                <Button
-                  size="sm"
-                  tone="secondary"
-                  className={
-                    detailFor.suspended
-                      ? undefined
-                      : 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
-                  }
-                  onClick={() => requestAction({ kind: 'suspend', next: !detailFor.suspended })}
-                  disabled={processingId === detailFor.id}
-                >
-                  {detailFor.suspended ? '恢復' : '暫停'}
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">
-                  {detailFor.isAdmin ? '目前是平台管理員' : '一般會員'}
-                </p>
-                <Button
-                  size="sm"
-                  tone="secondary"
-                  className={
-                    detailFor.isAdmin
-                      ? 'text-destructive-subtle-foreground hover:text-destructive-subtle-foreground'
-                      : undefined
-                  }
-                  onClick={() => requestAction({ kind: 'admin', next: !detailFor.isAdmin })}
-                  disabled={processingId === detailFor.id}
-                >
-                  {detailFor.isAdmin ? '撤銷管理員' : '設為管理員'}
-                </Button>
-              </div>
-
-              {panelError && (
-                <p role="alert" className="text-sm text-destructive-subtle-foreground">
-                  {panelError}
-                </p>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
+        <MemberDetailSheet
+          detail={detailFor}
+          processing={processingId === detailFor.id}
+          panelError={panelError}
+          onRequestAction={requestAction}
+          onClose={() => setDetailFor(null)}
+        />
       )}
 
       <TabsContent value="members" className="space-y-3 sm:space-y-6">
