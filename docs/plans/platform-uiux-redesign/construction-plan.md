@@ -389,19 +389,60 @@ Deno 測試（supabase/functions/api/*.test.ts）先紅後綠，前端 npm run c
 模型 Sonnet。規劃完跑 /review-plan 後停等我審。
 ```
 
-**S5**（模型選 Opus 起手）：
+**S5**（模型選 Opus 起手；2026-10-06 依 S3／S4 收尾狀態改寫為九條）：
 ```
-讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md
+（母計畫；plan.md §2.5 根因與 §3 A4 四條硬約束、progress 遺留事項
+「S3 審查遺留 → S5」與「S4 遺留」尤其要看）。
 先 git checkout -B feature/admin-data-cache origin/develop
 （web session 預設生在 claude/* 分支，三段式守衛只認 feature/<slug>）。
 執行 S5（工項 A4）：/plan-feature admin-data-cache
-範圍：stale-while-revalidate 模式延伸進 admin 各分頁（切回分頁顯示
-舊資料＋背景刷新），loading 統一為骨架屏。不動 API、不動請求時序、
-不做預載。四條硬約束照 plan.md §3 A4 全文執行，規劃書必須交付：
-(1) 記憶體內快取設計（絕不落 sessionStorage——admin 提領資料含
-未遮罩 PII）；(2) 快取排除清單（即時資料與寫入確認框依據欄位）；
-(3) admin 版 mutation→invalidation 對照表；(4) 對 AdminDashboard 的
-DI 慣例（檔頭註解）的明確裁決。規劃完跑 /review-plan 後停等我審。
+範圍：stale-while-revalidate 模式延伸進 admin 四個分頁（切回分頁瞬間
+顯示舊資料＋背景刷新），loading 統一為骨架屏；不動 API、不動請求時序、
+不做預載；supabase/functions 零變更。與 S6 平行施工：只動
+src/components/admin/** 與 admin 資料層（S6 動前台詳情頁與首頁），
+後合併的 PR 自己 rebase。規劃書必須交代下列九條：
+1) A4 四條硬約束逐條落地：(a) 記憶體內快取，絕不落 sessionStorage／
+   localStorage——admin 提領資料含未遮罩身分證與帳號；附一條守衛測試
+   （grep 或 vitest）釘住。(b) 快取排除清單：系統告警、待審佇列數等
+   即時資料，與寫入確認框依據的欄位（退件／標記已匯款的金額與帳號、
+   停權／授予的現況）——不快取，或開確認框時強制同步 revalidate。
+   (c) admin 版 mutation→invalidation 對照表（比照 DataCacheContext 的
+   MUTATION_GROUPS，不手動散清）：提領狀態變更、批次匯款、停權／授予
+   ／撤銷、證件審核、公告 CRUD、告警處理各自失效哪些 key。(d) 先讀
+   AdminDashboard.tsx 檔頭的 DI 慣例（取數走 AdminDashboard、畫面只吃
+   props），明確裁決「注入式 fetcher 的快取 hook」還是「hook 內含 fetch」，
+   寫清楚取捨與元件測試的替身方式，不默默打破。
+2) 快取生命週期：登出、切換帳號、離開 /admin 時清空（PII 不留在記憶體
+   超過 session）；DataCacheContext 現有 scope 與清除時機可否直接沿用，
+   不行就說明為何另設。
+3) 切回分頁的行為：Radix Tabs 非 active 不掛載（plan.md §2.5）——維持
+   不掛載＋快取水合，或改 forceMount？裁決並說明對首進請求數與記憶體的
+   影響；背景刷新的觸發條件（stale 時間或每次切回）。
+4) 骨架屏統一：四個分頁 loading 都用與內容同形的 Skeleton（§5）；首進
+   才有骨架，切回有舊資料就不換骨架；手動「重新整理」改成背景刷新＋
+   狀態宣告（承接遺留：AdminToolbar 重新整理焦點掉 body、無狀態宣告；
+   SystemAlerts 自刻的重新整理鈕收進 AdminToolbar）。
+5) 承接遺留逐條裁決「本 PR 做／不做（留給誰）」：請求序號收斂成一個
+   hook（usePagedList 加序號、MemberManagement 的 detailSeq 併入，含
+   「重開在途」補讀窗口）；匯出中切分頁雙下載（匯出旗標提升到分頁殼層
+   或匯出期間停用切換）；會員頁載入更多中送搜尋的競態；CSV 匯出失敗改
+   獨立狀態；list.reload() 期間關面板焦點掉 body（SWR 後應自然消失，
+   收尾確認）；「已匯出 N 筆」位移。
+6) 測試：快取行為單元測試（切回命中、stale 背景刷新、mutation 失效、
+   登出清空、排除清單不快取）；e2e 一條「切分頁→切走→切回，第二次不
+   出現骨架」（驗收 3 的機械版）；既有 admin 各分頁測試只增不減。
+7) 定位器契約（S3／S4 的教訓）：先 grep e2e/（含 journey/ 的 admin
+   步驟）與 src/**/*.test.tsx 用 role="status"、骨架、「載入中」定位的
+   地方；骨架與 loading 文案改動要列出會動到的定位器。
+8) 文件：規格書 §13 若描述 loading 行為要同步；ui-ux-guidelines §5 補
+   admin SWR 規則一句、不重複 §13 第 4 條；construction-plan §4.3 驗收 3
+   補可勾清單（含前置條件）；progress S5 列與遺留事項結案；收尾刪
+   docs/plans/admin-data-cache/。
+9) 風險：PII 在記憶體的曝險面（devtools 可讀）與現狀相同、不新增；
+   快取讓 admin 看到過期的寫入依據——排除清單是防線，舉一個反例說明
+   為何那個欄位不能快取。
+規劃用 Opus，實作可切 Sonnet。規劃完跑 /review-plan 後停等我審。
 ```
 
 **S6**：
