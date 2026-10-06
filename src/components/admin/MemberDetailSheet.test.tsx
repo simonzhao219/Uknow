@@ -151,6 +151,11 @@ describe('MemberDetailSheet 帳號與點數', () => {
     expect(within(account).getByText('刊登數')).toBeTruthy();
   });
 
+  it('沒有電話時顯示「—」', () => {
+    const { panel } = renderSheet(detail({ phone: null }));
+    expect(within(section(panel, '帳號')).getByText('—')).toBeTruthy();
+  });
+
   it('暫停時間只在停權時出現', () => {
     const { panel } = renderSheet();
     expect(within(section(panel, '帳號')).queryByText('暫停時間')).toBeNull();
@@ -177,7 +182,8 @@ describe('MemberDetailSheet 近期提領', () => {
     );
     const badge = within(section(panel, '近期提領')).getByText('待查收');
     expect(badge.getAttribute('data-slot')).toBe('badge');
-    expect(badge.className).toContain('bg-warning');
+    // 逐 token 比：子字串 bg-warning 也會命中 bg-warning-subtle。
+    expect(badge.classList.contains('bg-warning')).toBe(true);
   });
 
   it('待查收列有匯款時間、已完成列有完成時間', () => {
@@ -201,6 +207,25 @@ describe('MemberDetailSheet 近期提領', () => {
     const list = section(panel, '近期提領');
     expect(within(list).getByText(/匯款時間 2026\/08\/02/)).toBeTruthy();
     expect(within(list).getByText(/完成時間 2026\/07\/03/)).toBeTruthy();
+  });
+
+  it('匯款時間只在待查收列、完成時間只在已完成列', () => {
+    const { panel } = renderSheet(
+      detail({
+        recentWithdrawals: [
+          withdrawal({ id: 'w1', status: 'pending' }),
+          withdrawal({
+            id: 'w2',
+            status: 'completed',
+            processedAt: '2026-07-02T01:00:00Z',
+            completedAt: '2026-07-03T01:00:00Z',
+          }),
+        ],
+      }),
+    );
+    const list = section(panel, '近期提領');
+    expect(within(list).queryByText(/匯款時間/)).toBeNull();
+    expect(within(list).getAllByText(/完成時間/)).toHaveLength(1);
   });
 
   it('已退件列的備註標成退件理由並用紅字，其他狀態標成備註', () => {
@@ -263,6 +288,11 @@ describe('MemberDetailSheet 推薦關係與敏感資料', () => {
     expect(within(section(approved, '敏感資料')).queryByText('退回理由')).toBeNull();
   });
 
+  it('沒有身分證字號時寫「未設定」', () => {
+    const { panel } = renderSheet(detail({ idNumber: null }));
+    expect(within(section(panel, '敏感資料')).getAllByText('未設定')).toHaveLength(1);
+  });
+
   it('銀行代號與帳號都沒有時只寫一次「未設定」', () => {
     const { panel } = renderSheet(detail({ bankCode: null, bankAccount: null }));
     const sensitive = section(panel, '敏感資料');
@@ -277,6 +307,20 @@ describe('MemberDetailSheet 管理動作只回呼父層', () => {
     fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
     expect(onRequestAction).toHaveBeenCalledWith({ kind: 'suspend', next: true });
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('恢復回呼 suspend＝false 的動作', () => {
+    const { panel, onRequestAction } = renderSheet(
+      detail({ suspended: true, suspendedAt: '2026-07-20T00:00:00Z' }),
+    );
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
+    expect(onRequestAction).toHaveBeenCalledWith({ kind: 'suspend', next: false });
+  });
+
+  it('設為管理員回呼 admin＝true 的動作', () => {
+    const { panel, onRequestAction } = renderSheet();
+    fireEvent.click(within(panel).getByRole('button', { name: '設為管理員' }));
+    expect(onRequestAction).toHaveBeenCalledWith({ kind: 'admin', next: true });
   });
 
   it('撤銷管理員回呼 admin＝false 的動作', () => {

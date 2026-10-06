@@ -740,6 +740,31 @@ describe('MemberManagement 查看與請求順序', () => {
     expect(screen.queryByRole('heading', { name: '陳大文' })).toBeNull();
   });
 
+  it('關掉 A 後開 B，A 的重讀失敗不會把錯誤印進 B 的面板', async () => {
+    const reread = deferred<AdminMemberDetail>();
+    let aCalls = 0;
+    renderConsole({
+      loadMembers: async () => TWO_MEMBERS,
+      loadMemberDetail: async (id) => {
+        if (id === 'm2') return detail({ id: 'm2', name: '林小美', email: 'lin@b.c' });
+        aCalls += 1;
+        return aCalls === 1 ? detail({ suspended: true }) : reread.promise;
+      },
+    });
+
+    const panelA = await openDetail();
+    fireEvent.click(within(panelA).getByRole('button', { name: '恢復' }));
+    await waitFor(() => expect(aCalls).toBe(2));
+    fireEvent.keyDown(panelA, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(viewButton('林小美'));
+    const panelB = await screen.findByRole('dialog');
+    reread.reject(new Error('network'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(within(panelB).queryByText(/重新讀取詳情失敗/)).toBeNull();
+  });
+
   it('取詳情失敗時錯誤框被捲進視窗並取得焦點', async () => {
     const scrollIntoView = vi.fn();
     const original = HTMLElement.prototype.scrollIntoView;
@@ -785,6 +810,24 @@ describe('MemberManagement 查看與請求順序', () => {
 describe('MemberManagement 手機版的查看回饋', () => {
   beforeEach(() => {
     stubMediaQuery(false);
+  });
+
+  // 手機（LINE 內建瀏覽器）是後台與桌機並重的主裝置；焦點還原靠卡片上的觸發鈕
+  // 屬性找回，卡片改版時最容易悄悄斷掉。
+  it('面板關閉後焦點回到卡片上的查看鈕', async () => {
+    renderConsole({ loadMembers: async () => TWO_MEMBERS });
+    const card = await screen.findByRole('group', { name: /林小美/ });
+    fireEvent.click(within(card).getByRole('button', { name: /查看 林小美/ }));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(screen.getByRole('group', { name: /林小美/ })).getByRole('button', {
+          name: /查看 林小美/,
+        }),
+      ),
+    );
   });
 
   it('卡片上的查看鈕在取詳情期間轉圈且停用，連點不重送', async () => {
