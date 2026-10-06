@@ -804,3 +804,103 @@ describe('MemberManagement 手機版的查看回饋', () => {
     await screen.findByRole('dialog');
   });
 });
+
+// --- 管理區與確認框（S4 階段 4） ----------------------------------------------
+//
+// 按鈕三分法（ui-ux-guidelines §12.11）：暫停、撤銷管理員是破壞性 → 紅框字；恢復、
+// 設為管理員是流程起點 → 次要；面板內零顆實心鈕。確認鈕跟觸發鈕同類：紅框字觸發的
+// 確認是紅實心，次要觸發的確認是墨黑。顏色看破壞性，資料層可不可逆只決定要不要
+// 確認框（§11.3）——所以確認授予維持墨黑。
+// 斷言用 classList 逐 token 比對：`hover:bg-destructive-subtle` 也含 `bg-destructive`
+// 這個子字串，用 className.includes 會誤判。
+describe('MemberManagement 管理區與確認框', () => {
+  async function openPanel(d: AdminMemberDetail) {
+    renderConsole({ loadMemberDetail: async () => d });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    return screen.findByRole('dialog');
+  }
+
+  it('暫停與撤銷管理員是紅框字', async () => {
+    const panel = await openPanel(detail({ isAdmin: true }));
+    for (const name of ['暫停', '撤銷管理員']) {
+      const btn = within(panel).getByRole('button', { name });
+      expect(btn.classList.contains('border-destructive-border')).toBe(true);
+      expect(btn.classList.contains('text-destructive-subtle-foreground')).toBe(true);
+    }
+  });
+
+  it('恢復與設為管理員是次要外觀，不帶紅色', async () => {
+    const panel = await openPanel(detail({ suspended: true, isAdmin: false }));
+    for (const name of ['恢復', '設為管理員']) {
+      const btn = within(panel).getByRole('button', { name });
+      expect(btn.classList.contains('bg-card')).toBe(true);
+      // base class 帶 aria-invalid:border-destructive-border，所以逐 token 比，不比子字串。
+      expect(btn.classList.contains('border-destructive-border')).toBe(false);
+      expect(btn.classList.contains('text-destructive-subtle-foreground')).toBe(false);
+    }
+  });
+
+  it('面板內沒有任何實心鈕', async () => {
+    const panel = await openPanel(detail({ isAdmin: true }));
+    const solid = within(panel)
+      .getAllByRole('button')
+      .filter((b) =>
+        ['bg-primary', 'bg-brand', 'bg-destructive'].some((c) => b.classList.contains(c)),
+      );
+    expect(solid.map((b) => b.textContent)).toEqual([]);
+  });
+
+  it('暫停的確認鈕是紅實心', async () => {
+    const panel = await openPanel(detail());
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    const confirm = await screen.findByRole('button', { name: '確認暫停' });
+    expect(confirm.classList.contains('bg-destructive')).toBe(true);
+  });
+
+  it('撤銷管理員的確認鈕是紅實心', async () => {
+    const panel = await openPanel(detail({ isAdmin: true }));
+    fireEvent.click(within(panel).getByRole('button', { name: '撤銷管理員' }));
+    const confirm = await screen.findByRole('button', { name: '確認撤銷' });
+    expect(confirm.classList.contains('bg-destructive')).toBe(true);
+  });
+
+  it('授予管理員的確認鈕維持墨黑，不是紅實心', async () => {
+    const panel = await openPanel(detail({ isAdmin: false }));
+    fireEvent.click(within(panel).getByRole('button', { name: '設為管理員' }));
+    const confirm = await screen.findByRole('button', { name: '確認授予' });
+    expect(confirm.classList.contains('bg-primary')).toBe(true);
+    expect(confirm.classList.contains('bg-destructive')).toBe(false);
+  });
+
+  // 規格書 §5.2：停權會員一律看到「帳號已停權」、進不了會員區（RequireMembershipRoute
+  // 的 suspendedBlocked）。確認框是 admin 判斷後果的依據，寫錯就是讓他低估後果。
+  it('暫停確認框說明停權後進不了會員區', async () => {
+    const panel = await openPanel(detail());
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/無法進入會員區/)).toBeTruthy();
+    expect(within(dialog).queryByText(/會員區瀏覽不受影響/)).toBeNull();
+  });
+
+  // 只有一個請求取整份詳情，所以「區塊各自三態」落地為：動作後重讀失敗只印在管理區，
+  // 其他分區保留上一份資料，不連坐成整面錯誤。
+  it('動作後重讀失敗時錯誤只在管理區，其他分區仍是原資料', async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(detail({ suspended: true }))
+      .mockRejectedValueOnce(new Error('network'));
+    renderConsole({ loadMemberDetail: load });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
+
+    const manage = within(panel).getByRole('region', { name: '管理' });
+    expect(await within(manage).findByText(/重新讀取詳情失敗/)).toBeTruthy();
+    expect(
+      within(within(panel).getByRole('region', { name: '帳號' })).getByText('0912345678'),
+    ).toBeTruthy();
+    expect(
+      within(within(panel).getByRole('region', { name: '推薦關係' })).getByText('王小明'),
+    ).toBeTruthy();
+  });
+});
