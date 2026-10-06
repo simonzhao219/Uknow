@@ -622,15 +622,19 @@ export function WithdrawalManagement({
               <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待處理</dt>
+              <dt className="text-xs text-muted-foreground">{withdrawalStatusLabel('pending')}</dt>
               <dd className="font-bold">{stats.byStatus.pending}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待查收</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('awaiting_collection')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
             </div>
             <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">已完成</dt>
+              <dt className="text-xs text-muted-foreground">
+                {withdrawalStatusLabel('completed')}
+              </dt>
               <dd className="font-bold">{stats.byStatus.completed}</dd>
             </div>
           </dl>
@@ -653,13 +657,17 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待處理</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('pending')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待查收</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('awaiting_collection')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">
                   {stats.byStatus.awaiting_collection}
                 </p>
@@ -667,7 +675,9 @@ export function WithdrawalManagement({
             </Card>
             <Card>
               <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">已完成</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  {withdrawalStatusLabel('completed')}
+                </p>
                 <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
               </CardContent>
             </Card>

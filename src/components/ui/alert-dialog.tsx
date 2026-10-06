@@ -121,8 +121,8 @@ function AlertDialogDescription({
   );
 }
 
-// 確認鈕預設是流程鈕（墨黑）；紅框字觸發的確認（刪除刊登、退回、退件、暫停、撤銷管理員）
-// 傳 variant="destructive" 成紅實心——確認鈕跟觸發鈕同類（ui-ux-guidelines §12.11）。
+// 確認鈕預設是流程鈕（墨黑）；哪些確認傳 variant="destructive" 成紅實心，規則見
+// ui-ux-guidelines §12.11「確認鈕跟觸發鈕同類」。
 function AlertDialogAction({
   className,
   variant,

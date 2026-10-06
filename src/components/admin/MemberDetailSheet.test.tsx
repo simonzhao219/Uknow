@@ -64,7 +64,7 @@ function renderSheet(d: AdminMemberDetail = detail(), onRequestAction = vi.fn())
   render(
     <MemberDetailSheet
       detail={d}
-      processing={false}
+      processingKind={null}
       panelError={null}
       onRequestAction={onRequestAction}
       onClose={() => {}}
@@ -255,10 +255,11 @@ describe('MemberDetailSheet 近期提領', () => {
     const list = section(panel, '近期提領');
     const reason = within(list).getByText(/收款帳號與身分證姓名不符/);
     expect(reason.textContent).toContain('退件理由');
-    expect(reason.className).toContain('text-destructive-subtle-foreground');
+    expect(reason.classList.contains('text-destructive-subtle-foreground')).toBe(true);
     const note = within(list).getByText(/客服代為結案/);
     expect(note.textContent).toContain('備註');
-    expect(note.className).not.toContain('destructive');
+    expect(note.classList.contains('text-destructive-subtle-foreground')).toBe(false);
+    expect(note.classList.contains('text-muted-foreground')).toBe(true);
   });
 
   it('滿 10 筆時加尾註，不指向不存在的搜尋', () => {
@@ -275,7 +276,8 @@ describe('MemberDetailSheet 近期提領', () => {
   it('沒有提領時是一般文字的空態', () => {
     const { panel } = renderSheet();
     const empty = within(section(panel, '近期提領')).getByText('尚無提領記錄');
-    expect(empty.className).not.toContain('destructive');
+    expect(empty.classList.contains('text-destructive-subtle-foreground')).toBe(false);
+    expect(empty.classList.contains('text-muted-foreground')).toBe(true);
   });
 });
 

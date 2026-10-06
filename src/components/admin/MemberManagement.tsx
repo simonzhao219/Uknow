@@ -21,11 +21,8 @@ import { StatusCallout } from '../ui/status-callout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AdminToolbar } from './AdminToolbar';
 import { IdReviewQueue } from './IdReviewQueue';
-import {
-  MemberCardList,
-  findMemberDetailTrigger,
-  memberDetailTriggerProps,
-} from './MemberCardList';
+import { MemberCardList } from './MemberCardList';
+import { findMemberDetailTrigger, memberDetailTriggerProps } from './memberDetailTrigger';
 import { MemberDetailSheet } from './MemberDetailSheet';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -120,7 +117,10 @@ export function MemberManagement({
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  // 送出中的管理動作：哪一位、哪一種（面板用種類決定哪顆鈕轉圈）。
+  const [processing, setProcessing] = useState<{ id: string; kind: MemberAction['kind'] } | null>(
+    null,
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
@@ -165,11 +165,14 @@ export function MemberManagement({
     setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
   const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
   const errorRef = useRef<HTMLDivElement>(null);
-  // 目前開著的面板是哪一位（runAction 的閉包只看得到送出當下的 detailFor）。
+  // 目前開著的面板是哪一位（runAction 的閉包只看得到送出當下的 detailFor）。與
+  // `setDetailFor` 一起在 `showDetail` 裡**同步**寫，不用 effect 鏡像：effect 要等 commit
+  // 之後才跑，在那之前結算的請求會讀到上一位。
   const shownId = useRef<string | null>(null);
-  useEffect(() => {
-    shownId.current = detailFor?.id ?? null;
-  }, [detailFor]);
+  const showDetail = (next: AdminMemberDetail | null) => {
+    shownId.current = next?.id ?? null;
+    setDetailFor(next);
+  };
 
   // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
   // 時那裡在畫面外，使用者只會看到鈕停止轉圈——等於「按了沒反應」。
@@ -210,7 +213,7 @@ export function MemberManagement({
       const detail = await loadMemberDetail(id);
       if (isLatest(seq)) {
         openedFromId.current = id;
-        setDetailFor(detail);
+        showDetail(detail);
       }
     } catch (err) {
       if (isLatest(seq)) setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
@@ -221,7 +224,7 @@ export function MemberManagement({
 
   const closeDetail = () => {
     bumpSeq();
-    setDetailFor(null);
+    showDetail(null);
   };
 
   // 關閉後焦點回到同一位會員的「查看」鈕。不能交給 Radix 自己還原：載入期間
@@ -256,8 +259,8 @@ export function MemberManagement({
     const panelShowsTarget = () => isLatest(seq) || shownId.current === target.id;
     // 結算只清自己的 processing：A 在途時關面板、開 B 並對 B 動作，A 的結算不得
     // 解鎖 B 的鈕。
-    const settle = () => setProcessingId((p) => (p === target.id ? null : p));
-    setProcessingId(target.id);
+    const settle = () => setProcessing((p) => (p?.id === target.id ? null : p));
+    setProcessing({ id: target.id, kind: action.kind });
     setPanelError(null);
     setPanelNotice(null);
     try {
@@ -286,7 +289,7 @@ export function MemberManagement({
       const refreshSeq = detailSeq.current;
       try {
         const fresh = await loadMemberDetail(target.id);
-        if (isLatest(refreshSeq)) setDetailFor(fresh);
+        if (isLatest(refreshSeq)) showDetail(fresh);
       } catch {
         if (isLatest(refreshSeq)) setPanelNotice('已更新，但重新讀取詳情失敗，請關閉面板後重開');
       }
@@ -350,7 +353,7 @@ export function MemberManagement({
       {detailFor && (
         <MemberDetailSheet
           detail={detailFor}
-          processing={processingId === detailFor.id}
+          processingKind={processing?.id === detailFor.id ? processing.kind : null}
           panelError={panelError}
           panelNotice={panelNotice}
           onRequestAction={requestAction}

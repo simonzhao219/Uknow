@@ -1,6 +1,7 @@
 import type { AdminMember } from '@contract';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { memberDetailTriggerProps } from './memberDetailTrigger';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 
 /**
@@ -16,16 +17,6 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
  * 所以沒有審查 F1 那種「排版變更悄悄拿掉一個互動」的隱性耦合——它正是 F1
  * 的對照組。這裡要守的是**資訊量**：`plan.md` §4.1 明列的欄位一項都不能少。
  */
-
-/**
- * 「查看」觸發鈕的標記：父層關閉面板時用它把焦點還給開出面板的那顆鈕（載入期間鈕
- * 被停用，Radix 記不到它）。桌機表格與手機卡片兩處都掛同一個，只在這裡定義一次。
- */
-export const memberDetailTriggerProps = (id: string) => ({ 'data-member-detail-trigger': id });
-
-export function findMemberDetailTrigger(id: string) {
-  return document.querySelector<HTMLElement>(`[data-member-detail-trigger="${id}"]`);
-}
 
 interface MemberCardListProps {
   members: AdminMember[];

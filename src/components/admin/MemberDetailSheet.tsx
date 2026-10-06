@@ -29,8 +29,8 @@ import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
  */
 interface MemberDetailSheetProps {
   detail: AdminMemberDetail;
-  /** 管理動作進行中：四顆管理鈕停用。 */
-  processing: boolean;
+  /** 這位會員送出中的管理動作種類；非 null 時管理鈕全部停用。 */
+  processingKind: MemberAction['kind'] | null;
   /** 管理動作的錯誤。面板蓋在列表上，錯誤只能印在面板裡。 */
   panelError: string | null;
   /** 動作已成功、只是重讀失敗的提示：中性字，不是紅色警示。 */
@@ -148,7 +148,7 @@ function WithdrawalItem({ w }: { w: AdminMemberWithdrawal }) {
 
 export function MemberDetailSheet({
   detail,
-  processing,
+  processingKind,
   panelError,
   panelNotice,
   onRequestAction,
@@ -304,7 +304,7 @@ export function MemberDetailSheet({
                   size="sm"
                   tone={detail.suspended ? 'secondary' : 'destructive'}
                   onClick={() => onRequestAction({ kind: 'suspend', next: !detail.suspended })}
-                  disabled={processing}
+                  disabled={processingKind !== null}
                 >
                   {detail.suspended ? '恢復' : '暫停'}
                 </Button>
@@ -318,7 +318,7 @@ export function MemberDetailSheet({
                   size="sm"
                   tone={detail.isAdmin ? 'destructive' : 'secondary'}
                   onClick={() => onRequestAction({ kind: 'admin', next: !detail.isAdmin })}
-                  disabled={processing}
+                  disabled={processingKind !== null}
                 >
                   {detail.isAdmin ? '撤銷管理員' : '設為管理員'}
                 </Button>

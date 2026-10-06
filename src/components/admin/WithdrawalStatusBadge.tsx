@@ -5,8 +5,10 @@ import { Badge } from '../ui/badge';
 //                   → completed（用戶已確認查收）
 //   pending → rejected（退件，點數自動退回）
 //
-// **後台**的狀態對照只有這一張表：提領管理（表格、手機卡片、CSV、轉換歷史、篩選
-// 選單）與會員詳情的近期提領都從這裡取，同一筆在兩頁不會是兩種顏色。會員端
+// **後台**的狀態名稱與徽章只有這一張表：提領管理（表格、手機卡片、統計卡、CSV、轉換
+// 歷史、篩選選單）與會員詳情的近期提領都從這裡取，同一筆在兩頁不會是兩種顏色。動作
+// 完成的回報句（`WithdrawalManagement` 的 `ACTION_DONE`，如「已代為結案」）是另一種
+// 文案、不是狀態名，不從這裡取。會員端
 // `reward/WithdrawalSection.tsx` 依受眾另有一份（標籤用「處理中／已拒絕」），
 // 不併進來；待查收在兩端的顏色統一另案處理。
 type BadgeVariant = 'secondary' | 'warning' | 'outline' | 'destructive';
