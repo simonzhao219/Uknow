@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, type ReactNode, type Ref } from 'react';
 import { Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
@@ -7,6 +7,7 @@ import { formatTwDate, formatTwTimestamp } from '../../utils/twDate';
 import { BreakableEmail } from '../common/BreakableEmail';
 import type { AdminMemberDetail, AdminMemberWithdrawal } from '@contract';
 import type { MemberAction } from './MemberManagement';
+import { memberName } from './memberName';
 import { MemberStatusBadges } from './MemberStatusBadges';
 import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
 
@@ -35,6 +36,10 @@ interface MemberDetailSheetProps {
   panelError: string | null;
   /** 動作已成功、只是重讀失敗的提示：中性字，不是紅色警示。 */
   panelNotice?: string | null;
+  /** 另一位會員的動作失敗晚到、面板已換成這位時的提示（前綴那位的姓名）。 */
+  otherNotice?: string | null;
+  /** 管理區標題：父層在動作送出後把焦點放到這裡（被按的鈕送出中是停用的）。 */
+  manageHeadingRef?: Ref<HTMLHeadingElement>;
   onRequestAction: (action: MemberAction) => void;
   onClose: () => void;
   /** 關閉後焦點要回去的地方由父層決定（它知道是哪一顆「查看」開的）。 */
@@ -91,17 +96,25 @@ function Section({
   title,
   icon,
   description,
+  headingRef,
   children,
 }: {
   title: string;
   icon?: ReactNode;
   description?: string;
+  /** 給了就讓標題可被程式聚焦（tabIndex -1，不進 Tab 順序）。 */
+  headingRef?: Ref<HTMLHeadingElement>;
   children: ReactNode;
 }) {
   const id = useId();
   return (
     <section aria-labelledby={id} className="py-4">
-      <h3 id={id} className="flex items-center gap-1.5 text-sm font-semibold">
+      <h3
+        id={id}
+        ref={headingRef}
+        tabIndex={headingRef ? -1 : undefined}
+        className="flex items-center gap-1.5 text-sm font-semibold outline-none"
+      >
         {icon}
         {title}
       </h3>
@@ -115,12 +128,15 @@ function WithdrawalItem({ w }: { w: AdminMemberWithdrawal }) {
   return (
     <li className="space-y-0.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        {/* 手續費逐筆寫出：點數區的「處理中」含手續費，只有金額時客服加不回去。 */}
+        {/* 手續費逐筆寫出：點數區的「處理中」含手續費，只有金額時客服加不回去。已退件
+            不寫——退件時點數與手續費都退還（規格書 §10.3），寫出來客服會以為被收了。 */}
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <span className="whitespace-nowrap font-medium">{points(w.amount)}</span>
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
-            手續費 {points(w.fee)}
-          </span>
+          {w.status !== 'rejected' && (
+            <span className="whitespace-nowrap text-xs text-muted-foreground">
+              手續費 {points(w.fee)}
+            </span>
+          )}
         </span>
         <WithdrawalStatusBadge status={w.status} />
       </div>
@@ -151,11 +167,14 @@ export function MemberDetailSheet({
   processingKind,
   panelError,
   panelNotice,
+  otherNotice,
+  manageHeadingRef,
   onRequestAction,
   onClose,
   onCloseAutoFocus,
 }: MemberDetailSheetProps) {
   const bothBankFieldsMissing = detail.bankCode == null && detail.bankAccount == null;
+  const name = memberName(detail.name);
   return (
     <Sheet open onOpenChange={() => onClose()}>
       <SheetContent
@@ -163,7 +182,7 @@ export function MemberDetailSheet({
         // （HomePage／ReferralTreeView 的 Sheet 同一個結構）。
         className="w-full gap-0 sm:max-w-lg"
         // 無名時標題就是 Email，不再印第二行描述；不給描述時要明說，Radix 才不警告。
-        {...(detail.name ? {} : { 'aria-describedby': undefined })}
+        {...(name ? {} : { 'aria-describedby': undefined })}
         // 開啟時焦點放在姓名標題。Radix 預設落到 DOM 第一個可聚焦元素——那是
         // 畫面外的管理鈕，而「恢復」連確認框都沒有。
         onOpenAutoFocus={(event) => {
@@ -177,9 +196,9 @@ export function MemberDetailSheet({
         {/* 身分卡。pr-16：右上角關閉鈕實占右緣約 12–62px，長姓名不得鑽到它底下。 */}
         <SheetHeader className="gap-1.5 border-b pr-16">
           <SheetTitle tabIndex={-1} className="text-lg outline-none wrap-anywhere">
-            {detail.name ?? <BreakableEmail email={detail.email} />}
+            {name ?? <BreakableEmail email={detail.email} />}
           </SheetTitle>
-          {detail.name && (
+          {name && (
             <SheetDescription>
               <BreakableEmail email={detail.email} />
             </SheetDescription>
@@ -221,8 +240,10 @@ export function MemberDetailSheet({
           </Section>
 
           {/* 一區一個主數字：可提領是會員自己也看得到、客服對帳用的數字。處理中的細節
-              由下一區逐筆回答，這裡不再放大一次。處理中含待查收、含手續費，與列表的
-              「金額」對不上是正常的，所以要寫出來。 */}
+              由下一區逐筆回答，這裡不再放大一次（D10：處理中維持「灰字一行」——降級成
+              小字；窄螢幕大額時可以折成兩行，但每一段都 nowrap，不從數字中間斷開）。
+              處理中與已提領都是 amount＋fee 的加總（含待查收），與列表的「金額」對不上
+              是正常的，所以兩邊都寫出來。 */}
           <Section title="點數">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-muted-foreground">可提領點數</span>
@@ -234,7 +255,9 @@ export function MemberDetailSheet({
               <span className="whitespace-nowrap">
                 處理中 {points(detail.pendingPoints)}（含手續費）
               </span>
-              <span className="whitespace-nowrap">已提領 {points(detail.withdrawnPoints)}</span>
+              <span className="whitespace-nowrap">
+                已提領 {points(detail.withdrawnPoints)}（含手續費）
+              </span>
             </p>
           </Section>
 
@@ -294,7 +317,7 @@ export function MemberDetailSheet({
           {/* 管理。**所有會改變狀態的動作都在這裡**，放在最底、以分隔線隔開——位置要讓人
               「走到」而不是「路過」。兩列同構：左邊說現況、右邊是切換鍵；外觀依
               ui-ux-guidelines §12.11 按鈕三分法。 */}
-          <Section title="管理">
+          <Section title="管理" headingRef={manageHeadingRef}>
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-muted-foreground">
@@ -304,6 +327,7 @@ export function MemberDetailSheet({
                   size="sm"
                   tone={detail.suspended ? 'secondary' : 'destructive'}
                   onClick={() => onRequestAction({ kind: 'suspend', next: !detail.suspended })}
+                  loading={processingKind === 'suspend'}
                   disabled={processingKind !== null}
                 >
                   {detail.suspended ? '恢復' : '暫停'}
@@ -318,6 +342,7 @@ export function MemberDetailSheet({
                   size="sm"
                   tone={detail.isAdmin ? 'destructive' : 'secondary'}
                   onClick={() => onRequestAction({ kind: 'admin', next: !detail.isAdmin })}
+                  loading={processingKind === 'admin'}
                   disabled={processingKind !== null}
                 >
                   {detail.isAdmin ? '撤銷管理員' : '設為管理員'}
@@ -329,11 +354,12 @@ export function MemberDetailSheet({
                   {panelError}
                 </p>
               )}
-              {panelNotice && (
-                <p role="status" className="text-muted-foreground">
-                  {panelNotice}
-                </p>
-              )}
+            </div>
+            {/* 中性提示：常駐、只換文字——隨文字一起新插入 DOM 的 live region 報讀器不保證
+                播報。空的時候不留間距（不用 hidden：display:none 的 live region 一樣不播）。 */}
+            <div role="status" className="mt-4 space-y-1 text-muted-foreground empty:mt-0">
+              {otherNotice && <p className="wrap-anywhere">{otherNotice}</p>}
+              {panelNotice && <p>{panelNotice}</p>}
             </div>
           </Section>
         </section>

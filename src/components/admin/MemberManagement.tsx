@@ -24,6 +24,7 @@ import { IdReviewQueue } from './IdReviewQueue';
 import { MemberCardList } from './MemberCardList';
 import { findMemberDetailTrigger, memberDetailTriggerProps } from './memberDetailTrigger';
 import { MemberDetailSheet } from './MemberDetailSheet';
+import { memberLabel, memberName } from './memberName';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
@@ -77,7 +78,8 @@ function needsConfirm(action: MemberAction) {
  * `destructive`：確認鈕要不要紅實心——規則見 ui-ux-guidelines §12.11「確認鈕跟觸發鈕
  * 同類」。這裡是它在會員管理的唯一落點。
  */
-function actionCopy(action: MemberAction, name: string) {
+function actionCopy(action: MemberAction, target: AdminMemberDetail) {
+  const name = memberLabel(target);
   if (action.kind === 'admin') {
     return action.next
       ? {
@@ -93,13 +95,15 @@ function actionCopy(action: MemberAction, name: string) {
           body: `${name} 將立即失去平台管理後台的全部存取權（提領作業、會員管理、證件審核）。`,
         };
   }
+  // 後果與規格書 §5.2 一致：非管理員的停權會員進不了會員區（RequireMembershipRoute 的
+  // suspendedBlocked 是 `suspended && !isAdmin`），不只是凍結提領與刊登。管理員不受這條
+  // 限制，對他就不寫這句——守衛本來就不擋他，不必另寫例外。
+  const lockout = target.isAdmin ? '' : '，也無法進入會員區';
   return {
     title: '暫停這個帳號？',
     confirm: '確認暫停',
     destructive: true,
-    // 後果與規格書 §5.2 一致：停權會員進不了會員區（RequireMembershipRoute 的
-    // suspendedBlocked 一律顯示「帳號已停權」），不只是凍結提領與刊登。
-    body: `${name} 的刊登將立即隱藏，無法提領點數或領取免費續約 credit，也無法進入會員區。解除暫停後即恢復。`,
+    body: `${name} 的刊登將立即隱藏，無法提領點數或領取免費續約 credit${lockout}。解除暫停後即恢復。`,
   };
 }
 
@@ -117,9 +121,10 @@ export function MemberManagement({
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  // 送出中的管理動作：哪一位、哪一種（面板用種類決定哪顆鈕轉圈）。
-  const [processing, setProcessing] = useState<{ id: string; kind: MemberAction['kind'] } | null>(
-    null,
+  // 送出中的管理動作，逐位會員記（面板用種類決定哪顆鈕轉圈）。單值做不到：A 在途時
+  // 對 B 送出，A 的那筆就被蓋掉，關掉再重開 A 時鈕是活的，可以重複送出。
+  const [processing, setProcessing] = useState<ReadonlyMap<string, MemberAction['kind']>>(
+    () => new Map(),
   );
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState(EMPTY_STATS);
@@ -147,6 +152,9 @@ export function MemberManagement({
   // 動作成功、只是重讀失敗：區塊讀取失敗用中性字（ui-ux-guidelines §13 第 4 條），
   // 紅色 alert 只給動作本身的失敗。
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
+  // 別人（A）的動作失敗晚到、面板已換成 B：寫進 B 的管理區（前綴 A 的姓名）。列表上方
+  // 的錯誤框此時被 modal 蓋住、報讀器也念不到。B 自己的動作不清它，B 關閉時轉到列表上方。
+  const [otherNotice, setOtherNotice] = useState<string | null>(null);
 
   // 「查看」→ 面板的請求狀態。**只有最後一次意圖算數**：
   // - `openingIds`：在途的列各自轉圈、停用；每個請求結算時只移除自己的 id。單值
@@ -165,6 +173,16 @@ export function MemberManagement({
     setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
   const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
   const errorRef = useRef<HTMLDivElement>(null);
+  // 錯誤框的捲動與聚焦只給「剛按查看就失敗」——那是使用者正在等的結果。晚到的動作失敗
+  // 印在同一個框，但不搶焦點：admin 可能正在搜尋框打字，被拉走、列表跟著跳。
+  const focusErrorOnShow = useRef(false);
+  // 送出後焦點的落點。被按的鈕送出中是停用的，留在它身上等於掉到 body。
+  const manageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusManageArea = () => manageHeadingRef.current?.focus();
+  // 確認框沒有 AlertDialogTrigger（由面板內的鈕開），Radix 關閉時只會把焦點還給
+  // Trigger——沒有就掉到 body。所以落點自己記：取消回到開框的鈕，確認落到管理區。
+  const confirmReturnFocus = useRef<HTMLElement | null>(null);
+  const confirmed = useRef(false);
   // 目前開著的面板是哪一位（runAction 的閉包只看得到送出當下的 detailFor）。與
   // `setDetailFor` 一起在 `showDetail` 裡**同步**寫，不用 effect 鏡像：effect 要等 commit
   // 之後才跑，在那之前結算的請求會讀到上一位。
@@ -177,7 +195,8 @@ export function MemberManagement({
   // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
   // 時那裡在畫面外，使用者只會看到鈕停止轉圈——等於「按了沒反應」。
   useEffect(() => {
-    if (!actionError) return;
+    if (!actionError || !focusErrorOnShow.current) return;
+    focusErrorOnShow.current = false;
     errorRef.current?.scrollIntoView?.({ block: 'nearest' });
     errorRef.current?.focus();
   }, [actionError]);
@@ -208,6 +227,7 @@ export function MemberManagement({
     setActionError(null);
     setPanelError(null);
     setPanelNotice(null);
+    setOtherNotice(null);
     startOpening(id);
     try {
       const detail = await loadMemberDetail(id);
@@ -216,7 +236,10 @@ export function MemberManagement({
         showDetail(detail);
       }
     } catch (err) {
-      if (isLatest(seq)) setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+      if (isLatest(seq)) {
+        focusErrorOnShow.current = true;
+        setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+      }
     } finally {
       settleOpening(id);
     }
@@ -225,6 +248,11 @@ export function MemberManagement({
   const closeDetail = () => {
     bumpSeq();
     showDetail(null);
+    // 面板上那則「別人的失敗」不隨面板消失：轉到列表上方（不搶焦點）。
+    if (otherNotice) {
+      setActionError(otherNotice);
+      setOtherNotice(null);
+    }
   };
 
   // 關閉後焦點回到同一位會員的「查看」鈕。不能交給 Radix 自己還原：載入期間
@@ -243,10 +271,24 @@ export function MemberManagement({
 
   const requestAction = (action: MemberAction) => {
     if (needsConfirm(action)) {
+      confirmReturnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setPendingAction(action);
       return;
     }
     runAction(action);
+    focusManageArea();
+  };
+
+  // 確認框關閉後的焦點落點（見 confirmReturnFocus）。
+  const restoreFocusAfterConfirm = (event: Event) => {
+    event.preventDefault();
+    if (confirmed.current) {
+      confirmed.current = false;
+      focusManageArea();
+    } else {
+      confirmReturnFocus.current?.focus();
+    }
   };
 
   const runAction = async (action: MemberAction) => {
@@ -259,8 +301,13 @@ export function MemberManagement({
     const panelShowsTarget = () => isLatest(seq) || shownId.current === target.id;
     // 結算只清自己的 processing：A 在途時關面板、開 B 並對 B 動作，A 的結算不得
     // 解鎖 B 的鈕。
-    const settle = () => setProcessing((p) => (p?.id === target.id ? null : p));
-    setProcessing({ id: target.id, kind: action.kind });
+    const settle = () =>
+      setProcessing((prev) => {
+        const next = new Map(prev);
+        next.delete(target.id);
+        return next;
+      });
+    setProcessing((prev) => new Map(prev).set(target.id, action.kind));
     setPanelError(null);
     setPanelNotice(null);
     try {
@@ -274,9 +321,13 @@ export function MemberManagement({
       if (panelShowsTarget()) {
         setPanelError(message);
       } else {
-        // 面板已關或換人：不能靜默——admin 會以為已經成功。印在列表上方，並重讀
-        // 列表讓徽章回到真實狀態。
-        setActionError(`${target.name ?? target.email}：${message}`);
+        // 不能靜默——admin 會以為已經成功。兩種情況：
+        // - 面板已關：印在列表上方（不搶焦點，見 focusErrorOnShow）；
+        // - 已換到 B：寫進 B 的管理區（見 otherNotice），B 關閉時再轉到列表上方。
+        // 兩種都重讀列表，讓徽章回到真實狀態。
+        const text = `${memberLabel(target)}：${message}`;
+        if (shownId.current) setOtherNotice(text);
+        else setActionError(text);
         await list.reload();
       }
       settle();
@@ -321,9 +372,9 @@ export function MemberManagement({
           對話框各自演化的那天，就會有一個忘了把後果講清楚。 */}
       {pendingAction && detailFor && (
         <AlertDialog open onOpenChange={() => setPendingAction(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={restoreFocusAfterConfirm}>
             {(() => {
-              const copy = actionCopy(pendingAction, detailFor.name ?? detailFor.email);
+              const copy = actionCopy(pendingAction, detailFor);
               return (
                 <>
                   <AlertDialogHeader>
@@ -336,6 +387,7 @@ export function MemberManagement({
                       variant={copy.destructive ? 'destructive' : undefined}
                       onClick={() => {
                         const action = pendingAction;
+                        confirmed.current = true;
                         setPendingAction(null);
                         runAction(action);
                       }}
@@ -353,9 +405,11 @@ export function MemberManagement({
       {detailFor && (
         <MemberDetailSheet
           detail={detailFor}
-          processingKind={processing?.id === detailFor.id ? processing.kind : null}
+          processingKind={processing.get(detailFor.id) ?? null}
           panelError={panelError}
           panelNotice={panelNotice}
+          otherNotice={otherNotice}
+          manageHeadingRef={manageHeadingRef}
           onRequestAction={requestAction}
           onClose={closeDetail}
           onCloseAutoFocus={returnFocusToTrigger}
@@ -443,7 +497,7 @@ export function MemberManagement({
             載入態已經用了它。 */}
         <div aria-live="polite" className="sr-only">
           {latestOpeningId
-            ? `正在讀取 ${latestOpening?.name ?? latestOpening?.email ?? '會員'} 的詳情`
+            ? `正在讀取 ${latestOpening ? memberLabel(latestOpening) : '會員'} 的詳情`
             : ''}
         </div>
 
@@ -536,7 +590,7 @@ export function MemberManagement({
                   {members.map((member) => {
                     return (
                       <TableRow key={member.id}>
-                        <TableCell>{member.name ?? '—'}</TableCell>
+                        <TableCell>{memberName(member.name) ?? '—'}</TableCell>
                         <TableCell className="text-sm">{member.email}</TableCell>
                         <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
                         <TableCell>
@@ -566,7 +620,7 @@ export function MemberManagement({
                           <Button
                             size="sm"
                             tone="secondary"
-                            aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                            aria-label={`查看 ${memberLabel(member)} 的詳情`}
                             {...memberDetailTriggerProps(member.id)}
                             loading={openingIds.includes(member.id)}
                             onClick={() => openDetail(member.id)}

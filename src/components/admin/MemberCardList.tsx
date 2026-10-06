@@ -2,6 +2,7 @@ import type { AdminMember } from '@contract';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { memberDetailTriggerProps } from './memberDetailTrigger';
+import { memberLabel, memberName } from './memberName';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 
 /**
@@ -30,18 +31,14 @@ export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCard
     <div className="space-y-3">
       {members.map((member) => {
         return (
-          <Card
-            key={member.id}
-            role="group"
-            aria-label={`${member.name ?? member.email} 的會員資料`}
-          >
+          <Card key={member.id} role="group" aria-label={`${memberLabel(member)} 的會員資料`}>
             <CardContent className="space-y-2 p-3">
               {/* 收合態一眼要回答的：是誰、有沒有異常。**正常狀態不顯示 badge**
                   ——「一般會員」「正常」是預設值，佔了位置卻沒有資訊量，
                   六個 badge 擠在一起反而讓真正需要注意的那個消失在噪音裡。
                   會籍與刊登數留著（會籍決定他能不能用、刊登數是他的活躍度）。 */}
               <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 font-medium break-words">{member.name ?? '—'}</p>
+                <p className="min-w-0 font-medium break-words">{memberName(member.name) ?? '—'}</p>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
                   {/* 異常在前，與詳情身分卡（MemberStatusBadges）同序。 */}
                   {member.suspended && <SuspendedBadge />}
@@ -80,7 +77,7 @@ export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCard
                     size="sm"
                     tone="secondary"
                     className="px-2"
-                    aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                    aria-label={`查看 ${memberLabel(member)} 的詳情`}
                     {...memberDetailTriggerProps(member.id)}
                     loading={openingIds.includes(member.id)}
                     onClick={() => onOpenDetail(member.id)}
