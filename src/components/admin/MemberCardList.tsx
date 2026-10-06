@@ -52,8 +52,9 @@ export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCard
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 font-medium break-words">{member.name ?? '—'}</p>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
-                  {member.isAdmin && <AdminBadge />}
+                  {/* 異常在前，與詳情身分卡（MemberStatusBadges）同序。 */}
                   {member.suspended && <SuspendedBadge />}
+                  {member.isAdmin && <AdminBadge />}
                 </div>
               </div>
 

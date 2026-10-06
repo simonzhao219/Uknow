@@ -33,6 +33,8 @@ interface MemberDetailSheetProps {
   processing: boolean;
   /** 管理動作的錯誤。面板蓋在列表上，錯誤只能印在面板裡。 */
   panelError: string | null;
+  /** 動作已成功、只是重讀失敗的提示：中性字，不是紅色警示。 */
+  panelNotice?: string | null;
   onRequestAction: (action: MemberAction) => void;
   onClose: () => void;
   /** 關閉後焦點要回去的地方由父層決定（它知道是哪一顆「查看」開的）。 */
@@ -99,7 +101,13 @@ function WithdrawalItem({ w }: { w: AdminMemberWithdrawal }) {
   return (
     <li className="space-y-0.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="whitespace-nowrap font-medium">{points(w.amount)}</span>
+        {/* 手續費逐筆寫出：點數區的「處理中」含手續費，只有金額時客服加不回去。 */}
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="whitespace-nowrap font-medium">{points(w.amount)}</span>
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            手續費 {points(w.fee)}
+          </span>
+        </span>
         <WithdrawalStatusBadge status={w.status} />
       </div>
       <p className="text-xs text-muted-foreground">申請 {formatTwTimestamp(w.requestedAt)}</p>
@@ -128,6 +136,7 @@ export function MemberDetailSheet({
   detail,
   processing,
   panelError,
+  panelNotice,
   onRequestAction,
   onClose,
   onCloseAutoFocus,
@@ -175,7 +184,14 @@ export function MemberDetailSheet({
           )}
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 divide-y overflow-y-auto px-4 pb-6">
+        {/* 捲動區可被鍵盤聚焦：開啟焦點在上面固定的標題，沒有這個停駐點，純鍵盤使用者
+            按 Tab 會直接跳到最底的管理鈕，中間的分區捲不到。 */}
+        <section
+          aria-label="詳情內容"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: 可捲動區要能用鍵盤捲（WCAG 2.1.1）
+          tabIndex={0}
+          className="min-h-0 flex-1 divide-y overflow-y-auto px-4 pb-6 outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-inset"
+        >
           <Section title="帳號">
             <dl>
               {/* 電話：admin 用來電號碼搜到人之後要認得出是同一個人，手機上也要能回撥。 */}
@@ -297,9 +313,14 @@ export function MemberDetailSheet({
                   {panelError}
                 </p>
               )}
+              {panelNotice && (
+                <p role="status" className="text-muted-foreground">
+                  {panelNotice}
+                </p>
+              )}
             </div>
           </Section>
-        </div>
+        </section>
       </SheetContent>
     </Sheet>
   );

@@ -144,6 +144,9 @@ export function MemberManagement({
   const [pendingAction, setPendingAction] = useState<MemberAction | null>(null);
   // 面板蓋在列表上，面板內動作的錯誤印在列表區等於印在看不見的地方。
   const [panelError, setPanelError] = useState<string | null>(null);
+  // 動作成功、只是重讀失敗：區塊讀取失敗用中性字（ui-ux-guidelines §13 第 4 條），
+  // 紅色 alert 只給動作本身的失敗。
+  const [panelNotice, setPanelNotice] = useState<string | null>(null);
 
   // 「查看」→ 面板的請求狀態。**只有最後一次意圖算數**：
   // - `openingIds`：在途的列各自轉圈、停用；每個請求結算時只移除自己的 id。單值
@@ -162,6 +165,11 @@ export function MemberManagement({
     setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
   const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
   const errorRef = useRef<HTMLDivElement>(null);
+  // 目前開著的面板是哪一位（runAction 的閉包只看得到送出當下的 detailFor）。
+  const shownId = useRef<string | null>(null);
+  useEffect(() => {
+    shownId.current = detailFor?.id ?? null;
+  }, [detailFor]);
 
   // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
   // 時那裡在畫面外，使用者只會看到鈕停止轉圈——等於「按了沒反應」。
@@ -196,6 +204,7 @@ export function MemberManagement({
     const seq = bumpSeq();
     setActionError(null);
     setPanelError(null);
+    setPanelNotice(null);
     startOpening(id);
     try {
       const detail = await loadMemberDetail(id);
@@ -241,10 +250,16 @@ export function MemberManagement({
     const target = detailFor;
     if (!target) return;
     // 與「查看」共用序號（取號、不遞增）：面板關掉或換人之後，這個動作晚到的
-    // 結果（重讀與錯誤）一律丟棄。
+    // 結果不得寫進別人的面板。
     const seq = detailSeq.current;
+    // 面板還開著同一個人（沒關，或關了又重開同一位）：結果照樣寫回面板。
+    const panelShowsTarget = () => isLatest(seq) || shownId.current === target.id;
+    // 結算只清自己的 processing：A 在途時關面板、開 B 並對 B 動作，A 的結算不得
+    // 解鎖 B 的鈕。
+    const settle = () => setProcessingId((p) => (p === target.id ? null : p));
     setProcessingId(target.id);
     setPanelError(null);
+    setPanelNotice(null);
     try {
       await (action.kind === 'admin'
         ? setMemberAdmin(target.id, action.next)
@@ -252,20 +267,32 @@ export function MemberManagement({
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
       // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      if (isLatest(seq)) setPanelError(err instanceof Error ? err.message : '操作失敗');
-      setProcessingId(null);
+      const message = err instanceof Error ? err.message : '操作失敗';
+      if (panelShowsTarget()) {
+        setPanelError(message);
+      } else {
+        // 面板已關或換人：不能靜默——admin 會以為已經成功。印在列表上方，並重讀
+        // 列表讓徽章回到真實狀態。
+        setActionError(`${target.name ?? target.email}：${message}`);
+        await list.reload();
+      }
+      settle();
       return;
     }
     // 變更已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的
     // 標籤都隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
-    try {
-      const fresh = await loadMemberDetail(target.id);
-      if (isLatest(seq)) setDetailFor(fresh);
-    } catch {
-      if (isLatest(seq)) setPanelError('已更新，但重新讀取詳情失敗，請關閉面板後重開');
+    if (panelShowsTarget()) {
+      // 關了又重開同一位時，重開那次讀取可能早於變更提交：以當下的序號再讀一次。
+      const refreshSeq = detailSeq.current;
+      try {
+        const fresh = await loadMemberDetail(target.id);
+        if (isLatest(refreshSeq)) setDetailFor(fresh);
+      } catch {
+        if (isLatest(refreshSeq)) setPanelNotice('已更新，但重新讀取詳情失敗，請關閉面板後重開');
+      }
     }
     await list.reload();
-    setProcessingId(null);
+    settle();
   };
 
   return (
@@ -325,6 +352,7 @@ export function MemberManagement({
           detail={detailFor}
           processing={processingId === detailFor.id}
           panelError={panelError}
+          panelNotice={panelNotice}
           onRequestAction={requestAction}
           onClose={closeDetail}
           onCloseAutoFocus={returnFocusToTrigger}
@@ -407,12 +435,14 @@ export function MemberManagement({
             />
           </div>
         )}
-        {/* 按鈕上的 aria-busy 多數報讀器不播報，另放一句。 */}
-        {latestOpeningId && (
-          <p role="status" className="sr-only">
-            正在讀取 {latestOpening?.name ?? latestOpening?.email ?? '會員'} 的詳情
-          </p>
-        )}
+        {/* 按鈕上的 aria-busy 多數報讀器不播報，另放一句。live region 常駐、只換文字：
+            隨文字一起新插入的 live region 報讀器不保證播報。不用 role="status"，因為列表
+            載入態已經用了它。 */}
+        <div aria-live="polite" className="sr-only">
+          {latestOpeningId
+            ? `正在讀取 ${latestOpening?.name ?? latestOpening?.email ?? '會員'} 的詳情`
+            : ''}
+        </div>
 
         {/* 會員列表 */}
         <Card>
