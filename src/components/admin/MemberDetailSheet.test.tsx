@@ -91,6 +91,15 @@ describe('MemberDetailSheet 分區結構', () => {
     expect(titles).toEqual(['帳號', '點數', '近期提領', '推薦關係', '敏感資料', '管理']);
   });
 
+  // 開啟焦點在固定的身分卡標題、位於捲動區外；捲動區要能被鍵盤聚焦，純鍵盤使用者
+  // 才捲得動中間的分區，而不是一按 Tab 就跳到最底的管理鈕。
+  it('分區內文的捲動區可被鍵盤聚焦且有名稱', () => {
+    const { panel } = renderSheet();
+    const scroller = within(panel).getByRole('region', { name: '詳情內容' });
+    expect(scroller.getAttribute('tabindex')).toBe('0');
+    expect(within(scroller).getAllByRole('heading', { level: 3 })).toHaveLength(6);
+  });
+
   it('每個分區都是以標題命名的區塊', () => {
     const { panel } = renderSheet();
     for (const name of ['帳號', '點數', '近期提領', '推薦關係', '敏感資料', '管理']) {
@@ -207,6 +216,12 @@ describe('MemberDetailSheet 近期提領', () => {
     const list = section(panel, '近期提領');
     expect(within(list).getByText(/匯款時間 2026\/08\/02/)).toBeTruthy();
     expect(within(list).getByText(/完成時間 2026\/07\/03/)).toBeTruthy();
+  });
+
+  // 點數區的「處理中」含手續費；列上只有金額時客服對不上，逐筆寫出手續費才加得回去。
+  it('每筆提領都寫出手續費', () => {
+    const { panel } = renderSheet(detail({ recentWithdrawals: [withdrawal({ fee: 15 })] }));
+    expect(within(section(panel, '近期提領')).getByText('手續費 15 P')).toBeTruthy();
   });
 
   it('匯款時間只在待查收列、完成時間只在已完成列', () => {

@@ -559,6 +559,17 @@ describe('MemberManagement 手機版', () => {
     expect(within(card).queryByText('正常')).toBeNull();
   });
 
+  it('停權的管理員卡片上，已暫停排在管理員前面（與詳情身分卡同序）', async () => {
+    renderConsole({
+      loadMembers: async () => page({ members: [member({ suspended: true, isAdmin: true })] }),
+    });
+    const card = await screen.findByRole('group', { name: /陳大文/ });
+    const badges = Array.from(card.querySelectorAll('[data-slot="badge"]')).map(
+      (b) => b.textContent,
+    );
+    expect(badges.slice(0, 2)).toEqual(['已暫停', '管理員']);
+  });
+
   it('暫停中的會員才顯示已暫停 badge', async () => {
     renderConsole({ loadMembers: async () => page({ members: [member({ suspended: true })] }) });
     const card = await screen.findByRole('group', { name: /陳大文/ });
@@ -647,15 +658,19 @@ describe('MemberManagement 查看與請求順序', () => {
     await screen.findByRole('dialog');
   });
 
-  it('取詳情期間報讀器聽得到正在讀取誰', async () => {
+  // 常駐、只換文字的 live region 才可靠：隨文字一起新插入 DOM 的 live region，報讀器
+  // 不保證播報（同目錄 AdminToolbar 的寫法）。不用 role="status"，是因為列表載入態已用它。
+  it('取詳情期間常駐的 live region 念出正在讀取誰，讀完清空', async () => {
     const pending = deferred<AdminMemberDetail>();
     renderConsole({ loadMemberDetail: () => pending.promise });
 
     fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
-    const status = screen.getByText('正在讀取 陳大文 的詳情');
-    expect(status.closest('[role="status"]')).toBeTruthy();
+    const live = screen.getByText('正在讀取 陳大文 的詳情').closest('[aria-live="polite"]');
+    expect(live).toBeTruthy();
     pending.resolve(detail());
     await screen.findByRole('dialog');
+    expect(live?.isConnected).toBe(true);
+    expect(live?.textContent).toBe('');
   });
 
   it('A 在途時點 B、B 先回 A 後失敗時，開 B 且不印 A 的錯誤', async () => {
@@ -763,6 +778,81 @@ describe('MemberManagement 查看與請求順序', () => {
     reread.reject(new Error('network'));
     await new Promise((r) => setTimeout(r, 0));
     expect(within(panelB).queryByText(/重新讀取詳情失敗/)).toBeNull();
+  });
+
+  it('動作送出後關掉面板、動作失敗時，錯誤印在列表上方並重讀列表', async () => {
+    const suspend = deferred<void>();
+    const load = vi.fn(async () => page());
+    renderConsole({ loadMembers: load, suspendMember: () => suspend.promise });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    load.mockClear();
+
+    suspend.reject(new Error('該會員已被其他管理員處理'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('陳大文');
+    expect(alert.textContent).toContain('該會員已被其他管理員處理');
+    await waitFor(() => expect(load).toHaveBeenCalled());
+  });
+
+  it('動作途中關掉又重開同一位會員，動作完成後面板補讀成新狀態', async () => {
+    let suspended = false;
+    const suspend = deferred<void>();
+    renderConsole({
+      loadMemberDetail: async () => detail({ suspended }),
+      suspendMember: () => suspend.promise,
+    });
+
+    const panel = await openDetail();
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const reopened = await openDetail();
+    expect(within(reopened).getByText('帳號正常')).toBeTruthy();
+    suspended = true;
+    suspend.resolve();
+    expect(await within(reopened).findByText('帳號已暫停')).toBeTruthy();
+  });
+
+  it('A 的動作在途時開 B 並對 B 動作，A 先完成時 B 的管理鈕仍停用', async () => {
+    const actions: Record<string, ReturnType<typeof deferred<void>>> = {
+      m1: deferred<void>(),
+      m2: deferred<void>(),
+    };
+    renderConsole({
+      loadMembers: async () => TWO_MEMBERS,
+      loadMemberDetail: async (id) =>
+        id === 'm1'
+          ? detail({ suspended: true })
+          : detail({ id: 'm2', name: '林小美', email: 'lin@b.c', suspended: true }),
+      suspendMember: (id) => actions[id].promise,
+    });
+
+    const panelA = await openDetail();
+    fireEvent.click(within(panelA).getByRole('button', { name: '恢復' }));
+    fireEvent.keyDown(panelA, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(viewButton('林小美'));
+    const panelB = await screen.findByRole('dialog');
+    fireEvent.click(within(panelB).getByRole('button', { name: '恢復' }));
+    await waitFor(() =>
+      expect(
+        within(panelB).getByRole('button', { name: '設為管理員' }).hasAttribute('disabled'),
+      ).toBe(true),
+    );
+
+    actions.m1.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      within(panelB).getByRole('button', { name: '設為管理員' }).hasAttribute('disabled'),
+    ).toBe(true);
   });
 
   it('取詳情失敗時錯誤框被捲進視窗並取得焦點', async () => {
@@ -921,6 +1011,24 @@ describe('MemberManagement 管理區與確認框', () => {
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/無法進入會員區/)).toBeTruthy();
     expect(within(dialog).queryByText(/會員區瀏覽不受影響/)).toBeNull();
+  });
+
+  // 動作其實成功了，只是重讀失敗——區塊讀取失敗用中性字（ui-ux-guidelines §13 第 4 條），
+  // 紅色 alert 留給動作本身的失敗。
+  it('動作後重讀失敗是中性提示，不是紅色警示', async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(detail({ suspended: true }))
+      .mockRejectedValueOnce(new Error('network'));
+    renderConsole({ loadMemberDetail: load });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.click(within(panel).getByRole('button', { name: '恢復' }));
+
+    const notice = await within(panel).findByText(/重新讀取詳情失敗/);
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+    expect(notice.closest('[role="alert"]')).toBeNull();
+    expect(notice.classList.contains('text-destructive-subtle-foreground')).toBe(false);
   });
 
   // 只有一個請求取整份詳情，所以「區塊各自三態」落地為：動作後重讀失敗只印在管理區，
