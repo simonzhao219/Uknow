@@ -25,3 +25,26 @@ export function SuspendedBadge() {
 export function AdminBadge() {
   return <Badge variant="default">管理員</Badge>;
 }
+
+/**
+ * 詳情身分卡的徽章列：**異常在前**（已暫停 → 管理員 → 會籍）。「先看到這人狀態
+ * 如何」的主訊號不能排在綠色的會籍徽章後面。正常狀態不另佔徽章（與手機卡片同一
+ * 條規則：「一般會員」「正常」是預設值，沒有資訊量）。
+ */
+export function MemberStatusBadges({
+  suspended,
+  isAdmin,
+  accountStatus,
+}: {
+  suspended: boolean;
+  isAdmin: boolean;
+  accountStatus: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {suspended && <SuspendedBadge />}
+      {isAdmin && <AdminBadge />}
+      <AccountStatusBadge status={accountStatus} />
+    </div>
+  );
+}
