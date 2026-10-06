@@ -13,27 +13,27 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1a | `createLatestRequest`／`useLatestRequest`；`usePagedList` 序號（兩個方向、ticket 帶身分、`load` 走 ref）、旗標綁 ticket、背景重讀、失敗保留舊列、`loadMoreError`、`canLoadMore` | ⬜ 未開始 | | |
-| 1b | `usePagedList` 的 `initial`、`onLanded`（帶戳記、可回 `false` 補讀一次）、`meta`、`isConfirmed` | ⬜ 未開始 | | |
-| 2 | `createAdminCache`（builder、整數戳、fence、空結果刪槽、view、`accessLost`、`open`／`dispose`）＋`useAdminList`＋`classifyWriteFailure`＋PII 守衛 | ⬜ 未開始 | | |
-| 3 | `AdminToolbar` 新契約（`isUpdating`／`refreshDisabled`／`updateError`／`exportProgress`／`exportDescribedBy`、宣告區、`filter` 選填），兩個呼叫端同步改接 | ⬜ 未開始 | | |
+| 1a | `useLatestRequest`（`nextStamp`）；`usePagedList` 序號（兩個方向、ticket 帶身分與戳、`load` 走 ref）、旗標綁 ticket、背景重讀、失敗保留舊列、`clearOnError`、`loadMoreError`、`canLoadMore`、`reload` 回傳結算 | ⬜ 未開始 | | |
+| 1b | `usePagedList` 的 `initial`（換身分時凍結）、`onLanded`（被拒補讀一次、再被拒進錯誤態）、`meta`、`isConfirmed` | ⬜ 未開始 | | |
+| 2 | `createAdminCache`（builder `{id, slot, resource, params}`、fence 用 hooks 的 `nextStamp`、空結果刪槽、view、`accessLost`、`open`／`dispose`）＋`useAdminList`＋`writeOutcome`＋PII 守衛（AST） | ⬜ 未開始 | | |
+| 3 | `AdminToolbar` 新契約（`onRefresh` 回傳結算、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）與狀態文字，兩個呼叫端同步改接 | ⬜ 未開始 | | |
 | 4a | 提領頁純遷移到 `usePagedList`（綠到綠，既有測試一字不改；先補特徵測試） | ⬜ 未開始 | — | |
-| 4b | 提領頁讀取側：快取、確認閘門與原因說明、勾選清除、統計與作業面板、資料時間、骨架、錯誤區、失敗保留舊列與遮蔽、篩選保留 | ⬜ 未開始 | | |
-| 4c | 提領頁動作側：`AdminActionReport`、結果分類、失敗重讀、失效與 fence、批次快照、焦點後備、`withdrawalExport.ts` | ⬜ 未開始 | | |
-| 5 | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀）＋證件審核（閘門、錯誤區與重讀、`memberLabel`、按鈕順序） | ⬜ 未開始 | | |
-| 6 | 公告（快取、骨架、錯誤態）＋告警（`AdminToolbar`、閘門） | ⬜ 未開始 | | |
-| 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、匯出鎖分頁）、`AdminDashboard` 讀 `UserContext` | ⬜ 未開始 | | |
+| 4b | 提領頁讀取側：快取、匯款類閘門（D、K5）與 `AdminListStatus`、統計骨架（A）、作業面板、資料時間、骨架、錯誤區、失敗保留舊列與遮罩、篩選保留 | ⬜ 未開始 | | |
+| 4c | 提領頁動作側：`AdminActionReport`、結果分類、失敗重讀、失效與 fence、批次快照、焦點後備、`withdrawalExport.ts`（含完成核對 K7）、busy | ⬜ 未開始 | | |
+| ★ | **中途對照（K8）**：4c 綠燈後通知主 session 對照 hooks＋快取＋提領頁的 diff，通過才開 5a | ⬜ 未開始 | — | — |
+| 5a | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀、結果不明重讀詳情、換搜尋整合測試） | ⬜ 未開始 | | |
+| 5b | 證件審核（錯誤區與重讀、成功回報、`memberLabel`、按鈕順序；不受閘門約束） | ⬜ 未開始 | | |
+| 6 | 公告（快取、骨架、錯誤態、刪除鈕 44px）＋告警（`AdminToolbar`、背景重讀、`onAccessLost`；不走共用 hook） | ⬜ 未開始 | | |
+| 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、busy 鎖外層分頁與會員子分頁、說明行）、`AdminDashboard` 讀 `UserContext` | ⬜ 未開始 | | |
 | 8 | e2e 三個情境＋journey page object 與 offline 檢查＋溢版巡檢 | ⬜ 未開始 | | |
-| 9 | 文件（規格書 §13 新段與 §14 三列、ui-ux §5、檔頭理由、母計畫 §1／§2／§4.3 驗收 3／§6.2／progress）＋清理本目錄 | ⬜ 未開始 | | |
+| 9 | 文件（規格書 §13 新段與 §14 三列、ui-ux §3／§5／§9、檔頭理由、母計畫 §1／§2／§4.3 驗收 2 與 3／§6.2／progress 與計畫異動記錄）＋PR 描述揭露＋清理本目錄 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃第三版（依第二輪審查與業主裁決 E1–E8 修訂；第一輪的 D1–D8 不變）已完成；第三輪四視角審查已完成
-（無 P0，P1×4、P2×30，見 `review.md`「第三輪」），待業主裁決八題與下一步——題目貼在
-PR #371 留言（https://github.com/simonzhao219/Uknow/pull/371#issuecomment-6027046073），業主在 PR 上回覆。
-技術裁決 T12（補讀規則留在通用 `usePagedList`、檔頭寫明邊界）已在同一則留言告知，業主可推翻。
-核准後由業主親自打 `/tdd-implement admin-data-cache`，從階段 1a 開始。範圍比開工 prompt 預估大
-（十二個階段），可能需要兩到三次對話——中途 `/clear` 續作屬預期內，從本表找回位置。
+規劃第四版（依第三輪審查、第三輪裁決 K1–K8，並補套主 session 規劃審查與業主裁決 A–J）已完成。依 K1：四位審查員只複核
+第三輪的 4 條 P1 與裁決落實 → `review.md` 處置欄勾「修訂後通過」→ 通知主 session（PR #371 留言）對照 A–J、D／F／H 與 K 題 →
+對照通過後由業主親自打 `/tdd-implement admin-data-cache`，從階段 1a 開始。十三個階段，需要兩到三次對話——中途 `/clear`
+續作屬預期內，從本表找回位置。**4c 綠燈後先停下來請主 session 中途對照（★ 列），通過才開 5a。**
 
 ## Blockers（逃生口紀錄）
 
