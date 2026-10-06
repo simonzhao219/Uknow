@@ -20,9 +20,11 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
 interface MemberCardListProps {
   members: AdminMember[];
   onOpenDetail: (id: string) => void;
+  /** 正在取詳情的會員：該卡的「查看」轉圈、停用，連點不重送。 */
+  openingIds: string[];
 }
 
-export function MemberCardList({ members, onOpenDetail }: MemberCardListProps) {
+export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCardListProps) {
   return (
     <div className="space-y-3">
       {members.map((member) => {
@@ -77,6 +79,8 @@ export function MemberCardList({ members, onOpenDetail }: MemberCardListProps) {
                     tone="secondary"
                     className="px-2"
                     aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                    data-member-detail-trigger={member.id}
+                    loading={openingIds.includes(member.id)}
                     onClick={() => onOpenDetail(member.id)}
                   >
                     查看

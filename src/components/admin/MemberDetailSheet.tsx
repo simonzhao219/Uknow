@@ -23,6 +23,8 @@ interface MemberDetailSheetProps {
   panelError: string | null;
   onRequestAction: (action: MemberAction) => void;
   onClose: () => void;
+  /** 關閉後焦點要回去的地方由父層決定（它知道是哪一顆「查看」開的）。 */
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 const ID_STATUS_LABEL: Record<string, string> = {
@@ -42,12 +44,26 @@ export function MemberDetailSheet({
   panelError,
   onRequestAction,
   onClose,
+  onCloseAutoFocus,
 }: MemberDetailSheetProps) {
   return (
     <Sheet open onOpenChange={() => onClose()}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+      <SheetContent
+        className="w-full sm:max-w-lg overflow-y-auto"
+        // 開啟時焦點放在姓名標題。Radix 預設落到 DOM 第一個可聚焦元素——那是
+        // 畫面外的管理鈕，而「恢復」連確認框都沒有。
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.target as HTMLElement)
+            .querySelector<HTMLElement>('[data-slot="sheet-title"]')
+            ?.focus();
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <SheetHeader>
-          <SheetTitle>{detail.name ?? detail.email}</SheetTitle>
+          <SheetTitle tabIndex={-1} className="outline-none">
+            {detail.name ?? detail.email}
+          </SheetTitle>
           <SheetDescription>
             <BreakableEmail email={detail.email} />
           </SheetDescription>

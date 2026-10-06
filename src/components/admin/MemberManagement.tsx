@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -133,6 +133,27 @@ export function MemberManagement({
   // 面板蓋在列表上，面板內動作的錯誤印在列表區等於印在看不見的地方。
   const [panelError, setPanelError] = useState<string | null>(null);
 
+  // 「查看」→ 面板的請求狀態。**只有最後一次意圖算數**：
+  // - `openingIds`：在途的列各自轉圈、停用；每個請求結算時只移除自己的 id。單值
+  //   做不到——點 B 會讓 A 的鈕提前放開，A 的結算又會清掉 B 的轉圈。
+  // - `detailSeq`：最新意圖的序號。每次點「查看」遞增；回應只有序號仍為最新時才
+  //   可寫面板或錯誤。動作後的重讀共用同一個序號（開頭取號、不遞增），關閉面板
+  //   時遞增——否則關掉之後晚到的重讀會把面板重新打開，或把別人的面板換掉。
+  const [openingIds, setOpeningIds] = useState<string[]>([]);
+  const detailSeq = useRef(0);
+  // 開出目前面板的那顆「查看」屬於哪一列（關閉時把焦點還給它）。
+  const openedFromId = useRef<string | null>(null);
+  const isLatest = (seq: number) => seq === detailSeq.current;
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  // 取詳情失敗走列表上方的錯誤框（不開空面板）。手機上停在長列表深處按「查看」
+  // 時那裡在畫面外，使用者只會看到鈕停止轉圈——等於「按了沒反應」。
+  useEffect(() => {
+    if (!actionError) return;
+    errorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    errorRef.current?.focus();
+  }, [actionError]);
+
   // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
   // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
   const list = usePagedList<AdminMember>({
@@ -155,14 +176,41 @@ export function MemberManagement({
   const isLoading = list.isLoading;
 
   const openDetail = async (id: string) => {
+    const seq = ++detailSeq.current;
     setActionError(null);
     setPanelError(null);
+    setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
     try {
-      setDetailFor(await loadMemberDetail(id));
+      const detail = await loadMemberDetail(id);
+      if (isLatest(seq)) {
+        openedFromId.current = id;
+        setDetailFor(detail);
+      }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+      if (isLatest(seq)) setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+    } finally {
+      setOpeningIds((prev) => prev.filter((x) => x !== id));
     }
   };
+
+  const closeDetail = () => {
+    detailSeq.current += 1;
+    setDetailFor(null);
+  };
+
+  // 關閉後焦點回到同一位會員的「查看」鈕。不能交給 Radix 自己還原：載入期間
+  // 觸發鈕是停用的，焦點早就掉到 body，Radix 記到的就是 body。
+  const returnFocusToTrigger = (event: Event) => {
+    const id = openedFromId.current;
+    if (!id) return;
+    const trigger = document.querySelector<HTMLElement>(`[data-member-detail-trigger="${id}"]`);
+    if (!trigger) return;
+    event.preventDefault();
+    trigger.focus();
+  };
+
+  const latestOpeningId = openingIds[openingIds.length - 1];
+  const latestOpening = latestOpeningId ? members.find((m) => m.id === latestOpeningId) : undefined;
 
   const requestAction = (action: MemberAction) => {
     if (needsConfirm(action)) {
@@ -175,6 +223,9 @@ export function MemberManagement({
   const runAction = async (action: MemberAction) => {
     const target = detailFor;
     if (!target) return;
+    // 與「查看」共用序號（取號、不遞增）：面板關掉或換人之後，這個動作晚到的
+    // 結果（重讀與錯誤）一律丟棄。
+    const seq = detailSeq.current;
     setProcessingId(target.id);
     setPanelError(null);
     try {
@@ -184,16 +235,17 @@ export function MemberManagement({
     } catch (err) {
       // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
       // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      setPanelError(err instanceof Error ? err.message : '操作失敗');
+      if (isLatest(seq)) setPanelError(err instanceof Error ? err.message : '操作失敗');
       setProcessingId(null);
       return;
     }
     // 變更已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的
     // 標籤都隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
     try {
-      setDetailFor(await loadMemberDetail(target.id));
+      const fresh = await loadMemberDetail(target.id);
+      if (isLatest(seq)) setDetailFor(fresh);
     } catch {
-      setPanelError('已更新，但重新讀取詳情失敗，請關閉面板後重開');
+      if (isLatest(seq)) setPanelError('已更新，但重新讀取詳情失敗，請關閉面板後重開');
     }
     await list.reload();
     setProcessingId(null);
@@ -256,7 +308,8 @@ export function MemberManagement({
           processing={processingId === detailFor.id}
           panelError={panelError}
           onRequestAction={requestAction}
-          onClose={() => setDetailFor(null)}
+          onClose={closeDetail}
+          onCloseAutoFocus={returnFocusToTrigger}
         />
       )}
 
@@ -327,12 +380,20 @@ export function MemberManagement({
         </section>
 
         {actionError && (
-          <StatusCallout
-            variant="destructive"
-            role="alert"
-            className="px-3 py-2 text-sm"
-            title={actionError}
-          />
+          <div ref={errorRef} tabIndex={-1} className="outline-none">
+            <StatusCallout
+              variant="destructive"
+              role="alert"
+              className="px-3 py-2 text-sm"
+              title={actionError}
+            />
+          </div>
+        )}
+        {/* 按鈕上的 aria-busy 多數報讀器不播報，另放一句。 */}
+        {latestOpeningId && (
+          <p role="status" className="sr-only">
+            正在讀取 {latestOpening?.name ?? latestOpening?.email ?? '會員'} 的詳情
+          </p>
         )}
 
         {/* 會員列表 */}
@@ -405,7 +466,7 @@ export function MemberManagement({
             ) : members.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
             ) : !isDesktop ? (
-              <MemberCardList members={members} onOpenDetail={openDetail} />
+              <MemberCardList members={members} onOpenDetail={openDetail} openingIds={openingIds} />
             ) : (
               <Table>
                 <TableHeader>
@@ -455,6 +516,8 @@ export function MemberManagement({
                             size="sm"
                             tone="secondary"
                             aria-label={`查看 ${member.name ?? member.email} 的詳情`}
+                            data-member-detail-trigger={member.id}
+                            loading={openingIds.includes(member.id)}
                             onClick={() => openDetail(member.id)}
                           >
                             查看
