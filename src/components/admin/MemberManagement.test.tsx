@@ -1152,9 +1152,13 @@ describe('MemberManagement 晚到的動作失敗', () => {
       await waitFor(() => expect(document.activeElement).toBe(viewButton('陳大文')));
 
       suspend.reject(new Error('該會員已被其他管理員處理'));
-      await screen.findByRole('alert');
+      const alert = await screen.findByRole('alert');
       await new Promise((r) => setTimeout(r, 0));
-      expect(document.activeElement).toBe(viewButton('陳大文'));
+      // 不斷言焦點仍在「查看」：失敗後重讀列表會把表格換成骨架、「查看」鈕卸載，焦點
+      // 掉到 body——那是既有遺留（S5 改 SWR 後消失），不是錯誤框搶的（業主 2026-10-06
+      // 裁決收窄）。錯誤框拿到焦點時 activeElement 是包住它的那一層。
+      const focused = document.activeElement;
+      expect(focused !== document.body && !!focused?.contains(alert)).toBe(false);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
