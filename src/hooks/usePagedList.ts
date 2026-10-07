@@ -187,9 +187,14 @@ export function usePagedList<T, M = unknown>({
         isLoadingMore: false,
         loadMoreError: null,
       });
+      // 結算只認最新 ticket，而且身分還是發出時那個：身分已換、effect 還沒發出新身分的
+      // 重讀之前，舊 ticket 仍是「最新」——這時落地若交給 onLanded，會以新身分的設定
+      // （例如快取槽）處理舊身分的資料。
+      const current = () =>
+        mounted.current && requests.isLatest(ticket) && latest.current.identity === id;
       invoke(() => fetchPage({ limit, offset: 0 })).then(
         (res) => {
-          if (!mounted.current || !requests.isLatest(ticket)) return;
+          if (!current()) return;
           const items = res.items ?? [];
           const landedPage = { items, total: res.total ?? items.length, meta: res.meta };
           if (latest.current.onLanded?.(landedPage, { stamp: ticket.stamp }) === false) {
@@ -219,7 +224,7 @@ export function usePagedList<T, M = unknown>({
           finish(id, 'done');
         },
         (err) => {
-          if (!mounted.current || !requests.isLatest(ticket)) return;
+          if (!current()) return;
           const error = messageOf(err, '載入失敗');
           commit(
             latest.current.clearOnError?.(err)
