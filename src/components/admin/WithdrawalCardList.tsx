@@ -3,8 +3,10 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { CardOverflowMenu } from './CardOverflowMenu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
-import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { HiddenValue, WithdrawalFundingFields } from './WithdrawalFundingFields';
 import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
+import { DataAgeNote } from './DataAgeNote';
+import { Skeleton } from '../ui/skeleton';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -39,6 +41,18 @@ interface WithdrawalCardListProps {
   /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
   actionsDisabled?: boolean;
   formatAmount: (n: number) => string;
+  /** 失敗或逾時：卡片上的匯款金額遮住（扣點照常，K6）。 */
+  masked?: boolean;
+  /**
+   * 展開區的五欄（G）：`ready` 顯示；`pending` 是更新中的骨架；`paused` 是失敗或逾時時的
+   * 「資料未確認，暫停顯示」。後兩者都不渲染複製鈕。
+   */
+  fundingState?: 'ready' | 'pending' | 'paused';
+  /** 查看證件的閘門（K5）：⋯ 選單裡只有它會停用。 */
+  idCardGate?: { paused: boolean; look: boolean; describedBy?: string };
+  /** 展開區的資料時間（綁列表當下的資料）。 */
+  fetchedAt?: number | null;
+  now?: number;
 }
 
 export function WithdrawalCardList({
@@ -53,6 +67,11 @@ export function WithdrawalCardList({
   processingId,
   actionsDisabled = false,
   formatAmount,
+  masked = false,
+  fundingState = 'ready',
+  idCardGate,
+  fetchedAt = null,
+  now = 0,
 }: WithdrawalCardListProps) {
   return (
     <div className="space-y-3">
@@ -68,7 +87,9 @@ export function WithdrawalCardList({
             </div>
 
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xl font-bold">{formatAmount(w.amount)}</span>
+              <span className="text-xl font-bold">
+                {masked ? <HiddenValue /> : formatAmount(w.amount)}
+              </span>
               <span className="text-xs text-muted-foreground">
                 {new Date(w.requestedAt).toLocaleDateString('zh-TW')}
               </span>
@@ -129,7 +150,13 @@ export function WithdrawalCardList({
                   <CardOverflowMenu
                     label={`${w.userName} 的更多操作`}
                     actions={[
-                      { label: '查看證件', onSelect: () => onOpenIdCard(w) },
+                      {
+                        label: '查看證件',
+                        onSelect: () => onOpenIdCard(w),
+                        paused: idCardGate?.paused,
+                        pausedLook: idCardGate?.look,
+                        describedBy: idCardGate?.describedBy,
+                      },
                       { label: '查看歷史', onSelect: () => onOpenHistory(w) },
                     ]}
                   />
@@ -138,12 +165,23 @@ export function WithdrawalCardList({
               <CollapsibleContent>
                 {/* 扣點在展開態才出現:對帳時才需要，掃視時不需要。 */}
                 <p className="mt-2 text-xs text-muted-foreground">扣點 {w.amount + w.fee} P</p>
-                <WithdrawalFundingFields
-                  record={w}
-                  onCopyAccount={onCopyAccount}
-                  formatAmount={formatAmount}
-                  className="mt-2 space-y-2 rounded-md border p-3"
-                />
+                {fundingState === 'ready' ? (
+                  <>
+                    <WithdrawalFundingFields
+                      record={w}
+                      onCopyAccount={onCopyAccount}
+                      formatAmount={formatAmount}
+                      className="mt-2 space-y-2 rounded-md border p-3"
+                    />
+                    <DataAgeNote fetchedAt={fetchedAt} now={now} className="mt-2" />
+                  </>
+                ) : fundingState === 'paused' ? (
+                  <p className="mt-2 rounded-md border p-3 text-sm text-muted-foreground">
+                    資料未確認，暫停顯示
+                  </p>
+                ) : (
+                  <Skeleton aria-hidden="true" className="mt-2 h-40 w-full rounded-md" />
+                )}
               </CollapsibleContent>
             </Collapsible>
           </CardContent>

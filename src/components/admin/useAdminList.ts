@@ -32,6 +32,23 @@ export const STALE_HINT_MINUTES = 10;
 /** 更新超過這麼久才淡化列表、套閘門的停用樣式：0.3 秒內結束的更新不閃灰。 */
 export const REVALIDATE_DIM_DELAY_MS = 300;
 
+/**
+ * `on` 持續 `delay` 毫秒後才成立，`on` 一落下立即不成立——更新中的淡化、匯款類閘門的
+ * 停用外觀、鎖分頁的說明行都用它：0.3 秒內結束的更新不閃灰。
+ */
+export function useDelayedFlag(on: boolean, delay: number): boolean {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      setLate(false);
+      return;
+    }
+    const timer = setTimeout(() => setLate(true), delay);
+    return () => clearTimeout(timer);
+  }, [on, delay]);
+  return on && late;
+}
+
 const isForbidden = (err: unknown) =>
   (err as { status?: unknown } | null | undefined)?.status === 403;
 

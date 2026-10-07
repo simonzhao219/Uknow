@@ -19,7 +19,12 @@ export interface AdminToolbarProps {
   refreshDisabled?: boolean;
   /** CSV 停用的原因（狀態行或錯誤區的 id）。 */
   exportDescribedBy?: string;
+  /**
+   * 匯款類閘門關著（資料未確認）：CSV 鈕 aria-disabled、點擊不匯出。不用原生 disabled——
+   * 0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
+   */
   exportPaused?: boolean;
+  /** 停用的外觀：頁面在更新超過 0.3 秒、失敗或逾時時才給。 */
   exportPausedVisible?: boolean;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
@@ -54,6 +59,8 @@ export function AdminToolbar({
   statusText = '',
   refreshDisabled = false,
   exportDescribedBy,
+  exportPaused = false,
+  exportPausedVisible = false,
   onExport,
   isExporting = false,
   canExport = true,
@@ -105,8 +112,13 @@ export function AdminToolbar({
             type="button"
             tone="secondary"
             size="icon"
-            className={ICON_TO_LABELED}
-            onClick={onExport}
+            className={cn(
+              ICON_TO_LABELED,
+              'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50',
+            )}
+            onClick={exportPaused ? undefined : onExport}
+            aria-disabled={exportPaused || undefined}
+            data-paused={exportPaused && exportPausedVisible ? 'true' : undefined}
             disabled={disabled || !canExport}
             loading={isExporting}
             aria-labelledby={exportNameId}

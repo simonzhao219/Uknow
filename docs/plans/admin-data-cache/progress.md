@@ -18,7 +18,7 @@
 | 2 | `createAdminCache`（builder `{id, slot, resource, params}`、fence 用 hooks 的 `nextStamp`、空結果刪槽、view、`accessLost`、`open`／`dispose`）＋`useAdminList`＋`writeOutcome`＋PII 守衛（AST） | ✅ 綠燈 | `14dfabf` | `f0e2b7f` |
 | 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）、匯出宣告文字同步、`useRefreshAnnouncer`，兩個呼叫端同步改接 | ✅ 綠燈 | `439601b` | `53273b3` |
 | 4a | 提領頁純遷移到 `usePagedList`（綠到綠，既有測試一字不改；先補特徵測試） | ✅ 綠到綠（特徵測試 `b079c63`） | — | `ac08b01` |
-| 4b | 提領頁讀取側：快取、匯款類閘門（D、K5）與 `AdminListStatus`、統計骨架（A）、作業面板、資料時間、骨架、錯誤區、失敗保留舊列與遮罩、篩選保留 | ⬜ 未開始 | | |
+| 4b | 提領頁讀取側：快取、匯款類閘門（D、K5）與 `AdminListStatus`、統計骨架（A）、作業面板、資料時間、骨架、錯誤區、失敗保留舊列與遮罩、篩選保留 | ✅ 綠燈 | `c460654` | 見下一個 commit |
 | 4c | 提領頁動作側：`AdminActionReport`、結果分類、失敗重讀、失效與 fence、批次快照、焦點後備、`withdrawalExport.ts`（含完成核對 K7）、busy | ⬜ 未開始 | | |
 | ★ | **中途對照（K8）**：4c 綠燈後通知主 session 對照 hooks＋快取＋提領頁的 diff，通過才開 5a（最後對照只看 5–9） | ⬜ 未開始 | — | — |
 | 5a | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀、結果不明重讀詳情、換搜尋整合測試） | ⬜ 未開始 | | |
@@ -30,7 +30,7 @@
 
 ## 目前位置與下一步
 
-主 session 對照通過（PR #371 留言 6031064612），業主 2026-10-07 打 `/tdd-implement`，**施工中：階段 4b**（1a–4a 綠燈）。十三個階段，需要
+主 session 對照通過（PR #371 留言 6031064612），業主 2026-10-07 打 `/tdd-implement`，**施工中：階段 4c**（1a–4b 綠燈）。十三個階段，需要
 兩到三次對話——中途 `/clear` 續作屬預期內，從本表找回位置。**4c 綠燈後先停下來請主 session 中途對照（★ 列），通過才開 5a；
 最後對照只看 5–9。**
 

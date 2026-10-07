@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
@@ -8,7 +8,7 @@ import { Eye } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { AdminToolbar } from './AdminToolbar';
 import { WithdrawalCardList } from './WithdrawalCardList';
-import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { HiddenValue, WithdrawalFundingFields } from './WithdrawalFundingFields';
 import {
   WITHDRAWAL_STATUS_VALUES,
   WithdrawalStatusBadge,
@@ -32,8 +32,14 @@ import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
 import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { usePagedList } from '../../hooks/usePagedList';
-import type { AdminCache } from './adminCache';
+import { type AdminCache, type WithdrawalListParams, adminQuery } from './adminCache';
+import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
+import { useRefreshAnnouncer } from './useRefreshAnnouncer';
+import { AdminListSkeleton } from './AdminListSkeleton';
+import { AdminListError } from './AdminListError';
+import { AdminListStatus } from './AdminListStatus';
+import { AdminStaleNotice } from './AdminStaleNotice';
+import { DataAgeNote, formatDataAge } from './DataAgeNote';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
@@ -140,11 +146,6 @@ const PAGE_SIZE = 50;
 // CSV 匯出上限（需求方裁決）。超過就明示拒絕，不給半份檔案。
 const CSV_MAX_ROWS = 2000;
 
-const EMPTY_STATS: AdminWithdrawalStats = {
-  pendingAmount: 0,
-  byStatus: { pending: 0, awaiting_collection: 0, completed: 0, rejected: 0 },
-};
-
 const twd = (n: number) => `$${n.toLocaleString('en-US')}`;
 
 // 動作完成後的回報。刻意**留在畫面上**而不是彈個 toast 就消失：admin 做完
@@ -155,19 +156,44 @@ const ACTION_DONE: Record<string, string> = {
   completed: '已代為結案',
 };
 
+// 匯款類閘門的停用外觀：只在 data-paused="true" 時套（更新超過 0.3 秒、失敗、逾時）。
+const PAUSED_LOOK = 'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50';
+
+// 統計卡的標籤與取值。待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
+// 數字去對網銀的轉出總額，混進手續費就對不起來。
+const STAT_ITEMS: { label: string; value: (s: AdminWithdrawalStats) => string }[] = [
+  { label: '待匯款總額', value: (s) => twd(s.pendingAmount) },
+  { label: withdrawalStatusLabel('pending'), value: (s) => String(s.byStatus.pending) },
+  {
+    label: withdrawalStatusLabel('awaiting_collection'),
+    value: (s) => String(s.byStatus.awaiting_collection),
+  },
+  { label: withdrawalStatusLabel('completed'), value: (s) => String(s.byStatus.completed) },
+];
+// 手機的一行摘要把「待匯款總額」縮成「待匯款」：一行放得下四項。
+const SUMMARY_LABELS = ['待匯款', ...STAT_ITEMS.slice(1).map((item) => item.label)];
+// 作業面板骨架的五欄（戶名、身分證、銀行代號、帳號、匯款金額）。
+const FUNDING_FIELD_KEYS = ['name', 'id-number', 'bank-code', 'account', 'amount'];
+
 export function WithdrawalManagement({
   loadWithdrawals,
+  cache,
   updateStatus: submitStatus,
   batchMarkPaid,
 }: WithdrawalManagementProps) {
   // W8：「標記已匯款」需要同時開著網銀，手機上做不到，所以鎖在桌面。
   // 退件與代為完成不鎖——那是客服接到電話當下就該能處理的事。
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  const statusId = useId();
+  const listErrorId = useId();
 
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   // 動作與匯出的失敗（列表讀取的失敗在 list.error）。
   const [actionError, setActionError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState('all');
+  // 切回時回到原本的狀態篩選（J）：存在記憶體快取的 view，搜尋字與勾選不存。
+  const [statusFilter, setStatusFilter] = useState(
+    () => cache?.readView().withdrawalStatus ?? 'all',
+  );
   // 匯出中。state 驅動畫面；ref 擋重入——setState 要等 re-render 才讓按鈕
   // disabled，同一個 tick 連按兩次會並行跑兩輪收集、下載兩份對帳檔。
   const [isExporting, setIsExporting] = useState(false);
@@ -181,6 +207,9 @@ export function WithdrawalManagement({
   const [paidTarget, setPaidTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  // 對話框的資料時間在開框時凍結：內容取自點擊當下那一列，綁列表即時的時間的話，更新
+  // 落地後會標成「剛剛更新」，內容卻仍是舊的——比不標更糟。
+  const [dialogFetchedAt, setDialogFetchedAt] = useState<number | null>(null);
   // 退件與代為結案的理由。後端對這兩個轉換強制要求非空 note（btrim 後為空
   // 也算沒填），所以沒有輸入欄＝那顆按鈕在正式環境每次都 400。
   const [reasonInput, setReasonInput] = useState('');
@@ -196,35 +225,78 @@ export function WithdrawalManagement({
     if (!isDesktop) setSelected(new Set());
   }, [isDesktop]);
 
-  // 分頁走共用 hook（序號、載入更多與重讀互擋）。缺欄位時 hook 退回保守值，不要讓
+  // 分頁走後台的組合 hook：快取當種子、背景重讀、落地驗證。缺欄位時退回保守值，不要讓
   // 它變成 undefined 再往下讀——這是 e2e 教出來的：舊 mock 不回 total／stats，
   // `stats.pendingAmount` 直接擲錯，而 WithdrawalManagement 是 AdminDashboard 的預設
   // 分頁，一個面板的 payload 形狀不合，**整個後台的分頁一起打不開**。
-  const list = usePagedList<AdminWithdrawalRecord, AdminWithdrawalStats>({
+  const list = useAdminList<AdminWithdrawalRecord, AdminWithdrawalStats, WithdrawalListParams>({
+    cache,
+    query: adminQuery.withdrawals({ status: statusFilter }),
     pageSize: PAGE_SIZE,
-    deps: [statusFilter],
-    load: async ({ limit, offset }) => {
-      const data = await loadWithdrawals({ status: statusFilter, limit, offset });
+    load: async (params, { limit, offset }) => {
+      const data = await loadWithdrawals({ ...params, limit, offset });
       return { items: data.withdrawals, total: data.total, meta: data.stats };
     },
   });
   const withdrawals = list.items;
   const total = list.total;
-  const stats = list.meta ?? EMPTY_STATS;
-  // 任何重讀都出骨架（遷移前的行為）；背景更新在下一步才接上。
-  const isLoading = list.isLoading || list.isRevalidating;
-  const isLoadingMore = list.isLoadingMore;
-  const loadError = actionError ?? list.error ?? list.loadMoreError;
+  const updating = list.isLoading || list.isRevalidating;
+  const failed = list.error !== null;
+  const confirmed = list.isConfirmed;
+  // 失敗或逾 15 秒：不脈動的靜態呈現——統計「—」、面板「暫停顯示」、收款資訊遮住。
+  const settledUnconfirmed = !confirmed && (failed || list.isSlow);
+  const stale = withdrawals.length > 0 && (failed || list.isSlow);
+  // 更新中的淡化與停用外觀延遲 0.3 秒才出現、離開立即；失敗、逾時、匯出是靜態狀態，立即顯示。
+  const dimmed = useDelayedFlag(updating && !list.isSlow, REVALIDATE_DIM_DELAY_MS);
+  const blockingError = actionError ?? list.loadMoreError;
 
-  // 重讀。開頭清掉上一輪的錯誤——批次的「先重抓、再報告」靠這個順序；成功才清勾選：
-  // 換一批資料，「已選取 N 筆」就指向畫面上已經不存在的列，而下一步是不可回退的
-  // 批次匯款。
-  const fetchWithdrawals = async () => {
+  // 換一批資料（接受的落地）就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在的
+  // 列，而下一步是不可回退的批次匯款。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 資料版本一變就清，本身就是觸發條件
+  useEffect(() => {
+    setSelected(new Set());
+  }, [list.dataVersion]);
+
+  // 重讀。開頭清掉上一輪的動作錯誤——批次的「先重抓、再報告」靠這個順序。
+  const reload = async () => {
     setActionError(null);
-    const outcome = await list.reload();
-    if (outcome === 'done') setSelected(new Set());
-    return outcome;
+    return list.reload();
   };
+  const isUpdating = updating && !list.isSlow;
+  const announcer = useRefreshAnnouncer({ isUpdating, reload, settled: list.settled });
+
+  // 手動按下（工具列、陳舊提示、錯誤區的重試）的那條結算若失敗，狀態文字已經播過「更新
+  // 失敗」，陳舊提示就不再以 alert 打斷；新的一次讀取開始（錯誤清掉）時歸零。
+  const [failureAnnounced, setFailureAnnounced] = useState(false);
+  useEffect(() => {
+    if (!failed) setFailureAnnounced(false);
+  }, [failed]);
+  const manualRefresh = () => {
+    announcer.refresh();
+    void list.settled().then((outcome) => setFailureAnnounced(outcome === 'failed'));
+  };
+
+  // 匯款類閘門（標記已匯款、勾選與批次、CSV、查看證件）：本次讀取確認前一律擋下點擊
+  // （首個 render 就生效），外觀與原因跟淡化走同一個 0.3 秒判準。退件、代為完成、查看
+  // 歷史不閘——後端狀態機擋不合法的轉換，手機急救的退件不能被鎖住。
+  const gate = {
+    paused: !confirmed,
+    look: !confirmed && (dimmed || failed || list.isSlow),
+    describedBy: !confirmed ? statusId : undefined,
+  };
+  const pausedProps = {
+    'aria-disabled': gate.paused || undefined,
+    'aria-describedby': gate.describedBy,
+    'data-paused': gate.look ? 'true' : undefined,
+  };
+  const statusSuffix = isExporting
+    ? '匯出中，暫停其他操作'
+    : gate.look
+      ? failed
+        ? '更新失敗，暫停匯款相關操作'
+        : '更新中，暫停匯款相關操作'
+      : undefined;
+  const listFailedEmpty = failed && withdrawals.length === 0;
 
   // 作業面板預設盯著第一筆：admin 開著網銀時，面板必須一進畫面就有內容，
   // 而不是先點一下才出現。
@@ -232,14 +304,17 @@ export function WithdrawalManagement({
   const selectedRecords = withdrawals.filter((w) => selected.has(w.id));
   const pageIds = withdrawals.map((w) => w.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const stats = list.meta ?? null;
 
   const toggleAllOnPage = () => {
+    if (gate.paused) return;
     // 「全選」= 這一頁，不是整個篩選結果。悄悄擴大到未載入的頁，等於使用者
     // 以為勾了 2 筆、實際送出 37 筆——而批次匯款不可回退。
     setSelected(allPageSelected ? new Set() : new Set(pageIds));
   };
 
   const toggleOne = (id: string) => {
+    if (gate.paused) return;
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -247,15 +322,20 @@ export function WithdrawalManagement({
     });
   };
 
+  const openDialog = (open: () => void) => {
+    setDialogFetchedAt(list.fetchedAt);
+    open();
+  };
+
   const runBatch = async () => {
     const items = selectedRecords.map((w) => ({ id: w.id }));
     setBatchOpen(false);
     try {
       const result = await batchMarkPaid(items);
-      // **先重抓，再報告。** 反過來寫的話 fetchWithdrawals 的 setActionError(null)
+      // **先重抓，再報告。** 反過來寫的話 reload 的 setActionError(null)
       // 會把剛寫上去的訊息清掉——admin 做完 12 筆、其中 1 筆失敗，畫面卻什麼
       // 都不說，他會以為全部成功。批次不可回退，那筆漏掉的不會自己浮出來。
-      await fetchWithdrawals();
+      await reload();
       if (result.failed.length) {
         setActionError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
       } else {
@@ -263,7 +343,7 @@ export function WithdrawalManagement({
       }
       return;
     } catch (err) {
-      await fetchWithdrawals();
+      await reload();
       setActionError(err instanceof Error ? err.message : '批次標記失敗');
     }
   };
@@ -292,7 +372,7 @@ export function WithdrawalManagement({
     try {
       await submitStatus(record.id, status, note, bankRef);
       setActionMessage(`${ACTION_DONE[status]}：${record.userName}`);
-      await fetchWithdrawals();
+      await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '狀態更新失敗');
     } finally {
@@ -385,6 +465,7 @@ export function WithdrawalManagement({
   // 寫入動作、批次匯款與載入更多也停用：中途有列狀態改變而離開篩選，offset
   // 分頁會整體前移，對帳檔靜默漏列。
   // try/finally 包住整段——上限拒絕、收集失敗兩條提早 return 都要解除忙碌。
+  // 收集範圍以確認過的 total 為準：閘門關著（資料未確認）時 CSV 鈕不會呼叫到這裡。
   const downloadCSV = async () => {
     if (exportingRef.current) return;
     exportingRef.current = true;
@@ -396,6 +477,10 @@ export function WithdrawalManagement({
       setIsExporting(false);
     }
   };
+
+  const dataAge = (
+    <DataAgeNote as="span" fetchedAt={dialogFetchedAt} now={list.now} className="mt-1 block" />
+  );
 
   return (
     // 手機的區塊間距 12px、桌面維持 24px:卡片列表本身就是 `space-y-3`，
@@ -415,6 +500,7 @@ export function WithdrawalManagement({
                 {paidTarget.userName} 的提領 {paidTarget.amount} P， 匯入帳號末五碼{' '}
                 {String(paidTarget.bankAccount ?? '').slice(-5) || '未提供'}。
                 確認後該筆將轉為「待查收」並通知會員款項已匯出。
+                {dataAge}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-1 py-2">
@@ -453,6 +539,7 @@ export function WithdrawalManagement({
               <AlertDialogDescription>
                 退件後，{rejectTarget.userName} 的 {rejectTarget.amount + rejectTarget.fee} P
                 （含手續費）將自動退回其可提領點數。此操作無法復原。
+                {dataAge}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {/* 理由必填：它是會員唯一會看到的說明。沒有它，被退件的人只會
@@ -494,6 +581,7 @@ export function WithdrawalManagement({
               <AlertDialogDescription>
                 {completeTarget.userName} 的提領將由你代為結案。會員端會明示這是
                 管理員代為完成，不會顯示成他本人查收。
+                {dataAge}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {/* 理由必填且由 admin 自己寫：稽核要答得出「是誰、憑什麼認定會員
@@ -536,6 +624,7 @@ export function WithdrawalManagement({
               <AlertDialogDescription>
                 以下 {selectedRecords.length} 筆將轉為「待查收」，合計匯出{' '}
                 {twd(selectedRecords.reduce((s, w) => s + w.amount, 0))}。此操作無法復原。
+                {dataAge}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <ul className="max-h-48 overflow-y-auto text-sm space-y-1 py-2">
@@ -559,7 +648,12 @@ export function WithdrawalManagement({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>轉換歷史</DialogTitle>
-              <DialogDescription>{historyRecord.userName} 的提領處理紀錄</DialogDescription>
+              {/* 歷史讀的是點擊當下那一列內嵌的 events，與列表同齡（K5）：更新途中也能開，
+                  資料時間放在說明裡，開框時報讀器會念。 */}
+              <DialogDescription>
+                {historyRecord.userName} 的提領處理紀錄
+                {dataAge}
+              </DialogDescription>
             </DialogHeader>
             <ol className="space-y-3 py-2 text-sm">
               {historyRecord.events.length === 0 ? (
@@ -595,84 +689,58 @@ export function WithdrawalManagement({
         </div>
       )}
 
+      {/* 統計切回時是骨架、本次讀取確認後才出數字（A）：待審件數要即時，待匯款總額是對
+          網銀轉出總額的依據，都不從快取顯示。失敗或逾時寫「—」。骨架是裝飾，aria-hidden。 */}
       <section aria-label="提領彙總">
         {/* 手機不是把卡片壓扁，而是**整組換成一行摘要**。壓扁過的四張卡仍佔
             153px，把第一筆記錄推到 y=677——第一屏只剩 135px，兩筆要 300px。
             admin 打開手機是為了處理那一筆，統計是背景資訊，一行就夠。
             桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
         {!isDesktop ? (
-          <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
-            <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">待匯款</dt>
-              <dd className="font-bold">{twd(stats.pendingAmount)}</dd>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">{withdrawalStatusLabel('pending')}</dt>
-              <dd className="font-bold">{stats.byStatus.pending}</dd>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">
-                {withdrawalStatusLabel('awaiting_collection')}
-              </dt>
-              <dd className="font-bold">{stats.byStatus.awaiting_collection}</dd>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <dt className="text-xs text-muted-foreground">
-                {withdrawalStatusLabel('completed')}
-              </dt>
-              <dd className="font-bold">{stats.byStatus.completed}</dd>
-            </div>
-          </dl>
+          confirmed || settledUnconfirmed ? (
+            <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+              {STAT_ITEMS.map((item, i) => (
+                <div key={item.label} className="flex items-baseline gap-1">
+                  <dt className="text-xs text-muted-foreground">{SUMMARY_LABELS[i]}</dt>
+                  <dd className="font-bold">{confirmed && stats ? item.value(stats) : '—'}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <Skeleton aria-hidden="true" className="h-14 w-full rounded-lg" />
+          )
         ) : (
           <StatCardGrid>
-            {/* 待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
-            數字去對網銀的轉出總額，混進手續費就對不起來。 */}
-            <Card>
-              {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
-                為了處理那一筆，不是看儀表板——四張卡各佔 100px 高會把第一筆
-                記錄推到第一屏之外（實測 y=832 vs 視窗 812）。桌面維持原樣。
-                共用原語 StatCardGrid 不動:它也服務會員端的 RewardStats 與
-                ReferralStats，那兩處不在本 feature 範圍內。 */}
-              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">待匯款總額</p>
-                {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
-                  前端無上限，所以縮字級而不是指望數字不會變大。 */}
-                <p className="text-base sm:text-2xl font-bold">{twd(stats.pendingAmount)}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {withdrawalStatusLabel('pending')}
-                </p>
-                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.pending}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {withdrawalStatusLabel('awaiting_collection')}
-                </p>
-                <p className="text-base sm:text-2xl font-bold">
-                  {stats.byStatus.awaiting_collection}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {withdrawalStatusLabel('completed')}
-                </p>
-                <p className="text-base sm:text-2xl font-bold">{stats.byStatus.completed}</p>
-              </CardContent>
-            </Card>
+            {STAT_ITEMS.map((item) => (
+              <Card key={item.label}>
+                {/* 手機把統計卡壓扁:標籤與數字同一列、內距減半。admin 打開手機是
+                    為了處理那一筆，不是看儀表板——四張卡各佔 100px 高會把第一筆
+                    記錄推到第一屏之外（實測 y=832 vs 視窗 812）。桌面維持原樣。
+                    共用原語 StatCardGrid 不動:它也服務會員端的 RewardStats 與
+                    ReferralStats，那兩處不在本 feature 範圍內。 */}
+                <CardContent className="flex items-baseline justify-between gap-2 p-3 sm:block sm:p-6">
+                  <p className="text-xs sm:text-sm text-muted-foreground">{item.label}</p>
+                  {/* 六位數金額在 375px 的兩欄統計卡裡溢出 13px（實測）。點數是累積值、
+                      前端無上限，所以縮字級而不是指望數字不會變大。 */}
+                  {confirmed && stats ? (
+                    <p className="text-base sm:text-2xl font-bold">{item.value(stats)}</p>
+                  ) : settledUnconfirmed ? (
+                    <p className="text-base sm:text-2xl font-bold">—</p>
+                  ) : (
+                    <Skeleton aria-hidden="true" className="mt-1 h-6 w-20 sm:h-8" />
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </StatCardGrid>
         )}
       </section>
 
       {/* W1 同屏：admin 開著網銀打字，姓名／身分證／銀行代號／帳號／匯款金額
-          必須同時在眼前。要捲動或點開才看得到，就是逼人在兩個視窗間來回對帳。 */}
-      {isDesktop && activeRecord && (
+          必須同時在眼前。要捲動或點開才看得到，就是逼人在兩個視窗間來回對帳。
+          本次讀取確認前不顯示（G）：更新中是骨架，失敗或逾時寫「暫停顯示」，複製鈕都不渲染。
+          結果為空時整塊收掉。 */}
+      {isDesktop && (list.isLoading || withdrawals.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle>匯款作業面板</CardTitle>
@@ -683,13 +751,26 @@ export function WithdrawalManagement({
           <CardContent>
             {/* 五欄與手機版共用同一份 render（審查 R6）——各自手刻會長出
                 兩份會各自演化的 JSX，而「手機少一欄」在桌面開發時看不見。 */}
-            <WithdrawalFundingFields
-              record={activeRecord}
-              onCopyAccount={copyAccount}
-              formatAmount={twd}
-              ariaLabel="匯款作業面板"
-              className="grid gap-3 md:grid-cols-5"
-            />
+            {confirmed && activeRecord ? (
+              <>
+                <WithdrawalFundingFields
+                  record={activeRecord}
+                  onCopyAccount={copyAccount}
+                  formatAmount={twd}
+                  ariaLabel="匯款作業面板"
+                  className="grid gap-3 md:grid-cols-5"
+                />
+                <DataAgeNote fetchedAt={list.fetchedAt} now={list.now} className="mt-3" />
+              </>
+            ) : settledUnconfirmed ? (
+              <p className="text-sm text-muted-foreground">資料未確認，暫停顯示</p>
+            ) : (
+              <div aria-hidden="true" className="grid gap-3 md:grid-cols-5">
+                {FUNDING_FIELD_KEYS.map((key) => (
+                  <Skeleton key={key} className="h-12 w-full" />
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -717,6 +798,7 @@ export function WithdrawalManagement({
                   setActionError(null);
                   setSelected(new Set());
                   setStatusFilter(next);
+                  cache?.writeView({ withdrawalStatus: next });
                 }}
                 disabled={isExporting}
               >
@@ -733,29 +815,44 @@ export function WithdrawalManagement({
                 </SelectContent>
               </Select>
             }
-            onRefresh={fetchWithdrawals}
-            // 載入更多進行中也停用：loadMore 晚回來會把舊頁尾接到剛重設的列表上
+            onRefresh={manualRefresh}
+            statusText={announcer.statusText}
+            isUpdating={isUpdating}
+            // 載入更多進行中真停用：loadMore 晚回來會把舊頁尾接到剛重設的列表上
             // （同會員頁）；這頁是批次匯款的依據，重複或錯位的列不能出現。
-            isUpdating={false}
-            refreshDisabled={isLoading || isLoadingMore}
+            refreshDisabled={list.isLoadingMore}
             onExport={downloadCSV}
-            // 重新整理中 total／列表都是舊值，收集迴圈會照舊 total 收。
-            canExport={withdrawals.length > 0 && !isLoading && !isLoadingMore}
+            canExport={withdrawals.length > 0 && !list.isLoadingMore}
+            exportPaused={gate.paused}
+            exportPausedVisible={gate.look}
+            exportDescribedBy={listFailedEmpty ? listErrorId : gate.describedBy}
             isExporting={isExporting}
             disabled={isExporting}
           />
           {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
               只寫「共 N 筆」會讓人以為 N 就是全部。移出工具列自成一行，
-              不再參與工具列的寬度競爭。 */}
-          <p className="mt-2 text-sm text-muted-foreground">
-            已顯示 {withdrawals.length} / {total} 筆
-          </p>
+              不再參與工具列的寬度競爭。被閘的入口以 aria-describedby 指向這一行。 */}
+          <AdminListStatus
+            id={statusId}
+            shown={withdrawals.length}
+            total={total}
+            state={list.isLoading ? 'loading' : listFailedEmpty ? 'hidden' : 'ready'}
+            suffix={statusSuffix}
+          />
 
           {selected.size > 0 && (
             <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2">
               <span className="text-sm font-medium">已選取 {selected.size} 筆</span>
               {isDesktop && (
-                <Button size="sm" onClick={() => setBatchOpen(true)} disabled={isExporting}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (!gate.paused) openDialog(() => setBatchOpen(true));
+                  }}
+                  disabled={isExporting}
+                  className={PAUSED_LOOK}
+                  {...pausedProps}
+                >
                   批次標記已匯款
                 </Button>
               )}
@@ -777,163 +874,228 @@ export function WithdrawalManagement({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div role="status" aria-label="載入提領申請中" className="space-y-3 py-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+          {/* 有舊資料時的失敗或逾時：保留舊列並說出資料時間（E2）；收款資訊遮住，重試是背景重讀。
+              放在列表區外面：過期樣式的透明度不能疊到提示本身。 */}
+          {stale && !blockingError && (
+            <div className="mb-4">
+              <AdminStaleNotice
+                kind={failed ? 'failed' : 'slow'}
+                age={formatDataAge(list.fetchedAt ?? list.now, list.now)}
+                reason={list.error ?? undefined}
+                hidden="收款資訊已隱藏，重試後顯示"
+                onRetry={failed ? manualRefresh : undefined}
+                announce={!failureAnnounced}
+              />
             </div>
-          ) : loadError ? (
-            // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
-            // 以為今天沒人申請提領，而不是「沒讀到」。
-            <div className="py-12 text-center space-y-3">
-              <p className="text-destructive-subtle-foreground">{loadError}</p>
-              <Button onClick={fetchWithdrawals}>重試</Button>
-            </div>
-          ) : withdrawals.length === 0 ? (
-            <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
-          ) : !isDesktop ? (
-            <WithdrawalCardList
-              records={withdrawals}
-              activeId={activeId}
-              onActivate={setActiveId}
-              onCopyAccount={copyAccount}
-              onOpenIdCard={setViewRecord}
-              onOpenHistory={setHistoryRecord}
-              onReject={setRejectTarget}
-              onComplete={setCompleteTarget}
-              processingId={processingId}
-              actionsDisabled={isExporting}
-              formatAmount={twd}
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {/* 觸控裝置上把勾選欄讓寬讓高，44px 熱區才有地方伸展。
-                      熱區靠 checkbox 的負 inset 偽元素撐出來，而 Table 原語的
-                      overflow-x-auto 容器會**裁掉伸出容器左緣的部分**——實測
-                      左側只剩 16px 可用、可點區被削成 37px。
+          )}
+          {/* 更新中 aria-busy，0.3 秒後才淡化（快網路不閃）；失敗與逾時改用固定的過期樣式。 */}
+          <section
+            aria-label="提領申請列表"
+            aria-busy={updating || undefined}
+            data-dimmed={dimmed ? 'true' : undefined}
+            data-stale={stale ? 'true' : undefined}
+            className="transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
+          >
+            {blockingError ? (
+              // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
+              // 以為今天沒人申請提領，而不是「沒讀到」。
+              <div className="py-12 text-center space-y-3">
+                <p className="text-destructive-subtle-foreground">{blockingError}</p>
+                <Button onClick={manualRefresh}>重試</Button>
+              </div>
+            ) : list.isLoading ? (
+              <AdminListSkeleton
+                label="載入提領申請中"
+                variant={isDesktop ? 'rows' : 'cards'}
+                message={list.isSlow ? '更新較久，仍在等待伺服器回應' : undefined}
+              />
+            ) : listFailedEmpty ? (
+              <AdminListError
+                id={listErrorId}
+                message={list.error ?? ''}
+                retryLabel="重試"
+                tone="flow"
+                onRetry={manualRefresh}
+              />
+            ) : withdrawals.length === 0 ? (
+              <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
+            ) : !isDesktop ? (
+              <WithdrawalCardList
+                records={withdrawals}
+                activeId={activeId}
+                onActivate={setActiveId}
+                onCopyAccount={copyAccount}
+                onOpenIdCard={(record) => {
+                  if (!gate.paused) setViewRecord(record);
+                }}
+                onOpenHistory={(record) => openDialog(() => setHistoryRecord(record))}
+                onReject={(record) => openDialog(() => setRejectTarget(record))}
+                onComplete={(record) => openDialog(() => setCompleteTarget(record))}
+                processingId={processingId}
+                actionsDisabled={isExporting}
+                formatAmount={twd}
+                masked={stale}
+                fundingState={confirmed ? 'ready' : settledUnconfirmed ? 'paused' : 'pending'}
+                idCardGate={gate}
+                fetchedAt={list.fetchedAt}
+                now={list.now}
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {/* 觸控裝置上把勾選欄讓寬讓高，44px 熱區才有地方伸展。
+                        熱區靠 checkbox 的負 inset 偽元素撐出來，而 Table 原語的
+                        overflow-x-auto 容器會**裁掉伸出容器左緣的部分**——實測
+                        左側只剩 16px 可用、可點區被削成 37px。
 
-                      ⚠️ 只寫 pl-6 不寫 px-6:`ui/table.tsx` 的 TableHead/TableCell
-                      基底帶 `[&:has([role=checkbox])]:pr-0`，specificity (0,2,0)
-                      恆常生效，會蓋掉 `pointer-coarse:px-6` (0,1,0) 的
-                      padding-right（實測 computed padding-right = 0px）。寫 px-6
-                      會讓註解與實際行為不符——右側本來也不需要，熱區往右伸進的是
-                      隔壁儲存格、不在容器邊緣。
+                        ⚠️ 只寫 pl-6 不寫 px-6:`ui/table.tsx` 的 TableHead/TableCell
+                        基底帶 `[&:has([role=checkbox])]:pr-0`，specificity (0,2,0)
+                        恆常生效，會蓋掉 `pointer-coarse:px-6` (0,1,0) 的
+                        padding-right（實測 computed padding-right = 0px）。寫 px-6
+                        會讓註解與實際行為不符——右側本來也不需要，熱區往右伸進的是
+                        隔壁儲存格、不在容器邊緣。
 
-                      垂直:表頭原語是釘死的 h-10（40px），放不下 44px（實測 44×42），
-                      觸控時放大到 h-14。滑鼠裝置的密度完全不變。 */}
-                  <TableHead className="w-10 pointer-coarse:pl-6 pointer-coarse:h-14">
-                    <Checkbox
-                      touchTarget="expanded"
-                      aria-label="全選本頁的提領記錄"
-                      checked={allPageSelected}
-                      onCheckedChange={toggleAllOnPage}
-                    />
-                  </TableHead>
-                  <TableHead>會員</TableHead>
-                  <TableHead>扣點</TableHead>
-                  <TableHead>匯款金額</TableHead>
-                  <TableHead>收款銀行</TableHead>
-                  <TableHead>收款帳號</TableHead>
-                  <TableHead>申請時間</TableHead>
-                  <TableHead>狀態</TableHead>
-                  <TableHead>身分證照片</TableHead>
-                  <TableHead>歷史</TableHead>
-                  <TableHead>操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {withdrawals.map((w) => (
-                  <TableRow
-                    key={w.id}
-                    data-state={w.id === activeRecord?.id ? 'selected' : undefined}
-                    onClick={() => setActiveId(w.id)}
-                  >
-                    {/* 與表頭同理，見上方 TableHead 的說明 */}
-                    <TableCell className="pointer-coarse:pl-6 pointer-coarse:py-4">
+                        垂直:表頭原語是釘死的 h-10（40px），放不下 44px（實測 44×42），
+                        觸控時放大到 h-14。滑鼠裝置的密度完全不變。 */}
+                    <TableHead className="w-10 pointer-coarse:pl-6 pointer-coarse:h-14">
                       <Checkbox
                         touchTarget="expanded"
-                        aria-label={`選取 ${w.userName} 的提領記錄`}
-                        checked={selected.has(w.id)}
-                        onCheckedChange={() => toggleOne(w.id)}
+                        aria-label="全選本頁的提領記錄"
+                        checked={allPageSelected}
+                        onCheckedChange={toggleAllOnPage}
+                        className={PAUSED_LOOK}
+                        {...pausedProps}
                       />
-                    </TableCell>
-                    <TableCell>{w.userName}</TableCell>
-                    <TableCell>{w.amount + w.fee} P</TableCell>
-                    <TableCell>{twd(w.amount)}</TableCell>
-                    <TableCell className="font-mono text-sm">{w.bankCode ?? '-'}</TableCell>
-                    <TableCell className="font-mono text-sm">{w.bankAccount ?? '-'}</TableCell>
-                    <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
-                    <TableCell>
-                      <WithdrawalStatusBadge status={w.status} />
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => setViewRecord(w)}>
-                        <Eye className="h-4 w-4 mr-1" />
-                        查看
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      {/* 事件歷史手機也看得到（W8）：客服接到「我的錢呢」時，
-                          需要的就是這條時間軸。 */}
-                      <Button variant="ghost" size="sm" onClick={() => setHistoryRecord(w)}>
-                        查看歷史
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      {w.status === 'pending' ? (
-                        <div className="flex gap-2">
-                          {/* W8：只有這顆鎖在桌面——標記已匯款要同時開著網銀。 */}
-                          {isDesktop && (
+                    </TableHead>
+                    <TableHead>會員</TableHead>
+                    <TableHead>扣點</TableHead>
+                    <TableHead>匯款金額</TableHead>
+                    <TableHead>收款銀行</TableHead>
+                    <TableHead>收款帳號</TableHead>
+                    <TableHead>申請時間</TableHead>
+                    <TableHead>狀態</TableHead>
+                    <TableHead>身分證照片</TableHead>
+                    <TableHead>歷史</TableHead>
+                    <TableHead>操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {withdrawals.map((w) => (
+                    <TableRow
+                      key={w.id}
+                      data-state={w.id === activeRecord?.id ? 'selected' : undefined}
+                      onClick={() => setActiveId(w.id)}
+                    >
+                      {/* 與表頭同理，見上方 TableHead 的說明 */}
+                      <TableCell className="pointer-coarse:pl-6 pointer-coarse:py-4">
+                        <Checkbox
+                          touchTarget="expanded"
+                          aria-label={`選取 ${w.userName} 的提領記錄`}
+                          checked={selected.has(w.id)}
+                          onCheckedChange={() => toggleOne(w.id)}
+                          className={PAUSED_LOOK}
+                          {...pausedProps}
+                        />
+                      </TableCell>
+                      <TableCell>{w.userName}</TableCell>
+                      {/* 扣點不遮（K6）：遮蔽只擋「照舊資料去網銀匯款」，扣點是客服回答
+                          「為什麼扣我點數」用的。 */}
+                      <TableCell>{w.amount + w.fee} P</TableCell>
+                      <TableCell>{stale ? <HiddenValue /> : twd(w.amount)}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {stale ? <HiddenValue /> : (w.bankCode ?? '-')}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {stale ? <HiddenValue /> : (w.bankAccount ?? '-')}
+                      </TableCell>
+                      <TableCell className="text-sm">{formatTwTimestamp(w.requestedAt)}</TableCell>
+                      <TableCell>
+                        <WithdrawalStatusBadge status={w.status} />
+                      </TableCell>
+                      <TableCell>
+                        {/* 查看證件也在閘門內（K5）：簽名網址 1 小時，也是退件判斷的依據。 */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (!gate.paused) setViewRecord(w);
+                          }}
+                          className={PAUSED_LOOK}
+                          {...pausedProps}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          查看
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        {/* 事件歷史手機也看得到（W8）：客服接到「我的錢呢」時，
+                            需要的就是這條時間軸。 */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openDialog(() => setHistoryRecord(w))}
+                        >
+                          查看歷史
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        {w.status === 'pending' ? (
+                          <div className="flex gap-2">
+                            {/* W8：只有這顆鎖在桌面——標記已匯款要同時開著網銀。 */}
+                            {isDesktop && (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  if (!gate.paused) openDialog(() => setPaidTarget(w));
+                                }}
+                                disabled={isExporting || processingId === w.id}
+                                className={PAUSED_LOOK}
+                                {...pausedProps}
+                              >
+                                標記已匯款
+                              </Button>
+                            )}
                             <Button
                               size="sm"
-                              onClick={() => setPaidTarget(w)}
+                              tone="destructive"
+                              onClick={() => openDialog(() => setRejectTarget(w))}
                               disabled={isExporting || processingId === w.id}
                             >
-                              標記已匯款
+                              退件
                             </Button>
-                          )}
+                          </div>
+                        ) : w.status === 'awaiting_collection' ? (
                           <Button
                             size="sm"
-                            tone="destructive"
-                            onClick={() => setRejectTarget(w)}
+                            tone="secondary"
+                            onClick={() => openDialog(() => setCompleteTarget(w))}
                             disabled={isExporting || processingId === w.id}
                           >
-                            退件
+                            代為完成
                           </Button>
-                        </div>
-                      ) : w.status === 'awaiting_collection' ? (
-                        <Button
-                          size="sm"
-                          tone="secondary"
-                          onClick={() => setCompleteTarget(w)}
-                          disabled={isExporting || processingId === w.id}
-                        >
-                          代為完成
-                        </Button>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
 
-          {!isLoading && !loadError && withdrawals.length < total && (
-            <div className="pt-4 text-center">
-              <Button
-                tone="secondary"
-                onClick={list.loadMore}
-                disabled={isLoadingMore || isExporting}
-              >
-                {isLoadingMore ? '載入中…' : '載入更多'}
-              </Button>
-            </div>
-          )}
+            {!blockingError && withdrawals.length > 0 && list.hasMore && (
+              <div className="pt-4 text-center">
+                <Button
+                  tone="secondary"
+                  onClick={list.loadMore}
+                  disabled={!list.canLoadMore || isExporting}
+                >
+                  {list.isLoadingMore ? '載入中…' : '載入更多'}
+                </Button>
+              </div>
+            )}
+          </section>
         </CardContent>
       </Card>
     </div>

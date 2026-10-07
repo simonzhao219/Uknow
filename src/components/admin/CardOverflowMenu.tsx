@@ -33,6 +33,15 @@ export interface CardOverflowAction {
   onSelect: () => void;
   disabled?: boolean;
   destructive?: boolean;
+  /**
+   * 暫停（例：提領資料未確認時的查看證件）：aria-disabled、選了不動作，但仍在 roving
+   * focus 裡——Radix 的 disabled 會讓鍵盤跳過它，報讀器使用者就聽不到停用的原因。
+   */
+  paused?: boolean;
+  /** 停用的外觀：頁面在更新超過 0.3 秒、失敗或逾時時才給。 */
+  pausedLook?: boolean;
+  /** 停用原因所在節點的 id。 */
+  describedBy?: string;
 }
 
 interface CardOverflowMenuProps {
@@ -53,8 +62,17 @@ export function CardOverflowMenu({ label, actions }: CardOverflowMenuProps) {
         {actions.map((a) => (
           <DropdownMenuItem
             key={a.label}
-            onSelect={a.onSelect}
+            onSelect={(event) => {
+              if (a.paused) {
+                event.preventDefault();
+                return;
+              }
+              a.onSelect();
+            }}
             disabled={a.disabled}
+            aria-disabled={a.paused || undefined}
+            aria-describedby={a.paused ? a.describedBy : undefined}
+            data-paused={a.paused && a.pausedLook ? 'true' : undefined}
             // §1 觸控 ≥44px。DropdownMenuItem 基底是 px-2 py-1.5（實測 32px），
             // 而 ⋯ trigger 本身已經是 44×44——入口 44、開出來 32 是說不通的。
             // 只補在這裡、**不動 ui/dropdown-menu.tsx 基底**:比照 R2 的
@@ -62,6 +80,7 @@ export function CardOverflowMenu({ label, actions }: CardOverflowMenuProps) {
             // 12px，那是範圍外的視覺變更。
             className={cn(
               'pointer-coarse:min-h-[44px]',
+              'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50',
               a.destructive &&
                 'text-destructive-subtle-foreground focus:text-destructive-subtle-foreground',
             )}
