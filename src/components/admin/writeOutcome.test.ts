@@ -40,6 +40,12 @@ describe('UNKNOWN_OUTCOME', () => {
     );
   });
 
+  it('會員停權與授予前綴姓名，請 admin 在詳情更新後確認', () => {
+    expect(UNKNOWN_OUTCOME.member('陳大文')).toBe(
+      '陳大文：未收到伺服器確認，結果不明，詳情更新後請確認',
+    );
+  });
+
   it('批次匯款同樣提醒勿重匯，請 admin 逐筆確認後再補標記', () => {
     expect(UNKNOWN_OUTCOME.withdrawalBatch).toBe(
       '批次匯款未收到伺服器確認，結果不明。若款項已匯出請勿重匯，逐筆確認狀態後再補標記',

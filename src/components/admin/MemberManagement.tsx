@@ -28,6 +28,8 @@ import { memberLabel, memberName } from './memberName';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
+import type { AdminCache } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 import type {
   AdminIdReview,
   AdminMember,
@@ -51,6 +53,8 @@ export interface MemberManagementProps {
     offset: number;
   }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
+  cache?: AdminCache;
+  busy?: AdminBusy;
 }
 
 const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };

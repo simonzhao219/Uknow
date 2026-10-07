@@ -31,4 +31,5 @@ export const UNKNOWN_OUTCOME = {
     `${name}：未收到伺服器確認，結果不明。若款項已匯出請勿重匯，確認狀態後再補標記`,
   withdrawalBatch:
     '批次匯款未收到伺服器確認，結果不明。若款項已匯出請勿重匯，逐筆確認狀態後再補標記',
+  member: (_name: string) => '',
 };
