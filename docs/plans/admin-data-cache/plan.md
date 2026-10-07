@@ -13,6 +13,8 @@
 > - **第四版之一（2026-10-07）**：依第三輪複核（四個視角確認 4 條 P1 全數解決；另指出 B、K5 兩項裁決只落實一半、T14 缺
 >   資料通路，共 3 條 P1）修訂，並順手收掉複核附帶的 P2（§10.6）。業主同日於 session 內確認：A 取代 D2 的件數部分、
 >   F 在寫入卡住時維持鎖定、T13–T17 全部照第四版。
+> - **第四版之二（2026-10-07）**：依 UI/UX 對第四版之一的複核補 2 條 P1——對話框的資料時間在開框時凍結、更新途中按重新
+>   整理仍交給頁面決定（§10.6）。
 
 **九條對照**：①四條硬約束 → §2.3–§2.7、§3.1、§3.5；②生命週期 → §2.4；③分頁掛載 → §3.2；
 ④骨架與刷新 → §4.1–§4.3；⑤遺留裁決 → §1.4；⑥測試 → §5；⑦定位器 → §4.5；
@@ -315,6 +317,10 @@ open() / dispose()                                 // 成對：dispose 清空資
   顯示「資料更新於 N 分鐘前」（不到 1 分鐘「剛剛更新」）——歷史讀的是點擊當下那一列內嵌的 `events`
   （`WithdrawalManagement.tsx:572-599`），與列表同齡。對話框內放在 `AlertDialogDescription`／`DialogDescription` 裡，開框時
   報讀器會念（R3-P2-14(b)）；≥ `STALE_HINT_MINUTES`（10 分鐘）改成提示「建議先重新整理」。
+- **對話框的資料時間在開框時凍結**：四個確認框與查看歷史的內容取自點擊當下那一列（歷史是 `historyRecord`，
+  `WithdrawalManagement.tsx:176,814,893`），所以開框時把當下的 `fetchedAt` 與內容存在同一個 state，之後不跟著列表變；
+  文字照樣每分鐘從這個時間戳重算。K5 的情境正是「更新途中打開歷史」——若綁列表即時的 `fetchedAt`，更新落地後標示會變
+  「剛剛更新」，內容卻仍是舊的，比不標更糟。作業面板與手機展開卡顯示的是列表當下的資料，綁即時的 `fetchedAt`。
 - **具名常數的位置**：`SLOW_UPDATE_MS`、`DATA_AGE_TICK_MS`、`STALE_HINT_MINUTES`、`REVALIDATE_DIM_DELAY_MS` 都由
   `src/components/admin/useAdminList.ts` 匯出（規格書 §13 草稿的指標指向這支）。
 - **保證的範圍**：閘門保證「快取不讓匯款依據比沒有快取時更舊」——本次掛載的最新讀取確認前，標記已匯款、批次、匯出、
@@ -592,9 +598,10 @@ TTL 內不刷新＝寫入依據未經確認；(3) 提領列裡的證件照是 1 
   - `onRefresh(): void` 與 `statusText: string`——宣告邏輯不在工具列裡，而在頁面層的 `useRefreshAnnouncer(list)`（見下方
     「狀態文字」）；工具列只畫出 `statusText`。這樣錯誤區與陳舊提示的「重試」也走同一條宣告（§4.3）。
   - `isUpdating`：首次載入或背景更新中（`isSlow` 時為 false）——重新整理鈕 `aria-disabled`（**不用 `disabled`**：被按的鈕
-    變停用正是焦點掉到 body 的原因）、點了不重送、圖示轉動（`motion-safe`）；`aria-disabled` 的灰化與游標樣式寫在
+    變停用正是焦點掉到 body 的原因）、點擊照樣交給 `onRefresh`（由 `useRefreshAnnouncer` 決定不重送請求、只改寫狀態文字）、
+    圖示轉動（`motion-safe`）；`aria-disabled` 的灰化與游標樣式寫在
     `AdminToolbar` 內（`Button` 基底只有 `disabled:` 樣式，`button.tsx:24`；`loading` 會設 `disabled`，不能用，`:180`）。
-  - `refreshDisabled`：真停用——只用在載入更多中（焦點不在這顆鈕上）。
+  - `refreshDisabled`：真停用、點了不呼叫 `onRefresh`——只用在載入更多中（焦點不在這顆鈕上）；匯出中的 `disabled` 同。
   - `exportDescribedBy`：CSV 停用原因（§2.6）。
   - `filter` 改選填：告警頁沒有篩選，重新整理鈕靠右（H、主 #43）。
   - 第三版的 `updateError` 由 `useRefreshAnnouncer` 的結算取代；`exportProgress` 移到 `AdminConsole` 的說明行（§2.11）。
@@ -618,7 +625,8 @@ TTL 內不刷新＝寫入依據未經確認；(3) 提領列裡的證件照是 1 
 - **有舊資料時的失敗或逾時**：`AdminStaleNotice`（列表上方，`StatusCallout variant="warning"`——§13.4 讀取失敗不上紅、
   §12.5 第四種狀態併入 warning，R3-P2-13(c)）：
   - 失敗：「更新失敗，以下是 N 分鐘前的資料」＋一行原因（現況原文；403 時不走這裡，K2）＋次要重試、`role="alert"`；同一輪
-    已有動作失敗的 alert 時改不帶 role，不打斷「結果不明」那句（R3-P2-17(c)）。
+    已有動作失敗的 alert 時改不帶 role，不打斷「結果不明」那句（R3-P2-17(c)）；由手動重新整理或重試觸發的失敗也不帶 role——
+    狀態文字已經播過「更新失敗」，不再念第二次。
   - 逾時：「更新較久，以下是 N 分鐘前的資料」、不帶 role（不打斷）；公告與證件審核沒有工具列，提示附次要「重試」
     （R3-P2-18(b)）。
   - 提領頁另加「收款資訊已隱藏，重試後顯示」（E2）。
@@ -684,7 +692,7 @@ TTL 內不刷新＝寫入依據未經確認；(3) 提領列裡的證件照是 1 
 |---|---|---|
 | 1a | `usePagedList.test.tsx`「載入更多失敗時保留已顯示的資料」（`:32-45`） | 斷言 `error` → `loadMoreError`（`error` 只管重讀） |
 | 3 | `AdminToolbar.test.tsx` 的 `renderToolbar` helper（`:18`）與 `:87`、`:102`、`:112` | `isRefreshing` → `isUpdating`（機械改名；`:18`、`:87` 是顯式屬性，不改紅燈 commit 的 tsc 就過不了，R3-P2-22） |
-| 3 | `AdminToolbar.test.tsx`「重新整理中按不下去」（`:66-69`） | `disabled` → `aria-disabled`、點了不呼叫 `onRefresh`、焦點不動 |
+| 3 | `AdminToolbar.test.tsx`「重新整理中按不下去」（`:66-69`） | 改名為「重新整理中鈕標成停用、焦點不動，點擊交給頁面決定」：`disabled` → `aria-disabled`、焦點不動、點擊**仍呼叫** `onRefresh`（更新途中不重送請求、只改寫「仍在更新」，由 `useRefreshAnnouncer` 決定）；只有 `refreshDisabled`／`disabled` 時不呼叫 |
 | 3 | `AdminToolbar.test.tsx`「沒有匯出能力的頁面不放狀態宣告區」（`:96-99`） | 改名為「…不放匯出狀態宣告區」，斷言不變 |
 | 4c | `WithdrawalManagement.test.tsx`「狀態更新失敗時把原因說出來」（`:370-380`） | 丟出的錯誤改帶 `status: 409`（4xx 才照原文；結果不明的固定文案另補新測試） |
 | 5a | `MemberManagement.test.tsx`「停權失敗時把哪一種失敗印在詳情面板裡」（`:241-251`）、「撤銷管理員失敗時把哪一種失敗印在詳情面板裡」（`:491`）、「動作送出後關掉面板、動作失敗時，錯誤印在列表上方並重讀列表」（`:783`）、helper `failAAfterSwitchingToB`（`:1135`，供 `:1168`、`:1176`） | 丟出的錯誤改帶 `status: 409`——這些測試都斷言後端原文，不帶 status 的錯誤現在歸「結果不明」；結果不明另補新測試 |
@@ -699,9 +707,9 @@ TTL 內不刷新＝寫入依據未經確認；(3) 提領列裡的證件照是 1 
 | 1a | `useLatestRequest`（`nextStamp`、`begin` 回 `{ seq, stamp }`）；`usePagedList` 序號（兩個方向、ticket 帶身分與戳、`load` 走 ref、舊閉包 `reload` 讀新身分）、旗標綁 ticket、背景重讀、失敗保留舊列（E2）、`clearOnError`、`loadMoreError`、`isLoadingMore` 與重入 ref 歸零、`hasMore`／`canLoadMore`、`reload` 回傳結算、`settled()` | `src/hooks/useLatestRequest.test.ts`（node，測核心）、`src/hooks/usePagedList.test.tsx` | 連換身分 A→B→C 時 B 的結算不改旗標；換身分後呼叫舊閉包 `reload` 讀的是新身分；重讀在途時載入更多被拒、載入更多在途時重讀作廢它且 `isLoadingMore` 立即為 false、之後可再按；有資料時 `reload` 不回骨架；重讀失敗保留舊列、`clearOnError` 為真時丟列；`reload` 的 promise 在最新重讀結算時以 `done`／`failed` 兌現；載入更多失敗後可重試；`nextStamp` 在兩個核心實例之間仍單調遞增；`changedSince` 只對被標記的對象成立；卸載後不發請求；`reload()` 的 promise 在被取代、換身分、卸載時都會兌現（卸載為 `failed`），`settled()` 沒有在途時立即兌現；改寫清單 1a |
 | 1b | `usePagedList` 的 `initial`（換身分時讀一次後凍結）、`onLanded`（帶戳記；被拒補讀一次；補讀又被拒→錯誤態）、`meta`、`isConfirmed`（只看重讀） | `usePagedList.test.tsx` | 有種子的第一個 render 即未確認；換到有種子的身分時該 render 顯示新種子而非舊列；`onLanded` 回 `false` 時補讀一次；連續兩次被拒進錯誤態且可重試；沒有種子的首讀被拒時沒有「不在載入也沒資料」的 render；卸載後被拒不補讀；`onLanded` 收到的 stamp 單調遞增；載入更多成功不呼叫 `onLanded`、不改 `isConfirmed`；載入更多失敗 `isConfirmed` 仍為真 |
 | 2 | `createAdminCache`（builder `{ id, slot, resource, params }`、fence 用 hooks 的 `nextStamp`、空結果刪槽、view、`accessLost` 取新號、`open`／`dispose`）＋`useAdminList`（身分與槽、落地驗證、`fetchedAt` 與 60 秒重算、資料版本、`isSlow` 以 ticket 為鍵、403→`accessLost`＋`clearOnError`、匯出用 `loadPage`）＋`writeOutcome`＋PII 守衛 | `src/components/admin/adminCache.test.ts`（jsdom，要 `Storage`）、`useAdminList.test.tsx`、`writeOutcome.test.ts`（node）、`src/utils/repoHygiene.test.ts` | 非空白搜尋 A→B 各自重讀且 `load` 收到對應的 `params`、`null` 槽重新整理讀最新搜尋字；**失效戳與請求戳同源**（真 hook＋真 store）：失效前送出的讀取不寫回、落地被判未確認並補讀；`slot` 為 `null` 的非空白搜尋也受 fence；同戳記邊界（先失效再重讀能寫回）；`accessLost` 後在途舊讀不寫回；空結果刪掉舊條目；帶日期／搜尋回 `null` 槽；403 清空全部與 view（含 `null` 槽讀取）且列表丟掉舊列；表驅動斷言每個事件的失效集合；dispose 後寫入無效、open 後恢復；`fetchedAt` 用牆鐘、`visibilitychange` 與 60 秒重算（假時鐘、只在可見時）；15 秒進 `isSlow`、手動重試後歸零、再 15 秒才重進；分類函式涵蓋 4xx／5xx／無 status／原生錯誤；`setItem` 零呼叫；靜態守衛正反例；`appShell.test.ts` 仍綠 |
-| 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）與匯出宣告文字同步（B）；`useRefreshAnnouncer`；兩個呼叫端同步改接（`isUpdating` 先恆為 false，行為不變） | `AdminToolbar.test.tsx`、`src/components/admin/useRefreshAnnouncer.test.tsx` | `isUpdating` 時 `aria-disabled`、焦點不動、點了不重送；`useRefreshAnnouncer`（假 list）：手動按下寫「正在更新」、途中再按改「仍在更新」、結算時「已更新 HH:mm」或「更新失敗」，`isUpdating` 先下降（15 秒放行）時不寫「已更新」、結算才寫，自動更新途中按下接在 `settled()` 上而不重送；狀態文字在 flex 行之外；匯出中宣告區念「匯出中，完成前無法切換分頁」；不帶 `filter` 時鈕靠右；`exportDescribedBy` 掛上；改寫清單 3 的四列；提領與會員既有測試一字不改 |
+| 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）與匯出宣告文字同步（B）；`useRefreshAnnouncer`；兩個呼叫端同步改接（`isUpdating` 先恆為 false，行為不變） | `AdminToolbar.test.tsx`、`src/components/admin/useRefreshAnnouncer.test.tsx` | `isUpdating` 時 `aria-disabled`、焦點不動、點擊仍呼叫 `onRefresh`，`refreshDisabled`／`disabled` 時不呼叫；`useRefreshAnnouncer`（假 list）：手動按下寫「正在更新」、途中再按改「仍在更新」、結算時「已更新 HH:mm」或「更新失敗」，`isUpdating` 先下降（15 秒放行）時不寫「已更新」、結算才寫，自動更新途中按下接在 `settled()` 上而不重送；狀態文字在 flex 行之外；匯出中宣告區念「匯出中，完成前無法切換分頁」；不帶 `filter` 時鈕靠右；`exportDescribedBy` 掛上；改寫清單 3 的四列；提領與會員既有測試一字不改 |
 | 4a | 提領頁純遷移到 `usePagedList`（不加快取）：舊防線以等價旗標對應（舊 `isLoading` → `isLoading \|\| isRevalidating`）；清勾選搬到「重讀成功」時 | `WithdrawalManagement.test.tsx`：既有測試一字不改；遷移前先補特徵測試「重新整理成功後已選取歸零」（舊碼上即綠） | 綠到綠（比照 S4「重構綠到綠→行為」）；要保留的耦合：舊 `fetchWithdrawals` 開頭的 `setLoadError(null)`、`runBatch` 的「先重抓、再報告」（`:270-283`，既有 `:370-395` 會抓到） |
-| 4b | 提領頁讀取側：`useAdminList` 快取、匯款類閘門（D、K5、T17）與 `AdminListStatus`、統計區骨架與「—」（A）、作業面板與手機展開卡骨架／暫停顯示（G）與 `DataAgeNote`、骨架統一、`AdminListError`、失敗或逾時保留舊列＋`AdminStaleNotice`＋遮罩（E2、K6）、過期樣式、篩選保留（J） | `WithdrawalManagement.test.tsx`、`AdminListSkeleton.test.tsx`、`AdminListError.test.tsx`、`AdminStaleNotice.test.tsx`、`AdminListStatus.test.tsx`、`DataAgeNote.test.tsx` | 帶快取重掛無骨架；首個 render 起標記已匯款、勾選、批次、CSV、查看證件即 `aria-disabled` 且點擊不送出，300ms 內不套停用樣式、之後套並出原因（假時鐘）；**退件、代為完成、查看歷史在未確認時照常可按**；CSV 不以快取 `total` 收集；勾選在重讀成功與換篩選後歸零；統計區未確認時是骨架、失敗時「—」；作業面板未確認時骨架、失敗時「暫停顯示」、複製鈕不渲染；失敗保留舊列、列上匯款欄位「已隱藏」、扣點照常、重試是背景重讀；逾 15 秒同上並放行重新整理；N 不到 1 分鐘寫「剛剛」；資料時間 60 秒重算與 10 分鐘提示；過期樣式的對比 ≥ 4.5:1；篩選經 view 保留；手機 ⋯ 選單只有「查看證件」停用且帶原因；查看歷史在未確認時可開、對話框寫資料時間（K5） |
+| 4b | 提領頁讀取側：`useAdminList` 快取、匯款類閘門（D、K5、T17）與 `AdminListStatus`、統計區骨架與「—」（A）、作業面板與手機展開卡骨架／暫停顯示（G）與 `DataAgeNote`、骨架統一、`AdminListError`、失敗或逾時保留舊列＋`AdminStaleNotice`＋遮罩（E2、K6）、過期樣式、篩選保留（J） | `WithdrawalManagement.test.tsx`、`AdminListSkeleton.test.tsx`、`AdminListError.test.tsx`、`AdminStaleNotice.test.tsx`、`AdminListStatus.test.tsx`、`DataAgeNote.test.tsx` | 帶快取重掛無骨架；首個 render 起標記已匯款、勾選、批次、CSV、查看證件即 `aria-disabled` 且點擊不送出，300ms 內不套停用樣式、之後套並出原因（假時鐘）；**退件、代為完成、查看歷史在未確認時照常可按**；CSV 不以快取 `total` 收集；勾選在重讀成功與換篩選後歸零；統計區未確認時是骨架、失敗時「—」；作業面板未確認時骨架、失敗時「暫停顯示」、複製鈕不渲染；失敗保留舊列、列上匯款欄位「已隱藏」、扣點照常、重試是背景重讀；逾 15 秒同上並放行重新整理；N 不到 1 分鐘寫「剛剛」；資料時間 60 秒重算與 10 分鐘提示；過期樣式的對比 ≥ 4.5:1；篩選經 view 保留；手機 ⋯ 選單只有「查看證件」停用且帶原因；查看歷史在未確認時可開、對話框寫資料時間（K5）；**對話框開著時更新落地，對話框的資料時間不變**（不變成「剛剛更新」）；**自動更新途中按工具列的重新整理：請求數不增、文字「正在更新」，再按「仍在更新」，結算後「已更新 HH:mm」**；錯誤區與陳舊提示的重試同理 |
 | 4c | 提領頁動作側：`AdminActionReport`（兩個兄弟節點、warning 變體、`scroll-mt`、焦點）、結果分類與文案、失敗自動重讀（D5）、失效＋fence、批次快照與「閘門一關就關框」、焦點後備、`withdrawalExport.ts`（掛載檢查、進度、完成核對、403 偵測）、`loadMoreError` 顯示、`busy`（`AdminBusy` 型別含讀取側一次定案，預設 `NOOP_BUSY`） | `WithdrawalManagement.test.tsx`、`AdminActionReport.test.tsx`、`withdrawalExport.test.ts` | 成功回報文字只出現一次；以 `MutationObserver`（`attributeOldValue`）記錄 commit 序，證明「回報出現的那次 commit 裡 `aria-busy` 已為 true」（R3-P2-23）；剛按的失敗取得焦點並捲動、晚到的不搶；結果不明改固定文案並前綴姓名、4xx 照原文（改寫清單 4c）；批次網路失敗的固定文案；成功與結果不明失效、4xx 不失效、批次部分失敗失效、全 4xx 不失效；單筆失敗自動重讀一次、卸載後不重讀；批次框用快照、開框期間閘門一關就關框並以 warning 提示；確認後焦點落在該列、該列離開清單時移到下一列、取消或 Esc 回到觸發鈕；換篩選時在途的載入更多不接舊尾；寫入在途時換篩選，畫面不會以新篩選的標籤顯示舊列；匯出：卸在最後一頁在途不下載、筆數不符或重複時不下載並回報、途中 403 清空快取；寫入期間呼叫 busy、寫入請求一結算就釋放（不等重讀）、`release` 重複呼叫無害；匯出期間呼叫 busy；匯出途中任一頁的 `total` 與起始值不同時失敗、不下載 |
 | ★ | **中途對照（K8）**：4c 綠燈後先通知主 session 對照 hooks＋快取＋提領頁（金流部分）的 diff，通過才開 5a；最後對照只看 5–9 | — | 主 session 對照通過 |
 | 5a | 會員頁 | `MemberManagement.test.tsx` | 帶快取重掛無骨架（空白搜尋）；非空白搜尋不讀不寫快取、連續兩次不同搜尋各自重讀；**搜尋 A 下按暫停、動作在途時改搜 B，完成後列表是 B 的結果且重讀帶 B 的關鍵字**（R3-P2-21）；子分頁經 view 保留；動作後重讀不換骨架、關面板焦點回到「查看」；統計改由 `meta` 帶出、`load` 不再 `setStats`（主 #23）；停權／授予成功與結果不明失效、4xx 不失效；結果不明時重讀列表、面板顯示該人時一併重讀詳情（K3）；`openDetail` 落地時 `changedSince` 成立則丟棄結果、補讀落地才顯示；會員詳情每次「查看」都現讀，回 403 時清空；取詳情失敗的錯誤框有 `scroll-mt`；`loadMoreError` 顯示且列保留；寫入期間呼叫 busy；`busy.locked` 時非 active 的子分頁停用並指向說明行（假 busy，T14）；`cache` 與 `busy` 轉給 `IdReviewQueue`；改寫清單 5a 的兩列 |
@@ -1048,3 +1056,12 @@ T12（補讀的狀態機留在通用 `usePagedList`）業主確認不推翻（§
 寫明、載入更多也適用 `clearOnError`（系統）；匯出每頁 `total` 比對（系統）；`release` 冪等且只包寫入請求（系統）；具名常數
 的位置、規格書草稿的 403 例外、計畫異動記錄的兩項、PR 揭露子分頁同時讀取、100 筆上限的退場條件、K8 的「最後對照只看 5–9」、
 驗收清單的用語、節流與三項補充（需求、UI/UX）；F 的範圍與主 #1 的不同做法標出，交主 session 對照（需求、架構）。
+
+第四版之一再經 UI/UX 複核（`review.md`「第三輪複核」末段）：複核 P1-1、P1-3 解決，P1-2 部分解決；另補 2 條 P1（第四版之二）：
+
+| 發現 | 落點 |
+|---|---|
+| 複核二 P1-A 對話框的資料時間沒指定綁開框當下還是列表即時——綁即時會在更新落地後翻成「剛剛更新」 | §2.6「對話框的資料時間在開框時凍結」、階段 4b |
+| 複核二 P1-B 改寫清單要工具列在更新途中吞掉點擊，與「仍在更新」、`settled()` 矛盾 | §4.2、§4.5 改寫清單 3、階段 3、4b（整合斷言） |
+
+順手收掉的 P2：手動重新整理或重試觸發的失敗，陳舊提示不帶 role（狀態文字已播過「更新失敗」）。
