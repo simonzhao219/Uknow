@@ -13,7 +13,7 @@ import { formatTwTimestamp } from '../../utils/twDate';
 import type { SystemAlert, SystemAlertsResponse } from '@contract';
 import { type AdminBusy, NOOP_BUSY } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
-import { UNKNOWN_OUTCOME } from './writeOutcome';
+import { UNKNOWN_OUTCOME, UNKNOWN_OUTCOME_TOAST_MS } from './writeOutcome';
 import {
   DATA_AGE_TICK_MS,
   REVALIDATE_DIM_DELAY_MS,
@@ -280,7 +280,9 @@ export function SystemAlerts({ busy = NOOP_BUSY, onAccessLost }: SystemAlertsPro
         if (outcome.kind === 'done') {
           showToast('已標記處理', 'success');
         } else if (outcome.kind === 'unknown') {
-          showToast(UNKNOWN_OUTCOME.alertResolve, 'warning');
+          showToast(UNKNOWN_OUTCOME.alertResolve, 'warning', {
+            duration: UNKNOWN_OUTCOME_TOAST_MS,
+          });
         } else {
           console.error('SystemAlerts: 標記告警失敗:', outcome.error);
           showToast('標記失敗，請重試', 'error');

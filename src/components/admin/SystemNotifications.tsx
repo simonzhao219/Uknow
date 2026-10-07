@@ -13,7 +13,7 @@ import { formatTwTimestamp } from '../../utils/twDate';
 import { type AdminCache, adminQuery } from './adminCache';
 import { type AdminBusy, NOOP_BUSY } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
-import { refusal, UNKNOWN_OUTCOME } from './writeOutcome';
+import { refusal, UNKNOWN_OUTCOME, UNKNOWN_OUTCOME_TOAST_MS } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { AdminListSkeleton } from './AdminListSkeleton';
 import { AdminListError } from './AdminListError';
@@ -174,7 +174,9 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
           setForm({ title: '', message: '', type: 'info', startsAt: '', endsAt: '' });
         } else if (outcome.kind === 'unknown') {
           // 表單不清：可能沒建立成功，admin 確認列表後要能直接重發。
-          showToast(UNKNOWN_OUTCOME.announcementCreate, 'warning');
+          showToast(UNKNOWN_OUTCOME.announcementCreate, 'warning', {
+            duration: UNKNOWN_OUTCOME_TOAST_MS,
+          });
         } else {
           showToast(messageOf(outcome.error, '公告建立失敗'), 'error');
         }
@@ -210,7 +212,9 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
         // 後備就落空。
         if (outcome.kind === 'done') showToast('公告已刪除', 'success');
         else if (outcome.kind === 'unknown')
-          showToast(UNKNOWN_OUTCOME.announcementDelete, 'warning');
+          showToast(UNKNOWN_OUTCOME.announcementDelete, 'warning', {
+            duration: UNKNOWN_OUTCOME_TOAST_MS,
+          });
         else showToast(messageOf(outcome.error, '公告刪除失敗'), 'error');
       },
       reload: (outcome) => (outcome.kind === 'rejected' ? undefined : list.reload()),
@@ -344,7 +348,7 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
               放在列表區外面：過期樣式的透明度不能疊到提示本身。 */}
           {notice && (
             <div ref={noticeRef} className="mb-4">
-              <AdminStaleNotice {...notice} onRetry={() => retry('notice')} />
+              <AdminStaleNotice {...notice} onRetry={() => retry('notice')} announceUpdating />
             </div>
           )}
           {/* 更新中 aria-busy，0.3 秒後才淡化（快網路不閃）；失敗與逾時改用固定的過期樣式。 */}
@@ -361,6 +365,7 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
               <AdminListError
                 message=""
                 retrying
+                announceUpdating
                 retryLabel="重試"
                 tone="secondary"
                 onRetry={() => retry('empty')}

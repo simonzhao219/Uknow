@@ -604,7 +604,9 @@ export function MemberManagement({
       <TabsContent value="members" className="space-y-3 sm:space-y-6">
         {/* 統計卡片：讀伺服器算好的**全站** stats（隨列表回應帶出）。改版前是
             `members.filter(...).length`——那個數字會隨分頁改變。首次載入期間是骨架，
-            不先閃 0；沒有任何資料時寫「—」。 */}
+            不先閃 0；沒有任何資料時寫「—」。切回時照快取顯示、更新中與失敗時不套過期樣式
+            （業主 Q5）：會員統計是背景資訊、不是任何操作的依據；提領統計是匯款依據，才擋到
+            本次讀取確認後（裁決 A）。 */}
         <section aria-label="會員統計">
           {/* 手機整組換成一行摘要，與提領彙總同一個理由:壓扁過的三張卡仍佔
               一屏的可觀比例，而 admin 打開手機是為了找那個人。桌面維持卡片。 */}
@@ -883,7 +885,12 @@ export function MemberManagement({
                       >
                         {list.isLoadingMore ? '載入中…' : '載入更多'}
                       </Button>
-                      {list.loadMoreError && <p id={loadMoreNoteId}>{list.loadMoreError}</p>}
+                      {/* 失敗以 alert 說出：焦點停在鈕上的人要聽得到（業主 Q7）。 */}
+                      {list.loadMoreError && (
+                        <p id={loadMoreNoteId} role="alert">
+                          {list.loadMoreError}
+                        </p>
+                      )}
                     </>
                   )}
                 </div>

@@ -1,5 +1,6 @@
 import type { AdminBusy } from './adminBusy';
 import type { AdminCache, AdminMutationEvent } from './adminCache';
+import { isForbidden } from './useAdminList';
 import { classifyWriteFailure } from './writeOutcome';
 
 /**
@@ -7,7 +8,8 @@ import { classifyWriteFailure } from './writeOutcome';
  *
  * 1. **鎖分頁只包住寫入請求**：`try { await submit() } finally { release() }`——結算後立即
  *    釋放、不等之後的重讀（重讀卡住時說明行不該謊稱在等寫入），也不會釋放兩次。
- * 2. **結果三分**：成功、後端拒絕（4xx，交易沒提交）、結果不明（其餘，可能已提交）。
+ * 2. **結果三分**：成功、後端拒絕（4xx，交易沒提交）、結果不明（其餘，可能已提交）。後端拒絕
+ *    是 403 時一併清空快取（`accessLost`）：權限可能已失，與讀取回 403 同一個意圖（K2；業主 Q1）。
  * 3. **先失效、再回報、最後重讀**：成功（且真的有東西提交）與結果不明都可能已提交，先讓
  *    快取失效——之前送出的讀取晚到也寫不回去（fence）；回報與重讀在同一個同步段，回報出現
  *    的那個 commit 裡列表已經在更新。後端拒絕不失效；要不要重讀由頁面依結局決定（`reload`
@@ -65,6 +67,7 @@ export async function runAdminWrite<R>({
     outcome.kind === 'unknown' ||
     (outcome.kind === 'done' && (committed ? committed(outcome.result) : true));
   if (mayHaveCommitted && event) cache?.invalidate(event);
+  if (outcome.kind === 'rejected' && isForbidden(outcome.error)) cache?.invalidate('accessLost');
   settle(outcome);
   void reload(outcome);
   return outcome;

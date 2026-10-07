@@ -313,7 +313,7 @@ export function IdReviewQueue({
           重試。放在佇列區外面：過期樣式的透明度不能疊到提示本身。 */}
       {notice && (
         <div ref={noticeRef}>
-          <AdminStaleNotice {...notice} onRetry={() => retry('notice')} />
+          <AdminStaleNotice {...notice} onRetry={() => retry('notice')} announceUpdating />
         </div>
       )}
 
@@ -334,6 +334,7 @@ export function IdReviewQueue({
             id={listErrorId}
             message=""
             retrying
+            announceUpdating
             retryLabel="重試"
             tone="flow"
             onRetry={() => retry('empty')}
@@ -471,7 +472,12 @@ export function IdReviewQueue({
                 >
                   {list.isLoadingMore ? '載入中…' : '載入更多'}
                 </Button>
-                {list.loadMoreError && <p id={loadMoreNoteId}>{list.loadMoreError}</p>}
+                {/* 失敗以 alert 說出：焦點停在鈕上的人要聽得到（業主 Q7）。 */}
+                {list.loadMoreError && (
+                  <p id={loadMoreNoteId} role="alert">
+                    {list.loadMoreError}
+                  </p>
+                )}
               </>
             )}
           </div>

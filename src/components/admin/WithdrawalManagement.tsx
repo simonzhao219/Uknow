@@ -1386,7 +1386,13 @@ export function WithdrawalManagement({
                   {list.isLoadingMore ? '載入中…' : '載入更多'}
                 </Button>
                 {loadMoreNote && (
-                  <p id={loadMoreNoteId} className="text-sm text-muted-foreground">
+                  <p
+                    id={loadMoreNoteId}
+                    // 載入更多失敗以 alert 說出——焦點停在鈕上的人要聽得到（業主 Q7）；未確認的
+                    // 原因只是說明，不打斷。
+                    role={unconfirmedLook ? undefined : 'alert'}
+                    className="text-sm text-muted-foreground"
+                  >
                     {loadMoreNote}
                   </p>
                 )}

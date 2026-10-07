@@ -27,6 +27,12 @@ export function refusal(message: string): Error {
 }
 
 /**
+ * 沒有常駐回報區的頁面（公告、告警）以 toast 說「結果不明」：停 8 秒（預設 3 秒）——內容要 admin
+ * 先確認列表再決定，3 秒讀不完（業主 Q3）。只用在這三則，其他 toast 不動。
+ */
+export const UNKNOWN_OUTCOME_TOAST_MS = 8000;
+
+/**
  * 結果不明的固定文案：不斷言斷線（5xx 也歸這類），只說「沒收到確認」與下一步該看哪裡。
  * 讀取失敗的錯誤字維持後端原文——固定文案只用在寫入結果不明。
  */
