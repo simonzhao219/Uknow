@@ -1,14 +1,23 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
+import { cn } from '../ui/utils';
 
 export interface AdminToolbarProps {
-  /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度。 */
+  /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度；沒有篩選的頁面鈕靠右。 */
   filter?: ReactNode;
+  /** 點擊一律交給頁面：更新途中要不要重送、狀態文字寫什麼，由 `useRefreshAnnouncer` 決定。 */
   onRefresh: () => void;
+  /**
+   * 首次載入或背景更新中（慢更新時為 false，放行重新整理）：鈕標 `aria-disabled`、圖示轉動，
+   * 點擊照樣交出。不用原生 disabled——被按的鈕變停用，焦點會掉到 body。
+   */
   isUpdating: boolean;
+  /** 手動重新整理的結果（「正在更新」「已更新 09:05」…）；可見字即播報字。 */
   statusText?: string;
+  /** 真停用、點了不呼叫 `onRefresh`：載入更多進行中（舊頁尾不得接到重設的列表上）。 */
   refreshDisabled?: boolean;
+  /** CSV 停用的原因（狀態行或錯誤區的 id）。 */
   exportDescribedBy?: string;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
@@ -40,7 +49,9 @@ export function AdminToolbar({
   filter,
   onRefresh,
   isUpdating,
+  statusText = '',
   refreshDisabled = false,
+  exportDescribedBy,
   onExport,
   isExporting = false,
   canExport = true,
@@ -62,17 +73,28 @@ export function AdminToolbar({
 
   return (
     <>
-      <div data-slot="admin-toolbar" className="flex flex-nowrap items-center gap-2">
-        <div className="min-w-0 flex-1">{filter}</div>
+      <div
+        data-slot="admin-toolbar"
+        className={cn('flex flex-nowrap items-center gap-2', !filter && 'justify-end')}
+      >
+        {filter && <div className="min-w-0 flex-1">{filter}</div>}
         <Button
           type="button"
           tone="secondary"
           size="icon"
-          className={ICON_TO_LABELED}
+          // Button 基底只有 disabled: 的灰化；aria-disabled 的外觀在這裡補，但不擋 pointer。
+          className={cn(
+            ICON_TO_LABELED,
+            'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+          )}
           onClick={onRefresh}
-          disabled={disabled || isUpdating || refreshDisabled}
+          disabled={disabled || refreshDisabled}
+          aria-disabled={isUpdating || undefined}
         >
-          <RefreshCw aria-hidden="true" />
+          <RefreshCw
+            aria-hidden="true"
+            className={isUpdating ? 'motion-safe:animate-spin' : undefined}
+          />
           <span className="sr-only md:not-sr-only">重新整理</span>
         </Button>
         {onExport && (
@@ -86,6 +108,7 @@ export function AdminToolbar({
             disabled={disabled || !canExport}
             loading={isExporting}
             aria-labelledby={exportNameId}
+            aria-describedby={exportDescribedBy}
             // 桌機滑過時看得到「含敏感資料」；手機與報讀靠名稱裡的同一段字。
             title={EXPORT_NAME}
           >
@@ -105,9 +128,15 @@ export function AdminToolbar({
           absolute 定位，留在 flex 行裡會被版面量測當成第二行、也會攪亂按鈕間距。 */}
       {onExport && (
         <span role="status" className="sr-only">
-          {isExporting ? '匯出中' : ''}
+          {isExporting ? '匯出中，完成前無法切換分頁' : ''}
         </span>
       )}
+      {/* 手動重新整理的狀態文字：常駐（live region 要先在才念得出來）、只換文字；同樣
+          放在工具列那一行外面。不用 role="status"——那是列表骨架的定位器。空字串時
+          沒有高度也沒有外距，版面不跳。 */}
+      <p aria-live="polite" className="mt-1 text-xs text-muted-foreground empty:mt-0">
+        {statusText}
+      </p>
     </>
   );
 }
