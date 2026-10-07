@@ -13,7 +13,7 @@ import { formatTwTimestamp } from '../../utils/twDate';
 import { type AdminCache, adminQuery } from './adminCache';
 import { type AdminBusy, NOOP_BUSY } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
-import { UNKNOWN_OUTCOME } from './writeOutcome';
+import { refusal, UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { AdminListSkeleton } from './AdminListSkeleton';
 import { AdminListError } from './AdminListError';
@@ -49,10 +49,6 @@ export interface SystemNotificationsProps {
 
 const messageOf = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback;
-
-// 2xx 但 `success: false`：後端明確回覆沒有做，比照 4xx 歸「未提交」——不帶 status 的錯誤會被
-// 歸成「結果不明」。
-const refusal = (message: string) => Object.assign(new Error(message), { status: 422 });
 
 export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificationsProps = {}) {
   const { showSuccess, showToast, showWarning } = useNotification();
@@ -141,6 +137,8 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
   };
 
   const handleCreate = async () => {
+    // 送出中鈕是 aria-disabled（焦點留在鈕上）：點擊在這裡擋，不重送。
+    if (isSubmitting) return;
     if (!form.title.trim() || !form.message.trim()) {
       showWarning('資料不完整', '請填寫完整的公告標題與內容');
       return;
@@ -208,7 +206,9 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
           next.delete(id);
           return next;
         });
-        if (outcome.kind === 'done') showSuccess('公告已刪除', '');
+        // toast 而不是 showSuccess：成功彈窗會搶走焦點，送出時落在該則、它離開後移到下一則的
+        // 後備就落空。
+        if (outcome.kind === 'done') showToast('公告已刪除', 'success');
         else if (outcome.kind === 'unknown')
           showToast(UNKNOWN_OUTCOME.announcementDelete, 'warning');
         else showToast(messageOf(outcome.error, '公告刪除失敗'), 'error');
@@ -314,7 +314,12 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
             </div>
           </div>
 
-          <Button onClick={handleCreate} className="w-full" disabled={isSubmitting}>
+          {/* 送出中用 aria-disabled 不用原生 disabled：按下的鈕不離開焦點順序（ui-ux §9）。 */}
+          <Button
+            onClick={handleCreate}
+            aria-disabled={isSubmitting || undefined}
+            className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (

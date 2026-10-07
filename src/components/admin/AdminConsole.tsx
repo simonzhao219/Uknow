@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { type AdminCache, createAdminCache } from './adminCache';
-import { type AdminBusy, type AdminExportSession, LOCKED_TAB_LOOK } from './adminBusy';
+import { type AdminBusy, type AdminExportSession, lockedTabProps } from './adminBusy';
 import { REVALIDATE_DIM_DELAY_MS, SLOW_UPDATE_MS, useDelayedFlag } from './useAdminList';
 import { WithdrawalManagement, type WithdrawalManagementProps } from './WithdrawalManagement';
 import { MemberManagement, type MemberManagementProps } from './MemberManagement';
@@ -66,14 +66,7 @@ function AdminTab({
 }) {
   const nameId = useId();
   return (
-    <TabsTrigger
-      value={value}
-      aria-labelledby={nameId}
-      disabled={locked}
-      aria-describedby={locked ? noteId : undefined}
-      data-locked={locked && look ? 'true' : undefined}
-      className={LOCKED_TAB_LOOK}
-    >
+    <TabsTrigger value={value} aria-labelledby={nameId} {...lockedTabProps(locked, look, noteId)}>
       {visible}
       <span id={nameId} className="sr-only">
         {name}

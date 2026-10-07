@@ -142,6 +142,17 @@ export function IdReviewQueue({
     retryHadFocus.current = false;
   }, [updating]);
 
+  // 載入更多完成而沒有更多了：鈕消失，焦點移到佇列區（不掉到 body；同提領頁）。
+  const wasLoadingMore = useRef(false);
+  useEffect(() => {
+    if (wasLoadingMore.current && !list.isLoadingMore && !list.hasMore) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        queueRef.current?.focus();
+      }
+    }
+    wasLoadingMore.current = list.isLoadingMore;
+  }, [list.isLoadingMore, list.hasMore]);
+
   const age = formatDataAge(list.fetchedAt ?? list.now, list.now);
   const notice: AdminStaleNoticeProps | null = stale
     ? {
@@ -316,7 +327,9 @@ export function IdReviewQueue({
         data-stale={stale ? 'true' : undefined}
         className="scroll-mt-20 space-y-4 transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
       >
-        {retrying === 'empty' && list.isLoading ? (
+        {/* 重試途中留在原位：判「更新中」而不是「載入中」——有過資料但清單為空之後的失敗（兩張卡
+            並發，第一次重讀回空、第二次失敗）重試時不在載入中，會閃出空狀態（同其他四頁）。 */}
+        {retrying === 'empty' && updating ? (
           <AdminListError
             id={listErrorId}
             message=""

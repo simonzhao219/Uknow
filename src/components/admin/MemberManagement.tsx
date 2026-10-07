@@ -29,7 +29,7 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
-import { type AdminBusy, LOCKED_TAB_LOOK, NOOP_BUSY } from './adminBusy';
+import { type AdminBusy, lockedTabProps, NOOP_BUSY } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
 import { UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, isForbidden, useAdminList, useDelayedFlag } from './useAdminList';
@@ -49,6 +49,9 @@ import type {
 } from '@contract';
 
 const PAGE_SIZE = 50;
+
+// 手機統計摘要的形狀：骨架與確認後的 dl 共用，換行與高度一致（同提領彙總）。
+const SUMMARY_ROW = 'flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm';
 
 export interface MemberManagementProps {
   loadMembers: (params: {
@@ -279,6 +282,17 @@ export function MemberManagement({
     retryHadFocus.current = false;
   }, [updating]);
 
+  // 載入更多完成而沒有更多了：鈕消失，焦點移到列表區（不掉到 body；同提領頁）。
+  const wasLoadingMore = useRef(false);
+  useEffect(() => {
+    if (wasLoadingMore.current && !list.isLoadingMore && !list.hasMore) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        listRef.current?.focus();
+      }
+    }
+    wasLoadingMore.current = list.isLoadingMore;
+  }, [list.isLoadingMore, list.hasMore]);
+
   const age = formatDataAge(list.fetchedAt ?? list.now, list.now);
   const notice: AdminStaleNoticeProps | null = stale
     ? {
@@ -320,11 +334,8 @@ export function MemberManagement({
       let fetched = await loadMemberDetail(id);
       // 讀取送出之後這一位被改過（例：動作在途時關面板、重開同一位，讀取還在途時動作才完成）：
       // 這份早於變更，丟掉再讀一次，補讀落地才顯示——否則會閃一次舊狀態，期間「暫停」可按。
-      for (
-        let reread = 0;
-        reread < 3 && detailRequests.isLatest(ticket) && detailRequests.changedSince(ticket);
-        reread += 1
-      ) {
+      // 只補讀一次：補讀途中不會再有第二次變更（同一位的動作鈕處理中停用，面板也還沒開）。
+      if (detailRequests.isLatest(ticket) && detailRequests.changedSince(ticket)) {
         ticket = detailRequests.begin(id);
         fetched = await loadMemberDetail(id);
       }
@@ -476,10 +487,29 @@ export function MemberManagement({
 
   const statValue = (pick: (s: AdminMemberStats) => number) =>
     list.isLoading ? null : stats ? String(pick(stats)) : '—';
+  // placeholder：手機摘要骨架裡佔住數值位置的字（透明），寬度取典型值。
   const statCards = [
-    { label: '總會員數', short: '總會員', icon: Users, pick: (s: AdminMemberStats) => s.total },
-    { label: '暫停會員', short: '暫停', icon: UserX, pick: (s: AdminMemberStats) => s.suspended },
-    { label: '管理員', short: '管理員', icon: Shield, pick: (s: AdminMemberStats) => s.admins },
+    {
+      label: '總會員數',
+      short: '總會員',
+      icon: Users,
+      pick: (s: AdminMemberStats) => s.total,
+      placeholder: '000',
+    },
+    {
+      label: '暫停會員',
+      short: '暫停',
+      icon: UserX,
+      pick: (s: AdminMemberStats) => s.suspended,
+      placeholder: '0',
+    },
+    {
+      label: '管理員',
+      short: '管理員',
+      icon: Shield,
+      pick: (s: AdminMemberStats) => s.admins,
+      placeholder: '0',
+    },
   ];
 
   return (
@@ -500,19 +530,13 @@ export function MemberManagement({
       <TabsList>
         <TabsTrigger
           value="members"
-          disabled={tabLocked('members')}
-          aria-describedby={tabLocked('members') ? busy.noteId : undefined}
-          data-locked={tabLocked('members') && lockLook ? 'true' : undefined}
-          className={LOCKED_TAB_LOOK}
+          {...lockedTabProps(tabLocked('members'), lockLook, busy.noteId)}
         >
           會員列表
         </TabsTrigger>
         <TabsTrigger
           value="id-reviews"
-          disabled={tabLocked('id-reviews')}
-          aria-describedby={tabLocked('id-reviews') ? busy.noteId : undefined}
-          data-locked={tabLocked('id-reviews') && lockLook ? 'true' : undefined}
-          className={LOCKED_TAB_LOOK}
+          {...lockedTabProps(tabLocked('id-reviews'), lockLook, busy.noteId)}
         >
           證件審核
         </TabsTrigger>
@@ -586,9 +610,19 @@ export function MemberManagement({
               一屏的可觀比例，而 admin 打開手機是為了找那個人。桌面維持卡片。 */}
           {!isDesktop ? (
             list.isLoading ? (
-              <Skeleton aria-hidden="true" className="h-14 w-full rounded-lg" />
+              // 同形骨架：同一組 flex-wrap、同樣的標籤，數值換成透明佔位字——高度跟著摘要走。
+              // 先前固定 h-14（56px），摘要實測 46px，數字落地時下面跳 10px
+              // （test_admin_mobile_layout.py 量）。
+              <div aria-hidden="true" className={SUMMARY_ROW}>
+                {statCards.map((card) => (
+                  <div key={card.label} className="flex items-baseline gap-1">
+                    <span className="text-xs text-muted-foreground">{card.short}</span>
+                    <Skeleton className="font-bold text-transparent">{card.placeholder}</Skeleton>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+              <dl className={SUMMARY_ROW}>
                 {statCards.map((card) => (
                   <div key={card.label} className="flex items-baseline gap-1">
                     <dt className="text-xs text-muted-foreground">{card.short}</dt>

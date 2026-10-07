@@ -26,7 +26,20 @@ export interface AdminBusy {
  * 不動；停用的外觀等 0.3 秒，跟列表淡化同一個判準，0.3 秒內結束的寫入不閃灰。外觀只在
  * `data-locked="true"` 時套；蓋掉 TabsTrigger 基底的 `disabled:opacity-50`。
  */
-export const LOCKED_TAB_LOOK = 'disabled:opacity-100 data-[locked=true]:disabled:opacity-50';
+const LOCKED_TAB_LOOK = 'disabled:opacity-100 data-[locked=true]:disabled:opacity-50';
+
+/**
+ * 鎖住的分頁共用的屬性（比照 `gateProps()`）：停用與 `aria-describedby` 指向說明行在鎖定當下
+ * 生效，`look`（延遲 0.3 秒的旗標）為真才帶停用外觀。
+ */
+export function lockedTabProps(locked: boolean, look: boolean, noteId: string) {
+  return {
+    disabled: locked,
+    'aria-describedby': locked ? noteId : undefined,
+    'data-locked': locked && look ? 'true' : undefined,
+    className: LOCKED_TAB_LOOK,
+  };
+}
 
 export const NOOP_BUSY: AdminBusy = {
   locked: false,
