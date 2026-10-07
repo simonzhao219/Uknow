@@ -2810,10 +2810,14 @@ S4 新寫的徽章測試用 `className.toContain('bg-warning')` 釘「待查收�
   124 條全跑、30 節點真刷測試卡全數完成；10/03（run 37151064025）POST 進 PayUni、付款頁完整渲染
   （紅在按「確認送出」後卡住，另一題）。同樣的表單、同樣的憑證，從美國進得了門，從法國被擋在門口。
 
-最可能根因：PayUni 測試站的邊界防護擋非台灣來源 IP（P0 驗證＝台灣 IP 重試，業主執行）。次要可能：
-PayUni 在 10/04 之後改了規則。本 session 的容器出口封鎖整個 `payuni.com.tw`，技術文件
-（docs.payuni.com.tw/web/#/7/34）無法從 session 內讀取；網路上只查得到「限定 API 之 IP 設定」，
-那是幕後 API 的 IP 白名單，與瀏覽器端的 UPP 表單送出不是同一件事。
+根因（2026-10-07 業主驗證）：PayUni 測試站的邊界防護**依來源地區封鎖**——同一支手機、同一帳號，法國住宅 IP
+被擋、切台灣 VPN 即正常進入付款頁；美國 GitHub runner 也放行（10/03）。「PayUni 在 10/04 之後改了規則」的
+次要假說因此排除。本 session 的容器出口封鎖整個 `payuni.com.tw`，技術文件（docs.payuni.com.tw/web/#/7/34）
+無法從 session 內讀取；網路上只查得到「限定 API 之 IP 設定」，那是幕後 API 的 IP 白名單，與瀏覽器端的
+UPP 表單送出不是同一件事。
+
+待業主裁決（產品面，不在本 PR）：正式站端點 `api.payuni.com.tw` 是否同樣擋海外來源？若是，會員出國期間
+無法付款／續約——這是要向 PayUni 確認的商務問題，不是程式缺陷，但上線前要知道答案。
 
 **真正值得記的是「為什麼沒有任何測試抓到」**：
 1. 晉升閘門 `journey-full` 自 PR #275（08/09）起是 `payment_mode: webhook`——攔下往 sandbox 的跳轉、
@@ -2836,7 +2840,7 @@ PayUni 在 10/04 之後改了規則。本 session 的容器出口封鎖整個 `p
   匯總步驟（見下一條）。
 - B（合成探測）：`deploy-smoke.yml` 每 6 小時的排程加一條，對 sandbox 與正式站的 `/api/upp` POST 假表單，
   只斷言不是 403／5xx——抓不到地區封鎖，抓得到 PayUni 整體故障與規則變更。
-- 文件：`supabase-setup-checklist.md` 記「PayUni 可能擋海外 IP，海外驗證需台灣 VPN」；正式站開放清單加
+- 文件：`supabase-setup-checklist.md` 記「PayUni 測試站擋海外來源 IP（已驗證），海外驗證需台灣 VPN」；正式站開放清單加
   「從台灣網路真付款一次」。
 - 刻意不做（範圍裁決 2026-10-07）：前端交棒偵測、後端「從未抵達 PayUni」告警。等 P0 驗證結果再議。
 
