@@ -1784,9 +1784,17 @@ describe('WithdrawalManagement 寫入後的快取失效', () => {
     [
       '整批被後端拒絕',
       async () => {
-        throw rejected('沒有權限', 403);
+        throw rejected('狀態已變更', 409);
       },
       [],
+    ],
+    // 業主 Q1：403＝權限可能已失，與讀取回 403 同一個意圖（K2）——清空快取，不為那次寫入失效。
+    [
+      '整批回 403',
+      async () => {
+        throw rejected('沒有權限', 403);
+      },
+      ['accessLost'],
     ],
     [
       '結果不明',
