@@ -297,9 +297,9 @@ export function SystemAlerts({ busy = NOOP_BUSY, onAccessLost }: SystemAlertsPro
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
         <div>
           <CardTitle>系統告警</CardTitle>
+          {/* 一行寫完：JSX 文字換行會在「，」後面多出一個半形空白。 */}
           <CardDescription className="hidden sm:block">
-            需要人工介入的事件（付款處理失敗、對帳錯誤、金額不符）。處理完成後標記，
-            同類事件才會再次告警。
+            需要人工介入的事件（付款處理失敗、對帳錯誤、金額不符）。處理完成後標記，同類事件才會再次告警。
           </CardDescription>
         </div>
         {/* 同其他分頁的 AdminToolbar：沒有篩選，重新整理靠右（H、主 #43）。重新整理交給
