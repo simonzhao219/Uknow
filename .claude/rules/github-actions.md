@@ -224,6 +224,13 @@ gh api repos/:owner/:repo/rules/branches/develop   # 生效中的規則(來自 r
 gh api repos/:owner/:repo/branches/develop --jq .protection   # classic 側
 ```
 
+**規則 13 — `payment_mode: webhook` 必須帶未過期的「暫時至 YYYY-MM-DD」**
+webhook 模式攔下往 PayUni 的跳轉、自己簽章注入 notify,**從不打 PayUni**。
+PR #275(2026-08-09)為躲 sandbox 額度上限把晉升閘門改成 webhook,註解寫
+「應改回」,但沒有任何東西提醒——暫時了兩個月,2026-10-07 正式站被 PayUni
+測試站 403 才發現上線前沒有任何一條線碰過 PayUni。同一行或上一行要有
+`暫時至 YYYY-MM-DD:理由`,過期即紅;修法是改回 sandbox,或延期並寫理由。
+
 ## reusable workflow 的兩個地雷
 
 1. **不要在 reusable workflow 裡宣告 workflow 層 `concurrency`**。它會參與
