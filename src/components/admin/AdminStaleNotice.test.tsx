@@ -83,4 +83,16 @@ describe('AdminStaleNotice', () => {
     fireEvent.click(retry);
     expect(onRetry).not.toHaveBeenCalled();
   });
+
+  // 業主 Q7：沒有工具列的頁面（公告、證件審核）沒有狀態文字代念「正在更新」，由提示自己播。
+  it('沒有工具列的頁面重讀中以 status 播報「正在更新…」', () => {
+    render(<AdminStaleNotice kind="updating" age="3 分鐘前" onRetry={() => {}} announceUpdating />);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('正在更新…');
+  });
+
+  it('announceUpdating 只管更新中：失敗時照樣以 alert 打斷', () => {
+    render(<AdminStaleNotice kind="failed" age="3 分鐘前" reason="連線中斷" announceUpdating />);
+    expect(screen.getByRole('alert').textContent).toContain('連線中斷');
+  });
 });

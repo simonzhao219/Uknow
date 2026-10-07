@@ -21,6 +21,7 @@ export interface AdminListErrorProps {
    * 打斷（狀態文字已在播「正在更新」）；鈕顯示進行中、按了不重送。
    */
   retrying?: boolean;
+  announceUpdating?: boolean;
 }
 
 export function AdminListError({

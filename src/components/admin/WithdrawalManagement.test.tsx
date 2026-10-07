@@ -1940,6 +1940,8 @@ describe('WithdrawalManagement 載入更多與換篩選', () => {
     expect(await screen.findByText('連線中斷')).toBeTruthy();
     expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
     expect(screen.getByRole('button', { name: '載入更多' })).toBeTruthy();
+    // 焦點停在鈕上的人要聽得到失敗（業主 Q7）。
+    expect(screen.getByText('連線中斷').getAttribute('role')).toBe('alert');
   });
 
   it('換篩選時在途的載入更多不接到新列表上', async () => {

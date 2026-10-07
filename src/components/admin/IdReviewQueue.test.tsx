@@ -291,6 +291,19 @@ describe('IdReviewQueue 讀取', () => {
     expect(await screen.findByText('目前沒有待審核的證件')).toBeTruthy();
   });
 
+  // 業主 Q7：沒有工具列——沒有狀態文字代念「正在更新」，重試中的提示自己以 status 播報。
+  it('保留舊列的失敗按重試，提示以 status 播報「正在更新…」', async () => {
+    const { calls, load } = heldQueue();
+    renderQueue({ loadReviews: load });
+    await act(async () => calls[0].d.resolve(twoReviews()));
+    fireEvent.click(within(cardOf('王小明')).getByRole('button', { name: '通過' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].d.reject(new Error('連線中斷')));
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    const statuses = screen.getAllByRole('status').map((el) => el.textContent ?? '');
+    expect(statuses.some((text) => text.includes('正在更新…'))).toBe(true);
+  });
+
   // 沒有工具列的頁面：逾時的提示自己附重試。
   it('逾時且有舊列時提示更新較久，並附重試', async () => {
     vi.useFakeTimers();
@@ -335,6 +348,8 @@ describe('IdReviewQueue 讀取', () => {
     expect(cardOf('王小明')).toBeTruthy();
     const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
     expect(reason?.textContent).toBe('連線中斷');
+    // 焦點停在鈕上的人要聽得到失敗（業主 Q7）。
+    expect(reason?.getAttribute('role')).toBe('alert');
   });
 
   it('更新中載入更多按不出去，0.3 秒後套停用外觀，狀態行接「更新中」', async () => {
@@ -396,7 +411,7 @@ describe('IdReviewQueue 讀取', () => {
 
     const retry = within(queue()).getByRole('button', { name: '重試' });
     fireEvent.click(retry);
-    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(within(queue()).getByRole('status').textContent).toContain('正在更新…');
     expect(screen.queryByText('目前沒有待審核的證件')).toBeNull();
     expect(retry.isConnected).toBe(true);
   });

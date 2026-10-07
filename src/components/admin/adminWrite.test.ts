@@ -83,6 +83,31 @@ describe('runAdminWrite', () => {
     expect(outcome).toEqual({ kind: 'rejected', error });
   });
 
+  // 業主 Q1（實作審查）：寫入回 403＝權限可能已失，與讀取回 403 同一個意圖（K2）——清空快取，
+  // 不在記憶體留未遮罩的 PII。仍是「未提交」：不為這次寫入失效、照樣回報與重讀。
+  it('寫入回 403 時清空快取，先於回報', async () => {
+    const r = recorder();
+    const outcome = await runAdminWrite({
+      ...r,
+      event: 'memberSuspend',
+      submit: () => Promise.reject(status(403)),
+    });
+    expect(r.steps).toEqual([
+      'lock',
+      'release',
+      'invalidate:accessLost',
+      'settle:rejected',
+      'reload',
+    ]);
+    expect(outcome.kind).toBe('rejected');
+  });
+
+  it('不入失效表的寫入回 403 也清空快取', async () => {
+    const r = recorder();
+    await runAdminWrite({ ...r, event: null, submit: () => Promise.reject(status(403)) });
+    expect(r.steps).toContain('invalidate:accessLost');
+  });
+
   it('成功但沒有東西提交（例：批次全數失敗）時不失效', async () => {
     const r = recorder();
     await runAdminWrite({

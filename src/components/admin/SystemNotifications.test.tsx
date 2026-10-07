@@ -210,6 +210,39 @@ describe('SystemNotifications 讀取', () => {
     expect(screen.getByText('系統維護預告')).toBeTruthy();
   });
 
+  // 業主 Q7：沒有工具列——沒有狀態文字代念「正在更新」，重試中的提示自己以 status 播報。
+  it('沒有資料時按重試，錯誤區以 status 播報「正在更新…」', async () => {
+    const reads: ReturnType<typeof deferred<unknown>>[] = [];
+    route({
+      list: () => {
+        const d = deferred<unknown>();
+        reads.push(d);
+        return d.promise;
+      },
+    });
+    render(<SystemNotifications />);
+    await act(async () => reads[0].reject(new Error('連線失敗')));
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    expect(within(listRegion()).getByRole('status').textContent).toContain('正在更新…');
+  });
+
+  it('保留舊列的失敗按重試，提示以 status 播報「正在更新…」', async () => {
+    const cache = seedAnnouncements([announcement()]);
+    const reads: ReturnType<typeof deferred<unknown>>[] = [];
+    route({
+      list: () => {
+        const d = deferred<unknown>();
+        reads.push(d);
+        return d.promise;
+      },
+    });
+    render(<SystemNotifications cache={cache} />);
+    await act(async () => reads[0].reject(new Error('連線中斷')));
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    const statuses = screen.getAllByRole('status').map((el) => el.textContent ?? '');
+    expect(statuses.some((text) => text.includes('正在更新…'))).toBe(true);
+  });
+
   it('逾時且有舊列時提示更新較久並附重試', () => {
     vi.useFakeTimers();
     const cache = seedAnnouncements([announcement()]);
@@ -312,6 +345,7 @@ describe('SystemNotifications 寫入', () => {
       expect(showToast).toHaveBeenCalledWith(
         '未收到伺服器確認，結果不明，請確認公告列表後再決定是否重發',
         'warning',
+        { duration: 8000 },
       ),
     );
   });
@@ -327,6 +361,7 @@ describe('SystemNotifications 寫入', () => {
       expect(showToast).toHaveBeenCalledWith(
         '未收到伺服器確認，結果不明，請確認公告列表',
         'warning',
+        { duration: 8000 },
       ),
     );
   });

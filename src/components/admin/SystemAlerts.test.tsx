@@ -371,6 +371,7 @@ describe('SystemAlerts 標記已處理', () => {
       expect(showToast).toHaveBeenCalledWith(
         '未收到伺服器確認，結果不明，請確認告警列表',
         'warning',
+        { duration: 8000 },
       ),
     );
     const reads = () =>

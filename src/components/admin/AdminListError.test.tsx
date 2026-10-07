@@ -70,4 +70,20 @@ describe('AdminListError', () => {
     fireEvent.click(retry);
     expect(onRetry).not.toHaveBeenCalled();
   });
+
+  // 業主 Q7：沒有工具列的頁面（公告、證件審核）沒有狀態文字代念「正在更新」，由這一區自己播。
+  it('沒有工具列的頁面重試中以 status 播報「正在更新…」', () => {
+    render(
+      <AdminListError
+        message="連線失敗"
+        retryLabel="重試"
+        tone="flow"
+        onRetry={() => {}}
+        retrying
+        announceUpdating
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('正在更新…');
+  });
 });

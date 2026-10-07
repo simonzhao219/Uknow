@@ -1581,6 +1581,8 @@ describe('MemberManagement 快取與背景更新', () => {
     expect(within(screen.getByRole('table')).getByText('陳大文')).toBeTruthy();
     const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
     expect(reason?.textContent).toBe('連線中斷');
+    // 焦點停在鈕上的人要聽得到失敗（業主 Q7）。
+    expect(reason?.getAttribute('role')).toBe('alert');
   });
 
   it('確認前載入更多照樣擋下，0.3 秒後套停用外觀，狀態行接「更新中」', () => {

@@ -25,6 +25,7 @@ export interface AdminStaleNoticeProps {
   hidden?: string;
   onRetry?: () => void;
   announce?: boolean;
+  announceUpdating?: boolean;
 }
 
 export function AdminStaleNotice({
