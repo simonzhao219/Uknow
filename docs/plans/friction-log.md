@@ -2789,3 +2789,82 @@ S4 新寫的徽章測試用 `className.toContain('bg-warning')` 釘「待查收�
 推論：**class 斷言一律逐 token**——Tailwind 的語義 token 普遍互為前綴（`bg-x` 與 `bg-x-subtle`、`text-x` 與
 `text-x-foreground`），還有帶前綴修飾的變體（`hover:`、`aria-invalid:`）。可考慮在 `check-test-names.py` 同軌加一條
 靜態檢查：`*.test.tsx` 出現 `className).toContain('bg-` / `('text-` 就提醒。
+
+## 2026-10-07｜CI 盲區｜正式站付款 403：根因在 Uknow 之外，但上線前沒有任何一條線真的碰 PayUni
+
+業主 10/07 01:46（巴黎時間）在正式站按「前往統一金流付款」，瀏覽器被導到
+`sandbox-api.payuni.com.tw` 得到純文字的 `403 Forbidden`。第一直覺是最近的晉升（10/04～10/06
+共五次）改壞了什麼。調查結論：**不是任何一版 Uknow 的更動**。
+
+證據並排：
+- 程式面：PayUni 相關四段（prepare 組加密欄位、`resolvePayuniConfig`、`crypto.ts`、前端
+  `submitPayment` 建表單送出）自 7 月後未變；9/15 晉升版 `43f2e15`、10/03 排程版 `219f7e0`、
+  現行 main `67a27ec` 三版逐段 md5 相同。10/04～10/06 進 main 的後端改動只動建單前守衛，
+  前端只動按鈕樣式與提示框元件，都在送 PayUni 之前或與送出無關。
+- 線上面（正式站 Supabase 日誌）：10/06 23:46:25Z `/payuni/prepare` 回 200、sandbox 模式建單
+  `20261007074624TRBE7J`；PayUni 從未回呼 return／notify，訂單至今 pending。403 頁是伺服器預設頁，
+  不是 PayUni 應用層的錯誤頁（應用層錯誤長得像 7/26 那次的「授權失敗(模擬)」）。
+- 來源：Cloudflare 標 FR／Paris、法國 DSL 住宅網段、Android Edge；業主 commit 時區 10/04 之前
+  `+08:00`、10/05 起 `+02:00`。
+- 對照組：同一份程式碼從美國 GitHub runner 以 sandbox 模式跑排程 journey——09/26（run 36269079479）
+  124 條全跑、30 節點真刷測試卡全數完成；10/03（run 37151064025）POST 進 PayUni、付款頁完整渲染
+  （紅在按「確認送出」後卡住，另一題）。同樣的表單、同樣的憑證，從美國進得了門，從法國被擋在門口。
+
+根因（2026-10-07 業主驗證）：PayUni 測試站的邊界防護**依來源地區封鎖**——同一支手機、同一帳號，法國住宅 IP
+被擋、切台灣 VPN 即正常進入付款頁；美國 GitHub runner 也放行（10/03）。「PayUni 在 10/04 之後改了規則」的
+次要假說因此排除。本 session 的容器出口封鎖整個 `payuni.com.tw`，技術文件（docs.payuni.com.tw/web/#/7/34）
+無法從 session 內讀取；網路上只查得到「限定 API 之 IP 設定」，那是幕後 API 的 IP 白名單，與瀏覽器端的
+UPP 表單送出不是同一件事。
+
+待業主裁決（產品面，不在本 PR）：正式站端點 `api.payuni.com.tw` 是否同樣擋海外來源？若是，會員出國期間
+無法付款／續約——這是要向 PayUni 確認的商務問題，不是程式缺陷，但上線前要知道答案。
+
+**真正值得記的是「為什麼沒有任何測試抓到」**：
+1. 晉升閘門 `journey-full` 自 PR #275（08/09）起是 `payment_mode: webhook`——攔下往 sandbox 的跳轉、
+   用分支金鑰簽章注入 notify，**從不打 PayUni**。改的理由是 sandbox 商店「信用卡收款額度已達上限」，
+   `ci.yml` 註解寫明「暫時」「額度恢復後應改回」「見 friction-log 待辦」——**friction-log 裡從來沒有這條待辦**。
+   暫時的就這樣變成永久的，兩個月。
+2. 排程 `journey-scheduled` 仍是 sandbox 模式、每週真打 PayUni 一次，是唯一還碰得到 PayUni 的線——
+   但它 09/12 起每週紅（見下一條），綠不綠都沒人看。
+3. 其餘全部碰不到：單元／契約測試用 `Deno.env.set` 塞假憑證；pytest-bdd e2e 把 `api.payuni.com.tw/**`
+   整個 route 掉；`deploy-supabase.yml` 的健檢只看 `payuniMode`／`payuniConfigured`。
+4. 所有自動測試都從美國 runner 發出。**地區封鎖這種「依來源而異」的失敗，結構上沒有任何既有測試能觀察到。**
+5. 產品面是盲交棒：前端 `form.submit()` 之後失聯，交棒失敗無偵測、無回報；pending 訂單等對帳排程 4 天後
+   標 `expired`，且分不出「閘門擋下」與「使用者放棄」。
+
+處置（本 PR 只記錄；修正拆成兩個 session）：
+- A（CI 守門與回流）：先手動 dispatch `journey-scheduled.yml`（scope=skeleton、payment_mode=sandbox）確認
+  sandbox 能從頭刷到尾（10/03 那場卡在「確認送出」之後，要先弄清是額度、還是 sandbox 頁多了一層確認框）。
+  能 → `ci.yml` 晉升閘門改回 sandbox；不能 → 留 webhook，但 `check-workflows.py` 加守門：
+  `payment_mode: webhook` 必須附 `# 暫時至 YYYY-MM-DD`，過期即紅。排程連紅週數接進晉升 PR 的 `ci-ok`
+  匯總步驟（見下一條）。
+- B（合成探測）：`deploy-smoke.yml` 每 6 小時的排程加一條，對 sandbox 與正式站的 `/api/upp` POST 假表單，
+  只斷言不是 403／5xx——抓不到地區封鎖，抓得到 PayUni 整體故障與規則變更。
+- 文件：`supabase-setup-checklist.md` 記「PayUni 測試站擋海外來源 IP（已驗證），海外驗證需台灣 VPN」；正式站開放清單加
+  「從台灣網路真付款一次」。
+- 刻意不做（範圍裁決 2026-10-07）：前端交棒偵測、後端「從未抵達 PayUni」告警。等 P0 驗證結果再議。
+
+推論：**「暫時」沒有到期日就是永久。** 寫在註解裡的待辦不是待辦——要嘛寫進機械守門（到期即紅），
+要嘛寫進這裡（整併時會被讀到）。另一條：**閘門用 mock 繞過外部相依時，要同時說出「還有哪一條線真的碰它」**
+——這次的答案是「只剩每週一次、而且正在紅的排程」，等於沒有。
+
+## 2026-10-07｜漏網｜journey 排程自 09/12 連紅四週，issue #288 每週被覆寫、無人接——同一形狀第三次
+
+`journey-scheduled` 09/12、09/19、09/26、10/03 四場全紅，原因各異（09/26：提領後台「標記已匯款」列定位，
+同名會員出現兩列；10/03：PayUni sandbox 頁按「確認送出」後 45 秒表單仍在；09/12、09/19 未查）。失敗開的
+triage issue #288 自 08/15 開著，workflow 的行為是「已有同名 issue 就把 body 覆寫成最新一次 run」，
+**沒有任何東西累加**：看不出連紅幾週、看不出原因是否相同。這是 08/02「journey 排程 7 晚全紅」與 10/05
+「ECR 限流 7 則 issue 無人收」之後，同一形狀第三次：**失敗自動開 issue 只是訊號，不是回流機制。**
+
+這次的代價：10/03 那場已經把「PayUni 頁送出後卡住」拍下來了（頁面文字、表單元素都在 log 裡），比業主 10/07
+撞到 403 早三天；若有人看，至少「sandbox 現在還能不能刷」這題當時就有答案，晉升閘門該不該改回 sandbox
+也不必等到出事才問。
+
+處置（交 session A，與上一條同一個 PR）：
+- 連紅要能被看見：開 issue 的 step 改成 body **累加**一行（日期、run 連結、失敗摘要前 200 字），標題帶
+  連紅週數；並在晉升 PR 的 `ci-ok` 匯總步驟讀 #288 的狀態，連紅即印 `::warning::`——晉升是本 repo
+  唯一一定有人在看的時刻。
+- 09/26 與 10/03 各自的紅要分別 triage，不在本條範圍。
+
+推論：訊號要回流到「一定有人看的時刻」。本 repo 這樣的時刻只有兩個：PR 的 checks、正式站部署核准。
+排程紅燈不接到其中之一，就等於沒有。
