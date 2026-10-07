@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
+import type { RemittanceGate } from './remittanceGate';
 
 export interface AdminToolbarProps {
   /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度；沒有篩選的頁面鈕靠右。 */
@@ -26,6 +27,7 @@ export interface AdminToolbarProps {
   exportPaused?: boolean;
   /** 停用的外觀：頁面在更新超過 0.3 秒、失敗或逾時時才給。 */
   exportPausedVisible?: boolean;
+  exportGate?: RemittanceGate;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
   isExporting?: boolean;

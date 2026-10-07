@@ -181,19 +181,44 @@ describe('AdminToolbar', () => {
 
   it('匯出暫停時 CSV 鈕標成停用、點了不匯出，停用的外觀等頁面說可以才套', () => {
     const onExport = vi.fn();
-    const props = { onRefresh: vi.fn(), isUpdating: false, onExport, exportPaused: true };
-    const { rerender } = render(<AdminToolbar {...props} />);
+    const props = { onRefresh: vi.fn(), isUpdating: false, onExport };
+    const { rerender } = render(
+      <AdminToolbar {...props} exportGate={{ paused: true, look: false, describedBy: 'why' }} />,
+    );
     const csv = screen.getByRole('button', { name: /下載 CSV/ });
     // 不用原生 disabled：0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
     expect(csv.getAttribute('aria-disabled')).toBe('true');
     expect(csv.hasAttribute('disabled')).toBe(false);
     expect(csv.getAttribute('data-paused')).toBeNull();
+    expect(csv.getAttribute('aria-describedby')).toBe('why');
     fireEvent.click(csv);
     expect(onExport).not.toHaveBeenCalled();
 
-    rerender(<AdminToolbar {...props} exportPausedVisible />);
+    rerender(
+      <AdminToolbar {...props} exportGate={{ paused: true, look: true, describedBy: 'why' }} />,
+    );
     expect(screen.getByRole('button', { name: /下載 CSV/ }).getAttribute('data-paused')).toBe(
       'true',
     );
+  });
+
+  it('閘門開著時不掛暫停的原因；沒東西可匯的原因優先', () => {
+    const props = { onRefresh: vi.fn(), isUpdating: false, onExport: vi.fn() };
+    const { rerender } = render(
+      <AdminToolbar {...props} exportGate={{ paused: false, look: false, describedBy: 'why' }} />,
+    );
+    const csv = () => screen.getByRole('button', { name: /下載 CSV/ });
+    expect(csv().getAttribute('aria-disabled')).toBeNull();
+    expect(csv().getAttribute('aria-describedby')).toBeNull();
+
+    rerender(
+      <AdminToolbar
+        {...props}
+        canExport={false}
+        exportDescribedBy="list-error"
+        exportGate={{ paused: true, look: true, describedBy: 'why' }}
+      />,
+    );
+    expect(csv().getAttribute('aria-describedby')).toBe('list-error');
   });
 });

@@ -44,12 +44,15 @@ function fakeList() {
 }
 
 function Harness({ list }: { list: RefreshableList }) {
-  const { statusText, refresh } = useRefreshAnnouncer(list);
+  const { statusText, refresh, reset } = useRefreshAnnouncer(list);
   return (
     <div>
       <p data-testid="status">{statusText}</p>
       <button type="button" onClick={refresh}>
         重新整理
+      </button>
+      <button type="button" onClick={reset}>
+        收掉
       </button>
     </div>
   );
@@ -135,6 +138,22 @@ describe('useRefreshAnnouncer', () => {
     expect(settledText).toMatch(/^已更新 /);
     await act(async () => runs[0].resolve('failed'));
     expect(status()).toBe(settledText);
+  });
+
+  // 換篩選、寫入引起的重讀開始時，上一次的「已更新」「更新失敗」已經不是在說眼前的列表。
+  it('reset 收掉文字，之前按下的那條結算晚到也不再寫入', async () => {
+    const { runs, reload, settled } = fakeList();
+    render(<Harness list={{ isUpdating: false, reload, settled }} />);
+    press();
+    expect(status()).toBe('正在更新');
+
+    fireEvent.click(screen.getByRole('button', { name: '收掉' }));
+    expect(status()).toBe('');
+    await act(async () => runs[0].resolve('failed'));
+    expect(status()).toBe('');
+
+    press();
+    expect(status()).toBe('正在更新');
   });
 
   it('沒有手動按下時，自動更新的結算不寫任何文字', async () => {

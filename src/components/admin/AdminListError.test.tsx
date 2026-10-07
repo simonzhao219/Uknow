@@ -48,4 +48,26 @@ describe('AdminListError', () => {
     );
     expect(screen.getByRole('alert').id).toBe('list-error');
   });
+
+  // 按下重試後區塊留在原位（焦點不掉到 body），說出正在更新；狀態文字已在播「正在更新」，
+  // 不再以 alert 打斷。鈕顯示進行中、按了不重送（業主 2026-10-07 裁決 A）。
+  it('重試進行中寫「正在更新…」、不以 alert 打斷，重試鈕顯示進行中且按了不重送', () => {
+    const onRetry = vi.fn();
+    render(
+      <AdminListError
+        message="連線失敗"
+        retryLabel="重試"
+        tone="flow"
+        onRetry={onRetry}
+        retrying
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('連線失敗')).toBeNull();
+    const retry = screen.getByRole('button', { name: '重試' });
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
 });

@@ -307,6 +307,26 @@ describe('usePagedList 請求序號', () => {
     expect(calls[3].offset).toBe(2);
   });
 
+  // 第一頁之後有人新增或移出，offset 已經位移：接上去會重複最後一列、漏掉最新那列，狀態行
+  // 卻仍說「已顯示 61 / 61」。總數一變就不接尾頁，改重讀一次（業主 2026-10-07 裁決 D）。
+  it('載入更多落地時總數變了就不接尾頁，改重讀一次', async () => {
+    const { calls, load } = controlledLoader();
+    render(<ListProbe load={load} />);
+    await act(async () => calls[0].d.resolve(page(['a', 'b'], 3)));
+
+    click('more');
+    await act(async () => calls[1].d.resolve(page(['b2'], 4)));
+    expect(text('items')).toBe('a,b');
+    expect(calls).toHaveLength(3);
+    expect(calls[2].offset).toBe(0);
+    expect(text('revalidating')).toBe('true');
+    expect(text('loading-more')).toBe('false');
+
+    await act(async () => calls[2].d.resolve(page(['n', 'a'], 4)));
+    expect(text('items')).toBe('n,a');
+    expect(text('confirmed')).toBe('true');
+  });
+
   it('連續換身分 A→B→C 時，B 晚到的結算不改變畫面', async () => {
     const { calls, make } = controlledLoader();
     const { rerender } = render(<ListProbe load={make('A')} deps={['A']} />);

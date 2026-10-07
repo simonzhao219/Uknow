@@ -22,5 +22,6 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
  */
 export const UNKNOWN_OUTCOME = {
   withdrawal: (name: string) => `${name}：未收到伺服器確認，結果不明，列表更新後請確認該筆狀態`,
+  withdrawalPaid: (_name: string) => '',
   withdrawalBatch: '批次匯款未收到伺服器確認，結果不明，請逐筆確認列表',
 };

@@ -29,6 +29,7 @@ const clock = (d: Date) =>
 export function useRefreshAnnouncer(list: RefreshableList): {
   statusText: string;
   refresh: () => void;
+  reset: () => void;
 } {
   const [statusText, setStatusText] = useState('');
   const shown = useRef('');
@@ -61,5 +62,7 @@ export function useRefreshAnnouncer(list: RefreshableList): {
     });
   };
 
-  return { statusText, refresh };
+  const reset = () => {};
+
+  return { statusText, refresh, reset };
 }

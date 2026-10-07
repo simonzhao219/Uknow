@@ -59,4 +59,28 @@ describe('AdminStaleNotice', () => {
     );
     expect(screen.getByRole('alert').textContent).toContain('收款資訊已隱藏，重試後顯示');
   });
+
+  // 重試期間遮罩不解開（業主 2026-10-07 裁決 A）：提示留在原位、說出正在更新；狀態文字已在播
+  // 「正在更新」，不再以 alert 打斷。鈕留著（焦點不掉到 body）但顯示進行中、按了不重送。
+  it('重讀進行中寫「正在更新…」、不帶 live 角色，重試鈕顯示進行中且按了不重送', () => {
+    const onRetry = vi.fn();
+    render(
+      <AdminStaleNotice
+        kind="updating"
+        age="3 分鐘前"
+        reason="連線中斷"
+        hidden="收款資訊已隱藏，更新完成後顯示"
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('連線中斷')).toBeNull();
+    expect(screen.getByText('收款資訊已隱藏，更新完成後顯示')).toBeTruthy();
+    const retry = screen.getByRole('button', { name: '重試' });
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
 });

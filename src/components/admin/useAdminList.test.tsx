@@ -159,6 +159,22 @@ describe('useAdminList 種子與寫回', () => {
     expect(cache.read('withdrawals:all')).toEqual({ ...page(['w1']), fetchedAt: 50_000 });
   });
 
+  // 後台 PII 只准待在記憶體（約束 a）。store 本身不碰 Storage，只在 store 層監看會恆綠；
+  // 這裡帶著未遮罩的身分證與帳號走完種子→重讀→寫回整條路。
+  it('帶快取重掛到落地寫回，全程不呼叫 Storage 的寫入', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const pii = (id: string) => ({ id, idNumber: 'A123456789', bankAccount: '1234567890123' });
+    const cache = createAdminCache();
+    cache.write('withdrawals:all', { items: [pii('w0')], total: 1, fetchedAt: 1_000 }, nextStamp());
+    const { calls, load } = controlled<unknown>();
+    render(<Probe cache={cache} query={adminQuery.withdrawals({ status: 'all' })} load={load} />);
+    expect(text('items')).toBe('w0');
+
+    await act(async () => calls[0].d.resolve({ items: [pii('w1')], total: 1 }));
+    expect(ids(cache.read('withdrawals:all'))).toEqual(['w1']);
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
   it('重讀到空結果時刪掉快取裡的舊條目', async () => {
     const cache = createAdminCache();
     const { calls, load } = controlled<unknown>();

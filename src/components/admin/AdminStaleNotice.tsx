@@ -12,7 +12,7 @@ import { Button } from '../ui/button';
  * N 用 `formatDataAge`：不到 1 分鐘寫「剛剛」。
  */
 export interface AdminStaleNoticeProps {
-  kind: 'failed' | 'slow';
+  kind: 'failed' | 'slow' | 'updating';
   /** `formatDataAge` 的結果：「剛剛」或「N 分鐘前」。 */
   age: string;
   /** 失敗原因（後端原文）。 */

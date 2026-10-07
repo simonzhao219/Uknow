@@ -927,6 +927,20 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
     expect(screen.getByRole('button', { name: '複製收款帳號' })).toBeTruthy();
   });
 
+  // 主防線在 store 層之外也要成立：頁面帶著未遮罩的帳號與身分證走完種子→重讀→寫回。
+  it('帶快取重掛到落地寫回快取，全程不呼叫 Storage 的寫入', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].resolve(page()));
+
+    const cached = cache.read<AdminWithdrawalRecord>('withdrawals:all');
+    expect(cached?.items[0].bankAccount).toBe('1234567890123');
+    expect(setItem).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
   it('未確認時匯款類入口從第一個 render 就擋下點擊，0.3 秒後才套停用樣式並說出原因', () => {
     vi.useFakeTimers();
     const cache = seedCache();
@@ -964,6 +978,35 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
       expect(el.getAttribute('data-paused'), el.textContent ?? '').toBe('true');
       expect(el.getAttribute('aria-describedby'), el.textContent ?? '').toBe(statusLine().id);
     }
+  });
+
+  // 載入更多在確認前也按不出去（舊列後面不接新頁）；只擋不灰的話，手機上按了沒反應也看不出原因。
+  it('確認前載入更多照樣擋下，0.3 秒後套停用外觀，鈕旁寫原因並以 aria-describedby 指向', async () => {
+    vi.useFakeTimers();
+    const cache = seedCache(page({ withdrawals: [record()], total: 3 }));
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    const more = () => screen.getByRole('button', { name: '載入更多' });
+    const reason = () =>
+      document.getElementById(more().getAttribute('aria-describedby') ?? '')?.textContent;
+    expect(more().getAttribute('aria-disabled')).toBe('true');
+    expect(more().getAttribute('data-paused')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(more().getAttribute('data-paused')).toBe('true');
+    expect(reason()).toBe('更新中，完成後可載入更多');
+
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+    expect(more().getAttribute('data-paused')).toBe('true');
+    expect(reason()).toBe('更新失敗，重試後可載入更多');
+
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    await act(async () => calls[1].resolve(page({ withdrawals: [record()], total: 3 })));
+    expect(more().getAttribute('aria-disabled')).toBeNull();
+    expect(more().getAttribute('data-paused')).toBeNull();
+    expect(more().getAttribute('aria-describedby')).toBeNull();
   });
 
   it('退件、代為完成與查看歷史在未確認時照常可按', async () => {
@@ -1033,6 +1076,15 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
     expect(within(stats).getAllByText('—')).toHaveLength(4);
   });
 
+  // 舊 mock 與缺欄位的回應不回 stats：確認了卻沒有數字可寫，就寫「—」，不要永遠是骨架。
+  it('讀取成功但回應缺統計時統計區寫「—」，不停在骨架', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve({ ...page(), stats: undefined } as unknown as Page));
+    const stats = screen.getByRole('region', { name: '提領彙總' });
+    expect(within(stats).getAllByText('—')).toHaveLength(4);
+  });
+
   it('作業面板確認前是骨架、失敗時寫「資料未確認，暫停顯示」，兩者都不渲染複製鈕', async () => {
     const cache = seedCache();
     const { calls, load } = heldLoader();
@@ -1072,6 +1124,68 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
     expect(listRegion().getAttribute('data-stale')).not.toBe('true');
   });
 
+  // 失敗後遮到確認為止（業主 2026-10-07 裁決 A）：重試期間已知失敗的舊資料上不重新露出帳號，
+  // 提示改寫「正在更新…」、重試鈕顯示進行中；本次讀取確認後才解開。
+  it('陳舊提示按重試後收款資訊維持遮住，提示寫「正在更新…」，確認後才解開', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    const row = rowOf('王小明');
+    expect(within(row).getAllByText('已隱藏')).toHaveLength(3);
+    expect(within(row).queryByText('1234567890123')).toBeNull();
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.getByText('收款資訊已隱藏，更新完成後顯示')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重試' }).getAttribute('aria-disabled')).toBe('true');
+
+    await act(async () => calls[1].resolve(page()));
+    expect(within(rowOf('王小明')).queryByText('已隱藏')).toBeNull();
+    expect(screen.queryByText('正在更新…')).toBeNull();
+  });
+
+  it('失敗後改按工具列的重新整理也維持遮住，再失敗時帳號從未露出', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+    let exposed = false;
+    const observer = new MutationObserver(() => {
+      if (document.body.textContent?.includes('1234567890123')) exposed = true;
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    expect(within(rowOf('王小明')).getAllByText('已隱藏')).toHaveLength(3);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    await act(async () => calls[1].reject(new Error('仍然連不上')));
+    observer.disconnect();
+
+    expect(within(rowOf('王小明')).getAllByText('已隱藏')).toHaveLength(3);
+    expect(screen.getByText(/更新失敗，以下是/)).toBeTruthy();
+    expect(exposed).toBe(false);
+  });
+
+  it('沒有資料時錯誤區按重試後原地寫「正在更新…」、重試鈕顯示進行中', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].reject(new Error('連線失敗')));
+
+    const retry = screen.getByRole('button', { name: '重試' });
+    retry.focus();
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('連線失敗')).toBeNull();
+    expect(retry.isConnected).toBe(true);
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => calls[1].resolve(page()));
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+    expect(document.activeElement).toBe(listRegion());
+  });
+
   it('手動重新整理失敗時陳舊提示不再帶 alert——狀態文字已經播過', async () => {
     const { calls, load } = heldLoader();
     renderWith(undefined, load);
@@ -1096,9 +1210,28 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
       vi.advanceTimersByTime(15_000);
     });
     expect(screen.getByText(/更新較久，以下是剛剛的資料/)).toBeTruthy();
+    // 逾時提示沒有重試鈕：寫「重新整理後顯示」，不寫「重試後顯示」（業主 2026-10-07，P2-22）。
+    expect(screen.getByText('收款資訊已隱藏，重新整理後顯示')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(within(rowOf('王小明')).getAllByText('已隱藏')).toHaveLength(3);
     expect(refresh.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  // K2：權限可能被撤，畫面上不再留會員的帳號與身分證。
+  it('讀取回 403 時丟掉種子列改顯示錯誤，統計寫「—」，快取與切回位置一併清空', async () => {
+    const cache = seedCache(page(), Date.now(), 'pending');
+    cache.writeView({ withdrawalStatus: 'pending' });
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+
+    await act(async () => calls[0].reject(Object.assign(new Error('沒有權限'), { status: 403 })));
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByText('沒有權限')).toBeTruthy();
+    const stats = screen.getByRole('region', { name: '提領彙總' });
+    expect(within(stats).getAllByText('—')).toHaveLength(4);
+    expect(cache.read('withdrawals:pending')).toBeUndefined();
+    expect(cache.readView().withdrawalStatus).toBe('all');
   });
 
   it('作業面板的資料時間每 60 秒重算，滿 10 分鐘提示先重新整理', async () => {
@@ -1212,6 +1345,32 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
     await act(async () => calls[1].resolve(page()));
     expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
   });
+
+  it('手動重新整理失敗後，退件引起的重讀一開始就收掉「更新失敗」', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve(page()));
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].reject(new Error('連線中斷')));
+    expect(screen.getByText('更新失敗')).toBeTruthy();
+
+    await rejectRow('王小明');
+    await waitFor(() => expect(calls).toHaveLength(3));
+    expect(screen.queryByText('更新失敗')).toBeNull();
+  });
+
+  it('換篩選時收掉上一個篩選的「已更新 HH:mm」', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve(page()));
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].resolve(page()));
+    expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+    expect(screen.queryByText(/^已更新 \d\d:\d\d$/)).toBeNull();
+  });
 });
 
 describe('WithdrawalManagement 手機版的確認閘門', () => {
@@ -1232,6 +1391,29 @@ describe('WithdrawalManagement 手機版的確認閘門', () => {
     expect(history.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(idCard);
     expect(screen.queryByRole('dialog', { name: '身分證照片查閱' })).toBeNull();
+  });
+
+  // 觸控沒有游標可變：只變淡的項目點了沒反應，看不出是壞了還是在等。
+  it('⋯ 選單的「查看證件」出現停用外觀時，項目內寫「更新中」，名稱不變', async () => {
+    const cache = seedCache();
+    const { load } = heldLoader();
+    renderWith(cache, load);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /的更多操作/ }), { key: 'Enter' });
+    const idCard = await screen.findByRole('menuitem', { name: '查看證件' });
+    await waitFor(() => expect(idCard.getAttribute('data-paused')).toBe('true'));
+    expect(within(idCard).getByText('更新中')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '查看證件' })).toBe(idCard);
+  });
+
+  it('從 ⋯ 選單開的查看歷史關閉後，焦點回到 ⋯ 鈕', async () => {
+    renderConsole();
+    const more = await screen.findByRole('button', { name: /的更多操作/ });
+    fireEvent.keyDown(more, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '查看歷史' }));
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(more));
   });
 
   it('更新失敗時卡片遮住匯款金額，展開寫「資料未確認，暫停顯示」、扣點照常', async () => {
@@ -1388,7 +1570,26 @@ describe('WithdrawalManagement 動作回報與結果分類', () => {
     await openBatch();
     fireEvent.click(screen.getByRole('button', { name: '確認批次匯款' }));
     expect(
-      await screen.findByText('批次匯款未收到伺服器確認，結果不明，請逐筆確認列表'),
+      await screen.findByText(
+        '批次匯款未收到伺服器確認，結果不明。若款項已匯出請勿重匯，逐筆確認狀態後再補標記',
+      ),
+    ).toBeTruthy();
+  });
+
+  // 標記已匯款是網銀轉出之後才按的：重讀後仍顯示待處理時，最怕的是 admin 以為沒匯成而再匯
+  // 一次（業主 2026-10-07 裁決 E）。退件與代為完成沒有轉帳，維持原本的文案。
+  it('標記已匯款沒收到伺服器確認時，提醒款項若已匯出請勿重匯', async () => {
+    renderPage({
+      update: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '標記已匯款' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認匯款' }));
+    expect(
+      await screen.findByText(
+        '王小明：未收到伺服器確認，結果不明。若款項已匯出請勿重匯，確認狀態後再補標記',
+      ),
     ).toBeTruthy();
   });
 
@@ -1427,6 +1628,81 @@ describe('WithdrawalManagement 動作回報與結果分類', () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull();
     expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+  });
+
+  // 回報一次只放一則的話，晚到的成功會把「結果不明」那句蓋掉——admin 就不知道要回頭確認。
+  it('較早那筆結果不明、較晚那筆成功時，兩則回報都留著', async () => {
+    const { writes, update } = heldWrites();
+    renderPage({ load: async () => twoRows(), update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await rejectRow('李小華');
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+
+    await act(async () => writes[0].reject(new TypeError('Failed to fetch')));
+    await act(async () => writes[1].resolve());
+    expect(screen.getByText(/^王小明：未收到伺服器確認/)).toBeTruthy();
+    expect(screen.getByText('已退件：李小華')).toBeTruthy();
+  });
+
+  it('匯出途中先前的寫入以結果不明收場，匯出完成後那則失敗仍在', async () => {
+    const gates: Array<() => void> = [];
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (offset === 1) await new Promise<void>((r) => gates.push(r));
+      return page({
+        withdrawals: [offset === 1 ? record({ id: 'w2', userName: '李小華' }) : record()],
+        total: 2,
+      });
+    });
+    const { writes, update } = heldWrites();
+    renderPage({ load, update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await waitFor(() => expect(writes).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await waitFor(() => expect(gates).toHaveLength(1));
+
+    await act(async () => writes[0].reject(new TypeError('Failed to fetch')));
+    await act(async () => gates[0]());
+    expect(await screen.findByText(/^(已匯出|已產生) 2 筆/)).toBeTruthy();
+    expect(screen.getByText(/^王小明：未收到伺服器確認/)).toBeTruthy();
+  });
+
+  it('兩筆寫入同時在途時各自停用，先回來的那筆不解開另一筆', async () => {
+    const { writes, update } = heldWrites();
+    renderPage({ load: async () => twoRows(), update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await rejectRow('李小華');
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    const rejectOf = (name: string) => within(rowOf(name)).getByRole('button', { name: '退件' });
+    expect(rejectOf('王小明').hasAttribute('disabled')).toBe(true);
+    expect(rejectOf('李小華').hasAttribute('disabled')).toBe(true);
+
+    await act(async () => writes[0].resolve());
+    expect(rejectOf('王小明').hasAttribute('disabled')).toBe(false);
+    expect(rejectOf('李小華').hasAttribute('disabled')).toBe(true);
+  });
+
+  // 批次在途時那幾筆正在變成待查收：匯款類入口比照未確認擋下（業主 2026-10-07，P2-14）。
+  it('批次在途時匯款類入口比照未確認擋下，單筆的標記已匯款按不出去', async () => {
+    type BatchResult = { succeeded: string[]; failed: { id: string; error: string }[] };
+    const pending: Array<(result: BatchResult) => void> = [];
+    const batch = vi.fn(() => new Promise<BatchResult>((resolve) => pending.push(resolve)));
+    renderPage({ load: async () => twoRows(), batch });
+    await openBatch();
+    fireEvent.click(screen.getByRole('button', { name: '確認批次匯款' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(batch).toHaveBeenCalledTimes(1);
+
+    const markPaid = within(rowOf('王小明')).getByRole('button', { name: '標記已匯款' });
+    expect(markPaid.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    fireEvent.click(markPaid);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await act(async () => pending[0]({ succeeded: ['w1', 'w2'], failed: [] }));
   });
 
   it('寫入在途時離開頁面，之後才失敗也不再重讀', async () => {
@@ -1768,6 +2044,27 @@ describe('WithdrawalManagement 匯出的核對與鎖', () => {
     await act(async () => writes[0].resolve());
     expect(release).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(2);
+  });
+
+  // 2xx 但回應形狀不對（解析後讀欄位擲錯）：交易可能已提交，歸結果不明；鎖只包住寫入請求、
+  // 只釋放一次（§2.11）。
+  it('批次回應形狀不對時以結果不明回報，寫入鎖只釋放一次', async () => {
+    const release = vi.fn();
+    const busy: AdminBusy = {
+      locked: false,
+      noteId: '',
+      startWrite: vi.fn(() => release),
+      startExport: vi.fn(() => ({ progress: vi.fn(), end: vi.fn() })),
+    };
+    renderPage({
+      busy,
+      load: async () => twoRows(),
+      batch: async () => ({}) as { succeeded: string[]; failed: { id: string; error: string }[] },
+    });
+    await openBatch();
+    fireEvent.click(screen.getByRole('button', { name: '確認批次匯款' }));
+    expect(await screen.findByText(/^批次匯款未收到伺服器確認/)).toBeTruthy();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('匯出期間呼叫匯出鎖並回報收集進度，結束時解除', async () => {

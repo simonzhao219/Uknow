@@ -67,6 +67,21 @@ describe('collectExportRows', () => {
     expect(result).toEqual({ ok: false, reason: 'changed' });
   });
 
+  // 與 usePagedList 的載入更多同一個後備：缺 total 的回應沿用目前的總數，不當成變動。
+  it('某頁回應沒帶 total 時沿用起始總數，照樣核對筆數與重複', async () => {
+    const loadPage = pagesBy({
+      0: { items: rows('a', 'b'), total: 3 },
+      2: { items: rows('c'), total: undefined as unknown as number },
+    });
+    const result = await collectExportRows({
+      total: 3,
+      pageSize: 2,
+      loadPage,
+      isMounted: () => true,
+    });
+    expect(result).toEqual({ ok: true, rows: rows('a', 'b', 'c') });
+  });
+
   it('收完的筆數少於起始總數時視為資料有變動，不交出半份', async () => {
     const loadPage = pagesBy({
       0: { items: rows('a', 'b'), total: 3 },

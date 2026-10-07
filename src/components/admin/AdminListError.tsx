@@ -15,6 +15,7 @@ export interface AdminListErrorProps {
   onRetry: () => void;
   /** 停用的匯出鈕在沒有資料時以 aria-describedby 指向這裡。 */
   id?: string;
+  retrying?: boolean;
 }
 
 export function AdminListError({ message, retryLabel, tone, onRetry, id }: AdminListErrorProps) {

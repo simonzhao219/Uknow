@@ -301,6 +301,11 @@ describe('後台 PII 不得落地', () => {
       ['import ../../contexts/DataCacheContext'],
     ],
     ["const mod = await import('../../utils/formDraft');", ['import ../../utils/formDraft']],
+    [
+      "import { useDataCache } from '../../contexts/DataCacheContext.tsx';",
+      ['import ../../contexts/DataCacheContext.tsx'],
+    ],
+    ["const { saveDraft } = require('../../utils/formDraft');", ['require ../../utils/formDraft']],
     ['const name = member.name; const view = { cookie: 1 };', []],
   ])('全範圍規則：%s → %j', (source, expected) => {
     expect(storageUses(source, 'sample.ts', ADMIN_PII_RULES)).toEqual(expected);
@@ -327,9 +332,18 @@ describe('後台 PII 不得落地', () => {
       join('src', 'hooks', 'useLatestRequest.ts'),
       ...walk(join('src', 'components', 'admin'), ['.ts', '.tsx']),
     ].filter(isSource);
-    const strict = ['adminCache.ts', 'useAdminList.ts', 'AdminConsole.tsx'].map((name) =>
-      join('src', 'components', 'admin', name),
-    );
+    const admin = (name: string) => join('src', 'components', 'admin', name);
+    const strict = ['adminCache.ts', 'useAdminList.ts', 'AdminConsole.tsx'].map(admin);
+    // 掃描範圍本身也要釘住：檔案改名、搬家或 walk 漏掃時，「沒有違規」只是因為沒掃到。
+    // AdminConsole.tsx 在階段 7 才建立——建立它的那個紅燈 commit 把這裡的預期改成 []。
+    const required = [
+      ...strict,
+      ...['WithdrawalManagement.tsx', 'MemberManagement.tsx', 'IdReviewQueue.tsx'].map(admin),
+    ];
+    expect(
+      required.filter((rel) => !scoped.includes(rel)),
+      '清單裡的檔案都要在掃描範圍內（改名或搬家時同步這份清單）',
+    ).toEqual([admin('AdminConsole.tsx')]);
     const offenders = scoped.flatMap((rel) => {
       const rules = strict.includes(rel) ? ADMIN_CACHE_RULES : ADMIN_PII_RULES;
       const source = readFileSync(join(REPO_ROOT, rel), 'utf8');
