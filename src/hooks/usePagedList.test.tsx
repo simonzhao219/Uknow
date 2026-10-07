@@ -14,6 +14,8 @@
 //   * 有資料時的重讀在背景進行、失敗時保留舊列（ui-ux §5「保留舊資料，不要清空」）；
 //     載入更多的失敗另記 loadMoreError，不把整片列表換成錯誤區。
 //   * reload() 的 promise 一定兌現——呼叫端常在 await 之後才解除「處理中」，永懸會卡鈕。
+// 以及給後台快取用的擴充點：initial 種子（換身分時讀一次後凍結）、onLanded 落地驗證
+// （被拒補讀一次，補讀又被拒就進錯誤態——「未確認」永遠對應「有請求在跑或有錯誤可重試」）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
@@ -43,7 +45,10 @@ function Probe({ load }: { load: (p: { limit: number; offset: number }) => Promi
 interface Item {
   id: string;
 }
-type Page = PagedResult<Item>;
+interface Meta {
+  n: number;
+}
+type Page = PagedResult<Item, Meta>;
 type Load = (p: { limit: number; offset: number }) => Promise<Page>;
 
 function deferred<T>() {
@@ -69,9 +74,10 @@ function controlledLoader() {
   return { calls, make, load: make('') };
 }
 
-const page = (ids: string[], total = ids.length): Page => ({
+const page = (ids: string[], total = ids.length, meta?: Meta): Page => ({
   items: ids.map((id) => ({ id })),
   total,
+  meta,
 });
 
 /** promise 若 50ms 內沒兌現就讀成 'pending'——永懸的 promise 要讀得出來，而不是卡到逾時。 */
@@ -83,18 +89,30 @@ function ListProbe({
   load,
   deps = [],
   clearOnError,
+  initial,
+  onLanded,
   onList,
 }: {
   load: Load;
   deps?: unknown[];
   clearOnError?: (err: unknown) => boolean;
-  onList?: (list: UsePagedList<Item>) => void;
+  initial?: Page;
+  onLanded?: (page: Page, info: { stamp: number }) => boolean;
+  onList?: (list: UsePagedList<Item, Meta>) => void;
 }) {
-  const list = usePagedList<Item>({ load, pageSize: 2, deps, clearOnError });
+  const list = usePagedList<Item, Meta>({
+    load,
+    pageSize: 2,
+    deps,
+    clearOnError,
+    initial,
+    onLanded,
+  });
   onList?.(list);
   return (
     <div>
       <span data-testid="items">{list.items.map((i) => i.id).join(',')}</span>
+      <span data-testid="meta">{list.meta?.n ?? ''}</span>
       <span data-testid="error">{list.error ?? ''}</span>
       <span data-testid="more-error">{list.loadMoreError ?? ''}</span>
       <span data-testid="loading">{String(list.isLoading)}</span>
@@ -425,5 +443,193 @@ describe('usePagedList reload 的結算', () => {
     await act(async () => calls[1].d.reject(new Error('連線中斷')));
     expect(await outcome(during)).toBe('failed');
     expect(await outcome(list.settled())).toBe('failed');
+  });
+});
+
+describe('usePagedList 種子與落地驗證', () => {
+  it('有種子的第一個 render 就顯示種子，且是未確認的背景重讀', async () => {
+    const { calls, load } = controlledLoader();
+    const renders: UsePagedList<Item, Meta>[] = [];
+    render(
+      <ListProbe load={load} initial={page(['s1'], 1, { n: 7 })} onList={(l) => renders.push(l)} />,
+    );
+    const first = renders[0];
+    expect(first.items.map((i) => i.id)).toEqual(['s1']);
+    expect(first.meta).toEqual({ n: 7 });
+    expect(first.isLoading).toBe(false);
+    expect(first.isRevalidating).toBe(true);
+    expect(first.isConfirmed).toBe(false);
+
+    await act(async () => calls[0].d.resolve(page(['a'], 1, { n: 8 })));
+    expect(text('items')).toBe('a');
+    expect(text('meta')).toBe('8');
+    expect(text('confirmed')).toBe('true');
+  });
+
+  it('換到有種子的身分時，換身分的那個 render 就顯示新種子而不是舊列', async () => {
+    const { calls, make } = controlledLoader();
+    const shown: string[] = [];
+    const probe = (tag: string, initial?: Page) => (
+      <ListProbe
+        load={make(tag)}
+        deps={[tag]}
+        initial={initial}
+        onList={(l) => shown.push(l.items.map((i) => i.id).join(','))}
+      />
+    );
+    const { rerender } = render(probe('A'));
+    await act(async () => calls[0].d.resolve(page(['a1'])));
+
+    shown.length = 0;
+    rerender(probe('B', page(['b0'])));
+    expect(shown[0]).toBe('b0');
+    expect(shown).not.toContain('a1');
+    expect(text('revalidating')).toBe('true');
+  });
+
+  it('同一個身分下種子再變，已掛載的清單也不跟著換', () => {
+    const { load } = controlledLoader();
+    const { rerender } = render(<ListProbe load={load} initial={page(['s1'])} />);
+    rerender(<ListProbe load={load} initial={page(['s2'])} />);
+    expect(text('items')).toBe('s1');
+  });
+
+  it('onLanded 回 false 時補讀一次，補讀落地才換資料', async () => {
+    const { calls, load } = controlledLoader();
+    const onLanded = vi
+      .fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+    let list!: UsePagedList<Item>;
+    render(<ListProbe load={load} onLanded={onLanded} onList={(l) => (list = l)} />);
+    await act(async () => calls[0].d.resolve(page(['a'])));
+
+    let pending!: Promise<RefreshOutcome>;
+    act(() => {
+      pending = list.reload();
+    });
+    await act(async () => calls[1].d.resolve(page(['stale'])));
+    expect(calls).toHaveLength(3);
+    expect(text('items')).toBe('a');
+    expect(text('revalidating')).toBe('true');
+    expect(text('confirmed')).toBe('false');
+    expect(await outcome(pending)).toBe('pending');
+
+    await act(async () => calls[2].d.resolve(page(['b'])));
+    expect(text('items')).toBe('b');
+    expect(text('confirmed')).toBe('true');
+    expect(await outcome(pending)).toBe('done');
+  });
+
+  it('補讀落地又被拒時進錯誤態，保留舊列且可以重試', async () => {
+    const { calls, load } = controlledLoader();
+    const onLanded = vi
+      .fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+    let list!: UsePagedList<Item>;
+    render(<ListProbe load={load} onLanded={onLanded} onList={(l) => (list = l)} />);
+    await act(async () => calls[0].d.resolve(page(['a'])));
+
+    let pending!: Promise<RefreshOutcome>;
+    act(() => {
+      pending = list.reload();
+    });
+    await act(async () => calls[1].d.resolve(page(['stale'])));
+    expect(calls).toHaveLength(3);
+    await act(async () => calls[2].d.resolve(page(['stale'])));
+    // 補讀只有一次：再被拒就停在錯誤態，不再發第三個請求。
+    expect(calls).toHaveLength(3);
+    expect(text('items')).toBe('a');
+    expect(text('error')).toBe('資料在更新途中又有變動，請重新整理');
+    expect(text('confirmed')).toBe('false');
+    expect(text('loading')).toBe('false');
+    expect(await outcome(pending)).toBe('failed');
+
+    click('reload');
+    await act(async () => calls[3].d.resolve(page(['b'])));
+    expect(text('items')).toBe('b');
+    expect(text('error')).toBe('');
+  });
+
+  it('沒有種子的首讀被拒時，每個 render 不是在載入就是有資料', async () => {
+    const { calls, load } = controlledLoader();
+    const onLanded = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    const renders: boolean[] = [];
+    render(
+      <ListProbe
+        load={load}
+        onLanded={onLanded}
+        onList={(l) => renders.push(l.isLoading || l.items.length > 0)}
+      />,
+    );
+    await act(async () => calls[0].d.resolve(page(['stale'])));
+    expect(calls).toHaveLength(2);
+    await act(async () => calls[1].d.resolve(page(['a'])));
+    expect(text('items')).toBe('a');
+    expect(renders).not.toContain(false);
+  });
+
+  it('卸載之後才落地的結果不會引發補讀', async () => {
+    const { calls, load } = controlledLoader();
+    const { unmount } = render(<ListProbe load={load} onLanded={() => false} />);
+    unmount();
+    await act(async () => calls[0].d.resolve(page(['a'])));
+    expect(calls).toHaveLength(1);
+  });
+
+  it('被取代的重讀晚到時不交給 onLanded，最新那次收到正規化後的頁', async () => {
+    const { calls, load } = controlledLoader();
+    const onLanded = vi.fn().mockReturnValue(true);
+    render(<ListProbe load={load} onLanded={onLanded} />);
+    await act(async () => calls[0].d.resolve(page(['a'])));
+
+    click('reload');
+    click('reload');
+    await act(async () => calls[1].d.resolve(page(['late'])));
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    await act(async () => calls[2].d.resolve({ items: [{ id: 'b' }] } as Page));
+    expect(onLanded).toHaveBeenCalledTimes(2);
+    expect(onLanded.mock.calls[1][0]).toEqual({ items: [{ id: 'b' }], total: 1, meta: undefined });
+  });
+
+  it('onLanded 收到的戳記單調遞增，補讀也取新的戳記', async () => {
+    const { calls, load } = controlledLoader();
+    const stamps: number[] = [];
+    const verdicts = [true, false, true, true];
+    const onLanded = (_page: Page, { stamp }: { stamp: number }) => {
+      stamps.push(stamp);
+      return verdicts[stamps.length - 1] ?? true;
+    };
+    render(<ListProbe load={load} onLanded={onLanded} />);
+    await act(async () => calls[0].d.resolve(page(['a'])));
+    click('reload');
+    await act(async () => calls[1].d.resolve(page(['b'])));
+    expect(calls).toHaveLength(3);
+    await act(async () => calls[2].d.resolve(page(['c'])));
+    click('reload');
+    await act(async () => calls[3].d.resolve(page(['d'])));
+
+    expect(stamps).toHaveLength(4);
+    for (let i = 1; i < stamps.length; i += 1) {
+      expect(stamps[i]).toBeGreaterThan(stamps[i - 1]);
+    }
+  });
+
+  it('載入更多成功不呼叫 onLanded、不動 meta，也不改確認狀態', async () => {
+    const { calls, load } = controlledLoader();
+    const onLanded = vi.fn().mockReturnValue(true);
+    render(<ListProbe load={load} onLanded={onLanded} />);
+    await act(async () => calls[0].d.resolve(page(['a'], 3, { n: 1 })));
+
+    click('more');
+    await act(async () => calls[1].d.resolve(page(['b'], 3, { n: 2 })));
+    expect(text('items')).toBe('a,b');
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    expect(text('meta')).toBe('1');
+    expect(text('confirmed')).toBe('true');
   });
 });

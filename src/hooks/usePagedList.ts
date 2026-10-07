@@ -27,27 +27,31 @@ import { useLatestRequest } from './useLatestRequest';
  * 那次、卸載時以 `'failed'` 兌現。呼叫端常是 `await reload()` 之後才解除處理中，
  * 永懸會把按鈕卡住。
  */
-export interface PagedResult<T> {
+export interface PagedResult<T, M = unknown> {
   items: T[];
   total: number;
+  meta?: M;
 }
 
 /** 本身分最新一次重讀的結算。 */
 export type RefreshOutcome = 'done' | 'failed';
 
-export interface UsePagedListOptions<T> {
+export interface UsePagedListOptions<T, M = unknown> {
   /** 取一頁。`offset` 是目前已載入的筆數。 */
-  load: (params: { limit: number; offset: number }) => Promise<PagedResult<T>>;
+  load: (params: { limit: number; offset: number }) => Promise<PagedResult<T, M>>;
   pageSize: number;
   /** 變動時重新從第一頁取（篩選條件、搜尋字串）；序列化後就是清單的身分。 */
   deps: unknown[];
   /** 回 true 時這次讀取失敗不保留已顯示的列——重讀與載入更多都適用。 */
   clearOnError?: (err: unknown) => boolean;
+  initial?: PagedResult<T, M>;
+  onLanded?: (page: PagedResult<T, M>, info: { stamp: number }) => boolean;
 }
 
-export interface UsePagedList<T> {
+export interface UsePagedList<T, M = unknown> {
   items: T[];
   total: number;
+  meta: M | undefined;
   hasMore: boolean;
   /** 還有下一頁、資料已確認、沒有載入更多在途——更新中不接舊尾。 */
   canLoadMore: boolean;
@@ -110,12 +114,12 @@ function invoke<R>(fn: () => Promise<R>): Promise<R> {
   }
 }
 
-export function usePagedList<T>({
+export function usePagedList<T, M = unknown>({
   load,
   pageSize,
   deps,
   clearOnError,
-}: UsePagedListOptions<T>): UsePagedList<T> {
+}: UsePagedListOptions<T, M>): UsePagedList<T, M> {
   const identity = JSON.stringify(deps);
   const requests = useLatestRequest();
 
@@ -258,6 +262,7 @@ export function usePagedList<T>({
   return {
     items: view.items,
     total: view.total,
+    meta: undefined,
     hasMore,
     canLoadMore: hasMore && isConfirmed && !view.isLoadingMore,
     isLoading: !view.hasData && view.error === null,
