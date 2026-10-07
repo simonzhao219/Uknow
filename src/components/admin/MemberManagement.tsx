@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -27,13 +27,24 @@ import { MemberDetailSheet } from './MemberDetailSheet';
 import { memberLabel, memberName } from './memberName';
 import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { usePagedList } from '../../hooks/usePagedList';
-import type { AdminCache } from './adminCache';
-import type { AdminBusy } from './adminBusy';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
+import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
+import { type AdminBusy, NOOP_BUSY } from './adminBusy';
+import { runAdminWrite } from './adminWrite';
+import { UNKNOWN_OUTCOME } from './writeOutcome';
+import { REVALIDATE_DIM_DELAY_MS, isForbidden, useAdminList, useDelayedFlag } from './useAdminList';
+import { useRefreshAnnouncer } from './useRefreshAnnouncer';
+import { AdminListSkeleton } from './AdminListSkeleton';
+import { AdminListError } from './AdminListError';
+import { AdminListStatus } from './AdminListStatus';
+import { AdminStaleNotice, type AdminStaleNoticeProps } from './AdminStaleNotice';
+import { formatDataAge } from './DataAgeNote';
+import { PAUSED_LOOK } from './remittanceGate';
 import type {
   AdminIdReview,
   AdminMember,
   AdminMemberDetail,
+  AdminMemberStats,
   AdminMembersResponse,
 } from '@contract';
 
@@ -53,11 +64,13 @@ export interface MemberManagementProps {
     offset: number;
   }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
+  /** 後台記憶體快取（AdminConsole 建立）。不給＝不跨卸載保留。 */
   cache?: AdminCache;
   busy?: AdminBusy;
 }
 
-const EMPTY_STATS = { total: 0, active: 0, expired: 0, suspended: 0, admins: 0 };
+const messageOf = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message : fallback;
 
 /**
  * 詳情面板裡會改變會員狀態的動作。兩種動作**共用同一條路徑**——同一個確認框、
@@ -118,20 +131,28 @@ export function MemberManagement({
   suspendMember,
   loadIdReviews,
   submitIdReview,
+  cache,
+  busy = NOOP_BUSY,
 }: MemberManagementProps) {
   // 版面切換用 JS 判定而非 CSS 雙套版面（plan §3 的刻意偏離，Q3 已裁決接受）:
   // 兩套都掛在 DOM 上，jsdom 的 getByText 會立刻變成 found multiple elements，
   // 既有測試會整批誤紅，而那個紅燈不代表任何真實缺陷。
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  const statusId = useId();
+  const listErrorId = useId();
+  const loadMoreNoteId = useId();
+  const listRef = useRef<HTMLElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  // 切回時回到原本的子分頁（D3）：存在記憶體快取的 view；搜尋字不存。
+  const [memberTab, setMemberTab] = useState(() => cache?.readView().memberTab ?? 'members');
   // 送出中的管理動作，逐位會員記（面板用種類決定哪顆鈕轉圈）。單值做不到：A 在途時
   // 對 B 送出，A 的那筆就被蓋掉，關掉再重開 A 時鈕是活的，可以重複送出。
   const [processing, setProcessing] = useState<ReadonlyMap<string, MemberAction['kind']>>(
     () => new Map(),
   );
   const [actionError, setActionError] = useState<string | null>(null);
-  const [stats, setStats] = useState(EMPTY_STATS);
   const [detailFor, setDetailFor] = useState<AdminMemberDetail | null>(null);
   // **會改變會員狀態的動作全部只在詳情面板裡，走同一條路徑**：同一個
   // pendingAction、同一個確認框、同一個執行器。列上一顆都不放。
@@ -163,16 +184,14 @@ export function MemberManagement({
   // 「查看」→ 面板的請求狀態。**只有最後一次意圖算數**：
   // - `openingIds`：在途的列各自轉圈、停用；每個請求結算時只移除自己的 id。單值
   //   做不到——點 B 會讓 A 的鈕提前放開，A 的結算又會清掉 B 的轉圈。
-  // - `detailSeq`：最新意圖的序號。每次點「查看」遞增；回應只有序號仍為最新時才
-  //   可寫面板或錯誤。動作後的重讀共用同一個序號（開頭取號、不遞增），關閉面板
-  //   時遞增——否則關掉之後晚到的重讀會把面板重新打開，或把別人的面板換掉。
+  // - `detailRequests`：最新意圖的 ticket（useLatestRequest）。每次點「查看」與關閉面板都
+  //   `begin()`；回應只有 ticket 仍為最新時才可寫面板或錯誤。動作後的重讀共用同一個序號
+  //   （`peek()`、不遞增）——否則關掉之後晚到的重讀會把面板重新打開，或把別人的面板換掉。
+  //   動作成功或結果不明時 `markChanged`：讀取在途時那一位被改過，落地的那份丟掉再讀一次。
   const [openingIds, setOpeningIds] = useState<string[]>([]);
-  const detailSeq = useRef(0);
+  const detailRequests = useLatestRequest();
   // 開出目前面板的那顆「查看」屬於哪一列（關閉時把焦點還給它）。
   const openedFromId = useRef<string | null>(null);
-  const isLatest = (seq: number) => seq === detailSeq.current;
-  // 序號的遞增與在途 id 的進出收在這幾個 helper：「查看」、關閉與 runAction 共用。
-  const bumpSeq = () => ++detailSeq.current;
   const startOpening = (id: string) =>
     setOpeningIds((prev) => [...prev.filter((x) => x !== id), id]);
   const settleOpening = (id: string) => setOpeningIds((prev) => prev.filter((x) => x !== id));
@@ -205,44 +224,118 @@ export function MemberManagement({
     errorRef.current?.focus();
   }, [actionError]);
 
-  // 分頁走共用 hook：「不得靜默截斷」原本在三個地方各自手刻，三份實作各自
-  // 演化的那天就會有一個忘了顯示總數、或忘了在載入更多失敗時保留已顯示的資料。
-  const list = usePagedList<AdminMember>({
+  // 分頁走後台的組合 hook：空白搜尋時拿快取當種子、背景重讀、落地驗證；非空白搜尋不讀
+  // 不寫快取——不在記憶體累積被查詢者（§2.5）。這一頁沒有被暫停的操作，未確認只影響載入更多。
+  const list = useAdminList<AdminMember, AdminMemberStats, MemberListParams>({
+    cache,
+    query: adminQuery.members({ search }),
     pageSize: PAGE_SIZE,
-    deps: [search],
-    load: useCallback(
-      async ({ limit, offset }: { limit: number; offset: number }) => {
-        const data = await loadMembers({ search: search || undefined, limit, offset });
-        // stats 直通伺服器算好的**全站**數字。不從 members 加總——那樣算出來
-        // 的統計卡會隨分頁改變（M2 的反例，改版前正是如此）。
-        setStats(data.stats ?? EMPTY_STATS);
-        return { items: data.members ?? [], total: data.total ?? 0 };
-      },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [search],
-    ),
+    load: async (params, { limit, offset }) => {
+      const data = await loadMembers({ search: params.search, limit, offset });
+      // stats 直通伺服器算好的**全站**數字。不從 members 加總——那樣算出來
+      // 的統計卡會隨分頁改變（M2 的反例，改版前正是如此）。
+      return { items: data.members ?? [], total: data.total, meta: data.stats };
+    },
   });
   const members = list.items;
   const total = list.total;
-  const isLoading = list.isLoading;
+  const stats = list.meta ?? null;
+  const updating = list.isLoading || list.isRevalidating;
+  const failed = list.error !== null;
+  // 有舊列時的失敗或逾時：保留舊列並說出資料時間（E2）。
+  const stale = members.length > 0 && (failed || list.isSlow);
+  const listFailedEmpty = failed && members.length === 0;
+  // 更新中的淡化延遲 0.3 秒才出現、離開立即；失敗與逾時是靜態狀態，立即顯示。
+  const dimmed = useDelayedFlag(updating && !list.isSlow, REVALIDATE_DIM_DELAY_MS);
+  // 未確認時載入更多按不出去（舊列後面不接新頁）；外觀與原因跟淡化同一個 0.3 秒判準。
+  const unconfirmedLook = !list.isConfirmed && (dimmed || failed || list.isSlow);
+  const statusSuffix = unconfirmedLook ? (failed ? '更新失敗' : '更新中') : undefined;
+
+  const reload = () => list.reload();
+  const isUpdating = updating && !list.isSlow;
+  const announcer = useRefreshAnnouncer({ isUpdating, reload, settled: list.settled });
+
+  // 手動按下（工具列、陳舊提示、錯誤區的重試）的那條結算若失敗，狀態文字已經播過「更新
+  // 失敗」，陳舊提示就不再以 alert 打斷；新的一次讀取開始（錯誤清掉）時歸零。
+  const [failureAnnounced, setFailureAnnounced] = useState(false);
+  useEffect(() => {
+    if (!failed) setFailureAnnounced(false);
+  }, [failed]);
+  const manualRefresh = () => {
+    announcer.refresh();
+    void list.settled().then((outcome) => setFailureAnnounced(outcome === 'failed'));
+  };
+
+  // 重試期間錯誤區或陳舊提示留在原位、改寫「正在更新…」（焦點留在鈕上、不掉到 body）；結算後
+  // 若被列表取代，焦點移到列表區。
+  const [retrying, setRetrying] = useState<'notice' | 'empty' | null>(null);
+  // 按下重試時焦點在不在那一區：在的話，結算後那一區被列表取代（焦點掉到 body）就移到列表區。
+  const retryHadFocus = useRef(false);
+  useEffect(() => {
+    if (updating) return;
+    setRetrying(null);
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (retryHadFocus.current && lost) listRef.current?.focus();
+    retryHadFocus.current = false;
+  }, [updating]);
+
+  const age = formatDataAge(list.fetchedAt ?? list.now, list.now);
+  const notice: AdminStaleNoticeProps | null = stale
+    ? {
+        kind: failed ? 'failed' : 'slow',
+        age,
+        reason: list.error ?? undefined,
+        // 同一輪已有動作失敗的 alert 時不再打斷。
+        announce: !failureAnnounced && !actionError,
+      }
+    : retrying === 'notice' && updating && members.length > 0
+      ? { kind: 'updating', age }
+      : null;
+  const retryFromNotice = () => {
+    retryHadFocus.current = !!noticeRef.current?.contains(document.activeElement);
+    setRetrying('notice');
+    manualRefresh();
+  };
+  const retryFromError = () => {
+    const region = document.getElementById(listErrorId);
+    retryHadFocus.current = !!region?.contains(document.activeElement);
+    setRetrying('empty');
+    manualRefresh();
+  };
+
+  // 證件審核在子分頁裡：寫入在途或匯出中時，切子分頁同樣會卸載在途的元件（T14），非 active 的
+  // 那一個比照外層分頁停用、指向說明行。
+  const tabLocked = (value: string) => busy.locked && memberTab !== value;
 
   const openDetail = async (id: string) => {
-    const seq = bumpSeq();
+    let ticket = detailRequests.begin(id);
     setActionError(null);
     setPanelError(null);
     setPanelNotice(null);
     setOtherNotice(null);
     startOpening(id);
     try {
-      const detail = await loadMemberDetail(id);
-      if (isLatest(seq)) {
+      let fetched = await loadMemberDetail(id);
+      // 讀取送出之後這一位被改過（例：動作在途時關面板、重開同一位，讀取還在途時動作才完成）：
+      // 這份早於變更，丟掉再讀一次，補讀落地才顯示——否則會閃一次舊狀態，期間「暫停」可按。
+      for (
+        let reread = 0;
+        reread < 3 && detailRequests.isLatest(ticket) && detailRequests.changedSince(ticket);
+        reread += 1
+      ) {
+        ticket = detailRequests.begin(id);
+        fetched = await loadMemberDetail(id);
+      }
+      if (detailRequests.isLatest(ticket)) {
         openedFromId.current = id;
-        showDetail(detail);
+        showDetail(fetched);
       }
     } catch (err) {
-      if (isLatest(seq)) {
+      // 詳情讀取回 403：權限可能已失，清空快取（畫面上的列表在它下一次讀取時丟列，不為此多讀）。
+      if (isForbidden(err)) cache?.invalidate('accessLost');
+      if (detailRequests.isLatest(ticket)) {
         focusErrorOnShow.current = true;
-        setActionError(err instanceof Error ? err.message : '無法取得會員詳情');
+        setActionError(messageOf(err, '無法取得會員詳情'));
       }
     } finally {
       settleOpening(id);
@@ -250,7 +343,7 @@ export function MemberManagement({
   };
 
   const closeDetail = () => {
-    bumpSeq();
+    detailRequests.begin();
     showDetail(null);
     // 面板上那則「別人的失敗」不隨面板消失：轉到列表上方（不搶焦點）。
     if (otherNotice) {
@@ -295,63 +388,97 @@ export function MemberManagement({
     }
   };
 
+  // 動作後重讀詳情。關了又重開同一位時，重開那次讀取可能早於變更提交：以當下的序號再讀一次。
+  const refreshDetail = async (id: string, outcome: 'done' | 'unknown') => {
+    const ticket = detailRequests.peek();
+    try {
+      const fresh = await loadMemberDetail(id);
+      if (detailRequests.isLatest(ticket)) showDetail(fresh);
+    } catch (err) {
+      if (isForbidden(err)) cache?.invalidate('accessLost');
+      if (detailRequests.isLatest(ticket)) {
+        setPanelNotice(
+          outcome === 'done'
+            ? '已更新，但重新讀取詳情失敗，請關閉面板後重開'
+            : '重新讀取詳情失敗，請關閉面板後重開確認狀態',
+        );
+      }
+    }
+  };
+
+  // 寫入走 runAdminWrite：鎖只包住寫入請求、結果三分、先失效再回報再重讀。成功與結果不明都
+  // 可能已提交——失效、markChanged、面板仍顯示該人時重讀詳情（K3）、重讀列表；後端拒絕（4xx）
+  // 不失效，面板顯示該人時錯誤印在管理區（不重讀），否則印在列表上方並重讀列表。
   const runAction = async (action: MemberAction) => {
     const target = detailFor;
     if (!target) return;
     // 與「查看」共用序號（取號、不遞增）：面板關掉或換人之後，這個動作晚到的
     // 結果不得寫進別人的面板。
-    const seq = detailSeq.current;
+    const ticket = detailRequests.peek();
     // 面板還開著同一個人（沒關，或關了又重開同一位）：結果照樣寫回面板。
-    const panelShowsTarget = () => isLatest(seq) || shownId.current === target.id;
-    // 結算只清自己的 processing：A 在途時關面板、開 B 並對 B 動作，A 的結算不得
-    // 解鎖 B 的鈕。
-    const settle = () =>
-      setProcessing((prev) => {
-        const next = new Map(prev);
-        next.delete(target.id);
-        return next;
-      });
+    const panelShowsTarget = () => detailRequests.isLatest(ticket) || shownId.current === target.id;
+    const name = memberLabel(target);
     setProcessing((prev) => new Map(prev).set(target.id, action.kind));
     setPanelError(null);
     setPanelNotice(null);
-    try {
-      await (action.kind === 'admin'
-        ? setMemberAdmin(target.id, action.next)
-        : suspendMember(target.id, action.next));
-    } catch (err) {
-      // 錯誤原文直通：後端分得出 cannot_demote_self 與 last_admin，壓成
-      // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
-      const message = err instanceof Error ? err.message : '操作失敗';
-      if (panelShowsTarget()) {
-        setPanelError(message);
-      } else {
+    // 寫入結算之後還要等的讀取（詳情、列表）：送出中的鈕等它們回來才放開——變更已成立，
+    // 面板卻停在舊狀態時鈕的標籤也是舊的，admin 以為沒生效而再按一次，按下去的是反方向。
+    let followUp: Promise<unknown> = Promise.resolve();
+    await runAdminWrite({
+      busy,
+      cache,
+      event: action.kind === 'admin' ? 'memberAdmin' : 'memberSuspend',
+      submit: () =>
+        action.kind === 'admin'
+          ? setMemberAdmin(target.id, action.next)
+          : suspendMember(target.id, action.next),
+      settle: (outcome) => {
+        // 可能已提交：之後落地的詳情讀取若早於這次變更，丟掉再讀一次（見 openDetail）。
+        if (outcome.kind !== 'rejected') detailRequests.markChanged(target.id);
+        if (outcome.kind === 'done') return;
+        // 錯誤原文直通（4xx）：後端分得出 cannot_demote_self 與 last_admin，壓成
+        // 「操作失敗」等於把那個區別丟掉，admin 不知道該找誰處理。
+        const unknown = outcome.kind === 'unknown';
+        const message = messageOf(outcome.error, '操作失敗');
+        if (panelShowsTarget()) {
+          setPanelError(unknown ? UNKNOWN_OUTCOME.member(name) : message);
+          return;
+        }
         // 不能靜默——admin 會以為已經成功。兩種情況：
         // - 面板已關：印在列表上方（不搶焦點，見 focusErrorOnShow）；
         // - 已換到 B：寫進 B 的管理區（見 otherNotice），B 關閉時再轉到列表上方。
-        // 兩種都重讀列表，讓徽章回到真實狀態。
-        const text = `${memberLabel(target)}：${message}`;
+        const text = unknown ? UNKNOWN_OUTCOME.member(name) : `${name}：${message}`;
         if (shownId.current) setOtherNotice(text);
         else setActionError(text);
-        await list.reload();
-      }
-      settle();
-      return;
-    }
-    // 變更已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的
-    // 標籤都隨狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
-    if (panelShowsTarget()) {
-      // 關了又重開同一位時，重開那次讀取可能早於變更提交：以當下的序號再讀一次。
-      const refreshSeq = detailSeq.current;
-      try {
-        const fresh = await loadMemberDetail(target.id);
-        if (isLatest(refreshSeq)) showDetail(fresh);
-      } catch {
-        if (isLatest(refreshSeq)) setPanelNotice('已更新，但重新讀取詳情失敗，請關閉面板後重開');
-      }
-    }
-    await list.reload();
-    settle();
+      },
+      reload: (outcome) => {
+        const showsTarget = panelShowsTarget();
+        if (outcome.kind === 'rejected' && showsTarget) return;
+        // 變更可能已成立。之後的重讀失敗**不得**回報成「操作失敗」——這兩顆鈕的標籤都隨
+        // 狀態翻面，admin 以為沒生效而再按一次時，按下去的是反方向。
+        const detailRead =
+          outcome.kind !== 'rejected' && showsTarget
+            ? refreshDetail(target.id, outcome.kind)
+            : Promise.resolve();
+        followUp = detailRead.then(() => list.reload());
+        return followUp;
+      },
+    });
+    await followUp;
+    setProcessing((prev) => {
+      const next = new Map(prev);
+      next.delete(target.id);
+      return next;
+    });
   };
+
+  const statValue = (pick: (s: AdminMemberStats) => number) =>
+    list.isLoading ? null : stats ? String(pick(stats)) : '—';
+  const statCards = [
+    { label: '總會員數', short: '總會員', icon: Users, pick: (s: AdminMemberStats) => s.total },
+    { label: '暫停會員', short: '暫停', icon: UserX, pick: (s: AdminMemberStats) => s.suspended },
+    { label: '管理員', short: '管理員', icon: Shield, pick: (s: AdminMemberStats) => s.admins },
+  ];
 
   return (
     // 次分頁殼：證件審核併在「會員管理」底下，不新增 AdminDashboard 的第 5 個
@@ -360,14 +487,38 @@ export function MemberManagement({
     // 手機 12px / 桌面 24px 的區塊間距與提領台一致（理由寫在
     // `WithdrawalManagement.tsx` 的同一處，不重述）。兩個分頁在同一個
     // AdminDashboard 底下，節奏不同會被讀成「其中一頁壞了」。
-    <Tabs defaultValue="members" className="space-y-3 sm:space-y-6">
+    <Tabs
+      value={memberTab}
+      onValueChange={(next) => {
+        setMemberTab(next);
+        cache?.writeView({ memberTab: next });
+      }}
+      className="space-y-3 sm:space-y-6"
+    >
       <TabsList>
-        <TabsTrigger value="members">會員列表</TabsTrigger>
-        <TabsTrigger value="id-reviews">證件審核</TabsTrigger>
+        <TabsTrigger
+          value="members"
+          disabled={tabLocked('members')}
+          aria-describedby={tabLocked('members') ? busy.noteId : undefined}
+        >
+          會員列表
+        </TabsTrigger>
+        <TabsTrigger
+          value="id-reviews"
+          disabled={tabLocked('id-reviews')}
+          aria-describedby={tabLocked('id-reviews') ? busy.noteId : undefined}
+        >
+          證件審核
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="id-reviews">
-        <IdReviewQueue loadReviews={loadIdReviews} submitReview={submitIdReview} />
+        <IdReviewQueue
+          loadReviews={loadIdReviews}
+          submitReview={submitIdReview}
+          cache={cache}
+          busy={busy}
+        />
       </TabsContent>
 
       {/* 確認框的文案一律說出**後果**，不是「確定嗎」——admin 要判斷的是
@@ -421,73 +572,54 @@ export function MemberManagement({
       )}
 
       <TabsContent value="members" className="space-y-3 sm:space-y-6">
-        {/* 統計卡片：讀伺服器算好的**全站** stats。改版前是
-            `members.filter(...).length`——那個數字會隨分頁改變。 */}
+        {/* 統計卡片：讀伺服器算好的**全站** stats（隨列表回應帶出）。改版前是
+            `members.filter(...).length`——那個數字會隨分頁改變。首次載入期間是骨架，
+            不先閃 0；沒有任何資料時寫「—」。 */}
         <section aria-label="會員統計">
           {/* 手機整組換成一行摘要，與提領彙總同一個理由:壓扁過的三張卡仍佔
               一屏的可觀比例，而 admin 打開手機是為了找那個人。桌面維持卡片。 */}
           {!isDesktop ? (
-            <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
-              <div className="flex items-baseline gap-1">
-                <dt className="text-xs text-muted-foreground">總會員</dt>
-                <dd className="font-bold text-foreground">{stats.total}</dd>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <dt className="text-xs text-muted-foreground">暫停</dt>
-                <dd className="font-bold text-foreground">{stats.suspended}</dd>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <dt className="text-xs text-muted-foreground">管理員</dt>
-                <dd className="font-bold text-foreground">{stats.admins}</dd>
-              </div>
-            </dl>
+            list.isLoading ? (
+              <Skeleton aria-hidden="true" className="h-14 w-full rounded-lg" />
+            ) : (
+              <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+                {statCards.map((card) => (
+                  <div key={card.label} className="flex items-baseline gap-1">
+                    <dt className="text-xs text-muted-foreground">{card.short}</dt>
+                    <dd className="font-bold text-foreground">{statValue(card.pick)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )
           ) : (
             <StatCardGrid className="grid-cols-3 gap-2 sm:gap-4">
-              <Card>
-                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
-                    <span className="truncate">總會員數</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-foreground">{stats.total}</div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <UserX className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
-                    <span className="truncate">暫停會員</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-foreground">
-                    {stats.suspended}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
-                  <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
-                    <Shield className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
-                    <span className="truncate">管理員</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
-                  <div className="text-lg font-bold sm:text-3xl text-foreground">
-                    {stats.admins}
-                  </div>
-                </CardContent>
-              </Card>
+              {statCards.map((card) => {
+                const value = statValue(card.pick);
+                return (
+                  <Card key={card.label}>
+                    <CardHeader className="p-2 pb-0 sm:p-6 sm:pb-3">
+                      <CardTitle className="flex items-center gap-1 text-xs sm:gap-2 sm:text-lg">
+                        <card.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground sm:h-5 sm:w-5" />
+                        <span className="truncate">{card.label}</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-2 pt-0 sm:p-6 sm:pt-0">
+                      {value === null ? (
+                        <Skeleton aria-hidden="true" className="h-7 w-12 sm:h-9" />
+                      ) : (
+                        <div className="text-lg font-bold sm:text-3xl text-foreground">{value}</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </StatCardGrid>
           )}
         </section>
 
         {actionError && (
-          <div ref={errorRef} tabIndex={-1} className="outline-none">
+          // scroll-mt：導覽列是 sticky、高 64px，捲進視線時不被它蓋住。
+          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
             <StatusCallout
               variant="destructive"
               role="alert"
@@ -516,9 +648,9 @@ export function MemberManagement({
                 <CardDescription>管理平台所有會員帳號</CardDescription>
               </div>
               {/* 同提領頁的 AdminToolbar:搜尋吃剩餘寬度＋重新整理，沒有 CSV
-                  （規則見 ui-ux-guidelines §3）。
-                  載入更多進行中也停用重新整理:兩者交錯，loadMore 晚回來會把
-                  舊頁尾接到剛重設的列表上（usePagedList 沒有序列保護）。 */}
+                  （規則見 ui-ux-guidelines §3）。重新整理交給 useRefreshAnnouncer：更新途中
+                  再按不重送、只改寫狀態文字。載入更多進行中真停用：兩者交錯，loadMore 晚回來
+                  會把舊頁尾接到剛重設的列表上。 */}
               <div className="w-full sm:w-auto sm:min-w-80 sm:max-w-md sm:flex-1">
                 <AdminToolbar
                   filter={
@@ -526,6 +658,9 @@ export function MemberManagement({
                       className="relative"
                       onSubmit={(e) => {
                         e.preventDefault();
+                        // 上一個搜尋的「已更新 HH:mm」「更新失敗」不是在說新的結果。
+                        announcer.reset();
+                        setRetrying(null);
                         setSearch(searchInput.trim());
                       }}
                     >
@@ -550,109 +685,170 @@ export function MemberManagement({
                       </button>
                     </form>
                   }
-                  onRefresh={list.reload}
-                  isUpdating={false}
-                  refreshDisabled={list.isLoading || list.isLoadingMore}
+                  onRefresh={manualRefresh}
+                  statusText={announcer.statusText}
+                  isUpdating={isUpdating}
+                  refreshDisabled={list.isLoadingMore}
                 />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div role="status" aria-label="載入會員列表中" className="space-y-3 py-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
+            {/* 有舊列時的失敗或逾時：保留舊列並說出資料時間與原因（E2），重試是背景重讀。放在列表區
+                外面：過期樣式的透明度不能疊到提示本身。 */}
+            {notice && (
+              <div ref={noticeRef} className="mb-4">
+                <AdminStaleNotice
+                  {...notice}
+                  onRetry={notice.kind === 'slow' ? undefined : retryFromNotice}
+                />
               </div>
-            ) : list.error ? (
-              // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
-              // 以為系統裡沒有這個人，而不是「沒讀到」。
-              <div className="py-12 text-center space-y-3">
-                <p className="text-destructive-subtle-foreground">{list.error}</p>
-                <Button tone="secondary" onClick={list.reload}>
-                  重試
-                </Button>
-              </div>
-            ) : members.length === 0 ? (
-              <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
-            ) : !isDesktop ? (
-              <MemberCardList members={members} onOpenDetail={openDetail} openingIds={openingIds} />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>姓名</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>電話</TableHead>
-                    <TableHead>會籍</TableHead>
-                    <TableHead>刊登數</TableHead>
-                    <TableHead>角色</TableHead>
-                    <TableHead>狀態</TableHead>
-                    <TableHead>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {members.map((member) => {
-                    return (
-                      <TableRow key={member.id}>
-                        <TableCell>{memberName(member.name) ?? '—'}</TableCell>
-                        <TableCell className="text-sm">{member.email}</TableCell>
-                        <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
-                        <TableCell>
-                          <AccountStatusBadge status={member.accountStatus} />
-                        </TableCell>
-                        <TableCell>{member.listingCount}</TableCell>
-                        <TableCell>
-                          {member.isAdmin ? (
-                            <AdminBadge />
-                          ) : (
-                            <Badge variant="outline">一般會員</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {member.suspended ? (
-                            <SuspendedBadge />
-                          ) : (
-                            <Badge variant="default">正常</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {/* 列上只有一個動作：進去看。**沒有任何會改變狀態的
+            )}
+            {/* 更新中 aria-busy，0.3 秒後才淡化（快網路不閃）；失敗與逾時改用固定的過期樣式。 */}
+            <section
+              ref={listRef}
+              tabIndex={-1}
+              aria-label="會員列表"
+              aria-busy={updating || undefined}
+              data-dimmed={dimmed ? 'true' : undefined}
+              data-stale={stale ? 'true' : undefined}
+              className="scroll-mt-20 transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
+            >
+              {retrying === 'empty' && list.isLoading ? (
+                <AdminListError
+                  id={listErrorId}
+                  message=""
+                  retrying
+                  retryLabel="重試"
+                  tone="flow"
+                  onRetry={retryFromError}
+                />
+              ) : list.isLoading ? (
+                <AdminListSkeleton
+                  label="載入會員列表中"
+                  variant={isDesktop ? 'rows' : 'cards'}
+                  message={list.isSlow ? '更新較久，仍在等待伺服器回應' : undefined}
+                />
+              ) : listFailedEmpty ? (
+                // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
+                // 以為系統裡沒有這個人，而不是「沒讀到」。中性字（§13 第 4 條）。
+                <AdminListError
+                  id={listErrorId}
+                  message={list.error ?? ''}
+                  retryLabel="重試"
+                  tone="flow"
+                  onRetry={retryFromError}
+                />
+              ) : members.length === 0 ? (
+                <p className="text-center text-muted-foreground py-12">沒有符合條件的會員</p>
+              ) : !isDesktop ? (
+                <MemberCardList
+                  members={members}
+                  onOpenDetail={openDetail}
+                  openingIds={openingIds}
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>姓名</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>電話</TableHead>
+                      <TableHead>會籍</TableHead>
+                      <TableHead>刊登數</TableHead>
+                      <TableHead>角色</TableHead>
+                      <TableHead>狀態</TableHead>
+                      <TableHead>操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {members.map((member) => {
+                      return (
+                        <TableRow key={member.id}>
+                          <TableCell>{memberName(member.name) ?? '—'}</TableCell>
+                          <TableCell className="text-sm">{member.email}</TableCell>
+                          <TableCell className="text-sm">{member.phone ?? '—'}</TableCell>
+                          <TableCell>
+                            <AccountStatusBadge status={member.accountStatus} />
+                          </TableCell>
+                          <TableCell>{member.listingCount}</TableCell>
+                          <TableCell>
+                            {member.isAdmin ? (
+                              <AdminBadge />
+                            ) : (
+                              <Badge variant="outline">一般會員</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {member.suspended ? (
+                              <SuspendedBadge />
+                            ) : (
+                              <Badge variant="default">正常</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {/* 列上只有一個動作：進去看。**沒有任何會改變狀態的
                               鍵可以從列表直接按到**——誤觸的上限就是開錯一個面板。
                               改版前是三顆等寬平排，而且視覺權重和使用頻率相反：
                               每天要按的「查看」是最輕的 ghost，偶爾才用的「暫停」
                               卻是滿版紅底、在掃描時最搶眼。 */}
-                          <Button
-                            size="sm"
-                            tone="secondary"
-                            aria-label={`查看 ${memberLabel(member)} 的詳情`}
-                            {...memberDetailTriggerProps(member.id)}
-                            loading={openingIds.includes(member.id)}
-                            onClick={() => openDetail(member.id)}
-                          >
-                            查看
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
+                            <Button
+                              size="sm"
+                              tone="secondary"
+                              aria-label={`查看 ${memberLabel(member)} 的詳情`}
+                              {...memberDetailTriggerProps(member.id)}
+                              loading={openingIds.includes(member.id)}
+                              onClick={() => openDetail(member.id)}
+                            >
+                              查看
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
 
-            {!isLoading && !list.error && members.length > 0 && (
-              <div className="pt-4 text-center space-y-2 text-sm text-muted-foreground">
-                {/* 不得靜默截斷（ui-ux-guidelines §5）。 */}
-                <p>
-                  已顯示 {members.length} / {total} 筆
-                </p>
-                {list.hasMore && (
-                  <Button tone="secondary" onClick={list.loadMore} disabled={list.isLoadingMore}>
-                    {list.isLoadingMore ? '載入中…' : '載入更多'}
-                  </Button>
-                )}
-              </div>
-            )}
+              {members.length > 0 && (
+                <div className="pt-4 text-center space-y-2 text-sm text-muted-foreground">
+                  {/* 不得靜默截斷（ui-ux-guidelines §5）。未確認時接「・更新中」——載入更多
+                      按不出去的原因，鈕以 aria-describedby 指向這一行。 */}
+                  <AdminListStatus
+                    id={statusId}
+                    shown={members.length}
+                    total={total}
+                    state="ready"
+                    suffix={statusSuffix}
+                  />
+                  {list.hasMore && (
+                    <>
+                      {/* 載入中與未確認時改 aria-disabled（不用原生 disabled）：焦點留在鈕上、不掉到
+                          body；未確認的停用外觀跟淡化同一個 0.3 秒判準。失敗時原因寫在鈕下。 */}
+                      <Button
+                        tone="secondary"
+                        onClick={() => {
+                          if (list.canLoadMore) void list.loadMore();
+                        }}
+                        aria-disabled={!list.canLoadMore || undefined}
+                        aria-describedby={
+                          list.loadMoreError
+                            ? loadMoreNoteId
+                            : unconfirmedLook
+                              ? statusId
+                              : undefined
+                        }
+                        data-paused={unconfirmedLook ? 'true' : undefined}
+                        className={PAUSED_LOOK}
+                      >
+                        {list.isLoadingMore ? '載入中…' : '載入更多'}
+                      </Button>
+                      {list.loadMoreError && <p id={loadMoreNoteId}>{list.loadMoreError}</p>}
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
           </CardContent>
         </Card>
       </TabsContent>

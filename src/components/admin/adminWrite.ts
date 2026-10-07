@@ -29,7 +29,11 @@ export interface AdminWriteOptions<R> {
   committed?: (result: R) => boolean;
   /** 回報：在失效之後、重讀之前呼叫。 */
   settle: (outcome: AdminWriteOutcome<R>) => void;
-  reload: () => unknown;
+  /**
+   * 重讀：一定在 `settle` 之後。收到結局，頁面可以決定要不要讀、讀什麼（例：會員頁後端拒絕
+   * 且面板仍顯示該人時不重讀列表，既有行為）。
+   */
+  reload: (outcome: AdminWriteOutcome<R>) => unknown;
 }
 
 export async function runAdminWrite<R>({
@@ -55,6 +59,6 @@ export async function runAdminWrite<R>({
     (outcome.kind === 'done' && (committed ? committed(outcome.result) : true));
   if (mayHaveCommitted && event) cache?.invalidate(event);
   settle(outcome);
-  void reload();
+  void reload(outcome);
   return outcome;
 }

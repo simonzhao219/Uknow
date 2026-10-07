@@ -15,6 +15,8 @@ import {
 import { FieldError } from '../../utils/formHelpers';
 import { usePagedList } from '../../hooks/usePagedList';
 import type { AdminIdReview } from '@contract';
+import type { AdminCache } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 import { BreakableEmail } from '../common/BreakableEmail';
 
 export interface IdReviewQueueProps {
@@ -25,6 +27,10 @@ export interface IdReviewQueueProps {
   }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   /** 送出審核結果。退回時 reason 必填。 */
   submitReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
+  /** 後台記憶體快取：佇列不快取（槽恆為 null），拿 store 只為了讀取回 403 時整體清空（5b 接上）。 */
+  cache?: AdminCache;
+  /** 寫入在途時鎖分頁（5b 接上）。 */
+  busy?: AdminBusy;
 }
 
 const QUEUE_PAGE_SIZE = 50;

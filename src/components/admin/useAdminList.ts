@@ -54,7 +54,8 @@ export function useDelayedFlag(on: boolean, delay: number): boolean {
   return on && late;
 }
 
-const isForbidden = (err: unknown) =>
+/** 讀取回 403（duck-typing，不 import apiClient）：會員詳情的讀取也用它清空快取。 */
+export const isForbidden = (err: unknown) =>
   (err as { status?: unknown } | null | undefined)?.status === 403;
 
 export interface UseAdminListOptions<T, M, P> {
