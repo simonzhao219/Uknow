@@ -107,3 +107,68 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+
+      - name: PayUni 閘門探測
+        # 存在理由(2026-10-07 事故):正式站付款被 PayUni 回 403,根因在 PayUni
+        # 邊界(依來源地區封鎖)而不是 Uknow 程式。晉升閘門走 webhook 模式不碰
+        # PayUni、排程 journey 每週一次,沒有任何自動化會定期確認「UPP 端點還
+        # 收不收我們的表單」。證據見 docs/plans/friction-log.md 的 2026-10-07 兩條。
+        #
+        # 做法:對兩個 UPP 端點各 POST 一次假簽章表單(欄位同
+        # src/components/PaymentCheckout.tsx)。PayUni 對假簽章回什麼都算「門是
+        # 開的」;只有 403(閘門擋人)、5xx(服務故障)、連線失敗才算紅。
+        # 端點與 supabase/functions/api/index.ts 的 resolvePayuniConfig 同源。
+        #
+        # 基準狀態碼(2026-10-07 首次 CI workflow_dispatch,GitHub 美國 runner):
+        # sandbox-api.payuni.com.tw/api/upp → 200;api.payuni.com.tw/api/upp → 200。
+        # 本機未能驗證(開發容器出口 proxy 對 *.payuni.com.tw 回 CONNECT 403)。
+        # 之後狀態碼偏離 200 但不是 403/5xx 仍算通過,只是值得看一眼摘要。
+        #
+        # 頻率依據:沿用本 workflow 的每 6 小時排程,不另開 workflow(規則 8a:
+        # 秒級檢查併入既有 job)。理由與資產 TTL 同性質:PayUni 閘門狀態會在
+        # 沒有任何部署時改變(對方改封鎖規則),所以需要持續量測而非部署閘門;
+        # 因此 deployment_status 快路徑跳過它。成本落在訊號疲勞,不是 runner
+        # (免費、兩個 POST 約數秒)。
+        #
+        # 限制:探測從 GitHub 美國 runner 發出,抓不到「只擋某些地區」的封鎖
+        # (2026-10-07 的法國住宅 IP 案例本來就看不到);抓得到整體故障與規則變更。
+        #
+        # 失敗處理:本 workflow 不開 issue,job 紅燈即訊號;::error:: 標題寫明
+        # 「PayUni 閘門」以便與「資產」失敗區分。!cancelled() 讓資產 step 紅時
+        # 這個 step 仍會跑,兩種故障各自可見。
+        if: ${{ !cancelled() && github.event_name != 'deployment_status' }}
+        run: |
+          set -uo pipefail
+          failed=0
+          {
+            echo "### PayUni 閘門探測"
+            echo ""
+            echo "| 端點 | HTTP 狀態 | 結果 |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for endpoint in \
+            https://sandbox-api.payuni.com.tw/api/upp \
+            https://api.payuni.com.tw/api/upp; do
+            code=$(curl -sS -o /dev/null -m 20 --retry 2 --retry-delay 3 \
+              -w '%{http_code}' -X POST \
+              -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' \
+              -H 'Origin: https://uknow.com.tw' \
+              -H 'Referer: https://uknow.com.tw/' \
+              --data 'MerID=PROBE&Version=1.0&EncryptInfo=00&HashInfo=00' \
+              "$endpoint") || code="${code:-000}"
+            case "$code" in
+              000)
+                verdict="❌ 連線失敗"
+                echo "::error title=PayUni 閘門::$endpoint 連線失敗。這是 PayUni 閘門,不是 Uknow 程式。"
+                failed=1 ;;
+              403|5??)
+                verdict="❌ 被擋或故障"
+                echo "::error title=PayUni 閘門::$endpoint 回 HTTP $code。這是 PayUni 閘門,不是 Uknow 程式。"
+                failed=1 ;;
+              *)
+                verdict="✅ 門是開的" ;;
+            esac
+            echo "$endpoint → $code $verdict"
+            echo "| \`$endpoint\` | $code | $verdict |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit "$failed"
