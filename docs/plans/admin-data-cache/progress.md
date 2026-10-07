@@ -25,19 +25,25 @@
 | 5a | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀、結果不明重讀詳情、換搜尋整合測試） | ✅ 綠燈 | `8fa6e54` | `bc5abcd` |
 | 5b | 證件審核（錯誤區與重讀、成功回報、`memberLabel`、按鈕順序；不受閘門約束） | ✅ 綠燈 | `95b2379` | `460b1ee` |
 | 6 | 公告（快取、骨架、錯誤態、刪除鈕 44px）＋告警（`AdminToolbar`、背景重讀、`onAccessLost`；不走共用 hook） | ✅ 綠燈 | `fac9ce3` | `ed2b97d` |
-| 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、busy 鎖外層分頁與會員子分頁、說明行）、`AdminDashboard` 讀 `UserContext` | ⬜ 未開始 | | |
+| 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、busy 鎖外層分頁與會員子分頁、說明行）、`AdminDashboard` 讀 `UserContext` | ✅ 綠燈（測試修正 `71fc975`） | `1ab0234` | `c1aa1a7` |
 | 8 | e2e 三個情境＋journey page object 與 offline 檢查＋溢版巡檢 | ⬜ 未開始 | | |
 | 9 | 文件（規格書 §13 新段與 §14 三列、ui-ux §3／§5／§9、檔頭理由、母計畫 §1／§2／§4.3 驗收 2 與 3／§6.2／progress 與計畫異動記錄）＋PR 描述揭露＋清理本目錄 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-中途對照（K8）通過，4c 回填綠燈（★′），5a、5b、6 綠燈。**下一步：7 殼層**（紅燈 commit 一併把 PII 守衛
-清單的缺席預期由 `[AdminConsole.tsx]` 改為 `[]`，P2-17）。
+中途對照（K8）通過，4c 回填綠燈（★′），5a、5b、6、7 綠燈。**下一步：8 e2e、journey page object、溢版巡檢**
+（journey 只跑離線的 `cd e2e/journey && pytest tools/`，絕不在本機打真後端）。
 
 6 的兩處實作細節（PR 描述揭露）：公告刪除的「結果不明」文案與建立分開——§2.7 表上一句話含「再決定是否重發」，
 刪除沒有重發可言，改寫「未收到伺服器確認，結果不明，請確認公告列表」（紅燈 `fac9ce3` 的 `writeOutcome.test.ts`
 已釘）；公告與告警的錯誤區重試期間以「更新中」判定保留原位（不只首次載入），有過資料但清單為空時重試途中不會
 閃出「尚無公告」「目前沒有未處理的告警」。
+
+7 的實作細節（PR 描述揭露）：匯出第一頁回來之前還沒有筆數，說明行只寫「匯出中，完成前無法切換分頁，離開此頁會
+中止」，第一頁之後才是「匯出中（已收集 N / M 筆）…」；「同一筆寫入超過 15 秒」各筆各自計時，接力的兩筆不算；
+分頁的停用外觀以 `data-locked` 延遲 0.3 秒（`LOCKED_TAB_LOOK` 蓋掉 TabsTrigger 基底的 `disabled:opacity-50`，
+外層與會員子分頁共用，不動 `ui/tabs.tsx`）；停用分頁的 `aria-describedby` 在鎖定當下就掛上（與子分頁的
+`busy.locked ? busy.noteId : undefined` 一致），說明行 0.3 秒後才渲染。
 
 5–9 做完
 跑 `/review-implementation`、PR 改實作版描述後通知主 session 最後對照（只看 5–9）。十三個階段，需要兩到三次對話——中途
@@ -51,5 +57,11 @@
   測試檔。兩條案例的期望不需要動，要動的是同檔裡的守衛實作。依逃生口 3 求人工裁決（2026-10-07）。
   **已處置**：業主在 session 內選「授權解鎖改守衛」——其餘實作先綠（`c2b47fa`，測試檔零 diff），再手動移除鎖、只改
   `storageUses` 與規則表（期望一字未動），`npm run check` 全綠後另成 `3c133d5`。框架摩擦記入 friction-log。
+- 7（紅燈 `1ab0234`）：`AdminDashboard.test.tsx`「切走再切回提領不出骨架，照舊重讀一次」綠不了——測試本身的隔離
+  錯誤：`withdrawalReads()` 數的是 `api.mock.calls` 全部，同檔前面六條既有測試各讀過一次提領、沒有人清，整檔跑時
+  得 8（6＋2）；單獨跑這條得 2，殼層的行為正確。修法只要在該 describe 的 `beforeEach` 加 `api.mockClear()`，期望
+  一字不動；但紅燈鎖擋 `*.test.*`。其餘 1782 條全綠、biome／knip 乾淨。依逃生口 3 求人工裁決（2026-10-07）。
+  **已處置**：業主在 session 內選「授權解鎖修測試」——實作先提交（`c1aa1a7`，測試檔零 diff），手動移除鎖、只加
+  `api.mockClear()`（期望一字未動），`npm run check` 全綠（120 檔、1783 條）後另成 `71fc975`。框架摩擦記入 friction-log。
 
 ## 框架摩擦
