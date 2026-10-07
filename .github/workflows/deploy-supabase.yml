@@ -215,6 +215,18 @@ jobs:
             echo "::warning::正式站目前的 PayUni 模式是 ${mode}（尚未開放,屬預期）。開放前記得把 PAYUNI_SANDBOX 設為 false,並把本檔的 EXPECT_PRODUCTION_PAYUNI 改成 true。"
           fi
 
+          # 預設推薦人可用性（規格 §7.4）:reward_config.default_referrer_code 只能
+          # 人工 SQL 設定、逐環境各做一次、漏做時機制靜默停用且不告警。
+          # 2026-10-07 正式站就是這樣漏了——develop 設過、正式站沒有,首購都沒綁定。
+          # /health 早就回報三態,這裡印出來才算「部署 SOP 一併看見」。
+          # unset 在新環境做步驟 6 之前是合法狀態,所以只 warning 不紅燈。
+          default_referrer="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("defaultReferrer","unknown"))' 2>/dev/null || echo unknown)"
+          echo "- 預設推薦人：\`${default_referrer}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "預設推薦人：${default_referrer}"
+          if [ "$default_referrer" != "ok" ]; then
+            echo "::warning::${DEPLOY_BRANCH} 的預設推薦人狀態是 ${default_referrer}——未填推薦碼的首購不會自動綁定。處置見 docs/supabase-setup-checklist.md 步驟 6。"
+          fi
+
       - name: 失敗時開 issue
         if: failure()
         uses: actions/github-script@v7
