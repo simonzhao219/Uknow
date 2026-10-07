@@ -247,6 +247,10 @@ describe('平台管理的記憶體快取', () => {
     );
   }
 
+  beforeEach(() => {
+    // 呼叫紀錄只算本條：同檔前面的導覽測試各讀過一次提領、沒有清。
+    api.mockClear();
+  });
   afterEach(() => {
     // 還原 vi.fn 的預設實作（前面的導覽測試靠它）。
     api.mockReset();
