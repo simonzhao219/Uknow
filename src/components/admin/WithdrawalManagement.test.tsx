@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract';
 import { stubMediaQuery, stubMediaQueryWithControl } from '../../test-utils/stubMediaQuery';
+import { nextStamp } from '../../hooks/useLatestRequest';
+import { type AdminCache, type AdminSlot, createAdminCache } from './adminCache';
 import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManagement';
 
 afterEach(cleanup);
@@ -848,5 +850,408 @@ describe('WithdrawalManagement 手機版', () => {
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
     fireEvent.click(trigger);
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+  });
+});
+
+// --- S5 階段 4b：快取、確認閘門與更新中的呈現 -------------------------------
+//
+// 快取讓切回的分頁立刻有列表，但「上次看到的樣子」不能拿來匯款：本次讀取確認前，
+// 匯款類入口（標記已匯款、勾選與批次、CSV、查看證件）擋下點擊，統計與作業面板不顯示；
+// 退件、代為完成、查看歷史照常（後端狀態機擋不合法的轉換）。停用的外觀延遲 0.3 秒，
+// 快網路下不閃灰；失敗與逾時則立即遮住收款資訊。
+
+function seedCache(p: Page = page(), fetchedAt = Date.now(), status = 'all') {
+  const cache = createAdminCache();
+  cache.write(
+    `withdrawals:${status}` as AdminSlot,
+    { items: p.withdrawals, total: p.total, meta: p.stats, fetchedAt },
+    nextStamp(),
+  );
+  return cache;
+}
+
+/** 每次讀取都掛著，由測試結算。 */
+function heldLoader() {
+  const calls: {
+    params: WithdrawalQuery;
+    resolve: (p: Page) => void;
+    reject: (e: unknown) => void;
+  }[] = [];
+  const load = vi.fn(
+    (params: WithdrawalQuery) =>
+      new Promise<Page>((resolve, reject) => {
+        calls.push({ params, resolve, reject });
+      }),
+  );
+  return { calls, load };
+}
+
+function renderWith(cache: AdminCache | undefined, load: (p: WithdrawalQuery) => Promise<Page>) {
+  return render(
+    <WithdrawalManagement
+      cache={cache}
+      loadWithdrawals={load}
+      updateStatus={async () => {}}
+      batchMarkPaid={async () => ({ succeeded: [], failed: [] })}
+    />,
+  );
+}
+
+const statusLine = () => screen.getByText(/^已顯示 \d+ \/ \d+ 筆$/);
+const listRegion = () => screen.getByRole('region', { name: '提領申請列表' });
+const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(name) });
+
+describe('WithdrawalManagement 快取與確認閘門', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('帶快取重掛時列表立即出現、不出骨架；統計與作業面板等本次讀取確認', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+
+    expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull();
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+    expect(listRegion().getAttribute('aria-busy')).toBe('true');
+    const stats = screen.getByRole('region', { name: '提領彙總' });
+    expect(within(stats).queryByText('$1,000')).toBeNull();
+    expect(screen.queryByRole('region', { name: '匯款作業面板' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '複製收款帳號' })).toBeNull();
+
+    await act(async () => calls[0].resolve(page()));
+    expect(listRegion().getAttribute('aria-busy')).not.toBe('true');
+    expect(within(stats).getByText('$1,000')).toBeTruthy();
+    expect(screen.getByRole('region', { name: '匯款作業面板' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '複製收款帳號' })).toBeTruthy();
+  });
+
+  it('未確認時匯款類入口從第一個 render 就擋下點擊，0.3 秒後才套停用樣式並說出原因', () => {
+    vi.useFakeTimers();
+    const cache = seedCache();
+    const { load } = heldLoader();
+    renderWith(cache, load);
+
+    const gated = [
+      screen.getByRole('button', { name: '標記已匯款' }),
+      screen.getByRole('checkbox', { name: '選取 王小明 的提領記錄' }),
+      screen.getByRole('checkbox', { name: '全選本頁的提領記錄' }),
+      screen.getByRole('button', { name: '查看' }),
+      screen.getByRole('button', { name: /下載 CSV/ }),
+    ];
+    for (const el of gated) {
+      expect(el.getAttribute('aria-disabled'), el.textContent ?? '').toBe('true');
+      expect(el.getAttribute('data-paused'), el.textContent ?? '').toBeNull();
+    }
+    fireEvent.click(gated[0]);
+    fireEvent.click(gated[1]);
+    fireEvent.click(gated[3]);
+    fireEvent.click(gated[4]);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/已選取/)).toBeNull();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/暫停匯款相關操作/)).toBeNull();
+    expect(listRegion().getAttribute('data-dimmed')).not.toBe('true');
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(statusLine().textContent).toBe('已顯示 1 / 1 筆・更新中，暫停匯款相關操作');
+    expect(listRegion().getAttribute('data-dimmed')).toBe('true');
+    for (const el of gated) {
+      expect(el.getAttribute('data-paused'), el.textContent ?? '').toBe('true');
+      expect(el.getAttribute('aria-describedby'), el.textContent ?? '').toBe(statusLine().id);
+    }
+  });
+
+  it('退件、代為完成與查看歷史在未確認時照常可按', async () => {
+    const cache = seedCache(
+      page({
+        withdrawals: [
+          record(),
+          record({ id: 'w2', userName: '李小華', status: 'awaiting_collection' }),
+        ],
+      }),
+    );
+    const { load } = heldLoader();
+    renderWith(cache, load);
+
+    const reject = screen.getByRole('button', { name: '退件' });
+    expect(reject.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(reject);
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: '代為完成' }));
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    fireEvent.click(screen.getAllByRole('button', { name: '查看歷史' })[0]);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+
+  it('CSV 在確認前按不出去，確認後以這次讀到的總數收集', async () => {
+    // 快取裡的總數是 3（過期），這次讀到的是 1：以快取的總數收集會多打兩頁。
+    const cache = seedCache(page({ withdrawals: [record()], total: 3 }));
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await act(async () => calls[0].resolve(page({ withdrawals: [record()], total: 1 })));
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText(/^(已匯出|已產生) 1 筆/)).toBeTruthy();
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('換篩選後勾選歸零', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+    });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+    await waitFor(() => expect(screen.queryByText('已選取 2 筆')).toBeNull());
+  });
+
+  it('統計區在本次讀取確認前是骨架、不先閃 0，讀取失敗時寫「—」', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    const stats = screen.getByRole('region', { name: '提領彙總' });
+    expect(within(stats).queryByText('$0')).toBeNull();
+    expect(within(stats).queryByText('0')).toBeNull();
+
+    await act(async () => calls[0].reject(new Error('連線失敗')));
+    expect(within(stats).getAllByText('—')).toHaveLength(4);
+  });
+
+  it('作業面板確認前是骨架、失敗時寫「資料未確認，暫停顯示」，兩者都不渲染複製鈕', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    expect(screen.queryByRole('region', { name: '匯款作業面板' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '複製收款帳號' })).toBeNull();
+
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+    expect(screen.getByText('資料未確認，暫停顯示')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '複製收款帳號' })).toBeNull();
+  });
+
+  it('自動更新失敗時保留舊列並遮住收款資訊、扣點照常，重試在背景進行', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('更新失敗，以下是剛剛的資料');
+    expect(alert.textContent).toContain('連線中斷');
+    expect(alert.textContent).toContain('收款資訊已隱藏，重試後顯示');
+    expect(listRegion().getAttribute('data-stale')).toBe('true');
+    const row = rowOf('王小明');
+    expect(within(row).getAllByText('已隱藏')).toHaveLength(3);
+    expect(within(row).queryByText('1234567890123')).toBeNull();
+    expect(within(row).queryByText('822')).toBeNull();
+    expect(within(row).queryByText('$1,000')).toBeNull();
+    expect(within(row).getByText('1015 P')).toBeTruthy();
+
+    fireEvent.click(within(alert).getByRole('button', { name: '重試' }));
+    expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull();
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+    await act(async () => calls[1].resolve(page()));
+    expect(within(rowOf('王小明')).queryByText('已隱藏')).toBeNull();
+    expect(screen.queryByText(/更新失敗，以下是/)).toBeNull();
+    expect(listRegion().getAttribute('data-stale')).not.toBe('true');
+  });
+
+  it('手動重新整理失敗時陳舊提示不再帶 alert——狀態文字已經播過', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve(page()));
+
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].reject(new Error('連線中斷')));
+    expect(screen.getByText('更新失敗')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/更新失敗，以下是剛剛的資料/)).toBeTruthy();
+  });
+
+  it('逾 15 秒仍在更新時同樣遮住收款資訊，提示更新較久，並放行重新整理', () => {
+    vi.useFakeTimers();
+    const cache = seedCache();
+    const { load } = heldLoader();
+    renderWith(cache, load);
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+    expect(refresh.getAttribute('aria-disabled')).toBe('true');
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(screen.getByText(/更新較久，以下是剛剛的資料/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(within(rowOf('王小明')).getAllByText('已隱藏')).toHaveLength(3);
+    expect(refresh.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('作業面板的資料時間每 60 秒重算，滿 10 分鐘提示先重新整理', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 7, 9, 0));
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve(page()));
+    expect(screen.getByText('剛剛更新')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText('資料更新於 1 分鐘前')).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(9 * 60_000);
+    });
+    expect(screen.getByText('資料更新於 10 分鐘前，建議先重新整理')).toBeTruthy();
+  });
+
+  it('切走再切回仍是原本的狀態篩選', async () => {
+    const cache = createAdminCache();
+    const first = renderWith(
+      cache,
+      vi.fn(async () => page()),
+    );
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+    first.unmount();
+
+    const load = vi.fn(async (_params: WithdrawalQuery) => page());
+    renderWith(cache, load);
+    expect(screen.getByRole('combobox').textContent).toContain('待處理');
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }));
+  });
+
+  it('查看歷史在未確認時可開，對話框寫開框當下的資料時間，更新落地後也不變', async () => {
+    const cache = seedCache(page(), Date.now() - 5 * 60_000);
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看歷史' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('資料更新於 5 分鐘前')).toBeTruthy();
+
+    await act(async () => calls[0].resolve(page()));
+    expect(within(dialog).getByText('資料更新於 5 分鐘前')).toBeTruthy();
+    expect(within(dialog).queryByText('剛剛更新')).toBeNull();
+  });
+
+  it('確認框寫開框當下的資料時間：標記已匯款、退件、代為完成與批次', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({
+          withdrawals: [
+            record(),
+            record({ id: 'w2', userName: '李小華', status: 'awaiting_collection' }),
+          ],
+        }),
+    });
+    const open = async (button: HTMLElement) => {
+      fireEvent.click(button);
+      const dialog = await screen.findByRole('alertdialog');
+      expect(within(dialog).getByText('剛剛更新')).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    };
+    await open(await screen.findByRole('button', { name: '標記已匯款' }));
+    await open(screen.getByRole('button', { name: '退件' }));
+    await open(screen.getByRole('button', { name: '代為完成' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    await open(screen.getByRole('button', { name: '批次標記已匯款' }));
+  });
+
+  it('自動更新途中按重新整理不加請求，文字「正在更新」→「仍在更新」→「已更新 HH:mm」', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+
+    fireEvent.click(refresh);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('正在更新')).toBeTruthy();
+    fireEvent.click(refresh);
+    expect(screen.getByText('仍在更新')).toBeTruthy();
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await act(async () => calls[0].resolve(page()));
+    expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
+  });
+
+  it('陳舊提示的重試走同一套狀態文字', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
+    expect(screen.getByText('正在更新')).toBeTruthy();
+    await act(async () => calls[1].resolve(page()));
+    expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
+  });
+
+  it('沒有資料時錯誤區的重試也走同一套狀態文字', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].reject(new Error('連線失敗')));
+
+    fireEvent.click(screen.getByRole('button', { name: '重試' }));
+    expect(screen.getByText('正在更新')).toBeTruthy();
+    await act(async () => calls[1].resolve(page()));
+    expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
+  });
+});
+
+describe('WithdrawalManagement 手機版的確認閘門', () => {
+  beforeEach(() => {
+    stubMediaQuery(false);
+  });
+
+  it('⋯ 選單裡只有「查看證件」停用並帶原因，查看歷史照常', async () => {
+    const cache = seedCache();
+    const { load } = heldLoader();
+    renderWith(cache, load);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /的更多操作/ }), { key: 'Enter' });
+    const idCard = await screen.findByRole('menuitem', { name: '查看證件' });
+    const history = screen.getByRole('menuitem', { name: '查看歷史' });
+    expect(idCard.getAttribute('aria-disabled')).toBe('true');
+    expect(idCard.getAttribute('aria-describedby')).toBe(statusLine().id);
+    expect(history.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(idCard);
+    expect(screen.queryByRole('dialog', { name: '身分證照片查閱' })).toBeNull();
+  });
+
+  it('更新失敗時卡片遮住匯款金額，展開寫「資料未確認，暫停顯示」、扣點照常', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderWith(cache, load);
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+
+    const card = screen.getByRole('group', { name: /王小明/ });
+    expect(within(card).queryByText('$1,000')).toBeNull();
+    expect(within(card).getByText('已隱藏')).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: '匯款資訊' }));
+    await waitFor(() => expect(within(card).getByText('資料未確認，暫停顯示')).toBeTruthy());
+    expect(within(card).getByText('扣點 1015 P')).toBeTruthy();
+    expect(within(card).queryByText('1234567890123')).toBeNull();
+  });
+
+  it('確認後展開的卡片寫資料時間', async () => {
+    renderConsole();
+    const card = await screen.findByRole('group', { name: /王小明/ });
+    fireEvent.click(within(card).getByRole('button', { name: '匯款資訊' }));
+    await waitFor(() => expect(within(card).getByText('剛剛更新')).toBeTruthy());
   });
 });

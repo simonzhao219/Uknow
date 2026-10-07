@@ -178,4 +178,22 @@ describe('AdminToolbar', () => {
     expect(toolbar?.className).toContain('justify-end');
     expect(toolbar?.firstElementChild).toBe(screen.getByRole('button', { name: '重新整理' }));
   });
+
+  it('匯出暫停時 CSV 鈕標成停用、點了不匯出，停用的外觀等頁面說可以才套', () => {
+    const onExport = vi.fn();
+    const props = { onRefresh: vi.fn(), isUpdating: false, onExport, exportPaused: true };
+    const { rerender } = render(<AdminToolbar {...props} />);
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    // 不用原生 disabled：0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
+    expect(csv.getAttribute('aria-disabled')).toBe('true');
+    expect(csv.hasAttribute('disabled')).toBe(false);
+    expect(csv.getAttribute('data-paused')).toBeNull();
+    fireEvent.click(csv);
+    expect(onExport).not.toHaveBeenCalled();
+
+    rerender(<AdminToolbar {...props} exportPausedVisible />);
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).getAttribute('data-paused')).toBe(
+      'true',
+    );
+  });
 });

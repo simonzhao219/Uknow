@@ -33,6 +33,7 @@ import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePagedList } from '../../hooks/usePagedList';
+import type { AdminCache } from './adminCache';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
@@ -121,6 +122,8 @@ export interface WithdrawalQuery {
 
 export interface WithdrawalManagementProps {
   loadWithdrawals: (params: WithdrawalQuery) => Promise<AdminWithdrawalsResponse['data']>;
+  /** 後台記憶體快取（AdminConsole 建立）。不給＝不跨卸載保留。 */
+  cache?: AdminCache;
   updateStatus: (
     id: string,
     status: 'awaiting_collection' | 'rejected' | 'completed',

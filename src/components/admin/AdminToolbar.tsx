@@ -19,6 +19,8 @@ export interface AdminToolbarProps {
   refreshDisabled?: boolean;
   /** CSV 停用的原因（狀態行或錯誤區的 id）。 */
   exportDescribedBy?: string;
+  exportPaused?: boolean;
+  exportPausedVisible?: boolean;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
   isExporting?: boolean;
