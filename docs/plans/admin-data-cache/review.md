@@ -1021,6 +1021,19 @@ R3-S-P2-5 併入 R3-P1-2、系統 R3-S-P2-6 併入 R3-P1-3；各自的原判寫�
 
 兩條 P1 與這條 P2 已補進第四版之二（`plan.md` §10.6）。
 
+### 第四版之二的架構複核（`87fe8ce`）
+
+**架構**：複核 P1-3（T14 的資料通路）解決——外層 Tabs 現為 `defaultValue`（`AdminDashboard.tsx:142`）、內層同
+（`MemberManagement.tsx:359`）、`IdReviewQueue` 只收 `loadReviews`／`submitReview`（`IdReviewQueue.tsx:20-28`），修法正好補齊；
+Radix 1.x 的 trigger 在 `disabled` 時跳過 roving focus、自動啟用有 `!disabled` 守衛；appShell 契約不動；4c→5a→5b→7 的依賴順序
+正確，紅燈期 stub 可行，`knip --include files,dependencies` 逐階段可綠（靜態推演，未實跑）。契約變更（`reload()` 一定兌現與
+`settled()`、`onRefresh(): void`＋`statusText`、`useRefreshAnnouncer`、`isUpdating` 時點擊仍交給頁面）四處一致、三層可測；
+改寫清單 3 與 `AdminToolbar.test.tsx` 逐行相符、改名合 `check-test-names.py`。資料時間凍結與 `historyRecord`
+（`WithdrawalManagement.tsx:176,814,893`）結構相容、4b 斷言能分辨兩種實作。**新引入的 P0／P1：無。**
+
+附帶的實作註記（非 P1，已寫進 `plan.md` 階段表）：階段 3 兩個呼叫端的過渡期對應要保留舊 `isRefreshing` 的整個運算式（否則
+首次載入中的重新整理會被悄悄放開而測試照綠）；5b 的轉接測試要在 5a 就綠，用 `vi.mock('./IdReviewQueue')` 記錄 props。
+
 ## 處置（人審後填寫）
 
 <!-- P0 的處置規則：必須改 plan 並重跑 /review-plan，或由人在此明文豁免。
@@ -1059,6 +1072,9 @@ R3-S-P2-5 併入 R3-P1-2、系統 R3-S-P2-6 併入 R3-P1-3；各自的原判寫�
   （複核過了勾「修訂後通過」→ 主 session 對照 → 業主再打 `/tdd-implement`）。業主在主 session 對照前打了一次
   `/tdd-implement`，因本節未勾裁決而依 skill 前置檢查拒絕開工。
 - 第四版之一的 3 條 P1 修法交兩位審查員（架構、UI/UX）複核：UI/UX 確認其中兩條解決、另補 2 條 P1（第四版之二，見上方
-  「第四版之一的複核」）；架構那一份在 container 重啟時遺失，改對第四版之二重跑，結果見下。
+  「第四版之一的複核」）；架構那一份在 container 重啟時遺失，改對第四版之二重跑——解決，無新的 P0／P1（見上方「第四版之二的
+  架構複核」）。
+- 依 K1 與業主 2026-10-07 在 session 內選的「照 K1 流程」：複核過了即勾「修訂後通過」，並在 PR #371 留言通知主 session 對照
+  A–J、D／F／H 與 K 題。**主 session 對照通過之前不開工**；對照通過後由業主親自打 `/tdd-implement admin-data-cache`。
 
-- [ ] 人審完成，裁決：□ 通過 □ 修訂後通過（豁免理由：） □ 退回重規劃
+- [x] 人審完成，裁決：□ 通過 ■ 修訂後通過（無 P0、免豁免；依業主 K1 於複核通過後勾選，開工另待主 session 對照通過） □ 退回重規劃
