@@ -134,7 +134,8 @@
   - 導覽列「待處理提領」badge 只在載入時讀一次，後台寫入後不更新；母計畫「待審佇列數即時」的需求沒有工項承接。
   - 公告與告警列表最多 100 筆、沒有揭露總數。退場條件：告警 UI 讀回應的 `total`（寫「已顯示 X / Y 筆」）、公告端點回總數時。
   - `SystemNotifications`／`SystemAlerts` 仍在元件內打 `apiClient`（與 AdminDashboard props 注入的慣例不同，檔頭寫明）。
-    退場條件：下次改這兩支的取數或寫入時搬進 AdminDashboard 以 props 注入。
+    退場條件：下次改這兩支的取數或寫入時搬進 AdminDashboard 以 props 注入；告警並改接 `useAdminList`（`slot: null`，
+    不快取——自管的狀態是 `usePagedList` 的第二份）。
   - 兩套快取並存：會員區的 `DataCacheContext`（寫 sessionStorage、只在登出清）與後台的記憶體快取（`adminCache.ts`）。收斂
     條件：S7 之後評估 `DataCacheProvider` 能否支援不落地與依參數的鍵，能才併。
   - `SLOW_UPDATE_MS`（15 秒慢更新，放行重新整理並遮住收款資訊）是 `apiClient` 沒有逾時的權宜。退場條件：全站 `apiClient`
