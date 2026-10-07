@@ -16,6 +16,10 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
   return typeof status === 'number' && status >= 400 && status < 500 ? 'rejected' : 'unknown';
 }
 
+export function refusal(message: string): Error {
+  return new Error(message);
+}
+
 /**
  * 結果不明的固定文案：不斷言斷線（5xx 也歸這類），只說「沒收到確認」與下一步該看哪裡。
  * 讀取失敗的錯誤字維持後端原文——固定文案只用在寫入結果不明。

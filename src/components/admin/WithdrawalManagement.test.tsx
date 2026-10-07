@@ -1918,6 +1918,18 @@ describe('WithdrawalManagement 焦點後備', () => {
 });
 
 describe('WithdrawalManagement 載入更多與換篩選', () => {
+  it('載入到最後一頁、「載入更多」消失時焦點移到列表區，不掉到 body', async () => {
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) =>
+      page({ withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })], total: 2 }),
+    );
+    renderPage({ load });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    more.focus();
+    fireEvent.click(more);
+    await waitFor(() => expect(more.isConnected).toBe(false));
+    expect(document.activeElement).toBe(listRegion());
+  });
+
   it('載入更多失敗時在鈕旁說出原因，已顯示的列保留', async () => {
     const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
       if (offset > 0) throw new Error('連線中斷');

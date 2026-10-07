@@ -356,6 +356,50 @@ describe('IdReviewQueue 讀取', () => {
     const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
     expect(reason?.textContent).toBe('已顯示 1 / 3 筆・更新中');
   });
+
+  // 失敗時載入更多同樣按不出去：狀態行說出原因，鈕以 aria-describedby 指向它。
+  it('背景更新失敗時狀態行接「更新失敗」，載入更多指向它', async () => {
+    const { calls, load } = heldQueue();
+    renderQueue({ loadReviews: load });
+    await act(async () => calls[0].d.resolve({ reviews: [review()], total: 3 }));
+    fireEvent.click(within(cardOf('王小明')).getByRole('button', { name: '通過' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].d.reject(new Error('連線中斷')));
+
+    const more = screen.getByRole('button', { name: '載入更多' });
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toBe('已顯示 1 / 3 筆・更新失敗');
+  });
+
+  // 兩張卡並發：第一次重讀落地成空、第二次重讀失敗——「有過資料但清單為空」之後的錯誤區。
+  it('有過資料但清單為空時，錯誤區重試途中留在原位，不閃出空狀態', async () => {
+    const { calls, load } = heldQueue();
+    const writes = new Map([
+      ['u1', deferred<void>()],
+      ['u2', deferred<void>()],
+    ]);
+    const submitReview = vi.fn(
+      (userId: string) => writes.get(userId)?.promise ?? Promise.resolve(),
+    );
+    renderQueue({ loadReviews: load, submitReview });
+    await act(async () => calls[0].d.resolve(twoReviews()));
+    fireEvent.click(within(cardOf('王小明')).getByRole('button', { name: '通過' }));
+    fireEvent.click(within(cardOf('李小華')).getByRole('button', { name: '通過' }));
+    await act(async () => writes.get('u1')?.resolve());
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].d.resolve({ reviews: [], total: 0 }));
+    expect(screen.getByText('目前沒有待審核的證件')).toBeTruthy();
+    await act(async () => writes.get('u2')?.resolve());
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await act(async () => calls[2].d.reject(new Error('連線中斷')));
+
+    const retry = within(queue()).getByRole('button', { name: '重試' });
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('目前沒有待審核的證件')).toBeNull();
+    expect(retry.isConnected).toBe(true);
+  });
 });
 
 describe('IdReviewQueue 動作', () => {
@@ -453,6 +497,20 @@ describe('IdReviewQueue 動作', () => {
 });
 
 describe('IdReviewQueue 焦點後備與 busy', () => {
+  it('載入到最後一頁、「載入更多」消失時焦點移到佇列區，不掉到 body', async () => {
+    renderQueue({
+      loadReviews: async ({ offset }) =>
+        offset > 0
+          ? { reviews: [review({ userId: 'u2', name: '李小華', email: 'lee@b.c' })], total: 2 }
+          : { reviews: [review()], total: 2 },
+    });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    more.focus();
+    fireEvent.click(more);
+    await waitFor(() => expect(more.isConnected).toBe(false));
+    expect(document.activeElement).toBe(queue());
+  });
+
   it('通過後焦點落在該卡；那張卡因重讀離開佇列時移到下一張', async () => {
     const { calls, load } = heldQueue();
     renderQueue({ loadReviews: load });

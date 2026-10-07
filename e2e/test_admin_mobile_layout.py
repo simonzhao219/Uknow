@@ -749,36 +749,47 @@ def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sh
 # 統計切回時是骨架、本次讀取確認後才出數字（業主裁決 A）。手機的摘要是一行 dl，換行
 # 與否看寬度：375px 一行（46px）、320px 兩行（70px）。舊骨架是固定 h-14（56px），兩邊
 # 都差 10–14px——數字落地那一刻，下面的作業面板與列表整個跳一下。jsdom 量不出高度，
-# 只能在真瀏覽器裡比。
+# 只能在真瀏覽器裡比。提領與會員兩區同一個形狀（同類掃描漏掉會員區，實作審查補上）。
+
+# 統計區的 aria-label → (所在分頁、列表骨架的名稱、扣住／放行列表的 mock 方法名)。
+_STATS_SECTIONS = {
+    "提領彙總": (None, "載入提領申請中", "admin_withdrawal_list"),
+    "會員統計": ("會員管理", "載入會員列表中", "admin_member_list"),
+}
 
 
-def _summary_child_height(page) -> float:
+def _summary_child_height(page, section: str) -> float:
     return page.evaluate(
-        """() => {
-          const child = document.querySelector('section[aria-label="提領彙總"] > *');
+        """(label) => {
+          const child = document.querySelector(`section[aria-label="${label}"] > *`);
           return child ? child.getBoundingClientRect().height : -1;
-        }"""
+        }""",
+        section,
     )
 
 
 @pytest.mark.compatibility
+@pytest.mark.parametrize("section", list(_STATS_SECTIONS))
 @pytest.mark.parametrize("width", [375, 320])
 def test_admin_stats_skeleton_matches_the_summary_height(
-    page, context, api_mock, rest_mock, width
+    page, context, api_mock, rest_mock, width, section
 ):
     """手機統計區的骨架與確認後的摘要同高：數字落地時版面不跳。"""
+    tab, skeleton_name, list_mock = _STATS_SECTIONS[section]
     page.set_viewport_size({"width": width, "height": 812})
     _setup_admin(context, api_mock, rest_mock)
-    api_mock.hold_admin_withdrawal_list()
+    getattr(api_mock, f"hold_{list_mock}")()
     page.goto("/admin")
-    expect(page.get_by_role("status", name="載入提領申請中")).to_be_visible()
-    skeleton = _summary_child_height(page)
+    if tab:
+        _open_tab(tab)(page)
+    expect(page.get_by_role("status", name=skeleton_name)).to_be_visible()
+    skeleton = _summary_child_height(page, section)
 
-    api_mock.release_admin_withdrawal_list()
-    expect(page.locator('section[aria-label="提領彙總"] > dl')).to_be_visible()
-    summary = _summary_child_height(page)
+    getattr(api_mock, f"release_{list_mock}")()
+    expect(page.locator(f'section[aria-label="{section}"] > dl')).to_be_visible()
+    summary = _summary_child_height(page, section)
 
     assert abs(skeleton - summary) <= 1, (
-        f"{width}px 下統計骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
+        f"{width}px 下「{section}」骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
         f"下面的內容跳 {abs(skeleton - summary)}px。骨架要跟摘要同形（同一個 dl、同樣會換行）。"
     )

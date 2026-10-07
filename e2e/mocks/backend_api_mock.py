@@ -671,41 +671,58 @@ class BackendApiMock:
 
     def set_admin_members(self, members=None):
         records = members or []
+        list_path = urlparse(f"{API_BASE}/admin/members").path
+        self._member_list = {"hold": False, "held": []}
+
+        def list_body():
+            # Mirror the real contract: `stats` is computed server-side over
+            # the whole filtered set, so the console can show site-wide
+            # numbers rather than a per-page tally.
+            def count(pred):
+                return len([r for r in records if pred(r)])
+
+            return {
+                "success": True,
+                "data": {
+                    "members": records,
+                    "total": len(records),
+                    "stats": {
+                        "total": len(records),
+                        "active": count(
+                            lambda r: not r.get("suspended") and r.get("accountStatus") == "active"
+                        ),
+                        "expired": count(
+                            lambda r: not r.get("suspended") and r.get("accountStatus") != "active"
+                        ),
+                        "suspended": count(lambda r: r.get("suspended")),
+                        "admins": count(lambda r: r.get("isAdmin")),
+                    },
+                },
+            }
 
         def handler(route):
-            if route.request.method == "GET":
-                # Mirror the real contract: `stats` is computed server-side over
-                # the whole filtered set, so the console can show site-wide
-                # numbers rather than a per-page tally.
-                def count(pred):
-                    return len([r for r in records if pred(r)])
-
-                return _fulfill_json(
-                    route,
-                    {
-                        "success": True,
-                        "data": {
-                            "members": records,
-                            "total": len(records),
-                            "stats": {
-                                "total": len(records),
-                                "active": count(
-                                    lambda r: not r.get("suspended")
-                                    and r.get("accountStatus") == "active"
-                                ),
-                                "expired": count(
-                                    lambda r: not r.get("suspended")
-                                    and r.get("accountStatus") != "active"
-                                ),
-                                "suspended": count(lambda r: r.get("suspended")),
-                                "admins": count(lambda r: r.get("isAdmin")),
-                            },
-                        },
-                    },
-                )
+            request = route.request
+            if request.method == "GET":
+                # 只有列表本身（路徑完全相符、query 不限）受開關控制；會員詳情照常。
+                is_list = urlparse(request.url).path.rstrip("/") == list_path
+                if is_list and self._member_list["hold"]:
+                    self._member_list["held"].append(route)
+                    return None
+                return _fulfill_json(route, list_body())
             return _fulfill_json(route, {"success": True})
 
+        self._member_list_body = list_body
         self._route("/admin/members", handler)
+
+    def hold_admin_member_list(self):
+        """之後的 GET /admin/members（列表本身）都扣住，直到 release——量首次載入的骨架。"""
+        self._member_list["hold"] = True
+
+    def release_admin_member_list(self):
+        held = self._member_list["held"]
+        self._member_list.update(hold=False, held=[])
+        for route in held:
+            _fulfill_json(route, self._member_list_body())
 
     def set_admin_announcements(self, announcements=None):
         records = announcements or []

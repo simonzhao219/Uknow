@@ -1601,6 +1601,33 @@ describe('MemberManagement 快取與背景更新', () => {
     expect(memberList().getAttribute('data-dimmed')).toBe('true');
   });
 
+  // 失敗時載入更多同樣按不出去：狀態行說出原因，鈕以 aria-describedby 指向它。
+  it('背景更新失敗時狀態行接「更新失敗」，載入更多指向它', async () => {
+    const cache = seedMembers(page({ members: [member()], total: 3 }));
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    await act(async () => calls[0].d.reject(new Error('連線失敗')));
+
+    const more = screen.getByRole('button', { name: '載入更多' });
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toBe('已顯示 1 / 3 筆・更新失敗');
+  });
+
+  it('載入到最後一頁、「載入更多」消失時焦點移到列表區，不掉到 body', async () => {
+    const load = vi.fn(async (params: Record<string, unknown>) =>
+      (params.offset as number) > 0
+        ? page({ members: [member({ id: 'm2', name: '林小美' })], total: 2 })
+        : page({ members: [member()], total: 2 }),
+    );
+    renderMembers({ loadMembers: load });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    more.focus();
+    fireEvent.click(more);
+    await waitFor(() => expect(more.isConnected).toBe(false));
+    expect(document.activeElement).toBe(memberList());
+  });
+
   it('首次載入超過 15 秒時骨架旁說明仍在等待伺服器回應，重新整理放行', () => {
     vi.useFakeTimers();
     const { load } = heldMembers();

@@ -5,7 +5,7 @@
 // 交易都可能已經提交。5xx 多半代表沒提交，但歸「結果不明」是安全方向——錯的只會是
 // 描述；反過來把可能已提交的寫入說成「失敗」，admin 會再按一次（例：重複匯款）。
 import { describe, expect, it } from 'vitest';
-import { UNKNOWN_OUTCOME, classifyWriteFailure } from './writeOutcome';
+import { UNKNOWN_OUTCOME, classifyWriteFailure, refusal } from './writeOutcome';
 
 describe('classifyWriteFailure', () => {
   it.each([
@@ -21,6 +21,20 @@ describe('classifyWriteFailure', () => {
     ['擲出 null', 'unknown', null],
   ])('%s歸為 %s', (_label, expected, err) => {
     expect(classifyWriteFailure(err)).toBe(expected);
+  });
+});
+
+// 2xx 但 `success: false`：後端明確回覆沒有做（公告的建立與刪除）。交易沒有提交，比照 4xx
+// 歸「未提交」——但不偽造 HTTP 狀態碼：讀 `status` 的人會以為真的收到過 422。
+describe('refusal', () => {
+  it('明確拒絕歸為 rejected，訊息照原文', () => {
+    const err = refusal('公告不存在');
+    expect(err.message).toBe('公告不存在');
+    expect(classifyWriteFailure(err)).toBe('rejected');
+  });
+
+  it('不帶 HTTP 狀態碼', () => {
+    expect((refusal('公告不存在') as { status?: unknown }).status).toBeUndefined();
   });
 });
 

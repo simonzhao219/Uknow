@@ -251,6 +251,12 @@ describe('SystemNotifications 寫入', () => {
     ['成功', () => Promise.resolve({ success: true }), ['announcementDelete'], 2],
     ['結果不明', () => Promise.reject(new TypeError('Failed to fetch')), ['announcementDelete'], 2],
     ['被後端拒絕', () => Promise.reject(rejected('找不到這則公告', 404)), [], 1],
+    [
+      '被後端以 success:false 拒絕',
+      () => Promise.resolve({ success: false, error: { message: '公告不存在' } }),
+      [],
+      1,
+    ],
   ] as const)('刪除%s時的失效事件與重讀', async (_label, remove, expected, reads) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');
@@ -273,6 +279,12 @@ describe('SystemNotifications 寫入', () => {
     ['成功', () => Promise.resolve({ success: true }), ['announcementCreate'], 2],
     ['結果不明', () => Promise.reject(new TypeError('Failed to fetch')), ['announcementCreate'], 2],
     ['被後端拒絕', () => Promise.reject(rejected('標題過長', 400)), [], 1],
+    [
+      '被後端以 success:false 拒絕',
+      () => Promise.resolve({ success: false, error: { message: '標題重複' } }),
+      [],
+      1,
+    ],
   ] as const)('建立%s時的失效事件與重讀', async (_label, create, expected, reads) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');
@@ -317,6 +329,60 @@ describe('SystemNotifications 寫入', () => {
         'warning',
       ),
     );
+  });
+
+  // 2xx 但 success:false：後端明確回覆沒有做——說出原文，不當成功（失效與重讀見上方兩張表）。
+  it('建立被後端以 success:false 拒絕時說出原文，表單保留', async () => {
+    route({
+      list: async () => listOf([]),
+      create: async () => ({ success: false, error: { message: '標題重複' } }),
+    });
+    render(<SystemNotifications />);
+    await screen.findByText('尚無公告');
+    await fillAndPublish();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('標題重複', 'error'));
+    expect(showSuccess).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('公告標題') as HTMLInputElement).value).toBe('今晚停機');
+  });
+
+  it('刪除被後端以 success:false 拒絕時說出原文', async () => {
+    route({
+      list: async () => listOf([announcement()]),
+      remove: async () => ({ success: false, error: { message: '公告不存在' } }),
+    });
+    render(<SystemNotifications />);
+    fireEvent.click(await screen.findByRole('button', { name: '刪除公告' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('公告不存在', 'error'));
+    expect(showSuccess).not.toHaveBeenCalled();
+  });
+
+  // showSuccess 是會搶焦點的彈窗：焦點落在該則、再移到下一則的後備就落空（ui-ux §9）。
+  it('刪除成功以 toast 回報，不開會搶焦點的成功彈窗', async () => {
+    route({ list: async () => listOf([announcement()]) });
+    render(<SystemNotifications />);
+    fireEvent.click(await screen.findByRole('button', { name: '刪除公告' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('公告已刪除', 'success'));
+    expect(showSuccess).not.toHaveBeenCalled();
+  });
+
+  // ui-ux §9：被按下後要停用的鈕用 aria-disabled——原生 disabled 把焦點丟到 body。
+  it('發布中「發布公告」改 aria-disabled，焦點留在鈕上，再按不重送', async () => {
+    const pending = deferred<unknown>();
+    route({ list: async () => listOf([]), create: () => pending.promise });
+    render(<SystemNotifications />);
+    await screen.findByText('尚無公告');
+    const publish = screen.getByRole('button', { name: /發布公告/ });
+    publish.focus();
+    await fillAndPublish();
+    await waitFor(() => expect(publish.getAttribute('aria-disabled')).toBe('true'));
+    expect(publish.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(publish);
+
+    fireEvent.click(publish);
+    const posts = apiRequestJson.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts).toHaveLength(1);
+    await act(async () => pending.resolve({ success: true }));
+    expect(publish.getAttribute('aria-disabled')).toBeNull();
   });
 
   // 主 #43：h-7 w-7 把 icon 鈕壓成 28px，低於觸控 44px（ui-ux §1）。
