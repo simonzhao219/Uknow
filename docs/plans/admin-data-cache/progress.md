@@ -26,13 +26,27 @@
 | 5b | 證件審核（錯誤區與重讀、成功回報、`memberLabel`、按鈕順序；不受閘門約束） | ✅ 綠燈 | `95b2379` | `460b1ee` |
 | 6 | 公告（快取、骨架、錯誤態、刪除鈕 44px）＋告警（`AdminToolbar`、背景重讀、`onAccessLost`；不走共用 hook） | ✅ 綠燈 | `fac9ce3` | `ed2b97d` |
 | 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、busy 鎖外層分頁與會員子分頁、說明行）、`AdminDashboard` 讀 `UserContext` | ✅ 綠燈（測試修正 `71fc975`） | `1ab0234` | `c1aa1a7` |
-| 8 | e2e 三個情境＋journey page object 與 offline 檢查＋溢版巡檢 | ⬜ 未開始 | | |
+| 8 | e2e 三個情境＋journey page object 與 offline 檢查＋溢版巡檢 | ✅ 綠燈 | `7b2a947` | `46dfca5` |
 | 9 | 文件（規格書 §13 新段與 §14 三列、ui-ux §3／§5／§9、檔頭理由、母計畫 §1／§2／§4.3 驗收 2 與 3／§6.2／progress 與計畫異動記錄）＋PR 描述揭露＋清理本目錄 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-中途對照（K8）通過，4c 回填綠燈（★′），5a、5b、6、7 綠燈。**下一步：8 e2e、journey page object、溢版巡檢**
-（journey 只跑離線的 `cd e2e/journey && pytest tools/`，絕不在本機打真後端）。
+中途對照（K8）通過，4c 回填綠燈（★′），5a、5b、6、7、8 綠燈。**下一步：9 文件**，再收尾（`check:full`、截圖、
+`/review-implementation`、升級決策、清理本目錄、PR 實作版描述、通知主 session 最後對照）。
+
+8 的實作細節（PR 描述揭露）：
+- 本機驗證：mocked e2e 全套 213 條綠（`e2e/.venv`，Python 3.12、Playwright 1.56／chromium 1194）；journey 只跑離線
+  `pytest tools/`（88 條），沒有打真後端。
+- 三個情境寫完即綠（產品行為在 4–7 已落地），是回歸釘；真正的紅燈在 page object 的診斷（新檔
+  `e2e/test_admin_dashboard_page.py`：保留舊列的失敗撞 strict mode、背景更新途中放行）、統計骨架高度
+  （`test_admin_mobile_layout.py`，375／320 兩寬）、journey 離線的 aria-busy 檢查，以及提領與會員的錯誤區重試。
+- 手機統計骨架沒有照字面「釘 min-h」：實測摘要隨寬度換行（375px 一行 46px、320px 兩行 70px），固定高度兩邊都對
+  不上。改成同形骨架（同一組 flex-wrap、同樣標籤、數值用典型寬度的透明佔位字），兩寬都與摘要同高；遠長於典型值的
+  金額仍可能多換一行。
+- 錯誤區重試的「更新中」判定擴到提領與會員（階段 6 公告、告警的同類）；證件審核沒有工具列，「有過資料但清單為空」
+  之後沒有重讀入口，這條路不可達，維持原判定。
+- mock：提領列表 GET（路徑完全相符）可扣住／放行／失敗、寫入可扣住，並照 limit／offset 分頁；溢版巡檢加 `drive`
+  （導頁後操縱 mock 回應）與五條路由（切回更新中、更新失敗保留舊列、寫入在途與匯出中的說明行、告警重新整理後）。
 
 6 的兩處實作細節（PR 描述揭露）：公告刪除的「結果不明」文案與建立分開——§2.7 表上一句話含「再決定是否重發」，
 刪除沒有重發可言，改寫「未收到伺服器確認，結果不明，請確認公告列表」（紅燈 `fac9ce3` 的 `writeOutcome.test.ts`
