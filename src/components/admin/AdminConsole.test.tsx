@@ -95,7 +95,8 @@ const tab = (name: string) => screen.getByRole('tab', { name });
 const OTHER_TABS = ['會員管理', '系統公告', '系統告警'];
 const busyOf = () => last(seen.withdrawals).busy as AdminBusy;
 const WRITING = '處理中，完成前無法切換分頁';
-const SLOW_WRITING = `${WRITING}・仍在等待伺服器回應，離開此頁不會取消已送出的操作`;
+// 離開再回來時新讀到的列可能早於寫入提交（K4 殘餘風險）：提醒先確認那一筆（主 session 最後對照 P2-12）。
+const SLOW_WRITING = `${WRITING}・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後先確認該筆狀態`;
 
 beforeEach(() => {
   for (const list of Object.values(seen)) list.length = 0;
