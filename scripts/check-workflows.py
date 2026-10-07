@@ -25,6 +25,7 @@ framework-check.sh 會依序呼叫兩者。
 
 from __future__ import annotations
 
+import datetime
 import re
 import sys
 from pathlib import Path
@@ -153,6 +154,18 @@ FUNCTIONS_DEPLOY = re.compile(r"supabase\s+functions\s+deploy\b")
 RETRY_LOOP = re.compile(r"^\s*for\s+\w+\s+in\b", re.M)
 SLEEP_CALL = re.compile(r"\bsleep\s+\S")
 
+# 規則 13:`payment_mode: webhook` 必須帶到期日(2026-10-07 事故)
+#         webhook 模式攔下往 PayUni 的跳轉、自己簽章注入 notify,從不打 PayUni。
+#         PR #275(2026-08-09)為了躲 sandbox 額度上限把晉升閘門「暫時」改成
+#         webhook,註解寫「應改回」卻沒有任何東西會提醒——暫時變永久兩個月,
+#         上線前沒有任何一條線真的碰 PayUni。到期日讓「暫時」變成會自己紅燈。
+WEBHOOK_MODE = re.compile(r"^\s*payment_mode\s*:\s*['\"]?webhook\b")
+WEBHOOK_EXPIRY = re.compile(r"暫時至\s*(\d{4}-\d{2}-\d{2})")
+
+
+def _today() -> datetime.date:
+    return datetime.date.today()
+
 
 def _jobs(text: str) -> list[tuple[str, str]]:
     """切出 (job_id, job 區塊文字)。純文字掃描,不 import yaml。"""
@@ -270,6 +283,31 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                 "(2026-10-03~05 連續 7 次,含正式站一次)。部署冪等,重試無害。"
                 "修法:同一個 step 內用 for 迴圈包住指令,失敗時 sleep 後重試"
                 "(迴圈沒有 sleep 等於連環硬打限流)。"
+            )
+
+    # 規則 13:`payment_mode: webhook` 同一行或上一行必須帶「暫時至 YYYY-MM-DD」且未過期
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if not WEBHOOK_MODE.match(line):
+            continue
+        context = line + "\n" + (lines[i - 1] if i > 0 else "")
+        m = WEBHOOK_EXPIRY.search(context)
+        if not m:
+            found.append(
+                f"第 {i + 1} 行 payment_mode: webhook 沒有到期日——webhook 模式從不打 "
+                "PayUni,沒有期限的「暫時」會變永久(PR #275 暫時了兩個月)。"
+                "修法:同一行或上一行加「暫時至 YYYY-MM-DD:理由」,或改回 sandbox。"
+            )
+            continue
+        try:
+            expiry = datetime.date.fromisoformat(m.group(1))
+        except ValueError:
+            found.append(f"第 {i + 1} 行 payment_mode: webhook 的到期日 {m.group(1)} 不是合法日期。")
+            continue
+        if expiry < _today():
+            found.append(
+                f"第 {i + 1} 行 payment_mode: webhook 已於 {expiry} 到期——"
+                "改回 sandbox,或延期並寫理由(更新「暫時至 YYYY-MM-DD」)。"
             )
 
     # 規則 7:ci.yml 的 ci-ok 必須 needs 全部其他 job
@@ -645,6 +683,37 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
             "      # 接著的 supabase functions deploy 會讀到這個 sha\n"
             "      - name: 煙霧測試\n        run: curl -sS https://example.test/health\n"
         ),
+        "x.yml",
+        0,
+    ),
+    # --- 規則 13:webhook 模式必須帶未過期的到期日(2026-10-07) ---
+    (
+        "payment_mode: webhook 沒有到期日 → 違規(PR #275 暫時變永久的形態)",
+        "name: CI\njobs:\n    with:\n      payment_mode: webhook\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "payment_mode: webhook 同一行帶未過期日期 → 通過",
+        "name: CI\njobs:\n    with:\n      payment_mode: webhook  # 暫時至 2999-01-01:額度未恢復\n",
+        "x.yml",
+        0,
+    ),
+    (
+        "payment_mode: webhook 上一行帶未過期日期 → 通過",
+        "name: CI\njobs:\n    with:\n      # 暫時至 2999-01-01:額度未恢復\n      payment_mode: webhook\n",
+        "x.yml",
+        0,
+    ),
+    (
+        "payment_mode: webhook 日期已過期 → 違規",
+        "name: CI\njobs:\n    with:\n      payment_mode: webhook  # 暫時至 2000-01-01:額度未恢復\n",
+        "x.yml",
+        1,
+    ),
+    (
+        "payment_mode: sandbox 與說明文字提到 webhook → 不適用規則 13",
+        "name: CI\njobs:\n    with:\n      payment_mode: sandbox\n        description: 'webhook=簽章注入備援'\n",
         "x.yml",
         0,
     ),

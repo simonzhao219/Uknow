@@ -372,6 +372,10 @@ Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 | **ReturnURL（前景導回）** | `{FRONTEND_URL}/payment/result?tradeNo=...` | 程式自動帶入；PayUni 後台若限制網域請加入你的前端網域 |
 | 金額 | `1200` | 年費固定金額（後端會驗，不符即拒） |
 
+⚠️ **PayUni 測試站依來源地區封鎖**（2026-10-07 已驗證）：法國住宅 IP 回 403、
+台灣 VPN 與美國 GitHub runner 放行。海外手動驗證 sandbox 付款需先連台灣 VPN；
+遇到 403 先查來源 IP，不要先懷疑程式。
+
 ---
 
 ## ☑️ 步驟 4：確認 `api` 函數的 JWT 設定
@@ -422,6 +426,9 @@ NT$24,000，實際入帳 0 元——是靠人工反推 digest 才看出來的，
 > `deploy-supabase.yml` 裡的 `EXPECT_PRODUCTION_PAYUNI` 改成 `true`。
 > 之後任何 main 部署若偵測到 `payuniMode != production` 會直接紅燈，
 > 不再只是警告。
+>
+> **開放前必做**:從**台灣網路**對正式站真付款一次(PayUni 依來源地區擋人,
+> 見步驟 3 的警告;CI 的 journey 不碰正式站金流)。
 
 ### 5-2 PayUni 變數是否載入
 

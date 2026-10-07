@@ -478,15 +478,7 @@ jobs:
     uses: ./.github/workflows/journey.yml
     with:
       scope: full
-      # ⚠️ 暫時改用 webhook（原為 sandbox）：PayUni sandbox 商店額度
-      # 2026-08-08~09 連續三次真跑（含跨日）在第一筆交易就回「商店信用卡
-      # 收款額度已達上限」，webhook 模式當天已驗證過能跑出全 119 情境
-      # 皆綠（run 31283424267），含原本存疑的退件路徑。webhook 模式走的是
-      # 真的 /payuni/prepare → 簽章 /webhooks/payuni/notify → 真的
-      # process_successful_payment，只略過 PayUni 自家頁面渲染，本次晉升
-      # 未動這段。詳見 PR #275 討論。sandbox 額度恢復（有真跑成功證據）後
-      # 應改回 sandbox——見 friction-log 待辦，不要讓這行暫時的變成永久的。
-      payment_mode: webhook
+      payment_mode: sandbox
     secrets: inherit
 
   # 唯一該列入 required status checks 的項目(來源:ruleset
@@ -522,6 +514,9 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
     steps:
       - name: 匯總各軌結果
         env:
@@ -536,6 +531,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
           JOURNEY_RESULT: ${{ needs['journey-full'].result }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           echo "各軌結果:$RESULTS"
           failed=0
@@ -556,4 +553,17 @@ jobs:
               exit 1
             fi
             echo "晉升 PR:journey-full 已確認 success"
+
+            # 排程 journey 連紅警告(只警告不擋):排程是唯一真打 PayUni sandbox
+            # 的線,連紅四週(2026-09~10)無人接,晉升時至少要在眼前再喊一次。
+            # 查詢失敗不得影響閘門,所以整段 || true。
+            warn=$(gh issue list --repo "$REPO" --state open --limit 50 \
+              --json number,title,url \
+              --jq '.[] | select(.title | startswith("journey 排程失敗")) | "\(.title) \(.url)"' \
+              2>/dev/null || true)
+            if [ -n "$warn" ]; then
+              while IFS= read -r l; do
+                echo "::warning::排程 journey 仍有未結案的失敗 issue:$l——排程是唯一真打 PayUni sandbox 的線,請確認再上線"
+              done <<< "$warn"
+            fi
           fi
