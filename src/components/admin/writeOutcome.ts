@@ -35,4 +35,7 @@ export const UNKNOWN_OUTCOME = {
   member: (name: string) => `${name}：未收到伺服器確認，結果不明，詳情更新後請確認`,
   /** 證件審核通過／退回：佇列重讀一次（E4），請 admin 從佇列確認。 */
   idReview: (name: string) => `${name}：未收到伺服器確認，結果不明，佇列更新後請確認`,
+  announcementCreate: '',
+  announcementDelete: '',
+  alertResolve: '',
 };

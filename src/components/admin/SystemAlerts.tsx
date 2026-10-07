@@ -11,6 +11,7 @@ import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useNotification } from '../notifications/NotificationContext';
 import { formatTwTimestamp } from '../../utils/twDate';
 import type { SystemAlert, SystemAlertsResponse } from '@contract';
+import type { AdminBusy } from './adminBusy';
 
 // 系統告警（system_alerts）的維運介面。這張表收的是「需要人工介入」
 // 的事件：付款處理失敗、對帳錯誤、金額不符待裁決——在這個 tab 之前
@@ -26,7 +27,12 @@ function getSeverityBadge(severity: SystemAlert['severity']) {
   }
 }
 
-export function SystemAlerts() {
+export interface SystemAlertsProps {
+  busy?: AdminBusy;
+  onAccessLost?: () => void;
+}
+
+export function SystemAlerts(_props: SystemAlertsProps = {}) {
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);

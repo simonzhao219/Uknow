@@ -10,6 +10,8 @@ import { Bell, Send, Trash2, Loader2 } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { formatTwTimestamp } from '../../utils/twDate';
+import type { AdminCache } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 
 interface AdminAnnouncement {
   id: string;
@@ -27,7 +29,12 @@ interface AdminAnnouncement {
  * GET /announcements/active）。取代過去寫死在 constants.ts 的
  * 系統維護預告。
  */
-export function SystemNotifications() {
+export interface SystemNotificationsProps {
+  cache?: AdminCache;
+  busy?: AdminBusy;
+}
+
+export function SystemNotifications(_props: SystemNotificationsProps = {}) {
   const { showSuccess, showToast, showWarning } = useNotification();
 
   const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
