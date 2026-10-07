@@ -48,7 +48,8 @@ const ADMIN_TABS = [
 
 type AdminTabValue = (typeof ADMIN_TABS)[number]['value'];
 
-const SLOW_WRITE_HINT = '・仍在等待伺服器回應，離開此頁不會取消已送出的操作';
+// 離開再回來時新讀到的列可能早於寫入提交（K4 殘餘風險，見檔頭）：提醒回來後先確認那一筆。
+const SLOW_WRITE_HINT = '・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後先確認該筆狀態';
 
 // 可見二字＋完整名稱整串放一個 sr-only 節點、由 aria-labelledby 指過來——寫法與
 // 理由見 ui-ux-guidelines §9。id 由 useId 在同一處產生並同時給兩端，不手組字串。
