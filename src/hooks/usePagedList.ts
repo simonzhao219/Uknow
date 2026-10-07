@@ -16,22 +16,30 @@ export interface PagedResult<T> {
   total: number;
 }
 
+export type RefreshOutcome = 'done' | 'failed';
+
 export interface UsePagedListOptions<T> {
   /** 取一頁。`offset` 是目前已載入的筆數。 */
   load: (params: { limit: number; offset: number }) => Promise<PagedResult<T>>;
   pageSize: number;
   /** 變動時重新從第一頁取（篩選條件、搜尋字串）。 */
   deps: unknown[];
+  clearOnError?: (err: unknown) => boolean;
 }
 
 export interface UsePagedList<T> {
   items: T[];
   total: number;
-  isLoading: boolean;
-  isLoadingMore: boolean;
-  error: string | null;
   hasMore: boolean;
-  reload: () => Promise<void>;
+  canLoadMore: boolean;
+  isLoading: boolean;
+  isRevalidating: boolean;
+  isConfirmed: boolean;
+  error: string | null;
+  loadMoreError: string | null;
+  isLoadingMore: boolean;
+  reload: () => Promise<RefreshOutcome>;
+  settled: () => Promise<RefreshOutcome>;
   loadMore: () => Promise<void>;
 }
 
@@ -42,7 +50,7 @@ export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (): Promise<RefreshOutcome> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -54,6 +62,7 @@ export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>
     } finally {
       setIsLoading(false);
     }
+    return 'done';
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
@@ -79,11 +88,16 @@ export function usePagedList<T>({ load, pageSize, deps }: UsePagedListOptions<T>
   return {
     items,
     total,
-    isLoading,
-    isLoadingMore,
-    error,
     hasMore: items.length < total,
+    canLoadMore: items.length < total,
+    isLoading,
+    isRevalidating: false,
+    isConfirmed: false,
+    error,
+    loadMoreError: null,
+    isLoadingMore,
     reload,
+    settled: async () => 'done',
     loadMore,
   };
 }
