@@ -747,6 +747,10 @@ API),而且沒有任何測試會叫。
 真的一樣**。`ReferralTreeView` 的分頁與 SWR 式背景重抓纏在一起,硬併進
 `usePagedList` 只會讓 hook 長出只有它用的選項——為第 N 個使用者加分支的
 那一刻,抽象開始變成負債。抽取的判準不是「長得像」,是「守的是同一條規則」。
+(2026-10 S5 補記:`usePagedList` 現在本身就有背景重讀與失敗保留舊列——那是「不得清空
+已顯示資料」同一條規則的延伸,所以留在通用 hook;快取與 fence 則只透過 `initial`／
+`onLanded`／`clearOnError` 三個擴充點由 `useAdminList` 接上,hook 不知道 store 存在。
+`ReferralTreeView` 要不要改走它,判準照舊:守的是不是同一條規則。)
 
 ## 2026-08-02 admin-dashboard feature:本機 npm run check 不含覆蓋率門檻
 

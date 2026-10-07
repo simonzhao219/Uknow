@@ -20,7 +20,7 @@
 | S4 | 會員詳情重設計 | A3 | ✅ 已合併（2026-10-06，merge `d7125a0`）；主 session 最後對照 A–H 與 P1／P2 全數落地；驗收站 2 延到 S7 合併後 | [#365](https://github.com/simonzhao219/Uknow/pull/365) | 三段式：規劃四視角 P0×0／P1×10／P2×23 全數處置，業主裁決 Q1（session 內）與 D1–D13（#365 留言 6008679860）；五階段 TDD（重構綠到綠→查看回饋與請求序號→分區與身分卡→管理區與確認鈕→文件）。固定身分卡＋帳號／點數／近期提領／推薦關係／敏感資料／管理；`WithdrawalStatusBadge`、`MemberStatusBadges` 單一來源；不動 `supabase/functions/`。驗收站 2 與 S3 一起驗，S4 清單見 construction-plan §4.3 表格下方 |
 | S5 | admin 資料快取 | A4 | ⬜ 開工 prompt 已備（construction-plan §3 S5，九條；Opus 規劃） | — | 驗收站 3（延到 S7 合併後）；與 S6 平行施工 |
 | S6 | 前台門面 | F1 | ⬜ 未開工 | — | 與 S5 平行施工 |
-| S7 | 會員區資訊層次 | F2+F3 | ⬜ 未開工 | — | 驗收站 4（S7 合併後與驗收 2、3 一次驗）；等 S6 合併後開工（S5 若也動 `DataCacheProvider` 則一併等）；F2 已由「視覺對齊」改寫為「資訊層次重設計」（2026-10-03） |
+| S7 | 會員區資訊層次 | F2+F3 | ⬜ 未開工 | — | 驗收站 4（S7 合併後與驗收 2、3 一次驗）；**等 S5、S6 都合併後開工**（S5 裁決 D8：S5 沒動 `DataCacheProvider`，但改了共用的 `usePagedList`——有資料時 `reload` 改背景重讀、失敗保留舊列；後台公告的錯誤態已由 S5 處理）；F2 已由「視覺對齊」改寫為「資訊層次重設計」（2026-10-03） |
 | S8 | 制度化收尾 | G1+G2 | ⬜ 未開工 | — | 完工後刪除本目錄 |
 
 ## 計畫異動記錄
@@ -83,6 +83,7 @@
 | 2026-10-06 | **S4 主 session 實作審查（#365 留言 6011955700：P0×0、P1×8、P2×17）與業主裁決 A–H（留言 6012675490）已套用**：A 暫停確認框依目標分句——一般會員寫「也無法進入會員區」，管理員目標省略（守衛是 `suspended && !isAdmin`）；B 錯誤框的捲動與聚焦只給「剛按查看就失敗」，晚到的動作失敗不搶焦點，已換到 B 時寫進 B 面板管理區（前綴 A 姓名）、B 關閉時轉到列表上方；**C D8「身分卡占不到 1/5 高」改為「≤ 視窗 25%」**，e2e 以最壞資料量 `sheet-header`（50 字無空白外文姓名＋長 Email＋三徽章：189／812px＝23%）；D 重開在途時動作完成不補讀的窗口記遺留、併入 S5 序號收斂；E 已退件列不顯示手續費、「已提領」標明含手續費；F 管理區常駐 status、送出中的鈕 `loading`、確認或恢復後焦點落在管理區標題、取消確認框回到觸發鈕（原本確認框沒有 Trigger，Radix 關閉時焦點掉到 body）；G 查看鈕轉圈時寬度變化接受；H D10「灰字一行」放寬為「降級成小字、折行不斷在數字中間」。另修：空字串姓名（`profiles.name` default `''`）以 `memberName`／`memberLabel` 收斂七處、送出中狀態逐位會員記、觸發鈕標記搬出卡片模組、驗收 2・S4 清單加前置帳號條件 | 17 全形字的姓名不可達（中文姓名上限 10 字），改用可達且更寬的外文 50 字；裁決 B 的「B 關閉時不清」落地為轉到列表上方——面板關閉後提示不能跟著消失。**TDD 紅燈期人工裁決**（業主 2026-10-06，session 內互動選項）：紅燈測試「面板已關時動作失敗，錯誤框不搶焦點也不捲動」原本斷言焦點仍在「查看」鈕，撞上既有 S4 遺留（`list.reload()` 期間列表換骨架、「查看」鈕卸載，退場條件 S5 SWR）——收窄為裁決 B 的字面要求：焦點不在錯誤框、沒有捲動 |
 | 2026-10-06 | **S4 合併（#365，merge `d7125a0`）**：主 session 最後對照（留言 6014495982）確認裁決 A–H 與 P1／P2 全部落地。**業主裁決（S4 session 內）**：(1) 驗收站 2–4 延到最後——S5、S6、S7 做完、S7 合併後一次驗，S8 等三站都過才開工；延後期間不以驗收擋 session（construction-plan §1、§4.3、§5 同步改）；(2) S5 與 S6 平行施工（S5 只動後台、S6 只動前台詳情與首頁），S7 等 S6 合併後開工，S5 若也動 `DataCacheProvider` 則一併等 | 業主想先把施工做完再集中驗收。代價是 S3／S4 的問題要到最後才會被人眼發現，S5 又建在同一塊 admin 資料層上——每個 PR 的 CI（含 e2e）仍照常把關，S5 規劃時要把 S3／S4 的遺留一併看過 |
 | 2026-10-06 | S5 開工 prompt 改寫為九條（construction-plan §3 S5）：A4 四條硬約束逐條落地（PII 記憶體快取守衛、排除清單、mutation→invalidation 對照表、AdminDashboard DI 慣例裁決）、快取生命週期、Tabs 掛載方式、骨架屏統一、S3／S4 遺留逐條裁決、測試、定位器契約、文件、風險；S5 只動後台（與 S6 平行施工） | S3／S4 丟給 S5 的遺留已累積六項，開工 prompt 不逐條點名會被漏掉 |
+| 2026-10-07 | **S5 收尾的計畫異動**：S7 開工條件改「S5、S6 皆合併」（D8）；S5 重量「中」→「重」、單一 PR 不拆、4c 綠燈後主 session 中途對照（K8，construction-plan §2 ※S5）；驗收 3 換成「驗收 3・S5 清單」（§4.3）；驗收 2 追加證件審核卡「退回在左、通過在右、通過無確認框」一項（C）；§6.2 的「抽查一筆提領資料確認顯示值未過期」改成證偽做法 | 原「抽查一筆」兩次看到的都來自同一次回應、永遠為真（主 session 規劃審查 #17）；S5 改了 `usePagedList` 的 `reload` 語意，S7 的推薦橫幅會用它 |
 
 ## 遺留事項
 
@@ -109,24 +110,12 @@
   - 預建零消費者：`--brand-border`／`--brand-faint`／`--medal-gradient` 與 `container` 的 brand／success／destructive 組合目前沒有正式消費者（knip 看不到 CSS token 與 cva 變體）；**S7 合併時仍零消費者就刪**。
   - 測試：`SubscriptionStatusCard` 沒有元件測試，續訂引導鈕與失效框 warning 只靠 repoHygiene 白名單與目視。
   - 焦點：分段切換（HomeViewToggle、CompleteProfile 姓名切換）沒有自帶焦點樣式，靠 base 外框；推薦樹搜尋框 `outline-none` 沒有任何焦點樣式，框線也還是 `--border`（S7 重做時改走 `--input`，§12.7）；對話框關閉鈕的觸控熱區只有 16px。
-  - 畫面稿與舊程式的落差（規劃未涵蓋）：刊登卡查看／編輯／刪除畫面稿是圖示＋文字、現為純圖示（刪除緊鄰編輯，手機易誤觸）→ S7；簽名板「清除簽名」畫面稿 ghost、現為 outline → S7；證件審核列畫面稿「退回在左、通過在右」、現為通過在左 → S3；任務中心黃卡內「一次領取全部」的 `container`（#354 二次審查已補 `container="warning"`；S7 換綠框時改 success）。
+  - 畫面稿與舊程式的落差（規劃未涵蓋）：刊登卡查看／編輯／刪除畫面稿是圖示＋文字、現為純圖示（刪除緊鄰編輯，手機易誤觸）→ S7；簽名板「清除簽名」畫面稿 ghost、現為 outline → S7；任務中心黃卡內「一次領取全部」的 `container`（#354 二次審查已補 `container="warning"`；S7 換綠框時改 success）。
   - 連續同名「下一步」：提領 1→2→3、查收 1→2 同位同名，快速連點可能跳過確認頁（S2e 前步驟 2 的「確認並繼續」也在同一位置，非本 PR 引入；e2e 為此先等「上一步」出現才點）。建議換步時把焦點移到新步驟標題（順帶補 a11y）→ S7。
 - **其他浮在內容上的元件改用浮起表面**（S2e 只做首頁搜尋鈕與工具列，業主 2026-10-05 裁決其餘留給 S7）：底部導覽 BottomNav、toast（`NotificationCard`／`ToastCard`）、彈出選單（popover／dropdown／select 的內容用 `--popover`）、Sheet／對話框（`bg-background`）在深色同樣看不出浮起感，改 `bg-raised border-raised-border shadow-raised`（對話框與 Sheet 有遮罩，可只換表面）。規則見 `ui-ux-guidelines.md` §12.6。
 - **S7 接 B1 的端點**：推薦管理橫幅的「全部 N 位 ›」接 `API_PATHS.networkAttention`（`GET /referrals/network/attention?limit=&offset=`，契約 `NetworkAttentionResponseSchema`，分頁形狀同搜尋，可直接用 `usePagedList`）；橫幅的 chip 原因文字（`reason()` 的已停權／已失效分支）在新口徑下已是死碼，S7 重做橫幅時一併拿掉；前端接上 attention 端點時 `e2e/mocks/backend_api_mock.py` 的 `set_referral_tree` 要補註冊該路由（現只有 overview／children／search）。橫幅不再收已失效／停權後，樹列層級沒有任何文字狀態（色點 `aria-hidden`、列淡化），「已失效」只在點開的詳情——S7 重做列時決定是否把狀態寫進 treeitem 的 `aria-label`（§12.7，WCAG 1.4.1）。任務等級門檻只在前端 `TaskBadge.tsx`，歸 S7。
 - **`awaiting_collection`（待查收）狀態在 admin 與會員兩處顏色語意不一致**：`WithdrawalManagement.tsx`（admin 視角）用 `variant="warning"`（醒目黃，規劃當時就是這樣寫），`WithdrawalSection.tsx`（會員視角，本次 S2 業主核准的政策 13）用 `variant="secondary"`（中性灰）。需求視角 review 指出：業務流程上真正「需要動作」的其實是會員（要去確認收款），admin 端反而是等待中，兩邊的顏色安排恰好相反。兩處目前都各自忠實反映了規劃書的逐字指示，不是實作錯誤，但業主應在下一次接觸這兩個檔案時確認是否要拉平（同一狀態、同一注意力層級），或維持現狀（admin 用醒目色提醒「這筆在等會員」、會員視角用中性色標示「這是流程正常的一步」也是站得住腳的設計理由，需業主定調）。
   **S4 D1（#365）**：後台維持 warning，並由 `WithdrawalStatusBadge` 單一來源（提領管理與會員詳情同一張表）；會員端改 warning 與本條結案留 S7。
-- **S3 審查遺留 → S5**（#359 實作審查 P2，業主 2026-10-05 裁決留給 S5）：
-  - 匯出 CSV 失敗或超過上限走 `setLoadError`，整張提領列表被換成錯誤區，而「重試」是重讀列表、不是重新匯出
-    （`WithdrawalManagement.tsx` 的 `collectAndDownload`）→ 匯出錯誤改成獨立狀態，列表照常顯示。
-  - `AdminToolbar` 的重新整理按下後 `disabled`、焦點掉到 body，且沒有狀態宣告（CSV 有）→ S5 改 SWR 後刷新不再換骨架，屆時一併設計。
-  - 「已匯出 N 筆」callout 出現在工具列上方，造成版面位移（可接受，順手時移到工具列下方）。
-  - 驗收站 2 目視項：會員搜尋框內嵌放大鏡的鍵盤焦點環、`type="search"` 原生清除鈕是否與放大鏡擠在同一側。
-  - 匯出中切到別的分頁再切回：新掛載的提領頁 ref 是 false、可再按一次，舊實例的收集迴圈仍會跑完並 `link.click()`
-    → 雙下載。修法是把匯出旗標提升到分頁殼層（或匯出期間停用分頁切換），S5 動 admin 狀態層時一起做（#359 審查 #9）。
-  - 會員頁「載入更多」進行中送出搜尋，loadMore 晚回來仍會把舊頁尾接到新列表（既有競態，`usePagedList` 沒有序號守衛；
-    S3 只停用了重新整理）→ hook 加請求序號（#359 審查 #10）。
-  - `SystemAlerts` 的重新整理鈕是後台第三套自刻的（`SystemAlerts.tsx` 告警清單上方），S3 沒套 AdminToolbar：該頁沒有篩選、
-    版面無收益。退場條件：S5 若統一手動刷新入口（SWR 化）就一併收進 AdminToolbar（#359 審查 #15）。
 - **S4 遺留**（#365，業主裁決 D1／D12 與審查第 1 項）：
   - 會員詳情的近期提領只有最近 10 筆、沒有總筆數（`admin_member_detail` SQL `limit 10`），UI 也看不到單一會員的完整提領史——
     提領管理沒有搜尋框（後端 `/admin/withdrawals?search=` 已支援、前端沒接）。面板只寫「最多列出最近 10 筆」。
@@ -135,15 +124,18 @@
     `apiClient` 加 `AbortSignal.timeout` 落地。
   - `ui/dialog.tsx` 關閉鈕的無障礙名稱仍是英文「Close」（S4 只改了 `ui/sheet.tsx`，因為 `e2e/steps/profile_steps.py:95`
     依賴 Dialog 的「Close」）。退場條件：改成「關閉」並同步該 e2e 定位器。
-  - 會員詳情「最後意圖勝出」的請求序號是元件內手寫（`MemberManagement.tsx` 的 `detailSeq`），S5 預定在 `usePagedList` 另加序號
-    （#359 審查 #10）——會並存兩種寫法。退場條件：S5 動 admin 狀態層時收斂成一個 hook（例：`useLatestRequest`）。
-    同一條一併處理的窗口（#365 主 session 審查 P2-10，業主裁決 D）：動作在途時關面板、重開同一位（讀取在途）、動作才成功——
-    重開那次讀取若早於變更提交，面板停在舊狀態且不補讀（`panelShowsTarget()` 此時為 false）。修法是逐會員的變更版本號，
-    S5 收斂序號時一起做，S4 不加第三層守衛。
-  - 管理動作後 `list.reload()` 期間列表換成骨架、「查看」鈕卸載，這個窗口內關面板焦點落回 body（只影響鍵盤使用者）。退場條件：S5 改
-    stale-while-revalidate 後重新整理不再換骨架，屆時自然消失；S5 收尾時確認。
   - 停權端點每次都覆寫 `profiles.suspended_at`（非冪等，`api/index.ts` 的停權 handler）：兩位 admin 或雙分頁其一是舊面板時再按「暫停」，
     會改寫會員詳情新顯示的「暫停時間」。S4 零 API 變更，未修。退場條件：後端改成 `suspended_at` 已非 null 時不覆寫（另開 `/fix-bug`）。
-  - 空字串姓名的同類掃描（#365 主 session 審查 P1-1）：會員管理七處已改用 `memberName`／`memberLabel`；`IdReviewQueue.tsx`
-    三處（退回對話框標題、卡片標題、照片 alt）仍是 `name ?? …`。UI 上上傳證件在會員區、註冊 Step 2 寫入姓名之後，但
-    `/rewards/upload-id-photos` 只驗登入——直打 API 可達。退場條件：證件審核下次改動時改用 `memberLabel`（S4 不擴範圍）。
+- **S5 遺留**（#371）：
+  - 後端讀取與冪等的四個缺口——提領狀態更新與批次不透傳 `idempotent`、`/admin/withdrawals` 統計與附屬查詢的錯誤被讀成
+    200、`/admin/announcements` 與 `/admin/id-reviews` 簽名網址的錯誤被讀成 200、提領 CSV 匯出的補償式變動（offset 分頁，
+    根治要 keyset 或快照）。規格書 §14 第 10–13 列；另開 `/fix-bug`（後端）。
+  - 導覽列「待處理提領」badge 只在載入時讀一次，後台寫入後不更新；母計畫「待審佇列數即時」的需求沒有工項承接。
+  - 公告與告警列表最多 100 筆、沒有揭露總數。退場條件：告警 UI 讀回應的 `total`（寫「已顯示 X / Y 筆」）、公告端點回總數時。
+  - `SystemNotifications`／`SystemAlerts` 仍在元件內打 `apiClient`（與 AdminDashboard props 注入的慣例不同，檔頭寫明）。
+    退場條件：下次改這兩支的取數或寫入時搬進 AdminDashboard 以 props 注入。
+  - 兩套快取並存：會員區的 `DataCacheContext`（寫 sessionStorage、只在登出清）與後台的記憶體快取（`adminCache.ts`）。收斂
+    條件：S7 之後評估 `DataCacheProvider` 能否支援不落地與依參數的鍵，能才併。
+  - `SLOW_UPDATE_MS`（15 秒慢更新，放行重新整理並遮住收款資訊）是 `apiClient` 沒有逾時的權宜。退場條件：全站 `apiClient`
+    逾時上線後拿掉，逾時改走一般的失敗路徑（與 S4 遺留的 abort 同一件事）。
+  - 匯出提升到分頁殼層、切分頁不中斷（S5 裁決 B 另案）：現在匯出期間鎖分頁，離開 `/admin` 就中止。
