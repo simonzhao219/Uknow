@@ -35,7 +35,10 @@ export const UNKNOWN_OUTCOME = {
   member: (name: string) => `${name}：未收到伺服器確認，結果不明，詳情更新後請確認`,
   /** 證件審核通過／退回：佇列重讀一次（E4），請 admin 從佇列確認。 */
   idReview: (name: string) => `${name}：未收到伺服器確認，結果不明，佇列更新後請確認`,
-  announcementCreate: '',
-  announcementDelete: '',
-  alertResolve: '',
+  /** 公告建立：列表重讀一次（K3）；表單不清，確認列表上沒有這則再重發。 */
+  announcementCreate: '未收到伺服器確認，結果不明，請確認公告列表後再決定是否重發',
+  /** 公告刪除：列表重讀一次（K3）。刪除沒有「重發」可言，與建立分開。 */
+  announcementDelete: '未收到伺服器確認，結果不明，請確認公告列表',
+  /** 告警標記已處理：列表重讀一次（K3）。 */
+  alertResolve: '未收到伺服器確認，結果不明，請確認告警列表',
 };
