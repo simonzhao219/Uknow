@@ -343,7 +343,6 @@ describe('後台 PII 不得落地', () => {
     const admin = (name: string) => join('src', 'components', 'admin', name);
     const strict = ['adminCache.ts', 'useAdminList.ts', 'AdminConsole.tsx'].map(admin);
     // 掃描範圍本身也要釘住：檔案改名、搬家或 walk 漏掃時，「沒有違規」只是因為沒掃到。
-    // AdminConsole.tsx 在階段 7 才建立——建立它的那個紅燈 commit 把這裡的預期改成 []。
     const required = [
       ...strict,
       ...['WithdrawalManagement.tsx', 'MemberManagement.tsx', 'IdReviewQueue.tsx'].map(admin),
@@ -351,7 +350,7 @@ describe('後台 PII 不得落地', () => {
     expect(
       required.filter((rel) => !scoped.includes(rel)),
       '清單裡的檔案都要在掃描範圍內（改名或搬家時同步這份清單）',
-    ).toEqual([admin('AdminConsole.tsx')]);
+    ).toEqual([]);
     const offenders = scoped.flatMap((rel) => {
       const rules = strict.includes(rel) ? ADMIN_CACHE_RULES : ADMIN_PII_RULES;
       const source = readFileSync(join(REPO_ROOT, rel), 'utf8');

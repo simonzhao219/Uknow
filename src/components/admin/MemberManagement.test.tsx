@@ -1763,6 +1763,21 @@ describe('MemberManagement 寫入協議', () => {
     expect(members.getAttribute('aria-describedby')).toBeNull();
   });
 
+  // 與外層分頁同一個判準：停用立即生效，外觀等 0.3 秒——一般寫入 0.3 秒內結束時不閃灰。
+  it('鎖住未滿 0.3 秒的子分頁還不帶停用外觀，滿了才帶', () => {
+    vi.useFakeTimers();
+    try {
+      renderMembers({ busy: fakeBusy(true) });
+      const reviews = screen.getByRole('tab', { name: '證件審核' });
+      expect(reviews.getAttribute('data-locked')).toBeNull();
+      act(() => vi.advanceTimersByTime(300));
+      expect(reviews.getAttribute('data-locked')).toBe('true');
+      expect(screen.getByRole('tab', { name: '會員列表' }).getAttribute('data-locked')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cache 與 busy 轉給證件審核', async () => {
     const cache = createAdminCache();
     const busy = fakeBusy();
