@@ -33,5 +33,6 @@ export const UNKNOWN_OUTCOME = {
     '批次匯款未收到伺服器確認，結果不明。若款項已匯出請勿重匯，逐筆確認狀態後再補標記',
   /** 會員停權／恢復、授予／撤銷：面板仍顯示該人時一併重讀詳情（K3），請 admin 從詳情確認。 */
   member: (name: string) => `${name}：未收到伺服器確認，結果不明，詳情更新後請確認`,
-  idReview: (_name: string) => '',
+  /** 證件審核通過／退回：佇列重讀一次（E4），請 admin 從佇列確認。 */
+  idReview: (name: string) => `${name}：未收到伺服器確認，結果不明，佇列更新後請確認`,
 };
