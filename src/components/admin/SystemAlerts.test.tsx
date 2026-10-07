@@ -135,7 +135,7 @@ describe('SystemAlerts', () => {
     // 「同類事件才會再次告警」是這個動作的意義（見元件說明），所以標記完
     // 一定要重抓——不重抓的話畫面留著已處理的那筆，維運會重複處理。
     let resolved = false;
-    apiRequestJson.mockImplementation(async (url: unknown, init?: { method?: string }) => {
+    apiRequestJson.mockImplementation(async (_url: unknown, init?: { method?: string }) => {
       if (init?.method === 'POST') {
         resolved = true;
         return { success: true };

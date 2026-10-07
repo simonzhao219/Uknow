@@ -356,14 +356,15 @@ export function SystemAlerts({ busy = NOOP_BUSY, onAccessLost }: SystemAlertsPro
           ) : !isDesktop ? (
             <div className="space-y-3">
               {alerts.map((alert) => (
-                <div
+                // fieldset＝隱含 group 角色；min-w-0 蓋掉 fieldset 預設的 min-content 寬度——不然
+                // 斷不了行的來源或訊息會把整張卡撐出版面。
+                <fieldset
                   key={alert.id}
-                  role="group"
                   aria-label={`${alert.source} 的系統告警`}
                   // 程式化聚焦的落點（標記送出後）；不進 Tab 順序。
                   tabIndex={-1}
                   data-row-id={alert.id}
-                  className="scroll-mt-20 space-y-2 rounded-lg border p-3"
+                  className="min-w-0 scroll-mt-20 space-y-2 rounded-lg border p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     {getSeverityBadge(alert.severity)}
@@ -401,7 +402,7 @@ export function SystemAlerts({ busy = NOOP_BUSY, onAccessLost }: SystemAlertsPro
                   >
                     標記已處理
                   </Button>
-                </div>
+                </fieldset>
               ))}
             </div>
           ) : (

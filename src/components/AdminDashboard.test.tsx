@@ -32,7 +32,7 @@ vi.mock('../utils/apiClient', () => ({
 const { UserCtx } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
-    UserCtx: createContext<any>({
+    UserCtx: createContext<Record<string, unknown>>({
       user: { id: 'admin-1' },
       isLoggedIn: true,
       isAdmin: true,
@@ -127,7 +127,9 @@ describe('平台管理的分頁導覽', () => {
 describe('會員驗證捷徑', () => {
   function LandedAt() {
     const loc = useLocation();
-    return <div data-testid="landed-at">{`${loc.search}|${(loc.state as any)?.from ?? ''}`}</div>;
+    return (
+      <div data-testid="landed-at">{`${loc.search}|${(loc.state as { from?: string } | null)?.from ?? ''}`}</div>
+    );
   }
 
   it('點下去落在掃描分頁，並把來源記成管理後台', () => {

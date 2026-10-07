@@ -385,14 +385,15 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
             ) : (
               <div className="space-y-4">
                 {announcements.map((a) => (
-                  <div
+                  // fieldset＝隱含 group 角色（以標題為名）；min-w-0 蓋掉 fieldset 預設的 min-content
+                  // 寬度——不然長網址會把整則撐出版面（P15）。
+                  <fieldset
                     key={a.id}
-                    role="group"
                     aria-label={a.title}
                     // 程式化聚焦的落點（刪除送出後）；不進 Tab 順序。
                     tabIndex={-1}
                     data-row-id={a.id}
-                    className="scroll-mt-20 border rounded-lg p-4"
+                    className="min-w-0 scroll-mt-20 border rounded-lg p-4"
                   >
                     {/* P12:標題與右側三個 badge ＋ 刪除鍵在 375px 下互相擠壓。 */}
                     <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
@@ -424,7 +425,7 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
                       生效：{formatTwTimestamp(a.startsAt)}
                       {a.endsAt ? ` ~ ${formatTwTimestamp(a.endsAt)}` : '（無期限）'}
                     </p>
-                  </div>
+                  </fieldset>
                 ))}
               </div>
             )}

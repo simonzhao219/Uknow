@@ -22,13 +22,23 @@ import {
   type PagedResult,
   type RefreshOutcome,
   type UsePagedList,
+  type UsePagedListOptions,
   usePagedList,
 } from './usePagedList';
 
 afterEach(cleanup);
 
-function Probe({ load }: { load: (p: { limit: number; offset: number }) => Promise<any> }) {
-  const list = usePagedList<{ id: string }>({ load, pageSize: 2, deps: [] });
+// load 的結果用 Partial：「後端少回 items 或 total」那條要餵缺欄位的回應。
+function Probe({
+  load,
+}: {
+  load: (p: { limit: number; offset: number }) => Promise<Partial<PagedResult<{ id: string }>>>;
+}) {
+  const list = usePagedList<{ id: string }>({
+    load: load as UsePagedListOptions<{ id: string }>['load'],
+    pageSize: 2,
+    deps: [],
+  });
   return (
     <div>
       <span data-testid="items">{list.items.map((i) => i.id).join(',')}</span>

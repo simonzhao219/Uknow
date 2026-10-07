@@ -293,7 +293,7 @@ describe('MemberManagement', () => {
     fireEvent.change(screen.getByRole('searchbox'), {
       target: { value: '王小明' },
     });
-    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+    fireEvent.submit(screen.getByRole('searchbox').closest('form') as HTMLFormElement);
 
     await waitFor(() =>
       expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '王小明' })),
@@ -314,7 +314,7 @@ describe('MemberManagement', () => {
     renderConsole({ loadMembers: load });
     await screen.findAllByText('陳大文');
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '王小明' } });
-    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+    fireEvent.submit(screen.getByRole('searchbox').closest('form') as HTMLFormElement);
     await waitFor(() =>
       expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ search: '王小明' })),
     );

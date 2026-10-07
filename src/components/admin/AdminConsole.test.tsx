@@ -11,13 +11,13 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { AdminBusy, AdminExportSession } from './adminBusy';
 import { type AdminCache, createAdminCache } from './adminCache';
 
-type Props = Record<string, any>;
+type Props = Record<string, unknown>;
 
 const seen = vi.hoisted(() => ({
-  withdrawals: [] as Record<string, any>[],
-  members: [] as Record<string, any>[],
-  notifications: [] as Record<string, any>[],
-  alerts: [] as Record<string, any>[],
+  withdrawals: [] as Props[],
+  members: [] as Props[],
+  notifications: [] as Props[],
+  alerts: [] as Props[],
 }));
 
 vi.mock('./WithdrawalManagement', () => ({
@@ -137,7 +137,7 @@ describe('AdminConsole 快取 store 的生命週期', () => {
   it('告警讀取回 403 時清空的是同一個 store', () => {
     const { stores } = renderConsole();
     fireEvent.mouseDown(tab('系統告警'));
-    act(() => last(seen.alerts).onAccessLost());
+    act(() => (last(seen.alerts).onAccessLost as () => void)());
     expect(stores[0].invalidate).toHaveBeenCalledWith('accessLost');
   });
 
