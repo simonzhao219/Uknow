@@ -559,7 +559,7 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 2-2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
-- [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
+- [ ] 步驟 5：health 的 `sha` 相符、`defaultReferrer` 為 `ok`（已啟用機制的環境）、sandbox 付款成功、收到 OTP 驗證碼信
 - [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
 - [ ] 步驟 7（僅全新資料庫）：宣告前 `check` 確認是預定的帳號且 `userName` 非空；
