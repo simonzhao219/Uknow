@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
@@ -32,6 +32,7 @@ import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
 import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { usePagedList } from '../../hooks/usePagedList';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
 import type {
@@ -160,13 +161,9 @@ export function WithdrawalManagement({
   // 退件與代為完成不鎖——那是客服接到電話當下就該能處理的事。
   const isDesktop = useMediaQuery('(min-width: 768px)');
 
-  const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [stats, setStats] = useState<AdminWithdrawalStats>(EMPTY_STATS);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  // 動作與匯出的失敗（列表讀取的失敗在 list.error）。
+  const [actionError, setActionError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   // 匯出中。state 驅動畫面；ref 擋重入——setState 要等 re-render 才讓按鈕
   // disabled，同一個 tick 連按兩次會並行跑兩輪收集、下載兩份對帳檔。
@@ -196,49 +193,34 @@ export function WithdrawalManagement({
     if (!isDesktop) setSelected(new Set());
   }, [isDesktop]);
 
-  const fetchWithdrawals = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const data = await loadWithdrawals({ status: statusFilter, limit: PAGE_SIZE, offset: 0 });
-      const rows = data.withdrawals ?? [];
-      setWithdrawals(rows);
-      // 缺欄位就退回保守值，不要讓它變成 undefined 再往下讀。這一段是 e2e
-      // 教出來的：舊 mock 不回 total／stats，`stats.pendingAmount` 直接擲錯，
-      // 而 WithdrawalManagement 是 AdminDashboard 的預設分頁——一個面板的
-      // payload 形狀不合，**整個後台的分頁一起打不開**。爆炸半徑不該這麼大。
-      setTotal(data.total ?? rows.length);
-      setStats(data.stats ?? EMPTY_STATS);
-      // 換一批資料就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在
-      // 的列，而下一步是不可回退的批次匯款。
-      setSelected(new Set());
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
-    } finally {
-      setIsLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  // 分頁走共用 hook（序號、載入更多與重讀互擋）。缺欄位時 hook 退回保守值，不要讓
+  // 它變成 undefined 再往下讀——這是 e2e 教出來的：舊 mock 不回 total／stats，
+  // `stats.pendingAmount` 直接擲錯，而 WithdrawalManagement 是 AdminDashboard 的預設
+  // 分頁，一個面板的 payload 形狀不合，**整個後台的分頁一起打不開**。
+  const list = usePagedList<AdminWithdrawalRecord, AdminWithdrawalStats>({
+    pageSize: PAGE_SIZE,
+    deps: [statusFilter],
+    load: async ({ limit, offset }) => {
+      const data = await loadWithdrawals({ status: statusFilter, limit, offset });
+      return { items: data.withdrawals, total: data.total, meta: data.stats };
+    },
+  });
+  const withdrawals = list.items;
+  const total = list.total;
+  const stats = list.meta ?? EMPTY_STATS;
+  // 任何重讀都出骨架（遷移前的行為）；背景更新在下一步才接上。
+  const isLoading = list.isLoading || list.isRevalidating;
+  const isLoadingMore = list.isLoadingMore;
+  const loadError = actionError ?? list.error ?? list.loadMoreError;
 
-  useEffect(() => {
-    fetchWithdrawals();
-  }, [fetchWithdrawals]);
-
-  const loadMore = async () => {
-    setIsLoadingMore(true);
-    try {
-      const data = await loadWithdrawals({
-        status: statusFilter,
-        limit: PAGE_SIZE,
-        offset: withdrawals.length,
-      });
-      setWithdrawals((prev) => [...prev, ...(data.withdrawals ?? [])]);
-      setTotal((prev) => data.total ?? prev);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '無法取得提領申請');
-    } finally {
-      setIsLoadingMore(false);
-    }
+  // 重讀。開頭清掉上一輪的錯誤——批次的「先重抓、再報告」靠這個順序；成功才清勾選：
+  // 換一批資料，「已選取 N 筆」就指向畫面上已經不存在的列，而下一步是不可回退的
+  // 批次匯款。
+  const fetchWithdrawals = async () => {
+    setActionError(null);
+    const outcome = await list.reload();
+    if (outcome === 'done') setSelected(new Set());
+    return outcome;
   };
 
   // 作業面板預設盯著第一筆：admin 開著網銀時，面板必須一進畫面就有內容，
@@ -267,19 +249,19 @@ export function WithdrawalManagement({
     setBatchOpen(false);
     try {
       const result = await batchMarkPaid(items);
-      // **先重抓，再報告。** 反過來寫的話 fetchWithdrawals 的 setLoadError(null)
+      // **先重抓，再報告。** 反過來寫的話 fetchWithdrawals 的 setActionError(null)
       // 會把剛寫上去的訊息清掉——admin 做完 12 筆、其中 1 筆失敗，畫面卻什麼
       // 都不說，他會以為全部成功。批次不可回退，那筆漏掉的不會自己浮出來。
       await fetchWithdrawals();
       if (result.failed.length) {
-        setLoadError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
+        setActionError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
       } else {
         setActionMessage(`已標記匯款完成：${result.succeeded.length} 筆`);
       }
       return;
     } catch (err) {
       await fetchWithdrawals();
-      setLoadError(err instanceof Error ? err.message : '批次標記失敗');
+      setActionError(err instanceof Error ? err.message : '批次標記失敗');
     }
   };
 
@@ -309,7 +291,7 @@ export function WithdrawalManagement({
       setActionMessage(`${ACTION_DONE[status]}：${record.userName}`);
       await fetchWithdrawals();
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '狀態更新失敗');
+      setActionError(err instanceof Error ? err.message : '狀態更新失敗');
     } finally {
       setProcessingId(null);
     }
@@ -321,7 +303,7 @@ export function WithdrawalManagement({
     // 那幾筆不會自己浮出來。超過上限就明說，並告訴 admin 怎麼縮小範圍。
     if (total > CSV_MAX_ROWS) {
       setActionMessage(null);
-      setLoadError(
+      setActionError(
         `本次篩選有 ${total} 筆，超過匯出上限 ${CSV_MAX_ROWS} 筆。` +
           `請縮小日期範圍或狀態篩選後再匯出。`,
       );
@@ -347,7 +329,7 @@ export function WithdrawalManagement({
         }
         rows = collected;
       } catch (err) {
-        setLoadError(err instanceof Error ? err.message : '匯出失敗，請稍後再試');
+        setActionError(err instanceof Error ? err.message : '匯出失敗，請稍後再試');
         return;
       }
     }
@@ -385,7 +367,7 @@ export function WithdrawalManagement({
     link.download = `獎金提領申請_${twDayOf()}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
-    setLoadError(null);
+    setActionError(null);
     // LINE 等內建瀏覽器的下載常無聲無息、甚至根本沒落檔，而 link.click() 偵測不到
     // ——那裡說「已匯出」可能是假成功，改成說出怎麼補救。
     setActionMessage(
@@ -727,8 +709,10 @@ export function WithdrawalManagement({
               <Select
                 value={statusFilter}
                 onValueChange={(next) => {
-                  // 上一次的匯出回報（「已匯出 N 筆」）屬於舊篩選，換篩選就收掉。
+                  // 上一次的匯出回報（「已匯出 N 筆」）、動作錯誤與勾選都屬於舊篩選，換篩選就收掉。
                   setActionMessage(null);
+                  setActionError(null);
+                  setSelected(new Set());
                   setStatusFilter(next);
                 }}
                 disabled={isExporting}
@@ -938,7 +922,11 @@ export function WithdrawalManagement({
 
           {!isLoading && !loadError && withdrawals.length < total && (
             <div className="pt-4 text-center">
-              <Button tone="secondary" onClick={loadMore} disabled={isLoadingMore || isExporting}>
+              <Button
+                tone="secondary"
+                onClick={list.loadMore}
+                disabled={isLoadingMore || isExporting}
+              >
                 {isLoadingMore ? '載入中…' : '載入更多'}
               </Button>
             </div>
