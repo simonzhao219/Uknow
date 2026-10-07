@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
+import { PAUSED_LOOK, type RemittanceGate } from './remittanceGate';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,18 +32,19 @@ import {
 
 export interface CardOverflowAction {
   label: string;
-  onSelect: () => void;
+  /**
+   * `trigger` 是 ⋯ 鈕：從選單開出的對話框沒有 Trigger，關閉時焦點要還給它，不是整張卡。
+   */
+  onSelect: (trigger: HTMLElement | null) => void;
   disabled?: boolean;
   destructive?: boolean;
   /**
-   * 暫停（例：提領資料未確認時的查看證件）：aria-disabled、選了不動作，但仍在 roving
-   * focus 裡——Radix 的 disabled 會讓鍵盤跳過它，報讀器使用者就聽不到停用的原因。
+   * 匯款類閘門（例：提領資料未確認時的查看證件）：暫停時 aria-disabled、選了不動作，但仍在
+   * roving focus 裡——Radix 的 disabled 會讓鍵盤跳過它，報讀器使用者就聽不到停用的原因。
+   * 停用外觀出現時項目內補一行短原因（`hint`）：觸控沒有游標可變，只變淡的話點了沒反應
+   * 也看不出是壞了還是在等。
    */
-  paused?: boolean;
-  /** 停用的外觀：頁面在更新超過 0.3 秒、失敗或逾時時才給。 */
-  pausedLook?: boolean;
-  /** 停用原因所在節點的 id。 */
-  describedBy?: string;
+  gate?: RemittanceGate;
 }
 
 interface CardOverflowMenuProps {
@@ -51,43 +54,54 @@ interface CardOverflowMenuProps {
 }
 
 export function CardOverflowMenu({ label, actions }: CardOverflowMenuProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={label}>
+        <Button ref={triggerRef} variant="ghost" size="icon" aria-label={label}>
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {actions.map((a) => (
-          <DropdownMenuItem
-            key={a.label}
-            onSelect={(event) => {
-              if (a.paused) {
-                event.preventDefault();
-                return;
-              }
-              a.onSelect();
-            }}
-            disabled={a.disabled}
-            aria-disabled={a.paused || undefined}
-            aria-describedby={a.paused ? a.describedBy : undefined}
-            data-paused={a.paused && a.pausedLook ? 'true' : undefined}
-            // §1 觸控 ≥44px。DropdownMenuItem 基底是 px-2 py-1.5（實測 32px），
-            // 而 ⋯ trigger 本身已經是 44×44——入口 44、開出來 32 是說不通的。
-            // 只補在這裡、**不動 ui/dropdown-menu.tsx 基底**:比照 R2 的
-            // checkbox opt-in 先例，改基底會連帶把 Navbar 的六個選單項各加
-            // 12px，那是範圍外的視覺變更。
-            className={cn(
-              'pointer-coarse:min-h-[44px]',
-              'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50',
-              a.destructive &&
-                'text-destructive-subtle-foreground focus:text-destructive-subtle-foreground',
-            )}
-          >
-            {a.label}
-          </DropdownMenuItem>
-        ))}
+        {actions.map((a) => {
+          const paused = a.gate?.paused ?? false;
+          const look = paused && (a.gate?.look ?? false);
+          return (
+            <DropdownMenuItem
+              key={a.label}
+              onSelect={(event) => {
+                if (paused) {
+                  event.preventDefault();
+                  return;
+                }
+                a.onSelect(triggerRef.current);
+              }}
+              disabled={a.disabled}
+              aria-disabled={paused || undefined}
+              aria-describedby={paused ? a.gate?.describedBy : undefined}
+              data-paused={look ? 'true' : undefined}
+              // §1 觸控 ≥44px。DropdownMenuItem 基底是 px-2 py-1.5（實測 32px），
+              // 而 ⋯ trigger 本身已經是 44×44——入口 44、開出來 32 是說不通的。
+              // 只補在這裡、**不動 ui/dropdown-menu.tsx 基底**:比照 R2 的
+              // checkbox opt-in 先例，改基底會連帶把 Navbar 的六個選單項各加
+              // 12px，那是範圍外的視覺變更。
+              className={cn(
+                'pointer-coarse:min-h-[44px]',
+                PAUSED_LOOK,
+                a.destructive &&
+                  'text-destructive-subtle-foreground focus:text-destructive-subtle-foreground',
+              )}
+            >
+              {a.label}
+              {/* 名稱不變（報讀器走 aria-describedby），小字只給看得到的人。 */}
+              {look && a.gate?.hint && (
+                <span aria-hidden="true" className="ml-auto text-xs text-muted-foreground">
+                  {a.gate.hint}
+                </span>
+              )}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

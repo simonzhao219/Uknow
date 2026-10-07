@@ -21,7 +21,14 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
  * 讀取失敗的錯誤字維持後端原文——固定文案只用在寫入結果不明。
  */
 export const UNKNOWN_OUTCOME = {
+  /** 退件與代為完成：沒有轉帳，只請 admin 回頭確認那一筆。 */
   withdrawal: (name: string) => `${name}：未收到伺服器確認，結果不明，列表更新後請確認該筆狀態`,
-  withdrawalPaid: (_name: string) => '',
-  withdrawalBatch: '批次匯款未收到伺服器確認，結果不明，請逐筆確認列表',
+  /**
+   * 標記已匯款是網銀轉出**之後**才按的：重讀後若仍顯示待處理，最可能的誤判是「沒匯成」而
+   * 再匯一次（業主 2026-10-07 裁決 E）。
+   */
+  withdrawalPaid: (name: string) =>
+    `${name}：未收到伺服器確認，結果不明。若款項已匯出請勿重匯，確認狀態後再補標記`,
+  withdrawalBatch:
+    '批次匯款未收到伺服器確認，結果不明。若款項已匯出請勿重匯，逐筆確認狀態後再補標記',
 };

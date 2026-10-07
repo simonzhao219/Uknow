@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
-import type { RemittanceGate } from './remittanceGate';
+import { PAUSED_LOOK, type RemittanceGate, gateProps } from './remittanceGate';
 
 export interface AdminToolbarProps {
   /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度；沒有篩選的頁面鈕靠右。 */
@@ -18,15 +18,12 @@ export interface AdminToolbarProps {
   statusText?: string;
   /** 真停用、點了不呼叫 `onRefresh`：載入更多進行中（舊頁尾不得接到重設的列表上）。 */
   refreshDisabled?: boolean;
-  /** CSV 停用的原因（狀態行或錯誤區的 id）。 */
+  /** 沒東西可匯時的原因（例：錯誤區的 id）；比閘門的原因優先。 */
   exportDescribedBy?: string;
   /**
-   * 匯款類閘門關著（資料未確認）：CSV 鈕 aria-disabled、點擊不匯出。不用原生 disabled——
-   * 0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
+   * 匯款類閘門（資料未確認、批次在途）：CSV 鈕 aria-disabled、點擊不匯出，停用的外觀依
+   * `look`。不用原生 disabled——0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
    */
-  exportPaused?: boolean;
-  /** 停用的外觀：頁面在更新超過 0.3 秒、失敗或逾時時才給。 */
-  exportPausedVisible?: boolean;
   exportGate?: RemittanceGate;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
@@ -43,6 +40,7 @@ export interface AdminToolbarProps {
 const ICON_TO_LABELED = 'md:w-auto md:px-3 md:pointer-coarse:w-auto';
 
 const EXPORT_NAME = '下載 CSV（含身分證與帳號）';
+const OPEN_GATE: RemittanceGate = { paused: false, look: false };
 const EXPORTING_NAME = '匯出中…';
 
 /**
@@ -61,8 +59,7 @@ export function AdminToolbar({
   statusText = '',
   refreshDisabled = false,
   exportDescribedBy,
-  exportPaused = false,
-  exportPausedVisible = false,
+  exportGate = OPEN_GATE,
   onExport,
   isExporting = false,
   canExport = true,
@@ -70,6 +67,7 @@ export function AdminToolbar({
 }: AdminToolbarProps) {
   const exportNameId = useId();
   const exportRef = useRef<HTMLButtonElement>(null);
+  const exportGateProps = gateProps(exportGate);
   const wasExporting = useRef(isExporting);
 
   // 匯出中 CSV 鈕被停用，按它的人焦點掉到 body；結束時還回來。使用者已經把焦點
@@ -114,17 +112,13 @@ export function AdminToolbar({
             type="button"
             tone="secondary"
             size="icon"
-            className={cn(
-              ICON_TO_LABELED,
-              'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50',
-            )}
-            onClick={exportPaused ? undefined : onExport}
-            aria-disabled={exportPaused || undefined}
-            data-paused={exportPaused && exportPausedVisible ? 'true' : undefined}
+            className={cn(ICON_TO_LABELED, PAUSED_LOOK)}
+            onClick={exportGate.paused ? undefined : onExport}
+            {...exportGateProps}
+            aria-describedby={exportDescribedBy ?? exportGateProps['aria-describedby']}
             disabled={disabled || !canExport}
             loading={isExporting}
             aria-labelledby={exportNameId}
-            aria-describedby={exportDescribedBy}
             // 桌機滑過時看得到「含敏感資料」；手機與報讀靠名稱裡的同一段字。
             title={EXPORT_NAME}
           >

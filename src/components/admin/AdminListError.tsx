@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 
 /**
@@ -15,14 +16,30 @@ export interface AdminListErrorProps {
   onRetry: () => void;
   /** 停用的匯出鈕在沒有資料時以 aria-describedby 指向這裡。 */
   id?: string;
+  /**
+   * 重試進行中（業主裁決 A）：區塊留在原位（焦點不掉到 body），寫「正在更新…」、不以 alert
+   * 打斷（狀態文字已在播「正在更新」）；鈕顯示進行中、按了不重送。
+   */
   retrying?: boolean;
 }
 
-export function AdminListError({ message, retryLabel, tone, onRetry, id }: AdminListErrorProps) {
+export function AdminListError({
+  message,
+  retryLabel,
+  tone,
+  onRetry,
+  id,
+  retrying = false,
+}: AdminListErrorProps) {
   return (
-    <div id={id} role="alert" className="space-y-3 py-12 text-center">
-      <p className="text-muted-foreground">{message}</p>
-      <Button tone={tone} onClick={onRetry}>
+    <div id={id} role={retrying ? undefined : 'alert'} className="space-y-3 py-12 text-center">
+      <p className="text-muted-foreground">{retrying ? '正在更新…' : message}</p>
+      <Button
+        tone={tone}
+        aria-disabled={retrying || undefined}
+        onClick={retrying ? undefined : onRetry}
+      >
+        {retrying && <RefreshCw aria-hidden="true" className="motion-safe:animate-spin" />}
         {retryLabel}
       </Button>
     </div>

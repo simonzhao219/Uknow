@@ -7,6 +7,7 @@ import { HiddenValue, WithdrawalFundingFields } from './WithdrawalFundingFields'
 import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
 import { DataAgeNote } from './DataAgeNote';
 import { Skeleton } from '../ui/skeleton';
+import type { RemittanceGate } from './remittanceGate';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -33,16 +34,18 @@ interface WithdrawalCardListProps {
   activeId: string | null;
   onActivate: (id: string | null) => void;
   onCopyAccount: (account: string) => void;
-  onOpenIdCard: (record: AdminWithdrawalRecord) => void;
-  onOpenHistory: (record: AdminWithdrawalRecord) => void;
+  /** 第二個參數是 ⋯ 鈕：對話框關閉時焦點還給它。 */
+  onOpenIdCard: (record: AdminWithdrawalRecord, trigger: HTMLElement | null) => void;
+  onOpenHistory: (record: AdminWithdrawalRecord, trigger: HTMLElement | null) => void;
   /** 第二個參數是按下的鈕：確認框取消或 Esc 時焦點還給它。 */
   onReject: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
   onComplete: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
-  processingId: string | null;
+  /** 寫入在途的列（可以同時有好幾筆）：各自的動作鈕停用。 */
+  processing: ReadonlySet<string>;
   /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
   actionsDisabled?: boolean;
   formatAmount: (n: number) => string;
-  /** 失敗或逾時：卡片上的匯款金額遮住（扣點照常，K6）。 */
+  /** 失敗或逾時之後、本次讀取確認之前：卡片上的匯款金額遮住（扣點照常，K6；裁決 A）。 */
   masked?: boolean;
   /**
    * 展開區的五欄（G）：`ready` 顯示；`pending` 是更新中的骨架；`paused` 是失敗或逾時時的
@@ -50,7 +53,7 @@ interface WithdrawalCardListProps {
    */
   fundingState?: 'ready' | 'pending' | 'paused';
   /** 查看證件的閘門（K5）：⋯ 選單裡只有它會停用。 */
-  idCardGate?: { paused: boolean; look: boolean; describedBy?: string };
+  idCardGate?: RemittanceGate;
   /** 展開區的資料時間（綁列表當下的資料）。 */
   fetchedAt?: number | null;
   now?: number;
@@ -65,7 +68,7 @@ export function WithdrawalCardList({
   onOpenHistory,
   onReject,
   onComplete,
-  processingId,
+  processing,
   actionsDisabled = false,
   formatAmount,
   masked = false,
@@ -137,7 +140,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="destructive"
                     onClick={(e) => onReject(w, e.currentTarget)}
-                    disabled={actionsDisabled || processingId === w.id}
+                    disabled={actionsDisabled || processing.has(w.id)}
                   >
                     退件
                   </Button>
@@ -147,7 +150,7 @@ export function WithdrawalCardList({
                     size="sm"
                     tone="secondary"
                     onClick={(e) => onComplete(w, e.currentTarget)}
-                    disabled={actionsDisabled || processingId === w.id}
+                    disabled={actionsDisabled || processing.has(w.id)}
                   >
                     代為完成
                   </Button>
@@ -161,12 +164,10 @@ export function WithdrawalCardList({
                     actions={[
                       {
                         label: '查看證件',
-                        onSelect: () => onOpenIdCard(w),
-                        paused: idCardGate?.paused,
-                        pausedLook: idCardGate?.look,
-                        describedBy: idCardGate?.describedBy,
+                        onSelect: (trigger) => onOpenIdCard(w, trigger),
+                        gate: idCardGate,
                       },
-                      { label: '查看歷史', onSelect: () => onOpenHistory(w) },
+                      { label: '查看歷史', onSelect: (trigger) => onOpenHistory(w, trigger) },
                     ]}
                   />
                 </div>

@@ -12,6 +12,12 @@ import type { PagedResult } from '../../hooks/usePagedList';
  * - **離開就停**：每個 await 之後都檢查仍掛載，卸載就不再發下一頁、也不交出資料
  *   （`aborted`）——離開 /admin 之後不該冒出一份下載。
  *
+ * **核對擋不住的情況（殘餘風險，業主 2026-10-07 裁決 C 接受）**：補償式變動——收集途中一筆
+ * 新申請排進已收過的範圍前面、同時一筆已收過的離開篩選，總數不變、筆數相符、id 不重複，
+ * 檔案卻留著那筆已離開的、漏掉新進的那筆。offset 分頁在前端無法根治；根治（keyset 分頁或
+ * 匯出快照）登在規格書 §14 的後端遺留。所以這裡的核對是「擋下大多數位移」，不保證
+ * 「不給半份」。
+ *
  * 讀取失敗直接往上丟：`loadPage` 是 useAdminList 給的、帶 403 偵測的取數，403 會先清空
  * 快取再丟出來。
  */
@@ -39,7 +45,8 @@ export async function collectExportRows<T extends { id: string }>({
   while (rows.length < total) {
     const page = await loadPage({ limit: pageSize, offset: rows.length });
     if (!isMounted()) return { ok: false, reason: 'aborted' };
-    if (page.total !== total) return { ok: false, reason: 'changed' };
+    // 缺 total 的回應沿用起始總數（同 usePagedList 載入更多的後備），筆數與重複照樣核對。
+    if ((page.total ?? total) !== total) return { ok: false, reason: 'changed' };
     const batch = page.items ?? [];
     if (batch.length === 0) break; // 回空頁就停，避免無限迴圈；少收的由下面的核對擋下
     rows.push(...batch);

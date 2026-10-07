@@ -12,6 +12,8 @@ import type { RefreshOutcome } from '../../hooks/usePagedList';
  * - 前一次按下還沒結算又按，文字在「正在更新」與「仍在更新」之間交替——同一串字報讀器
  *   不會再念一次，等於按了沒有回饋。
  * - 切回與寫入後的自動更新不寫、不播：只有按下的人需要回饋。
+ * - 換篩選、寫入引起的重讀開始時頁面呼叫 `reset()`：上一次的「已更新」「更新失敗」已經
+ *   不是在說眼前的列表；在等的那次按下一併作廢，晚到的結算不再寫入。
  */
 export interface RefreshableList {
   /** 首次載入或背景更新中（慢更新時為 false，放行重新整理）。 */
@@ -62,7 +64,11 @@ export function useRefreshAnnouncer(list: RefreshableList): {
     });
   };
 
-  const reset = () => {};
+  const reset = () => {
+    lastPress.current += 1;
+    unsettled.current = false;
+    show('');
+  };
 
   return { statusText, refresh, reset };
 }

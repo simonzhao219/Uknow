@@ -17,7 +17,8 @@ import { useLatestRequest } from './useLatestRequest';
  * 載入更多帶當下那張；結算時 ticket 已不是最新就整個丟掉，不改任何 state、不呼叫
  * `onLanded`。身分是 `deps` 的序列化；身分與 `load` 存在 ref，寫入 await 之後才呼叫的
  * 舊閉包 `reload` 讀的也是當下的身分。兩個方向都擋：重讀在途時不接受載入更多（舊尾
- * 不接到新列表上），載入更多在途時開始重讀即作廢它。
+ * 不接到新列表上），載入更多在途時開始重讀即作廢它。載入更多落地時總數變了（中間有人
+ * 新增或移出、offset 已位移），不接尾頁、改重讀一次。
  *
  * **有資料時的重讀在背景進行、失敗時保留舊列**（ui-ux-guidelines §5）。只有本身分
  * 還沒有任何資料時才是骨架（`isLoading`）；`isConfirmed` 只在最近一次重讀成功落地、
@@ -268,6 +269,12 @@ export function usePagedList<T, M = unknown>({
       const res = await invoke(() => fetchPage({ limit, offset: s.items.length }));
       if (!mounted.current || !requests.isLatest(ticket)) return;
       const now = stateRef.current;
+      // 總數變了：第一頁之後有人新增或移出，offset 已經位移——接上去會重複最後一列、漏掉最新
+      // 那列，狀態行卻說「已顯示 61 / 61」。不接尾頁，改重讀一次（業主裁決 D，時序例外）。
+      if (typeof res.total === 'number' && res.total !== now.total) {
+        startReload();
+        return;
+      }
       commit({
         ...now,
         items: [...now.items, ...(res.items ?? [])],
@@ -286,7 +293,7 @@ export function usePagedList<T, M = unknown>({
       // 被作廢的那次不碰重入 ref——重讀已經歸零，之後新按的那次可能正在跑。
       if (requests.isLatest(ticket)) moreInFlight.current = false;
     }
-  }, [commit, requests]);
+  }, [commit, requests, startReload]);
 
   useEffect(() => {
     mounted.current = true;
