@@ -210,8 +210,9 @@ describe('SystemNotifications 讀取', () => {
     expect(screen.getByText('系統維護預告')).toBeTruthy();
   });
 
-  // 業主 Q7：沒有工具列——沒有狀態文字代念「正在更新」，重試中的提示自己以 status 播報。
-  it('沒有資料時按重試，錯誤區以 status 播報「正在更新…」', async () => {
+  // 業主 Q7／R4：沒有工具列——重試中的「正在更新…」由區塊外常駐的 status 容器播報（容器在內容出現
+  // 之前就在、只換文字，同 AdminActionReport）；錯誤區與陳舊提示本身不切換 live 角色。
+  it('沒有資料時按重試，常駐的狀態容器播報「正在更新…」，結算後清空', async () => {
     const reads: ReturnType<typeof deferred<unknown>>[] = [];
     route({
       list: () => {
@@ -222,11 +223,18 @@ describe('SystemNotifications 讀取', () => {
     });
     render(<SystemNotifications />);
     await act(async () => reads[0].reject(new Error('連線失敗')));
+    const before = screen.getAllByRole('status');
     fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
-    expect(within(listRegion()).getByRole('status').textContent).toContain('正在更新…');
+    const announcing = screen.getAllByRole('status').find((el) => el.textContent === '正在更新…');
+    expect(announcing).toBeTruthy();
+    expect(before).toContain(announcing);
+    expect(within(listRegion()).queryByRole('status')).toBeNull();
+
+    await act(async () => reads[1].resolve(listOf([announcement()])));
+    expect(announcing?.textContent).toBe('');
   });
 
-  it('保留舊列的失敗按重試，提示以 status 播報「正在更新…」', async () => {
+  it('保留舊列的失敗按重試，常駐的狀態容器播報「正在更新…」', async () => {
     const cache = seedAnnouncements([announcement()]);
     const reads: ReturnType<typeof deferred<unknown>>[] = [];
     route({
@@ -238,9 +246,11 @@ describe('SystemNotifications 讀取', () => {
     });
     render(<SystemNotifications cache={cache} />);
     await act(async () => reads[0].reject(new Error('連線中斷')));
+    const before = screen.getAllByRole('status');
     fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
-    const statuses = screen.getAllByRole('status').map((el) => el.textContent ?? '');
-    expect(statuses.some((text) => text.includes('正在更新…'))).toBe(true);
+    const announcing = screen.getAllByRole('status').find((el) => el.textContent === '正在更新…');
+    expect(announcing).toBeTruthy();
+    expect(before).toContain(announcing);
   });
 
   it('逾時且有舊列時提示更新較久並附重試', () => {
@@ -290,6 +300,8 @@ describe('SystemNotifications 寫入', () => {
       [],
       1,
     ],
+    // 業主 Q1／R2：403＝權限可能已失，清空快取（不為那次寫入失效、不重讀）。
+    ['回 403', () => Promise.reject(rejected('沒有權限', 403)), ['accessLost'], 1],
   ] as const)('刪除%s時的失效事件與重讀', async (_label, remove, expected, reads) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');
@@ -318,6 +330,7 @@ describe('SystemNotifications 寫入', () => {
       [],
       1,
     ],
+    ['回 403', () => Promise.reject(rejected('沒有權限', 403)), ['accessLost'], 1],
   ] as const)('建立%s時的失效事件與重讀', async (_label, create, expected, reads) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');

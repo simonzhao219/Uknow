@@ -35,6 +35,7 @@ export interface AdminWriteOptions<R> {
   cache?: AdminCache;
   /** 可能已提交時要失效的事件；`null`＝不入失效表的寫入（證件審核、告警）。 */
   event: AdminMutationEvent | null;
+  onAccessLost?: () => void;
   submit: () => Promise<R>;
   /** 成功時是否真的有東西提交了（例：批次全數失敗＝沒有）。預設是。 */
   committed?: (result: R) => boolean;

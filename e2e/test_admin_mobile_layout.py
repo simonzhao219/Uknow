@@ -40,7 +40,7 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
 from mocks.admin_console_mock import build_admin_member_detail, route_admin_member_detail
-from mocks.backend_api_mock import build_admin_member
+from mocks.backend_api_mock import build_admin_member, build_admin_withdrawal
 from test_overflow_sweep import (
     LONG_EMAIL,
     NAME_CJK_10,
@@ -792,4 +792,30 @@ def test_admin_stats_skeleton_matches_the_summary_height(
     assert abs(skeleton - summary) <= 1, (
         f"{width}px 下「{section}」骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
         f"下面的內容跳 {abs(skeleton - summary)}px。骨架要跟摘要同形（同一個 dl、同樣會換行）。"
+    )
+
+
+# 佔位字取典型寬度（六位數待匯款）；七位數時摘要可能多換一行（業主 R7：補量測，若多換行就把佔位放寬到同高）。
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", [375, 320])
+def test_admin_stats_skeleton_matches_a_seven_digit_summary(
+    page, context, api_mock, rest_mock, width
+):
+    """待匯款總額到七位數時，手機統計骨架仍與摘要同高。"""
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.set_admin_withdrawals([build_admin_withdrawal(status="pending", amount=1_234_567)])
+    api_mock.hold_admin_withdrawal_list()
+    page.goto("/admin")
+    expect(page.get_by_role("status", name="載入提領申請中")).to_be_visible()
+    skeleton = _summary_child_height(page, "提領彙總")
+
+    api_mock.release_admin_withdrawal_list()
+    summary_row = page.locator('section[aria-label="提領彙總"] > dl')
+    expect(summary_row).to_contain_text("1,234,567")
+    summary = _summary_child_height(page, "提領彙總")
+
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下七位數待匯款：骨架 {skeleton}px、摘要 {summary}px——數字落地時下面的內容跳 "
+        f"{abs(skeleton - summary)}px。佔位字要放寬到七位數也同高。"
     )

@@ -306,6 +306,44 @@ describe('平台管理的記憶體快取', () => {
     expect(skeleton()).toBeTruthy();
   });
 
+  // 業主 Q1／R2：寫入回 403＝權限可能已失——不論哪一頁寫的，整個 store 清空。以告警為例（不拿 store、
+  // 只拿 onAccessLost，最後對照 P1-1 漏接的就是它）：提領已快取，告警標記回 403 後切回提領，舊列
+  // 不從快取出現、重新出骨架。
+  it('某頁寫入回 403 後切回提領，快取已清空、重新出骨架', async () => {
+    const alert = {
+      id: 'a1',
+      source: 'process_successful_payment',
+      severity: 'error',
+      message: '付款處理失敗，需人工介入',
+      context: {},
+      created_at: '2026-08-01T02:00:00Z',
+      resolved_at: null,
+    };
+    const isPost = (init: unknown) => (init as { method?: string } | undefined)?.method === 'POST';
+    api.mockImplementation(async (url: unknown, init?: unknown) => {
+      if (isPost(init)) throw Object.assign(new Error('沒有權限'), { status: 403 });
+      const path = String(url);
+      if (path.startsWith('/admin/withdrawals')) return WITHDRAWALS;
+      if (path.startsWith('/admin/system-alerts'))
+        return { success: true, data: { alerts: [alert] } };
+      return OTHERS;
+    });
+    renderAdminRoute();
+    await screen.findByRole('row', { name: /王小明/ });
+
+    openTab('系統告警');
+    fireEvent.click(await screen.findByRole('button', { name: '標記已處理' }));
+    await waitFor(() => expect(api.mock.calls.some(([, init]) => isPost(init))).toBe(true));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    held();
+    openTab('獎金提領管理');
+    expect(rowShown()).toBeNull();
+    expect(skeleton()).toBeTruthy();
+  });
+
   it('user 為 null 時照常渲染四個分頁', () => {
     render(
       <MemoryRouter>

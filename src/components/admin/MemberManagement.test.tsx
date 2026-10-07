@@ -1664,6 +1664,9 @@ describe('MemberManagement 寫入協議', () => {
   const refused: Write = async () => {
     throw conflict('該會員已被其他管理員處理');
   };
+  const denied: Write = async () => {
+    throw forbidden();
+  };
 
   it.each([
     ['暫停成功', 'suspend', ok, ['memberSuspend']],
@@ -1671,6 +1674,8 @@ describe('MemberManagement 寫入協議', () => {
     ['暫停被後端拒絕', 'suspend', refused, []],
     ['授予成功', 'admin', ok, ['memberAdmin']],
     ['授予被後端拒絕', 'admin', refused, []],
+    // 業主 Q1／R2：403＝權限可能已失，清空快取（不為那次寫入失效）。
+    ['暫停回 403', 'suspend', denied, ['accessLost']],
   ] as const)('%s時的失效事件', async (_label, kind, write, expected) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');

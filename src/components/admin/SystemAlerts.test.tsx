@@ -153,6 +153,18 @@ describe('SystemAlerts', () => {
     expect(await screen.findByText('目前沒有未處理的告警')).toBeTruthy();
   });
 
+  // 業主 Q1／R1（最後對照 P1-1）：寫入回 403＝權限可能已失。告警不拿 store，經 onAccessLost 請殼層清空。
+  it('標記已處理回 403 時通知殼層清空快取（onAccessLost）', async () => {
+    const onAccessLost = vi.fn();
+    apiRequestJson.mockImplementation(async (_url: unknown, init?: { method?: string }) => {
+      if (init?.method === 'POST') throw Object.assign(new Error('沒有權限'), { status: 403 });
+      return listResponse([alert()]);
+    });
+    render(<SystemAlerts onAccessLost={onAccessLost} />);
+    fireEvent.click(await screen.findByRole('button', { name: '標記已處理' }));
+    await waitFor(() => expect(onAccessLost).toHaveBeenCalledTimes(1));
+  });
+
   it('標記失敗時說出來,不靜默吞掉', async () => {
     mockApi([alert()], { resolveFails: true });
     render(<SystemAlerts />);

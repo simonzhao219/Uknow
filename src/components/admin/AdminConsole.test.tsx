@@ -96,7 +96,7 @@ const OTHER_TABS = ['會員管理', '系統公告', '系統告警'];
 const busyOf = () => last(seen.withdrawals).busy as AdminBusy;
 const WRITING = '處理中，完成前無法切換分頁';
 // 離開再回來時新讀到的列可能早於寫入提交（K4 殘餘風險）：提醒先確認那一筆（主 session 最後對照 P2-12）。
-const SLOW_WRITING = `${WRITING}・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後先確認該筆狀態`;
+const SLOW_WRITING = `${WRITING}・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後請先確認該筆狀態`;
 
 beforeEach(() => {
   for (const list of Object.values(seen)) list.length = 0;
@@ -242,6 +242,30 @@ describe('AdminConsole 寫入與匯出在途時鎖分頁', () => {
 
     act(() => release());
     expect(screen.queryByText(/仍在等待伺服器回應/)).toBeNull();
+  });
+
+  // 業主 R3（最後對照 P2-5）：說明行常駐、保留一行高——寫入超過 0.3 秒時才填字，分頁列下方的內容不被
+  // 推下又拉回；停用分頁的 aria-describedby 在鎖定當下就指得到節點（不再懸空 0.3 秒）。
+  it('說明行常駐：鎖定前就在、沒有字；鎖定當下就指得到它，0.3 秒後才填字，結算後清空但不卸載', () => {
+    renderConsole();
+    const note = document.getElementById(busyOf().noteId);
+    expect(note).not.toBeNull();
+    expect(note?.textContent).toBe('');
+
+    let release!: () => void;
+    act(() => {
+      release = busyOf().startWrite();
+    });
+    expect(tab('會員管理').getAttribute('aria-describedby')).toBe(note?.id);
+    expect(document.getElementById(busyOf().noteId)).toBe(note);
+    expect(note?.textContent).toBe('');
+
+    act(() => vi.advanceTimersByTime(300));
+    expect(note?.textContent).toBe(WRITING);
+
+    act(() => release());
+    expect(note?.isConnected).toBe(true);
+    expect(note?.textContent).toBe('');
   });
 
   it('兩筆寫入接力超過 15 秒、但沒有一筆超過時不接等候提示', () => {

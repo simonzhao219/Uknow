@@ -1752,6 +1752,14 @@ describe('WithdrawalManagement 寫入後的快取失效', () => {
       },
       [],
     ],
+    // 業主 Q1／R2：403＝權限可能已失，清空快取（不為那次寫入失效）。
+    [
+      '回 403',
+      async () => {
+        throw rejected('沒有權限', 403);
+      },
+      ['accessLost'],
+    ],
   ])('單筆動作%s時的失效事件', async (_label, update, expected) => {
     const cache = createAdminCache();
     const invalidate = vi.spyOn(cache, 'invalidate');

@@ -108,6 +108,33 @@ describe('runAdminWrite', () => {
     expect(r.steps).toContain('invalidate:accessLost');
   });
 
+  // 業主 R1：不拿 store 的頁面（告警）經 onAccessLost 請殼層清空——仍在這個單點、先於回報。
+  it('只有 onAccessLost、沒有 cache 時，寫入回 403 照樣通知清空，先於回報', async () => {
+    const r = recorder();
+    const outcome = await runAdminWrite({
+      busy: r.busy,
+      settle: r.settle,
+      reload: r.reload,
+      onAccessLost: () => r.steps.push('accessLost'),
+      event: null,
+      submit: () => Promise.reject(status(403)),
+    });
+    expect(r.steps).toEqual(['lock', 'release', 'accessLost', 'settle:rejected', 'reload']);
+    expect(outcome.kind).toBe('rejected');
+  });
+
+  it('其他 4xx 不通知 onAccessLost', async () => {
+    const r = recorder();
+    const onAccessLost = vi.fn();
+    await runAdminWrite({
+      ...r,
+      onAccessLost,
+      event: null,
+      submit: () => Promise.reject(status(409)),
+    });
+    expect(onAccessLost).not.toHaveBeenCalled();
+  });
+
   it('成功但沒有東西提交（例：批次全數失敗）時不失效', async () => {
     const r = recorder();
     await runAdminWrite({

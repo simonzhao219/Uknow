@@ -62,28 +62,15 @@ describe('AdminListError', () => {
         retrying
       />,
     );
+    // 不切任何 live 角色：播報交給頁面常駐的狀態容器（工具列的狀態文字，或沒有工具列的頁面自己的那一個；
+    // 業主 R4）。
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
     expect(screen.getByText('正在更新…')).toBeTruthy();
     expect(screen.queryByText('連線失敗')).toBeNull();
     const retry = screen.getByRole('button', { name: '重試' });
     expect(retry.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(retry);
     expect(onRetry).not.toHaveBeenCalled();
-  });
-
-  // 業主 Q7：沒有工具列的頁面（公告、證件審核）沒有狀態文字代念「正在更新」，由這一區自己播。
-  it('沒有工具列的頁面重試中以 status 播報「正在更新…」', () => {
-    render(
-      <AdminListError
-        message="連線失敗"
-        retryLabel="重試"
-        tone="flow"
-        onRetry={() => {}}
-        retrying
-        announceUpdating
-      />,
-    );
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByRole('status').textContent).toContain('正在更新…');
   });
 });

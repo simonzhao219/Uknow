@@ -251,6 +251,24 @@ describe('IdReviewQueue 讀取', () => {
     expect(screen.getByText('更新較久，仍在等待伺服器回應')).toBeTruthy();
   });
 
+  // 業主 Q1／R2：寫入回 403 同樣清空（證件審核不入失效表，但拿 store 就是為了這件事）。
+  it('通過回 403 時清空全部快取', async () => {
+    const cache = createAdminCache();
+    const invalidate = vi.spyOn(cache, 'invalidate');
+    renderQueue({
+      cache,
+      submitReview: async () => {
+        throw rejected('沒有權限', 403);
+      },
+    });
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: /王小明/ })).getByRole('button', {
+        name: '通過',
+      }),
+    );
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith('accessLost'));
+  });
+
   it('讀取回 403 時清空全部快取，佇列改顯示錯誤', async () => {
     const cache = createAdminCache();
     cache.write(
@@ -291,17 +309,20 @@ describe('IdReviewQueue 讀取', () => {
     expect(await screen.findByText('目前沒有待審核的證件')).toBeTruthy();
   });
 
-  // 業主 Q7：沒有工具列——沒有狀態文字代念「正在更新」，重試中的提示自己以 status 播報。
-  it('保留舊列的失敗按重試，提示以 status 播報「正在更新…」', async () => {
+  // 業主 Q7／R4：沒有工具列——重試中的「正在更新…」由佇列外常駐的 status 容器播報（容器在內容出現
+  // 之前就在、只換文字，同 AdminActionReport）；陳舊提示與錯誤區本身不切換 live 角色。
+  it('保留舊列的失敗按重試，常駐的狀態容器播報「正在更新…」', async () => {
     const { calls, load } = heldQueue();
     renderQueue({ loadReviews: load });
     await act(async () => calls[0].d.resolve(twoReviews()));
     fireEvent.click(within(cardOf('王小明')).getByRole('button', { name: '通過' }));
     await waitFor(() => expect(calls).toHaveLength(2));
     await act(async () => calls[1].d.reject(new Error('連線中斷')));
+    const before = screen.getAllByRole('status');
     fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重試' }));
-    const statuses = screen.getAllByRole('status').map((el) => el.textContent ?? '');
-    expect(statuses.some((text) => text.includes('正在更新…'))).toBe(true);
+    const announcing = screen.getAllByRole('status').find((el) => el.textContent === '正在更新…');
+    expect(announcing).toBeTruthy();
+    expect(before).toContain(announcing);
   });
 
   // 沒有工具列的頁面：逾時的提示自己附重試。
@@ -410,8 +431,11 @@ describe('IdReviewQueue 讀取', () => {
     await act(async () => calls[2].d.reject(new Error('連線中斷')));
 
     const retry = within(queue()).getByRole('button', { name: '重試' });
+    const before = screen.getAllByRole('status');
     fireEvent.click(retry);
-    expect(within(queue()).getByRole('status').textContent).toContain('正在更新…');
+    const announcing = screen.getAllByRole('status').find((el) => el.textContent === '正在更新…');
+    expect(before).toContain(announcing);
+    expect(within(queue()).queryByRole('status')).toBeNull();
     expect(screen.queryByText('目前沒有待審核的證件')).toBeNull();
     expect(retry.isConnected).toBe(true);
   });
