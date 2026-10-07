@@ -16,7 +16,11 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
   return typeof status === 'number' && status >= 400 && status < 500 ? 'rejected' : 'unknown';
 }
 
+/**
+ * 結果不明的固定文案：不斷言斷線（5xx 也歸這類），只說「沒收到確認」與下一步該看哪裡。
+ * 讀取失敗的錯誤字維持後端原文——固定文案只用在寫入結果不明。
+ */
 export const UNKNOWN_OUTCOME = {
-  withdrawal: (_name: string) => '',
-  withdrawalBatch: '',
+  withdrawal: (name: string) => `${name}：未收到伺服器確認，結果不明，列表更新後請確認該筆狀態`,
+  withdrawalBatch: '批次匯款未收到伺服器確認，結果不明，請逐筆確認列表',
 };

@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { StatusCallout } from '../ui/status-callout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Eye } from 'lucide-react';
@@ -33,13 +32,16 @@ import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { type AdminCache, type WithdrawalListParams, adminQuery } from './adminCache';
-import type { AdminBusy } from './adminBusy';
+import { type AdminBusy, NOOP_BUSY } from './adminBusy';
+import { AdminActionReport } from './AdminActionReport';
+import { UNKNOWN_OUTCOME, classifyWriteFailure } from './writeOutcome';
+import { collectExportRows } from './withdrawalExport';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { useRefreshAnnouncer } from './useRefreshAnnouncer';
 import { AdminListSkeleton } from './AdminListSkeleton';
 import { AdminListError } from './AdminListError';
 import { AdminListStatus } from './AdminListStatus';
-import { AdminStaleNotice } from './AdminStaleNotice';
+import { AdminStaleNotice, type AdminStaleNoticeProps } from './AdminStaleNotice';
 import { DataAgeNote, formatDataAge } from './DataAgeNote';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { StatCardGrid } from '../ui/stat-card-grid';
@@ -52,9 +54,11 @@ import type {
 interface IdCardDialogProps {
   record: AdminWithdrawalRecord;
   onClose: () => void;
+  /** 關閉時焦點還給開框的鈕（這個框沒有 Trigger，Radix 只會還給 body）。 */
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
-function IdCardDialog({ record, onClose }: IdCardDialogProps) {
+function IdCardDialog({ record, onClose, onCloseAutoFocus }: IdCardDialogProps) {
   return (
     <Dialog open onOpenChange={onClose}>
       {/* P5:max-w-3xl 經 twMerge 會蓋掉 dialog 原語的行動端護欄
@@ -62,7 +66,10 @@ function IdCardDialog({ record, onClose }: IdCardDialogProps) {
           貼齊螢幕邊緣。實測**沒有**溢出（w-full 在 fixed 元素上已依視窗定寬
           375px，max-w-3xl 比它大所以不生效），所以「有沒有水平捲軸」永遠測
           不出這個退化——要量盒子與視窗邊界的間距。 */}
-      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-3xl">
+      <DialogContent
+        className="max-w-[calc(100%-2rem)] sm:max-w-3xl"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>身分證照片查閱</DialogTitle>
           <DialogDescription>
@@ -177,9 +184,22 @@ const SUMMARY_LABELS = ['待匯款', ...STAT_ITEMS.slice(1).map((item) => item.l
 // 作業面板骨架的五欄（戶名、身分證、銀行代號、帳號、匯款金額）。
 const FUNDING_FIELD_KEYS = ['name', 'id-number', 'bank-code', 'account', 'amount'];
 
+interface Report {
+  status: { tone: 'success' | 'warning'; text: string } | null;
+  failure: string | null;
+  /** 這個失敗屬於剛按下的那個動作：捲進視線並取得焦點。晚到的不搶。 */
+  focusFailure: boolean;
+}
+
+const NO_REPORT: Report = { status: null, failure: null, focusFailure: false };
+
+const messageOf = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message : fallback;
+
 export function WithdrawalManagement({
   loadWithdrawals,
   cache,
+  busy = NOOP_BUSY,
   updateStatus: submitStatus,
   batchMarkPaid,
 }: WithdrawalManagementProps) {
@@ -188,10 +208,22 @@ export function WithdrawalManagement({
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const statusId = useId();
   const listErrorId = useId();
+  const listRef = useRef<HTMLElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
 
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  // 動作與匯出的失敗（列表讀取的失敗在 list.error）。
-  const [actionError, setActionError] = useState<string | null>(null);
+  // 動作回報：狀態容器（成功、批次被取消）與失敗容器（ui-ux §4.3）。收起時機：按「知道了」、
+  // 下一個動作開始、換篩選、手動重新整理。
+  const [report, setReport] = useState<Report>(NO_REPORT);
+  // 每個動作（單筆、批次、匯出）開始時取號；失敗時號碼還是最新的，才算「剛按下的」。
+  const actionSeq = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   // 切回時回到原本的狀態篩選（J）：存在記憶體快取的 view，搜尋字與勾選不存。
   const [statusFilter, setStatusFilter] = useState(
     () => cache?.readView().withdrawalStatus ?? 'all',
@@ -204,7 +236,8 @@ export function WithdrawalManagement({
   const [historyRecord, setHistoryRecord] = useState<AdminWithdrawalRecord | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [batchOpen, setBatchOpen] = useState(false);
+  // 批次確認框開啟時凍結勾選的快照：框內姓名與合計、送出的 id 都用它（§2.6）。
+  const [batchSnapshot, setBatchSnapshot] = useState<AdminWithdrawalRecord[] | null>(null);
   const [rejectTarget, setRejectTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [paidTarget, setPaidTarget] = useState<AdminWithdrawalRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<AdminWithdrawalRecord | null>(null);
@@ -212,6 +245,15 @@ export function WithdrawalManagement({
   // 對話框的資料時間在開框時凍結：內容取自點擊當下那一列，綁列表即時的時間的話，更新
   // 落地後會標成「剛剛更新」，內容卻仍是舊的——比不標更糟。
   const [dialogFetchedAt, setDialogFetchedAt] = useState<number | null>(null);
+  // 對話框關閉時焦點去哪（§4.3 焦點後備）：確認→該列（批次→列表區）；取消或 Esc→開框的
+  // 觸發鈕，鈕已不在→該列。這些框沒有 Trigger，Radix 的 onCloseAutoFocus 只會還給 body。
+  const dialogFocus = useRef<{ trigger: HTMLElement | null; rowId: string | null; done: boolean }>({
+    trigger: null,
+    rowId: null,
+    done: false,
+  });
+  // 確認後焦點落在的那一列；它因重讀離開清單時移到下一列→上一列→列表區。
+  const rowFocus = useRef<{ id: string; index: number } | null>(null);
   // 退件與代為結案的理由。後端對這兩個轉換強制要求非空 note（btrim 後為空
   // 也算沒填），所以沒有輸入欄＝那顆按鈕在正式環境每次都 400。
   const [reasonInput, setReasonInput] = useState('');
@@ -250,20 +292,30 @@ export function WithdrawalManagement({
   const stale = withdrawals.length > 0 && (failed || list.isSlow);
   // 更新中的淡化與停用外觀延遲 0.3 秒才出現、離開立即；失敗、逾時、匯出是靜態狀態，立即顯示。
   const dimmed = useDelayedFlag(updating && !list.isSlow, REVALIDATE_DIM_DELAY_MS);
-  const blockingError = actionError ?? list.loadMoreError;
+
+  const focusList = () => listRef.current?.focus();
+  const focusRow = (id: string) => {
+    const rows = listRef.current?.querySelectorAll<HTMLElement>('[data-row-id]') ?? [];
+    const row = Array.from(rows).find((el) => el.dataset.rowId === id);
+    (row ?? listRef.current)?.focus();
+  };
 
   // 換一批資料（接受的落地）就清掉勾選：留著會讓「已選取 N 筆」指向畫面上已經不存在的
-  // 列，而下一步是不可回退的批次匯款。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 資料版本一變就清，本身就是觸發條件
+  // 列，而下一步是不可回退的批次匯款。剛確認的那一列若因這次重讀離開清單，焦點移到下一列。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 資料版本一變就做，本身就是觸發條件
   useEffect(() => {
     setSelected(new Set());
+    const pending = rowFocus.current;
+    if (!pending || list.dataVersion === 0) return;
+    rowFocus.current = null;
+    if (withdrawals.some((w) => w.id === pending.id)) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const next = withdrawals[pending.index] ?? withdrawals[pending.index - 1];
+    if (next) focusRow(next.id);
+    else focusList();
   }, [list.dataVersion]);
 
-  // 重讀。開頭清掉上一輪的動作錯誤——批次的「先重抓、再報告」靠這個順序。
-  const reload = async () => {
-    setActionError(null);
-    return list.reload();
-  };
+  const reload = () => list.reload();
   const isUpdating = updating && !list.isSlow;
   const announcer = useRefreshAnnouncer({ isUpdating, reload, settled: list.settled });
 
@@ -274,6 +326,7 @@ export function WithdrawalManagement({
     if (!failed) setFailureAnnounced(false);
   }, [failed]);
   const manualRefresh = () => {
+    setReport(NO_REPORT);
     announcer.refresh();
     void list.settled().then((outcome) => setFailureAnnounced(outcome === 'failed'));
   };
@@ -300,6 +353,52 @@ export function WithdrawalManagement({
       : undefined;
   const listFailedEmpty = failed && withdrawals.length === 0;
 
+  // 批次確認框開著時閘門一關（例：另一筆單筆寫入完成、開始重讀）就關框：框裡的勾選屬於
+  // 上一批資料，不能拿去送。不等資料版本變——重讀一開始就關。
+  useEffect(() => {
+    if (!batchSnapshot || !gate.paused) return;
+    setBatchSnapshot(null);
+    setReport((r) => ({ ...r, status: { tone: 'warning', text: '列表已更新，請重新勾選' } }));
+  }, [batchSnapshot, gate.paused]);
+
+  // 重試期間錯誤區或陳舊提示留在原位（焦點留在鈕上、不掉到 body）；結算後若被列表取代，
+  // 焦點移到列表區。
+  const [heldNotice, setHeldNotice] = useState<AdminStaleNoticeProps | null>(null);
+  const [heldError, setHeldError] = useState<string | null>(null);
+  // 按下重試時焦點在不在那一區：在的話，結算後那一區被列表取代（焦點掉到 body）就移到列表區。
+  const retryHadFocus = useRef(false);
+  useEffect(() => {
+    if (updating || (!heldNotice && heldError === null)) return;
+    setHeldNotice(null);
+    setHeldError(null);
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (retryHadFocus.current && lost) listRef.current?.focus();
+    retryHadFocus.current = false;
+  }, [updating, heldNotice, heldError]);
+
+  const liveNotice: AdminStaleNoticeProps | null = stale
+    ? {
+        kind: failed ? 'failed' : 'slow',
+        age: formatDataAge(list.fetchedAt ?? list.now, list.now),
+        reason: list.error ?? undefined,
+        hidden: '收款資訊已隱藏，重試後顯示',
+        // 同一輪已有動作失敗的 alert 時不再打斷——別蓋掉「結果不明」那句。
+        announce: !failureAnnounced && !report.failure,
+      }
+    : null;
+  const notice = liveNotice ?? (updating ? heldNotice : null);
+  const retryFromNotice = () => {
+    retryHadFocus.current = !!noticeRef.current?.contains(document.activeElement);
+    if (liveNotice) setHeldNotice({ ...liveNotice, announce: false });
+    manualRefresh();
+  };
+  const retryFromError = () => {
+    const region = document.getElementById(listErrorId);
+    retryHadFocus.current = !!region?.contains(document.activeElement);
+    setHeldError(list.error);
+    manualRefresh();
+  };
+
   // 作業面板預設盯著第一筆：admin 開著網銀時，面板必須一進畫面就有內容，
   // 而不是先點一下才出現。
   const activeRecord = withdrawals.find((w) => w.id === activeId) ?? withdrawals[0] ?? null;
@@ -324,30 +423,73 @@ export function WithdrawalManagement({
     });
   };
 
-  const openDialog = (open: () => void) => {
+  const openDialog = (trigger: HTMLElement | null, rowId: string | null, open: () => void) => {
+    dialogFocus.current = { trigger, rowId, done: false };
     setDialogFetchedAt(list.fetchedAt);
     open();
   };
+  const restoreDialogFocus = (event: Event) => {
+    event.preventDefault();
+    const { trigger, rowId, done } = dialogFocus.current;
+    if (done) {
+      if (rowId) focusRow(rowId);
+      else focusList();
+      return;
+    }
+    if (trigger?.isConnected && !trigger.hasAttribute('disabled')) trigger.focus();
+    else if (rowId) focusRow(rowId);
+    else focusList();
+  };
+  // 確認鈕：焦點改落在該列（或批次的列表區），而不是觸發鈕。
+  const confirmDialog = (record: AdminWithdrawalRecord | null) => {
+    dialogFocus.current.done = true;
+    if (record) rowFocus.current = { id: record.id, index: withdrawals.indexOf(record) };
+  };
+
+  const dismissReport = () => {
+    setReport(NO_REPORT);
+    focusList();
+  };
 
   const runBatch = async () => {
-    const items = selectedRecords.map((w) => ({ id: w.id }));
-    setBatchOpen(false);
+    const targets = batchSnapshot ?? [];
+    confirmDialog(null);
+    setBatchSnapshot(null);
+    const seq = ++actionSeq.current;
+    setReport(NO_REPORT);
+    const release = busy.startWrite();
+    let next: Report;
     try {
-      const result = await batchMarkPaid(items);
-      // **先重抓，再報告。** 反過來寫的話 reload 的 setActionError(null)
-      // 會把剛寫上去的訊息清掉——admin 做完 12 筆、其中 1 筆失敗，畫面卻什麼
-      // 都不說，他會以為全部成功。批次不可回退，那筆漏掉的不會自己浮出來。
-      await reload();
-      if (result.failed.length) {
-        setActionError(`${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`);
-      } else {
-        setActionMessage(`已標記匯款完成：${result.succeeded.length} 筆`);
-      }
-      return;
+      const result = await batchMarkPaid(targets.map((w) => ({ id: w.id })));
+      release();
+      // 有任一筆成功就失效：那幾筆已經在狀態篩選之間移動。
+      if (result.succeeded.length > 0) cache?.invalidate('withdrawalBatchPaid');
+      next = result.failed.length
+        ? {
+            status: null,
+            failure: `${result.succeeded.length} 筆成功、${result.failed.length} 筆失敗`,
+            focusFailure: seq === actionSeq.current,
+          }
+        : {
+            ...NO_REPORT,
+            status: { tone: 'success', text: `已標記匯款完成：${result.succeeded.length} 筆` },
+          };
     } catch (err) {
-      await reload();
-      setActionError(err instanceof Error ? err.message : '批次標記失敗');
+      release();
+      // 整批被後端拒絕（4xx，含整批回 403）沒有提交；其餘可能已提交，失效並請 admin 逐筆確認。
+      const unknown = classifyWriteFailure(err) === 'unknown';
+      if (unknown) cache?.invalidate('withdrawalBatchPaid');
+      next = {
+        status: null,
+        failure: unknown ? UNKNOWN_OUTCOME.withdrawalBatch : messageOf(err, '批次標記失敗'),
+        focusFailure: seq === actionSeq.current,
+      };
     }
+    // 回報與重讀在同一個 commit：回報出現時列表已經是 aria-busy，page object 不會在那一瞬間
+    // 以為列表已經更新完。
+    setReport(next);
+    setSelected(new Set());
+    void reload();
   };
 
   // 兩個必填理由的對話框共用同一個輸入 state：一次只會開一個，關掉就清空，
@@ -369,133 +511,176 @@ export function WithdrawalManagement({
     note?: string,
     bankRef?: string,
   ) => {
+    const seq = ++actionSeq.current;
     setProcessingId(record.id);
-    setActionMessage(null);
+    setReport(NO_REPORT);
+    // 只包住寫入請求：結算後立即釋放，不等之後的重讀（重讀卡住時說明行不該謊稱在等寫入）。
+    const release = busy.startWrite();
+    let failure: unknown = null;
+    let succeeded = false;
     try {
       await submitStatus(record.id, status, note, bankRef);
-      setActionMessage(`${ACTION_DONE[status]}：${record.userName}`);
-      await reload();
+      succeeded = true;
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : '狀態更新失敗');
+      failure = err;
     } finally {
+      release();
       setProcessingId(null);
     }
-  };
-
-  const collectAndDownload = async () => {
-    // W6：匯出的是**符合當前篩選的全部資料**，不是畫面上已載入的那幾列。
-    // 給半份比明示拒絕糟得多——對帳是拿這份檔案去比銀行的轉出紀錄，少的
-    // 那幾筆不會自己浮出來。超過上限就明說，並告訴 admin 怎麼縮小範圍。
-    if (total > CSV_MAX_ROWS) {
-      setActionMessage(null);
-      setActionError(
-        `本次篩選有 ${total} 筆，超過匯出上限 ${CSV_MAX_ROWS} 筆。` +
-          `請縮小日期範圍或狀態篩選後再匯出。`,
-      );
-      return;
-    }
-
-    let rows: AdminWithdrawalRecord[] = withdrawals;
-    if (withdrawals.length < total) {
-      try {
-        const collected: AdminWithdrawalRecord[] = [];
-        // **依實際回傳筆數前進，不是依要求的 limit。** 伺服器可以回得比要求的
-        // 少（上限被夾、篩選期間資料變動），照固定步長跳就會靜默跳過那幾筆
-        // ——而那正是這條修復想根除的「安靜地少給」。
-        while (collected.length < total) {
-          const data = await loadWithdrawals({
-            status: statusFilter,
-            limit: PAGE_SIZE,
-            offset: collected.length,
-          });
-          const batch = data.withdrawals ?? [];
-          if (batch.length === 0) break; // 回空頁就停，避免無限迴圈
-          collected.push(...batch);
-        }
-        rows = collected;
-      } catch (err) {
-        setActionError(err instanceof Error ? err.message : '匯出失敗，請稍後再試');
-        return;
-      }
-    }
-
-    const headers = [
-      '會員',
-      '提領金額',
-      '手續費',
-      '匯款金額',
-      '收款銀行代號',
-      '收款銀行帳號',
-      '身分證字號',
-      '申請時間',
-      '狀態',
-    ];
-    const csvRows = rows.map((w) => [
-      w.userName,
-      w.amount + w.fee,
-      w.fee,
-      w.amount,
-      w.bankCode ?? '未設定',
-      w.bankAccount ?? '未設定',
-      w.idNumber ?? '未設定',
-      formatTwTimestamp(w.requestedAt),
-      withdrawalStatusLabel(w.status),
-    ]);
-
-    // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
-    // 姓名帶逗號、備註帶換行都會把手刻的 join(',') 撕成錯位的欄。
-    const blob = new Blob([buildCsvContent(headers, csvRows)], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `獎金提領申請_${twDayOf()}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    setActionError(null);
-    // LINE 等內建瀏覽器的下載常無聲無息、甚至根本沒落檔，而 link.click() 偵測不到
-    // ——那裡說「已匯出」可能是假成功，改成說出怎麼補救。
-    setActionMessage(
-      detectInAppBrowser().isInAppBrowser
-        ? `已產生 ${rows.length} 筆，若沒收到檔案請用外部瀏覽器開啟`
-        : `已匯出 ${rows.length} 筆`,
+    // 成功與結果不明都可能已提交：先失效再重讀。後端拒絕（4xx）沒有提交，不失效，但同樣
+    // 重讀一次（D5），讓列表回到真實狀態；卸載後 hook 不再發請求。
+    const outcome = succeeded ? 'done' : classifyWriteFailure(failure);
+    if (outcome !== 'rejected') cache?.invalidate('withdrawalStatus');
+    setReport(
+      outcome === 'done'
+        ? {
+            ...NO_REPORT,
+            status: { tone: 'success', text: `${ACTION_DONE[status]}：${record.userName}` },
+          }
+        : {
+            status: null,
+            failure:
+              outcome === 'unknown'
+                ? UNKNOWN_OUTCOME.withdrawal(record.userName)
+                : `${record.userName}：${messageOf(failure, '狀態更新失敗')}`,
+            focusFailure: seq === actionSeq.current,
+          },
     );
+    void reload();
   };
 
-  // 收集可能要好幾秒（逐頁）。期間篩選與重新整理一併停用：收集迴圈用的是
-  // 按下當下的 statusFilter，中途換篩選會下載一份跟畫面不一致的檔案。列上的
-  // 寫入動作、批次匯款與載入更多也停用：中途有列狀態改變而離開篩選，offset
-  // 分頁會整體前移，對帳檔靜默漏列。
-  // try/finally 包住整段——上限拒絕、收集失敗兩條提早 return 都要解除忙碌。
-  // 收集範圍以確認過的 total 為準：閘門關著（資料未確認）時 CSV 鈕不會呼叫到這裡。
+  // 收集可能要好幾秒（逐頁）。期間篩選與重新整理一併停用：收集迴圈用的是按下當下的
+  // 篩選，中途換篩選會下載一份跟畫面不一致的檔案。列上的寫入動作、批次匯款與載入更多也
+  // 停用：中途有列狀態改變而離開篩選，offset 分頁會整體前移。分頁也鎖住（busy），收完
+  // 還要核對筆數與重複（K7）。收集範圍以確認過的 total 為準：閘門關著時 CSV 鈕不會呼叫到這裡。
   const downloadCSV = async () => {
-    if (exportingRef.current) return;
+    if (exportingRef.current || gate.paused) return;
     exportingRef.current = true;
     setIsExporting(true);
+    const seq = ++actionSeq.current;
+    setReport(NO_REPORT);
+    const session = busy.startExport();
+    const fail = (text: string) =>
+      setReport({ status: null, failure: text, focusFailure: seq === actionSeq.current });
     try {
-      await collectAndDownload();
+      // W6：匯出的是**符合當前篩選的全部資料**，不是畫面上已載入的那幾列。給半份比明示
+      // 拒絕糟得多——對帳是拿這份檔案去比銀行的轉出紀錄，少的那幾筆不會自己浮出來。超過
+      // 上限就明說，並告訴 admin 怎麼縮小範圍。
+      if (total > CSV_MAX_ROWS) {
+        fail(
+          `本次篩選有 ${total} 筆，超過匯出上限 ${CSV_MAX_ROWS} 筆。` +
+            `請縮小日期範圍或狀態篩選後再匯出。`,
+        );
+        return;
+      }
+      let rows: AdminWithdrawalRecord[] = withdrawals;
+      if (withdrawals.length < total) {
+        try {
+          const collected = await collectExportRows({
+            total,
+            pageSize: PAGE_SIZE,
+            loadPage: list.loadPage,
+            isMounted: () => mounted.current,
+            onProgress: session.progress,
+          });
+          // tsconfig 非 strict，布林判別欄位不收窄聯集型別；改以欄位存在與否判斷。
+          if ('reason' in collected) {
+            if (collected.reason === 'changed') fail('匯出途中資料有變動，請重新匯出');
+            return;
+          }
+          rows = collected.rows;
+        } catch (err) {
+          fail(messageOf(err, '匯出失敗，請稍後再試'));
+          return;
+        }
+      }
+      if (!mounted.current) return;
+
+      const headers = [
+        '會員',
+        '提領金額',
+        '手續費',
+        '匯款金額',
+        '收款銀行代號',
+        '收款銀行帳號',
+        '身分證字號',
+        '申請時間',
+        '狀態',
+      ];
+      const csvRows = rows.map((w) => [
+        w.userName,
+        w.amount + w.fee,
+        w.fee,
+        w.amount,
+        w.bankCode ?? '未設定',
+        w.bankAccount ?? '未設定',
+        w.idNumber ?? '未設定',
+        formatTwTimestamp(w.requestedAt),
+        withdrawalStatusLabel(w.status),
+      ]);
+
+      // 逗號／引號／換行／前導 =+-@ 的跳脫走 src/utils/csv.ts（階段 2.1）——
+      // 姓名帶逗號、備註帶換行都會把手刻的 join(',') 撕成錯位的欄。
+      const blob = new Blob([buildCsvContent(headers, csvRows)], {
+        type: 'text/csv;charset=utf-8;',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `獎金提領申請_${twDayOf()}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      // LINE 等內建瀏覽器的下載常無聲無息、甚至根本沒落檔，而 link.click() 偵測不到
+      // ——那裡說「已匯出」可能是假成功，改成說出怎麼補救。
+      setReport({
+        ...NO_REPORT,
+        status: {
+          tone: 'success',
+          text: detectInAppBrowser().isInAppBrowser
+            ? `已產生 ${rows.length} 筆，若沒收到檔案請用外部瀏覽器開啟`
+            : `已匯出 ${rows.length} 筆`,
+        },
+      });
     } finally {
+      session.end();
       exportingRef.current = false;
-      setIsExporting(false);
+      if (mounted.current) setIsExporting(false);
     }
   };
+
+  // 載入更多完成而沒有更多了：鈕消失，焦點移到列表區（不掉到 body）。
+  const wasLoadingMore = useRef(false);
+  useEffect(() => {
+    if (wasLoadingMore.current && !list.isLoadingMore && !list.hasMore) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        listRef.current?.focus();
+      }
+    }
+    wasLoadingMore.current = list.isLoadingMore;
+  }, [list.isLoadingMore, list.hasMore]);
 
   const dataAge = (
     <DataAgeNote as="span" fetchedAt={dialogFetchedAt} now={list.now} className="mt-1 block" />
   );
+  const batchTargets = batchSnapshot ?? [];
 
   return (
     // 手機的區塊間距 12px、桌面維持 24px:卡片列表本身就是 `space-y-3`，
     // 區塊之間卻是它的兩倍，同一頁上兩套節奏。24px × 兩個間隔在 812px 的
     // 視窗裡是純浪費，而桌面空間充裕、24px 幫助分群。
     <div className="space-y-3 sm:space-y-6">
-      {viewRecord && <IdCardDialog record={viewRecord} onClose={() => setViewRecord(null)} />}
+      {viewRecord && (
+        <IdCardDialog
+          record={viewRecord}
+          onClose={() => setViewRecord(null)}
+          onCloseAutoFocus={restoreDialogFocus}
+        />
+      )}
 
       {/* 「已匯款」與「退件」同屬金錢狀態操作，一律先確認——兩顆按鈕
           相鄰，單鍵直接執行會讓誤觸立即通知會員款項已匯出。 */}
       {paidTarget && (
         <AlertDialog open onOpenChange={() => setPaidTarget(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={restoreDialogFocus}>
             <AlertDialogHeader>
               <AlertDialogTitle>確認已完成匯款？</AlertDialogTitle>
               <AlertDialogDescription>
@@ -520,6 +705,7 @@ export function WithdrawalManagement({
                 onClick={() => {
                   const target = paidTarget;
                   const ref = bankRefInput.trim();
+                  confirmDialog(target);
                   setPaidTarget(null);
                   setBankRefInput('');
                   if (target)
@@ -535,7 +721,7 @@ export function WithdrawalManagement({
 
       {rejectTarget && (
         <AlertDialog open onOpenChange={() => closeReasonDialog()}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={restoreDialogFocus}>
             <AlertDialogHeader>
               <AlertDialogTitle>確認退件？</AlertDialogTitle>
               <AlertDialogDescription>
@@ -564,6 +750,7 @@ export function WithdrawalManagement({
                 onClick={() => {
                   const target = rejectTarget;
                   const reason = reasonInput.trim();
+                  confirmDialog(target);
                   closeReasonDialog();
                   if (target) updateStatus(target, 'rejected', reason);
                 }}
@@ -577,7 +764,7 @@ export function WithdrawalManagement({
 
       {completeTarget && (
         <AlertDialog open onOpenChange={() => setCompleteTarget(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent onCloseAutoFocus={restoreDialogFocus}>
             <AlertDialogHeader>
               <AlertDialogTitle>代為標記已完成？</AlertDialogTitle>
               <AlertDialogDescription>
@@ -605,6 +792,7 @@ export function WithdrawalManagement({
                 onClick={() => {
                   const target = completeTarget;
                   const reason = reasonInput.trim();
+                  confirmDialog(target);
                   closeReasonDialog();
                   if (target) updateStatus(target, 'completed', reason);
                 }}
@@ -618,19 +806,19 @@ export function WithdrawalManagement({
 
       {/* 批次不可回退，所以確認框列出**受影響會員姓名**，不只給筆數與總額：
           金額相近時聚合數字不會露出異常，看到名字才會。 */}
-      {batchOpen && (
-        <AlertDialog open onOpenChange={() => setBatchOpen(false)}>
-          <AlertDialogContent>
+      {batchSnapshot && (
+        <AlertDialog open onOpenChange={() => setBatchSnapshot(null)}>
+          <AlertDialogContent onCloseAutoFocus={restoreDialogFocus}>
             <AlertDialogHeader>
               <AlertDialogTitle>批次標記已匯款？</AlertDialogTitle>
               <AlertDialogDescription>
-                以下 {selectedRecords.length} 筆將轉為「待查收」，合計匯出{' '}
-                {twd(selectedRecords.reduce((s, w) => s + w.amount, 0))}。此操作無法復原。
+                以下 {batchTargets.length} 筆將轉為「待查收」，合計匯出{' '}
+                {twd(batchTargets.reduce((s, w) => s + w.amount, 0))}。此操作無法復原。
                 {dataAge}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <ul className="max-h-48 overflow-y-auto text-sm space-y-1 py-2">
-              {selectedRecords.map((w) => (
+              {batchTargets.map((w) => (
                 <li key={w.id} className="flex justify-between gap-4">
                   <span>{w.userName}</span>
                   <span className="font-mono">{twd(w.amount)}</span>
@@ -647,7 +835,7 @@ export function WithdrawalManagement({
 
       {historyRecord && (
         <Dialog open onOpenChange={() => setHistoryRecord(null)}>
-          <DialogContent>
+          <DialogContent onCloseAutoFocus={restoreDialogFocus}>
             <DialogHeader>
               <DialogTitle>轉換歷史</DialogTitle>
               {/* 歷史讀的是點擊當下那一列內嵌的 events，與列表同齡（K5）：更新途中也能開，
@@ -680,15 +868,6 @@ export function WithdrawalManagement({
             </ol>
           </DialogContent>
         </Dialog>
-      )}
-
-      {actionMessage && (
-        <div className="flex items-center gap-2">
-          <StatusCallout variant="success" title={actionMessage} className="flex-1 py-2" />
-          <Button variant="ghost" size="sm" onClick={() => setActionMessage(null)}>
-            知道了
-          </Button>
-        </div>
       )}
 
       {/* 統計切回時是骨架、本次讀取確認後才出數字（A）：待審件數要即時，待匯款總額是對
@@ -795,9 +974,8 @@ export function WithdrawalManagement({
               <Select
                 value={statusFilter}
                 onValueChange={(next) => {
-                  // 上一次的匯出回報（「已匯出 N 筆」）、動作錯誤與勾選都屬於舊篩選，換篩選就收掉。
-                  setActionMessage(null);
-                  setActionError(null);
+                  // 上一次的動作回報（「已匯出 N 筆」）與勾選都屬於舊篩選，換篩選就收掉。
+                  setReport(NO_REPORT);
                   setSelected(new Set());
                   setStatusFilter(next);
                   cache?.writeView({ withdrawalStatus: next });
@@ -831,6 +1009,12 @@ export function WithdrawalManagement({
             isExporting={isExporting}
             disabled={isExporting}
           />
+          <AdminActionReport
+            status={report.status}
+            failure={report.failure}
+            focusFailure={report.focusFailure}
+            onDismiss={dismissReport}
+          />
           {/* 不得靜默截斷（ui-ux-guidelines §5）：說出已顯示幾筆、總共幾筆。
               只寫「共 N 筆」會讓人以為 N 就是全部。移出工具列自成一行，
               不再參與工具列的寬度競爭。被閘的入口以 aria-describedby 指向這一行。 */}
@@ -848,8 +1032,10 @@ export function WithdrawalManagement({
               {isDesktop && (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    if (!gate.paused) openDialog(() => setBatchOpen(true));
+                  onClick={(e) => {
+                    if (!gate.paused) {
+                      openDialog(e.currentTarget, null, () => setBatchSnapshot(selectedRecords));
+                    }
                   }}
                   disabled={isExporting}
                   className={PAUSED_LOOK}
@@ -858,7 +1044,14 @@ export function WithdrawalManagement({
                   批次標記已匯款
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSelected(new Set());
+                  focusList();
+                }}
+              >
                 清除選取
               </Button>
             </div>
@@ -878,33 +1071,32 @@ export function WithdrawalManagement({
         <CardContent>
           {/* 有舊資料時的失敗或逾時：保留舊列並說出資料時間（E2）；收款資訊遮住，重試是背景重讀。
               放在列表區外面：過期樣式的透明度不能疊到提示本身。 */}
-          {stale && !blockingError && (
-            <div className="mb-4">
+          {notice && (
+            <div ref={noticeRef} className="mb-4">
               <AdminStaleNotice
-                kind={failed ? 'failed' : 'slow'}
-                age={formatDataAge(list.fetchedAt ?? list.now, list.now)}
-                reason={list.error ?? undefined}
-                hidden="收款資訊已隱藏，重試後顯示"
-                onRetry={failed ? manualRefresh : undefined}
-                announce={!failureAnnounced}
+                {...notice}
+                onRetry={notice.kind === 'failed' ? retryFromNotice : undefined}
               />
             </div>
           )}
           {/* 更新中 aria-busy，0.3 秒後才淡化（快網路不閃）；失敗與逾時改用固定的過期樣式。 */}
           <section
+            ref={listRef}
+            tabIndex={-1}
             aria-label="提領申請列表"
             aria-busy={updating || undefined}
             data-dimmed={dimmed ? 'true' : undefined}
             data-stale={stale ? 'true' : undefined}
-            className="transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
+            className="scroll-mt-20 transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
           >
-            {blockingError ? (
-              // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
-              // 以為今天沒人申請提領，而不是「沒讀到」。
-              <div className="py-12 text-center space-y-3">
-                <p className="text-destructive-subtle-foreground">{blockingError}</p>
-                <Button onClick={manualRefresh}>重試</Button>
-              </div>
+            {heldError !== null && list.isLoading ? (
+              <AdminListError
+                id={listErrorId}
+                message={heldError}
+                retryLabel="重試"
+                tone="flow"
+                onRetry={retryFromError}
+              />
             ) : list.isLoading ? (
               <AdminListSkeleton
                 label="載入提領申請中"
@@ -912,12 +1104,14 @@ export function WithdrawalManagement({
                 message={list.isSlow ? '更新較久，仍在等待伺服器回應' : undefined}
               />
             ) : listFailedEmpty ? (
+              // 三態的「錯」：說出錯在哪、給一顆重試。靜默的空表格會讓 admin
+              // 以為今天沒人申請提領，而不是「沒讀到」。
               <AdminListError
                 id={listErrorId}
                 message={list.error ?? ''}
                 retryLabel="重試"
                 tone="flow"
-                onRetry={manualRefresh}
+                onRetry={retryFromError}
               />
             ) : withdrawals.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">目前沒有提領申請</p>
@@ -928,11 +1122,17 @@ export function WithdrawalManagement({
                 onActivate={setActiveId}
                 onCopyAccount={copyAccount}
                 onOpenIdCard={(record) => {
-                  if (!gate.paused) setViewRecord(record);
+                  if (!gate.paused) openDialog(null, record.id, () => setViewRecord(record));
                 }}
-                onOpenHistory={(record) => openDialog(() => setHistoryRecord(record))}
-                onReject={(record) => openDialog(() => setRejectTarget(record))}
-                onComplete={(record) => openDialog(() => setCompleteTarget(record))}
+                onOpenHistory={(record) =>
+                  openDialog(null, record.id, () => setHistoryRecord(record))
+                }
+                onReject={(record, trigger) =>
+                  openDialog(trigger, record.id, () => setRejectTarget(record))
+                }
+                onComplete={(record, trigger) =>
+                  openDialog(trigger, record.id, () => setCompleteTarget(record))
+                }
                 processingId={processingId}
                 actionsDisabled={isExporting}
                 formatAmount={twd}
@@ -986,6 +1186,10 @@ export function WithdrawalManagement({
                   {withdrawals.map((w) => (
                     <TableRow
                       key={w.id}
+                      // 程式化聚焦的落點（確認後、取消時鈕已不在）；不進 Tab 順序。
+                      tabIndex={-1}
+                      data-row-id={w.id}
+                      className="scroll-mt-20"
                       data-state={w.id === activeRecord?.id ? 'selected' : undefined}
                       onClick={() => setActiveId(w.id)}
                     >
@@ -1020,8 +1224,9 @@ export function WithdrawalManagement({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            if (!gate.paused) setViewRecord(w);
+                          onClick={(e) => {
+                            if (!gate.paused)
+                              openDialog(e.currentTarget, w.id, () => setViewRecord(w));
                           }}
                           className={PAUSED_LOOK}
                           {...pausedProps}
@@ -1036,7 +1241,9 @@ export function WithdrawalManagement({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openDialog(() => setHistoryRecord(w))}
+                          onClick={(e) =>
+                            openDialog(e.currentTarget, w.id, () => setHistoryRecord(w))
+                          }
                         >
                           查看歷史
                         </Button>
@@ -1048,8 +1255,10 @@ export function WithdrawalManagement({
                             {isDesktop && (
                               <Button
                                 size="sm"
-                                onClick={() => {
-                                  if (!gate.paused) openDialog(() => setPaidTarget(w));
+                                onClick={(e) => {
+                                  if (!gate.paused) {
+                                    openDialog(e.currentTarget, w.id, () => setPaidTarget(w));
+                                  }
                                 }}
                                 disabled={isExporting || processingId === w.id}
                                 className={PAUSED_LOOK}
@@ -1061,7 +1270,9 @@ export function WithdrawalManagement({
                             <Button
                               size="sm"
                               tone="destructive"
-                              onClick={() => openDialog(() => setRejectTarget(w))}
+                              onClick={(e) =>
+                                openDialog(e.currentTarget, w.id, () => setRejectTarget(w))
+                              }
                               disabled={isExporting || processingId === w.id}
                             >
                               退件
@@ -1071,7 +1282,9 @@ export function WithdrawalManagement({
                           <Button
                             size="sm"
                             tone="secondary"
-                            onClick={() => openDialog(() => setCompleteTarget(w))}
+                            onClick={(e) =>
+                              openDialog(e.currentTarget, w.id, () => setCompleteTarget(w))
+                            }
                             disabled={isExporting || processingId === w.id}
                           >
                             代為完成
@@ -1086,15 +1299,23 @@ export function WithdrawalManagement({
               </Table>
             )}
 
-            {!blockingError && withdrawals.length > 0 && list.hasMore && (
-              <div className="pt-4 text-center">
+            {withdrawals.length > 0 && list.hasMore && (
+              <div className="space-y-2 pt-4 text-center">
+                {/* 載入中與更新中改 aria-disabled（不用原生 disabled）：焦點留在鈕上、不掉到
+                    body。匯出期間照舊原生 disabled。失敗時原因寫在鈕旁，已顯示的列保留。 */}
                 <Button
                   tone="secondary"
-                  onClick={list.loadMore}
-                  disabled={!list.canLoadMore || isExporting}
+                  onClick={() => {
+                    if (list.canLoadMore) void list.loadMore();
+                  }}
+                  aria-disabled={!list.canLoadMore || undefined}
+                  disabled={isExporting}
                 >
                   {list.isLoadingMore ? '載入中…' : '載入更多'}
                 </Button>
+                {list.loadMoreError && (
+                  <p className="text-sm text-muted-foreground">{list.loadMoreError}</p>
+                )}
               </div>
             )}
           </section>

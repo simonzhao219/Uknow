@@ -35,8 +35,9 @@ interface WithdrawalCardListProps {
   onCopyAccount: (account: string) => void;
   onOpenIdCard: (record: AdminWithdrawalRecord) => void;
   onOpenHistory: (record: AdminWithdrawalRecord) => void;
-  onReject: (record: AdminWithdrawalRecord) => void;
-  onComplete: (record: AdminWithdrawalRecord) => void;
+  /** 第二個參數是按下的鈕：確認框取消或 Esc 時焦點還給它。 */
+  onReject: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
+  onComplete: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
   processingId: string | null;
   /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
   actionsDisabled?: boolean;
@@ -76,7 +77,15 @@ export function WithdrawalCardList({
   return (
     <div className="space-y-3">
       {records.map((w) => (
-        <Card key={w.id} role="group" aria-label={`${w.userName} 的提領記錄`}>
+        <Card
+          key={w.id}
+          role="group"
+          aria-label={`${w.userName} 的提領記錄`}
+          // 程式化聚焦的落點（確認後、取消時鈕已不在）；不進 Tab 順序。
+          tabIndex={-1}
+          data-row-id={w.id}
+          className="scroll-mt-20"
+        >
           <CardContent className="space-y-2 p-3">
             {/* 收合態一眼要回答的三件事:誰、多少錢、什麼狀態。其餘（日期、
                 扣點、五欄匯款資訊）要求一次額外點擊——列表頁的工作是「找到
@@ -127,7 +136,7 @@ export function WithdrawalCardList({
                   <Button
                     size="sm"
                     tone="destructive"
-                    onClick={() => onReject(w)}
+                    onClick={(e) => onReject(w, e.currentTarget)}
                     disabled={actionsDisabled || processingId === w.id}
                   >
                     退件
@@ -137,7 +146,7 @@ export function WithdrawalCardList({
                   <Button
                     size="sm"
                     tone="secondary"
-                    onClick={() => onComplete(w)}
+                    onClick={(e) => onComplete(w, e.currentTarget)}
                     disabled={actionsDisabled || processingId === w.id}
                   >
                     代為完成
