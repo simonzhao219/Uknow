@@ -15,3 +15,8 @@ export function classifyWriteFailure(err: unknown): WriteFailure {
   const status = (err as { status?: unknown } | null | undefined)?.status;
   return typeof status === 'number' && status >= 400 && status < 500 ? 'rejected' : 'unknown';
 }
+
+export const UNKNOWN_OUTCOME = {
+  withdrawal: (_name: string) => '',
+  withdrawalBatch: '',
+};

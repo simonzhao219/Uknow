@@ -18,6 +18,7 @@ import type { AdminWithdrawalRecord, AdminWithdrawalsResponse } from '@contract'
 import { stubMediaQuery, stubMediaQueryWithControl } from '../../test-utils/stubMediaQuery';
 import { nextStamp } from '../../hooks/useLatestRequest';
 import { type AdminCache, type AdminSlot, createAdminCache } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 import { WithdrawalManagement, type WithdrawalQuery } from './WithdrawalManagement';
 
 afterEach(cleanup);
@@ -372,7 +373,7 @@ describe('WithdrawalManagement', () => {
   it('狀態更新失敗時把原因說出來', async () => {
     renderConsole({
       updateStatus: async () => {
-        throw new Error('這筆已被其他管理員處理');
+        throw Object.assign(new Error('這筆已被其他管理員處理'), { status: 409 });
       },
     });
     fireEvent.click(await screen.findByRole('button', { name: '退件' }));
@@ -1253,5 +1254,548 @@ describe('WithdrawalManagement 手機版的確認閘門', () => {
     const card = await screen.findByRole('group', { name: /王小明/ });
     fireEvent.click(within(card).getByRole('button', { name: '匯款資訊' }));
     await waitFor(() => expect(within(card).getByText('剛剛更新')).toBeTruthy());
+  });
+});
+
+// --- S5 階段 4c：動作側——回報、結果分類、失效、焦點、匯出核對、busy -------------
+//
+// 寫入的結局分三種：成功、後端拒絕（4xx，交易沒提交）、結果不明（其餘，可能已提交）。
+// 成功與結果不明都要讓快取失效並背景重讀；後端拒絕不失效，但同樣重讀一次（D5）讓列表
+// 回到真實狀態。回報出現在工具列下方，文字只出現一次；剛按下的失敗取得焦點。
+
+interface Held<T> {
+  resolve: (v: T) => void;
+  reject: (e: unknown) => void;
+}
+
+function heldWrites() {
+  const writes: Held<void>[] = [];
+  const update = vi.fn(
+    (_id: string, _status: string, _note?: string, _bankRef?: string) =>
+      new Promise<void>((resolve, reject) => {
+        writes.push({ resolve, reject });
+      }),
+  );
+  return { writes, update };
+}
+
+const rejected = (message: string, status = 409) => Object.assign(new Error(message), { status });
+
+function renderPage(
+  opts: {
+    cache?: AdminCache;
+    busy?: AdminBusy;
+    load?: (p: WithdrawalQuery) => Promise<Page>;
+    update?: (id: string, status: string, note?: string, bankRef?: string) => Promise<void>;
+    batch?: (
+      items: { id: string; bankRef?: string }[],
+    ) => Promise<{ succeeded: string[]; failed: { id: string; error: string }[] }>;
+  } = {},
+) {
+  return render(
+    <WithdrawalManagement
+      cache={opts.cache}
+      busy={opts.busy}
+      loadWithdrawals={opts.load ?? (async () => page())}
+      updateStatus={opts.update ?? (async () => {})}
+      batchMarkPaid={opts.batch ?? (async () => ({ succeeded: [], failed: [] }))}
+    />,
+  );
+}
+
+const twoRows = () => page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] });
+
+async function rejectRow(name: string, reason = '資料有誤') {
+  fireEvent.click(within(rowOf(name)).getByRole('button', { name: '退件' }));
+  fireEvent.change(await screen.findByLabelText('退件理由'), { target: { value: reason } });
+  fireEvent.click(screen.getByRole('button', { name: '確認退件' }));
+}
+
+async function openBatch() {
+  fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+  fireEvent.click(screen.getByRole('button', { name: '批次標記已匯款' }));
+  return screen.findByRole('alertdialog');
+}
+
+describe('WithdrawalManagement 動作回報與結果分類', () => {
+  it('成功回報在畫面上只出現一次', async () => {
+    renderPage();
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await screen.findByText('已退件：王小明');
+    expect(screen.getAllByText('已退件：王小明')).toHaveLength(1);
+  });
+
+  it('成功回報出現的那一次 commit 裡，列表已經在更新', async () => {
+    const { calls, load } = heldLoader();
+    renderPage({ load });
+    await act(async () => calls[0].resolve(page()));
+    const region = listRegion();
+    const busyWhenReported: (string | null)[] = [];
+    // 以 MutationObserver 記錄 commit 的先後：回報先出現、重讀晚一個 commit 才開始的話，
+    // 第一次看到回報時列表還不是 aria-busy——那一瞬間 page object 會以為列表已經更新完。
+    const observer = new MutationObserver(() => {
+      if (screen.queryByText('已退件：王小明')) {
+        busyWhenReported.push(region.getAttribute('aria-busy'));
+      }
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeOldValue: true,
+    });
+    await rejectRow('王小明');
+    await screen.findByText('已退件：王小明');
+    observer.disconnect();
+    expect(busyWhenReported[0]).toBe('true');
+  });
+
+  it('後端拒絕時照原文說出來並前綴姓名，列表照常顯示', async () => {
+    renderPage({
+      update: async () => {
+        throw rejected('這筆已被其他管理員處理');
+      },
+    });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('王小明：這筆已被其他管理員處理');
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+  });
+
+  it('沒收到伺服器確認時改寫固定文案並前綴姓名', async () => {
+    renderPage({
+      update: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    expect(
+      await screen.findByText('王小明：未收到伺服器確認，結果不明，列表更新後請確認該筆狀態'),
+    ).toBeTruthy();
+  });
+
+  it('批次沒收到伺服器確認時寫固定文案', async () => {
+    renderPage({
+      load: async () => twoRows(),
+      batch: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    await openBatch();
+    fireEvent.click(screen.getByRole('button', { name: '確認批次匯款' }));
+    expect(
+      await screen.findByText('批次匯款未收到伺服器確認，結果不明，請逐筆確認列表'),
+    ).toBeTruthy();
+  });
+
+  it('剛按下的那筆失敗時捲進視線並取得焦點，較早那筆晚到的失敗不搶', async () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    const { writes, update } = heldWrites();
+    renderPage({ load: async () => twoRows(), update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await rejectRow('李小華');
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    scroll.mockClear();
+
+    await act(async () => writes[0].reject(rejected('這筆已被其他管理員處理')));
+    expect(document.activeElement).not.toBe(screen.getByRole('alert'));
+    expect(scroll).not.toHaveBeenCalled();
+
+    await act(async () => writes[1].reject(rejected('帳號與姓名不符')));
+    expect(document.activeElement).toBe(screen.getByRole('alert'));
+    expect(scroll).toHaveBeenCalled();
+    scroll.mockRestore();
+  });
+
+  it('單筆動作失敗後自動背景重讀一次，列表不換骨架', async () => {
+    const load = vi.fn(async (_params: WithdrawalQuery) => page());
+    renderPage({
+      load,
+      update: async () => {
+        throw rejected('狀態已變更');
+      },
+    });
+    await screen.findAllByText('王小明');
+    load.mockClear();
+    await rejectRow('王小明');
+    await screen.findByText(/狀態已變更/);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('status', { name: '載入提領申請中' })).toBeNull();
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+  });
+
+  it('寫入在途時離開頁面，之後才失敗也不再重讀', async () => {
+    const load = vi.fn(async (_params: WithdrawalQuery) => page());
+    const { writes, update } = heldWrites();
+    const { unmount } = renderPage({ load, update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await waitFor(() => expect(writes).toHaveLength(1));
+    load.mockClear();
+    unmount();
+    await act(async () => writes[0].reject(rejected('狀態已變更')));
+    expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe('WithdrawalManagement 寫入後的快取失效', () => {
+  it.each([
+    ['成功', async () => {}, ['withdrawalStatus']],
+    [
+      '結果不明',
+      async () => {
+        throw new TypeError('Failed to fetch');
+      },
+      ['withdrawalStatus'],
+    ],
+    [
+      '被後端拒絕',
+      async () => {
+        throw rejected('狀態已變更');
+      },
+      [],
+    ],
+  ])('單筆動作%s時的失效事件', async (_label, update, expected) => {
+    const cache = createAdminCache();
+    const invalidate = vi.spyOn(cache, 'invalidate');
+    const load = vi.fn(async (_params: WithdrawalQuery) => page());
+    renderPage({ cache, load, update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(invalidate.mock.calls.map(([event]) => event)).toEqual(expected);
+  });
+
+  it.each([
+    ['全數成功', async () => ({ succeeded: ['w1', 'w2'], failed: [] }), ['withdrawalBatchPaid']],
+    [
+      '部分失敗',
+      async () => ({ succeeded: ['w1'], failed: [{ id: 'w2', error: '帳號不符' }] }),
+      ['withdrawalBatchPaid'],
+    ],
+    [
+      '全數失敗',
+      async () => ({
+        succeeded: [],
+        failed: [
+          { id: 'w1', error: '帳號不符' },
+          { id: 'w2', error: '帳號不符' },
+        ],
+      }),
+      [],
+    ],
+    [
+      '整批被後端拒絕',
+      async () => {
+        throw rejected('沒有權限', 403);
+      },
+      [],
+    ],
+    [
+      '結果不明',
+      async () => {
+        throw new TypeError('Failed to fetch');
+      },
+      ['withdrawalBatchPaid'],
+    ],
+  ])('批次%s時的失效事件', async (_label, batch, expected) => {
+    const cache = createAdminCache();
+    const invalidate = vi.spyOn(cache, 'invalidate');
+    const load = vi.fn(async (_params: WithdrawalQuery) => twoRows());
+    renderPage({ cache, load, batch });
+    await openBatch();
+    fireEvent.click(screen.getByRole('button', { name: '確認批次匯款' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(invalidate.mock.calls.map(([event]) => event)).toEqual(expected);
+  });
+});
+
+describe('WithdrawalManagement 批次確認框', () => {
+  it('確認框列出開框當下勾選的會員，送出的也是那幾筆', async () => {
+    const batch = vi.fn(async () => ({ succeeded: ['w1', 'w2'], failed: [] }));
+    renderPage({ load: async () => twoRows(), batch });
+    const dialog = await openBatch();
+    expect(within(dialog).getByText('王小明')).toBeTruthy();
+    expect(within(dialog).getByText('李小華')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: '確認批次匯款' }));
+    await waitFor(() => expect(batch).toHaveBeenCalledWith([{ id: 'w1' }, { id: 'w2' }]));
+  });
+
+  it('確認框開著時列表開始更新就關框，並提示重新勾選', async () => {
+    const { calls, load } = heldLoader();
+    const { writes, update } = heldWrites();
+    const batch = vi.fn(async () => ({ succeeded: [], failed: [] }));
+    renderPage({ load, update, batch });
+    await act(async () => calls[0].resolve(twoRows()));
+    await rejectRow('李小華');
+    await waitFor(() => expect(writes).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '選取 王小明 的提領記錄' }));
+    fireEvent.click(screen.getByRole('button', { name: '批次標記已匯款' }));
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+
+    await act(async () => writes[0].resolve());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.getByText('列表已更新，請重新勾選')).toBeTruthy();
+    expect(batch).not.toHaveBeenCalled();
+  });
+});
+
+describe('WithdrawalManagement 焦點後備', () => {
+  it('確認後焦點落在該列；那一列因重讀離開清單時移到下一列', async () => {
+    const { calls, load } = heldLoader();
+    renderPage({ load });
+    await act(async () => calls[0].resolve(twoRows()));
+    await rejectRow('王小明');
+    await waitFor(() => expect(document.activeElement).toBe(rowOf('王小明')));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () =>
+      calls[1].resolve(page({ withdrawals: [record({ id: 'w2', userName: '李小華' })] })),
+    );
+    expect(document.activeElement).toBe(rowOf('李小華'));
+  });
+
+  it('取消或 Esc 時焦點回到開框的觸發鈕', async () => {
+    renderPage();
+    await screen.findAllByText('王小明');
+    const trigger = within(rowOf('王小明')).getByRole('button', { name: '退件' });
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('清除選取與按「知道了」之後焦點移到列表區', async () => {
+    renderPage({ load: async () => twoRows() });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    fireEvent.click(screen.getByRole('button', { name: '清除選取' }));
+    expect(document.activeElement).toBe(listRegion());
+
+    await rejectRow('王小明');
+    await screen.findByText('已退件：王小明');
+    fireEvent.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.queryByText('已退件：王小明')).toBeNull();
+    expect(document.activeElement).toBe(listRegion());
+  });
+
+  it('載入更多進行中鈕改 aria-disabled，焦點留在鈕上', async () => {
+    const gates: Array<() => void> = [];
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (offset > 0) await new Promise<void>((r) => gates.push(r));
+      return page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: 3,
+      });
+    });
+    renderPage({ load });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    more.focus();
+    fireEvent.click(more);
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    expect(more.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(more);
+  });
+
+  it('陳舊提示的重試期間提示留在原位、焦點留在鈕上，更新完成後焦點移到列表區', async () => {
+    const cache = seedCache();
+    const { calls, load } = heldLoader();
+    renderPage({ cache, load });
+    await act(async () => calls[0].reject(new Error('連線中斷')));
+
+    const retry = within(screen.getByRole('alert')).getByRole('button', { name: '重試' });
+    retry.focus();
+    fireEvent.click(retry);
+    expect(retry.isConnected).toBe(true);
+    expect(document.activeElement).toBe(retry);
+
+    await act(async () => calls[1].resolve(page()));
+    expect(retry.isConnected).toBe(false);
+    expect(document.activeElement).toBe(listRegion());
+  });
+});
+
+describe('WithdrawalManagement 載入更多與換篩選', () => {
+  it('載入更多失敗時在鈕旁說出原因，已顯示的列保留', async () => {
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (offset > 0) throw new Error('連線中斷');
+      return page({ withdrawals: [record()], total: 3 });
+    });
+    renderPage({ load });
+    fireEvent.click(await screen.findByRole('button', { name: '載入更多' }));
+    expect(await screen.findByText('連線中斷')).toBeTruthy();
+    expect(within(screen.getByRole('table')).getByText('王小明')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '載入更多' })).toBeTruthy();
+  });
+
+  it('換篩選時在途的載入更多不接到新列表上', async () => {
+    const tail: Held<Page>[] = [];
+    const load = vi.fn((params: WithdrawalQuery) => {
+      if (params.offset > 0) {
+        return new Promise<Page>((resolve, reject) => {
+          tail.push({ resolve, reject });
+        });
+      }
+      return Promise.resolve(
+        params.status === 'all'
+          ? page({ withdrawals: [record()], total: 3 })
+          : page({ withdrawals: [record({ id: 'p1', userName: '待處理者' })], total: 1 }),
+      );
+    });
+    renderPage({ load });
+    fireEvent.click(await screen.findByRole('button', { name: '載入更多' }));
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+    await screen.findAllByText('待處理者');
+
+    await act(async () =>
+      tail[0].resolve(page({ withdrawals: [record({ id: 'old', userName: '舊尾巴' })], total: 3 })),
+    );
+    expect(screen.queryByText('舊尾巴')).toBeNull();
+  });
+
+  it('寫入在途時換篩選，畫面不以新篩選的標籤顯示舊列，寫完的重讀帶新篩選', async () => {
+    const load = vi.fn((params: WithdrawalQuery) =>
+      params.status === 'all' ? Promise.resolve(page()) : new Promise<Page>(() => {}),
+    );
+    const { writes, update } = heldWrites();
+    renderPage({ load, update });
+    await screen.findAllByText('王小明');
+    await rejectRow('王小明');
+    await waitFor(() => expect(writes).toHaveLength(1));
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: '待處理' }));
+    await waitFor(() => expect(screen.queryByRole('table')).toBeNull());
+    expect(screen.getByRole('status', { name: '載入提領申請中' })).toBeTruthy();
+
+    await act(async () => writes[0].resolve());
+    expect(load).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'pending', offset: 0 }),
+    );
+  });
+});
+
+describe('WithdrawalManagement 匯出的核對與鎖', () => {
+  it('匯出途中某頁的總數變了就不下載，說出資料有變動，列表照常', async () => {
+    const createUrl = vi.fn(() => 'blob:test');
+    URL.createObjectURL = createUrl;
+    let listed = false;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (!listed) {
+        listed = true;
+        return page({ withdrawals: [record({ id: 'w0', userName: '會員0' })], total: 3 });
+      }
+      return page({
+        withdrawals: [record({ id: `w${offset}`, userName: `會員${offset}` })],
+        total: offset === 0 ? 3 : 4,
+      });
+    });
+    renderPage({ load });
+    await screen.findAllByText('會員0');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText('匯出途中資料有變動，請重新匯出')).toBeTruthy();
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(within(screen.getByRole('table')).getByText('會員0')).toBeTruthy();
+  });
+
+  it('最後一頁在途時離開頁面就不下載', async () => {
+    const createUrl = vi.fn(() => 'blob:test');
+    URL.createObjectURL = createUrl;
+    const gates: Array<() => void> = [];
+    let listed = false;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (!listed) {
+        listed = true;
+        return page({ withdrawals: [record({ id: 'w0' })], total: 2 });
+      }
+      if (offset === 1) await new Promise<void>((r) => gates.push(r));
+      return page({ withdrawals: [record({ id: `w${offset}` })], total: 2 });
+    });
+    const { unmount } = renderPage({ load });
+    await screen.findAllByText('王小明');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    await waitFor(() => expect(gates).toHaveLength(1));
+    unmount();
+    await act(async () => gates[0]());
+    expect(createUrl).not.toHaveBeenCalled();
+  });
+
+  it('匯出途中讀到 403 時清空快取', async () => {
+    const cache = createAdminCache();
+    let listed = false;
+    const load = vi.fn(async (_params: WithdrawalQuery) => {
+      if (!listed) {
+        listed = true;
+        return page({ withdrawals: [record({ id: 'w0' })], total: 2 });
+      }
+      throw rejected('沒有權限', 403);
+    });
+    renderPage({ cache, load });
+    await screen.findAllByText('王小明');
+    expect(cache.read('withdrawals:all')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText(/沒有權限/)).toBeTruthy();
+    expect(cache.read('withdrawals:all')).toBeUndefined();
+  });
+
+  it('寫入期間鎖分頁，寫入請求一結算就釋放、不等之後的重讀', async () => {
+    const release = vi.fn();
+    const busy: AdminBusy = {
+      locked: false,
+      noteId: '',
+      startWrite: vi.fn(() => release),
+      startExport: vi.fn(() => ({ progress: vi.fn(), end: vi.fn() })),
+    };
+    const { calls, load } = heldLoader();
+    const { writes, update } = heldWrites();
+    renderPage({ busy, load, update });
+    await act(async () => calls[0].resolve(page()));
+    await rejectRow('王小明');
+    await waitFor(() => expect(busy.startWrite).toHaveBeenCalledTimes(1));
+    expect(release).not.toHaveBeenCalled();
+
+    await act(async () => writes[0].resolve());
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('匯出期間呼叫匯出鎖並回報收集進度，結束時解除', async () => {
+    const progress = vi.fn();
+    const end = vi.fn();
+    const busy: AdminBusy = {
+      locked: false,
+      noteId: '',
+      startWrite: vi.fn(() => () => {}),
+      startExport: vi.fn(() => ({ progress, end })),
+    };
+    let listed = false;
+    const load = vi.fn(async ({ offset }: WithdrawalQuery) => {
+      if (!listed) {
+        listed = true;
+        return page({ withdrawals: [record({ id: 'w0' })], total: 2 });
+      }
+      return page({ withdrawals: [record({ id: `w${offset}` })], total: 2 });
+    });
+    renderPage({ busy, load });
+    await screen.findAllByText('王小明');
+    fireEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
+    expect(await screen.findByText(/^(已匯出|已產生) 2 筆/)).toBeTruthy();
+    expect(busy.startExport).toHaveBeenCalledTimes(1);
+    expect(progress.mock.calls).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+    expect(end).toHaveBeenCalledTimes(1);
   });
 });

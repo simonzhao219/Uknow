@@ -33,6 +33,7 @@ import { buildCsvContent } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { type AdminCache, type WithdrawalListParams, adminQuery } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { useRefreshAnnouncer } from './useRefreshAnnouncer';
 import { AdminListSkeleton } from './AdminListSkeleton';
@@ -130,6 +131,7 @@ export interface WithdrawalManagementProps {
   loadWithdrawals: (params: WithdrawalQuery) => Promise<AdminWithdrawalsResponse['data']>;
   /** 後台記憶體快取（AdminConsole 建立）。不給＝不跨卸載保留。 */
   cache?: AdminCache;
+  busy?: AdminBusy;
   updateStatus: (
     id: string,
     status: 'awaiting_collection' | 'rejected' | 'completed',
