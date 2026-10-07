@@ -29,7 +29,7 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
-import { type AdminBusy, NOOP_BUSY } from './adminBusy';
+import { type AdminBusy, LOCKED_TAB_LOOK, NOOP_BUSY } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
 import { UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, isForbidden, useAdminList, useDelayedFlag } from './useAdminList';
@@ -306,6 +306,8 @@ export function MemberManagement({
   // 證件審核在子分頁裡：寫入在途或匯出中時，切子分頁同樣會卸載在途的元件（T14），非 active 的
   // 那一個比照外層分頁停用、指向說明行。
   const tabLocked = (value: string) => busy.locked && memberTab !== value;
+  // 停用立即生效，外觀等 0.3 秒（與外層分頁同一個判準）。
+  const lockLook = useDelayedFlag(busy.locked, REVALIDATE_DIM_DELAY_MS);
 
   const openDetail = async (id: string) => {
     let ticket = detailRequests.begin(id);
@@ -500,6 +502,8 @@ export function MemberManagement({
           value="members"
           disabled={tabLocked('members')}
           aria-describedby={tabLocked('members') ? busy.noteId : undefined}
+          data-locked={tabLocked('members') && lockLook ? 'true' : undefined}
+          className={LOCKED_TAB_LOOK}
         >
           會員列表
         </TabsTrigger>
@@ -507,6 +511,8 @@ export function MemberManagement({
           value="id-reviews"
           disabled={tabLocked('id-reviews')}
           aria-describedby={tabLocked('id-reviews') ? busy.noteId : undefined}
+          data-locked={tabLocked('id-reviews') && lockLook ? 'true' : undefined}
+          className={LOCKED_TAB_LOOK}
         >
           證件審核
         </TabsTrigger>

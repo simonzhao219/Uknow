@@ -21,6 +21,13 @@ export interface AdminBusy {
   startExport(): AdminExportSession;
 }
 
+/**
+ * 鎖住的分頁（外層四個、會員區的兩個子分頁）：原生 disabled 立即生效——Radix 鍵盤導覽跳過、點
+ * 不動；停用的外觀等 0.3 秒，跟列表淡化同一個判準，0.3 秒內結束的寫入不閃灰。外觀只在
+ * `data-locked="true"` 時套；蓋掉 TabsTrigger 基底的 `disabled:opacity-50`。
+ */
+export const LOCKED_TAB_LOOK = 'disabled:opacity-100 data-[locked=true]:disabled:opacity-50';
+
 export const NOOP_BUSY: AdminBusy = {
   locked: false,
   noteId: '',
