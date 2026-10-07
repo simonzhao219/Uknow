@@ -119,8 +119,10 @@ jobs:
         # 開的」;只有 403(閘門擋人)、5xx(服務故障)、連線失敗才算紅。
         # 端點與 supabase/functions/api/index.ts 的 resolvePayuniConfig 同源。
         #
-        # 基準狀態碼:未能本機驗證(開發容器的出口 proxy 對 *.payuni.com.tw
-        # 回 CONNECT 403),以第一次 CI 跑的結果為基準——跑完把兩個狀態碼補回此處。
+        # 基準狀態碼(2026-10-07 首次 CI workflow_dispatch,GitHub 美國 runner):
+        # sandbox-api.payuni.com.tw/api/upp → 200;api.payuni.com.tw/api/upp → 200。
+        # 本機未能驗證(開發容器出口 proxy 對 *.payuni.com.tw 回 CONNECT 403)。
+        # 之後狀態碼偏離 200 但不是 403/5xx 仍算通過,只是值得看一眼摘要。
         #
         # 頻率依據:沿用本 workflow 的每 6 小時排程,不另開 workflow(規則 8a:
         # 秒級檢查併入既有 job)。理由與資產 TTL 同性質:PayUni 閘門狀態會在
