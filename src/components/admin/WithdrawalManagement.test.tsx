@@ -757,6 +757,21 @@ describe('WithdrawalManagement 工具列與匯出', () => {
     fireEvent.click(refresh);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
   });
+
+  // 特徵測試（S5 階段 4a 遷移前補上）：清勾選原本寫在 fetchWithdrawals 裡，遷移到
+  // usePagedList 後要搬到「重讀成功」時——留著的勾選指向上一批資料，下一步是不可
+  // 回退的批次匯款。
+  it('重新整理成功後已選取歸零', async () => {
+    renderConsole({
+      loadWithdrawals: async () =>
+        page({ withdrawals: [record(), record({ id: 'w2', userName: '李小華' })] }),
+    });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全選本頁的提領記錄' }));
+    expect(screen.getByText('已選取 2 筆')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await waitFor(() => expect(screen.queryByText('已選取 2 筆')).toBeNull());
+  });
 });
 
 describe('WithdrawalManagement 跨斷點', () => {

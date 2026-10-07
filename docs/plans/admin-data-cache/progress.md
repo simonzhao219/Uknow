@@ -16,7 +16,7 @@
 | 1a | `useLatestRequest`（`nextStamp`）；`usePagedList` 序號（兩個方向、ticket 帶身分與戳、`load` 走 ref）、旗標綁 ticket、背景重讀、失敗保留舊列、`clearOnError`、`loadMoreError`、`canLoadMore`、`reload` 回傳結算 | ✅ 綠燈 | `835b2e5` | `dbd0f29` |
 | 1b | `usePagedList` 的 `initial`（換身分時凍結）、`onLanded`（被拒補讀一次、再被拒進錯誤態）、`meta`、`isConfirmed` | ✅ 綠燈 | `9e7edf7` | `6f14c49` |
 | 2 | `createAdminCache`（builder `{id, slot, resource, params}`、fence 用 hooks 的 `nextStamp`、空結果刪槽、view、`accessLost`、`open`／`dispose`）＋`useAdminList`＋`writeOutcome`＋PII 守衛（AST） | ✅ 綠燈 | `14dfabf` | `f0e2b7f` |
-| 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）、匯出宣告文字同步、`useRefreshAnnouncer`，兩個呼叫端同步改接 | ✅ 綠燈 | `439601b` | 見下一個 commit |
+| 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）、匯出宣告文字同步、`useRefreshAnnouncer`，兩個呼叫端同步改接 | ✅ 綠燈 | `439601b` | `53273b3` |
 | 4a | 提領頁純遷移到 `usePagedList`（綠到綠，既有測試一字不改；先補特徵測試） | ⬜ 未開始 | — | |
 | 4b | 提領頁讀取側：快取、匯款類閘門（D、K5）與 `AdminListStatus`、統計骨架（A）、作業面板、資料時間、骨架、錯誤區、失敗保留舊列與遮罩、篩選保留 | ⬜ 未開始 | | |
 | 4c | 提領頁動作側：`AdminActionReport`、結果分類、失敗重讀、失效與 fence、批次快照、焦點後備、`withdrawalExport.ts`（含完成核對 K7）、busy | ⬜ 未開始 | | |
