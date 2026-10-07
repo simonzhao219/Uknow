@@ -742,3 +742,43 @@ def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sh
     expect(title).to_have_text(LONG_EMAIL)
     _assert_title_clears_close_button(page)
     _assert_identity_card_fits(page)
+
+
+# --- 統計區的骨架（S5 階段 8，中途對照 P2-20） ------------------------------------
+#
+# 統計切回時是骨架、本次讀取確認後才出數字（業主裁決 A）。手機的摘要是一行 dl，換行
+# 與否看寬度：375px 一行（46px）、320px 兩行（70px）。舊骨架是固定 h-14（56px），兩邊
+# 都差 10–14px——數字落地那一刻，下面的作業面板與列表整個跳一下。jsdom 量不出高度，
+# 只能在真瀏覽器裡比。
+
+
+def _summary_child_height(page) -> float:
+    return page.evaluate(
+        """() => {
+          const child = document.querySelector('section[aria-label="提領彙總"] > *');
+          return child ? child.getBoundingClientRect().height : -1;
+        }"""
+    )
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", [375, 320])
+def test_admin_stats_skeleton_matches_the_summary_height(
+    page, context, api_mock, rest_mock, width
+):
+    """手機統計區的骨架與確認後的摘要同高：數字落地時版面不跳。"""
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.hold_admin_withdrawal_list()
+    page.goto("/admin")
+    expect(page.get_by_role("status", name="載入提領申請中")).to_be_visible()
+    skeleton = _summary_child_height(page)
+
+    api_mock.release_admin_withdrawal_list()
+    expect(page.locator('section[aria-label="提領彙總"] > dl')).to_be_visible()
+    summary = _summary_child_height(page)
+
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下統計骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
+        f"下面的內容跳 {abs(skeleton - summary)}px。骨架要跟摘要同形（同一個 dl、同樣會換行）。"
+    )

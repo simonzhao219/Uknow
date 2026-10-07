@@ -1186,6 +1186,22 @@ describe('WithdrawalManagement 快取與確認閘門', () => {
     expect(document.activeElement).toBe(listRegion());
   });
 
+  // 「目前沒有提領申請」在重試途中閃出來，等於在結果出來前先說了一次沒有（與公告、告警同一個判準）。
+  it('有過資料但清單為空時，錯誤區重試途中留在原位，不閃出空狀態', async () => {
+    const { calls, load } = heldLoader();
+    renderWith(undefined, load);
+    await act(async () => calls[0].resolve(page({ withdrawals: [] })));
+    expect(screen.getByText('目前沒有提領申請')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].reject(new Error('連線失敗')));
+
+    const retry = screen.getByRole('button', { name: '重試' });
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('目前沒有提領申請')).toBeNull();
+    expect(retry.isConnected).toBe(true);
+  });
+
   it('手動重新整理失敗時陳舊提示不再帶 alert——狀態文字已經播過', async () => {
     const { calls, load } = heldLoader();
     renderWith(undefined, load);

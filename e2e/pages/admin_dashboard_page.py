@@ -37,6 +37,15 @@ class AdminDashboardPage(BasePage):
     def open_tab(self, name: str) -> None:
         self.tab(name).click()
 
+    # 提領列表區（`WithdrawalManagement.tsx` 的 `<section aria-label="提領申請列表">`）：
+    # 骨架、錯誤區、空狀態與表格（手機是卡片）都在裡面；背景更新時它帶 aria-busy、列表留著。
+    # 「更新失敗」的陳舊提示與它的「重試」在列表區**外面**。
+    def withdrawal_list(self) -> Locator:
+        return self.page.get_by_role("region", name="提領申請列表")
+
+    def withdrawal_skeleton(self) -> Locator:
+        return self.page.get_by_role("status", name="載入提領申請中")
+
     # --- withdrawal review actions (pending rows only) ---------------------
     #
     # 一律以**會員**鎖定那一列,不用 ".first"。

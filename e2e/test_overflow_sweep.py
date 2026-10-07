@@ -23,11 +23,13 @@
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
 import pytest
+from playwright.sync_api import expect
 
 from mocks.admin_console_mock import build_worst_case_member_detail, route_admin_member_detail
 from mocks.backend_api_mock import (
@@ -152,6 +154,10 @@ class SweepRoute:
     # 只放「切換到另一個持久畫面」這種互動；一次性彈出物（對話框、toast）
     # 仍在盲區，見報告文末。
     after_load: Optional[Callable] = None
+    # 導頁後要操縱後端回應的互動（page, api_mock → None）：扣住或打壞讀取、扣住寫入。
+    # 背景更新、失敗保留舊列、寫入與匯出在途的鎖分頁說明行都要「等網路」才畫得出來，
+    # 被動載入與 after_load 都到不了（S5）。在 after_load 之後執行。
+    drive: Optional[Callable] = None
     # 已知未清的溢出：值是「為什麼還沒清」。**非空 = 這條路由暫時不硬失敗**。
     #
     # 這是逐路由棘輪，取代原本「全域 STRICT 一翻全翻」的全有全無：沒有這個
@@ -454,6 +460,62 @@ def _open_history_dialog(page):
     page.get_by_role("menuitem", name="查看歷史").click()
 
 
+def _setup_admin_many_withdrawals(context, api_mock, rest_mock):
+    """超過一頁（50 筆）的提領：匯出要逐頁收集，說明行才有「已收集 N / M 筆」。"""
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.set_admin_withdrawals(
+        [
+            build_admin_withdrawal(
+                status="pending",
+                id=f"wd-admin-{i:03d}",
+                userName=NAME_CJK_10 if i == 0 else f"會員{i:03d}",
+                amount=BIG_POINTS if i == 0 else 1000,
+            )
+            for i in range(120)
+        ]
+    )
+
+
+def _return_to_withdrawals_while_refreshing(page, api_mock):
+    """切到會員再切回提領、扣住重讀：快取的舊列＋更新中的狀態行與閘門外觀。"""
+    page.get_by_role("tab", name="會員管理").click()
+    settle(page)
+    api_mock.hold_admin_withdrawal_list()
+    page.get_by_role("tab", name="獎金提領管理").click()
+    expect(page.get_by_role("region", name="提領申請列表")).to_have_attribute("aria-busy", "true")
+
+
+def _refresh_withdrawals_and_fail(page, api_mock):
+    """重新整理失敗：保留舊列、收款資訊遮住、陳舊提示寫原因與「重試後顯示」。"""
+    api_mock.fail_admin_withdrawal_list()
+    page.get_by_role("button", name="重新整理").click()
+    expect(page.get_by_text(re.compile(r"^更新失敗，以下是"))).to_be_visible()
+
+
+def _reject_with_write_held(page, api_mock):
+    """寫入在途：其他分頁停用，分頁列下方的說明行（0.3 秒後出現）。"""
+    api_mock.hold_admin_withdrawal_writes()
+    page.get_by_role("button", name="退件", exact=True).first.click()
+    page.get_by_label("退件理由").fill("收款帳號與身分證姓名不符")
+    page.get_by_role("button", name="確認退件").click()
+    expect(page.get_by_text("處理中，完成前無法切換分頁")).to_be_visible()
+
+
+def _export_with_collection_held(page, api_mock):
+    """匯出逐頁收集到一半：說明行寫已收集的筆數，是這一列最長的字串。"""
+    api_mock.hold_admin_withdrawal_list(from_offset=100)
+    page.get_by_role("button", name="下載 CSV（含身分證與帳號）").click()
+    expect(page.get_by_text(re.compile(r"^匯出中（已收集 \d+ / \d+ 筆）"))).to_be_visible()
+
+
+def _refresh_system_alerts(page):
+    """告警的新工具列（沒有篩選、鈕靠右）按過重新整理：狀態文字「已更新 HH:mm」。"""
+    _open_system_alerts_tab(page)
+    settle(page)
+    page.get_by_role("button", name="重新整理").click()
+    expect(page.get_by_text(re.compile(r"^已更新 \d\d:\d\d$"))).to_be_visible()
+
+
 def _open_member_detail_sheet(page):
     page.get_by_role("tab", name="會員管理").click()
     # 這一步的 settle 不能省：列表要先畫出來，才點得到「查看」。
@@ -628,6 +690,47 @@ ROUTES = [
         tags=["member-sheet"],
         after_load=_open_member_detail_sheet,
     ),
+    # S5：要等網路的狀態（背景更新、失敗保留舊列、寫入與匯出在途），以 drive 扣住或打壞回應。
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領切回（背景更新中）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawals-refreshing"],
+        drive=_return_to_withdrawals_while_refreshing,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領更新失敗（保留舊列）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawals-stale"],
+        drive=_refresh_withdrawals_and_fail,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 寫入在途（分頁說明行）",
+        _setup_admin,
+        "/admin",
+        tags=["write-in-flight"],
+        drive=_reject_with_write_held,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 匯出中（分頁說明行）",
+        _setup_admin_many_withdrawals,
+        "/admin",
+        tags=["export-in-flight"],
+        drive=_export_with_collection_held,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 系統告警（重新整理後）",
+        _setup_admin_alerts,
+        "/admin",
+        tags=["system-alerts-refreshed"],
+        after_load=_refresh_system_alerts,
+    ),
 ]
 
 # 沒掃到的路由要寫出來，不能靜默略過——「報告沒提到」和「掃過沒問題」
@@ -754,6 +857,10 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
 
     if route.after_load:
         route.after_load(page)
+        settle(page)
+
+    if route.drive:
+        route.drive(page, api_mock)
         settle(page)
 
     # 地基檢查:全站文案是中文，所有溢出數字都建立在中文字寬上。字沒有以

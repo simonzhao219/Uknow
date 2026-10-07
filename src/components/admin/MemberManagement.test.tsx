@@ -1531,6 +1531,22 @@ describe('MemberManagement 快取與背景更新', () => {
     expect(document.activeElement).toBe(memberList());
   });
 
+  // 「沒有符合條件的會員」在重試途中閃出來，等於在結果出來前先說了一次沒有（與公告、告警同一個判準）。
+  it('有過資料但清單為空時，錯誤區重試途中留在原位，不閃出空狀態', async () => {
+    const { calls, load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    await act(async () => calls[0].d.resolve(page({ members: [] })));
+    expect(screen.getByText('沒有符合條件的會員')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].d.reject(new Error('連線失敗')));
+
+    const retry = within(screen.getByRole('alert')).getByRole('button', { name: '重試' });
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('沒有符合條件的會員')).toBeNull();
+    expect(retry.isConnected).toBe(true);
+  });
+
   it('沒有資料時讀取失敗用中性字，重試是流程鈕', async () => {
     const { calls, load } = heldMembers();
     renderMembers({ loadMembers: load });
