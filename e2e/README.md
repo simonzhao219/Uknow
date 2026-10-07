@@ -158,6 +158,12 @@ E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 連已知債務也一併�
   預設分頁。對話框/Sheet 同理。同一條 `path` 可以掃多次，pytest 的 id 靠
   `tags` 區分（`/admin#members`）——**不要改用 label 當 id**，中文會被轉義成
   `\uXXXX`，`-k` 就篩不到了。
+- **`drive` 把要「等網路」才畫得出來的狀態帶進量測**（S5）：背景更新中、更新
+  失敗保留舊列、寫入與匯出在途時鎖分頁的說明行，都要扣住或打壞後端回應才看得到，
+  被動導頁與 `after_load` 都到不了。`drive(page, api_mock)` 在 `after_load` 之後
+  執行，用 `mocks/backend_api_mock.py` 的 `hold_*`／`release_*`／`fail_*` 操縱回應
+  （目前只有提領頁的四條：`withdrawals-refreshing`、`withdrawals-stale`、
+  `write-in-flight`、`export-in-flight`）。
 - **不是 `.feature`**：其他測試描述使用者行為，這支是橫切面巡檢，硬套
   Gherkin 只會得到沒人想讀的假場景。走 `pytest.ini` 已允許的 `test_*.py`。
 - **測資是「最壞但可達」**：每個欄位取產品實際允許的極端值（名稱 10 字
@@ -171,7 +177,7 @@ E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 連已知債務也一併�
   只給了空清單，於是只渲染「尚無公告」。兩條都因此「0 發現」而上鎖，補齊
   後各溢出 119px 與 153px。所以上鎖前的自檢有兩層：**mock 的形狀要與後端
   一致**（缺欄位會讓條件渲染整塊消失）、**清單不能是空的**。
-- **盲區**：沒接 `after_load` 的互動式畫面仍掃不到（**能掃不等於掃了**）、
+- **盲區**：沒接 `after_load`／`drive` 的互動式畫面仍掃不到（**能掃不等於掃了**）、
   toast 需要操作才出現、目前只跑 375px 單一軸。每次報告的文末都會列出來。
 - **表格的橫向捲動不算溢出**：`Table` 原語自帶 `overflow-x-auto`，明示要捲動
   ＝有意為之。「要橫向捲才讀得完一列」是可用性問題，這支測不出來。

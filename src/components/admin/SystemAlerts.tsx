@@ -33,8 +33,9 @@ import { formatDataAge } from './DataAgeNote';
 //
 // **與 DI 慣例的例外**（業主裁決 H）：提領與會員的取數由 AdminDashboard 以 props 注入，這支仍
 // 自己打 apiClient，也不快取、不走共用的分頁 hook——監控面板要的是即時資料。S5 只接共用的呈現
-// （工具列、骨架、錯誤區、陳舊提示）與寫入協議。退場條件：下次改這支的取數或寫入時，搬進
-// AdminDashboard 以 props 注入。
+// （工具列、骨架、錯誤區、陳舊提示）與寫入協議。代價是自管的狀態（序號、`settled`、重讀旗標、
+// 錯誤與資料時間）是 `usePagedList` 的第二份，同一個修正要改兩處。退場條件：下次改這支的取數或
+// 寫入時，搬進 AdminDashboard 以 props 注入，並改接 `useAdminList`（`slot: null`，不快取）。
 function getSeverityBadge(severity: SystemAlert['severity']) {
   switch (severity) {
     case 'error':
