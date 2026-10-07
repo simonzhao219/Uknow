@@ -243,7 +243,8 @@ interface StorageRules {
 const ADMIN_PII_RULES: StorageRules = {
   identifiers: ['sessionStorage', 'localStorage', 'indexedDB', 'caches'],
   members: ['document.cookie'],
-  imports: [/DataCacheContext$/, /formDraft$/],
+  // 帶副檔名的寫法（`DataCacheContext.tsx`）也算同一個模組。
+  imports: [/DataCacheContext(\.[jt]sx?)?$/, /formDraft(\.[jt]sx?)?$/],
 };
 
 // 快取、組合 hook 與殼層另禁會把狀態帶出記憶體的管道（網址、跨分頁、視窗名稱）。
@@ -266,9 +267,9 @@ function storageUses(source: string, fileName: string, rules: StorageRules): str
   const hits: string[] = [];
   const lastName = (node: ts.Expression) =>
     ts.isIdentifier(node) ? node.text : ts.isPropertyAccessExpression(node) ? node.name.text : '';
-  const checkImport = (spec: ts.Node | undefined) => {
+  const checkImport = (spec: ts.Node | undefined, via = 'import') => {
     if (spec && ts.isStringLiteral(spec) && rules.imports.some((re) => re.test(spec.text))) {
-      hits.push(`import ${spec.text}`);
+      hits.push(`${via} ${spec.text}`);
     }
   };
   const visit = (node: ts.Node) => {
@@ -281,6 +282,13 @@ function storageUses(source: string, fileName: string, rules: StorageRules): str
       checkImport(node.moduleSpecifier);
     if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       checkImport(node.arguments[0]);
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require'
+    ) {
+      checkImport(node.arguments[0], 'require');
     }
     ts.forEachChild(node, visit);
   };
