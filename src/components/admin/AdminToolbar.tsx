@@ -4,9 +4,12 @@ import { Button } from '../ui/button';
 
 export interface AdminToolbarProps {
   /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度。 */
-  filter: ReactNode;
+  filter?: ReactNode;
   onRefresh: () => void;
-  isRefreshing: boolean;
+  isUpdating: boolean;
+  statusText?: string;
+  refreshDisabled?: boolean;
+  exportDescribedBy?: string;
   /** 只有已具匯出邏輯的頁面才傳——沒傳就不渲染 CSV 鈕（規則見 ui-ux-guidelines §3）。 */
   onExport?: () => void;
   isExporting?: boolean;
@@ -36,7 +39,8 @@ const EXPORTING_NAME = '匯出中…';
 export function AdminToolbar({
   filter,
   onRefresh,
-  isRefreshing,
+  isUpdating,
+  refreshDisabled = false,
   onExport,
   isExporting = false,
   canExport = true,
@@ -66,7 +70,7 @@ export function AdminToolbar({
           size="icon"
           className={ICON_TO_LABELED}
           onClick={onRefresh}
-          disabled={disabled || isRefreshing}
+          disabled={disabled || isUpdating || refreshDisabled}
         >
           <RefreshCw aria-hidden="true" />
           <span className="sr-only md:not-sr-only">重新整理</span>

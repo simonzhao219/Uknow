@@ -547,7 +547,8 @@ export function MemberManagement({
                     </form>
                   }
                   onRefresh={list.reload}
-                  isRefreshing={list.isLoading || list.isLoadingMore}
+                  isUpdating={false}
+                  refreshDisabled={list.isLoading || list.isLoadingMore}
                 />
               </div>
             </div>
