@@ -22,7 +22,7 @@
 | 4c | 提領頁動作側：`AdminActionReport`、結果分類、失敗重讀、失效與 fence、批次快照、焦點後備、`withdrawalExport.ts`（含完成核對 K7）、busy | ✅ 綠燈 | `9a35ecb` | `47bb6b0` |
 | ★ | **中途對照（K8）**：4c 綠燈後通知主 session 對照 hooks＋快取＋提領頁的 diff，通過才開 5a（最後對照只看 5–9） | ✅ 通過（PR #371 留言 6033343045；業主裁決 6033724251） | — | — |
 | ★′ | 4c 回填：中途對照 P1、業主裁決 A–G、P2 #12–#22（`plan.md` §10.7） | ✅ 綠燈（守衛 `3c133d5`） | `79bd971` | `c2b47fa` |
-| 5a | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀、結果不明重讀詳情、換搜尋整合測試） | ⬜ 未開始 | | |
+| 5a | 會員頁（快取、子分頁保留、`useLatestRequest`、補讀、結果不明重讀詳情、換搜尋整合測試） | ✅ 綠燈 | `8fa6e54` | `bc5abcd` |
 | 5b | 證件審核（錯誤區與重讀、成功回報、`memberLabel`、按鈕順序；不受閘門約束） | ⬜ 未開始 | | |
 | 6 | 公告（快取、骨架、錯誤態、刪除鈕 44px）＋告警（`AdminToolbar`、背景重讀、`onAccessLost`；不走共用 hook） | ⬜ 未開始 | | |
 | 7 | 殼層：`AdminConsole`（`user.id` key、store `open`／`dispose`、注入、busy 鎖外層分頁與會員子分頁、說明行）、`AdminDashboard` 讀 `UserContext` | ⬜ 未開始 | | |
@@ -31,7 +31,8 @@
 
 ## 目前位置與下一步
 
-中途對照（K8）通過，4c 回填綠燈（★′）。**下一步：5a 會員頁**——依業主裁決「4c 回填綠燈後直接開 5a，不必再通知」。5–9 做完
+中途對照（K8）通過，4c 回填綠燈（★′），5a 綠燈。**下一步：5b 證件審核**（含改寫清單 5b：`IdReviewQueue.test.tsx:61`
+改成「名稱為『載入審核佇列中』的 status 消失」，裁決 B）。5–9 做完
 跑 `/review-implementation`、PR 改實作版描述後通知主 session 最後對照（只看 5–9）。十三個階段，需要兩到三次對話——中途
 `/clear` 續作屬預期內，從本表找回位置。
 
