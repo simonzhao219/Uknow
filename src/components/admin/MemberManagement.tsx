@@ -720,7 +720,7 @@ export function MemberManagement({
               data-stale={stale ? 'true' : undefined}
               className="scroll-mt-20 transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
             >
-              {retrying === 'empty' && list.isLoading ? (
+              {retrying === 'empty' && updating ? (
                 <AdminListError
                   id={listErrorId}
                   message=""

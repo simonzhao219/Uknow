@@ -56,6 +56,7 @@ overflow_probe.py # 溢出探針：有沒有畫到框外（缺陷偵測，掃全
 layout_probe.py   # 版面探針：有沒有長成該有的樣子（意圖驗證，量指定元素）
 test_overflow_sweep.py       # 375px 全路由溢字巡檢（非 BDD，見下節）
 test_admin_mobile_layout.py  # /admin 的正向版面期望（見下節）
+test_admin_dashboard_page.py # journey 共用的 AdminDashboardPage 列表等待，在 mock 下先驗診斷
 ```
 
 **兩支探針刻意分家**，因為它們的失效方式相反：一個把一排中文分頁擠成單行

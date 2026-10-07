@@ -1,9 +1,12 @@
 """`AdminDashboard.tsx` — the admin-only console at `/admin` (guarded by
-AdminRoute). A Radix `Tabs` with four triggers whose accessible names are
+AdminRoute); the tabs live in `admin/AdminConsole.tsx`, keyed by the signed-in
+user. A Radix `Tabs` with four triggers whose accessible names are
 獎金提領管理 / 會員管理 / 系統公告 / 系統告警 (only the two-character tail —
 提領 / 會員 / 公告 / 告警 — is visible; the rest is sr-only so the names stay
 stable for e2e and journey); only the active tab's panel is mounted, so switching
 tabs is what triggers each management component's data fetch."""
+
+import re
 
 from playwright.sync_api import Locator, Page, expect
 
@@ -73,17 +76,25 @@ class AdminDashboardPage(BasePage):
     #
     # 鎖不到唯一一列時**擲錯而不是取 .first**:取第一列正是這個修法要移除的
     # 假設,再套一次只會換個地方重演。
-    # 列表是**掛載時一次性抓取**(WithdrawalManagement 的 fetchWithdrawals),載入中
+    # 列表在**掛載時抓取**(S5 之前是一次性的 fetchWithdrawals,見下方 S5 段),載入中
     # 顯示骨架、失敗顯示「重試」、真的沒資料才顯示空訊息。對 0 列的表格直接套
     # expect 的 5 秒預設逾時,等於把「API 還在回」讀成「那一列不存在」:2026-09-26
     # 排程 run 36269079479 的 f50 就是這樣紅的(同一份 log 的下一個情境暖機後也要
     # 輪詢約 3 秒才看到列,5 秒的餘裕本來就薄)。所以先等列表**確實載入完成**,
     # 再去數列;並且失敗時說明畫面屬於哪一態,而不是只丟一個 0。
+    #
+    # S5 之後還有兩種狀態——切回分頁與寫入後的重讀是**背景更新**:
+    # - 背景更新中:表格留在畫面上、骨架不出現,列表區(「提領申請列表」)帶 aria-busy。
+    #   只等骨架會在更新途中放行,對著即將被換掉的列動作——所以另等 aria-busy 解除。
+    # - 更新失敗保留舊列:表格上方有陳舊提示與它自己的「重試」(在列表區**外面**)。那顆
+    #   進 or_ 鏈的話,與表格同時可見會撞 strict mode、吃掉診斷(R3-P2-25)——鏈上的「重試」
+    #   只認列表區**裡面**那一顆(沒有資料時的錯誤區),保留舊列的失敗另外辨識、說出來。
     def _wait_list_settled(self) -> None:
-        skeleton = self.page.get_by_role("status", name="載入提領申請中")
-        table = self.page.get_by_role("table")
-        empty = self.page.get_by_text("目前沒有提領申請")
-        retry = self.page.get_by_role("button", name="重試", exact=True)
+        region = self.withdrawal_list()
+        skeleton = self.withdrawal_skeleton()
+        table = region.get_by_role("table")
+        empty = region.get_by_text("目前沒有提領申請")
+        retry = region.get_by_role("button", name="重試", exact=True)
         # 先等「任一終態或骨架」出現:分頁剛切過去、元件還沒掛上時骨架也不在,
         # 直接等骨架消失會在那一刻空轉成立。
         expect(skeleton.or_(table).or_(empty).or_(retry)).to_be_visible(
@@ -97,23 +108,51 @@ class AdminDashboardPage(BasePage):
                 "管理台 GET /admin/withdrawals 太慢或卡住,不是那一列不存在。"
                 f"\n{self._list_state()}"
             ) from exc
+        try:
+            expect(region).not_to_have_attribute(
+                "aria-busy", "true", timeout=_LIST_SETTLE_TIMEOUT_MS
+            )
+        except AssertionError as exc:
+            raise AssertionError(
+                f"提領列表 {_LIST_SETTLE_TIMEOUT_MS // 1000} 秒後仍在背景更新中（列表區 aria-busy"
+                "未解除）——管理台 GET /admin/withdrawals 太慢或卡住;畫面上是更新前的舊列,"
+                "不能拿來動作。"
+                f"\n{self._list_state()}"
+            ) from exc
         if retry.count():
             raise AssertionError(
                 "提領列表載入失敗（畫面出現「重試」鈕）——不是那一列不存在。"
                 f"\n{self._list_state()}"
             )
+        if self._stale_notice().count():
+            raise AssertionError(
+                "提領列表更新失敗（畫面保留舊列並提示「更新失敗」）——收款資訊遮住、匯款類操作"
+                "暫停,不是那一列不存在。"
+                f"\n{self._list_state()}"
+            )
+
+    def _stale_notice(self) -> Locator:
+        """保留舊列時的失敗提示（`AdminStaleNotice`，在列表區外面）。"""
+        return self.page.get_by_text(re.compile(r"^更新失敗，以下是"))
 
     def _list_state(self) -> str:
         """目前列表屬於哪一態,供失敗訊息使用(任何一段取不到只降級成一行)。"""
         try:
-            if self.page.get_by_role("status", name="載入提領申請中").count():
+            region = self.withdrawal_list()
+            if self.withdrawal_skeleton().count():
                 return "列表狀態：載入中（骨架）"
-            if self.page.get_by_role("button", name="重試", exact=True).count():
-                text = " ".join(self.page.get_by_role("tabpanel").inner_text(timeout=3_000).split())
+            if not region.count():
+                return "列表狀態：找不到列表區（提領分頁沒有掛上？）"
+            if region.get_attribute("aria-busy", timeout=3_000) == "true":
+                return "列表狀態：背景更新中（畫面是更新前的舊列）"
+            if region.get_by_role("button", name="重試", exact=True).count():
+                text = " ".join(region.inner_text(timeout=3_000).split())
                 return f"列表狀態：載入失敗——{text[:300]}"
-            if self.page.get_by_text("目前沒有提領申請").count():
+            if self._stale_notice().count():
+                return "列表狀態：更新失敗，保留舊列（收款資訊遮住、匯款類操作暫停）"
+            if region.get_by_text("目前沒有提領申請").count():
                 return "列表狀態：載入完成但是空的（目前沒有提領申請）"
-            return f"列表狀態：載入完成，共 {self.page.get_by_role('row').count() - 1} 列資料"
+            return f"列表狀態：載入完成，共 {region.get_by_role('row').count() - 1} 列資料"
         except Exception as exc:
             return f"（列表狀態取得失敗：{exc}）"
 

@@ -170,17 +170,33 @@ const ACTION_DONE: Record<string, string> = {
 
 // 統計卡的標籤與取值。待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
 // 數字去對網銀的轉出總額，混進手續費就對不起來。
-const STAT_ITEMS: { label: string; value: (s: AdminWithdrawalStats) => string }[] = [
-  { label: '待匯款總額', value: (s) => twd(s.pendingAmount) },
-  { label: withdrawalStatusLabel('pending'), value: (s) => String(s.byStatus.pending) },
+// placeholder：手機摘要骨架裡佔住數值位置的字（透明），寬度取典型值——骨架與摘要同樣換行。
+const STAT_ITEMS: {
+  label: string;
+  value: (s: AdminWithdrawalStats) => string;
+  placeholder: string;
+}[] = [
+  { label: '待匯款總額', value: (s) => twd(s.pendingAmount), placeholder: '$000,000' },
+  {
+    label: withdrawalStatusLabel('pending'),
+    value: (s) => String(s.byStatus.pending),
+    placeholder: '0',
+  },
   {
     label: withdrawalStatusLabel('awaiting_collection'),
     value: (s) => String(s.byStatus.awaiting_collection),
+    placeholder: '0',
   },
-  { label: withdrawalStatusLabel('completed'), value: (s) => String(s.byStatus.completed) },
+  {
+    label: withdrawalStatusLabel('completed'),
+    value: (s) => String(s.byStatus.completed),
+    placeholder: '0',
+  },
 ];
 // 手機的一行摘要把「待匯款總額」縮成「待匯款」：一行放得下四項。
 const SUMMARY_LABELS = ['待匯款', ...STAT_ITEMS.slice(1).map((item) => item.label)];
+// 手機摘要與它的骨架共用：同一組 flex-wrap，換行與高度才會一致。
+const SUMMARY_ROW = 'flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm';
 // 作業面板骨架的五欄（戶名、身分證、銀行代號、帳號、匯款金額）。
 const FUNDING_FIELD_KEYS = ['name', 'id-number', 'bank-code', 'account', 'amount'];
 
@@ -389,7 +405,8 @@ export function WithdrawalManagement({
   }, [batchSnapshot, gate.paused]);
 
   // 重試期間錯誤區或陳舊提示留在原位、改寫「正在更新…」（焦點留在鈕上、不掉到 body）；結算後
-  // 若被列表取代，焦點移到列表區。沒有資料時的錯誤區靠這個旗標撐過重讀（否則是骨架）。
+  // 若被列表取代，焦點移到列表區。沒有資料時的錯誤區靠這個旗標撐過重讀——首次載入失敗時否則
+  // 是骨架，有過資料但清單為空時否則是「目前沒有提領申請」（結果出來前先說了一次沒有）。
   const [retryingEmpty, setRetryingEmpty] = useState(false);
   // 按下重試時焦點在不在那一區：在的話，結算後那一區被列表取代（焦點掉到 body）就移到列表區。
   const retryHadFocus = useRef(false);
@@ -913,7 +930,7 @@ export function WithdrawalManagement({
             桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
         {!isDesktop ? (
           confirmed || settledUnconfirmed ? (
-            <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+            <dl className={SUMMARY_ROW}>
               {STAT_ITEMS.map((item, i) => (
                 <div key={item.label} className="flex items-baseline gap-1">
                   <dt className="text-xs text-muted-foreground">{SUMMARY_LABELS[i]}</dt>
@@ -922,7 +939,18 @@ export function WithdrawalManagement({
               ))}
             </dl>
           ) : (
-            <Skeleton aria-hidden="true" className="h-14 w-full rounded-lg" />
+            // 同形骨架：同一組 flex-wrap、同樣的標籤，數值換成等寬的透明佔位字——換行與高度
+            // 跟著摘要走。實測 375px 一行 46px、320px 兩行 70px；先前固定 h-14（56px）的骨架
+            // 兩邊都差 10–14px，數字落地時下面整個跳一下（P2-20，test_admin_mobile_layout.py 量）。
+            // 數值遠比典型值長時（七位數金額）仍可能多換一行，佔位取的是典型寬度。
+            <div aria-hidden="true" className={SUMMARY_ROW}>
+              {STAT_ITEMS.map((item, i) => (
+                <div key={item.label} className="flex items-baseline gap-1">
+                  <span className="text-xs text-muted-foreground">{SUMMARY_LABELS[i]}</span>
+                  <Skeleton className="font-bold text-transparent">{item.placeholder}</Skeleton>
+                </div>
+              ))}
+            </div>
           )
         ) : (
           <StatCardGrid>
@@ -1127,7 +1155,7 @@ export function WithdrawalManagement({
             data-stale={stale ? 'true' : undefined}
             className="scroll-mt-20 transition-opacity data-[dimmed=true]:opacity-60 data-[stale=true]:opacity-[var(--stale-opacity)]"
           >
-            {retryingEmpty && list.isLoading ? (
+            {retryingEmpty && updating ? (
               <AdminListError
                 id={listErrorId}
                 message=""
