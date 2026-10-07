@@ -14,7 +14,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1a | `useLatestRequest`（`nextStamp`）；`usePagedList` 序號（兩個方向、ticket 帶身分與戳、`load` 走 ref）、旗標綁 ticket、背景重讀、失敗保留舊列、`clearOnError`、`loadMoreError`、`canLoadMore`、`reload` 回傳結算 | ✅ 綠燈 | `835b2e5` | `dbd0f29` |
-| 1b | `usePagedList` 的 `initial`（換身分時凍結）、`onLanded`（被拒補讀一次、再被拒進錯誤態）、`meta`、`isConfirmed` | ⬜ 未開始 | | |
+| 1b | `usePagedList` 的 `initial`（換身分時凍結）、`onLanded`（被拒補讀一次、再被拒進錯誤態）、`meta`、`isConfirmed` | ✅ 綠燈 | `9e7edf7` | 見下一個 `feat(hooks)` commit |
 | 2 | `createAdminCache`（builder `{id, slot, resource, params}`、fence 用 hooks 的 `nextStamp`、空結果刪槽、view、`accessLost`、`open`／`dispose`）＋`useAdminList`＋`writeOutcome`＋PII 守衛（AST） | ⬜ 未開始 | | |
 | 3 | `AdminToolbar` 新契約（`onRefresh`、`statusText`、`isUpdating`、`refreshDisabled`、`exportDescribedBy`、`filter` 選填）、匯出宣告文字同步、`useRefreshAnnouncer`，兩個呼叫端同步改接 | ⬜ 未開始 | | |
 | 4a | 提領頁純遷移到 `usePagedList`（綠到綠，既有測試一字不改；先補特徵測試） | ⬜ 未開始 | — | |
@@ -30,10 +30,12 @@
 
 ## 目前位置與下一步
 
-主 session 對照通過（PR #371 留言 6031064612），業主 2026-10-07 打 `/tdd-implement`，**施工中：階段 1b**（1a 綠燈 `dbd0f29`）。十三個階段，需要
+主 session 對照通過（PR #371 留言 6031064612），業主 2026-10-07 打 `/tdd-implement`，**施工中：階段 2**（1a、1b 綠燈）。十三個階段，需要
 兩到三次對話——中途 `/clear` 續作屬預期內，從本表找回位置。**4c 綠燈後先停下來請主 session 中途對照（★ 列），通過才開 5a；
 最後對照只看 5–9。**
 
 ## Blockers（逃生口紀錄）
+
+- 1b 驗證標準「載入更多失敗 `isConfirmed` 仍為真」已由 1a 的「載入更多失敗後可以再按一次，且不改變確認狀態」覆蓋，1b 不重複寫（逃生口 1 的子項，不影響階段）。
 
 ## 框架摩擦

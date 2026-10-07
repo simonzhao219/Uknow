@@ -13,19 +13,24 @@ import { useLatestRequest } from './useLatestRequest';
  * 的那幾筆也一起消失——那比沒有加載更多還糟。載入更多的失敗另記在
  * `loadMoreError`，`error` 只管重讀，整片列表才不會被錯誤區換掉。
  *
- * **最後意圖勝出。** 每次重讀（掛載、換身分、`reload()`）取一張新 ticket，載入更多
- * 帶當下那張；結算時 ticket 已不是最新就整個丟掉，不改任何 state。身分是 `deps`
- * 的序列化；身分與 `load` 存在 ref，寫入 await 之後才呼叫的舊閉包 `reload` 讀的也是
- * 當下的身分。兩個方向都擋：重讀在途時不接受載入更多（舊尾不接到新列表上），
- * 載入更多在途時開始重讀即作廢它。
+ * **最後意圖勝出。** 每次重讀（掛載、換身分、`reload()`、被拒補讀）取一張新 ticket，
+ * 載入更多帶當下那張；結算時 ticket 已不是最新就整個丟掉，不改任何 state、不呼叫
+ * `onLanded`。身分是 `deps` 的序列化；身分與 `load` 存在 ref，寫入 await 之後才呼叫的
+ * 舊閉包 `reload` 讀的也是當下的身分。兩個方向都擋：重讀在途時不接受載入更多（舊尾
+ * 不接到新列表上），載入更多在途時開始重讀即作廢它。
  *
  * **有資料時的重讀在背景進行、失敗時保留舊列**（ui-ux-guidelines §5）。只有本身分
  * 還沒有任何資料時才是骨架（`isLoading`）；`isConfirmed` 只在最近一次重讀成功落地、
- * 之後沒有在途的重讀與錯誤時成立——未確認的列可以看，不能拿來當依據。
+ * 被接受、之後沒有在途的重讀與錯誤時成立——未確認的列可以看，不能拿來當依據。
+ * 「未確認」永遠對應「有請求在跑」或「有錯誤可重試」，不會停在兩者皆無。
  *
  * **`reload()` 一定會兌現**：被較新的重讀取代時跟著新的那次、換身分時跟著新身分的
  * 那次、卸載時以 `'failed'` 兌現。呼叫端常是 `await reload()` 之後才解除處理中，
  * 永懸會把按鈕卡住。
+ *
+ * 擴充點 `initial`／`onLanded`（含被拒補讀一次）／`clearOnError` 目前只有後台的
+ * `useAdminList` 一個使用者——**第二個使用者出現前不再加選項**。補讀的狀態機留在
+ * 這裡，是因為上面那條「未確認」的不變式要在同一個 hook 裡才守得住。
  */
 export interface PagedResult<T, M = unknown> {
   items: T[];
@@ -44,13 +49,19 @@ export interface UsePagedListOptions<T, M = unknown> {
   deps: unknown[];
   /** 回 true 時這次讀取失敗不保留已顯示的列——重讀與載入更多都適用。 */
   clearOnError?: (err: unknown) => boolean;
+  /** 本身分的種子。只在身分改變時讀一次：之後再變也不影響已掛載的清單。 */
   initial?: PagedResult<T, M>;
+  /**
+   * 最新一次重讀成功落地時呼叫；回 `false` 表示不接受這份結果——補讀一次，
+   * 補讀又被拒就以錯誤收場。`stamp` 是那次請求送出時取的整數戳。
+   */
   onLanded?: (page: PagedResult<T, M>, info: { stamp: number }) => boolean;
 }
 
 export interface UsePagedList<T, M = unknown> {
   items: T[];
   total: number;
+  /** 重讀那一頁（或種子）帶的附加資料；載入更多不動它。 */
   meta: M | undefined;
   hasMore: boolean;
   /** 還有下一頁、資料已確認、沒有載入更多在途——更新中不接舊尾。 */
@@ -70,14 +81,18 @@ export interface UsePagedList<T, M = unknown> {
   loadMore: () => Promise<void>;
 }
 
-interface ListState<T> {
+/** 補讀落地又被拒：資料在兩次讀取之間又被改過。 */
+const CHANGED_DURING_UPDATE = '資料在更新途中又有變動，請重新整理';
+
+interface ListState<T, M> {
   /** 這份資料屬於哪個身分；與當下的身分不同時一律不顯示。 */
   identity: string;
   items: T[];
   total: number;
-  /** `items`／`total` 是本身分真的讀到的（可能為空），不是預設值。 */
+  meta: M | undefined;
+  /** `items`／`total` 是本身分的資料（讀到的或種子，可能為空），不是預設值。 */
   hasData: boolean;
-  /** 最近一次重讀成功落地，之後沒有失敗。 */
+  /** 最近一次重讀成功落地且被接受，之後沒有失敗。 */
   landed: boolean;
   /** 本身分有重讀在途。 */
   reloading: boolean;
@@ -86,13 +101,15 @@ interface ListState<T> {
   loadMoreError: string | null;
 }
 
-/** 新身分的起點：沒有資料，重讀即將發出（掛載與換身分的 effect 立刻發）。 */
-function blank<T>(identity: string): ListState<T> {
+/** 新身分的起點：重讀即將發出（掛載與換身分的 effect 立刻發）；有種子就先顯示種子。 */
+function seeded<T, M>(identity: string, seed: PagedResult<T, M> | undefined): ListState<T, M> {
+  const items = seed?.items ?? [];
   return {
     identity,
-    items: [],
-    total: 0,
-    hasData: false,
+    items,
+    total: seed?.total ?? items.length,
+    meta: seed?.meta,
+    hasData: seed !== undefined,
     landed: false,
     reloading: true,
     error: null,
@@ -119,17 +136,23 @@ export function usePagedList<T, M = unknown>({
   pageSize,
   deps,
   clearOnError,
+  initial,
+  onLanded,
 }: UsePagedListOptions<T, M>): UsePagedList<T, M> {
   const identity = JSON.stringify(deps);
   const requests = useLatestRequest();
 
-  const latest = useRef({ identity, load, pageSize, clearOnError });
-  latest.current = { identity, load, pageSize, clearOnError };
+  const latest = useRef({ identity, load, pageSize, clearOnError, onLanded });
+  latest.current = { identity, load, pageSize, clearOnError, onLanded };
 
-  const [state, setState] = useState<ListState<T>>(() => blank(identity));
+  // 種子只在身分改變的那個 render 讀一次——失效不會把顯示中的種子列抽掉。
+  const seedFor = useRef({ identity, seed: initial });
+  if (seedFor.current.identity !== identity) seedFor.current = { identity, seed: initial };
+
+  const [state, setState] = useState<ListState<T, M>>(() => seeded(identity, initial));
   // render 讀 state；非同步的結算要讀「現在」，讀這份同步更新的鏡像。
   const stateRef = useRef(state);
-  const commit = useCallback((next: ListState<T>) => {
+  const commit = useCallback((next: ListState<T, M>) => {
     stateRef.current = next;
     setState(next);
   }, []);
@@ -149,52 +172,73 @@ export function usePagedList<T, M = unknown>({
     for (const resolve of pending) resolve(outcome);
   }, []);
 
-  const startReload = useCallback((): Promise<RefreshOutcome> => {
-    if (!mounted.current) return Promise.resolve('failed');
-    const { identity: id, load: fetchPage, pageSize: limit } = latest.current;
-    const ticket = requests.begin();
-    moreInFlight.current = false;
-    const prev = stateRef.current;
-    commit({
-      ...(prev.identity === id ? prev : blank<T>(id)),
-      reloading: true,
-      landed: false,
-      error: null,
-      isLoadingMore: false,
-      loadMoreError: null,
-    });
-    const outcome = new Promise<RefreshOutcome>((resolve) => waiters.current.push(resolve));
-    invoke(() => fetchPage({ limit, offset: 0 })).then(
-      (res) => {
-        if (!mounted.current || !requests.isLatest(ticket)) return;
-        const items = res.items ?? [];
-        commit({
-          ...stateRef.current,
-          identity: id,
-          items,
-          total: res.total ?? items.length,
-          hasData: true,
-          landed: true,
-          reloading: false,
-          error: null,
-        });
-        finish(id, 'done');
-      },
-      (err) => {
-        if (!mounted.current || !requests.isLatest(ticket)) return;
-        const error = messageOf(err, '載入失敗');
-        commit(
-          latest.current.clearOnError?.(err)
-            ? { ...blank<T>(id), reloading: false, error }
-            : { ...stateRef.current, reloading: false, landed: false, error },
-        );
-        finish(id, 'failed');
-      },
-    );
-    return outcome;
+  const startReload = useCallback(() => {
+    const run = (retried: boolean) => {
+      if (!mounted.current) return;
+      const { identity: id, load: fetchPage, pageSize: limit } = latest.current;
+      const ticket = requests.begin();
+      moreInFlight.current = false;
+      const prev = stateRef.current;
+      commit({
+        ...(prev.identity === id ? prev : seeded<T, M>(id, seedFor.current.seed)),
+        reloading: true,
+        landed: false,
+        error: null,
+        isLoadingMore: false,
+        loadMoreError: null,
+      });
+      invoke(() => fetchPage({ limit, offset: 0 })).then(
+        (res) => {
+          if (!mounted.current || !requests.isLatest(ticket)) return;
+          const items = res.items ?? [];
+          const landedPage = { items, total: res.total ?? items.length, meta: res.meta };
+          if (latest.current.onLanded?.(landedPage, { stamp: ticket.stamp }) === false) {
+            // 補讀與拒絕在同一個同步段內：中間沒有「不在載入也沒資料」的 render。
+            if (!retried) {
+              run(true);
+              return;
+            }
+            commit({
+              ...stateRef.current,
+              reloading: false,
+              landed: false,
+              error: CHANGED_DURING_UPDATE,
+            });
+            finish(id, 'failed');
+            return;
+          }
+          commit({
+            ...stateRef.current,
+            ...landedPage,
+            identity: id,
+            hasData: true,
+            landed: true,
+            reloading: false,
+            error: null,
+          });
+          finish(id, 'done');
+        },
+        (err) => {
+          if (!mounted.current || !requests.isLatest(ticket)) return;
+          const error = messageOf(err, '載入失敗');
+          commit(
+            latest.current.clearOnError?.(err)
+              ? { ...seeded<T, M>(id, undefined), reloading: false, error }
+              : { ...stateRef.current, reloading: false, landed: false, error },
+          );
+          finish(id, 'failed');
+        },
+      );
+    };
+    run(false);
   }, [commit, finish, requests]);
 
-  const reload = useCallback(() => startReload(), [startReload]);
+  const reload = useCallback((): Promise<RefreshOutcome> => {
+    if (!mounted.current) return Promise.resolve('failed');
+    const outcome = new Promise<RefreshOutcome>((resolve) => waiters.current.push(resolve));
+    startReload();
+    return outcome;
+  }, [startReload]);
 
   const settled = useCallback((): Promise<RefreshOutcome> => {
     if (!mounted.current) return Promise.resolve('failed');
@@ -230,7 +274,7 @@ export function usePagedList<T, M = unknown>({
       const error = messageOf(err, '載入更多失敗');
       commit(
         latest.current.clearOnError?.(err)
-          ? { ...blank<T>(id), reloading: false, error }
+          ? { ...seeded<T, M>(id, undefined), reloading: false, error }
           : { ...stateRef.current, isLoadingMore: false, loadMoreError: error },
       );
     } finally {
@@ -252,17 +296,17 @@ export function usePagedList<T, M = unknown>({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只在身分改變時重讀；startReload 是穩定的，讀的是 ref
   useEffect(() => {
-    void startReload();
+    startReload();
   }, [identity]);
 
-  const view = state.identity === identity ? state : blank<T>(identity);
+  const view = state.identity === identity ? state : seeded<T, M>(identity, seedFor.current.seed);
   const hasMore = view.items.length < view.total;
   const isConfirmed = view.hasData && view.landed && !view.reloading && view.error === null;
 
   return {
     items: view.items,
     total: view.total,
-    meta: undefined,
+    meta: view.meta,
     hasMore,
     canLoadMore: hasMore && isConfirmed && !view.isLoadingMore,
     isLoading: !view.hasData && view.error === null,
