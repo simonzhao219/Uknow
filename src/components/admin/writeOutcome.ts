@@ -12,6 +12,13 @@
  */
 export type WriteFailure = 'rejected' | 'unknown';
 
+/**
+ * 回 403：權限可能已失——讀取（K2）與寫入（業主 Q1）都清空快取。判斷用 duck-typing，同
+ * `classifyWriteFailure`。
+ */
+export const isForbidden = (err: unknown) =>
+  (err as { status?: unknown } | null | undefined)?.status === 403;
+
 export function classifyWriteFailure(err: unknown): WriteFailure {
   if ((err as { refused?: unknown } | null | undefined)?.refused === true) return 'rejected';
   const status = (err as { status?: unknown } | null | undefined)?.status;

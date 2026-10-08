@@ -2,7 +2,8 @@ import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
-import { PAUSED_LOOK, type RemittanceGate, gateProps } from './remittanceGate';
+import { PAUSED_LOOK } from './adminBusy';
+import { type RemittanceGate, gateProps } from './remittanceGate';
 
 export interface AdminToolbarProps {
   /** 篩選欄位（狀態 Select、搜尋 form…）。吃掉工具列的剩餘寬度；沒有篩選的頁面鈕靠右。 */

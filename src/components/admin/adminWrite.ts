@@ -1,7 +1,6 @@
 import type { AdminBusy } from './adminBusy';
 import type { AdminCache, AdminMutationEvent } from './adminCache';
-import { isForbidden } from './useAdminList';
-import { classifyWriteFailure } from './writeOutcome';
+import { classifyWriteFailure, isForbidden } from './writeOutcome';
 
 /**
  * 後台寫入的協議，只寫這一次（業主 2026-10-07 裁決 G；S5 §2.7、§2.11）：

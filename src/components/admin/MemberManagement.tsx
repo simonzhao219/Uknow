@@ -29,17 +29,16 @@ import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBa
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
-import { type AdminBusy, lockedTabProps, NOOP_BUSY } from './adminBusy';
+import { type AdminBusy, lockedTabProps, NOOP_BUSY, PAUSED_LOOK } from './adminBusy';
 import { runAdminWrite } from './adminWrite';
-import { UNKNOWN_OUTCOME } from './writeOutcome';
-import { REVALIDATE_DIM_DELAY_MS, isForbidden, useAdminList, useDelayedFlag } from './useAdminList';
+import { isForbidden, UNKNOWN_OUTCOME } from './writeOutcome';
+import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { useRefreshAnnouncer } from './useRefreshAnnouncer';
 import { AdminListSkeleton } from './AdminListSkeleton';
 import { AdminListError } from './AdminListError';
 import { AdminListStatus } from './AdminListStatus';
 import { AdminStaleNotice, type AdminStaleNoticeProps } from './AdminStaleNotice';
 import { formatDataAge } from './DataAgeNote';
-import { PAUSED_LOOK } from './remittanceGate';
 import type {
   AdminIdReview,
   AdminMember,

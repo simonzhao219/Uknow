@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type PagedResult, type UsePagedList, usePagedList } from '../../hooks/usePagedList';
 import type { AdminCache, AdminQuery, AdminSnapshot } from './adminCache';
+import { isForbidden } from './writeOutcome';
 
 /**
  * 後台清單＝通用的分頁狀態機（`usePagedList`）＋記憶體快取（`adminCache`）。
@@ -55,9 +56,6 @@ export function useDelayedFlag(on: boolean, delay: number): boolean {
 }
 
 /** 讀取回 403（duck-typing，不 import apiClient）：會員詳情的讀取也用它清空快取。 */
-export const isForbidden = (err: unknown) =>
-  (err as { status?: unknown } | null | undefined)?.status === 403;
-
 export interface UseAdminListOptions<T, M, P> {
   /** 不給＝不跨卸載保留（既有測試的預設）。 */
   cache?: AdminCache;

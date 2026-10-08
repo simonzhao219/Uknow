@@ -15,7 +15,7 @@ import {
 import { FieldError } from '../../utils/formHelpers';
 import type { AdminIdReview } from '@contract';
 import { type AdminCache, adminQuery } from './adminCache';
-import { type AdminBusy, NOOP_BUSY } from './adminBusy';
+import { type AdminBusy, NOOP_BUSY, PAUSED_LOOK } from './adminBusy';
 import { BreakableEmail } from '../common/BreakableEmail';
 import { AdminActionReport } from './AdminActionReport';
 import { AdminListError } from './AdminListError';
@@ -26,7 +26,6 @@ import { runAdminWrite } from './adminWrite';
 import { UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
 import { memberLabel } from './memberName';
-import { PAUSED_LOOK } from './remittanceGate';
 
 export interface IdReviewQueueProps {
   /** 取回審核佇列。注入而非直接呼叫 apiClient——與 ReferralTreeView 同慣例。 */

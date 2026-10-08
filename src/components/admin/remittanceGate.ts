@@ -18,10 +18,7 @@ export interface RemittanceGate {
   hint?: string;
 }
 
-/** 停用的外觀：只在 `data-paused="true"` 時套。 */
-export const PAUSED_LOOK = 'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50';
-
-/** 被閘的鈕與勾選框共用的屬性（外觀另套 `PAUSED_LOOK`）。 */
+/** 被閘的鈕與勾選框共用的屬性（外觀另套 `adminBusy.ts` 的 `PAUSED_LOOK`）。 */
 export function gateProps(gate: RemittanceGate) {
   return {
     'aria-disabled': gate.paused || undefined,

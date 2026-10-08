@@ -2,7 +2,8 @@ import { useRef } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
-import { PAUSED_LOOK, type RemittanceGate } from './remittanceGate';
+import { PAUSED_LOOK } from './adminBusy';
+import type { RemittanceGate } from './remittanceGate';
 import {
   DropdownMenu,
   DropdownMenuContent,

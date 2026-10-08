@@ -29,6 +29,13 @@ export interface AdminBusy {
 const LOCKED_TAB_LOOK = 'disabled:opacity-100 data-[locked=true]:disabled:opacity-50';
 
 /**
+ * 被擋下的鈕與勾選框（`aria-disabled`，不離開焦點順序）的停用外觀：只在 `data-paused="true"` 時套。
+ * 匯款類閘門（`remittanceGate.ts` 的 `gateProps`）與未確認時的「載入更多」共用——外觀不是閘門語意，
+ * 所以住在這裡（最後對照 P2-3）。
+ */
+export const PAUSED_LOOK = 'data-[paused=true]:cursor-not-allowed data-[paused=true]:opacity-50';
+
+/**
  * 鎖住的分頁共用的屬性（比照 `gateProps()`）：停用與 `aria-describedby` 指向說明行在鎖定當下
  * 生效，`look`（延遲 0.3 秒的旗標）為真才帶停用外觀。
  */
