@@ -15,7 +15,7 @@ function renderToolbar(props: Partial<Parameters<typeof AdminToolbar>[0]> = {}) 
     <AdminToolbar
       filter={<input aria-label="篩選" />}
       onRefresh={onRefresh}
-      isRefreshing={false}
+      isUpdating={false}
       {...props}
     />,
   );
@@ -63,9 +63,28 @@ describe('AdminToolbar', () => {
     expect(onExport).toHaveBeenCalledTimes(1);
   });
 
-  it('重新整理中按不下去', () => {
-    renderToolbar({ isRefreshing: true });
-    expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true);
+  it('重新整理中鈕標成停用、焦點不動，點擊交給頁面決定', () => {
+    const { onRefresh } = renderToolbar({ isUpdating: true });
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+    // 不用原生 disabled：被按的鈕變停用，焦點會掉到 body。
+    expect(refresh.getAttribute('aria-disabled')).toBe('true');
+    expect(refresh.hasAttribute('disabled')).toBe(false);
+    expect(refresh.querySelector('svg')?.getAttribute('class')).toContain(
+      'motion-safe:animate-spin',
+    );
+    refresh.focus();
+    fireEvent.click(refresh);
+    expect(document.activeElement).toBe(refresh);
+    // 更新途中要不要重送、要寫「仍在更新」，由頁面的 useRefreshAnnouncer 決定；工具列照樣交出點擊。
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('載入更多中真停用，點了不呼叫 onRefresh', () => {
+    const { onRefresh } = renderToolbar({ refreshDisabled: true });
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+    expect(refresh.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(refresh);
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it('匯出中：CSV 鈕忙碌、按不下去、名稱改成匯出中，並有狀態宣告', () => {
@@ -84,7 +103,7 @@ describe('AdminToolbar', () => {
       <AdminToolbar
         filter={<input aria-label="篩選" />}
         onRefresh={vi.fn()}
-        isRefreshing={false}
+        isUpdating={false}
         onExport={vi.fn()}
         isExporting
       />,
@@ -93,13 +112,13 @@ describe('AdminToolbar', () => {
     expect(status.textContent).toContain('匯出中');
   });
 
-  it('沒有匯出能力的頁面不放狀態宣告區（沒有東西要宣告）', () => {
+  it('沒有匯出能力的頁面不放匯出狀態宣告區（沒有東西要宣告）', () => {
     renderToolbar();
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('匯出結束時焦點回到 CSV 鈕——按下去後鈕被停用，焦點掉到 body 就回不來了', () => {
-    const props = { filter: <input aria-label="篩選" />, onRefresh: vi.fn(), isRefreshing: false };
+    const props = { filter: <input aria-label="篩選" />, onRefresh: vi.fn(), isUpdating: false };
     const { rerender } = render(<AdminToolbar {...props} onExport={vi.fn()} isExporting />);
     (document.activeElement as HTMLElement | null)?.blur();
     rerender(<AdminToolbar {...props} onExport={vi.fn()} isExporting={false} />);
@@ -109,7 +128,7 @@ describe('AdminToolbar', () => {
   });
 
   it('匯出結束時使用者已把焦點移到別處，就不搶回來', () => {
-    const props = { filter: <input aria-label="篩選" />, onRefresh: vi.fn(), isRefreshing: false };
+    const props = { filter: <input aria-label="篩選" />, onRefresh: vi.fn(), isUpdating: false };
     const { rerender } = render(<AdminToolbar {...props} onExport={vi.fn()} isExporting />);
     const box = screen.getByRole('textbox', { name: '篩選' });
     box.focus();
@@ -121,5 +140,85 @@ describe('AdminToolbar', () => {
     renderToolbar({ onExport: vi.fn(), disabled: true });
     expect(screen.getByRole('button', { name: '重新整理' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: /下載 CSV/ }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('匯出中的宣告說出完成前無法切換分頁', () => {
+    renderToolbar({ onExport: vi.fn(), isExporting: true });
+    expect(screen.getByRole('status').textContent).toBe('匯出中，完成前無法切換分頁');
+  });
+
+  it('CSV 停用的原因以 exportDescribedBy 掛在鈕上', () => {
+    renderToolbar({ onExport: vi.fn(), canExport: false, exportDescribedBy: 'export-why' });
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    expect(csv.getAttribute('aria-describedby')).toBe('export-why');
+  });
+
+  it('狀態文字是工具列那一行之外的 aria-live 段落，不是 role="status"', () => {
+    renderToolbar({ statusText: '正在更新' });
+    const status = screen.getByText('正在更新');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    // role="status" 是列表骨架的定位器；狀態文字不能搶走它。
+    expect(status.getAttribute('role')).toBeNull();
+    expect(status.closest('[data-slot="admin-toolbar"]')).toBeNull();
+  });
+
+  it('狀態文字的段落常駐、只換文字——live region 要先在才念得出來', () => {
+    const props = { onRefresh: vi.fn(), isUpdating: false };
+    const { container, rerender } = render(<AdminToolbar {...props} statusText="" />);
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    rerender(<AdminToolbar {...props} statusText="已更新 09:05" />);
+    expect(container.querySelector('[aria-live="polite"]')).toBe(live);
+    expect(live?.textContent).toBe('已更新 09:05');
+  });
+
+  it('沒有篩選的頁面，重新整理鈕靠右', () => {
+    const { container } = render(<AdminToolbar onRefresh={vi.fn()} isUpdating={false} />);
+    const toolbar = container.querySelector('[data-slot="admin-toolbar"]');
+    expect(toolbar?.className).toContain('justify-end');
+    expect(toolbar?.firstElementChild).toBe(screen.getByRole('button', { name: '重新整理' }));
+  });
+
+  it('匯出暫停時 CSV 鈕標成停用、點了不匯出，停用的外觀等頁面說可以才套', () => {
+    const onExport = vi.fn();
+    const props = { onRefresh: vi.fn(), isUpdating: false, onExport };
+    const { rerender } = render(
+      <AdminToolbar {...props} exportGate={{ paused: true, look: false, describedBy: 'why' }} />,
+    );
+    const csv = screen.getByRole('button', { name: /下載 CSV/ });
+    // 不用原生 disabled：0.3 秒內結束的更新不該閃灰，焦點也不能因停用掉到 body。
+    expect(csv.getAttribute('aria-disabled')).toBe('true');
+    expect(csv.hasAttribute('disabled')).toBe(false);
+    expect(csv.getAttribute('data-paused')).toBeNull();
+    expect(csv.getAttribute('aria-describedby')).toBe('why');
+    fireEvent.click(csv);
+    expect(onExport).not.toHaveBeenCalled();
+
+    rerender(
+      <AdminToolbar {...props} exportGate={{ paused: true, look: true, describedBy: 'why' }} />,
+    );
+    expect(screen.getByRole('button', { name: /下載 CSV/ }).getAttribute('data-paused')).toBe(
+      'true',
+    );
+  });
+
+  it('閘門開著時不掛暫停的原因；沒東西可匯的原因優先', () => {
+    const props = { onRefresh: vi.fn(), isUpdating: false, onExport: vi.fn() };
+    const { rerender } = render(
+      <AdminToolbar {...props} exportGate={{ paused: false, look: false, describedBy: 'why' }} />,
+    );
+    const csv = () => screen.getByRole('button', { name: /下載 CSV/ });
+    expect(csv().getAttribute('aria-disabled')).toBeNull();
+    expect(csv().getAttribute('aria-describedby')).toBeNull();
+
+    rerender(
+      <AdminToolbar
+        {...props}
+        canExport={false}
+        exportDescribedBy="list-error"
+        exportGate={{ paused: true, look: true, describedBy: 'why' }}
+      />,
+    );
+    expect(csv().getAttribute('aria-describedby')).toBe('list-error');
   });
 });

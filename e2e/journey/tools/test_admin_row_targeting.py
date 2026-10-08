@@ -134,3 +134,30 @@ def test_list_state_labels_match_the_product():
     for label in ("載入提領申請中", "目前沒有提領申請", "重試"):
         assert label in ui, f"WithdrawalManagement.tsx 已經沒有「{label}」——等待條件對不上產品了"
         assert label in page_source, f"admin_dashboard_page.py 沒有用「{label}」辨識列表狀態"
+
+
+# --- 背景更新（S5） -------------------------------------------------------
+#
+# S5 之後切回分頁與寫入後的重讀是**背景更新**：表格留在畫面上、骨架不出現，列表區
+# （`<section aria-label="提領申請列表">`）帶 `aria-busy`。只等骨架消失的話會在更新途中
+# 放行，對著即將被換掉的列動作。行為由 `e2e/test_admin_dashboard_page.py` 在 mock 下
+# 驗；這裡守住兩端的字串對得上——對不上時等待會退化成「找不到列表區 → 立刻放行」。
+
+LIST_REGION = "提領申請列表"
+
+
+def test_list_settle_waits_out_background_refreshes():
+    source = _method(LIST_SETTLE)
+    assert "aria-busy" in source, (
+        "_wait_list_settled 沒有等列表區的 aria-busy——背景更新時表格留著、骨架不出現,"
+        "只等骨架會在更新途中放行"
+    )
+
+
+def test_list_region_name_matches_the_product():
+    ui = WITHDRAWAL_UI.read_text(encoding="utf-8")
+    page_source = ADMIN_PAGE.read_text(encoding="utf-8")
+    assert f'aria-label="{LIST_REGION}"' in ui, (
+        f"WithdrawalManagement.tsx 的列表區已經不叫「{LIST_REGION}」——等待條件對不上產品了"
+    )
+    assert LIST_REGION in page_source, f"admin_dashboard_page.py 沒有以「{LIST_REGION}」找列表區"

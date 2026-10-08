@@ -40,7 +40,7 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
 from mocks.admin_console_mock import build_admin_member_detail, route_admin_member_detail
-from mocks.backend_api_mock import build_admin_member
+from mocks.backend_api_mock import build_admin_member, build_admin_withdrawal
 from test_overflow_sweep import (
     LONG_EMAIL,
     NAME_CJK_10,
@@ -742,3 +742,80 @@ def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sh
     expect(title).to_have_text(LONG_EMAIL)
     _assert_title_clears_close_button(page)
     _assert_identity_card_fits(page)
+
+
+# --- 統計區的骨架（S5 階段 8，中途對照 P2-20） ------------------------------------
+#
+# 統計切回時是骨架、本次讀取確認後才出數字（業主裁決 A）。手機的摘要是一行 dl，換行
+# 與否看寬度：375px 一行（46px）、320px 兩行（70px）。舊骨架是固定 h-14（56px），兩邊
+# 都差 10–14px——數字落地那一刻，下面的作業面板與列表整個跳一下。jsdom 量不出高度，
+# 只能在真瀏覽器裡比。提領與會員兩區同一個形狀（同類掃描漏掉會員區，實作審查補上）。
+
+# 統計區的 aria-label → (所在分頁、列表骨架的名稱、扣住／放行列表的 mock 方法名)。
+_STATS_SECTIONS = {
+    "提領彙總": (None, "載入提領申請中", "admin_withdrawal_list"),
+    "會員統計": ("會員管理", "載入會員列表中", "admin_member_list"),
+}
+
+
+def _summary_child_height(page, section: str) -> float:
+    return page.evaluate(
+        """(label) => {
+          const child = document.querySelector(`section[aria-label="${label}"] > *`);
+          return child ? child.getBoundingClientRect().height : -1;
+        }""",
+        section,
+    )
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("section", list(_STATS_SECTIONS))
+@pytest.mark.parametrize("width", [375, 320])
+def test_admin_stats_skeleton_matches_the_summary_height(
+    page, context, api_mock, rest_mock, width, section
+):
+    """手機統計區的骨架與確認後的摘要同高：數字落地時版面不跳。"""
+    tab, skeleton_name, list_mock = _STATS_SECTIONS[section]
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    getattr(api_mock, f"hold_{list_mock}")()
+    page.goto("/admin")
+    if tab:
+        _open_tab(tab)(page)
+    expect(page.get_by_role("status", name=skeleton_name)).to_be_visible()
+    skeleton = _summary_child_height(page, section)
+
+    getattr(api_mock, f"release_{list_mock}")()
+    expect(page.locator(f'section[aria-label="{section}"] > dl')).to_be_visible()
+    summary = _summary_child_height(page, section)
+
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下「{section}」骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
+        f"下面的內容跳 {abs(skeleton - summary)}px。骨架要跟摘要同形（同一個 dl、同樣會換行）。"
+    )
+
+
+# 佔位字取典型寬度（六位數待匯款）；七位數時摘要可能多換一行（業主 R7：補量測，若多換行就把佔位放寬到同高）。
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", [375, 320])
+def test_admin_stats_skeleton_matches_a_seven_digit_summary(
+    page, context, api_mock, rest_mock, width
+):
+    """待匯款總額到七位數時，手機統計骨架仍與摘要同高。"""
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.set_admin_withdrawals([build_admin_withdrawal(status="pending", amount=1_234_567)])
+    api_mock.hold_admin_withdrawal_list()
+    page.goto("/admin")
+    expect(page.get_by_role("status", name="載入提領申請中")).to_be_visible()
+    skeleton = _summary_child_height(page, "提領彙總")
+
+    api_mock.release_admin_withdrawal_list()
+    summary_row = page.locator('section[aria-label="提領彙總"] > dl')
+    expect(summary_row).to_contain_text("1,234,567")
+    summary = _summary_child_height(page, "提領彙總")
+
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下七位數待匯款：骨架 {skeleton}px、摘要 {summary}px——數字落地時下面的內容跳 "
+        f"{abs(skeleton - summary)}px。佔位字要放寬到七位數也同高。"
+    )

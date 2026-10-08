@@ -17,12 +17,25 @@
 //      收款帳號，撤回權限撤不回已經看過的東西。失敗時要說出是哪一種失敗。
 //   6. 空／錯／載入三態。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AdminMember, AdminMemberDetail, AdminMembersResponse } from '@contract';
 import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
+import { nextStamp } from '../../hooks/useLatestRequest';
+import { type AdminCache, createAdminCache } from './adminCache';
+import type { AdminBusy } from './adminBusy';
 import { MemberManagement } from './MemberManagement';
 
 afterEach(cleanup);
+
+// 證件審核的行為在它自己的測試（5b）；這裡只驗會員頁轉給它的 props（cache、busy）。替身
+// 只在切到「證件審核」子分頁時才會渲染，其他測試碰不到它。
+const idReview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+vi.mock('./IdReviewQueue', () => ({
+  IdReviewQueue: (props: Record<string, unknown>) => {
+    idReview.props = props;
+    return <p>證件審核佇列（替身）</p>;
+  },
+}));
 
 // MemberManagement 從階段 3 起用 useMediaQuery 決定表格/卡片，而 jsdom 沒有
 // matchMedia——沒有替身整個檔案會炸，而那個紅燈不代表任何真實缺陷
@@ -87,6 +100,9 @@ function detail(over: Partial<AdminMemberDetail> = {}): AdminMemberDetail {
     ...over,
   };
 }
+
+/** 後端明確拒絕（4xx）：交易沒提交，照原文說出來。不帶 status 的錯誤歸「結果不明」。 */
+const conflict = (message: string) => Object.assign(new Error(message), { status: 409 });
 
 function renderConsole(
   opts: {
@@ -241,7 +257,7 @@ describe('MemberManagement', () => {
   it('停權失敗時把哪一種失敗印在詳情面板裡', async () => {
     renderConsole({
       suspendMember: async () => {
-        throw new Error('該會員已被其他管理員處理');
+        throw conflict('該會員已被其他管理員處理');
       },
     });
 
@@ -277,7 +293,7 @@ describe('MemberManagement', () => {
     fireEvent.change(screen.getByRole('searchbox'), {
       target: { value: '王小明' },
     });
-    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+    fireEvent.submit(screen.getByRole('searchbox').closest('form') as HTMLFormElement);
 
     await waitFor(() =>
       expect(load).toHaveBeenCalledWith(expect.objectContaining({ search: '王小明' })),
@@ -298,7 +314,7 @@ describe('MemberManagement', () => {
     renderConsole({ loadMembers: load });
     await screen.findAllByText('陳大文');
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '王小明' } });
-    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+    fireEvent.submit(screen.getByRole('searchbox').closest('form') as HTMLFormElement);
     await waitFor(() =>
       expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ search: '王小明' })),
     );
@@ -492,7 +508,7 @@ describe('MemberManagement', () => {
     renderConsole({
       loadMemberDetail: async () => detail({ isAdmin: true }),
       setMemberAdmin: async () => {
-        throw new Error('不能撤銷自己的管理員權限，請由其他管理員操作');
+        throw conflict('不能撤銷自己的管理員權限，請由其他管理員操作');
       },
     });
 
@@ -792,7 +808,7 @@ describe('MemberManagement 查看與請求順序', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     load.mockClear();
 
-    suspend.reject(new Error('該會員已被其他管理員處理'));
+    suspend.reject(conflict('該會員已被其他管理員處理'));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('陳大文');
     expect(alert.textContent).toContain('該會員已被其他管理員處理');
@@ -1132,7 +1148,7 @@ describe('MemberManagement 晚到的動作失敗', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(viewButton('林小美'));
     const panelB = await screen.findByRole('dialog');
-    suspend.reject(new Error('該會員已被其他管理員處理'));
+    suspend.reject(conflict('該會員已被其他管理員處理'));
     return panelB;
   }
 
@@ -1151,14 +1167,14 @@ describe('MemberManagement 晚到的動作失敗', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       await waitFor(() => expect(document.activeElement).toBe(viewButton('陳大文')));
 
-      suspend.reject(new Error('該會員已被其他管理員處理'));
+      suspend.reject(conflict('該會員已被其他管理員處理'));
       const alert = await screen.findByRole('alert');
       await new Promise((r) => setTimeout(r, 0));
-      // 不斷言焦點仍在「查看」：失敗後重讀列表會把表格換成骨架、「查看」鈕卸載，焦點
-      // 掉到 body——那是既有遺留（S5 改 SWR 後消失），不是錯誤框搶的（業主 2026-10-06
-      // 裁決收窄）。錯誤框拿到焦點時 activeElement 是包住它的那一層。
+      // 失敗後的重讀在背景進行（S5），表格不換骨架、「查看」鈕不卸載：焦點留在原處，錯誤框
+      // 不搶。錯誤框拿到焦點時 activeElement 是包住它的那一層。
       const focused = document.activeElement;
       expect(focused !== document.body && !!focused?.contains(alert)).toBe(false);
+      expect(focused).toBe(viewButton('陳大文'));
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
@@ -1290,5 +1306,535 @@ describe('MemberManagement 送出中的管理區', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(within(panel).getByRole('button', { name: '暫停' })),
     );
+  });
+});
+
+// --- S5 階段 5a：快取、背景更新、寫入協議 ----------------------------------------------
+//
+// 會員列表（只限空白搜尋）切回時拿快取當種子：立即出現、背景重讀；這一頁沒有被暫停的操作。
+// 非空白搜尋不讀也不寫快取——不在記憶體累積被查詢者。統計由列表回應帶出（`meta`）。
+// 寫入走 runAdminWrite：成功與結果不明讓會員快取失效，後端拒絕不失效；結果不明時面板仍顯示
+// 該人就一併重讀詳情（K3）。會員詳情每次「查看」都現讀；讀取在途時該人被改過，那份結果丟掉
+// 再讀一次，補讀落地才顯示。
+
+function seedMembers(p: Page = page(), cache: AdminCache = createAdminCache()) {
+  cache.write(
+    'members:list',
+    { items: p.members, total: p.total, meta: p.stats, fetchedAt: Date.now() },
+    nextStamp(),
+  );
+  return cache;
+}
+
+/** 每次讀列表都掛著，由測試結算。 */
+function heldMembers() {
+  const calls: { params: Record<string, unknown>; d: ReturnType<typeof deferred<Page>> }[] = [];
+  const load = vi.fn((params: Record<string, unknown>) => {
+    const d = deferred<Page>();
+    calls.push({ params, d });
+    return d.promise;
+  });
+  return { calls, load };
+}
+
+const forbidden = () => Object.assign(new Error('沒有權限'), { status: 403 });
+
+function renderMembers(
+  opts: {
+    cache?: AdminCache;
+    busy?: AdminBusy;
+    loadMembers?: (params: Record<string, unknown>) => Promise<Page>;
+    loadMemberDetail?: (id: string) => Promise<AdminMemberDetail>;
+    setMemberAdmin?: (id: string, isAdmin: boolean) => Promise<void>;
+    suspendMember?: (id: string, suspend: boolean) => Promise<void>;
+  } = {},
+) {
+  return render(
+    <MemberManagement
+      cache={opts.cache}
+      busy={opts.busy}
+      loadMembers={opts.loadMembers ?? (async () => page())}
+      loadMemberDetail={opts.loadMemberDetail ?? (async () => detail())}
+      setMemberAdmin={opts.setMemberAdmin ?? (async () => {})}
+      suspendMember={opts.suspendMember ?? (async () => {})}
+      loadIdReviews={async () => ({ reviews: [], total: 0 })}
+      submitIdReview={async () => {}}
+    />,
+  );
+}
+
+const memberList = () => screen.getByRole('region', { name: '會員列表', hidden: true });
+
+function searchFor(text: string) {
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: text } });
+  fireEvent.submit(screen.getByRole('searchbox').closest('form') as HTMLFormElement);
+}
+
+async function suspendFromPanel() {
+  fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+  const panel = await screen.findByRole('dialog');
+  fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+  fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+  return panel;
+}
+
+async function closePanel() {
+  fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+}
+
+function fakeBusy(locked = false): AdminBusy & { release: ReturnType<typeof vi.fn> } {
+  const release = vi.fn();
+  return {
+    locked,
+    noteId: 'busy-note',
+    release,
+    startWrite: vi.fn(() => release),
+    startExport: vi.fn(() => ({ progress: vi.fn(), end: vi.fn() })),
+  };
+}
+
+describe('MemberManagement 快取與背景更新', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('帶快取重掛時列表立即出現、不出骨架，並在背景重讀一次', async () => {
+    const cache = seedMembers();
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+
+    expect(screen.queryByRole('status', { name: '載入會員列表中' })).toBeNull();
+    expect(within(screen.getByRole('table')).getByText('陳大文')).toBeTruthy();
+    expect(memberList().getAttribute('aria-busy')).toBe('true');
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await act(async () => calls[0].d.resolve(page({ members: [member({ name: '陳大文新' })] })));
+    expect(memberList().getAttribute('aria-busy')).not.toBe('true');
+    expect(within(screen.getByRole('table')).getByText('陳大文新')).toBeTruthy();
+  });
+
+  it('非空白搜尋不讀也不寫快取，兩次不同的搜尋各自重讀', async () => {
+    const cache = seedMembers();
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    await act(async () => calls[0].d.resolve(page({ members: [member({ name: '陳大文新' })] })));
+
+    searchFor('王');
+    expect(screen.getByRole('status', { name: '載入會員列表中' })).toBeTruthy();
+    await act(async () =>
+      calls[1].d.resolve(page({ members: [member({ id: 'm9', name: '王大明' })] })),
+    );
+    searchFor('林');
+    await act(async () =>
+      calls[2].d.resolve(page({ members: [member({ id: 'm8', name: '林小美' })] })),
+    );
+
+    expect(calls.map((c) => c.params.search)).toEqual([undefined, '王', '林']);
+    const cached = cache.read<AdminMember>('members:list');
+    expect(cached?.items.map((m) => m.name)).toEqual(['陳大文新']);
+  });
+
+  // R3-P2-21：寫入 await 之後才呼叫的舊閉包 reload，讀的也是當下的搜尋字。
+  it('搜尋 A 下按暫停、動作在途時改搜 B，完成後列表是 B 的結果且重讀帶 B 的關鍵字', async () => {
+    const suspend = deferred<void>();
+    const load = vi.fn(async (params: Record<string, unknown>) =>
+      params.search === 'B'
+        ? page({ members: [member({ id: 'm2', name: '林小美', email: 'lin@b.c' })] })
+        : page(),
+    );
+    renderMembers({ loadMembers: load, suspendMember: () => suspend.promise });
+    await screen.findAllByText('陳大文');
+    searchFor('A');
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'A' })),
+    );
+    await suspendFromPanel();
+    await closePanel();
+
+    searchFor('B');
+    await screen.findByText('林小美');
+    load.mockClear();
+    await act(async () => suspend.resolve());
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'B', offset: 0 }));
+    expect(screen.getByText('林小美')).toBeTruthy();
+    expect(screen.queryByText('陳大文')).toBeNull();
+  });
+
+  it('子分頁的選擇存在 view：切走再切回仍在證件審核', async () => {
+    const cache = createAdminCache();
+    const first = renderMembers({ cache });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '證件審核' }));
+    expect(await screen.findByText('證件審核佇列（替身）')).toBeTruthy();
+    first.unmount();
+
+    renderMembers({ cache });
+    expect(screen.getByRole('tab', { name: '證件審核' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByText('證件審核佇列（替身）')).toBeTruthy();
+  });
+
+  it('統計在首次載入期間是骨架、不先閃 0；讀取失敗且沒有資料時寫「—」', async () => {
+    const { calls, load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    const stats = screen.getByRole('region', { name: '會員統計' });
+    expect(within(stats).queryByText('0')).toBeNull();
+
+    await act(async () => calls[0].d.reject(new Error('連線失敗')));
+    expect(within(stats).getAllByText('—')).toHaveLength(3);
+  });
+
+  it('統計由列表回應帶出，帶快取重掛時與列表一起先顯示', () => {
+    const cache = seedMembers(
+      page({ stats: { total: 120, active: 100, expired: 13, suspended: 7, admins: 3 } }),
+    );
+    const { load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    const stats = screen.getByRole('region', { name: '會員統計' });
+    expect(within(stats).getByText('120')).toBeTruthy();
+    expect(within(stats).getByText('7')).toBeTruthy();
+    expect(within(stats).getByText('3')).toBeTruthy();
+  });
+
+  it('動作後的重讀在背景進行，列表不換骨架', async () => {
+    const { calls, load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    await act(async () => calls[0].d.resolve(page()));
+    await suspendFromPanel();
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(screen.queryByRole('status', { name: '載入會員列表中', hidden: true })).toBeNull();
+    expect(viewButton('陳大文')).toBeTruthy();
+  });
+
+  it('背景更新失敗時保留舊列並說出資料時間與原因，重試期間提示原地寫「正在更新…」', async () => {
+    const cache = seedMembers();
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    await act(async () => calls[0].d.reject(new Error('連線中斷')));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('更新失敗，以下是剛剛的資料');
+    expect(alert.textContent).toContain('連線中斷');
+    expect(within(screen.getByRole('table')).getByText('陳大文')).toBeTruthy();
+    expect(memberList().getAttribute('data-stale')).toBe('true');
+
+    const retry = within(alert).getByRole('button', { name: '重試' });
+    retry.focus();
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(document.activeElement).toBe(retry);
+    await act(async () => calls[1].d.resolve(page()));
+    expect(screen.queryByText(/更新失敗，以下是/)).toBeNull();
+    expect(screen.queryByText('正在更新…')).toBeNull();
+    expect(document.activeElement).toBe(memberList());
+  });
+
+  // 「沒有符合條件的會員」在重試途中閃出來，等於在結果出來前先說了一次沒有（與公告、告警同一個判準）。
+  it('有過資料但清單為空時，錯誤區重試途中留在原位，不閃出空狀態', async () => {
+    const { calls, load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    await act(async () => calls[0].d.resolve(page({ members: [] })));
+    expect(screen.getByText('沒有符合條件的會員')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    await act(async () => calls[1].d.reject(new Error('連線失敗')));
+
+    const retry = within(screen.getByRole('alert')).getByRole('button', { name: '重試' });
+    fireEvent.click(retry);
+    expect(screen.getByText('正在更新…')).toBeTruthy();
+    expect(screen.queryByText('沒有符合條件的會員')).toBeNull();
+    expect(retry.isConnected).toBe(true);
+  });
+
+  it('沒有資料時讀取失敗用中性字，重試是流程鈕', async () => {
+    const { calls, load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    await act(async () => calls[0].d.reject(new Error('連線失敗')));
+    const alert = screen.getByRole('alert');
+    expect(within(alert).getByText('連線失敗').classList.contains('text-muted-foreground')).toBe(
+      true,
+    );
+    const retry = within(alert).getByRole('button', { name: '重試' });
+    expect(retry.classList.contains('bg-primary')).toBe(true);
+  });
+
+  it('重讀回 403 時丟掉舊列改顯示錯誤，並清空快取', async () => {
+    const cache = seedMembers();
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    await act(async () => calls[0].d.reject(forbidden()));
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByText('沒有權限')).toBeTruthy();
+    expect(cache.read('members:list')).toBeUndefined();
+  });
+
+  it('載入更多失敗時在鈕旁說出原因，已顯示的列保留', async () => {
+    const load = vi.fn(async (params: Record<string, unknown>) => {
+      if ((params.offset as number) > 0) throw new Error('連線中斷');
+      return page({ members: [member()], total: 3 });
+    });
+    renderMembers({ loadMembers: load });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    fireEvent.click(more);
+    expect(await screen.findByText('連線中斷')).toBeTruthy();
+    expect(within(screen.getByRole('table')).getByText('陳大文')).toBeTruthy();
+    const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toBe('連線中斷');
+    // 焦點停在鈕上的人要聽得到失敗（業主 Q7）。
+    expect(reason?.getAttribute('role')).toBe('alert');
+  });
+
+  it('確認前載入更多照樣擋下，0.3 秒後套停用外觀，狀態行接「更新中」', () => {
+    vi.useFakeTimers();
+    const cache = seedMembers(page({ members: [member()], total: 3 }));
+    const { load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    const more = screen.getByRole('button', { name: '載入更多' });
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    expect(more.getAttribute('data-paused')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(more.getAttribute('data-paused')).toBe('true');
+    const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toBe('已顯示 1 / 3 筆・更新中');
+    expect(memberList().getAttribute('data-dimmed')).toBe('true');
+  });
+
+  // 失敗時載入更多同樣按不出去：狀態行說出原因，鈕以 aria-describedby 指向它。
+  it('背景更新失敗時狀態行接「更新失敗」，載入更多指向它', async () => {
+    const cache = seedMembers(page({ members: [member()], total: 3 }));
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    await act(async () => calls[0].d.reject(new Error('連線失敗')));
+
+    const more = screen.getByRole('button', { name: '載入更多' });
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    const reason = document.getElementById(more.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toBe('已顯示 1 / 3 筆・更新失敗');
+  });
+
+  it('載入到最後一頁、「載入更多」消失時焦點移到列表區，不掉到 body', async () => {
+    const load = vi.fn(async (params: Record<string, unknown>) =>
+      (params.offset as number) > 0
+        ? page({ members: [member({ id: 'm2', name: '林小美' })], total: 2 })
+        : page({ members: [member()], total: 2 }),
+    );
+    renderMembers({ loadMembers: load });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    more.focus();
+    fireEvent.click(more);
+    await waitFor(() => expect(more.isConnected).toBe(false));
+    expect(document.activeElement).toBe(memberList());
+  });
+
+  it('首次載入超過 15 秒時骨架旁說明仍在等待伺服器回應，重新整理放行', () => {
+    vi.useFakeTimers();
+    const { load } = heldMembers();
+    renderMembers({ loadMembers: load });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(screen.getByText('更新較久，仍在等待伺服器回應')).toBeTruthy();
+    const refresh = screen.getByRole('button', { name: '重新整理' });
+    expect(refresh.getAttribute('aria-disabled')).toBeNull();
+    expect(refresh.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('自動更新途中按重新整理不重送，文字「正在更新」→「已更新 HH:mm」', async () => {
+    const cache = seedMembers();
+    const { calls, load } = heldMembers();
+    renderMembers({ cache, loadMembers: load });
+    fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('正在更新')).toBeTruthy();
+    await act(async () => calls[0].d.resolve(page()));
+    expect(screen.getByText(/^已更新 \d\d:\d\d$/)).toBeTruthy();
+  });
+});
+
+describe('MemberManagement 寫入協議', () => {
+  type Write = (id: string, next: boolean) => Promise<void>;
+  const ok: Write = async () => {};
+  const unknown: Write = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  const refused: Write = async () => {
+    throw conflict('該會員已被其他管理員處理');
+  };
+  const denied: Write = async () => {
+    throw forbidden();
+  };
+
+  it.each([
+    ['暫停成功', 'suspend', ok, ['memberSuspend']],
+    ['暫停結果不明', 'suspend', unknown, ['memberSuspend']],
+    ['暫停被後端拒絕', 'suspend', refused, []],
+    ['授予成功', 'admin', ok, ['memberAdmin']],
+    ['授予被後端拒絕', 'admin', refused, []],
+    // 業主 Q1／R2：403＝權限可能已失，清空快取（不為那次寫入失效）。
+    ['暫停回 403', 'suspend', denied, ['accessLost']],
+  ] as const)('%s時的失效事件', async (_label, kind, write, expected) => {
+    const cache = createAdminCache();
+    const invalidate = vi.spyOn(cache, 'invalidate');
+    const submit = vi.fn(write);
+    renderMembers({
+      cache,
+      suspendMember: kind === 'suspend' ? submit : undefined,
+      setMemberAdmin: kind === 'admin' ? submit : undefined,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: kind === 'suspend' ? '暫停' : '設為管理員' }),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: kind === 'suspend' ? '確認暫停' : '確認授予' }),
+    );
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(invalidate.mock.calls.map(([event]) => event)).toEqual(expected);
+  });
+
+  // K3：可能已提交——面板仍顯示該人時一併重讀詳情，admin 從詳情就看得出到底改了沒有。
+  it('結果不明且面板仍顯示該人：管理區寫固定文案，並一併重讀詳情與列表', async () => {
+    const loadMembers = vi.fn(async () => page());
+    const loadMemberDetail = vi.fn(async () => detail());
+    renderMembers({ loadMembers, loadMemberDetail, suspendMember: unknown });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const panel = await screen.findByRole('dialog');
+    loadMembers.mockClear();
+    loadMemberDetail.mockClear();
+
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    expect(
+      await within(panel).findByText('陳大文：未收到伺服器確認，結果不明，詳情更新後請確認'),
+    ).toBeTruthy();
+    await waitFor(() => expect(loadMemberDetail).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(loadMembers).toHaveBeenCalledTimes(1));
+  });
+
+  it('結果不明且面板已關：錯誤印在列表上方並重讀列表', async () => {
+    const suspend = deferred<void>();
+    const loadMembers = vi.fn(async () => page());
+    renderMembers({ loadMembers, suspendMember: () => suspend.promise });
+    await suspendFromPanel();
+    await closePanel();
+    loadMembers.mockClear();
+
+    suspend.reject(new TypeError('Failed to fetch'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('陳大文：未收到伺服器確認，結果不明，詳情更新後請確認');
+    await waitFor(() => expect(loadMembers).toHaveBeenCalled());
+  });
+
+  // S4 遺留 D 的窗口：動作在途時關面板、重開同一位、讀取還在途時動作才完成——那份讀取早於變更。
+  it('重開同一位的讀取在途時動作才完成：先到的舊詳情丟掉，補讀落地才顯示', async () => {
+    const suspend = deferred<void>();
+    const reads: ReturnType<typeof deferred<AdminMemberDetail>>[] = [];
+    const loadMemberDetail = vi.fn(() => {
+      const d = deferred<AdminMemberDetail>();
+      reads.push(d);
+      return d.promise;
+    });
+    renderMembers({ loadMemberDetail, suspendMember: () => suspend.promise });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    await act(async () => reads[0].resolve(detail()));
+    const panel = await screen.findByRole('dialog');
+    fireEvent.click(within(panel).getByRole('button', { name: '暫停' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認暫停' }));
+    await closePanel();
+
+    fireEvent.click(viewButton('陳大文'));
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await act(async () => suspend.resolve());
+    await act(async () => reads[1].resolve(detail({ suspended: false })));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await waitFor(() => expect(reads).toHaveLength(3));
+    await act(async () => reads[2].resolve(detail({ suspended: true })));
+    const reopened = await screen.findByRole('dialog');
+    expect(within(reopened).getByText('帳號已暫停')).toBeTruthy();
+  });
+
+  it('查看詳情回 403 時清空快取', async () => {
+    const cache = seedMembers();
+    const loadMembers = vi.fn(async () => page());
+    renderMembers({
+      cache,
+      loadMembers,
+      loadMemberDetail: async () => {
+        throw forbidden();
+      },
+    });
+    await waitFor(() => expect(loadMembers).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    expect(await screen.findByText('沒有權限')).toBeTruthy();
+    expect(cache.read('members:list')).toBeUndefined();
+  });
+
+  it('取詳情失敗的錯誤框帶 scroll-mt，不被 sticky 導覽列蓋住', async () => {
+    renderMembers({
+      loadMemberDetail: async () => {
+        throw new Error('查無此會員');
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    const alert = await screen.findByRole('alert');
+    const box = alert.closest('[tabindex="-1"]');
+    expect(box?.classList.contains('scroll-mt-20')).toBe(true);
+  });
+
+  it('寫入期間呼叫 busy，寫入請求一結算就釋放', async () => {
+    const busy = fakeBusy();
+    const suspend = deferred<void>();
+    renderMembers({ busy, suspendMember: () => suspend.promise });
+    await suspendFromPanel();
+    await waitFor(() => expect(busy.startWrite).toHaveBeenCalledTimes(1));
+    expect(busy.release).not.toHaveBeenCalled();
+
+    await act(async () => suspend.resolve());
+    expect(busy.release).toHaveBeenCalledTimes(1);
+  });
+
+  // T14：證件審核在子分頁裡，切子分頁同樣會卸載在途的元件。
+  it('busy 鎖住時非 active 的子分頁停用並指向說明行，active 的不受影響', () => {
+    renderMembers({ busy: fakeBusy(true) });
+    const reviews = screen.getByRole('tab', { name: '證件審核' });
+    expect(reviews.hasAttribute('disabled')).toBe(true);
+    expect(reviews.getAttribute('aria-describedby')).toBe('busy-note');
+    const members = screen.getByRole('tab', { name: '會員列表' });
+    expect(members.hasAttribute('disabled')).toBe(false);
+    expect(members.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  // 與外層分頁同一個判準：停用立即生效，外觀等 0.3 秒——一般寫入 0.3 秒內結束時不閃灰。
+  it('鎖住未滿 0.3 秒的子分頁還不帶停用外觀，滿了才帶', () => {
+    vi.useFakeTimers();
+    try {
+      renderMembers({ busy: fakeBusy(true) });
+      const reviews = screen.getByRole('tab', { name: '證件審核' });
+      expect(reviews.getAttribute('data-locked')).toBeNull();
+      act(() => vi.advanceTimersByTime(300));
+      expect(reviews.getAttribute('data-locked')).toBe('true');
+      expect(screen.getByRole('tab', { name: '會員列表' }).getAttribute('data-locked')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cache 與 busy 轉給證件審核', async () => {
+    const cache = createAdminCache();
+    const busy = fakeBusy();
+    renderMembers({ cache, busy });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '證件審核' }));
+    await screen.findByText('證件審核佇列（替身）');
+    expect(idReview.props?.cache).toBe(cache);
+    expect(idReview.props?.busy).toBe(busy);
   });
 });

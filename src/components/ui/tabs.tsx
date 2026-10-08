@@ -52,7 +52,7 @@ function TabsTrigger({
         // 由 TabsList 的 overflow-x-auto 接手捲動。
         // 選中分頁＝無框元件的選取態（§12.12）：底色 --sel（灰字）、文字反白，不靠字色或
         // 粗體——選中與否在色盲下仍是「實心 vs 透明」的明度差。只換顏色、不改盒模型，
-        // admin 分頁列的量測法（AdminDashboard.tsx 註解）不受影響。dark 變體要保留：
+        // admin 分頁列的量測法（admin/AdminConsole.tsx 註解）不受影響。dark 變體要保留：
         // specificity 才贏得過 dark:text-muted-foreground。焦點只有鍵盤焦點環。
         "data-[state=active]:bg-sel data-[state=active]:text-sel-foreground dark:data-[state=active]:text-sel-foreground focus-visible:ring-ring text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-auto items-center justify-center gap-1.5 rounded-xl border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-hidden focus-visible:ring-[3px] focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,

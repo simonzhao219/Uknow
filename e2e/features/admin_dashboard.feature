@@ -37,3 +37,51 @@ Feature: Admin dashboard
     When I resolve the first system alert
     Then I should see a toast containing "已標記處理"
     And I should see the text "目前沒有未處理的告警"
+
+  # 切回分頁時先顯示剛才的列表、背景更新（S5 記憶體快取）。扣住列表讀取才看得到
+  # 更新中的那一段——快網路下它在一個 frame 內就結束了。
+  Scenario: Returning to a visited tab shows the previous list at once while it refreshes
+    Given I am logged in as an admin
+    And there is a pending withdrawal from "王小明"
+    And the platform has a member named "陳大文"
+    When I visit "/admin"
+    Then I should see the text "王小明"
+    When I open the "會員管理" tab
+    Then I should see the text "陳大文"
+    When the withdrawal list stops responding
+    And I open the "獎金提領管理" tab
+    Then the withdrawal list shows "王小明" without a loading skeleton
+    And the withdrawal list is refreshing
+    When the withdrawal list responds again
+    Then the withdrawal list is no longer refreshing
+
+  @compatibility
+  Scenario: On a phone, returning to a visited tab shows the previous list at once while it refreshes
+    Given I am on a 375px-wide phone screen
+    And I am logged in as an admin
+    And there is a pending withdrawal from "王小明"
+    And the platform has a member named "陳大文"
+    When I visit "/admin"
+    Then I should see the text "王小明"
+    When I open the "會員管理" tab
+    Then I should see the text "陳大文"
+    When the withdrawal list stops responding
+    And I open the "獎金提領管理" tab
+    Then the withdrawal list shows "王小明" without a loading skeleton
+    And the withdrawal list is refreshing
+    When the withdrawal list responds again
+    Then the withdrawal list is no longer refreshing
+
+  # 退件不受確認閘門約束；送出後列表留在畫面上背景重讀。走 journey 共用的 page object。
+  Scenario: Rejecting a withdrawal keeps the list on screen while it refreshes
+    Given I am logged in as an admin
+    And there is a pending withdrawal from "王小明"
+    When I visit "/admin"
+    Then I should see the text "王小明"
+    When the withdrawal list stops responding
+    And I reject the withdrawal from "王小明"
+    Then I should see the text "已退件：王小明"
+    And the withdrawal list shows "王小明" without a loading skeleton
+    And the withdrawal list is refreshing
+    When the withdrawal list responds again
+    Then the withdrawal list is no longer refreshing

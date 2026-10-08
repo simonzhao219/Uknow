@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import ts from 'typescript';
 
 const REPO_ROOT = resolve(__dirname, '..', '..');
 
@@ -222,5 +223,139 @@ describe('焦點環與錯誤環一律全不透明', () => {
       offenders,
       '焦點與錯誤環請用全不透明的 token（ring-ring、ring-destructive-border、outline-ring）',
     ).toEqual([]);
+  });
+});
+
+// 後台的未遮罩身分證字號與銀行帳號只准待在記憶體（S5 約束 a）。主防線是行為測試
+// （adminCache／AdminConsole／AdminDashboard 監看 Storage.prototype.setItem）；這裡
+// 補 spy 看不到的路——屬性賦值（sessionStorage.k = v）、新的落地管道。
+//
+// 以 TypeScript 解析後掃識別字與 import，註解與字串天然不算：用 regex 剝註解會把
+// 字串裡的 `//`（例如網址）當成註解起點，吃掉同一行後面的真呼叫而假綠。
+// 限制：只掃下列路徑，範圍外的新檔掃不到；`window['localStorage']` 這種字串鍵也看不到
+// ——所以它是輔助，不是主防線。
+interface StorageRules {
+  identifiers: string[];
+  members: string[];
+  imports: RegExp[];
+}
+
+const ADMIN_PII_RULES: StorageRules = {
+  identifiers: ['sessionStorage', 'localStorage', 'indexedDB', 'caches'],
+  members: ['document.cookie'],
+  // 帶副檔名的寫法（`DataCacheContext.tsx`）也算同一個模組。
+  imports: [/DataCacheContext(\.[jt]sx?)?$/, /formDraft(\.[jt]sx?)?$/],
+};
+
+// 快取、組合 hook 與殼層另禁會把狀態帶出記憶體的管道（網址、跨分頁、視窗名稱）。
+const ADMIN_CACHE_RULES: StorageRules = {
+  identifiers: [
+    ...ADMIN_PII_RULES.identifiers,
+    'pushState',
+    'replaceState',
+    'useSearchParams',
+    'setSearchParams',
+    'BroadcastChannel',
+  ],
+  members: [...ADMIN_PII_RULES.members, 'navigator.storage', 'window.name'],
+  imports: ADMIN_PII_RULES.imports,
+};
+
+function storageUses(source: string, fileName: string, rules: StorageRules): string[] {
+  const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  const hits: string[] = [];
+  const lastName = (node: ts.Expression) =>
+    ts.isIdentifier(node) ? node.text : ts.isPropertyAccessExpression(node) ? node.name.text : '';
+  const checkImport = (spec: ts.Node | undefined, via = 'import') => {
+    if (spec && ts.isStringLiteral(spec) && rules.imports.some((re) => re.test(spec.text))) {
+      hits.push(`${via} ${spec.text}`);
+    }
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && rules.identifiers.includes(node.text)) hits.push(node.text);
+    if (ts.isPropertyAccessExpression(node)) {
+      const member = `${lastName(node.expression)}.${node.name.text}`;
+      if (rules.members.includes(member)) hits.push(member);
+    }
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      checkImport(node.moduleSpecifier);
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      checkImport(node.arguments[0]);
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require'
+    ) {
+      checkImport(node.arguments[0], 'require');
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return hits;
+}
+
+describe('後台 PII 不得落地', () => {
+  it.each([
+    ['// sessionStorage.setItem(key, value)', []],
+    ["const hint = 'localStorage 不可用';", []],
+    ["const url = 'https://x.test//a'; localStorage.setItem('k', v);", ['localStorage']],
+    ["sessionStorage.setItem('k', JSON.stringify(rows));", ['sessionStorage']],
+    ["window.localStorage.getItem('k');", ['localStorage']],
+    ["document.cookie = 'a=b';", ['document.cookie']],
+    [
+      "import { useDataCache } from '../../contexts/DataCacheContext';",
+      ['import ../../contexts/DataCacheContext'],
+    ],
+    ["const mod = await import('../../utils/formDraft');", ['import ../../utils/formDraft']],
+    [
+      "import { useDataCache } from '../../contexts/DataCacheContext.tsx';",
+      ['import ../../contexts/DataCacheContext.tsx'],
+    ],
+    ["const { saveDraft } = require('../../utils/formDraft');", ['require ../../utils/formDraft']],
+    ['const name = member.name; const view = { cookie: 1 };', []],
+  ])('全範圍規則：%s → %j', (source, expected) => {
+    expect(storageUses(source, 'sample.ts', ADMIN_PII_RULES)).toEqual(expected);
+  });
+
+  it.each([
+    ["window.history.replaceState(null, '', url);", ['replaceState']],
+    ["const channel = new BroadcastChannel('admin');", ['BroadcastChannel']],
+    ['await navigator.storage.persist();', ['navigator.storage']],
+    ["window.name = 'admin';", ['window.name']],
+    [
+      'const [params, setSearchParams] = useSearchParams();',
+      ['setSearchParams', 'useSearchParams'],
+    ],
+    ["// history.pushState({}, '', '/admin?status=pending')", []],
+  ])('快取與殼層的額外規則：%s → %j', (source, expected) => {
+    expect(storageUses(source, 'sample.tsx', ADMIN_CACHE_RULES)).toEqual(expected);
+  });
+
+  it('後台的元件、快取與分頁 hook 不碰任何會落地的儲存', () => {
+    const scoped = [
+      join('src', 'components', 'AdminDashboard.tsx'),
+      join('src', 'hooks', 'usePagedList.ts'),
+      join('src', 'hooks', 'useLatestRequest.ts'),
+      ...walk(join('src', 'components', 'admin'), ['.ts', '.tsx']),
+    ].filter(isSource);
+    const admin = (name: string) => join('src', 'components', 'admin', name);
+    const strict = ['adminCache.ts', 'useAdminList.ts', 'AdminConsole.tsx'].map(admin);
+    // 掃描範圍本身也要釘住：檔案改名、搬家或 walk 漏掃時，「沒有違規」只是因為沒掃到。
+    const required = [
+      ...strict,
+      ...['WithdrawalManagement.tsx', 'MemberManagement.tsx', 'IdReviewQueue.tsx'].map(admin),
+    ];
+    expect(
+      required.filter((rel) => !scoped.includes(rel)),
+      '清單裡的檔案都要在掃描範圍內（改名或搬家時同步這份清單）',
+    ).toEqual([]);
+    const offenders = scoped.flatMap((rel) => {
+      const rules = strict.includes(rel) ? ADMIN_CACHE_RULES : ADMIN_PII_RULES;
+      const source = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      return storageUses(source, rel, rules).map((hit) => `${rel}: ${hit}`);
+    });
+    expect(offenders, '後台資料只准待在記憶體（見 adminCache.ts 檔頭）').toEqual([]);
   });
 });

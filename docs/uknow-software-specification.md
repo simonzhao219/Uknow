@@ -680,6 +680,24 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 管理後台入口在導覽列本身（不藏在頭像下拉），帶待處理提領筆數的 badge。
 
+**後台資料快取**：提領（依狀態篩選）、會員（未輸入搜尋時）與公告三個列表，切回分頁時先顯示上次讀到的
+列表，並在背景重讀；提領的狀態篩選與會員區停在哪個子分頁也一併沿用。下列資料每次現讀、不從快取顯示：
+會員詳情、會員搜尋結果、證件審核佇列、系統告警，以及提領的件數與待匯款總額（讀到前顯示骨架）；導覽列的
+待處理數是載入當下的快照。快取只存在記憶體，離開 `/admin`、登出、換帳號或後台分頁內的讀取或寫入回 403 即
+清空，從不寫入 `sessionStorage`／`localStorage`（提領資料含未遮罩的身分證字號與收款帳號，見 §10.4）。
+
+提領列表的最新一次讀取確認前，列上與工具列的匯款類操作暫停：標記已匯款、勾選與批次標記已匯款、CSV 匯出
+與查看證件停用，匯款作業面板與手機卡片展開後的匯款資訊不顯示、沒有複製鈕（更新中是骨架，失敗或等候過久寫
+「資料未確認，暫停顯示」）；已打開的單筆確認框照常可送出（框內寫開框當下的資料時間），批次確認框則隨暫停
+關閉、請重新勾選。退件、代為結案、查看歷史、證件審核、公告與告警的操作不受影響（後端狀態機擋
+不合法的轉換）。讀取失敗或等候過久時保留舊列並標示資料時間（讀取回 403 時不保留），收款銀行、帳號與匯款
+金額改為遮蔽，直到下一次讀取確認。任何後台寫入送出到回應之間、以及 CSV 匯出收集期間，不能切換分頁。
+寫入沒收到伺服器確認（斷線、5xx）一律當「結果不明」、不說失敗：重讀列表，並以固定文案請 admin 確認狀態
+後再決定（標記已匯款與批次另提醒「若款項已匯出請勿重匯」，公告建立提醒先確認列表再決定是否重發）；後端
+明確拒絕（4xx）才照原文說失敗。
+快取保證的是「不讓匯款依據比沒有快取時更舊」——同一頁停留過久的資料仍會過期，介面以資料時間提示，停留
+過久時建議先重新整理（門檻見 `src/components/admin/useAdminList.ts` 的具名常數）。
+
 ### 13.1 會員驗證（會員身分）
 
 **為什麼**：業主需要在線下（門市/活動）當場確認「來的人是不是會員、會籍還有沒有效」；
@@ -706,7 +724,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 寫入失敗即擋下驗證（fail-closed）。查閱走 Supabase Studio，目前無前端介面。
 
 > **相機頁放哪的判準**：需要全螢幕或裝置權限的即時互動（如相機掃碼）走**獨立路由**；
-> 資料管理類走 `AdminDashboard` 的 **Tabs**（手機與桌面都是釘死的 4 欄一列，硬加會壞版面）。
+> 資料管理類走後台分頁區（`AdminConsole`）的 **Tabs**（手機與桌面都是釘死的 4 欄一列，硬加會壞版面）。
 > 掃描開放給一般會員之後，那條獨立路由從 admin 區搬到會員區的 `/dashboard/qr`，
 > 判準本身不變。
 
@@ -729,6 +747,10 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
 | 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/profile` 的 `accountStatus`（`buildProfileResponse` 讀 `user_account_status` 不看 error，暫時性錯誤時路由守衛把有效會員導去續訂；失敗策略應是「未知態」或保留舊 profile，不是 5xx 當未登入）②`buildProfileResponse` 的 `profiles` 讀取失敗回 null → 404 → 前端 `signOut`，暫時性錯誤會登出有效會員 ③`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）④`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status` 與 `/payuni/prepare` 已改 fail-closed（#360） |
 | 9 | 會員列表的狀態篩選／排序（§13） | 後端 `GET /admin/members` 已收 `status`／`sort` 參數，`MemberManagement` 只接了搜尋（`search`），畫面上沒有篩選與排序 |
+| 10 | 提領狀態更新與批次不透傳冪等旗標（§10、§13） | `supabase/functions/api/index.ts`：`admin_update_withdrawal_status` 對「已是該狀態」回成功並帶 `idempotent`，但 `/admin/withdrawals/:id/status` 與 `/admin/withdrawals/batch-mark-paid` 不透傳，前端分辨不出重複標記已匯款 |
+| 11 | 提領管理讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts` 的 `/admin/withdrawals`：統計查詢的錯誤被忽略（件數與待匯款總額回 0）；附屬查詢（姓名、證件簽名網址、事件歷史）也不檢查錯誤，回空姓名、「未設定」身分證、空歷史，證件顯示未上傳 |
+| 12 | 公告與證件審核讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts`：`/admin/announcements` 不檢查查詢錯誤（回空清單）；`/admin/id-reviews` 的證件簽名網址不檢查錯誤（證件顯示未上傳，審核者可能因此誤退件） |
+| 13 | 提領 CSV 匯出的補償式變動（§13） | 匯出以 offset 逐頁收集，前端核對每頁的總數、收完的筆數與重複 id；收集途中一筆新進最前、另一筆同時離開篩選時，核對全數通過但檔案錯一筆。根治要 `/admin/withdrawals` 支援 keyset 分頁或快照讀取 |
 
 ---
 

@@ -23,6 +23,19 @@ import { Button } from '../ui/button';
  * `role="group"` 與會員姓名可辨識。
  */
 
+/**
+ * 被遮住的收款資訊（失敗或逾時時的收款銀行、帳號、匯款金額）：不脈動的色塊——
+ * 脈動是「載入中」的語彙，這裡是「暫停顯示」；格內 sr-only 說「已隱藏」。
+ */
+export function HiddenValue() {
+  return (
+    <>
+      <span aria-hidden="true" className="inline-block h-4 w-16 rounded bg-muted align-middle" />
+      <span className="sr-only">已隱藏</span>
+    </>
+  );
+}
+
 interface WithdrawalFundingFieldsProps {
   record: AdminWithdrawalRecord;
   onCopyAccount: (account: string) => void;
