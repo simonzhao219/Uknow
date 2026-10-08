@@ -212,6 +212,13 @@ const NO_REPORT: Report = { status: null, failure: null, focusFailure: false };
 const messageOf = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback;
 
+/**
+ * 提領管理。桌機表格內聯在這裡，手機卡片是 `WithdrawalCardList`。
+ *
+ * **拆分的退場條件**（業主裁決 R5）：這支已逾 1,400 行、元件函式約 1,200 行。裁決 G 的「改其中一份
+ * 發現要同步改第二份就抽」對巨型元件不會自己觸發，所以另訂一條：下次在提領頁新增寫入站點，或出現第三份
+ * 焦點後備時，先抽出桌機表格、回報、焦點後備這三塊，再加新功能。
+ */
 export function WithdrawalManagement({
   loadWithdrawals,
   cache,
