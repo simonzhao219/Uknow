@@ -302,7 +302,8 @@ describe('IdReviewQueue 讀取', () => {
     const retry = within(alert).getByRole('button', { name: '重試' });
     retry.focus();
     fireEvent.click(retry);
-    expect(screen.getByText('正在更新…')).toBeTruthy();
+    // 限定在提示內：佇列外另有常駐的狀態容器同樣寫「正在更新…」（業主 R4，由另一條測試守）。
+    expect(within(alert).getByText('正在更新…')).toBeTruthy();
     expect(document.activeElement).toBe(retry);
     await act(async () => calls[2].d.resolve({ reviews: [], total: 0 }));
     expect(screen.queryByText('正在更新…')).toBeNull();
