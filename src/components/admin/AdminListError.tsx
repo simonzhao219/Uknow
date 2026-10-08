@@ -21,11 +21,6 @@ export interface AdminListErrorProps {
    * 打斷（狀態文字已在播「正在更新」）；鈕顯示進行中、按了不重送。
    */
   retrying?: boolean;
-  /**
-   * 沒有工具列的頁面（公告、證件審核）傳 true：沒有狀態文字代念「正在更新」，重試中的這一區
-   * 改帶 `role="status"` 自己播（業主 Q7）。有工具列的頁面不傳，避免念兩次。
-   */
-  announceUpdating?: boolean;
 }
 
 export function AdminListError({
@@ -35,11 +30,9 @@ export function AdminListError({
   onRetry,
   id,
   retrying = false,
-  announceUpdating = false,
 }: AdminListErrorProps) {
-  const role = retrying ? (announceUpdating ? 'status' : undefined) : 'alert';
   return (
-    <div id={id} role={role} className="space-y-3 py-12 text-center">
+    <div id={id} role={retrying ? undefined : 'alert'} className="space-y-3 py-12 text-center">
       <p className="text-muted-foreground">{retrying ? '正在更新…' : message}</p>
       <Button
         tone={tone}

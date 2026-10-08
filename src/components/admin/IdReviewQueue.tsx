@@ -309,11 +309,17 @@ export function IdReviewQueue({
         onDismiss={dismissReport}
       />
 
+      {/* 沒有工具列、沒有狀態文字代念：重試中的「正在更新…」由這個常駐的 status 播報（業主 Q7、R4；
+          與上方回報區同法——live region 要在內容出現之前就在，只換文字）。空時不佔高也沒有外距。 */}
+      <p role="status" className="text-sm text-muted-foreground empty:mb-0">
+        {retrying && updating ? '正在更新…' : ''}
+      </p>
+
       {/* 有舊列時的失敗或逾時：保留本次掛載的舊列並說出資料時間（E2）。沒有工具列，逾時的提示也附
           重試。放在佇列區外面：過期樣式的透明度不能疊到提示本身。 */}
       {notice && (
         <div ref={noticeRef}>
-          <AdminStaleNotice {...notice} onRetry={() => retry('notice')} announceUpdating />
+          <AdminStaleNotice {...notice} onRetry={() => retry('notice')} />
         </div>
       )}
 
@@ -334,7 +340,6 @@ export function IdReviewQueue({
             id={listErrorId}
             message=""
             retrying
-            announceUpdating
             retryLabel="重試"
             tone="flow"
             onRetry={() => retry('empty')}

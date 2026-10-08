@@ -35,6 +35,9 @@ export interface AdminWriteOptions<R> {
   cache?: AdminCache;
   /** 可能已提交時要失效的事件；`null`＝不入失效表的寫入（證件審核、告警）。 */
   event: AdminMutationEvent | null;
+  /**
+   * 不拿 store 的頁面（告警）：寫入回 403 時請殼層清空快取——與 `cache` 並列、同一個單點（業主 R1）。
+   */
   onAccessLost?: () => void;
   submit: () => Promise<R>;
   /** 成功時是否真的有東西提交了（例：批次全數失敗＝沒有）。預設是。 */
@@ -56,6 +59,7 @@ export async function runAdminWrite<R>({
   committed,
   settle,
   reload,
+  onAccessLost,
 }: AdminWriteOptions<R>): Promise<AdminWriteOutcome<R>> {
   const release = busy.startWrite();
   let outcome: AdminWriteOutcome<R>;
@@ -70,7 +74,10 @@ export async function runAdminWrite<R>({
     outcome.kind === 'unknown' ||
     (outcome.kind === 'done' && (committed ? committed(outcome.result) : true));
   if (mayHaveCommitted && event) cache?.invalidate(event);
-  if (outcome.kind === 'rejected' && isForbidden(outcome.error)) cache?.invalidate('accessLost');
+  if (outcome.kind === 'rejected' && isForbidden(outcome.error)) {
+    cache?.invalidate('accessLost');
+    onAccessLost?.();
+  }
   settle(outcome);
   void reload(outcome);
   return outcome;

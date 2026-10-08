@@ -12,8 +12,8 @@ import { Button } from '../ui/button';
  *   （公告、證件審核）才給 `onRetry`。
  * - 更新中（重試或重新整理之後、遮罩還沒解開時；業主裁決 A）：標題寫「正在更新…」、不帶
  *   live 角色（狀態文字已在播「正在更新」）；重試鈕留在原位——焦點不掉到 body——但顯示
- *   進行中、按了不重送。沒有工具列的頁面沒有狀態文字代念，傳 `announceUpdating` 改以
- *   `role="status"` 自己播（業主 Q7）。
+ *   進行中、按了不重送。沒有工具列的頁面由頁面自己常駐的 status 容器播報（業主 Q7、R4），這裡
+ *   不切換 live 角色。
  * N 用 `formatDataAge`：不到 1 分鐘寫「剛剛」。
  */
 export interface AdminStaleNoticeProps {
@@ -26,8 +26,6 @@ export interface AdminStaleNoticeProps {
   hidden?: string;
   onRetry?: () => void;
   announce?: boolean;
-  /** 沒有工具列的頁面（公告、證件審核）傳 true：更新中以 status 播報「正在更新…」。 */
-  announceUpdating?: boolean;
 }
 
 export function AdminStaleNotice({
@@ -37,7 +35,6 @@ export function AdminStaleNotice({
   hidden,
   onRetry,
   announce = true,
-  announceUpdating = false,
 }: AdminStaleNoticeProps) {
   const when = age === '剛剛' ? '剛剛' : ` ${age}`;
   const updating = kind === 'updating';
@@ -48,15 +45,8 @@ export function AdminStaleNotice({
   return (
     <StatusCallout
       variant="warning"
-      // StatusCallout 預設 role="status"；這裡只在失敗且該打斷時用 alert、沒有工具列的頁面更新中用
-      // status，其餘一律不帶。
-      role={
-        kind === 'failed' && announce
-          ? 'alert'
-          : updating && announceUpdating
-            ? 'status'
-            : undefined
-      }
+      // StatusCallout 預設 role="status"；這裡只在失敗且該打斷時用 alert，其餘一律不帶。
+      role={kind === 'failed' && announce ? 'alert' : undefined}
       title={title}
       description={details.length > 0 ? details.map((line) => <p key={line}>{line}</p>) : undefined}
       action={

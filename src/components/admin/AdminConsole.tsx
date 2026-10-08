@@ -49,7 +49,8 @@ const ADMIN_TABS = [
 type AdminTabValue = (typeof ADMIN_TABS)[number]['value'];
 
 // 離開再回來時新讀到的列可能早於寫入提交（K4 殘餘風險，見檔頭）：提醒回來後先確認那一筆。
-const SLOW_WRITE_HINT = '・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後先確認該筆狀態';
+const SLOW_WRITE_HINT =
+  '・仍在等待伺服器回應，離開此頁不會取消已送出的操作，回來後請先確認該筆狀態';
 
 // 可見二字＋完整名稱整串放一個 sr-only 節點、由 aria-labelledby 指過來——寫法與
 // 理由見 ui-ux-guidelines §9。id 由 useId 在同一處產生並同時給兩端，不手組字串。
@@ -218,11 +219,12 @@ export function AdminConsole({
           />
         ))}
       </TabsList>
-      {look && (
-        <p id={noteId} className="text-sm text-muted-foreground">
-          {note}
-        </p>
-      )}
+      {/* 說明行常駐、保留一行高（業主 R3）：寫入超過 0.3 秒才填字，分頁列下方的內容不被推下又拉回——
+          證件審核的「通過」沒有確認框，位移發生在手指底下最危險；停用分頁的 aria-describedby 在鎖定
+          當下就指得到它。 */}
+      <p id={noteId} className="min-h-5 text-sm text-muted-foreground">
+        {look ? note : ''}
+      </p>
 
       <TabsContent value="withdrawals">
         <WithdrawalManagement {...withdrawals} cache={cache} busy={busy} />

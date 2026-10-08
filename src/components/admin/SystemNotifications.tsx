@@ -344,11 +344,16 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
           <CardDescription className="hidden sm:block">查看與管理所有公告</CardDescription>
         </CardHeader>
         <CardContent>
+          {/* 沒有工具列、沒有狀態文字代念：重試中的「正在更新…」由這個常駐的 status 播報（業主 Q7、R4；
+              與 AdminActionReport 同法——live region 要在內容出現之前就在，只換文字）。空時不佔高。 */}
+          <p role="status" className="mb-4 text-sm text-muted-foreground empty:mb-0">
+            {retrying && updating ? '正在更新…' : ''}
+          </p>
           {/* 有舊列時的失敗或逾時：保留舊列並說出資料時間（E2）。沒有工具列，逾時的提示也附重試。
               放在列表區外面：過期樣式的透明度不能疊到提示本身。 */}
           {notice && (
             <div ref={noticeRef} className="mb-4">
-              <AdminStaleNotice {...notice} onRetry={() => retry('notice')} announceUpdating />
+              <AdminStaleNotice {...notice} onRetry={() => retry('notice')} />
             </div>
           )}
           {/* 更新中 aria-busy，0.3 秒後才淡化（快網路不閃）；失敗與逾時改用固定的過期樣式。 */}
@@ -365,7 +370,6 @@ export function SystemNotifications({ cache, busy = NOOP_BUSY }: SystemNotificat
               <AdminListError
                 message=""
                 retrying
-                announceUpdating
                 retryLabel="重試"
                 tone="secondary"
                 onRetry={() => retry('empty')}

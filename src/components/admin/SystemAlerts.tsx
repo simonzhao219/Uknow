@@ -263,10 +263,11 @@ export function SystemAlerts({ busy = NOOP_BUSY, onAccessLost }: SystemAlertsPro
     focusRow(alert.id);
     setProcessing((prev) => new Set(prev).add(alert.id));
     // 寫入走 runAdminWrite：成功與結果不明都重讀一次（K3）；後端拒絕沒有提交，只說出來。告警不快取，
-    // 沒有要失效的事件。
+    // 沒有要失效的事件；回 403 時經 onAccessLost 請殼層清空快取（業主 Q1、R1）。
     await runAdminWrite({
       busy,
       event: null,
+      onAccessLost: () => onAccessLostRef.current?.(),
       submit: () =>
         apiRequestJson(buildApiUrl(`/admin/system-alerts/${alert.id}/resolve`), {
           method: 'POST',
