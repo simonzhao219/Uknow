@@ -88,7 +88,7 @@ commit 被擋時修到綠:`--no-verify` 與覆寫 `core.hooksPath` 都會被 hoo
 | 動 e2e/journey | `docs/e2e-journey-test-design.md` |
 | 動 CI workflow | `.claude/rules/github-actions.md`(命名與結構,有機械把關) |
 | 新增任何測試 | `.claude/rules/test-naming.md`(命名分層,有機械把關) |
-| Supabase 環境問題 | `docs/supabase-setup-checklist.md` |
+| Supabase 環境問題;線上告警/事故/切金流模式 | `docs/supabase-setup-checklist.md`;`docs/operations.md`(runbook 在 §7) |
 | 關閉 §14 落差項目/改文件措辭 | `.claude/rules/document-writing.md`(path-scoped,自動載入) |
 
 規格書與程式碼衝突時**以程式碼為準,並在同一個 PR 回頭修規格書**——
