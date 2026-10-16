@@ -1,0 +1,2 @@
+{"branch": "ccr-a8db57d0-cb2mgs", "ended": "2026-10-16T20:53:08+00:00", "fired": {}, "passed": {"bash-guard": 40, "check-output-filter": 40, "model-effort-advisor": 1}, "session": "5132ae9d8e27", "started": "2026-10-16T20:47:10+00:00"}
+{"branch": "ccr-a8db57d0-cb2mgs", "ended": "2026-10-16T21:26:35+00:00", "fired": {}, "passed": {"bash-guard": 25, "check-output-filter": 25, "model-effort-advisor": 1}, "session": "e85dbab5c5fe", "started": "2026-10-16T21:06:23+00:00"}
