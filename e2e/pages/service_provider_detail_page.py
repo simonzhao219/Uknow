@@ -21,3 +21,19 @@ class ServiceProviderDetailPage(BasePage):
 
     def not_found(self):
         return self.page.get_by_role("heading", name="找不到此服務者")
+
+    # --- 載入與讀取失敗（S6）------------------------------------------------
+    # 骨架是 <output aria-busy aria-label="載入服務者詳情中">（隱含 role="status"）；
+    # 讀取失敗是 warning 提示框，標題為 h2，唯一出路是「重試」。
+
+    def loading_skeleton(self):
+        return self.page.get_by_role("status", name="載入服務者詳情中")
+
+    def load_error(self):
+        return self.page.get_by_role("heading", name="暫時無法載入服務者資料")
+
+    def retry_button(self):
+        return self.page.get_by_role("button", name="重試")
+
+    def back_link(self):
+        return self.page.get_by_role("button", name="返回", exact=True)

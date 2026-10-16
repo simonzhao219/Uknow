@@ -16,6 +16,12 @@ function chipOf(label: string) {
 }
 
 describe('FilterChip', () => {
+  it('觸控裝置上 chip 高度達 44px（滑鼠維持精簡）', () => {
+    const chip = chipOf('美髮');
+    expect(chip.classList.contains('pointer-coarse:min-h-11')).toBe(true);
+    expect(chip.classList.contains('min-h-10')).toBe(true);
+  });
+
   it('渲染標籤文字', () => {
     expect(chipOf('美髮').textContent).toBe('美髮');
   });

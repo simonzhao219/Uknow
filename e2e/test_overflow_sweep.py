@@ -186,6 +186,17 @@ def _setup_detail(context, api_mock, rest_mock):
     rest_mock.set_public_listing(_hostile_public_listing())
 
 
+def _setup_detail_loading(context, api_mock, rest_mock):
+    # 骨架只在讀取在途時出現：扣住 .single()，量的是骨架本身（S6）。
+    rest_mock.set_public_listing(_hostile_public_listing())
+    rest_mock.hold_public_listing()
+
+
+def _setup_detail_error(context, api_mock, rest_mock):
+    # 暫時讀不到（非 406）：讀取失敗提示框＋重試，不是「找不到」（S6）。
+    rest_mock.fail_public_listing()
+
+
 def _setup_dashboard(context, api_mock, rest_mock):
     # 狀態總覽的最壞情境：四張卡全是最長的值、「需要注意」兩條都在、徽章與
     # 「申請提領」按鈕都出現（手機 2×2 每張卡只有約 160px 寬）。
@@ -552,6 +563,20 @@ ROUTES = [
         "服務者詳情",
         _setup_detail,
         "/service-providers/",
+    ),
+    SweepRoute(
+        "/service-providers/11111111-1111-1111-1111-111111111111",
+        "服務者詳情 · 載入中骨架",
+        _setup_detail_loading,
+        "/service-providers/",
+        tags=["loading"],
+    ),
+    SweepRoute(
+        "/service-providers/11111111-1111-1111-1111-111111111111",
+        "服務者詳情 · 讀取失敗",
+        _setup_detail_error,
+        "/service-providers/",
+        tags=["load-error"],
     ),
     SweepRoute("/login", "登入", None, "/login"),
     SweepRoute("/register", "註冊", None, "/register"),

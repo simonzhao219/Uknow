@@ -88,7 +88,14 @@
 
 - **列表載入用骨架屏**（與卡片同形 + `aria-busy`），不要單一置中 spinner
   ——spinner 等待感強，且資料到位時版面會跳動。`Skeleton` 元件已存在。
-  已套用：首頁、會員中心、後台列表（提領、會員、公告、告警四頁共用 `AdminListSkeleton`；證件審核沿用自己的大圖卡骨架）。可延伸：獎勵/推薦。
+  已套用：首頁、服務者詳情頁、會員中心、後台列表（提領、會員、公告、告警四頁共用 `AdminListSkeleton`；證件審核沿用自己的大圖卡骨架）。可延伸：獎勵/推薦。
+  外層用 `<output aria-busy="true" aria-label="載入…中">`（隱含 role="status"），裡面只放
+  div——page object 以這個名稱等載入，骨架裡有 heading 或 table 角色會被當成已載入的內容。
+- **「同形」要量，不是目測**：骨架沿用實際內容的同一組 grid／間距，再用 Playwright 在 375 與
+  1280px 比對骨架與載入後的區塊位置（服務者詳情與首頁卡片實測差 ≤2px，S6）。**骨架之外的固定
+  列也算**：首頁的「找到 N 位服務者」列原本載入中整列隱藏，資料一到整片卡片往下跳 58px（手機）；
+  載入中要佔位（數字用骨架、切換鈕照常可按）。行內元素（`inline-flex` 的徽章）坐在行盒裡會多吃
+  約 3px 行高，骨架要照算或把徽章改成 `flex w-fit`。
 - **重新驗證中的清單**（例如切換伺服器端排序）以降透明度 + `aria-busy` 標示，
   保留舊資料，不要清空——避免看似無回應的空窗。後台列表的背景重讀：`aria-busy`
   立即標上、降透明度約 0.3 秒後才出現（快網路不閃）；失敗與逾時改用固定的過期
@@ -101,6 +108,14 @@
 
 每個新畫面都要規劃**空態 / 錯誤態 / 載入態**——缺態是上線後最常見的 UX 事故。
 既有的空狀態與 Toast（手機底部定位 `bottom-4 md:top-4`）可直接沿用。
+
+- **「查無資料」與「讀取失敗」分開**：讀單筆時只有「真的沒有這筆」才說找不到——PostgREST
+  `.single()` 對零列回 `PGRST116`、id 不是合法 uuid 回 `22P02`；其餘（網路、5xx）是暫時讀不到，
+  給說明＋重試，重試只重發那支請求、不整頁重載。從分享連結進來的訪客被告知「找不到」就不會再試
+  （服務者詳情頁，S6）。讀取失敗是「錯誤但可重試」，用 warning 黃框（12.5），重試是唯一出路、
+  用流程鈕取容器色（12.11）。列表的失敗也不寫「找到 0 筆」——那是空態的說法。
+- postgrest-js 對 GET 的 503／520 與網路錯誤會自動退避重試，錯誤態要幾秒後才出現；這段時間顯示的
+  是載入態，所以載入態本身也要撐得住（骨架而不是空白）。
 
 ## 7. 響應式版面策略
 
@@ -661,13 +676,16 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
   顯示它。輸入格類滑鼠點也算 focus-visible，所以只用上面的單圈 2px，不疊焦點環。
   - chip、分頁格這類選中＝`--sel` 實心的元件，焦點環外加 1px 間隙（`ring-offset-1`，
     間隙色＝版面底）；否則環與選中底色同色，融成一塊，只看得到格子外擴。
-  - 沒有自帶焦點 class 的元素（段落內連結、分段切換）吃 base 層的 `outline-ring`，同樣
-    全不透明。
+  - 沒有自帶焦點 class 的元素（段落內連結、完成會員資料的姓名切換）吃 base 層的
+    `outline-ring`，顏色同樣全不透明，但寬度是瀏覽器預設。新寫的按鈕類元件（含原生
+    `<button>`）自帶 3px 環：首頁的分段切換、浮動工具列與服務者詳情的縮圖已補（S6）。
+    捲動容器（`overflow-*`）會裁掉子元素外擴的環，放可聚焦子元素時要留邊或改成不捲動。
   - 錯誤欄位聚焦：框線與 1px 環同為 `--destructive-border`（全不透明），不疊灰；沒掛
     `aria-invalid` 的錯誤框（`getInputErrorClass`）同一條規則。
 
 〔實作〕`src/components/ui/{tabs,input,select,textarea,input-otp,checkbox,button,badge}.tsx`、
-`src/components/common/FilterChip.tsx`、`src/utils/formHelpers.tsx` 與其測試；`src/` 不得
+`src/components/common/FilterChip.tsx`、`src/components/home/HomeViewToggle.tsx`、
+`src/utils/formHelpers.tsx` 與其測試；`src/` 不得
 出現帶透明度的 ring 色，由 `src/utils/repoHygiene.test.ts` 掃描把關。
 
 ### 12.13 文案

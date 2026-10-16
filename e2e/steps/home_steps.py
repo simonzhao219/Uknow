@@ -86,6 +86,11 @@ def public_listing_exists(rest_mock, directory, name, desc):
     directory[name] = row
 
 
+@given("the listing detail read is temporarily failing")
+def listing_detail_failing(rest_mock):
+    rest_mock.fail_public_listing()
+
+
 @given(parsers.parse('no public listing exists for id "{listing_id}"'))
 def no_public_listing(rest_mock, listing_id):
     rest_mock.set_public_listing(None)
@@ -104,6 +109,18 @@ def directory_recovers(rest_mock, directory, names):
     # set_public_listings clears the pending failure installed by
     # fail_public_listings, so the retry button's refetch succeeds.
     rest_mock.set_public_listings(rows)
+
+
+@when("the listing detail read recovers")
+def listing_detail_recovers(rest_mock, directory):
+    # set_public_listing clears the pending failure installed by
+    # fail_public_listing, so the retry button's refetch succeeds.
+    rest_mock.set_public_listing(next(iter(directory.values())))
+
+
+@when("I retry loading the listing detail")
+def retry_listing_detail(service_provider_detail_page):
+    service_provider_detail_page.retry_button().click()
 
 
 @when("I retry loading the directory")

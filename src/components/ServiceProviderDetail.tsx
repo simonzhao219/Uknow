@@ -1,12 +1,14 @@
-import React, { useState, useContext, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Skeleton } from './ui/skeleton';
+import { StatusCallout } from './ui/status-callout';
+import { cn } from './ui/utils';
 import { CategoryBadge } from './common/CategoryBadge';
 import {
   ArrowLeft,
   MapPin,
-  Calendar,
   Instagram,
   MessageCircle,
   Facebook,
@@ -15,69 +17,118 @@ import {
 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
-import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
-import { useBackNavigation } from '../hooks/useBackNavigation';
 import { openExternalLink } from '../utils/externalLink';
 import type { PublicListingRow } from '../types/listing';
 
+// 「真的沒有這筆」只有兩種：.single() 對零列回 PGRST116；id 不是合法 uuid（分享連結被
+// 截斷、手打錯）回 22P02。其餘（網路、5xx）是暫時讀不到——從 LINE 分享連結進來的訪客
+// 遇到這種失敗，不能被告知「找不到」，要給重試。
+const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
+
+type LoadStatus = 'loading' | 'ready' | 'notFound' | 'error';
+
+// 鍵盤焦點環（ui-ux-guidelines §12.12）：選中態是 --sel 框線，環外留 1px 間隙才分得開。
+const THUMB_FOCUS =
+  'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
+
 export function ServiceProviderDetail() {
-  const { user } = useContext(UserContext);
   const { showToast } = useNotification();
   const { id } = useParams();
   const navigate = useNavigate();
-  const handleBack = useBackNavigation();
+  const location = useLocation();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
-  // ✅ 添加状态管理
   const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [status, setStatus] = useState<LoadStatus>('loading');
 
-  // ✅ 从后端 API 获取数据
-  useEffect(() => {
+  // 重試只重發這一支請求，不整頁重載（reload 會重開整個 SPA、白畫面閃爍）。
+  const fetchListing = useCallback(async () => {
     if (!id) return;
+    setStatus('loading');
+    try {
+      const supabase = createClient();
+      const { data: listing, error: queryError } = await supabase
+        .from('public_listings')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    const fetchListing = async () => {
-      setLoading(true);
-      setError(false);
-      try {
-        const supabase = createClient();
-        const { data: listing, error: queryError } = await supabase
-          .from('public_listings')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (queryError || !listing) throw new Error('獲取刊登詳情失敗');
-        setServiceProvider(listing);
-      } catch (error) {
-        console.error('❌ 獲取刊登詳情失敗:', error);
-        setError(true);
-      } finally {
-        setLoading(false);
+      if (queryError && NOT_FOUND_CODES.has(queryError.code)) {
+        setStatus('notFound');
+        return;
       }
-    };
-
-    fetchListing();
+      if (queryError) throw queryError;
+      if (!listing) {
+        setStatus('notFound');
+        return;
+      }
+      setServiceProvider(listing);
+      setStatus('ready');
+    } catch (error) {
+      console.error('❌ 獲取刊登詳情失敗:', error);
+      setStatus('error');
+    }
   }, [id]);
 
-  // ✅ 添加 loading 状态
-  if (loading) {
+  useEffect(() => {
+    fetchListing();
+  }, [fetchListing]);
+
+  // 從 LINE 分享連結直接開進來時，站內沒有上一頁（React Router 的第一個 location 的
+  // key 是 'default'）：navigate(-1) 會離開網站或沒反應，改回首頁。不用
+  // useBackNavigation——它的層級表把 /service-providers/* 對到會員中心，訪客進不去。
+  const handleBack = () => {
+    if (location.key === 'default') {
+      navigate('/');
+    } else {
+      navigate(-1);
+    }
+  };
+
+  if (status === 'notFound') {
     return (
       <div className="max-w-4xl mx-auto text-center py-12">
-        <p className="text-muted-foreground">載入中...</p>
+        <h2 className="text-2xl font-bold mb-4">找不到此服務者</h2>
+        {/* 找不到頁面唯一的出路＝流程鈕；手機整寬、桌機文字寬（§12.11） */}
+        <Button onClick={() => navigate('/')} className="w-full md:w-auto">
+          返回首頁
+        </Button>
       </div>
     );
   }
 
-  // ✅ 修改错误状态
-  if (error || !serviceProvider) {
+  const backLink = (
+    // 頁面導覽，不是流程鈕：墨色底線連結＋左箭頭（全站畫面稿、§12.13）。
+    <Button variant="link" onClick={handleBack} className="px-0 has-[>svg]:px-0">
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      返回
+    </Button>
+  );
+
+  if (status !== 'ready' || !serviceProvider) {
     return (
-      <div className="max-w-4xl mx-auto text-center py-12">
-        <h2 className="text-2xl font-bold mb-4">找不到此服務者</h2>
-        <Button onClick={() => navigate('/')}>返回首頁</Button>
+      <div className="max-w-4xl mx-auto space-y-6">
+        {backLink}
+        {status === 'error' ? (
+          // 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重試是唯一出路，流程鈕
+          // 取容器色（§12.11），提示框內靠右、文字寬。
+          <StatusCallout
+            variant="warning"
+            titleAs="h2"
+            title="暫時無法載入服務者資料"
+            description="可能是網路不穩，請再試一次。"
+            action={
+              <div className="flex justify-end">
+                <Button container="warning" onClick={fetchListing}>
+                  重試
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <DetailSkeleton />
+        )}
       </div>
     );
   }
@@ -119,11 +170,7 @@ export function ServiceProviderDetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* 返回按鈕 */}
-      <Button variant="ghost" onClick={() => navigate(-1)} className="flex items-center gap-2">
-        <ArrowLeft className="h-4 w-4" />
-        返回
-      </Button>
+      {backLink}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 圖片區域 */}
@@ -137,14 +184,20 @@ export function ServiceProviderDetail() {
           </div>
 
           {serviceProvider.photos.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            // 不捲動、改換行：刊登一律三張照片（3×80px＋間距＝256px，最窄 343px 也放得下），
+            // 捲動容器只會把縮圖的焦點環裁掉。
+            <div className="flex flex-wrap gap-2 pb-2">
               {serviceProvider.photos.map((photo, index) => (
                 <button
                   key={index}
+                  type="button"
+                  aria-pressed={currentImageIndex === index}
                   onClick={() => setCurrentImageIndex(index)}
-                  className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
-                    currentImageIndex === index ? 'border-sel' : 'border-transparent'
-                  }`}
+                  className={cn(
+                    'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors',
+                    THUMB_FOCUS,
+                    currentImageIndex === index ? 'border-sel' : 'border-transparent',
+                  )}
                 >
                   <ImageWithFallback
                     src={photo}
@@ -159,34 +212,24 @@ export function ServiceProviderDetail() {
 
         {/* 詳細資訊區域 */}
         <div className="space-y-6">
-          <div>
-            <div className="flex items-start justify-between gap-3 mb-4">
-              {/* min-w-0 + truncate：徽章帶 shrink-0，沒有這兩個的話長類別
-                  會把名稱擠到 0 寬（只補外層 min-w-0 不夠——真正需要縮的是
-                  <h1> 自己）。 */}
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <h1 className="text-3xl font-bold truncate">{serviceProvider.name}</h1>
-                {/* 🆕 性别 Badge */}
-                <GenderBadge gender={serviceProvider.gender} className="text-base shrink-0" />
-              </div>
-              {/* 與 h1 同列競爭寬度，故封頂在 45% */}
-              <CategoryBadge
-                category={serviceProvider.category}
-                variant="default"
-                className="text-lg px-3 py-1 max-w-[45%]"
-              />
+          {/* 標題列照全站畫面稿：名稱與性別徽章兩端對齊，類別灰 chip 在下一行。名稱
+              換行不截斷——訪客要看到完整名稱（上限 10 字，NAME_MAX_LENGTH）。類別與
+              性別是分類標記，不上重色（§12.5 (b)）。 */}
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="min-w-0 text-2xl md:text-3xl font-bold">{serviceProvider.name}</h1>
+              <GenderBadge gender={serviceProvider.gender} className="mt-1.5 md:mt-2" />
             </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <MapPin className="h-5 w-5" />
-                <span>
-                  {serviceProvider.city}{' '}
-                  {serviceProvider.districts.includes('全區')
-                    ? '全區'
-                    : serviceProvider.districts.join(', ')}
-                </span>
-              </div>
+            {/* flex（不是 inline-flex）：徽章自成一個區塊，不坐在行盒裡多吃 3px 行高 */}
+            <CategoryBadge category={serviceProvider.category} className="flex w-fit" />
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <MapPin className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span>
+                {serviceProvider.city}{' '}
+                {serviceProvider.districts.includes('全區')
+                  ? '全區'
+                  : serviceProvider.districts.join(', ')}
+              </span>
             </div>
           </div>
 
@@ -262,5 +305,68 @@ export function ServiceProviderDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+const THUMB_KEYS = ['t1', 't2', 't3'];
+const CONTACT_KEYS = ['c1', 'c2', 'c3'];
+
+/**
+ * 詳情頁骨架：沿用實際內容的同一組 grid（手機單欄、lg 起兩欄），資料到位時版面不跳
+ * （ui-ux-guidelines §5）。縮圖三格：刊登一律三張照片（MAX_PHOTO_COUNT＝3，表單
+ * 也要求至少 3 張），所以載入後一定有這一列。
+ *
+ * 外層是 `<output>`（隱含 role="status"）＋名稱＋`aria-busy`，比照後台的
+ * `AdminListSkeleton`；裡面只用 div，不放 heading，免得報讀器把骨架當成已載入的內容。
+ */
+function DetailSkeleton() {
+  return (
+    <output aria-label="載入服務者詳情中" aria-busy="true" className="block">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <Skeleton className="aspect-video w-full rounded-lg" />
+          <div className="flex gap-2 pb-2">
+            {THUMB_KEYS.map((key) => (
+              <Skeleton key={key} className="h-20 w-20 shrink-0 rounded-lg" />
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <Skeleton className="h-8 md:h-9 w-1/2" />
+              <Skeleton className="mt-1.5 md:mt-2 h-[22px] w-10" />
+            </div>
+            <Skeleton className="h-[22px] w-14" />
+            <Skeleton className="h-6 w-2/3" />
+          </div>
+
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-4 w-20" />
+            </CardHeader>
+            {/* 內文 leading-relaxed：一行 26px，三行約等於一般長度的服務介紹 */}
+            <CardContent className="space-y-2">
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-2/3" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-4 w-20" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {CONTACT_KEYS.map((key) => (
+                // 聯絡鈕 h-auto＋py-2：滑鼠 38px，觸控 44px
+                <Skeleton key={key} className="h-[38px] pointer-coarse:h-11 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </output>
   );
 }
