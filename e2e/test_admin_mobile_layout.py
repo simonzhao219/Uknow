@@ -40,7 +40,7 @@ from overflow_probe import MOBILE_VIEWPORT, settle
 # 沿用巡檢那份「最壞但可達」的 admin 測資與 mock 接線，不另外複製一份：
 # 兩支都在量同一個畫面，測資一旦分岔，兩邊的結論就會開始互相矛盾。
 from mocks.admin_console_mock import build_admin_member_detail, route_admin_member_detail
-from mocks.backend_api_mock import build_admin_member
+from mocks.backend_api_mock import build_admin_member, build_admin_withdrawal
 from test_overflow_sweep import (
     LONG_EMAIL,
     NAME_CJK_10,
@@ -742,3 +742,124 @@ def test_nameless_member_sheet_titles_with_the_email_at_375px(nameless_member_sh
     expect(title).to_have_text(LONG_EMAIL)
     _assert_title_clears_close_button(page)
     _assert_identity_card_fits(page)
+
+
+# --- 統計區的骨架（S5 階段 8，中途對照 P2-20；業主 R7、R8） ------------------------
+#
+# 統計切回時是骨架、本次讀取確認後才出數字（業主裁決 A）。骨架與摘要同形：同一個 dl、
+# 同樣的標籤，數值換成透明佔位字——行數一樣，數字落地時下面的作業面板與列表才不會跳。
+# 固定高度的骨架對不上（摘要高度隨寬度換行），jsdom 也量不出高度，只能在真瀏覽器裡比。
+# 提領與會員兩區都是這個形狀（同類掃描漏掉會員區，實作審查補上）。
+#
+# 提領彙總固定兩行（業主 R8）：第一行只放待匯款，第二行放三個件數。四項擠一行時，行數
+# 跟著數字長度與字型變——七位數金額、累積成多位數的「已完成」、Inter 的比例寬數字，都會
+# 讓摘要比骨架多換或少換一行。會員統計只有三項，一行還很寬裕，維持一行。
+#
+# ⚠️ 本機容器的預設字型是 Inter，CI 是 DejaVu Sans，數字寬約差 15%：版面量測本機綠不代表
+# CI 綠（R7 的七位數量測就是這樣漏的）。本機模擬 CI 字型的方法見 friction-log（2026-10-16）。
+
+# 常見手機寬：320（最窄）、360（Android 主流）、375、390、414（iPhone 各代）。
+_SUMMARY_WIDTHS = [320, 360, 375, 390, 414]
+
+# 統計區的 aria-label → (所在分頁、列表骨架的名稱、扣住／放行列表的 mock 方法名)。
+_STATS_SECTIONS = {
+    "提領彙總": (None, "載入提領申請中", "admin_withdrawal_list"),
+    "會員統計": ("會員管理", "載入會員列表中", "admin_member_list"),
+}
+
+
+def _summary_child_height(page, section: str) -> float:
+    return page.evaluate(
+        """(label) => {
+          const child = document.querySelector(`section[aria-label="${label}"] > *`);
+          return child ? child.getBoundingClientRect().height : -1;
+        }""",
+        section,
+    )
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("section", list(_STATS_SECTIONS))
+@pytest.mark.parametrize("width", _SUMMARY_WIDTHS)
+def test_admin_stats_skeleton_matches_the_summary_height(
+    page, context, api_mock, rest_mock, width, section
+):
+    """手機統計區的骨架與確認後的摘要同高：數字落地時版面不跳。"""
+    tab, skeleton_name, list_mock = _STATS_SECTIONS[section]
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    getattr(api_mock, f"hold_{list_mock}")()
+    page.goto("/admin")
+    if tab:
+        _open_tab(tab)(page)
+    expect(page.get_by_role("status", name=skeleton_name)).to_be_visible()
+    skeleton = _summary_child_height(page, section)
+
+    getattr(api_mock, f"release_{list_mock}")()
+    expect(page.locator(f'section[aria-label="{section}"] > dl')).to_be_visible()
+    summary = _summary_child_height(page, section)
+
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下「{section}」骨架 {skeleton}px、確認後的摘要 {summary}px——數字落地時"
+        f"下面的內容跳 {abs(skeleton - summary)}px。骨架要跟摘要同形（同一個 dl、同樣會換行）。"
+    )
+
+
+def _withdrawal_summary_heights(page, context, api_mock, rest_mock, width, withdrawals, landed):
+    """提領彙總在骨架時與數字落地後的高度。`landed` 是落地後摘要裡一定會出現的字。"""
+    page.set_viewport_size({"width": width, "height": 812})
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.set_admin_withdrawals(withdrawals)
+    api_mock.hold_admin_withdrawal_list()
+    page.goto("/admin")
+    expect(page.get_by_role("status", name="載入提領申請中")).to_be_visible()
+    skeleton = _summary_child_height(page, "提領彙總")
+
+    api_mock.release_admin_withdrawal_list()
+    expect(page.locator('section[aria-label="提領彙總"] > dl')).to_contain_text(landed)
+    return skeleton, _summary_child_height(page, "提領彙總")
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", _SUMMARY_WIDTHS)
+def test_admin_stats_skeleton_matches_a_seven_digit_summary(
+    page, context, api_mock, rest_mock, width
+):
+    """待匯款總額到七位數時，手機統計骨架仍與摘要同高（業主 R7）。"""
+    skeleton, summary = _withdrawal_summary_heights(
+        page,
+        context,
+        api_mock,
+        rest_mock,
+        width,
+        [build_admin_withdrawal(status="pending", amount=1_234_567)],
+        "1,234,567",
+    )
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下七位數待匯款：骨架 {skeleton}px、摘要 {summary}px——數字落地時下面的內容跳 "
+        f"{abs(skeleton - summary)}px。待匯款要獨佔一行，行數才不隨金額長短變（業主 R8）。"
+    )
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", _SUMMARY_WIDTHS)
+def test_admin_stats_skeleton_matches_multi_digit_counts(
+    page, context, api_mock, rest_mock, width
+):
+    """「已完成」累積到兩位數時，手機統計骨架仍與摘要同高（業主 R8：件數是整個篩選結果的總數）。"""
+    done = [build_admin_withdrawal(status="completed", id=f"wd-done-{i}") for i in range(12)]
+    skeleton, summary = _withdrawal_summary_heights(
+        page,
+        context,
+        api_mock,
+        rest_mock,
+        width,
+        [build_admin_withdrawal(status="pending", amount=131_460), *done],
+        "$131,460",
+    )
+    # 前提：「已完成」真的是兩位數（統計的最後一項）。
+    expect(page.locator('section[aria-label="提領彙總"] > dl dd').last).to_have_text("12")
+    assert abs(skeleton - summary) <= 1, (
+        f"{width}px 下「已完成 12」：骨架 {skeleton}px、摘要 {summary}px——數字落地時下面的內容跳 "
+        f"{abs(skeleton - summary)}px。件數要另起一行，行數才不隨件數位數變（業主 R8）。"
+    )

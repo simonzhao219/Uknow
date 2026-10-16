@@ -666,3 +666,27 @@ describe('品牌色蔚藍對比度（淺深各一輪，公式已錨定）', () =
     }
   }
 });
+
+// 後台列表的過期樣式（S5）：失敗與逾時時整片列表疊上 --stale-opacity，固定不變。
+// 列表裡最淡的字是灰字，疊上透明度後要對卡片底仍達 4.5:1——瀏覽器在 sRGB 空間做
+// alpha 合成，所以在 sRGB 位元組上混色，再交給已錨定的 contrastRatio。
+describe('後台列表過期樣式的對比度（S5）', () => {
+  const opacity = Number.parseFloat(rootTokens.get('--stale-opacity') ?? 'NaN');
+
+  it('--stale-opacity 是 0 到 1 之間的數字', () => {
+    expect(opacity).toBeGreaterThan(0);
+    expect(opacity).toBeLessThanOrEqual(1);
+  });
+
+  for (const mode of MODES) {
+    const modeLabel = mode === 'light' ? '淺色' : '深色';
+    it(`${modeLabel}：灰字疊上過期透明度後對卡片底仍達 4.5:1`, () => {
+      const card = hexOf(mode, 'card');
+      const fg = hexToRgb(hexOf(mode, 'muted-foreground'));
+      const bg = hexToRgb(card);
+      const blended = fg.map((c, i) => Math.round(c * opacity + bg[i] * (1 - opacity)));
+      const hex = `#${blended.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+      expect(contrastRatio(hex, card)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});

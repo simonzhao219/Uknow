@@ -128,7 +128,7 @@ export function MyQrPage() {
           這個副作用）。 */}
       <Tabs value={tab} onValueChange={handleTabChange} activationMode="manual">
         {visibleCount > 1 ? (
-          // 四個 class 缺一不可（同 AdminDashboard 的實測）：TabsList 原語 base 是
+          // 四個 class 缺一不可（同 admin/AdminConsole 的實測）：TabsList 原語 base 是
           // inline-flex/w-fit/flex，少了無前綴的 grid 則 grid-cols-* 無效、少了
           // w-full 容器縮成內容寬、少了 h-auto 放不下 44px 的觸控目標。
           <TabsList

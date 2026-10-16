@@ -3,8 +3,11 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { CardOverflowMenu } from './CardOverflowMenu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
-import { WithdrawalFundingFields } from './WithdrawalFundingFields';
+import { HiddenValue, WithdrawalFundingFields } from './WithdrawalFundingFields';
 import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
+import { DataAgeNote } from './DataAgeNote';
+import { Skeleton } from '../ui/skeleton';
+import type { RemittanceGate } from './remittanceGate';
 
 /**
  * 提領管理的**手機版**列表：一筆一張卡。
@@ -31,14 +34,29 @@ interface WithdrawalCardListProps {
   activeId: string | null;
   onActivate: (id: string | null) => void;
   onCopyAccount: (account: string) => void;
-  onOpenIdCard: (record: AdminWithdrawalRecord) => void;
-  onOpenHistory: (record: AdminWithdrawalRecord) => void;
-  onReject: (record: AdminWithdrawalRecord) => void;
-  onComplete: (record: AdminWithdrawalRecord) => void;
-  processingId: string | null;
+  /** 第二個參數是 ⋯ 鈕：對話框關閉時焦點還給它。 */
+  onOpenIdCard: (record: AdminWithdrawalRecord, trigger: HTMLElement | null) => void;
+  onOpenHistory: (record: AdminWithdrawalRecord, trigger: HTMLElement | null) => void;
+  /** 第二個參數是按下的鈕：確認框取消或 Esc 時焦點還給它。 */
+  onReject: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
+  onComplete: (record: AdminWithdrawalRecord, trigger: HTMLElement) => void;
+  /** 寫入在途的列（可以同時有好幾筆）：各自的動作鈕停用。 */
+  processing: ReadonlySet<string>;
   /** 匯出中：列上的寫入動作一律停用（收集期間有列離開篩選，offset 分頁會錯位漏列）。 */
   actionsDisabled?: boolean;
   formatAmount: (n: number) => string;
+  /** 失敗或逾時之後、本次讀取確認之前：卡片上的匯款金額遮住（扣點照常，K6；裁決 A）。 */
+  masked?: boolean;
+  /**
+   * 展開區的五欄（G）：`ready` 顯示；`pending` 是更新中的骨架；`paused` 是失敗或逾時時的
+   * 「資料未確認，暫停顯示」。後兩者都不渲染複製鈕。
+   */
+  fundingState?: 'ready' | 'pending' | 'paused';
+  /** 查看證件的閘門（K5）：⋯ 選單裡只有它會停用。 */
+  idCardGate?: RemittanceGate;
+  /** 展開區的資料時間（綁列表當下的資料）。 */
+  fetchedAt?: number | null;
+  now?: number;
 }
 
 export function WithdrawalCardList({
@@ -50,14 +68,27 @@ export function WithdrawalCardList({
   onOpenHistory,
   onReject,
   onComplete,
-  processingId,
+  processing,
   actionsDisabled = false,
   formatAmount,
+  masked = false,
+  fundingState = 'ready',
+  idCardGate,
+  fetchedAt = null,
+  now = 0,
 }: WithdrawalCardListProps) {
   return (
     <div className="space-y-3">
       {records.map((w) => (
-        <Card key={w.id} role="group" aria-label={`${w.userName} 的提領記錄`}>
+        <Card
+          key={w.id}
+          role="group"
+          aria-label={`${w.userName} 的提領記錄`}
+          // 程式化聚焦的落點（確認後、取消時鈕已不在）；不進 Tab 順序。
+          tabIndex={-1}
+          data-row-id={w.id}
+          className="scroll-mt-20"
+        >
           <CardContent className="space-y-2 p-3">
             {/* 收合態一眼要回答的三件事:誰、多少錢、什麼狀態。其餘（日期、
                 扣點、五欄匯款資訊）要求一次額外點擊——列表頁的工作是「找到
@@ -68,7 +99,9 @@ export function WithdrawalCardList({
             </div>
 
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xl font-bold">{formatAmount(w.amount)}</span>
+              <span className="text-xl font-bold">
+                {masked ? <HiddenValue /> : formatAmount(w.amount)}
+              </span>
               <span className="text-xs text-muted-foreground">
                 {new Date(w.requestedAt).toLocaleDateString('zh-TW')}
               </span>
@@ -106,8 +139,8 @@ export function WithdrawalCardList({
                   <Button
                     size="sm"
                     tone="destructive"
-                    onClick={() => onReject(w)}
-                    disabled={actionsDisabled || processingId === w.id}
+                    onClick={(e) => onReject(w, e.currentTarget)}
+                    disabled={actionsDisabled || processing.has(w.id)}
                   >
                     退件
                   </Button>
@@ -116,8 +149,8 @@ export function WithdrawalCardList({
                   <Button
                     size="sm"
                     tone="secondary"
-                    onClick={() => onComplete(w)}
-                    disabled={actionsDisabled || processingId === w.id}
+                    onClick={(e) => onComplete(w, e.currentTarget)}
+                    disabled={actionsDisabled || processing.has(w.id)}
                   >
                     代為完成
                   </Button>
@@ -129,8 +162,12 @@ export function WithdrawalCardList({
                   <CardOverflowMenu
                     label={`${w.userName} 的更多操作`}
                     actions={[
-                      { label: '查看證件', onSelect: () => onOpenIdCard(w) },
-                      { label: '查看歷史', onSelect: () => onOpenHistory(w) },
+                      {
+                        label: '查看證件',
+                        onSelect: (trigger) => onOpenIdCard(w, trigger),
+                        gate: idCardGate,
+                      },
+                      { label: '查看歷史', onSelect: (trigger) => onOpenHistory(w, trigger) },
                     ]}
                   />
                 </div>
@@ -138,12 +175,23 @@ export function WithdrawalCardList({
               <CollapsibleContent>
                 {/* 扣點在展開態才出現:對帳時才需要，掃視時不需要。 */}
                 <p className="mt-2 text-xs text-muted-foreground">扣點 {w.amount + w.fee} P</p>
-                <WithdrawalFundingFields
-                  record={w}
-                  onCopyAccount={onCopyAccount}
-                  formatAmount={formatAmount}
-                  className="mt-2 space-y-2 rounded-md border p-3"
-                />
+                {fundingState === 'ready' ? (
+                  <>
+                    <WithdrawalFundingFields
+                      record={w}
+                      onCopyAccount={onCopyAccount}
+                      formatAmount={formatAmount}
+                      className="mt-2 space-y-2 rounded-md border p-3"
+                    />
+                    <DataAgeNote fetchedAt={fetchedAt} now={now} className="mt-2" />
+                  </>
+                ) : fundingState === 'paused' ? (
+                  <p className="mt-2 rounded-md border p-3 text-sm text-muted-foreground">
+                    資料未確認，暫停顯示
+                  </p>
+                ) : (
+                  <Skeleton aria-hidden="true" className="mt-2 h-40 w-full rounded-md" />
+                )}
               </CollapsibleContent>
             </Collapsible>
           </CardContent>
