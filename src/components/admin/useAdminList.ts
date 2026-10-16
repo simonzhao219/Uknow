@@ -55,7 +55,6 @@ export function useDelayedFlag(on: boolean, delay: number): boolean {
   return on && late;
 }
 
-/** 讀取回 403（duck-typing，不 import apiClient）：會員詳情的讀取也用它清空快取。 */
 export interface UseAdminListOptions<T, M, P> {
   /** 不給＝不跨卸載保留（既有測試的預設）。 */
   cache?: AdminCache;
