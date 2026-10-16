@@ -451,12 +451,73 @@ src/components/admin/** 與 admin 資料層（S6 動前台詳情頁與首頁）�
 規劃用 Opus，實作可切 Sonnet。規劃完跑 /review-plan 後停等我審。
 ```
 
-**S6**：
+**S6**（2026-10-16 依 S5 收尾狀態改寫為九條；原四行版見 git 歷史）：
 ```
-讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
-執行 S6（工項 F1）：在 fix/frontend-p1-polish 分支上，
-ServiceProviderDetail 補骨架屏、首頁與詳情頁視覺對齊新設計語言。
-Plan Mode 過目後動工。
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md
+（母計畫；plan.md §1 P1 訪客視角、§2.5 感知效能、§4 第 9–14 點設計定案、
+progress 遺留事項「S2e 留給 S7 的原語用法」與「S2e 審查遺留」尤其要看）。
+先 git checkout -B fix/frontend-p1-polish origin/develop
+（web session 預設生在 claude/* 分支；fix/* 不觸發需要規劃檔的守衛）。
+執行 S6（工項 F1）：輕量 Plan Mode（對話內規劃、不落檔），清單給我看過
+再動工。範圍：首頁與服務詳情頁——全站唯一「未登入也要完美」的路徑，
+手機（LINE 內建瀏覽器）為主、桌機次要。只動 src/components/HomePage.tsx、
+src/components/home/**、src/components/ServiceProviderDetail.tsx 與它們的
+測試、e2e 對應的 page object／feature／mock；資料路徑不動（兩頁仍直接讀
+public_listings view）、不改 API 契約、supabase/functions 零變更、不動
+BottomNav。Plan Mode 必須交代下列九條：
+1) 詳情頁骨架屏（F1 本旨）：「載入中...」純文字換成與實際版面同形的
+   Skeleton（返回鈕留位、aspect-video 圖片區、縮圖列、標題與徽章、服務
+   介紹段落、聯絡方式三顆鈕；手機單欄、桌機兩欄各一組），aria-busy 與
+   可存取名稱比照 admin 的 AdminListSkeleton（<output aria-busy
+   aria-label="載入服務者詳情中">）；資料到位時版面不跳（§5）。
+2) 詳情頁三態補齊（§6）：現況把「查無此刊登」與「讀取失敗」混成同一個
+   「找不到此服務者」。分開——查無資料維持現文案與「返回首頁」；網路或
+   伺服器失敗改成說明＋「重試」（StatusCallout，重試只重發請求、不整頁
+   重載）。從 LINE 分享連結進來遇到暫時性失敗的訪客不該被告知「找不到」。
+3) 首頁：骨架已有（MobileCardSkeleton／DesktopCardSkeleton），只核對與
+   卡片同形、aria-busy；失敗態與空態已分開（HomePage.tsx:127 的註解），
+   核對用的是 StatusCallout 與 §12.11 的鈕。不重做版面。
+4) 視覺對齊新設計語言（ui-ux-guidelines §12）：Plan Mode 先盤點兩頁的
+   偏離清單再動手，至少看這幾處——(a) 按鈕三分法 §12.11：詳情頁三顆
+   聯絡鈕（現為 tone="secondary"）、「返回」、「返回首頁」、首頁「清除
+   搜尋與篩選」各屬哪一類，手機整寬／桌機靠右的位置規則；(b) 選取與
+   聚焦 §12.12：詳情頁縮圖已是 border-2 border-sel，核對鍵盤焦點環 3px
+   全不透明；首頁篩選 chip 與 HomeViewToggle 分段切換（無邊框→底色灰字）；
+   (c) 層次靠灰階 §12.2、無漸層 §12.4、徽章用 §12.3 的語義色形狀（性別
+   與類別徽章不是狀態，不上語義色）；(d) 觸控 44px（§1）：縮圖、chip、
+   聯絡鈕；(e) 文案 §12.13（鈕不帶箭頭、用語照 plan §4 第 14 點）。
+   S2e 審查遺留裡屬於首頁的「HomeViewToggle 分段切換沒有自帶焦點樣式」
+   順手一併處理（在 PR 說明與 progress 遺留事項結案），其餘 S2e 遺留仍
+   留 S7；浮起表面（--raised）首頁搜尋鈕已做，其他不碰。
+5) 定位器契約（S3／S4／S5 的教訓）：e2e/pages/home_page.py 與
+   service_provider_detail_page.py 靠這些定位——首頁「照片檢視」「詳細
+   檢視」鈕、「服務地區」chip（原生 <button aria-pressed>，文字即名稱）、
+   searchbox、a[href='/service-providers/<id>']、「沒有找到符合條件的
+   服務者」「目前沒有可用的服務者」「清除搜尋與篩選」；詳情頁 heading
+   「<刊登名>」「服務介紹」「聯絡方式」「找不到此服務者」。改任何文案、
+   role、aria-label 前先 grep e2e/（含 journey/）與 src/**/*.test.tsx，
+   Plan Mode 列出會動到的字串與對應定位器；新骨架的可存取名稱寫進
+   page object。
+6) 測試：新增 src/components/ServiceProviderDetail.test.tsx（jsdom；
+   createClient 以 vi.mock 替身）釘三態——骨架→資料、查無資料、失敗＋
+   重試重發請求；首頁既有 home/*.test.tsx 只增不減；e2e
+   service_provider_detail.feature 加「讀取失敗顯示錯誤與重試，不是找不到」
+   一條（比照 home_listings.feature「A directory load failure shows an
+   error with retry」的寫法，mock 在 e2e/mocks/supabase_rest_mock.py）；
+   e2e/test_overflow_sweep.py 首頁與詳情頁巡檢照跑，版面有改就補 drive。
+   覆蓋率棘輪只准往上。
+7) 既有行為不變：首頁排序（定位權限有無）、搜尋與篩選、檢視偏好記憶、
+   詳情頁縮圖切換、外部連結開法（openExternalLink）、LINE ID 複製與
+   toast 文案一律不動；性別／類別徽章的資料來源不動。
+8) 文件：ui-ux-guidelines §5「已套用」補詳情頁；construction-plan §4.3
+   加「驗收 4・S6 清單」（手機與桌機各一組可勾項：Slow 3G 看骨架不跳、
+   斷網看「讀取失敗＋重試」、不存在的 id 看「找不到」、縮圖選取與焦點環、
+   chip 選取態；驗收 2–4 延到 S7 合併後一次驗）；progress S6 列與異動
+   記錄；PR 描述寫偏離說明。本 session 不落規劃檔，沒有東西要清。
+9) 風險與不做：不碰兩頁的資料請求時序與排序邏輯；不引入快取（訪客頁
+   即時性要求低、資料量小，SWR 留給日後）；不做深色切換入口；不重做
+   BottomNav；桌機只驗不壞。S7 等本 PR 合併後才開工，範圍守住「輕」。
+模型 Sonnet。Plan Mode 列完清單先停等我看。
 ```
 
 **S7**：
