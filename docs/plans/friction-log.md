@@ -2920,3 +2920,33 @@ S5 實作審查的業主裁決 Q1（寫入回 403 也清空快取）。紅燈 co
 那一行限定在陳舊提示內（`within(alert)`）。上一段的推論寫完一小時就沒照做——這不是記性問題，是流程沒有把它變成
 必經步驟。整併時建議：寫進 `/tdd-implement` 的紅燈步驟，或在建立 `.claude/tdd-lock` 時由 hook 提醒「先用真實作
 跑一次全套」。
+
+## 2026-10-16｜漏網（環境）｜本機 e2e 的字型與 CI 不同，版面量測本機綠、CI 紅
+
+S5 業主裁決 R7 要 e2e 補「待匯款七位數時，手機統計骨架與摘要同高」的量測。本機 375／320px 兩寬都綠，我據此在
+PR 寫了「佔位字不必放寬」；推上去 CI 在 375px 紅：骨架 46px、摘要 70px，數字落地時下面整個跳 24px。
+
+根因：前端沒有指定字型，數字吃系統預設的無襯線字型。本機容器有 `/etc/fonts/conf.d/56-prefer-inter.conf`，把
+`sans-serif`、`system-ui`、`ui-sans-serif` 等都指向 Inter；GitHub 的 Ubuntu runner 是 DejaVu Sans，粗體數字寬約多
+15%。Inter 的數字還是比例寬（「1」比「0」窄），DejaVu 是等寬——同一份版面兩邊的換行點不同。反方向也漏：本機 Inter
+在 360px 量到典型值就會跳，CI 字型下不會，而原本的測試只量 375／320。
+
+處置：本機模擬 CI 字型重現了一模一樣的 46／70px；量完三種修法送業主裁決（R8 A：手機摘要固定兩行）。e2e 的同高
+量測擴到 320／360／375／390／414，另加「已完成」兩位數的量測，兩種字型都跑過才推。
+
+本機模擬 CI 字型（不動系統設定）。只在設定檔前面加一條 DejaVu 的 alias 不夠——系統那支的 Inter 仍排在前面，要整支
+排除：
+
+```bash
+D=<scratchpad>/ci-fonts && mkdir -p "$D/conf.d"
+for f in /etc/fonts/conf.d/*; do b=$(basename "$f"); [ "$b" = 56-prefer-inter.conf ] || ln -s "$(readlink -f "$f")" "$D/conf.d/$b"; done
+sed "s#<include ignore_missing=\"yes\">conf.d</include>#<include ignore_missing=\"no\">$D/conf.d</include>#" /etc/fonts/fonts.conf > "$D/fonts.conf"
+FONTCONFIG_FILE="$D/fonts.conf" fc-match sans-serif   # 應為 DejaVu Sans
+cd e2e && FONTCONFIG_FILE="$D/fonts.conf" E2E_SKIP_DEV_SERVER=1 .venv/bin/pytest test_admin_mobile_layout.py
+```
+
+推論（待整併時裁決）：**版面量測（高度、換行、第一屏）的結論，本機要在兩種字型下各量一次才算數**——CI 只有
+DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選做法：(a) 把上面這段寫進 `e2e/README.md` 的本機跑法；
+(b) 包成一支 script；(c) 量版面的 e2e 在 CI 加一個 Inter 的矩陣（成本：多一軌、要裝字型）。另外，程式註解與 PR 裡
+引用的實測 px 多半是本機 Inter 量的，拿來下結論前先在 CI 字型下重量（這次重量了 375px 第一屏餘裕：提領 122px、
+會員 132px，兩種字型相同）。
