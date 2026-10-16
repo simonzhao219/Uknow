@@ -170,7 +170,8 @@ const ACTION_DONE: Record<string, string> = {
 
 // 統計卡的標籤與取值。待匯款總額用 amount（銀行實付），不含平台收的手續費——admin 拿這個
 // 數字去對網銀的轉出總額，混進手續費就對不起來。
-// placeholder：手機摘要骨架裡佔住數值位置的字（透明），寬度取典型值——骨架與摘要同樣換行。
+// placeholder：手機摘要骨架裡佔住數值位置的字（透明），寬度取典型值。摘要固定兩行（見
+// SUMMARY_ITEM），數值比佔位字多幾位也不會多換一行。
 const STAT_ITEMS: {
   label: string;
   value: (s: AdminWithdrawalStats) => string;
@@ -193,10 +194,14 @@ const STAT_ITEMS: {
     placeholder: '0',
   },
 ];
-// 手機的一行摘要把「待匯款總額」縮成「待匯款」：一行放得下四項。
+// 手機摘要的標籤都是三字：「待匯款總額」縮成「待匯款」，兩行左側的數字才對齊。
 const SUMMARY_LABELS = ['待匯款', ...STAT_ITEMS.slice(1).map((item) => item.label)];
 // 手機摘要與它的骨架共用：同一組 flex-wrap，換行與高度才會一致。
 const SUMMARY_ROW = 'flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border p-3 text-sm';
+// 摘要固定兩行（業主 R8）：待匯款獨佔第一行，三個件數在第二行。四項擠一行時，行數會跟著
+// 數字長度與字型變——七位數金額、累積成多位數的「已完成」（件數是整個篩選結果的總數）、
+// Inter 的比例寬數字，都會讓摘要比骨架多換或少換一行，數字落地時下面整個跳一下。
+const SUMMARY_ITEM = 'flex items-baseline gap-1 first:basis-full';
 // 作業面板骨架的五欄（戶名、身分證、銀行代號、帳號、匯款金額）。
 const FUNDING_FIELD_KEYS = ['name', 'id-number', 'bank-code', 'account', 'amount'];
 
@@ -931,28 +936,28 @@ export function WithdrawalManagement({
       {/* 統計切回時是骨架、本次讀取確認後才出數字（A）：待審件數要即時，待匯款總額是對
           網銀轉出總額的依據，都不從快取顯示。失敗或逾時寫「—」。骨架是裝飾，aria-hidden。 */}
       <section aria-label="提領彙總">
-        {/* 手機不是把卡片壓扁，而是**整組換成一行摘要**。壓扁過的四張卡仍佔
+        {/* 手機不是把卡片壓扁，而是**整組換成兩行摘要**。壓扁過的四張卡仍佔
             153px，把第一筆記錄推到 y=677——第一屏只剩 135px，兩筆要 300px。
-            admin 打開手機是為了處理那一筆，統計是背景資訊，一行就夠。
-            桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
+            admin 打開手機是為了處理那一筆，統計是背景資訊，兩行就夠（375px 放完
+            兩筆還餘 122px）。桌面維持四張卡不動（那裡空間充裕，卡片好掃）。 */}
         {!isDesktop ? (
           confirmed || settledUnconfirmed ? (
             <dl className={SUMMARY_ROW}>
               {STAT_ITEMS.map((item, i) => (
-                <div key={item.label} className="flex items-baseline gap-1">
+                <div key={item.label} className={SUMMARY_ITEM}>
                   <dt className="text-xs text-muted-foreground">{SUMMARY_LABELS[i]}</dt>
                   <dd className="font-bold">{confirmed && stats ? item.value(stats) : '—'}</dd>
                 </div>
               ))}
             </dl>
           ) : (
-            // 同形骨架：同一組 flex-wrap、同樣的標籤，數值換成等寬的透明佔位字——換行與高度
-            // 跟著摘要走。實測 375px 一行 46px、320px 兩行 70px；先前固定 h-14（56px）的骨架
-            // 兩邊都差 10–14px，數字落地時下面整個跳一下（P2-20，test_admin_mobile_layout.py 量）。
-            // 數值遠比典型值長時（七位數金額）仍可能多換一行，佔位取的是典型寬度。
+            // 同形骨架：同一組 flex-wrap、同樣的標籤與 SUMMARY_ITEM，數值換成透明佔位字——
+            // 行數與高度跟著摘要走（320–414px 都是兩行 70px）。先前固定 h-14（56px）的骨架
+            // 兩邊都差 10–14px，數字落地時下面整個跳一下（P2-20；test_admin_mobile_layout.py
+            // 在五種寬度量，含七位數金額與兩位數件數）。
             <div aria-hidden="true" className={SUMMARY_ROW}>
               {STAT_ITEMS.map((item, i) => (
-                <div key={item.label} className="flex items-baseline gap-1">
+                <div key={item.label} className={SUMMARY_ITEM}>
                   <span className="text-xs text-muted-foreground">{SUMMARY_LABELS[i]}</span>
                   <Skeleton className="font-bold text-transparent">{item.placeholder}</Skeleton>
                 </div>
@@ -1029,7 +1034,7 @@ export function WithdrawalManagement({
       <Card>
         {/* 手機內距減半:工具列在 375px 實測 174px 高，其中 48px 是純內距
             （`pt-6` ＋ 原語的 `[&:last-child]:pb-6`）。桌面的留白節奏在手機
-            是最貴的東西——同一個理由已經讓統計卡換成一行摘要、讓重複的
+            是最貴的東西——同一個理由已經讓統計卡換成兩行摘要、讓重複的
             CardHeader 收起來。
             ⚠️ `[&:last-child]:pb-6` 的 specificity 是 (0,2,0)，`p-3` 的
             (0,1,0) 蓋不掉它（同 `ui/table.tsx` 那個踩過的坑），所以下方
