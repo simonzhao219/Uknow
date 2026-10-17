@@ -1,12 +1,17 @@
 import { useRef } from 'react';
+import type React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { Download, Share2, Copy } from 'lucide-react';
 import { useNotification } from '../notifications/NotificationContext';
+import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
 import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
-import { copyToClipboard } from '../../utils/clipboard';
+import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
+import { useCopyToast } from '../../hooks/useCopyToast';
 
 interface InviteFriendPanelContentProps {
   /** 會員專屬推薦碼；QR/連結都由它推導。空值時不渲染（呼叫端的按鈕會擋在加入計畫前）。 */
@@ -29,6 +34,7 @@ export function InviteFriendPanelContent({
   memberName,
 }: InviteFriendPanelContentProps) {
   const { showToast } = useNotification();
+  const copy = useCopyToast();
   const qrRef = useRef<HTMLDivElement>(null);
 
   const code = referralCode || '';
@@ -37,9 +43,12 @@ export function InviteFriendPanelContent({
   // 與 shareReferralInvite 一致地偵測後給長按另存的提示。
   const { isInAppBrowser } = detectInAppBrowser();
 
-  const copyText = (text: string, successMsg: string) => {
-    if (copyToClipboard(text)) showToast(successMsg, 'success');
-    else showToast('複製失敗，請手動複製', 'error');
+  // 點進欄位就整段反白，長按「拷貝」一次到位。iOS Safari 的 select() 不一定選得到
+  // 唯讀欄位，所以再補一次 setSelectionRange。
+  const selectAll = (event: React.SyntheticEvent<HTMLInputElement>) => {
+    const field = event.currentTarget;
+    field.select();
+    field.setSelectionRange(0, field.value.length);
   };
 
   /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結，不含任何按鈕）。 */
@@ -123,30 +132,41 @@ export function InviteFriendPanelContent({
           size={200}
           level="M"
           marginSize={2}
-          bgColor="#ffffff"
-          fgColor="#111111"
+          bgColor={PIXEL_PAPER}
+          fgColor={PIXEL_INK}
         />
       </div>
 
-      {/* 推薦碼 + 複製鈕（icon-only：文字標籤在這裡是多餘的，碼就在左邊。
-          icon-only 必須有可存取名稱，否則螢幕閱讀器只會念出「按鈕」）。 */}
-      <div className="flex items-center justify-center gap-1">
-        <span className="font-mono text-lg tracking-wider text-primary">{code}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => copyText(code, '推薦碼已複製！')}
-          aria-label="複製推薦碼"
-          title="複製推薦碼"
-        >
-          <Copy className="h-4 w-4" />
-        </Button>
-      </div>
+      {/* 推薦碼＋複製：與會員資訊卡、推薦管理共用同一顆。 */}
+      <ReferralCodeWithCopy layout="centered" />
 
-      <p className="max-w-full break-all text-center text-xs text-muted-foreground">
-        {referralLink}
-      </p>
+      {/* 邀請連結：唯讀欄位（不跳鍵盤、改不到；不換行，長了在框內橫捲），點進去整段
+          反白；右側一顆複製鈕給不想手動複製的人。 */}
+      <div className="space-y-1.5">
+        <Label htmlFor="invite-link-field" className="text-muted-foreground">
+          邀請連結
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="invite-link-field"
+            readOnly
+            value={referralLink}
+            onFocus={selectAll}
+            onClick={selectAll}
+            className="bg-muted font-mono"
+          />
+          <Button
+            tone="secondary"
+            size="icon"
+            className="shrink-0"
+            onClick={() => copy(referralLink, '邀請連結已複製！')}
+            aria-label="複製邀請連結"
+            title="複製邀請連結"
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
 
       {/* 兩顆按鈕各司其職，刻意不合併：文字與圖片一起送時，文字會被多數
           Android 分享目標丟掉（見 shareQrCode 的說明）。「邀請好友」永遠只送
