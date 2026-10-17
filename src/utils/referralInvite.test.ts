@@ -26,7 +26,7 @@ vi.mock('./browserDetection', () => ({ detectInAppBrowser: () => browser }));
 function installMemoryStorage() {
   const store = new Map<string, string>();
   const mock = {
-    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, String(v)),
     removeItem: (k: string) => void store.delete(k),
     clear: () => store.clear(),

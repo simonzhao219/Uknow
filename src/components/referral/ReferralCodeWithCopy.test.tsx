@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 const { UserCtx, showToast } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
-    UserCtx: createContext<any>({ user: null, refreshUser: async () => null }),
+    UserCtx: createContext<{ user: MyQrTabUser | null }>({ user: null }),
     showToast: vi.fn(),
   };
 });
@@ -20,6 +20,7 @@ vi.mock('../../utils/clipboard', () => ({ copyToClipboard: vi.fn(() => true) }))
 
 import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
 import { copyToClipboard } from '../../utils/clipboard';
+import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
 const JOINED = { referralProgramJoined: true, referralCode: '8048877' };
 
@@ -28,7 +29,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderCode(user: any, layout?: 'field' | 'centered') {
+function renderCode(user: MyQrTabUser, layout?: 'field' | 'centered') {
   return render(
     <UserCtx.Provider value={{ user }}>
       <ReferralCodeWithCopy layout={layout} />

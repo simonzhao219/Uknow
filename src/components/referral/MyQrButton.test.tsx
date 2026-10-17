@@ -14,22 +14,25 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 // import——用檔案頂端那個 binding 會踩到 TDZ（同 BottomNav.test.tsx）。
 const { UserCtx } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
-  return { UserCtx: createContext<any>({ user: null, refreshUser: async () => null }) };
+  return { UserCtx: createContext<{ user: MyQrTabUser | null }>({ user: null }) };
 });
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 
 import { MyQrButton } from './MyQrButton';
+import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
 afterEach(cleanup);
 
 /** 點下之後停在哪、帶了什麼 state——連結的目的地只能這樣觀察。 */
 function LandedAt() {
   const loc = useLocation();
-  return <div data-testid="landed-at">{`${loc.pathname}|${(loc.state as any)?.from ?? ''}`}</div>;
+  return (
+    <div data-testid="landed-at">{`${loc.pathname}|${(loc.state as { from?: string } | null)?.from ?? ''}`}</div>
+  );
 }
 
-function renderButton(user: any, at = '/dashboard') {
+function renderButton(user: MyQrTabUser, at = '/dashboard') {
   render(
     <UserCtx.Provider value={{ user }}>
       <MemoryRouter initialEntries={[at]}>
