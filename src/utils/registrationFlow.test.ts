@@ -123,8 +123,16 @@ describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一�
       expect(resolveProfilePageRedirect(filled(2), { editing: true })).toBeNull();
     });
 
-    it('即便 step 3，editing=true 也不會硬把人推走（交由頁面自行處理，不做彈跳）', () => {
-      expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBeNull();
+    // 註冊完成後後端拒絕寫入（/auth/register 403），編輯意圖失效：停在編輯頁
+    // 時另一個分頁付完款、或重新整理沿用舊 history state 的人，要被帶回會員中心。
+    it('step 3、資料已填、editing=true → 導向 dashboard（註冊完成後不可改）', () => {
+      expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBe('/dashboard');
+    });
+
+    it('step 3 但資料未填齊、editing=true → 仍留在本頁（不破壞未填齊不變式）', () => {
+      expect(
+        resolveProfilePageRedirect({ registrationStep: 3, name: '王小明' }, { editing: true }),
+      ).toBeNull();
     });
   });
 

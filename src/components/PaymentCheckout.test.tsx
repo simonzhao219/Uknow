@@ -170,6 +170,26 @@ describe('PaymentCheckout', () => {
     expect(screen.getByText(/推薦人：王小明/)).toBeTruthy();
   });
 
+  it('首購者（付款前）保有編輯鈕，不顯示資料已鎖定的說明', async () => {
+    spyFetch();
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/姓名：測試使用者/)).toBeTruthy());
+    expect(screen.getByTestId('edit-profile-button')).toBeTruthy();
+    expect(screen.queryByTestId('profile-locked-note')).toBeNull();
+  });
+
+  it('註冊已完成（step 3）但無訂閱紀錄的快取，同樣不顯示編輯鈕', async () => {
+    spyFetch();
+    seedPendingUser({ registrationStep: 3 });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/姓名：測試使用者/)).toBeTruthy());
+    expect(screen.queryByTestId('edit-profile-button')).toBeNull();
+    expect(screen.getByTestId('profile-locked-note')).toBeTruthy();
+  });
+
   it('自動綁定者選新約：推薦碼輸入框 placeholder 不外洩預設碼', async () => {
     spyFetch();
     seedPendingUser({
@@ -334,13 +354,27 @@ describe('PaymentCheckout 補繳制', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
-    // 摺疊態：明細（生日/手機等）不可見，摘要列與編輯鈕在。
+    // 摺疊態：明細（生日/手機等）不可見，摘要列在。
     expect(screen.queryByText(/生日：1990-01-01/)).toBeNull();
-    expect(screen.getByTestId('edit-profile-button')).toBeTruthy();
+    expect(screen.getByTestId('profile-summary-toggle')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('profile-summary-toggle'));
     expect(screen.getByText(/生日：1990-01-01/)).toBeTruthy();
     expect(screen.getByText(/推薦人：王小明/)).toBeTruthy();
+  });
+
+  // 續約者必有完成過的付款 → 資料已鎖定（/auth/register 403、reset-registration
+  // 400）。「編輯」按下必定失敗，不該出現；改在明細裡說明怎麼變更。
+  it('續約者不顯示編輯鈕，展開明細可見聯繫客服的說明', async () => {
+    spyFetch();
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    expect(screen.queryByTestId('edit-profile-button')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('profile-summary-toggle'));
+    expect(screen.getByTestId('profile-locked-note').textContent).toContain('LINE');
   });
 
   it('renewal 載入中顯示載入態而非錯誤文案（四狀態表第 2 列）', async () => {
