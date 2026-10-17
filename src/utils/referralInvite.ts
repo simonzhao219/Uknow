@@ -131,3 +131,10 @@ export function clearPendingReferral(): void {
     // 忽略
   }
 }
+
+// TDD 紅燈 stub：綠燈實作會換掉。
+export function buildLineShareUrl(_message: string): string {
+  return '';
+}
+
+export function shareToLine(_message: string, _showToast: ShowToast): void {}

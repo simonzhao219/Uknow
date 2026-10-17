@@ -132,3 +132,12 @@ export function resolveMyQrTab(
   if (available[preferred]) return preferred;
   return 'verify';
 }
+
+// TDD 紅燈 stub：綠燈實作會換掉。
+export function myQrTabsForUser(_user: unknown): MyQrTabAvailability {
+  return { invite: false, verify: true, scan: false };
+}
+
+export function visibleMyQrTabCount(_tabs: MyQrTabAvailability): number {
+  return 0;
+}

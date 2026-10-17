@@ -38,10 +38,23 @@ vi.mock('../hooks/useUserListing', () => ({ useUserListing: () => state.listing 
 vi.mock('../hooks/useReferralData', () => ({ useReferralData: () => state.referral }));
 vi.mock('../hooks/useTaskData', () => ({ useTaskData: () => state.task }));
 vi.mock('../hooks/useRewardData', () => ({ useRewardData: () => state.reward }));
-vi.mock('./referral/MyQrEntry', () => ({
-  MyQrEntry: ({ yieldsGuide }: { yieldsGuide?: boolean }) => (
-    <div data-testid="my-qr-entry" data-yields-guide={String(Boolean(yieldsGuide))} />
+// 三顆推薦入口有各自的測試（閘門、導向、分享、複製）；這裡只驗放在哪、傳了什麼。
+vi.mock('./referral/InviteFriendButton', () => ({
+  InviteFriendButton: ({ yieldsGuide }: { yieldsGuide?: boolean }) => (
+    <button
+      type="button"
+      data-testid="invite-friend-entry"
+      data-yields-guide={String(Boolean(yieldsGuide))}
+    >
+      邀請好友
+    </button>
   ),
+}));
+vi.mock('./referral/MyQrButton', () => ({
+  MyQrButton: () => <span data-testid="my-qr-entry" />,
+}));
+vi.mock('./referral/ReferralCodeWithCopy', () => ({
+  ReferralCodeWithCopy: () => <span data-testid="referral-code-entry" />,
 }));
 
 import { MemberDashboard } from './MemberDashboard';
@@ -98,6 +111,8 @@ function renderPage(user: any = { name: '王小明', referralProgramJoined: true
 }
 
 const card = (name: RegExp) => screen.getByRole('link', { name });
+/** 整張卡的外殼——推薦格的按鈕在連結外，要從卡片外殼找。 */
+const cardBox = (name: RegExp) => card(name).closest('[data-slot="card"]') as HTMLElement;
 
 beforeEach(setLoaded);
 afterEach(cleanup);
@@ -187,6 +202,41 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
   });
 
+  it('推薦網絡卡的人數與「位」在同一行', () => {
+    renderPage();
+    const value = within(card(/^推薦網絡：/)).getByText('12');
+    expect(value.textContent).toBe('12位');
+  });
+
+  it('推薦格的邀請鈕在卡片連結之外，連結名稱照舊說完卡上狀態', () => {
+    renderPage();
+    const link = card(/^推薦網絡：/);
+    const invite = within(cardBox(/^推薦網絡：/)).getByTestId('invite-friend-entry');
+    expect(link.contains(invite)).toBe(false);
+    expect(link.getAttribute('aria-label')).toBe('推薦網絡：12 位');
+  });
+
+  it('推薦資料讀取失敗時錯誤字照舊，邀請鈕照常顯示', () => {
+    state.referral = { overview: null, loading: false, error: '網路錯誤' };
+    renderPage();
+    const box = cardBox(/^推薦網絡：/);
+    expect(within(box).getByText('暫時無法取得推薦資料')).toBeTruthy();
+    expect(within(box).getByTestId('invite-friend-entry')).toBeTruthy();
+  });
+
+  it('其他三張卡仍是整卡一個連結，名稱照舊', () => {
+    renderPage();
+    for (const [name, label] of [
+      [/^刊登：/, '刊登：台北好店，會籍至 2027/01/01'],
+      [/^本月任務：/, '本月任務：推薦王本輪推薦 3 / 8 位'],
+      [/^可提領點數：/, '可提領點數：500 P'],
+    ] as const) {
+      const link = card(name);
+      expect(link.getAttribute('aria-label')).toBe(label);
+      expect(link.querySelector('[data-slot="card"]')).not.toBeNull();
+    }
+  });
+
   it('本月任務卡以本輪顯示推薦進度並標明單位', () => {
     renderPage();
 
@@ -267,11 +317,14 @@ describe('MemberDashboard 狀態卡', () => {
 });
 
 // 引導鈕一頁一顆（ui-ux-guidelines §12.11，#354 裁決 #1）：我的訂閱卡出現續訂時，
-// MyQrEntry 的加入推薦計畫讓位成次要；沒有續訂時維持引導鈕。到期前續訂暫停開放
+// 推薦格的加入推薦計畫讓位成次要；沒有續訂時維持引導鈕。到期前續訂暫停開放
 // （業主 2026-10-05，規格書 §14 第 7 列），30 天內到期的卡片不放續訂鈕，所以也不讓位。
 describe('MemberDashboard 引導鈕讓位', () => {
   const DAY = 86_400_000;
-  const yields = () => screen.getByTestId('my-qr-entry').getAttribute('data-yields-guide');
+  const yields = () =>
+    within(cardBox(/^推薦網絡/))
+      .getByTestId('invite-friend-entry')
+      .getAttribute('data-yields-guide');
 
   it('會籍 30 天內到期時訂閱卡不放續訂，加入推薦計畫維持引導鈕', () => {
     state.subscription.subscriptionData = {
@@ -295,6 +348,18 @@ describe('MemberDashboard 引導鈕讓位', () => {
 });
 
 // 給使用者確認的資料不截斷、只換行（#354 範圍外發現第 2 條）：Email 走 BreakableEmail。
+describe('MemberDashboard 推薦入口位置', () => {
+  it('標題列有我的 QR，會員資訊卡是推薦碼＋複製，邀請鈕只在推薦格', () => {
+    renderPage();
+    const heading = screen.getByRole('heading', { name: '會員中心' });
+    const titleRow = heading.closest('div')?.parentElement as HTMLElement;
+    expect(within(titleRow).getByTestId('my-qr-entry')).toBeTruthy();
+    expect(screen.getAllByTestId('my-qr-entry')).toHaveLength(1);
+    expect(screen.getAllByTestId('referral-code-entry')).toHaveLength(1);
+    expect(screen.getAllByTestId('invite-friend-entry')).toHaveLength(1);
+  });
+});
+
 describe('MemberDashboard 基本資料', () => {
   it('長 Email 完整顯示、在 @ 後可換行，不截斷', () => {
     const email = 'chienmingchangservice@uknowplatform.com.tw';
