@@ -264,15 +264,15 @@ const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
 // /referrals/validate/:code：per 使用者、雙窗。短窗容得下合法的連續重試
 // （驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗讓單一
 // 帳號一天最多查 50 個碼——推薦碼是流水號、回推薦人真名，這是枚舉的上限。
-const REFERRAL_VALIDATE_RATE_MAX = 10;
-const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 300;
-const REFERRAL_VALIDATE_DAILY_MAX = 50;
-const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 86400;
+export const REFERRAL_VALIDATE_RATE_MAX = 10;
+export const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 300;
+export const REFERRAL_VALIDATE_DAILY_MAX = 50;
+export const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 86400;
 
 // 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
 // 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
 // 行為與改版前相同）。
-function clientIp(c: any): string {
+export function clientIp(c: any): string {
   return c.req.header('cf-connecting-ip') ||
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
     'unknown';

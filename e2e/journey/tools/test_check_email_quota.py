@@ -77,6 +77,19 @@ def test_handler_extraction_finds_the_rate_limit_branch():
     assert "429" in handler
 
 
+def test_check_email_key_prefix_matches_the_quota_reset():
+    """限流鍵的前綴必須是 `check-email:`——`supa.py` 的
+    `reset_check_email_rate_limit` 只刪 `key like 'check-email:*'` 的列。
+
+    前綴一改,重置就刪不到東西,自癒退回「auth-login-button 不出現」的逾時。
+    """
+    handler = _check_email_handler()
+    assert "`check-email:${" in handler, (
+        "check-email 的限流鍵不再以 `check-email:` 開頭——"
+        "e2e/journey/tools/supa.py 的 reset_check_email_rate_limit 會刪不到計數"
+    )
+
+
 def test_markers_match_the_backend_429_message():
     """後端 429 的訊息必須被 RATE_LIMIT_MARKERS 認得。"""
     handler = _check_email_handler()

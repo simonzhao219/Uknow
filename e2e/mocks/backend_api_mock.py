@@ -207,6 +207,10 @@ class BackendApiMock:
         body = {"valid": False, "error": {"message": message}}
         self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))
 
+    def rate_limit_referral_validate(self):
+        body = {"valid": False, "error": {"code": "rate_limited", "message": "請求過於頻繁，請稍後再試"}}
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body, status=429))
+
     def set_referral_validate(self, code: str, referrer_name: str):
         body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
         self._route(f"/referrals/validate/{code}", lambda route: _fulfill_json(route, body))

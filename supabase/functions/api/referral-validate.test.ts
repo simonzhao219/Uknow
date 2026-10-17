@@ -24,6 +24,7 @@ import {
   getActiveReferralCode,
   getUserAccessToken,
   payForUser,
+  withRestTableFailure,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -33,7 +34,12 @@ Deno.env.set('PAYUNI_HASH_IV', '0123456789ab');
 Deno.env.set('PAYUNI_SANDBOX', 'false');
 Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
-const { app } = await import('./index.ts');
+const {
+  app,
+  REFERRAL_VALIDATE_RATE_MAX,
+  REFERRAL_VALIDATE_DAILY_MAX,
+  REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS,
+} = await import('./index.ts');
 
 const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
   'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
@@ -116,19 +122,52 @@ Deno.test('referrals/validate：有效推薦碼 → 只回推薦人姓名與刊�
   }
 });
 
-Deno.test('referrals/validate：同一使用者 5 分鐘內第 11 次 → 429，其他使用者不受影響', async () => {
+Deno.test('referrals/validate：推薦人有刊登 → listingName 為刊登名（不去刊登名）', async () => {
+  // 總綱 v1 曾寫錯「去刊登名」；規格書 §4.2 不變，刊登名照回。
+  const client = adminClient();
+  const referrer = await createTestUser(client, { name: '有刊登的推薦人' });
+  const caller = await createCaller(client);
+  try {
+    await payForUser(client, referrer.id);
+    const { error: listingErr } = await client.from('listings').insert({
+      user_id: referrer.id,
+      name: '小明髮廊',
+      category: '美髮',
+      city: '台北市',
+      districts: ['全區'],
+      gender: '女',
+      photos: [],
+      contacts: { instagram: 'ig' },
+      description: 'x',
+    });
+    assertEquals(listingErr, null);
+    const code = await getActiveReferralCode(client, referrer.id);
+
+    const res = await validateReq(caller.token, code);
+    assertEquals(await res.json(), {
+      valid: true,
+      referrer: { userName: '有刊登的推薦人', listingName: '小明髮廊' },
+    });
+  } finally {
+    await cleanup(client, [caller.id]);
+    await deleteTestUsers(client, [referrer.id]);
+  }
+});
+
+Deno.test('referrals/validate：短窗額度用完的下一次 → 429，其他使用者不受影響', async () => {
   const client = adminClient();
   const caller = await createCaller(client, '連續查碼者');
   const other = await createCaller(client, '一般註冊者');
   try {
-    // 真的打 10 次（不是預先灌計數）：證明每一次請求都有被計入。
-    for (let i = 1; i <= 10; i++) {
+    // 真的打滿短窗額度（不是預先灌計數）：證明每一次請求都有被計入。
+    // 數字本身（10 次／5 分鐘）由 check-spec-drift 對規格書 §4.2 釘住。
+    for (let i = 1; i <= REFERRAL_VALIDATE_RATE_MAX; i++) {
       const res = await validateReq(caller.token, `nope-${i}`);
       assertEquals(res.status, 200, `第 ${i} 次應放行，實際 ${res.status}`);
       await res.body?.cancel();
     }
 
-    const blocked = await validateReq(caller.token, 'nope-11');
+    const blocked = await validateReq(caller.token, 'nope-over');
     assertEquals(blocked.status, 429);
     const body = await blocked.json();
     assertEquals(body.valid, false);
@@ -143,17 +182,18 @@ Deno.test('referrals/validate：同一使用者 5 分鐘內第 11 次 → 429，
   }
 });
 
-Deno.test('referrals/validate：當日已查 50 次 → 第 51 次 429（短窗仍有額度）', async () => {
+Deno.test('referrals/validate：24 小時額度用完的下一次 → 429（短窗仍有額度）', async () => {
   const client = adminClient();
   const caller = await createCaller(client, '慢速枚舉者');
   try {
     // 灌滿每日窗口、短窗不動——釘住「每日上限」是獨立的第二道窗，
-    // 也釘住鍵的形狀 `referral-validate-day:<使用者 id>`。
-    for (let i = 0; i < 50; i++) {
+    // 也釘住鍵的形狀 `referral-validate-day:<使用者 id>`。用 handler 的常數
+    // 灌，常數寫錯時這條才會跟著紅（自帶數字的話它只驗自己灌的數）。
+    for (let i = 0; i < REFERRAL_VALIDATE_DAILY_MAX; i++) {
       await client.rpc('bump_rate_limit', {
         p_key: `referral-validate-day:${caller.id}`,
-        p_max: 50,
-        p_window_seconds: 86400,
+        p_max: REFERRAL_VALIDATE_DAILY_MAX,
+        p_window_seconds: REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS,
       });
     }
 
@@ -161,6 +201,43 @@ Deno.test('referrals/validate：當日已查 50 次 → 第 51 次 429（短窗�
     assertEquals(res.status, 429);
     const body = await res.json();
     assertEquals(body.error?.code, 'rate_limited');
+  } finally {
+    await cleanup(client, [caller.id]);
+  }
+});
+
+Deno.test('referrals/validate：被短窗擋下的請求不扣 24 小時額度', async () => {
+  // 日窗計的是「實際查詢次數」。若被短窗擋下的請求也扣日額，撞牆後連點
+  // 幾十下就把一整天鎖死——懲罰的是手忙腳亂的真人，不是枚舉者。
+  const client = adminClient();
+  const caller = await createCaller(client, '撞牆後連點者');
+  try {
+    for (let i = 1; i <= REFERRAL_VALIDATE_RATE_MAX + 3; i++) {
+      const res = await validateReq(caller.token, `nope-${i}`);
+      await res.body?.cancel();
+    }
+    const { data } = await client.from('rate_limits').select('count')
+      .eq('key', `referral-validate-day:${caller.id}`).single();
+    assertEquals(data?.count, REFERRAL_VALIDATE_RATE_MAX, '日窗只該計入短窗放行的查詢');
+  } finally {
+    await cleanup(client, [caller.id]);
+  }
+});
+
+Deno.test('referrals/validate：RPC 失敗 → 503，不偽裝成查無此碼', async () => {
+  // 授權若退步（例如 revoke 誤傷 service_role）或資料庫暫時故障，回 200
+  // 「推薦碼不存在或已失效」會讓所有碼靜默變無效、使用者改掉正確的碼。
+  const client = adminClient();
+  const caller = await createCaller(client);
+  try {
+    const res = await withRestTableFailure(
+      ['rpc/validate_referral_code'],
+      async () => await validateReq(caller.token, '1000001'),
+    );
+    assertEquals(res.status, 503);
+    const body = await res.json();
+    assertEquals(body.valid, false);
+    assert(!String(body.error?.message ?? '').includes('不存在'), JSON.stringify(body));
   } finally {
     await cleanup(client, [caller.id]);
   }

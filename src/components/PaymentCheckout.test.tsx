@@ -553,3 +553,93 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     });
   });
 });
+
+// R0 審查回填（#380 必修 2）：換推薦人驗證的「查無」與「暫時讀不到」分開
+// （ui-ux §6）。端點需登入且有限流，429／5xx／網路錯誤都不代表碼無效——
+// 一律說「推薦碼不存在或已失效」會讓使用者以為碼打錯而改掉、丟掉推薦關係。
+describe('PaymentCheckout 換推薦人驗證', () => {
+  /** 只讓 /referrals/validate/ 回指定狀態；其餘請求照舊回空殼。 */
+  function stubValidate(respond: () => Promise<Response>) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        if (String(url).includes('/referrals/validate/')) return respond();
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      }),
+    );
+    return calls;
+  }
+
+  async function enterNewCode(code: string) {
+    seedPendingUser({
+      referredByCode: '8048876',
+      isAutoReferral: true,
+      subscriptionEndDate: recentEnd,
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: code } });
+    fireEvent.blur(input);
+  }
+
+  it('429 時顯示稍後再試，不說推薦碼不存在或已失效', async () => {
+    stubValidate(
+      async () =>
+        ({
+          ok: false,
+          status: 429,
+          json: async () => ({
+            valid: false,
+            error: { code: 'rate_limited', message: '請求過於頻繁，請稍後再試' },
+          }),
+        }) as Response,
+    );
+    await enterNewCode('8048901');
+
+    expect(await screen.findByText('請求過於頻繁，請稍後再試')).toBeTruthy();
+    expect(screen.queryByText('推薦碼不存在或已失效')).toBeNull();
+  });
+
+  it('網路錯誤時顯示暫時無法驗證，不說推薦碼不存在或已失效', async () => {
+    stubValidate(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await enterNewCode('8048901');
+
+    expect(await screen.findByText('暫時無法驗證，請稍後再試')).toBeTruthy();
+    expect(screen.queryByText('推薦碼不存在或已失效')).toBeNull();
+  });
+
+  it('後端明確回 valid=false 時才說推薦碼不存在或已失效', async () => {
+    stubValidate(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({ valid: false, error: { message: '推薦碼不存在或已失效' } }),
+        }) as Response,
+    );
+    await enterNewCode('8048901');
+
+    expect(await screen.findByText('推薦碼不存在或已失效')).toBeTruthy();
+  });
+
+  it('暫時無法驗證時按付款不送單，提示是稍後再試而不是未通過', async () => {
+    const calls = stubValidate(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    setSubscription({ ...RENEWAL, freshForfeitPoints: 0, freshForfeitReferrals: 0 });
+    await enterNewCode('8048901');
+    await screen.findByText('暫時無法驗證，請稍後再試');
+
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('推薦碼暫時無法驗證，請稍後再試', 'warning'),
+    );
+    expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
+  });
+});

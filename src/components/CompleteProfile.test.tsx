@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { createContext } from 'react';
+import { ApiError } from '../utils/apiClient';
 
 // radix 的 Checkbox 走 useSize → ResizeObserver,jsdom 沒有這個 API。
 // 只需要「存在且不炸」,不需要真的量測。
@@ -330,5 +331,44 @@ describe('推薦碼驗證', () => {
     expect(url).toMatch(/\/referrals\/validate\/8048876$/);
     // 沒帶 method 就是 GET;帶了也只能是 GET。
     expect(options?.method ?? 'GET').toBe('GET');
+  });
+
+  // 端點需登入且有限流(#380 必修 3、4):429 是「暫時不能查」,不是「碼無效」。
+  it('按驗證遇到 429 時顯示稍後再試,不說推薦碼無效', async () => {
+    apiRequestJson.mockRejectedValueOnce(
+      new ApiError('請求過於頻繁，請稍後再試', 429, 'rate_limited'),
+    );
+    renderForm();
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('請求過於頻繁'));
+    expect(screen.queryByText('推薦碼無效')).toBeNull();
+  });
+
+  it('送出前重驗遇到 429 時保留已驗證的推薦人,不清掉驗證狀態', async () => {
+    apiRequestJson
+      .mockResolvedValueOnce({ valid: true, referrer: { userName: '陳推薦', listingName: null } })
+      .mockRejectedValueOnce(new ApiError('請求過於頻繁，請稍後再試', 429, 'rate_limited'));
+    renderForm();
+    fireEvent.change(nameInput(), { target: { value: '王小明' } });
+    fireEvent.change(screen.getByLabelText('身份證字號 *'), { target: { value: 'A123456789' } });
+    fireEvent.change(screen.getByLabelText('手機號碼 *'), { target: { value: '0933333333' } });
+    fireEvent.change(screen.getByLabelText('出生年月日 *'), { target: { value: '2000-01-01' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦'),
+    );
+
+    // 送出 → 確認框 → 確認後才進到「送出前重驗」。
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    showNotification.mock.calls[0][0].onConfirm();
+    await waitFor(() => expect(apiRequestJson).toHaveBeenCalledTimes(2));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('請求過於頻繁'));
+    // 剛驗好的推薦人不能因為「暫時不能查」就消失、逼使用者等窗口過後重驗。
+    expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦');
   });
 });

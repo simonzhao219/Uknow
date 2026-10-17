@@ -172,3 +172,25 @@ Deno.test('prune_rate_limits：pg_cron 每小時排程清理一次', async () =>
     await sql.end();
   }
 });
+
+Deno.test('rate_limits 函式：anon、authenticated 不能直接執行，只給 service_role', async () => {
+  // prune_rate_limits(0) 會清空整張計數表（等於重置所有人的限流）、
+  // bump_rate_limit 能替任意 key 灌計數（把別人鎖死）——兩支都只能由
+  // Edge Function（service_role）呼叫，不能經 PostgREST 對外。
+  const sql = postgres(DB_URL);
+  try {
+    for (const fn of ['public.prune_rate_limits(int)', 'public.bump_rate_limit(text, int, int)']) {
+      const [row] = await sql<{ anon: boolean; authed: boolean; service: boolean }[]>`
+        select
+          has_function_privilege('anon', ${fn}, 'EXECUTE') as anon,
+          has_function_privilege('authenticated', ${fn}, 'EXECUTE') as authed,
+          has_function_privilege('service_role', ${fn}, 'EXECUTE') as service
+      `;
+      assertEquals(row.anon, false, `anon 不得執行 ${fn}`);
+      assertEquals(row.authed, false, `authenticated 不得執行 ${fn}`);
+      assertEquals(row.service, true, `service_role 要能執行 ${fn}`);
+    }
+  } finally {
+    await sql.end();
+  }
+});

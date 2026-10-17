@@ -46,6 +46,15 @@ Feature: Complete profile
     And I click verify referral code
     Then I should see a toast containing "推薦碼已過期"
 
+  # The check endpoint requires login and is rate limited per user. A 429 means
+  # "try again later", not "this code is wrong" — saying the code is invalid
+  # would push the user to change a correct code and lose the referral.
+  Scenario: A rate-limited referral check asks to retry instead of rejecting the code
+    Given checking referral codes is rate limited
+    When I fill the referral code "abc123"
+    And I click verify referral code
+    Then I should see a toast containing "請求過於頻繁，請稍後再試"
+
   # --- Data-loss guard: reading the terms / reloading must not wipe the form ---
   # The reported incident: the "服務條款" link was an in-app <Link> that unmounted
   # the whole form (destroying its useState), so coming back left a blank form to
