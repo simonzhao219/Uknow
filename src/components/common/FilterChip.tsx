@@ -7,7 +7,7 @@ import { cn } from '../ui/utils';
 //   - 選項本身就是完整的點擊目標（整顆 chip 可點），不必精準點中小圓圈；
 //   - flex-wrap 讓選項依內容寬度自動排滿整行，30 個類別在手機上約 10 列內
 //     即可看完，取代原本一欄一項、右側大片留白、要滑很久的直列。
-// 觸控目標高度由 py-2（約 40px）保證，符合行動裝置最小可點面積。
+// 觸控目標：滑鼠 40px（min-h-10），觸控裝置 44px（pointer-coarse，ui-ux-guidelines §1）。
 
 interface FilterChipProps {
   label: string;
@@ -24,7 +24,7 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
       onClick={onToggle}
       title={label}
       className={cn(
-        'inline-flex min-h-10 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
+        'inline-flex min-h-10 pointer-coarse:min-h-11 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
         // max-w-full：自訂服務類別上線後，chip 的文字長度不再由開發者決定。
         // 自訂上限已對齊內建最長值（皆 6 字，見 CUSTOM_CATEGORY_MAX_LENGTH），
         // 但調降前建立的類別最長仍有 10 字、資料層的濫用上界是 20 字，所以

@@ -72,6 +72,11 @@ test_admin_dashboard_page.py # journey 共用的 AdminDashboardPage 列表等待
 3. If it needs a new backend response shape, add a method to
    `mocks/backend_api_mock.py` or `mocks/supabase_auth_mock.py` rather than
    registering a route inline in a step — keeps mock shapes in one place.
+   **Mocked read failures default to 500, not 503**: postgrest-js retries
+   GET requests that fail with 503/520 (or a network error) with backoff
+   (1+2+4 s) before surfacing the error, so a 503 mock only makes the
+   scenario wait ~7 s for the same error state (`supabase_rest_mock.py`
+   `fail_public_listing(s)`).
 4. If it needs a new selector, prefer `get_by_role`/`get_by_label` on the
    page object; only add a `data-testid` to the source component when the
    text/role is ambiguous or state-dependent.
@@ -163,7 +168,11 @@ E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 連已知債務也一併�
   被動導頁與 `after_load` 都到不了。`drive(page, api_mock)` 在 `after_load` 之後
   執行，用 `mocks/backend_api_mock.py` 的 `hold_*`／`release_*`／`fail_*` 操縱回應
   （目前只有提領頁的四條：`withdrawals-refreshing`、`withdrawals-stale`、
-  `write-in-flight`、`export-in-flight`）。
+  `write-in-flight`、`export-in-flight`）。訪客兩頁的載入中與讀取失敗（S6）不必
+  等導頁之後才動手，直接在 setup 裡用 `mocks/supabase_rest_mock.py` 的
+  `hold_public_listing(s)`／`fail_public_listing(s)`，再以 `after_load` 斷言畫面
+  真的在那一態（骨架的 status、錯誤框標題）——只靠 setup 的話，hold／fail 一旦失效，
+  量到的是載入完成的頁，照樣綠。
 - **不是 `.feature`**：其他測試描述使用者行為，這支是橫切面巡檢，硬套
   Gherkin 只會得到沒人想讀的假場景。走 `pytest.ini` 已允許的 `test_*.py`。
 - **測資是「最壞但可達」**：每個欄位取產品實際允許的極端值（名稱 10 字
@@ -206,6 +215,16 @@ E2E_OVERFLOW_STRICT=1 pytest test_overflow_sweep.py  # 連已知債務也一併�
 也就是說它是**會自我拆除的鷹架**，不會像註解掉的測試那樣被遺忘，也不會像
 TODO 那樣沒有到期日。**不要**因為看到 xfail 就把 marker 刪掉「讓它變綠」
 ——那會把一個尚未滿足的期望變成謊言。
+
+### 訪客兩頁（S6）
+
+- `test_public_skeleton_layout.py`：首頁與服務者詳情的骨架與載入後**同形**——扣住讀取、
+  先確認骨架在畫面上、量、放行、再量，區塊頂緣差 ≤2px（詳情 375／1280，首頁照片牆、
+  詳細、桌機三種）。只量由行高與固定尺寸決定的位置，名稱用全形中文：本機與 CI 的
+  拉丁字型寬度不同，數字以 CI 為準。
+- `test_public_touch_targets.py`：觸控 context（`has_touch`）下量檢視切換與篩選 chip
+  的實際可點區 ≥44px，鍵盤焦點下讀 `box-shadow` 釘住 3px 全不透明 `--sel` 環（選中
+  態本身是 `--sel` 的再加 1px 間隙），並檢查縮圖的環沒有被會裁切的祖先擋住。
 
 ## Coverage
 

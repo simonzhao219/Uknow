@@ -1,12 +1,13 @@
 import type React from 'react';
-import { useState, useMemo, useEffect, useContext } from 'react';
+import { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Skeleton } from './ui/skeleton';
-import { MapPin, ChevronDown, Search, SlidersHorizontal, AlertCircle } from 'lucide-react';
+import { StatusCallout } from './ui/status-callout';
+import { MapPin, ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
 import { FilterCountBadge } from './common/FilterCountBadge';
@@ -169,6 +170,31 @@ export function HomePage() {
     }
   };
 
+  // 焦點跟著使用者的重新載入走（ui-ux-guidelines §9 焦點後備落點），與詳情頁同款：錯誤框
+  // 一換成骨架，按下的「重新載入」就卸載了。按下時焦點交給骨架；落地時焦點若已掉到 body，
+  // 失敗交給錯誤框、成功交給頁面標題。首次載入不搶焦點。
+  const focusAfterLoad = useRef(false);
+  const skeletonRef = useRef<HTMLOutputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const handleReload = () => {
+    focusAfterLoad.current = true;
+    fetchAllListings();
+  };
+
+  useEffect(() => {
+    if (!focusAfterLoad.current) return;
+    if (loading) {
+      skeletonRef.current?.focus();
+      return;
+    }
+    focusAfterLoad.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    (loadError ? errorRef : headingRef).current?.focus();
+  }, [loading, loadError]);
+
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
       // 關鍵字搜尋（名稱／服務介紹／服務類別）。判定抽在 utils/listingSearch.ts，
@@ -240,6 +266,9 @@ export function HomePage() {
     userCoords,
   ]);
 
+  // 載入中與讀取失敗時沒有「結果數」可說：面板主鈕不寫「查看 0 位」（§6：失敗不寫找到 0 筆）
+  const resultCount = loading || loadError ? null : filteredServiceProviders.length;
+
   const handleCityChange = (city: string, checked: boolean) => {
     // 勾選縣市＝預設全區；取消＝移除該市整個 key。純函式只動這一市。
     setDistrictsByCity((prev) => toggleCity(prev, city, checked, TAIWAN_REGIONS[city] || []));
@@ -274,7 +303,13 @@ export function HomePage() {
     <div className="max-w-6xl mx-auto space-y-6">
       {/* 標題區域 */}
       <div className="text-center space-y-4">
-        <h1 className="text-3xl md:text-4xl font-bold">找到你需要的專業服務</h1>
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-3xl md:text-4xl font-bold scroll-mt-20 outline-none"
+        >
+          找到你需要的專業服務
+        </h1>
         <p className="text-muted-foreground">Uknow 連結專業服務，讓專業眾所皆知</p>
       </div>
 
@@ -351,7 +386,7 @@ export function HomePage() {
         onSearchChange={setSearchQuery}
         totalFilters={totalFilters}
         hasBottomNav={isLoggedIn}
-        resultCount={filteredServiceProviders.length}
+        resultCount={resultCount}
         onResetFilters={() => {
           setSelectedGenders([]);
           setSelectedCategory('');
@@ -388,37 +423,52 @@ export function HomePage() {
 
       {/* 結果顯示區域 */}
       <div className="space-y-6">
-        {/* 結果統計 - 僅在非載入狀態顯示 */}
-        {!loading && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center gap-3">
+        {/* 結果統計：載入中也佔住這一列（數字先用骨架），否則資料到位時整片卡片往下
+            跳一列高（實測手機 58px、桌機 36px，§5）。檢視切換在載入中照常可按——
+            骨架本來就跟著檢視模式走。 */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center gap-3">
+            {loading ? (
+              <Skeleton className="h-5 w-28" />
+            ) : loadError ? (
+              // 讀取失敗時不說「找到 0 位」——那是空狀態的說法；佔位讓切換鈕留在右邊
+              <span />
+            ) : (
               <span className="text-sm text-muted-foreground">
                 找到 {filteredServiceProviders.length} 位服務者
               </span>
-              <div className="flex items-center gap-2">
-                {/* 手機版搜尋／篩選都收進底部工具列後，這裡是面板外
-                    唯一的一鍵清除入口，因此不再只限桌面顯示 */}
-                {totalFilters > 0 && (
-                  <Button
-                    onClick={clearFilters}
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs md:text-sm px-2"
-                  >
-                    清除篩選 ({totalFilters})
-                  </Button>
-                )}
-                {/* 檢視方式切換：手機專屬（桌面版面已寬、資訊完整，不提供切換） */}
-                <HomeViewToggle value={viewMode} onChange={setViewMode} className="md:hidden" />
-              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {/* 手機版搜尋／篩選都收進底部工具列後，這裡是面板外
+                  唯一的一鍵清除入口，因此不再只限桌面顯示 */}
+              {!loading && totalFilters > 0 && (
+                <Button
+                  onClick={clearFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs md:text-sm px-2"
+                >
+                  清除篩選 ({totalFilters})
+                </Button>
+              )}
+              {/* 檢視方式切換：手機專屬（桌面版面已寬、資訊完整，不提供切換） */}
+              <HomeViewToggle value={viewMode} onChange={setViewMode} className="md:hidden" />
             </div>
           </div>
-        )}
+        </div>
 
         {/* ========== 載入中狀態：骨架屏（與卡片版面一致，降低版面跳動） ========== */}
         {loading && (
-          <div aria-busy="true" aria-live="polite">
-            <span className="sr-only">載入服務者資料中</span>
+          // <output>（隱含 role="status"）＋名稱＋aria-busy，比照後台 AdminListSkeleton 與
+          // 詳情頁骨架；裡面只用 div。
+          // tabIndex={-1}：使用者按重新載入時焦點交給它（名稱即播報字）。
+          <output
+            ref={skeletonRef}
+            tabIndex={-1}
+            aria-label="載入服務者資料中"
+            aria-busy="true"
+            className="block scroll-mt-20 outline-none"
+          >
             {/* 手機：骨架屏跟著檢視模式走，資料到位時版面不跳動 */}
             <div className="block md:hidden">
               {viewMode === 'photo' ? (
@@ -441,18 +491,27 @@ export function HomePage() {
                 <DesktopCardSkeleton key={i} />
               ))}
             </div>
-          </div>
+          </output>
         )}
 
         {/* ========== 載入失敗（與空狀態明確區分，提供重試） ========== */}
+        {/* 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重新載入是唯一出路，
+            流程鈕取容器色（§12.11），提示框內靠右、文字寬。與詳情頁的讀取失敗同一款。 */}
         {!loading && loadError && (
-          <div className="text-center py-12">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground text-lg mb-2">載入失敗</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              無法取得服務者列表，請檢查網路連線後再試一次
-            </p>
-            <Button onClick={fetchAllListings}>重新載入</Button>
+          // 外層 div 是重新載入後的焦點落點（StatusCallout 不轉發 ref）
+          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
+            <StatusCallout
+              variant="warning"
+              title="載入失敗"
+              description="無法取得服務者列表，請檢查網路連線後再試一次"
+              action={
+                <div className="flex justify-end">
+                  <Button container="warning" onClick={handleReload}>
+                    重新載入
+                  </Button>
+                </div>
+              }
+            />
           </div>
         )}
 
@@ -471,7 +530,8 @@ export function HomePage() {
                 : '請稍後再來看看，或許會有新的服務者加入'}
             </p>
             {(totalFilters > 0 || searchQuery.trim()) && (
-              <Button onClick={clearFilters} tone="secondary">
+              // 手機整寬、桌機文字寬（§12.11；畫面稿唯一畫出的空狀態同此）
+              <Button onClick={clearFilters} tone="secondary" className="w-full md:w-auto">
                 清除搜尋與篩選
               </Button>
             )}
@@ -524,6 +584,11 @@ export function HomePage() {
 // 篩選 UI（手機底部面板與桌面折疊區共用同一套 chip 內容元件）
 // ============================================
 
+// 面板主鈕：有結果數時回饋「查看 N 位服務者」；載入中或讀取失敗時沒有數字可說。
+function resultLabel(resultCount: number | null): string {
+  return resultCount === null ? '查看結果' : `查看 ${resultCount} 位服務者`;
+}
+
 // 手機版篩選面板：從螢幕底部彈出（單手拇指可及），而非右側全幅滑出。
 // 關閉動線以底部的「查看 N 位服務者」主按鈕為主（同時回饋目前結果數），
 // 點背景遮罩也可關閉；右上角 X 僅作為輔助。
@@ -540,8 +605,8 @@ function MobileFilterSheet({
   trigger: React.ReactNode;
   title: string;
   description: string;
-  /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋 */
-  resultCount: number;
+  /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋；載入中或讀取失敗時是 null */
+  resultCount: number | null;
   /** 是否顯示「重設」（有任一條件時才出現） */
   showReset: boolean;
   onReset: () => void;
@@ -562,19 +627,25 @@ function MobileFilterSheet({
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
         <SheetFooter className="mt-0 flex-row gap-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {/* 兩顆並排等寬，次要在左、主要在右（§12.11、畫面稿篩選面板） */}
           {showReset && (
-            <Button variant="ghost" onClick={onReset} className="shrink-0">
+            <Button tone="secondary" onClick={onReset} className="min-h-12 flex-1">
               重設
             </Button>
           )}
           <SheetClose asChild>
-            <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
+            <Button className="min-h-12 flex-1">{resultLabel(resultCount)}</Button>
           </SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>
   );
 }
+
+// 浮動工具列的按鈕是原生 <button>，沒有 Button 原語的焦點樣式：補上同一個 3px 全不透明
+// 焦點環（ui-ux-guidelines §12.12）。
+const TOOLBAR_FOCUS =
+  'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring';
 
 // 手機版底部浮動工具列：搜尋與篩選的唯一入口。
 //
@@ -604,7 +675,8 @@ function MobileSearchFilterBar({
   totalFilters: number;
   /** 登入會員的固定底部導覽列存在時，工具列上移避開 */
   hasBottomNav: boolean;
-  resultCount: number;
+  /** 載入中或讀取失敗時是 null（沒有結果數可說） */
+  resultCount: number | null;
   /** 清除全部篩選條件（不含搜尋字串，搜尋在搜尋面板內清除） */
   onResetFilters: () => void;
   /** 整合篩選面板的內容（三個 chip 區塊） */
@@ -630,7 +702,10 @@ function MobileSearchFilterBar({
           onClick={() => setExpanded(true)}
           aria-label="展開搜尋與篩選"
           aria-expanded={false}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-90 duration-200"
+          className={cn(
+            'relative flex h-14 w-14 items-center justify-center rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-90 duration-200',
+            TOOLBAR_FOCUS,
+          )}
         >
           <Search className="h-5 w-5" aria-hidden="true" />
           {activeCount > 0 && (
@@ -652,7 +727,10 @@ function MobileSearchFilterBar({
           <SheetTrigger asChild>
             <button
               type="button"
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-l-full px-4 py-3 text-left"
+              className={cn(
+                'flex min-w-0 flex-1 items-center gap-2 rounded-l-full px-4 py-3 text-left',
+                TOOLBAR_FOCUS,
+              )}
             >
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               {searchQuery ? (
@@ -686,12 +764,16 @@ function MobileSearchFilterBar({
             </div>
             <SheetFooter className="mt-0 flex-row gap-3 border-t p-4">
               {searchQuery && (
-                <Button variant="ghost" onClick={() => onSearchChange('')} className="shrink-0">
+                <Button
+                  tone="secondary"
+                  onClick={() => onSearchChange('')}
+                  className="min-h-12 flex-1"
+                >
                   清除
                 </Button>
               )}
               <SheetClose asChild>
-                <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
+                <Button className="min-h-12 flex-1">{resultLabel(resultCount)}</Button>
               </SheetClose>
             </SheetFooter>
           </SheetContent>
@@ -704,7 +786,7 @@ function MobileSearchFilterBar({
           trigger={
             <button
               type="button"
-              className="flex shrink-0 items-center gap-1.5 rounded-r-full px-4 py-3"
+              className={cn('flex shrink-0 items-center gap-1.5 px-4 py-3', TOOLBAR_FOCUS)}
             >
               <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
               <span className="text-sm">篩選</span>
@@ -728,7 +810,10 @@ function MobileSearchFilterBar({
           onClick={() => setExpanded(false)}
           aria-label="收合搜尋與篩選"
           aria-expanded={true}
-          className="flex shrink-0 items-center rounded-r-full px-3 text-muted-foreground"
+          className={cn(
+            'flex shrink-0 items-center rounded-r-full px-3 text-muted-foreground',
+            TOOLBAR_FOCUS,
+          )}
         >
           <ChevronDown className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -872,16 +957,18 @@ function LocationFilterChips({
   );
 }
 
-// 載入中骨架屏：對應手機與桌面卡片外形，避免資料到位時版面跳動。
+// 載入中骨架屏：對應手機與桌面卡片外形，避免資料到位時版面跳動。各區塊高度以
+// Playwright 實測對齊卡片（375px／1280px，差 0px）：名稱一行、類別徽章（坐在行盒裡，
+// 上方多 3px）、地區一行；桌機是名稱列、兩行服務介紹、地區。
 function MobileCardSkeleton() {
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-0">
         <Skeleton className="aspect-square w-full rounded-none" />
-        <div className="p-2 space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-12" />
-          <Skeleton className="h-3 w-2/3" />
+        <div className="flex flex-col gap-1 p-2">
+          <Skeleton className="h-5 w-3/4" />
+          <Skeleton className="mt-[3px] h-[22px] w-12" />
+          <Skeleton className="h-4 w-2/3" />
         </div>
       </CardContent>
     </Card>
@@ -894,9 +981,15 @@ function DesktopCardSkeleton() {
       <CardContent className="p-0">
         <Skeleton className="aspect-video w-full rounded-t-lg rounded-b-none" />
         <div className="p-4 space-y-3">
-          <Skeleton className="h-5 w-1/2" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-1/3" />
+          <div className="flex h-6 items-center justify-between gap-2">
+            <Skeleton className="h-5 w-1/2" />
+            <Skeleton className="h-[22px] w-16" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+          <Skeleton className="h-5 w-1/3" />
         </div>
       </CardContent>
     </Card>

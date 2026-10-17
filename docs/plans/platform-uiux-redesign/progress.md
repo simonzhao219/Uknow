@@ -19,7 +19,7 @@
 | S3 | 後台資訊架構 | A1+A2 | ✅ 已合併（2026-10-05，merge `44fda732`）；兩輪審查共 P0×1／P1×9 全修、九題裁決全數套用；驗收站 2 待 S4 合併後一起驗 | [#359](https://github.com/simonzhao219/Uknow/pull/359) | 三段式：Q1–Q3、R1–R4 業主裁決（#359）；四分頁一列（可見二字＋完整無障礙名稱，公告改「系統公告」）、管理員設置退場（bootstrap 只走 API，checklist 步驟 7）、AdminToolbar 套提領＋會員兩頁。看板遺留項「`--brand-subtle(-foreground)` 零消費者，S3 決定去留」結案：S2e 後已有消費者（Button brand tone），保留 |
 | S4 | 會員詳情重設計 | A3 | ✅ 已合併（2026-10-06，merge `d7125a0`）；主 session 最後對照 A–H 與 P1／P2 全數落地；驗收站 2 延到 S7 合併後 | [#365](https://github.com/simonzhao219/Uknow/pull/365) | 三段式：規劃四視角 P0×0／P1×10／P2×23 全數處置，業主裁決 Q1（session 內）與 D1–D13（#365 留言 6008679860）；五階段 TDD（重構綠到綠→查看回饋與請求序號→分區與身分卡→管理區與確認鈕→文件）。固定身分卡＋帳號／點數／近期提領／推薦關係／敏感資料／管理；`WithdrawalStatusBadge`、`MemberStatusBadges` 單一來源；不動 `supabase/functions/`。驗收站 2 與 S3 一起驗，S4 清單見 construction-plan §4.3 表格下方 |
 | S5 | admin 資料快取 | A4 | ✅ 已合併（2026-10-16，merge `1c89474`）；主 session 最後對照 P1×1／P2×12（留言 6044978432）與業主裁決 R1–R8 全數落地、增量確認通過（留言 6218622656）；驗收站 3 延到 S7 合併後 | [#371](https://github.com/simonzhao219/Uknow/pull/371) | 三段式：規劃四輪審查（A–J、D1–D8／E1–E8、K1–K8）、中途對照 A–G、實作審查 Q1–Q7、最後對照 R1–R8；十三個 TDD 階段、四次授權解鎖（friction-log）。記憶體快取 `adminCache`＋`useAdminList`、`runAdminWrite` 單點寫入協議（403 清空）、`AdminConsole` 以 `user.id` 為 key 持有 store 與鎖分頁；不動 `supabase/functions/`。「S5 遺留」八項見遺留事項；驗收 3 清單見 construction-plan §4.3 |
-| S6 | 前台門面 | F1 | 🟡 開工 prompt 已備（2026-10-16，construction-plan §3 九條） | — | 分支 `fix/frontend-p1-polish`、輕量 Plan Mode、Sonnet；驗收 4 與 S7 一起驗；S7 等本 PR 合併後開工 |
+| S6 | 前台門面 | F1 | 🟡 主 session 對照（#377 留言 6226732252：P0×0／P1×5／P2×17）與業主裁決 D1–D6（留言 6226963005）已套用，待增量確認 | [#377](https://github.com/simonzhao219/Uknow/pull/377) | 分支 `fix/frontend-p1-polish`、輕量 Plan Mode（業主於 session 內核准清單與四題裁決，見異動記錄）。詳情頁骨架（e2e 量 375／1280px 差 ≤2px）、查無（`PGRST116`／`22P02`）與讀取失敗（黃框＋重試）分開、頁首返回改全站同款圖示鈕且站內無上一頁時回首頁、重試後焦點交給骨架再落到錯誤框或標題、標題列照畫面稿；首頁失敗態改同款黃框、結果列載入中佔位（原本資料到位整片下移 58px）、卡片骨架對齊到 0px；分段切換／浮動工具列／縮圖補 3px 焦點環，分段切換與 FilterChip 觸控 44px；不動 `supabase/functions/`、資料路徑與 BottomNav。驗收 4・S6 清單見 construction-plan §4.3；S7 等本 PR 合併後開工 |
 | S7 | 會員區資訊層次 | F2+F3 | ⬜ 未開工 | — | 驗收站 4（S7 合併後與驗收 2、3 一次驗）；**等 S5、S6 都合併後開工**（S5 裁決 D8：S5 沒動 `DataCacheProvider`，但改了共用的 `usePagedList`——有資料時 `reload` 改背景重讀、失敗保留舊列；後台公告的錯誤態已由 S5 處理）；F2 已由「視覺對齊」改寫為「資訊層次重設計」（2026-10-03） |
 | S8 | 制度化收尾 | G1+G2 | ⬜ 未開工 | — | 完工後刪除本目錄 |
 
@@ -86,6 +86,8 @@
 | 2026-10-07 | **S5 收尾的計畫異動**：S7 開工條件改「S5、S6 皆合併」（D8）；S5 重量「中」→「重」、單一 PR 不拆、4c 綠燈後主 session 中途對照（K8，construction-plan §2 ※S5）；驗收 3 換成「驗收 3・S5 清單」（§4.3）；驗收 2 追加證件審核卡「退回在左、通過在右、通過無確認框」一項（C）；§6.2 的「抽查一筆提領資料確認顯示值未過期」改成證偽做法 | 原「抽查一筆」兩次看到的都來自同一次回應、永遠為真（主 session 規劃審查 #17）；S5 改了 `usePagedList` 的 `reload` 語意，S7 的推薦橫幅會用它 |
 | 2026-10-07 | **S5 實作收尾（#371）**：十三個階段綠燈；`/review-implementation`（5a–9）P0×0、P1×9、P2×19，P1 與範圍內的 P2 已修，超出 plan 的七題業主全 A（留言 6043735046）：寫入回 403 也清空快取、公告與告警的「結果不明」toast 停 8 秒、沒有工具列的頁面重試中以 status 播報、載入更多失敗以 alert 播報。**遺留結案**：「S3 審查遺留 → S5」十項全數落地——匯出錯誤改獨立狀態（列表照常顯示）、重新整理不再原生停用且有狀態宣告、「已匯出 N 筆」移到工具列下方、寫入與匯出在途鎖分頁（雙下載不可達）、`usePagedList` 請求序號（載入更多不接舊尾）、告警收進 `AdminToolbar`、會員詳情序號收斂成 `useLatestRequest`（含 S4 遺留 D 的重開在途補讀）、重讀不換骨架（關面板焦點回「查看」）、證件審核改用 `memberLabel`；放大鏡目視項併入驗收 2 (4)；S2e 審查遺留的「證件審核列退回在左、通過在右」由裁決 C 落地。**新增**：「S5 遺留」八項（見遺留事項；第八項是裁決 Q4 的證件審核回報位置） | 遺留清單是跨 session 的交接面：結案的要寫在哪裡落地，否則下一位讀者分不出是做完了還是被漏掉 |
 | 2026-10-16 | **S5 合併（#371，merge `1c89474`）**：主 session 最後對照（留言 6044978432，四視角去重 P0×0／P1×1／P2×12，主 session 親查紅綠 commit 與三次授權解鎖）與業主裁決 R1–R7 全 A（留言 6045628257）、R8 A（CI 字型引出，留言 6049819938）全部落地；增量確認通過（留言 6218622656），主 session 代推一行孤兒註解清理 `d278640`。R1 `runAdminWrite` 收 `onAccessLost`，六個寫入站點回 403 都清快取（告警原本漏接、唯一 P1）；R2 站點層與殼層 403 測試補齊；R3 鎖分頁說明行常駐一行高；R4 無工具列頁面改常駐 status；R6 `PAUSED_LOOK`／`isForbidden` 搬家；R8 手機提領摘要固定兩行（本機 Inter 與 CI DejaVu 數字寬差 15%，friction-log 2026-10-16）。**S6 開工 prompt 改寫為九條**（construction-plan §3）：詳情頁骨架與「查無／讀取失敗」分開、兩頁 §12 偏離盤點、定位器契約、`ServiceProviderDetail` 元件測試、驗收 4・S6 清單；HomeViewToggle 焦點樣式由 S7 改歸 S6 順手。S7 仍等 S6 合併 | S6 原本四行 prompt 沒把 e2e 定位器與三態分開講清楚，S3–S5 的教訓是漏講的都會在 PR 內多補一輪；詳情頁的「找不到」混著「讀取失敗」是 P1 關鍵路徑上的錯誤訊息，歸 F1 而不是等 S7 的全站巡檢 |
+| 2026-10-16 | **S6 施工（#377）**：Plan Mode 清單經業主核准，四題裁決全選推薦（session 內互動選項）：(1) 讀取失敗兩頁都用 `StatusCallout variant="warning"`＋流程鈕取容器色（§12.5「錯誤但可重試」併入 warning；首頁保留「載入失敗」「重新載入」字串）；(2) 詳情「返回」改 `variant="link"`（畫面稿；**已被 D3 改回圖示鈕**，見下一列）、`location.key === 'default'`（從分享連結直接進來）時回首頁，刪掉詳情頁對 `useBackNavigation` 的呼叫（hook 本身仍有其他消費者；它把 `/service-providers/*` 對到會員中心，訪客進不去）；(3) 詳情標題列照畫面稿：名稱換行不截斷、性別外框徽章靠右、類別改灰 chip 在下一行（原為墨黑實心 `text-lg`）；(4) `common/FilterChip` 只補 `pointer-coarse:min-h-11`（超出 prompt 列的檔案範圍，業主核准；獎勵頁一併受益），未選態外觀留 S7。**實作期偏離**：縮圖列由橫向捲動改換行（刊登一律三張、最窄放得下；捲動容器會裁焦點環，負邊距留邊又被溢版巡檢抓到 4px）；首頁結果列載入中改為佔位（實測原本資料到位整片下移 58px／36px），讀取失敗時不顯示「找到 0 位」；篩選與搜尋面板底部兩顆改等寬（畫面稿）；聯絡鈕維持文字靠左（畫面稿置中，長帳號換行時靠左好讀）；分段切換維持純圖示（畫面稿寫「照片／詳細」；檢視模式切換用圖示是慣例，aria-label 已有——D6-2）；首頁卡片維持性別徽章（畫面稿沒畫，性別是篩選條件）；名稱字級手機 `text-2xl`、桌機 `text-3xl`（上限 10 字一行放得下）；e2e mock 的詳情讀取失敗預設 500 而非 503（postgrest-js 對 503 自動退避重試，情境會白等） | 詳情頁把「讀取失敗」說成「找不到」是 P1 關鍵路徑上的錯誤訊息；骨架的「同形」以實測數字而非目測驗收，規則與兩條教訓（骨架之外的固定列也要佔位、行內徽章多吃 3px 行高）寫進 `ui-ux-guidelines.md` §5，查無／失敗分開與自動重試寫進 §6 |
+| 2026-10-17 | **S6 主 session 對照與業主裁決（#377 留言 6226732252、6226963005）已套用**：P1 五項——驗收清單的斷網步驟改成「先在 app 內載入、再切 Offline 走站內連結」或 request blocking、「沒整頁重載」改看 Preserve log 下只多一筆請求、「約數秒」改「約 7 秒」；骨架同形改由 e2e 量（D1 (a)：`e2e/test_public_skeleton_layout.py`，詳情 375／1280、首頁照片牆／詳細／桌機，hold → 確認骨架在畫面上 → 量 → release → 量，差 ≤2px；mock 補 `hold_／release_public_listings`）；溢版巡檢補首頁載入中與讀取失敗兩條，四條新路由都以 `after_load` 確認進入目標狀態；重試後焦點（D2 (a)）：按下時交給骨架 `<output tabIndex={-1}>`，落地時焦點若掉到 body 就交給錯誤框或頁面標題，首次載入不搶，兩頁同款，§9 補一條；返回改用 `utils/backNavigation.ts` 的 `resolveDocBackTarget`（與 MarkdownContent 同一個決策來源）。D3 (b)：頁首返回改回全站同款 ghost 圖示鈕，名稱依去向「返回上一頁」／「回首頁」。D4 (a)：§6 劃界——整頁主內容的讀取失敗用黃框，儀表板卡片內的單一區塊維持 §13 第 4 條中性字。D5 (a)：請求逾時記遺留。D6：面板「重設」「清除」改外框次要鈕；分段切換維持純圖示。P2 本 PR 做：面板主鈕在載入中與失敗時寫「查看結果」；首頁失敗情境斷言不出現「找到 0 位」；id 在途切換以 `useLatestRequest` 只認最後一次請求；返回兩條 e2e（直接開連結、從首頁進來後重整）；大圖與縮圖 `bg-muted`；觸控 44px 與焦點環改在真瀏覽器量（`e2e/test_public_touch_targets.py`：`hit_area`、鍵盤焦點下的 `box-shadow`、縮圖環未被裁切）；`CategoryBadge` 過期註解；遺留改 file:line＋退場條件；縮圖骨架格數取 `MAX_PHOTO_COUNT`；沒有資料也沒有錯誤碼的回應歸讀取失敗；console 靜音改逐測試；`e2e/README.md` 補 mock 失敗預設 500 的理由；§12.11 補空態／找不到頁的鈕位置。新測試對改動前的元件跑過：vitest 9 條紅、e2e 量測與觸控／焦點各以人為改壞的骨架高度、間隙與觸控高度確認會紅 | 審查 P1 集中在「驗證與可達性」：骨架同形原本只有一次性的本機實測、宣告卻寫「以 e2e 為準」；斷網步驟按字面做不到；重試後焦點掉到 body。三項可記遺留的 P2 中，在途切換（P2-4）只要三行就本 PR 修掉，焦點環單一來源（P2-9）與抽 `LoadErrorCallout`（P2-10）記遺留 |
 
 ## 遺留事項
 
@@ -111,7 +113,7 @@
   - Button API：`tone`／`container` 只在 `variant="default"` 生效，型別卻放行其他 variant 帶 tone（靜默無效）→ 可改判別聯合型別；`container` 與 `StatusCallout` 的 variant 是兩份平行列舉、靠人手傳同值 → 可讓 StatusCallout 以 context 提供預設；`variant="destructive"`（紅實心）與 `tone="destructive"`（紅框字）同名異義。S7 大量用到 container 前定案。
   - 預建零消費者：`--brand-border`／`--brand-faint`／`--medal-gradient` 與 `container` 的 brand／success／destructive 組合目前沒有正式消費者（knip 看不到 CSS token 與 cva 變體）；**S7 合併時仍零消費者就刪**。
   - 測試：`SubscriptionStatusCard` 沒有元件測試，續訂引導鈕與失效框 warning 只靠 repoHygiene 白名單與目視。
-  - 焦點：分段切換（HomeViewToggle、CompleteProfile 姓名切換）沒有自帶焦點樣式，靠 base 外框；推薦樹搜尋框 `outline-none` 沒有任何焦點樣式，框線也還是 `--border`（S7 重做時改走 `--input`，§12.7）；對話框關閉鈕的觸控熱區只有 16px。
+  - 焦點：分段切換（CompleteProfile 姓名切換）沒有自帶焦點樣式，靠 base 外框（HomeViewToggle 已由 S6 補上 3px 環＋1px 間隙，#377，此項首頁部分結案；CompleteProfile 的退場條件：下次改 `CompleteProfile.tsx` 的姓名切換時比照 `HomeViewToggle`）；推薦樹搜尋框 `outline-none` 沒有任何焦點樣式，框線也還是 `--border`（S7 重做時改走 `--input`，§12.7）；對話框關閉鈕的觸控熱區只有 16px。
   - 畫面稿與舊程式的落差（規劃未涵蓋）：刊登卡查看／編輯／刪除畫面稿是圖示＋文字、現為純圖示（刪除緊鄰編輯，手機易誤觸）→ S7；簽名板「清除簽名」畫面稿 ghost、現為 outline → S7；任務中心黃卡內「一次領取全部」的 `container`（#354 二次審查已補 `container="warning"`；S7 換綠框時改 success）。
   - 連續同名「下一步」：提領 1→2→3、查收 1→2 同位同名，快速連點可能跳過確認頁（S2e 前步驟 2 的「確認並繼續」也在同一位置，非本 PR 引入；e2e 為此先等「上一步」出現才點）。建議換步時把焦點移到新步驟標題（順帶補 a11y）→ S7。
 - **其他浮在內容上的元件改用浮起表面**（S2e 只做首頁搜尋鈕與工具列，業主 2026-10-05 裁決其餘留給 S7）：底部導覽 BottomNav、toast（`NotificationCard`／`ToastCard`）、彈出選單（popover／dropdown／select 的內容用 `--popover`）、Sheet／對話框（`bg-background`）在深色同樣看不出浮起感，改 `bg-raised border-raised-border shadow-raised`（對話框與 Sheet 有遮罩，可只換表面）。規則見 `ui-ux-guidelines.md` §12.6。
@@ -145,3 +147,20 @@
   - 證件審核的成功回報（「已通過：〈姓名〉」）在佇列最上方：手機往下審第 2 張以後回報落在畫面外，看得到的回饋只有那張
     卡消失、焦點移到下一張（報讀器念得到，回報區是 live region）。業主 2026-10-07 裁決 Q4 本 PR 維持。退場條件：下次改
     證件審核時重新設計回報位置（toast 或卡片原位）。
+- **S6 遺留**（#377）：
+  - `FilterChip` 未選態：畫面稿是灰底無框（`--secondary` 底、灰字），現為白底框線；元件在 `common/`、獎勵頁的紀錄篩選也在用，
+    S6 只補觸控 44px（§12.12 把 chip 歸為無框元件）。退場條件：S7 動獎勵頁時定調並改 `src/components/common/FilterChip.tsx`。
+  - 整頁主內容的讀取失敗仍是置中紅字＋黑色重試，與 S6 兩頁的黃框不同款（§6 已劃界：整頁級用 warning 黃框＋流程鈕取容器色；
+    儀表板卡片內的單一區塊維持 §13 第 4 條中性字，所以我的訂閱卡不在此列）：推薦管理 `ReferralManagement.tsx:74-79`、
+    獎勵回饋 `RewardDashboard.tsx:117-122`、任務中心 `TaskDashboard.tsx:98-101`、刊登管理 `ServiceProviderManagement.tsx:145-158`、
+    獎勵明細 `RewardHistory.tsx:216-223`；其中 `TaskDashboard.tsx:100` 與 `RewardHistory.tsx:220` 用 `window.location.reload()`，
+    違反 §6「重試只重發那支請求、不整頁重載」。重試後的焦點落點（§9）一併套用。退場條件：S7 的 F3 三態巡檢逐頁對齊後刪本條。
+  - 兩頁沒有請求逾時（`src/utils/supabase/client.ts` 沒有自訂 fetch／`AbortSignal`），連線卡住只停在骨架、到不了讀取失敗態；
+    斷網時 postgrest-js 退避約 7 秒才出錯。退場條件：全站讀取逾時工項落地（與後續總綱 T1 的 `fetchProfile` 逾時併成同一工項，
+    也與 S4／S5 遺留的 `apiClient` 逾時同一件事）。
+  - 「3px 環＋1px 間隙」的焦點環字串有四份副本（`FilterChip.tsx`、`HomeViewToggle.tsx`、`ServiceProviderDetail.tsx` 的
+    `THUMB_FOCUS`，以及不帶間隙的 `HomePage.tsx` `TOOLBAR_FOCUS`），值由 `e2e/test_public_touch_targets.py` 釘住、來源不只一處。
+    退場條件：下次動 `ui/tabs.tsx` 或 `FilterChip` 時抽成單一常數（或 cva 變體）。
+  - 讀取失敗提示框在兩頁手工組裝（`variant="warning"`＋`container="warning"`＋`flex justify-end`），S7 對齊上面五處時會再抄五次；
+    桌機「提示框內的鈕與文字同一行靠右」`StatusCallout` 的 `action` slot 做不到（§12.11 已註明）。退場條件：S7 開頭抽
+    `LoadErrorCallout`（標題、說明、重試、焦點落點 ref）並讓兩頁改用。

@@ -38,8 +38,8 @@ describe('CategoryBadge', () => {
   });
 
   it('呼叫端調字級不會洗掉截斷行為', () => {
-    // 四個渲染點的字級/內距各不相同（詳情頁 text-lg、手機卡片 text-xs），
-    // tailwind-merge 只合併同族類別，所以界限不該因此消失。
+    // 各渲染點的字級/內距各不相同（手機卡片 text-xs；text-lg 是任一呼叫端可能傳的
+    // 大字級），tailwind-merge 只合併同族類別，所以界限不該因此消失。
     const className = badgeOf('寵物美容', 'text-lg px-3 py-1').className;
     expect(className).toContain('truncate');
     expect(className).toContain('text-lg');
@@ -47,7 +47,8 @@ describe('CategoryBadge', () => {
 
   it('與名稱同列的呼叫端可覆寫成百分比上限', () => {
     // 這是刻意的覆寫路徑：Badge 基底帶 shrink-0，flex 容器會先餵飽徽章
-    // 再壓縮名稱，同列的兩處（首頁桌面卡片、詳情頁）因此要封頂在 45%。
+    // 再壓縮名稱，與名稱同列的首頁桌面卡片因此要封頂在 45%（詳情頁自 S6 起
+    // 類別在名稱下一行，不再同列）。
     const className = badgeOf('寵物美容', 'max-w-[45%]').className;
     expect(className).toContain('max-w-[45%]');
     expect(className).not.toContain('max-w-full');
