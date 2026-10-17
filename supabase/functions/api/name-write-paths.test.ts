@@ -33,9 +33,12 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 // GRANT 的效果直接問 Postgres,不透過 PostgREST。
 //
 // 為什麼不用「以使用者 token 打 PATCH /rest/v1/profiles」來測:
-// `authenticated` 對 `profiles` **沒有 table-level SELECT**(migrations 裡從來
-// 沒有 `grant select ... on profiles`——前端讀 profile 一律走 Edge Function 的
-// service_role)。PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
+// 本機重播與正式站的 `authenticated` 對 `profiles` **沒有 table-level SELECT**
+// (migrations 裡從來沒有 `grant select ... on profiles`——前端讀 profile 一律走
+// Edge Function 的 service_role);持久的 develop 分支**有**(平台 default
+// privileges,2026-10-17 實測),所以 develop 上帶過濾條件的直連寫入是可行的,
+// 這是 20261017000003 用表級 REVOKE UPDATE 收掉的原因。在沒有 SELECT 的環境裡,
+// PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
 // **任何**欄位的 PATCH 都會回 403 `42501 permission denied for table profiles`。
 // 那個 403 來自 SELECT 而非 UPDATE,會讓斷言完全失去辨別力:即使 REVOKE 根本
 // 沒生效也照樣「被拒」。CI 連續兩輪紅燈才逼出這個事實(第一輪誤判成

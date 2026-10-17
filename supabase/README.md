@@ -62,6 +62,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `pay_referral_generations` | **三代發獎的單一真相**（付款與任務續約共用） |
 | `reconcile_king_credits` | 推薦王 credit 對帳補發（自癒） |
 | `claim_referral_king_reward` | 領取免費續約 credit（延展效期 + 連動發獎） |
+| `register_profile` | Step 2 資料寫入：與付款完成共用 profiles 列鎖，註冊完成後拒寫（只給 service_role） |
 | `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
 | `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
@@ -92,7 +93,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## Migrations
 
-47 個 migration，檔名即時序（`YYYYMMDDNNNNNN_描述.sql`）。**每個檔頭都寫了
+migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
+`scripts/check-migration-versions.py` 把關）。**每個檔頭都寫了
 「為什麼這樣改」**——改動金流函數前請先讀對應檔頭，那裡記錄了歷次踩過的坑。
 
 幾個影響全域的轉折點：

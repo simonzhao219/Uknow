@@ -3005,10 +3005,26 @@ profiles 的 `for update` 鎖擋住，commit 後照樣寫入（本機重現：�
 `supabase/functions/api/registration-completion-guard.test.ts` 的「端點 × 註冊狀態」矩陣，含一條在付款交易
 持鎖期間送出 register 的確定性競態測試（測試自開交易呼叫 `process_successful_payment`、不 commit）。
 
-未處理：CompleteProfile「稍後註冊」對已付款者吞掉 cancel-signup 的 400 後仍登出並顯示「可稍後再完成註冊」；
-客服代改身分資料沒有後台工具（A1b 另案）。
+審查回填（PR #382 留言）另修了三處同形缺口：cancel-signup 改為也擋已付款待開通（pending + PayUni SUCCESS，
+錢已收、刪除不可逆）、reset-registration 讀取失敗改回 500、register 對 `register_profile` 未預期的回傳值回 500
+而不是一律說成「用戶不存在」。
 
-## 2026-10-17｜環境｜雲端 session 跑本機 Supabase：dockerd 要自己起、三個映像要改從 Docker Hub 拉
+自我糾正（要沉澱的那種）：我在本機實測直連 PATCH 被「沒有 SELECT」與 `safeupdate` 附帶擋住，就推論「各環境
+都只是縱深防禦」寫進 PR；審查唯讀查 develop 才發現持久分支的 `authenticated` 有表級 SELECT，直連寫入在
+develop 今天就可行。**權限類結論要逐環境查**——本 repo 早已記錄各環境 default privileges 不一致
+（`rls-policies.test.ts`），本機只代表從零重播的那一種。
+
+未處理：
+- CompleteProfile「稍後註冊」對已付款者吞掉 cancel-signup 的 400 後仍登出並顯示「可稍後再完成註冊」。
+- 客服代改身分資料沒有後台工具（A1b 另案）。
+- cancel-signup 的守衛讀取與 `deleteUser` 之間沒有鎖（TOCTOU）；要根治需 security definer 刪除函式，另案。
+- `/payuni/prepare` 沒有「基本資料已填齊」的伺服端守衛。「已付款但資料未填齊 0 筆」是 2026-10-17 的時點量測，
+  不是結構保證。
+- step 3 且資料未填齊者會被 App 啟動守衛（導去完善資料頁）與後端 403 互相夾住；UI 出口另案（A1b）。
+- 已付款待開通的窗口內換推薦人，會讓 `referred_by_changed_at` 晚於該筆付款的 `completed_at`，
+  `repair_orphaned_payments` 對這一筆付款永遠略過。只影響自癒補救路徑，正常開通不經此閘門。
+
+## 2026-10-17｜漏網（環境）｜雲端 session 跑本機 Supabase：dockerd 要自己起、三個映像要改從 Docker Hub 拉
 
 `deno task test:db` 需要 `supabase start`，雲端容器有 docker 但 daemon 沒在跑，且 worker 重啟後 dockerd
 會一起消失（容器保留，`supabase start` 會沿用）。映像拉取：代理擋 `pkg-containers.githubusercontent.com`
@@ -3025,3 +3041,7 @@ supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime   # edg
 `supabase db reset` 或容器重啟後，若測試全部以 `AuthRetryableFetchError` 秒退，`docker restart` kong 即可。
 另：本機 deno 2.5 的 `deno task test:db` 會把 `--ignore=api/*.unit.test.ts` 當成檔案 glob 而失敗，改用
 `deno test ... $(ls api/*.test.ts | grep -v '\.unit\.test\.ts$')`（CI 的 deno 版本不受影響）。
+
+處置：照上面的組合在本 session 跑通 `deno task test:db` 全套（含 `supabase db reset` 從零重播）；CLI 要釘 CI 的
+2.109.1（PR #380 記錄了 2.121 的本機映像預設授權較寬，會讓 GRANT 斷言誤紅）。是否包成 SessionStart hook 待
+整併時裁決。
