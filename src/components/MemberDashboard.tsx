@@ -14,7 +14,9 @@ import { useReferralData } from '../hooks/useReferralData';
 import { useTaskData } from '../hooks/useTaskData';
 import { useRewardData } from '../hooks/useRewardData';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { MyQrEntry } from './referral/MyQrEntry';
+import { InviteFriendButton } from './referral/InviteFriendButton';
+import { MyQrButton } from './referral/MyQrButton';
+import { ReferralCodeWithCopy } from './referral/ReferralCodeWithCopy';
 import { showsRenewalCta } from '../utils/subscriptionNotice';
 import {
   PROFILE_LOCKED_CONFIRM_TEXT,
@@ -37,7 +39,8 @@ import { BreakableEmail } from './common/BreakableEmail';
 /**
  * 會員中心＝狀態總覽，不是導覽選單（ui-ux-guidelines §13；任務／推薦／獎勵的
  * 入口在 BottomNav）。由上到下：需要注意（有事才出現）→ 四張狀態卡 → 我的訂閱
- * → 會員資訊。
+ * → 會員資訊。推薦入口是三顆共用元件（src/components/referral/，推薦管理頁也用）：
+ * 標題列右端「我的 QR」、推薦格的「邀請好友／加入推薦計畫」、會員資訊卡的推薦碼＋複製。
  *
  * 資料 hook 一律在這裡各掛一次、以 props 往下傳：「需要注意」與卡片讀同一份
  * 資料，各自掛會變成同頁兩個實例共用一個 dedupe 請求（見 utils/requestDedup.ts）。
@@ -181,10 +184,11 @@ export function MemberDashboard() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold">會員中心</h1>
           <p className="text-muted-foreground">歡迎回來，{user?.name}</p>
         </div>
+        <MyQrButton className="ml-auto shrink-0" />
       </div>
 
       <AttentionCallout items={attentionItems} />
@@ -230,13 +234,23 @@ export function MemberDashboard() {
             icon={Users}
             ariaLabel={referralLabel()}
             loading={referral.loading}
+            // 卡內唯一的真按鈕：只看 UserContext（是否已加入），推薦資料讀取中或失敗都照常顯示。
+            // 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。
+            action={
+              <InviteFriendButton
+                className="w-full"
+                yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)}
+              />
+            }
           >
             {referral.error || !referral.overview ? (
               <StatCardError>暫時無法取得推薦資料</StatCardError>
             ) : (
               <>
-                <StatValue>{referral.overview.summary.totalReferrals}</StatValue>
-                <p className="text-xs text-muted-foreground">位</p>
+                <StatValue>
+                  {referral.overview.summary.totalReferrals}
+                  <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
+                </StatValue>
                 {expiring > 0 && <Badge variant="warning-subtle">{expiring} 位即將到期</Badge>}
               </>
             )}
@@ -348,11 +362,8 @@ export function MemberDashboard() {
               <BreakableEmail email={user?.email} />
             </p>
           </div>
-          {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
-              呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
-              所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
-          {/* 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。 */}
-          <MyQrEntry yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)} />
+          {/* 推薦碼＋複製：與推薦管理、我的 QR 頁共用同一顆，閘門由元件本身保證一致。 */}
+          <ReferralCodeWithCopy />
         </CardContent>
       </Card>
     </div>

@@ -3,6 +3,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Loader2, RefreshCw, ScanLine } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useMemberVerifyToken } from '../../hooks/useMemberVerifyToken';
+import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
 
 interface MemberVerifyQrTabProps {
   /** 是否為當前選取分頁；只有選取時才取碼／輪替。 */
@@ -80,8 +81,8 @@ export function MemberVerifyQrTab({ active, accountStatus }: MemberVerifyQrTabPr
               size={200}
               level="M"
               marginSize={2}
-              bgColor="#ffffff"
-              fgColor="#111111"
+              bgColor={PIXEL_PAPER}
+              fgColor={PIXEL_INK}
             />
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
