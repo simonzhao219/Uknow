@@ -137,8 +137,10 @@ describe('buildLineShareUrl', () => {
 });
 
 describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本站', () => {
-  const message = buildInviteMessageFor('abc123');
-  const lineUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+  // 訊息與網址在替身環境裡算（buildInviteMessage 讀 window.location.origin），
+  // 不在測試裡另抄一份邀請文案。
+  let message = '';
+  let lineUrl = '';
 
   function stubEnv({ coarse, share }: { coarse: boolean; share?: () => Promise<void> }) {
     vi.stubGlobal('window', {
@@ -146,6 +148,8 @@ describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本�
       matchMedia: (query: string) => ({ matches: coarse && query === '(pointer: coarse)' }),
     });
     vi.stubGlobal('navigator', share ? { share } : {});
+    message = buildInviteMessage('abc123');
+    lineUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
   }
 
   beforeEach(() => {
@@ -190,7 +194,9 @@ describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本�
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
   });
 
-  it('導頁失敗時退回複製，邀請仍可完成', () => {
+  // 防禦性的那條路：只有導頁當下丟同步例外（沙箱 iframe 之類）才會走到。手機沒裝 LINE
+  // 不會丟例外、而是整頁到 line.me 網頁版——那一條只能真機驗收，這裡守不到。
+  it('導頁當下丟例外時退回複製，邀請仍可完成', () => {
     stubEnv({ coarse: true });
     vi.mocked(openExternalLink).mockImplementationOnce(() => {
       throw new Error('navigation blocked');
@@ -220,8 +226,3 @@ describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本�
     expect(copyToClipboard).toHaveBeenCalledWith(message);
   });
 });
-
-/** 與 buildInviteMessage 同一個 base（stubEnv 的 origin）——在 describe 外先算好。 */
-function buildInviteMessageFor(code: string): string {
-  return `邀請你一起加入 Uknow：\nhttps://test.example/register?ref=${code}\n\n推薦碼 ${code}`;
-}

@@ -105,6 +105,8 @@ export function shareToLine(message: string, showToast: ShowToast): void {
     shareViaSystem(message, showToast);
     return;
   }
+  // 防禦性：只接得住導頁當下的同步例外（沙箱 iframe 禁止導頁之類）。真正常見的失敗——
+  // 手機沒裝 LINE——不會丟例外，而是整頁到 line.me 的網頁版；那只能靠真機驗收看。
   try {
     openExternalLink(buildLineShareUrl(message));
   } catch {

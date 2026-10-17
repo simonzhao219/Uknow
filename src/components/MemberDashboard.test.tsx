@@ -51,7 +51,7 @@ vi.mock('./referral/InviteFriendButton', () => ({
   ),
 }));
 vi.mock('./referral/MyQrButton', () => ({
-  MyQrButton: () => <span data-testid="my-qr-entry" />,
+  MyQrButton: () => <span data-testid="my-qr-button-entry" />,
 }));
 vi.mock('./referral/ReferralCodeWithCopy', () => ({
   ReferralCodeWithCopy: () => <span data-testid="referral-code-entry" />,
@@ -347,19 +347,19 @@ describe('MemberDashboard 引導鈕讓位', () => {
   });
 });
 
-// 給使用者確認的資料不截斷、只換行（#354 範圍外發現第 2 條）：Email 走 BreakableEmail。
 describe('MemberDashboard 推薦入口位置', () => {
   it('標題列有我的 QR，會員資訊卡是推薦碼＋複製，邀請鈕只在推薦格', () => {
     renderPage();
     const heading = screen.getByRole('heading', { name: '會員中心' });
     const titleRow = heading.closest('div')?.parentElement as HTMLElement;
-    expect(within(titleRow).getByTestId('my-qr-entry')).toBeTruthy();
-    expect(screen.getAllByTestId('my-qr-entry')).toHaveLength(1);
+    expect(within(titleRow).getByTestId('my-qr-button-entry')).toBeTruthy();
+    expect(screen.getAllByTestId('my-qr-button-entry')).toHaveLength(1);
     expect(screen.getAllByTestId('referral-code-entry')).toHaveLength(1);
     expect(screen.getAllByTestId('invite-friend-entry')).toHaveLength(1);
   });
 });
 
+// 給使用者確認的資料不截斷、只換行（#354 範圍外發現第 2 條）：Email 走 BreakableEmail。
 describe('MemberDashboard 基本資料', () => {
   it('長 Email 完整顯示、在 @ 後可換行，不截斷', () => {
     const email = 'chienmingchangservice@uknowplatform.com.tw';

@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Share2, Shield } from 'lucide-react';
 import { Button } from '../ui/button';
 import { UserContext } from '../../App';
@@ -42,13 +42,25 @@ export function InviteFriendButton({
   const { user, refreshUser } = useContext(UserContext);
   const { showToast } = useNotification();
   const [joinOpen, setJoinOpen] = useState(false);
+  const inviteRef = useRef<HTMLButtonElement>(null);
+  const justJoined = useRef(false);
 
   // 碼在付款成功時就已產生（process_successful_payment），但「加入推薦計畫」才是
   // 簽了參加契約書的憑據——沒加入就不該拿碼去邀請人。
   const canInvite = myQrTabsForUser(user).invite;
 
+  // 簽完之後加入鈕整顆換成邀請好友（不同的樹、必定重掛），焦點會掉到 body——
+  // 交給同一位置的新鈕，鍵盤與讀屏使用者接著就能邀請（§9）。
+  useEffect(() => {
+    if (canInvite && justJoined.current) {
+      justJoined.current = false;
+      inviteRef.current?.focus();
+    }
+  }, [canInvite]);
+
   const handleJoinSuccess = async () => {
     setJoinOpen(false);
+    justJoined.current = true;
     // 重抓 /profile 取代手刻的 setUser + localStorage——加入成功會同時改動
     // referralProgramJoined / referralCode / referralSignatureUrl，逐欄補寫遲早漏。
     await refreshUser();
@@ -58,6 +70,7 @@ export function InviteFriendButton({
   if (canInvite) {
     return (
       <Button
+        ref={inviteRef}
         tone="secondary"
         size="sm"
         className={className}
@@ -79,7 +92,9 @@ export function InviteFriendButton({
         onClick={() => setJoinOpen(true)}
         data-testid="join-referral-button"
       >
-        <Shield className="h-4 w-4" aria-hidden="true" />
+        {/* 手機隱藏圖示：會員中心 2×2 小卡在 360px 只剩約 122px，「加入推薦計畫」六字＋圖示
+            ＋內距要 126px（375px 只餘約 4px）。品牌色本身已是辨識，圖示讓位。 */}
+        <Shield className="h-4 w-4 max-sm:hidden" aria-hidden="true" />
         加入推薦計畫
       </Button>
       <JoinReferralProgramDialog

@@ -102,7 +102,9 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
 APPROVED_GRADIENT_FILES: dict[str, str] = {}
 
-# 掃描排除清單——只收「檔案裡的色值不是色彩用途」的檔，不是豁免。
+# 掃描排除清單——只收「檔案裡的色值不是 UI 手刻色」的檔，不是豁免：參考值（WCAG 錨定）、
+# 功能性繪圖（canvas 像素色），以及兩者共用的像素色常數檔（pixelColors.ts，內容由測試
+# 逐一對到 globals.css :root，且測試釘住只有那幾個匯出）。
 # globals.test.ts 是對比度公式的錨定測試，`#777777`/`#767676` 這些 hex 是
 # WCAG 參考值、必須以原始色值寫，它們本身就是閘門的一部分；把它算進
 # baseline 會讓 S2 收斂到最後永遠剩這一筆「債」，且每加一條錨定案例都要

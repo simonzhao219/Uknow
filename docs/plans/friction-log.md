@@ -3039,3 +3039,13 @@ supabase CLI 2.109.1 從零重播的那一種（較新版 CLI 的預設授權不
 - step 3 且資料未填齊者會被 App 啟動守衛（導去完善資料頁）與後端 403 互相夾住；UI 出口另案（A1b）。
 - 已付款待開通的窗口內換推薦人，會讓 `referred_by_changed_at` 晚於該筆付款的 `completed_at`，
   `repair_orphaned_payments` 對這一筆付款永遠略過。只影響自癒補救路徑，正常開通不經此閘門。
+
+## 2026-10-17｜誤擋（再犯）｜唯讀的 `git config core.hooksPath` 又被擋——10-03 那條的處置還沒整併
+
+fix/referral-entry-points 開局在同一條複合指令裡順手執行 `git config core.hooksPath`（單一參數，讀），
+bash-guard 第 0 類照舊回「覆寫 core.hooksPath」，連帶把同一行的 `git checkout -b` 一起擋掉，
+只好拿掉那段重跑。與 2026-10-03 那條同形狀、同訊息：deny 訊息仍沒寫「只是想讀請用 `--get`」。
+metrics（`.claude/metrics/sessions/fix__referral-entry-points.jsonl`）記為一筆 hooks-path。
+
+處置:不動守衛，計數＋1，併入 10-03 那條的框架修訂（`REASON_HOOKS_PATH` 補 `--get` 提示＋
+`test-hooks.py` 單一參數讀取案例）。第二次出現代表它不是一次性的手滑，整併時優先處理。

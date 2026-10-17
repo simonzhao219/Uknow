@@ -1005,6 +1005,15 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
             "請修正 setup 的登入/會籍狀態，否則報告會漏掉這一頁。"
         )
 
+    # 推薦碼被省略號截掉不算溢版（truncate 是刻意的保底），scan_overflow 量不到——但碼看
+    # 不全等於邀請不出去。凡畫面上有推薦碼就要完整顯示，不受 known_overflow 放行
+    # （推薦管理推薦碼列在 375px 曾把 10 碼舊格式碼截成「UK8K3M9Q…」）。
+    clipped_codes = page.evaluate(
+        "() => [...document.querySelectorAll('[data-testid=\"my-referral-code\"]')]"
+        ".filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent)"
+    )
+    assert not clipped_codes, f"{route.label}（{route.path}）的推薦碼被截斷：{clipped_codes}"
+
     if route.hard_fails():
         assert not result["findings"], (
             f"{route.label}（{route.path}）有 {len(result['findings'])} 處溢出：\n"

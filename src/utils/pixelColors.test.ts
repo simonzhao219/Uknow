@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import * as pixelColors from './pixelColors';
 import { PIXEL_INK, PIXEL_INK_MUTED, PIXEL_PAPER } from './pixelColors';
 
 const css = readFileSync(resolve(__dirname, '../styles/globals.css'), 'utf-8').replace(
@@ -31,5 +32,15 @@ describe('pixelColors', () => {
 
   it('白底等於 :root 的 --card', () => {
     expect(PIXEL_PAPER).toBe(rootToken('card'));
+  });
+
+  it('只有這三個色——整檔被色彩守門排除，多一個色值只有這裡擋得到', () => {
+    // scripts/check-color-usage.py 的 EXCLUDED_PATHS 收了 pixelColors.ts；第四個色值
+    // 要加進來，就得在這裡（與上面三條）說清楚它對應 :root 的哪個 token。
+    expect(Object.keys(pixelColors).sort()).toEqual([
+      'PIXEL_INK',
+      'PIXEL_INK_MUTED',
+      'PIXEL_PAPER',
+    ]);
   });
 });
