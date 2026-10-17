@@ -97,8 +97,9 @@ export function ReferralManagement() {
         <CardContent className="space-y-4">
           {/* 推薦碼列：推薦碼＋複製、邀請好友／加入推薦計畫——與會員中心共用同兩顆
               （同一個元件、同一份狀態來源），這裡只給 bordered row 的外框。
-              加入成功後 refetch：會員狀態由元件自己重抓，推薦網絡是本頁的事。 */}
-          <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
+              加入成功後 refetch：會員狀態由元件自己重抓，推薦網絡是本頁的事。
+              flex-wrap：舊格式長碼在手機放不下時讓按鈕換行，不把碼截斷。 */}
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
             <ReferralCodeWithCopy />
             <InviteFriendButton className="ml-auto shrink-0" onJoined={refetch} />
           </div>
