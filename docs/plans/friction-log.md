@@ -2973,5 +2973,9 @@ DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選�
    Postgres 映像的預設授權比較寬，`name-write-paths.test.ts`、`rls-policies.test.ts` 兩條 GRANT 斷言本機紅——拿掉本次
    migration 重置後照樣紅，確認與改動無關。本機要跟 CI 同結果就裝 `npm i -g supabase@2.109.1`。
 
+處置：本 PR（#380）照上面的繞法在本機取得兩輪紅綠燈證據，未改任何設定。另一個坑：worker 重啟會殺掉 `dockerd`，
+重新起 `supabase start` 時 DB 走 crash recovery、auth 容器晚約 30 秒才 healthy——這段期間跑測試會整批假紅
+（`getUserAccessToken` 連不上），等 `docker ps` 全部 healthy 再跑。
+
 推論（待整併時裁決）：CI 升 CLI 版本時，這兩條 GRANT 測試會先紅——那是新版預設授權變寬的訊號，該補的是 migration 裡
 明確的 revoke，不是放寬斷言。

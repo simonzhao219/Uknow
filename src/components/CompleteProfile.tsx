@@ -414,17 +414,18 @@ export function CompleteProfile() {
           return;
         }
 
-        // 驗證成功，更新推薦人姓名（可能已變更）
+        // 驗證成功，更新推薦人姓名（可能已變更）；清掉上一輪暫時錯誤留下的訊息
+        setCodeError('');
         if (result.referrer?.userName) {
           setReferrerName(result.referrer.userName);
         }
       } catch (err: any) {
+        // 丟出來的都是「暫時查不到」（限流 429、5xx、網路）——後端明確說碼無效
+        // 走的是上面 valid=false 那條。剛驗好的推薦人不清掉，只擋下這次送出，
+        // 免得使用者以為碼錯了、或要等窗口過後從頭重驗。
         console.error('CompleteProfile: Re-verification error:', err);
-        showToast(err.message || '推薦碼驗證失敗，請稍後再試', 'error');
-        setCodeError(err.message || '推薦碼驗證失敗');
-        setCodeVerified(false);
-        setVerifiedReferralCode('');
-        setReferrerName('');
+        showToast(err.message || '推薦碼驗證失敗，請稍後再試', 'warning');
+        setCodeError(err.message || '推薦碼驗證失敗，請稍後再試');
         setIsLoading(false);
         return;
       }

@@ -249,33 +249,40 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 // ============================================================
 // 工具：限流（DB 計數表 bump_rate_limit，Edge Function 無內建限流）
 //
-// 限流值集中在這裡。固定窗口；rate_limits 由 pg_cron 每小時清掉 window_start
-// 超過 2 天的列（prune_rate_limits），所以**任何窗口都不得長於 2 天**——長於
-// 保留期的窗口會在窗內被清掉，等於提早重置。
+// 限流值集中在這裡。固定窗口（自該窗口第一次請求起算，期滿重置）；
+// rate_limits 由 pg_cron 每小時清掉 window_start 超過 2 天的列
+// （prune_rate_limits），所以**任何窗口都不得長於 2 天**——長於保留期的窗口
+// 會在窗內被清掉，等於提早重置（rate-limit.unit.test.ts 讀兩邊原始碼把關）。
+// 窗口寫成乘式，規格書用分鐘／小時對照（check-spec-drift）。
 // ============================================================
 // /auth/check-email：無驗證端點、{ exists } 本身是帳號枚舉位元 → per-IP。
 const CHECK_EMAIL_RATE_MAX = 10;
-const CHECK_EMAIL_RATE_WINDOW_SECONDS = 300;
+const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
 // /members/verify：per 掃描者，每分鐘 30 次。猜 token 本來就不可行（HMAC 簽章、
 // 90 秒到期），這道防的是開放互掃後「側錄一批他人正在顯示的 QR 再批次驗證」的
 // 個資收集。人工掃描一次至少兩三秒，30 次／分鐘碰不到；換 IP 沒有意義。
 const MEMBER_VERIFY_RATE_MAX = 30;
 const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
-// /referrals/validate/:code：per 使用者、雙窗。短窗容得下合法的連續重試
-// （驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗讓單一
-// 帳號一天最多查 50 個碼——推薦碼是流水號、回推薦人真名，這是枚舉的上限。
+// /referrals/validate/:code：per 使用者、雙窗，依序計數。短窗容得下合法的連續
+// 重試（驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗只計
+// 「短窗放行的實際查詢」，讓單一帳號 24 小時內最多查 50 個碼——推薦碼是流水號、
+// 回推薦人真名，這是單帳號枚舉的上限（多開帳號線性放大，受註冊速率限制）。
 export const REFERRAL_VALIDATE_RATE_MAX = 10;
-export const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 300;
+export const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 5 * 60;
 export const REFERRAL_VALIDATE_DAILY_MAX = 50;
-export const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 86400;
+export const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
 
 // 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
 // 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
-// 行為與改版前相同）。
+// 用戶端仍可換值繞過 per-IP 限流，屬既有殘餘風險）。
+// 格式不像 IPv4／IPv6 的一律歸 'unknown'：超長字串當鍵會讓 bump_rate_limit 的
+// 寫入出錯、被它的 exception 分支吞成 fail-open，任意字串也不該成為計數表的一列。
+const IP_LIKE = /^[0-9a-fA-F:.]{2,45}$/;
 export function clientIp(c: any): string {
-  return c.req.header('cf-connecting-ip') ||
+  const ip = c.req.header('cf-connecting-ip') ||
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    'unknown';
+    '';
+  return IP_LIKE.test(ip) ? ip : 'unknown';
 }
 
 // 回傳是否放行。限流器自身故障（RPC 錯誤）一律放行（fail-open）——
@@ -898,31 +905,38 @@ app.get('/referrals/validate/:code', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const [withinShort, withinDaily] = await Promise.all([
-    rateLimit(
-      `referral-validate:${user.id}`,
-      REFERRAL_VALIDATE_RATE_MAX,
-      REFERRAL_VALIDATE_RATE_WINDOW_SECONDS,
-    ),
-    rateLimit(
-      `referral-validate-day:${user.id}`,
-      REFERRAL_VALIDATE_DAILY_MAX,
-      REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS,
-    ),
-  ]);
-  if (!withinShort || !withinDaily) {
-    return c.json({
+  // 依序計數：被短窗擋下的請求不扣日窗——否則撞牆後連點幾十下就把一整天
+  // 鎖死，懲罰的是手忙腳亂的真人。日窗計的是實際查詢次數。
+  const rateLimited = () =>
+    c.json({
       valid: false,
       error: { code: 'rate_limited', message: '請求過於頻繁，請稍後再試' },
     }, 429);
-  }
+  const withinShort = await rateLimit(
+    `referral-validate:${user.id}`,
+    REFERRAL_VALIDATE_RATE_MAX,
+    REFERRAL_VALIDATE_RATE_WINDOW_SECONDS,
+  );
+  if (!withinShort) return rateLimited();
+  const withinDaily = await rateLimit(
+    `referral-validate-day:${user.id}`,
+    REFERRAL_VALIDATE_DAILY_MAX,
+    REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS,
+  );
+  if (!withinDaily) return rateLimited();
 
   const code = c.req.param('code')?.normalize('NFKC').toLowerCase().trim();
   if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
 
   const { data, error } = await sb().rpc('validate_referral_code', { p_code: code });
 
-  if (error || !data || data.length === 0) {
+  // 查詢失敗與查無此碼分開：授權退步或資料庫暫時故障時回 200「不存在」，
+  // 會讓所有碼靜默變無效、使用者改掉正確的碼。
+  if (error) {
+    console.error('[referrals/validate] validate_referral_code failed:', error);
+    return c.json({ valid: false, error: { message: '服務暫時無法使用' } }, 503);
+  }
+  if (!data || data.length === 0) {
     return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
   }
 

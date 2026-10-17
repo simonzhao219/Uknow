@@ -40,10 +40,13 @@ export function PaymentCheckout() {
   //    fresh=新約從付款日起算、可換新推薦人。null 表示尚未選擇。
   const [renewalMode, setRenewalMode] = useState<'extend' | 'fresh' | null>(null);
   const [newReferralCode, setNewReferralCode] = useState('');
-  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>(
-    'idle',
-  );
+  // invalid＝後端明確說查無此碼；unavailable＝暫時查不到（限流、5xx、網路），
+  // 碼本身可能是對的——兩者分開說（ui-ux §6），免得使用者改掉正確的碼。
+  const [newCodeStatus, setNewCodeStatus] = useState<
+    'idle' | 'checking' | 'valid' | 'invalid' | 'unavailable'
+  >('idle');
   const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
+  const [newCodeUnavailableMessage, setNewCodeUnavailableMessage] = useState<string | null>(null);
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
@@ -353,25 +356,35 @@ export function PaymentCheckout() {
       return;
     }
     setNewCodeStatus('checking');
+    const markUnavailable = (message: unknown) => {
+      setNewCodeStatus('unavailable');
+      setNewCodeUnavailableMessage(typeof message === 'string' && message ? message : null);
+      setNewReferrerName(null);
+    };
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        markUnavailable(null);
+        return;
+      }
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      const result = await response.json();
-      if (response.ok && result.valid && result.referrer) {
+      const result = await response.json().catch(() => null);
+      if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
-      } else {
+      } else if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
+      } else {
+        // 429（限流，訊息取後端的）、401、5xx：暫時查不到，不是碼無效。
+        markUnavailable(result?.error?.message);
       }
     } catch {
-      setNewCodeStatus('invalid');
-      setNewReferrerName(null);
+      markUnavailable(null);
     }
   };
 
@@ -414,7 +427,12 @@ export function PaymentCheckout() {
       newReferralCode.trim() &&
       newCodeStatus !== 'valid'
     ) {
-      showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
+      showToast(
+        newCodeStatus === 'unavailable'
+          ? '推薦碼暫時無法驗證，請稍後再試'
+          : '推薦碼尚未驗證通過，請確認後再送出',
+        'warning',
+      );
       return;
     }
 
@@ -945,6 +963,11 @@ export function PaymentCheckout() {
                       {newCodeStatus === 'invalid' && (
                         <p className="text-xs text-destructive-subtle-foreground">
                           推薦碼不存在或已失效
+                        </p>
+                      )}
+                      {newCodeStatus === 'unavailable' && (
+                        <p className="text-xs text-warning-subtle-foreground">
+                          {newCodeUnavailableMessage ?? '暫時無法驗證，請稍後再試'}
                         </p>
                       )}
                       {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道

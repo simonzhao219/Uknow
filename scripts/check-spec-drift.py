@@ -142,6 +142,38 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "src/utils/serviceCategories.ts",
         r"CUSTOM_CATEGORY_MAX_LENGTH = (\d+)",
     ),
+    # 限流值是安全宣稱（§4.2 推薦碼、§13 掃描驗證），寫在 Edge Function 的常數
+    # 區。窗口常數寫成乘式（5 * 60、24 * 60 * 60），規格書才能用分鐘／小時對照。
+    ConstantRule(
+        "推薦碼驗證短窗（分鐘）",
+        r"同一使用者在 (\d+) 分鐘內最多查",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = (\d+) \* 60;",
+    ),
+    ConstantRule(
+        "推薦碼驗證短窗上限",
+        r"分鐘內最多查 (\d+) 次、",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_RATE_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "推薦碼驗證長窗（小時）",
+        r"、(\d+) 小時內最多查",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "推薦碼驗證長窗上限",
+        r"小時內最多查 (\d+) 次",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_DAILY_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "掃描驗證每分鐘上限",
+        r"同一掃描者每分鐘上限 (\d+) 次",
+        "supabase/functions/api/index.ts",
+        r"MEMBER_VERIFY_RATE_MAX = (\d+);",
+    ),
 )
 
 
@@ -558,7 +590,8 @@ def _load_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for pattern in ("supabase/migrations/*.sql", "src/utils/constants.ts",
                     "src/utils/serviceCategories.ts",
-                    "supabase/functions/_shared/api-contract.ts"):
+                    "supabase/functions/_shared/api-contract.ts",
+                    "supabase/functions/api/index.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
     return sources
