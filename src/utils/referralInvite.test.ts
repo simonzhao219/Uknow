@@ -6,7 +6,6 @@ import {
   getPendingReferral,
   clearPendingReferral,
   buildLineShareUrl,
-  shareToLine,
   shareReferralInvite,
 } from './referralInvite';
 import { openExternalLink } from './externalLink';
@@ -136,21 +135,26 @@ describe('buildLineShareUrl', () => {
   });
 });
 
-describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本站', () => {
-  // 訊息與網址在替身環境裡算（buildInviteMessage 讀 window.location.origin），
-  // 不在測試裡另抄一份邀請文案。
+// 分享順位（業主 2026-10-17）：① 手機／系統分享面板，讓使用者自己選 App 與對象；
+// ② 面板確定用不了時，所在 App 能直接分享就交給它（LINE 內建瀏覽器 → LINE 好友選擇器）；
+// ③ 最後才複製整段邀請訊息並提示。會員中心、推薦管理、我的 QR 頁的「邀請好友」都是這一支。
+describe('shareReferralInvite — 先系統分享面板，再所在 App，最後複製', () => {
   let message = '';
   let lineUrl = '';
 
-  function stubEnv({ coarse, share }: { coarse: boolean; share?: () => Promise<void> }) {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://test.example' },
-      matchMedia: (query: string) => ({ matches: coarse && query === '(pointer: coarse)' }),
-    });
+  /** share 給值＝環境有系統分享面板；訊息在替身環境裡算，不另抄邀請文案。 */
+  function stubEnv(share?: (data: ShareData) => Promise<void>) {
+    vi.stubGlobal('window', { location: { origin: 'https://test.example' } });
     vi.stubGlobal('navigator', share ? { share } : {});
     message = buildInviteMessage('abc123');
     lineUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
   }
+
+  /** 讓 share() 被拒之後的 .catch 跑完。 */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  const rejectWith = (name: string) => () =>
+    Promise.reject(Object.assign(new Error(name), { name }));
 
   beforeEach(() => {
     browser.isInAppBrowser = false;
@@ -161,34 +165,74 @@ describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本�
     vi.clearAllMocks();
   });
 
-  it('LINE 內建瀏覽器直接導到 LINE 分享網址，不給成功提示', () => {
-    stubEnv({ coarse: false });
+  it('有系統分享面板就先叫面板，訊息含連結與推薦碼', () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubEnv(share);
+    shareReferralInvite('abc123', vi.fn());
+    expect(share).toHaveBeenCalledWith({ title: 'Uknow 專業服務平台', text: message });
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).not.toHaveBeenCalled();
+  });
+
+  it('在 LINE 內建瀏覽器裡也先叫系統分享面板，讓使用者自己選 App', () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubEnv(share);
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
+    shareReferralInvite('abc123', vi.fn());
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(openExternalLink).not.toHaveBeenCalled();
+  });
+
+  it('使用者在分享面板按取消就停在那裡，不再導頁也不複製', async () => {
+    stubEnv(rejectWith('AbortError'));
     browser.isInAppBrowser = true;
     browser.platform = 'line';
     const showToast = vi.fn();
-    shareToLine(message, showToast);
-    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+    shareReferralInvite('abc123', showToast);
+    await settle();
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('觸控裝置的一般瀏覽器也直接導到 LINE 分享網址', () => {
-    stubEnv({ coarse: true });
-    shareToLine(message, vi.fn());
-    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
-  });
-
-  it('桌機有系統分享面板時叫面板，不導離本站', () => {
-    const share = vi.fn().mockResolvedValue(undefined);
-    stubEnv({ coarse: false, share });
-    shareToLine(message, vi.fn());
-    expect(openExternalLink).not.toHaveBeenCalled();
-    expect(share).toHaveBeenCalledWith({ title: 'Uknow 專業服務平台', text: message });
-  });
-
-  it('桌機沒有分享面板時複製整段邀請訊息並提示', () => {
-    stubEnv({ coarse: false });
+  it('分享面板叫不起來時，在 LINE 內建瀏覽器改開 LINE 好友選擇器', async () => {
+    stubEnv(rejectWith('NotAllowedError'));
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
     const showToast = vi.fn();
-    shareToLine(message, showToast);
+    shareReferralInvite('abc123', showToast);
+    await settle();
+    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+    // 開了 LINE 不等於送出了：不給任何成功提示。
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('沒有分享面板的 LINE 內建瀏覽器直接開 LINE 好友選擇器', () => {
+    stubEnv();
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
+    shareReferralInvite('abc123', vi.fn());
+    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+    expect(copyToClipboard).not.toHaveBeenCalled();
+  });
+
+  it('沒有分享面板、所在 App 也不能直接分享時，複製整段邀請訊息並提示', () => {
+    stubEnv();
+    browser.isInAppBrowser = true;
+    browser.platform = 'facebook';
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).toHaveBeenCalledWith(message);
+    expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
+  });
+
+  it('分享面板出錯且不在可直接分享的 App 裡時，退回複製', async () => {
+    stubEnv(rejectWith('NotAllowedError'));
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    await settle();
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).toHaveBeenCalledWith(message);
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
@@ -197,32 +241,24 @@ describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本�
   // 防禦性的那條路：只有導頁當下丟同步例外（沙箱 iframe 之類）才會走到。手機沒裝 LINE
   // 不會丟例外、而是整頁到 line.me 網頁版——那一條只能真機驗收，這裡守不到。
   it('導頁當下丟例外時退回複製，邀請仍可完成', () => {
-    stubEnv({ coarse: true });
+    stubEnv();
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
     vi.mocked(openExternalLink).mockImplementationOnce(() => {
       throw new Error('navigation blocked');
     });
     const showToast = vi.fn();
-    shareToLine(message, showToast);
+    shareReferralInvite('abc123', showToast);
     expect(copyToClipboard).toHaveBeenCalledWith(message);
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
   });
 
-  it('我的 QR 頁的邀請好友在 LINE 內建瀏覽器也改走 LINE 分享網址', () => {
-    stubEnv({ coarse: false });
-    browser.isInAppBrowser = true;
-    browser.platform = 'line';
-    shareReferralInvite('abc123', vi.fn());
-    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
-    expect(copyToClipboard).not.toHaveBeenCalled();
-  });
-
-  it('我的 QR 頁的邀請好友在其他內建瀏覽器照舊複製', () => {
-    stubEnv({ coarse: true });
-    browser.isInAppBrowser = true;
-    browser.platform = 'facebook';
+  it('沒有推薦碼時提示錯誤，不分享', () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubEnv(share);
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
-    expect(openExternalLink).not.toHaveBeenCalled();
-    expect(copyToClipboard).toHaveBeenCalledWith(message);
+    shareReferralInvite('', showToast);
+    expect(share).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('推薦碼不存在', 'error');
   });
 });

@@ -4,15 +4,14 @@
 // 閘門吃 myQrTabsForUser（與我的 QR 頁的邀請分頁同一條規則）——3967f69 的事故就是
 // 同一條規則被複製成兩份、只改了一邊。
 //   - 未加入（或碼還沒產生）：加入推薦計畫引導鈕；同頁有續訂鈕時讓位成次要。
-//   - 已加入：邀請好友次要鈕。手機／LINE 內直接開 LINE 好友選擇器，桌機不導離本站、
-//     退回既有的分享面板或複製。兩邊都不宣稱「已送出」——我們不知道使用者送了沒。
+//   - 已加入：邀請好友次要鈕，按下走 shareReferralInvite——與我的 QR 頁的「邀請好友」
+//     同一支（先系統分享面板、再所在 App、最後複製；順位矩陣在 referralInvite.test.ts）。
 // JoinReferralProgramDialog 替身掉：簽名板與 API 有自己的關注點。
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 
-const { UserCtx, showToast, browser } = await vi.hoisted(async () => {
+const { UserCtx, showToast } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
     UserCtx: createContext<{ user: MyQrTabUser | null; refreshUser: () => Promise<unknown> }>({
@@ -20,15 +19,12 @@ const { UserCtx, showToast, browser } = await vi.hoisted(async () => {
       refreshUser: async () => null,
     }),
     showToast: vi.fn(),
-    browser: { isInAppBrowser: false, platform: null as string | null, userAgent: '' },
   };
 });
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 vi.mock('../notifications/NotificationContext', () => ({ useNotification: () => ({ showToast }) }));
-vi.mock('../../utils/externalLink', () => ({ openExternalLink: vi.fn() }));
-vi.mock('../../utils/clipboard', () => ({ copyToClipboard: vi.fn(() => true) }));
-vi.mock('../../utils/browserDetection', () => ({ detectInAppBrowser: () => browser }));
+vi.mock('../../utils/referralInvite', () => ({ shareReferralInvite: vi.fn() }));
 vi.mock('./JoinReferralProgramDialog', () => ({
   JoinReferralProgramDialog: ({
     open,
@@ -49,17 +45,10 @@ vi.mock('./JoinReferralProgramDialog', () => ({
 }));
 
 import { InviteFriendButton } from './InviteFriendButton';
-import { openExternalLink } from '../../utils/externalLink';
-import { copyToClipboard } from '../../utils/clipboard';
-import { buildInviteMessage } from '../../utils/referralInvite';
+import { shareReferralInvite } from '../../utils/referralInvite';
 import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
 const JOINED = { name: '王小明', referralProgramJoined: true, referralCode: '8048877' };
-
-beforeEach(() => {
-  browser.isInAppBrowser = false;
-  browser.platform = null;
-});
 
 afterEach(() => {
   cleanup();
@@ -146,34 +135,11 @@ describe('InviteFriendButton 已加入推薦計畫', () => {
     expect(screen.queryByTestId('join-referral-button')).toBeNull();
   });
 
-  it('手機上按下直接開 LINE 好友選擇器，訊息是現行邀請文案', () => {
-    stubMediaQuery(true); // (pointer: coarse) 成立＝觸控裝置
+  it('按下走與我的 QR 頁同一支分享，帶自己的推薦碼', () => {
     renderButton(JOINED);
     fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
-
-    expect(openExternalLink).toHaveBeenCalledWith(
-      `https://line.me/R/share?text=${encodeURIComponent(buildInviteMessage('8048877'))}`,
-    );
-    // 開了 LINE 不等於送出了：不給任何成功提示。
+    expect(shareReferralInvite).toHaveBeenCalledWith('8048877', showToast);
+    // 開了分享面板或 LINE 不等於送出了：元件自己不給任何成功提示。
     expect(showToast).not.toHaveBeenCalled();
-  });
-
-  it('LINE 內建瀏覽器即使不是觸控指標也直接開 LINE', () => {
-    stubMediaQuery(false);
-    browser.isInAppBrowser = true;
-    browser.platform = 'line';
-    renderButton(JOINED);
-    fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
-    expect(openExternalLink).toHaveBeenCalledTimes(1);
-  });
-
-  it('桌機按下不離開本站，退回複製整段邀請訊息並提示', () => {
-    stubMediaQuery(false);
-    renderButton(JOINED);
-    fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
-
-    expect(openExternalLink).not.toHaveBeenCalled();
-    expect(copyToClipboard).toHaveBeenCalledWith(buildInviteMessage('8048877'));
-    expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
   });
 });
