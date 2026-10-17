@@ -46,6 +46,26 @@ describe('copyToClipboard', () => {
     expect(document.querySelectorAll('textarea')).toHaveLength(0);
   });
 
+  it('複製完把焦點還給原本的元素，鍵盤使用者不會掉到頁首', () => {
+    stubExecCommand('ok');
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    copyToClipboard('UK1234');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('暫存 textarea 唯讀且 16px：iOS 聚焦時不跳鍵盤、不放大整頁', () => {
+    let seen: { readOnly: boolean; fontSize: string } | null = null;
+    document.execCommand = vi.fn(() => {
+      const active = document.activeElement as HTMLTextAreaElement;
+      seen = { readOnly: active.readOnly, fontSize: active.style.fontSize };
+      return true;
+    });
+    copyToClipboard('UK1234');
+    expect(seen).toEqual({ readOnly: true, fontSize: '16px' });
+  });
+
   it('execCommand 擲錯時仍移除暫存 textarea', () => {
     stubExecCommand('throws');
     copyToClipboard('UK1234');

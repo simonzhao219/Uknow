@@ -30,8 +30,10 @@ describe('pixelColors', () => {
     expect(PIXEL_INK_MUTED).toBe(rootToken('muted-foreground'));
   });
 
-  it('白底等於 :root 的 --card', () => {
-    expect(PIXEL_PAPER).toBe(rootToken('card'));
+  it('白底固定純白，不跟 --card 走', () => {
+    // QR 靜區與列印要純白：QR 容器寫死 bg-white，--card 哪天調成淡灰，跟著變的話
+    // QR 四周會露出色差、下載的邀請卡底也會變灰。
+    expect(PIXEL_PAPER).toBe('#ffffff');
   });
 
   it('只有這三個色——整檔被色彩守門排除，多一個色值只有這裡擋得到', () => {

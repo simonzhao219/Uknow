@@ -124,6 +124,35 @@ describe('InviteFriendButton 未加入推薦計畫', () => {
     // 加入鈕卸載後焦點交給同一位置的新鈕，不掉到 body（§9）。
     expect(document.activeElement).toBe(invite);
   });
+
+  it('簽完後重抓會員資料失敗時，之後別處讓鈕翻轉也不搶焦點', async () => {
+    // refreshUser 失敗回 null（不 reject）：鈕暫時不翻。之後分頁切回觸發 revalidate
+    // 讓閘門翻真時，使用者可能正在別處操作，焦點不該被搶到邀請鈕。
+    function Harness() {
+      const [user, setUser] = useState<MyQrTabUser>({
+        referralProgramJoined: false,
+        referralCode: null,
+      });
+      return (
+        <UserCtx.Provider value={{ user, refreshUser: async () => null }}>
+          <InviteFriendButton />
+          <button type="button" data-testid="revalidate" onClick={() => setUser(JOINED)}>
+            重新驗證
+          </button>
+        </UserCtx.Provider>
+      );
+    }
+    render(<Harness />);
+
+    fireEvent.click(screen.getByTestId('join-referral-button'));
+    fireEvent.click(screen.getByTestId('join-dialog-submit'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('join-referral-button')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('revalidate'));
+    const invite = screen.getByRole('button', { name: /邀請好友/ });
+    expect(document.activeElement).not.toBe(invite);
+  });
 });
 
 describe('InviteFriendButton 已加入推薦計畫', () => {

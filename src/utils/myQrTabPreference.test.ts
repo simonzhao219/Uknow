@@ -13,7 +13,6 @@ import {
   readMyQrTab,
   resolveMyQrTab,
   type StorageLike,
-  visibleMyQrTabCount,
   writeMyQrTab,
 } from './myQrTabPreference';
 
@@ -107,13 +106,6 @@ describe('myQrTabsForUser', () => {
 
   it('會員資料尚未載入時只有驗證碼分頁', () => {
     expect(myQrTabsForUser(null)).toEqual({ invite: false, verify: true, scan: false });
-  });
-});
-
-describe('visibleMyQrTabCount', () => {
-  it('只算真的存在的分頁', () => {
-    expect(visibleMyQrTabCount(ALL_TABS)).toBe(3);
-    expect(visibleMyQrTabCount({ invite: false, verify: true, scan: false })).toBe(1);
   });
 });
 

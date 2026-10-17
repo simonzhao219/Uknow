@@ -196,6 +196,20 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  it('面板還開著又按一下（InvalidStateError）就停，不導頁也不複製', async () => {
+    // Web Share 規格：前一次 share() 尚未結束時再呼叫，以 InvalidStateError 拒絕——
+    // 那是連點的第二下，不是「面板用不了」。
+    stubEnv(rejectWith('InvalidStateError'));
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    await settle();
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('分享面板叫不起來時，在 LINE 內建瀏覽器改開 LINE 好友選擇器', async () => {
     stubEnv(rejectWith('NotAllowedError'));
     browser.isInAppBrowser = true;
@@ -238,8 +252,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
   });
 
-  // 防禦性的那條路：只有導頁當下丟同步例外（沙箱 iframe 之類）才會走到。手機沒裝 LINE
-  // 不會丟例外、而是整頁到 line.me 網頁版——那一條只能真機驗收，這裡守不到。
+  // 防禦性的那條路：只有導頁當下丟同步例外（沙箱 iframe 禁止導頁之類）才會走到。
   it('導頁當下丟例外時退回複製，邀請仍可完成', () => {
     stubEnv();
     browser.isInAppBrowser = true;
@@ -251,6 +264,31 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     shareReferralInvite('abc123', showToast);
     expect(copyToClipboard).toHaveBeenCalledWith(message);
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
+  });
+
+  // 會員中心與推薦管理沒有可手動複製的邀請文字（只露推薦碼），複製失敗要指向有欄位的
+  // 地方；面板被拒之後的複製已脫離使用者手勢，WebKit 的 execCommand 更容易回 false。
+  it('沒有分享面板而複製失敗時，指向我的 QR 頁的邀請連結欄位', () => {
+    stubEnv();
+    vi.mocked(copyToClipboard).mockReturnValueOnce(false);
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    expect(showToast).toHaveBeenCalledWith(
+      '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
+      'error',
+    );
+  });
+
+  it('分享面板出錯後複製也失敗時，同樣指向我的 QR 頁的邀請連結欄位', async () => {
+    stubEnv(rejectWith('NotAllowedError'));
+    vi.mocked(copyToClipboard).mockReturnValueOnce(false);
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    await settle();
+    expect(showToast).toHaveBeenCalledWith(
+      '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
+      'error',
+    );
   });
 
   it('沒有推薦碼時提示錯誤，不分享', () => {

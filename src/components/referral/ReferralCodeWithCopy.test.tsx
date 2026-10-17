@@ -73,6 +73,13 @@ describe('ReferralCodeWithCopy', () => {
     expect(screen.queryByRole('button', { name: '複製推薦碼' })).toBeNull();
   });
 
+  it('已加入但推薦碼尚未產生時不露碼、寫尚未加入且沒有複製鈕', () => {
+    renderCode({ referralProgramJoined: true, referralCode: null });
+    expect(screen.queryByTestId('my-referral-code')).toBeNull();
+    expect(screen.getByText('尚未加入推薦計畫')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '複製推薦碼' })).toBeNull();
+  });
+
   it('置中版（我的 QR 頁）不帶標籤，未加入時整塊不渲染', () => {
     renderCode(JOINED, 'centered');
     expect(screen.queryByText('我的推薦碼')).toBeNull();

@@ -4,8 +4,10 @@
 //   - 有推薦碼時，可掃描/可複製的連結必須是 `/register?ref=<code>`（帶碼直達註冊），
 //     QR 容器帶可存取名稱（aria-label 含該連結），且分享鈕帶 e2e 依賴的 testid。
 //   - 邀請連結是唯讀欄位：點進去整段全選、旁邊一顆鈕複製（不跳鍵盤、不換行）。
-//   - 推薦碼＋複製是共用元件 ReferralCodeWithCopy（從 UserContext 取碼與閘門）。
-//   - 沒有推薦碼時整塊不渲染（gating 由呼叫端的分頁負責，內容自身也防守一次）。
+//   - 推薦碼、會員名與閘門只有一個來源：UserContext（myQrTabsForUser），面板與其中的
+//     ReferralCodeWithCopy 讀同一份，不再由呼叫端另傳一份碼。
+//   - 沒加入或沒有碼時整塊不渲染（gating 由呼叫端的分頁負責，內容自身也防守一次）。
+//   - 「分享 QR Code」與「邀請好友」同一套取消語意：分享面板按取消就停。
 // QR 元件替身成帶顏色屬性的 canvas：不斷言像素，只斷言畫什麼、用什麼色。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -13,7 +15,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 const { UserCtx, showToast } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
-    UserCtx: createContext<{ user: MyQrTabUser | null }>({ user: null }),
+    UserCtx: createContext<{ user: PanelUser | null }>({ user: null }),
     showToast: vi.fn(),
   };
 });
@@ -33,15 +35,21 @@ import { copyToClipboard } from '../../utils/clipboard';
 import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
 import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
+type PanelUser = MyQrTabUser & { name?: string | null };
+
+const JOINED: PanelUser = { name: '小明', referralProgramJoined: true, referralCode: 'abc123' };
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
-function renderPanel(code: string | null = 'abc123') {
+function renderPanel(user: PanelUser = JOINED) {
   return render(
-    <UserCtx.Provider value={{ user: { referralProgramJoined: true, referralCode: code } }}>
-      <InviteFriendPanelContent referralCode={code} memberName="小明" />
+    <UserCtx.Provider value={{ user }}>
+      <InviteFriendPanelContent />
     </UserCtx.Provider>,
   );
 }
@@ -108,8 +116,46 @@ describe('InviteFriendPanelContent', () => {
   });
 
   it('沒有推薦碼時整塊不渲染', () => {
-    const { container } = renderPanel(null);
+    const { container } = renderPanel({ ...JOINED, referralCode: null });
     expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId('referral-qrcode')).toBeNull();
+  });
+
+  it('未加入推薦計畫時整塊不渲染，即使碼已產生', () => {
+    const { container } = renderPanel({ ...JOINED, referralProgramJoined: false });
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('abc123')).toBeNull();
+  });
+});
+
+describe('InviteFriendPanelContent 分享 QR Code', () => {
+  /** jsdom 沒有 canvas 輸出：toBlob 給一個空 PNG、toDataURL 給空字串，下載的 <a>.click 不導頁。 */
+  function stubCanvasAndShare(share: () => Promise<void>) {
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb) {
+      cb(new Blob([], { type: 'image/png' }));
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,');
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.stubGlobal('navigator', { ...navigator, share, canShare: () => true });
+  }
+
+  const rejectWith = (name: string) => () =>
+    Promise.reject(Object.assign(new Error(name), { name }));
+
+  it('分享面板按取消就停，不落回下載', async () => {
+    const share = vi.fn(rejectWith('AbortError'));
+    stubCanvasAndShare(share);
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
+    await vi.waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('分享面板用不了時落回下載邀請卡', async () => {
+    stubCanvasAndShare(rejectWith('NotAllowedError'));
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
   });
 });
