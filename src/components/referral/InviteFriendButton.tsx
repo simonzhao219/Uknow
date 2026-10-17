@@ -5,7 +5,7 @@ import { UserContext } from '../../App';
 import { useNotification } from '../notifications/NotificationContext';
 import { JoinReferralProgramDialog } from './JoinReferralProgramDialog';
 import { myQrTabsForUser } from '../../utils/myQrTabPreference';
-import { buildInviteMessage, shareToLine } from '../../utils/referralInvite';
+import { shareReferralInvite } from '../../utils/referralInvite';
 
 interface InviteFriendButtonProps {
   /** 外框與寬度依版面脈絡給（推薦格整寬、推薦碼列靠右）。 */
@@ -24,8 +24,8 @@ interface InviteFriendButtonProps {
  * 「邀請好友／加入推薦計畫」同一個位置——會員中心推薦格與推薦管理推薦碼列都放這一顆
  * （推薦入口三顆共用元件之一）。
  *
- * - 已加入推薦計畫：次要鈕「邀請好友」，按下走 shareToLine——手機與 LINE 內直接開
- *   LINE 好友選擇器，桌機退回系統分享面板或複製。
+ * - 已加入推薦計畫：次要鈕「邀請好友」，按下走 shareReferralInvite（與我的 QR 頁同一支）：
+ *   先系統分享面板讓使用者自己選 App，用不了時交給所在 App（LINE 好友選擇器），最後複製。
  * - 未加入（首購者付完款都是）：同一位置是「加入推薦計畫」引導鈕，簽完 refreshUser
  *   之後閘門翻過來，鈕立刻變成「邀請好友」。
  *
@@ -74,7 +74,7 @@ export function InviteFriendButton({
         tone="secondary"
         size="sm"
         className={className}
-        onClick={() => shareToLine(buildInviteMessage(user.referralCode), showToast)}
+        onClick={() => shareReferralInvite(user.referralCode, showToast)}
         data-testid="invite-friend-button"
       >
         <Share2 className="h-4 w-4" aria-hidden="true" />

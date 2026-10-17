@@ -1,9 +1,8 @@
 // 邀請分享 + 推薦碼跨步驟帶入。
 //
 // 兩件事收斂在這裡，讓「分享」與「自動帶入」只有一份實作、行為一致：
-//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息。手機與 LINE 內建瀏覽器直接
-//      開 LINE 好友選擇器（shareToLine）；其餘優先叫系統原生分享面板，不支援（或在
-//      會壞掉的 in-app 瀏覽器）時退回複製整段訊息到剪貼簿。
+//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息，先叫系統分享面板，用不了時
+//      交給所在 App（LINE 好友選擇器），再不行才複製整段訊息到剪貼簿。
 //   2. 帶入：把邀請連結上的推薦碼（?ref=）存進 localStorage，撐過
 //      註冊漏斗（/register → OTP → 完善資料頁）後在完善資料頁自動帶入並驗證。
 //
@@ -44,7 +43,7 @@ export function buildInviteMessage(code: string): string {
   return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
 }
 
-/** 複製整段邀請訊息並提示——分享路徑的共同退路。 */
+/** 複製整段邀請訊息並提示——分享的最後一順位。 */
 function copyInviteMessage(message: string, showToast: ShowToast): void {
   if (copyToClipboard(message)) {
     showToast('邀請訊息已複製到剪貼簿！', 'success');
@@ -53,71 +52,45 @@ function copyInviteMessage(message: string, showToast: ShowToast): void {
   }
 }
 
-/**
- * 系統原生分享面板；不支援或在會壞掉的 in-app 瀏覽器時退回複製。
- * text 帶完整邀請訊息（含連結＋推薦碼），不另外帶 url，避免部分 App 把 url
- * 再接到訊息尾端，導致連結出現兩次。
- */
-function shareViaSystem(message: string, showToast: ShowToast): void {
-  const { isInAppBrowser } = detectInAppBrowser();
-  if (
-    !isInAppBrowser &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.share === 'function'
-  ) {
-    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch(() => {
-      // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
-      if (copyToClipboard(message)) {
-        showToast('邀請訊息已複製到剪貼簿！', 'success');
-      }
-    });
-    return;
-  }
-  copyInviteMessage(message, showToast);
-}
-
 /** LINE 好友選擇器的分享網址。整段訊息編碼進 text：換行與連結裡的 `?ref=` 都要活著。 */
 export function buildLineShareUrl(message: string): string {
   return `https://line.me/R/share?text=${encodeURIComponent(message)}`;
 }
 
 /**
- * 開得起 LINE 的環境：LINE 內建瀏覽器本身，或觸控為主的裝置（手機／平板，LINE app
- * 接得住 line.me 的通用連結）。桌機多半沒有 LINE app，line.me 只會把人帶離本站
- * （openExternalLink 在原分頁開，沒有新分頁可退）。
+ * 所在 App 自己的分享入口（第二順位），以 detectInAppBrowser 的 platform 為鍵。只收官方、
+ * 不必註冊 App ID、按下就開好友選擇器的網址——目前只有 LINE 符合（Messenger 的傳送對話框
+ * 要 Facebook App ID，IG 與微信沒有網頁分享入口）。要加一個 App 就在這裡加一列。
  */
-function opensLineDirectly(): boolean {
-  if (detectInAppBrowser().platform === 'line') return true;
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches
-  );
+const IN_APP_SHARE_URL: Partial<Record<string, (message: string) => string>> = {
+  line: buildLineShareUrl,
+};
+
+/** 第二、三順位：所在 App 能直接分享就交給它，否則複製整段訊息並提示。 */
+function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
+  const { platform } = detectInAppBrowser();
+  const hostAppShareUrl = platform ? IN_APP_SHARE_URL[platform] : undefined;
+  if (hostAppShareUrl) {
+    // 只接得住導頁當下的同步例外（沙箱 iframe 禁止導頁之類）。開了 App 不等於送出了，
+    // 所以不給任何成功提示。
+    try {
+      openExternalLink(hostAppShareUrl(message));
+      return;
+    } catch {
+      /* 落到複製 */
+    }
+  }
+  copyInviteMessage(message, showToast);
 }
 
 /**
- * 已加入者按「邀請好友」：直接開 LINE 好友選擇器，少掉「系統分享面板 → 選 LINE」
- * 那一層（業主 2026-10-17）。開不了 LINE 的環境（桌機）退回系統分享面板或複製。
- * 開了 LINE 不等於送出了，所以不給任何「已送出」提示。
- */
-export function shareToLine(message: string, showToast: ShowToast): void {
-  if (!opensLineDirectly()) {
-    shareViaSystem(message, showToast);
-    return;
-  }
-  // 防禦性：只接得住導頁當下的同步例外（沙箱 iframe 禁止導頁之類）。真正常見的失敗——
-  // 手機沒裝 LINE——不會丟例外，而是整頁到 line.me 的網頁版；那只能靠真機驗收看。
-  try {
-    openExternalLink(buildLineShareUrl(message));
-  } catch {
-    copyInviteMessage(message, showToast);
-  }
-}
-
-/**
- * 「我的 QR」頁的「邀請好友」。LINE 內建瀏覽器改走 shareToLine（與會員中心的
- * 邀請好友同一支）——那裡的原生分享面板會壞，原本只能退回複製。其餘照舊：
- * 系統分享面板，不支援時複製。
+ * 「邀請好友」——會員中心、推薦管理、我的 QR 頁都是這一支。使用者不一定透過 LINE
+ * 分享（業主 2026-10-17），順位是：
+ *   1. 系統分享面板（Web Share），讓使用者自己選 App 與對象——LINE 內建瀏覽器有面板時
+ *      也一樣。text 帶完整邀請訊息（含連結＋推薦碼），不另外帶 url，避免部分 App 把
+ *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消就停在那裡，不替他改走別條路。
+ *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
+ *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
  */
 export function shareReferralInvite(code: string, showToast: ShowToast): void {
   if (!code) {
@@ -126,11 +99,14 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
   }
 
   const message = buildInviteMessage(code);
-  if (detectInAppBrowser().platform === 'line') {
-    shareToLine(message, showToast);
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch((error: unknown) => {
+      if ((error as { name?: unknown } | null)?.name === 'AbortError') return;
+      shareViaHostAppOrCopy(message, showToast);
+    });
     return;
   }
-  shareViaSystem(message, showToast);
+  shareViaHostAppOrCopy(message, showToast);
 }
 
 // --- 推薦碼跨步驟帶入（撐過註冊漏斗）---
