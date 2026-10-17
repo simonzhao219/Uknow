@@ -2950,3 +2950,28 @@ DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選�
 (b) 包成一支 script；(c) 量版面的 e2e 在 CI 加一個 Inter 的矩陣（成本：多一軌、要裝字型）。另外，程式註解與 PR 裡
 引用的實測 px 多半是本機 Inter 量的，拿來下結論前先在 CI 字型下重量（這次重量了 375px 第一屏餘裕：提領 122px、
 會員 132px，兩種字型相同）。
+
+---
+
+## 2026-10-17｜漏網（環境）｜web session 本機跑得起 supabase start，但映像要繞路、CLI 要釘版
+
+2026-07-25 那條寫「無 docker daemon，後端紅燈只能從 CI 取」——現在的 web session 是 root、有 `dockerd`，背景啟動後
+`supabase start` 跑得起來（`fix/referral-validate-hardening` 的紅綠燈都在本機實跑）。卡住的是兩件事：
+
+1. **映像拉不下來**：`public.ecr.aws` 回 `Data limit exceeded`（共用出口 IP 的匿名額度）、`ghcr.io` 的 blob 經 proxy
+   被拒、Docker Hub 429。缺的是 kong、gotrue、edge-runtime。繞法：從 `mirror.gcr.io` 拉再改標成 CLI 要的名字；
+   Deno 測試直接 import `index.ts`，不需要 edge-runtime。
+
+   ```bash
+   nohup dockerd > <scratchpad>/dockerd.log 2>&1 &
+   docker pull mirror.gcr.io/library/kong:2.8.1 && docker tag mirror.gcr.io/library/kong:2.8.1 public.ecr.aws/supabase/kong:2.8.1
+   docker pull mirror.gcr.io/supabase/gotrue:<版本> && docker tag mirror.gcr.io/supabase/gotrue:<版本> public.ecr.aws/supabase/gotrue:<版本>
+   supabase start -x studio,logflare,vector,supavisor,edge-runtime,imgproxy
+   ```
+
+2. **CLI 版本漂移**：`npm i -g supabase` 裝到最新（2.121.0），CI 釘的是 2.109.1（`ci.yml` 的 setup-cli）。新版本地
+   Postgres 映像的預設授權比較寬，`name-write-paths.test.ts`、`rls-policies.test.ts` 兩條 GRANT 斷言本機紅——拿掉本次
+   migration 重置後照樣紅，確認與改動無關。本機要跟 CI 同結果就裝 `npm i -g supabase@2.109.1`。
+
+推論（待整併時裁決）：CI 升 CLI 版本時，這兩條 GRANT 測試會先紅——那是新版預設授權變寬的訊號，該補的是 migration 裡
+明確的 revoke，不是放寬斷言。

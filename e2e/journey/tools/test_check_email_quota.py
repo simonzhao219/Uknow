@@ -51,12 +51,28 @@ def _check_email_handler() -> str:
     return source[start:end]
 
 
+def _rate_limit_helper() -> str:
+    """截出共用限流器 `rateLimit()` 的原始碼(各端點經它呼叫 bump_rate_limit)。"""
+    source = API_INDEX.read_text(encoding="utf-8")
+    start = source.index("async function rateLimit(")
+    end = source.index("\n}\n", start)
+    return source[start:end]
+
+
 def test_handler_extraction_finds_the_rate_limit_branch():
-    """先證明抽取有效——抽不到東西時下面兩條會空轉成假綠。"""
+    """先證明抽取有效——抽不到東西時下面兩條會空轉成假綠。
+
+    限流走共用的 `rateLimit()`(它才呼叫 bump_rate_limit),所以兩段都要對:
+    處理函式呼叫了它、它本體真的打到計數表。
+    """
     handler = _check_email_handler()
-    assert "bump_rate_limit" in handler, (
-        "抽出來的 check-email 處理函式裡沒有 bump_rate_limit——"
+    assert "rateLimit(" in handler, (
+        "抽出來的 check-email 處理函式裡沒有呼叫 rateLimit()——"
         "端點結構變了,這支測試的抽取式要跟著改"
+    )
+    assert "bump_rate_limit" in _rate_limit_helper(), (
+        "rateLimit() 不再呼叫 bump_rate_limit——限流換了實作,"
+        "supa.py 的 reset_check_email_rate_limit 刪的那張表可能已不是計數來源"
     )
     assert "429" in handler
 

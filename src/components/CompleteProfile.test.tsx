@@ -12,8 +12,10 @@
 //   4. 送出前確認**只跳一個**對話框,且同時列出姓名與推薦碼(不疊兩個 modal)。
 //   5. 確認過後改姓名再送出,確認框必須**重新出現**——否則新姓名從未被實際
 //      確認就送出去了,加確認框的意義被架空。
+//   6. 推薦碼驗證打 `GET /referrals/validate/<碼>`(需登入、有限流的那一支);
+//      匿名別名 `POST /listings/verify-referral-code` 已移除。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { createContext } from 'react';
 
@@ -53,6 +55,14 @@ vi.mock('./notifications/NotificationContext', () => ({
 
 vi.mock('./LegalDialog', () => ({ LegalDialog: () => null }));
 
+// 只換掉發請求的 apiRequestJson(上面的 getSession 永不 resolve,真的走
+// apiClient 會卡在取 token);buildApiUrl 照用真的,斷言才看得到實際路徑。
+const apiRequestJson = vi.fn();
+vi.mock('../utils/apiClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/apiClient')>()),
+  apiRequestJson: (...args: unknown[]) => apiRequestJson(...args),
+}));
+
 const { CompleteProfile } = await import('./CompleteProfile');
 
 function renderForm() {
@@ -71,6 +81,7 @@ afterEach(cleanup);
 beforeEach(() => {
   cleanup();
   showNotification.mockClear();
+  apiRequestJson.mockReset();
   sessionStorage.clear();
   localStorage.clear();
 });
@@ -296,5 +307,28 @@ describe('送出前確認對話框', () => {
     fireEvent.click(modeButton('中文姓名'));
     fireEvent.click(submit);
     expect(showNotification).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('推薦碼驗證', () => {
+  const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+
+  it('打 GET /referrals/validate/<碼>,推薦人姓名取自 referrer.userName', async () => {
+    apiRequestJson.mockResolvedValueOnce({
+      valid: true,
+      referrer: { userName: '陳推薦', listingName: null },
+    });
+    renderForm();
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦'),
+    );
+    expect(apiRequestJson).toHaveBeenCalledTimes(1);
+    const [url, options] = apiRequestJson.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toMatch(/\/referrals\/validate\/8048876$/);
+    // 沒帶 method 就是 GET;帶了也只能是 GET。
+    expect(options?.method ?? 'GET').toBe('GET');
   });
 });

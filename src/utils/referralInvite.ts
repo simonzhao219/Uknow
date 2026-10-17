@@ -6,7 +6,7 @@
 //   2. 帶入：把邀請連結上的推薦碼（?ref=）存進 localStorage，撐過
 //      註冊漏斗（/register → OTP → 完善資料頁）後在完善資料頁自動帶入並驗證。
 //
-// 推薦碼不是機敏資料；真正的信任邊界仍在後端（verify-referral-code 與
+// 推薦碼不是機敏資料；真正的信任邊界仍在後端（/referrals/validate/:code 與
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
 import { detectInAppBrowser } from './browserDetection';

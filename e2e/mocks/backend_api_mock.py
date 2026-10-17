@@ -196,16 +196,19 @@ class BackendApiMock:
     def set_reset_registration_success(self):
         self._route("/auth/reset-registration", lambda route: _fulfill_json(route, {"success": True}))
 
+    # GET /referrals/validate/<code> is the only referral-code check (the anonymous
+    # POST /listings/verify-referral-code alias was removed). Response shape mirrors
+    # the backend exactly: no referrer id of any kind.
     def set_referral_code_valid(self, referrer_name: str = "推薦人測試"):
-        body = {"valid": True, "referrerName": referrer_name}
-        self._route("/listings/verify-referral-code", lambda route: _fulfill_json(route, body))
+        body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))
 
     def set_referral_code_invalid(self, message: str = "推薦碼無效"):
         body = {"valid": False, "error": {"message": message}}
-        self._route("/listings/verify-referral-code", lambda route: _fulfill_json(route, body))
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))
 
     def set_referral_validate(self, code: str, referrer_name: str):
-        body = {"valid": True, "referrer": {"userName": referrer_name}}
+        body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
         self._route(f"/referrals/validate/{code}", lambda route: _fulfill_json(route, body))
 
     def set_payuni_result(
