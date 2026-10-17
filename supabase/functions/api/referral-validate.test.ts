@@ -10,8 +10,12 @@
 //
 // 同功能的匿名別名 POST /listings/verify-referral-code 一併移除：兩支各算各的
 // 額度等於輪流打就有兩倍，留著一支不需登入的更是整個加固的破口。
+// 同理，底層的 validate_referral_code RPC 不得再對 anon／authenticated 開放——
+// 否則拿前端公開的 anon key 打 /rest/v1/rpc/validate_referral_code 就能繞過
+// 上面全部（無登入、無限流，還回 referrer_user_id）。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
+import postgres from 'npm:postgres@3';
 import {
   adminClient,
   createTestUser,
@@ -30,6 +34,9 @@ Deno.env.set('PAYUNI_SANDBOX', 'false');
 Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
 const { app } = await import('./index.ts');
+
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 function validateReq(token: string | null, code: string) {
   const headers: Record<string, string> = {};
@@ -167,4 +174,26 @@ Deno.test('verify-referral-code：匿名別名已移除 → 404', async () => {
   });
   assertEquals(res.status, 404);
   await res.body?.cancel();
+});
+
+Deno.test('validate_referral_code：anon、authenticated 不能直接執行，只給 service_role', async () => {
+  // 20260620000003 曾刻意 grant 給 anon／authenticated（當時前端直接打 RPC）。
+  // 現在唯一呼叫者是 Edge Function（service_role）；留著 grant 等於在 PostgREST
+  // 上保留一個匿名、無限流、會回推薦人 user id 的枚舉入口。
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql<{ anon: boolean; authed: boolean; service: boolean }[]>`
+      select
+        has_function_privilege('anon', 'public.validate_referral_code(text)', 'EXECUTE') as anon,
+        has_function_privilege('authenticated', 'public.validate_referral_code(text)', 'EXECUTE')
+          as authed,
+        has_function_privilege('service_role', 'public.validate_referral_code(text)', 'EXECUTE')
+          as service
+    `;
+    assertEquals(row.anon, false, 'anon 不得執行 validate_referral_code');
+    assertEquals(row.authed, false, 'authenticated 不得執行 validate_referral_code');
+    assertEquals(row.service, true, 'Edge Function 以 service_role 呼叫，不能一起被撤掉');
+  } finally {
+    await sql.end();
+  }
 });
