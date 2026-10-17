@@ -110,6 +110,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `20260725000002_reward_source_lifecycle` | 獎勵來源分類改「拉新／續約」軸 |
 | `20260726000001_scope_own_policies_to_authenticated` | 「自己的資料」policy 收斂到 authenticated——訪客查詢路徑不再碰 `is_admin()` |
 | `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
+| `20261017000001_revoke_profile_self_update_grants` | authenticated 對 `profiles` 的 UPDATE 全數撤銷——個人資料只能經 Edge Function 寫入 |
+| `20261017000002_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
