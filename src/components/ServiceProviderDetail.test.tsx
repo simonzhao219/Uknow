@@ -243,6 +243,20 @@ describe('ServiceProviderDetail', () => {
     expect(screen.getByRole('img', { name: 'Cara 美容師 - 圖片 2' })).toBeTruthy();
   });
 
+  // 圖片載入失敗時 ImageWithFallback 把 alt 換成「Error loading image」：名稱若取自圖片，
+  // 三顆縮圖都會變成同一個名字（CI 的 e2e 擋掉外部圖片時就是這樣抓到的）。
+  it('縮圖載入失敗時按鈕名稱仍是「縮圖 N」', async () => {
+    single.mockResolvedValueOnce({ data: listing, error: null });
+    renderAt([detailPath]);
+
+    const first = await screen.findByRole('button', { name: '縮圖 1' });
+    const img = first.querySelector('img');
+    if (img) fireEvent.error(img);
+
+    expect(screen.getByRole('button', { name: '縮圖 1' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Error loading image' })).toBeNull();
+  });
+
   it('類別徽章是灰色分類標記，不是墨黑實心', async () => {
     single.mockResolvedValueOnce({ data: listing, error: null });
     renderAt([detailPath]);

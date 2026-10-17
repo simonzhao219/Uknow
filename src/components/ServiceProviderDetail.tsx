@@ -229,9 +229,12 @@ export function ServiceProviderDetail() {
             // 捲動容器只會把縮圖的焦點環裁掉。
             <div className="flex flex-wrap gap-2 pb-2">
               {serviceProvider.photos.map((photo, index) => (
+                // 名稱寫在按鈕上，不取自圖片：圖片載入失敗時 ImageWithFallback 會把 alt 換成
+                // 「Error loading image」，三顆縮圖就變成同一個名字。
                 <button
                   key={index}
                   type="button"
+                  aria-label={`縮圖 ${index + 1}`}
                   aria-pressed={currentImageIndex === index}
                   onClick={() => setCurrentImageIndex(index)}
                   className={cn(
