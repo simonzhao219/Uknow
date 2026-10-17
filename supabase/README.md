@@ -42,7 +42,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `reward_config` | 業務常數單列表（獎金額度、推薦王門檻） | 1（全域） |
 | `announcements` | 系統公告 | N |
 | `system_alerts` | 背景失敗告警（warning-only 隔離的落點） | N |
-| `rate_limits` | 端點限流計數 | N |
+| `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
 
 ## 衍生 View / 函數（即時計算）
 
@@ -67,6 +67,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
 | `referral_tree` | 三代推薦樹（只往下爬 3 層，限自己/admin） |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人） |
+| `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
 | `effective_registration_step` | 註冊進度即時推導 |
 | `tw_day` / `tw_start_of_day` / `tw_end_of_day` | 台灣時區日界（月份 key、單日限額都靠它） |

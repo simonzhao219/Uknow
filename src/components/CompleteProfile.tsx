@@ -31,6 +31,21 @@ import {
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
 
+// GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
+// 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
+interface ReferralValidateResult {
+  valid: boolean;
+  referrer?: { userName: string; listingName: string | null };
+  error?: { message: string };
+}
+
+// 端點需登入且有限流(429 的訊息會被 apiErrorFromBody 帶進 err.message)。
+function requestReferralValidation(code: string) {
+  return apiRequestJson<ReferralValidateResult>(
+    buildApiUrl(`/referrals/validate/${encodeURIComponent(normalizeReferralCode(code))}`),
+  );
+}
+
 const EMPTY_FORM = {
   name: '',
   // 姓名模式(中文/外文)。階段 1 只先讓型別成立、預設中文;切換鈕、長度連動、
@@ -387,18 +402,7 @@ export function CompleteProfile() {
       // ✅ 即使已驗證，點擊下一步時再驗證一次（確保推薦碼仍然有效）
       setIsLoading(true);
       try {
-        const result = await apiRequestJson<{
-          valid: boolean;
-          referrerName?: string;
-          referrerUserId?: string;
-          error?: { message: string };
-        }>(buildApiUrl('/listings/verify-referral-code'), {
-          method: 'POST',
-          body: JSON.stringify({
-            referralCode: normalizeReferralCode(formData.referralCode),
-            currentUserId: null,
-          }),
-        });
+        const result = await requestReferralValidation(formData.referralCode);
 
         if (!result.valid) {
           showToast(result.error?.message || '推薦碼無效，請重新驗證', 'error');
@@ -411,8 +415,8 @@ export function CompleteProfile() {
         }
 
         // 驗證成功，更新推薦人姓名（可能已變更）
-        if (result.referrerName) {
-          setReferrerName(result.referrerName);
+        if (result.referrer?.userName) {
+          setReferrerName(result.referrer.userName);
         }
       } catch (err: any) {
         console.error('CompleteProfile: Re-verification error:', err);
@@ -576,27 +580,15 @@ export function CompleteProfile() {
     setCodeError('');
 
     try {
-      // ✅ 使用統一的 API 請求工具
-      const result = await apiRequestJson<{
-        valid: boolean;
-        referrerName?: string;
-        referrerUserId?: string;
-        error?: { message: string };
-      }>(buildApiUrl('/listings/verify-referral-code'), {
-        method: 'POST',
-        body: JSON.stringify({
-          referralCode: normalizeReferralCode(code),
-          currentUserId: null, // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
-        }),
-      });
+      const result = await requestReferralValidation(code);
 
-      if (result.valid && result.referrerName) {
+      if (result.valid && result.referrer?.userName) {
         setCodeVerified(true);
         setCodeError('');
         // 存正規化值:與 formData.referralCode 同基準,
         // 「驗證後有沒有被改過」的比對才成立。
         setVerifiedReferralCode(normalizeReferralCode(code));
-        setReferrerName(result.referrerName); // ✅ 儲存推薦人姓名
+        setReferrerName(result.referrer.userName); // ✅ 儲存推薦人姓名
         showToast('推薦碼驗證成功', 'success'); // ✅ 只顯示簡單訊息
       } else {
         setCodeError(result.error?.message || '推薦碼無效');

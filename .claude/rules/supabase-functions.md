@@ -44,10 +44,10 @@ paths:
 | # | 區段 | 內容 |
 |---|---|---|
 | 1 | 前置 | CORS、`READ_PATHS`、`CORS_304_HEADERS` |
-| 2 | 共用工具 | `sb()`、`getRewardConfig()`、`requireAuth()`、`isAdminUser()`、`verifyNationalId()`、`maskNationalId()`、`maskBankAccount()` |
+| 2 | 共用工具 | `sb()`、`getRewardConfig()`、`requireAuth()`、限流 `clientIp()`／`rateLimit()`＋限流常數、`isAdminUser()`、`verifyNationalId()`、`maskNationalId()`、`maskBankAccount()` |
 | 3 | PayUni 設定 | `payuniConfig()` |
 | 4 | auth | `/profile`、`/auth/*`(check-email / register / profile / cancel-signup / complete-registration / reset-registration) |
-| 5 | 推薦碼 | `/referrals/validate/:code`、`/referrals/join-program`、`/listings/verify-referral-code` |
+| 5 | 推薦碼 | `/referrals/validate/:code`、`/referrals/join-program` |
 | 6 | admin | `/admin/system-alerts`、`/admin/features`、`/admin/withdrawals`、`/admin/members`、`/admin/announcements`、`/announcements/active`、`/admin-setup/*` |
 | 7 | 金流 | `/payuni/prepare`、`/payuni/result/:tradeNo`、`/payuni/return`、`/webhooks/payuni/notify`、`/internal/reconcile-pending-payments` |
 | 8 | 會籍 | `/subscriptions/status` |
