@@ -16,6 +16,8 @@ interface DashboardStatCardProps {
    */
   ariaLabel: string;
   loading?: boolean;
+  /** TDD 紅燈 stub：綠燈實作會接上。 */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }
 

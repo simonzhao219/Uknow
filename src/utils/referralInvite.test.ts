@@ -5,7 +5,21 @@ import {
   savePendingReferral,
   getPendingReferral,
   clearPendingReferral,
+  buildLineShareUrl,
+  shareToLine,
+  shareReferralInvite,
 } from './referralInvite';
+import { openExternalLink } from './externalLink';
+import { copyToClipboard } from './clipboard';
+
+// 分享路由的三個外部依賴替身掉：導頁（openExternalLink）、複製（copyToClipboard）、
+// 瀏覽器辨識（detectInAppBrowser）。只有「分享到哪裡」那幾條用得到。
+const { browser } = vi.hoisted(() => ({
+  browser: { isInAppBrowser: false, platform: null as string | null, userAgent: '' },
+}));
+vi.mock('./externalLink', () => ({ openExternalLink: vi.fn() }));
+vi.mock('./clipboard', () => ({ copyToClipboard: vi.fn(() => true) }));
+vi.mock('./browserDetection', () => ({ detectInAppBrowser: () => browser }));
 
 // node env (no jsdom) — provide a minimal in-memory localStorage, matching the
 // convention in otpSession.test.ts. The module only uses getItem/setItem/removeItem.
@@ -110,3 +124,104 @@ describe('pending referral — 撐過註冊漏斗（save/get/clear）', () => {
     expect(() => clearPendingReferral()).not.toThrow();
   });
 });
+
+describe('buildLineShareUrl', () => {
+  it('把整段邀請訊息編碼進 line.me 分享網址的 text 參數', () => {
+    const message =
+      '邀請你一起加入 Uknow：\nhttps://a.example/register?ref=abc123\n\n推薦碼 abc123';
+    const url = buildLineShareUrl(message);
+    expect(url).toBe(`https://line.me/R/share?text=${encodeURIComponent(message)}`);
+    // 換行、問號、等號都要被編碼，否則連結的 ?ref= 會被 LINE 當成自己的參數吃掉。
+    expect(new URL(url).searchParams.get('text')).toBe(message);
+  });
+});
+
+describe('shareToLine — 手機與 LINE 內直接到 LINE，桌機不導離本站', () => {
+  const message = buildInviteMessageFor('abc123');
+  const lineUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+
+  function stubEnv({ coarse, share }: { coarse: boolean; share?: () => Promise<void> }) {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://test.example' },
+      matchMedia: (query: string) => ({ matches: coarse && query === '(pointer: coarse)' }),
+    });
+    vi.stubGlobal('navigator', share ? { share } : {});
+  }
+
+  beforeEach(() => {
+    browser.isInAppBrowser = false;
+    browser.platform = null;
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('LINE 內建瀏覽器直接導到 LINE 分享網址，不給成功提示', () => {
+    stubEnv({ coarse: false });
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
+    const showToast = vi.fn();
+    shareToLine(message, showToast);
+    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('觸控裝置的一般瀏覽器也直接導到 LINE 分享網址', () => {
+    stubEnv({ coarse: true });
+    shareToLine(message, vi.fn());
+    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+  });
+
+  it('桌機有系統分享面板時叫面板，不導離本站', () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubEnv({ coarse: false, share });
+    shareToLine(message, vi.fn());
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(share).toHaveBeenCalledWith({ title: 'Uknow 專業服務平台', text: message });
+  });
+
+  it('桌機沒有分享面板時複製整段邀請訊息並提示', () => {
+    stubEnv({ coarse: false });
+    const showToast = vi.fn();
+    shareToLine(message, showToast);
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).toHaveBeenCalledWith(message);
+    expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
+  });
+
+  it('導頁失敗時退回複製，邀請仍可完成', () => {
+    stubEnv({ coarse: true });
+    vi.mocked(openExternalLink).mockImplementationOnce(() => {
+      throw new Error('navigation blocked');
+    });
+    const showToast = vi.fn();
+    shareToLine(message, showToast);
+    expect(copyToClipboard).toHaveBeenCalledWith(message);
+    expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
+  });
+
+  it('我的 QR 頁的邀請好友在 LINE 內建瀏覽器也改走 LINE 分享網址', () => {
+    stubEnv({ coarse: false });
+    browser.isInAppBrowser = true;
+    browser.platform = 'line';
+    shareReferralInvite('abc123', vi.fn());
+    expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
+    expect(copyToClipboard).not.toHaveBeenCalled();
+  });
+
+  it('我的 QR 頁的邀請好友在其他內建瀏覽器照舊複製', () => {
+    stubEnv({ coarse: true });
+    browser.isInAppBrowser = true;
+    browser.platform = 'facebook';
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).toHaveBeenCalledWith(message);
+  });
+});
+
+/** 與 buildInviteMessage 同一個 base（stubEnv 的 origin）——在 describe 外先算好。 */
+function buildInviteMessageFor(code: string): string {
+  return `邀請你一起加入 Uknow：\nhttps://test.example/register?ref=${code}\n\n推薦碼 ${code}`;
+}
