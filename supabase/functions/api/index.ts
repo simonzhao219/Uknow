@@ -322,9 +322,9 @@ const SEPARATOR_LIKE = new RegExp('(?=[\\p{P}\\p{Z}])[^ ]', 'u');
 const NAME_MAX_LENGTH = 50;
 
 export function validateNameFormat(name: unknown): string | undefined {
-  // 型別防禦:`PUT /auth/profile` 的觸發條件是 `'name' in body`,只檢查鍵存在、
-  // 不檢查型別,所以這裡可能收到 null/數字/物件。一律回「格式不符」而**不拋錯**
-  // ——HAN_RANGE 上方註解記載的正是「未防禦邊界輸入把端點打成 500」的事故。
+  // 型別防禦:呼叫端的 `!name` 只擋 falsy 值,所以這裡可能收到數字/物件/陣列。
+  // 一律回「格式不符」而**不拋錯**——HAN_RANGE 上方註解記載的正是「未防禦
+  // 邊界輸入把端點打成 500」的事故。
   if (typeof name !== 'string') return '姓名格式不正確';
   if (!name.trim()) return '請填寫姓名';
 
@@ -616,7 +616,12 @@ app.post('/auth/check-email', async (c) => {
 
 // ============================================================
 // POST /auth/register
-// CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1
+// CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1。
+// 付款前（step 0/1/2）可重送——編輯模式與推薦碼回填都靠它；註冊完成
+// （step 3）後一律 403：身分證字號是經營權與提領身分核對的唯一鍵、推薦人
+// 送出前已確認「永久綁定」、姓名是提領人工核對的依據。守衛必須在寫入端點
+// 本身——/auth/reset-registration 只是編輯入口的提早告知，直接打本端點就
+// 繞過它。
 // ============================================================
 app.post('/auth/register', async (c) => {
   const user = await requireAuth(c);
@@ -640,6 +645,12 @@ app.post('/auth/register', async (c) => {
   const nameError = validateNameFormat(name);
   if (nameError) return c.json({ error: nameError }, 400);
 
+  // 遮罩值防呆：本端點的回應與 GET /profile 回的是遮罩值（A12****789），
+  // 編輯模式又以它回填表單——誤送回來會把 DB 的完整字號蓋成星號。
+  if (typeof nationalId === 'string' && nationalId.includes('*')) {
+    return c.json({ error: '身分證字號含遮罩字元，請輸入完整內容' }, 400);
+  }
+
   const client = sb();
 
   // 若有填推薦碼，先查出推薦人 user_id
@@ -657,84 +668,27 @@ app.post('/auth/register', async (c) => {
     referrerUserId = rc?.user_id ?? null;
   }
 
-  // 透過 service_role 更新 profile（包含 registration_step = 1）
-  const updates: Record<string, any> = {
-    name,
-    phone,
-    birth_date: birthDate,
-    national_id: nationalId || null,
-    registration_step: 1,
-    referred_by_code: cleanCode,
-    referred_by_user_id: referrerUserId,
-  };
-
-  const { error } = await client.from('profiles').update(updates).eq('id', user.id);
+  // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
+  // （register_profile，見 migration 20261017000002）。在這裡先讀進度再
+  // UPDATE 擋不住付款同時完成：讀到 step 2 之後，UPDATE 會被付款交易的列鎖
+  // 擋住、commit 後照樣寫進去。
+  const { data: outcome, error } = await client.rpc('register_profile', {
+    p_user_id: user.id,
+    p_name: name,
+    p_phone: phone,
+    p_birth_date: birthDate,
+    p_national_id: nationalId || null,
+    p_referred_by_code: cleanCode,
+    p_referred_by_user_id: referrerUserId,
+  });
   if (error) {
-    console.error('[register] update 失敗:', error);
+    console.error('[register] register_profile 失敗:', error);
     return c.json({ error: '更新失敗' }, 500);
   }
-
-  const data = await buildProfileResponse(client, user.id, user.email);
-  if (!data) return c.json({ error: '用戶不存在' }, 404);
-  return c.json(data);
-});
-
-// ============================================================
-// PUT /auth/profile
-// 更新可編輯的基本資料欄位。registrationStep 不接受前端寫入 ——
-// 由 payment_orders 即時算出（見 buildProfileResponse / migration 0011），
-// 避免任何登入用戶自行 PUT 跳過付款流程。
-// ============================================================
-app.put('/auth/profile', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  let body: any;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: '請求格式錯誤' }, 400);
+  if (outcome === 'completed') {
+    return c.json({ error: '註冊已完成，資料變更請聯繫客服' }, 403);
   }
-
-  // 遮罩值防呆：GET /profile 回的是遮罩值（A12****789 / *****0123），
-  // 前端若誤把它回填送出，會把 DB 的完整值蓋成星號——一律拒絕。
-  for (const key of ['nationalId', 'bankCode', 'bankAccount']) {
-    if (typeof body?.[key] === 'string' && body[key].includes('*')) {
-      return c.json({ error: '欄位含遮罩字元，請輸入完整內容' }, 400);
-    }
-  }
-
-  const client = sb();
-  const allowedFields: Record<string, string> = {
-    name: 'name',
-    phone: 'phone',
-    birthDate: 'birth_date',
-    nationalId: 'national_id',
-    bankCode: 'bank_code',
-    bankAccount: 'bank_account',
-  };
-
-  // 姓名格式只在 body 帶 name 時檢查——本端點是逐欄位局部更新,無條件檢查會
-  // 誤擋「只改手機/銀行帳號」的請求,也會對 undefined 呼叫字串方法而回 500。
-  if ('name' in body) {
-    const nameError = validateNameFormat(body.name);
-    if (nameError) return c.json({ error: nameError }, 400);
-  }
-
-  const updates: Record<string, any> = {};
-  for (const [jsKey, dbKey] of Object.entries(allowedFields)) {
-    if (jsKey in body) updates[dbKey] = body[jsKey];
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return c.json({ error: '沒有可更新的欄位' }, 400);
-  }
-
-  const { error } = await client.from('profiles').update(updates).eq('id', user.id);
-  if (error) {
-    console.error('[put /auth/profile] 更新失敗:', error);
-    return c.json({ error: '更新失敗' }, 500);
-  }
+  if (outcome !== 'ok') return c.json({ error: '用戶不存在' }, 404);
 
   const data = await buildProfileResponse(client, user.id, user.email);
   if (!data) return c.json({ error: '用戶不存在' }, 404);
@@ -754,12 +708,21 @@ app.delete('/auth/cancel-signup', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const client = sb();
-  const [{ data: completedOrder }, { data: withdrawal }] = await Promise.all([
+  const [
+    { data: completedOrder, error: orderErr },
+    { data: withdrawal, error: withdrawalErr },
+  ] = await Promise.all([
     client.from('payment_orders').select('id')
       .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
     client.from('withdrawals').select('id')
       .eq('user_id', user.id).limit(1).maybeSingle(),
   ]);
+  // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
+  // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
+  if (orderErr || withdrawalErr) {
+    console.error('[cancel-signup] 守衛讀取失敗:', orderErr ?? withdrawalErr);
+    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
+  }
   if (completedOrder || withdrawal) {
     return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
   }
@@ -824,7 +787,9 @@ app.post('/auth/complete-registration', async (c) => {
 // PaymentCheckout「編輯」：讓用戶回到 CompleteProfile 修改基本資料。
 // registrationStep 已改為即時算出（見 buildProfileResponse），這裡不需要
 // 寫任何「step 0」旗標 —— 只要擋掉已付款會員誤觸重置即可；使用者重新
-// 送出 /auth/register 時 registration_step 會自然設回 1。
+// 送出 /auth/register 時 registration_step 會自然設回 1。本端點不寫入任何
+// 資料，這道擋只是讓已付款者在進編輯頁前就得到說明；真正的防線是
+// /auth/register 自己的註冊完成守衛。
 // ============================================================
 app.post('/auth/reset-registration', async (c) => {
   const user = await requireAuth(c);

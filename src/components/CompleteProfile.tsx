@@ -21,6 +21,7 @@ import {
   type NameMode,
 } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
 import { useImeComposition } from '../hooks/useImeComposition';
 import {
   loadProfileDraft,
@@ -71,7 +72,7 @@ export function CompleteProfile() {
   const [referrerName, setReferrerName] = useState('');
   const hasConfirmedSubmission = useRef(false);
 
-  const { setUser } = useContext(UserContext);
+  const { setUser, refreshUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast, showNotification } = useNotification();
@@ -349,8 +350,8 @@ export function CompleteProfile() {
       }
 
       // 顯示警告卡片。訊息拆兩句：推薦碼那句維持原意（它確實永久綁定），
-      // 姓名另補一句——姓名是**可以改的**（規格書 §4.2 明載「修改時連動
-      // 所有顯示介面」），沿用「永久綁定，無法修改」涵蓋姓名會是錯誤陳述。
+      // 姓名另補一句——姓名付款前可由結帳頁「編輯」重填，註冊完成後才鎖定
+      // （規格書 §4.1），沿用「永久綁定，無法修改」涵蓋姓名會是錯誤陳述。
       showNotification({
         type: 'warning',
         title: '重要提醒',
@@ -466,6 +467,25 @@ export function CompleteProfile() {
       if (!response.ok) {
         const errorData = await response.json();
         console.error('CompleteProfile: API error:', errorData);
+        // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
+        // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——直接
+        // 帶回會員中心再說明。先 refreshUser，否則守衛拿舊的 step 又把人彈回來。
+        if (response.status === 403) {
+          clearProfileDraft();
+          await refreshUser();
+          navigate('/dashboard', { replace: true });
+          showNotification({
+            type: 'info',
+            title: '註冊已完成',
+            message: '會員資料一經註冊後無法自行修改。',
+            details: [
+              '如需更改基本資料，請透過 LINE 聯繫客服：',
+              `📱 LINE 官方帳號：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
+            ],
+            confirmText: '我知道了',
+          });
+          return;
+        }
         throw new Error(errorData.error || '註冊失敗');
       }
 
