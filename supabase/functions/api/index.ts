@@ -716,7 +716,7 @@ app.post('/auth/register', async (c) => {
   }
 
   // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
-  // （register_profile，見 migration 20261017000002）。在這裡先讀進度再
+  // （register_profile，見 migration 20261017000004）。在這裡先讀進度再
   // UPDATE 擋不住付款同時完成：讀到 step 2 之後，UPDATE 會被付款交易的列鎖
   // 擋住、commit 後照樣寫進去。
   const { data: outcome, error } = await client.rpc('register_profile', {

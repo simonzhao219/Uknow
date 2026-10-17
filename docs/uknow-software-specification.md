@@ -134,7 +134,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 Step 2 重填。檢查與寫入和付款完成共用同一把 `profiles` 列鎖，付款進行中送出的重填會等付款
 完成後被拒。推薦人在註冊完成後唯一的自助變更路徑是續費選新約（§6.2、§7.4）。收款銀行資訊
 不在此限（每次提領申請時提供，§10.4）。
-〔實作〕`register_profile`（`20261017000002_register_profile_payment_lock.sql`）、
+〔實作〕`register_profile`（`20261017000004_register_profile_payment_lock.sql`）、
 `resolveProfilePageRedirect`
 
 ### 4.2 Step 2 的欄位規則
