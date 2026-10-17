@@ -6,8 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemberVerifyQrTab } from './MemberVerifyQrTab';
 import { useMemberVerifyToken } from '../../hooks/useMemberVerifyToken';
+import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
 
 vi.mock('../../hooks/useMemberVerifyToken', () => ({ useMemberVerifyToken: vi.fn() }));
+// QR 元件替身成帶顏色屬性的 canvas：不斷言像素，只斷言用什麼色畫。
+vi.mock('qrcode.react', () => ({
+  QRCodeCanvas: ({ fgColor, bgColor }: { fgColor?: string; bgColor?: string }) => (
+    <canvas data-testid="qr-canvas" data-fg={fgColor} data-bg={bgColor} />
+  ),
+}));
 
 const mockHook = vi.mocked(useMemberVerifyToken);
 
@@ -17,6 +24,19 @@ afterEach(() => {
 });
 
 describe('MemberVerifyQrTab', () => {
+  it('驗證 QR 以現行墨色畫在白底上', () => {
+    mockHook.mockReturnValue({
+      data: { token: 'signed.token', expiresAt: new Date(Date.now() + 90_000).toISOString() },
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    });
+    render(<MemberVerifyQrTab active accountStatus="active" />);
+    const canvas = screen.getByTestId('qr-canvas');
+    expect(canvas.getAttribute('data-fg')).toBe(PIXEL_INK);
+    expect(canvas.getAttribute('data-bg')).toBe(PIXEL_PAPER);
+  });
+
   it('有短效碼時渲染驗證 QR 與會籍狀態', () => {
     mockHook.mockReturnValue({
       data: { token: 'signed.token', expiresAt: new Date(Date.now() + 90_000).toISOString() },

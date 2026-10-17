@@ -11,18 +11,24 @@ interface DashboardStatCardProps {
   title: string;
   icon: LucideIcon;
   /**
-   * 整張卡是一個連結，aria-label 會取代內容成為唯一的可及名稱——必須把卡上
-   * 看得到的狀態都說完（標題開頭，符合 WCAG 2.5.3 名稱含可見標籤）。
+   * 卡上的連結以 aria-label 為唯一的可及名稱——必須把卡上看得到的狀態都說完
+   * （標題開頭，符合 WCAG 2.5.3 名稱含可見標籤）。action 的按鈕有自己的名稱，不算在內。
    */
   ariaLabel: string;
   loading?: boolean;
+  /**
+   * 卡內「現在就能做、且不是導去同一頁」的真按鈕（推薦格的邀請好友／加入推薦計畫）。
+   * 有給時卡片改成「標題＋數字區是連結、按鈕在連結外」——<a> 裡不能巢狀互動元素。
+   * 不給時整張卡是一個連結（其餘三張卡，含立即刊登）。
+   */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }
 
 /**
- * 會員中心的狀態卡外殼（ui-ux-guidelines §13）：整張卡可點、右側 chevron，
- * 不另放重複標題的按鈕。卡內若要呈現「現在就能做的事」，用 StatCardAction 畫成
- * 按鈕樣式的 span——卡本身已是 <a>，裡面不能再巢狀一個連結。
+ * 會員中心的狀態卡外殼（ui-ux-guidelines §13）：卡片可點、右側 chevron，不另放重複
+ * 標題的按鈕。卡內的行動提示若目的地與卡片相同（申請提領、立即刊登），用 StatCardAction
+ * 畫成按鈕樣式的 span，點擊落在整張卡的連結上；要做別的事的真按鈕走 action。
  */
 export function DashboardStatCard({
   to,
@@ -30,8 +36,47 @@ export function DashboardStatCard({
   icon: Icon,
   ariaLabel,
   loading,
+  action,
   children,
 }: DashboardStatCardProps) {
+  const content = (
+    <>
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        <span className="truncate">{title}</span>
+        <ChevronRight className="ml-auto size-4 shrink-0" aria-hidden="true" />
+      </div>
+      <div className="min-w-0 space-y-1.5">
+        {loading ? (
+          // 骨架占位，不先閃「0」再跳成真值（§5）。
+          <>
+            <Skeleton className="h-8 w-16" />
+            <Skeleton className="h-4 w-24" />
+          </>
+        ) : (
+          children
+        )}
+      </div>
+    </>
+  );
+
+  if (action) {
+    // 連結只包標題＋數字區；陰影只在指到連結時浮起，指到按鈕不暗示「整張卡會導頁」。
+    return (
+      <Card className="h-full min-w-0 gap-2 p-4 transition-shadow has-[a:hover]:shadow-md">
+        <Link
+          to={to}
+          aria-label={ariaLabel}
+          aria-busy={loading || undefined}
+          className="flex flex-col gap-2 rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+        >
+          {content}
+        </Link>
+        <div className="mt-auto">{action}</div>
+      </Card>
+    );
+  }
+
   return (
     <Link
       to={to}
@@ -39,24 +84,7 @@ export function DashboardStatCard({
       aria-busy={loading || undefined}
       className="group block min-w-0 rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
     >
-      <Card className="h-full gap-2 p-4 transition-shadow group-hover:shadow-md">
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Icon className="size-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">{title}</span>
-          <ChevronRight className="ml-auto size-4 shrink-0" aria-hidden="true" />
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          {loading ? (
-            // 骨架占位，不先閃「0」再跳成真值（§5）。
-            <>
-              <Skeleton className="h-8 w-16" />
-              <Skeleton className="h-4 w-24" />
-            </>
-          ) : (
-            children
-          )}
-        </div>
-      </Card>
+      <Card className="h-full gap-2 p-4 transition-shadow group-hover:shadow-md">{content}</Card>
     </Link>
   );
 }
@@ -69,7 +97,7 @@ export function StatCardError({ children }: { children: React.ReactNode }) {
 /**
  * 卡內的行動提示：點擊落在整張卡的連結上（目的地相同）。申請提領、立即刊登都是
  * 流程的起點，按鈕三分法歸次要（白底框線，ui-ux-guidelines §12.11）——進了流程才有
- * 墨黑的流程鈕；會員中心沒有要引導的事，所以卡片區沒有實心鈕。
+ * 墨黑的流程鈕。卡片區唯一可能的實心鈕是推薦格 action 的「加入推薦計畫」引導鈕。
  */
 export function StatCardAction({ children }: { children: React.ReactNode }) {
   return (

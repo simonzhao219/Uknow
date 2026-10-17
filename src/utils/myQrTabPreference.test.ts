@@ -8,10 +8,12 @@ import {
   DEFAULT_MY_QR_TAB,
   MY_QR_TAB_KEY,
   type MyQrTabAvailability,
+  myQrTabsForUser,
   normalizeMyQrTab,
   readMyQrTab,
   resolveMyQrTab,
   type StorageLike,
+  visibleMyQrTabCount,
   writeMyQrTab,
 } from './myQrTabPreference';
 
@@ -78,6 +80,40 @@ describe('availableMyQrTabs', () => {
     expect(cannotScan.verify).toBe(true);
     expect(cannotScan.scan).toBe(false);
     expect(availableMyQrTabs({ joined: false, referralCode: null, canScan: true }).scan).toBe(true);
+  });
+});
+
+// 會員中心、推薦管理的三顆入口與「我的 QR」頁都從同一份會員資料推導分頁，
+// canScan 的判斷（管理員或會籍有效，與後端 POST /members/verify 同一把尺）只寫在這裡。
+describe('myQrTabsForUser', () => {
+  it('會籍有效的會員能掃描，會籍失效的不能', () => {
+    expect(myQrTabsForUser({ accountStatus: 'active' }).scan).toBe(true);
+    expect(myQrTabsForUser({ accountStatus: 'expired' }).scan).toBe(false);
+  });
+
+  it('管理員即使沒有有效會籍也能掃描', () => {
+    expect(myQrTabsForUser({ isAdmin: true, accountStatus: 'expired' }).scan).toBe(true);
+  });
+
+  it('邀請分頁與 availableMyQrTabs 同一條規則：要已加入且碼已產生', () => {
+    expect(myQrTabsForUser({ referralProgramJoined: true, referralCode: '8048877' }).invite).toBe(
+      true,
+    );
+    expect(myQrTabsForUser({ referralProgramJoined: false, referralCode: '8048877' }).invite).toBe(
+      false,
+    );
+    expect(myQrTabsForUser({ referralProgramJoined: true, referralCode: null }).invite).toBe(false);
+  });
+
+  it('會員資料尚未載入時只有驗證碼分頁', () => {
+    expect(myQrTabsForUser(null)).toEqual({ invite: false, verify: true, scan: false });
+  });
+});
+
+describe('visibleMyQrTabCount', () => {
+  it('只算真的存在的分頁', () => {
+    expect(visibleMyQrTabCount(ALL_TABS)).toBe(3);
+    expect(visibleMyQrTabCount({ invite: false, verify: true, scan: false })).toBe(1);
   });
 });
 

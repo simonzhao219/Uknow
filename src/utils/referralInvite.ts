@@ -1,8 +1,8 @@
 // 邀請分享 + 推薦碼跨步驟帶入。
 //
 // 兩件事收斂在這裡，讓「分享」與「自動帶入」只有一份實作、行為一致：
-//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息，優先叫系統原生分享面板，
-//      不支援（或在會壞掉的 in-app 瀏覽器）時退回複製整段訊息到剪貼簿。
+//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息，先叫系統分享面板，用不了時
+//      交給所在 App（LINE 好友選擇器），再不行才複製整段訊息到剪貼簿。
 //   2. 帶入：把邀請連結上的推薦碼（?ref=）存進 localStorage，撐過
 //      註冊漏斗（/register → OTP → 完善資料頁）後在完善資料頁自動帶入並驗證。
 //
@@ -10,6 +10,8 @@
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
 import { detectInAppBrowser } from './browserDetection';
+import { copyToClipboard } from './clipboard';
+import { openExternalLink } from './externalLink';
 import { normalizeReferralCode } from './referralCode';
 
 type ShowToast = (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
@@ -41,31 +43,54 @@ export function buildInviteMessage(code: string): string {
   return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
 }
 
-/** 用隱藏 textarea + execCommand 複製文字（不受 Clipboard API 權限限制，相容性佳）。 */
-function copyTextFallback(text: string): boolean {
-  try {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    textArea.style.top = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    return ok;
-  } catch (err) {
-    console.error('複製邀請訊息失敗:', err);
-    return false;
+/** 複製整段邀請訊息並提示——分享的最後一順位。 */
+function copyInviteMessage(message: string, showToast: ShowToast): void {
+  if (copyToClipboard(message)) {
+    showToast('邀請訊息已複製到剪貼簿！', 'success');
+  } else {
+    showToast('複製失敗，請手動複製', 'error');
   }
 }
 
+/** LINE 好友選擇器的分享網址。整段訊息編碼進 text：換行與連結裡的 `?ref=` 都要活著。 */
+export function buildLineShareUrl(message: string): string {
+  return `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+}
+
 /**
- * 分享我的推薦邀請。
- * - 支援 Web Share API 且非會壞掉的 in-app 瀏覽器：叫系統原生分享面板，
- *   text 帶完整邀請訊息（含連結＋推薦碼），另帶 url 讓部分 App 直接吃連結預覽。
- * - 否則：複製整段邀請訊息到剪貼簿並提示。
+ * 所在 App 自己的分享入口（第二順位），以 detectInAppBrowser 的 platform 為鍵。只收官方、
+ * 不必註冊 App ID、按下就開好友選擇器的網址——目前只有 LINE 符合（Messenger 的傳送對話框
+ * 要 Facebook App ID，IG 與微信沒有網頁分享入口）。要加一個 App 就在這裡加一列。
+ */
+const IN_APP_SHARE_URL: Partial<Record<string, (message: string) => string>> = {
+  line: buildLineShareUrl,
+};
+
+/** 第二、三順位：所在 App 能直接分享就交給它，否則複製整段訊息並提示。 */
+function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
+  const { platform } = detectInAppBrowser();
+  const hostAppShareUrl = platform ? IN_APP_SHARE_URL[platform] : undefined;
+  if (hostAppShareUrl) {
+    // 只接得住導頁當下的同步例外（沙箱 iframe 禁止導頁之類）。開了 App 不等於送出了，
+    // 所以不給任何成功提示。
+    try {
+      openExternalLink(hostAppShareUrl(message));
+      return;
+    } catch {
+      /* 落到複製 */
+    }
+  }
+  copyInviteMessage(message, showToast);
+}
+
+/**
+ * 「邀請好友」——會員中心、推薦管理、我的 QR 頁都是這一支。使用者不一定透過 LINE
+ * 分享（業主 2026-10-17），順位是：
+ *   1. 系統分享面板（Web Share），讓使用者自己選 App 與對象——LINE 內建瀏覽器有面板時
+ *      也一樣。text 帶完整邀請訊息（含連結＋推薦碼），不另外帶 url，避免部分 App 把
+ *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消就停在那裡，不替他改走別條路。
+ *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
+ *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
  */
 export function shareReferralInvite(code: string, showToast: ShowToast): void {
   if (!code) {
@@ -74,29 +99,14 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
   }
 
   const message = buildInviteMessage(code);
-  const { isInAppBrowser } = detectInAppBrowser();
-
-  if (
-    !isInAppBrowser &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.share === 'function'
-  ) {
-    // 只帶 text（訊息本身已含連結）；不另外帶 url，避免部分 App 把 url 再接到
-    // 訊息尾端，導致連結出現兩次。
-    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch(() => {
-      // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
-      if (copyTextFallback(message)) {
-        showToast('邀請訊息已複製到剪貼簿！', 'success');
-      }
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch((error: unknown) => {
+      if ((error as { name?: unknown } | null)?.name === 'AbortError') return;
+      shareViaHostAppOrCopy(message, showToast);
     });
     return;
   }
-
-  if (copyTextFallback(message)) {
-    showToast('邀請訊息已複製到剪貼簿！', 'success');
-  } else {
-    showToast('複製失敗，請手動複製', 'error');
-  }
+  shareViaHostAppOrCopy(message, showToast);
 }
 
 // --- 推薦碼跨步驟帶入（撐過註冊漏斗）---
@@ -117,7 +127,7 @@ export function savePendingReferral(code: string): void {
 export function getPendingReferral(): string | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
-    return raw && raw.trim() ? raw : null;
+    return raw?.trim() ? raw : null;
   } catch {
     return null;
   }

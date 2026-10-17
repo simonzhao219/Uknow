@@ -2950,3 +2950,13 @@ DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選�
 (b) 包成一支 script；(c) 量版面的 e2e 在 CI 加一個 Inter 的矩陣（成本：多一軌、要裝字型）。另外，程式註解與 PR 裡
 引用的實測 px 多半是本機 Inter 量的，拿來下結論前先在 CI 字型下重量（這次重量了 375px 第一屏餘裕：提領 122px、
 會員 132px，兩種字型相同）。
+
+## 2026-10-17｜誤擋（再犯）｜唯讀的 `git config core.hooksPath` 又被擋——10-03 那條的處置還沒整併
+
+fix/referral-entry-points 開局在同一條複合指令裡順手執行 `git config core.hooksPath`（單一參數，讀），
+bash-guard 第 0 類照舊回「覆寫 core.hooksPath」，連帶把同一行的 `git checkout -b` 一起擋掉，
+只好拿掉那段重跑。與 2026-10-03 那條同形狀、同訊息：deny 訊息仍沒寫「只是想讀請用 `--get`」。
+metrics（`.claude/metrics/sessions/fix__referral-entry-points.jsonl`）記為一筆 hooks-path。
+
+處置:不動守衛，計數＋1，併入 10-03 那條的框架修訂（`REASON_HOOKS_PATH` 補 `--get` 提示＋
+`test-hooks.py` 單一參數讀取案例）。第二次出現代表它不是一次性的手滑，整併時優先處理。

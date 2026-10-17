@@ -3,6 +3,10 @@
 // 為什麼自己用 canvas 畫、不引 html2canvas：需要的版面很固定（四段文字＋一張
 // 已經是 canvas 的 QR），自己畫零依賴、輸出穩定，且不會把畫面上的按鈕一起
 // 截進去——業主要的正是「整張卡，但不要複製鈕與那三顆動作鈕」。
+//
+// 顏色取 pixelColors（與站上色票同一份，見該檔為何不讀 CSS 變數）。
+
+import { PIXEL_INK, PIXEL_INK_MUTED, PIXEL_PAPER } from './pixelColors';
 
 export interface InviteCardOptions {
   /** 畫面上已渲染好的 QR canvas（qrcode.react 的 QRCodeCanvas）。 */
@@ -29,7 +33,7 @@ export function drawInviteCard(options: InviteCardOptions): HTMLCanvasElement {
   if (!ctx) return canvas;
 
   // 底：白色（QR 對比與列印都靠它）
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = PIXEL_PAPER;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.textAlign = 'center';
@@ -46,10 +50,10 @@ export function drawInviteCard(options: InviteCardOptions): HTMLCanvasElement {
     const startX = (W - (nameW + suffixW)) / 2;
 
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#111111';
+    ctx.fillStyle = PIXEL_INK;
     ctx.font = nameFont;
     ctx.fillText(name, startX, 48);
-    ctx.fillStyle = '#4b4b55';
+    ctx.fillStyle = PIXEL_INK_MUTED;
     ctx.font = suffixFont;
     ctx.fillText(suffix, startX + nameW, 48);
     ctx.textAlign = 'center';
@@ -60,12 +64,12 @@ export function drawInviteCard(options: InviteCardOptions): HTMLCanvasElement {
   ctx.drawImage(qrCanvas, (W - QR) / 2, headerH, QR, QR);
 
   // 推薦碼
-  ctx.fillStyle = '#7c3aed';
+  ctx.fillStyle = PIXEL_INK;
   ctx.font = 'bold 34px ui-monospace, "SF Mono", Menlo, monospace';
   ctx.fillText(code, W / 2, headerH + QR + 56);
 
   // 邀請連結（過長就截尾，不讓它撐破卡片）
-  ctx.fillStyle = '#6b6976';
+  ctx.fillStyle = PIXEL_INK_MUTED;
   ctx.font = '18px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
   let shown = link;
   while (ctx.measureText(shown).width > W - PAD * 2 && shown.length > 8) {
