@@ -5,6 +5,7 @@
 //     金流稽核紀錄與推薦樹對帳從此消失（對照 /auth/reset-registration
 //     既有的「已完成付款無法重置」守衛，cancel-signup 必須同等保護）。
 //   * 尚未付款的註冊中用戶維持既有行為：可以刪除（「我晚點再填」流程）。
+//   * 守衛讀不到資料時 fail-closed（500、不刪）——刪除不可逆。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
@@ -14,6 +15,7 @@ import {
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  withRestTableFailure,
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
@@ -117,5 +119,33 @@ Deno.test('cancel-signup：未付款的註冊中用戶維持可刪除（characte
     deleted = true;
   } finally {
     if (!deleted) await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('cancel-signup：讀不到付款紀錄 → 500，已付款會員不被刪除（fail-closed）', async () => {
+  // 讀取失敗若被當成「沒有付款紀錄」,會刪掉已付款會員並連鎖抹除金流稽核資料。
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Paid Member' });
+
+  try {
+    const { error } = await payForUser(client, user.id);
+    assertEquals(error, null);
+
+    const token = await getUserAccessToken(client, user.email);
+    const res = await withRestTableFailure(
+      ['payment_orders'],
+      async () =>
+        await app.request('/api/auth/cancel-signup', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+    );
+    assertEquals(res.status, 500, await res.clone().text());
+
+    const { data: profile } = await client
+      .from('profiles').select('id').eq('id', user.id).maybeSingle();
+    assert(profile, '讀取失敗時不得刪除帳號');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
   }
 });

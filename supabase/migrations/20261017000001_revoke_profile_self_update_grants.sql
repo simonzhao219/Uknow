@@ -1,0 +1,33 @@
+-- ============================================================
+-- profiles 自助 UPDATE 權限全數收回:phone / birth_date / national_id /
+-- bank_code / bank_account
+-- ============================================================
+--
+-- 為什麼:身分證字號是經營權與提領身分核對的唯一鍵(`request_withdrawal`
+-- 只比對身分證字號),註冊完成後不得自助修改。`POST /auth/register` 已加
+-- 「註冊完成回 403」的守衛、無呼叫端的 `PUT /auth/profile` 已移除——但只要
+-- `authenticated` 還持有欄位級 UPDATE,守衛就只擋得住走 Edge Function 的
+-- 客戶端,DB 上仍留著一條繞過 API 的直連寫入權限。
+--
+-- 這些 GRANT 由 20260620000009 開出,前提是「混合模式——完善個人資料會是
+-- 前端直接 update profiles」。該前提早已不成立(20260726000002 檔頭已記載:
+-- 前端 supabase-js 直連只碰 listings / public_listings,profiles 的寫入全部
+-- 走 Edge Function),當時只收回 name、其餘留待另案。本 migration 收完。
+--
+-- 對正式使用者是**行為不變更**:
+--   * Edge Function 以 service_role 寫入,不受 authenticated 的欄位權限影響
+--   * `request_withdrawal` 寫 bank_code / bank_account,是 security definer
+--   * `handle_new_user` 寫 phone / national_id,是 security definer(INSERT)
+--
+-- 用表級 REVOKE 而不是列舉五欄:Postgres 撤銷表級權限時會連帶撤銷每一欄的
+-- 欄位級權限,一句同時涵蓋 0009 開出的欄位與日後新增的欄位;平台的 default
+-- privileges 各環境不一致(見 supabase/README.md 的授權實測),列舉欄位只在
+-- 「表級早已撤銷」這個前提下才完整。句式與 0009 第 1 段相同。
+--
+-- 收回後 authenticated 對 profiles 沒有任何欄位的 UPDATE 權限。這也一併關掉
+-- profiles_update_own 的 `or is_admin()` 分支替管理員 JWT 開的直連改他人資料
+-- 路徑(管理者代改另案,走 Edge Function)。policy 本身保留不動:沒有 UPDATE
+-- 權限時它無從生效,刪它是另一個獨立的決定。
+-- ============================================================
+
+revoke update on public.profiles from authenticated;
