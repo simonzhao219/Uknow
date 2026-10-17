@@ -130,8 +130,10 @@ describe('InviteFriendButton 未加入推薦計畫', () => {
     fireEvent.click(screen.getByTestId('join-dialog-submit'));
 
     await vi.waitFor(() => expect(onJoined).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: /邀請好友/ })).toBeTruthy();
+    const invite = screen.getByRole('button', { name: /邀請好友/ });
     expect(screen.queryByTestId('join-referral-button')).toBeNull();
+    // 加入鈕卸載後焦點交給同一位置的新鈕，不掉到 body（§9）。
+    expect(document.activeElement).toBe(invite);
   });
 });
 

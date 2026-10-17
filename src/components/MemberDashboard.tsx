@@ -228,6 +228,8 @@ export function MemberDashboard() {
             ariaLabel={referralLabel()}
             loading={referral.loading}
             // 卡內唯一的真按鈕：只看 UserContext（是否已加入），推薦資料讀取中或失敗都照常顯示。
+            // 這也是會員中心唯一的加入推薦計畫入口——推薦格跟著 referralManagement 旗標走，
+            // 旗標若有一天能關，會員資訊卡的「尚未加入推薦計畫」要一起處理。
             // 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。
             action={
               <InviteFriendButton

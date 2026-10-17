@@ -22,9 +22,14 @@ interface InviteFriendPanelContentProps {
 
 /**
  * 邀請好友面板的「內容」——刻意與 Dialog 外殼分離：
- *   1. 內容是純呈現、不依賴 Radix Dialog，能在 jsdom 直接單元測試（Dialog 外殼
- *      需要的 focus-trap／portal 在 node 測試環境不穩）。
+ *   1. 內容不依賴 Radix Dialog，能在 jsdom 直接單元測試（Dialog 外殼需要的
+ *      focus-trap／portal 在 node 測試環境不穩）。推薦碼＋複製是共用的
+ *      ReferralCodeWithCopy，它自己從 UserContext 取碼與閘門，所以測試要提供 context。
  *   2. 同一份內容未來若要換外殼（Sheet／獨立頁）也不必重寫。
+ *
+ * referralCode prop 與 UserContext 的推薦碼必須同源——唯一呼叫端 MyQrPage 傳的就是
+ * user.referralCode。QR／連結／分享用 prop，顯示與複製的碼用 context，兩者分歧時
+ * 畫面上的碼會與 QR 不符。
  *
  * QR 內容即 buildReferralLink(code)=`${base}/register?ref=<code>`，與既有分享連結
  * 完全同源；掃碼落地由 AuthPage 讀 ?ref → savePendingReferral 撐過註冊漏斗，零後端。

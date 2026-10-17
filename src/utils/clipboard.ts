@@ -20,6 +20,7 @@ export function copyToClipboard(text: string): boolean {
   // 並用 fixed 定位,避免 focus 時把頁面捲走。
   textArea.style.position = 'fixed';
   textArea.style.left = '-999999px';
+  textArea.style.top = '-999999px';
   document.body.appendChild(textArea);
   textArea.focus();
   textArea.select();

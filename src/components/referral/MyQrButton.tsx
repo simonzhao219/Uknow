@@ -32,6 +32,8 @@ export function MyQrButton({ className }: { className?: string }) {
   const { user } = useContext(UserContext);
   const location = useLocation();
 
+  // 驗證碼分頁恆存在（availableMyQrTabs），所以這道判斷目前恆不成立——留著是為了
+  // 與「我的 QR」頁同一把尺：哪天分頁規則改了，入口跟著改，不會指向一個空頁。
   if (visibleMyQrTabCount(myQrTabsForUser(user)) === 0) return null;
 
   return (
