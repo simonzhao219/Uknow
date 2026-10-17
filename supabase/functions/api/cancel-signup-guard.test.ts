@@ -4,6 +4,8 @@
 //     刪 auth user 會連鎖抹除 payment_orders / withdrawals / referral_edges，
 //     金流稽核紀錄與推薦樹對帳從此消失（對照 /auth/reset-registration
 //     既有的「已完成付款無法重置」守衛，cancel-signup 必須同等保護）。
+//   * 已付款待開通（pending 訂單上已存 PayUni SUCCESS）同樣被拒——錢已收，
+//     刪帳號會連訂單與 PayUni 回應一起 cascade 抹掉，不可逆。
 //   * 尚未付款的註冊中用戶維持既有行為：可以刪除（「我晚點再填」流程）。
 //   * 守衛讀不到資料時 fail-closed（500、不刪）——刪除不可逆。
 // ============================================================
@@ -15,6 +17,7 @@ import {
   ensureEdgeFunctionEnv,
   getUserAccessToken,
   payForUser,
+  seedPaidAwaitingActivation,
   withRestTableFailure,
 } from './test-helpers.ts';
 
@@ -145,6 +148,27 @@ Deno.test('cancel-signup：讀不到付款紀錄 → 500，已付款會員不被
     const { data: profile } = await client
       .from('profiles').select('id').eq('id', user.id).maybeSingle();
     assert(profile, '讀取失敗時不得刪除帳號');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('cancel-signup：已付款待開通（pending + SUCCESS）被拒絕，訂單保留', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Awaiting Member' });
+
+  try {
+    const tradeNo = await seedPaidAwaitingActivation(client, user.id);
+    const token = await getUserAccessToken(client, user.email);
+    const res = await app.request('/api/auth/cancel-signup', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assertEquals(res.status, 400, await res.clone().text());
+
+    const { data: order } = await client
+      .from('payment_orders').select('status').eq('transaction_id', tradeNo).maybeSingle();
+    assertEquals(order?.status, 'pending', 'PayUni 已收款的訂單必須保留');
   } finally {
     await deleteTestUsers(client, [user.id]);
   }

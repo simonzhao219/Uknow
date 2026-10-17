@@ -4,6 +4,7 @@ import {
   nextRouteForStep,
   classifyLoginError,
   isProfileComplete,
+  isRegistrationLocked,
   resolveProfilePageRedirect,
   resolveCheckoutPageRedirect,
   type FunnelProfile,
@@ -103,6 +104,23 @@ describe('isProfileComplete — 基本資料是否已填齊', () => {
   });
 });
 
+// 鎖定判準的唯一定義：CompleteProfile 的編輯守衛與 PaymentCheckout 的編輯入口
+// 共用。後端以「有 completed 訂單」拒寫（/auth/register 403），前端看得到的
+// 對應訊號是 step 3；曾有訂閱（subscriptionEndDate）必然有過完成的付款。
+describe('isRegistrationLocked — 註冊完成後身分資料鎖定', () => {
+  it('step 3 → 鎖定', () => {
+    expect(isRegistrationLocked({ registrationStep: 3 })).toBe(true);
+  });
+
+  it('曾有訂閱（續約者）→ 鎖定，即使快取沒帶到 registrationStep', () => {
+    expect(isRegistrationLocked({ subscriptionEndDate: '2026-01-01T00:00:00Z' })).toBe(true);
+  });
+
+  it.each([0, 1, 2, null, undefined])('step %p 且無訂閱 → 未鎖定（付款前可重填）', (step) => {
+    expect(isRegistrationLocked({ registrationStep: step })).toBe(false);
+  });
+});
+
 describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一決策來源）', () => {
   // 一個「資料已填齊」的 profile 骨架，測試只覆寫 registrationStep。
   const filled = (registrationStep: RegistrationStep): FunnelProfile => ({
@@ -127,6 +145,15 @@ describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一�
     // 時另一個分頁付完款、或重新整理沿用舊 history state 的人，要被帶回會員中心。
     it('step 3、資料已填、editing=true → 導向 dashboard（註冊完成後不可改）', () => {
       expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBe('/dashboard');
+    });
+
+    it('續約者（有訂閱、快取缺 step）、editing=true → 導向 dashboard', () => {
+      expect(
+        resolveProfilePageRedirect(
+          { ...filled(undefined), subscriptionEndDate: '2026-01-01T00:00:00Z' },
+          { editing: true },
+        ),
+      ).toBe('/dashboard');
     });
 
     it('step 3 但資料未填齊、editing=true → 仍留在本頁（不破壞未填齊不變式）', () => {

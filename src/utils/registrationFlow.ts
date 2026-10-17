@@ -82,6 +82,14 @@ export interface FunnelProfile {
   accountStatus?: 'active' | 'expired' | string | null;
   paidAwaitingActivation?: boolean | null;
   lastTradeNo?: string | null;
+  subscriptionEndDate?: string | null;
+}
+
+/** 紅燈期 stub：註冊完成後的鎖定判準（綠燈 commit 實作）。 */
+export function isRegistrationLocked(
+  _profile: Pick<FunnelProfile, 'registrationStep' | 'subscriptionEndDate'>,
+): boolean {
+  return false;
 }
 
 /**

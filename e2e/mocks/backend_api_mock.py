@@ -193,6 +193,37 @@ class BackendApiMock:
     def set_register_error(self, message: str, status: int = 400):
         self._route("/auth/register", lambda route: _fulfill_json(route, {"error": message}, status=status))
 
+    def set_register_completed_elsewhere(self) -> None:
+        """Payment completed in another tab while this profile form stayed open.
+
+        `/auth/register` refuses the write with 403 (the backend's
+        registration-completed guard), and from that moment on the profile
+        endpoints report the completed member (step 3) — the page's
+        refreshUser() must see the new state before it leaves the form.
+        Before the register call, the profile stays at step 0 so the form
+        renders normally."""
+        before = build_profile(0)
+        after = build_profile(3)
+        state = {"completed": False}
+
+        def register(route):
+            state["completed"] = True
+            _fulfill_json(route, {"error": "註冊已完成，資料變更請聯繫客服"}, status=403)
+
+        def profile(route):
+            _fulfill_json(route, after if state["completed"] else before)
+
+        self._route("/auth/register", register)
+        self._route("/profile", profile)
+        self._route("/auth/profile", profile)
+        self.set_subscription_status(
+            has_subscription=True,
+            status="active",
+            active_until=after["subscriptionEndDate"],
+            renewal=None,
+            hasPendingWithdrawal=False,
+        )
+
     def set_reset_registration_success(self):
         self._route("/auth/reset-registration", lambda route: _fulfill_json(route, {"success": True}))
 

@@ -10,8 +10,12 @@
 //     會被付款的列鎖擋住、commit 後照樣寫進去。
 //   * 付款前(step 0 首次送出、step 1 編輯模式重送、step 2 付款失敗後
 //     重送)維持可寫——CompleteProfile 的編輯模式與推薦碼回填靠它。
-//   * register_profile 呼叫失敗時 fail-closed(500、不寫入);遮罩過的身分證
-//     字號拒寫。
+//   * 已付款待開通(pending 且 PayUni SUCCESS)視同付款前:開通才鎖定。
+//   * register_profile 呼叫失敗或回傳未預期的結果時 fail-closed(500、不寫入);
+//     profile 列不存在回 404;遮罩過的身分證字號拒寫。
+//   * register 寫推薦人時一併把 referred_by_is_default 重置為 false——使用者
+//     親自填的(或清空的)推薦來源不是平台自動綁定。
+//   * reset-registration(編輯入口的提早告知)讀不到付款紀錄時回 500。
 //   * 身分欄位的 Edge Function 自助寫入口只有 `POST /auth/register`
 //     (`PUT /auth/profile` 回 404)。register_profile 是 security definer
 //     且以參數指定對象,anon / authenticated 不得執行。
@@ -29,6 +33,7 @@ import {
   getActiveReferralCode,
   getUserAccessToken,
   payForUser,
+  seedPaidAwaitingActivation,
   withRestTableFailure,
 } from './test-helpers.ts';
 
@@ -67,6 +72,30 @@ async function registerAs(token: string, body: Record<string, unknown>) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+// 讓 register_profile 的 RPC 回 200 + 指定內容(例如 null),其餘請求照常——
+// 驗證「函式回傳未預期的值」時 handler 不會把它說成別的事。原理同
+// test-helpers.ts 的 withRestTableFailure:sb() 每次新建 client。
+async function withRegisterProfileResult<T>(body: unknown, run: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch;
+  globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (/\/rest\/v1\/rpc\/register_profile(\?|$)/.test(url)) {
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+    return original(input, init);
+  }) as typeof fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+  }
 }
 
 async function readIdentity(client: ReturnType<typeof adminClient>, userId: string) {
@@ -177,6 +206,65 @@ Deno.test('/auth/register：付款失敗留下 pending 訂單（step 2）仍可�
   }
 });
 
+Deno.test('/auth/register：已付款待開通（pending + SUCCESS）視同付款前 → 200 並寫入', async () => {
+  // 推薦邊與身分在開通(completed)那一刻才綁定,窗口內改寫等同付款前改寫。
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    assertEquals((await registerAs(token, FIRST_BODY)).status, 200);
+    await seedPaidAwaitingActivation(client, user.id);
+
+    const res = await registerAs(token, EDITED_BODY);
+    assertEquals(res.status, 200, await res.clone().text());
+    assertEquals((await readIdentity(client, user.id))?.name, EDITED_BODY.name);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('/auth/register：預設推薦人旗標為 true 時填碼重送 → 旗標重置為 false', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+  const referrer = await createTestUser(client, { name: '陳推薦' });
+
+  try {
+    assertEquals((await payForUser(client, referrer.id)).error, null);
+    const code = await getActiveReferralCode(client, referrer.id);
+    const token = await getUserAccessToken(client, user.email);
+    assertEquals((await registerAs(token, FIRST_BODY)).status, 200);
+    await client.from('profiles').update({ referred_by_is_default: true }).eq('id', user.id);
+
+    const res = await registerAs(token, { ...FIRST_BODY, referralCode: code });
+    assertEquals(res.status, 200, await res.clone().text());
+    const profile = await readIdentity(client, user.id);
+    assertEquals(profile?.referred_by_user_id, referrer.id);
+    assertEquals(profile?.referred_by_is_default, false);
+  } finally {
+    await deleteTestUsers(client, [user.id, referrer.id]);
+  }
+});
+
+Deno.test('/auth/register：預設推薦人旗標為 true 時清空推薦碼重送 → 旗標重置為 false', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    assertEquals((await registerAs(token, FIRST_BODY)).status, 200);
+    await client.from('profiles').update({ referred_by_is_default: true }).eq('id', user.id);
+
+    const res = await registerAs(token, { ...FIRST_BODY, referralCode: null });
+    assertEquals(res.status, 200, await res.clone().text());
+    const profile = await readIdentity(client, user.id);
+    assertEquals(profile?.referred_by_user_id, null);
+    assertEquals(profile?.referred_by_is_default, false);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
 Deno.test('/auth/register：付款交易持鎖期間送出 → 等付款 commit 後 403，資料不變', async () => {
   // 重現手法:測試自己開交易呼叫 process_successful_payment(它對 profiles
   // 列 for update),不 commit,此時送出 register;確認 register 被鎖擋住,
@@ -246,6 +334,37 @@ Deno.test('/auth/register：register_profile 失敗 → 500 且不寫入（fail-
   }
 });
 
+Deno.test('/auth/register：register_profile 回傳未預期的值 → 500，不說成用戶不存在', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    for (const body of [null, 'something_else']) {
+      const res = await withRegisterProfileResult(body, () => registerAs(token, FIRST_BODY));
+      assertEquals(res.status, 500, `${JSON.stringify(body)}:${await res.clone().text()}`);
+    }
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('/auth/register：profile 列不存在 → 404', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    const { error } = await client.from('profiles').delete().eq('id', user.id);
+    assertEquals(error, null);
+
+    const res = await registerAs(token, FIRST_BODY);
+    assertEquals(res.status, 404, await res.clone().text());
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
 Deno.test('/auth/register：遮罩過的身分證字號 → 400，不寫回 DB', async () => {
   // 編輯模式以 register 的回應(nationalId 已遮罩成 A12****789)回填表單;
   // 前端驗證若被繞過,遮罩值會把 DB 的完整字號蓋成星號。
@@ -283,6 +402,27 @@ Deno.test('PUT /auth/profile：無此寫入口 → 404，已付款會員的身�
     assertEquals((await readIdentity(client, member.id))?.national_id, FIRST_BODY.nationalId);
   } finally {
     await deleteTestUsers(client, [member.id]);
+  }
+});
+
+Deno.test('reset-registration：讀不到付款紀錄 → 500（fail-closed）', async () => {
+  // 規格書 §5.3:守衛與狀態端點讀不到資料時一律 fail-closed 回 5xx。
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    const res = await withRestTableFailure(
+      ['payment_orders'],
+      async () =>
+        await app.request('/api/auth/reset-registration', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+    );
+    assertEquals(res.status, 500, await res.clone().text());
+  } finally {
+    await deleteTestUsers(client, [user.id]);
   }
 });
 

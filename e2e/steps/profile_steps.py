@@ -30,6 +30,16 @@ def save_profile_succeeds(api_mock, step):
     api_mock.set_register_success(step)
 
 
+@given("registration completes in another tab before the profile is saved")
+def registration_completed_elsewhere(api_mock):
+    api_mock.set_register_completed_elsewhere()
+
+
+@then("I should see the profile locked notice")
+def profile_locked_notice(page):
+    expect(page.get_by_role("dialog", name="資料已鎖定")).to_be_visible(timeout=5_000)
+
+
 @when(
     # parsers.re (not .parse): the Examples table has a blank name cell in
     # one row, and parse's {name} fields require at least one character.

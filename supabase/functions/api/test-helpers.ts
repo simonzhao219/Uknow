@@ -77,6 +77,27 @@ export async function deleteTestUsers(client: SupabaseClient, userIds: string[])
   }
 }
 
+// 「已付款待開通」：pending 訂單上已存 PayUni 的 SUCCESS 回應。TradeAmt 刻意
+// 不是 1200——金額相符的話，任何走到 buildProfileResponse 的請求都會把它自癒成
+// completed（complete_paid_pending_orders），測試就會因錯的理由通過；金額不符
+// 時自癒維持 pending 交人工裁決，這個狀態才穩定得住。
+export async function seedPaidAwaitingActivation(
+  client: SupabaseClient,
+  userId: string,
+): Promise<string> {
+  const tradeNo = `TEST-AWAIT-${userId}-${counter++}`;
+  const { error } = await client.from('payment_orders').insert({
+    user_id: userId,
+    amount: 1200,
+    status: 'pending',
+    payment_method: 'payuni',
+    transaction_id: tradeNo,
+    payuni_response: { Status: 'SUCCESS', TradeAmt: '999' },
+  });
+  if (error) throw new Error(`seedPaidAwaitingActivation failed: ${error.message}`);
+  return tradeNo;
+}
+
 // 讓一個使用者「完成一次付款」的最短路徑：自己塞一筆 pending 訂單，
 // 直接呼叫 process_successful_payment RPC（跳過 HTTP/webhook 層，
 // 因為我們要測的是 DB 邏輯本身）。回傳 RPC 結果 + 這次用的 trade_no。
