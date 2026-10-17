@@ -362,9 +362,15 @@ describe('推薦碼驗證', () => {
       expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦'),
     );
 
-    // 送出 → 確認框 → 確認後才進到「送出前重驗」。
+    // 送出 → 確認框 → 確認後才進到「送出前重驗」。取「本次」的確認框：同檔前面的
+    // 測試按過確認後留下 100ms 的 setTimeout(handleSubmit)，可能落在本測試期間、
+    // 由已卸載的元件再呼叫一次 showNotification，calls[0] 不一定是這裡觸發的。
     fireEvent.click(screen.getByTestId('profile-submit-button'));
-    showNotification.mock.calls[0][0].onConfirm();
+    const confirmation = showNotification.mock.calls
+      .map(([arg]) => arg)
+      .find((arg) => arg.details?.includes('推薦人：陳推薦'));
+    expect(confirmation).toBeTruthy();
+    confirmation.onConfirm();
     await waitFor(() => expect(apiRequestJson).toHaveBeenCalledTimes(2));
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('請求過於頻繁'));
