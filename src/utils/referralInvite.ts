@@ -9,12 +9,10 @@
 // 推薦碼不是機敏資料；真正的信任邊界仍在後端（/referrals/validate/:code 與
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
-import { detectInAppBrowser } from './browserDetection';
-import { copyToClipboard } from './clipboard';
+import { detectInAppBrowser, type InAppBrowserPlatform } from './browserDetection';
+import { copyWithToast, type ShowToast } from './copyWithToast';
 import { openExternalLink } from './externalLink';
 import { normalizeReferralCode } from './referralCode';
-
-type ShowToast = (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
 const PENDING_KEY = 'pending_referral_code';
 
@@ -43,13 +41,28 @@ export function buildInviteMessage(code: string): string {
   return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
 }
 
-/** 複製整段邀請訊息並提示——分享的最後一順位。 */
+/**
+ * 複製整段邀請訊息並提示——分享的最後一順位。失敗時指向「我的 QR」頁的邀請連結欄位：
+ * 會員中心與推薦管理沒有可手動複製的邀請文字（只露推薦碼）。面板被拒之後的複製發生在
+ * .catch 裡、已脫離使用者手勢，WebKit 的 execCommand('copy') 在那裡更容易回 false。
+ */
 function copyInviteMessage(message: string, showToast: ShowToast): void {
-  if (copyToClipboard(message)) {
-    showToast('邀請訊息已複製到剪貼簿！', 'success');
-  } else {
-    showToast('複製失敗，請手動複製', 'error');
-  }
+  copyWithToast(
+    message,
+    '邀請訊息已複製到剪貼簿！',
+    showToast,
+    '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
+  );
+}
+
+/**
+ * 分享面板被拒時，哪些是使用者自己停手：AbortError＝在面板上按取消；InvalidStateError＝
+ * 前一次 share() 還沒結束又按了一下（Web Share 規格，連點的第二下）。這兩種都不替使用者
+ * 改走別條路。「邀請好友」與「分享 QR Code」共用這一條判斷。
+ */
+export function isShareStoppedByUser(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === 'AbortError' || name === 'InvalidStateError';
 }
 
 /** LINE 好友選擇器的分享網址。整段訊息編碼進 text：換行與連結裡的 `?ref=` 都要活著。 */
@@ -62,7 +75,9 @@ export function buildLineShareUrl(message: string): string {
  * 不必註冊 App ID、按下就開好友選擇器的網址——目前只有 LINE 符合（Messenger 的傳送對話框
  * 要 Facebook App ID，IG 與微信沒有網頁分享入口）。要加一個 App 就在這裡加一列。
  */
-const IN_APP_SHARE_URL: Partial<Record<string, (message: string) => string>> = {
+const IN_APP_SHARE_URL: Partial<
+  Record<NonNullable<InAppBrowserPlatform>, (message: string) => string>
+> = {
   line: buildLineShareUrl,
 };
 
@@ -88,7 +103,8 @@ function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
  * 分享（業主 2026-10-17），順位是：
  *   1. 系統分享面板（Web Share），讓使用者自己選 App 與對象——LINE 內建瀏覽器有面板時
  *      也一樣。text 帶完整邀請訊息（含連結＋推薦碼），不另外帶 url，避免部分 App 把
- *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消就停在那裡，不替他改走別條路。
+ *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消（或連點）就停在那裡，不替他
+ *      改走別條路。
  *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
  *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
  */
@@ -101,7 +117,7 @@ export function shareReferralInvite(code: string, showToast: ShowToast): void {
   const message = buildInviteMessage(code);
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch((error: unknown) => {
-      if ((error as { name?: unknown } | null)?.name === 'AbortError') return;
+      if (isShareStoppedByUser(error)) return;
       shareViaHostAppOrCopy(message, showToast);
     });
     return;

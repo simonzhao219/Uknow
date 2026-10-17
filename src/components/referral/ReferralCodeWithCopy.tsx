@@ -7,7 +7,6 @@ import { myQrTabsForUser } from '../../utils/myQrTabPreference';
 import { useCopyToast } from '../../hooks/useCopyToast';
 
 interface ReferralCodeWithCopyProps {
-  className?: string;
   /**
    * field：「我的推薦碼」標籤＋碼（會員資訊卡、推薦管理推薦碼列）；
    * centered：只有碼、置中（我的 QR 頁，碼就在 QR 下方，標籤多餘）。
@@ -24,7 +23,7 @@ interface ReferralCodeWithCopyProps {
  * 拿出來用）：field 版留著標籤並寫「尚未加入推薦計畫」——加入鈕只在 InviteFriendButton，
  * 這裡不放第二顆；centered 版整塊不渲染。
  */
-export function ReferralCodeWithCopy({ className, layout = 'field' }: ReferralCodeWithCopyProps) {
+export function ReferralCodeWithCopy({ layout = 'field' }: ReferralCodeWithCopyProps) {
   const { user } = useContext(UserContext);
   const copy = useCopyToast();
   const canShowCode = myQrTabsForUser(user).invite;
@@ -33,7 +32,7 @@ export function ReferralCodeWithCopy({ className, layout = 'field' }: ReferralCo
   if (!canShowCode && centered) return null;
 
   return (
-    <div className={cn('min-w-0', className)}>
+    <div className="min-w-0">
       {centered ? null : <p className="text-sm text-muted-foreground">我的推薦碼</p>}
       {canShowCode ? (
         <div className={cn('flex min-w-0 items-center gap-1', centered && 'justify-center')}>

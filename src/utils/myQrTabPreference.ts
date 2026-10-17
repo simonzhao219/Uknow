@@ -142,9 +142,8 @@ export interface MyQrTabUser {
 }
 
 /**
- * 從會員資料推導分頁。「我的 QR」頁與會員中心、推薦管理的三顆推薦入口
- * （MyQrButton、InviteFriendButton、ReferralCodeWithCopy）都吃這一支，
- * canScan 的判斷因此只有這一份。
+ * 從會員資料推導分頁。「我的 QR」頁、邀請好友面板與推薦入口（InviteFriendButton、
+ * ReferralCodeWithCopy）都吃這一支，canScan 的判斷因此只有這一份。
  */
 export function myQrTabsForUser(user: MyQrTabUser | null | undefined): MyQrTabAvailability {
   return availableMyQrTabs({
@@ -154,9 +153,4 @@ export function myQrTabsForUser(user: MyQrTabUser | null | undefined): MyQrTabAv
     // 有效的會員。前端這份只是門面——真正的邊界在那支 handler 裡。
     canScan: user?.isAdmin === true || user?.accountStatus === 'active',
   });
-}
-
-/** 真的存在的分頁數。「我的 QR」頁用它排分頁列，入口鈕用它決定要不要出現。 */
-export function visibleMyQrTabCount(tabs: MyQrTabAvailability): number {
-  return [tabs.invite, tabs.verify, tabs.scan].filter(Boolean).length;
 }

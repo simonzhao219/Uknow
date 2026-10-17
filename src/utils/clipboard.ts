@@ -14,8 +14,15 @@
  * 會在後者的瀏覽器上顯示「已複製」卻什麼都沒複製到,所以兩種都要看。
  */
 export function copyToClipboard(text: string): boolean {
+  // 複製要把焦點借給暫存 textarea;記下原本的焦點,用完還回去——鍵盤使用者按完
+  // 複製鈕不該掉到頁首。
+  const previousFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const textArea = document.createElement('textarea');
   textArea.value = text;
+  // 唯讀:iOS 聚焦時不跳鍵盤;16px:低於 16px 的輸入元件聚焦時 iOS 會放大整頁。
+  textArea.readOnly = true;
+  textArea.style.fontSize = '16px';
   // 不能用 display:none 或 hidden——那樣 select() 選不到內容。移到畫面外
   // 並用 fixed 定位,避免 focus 時把頁面捲走。
   textArea.style.position = 'fixed';
@@ -24,6 +31,8 @@ export function copyToClipboard(text: string): boolean {
   document.body.appendChild(textArea);
   textArea.focus();
   textArea.select();
+  // iOS Safari 的 select() 不一定選得到唯讀欄位,再明確選一次全段。
+  textArea.setSelectionRange(0, text.length);
 
   let copied = false;
   try {
@@ -31,8 +40,9 @@ export function copyToClipboard(text: string): boolean {
   } catch {
     copied = false;
   } finally {
-    // finally 而非 try 之後:擲錯路徑也必須清掉暫存節點。
+    // finally 而非 try 之後:擲錯路徑也必須清掉暫存節點、還回焦點。
     textArea.remove();
+    previousFocus?.focus({ preventScroll: true });
   }
   return copied;
 }

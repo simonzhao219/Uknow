@@ -63,7 +63,9 @@ export function InviteFriendButton({
     justJoined.current = true;
     // 重抓 /profile 取代手刻的 setUser + localStorage——加入成功會同時改動
     // referralProgramJoined / referralCode / referralSignatureUrl，逐欄補寫遲早漏。
-    await refreshUser();
+    const profile = await refreshUser();
+    // 重抓失敗（回 null、不 reject）時鈕暫時不翻；收掉旗標，免得之後別處讓它翻轉時搶焦點。
+    if (!profile) justJoined.current = false;
     onJoined?.();
   };
 

@@ -15,7 +15,6 @@ import {
   normalizeMyQrTab,
   readMyQrTab,
   resolveMyQrTab,
-  visibleMyQrTabCount,
   writeMyQrTab,
 } from '../utils/myQrTabPreference';
 
@@ -44,9 +43,8 @@ export function MyQrPage() {
   const goUpOneLevel = useBackNavigation();
 
   // 分頁由會員資料推導，與會員中心、推薦管理的推薦入口同一支（含 canScan 的授權尺）。
-  const tabs = myQrTabsForUser(user);
-  const { invite: canInvite, verify: canVerify, scan: canScanTab } = tabs;
-  const visibleCount = visibleMyQrTabCount(tabs);
+  const { invite: canInvite, verify: canVerify, scan: canScanTab } = myQrTabsForUser(user);
+  const visibleCount = [canInvite, canVerify, canScanTab].filter(Boolean).length;
   const requestedTab = searchParams.get('tab');
 
   const [tab, setTab] = useState<MyQrTab>(() =>
@@ -152,7 +150,7 @@ export function MyQrPage() {
 
         {canInvite ? (
           <TabsContent value="invite" className="pt-4">
-            <InviteFriendPanelContent referralCode={user?.referralCode} memberName={user?.name} />
+            <InviteFriendPanelContent />
           </TabsContent>
         ) : null}
 

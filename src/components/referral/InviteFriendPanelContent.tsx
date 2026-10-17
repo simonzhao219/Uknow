@@ -1,51 +1,49 @@
-import { useRef } from 'react';
+import { useContext, useRef } from 'react';
 import type React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Download, Share2, Copy } from 'lucide-react';
+import { UserContext } from '../../App';
 import { useNotification } from '../notifications/NotificationContext';
 import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
-import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
+import { myQrTabsForUser } from '../../utils/myQrTabPreference';
+import {
+  buildReferralLink,
+  isShareStoppedByUser,
+  shareReferralInvite,
+} from '../../utils/referralInvite';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
 import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
 import { useCopyToast } from '../../hooks/useCopyToast';
 
-interface InviteFriendPanelContentProps {
-  /** 會員專屬推薦碼；QR/連結都由它推導。空值時不渲染（呼叫端的按鈕會擋在加入計畫前）。 */
-  referralCode?: string | null;
-  /** 會員名稱，用於面板抬頭與下載檔名；可選，缺時退化成純推薦碼。 */
-  memberName?: string | null;
-}
-
 /**
  * 邀請好友面板的「內容」——刻意與 Dialog 外殼分離：
  *   1. 內容不依賴 Radix Dialog，能在 jsdom 直接單元測試（Dialog 外殼需要的
- *      focus-trap／portal 在 node 測試環境不穩）。推薦碼＋複製是共用的
- *      ReferralCodeWithCopy，它自己從 UserContext 取碼與閘門，所以測試要提供 context。
+ *      focus-trap／portal 在 node 測試環境不穩）。
  *   2. 同一份內容未來若要換外殼（Sheet／獨立頁）也不必重寫。
  *
- * referralCode prop 與 UserContext 的推薦碼必須同源——唯一呼叫端 MyQrPage 傳的就是
- * user.referralCode。QR／連結／分享用 prop，顯示與複製的碼用 context，兩者分歧時
- * 畫面上的碼會與 QR 不符。
+ * 推薦碼、會員名與閘門只有一個來源：UserContext（myQrTabsForUser）。QR、連結、邀請卡、
+ * 分享鈕與其中的 ReferralCodeWithCopy 讀同一份，呼叫端不另傳碼——兩份碼只靠註解
+ * 保證同源，就是已退場的 MyQrEntry 記下的那個教訓（註解不會編譯失敗）。
  *
  * QR 內容即 buildReferralLink(code)=`${base}/register?ref=<code>`，與既有分享連結
  * 完全同源；掃碼落地由 AuthPage 讀 ?ref → savePendingReferral 撐過註冊漏斗，零後端。
  */
-export function InviteFriendPanelContent({
-  referralCode,
-  memberName,
-}: InviteFriendPanelContentProps) {
+export function InviteFriendPanelContent() {
+  const { user } = useContext(UserContext);
   const { showToast } = useNotification();
   const copy = useCopyToast();
   const qrRef = useRef<HTMLDivElement>(null);
 
-  const code = referralCode || '';
+  // 沒簽參加契約書之前不出示、不分享推薦碼（碼在付款成功時就已產生）。
+  const code: string = myQrTabsForUser(user).invite ? user.referralCode : '';
+  const memberName: string | null | undefined = user?.name;
   const referralLink = code ? buildReferralLink(code) : '';
   // 下載在 LINE 等 in-app 瀏覽器對 <a download> 支援不一（常靜默開新分頁而非下載），
-  // 與 shareReferralInvite 一致地偵測後給長按另存的提示。
+  // 偵測到 in-app 瀏覽器時給長按另存的提示。
   const { isInAppBrowser } = detectInAppBrowser();
 
   // 點進欄位就整段反白，長按「拷貝」一次到位。iOS Safari 的 select() 不一定選得到
@@ -86,7 +84,8 @@ export function InviteFriendPanelContent({
    * 而 navigator.canShare() 只驗證「檔案類型可分享」，**無法**告訴你文字會不會活著。
    * 混送等於賭運氣，賭輸的代價是推薦連結與推薦碼整個消失（推薦就斷了）。
    * 所以拆成兩顆按鈕：這顆專送圖（圖裡本來就有 QR 與推薦碼），文字交給「邀請好友」。
-   * 不支援檔案分享的環境（多數桌機瀏覽器）退回下載，使用者仍拿得到圖。
+   * 不支援檔案分享的環境（多數桌機瀏覽器）或分享失敗時退回下載，使用者仍拿得到圖；
+   * 使用者在面板上按取消（或連點）就停，與「邀請好友」同一套語意。
    */
   const shareQrCode = async () => {
     const card = buildCardCanvas();
@@ -108,8 +107,9 @@ export function InviteFriendPanelContent({
             return;
           }
         }
-      } catch {
-        // 使用者取消或分享失敗 → 落回下載，圖片仍到得了手上。
+      } catch (error) {
+        if (isShareStoppedByUser(error)) return;
+        // 分享失敗 → 落回下載，圖片仍到得了手上。
       }
     }
     downloadCard(card);
