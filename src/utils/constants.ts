@@ -32,6 +32,17 @@ export const LINE_OFFICIAL_ACCOUNT_URL = `https://line.me/R/ti/p/${LINE_OFFICIAL
 export const OFFICIAL_EMAIL = 'admin@uknow.com.tw';
 export const OFFICIAL_EMAIL_URL = `mailto:${OFFICIAL_EMAIL}`;
 
+// 註冊完成後的資料鎖定（規格書 §4.1）——會員中心、完善資料頁、結帳頁共用同一份
+// 說法，不讓同一群人看到兩套。欄位明列：同頁的續約區塊仍可換推薦人（新約），
+// 泛稱「資料」會被讀成推薦人也要找客服。
+export const PROFILE_LOCKED_FIELDS = '姓名、身分證字號、生日、手機與推薦人';
+export const PROFILE_LOCKED_MESSAGE = '會員資料一經註冊後無法自行修改。';
+export const PROFILE_LOCKED_DETAILS = [
+  '如需更改基本資料，請透過 LINE 聯繫客服：',
+  `📱 LINE 官方帳號：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
+];
+export const PROFILE_LOCKED_CONFIRM_TEXT = '我知道了';
+
 // ============================================
 // 服務相關常數
 // ============================================

@@ -21,7 +21,12 @@ import {
   type NameMode,
 } from '../utils/profileValidation';
 import { resolveProfilePageRedirect } from '../utils/registrationFlow';
-import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_FIELDS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 import { useImeComposition } from '../hooks/useImeComposition';
 import {
   loadProfileDraft,
@@ -66,6 +71,24 @@ const EMPTY_FORM = {
   referralCode: '',
   agreedToTerms: false,
 };
+
+// 資料鎖定說明：送出時撞到 403 與編輯模式載入時發現已是 step 3，是同一群人，
+// 說法要一致（文案與會員中心「修改會員資料」共用 PROFILE_LOCKED_*）。
+// 送出後才發現的，先講清楚剛才的修改沒有儲存。
+function showProfileLockedNotice(
+  showNotification: ReturnType<typeof useNotification>['showNotification'],
+  afterSubmit: boolean,
+) {
+  showNotification({
+    type: 'info',
+    title: '資料已鎖定',
+    message: afterSubmit
+      ? `您剛才送出的修改沒有儲存。${PROFILE_LOCKED_MESSAGE}`
+      : PROFILE_LOCKED_MESSAGE,
+    details: PROFILE_LOCKED_DETAILS,
+    confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+  });
+}
 
 export function CompleteProfile() {
   // 用 lazy initializer 從 sessionStorage 的草稿還原「填到一半」的內容。
@@ -177,6 +200,17 @@ export function CompleteProfile() {
           // 各寫一份 if/else。editing=true 時一律留在本頁讓使用者改資料。
           const redirect = resolveProfilePageRedirect(profile, { editing: isEditing });
 
+          if (redirect === '/dashboard' && isEditing) {
+            // 編輯中但註冊已完成（停在本頁時另一個分頁付完款，或重新整理沿用
+            // 舊 history state）：資料已鎖定。與送出時的 403 同一則說明，立即
+            // 帶走、不留一段看得到表單的空窗。先 refreshUser，否則會員中心的
+            // 守衛拿舊的會籍狀態又把人彈回結帳頁。
+            await refreshUser();
+            navigate('/dashboard', { replace: true });
+            showProfileLockedNotice(showNotification, false);
+            return;
+          }
+
           if (redirect === '/dashboard') {
             // 已完成註冊：保留原本的友善提示與短暫延遲。
             console.log(
@@ -202,7 +236,7 @@ export function CompleteProfile() {
       }
     };
     checkSession();
-  }, [supabase, navigate, showToast, isEditing]);
+  }, [supabase, navigate, showToast, showNotification, refreshUser, isEditing]);
 
   // 邀請連結帶進來的推薦碼：掛載時自動填入並驗證（顯示推薦人姓名），欄位仍可修改。
   // 只在欄位為空時帶入，避免覆蓋使用者手動輸入的值。
@@ -372,14 +406,14 @@ export function CompleteProfile() {
         details.push('您未填寫推薦碼');
       }
 
-      // 顯示警告卡片。訊息拆兩句：推薦碼那句維持原意（它確實永久綁定），
-      // 姓名另補一句——姓名付款前可由結帳頁「編輯」重填，註冊完成後才鎖定
-      // （規格書 §4.1），沿用「永久綁定，無法修改」涵蓋姓名會是錯誤陳述。
+      // 顯示警告卡片。付款完成後身分資料與推薦人即鎖定（規格書 §4.1），付款前
+      // 的這個確認點要先揭露。不說推薦碼「永久綁定」：註冊完成後唯一的自助換線
+      // 入口是續費時選新約（§6.2），「永久」是錯誤陳述。姓名另補提領核對身分
+      // 的用途。
       showNotification({
         type: 'warning',
         title: '重要提醒',
-        message:
-          '推薦碼註冊後將永久綁定，無法修改。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。',
+        message: `付款完成後，${PROFILE_LOCKED_FIELDS}即鎖定，變更須聯繫客服。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。`,
         details,
         confirmText: '確認無誤，繼續',
         cancelText: '返回檢查',
@@ -481,23 +515,19 @@ export function CompleteProfile() {
         const errorData = await response.json();
         console.error('CompleteProfile: API error:', errorData);
         // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
-        // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——直接
-        // 帶回會員中心再說明。先 refreshUser，否則守衛拿舊的 step 又把人彈回來。
+        // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
+        // 會員中心再說明。但要先確認最新狀態真的是 step 3 才動手：閘道層的
+        // 403 也長這樣，對 step 0 的人清草稿、導去會員中心等於丟掉整張表單
+        // （refresh 失敗會被送去登入頁，成功則被彈回空白的本頁）。確認不了
+        // 就照一般錯誤處理：留在本頁、草稿不動、顯示伺服器訊息。
         if (response.status === 403) {
-          clearProfileDraft();
-          await refreshUser();
-          navigate('/dashboard', { replace: true });
-          showNotification({
-            type: 'info',
-            title: '註冊已完成',
-            message: '會員資料一經註冊後無法自行修改。',
-            details: [
-              '如需更改基本資料，請透過 LINE 聯繫客服：',
-              `📱 LINE 官方帳號：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
-            ],
-            confirmText: '我知道了',
-          });
-          return;
+          const fresh = await refreshUser();
+          if (fresh?.registrationStep === 3) {
+            clearProfileDraft();
+            navigate('/dashboard', { replace: true });
+            showProfileLockedNotice(showNotification, true);
+            return;
+          }
         }
         throw new Error(errorData.error || '註冊失敗');
       }

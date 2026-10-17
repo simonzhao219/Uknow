@@ -85,11 +85,19 @@ export interface FunnelProfile {
   subscriptionEndDate?: string | null;
 }
 
-/** 紅燈期 stub：註冊完成後的鎖定判準（綠燈 commit 實作）。 */
+/**
+ * 註冊完成後身分資料（姓名、身分證字號、生日、手機）與推薦人鎖定，後端拒絕
+ * 重填（/auth/register 403、reset-registration 400）。CompleteProfile 的編輯
+ * 守衛與 PaymentCheckout 的編輯入口共用這一個判準。
+ *
+ * 後端的判準是「有 completed 訂單」，前端看得到的對應訊號是 step 3；曾有訂閱
+ * （subscriptionEndDate，續約者）必然有過完成的付款，補上快取沒帶到進度的情況。
+ * 已付款待開通（step 2）不算——開通才鎖定（規格書 §4.1）。
+ */
 export function isRegistrationLocked(
-  _profile: Pick<FunnelProfile, 'registrationStep' | 'subscriptionEndDate'>,
+  profile: Pick<FunnelProfile, 'registrationStep' | 'subscriptionEndDate'>,
 ): boolean {
-  return false;
+  return profile.registrationStep === 3 || !!profile.subscriptionEndDate;
 }
 
 /**
@@ -127,8 +135,8 @@ export function resolveProfilePageRedirect(
   // 403），留在本頁只會讓人填一張送不出去的表單。會走到這裡的是「停在編輯頁
   // 時另一個分頁付完款」或重新整理後沿用舊 history state 的人。資料未填齊者
   // 不在此列——見下方「資料沒填齊 → 一定停在填資料頁」的不變式。
-  if (opts?.editing && profile.registrationStep === 3 && isProfileComplete(profile)) {
-    return '/dashboard';
+  if (opts?.editing && isRegistrationLocked(profile) && isProfileComplete(profile)) {
+    return nextRouteForStep(3);
   }
 
   // 使用者主動要回來改資料——尊重意圖，不做任何彈跳。

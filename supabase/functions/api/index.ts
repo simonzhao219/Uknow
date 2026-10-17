@@ -661,6 +661,9 @@ app.post('/auth/check-email', async (c) => {
   return c.json({ exists });
 });
 
+// register_profile 的回傳值（見 migration 20261017000004）。
+type RegisterProfileOutcome = 'ok' | 'completed' | 'not_found';
+
 // ============================================================
 // POST /auth/register
 // CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1。
@@ -732,10 +735,17 @@ app.post('/auth/register', async (c) => {
     console.error('[register] register_profile 失敗:', error);
     return c.json({ error: '更新失敗' }, 500);
   }
-  if (outcome === 'completed') {
+  // 只認函式定義的三個值；其餘（null、改壞後的新字串）一律 500——不能把
+  // 「函式回了沒預期的東西」說成「用戶不存在」或當成寫入成功。
+  const result = outcome as RegisterProfileOutcome | null;
+  if (result === 'completed') {
     return c.json({ error: '註冊已完成，資料變更請聯繫客服' }, 403);
   }
-  if (outcome !== 'ok') return c.json({ error: '用戶不存在' }, 404);
+  if (result === 'not_found') return c.json({ error: '用戶不存在' }, 404);
+  if (result !== 'ok') {
+    console.error('[register] register_profile 回傳未預期的值:', outcome);
+    return c.json({ error: '更新失敗' }, 500);
+  }
 
   const data = await buildProfileResponse(client, user.id, user.email);
   if (!data) return c.json({ error: '用戶不存在' }, 404);
@@ -757,20 +767,27 @@ app.delete('/auth/cancel-signup', async (c) => {
   const client = sb();
   const [
     { data: completedOrder, error: orderErr },
+    { data: paidPendingOrder, error: paidPendingErr },
     { data: withdrawal, error: withdrawalErr },
   ] = await Promise.all([
     client.from('payment_orders').select('id')
       .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
+    // 已付款待開通：PayUni 已回 SUCCESS、訂單還在 pending（金額不符時維持
+    // pending 交人工）。錢已收，刪帳號會連訂單與 PayUni 回應一起抹掉。
+    client.from('payment_orders').select('id')
+      .eq('user_id', user.id).eq('status', 'pending')
+      .eq('payuni_response->>Status', 'SUCCESS').limit(1).maybeSingle(),
     client.from('withdrawals').select('id')
       .eq('user_id', user.id).limit(1).maybeSingle(),
   ]);
   // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
   // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
-  if (orderErr || withdrawalErr) {
-    console.error('[cancel-signup] 守衛讀取失敗:', orderErr ?? withdrawalErr);
+  const guardErr = orderErr ?? paidPendingErr ?? withdrawalErr;
+  if (guardErr) {
+    console.error('[cancel-signup] 守衛讀取失敗:', guardErr);
     return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
   }
-  if (completedOrder || withdrawal) {
+  if (completedOrder || paidPendingOrder || withdrawal) {
     return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
   }
 
@@ -842,7 +859,7 @@ app.post('/auth/reset-registration', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const { data: completedOrder } = await sb()
+  const { data: completedOrder, error } = await sb()
     .from('payment_orders')
     .select('id')
     .eq('user_id', user.id)
@@ -850,6 +867,11 @@ app.post('/auth/reset-registration', async (c) => {
     .limit(1)
     .maybeSingle();
 
+  // 讀不到就不放行（規格書 §5.3：守衛讀不到資料時 fail-closed 回 5xx）。
+  if (error) {
+    console.error('[reset-registration] 守衛讀取失敗:', error);
+    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
+  }
   if (completedOrder) {
     return c.json({ error: '已完成付款，無法重置註冊資料' }, 400);
   }

@@ -16,7 +16,11 @@ import { useRewardData } from '../hooks/useRewardData';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
 import { MyQrEntry } from './referral/MyQrEntry';
 import { showsRenewalCta } from '../utils/subscriptionNotice';
-import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
 import { computeKingRounds } from '../utils/kingProgress';
@@ -43,7 +47,7 @@ export function MemberDashboard() {
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
-  const { showInfo } = useNotification();
+  const { showNotification } = useNotification();
 
   const listingEnabled = isFeatureEnabled('serviceProviderManagement');
   const referralEnabled = isFeatureEnabled('referralManagement');
@@ -114,10 +118,13 @@ export function MemberDashboard() {
   const rounds = currentTask ? computeKingRounds(currentTask.current, currentTask.target) : null;
 
   const handleShowProfileInfo = () => {
-    showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
-      '如需更改基本資料，請透過 LINE 聯繫客服：',
-      `📱 LINE 官方帳號：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
-    ]);
+    showNotification({
+      type: 'info',
+      title: '修改會員資料',
+      message: PROFILE_LOCKED_MESSAGE,
+      details: PROFILE_LOCKED_DETAILS,
+      confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+    });
   };
 
   const listingLabel = () => {

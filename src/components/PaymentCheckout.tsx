@@ -20,11 +20,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
+import {
+  resolveCheckoutPageRedirect,
+  isProfileComplete,
+  isRegistrationLocked,
+} from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
 import { StatusCallout } from './ui/status-callout';
 import { BreakableEmail } from './common/BreakableEmail';
-import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, PROFILE_LOCKED_FIELDS } from '../utils/constants';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -315,11 +319,9 @@ export function PaymentCheckout() {
   // ✅ 續費身分判斷：曾有訂閱（subscriptionEndDate 存在）且此刻不是有效
   //    會員（有效會員在進入本頁時已被彈去 dashboard）→ 這是過期續費。
   const isRenewal = !!pendingUser?.subscriptionEndDate;
-  // 註冊已完成 → 身分資料與推薦人已鎖定，後端拒絕重填（/auth/register 403、
-  // reset-registration 400）。不顯示「編輯」，免得邀請使用者做一件必定失敗
-  // 的事。曾有訂閱（isRenewal）必然有過完成的付款；registrationStep 補上
-  // 快取裡有帶到進度的情況。
-  const isProfileLocked = isRenewal || pendingUser?.registrationStep === 3;
+  // 註冊已完成 → 身分資料與推薦人已鎖定（判準見 isRegistrationLocked）。不顯示
+  // 「編輯」，免得邀請使用者做一件必定失敗的事。
+  const isProfileLocked = !!pendingUser && isRegistrationLocked(pendingUser);
   // 補繳制（A1）：續約永遠可選，不因過期多久而消失——canExtend 已拆除。
   // 日期與補繳數字一律吃契約 renewal 值（AC-2）：pendingUser 走 localStorage
   // 快取，補繳中途不會更新，用它自算會把付款前的舊效期顯示出來。
@@ -731,7 +733,8 @@ export function PaymentCheckout() {
                 )}
                 {isProfileLocked && (
                   <p className="pt-1" data-testid="profile-locked-note">
-                    資料如需變更，請透過 LINE 聯繫客服（{LINE_OFFICIAL_ACCOUNT_HANDLE}）
+                    {PROFILE_LOCKED_FIELDS}如需變更，請透過 LINE 聯繫客服（
+                    {LINE_OFFICIAL_ACCOUNT_HANDLE}）
                   </p>
                 )}
               </div>

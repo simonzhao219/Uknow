@@ -23,6 +23,13 @@
 --
 -- 推薦碼解析、欄位格式驗證留在 Edge Function(呼叫端傳入已解析的推薦人)。
 --
+-- referred_by_is_default 一併寫 false:使用者親自填的(或清空的)推薦來源不是
+-- 平台自動綁定。referred_by_* 的其他寫入點——apply_referral_side_effects 3a-bis
+-- 寫 true、/payuni/prepare fresh 有碼寫 false、無碼寫 true——各自維護這個旗標;
+-- 少了這一欄,先走 prepare 的 fresh 無碼分支(它不檢查是否付過款)再用 register
+-- 改碼,旗標會卡在 true,前端把使用者自己選的推薦人也一起隱藏。
+-- track_referred_by_change 觸發器只看 referred_by_user_id,多寫這欄不會誤觸。
+--
 -- 回傳:'ok' 已寫入|'completed' 註冊已完成,未寫入|'not_found' 無 profile。
 -- ============================================================
 
@@ -58,8 +65,9 @@ begin
       birth_date          = p_birth_date,
       national_id         = p_national_id,
       registration_step   = 1,
-      referred_by_code    = p_referred_by_code,
-      referred_by_user_id = p_referred_by_user_id
+      referred_by_code       = p_referred_by_code,
+      referred_by_user_id    = p_referred_by_user_id,
+      referred_by_is_default = false
   where id = p_user_id;
 
   return 'ok';
