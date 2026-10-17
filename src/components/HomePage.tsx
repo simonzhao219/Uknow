@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useMemo, useEffect, useContext } from 'react';
+import { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
@@ -170,6 +170,31 @@ export function HomePage() {
     }
   };
 
+  // 焦點跟著使用者的重新載入走（ui-ux-guidelines §9 焦點後備落點），與詳情頁同款：錯誤框
+  // 一換成骨架，按下的「重新載入」就卸載了。按下時焦點交給骨架；落地時焦點若已掉到 body，
+  // 失敗交給錯誤框、成功交給頁面標題。首次載入不搶焦點。
+  const focusAfterLoad = useRef(false);
+  const skeletonRef = useRef<HTMLOutputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const handleReload = () => {
+    focusAfterLoad.current = true;
+    fetchAllListings();
+  };
+
+  useEffect(() => {
+    if (!focusAfterLoad.current) return;
+    if (loading) {
+      skeletonRef.current?.focus();
+      return;
+    }
+    focusAfterLoad.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    (loadError ? errorRef : headingRef).current?.focus();
+  }, [loading, loadError]);
+
   const filteredServiceProviders = useMemo(() => {
     let filtered = serviceProviders.filter((serviceProvider) => {
       // 關鍵字搜尋（名稱／服務介紹／服務類別）。判定抽在 utils/listingSearch.ts，
@@ -241,6 +266,9 @@ export function HomePage() {
     userCoords,
   ]);
 
+  // 載入中與讀取失敗時沒有「結果數」可說：面板主鈕不寫「查看 0 位」（§6：失敗不寫找到 0 筆）
+  const resultCount = loading || loadError ? null : filteredServiceProviders.length;
+
   const handleCityChange = (city: string, checked: boolean) => {
     // 勾選縣市＝預設全區；取消＝移除該市整個 key。純函式只動這一市。
     setDistrictsByCity((prev) => toggleCity(prev, city, checked, TAIWAN_REGIONS[city] || []));
@@ -275,7 +303,13 @@ export function HomePage() {
     <div className="max-w-6xl mx-auto space-y-6">
       {/* 標題區域 */}
       <div className="text-center space-y-4">
-        <h1 className="text-3xl md:text-4xl font-bold">找到你需要的專業服務</h1>
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-3xl md:text-4xl font-bold scroll-mt-20 outline-none"
+        >
+          找到你需要的專業服務
+        </h1>
         <p className="text-muted-foreground">Uknow 連結專業服務，讓專業眾所皆知</p>
       </div>
 
@@ -352,7 +386,7 @@ export function HomePage() {
         onSearchChange={setSearchQuery}
         totalFilters={totalFilters}
         hasBottomNav={isLoggedIn}
-        resultCount={filteredServiceProviders.length}
+        resultCount={resultCount}
         onResetFilters={() => {
           setSelectedGenders([]);
           setSelectedCategory('');
@@ -427,7 +461,14 @@ export function HomePage() {
         {loading && (
           // <output>（隱含 role="status"）＋名稱＋aria-busy，比照後台 AdminListSkeleton 與
           // 詳情頁骨架；裡面只用 div。
-          <output aria-label="載入服務者資料中" aria-busy="true" className="block">
+          // tabIndex={-1}：使用者按重新載入時焦點交給它（名稱即播報字）。
+          <output
+            ref={skeletonRef}
+            tabIndex={-1}
+            aria-label="載入服務者資料中"
+            aria-busy="true"
+            className="block scroll-mt-20 outline-none"
+          >
             {/* 手機：骨架屏跟著檢視模式走，資料到位時版面不跳動 */}
             <div className="block md:hidden">
               {viewMode === 'photo' ? (
@@ -457,18 +498,21 @@ export function HomePage() {
         {/* 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重新載入是唯一出路，
             流程鈕取容器色（§12.11），提示框內靠右、文字寬。與詳情頁的讀取失敗同一款。 */}
         {!loading && loadError && (
-          <StatusCallout
-            variant="warning"
-            title="載入失敗"
-            description="無法取得服務者列表，請檢查網路連線後再試一次"
-            action={
-              <div className="flex justify-end">
-                <Button container="warning" onClick={fetchAllListings}>
-                  重新載入
-                </Button>
-              </div>
-            }
-          />
+          // 外層 div 是重新載入後的焦點落點（StatusCallout 不轉發 ref）
+          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
+            <StatusCallout
+              variant="warning"
+              title="載入失敗"
+              description="無法取得服務者列表，請檢查網路連線後再試一次"
+              action={
+                <div className="flex justify-end">
+                  <Button container="warning" onClick={handleReload}>
+                    重新載入
+                  </Button>
+                </div>
+              }
+            />
+          </div>
         )}
 
         {/* ========== 空狀態顯示（僅在載入完成、無錯誤且無資料時） ========== */}
@@ -540,6 +584,11 @@ export function HomePage() {
 // 篩選 UI（手機底部面板與桌面折疊區共用同一套 chip 內容元件）
 // ============================================
 
+// 面板主鈕：有結果數時回饋「查看 N 位服務者」；載入中或讀取失敗時沒有數字可說。
+function resultLabel(resultCount: number | null): string {
+  return resultCount === null ? '查看結果' : `查看 ${resultCount} 位服務者`;
+}
+
 // 手機版篩選面板：從螢幕底部彈出（單手拇指可及），而非右側全幅滑出。
 // 關閉動線以底部的「查看 N 位服務者」主按鈕為主（同時回饋目前結果數），
 // 點背景遮罩也可關閉；右上角 X 僅作為輔助。
@@ -556,8 +605,8 @@ function MobileFilterSheet({
   trigger: React.ReactNode;
   title: string;
   description: string;
-  /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋 */
-  resultCount: number;
+  /** 目前條件下的即時結果數，顯示在主按鈕上作為即時回饋；載入中或讀取失敗時是 null */
+  resultCount: number | null;
   /** 是否顯示「重設」（有任一條件時才出現） */
   showReset: boolean;
   onReset: () => void;
@@ -580,12 +629,12 @@ function MobileFilterSheet({
         <SheetFooter className="mt-0 flex-row gap-3 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {/* 兩顆並排等寬，次要在左、主要在右（§12.11、畫面稿篩選面板） */}
           {showReset && (
-            <Button variant="ghost" onClick={onReset} className="min-h-12 flex-1">
+            <Button tone="secondary" onClick={onReset} className="min-h-12 flex-1">
               重設
             </Button>
           )}
           <SheetClose asChild>
-            <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
+            <Button className="min-h-12 flex-1">{resultLabel(resultCount)}</Button>
           </SheetClose>
         </SheetFooter>
       </SheetContent>
@@ -626,7 +675,8 @@ function MobileSearchFilterBar({
   totalFilters: number;
   /** 登入會員的固定底部導覽列存在時，工具列上移避開 */
   hasBottomNav: boolean;
-  resultCount: number;
+  /** 載入中或讀取失敗時是 null（沒有結果數可說） */
+  resultCount: number | null;
   /** 清除全部篩選條件（不含搜尋字串，搜尋在搜尋面板內清除） */
   onResetFilters: () => void;
   /** 整合篩選面板的內容（三個 chip 區塊） */
@@ -715,7 +765,7 @@ function MobileSearchFilterBar({
             <SheetFooter className="mt-0 flex-row gap-3 border-t p-4">
               {searchQuery && (
                 <Button
-                  variant="ghost"
+                  tone="secondary"
                   onClick={() => onSearchChange('')}
                   className="min-h-12 flex-1"
                 >
@@ -723,7 +773,7 @@ function MobileSearchFilterBar({
                 </Button>
               )}
               <SheetClose asChild>
-                <Button className="min-h-12 flex-1">查看 {resultCount} 位服務者</Button>
+                <Button className="min-h-12 flex-1">{resultLabel(resultCount)}</Button>
               </SheetClose>
             </SheetFooter>
           </SheetContent>

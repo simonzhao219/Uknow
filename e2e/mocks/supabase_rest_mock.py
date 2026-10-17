@@ -111,6 +111,8 @@ class SupabaseRestMock:
         self._held_public_listing = []     # routes held by `hold_public_listing`
         self._public_listings = []     # select() list GET /public_listings (HomePage)
         self._public_listings_error = None  # (status, body) to fail HomePage's list read
+        self._public_listings_hold = False  # hold HomePage's list read until released
+        self._held_public_listings = []     # routes held by `hold_public_listings`
         self._write_error = None       # (status, body) to fail insert/update/delete
         self._routed = False
 
@@ -187,6 +189,19 @@ class SupabaseRestMock:
         self._public_listings_error = (status, {"message": message, "code": str(status), "details": "", "hint": ""})
         self._ensure_routes()
 
+    def hold_public_listings(self):
+        """Hold HomePage's list reads until `release_public_listings()` — the
+        card skeleton and the results-row placeholder only exist while the
+        read is in flight."""
+        self._public_listings_hold = True
+        self._ensure_routes()
+
+    def release_public_listings(self):
+        held, self._held_public_listings = self._held_public_listings, []
+        self._public_listings_hold = False
+        for route in held:
+            self._serve_public_listings(route)
+
     def fail_writes(self, message: str = "操作失敗", status: int = 400):
         self._write_error = (status, {"message": message, "code": "", "details": "", "hint": ""})
         self._ensure_routes()
@@ -226,11 +241,17 @@ class SupabaseRestMock:
                     return None
                 return self._serve_public_listing(route)
             # `.select().order()` list — HomePage read.
-            if self._public_listings_error:
-                status, body = self._public_listings_error
-                return _fulfill_json(route, body, status=status)
-            return _fulfill_json(route, self._public_listings)
+            if self._public_listings_hold:
+                self._held_public_listings.append(route)
+                return None
+            return self._serve_public_listings(route)
         return _fulfill_empty(route, status=204)
+
+    def _serve_public_listings(self, route):
+        if self._public_listings_error:
+            status, body = self._public_listings_error
+            return _fulfill_json(route, body, status=status)
+        return _fulfill_json(route, self._public_listings)
 
     def _serve_public_listing(self, route):
         if self._public_listing_error:

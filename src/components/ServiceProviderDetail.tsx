@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -20,11 +20,14 @@ import { GenderBadge } from './common/GenderBadge';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { openExternalLink } from '../utils/externalLink';
+import { resolveDocBackTarget } from '../utils/backNavigation';
+import { MAX_PHOTO_COUNT } from '../utils/constants';
+import { useLatestRequest } from '../hooks/useLatestRequest';
 import type { PublicListingRow } from '../types/listing';
 
 // 「真的沒有這筆」只有兩種：.single() 對零列回 PGRST116；id 不是合法 uuid（分享連結被
-// 截斷、手打錯）回 22P02。其餘（網路、5xx）是暫時讀不到——從 LINE 分享連結進來的訪客
-// 遇到這種失敗，不能被告知「找不到」，要給重試。
+// 截斷、手打錯）回 22P02。其餘（網路、5xx、沒有資料也沒有錯誤碼的怪回應）是暫時讀不到——
+// 從 LINE 分享連結進來的訪客遇到這種失敗，不能被告知「找不到」，要給重試。
 const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
 
 type LoadStatus = 'loading' | 'ready' | 'notFound' | 'error';
@@ -41,10 +44,13 @@ export function ServiceProviderDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
+  // 只認最後一次請求：id 在途切換時，前一筆的晚到回應不得蓋掉後一筆。
+  const request = useLatestRequest();
 
   // 重試只重發這一支請求，不整頁重載（reload 會重開整個 SPA、白畫面閃爍）。
   const fetchListing = useCallback(async () => {
     if (!id) return;
+    const ticket = request.begin();
     setStatus('loading');
     try {
       const supabase = createClient();
@@ -53,43 +59,82 @@ export function ServiceProviderDetail() {
         .select('*')
         .eq('id', id)
         .single();
+      if (!request.isLatest(ticket)) return;
 
       if (queryError && NOT_FOUND_CODES.has(queryError.code)) {
         setStatus('notFound');
         return;
       }
       if (queryError) throw queryError;
-      if (!listing) {
-        setStatus('notFound');
-        return;
-      }
+      if (!listing) throw new Error('回應沒有刊登資料');
       setServiceProvider(listing);
       setStatus('ready');
     } catch (error) {
+      if (!request.isLatest(ticket)) return;
       console.error('❌ 獲取刊登詳情失敗:', error);
       setStatus('error');
     }
-  }, [id]);
+  }, [id, request]);
 
   useEffect(() => {
     fetchListing();
   }, [fetchListing]);
 
-  // 從 LINE 分享連結直接開進來時，站內沒有上一頁（React Router 的第一個 location 的
-  // key 是 'default'）：navigate(-1) 會離開網站或沒反應，改回首頁。不用
-  // useBackNavigation——它的層級表把 /service-providers/* 對到會員中心，訪客進不去。
-  const handleBack = () => {
-    if (location.key === 'default') {
-      navigate('/');
-    } else {
-      navigate(-1);
-    }
+  // 焦點跟著使用者的重試走（ui-ux-guidelines §9 焦點後備落點）：錯誤框一換成骨架，按下的
+  // 「重試」就卸載了，焦點掉到 body、骨架期間報讀器無聲。按下重試時把焦點交給骨架（名稱
+  // 即播報字）；落地時骨架也卸載了，焦點若已掉到 body 就交給錯誤框或頁面標題。首次載入
+  // 不搶焦點。
+  const focusAfterLoad = useRef(false);
+  const skeletonRef = useRef<HTMLOutputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const notFoundRef = useRef<HTMLHeadingElement>(null);
+
+  const handleRetry = () => {
+    focusAfterLoad.current = true;
+    fetchListing();
   };
+
+  useEffect(() => {
+    if (!focusAfterLoad.current) return;
+    if (status === 'loading') {
+      skeletonRef.current?.focus();
+      return;
+    }
+    focusAfterLoad.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const target = { error: errorRef, ready: headingRef, notFound: notFoundRef }[status];
+    target.current?.focus();
+  }, [status]);
+
+  // 頁首返回圖示鈕（全站同款，§12.13）。去向與 MarkdownContent 同一個決策來源：從 LINE
+  // 分享連結直接開進來時站內沒有上一頁（location.key 是 'default'），navigate(-1) 會離開
+  // 網站或沒反應，改回首頁。不用 useBackNavigation——它的層級表把 /service-providers/*
+  // 對到會員中心，訪客進不去。
+  const backTarget = resolveDocBackTarget(location.key);
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => (typeof backTarget === 'number' ? navigate(backTarget) : navigate(backTarget))}
+      className="shrink-0"
+      aria-label={typeof backTarget === 'number' ? '返回上一頁' : '回首頁'}
+    >
+      <ArrowLeft className="h-5 w-5" />
+    </Button>
+  );
 
   if (status === 'notFound') {
     return (
       <div className="max-w-4xl mx-auto text-center py-12">
-        <h2 className="text-2xl font-bold mb-4">找不到此服務者</h2>
+        <h2
+          ref={notFoundRef}
+          tabIndex={-1}
+          className="text-2xl font-bold mb-4 scroll-mt-20 outline-none"
+        >
+          找不到此服務者
+        </h2>
         {/* 找不到頁面唯一的出路＝流程鈕；手機整寬、桌機文字寬（§12.11） */}
         <Button onClick={() => navigate('/')} className="w-full md:w-auto">
           返回首頁
@@ -98,36 +143,31 @@ export function ServiceProviderDetail() {
     );
   }
 
-  const backLink = (
-    // 頁面導覽，不是流程鈕：墨色底線連結＋左箭頭（全站畫面稿、§12.13）。
-    <Button variant="link" onClick={handleBack} className="px-0 has-[>svg]:px-0">
-      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-      返回
-    </Button>
-  );
-
   if (status !== 'ready' || !serviceProvider) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        {backLink}
+        {backButton}
         {status === 'error' ? (
           // 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重試是唯一出路，流程鈕
-          // 取容器色（§12.11），提示框內靠右、文字寬。
-          <StatusCallout
-            variant="warning"
-            titleAs="h2"
-            title="暫時無法載入服務者資料"
-            description="可能是網路不穩，請再試一次。"
-            action={
-              <div className="flex justify-end">
-                <Button container="warning" onClick={fetchListing}>
-                  重試
-                </Button>
-              </div>
-            }
-          />
+          // 取容器色（§12.11），提示框內靠右、文字寬。外層 div 是重試後的焦點落點
+          // （StatusCallout 不轉發 ref）。
+          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
+            <StatusCallout
+              variant="warning"
+              titleAs="h2"
+              title="暫時無法載入服務者資料"
+              description="可能是網路不穩，請再試一次。"
+              action={
+                <div className="flex justify-end">
+                  <Button container="warning" onClick={handleRetry}>
+                    重試
+                  </Button>
+                </div>
+              }
+            />
+          </div>
         ) : (
-          <DetailSkeleton />
+          <DetailSkeleton outputRef={skeletonRef} />
         )}
       </div>
     );
@@ -170,12 +210,13 @@ export function ServiceProviderDetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {backLink}
+      {backButton}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 圖片區域 */}
         <div className="space-y-4">
-          <div className="aspect-video rounded-lg overflow-hidden">
+          {/* bg-muted：骨架退場時照片可能還在下載，沒有底色會是「灰骨架→白框→照片」 */}
+          <div className="aspect-video rounded-lg overflow-hidden bg-muted">
             <ImageWithFallback
               src={serviceProvider.photos[currentImageIndex]}
               alt={`${serviceProvider.name} - 圖片 ${currentImageIndex + 1}`}
@@ -194,7 +235,7 @@ export function ServiceProviderDetail() {
                   aria-pressed={currentImageIndex === index}
                   onClick={() => setCurrentImageIndex(index)}
                   className={cn(
-                    'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors',
+                    'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 bg-muted transition-colors',
                     THUMB_FOCUS,
                     currentImageIndex === index ? 'border-sel' : 'border-transparent',
                   )}
@@ -217,7 +258,13 @@ export function ServiceProviderDetail() {
               性別是分類標記，不上重色（§12.5 (b)）。 */}
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <h1 className="min-w-0 text-2xl md:text-3xl font-bold">{serviceProvider.name}</h1>
+              <h1
+                ref={headingRef}
+                tabIndex={-1}
+                className="min-w-0 text-2xl md:text-3xl font-bold scroll-mt-20 outline-none"
+              >
+                {serviceProvider.name}
+              </h1>
               <GenderBadge gender={serviceProvider.gender} className="mt-1.5 md:mt-2" />
             </div>
             {/* flex（不是 inline-flex）：徽章自成一個區塊，不坐在行盒裡多吃 3px 行高 */}
@@ -308,20 +355,28 @@ export function ServiceProviderDetail() {
   );
 }
 
-const THUMB_KEYS = ['t1', 't2', 't3'];
+const THUMB_KEYS = Array.from({ length: MAX_PHOTO_COUNT }, (_, i) => `t${i + 1}`);
 const CONTACT_KEYS = ['c1', 'c2', 'c3'];
 
 /**
  * 詳情頁骨架：沿用實際內容的同一組 grid（手機單欄、lg 起兩欄），資料到位時版面不跳
- * （ui-ux-guidelines §5）。縮圖三格：刊登一律三張照片（MAX_PHOTO_COUNT＝3，表單
- * 也要求至少 3 張），所以載入後一定有這一列。
+ * （ui-ux-guidelines §5；位置由 e2e `test_public_skeleton_layout.py` 實測把關）。縮圖
+ * 格數＝MAX_PHOTO_COUNT：刊登表單要求剛好這麼多張，所以一般刊登載入後也是這一列
+ * （資料層 `photos` 沒有數量約束，表單外寫入的刊登不受此保證）。
  *
  * 外層是 `<output>`（隱含 role="status"）＋名稱＋`aria-busy`，比照後台的
  * `AdminListSkeleton`；裡面只用 div，不放 heading，免得報讀器把骨架當成已載入的內容。
+ * `tabIndex={-1}`：使用者按重試時焦點交給它（名稱即播報字），見元件裡的焦點落點。
  */
-function DetailSkeleton() {
+function DetailSkeleton({ outputRef }: { outputRef: Ref<HTMLOutputElement> }) {
   return (
-    <output aria-label="載入服務者詳情中" aria-busy="true" className="block">
+    <output
+      ref={outputRef}
+      tabIndex={-1}
+      aria-label="載入服務者詳情中"
+      aria-busy="true"
+      className="block scroll-mt-20 outline-none"
+    >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <Skeleton className="aspect-video w-full rounded-lg" />

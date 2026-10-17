@@ -30,3 +30,22 @@ Feature: Public service-provider detail page
     And I retry loading the listing detail
     Then I should see the text "Cara 美容師"
     And I should see the text "服務介紹"
+
+  @listing
+  Scenario: Opening a shared detail link directly, the back button returns to the directory
+    Given a public listing "Cara 美容師" exists with description "專業臉部保養與清潔"
+    When I open that listing's detail page
+    And I press the detail page's back button labelled "回首頁"
+    Then I should be redirected to "/"
+    And I should see the text "找到你需要的專業服務"
+
+  @listing
+  Scenario: After reloading a detail page opened from the directory, back still returns to the directory
+    Given the public directory lists providers "Alice 美髮師"
+    And the directory listing "Alice 美髮師" has a detail page
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    And I reload the page
+    And I press the detail page's back button labelled "返回上一頁"
+    Then I should be redirected to "/"
+    And I should see the listing card for "Alice 美髮師"

@@ -91,6 +91,13 @@ def listing_detail_failing(rest_mock):
     rest_mock.fail_public_listing()
 
 
+@given(parsers.parse('the directory listing "{name}" has a detail page'))
+def directory_listing_has_detail(rest_mock, directory, name):
+    # The detail page reads `.single()`, a separate mock slot from the list read;
+    # serve the same row there so clicking the card lands on real content.
+    rest_mock.set_public_listing(directory[name])
+
+
 @given(parsers.parse('no public listing exists for id "{listing_id}"'))
 def no_public_listing(rest_mock, listing_id):
     rest_mock.set_public_listing(None)
@@ -121,6 +128,15 @@ def listing_detail_recovers(rest_mock, directory):
 @when("I retry loading the listing detail")
 def retry_listing_detail(service_provider_detail_page):
     service_provider_detail_page.retry_button().click()
+
+
+@when(parsers.parse("I press the detail page's back button labelled \"{label}\""))
+def press_detail_back(service_provider_detail_page, label):
+    # The label states the destination: "回首頁" when there is no in-app history
+    # (opened from a shared link), "返回上一頁" otherwise.
+    button = service_provider_detail_page.back_button()
+    expect(button).to_have_accessible_name(label)
+    button.click()
 
 
 @when("I retry loading the directory")

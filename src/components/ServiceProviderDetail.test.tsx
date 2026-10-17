@@ -5,7 +5,7 @@
 // 以及「站內沒有上一頁時，返回回首頁」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import type { PublicListingRow } from '../types/listing';
 
 type SingleResult = {
@@ -54,9 +54,17 @@ function deferred() {
   return { promise, resolve };
 }
 
+// 測試要在同一個元件實例上換 id（模擬在途切換），從路由樹裡把 navigate 拿出來。
+let navigateTo: (to: string) => void = () => {};
+function CaptureNavigate() {
+  navigateTo = useNavigate();
+  return null;
+}
+
 function renderAt(entries: string[]) {
   return render(
     <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+      <CaptureNavigate />
       <Routes>
         <Route path="/" element={<p>首頁內容</p>} />
         <Route path="/from" element={<p>上一頁內容</p>} />
@@ -68,9 +76,13 @@ function renderAt(entries: string[]) {
 
 const detailPath = `/service-providers/${LISTING_ID}`;
 
+// 失敗路徑會刻意 console.error；只在那幾條測試裡靜音，快樂路徑的 React 警告照常浮出來。
+function silenceExpectedError() {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+}
+
 beforeEach(() => {
   single.mockReset();
-  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => {
   cleanup();
@@ -112,6 +124,7 @@ describe('ServiceProviderDetail', () => {
   });
 
   it('網路或伺服器失敗時顯示讀取失敗與重試，不說找不到', async () => {
+    silenceExpectedError();
     single.mockResolvedValueOnce({ data: null, error: { code: '', message: 'Failed to fetch' } });
     renderAt([detailPath]);
 
@@ -121,6 +134,7 @@ describe('ServiceProviderDetail', () => {
   });
 
   it('按重試只重發一次請求、不整頁重載，成功後顯示刊登', async () => {
+    silenceExpectedError();
     single
       .mockResolvedValueOnce({ data: null, error: { code: '503', message: 'unavailable' } })
       .mockResolvedValueOnce({ data: listing, error: null });
@@ -138,7 +152,7 @@ describe('ServiceProviderDetail', () => {
     single.mockResolvedValueOnce({ data: listing, error: null });
     renderAt([detailPath]);
 
-    fireEvent.click(await screen.findByRole('button', { name: '返回' }));
+    fireEvent.click(await screen.findByRole('button', { name: '回首頁' }));
     expect(screen.getByText('首頁內容')).toBeTruthy();
   });
 
@@ -146,8 +160,73 @@ describe('ServiceProviderDetail', () => {
     single.mockResolvedValueOnce({ data: listing, error: null });
     renderAt(['/from', detailPath]);
 
-    fireEvent.click(await screen.findByRole('button', { name: '返回' }));
+    fireEvent.click(await screen.findByRole('button', { name: '返回上一頁' }));
     expect(screen.getByText('上一頁內容')).toBeTruthy();
+  });
+
+  it('回應沒有資料也沒有錯誤碼時當讀取失敗，不說找不到', async () => {
+    silenceExpectedError();
+    single.mockResolvedValueOnce({ data: null, error: null });
+    renderAt([detailPath]);
+
+    expect(await screen.findByRole('heading', { name: '暫時無法載入服務者資料' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '找不到此服務者' })).toBeNull();
+  });
+
+  it('id 在途切換時，前一筆的晚到回應不會蓋掉後一筆', async () => {
+    const first = deferred();
+    const second = deferred();
+    single.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    renderAt([detailPath]);
+
+    act(() => navigateTo('/service-providers/22222222-2222-2222-2222-222222222222'));
+    await act(async () => second.resolve({ data: { ...listing, name: '後一筆' }, error: null }));
+    await act(async () => first.resolve({ data: listing, error: null }));
+
+    expect(screen.getByRole('heading', { name: '後一筆' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Cara 美容師' })).toBeNull();
+  });
+
+  // ui-ux-guidelines §9 焦點後備落點：錯誤框換成骨架時「重試」卸載，焦點不能掉到 body。
+  it('首次載入不搶焦點', async () => {
+    single.mockResolvedValueOnce({ data: listing, error: null });
+    renderAt([detailPath]);
+
+    await screen.findByRole('heading', { name: 'Cara 美容師' });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('按重試後焦點交給骨架，再次失敗時落在錯誤框', async () => {
+    silenceExpectedError();
+    const retry = deferred();
+    single
+      .mockResolvedValueOnce({ data: null, error: { code: '500', message: 'boom' } })
+      .mockReturnValueOnce(retry.promise);
+    renderAt([detailPath]);
+
+    const button = await screen.findByRole('button', { name: '重試' });
+    button.focus();
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(screen.getByRole('status', { name: '載入服務者詳情中' }));
+
+    await act(async () => retry.resolve({ data: null, error: { code: '500', message: 'boom' } }));
+    const errorTitle = screen.getByRole('heading', { name: '暫時無法載入服務者資料' });
+    expect(document.activeElement?.contains(errorTitle)).toBe(true);
+  });
+
+  it('按重試成功後焦點落在刊登名稱標題', async () => {
+    silenceExpectedError();
+    single
+      .mockResolvedValueOnce({ data: null, error: { code: '500', message: 'boom' } })
+      .mockResolvedValueOnce({ data: listing, error: null });
+    renderAt([detailPath]);
+
+    const button = await screen.findByRole('button', { name: '重試' });
+    button.focus();
+    fireEvent.click(button);
+
+    const heading = await screen.findByRole('heading', { name: 'Cara 美容師' });
+    expect(document.activeElement).toBe(heading);
   });
 
   it('縮圖以 aria-pressed 標示目前顯示的照片，點選後切換', async () => {

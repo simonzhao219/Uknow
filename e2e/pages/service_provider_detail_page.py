@@ -1,6 +1,8 @@
 """`ServiceProviderDetail.tsx` — the public listing detail page (route
 `/service-providers/:id`, no auth guard). Reads the `public_listings` view."""
 
+import re
+
 from playwright.sync_api import Page
 
 from pages.base_page import BasePage
@@ -35,5 +37,7 @@ class ServiceProviderDetailPage(BasePage):
     def retry_button(self):
         return self.page.get_by_role("button", name="重試")
 
-    def back_link(self):
-        return self.page.get_by_role("button", name="返回", exact=True)
+    def back_button(self):
+        """頁首返回圖示鈕。名稱說去向：站內有上一頁時「返回上一頁」，從分享連結直接
+        開進來（沒有站內歷史）時「回首頁」。"""
+        return self.page.get_by_role("button", name=re.compile(r"^(返回上一頁|回首頁)$"))
