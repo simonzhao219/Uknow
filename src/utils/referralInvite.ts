@@ -149,7 +149,7 @@ export function savePendingReferral(code: string): void {
 export function getPendingReferral(): string | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
-    return raw && raw.trim() ? raw : null;
+    return raw?.trim() ? raw : null;
   } catch {
     return null;
   }

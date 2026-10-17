@@ -13,7 +13,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 const { UserCtx, showToast } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
-    UserCtx: createContext<any>({ user: null, refreshUser: async () => null }),
+    UserCtx: createContext<{ user: MyQrTabUser | null }>({ user: null }),
     showToast: vi.fn(),
   };
 });
@@ -31,6 +31,7 @@ import { InviteFriendPanelContent } from './InviteFriendPanelContent';
 import { buildReferralLink } from '../../utils/referralInvite';
 import { copyToClipboard } from '../../utils/clipboard';
 import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
+import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
 afterEach(() => {
   cleanup();

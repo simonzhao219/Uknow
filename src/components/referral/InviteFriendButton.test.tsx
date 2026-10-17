@@ -15,7 +15,10 @@ import { stubMediaQuery } from '../../test-utils/stubMediaQuery';
 const { UserCtx, showToast, browser } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
-    UserCtx: createContext<any>({ user: null, refreshUser: async () => null }),
+    UserCtx: createContext<{ user: MyQrTabUser | null; refreshUser: () => Promise<unknown> }>({
+      user: null,
+      refreshUser: async () => null,
+    }),
     showToast: vi.fn(),
     browser: { isInAppBrowser: false, platform: null as string | null, userAgent: '' },
   };
@@ -27,9 +30,19 @@ vi.mock('../../utils/externalLink', () => ({ openExternalLink: vi.fn() }));
 vi.mock('../../utils/clipboard', () => ({ copyToClipboard: vi.fn(() => true) }));
 vi.mock('../../utils/browserDetection', () => ({ detectInAppBrowser: () => browser }));
 vi.mock('./JoinReferralProgramDialog', () => ({
-  JoinReferralProgramDialog: ({ open, onSuccess }: any) =>
+  JoinReferralProgramDialog: ({
+    open,
+    onSuccess,
+  }: {
+    open: boolean;
+    onSuccess: (referralCode: string, joinedAt: string) => void;
+  }) =>
     open ? (
-      <button type="button" data-testid="join-dialog-submit" onClick={() => onSuccess('8048877')}>
+      <button
+        type="button"
+        data-testid="join-dialog-submit"
+        onClick={() => onSuccess('8048877', '2026-10-17T00:00:00.000Z')}
+      >
         送出加入
       </button>
     ) : null,
@@ -39,6 +52,7 @@ import { InviteFriendButton } from './InviteFriendButton';
 import { openExternalLink } from '../../utils/externalLink';
 import { copyToClipboard } from '../../utils/clipboard';
 import { buildInviteMessage } from '../../utils/referralInvite';
+import type { MyQrTabUser } from '../../utils/myQrTabPreference';
 
 const JOINED = { name: '王小明', referralProgramJoined: true, referralCode: '8048877' };
 
@@ -53,9 +67,9 @@ afterEach(() => {
 });
 
 function renderButton(
-  user: any,
+  user: MyQrTabUser,
   props: { yieldsGuide?: boolean; onJoined?: () => void } = {},
-  refreshUser: () => Promise<any> = vi.fn().mockResolvedValue(user),
+  refreshUser: () => Promise<unknown> = vi.fn().mockResolvedValue(user),
 ) {
   render(
     <UserCtx.Provider value={{ user, refreshUser }}>
@@ -96,7 +110,10 @@ describe('InviteFriendButton 未加入推薦計畫', () => {
   it('簽完後重抓會員資料、通知呼叫端，鈕立刻變成邀請好友', async () => {
     const onJoined = vi.fn();
     function Harness() {
-      const [user, setUser] = useState<any>({ referralProgramJoined: false, referralCode: null });
+      const [user, setUser] = useState<MyQrTabUser>({
+        referralProgramJoined: false,
+        referralCode: null,
+      });
       const refreshUser = vi.fn(async () => {
         setUser(JOINED);
         return JOINED;
