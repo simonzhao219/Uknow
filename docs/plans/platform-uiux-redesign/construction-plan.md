@@ -559,6 +559,31 @@ sweep 盲點、§3 桌機入口補句、ReferralStats 手機高度、點數寫�
     待查收徽章在 admin 與會員兩處統一 warning（遺留事項最後一條就此結案）；
 (5) 全站提到「代」的地方（推薦詳情、明細、後台會員詳情）用世代 chip／小圓點元件，
     會員中心卡片不放世代。
+另外承接 S6 收尾（2026-10-17 補；依 #377 主 session 對照 P2-12 與業主裁決 D4／D5，遺留原文見 progress.md「S6 遺留」）：
+(6) S6 遺留——做到的在 progress 寫落地處並刪該條：
+    a. 開頭先抽 `LoadErrorCallout`（標題、說明、重試鈕、重試後焦點落點的 ref；鈕位置照 ui-ux §12.11 的
+       現況），讓首頁與服務者詳情改用，再套到整頁主內容讀取失敗的五處：推薦管理 `ReferralManagement.tsx:74-79`、
+       獎勵回饋 `RewardDashboard.tsx:117-122`、任務中心 `TaskDashboard.tsx:98-101`、刊登管理
+       `ServiceProviderManagement.tsx:145-158`、獎勵明細 `RewardHistory.tsx:216-223`；其中兩處
+       `window.location.reload()` 改成只重發那支請求（§6）。儀表板卡片內的單一區塊（我的訂閱卡）維持
+       §13 第 4 條中性字，**不**對齊黃框（D4 劃界）。
+    b. `FilterChip` 未選態定調（畫面稿灰底無框：`--secondary` 底、灰字；現為白底框線）：動獎勵頁紀錄篩選時
+       一併改 `common/FilterChip.tsx`（§12.12 已把 chip 歸為無框元件）；`e2e/test_public_touch_targets.py`
+       量的 44px 與焦點環要仍綠。
+    c. 焦點環「3px ＋ 1px 間隙」的字串有四份副本（`FilterChip`、`HomeViewToggle`、詳情 `THUMB_FOCUS`、首頁
+       `TOOLBAR_FOCUS`）：動 `ui/tabs.tsx` 或 `FilterChip` 時抽成單一常數或 cva 變體。CompleteProfile 的姓名
+       分段切換（S2e 審查遺留）比照 `HomeViewToggle` 補同款焦點樣式，F3 焦點巡檢順手做。
+    d. 不做：請求逾時（S6 遺留第 3 條，全站讀取逾時另案）；後端工項與規格書 §7.2 四態定義（同上文）。
+(7) 流程：**新測試先以 `test(red)` commit 入庫、紅燈 hash 寫進 PR，再 commit 實作**（CLAUDE.md 的紅燈證據；S6
+    兩輪的紅燈只在留言陳述，主 session 無法從 commit 驗證）。e2e 定位器契約同 S6：改了可存取名稱或角色，同一
+    commit 改 `e2e/pages/*` 的 page object；每個新狀態（三態、空態、會籍失效）各有一條 e2e 情境，元件測試只守
+    e2e 量不到的焦點落點與判定分支。既有行為不變：不動 `supabase/functions/`、資料路徑與 BottomNav。
+(8) 文件：ui-ux §13 要改的措辭同 PR 改；驗收 4 加「S7 清單」（照 S6 清單的寫法：前置、手機、桌機、以 vitest／e2e
+    為準不列人工項）；progress 的 S7 列、異動記錄與承接的遺留結案同 PR 更新。
+(9) 開工前查核（主 session 2026-10-17 讀碼）：上文 (2) 的 attention「一代且即將到期」已在後端
+    （`supabase/functions/api/index.ts:3658` 的 `generation === 1 && status === 'expiring'`），但「全部 N 位 ›」的
+    分頁清單端點沒看到——橫幅照 (2) 的後備做法；(3) 的 `src/components/task/TaskBadge.tsx` 現為三級、門檻取
+    `reward_config` 的 target（預設 8），四顆徽章 2／4／6／8 是否真的需要後端變更，Plan Mode 先查清楚再列給我。
 ```
 
 **S8**：
