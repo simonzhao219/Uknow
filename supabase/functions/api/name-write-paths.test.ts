@@ -10,8 +10,8 @@
 //   * **防漏抄**:`create or replace function` 是整段覆蓋,所以要釘住「推薦碼
 //     解析邏輯還在」——漏抄會靜默清空日後所有新註冊使用者的
 //     `referred_by_user_id`,而且不會有任何錯誤訊息。
-//   * 其餘自助欄位(phone 等)的 GRANT 本次刻意不動,characterization 釘住,
-//     以免日後有人以為這個 migration 把整張表都收乾淨了。
+//   * 其餘自助欄位(phone 等)的 GRANT 由後續 migration 收回,斷言在
+//     registration-completion-guard.test.ts。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
@@ -43,26 +43,17 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 //
 // `has_column_privilege` 問的正是 migration 唯一改動的那件事,中間不隔任何一層。
 // ============================================================
-Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限,其餘自助欄位保留', async () => {
+Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限', async () => {
   const sql = postgres(DB_URL);
   try {
     const [row] = await sql`
       select
         has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE') as name_update,
-        has_column_privilege('authenticated', 'public.profiles', 'phone', 'UPDATE') as phone_update,
-        has_column_privilege(
-          'authenticated', 'public.profiles', 'national_id', 'UPDATE'
-        ) as national_id_update,
         has_table_privilege('authenticated', 'public.profiles', 'SELECT') as table_select
     `;
 
     // 這是 20260726000002 的核心:姓名不再能被自助寫入。
     assertEquals(row.name_update, false, 'name 的 UPDATE 權限應已撤銷');
-
-    // 本次刻意只收 name 一欄。其餘同類繞過面仍在,留待另案——這兩條
-    // characterization 存在是為了讓下一個讀者不會誤以為整張表都收乾淨了。
-    assertEquals(row.phone_update, true, 'phone 的自助 UPDATE 本次不動');
-    assertEquals(row.national_id_update, true, 'national_id 的自助 UPDATE 本次不動');
 
     // 記錄「沒有 table-level SELECT」這個事實:它是上面那段註解的依據,也讓
     // 日後若有人為了某個讀取功能補上 grant select,這條會紅、迫使重新評估
