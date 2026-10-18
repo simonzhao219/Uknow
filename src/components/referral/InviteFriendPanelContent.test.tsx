@@ -136,8 +136,16 @@ describe('InviteFriendPanelContent 分享 QR Code', () => {
     });
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,');
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    vi.stubGlobal('navigator', { ...navigator, share, canShare: () => true });
+    // 只在真的 navigator 上補 share／canShare（jsdom 沒有這兩支）；整個換掉會丟失
+    // userAgent 這類 getter，detectInAppBrowser 就讀不到了。
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
   }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'share');
+    Reflect.deleteProperty(navigator, 'canShare');
+  });
 
   const rejectWith = (name: string) => () =>
     Promise.reject(Object.assign(new Error(name), { name }));
