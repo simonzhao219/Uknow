@@ -88,7 +88,7 @@ export interface FunnelProfile {
 /**
  * 註冊完成後身分資料（姓名、身分證字號、生日、手機）與推薦人鎖定，後端拒絕
  * 重填（/auth/register 403、reset-registration 400）。CompleteProfile 的編輯
- * 守衛與 PaymentCheckout 的編輯入口共用這一個判準。
+ * 守衛與 403 出口、PaymentCheckout 的編輯入口共用這一個判準。
  *
  * 後端的判準是「有 completed 訂單」，前端看得到的對應訊號是 step 3；曾有訂閱
  * （subscriptionEndDate，續約者）必然有過完成的付款，補上快取沒帶到進度的情況。

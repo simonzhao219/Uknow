@@ -734,7 +734,7 @@ export function PaymentCheckout() {
                 {isProfileLocked && (
                   <p className="pt-1" data-testid="profile-locked-note">
                     {PROFILE_LOCKED_FIELDS}如需變更，請透過 LINE 聯繫客服（
-                    {LINE_OFFICIAL_ACCOUNT_HANDLE}）
+                    {LINE_OFFICIAL_ACCOUNT_HANDLE}）；續約選新約可更換推薦人
                   </p>
                 )}
               </div>
