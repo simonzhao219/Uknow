@@ -1054,7 +1054,11 @@ export function PaymentCheckout() {
 
             {/* 資料未填齊時，說明付款鈕為何反灰，並給一個回填資料的明確入口，
                 避免使用者面對一顆「按不動」的按鈕不知所措。資料已鎖定者這個
-                入口必定失敗，同上方「編輯」一併不顯示。 */}
+                入口必定失敗，同上方「編輯」一併不顯示。
+                防禦性分支：目前的載入流程走不到這裡——pendingUser 只在通過
+                isProfileComplete 後才寫入（API 分支經 resolveCheckoutPageRedirect、
+                localStorage 分支經本檔的完整度檢查），寫入後不再變動。所以沒有
+                元件測試：導頁後畫面停在載入態，任何斷言都會恆真。 */}
             {!isProfileComplete(pendingUser) && !isProfileLocked && (
               <p
                 className="text-sm text-center text-muted-foreground"
