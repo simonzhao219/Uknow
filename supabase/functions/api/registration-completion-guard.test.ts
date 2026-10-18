@@ -1,8 +1,9 @@
 // ============================================================
 // 「註冊已完成」之後的身分資料寫入守衛(需真 Postgres):
 //   * `POST /auth/register` 對已完成付款的會員(effective_registration_step
-//     = 3)回 403——身分證字號是經營權與提領身分核對的唯一鍵、推薦人在送出
-//     前有「永久綁定」確認框、姓名是提領人工核對的依據。先前這支只有
+//     = 3)回 403——身分證字號是經營權與提領身分核對的唯一鍵、推薦人付款
+//     完成後鎖定(之後唯一的自助換線入口是續費選新約,§6.2)、姓名是提領
+//     人工核對的依據。先前這支只有
 //     requireAuth,「已付款不可改」只活在前端「先打 reset-registration
 //     再導去編輯頁」的呼叫順序裡,直接打 API 就能改寫。
 //   * 付款交易進行中送出的 register 也要被擋:檢查與寫入由 register_profile
@@ -119,10 +120,11 @@ Deno.test('/auth/register：已完成付款的會員 → 403，身分欄位與�
       birth_date: FIRST_BODY.birthDate,
     }).eq('id', member.id);
     assertEquals((await payForUser(client, member.id)).error, null);
-    // 被平台預設推薦人綁定的會員:register 不清 referred_by_is_default,
-    // 放行的話旗標會卡在 true、前端連使用者自己選的推薦人也一起隱藏。
+    // 被平台預設推薦人綁定的會員:放行的話 register 會把 referred_by_is_default
+    // 重置為 false(視同使用者親選),所以旗標維持 true 也證明這次沒有寫入。
     await client.from('profiles').update({ referred_by_is_default: true }).eq('id', member.id);
     const before = await readIdentity(client, member.id);
+    assertEquals(before?.referred_by_is_default, true, '前置:旗標應已設成 true');
 
     const token = await getUserAccessToken(client, member.email);
     const res = await registerAs(token, { ...EDITED_BODY, referralCode: otherCode });
@@ -235,6 +237,11 @@ Deno.test('/auth/register：預設推薦人旗標為 true 時填碼重送 → �
     const token = await getUserAccessToken(client, user.email);
     assertEquals((await registerAs(token, FIRST_BODY)).status, 200);
     await client.from('profiles').update({ referred_by_is_default: true }).eq('id', user.id);
+    assertEquals(
+      (await readIdentity(client, user.id))?.referred_by_is_default,
+      true,
+      '前置:旗標應已設成 true',
+    );
 
     const res = await registerAs(token, { ...FIRST_BODY, referralCode: code });
     assertEquals(res.status, 200, await res.clone().text());
@@ -254,6 +261,11 @@ Deno.test('/auth/register：預設推薦人旗標為 true 時清空推薦碼重�
     const token = await getUserAccessToken(client, user.email);
     assertEquals((await registerAs(token, FIRST_BODY)).status, 200);
     await client.from('profiles').update({ referred_by_is_default: true }).eq('id', user.id);
+    assertEquals(
+      (await readIdentity(client, user.id))?.referred_by_is_default,
+      true,
+      '前置:旗標應已設成 true',
+    );
 
     const res = await registerAs(token, { ...FIRST_BODY, referralCode: null });
     assertEquals(res.status, 200, await res.clone().text());

@@ -376,9 +376,10 @@ describe('PaymentCheckout 補繳制', () => {
     fireEvent.click(screen.getByTestId('profile-summary-toggle'));
     const note = screen.getByTestId('profile-locked-note').textContent ?? '';
     expect(note).toContain('LINE');
-    // 明列鎖定欄位：同頁續約區塊仍可換推薦人（新約），泛稱「資料」會被讀成
-    // 推薦人也要找客服。
+    // 明列哪些欄位要找客服；推薦人例外是同頁續約區塊選新約可自助更換（§6.2），
+    // 不補這半句，註記會與下方的新約選項互相矛盾。
     expect(note).toContain('姓名、身分證字號、生日、手機與推薦人');
+    expect(note).toContain('續約選新約可更換推薦人');
   });
 
   it('renewal 載入中顯示載入態而非錯誤文案（四狀態表第 2 列）', async () => {

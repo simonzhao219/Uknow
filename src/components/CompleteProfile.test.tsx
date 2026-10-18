@@ -402,13 +402,51 @@ describe('送出時註冊已完成（403）', () => {
       expect(showToast).toHaveBeenCalledWith('註冊已完成，資料變更請聯繫客服', 'error'),
     );
     expect(screen.queryByText('會員中心頁')).toBeNull();
-    expect(screen.getByTestId('profile-submit-button')).toBeTruthy();
     expect(loadProfileDraft().name).toBe('王小明');
+    // 送出鈕要復位，否則人留在表單前卻再也按不了。
+    await waitFor(() =>
+      expect((screen.getByTestId('profile-submit-button') as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+  });
+
+  it('拿不到最新狀態（refreshUser 回 null）→ 同樣留在表單、草稿保留', async () => {
+    refreshUser.mockResolvedValue(null);
+    renderWithDashboard();
+    submitConfirmed();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('註冊已完成，資料變更請聯繫客服', 'error'),
+    );
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+
+  it('403 回應不是 JSON 時仍確認最新狀態，step 3 照樣帶回會員中心', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response('Forbidden', { status: 403 })
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+    refreshUser.mockResolvedValue({ registrationStep: 3 });
+    renderWithDashboard();
+    submitConfirmed();
+
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    expect(refreshUser).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('編輯模式載入時已是 step 3', () => {
   it('立即帶回會員中心並顯示同一則資料鎖定說明', async () => {
+    // 先 refreshUser 再導頁：會員中心的守衛讀的是 UserContext，拿到舊會籍會
+    // 把人彈回結帳頁。refresh 回來之前不能導頁。
+    let resolveRefresh: (value: unknown) => void = () => {};
+    refreshUser.mockImplementation(() => new Promise((resolve) => (resolveRefresh = resolve)));
     getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
     vi.stubGlobal(
       'fetch',
@@ -436,6 +474,10 @@ describe('編輯模式載入時已是 step 3', () => {
       </MemoryRouter>,
     );
 
+    await waitFor(() => expect(refreshUser).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+
+    resolveRefresh({ registrationStep: 3 });
     expect(await screen.findByText('會員中心頁', {}, { timeout: 500 })).toBeTruthy();
     const last = showNotification.mock.calls.at(-1)?.[0];
     expect(last?.title).toBe('資料已鎖定');
