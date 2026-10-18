@@ -2977,6 +2977,21 @@ DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選�
 重新起 `supabase start` 時 DB 走 crash recovery、auth 容器晚約 30 秒才 healthy——這段期間跑測試會整批假紅
 （`getUserAccessToken` 連不上），等 `docker ps` 全部 healthy 再跑。
 
+補充（PR #382 的 session，同日；原為獨立一條，合併進來免得同一件事兩處說法）：映像的另一條路是 Docker
+Hub——代理擋的是 ghcr 的 blob 主機 `pkg-containers.githubusercontent.com`，Docker Hub 當時可用：
+
+```bash
+docker pull postgrest/postgrest:v14.14 && docker tag postgrest/postgrest:v14.14 supabase/postgrest:v14.14
+docker pull kong:2.8.1 && docker tag kong:2.8.1 supabase/kong:2.8.1
+docker pull axllent/mailpit:v1.30.2 && docker tag axllent/mailpit:v1.30.2 supabase/mailpit:v1.30.2
+supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime   # edge-runtime 起不來（rlimit）
+```
+
+另兩個坑：`supabase db reset` 或容器重啟後，若測試全部以 `AuthRetryableFetchError` 秒退，`docker restart` kong
+即可；本機 deno 2.5 的 `deno task test:db` 會把 `--ignore=api/*.unit.test.ts` 當成檔案 glob 而失敗，改用
+`deno test ... $(ls api/*.test.ts | grep -v '\.unit\.test\.ts$')`（CI 的 deno 版本不受影響）。是否把整套包成
+SessionStart hook 待整併時裁決。
+
 推論（待整併時裁決）：CI 升 CLI 版本時，這兩條 GRANT 測試會先紅——那是新版預設授權變寬的訊號，該補的是 migration 裡
 明確的 revoke，不是放寬斷言。
 
@@ -3024,25 +3039,3 @@ supabase CLI 2.109.1 從零重播的那一種（較新版 CLI 的預設授權不
 - step 3 且資料未填齊者會被 App 啟動守衛（導去完善資料頁）與後端 403 互相夾住；UI 出口另案（A1b）。
 - 已付款待開通的窗口內換推薦人，會讓 `referred_by_changed_at` 晚於該筆付款的 `completed_at`，
   `repair_orphaned_payments` 對這一筆付款永遠略過。只影響自癒補救路徑，正常開通不經此閘門。
-
-## 2026-10-17｜漏網（環境）｜雲端 session 跑本機 Supabase：dockerd 要自己起、三個映像要改從 Docker Hub 拉
-
-`deno task test:db` 需要 `supabase start`，雲端容器有 docker 但 daemon 沒在跑，且 worker 重啟後 dockerd
-會一起消失（容器保留，`supabase start` 會沿用）。映像拉取：代理擋 `pkg-containers.githubusercontent.com`
-（ghcr）、ECR 的 cloudfront 偶發失敗或回 Data limit exceeded；Docker Hub 可用。可行組合：
-
-```bash
-nohup dockerd >/tmp/dockerd.log 2>&1 &
-docker pull postgrest/postgrest:v14.14 && docker tag postgrest/postgrest:v14.14 supabase/postgrest:v14.14
-docker pull kong:2.8.1 && docker tag kong:2.8.1 supabase/kong:2.8.1
-docker pull axllent/mailpit:v1.30.2 && docker tag axllent/mailpit:v1.30.2 supabase/mailpit:v1.30.2
-supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime   # edge-runtime 起不來（rlimit），測試用 app.request 不需要它
-```
-
-`supabase db reset` 或容器重啟後，若測試全部以 `AuthRetryableFetchError` 秒退，`docker restart` kong 即可。
-另：本機 deno 2.5 的 `deno task test:db` 會把 `--ignore=api/*.unit.test.ts` 當成檔案 glob 而失敗，改用
-`deno test ... $(ls api/*.test.ts | grep -v '\.unit\.test\.ts$')`（CI 的 deno 版本不受影響）。
-
-處置：照上面的組合在本 session 跑通 `deno task test:db` 全套（含 `supabase db reset` 從零重播）；CLI 要釘 CI 的
-2.109.1（PR #380 記錄了 2.121 的本機映像預設授權較寬，會讓 GRANT 斷言誤紅）。是否包成 SessionStart hook 待
-整併時裁決。
