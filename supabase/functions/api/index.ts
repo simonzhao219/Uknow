@@ -669,9 +669,9 @@ type RegisterProfileOutcome = 'ok' | 'completed' | 'not_found';
 // CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1。
 // 付款前（step 0/1/2）可重送——編輯模式與推薦碼回填都靠它；註冊完成
 // （step 3）後一律 403：身分證字號是經營權與提領身分核對的唯一鍵、推薦人
-// 送出前已確認「永久綁定」、姓名是提領人工核對的依據。守衛必須在寫入端點
-// 本身——/auth/reset-registration 只是編輯入口的提早告知，直接打本端點就
-// 繞過它。
+// 付款完成後鎖定（之後唯一的自助換線入口是續費選新約，§6.2）、姓名是提領
+// 人工核對的依據。守衛必須在寫入端點本身——/auth/reset-registration 只是
+// 編輯入口的提早告知，直接打本端點就繞過它。
 // ============================================================
 app.post('/auth/register', async (c) => {
   const user = await requireAuth(c);
@@ -755,10 +755,11 @@ app.post('/auth/register', async (c) => {
 // ============================================================
 // DELETE /auth/cancel-signup
 // CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
-// 守衛：已完成付款或有提領紀錄的會員不得自助刪除——schema 全面
-// on delete cascade，刪 auth user 會連鎖抹除 payment_orders /
-// withdrawals / referral_edges，金流稽核紀錄與推薦樹對帳從此消失
-// （與 /auth/reset-registration 的「已完成付款無法重置」同一原則）。
+// 守衛：已完成付款、已付款待開通（pending 且 PayUni SUCCESS）或有提領紀錄
+// 的會員不得自助刪除——schema 全面 on delete cascade，刪 auth user 會連鎖
+// 抹除 payment_orders / withdrawals / referral_edges，金流稽核紀錄與推薦樹
+// 對帳從此消失（與 /auth/reset-registration 的「已完成付款無法重置」同一
+// 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
 // ============================================================
 app.delete('/auth/cancel-signup', async (c) => {
   const user = await requireAuth(c);

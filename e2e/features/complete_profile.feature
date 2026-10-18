@@ -1,7 +1,8 @@
 Feature: Complete profile
   CompleteProfile.tsx collects the fields required before checkout: name,
-  national ID, birth date, phone, and an optional referral code that (once
-  verified) is bound permanently. The submit button is never silently
+  national ID, birth date, phone, and an optional referral code. These lock
+  once payment completes (afterwards the referrer can only change through a
+  fresh renewal). The submit button is never silently
   disabled on invalid input — a disabled button with no visible reason is a
   dead-end (see docs/multi-step-flow-recovery.md). Instead the button stays
   clickable and a click on an invalid form surfaces the specific reason

@@ -33,10 +33,11 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 // GRANT 的效果直接問 Postgres,不透過 PostgREST。
 //
 // 為什麼不用「以使用者 token 打 PATCH /rest/v1/profiles」來測:
-// 本機重播與正式站的 `authenticated` 對 `profiles` **沒有 table-level SELECT**
-// (migrations 裡從來沒有 `grant select ... on profiles`——前端讀 profile 一律走
-// Edge Function 的 service_role);持久的 develop 分支**有**(平台 default
-// privileges,2026-10-17 實測),所以 develop 上帶過濾條件的直連寫入是可行的,
+// 本機重播(CI 釘的 supabase CLI 2.109.1;較新版 CLI 的預設授權不同)與正式站的
+// `authenticated` 對 `profiles` **沒有 table-level SELECT**(migrations 裡從來沒有
+// `grant select ... on profiles`——前端讀 profile 一律走 Edge Function 的
+// service_role);持久的 develop 分支**有**(平台 default privileges,2026-10-17
+// 唯讀查詢),依權限推得 develop 上帶過濾條件的直連寫入可行(未實送 PATCH),
 // 這是 20261017000003 用表級 REVOKE UPDATE 收掉的原因。在沒有 SELECT 的環境裡,
 // PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
 // **任何**欄位的 PATCH 都會回 403 `42501 permission denied for table profiles`。
@@ -58,10 +59,17 @@ Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限', async () => {
     // 這是 20260726000002 的核心:姓名不再能被自助寫入。
     assertEquals(row.name_update, false, 'name 的 UPDATE 權限應已撤銷');
 
-    // 記錄「沒有 table-level SELECT」這個事實:它是上面那段註解的依據,也讓
-    // 日後若有人為了某個讀取功能補上 grant select,這條會紅、迫使重新評估
-    // ——因為那會讓帶過濾條件的直寫路徑重新變得可表達。
-    assertEquals(row.table_select, false, 'authenticated 不應有 profiles 的 table-level SELECT');
+    // 記錄本機重播「沒有 table-level SELECT」這個事實:它是上面那段註解的依據。
+    // 寫入面已由 20261017000003 的表級 REVOKE UPDATE 收掉,補 SELECT 不會再讓
+    // 直寫可表達;這條守的是讀取面——profiles_select_own 讓 token 持有者讀得到
+    // 自己那列,日後若有人為了某個讀取功能補上 grant select,完整的身分證字號與
+    // 銀行帳號就能繞過 Edge Function 的 maskNationalId / maskBankAccount 直接讀出
+    // (見 index.ts 敏感欄位遮罩的註解)。這條會紅、迫使重新評估。
+    assertEquals(
+      row.table_select,
+      false,
+      'authenticated 不應有 profiles 的 table-level SELECT(會繞過敏感欄位遮罩)',
+    );
   } finally {
     await sql.end();
   }

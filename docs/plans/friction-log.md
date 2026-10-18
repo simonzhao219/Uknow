@@ -2998,7 +2998,7 @@ profiles 的 `for update` 鎖擋住，commit 後照樣寫入（本機重現：�
 - 這是第三次逐端點補「已付款不可 X」（reset-registration、cancel-signup、register）。cancel-signup 這次也
   被掃到同形的 fail-open（讀取失敗當成「沒付過款」→ 刪除已付款會員），一併修了。若再出現第四個，考慮把判準
   收斂成共用 helper 並以 `effective_registration_step` 為唯一來源（reset-registration 仍直接查
-  payment_orders、讀取失敗時放行；它不寫入，本次未動）。
+  payment_orders；讀取失敗已於審查回填改為回 500）。
 
 處置：`register_profile`（先鎖同一列再查再寫）、表級撤銷 authenticated 的 profiles UPDATE、刪除無呼叫端的
 `PUT /auth/profile`、cancel-signup fail-closed、前端 403 出口與編輯守衛。防線是
@@ -3010,9 +3010,10 @@ profiles 的 `for update` 鎖擋住，commit 後照樣寫入（本機重現：�
 而不是一律說成「用戶不存在」。
 
 自我糾正（要沉澱的那種）：我在本機實測直連 PATCH 被「沒有 SELECT」與 `safeupdate` 附帶擋住，就推論「各環境
-都只是縱深防禦」寫進 PR；審查唯讀查 develop 才發現持久分支的 `authenticated` 有表級 SELECT，直連寫入在
-develop 今天就可行。**權限類結論要逐環境查**——本 repo 早已記錄各環境 default privileges 不一致
-（`rls-policies.test.ts`），本機只代表從零重播的那一種。
+都只是縱深防禦」寫進 PR；審查唯讀查 develop 才發現持久分支的 `authenticated` 有表級 SELECT，依權限推得
+直連寫入在 develop 今天就可行（未實送 PATCH）。**權限類結論要逐環境查**，且要分清「實測」與「依權限
+推得」——本 repo 早已記錄各環境 default privileges 不一致（`rls-policies.test.ts`），本機只代表 CI 釘的
+supabase CLI 2.109.1 從零重播的那一種（較新版 CLI 的預設授權不同）。
 
 未處理：
 - CompleteProfile「稍後註冊」對已付款者吞掉 cancel-signup 的 400 後仍登出並顯示「可稍後再完成註冊」。
