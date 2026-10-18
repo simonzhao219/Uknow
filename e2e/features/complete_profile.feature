@@ -1,7 +1,8 @@
 Feature: Complete profile
   CompleteProfile.tsx collects the fields required before checkout: name,
-  national ID, birth date, phone, and an optional referral code that (once
-  verified) is bound permanently. The submit button is never silently
+  national ID, birth date, phone, and an optional referral code. These lock
+  once payment completes (afterwards the referrer can only change through a
+  fresh renewal). The submit button is never silently
   disabled on invalid input — a disabled button with no visible reason is a
   dead-end (see docs/multi-step-flow-recovery.md). Instead the button stays
   clickable and a click on an invalid form surfaces the specific reason
@@ -91,3 +92,16 @@ Feature: Complete profile
     When I submit the profile form
     And I confirm the referral code warning
     Then I should be redirected to "/payment/checkout"
+
+  # Payment completed in another tab while this form stayed open: the backend
+  # refuses the write (403). The page must not strand the member on a form that
+  # can never be submitted — it confirms the new state, lands on the dashboard
+  # and explains that the identity data is now locked.
+  Scenario: Submitting after registration completed elsewhere lands on the dashboard with the lock notice
+    Given registration completes in another tab before the profile is saved
+    When I fill the profile form with name "測試用戶" national ID "A123456789" birth date "1990-01-01" phone "0912345678"
+    And I check the terms checkbox
+    And I submit the profile form
+    And I confirm the referral code warning
+    Then I should be redirected to "/dashboard"
+    And I should see the profile locked notice

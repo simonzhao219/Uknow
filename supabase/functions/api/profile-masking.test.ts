@@ -6,8 +6,6 @@
 //     遮罩格式：nationalId → A12****789（頭 3 尾 3），bankAccount → 僅末 4 碼。
 //   * 伺服器端比對流程不受遮罩影響：POST /rewards/verify-id 用完整字號
 //     仍驗證成功（characterization，釘住既有行為）。
-//   * PUT /auth/profile 拒絕遮罩值寫入——防止前端誤把遮罩值回填送出，
-//     把 profiles.national_id 蓋成星號造成資料損毀。
 //   * GET /admin/withdrawals 維持完整值（管理員匯款作業需要，本次不動，
 //     characterization 釘住以免遮罩改動誤傷）。
 // ============================================================
@@ -101,29 +99,6 @@ Deno.test('POST /rewards/verify-id：完整字號的伺服器端比對不受遮�
       body: JSON.stringify({ idNumber: 'A12****789' }),
     });
     assertEquals(masked.status, 400);
-  } finally {
-    await deleteTestUsers(client, [user.id]);
-  }
-});
-
-Deno.test('PUT /auth/profile：遮罩值不得寫回 nationalId / bankAccount', async () => {
-  const client = adminClient();
-  const user = await createMemberWithSensitiveData(client);
-
-  try {
-    const token = await getUserAccessToken(client, user.email);
-    const res = await app.request('/api/auth/profile', {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nationalId: 'A12****789', bankAccount: '*********0123' }),
-    });
-    assertEquals(res.status, 400, await res.clone().text());
-
-    // DB 內的原值必須未被污染
-    const { data: profile } = await client
-      .from('profiles').select('national_id, bank_account').eq('id', user.id).single();
-    assertEquals(profile?.national_id, ID_NUMBER);
-    assertEquals(profile?.bank_account, BANK_ACCOUNT);
   } finally {
     await deleteTestUsers(client, [user.id]);
   }

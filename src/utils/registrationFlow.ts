@@ -82,6 +82,22 @@ export interface FunnelProfile {
   accountStatus?: 'active' | 'expired' | string | null;
   paidAwaitingActivation?: boolean | null;
   lastTradeNo?: string | null;
+  subscriptionEndDate?: string | null;
+}
+
+/**
+ * 註冊完成後身分資料（姓名、身分證字號、生日、手機）與推薦人鎖定，後端拒絕
+ * 重填（/auth/register 403、reset-registration 400）。CompleteProfile 的編輯
+ * 守衛與 403 出口、PaymentCheckout 的編輯入口共用這一個判準。
+ *
+ * 後端的判準是「有 completed 訂單」，前端看得到的對應訊號是 step 3；曾有訂閱
+ * （subscriptionEndDate，續約者）必然有過完成的付款，補上快取沒帶到進度的情況。
+ * 已付款待開通（step 2）不算——開通才鎖定（規格書 §4.1）。
+ */
+export function isRegistrationLocked(
+  profile: Pick<FunnelProfile, 'registrationStep' | 'subscriptionEndDate'>,
+): boolean {
+  return profile.registrationStep === 3 || !!profile.subscriptionEndDate;
 }
 
 /**
@@ -99,7 +115,8 @@ export function isProfileComplete(profile: FunnelProfile): boolean {
  * 關鍵設計——「使用者意圖」是一等公民：
  * 從結帳頁按「編輯」回來的人，資料本來就填齊了。若守衛只看「資料是否存在」
  * 就會把想改資料的人立刻彈回結帳頁（本次修的 bug）。因此當 editing=true 時，
- * 一律留在本頁；否則才用 registrationStep 這個單一事實來源決定漏斗前進的去向。
+ * 留在本頁（註冊已完成者除外，那時資料已鎖定）；否則才用 registrationStep
+ * 這個單一事實來源決定漏斗前進的去向。
  *
  * 第二道防線（與 resolveCheckoutPageRedirect 對稱）：基本資料未填齊就一律留在
  * 本頁，不論後端把 step 算成多少。少了它，一旦 step 漂移到 ≥1（正是空白結帳頁
@@ -114,6 +131,14 @@ export function resolveProfilePageRedirect(
   profile: FunnelProfile,
   opts?: { editing?: boolean },
 ): string | null {
+  // 編輯意圖只在付款前有效：註冊完成後後端一律拒絕寫入（/auth/register 回
+  // 403），留在本頁只會讓人填一張送不出去的表單。會走到這裡的是「停在編輯頁
+  // 時另一個分頁付完款」或重新整理後沿用舊 history state 的人。資料未填齊者
+  // 不在此列——見下方「資料沒填齊 → 一定停在填資料頁」的不變式。
+  if (opts?.editing && isRegistrationLocked(profile) && isProfileComplete(profile)) {
+    return nextRouteForStep(3);
+  }
+
   // 使用者主動要回來改資料——尊重意圖，不做任何彈跳。
   if (opts?.editing) return null;
 

@@ -12,11 +12,17 @@
 //   4. 送出前確認**只跳一個**對話框,且同時列出姓名與推薦碼(不疊兩個 modal)。
 //   5. 確認過後改姓名再送出,確認框必須**重新出現**——否則新姓名從未被實際
 //      確認就送出去了,加確認框的意義被架空。
-//   6. 推薦碼驗證打 `GET /referrals/validate/<碼>`(需登入、有限流的那一支);
+//   6. 送出時後端回 403(註冊已完成,例如另一個分頁剛付完款):先確認最新
+//      狀態真的是 step 3,才清草稿、帶回會員中心並說明資料已鎖定;確認不了
+//      (閘道層 403、refresh 失敗)就留在表單、草稿不動。
+//   7. 編輯模式重新整理後發現已是 step 3:同一則鎖定說明、立即帶回會員中心。
+//   8. 確認框揭露「付款完成後鎖定」,不再說推薦碼「永久綁定」(續費選新約
+//      仍可換推薦人,永久是錯誤陳述)。
+//   9. 推薦碼驗證打 `GET /referrals/validate/<碼>`(需登入、有限流的那一支);
 //      匿名別名 `POST /listings/verify-referral-code` 已移除。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { createContext } from 'react';
 import { ApiError } from '../utils/apiClient';
 
@@ -29,26 +35,25 @@ globalThis.ResizeObserver ??= class {
 } as unknown as typeof ResizeObserver;
 
 const showNotification = vi.fn();
+const showToast = vi.fn();
+const refreshUser = vi.fn(async (): Promise<unknown> => null);
+// 預設**永不 resolve**:本檔多數測的是姓名欄位行為,不是 session 流程。
+// 若讓它 resolve,checkSession 會在測試結束、jsdom 已拆掉之後才跑到
+// navigate(),React 於 teardown 後 commit 就會擲 `window is not defined`
+// ——那是假陽性噪音,不是產品問題。要走送出流程的測試自行改成 resolve 並 await 到底。
+const getSession = vi.fn(() => new Promise<unknown>(() => {}));
 
 vi.mock('../App', () => ({
-  UserContext: createContext<any>({ setUser: () => {} }),
+  UserContext: createContext<any>({ setUser: () => {}, refreshUser }),
 }));
 
 vi.mock('../utils/supabase/client', () => ({
-  createClient: () => ({
-    auth: {
-      // 刻意**永不 resolve**:本檔測的是姓名欄位行為,不是 session 流程。
-      // 若讓它 resolve,checkSession 會在測試結束、jsdom 已拆掉之後才跑到
-      // navigate(),React 於 teardown 後 commit 就會擲 `window is not defined`
-      // ——那是假陽性噪音,不是產品問題。
-      getSession: () => new Promise<never>(() => {}),
-    },
-  }),
+  createClient: () => ({ auth: { getSession } }),
 }));
 
 vi.mock('./notifications/NotificationContext', () => ({
   useNotification: () => ({
-    showToast: vi.fn(),
+    showToast,
     showSuccess: vi.fn(),
     showNotification,
   }),
@@ -65,6 +70,7 @@ vi.mock('../utils/apiClient', async (importOriginal) => ({
 }));
 
 const { CompleteProfile } = await import('./CompleteProfile');
+const { loadProfileDraft } = await import('../utils/formDraft');
 
 function renderForm() {
   return render(
@@ -75,6 +81,16 @@ function renderForm() {
 }
 
 const nameInput = () => screen.getByLabelText('姓名 *') as HTMLInputElement;
+
+function fillValidForm() {
+  fireEvent.change(nameInput(), { target: { value: '王小明' } });
+  fireEvent.change(screen.getByLabelText('身份證字號 *'), {
+    target: { value: 'A123456789' },
+  });
+  fireEvent.change(screen.getByLabelText('手機號碼 *'), { target: { value: '0933333333' } });
+  fireEvent.change(screen.getByLabelText('出生年月日 *'), { target: { value: '2000-01-01' } });
+  fireEvent.click(screen.getByRole('checkbox'));
+}
 const modeButton = (label: string) => screen.getByRole('button', { name: label });
 
 afterEach(cleanup);
@@ -83,6 +99,11 @@ beforeEach(() => {
   cleanup();
   showNotification.mockClear();
   apiRequestJson.mockReset();
+  showToast.mockClear();
+  refreshUser.mockReset();
+  refreshUser.mockResolvedValue(null);
+  getSession.mockImplementation(() => new Promise<unknown>(() => {}));
+  vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
 });
@@ -249,16 +270,6 @@ describe('姓名欄位的 IME 組字', () => {
 });
 
 describe('送出前確認對話框', () => {
-  function fillValidForm() {
-    fireEvent.change(nameInput(), { target: { value: '王小明' } });
-    fireEvent.change(screen.getByLabelText('身份證字號 *'), {
-      target: { value: 'A123456789' },
-    });
-    fireEvent.change(screen.getByLabelText('手機號碼 *'), { target: { value: '0933333333' } });
-    fireEvent.change(screen.getByLabelText('出生年月日 *'), { target: { value: '2000-01-01' } });
-    fireEvent.click(screen.getByRole('checkbox'));
-  }
-
   it('只跳一個對話框,且同時列出姓名與推薦碼資訊', () => {
     renderForm();
     fillValidForm();
@@ -268,10 +279,14 @@ describe('送出前確認對話框', () => {
     const arg = showNotification.mock.calls[0][0];
     expect(arg.details.some((d: string) => d.includes('姓名：王小明'))).toBe(true);
     expect(arg.details.some((d: string) => d.includes('推薦碼'))).toBe(true);
-    // 姓名是可以改的(規格書 §4.2),不可沿用推薦碼那句「永久綁定,無法修改」
-    // 涵蓋姓名——那會是錯誤陳述。
+    // 姓名付款前可重填、註冊完成後才鎖定(規格書 §4.1),不可沿用推薦碼那句
+    // 「永久綁定,無法修改」涵蓋姓名——那會是錯誤陳述。
     expect(arg.message).toContain('姓名');
     expect(arg.message).toContain('核對身分');
+    // 付款前揭露鎖定;「永久綁定」是錯誤陳述(續費選新約可換推薦人)。
+    expect(arg.message).toContain('付款完成後');
+    expect(arg.message).toContain('聯繫客服');
+    expect(arg.message).not.toContain('永久綁定');
   });
 
   it('確認後改姓名再送出,確認框重新出現', () => {
@@ -308,6 +323,165 @@ describe('送出前確認對話框', () => {
     fireEvent.click(modeButton('中文姓名'));
     fireEvent.click(submit);
     expect(showNotification).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('送出時註冊已完成（403）', () => {
+  // 掛載時的 profile 讀取讓它失敗 → 留在本頁(與本案無關,只為了不被導走)
+  function stubRegister403() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response(JSON.stringify({ error: '註冊已完成，資料變更請聯繫客服' }), {
+              status: 403,
+            })
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+  }
+
+  function renderWithDashboard() {
+    render(
+      <MemoryRouter initialEntries={['/auth/complete-profile']}>
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/dashboard" element={<p>會員中心頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  function submitConfirmed() {
+    fillValidForm();
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    showNotification.mock.calls[0][0].onConfirm();
+  }
+
+  beforeEach(() => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+    stubRegister403();
+  });
+
+  it('確認已是 step 3 才清草稿，帶回會員中心並說明修改沒有儲存', async () => {
+    refreshUser.mockResolvedValue({ registrationStep: 3 });
+    renderWithDashboard();
+    submitConfirmed();
+
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    expect(refreshUser).toHaveBeenCalledTimes(1);
+    expect(loadProfileDraft().name).toBeUndefined();
+    await waitFor(() => {
+      const last = showNotification.mock.calls.at(-1)?.[0];
+      expect(last?.title).toBe('資料已鎖定');
+      expect(last?.message).toContain('您剛才送出的修改沒有儲存');
+      expect(last?.details.some((d: string) => d.includes('LINE'))).toBe(true);
+    });
+  });
+
+  it('最新狀態回來之前不導頁，也不清草稿', async () => {
+    let resolveRefresh: (value: unknown) => void = () => {};
+    refreshUser.mockImplementation(() => new Promise((resolve) => (resolveRefresh = resolve)));
+    renderWithDashboard();
+    submitConfirmed();
+
+    await waitFor(() => expect(refreshUser).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+    expect(loadProfileDraft().name).toBe('王小明');
+
+    resolveRefresh({ registrationStep: 3 });
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+  });
+
+  it('最新狀態不是 step 3（閘道層 403 等）→ 留在表單、草稿保留、顯示伺服器訊息', async () => {
+    refreshUser.mockResolvedValue({ registrationStep: 0 });
+    renderWithDashboard();
+    submitConfirmed();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('註冊已完成，資料變更請聯繫客服', 'error'),
+    );
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+    expect(loadProfileDraft().name).toBe('王小明');
+    // 送出鈕要復位，否則人留在表單前卻再也按不了。
+    await waitFor(() =>
+      expect((screen.getByTestId('profile-submit-button') as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+  });
+
+  it('拿不到最新狀態（refreshUser 回 null）→ 同樣留在表單、草稿保留', async () => {
+    refreshUser.mockResolvedValue(null);
+    renderWithDashboard();
+    submitConfirmed();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('註冊已完成，資料變更請聯繫客服', 'error'),
+    );
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+
+  it('403 回應不是 JSON 時仍確認最新狀態，step 3 照樣帶回會員中心', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response('Forbidden', { status: 403 })
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+    refreshUser.mockResolvedValue({ registrationStep: 3 });
+    renderWithDashboard();
+    submitConfirmed();
+
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    expect(refreshUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('編輯模式載入時已是 step 3', () => {
+  it('立即帶回會員中心並顯示同一則資料鎖定說明', async () => {
+    // 先 refreshUser 再導頁：會員中心的守衛讀的是 UserContext，拿到舊會籍會
+    // 把人彈回結帳頁。refresh 回來之前不能導頁。
+    let resolveRefresh: (value: unknown) => void = () => {};
+    refreshUser.mockImplementation(() => new Promise((resolve) => (resolveRefresh = resolve)));
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              registrationStep: 3,
+              name: '王小明',
+              phone: '0933333333',
+              birthDate: '2000-01-01',
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: '/auth/complete-profile', state: { editing: true } }]}
+      >
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/dashboard" element={<p>會員中心頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(refreshUser).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+
+    resolveRefresh({ registrationStep: 3 });
+    expect(await screen.findByText('會員中心頁', {}, { timeout: 500 })).toBeTruthy();
+    const last = showNotification.mock.calls.at(-1)?.[0];
+    expect(last?.title).toBe('資料已鎖定');
+    expect(last?.details.some((d: string) => d.includes('LINE'))).toBe(true);
   });
 });
 

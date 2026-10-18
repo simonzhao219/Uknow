@@ -441,9 +441,9 @@ Deno.test('prepare fresh：被預設綁定者換到真推薦人 → 旗標重置
 });
 
 Deno.test('reset-registration：已完成付款者 → 400（釘住編輯入口守衛）', async () => {
-  // 這道守衛是「/auth/register 第三寫入點不需清旗標邏輯」的前提
-  // （見 plan §2.6）：旗標為 true 者必然有 completed 訂單，會被此守衛
-  // 擋在編輯模式之外。放寬此守衛的人必須看到這裡紅燈並回頭補清除邏輯。
+  // 釘住編輯入口的提早告知：已完成付款者在進編輯頁前就被擋。真正的防線是
+  // /auth/register 的註冊完成守衛；register 寫推薦人時也一併把
+  // referred_by_is_default 重置為 false（兩者皆見 registration-completion-guard.test.ts）。
   const client = adminClient();
   const user = await createTestUser(client, { name: '守衛釘住情境' });
   try {

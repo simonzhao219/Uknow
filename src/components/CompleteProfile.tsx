@@ -20,7 +20,17 @@ import {
   SEPARATOR_LIKE_GLOBAL,
   type NameMode,
 } from '../utils/profileValidation';
-import { resolveProfilePageRedirect } from '../utils/registrationFlow';
+import {
+  isRegistrationLocked,
+  nextRouteForStep,
+  resolveProfilePageRedirect,
+} from '../utils/registrationFlow';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_FIELDS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 import { useImeComposition } from '../hooks/useImeComposition';
 import {
   loadProfileDraft,
@@ -66,6 +76,24 @@ const EMPTY_FORM = {
   agreedToTerms: false,
 };
 
+// 資料鎖定說明：送出時撞到 403 與編輯模式載入時發現已是 step 3，是同一群人，
+// 說法要一致（文案與會員中心「修改會員資料」共用 PROFILE_LOCKED_*）。
+// 送出後才發現的，先講清楚剛才的修改沒有儲存。
+function showProfileLockedNotice(
+  showNotification: ReturnType<typeof useNotification>['showNotification'],
+  afterSubmit: boolean,
+) {
+  showNotification({
+    type: 'info',
+    title: '資料已鎖定',
+    message: afterSubmit
+      ? `您剛才送出的修改沒有儲存。${PROFILE_LOCKED_MESSAGE}`
+      : PROFILE_LOCKED_MESSAGE,
+    details: PROFILE_LOCKED_DETAILS,
+    confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+  });
+}
+
 export function CompleteProfile() {
   // 用 lazy initializer 從 sessionStorage 的草稿還原「填到一半」的內容。
   // 這是資料遺失 bug 的架構層防護（見 utils/formDraft.ts 與
@@ -94,7 +122,7 @@ export function CompleteProfile() {
   const [referrerName, setReferrerName] = useState('');
   const hasConfirmedSubmission = useRef(false);
 
-  const { setUser } = useContext(UserContext);
+  const { setUser, refreshUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast, showNotification } = useNotification();
@@ -173,8 +201,21 @@ export function CompleteProfile() {
           console.log('CompleteProfile: Loaded profile:', profile);
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
-          // 各寫一份 if/else。editing=true 時一律留在本頁讓使用者改資料。
+          // 各寫一份 if/else。editing=true 時留在本頁讓使用者改資料——註冊已
+          // 完成者除外（資料已鎖定，守衛回 nextRouteForStep(3)）。
           const redirect = resolveProfilePageRedirect(profile, { editing: isEditing });
+          const lockedRoute = nextRouteForStep(3);
+
+          if (redirect === lockedRoute && isEditing) {
+            // 編輯中但註冊已完成（停在本頁時另一個分頁付完款，或重新整理沿用
+            // 舊 history state）：資料已鎖定。與送出時的 403 同一則說明，立即
+            // 帶走、不留一段看得到表單的空窗。先 refreshUser，否則會員中心的
+            // 守衛拿舊的會籍狀態又把人彈回結帳頁。
+            await refreshUser();
+            navigate(lockedRoute, { replace: true });
+            showProfileLockedNotice(showNotification, false);
+            return;
+          }
 
           if (redirect === '/dashboard') {
             // 已完成註冊：保留原本的友善提示與短暫延遲。
@@ -201,7 +242,7 @@ export function CompleteProfile() {
       }
     };
     checkSession();
-  }, [supabase, navigate, showToast, isEditing]);
+  }, [supabase, navigate, showToast, showNotification, refreshUser, isEditing]);
 
   // 邀請連結帶進來的推薦碼：掛載時自動填入並驗證（顯示推薦人姓名），欄位仍可修改。
   // 只在欄位為空時帶入，避免覆蓋使用者手動輸入的值。
@@ -371,14 +412,14 @@ export function CompleteProfile() {
         details.push('您未填寫推薦碼');
       }
 
-      // 顯示警告卡片。訊息拆兩句：推薦碼那句維持原意（它確實永久綁定），
-      // 姓名另補一句——姓名是**可以改的**（規格書 §4.2 明載「修改時連動
-      // 所有顯示介面」），沿用「永久綁定，無法修改」涵蓋姓名會是錯誤陳述。
+      // 顯示警告卡片。付款完成後身分資料與推薦人即鎖定（規格書 §4.1），付款前
+      // 的這個確認點要先揭露。不說推薦碼「永久綁定」：註冊完成後唯一的自助換線
+      // 入口是續費時選新約（§6.2），「永久」是錯誤陳述。姓名另補提領核對身分
+      // 的用途。
       showNotification({
         type: 'warning',
         title: '重要提醒',
-        message:
-          '推薦碼註冊後將永久綁定，無法修改。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。',
+        message: `付款完成後，${PROFILE_LOCKED_FIELDS}即鎖定，變更須聯繫客服。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。`,
         details,
         confirmText: '確認無誤，繼續',
         cancelText: '返回檢查',
@@ -477,8 +518,28 @@ export function CompleteProfile() {
       console.log('CompleteProfile: API response status:', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json();
+        // body 不是 JSON（閘道層的純文字錯誤頁）時不能在這裡就丟出——那會跳過
+        // 下面的 403 分支，連確認最新狀態的機會都沒有。
+        const errorData = await response.json().catch(() => ({}));
         console.error('CompleteProfile: API error:', errorData);
+        // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
+        // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
+        // 會員中心再說明。但要先確認最新狀態真的已鎖定才動手：閘道層的
+        // 403 也長這樣，對 step 0 的人清草稿、導去會員中心等於丟掉整張表單
+        // （refresh 失敗會被送去登入頁，成功則被彈回空白的本頁）。確認不了
+        // 就照一般錯誤處理：留在本頁、草稿不動、顯示伺服器訊息。判準與編輯守衛、
+        // 結帳頁共用 isRegistrationLocked。refreshUser 一律把讀回的 profile（可能是
+        // step 0）同步進 UserContext 與 localStorage——既有副作用，留在本頁時無害：
+        // 本頁的去向不讀 context。
+        if (response.status === 403) {
+          const fresh = await refreshUser();
+          if (fresh && isRegistrationLocked(fresh)) {
+            clearProfileDraft();
+            navigate(nextRouteForStep(3), { replace: true });
+            showProfileLockedNotice(showNotification, true);
+            return;
+          }
+        }
         throw new Error(errorData.error || '註冊失敗');
       }
 

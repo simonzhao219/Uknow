@@ -6,7 +6,7 @@
 // - 卡片區的行動提示（申請提領、立即刊登）一律是次要外框鈕（ui-ux-guidelines §12.11）。
 // 資料 hook 全部 mock 成可變狀態：這裡驗的是版面與推導，不是取數。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const { UserCtx, state } = await vi.hoisted(async () => {
@@ -28,8 +28,9 @@ vi.mock('../App', () => ({ UserContext: UserCtx }));
 vi.mock('../contexts/FeatureContext', () => ({
   useFeatures: () => ({ isFeatureEnabled: (k: string) => state.flags[k] ?? true }),
 }));
+const showNotification = vi.hoisted(() => vi.fn());
 vi.mock('./notifications/NotificationContext', () => ({
-  useNotification: () => ({ showInfo: vi.fn() }),
+  useNotification: () => ({ showNotification }),
 }));
 vi.mock('../hooks/useBackNavigation', () => ({ useBackNavigation: () => vi.fn() }));
 vi.mock('../hooks/useSubscription', () => ({ useSubscription: () => state.subscription }));
@@ -44,6 +45,11 @@ vi.mock('./referral/MyQrEntry', () => ({
 }));
 
 import { MemberDashboard } from './MemberDashboard';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 
 const node = (status: string) => ({ status });
 
@@ -296,6 +302,23 @@ describe('MemberDashboard 基本資料', () => {
     const node = screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === email);
     expect(node.innerHTML).toContain('@<wbr>');
     expect(node.closest('.truncate')).toBeNull();
+  });
+});
+
+// 會員中心、完善資料頁、結帳頁對「資料已鎖定」共用同一份文案（PROFILE_LOCKED_*）。
+describe('MemberDashboard 修改會員資料說明', () => {
+  it('點說明鈕顯示共用的資料鎖定文案與客服管道', () => {
+    showNotification.mockClear();
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '會員資料修改說明' }));
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '修改會員資料',
+        message: PROFILE_LOCKED_MESSAGE,
+        details: PROFILE_LOCKED_DETAILS,
+        confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+      }),
+    );
   });
 });
 
