@@ -43,7 +43,7 @@ describe('validateWithdrawalAmount', () => {   // 受測單元(識別字)
 
 **Deno.test** —— `<主體>：<情境> → <預期>`
 ```ts
-Deno.test('verify-referral-code：空推薦碼被拒', ...)
+Deno.test('referrals/validate：匿名請求 → 401', ...)
 Deno.test('public_listings：停權後該會員的刊登消失', ...)
 ```
 

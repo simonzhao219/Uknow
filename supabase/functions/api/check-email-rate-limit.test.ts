@@ -4,9 +4,16 @@
 // 會員（會員資格本身即敏感：這是含身分證/銀行資料的金流平台），
 // 每次還以 service role 打一次 auth admin API 形成放大。
 // 補上 per-IP 限流（DB 計數表 bump_rate_limit，Edge Function 無內建限流）。
+//
+// 計數表本身的清理（prune_rate_limits＋pg_cron 每小時排程）也在本檔：
+// check-email 以 IP 為鍵，不清的話列數只增不減。
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
+import postgres from 'npm:postgres@3';
 import { adminClient, ensureEdgeFunctionEnv } from './test-helpers.ts';
+
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 ensureEdgeFunctionEnv();
 Deno.env.set('PAYUNI_MER_ID', 'TESTMER');
@@ -62,7 +69,7 @@ Deno.test('check-email：同一 IP 連打超過上限回 429，其他 IP 不受�
   const ip = uniqueIp();
   const otherIp = uniqueIp();
 
-  // 上限 10 次（見 index.ts CHECK_EMAIL_RATE_LIMIT）：前 10 次正常
+  // 上限 10 次（見 index.ts CHECK_EMAIL_RATE_MAX）：前 10 次正常
   for (let i = 1; i <= 10; i++) {
     const res = await app.request('/api/auth/check-email', {
       method: 'POST',
@@ -88,4 +95,102 @@ Deno.test('check-email：同一 IP 連打超過上限回 429，其他 IP 不受�
     body: JSON.stringify({ email: 'probe-other@example.invalid' }),
   });
   assertEquals(other.status, 200);
+});
+
+Deno.test('check-email：cf-connecting-ip 優先於 x-forwarded-for 作為限流鍵', async () => {
+  // x-forwarded-for 的第一段由用戶端自己填：每次換一個值就能繞過 per-IP 限流。
+  // cf-connecting-ip 由 Cloudflare 覆寫、用戶端改不動，所以有它就以它為準。
+  const ip = uniqueIp();
+  for (let i = 1; i <= 10; i++) {
+    const res = await app.request('/api/auth/check-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'cf-connecting-ip': ip,
+        'x-forwarded-for': uniqueIp(),
+      },
+      body: JSON.stringify({ email: `cf-probe-${i}@example.invalid` }),
+    });
+    assertEquals(res.status, 200, `第 ${i} 次應放行，實際 ${res.status}`);
+    await res.body?.cancel();
+  }
+
+  const blocked = await app.request('/api/auth/check-email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'cf-connecting-ip': ip,
+      'x-forwarded-for': uniqueIp(),
+    },
+    body: JSON.stringify({ email: 'cf-probe-11@example.invalid' }),
+  });
+  assertEquals(blocked.status, 429, '換 x-forwarded-for 不得繞過 cf-connecting-ip 的配額');
+  await blocked.body?.cancel();
+
+  await adminClient().from('rate_limits').delete().eq('key', `check-email:${ip}`);
+});
+
+// ============================================================
+// rate_limits 清理
+// ============================================================
+
+Deno.test('prune_rate_limits：刪除超過保留期的計數列，窗內的列保留', async () => {
+  const client = adminClient();
+  const stale = `test:stale:${crypto.randomUUID()}`;
+  const fresh = `test:fresh:${crypto.randomUUID()}`;
+  try {
+    const { error: insertErr } = await client.from('rate_limits').insert([
+      // 3 天前：超過預設保留期（2 天＝最長窗口 1 天的兩倍）
+      { key: stale, count: 5, window_start: new Date(Date.now() - 3 * 86400_000).toISOString() },
+      { key: fresh, count: 5, window_start: new Date().toISOString() },
+    ]);
+    assertEquals(insertErr, null);
+
+    const { data: deleted, error } = await client.rpc('prune_rate_limits');
+    assertEquals(error, null);
+    assert(typeof deleted === 'number' && deleted >= 1, `應回傳刪除筆數，實際 ${deleted}`);
+
+    const { data: left } = await client.from('rate_limits').select('key').in('key', [stale, fresh]);
+    assertEquals((left ?? []).map((r) => r.key), [fresh]);
+  } finally {
+    await client.from('rate_limits').delete().in('key', [stale, fresh]);
+  }
+});
+
+Deno.test('prune_rate_limits：pg_cron 每小時排程清理一次', async () => {
+  const sql = postgres(DB_URL);
+  try {
+    const rows = await sql`
+      select schedule, command, active from cron.job where jobname = 'prune-rate-limits'
+    `;
+    assertEquals(rows.length, 1, '應恰好有一個 prune-rate-limits 排程');
+    // 「分 * * * *」＝每小時一次；分鐘值刻意不釘（避開整點只是錯峰）。
+    assert(/^\d{1,2} \* \* \* \*$/.test(rows[0].schedule), `排程不是每小時：${rows[0].schedule}`);
+    assert(rows[0].command.includes('prune_rate_limits'), rows[0].command);
+    assertEquals(rows[0].active, true);
+  } finally {
+    await sql.end();
+  }
+});
+
+Deno.test('rate_limits 函式：anon、authenticated 不能直接執行，只給 service_role', async () => {
+  // prune_rate_limits(0) 會清空整張計數表（等於重置所有人的限流）、
+  // bump_rate_limit 能替任意 key 灌計數（把別人鎖死）——兩支都只能由
+  // Edge Function（service_role）呼叫，不能經 PostgREST 對外。
+  const sql = postgres(DB_URL);
+  try {
+    for (const fn of ['public.prune_rate_limits(int)', 'public.bump_rate_limit(text, int, int)']) {
+      const [row] = await sql<{ anon: boolean; authed: boolean; service: boolean }[]>`
+        select
+          has_function_privilege('anon', ${fn}, 'EXECUTE') as anon,
+          has_function_privilege('authenticated', ${fn}, 'EXECUTE') as authed,
+          has_function_privilege('service_role', ${fn}, 'EXECUTE') as service
+      `;
+      assertEquals(row.anon, false, `anon 不得執行 ${fn}`);
+      assertEquals(row.authed, false, `authenticated 不得執行 ${fn}`);
+      assertEquals(row.service, true, `service_role 要能執行 ${fn}`);
+    }
+  } finally {
+    await sql.end();
+  }
 });

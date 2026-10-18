@@ -20,6 +20,11 @@ def referral_code_invalid(api_mock, code, message):
     api_mock.set_referral_code_invalid(message=message)
 
 
+@given("checking referral codes is rate limited")
+def referral_validate_rate_limited(api_mock):
+    api_mock.rate_limit_referral_validate()
+
+
 @given(parsers.parse("saving the profile succeeds with registration step {step:d}"))
 def save_profile_succeeds(api_mock, step):
     api_mock.set_register_success(step)

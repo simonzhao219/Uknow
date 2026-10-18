@@ -40,10 +40,13 @@ export function PaymentCheckout() {
   //    fresh=新約從付款日起算、可換新推薦人。null 表示尚未選擇。
   const [renewalMode, setRenewalMode] = useState<'extend' | 'fresh' | null>(null);
   const [newReferralCode, setNewReferralCode] = useState('');
-  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>(
-    'idle',
-  );
+  // invalid＝後端明確說查無此碼；unavailable＝暫時查不到（限流、5xx、網路），
+  // 碼本身可能是對的——兩者分開說（ui-ux §6），免得使用者改掉正確的碼。
+  const [newCodeStatus, setNewCodeStatus] = useState<
+    'idle' | 'checking' | 'valid' | 'invalid' | 'unavailable'
+  >('idle');
   const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
+  const [newCodeUnavailableMessage, setNewCodeUnavailableMessage] = useState<string | null>(null);
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
@@ -344,34 +347,48 @@ export function PaymentCheckout() {
   // 實際寫入值仍出自 process_successful_payment。
   const freshLastDay = subscriptionLastDay(twDayOf(new Date()));
 
-  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
-  const handleValidateNewCode = async (code: string) => {
+  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。回傳這次的結果，
+  //    讓付款鈕在「暫時無法驗證」時拿來當重試用（state 要到下次 render 才更新）。
+  type NewCodeResult = 'idle' | 'valid' | 'invalid' | 'unavailable';
+  const handleValidateNewCode = async (code: string): Promise<NewCodeResult> => {
     const trimmed = code.trim();
     if (!trimmed) {
       setNewCodeStatus('idle');
       setNewReferrerName(null);
-      return;
+      return 'idle';
     }
     setNewCodeStatus('checking');
+    // 只有 429（限流）採用後端訊息；5xx、網路錯誤的技術字眼（例「服務暫時無法
+    // 使用」）不外露，一律顯示預設的「暫時無法驗證，請稍後再試」。
+    const markUnavailable = (message: unknown): NewCodeResult => {
+      setNewCodeStatus('unavailable');
+      setNewCodeUnavailableMessage(typeof message === 'string' && message ? message : null);
+      setNewReferrerName(null);
+      return 'unavailable';
+    };
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) return markUnavailable(null);
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      const result = await response.json();
-      if (response.ok && result.valid && result.referrer) {
+      const result = await response.json().catch(() => null);
+      if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
-      } else {
+        return 'valid';
+      }
+      if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
+        return 'invalid';
       }
+      // 429、401、5xx：暫時查不到，不是碼無效。
+      return markUnavailable(response.status === 429 ? result?.error?.message : null);
     } catch {
-      setNewCodeStatus('invalid');
-      setNewReferrerName(null);
+      return markUnavailable(null);
     }
   };
 
@@ -414,6 +431,22 @@ export function PaymentCheckout() {
       newReferralCode.trim() &&
       newCodeStatus !== 'valid'
     ) {
+      if (newCodeStatus === 'unavailable') {
+        // 暫時查不到時，按付款就是重試（不必再點進輸入框）。重驗通過也**不在這次
+        // 點擊送單**：submitPayment 讀的是這次 render 的 newCodeStatus（仍是
+        // unavailable），會漏帶新推薦碼、新約變成沒有推薦人。先亮出推薦人，
+        // 請使用者確認後再按一次。
+        const retried = await handleValidateNewCode(newReferralCode);
+        showToast(
+          retried === 'valid'
+            ? '推薦碼已驗證，請確認推薦人後再按付款'
+            : retried === 'unavailable'
+              ? '推薦碼暫時無法驗證，請稍後再試'
+              : '推薦碼尚未驗證通過，請確認後再送出',
+          retried === 'valid' ? 'info' : 'warning',
+        );
+        return;
+      }
       showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
       return;
     }
@@ -945,6 +978,11 @@ export function PaymentCheckout() {
                       {newCodeStatus === 'invalid' && (
                         <p className="text-xs text-destructive-subtle-foreground">
                           推薦碼不存在或已失效
+                        </p>
+                      )}
+                      {newCodeStatus === 'unavailable' && (
+                        <p className="text-xs text-warning-subtle-foreground">
+                          {newCodeUnavailableMessage ?? '暫時無法驗證，請稍後再試'}
                         </p>
                       )}
                       {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道
