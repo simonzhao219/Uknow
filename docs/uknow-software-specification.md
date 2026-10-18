@@ -275,6 +275,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
   後不得 restart；交易 rollback 會消耗掉一個號，序號因此可能有極少數空洞。
 - **發碼時機**：首次付款成功時產生。同時僅一個 `active` 碼；續約／補償沿用
   既有碼，完全沒有時才產生新碼——序號只消耗在真正付費的會員身上。
+- **出示與分享**：碼雖在首購時發出，會員需完成「加入推薦計畫」（簽參加契約書）
+  後才可出示、複製或分享。
 - 第一個發出的碼 `8048876` 同時是 §7.4 預設推薦人的指定碼。
 - **比對規則**：碼不分全形半形、不分大小寫——`８０４８８７６` 與 `8048876` 是
   同一個碼（舊格式碼的全形英文同理）。所有輸入點一律先正規化
@@ -283,7 +285,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
   打錯碼」完全同形（都只是查無此碼），任何閘門都分不出來。
 
 〔實作〕`20260914000001_referral_code_numeric_sequence.sql`、`generate_referral_code()`、
-`src/utils/referralCode.ts` 的 `normalizeReferralCode()`
+`src/utils/referralCode.ts` 的 `normalizeReferralCode()`、`src/utils/myQrTabPreference.ts` 的
+`myQrTabsForUser()`（出示與分享的閘門）
 
 ### 7.2 組織圖
 
