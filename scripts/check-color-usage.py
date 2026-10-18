@@ -125,10 +125,12 @@ EXCLUDED_PATHS = {
     ),
     # 邀請卡圖（canvas）與兩處 QR 的像素色收成這一份常數（推薦入口 PR，2026-10-17），
     # 取代原本逐檔的 hex——inviteCardImage.ts 因此不再有色值、退出本清單，兩個 QR
-    # 元件的 baseline 也歸零。整檔都是色值，與 :root 的同步由 pixelColors.test.ts 把關。
+    # 元件的 baseline 也歸零。整檔都是色值，由 pixelColors.test.ts 把關：墨字、灰字與
+    # :root 同步，白底固定純白，只准三個匯出。
     "src/utils/pixelColors.ts": (
         "邀請卡 canvas 與 QRCodeCanvas 的像素色常數——畫在白底上、會被下載分享，"
-        "不能吃隨深色模式翻轉的 CSS 變數；值與 globals.css :root 同步由測試釘住"
+        "不能吃隨深色模式翻轉的 CSS 變數；墨字、灰字與 globals.css :root 同步、"
+        "白底固定純白，由測試釘住"
     ),
 }
 

@@ -131,7 +131,7 @@ describe('InviteFriendPanelContent', () => {
 describe('InviteFriendPanelContent 分享 QR Code', () => {
   /** jsdom 沒有 canvas 輸出：toBlob 給一個空 PNG、toDataURL 給空字串，下載的 <a>.click 不導頁。 */
   function stubCanvasAndShare(share: () => Promise<void>) {
-    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb) {
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb) => {
       cb(new Blob([], { type: 'image/png' }));
     });
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,');
@@ -147,11 +147,21 @@ describe('InviteFriendPanelContent 分享 QR Code', () => {
     Reflect.deleteProperty(navigator, 'canShare');
   });
 
-  const rejectWith = (name: string) => () =>
-    Promise.reject(Object.assign(new Error(name), { name }));
+  /** 瀏覽器拒絕 share() 時丟的是 DOMException，name 區分原因。 */
+  const rejectWith = (name: string) => () => Promise.reject(new DOMException(name, name));
 
   it('分享面板按取消就停，不落回下載', async () => {
     const share = vi.fn(rejectWith('AbortError'));
+    stubCanvasAndShare(share);
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
+    await vi.waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('面板還開著又按一下（InvalidStateError）就停，不落回下載', async () => {
+    const share = vi.fn(rejectWith('InvalidStateError'));
     stubCanvasAndShare(share);
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));

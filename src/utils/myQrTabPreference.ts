@@ -52,7 +52,8 @@ export function normalizeMyQrTab(raw: unknown): MyQrTab {
 
 /**
  * 推導當下有哪些分頁。**這是「哪些分頁存在」的單一事實來源**——元件一律經
- * myQrTabsForUser 取用（「我的 QR」頁與三顆推薦入口）。
+ * myQrTabsForUser 取用（「我的 QR」頁與其邀請面板、「邀請好友」鈕、推薦碼欄；
+ * 「我的 QR」入口鈕不讀它——驗證碼分頁對所有人都在）。
  *
  * 為什麼不各自寫 `joined && !!referralCode`：那個判斷式在本專案已經被複製過
  * 兩份（當年的 MyQrEntry canShowCode、MyQrDialog canShareInvite），而 3967f69

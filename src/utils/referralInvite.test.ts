@@ -153,8 +153,8 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
   /** 讓 share() 被拒之後的 .catch 跑完。 */
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  const rejectWith = (name: string) => () =>
-    Promise.reject(Object.assign(new Error(name), { name }));
+  /** 瀏覽器拒絕 share() 時丟的是 DOMException，name 區分原因。 */
+  const rejectWith = (name: string) => () => Promise.reject(new DOMException(name, name));
 
   beforeEach(() => {
     browser.isInAppBrowser = false;
@@ -206,6 +206,16 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     shareReferralInvite('abc123', showToast);
     await settle();
     expect(openExternalLink).not.toHaveBeenCalled();
+    expect(copyToClipboard).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('不在任何 App 裡時連點第二下（InvalidStateError）也不複製、不提示', async () => {
+    // 上一條在 LINE 內：那裡本來就不走複製，只有「不導頁」咬得到。這條守複製那一側。
+    stubEnv(rejectWith('InvalidStateError'));
+    const showToast = vi.fn();
+    shareReferralInvite('abc123', showToast);
+    await settle();
     expect(copyToClipboard).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });

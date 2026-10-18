@@ -1,6 +1,6 @@
-// 像素色常數與色票同一份：邀請卡圖與 QR 不能吃 CSS 變數（深色模式會翻成淺色、
-// 畫在白底上就消失），只好另存常數——這支測試讓那份常數不會跟 globals.css 漂開。
-// 改色票時這裡先紅，提醒同步改 pixelColors.ts。
+// 像素色常數：邀請卡圖與 QR 不能吃 CSS 變數（深色模式會翻成淺色、畫在白底上就消失），
+// 只好另存常數。這支測試釘三件事：墨字、灰字與 globals.css :root 同步（改色票時這裡
+// 先紅，提醒同步改 pixelColors.ts）；白底固定純白、刻意不跟色票；只准這三個匯出。
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

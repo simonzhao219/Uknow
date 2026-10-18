@@ -44,7 +44,8 @@ export function buildInviteMessage(code: string): string {
 /**
  * 複製整段邀請訊息並提示——分享的最後一順位。失敗時指向「我的 QR」頁的邀請連結欄位：
  * 會員中心與推薦管理沒有可手動複製的邀請文字（只露推薦碼）。面板被拒之後的複製發生在
- * .catch 裡、已脫離使用者手勢，WebKit 的 execCommand('copy') 在那裡更容易回 false。
+ * .catch 裡、已脫離使用者手勢，WebKit 的 execCommand('copy') 在那裡可能更容易回 false
+ * （推論，待真機驗證）。
  */
 function copyInviteMessage(message: string, showToast: ShowToast): void {
   copyWithToast(

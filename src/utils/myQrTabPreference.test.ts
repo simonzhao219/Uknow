@@ -82,7 +82,7 @@ describe('availableMyQrTabs', () => {
   });
 });
 
-// 會員中心、推薦管理的三顆入口與「我的 QR」頁都從同一份會員資料推導分頁，
+// 「我的 QR」頁與其邀請面板、「邀請好友」鈕、推薦碼欄都從同一份會員資料推導分頁，
 // canScan 的判斷（管理員或會籍有效，與後端 POST /members/verify 同一把尺）只寫在這裡。
 describe('myQrTabsForUser', () => {
   it('會籍有效的會員能掃描，會籍失效的不能', () => {
