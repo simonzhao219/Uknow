@@ -3049,3 +3049,19 @@ metrics（`.claude/metrics/sessions/fix__referral-entry-points.jsonl`）記為�
 
 處置:不動守衛，計數＋1，併入 10-03 那條的框架修訂（`REASON_HOOKS_PATH` 補 `--get` 提示＋
 `test-hooks.py` 單一參數讀取案例）。第二次出現代表它不是一次性的手滑，整併時優先處理。
+
+## 2026-10-18｜漏網（流程）｜紅燈因「元件還吃舊 props」先紅，替身的錯到綠燈期才浮現——同 10-07 形狀再一次
+
+#381 審查回填的紅燈 commit（4ede003）裡，「分享 QR Code」兩條測試用 `{ ...navigator, share }` 整個換掉
+navigator；展開丟了 `userAgent` 這類 getter，元件一渲染 `detectInAppBrowser` 就炸。紅燈期這兩條早已因
+「面板還吃 referralCode props、測試只給 context」而紅，替身的錯被前一個紅蓋掉，實作綠了才浮現；鎖擋
+`*.test.*`，只能走逃生口 3。另一個同場的小坑：測試檔也在 `check-color-usage` 的 C3 掃描範圍，紅燈測試
+寫的 `'#ffffff'` 字面讓 framework-check 紅，`npm run check` 不跑它所以 commit 前沒看到。
+
+處置：業主在 session 內授權；實作先提交（032a06e，兩個測試檔零 diff），再手動移除鎖、只把替身改成在真
+navigator 上補 share／canShare（期望一字未動，7e3b925）；另做變異驗證確認「按取消就停」那條真的會紅。
+純白斷言改成數值比對（4d2b33d）。
+
+推論（併入 10-07 那條待整併）：紅燈期除了「每條斷言各自能紅」，也要確認**紅的原因是預期的那一個**——
+`vitest run` 的錯誤訊息若是 TypeError 而不是斷言失敗，紅燈證據就不成立。新增或改寫測試後，commit 前
+跑一次 `bash scripts/framework-check.sh`（測試檔也受色彩、命名等守門掃描）。
