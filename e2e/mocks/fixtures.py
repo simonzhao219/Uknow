@@ -88,8 +88,16 @@ def seed_pending_referral(context: BrowserContext, code: str) -> None:
 
 def disable_native_share(context: BrowserContext) -> None:
     """Force the copy-to-clipboard fallback deterministically by removing the
-    Web Share API, regardless of the headless browser's support for it."""
-    context.add_init_script("try { delete navigator.share; } catch (e) {}")
+    Web Share API, regardless of the headless browser's support for it.
+
+    `share` lives on Navigator.prototype, so `delete navigator.share` (an own
+    property that never existed) is a no-op wherever Web Share ships -- shadow
+    it on the prototype instead. The app feature-detects with
+    `typeof navigator.share === 'function'`, which undefined fails."""
+    context.add_init_script(
+        "try { Object.defineProperty(Navigator.prototype, 'share', "
+        "{ value: undefined, configurable: true, writable: true }); } catch (e) {}"
+    )
 
 
 def seed_stale_cache(context: BrowserContext, key: str, data, age_ms: int) -> None:

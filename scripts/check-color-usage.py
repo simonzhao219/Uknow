@@ -102,7 +102,11 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
 APPROVED_GRADIENT_FILES: dict[str, str] = {}
 
-# 掃描排除清單——只收「檔案裡的色值不是色彩用途」的檔，不是豁免。
+# 掃描排除清單——只收「檔案裡的色值不是 UI 手刻色」的檔，不是豁免。判準三類：
+#   1. 參考值（WCAG 錨定測試）；
+#   2. 功能性繪圖（canvas 2D 的像素色）；
+#   3. 整檔都是色值、且有同步測試釘住的常數檔（canvas 與 QR 共用的 pixelColors.ts：
+#      墨字、灰字由測試對到 globals.css :root，並釘住只有那幾個匯出）。
 # globals.test.ts 是對比度公式的錨定測試，`#777777`/`#767676` 這些 hex 是
 # WCAG 參考值、必須以原始色值寫，它們本身就是閘門的一部分；把它算進
 # baseline 會讓 S2 收斂到最後永遠剩這一筆「債」，且每加一條錨定案例都要
@@ -110,20 +114,23 @@ APPROVED_GRADIENT_FILES: dict[str, str] = {}
 # 「色彩用途但先放過」，排除是「根本不是色彩用途」。新增條目必須附理由。
 EXCLUDED_PATHS = {
     "src/styles/globals.test.ts": "對比度公式錨定測試，hex 是 WCAG 參考值而非手刻色",
-    # S2（D3 全站手刻色收斂）新增兩筆：只收「檔案裡幾乎全部內容都是功能性繪圖」
+    # S2（D3 全站手刻色收斂）新增：只收「檔案裡幾乎全部內容都是功能性繪圖」
     # 的窄範圍檔案——canvas 2D context 的 fillStyle/strokeStyle 決定實際畫出來的
-    # 像素顏色，不是裝飾性 class。同樣命中 C3 的 InviteFriendPanelContent.tsx／
-    # MemberVerifyQrTab.tsx（QRCodeCanvas 的 bgColor/fgColor）刻意**不**收進來：
-    # 那兩個是一般頁面/面板元件，只是恰好嵌了一個 QR code，檔案其餘部分仍可能
-    # 長出手刻色，整檔排除會讓那部分永遠不受棘輪保護；改成把目前命中數留在
-    # baseline（各 2 筆），保留對「檔案其餘部分」的機械把關。
+    # 像素顏色，不是裝飾性 class。InviteFriendPanelContent.tsx／MemberVerifyQrTab.tsx
+    # （QRCodeCanvas 的 bgColor/fgColor）刻意**不**收進來：那兩個是一般頁面/面板
+    # 元件，只是恰好嵌了一個 QR code，整檔排除會讓其餘部分永遠不受棘輪保護。
     "src/components/referral/SignaturePad.tsx": (
         "canvas 2D context 的簽名筆畫顏色（ctx.strokeStyle），全檔幾乎都是"
         "簽名板繪圖邏輯，非裝飾性 UI 色"
     ),
-    "src/utils/inviteCardImage.ts": (
-        "canvas 2D context 產生下載用邀請卡圖片的顏色（ctx.fillStyle），"
-        "全檔就是畫圖工具函式，非裝飾性 UI 色"
+    # 邀請卡圖（canvas）與兩處 QR 的像素色收成這一份常數（推薦入口 PR，2026-10-17），
+    # 取代原本逐檔的 hex——inviteCardImage.ts 因此不再有色值、退出本清單，兩個 QR
+    # 元件的 baseline 也歸零。整檔都是色值，由 pixelColors.test.ts 把關：墨字、灰字與
+    # :root 同步，白底固定純白，只准三個匯出。
+    "src/utils/pixelColors.ts": (
+        "邀請卡 canvas 與 QRCodeCanvas 的像素色常數——畫在白底上、會被下載分享，"
+        "不能吃隨深色模式翻轉的 CSS 變數；墨字、灰字與 globals.css :root 同步、"
+        "白底固定純白，由測試釘住"
     ),
 }
 
@@ -666,13 +673,18 @@ def self_test() -> int:
     if (
         not is_excluded("src/styles/globals.test.ts")
         or not is_excluded("src/components/referral/SignaturePad.tsx")
-        or not is_excluded("src/utils/inviteCardImage.ts")
+        or not is_excluded("src/utils/pixelColors.ts")
         or is_excluded("src/styles/globals.css")
+        # 一般頁面元件、以及色值已收進 pixelColors.ts 的繪圖檔都不該在清單上——有人把它們
+        # 加回去藏色值時，這裡先紅。
         or is_excluded("src/components/referral/InviteFriendPanelContent.tsx")
+        or is_excluded("src/components/referral/MemberVerifyQrTab.tsx")
+        or is_excluded("src/utils/inviteCardImage.ts")
     ):
         failures.append(
             "  FAIL(exclude): 排除清單應命中 globals.test.ts / SignaturePad.tsx / "
-            "inviteCardImage.ts，不該命中 globals.css 或 InviteFriendPanelContent.tsx"
+            "pixelColors.ts，不該命中 globals.css、InviteFriendPanelContent.tsx、"
+            "MemberVerifyQrTab.tsx 或 inviteCardImage.ts"
         )
 
     for label, used, markdown_text, want_n in G1_CASES:

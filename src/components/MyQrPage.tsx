@@ -10,8 +10,8 @@ import { InviteFriendPanelContent } from './referral/InviteFriendPanelContent';
 import { MemberVerifyQrTab } from './referral/MemberVerifyQrTab';
 import { MemberVerifyScanner } from './referral/MemberVerifyScanner';
 import {
-  availableMyQrTabs,
   type MyQrTab,
+  myQrTabsForUser,
   normalizeMyQrTab,
   readMyQrTab,
   resolveMyQrTab,
@@ -42,18 +42,8 @@ export function MyQrPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const goUpOneLevel = useBackNavigation();
 
-  // 與後端 POST /members/verify 的授權同一把尺：管理員（可能沒有訂閱）或會籍
-  // 有效的會員。前端這份只是門面——真正的邊界在那支 handler 裡。
-  const canScan = user?.isAdmin === true || user?.accountStatus === 'active';
-  const {
-    invite: canInvite,
-    verify: canVerify,
-    scan: canScanTab,
-  } = availableMyQrTabs({
-    joined: user?.referralProgramJoined,
-    referralCode: user?.referralCode,
-    canScan,
-  });
+  // 分頁由會員資料推導，與會員中心、推薦管理的推薦入口同一支（含 canScan 的授權尺）。
+  const { invite: canInvite, verify: canVerify, scan: canScanTab } = myQrTabsForUser(user);
   const visibleCount = [canInvite, canVerify, canScanTab].filter(Boolean).length;
   const requestedTab = searchParams.get('tab');
 
@@ -160,7 +150,7 @@ export function MyQrPage() {
 
         {canInvite ? (
           <TabsContent value="invite" className="pt-4">
-            <InviteFriendPanelContent referralCode={user?.referralCode} memberName={user?.name} />
+            <InviteFriendPanelContent />
           </TabsContent>
         ) : null}
 

@@ -231,10 +231,10 @@ def _expect_text(text):
     return check
 
 
-def _setup_dashboard(context, api_mock, rest_mock):
+def _setup_dashboard(context, api_mock, rest_mock, **profile):
     # 狀態總覽的最壞情境：四張卡全是最長的值、「需要注意」兩條都在、徽章與
     # 「申請提領」按鈕都出現（手機 2×2 每張卡只有約 160px 寬）。
-    _seed_member(context)
+    _seed_member(context, **profile)
     rest_mock.set_user_listing(_hostile_listing())
     expiring = [
         build_referral_member(NAME_CJK_10, status="expiring", daysToExpiry=3)
@@ -253,6 +253,12 @@ def _setup_dashboard(context, api_mock, rest_mock):
     api_mock.set_reward_withdrawals(
         [build_withdrawal_record(status="awaiting_collection", amount=1000)] * 12
     )
+
+
+def _setup_dashboard_unjoined(context, api_mock, rest_mock):
+    """會員中心 · 未加入推薦計畫：推薦格的鈕是「加入推薦計畫」（比「邀請好友」寬兩個字），
+    會員資訊卡的推薦碼欄是「尚未加入推薦計畫」。首購者付完款都是這個樣子。"""
+    _setup_dashboard(context, api_mock, rest_mock, referralProgramJoined=False)
 
 
 def _setup_my_qr(context, api_mock, rest_mock):
@@ -277,8 +283,8 @@ def _setup_listing_edit(context, api_mock, rest_mock):
     rest_mock.set_listing_by_id(_hostile_listing())
 
 
-def _setup_referrals(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_referrals(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
     api_mock.set_referral_tree(
         first_generation=[
             build_referral_member(NAME_CJK_10),
@@ -288,6 +294,11 @@ def _setup_referrals(context, api_mock, rest_mock):
         third_generation=[build_referral_member("張美玲")] * 2,
         user_referral_code="UK8K3M9Q2X",
     )
+
+
+def _setup_referrals_unjoined(context, api_mock, rest_mock):
+    """推薦管理 · 未加入推薦計畫：推薦碼列是「尚未加入推薦計畫」＋「加入推薦計畫」。"""
+    _setup_referrals(context, api_mock, rest_mock, referralProgramJoined=False)
 
 
 def _setup_tasks(context, api_mock, rest_mock):
@@ -640,6 +651,15 @@ ROUTES = [
     SweepRoute("/participation-contract", "參加契約書", None, "/participation-contract"),
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),
+    # 標題列多了「我的 QR」、推薦格多了一顆真按鈕：已加入（邀請好友）與未加入
+    # （加入推薦計畫）的鈕寬不同，兩種都要量。
+    SweepRoute(
+        "/dashboard",
+        "會員中心 · 未加入推薦計畫",
+        _setup_dashboard_unjoined,
+        "/dashboard",
+        tags=["unjoined"],
+    ),
     # 三條而不是一條：預設停在「邀請好友」，那一頁有不斷行的推薦連結與長姓名，
     # 是本次真正從對話框盲區變成可直達路由的畫面；另外兩個分頁不切過去就從來
     # 沒被畫出來過（Radix 只掛載 active 面板）。
@@ -673,6 +693,13 @@ ROUTES = [
         after_load=_open_custom_category_input,
     ),
     SweepRoute("/referrals", "推薦管理", _setup_referrals, "/referrals"),
+    SweepRoute(
+        "/referrals",
+        "推薦管理 · 未加入推薦計畫",
+        _setup_referrals_unjoined,
+        "/referrals",
+        tags=["unjoined"],
+    ),
     SweepRoute("/tasks", "任務中心", _setup_tasks, "/tasks"),
     SweepRoute(
         "/rewards",
@@ -977,6 +1004,15 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
             f"路由守衛把 {route.path} 導到 {landed}，這條巡檢沒掃到目標頁面。"
             "請修正 setup 的登入/會籍狀態，否則報告會漏掉這一頁。"
         )
+
+    # 推薦碼被省略號截掉不算溢版（truncate 是刻意的保底），scan_overflow 量不到——但碼看
+    # 不全等於邀請不出去。凡畫面上有推薦碼就要完整顯示，不受 known_overflow 放行
+    # （推薦管理推薦碼列在 375px 曾把 10 碼舊格式碼截成「UK8K3M9Q…」）。
+    clipped_codes = page.evaluate(
+        "() => [...document.querySelectorAll('[data-testid=\"my-referral-code\"]')]"
+        ".filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent)"
+    )
+    assert not clipped_codes, f"{route.label}（{route.path}）的推薦碼被截斷：{clipped_codes}"
 
     if route.hard_fails():
         assert not result["findings"], (
