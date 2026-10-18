@@ -347,28 +347,30 @@ export function PaymentCheckout() {
   // 實際寫入值仍出自 process_successful_payment。
   const freshLastDay = subscriptionLastDay(twDayOf(new Date()));
 
-  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
-  const handleValidateNewCode = async (code: string) => {
+  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。回傳這次的結果，
+  //    讓付款鈕在「暫時無法驗證」時拿來當重試用（state 要到下次 render 才更新）。
+  type NewCodeResult = 'idle' | 'valid' | 'invalid' | 'unavailable';
+  const handleValidateNewCode = async (code: string): Promise<NewCodeResult> => {
     const trimmed = code.trim();
     if (!trimmed) {
       setNewCodeStatus('idle');
       setNewReferrerName(null);
-      return;
+      return 'idle';
     }
     setNewCodeStatus('checking');
-    const markUnavailable = (message: unknown) => {
+    // 只有 429（限流）採用後端訊息；5xx、網路錯誤的技術字眼（例「服務暫時無法
+    // 使用」）不外露，一律顯示預設的「暫時無法驗證，請稍後再試」。
+    const markUnavailable = (message: unknown): NewCodeResult => {
       setNewCodeStatus('unavailable');
       setNewCodeUnavailableMessage(typeof message === 'string' && message ? message : null);
       setNewReferrerName(null);
+      return 'unavailable';
     };
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) {
-        markUnavailable(null);
-        return;
-      }
+      if (!session) return markUnavailable(null);
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -376,15 +378,17 @@ export function PaymentCheckout() {
       if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
-      } else if (response.ok && result?.valid === false) {
+        return 'valid';
+      }
+      if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
-      } else {
-        // 429（限流，訊息取後端的）、401、5xx：暫時查不到，不是碼無效。
-        markUnavailable(result?.error?.message);
+        return 'invalid';
       }
+      // 429、401、5xx：暫時查不到，不是碼無效。
+      return markUnavailable(response.status === 429 ? result?.error?.message : null);
     } catch {
-      markUnavailable(null);
+      return markUnavailable(null);
     }
   };
 
@@ -427,12 +431,23 @@ export function PaymentCheckout() {
       newReferralCode.trim() &&
       newCodeStatus !== 'valid'
     ) {
-      showToast(
-        newCodeStatus === 'unavailable'
-          ? '推薦碼暫時無法驗證，請稍後再試'
-          : '推薦碼尚未驗證通過，請確認後再送出',
-        'warning',
-      );
+      if (newCodeStatus === 'unavailable') {
+        // 暫時查不到時，按付款就是重試（不必再點進輸入框）。重驗通過也**不在這次
+        // 點擊送單**：submitPayment 讀的是這次 render 的 newCodeStatus（仍是
+        // unavailable），會漏帶新推薦碼、新約變成沒有推薦人。先亮出推薦人，
+        // 請使用者確認後再按一次。
+        const retried = await handleValidateNewCode(newReferralCode);
+        showToast(
+          retried === 'valid'
+            ? '推薦碼已驗證，請確認推薦人後再按付款'
+            : retried === 'unavailable'
+              ? '推薦碼暫時無法驗證，請稍後再試'
+              : '推薦碼尚未驗證通過，請確認後再送出',
+          retried === 'valid' ? 'info' : 'warning',
+        );
+        return;
+      }
+      showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
       return;
     }
 

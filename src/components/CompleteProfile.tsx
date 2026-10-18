@@ -46,6 +46,14 @@ function requestReferralValidation(code: string) {
   );
 }
 
+// 驗證請求丟出的錯誤都是「暫時查不到」。只有限流(429)與登入過期(401)用
+// apiClient 帶來的訊息;5xx 的「服務暫時無法使用」、網路錯誤的英文原文不外露。
+function referralCheckErrorMessage(err: unknown): string {
+  return err instanceof ApiError && (err.status === 429 || err.status === 401) && err.message
+    ? err.message
+    : '推薦碼暫時無法驗證，請稍後再試';
+}
+
 const EMPTY_FORM = {
   name: '',
   // 姓名模式(中文/外文)。階段 1 只先讓型別成立、預設中文;切換鈕、長度連動、
@@ -424,8 +432,8 @@ export function CompleteProfile() {
         // 走的是上面 valid=false 那條。剛驗好的推薦人不清掉，只擋下這次送出，
         // 免得使用者以為碼錯了、或要等窗口過後從頭重驗。
         console.error('CompleteProfile: Re-verification error:', err);
-        showToast(err.message || '推薦碼驗證失敗，請稍後再試', 'warning');
-        setCodeError(err.message || '推薦碼驗證失敗，請稍後再試');
+        showToast(referralCheckErrorMessage(err), 'warning');
+        setCodeError(referralCheckErrorMessage(err));
         setIsLoading(false);
         return;
       }
@@ -605,8 +613,8 @@ export function CompleteProfile() {
         setCodeError('登入已過期，請重新登入');
         showToast('登入已過期，請重新登入', 'error');
       } else {
-        setCodeError(err.message || '推薦碼驗證失敗，請稍後再試');
-        showToast(err.message || '推薦碼驗證失敗', 'error');
+        setCodeError(referralCheckErrorMessage(err));
+        showToast(referralCheckErrorMessage(err), 'error');
       }
       setCodeVerified(false);
       setVerifiedReferralCode('');
