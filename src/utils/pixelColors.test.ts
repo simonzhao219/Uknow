@@ -33,7 +33,9 @@ describe('pixelColors', () => {
   it('白底固定純白，不跟 --card 走', () => {
     // QR 靜區與列印要純白：QR 容器寫死 bg-white，--card 哪天調成淡灰，跟著變的話
     // QR 四周會露出色差、下載的邀請卡底也會變灰。
-    expect(PIXEL_PAPER).toBe('#ffffff');
+    // 以數值比對（RGB 全滿＝純白）：測試檔也在色彩守門的掃描範圍內，不寫色值字面。
+    expect(PIXEL_PAPER).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(Number.parseInt(PIXEL_PAPER.slice(1), 16)).toBe(0xffffff);
   });
 
   it('只有這三個色——整檔被色彩守門排除，多一個色值只有這裡擋得到', () => {

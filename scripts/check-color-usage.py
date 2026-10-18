@@ -102,9 +102,11 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
 APPROVED_GRADIENT_FILES: dict[str, str] = {}
 
-# 掃描排除清單——只收「檔案裡的色值不是 UI 手刻色」的檔，不是豁免：參考值（WCAG 錨定）、
-# 功能性繪圖（canvas 像素色），以及兩者共用的像素色常數檔（pixelColors.ts，內容由測試
-# 逐一對到 globals.css :root，且測試釘住只有那幾個匯出）。
+# 掃描排除清單——只收「檔案裡的色值不是 UI 手刻色」的檔，不是豁免。判準三類：
+#   1. 參考值（WCAG 錨定測試）；
+#   2. 功能性繪圖（canvas 2D 的像素色）；
+#   3. 整檔都是色值、且有同步測試釘住的常數檔（canvas 與 QR 共用的 pixelColors.ts：
+#      墨字、灰字由測試對到 globals.css :root，並釘住只有那幾個匯出）。
 # globals.test.ts 是對比度公式的錨定測試，`#777777`/`#767676` 這些 hex 是
 # WCAG 參考值、必須以原始色值寫，它們本身就是閘門的一部分；把它算進
 # baseline 會讓 S2 收斂到最後永遠剩這一筆「債」，且每加一條錨定案例都要
@@ -671,11 +673,16 @@ def self_test() -> int:
         or not is_excluded("src/components/referral/SignaturePad.tsx")
         or not is_excluded("src/utils/pixelColors.ts")
         or is_excluded("src/styles/globals.css")
+        # 一般頁面元件、以及色值已收進 pixelColors.ts 的繪圖檔都不該在清單上——有人把它們
+        # 加回去藏色值時，這裡先紅。
         or is_excluded("src/components/referral/InviteFriendPanelContent.tsx")
+        or is_excluded("src/components/referral/MemberVerifyQrTab.tsx")
+        or is_excluded("src/utils/inviteCardImage.ts")
     ):
         failures.append(
             "  FAIL(exclude): 排除清單應命中 globals.test.ts / SignaturePad.tsx / "
-            "pixelColors.ts，不該命中 globals.css 或 InviteFriendPanelContent.tsx"
+            "pixelColors.ts，不該命中 globals.css、InviteFriendPanelContent.tsx、"
+            "MemberVerifyQrTab.tsx 或 inviteCardImage.ts"
         )
 
     for label, used, markdown_text, want_n in G1_CASES:
