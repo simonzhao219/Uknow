@@ -642,4 +642,65 @@ describe('PaymentCheckout 換推薦人驗證', () => {
     );
     expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
   });
+
+  // #380 增量審查 P2-2：只有 429 用後端訊息；503「服務暫時無法使用」像整站掛了。
+  it('503 時顯示暫時無法驗證，不外露服務暫時無法使用', async () => {
+    stubValidate(
+      async () =>
+        ({
+          ok: false,
+          status: 503,
+          json: async () => ({ valid: false, error: { message: '服務暫時無法使用' } }),
+        }) as Response,
+    );
+    await enterNewCode('8048901');
+
+    expect(await screen.findByText('暫時無法驗證，請稍後再試')).toBeTruthy();
+    expect(screen.queryByText('服務暫時無法使用')).toBeNull();
+  });
+
+  // #380 增量審查 P2-1：暫時無法驗證後，按付款就是重試（不必再點進輸入框）。
+  // 重驗通過也不在同一次點擊送單：送單讀的是點擊當下的狀態，會漏帶新推薦碼，
+  // 新約就變成沒有推薦人——所以先亮出推薦人，讓使用者確認後再按一次。
+  it('暫時無法驗證後按付款會重驗，通過時先顯示推薦人，再按一次才帶碼送單', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    let validateCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        if (String(url).includes('/referrals/validate/')) {
+          validateCalls += 1;
+          if (validateCalls === 1) throw new TypeError('Failed to fetch');
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              valid: true,
+              referrer: { userName: '新推薦人', listingName: null },
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      }),
+    );
+    setSubscription({ ...RENEWAL, freshForfeitPoints: 0, freshForfeitReferrals: 0 });
+    await enterNewCode('8048901');
+    await screen.findByText('暫時無法驗證，請稍後再試');
+
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    expect((await screen.findByTestId('new-referrer-name')).textContent).toBe('推薦人：新推薦人');
+    expect(validateCalls).toBe(2);
+    expect(requests.filter((r) => r.url.includes('/payuni/prepare'))).toEqual([]);
+
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    await waitFor(() =>
+      expect(requests.filter((r) => r.url.includes('/payuni/prepare')).length).toBe(1),
+    );
+    const prepare = requests.find((r) => r.url.includes('/payuni/prepare'));
+    expect(JSON.parse(String(prepare?.init?.body))).toMatchObject({
+      renewalMode: 'fresh',
+      referredByCode: '8048901',
+    });
+  });
 });

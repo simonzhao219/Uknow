@@ -346,6 +346,19 @@ describe('推薦碼驗證', () => {
     expect(screen.queryByText('推薦碼無效')).toBeNull();
   });
 
+  // #380 增量審查 P2-2:503 的後端訊息「服務暫時無法使用」像整站掛了,只有 429 用後端訊息。
+  it('按驗證遇到 503 時顯示暫時無法驗證,不外露服務暫時無法使用', async () => {
+    apiRequestJson.mockRejectedValueOnce(new ApiError('服務暫時無法使用', 503));
+    renderForm();
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('推薦碼暫時無法驗證'),
+    );
+    expect(screen.queryByText(/服務暫時無法使用/)).toBeNull();
+  });
+
   it('送出前重驗遇到 429 時保留已驗證的推薦人,不清掉驗證狀態', async () => {
     apiRequestJson
       .mockResolvedValueOnce({ valid: true, referrer: { userName: '陳推薦', listingName: null } })
