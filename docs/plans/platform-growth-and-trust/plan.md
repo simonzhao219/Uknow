@@ -1,153 +1,175 @@
-# 平台信任感與成長——六項新需求總綱（v2，四視角審查回填後）
+# 平台信任感與成長——六項新需求總綱（v3，重審與第一波施工後回填）
 
-<!-- plans-keep: 跨 session 施工鷹架（§8 的工項尚未開工，順序與 platform-uiux-redesign 的 S6–S8 交錯）；退場條件＝§8 全部工項合併、決策升級進規格書／ui-ux-guidelines 後，收尾時整個目錄刪除 -->
+<!-- plans-keep: 跨 session 施工鷹架（§8 仍有未開工工項，順序與 platform-uiux-redesign 的 S7–S8 交錯）；退場條件＝§8 全部工項合併或明確作廢、決策升級進規格書／ui-ux-guidelines／friction-log 後，收尾時整個目錄刪除 -->
 
 > 業主 2026-10-16 提出六項需求（登入狀態閃爍、推薦分享、被推薦者註冊、刊登照片、管理者核對、定位、管理者代改資料），
-> 要求「系統穩定優先、使用者信任且流暢、符合主流直覺的 UI/UX」一併規劃。本檔是**總綱**：每項先講現況與根因（五個唯讀
-> 探查讀碼得出，附檔案:行號），再給設計與建議、穩定性取捨、分期與測試、需業主裁決的問題。業主核對後，三段式工項各自
-> `/plan-feature <slug>` 落細部規劃書；輕量工項走 Plan Mode。
+> 要求「系統穩定優先、使用者信任且流暢、符合主流直覺的 UI/UX」一併規劃。本檔是**總綱**：每項先講現況與根因（讀碼事實，
+> 附 develop HEAD 的檔案:行號），再給設計、穩定性取捨、分期與測試、需業主裁決的問題。
 >
-> v1（`ed89b8f`）經四視角 `/review-plan`（系統 P0×1／P1×16、架構 P1×9、UI/UX P1×18、需求 P0×2／P1×21，P2 共 52）。
-> 去重後兩條 P0 與全部 P1 已回填或轉成裁決題，處置逐條記在 §12。業主附的影片本 session 讀不到；第 1 項依文字描述規劃，
-> 與讀碼事實一致。
+> 版本：v1（`ed89b8f`）→ v2（四視角 `/review-plan` 回填，§12）→ **v3**：依業主 2026-10-17 重審報告（PR #378 留言
+> 6230904825，150 位唯讀代理＋反駁者）與第一波三個施工 PR（#380 推薦碼端點關洞、#382 註冊完成守衛、#381 推薦入口三顆
+> 共用元件，2026-10-19 全部合併進 develop）回填。v3 做了四件事：(1) 重審報告確認的 major 逐條處置（§15）；(2) 已合併的
+> 工項改寫成「已完成＋實作偏離」，剩餘範圍重切；(3) 七節「現況與根因」對 develop HEAD `2fa1f2c` 逐條重核，行號全部重標，
+> 寫錯的改掉（§15）；(4) 法務題一次問齊（§14）。v2 的裁決題編號沿用，作廢的標明。
 
 ## 給業主的十分鐘版
 
-**六項裡真正要改規則的只有四處，其餘都是呈現與資料流**：
+**六項裡真正要改規則的只剩三處**（照片張數、定位的資料類別、代改的程序），其餘是呈現、資料流，與已完成的關洞：
 
-| 項 | 一句話結論 | 要您拍板的核心 |
-|---|---|---|
-| 1 登入閃爍 | 首次繪製不再猜「未登入」：有本機提示就畫頭像占位、沒有就直接畫訪客版；後端暫時性故障不再把人登出 | Q1-1 首繪策略（推薦：本機提示）；Q1-2 後端 `/profile` 把暫時性錯誤翻成 404 的缺口一併修（推薦：併） |
-| 2-1 分享 | 一鍵進 LINE 好友選擇器、複製連結、入口搬到推薦頁頂部與付款成功頁；全部走同一個「已加入推薦計畫」閘門 | Q2-5 法定揭露句（擋開工，需法務） |
-| 2-2 被推薦者 | 不做簡訊、不代填手機；做「邀請物件」：落地頁顯示誰邀請、碼已鎖定、三步進度，推薦者看得到邀請走到哪一步 | Q2-4 身分證是否延後到首次需要時（推薦：本輪不做，代價見 §2.3）；Q2-3 簡訊／LINE Login 列第二期 |
-| 3 照片 | 選圖→自動 1:1 置中裁（可調整）→壓縮→上傳；封面即大頭照；詳情頁滑動輪播；所有顯示容器統一正方形 | Q3-1 張數改「1–3 張」（推薦）；Q3-3 自動裁＋選用調整 vs 每張強制裁（推薦前者） |
-| 4 核對 | 先建稽核軌跡，再做會員核對面板（在既有 Sheet 內）、全站對帳報表（只讀、顯示例外）；手動調點數本輪不做 | Q4-2 手動調整（推薦：不納入）；Q4-5 對帳放告警次分頁（推薦）；Q4-6「合理／完整／定期」的範圍 |
-| 5 定位 | 刊登者設「服務據點」（區級中心點為預設、可用目前位置）；訪客按「離我最近」才要定位、拒絕可選地區；距離只公開公里級、不回座標 | Q5-2 公開精度（擋開工：預設 1 km 網格＋級距）；Q5-1 位置來源；Q5-5 首頁資料流路線 |
-| 6 代改 | 單一端點＋理由必填＋稽核＋連動（改身分證重設證件驗證）；會員自助仍不開放；同時關掉會員目前可直改個資欄位的洞 | Q6-5 有在途提領時禁改身分證（推薦）；Q6-6 撤銷會員對 profiles 欄位的直改權（推薦） |
+| 項 | 狀態（2026-10-19） | 一句話結論 | 要您拍板的核心 |
+|---|---|---|---|
+| 1 登入閃爍（T1） | 待開工，範圍已縮 | 首繪不再猜「未登入」：有本機提示就畫頭像占位、沒有就直接畫訪客版；後端與前端都不再把暫時性故障當成「不合格」而登出 | Q1-1 首繪策略（推薦：本機提示）；Q1-2 後端 `/profile` 的錯誤分類一併修（推薦：併） |
+| 2-1 分享（R1a） | **入口與順位已上線**（#381） | 會員中心與推薦管理各一顆「邀請好友」、系統分享面板→所在 App→複製、閘門單一來源；剩 og 預覽與 `lang` | Q2-5 法定揭露句（法務，§14）；真機驗收結果回填 PR #381 |
+| 2-2 被推薦者（R0／R1b） | **R0 已上線**（#380）；R1b 作廢 | 枚舉面從匿名降到需登入＋限流（不是關閉）；邀請物件、落地頁、邀請紀錄整套不做——沒有縮短任何點擊 | 未簽約者的推薦碼能不能被使用與發獎（法務＋產品，§14） |
+| 3 照片（P1a／P1b） | 待開工，核心保留 | 選圖→自動 1:1 置中裁→壓縮（剝 EXIF）→逐張上傳；1–3 張；顯示容器統一正方形。草稿持久化、舊圖重裁、配額清理改選配 | Q3-1 張數改「1–3 張」（推薦）；Q3-3 自動裁＋選用調整（推薦） |
+| 4 核對（A1a／A2） | 待開工，已拆開 | 先做純讀的會員核對面板與十一項對帳；稽核軌跡搬去跟代改一起做 | Q4-5 面板在 Sheet 內、對帳放告警次分頁（推薦）；Q4-6「合理／完整／定期」的範圍 |
+| 5 定位（L1） | 待開工，改最小版 | 第一步只做「依縣市／區中心點排序」：訪客自己選所在地區，不要定位權限、不收集位置、不開新表；觀察後再決定要不要 GPS 據點 | Q5-1 加選項 D（推薦）；Q5-2 已裁（1 km 網格，留給第二步） |
+| 6 代改（A1b） | **階段 1 已上線**（#382） | 已付款會員不能再改身分資料（API 與直連都關了）；後台代改限「更正輸入錯誤」，變更身分證字號依手冊是轉讓經營權、走書面 | 代改身分證與事業手冊 2-3-3 的關係（法務，§14）；Q6-5 在途提領時拒改（推薦） |
 
-**施工分三波**（§8）：波次 1「穩定與信任」（登入狀態、推薦碼端點關洞、後端 /profile 缺口）；波次 2「管理」（稽核→對帳
-→代改）；波次 3「成長」（照片、邀請流程、定位）。與進行中的 S6／S7 不撞檔，S7 不等本計畫任何工項。
+**一個被漏掉的產品狀態**：首購者付完年費 100% 是「已付費、未加入推薦計畫」——碼已產生但不可出示、不可分享、不能提領。
+#381 的入口元件已處理（未加入者看到的是「加入推薦計畫」引導鈕），本總綱 §7 影響表與 S7／S8 的 persona 也補上這個狀態。
+
+**施工順序**（§8）：S7 prompt 重寫（另案）→ T1 ∥ A1a（純讀後端）∥ P1a → A2 → A1b（稽核＋代改）→ L1 第一步、P1b、R1a-2
+（og）各一個 Plan Mode PR。在途工項上限 3。法務題（§14）不擋 T1／A1a／P1a 開工，擋 Q2-5 文案與代改身分證的程序。
 
 ## 0. 貫穿原則
 
 1. **沒確認的狀態不畫成已知狀態**：不知道有沒有登入就不畫「登入」鈕；不知道資料是否同步就不畫 0；不知道定位就不排距離；
    不知道有沒有送達就不寫「已送出」。這是「系統不穩」觀感的共同根因——畫面先給一個答案、幾百毫秒後再改口。
 2. **先改呈現與資料流，不動金流與會籍規則**：碰到點數、推薦邊、付款的地方一律只讀或可稽核的單點寫入，不改既有的發獎、
-   換線、提領函式（規格書 §7–§10 不變）。本總綱裡會動到規格書 §4／§11／§13 文字的地方全部列在 §12 的「規則變動表」並
-   各有裁決題。
-3. **主流樣式不等於新框架**：裁切用 IG 的手勢與比例、分享用 LINE 的分享面板、定位用「離我最近」排序鈕——都在既有
+   換線、提領函式（規格書 §7–§10 不變）。會動到規格書／條款／手冊文字的地方全部列在 §12 的「規則變動表」並各有裁決題。
+3. **主流樣式不等於新框架**：裁切用 IG 的手勢與比例、分享用系統分享面板、定位用「離我最近」排序鈕——都在既有
    React Context／Tailwind／Radix 內做，不引入狀態庫、UI 框架、地圖套件（延續 platform-uiux-redesign plan.md §5）。
-4. **法遵與個資先於功能**：新的招募曝光面（分享、落地頁、付款成功卡）要先過法定揭露的裁決；新的資料類別（位置、邀請、
-   稽核）要先定告知、保存期限、清除；公開面只給推算不出個人的粒度。
+4. **法遵與個資先於功能**：新的招募曝光面（分享、付款成功卡）要先過法定揭露的裁決；新的資料類別（位置、稽核）要先定告知、
+   保存期限、清除；公開面只給推算不出個人的粒度。
+5. **「已付費、未加入推薦計畫」是正式狀態**（v3 新增）：推薦碼在首次付款成功時產生（`process_successful_payment`），
+   但 `myQrTabsForUser()` 規定 `invite = joined && referralCode`；簽參加契約書（`POST /referrals/join-program`）之前不出示、
+   不複製、不分享、不能提領。任何推薦、獎勵、分享相關的設計都要有這個狀態的畫面與文案。
+6. **事實要打開程式碼核對**（v3 新增）：總綱裡每個「現況」都附 develop HEAD 的檔案:行號；改版時逐條重核，行號漂移要重標，
+   寫錯的在 §15 留紀錄。重審報告抓到的錯誤多半是沒打開程式碼就下結論（含主 session 自己寫的 S7 第 (9) 條與 §13 的法務讀碼）。
 
 ## 1. 登入狀態與安心設計（工項 T1）
 
-### 1.1 現況與根因（讀碼事實）
+### 1.1 現況與根因（讀碼事實，develop HEAD `2fa1f2c`；三個 PR 都沒碰本節引用的前端檔案，`index.ts` 行號因 #380 插入限流區塊整體 +50～+60）
 
 - 首次繪製必然是未登入版：`user` 初值 `null`、`isLoggedIn = !!user`（`src/App.tsx:119,131`），Navbar 只看 `isLoggedIn`、不看
-  `isLoadingUser`（`src/components/Navbar.tsx:32,101-109`）。22 個讀 `UserContext` 的檔案裡只有 `ProtectedRoute` 與 `AdminRoute`
-  讀 `isLoadingUser`。
-- 之後才換版：首次 render → effect → `supabase.auth.getSession()` → 原生 fetch `/profile` → `setUser`（`App.tsx:133-187`）。
-  `/profile` 對已付款會員還依序 await 三支 repair RPC（`supabase/functions/api/index.ts:414-417`），不在 ETag 讀端點清單。
-  `/profile`（別名 `/auth/profile`）的原生 fetch 全站共 8 處、各自處置失敗（App×2、AuthPage×2、CompleteProfile、
-  PaymentCheckout×2、OTPVerificationPage），沒有逾時。
+  `isLoadingUser`（`src/components/Navbar.tsx:32,101-109`）。25 個讀 `UserContext` 的檔案（23 個呼叫 `useContext`，#381 新增
+  三顆推薦元件）裡只有 `ProtectedRoute` 與 `AdminRoute` 讀 `isLoadingUser`。
+- 之後才換版：首次 render → effect → `supabase.auth.getSession()` → 原生 fetch `/profile` → `setUser`（`App.tsx:133-187`；
+  `onAuthStateChange` 只處理 SIGNED_IN／SIGNED_OUT，沒有 INITIAL_SESSION 分支）。`/profile` 對已付款會員還依序 await 三支
+  repair RPC（`index.ts:464-465` → `:2273-2285`），不在 ETag 讀端點清單（`:129-137`）。
+- `/profile`（別名 `/auth/profile`，`index.ts:618-619`）的原生 fetch 全站共 8 處、各自處置失敗、沒有逾時（`App.tsx:140,246`、
+  `AuthPage.tsx:56,224`、`CompleteProfile.tsx:193`、`PaymentCheckout.tsx:93,151`、`OTPVerificationPage.tsx:119`）。其中
+  `refreshUser`（`App.tsx:240-262`，失敗一律回 null）在三個 PR 後多了消費者：`PaymentResult.tsx:234,258`（既有）、
+  `CompleteProfile.tsx:214,535`（#382 的編輯守衛與 403 出口）、`referral/InviteFriendButton.tsx:66`（#381 簽完翻鈕）。
+- **現況已經會把暫時性錯誤變成「導去登入頁」**：`App.tsx:152-155` 對非 401／404／410 的失敗直接 return、不 `setUser`，
+  `:167` finally 把 `isLoadingUser` 設 false → `ProtectedRoute.tsx:28-38`（`AdminRoute.tsx:12-22` 同）在 `!isLoggedIn` 時
+  `<Navigate to="/login">`；登入頁掛載又打一次 `/auth/profile`（`AuthPage.tsx:44-88`）且 catch-all `signOut()`（`:77-82`，
+  預設 `scope: 'global'`）——冷啟動遇 5xx 的實際路徑是「導去登入頁 → 再查一次 → 網路仍斷就登出所有裝置」。
 - 同一根因的其他位置：BottomNav 載入中不畫、登入後整個冒出（`BottomNav.tsx:32`）；`main` 底部 padding 登入後才加
-  （`App.tsx:296`）；首頁搜尋 FAB 登入後上移（`HomePage.tsx:353`）；`MaintenanceBanner` 自己再查一次 session、淡入時把內容
-  往下推（`MaintenanceBanner.tsx:58-99`）；已登入者在 `/login` 按 F5 先看到表單再被導走（`AuthPage.tsx:89-94`）；守衛與
-  `RouteLoader` 是三種置中 spinner；冷載受保護頁依序出現四種等待畫面。
-- `localStorage.user` 是 write-only（3 處寫、9 處清、零讀者），內容是整份 profile（含未遮罩手機）長駐——該刪不該用。
-- **後端會把暫時性故障翻成「不合格」**：`requireAuth` 把 `auth.getUser` 任何錯誤回 401（`index.ts:242-247`）；
-  `buildProfileResponse` 吞掉 profiles 讀取錯誤→null→404（`:364-384,563-565`）；`accountStatus ?? 'expired'`（`:442`）。前端收到
-  404 就 `signOut()`（`App.tsx:145-150`），且 `signOut()` 預設 `scope: 'global'`——撤銷該使用者**所有裝置**的 session。規格書
-  §14 #8 記了這件事但沒有工項承接。
-- 其他：session 過期一律靜默導 `/login`（`App.tsx:221-230`）；登出先 `setUser(null)` 讓受保護頁閃到 `/login` 再回首頁
-  （`Navbar.tsx:58-85`；react-router 7 的導頁包在 `startTransition`，單純對調順序無效）；`ErrorBoundary` 只包 `<Routes>`、沒有
-  fallback prop、不收 error 物件（分不出 chunk 錯誤）。
+  （`App.tsx:296`）；首頁搜尋 FAB 登入後上移（`HomePage.tsx:388`，S6 合併後的行號）；`MaintenanceBanner` 自己再查一次
+  session、淡入時把內容往下推（`MaintenanceBanner.tsx:54-122`，走 `utils/auth.ts:65-68` 的 `isAuthenticated`）；已登入者在
+  `/login` 按 F5 先看到表單再被導走（`AuthPage.tsx:90-94`）；守衛與 `RouteLoader` 是三處、兩種置中 spinner
+  （`ProtectedRoute.tsx:29-33`＝`AdminRoute.tsx:13-17`；`App.tsx:92-98`）。
+- `localStorage.user` 是 write-only（3 處寫、9 處清、零讀者；`App.tsx:252-254` 的「整頁載入會讀回」是過時註解），內容是整份
+  profile（含未遮罩手機，`index.ts:472`）長駐——該刪不該用。死鍵 `pendingSession` 只有 removeItem。
+- **後端會把暫時性故障翻成「不合格」**：`requireAuth`（`index.ts:242-247`）對 `auth.getUser` 任何錯誤回 null，**47 個呼叫點**
+  共用（42 處映成 401「未授權」，`/admin/*` middleware 一處）；`buildProfileResponse`（`:408-434`）解構只取 `data`、吞掉
+  profiles 讀取錯誤→null→`profileHandler` 回 404（`:610-616`）；`accountStatus: acct?.status ?? 'expired'`（`:492`）。前端收到
+  404 就 `signOut()`（`App.tsx:145-146`），`signOut()` 預設 `scope: 'global'`——撤銷該使用者**所有裝置**的 session。規格書
+  §14 #8 記了這件事但沒有工項承接（四個子項在三個 PR 後原封未動）。
+- **`apiClient` 對 401 也做全域登出**：`src/utils/apiClient.ts:78-86` 先 `refreshSession()` 重試一次，仍 401 時 `:191-208`
+  `signOut()`（global）＋清 localStorage＋`emitSessionExpired()` → `App.tsx:221-230` 靜默導 `/login`。所有 `apiRequestJson`
+  呼叫者共用，v2 漏列。
+- 其他：登出先 `setUser(null)` 讓受保護頁閃到 `/login` 再回首頁（`Navbar.tsx:53-91`；react-router 7 的導頁包在
+  `startTransition`，單純對調順序無效）；`ErrorBoundary` 只包 `<Routes>`（`App.tsx:300-301`）、沒有 fallback prop、不收 error
+  物件。
 
-### 1.2 設計
+### 1.2 設計（v3 縮：只留「首繪不閃」與「暫時性故障不登出」兩個核心）
 
 **A. 登入狀態三態＋本機提示（Q1-1，推薦）**
 
-- `UserContext` 的值加 `authState: 'unknown' | 'anonymous' | 'authenticated' | 'degraded'`（**加性**：舊欄位全留，14 支
-  `vi.mock('../App')` 的舊 fixture 沒有這個 key 時由純函式 `resolveAuthView()` 回落到舊行為；`ProtectedRoute`／`AdminRoute`
-  的授權判斷不變）。註冊漏斗（有 session、profile 未填齊，`App.tsx:160-164`）是第五種合法狀態，維持 `user=null`、導向
-  complete-profile，**不**視為 degraded。
+- `UserContext` 的值加 `authState: 'unknown' | 'anonymous' | 'authenticated' | 'degraded'`（**加性**：舊欄位全留，17 支
+  `vi.mock('../App')`／`'../../App'` 的舊 fixture 沒有這個 key 時由純函式 `resolveAuthView()` 回落到舊行為；`ProtectedRoute`／
+  `AdminRoute` 的授權判斷不變）。註冊漏斗（有 session、profile 未填齊，`App.tsx:160-164`）是第五種合法狀態，維持 `user=null`、
+  導向 complete-profile，**不**視為 degraded。
 - **首繪提示** `uknow:auth-hint`：只存 `{ initial: 首字, at }`，不存 email、isAdmin。App 第一個 render 同步讀它：有提示 →
   頁首畫**可點的**頭像鈕（同一顆 40px 圓＋首字、`aria-busy`；選單的靜態連結與「登出」首繪就能開，只有姓名列等 `/profile`）、
-  BottomNav **直接畫真的五格**（五格不依賴 user，旗標是靜態常數）、`main` padding 先加；沒有提示 → 直接畫訪客版，訪客不等
-  任何請求。管理後台連結與待處理 badge 一律等 `/profile` 確認後才出現，badge 改成絕對定位小圓點（晚到的第二個請求不再
-  撐寬按鈕）。
-- **寫入與清除只有一個 choke point**：`UserContext` 提供的 `setUser` 換成包裝版（非 null→寫提示；null→清提示）；再補四個清除
-  時機：`getSession()` 回 null、`INITIAL_SESSION` 無 session、`/profile` 回「資料未齊」、`signOut()` 失敗。`localStorage.user`
-  與死鍵 `pendingSession` 刪除（啟動時一次 `removeItem` 清舊殘留）。提示鍵名成為 e2e 契約（fixtures 預寫）。
+  BottomNav **直接畫真的五格**（五格不依賴 user）、`main` padding 先加、首頁 `hasBottomNav`（`HomePage.tsx:388`）跟著提示走
+  （**併入 T1，不另開 PR**——重審 T1-06）；沒有提示 → 直接畫訪客版，訪客不等任何請求。管理後台連結與待處理 badge 一律等
+  `/profile` 確認後才出現，badge 改成絕對定位小圓點。
+- **寫入與清除只有一個 choke point**：`UserContext` 提供的 `setUser` 換成包裝版（非 null→寫提示；null→清提示），`refreshUser`
+  也走它；再補四個清除時機：`getSession()` 回 null、`INITIAL_SESSION` 無 session、`/profile` 回「資料未齊」、`signOut()` 失敗。
+  `localStorage.user` 與死鍵 `pendingSession` 刪除（啟動時一次 `removeItem` 清舊殘留；`App.tsx:252-254` 的過時註解一併刪）。
+  提示鍵名成為 e2e 契約（fixtures 預寫）。
 - 為什麼不用「一律中性直到確認」：訪客會看到頁首空白幾百毫秒，首頁是「未登入也要完美」的路徑。為什麼不用 Supabase 的
   `sb-*` key 當提示：key 名依專案 ref、JSON 形狀是函式庫內部契約。
 
-**B. `degraded`：暫時性故障不登出、有出口、有上限**
+**B. `degraded`：暫時性故障不登出、有出口、不自動退避**
 
 - 抽 `fetchProfile(token) → ok | unauthorized | transient`（含 8–10 秒逾時、`AbortController`、key=`profile:<userId>` 的
-  single-flight）與 `useAuthBootstrap()`（注入 supabase／fetch，可 `renderHook` 測），**8 處 `/profile` 原生 fetch 全走它**；
-  App 保留 `useRevalidateOnFocus(… refreshUser())` 字面以過 `appShell.test.ts` 正則。
-- `transient`（5xx、斷網、逾時）→ `degraded`：頁首維持占位；全站常駐的狀態行（`role="status"`，提前掛載）「網路不穩，正在
-  重新連線」＋第一次失敗就給「立即重試」與「先逛逛首頁／登出」；自動重試 1→2→4→8 秒含 jitter、最多 5 次，每次重新
-  `getSession()` 取新 token；focus／online 重置退避。`useRevalidateOnFocus` 的閘改成 `authenticated || degraded`。
-- `unauthorized`（401／404／410）才登出，且**先確認再登出**：先 `refreshSession()` 或 1–2 秒後重打一次，仍是 401 類才走單一
-  `endInvalidSession()`——`signOut({ scope: 'local' })`，不再撤銷其他裝置。`AuthPage` 的 catch-all signOut 改成只在 401 類。
-- **後端那一半同一工項做（Q1-2，推薦併）**：`requireAuth` 的 Auth 5xx 回 503 而非 401；`buildProfileResponse` 的 profiles 讀取
-  錯誤 throw→5xx 而非 404；`accountStatus` 讀不到回未知態而非 `expired`。變動只在 `/profile` 一條路徑；不併的話 `degraded`
-  只擋得住斷網、擋不住 DB／Auth 抖動這個最常見的形態。
-- 冷啟動 `/profile` 只打一次（single-flight 的 key 含 userId，換帳號不會 join 到前一人的請求）；SIGNED_OUT／換帳號時取消
-  in-flight，避免登出後「復活」。
+  single-flight）與 `useAuthBootstrap()`（注入 supabase／fetch，可 `renderHook` 測），**8 處 `/profile` 原生 fetch 與
+  `refreshUser` 的 5 個呼叫點全走它**；App 保留 `useRevalidateOnFocus(… refreshUser())` 字面以過 `appShell.test.ts:95-96` 正則。
+- `transient`（5xx、斷網、逾時）→ `degraded`：頁首維持占位；**自動重試一次**（2 秒後，重新 `getSession()` 取新 token），
+  仍失敗就在頁首占位下方放一行「網路不穩・重試」（`role="status"`，不是常駐狀態列），focus／online 事件再各觸發一次。
+  v2 的「1→2→4→8 秒含 jitter、最多 5 次」與全站常駐狀態行砍掉（重審 T1-13）：一次自動＋手動出口就夠，退避表只是把
+  「什麼時候放棄」變成一個沒人驗得了的參數。
+- **守衛對 `degraded` 的處置（重審 T1-01，v2 漏寫）**：`ProtectedRoute`／`AdminRoute` 在 `degraded` 時**不導 `/login`**，
+  畫受保護頁的外框骨架＋同一行「網路不穩・重試」；`RequireMembershipRoute` 同。只有 `anonymous` 才導 `/login`。
+  `AuthPage` 掛載時那次 `/auth/profile`（`AuthPage.tsx:44-88`）改走 `fetchProfile`，catch-all `signOut` 改成只在 `unauthorized`。
+- `unauthorized`（401／404／410）才登出，且**先確認再登出**：`refreshSession()` 後重打一次，仍是 401 類才走單一
+  `endInvalidSession()`——`signOut({ scope: 'local' })`，不再撤銷其他裝置。**`apiClient.ts:191-208` 的 401 處置收進同一個
+  `endInvalidSession()`**（重審 T1-04）：它已有 refresh-and-retry-once，只差 scope 與出口統一。
+- **後端那一半同一工項做（Q1-2，推薦併），但只動 `/profile` 這條路徑、不動 `requireAuth` 本體**（重審 T1-02：47 個呼叫點
+  共用）：新增 `authenticate(token) → { user } | { error: 'unauthorized' | 'transient' }`，只有 `profileHandler`（`:610-616`）
+  改用它，Auth 5xx 回 503；`buildProfileResponse` 的 profiles 讀取錯誤 throw→503 而非 404；`user_account_status` 讀不到回
+  `accountStatus: 'unknown'`（前端路由守衛對 `unknown` 視同 degraded、不導續訂）。其餘 46 處 `requireAuth` 語意不變，
+  由列舉測試釘住「42 處 401 映射零變化」。不併的話 `degraded` 只擋得住斷網、擋不住 DB／Auth 抖動這個最常見的形態。
+- 冷啟動 `/profile` 只打一次；SIGNED_OUT／換帳號時取消 in-flight，避免登出後「復活」。
 
-**C. 等待畫面與登出**
+**C. 砍掉的（v2 §1.2C／D，重審 T1-13；都不是「首繪不閃、故障不登出」的必要條件）**
 
-- 守衛（`ProtectedRoute`／`AdminRoute`）、`RouteLoader`、頁內載入共用 `components/common/PageSkeleton.tsx`：**外框**（標題列＋
-  卡片區）一致，內容層由各頁自己的骨架細化；驗收改成「無置中 spinner、外框一致、內容層不跳版」（不宣稱「只有一種等待
-  畫面」）。提示存在時預熱當前路由的 chunk。
-- 登出：`startTransition(() => { navigate('/'); setUser(null) })`，或只靠 SIGNED_OUT 事件清 user。
-- `MaintenanceBanner` 改吃 `UserContext`、上次公告快取在 sessionStorage 首繪就位（或改覆蓋式），不再推擠內容。
-- `ErrorBoundary` 加 `fallback` prop 與錯誤分類；外再包一層只包頁首與導覽。
-
-**D. 安心設計（拆成三小批，不與其他工項撞檔）**
-
-| 批 | 內容 | 說明 |
-|---|---|---|
-| 5a 殼層四項 | session 過期後登入頁上方 `StatusCallout`「為了安全，登入已逾時，請重新登入」並帶 `from` 回原頁；離線條「目前離線，恢復連線後會更新資料」（覆蓋式，不承諾自動重試）；chunk 404 文案「有新版本，請重新載入」＋頁內「重新載入」鈕；`ErrorBoundary` 外層 | 只動 App／AuthPage／ErrorBoundary |
-| 5b 結帳頁載入態 | `PaymentCheckout` 的「載入中...」卡改骨架 | 只動一檔 |
-| 5c toast 語氣盤點 | 全站 107 處 `showToast`／23 檔，統一「發生了什麼＋下一步」；後端回 code、前端對照文案 | **獨立工項，排在波次 3 之後**：與 P1a／R1／S6／S7 全部撞檔，不能塞在 T1 |
+| 項 | 去向 |
+|---|---|
+| `PageSkeleton` 統一三處 spinner | S8 制度化收尾的候選（三處只有兩種 markup，統一是整理不是修 bug） |
+| `MaintenanceBanner` 改吃 `UserContext`、不推擠內容 | 選配：T1 階段 3 若順手就做（它是 `utils/auth.ts:65` 的唯一消費者，做完可刪死碼）；不做不影響驗收 |
+| `ErrorBoundary` fallback／分類／外層 | 另案 issue |
+| 登出 `startTransition` 順序 | T1 階段 3 小項（一行），保留 |
+| 5a 殼層安心四項、5b 結帳頁骨架 | 5a 的「session 逾時說明」併入 `endInvalidSession()` 的出口（帶 `from` 回原頁）；離線條、chunk 404 文案、5b 另案 |
+| 5c toast 語氣盤點（105 處／24 檔） | 作廢；由 S8 的文案 sweep 決定要不要做 |
 
 ### 1.3 穩定性與架構
 
-- 「元件只准從 App 匯入 `UserContext`」升級成 `appShell.test.ts` 守衛；`utils/auth.ts` 的 `isAuthenticated` 變死碼要手刪
-  （knip 不報）；`MaintenanceBanner.test` 要改 mock `../App`。
+- 「元件只准從 App 匯入 `UserContext`」升級成 `appShell.test.ts` 守衛；`utils/auth.ts` 的 `isAuthenticated` 若 MaintenanceBanner
+  不改就留著（knip 不報死碼，手刪要先確認唯一消費者）。
+- 契約：`fetchProfile` 的三分類是前後端共用的錯誤碼對照（`_shared/api-contract.ts` 新增 `PROFILE_FETCH_OUTCOME`）；`/profile`
+  是 S5 之後唯一一條「讀取失敗策略＝未知態」的端點，規格書 §5.3 補一句、§14 #8 改寫成剩餘子項（③ `/members/verify`、
+  ④ `/referrals/debug`）。
 - e2e 契約：`line_browser_steps.py:86` 匿名時 10 秒內看得到「立即刊登」（維持）；新增「`/profile` 延遲 2 秒且 fixtures 預寫
-  提示鍵時，頁首從首繪起 DOM 變更紀錄中零次出現『登入』」（`MutationObserver` 由 init script 掛，單點 `not_to_be_visible`
-  抓不到瞬閃）＋ 頁首 CLS=0；反向案例「提示在、session 已失效」必須出現逾時說明；`set_profile_sequence` 是全域計次，冷啟動
-  次數改變要重基線（`payment_result_steps.py:22`）；journey 的 login builder 依賴 AuthPage「已登入自動導向」（維持）。
-- 與 S6 的交集只有 `HomePage.tsx:353` 一行（`hasBottomNav`）：**S6 合併後另開 `fix/*` Plan Mode PR**，不放進 T1 的規劃書。
-- 與 R1 的交集：`App.tsx`（T1 重寫啟動流程、R1 加路由）、`Navbar`（T1 三態、R1 選單入口）、`AuthPage`（T1 兩處、R1 落地）
-  → **T1 先合併**，R1 的小增量 rebase；落地頁也要吃三態才不會對已登入者閃「新會員」畫面。
+  提示鍵時，頁首從首繪起 DOM 變更紀錄中零次出現『登入』」（`MutationObserver` 由 init script 掛）＋頁首 CLS=0；反向案例
+  「提示在、session 已失效」必須出現逾時說明；「`/profile` 回 503」必須停在受保護頁外框而非 `/login`；`set_profile_sequence`
+  是全域計次（`backend_api_mock.py:110-125`），冷啟動次數改變要重基線（`payment_result_steps.py:22`）；journey 的 login builder
+  依賴 AuthPage「已登入自動導向」（維持）。
+- 撞檔：S6 已合併（2026-10-17），`HomePage.tsx:388` 那行併入 T1。#381 沒碰 `App.tsx`／`Navbar.tsx`／`AuthPage.tsx`，v2 寫的
+  「與 R1 的交集」已不存在；S7 prompt 重寫後若動會員區頁面也不碰這三檔。T1 是目前唯一會動 `App.tsx` 啟動流程的工項。
 
 ### 1.4 階段與測試
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
 | 1 | `authHint.ts`（讀寫清除、壞 JSON、storage 例外）、`resolveAuthView()`、`fetchProfile()` 三分類 | vitest node | 清除時機六種各一案例；transient／unauthorized 分類；逾時回 transient |
-| 2 | `useAuthBootstrap()`：single-flight、取消、退避、確認再登出、`scope:'local'`；後端 `/profile` 的 503／5xx／未知態（Deno） | vitest jsdom `renderHook` ＋ deno test | 冷啟動恰一次；5xx 不登出且重試後成功；404 先確認再登出；Auth 5xx → 503 |
-| 3 | Navbar／BottomNav／`main`／Banner 依三態渲染；badge 小圓點 | vitest jsdom（Navbar.test 補三組；BottomNav.test 五格契約不變） | 有提示首繪無「登入」；無提示立刻有；admin 連結只在 `authenticated && isAdmin` |
-| 4 | `PageSkeleton` ＋ 守衛／RouteLoader 接上；登出 `startTransition`；`/login` 已登入者 | vitest ＋ e2e `route_guards.feature` 補 2 條 | 無置中 spinner；登出不經 `/login` |
-| 5a | 殼層安心四項 | vitest ＋ e2e 離線情境 1 條 | 逐項可見 |
-| 5b | 結帳頁骨架 | vitest | — |
-| 6 | 文件：規格書 §5.3 擴寫「未確認≠不合格」（只寫這一處，§3 與 ui-ux §5 放指標）；§14 #8 改寫為剩餘的後端子項；8 處 fetch 收斂記 friction-log | check-spec-drift | — |
+| 2 | `useAuthBootstrap()`：single-flight、取消、一次重試、確認再登出、`scope:'local'`、`endInvalidSession()` 收 apiClient；後端 `authenticate()`＋`/profile` 的 503／`unknown`（Deno）＋ 42 處 401 映射列舉測試 | vitest jsdom `renderHook` ＋ deno test | 冷啟動恰一次；5xx 不登出且重試後成功；404 先確認再登出；Auth 5xx → 503；其餘端點 401 零變化 |
+| 3 | Navbar／BottomNav／`main`／`hasBottomNav` 依三態渲染；badge 小圓點；守衛對 `degraded` 畫外框不導頁；登出 `startTransition`；（選配）MaintenanceBanner | vitest jsdom（Navbar.test 補三組；BottomNav.test 五格契約不變）＋ e2e `route_guards.feature` 補 2 條 | 有提示首繪無「登入」；無提示立刻有；admin 連結只在 `authenticated && isAdmin`；503 停在外框 |
+| 4 | 文件：規格書 §5.3 擴寫「未確認≠不合格」（只寫這一處，§3 與 ui-ux §5 放指標）；§14 #8 改寫為剩餘子項；8 處 fetch 收斂與 `refreshUser` 消費者記 friction-log | check-spec-drift | — |
 
-後續 Plan Mode PR（不在規劃書內）：`HomePage.tsx:353` 一行（S6 後）；5c toast 盤點（波次 3 後）。
-重量：中偏重（三段式落檔）。階段 2 的啟動流程與後端 `/profile` 屬跨層契約——**規劃與階段 2 審查用 Opus**，其餘 Sonnet。
+重量：中（三段式落檔）。階段 2 的啟動流程與後端 `/profile` 屬跨層契約——**規劃與階段 2 審查用 Opus**，其餘 Sonnet。
 
 ### 1.5 驗收（可證偽）
 
-- 自動化：上述 e2e 兩條（DOM 變更零次「登入」、CLS=0）＋反向案例。
+- 自動化：上述 e2e 三條（DOM 變更零次「登入」、CLS=0、503 停在外框）＋反向案例。
 - 真機（業主，LINE 內建 iOS／Android）：登入後重新整理 20 次、devtools Slow 3G 各 5 次，頁首不出現登入鈕、不位移；斷網重新
-  整理看到「正在重新連線」而非訪客版；恢復連線自動回來。`/profile` 的 P50／P95 延遲由階段 2 的 Deno 測試環境量一次當基線。
+  整理看到「網路不穩・重試」而非訪客版或登入頁；恢復連線按重試回來。`/profile` 的 P50／P95 延遲由階段 2 的 Deno 測試環境
+  量一次當基線。
 
 ### 1.6 開放問題
 
@@ -155,244 +177,231 @@
 - [ ] Q1-2 後端 `/profile` 把暫時性錯誤翻成 401／404 的缺口（規格書 §14 #8①②）**併入 T1（推薦）** / 另開工項（T1 只能宣稱
   「首繪不閃」、不能宣稱「不再被登出」）。
 
-## 2. 推薦：分享動線（2-1）與被推薦者註冊（2-2）（工項 R0、R1a、R1b）
+## 2. 推薦：分享動線（2-1）與被推薦者註冊（2-2）（工項 R0 ✅、R1a-1 ✅、R1a-2；R1b 作廢）
 
-### 2.1 現況與根因
+### 2.1 現況（2026-10-19，#380 與 #381 合併後；本節 v2 的「入口只掛兩處、in-app 一律複製、沒有複製連結鈕、兩個匿名驗證端點」都已不是現況）
 
-**分享動線**
-- 入口只掛兩處：會員中心「會員資訊」卡（在四張統計卡與訂閱卡之後，`MemberDashboard.tsx:348`）與推薦管理首列
-  （`ReferralManagement.tsx:119`）。手機路徑 BottomNav「推薦」→「我的 QR」→「邀請好友」= 3 次點擊；桌機 4 次。付款成功頁
-  沒有分享 CTA。
-- 分享本身在 LINE 內建瀏覽器幾乎失效：`shareReferralInvite` 對 in-app 瀏覽器**一律直接複製**、不叫分享面板
-  （`src/utils/referralInvite.ts:79-82`）；沒有「複製連結」鈕（測試釘死 `InviteFriendPanelContent.test.tsx:44`）；沒有 LINE
-  專屬分享；邀請卡 PNG 沒有說明文字；`index.html` 無 og meta，連結貼到 LINE 沒有預覽圖文（推論）。
-- 「已加入推薦計畫」才可見邀請分頁（`myQrTabPreference.ts:53-81` 是單一來源；3967f69 事故就是漏了這個閘門）：首購者付完
-  年費必為「未加入」。
-- 命名不一：BottomNav「推薦」、Navbar「推薦管理」、規格書 §3「推薦網絡」。
+**分享動線（#381 的事實）**
+- 入口是三顆共用元件（`src/components/referral/`），五個掛點：`MyQrButton`「我的 QR」（次要鈕、純連結，掛會員中心與推薦管理
+  標題列右端 `MemberDashboard.tsx:191`、`ReferralManagement.tsx:44`）；`InviteFriendButton`（掛會員中心「推薦網絡」統計卡的
+  `action` `MemberDashboard.tsx:241-246`——卡內真按鈕、在連結外——與推薦管理推薦碼列 `ReferralManagement.tsx:104`；已加入＝
+  「邀請好友」直接呼叫 `shareReferralInvite`，未加入＝同位置「加入推薦計畫」引導鈕，簽完立刻翻成「邀請好友」）；
+  `ReferralCodeWithCopy`（會員資訊卡、推薦碼列、我的 QR 頁；未加入顯示「尚未加入推薦計畫」、不露碼）。我的 QR 頁面板另有自己
+  的「邀請好友」鈕與「複製邀請連結」圖示鈕＋唯讀全選的連結欄。`MyQrEntry` 已退場。
+- 點擊數（讀掛點推得）：已在會員中心或推薦管理 1 下；手機從任何頁 BottomNav「會員」或「推薦」→「邀請好友」2 下；桌機從任何頁
+  頭像 → 會員中心／推薦管理 → 邀請好友 3 下。真機實際點擊數是 PR #381 驗收清單的待填欄。
+- 分享順位（業主 2026-10-17 二次裁決「使用者不一定透過 LINE 分享」，`src/utils/referralInvite.ts:112-127`）：(1) 只要
+  `navigator.share` 存在就叫**系統分享面板**（LINE 內建瀏覽器有面板時也一樣；`text` 只帶整段訊息、不帶 `url`）；按取消
+  （`AbortError`）或連點（`InvalidStateError`）就停；(2) 面板不存在或出錯 → 所在 App 能直接分享就交給它（`IN_APP_SHARE_URL`，
+  目前只有 `line` → `line.me/R/share?text=`）；(3) 最後複製整段邀請訊息並提示，失敗提示指向我的 QR 頁的連結欄。任何一條路
+  都不宣稱「已送出」。**代價**：LINE 內有面板時比「直開好友選擇器」多一下；桌機有面板的瀏覽器行為與原本相同。
+- 閘門單一來源 `myQrTabsForUser()`（`src/utils/myQrTabPreference.ts:63-82,167-176`：`invite = joined && referralCode`），
+  四個消費者共用，全 `src` 沒有第二份判斷；規格書 §7.1 已補「碼雖在首購時發出，完成『加入推薦計畫』後才可出示、複製或分享」
+  （spec:278-279,288-289）；ui-ux §13 第 5 條記三顆元件的規則、第 2 條記「真按鈕放連結外、推薦格的鈕常駐」。
+- 邀請訊息（`referralInvite.ts:40-42`）：「邀請你一起加入 Uknow：{連結}\n\n推薦碼 {碼}」；邀請卡 PNG 只畫名、碼、連結。兩者都
+  沒有法定揭露字樣（Q2-5）。
+- **仍未做**：`index.html` 是 `lang="en"`、meta 只有 charset 與 viewport、沒有任何 og（連結貼到 LINE 沒有預覽圖文，推論）；
+  付款成功頁沒有分享 CTA（`PaymentResult.tsx` 無）——而首購者 100% 未加入，那張卡只能是「加入推薦計畫」引導，會員中心已有，
+  v3 作廢。真機驗收（LINE iOS／Android、FB、IG 內建瀏覽器）是 #381 的合併前 gate，結果待回填。
+- 命名不一維持：BottomNav「推薦」、Navbar「推薦管理」、規格書 §3「推薦網絡」（頁面 h1「推薦管理」、統計卡「推薦網絡」）。
 
-**被推薦者註冊**
-- 連結只有 `${base}/register?ref=<code>` 一種；落地頁是一般登入／註冊頁，不顯示任何邀請脈絡。碼存 localStorage
-  `pending_referral_code`（純字串，e2e 逐字比對；無 TTL、登出不清、再開另一條會覆蓋）。
-- 四步：Email 檢核 → 密碼 → **Email OTP** → 完善資料（姓名、身分證、生日、手機、推薦碼、條款）→ PayUni 年費。沒有簡訊供應商
-  或 phone auth；手機只驗格式、不驗擁有權。寄信走 Custom SMTP，預設 30 封／小時需手動調高（`docs/supabase-setup-checklist.md:202-207`）。
-- 推薦關係在 Step 2 寫 `profiles.referred_by_*`，`referral_edges`、三代獎勵、任務 +1 要到首次付款成功才產生；未付款的被
-  推薦者在推薦者畫面完全不可見、沒有邀請紀錄表。
-- 兩個推薦碼驗證端點**無登入、無限流**，回推薦人真實姓名、刊登名與內部 `userId`（`index.ts:852-874,978-1002`）；碼是流水號
-  → 可枚舉已付費會員真名。**但所有合法呼叫者本來就帶 session**（CompleteProfile 走 `apiRequestJson`、PaymentCheckout 帶
-  Bearer），所以關洞不需要遮罩名——規格書 §4.2 要求顯示推薦人真名（打錯碼的唯一防呆），journey 也斷言全名。
-- 法遵：事業手冊 1-2-3「不得委託他人填寫入會資料」、4-1-2(2)(5)「需明白表示自己為傳銷商／嚴禁誇大獎金」、4-1-3「未經本人
-  同意不得代為申請」；多層次傳銷管理法第十條（參加前告知）、第十一條（招募時應表明）（`src/content/businessManual.ts`）。
-  現行邀請訊息與邀請卡沒有揭露字樣。另：規格書 §4.1「付款成功不允許退款」與手冊 2-1-1(1)「30 天猶豫期」現況不一致。
+**被推薦者註冊（未變，加上 #382 的鎖定）**
+- 連結只有 `${base}/register?ref=<code>` 一種（`referralInvite.ts:30-33`）；落地頁是一般登入／註冊頁（`AuthPage.tsx:36-40` 讀
+  `?ref` 存 localStorage `pending_referral_code`——純字串、e2e 逐字比對、無 TTL、登出不清、再開另一條會覆蓋）。
+- 四步：Email 檢核 → 密碼 → Email OTP → 完善資料（姓名、身分證、生日、手機、推薦碼、條款）→ PayUni 年費；沒有簡訊供應商或
+  phone auth；手機只驗格式（`profileValidation.ts:122`）。寄信走 Custom SMTP，新掛預設 30 封／小時、正式站目前 300 封／小時
+  （`docs/supabase-setup-checklist.md:202-205,326`）。
+- 推薦關係在 Step 2 寫 `profiles.referred_by_*`——**#382 後改經 `register_profile` RPC**（`20261017000004`：先 `for update` 鎖
+  profiles 列、`effective_registration_step = 3` 就回 `completed` → 端點 403「註冊已完成，資料變更請聯繫客服」）；
+  `referral_edges`、三代獎勵、任務 +1 要到首次付款成功才產生（`apply_referral_side_effects` 3b／3c）。註冊完成後唯一的自助
+  換推薦人路徑是續費選新約：`/payuni/prepare` fresh **在建單前**就改 `profiles.referred_by_*`（`index.ts:1902-1911`；無碼則套
+  平台預設碼 `:1944-1952`），`referred_by` 的寫入點全檔只有這三處，付款失敗／棄單沒有還原路徑，`track_referred_by_change`
+  trigger 只蓋時戳不留舊值（重審 R-09，確認）。
+- **後端不檢查「已加入」**（重審 R-08，確認）：`validate_referral_code`（`20260720000001:142-160`）只看 `status='active'` 與
+  推薦人未停權；發獎鏈 `apply_referral_side_effects` → `pay_referral_generations` 從不讀 `referral_program_joined`（該欄只出現
+  在 schema 與提領守衛）。碼是流水號（`20260914000001`），被猜到就能讓未簽約的人收到獎勵——R0 把枚舉面降到需登入＋限流，
+  不是消除。另一個洞：`/auth/register` 解析推薦人只查 `referral_codes.status='active'`（`index.ts:709-716`），不經
+  `validate_referral_code`、不查 `suspended_at`——直接打 API 可綁停權推薦人（前端流程先經 GET validate 才送出，所以 UI 走不到）。
+  兩者都歸 §14 法務題 4，答案決定要不要在寫入端補判準。
+- 法遵（原文核對無誤）：事業手冊 1-2-3「不得委託他人填寫入會資料」、4-1-2(2)「需明白表示自己為傳銷商身分」、4-1-2(5)「嚴禁
+  誇大或承諾任何獎金計畫說明或收入」、4-1-3「未經本人同意不得擅自為其申請」（`businessManual.ts:29,191,197,203-205`）；
+  多層次傳銷管理法第十條（參加前告知七款）、第十一條（招募時應表明）在手冊附錄一（`:404-419`）。退費口徑三份文件互相不同，
+  見 §13 更正與 §14。
 
-### 2.2 設計：分享（2-1）
+**推薦碼驗證端點（#380 的事實）**
+- 只剩 `GET /referrals/validate/:code`（`index.ts:884-939`）：需登入（無 token 401）；以 `user.id` 為鍵的雙窗限流依序計數
+  （常數 `:270-273`：5 分鐘 10 次、24 小時 50 次，固定窗口自第一次請求起算；被短窗擋下不扣日額；超過回 429 `rate_limited`）；
+  RPC 失敗回 503；查無或停權同形回 200 `valid:false`；回應只有 `{ valid, referrer: { userName, listingName } }`（移除
+  `referrer.userId`、頂層 `referrerUserId` 與舊欄位 `referrerName`，比 v2 寫的範圍大；不遮罩真名、不去刊登名）。
+- 匿名別名 `POST /listings/verify-referral-code` 整支刪除；RPC `validate_referral_code` 收回 anon／authenticated 的 EXECUTE
+  （`20261017000002`，函式本體不動）。`rate_limits` 由 pg_cron 每小時 `prune_rate_limits()`（`20261017000001`，repo 第一支
+  DB 排程）。`clientIp()`／`rateLimit()` 抽成共用（`:280-297`），限流常數集中於 `:258-276`，規則「任何窗口不得長於 2 天」由
+  `rate-limit.unit.test.ts` 讀兩邊原始碼把關；五條 ConstantRule 把數字釘在規格書 §4.2。
+- 前端：付款頁換推薦人分 valid／invalid／unavailable 三態，unavailable 時按付款即重驗、通過後要再按一次才帶碼送單
+  （同一次點擊送單會漏帶碼，主 session 變異實驗證實）；完善資料頁送出前重驗遇暫時錯誤保留已驗證推薦人，503 與網路錯誤不
+  外露後端原文。
+- **殘餘風險（接受，量化）**：單一帳號 5 分鐘 10 碼、每日 50 碼；多開帳號線性放大，總量受 Email OTP 寄信配額限制。不加 per-IP
+  第三道窗。寄信失敗告警未做（v2 §2.3 R0 第二句），改列 §8 的小 Plan Mode 項。後續 P2 在 issue #383（同碼重驗燒額度、兩頁
+  429 文案一致、註解與規格書補「依序計數只寫一半」、`clientIp`／窗口守衛／journey 離線測試補強）。
 
-**A. 一鍵到 LINE，四個動作同一位階**
-- `shareToLine(message)`：`https://line.me/R/share?text=<encodeURIComponent(訊息)>`，同分頁開啟（走既有 `openExternalLink`；
-  repo 禁 `target=_blank`／`window.open`）。LINE 內建瀏覽器直接打開好友選擇器；Safari／Chrome 喚起 LINE。**真機驗收**（repo 無
-  紀錄）。
-- 面板動作：「LINE 傳給好友」（整寬）、「複製連結」（新增，只複製連結）、「更多」（Web Share，帶 `url` 時 `text` 用**無連結**
-  變體，避免連結重複；LINE 內建瀏覽器無 Web Share 且 `<a download>` 不穩，改內嵌邀請卡圖＋「長按儲存」）。全部
-  `tone="secondary"`、靠順序與整寬分主從，不用 LINE 綠底、不升引導鈕（ui-ux §12.11：分享／邀請屬次要；Q2-1）。推薦碼列的
-  複製鈕補到 44px。複製失敗顯示可全選的連結欄。
-- 邀請訊息（主詞清楚、數字來自契約而非硬編）：「{名} 邀請你加入 Uknow 專業服務平台 👉 {連結}（推薦碼 {碼} 已幫你帶入）」；
-  獎金字樣是否出現、法定揭露句怎麼寫，等 Q2-5。邀請卡加「掃描加入 Uknow・推薦碼 {碼}」。
-- 面板掛載時**預先**建邀請 token（§2.3），點擊時同步導向（iOS 對非手勢的 async 導向會退化成開網頁）；token 建立失敗就降級為
-  舊 `?ref=` 連結照樣分享，不出現「已送出」這類無法證實的提示。
+### 2.2 設計：分享（2-1）——最小版，已完成大半
 
-**B. 入口與閘門**
-- 面板抽成三件組 `useInviteShare`＋`InviteSharePanel`（完整）＋`InviteShareActions`（精簡列），放 `components/referral/`；
-  **閘門內建於面板**（吃 `availableMyQrTabs`）：未加入推薦計畫者看到的是「加入推薦計畫」引導（簽名對話框），不是分享。
-  後端 `POST /referrals/invitations` 同樣擋 `not_joined`。
-- 入口：推薦管理頁（`/referrals`）層次改為「橫幅（有才畫）→ 推薦總人數（主數字）→ 精簡邀請區 → 邀請紀錄 → 推薦網絡」；
-  會員中心推薦卡加次要動作「邀請」（`StatCardAction`，導向 `/referrals`，不巢狀互動）；Navbar 選單加「邀請好友」；付款成功頁
-  加一張卡（未加入者導「加入推薦計畫」）。「2 次點擊到 LINE 好友選擇器」成立。
-- 用語收斂：BottomNav「推薦」維持（五格契約），頁名「推薦管理」，UI 字串用「推薦人／一代二代三代」（ui-ux §12.13）。
-- `index.html` 加靜態 og（title／description／image，絕對網址靠 `%VITE_*%` 注入）與 `lang="zh-Hant"`；個別化預覽列第二期。
+- **已完成（#381）**：三顆元件、五個掛點、分享順位、閘門單一來源、推薦碼複製鈕 44px、我的 QR 頁的複製邀請連結鈕與全選欄、
+  ui-ux §13 與規格書 §7.1 的規則。業主要的「會員中心一顆鈕、少點幾層、重複的設計共用同一份程式」（重審 §一-3）已成立。
+- **R1a-2（剩餘，Plan Mode `fix/*`，Sonnet）**：`index.html` 靜態 og（`og:title`／`og:description`／`og:image`，絕對網址靠
+  `%VITE_*%` 注入）＋`lang="zh-Hant"`；vitest 讀檔斷言三個 og 存在且 image 是絕對網址；真機驗收：LINE 貼連結出現預覽圖文。
+- **選配（真機驗收後裁決，各是一個小判斷）**：(a) `platform === 'line'` 時跳過面板直開好友選擇器（`shareReferralInvite` 開頭
+  一個判斷，若業主覺得 LINE 內多一下不值）；(b) 某內建瀏覽器 `navigator.share` 存在卻沒反應 → 窄表 `WEB_SHARE_UNRELIABLE`；
+  (c) Navbar 頭像旁常駐一顆（桌機從任何頁 1 下）。現在不預先為沒證據的失敗模式寫程式。
+- **文案（等 Q2-5）**：邀請訊息與邀請卡的法定揭露句、獎金字樣是否出現，法務裁決後一個 commit（都是常數）；鈕與訊息不出現
+  「賺／獎金」。邀請卡加「掃描加入 Uknow・推薦碼 {碼}」說明行可同批做。
+- **作廢（v2 §2.2A／B）**：面板並列三鈕（LINE 傳給好友／複製連結／更多）、Web Share 的「無連結變體」（現行刻意只帶 text）、
+  邀請卡「長按儲存」、`/referrals` 頁重排、Navbar 選單「邀請好友」、付款成功頁加卡、`StatCardAction` 導 `/referrals`（做不到直接
+  分享，重審 F2；#381 以 `DashboardStatCard` 的 `action` prop 把真按鈕放在連結外取代）、面板抽三件組。
 
-### 2.3 設計：被推薦者從連結到完成（2-2）
+### 2.3 設計：被推薦者從連結到完成（2-2）——本輪不做邀請物件
 
-**先回答「Amway 式：推薦者填對方手機、對方收簡訊、點開就預填」**
-
-那條路的三個組件：(1) 簡訊通道、(2) 一個「邀請」物件把推薦者與預填資料綁在 token 裡、(3) 落地頁讀 token 預填。
-三個方案並列（Q2-3）：
-
-| 方案 | 內容 | 成本與風險 | 價值 |
-|---|---|---|---|
-| **A 邀請物件（推薦，本輪）** | token 連結＋落地頁＋推薦者可追蹤；被推薦者自己輸入手機 | 新表一張、零外部依賴 | 解掉「不知道這是什麼、要幾步、碼有沒有帶到」與「石沉大海」 |
-| B 簡訊送達通道（第二期） | 推薦者輸入對方手機→系統寄含連結的簡訊；需勾「我已取得對方同意」；每人每日上限、全站配額、可回覆停止 | 供應商（三竹／Every8d／Twilio）＋每則費用＋濫用面；手冊 1-2-3／4-1-3 與個資法上平台成為共同蒐集者；陌生簡訊的信任反而低 | 可兼當手機擁有權證明（目前只驗格式） |
-| C phone-first 帳號 | 手機當帳號識別、簡訊 OTP 取代 Email OTP | 重做 auth（登入、重設密碼、journey 全套） | 少填一個 Email |
-| D LINE Login（第二期裁決） | 以 LINE 帳號登入／註冊 | 新 OAuth 供應商、profile 綁定規則 | LINE 族群註冊轉換的最大槓桿 |
-
-**方案 A 的設計**
-
-- **邀請物件** `referral_invitations`：id、referrer_user_id、token（32 bytes base64url，不可枚舉；明文存放可接受）、channel
-  （line／copy／share／qr）、client_request_id（冪等建立：開面板時產生，重開不重建）、created_at、opened_at、
-  registered_user_id、registered_at、revoked_at、expires_at（90 天，可調常數）。每使用者未過期上限（可調常數）。
-  **碼為權威、token 只做歸因**：`/auth/register` 收 `referralCode` 與選填 `invitationToken`，驗證 token 的 referrer 等於由碼
-  解析出的推薦人才寫 `registered_*`；只有 token、沒有碼時由後端從 token 解析出碼作後備（落地頁 GET 失敗也不丟推薦人）。
-  `opened_at` 用 `update … where opened_at is null` 單句冪等，帶推薦者本人 Authorization 時略過。
-  **「已付費」不存欄位、不加 trigger**：讀取時由 `referral_edges`（referee = registered_user_id **且** referrer = invitation.
-  referrer）＋ `min(payment_orders.completed_at)` 推導——付款路徑零寫入耦合、對 repair 自癒、改碼後舊邀請不會誤標。
-  RLS：推薦者只能讀自己的且 owner-select 不含 `registered_user_id`（付費前不可見，Q2-2）；公開讀取只經 Edge。
-  token 語意（Q2-7）：**每次分享鑄新 token、單次綁定（推薦）**；若要「一個連結貼群組、多人註冊都算」則拆子表。
-- **落地頁** `/invite/<token>`（未登入可看，是 LINE 冷進站第一頁 → 同步匯入或 preheat；用最小頁首，不顯示訪客版的「立即
-  刊登」）。順序：推薦人（碼併同一行）→ 一句平台是什麼 → 三步進度（第 3 步寫「付年費 NT$1,200」，金額來自常數）→ 主鈕
-  「開始註冊」（色調見 Q2-9）→「已有帳號？登入」底線連結；法定揭露句預留位置（Q2-5）。**三態**：載入＝卡片骨架（推薦人名
-  未到不先畫「邀請你」）；失效／無效／限流＝「這個邀請連結已失效，你仍可直接註冊，推薦碼可在註冊時填寫」＋照常 CTA；
-  CTA 首繪即可按，token 在背景解析，解析失敗不擋註冊。已登入者：「你已經是會員了」＋回會員中心，不覆寫自己的碼。推薦人名
-  在落地頁顯示**完整名**（token 是推薦者自己發的，Q2-8），舊 `?ref=` 路徑不顯示脈絡。
-- **pending 儲存**：`pending_referral_code` 維持純字串（e2e 契約）；新增旁鍵 `pending_invitation`（`{code, token, at}` 原子
-  覆寫、90 天 TTL、登出清除）；再開另一條邀請時提示「改用 {新推薦人} 的邀請？」而不是靜默覆蓋。
-- **推薦者的邀請紀錄**（`/referrals` 邀請區下方）：狀態名「連結已建立 → 已開啟 → 已註冊 → 已付費」（沒有「已送出」）；列以
-  「渠道＋時間」識別（LINE・10/16 14:32）；「再傳一次」只給前兩態；已付費列連到推薦網絡；空態（附 LINE 鈕）／骨架／中性
-  錯誤／載入更多＋「已顯示 X / Y」。付費前**不顯示對方姓名**（Q2-2）。
-- **註冊漏斗減阻（不改帳號識別）**：四步共用頂部步驟列（`<ol>`＋`aria-current="step"`，三組對應五個畫面：Email／密碼／OTP
-  都算第 1 步）；Step 2 的推薦碼在有邀請脈絡時改成唯讀 `Badge`「{推薦人} 的推薦碼 {碼}」＋「換一個」（轉可編輯並解除
-  token 歸因），送出前「永久綁定」確認框維持；OTP 頁加「換一個信箱」。
-- **身分證是否延後到首次需要時再填（Q2-4）**：v1 的前提有誤——「加入推薦計畫」只收同意與簽名、不收證件；`verifyNationalId`
-  在會員驗證、提領、查收、**領獎**四處比對註冊時留下的值（`index.ts:261-265`），且 null 一律 false；手冊 1-1「每名傳銷商以身分
-  證字號為準限取一個經營權」、條款十二寫明註冊時輸入、migration `20260620000007:14` 註明「不可廢棄」。延後等於：第一次輸入
-  從「驗證」變「設定」（被盜帳號可自設）、取得經營權時無法以身分證把關、五個 journey builder 要改。**推薦本輪不做**；若業主
-  仍要做，獨立成 Opus 工項：統一 set-if-null 入口供加入／提領／領獎共用、`verifyNationalId` 對 null 回 `national_id_required`、
-  規格書 §4.2 與條款同步、需法務確認。
-
-**R0：先關枚舉洞，不改規則**
-- 兩個驗證端點加 `requireAuth`（所有合法呼叫者都有 session）＋以 user 為鍵的限流（抽 `clientIp(c)`／`rateLimit()` 共用，
-  `cf-connecting-ip` 優先、`rate_limits` 加清理）；回應移除 `referrer.userId`；**不遮罩名、不去刊登名**（規格書 §4.2 不變）。
-  Pages Function 等匿名消費者目前不存在（Q2-10 確認）。邀請 token 查詢另設限流（只計 404）、區分 404／410、`no-store`。
-- 寄信配額：活動前確認 SMTP 限流值並加寄信失敗告警（邀請漏斗放大註冊量，Email OTP 是硬上限）。
+- 重審結論（業主同意）：v2 整套「邀請物件」（新表、token、`/invite/<token>` 落地頁、邀請紀錄、註冊步驟列、Step 2 唯讀徽章、
+  OTP 換信箱）沒有縮短到 LINE 的點擊數，卻新增表、新路由，並動到註冊與付款相鄰路徑 → **R1b 刪除、Q2-1／2-2／2-6／2-7／
+  2-8／2-9 作廢**。被推薦者看到的仍是一般註冊頁；「誰邀請我、碼有沒有帶到」由邀請訊息文字＋ Step 2 推薦人姓名即時顯示承擔。
+- 簡訊通道（B）、phone-first（C）、LINE Login（D）：第二期裁決，記 GitHub issue，不入規格書 §14（Q2-3 作廢為「第二期」）。
+- Q2-4 身分證延後：**不做，且已被 #382 關死**——業主裁決「不採 set-if-null 補填入口」（重開剛關的寫入面；付款後首次設定會撞
+  `register_profile` 的 403）；規格書 §4.1 已把身分證變更定性為轉讓經營權。
+- 寄信配額：活動前確認 SMTP 限流值（正式站 300 封／小時）；寄信失敗告警列 §8 的小 Plan Mode 項。
+- Step 2 的「永久綁定」確認框（v2 §2.3）已由 #382 改成「付款完成後，姓名、身分證字號、生日、手機與推薦人即鎖定，變更須聯繫
+  客服」（續費選新約仍可換推薦人）。
 
 ### 2.4 穩定性與架構
 
-- 新表與發獎、換線、任務零耦合；回填失敗只影響紀錄顯示。
-- 模組：`referralInvite.ts` 留連結／訊息／LINE／Web Share；pending 抽 `pendingReferral.ts`；token API 獨立檔＋`@contract`
-  `API_PATHS`；落地頁 `InviteLanding`；路由進規格書 §3 路由表（加路由的那階段就改，`check-spec-drift` 雙向比對）、
-  `e2e/test_overflow_sweep.py` 的清單。
-- 拆兩個工項：**R1a**（面板三件組、LINE、複製連結、入口、落地頁 UI、紀錄 UI、og；Sonnet）與 **R1b**（邀請表、端點、
-  `/auth/register` 歸因、付費推導、RLS；**Opus**——動註冊與付款相鄰路徑）。R1b 先於 R1a 的紀錄區。
-- 與 S7：S7 **不等本計畫**，照原 prompt 先走（入口沿用 `MyQrEntry`）；R1a 在 S7 合併後以小 PR 把會員中心推薦卡與推薦頁頂部
-  接到新面板（R1 去適應 S7 版面）。與 T1：T1 先合併（§1.3）。
-- 測試契約：`InviteFriendPanelContent.test.tsx:44`「沒有複製連結鈕」反轉；`referralInvite.test.ts` 連結格式（新增 token 形式、
-  舊形式保留）；testid `share-referral-button`／`invite-tab`／`my-qr-button` 留用（`dashboard_smoke.feature:12`）；e2e must-keep
-  三條註冊情境名不改；新增 `invite_landing.feature`；journey 補「從邀請連結完成註冊與付款，邀請紀錄變已付費」（目前無連結
-  路徑情境）；`backend_api_mock` 加邀請端點 mock。
+- 三顆元件與 `shareReferralInvite` 的測試契約：testid `invite-friend-button`／`my-qr-button`／`join-referral-button`／
+  `share-referral-button`；`dashboard_smoke.feature:21-26`「從推薦格邀請（複製 fallback）」；`test_overflow_sweep.py`「推薦碼
+  不得被截斷」；`check-color-usage.py` 排除 `pixelColors.ts`（墨字、灰字與 `:root` 同步，白底固定純白）。
+- 與 S7：S7 prompt 重寫（另案）以三顆元件為既成事實；`MyQrEntry` 不存在了；S7 動 `MemberDashboard`／`ReferralManagement` 時
+  不得複製閘門（3967f69 教訓）。與 T1：R1a-2 只動 `index.html`，零撞檔。
+- e2e mock 的 `delete navigator.share` 只刪實例屬性（`fixtures.py:92`），CI 在 Linux Chromium 本來就沒 Web Share 才過；
+  要保證就改 `Navigator.prototype.share = undefined`（#381 增量確認 P2，順手）。
 
 ### 2.5 階段與測試
 
-| # | 工項 | 階段 | 測試落點 | 驗證標準 |
-|---|---|---|---|---|
-| R0 | Plan Mode | 驗證端點 `requireAuth`＋限流＋移除 userId；`clientIp`／`rateLimit` 抽取；`rate_limits` 清理 | deno test | 無 token 401；第 N+1 次 429；回應無 userId；停權仍不洩漏 |
-| R1b-1 | 三段式 | migration（表、RLS、索引）、`POST/GET /referrals/invitations`（冪等建立、上限、404／410、限流、`not_joined`） | sql＋deno test | token 不可枚舉；過期 410；未加入 403 |
-| R1b-2 | | `/auth/register` 收 token 做歸因（referrer 一致才寫）、後備解析碼；「編輯」重送撤回舊歸因 | deno test | 不一致不寫；只有 token 也綁對推薦人 |
-| R1b-3 | | 已付費推導查詢＋邀請紀錄端點（分頁、total） | deno test＋sql | 改碼後舊邀請不誤標；repair 後自癒 |
-| R1a-1 | 三段式 | 面板三件組＋閘門＋LINE／複製連結／Web Share 變體＋預建 token 與降級 | vitest jsdom | in-app 按 LINE 得 `line.me/R/share?text=`；未加入者看到加入引導；token 失敗仍可分享 |
-| R1a-2 | | 落地頁三態＋最小頁首＋pending 雙鍵＋Step 2 Badge＋步驟列 | vitest＋e2e `invite_landing.feature` | 失效 token 仍可註冊；已登入者不覆寫 |
-| R1a-3 | | 邀請紀錄區（四態、再傳一次、載入更多） | vitest＋e2e | 四態各一筆；空態附 LINE 鈕 |
-| R1a-4 | | 入口：Navbar 選單、付款成功卡（含未加入導引）、og meta、`lang` | vitest＋e2e 溢版巡檢 | 2 次點擊到分享 |
-| R1a-5 | | 文件：規格書 §3 路由、§7 新段「邀請物件」、ui-ux §12.11／§12.13、條款（邀請資料保存期限） | check-spec-drift | — |
-| R1c（Q2-4 若做） | 三段式，Opus | 身分證 set-if-null 統一入口、四處守衛、journey builder、規格書 §4.2 | deno＋vitest＋journey | — |
-| S7 後 | Plan Mode | 會員中心推薦卡「邀請」、推薦頁頂部接新面板 | vitest | — |
+| # | 工項 | 狀態／流程 | 內容 | 測試落點 | 驗證標準 |
+|---|---|---|---|---|---|
+| R0 | 推薦碼端點關洞 | ✅ #380（merge `ae07800`） | 見 §2.1；後續 P2 在 #383 | `referral-validate.test.ts`、`rate-limit.unit.test.ts`、`check-spec-drift` 五條 | 無 token 401；第 N+1 次 429；被短窗擋下不扣日額；回應無 id；RPC 失敗 503；別名 404；RPC 權限只給 service_role |
+| R1a-1 | 入口三顆元件＋分享順位 | ✅ #381（merge `2fa1f2c`） | 見 §2.1 | 元件 vitest、`dashboard_smoke`、溢版巡檢 | 真機驗收四項（LINE iOS／Android、FB、IG）為合併前 gate，結果回填 PR |
+| R1a-2 | og＋`lang` | Plan Mode `fix/*` | `index.html` | vitest 讀檔 | 三個 og 存在、image 絕對網址；真機 LINE 預覽 |
+| R1a-3 | 揭露文案 | Plan Mode，等 Q2-5 | 邀請訊息、邀請卡常數 | vitest 字串斷言 | 法務句逐字 |
+| 寄信告警 | SMTP 失敗告警 | Plan Mode，排 T1 後 | `system_alerts` 來源新增 | deno | — |
+| R1b | 邀請物件 | **作廢** | — | — | — |
 
 ### 2.6 驗收
 
-- 自動化：`line.me/R/share?text=` 導向與訊息內容；落地頁三態；邀請紀錄狀態轉換；must-keep 三條照綠。
-- 真機（業主）：LINE 內建瀏覽器按「LINE 傳給好友」是否直接開好友選擇器；Safari／Chrome 是否喚起 LINE；未裝 LINE 的退路；從
-  LINE 內建瀏覽器開邀請連結、切到系統瀏覽器完成註冊，推薦歸屬不丟（推論待驗）。轉換率：以 `referral_invitations` 的四個時間
-  戳做新連結的漏斗；舊 `?ref=` 無 baseline，在紀錄表上線後再量。
+- 真機（#381 gate，待業主回填）：按下後必須出現系統分享面板、LINE 好友選擇器或複製提示三者之一；記實際點擊數；複製後貼上
+  確認內容；「有面板但拒絕」在 LINE 內仍開得出選擇器；LINE 內建瀏覽器首屏四個主數字仍在不滑動範圍內。
+- 轉換率：沒有邀請紀錄表，以 `profiles.referred_by_*` 非預設且付款完成的比率當既有 baseline；不新增表。
 
 ### 2.7 開放問題
 
-- [ ] Q2-1 「邀請好友」是否升為引導鈕：**推薦不升**，維持次要樣式但放頂部常駐區。
-- [ ] Q2-2 邀請紀錄付費前是否顯示對方姓名：**推薦不顯示**。
-- [ ] Q2-3 簡訊通道（B）、phone-first（C）、LINE Login（D）：**推薦 B／D 列第二期裁決，C 不做**。
-- [ ] Q2-4 身分證延後：**推薦本輪不做**（代價見 §2.3）；要做則獨立 Opus 工項＋法務。
-- [ ] Q2-5（**擋 R1a 開工**）邀請訊息、邀請卡、落地頁、付款成功卡的法定揭露句與獎金字樣：法務裁決；技術上是文案常數。業主 2026-10-17 要求先看示意畫面（§13）再定。
-- [ ] Q2-6 個別化 og 預覽（Pages Function）：**推薦不做**。
-- [ ] Q2-7 token 語意：**A 每次分享單次綁定（推薦）** / B 廣播型一對多＋子表。
-- [ ] Q2-8 落地頁推薦人姓名：**完整名（推薦）** / 遮罩。
-- [ ] Q2-9 落地頁「開始註冊」色調：依 §12.11 流程起點是次要；單一轉換 CTA 的頁面是否比照導覽列「立即刊登」開流程鈕例外。
-- [ ] Q2-10 前半：規格書 §4.1「不允許退款」vs 手冊 2-1-1 30 天猶豫期——業主 2026-10-17 指示以既有法務文件為準，看過示意畫面再定落地頁寫法（§13）。後半 R0 前確認沒有匿名消費者：**業主 2026-10-17 確認 repo 外無匿名呼叫者（repo 內只有付款頁與完成資料頁，都在登入後），R0 擋開工項解除**。
+- [ ] Q2-5（**擋 R1a-3**）邀請訊息、邀請卡的法定揭露句與獎金字樣：法務裁決（§14 第 1 題）；技術上是文案常數。業主 2026-10-17
+  已看示意畫布（§13）。
+- [ ] Q2-10 前半：年費退費口徑（§14 第 2 題，§13 已更正）。後半已裁：R0 完成。
+- [ ] Q2-11（v3 新）：未簽約者的推薦碼可否被使用與發獎（§14 第 4 題）。若答「不可」→ `validate_referral_code` 與發獎鏈加
+  `referral_program_joined` 判準、`/auth/register` 解析改經 `validate_referral_code`——動金流，獨立 Opus 工項，另需處理
+  既有「未簽約但已有下線」的存量。
+- 作廢：Q2-1、Q2-2、Q2-6、Q2-7、Q2-8、Q2-9（隨 R1b）；Q2-3 改「第二期 issue」；Q2-4 關死（§2.3）。
 
 ## 3. 刊登照片：上傳、裁切、呈現（工項 P1a、P1b）
 
-### 3.1 現況與根因
+### 3.1 現況與根因（develop HEAD；三個 PR 只讓 `index.ts` 行號漂移，照片相關前端檔零改動）
 
-- 鏈路：原檔 multipart → Edge Function（只驗 MIME 與 5MB，`index.ts:4103-4143`）→ service_role 寫 public bucket → 回 URL →
-  前端把 URL 陣列寫進 `listings.photos`。**沒有壓縮、裁切、縮圖、EXIF、HEIC 處理，沒有本機預覽**（上傳完才顯示），沒有進度
-  與重試，`Promise.all` 一張失敗整批失敗（`CreateServiceProvider.tsx:202`）。原圖含 EXIF（可能含 GPS）直接公開（推論，未抽樣）。
-- 「太大不能上傳」：手機原圖 3–8 MB，5MB 上限直接擋；iPhone HEIC 在部分瀏覽器不會自動轉 JPEG。後端錯誤訊息前端讀不到
-  （後端回 `{error:'字串'}`、前端讀 `.error?.message`，`:195`）——**bug 在前端**，`apiClient.extractApiErrorMessage` 已能吃兩種
-  信封，後端不必動。
-- 「不能決定顯示哪一塊」：儲存原圖，各處 CSS `object-cover` 置中裁——首頁照片牆與手機卡 1:1、桌機卡 16:9、刊登管理卡 16:9、
-  Create／Edit 預覽 16:9、詳情頁主圖 16:9 `object-contain`（黑邊）、縮圖 80px 正方形。七種容器、兩種比例。
-- 「第一張是封面」只是 `photos[0]` 慣例；沒有重排、指定封面；沒有「大頭照」概念。詳情頁三張縮圖點擊切換、無滑動無鍵盤。
-- Edit 沒有前端大小檢查；移除照片與刪除刊登都不清 Storage（條款十之一承諾「撤除後三十日內下架」→ 清理是合規項）；
-  `ImageWithFallback` 一張失敗後切縮圖仍 fallback；全站 `<img>` 無 `loading`／寬高。
-- 授權：服務條款十之一已授權「技術性編輯（含裁切、壓縮、格式轉換）」。`check-spec-drift.py:124-135` 以 regex 釘 §11「最多 N
-  張／單張 ≤N MB」與 `constants.ts`。
+- 鏈路：原檔 multipart → Edge Function（只驗 MIME 白名單與 5MB，`index.ts:4127-4168`，`file.arrayBuffer()` 原位元組直寫）→
+  service_role 寫 public bucket（`20260805000001:17-18`，bucket 自己也有 `file_size_limit=5242880`）→ 回 URL → 前端把 URL 陣列
+  寫進 `listings.photos`（`text[]`，無張數約束）。**沒有壓縮、裁切、縮圖、EXIF、HEIC 處理，沒有本機預覽**（預覽讀的是伺服器
+  回的 URL），沒有進度與重試，`Promise.all` 一張失敗整批失敗（`CreateServiceProvider.tsx:202`；Edit `:217` 同構）。原圖含
+  EXIF（可能含 GPS）直接公開——機制可證（無任何重新編碼），實際檔案含 GPS 需抽樣（推論）。
+- 「太大不能上傳」：repo 內沒有任何使用者回報、HEIC 字樣或 commit 紀錄（重審 P-03，確認未證）。可證的機制：file input
+  `accept="image/*"` 讓 HEIC 被選進來，但前後端白名單都是 jpeg／png／webp（`constants.ts:19`、Edit `:171`、`index.ts:4141`），
+  HEIC 會被「只支援 JPG、PNG、WEBP 格式」擋下——是**格式**拒絕，不是 5MB。P1a 階段 0 先以真機確認抱怨的成因。
+- 後端錯誤訊息前端讀不到：後端回 `{error:'字串'}`（`:4143,4146,4159`）、前端讀 `.error?.message`（Create `:195`、Edit `:210`）
+  永遠落到 fallback——**bug 在前端**，`apiClient.extractApiErrorMessage`（`:133-144`）已能吃字串與巢狀兩種信封（同檔
+  `/rewards/upload-id-photos` 用的是巢狀，兩個上傳端點信封本就不同）。e2e mock 只有成功路徑，這條沒有既有測試覆蓋。
+- 「不能決定顯示哪一塊」：儲存原圖，各處 CSS `object-cover` 置中裁——首頁照片牆（`MobilePhotoWallCard.tsx:21`）與手機卡
+  （`HomePage.tsx:1007`）1:1、桌機卡（`:1044`）16:9、刊登管理卡（`ServiceProviderManagement.tsx:175`）16:9、Create／Edit 預覽
+  （`:480`／`:502`）16:9、詳情主圖（`ServiceProviderDetail.tsx:219`）16:9 `object-contain`（S6 後是 `bg-muted` 灰底留白，不是
+  黑邊）、縮圖 80px 正方形（`:241`）。七種容器、兩種比例；另有兩處同形骨架（`HomePage.tsx:982`、`ServiceProviderDetail.tsx:385`）
+  改比例時是成對的。
+- 「第一張是封面」：程式只是 `photos[0]` 慣例，但 **Create 的 UI 標籤已向使用者宣告「必須上傳3張，第一張為封面照」**
+  （`CreateServiceProvider.tsx:475`；Edit `:497` 沒有這句）；沒有重排、指定封面；沒有「大頭照」概念。詳情頁三張縮圖點擊切換
+  （原生 `<button>`，Tab 可達），無滑動、無方向鍵；S6 把縮圖列由橫向捲動改成換行。
+- Edit 沒有前端大小檢查、張數與格式硬編（`:110,165-166,497,628` 四處寫死 3，不走 `MAX_PHOTO_COUNT`；Create 也有三處）；
+  移除照片與刪除刊登都不清 Storage（刪刊登是前端 supabase-js 直刪 `ServiceProviderManagement.tsx:50-54`；`index.ts` 無任何
+  `.remove(`）——條款十之一承諾「撤除後三十日內完成下架，技術快取殘留不在此限」（`termsOfService.ts:48-49`）→ 清理是合規項；
+  `ImageWithFallback` 一張失敗後切縮圖仍 fallback（無 `useEffect` 隨 src 重置；以 `{...rest}` 轉發 img 屬性）；全站 10 個
+  `<img>` 無 `loading`／寬高。
+- 授權：條款十之一已授權「為適應版面所必要之技術性編輯（含裁切、壓縮、格式轉換）」。`check-spec-drift.py:124-135` 以 regex 釘
+  §11「最多 N 張／單張 ≤N MB」與 `constants.ts:17-19`。
 
-### 3.2 設計
+### 3.2 設計（v3：核心保留，重審 P-02 的矛盾修掉，其餘改選配）
 
-**A. 選圖 → 自動裁 → 壓縮 → 上傳（IG 式，手機瀏覽器內完成）**
-1. 選圖 `accept="image/*"`；解碼 `createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth/Height })`（限邊解碼，
-   48MP 原圖不會整張 RGBA 進記憶體）；失敗訊息分「記憶體不足」與「格式無法讀取」：「這張照片的格式無法讀取，請換一張，或
-   截圖後再試」（iOS 另附「相機設定→格式→最相容」）。iOS Safari 原生能顯示 HEIC（真機驗證列入階段 1）。
-2. **先自動 1:1 置中裁並開始上傳，「調整範圍」為選用**（一次選 3 張連續進 3 個全螢幕裁切是最大流失點；Q3-3）。裁切對話框：
-   固定取景框、雙指縮放＋**縮放滑桿**（單指替代）、拖曳、重設、完成／取消（44px）；`useBodyScrollLock`＋`touch-action: none`＋
-   非 passive 監聽（先例 `SignaturePad.tsx:78-90`、`JoinReferralProgramDialog`）；Android 返回鍵關疊層（`pushState`）；`dvh`。
-3. 壓縮：輸出 JPEG（**重新編碼即剝除 EXIF**，這是需求不是副作用），最長邊 1600px、品質 0.82、目標 < 600 KB（三個值是可調
-   常數，只在原檔超過上限時顯示「已自動縮小」）。5MB 上限留在後端當安全網。
-4. 上傳：每張獨立狀態（準備中／上傳中／失敗-重試／完成）＋常駐 live region；選完立刻 objectURL 預覽；已傳成功的 URL 與文字
-   欄位進 `listingDraft.ts`（sessionStorage，key 含 userId／listingId；Edit 定與伺服器版本衝突策略），F5 不丟。上傳中送出鈕
-   `aria-disabled`＋原因。
-5. 封面：第一張＝封面，每張「設為封面」（≤3 張不做拖曳）；多選顯示 1／2／3 序號與「封面」標。375px 三欄磚塞不下 44px 動作 →
-   點磚後在下方出一條動作列。
-- 元件：`PhotoPicker`＋`useListingPhotos`（Create／Edit 共用，picker 只回報已確認 URL、不寫整份 formData——stale-closure 回歸
-  無從發生），放 `src/components/listing/`（先例 `CategorySelectField`）。`imageGeometry.ts`（純數學，node 測）＋
-  `imagePipeline.ts`（注入 ImageIO，jsdom 替身；「≤1600px／<600KB」只能在 Playwright 真瀏覽器驗）。裁切 UI 用 `react-easy-crop`
-  在 Create／Edit 的 lazy chunk 內動態載入（依賴與首個 import 同 commit；bundle 預算只在 CI，PR 前手動 build 量；基準
-  955／296 kB 是 2026-07 值）。
-- **既有刊登的舊照片**（都是未裁切原檔）：Edit 對每張既有照片提供「調整範圍」（抓既有 URL→裁切→上傳新檔→刊登更新成功後
-  才刪舊檔）；新舊混排時舊圖以 1:1 cover 置中並在 Edit 說明；EXIF 的舊檔靠重新裁切逐步汰換，不做批次回填。
-- 張數：**改「最多 3 張（至少 1 張）」（Q3-1，推薦）**——規格書本就寫「最多 3」；UI 標籤「必須上傳 3 張」、送出鈕、驗證文案、
-  `listing_management.feature` 同步改；規格列文字保留 `check-spec-drift` 可抽的形狀。現有刊登全為 3 張，無資料遷移。
+**A. 核心（P1a）：選圖 → 自動裁 → 壓縮 → 逐張上傳**
+1. 選圖 `accept="image/*"`；解碼 `createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth/Height })`（限邊解碼）；
+   失敗訊息分「記憶體不足」與「格式無法讀取」：「這張照片的格式無法讀取，請換一張，或截圖後再試」（iOS 另附「相機設定→格式→
+   最相容」）。**階段 0**：真機確認 iPhone 預設 HEIC 在 Safari／LINE 內建瀏覽器選檔時會不會轉 JPEG、會被哪句擋下（P-03）。
+2. **先自動 1:1 置中裁並開始上傳，「調整範圍」為選用**（Q3-3）。裁切對話框：固定取景框、雙指縮放＋縮放滑桿、拖曳、重設、
+   完成／取消（44px）；`useBodyScrollLock`＋`touch-action: none`＋非 passive 監聽（先例 `SignaturePad.tsx:152-155`）；Android
+   返回鍵關疊層；`dvh`。
+3. 壓縮：輸出 JPEG，最長邊 1600px、品質 0.82、目標 < 600 KB（可調常數，只在原檔超過上限時顯示「已自動縮小」）。**重新編碼
+   即剝除 EXIF，這是需求不是副作用——所以編碼失敗不退回原檔上傳**（v2 §11 風險表寫「壓縮失敗退回原檔」與此矛盾，重審 P-02；
+   v3 改成：解碼成功但編碼失敗 → 該張標「無法處理，請換一張」、不上傳，其餘照常）。5MB 上限留在後端與 bucket 當安全網。
+4. 上傳：每張獨立狀態（準備中／上傳中／失敗-重試／完成）＋常駐 live region；選完立刻 objectURL 預覽；上傳中送出鈕
+   `aria-disabled`＋原因；Create `:195`／Edit `:210` 改用 `extractApiErrorMessage`。
+5. 張數：**改「最多 3 張（至少 1 張）」（Q3-1，推薦）**——規格書本就寫「最多 3」；Create／Edit 七處硬編 3 全改常數，
+   「必須上傳 3 張、第一張為封面照」標籤、送出鈕、驗證文案、`listing_management.feature` 同步改；規格列文字保留
+   `check-spec-drift` 可抽的形狀。「現有刊登全為 3 張」是 DB 狀態，開工時查一次（repo 內不可驗）。
+- 元件：`PhotoPicker`＋`useListingPhotos`（Create／Edit 共用，picker 只回報已確認 URL），放 `src/components/listing/`（先例
+  `CategorySelectField`）；`imageGeometry.ts`（純數學）＋`imagePipeline.ts`（注入 ImageIO）；裁切 UI 用 `react-easy-crop` 在
+  Create／Edit 的 lazy chunk 內動態載入（bundle 預算 `scripts/check-bundle-budget.mjs` 只在 CI 跑，PR 前手動 `node` 量一次；
+  基準 955／296 kB 是 2026-07 值）。
 
-**B. 顯示容器統一 1:1（S6 後的 P1b）**
-- 七個容器全改 `aspect-square`：桌機卡、刊登管理卡、Create／Edit 預覽、詳情主圖；首頁照片牆與手機卡已是。「封面 1:1＋其餘
-  4:5」只在詳情輪播多一種高度、首頁只用 `photos[0]`，無收益（Q3-2 推薦全 1:1）。
-- 詳情頁輪播：CSS `scroll-snap` 橫向、底部圓點（≥44px button＋`aria-current`，n=1 不畫）、`region`＋`aria-roledescription=
-  "carousel"`、「第 n 張，共 N 張」單一 live 節點、鍵盤左右、`prefers-reduced-motion`；點主圖開 lightbox（Radix Dialog：焦點
-  圈、ESC、44px 關閉、焦點歸還；縮放做在 lightbox 內，不靠原生 pinch——viewport 未鎖會放大整頁）。縮圖列桌機保留、手機隱藏。
-  alt 維持 `{名稱} - 圖片 N`。`ImageWithFallback` 隨 src 重置、加 `loading="lazy"`／`decoding="async"`／寬高。
+**B. 選配（P1a 不做也能驗收；各自是獨立小 PR）**
+- 封面：每張「設為封面」＋ 375px 的磚下動作列（≤3 張不做拖曳）。不做時維持「第一張為封面」標籤。
+- 草稿持久化 `listingDraft.ts`（sessionStorage，F5 不丟）。
+- 既有刊登的舊照片「調整範圍」（抓既有 URL→裁切→上傳新檔→更新成功後刪舊檔）；不做時舊圖以 1:1 cover 置中並在 Edit 說明。
+- 每使用者物件數上限與排程 janitor。
 
-**C. 後端與 Storage 清理**
-- `DELETE /listings/photos`：只收 `^<uid>/\d+_[a-z0-9]+\.(jpg|png|webp)$` 的路徑（拒 `..`、`//`、編碼變體）、單次上限；**先存
-  listings 成功再 diff 刪 Storage**，仍被 `listings.photos` 引用者拒刪；刪刊登走同一條。每使用者物件數上限（查 prefix 計數）；
-  排程 janitor（`storage.objects` 未被引用且 >7 天者，先 dry-run 告警再刪）兜底孤兒。
-- 上傳端點不變（產物 <1 MB，5MB 是安全網；可選 magic-byte 檢查）。前端 Create:195／Edit:210 改用 `extractApiErrorMessage`。
+**C. 後端與 Storage 清理（P1a 必做的那一半）**
+- `DELETE /listings/photos`：只收 `^<uid>/\d+_[a-z0-9]+\.(jpg|png|webp)$` 的路徑、單次上限；**先存 listings 成功再 diff 刪
+  Storage**，仍被 `listings.photos` 引用者拒刪；刪刊登改走 Edge（目前是前端直刪）同一條清理。上傳端點不變（可選 magic-byte）。
+
+**D. 顯示容器統一 1:1（P1b，S6 已合併，Plan Mode）**
+- 七個容器＋兩處骨架全改 `aspect-square`（重審 P-01／X3：`e2e/test_public_skeleton_layout.py:40-80` 量的是骨架與內容同形，
+  大圖改 1:1 而骨架 `ServiceProviderDetail.tsx:385` 不改就紅；桌機卡 `HomePage.tsx:1044` 與 `DesktopCardSkeleton:982` 同理）。
+- 縮圖列**桌機與手機都保留、維持換行**：v2「手機隱藏」會直接打紅 `e2e/test_public_touch_targets.py:124-149`（375px 下
+  `expect(thumb).to_be_visible()` 與焦點環不被裁切）；放進 scroll-snap 溢出容器也會打紅 clipping 斷言。
+- 輪播與 lightbox 改選配（主圖加鍵盤左右與 `aria-live`「第 n 張，共 N 張」即可達標）；`ImageWithFallback` 隨 src 重置（改元件）
+  ＋呼叫端傳 `loading="lazy"`／`decoding="async"`／寬高。alt 維持 `{名稱} - 圖片 N`。
 
 ### 3.3 穩定性與架構
 
-- 資料欄位不變；`public_listings` 12 欄契約不動；上傳限制的後端第二副本（`index.ts:4117,4121`）由子規劃決定共用位置。
-- e2e：`create_service_provider_page.py` 的 22 byte 假 JPEG 會被新流程解碼失敗 → 改用真的小 JPEG fixture（e2e 與 journey 共用，
-  journey 會打進真 Storage）；「框的＝傳的」用 2×2 色塊 fixture 在真瀏覽器驗輸出主色並斷言無 EXIF（APP1）；`listing_management.
-  feature:74-81`「上傳中輸入不被倒回」仍要綠。
-- 與 S6：S6 動詳情頁骨架與三態、明訂「縮圖切換不動」。**P1a（上傳管線、Create／Edit、後端、刊登管理卡比例）可與 S6 平行；
-  P1b（詳情頁輪播、桌機卡比例、img 屬性）在 S6 合併後另開 Plan Mode PR**。與 S7：`ServiceProviderManagement` 是 S7 檔，P1a
-  只改它的刪除清理與容器比例一行，排 S7 前後皆可，先合併者定。
-- 真機矩陣（業主）：iPhone Safari／LINE、Android Chrome／LINE；fixture：HEIC、48MP、EXIF 方向 6、透明 PNG（canvas 轉 JPEG 預設
-  黑底→補白底）、極大檔。
+- 資料欄位不變；`public_listings` 12 欄契約不動（`listings.test.ts:190-224`、`rls-policies.test.ts:254-282`）；5MB 的四份副本
+  （`constants.ts:17`、`index.ts:4145`、Edit 區域白名單、bucket）由子規劃決定共用位置，至少 Edit 的那份要刪。
+- e2e：`create_service_provider_page.py:15` 的 22 byte 假 JPEG 會被新流程解碼失敗 → 改用真的小 JPEG fixture（e2e 與 journey
+  共用：`f40_listing_steps.py`、`f60_time_scenarios_steps.py` 同一個 page object，journey 會打進真 Storage）；「框的＝傳的」
+  用 2×2 色塊 fixture 在真瀏覽器驗輸出主色並斷言無 EXIF（APP1）；`listing_management.feature:74-81`「上傳中輸入不被倒回」
+  仍要綠；mock 補上傳失敗路徑。
+- 與 S7：`ServiceProviderManagement` 是 S7 檔（construction-plan §3 S7 範圍），P1a 只改它的刪除清理與容器比例一行，先合併者定。
+- 真機矩陣（業主）：iPhone Safari／LINE、Android Chrome／LINE；fixture：HEIC、48MP、EXIF 方向 6、透明 PNG（canvas 轉 JPEG
+  預設黑底→補白底）、極大檔。
 
 ### 3.4 階段與測試
 
 | # | 工項 | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|---|
-| 1 | P1a | `imageGeometry.ts`＋`imagePipeline.ts`（解碼限邊、方向、裁切矩形、縮放、JPEG、大小估算、錯誤分類） | vitest node＋jsdom（ImageIO 替身） | 矩形換算正確；OOM 與格式錯誤分流 |
-| 2 | P1a | `PhotoPicker`＋`useListingPhotos`：自動置中裁、選用調整、狀態機、封面、動作列 | vitest jsdom＋e2e（真 JPEG、2×2 色塊） | 一張失敗其餘保留；封面反映到 `photos[0]`；輸出無 EXIF |
-| 3 | P1a | `listingDraft.ts`＋Edit 既有照片「調整範圍」＋衝突策略 | vitest | F5 後照片與文字都在；舊檔在更新成功後才刪 |
-| 4 | P1a | 後端：`DELETE /listings/photos`、引用檢查、配額、janitor（dry-run）、Edit 大小檢查、張數 1–3 | deno test | 非法路徑 403；仍引用者拒刪；1 張可送出 |
-| 5 | P1a | 文件：規格書 §11（寫行為不寫數字）、multi-step 候選結案、ui-ux §7 補「照片裁切與輪播」 | check-spec-drift | — |
-| 6 | P1b（S6 後，Plan Mode） | 詳情輪播＋lightbox、七容器 1:1、`ImageWithFallback`、img 屬性、`service_provider_detail.feature` 補輪播 | vitest＋e2e 溢版巡檢 | 手機可滑；鍵盤可切；一張壞圖不影響其他 |
+| 0 | P1a | 真機確認 HEIC 成因（P-03）；查現有刊登張數分佈 | — | 成因寫進 PR 描述 |
+| 1 | P1a | `imageGeometry.ts`＋`imagePipeline.ts`（解碼限邊、方向、裁切矩形、縮放、JPEG、大小估算、錯誤分類；編碼失敗不退回原檔） | vitest node＋jsdom（ImageIO 替身） | 矩形換算正確；OOM 與格式錯誤分流；編碼失敗該張不上傳 |
+| 2 | P1a | `PhotoPicker`＋`useListingPhotos`：自動置中裁、選用調整、狀態機、錯誤信封 | vitest jsdom＋e2e（真 JPEG、2×2 色塊） | 一張失敗其餘保留；輸出無 EXIF；後端錯誤訊息顯示出來 |
+| 3 | P1a | 後端 `DELETE /listings/photos`、引用檢查、刪刊登改走 Edge、Edit 大小檢查、張數 1–3 常數化 | deno test | 非法路徑 403；仍引用者拒刪；1 張可送出 |
+| 4 | P1a | 文件：規格書 §11（寫行為不寫數字）、ui-ux §7 補「照片裁切」 | check-spec-drift | — |
+| 5 | P1b（Plan Mode） | 七容器＋兩骨架 1:1、縮圖列保留、主圖鍵盤左右、`ImageWithFallback`、img 屬性；`service_provider_detail.feature` 補鍵盤切換 | vitest＋e2e 溢版巡檢＋兩支既有探針 | 骨架探針差 ≤2px 仍綠；觸控探針縮圖可見且焦點環不裁 |
+| 選配 | P1a-x | 封面、草稿、舊圖重裁、配額與 janitor、輪播／lightbox | 各自 | — |
 
 重量：中（P1a 三段式；P1b Plan Mode）。模型 Sonnet。
 
@@ -401,336 +410,413 @@
 - [ ] Q3-1 張數：**改「最多 3 張（至少 1 張）」（推薦）** / 維持恰好 3。
 - [ ] Q3-2 比例：**全部 1:1、七容器統一（推薦）** / 封面 1:1＋其餘 4:5。
 - [ ] Q3-3 裁切流程：**自動置中裁＋選用調整（推薦）** / 每張強制進裁切。
-- [ ] Q3-4 「大頭照」獨立於刊登封面：**推薦本輪不做**，封面即大頭照（在首頁牆、卡片、詳情、推薦樹頭像不用圖）。
+- [ ] Q3-4 「大頭照」獨立於刊登封面：**推薦本輪不做**，封面即大頭照。
 
-## 4. 管理者核對視圖（任務、點數、推薦樹、付款）（工項 A1a、A2、A1b）
+## 4. 管理者核對視圖（工項 A1a 核對面板、A2 對帳；稽核軌跡移到 §6 的 A1b）
 
-### 4.1 現況與根因
+### 4.1 現況與根因（develop HEAD；`index.ts` 現為 4,292 行）
 
-- 後台沒有任何「某位會員的獎勵明細、任務進度、推薦樹、付款紀錄」讀取：`/rewards*`、`/tasks*`、`/referrals/network/*` 全以本人
-  取數；admin 只看得到詳情面板的三個點數總額、最近 10 筆提領、推薦人姓名與直推人數、到期日。**沒有頁面列出 `payment_orders`
-  ／`subscriptions`**；付款異常只在系統告警。
-- `loadNetwork(client, viewerId)` 本來就以觀看者為參數（`index.ts:3515`），寫死「自己」的只有 `buildFlatNode` 的遮罩與 4 個
-  handler 的 `user.id`——重構面比 v1 估的小；SQL `referral_tree()` 只回 5 欄，產不出 `NetworkNode`，不用它。「往上的推薦人鏈」
-  兩邊都沒有現成程式。`RewardHistory` 自抓 `/rewards/history`、非 props 注入。
-- 帳本正確性靠函式內 `NOT EXISTS`，**沒有 unique constraint**；`repair_orphaned_payments` 的候選查詢（`20260807000001:80-130`）
-  就是「缺三代獎勵」的判定且已處理換線閘門；合法特例：fresh 換線（邊原地覆寫、歷史獎勵留舊上線）、fresh 清空當月桶但 credit
-  保留、預設推薦人、補繳多筆、任務免費續約（冪等鍵 `source_claim_id`）、`/payuni/prepare` fresh 在付款前就改 `profiles.
-  referred_by_*`（棄單者 profile≠edge 是常態）。
-- **沒有 admin 操作紀錄表**：停權（無 actor、無理由）、授予管理員、公告刪除、告警處理、首位管理員自授都不留痕；
-  `withdrawal_events`（同交易、含 `idempotent`）與 `member_verify_logs`（fail-closed）是僅有的兩條軌跡。既有 8 個寫入端點多數沒有
-  理由輸入。`adjustment_manual` 分類存在但無端點；`reward_balances.total_earned` 只算正數且排除提領——手動調整若直接 insert 會
-  灌進累計收益。
-- 後台既有約束：資料管理類走 `AdminConsole` 的四分頁（規格書 §13:726-729、ui-ux §3:58-65「加第五個分頁會壞版面，新功能先找
-  次分頁」）；`AdminConsole` 卸載即 dispose 快取；`repoHygiene.test.ts:250-262` 禁 admin 殼層用 URL state；S4 的詳情 Sheet 有
-  journey f70 與 e2e `sheet-header` 契約；**後台手機與桌機並重**（platform-uiux-redesign plan.md:16，v1 引用反了）。
+- 後台沒有「某位會員的獎勵明細、任務進度、推薦樹節點、付款紀錄」讀取：`/admin/*` 共 16 支（`index.ts:1061-1776`）＋
+  `/admin-setup/*` 兩支，沒有 rewards／tasks／network／payments 類；`/rewards*`、`/tasks*`、`/referrals/network/*` 全以本人
+  取數。唯一的例外是 `GET /referrals/debug/:userId`（`:4172-4231`，admin 可讀任一會員的名、碼、推薦碼來源、註冊步驟、會籍、
+  一代人數、碼狀態）。admin 詳情面板只有三個點數總額、最近 10 筆提領、推薦人姓名與直推人數（都取自
+  `profiles.referred_by_user_id`，不是 `referral_edges`）、到期日、證件狀態、遮罩後的身分證與帳號。**沒有頁面列出
+  `payment_orders`／`subscriptions`**；付款異常只在系統告警。
+- `loadNetwork(client, viewerId)`（`index.ts:3539`）本來就以觀看者為參數；寫死「自己」的是 `buildFlatNode` 的遮罩
+  （`:3632`）、4 個 handler 的 `user.id`（`:3727,3768,3805,3849`）加 overview 的 `myReferralCode` 與 children 的 `isSelf`
+  （`:3728,3770`）；SQL `referral_tree()` 只回 5 欄，產不出 `NetworkNode`。「往上的推薦人鏈」兩邊都沒有現成程式。
+  `RewardHistory` 自抓 `/rewards/history`（`RewardHistory.tsx:111-113`）、非 props 注入。
+- **推薦關係有兩套來源並存**（重審 S4-04，部分確認）：用 `profiles.referred_by_user_id` 的——gen1 發獎、任務與推薦王歸屬、
+  admin 詳情的推薦人與直推數、前端 `isAutoReferral`；用 `referral_edges` 的——gen2／gen3 發獎、推薦網絡四端點、`referral_tree()`、
+  `/referrals/debug`。同步點：`apply_referral_side_effects` 3b 在每次 completed 付款時把 edge 覆寫成當下 profile 值；edge 也
+  沒有歷史。所以「註冊未付款者」與「棄單者」必然 profile 有值、edge 不存在，同一個 admin 畫面的「直推人數」與「推薦網絡一代數」
+  在 profile≠edge 時會不一致。
+- 帳本正確性靠函式內 `NOT EXISTS`（`pay_referral_generations` 三處，鍵 `(referee, generation, subscription_id, source_claim_id)`）
+  ＋ `apply_referral_side_effects` 對 profiles 的列鎖；**沒有 unique constraint、沒有事後的重複發獎偵測**（重審 S4-06，確認：
+  migrations 內 `having count(*) > 1` 只有 payment_orders 與 subscriptions）。合法特例：fresh 換線（邊原地覆寫、歷史獎勵留舊上線）、
+  fresh 清空當月桶但 credit 保留、預設推薦人、補繳多筆、任務免費續約（`source_claim_id`）、prepare fresh 在付款前就改 profile。
+- `repair_orphaned_payments` 的候選查詢（`20260807000001:80-132`）**是函式本體的迴圈、同迴圈內直接發獎**（`:135`），候選分支 (a)
+  是「已付款卻沒有 active 推薦碼」不是缺獎勵——「抽成共用 dry-run」等於 `create or replace` 發獎函式（重審 S4-05，確認）。
+- **沒有 admin 操作紀錄表**：停權（無 actor、無理由）、授予管理員、公告刪除、告警處理（只寫 `resolved_at`）、首位管理員自授都不留痕；
+  `withdrawal_events`（同交易、含 `idempotent`）是唯一的 admin 事件表；`member_verify_logs` 記的是 QR 核身（`admin_id` 已改名
+  `verifier_id`，`20260902000001`），不是 admin 操作；**證件審核沒有事件表**（`admin_review_id` 只 update profiles，重審 S4-01）。
+  8 個寫入端點 5 個沒有理由欄（提領狀態與證件退回的理由由 SQL 必填）。`adjustment_manual` 分類存在但無端點；
+  `reward_balances.total_earned` 只算正數且排除提領，手動調整若直接 insert 會灌進累計收益。
+- **`/admin/withdrawals` 回未遮罩的身分證、銀行帳號與證件簽名網址**（`index.ts:1167,1179,1217,1222,1230-1231`，重審 S4-02，
+  確認）——會員核對面板的提領區不能直接複用它。
+- `payment_orders.status` 集合是 pending／completed／failed／cancelled／expired；`/internal/reconcile-pending-payments`
+  （`:2606`，每小時）會把超過 PayUni 3 天期限再加 1 天緩衝仍查無結果的 pending 單標成 expired——pending 不會無限停留。
+- 後台既有約束：資料管理類走 `AdminConsole` 的四分頁（規格書 §13 `:744`、ui-ux §3 `:58-67`「加第五個分頁會壞版面，新功能先找
+  次分頁」）；`AdminConsole` 卸載即 dispose 快取；`repoHygiene.test.ts:251-262` 禁 admin 殼層用 URL state；S4 的詳情 Sheet 有
+  journey f70 與 e2e `sheet-header` 契約；後台手機與桌機並重。
 
-### 4.2 設計：三層
+### 4.2 設計（v3 拆成兩個純讀工項；稽核軌跡 §6）
 
-**(1) 稽核軌跡 `admin_audit_log`（A1a，第 6 項也靠它）**
-- 欄位：id、admin_id（`on delete set null`＋姓名快照）、action、target_type、target_id、before、after、reason、request_id、
-  created_at。**原子性**：單表寫入（停權、授予、公告、告警、代改、調整）改成 SQL 函式 `update … returning` 取 old 並在**同一
-  交易**寫 audit；已有自己事件表的（提領狀態、證件審核）**不雙寫**，`GET /admin/audit` 以 UNION view 呈現，並看 `idempotent`
-  不重複記。涵蓋 8 個既有寫入＋`/admin-setup/set-self-admin`；由 `app.routes` 推導的列舉測試保證「每個 admin 寫入都有 audit」。
-- 敏感欄位的 before／after：**二擇一（Q4-8）**——另存加密原值（pgcrypto，金鑰在 Edge secret，管理端只讀遮罩）以保留還原能力，
-  或只存遮罩並刪掉「可還原」的承諾。append-only 靠 `BEFORE UPDATE/DELETE/TRUNCATE` trigger（RLS 擋不住 service_role）。
-- reason：代改、調整、停權**必填**；授予管理員、證件、公告、告警選填（既有端點補欄位與 UI）。audit 寫入失敗：金流類
-  fail-closed、其餘寫 `system_alerts`＋回應帶 `auditFailed`（Q4-7）。helper 放 `api/audit.ts`（不放 `_shared/`）；先抽
-  `api/mask.ts`；`/admin/*` middleware `c.set('adminId')`。保存期限與條款十二「終止後一年」對齊（Q4-7）。
-
-**(2) 會員層核對面板（A1a；在既有 Sheet 內，不升獨立路由，Q4-5）**
+**(1) 會員層核對面板（A1a；在既有 Sheet 內，不升獨立路由，Q4-5）**
 - Sheet 維持（手機全螢幕）、內加「完整核對」展開成 `MemberManagement` 內的子視圖（state 驅動，store／busy／鎖分頁仍在
-  `AdminConsole`，不需新路由）；保住「查人→看→回列表查下一位」迴圈與 S4 契約。手機首屏＝身分卡＋4 項關鍵事實（會籍狀態與
-  到期、最近一筆付款、點數餘額是否與流水帳一致、處理中提領），其餘折疊；**逐區載入、各區三態、失敗不連坐**（§13.4）。
+  `AdminConsole`）；手機首屏＝身分卡＋4 項關鍵事實（會籍狀態與到期、最近一筆付款、點數餘額是否與流水帳一致、處理中提領），
+  其餘折疊；**逐區載入、各區三態、失敗不連坐**。
 
 | 分區 | 內容 | 資料來源（新增，只讀） |
 |---|---|---|
-| 付款與會籍 | `payment_orders`（明確投影，不含 `payuni_response`）＋`subscriptions` 時間軸；pending 超過付款期限標黃 | `GET /admin/members/:id/payments` |
+| 付款與會籍 | `payment_orders`（明確投影，不含 `payuni_response`）＋`subscriptions` 時間軸；pending 標黃、expired 標灰 | `GET /admin/members/:id/payments` |
 | 獎勵明細 | `RewardHistory` 注入化後複用，多一欄「對應付款」；頁尾「流水帳提領列 vs withdrawals」是否一致 | `GET /admin/members/:id/rewards` |
-| 推薦關係 | 一代／二代／三代推薦人（往上，新程式）＋推薦網絡（`ReferralTreeView` 注入 admin 資料源，**完整姓名**＋常駐說明「管理員檢視：顯示完整姓名」，含付款狀態與「這筆給一代推薦人的獎勵有沒有發」） | `GET /admin/members/:id/network/{overview,children,search}`：4 個 handler 本體抽成 `(client, viewerId, { mask })`，admin 端點呼叫同一份 |
-| 任務 | 每月桶人數與名單 vs 該月 credit（granted／claimed）；不等式只驗單向、排除當月有 `ledger_reset` 者 | `GET /admin/members/:id/tasks` |
-| 提領 | 全部＋事件歷史 | 既有 `/admin/withdrawals` 加 `userId` |
-| 操作紀錄 | audit UNION view：action 中文標籤、操作者、時間、理由、before/after 摺疊、分頁 | `GET /admin/audit?target=` |
+| 推薦關係 | **兩套來源並列**：profile 推薦人（`referred_by_*`、`is_default`、`changed_at`）與 edge 推薦人，不一致時標示；一代／二代／三代推薦人（往上，新程式，以 edge 為準）；推薦網絡（`ReferralTreeView` 注入 admin 資料源，**完整姓名**＋常駐說明），含付款狀態與「這筆給一代推薦人的獎勵有沒有發」 | `GET /admin/members/:id/network/{overview,children,search}`：4 個 handler 本體抽成 `(client, viewerId, { mask })` |
+| 任務 | 每月桶人數與名單 vs 該月 credit；只驗單向、排除當月有 `ledger_reset` 者 | `GET /admin/members/:id/tasks` |
+| 提領 | 全部＋事件歷史——**新端點、遮罩投影**（不複用 `/admin/withdrawals`，S4-02） | `GET /admin/members/:id/withdrawals` |
+| 操作紀錄 | 等 A1b 的 audit 表上線後才加這一區（面板先留位） | — |
 
-- 取數函式獨立檔＋`MEMBER_AUDIT_API` 分組仍由 `AdminDashboard` 注入；`useAdminList` 配 `slot: null`。
-- 新端點約 20 支進 4,200 行的 `index.ts`：**總綱表態先抽 `api/deps.ts`（requireAuth／isAdminUser／sb）再拆模組，屬結構調整，
-  A1a 規劃用 Opus**。
+- 取數函式獨立檔＋`MEMBER_AUDIT_API` 分組由 `AdminDashboard` 注入；`useAdminList` 配 `slot: null`。新端點約 10 支進
+  4,292 行的 `index.ts`：**先抽 `api/deps.ts`（requireAuth／isAdminUser／sb）再拆模組，屬結構調整，A1a 規劃用 Opus**。
 
-**(3) 全站對帳報表（A2；放「告警」次分頁，Q4-5）**
-- 每項檢查回 `{ status: ok | exceptions | error | not_run, count, ranAt }`，畫面四態並列（「查詢出錯」絕不畫成 0 例外；「0 例外」
-  寫「上次執行 {時間}」用 `DataAgeNote`）；九項各自請求與進度；`statement_timeout`＋advisory lock 防連點；例外列全序分頁；
-  九種檢查正規化成同一列形（會員／問題／應有 vs 實際／金額／時間／連結），手機卡片與桌機表格共用；例外數墨色、狀態靠 Badge。
-- 第一批檢查（都從規格書規則直譯，含**合法特例排除**）：
+**(2) 全站對帳報表（A2；純讀，放「告警」次分頁，Q4-5）**
+- 每項檢查回 `{ status: ok | exceptions | error | not_run, count, ranAt }`，畫面四態並列；各自請求與進度；`statement_timeout`＋
+  advisory lock 防連點；例外列全序分頁；正規化成同一列形，手機卡片與桌機表格共用。
+- 第一批十一項（都從規格書規則直譯，含**合法特例排除**；v3 修正第 2、7、8 項，新增第 11 項）：
   1. completed 訂單無對應 subscription（舊列以 `payment_transaction_id` 後備）。
-  2. 付款（首購、補繳、續約、任務續約 claim）的三代獎勵缺筆或多筆——**重用 `repair_orphaned_payments` 的候選查詢抽成共用
-     dry-run 函式**（含 `referred_by_changed_at ≤ completed_at` 閘門），二三代祖先後來換線者標「不可判定」。
+  2. 付款（首購、補繳、續約、任務續約 claim）的三代獎勵缺筆或多筆——**另寫唯讀查詢，複製 `repair_orphaned_payments` 的候選
+     條件與 `referred_by_changed_at ≤ completed_at` 閘門、剔除候選分支 (a)，不改發獎函式**（S4-05）；以「合法特例矩陣」測試
+     對照 repair 的行為，兩邊同時改才不會漂。二三代祖先後來換線者標「不可判定」。
   3. `reward_transactions` 型別與外鍵不一致（`type='withdrawal'` 而 `withdrawal_id` 為 null；`referral_reward` 而 subscription
-     與 claim 皆 null）——FK 是 `on delete set null`，「指向不存在」結構上不可能，v1 寫錯。
-  4. 月份桶 vs credit 張數（單向不等式；排除當月 `ledger_reset`；月份鍵沿用 `Asia/Taipei`）。
-  5. 跨來源餘額：Σ ledger 提領列 vs `withdrawals(amount+fee)`；退款 adjustment vs rejected 提領（`available = Σamount` 是恆等式，
-     v1 寫錯）。
+     與 claim 皆 null）。
+  4. 月份桶 vs credit 張數（單向不等式；排除當月 `ledger_reset`；月份鍵 `Asia/Taipei`）。
+  5. 跨來源餘額：Σ ledger 提領列 vs `withdrawals(amount+fee)`；退款 adjustment vs rejected 提領。
   6. 提領狀態與最後事件不一致、`awaiting_collection` 超過 N 天（排除事件表建立前的舊提領）。
-  7. `payment_orders` pending 超過 N 小時（N > 3 天付款期限）。
-  8. `profiles.referred_by_user_id` 與 `referral_edges.referrer` 不一致（排除有 pending fresh 訂單者）。
+  7. **pending 單超過 PayUni 期限＋1 天仍未被 reconcile 標 expired**（偵測排程失效；v2 的「pending 超過 N 小時」在排程正常時
+     命中集合為空）。
+  8. **推薦人兩套來源不一致**（S4-03 口徑修正）：母體是「有 completed 訂單者」；`profiles.referred_by_user_id` ≠
+     `referral_edges.referrer_user_id`，且 `referred_by_changed_at ≤ 最近一筆 completed_at`（付款後才換線的在途者排除；
+     pending 會被 reconcile 標 expired，不能當排除條件）。付款前的 profile≠edge 是常態，不報。
   9. 未處理告警 > N 天。
-  10. `national_id` 正規化後重複（給第 6 項的唯一索引清零用）。
-  門檻 N 全部進設定表。驗收：合法特例矩陣（換線／fresh／補繳／預設推薦人／免費續約）各一例**不得報**；對正式環境快照跑全部
-  檢查，例外集須全數可解釋。排程寫告警列第二期（Q4-4）。
-- **合理性訊號**（Q4-6）：規格書 §9.2 自承弱去重靠「經濟上不划算」，業主要的「合理」可能包含同手機／同收款帳號多帳號、短時間
-  成鏈註冊付款；樹深度（三代／到根）；核對留存（簽核／匯出）。本總綱先列第一批一致性檢查，合理性訊號由業主定範圍後進 A2。
-- **手動調整**（Q4-2，**推薦本輪不納入**：它是唯一會寫帳本的新能力，與「只讀」承諾相反）。若納入：SQL 函式
-  `admin_adjust_reward(p_admin, p_user, p_amount, p_reason, p_idem_key)`——`for update` profiles、`idem_key` partial unique、
-  audit 同交易、金額上限、`available<0` 明示；規格書 §8.4／8.5 寫明 `total_earned` 語意；UI 開確認框時產生 idem_key；扣點
-  紅實心確認、加點墨黑；雙人覆核與會員端可見理由三項控制。
+  10. `national_id` 正規化後重複（給 A1b 唯一索引清零用）。
+  11. **重複發獎**（S4-06）：`reward_transactions` 依 `(referee, generation, subscription_id, source_claim_id)` 計數 > 1。
+  門檻 N 全部進設定表。驗收：合法特例矩陣各一例**不得報**；對正式環境快照跑全部檢查，例外集須全數可解釋。排程寫告警列第二期。
+- **合理性訊號**（Q4-6）與**手動調整**（Q4-2，推薦不納入）維持 v2 的說法：前者由業主定範圍後進 A2，後者若納入是唯一會寫帳本的
+  新能力，走 `admin_adjust_reward` SQL 函式＋audit 同交易（A1b 之後）。
 
 ### 4.3 穩定性與架構
 
-- 新讀取全是 security definer＋revoke 的 SQL 函式或 Edge 查詢，不改發獎、換線、提領函式；`ADMIN_MUTATION_GROUPS` 新增
-  `memberProfileEdit → ['members','withdrawals']`、`rewardAdjust`（不入表，註解）；核對、對帳、audit 一律 `slot: null`。
-- 與 S7：`ReferralTreeView`、`MemberDetailSheet`、`RewardHistory` 是 S7 也會碰的檔 → A1a 的面板階段排在 S7 合併後，或先合併者定、
-  後者 rebase（都是注入式改動）。
-- 會員端行為由 `network-endpoints.test.ts` 釘住再參數化（階段順序：先抽取、後端點）。
+- 新讀取全是 security definer＋revoke 的 SQL 函式或 Edge 查詢，不改發獎、換線、提領函式；`ADMIN_MUTATION_GROUPS` 不動
+  （純讀）；核對、對帳一律 `slot: null`。
+- 與 S7：`ReferralTreeView`（已是注入式）、`MemberDetailSheet`、`RewardHistory` 是 S7 也會碰的檔；三個 PR 都沒動它們。A1a 的
+  面板階段排在 S7 合併後，或先合併者定、後者 rebase。會員端行為由 `network-endpoints.test.ts` 釘住再參數化。
 - A1 建在尚未人工驗收的 S3／S4／S5 之上（驗收站 2、3 延到 S7 後）：風險記在 §11。
 
 ### 4.4 階段與測試
 
 | # | 工項 | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|---|
-| 1 | A1a | `api/deps.ts`／`api/mask.ts`／`api/audit.ts`；`admin_audit_log` 表、trigger、RLS；既有單表寫入改 SQL 函式同交易；UNION view；列舉測試 | sql＋deno test | 每個寫入一筆；表無改刪路徑；失敗政策依裁決 |
-| 2 | A1a | `loadNetwork` 的 mask 參數化（會員端零變）＋往上推薦人鏈＋`RewardHistory` 注入化 | deno（既有測試全綠）＋vitest | — |
-| 3 | A1a | 會員層讀取端點（payments 投影、rewards、network×3、tasks、audit）＋契約 | deno test | 非 admin 403；遮罩；與會員端同形 |
-| 4 | A1a | Sheet 內子視圖六區（逐區三態）＋操作紀錄 UI | vitest jsdom＋e2e admin 2 條 | 手機首屏四事實；失敗不連坐 |
-| 5 | A2 | 對帳函式 10 支（dry-run 共用、排除條件、門檻設定）＋`/admin/reconcile`＋告警次分頁 UI 四態 | sql＋deno（每支「人造例外」＋「合法特例不得報」各一） | 無誤報矩陣通過 |
-| 6 | A2（Q4-2 若納入，Opus） | `admin_adjust_reward`＋確認框＋audit | deno＋vitest | 重送不重複；餘額鎖 |
-| 7 | — | 文件：規格書 §13 新段「稽核與對帳」（§3 路由不變）、§8.4 `adjustment_manual`、快取段新事件、用語；ui-ux §3 次分頁例 | check-spec-drift | — |
+| 1 | A1a | `api/deps.ts`／`api/mask.ts`；`loadNetwork` 的 mask 參數化（會員端零變）＋往上推薦人鏈＋`RewardHistory` 注入化 | deno（既有測試全綠）＋vitest | — |
+| 2 | A1a | 會員層讀取端點（payments 投影、rewards、network×3、tasks、withdrawals 遮罩投影）＋契約 | deno test | 非 admin 403；遮罩；與會員端同形；不含 `payuni_response` 與簽名網址 |
+| 3 | A1a | Sheet 內子視圖五區（逐區三態）＋兩套推薦人來源並列 | vitest jsdom＋e2e admin 2 條 | 手機首屏四事實；失敗不連坐；profile≠edge 有標示 |
+| 4 | A2 | 對帳函式 11 支（唯讀、排除條件、門檻設定）＋`/admin/reconcile`＋告警次分頁 UI 四態 | sql＋deno（每支「人造例外」＋「合法特例不得報」各一） | 無誤報矩陣通過 |
+| 5 | — | 文件：規格書 §13 新段「核對與對帳」、用語；ui-ux §3 次分頁例 | check-spec-drift | — |
 
-重量：A1a 重、A2 中偏重。**A1a 規劃與階段 1／2 用 Opus**（`index.ts` 結構調整、推薦網絡重構）；A2 階段 5／6 用 Opus；其餘 Sonnet。
+重量：A1a 中偏重、A2 中。**A1a 規劃與階段 1 用 Opus**（`index.ts` 結構調整、推薦網絡重構）；A2 階段 4 用 Opus；其餘 Sonnet。
 
 ### 4.5 開放問題
 
-- [ ] Q4-1 稽核涵蓋所有 admin 寫入（**推薦**）或只金流類；是否也稽核敏感資料「讀取」（證件簽名網址、完整字號）。
+- [ ] Q4-1 稽核涵蓋所有 admin 寫入（**推薦**）或只金流類；是否也稽核敏感資料「讀取」——移到 §6（A1b）。
 - [ ] Q4-2 手動調整：**推薦本輪不納入**；納入則附上限、雙人覆核、會員端可見理由。
 - [ ] Q4-3 admin 看推薦網絡不遮罩二三代姓名：**推薦不遮罩**（常駐說明）。
 - [ ] Q4-4 對帳排程寫告警：**第二期**。
-- [ ] Q4-5 面板在 Sheet 內子視圖（**推薦**）/ 獨立路由（需動 S5 快取契約）；對帳放告警次分頁（**推薦**）/ 第五分頁（要改
-  ui-ux §3 與規格書 §13 的四欄規則與 e2e）。
-- [ ] Q4-6 「合理」是否含多帳號／成鏈訊號；「完整推薦樹」深度；「定期」是否要核對留存（簽核／匯出）。
-- [ ] Q4-7 audit 失敗政策（金流類 fail-closed？）與保存期限。
-- [ ] Q4-8 敏感欄位 before／after：加密原值（可還原）/ 只存遮罩（刪「可還原」承諾）。
+- [ ] Q4-5 面板在 Sheet 內子視圖（**推薦**）/ 獨立路由；對帳放告警次分頁（**推薦**）/ 第五分頁。
+- [ ] Q4-6 「合理」是否含多帳號／成鏈訊號；「完整推薦樹」深度；「定期」是否要核對留存。
+- [ ] Q4-7、Q4-8（audit 失敗政策、敏感欄位 before／after）：移到 §6（A1b）。
+- [ ] Q4-9（v3 新）推薦關係以哪套來源為準：**面板兩套並列、對帳以 edge 為準（推薦）** / 改程式統一來源（動發獎，不在本輪）。
 
-## 5. 定位：記錄刊登者位置、依距離排序（工項 L1a、L1b）
+## 5. 定位：依距離排序（工項 L1；v3 改成「先做中心點排序」）
 
-### 5.1 現況與根因
+### 5.1 現況與根因（develop HEAD；三個 PR 未動本節任何前端檔）
 
-- 「依距離排序」全在前端：首頁掛載就要定位（無說明、無按鈕，`HomePage.tsx:142-149`），用 **22 個縣市中心點查表**算距離
-  （只看 `city`），被拒／逾時靜默；畫面無距離數字、無排序說明。
-- **刊登沒有任何座標欄位**、沒有端點接收座標、沒有「最後位置」欄位；DB 只有 `pgcrypto`。
-- 首頁一次 `select('*')` 全抓、無分頁；篩選是多縣市逐區（`districtSelection.ts:117`）、性別多選、關鍵字三欄
-  （`listingSearch.ts:28`）、自訂類別，全在前端（純函式有測試）。
-- 公開面：`public_listings` 12 欄由兩支測試釘死；**原表 `listings` 對 anon 整表可讀**——座標不能加在 `listings`。
-- `districts` 預設 `['全區', …全部區]`、可多選——「第一個勾選的區」是系統性偏差。條款沒有位置資料條目；LINE 內建瀏覽器的
-  geolocation 行為 repo 無紀錄。
-- **v1 的「RPC 只回距離」不是隱私保證**：匿名呼叫者換三組自選原點就能三邊定位 `source=gps` 的刊登者到百公尺（交友 app 的
-  典型事故）——本輪最嚴重的 P0。
+- 「依距離排序」全在前端：首頁掛載就要定位（無說明、無按鈕，`HomePage.tsx:142-150`），用 **22 個縣市中心點查表**算距離
+  （`:61-83`，只看 `city`；Haversine `:46-58` 模組私有、無單元測試），被拒／逾時靜默（`:147` 只 `setUserCoords(null)`）；
+  畫面無距離數字、無排序說明；e2e 只有 `home_listings.feature:57-69` 兩條情境（Playwright `set_geolocation`，台北市／高雄市）。
+- **刊登沒有任何座標欄位**、沒有端點接收座標、沒有「最後位置」欄位；DB extensions 現為 `pgcrypto`＋`pg_cron`（後者由 #380
+  新增，repo 第一支 DB 排程）。**repo 內沒有任何區級座標**：`TAIWAN_REGIONS`（`constants.ts:115-494`）是 22 縣市／368 區的
+  名稱表，座標只有首頁那 22 個縣市中心點。
+- 首頁一次 `select('*')` 全抓、無分頁；篩選是多縣市逐區（`districtSelection.ts:117`）、性別多選、關鍵字三欄（`listingSearch.ts:28`）、
+  自訂類別，全在前端（純函式有測試）。地區篩選 UI：桌面 `DesktopFilterPopover`「服務地區」、手機底部面板「服務地區」區段，共用
+  `LocationFilterChips`（`:900-957`：縣市 chip → 展開該市全部區 chip，多選）；首頁沒有任何排序控制或「我的位置」輸入。
+- 公開面：`public_listings` 12 欄由兩支測試釘死（`listings.test.ts:190-224`、`rls-policies.test.ts:254-282`）；**原表 `listings`
+  對 anon 開放 SELECT**（PUBLIC policy `20260620000004:30-31`＋`grant select … to anon` `20260914000002:35`；列集同 view、欄位
+  全開）——座標欄不能加在 `listings`。
+- `districts` 預設 `['全區', …全部區]`、可多選——「第一個勾選的區」是系統性偏差。條款十二沒有位置資料條目（蒐集項目只有姓名、
+  身分證、生日、電話、Email；保存「終止本服務後一年」）；LINE 內建瀏覽器的 geolocation 行為 repo 無紀錄。
+- **會籍失效不是事件**（重審 L-01，確認）：`has_active_subscription` 以 `now() <= end_date` 即時判定，`subscriptions` 無 status
+  欄、無到期 trigger、無 cron；刪刊登是前端直刪（FK cascade 可掛）；付費會員沒有自助「終止服務」路徑（`cancel-signup` 限未付款）。
+  v2 §5.2B「會籍失效時位置列一併刪除」沒有任何機制可掛。
+- **級距會讓跨縣市排序退化**（重審 L-03，確認）：以現行 22 中心點算，高雄訪客對其餘 21 市全落在 20+ km（屏東 26.7、台南 42.1、
+  台東 91.2），v2 的級距設計會把三者併成同一桶改依 `created_at`，比今天的連續排序退化；22 中心點兩兩 <20 km 的只有 4 對。
+- hosted 拋棄式分支 anon／authenticated 的 table GRANT 為空（`supabase/README.md:192-194`）：新表若只寫 policy 不寫 GRANT，
+  本人 SELECT 也是 42501（重審 L-04，確認）。e2e `supabase_rest_mock.py` 沒有 `/rpc/` route，只攔 `/public_listings**`。
 
-### 5.2 設計
+### 5.2 設計（v3）
 
-**A. 位置來源（Q5-1）：服務據點為主，手動更新目前位置為輔**
-- 刊登者在建立／編輯刊登設定**服務據點**：預設由 `city`／`districts` 解析——單一區→區中心點（精度 `district`）、全區或多區→
-  縣市中心點（精度 `city`）；「使用我目前的位置」→ GPS 點（精度 `point`，**就地**同意文字：「公開的只有大約距離，可被推算
-  到約 1 公里」）。刊登管理頁有「更新為目前位置」與「清除位置」。**不做**「開 app 自動更新」（與「進站不再自動要定位」
-  矛盾，且讓服務者位置在不知情下移動）；地圖點選列第二期。
-- **既有刊登不需回填**：`listing_locations` 是**覆寫表**，RPC 對無列者用 `districts`／`city` 的中心點 coalesce（多區取最小距離）
-  → 上線當天每筆刊登都有位置可排，不退化。
+**第一步 L1-1：依縣市／區中心點排序——不收集位置、不新表、不要定位權限（Q5-1 選項 D，推薦）**
+- 首頁結果列上方整寬分段切換「最新｜離我最近」（沿用 `HomeViewToggle` 的 `role=group`＋`aria-pressed`＋`bg-sel`；觸控 44px、
+  滑鼠 36px）。**拿掉掛載即定位**（`HomePage.tsx:142-150`；ui-ux §7 本就寫「依賴定位的功能只在取得真實定位後才啟用」）。
+- 點「離我最近」→ 選「你所在的地區」（縣市 → 區，與「服務地區」篩選分開語意；沿用 `LocationFilterChips` 的 chip 樣式但單選）；
+  記在 sessionStorage，返回詳情頁後還原；之後顯示「依『台北市 大安區』排序・更改」。
+- 距離來源：**訪客所選區的中心點 ↔ 刊登的區中心點**（刊登 `districts` 單一區→該區中心點；全區或多區→縣市中心點，多區取最小
+  距離）。中心點資料：368 區＋22 縣市座標做成前端常數檔 `src/data/regionCentroids.ts`（**資料來源要在 PR 寫明**：政府開放資料
+  的鄉鎮市區界圖形中心，或各區公所座標；repo 目前沒有這份資料，不能憑印象造），vitest 以 fs 對 `TAIWAN_REGIONS` 鍵逐一比對
+  （368 區一個不缺、無多餘）。
+- 顯示：連續距離取整數「約 N 公里」、同區寫「同區」、<1 km 寫「1 公里內」；**不用級距桶排序**（L-03），排序鍵
+  `(distance, created_at desc, id)` 全序。**沒有隱私面**：兩端都是公開的行政區中心點，不涉及任何人的位置。
+- 不做：定位權限、GPS、任何位置儲存、新表、RPC、條款變動。既有刊登零回填（每筆刊登本來就有 `city`／`districts`）。
+- 觀察指標（第一步上線後）：「離我最近」點擊率、選區後的詳情頁點擊率 vs「最新」；有了數字再決定要不要第二步。
 
-**B. 儲存與公開粒度（Q5-2，擋開工）**
-- 新表 `listing_locations`（user_id pk → `listings.user_id`、lat、lng、**grid_lat／grid_lng（寫入時吸附到 1 km 網格）**、accuracy_m、
-  source ∈ {district, city, gps}、updated_at）。authenticated 只有 SELECT 本人；**寫入只能經 RPC** `upsert_listing_location`
-  （`auth.uid()`、該使用者有 listing、source 白名單、台灣範圍框）；anon 不可讀。中心點表只在 SQL 一份（RPC 吃 `(city, district)`），
-  前端不需 368 列座標。
-- 公開讀取：**距離只用網格座標計算、回傳分級**（<1 km／1–3／3–5／5–10／10–20／20+，或整數公里取整），永不回座標；對匿名
-  呼叫限流（PostgREST RPC 不經 Edge，`bump_rate_limit` 對 anon 已 revoke → 走 Edge `GET /listings/nearby` 沿用限流，RPC 只給
-  service_role；或 RPC 內讀 `request.headers` 限流，階段 2 擇一實測）。防三角定位測試：相近查詢點的回傳不得讓位置可推算到
-  <1 km。訪客座標送出前捨入到 0.01 度、確認不進日誌。
-- 顯示：`district`／`city` 精度寫「約 N 公里」整數或「1 公里內」，**不顯示 0.1 公里**（區中心點相距數公里，是假精度）；
-  `point` 精度也只到級距。「同區」只在訪客明確選了地區時顯示。未定位者排最後、不顯示距離。
-- 條款：新增「位置資料」告知（目的、保存只留最新一筆、可隨時清除）；刪刊登／會籍失效／終止服務時位置列一併刪除。
+**第二步（選配，觀察後裁決）**：「使用我目前的位置」——GPS 一次性取得、前端吸附到最近的區中心點後丟棄座標、不存不傳；只是
+省掉手選那一步。仍不新表、不改條款。
 
-**C. 訪客側：先問用途、再要權限，拒絕也能用**
-- 首頁結果列上方獨立一列整寬分段切換「最新｜離我最近」（沿用 `HomeViewToggle` 的 `role=group`＋`aria-pressed`＋`bg-sel`，
-  高度 44px）。**進站不再自動要定位**。點「離我最近」→ 軟詢問對話框（只出現一次）「用你目前的位置，把附近的服務者排前面。
-  位置只用來排序，不會留存。」＋[使用目前位置][改選地區]；定位中有進行中與取消；拒絕／無法取得／逾時三種文案（含「LINE 或
-  手機的定位權限沒開」）→「選擇你所在的地區」（縣市／區，與「服務地區」篩選分開語意）；已存地區＋系統已拒＝直接用地區排序
-  並顯示「依『台北市 大安區』排序・更改」。卡片：照片牆磚右上角膠囊、詳細卡保留「城市 區」行＋膠囊；切換排序沿用降透明度＋
-  `aria-busy`。
-- **首頁資料流路線（Q5-5）**：**預設 (b) 薄距離 RPC**——`listing_distances(p_lat, p_lng)` 只回 `(listing_id, distance_bucket,
-  precision)` 全量小表，前端照舊抓 `public_listings`＋既有純函式篩選再 join 排序；不改篩選語意、不重寫 SQL、不動 S6 資料路徑、
-  e2e REST mock 照用。(a) 全搬 RPC（陣列篩選參數、`total`、分頁、`debounce`）留給資料量逼出時，RPC 介面另訂。前端
-  feature-detect：距離 RPC 失敗就退回縣市排序。
-- 篩選／排序／已載入頁數進 URL query 或 sessionStorage，返回詳情頁後還原。
+**第三步（v2 §5.2A／B 的「服務據點」，本輪不做）**：刊登者設 GPS 據點、`listing_locations` 新表（只存 1 km 網格 `grid_*`，
+Q5-2 已裁）、RPC、限流、防三角定位測試、條款新增位置資料條目、失效連動刪除（L-01：要先有失效事件或改成讀取時過濾）。
+v2 的細節保留在 `git show 8f0ebcf:docs/plans/platform-growth-and-trust/plan.md` §5.2，第三步開工時再取回，不在 v3 維護。
 
 ### 5.3 穩定性與架構
 
-- `listings`／`public_listings` 零變更；新表走 journey `45_listing_rls.feature` 同款 RLS probe（anon 讀 0 列）。RPC 以
-  `public_listings` 為基底（可見性只定義一次，不自寫 `has_active_subscription`）；`set search_path`；clamp 參數；全序排序
-  `(bucket, created_at desc, id)`。
-- **L1a（後端：表、RPC、Edge nearby、中心點 seed、條款）可先做；刊登表單位置區塊與刊登管理頁「更新／清除」歸 L1a 第二段
-  並排在 P1a 合併後（同改 Create／Edit）；L1b（首頁排序 UI、軟詢問、地區 fallback、膠囊、feature-detect、URL state）在 S6
-  合併後另開 Plan Mode PR**。e2e：`set_geolocation` 既有 mock；補「拒絕→選地區」；距離 RPC 走 Edge 時由 `backend_api_mock` 攔。
-- 量級：Haversine 非瓶頸，逐列可見性函式才是（現行 view 已付）；N 在數萬內毫秒級。
+- `listings`／`public_listings` 零變更；無 migration；無後端改動——L1-1 是純前端 Plan Mode PR（`fix/*`），不需三段式。
+- e2e：`home_listings.feature:57-69` 兩條 `set_geolocation` 情境改寫成「選地區→最近在前」與「未選地區→最新在前」；
+  `home_steps.py:26-29` 的 `_CITY_COORDS` 退場；補「切換排序時 `aria-busy`」；溢版巡檢加排序列。vitest：`regionCentroids`
+  鍵集合、距離排序純函式（抽出 `HomePage.tsx:46-58` 的 Haversine 並測）。
+- 與 S6：已合併。與 T1：首頁只有 `hasBottomNav` 一行屬 T1，L1-1 不碰。與 P1b：都動 `HomePage.tsx` 的結果列區塊，先合併者定。
 
 ### 5.4 階段與測試
 
 | # | 工項 | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|---|
-| 1 | L1a | 區鄉鎮中心點 SQL seed（368 區，與 `TAIWAN_REGIONS` 鍵一致，vitest 以 fs 讀 migration 對表）；`listing_locations` 表、RLS、網格吸附、`upsert_listing_location` | sql＋deno＋journey RLS probe | anon 不可讀；寫入只能 RPC；吸附正確 |
-| 2 | L1a | 距離查詢（Edge `GET /listings/nearby` 或 RPC）＋級距＋限流＋防三角定位測試 | deno test | 不回座標；兩相近查詢點推不出 <1 km；第 N+1 次 429 |
-| 3 | L1a（P1a 後） | 刊登表單位置區塊（唯讀一行、使用目前位置、就地同意、結果行含更新時間與清除、預設收合）；刊登管理頁更新／清除；刪刊登／失效連動刪除 | vitest jsdom＋e2e `listing_management` 1 條 | 建立後有列；清除後走中心點 |
-| 4 | L1b（S6 後，Plan Mode） | 排序切換、軟詢問、地區 fallback、膠囊、feature-detect、URL state | vitest＋e2e（補「拒絕→選地區」） | 被拒仍可依地區排序；卡片顯示級距 |
-| 5 | L1a | 文件：規格書 §11／§12.3 新段「位置與距離」、ui-ux §7 定位規則擴寫、條款 | check-spec-drift | — |
+| 1 | L1-1 | `regionCentroids.ts`（含來源註明）＋ `listingDistance.ts`（Haversine、刊登中心點解析、全序排序） | vitest node | 368 區鍵一致；多區取最小；全序穩定 |
+| 2 | L1-1 | 排序切換、選地區（單選縣市→區）、sessionStorage 還原、距離顯示、拿掉掛載定位 | vitest jsdom＋e2e 兩條改寫＋溢版巡檢 | 未選地區不排距離；選後顯示整數公里；無 geolocation 呼叫 |
+| 3 | L1-1 | 文件：ui-ux §7 定位段改寫（「不要定位權限」的理由）、規格書 §12.3 補一句「依區中心點排序」 | check-spec-drift | — |
 
-重量：中偏重。**L1a 的 RPC／RLS／限流用 Opus 審查**，其餘 Sonnet。
+重量：輕（Plan Mode，Sonnet）。第三步才需要 Opus 審 RPC／RLS。
 
 ### 5.5 開放問題
 
-- [ ] Q5-1 位置來源：**A 服務據點為主＋手動更新目前位置（推薦）** / B 每次開 app 自動更新 / C 兩者（偏好開關）。
-- [x] Q5-2 公開精度：**裁決 2026-10-17＝1 km 網格＋級距，不存精確點**（寫入時吸附、資料庫只留網格座標；精確點沒有消費者、只有外洩風險與告知義務，第二期地圖檢視再加欄）。L1a 的擋開工項解除；§5.2B 的 lat／lng 欄位描述於 v3 同步改成只存 grid_*。
+- [ ] Q5-1 位置來源：**D 先做中心點排序、不收集位置（v3 新增，推薦）** / A 服務據點為主＋手動更新 / B 每次開 app 自動更新 / C 兩者。
+- [x] Q5-2 公開精度：裁決 2026-10-17＝1 km 網格＋級距，不存精確點——適用於第三步。
 - [ ] Q5-3 地圖點選與地圖檢視：**第二期**。
-- [ ] Q5-4 「離我最近」是否成為預設排序：**推薦：有定位偏好才預設，否則最新**。
-- [ ] Q5-5 首頁資料流：**(b) 薄距離 RPC（推薦）** / (a) 全搬 RPC＋分頁。
+- [ ] Q5-4 「離我最近」是否成為預設排序：**推薦：訪客選過地區才預設，否則最新**。
+- [ ] Q5-5 首頁資料流（薄距離 RPC vs 全搬 RPC）：**第一步不需要**（純前端）；第三步再裁。
+- [ ] Q5-6（v3 新）區中心點的資料來源與授權（政府開放資料的條款）——L1-1 開工前由業主或 session 查明並寫進 PR。
 
-## 6. 管理者代使用者修改資料（工項 A1b）
+## 6. 管理者代使用者修改資料＋稽核軌跡（工項 A1b；階段 1 已由 #382 完成）
 
-### 6.1 現況與根因
+### 6.1 現況與根因（develop HEAD，#382 合併後）
 
-- 產品現況「會員資料一經註冊後無法自行修改，請透過 LINE 聯繫客服」；沒有編輯頁；`PUT /auth/profile` 可改六欄但無前端呼叫者
-  且只驗姓名；admin 沒有改他人資料的端點。
-- **會員目前其實可以直改**：`20260620000009:23-25` 對 authenticated 授與 `profiles` 的 phone／birth_date／national_id／bank 欄位
-  UPDATE（只撤了 name），任一登入會員可 `PATCH /rest/v1/profiles?id=eq.<self>` 繞過一切連動與稽核——本項要一併關。
-- 欄位連動：`national_id` 是會員驗證、提領、查收、領獎四處的驗證憑證並與證件審核綁定；提領作業台的姓名、手機、身分證、證件照
-  是**即時 join profiles**（只有銀行資訊是快照）；`bank_*` 在 profiles 是「上次使用值」，但提領預填讀裝置 localStorage、送出由
-  body 帶入——**代改 bank_* 對會員流程無效**；`name` 改了推薦網絡即時反映，獎勵明細的名字快照不連動（這是現況，不是規格
-  §8 的規則；規格 §4.2:134 寫「修改時連動所有顯示介面」）；規格 §14 #5 的罕用字逃生口是「聯繫客服」。
+- **已付款會員不能再改身分資料**（#382）：`POST /auth/register` 改走 `register_profile`（`20261017000004`，security definer、只給
+  service_role、先 `for update` 鎖 profiles 列、`effective_registration_step = 3` 回 `completed` → 403）；`PUT /auth/profile`
+  整支刪除（`registration-completion-guard.test.ts:398` 釘 404）；`20261017000003` 表級 `revoke update on profiles from
+  authenticated`（連帶撤銷每一欄的欄位級權限，`has_any_column_privilege` 斷言 false；也關掉 `profiles_update_own` 的
+  `or is_admin()` 分支替管理員 JWT 開的直連路徑）；cancel-signup fail-closed 並擋已付款待開通；前端 `isRegistrationLocked`、
+  `PROFILE_LOCKED_*` 常數三處共用（`constants.ts:38-44`，含 LINE 官方帳號 `@uknow` 文字）。規格書 §4.1 新增「註冊完成後的
+  資料鎖定」段（`spec:130-141`）：姓名依手冊 2-3-1／2-3-2 書面申請、身分證字號變更等同轉讓經營權依 2-3-3、手機／生日／推薦人
+  經客服辦理、pending 視同付款前、續費選新約是唯一自助換推薦人路徑。**規格已承諾「由客服辦理」，後台卻沒有任何代改工具**
+  （friction-log 記為 A1b 另案）——A1b 從新需求變成規格已承諾、實作缺席的落差。
+- 身分欄位的自助寫入口收斂為單一條：`POST /auth/register` → `register_profile`（寫 name／phone／birth_date／national_id／
+  referred_by_*，並把 `referred_by_is_default` 重設為 false）。`referred_by_*` 另兩個寫入點是 `/payuni/prepare` fresh 有碼／
+  無碼（`index.ts:1902-1909`、`:1945-1952`）。
+- **`handle_new_user` 仍從 `raw_user_meta_data` 寫 `phone` 與 `national_id`**（`20260726000002:81-82`，最後一次定義；
+  `20261017000003:20` 註明它是 security definer INSERT、不受 UPDATE 撤銷影響；重審 A1b-03，確認）。正式前端 `signUp` 不帶
+  `data`，正常流程兩欄恆為 null，但拿 anon key 直打 `/auth/v1/signup` 帶 `data` 就能在 Step 2 之前種下 national_id——與
+  v2 Q2-4「第一次輸入從驗證變設定」是同一個注入面。
+- 欄位連動：`national_id` 是身分驗證（`/rewards/verify-id`）、提領、查收、領獎四處的驗證憑證（`verifyNationalId`
+  `index.ts:311-315`，呼叫 `:3161,3318,3366,4090`；null 一律 false）並與證件審核綁定（`request_withdrawal` 讀
+  `id_verification_status`）；提領作業台的姓名、手機、身分證、證件照是**即時 join profiles**（`index.ts:1168-1172`，只有銀行
+  資訊是申請當下的快照）；`bank_*` 在 profiles 是「上次使用值」，提領預填讀裝置 localStorage、送出由 body 帶入——代改 bank_*
+  對會員流程無效；`name` 改了推薦網絡即時反映，獎勵明細的名字是發獎當下快照、不連動——**規格書 §4.2:147 已由 #382 改寫成與
+  程式一致**（v2 引的「修改時連動所有顯示介面」已不存在，Q6-7 失去文字依據）；§14 #5 的罕用字逃生口是「聯繫客服」；§14 #1
+  身分證唯一性仍未實作（`register_profile` 也沒查）。
+- 事業手冊 2-3-3 原文（`businessManual.ts:95`）：「欲轉讓經營權或變更身分證字號者，應以書面向本公司申請，經本公司書面同意，
+  且受讓人循事業手冊規定入會後，始完成經營權轉讓」——把「變更身分證字號」與「轉讓經營權」放在同一個程序裡（重審 A1b-02，
+  確認；原文沒有直接寫「＝」）。1-1「每名傳銷商以身分證字號為準限取一個經營權」。
+- **權限盤點（2026-10-17 唯讀查詢，逐環境）**：正式站與本機重播——`authenticated` 對 profiles 沒有 table-level SELECT
+  （`name-write-paths.test.ts:36-45,65-72` 釘 false）；**持久 develop 分支——有**（平台 default privileges），`profiles_select_own`
+  在那裡是活的，持 token 的會員可直讀自己列的**完整** `national_id`／`bank_account`，繞過 Edge 的遮罩（推論，未實送）；正式站
+  `anon` 對 profiles 有表級 SELECT（RLS 無 anon policy → 0 列）；develop 的 `authenticated` 有 INSERT／DELETE／TRUNCATE 表級
+  授權（RLS 無對應 policy）。各環境 default privileges 不一致是 `rls-policies.test.ts` 早已記錄的事實。
+- admin 沒有改他人資料的端點（`/admin/members/*` 只有 GET、admin、suspend）；journey 唯一直打 PostgREST 的 profiles 寫入者
+  用 service_role（`admin_bootstrap.py:38`），不受撤銷影響。
+- #382 審查留下的未處理項在 HEAD 逐項仍在：(a) `/payuni/prepare` 建單前沒有 `isProfileComplete`／`national_id` 非空檢查，
+  之後直接寫 `referred_by` 並建單；(b) step 3 且資料未填齊者會在 App 守衛 → 完善資料頁 → 403 → 會員中心 → 守衛之間繞圈
+  （兩環境此族群目前 0 筆，時點量測非結構保證）；(c) cancel-signup 讀與刪之間無鎖；(d) 已付款待開通窗口內換線，
+  `completed_at` 取 PayUni 付款時點、早於換線時刻，`repair_orphaned_payments` 的閘門會永遠略過該筆；(e) `PaymentCheckout` 的
+  localStorage `pendingUser` 付款後不更新；(f) 完善資料頁「稍後註冊」對 cancel-signup 的 400 仍登出。
 
-### 6.2 設計
+### 6.2 設計（v3：代改限「更正輸入錯誤」；稽核軌跡從 §4 搬來；唯一索引改選配）
 
-- **單一 SQL 函式**（比照 `admin_review_id`）由 `PATCH /admin/members/:id/profile` 呼叫：`for update` profiles、白名單 name
-  （中／外文模式，**客服例外**：罕用字可帶 reason 跳過格式檢查）、phone、birth_date、national_id；**不含** bank_*（代改無效，
-  移除）、referred_by_*、is_admin／suspended（既有端點）、email（Q6-2）。驗證規則用「雙實作＋共用案例表」（Deno
-  `api/profile-validation.ts`＋`_shared/profile-validation-cases.ts`，先例 `name-validation-cases.ts`），`PUT /auth/profile`
-  同批收斂成 national_id set-if-null、其餘拒。
+**A. 稽核軌跡 `admin_audit_log`（A1b 階段 2，代改與既有寫入共用）**
+- 欄位：id、admin_id（`on delete set null`＋姓名快照）、action、target_type、target_id、before、after、reason、request_id、
+  created_at。**原子性**：單表寫入（停權、授予、公告、告警、證件審核、代改）改成 SQL 函式 `update … returning` 取 old 並在
+  **同一交易**寫 audit；提領已有 `withdrawal_events` 不雙寫，`GET /admin/audit` 以 UNION view 呈現並看 `idempotent` 不重複記；
+  **證件審核沒有事件表**（S4-01）→ `admin_review_id` 改成同交易寫 audit。由 `app.routes` 推導的列舉測試保證「每個 admin
+  寫入都有 audit」（8 支＋`/admin-setup/set-self-admin`）。
+- 敏感欄位的 before／after：**二擇一（Q4-8）**——另存加密原值（pgcrypto，金鑰在 Edge secret，管理端只讀遮罩）以保留還原能力，
+  或只存遮罩並刪掉「可還原」的承諾。append-only 靠 `BEFORE UPDATE/DELETE/TRUNCATE` trigger。
+- reason：代改、停權**必填**；授予管理員、證件、公告、告警選填（既有端點補欄位與 UI）。audit 寫入失敗：金流類 fail-closed、
+  其餘寫 `system_alerts`＋回應帶 `auditFailed`（Q4-7）。helper 放 `api/audit.ts`；`/admin/*` middleware `c.set('adminId')`
+  （目前 `index.ts:1046-1051` 只做 requireAuth＋isAdminUser）。保存期限與條款十二「終止後一年」對齊（Q4-7）。
+
+**B. 代改端點（A1b 階段 3）**
+- **單一 SQL 函式**（先例 `admin_review_id` 與 `register_profile`）由 `PATCH /admin/members/:id/profile` 呼叫：`for update`
+  profiles（與付款、register 同一把列鎖）、白名單 name（中／外文模式，**客服例外**：罕用字可帶 reason 跳過格式檢查）、phone、
+  birth_date、national_id；**不含** bank_*（代改無效）、referred_by_*、is_admin／suspended（既有端點）、email（Q6-2）。驗證規則
+  用「雙實作＋共用案例表」（`api/profile-validation.ts`＋`_shared/profile-validation-cases.ts`，先例 `name-validation-cases.ts`）。
+- **代改的定位是「更正輸入錯誤」，不是變更**（重審 A1b-02 的處置）：reason 必選類別——「更正輸入錯誤」／「依書面申請變更」；
+  身分證字號只開放前者（打錯一碼、全半形），後者（真的換人、換身分證字號）依手冊 2-3-3 走書面程序，系統端等法務題 §14 第 3 題
+  的答案再定要不要開第二類。確認框唯讀摘要「遮罩舊值 → 完整新值」（身分證再輸入一次）、改身分證的確認鈕紅實心（Q6-8）。
 - 連動：改 `national_id` → 同交易重設 `id_verification_status=none`、清 `id_reject_reason／id_verified_at／id_verified_by／
-  id_submitted_at`、證件照搬 archive 前綴並記 audit；**有 pending／awaiting_collection 提領或未領 credit 時拒改（409）**
-  （Q6-5；否則查收與領獎要輸入新字號、作業台列顯示新字號無證件照）。改 `name` → 即時面反映；獎勵明細快照是否連動由
-  Q6-7 定。唯一性：先用對帳第 10 項報表清零 → `unique index on (upper(btrim(national_id))) where national_id is not null`
-  （migration 內預檢 RAISE）→ 應用層 23505→409 泛化訊息（順手關 §14 #1；`/auth/register` 也要查，否則 §14 #1 刪不掉）。
-- 並發：請求帶 `expectedBefore`（或 `updated_at`）樂觀鎖，不符 409；相同值回 `idempotent` 不寫 audit。reason 必填、
-  `admin_audit_log` 同交易（before／after 依 Q4-8）。**撤銷會員欄級 UPDATE**（Q6-6；提領寫回 profiles 走 definer 函式不受影響；
-  src 與 journey 無直寫者）＋`BEFORE UPDATE OF national_id` trigger 一律重設證件狀態（任何路徑改字號都連動）。
-- UI：併入 `MemberAction` 的單一執行器與確認框；表單在 Sheet 管理區（理由欄在表單內）、確認框唯讀摘要「遮罩舊值 → 完整新值」
-  （身分證／帳號再輸入一次）；改身分證的確認鈕紅實心（會員失去已通過的驗證，Q6-8）、其餘墨黑；警示用 `StatusCallout`。
-- 會員側：會員資訊卡說明改「如需修改，請透過 LINE 聯繫客服」＋一鍵開 LINE 預填（確認官方帳號網址支援 `oaMessage`）；資料
-  被改後**下次開啟會員中心**看到一次性提示（已讀標記放後端；內容列被改欄位名＋後續動作如「請重新上傳證件」，不含理由）。
+  id_submitted_at`、證件照搬 archive 前綴並記 audit；**有 pending／awaiting_collection 提領或未領 credit 時拒改（409）**（Q6-5；
+  既有 helper `hasPendingWithdrawal` 只查 pending，要擴）。改 `name` → 即時面反映，快照不連動（規格已定）。並發：請求帶
+  `expectedBefore` 樂觀鎖，不符 409；相同值回 `idempotent` 不寫 audit。`BEFORE UPDATE OF national_id` trigger 一律重設證件狀態。
+- **唯一性改選配**（重審）：對帳第 10 項先報表清零；索引 `unique index on (upper(btrim(national_id))) where national_id is not
+  null` 與 `/auth/register` 查重另開小 PR，且要同時處理 `handle_new_user` 的 INSERT 路徑（撞 23505 會讓 signup 失敗）。
+  §14 #1 在那個 PR 才刪。
+
+**C. 同批要關的洞與出口（A1b 階段 1 的剩餘，可先於稽核做）**
+- `handle_new_user` 不再從 metadata 讀 `phone`／`national_id`（正式前端本就不帶；A1b-03）。
+- `/payuni/prepare` 建單前守衛：`isProfileComplete` 且 `national_id` 非空，否則 400「請先完成個人資料」（未處理項 a）。
+- step 3 且資料未填齊者的 UI 出口：完善資料頁以 `StatusCallout`「資料已鎖定，請聯繫客服」取代表單（未處理項 b）。
+- **權限顯式化 migration**：`revoke select, insert, delete, truncate on profiles from anon, authenticated`，讓三個環境一致、
+  關掉 develop 分支的直讀完整身分證路徑；`name-write-paths.test.ts` 的環境限定註解改回「三環境皆無」；部署後在 develop 與正式站
+  各跑一次 `has_table_privilege` 確認。前端從不直讀 profiles（全走 Edge），零行為變更。
+- 選配：cancel-signup 讀與刪包進一支 SQL 函式加列鎖（未處理項 c）；repair 閘門對「開通前換線」的處置（未處理項 d，動
+  `repair_orphaned_payments`，Opus，另案）；`pendingUser` 快照（e）歸 S7／S8；「稍後註冊」的 400 處置（f）小修。
+
+**D. 會員側**
+- 會員資訊卡說明已是「會員資料一經註冊後無法自行修改」＋ LINE 帳號文字；加一鍵開 LINE（`LINE_OFFICIAL_ACCOUNT_URL` 既有，
+  `oaMessage` 預填是否支援 repo 無紀錄，開工時實測一次）；資料被改後**下次開啟會員中心**看到一次性提示（已讀標記放後端；
+  列被改欄位名＋後續動作如「請重新上傳證件」，不含理由）。
 
 ### 6.3 穩定性與架構
 
-- 寫入只經 Edge＋SQL 函式；`ADMIN_MUTATION_GROUPS` 加 `memberProfileEdit`；`invalidate` 只收封閉聯集，不能傳字串。
-- 依賴 A1a 的 audit；排在 A1a 後。e2e：admin 情境 1 條；journey 不受影響（無直寫者）。
+- 寫入只經 Edge＋SQL 函式；`ADMIN_MUTATION_GROUPS` 加 `memberProfileEdit → ['members','withdrawals']`；`invalidate` 只收封閉
+  聯集。e2e：admin 情境 1 條；會員側 403 情境已由 #382 覆蓋；journey 不受影響。
+- 與 A1a：audit 表不再是 A1a 的前置；A1a 面板的「操作紀錄」區等本工項上線後補。與 S7：不撞檔（admin 區）。
 
 ### 6.4 階段與測試
 
-| # | 階段 | 測試落點 | 驗證標準 |
-|---|---|---|---|
-| 1 | 驗證案例表＋Deno 驗證器；`PUT /auth/profile` 收斂；撤銷欄級 UPDATE（Q6-6） | deno test＋rls-policies.test | 會員直改 profiles 被拒 |
-| 2 | 唯一性報表→索引 migration（預檢）→ `/auth/register` 查重 | sql＋deno | 重複 409、訊息泛化 |
-| 3 | SQL 函式＋`PATCH` 端點（連動、409 條件、樂觀鎖、冪等、audit） | deno test | 在途提領拒改；改字號後 status=none 且照片 archive |
-| 4 | 前端表單＋確認框＋回報＋快取事件 | vitest jsdom＋e2e 1 條 | diff 顯示；理由必填；成功後詳情更新 |
-| 5 | 會員側提示＋LINE 預填 | vitest | — |
-| 6 | 文件：規格書 §13「代改與連動」、§4.2 唯一性與連動措辭、§14 刪 #1 | check-spec-drift | — |
+| # | 階段 | 狀態 | 測試落點 | 驗證標準 |
+|---|---|---|---|---|
+| 1 | 守衛與撤銷：`register_profile` 列鎖、刪 `PUT /auth/profile`、表級撤銷 UPDATE、cancel-signup fail-closed、前端 403 出口 | ✅ #382 | `registration-completion-guard.test.ts`、`cancel-signup-guard.test.ts`、`registrationFlow.test`、`CompleteProfile.test`、e2e `complete_profile.feature` | 已付款 403；付款交易持鎖期間送出等 commit 後 403；pending+SUCCESS 視同付款前；GRANT 斷言 |
+| 1b | 剩餘守衛：`handle_new_user` 不讀 metadata、`/payuni/prepare` 完整性守衛、step 3 未填齊出口、權限顯式化 migration、驗證案例表＋Deno 驗證器 | 待做（Plan Mode `fix/*` 可先行） | deno test＋`name-write-paths.test`、vitest | 直打 signup 帶 national_id 不落地；未填齊不能建單；三環境 GRANT 一致 |
+| 2 | 稽核：`api/audit.ts`、`admin_audit_log` 表、trigger、既有單表寫入改 SQL 函式同交易、`admin_review_id` 補 audit、UNION view、列舉測試、`c.set('adminId')` | 三段式 | sql＋deno test | 每個 admin 寫入一筆；表無改刪路徑；失敗政策依裁決 |
+| 3 | 代改：SQL 函式＋`PATCH` 端點（白名單、reason 類別、連動、409 條件、樂觀鎖、冪等、audit） | 三段式 | deno test | 在途提領拒改；改字號後 status=none 且照片 archive；「依書面申請」類別依法務答案 |
+| 4 | 前端表單＋確認框＋回報＋快取事件；A1a 面板補「操作紀錄」區 | | vitest jsdom＋e2e 1 條 | diff 顯示；理由必填；成功後詳情更新 |
+| 5 | 會員側提示＋LINE 一鍵 | | vitest | — |
+| 6 | 文件：規格書 §13「稽核、代改與連動」、§4.2 唯一性措辭、§14 #1（隨選配索引）、§14 #8 不動 | | check-spec-drift | — |
+| 選配 | 唯一索引＋`/auth/register` 查重＋`handle_new_user` 衝突處理；cancel-signup 列鎖；repair 閘門 | 各自小 PR | sql＋deno | 重複 409、訊息泛化 |
 
-重量：中（三段式；動會籍身分資料，**規劃與階段 3 用 Opus**）。
+重量：中偏重（三段式；動會籍身分資料與稽核，**規劃與階段 2／3 用 Opus**）。
 
 ### 6.5 開放問題
 
 - [ ] Q6-1 可改欄位：name／phone／birth_date／national_id（**推薦**；bank_* 移除）。
-- [ ] Q6-2 email 由 admin 改（`auth.admin.updateUserById`，改登入識別）：**推薦本輪不做**；業主原話「Dashboard 有這些資訊」是否
-  指 Email 請確認。
+- [ ] Q6-2 email 由 admin 改（`auth.admin.updateUserById`）：**推薦本輪不做**。
 - [ ] Q6-3 會員自助修改：**推薦維持不開放**，一鍵聯繫客服。
 - [ ] Q6-4 改身分證一律重設證件驗證：**推薦一律**。
 - [ ] Q6-5 有在途提領／未領 credit 時：**拒改 409（推薦）** / 先快照進 withdrawals 後放行。
-- [ ] Q6-6 撤銷會員對 profiles 欄位的直改權：**推薦撤銷**（需確認無外部腳本直打 PostgREST）。
-- [ ] Q6-7 改名後獎勵明細快照：維持不連動（現況）/ 連動（規格 §4.2 字面）。
+- [x] Q6-6 撤銷會員對 profiles 欄位的直改權：**已由 #382 完成**（`20261017000003`）。
+- [x] Q6-7 改名後獎勵明細快照：**規格書 §4.2 已明文不連動**（#382）。
 - [ ] Q6-8 改身分證確認鈕紅實心：**推薦紅實心**。
+- [ ] Q6-9（v3 新）代改身分證字號與手冊 2-3-3 的關係：**代改限「更正輸入錯誤」（推薦）**；「依書面申請變更」是否開放給系統
+  端、書面文件要不要留檔，§14 第 3 題。
+- [ ] Q4-1、Q4-7、Q4-8（稽核範圍、失敗政策、敏感欄位）：從 §4 移到這裡，隨階段 2 裁。
 
-## 7. 四種使用者＋被推薦者 × 工項影響表
+## 7. 五種使用者＋被推薦者 × 工項影響表（v3 補 P3′「已付費、未加入推薦計畫」）
 
-| 工項 | P1 訪客 | P2 刊登會員 | P3 推薦會員 | P4 管理者 | P5 被推薦者（未註冊） |
-|---|---|---|---|---|---|
-| T1 登入狀態 | 無提示→直接訪客版，不等請求 | 重新整理不閃、暫時性故障不登出 | 同左 | 「平台管理」等確認才出現（不位移） | 註冊漏斗維持 user=null，不誤判 degraded |
-| R0 關洞 | — | — | 驗證端點改需登入（合法流程本就有） | — | 落地頁走 token，不受影響 |
-| R1 分享與邀請 | og 預覽 | 失效會籍進不了 `/dashboard/qr`，新入口同樣受閘門 | 一鍵 LINE、紀錄可追蹤、付費前看不到姓名 | 暫無漏斗檢視面（第二期） | 落地頁知道誰邀、要幾步、碼已鎖；失效仍可註冊 |
-| P1a／P1b 照片 | 卡片與詳情無黑邊、輪播 | 自動裁＋可調、HEIC 可傳、舊照可調整 | — | 無審核（規格無刊登審核） | — |
-| A1a／A2 核對 | — | — | 手動調整（若納入）後會員端看到分類與理由 | 手機急救（Sheet 首屏四事實）＋桌機對帳 | — |
-| A1b 代改 | — | 被改後有提示與後續動作；在途提領時不被改字號 | 同左 | 單一入口＋稽核 | — |
-| L1a／L1b 定位 | 按了才問、拒絕可選地區、級距距離 | 公開只有級距；就地同意；可清除 | — | 可讀位置表（無 UI，第二期） | — |
+| 工項 | P1 訪客 | P2 刊登會員 | P3′ 已付費未加入推薦計畫 | P3 推薦會員（已加入） | P4 管理者 | P5 被推薦者（未註冊） |
+|---|---|---|---|---|---|---|
+| T1 登入狀態 | 無提示→直接訪客版，不等請求 | 重新整理不閃、暫時性故障停在外框不登出 | 同左 | 同左 | 「平台管理」等確認才出現（不位移） | 註冊漏斗維持 user=null，不誤判 degraded |
+| R0 關洞 ✅ | — | — | 驗證端點改需登入（合法流程本就有） | 同左 | — | 落地頁不受影響 |
+| R1a 入口與分享 ✅ | og 預覽（R1a-2） | 會員中心看到「加入推薦計畫」引導鈕 | **同位置是「加入推薦計畫」，簽完翻成「邀請好友」；推薦碼欄顯示「尚未加入」** | 1 下到系統分享面板；付費前看不到下線姓名 | — | 收到的訊息含連結與碼；一般註冊頁 |
+| P1a／P1b 照片 | 卡片與詳情無灰底留白、縮圖可鍵盤切換 | 自動裁＋可調、1–3 張、HEIC 成因確認 | — | — | 無審核（規格無刊登審核） | — |
+| A1a／A2 核對 | — | — | — | — | 手機 Sheet 首屏四事實＋桌機對帳 | — |
+| A1b 代改與稽核 ✅階段 1 | — | 已付款後不能自改；被改後有提示 | 同左 | 同左 | 單一入口＋稽核＋reason 類別 | — |
+| L1-1 定位 | 按「離我最近」自己選地區、看整數公里 | 不需設定任何位置 | — | — | — | — |
 
 ## 8. 工項、波次與分工
 
-### 8.1 波次表（業主看得到的成果）
+### 8.1 波次表（2026-10-19 更新）
 
-| 波 | 工項 | 內容 | 流程／分支 | 模型 | 前置 | 業主看到什麼 |
-|---|---|---|---|---|---|---|
-| 1 穩定與信任 | **R0** 推薦碼端點關洞 | §2.3 R0 | Plan Mode `fix/referral-validate-hardening` | Sonnet | Q2-10 確認無匿名消費者 | 無可見變化；枚舉面關閉 |
-| 1 | **T1** 登入狀態與安心設計 | §1（含後端 `/profile` 缺口） | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
-| 2 管理 | **A1a** 稽核＋會員核對面板 | §4.2(1)(2) | 三段式 `feature/admin-audit-and-review` | Opus 規劃／階段 1–2 | Q4-1、Q4-5、Q4-7、Q4-8；面板階段在 S7 後 | 每筆後台操作可查；Sheet 內六區核對 |
-| 2 | **A2** 對帳報表 | §4.2(3) | 三段式 `feature/admin-reconcile` | Opus 階段 5／6 | A1a 合併；Q4-2、Q4-6 | 告警次分頁的十項檢查與例外列 |
-| 2 | **A1b** 代改資料 | §6 | 三段式 `feature/admin-profile-edit` | Opus 規劃／階段 3 | A1a 合併；Q6-* | 會員詳情「編輯基本資料」 |
-| 3 成長 | **P1a** 照片上傳管線 | §3.2A／C | 三段式 `feature/listing-photo-pipeline` | Sonnet | Q3-1、Q3-3 | 選圖即裁、HEIC 可傳、封面 |
-| 3 | **R1b** 邀請物件後端 | §2.3 | 三段式 `feature/referral-invitations` | **Opus** | Q2-7；T1 合併 | 無可見變化 |
-| 3 | **R1a** 分享面板、落地頁、紀錄 | §2.2、§2.3 | 三段式 `feature/referral-share-flow` | Sonnet | Q2-5（擋開工）、Q2-8、Q2-9；R1b、T1 合併 | 一鍵 LINE；落地頁；邀請紀錄 |
-| 3 | **L1a** 位置後端＋刊登表單 | §5.2A／B | 三段式 `feature/listing-location` | Opus 審 RPC／RLS | Q5-1、Q5-2（擋開工）；表單段在 P1a 後 | 刊登可設服務據點 |
-| S6 後 | P1b、L1b、T1 首頁一行 | 詳情輪播與容器；首頁排序 UI；`hasBottomNav` | 各一個 `fix/*` Plan Mode PR | Sonnet | S6 合併；L1b 另需 Q5-5 | 輪播；「離我最近」 |
-| S7 後 | R1a 入口接線 | 會員中心推薦卡「邀請」、推薦頁頂部 | `fix/*` Plan Mode | Sonnet | S7、R1a 合併 | 2 次點擊到 LINE |
-| 最後 | **T1-5c** toast 語氣盤點 | §1.2D | `fix/*` Plan Mode | Sonnet | 波次 3 全合併 | 錯誤訊息一致 |
-| 第二期（GitHub issue，不入規格書 §14） | 簡訊通道、LINE Login、個別化 og、地圖點選、對帳排程、admin 漏斗檢視、手動調整（若 Q4-2 不納入）、Email 可改 | — | — | — | — | — |
+| 波 | 工項 | 狀態 | 內容 | 流程／分支 | 模型 | 前置 | 業主看到什麼 |
+|---|---|---|---|---|---|---|---|
+| 1 | **R0** 推薦碼端點關洞 | ✅ #380（2026-10-18） | §2.1；後續 P2 在 #383 | Plan Mode `fix/referral-validate-hardening` | Sonnet | — | 無可見變化；枚舉面降到需登入＋限流 |
+| 1 | **A1b-1** 已付款守衛＋撤銷直改 | ✅ #382（2026-10-19） | §6.1 | `/fix-bug` `claude/auth-register-completion-guard` | Opus | — | 已付款會員改資料得到「請聯繫客服」 |
+| 1 | **R1a-1** 入口三顆元件＋分享順位 | ✅ #381（2026-10-19） | §2.1 | Plan Mode `fix/referral-entry-points` | Sonnet | 真機驗收回填 | 會員中心 1 下到分享面板 |
+| 0 | S7 prompt 重寫 | 另案（步驟 3） | 拆 S7a／S7b、補 P3′、承接三顆元件 | 規劃分支 | — | — | — |
+| 2 | **T1** 登入狀態（縮） | 待開工 | §1 | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
+| 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1) | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-5、Q4-9；面板段在 S7 後 | Sheet 內五區核對 |
+| 2 | **P1a** 照片上傳管線（核心） | 待開工 | §3.2A／C | 三段式 `feature/listing-photo-pipeline` | Sonnet | Q3-1、Q3-3；階段 0 真機 | 選圖即裁、1–3 張、錯誤看得懂 |
+| 2 | **A1b-1b** 剩餘守衛與權限顯式化 | 待開工 | §6.2C | Plan Mode `fix/*` | Sonnet | — | 無可見變化 |
+| 3 | **A2** 對帳報表（純讀） | 待開工 | §4.2(2) | 三段式 `feature/admin-reconcile` | Opus 階段 4 | A1a 合併；Q4-2、Q4-6 | 告警次分頁十一項檢查 |
+| 3 | **A1b-2／3** 稽核＋代改 | 待開工 | §6.2A／B | 三段式 `feature/admin-profile-edit` | Opus | A1a 合併；Q6-*、Q4-1／7／8；§14 第 3 題 | 每筆後台操作可查；會員詳情「更正資料」 |
+| Plan Mode | **L1-1** 中心點排序 | 待開工 | §5.2 第一步 | `fix/*` | Sonnet | Q5-1 D、Q5-6 資料來源；S6 ✅ | 「離我最近」 |
+| Plan Mode | **P1b** 顯示容器 1:1 | 待開工 | §3.2D | `fix/*` | Sonnet | S6 ✅；P1a 先合併較順 | 卡片與詳情正方形、鍵盤切圖 |
+| Plan Mode | **R1a-2** og＋`lang` | 待開工 | §2.2 | `fix/*` | Sonnet | — | LINE 貼連結有預覽 |
+| Plan Mode | **R1a-3** 揭露文案 | 等法務 | §2.2 | `fix/*` | Sonnet | Q2-5（§14 第 1 題） | 邀請訊息含揭露句 |
+| Plan Mode | 寄信失敗告警 | 待開工 | §2.1 | `fix/*` | Sonnet | T1 後 | 無可見變化 |
+| 第二期（issue） | 簡訊通道、LINE Login、個別化 og、地圖、對帳排程、admin 漏斗檢視、手動調整（若 Q4-2 不納入）、Email 可改、服務據點（L1 第三步）、`ErrorBoundary`、5c 文案 sweep | — | — | — | — | — | — |
 
-**在途工項上限 3**（業主每個三段式都要人審一次規劃＋親自打 `/tdd-implement`）。建議起手：R0 → T1 ∥ A1a 的階段 1–3（後端）
-∥ P1a。S7 **不等**本計畫任何工項；S8 與驗收站 2–4 時程不受影響。
+**在途工項上限 3**。建議起手：**S7 prompt 重寫**（另案）→ T1 ∥ A1a 階段 1–2（後端）∥ P1a；A1b-1b 與 R1a-2 是小 PR，
+塞在空檔。法務題（§14）不擋 T1／A1a／P1a；擋 R1a-3 與 A1b-3 的「依書面申請」類別。
 
-### 8.2 撞檔矩陣（只撞檔才序列化）
+### 8.2 撞檔矩陣（只撞檔才序列化；S6 已合併，S7 待 prompt 重寫）
 
 | 檔案 | 動它的工項 | 處置 |
 |---|---|---|
-| `src/App.tsx`、`Navbar.tsx`、`AuthPage.tsx` | T1（重寫啟動流程）、R1a（路由、選單、落地） | T1 先合併 |
-| `CompleteProfile.tsx`、`PaymentCheckout.tsx` | R1a、T1（`/profile` 收斂） | T1 先 |
-| `Create/EditServiceProvider.tsx` | P1a、L1a 表單段 | P1a 先 |
-| `ServiceProviderManagement.tsx` | P1a（刪除清理、比例）、L1a（更新位置）、S7 | 先合併者定，後者 rebase |
-| `ReferralManagement`／`MemberDashboard`／`MyQrEntry` | R1a 入口、S7 | S7 先；R1a 入口在 S7 後 |
-| `ReferralTreeView`／`MemberDetailSheet`／`RewardHistory` | A1a 面板段、S7 | S7 先或先合併者定 |
+| `src/App.tsx`、`Navbar.tsx`、`AuthPage.tsx`、`BottomNav.tsx`、`ProtectedRoute`／`AdminRoute`、`apiClient.ts` | 只有 T1 | — |
+| `HomePage.tsx` | T1（`hasBottomNav` 一行）、L1-1（結果列與排序）、P1b（桌機卡比例） | 先合併者定；L1-1 與 P1b 都是小 PR，rebase 成本低 |
+| `CompleteProfile.tsx`、`PaymentCheckout.tsx` | T1（`/profile` 收斂到 `fetchProfile`）、A1b-1b（step 3 出口）、#383（付款頁重驗） | T1 先 |
+| `Create/EditServiceProvider.tsx` | P1a | — |
+| `ServiceProviderManagement.tsx` | P1a（刪除清理、比例）、S7 | 先合併者定 |
+| `ServiceProviderDetail.tsx`＋`e2e/test_public_skeleton_layout.py`、`test_public_touch_targets.py` | P1b | 兩支探針隨 P1b 同 PR 改 |
+| `MemberDashboard`／`ReferralManagement`／`referral/*` | S7（prompt 重寫後） | 三顆元件是既成事實；S7 不得複製閘門 |
+| `ReferralTreeView`／`MemberDetailSheet`／`RewardHistory` | A1a 面板段、S7 | S7 先或先合併者定（都是注入式改動） |
 | `AdminConsole`／`AdminDashboard`／`adminCache`／`api-contract.ts` | A1a → A2 → A1b | 序列化 |
-| `api/index.ts`、migrations、規格書 | R0／R1b／A1a／A2／A1b／P1a／L1a | 各工項預留 migration 版本區段、rebase 後定號並跑 `check-migration-versions.py`；`api-contract.ts` 按領域分段追加 |
-| `HomePage.tsx`、`ServiceProviderDetail.tsx` | S6、P1b、L1b、T1 一行 | 全在 S6 後 |
-| `apiClient.ts` | 只有 T1 一行 | — |
+| `supabase/functions/api/index.ts` | T1（`authenticate`＋`/profile`）、A1a（約 10 支讀端點，先抽 `api/deps.ts`）、A2、A1b、P1a（`DELETE /listings/photos`） | 各工項只加自己的區段；A1a 的 `deps.ts` 抽取先合併 |
+| `supabase/migrations/` | A1b-1b（權限顯式化）、A1b-2（audit）、A2（對帳函式）、P1a（無）、L1-1（無） | **migration 版本號登記制**（見下） |
+| 規格書 | 每個工項 | 各改自己的節；`check-spec-drift` 把關 |
+| `docs/plans/friction-log.md` | 每個 PR | 追加檔尾；後合併者 rebase 時依日期排序、保留一組 `---` |
+
+**migration 版本號登記制（v3 新增，2026-10-17 的教訓）**：#380 與 #382 同日各自取 `20261017000001/2`，各自 CI 綠，只有進
+同一棵樹才由 framework-check 10b 抓到，後合併者重編。規則：(1) 工項開工時在本表登記「預留前綴＝開工日 `YYYYMMDD`＋序號區段」
+（同日第二個工項用 `000011` 起、第三個 `000021` 起）；(2) rebase 後一律跑 `python3 scripts/check-migration-versions.py`；
+(3) 已部署到任何 hosted 環境的 migration 不重編（#382 的 000003／000004 能原地重編是因為預覽分支沒建立）。
 
 ### 8.3 裁決 ↔ 工項對照（gating）
 
 | 擋開工 | 裁決 | 工項 |
 |---|---|---|
-| 是（示意畫面審閱中，§13） | Q2-5 法定揭露 | R1a |
-| 已裁決 2026-10-17 | Q5-2 公開精度 | L1a 可開工（Q5-1、Q5-5 開工前裁） |
-| 已裁決 2026-10-17 | Q2-10 無匿名消費者 | R0 可開工 |
+| 是（法務，§14 第 1 題） | Q2-5 法定揭露 | R1a-3 |
+| 是（法務，§14 第 3 題） | Q6-9 代改身分證的程序 | A1b-3 的「依書面申請」類別（「更正輸入錯誤」類別不擋） |
+| 否（但答案影響是否開新工項，§14 第 4 題） | Q2-11 未簽約者的碼 | 可能的 Opus 工項「發獎加 joined 判準」 |
+| 否（法務，§14 第 2 題；只影響文件） | Q2-10 前半 退費口徑 | 規格書 §4.1 措辭 |
 | 開工前 | Q1-1、Q1-2 | T1 |
-| 開工前 | Q4-1、Q4-5、Q4-7、Q4-8 | A1a |
+| 開工前 | Q4-5、Q4-9 | A1a |
 | 開工前 | Q4-2、Q4-6 | A2 |
-| 開工前 | Q6-1～Q6-8 | A1b |
+| 開工前 | Q6-1～Q6-5、Q6-8、Q4-1、Q4-7、Q4-8 | A1b-2／3 |
 | 開工前 | Q3-1、Q3-3 | P1a |
-| 開工前 | Q2-7、Q2-8、Q2-9、Q2-2 | R1b／R1a |
-| 開工前 | Q5-1、Q5-5 | L1a／L1b |
-| 可延後 | Q2-1、Q2-3、Q2-4、Q2-6、Q3-2、Q3-4、Q4-3、Q4-4、Q5-3、Q5-4、Q6-7 | — |
+| 開工前 | Q5-1（推薦 D）、Q5-6 | L1-1 |
+| 已裁決 | Q5-2（1 km 網格，第三步用）、Q2-10 後半（R0 ✅）、Q6-6（✅ #382）、Q6-7（規格已定） | — |
+| 作廢 | Q2-1、Q2-2、Q2-6、Q2-7、Q2-8、Q2-9（隨 R1b）；Q2-3、Q2-4 定案；Q5-5 第三步再裁 | — |
+| 可延後 | Q3-2、Q3-4、Q4-3、Q4-4、Q5-3、Q5-4 | — |
 
 ### 8.4 本輪完成定義
 
-六項各有「業主看到什麼」落地（§8.1 右欄）；第二期清單進 GitHub issue；本目錄刪除。
+六項各有「業主看到什麼」落地（§8.1 右欄）；第二期清單進 GitHub issue；本目錄刪除（v2 的細節以 `git show` 取回）。
+
+### 8.5 PR 收尾清單（v3 新增；第一波三個 PR 的增量確認殘留 P2 幾乎同一型——改了說法沒掃同類）
+
+1. **被改掉的說法 grep 全 repo**：含 migration 檔頭、測試檔頭、friction-log 同一條目的推論段與處置段、`check-color-usage` 之類
+   的排除清單註解（#382 的「永久綁定」、#381 的「整檔與 :root 同步」、#380 的「慢速枚舉」都是這型）。
+2. 紅燈 commit hash 寫進 PR；審查回填也要有自己的紅燈（替身錯誤要在紅燈期抓到——紅的原因要是預期的斷言，不是 TypeError）。
+3. 規格書同一個 PR 回頭修；`check-spec-drift` 綠；改了常數就補 ConstantRule 的 `CASES`。
+4. rebase 後跑 `check-migration-versions.py`；friction-log 衝突依日期排序。
+5. 審查者給修法時，若修法牽涉 async handler 內讀 state，先想那是哪一次 render 的 closure（#380 增量確認的「重驗後依結果放行」
+   會漏帶推薦碼，施工 session 讀碼後擋下）。
+6. 真機驗收是 gate 的項目，結果回填 PR 驗收清單後才合併；做不到真機的寫「未驗」，不寫「應該可以」。
 
 ## 9. 驗收與真機責任
 
@@ -739,37 +825,46 @@
 
 | 工項 | 自動化證偽 | 真機 |
 |---|---|---|
-| T1 | e2e：`/profile` 延遲 2 秒時首繪起 DOM 變更零次「登入」＋CLS=0；反向案例 | 重新整理 20 次＋Slow 3G 5 次不閃；斷網不登出 |
-| R0 | deno：無 token 401、限流 429 | — |
-| R1a／R1b | `line.me/R/share` 導向與訊息；落地頁三態；紀錄狀態轉換 | LINE 內建按鈕開好友選擇器；Safari／Chrome 喚起；跨瀏覽器完成註冊歸屬不丟 |
-| P1a／P1b | 2×2 色塊驗裁切；無 EXIF；一張失敗其餘保留 | iPhone HEIC／48MP／方向 6；LINE iOS／Android 裁切手勢 |
-| A1a／A2／A1b | 列舉測試每寫入一筆 audit；合法特例矩陣不報；在途提領拒改 | 桌機對帳走一輪；手機 Sheet 首屏四事實 |
-| L1a／L1b | anon 讀位置表 0 列；防三角定位；拒絕→選地區 | LINE 內建瀏覽器定位權限行為；覆蓋率（有位置刊登占比） |
+| T1 | e2e：`/profile` 延遲 2 秒時首繪起 DOM 變更零次「登入」＋CLS=0；503 停在受保護頁外框；反向案例 | 重新整理 20 次＋Slow 3G 5 次不閃；斷網不登出、按重試回來 |
+| R0 ✅ | deno：無 token 401、限流 429、短窗不扣日額、503 | — |
+| R1a-1 ✅ | 元件 vitest、`dashboard_smoke`、溢版巡檢 | **待回填**：LINE iOS／Android、FB、IG 內建瀏覽器按「邀請好友」出現面板／選擇器／複製提示三者之一；記點擊數；貼上確認 |
+| R1a-2 | vitest 讀 `index.html` | LINE 貼連結有預覽 |
+| P1a／P1b | 2×2 色塊驗裁切；無 EXIF；一張失敗其餘保留；兩支既有探針仍綠 | iPhone HEIC／48MP／方向 6；LINE iOS／Android 裁切手勢 |
+| A1a／A2 | 遮罩投影；合法特例矩陣不報；重複發獎人造例外會報 | 桌機對帳走一輪；手機 Sheet 首屏四事實 |
+| A1b | 列舉測試每寫入一筆 audit；在途提領拒改；直打 signup 帶 national_id 不落地；三環境 GRANT 一致 | 代改一筆、會員端看到提示 |
+| L1-1 | 368 區鍵一致；選區排序全序；無 geolocation 呼叫 | LINE 內建瀏覽器選區與切換不卡 |
 
 ## 10. 不做什麼（本輪）
 
-- 不換帳號識別（phone-first）、不做簡訊 OTP、不代填他人手機。
-- 不做即時位置追蹤、不存位置歷史、不公開座標、不做地圖。
-- 不做獨立大頭照欄位；不用 Supabase 圖片轉換；不批次回填舊照片。
-- 不改發獎、換線、提領、推薦王的任何函式；對帳只讀。
-- 不引入狀態庫、UI 框架、地圖套件；不做會員自助修改資料頁；不稽核敏感資料讀取（除非 Q4-1 另裁）。
+- 不做邀請物件、token 落地頁、邀請紀錄、註冊步驟列（R1b 作廢）；不做簡訊 OTP、phone-first、LINE Login（第二期裁決）。
+- 不收集任何位置資料、不做 GPS 據點、不開位置表、不做地圖（L1 第一步只排序；第三步待觀察）。
+- 不做獨立大頭照欄位；不用 Supabase 圖片轉換；不批次回填舊照片；草稿持久化、舊圖重裁、配額清理改選配。
+- 不改發獎、換線、提領、推薦王的任何函式；對帳只讀、不重用 repair 的候選迴圈；手動調整不納入（Q4-2 推薦）。
+- 不做會員自助修改資料頁；代改只做「更正輸入錯誤」，「依書面申請變更」等法務答案；身分證唯一索引改選配。
+- 不引入狀態庫、UI 框架、地圖套件；不做 `PageSkeleton` 統一、`ErrorBoundary` 重做、toast 全站盤點（T1 縮）。
+- 不稽核敏感資料讀取（除非 Q4-1 另裁）。
 
 ## 11. 風險與回滾
 
 | 風險 | 緩解 | 回滾 |
 |---|---|---|
 | 首繪提示與真實狀態不一致（換帳號、撤權、他裝置登出） | 提示只影響頁首占位；清除時機六種；`/profile` 回來即以其為準 | 關掉讀提示（一行旗標） |
-| `degraded` 把真的失效會員留在站內 | 只對 transient 重試；401 類先確認再登出；上限 5 次 | 同上 |
-| 後端 `/profile` 改錯誤碼影響其他呼叫者 | 只動 `/profile`；8 處 fetch 已收斂到 `fetchProfile` | 還原錯誤碼對照 |
-| 邀請歸因錯人 | 碼為權威、token 只歸因、referrer 一致才寫 | 刪紀錄顯示，連結仍可用 |
-| 裁切／壓縮在特定瀏覽器失敗 | 解碼失敗明確文案；壓縮失敗退回原檔上傳（仍受 5MB） | 旗標關閉裁切 |
-| 位置資料外洩 | 表不對 anon 開放、網格化＋級距、限流、防三角定位測試、RLS probe | drop 距離查詢→前端退回縣市排序（feature-detect） |
+| `degraded` 把真的失效會員留在站內 | 只對 transient 重試一次；401 類先確認再登出；守衛外框不露受保護內容 | 同上 |
+| 後端 `/profile` 改錯誤碼影響其他呼叫者 | 只動 `profileHandler` 與 `buildProfileResponse`，不動 `requireAuth`；42 處 401 映射列舉測試 | 還原錯誤碼對照 |
+| 裁切／壓縮在特定瀏覽器失敗 | 解碼失敗明確文案；**編碼失敗該張不上傳**（不退回原檔，EXIF 是硬需求） | 旗標關閉裁切（仍不接受原檔） |
+| 1:1 改比例打紅 S6 的兩支探針 | 骨架與內容同 PR 改；縮圖列保留 | 還原比例 |
 | 核對面板重構推薦網絡端點誤傷會員端 | 先以 Deno 測試釘住再參數化 | 保留舊函式路徑 |
-| 代改資料改錯身分證 | diff 確認＋再輸入＋理由＋audit＋在途提領拒改 | 依 Q4-8 的原值還原或人工 |
+| 對帳第 2 項與 repair 的候選條件漂移 | 合法特例矩陣測試兩邊共用案例 | 關掉第 2 項 |
+| 代改資料改錯身分證 | diff 確認＋再輸入＋reason 類別＋audit＋在途提領拒改；「更正輸入錯誤」以外等法務 | 依 Q4-8 的原值還原或人工 |
+| 權限顯式化 migration 在某環境撤掉前端其實在用的權限 | 前端無任何直讀 profiles（全走 Edge）；journey 直寫者用 service_role；部署後逐環境查 | 單一 migration 可逆 |
+| `handle_new_user` 改動影響 signup | 正式前端不帶 metadata；Deno 測試直打 signup | 還原 trigger |
 | 三條管線部署順序（Pages／Edge／migration） | migration 先於前端合併；前端 feature-detect | 前端旗標 |
-| 新失敗模式無可觀測性 | audit 失敗、degraded 進入率、邀請 429 率寫 `system_alerts` | — |
+| 退費口徑三份文件不同（§14 第 2 題）在法務定案前被使用者引用 | 不在任何新畫面重述退費條文，只連結既有文件 | — |
+| 未簽約者的碼被使用與發獎（§14 第 4 題）在定案前持續發生 | R0 已把枚舉降到需登入＋限流；對帳第 11 項可事後盤點 | — |
+| 已付款待開通窗口換線讓 repair 略過（§6.1 d） | 對帳第 2 項會把它報成例外 | 人工補發 |
 | A1 建在未人工驗收的 S3／S4／S5 上 | 驗收站 2、3 延到 S7 後是業主既定；A1a 面板段排 S7 後 | — |
-| 邀請漏斗放大註冊量撞 Email 寄信配額 | 活動前確認 SMTP 限流、寄信失敗告警 | — |
+| 邀請分享放大註冊量撞 Email 寄信配額 | 正式站 300 封／小時；寄信失敗告警（小 PR） | — |
+| 區中心點資料來源的授權或精度 | PR 寫明來源；vitest 釘鍵集合 | 退回縣市中心點 |
 
 ## 12. 審查回填紀錄（v1 → v2）
 
@@ -823,11 +918,114 @@
 | 系統 S-23／S-24 | 寄信配額、風險遺漏 | §2.3 R0、§11 |
 | 未採 | UI G1「公告快取首繪」改為二擇一；系統「RPC 內讀 request.headers 限流」列為階段 2 實測選項；UI H9 LINE Login 列第二期裁決而非本輪 | — |
 
-## 13. 業主裁決紀錄（v2 之後，逐題累積；v3 回填時併入各節）
+## 13. 業主裁決紀錄（v2 之後逐題累積；v3 已併入各節，本表是溯源）
 
 | 日期 | 題 | 裁決 | 連帶 |
 |---|---|---|---|
-| 2026-10-17 | Q5-2 公開精度 | (a) 1 km 網格＋級距，**不存精確點** | L1a 擋開工項解除；§5.2B 表的 lat／lng 欄改為只存 grid_*（v3） |
-| 2026-10-17 | Q2-10 後半 無匿名消費者 | 業主確認 repo 外沒有東西匿名呼叫 `/referrals/validate/:code`、`/listings/verify-referral-code` | R0 可開工（Plan Mode `fix/referral-validate-hardening`） |
-| 2026-10-17 | Q2-5 法定揭露句與獎金字樣 | 待：業主要求先看「做在哪」的示意畫面 | 示意畫布 https://claude.ai/artifact/V9fhyw3HzcSDVttMu9ptei（八張：總圖、推薦管理頁、LINE 訊息、邀請卡、付款成功頁、落地頁正常態與失效態、註冊第 2 步；黃框＝揭露句位置、灰框＝獎金字樣位置） |
-| 2026-10-17 | Q2-10 前半 退款口徑 | 待：業主指示「以既有法務文件內容為主」，看過示意畫面再定落地頁怎麼寫 | 讀碼釐清：三份既有文件各管一份契約、不衝突——《服務條款》第六條（年費的刊登服務是線上數位服務，付費前明示同意後不適用消保法七日解除權）；《傳銷商參加契約》第十二、十三條與《事業手冊》2-1-1（加入推薦計畫後 30 日內可書面解除、全額退款扣已付獎金，之後終止依未使用月數扣 10%）。規格書 §4.1「付款成功不允許退款」只講了年費那一半，v3 要補一句區分。落地頁的「費用與退費」段建議只引用＋連結，不重述條文（示意畫布藍框） |
+| 2026-10-17 | Q5-2 公開精度 | (a) 1 km 網格＋級距，**不存精確點** | 適用於 L1 第三步（v3 把 L1 改成先做中心點排序，§5.2） |
+| 2026-10-17 | Q2-10 後半 無匿名消費者 | 業主確認 repo 外沒有東西匿名呼叫推薦碼驗證端點 | R0 已完成（#380）：`GET /referrals/validate/:code` 需登入＋限流；`POST /listings/verify-referral-code` 已刪 |
+| 2026-10-17 | Q2-5 法定揭露句與獎金字樣 | 待法務；業主已看示意畫布 https://claude.ai/artifact/V9fhyw3HzcSDVttMu9ptei（八張；其中落地頁、付款成功頁兩張隨 R1b 作廢） | §14 第 1 題；落點只剩邀請訊息與邀請卡 |
+| 2026-10-17 | Q2-10 前半 退款口徑 | 待法務：業主指示「以既有法務文件內容為主」 | **v3 更正 v2 的讀碼結論**：v2 寫「三份文件各管一份契約、不衝突；規格書只講了年費那一半」是錯的。原文：《服務條款》第六條除排除消保法七日解除權外，**明文「您於服務期間內仍得隨時通知 UKNOW 終止本服務，UKNOW 應就尚未提供服務之期間，按您未使用月份之比例退還已繳年費」**（`termsOfService.ts:33-34`）；《傳銷商參加契約》第 12 條訂約 30 日內書面解除「全額退款，但得扣除已支付之相關獎金」、第 13 條之後終止「以尚未使用服務之月數，扣除 10% 之減損費後退款」（`participationContract.ts:18-19`）；《事業手冊》2-2-1／2-2-2 同契約（`businessManual.ts:74-80`；v2 引的 2-1-1 只定義三種撤銷情況、不含金額）；規格書 §4.1「付款成功**不允許退款**」（`spec:126`）。契約第 9 條與手冊 1-2-1 把傳銷商契約綁在同一筆 1,200 元年費上——**同一筆錢三種口徑**，是法務題（§14 第 2 題）。起算點原文是「訂約之日」，契約第 3 條的生效日（審核通過並發送推薦碼）在程式上對不到單一時點 |
+| 2026-10-17 | 重審報告（PR #378 留言 6230904825）處理順序 | 1 立刻可做（R0、`/fix-bug` 補 register 守衛、會員中心邀請鈕）；2 總綱 v3；3 S7 重寫＋S8、rules.md；4 法務題一次問齊 | 1 已全部合併（#380／#382／#381）；2 即本版；3、4 接續 |
+| 2026-10-17 | 分享順位（二次裁決，#381 session 內） | 系統分享面板 → 所在 App → 複製；取消就停；不預先為 FB／IG 加窄表，真機驗收為 gate | 取代重審報告 §一-3「直接開 LINE 好友選擇器」；代價是 LINE 內有面板時多一下 |
+| 2026-10-17 | #380 審查（留言 6237456203，主 session 依授權裁決） | RPC 收回 anon／authenticated：同意；pg_cron 首次使用：同意；不加 per-IP 第三道窗：維持；付款頁 429 顯示成「無效」：推翻，改三態；舊別名 410 墓碑：不做 | 全部已落地 |
+| 2026-10-17 | #382 審查（留言 6239049379，主 session 依授權裁決） | 維持「step 2 含已付款待開通不擋」，以規格句＋測試釘住；cancel-signup 另擋已付款待開通；刪 PUT、表級撤銷、DB 函式加列鎖：維持；set-if-null 補填入口：不採；合併順序 #380 先、#382 重編 000003／000004 | 全部已落地；Q2-4 因此關死 |
+| 2026-10-17 | #381 審查（留言 6239632003，主 session 依授權裁決） | 維持二次裁決並延伸到「分享 QR Code」；維持拿掉內建瀏覽器守衛、FB／IG 升 gate；接受回填測試無紅燈但描述要誠實；不做桌機畫布「一代 N」與欄位 label 提示 | 全部已落地；真機驗收待回填 |
+| 2026-10-18 | #380 增量確認 P2 | P2 #1（付款頁暫時無法驗證要有重試出口）、#2（503 文案）合併前修；其餘 9 條開 #383 | 已落地；施工 session 把 #1 改成「重驗通過後再按一次才送單」，主 session 複驗確認同一次點擊送單會漏帶推薦碼，偏離正確 |
+| 2026-10-19 | 三個 PR 合併 | #380（`ae07800`）→ #382（`79e0591`）→ #381（`2fa1f2c`） | 總綱 v3 依此回填 |
+
+## 14. 法務題清單（一次問齊；每題附程式與文件的現況、答案會改到什麼）
+
+**1. 招募曝光面的法定揭露句與獎金字樣（Q2-5）**
+- 現況：邀請訊息（`referralInvite.ts:40-42`）「邀請你一起加入 Uknow：{連結}\n\n推薦碼 {碼}」、邀請卡 PNG（名、碼、連結）都沒有
+  揭露字樣；會員中心與推薦管理的「邀請好友」鈕文案沒有「賺／獎金」。落地頁與付款成功卡已作廢，不再是曝光面。
+- 依據：事業手冊 4-1-2(2)「需明白表示自己為傳銷商身分」、4-1-2(5)「嚴禁誇大或承諾任何獎金計畫說明或收入」（`businessManual.ts:191,197`）；
+  多層次傳銷管理法第十一條「以廣告或其他方法招募傳銷商時，應表明係從事多層次傳銷行為」（手冊附錄一 `:417-419`）。
+- 要問：(a) 邀請訊息是否必須含「本訊息由 Uknow 傳銷商發送」之類的固定句，文字為何；(b) 「推薦獎金」「回饋」字樣可否出現在
+  邀請訊息與邀請卡；(c) 由會員自己轉貼的系統訊息，平台是否負表明義務。
+- 答案落點：`referralInvite.ts` 與 `inviteCardImage.ts` 的常數（R1a-3，一個 commit）；ui-ux §13 第 5 條補規則句。
+
+**2. 年費退費口徑（Q2-10 前半）**
+- 現況：三份文件對同一筆 1,200 元年費寫了三種口徑（§13 更正列有逐字引文與 file:line）：條款六＝服務期間內終止按未使用月份比例退；
+  契約 12／13＝訂約 30 日內全額退（扣已付獎金）、之後按未使用月數扣 10% 減損費；規格書 §4.1＝不允許退款。程式沒有任何退款功能，
+  PayUni 只有付款。
+- 另一個對不上的點：契約第 3 條「自申請人同意並送出本申請書及契約，本公司審核通過並發送個人推薦碼後生效」——程式上推薦碼在
+  首次付款時發出、簽約（`join-program`）在付款之後且沒有審核步驟；「訂約之日」對應付款日還是簽約日，從程式判不出。
+- 要問：(a) 哪一份為準，或三份如何並存（例如條款六管年費、契約 12／13 只管傳銷商身分）；(b) 「訂約之日」的起算點；(c) 規格書
+  §4.1 的「不允許退款」要改成什麼。
+- 答案落點：規格書 §4.1 一句；若需要退款作業，另開工項（本輪不做）。
+
+**3. 管理者代改身分證字號與事業手冊 2-3-3（Q6-9）**
+- 現況：#382 後已付款會員不能自改身分證；規格書 §4.1 已寫「身分證字號的變更等同轉讓經營權，依 2-3-3 書面申請並經書面同意」；
+  後台沒有代改工具。手冊 2-3-3 原文（`businessManual.ts:95`）把「轉讓經營權」與「變更身分證字號」放在同一個書面程序裡，
+  受讓人還要循手冊入會。
+- 要問：(a) 「更正輸入錯誤」（打錯一碼、全半形、本人證件相同）是否屬 2-3-3 的「變更身分證字號」，還是可由客服核對證件後直接更正；
+  (b) 真的換人（轉讓）時，書面申請與同意文件由誰保存、系統要不要留檔欄位；(c) 更正後是否一律重做證件驗證（Q6-4）。
+- 答案落點：A1b-3 的 reason 類別是否開「依書面申請變更」；規格書 §4.1／§4.2 措辭。
+
+**4. 未簽參加契約者的推薦碼可否被使用與發獎（Q2-11）**
+- 現況：推薦碼在首次付款成功時就產生（`process_successful_payment`），`validate_referral_code` 只看碼 active 與推薦人未停權、
+  不看 `referral_program_joined`；發獎鏈（`apply_referral_side_effects` → `pay_referral_generations`）也不看；提領守衛才看。
+  前端閘門讓未簽約者不能出示、不能分享，但碼是流水號、可被猜到（R0 把枚舉降到需登入＋限流），被推薦者在註冊時填了就能綁定，
+  付款後未簽約的推薦人會收到獎勵（進帳本、不能提領）。另 `/auth/register` 解析碼不查推薦人是否停權。
+- 依據：手冊 4-1-2(2) 推薦時需表明傳銷商身分；參加契約第 3 條生效要件；多層次傳銷管理法對「傳銷商」的定義與參加前告知
+  （第十條）。
+- 要問：(a) 未簽約者在法律上算不算傳銷商、其推薦可否計入組織與獎金；(b) 若不可：被推薦者的註冊要擋（碼無效）還是只擋發獎；
+  (c) 存量（已簽約前產生的下線與獎勵）如何處理。
+- 答案落點：若「不可」→ 獨立 Opus 工項：`validate_referral_code` 與發獎鏈加 `referral_program_joined` 判準、`/auth/register`
+  解析改經 `validate_referral_code`（同時補停權檢查）、存量盤點查詢（可併 A2 對帳）。若「可」→ 只補 `/auth/register` 的停權
+  檢查（小 PR）。
+
+## 15. v2 → v3 變更紀錄
+
+**重審報告（2026-10-17，留言 6230904825）確認的 major 與 v3 處置**
+
+| 來源 | 發現 | v3 處置 |
+|---|---|---|
+| T1-01 | degraded 時 `ProtectedRoute` 會導 `/login`，計畫沒寫怎麼擋 | §1.2B 守衛對 degraded 畫外框不導頁；現況已會把 5xx 導去登入頁的事實寫進 §1.1 |
+| T1-02 | `requireAuth` 是 47 個呼叫點共用，計畫說只動 `/profile` | §1.2B 改成新增 `authenticate()` 只給 `profileHandler` 用；42 處 401 映射列舉測試 |
+| T1-04 | `apiClient` 對 401 做全域 signOut，計畫沒列 | §1.1 補事實；§1.2B 收進 `endInvalidSession()` |
+| T1-06 | `hasBottomNav` 一行不該另開 PR | 併入 T1 階段 3 |
+| T1-09／F1 | 缺「已付費未加入推薦計畫」狀態 | §0 原則 5、十分鐘版、§7 新增 P3′ 欄；S7／S8 另案 |
+| T1-13 | T1 做成大工程 | §1.2C 砍掉清單；階段 6→4 |
+| R-08 | `validate_referral_code` 與發獎不看已加入 | §2.1 事實；§14 第 4 題；順帶發現 `/auth/register` 解析不查停權 |
+| R-09 | `/payuni/prepare` 付款前改 `referred_by`、棄單無還原 | §2.1 事實確認；§6.1 未處理項 (d)；對帳第 8 項口徑配合 |
+| F2 | `StatCardAction` 做不到直接分享 | 作廢；#381 以 `action` prop 把真按鈕放連結外 |
+| F4／X15 | 邀請物件沒縮短點擊、動到註冊與付款相鄰路徑 | R1b 刪除；Q2-1／2／6／7／8／9 作廢 |
+| F7 | 「枚舉面關閉」→「降到需登入＋限流」；§13 法務讀碼錯 | §2.1、§8.1、§9 改口；§13 Q2-10 前半列整段更正 |
+| F8 | 頂層 `referrerUserId` 也要移除 | #380 已移除（含 `referrerName`） |
+| P-01／X3 | 1:1 會打紅 S6 的骨架探針 | §3.2D 骨架與探針同 PR 改；另發現「縮圖列手機隱藏」會打紅觸控探針 → 改保留 |
+| P-02 | 「壓縮失敗退回原檔」與「剝 EXIF 是需求」矛盾 | §3.2A 第 3 點與 §11：編碼失敗該張不上傳 |
+| P-03 | HEIC 成因未證 | §3.1 事實（repo 零紀錄；HEIC 現在被格式白名單擋）；P1a 階段 0 真機確認 |
+| S4-01 | 證件審核沒有事件表 | §4.1 事實；§6.2A `admin_review_id` 補 audit |
+| S4-02 | `/admin/withdrawals` 回未遮罩身分證、帳號、簽名網址 | §4.2 提領區改新端點遮罩投影 |
+| S4-03 | 對帳第 8 項口徑錯 | §4.2 第 8 項改母體與排除條件；第 7 項改成偵測 reconcile 失效 |
+| S4-04 | 推薦關係以 `referral_edges` 為準 | §4.1 兩套來源並存的事實；面板兩套並列、對帳以 edge 為準（Q4-9） |
+| S4-05 | 重用 repair 候選查詢＝動發獎函式 | §4.2 第 2 項另寫唯讀查詢，矩陣測試對照 |
+| S4-06 | 重複發獎偵測不存在 | §4.2 新增第 11 項 |
+| A1a 拆 | 核對面板＋對帳純讀先做，稽核綁代改 | §4 只剩 A1a／A2；稽核搬到 §6.2A |
+| L-01 | 失效連動刪除無機制 | §5.1 事實；第三步才需處理 |
+| L-02 | fallback 資料流缺 | §5.2 第一步只有「選地區→區中心點」一條資料流 |
+| L-03 | 級距 20+ 退化 | §5.2 第一步連續距離取整數，不用桶 |
+| L-04 | 新表要顯式 GRANT | §5.1 事實；第一步無新表 |
+| L-06 | 首頁軟詢問＋地區選擇器過重 | §5.2 第一步只有選地區；GPS 改第二步選配 |
+| L1 改最小版 | 先做中心點排序 | §5 全節改寫；Q5-1 加 D；Q5-6 資料來源 |
+| A1b-01 | `/auth/register` 無已付款守衛 | ✅ #382；§6.1 |
+| A1b-02 | 代改身分證牴觸手冊 2-3-3 | §6.2B 代改限「更正輸入錯誤」；§14 第 3 題 |
+| A1b-03 | `handle_new_user` 仍從 metadata 寫 `national_id` | §6.2C 階段 1b 關掉 |
+| 唯一索引 | 改選配 | §6.2B、§6.4 選配列 |
+| X1／X2 | S6 仍寫成進行中；S7 與 P1b／L1b／T1 共檔未排序 | §8.1 狀態、§8.2 撞檔矩陣重寫；migration 登記制 |
+
+**七節事實重核摘要（develop HEAD `2fa1f2c`，2026-10-19）**
+- 行號漂移：`index.ts` 自 `:248` 起整體 +50～+60（#380 插入限流區塊）；`HomePage.tsx` 353→388（S6）；`constants.ts` `TAIWAN_REGIONS`
+  104→115（#382 加 `PROFILE_LOCKED_*`）；`listings.test.ts` 白名單測試上移至 `:190`（#380 刪三條別名測試）；`verifyNationalId`
+  261→311；`buildProfileResponse` 364→408；`loadNetwork` 3515→3539；上傳端點 4103→4127；規格書 §4.2 真實姓名列 134→147。
+- v2 寫錯、v3 改掉：守衛「三種置中 spinner」→三處兩種；「22 個讀 UserContext 的檔案」→25；「五個 journey builder」→4；詳情主圖
+  「黑邊」→S6 後灰底留白；「第一張是封面只是慣例」→Create 標籤已向使用者宣告；「上傳限制的後端第二副本」→至少四份；
+  「DB 只有 pgcrypto」→加 pg_cron；「journey 無直寫者」→有一個 service_role 直寫者；§13 Q2-10 前半的三點讀碼結論；§4.1「後台沒有
+  任何會員層讀取」→收窄（`/referrals/debug/:userId` 存在）；`member_verify_logs.admin_id` 已改名 `verifier_id`。
+- 被三個 PR 改掉、v3 重寫的事實：§2.1 整段（入口、順位、複製連結鈕、驗證端點、Step 2 寫入機制、確認框文案）；§6.1 整段
+  （`PUT /auth/profile`、直改權、鎖定段、§4.2 連動措辭）；§1.1 的 `refreshUser` 消費者、`vi.mock('../App')` 數量、`showToast` 數量。
+- 仍無法從 repo 驗證、維持標「推論」：冷載四種等待畫面；原圖 EXIF 含 GPS；HEIC 成因；iOS Safari 顯示 HEIC；三邊定位（幾何）；
+  LINE 官方帳號 `oaMessage`；3967f69 事故本身（shallow clone 查不到，只見於程式註解）。
+- §12（v1→v2 審查回填紀錄）原樣保留為歷史，其中的檔案:行號是 v2 當時的值，不再維護。
