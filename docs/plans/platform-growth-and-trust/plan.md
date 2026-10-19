@@ -241,7 +241,7 @@
 - **後端不檢查「已加入」**（重審 R-08，確認）：`validate_referral_code`（`20260720000001:142-160`）只看 `status='active'` 與
   推薦人未停權；發獎鏈 `apply_referral_side_effects` → `pay_referral_generations` 從不讀 `referral_program_joined`（該欄只出現
   在 schema 與提領守衛）。碼是流水號（`20260914000001`），被猜到就能讓未簽約的人收到獎勵——R0 把枚舉面降到需登入＋限流，
-  不是消除。另一個洞：`/auth/register` 解析推薦人只查 `referral_codes.status='active'`（`index.ts:709-716`），不經
+  不是消除。另一個洞：`/auth/register` 解析推薦人只查 `referral_codes.status='active'`（`index.ts:711-717`），不經
   `validate_referral_code`、不查 `suspended_at`——直接打 API 可綁停權推薦人（前端流程先經 GET validate 才送出，所以 UI 走不到）。
   前者歸 §14 法務題 4；後者是規格書 §4.2「推薦人未停權」已明文的缺口，與法務無關，列 §8 的小 PR（解析改經 `validate_referral_code`）。
 - 法遵（原文核對無誤）：事業手冊 1-2-3「不得委託他人填寫入會資料」、4-1-2(2)「需明白表示自己為傳銷商身分」、4-1-2(5)「嚴禁
@@ -446,9 +446,9 @@
 
 ### 4.1 現況與根因（develop HEAD；`index.ts` 現為 4,292 行）
 
-- 後台沒有「某位會員的獎勵明細、任務進度、推薦樹節點、付款紀錄」讀取：`/admin/*` 共 16 支（`index.ts:1061-1776`）＋
+- 後台沒有「某位會員的獎勵明細、任務進度、推薦樹節點、付款紀錄」讀取：`/admin/*` 共 16 支（`index.ts:1061-1771`）＋
   `/admin-setup/*` 兩支，沒有 rewards／tasks／network／payments 類；`/rewards*`、`/tasks*`、`/referrals/network/*` 全以本人
-  取數。唯一的例外是 `GET /referrals/debug/:userId`（`:4172-4231`，admin 可讀任一會員的名、碼、推薦碼來源、註冊步驟、會籍、
+  取數。唯一的例外是 `GET /referrals/debug/:userId`（`:4172-4223`，admin 可讀任一會員的名、碼、推薦碼來源、註冊步驟、會籍、
   一代人數、碼狀態）。admin 詳情面板只有三個點數總額、最近 10 筆提領、推薦人姓名與直推人數（都取自
   `profiles.referred_by_user_id`，不是 `referral_edges`）、到期日、證件狀態、遮罩後的身分證與帳號。**沒有頁面列出
   `payment_orders`／`subscriptions`**；付款異常只在系統告警。
@@ -671,7 +671,7 @@ v2 的細節保留在 `git show 8f0ebcf:docs/plans/platform-growth-and-trust/pla
   v2 Q2-4「第一次輸入從驗證變設定」是同一個注入面。
 - 欄位連動：`national_id` 是身分驗證（`/rewards/verify-id`）、提領、查收、領獎四處的驗證憑證（`verifyNationalId`
   `index.ts:311-315`，呼叫 `:3161,3318,3366,4090`；null 一律 false）並與證件審核綁定（`request_withdrawal` 讀
-  `id_verification_status`）；提領作業台的姓名、手機、身分證、證件照是**即時 join profiles**（`index.ts:1168-1172`，只有銀行
+  `id_verification_status`）；提領作業台的姓名、手機、身分證、證件照是**即時 join profiles**（`index.ts:1166-1169`，只有銀行
   資訊是申請當下的快照）；`bank_*` 在 profiles 是「上次使用值」，提領預填讀裝置 localStorage、送出由 body 帶入——代改 bank_*
   對會員流程無效；`name` 改了推薦網絡即時反映，獎勵明細的名字是發獎當下快照、不連動——**規格書 §4.2:147 已由 #382 改寫成與
   程式一致**（v2 引的「修改時連動所有顯示介面」已不存在，Q6-7 失去文字依據）；§14 #5 的罕用字逃生口是「聯繫客服」；§14 #1
