@@ -826,9 +826,9 @@ R1a-2／R1a-3 各一個 Plan Mode PR。在途工項上限 3。沒有任何裁決
 | 1 | **R0** 推薦碼端點關洞 | ✅ #380（2026-10-18） | §2.1；後續 P2 在 #383 | Plan Mode `fix/referral-validate-hardening` | Sonnet | — | 無可見變化；枚舉面降到需登入＋限流 |
 | 1 | **A1b-1** 已付款守衛＋撤銷直改 | ✅ #382（2026-10-18） | §6.1 | `/fix-bug` `claude/auth-register-completion-guard` | Opus | — | 已付款會員改資料得到「請聯繫客服」 |
 | 1 | **R1a-1** 入口三顆元件＋分享順位 | ✅ #381（2026-10-19） | §2.1 | Plan Mode `fix/referral-entry-points` | Sonnet | 真機驗收回填 | 會員中心 1 下到分享面板 |
-| 0 | S7 prompt 重寫 | 另案（步驟 3） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補步驟與 `upline-pairing-lines/rules.md` 處置另開 issue 追蹤（重審 §四 步驟 3） | 規劃分支 | — | — | — |
+| 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |
 | 2 | **T1** 登入狀態（縮） | 待開工 | §1 | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
-| 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段在 S7（最小完成點＝會員區三頁資訊層次）合併後或先合併者定 | Sheet 內五區核對 |
+| 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段在 S7a（最小完成點＝會員區三頁資訊層次）合併後或先合併者定 | Sheet 內五區核對 |
 | 2 | **P1a** 照片上傳管線（核心） | 待開工 | §3.2A／C | 三段式 `feature/listing-photo-pipeline` | Sonnet | Q3-1、Q3-3；階段 0 真機 | 選圖即裁、1–3 張、錯誤看得懂 |
 | 2 | **A1b-1b** 剩餘守衛與權限顯式化 | 待開工 | §6.2C；migration 前綴：開工時登記 | Plan Mode `fix/*` | Opus 規劃與審查、Sonnet 實作 | — | 無可見變化 |
 | 3 | **A2** 對帳報表（純讀）＋手動調整（第二段，排 A1b-2 後） | 待開工 | §4.2(2)；migration 前綴：開工時登記 | 三段式 `feature/admin-reconcile` | Opus 階段 4 與手動調整 | A1a 合併；手動調整另等 A1b-2 | 告警次分頁十一項檢查＋一項盤點；之後手動調整 |
@@ -842,22 +842,22 @@ R1a-2／R1a-3 各一個 Plan Mode PR。在途工項上限 3。沒有任何裁決
 | `/fix-bug` | repair 閘門對預設推薦人首購恆假 | 待開工 | §6.1 (d′)、§4.2 第 2 項 | `fix/*`，動發獎相鄰函式 | Opus | — | 無可見變化；孤兒獎勵可被修補 |
 | 第二期（issue） | 簡訊通道、LINE Login、個別化 og、地圖、對帳排程、admin 漏斗檢視、手動調整（若 Q4-2 不納入）、Email 可改、服務據點（L1 第三步）、`ErrorBoundary`、5c 文案 sweep | — | — | — | — | — | — |
 
-**在途工項上限 3**。建議起手：**S7 prompt 重寫**（另案）→ T1 ∥ A1a 階段 1–2（後端）∥ P1a；A1b-1b 與 R1a-2 是小 PR，
-塞在空檔。法務題（§14）不擋 T1／A1a／P1a；擋 R1a-3 與 A1b-3 的「依書面申請」類別。各工項 `/plan-feature` 的子 `plan.md`
+**在途工項上限 3**。建議起手：S7a ∥ T1 ∥ A1a 階段 1–2（後端）；之後 P1a；A1b-1b 與 R1a-2 是小 PR，
+塞在空檔。法務題（§14）已全部裁決（文件不可改、產品對齊），不再擋任何工項。各工項 `/plan-feature` 的子 `plan.md`
 只放與本總綱的差異，以 `git show <hash>:docs/plans/platform-growth-and-trust/plan.md §n` 為上游，不複製設計。
 
-### 8.2 撞檔矩陣（只撞檔才序列化；S6 已合併，S7 待 prompt 重寫）
+### 8.2 撞檔矩陣（只撞檔才序列化；S6 已合併，S7 已拆成 S7a／S7b，prompt 見 construction-plan §3）
 
 | 檔案 | 動它的工項 | 處置 |
 |---|---|---|
 | `src/App.tsx`、`Navbar.tsx`、`AuthPage.tsx`、`BottomNav.tsx`、`ProtectedRoute`／`AdminRoute`、`apiClient.ts` | 只有 T1 | — |
-| `HomePage.tsx` | T1（`hasBottomNav` 一行）、L1-1（結果列與排序）、P1b（桌機卡比例）、S7（現行 prompt 有首頁項，重寫後更新） | 先合併者定；L1-1 與 P1b 都是小 PR，rebase 成本低 |
-| `CompleteProfile.tsx`、`PaymentCheckout.tsx` | T1（`/profile` 收斂到 `fetchProfile`）、A1b-1b（step 3 出口，不同區段）、#383（付款頁重驗）、S7（現行 prompt 的姓名切換焦點） | T1 先；其餘互不重疊的區段先合併者定 |
+| `HomePage.tsx` | T1（`hasBottomNav` 一行）、L1-1（結果列與排序）、P1b（桌機卡比例）、S7a（讀取失敗黃框換成 `LoadErrorCallout`、焦點環常數，只換不改） | 先合併者定；L1-1 與 P1b 都是小 PR，rebase 成本低 |
+| `CompleteProfile.tsx`、`PaymentCheckout.tsx` | T1（`/profile` 收斂到 `fetchProfile`）、A1b-1b（step 3 出口，不同區段）、#383（付款頁重驗）、S7b（姓名切換焦點一處 className；`pendingUser` 評估） | T1 先；其餘互不重疊的區段先合併者定 |
 | `Create/EditServiceProvider.tsx` | P1a | — |
-| `ServiceProviderManagement.tsx` | P1a（刪除清理、比例）、S7 | 先合併者定 |
-| `ServiceProviderDetail.tsx`＋`e2e/test_public_skeleton_layout.py`、`test_public_touch_targets.py` | P1b、S7（現行 prompt 的 `LoadErrorCallout`） | 兩支探針隨 P1b 同 PR 改；S7 先合併者定 |
-| `MemberDashboard`／`ReferralManagement`／`referral/*` | S7（prompt 重寫後） | 三顆元件是既成事實；S7 不得複製閘門 |
-| `ReferralTreeView`／`MemberDetailSheet`／`RewardHistory` | A1a 面板段、S7 | S7 先或先合併者定（都是注入式改動） |
+| `ServiceProviderManagement.tsx` | P1a（刪除清理、比例）、S7a（刊登卡動作列、讀取失敗） | 先合併者定 |
+| `ServiceProviderDetail.tsx`＋`e2e/test_public_skeleton_layout.py`、`test_public_touch_targets.py` | P1b、S7a（`LoadErrorCallout` 只換不改、`THUMB_FOCUS` 抽常數） | 兩支探針隨 P1b 同 PR 改；S7a 先合併者定 |
+| `MemberDashboard`／`ReferralManagement`／`referral/*` | S7a（頁面層、橫幅接 attention 端點）、S7b（樹列樣式、`adoptShared`） | 三顆元件是既成事實；不得複製閘門 |
+| `ReferralTreeView`／`MemberDetailSheet`／`RewardHistory` | A1a 面板段、S7a（前兩者不碰 `MemberDetailSheet`——世代 chip 在後台那處留給 A1a 套） | S7a 先或先合併者定（都是注入式改動） |
 | `AdminConsole`／`AdminDashboard`／`adminCache`／`api-contract.ts` | A1a → A2 → A1b | 序列化 |
 | `supabase/functions/api/index.ts` | T1（`authenticate`＋`/profile`）、A1a（約 10 支讀端點，先抽 `api/deps.ts`）、A2、A1b、P1a（`DELETE /listings/photos`） | 各工項只加自己的區段；A1a 的 `deps.ts` 抽取先合併 |
 | `supabase/migrations/` | A1b-1b（權限顯式化）、A1b-2（audit、`profile_change_seen_at`）、A2（對帳函式）、A1a（往上推薦人鏈若需 SQL）、repair 閘門 `/fix-bug`；P1a、L1-1 無 | **migration 版本號登記制**（見下） |

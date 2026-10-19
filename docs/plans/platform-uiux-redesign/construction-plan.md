@@ -9,8 +9,8 @@
 S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊架構 ──► S4 會員詳情
    (D1+D2)            (D3)               (A1+A2)             (A3)
                                             │
-                                            └──► S5 admin 快取 ──► S6 前台門面 ──► S7 會員區收尾 ──► S8 制度化收尾
-                                                 (A4)              (F1)             (F2+F3)          (G1+G2)
+                                            └──► S5 admin 快取 ──► S6 前台門面 ──► S7a 會員區資訊層次 ──► S7b 三態與遺留 ──► S8 制度化收尾
+                                                 (A4)              (F1)             (F2)                 (F3＋遺留)          (G1+G2)
 ```
 
 - **嚴格依序**：S1→S2 是硬依賴（沒有 token 與守門腳本，收斂就沒有依據）；
@@ -57,7 +57,8 @@ S1 設計語言地基 ──► S2 全站色彩收斂 ──► S3 後台資訊�
 | S4 | 會員詳情重設計 | A3 | `feature/member-detail-redesign` | 三段式落檔（動作位階契約在此頁，審查必跑） | Sonnet | 中 |
 | S5 | admin 資料快取 | A4 | `feature/admin-data-cache` | 三段式落檔（跨分頁資料層） | **Opus** 規劃、Sonnet 實作 | 重 ※S5 |
 | S6 | 前台門面 | F1 | `fix/frontend-p1-polish` | 輕量 Plan Mode | Sonnet | 輕 |
-| S7 | 會員區資訊層次 | F2+F3＋S2d 審查遺留 | `fix/frontend-member-hierarchy` | 輕量 Plan Mode（照 §13 通則與 F4 的樣板） | Sonnet | 中 |
+| S7a | 會員區資訊層次（2026-10-19 拆分） | F2＋會員中心頁面層＋`LoadErrorCallout` | `fix/frontend-member-hierarchy` | 輕量 Plan Mode（照 §13 通則與 F4 的樣板；三顆推薦元件為既成事實） | Sonnet | 中 |
+| S7b | 會員區三態巡檢與遺留收尾（2026-10-19 拆分） | F3＋S2d／S2e 審查遺留＋浮起表面 | `fix/frontend-member-polish` | 輕量 Plan Mode（Button API 與 DataCacheProvider 兩項先停等看） | Sonnet | 中 |
 | S8 | 制度化收尾 | G1+G2 | `claude/uiux-program-closeout` | 輕量（改文件與 skill 模板、刪鷹架） | Sonnet | 輕 |
 
 ※ **S1 重量異動（2026-09-14）**：兩輪四視角審查回填後範圍變大（C3 原始色值
@@ -520,79 +521,165 @@ BottomNav。Plan Mode 必須交代下列九條：
 模型 Sonnet。Plan Mode 列完清單先停等我看。
 ```
 
-**S7**：
+**S7a**（2026-10-19 重寫；取代原 S7 prompt——原文 `git show 08744cd:docs/plans/platform-uiux-redesign/construction-plan.md`。
+最小完成點：合併後總綱 A1a 面板段與驗收 2–4 解鎖）：
 ```
-讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
-執行 S7（工項 F2+F3）：在 fix/frontend-member-hierarchy 分支上，照
-ui-ux-guidelines §13 的通則與 S2d 做好的會員中心樣板，重做任務中心、
-獎勵回饋、刊登管理三頁的資訊層次：每頁一個主數字或主狀態（獎勵＝可提領
-點數、任務＝進行中任務進度、刊登＝刊登狀態），其餘降級；達標／已完成的
-卡收起、進行中排前面；主行動一顆黑、次行動 brand；會籍失效狀態的呈現
-（續約 banner、功能導向提示、獎勵頁例外可讀）是一級對象。接著 F3：全站
-三態完備性巡檢＋補缺、既有 text-destructive 裸字若仍有殘留一併收掉、
-overflow sweep 過一輪。另外承接 progress.md 遺留事項「S2d 審查遺留」那條的前端
-項目（withdrawalBlockReason 收斂、dashboardSummary 搬 utils/、DataCacheProvider
-單一 commit＋provider 測試、adoptShared 共用化、canWithdraw 等會籍 settled、
-mutation 後 refetch 繞過 join、需要注意區位移、span 畫按鈕語意、Badge 截斷
-sweep 盲點、§3 桌機入口補句、ReferralStats 手機高度、點數寫法統一、推薦頁
-橫幅口徑拉齊、MyQrEntry／SubscriptionStatusCard 的黑鈕納入 §13）；後端項
-（attention.expiringTotal、/subscriptions/status 查詢失敗回 5xx、會員中心摘要
-端點）與規格書 §7.2 下線四態定義不在 S7，另開工項。Plan Mode 先列每頁的
-主數字與降級清單給我看過再動工。
-另外承接 2026-10-04～05 畫面稿定案中屬於頁面層的項目（S2e 只做 token 與原語）：
-(1) 會員中心：四卡標題改目的頁名（刊登管理／推薦管理／任務中心／獎勵回饋）、
-    推薦卡只留總數＋狀態徽章、**拿掉「需要注意」區**（§13 第 3 條在會員中心不適用，
-    規則措辭同 PR 改）；
-(2) 推薦管理橫幅：只算一代且即將到期，標題「N 位一代即將到期」、無副標、chip 不帶
-    小圓點、只列最緊急 3 位＋「全部 N 位 ›」（分頁清單端點與 attention 改
-    generation===1 && status==='expiring' 是後端工項，S7 開工前要先合併；若未就緒，
-    橫幅先用 items 過濾一代即將到期並顯示「至少 N 位」）；
-(3) 任務中心：四顆徽章放進「本月已推薦」淡底卡取代進度條（plan.md §4 第 13 點：
-    一顆 2 人、奇數半亮、偶數全亮、--medal-gradient 填色、徽章下只放名稱），
-    等級小標籤、人數、鼓勵文案拿掉；「任務獎勵」框改 neutral；等級門檻 2／4／6／8
-    依賴後端 TaskBadge 工項先合併；徽章元件建好後把路徑登記到
-    scripts/check-color-usage.py 的 APPROVED_GRADIENT_FILES（理由＋退場條件，S2e #354 備好的機制），
-    有色容器裡的按鈕用 Button 的 container（黃框續訂 tone="guide" container="warning"、
-    綠框領取獎勵 tone="secondary" container="success"，ui-ux-guidelines §12.11）；
-(4) 獎勵回饋：可提領卡為該頁唯一淡底主區、「申請提領」外框在卡內；提領申請列
-    「待查收」黃徽章＋「確認收款」引導鈕靠右；明細的世代 chip 用世代色、負項紅字；
-    待查收徽章在 admin 與會員兩處統一 warning（遺留事項最後一條就此結案）；
-(5) 全站提到「代」的地方（推薦詳情、明細、後台會員詳情）用世代 chip／小圓點元件，
-    會員中心卡片不放世代。
-另外承接 S6 收尾（2026-10-17 補；依 #377 主 session 對照 P2-12 與業主裁決 D4／D5，遺留原文見 progress.md「S6 遺留」）：
-(6) S6 遺留——做到的在 progress 寫落地處並刪該條：
-    a. 開頭先抽 `LoadErrorCallout`（標題、說明、重試鈕、重試後焦點落點的 ref；鈕位置照 ui-ux §12.11 的
-       現況），讓首頁與服務者詳情改用，再套到整頁主內容讀取失敗的五處：推薦管理 `ReferralManagement.tsx:74-79`、
-       獎勵回饋 `RewardDashboard.tsx:117-122`、任務中心 `TaskDashboard.tsx:98-101`、刊登管理
-       `ServiceProviderManagement.tsx:145-158`、獎勵明細 `RewardHistory.tsx:216-223`；其中兩處
-       `window.location.reload()` 改成只重發那支請求（§6）。儀表板卡片內的單一區塊（我的訂閱卡）維持
-       §13 第 4 條中性字，**不**對齊黃框（D4 劃界）。
-    b. `FilterChip` 未選態定調（畫面稿灰底無框：`--secondary` 底、灰字；現為白底框線）：動獎勵頁紀錄篩選時
-       一併改 `common/FilterChip.tsx`（§12.12 已把 chip 歸為無框元件）；`e2e/test_public_touch_targets.py`
-       量的 44px 與焦點環要仍綠。
-    c. 焦點環「3px ＋ 1px 間隙」的字串有四份副本（`FilterChip`、`HomeViewToggle`、詳情 `THUMB_FOCUS`、首頁
-       `TOOLBAR_FOCUS`）：動 `ui/tabs.tsx` 或 `FilterChip` 時抽成單一常數或 cva 變體。CompleteProfile 的姓名
-       分段切換（S2e 審查遺留）比照 `HomeViewToggle` 補同款焦點樣式，F3 焦點巡檢順手做。
-    d. 不做：請求逾時（S6 遺留第 3 條，全站讀取逾時另案）；後端工項與規格書 §7.2 四態定義（同上文）。
-(7) 流程：**新測試先以 `test(red)` commit 入庫、紅燈 hash 寫進 PR，再 commit 實作**（CLAUDE.md 的紅燈證據；S6
-    兩輪的紅燈只在留言陳述，主 session 無法從 commit 驗證）。e2e 定位器契約同 S6：改了可存取名稱或角色，同一
-    commit 改 `e2e/pages/*` 的 page object；每個新狀態（三態、空態、會籍失效）各有一條 e2e 情境，元件測試只守
-    e2e 量不到的焦點落點與判定分支。既有行為不變：不動 `supabase/functions/`、資料路徑與 BottomNav。
-(8) 文件：ui-ux §13 要改的措辭同 PR 改；驗收 4 加「S7 清單」（照 S6 清單的寫法：前置、手機、桌機、以 vitest／e2e
-    為準不列人工項）；progress 的 S7 列、異動記錄與承接的遺留結案同 PR 更新。
-(9) 開工前查核（主 session 2026-10-17 讀碼）：上文 (2) 的 attention「一代且即將到期」已在後端
-    （`supabase/functions/api/index.ts:3658` 的 `generation === 1 && status === 'expiring'`），但「全部 N 位 ›」的
-    分頁清單端點沒看到——橫幅照 (2) 的後備做法；(3) 的 `src/components/task/TaskBadge.tsx` 現為三級、門檻取
-    `reward_config` 的 target（預設 8），四顆徽章 2／4／6／8 是否真的需要後端變更，Plan Mode 先查清楚再列給我。
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md，與
+docs/plans/platform-growth-and-trust/plan.md 的 §0 原則 5、§2.1、§7（P3′ 欄）。
+執行 S7a（工項 F2）：在 fix/frontend-member-hierarchy 分支上（從最新 origin/develop 切），照
+ui-ux-guidelines §13 的通則與 S2d 做好的會員中心樣板（DashboardStatCard／StatValue／
+StatCardAction），重做任務中心、獎勵回饋、刊登管理三頁的資訊層次：每頁一個主數字或主狀態
+（獎勵＝可提領點數、任務＝本輪推薦進度、刊登＝刊登狀態），其餘降級；達標／已完成的卡收起、
+進行中排前面；主行動一顆黑、引導鈕 brand、其餘次要；會籍失效狀態的呈現（續約 banner、
+功能導向提示、獎勵頁例外可讀）是一級對象。
+既成事實（PR #381，2026-10-19 合併；不得改回）：推薦入口是三顆共用元件 MyQrButton／
+InviteFriendButton／ReferralCodeWithCopy（src/components/referral/），MyQrEntry 已不存在；
+閘門只有 myQrTabsForUser 一份——動 MemberDashboard／ReferralManagement 時不得另寫
+joined && referralCode（3967f69 教訓）；推薦格的「邀請好友／加入推薦計畫」是常駐 action 鈕
+（§13 第 2、5 條）。
+「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5、§7 P3′ 欄；首購者 100% 從這裡開始）：
+每頁的狀態表都要有這一欄——任務中心與獎勵頁對這類會員顯示什麼（任務照計、碼不可分享、
+不可提領）、引導去哪裡；「加入推薦計畫」引導鈕只在既有兩處（會員中心推薦格、推薦管理推薦碼列，
+同一顆 InviteFriendButton），其他頁只用說明文字＋連結，不複製鈕、不複製閘門。
+Plan Mode 先列每頁的主數字、降級清單與「P2 刊登會員／P3′ 未加入／P3 已加入／會籍失效／
+讀取失敗」五欄狀態表給我看過再動工。
+(1) 會員中心：四卡標題改目的頁名（刊登管理／推薦管理／任務中心／獎勵回饋）；推薦卡＝總數＋
+    狀態徽章＋常駐 action 鈕（#381 既成，取代畫面稿原句「只留總數＋狀態徽章」）；**拿掉「需要
+    注意」區**（AttentionCallout；§13 第 3 條在會員中心不適用，規則措辭同 PR 改，元件沒有其他
+    消費者就一併刪）；推薦卡「N 位即將到期」徽章改「N 位一代即將到期」（口徑已由 B1 拉齊，
+    MemberDashboard.tsx:97,150,256）；引導鈕一頁一顆的優先序（續訂＞加入推薦計畫＞確認收款）
+    會員中心已由 yieldsGuide 落實，獎勵頁對失效會員（橫幅續訂 vs 待查收列的確認收款）照同一
+    規則處理；我的訂閱卡「已失效」徽章 destructive-subtle（SubscriptionStatusCard.tsx:34）與
+    失效框 warning 不一致，定調 warning 同族；補 SubscriptionStatusCard 元件測試（續訂引導鈕
+    與失效框，S2e 遺留）。
+(2) 推薦管理：橫幅（ReferralTreeView.tsx:247-289 的 AttentionBanner）現已是「N 位一代即將到期」
+    ＋最緊急幾位＋「還有 N 位」；「還有 N 位」改成「全部 N 位 ›」，接後端既有的
+    GET /referrals/network/attention?limit=&offset=（supabase/functions/api/index.ts:3844，契約
+    NetworkAttentionResponseSchema，分頁形狀同搜尋，用 usePagedList）；chip 不帶小圓點；reason()
+    的已停權／已失效分支在一代即將到期口徑下是死碼，拿掉；e2e/mocks/backend_api_mock.py 的
+    set_referral_tree 補註冊 attention 路由（現只有 overview／children／search）。樹列層級沒有
+    文字狀態（色點 aria-hidden、列淡化），決定是否把狀態寫進 treeitem 的 aria-label（§12.7，
+    WCAG 1.4.1）。ReferralStats 已是主數字＋世代小字，不動。
+(3) 任務中心：四顆徽章放進「本月已推薦」淡底卡取代進度條（plan.md §4 第 13 點：一顆 2 人、
+    奇數半亮、偶數全亮、--medal-gradient 填色、徽章下只放名稱），等級小標籤、人數、鼓勵文案
+    拿掉；「任務獎勵」框改 neutral。門檻不動後端：TaskBadge 現為四級（🔰／⭐／⭐⭐／⭐⭐⭐）、
+    門檻取 reward_config 的 target（預設 8）——四顆徽章的門檻由 target 等分推導（target=8 →
+    2／4／6／8），Plan Mode 列 target 不是 4 的倍數時的取捨。徽章元件建好後把路徑登記到
+    scripts/check-color-usage.py 的 APPROVED_GRADIENT_FILES（理由＋退場條件；目前是空 dict）。
+    有色容器裡的按鈕用 Button 的 container（黃框續訂 tone="guide" container="warning"、綠框
+    領取獎勵 tone="secondary" container="success"；「一次領取全部」換綠框時 container 改
+    success；§12.11）。
+(4) 獎勵回饋：可提領卡為該頁唯一淡底主區（內鈕 tone="secondary" container="brand"）、「申請
+    提領」外框在卡內；提領申請列「待查收」黃徽章＋「確認收款」引導鈕靠右；明細的世代 chip
+    用世代色、負項紅字；待查收徽章會員端（WithdrawalSection）改 warning，與 admin 的
+    WithdrawalStatusBadge 統一（progress 遺留「awaiting_collection 顏色語意」就此結案）。動紀錄
+    篩選時把 FilterChip 未選態定調成畫面稿的灰底無框（--secondary 底、灰字；
+    src/components/common/FilterChip.tsx，首頁 CategoryFilterChips 也在用，
+    e2e/test_public_touch_targets.py 的 44px 與焦點環要仍綠），並把「3px 環＋1px 間隙」四份
+    副本（FilterChip、HomeViewToggle、ServiceProviderDetail THUMB_FOCUS、HomePage TOOLBAR_FOCUS）
+    抽成單一常數。
+(5) 刊登管理：刊登卡的查看／編輯／刪除改圖示＋文字（畫面稿；現為純圖示
+    ServiceProviderManagement.tsx:197-215），刪除不緊鄰編輯（手機誤觸）；刊登狀態只有上架中／
+    已隱藏兩種（規格書 §11）。總綱 P1a 也會改這檔的刪除清理與容器比例一行——先合併者定，
+    後者 rebase。
+(6) 世代：會員區提到「代」的地方（推薦詳情、獎勵明細）用世代 chip／小圓點元件，會員中心卡片
+    不放世代；後台會員詳情（MemberDetailSheet）留給總綱 A1a 面板段套同一顆元件，S7a 不碰
+    admin 檔。
+(7) LoadErrorCallout：開頭先抽（標題、說明、重試鈕、重試後焦點落點的 ref；鈕位置照 §12.11
+    現況），讓首頁與服務者詳情的手工黃框改用（只換元件、不動其他行——HomePage 與
+    ServiceProviderDetail 還有總綱 T1／L1-1／P1b 要動，先合併者定），再套到整頁主內容讀取
+    失敗的五處：推薦管理 ReferralManagement.tsx:64-78、獎勵回饋 RewardDashboard.tsx:100-122、
+    任務中心 TaskDashboard.tsx:81-102、刊登管理 ServiceProviderManagement.tsx:145-158、獎勵明細
+    RewardHistory.tsx:216-223；其中 TaskDashboard.tsx:100 與 RewardHistory.tsx:220 的
+    window.location.reload() 改成只重發那支請求（§6）。儀表板卡片內的單一區塊（我的訂閱卡）
+    維持 §13 第 4 條中性字，**不**對齊黃框（S6 D4 劃界）。
+(8) 不做（留 S7b 或另案）：F3 全站三態巡檢、S2d／S2e 審查遺留的重構項、浮起表面、Button API
+    定案（container 照現行 API 用，型別收緊留 S7b）、請求逾時（全站另案）、後端項（會員中心
+    摘要端點、/subscriptions/status）、規格書 §7.2 四態定義、admin 區任何檔、BottomNav。
+(9) 流程：新測試先以 test(red) commit 入庫、紅燈 hash 寫進 PR，再 commit 實作。e2e 定位器契約
+    同 S6：改了可存取名稱或角色，同一 commit 改 e2e/pages/* 的 page object（dashboard_page／
+    reward_page／service_provider_management_page；任務中心沒有 page object，新增）；每個新狀態
+    （三態、空態、會籍失效、P3′ 未加入）各有一條 e2e 情境，元件測試只守 e2e 量不到的焦點落點
+    與判定分支。既有行為不變：不動 supabase/functions/ 與資料路徑。
+(10) 文件：ui-ux §13 要改的措辭同 PR 改（第 3 條加「會員中心不適用」）；驗收 4 加「S7a 清單」
+    （照 S6 清單的寫法：前置、手機、桌機、以 vitest／e2e 為準不列人工項；帳號條件要分 P3′
+    未加入與已加入、會籍失效）；progress 的 S7a 列、異動記錄與承接的遺留結案（S6 遺留第 1、
+    2、4、5 條、awaiting_collection、即將到期文案、S2e 留給 S7 的原語用法中已做的）同 PR 更新；
+    總綱 §8.5 收尾三條照做（被改掉的說法 grep 全 repo）。
+模型 Sonnet。Plan Mode 列完清單先停等我看。
 ```
 
-**S8**：
+**S7b**（2026-10-19 新增；S7a 合併後開工）：
 ```
-讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md。
-執行 S8（工項 G1+G2）：persona 框架升級進 ui-ux-guidelines、
-/plan-feature 與 plan-reviewer-requirements 模板加四視角檢核、
-刪除本 plan 目錄、friction-log 記錄本工程摩擦。改 hook/skill 後跑
-python3 scripts/test-hooks.py 與 framework-check。
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md（progress 遺留事項逐條讀）。
+執行 S7b（工項 F3＋S2d／S2e 審查遺留）：在 fix/frontend-member-polish 分支上（S7a 合併後從最新
+origin/develop 切）。
+一、F3 全站三態完備性巡檢＋補缺（會員區各頁與對話框：載入中同形 Skeleton、讀取失敗用
+    LoadErrorCallout 或 §13 第 4 條中性字、空態一般文字），既有 text-destructive 裸字若仍有殘留
+    一併收掉，375px overflow sweep 過一輪；評估 check-color-usage.py 加 C4（A 形狀 bg 配裸
+    text-destructive 的靜態檢查），做得到就加、做不到寫明理由。
+二、S2d 審查遺留的前端項（progress「S2d 審查遺留」）：WithdrawalSection 四個停用原因旗標與
+    canRequestWithdrawal 並行 → 收成 withdrawalBlockReason()；dashboardSummary.ts 搬 utils/；
+    DataCacheProvider 三個寫入點各寫 ref＋state → 單一 commit()＋provider 測試；五份 adoptShared
+    （useReferralData／useTaskData／useRewardData／useSubscription／useUserListing）共用化；
+    canWithdraw 在會籍未取得時當有效（空窗先亮鈕）改成未取得不亮；mutation 後 clearAndRefetch
+    可能 join 到變更前在途請求；StatCardAction 的 span 畫按鈕（無 role／無 active:）改成語意正確
+    的呈現；Badge text-ellipsis 截斷 sweep 偵測不到（360px 餘裕約 9px）補一條斷言；ReferralStats
+    手機高度取捨記進元件檔頭；點數寫法三處統一（「1,500 P」／「1500P」／「Point」）。「需要注意
+    區資料到位後才擠進頁面」隨 S7a 拿掉該區而消失；「§3 入口在 BottomNav 只對手機成立」改
+    ui-ux 文件一句。
+三、S2e 審查遺留：Button API 定案——tone／container 只在 variant="default" 生效但型別放行其他
+    variant（改判別聯合型別）、container 與 StatusCallout 的 variant 兩份平行列舉（讓 StatusCallout
+    以 context 提供預設）、variant="destructive" 與 tone="destructive" 同名異義（至少檔頭與
+    §12.11 寫清楚）；預建零消費者（--brand-border／--brand-faint、container 的 brand／success／
+    destructive 組合）S7a 合併後仍零消費者的刪（knip 看不到 CSS token 與 cva 變體，用 grep）；
+    推薦樹選中列 bg-muted、兩處焦點環 ring-2 對齊 §12.12，搜尋框 outline-none 補焦點樣式、框線
+    改 --input（§12.7）；對話框關閉鈕觸控熱區 16px → 44px，ui/dialog.tsx 關閉鈕無障礙名稱改
+    「關閉」並同步 e2e/steps/profile_steps.py:95（S4 遺留）；簽名板「清除簽名」改 ghost；連續
+    同名「下一步」（提領 1→2→3、查收 1→2）換步時把焦點移到新步驟標題；CompleteProfile 姓名
+    分段切換比照 HomeViewToggle 補焦點樣式（CompleteProfile 還有總綱 T1／A1b-1b 要動，先合併者
+    定，只改那一處 className）。
+四、浮起表面（業主 2026-10-05 裁決留給 S7）：BottomNav、toast（NotificationCard／ToastCard）、
+    popover／dropdown／select 內容用 --popover、Sheet／對話框（有遮罩，只換表面）改
+    bg-raised border-raised-border shadow-raised（§12.6）。
+五、評估後只寫結論、不實作：會員中心摘要端點（一個聚合 API 取代五 hook 扇出）——量冷啟動
+    請求數與實際載入時間，決定要不要另開後端工項；兩套快取並存（DataCacheContext 寫
+    sessionStorage vs adminCache.ts 記憶體）——DataCacheProvider 能否支援不落地與依參數的鍵，
+    結論寫進 progress 遺留；PaymentCheckout 的 localStorage pendingUser 付款後不更新（總綱
+    §6.1 (e)）——一行能修就修，否則寫明處置。
+六、不做：請求逾時（全站另案，與總綱 T1 的 fetchProfile 逾時併）；後端項與規格書 §7.2 四態；
+    admin 區任何檔；首頁與詳情頁（只在 F3 巡檢發現三態缺口時以 LoadErrorCallout 補，其餘不碰）。
+七、流程同 S7a（test(red) 先入庫、e2e page object 同 commit、每個重構項至少一條釘住行為的測試）；
+    每做掉一條遺留就在 progress 寫落地處並刪該條；驗收 4 加「S7b 清單」；總綱 §8.5 收尾三條照做。
+模型 Sonnet。Button API 與 DataCacheProvider 兩項牽動契約，Plan Mode 列完先停等我看。
+```
+
+**S8**（2026-10-19 重寫；前置：S7a、S7b 合併，驗收 2–4 三站都過）：
+```
+讀 docs/plans/platform-uiux-redesign/{plan,construction-plan,progress}.md 與
+docs/plans/platform-growth-and-trust/plan.md 的 §0、§7、§8.5。
+執行 S8（工項 G1+G2）：在 claude/uiux-program-closeout 分支上。
+一、persona 閘門（G1）：plan.md §1 的四種使用者升級進 ui-ux-guidelines（A 級，新節），並補總綱
+    §7 的兩個狀態——P3′「已付費、未加入推薦計畫」（正式狀態，總綱 §0 原則 5：首購者 100% 從
+    這裡開始，不是 P3 的子集）與 P5「被推薦者（未註冊）」；/plan-feature 用的
+    docs/_templates/plan.md §1 使用者需求加一張「五種使用者＋被推薦者 × 本工項影響」表（空欄
+    寫「—」，不寫等於沒想），.claude/agents/plan-reviewer-requirements.md 加一條檢核：「每個
+    persona 欄都有結論？P3′ 有沒有被當成 P3？」。改 agent／skill／template 後跑
+    python3 scripts/test-hooks.py 與 bash scripts/framework-check.sh。
+二、遺留處置（G2 前置）：progress.md 遺留事項逐條三選一——已落地（寫落地處並刪）、升級（規則
+    進 ui-ux-guidelines／規格書／friction-log，升級後刪）、另開 issue（還沒做又不該丟的：
+    apiClient 逾時、提前續訂 /fix-bug、後端讀取失敗端點、S4／S5 的後端項）；不留「待評估」。
+三、鷹架收尾（G2）：刪 docs/plans/platform-uiux-redesign/ 整個目錄（construction-plan 的驗收
+    清單與 §6 部署管線若仍有用，升級進 docs/README.md 或 supabase/README.md 對應節）；
+    docs/plans/platform-growth-and-trust/ 不刪（它有自己的 plans-keep 退場條件）；
+    docs/plans/upline-pairing-lines/rules.md 依 issue #384 的裁決處置（建議 A：M1–M8 逐條對照
+    規格書 §5–§10 升級後刪；業主裁 B 則更新檔頭退場條件）；python3 scripts/check-plans-scaffold.py
+    要綠。
+四、friction-log 記本工程（S1–S8）的框架摩擦整併：這工程加的守門（check-color-usage、
+    plans-keep、紅燈 hash）、還沒收的誤擋／漏網（python3 scripts/harness-metrics.py 的誤擋率），
+    「每 2 個 feature 整併成框架修訂 PR」在這裡結一次帳。
+五、不做：任何 src/ 與 supabase/functions/ 的改動（純文件與 .claude/ 模板）。
+模型 Sonnet。
 ```
 
 ## 4. 監工 SOP
@@ -632,7 +719,7 @@ python3 scripts/test-hooks.py 與 framework-check。
 | 驗收 1e | S2e 合併 | **帳號條件**（引導鈕三種要分帳號看）：**會籍已失效**——只驗獎勵頁橫幅的續訂（黃底黃實心鈕），此時同頁的確認收款讓位成白底外框；失效會員進不了會員中心（`/dashboard` 守衛會導去結帳頁），所以我的訂閱卡的「已失效」與「開始訂閱」兩態在實作上沒有可見畫面。**會籍有效且 30 天內到期**——我的訂閱卡只有「會籍即將到期」倒數框、**沒有續訂鈕**，倒數文字說明到期後怎麼續（到期前續訂走不通，業主 2026-10-05 裁決先藏鈕、UI/UX 改版完成後再修，規格書 §14 第 7 列）；同頁 MyQrEntry 的加入推薦計畫照常是蔚藍。**未加入推薦計畫**——驗 MyQrEntry 的加入推薦計畫（蔚藍）。**有待查收提領**——驗獎勵頁的確認收款，多筆時只有最早一筆是蔚藍。後台用 admin 帳號（分頁選中、提領台退件：桌機表格與手機卡片都是紅框字，確認退件紅實心）。**其餘目視項**：對照全站畫面稿（https://claude.ai/artifact/RzXCDXTrHetn8Ua4xkXor3）——版面底是白、流程鈕黑、次要鈕白底框線；chip／分頁／OTP 目前格的選中是灰字；Tab 鍵盤操作才看到 3px 全不透明灰字焦點環，分頁與 chip 的環和選中底色之間有 1px 間隙；錯誤欄位聚焦是紅色單圈；輸入格、下拉、勾選框的框線一眼看得出（E1）；列內刪除／退件紅框字、按下後確認框紅實心，結帳選新約的二次確認也是紅實心；登入步驟 1 與提領步驟 2 叫「下一步」且沒有箭頭；查收完成／失敗提示是「收款確認成功／失敗」；訪客導覽列「立即刊登」是黑（唯一例外）；產品 UI 找不到「上線／下線」（法規三份與後端錯誤字串「載入下線失敗」除外，後者併入 S7 前的後端工項）。**深色**：devtools 掛 `.dark` 看一次，首頁浮動搜尋鈕與工具列要看得出浮起來（底色比頁面亮一階）。375px 與桌機各走一輪 |
 | 驗收 2 | S4 合併 | 後台，手機與桌機各實際操作一次（後台兩者並重）。**S3 部分**：(1) 375px 四分頁（提領／會員／公告／告警）一列、字完整、不橫捲；(2) 375px 提領頁工具列一行、篩選吃剩餘寬度、兩顆 icon 鈕分開好點，按 CSV 後鈕忙碌且篩選、重新整理、列上動作與載入更多都停用，完成顯示「已匯出 N 筆」——**用 LINE 內建瀏覽器再按一次**，確認看到的是「已產生 N 筆，若沒收到檔案請用外部瀏覽器開啟」；(3) 375px 會員頁搜尋框 placeholder「搜尋會員」完整、框內放大鏡可送出、有重新整理、沒有 CSV；(4) 桌機四欄等寬、兩頁工具列帶文字、滑過 CSV 鈕看到「含身分證與帳號」、會員頁搜尋框寬度（比改版前寬）是否合適、放大鏡的鍵盤焦點環與 `type="search"` 原生清除鈕不打架；(5) 平板觸控（約 768px）兩顆鈕高 ≥44px 且文字沒被擠壓；(6) 新環境 bootstrap：以 `supabase-setup-checklist.md` 步驟 7 對照程式碼為驗收（業主裁決不開拋棄式分支演練）。**S5 追加**：證件審核卡「退回」在左、「通過」在右，手機兩顆等寬；通過沒有確認框——留意誤觸（S5 裁決 C）。**S4 部分**：見下方「驗收 2・S4 清單」 |
 | 驗收 3 | S5 合併 | 後台切換分頁的速度感：切回先顯示剛才的列表、背景更新，匯款依據不比沒有快取時更舊。清單見下方「驗收 3・S5 清單」 |
-| 驗收 4 | S7 合併 | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主；任務／獎勵／刊登三頁各自的主數字是否一眼就看到、達標的卡有沒有收起、會籍失效狀態的 banner 與提示是否正確。**訪客路徑（S6）**見下方「驗收 4・S6 清單」 |
+| 驗收 4 | S7a 合併（S7b 合併後補驗其清單） | 前台四情境各走一遍（訪客找服務、刊登、推薦獎勵），手機為主；任務／獎勵／刊登三頁各自的主數字是否一眼就看到、達標的卡有沒有收起、會籍失效狀態的 banner 與提示是否正確。**訪客路徑（S6）**見下方「驗收 4・S6 清單」 |
 
 **驗收 2・S4 清單**（會員詳情分區，PR #365；手機與桌機各走一次）：
 
