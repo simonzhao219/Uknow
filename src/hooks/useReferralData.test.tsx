@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 跨頁接力的契約（同 useRewardData.test.tsx）：會員中心的冷啟動請求還在飛時
-// 點「推薦網絡」卡進推薦頁，新頁實例接上同一個 dedupe 請求，請求結束後必須
+// 點「推薦管理」卡進推薦頁，新頁實例接上同一個 dedupe 請求，請求結束後必須
 // 拿到資料或錯誤態，不能永遠停在載入中（推薦頁的載入畫面沒有重試鈕）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';

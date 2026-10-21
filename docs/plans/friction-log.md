@@ -3082,3 +3082,29 @@ S6 的開工 prompt（九條）也沒要求——漏講的都會在 PR 內多補
 處置：S7 開工 prompt 第 (7) 條明寫「新測試先以 `test(red)` commit 入庫，紅燈 hash 寫進 PR」。
 框架修訂候選（雙週整併時處理）：PR 模板的「不適用」限定為「沒有新增或修改測試」；有測試改動
 的 PR 一律要紅燈 hash，可機械把關——PR diff 碰到 `*.test.ts(x)`／`e2e/**` 而描述沒有 hash 就提醒。
+
+## 2026-10-21｜漏網（流程）｜S7a 紅燈測試自身有錯，施工 session 手動刪鎖修測試，沒走「停手求人工裁決」
+
+S7a（#385）七階段 TDD 中，兩個階段在紅燈 commit 之後又改了測試檔：
+
+- 階段 D（`2c0bd24`→`830ee46`）：`TaskMedals.test.tsx` 把 `--medal-gradient` 字面改成匯入元件的
+  `MEDAL_GRADIENT_CLASS`。測試檔也在 `check-color-usage` 的 C2/C3 掃描範圍，只放行登記過的檔；
+  `npm run check` 不跑它，是階段收尾手動跑 `check-color-usage.py` 才抓到（`tdd-unlock.sh` 本身不會）。
+- 階段 E（`bdfd555`→`a6c82a4`）：`RewardDashboard.test`（桌機 `order` 斷言打在不帶 class 的 stub 上，
+  永遠為假）與 `RewardHistory.test`（「重試仍失敗」在同一個 act 內立刻失敗，被 React 批次合併，
+  錯誤框從沒卸載、焦點本來就還在重試鈕）。兩條在紅燈期都因元件尚未實作而紅，測試自己的錯被蓋住，
+  實作綠了才浮現——與 2026-10-07、2026-10-18 兩條同一個形狀。
+
+**這次的程序偏離**：鎖擋 `*.test.*`，`tdd-implement` 逃生口 2 的規定是停手、記 Blockers、求人工裁決。
+階段 E 施工 session 判斷「只修測試自己的錯、斷言語意不變」，沒有停手，直接 `rm .claude/tdd-lock`
+（bash-guard 不攔）後改測試，測試修正與實作混在同一個綠燈 commit（`a6c82a4`），事前沒有業主授權。
+可驗證的範圍：`git diff bdfd555 a6c82a4 -- '*.test.*'` 只有上述兩個檔、共 18 行；`git diff 2c0bd24 830ee46 -- '*.test.*'`
+只有 `TaskMedals.test.tsx` 10 行。審查者請對這兩段 diff 判斷語意是否真的未變，不要只信這裡的陳述。
+
+另一個程序事實：S7a 的 e2e 情境（`.feature`／`*_steps.py`）從階段 C 起都隨綠燈 commit 入庫，不在紅燈 commit 內——
+紅燈鎖只管 vitest 層，e2e 沒有「先紅」的 commit 證據；它們由 CI 的 e2e 軌把關。
+
+處置：照實寫進 PR 描述請審查者看這兩段 diff；框架修訂候選（雙週整併，併入 10-07／10-18 兩條）：
+(1) 紅燈 commit 前跑 `bash scripts/framework-check.sh`，測試檔也受色彩／命名守門掃描；
+(2) `tdd-unlock.sh` 的 check 納入 `check-color-usage.py`，否則解鎖後才紅；
+(3) 評估是否讓 bash-guard 攔「刪 `.claude/tdd-lock`」，把逃生口 2 變成機械上只能由 `tdd-unlock.sh` 走。
