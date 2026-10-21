@@ -26,13 +26,12 @@ interface Props {
 
 // 會員兩態模型：付款即訂閱 / 續訂（到期後付款接續）/ 重新訂。
 // 一次性年費、無自動扣款——沒有「取消／恢復／補繳／寬限期」，到期即失效。
-const STATUS_MAP: Record<
-  string,
-  { label: string; variant: 'success-subtle' | 'destructive-subtle' }
-> = {
-  active: { label: '訂閱中', variant: 'success-subtle' },
-  expired: { label: '已失效', variant: 'destructive-subtle' },
-};
+// 失效是 warning 族，與同卡的黃色失效框一致；紅留給失敗與破壞性（ui-ux-guidelines §12.13）。
+const STATUS_MAP: Record<string, { label: string; variant: 'success-subtle' | 'warning-subtle' }> =
+  {
+    active: { label: '訂閱中', variant: 'success-subtle' },
+    expired: { label: '已失效', variant: 'warning-subtle' },
+  };
 
 // 一律以台灣日曆日顯示——訂閱效期存的是精確時點（見時間領域重設計），
 // 用瀏覽器時區顯示在非台灣時區會差一天。

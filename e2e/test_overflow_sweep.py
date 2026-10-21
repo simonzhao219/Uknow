@@ -232,8 +232,8 @@ def _expect_text(text):
 
 
 def _setup_dashboard(context, api_mock, rest_mock, **profile):
-    # 狀態總覽的最壞情境：四張卡全是最長的值、「需要注意」兩條都在、徽章與
-    # 「申請提領」按鈕都出現（手機 2×2 每張卡只有約 160px 寬）。
+    # 狀態總覽的最壞情境：四張卡全是最長的值、「N 位一代即將到期」與「待查收」徽章
+    # 都在、「申請提領」按鈕也出現（手機 2×2 每張卡只有約 160px 寬）。
     _seed_member(context, **profile)
     rest_mock.set_user_listing(_hostile_listing())
     expiring = [
@@ -245,7 +245,7 @@ def _setup_dashboard(context, api_mock, rest_mock, **profile):
         second_generation=[build_referral_member("李小華")] * 300,
         third_generation=[build_referral_member("張美玲")] * 700,
         user_referral_code="UK8K3M9Q2X",
-        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是徽章與注意列的最寬情境
+        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是「N 位一代即將到期」徽章的最寬情境
         attention={"total": 999, "items": expiring},
     )
     api_mock.set_task_center(tasks=[build_monthly_king_task(current=8)])
