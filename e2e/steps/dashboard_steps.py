@@ -1,9 +1,8 @@
 """dashboard_smoke.feature — shared steps in common_steps.py plus the two invite entry points."""
 
 from playwright.sync_api import expect
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import parsers, scenarios, then, when
 
-from mocks.backend_api_mock import build_referral_member
 from steps.common_steps import *  # noqa: F401,F403
 
 scenarios("dashboard_smoke.feature")
@@ -31,18 +30,6 @@ def click_invite_friend(page):
     # shareReferralInvite。e2e 的 Chromium 不是 in-app 瀏覽器、分享面板已拿掉，
     # 所以走最後一順位——複製整段邀請訊息並提示。
     page.get_by_test_id("invite-friend-button").click()
-
-
-@given(parsers.parse("{count:d} first-generation members are about to expire"))
-def first_generation_about_to_expire(api_mock, count):
-    # B1 起 attention 只收「一代且即將到期」，total 是精確人數、items 最多 6 筆。
-    members = [
-        build_referral_member(f"到期{i}", status="expiring", daysToExpiry=5) for i in range(count)
-    ]
-    api_mock.set_referral_tree(
-        first_generation=members,
-        attention={"total": count, "items": members},
-    )
 
 
 @then(parsers.parse('I should see the status cards "{titles}"'))

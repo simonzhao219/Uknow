@@ -30,6 +30,7 @@ from pages.forgot_password_page import ForgotPasswordPage
 from pages.home_page import HomePage
 from pages.navbar import Navbar
 from pages.otp_page import OtpPage
+from pages.referral_page import ReferralPage
 from pages.reset_password_page import ResetPasswordPage
 from pages.payment_checkout_page import PaymentCheckoutPage
 from pages.payment_result_page import PaymentResultPage
@@ -228,6 +229,11 @@ def payment_result_page(page):
 @pytest.fixture
 def dashboard_page(page):
     return DashboardPage(page)
+
+
+@pytest.fixture
+def referral_page(page):
+    return ReferralPage(page)
 
 
 @pytest.fixture

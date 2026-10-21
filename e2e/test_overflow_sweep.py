@@ -285,6 +285,10 @@ def _setup_listing_edit(context, api_mock, rest_mock):
 
 def _setup_referrals(context, api_mock, rest_mock, **profile):
     _seed_member(context, **profile)
+    # 橫幅最壞情境：六顆姓名最長的 chip（每顆帶倒數）＋「全部 999 位 ›」。
+    expiring = [
+        build_referral_member(NAME_CJK_10, status="expiring", daysToExpiry=3) for _ in range(6)
+    ]
     api_mock.set_referral_tree(
         first_generation=[
             build_referral_member(NAME_CJK_10),
@@ -293,6 +297,7 @@ def _setup_referrals(context, api_mock, rest_mock, **profile):
         second_generation=[build_referral_member("李小華")] * 3,
         third_generation=[build_referral_member("張美玲")] * 2,
         user_referral_code="UK8K3M9Q2X",
+        attention={"total": 999, "items": expiring},
     )
 
 
