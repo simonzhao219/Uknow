@@ -2,7 +2,9 @@
 //
 // 會員中心狀態總覽的契約（plan F4、ui-ux-guidelines §13）：
 // - 四張狀態卡各自有載入（骨架、不閃 0）／錯誤（中性字、不整頁報錯）／有資料三態；
-// - 「需要注意」有事才出現，推薦那條只算即將到期（業主裁決 2026-10-04）；
+// - 四張卡的標題是目的頁名（刊登管理／推薦管理／任務中心／獎勵回饋），不設集中的
+//   「需要注意」區（§13 第 3 條在會員中心不適用，業主 2026-10-04 裁決）；
+// - 推薦卡的徽章只算一代即將到期，寫「N 位一代即將到期」；
 // - 卡片區的行動提示（申請提領、立即刊登）一律是次要外框鈕（ui-ux-guidelines §12.11）。
 // 資料 hook 全部 mock 成可變狀態：這裡驗的是版面與推導，不是取數。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -125,7 +127,7 @@ describe('MemberDashboard 狀態卡', () => {
     state.reward = { rewardsData: null, withdrawals: [], isLoading: true, error: null };
     const { container } = renderPage();
 
-    for (const name of [/^刊登/, /^推薦網絡/, /^本月任務/, /^可提領點數/]) {
+    for (const name of [/^刊登管理/, /^推薦管理/, /^任務中心/, /^獎勵回饋/]) {
       expect(card(name).getAttribute('aria-busy')).toBe('true');
     }
     expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThanOrEqual(8);
@@ -136,15 +138,15 @@ describe('MemberDashboard 狀態卡', () => {
     state.referral = { overview: null, loading: false, error: '網路錯誤' };
     renderPage();
 
-    expect(within(card(/^推薦網絡：/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
-    expect(within(card(/^可提領點數/)).getByText('500')).toBeTruthy();
+    expect(within(card(/^推薦管理：/)).getByText('暫時無法取得推薦資料')).toBeTruthy();
+    expect(within(card(/^獎勵回饋/)).getByText('500')).toBeTruthy();
   });
 
   it('沒有刊登時刊登卡連到建立頁並出現立即刊登', () => {
     state.listing = { listing: null, loading: false, error: null };
     renderPage();
 
-    const listing = card(/^刊登：尚未建立刊登/);
+    const listing = card(/^刊登管理：尚未建立刊登/);
     expect(listing.getAttribute('href')).toBe('/service-providers/create');
     expect(within(listing).getByText('立即刊登')).toBeTruthy();
   });
@@ -152,9 +154,9 @@ describe('MemberDashboard 狀態卡', () => {
   it('會籍有效時刊登卡顯示名稱與會籍到期日且沒有狀態徽章', () => {
     renderPage();
 
-    const listing = card(/^刊登：台北好店/);
+    const listing = card(/^刊登管理：台北好店/);
     expect(listing.getAttribute('href')).toBe('/service-providers');
-    expect(listing.getAttribute('aria-label')).toBe('刊登：台北好店，會籍至 2027/01/01');
+    expect(listing.getAttribute('aria-label')).toBe('刊登管理：台北好店，會籍至 2027/01/01');
     expect(within(listing).getByText('會籍至 2027/01/01')).toBeTruthy();
     expect(within(listing).queryByText('已隱藏')).toBeNull();
   });
@@ -170,56 +172,60 @@ describe('MemberDashboard 狀態卡', () => {
     };
     renderPage();
 
-    expect(within(card(/^刊登：台北好店/)).getByText('已隱藏')).toBeTruthy();
+    const badge = within(card(/^刊登管理：台北好店/)).getByText('已隱藏');
+    // 已隱藏是會籍失效的結果，與失效框同為 warning 族（plan.md §4 第 10 點：失效用黃不用紅）
+    expect(badge.classList.contains('bg-warning-subtle')).toBe(true);
   });
 
   it('刊登讀取失敗時不喊尚未刊登', () => {
     state.listing = { listing: null, loading: false, error: '查詢失敗' };
     renderPage();
 
-    const listing = card(/^刊登/);
+    const listing = card(/^刊登管理/);
     expect(within(listing).getByText('暫時無法取得刊登狀態')).toBeTruthy();
     expect(within(listing).queryByText('立即刊登')).toBeNull();
   });
 
-  it('推薦網絡卡的徽章顯示一代即將到期的人數', () => {
+  it('推薦管理卡的徽章顯示一代即將到期的人數', () => {
     state.referral.overview.attention = {
       total: 3,
       items: [node('expiring'), node('expiring'), node('expiring')],
     };
     renderPage();
 
-    const referral = card(/^推薦網絡：/);
+    const referral = card(/^推薦管理：/);
     expect(within(referral).getByText('12')).toBeTruthy();
-    expect(within(referral).getByText('3 位即將到期')).toBeTruthy();
-    expect(referral.getAttribute('aria-label')).toBe('推薦網絡：12 位，3 位即將到期');
+    expect(within(referral).getByText('3 位一代即將到期')).toBeTruthy();
+    expect(referral.getAttribute('aria-label')).toBe(
+      '推薦管理：推薦總人數 12 位，3 位一代即將到期',
+    );
   });
 
-  it('推薦網絡沒有人即將到期時卡片不顯示徽章', () => {
+  it('推薦管理沒有人即將到期時卡片不顯示徽章', () => {
     state.referral.overview.attention = { total: 0, items: [] };
     renderPage();
 
-    expect(within(card(/^推薦網絡：/)).queryByText(/即將到期/)).toBeNull();
+    expect(within(card(/^推薦管理：/)).queryByText(/即將到期/)).toBeNull();
   });
 
-  it('推薦網絡卡的人數與「位」在同一行', () => {
+  it('推薦管理卡的人數與「位」在同一行', () => {
     renderPage();
-    const value = within(card(/^推薦網絡：/)).getByText('12');
+    const value = within(card(/^推薦管理：/)).getByText('12');
     expect(value.textContent).toBe('12位');
   });
 
   it('推薦格的邀請鈕在卡片連結之外，連結名稱照舊說完卡上狀態', () => {
     renderPage();
-    const link = card(/^推薦網絡：/);
-    const invite = within(cardBox(/^推薦網絡：/)).getByTestId('invite-friend-entry');
+    const link = card(/^推薦管理：/);
+    const invite = within(cardBox(/^推薦管理：/)).getByTestId('invite-friend-entry');
     expect(link.contains(invite)).toBe(false);
-    expect(link.getAttribute('aria-label')).toBe('推薦網絡：12 位');
+    expect(link.getAttribute('aria-label')).toBe('推薦管理：推薦總人數 12 位');
   });
 
   it('推薦資料讀取失敗時錯誤字照舊，邀請鈕照常顯示', () => {
     state.referral = { overview: null, loading: false, error: '網路錯誤' };
     renderPage();
-    const box = cardBox(/^推薦網絡：/);
+    const box = cardBox(/^推薦管理：/);
     expect(within(box).getByText('暫時無法取得推薦資料')).toBeTruthy();
     expect(within(box).getByTestId('invite-friend-entry')).toBeTruthy();
   });
@@ -227,9 +233,9 @@ describe('MemberDashboard 狀態卡', () => {
   it('其他三張卡仍是整卡一個連結，名稱照舊', () => {
     renderPage();
     for (const [name, label] of [
-      [/^刊登：/, '刊登：台北好店，會籍至 2027/01/01'],
-      [/^本月任務：/, '本月任務：推薦王本輪推薦 3 / 8 位'],
-      [/^可提領點數：/, '可提領點數：500 P'],
+      [/^刊登管理：/, '刊登管理：台北好店，會籍至 2027/01/01'],
+      [/^任務中心：/, '任務中心：推薦王本輪推薦 3 / 8 位'],
+      [/^獎勵回饋：/, '獎勵回饋：可提領 500 P'],
     ] as const) {
       const link = card(name);
       expect(link.getAttribute('aria-label')).toBe(label);
@@ -237,13 +243,13 @@ describe('MemberDashboard 狀態卡', () => {
     }
   });
 
-  it('本月任務卡以本輪顯示推薦進度並標明單位', () => {
+  it('任務中心卡以本輪顯示推薦進度並標明單位', () => {
     renderPage();
 
-    const taskCard = card(/^本月任務/);
+    const taskCard = card(/^任務中心/);
     expect(taskCard.textContent).toContain('本輪推薦3 / 8位');
     expect(within(taskCard).queryByText(/本月已完成/)).toBeNull();
-    expect(taskCard.getAttribute('aria-label')).toBe('本月任務：推薦王本輪推薦 3 / 8 位');
+    expect(taskCard.getAttribute('aria-label')).toBe('任務中心：推薦王本輪推薦 3 / 8 位');
   });
 
   it('本月推薦超過一輪時與任務中心同口徑顯示本輪與已完成次數', () => {
@@ -252,7 +258,7 @@ describe('MemberDashboard 狀態卡', () => {
     ];
     renderPage();
 
-    const taskCard = card(/^本月任務/);
+    const taskCard = card(/^任務中心/);
     expect(taskCard.textContent).toContain('1 / 8位');
     expect(taskCard.textContent).not.toContain('17 / 8');
     expect(within(taskCard).getByText('本月已完成 2 次')).toBeTruthy();
@@ -263,28 +269,28 @@ describe('MemberDashboard 狀態卡', () => {
     state.task.tasks = [{ id: 'x', type: 'other', title: '其他', current: 1, target: 2 }];
     renderPage();
 
-    const taskCard = card(/^本月任務：目前沒有任務/);
+    const taskCard = card(/^任務中心：目前沒有任務/);
     expect(within(taskCard).getByText('目前沒有任務').className).toContain('text-foreground');
   });
 
-  it('任務讀取失敗時本月任務卡顯示中性錯誤態', () => {
+  it('任務讀取失敗時任務中心卡顯示中性錯誤態', () => {
     state.task = { tasks: [], isLoading: false, error: '網路錯誤' };
     renderPage();
-    expect(within(card(/^本月任務/)).getByText('暫時無法取得任務進度')).toBeTruthy();
+    expect(within(card(/^任務中心/)).getByText('暫時無法取得任務進度')).toBeTruthy();
   });
 
-  it('點數讀取失敗時可提領點數卡顯示中性錯誤態且沒有申請提領', () => {
+  it('點數讀取失敗時獎勵回饋卡顯示中性錯誤態且沒有申請提領', () => {
     state.reward = { rewardsData: null, withdrawals: [], isLoading: false, error: '網路錯誤' };
     renderPage();
-    expect(within(card(/^可提領點數/)).getByText('暫時無法取得點數')).toBeTruthy();
+    expect(within(card(/^獎勵回饋/)).getByText('暫時無法取得點數')).toBeTruthy();
     expect(screen.queryByText('申請提領')).toBeNull();
   });
 
-  it('可提領點數卡顯示待查收筆數', () => {
+  it('獎勵回饋卡顯示待查收筆數', () => {
     state.reward.withdrawals = [node('awaiting_collection'), node('completed')];
     renderPage();
 
-    expect(within(card(/^可提領點數/)).getByText('待查收 1 筆')).toBeTruthy();
+    expect(within(card(/^獎勵回饋/)).getByText('待查收 1 筆')).toBeTruthy();
   });
 
   it('餘額未達提領門檻時不出現申請提領', () => {
@@ -316,13 +322,41 @@ describe('MemberDashboard 狀態卡', () => {
   });
 });
 
+describe('MemberDashboard 卡片標題與說明', () => {
+  it('四張卡的標題是目的頁名', () => {
+    renderPage();
+    for (const [name, title] of [
+      [/^刊登管理/, '刊登管理'],
+      [/^推薦管理：/, '推薦管理'],
+      [/^任務中心/, '任務中心'],
+      [/^獎勵回饋/, '獎勵回饋'],
+    ] as const) {
+      expect(within(card(name)).getByText(title), title).toBeTruthy();
+    }
+  });
+
+  it('標題不再是舊的「刊登／推薦網絡／本月任務／可提領點數」', () => {
+    renderPage();
+    for (const old of ['推薦網絡', '本月任務', '可提領點數']) {
+      expect(screen.queryByText(old), old).toBeNull();
+    }
+    expect(screen.queryByText('刊登')).toBeNull();
+  });
+
+  it('推薦管理卡的數字有「推薦總人數」、獎勵回饋卡的數字有「可提領」說明', () => {
+    renderPage();
+    expect(within(card(/^推薦管理：/)).getByText('推薦總人數')).toBeTruthy();
+    expect(within(card(/^獎勵回饋/)).getByText('可提領')).toBeTruthy();
+  });
+});
+
 // 引導鈕一頁一顆（ui-ux-guidelines §12.11，#354 裁決 #1）：我的訂閱卡出現續訂時，
 // 推薦格的加入推薦計畫讓位成次要；沒有續訂時維持引導鈕。到期前續訂暫停開放
 // （業主 2026-10-05，規格書 §14 第 7 列），30 天內到期的卡片不放續訂鈕，所以也不讓位。
 describe('MemberDashboard 引導鈕讓位', () => {
   const DAY = 86_400_000;
   const yields = () =>
-    within(cardBox(/^推薦網絡/))
+    within(cardBox(/^推薦管理/))
       .getByTestId('invite-friend-entry')
       .getAttribute('data-yields-guide');
 
@@ -331,6 +365,29 @@ describe('MemberDashboard 引導鈕讓位', () => {
       hasSubscription: true,
       status: 'active',
       activeUntil: new Date(Date.now() + 10 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('false');
+  });
+
+  it('會籍已失效時訂閱卡有續訂，加入推薦計畫讓位成次要', () => {
+    state.subscription.subscriptionData = {
+      hasSubscription: false,
+      status: 'expired',
+      activeUntil: new Date(Date.now() - 3 * DAY).toISOString(),
+    };
+    renderPage({ name: '王小明', referralProgramJoined: false });
+    expect(yields()).toBe('true');
+  });
+
+  it('訂閱資料還在載入時不讓位', () => {
+    state.subscription = {
+      subscriptionData: {
+        hasSubscription: false,
+        status: 'expired',
+        activeUntil: new Date(Date.now() - 3 * DAY).toISOString(),
+      },
+      isLoading: true,
     };
     renderPage({ name: '王小明', referralProgramJoined: false });
     expect(yields()).toBe('false');
@@ -401,47 +458,39 @@ describe('MemberDashboard 我的訂閱卡', () => {
   });
 });
 
-describe('MemberDashboard 需要注意區', () => {
-  it('沒有需要處理的事時整塊不渲染', () => {
+// ui-ux-guidelines §13 第 3 條在會員中心不適用：四張卡各自帶徽章承擔「要注意的事」，
+// 不另設集中的提示區（業主 2026-10-04 裁決，S7a 拿掉）。
+describe('MemberDashboard 不設需要注意區', () => {
+  it('沒有需要處理的事時沒有需要注意區', () => {
     renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
   });
 
-  it('有人即將到期與有待查收提領時各列一條動作連結', () => {
+  it('有人即將到期與有待查收提領時也沒有需要注意區，狀態只在卡片徽章', () => {
     state.referral.overview.attention = { total: 1, items: [node('expiring')] };
     state.reward.withdrawals = [node('awaiting_collection'), node('awaiting_collection')];
     renderPage();
 
-    expect(screen.getByRole('heading', { name: '需要注意' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '推薦網絡 1 位即將到期' }).getAttribute('href')).toBe(
-      '/referrals',
-    );
-    expect(screen.getByRole('link', { name: '2 筆提領待查收' }).getAttribute('href')).toBe(
-      '/rewards',
-    );
-  });
-
-  it('推薦網絡沒有一代即將到期時不列推薦那條', () => {
-    state.referral.overview.attention = { total: 0, items: [] };
-    renderPage();
     expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
+    expect(screen.queryByRole('link', { name: '2 筆提領待查收' })).toBeNull();
+    expect(within(card(/^推薦管理：/)).getByText('1 位一代即將到期')).toBeTruthy();
+    expect(within(card(/^獎勵回饋/)).getByText('待查收 2 筆')).toBeTruthy();
   });
 
-  it('清單被截在六筆時仍顯示精確人數', () => {
+  it('清單被截在六筆時卡片徽章仍顯示精確人數', () => {
     state.referral.overview.attention = {
       total: 9,
       items: Array.from({ length: 6 }, () => node('expiring')),
     };
     renderPage();
-    expect(screen.getByRole('link', { name: '推薦網絡 9 位即將到期' })).toBeTruthy();
+    expect(within(card(/^推薦管理：/)).getByText('9 位一代即將到期')).toBeTruthy();
   });
 
-  it('功能旗標關閉時不列該功能的注意事項', () => {
+  it('功能旗標關閉時不渲染該功能的卡', () => {
     state.flags = { rewardSystem: false };
     state.reward.withdrawals = [node('awaiting_collection')];
     renderPage();
-    expect(screen.queryByRole('heading', { name: '需要注意' })).toBeNull();
-    expect(screen.queryByRole('link', { name: /^可提領點數/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^獎勵回饋/ })).toBeNull();
   });
 });
 
