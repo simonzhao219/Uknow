@@ -21,12 +21,12 @@ import {
 import type { WithdrawalRecord } from '@contract';
 
 interface WithdrawalSectionProps {
-  availableRewards: number;
+  availableRewards?: number;
   pendingRewards: number;
   withdrawnRewards: number;
-  hasWithdrawnToday: boolean;
+  hasWithdrawnToday?: boolean;
   withdrawals: WithdrawalRecord[];
-  onStartWithdrawal: () => void;
+  onStartWithdrawal?: () => void;
   onRefresh: () => void;
   subscriptionStatus?: string | null; // ✅ 新增：訂閱狀態
   referralProgramJoined?: boolean; // ✅ 新增：是否加入推薦計畫
