@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 //
 // 「申請Point提領」鈕與它被停用時的原因（獎勵回饋可提領主區內）。判斷式與會員中心的
-// 「申請提領」共用 canRequestWithdrawal；原因文案的優先序：未加入 → 失效 → 餘額不足 → 今日已提領。
+// 「申請提領」共用 canRequestWithdrawal；原因文案的優先序：失效 → 未加入 → 餘額不足 → 今日已提領。
+// 失效排第一：/rewards 是唯一失效會員進得去的會員頁，/referrals 對他們會被導去結帳，所以失效時
+// 不能叫人「前往推薦管理加入」——先續訂（橫幅有續訂鈕）。
 // 「已付費、未加入推薦計畫」(P3′) 是正式狀態：只用說明文字＋連結引導（總綱 §0 原則 5），
 // 不複製「加入推薦計畫」鈕；還不知道（會員資料未取得）不畫成未加入。
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -68,14 +70,24 @@ describe('WithdrawalAction 已付費、未加入推薦計畫（P3′）', () => 
     expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
-  it('未加入的原因優先於會籍失效與餘額不足', () => {
-    renderAction({
-      referralProgramJoined: false,
-      subscriptionStatus: 'expired',
-      availableRewards: 0,
-    });
+  it('未加入的原因優先於餘額不足', () => {
+    renderAction({ referralProgramJoined: false, availableRewards: 0 });
     expect(screen.getByText('尚未加入推薦計畫，無法申請提領')).toBeTruthy();
-    expect(screen.queryByText(/訂閱已失效/)).toBeNull();
+    expect(screen.queryByText(/不足/)).toBeNull();
+  });
+
+  it('會籍失效又未加入：原因是請續訂，不指向推薦管理（失效會員進不去那一頁）', () => {
+    renderAction({ referralProgramJoined: false, subscriptionStatus: 'expired' });
+    expect(button().disabled).toBe(true);
+    expect(screen.getByText('訂閱已失效，無法申請提領。請續訂以恢復服務。')).toBeTruthy();
+    expect(screen.queryByText(/尚未加入推薦計畫/)).toBeNull();
+    expect(screen.queryByRole('link', { name: '前往推薦管理加入' })).toBeNull();
+  });
+
+  it('連結在觸控裝置有 44px 的點擊高度', () => {
+    renderAction({ referralProgramJoined: false });
+    const link = screen.getByRole('link', { name: '前往推薦管理加入' });
+    expect(link.className).toContain('pointer-coarse:min-h-11');
   });
 
   it('會員資料還沒取得（不知道）時不說「尚未加入」也不給連結', () => {

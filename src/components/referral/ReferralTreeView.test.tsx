@@ -279,6 +279,36 @@ describe('全部一代即將到期清單（就地取代樹，分頁同搜尋）'
     expect(screen.getByRole('button', { name: '全部 43 位 ›' })).toBeTruthy();
   });
 
+  it('清單開著時背景重驗讓總數降到橫幅上限內：仍有「返回推薦樹」出口', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, 7), total: 7 });
+    const element = (total: number) => (
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({
+            roots: [makeNode({ name: '樹上的人' })],
+            attention: { total, items: range(0, Math.min(total, 6)) },
+          })}
+          sort="updated_desc"
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          loadAttention={loadAttention}
+        />
+      </MemoryRouter>
+    );
+    const view = render(element(7));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 7 位 ›' }));
+    });
+    await screen.findByText('已顯示 7 / 7 筆記錄');
+
+    // 其中一位續訂了，overview 重驗後只剩橫幅上限內的 6 位
+    view.rerender(element(6));
+
+    fireEvent.click(screen.getByRole('button', { name: '返回推薦樹' }));
+    expect(screen.getByRole('tree', { name: '我的推薦網絡' })).toBeTruthy();
+  });
+
   it('讀取失敗時顯示錯誤與重試，重試重發第一頁', async () => {
     const loadAttention = vi
       .fn()

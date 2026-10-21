@@ -97,6 +97,11 @@ describe('TaskDashboard 主數字與徽章', () => {
     expect(screen.getByText('本月已推薦 17 人，已完成 2 次')).toBeTruthy();
   });
 
+  it('任務卡只有一塊品牌淡底主區：標題旁的圖示底不再用品牌色', () => {
+    const { container } = renderPage();
+    expect(container.querySelectorAll('.bg-brand-subtle')).toHaveLength(1);
+  });
+
   it('本輪剛好滿額時標示已滿一輪', () => {
     state.task.tasks = [king({ current: 8, completed: true })];
     renderPage();
