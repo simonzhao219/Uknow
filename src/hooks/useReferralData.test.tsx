@@ -94,3 +94,35 @@ describe('useReferralData', () => {
     expect(seen.b.error).toBeTruthy();
   });
 });
+
+// 「全部 N 位 ›」的分頁清單（B1 的 GET /referrals/network/attention）：前端只是帶 limit／offset
+// 的薄包裝，total 是全部人數（不受分頁影響），由 usePagedList 的「已顯示 X / Y」使用。
+describe('useReferralData.loadAttention', () => {
+  const never = () => new Promise(() => {});
+
+  it('帶 limit 與 offset 打 attention 端點，回傳該頁 items 與全部人數 total', async () => {
+    mockRequest.mockImplementation(((url: string) =>
+      url.includes('/referrals/network/attention')
+        ? Promise.resolve({
+            success: true,
+            data: { total: 45, limit: 20, offset: 20, items: [{ userId: 'u1' }] },
+          })
+        : never()) as never);
+    render(<Harness showA showB={false} />);
+
+    const page = await seen.a.loadAttention({ limit: 20, offset: 20 });
+
+    expect(mockRequest).toHaveBeenCalledWith('/referrals/network/attention?limit=20&offset=20');
+    expect(page).toEqual({ items: [{ userId: 'u1' }], total: 45 });
+  });
+
+  it('後端回 success 為 false 時丟錯，不回空清單', async () => {
+    mockRequest.mockImplementation(((url: string) =>
+      url.includes('/referrals/network/attention')
+        ? Promise.resolve({ success: false })
+        : never()) as never);
+    render(<Harness showA showB={false} />);
+
+    await expect(seen.a.loadAttention({ limit: 20, offset: 0 })).rejects.toThrow();
+  });
+});

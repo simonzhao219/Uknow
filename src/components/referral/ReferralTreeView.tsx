@@ -368,6 +368,10 @@ interface ReferralTreeViewProps {
   ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
   /** 背景重新請求中（切排序、focus revalidate）——清單仍是舊資料，需回饋 */
   isValidating?: boolean;
+  loadAttention?: (page: { limit: number; offset: number }) => Promise<{
+    items: NetworkNode[];
+    total: number;
+  }>;
 }
 
 type SearchState =

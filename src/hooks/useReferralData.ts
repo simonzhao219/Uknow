@@ -42,6 +42,10 @@ export interface UseReferralDataResult {
     q: string,
     offset?: number,
   ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
+  loadAttention: (page: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ items: NetworkNode[]; total: number }>;
 }
 
 const DEDUP_KEY = 'referralNetwork';
@@ -213,5 +217,6 @@ export function useReferralData(): UseReferralDataResult {
     setSort,
     loadChildren,
     searchNetwork,
+    loadAttention: async () => ({ items: [], total: 0 }),
   };
 }
