@@ -3,9 +3,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { StatusCallout } from './ui/status-callout';
+import { FOCUS_RING_GAP } from './ui/focusRing';
 import { cn } from './ui/utils';
 import { CategoryBadge } from './common/CategoryBadge';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
   ArrowLeft,
   MapPin,
@@ -31,10 +32,6 @@ import type { PublicListingRow } from '../types/listing';
 const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
 
 type LoadStatus = 'loading' | 'ready' | 'notFound' | 'error';
-
-// 鍵盤焦點環（ui-ux-guidelines §12.12）：選中態是 --sel 框線，環外留 1px 間隙才分得開。
-const THUMB_FOCUS =
-  'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
 export function ServiceProviderDetail() {
   const { showToast } = useNotification();
@@ -148,24 +145,15 @@ export function ServiceProviderDetail() {
       <div className="max-w-4xl mx-auto space-y-6">
         {backButton}
         {status === 'error' ? (
-          // 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重試是唯一出路，流程鈕
-          // 取容器色（§12.11），提示框內靠右、文字寬。外層 div 是重試後的焦點落點
-          // （StatusCallout 不轉發 ref）。
-          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
-            <StatusCallout
-              variant="warning"
-              titleAs="h2"
-              title="暫時無法載入服務者資料"
-              description="可能是網路不穩，請再試一次。"
-              action={
-                <div className="flex justify-end">
-                  <Button container="warning" onClick={handleRetry}>
-                    重試
-                  </Button>
-                </div>
-              }
-            />
-          </div>
+          // 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11）；ref 是重試後的焦點落點。
+          <LoadErrorCallout
+            ref={errorRef}
+            titleAs="h2"
+            title="暫時無法載入服務者資料"
+            description="可能是網路不穩，請再試一次。"
+            retryLabel="重試"
+            onRetry={handleRetry}
+          />
         ) : (
           <DetailSkeleton outputRef={skeletonRef} />
         )}
@@ -239,7 +227,7 @@ export function ServiceProviderDetail() {
                   onClick={() => setCurrentImageIndex(index)}
                   className={cn(
                     'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 bg-muted transition-colors',
-                    THUMB_FOCUS,
+                    FOCUS_RING_GAP,
                     currentImageIndex === index ? 'border-sel' : 'border-transparent',
                   )}
                 >

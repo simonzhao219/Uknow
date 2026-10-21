@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Input } from './ui/input';
 import { Skeleton } from './ui/skeleton';
-import { StatusCallout } from './ui/status-callout';
+import { FOCUS_RING } from './ui/focusRing';
 import { MapPin, ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { GenderBadge } from './common/GenderBadge';
@@ -15,6 +15,7 @@ import { CategoryFilterChips } from './home/CategoryFilterChips';
 import { CategoryBadge } from './common/CategoryBadge';
 import { useCustomCategories } from '../hooks/useCustomCategories';
 import { FilterChip } from './common/FilterChip';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
   Sheet,
   SheetClose,
@@ -495,24 +496,15 @@ export function HomePage() {
         )}
 
         {/* ========== 載入失敗（與空狀態明確區分，提供重試） ========== */}
-        {/* 暫時讀不到＝「錯誤但可重試」，併入 warning（§12.5）；重新載入是唯一出路，
-            流程鈕取容器色（§12.11），提示框內靠右、文字寬。與詳情頁的讀取失敗同一款。 */}
+        {/* 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11），與詳情頁的讀取失敗同一款；
+            ref 是重新載入後的焦點落點。 */}
         {!loading && loadError && (
-          // 外層 div 是重新載入後的焦點落點（StatusCallout 不轉發 ref）
-          <div ref={errorRef} tabIndex={-1} className="scroll-mt-20 outline-none">
-            <StatusCallout
-              variant="warning"
-              title="載入失敗"
-              description="無法取得服務者列表，請檢查網路連線後再試一次"
-              action={
-                <div className="flex justify-end">
-                  <Button container="warning" onClick={handleReload}>
-                    重新載入
-                  </Button>
-                </div>
-              }
-            />
-          </div>
+          <LoadErrorCallout
+            ref={errorRef}
+            title="載入失敗"
+            description="無法取得服務者列表，請檢查網路連線後再試一次"
+            onRetry={handleReload}
+          />
         )}
 
         {/* ========== 空狀態顯示（僅在載入完成、無錯誤且無資料時） ========== */}
@@ -642,11 +634,6 @@ function MobileFilterSheet({
   );
 }
 
-// 浮動工具列的按鈕是原生 <button>，沒有 Button 原語的焦點樣式：補上同一個 3px 全不透明
-// 焦點環（ui-ux-guidelines §12.12）。
-const TOOLBAR_FOCUS =
-  'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring';
-
 // 手機版底部浮動工具列：搜尋與篩選的唯一入口。
 //
 // 設計取捨（對應「操作習慣在下方」與「不想讓搜尋列常駐佔位」兩個訴求）：
@@ -704,7 +691,7 @@ function MobileSearchFilterBar({
           aria-expanded={false}
           className={cn(
             'relative flex h-14 w-14 items-center justify-center rounded-full border border-raised-border bg-raised shadow-raised animate-in fade-in zoom-in-90 duration-200',
-            TOOLBAR_FOCUS,
+            FOCUS_RING,
           )}
         >
           <Search className="h-5 w-5" aria-hidden="true" />
@@ -729,7 +716,7 @@ function MobileSearchFilterBar({
               type="button"
               className={cn(
                 'flex min-w-0 flex-1 items-center gap-2 rounded-l-full px-4 py-3 text-left',
-                TOOLBAR_FOCUS,
+                FOCUS_RING,
               )}
             >
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -786,7 +773,7 @@ function MobileSearchFilterBar({
           trigger={
             <button
               type="button"
-              className={cn('flex shrink-0 items-center gap-1.5 px-4 py-3', TOOLBAR_FOCUS)}
+              className={cn('flex shrink-0 items-center gap-1.5 px-4 py-3', FOCUS_RING)}
             >
               <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
               <span className="text-sm">篩選</span>
@@ -812,7 +799,7 @@ function MobileSearchFilterBar({
           aria-expanded={true}
           className={cn(
             'flex shrink-0 items-center rounded-r-full px-3 text-muted-foreground',
-            TOOLBAR_FOCUS,
+            FOCUS_RING,
           )}
         >
           <ChevronDown className="h-4 w-4" aria-hidden="true" />
