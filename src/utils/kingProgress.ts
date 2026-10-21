@@ -29,3 +29,12 @@ export function computeKingRounds(current: number, target: number): KingRounds {
 
   return { roundsThisMonth, currentRoundCount, roundProgressPct };
 }
+
+export type MedalFill = 0 | 0.5 | 1;
+
+export function medalFills(
+  _roundCount: number,
+  _target: number,
+): [MedalFill, MedalFill, MedalFill, MedalFill] {
+  return [0, 0, 0, 0];
+}

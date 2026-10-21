@@ -90,3 +90,36 @@ describe('useTaskData', () => {
     expect(seen.b.error).toBeTruthy();
   });
 });
+
+// 整頁讀取失敗的重試只重發那兩支請求（ui-ux-guidelines §6），不整頁重載。
+describe('useTaskData.refetch', () => {
+  it('冷啟動失敗後 refetch 重發任務與待領取請求，成功時清掉錯誤', async () => {
+    let failing = true;
+    mockRequest.mockImplementation(((url: string) => {
+      if (failing) return Promise.reject(new Error('網路錯誤'));
+      return url === '/tasks'
+        ? Promise.resolve({
+            success: true,
+            data: { tasks: [{ id: 't1', type: 'monthly_king', current: 3, target: 8 }] },
+          })
+        : Promise.resolve({ success: true, data: [] });
+    }) as never);
+    render(<Harness showA showB={false} />);
+    await waitFor(() => expect(seen.a.error).toBeTruthy());
+    expect(seen.a.isLoading).toBe(false);
+
+    failing = false;
+    mockRequest.mockClear();
+    await act(async () => {
+      seen.a.refetch();
+    });
+
+    await waitFor(() => expect(seen.a.tasks).toHaveLength(1));
+    expect(seen.a.error).toBeNull();
+    expect(seen.a.isLoading).toBe(false);
+    expect(mockRequest.mock.calls.map(([url]) => url).sort()).toEqual([
+      '/tasks',
+      '/tasks/pending-rewards',
+    ]);
+  });
+});

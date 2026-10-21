@@ -65,6 +65,7 @@ export interface UseTaskDataResult {
   fetchPendingRewards: () => Promise<void>;
   handleClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
   handleClaimAllRewards: (idNumber: string) => Promise<void>;
+  refetch: () => void;
 }
 
 const DEDUP_KEY = 'tasks+pendingRewards';
@@ -281,5 +282,6 @@ export function useTaskData(): UseTaskDataResult {
     fetchPendingRewards,
     handleClaimReward,
     handleClaimAllRewards,
+    refetch: () => {},
   };
 }

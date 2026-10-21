@@ -155,3 +155,11 @@ export function myQrTabsForUser(user: MyQrTabUser | null | undefined): MyQrTabAv
     canScan: user?.isAdmin === true || user?.accountStatus === 'active',
   });
 }
+
+export type ReferralJoinState = 'joined' | 'not-joined' | 'unknown';
+
+export function referralJoinState(
+  _user: { referralProgramJoined?: boolean | null } | null | undefined,
+): ReferralJoinState {
+  return 'unknown';
+}

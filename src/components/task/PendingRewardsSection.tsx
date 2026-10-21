@@ -22,6 +22,8 @@ interface Props {
    * 提早收斂 UI、避免走完三步驟對話框才被 403 退回）。
    */
   claimBlockedReason?: string | null;
+  /** 為什麼不能領：會籍失效（黃框＋續訂）或停權（只有原因文字）。 */
+  blocked?: 'expired' | 'suspended' | null;
 }
 
 export function PendingRewardsSection({
