@@ -272,6 +272,15 @@ def _setup_listing_mgmt(context, api_mock, rest_mock):
     rest_mock.set_user_listing(_hostile_listing())
 
 
+def _setup_listing_mgmt_hidden(context, api_mock, rest_mock):
+    """刊登管理 · 會籍剛到期：黃框＋續訂、「已隱藏」徽章與「會籍至」（頁面開著時到期的邊界：
+    守衛讀 profile、本頁讀訂閱狀態，所以 profile 仍有效、訂閱已到期）。"""
+    _setup_listing_mgmt(context, api_mock, rest_mock)
+    api_mock.set_subscription_status(
+        has_subscription=True, status="expired", active_until="2026-01-01T00:00:00.000Z"
+    )
+
+
 def _setup_listing_create(context, api_mock, rest_mock):
     _seed_member(context)
     rest_mock.set_user_listing(None)
@@ -306,8 +315,8 @@ def _setup_referrals_unjoined(context, api_mock, rest_mock):
     _setup_referrals(context, api_mock, rest_mock, referralProgramJoined=False)
 
 
-def _setup_tasks(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_tasks(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
     api_mock.set_task_center(
         tasks=[build_monthly_king_task(current=8, hasUnclaimedReward=True, unclaimedRewardCount=1)],
         pending_rewards=[
@@ -318,8 +327,13 @@ def _setup_tasks(context, api_mock, rest_mock):
     )
 
 
-def _setup_rewards(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_tasks_unjoined(context, api_mock, rest_mock):
+    """任務中心 · 未加入推薦計畫：淡底卡內多一段說明與連結，待領取綠框照常。"""
+    _setup_tasks(context, api_mock, rest_mock, referralProgramJoined=False)
+
+
+def _setup_rewards(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
     api_mock.set_reward_dashboard(
         available=BIG_POINTS,
         pending=BIG_POINTS // 3,
@@ -341,6 +355,17 @@ def _setup_rewards(context, api_mock, rest_mock):
             ),
         ],
     )
+
+
+def _setup_rewards_unjoined(context, api_mock, rest_mock):
+    """獎勵回饋 · 未加入推薦計畫：可提領卡內停用的申請鈕＋原因＋連結。"""
+    _setup_rewards(context, api_mock, rest_mock, referralProgramJoined=False)
+
+
+def _setup_rewards_expired(context, api_mock, rest_mock):
+    """獎勵回饋 · 會籍失效：/rewards 是唯一失效會員進得去的會員頁——黃框橫幅＋續訂、
+    停用的申請鈕與原因、待查收列的確認收款降成次要。"""
+    _setup_rewards(context, api_mock, rest_mock, accountStatus="expired")
 
 
 def _setup_checkout(context, api_mock, rest_mock):
@@ -684,6 +709,13 @@ ROUTES = [
     ),
     SweepRoute("/service-providers", "刊登管理", _setup_listing_mgmt, "/service-providers"),
     SweepRoute(
+        "/service-providers",
+        "刊登管理 · 會籍剛到期",
+        _setup_listing_mgmt_hidden,
+        "/service-providers",
+        tags=["hidden"],
+    ),
+    SweepRoute(
         "/service-providers/create",
         "建立刊登",
         _setup_listing_create,
@@ -707,10 +739,31 @@ ROUTES = [
     ),
     SweepRoute("/tasks", "任務中心", _setup_tasks, "/tasks"),
     SweepRoute(
+        "/tasks",
+        "任務中心 · 未加入推薦計畫",
+        _setup_tasks_unjoined,
+        "/tasks",
+        tags=["unjoined"],
+    ),
+    SweepRoute(
         "/rewards",
         "獎勵回饋",
         _setup_rewards,
         "/rewards",
+    ),
+    SweepRoute(
+        "/rewards",
+        "獎勵回饋 · 未加入推薦計畫",
+        _setup_rewards_unjoined,
+        "/rewards",
+        tags=["unjoined"],
+    ),
+    SweepRoute(
+        "/rewards",
+        "獎勵回饋 · 會籍失效",
+        _setup_rewards_expired,
+        "/rewards",
+        tags=["expired"],
     ),
     SweepRoute(
         "/payment/checkout",

@@ -1,4 +1,4 @@
-"""Steps for referral_visibility.feature."""
+"""Steps for referral_visibility.feature and referral_attention.feature."""
 
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when

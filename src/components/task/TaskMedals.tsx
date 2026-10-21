@@ -2,7 +2,7 @@ import { Crown, type LucideIcon, Sparkles, Sprout, Star } from 'lucide-react';
 import { type MedalFill, medalFills } from '../../utils/kingProgress';
 import { cn } from '../ui/utils';
 
-// 任務中心的四顆徽章＝本輪進度（畫面稿，業主 2026-10-05；plan.md §4 第 13 點），取代進度條
+// 任務中心的四顆徽章＝本輪進度（畫面稿，業主 2026-10-05；規格書 §9.4），取代進度條
 // 與舊的等級小標籤。亮度由 medalFills 換算：奇數半亮（左半填色＋淡環）、偶數全亮，滿一輪
 // 四顆全亮＝推薦王，下一輪歸零重點。徽章下只放名稱——不放人數、等級小標籤、鼓勵文案。
 //

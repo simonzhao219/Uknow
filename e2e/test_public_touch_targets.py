@@ -114,7 +114,7 @@ def test_view_toggle_focus_ring_is_3px_opaque_with_a_gap(home):
 
 
 def test_floating_search_button_focus_ring_is_3px_opaque(home):
-    """浮動搜尋鈕（原生 button，TOOLBAR_FOCUS）：3px 全不透明 --sel 環。"""
+    """浮動搜尋鈕（原生 button，FOCUS_RING）：3px 全不透明 --sel 環。"""
     shadow = _keyboard_focus_shadow(
         home, home.get_by_role("button", name="展開搜尋與篩選"), RING_3PX
     )
@@ -122,7 +122,7 @@ def test_floating_search_button_focus_ring_is_3px_opaque(home):
 
 
 def test_detail_thumbnail_focus_ring_is_3px_opaque_with_a_gap_and_unclipped(page, rest_mock):
-    """詳情頁縮圖（THUMB_FOCUS）：3px＋1px 間隙，且沒有祖先把環裁掉。"""
+    """詳情頁縮圖（FOCUS_RING_GAP）：3px＋1px 間隙，且沒有祖先把環裁掉。"""
     rest_mock.set_public_listing(DETAIL)
     page.goto(f"/service-providers/{DETAIL['id']}")
     thumb = page.get_by_role("button", name="縮圖 1")

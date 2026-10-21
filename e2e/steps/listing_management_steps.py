@@ -31,6 +31,13 @@ def membership_runs_until(api_mock, date):
     )
 
 
+@given("my membership has expired")
+def membership_expired(api_mock):
+    api_mock.set_subscription_status(
+        has_subscription=True, status="expired", active_until="2026-01-01T00:00:00.000Z"
+    )
+
+
 @given("the listing read fails once")
 def listing_read_fails_once(rest_mock):
     # 註冊在 set_user_listing 之後：第一次讀取失敗，之後落回成功的那份（重試即成功）。

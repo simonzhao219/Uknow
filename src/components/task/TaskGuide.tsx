@@ -29,7 +29,7 @@ export function TaskGuide() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-muted-foreground shrink-0">•</span>
-              <span>只計算第 1 代（直接推薦）</span>
+              <span>只計算一代（直接推薦）</span>
             </li>
           </ul>
         </div>

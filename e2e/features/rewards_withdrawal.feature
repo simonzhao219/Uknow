@@ -94,6 +94,27 @@ Feature: Reward points and withdrawal
     And the page was not reloaded
 
   @rewards
+  Scenario: A failed history read keeps the balance and retrying reloads only the history
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And my reward history shows a first-generation referral commission "一代推薦 - 王大明" worth 100
+    And the reward history fails to load once
+    When I visit "/rewards"
+    Then the history error callout is shown
+    And I should see the text "5000P"
+    When I retry loading the reward page
+    Then I should see the text "一代推薦 - 王大明"
+    And the page was not reloaded
+
+  @rewards
+  Scenario: An awaiting-collection withdrawal shows a warning badge in the same row as its collect action
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 3000 available and 8000 total earned
+    And I have a withdrawal "wd-e2e-1" awaiting collection
+    When I visit "/rewards"
+    Then the awaiting-collection row shows a warning badge and the collect action
+
+  @rewards
   Scenario: Withdrawal is blocked when the balance is below the minimum
     Given I am a paid member who joined the referral program
     And my reward summary shows 500 available and 500 total earned

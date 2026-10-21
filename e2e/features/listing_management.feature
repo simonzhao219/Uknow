@@ -26,7 +26,18 @@ Feature: Listing management
   # 過期／停權的刊登會自動從首頁消失。所以本頁的「刊登狀態」讀訂閱狀態：會籍有效＝
   # 「上架中」＋會籍至日期；會籍失效＝「已隱藏」（規格書 §11 只有這兩種）。過期會員本就被
   # RequireMembershipRoute 導去 checkout（見下方 route_guard 情境），所以「已隱藏」只在頁面
-  # 開著時剛好到期才看得到，由元件測試守住，e2e 停不在那個瞬間。
+  # 開著時剛好到期才看得到。守衛讀 /profile 的 accountStatus、本頁讀 /subscriptions/status，
+  # 所以 e2e 以「profile 仍有效、訂閱已到期」走到那個邊界。
+
+  @listing
+  Scenario: A membership that expired while the page was open shows the listing as hidden with a renewal link
+    Given I am logged in as an active member
+    And I have an active listing named "美髮小美"
+    And my membership has expired
+    When I visit "/service-providers"
+    Then the listing status reads "已隱藏"
+    And I should see the text "刊登已隱藏"
+    And the link "續訂" points to "/payment/checkout"
 
   @listing
   Scenario: A member with an active membership sees the listing as live with the membership end date

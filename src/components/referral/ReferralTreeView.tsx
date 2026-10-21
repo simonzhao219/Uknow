@@ -42,7 +42,7 @@ import {
 // ============================================================
 
 // 世代 chip／小圓點與「一代／二代／三代」文字由 common/GenerationChip 提供（獎勵明細共用）。
-// 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
+// 分支連接線依「子代」上色。**不可**重用世代 chip（common/GenerationChip）的淺底 token 當邊框——
 // 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
 // ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的色，
 // 對比淺色 5.7:1 以上、深色 6.6:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在
@@ -89,7 +89,7 @@ function nodeAriaLabel(node: NetworkNode): string {
   return `${node.name} 詳情，${parts.join('、')}`;
 }
 
-// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色相：一代 teal、二代 violet、三代 pink；
+// 頭像底色綁世代（與世代 chip／GEN_LINE 同色相：一代 teal、二代 violet、三代 pink；
 // ui-ux-guidelines.md §12.5 (c) 核准的世代色例外，不得擴散到其他頁面）。
 // 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
 const GEN_AVATAR: Record<number, string> = {

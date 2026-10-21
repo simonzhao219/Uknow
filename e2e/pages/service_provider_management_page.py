@@ -27,9 +27,6 @@ class ServiceProviderManagementPage(BasePage):
     def edit_link(self):
         return self.page.get_by_role("link", name="編輯刊登")
 
-    def view_link(self):
-        return self.page.get_by_role("link", name="查看刊登")
-
     def status_badge(self, label: str):
         """The listing status badge: 「上架中」 (membership active) or 「已隱藏」."""
         return self.page.get_by_text(label, exact=True)

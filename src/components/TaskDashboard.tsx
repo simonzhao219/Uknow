@@ -17,7 +17,7 @@ import { computeKingRounds } from '../utils/kingProgress';
 import { referralJoinState } from '../utils/myQrTabPreference';
 
 /**
- * 任務中心的資訊層次（ui-ux-guidelines §13、plan.md §4 第 13 點）：
+ * 任務中心的資訊層次（ui-ux-guidelines §13、規格書 §9.4）：
  * 待領取的獎勵置頂（可領＝綠框、領不了＝黃框）→ 任務卡 → 任務說明。
  * 任務卡只有一塊淡底主區：主數字是「本輪 x / 門檻」，四顆徽章就是進度條；本月已推薦人數
  * 與已完成次數降為一行小字。任務只有推薦王一個，且輪次滾動（滿 8 人顯示 8/8，第 9 人才

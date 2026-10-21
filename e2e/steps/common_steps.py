@@ -252,6 +252,11 @@ def follow_link(page, name):
     page.get_by_role("link", name=name).click()
 
 
+@then(parsers.parse('the link "{name}" points to "{href}"'))
+def link_points_to(page, name, href):
+    expect(page.get_by_role("link", name=name)).to_have_attribute("href", href)
+
+
 @then("the page was not reloaded")
 def page_not_reloaded(page):
     # 重試步驟先在頁面上立 window.__e2eNoReloadMarker：整頁重載會讓它消失，只重發請求

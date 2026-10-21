@@ -101,7 +101,7 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
 APPROVED_GRADIENT_FILES: dict[str, str] = {
     "src/components/task/TaskMedals.tsx": (
-        "任務中心四顆徽章的填色(plan.md §4 第 13 點、ui-ux-guidelines §12.4 唯一核准的漸層);"
+        "任務中心四顆徽章的填色(規格書 §9.4、ui-ux-guidelines §12.4 唯一核准的漸層);"
         "退場:徽章改單色填色或任務徽章下架時,移除這一列與 globals.css 的 --medal-gradient"
     ),
 }

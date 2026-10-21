@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// 任務中心的四顆徽章＝本輪進度（畫面稿，業主 2026-10-05；plan.md §4 第 13 點）：
+// 任務中心的四顆徽章＝本輪進度（畫面稿，業主 2026-10-05；規格書 §9.4）：
 // 取代進度條與舊的等級小標籤。亮度由 medalFills 換算（那邊有表格案例），這裡驗：
 // 名稱與順序、亮度有沒有真的畫出來、不只靠顏色（文字也說）、漸層只用核准的 token。
 import { afterEach, describe, expect, it } from 'vitest';

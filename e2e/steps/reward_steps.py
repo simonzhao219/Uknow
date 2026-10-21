@@ -8,6 +8,8 @@ individual slices. Every reward read is mocked at an exact URL (see
 BackendApiMock._route_exact), so those overrides are order-independent.
 """
 
+import re
+
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -99,6 +101,12 @@ def reward_history_second_generation(api_mock, description, amount):
 def reward_summary_fails_once(api_mock):
     # 註冊在成功 mock 之後：第一次請求失敗，之後落回成功的那份（重試即成功）。
     api_mock.set_route_error("/rewards", times=1, exact=True)
+
+
+@given("the reward history fails to load once")
+def reward_history_fails_once(api_mock):
+    # 明細是另一支請求：失敗時上方的點數與提領申請照常，重試只重發它。
+    api_mock.set_route_error("/rewards/history", times=1)
 
 
 @given("my reward history is empty")
@@ -274,12 +282,27 @@ def see_renewal_banner(reward_page):
 
 
 @then("the renewal button is the only solid guide button")
-def renewal_is_only_guide_button(page, reward_page):
+def renewal_is_only_guide_button(reward_page):
     banner = reward_page.renewal_banner()
-    expect(banner.get_by_role("button", name="續訂")).to_be_visible()
-    # 品牌色（引導）與墨黑（流程）實心鈕在本頁一顆都不該有：確認收款讓位、申請提領是次要
-    solid = page.locator("button.bg-brand, button.bg-primary")
-    expect(solid).to_have_count(0)
+    renew = banner.get_by_role("button", name="續訂")
+    expect(renew).to_be_visible()
+    # 整頁的實心鈕（墨黑、品牌、黃）只剩橫幅裡這一顆：確認收款讓位、申請提領是次要
+    expect(reward_page.solid_buttons()).to_have_count(1)
+    expect(renew).to_have_class(re.compile(r"(^|\s)bg-warning(\s|$)"))
+
+
+@then("the awaiting-collection row shows a warning badge and the collect action")
+def awaiting_row_badge_and_action(reward_page):
+    row = reward_page.awaiting_collection_row()
+    expect(row).to_have_count(1)
+    expect(row.get_by_role("button", name="確認收款")).to_be_visible()
+    badge = row.locator('[data-slot="badge"]', has_text="待查收")
+    expect(badge).to_have_class(re.compile(r"(^|\s)bg-warning(\s|$)"))
+
+
+@then("the history error callout is shown")
+def history_error_shown(reward_page):
+    expect(reward_page.history_error()).to_be_visible(timeout=5_000)
 
 
 @then(parsers.parse('I should see the generation chip "{label}"'))
