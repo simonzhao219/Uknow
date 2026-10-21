@@ -35,6 +35,22 @@ class RewardPage(BasePage):
     def history_empty_state(self) -> Locator:
         return self.page.get_by_text("尚無獎勵記錄")
 
+    def available_block(self) -> Locator:
+        """The page's one tinted main block: 「可提領」 plus the withdraw button."""
+        return self.page.get_by_test_id("available-rewards-card")
+
+    def renewal_banner(self) -> Locator:
+        return self.page.get_by_test_id("expired-renewal-banner")
+
+    def generation_chip(self, label: str) -> Locator:
+        return self.page.get_by_text(label, exact=True)
+
+    def load_error(self) -> Locator:
+        return self.page.get_by_text("暫時無法取得獎勵資料")
+
+    def retry_button(self) -> Locator:
+        return self.page.get_by_role("button", name="重新載入")
+
     # --- Withdrawal eligibility ---------------------------------------------
 
     def apply_withdrawal_button(self) -> Locator:

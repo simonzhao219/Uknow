@@ -121,8 +121,9 @@ describe('RewardDashboard 可提領主區', () => {
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(follows(stats, withdrawal)).toBe(true);
     expect(follows(withdrawal, history)).toBe(true);
-    expect(history.className).toContain('lg:order-1');
-    expect(withdrawal.className).toContain('lg:order-2');
+    // stub 本身沒有 class：桌機的左右順序在包著它們的欄位上
+    expect(history.closest('[class*="lg:order-1"]')).toBeTruthy();
+    expect(withdrawal.closest('[class*="lg:order-2"]')).toBeTruthy();
   });
 });
 

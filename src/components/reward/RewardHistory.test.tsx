@@ -133,12 +133,23 @@ describe('RewardHistory 讀取失敗', () => {
   });
 
   it('重試仍失敗時焦點回到錯誤框', async () => {
-    mockRequest.mockRejectedValue(new Error('網路錯誤'));
+    // 第二次請求用卡住的 promise：重試進行中錯誤框要真的卸載（真實網路有延遲；同一個 act
+    // 內立刻失敗會被 React 批次合併成「錯誤框從沒卸載」，焦點本來就還在重試鈕上）。
+    let rejectRetry!: (e: unknown) => void;
+    const retrying = new Promise((_, reject) => {
+      rejectRetry = reject;
+    });
+    mockRequest.mockRejectedValueOnce(new Error('網路錯誤')).mockReturnValueOnce(retrying as never);
     render(<RewardHistory />);
     const retry = await screen.findByRole('button', { name: '重新載入' });
     act(() => retry.focus());
     await act(async () => {
       fireEvent.click(retry);
+    });
+    expect(screen.queryByText('暫時無法取得獎勵明細')).toBeNull();
+
+    await act(async () => {
+      rejectRetry(new Error('網路錯誤'));
     });
 
     await screen.findByText('暫時無法取得獎勵明細');

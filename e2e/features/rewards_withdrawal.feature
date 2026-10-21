@@ -8,12 +8,14 @@ Feature: Reward points and withdrawal
   from, and get it out — plus every guardrail that legitimately blocks a
   withdrawal.
 
-  The route sits behind ProtectedRoute + RequireMembershipRoute, so only an
-  active member reaches it; an expired member is redirected to checkout by the
-  guard (covered in route_guards.feature) and never renders this page. With the
-  grace period removed (two-state membership), there is no longer any state that
-  can view this page yet is invalid for withdrawal, so the "subscription invalid"
-  guardrail is enforced at the guard and backend layers rather than here.
+  The route sits behind ProtectedRoute + RequireMembershipRoute with allowExpired:
+  an active member reaches it, and so does an expired former member (spec section
+  5: points are kept, only withdrawal is blocked) — they see a renewal banner whose
+  button is the page's only solid guide button. Everyone else is redirected by the
+  guard (covered in route_guards.feature). "Available points" is the page's one
+  tinted main block and the withdraw button sits inside it; when the button is
+  disabled the reason is written right under it (a member who paid but has not joined
+  the referral program is pointed to the referral page by a link, not a second button).
 
   @rewards
   Scenario: A paid member sees their points balance and the referral that earned it
@@ -43,6 +45,53 @@ Feature: Reward points and withdrawal
     When I visit "/rewards"
     Then the apply-withdrawal button should be disabled
     And I should see the text "尚未加入推薦計畫，無法申請提領"
+
+  @rewards
+  Scenario: The withdraw button lives inside the available-points main block
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    When I visit "/rewards"
+    Then the apply-withdrawal button should be inside the available-points block
+
+  @rewards
+  Scenario: A member who has not joined the referral program is pointed to the referral page
+    Given I am a paid member who has not joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    When I visit "/rewards"
+    Then I should see the text "5000P"
+    And the apply-withdrawal button should be disabled
+    When I follow the link "前往推薦管理加入"
+    Then I should be redirected to "/referrals"
+
+  @rewards
+  Scenario: An expired former member can still read their points, and renewal is the only solid button
+    Given I am an expired former member with points
+    And my reward summary shows 5000 available and 8000 total earned
+    When I visit "/rewards"
+    Then I should see the reward dashboard
+    And I should see the text "5000P"
+    And I should see the renewal banner
+    And the apply-withdrawal button should be disabled
+    And I should see the text "訂閱已失效，無法申請提領"
+    And the renewal button is the only solid guide button
+
+  @rewards
+  Scenario: The reward history labels each generation with a generation chip
+    Given I am a paid member who joined the referral program
+    And my reward history shows a second-generation referral commission "二代推薦 - 李小華" worth 100
+    When I visit "/rewards"
+    Then I should see the generation chip "二代"
+
+  @rewards
+  Scenario: A failed reward load shows a retry callout and retrying does not reload the page
+    Given I am a paid member who joined the referral program
+    And my reward summary shows 5000 available and 8000 total earned
+    And the reward summary fails to load once
+    When I visit "/rewards"
+    Then I should see the text "暫時無法取得獎勵資料"
+    When I retry loading the reward page
+    Then I should see the text "5000P"
+    And the page was not reloaded
 
   @rewards
   Scenario: Withdrawal is blocked when the balance is below the minimum
