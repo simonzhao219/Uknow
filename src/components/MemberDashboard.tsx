@@ -24,6 +24,7 @@ import {
   PROFILE_LOCKED_MESSAGE,
 } from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
+import { listingVisibility } from '../utils/listingVisibility';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
 import { computeKingRounds } from '../utils/kingProgress';
 import {
@@ -94,7 +95,7 @@ export function MemberDashboard() {
   // 會籍失效＝已隱藏（warning 族：失效不是錯誤，ui-ux-guidelines §12.13）。失效會員多半被 RequireMembershipRoute 導去續約，這裡是
   // 頁面開著時剛好到期的邊界。停權也會讓刊登下架（public_listings），但停權帳號
   // 被 RequireMembershipRoute 擋在會員區外，進不到這頁，所以不另判。
-  const listingHidden = subscriptionData?.status === 'expired';
+  const listingHidden = listingVisibility(subscriptionData) === 'hidden';
   const memberUntil = subscriptionData?.activeUntil
     ? formatTwDate(subscriptionData.activeUntil)
     : null;

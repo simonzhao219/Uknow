@@ -21,11 +21,33 @@ Feature: Listing management
     When I visit "/service-providers"
     Then I should see the text "美髮小美"
 
-  # 刊登本身沒有狀態或效期——是否對外顯示完全由帳號訂閱決定，且在資料層
+  # 刊登本身沒有狀態或效期欄位——是否對外顯示完全由帳號訂閱決定，且在資料層
   # 一處守門（public_listings view 以 has_active_subscription 過濾），會員
-  # 過期／停權的刊登會自動從首頁消失。因此刊登管理頁不再顯示任何「活躍／
-  # 過期」徽章，也沒有對應的狀態情境；過期會員本就被 RequireMembershipRoute
-  # 導去 checkout（見下方 route_guard 情境）。
+  # 過期／停權的刊登會自動從首頁消失。所以本頁的「刊登狀態」讀訂閱狀態：會籍有效＝
+  # 「上架中」＋會籍至日期；會籍失效＝「已隱藏」（規格書 §11 只有這兩種）。過期會員本就被
+  # RequireMembershipRoute 導去 checkout（見下方 route_guard 情境），所以「已隱藏」只在頁面
+  # 開著時剛好到期才看得到，由元件測試守住，e2e 停不在那個瞬間。
+
+  @listing
+  Scenario: A member with an active membership sees the listing as live with the membership end date
+    Given I am logged in as an active member
+    And I have an active listing named "美髮小美"
+    And my membership runs until "2027-12-31"
+    When I visit "/service-providers"
+    Then the listing status reads "上架中"
+    And I should see the membership end date "2027/12/31"
+
+  @listing
+  Scenario: A failed listing read shows a retry callout, not the empty state, and retrying does not reload the page
+    Given I am logged in as an active member
+    And I have an active listing named "重試後的刊登"
+    And the listing read fails once
+    When I visit "/service-providers"
+    Then I should see the text "暫時無法取得刊登狀態"
+    And I should not see the create-listing action
+    When I retry loading the listing page
+    Then I should see the text "重試後的刊登"
+    And the page was not reloaded
 
   @listing @route_guard
   Scenario: An expired member cannot reach listing management and is sent to checkout
