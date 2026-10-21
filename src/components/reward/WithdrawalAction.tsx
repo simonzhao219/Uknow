@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Button } from '../ui/button';
+import { referralJoinState } from '../../utils/myQrTabPreference';
 import {
   MIN_REQUIRED_BALANCE,
   MIN_WITHDRAWAL,
@@ -22,7 +23,9 @@ export interface WithdrawalActionProps {
  * 所以是 `secondary`／`container="brand"`，ui-ux-guidelines §12.11）。
  *
  * 判斷式與會員中心的「申請提領」共用 canRequestWithdrawal（只有現在能做的事才出現可按的
- * 鈕）；原因文案的優先序：未加入 → 失效 → 餘額不足 → 今日已提領。
+ * 鈕）；原因文案的優先序：失效 → 未加入 → 餘額不足 → 今日已提領。失效排第一：/rewards 是唯一
+ * 失效會員進得去的會員頁，/referrals 對他們會被導去結帳，所以失效時不叫人去推薦管理加入——
+ * 先續訂（頁面橫幅有續訂鈕）。
  *
  * 「已付費、未加入推薦計畫」(P3′) 是正式狀態：這裡只用說明文字＋連結引導到推薦管理（那裡有
  * 加入推薦計畫的引導鈕），不複製鈕、不另寫分享閘門。會籍失效時橫幅已有續訂鈕，這裡不重複。
@@ -40,11 +43,13 @@ export function WithdrawalAction({
     subscriptionStatus,
     referralProgramJoined,
   });
-  const notJoined = referralProgramJoined === false;
+  const expired = subscriptionStatus === 'expired';
+  // 單一判定：未取得（unknown）不畫成未加入，與任務中心同一支。
+  const notJoined = referralJoinState({ referralProgramJoined }) === 'not-joined';
 
   const disabledReason = () => {
+    if (expired) return '訂閱已失效，無法申請提領。請續訂以恢復服務。';
     if (notJoined) return '尚未加入推薦計畫，無法申請提領';
-    if (subscriptionStatus === 'expired') return '訂閱已失效，無法申請提領。請續訂以恢復服務。';
     if (availableRewards < MIN_REQUIRED_BALANCE) {
       return `可提領Point不足${MIN_REQUIRED_BALANCE.toLocaleString()}P（最低提領${MIN_WITHDRAWAL.toLocaleString()}P + 手續費${WITHDRAWAL_FEE}P）`;
     }
@@ -66,9 +71,12 @@ export function WithdrawalAction({
         申請Point提領
       </Button>
       {reason && <p className="text-center text-sm">{reason}</p>}
-      {!canWithdraw && notJoined && (
-        <p className="text-center text-sm">
-          <Link to="/referrals" className="font-medium underline underline-offset-2">
+      {!canWithdraw && notJoined && !expired && (
+        <p className="flex justify-center text-sm">
+          <Link
+            to="/referrals"
+            className="inline-flex items-center font-medium underline underline-offset-2 pointer-coarse:min-h-11"
+          >
             前往推薦管理加入
           </Link>
         </p>

@@ -294,7 +294,8 @@ function AttentionBanner({
               <span className="text-muted-foreground">· {reason(n)}</span>
             </button>
           ))}
-          {overflow > 0 && (
+          {/* 清單開著時即使 overflow 變 0（背景重驗後有人續訂）也要留著出口，不然使用者被困在過期的清單裡 */}
+          {(overflow > 0 || showingAll) && (
             <button
               type="button"
               onClick={onToggleAll}

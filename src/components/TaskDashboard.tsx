@@ -132,7 +132,7 @@ export function TaskDashboard() {
               <Card key={task.id}>
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-subtle text-brand-subtle-foreground">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
                       <Trophy className="h-5 w-5" aria-hidden="true" />
                     </span>
                     <div className="min-w-0">
@@ -165,12 +165,15 @@ export function TaskDashboard() {
                       target={task.target}
                     />
                     {notJoined && (
-                      <p className="mt-3 text-xs">
-                        尚未加入推薦計畫，推薦碼目前不能出示或分享。
-                        <Link to="/referrals" className="font-medium underline underline-offset-2">
+                      <div className="mt-3 text-xs">
+                        <p>尚未加入推薦計畫，推薦碼目前不能出示或分享。</p>
+                        <Link
+                          to="/referrals"
+                          className="inline-flex items-center font-medium underline underline-offset-2 pointer-coarse:min-h-11"
+                        >
                           前往推薦管理加入
                         </Link>
-                      </p>
+                      </div>
                     )}
                   </div>
 
