@@ -5,7 +5,7 @@
 // 名稱與順序、亮度有沒有真的畫出來、不只靠顏色（文字也說）、漸層只用核准的 token。
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { TaskMedals } from './TaskMedals';
+import { MEDAL_GRADIENT_CLASS, TaskMedals } from './TaskMedals';
 
 afterEach(cleanup);
 
@@ -47,13 +47,13 @@ describe('TaskMedals', () => {
     expect(screen.getByRole('list', { name: '本輪進度 3 / 8' })).toBeTruthy();
   });
 
-  it('亮的徽章填 --medal-gradient（§12.4 唯一核准的漸層），暗的沒有', () => {
+  it('亮的徽章填核准的品牌色漸層（§12.4 唯一核准的漸層），暗的沒有', () => {
     render(<TaskMedals roundCount={3} target={8} />);
     const face = (i: number) =>
       items()[i].querySelector('[data-testid="medal-face"]') as HTMLElement;
-    expect(face(0).className).toContain('bg-[image:var(--medal-gradient)]');
-    expect(face(1).className).toContain('bg-[image:var(--medal-gradient)]');
-    expect(face(2).className).not.toContain('--medal-gradient');
+    expect(face(0).className).toContain(MEDAL_GRADIENT_CLASS);
+    expect(face(1).className).toContain(MEDAL_GRADIENT_CLASS);
+    expect(face(2).className).not.toContain(MEDAL_GRADIENT_CLASS);
   });
 
   it('半亮只填左半、全亮填滿', () => {

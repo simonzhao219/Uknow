@@ -61,8 +61,3 @@ def see_expiring_shown(referral_page, shown, total):
 @then("I should see the referral tree")
 def see_referral_tree(referral_page):
     expect(referral_page.tree()).to_be_visible()
-
-
-@then("the page was not reloaded")
-def page_not_reloaded(page):
-    assert page.evaluate("window.__e2eNoReloadMarker") == "kept"

@@ -158,8 +158,19 @@ export function myQrTabsForUser(user: MyQrTabUser | null | undefined): MyQrTabAv
 
 export type ReferralJoinState = 'joined' | 'not-joined' | 'unknown';
 
+/**
+ * 「加入推薦計畫了沒」——「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5：首購者
+ * 100% 從這裡開始）。**還不知道**（會員資料尚未取得）是第三態，不能被畫成「未加入」
+ * （原則 1：沒確認的狀態不畫成已知狀態）。任務中心與獎勵頁的說明文字吃這一支，
+ * 不各寫 `=== false`。
+ *
+ * 只回答「加入了沒」。能不能出示、複製、分享推薦碼仍然只由 myQrTabsForUser 決定
+ * （invite = joined && referralCode，碼在首購時就已發出）——不要用這支另寫那個閘門。
+ */
 export function referralJoinState(
-  _user: { referralProgramJoined?: boolean | null } | null | undefined,
+  user: { referralProgramJoined?: boolean | null } | null | undefined,
 ): ReferralJoinState {
+  if (user?.referralProgramJoined === true) return 'joined';
+  if (user?.referralProgramJoined === false) return 'not-joined';
   return 'unknown';
 }

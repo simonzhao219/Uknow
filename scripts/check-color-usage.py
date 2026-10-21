@@ -98,9 +98,13 @@ Hit = tuple[int, str]  # (1-indexed 行號, 命中片段)
 # C2,只有登記在這裡的檔不算。這不是行內豁免:清單機器可讀、每條必須寫理由與退場
 # 條件(比照 docs/plans/ 的 plans-keep),登記的檔已不存在(孤兒)或不再引用(過期)
 # 都會紅。登記的檔照樣抓 bg-linear-to-* 這類一般漸層——核准的只有那個 token。
-# 起始為空:徽章元件由 S7 建立,建好時把路徑加進來。
 MEDAL_GRADIENT_PATTERN = re.compile(r"--medal-gradient(?![\w-])")
-APPROVED_GRADIENT_FILES: dict[str, str] = {}
+APPROVED_GRADIENT_FILES: dict[str, str] = {
+    "src/components/task/TaskMedals.tsx": (
+        "任務中心四顆徽章的填色(plan.md §4 第 13 點、ui-ux-guidelines §12.4 唯一核准的漸層);"
+        "退場:徽章改單色填色或任務徽章下架時,移除這一列與 globals.css 的 --medal-gradient"
+    ),
+}
 
 # 掃描排除清單——只收「檔案裡的色值不是 UI 手刻色」的檔，不是豁免。判準三類：
 #   1. 參考值（WCAG 錨定測試）；

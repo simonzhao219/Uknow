@@ -1,24 +1,28 @@
 import { useState, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Alert, AlertDescription } from './ui/alert';
-import { Target, Gift, ArrowLeft, Loader2, Eye, Zap, Trophy } from 'lucide-react';
+import { StatusCallout } from './ui/status-callout';
+import { Gift, ArrowLeft, Loader2, Eye, Trophy } from 'lucide-react';
 import { useBackNavigation } from '../hooks/useBackNavigation';
+import { useRetryFocus } from '../hooks/useRetryFocus';
 import { useTaskData } from '../hooks/useTaskData';
 import { UserContext } from '../App';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import { PendingRewardsSection } from './task/PendingRewardsSection';
 import { TaskGuide } from './task/TaskGuide';
+import { TaskMedals } from './task/TaskMedals';
 import { MonthlyKingProgress } from './task/MonthlyKingProgress';
-import { TaskBadge } from './task/TaskBadge';
-import { getMotivationText, getProgressColor } from '../utils/userReferralFormatter';
 import { computeKingRounds } from '../utils/kingProgress';
+import { referralJoinState } from '../utils/myQrTabPreference';
 
-function formatMonth(monthStr: string) {
-  if (!monthStr) return '';
-  const [year, month] = monthStr.split('-');
-  return `${year}年${month}月`;
-}
-
+/**
+ * 任務中心的資訊層次（ui-ux-guidelines §13、plan.md §4 第 13 點）：
+ * 待領取的獎勵置頂（可領＝綠框、領不了＝黃框）→ 任務卡 → 任務說明。
+ * 任務卡只有一塊淡底主區：主數字是「本輪 x / 門檻」，四顆徽章就是進度條；本月已推薦人數
+ * 與已完成次數降為一行小字。任務只有推薦王一個，且輪次滾動（滿 8 人顯示 8/8，第 9 人才
+ * 歸零重點），所以沒有「達標就收起」的卡——達標的資訊收成「已完成 N 次」一行。
+ */
 export function TaskDashboard() {
   const handleBack = useBackNavigation();
 
@@ -32,45 +36,59 @@ export function TaskDashboard() {
     fetchCurrentMonthTop,
     handleClaimReward,
     handleClaimAllRewards,
+    refetch,
   } = useTaskData();
 
   // 領免費續約 credit 的可領性：帳號須正常（未停權）且會籍有效（active）。
   // 兩個訊號都直接讀 UserContext.user（/profile 回傳 accountStatus 與
   // suspended，App 已對 /profile 掛 focus-revalidation），不必另開請求。
   // 與後端 claim_referral_king_reward 同一把尺：停權優先擋、再擋到期。
+  // 失效會員平常進不了本頁（路由守衛導去結帳），這是頁面開著時剛好到期的邊界。
   const { user } = useContext(UserContext);
-  const claimBlockedReason =
-    user?.suspended === true
-      ? '帳號已停權，請聯繫客服'
-      : user?.accountStatus === 'expired'
-        ? '會籍已失效，請先續訂後再領取'
-        : null;
+  const claimBlocked =
+    user?.suspended === true ? 'suspended' : user?.accountStatus === 'expired' ? 'expired' : null;
+
+  // 「已付費、未加入推薦計畫」是正式狀態：任務照計，只多一行說明（碼不能出示或分享）。
+  // 還不知道（會員資料未取得）不畫成未加入。
+  const notJoined = referralJoinState(user) === 'not-joined';
 
   const [showKingProgress, setShowKingProgress] = useState(false);
+
+  // 重試後的焦點落點（§9）：失敗回錯誤框、成功到標題。
+  const { errorRef, headingRef, retry } = useRetryFocus({
+    loading: isLoading,
+    failed: Boolean(error),
+  });
 
   const handleViewCurrentMonthTop = async () => {
     const data = await fetchCurrentMonthTop();
     if (data) setShowKingProgress(true);
   };
 
+  const header = (
+    <div className="flex items-center gap-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleBack}
+        className="shrink-0"
+        aria-label="返回上一頁"
+      >
+        <ArrowLeft className="h-5 w-5" />
+      </Button>
+      <div>
+        <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold outline-none">
+          任務中心
+        </h1>
+        <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
+      </div>
+    </div>
+  );
+
   if (isLoading) {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="shrink-0"
-            aria-label="返回上一頁"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">任務中心</h1>
-            <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
-          </div>
-        </div>
+        {header}
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -81,164 +99,118 @@ export function TaskDashboard() {
   if (error) {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="shrink-0"
-            aria-label="返回上一頁"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">任務中心</h1>
-          </div>
-        </div>
-        <div className="text-center py-12">
-          <p className="text-destructive-subtle-foreground mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>重新載入</Button>
-        </div>
+        {header}
+        <LoadErrorCallout
+          ref={errorRef}
+          title="暫時無法取得任務資料"
+          description={error}
+          onRetry={() => retry(refetch)}
+        />
       </div>
     );
   }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="shrink-0"
-            aria-label="返回上一頁"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">任務中心</h1>
-            <p className="text-muted-foreground">完成推薦任務，解鎖專屬獎勵！</p>
-          </div>
-        </div>
-      </div>
+      {header}
 
       <PendingRewardsSection
         pendingRewards={pendingRewards}
         onClaimReward={handleClaimReward}
         onClaimAll={handleClaimAllRewards}
-        claimBlockedReason={claimBlockedReason}
+        blocked={claimBlocked}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div className="lg:col-span-3 space-y-6">
           {tasks.map((task) => {
-            const motivationText = getMotivationText(task.progress);
-            // 進度條/分數以「當前輪」呈現（3-B 多輪）；motivation/badge 維持
-            // 依原始 task.progress/task.current（決策 b）。
+            // 進度以「當前輪」呈現（3-B 多輪）：主數字與徽章都吃本輪人數。
             const rounds = computeKingRounds(task.current, task.target);
-            const progressColor = getProgressColor(rounds.roundProgressPct);
+            const roundFull = task.current > 0 && rounds.currentRoundCount === task.target;
 
             return (
-              <Card
-                key={task.id}
-                className="relative overflow-hidden border-2 hover:shadow-lg transition-shadow"
-              >
-                <div className="absolute top-0 right-0 w-32 h-32 opacity-10 bg-muted-foreground rounded-full -mr-16 -mt-16" />
-
-                <CardHeader className="relative">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-1">
-                      <Trophy className="h-6 w-6 text-muted-foreground shrink-0" />
-                      <div>
-                        <CardTitle className="text-xl">{task.title}</CardTitle>
-                        <CardDescription className="mt-1">{task.description}</CardDescription>
-                      </div>
+              <Card key={task.id}>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-subtle text-brand-subtle-foreground">
+                      <Trophy className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <CardTitle className="text-xl">{task.title}</CardTitle>
+                      <CardDescription>{task.description}</CardDescription>
                     </div>
-                  </div>
-                  <div className="mt-3">
-                    <TaskBadge type="monthly_king" progress={task.current} target={task.target} />
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-4 relative">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        {rounds.roundsThisMonth > 0 ? '本輪進度' : '任務進度'}
-                      </span>
-                      <span className={`text-sm font-bold ${progressColor}`}>
-                        {rounds.currentRoundCount} / {task.target}
-                      </span>
-                    </div>
-                    {/* 進度條填色一律 brand，不依進度換色：亮底 success/warning 對淺軌道
-                        不到 3:1，達標狀態由旁邊的 x / y 數字（getProgressColor）承擔 */}
-                    <div className="relative h-3 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-brand transition-all duration-500"
-                        style={{ width: `${Math.min(rounds.roundProgressPct, 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground text-center">{motivationText}</p>
+                <CardContent className="space-y-4">
+                  {/* 本頁唯一的淡底主區（重點與進度，§12.3）：主數字＋徽章 */}
+                  <div className="rounded-lg bg-brand-subtle p-3 text-brand-subtle-foreground">
+                    <p className="text-xs">本輪推薦</p>
+                    <p
+                      data-testid="round-progress"
+                      className="text-3xl font-bold leading-tight tabular-nums"
+                    >
+                      {rounds.currentRoundCount} / {task.target}
+                      <span className="ml-1 text-base font-medium">位</span>
+                      {roundFull && <span className="ml-2 text-sm font-medium">已滿一輪</span>}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      {`本月已推薦 ${task.current} 人${
+                        rounds.roundsThisMonth > 0 ? `，已完成 ${rounds.roundsThisMonth} 次` : ''
+                      }`}
+                    </p>
+                    <TaskMedals
+                      className="mt-3"
+                      roundCount={rounds.currentRoundCount}
+                      target={task.target}
+                    />
+                    {notJoined && (
+                      <p className="mt-3 text-xs">
+                        尚未加入推薦計畫，推薦碼目前不能出示或分享。
+                        <Link to="/referrals" className="font-medium underline underline-offset-2">
+                          前往推薦管理加入
+                        </Link>
+                      </p>
+                    )}
                   </div>
 
-                  {rounds.roundsThisMonth > 0 && (
-                    <div className="p-2 bg-success-subtle border border-success-border rounded text-sm text-success-subtle-foreground flex items-center justify-center gap-2">
-                      🎉 本月已達成 {rounds.roundsThisMonth} 輪
-                      {task.unclaimedRewardCount > 0 &&
-                        `（可領 ${task.unclaimedRewardCount} 張免費續約）`}
-                    </div>
+                  <StatusCallout
+                    variant="neutral"
+                    icon={Gift}
+                    title={
+                      <>
+                        任務獎勵 <span className="font-semibold">{task.reward.label}</span>
+                      </>
+                    }
+                  />
+
+                  {task.details?.totalCredits > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      累計獲得 {task.details.totalCredits} 張免費續約
+                    </p>
                   )}
 
-                  <div className="flex items-center justify-between p-3 bg-warning-subtle rounded-lg border border-warning-border">
-                    <div className="flex items-center gap-2">
-                      <Gift className="h-5 w-5 text-warning-subtle-foreground" />
-                      <span className="text-sm font-medium">任務獎勵</span>
-                    </div>
-                    <span className="text-lg font-bold text-warning-subtle-foreground">
-                      {task.reward.label}
-                    </span>
-                  </div>
-
-                  {task.details && (
-                    <div className="space-y-3">
-                      {task.details.currentMonth && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Target className="h-4 w-4" />
-                          <span>
-                            本月 ({formatMonth(task.details.currentMonth)}) 已推薦 {task.current} 人
-                          </span>
-                        </div>
-                      )}
-                      {task.details.totalCredits > 0 && (
-                        <div className="p-2 bg-success-subtle border border-success-border rounded text-sm text-success-subtle-foreground flex items-center gap-2">
-                          累計獲得 {task.details.totalCredits} 張免費續約
-                        </div>
-                      )}
-                      {task.current > 0 ? (
-                        <Button
-                          tone="secondary"
-                          size="sm"
-                          onClick={handleViewCurrentMonthTop}
-                          loading={loadingCurrent}
-                          className="w-full gap-2"
-                        >
-                          {loadingCurrent ? (
-                            '載入中...'
-                          ) : (
-                            <>
-                              <Eye className="h-4 w-4" />
-                              查看本月推薦詳情
-                            </>
-                          )}
-                        </Button>
+                  {task.current > 0 ? (
+                    <Button
+                      tone="secondary"
+                      size="sm"
+                      onClick={handleViewCurrentMonthTop}
+                      loading={loadingCurrent}
+                      className="w-full gap-2"
+                    >
+                      {loadingCurrent ? (
+                        '載入中...'
                       ) : (
-                        <Alert>
-                          <Zap className="h-4 w-4" />
-                          <AlertDescription>完成第一次推薦後，任務將自動啟動！</AlertDescription>
-                        </Alert>
+                        <>
+                          <Eye className="h-4 w-4" />
+                          查看本月推薦詳情
+                        </>
                       )}
-                    </div>
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      完成第一次推薦後，任務將自動啟動！
+                    </p>
                   )}
                 </CardContent>
               </Card>

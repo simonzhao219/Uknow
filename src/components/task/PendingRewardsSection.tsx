@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { StatusCallout } from '../ui/status-callout';
 import { Trophy, Gift, Clock, Sparkles } from 'lucide-react';
 import { ClaimRewardDialog } from './ClaimRewardDialog';
 import { ThreeStepDialog } from '../common/ThreeStepDialog';
@@ -15,14 +17,14 @@ interface Props {
   /** 批次領取：驗證一次身分證後一次領完全部待領 credit。未提供則只顯示單筆領取。 */
   onClaimAll?: (idNumber: string) => Promise<void>;
   /**
-   * 不可領取的原因（到期或停權）。有值即停用領取鈕並顯示此原因；
-   * null/undefined 表示可領取。「免費續約 1 年」credit 的語意是在既有
-   * 會籍後接一年，需帳號正常且會籍有效才能領取——到期不得免費復活、
-   * 停權期間不得動用（後端 claim_referral_king_reward 亦會擋，這裡只是
-   * 提早收斂 UI、避免走完三步驟對話框才被 403 退回）。
+   * 為什麼現在不能領：`expired`＝會籍失效（黃框＋續訂引導鈕）、`suspended`＝停權（只有原因
+   * 文字）；null＝可領。「免費續約 1 年」credit 的語意是在既有會籍後接一年，需帳號正常且
+   * 會籍有效才能領取——到期不得免費復活、停權期間不得動用（後端 claim_referral_king_reward
+   * 亦會擋，這裡只是提早收斂 UI、避免走完三步驟對話框才被 403 退回）。領不了時領取鈕不出現。
+   *
+   * 路由守衛（RequireMembershipRoute）本來就會把失效會員導去結帳，這裡是「頁面開著時
+   * 剛好到期」的邊界防線。
    */
-  claimBlockedReason?: string | null;
-  /** 為什麼不能領：會籍失效（黃框＋續訂）或停權（只有原因文字）。 */
   blocked?: 'expired' | 'suspended' | null;
 }
 
@@ -30,82 +32,107 @@ export function PendingRewardsSection({
   pendingRewards,
   onClaimReward,
   onClaimAll,
-  claimBlockedReason = null,
+  blocked = null,
 }: Props) {
-  const isBlocked = !!claimBlockedReason;
   const [selectedReward, setSelectedReward] = useState<PendingMissionReward | null>(null);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
   const [showClaimAllDialog, setShowClaimAllDialog] = useState(false);
 
-  if (pendingRewards.length === 0) return null;
+  const count = pendingRewards.length;
+  if (count === 0) return null;
+
+  if (blocked) {
+    const expired = blocked === 'expired';
+    return (
+      <StatusCallout
+        data-testid="pending-rewards"
+        variant="warning"
+        title={expired ? '會籍已失效' : '帳號已停權'}
+        description={
+          expired
+            ? `您有 ${count} 個任務獎勵待領取，請先續訂後再領取。`
+            : `您有 ${count} 個任務獎勵待領取，帳號已停權，請聯繫客服。`
+        }
+        action={
+          expired ? (
+            <div className="flex justify-end">
+              {/* 續訂是引導鈕（會籍失效），取黃框的容器色；全頁唯一實心鈕（§12.11） */}
+              <Button tone="guide" container="warning" asChild>
+                <Link to="/payment/checkout">續訂</Link>
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+    );
+  }
 
   // 有多張待領且父層有提供批次 handler 時，才顯示「領取全部」。
-  const canClaimAll = !!onClaimAll && pendingRewards.length >= 2;
+  const canClaimAll = !!onClaimAll && count >= 2;
 
   return (
     <>
-      <Card className="border-2 border-warning-border bg-warning-subtle animate-pulse">
+      <Card
+        data-testid="pending-rewards"
+        className="border-2 border-success-border bg-success-subtle text-success-subtle-foreground"
+      >
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-warning-subtle-foreground" />
-              <CardTitle className="text-xl">🎁 待領取任務獎勵</CardTitle>
+              <Sparkles className="h-6 w-6" aria-hidden="true" />
+              <CardTitle className="text-xl">待領取任務獎勵</CardTitle>
             </div>
-            <Badge
-              variant="default"
-              className="bg-warning text-warning-foreground text-base px-3 py-1"
-            >
-              {pendingRewards.length} 個待領取
+            <Badge variant="success" className="px-3 py-1 text-base">
+              {count} 個待領取
             </Badge>
           </div>
-          <CardDescription className="text-base">
-            {isBlocked
-              ? `您有待領取的「免費續約 1 年」獎勵，但目前無法領取：${claimBlockedReason}`
-              : `🎉 恭喜！您有 ${pendingRewards.length} 個任務獎勵待領取，請盡快領取！`}
+          <CardDescription className="text-base text-success-subtle-foreground">
+            恭喜！您有 {count} 個任務獎勵待領取。
           </CardDescription>
 
           {canClaimAll && (
             <Button
               size="lg"
-              disabled={isBlocked}
-              title={claimBlockedReason ?? undefined}
               onClick={() => setShowClaimAllDialog(true)}
               tone="secondary"
-              container="warning"
-              className="mt-2 w-full sm:w-auto gap-2"
+              container="success"
+              className="mt-2 w-full gap-2 sm:w-auto"
             >
               <Gift className="h-5 w-5" />
-              一次領取全部（{pendingRewards.length} 張）
+              一次領取全部（{count} 張）
             </Button>
           )}
         </CardHeader>
 
         {/* 上限 max-h + overflow-y-auto：即使累積數十筆未領取獎勵，卡片高度
             也被封頂、內部滾動，不會把整頁撐爆。 */}
-        <CardContent className="space-y-3 max-h-[28rem] overflow-y-auto">
+        <CardContent className="max-h-[28rem] space-y-3 overflow-y-auto">
           {pendingRewards.map((reward) => (
             <div
               key={reward.id}
-              className="p-4 bg-white border-2 border-warning-border rounded-lg shadow-sm hover:shadow-md transition-shadow"
+              className="rounded-lg border-2 border-success-border bg-card p-4 text-foreground shadow-sm"
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-warning-subtle-foreground shrink-0" />
-                    <p className="font-bold text-lg">{reward.description}</p>
+                    <Trophy
+                      className="h-5 w-5 shrink-0 text-success-subtle-foreground"
+                      aria-hidden="true"
+                    />
+                    <p className="text-lg font-bold">{reward.description}</p>
                   </div>
-                  <div className="flex items-center gap-4 text-sm flex-wrap">
+                  <div className="flex flex-wrap items-center gap-4 text-sm">
                     <div className="flex items-center gap-1">
-                      <Gift className="h-4 w-4 text-warning-subtle-foreground" />
+                      <Gift className="h-4 w-4 text-success-subtle-foreground" aria-hidden="true" />
                       <span className="text-muted-foreground">獎勵:</span>
-                      <span className="font-bold text-warning-subtle-foreground text-base">
+                      <span className="text-base font-bold text-success-subtle-foreground">
                         {reward.rewardType === 'free_renewal_year'
                           ? '免費續約 1 年'
                           : `${reward.amount} P`}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                       <span className="text-muted-foreground">
                         {formatTimestamp(reward.achievedAt)}
                       </span>
@@ -114,17 +141,16 @@ export function PendingRewardsSection({
                 </div>
                 <Button
                   size="lg"
-                  disabled={isBlocked}
-                  title={claimBlockedReason ?? undefined}
                   onClick={() => {
                     setSelectedReward(reward);
                     setShowClaimDialog(true);
                   }}
                   tone="secondary"
-                  className="gap-2 shrink-0"
+                  container="success"
+                  className="shrink-0 gap-2"
                 >
                   <Gift className="h-5 w-5" />
-                  {isBlocked ? '暫無法領取' : '立即領取'}
+                  領取獎勵
                 </Button>
               </div>
             </div>
@@ -147,7 +173,7 @@ export function PendingRewardsSection({
       {showClaimAllDialog && onClaimAll && (
         <ThreeStepDialog
           isOpen={showClaimAllDialog}
-          config={createClaimAllRewardsConfig(pendingRewards.length)}
+          config={createClaimAllRewardsConfig(count)}
           onClose={() => setShowClaimAllDialog(false)}
           onConfirm={onClaimAll}
         />

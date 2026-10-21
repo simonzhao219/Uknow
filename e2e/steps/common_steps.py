@@ -62,6 +62,23 @@ def logged_in_expired_member(context):
     )
 
 
+@given("I am logged in as an active member who has not joined the referral program")
+def logged_in_active_member_not_joined(context, api_mock):
+    # 「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5）：碼在首購時就發了，但簽參加
+    # 契約書之前不出示、不複製、不分享、不能提領。導去推薦管理看得到的頁面要有資料，
+    # 所以順手鋪好會員區的預設空資料（之後的 Given 可以再覆寫）。
+    seed_authenticated_session(
+        context,
+        registration_step=3,
+        accountStatus="active",
+        referralProgramJoined=False,
+        referralCode="UK-NOTJOINED",
+        subscriptionEndDate="2027-01-01T00:00:00.000Z",
+    )
+    api_mock.set_subscription_status(has_subscription=True)
+    api_mock.set_member_area_defaults()
+
+
 @given(parsers.parse('I am logged in awaiting activation with trade number "{trade_no}"'))
 def logged_in_awaiting_activation(context, trade_no):
     # 已付款（PayUni 已回 SUCCESS）但訂閱還沒建好（後端收斂中）——
@@ -228,3 +245,15 @@ def first_generation_about_to_expire(api_mock, count):
         attention={"total": count, "items": members[:6]},
         attention_all=members,
     )
+
+
+@when(parsers.parse('I follow the link "{name}"'))
+def follow_link(page, name):
+    page.get_by_role("link", name=name).click()
+
+
+@then("the page was not reloaded")
+def page_not_reloaded(page):
+    # 重試步驟先在頁面上立 window.__e2eNoReloadMarker：整頁重載會讓它消失，只重發請求
+    # 則留著（ui-ux-guidelines §6 重試只重發那支請求）。
+    assert page.evaluate("window.__e2eNoReloadMarker") == "kept"
