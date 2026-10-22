@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 跨頁接力的契約（同 useRewardData.test.tsx）：會員中心的冷啟動查詢還在飛時
-// 點「刊登」卡進刊登管理頁，新頁實例接上同一個 dedupe 請求，查詢結束後必須
+// 點「刊登管理」卡進刊登管理頁，新頁實例接上同一個 dedupe 請求，查詢結束後必須
 // 拿到結果或錯誤態，不能永遠停在載入中。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';

@@ -6,9 +6,11 @@ import { ReferralTreeView } from './referral/ReferralTreeView';
 import { InviteFriendButton } from './referral/InviteFriendButton';
 import { MyQrButton } from './referral/MyQrButton';
 import { ReferralCodeWithCopy } from './referral/ReferralCodeWithCopy';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';
+import { useRetryFocus } from '../hooks/useRetryFocus';
 
 export function ReferralManagement() {
   const handleBack = useBackNavigation();
@@ -24,7 +26,10 @@ export function ReferralManagement() {
     setSort,
     loadChildren,
     searchNetwork,
+    loadAttention,
   } = useReferralData();
+  // 重試後的焦點落點（§9）：失敗回錯誤框、成功到標題。
+  const { errorRef, headingRef, retry } = useRetryFocus({ loading, failed: Boolean(error) });
 
   // 標題列三態共用一份：載入中、錯誤態也找得到「我的 QR」（出示驗證碼不必等推薦網絡）。
   const header = (
@@ -39,7 +44,9 @@ export function ReferralManagement() {
         <ArrowLeft className="h-5 w-5" />
       </Button>
       <div className="min-w-0">
-        <h1 className="text-3xl font-bold">推薦管理</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold outline-none">
+          推薦管理
+        </h1>
       </div>
       <MyQrButton className="ml-auto shrink-0" />
     </div>
@@ -65,14 +72,12 @@ export function ReferralManagement() {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
         {header}
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <p className="text-destructive-subtle-foreground mb-4">{error}</p>
-              <Button onClick={refetch}>重試</Button>
-            </div>
-          </CardContent>
-        </Card>
+        <LoadErrorCallout
+          ref={errorRef}
+          title="暫時無法取得推薦資料"
+          description={error}
+          onRetry={() => retry(refetch)}
+        />
       </div>
     );
   }
@@ -110,6 +115,7 @@ export function ReferralManagement() {
             onSortChange={setSort}
             loadChildren={loadChildren}
             searchNetwork={searchNetwork}
+            loadAttention={loadAttention}
             isValidating={isValidating}
           />
         </CardContent>

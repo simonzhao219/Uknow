@@ -36,7 +36,7 @@ def wait_tree(page: Page) -> None:
 
 def tree_row(page: Page, real_name: str, gen: int) -> Locator:
     """真名為 `real_name`、位於第 `gen` 代的那一列（見模組 docstring 的兩把鑰匙）。"""
-    # NodeRow 的 aria-label 固定為「{顯示名} 詳情」，aria-level 固定為代數。
+    # NodeRow 的 aria-label 以「{顯示名} 詳情」開頭（後面接世代與狀態），Playwright 的 name 是子字串比對；aria-level 固定為代數。
     return page.get_by_role("treeitem", name=f"{masked_name(real_name, gen)} 詳情").and_(
         page.locator(f'[aria-level="{gen}"]')
     )

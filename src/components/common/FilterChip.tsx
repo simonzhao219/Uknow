@@ -1,7 +1,8 @@
+import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
 
 // 篩選用的切換式 chip（膠囊按鈕），手機底部篩選面板與桌面篩選區共用，
-// 讓兩個平台的「選取」視覺語言一致：實心 = 已選、外框 = 未選。
+// 讓兩個平台的「選取」視覺語言一致：灰字實心 = 已選、灰底無框 = 未選。
 //
 // 為什麼用 chip 而不是 radio / checkbox 直列：
 //   - 選項本身就是完整的點擊目標（整顆 chip 可點），不必精準點中小圓圈；
@@ -31,11 +32,13 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
         // 界限不能靠「上限夠小」——沒有 max-w 時，長標籤會把 flex-wrap 容器
         // 撐得比篩選面板還寬。
         'max-w-full',
-        'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-        // 選中＝無框元件的選取態（ui-ux-guidelines §12.12）：底色灰字 --sel、文字反白。
+        FOCUS_RING_GAP,
+        // chip 是無框元件（ui-ux-guidelines §12.12）。選中＝底色灰字 --sel、文字反白；
+        // 未選＝灰底（--secondary）灰字，沒有框線（畫面稿）。邊框保留為透明，讓兩態盒子
+        // 尺寸一致、切換時不位移。
         selected
           ? 'border-sel bg-sel text-sel-foreground'
-          : 'border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
+          : 'border-transparent bg-secondary text-muted-foreground hover:bg-accent hover:text-accent-foreground',
         className,
       )}
     >

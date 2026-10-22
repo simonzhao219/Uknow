@@ -41,6 +41,17 @@ Feature: Route guards enforce membership entitlement
     When I visit "/dashboard"
     Then I should be redirected to "/payment/checkout"
 
+  Scenario Outline: An expired former member cannot open a member-only page and is sent to checkout
+    Given I am logged in as an expired former member
+    When I visit "<path>"
+    Then I should be redirected to "/payment/checkout"
+
+    Examples:
+      | path              |
+      | /tasks            |
+      | /referrals        |
+      | /service-providers |
+
   Scenario Outline: The first-time funnel routes by registration step
     Given I am logged in with registration step <step> and last trade number "<trade_no>"
     When I visit "/dashboard"

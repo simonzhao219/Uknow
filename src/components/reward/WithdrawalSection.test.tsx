@@ -47,15 +47,11 @@ function renderSection(
 ) {
   return render(
     <WithdrawalSection
-      availableRewards={5000}
       pendingRewards={0}
       withdrawnRewards={0}
-      hasWithdrawnToday={false}
       withdrawals={withdrawals}
-      onStartWithdrawal={() => {}}
       onRefresh={() => {}}
       subscriptionStatus={subscriptionStatus}
-      referralProgramJoined
     />,
   );
 }
@@ -169,5 +165,24 @@ describe('WithdrawalSection', () => {
     const button = screen.getByRole('button', { name: '確認收款' });
     expect(button.classList.contains('bg-brand')).toBe(false);
     expect(button.classList.contains('bg-card')).toBe(true);
+  });
+
+  // 申請提領鈕與停用原因搬到獎勵頁的「可提領」主區（WithdrawalAction）；這裡只剩提領申請。
+  it('標題是提領申請，申請提領鈕已搬到可提領主區', () => {
+    renderSection([]);
+    expect(screen.getByText('提領申請')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /申請Point提領/ })).toBeNull();
+    expect(screen.getByText('尚未有進行中的提領申請')).toBeTruthy();
+  });
+
+  // 待查收是「等會員確認收款」，與後台提領管理同一顆 WithdrawalStatusBadge 的顏色（warning）；
+  // 先前會員端用中性灰、後台用黃，同一狀態兩種注意力層級（S4 D1 留給 S7a 拉平）。
+  it('待查收徽章是 warning，與後台同色；處理中維持中性灰', () => {
+    renderSection([
+      record({ id: 'a', status: 'awaiting_collection' }),
+      record({ id: 'b', status: 'pending' }),
+    ]);
+    expect(screen.getByText('待查收').classList.contains('bg-warning')).toBe(true);
+    expect(screen.getByText('處理中').classList.contains('bg-secondary')).toBe(true);
   });
 });

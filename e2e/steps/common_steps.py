@@ -9,6 +9,7 @@ from playwright.sync_api import expect
 from pytest_bdd import given, parsers, then, when
 
 from config import BASE_URL
+from mocks.backend_api_mock import build_referral_member
 from mocks.fixtures import (
     disable_native_share,
     seed_authenticated_session,
@@ -59,6 +60,23 @@ def logged_in_expired_member(context):
         accountStatus="expired",
         subscriptionEndDate=_iso_days_ago(90),
     )
+
+
+@given("I am logged in as an active member who has not joined the referral program")
+def logged_in_active_member_not_joined(context, api_mock):
+    # 「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5）：碼在首購時就發了，但簽參加
+    # 契約書之前不出示、不複製、不分享、不能提領。導去推薦管理看得到的頁面要有資料，
+    # 所以順手鋪好會員區的預設空資料（之後的 Given 可以再覆寫）。
+    seed_authenticated_session(
+        context,
+        registration_step=3,
+        accountStatus="active",
+        referralProgramJoined=False,
+        referralCode="UK-NOTJOINED",
+        subscriptionEndDate="2027-01-01T00:00:00.000Z",
+    )
+    api_mock.set_subscription_status(has_subscription=True)
+    api_mock.set_member_area_defaults()
 
 
 @given(parsers.parse('I am logged in awaiting activation with trade number "{trade_no}"'))
@@ -213,3 +231,34 @@ def should_see_text(page, text):
 @then("I should see the dashboard")
 def should_see_dashboard(dashboard_page):
     expect(dashboard_page.heading()).to_be_visible(timeout=5_000)
+
+
+@given(parsers.parse("{count:d} first-generation members are about to expire"))
+def first_generation_about_to_expire(api_mock, count):
+    # B1 起 attention 只收「一代且即將到期」：total 是精確人數、items 最多 6 筆（橫幅）；
+    # 完整清單走分頁端點（「全部 N 位 ›」），所以兩份資料都要給。
+    members = [
+        build_referral_member(f"到期{i}", status="expiring", daysToExpiry=5) for i in range(count)
+    ]
+    api_mock.set_referral_tree(
+        first_generation=members,
+        attention={"total": count, "items": members[:6]},
+        attention_all=members,
+    )
+
+
+@when(parsers.parse('I follow the link "{name}"'))
+def follow_link(page, name):
+    page.get_by_role("link", name=name).click()
+
+
+@then(parsers.parse('the link "{name}" points to "{href}"'))
+def link_points_to(page, name, href):
+    expect(page.get_by_role("link", name=name)).to_have_attribute("href", href)
+
+
+@then("the page was not reloaded")
+def page_not_reloaded(page):
+    # 重試步驟先在頁面上立 window.__e2eNoReloadMarker：整頁重載會讓它消失，只重發請求
+    # 則留著（ui-ux-guidelines §6 重試只重發那支請求）。
+    assert page.evaluate("window.__e2eNoReloadMarker") == "kept"

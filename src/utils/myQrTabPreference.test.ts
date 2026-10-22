@@ -11,6 +11,7 @@ import {
   myQrTabsForUser,
   normalizeMyQrTab,
   readMyQrTab,
+  referralJoinState,
   resolveMyQrTab,
   type StorageLike,
   writeMyQrTab,
@@ -175,5 +176,22 @@ describe('resolveMyQrTab', () => {
   it('URL 與偏好都不存在時落回驗證碼', () => {
     const scanOnlyExtra: MyQrTabAvailability = { invite: false, verify: true, scan: true };
     expect(resolveMyQrTab(scanOnlyExtra, 'invite', 'invite')).toBe('verify');
+  });
+});
+
+// 「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5）；而「還不知道」（會員資料尚未
+// 取得）不能被畫成「未加入」——沒確認的狀態不畫成已知狀態（原則 1）。任務中心與獎勵頁的
+// 說明文字都吃這一支，不各寫 `=== false`。這支只回答「加入了沒」；能不能分享推薦碼仍然
+// 只由 myQrTabsForUser 決定（invite = joined && referralCode）。
+describe('referralJoinState', () => {
+  it.each([
+    [{ referralProgramJoined: true }, 'joined'],
+    [{ referralProgramJoined: false }, 'not-joined'],
+    [{ referralProgramJoined: null }, 'unknown'],
+    [{}, 'unknown'],
+    [null, 'unknown'],
+    [undefined, 'unknown'],
+  ])('%j → %s', (user, expected) => {
+    expect(referralJoinState(user)).toBe(expected);
   });
 });

@@ -24,6 +24,26 @@ def active_listing(rest_mock, name):
     rest_mock.set_user_listing(build_listing(name=name))
 
 
+@given(parsers.parse('my membership runs until "{date}"'))
+def membership_runs_until(api_mock, date):
+    api_mock.set_subscription_status(
+        has_subscription=True, status="active", active_until=f"{date}T00:00:00.000Z"
+    )
+
+
+@given("my membership has expired")
+def membership_expired(api_mock):
+    api_mock.set_subscription_status(
+        has_subscription=True, status="expired", active_until="2026-01-01T00:00:00.000Z"
+    )
+
+
+@given("the listing read fails once")
+def listing_read_fails_once(rest_mock):
+    # 註冊在 set_user_listing 之後：第一次讀取失敗，之後落回成功的那份（重試即成功）。
+    rest_mock.fail_user_listing(times=1)
+
+
 @given("there is a listing owned by another member")
 def listing_owned_by_other(rest_mock):
     rest_mock.set_listing_by_id(
@@ -78,3 +98,24 @@ def see_create_action(service_provider_management_page):
     expect(service_provider_management_page.create_link()).to_be_visible(timeout=5_000)
 
 
+@then("I should not see the create-listing action")
+def not_see_create_action(service_provider_management_page):
+    # 讀取失敗時 listing 也是 null，此時放行會讓已有刊登的人建出第二則（單一刊登模式）。
+    expect(service_provider_management_page.create_link()).to_have_count(0)
+
+
+@when("I retry loading the listing page")
+def retry_listing_page(page, service_provider_management_page):
+    # 在頁面上立一個標記：整頁重載會讓它消失，只重發請求則留著（ui-ux-guidelines §6）。
+    page.evaluate("window.__e2eNoReloadMarker = 'kept'")
+    service_provider_management_page.retry_button().click()
+
+
+@then(parsers.parse('the listing status reads "{label}"'))
+def listing_status_reads(service_provider_management_page, label):
+    expect(service_provider_management_page.status_badge(label)).to_be_visible()
+
+
+@then(parsers.parse('I should see the membership end date "{date}"'))
+def see_membership_end_date(service_provider_management_page, date):
+    expect(service_provider_management_page.member_until(date)).to_be_visible()

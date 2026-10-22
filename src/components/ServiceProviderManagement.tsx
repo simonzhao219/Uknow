@@ -2,7 +2,10 @@ import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { StatusCallout } from './ui/status-callout';
 import { CategoryBadge } from './common/CategoryBadge';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +21,12 @@ import { Plus, Edit, Eye, MapPin, ArrowLeft, Trash2 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNotification } from './notifications/NotificationContext';
 import { useBackNavigation } from '../hooks/useBackNavigation';
+import { useRetryFocus } from '../hooks/useRetryFocus';
+import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
 import { createClient } from '../utils/supabase/client';
+import { formatTwDate } from '../utils/twDate';
+import { listingVisibility } from '../utils/listingVisibility';
 
 export function ServiceProviderManagement() {
   const { showToast, showError } = useNotification();
@@ -28,7 +35,9 @@ export function ServiceProviderManagement() {
   // 刊登本身沒有狀態或效期（listings 表刻意不存 is_active／active_until）——
   // 是否對外顯示完全由帳號訂閱決定，且在資料層一處守門：HomePage 讀
   // public_listings view，view 以 has_active_subscription() 過濾，會員過期／
-  // 停權的刊登會自動從首頁消失。因此這裡不再顯示任何「活躍／過期」狀態徽章。
+  // 停權的刊登會自動從首頁消失。所以本頁的「刊登狀態」讀的是訂閱狀態，不是刊登的欄位，
+  // 且只有後端真有的兩種：上架中（會籍有效）／已隱藏（會籍失效，規格書 §11）。失效會員平常
+  // 進不了本頁（RequireMembershipRoute 導去結帳），已隱藏是頁面開著時剛好到期的邊界。
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -36,6 +45,17 @@ export function ServiceProviderManagement() {
   // 與會員中心的刊登卡片共用同一份邏輯與同一個快取鍵。
   const { listing, loading, error: listingError, refetch: refetchListing } = useUserListing();
   const supabase = createClient();
+  const { subscriptionData } = useSubscription();
+  const visibility = listingVisibility(subscriptionData);
+  const memberUntil = subscriptionData?.activeUntil
+    ? formatTwDate(subscriptionData.activeUntil)
+    : null;
+
+  // 重試後的焦點落點（§9）：失敗回錯誤框、成功到標題。
+  const { errorRef, headingRef, retry } = useRetryFocus({
+    loading,
+    failed: Boolean(listingError),
+  });
 
   // 刪除刊登。確認一律走 AlertDialog（全站確認彈窗的統一標準）——
   // 原生 window.confirm 在 LINE 等內建瀏覽器可能被抑制、樣式與品牌
@@ -117,7 +137,9 @@ export function ServiceProviderManagement() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">刊登管理</h1>
+            <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold outline-none">
+              刊登管理
+            </h1>
             {/* <p className="text-muted-foreground">管理理您的專業服務刊登</p> */}
           </div>
         </div>
@@ -143,19 +165,16 @@ export function ServiceProviderManagement() {
           </CardContent>
         </Card>
       ) : listingError ? (
-        <Card>
-          <CardContent className="text-center py-12">
-            <h3 className="text-lg font-medium mb-2">暫時無法取得刊登狀態</h3>
-            <p className="text-muted-foreground mb-6">{listingError}</p>
-            <Button
-              onClick={() => {
-                void refetchListing();
-              }}
-            >
-              重新載入
-            </Button>
-          </CardContent>
-        </Card>
+        <LoadErrorCallout
+          ref={errorRef}
+          title="暫時無法取得刊登狀態"
+          description={listingError}
+          onRetry={() =>
+            retry(() => {
+              void refetchListing();
+            })
+          }
+        />
       ) : listing === null ? (
         <Card>
           <CardContent className="text-center py-12">
@@ -167,6 +186,22 @@ export function ServiceProviderManagement() {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* 會籍失效的邊界：刊登已從首頁隱藏，唯一的出路是續訂（引導鈕取黃框的容器色） */}
+          {visibility === 'hidden' && (
+            <StatusCallout
+              variant="warning"
+              title="刊登已隱藏"
+              description="會籍已到期，您的刊登已從首頁下架。續訂後會自動恢復上架。"
+              action={
+                <div className="flex justify-end">
+                  <Button tone="guide" container="warning" asChild>
+                    <Link to="/payment/checkout">續訂</Link>
+                  </Button>
+                </div>
+              }
+            />
+          )}
+
           {/* ✅ 單一對象 */}
           <Card key={listing.id}>
             <CardContent className="p-6">
@@ -182,40 +217,28 @@ export function ServiceProviderManagement() {
 
                 {/* 內容 */}
                 <div className="flex-1 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     {/* min-w-0 + truncate：長自訂類別與長名稱並列時，需要縮的是
                         名稱本身，只在外層補 min-w-0 只是把擠壓換個位置發生。 */}
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-xl font-semibold truncate">{listing.name}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <CategoryBadge category={listing.category} variant="default" />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button tone="secondary" size="sm" asChild>
-                        <Link to={`/service-providers/${listing.id}`} aria-label="查看刊登">
-                          <Eye className="h-4 w-4" />
-                        </Link>
-                      </Button>
-
-                      <Button tone="secondary" size="sm" asChild>
-                        <Link to={`/service-providers/edit/${listing.id}`} aria-label="編輯刊登">
-                          <Edit className="h-4 w-4" />
-                        </Link>
-                      </Button>
-
-                      <Button
-                        tone="destructive"
-                        size="sm"
-                        onClick={() => setShowDeleteConfirm(true)}
-                        disabled={isDeleting}
-                        aria-label="刪除刊登"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <h3 className="text-xl font-semibold truncate">{listing.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <CategoryBadge category={listing.category} variant="default" />
                     </div>
                   </div>
+
+                  {/* 刊登狀態（本頁的主狀態）：讀不到訂閱狀態時不畫（不知道，不是上架中） */}
+                  {visibility !== 'unknown' && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {visibility === 'visible' ? (
+                        <Badge variant="success-subtle">上架中</Badge>
+                      ) : (
+                        <Badge variant="warning-subtle">已隱藏</Badge>
+                      )}
+                      {memberUntil && (
+                        <span className="text-sm text-muted-foreground">會籍至 {memberUntil}</span>
+                      )}
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -228,7 +251,35 @@ export function ServiceProviderManagement() {
 
                   <p className="text-muted-foreground line-clamp-2">{listing.description}</p>
 
-                  {/* 推薦碼區域已移除 */}
+                  {/* 動作列：查看／編輯在左，刪除（破壞性）推到另一端，不緊鄰編輯（手機誤觸） */}
+                  <div className="flex items-center justify-between gap-6">
+                    <div className="flex gap-2">
+                      <Button tone="secondary" size="sm" asChild>
+                        <Link to={`/service-providers/${listing.id}`} aria-label="查看刊登">
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                          查看
+                        </Link>
+                      </Button>
+
+                      <Button tone="secondary" size="sm" asChild>
+                        <Link to={`/service-providers/edit/${listing.id}`} aria-label="編輯刊登">
+                          <Edit className="h-4 w-4" aria-hidden="true" />
+                          編輯
+                        </Link>
+                      </Button>
+                    </div>
+
+                    <Button
+                      tone="destructive"
+                      size="sm"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={isDeleting}
+                      aria-label="刪除刊登"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      刪除
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>

@@ -21,7 +21,7 @@ def claim_first_pending_reward(page: Page, user: JourneyUser) -> None:
     「到期日延長 0 天」極可能是這個競態）；就算真失敗，也要把回應
     內容帶進錯誤訊息，不留「0 天」這種讀不出死因的斷言。"""
     expect(page.get_by_text("免費續約 1 年").first).to_be_visible(timeout=15_000)
-    page.get_by_role("button", name="立即領取").first.click()
+    page.get_by_role("button", name="領取獎勵").first.click()
 
     page.get_by_role("button", name="下一步").click()   # 步驟 1 → 2（不可逆通知）
     page.get_by_role("button", name="下一步").click()   # 步驟 2 → 3（SSOT 點數預覽）

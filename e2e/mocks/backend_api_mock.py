@@ -348,11 +348,14 @@ class BackendApiMock:
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
         attention: Optional[dict] = None,
+        attention_all: Optional[list] = None,
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
         # attention：需要關注＝一代且即將到期（{total, items}；items 最多 6 筆、
         # total 是精確人數），會員中心與推薦頁橫幅都讀它；不給 = 沒有人。
+        # attention_all：「全部 N 位 ›」的完整清單（GET /referrals/network/attention 分頁讀它）；
+        # 不給 = 用 attention["items"]。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -364,6 +367,28 @@ class BackendApiMock:
             ),
         }
         self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
+
+        attention_items = attention_all if attention_all is not None else (attention or {}).get("items", [])
+        attention_total = (attention or {}).get("total", len(attention_items))
+
+        def attention_page(route):
+            query = parse_qs(urlparse(route.request.url).query)
+            limit = int(query.get("limit", ["50"])[0])
+            offset = int(query.get("offset", ["0"])[0])
+            _fulfill_json(
+                route,
+                {
+                    "success": True,
+                    "data": {
+                        "total": attention_total,
+                        "limit": limit,
+                        "offset": offset,
+                        "items": attention_items[offset : offset + limit],
+                    },
+                },
+            )
+
+        self._route("/referrals/network/attention", attention_page)
         self._route(
             "/referrals/network/children",
             lambda route: _fulfill_json(
@@ -387,6 +412,36 @@ class BackendApiMock:
                 },
             ),
         )
+
+    def set_route_error(
+        self,
+        path: str,
+        status: int = 500,
+        message: str = "伺服器暫時無法使用",
+        times: Optional[int] = None,
+        exact: bool = False,
+    ):
+        """Make an API path answer with an error. Playwright runs the most recently
+        registered matching route first, so call this *after* the success mock.
+
+        `times=N` fails only the first N requests and then falls through
+        (`route.fallback()`) to the success mock registered earlier — the
+        "fails, user presses retry, it works" case. Without `times` it always
+        fails. Default 500, not 503: only the Supabase REST client retries 5xx.
+        `exact=True` matches the URL with no trailing wildcard (see `_route_exact`).
+        """
+        remaining = {"n": times}
+        body = {"success": False, "error": message}
+
+        def handler(route):
+            if remaining["n"] is None or remaining["n"] > 0:
+                if remaining["n"] is not None:
+                    remaining["n"] -= 1
+                _fulfill_json(route, body, status=status)
+            else:
+                route.fallback()
+
+        (self._route_exact if exact else self._route)(path, handler)
 
     def set_member_area_defaults(self):
         """會員中心（狀態總覽）同時讀推薦網絡、任務、獎勵三組資料。預設回空資料，

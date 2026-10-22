@@ -50,7 +50,7 @@ export function resolveMembershipRedirect(
 
   // 曾是會員、已過期 → 直接續約，不重走註冊漏斗。
   // allowExpired 的頁面(獎勵頁)在這一格放行,讓失效會員看得到被保留的點數;
-  // 提領本身仍由 WithdrawalSection 的 isSubscriptionInvalid 擋住。
+  // 提領本身仍由 reward/WithdrawalAction（canRequestWithdrawal）擋住。
   if (user.subscriptionEndDate) return opts?.allowExpired ? null : '/payment/checkout';
 
   const profileComplete = !!(user.name && user.phone && user.birthDate);

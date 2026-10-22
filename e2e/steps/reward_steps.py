@@ -8,6 +8,8 @@ individual slices. Every reward read is mocked at an exact URL (see
 BackendApiMock._route_exact), so those overrides are order-independent.
 """
 
+import re
+
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -20,15 +22,15 @@ scenarios("rewards_withdrawal.feature")
 
 # --- Member sessions that can reach /rewards -------------------------------
 
-def _seed_member(context, api_mock, *, account_status, sub_status, joined):
+def _seed_member(context, api_mock, *, account_status, sub_status, joined, end_date="2027-01-01T00:00:00.000Z"):
     seed_authenticated_session(
         context,
         registration_step=3,
         accountStatus=account_status,
-        subscriptionEndDate="2027-01-01T00:00:00.000Z",
+        subscriptionEndDate=end_date,
         referralProgramJoined=joined,
     )
-    api_mock.set_subscription_status(has_subscription=True, status=sub_status)
+    api_mock.set_subscription_status(has_subscription=sub_status == "active", status=sub_status)
     # Full default wiring so the page's Promise.all bootstrap always resolves;
     # individual Givens below override just what they need.
     api_mock.set_reward_dashboard()
@@ -37,6 +39,19 @@ def _seed_member(context, api_mock, *, account_status, sub_status, joined):
 @given("I am a paid member who joined the referral program")
 def paid_member_joined(context, api_mock):
     _seed_member(context, api_mock, account_status="active", sub_status="active", joined=True)
+
+
+@given("I am an expired former member with points")
+def expired_member_with_points(context, api_mock):
+    # /rewards 是唯一 allowExpired 的會員區頁面（規格書 §5：點數保留不歸零、僅提領不可）。
+    _seed_member(
+        context,
+        api_mock,
+        account_status="expired",
+        sub_status="expired",
+        joined=True,
+        end_date="2026-07-01T00:00:00.000Z",
+    )
 
 
 @given("I am a paid member who has not joined the referral program")
@@ -65,6 +80,33 @@ def reward_history_referral(api_mock, description, amount):
     api_mock.set_reward_history(
         [build_reward_history_record(description=description, amount=amount, balance=amount)]
     )
+
+
+@given(
+    parsers.parse(
+        'my reward history shows a second-generation referral commission "{description}" worth {amount:d}'
+    )
+)
+def reward_history_second_generation(api_mock, description, amount):
+    api_mock.set_reward_history(
+        [
+            build_reward_history_record(
+                description=description, amount=amount, balance=amount, generation=2
+            )
+        ]
+    )
+
+
+@given("the reward summary fails to load once")
+def reward_summary_fails_once(api_mock):
+    # 註冊在成功 mock 之後：第一次請求失敗，之後落回成功的那份（重試即成功）。
+    api_mock.set_route_error("/rewards", times=1, exact=True)
+
+
+@given("the reward history fails to load once")
+def reward_history_fails_once(api_mock):
+    # 明細是另一支請求：失敗時上方的點數與提領申請照常，重試只重發它。
+    api_mock.set_route_error("/rewards/history", times=1)
 
 
 @given("my reward history is empty")
@@ -219,3 +261,50 @@ def submit_withdrawal_disabled(reward_page):
 @then("the submit-withdrawal button should be enabled")
 def submit_withdrawal_enabled(reward_page):
     expect(reward_page.submit_button()).to_be_enabled(timeout=5_000)
+
+
+@when("I retry loading the reward page")
+def retry_reward_page(page, reward_page):
+    # 在頁面上立一個標記：整頁重載會讓它消失，只重發請求則留著（ui-ux-guidelines §6）。
+    page.evaluate("window.__e2eNoReloadMarker = 'kept'")
+    reward_page.retry_button().click()
+
+
+@then("the apply-withdrawal button should be inside the available-points block")
+def apply_button_in_main_block(reward_page):
+    block = reward_page.available_block()
+    expect(block.get_by_role("button", name="申請Point提領")).to_be_visible()
+
+
+@then("I should see the renewal banner")
+def see_renewal_banner(reward_page):
+    expect(reward_page.renewal_banner()).to_be_visible()
+
+
+@then("the renewal button is the only solid guide button")
+def renewal_is_only_guide_button(reward_page):
+    banner = reward_page.renewal_banner()
+    renew = banner.get_by_role("button", name="續訂")
+    expect(renew).to_be_visible()
+    # 整頁的實心鈕（墨黑、品牌、黃）只剩橫幅裡這一顆：確認收款讓位、申請提領是次要
+    expect(reward_page.solid_buttons()).to_have_count(1)
+    expect(renew).to_have_class(re.compile(r"(^|\s)bg-warning(\s|$)"))
+
+
+@then("the awaiting-collection row shows a warning badge and the collect action")
+def awaiting_row_badge_and_action(reward_page):
+    row = reward_page.awaiting_collection_row()
+    expect(row).to_have_count(1)
+    expect(row.get_by_role("button", name="確認收款")).to_be_visible()
+    badge = row.locator('[data-slot="badge"]', has_text="待查收")
+    expect(badge).to_have_class(re.compile(r"(^|\s)bg-warning(\s|$)"))
+
+
+@then("the history error callout is shown")
+def history_error_shown(reward_page):
+    expect(reward_page.history_error()).to_be_visible(timeout=5_000)
+
+
+@then(parsers.parse('I should see the generation chip "{label}"'))
+def see_generation_chip(reward_page, label):
+    expect(reward_page.generation_chip(label).first).to_be_visible()
