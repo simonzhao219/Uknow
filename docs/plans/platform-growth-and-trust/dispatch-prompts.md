@@ -163,8 +163,8 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
   實作至綠 → `scripts/tdd-unlock.sh` → commit `feat:`（PR 範本要紅燈 hash）。
 - `src/utils/referralInvite.test.ts`：`buildInviteMessage('abc123', '小明')` 以揭露句結尾且前三段逐字不變；未給名字時走退化句；
   `navigator.share` 收到的 `text` 含揭露句；訊息逐字檢查不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一（table-driven）。
-- 新檔 `supabase/functions/_shared/recruitment-copy.test.ts`？**不要**——`_shared` 的 vitest 測試放前端側（照 `@name-cases` 的既有做法找同款測試檔位置），
-  斷言 `referralDisclosureSentence('小明') === '本邀請由 Uknow 推薦人 小明 發送'`、陣列含十一詞。
+- `_shared` 檔不另開測試檔：照 `src/utils/profileValidation.test.ts` 引用 `@name-cases` 的做法，在 `src/utils/referralInvite.test.ts` 經 `@recruitment-copy` 引入，
+  斷言 `referralDisclosureSentence('小明') === '本邀請由 Uknow 推薦人 小明 發送'`、陣列恰為十一詞。
 - `src/utils/inviteCardImage.test.ts`：用既有假 context 手法記錄 `fillText`，斷言畫了「掃描加入 Uknow・推薦碼 」、碼、揭露句，高度比改前大；
   用 `measureText` 回偏大寬度的假 context（50 字外文姓名）斷言 `fillText` 收到的揭露句字串仍等於完整原句（縮字級或換行，不截尾）；
   記錄到的所有 `fillText` 字串逐一不含 `RECRUITMENT_FORBIDDEN_WORDS`；三個既有案例維持。
