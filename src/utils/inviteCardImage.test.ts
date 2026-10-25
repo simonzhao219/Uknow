@@ -51,10 +51,13 @@ interface DrawnText {
   align: string;
 }
 
-/** HTML 規格：設定 canvas 的 width/height 會把 context 狀態重置成這組預設值。 */
+/**
+ * HTML 規格：設定 canvas 的 width/height 會把 context 狀態重置成預設值。顏色的預設是黑，
+ * 這裡用記號字串代替（色彩守門不收原始色值），斷言只看「是不是重置後沒再設定」。
+ */
 const DEFAULT_STATE = {
   font: '10px sans-serif',
-  fillStyle: '#000000',
+  fillStyle: 'reset-default',
   textAlign: 'start',
   imageSmoothingEnabled: true,
 };
