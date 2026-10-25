@@ -11,9 +11,13 @@
 /**
  * 邀請的揭露句(業主裁決逐字)。手冊 4-1-2(2) 要表明推薦人身分;用語「推薦人」
  * 依 ui-ux §12.13。回傳純文字、不做 HTML 跳脫——放進信件模板的呼叫端自行處理。
+ *
+ * 沒有名字時退回不帶名字的句子(2026-10-25 裁決):能分享的人都已完成會員資料,
+ * 實務上到不了,但寧可少名字也不送出「推薦人  發送」這種破句。
  */
-export function referralDisclosureSentence(_name?: string | null): string {
-  return '';
+export function referralDisclosureSentence(name?: string | null): string {
+  const trimmed = name?.trim();
+  return trimmed ? `本邀請由 Uknow 推薦人 ${trimmed} 發送` : '本邀請由 Uknow 推薦人發送';
 }
 
 /**
@@ -37,6 +41,6 @@ export const RECRUITMENT_FORBIDDEN_WORDS = [
 ] as const;
 
 /** 回傳文字裡第一個命中的禁用字樣;沒有命中回 undefined。 */
-export function findForbiddenWord(_text: string): string | undefined {
-  return undefined;
+export function findForbiddenWord(text: string): string | undefined {
+  return RECRUITMENT_FORBIDDEN_WORDS.find((word) => text.includes(word));
 }
