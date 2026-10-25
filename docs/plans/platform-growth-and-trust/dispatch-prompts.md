@@ -17,9 +17,7 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
 - 本 session 只做這一件事。分支 `fix/auth-check-email-lookup`：
   `git fetch origin develop && git checkout -B fix/auth-check-email-lookup origin/develop`
 - 走 /fix-bug 完整版（行為級：影響第 51 位之後所有既有會員能否登入）。Sonnet 即可。
-- 本 prompt 自足。要看總綱溯源（§2.3A C／E、§8.1）而 develop 上的 `docs/plans/platform-growth-and-trust/plan.md` 還沒有 §2.3A 時，
-  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md`
-  只讀不 merge；兩邊不一致以本 prompt 為準。
+- 本 prompt 自足。總綱溯源讀 develop 上的 `docs/plans/platform-growth-and-trust/plan.md` §2.3A C／E 與 §8.1（#386 已合併、就在工作樹）；兩邊不一致以本 prompt 為準。
 - 不要整檔讀 `supabase/functions/api/index.ts`；先 `grep -n "check-email" supabase/functions/api/index.ts` 定位，再讀那一段。
 
 ## 症狀與根因（監工 session 初判；請先寫紅燈測試重現，根因由你自己追到機制層再寫進 fix.md）
@@ -122,8 +120,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
 ## 開局
 - 分支 `fix/referral-disclosure-wording`：`git fetch origin develop && git checkout -B fix/referral-disclosure-wording origin/develop`。Sonnet 即可。
 - Plan Mode（不落檔）：先在對話裡列改動點與測試落點，**跑 `/review-plan`（Plan Mode：把規劃全文交給四個 reviewer），P0 清掉再動手**。
-- 本 prompt 自足。總綱溯源（§2.2、§14 第 1 題、§8.6 #8／#9／#15）在 develop 上讀不到時，
-  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md` 只讀不 merge。
+- 本 prompt 自足。總綱溯源讀 develop 上的 `docs/plans/platform-growth-and-trust/plan.md` §2.2、§14 第 1 題、§8.6 #8／#9／#15（#386 已合併、就在工作樹）。
 - 業主裁決（已定、不要再問）：揭露句逐字「本邀請由 Uknow 推薦人 {名} 發送」；使用者看得到的文案一律「推薦人」、不出現「傳銷商／直銷」；
   律師定案的四份內容頁（`src/content/termsOfService.ts`、`participationContract.ts`、`businessManual.ts`、`referralRewardRules.ts`）原文一個字都不改；
   服務類別「傳銷」（`src/utils/constants.ts` `SERVICE_CATEGORIES`）是職業類別、保留；程式註解、內部文件、測試腳本的「上線／下線」業務術語不改。
@@ -199,10 +196,8 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
   （三段式流程，守衛只認 `feature/*`；規劃書目錄名必須等於 slug）。
 - 模型 Opus。本 session 只做規劃與審查，不寫任何產品程式碼；審查報告出來後停，等業主裁決。不要跑 `/tdd-implement`。
 - 上游是總綱 `docs/plans/platform-growth-and-trust/plan.md` 的 §2.3A（R2 Email 邀請，A～K）、§8.1／§8.2、§8.6 #9～#13、§14 第 6 題、§16。
-  PR #386 合併前 develop 上的總綱沒有這些段，所以一律這樣讀：
-  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md > <scratchpad>/upstream-plan.md`
-  （不 merge、不 commit），再用 Read 的 offset／limit 只讀上述段落（§2.3A 約 300–620 行、§8.1／§8.2 約 1156–1215 行，行號現算），不要整檔讀進 context。
-  plan.md 的上游引用寫「總綱 §2.3A（commit <hash>）」：#386 已合併就填它合進 develop 的 merge commit，未合併填「待監工回填」並列入回報；不要寫會被 rebase 掉的分支 tip。
+  #386 已合併（merge commit `1b9e709`），總綱就在工作樹；用 Read 的 offset／limit 只讀上述段落（§2.3A 約 300–620 行、§8.1／§8.2 約 1156–1215 行，行號現算），不要整檔讀進 context。
+  plan.md 的上游引用寫「總綱 §2.3A（commit `1b9e709`）」。
 - 衝突時誰為準：§2.3A D／K 與業主 2026-10-22／23 裁決 > §2.3A I 表 > §2.5／§2.7／§9／§11 的摘要列（後者可能殘留舊稱）。
   已知殘留：總綱 E 段 purge 一句寫「R2-0 第 9 點驗可行性」，audit 刪除其實是 spike 第 6 點。規劃中再發現的，列進回報的「總綱需修正處」，不要自己改總綱。
 - 前置狀態（開工時核對，寫進 plan.md「0. 現況」）：
@@ -252,8 +247,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
   讓 `guards` 軌綠——friction-log 2026-09-14 業主裁決的過渡做法，衝突已記錄、不必再寫一次。
 
 ## 審查
-- 規劃寫完立刻 `/review-plan referral-email-invite`。reviewer 只有 Read／Grep／Glob、跑不了 git：派工時在每個 prompt 附 `<scratchpad>/upstream-plan.md` 的絕對路徑與要讀的段落行段，
-  並明講總綱不在工作樹。
+- 規劃寫完立刻 `/review-plan referral-email-invite`。reviewer 只有 Read／Grep／Glob、跑不了 git：派工時在每個 prompt 附總綱 `docs/plans/platform-growth-and-trust/plan.md` 的絕對路徑與要讀的段落行段。
 - 事實核對拆兩半：repo 內事實（行號、函式名、檔案存在）交唯讀 subagent（codebase-scout）逐條核對；GoTrue 行為由你在連得到時以官方文件或原始碼核對，
   連不到就在 plan.md 標「未驗，由 R2-0 第 N 點承接」並附 GoTrue 主張 ↔ spike 十一點對照，不得寫成已核對。`review.md` 摘要表為事實核對加第五列。
 - P0：修訂 plan.md 並重跑 `/review-plan`，或停下等業主明文豁免。P1／P2 原樣留在 `review.md`、不改判，需裁決的點放進 PR 描述。不要勾 `review.md`「處置」節的人審完成框。之後停。
@@ -272,8 +266,7 @@ R2-0 spike：Email 邀請可行性驗證（拋棄式、不留產品碼、不 com
 ## 開局
 - 分支 `claude/r2-0-invite-spike`（非 `feature/*`；全程不 commit、不 push、不開 PR）：`git fetch origin develop && git checkout -B claude/r2-0-invite-spike origin/develop`。Sonnet。
 - 筆記一律寫在 scratchpad（不寫進 `docs/plans/`），收尾整段貼回監工 session。每一點寫：怎麼驗、看到什麼、結論（可行／不可行／有條件／待本機／待業主）、對總綱 §2.3A 設計的影響。
-- 背景只讀總綱 §2.3A C／E／F／I：`git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md > <scratchpad>/upstream-plan.md`，
-  用 Read offset／limit 只讀 §2.3A（約 300–620 行，行號現算），不 merge。
+- 背景只讀總綱 `docs/plans/platform-growth-and-trust/plan.md` §2.3A C／E／F／I（#386 已合併、就在工作樹）：用 Read offset／limit 只讀 §2.3A（約 300–620 行，行號現算）。
 - 通則：任何一點因環境做不到（無 docker、連不上 develop、沒有 key），結論欄一律寫「未驗證」並說明原因，**不得**以讀 GoTrue 原始碼或總綱 §2.3A C 的敘述代替實測結論。
   service role key 只經環境變數傳入，不寫進 `spike-*.ts`、筆記或任何 commit；回報前自查筆記不含 `eyJ` 開頭字串。**不得對正式站 project `uhtwwxtazwqnlbejhprl` 發任何 API 呼叫**，正式站的值一律由業主在 Dashboard 唯讀查看後回填。
 - 兩段：
