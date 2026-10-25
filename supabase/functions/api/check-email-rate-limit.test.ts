@@ -2,7 +2,7 @@
 // /auth/check-email 是無驗證端點，回傳的 { exists } 本身就是帳號枚舉
 // 位元——沒有限流的話，攻擊者可拿外洩 email 清單批量驗證是否為本平台
 // 會員（會員資格本身即敏感：這是含身分證/銀行資料的金流平台），
-// 每次還以 service role 打一次 auth admin API 形成放大。
+// 每次還以 service role 查一次 auth.users（find_auth_user_by_email）。
 // 補上 per-IP 限流（DB 計數表 bump_rate_limit，Edge Function 無內建限流）。
 //
 // 計數表本身的清理（prune_rate_limits＋pg_cron 每小時排程）也在本檔：
