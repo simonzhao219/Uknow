@@ -1164,9 +1164,9 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 1 | **check-email 修正** | 待開工，**立即**（prompt 已給：`dispatch-prompts.md` A，2026-10-25） | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（檔名登記 `20261025000001_find_auth_user_by_email.sql`，rebase 時若 develop 已有更大版本號則改號）；RPC 失敗改 503 fail-closed | `/fix-bug` `fix/auth-check-email-lookup` | Sonnet | — | 既有會員登入不再被判「不存在」 |
 | 0 | **R2-0** Email 邀請 spike | 待開工（prompt 已給：`dispatch-prompts.md` D） | §2.3A I 十一點 | develop 分支、拋棄式 `claude/r2-0-invite-spike`，不開 PR | Sonnet | 本機段只要 `supabase start`；develop 段要 service key 與 Dashboard（實寄由業主收信） | 無可見變化；結論回報監工 session，進 R2 子 progress |
 | 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 登記 `20261025000011_purge_stale_referral_invites.sql`（同日第二工項用 000011 起；rebase 時若 develop 已有更大版本號則改號）；`find_auth_user_by_email` 由 check-email 修正先進、R2 不另建 | 三段式 `feature/referral-email-invite`（規劃 prompt 已給：`dispatch-prompts.md` C；業主另開 session） | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
-| 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |
+| 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378）；**S7a 已合併 #385（2026-10-25，`21498c3`）** | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |
 | 2 | **T1** 登入狀態（縮） | 待開工 | §1 | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
-| 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段在 S7a（最小完成點＝會員區三頁資訊層次）合併後或先合併者定 | Sheet 內五區核對 |
+| 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段的前置「S7a 合併」已達成（#385，2026-10-25） | Sheet 內五區核對 |
 | 2 | **P1a** 照片上傳管線（核心） | 待開工 | §3.2A／C | 三段式 `feature/listing-photo-pipeline` | Sonnet | Q3-1、Q3-3；階段 0 真機 | 選圖即裁、1–3 張、錯誤看得懂 |
 | 2 | **A1b-1b** 剩餘守衛與權限顯式化 | 待開工 | §6.2C；migration 前綴：開工時登記 | Plan Mode `fix/*` | Opus 規劃與審查、Sonnet 實作 | — | 無可見變化 |
 | 3 | **A2** 對帳報表（純讀）＋手動調整（第二段，排 A1b-2 後） | 待開工 | §4.2(2)；migration 前綴：開工時登記 | 三段式 `feature/admin-reconcile` | Opus 階段 4 與手動調整 | A1a 合併；手動調整另等 A1b-2 | 告警次分頁十一項檢查＋一項盤點；之後手動調整 |
