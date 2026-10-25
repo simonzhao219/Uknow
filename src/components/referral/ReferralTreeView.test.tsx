@@ -6,7 +6,8 @@
 //   * 懶載入：展開呼叫 loadChildren(parentId)、等待中有 skeleton、回來後渲染子列
 //   * 對齊（方案 A）：分支數移列右側「N 位」；即將到期以倒數取代且優先
 //   * 倒數以 endDate 前端重算（不吃伺服器過時快照）
-//   * 需要關注橫幅（一代即將到期）：伺服器上限 + 「還有 N 位」
+//   * 需要關注橫幅（一代即將到期）：伺服器上限 + 「全部 N 位 ›」（就地清單，分頁同搜尋）
+//   * 列的可及名稱寫入世代／狀態／倒數／直接推薦人數（WCAG 1.4.1：不只靠色點與淡化）
 //   * 排序：原生 select、值受控、變更回報
 //   * 搜尋：debounce 300ms 呼叫伺服器、渲染遮罩結果
 //   * a11y：tree/treeitem 語意在改寫後不退化
@@ -83,6 +84,10 @@ function renderTree(
       offset: number,
     ) => Promise<{ matches: { node: NetworkNode; ancestorPath: string[] }[]; total: number }>;
     onSortChange?: (m: NetworkSortMode) => void;
+    loadAttention?: (page: { limit: number; offset: number }) => Promise<{
+      items: NetworkNode[];
+      total: number;
+    }>;
   } = {},
 ) {
   return render(
@@ -93,6 +98,7 @@ function renderTree(
         onSortChange={opts.onSortChange ?? (() => {})}
         loadChildren={opts.loadChildren ?? (async () => [])}
         searchNetwork={opts.searchNetwork ?? (async () => ({ matches: [], total: 0 }))}
+        loadAttention={opts.loadAttention ?? (async () => ({ items: [], total: 0 }))}
       />
     </MemoryRouter>,
   );
@@ -148,32 +154,192 @@ describe('列右側資訊（方案 A 對齊）', () => {
 });
 
 describe('需要關注橫幅（一代即將到期，伺服器上限）', () => {
-  it('標題為一代即將到期的總數，上限內的 chips 之外顯示「還有 N 位」', () => {
-    const items = [
-      makeNode({
-        userId: 'a1',
-        name: '陳大華',
-        status: 'expiring',
-        daysToExpiry: 3,
-        endDate: new Date(Date.now() + 3 * DAY).toISOString(),
-      }),
-      makeNode({
-        userId: 'a2',
-        name: '林美樺',
-        status: 'expiring',
-        daysToExpiry: 9,
-        endDate: new Date(Date.now() + 9 * DAY).toISOString(),
-      }),
-    ];
+  const expiringNode = (userId: string, name: string, days: number) =>
+    makeNode({
+      userId,
+      name,
+      status: 'expiring',
+      daysToExpiry: days,
+      endDate: new Date(Date.now() + days * DAY).toISOString(),
+    });
+
+  it('標題為一代即將到期的總數，上限內的 chips 之外顯示「全部 N 位 ›」', () => {
+    const items = [expiringNode('a1', '陳大華', 3), expiringNode('a2', '林美樺', 9)];
     renderTree(makeOverview({ attention: { total: 8, items } }));
     expect(screen.getByText('8 位一代即將到期')).toBeTruthy();
     expect(screen.getByText('陳大華')).toBeTruthy();
-    expect(screen.getByText('還有 6 位')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '全部 8 位 ›' })).toBeTruthy();
+    expect(screen.queryByText(/還有 \d+ 位/)).toBeNull();
+  });
+
+  it('chip 不帶狀態小圓點，只有姓名與倒數', () => {
+    const items = [expiringNode('a1', '陳大華', 3)];
+    renderTree(makeOverview({ attention: { total: 1, items } }));
+    const chip = screen.getByText('陳大華').closest('button') as HTMLElement;
+    expect(chip.querySelector('[aria-hidden]')).toBeNull();
+    expect(chip.textContent).toContain('剩 3 天到期');
+  });
+
+  it('全部都在橫幅上（沒有超出上限）時不出現「全部 N 位 ›」', () => {
+    const items = [expiringNode('a1', '陳大華', 3), expiringNode('a2', '林美樺', 9)];
+    renderTree(makeOverview({ attention: { total: 2, items } }));
+    expect(screen.queryByRole('button', { name: /^全部 \d+ 位/ })).toBeNull();
   });
 
   it('無一代即將到期者不渲染橫幅', () => {
     renderTree(makeOverview({ roots: [makeNode()] }));
     expect(screen.queryByText(/一代即將到期/)).toBeNull();
+  });
+});
+
+// 「全部 N 位 ›」＝後端既有的 GET /referrals/network/attention 分頁清單，形狀同搜尋
+// （total、已顯示 X / Y、加載更多從已顯示筆數續接）。就地取代樹，不開新的 Sheet。
+describe('全部一代即將到期清單（就地取代樹，分頁同搜尋）', () => {
+  const PAGE = 20;
+  const person = (i: number) =>
+    makeNode({
+      userId: `e${i}`,
+      name: `到期者${i}`,
+      status: 'expiring',
+      daysToExpiry: i + 1,
+      endDate: new Date(Date.now() + (i + 1) * DAY).toISOString(),
+    });
+  const range = (from: number, to: number) =>
+    Array.from({ length: to - from }, (_, i) => person(from + i));
+
+  function renderWithAttention(loadAttention: ReturnType<typeof vi.fn>, total = 45) {
+    return renderTree(
+      makeOverview({
+        roots: [makeNode({ name: '樹上的人' })],
+        attention: { total, items: range(0, 6) },
+      }),
+      { loadAttention },
+    );
+  }
+
+  it('點「全部 N 位 ›」從第一頁取（每頁 20），清單取代樹', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, PAGE), total: 45 });
+    renderWithAttention(loadAttention);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 45 位 ›' }));
+    });
+
+    expect(loadAttention).toHaveBeenCalledWith({ limit: PAGE, offset: 0 });
+    expect(await screen.findByText('已顯示 20 / 45 筆記錄')).toBeTruthy();
+    expect(screen.queryByRole('tree')).toBeNull();
+    expect(
+      screen.getAllByRole('button', { name: /到期者\d+ 詳情，一代、即將到期（剩 \d+ 天）/ }),
+    ).toHaveLength(PAGE);
+  });
+
+  it('加載更多從已顯示筆數續接', async () => {
+    const loadAttention = vi
+      .fn()
+      .mockResolvedValueOnce({ items: range(0, PAGE), total: 45 })
+      .mockResolvedValueOnce({ items: range(PAGE, 40), total: 45 });
+    renderWithAttention(loadAttention);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 45 位 ›' }));
+    });
+    await screen.findByText('已顯示 20 / 45 筆記錄');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '加載更多' }));
+    });
+
+    expect(loadAttention).toHaveBeenLastCalledWith({ limit: PAGE, offset: PAGE });
+    expect(await screen.findByText('已顯示 40 / 45 筆記錄')).toBeTruthy();
+  });
+
+  it('點清單中的列開啟該成員的詳情', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, 3), total: 3 + 40 });
+    renderWithAttention(loadAttention, 43);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 43 位 ›' }));
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^到期者1 詳情/ }));
+
+    expect(screen.getAllByText('加入日期').length).toBeGreaterThan(0);
+  });
+
+  it('「返回推薦樹」回到樹', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, 3), total: 43 });
+    renderWithAttention(loadAttention, 43);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 43 位 ›' }));
+    });
+    await screen.findByText('已顯示 3 / 43 筆記錄');
+
+    fireEvent.click(screen.getByRole('button', { name: '返回推薦樹' }));
+
+    expect(screen.getByRole('tree', { name: '我的推薦網絡' })).toBeTruthy();
+    expect(screen.queryByText(/已顯示 \d+ \/ 43 筆記錄/)).toBeNull();
+    expect(screen.getByRole('button', { name: '全部 43 位 ›' })).toBeTruthy();
+  });
+
+  it('清單開著時背景重驗讓總數降到橫幅上限內：仍有「返回推薦樹」出口', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, 7), total: 7 });
+    const element = (total: number) => (
+      <MemoryRouter>
+        <ReferralTreeView
+          overview={makeOverview({
+            roots: [makeNode({ name: '樹上的人' })],
+            attention: { total, items: range(0, Math.min(total, 6)) },
+          })}
+          sort="updated_desc"
+          onSortChange={() => {}}
+          loadChildren={async () => []}
+          searchNetwork={async () => ({ matches: [], total: 0 })}
+          loadAttention={loadAttention}
+        />
+      </MemoryRouter>
+    );
+    const view = render(element(7));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 7 位 ›' }));
+    });
+    await screen.findByText('已顯示 7 / 7 筆記錄');
+
+    // 其中一位續訂了，overview 重驗後只剩橫幅上限內的 6 位
+    view.rerender(element(6));
+
+    fireEvent.click(screen.getByRole('button', { name: '返回推薦樹' }));
+    expect(screen.getByRole('tree', { name: '我的推薦網絡' })).toBeTruthy();
+  });
+
+  it('讀取失敗時顯示錯誤與重試，重試重發第一頁', async () => {
+    const loadAttention = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('網路錯誤'))
+      .mockResolvedValueOnce({ items: range(0, 3), total: 43 });
+    renderWithAttention(loadAttention, 43);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 43 位 ›' }));
+    });
+
+    expect(await screen.findByText('載入失敗，請稍後再試')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '重試' }));
+    });
+
+    expect(loadAttention).toHaveBeenCalledTimes(2);
+    expect(loadAttention).toHaveBeenLastCalledWith({ limit: PAGE, offset: 0 });
+    expect(await screen.findByText('已顯示 3 / 43 筆記錄')).toBeTruthy();
+  });
+
+  it('在搜尋框打字會離開清單，改看搜尋結果', async () => {
+    const loadAttention = vi.fn().mockResolvedValue({ items: range(0, 3), total: 43 });
+    renderWithAttention(loadAttention, 43);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '全部 43 位 ›' }));
+    });
+    await screen.findByText('已顯示 3 / 43 筆記錄');
+
+    fireEvent.change(screen.getByPlaceholderText('搜尋姓名'), { target: { value: '王' } });
+
+    expect(screen.queryByText('已顯示 3 / 43 筆記錄')).toBeNull();
   });
 });
 
@@ -183,7 +349,7 @@ describe('節點詳情的失效說明', () => {
   it('點已失效的一代列，詳情顯示此帳號已失效、刊登已下架', () => {
     const node = makeNode({ userId: 'x1', name: '林失效', status: 'expired', daysToExpiry: null });
     renderTree(makeOverview({ roots: [node] }));
-    fireEvent.click(screen.getByRole('treeitem', { name: '林失效 詳情' }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '林失效 詳情，一代、已失效' }));
     expect(screen.getAllByText('此帳號已失效，刊登已下架').length).toBeGreaterThan(0);
   });
 
@@ -195,7 +361,7 @@ describe('節點詳情的失效說明', () => {
       daysToExpiry: null,
     });
     renderTree(makeOverview({ roots: [node] }));
-    fireEvent.click(screen.getByRole('treeitem', { name: '王停權 詳情' }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '王停權 詳情，一代、已停權' }));
     expect(screen.getAllByText('此帳號已停權，刊登已下架').length).toBeGreaterThan(0);
   });
 });
@@ -420,7 +586,7 @@ describe('詳情面板的世代徽章（底與字色都隨世代）', () => {
   for (const [gen, label] of CASES) {
     it(`${label}徽章用 badge-${gen} 的底與 badge-foreground-${gen} 的字`, () => {
       renderTree(makeOverview({ roots: [makeNode({ name: '王大明', generation: gen })] }));
-      fireEvent.click(screen.getByRole('treeitem', { name: '王大明 詳情' }));
+      fireEvent.click(screen.getByRole('treeitem', { name: `王大明 詳情，${label}、訂閱中` }));
 
       const badge = screen.getByText(label);
       expect(badge.className).toContain(`bg-[var(--tree-gen-badge-${gen})]`);
@@ -442,6 +608,7 @@ describe('重新驗證中的載入回饋（切排序不再是無回饋空窗）'
           onSortChange={() => {}}
           loadChildren={async () => []}
           searchNetwork={async () => ({ matches: [], total: 0 })}
+          loadAttention={async () => ({ items: [], total: 0 })}
           isValidating
         />
       </MemoryRouter>,
@@ -459,6 +626,7 @@ describe('重新驗證中的載入回饋（切排序不再是無回饋空窗）'
           onSortChange={() => {}}
           loadChildren={async () => []}
           searchNetwork={async () => ({ matches: [], total: 0 })}
+          loadAttention={async () => ({ items: [], total: 0 })}
           isValidating={false}
         />
       </MemoryRouter>,
@@ -467,6 +635,52 @@ describe('重新驗證中的載入回饋（切排序不再是無回饋空窗）'
     const settled = screen.getByRole('tree', { name: '我的推薦網絡' });
     expect(settled.getAttribute('aria-busy')).toBeNull();
     expect(settled.className).not.toContain('opacity-');
+  });
+});
+
+// aria-label 會蓋掉列內文字，原本只剩「{名} 詳情」：色點是 aria-hidden、失效列只靠淡化、
+// 「剩 N 天到期」「N 位」也讀不到——狀態只靠顏色與透明度（WCAG 1.4.1）。
+// 名稱保留「{名} 詳情」連續子字串（journey 的 Playwright 子字串定位器依賴它）。
+describe('列的可及名稱寫入狀態（WCAG 1.4.1）', () => {
+  it('樹列含世代、狀態、倒數與直接推薦人數', () => {
+    const roots = [
+      makeNode({ userId: 'r1', name: '王大明', childCount: 2 }),
+      makeNode({
+        userId: 'r2',
+        name: '林快到期',
+        status: 'expiring',
+        daysToExpiry: 10,
+        endDate: new Date(Date.now() + 10 * DAY).toISOString(),
+      }),
+      makeNode({ userId: 'r3', name: '林失效', status: 'expired', daysToExpiry: null }),
+      makeNode({ userId: 'r4', name: '王停權', status: 'suspended', daysToExpiry: null }),
+    ];
+    renderTree(makeOverview({ roots }));
+
+    for (const name of [
+      '王大明 詳情，一代、訂閱中、直接推薦 2 位',
+      '林快到期 詳情，一代、即將到期（剩 10 天）',
+      '林失效 詳情，一代、已失效',
+      '王停權 詳情，一代、已停權',
+    ]) {
+      expect(screen.getByRole('treeitem', { name }), name).toBeTruthy();
+    }
+  });
+
+  it('搜尋結果列同樣含世代與狀態', async () => {
+    const hit = makeNode({ userId: 's1', name: '陳○華', generation: 2, status: 'expired' });
+    const searchNetwork = vi.fn().mockResolvedValue({
+      matches: [{ node: hit, ancestorPath: [] }],
+      total: 1,
+    });
+    renderTree(makeOverview({ roots: [makeNode()] }), { searchNetwork });
+
+    fireEvent.change(screen.getByPlaceholderText('搜尋姓名'), { target: { value: '陳' } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    expect(screen.getByRole('button', { name: '陳○華 詳情，二代、已失效' })).toBeTruthy();
   });
 });
 

@@ -42,6 +42,10 @@ export interface UseReferralDataResult {
     q: string,
     offset?: number,
   ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
+  loadAttention: (page: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ items: NetworkNode[]; total: number }>;
 }
 
 const DEDUP_KEY = 'referralNetwork';
@@ -203,6 +207,27 @@ export function useReferralData(): UseReferralDataResult {
     [],
   );
 
+  // 「全部 N 位 ›」的完整清單（一代即將到期，依剩餘天數排序）。形狀同搜尋：total 是全部
+  // 人數、不受分頁影響；offset 由 usePagedList 以已顯示筆數續接。端點不吃 sort 參數
+  // （排序是剩餘天數，與 overview.attention 共用同一個 attentionIds）。
+  const loadAttention = useCallback(
+    async ({
+      limit,
+      offset,
+    }: {
+      limit: number;
+      offset: number;
+    }): Promise<{ items: NetworkNode[]; total: number }> => {
+      const result = await apiRequestJson<{
+        success: boolean;
+        data: { items: NetworkNode[]; total: number };
+      }>(buildApiUrl(`/referrals/network/attention?limit=${limit}&offset=${offset}`));
+      if (!result.success) throw new Error('載入一代即將到期清單失敗');
+      return { items: result.data.items, total: result.data.total };
+    },
+    [],
+  );
+
   return {
     overview,
     loading,
@@ -213,5 +238,6 @@ export function useReferralData(): UseReferralDataResult {
     setSort,
     loadChildren,
     searchNetwork,
+    loadAttention,
   };
 }

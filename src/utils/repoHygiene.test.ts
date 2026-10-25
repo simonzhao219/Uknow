@@ -195,8 +195,10 @@ describe('引導鈕只有三種', () => {
     // PR 改這份清單，審查時就看得到。
     const allowed = [
       join('src', 'components', 'RewardDashboard.tsx'),
+      join('src', 'components', 'ServiceProviderManagement.tsx'),
       join('src', 'components', 'referral', 'InviteFriendButton.tsx'),
       join('src', 'components', 'reward', 'WithdrawalSection.tsx'),
+      join('src', 'components', 'task', 'PendingRewardsSection.tsx'),
       join('src', 'components', 'subscription', 'SubscriptionStatusCard.tsx'),
     ].sort();
     // button.tsx 是 tone 的定義處（compoundVariants），不是使用者。

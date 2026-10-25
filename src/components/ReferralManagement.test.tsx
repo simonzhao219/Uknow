@@ -4,19 +4,25 @@
 // 推薦碼列是「推薦碼＋複製」＋「邀請好友／加入推薦計畫」，加入成功後重抓推薦網絡。
 // 三顆入口有各自的測試（閘門、導向、分享、複製）；這裡只驗放在哪、接了什麼。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
-const { state } = vi.hoisted(() => ({
+const { state, treeProps } = vi.hoisted(() => ({
   state: {
     referral: {} as Record<string, unknown>,
   },
+  treeProps: { current: {} as Record<string, unknown> },
 }));
 
 vi.mock('../hooks/useReferralData', () => ({ useReferralData: () => state.referral }));
 vi.mock('../hooks/useBackNavigation', () => ({ useBackNavigation: () => vi.fn() }));
 vi.mock('../hooks/usePageRestoration', () => ({ usePageRestoration: () => {} }));
 vi.mock('./referral/ReferralStats', () => ({ ReferralStats: () => null }));
-vi.mock('./referral/ReferralTreeView', () => ({ ReferralTreeView: () => null }));
+vi.mock('./referral/ReferralTreeView', () => ({
+  ReferralTreeView: (props: Record<string, unknown>) => {
+    treeProps.current = props;
+    return null;
+  },
+}));
 vi.mock('./referral/MyQrButton', () => ({
   MyQrButton: () => <span data-testid="my-qr-button-entry" />,
 }));
@@ -44,6 +50,7 @@ function setLoaded() {
     setSort: vi.fn(),
     loadChildren: vi.fn(),
     searchNetwork: vi.fn(),
+    loadAttention: vi.fn(),
   };
 }
 
@@ -78,5 +85,61 @@ describe('ReferralManagement 推薦入口', () => {
     render(<ReferralManagement />);
     fireEvent.click(screen.getByTestId('invite-friend-entry'));
     expect(state.referral.refetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ReferralManagement 一代即將到期的完整清單', () => {
+  it('把 loadAttention 交給推薦樹（「全部 N 位 ›」用它分頁取）', () => {
+    render(<ReferralManagement />);
+    expect(treeProps.current.loadAttention).toBe(state.referral.loadAttention);
+  });
+});
+
+// 整頁主內容讀取失敗＝LoadErrorCallout（黃框＋重新載入，ui-ux-guidelines §12.11）；
+// 重試只重發請求，重試落地後焦點不能掉在 body（§9）。
+describe('ReferralManagement 讀取失敗', () => {
+  const failed = () => {
+    state.referral = { ...state.referral, overview: null, loading: false, error: '網路錯誤' };
+  };
+
+  it('整頁讀取失敗顯示黃框、錯誤原因與重新載入，點了只重發推薦請求', () => {
+    failed();
+    render(<ReferralManagement />);
+
+    expect(screen.getByText('暫時無法取得推薦資料')).toBeTruthy();
+    expect(screen.getByText('網路錯誤')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新載入' }));
+    expect(state.referral.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('重試成功後焦點落到頁面標題', () => {
+    failed();
+    const view = render(<ReferralManagement />);
+    const retry = screen.getByRole('button', { name: '重新載入' });
+    act(() => retry.focus());
+    fireEvent.click(retry);
+
+    state.referral = { ...state.referral, loading: true, error: null };
+    view.rerender(<ReferralManagement />);
+    setLoaded();
+    view.rerender(<ReferralManagement />);
+
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: '推薦管理' }));
+  });
+
+  it('重試後仍失敗，焦點回到錯誤框', () => {
+    failed();
+    const view = render(<ReferralManagement />);
+    const retry = screen.getByRole('button', { name: '重新載入' });
+    act(() => retry.focus());
+    fireEvent.click(retry);
+
+    state.referral = { ...state.referral, loading: true, error: null };
+    view.rerender(<ReferralManagement />);
+    failed();
+    view.rerender(<ReferralManagement />);
+
+    const callout = document.querySelector('[data-slot="status-callout"]');
+    expect(document.activeElement).toBe(callout?.parentElement);
   });
 });

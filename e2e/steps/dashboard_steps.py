@@ -1,6 +1,7 @@
 """dashboard_smoke.feature — shared steps in common_steps.py plus the two invite entry points."""
 
-from pytest_bdd import scenarios, when
+from playwright.sync_api import expect
+from pytest_bdd import parsers, scenarios, then, when
 
 from steps.common_steps import *  # noqa: F401,F403
 
@@ -29,3 +30,20 @@ def click_invite_friend(page):
     # shareReferralInvite。e2e 的 Chromium 不是 in-app 瀏覽器、分享面板已拿掉，
     # 所以走最後一順位——複製整段邀請訊息並提示。
     page.get_by_test_id("invite-friend-button").click()
+
+
+@then(parsers.parse('I should see the status cards "{titles}"'))
+def see_status_cards(dashboard_page, titles):
+    for title in [t.strip() for t in titles.split(",")]:
+        expect(dashboard_page.status_card(title)).to_be_visible()
+
+
+@then(parsers.parse('the referral card shows the badge "{text}"'))
+def referral_card_badge(dashboard_page, text):
+    expect(dashboard_page.status_card("推薦管理").get_by_text(text)).to_be_visible()
+
+
+@then("the dashboard has no attention area")
+def no_attention_area(dashboard_page):
+    expect(dashboard_page.heading()).to_be_visible()
+    expect(dashboard_page.attention_area()).to_have_count(0)

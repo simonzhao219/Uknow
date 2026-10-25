@@ -4,6 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { FilterChip } from '../common/FilterChip';
+import { GenerationChip } from '../common/GenerationChip';
+import { LoadErrorCallout } from '../common/LoadErrorCallout';
+import { useRetryFocus } from '../../hooks/useRetryFocus';
 import {
   Calendar,
   Receipt,
@@ -90,6 +93,12 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   const [total, setTotal] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // 重試後的焦點落點（§9）：失敗回錯誤框、成功到區塊標題。
+  const { errorRef, headingRef, retry } = useRetryFocus({
+    loading: isLoading,
+    failed: Boolean(error),
+  });
+
   const isFiltered = isRewardFilterActive(filter);
   const filterOptions = rewardFilterOptions(facets);
 
@@ -173,10 +182,17 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Receipt className="h-5 w-5" />
-          獎勵明細
-        </CardTitle>
+        <div
+          ref={headingRef}
+          tabIndex={-1}
+          data-testid="reward-history-heading"
+          className="scroll-mt-20 outline-none"
+        >
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5" />
+            獎勵明細
+          </CardTitle>
+        </div>
         <CardDescription>查看您的Point收支記錄，可依來源篩選</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -212,15 +228,14 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
           </div>
         )}
 
-        {/* 錯誤狀態 */}
+        {/* 錯誤狀態：黃框＋重新載入，只重發明細請求，不整頁重載（§6、§12.11） */}
         {error && (
-          <div className="text-center py-8">
-            <p className="text-destructive-subtle-foreground mb-4">{error}</p>
-            {/* 區塊內的重試：頁面上還有提領等主要動作，用次要（§12.11）。 */}
-            <Button tone="secondary" onClick={() => window.location.reload()} size="sm">
-              重新載入
-            </Button>
-          </div>
+          <LoadErrorCallout
+            ref={errorRef}
+            title="暫時無法取得獎勵明細"
+            description={error}
+            onRetry={() => retry(() => fetchHistory())}
+          />
         )}
 
         {/* 獎勵記錄列表 */}
@@ -260,9 +275,7 @@ export function RewardHistory({ refreshTrigger }: RewardHistoryProps = {}) {
                             {REWARD_SOURCE_LABELS[record.sourceCategory] ?? '其他'}
                           </Badge>
                           {isReferral && record.generation ? (
-                            <Badge variant="outline" className="text-muted-foreground">
-                              第 {record.generation} 代
-                            </Badge>
+                            <GenerationChip generation={record.generation} />
                           ) : null}
                         </div>
 

@@ -114,6 +114,7 @@ class SupabaseRestMock:
         self._public_listings_hold = False  # hold HomePage's list read until released
         self._held_public_listings = []     # routes held by `hold_public_listings`
         self._write_error = None       # (status, body) to fail insert/update/delete
+        self._user_listing_error = None  # [status, body, remaining] to fail Management's maybeSingle read
         self._routed = False
 
     # --- setup -------------------------------------------------------------
@@ -131,6 +132,19 @@ class SupabaseRestMock:
         self._user_listing = listing
         self._ensure_routes()
         return listing
+
+    def fail_user_listing(self, times=None, status: int = 500, message: str = "internal error"):
+        """Make Management's own-listing read (`.maybeSingle()`) fail with a transient
+        error: the page must show its retryable load-error callout, NOT the empty
+        state (which would invite a second listing). `times=N` fails only the first N
+        reads and then serves `set_user_listing(...)` again — the "fails, user presses
+        retry, it works" case; without `times` it always fails.
+
+        Default 500, not 503: postgrest-js retries 503/520 GETs with backoff before
+        surfacing the error."""
+        body = {"message": message, "code": str(status), "details": "", "hint": ""}
+        self._user_listing_error = [status, body, times]
+        self._ensure_routes()
 
     def set_listing_by_id(self, listing):
         """The row returned by Edit's `.single()` read (ownership is then
@@ -218,6 +232,12 @@ class SupabaseRestMock:
                     return _not_found_406(route)
                 return _fulfill_json(route, self._listing_by_id)
             # `.maybeSingle()` — Management / Create existing-check.
+            if self._user_listing_error:
+                status, body, remaining = self._user_listing_error
+                if remaining is None or remaining > 0:
+                    if remaining is not None:
+                        self._user_listing_error[2] = remaining - 1
+                    return _fulfill_json(route, body, status=status)
             return _fulfill_json(route, [self._user_listing] if self._user_listing else [])
 
         if method in ("POST", "PATCH", "DELETE"):

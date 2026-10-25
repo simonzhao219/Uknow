@@ -24,3 +24,15 @@ Feature: Dashboard smoke test
     When I visit "/dashboard"
     And I click the invite friend button
     Then I should see a toast containing "邀請訊息已複製到剪貼簿"
+
+  Scenario: The four status cards are titled after their destination pages
+    Given I am logged in with registration step 3 and a referral code "REF001"
+    When I visit "/dashboard"
+    Then I should see the status cards "刊登管理, 推薦管理, 任務中心, 獎勵回饋"
+
+  Scenario: Expiring first-generation members show on the referral card, not in an attention area
+    Given I am logged in with registration step 3 and a referral code "REF001"
+    And 3 first-generation members are about to expire
+    When I visit "/dashboard"
+    Then the referral card shows the badge "3 位一代即將到期"
+    And the dashboard has no attention area

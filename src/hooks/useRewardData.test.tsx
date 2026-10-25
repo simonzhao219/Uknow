@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 跨頁接力的契約：會員中心掛著 useRewardData、冷啟動請求還在飛時，使用者點
-// 「可提領點數」卡進獎勵頁——新頁的實例會接上同一個 dedupe 請求（自己的 fetch
+// 「獎勵回饋」卡進獎勵頁——新頁的實例會接上同一個 dedupe 請求（自己的 fetch
 // 不會跑）。請求結束後它必須拿到資料或錯誤態，不能永遠停在載入中。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';

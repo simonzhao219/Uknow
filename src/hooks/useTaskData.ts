@@ -65,6 +65,7 @@ export interface UseTaskDataResult {
   fetchPendingRewards: () => Promise<void>;
   handleClaimReward: (rewardId: string, idNumber: string) => Promise<void>;
   handleClaimAllRewards: (idNumber: string) => Promise<void>;
+  refetch: () => void;
 }
 
 const DEDUP_KEY = 'tasks+pendingRewards';
@@ -175,6 +176,12 @@ export function useTaskData(): UseTaskDataResult {
     () => dedupe(DEDUP_KEY, fetchAllData, adoptShared),
   );
 
+  // 整頁讀取失敗的重試：只重發任務與待領取兩支請求，不整頁重載（ui-ux-guidelines §6）。
+  const refetch = useCallback(
+    () => dedupe(DEDUP_KEY, fetchAllData, adoptShared),
+    [fetchAllData, adoptShared],
+  );
+
   const fetchCurrentMonthTop = useCallback(async (): Promise<CurrentMonthReferrals | null> => {
     setLoadingCurrent(true);
     try {
@@ -281,5 +288,6 @@ export function useTaskData(): UseTaskDataResult {
     fetchPendingRewards,
     handleClaimReward,
     handleClaimAllRewards,
+    refetch,
   };
 }
