@@ -644,21 +644,15 @@ app.post('/auth/check-email', async (c) => {
   const email = body?.email?.trim()?.toLowerCase();
   if (!email) return c.json({ exists: false });
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-  const res = await fetch(
-    `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=50&search=${encodeURIComponent(email)}`,
-    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
-  );
-
-  if (!res.ok) return c.json({ exists: false });
-  const data = await res.json();
+  // 精確查 auth.users（migration 20261025000001）。不用 GoTrue admin users
+  // 列表：它不認 `search`，只會回最新 50 位，較早的會員被判不存在。
+  const { data, error } = await sb().rpc('find_auth_user_by_email', { p_email: email });
+  // fail-closed：回 { exists:false } 會把暫時性故障變成「既有會員被送去設定密碼」。
+  if (error) return c.json({ error: '暫時無法檢查 Email，請稍後再試' }, 503);
   // 只回傳 exists。刻意「不」回傳 email 是否已驗證：一來避免多洩漏一個
   // 「這個 email 註冊到一半」的枚舉位元，二來未驗證帳號的復原改走「密碼優先」
   // （見 AuthPage.handleLogin），前端不需要在步驟 1 就知道驗證狀態。
-  const exists = (data.users || []).some((u: any) => u.email?.toLowerCase() === email);
-  return c.json({ exists });
+  return c.json({ exists: Array.isArray(data) && data.length > 0 });
 });
 
 // register_profile 的回傳值（見 migration 20261017000004）。
