@@ -435,7 +435,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 **E. 後端設計（都是新增，不改既有函式；審查 SYS-01／02／04／05／06／10／11／12、ARCH-02／03／10／12、FACT-04／06／07 回填）**
 - **共用查詢** migration `find_auth_user_by_email(p_email text)`：SECURITY DEFINER、只授權 service_role、`lower(email) = lower($1)`，
   回 `id`、`email_confirmed_at`、`invited_at`、`confirmation_sent_at`、`last_sign_in_at`、`has_password`
-  （`coalesce(encrypted_password, '') <> ''`）、`app_metadata`（只取 `referral_invite` 鍵）。R2 的兩支端點都用它，不沿用
+  （`coalesce(encrypted_password, '') <> ''`）、`referral_invite`（即 `raw_app_meta_data -> 'referral_invite'`，欄名以 check-email 修正的 migration 為準）。R2 的兩支端點都用它，不沿用
   `index.ts:650-653` 的 `search=`（SYS-01）。`/auth/check-email` 改用同一函式是獨立的 `/fix-bug`（§8.1），先於 R2 合併。
 - **資格 helper**（`api/referral-invite.ts`，注入 `sb`）：`referral_program_joined`、`suspended_at is null`、`referral_codes.status =
   'active'` 三項；任一讀取失敗 **fail-closed 回 503 `unavailable`**（不是 403），比照 `validate_referral_code` 的停權判準
@@ -1160,7 +1160,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 1 | **R0** 推薦碼端點關洞 | ✅ #380（2026-10-18） | §2.1；後續 P2 在 #383 | Plan Mode `fix/referral-validate-hardening` | Sonnet | — | 無可見變化；枚舉面降到需登入＋限流 |
 | 1 | **A1b-1** 已付款守衛＋撤銷直改 | ✅ #382（2026-10-18） | §6.1 | `/fix-bug` `claude/auth-register-completion-guard` | Opus | — | 已付款會員改資料得到「請聯繫客服」 |
 | 1 | **R1a-1** 入口三顆元件＋分享順位 | ✅ #381（2026-10-19） | §2.1 | Plan Mode `fix/referral-entry-points` | Sonnet | 真機驗收回填 | 會員中心 1 下到分享面板 |
-| 1 | **check-email 修正** | 待開工，**立即**（prompt 已給：`dispatch-prompts.md` A，2026-10-25） | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（檔名 `<開工日>000001_find_auth_user_by_email.sql`，合併後回填此列）；RPC 失敗改 503 fail-closed | `/fix-bug` `fix/auth-check-email-lookup` | Sonnet | — | 既有會員登入不再被判「不存在」 |
+| 1 | **check-email 修正** | 待開工，**立即**（prompt 已給：`dispatch-prompts.md` A，2026-10-25） | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（檔名登記 `20261025000001_find_auth_user_by_email.sql`，rebase 時若 develop 已有更大版本號則改號）；RPC 失敗改 503 fail-closed | `/fix-bug` `fix/auth-check-email-lookup` | Sonnet | — | 既有會員登入不再被判「不存在」 |
 | 0 | **R2-0** Email 邀請 spike | 待開工（prompt 已給：`dispatch-prompts.md` D） | §2.3A I 十一點 | develop 分支、拋棄式 `claude/r2-0-invite-spike`，不開 PR | Sonnet | 本機段只要 `supabase start`；develop 段要 service key 與 Dashboard（實寄由業主收信） | 無可見變化；結論回報監工 session，進 R2 子 progress |
 | 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 前綴：開工時登記（purge；`find_auth_user_by_email` 若隨 check-email 修正先進則不重複） | 三段式 `feature/referral-email-invite`（規劃 prompt 已給：`dispatch-prompts.md` C；業主另開 session） | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
 | 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |

@@ -17,19 +17,24 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
 - 本 session 只做這一件事。分支 `fix/auth-check-email-lookup`：
   `git fetch origin develop && git checkout -B fix/auth-check-email-lookup origin/develop`
 - 走 /fix-bug 完整版（行為級：影響第 51 位之後所有既有會員能否登入）。Sonnet 即可。
+- 本 prompt 自足。要看總綱溯源（§2.3A C／E、§8.1）而 develop 上的 `docs/plans/platform-growth-and-trust/plan.md` 還沒有 §2.3A 時，
+  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md`
+  只讀不 merge；兩邊不一致以本 prompt 為準。
 - 不要整檔讀 `supabase/functions/api/index.ts`；先 `grep -n "check-email" supabase/functions/api/index.ts` 定位，再讀那一段。
 
-## 症狀與根因（監工 session 已讀碼核對；請先寫紅燈測試重現，再修）
+## 症狀與根因（監工 session 初判；請先寫紅燈測試重現，根因由你自己追到機制層再寫進 fix.md）
 - `app.post('/auth/check-email')` 以 service key 打
-  `GET {SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=50&search=<email>`，再對回傳的 `users` 陣列做 `some(u => u.email === email)`。
-- GoTrue 的 admin list users 端點讀的查詢參數是 `filter`（另有 `page`／`per_page`／`sort`），沒有 `search`；未知參數被忽略，
+  `GET {SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=50&search=<email>`，再對回傳的 `users` 陣列做 `some(u => u.email?.toLowerCase() === email)`。
+- GoTrue 的 admin list users 端點讀的查詢參數是 `filter`（子字串比對＋分頁；另有 `page`／`per_page`／`sort`），沒有 `search`；未知參數被忽略，
   所以這支永遠拿到「最新建立的 50 位使用者」（預設 `created_at desc`）。第 51 位以前註冊的會員會被判 `exists:false`。
 - 前端後果：`src/components/AuthPage.tsx` 的 `handleCheckEmail` 收到 `exists:false` → `setIsExistingUser(false)` → 進 2B「設定密碼」表單 →
   既有會員對已存在的 email 跑 `supabase.auth.signUp`，而不是登入。
-- 為什麼沒被抓到：本機與 CI 的資料庫從零起步、使用者數從未超過 50；`check-email-rate-limit.test.ts` 只釘限流；e2e 全 mock。
+- 為什麼沒被抓到（可證的部分）：沒有任何測試對真 GoTrue 斷言過 `exists:true`——`check-email-rate-limit.test.ts` 只斷言狀態碼；e2e 全 mock。
+  其餘原因（本機／CI 使用者數、程式碼來源）請你自己核對，不要照抄。
 
 ## 修法（總綱 §2.3A E 已定，R2 Email 邀請之後要共用這支函式——簽名照這裡，不要縮）
-1. 新 migration `supabase/migrations/<開工日 YYYYMMDD>000001_find_auth_user_by_email.sql`：
+1. 新 migration `supabase/migrations/20261025000001_find_auth_user_by_email.sql`（總綱 §8.1 已登記此檔名；rebase 時若 `origin/develop` 已有更大的版本號，
+   改號成大於它——版本號隨合併順序單調，不隨開工日）：
    create or replace function public.find_auth_user_by_email(p_email text)
    returns table (
      id uuid,
@@ -47,47 +52,64 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
             u.raw_app_meta_data -> 'referral_invite' as referral_invite
      from auth.users u
      where lower(u.email) = lower(p_email)
-       and u.deleted_at is null   -- 本機 supabase start 後以 \d auth.users 核對此欄存在才加；不存在就拿掉這行
+       and u.deleted_at is null
    $$;
    revoke execute on function public.find_auth_user_by_email(text) from anon, authenticated, public;
    grant execute on function public.find_auth_user_by_email(text) to service_role;
-   檔頭註解寫「為什麼」（照 `20261017000002_validate_referral_code_revoke.sql` 的寫法）：GoTrue admin list 不支援以 email 精確查詢、
-   `search=` 從未被讀過；只回 `/auth/check-email` 與日後 Email 邀請端點需要的欄位、不回其他個資；只給 service_role。
+   `auth.users.deleted_at` 是 GoTrue 既有欄位（軟刪除）；本機 `supabase start` 起得來就以 `\d auth.users` 核對一次，起不來以 CI api-tests 套用成功為準。
+   檔頭註解寫「為什麼」（照 `20261017000002_validate_referral_code_revoke.sql` 的寫法），三點都要可驗證：(1) `search=` 從未被 GoTrue 讀過、只拿到最新 50 位；
+   (2) admin API 的 `filter` 是子字串比對＋分頁，沒有精確查詢端點；(3) Email 邀請要的 `has_password`、`invited_at` 等欄位 admin API 拿不到或要多打幾次，
+   直接讀 `auth.users` 一次命中（第 3 點是設計理由）。只回這幾個欄位、不回其他個資；只給 service_role。
 2. `/auth/check-email` 改成 `const { data, error } = await sb().rpc('find_auth_user_by_email', { p_email: email })`：
    - `error` → 503 `{ error: '暫時無法檢查 Email，請稍後再試' }`（fail-closed。現行 `!res.ok` 回 `{exists:false}` 會把暫時性故障變成與本 bug
      相同的症狀；`AuthPage.handleCheckEmail` 對非 2xx 已有錯誤提示、e2e `backend_api_mock.set_check_email_error()` 已有情境，前端不必改）。
    - 成功 → `{ exists: Array.isArray(data) && data.length > 0 }`。回應仍只有 `exists`，不回任何其他位元（理由見該處既有註解）。
    - 限流與 `clientIp` 不動；拿掉對 `SUPABASE_URL`／`SUPABASE_SERVICE_ROLE_KEY` 的直接 fetch。
+   - 離線守衛 `e2e/journey/tools/test_check_email_quota.py` 會從 `app.post('/auth/check-email'` 切到下一個 `app.` 字串讀這段原始碼：
+     處理函式裡必須保留 `rateLimit(` 呼叫、`` `check-email:${ `` 鍵字面值與 `{ error: '…' }, 429` 的寫法；新增的註解與程式碼不要出現 `app.` 子字串。
 3. 不動 `/auth/register`、`cancel-signup`、`requireAuth`、前端。
 
-## 測試（紅燈先行；`touch .claude/tdd-lock` → commit `test(red)`，照 CLAUDE.md）
+## 測試（紅燈先行；`touch .claude/tdd-lock` → commit `test(red)`；綠後 `scripts/tdd-unlock.sh` → commit `fix:`，照 CLAUDE.md）
+- 紅燈期 hook 禁改 `*.test.ts`：`check-email-rate-limit.test.ts` 檔頭「每次還以 service role 打一次 auth admin API 形成放大」那句修後會過期，
+  在 `touch .claude/tdd-lock` 之前先改好、隨紅燈 commit 一起進（總綱 §8.5 #1「被改掉的說法 grep 全 repo」；舊 migration `20260720000002` 檔頭的同款說法不改，
+  在新 migration 檔頭帶一句更正）。
 - 新檔 `supabase/functions/api/check-email-lookup.test.ts`（需 DB、`deno task test:db`；名稱照 `.claude/rules/test-naming.md`「<主體>：<情境> → <預期>」）：
   1. `check-email：比目標帳號更新的使用者超過 50 位 → 仍回 exists:true`——`createTestUser` 建目標帳號，再建 50 位，
      `POST /api/auth/check-email`（帶唯一 `x-forwarded-for`，寫法照 `check-email-rate-limit.test.ts`）斷言 `{exists:true}`；修法前這條必紅。
-     結束用 `deleteTestUsers` 清掉 51 位。
-  2. `check-email：不存在的 email → exists:false`。
-  3. `check-email：大小寫不同的既有 email → exists:true`。
-  4. `find_auth_user_by_email：anon／authenticated 直接呼叫 RPC → 權限被拒`（寫法照 `referral-validate.test.ts` 的 revoke 斷言）。
-  5. RPC 失敗 → 503：寫得出就寫（`test-helpers.ts` 的 `withRestTableFailure` 是針對 REST 表的失敗注入，RPC 可能要另想辦法）；
-     寫不出就在 fix.md 第 5 節寫明為何，不要硬湊。
+     51 位用 try／finally 以 `deleteTestUsers` 清掉（斷言失敗時也要清）。
+  2. `check-email：不存在的 email → exists:false`（修前就綠，回歸護欄）。
+  3. `check-email：大小寫不同的既有 email → exists:true`（修前就綠，回歸護欄：現行比對已 `toLowerCase`，新函式用 `lower()`）。
+  4. `find_auth_user_by_email：anon、authenticated 不能直接執行，只給 service_role`——寫法照 `referral-validate.test.ts` 的 `has_function_privilege` 查表，
+     三個斷言：anon false、authenticated false、service_role true（第三個擋「revoke 誤傷 service_role → 全站登入步驟 1 都 503」）。
+  5. `check-email：RPC 失敗 → 503，不偽裝成不存在`——照 `referral-validate.test.ts` 的 `withRestTableFailure(['rpc/validate_referral_code'], …)` 寫法，
+     用 `withRestTableFailure(['rpc/find_auth_user_by_email'], …)`，斷言 503、body.error 為「暫時無法檢查 Email，請稍後再試」、body 無 `exists`。這條必寫。
 - `rate-limit.unit.test.ts`、`check-email-rate-limit.test.ts` 不得變紅。`cd supabase/functions && deno fmt && deno lint && deno task check`。
+- 本機起不了 `supabase start` 或連不上 jsr registry：紅綠以 CI `api-tests` 軌為準，fix.md 與 PR 註明「紅燈未在本機確認」；此時 push 前要先清掉 fix.md（見文件段），
+  否則 `guards` 軌紅、其餘軌全 skip。
 
 ## 同類掃描（/fix-bug 第 3 步，必做並寫進 fix.md）
 - pattern：「呼叫外部 API 時帶了對方不認的參數名，回應形狀正常、沒有任何錯誤」。
-- 掃 `grep -rn "admin/users" supabase/ e2e/ scripts/` 與 `grep -rn "auth\.admin\." supabase/functions`，每一處核對參數名與 GoTrue 文件。
-  已知 `e2e/journey/tools/supa.py` 的 `list_users_by_email_prefix` 是分頁掃到空頁為止、不靠 `search`，沒有同一個病。
+- 掃 `grep -rn "admin/users" . --exclude-dir=node_modules --exclude-dir=.git`（含 `.github/workflows/`）、`grep -rn "auth\.admin\." supabase/functions`、
+  `grep -n "fetch(" supabase/functions/api/index.ts`（後端原生 fetch 只剩 PayUni 那處），每一處核對參數名與對方文件。
+  已知 `e2e/journey/tools/supa.py` 的 `list_users_by_email_prefix` 是分頁掃到空頁為止、不靠 `search`，沒有同一個病；`journey.yml` 的 `admin/users/<id>` DELETE 以 id 定址，也沒有。
 - 另有同病灶：小的本 PR 一併修，大的記 friction-log。
 
 ## 文件
 - `supabase/README.md` 函數表加一列 `find_auth_user_by_email`（只給 service_role；`/auth/check-email` 與 Email 邀請端點共用）。
-- 規格書 §4.1 Step 0 那列（`/auth/check-email` 只回 `{ exists }`）契約不變、不改；不在 §14 加「已修」旁白（`.claude/rules/document-writing.md`）。
-- fix.md：`docs/plans/fix-auth-check-email-lookup/fix.md`（從 `docs/_templates/fix.md` 實例化）。PR 收尾前刪掉它（`check-plans-scaffold` 會紅）；
-  「防線回填」一段升級進 `docs/plans/friction-log.md`——教訓：引用既有呼叫當範本前，先核對對方 API 的參數名。
+- 規格書 §4.1 Step 0 那列（`/auth/check-email` 只回 `{ exists }`）契約不變、不改；§14 不加列也不加「已修」旁白（`.claude/rules/document-writing.md`；
+  總綱 §8.6 #14 的「合併前加一列」只在修正延後時適用）。
+- fix.md：`docs/plans/fix-auth-check-email-lookup/fix.md`（從 `docs/_templates/fix.md` 實例化），紅燈 commit 之後至少 commit 一次（之後才能 `git show` 取回）。
+  push 前以獨立 commit `chore(plans): 清理 fix-auth-check-email-lookup` 刪掉它（留著 `check-plans-scaffold` 會紅、CI 其餘軌全 skip）；
+  根因、同類掃描、四面向結論貼進 PR 描述的結論摘要；「防線回填」一段升級進 `docs/plans/friction-log.md`，教訓以你的根因分析為準
+  （監工初判、待你驗證：引用既有呼叫當範本前，先核對對方 API 的參數名）。
 
 ## 收尾
-- rebase 後 `python3 scripts/check-migration-versions.py`；`npm run check`；`bash scripts/framework-check.sh`。
-- PR → develop（draft），標題 `fix(auth): /auth/check-email 改以 find_auth_user_by_email 查詢，不再只比對最新 50 位使用者`，內文照 PR 範本、附紅燈 hash。
-- 回報監工 session：migration 檔名（總綱 §8.1 要登記）、是否找到同病灶、RPC 失敗測試有沒有寫出來。
+- rebase 後 `python3 scripts/check-migration-versions.py` 並手動確認新檔版本號大於 `origin/develop` 現有最大值；`npm run check:full`；
+  `cd e2e/journey && pytest tools/ -q`；`bash scripts/framework-check.sh`。
+- PR → develop（draft），標題 `fix(auth): /auth/check-email 改以 find_auth_user_by_email 查詢，不再只比對最新 50 位使用者`，內文照 PR 範本、附最後一次 rebase 後的紅燈 hash。
+  驗收段加一項：develop 預覽站以註冊順序在最新 50 位之外的既有會員 email 進登入頁，應進「登入」步驟而非「設定密碼」；做不到就寫「未驗」。
+- push 後 `gh pr checks --watch` 盯到 `api-tests` 綠才回報。
+- 回報監工 session：migration 最終檔名（改號才需回報）、是否找到同病灶、根因分析結論一句。
 ```
 
 ---
