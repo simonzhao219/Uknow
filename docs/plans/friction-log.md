@@ -2987,6 +2987,10 @@ docker pull axllent/mailpit:v1.30.2 && docker tag axllent/mailpit:v1.30.2 supaba
 supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime   # edge-runtime 起不來（rlimit）
 ```
 
+補充（`fix/auth-check-email-lookup`，2026-10-25）：`SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io supabase start -x
+studio,logflare,vector,supavisor` 讓 CLI 直接從 Docker Hub 拉全部映像，不必逐一改標；當天 `public.ecr.aws` 仍回
+`Data limit exceeded`、ghcr blob 仍被拒，這一條一次起得來。`npm i -g deno` 裝到的 2.9.6 跑 `deno task test:db` 正常。
+
 另兩個坑：`supabase db reset` 或容器重啟後，若測試全部以 `AuthRetryableFetchError` 秒退，`docker restart` kong
 即可；本機 deno 2.5 的 `deno task test:db` 會把 `--ignore=api/*.unit.test.ts` 當成檔案 glob 而失敗，改用
 `deno test ... $(ls api/*.test.ts | grep -v '\.unit\.test\.ts$')`（CI 的 deno 版本不受影響）。是否把整套包成
@@ -3108,3 +3112,38 @@ S7a（#385）七階段 TDD 中，兩個階段在紅燈 commit 之後又改了測
 (1) 紅燈 commit 前跑 `bash scripts/framework-check.sh`，測試檔也受色彩／命名守門掃描；
 (2) `tdd-unlock.sh` 的 check 納入 `check-color-usage.py`，否則解鎖後才紅；
 (3) 評估是否讓 bash-guard 攔「刪 `.claude/tdd-lock`」，把逃生口 2 變成機械上只能由 `tdd-unlock.sh` 走。
+
+## 2026-10-25｜漏網｜`/auth/check-email` 帶了 GoTrue 不認的 `search=`，只比對最新 50 位——同一個 bug 舊版修過一次，改寫時被靜默撤回
+
+`/auth/check-email` 打 `admin/users?page=1&per_page=50&search=<email>` 再在那一頁裡比對。GoTrue 的 list users 只讀
+`page`／`per_page`／`sort`／`filter`，`search` 被靜默忽略，回的是 `created_at desc` 第一頁＝最新 50 位：會員一過 50，
+較早註冊的人在登入頁被判「不存在」、被送去設定密碼。本機 gotrue v2.197.0 實測帶 `search=` 與不帶參數回同一頁。
+R2 規劃審查（2026-10-21）讀碼發現，不是任何閘門攔到的。
+
+三層都沒有訊號，各有原因：
+
+1. **寫錯沒有訊號**：2026-06-20 `2f3f715b` 把舊 `make-server` 的 SDK 呼叫 `auth.admin.listUsers({ page, perPage })`
+   改寫成手寫 `fetch`，自創了 `search` 參數。手寫 URL 沒有型別，GoTrue 對未知參數不報錯、HTTP 200、回應形狀與正確
+   查詢相同。
+2. **舊修法沒有測試**：被取代的舊版 `checkEmail` 是分頁掃到最後一頁，註解寫「Phase 10.2: 修復分頁問題」——這個 bug
+   修過一次，修正只活在程式碼裡，重寫時一起消失，沒有任何紅燈。
+3. **就算有測試也會綠**：沒有任何測試對真 GoTrue 斷言過 `exists:true`（`check-email-rate-limit.test.ts` 只看狀態碼、
+   e2e 全 mock）；而「剛建的帳號 → exists:true」修前修後都綠，因為 fixture 永遠是最新建立的，天生落在第一頁。
+
+處置：`fix/auth-check-email-lookup` 改用 service_role 專用的 `find_auth_user_by_email`（DB 內精確比對），RPC 失敗
+503 fail-closed；`check-email-lookup.test.ts` 的紅燈刻意在目標之後再建 50 位，才造得出 bug 的前提。
+
+同類掃描記債（金流，不在該 PR 範圍）：`queryPayUniTradeStatus` 的查詢層回應只要 `Status !== 'SUCCESS'` 就回
+`stillProcessing`，不記錄、不告警。payload 欄位名若不對，每一輪都拿到 PayUni 的錯誤狀態，卡單永遠「處理中」、端點
+照樣回成功——同一個「錯誤長得像正常」的形狀。欄位名當時無法對 PayUni 文件驗證（`index.ts` 註解寫「以官方文件為準、
+上線前 sandbox 驗一輪」，`docs/`、`.github/` 內找不到驗過的紀錄）。償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的
+`Message`，讓「查無此單」與「參數錯」分得開；再以 sandbox 實打一輪確認欄位名。
+
+推論（待整併時裁決）：
+
+- 引用既有呼叫當範本、或把 SDK 呼叫改寫成手寫 HTTP 之前，先對對方原始碼／文件核一次參數名。
+  `platform-uiux-redesign/progress.md` 2026-10-21 列已寫過同一句，這是第二次出現。
+- 修過的 bug 沒有測試就等於沒修過——重寫會把它靜默撤回。修 bug 的紅燈測試是那次修正唯一帶得走的部分。
+- 「把單頁當全集」這一類 bug，紅燈要刻意造出前提（目標之後再建滿一頁），只用新建 fixture 的測試永遠綠。
+- 框架修訂候選：離線守衛限制 `supabase/functions/api/index.ts` 的原生 `fetch(` 只能打 PayUni（目前只剩那一處），
+  新增對 GoTrue／PostgREST 的手寫 HTTP 呼叫就紅，逼它走 SDK 或 DB 函式。
