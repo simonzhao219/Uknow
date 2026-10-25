@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { findForbiddenWord } from '@recruitment-copy';
 import { MyQrButton } from './MyQrButton';
 
 afterEach(cleanup);
@@ -58,5 +59,11 @@ describe('MyQrButton', () => {
     // 觸控裝置上純圖示鈕仍要 44px 見方（§1）。
     expect(link.className).toContain('pointer-coarse:min-w-[44px]');
     expect(link.className).toContain('pointer-coarse:min-h-[44px]');
+  });
+
+  it('入口的文字與屬性都不含招募禁用字樣', () => {
+    renderButton();
+    // innerHTML 連 aria-label、title 一起看：讀屏念得到的也是使用者看得到的文案。
+    expect(findForbiddenWord(document.body.innerHTML)).toBeUndefined();
   });
 });

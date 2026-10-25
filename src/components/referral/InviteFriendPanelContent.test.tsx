@@ -8,6 +8,7 @@
 //     ReferralCodeWithCopy 讀同一份，不再由呼叫端另傳一份碼。
 //   - 沒加入或沒有碼時整塊不渲染（gating 由呼叫端的分頁負責，內容自身也防守一次）。
 //   - 「分享 QR Code」與「邀請好友」同一套取消語意：分享面板按取消就停。
+//   - 「邀請好友」送出的訊息以推薦人揭露句收尾，名字取自同一份 UserContext。
 // QR 元件替身成帶顏色屬性的 canvas：不斷言像素，只斷言畫什麼、用什麼色。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -175,5 +176,22 @@ describe('InviteFriendPanelContent 分享 QR Code', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
+  });
+});
+
+describe('InviteFriendPanelContent 邀請好友', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'share');
+  });
+
+  it('送出的邀請訊息以「本邀請由 Uknow 推薦人 小明 發送」收尾', () => {
+    // 只在真的 navigator 上補 share（jsdom 沒有）；shareReferralInvite 立刻接 .catch，
+    // 所以替身要回 Promise。
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    renderPanel();
+    fireEvent.click(screen.getByTestId('share-referral-button'));
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(share.mock.calls[0][0].text).toMatch(/本邀請由 Uknow 推薦人 小明 發送$/);
   });
 });

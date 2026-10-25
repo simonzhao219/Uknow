@@ -51,6 +51,12 @@ export default defineConfig({
       ),
       // 補繳計畫的共用案例表。同上:物理放 Deno 側,前端經 alias 讀入。
       '@backfill-cases': path.resolve(__dirname, './supabase/functions/_shared/backfill-cases.ts'),
+      // 招募文案（揭露句與禁用字樣）。與 @contract 同理：正式程式與測試都 import，
+      // R2 的後端姓名檢查與信件模板測試讀同一份。
+      '@recruitment-copy': path.resolve(
+        __dirname,
+        './supabase/functions/_shared/recruitment-copy.ts',
+      ),
     },
   },
   build: {

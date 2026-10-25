@@ -37,7 +37,7 @@ export function buildReferralLink(code: string): string {
  * 「連結」與「推薦碼」。連結只出現一次（分享時不再另外帶 url 欄位，避免部分
  * App 把 url 再接到訊息尾端造成重複）。
  */
-export function buildInviteMessage(code: string): string {
+export function buildInviteMessage(code: string, _memberName?: string | null): string {
   return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
 }
 
@@ -109,7 +109,11 @@ function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
  *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
  *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
  */
-export function shareReferralInvite(code: string, showToast: ShowToast): void {
+export function shareReferralInvite(
+  code: string,
+  showToast: ShowToast,
+  _memberName?: string | null,
+): void {
   if (!code) {
     showToast('推薦碼不存在', 'error');
     return;
