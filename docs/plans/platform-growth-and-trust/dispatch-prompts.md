@@ -198,45 +198,68 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
 - 分支 `feature/referral-email-invite`：`git fetch origin develop && git checkout -B feature/referral-email-invite origin/develop`
   （三段式流程，守衛只認 `feature/*`；規劃書目錄名必須等於 slug）。
 - 模型 Opus。本 session 只做規劃與審查，不寫任何產品程式碼；審查報告出來後停，等業主裁決。不要跑 `/tdd-implement`。
-- 上游：總綱 `docs/plans/platform-growth-and-trust/plan.md` §2.3A（R2 Email 邀請，A～K 全部）、§2.4／§2.5 的 R2 列、§8.1／§8.2／§8.6 #9～#13、
-  §14 第 6 題、§16。若 PR #386 還沒合併、develop 的總綱沒有 §2.3A，用
-  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md`
-  讀那份（不要 merge 進來）。
-- 前置狀態（開工時核對，寫進 plan.md「現況」）：
-  - check-email 修正（`fix/auth-check-email-lookup`）合併了嗎——合併了就直接用 `find_auth_user_by_email`（簽名見總綱 §2.3A E 第一點），
-    沒合併就在 plan.md 寫明依賴、不要重複建同名 migration；
-  - R1a-3（`fix/referral-disclosure-wording`）合併了嗎——揭露句函式的名稱與路徑，模板測試要引用；
-  - R2-0 spike 結論在不在（監工 session 另有 spike prompt）；不在就把十一點列為階段 0 並標「待驗證」，規劃不等它。
+- 上游是總綱 `docs/plans/platform-growth-and-trust/plan.md` 的 §2.3A（R2 Email 邀請，A～K）、§8.1／§8.2、§8.6 #9～#13、§14 第 6 題、§16。
+  PR #386 合併前 develop 上的總綱沒有這些段，所以一律這樣讀：
+  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md > <scratchpad>/upstream-plan.md`
+  （不 merge、不 commit），再用 Read 的 offset／limit 只讀上述段落（§2.3A 約 300–620 行、§8.1／§8.2 約 1156–1215 行，行號現算），不要整檔讀進 context。
+  plan.md 的上游引用寫「總綱 §2.3A（commit <hash>）」：#386 已合併就填它合進 develop 的 merge commit，未合併填「待監工回填」並列入回報；不要寫會被 rebase 掉的分支 tip。
+- 衝突時誰為準：§2.3A D／K 與業主 2026-10-22／23 裁決 > §2.3A I 表 > §2.5／§2.7／§9／§11 的摘要列（後者可能殘留舊稱）。
+  已知殘留：總綱 E 段 purge 一句寫「R2-0 第 9 點驗可行性」，audit 刪除其實是 spike 第 6 點。規劃中再發現的，列進回報的「總綱需修正處」，不要自己改總綱。
+- 前置狀態（開工時核對，寫進 plan.md「0. 現況」）：
+  - check-email 修正（`fix/auth-check-email-lookup`，dispatch-prompts A）合併了嗎——合併後 `find_auth_user_by_email` 的權威是 `supabase/migrations/*_find_auth_user_by_email.sql`，
+    未合併以 A 段的 SQL 為準。**R2-1 的開工條件＝A 已合併**；沒合併就在 plan.md 標「R2-1 擋於前置」，不列第二支 migration、不重建同名函式。
+  - R1a-3（`fix/referral-disclosure-wording`，dispatch-prompts B）合併了嗎——B 建的是 `supabase/functions/_shared/recruitment-copy.ts`
+    （`referralDisclosureSentence(name)`、`RECRUITMENT_FORBIDDEN_WORDS` 十一詞、vite alias `@recruitment-copy`）。未合併就寫「依賴 B」並照該路徑規劃，不要另建第二份陣列。
+  - R2-0 spike（dispatch-prompts D）結論：由監工 session 貼進本 prompt 之後或 progress.md；沒有就視為不在，階段 0 標「外部 spike，待驗」，規劃不等它。
 
 ## 規劃書（落檔模式：跨 session、動 auth 資料、階段 ≥3，三條全中）
-- `docs/plans/referral-email-invite/plan.md` 只寫與總綱 §2.3A 的差異與補足，設計本體以
-  `git show <總綱 commit>:docs/plans/platform-growth-and-trust/plan.md §2.3A` 為上游、不複製。各節至少要有：
+- `docs/plans/referral-email-invite/plan.md` 只寫與總綱 §2.3A 的差異與補足，設計本體引用上游、不複製。各節：
+  0. 現況（前置狀態）：上面三項的實際狀態、develop HEAD、總綱 C／E 引用行號的重標結果。
   1. 使用者需求：引總綱 A；K 段 Q2-12～23 ＋ 用語稽核逐條列為「已定、不重議」。
-  2. 系統設計：讀碼重標總綱 C／E 引用的行號；`POST /referrals/invites`、`POST /auth/invite/accept` 的請求／回應／error code 表；
-     限流六組常數名與數值（每人 5／3600 與 20／86400；同一信箱 1／86400；全站 100／3600 與 1000／86400；accept per-IP 20／300）；
-     簽章 payload `{v,e,c,x}` 與 TTL 7 天；purge 7 天＋`p_email`＋audit 列＋cron `23 3 * * *`；`app_metadata.referral_invite` 四鍵；`user_metadata` 兩鍵。
-  3. 架構影響：新檔（`api/referral-invite.ts`、`api/referral-invite-token.ts`、`_shared/referral-invite-payload.ts`、
-     `src/components/referral/InviteCard.tsx`——三處「邀請好友」改開同一張卡片、一顆主鈕依有無 email 切換「快速分享」／「用 Email 邀請」、
-     `src/hooks/useInviteAccept.ts`、`supabase/email-templates/referral-invite.html`）；既有檔改動點（`AuthPage.tsx` invite 模式、
-     `OTPVerificationPage.tsx` 抽 `routeAfterVerifiedSession`、`App.tsx` 豁免 `/auth/reset-password` 一行、`CompleteProfile.tsx` 後備預填、
-     `index.ts` 只加路由註冊與常數）；撞檔：T1 排 R2 之後（Q2-20）、admin 檔不動（交 A1a）。
-  4. UIUX：邀請卡片三狀態（未填 email／已填未勾同意／已填已勾）、九種 error code 文案、受理文案（遮罩地址、不宣稱已送達）、2A 靜態提示、
-     「改用其他 Email 註冊」；用語一律「推薦人」；讀 `docs/ui-ux-guidelines.md` §12.11／§12.13／§13 第 5 條。
-  5. 階段切分（TDD）：R2-0 spike（拋棄式）、R2-1 後端、R2-2 前端＋文件、R2-3 上線——照總綱 §2.3A I 的表，每階段寫紅燈測試落點與驗證標準；
-     `check-spec-drift` 十二條與規格書 §7.1 新段同在 R2-1。
+  2. 系統設計：`POST /referrals/invites`、`POST /auth/invite/accept` 的請求／回應／error code 表；限流六組常數名與數值（每人 5／3600 與 20／86400；
+     同一信箱 1／86400；全站 100／3600 與 1000／86400；accept per-IP 20／300）——常數留在 `index.ts` 常數區、窗口寫乘式（`rate-limit.unit.test.ts` 只讀那裡）；
+     簽章 payload `{v,e,c,x}` 與 TTL 7 天（TTL 常數放 `index.ts` 讓 `check-spec-drift` 讀得到，或由 R2-1 擴充 `scripts/check-spec-drift.py` 的 `_load_sources` 並補 self-test 案例，二選一寫明；
+     「十二條」＝五把 per-user／target／global 限流 ×2＋TTL＋purge，accept per-IP 是否納入請明寫）；purge 7 天＋`p_email`＋audit 列＋cron `23 3 * * *`；
+     `app_metadata.referral_invite` 四鍵；`user_metadata` 兩鍵；`find_auth_user_by_email` 的欄名以前置狀態寫的權威為準。
+  3. 架構影響：
+     - 新檔：`api/referral-invite.ts`、`api/referral-invite-token.ts`、`_shared/referral-invite-payload.ts`（零依賴；前端經 vite alias `@referral-invite-payload` 讀，
+       接線照 `@backfill-cases`：`vite.config.ts` alias、`tsconfig.json` paths 與 include）、`src/components/referral/InviteCard.tsx`（三處「邀請好友」改開同一張卡片、
+       一顆主鈕依有無 email 切換「快速分享」／「用 Email 邀請」）、`src/hooks/useInviteAccept.ts`、`supabase/email-templates/referral-invite.html`。
+       vitest 只跑 `src/**`（`vitest.config.ts` exclude supabase）：模板測試與 payload 純解碰測試都放 `src/`。
+     - 既有檔：`AuthPage.tsx` invite 模式、`OTPVerificationPage.tsx` 抽 `routeAfterVerifiedSession`、`App.tsx` 豁免 `/auth/reset-password` 一行、`CompleteProfile.tsx` 後備預填、
+       `index.ts` 只加路由註冊與常數、`InviteFriendButton.tsx`／`InviteFriendPanelContent.tsx`／`MyQrPage.tsx`（入口改開卡片）、`e2e/mocks/backend_api_mock.py`、
+       `e2e/mocks/supabase_auth_mock.py`、`e2e/features/dashboard_smoke.feature`、`.github/workflows/ci.yml`／`journey.yml`（見下一點；改了要跑 `scripts/check-workflows.py`）。
+     - 旗標與 secret 的環境落點（plan.md 逐一定案）：e2e 的 dev server（`ci.yml` 與 `e2e/conftest.py` 裡起 `npm run dev` 的地方）怎麼帶 `VITE_REFERRAL_EMAIL_INVITE`，
+       或旗標缺省時表單是否仍渲染；journey 的 `supabase secrets set` 段加 `REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED=true`，`e2e/journey/conftest.py` 的前端 env 加旗標；
+       hosted 環境（Cloudflare Pages 建置變數、Supabase secrets）由誰在 R2-3 設。沒定這段，R2-2 的 e2e 會看不到表單、R2-3 的 journey 會拿到 503 `disabled`。
+     - `_shared/recruitment-copy.ts` 的三個消費點：`POST /referrals/invites` 對推薦人姓名的檢查；模板測試以 `referralDisclosureSentence('{{ .Data.referral_invite_name }}')` 比對並斷言
+       整份模板不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一詞；InviteCard 與受理／錯誤文案的 render 測試。
+     - 讀 `docs/multi-step-flow-recovery.md`，逐條寫四契約怎麼滿足（尤其契約 2 可重入入口、契約 4 零寄信），並決定 invite 狀態推導與 `routeAfterVerifiedSession`
+       放進 `src/utils/registrationFlow.ts` 還是獨立檔，附理由。
+     - 撞檔：T1 排 R2 之後（Q2-20）；admin 檔不動（交 A1a）；B 先改 `InviteFriendButton.tsx`／`InviteFriendPanelContent.tsx` 的分享簽名、S7a 動 `MemberDashboard`／`ReferralManagement`，
+       R2 rebase 以先合併者為準（總綱 §8.2）。
+  4. UIUX：邀請卡片三狀態（未填 email／已填未勾同意／已填已勾）、九種 error code 文案、受理文案（遮罩地址、不宣稱已送達）、2A 靜態提示、「改用其他 Email 註冊」；
+     用語一律「推薦人」、信件與卡片文案不含 `RECRUITMENT_FORBIDDEN_WORDS`；讀 `docs/ui-ux-guidelines.md` §12.11／§12.13／§13 第 5 條。
+  5. 階段切分（給 TDD 用）：只把可紅綠循環的階段列為待實作。R2-0 標「外部 spike，結論由監工貼入，不在本分支做」；R2-3 標「非 TDD：業主貼模板、開 env；journey 在晉升 PR 跑」。
+     R2-1、R2-2 依依賴拆成多個紅綠循環，各寫測試落點與驗證標準，例如：token 模組（unit）→ purge migration → 資格 helper＋`rateLimitStrict` → invites 端點 → accept 端點 →
+     `routeAfterVerifiedSession` 抽取（行為不變）→ AuthPage invite 模式＋hook → InviteCard → CompleteProfile 後備預填＋模板檔＋文件。`check-spec-drift` 十二條與規格書 §7.1 新段跟著後端那幾段。
   6. 開放問題：只准列總綱沒裁過的；K 段已裁的不得重開。
   7. 風險回滾：env `REFERRAL_EMAIL_INVITE_ENABLED` 與建置旗標 `VITE_REFERRAL_EMAIL_INVITE` 兩道開關；purge 可手動呼叫；回滾不需刪 migration。
-  - migration 檔名：`<開工日>000001_purge_stale_referral_invites.sql`（`find_auth_user_by_email` 只在 check-email 修正未先合併時才另列 `000002`），
-    寫進 plan.md 讓監工 session 登記進總綱 §8.1。
-- `docs/plans/referral-email-invite/progress.md`：從 `docs/_templates/progress.md` 實例化，R2-0～R2-3 全部「未開始」。檔頭照先例
+  - migration：只有 purge 一支，版本號照總綱 §8.1 登記值 `20261025000011_purge_stale_referral_invites.sql`，plan.md 抄登記值；R2-1 開工若 develop 已有更大版本號就改號，
+    rebase 後跑 `python3 scripts/check-migration-versions.py`。
+- `docs/plans/referral-email-invite/progress.md`：從 `docs/_templates/progress.md` 實例化，階段照第 5 節的拆法、全部「未開始」。檔頭照先例
   （`docs/plans/platform-uiux-redesign/progress.md:3`）加 `<!-- plans-keep: 施工鷹架；退場條件＝/tdd-implement 收尾刪除整個目錄 -->`
   讓 `guards` 軌綠——friction-log 2026-09-14 業主裁決的過渡做法，衝突已記錄、不必再寫一次。
 
 ## 審查
-- 規劃寫完立刻 `/review-plan referral-email-invite`（四個 plan-reviewer，並照 2026-10-21 先例自加一條「事實核對」lane：逐條核對 plan.md 引用的行號、
-  函式名、GoTrue 行為）。產出 `review.md`。
-- P0／P1 處置後停。推分支、開 draft PR（標題 `docs(plans): referral-email-invite 規劃與審查`，內文列開放問題與需業主裁決的點）。
-- 回報監工 session：PR 號、開放問題清單、與總綱 §2.3A 不一致之處（規劃過程發現總綱寫錯的，列出來，不要自己改總綱）。
+- 規劃寫完立刻 `/review-plan referral-email-invite`。reviewer 只有 Read／Grep／Glob、跑不了 git：派工時在每個 prompt 附 `<scratchpad>/upstream-plan.md` 的絕對路徑與要讀的段落行段，
+  並明講總綱不在工作樹。
+- 事實核對拆兩半：repo 內事實（行號、函式名、檔案存在）交唯讀 subagent（codebase-scout）逐條核對；GoTrue 行為由你在連得到時以官方文件或原始碰核對，
+  連不到就在 plan.md 標「未驗，由 R2-0 第 N 點承接」並附 GoTrue 主張 ↔ spike 十一點對照，不得寫成已核對。`review.md` 摘要表為事實核對加第五列。
+- P0：修訂 plan.md 並重跑 `/review-plan`，或停下等業主明文豁免。P1／P2 原樣留在 `review.md`、不改判，需裁決的點放進 PR 描述。不要勾 `review.md`「處置」節的人審完成框。之後停。
+- push 前 `python3 scripts/check-plans-scaffold.py` 與 `bash scripts/framework-check.sh`；推分支、開 draft PR（標題 `docs(plans): referral-email-invite 規劃與審查`，
+  內文照 `.github/pull_request_template.md`，「流程證據」貼四視角＋事實核對的 P0／P1 摘要）；push 後 `gh pr checks <pr> --watch` 盯到 `guards` 綠。
+- 回報監工 session：PR 號；三個前置各自的狀態；plan.md 登記的 migration 版本號；`review.md` 處置狀態與開放問題清單；總綱需修正處（含上面已知那句）。
 ```
 
 ---
@@ -244,39 +267,53 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
 ## D. R2-0 spike：Email 邀請可行性十一點（拋棄式）
 
 ```text
-R2-0 spike：Email 邀請可行性驗證（拋棄式、不留產品碼；結論寫成一份 markdown 回報監工 session）
+R2-0 spike：Email 邀請可行性驗證（拋棄式、不留產品碼、不 commit；結論寫成一份 markdown 貼回監工 session）
 
 ## 開局
-- 分支 `claude/r2-0-invite-spike`（非 `feature/*`；不開 PR、不合併）：`git fetch origin develop && git checkout -B claude/r2-0-invite-spike origin/develop`。Sonnet。
-- 產物只有一份筆記：若 `docs/plans/referral-email-invite/` 已存在（R2 規劃分支）就寫 `spike-notes.md` 到那裡，否則寫在 scratchpad、最後整段貼回監工 session。
-  每一點寫：怎麼驗、看到什麼、結論（可行／不可行／有條件）、對總綱 §2.3A 設計的影響。
-- 兩段：本機段用 `supabase start`（GoTrue＋本機信箱 Inbucket 或 Mailpit，`supabase status` 列網址），spike 程式放 `supabase/functions/api/spike-*.ts`、驗完刪掉；
-  develop 段要打 develop 的 Supabase 分支（project `ijcxnxhrziehdtkwausy`，見 `config/supabaseTarget.ts`），需要 service role key 與 Dashboard——
-  沒有權限就把該點標「待業主」並寫出業主要做的操作步驟與要回填的欄位。
-- 背景：總綱 §2.3A C／E／F（develop 上沒有就 `git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md`）。
+- 分支 `claude/r2-0-invite-spike`（非 `feature/*`；全程不 commit、不 push、不開 PR）：`git fetch origin develop && git checkout -B claude/r2-0-invite-spike origin/develop`。Sonnet。
+- 筆記一律寫在 scratchpad（不寫進 `docs/plans/`），收尾整段貼回監工 session。每一點寫：怎麼驗、看到什麼、結論（可行／不可行／有條件／待本機／待業主）、對總綱 §2.3A 設計的影響。
+- 背景只讀總綱 §2.3A C／E／F／I：`git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md > <scratchpad>/upstream-plan.md`，
+  用 Read offset／limit 只讀 §2.3A（約 300–620 行，行號現算），不 merge。
+- 兩段：
+  - 本機段：`supabase start`（CLI 用 2.109.1，同 `.github/workflows/ci.yml` 的釘版，否則第 7 點的結論不能外推到 CI）；本機信箱是 Inbucket 或 Mailpit，`supabase status` 列網址。
+    `supabase/config.toml` 現在只有 `project_id` 與 `[functions.api]`、沒有 `[auth]` 段——要測模板就新增 `[auth.email.template.invite]`（與 recovery 的 `content_path`），
+    收尾必 `git checkout -- supabase/config.toml`。spike 程式放 `supabase/functions/api/spike-*.ts`，驗完刪掉，收尾 `git status` 必須乾淨。
+    `supabase start` 起不來（無 docker、jsr.io 被擋）：本機段各點標「待本機」，不要硬湊結論；第 2、3、4、8 點可改打 develop 驗。
+  - develop 段：打 develop 的 Supabase 分支（project `ijcxnxhrziehdtkwausy`，見 `config/supabaseTarget.ts`），需要 service role key 與 Dashboard。
+    沒有權限的點標「待業主」並寫清楚操作路徑、要回填的欄位、「只看不改」或「改完還原」。develop 的 Invite 模板是整個專案共用的：業主貼之前先備份原文，收尾還原。
+    develop 上建的所有測試使用者（第 2、3、4、8、9、10 點）收尾用 service role `deleteUser` 清掉；寄信對象一律用業主收得到的 plus 位址（`<業主信箱>+spikeN@gmail.com`），不用 `example.invalid`（真 SMTP 會退信）。
 
-## 十一點（總綱 §2.3A I「R2-0 spike」列）
-1. `auth.admin.inviteUserByEmail(email, { data: { referral_invite_name, referral_invite_url } })` 寄出的信在本機信箱看得到；
-   Invite 模板裡 `{{ .Data.referral_invite_name }}` 與 `{{ if .Data.referral_invite_url }}…{{ end }}` 都正確渲染
-   （本機用 `supabase/config.toml` 的 `[auth.email.template.invite]` `content_path` 指一份暫時模板測；把 config 寫法記下給 R2-3）。
+## 十一點（編號照總綱 §2.3A I「R2-0 spike」列的順序；第 12 點是加測）
+1. `auth.admin.inviteUserByEmail(email, { data: { referral_invite_name, referral_invite_url } })` 寄出的信在信箱看得到；模板裡 `{{ .Data.referral_invite_name }}` 與
+   `{{ if .Data.referral_invite_url }}…{{ else }}…{{ end }}` 都正確渲染。另測 else 分支：`inviteUserByEmail(email)` 不帶 data，以及 Dashboard 手動 Invite 各一次，
+   確認不報模板錯誤、渲染一般文案、沒有 `<no value>`。暫時模板採總綱 §2.3A F 的內文順序與排版數值（側邊 padding ≤ 24px、揭露句與告知段 ≥ 14px、CTA ≥ 44px），
+   揭露句逐字「本邀請由 Uknow 推薦人 {{ .Data.referral_invite_name }} 發送」，全文不得出現「傳銷商」「直銷」。把 config 寫法記下給 R2-3。
 2. 對既存「已邀請未驗證」使用者先 `updateUserById(id, { user_metadata, app_metadata })` 再 `inviteUserByEmail` 重寄，信內渲染的是更新後的 metadata
-   （總綱 C 說直接重寄不套用新 data，驗證繞法成立）。
-3. `generateLink({ type: 'invite', email })` 對既存未驗證使用者回 `properties.hashed_token`；對已驗證使用者回 422。
-4. 硬順序：`updateUserById(id, { password })` → `generateLink(invite)` → `verifyOtp({ token_hash, type: 'invite' })` 取得 session，
-   `email_confirmed_at` 非空，`signInWithPassword` 用剛設的密碼成功；反過來（先 generateLink＋verifyOtp 再設密碼）會怎樣也記一下。
-5. `updateUserById({ password: '12345678' })` 之類弱密碼回 `weak_password`；記下本機與 develop 兩環境的密碼強度設定（最小長度、字元類別、外洩密碼檢查）。
-6. 以 postgres 身分 `delete from auth.users where …` 成功並 cascade 到 `profiles`；同交易 `delete from auth.audit_log_entries where payload->>'user_id' = …` 可行；
-   pg_cron 排程下以函式 owner 執行也可行（本機 `cron.schedule` 一分鐘排程試一次）。
-7. 本機 `supabase start` 下，Deno 整合測試呼叫 `inviteUserByEmail` 不受 email 寄送限流影響，確認 R2-1 的測試在 CI `api-tests` 軌跑得動。
-8. 已邀請未驗證帳號 → `resetPasswordForEmail` → recovery 信 → `verifyOtp(type:'recovery')` → 可設密碼並登入
-   （被邀請者不走邀請連結時的逃生路徑；順帶記 recovery 後 `App.tsx` 的導頁行為）。
-9. `inviteUserByEmail` 是否計入 GoTrue 的 `email_sent` 限流桶（連續打超過 develop 的 `rate_limit_email_sent` 看是否 429 `over_email_send_rate_limit`）；
-   develop 該值是多少（Dashboard Auth → Rate Limits）。
-10. develop SMTP 實寄：業主以自己的 Gmail、iOS 郵件、Outlook App 各收一封，記：進收件匣或垃圾、揭露句與告知段在手機不放大是否可讀、
-    「接受邀請」連結可點且落到 `FRONTEND_URL`（業主操作，寫清楚步驟與回填欄位）。
-11. `redirect_to` 不在 allow list 時落到 Site URL 且 query 被丟——驗一次，確認「不傳 redirectTo、連結自己放信內」是必要的。
+   （總綱 C 說直接重寄不套用新 data，驗證繞法成立）。每一步之後 `select invited_at, confirmation_sent_at, raw_app_meta_data, raw_user_meta_data from auth.users`，記下哪一步覆寫了 `invited_at`。
+3. `generateLink({ type: 'invite', email })` 對既存未驗證使用者回 `properties.hashed_token`；對已驗證使用者回 422。同樣記 `invited_at`／`confirmation_sent_at` 的變化。
+4. 硬順序：`updateUserById(id, { password })` → `generateLink(invite)` → `verifyOtp({ token_hash, type: 'invite' })` 取得 session，`email_confirmed_at` 非空，
+   `signInWithPassword` 用剛設的密碼成功；反過來（先 generateLink＋verifyOtp 再設密碼）會怎樣也記一下。
+5. `updateUserById(id, { password })` 依序試三種：長度不足、缺字元類別（`abcdefgh`）、已知外洩（`Password123`），逐一記是否回 `weak_password`、`error.code`／message。
+   本機預設設定下通過是正常結果（記為「本機無此防線」）；要驗字元類別就在 config.toml 加 `[auth]` 的 `minimum_password_length = 8`、`password_requirements = "lower_upper_letters_digits"`（測完還原）。
+   另記 **develop 與正式站**兩個 Dashboard 的密碼強度設定（Authentication → Sign In / Providers → Email；正式站只看不改、標「待業主」），對照前端 `src/utils/passwordPolicy.ts`。
+6. 以 postgres 身分 `delete from auth.users where …` 成功並 cascade 到 `profiles`；同交易刪 `auth.audit_log_entries`——先 `select payload` 看 invite／signup 事件的實際形狀，
+   謂詞用實際鍵（可能是 `payload->'traits'->>'user_id'`、`payload->>'actor_id'` 或 `actor_username = email`，總綱 E 的 `payload->>'user_id'` 只是初稿），
+   判準寫「被刪列數 > 0 且刪後以 email／id 搜 `audit_log_entries` 為 0」。pg_cron 排程下以函式 owner 執行也可行（本機 `cron.schedule` 一分鐘排程試一次）。
+   本機與 develop（hosted；用 `begin; … rollback;` 或拋棄式測試使用者）各驗一次 postgres 角色對 `auth.users`／`auth.audit_log_entries` 的 DELETE 權限，結論分環境寫。
+7. 本機 `supabase start` 下 Deno 整合測試可呼叫 `inviteUserByEmail`。先查本機是否 autoconfirm（`enable_confirmations`；config 沒設就是 CLI 預設）：若是，「不受 email 限流」只是 autoconfirm 的結果，
+   結論寫成「CI api-tests 可呼叫 inviteUserByEmail，但與正式站限流無關（第 9、10 點才管）」。另記：R2-1 要造「自助註冊未驗證」fixture 在本機得用 `admin.createUser({ email_confirm: false })`
+   （`test-helpers.ts` 的 `createTestUser` 是 `email_confirm: true`）。
+8. 已邀請未驗證帳號 → `resetPasswordForEmail` → recovery 信 → `verifyOtp(type:'recovery')` → 可設密碼並登入（被邀請者不走邀請連結時的逃生路徑）。
+   本機把 `supabase/email-templates/reset-password.html` 設為 recovery 的 `content_path` 走 6 碼 `verifyOtp({ email, token, type: 'recovery' })`；
+   recovery 後 `App.tsx` 的導頁行為讀碼確認（`App.tsx` SIGNED_IN 處理與 `OTPVerificationPage` 的 recovery 分支），不必起前端。
+9. `inviteUserByEmail` 是否計入 GoTrue 的 `email_sent` 限流桶：本機要驗得開 `enable_confirmations`＋`[auth.email.smtp]` 指向本機信箱＋`[auth.rate_limit] email_sent = 2`（測完還原），
+   不開就只能在 develop 驗。develop 版：請業主把 Dashboard「Rate limit for sending emails」暫調到 3（收尾還原原值），再打 4 次，看第 4 次是否 429 `over_email_send_rate_limit`。
+10. 記 develop **與正式站**的 `rate_limit_email_sent`（Dashboard Authentication → Rate Limits；正式站只看不改、標「待業主」）。
+11. develop SMTP 實寄：業主以 Gmail、iOS 郵件、Outlook App 各收一封（plus 位址），記：進收件匣或垃圾、揭露句與告知段在手機不放大是否可讀、「接受邀請」連結可點且落到 `FRONTEND_URL`
+    （業主操作，寫清楚步驟與回填欄位）。
+12. 加測（依據總綱 §2.3A C 的 GoTrue 事實）：`redirect_to` 不在 allow list 時落到 Site URL 且 query 被丟——驗一次，確認「不傳 redirectTo、連結自己放信內」是必要的。
 
 ## 收尾
-- 刪掉所有 spike 程式與暫時模板；分支可留可刪，不開 PR。
-- 回報監工 session：十一點各一行結論＋總綱 §2.3A 需要修正的句子。
+- 刪 spike 程式與暫時模板、`git checkout -- supabase/config.toml`、`git status` 乾淨；清掉 develop 的測試使用者；確認 develop 的 Invite 模板與 rate limit 已還原。分支可留可刪，不開 PR。
+- 回報監工 session：十二點各一行結論（含「待本機」「待業主」的項目與業主操作步驟）＋總綱 §2.3A 需要修正的句子。
 ```

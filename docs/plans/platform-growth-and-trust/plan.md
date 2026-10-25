@@ -487,7 +487,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   SECURITY DEFINER：刪 `auth.users` where `invited_at is not null and email_confirmed_at is null and last_sign_in_at is null and
   raw_app_meta_data ? 'referral_invite' and invited_at < now() - make_interval(days => p_older_than_days)`（指定 `p_email` 時只刪該
   未驗證空殼，給客服應個資刪除請求用，LEG-10），且該 id 不存在於 `payment_orders`（防禦）；同交易刪 `auth.audit_log_entries`
-  where `payload->>'user_id'`＝該 id（R2-0 第 9 點驗可行性，LEG-05）；cascade 清 `profiles`；`cron.schedule
+  where 該列指向該 id（實際謂詞由 R2-0 第 6 點先 select payload 形狀再定——`payload->>'user_id'` 只是初稿，LEG-05）；cascade 清 `profiles`；`cron.schedule
   ('purge-stale-referral-invites', '23 3 * * *', …)`；revoke from anon／authenticated／public；照 `20261017000001` 的寫法。
   清除天數與簽章效期同為 7 天（PM-02：縮短「連結已失效但帳號仍在」的窗口）。
 - **後台可見性**：空殼期間 `profiles` 有一列 `name=''`、`registrationStep = 0`，會進會員列表與統計。`invited_pending` 欄＋
