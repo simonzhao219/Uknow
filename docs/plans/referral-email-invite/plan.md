@@ -54,7 +54,8 @@ C／E 的行號在 `dc4a615` 上**全部仍有效**。逐條現算時另發現�
 
 ### 2.1 `POST /referrals/invites`（需登入）
 
-流程照上游 E 第 1～8 點。下表是對外契約（`{ success: false, error: { code, message } }` 是既有慣例，`index.ts:901`、`:2964`）：
+流程照上游 E 第 1～8 點。下表是對外契約（`{ success: false, error: { code, message } }` 的先例是 `index.ts:2964`（`/members/verify`）；
+`:901` 的 `/referrals/validate` 是 `{ valid: false, error: { code, message } }`，只證明 `error.code` 的位置）：
 
 | 狀態 | 回應 | 何時 |
 |---|---|---|
@@ -209,7 +210,7 @@ DEFINER、四條件（`invited_at is not null`、`email_confirmed_at is null`、
 | `src/components/AuthPage.tsx` | invite 模式（§3.3）；2A「忘記密碼」旁靜態提示 |
 | `src/components/OTPVerificationPage.tsx` | `:110-140` 改呼叫 `routeAfterVerifiedSession`；recovery 分支 `:101-104` 留原處 |
 | `src/App.tsx` | `:162` 豁免清單加 `/auth/reset-password`（一行） |
-| `src/components/CompleteProfile.tsx` | `:248-259` 的預填 effect：pending 為空時 `getSession()` 讀 `session.user.app_metadata.referral_invite.code`（只預填、仍走 `verifyReferralCode`、不寫 `referred_by_*`） |
+| `src/components/CompleteProfile.tsx` | `:249-259` 的預填 effect：pending 為空時 `getSession()` 讀 `session.user.app_metadata.referral_invite.code`（只預填、仍走 `verifyReferralCode`、不寫 `referred_by_*`） |
 | `src/components/referral/InviteFriendButton.tsx` | `:79` 的 `onClick` 改開卡片（旗標開時） |
 | `src/components/referral/InviteFriendPanelContent.tsx` | `:183-191`（`share-referral-button`）同上 |
 | `src/components/MyQrPage.tsx` | **不改**：它的「邀請好友」是分頁標籤（`:133`），按鈕在面板元件裡（差異：上游 §8.2 與 prompt 把它列為入口檔） |
@@ -235,7 +236,7 @@ DEFINER、四條件（`invited_at is not null`、`email_confirmed_at is null`、
 |---|---|---|---|
 | vitest | `vi.stubEnv` 逐案切換 | 不適用 | 測試自己 |
 | api-tests（Deno，`supabase start`） | 不適用 | 測試檔頂端 `Deno.env.set`（先例 `member-verify.test.ts:26`）；handler 每次請求經注入的 `read` 讀 env，「env 關閉 503」案例可逐案切換 | 測試自己 |
-| e2e（全 mock） | `ci.yml` 起 dev server 的 step 與 `e2e/conftest.py` 都帶 `true`；手動起 dev server 跑 e2e 的人要自己帶（寫進 `e2e/README.md` 本機跑法一句） | 全 mock，不適用 | R2-2 |
+| e2e（全 mock） | `ci.yml` 起 dev server 的 step 與 `e2e/conftest.py` 都帶 `true`；手動起 dev server 跑 e2e 的人要自己帶（寫進 `e2e/README.md` `## Running` 段 `:41-44` 談 `E2E_SKIP_DEV_SERVER` 的那幾行） | 全 mock，不適用 | R2-2 |
 | journey（拋棄式分支） | `e2e/journey/conftest.py` 帶 `true` | `journey.yml` 設定步驟注入（上表） | R2-2 提交、晉升 PR 實跑 |
 | develop | Cloudflare Pages develop 環境變數 | `supabase secrets set --project-ref ijcxnxhrziehdtkwausy …` | 業主，R2-3（先貼模板再開） |
 | 正式站 | Cloudflare Pages Production 環境變數 | `supabase secrets set --project-ref uhtwwxtazwqnlbejhprl …` | 業主，R2-3（正式站收信核對通過後才開，上游 H） |
