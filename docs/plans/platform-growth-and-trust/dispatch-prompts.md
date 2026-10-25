@@ -117,50 +117,74 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
 ## B. Plan Mode 小 PR：R1a-3 揭露句與用語
 
 ```text
-Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀請訊息與邀請卡加「本邀請由 Uknow 推薦人 {名} 發送」、刊登方案頁「下線」改寫、禁用字樣測試
+Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀請訊息與邀請卡加「本邀請由 Uknow 推薦人 {名} 發送」、刊登方案頁「下線」改寫、禁用字樣常數與測試
 
 ## 開局
-- 分支 `fix/referral-disclosure-wording`：`git fetch origin develop && git checkout -B fix/referral-disclosure-wording origin/develop`
-- Plan Mode（不落檔）：先在對話裡列改動點與測試落點，審完再動手。Sonnet 即可。
+- 分支 `fix/referral-disclosure-wording`：`git fetch origin develop && git checkout -B fix/referral-disclosure-wording origin/develop`。Sonnet 即可。
+- Plan Mode（不落檔）：先在對話裡列改動點與測試落點，**跑 `/review-plan`（Plan Mode：把規劃全文交給四個 reviewer），P0 清掉再動手**。
+- 本 prompt 自足。總綱溯源（§2.2、§14 第 1 題、§8.6 #8／#9／#15）在 develop 上讀不到時，
+  `git fetch origin claude/platform-uiux-redesign-plan-oowvbe && git show origin/claude/platform-uiux-redesign-plan-oowvbe:docs/plans/platform-growth-and-trust/plan.md` 只讀不 merge。
 - 業主裁決（已定、不要再問）：揭露句逐字「本邀請由 Uknow 推薦人 {名} 發送」；使用者看得到的文案一律「推薦人」、不出現「傳銷商／直銷」；
   律師定案的四份內容頁（`src/content/termsOfService.ts`、`participationContract.ts`、`businessManual.ts`、`referralRewardRules.ts`）原文一個字都不改；
   服務類別「傳銷」（`src/utils/constants.ts` `SERVICE_CATEGORIES`）是職業類別、保留；程式註解、內部文件、測試腳本的「上線／下線」業務術語不改。
 
 ## 改動點
-1. `src/utils/referralInvite.ts`
-   - 新增匯出 `referralDisclosureSentence(name)`：`本邀請由 Uknow 推薦人 ${name} 發送`；`name` 空白時退成 `本邀請由 Uknow 推薦人發送`。
-     這是唯一一份揭露句，之後 Email 邀請的信件模板測試會引用同一個函式比對。
-   - `buildInviteMessage(code, memberName)`：訊息最後加一行揭露句，前三行不動（既有測試釘了連結只出現一次、含「推薦碼 {碼}」、含「邀請你一起加入」）。
-   - `shareReferralInvite` 加 `memberName` 參數（簽名由你定，呼叫端一起改）：`src/components/referral/InviteFriendButton.tsx`（`user.referralCode`／`user.name`）、
-     `src/components/referral/InviteFriendPanelContent.tsx`（已有 `memberName`）。`buildLineShareUrl` 不動。
-   - 同檔匯出 `RECRUITMENT_FORBIDDEN_WORDS = ['賺', '獎金', '收入', '傳銷', '直銷', '下線']`（手冊 4-1-2(5) 嚴禁誇大獎金／收入＋業主用語裁決），給測試用。
-2. `src/utils/inviteCardImage.ts` `drawInviteCard`：
+1. 新檔 `supabase/functions/_shared/recruitment-copy.ts`（零依賴，Deno 與前端都直接讀；之後 Email 邀請的後端姓名檢查與信件模板測試都引用它）：
+   - `export function referralDisclosureSentence(name?: string | null): string` → `本邀請由 Uknow 推薦人 ${name} 發送`；
+     `name` 空白時回 `本邀請由 Uknow 推薦人發送`——**這是防禦性退化句、不是業主裁決**（能分享的人都已完成會員資料，實務上到不了），PR 描述列為「請業主確認的一處新句式」。
+   - `export const RECRUITMENT_FORBIDDEN_WORDS = ['賺', '獎金', '收入', '投資', '受僱', '工作', '兼職', '節稅', '傳銷', '直銷', '下線'] as const`，
+     常數上方註解標明前八個出自手冊 4-1-2(5)（總綱 §2.3A F 的同一陣列）、後三個出自業主 2026-10-23 用語裁決。
+   - 接線照 `@backfill-cases` 的既有做法：`vite.config.ts` alias `@recruitment-copy`、`tsconfig.json` 的 `paths` 與 `include` 各加一列（檔頭已寫明兩處必須同步）。
+2. `src/utils/referralInvite.ts`
+   - `buildInviteMessage(code: string, memberName?: string | null)`：既有三段（邀請句／連結／推薦碼）逐字不動，其後換行接揭露句。`memberName` 可選，
+     既有 5 處單引數呼叫（`referralInvite.test.ts`）才不會被 tsc 擋。
+   - `shareReferralInvite(code, showToast, memberName?)`（型別 `string | null | undefined`，對齊 `InviteFriendPanelContent.tsx` 的 `memberName` 與 `user.name`）；
+     呼叫端一起改：`src/components/referral/InviteFriendButton.tsx`（`user.referralCode`／`user.name`）、`src/components/referral/InviteFriendPanelContent.tsx`（已有 `memberName`）。
+     `buildLineShareUrl` 不動。
+3. `src/utils/inviteCardImage.ts` `drawInviteCard`：
    - QR 下方現在只印粗體等寬推薦碼的那一行，改成「掃描加入 Uknow・推薦碼 」（一般字、`PIXEL_INK_MUTED`）＋碼（粗體等寬、`PIXEL_INK`）同一行——
-     兩種字型拼一行的做法抬頭已有（`name` ＋ `' 的Uknow邀請'`），照抄；碼不得截尾，整行過寬就縮小字級。
-   - 連結之下加揭露句（同一函式、灰字 18px），畫布高度隨之增加。
-   - 顏色只准 `pixelColors.ts` 的三個常數（`inviteCardImage.test.ts`「只用現行色票上色」會驗）。
-3. `src/content/listingPlans.ts:38`：「只要您的下線（或下線的下線）成功加入刊登或續約」→「只要您推薦的會員（及他們再推薦的會員）成功加入刊登或續約」。其餘不動。
-4. `docs/ui-ux-guidelines.md`
-   - §12.13「用語」條補：「使用者看得到的文案不出現『傳銷商／直銷』，一律『推薦人』；服務類別清單的『傳銷』是職業類別、保留」；
-     例外清單由「三份法規性內容」改成四份（加推廣獎勵規章 `referralRewardRules.ts`）；刊登方案頁 `listingPlans.ts` 不是律師定案文件、不在例外內。
-   - §13 第 5 條加一子項：邀請訊息與邀請卡固定含揭露句「本邀請由 Uknow 推薦人 {名} 發送」（手冊 4-1-2(2)），來源 `referralInvite.ts`；
-     訊息、邀請卡與三顆入口的文案不得出現「賺／獎金／收入」（4-1-2(5)）。規則只寫這一份，規格書不重複。
+     兩種字型拼一行的做法抬頭已有（`name` ＋ `' 的Uknow邀請'`），照抄。
+   - 連結之下加揭露句（`referralDisclosureSentence(memberName)`、灰字 18px），畫布高度隨之增加。
+   - 說明行與揭露句都**不得截尾、不得加「…」**（業主裁決逐字）：以 `measureText` 量，超過 `W - PAD * 2` 先縮字級（下限 12px），仍過寬就換行置中、畫布高度再加一行。
+     只有連結行維持現行截尾。顏色只准 `pixelColors.ts` 的三個常數（`inviteCardImage.test.ts`「只用現行色票上色」會驗）。
+4. `src/content/listingPlans.ts:38`：「只要您的下線（或下線的下線）成功加入刊登或續約」→「只要您推薦的會員（及他們再推薦的會員）成功加入刊登或續約」。其餘不動。
+5. `src/utils/constants.ts` `SERVICE_CATEGORIES` 上方加一行註解：「『傳銷』是職業類別（業主 2026-10-23），不受『使用者文案一律推薦人』的用語規則約束」——殘跡說明寫在定義處，不寫進文件。
+6. `docs/ui-ux-guidelines.md`
+   - §12.13「用語」條：補「使用者看得到的文案不出現『傳銷商／直銷』，一律『推薦人』」；例外清單改為「服務條款、參加契約、事業手冊、推廣獎勵規章四份律師定案內容
+     （`src/content/` 對應四檔）維持原文」，拿掉原本的「刊登方案」。只列這四份，不寫「刊登方案不在例外」之類的旁白（`.claude/rules/document-writing.md`）。
+   - §13 第 5 條加一子項：邀請訊息與邀請卡固定含揭露句「本邀請由 Uknow 推薦人 {名} 發送」（手冊 4-1-2(2)），來源 `_shared/recruitment-copy.ts`；
+     訊息、邀請卡與三顆入口的文案不得出現 `RECRUITMENT_FORBIDDEN_WORDS`（4-1-2(5)＋用語裁決）。規則只寫這一份，規格書不重複。
+7. 被改掉的說法 grep 全 repo（總綱 §8.5 #1）：`grep -rn "會員名 + QR\|四段文字\|同時含連結與推薦碼\|含會員名/推薦碼/連結" src`，把 `inviteCardImage.ts` 檔頭、
+   `inviteCardImage.test.ts` 檔頭與測試名、`InviteFriendPanelContent.tsx` 的 `buildCardCanvas` 註解、`referralInvite.ts` 檔頭與 `buildInviteMessage` docblock 改成新組成。
 
-## 測試（vitest，中文 it 名；先紅再綠）
-- `src/utils/referralInvite.test.ts`：`buildInviteMessage` 含揭露句且名字在句中；名字空白退成無名版本；揭露句逐字等於「本邀請由 Uknow 推薦人 小明 發送」；
-  訊息不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一字樣（table-driven）；既有 `shareReferralInvite` 測試改簽名後全綠、`navigator.share` 收到的 `text` 含揭露句。
-- `src/utils/inviteCardImage.test.ts`：用既有假 context 的手法記錄 `fillText`，斷言畫了說明行文字、碼、揭露句，高度比改前大；三個既有案例維持。
+## 測試（vitest，中文 it 名；紅燈期 hook 禁改 `*.test.*`，所以順序如下）
+- 先把要改的既有測試改好：`InviteFriendButton.test.tsx` 的 `toHaveBeenCalledWith('8048877', showToast)` 改成新簽名並帶 `'王小明'`（該檔 JOINED 的 name）；
+  `referralInvite.test.ts` 既有 `shareReferralInvite('abc123', showToast)` 等呼叫對齊新簽名。再寫下列新測試，`touch .claude/tdd-lock` → commit `test(red)`；
+  實作至綠 → `scripts/tdd-unlock.sh` → commit `feat:`（PR 範本要紅燈 hash）。
+- `src/utils/referralInvite.test.ts`：`buildInviteMessage('abc123', '小明')` 以揭露句結尾且前三段逐字不變；未給名字時走退化句；
+  `navigator.share` 收到的 `text` 含揭露句；訊息逐字檢查不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一（table-driven）。
+- 新檔 `supabase/functions/_shared/recruitment-copy.test.ts`？**不要**——`_shared` 的 vitest 測試放前端側（照 `@name-cases` 的既有做法找同款測試檔位置），
+  斷言 `referralDisclosureSentence('小明') === '本邀請由 Uknow 推薦人 小明 發送'`、陣列含十一詞。
+- `src/utils/inviteCardImage.test.ts`：用既有假 context 手法記錄 `fillText`，斷言畫了「掃描加入 Uknow・推薦碼 」、碼、揭露句，高度比改前大；
+  用 `measureText` 回偏大寬度的假 context（50 字外文姓名）斷言 `fillText` 收到的揭露句字串仍等於完整原句（縮字級或換行，不截尾）；
+  記錄到的所有 `fillText` 字串逐一不含 `RECRUITMENT_FORBIDDEN_WORDS`；三個既有案例維持。
+- `InviteFriendPanelContent.test.tsx` 沒有 `shareReferralInvite` 的 mock：不要加整檔 mock，stub `navigator.share` 後點「邀請好友」，斷言 `text` 含
+  「本邀請由 Uknow 推薦人 小明 發送」（JOINED 的 name 是小明）。
+- `InviteFriendButton.test.tsx`、`MyQrButton.test.tsx`、`ReferralCodeWithCopy.test.tsx` 各加一條：render 後 `textContent` 不含 `RECRUITMENT_FORBIDDEN_WORDS`（三顆各自 render）。
 - 新檔 `src/content/listingPlans.test.ts`：內容不含「傳銷商」「直銷」「下線」、含「您推薦的會員（及他們再推薦的會員）」。不要對四份律師文件寫禁用字測試。
-- `InviteFriendButton.test.tsx`、`InviteFriendPanelContent.test.tsx`：既有斷言照舊，`shareReferralInvite` mock 收到的參數含 `user.name`。
-- e2e `dashboard_smoke.feature` 只斷言 toast 文案、不受影響；跑一次確認。
-- `python3 scripts/check-test-names.py`、`npm run check`、`bash scripts/framework-check.sh`。
+- e2e：`npm run dev` 後 `cd e2e && pytest features/dashboard_smoke.feature`（只斷言 toast 文案、應不受影響）；跑不起來就以 CI e2e 軌為準並在 PR 寫明。
+- `python3 scripts/check-test-names.py`、`npm run check:full`、`bash scripts/framework-check.sh`。
 
 ## 不做
 - 不做 Email 邀請（R2）的邀請卡片／表單；不改 `InviteFriendPanelContent` 版面；不碰 `/auth/*` 後端；不改任何 `src/content/` 律師文件。
 
 ## 收尾
-- PR → develop（draft），標題 `feat(referral): 邀請訊息與邀請卡加推薦人揭露句，刊登方案頁用語改「推薦的會員」`，內文列揭露句逐字與用語規則落點。
-- 回報監工 session：揭露句函式的名稱與匯出路徑（R2 模板測試要引用）。
+- 實作完跑 `/review-implementation`（Plan Mode：把規劃全文與 diff 給它；邀請卡 PNG 是 UI 改動，附一張下載的邀請卡截圖）。
+- PR → develop（draft），標題 `feat(referral): 邀請訊息與邀請卡加推薦人揭露句，刊登方案頁用語改「推薦的會員」`；流程證據勾 Plan Mode、貼兩次審查摘要與紅燈 hash。
+  驗收段加一項：develop 預覽站下載邀請卡，目視說明行、碼、連結、揭露句不截尾不重疊（含 10 字中文名與長外文名）；做不到寫「未驗」。
+  另列「請業主確認」一項：無名時的退化句。
+- push 後 `gh pr checks --watch` 盯到全綠。
+- 回報監工 session：`referralDisclosureSentence`、`RECRUITMENT_FORBIDDEN_WORDS` 的匯出路徑與最終內容、alias 名、`shareReferralInvite` 最終簽名（R2 的 InviteCard 與模板測試要引用）。
 ```
 
 ---

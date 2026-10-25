@@ -516,7 +516,8 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   與聯絡＝客服信箱 `OFFICIAL_EMAIL`，LEG-04）→ 頁尾連結服務條款與事業手冊頁（既有公開路由）。
 - 排版：側邊 padding ≤ 24px（375px 正文 ≥ 327px）、揭露句與告知段 ≥ 14px、對比 ≥ 4.5:1、長段靠左；不用現有模板的 #c0c0c8 類淡灰
   頁尾（UX-11）。
-- 禁用字樣常數陣列（賺、獎金、收入、投資、受僱、工作、兼職、節稅；與 ui-ux §13 第 5 條同源）：模板全文不得出現；`POST /referrals/invites`
+- 禁用字樣常數陣列 `RECRUITMENT_FORBIDDEN_WORDS`（賺、獎金、收入、投資、受僱、工作、兼職、節稅＋用語裁決的傳銷、直銷、下線；由 R1a-3 建在
+  `supabase/functions/_shared/recruitment-copy.ts`，前端經 vite alias 讀、Deno 直接 import，與 ui-ux §13 第 5 條同源）：模板全文不得出現；`POST /referrals/invites`
   送出前以同一陣列檢查推薦人姓名，命中 400 `restricted` 並寫 `logSystemAlertOnce`（LEG-06）。
 - **不用** `{{ .ConfirmationURL }}`／`{{ .TokenHash }}`／`{{ .RedirectTo }}`／`{{ .SiteURL }}`（R2 分支）：連結由後端以 `FRONTEND_URL`
   組好放進 metadata，避開 Site URL 與允許清單設定、避開「退回 Site URL 丟 query」、避開預掃消耗 token；GoTrue 自己產的一次性
@@ -576,7 +577,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 前置 | `/auth/check-email` 改用 `find_auth_user_by_email`（SYS-01 既有 bug，獨立 `/fix-bug`，含同類掃描：全 repo 其他 `admin/users?` 呼叫）；R1a-3 揭露句獨立 Plan Mode PR 先出貨（PM-06） | `/fix-bug`、Plan Mode | `check-email` 測試加「第 51 位以上使用者仍回 exists」；R1a-3 vitest |
 | R2-0 spike | develop 分支、拋棄式、不留產品碼，驗證十一點：`inviteUserByEmail` 經 develop SMTP 寄出且 `{{ .Data.* }}` 與 `{{ if }}` 分支渲染；`updateUserById` 合併 `user_metadata`／`app_metadata` 後重寄生效；`generateLink({type:'invite'})` 對既存未驗證使用者回 `hashed_token`；先設密碼再 `generateLink` → `verifyOtp({type:'invite'})` 取得 session、`email_confirmed_at` 非空、`signInWithPassword` 用剛設的密碼成功；`updateUserById({password})` 對弱／外洩密碼回 `weak_password`（並記錄兩環境的密碼強度設定）；cron 以 postgres 身分刪 `auth.users`＋`auth.audit_log_entries` 並 cascade；本機 `supabase start` 下 Deno 測試可呼叫 `/invite`（autoconfirm 時不受 email 限流）；已邀請未驗證帳號 → `resetPasswordForEmail` → recovery OTP → 可設密碼並登入；`/invite` 是否計入 `email_sent`；develop 的 `rate_limit_email_sent`；Gmail App／iOS 郵件／Outlook App 實收與開連結 | 0.5 session，Sonnet；結果寫 progress | — |
 | R2-1 後端 | token 模組（api 側簽驗、`_shared` 純解碼）；資格 helper；`rateLimitStrict`；兩支端點（處理函式 `api/referral-invite.ts`）；限流常數六組；`find_auth_user_by_email` 與 purge 兩支 migration（登記前綴）；規格書 §7.1 新段寫數字；`check-spec-drift` 十二條規則（五把限流各上限與窗口 10 條＋TTL 天數＋purge 天數，PM-07） | 三段式 `feature/referral-email-invite`：Opus 規劃／審查，Sonnet 實作 | `referral-invite-token.unit.test.ts`（簽驗、過期、竄改 payload 段／簽章段、secret 缺失拋錯、常數時間 API）；`referral-invite.test.ts`（資格三案含停權與讀取失敗 503、格式／自邀／未勾 400、per-user 兩窗順序、target 窗第二位推薦人 202 不寄、global 小時窗 503、已驗證 202 不寄、自助未驗證 202 不寄且其 `confirmation_token` 不變、空殼重寄 metadata 更新、新建含 `user_metadata` 兩鍵與 `app_metadata` 且 **`raw_user_meta_data` 無 `referred_by_code`、`profiles.referred_by_*` 為 null**、GoTrue 失敗 503＋退還三鍵＋告警去重、env 關閉 503、姓名禁用字樣 400、回應同形 table-driven；accept：無效／過期 400 code、不存在 410、自助帳號 410、已驗證 409、弱密碼 400 透傳、成功回 `hashed_token` 且 `verifyOtp` 後 `email_confirmed_at` 非空、以該密碼 `signInWithPassword` 成功、重入兩次皆成功、per-IP 429）；`referral-invite-purge.test.ts`（四個 WHERE 條件各自不誤刪、指定 email 只刪該空殼、audit 列同刪、grants、cron 列）；`check-spec-drift` 十二條 |
-| R2-2 前端＋文件 | `EmailInviteForm`；AuthPage invite 模式（惰性初始值、`useInviteAccept` hook、`replaceState`、三個入口狀態、code 分流、「改用其他 Email 註冊」）；`routeAfterVerifiedSession` 抽取（第一個 commit 先抽、行為不變）；`App.tsx` 豁免 `/auth/reset-password`；CompleteProfile `app_metadata` 後備預填；2A 靜態提示；模板檔；e2e；ui-ux §13 第 5 條；規格書 §4.1 加「邀請信入口」列與 Step 0 空殼註記、§7.1「Email 邀請」段與閘門句加「寄送邀請信」；checklist；`multi-step-flow-recovery.md` 加「外部連結進入中段」一句 | 同一分支，Sonnet | 元件 vitest（閘門、同意三要件必勾、勾選重置三規則、九種 code 文案、live region、44px）；`useInviteAccept` 與 AuthPage vitest（已有 session／解碼失敗／過期／有效三入口、無首繪閃爍、`replaceState`、accept→verifyOtp→導頁、`weak_password` 留在 2B 且 pending 不清、`already_accepted` 清密碼切 2A、`verifyOtp` 失敗重入一次、「改用其他 Email」清狀態保留 pending）；`routeAfterVerifiedSession` 五分支 vitest；CompleteProfile 後備預填 vitest；`referralInviteTemplate.test.ts`；e2e `referral_email_invite.feature`（受理文案回顯遮罩地址、同信箱第二次仍受理、429 hour／day 兩句、503、env 關閉）、`auth_signup.feature` 加「邀請連結開設定密碼步驟並落到完善資料頁且推薦碼已驗證且欄位可編輯」「過期連結進登入步驟且提示忘記密碼」「已接受的連結切到登入」「被邀請者不用連結走忘記密碼能設密碼並到完善資料頁」、`registration_recovery.feature` 加「accept 設完密碼但 verifyOtp 未完成，重點同一連結仍可完成」；mock：`backend_api_mock.py` 加 `mock_invite_accept(status, token_hash)`、`spy_invites()`，`supabase_auth_mock.py` 加 `spy_verify()` 斷言 `type=invite` 且帶 `token_hash`（ARCH-11）；溢版巡檢加兩畫面；`check-e2e-mustkeep` 不改必留情境名 |
+| R2-2 前端＋文件 | `InviteCard`（邀請卡片，D）；AuthPage invite 模式（惰性初始值、`useInviteAccept` hook、`replaceState`、三個入口狀態、code 分流、「改用其他 Email 註冊」）；`routeAfterVerifiedSession` 抽取（第一個 commit 先抽、行為不變）；`App.tsx` 豁免 `/auth/reset-password`；CompleteProfile `app_metadata` 後備預填；2A 靜態提示；模板檔；e2e；ui-ux §13 第 5 條；規格書 §4.1 加「邀請信入口」列與 Step 0 空殼註記、§7.1「Email 邀請」段與閘門句加「寄送邀請信」；checklist；`multi-step-flow-recovery.md` 加「外部連結進入中段」一句 | 同一分支，Sonnet | 元件 vitest（閘門、同意三要件必勾、勾選重置三規則、九種 code 文案、live region、44px）；`useInviteAccept` 與 AuthPage vitest（已有 session／解碼失敗／過期／有效三入口、無首繪閃爍、`replaceState`、accept→verifyOtp→導頁、`weak_password` 留在 2B 且 pending 不清、`already_accepted` 清密碼切 2A、`verifyOtp` 失敗重入一次、「改用其他 Email」清狀態保留 pending）；`routeAfterVerifiedSession` 五分支 vitest；CompleteProfile 後備預填 vitest；`referralInviteTemplate.test.ts`；e2e `referral_email_invite.feature`（受理文案回顯遮罩地址、同信箱第二次仍受理、429 hour／day 兩句、503、env 關閉）、`auth_signup.feature` 加「邀請連結開設定密碼步驟並落到完善資料頁且推薦碼已驗證且欄位可編輯」「過期連結進登入步驟且提示忘記密碼」「已接受的連結切到登入」「被邀請者不用連結走忘記密碼能設密碼並到完善資料頁」、`registration_recovery.feature` 加「accept 設完密碼但 verifyOtp 未完成，重點同一連結仍可完成」；mock：`backend_api_mock.py` 加 `mock_invite_accept(status, token_hash)`、`spy_invites()`，`supabase_auth_mock.py` 加 `spy_verify()` 斷言 `type=invite` 且帶 `token_hash`（ARCH-11）；溢版巡檢加兩畫面；`check-e2e-mustkeep` 不改必留情境名 |
 | R2-3 上線 | Dashboard 貼模板（develop → 正式站）、設 secret、開 env 與建置旗標；正式站收信核對（H）；journey 一條；真機驗收（J） | 業主＋Sonnet | journey：以已加入推薦計畫的 fixture 帳號打 `POST /referrals/invites` → service key 讀被邀請者 `user_metadata.referral_invite_url`（`tools/supa.py` 既有 admin users 讀取）→ 開連結 → 設密碼 → 完善資料頁顯示推薦人 → 送出 → 結帳頁顯示推薦人；**不在 Python 重算簽章**（ARCH-08／FACT-08）；purge RPC 以 service role 呼叫驗證 |
 
 子 `plan.md` 只寫與本節的差異；紅燈 commit 照 CLAUDE.md。
@@ -641,9 +642,9 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | check-email 修正 | `/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`） | `/fix-bug`，先於 R2（審查 SYS-01） | 改用 `find_auth_user_by_email`；同類掃描 `admin/users?` 呼叫 | deno：第 51 位以上仍回 exists | 既有會員登入不再被判不存在 |
 | 寄信告警 | SMTP 失敗告警 | Plan Mode，排 T1 後 | `system_alerts` 來源新增 | deno | — |
 | 停權檢查 | `/auth/register` 解析碼改經 `validate_referral_code` | Plan Mode 小 PR，不等法務 | `index.ts:711-717` | deno | 停權推薦人的碼在寫入端也被拒 |
-| R2-0 | Email 邀請 spike | 待開工，develop 分支拋棄式 | §2.3A I 七點 | — | 七點各有結論寫進 progress |
-| R2-1 | Email 邀請後端 | 三段式 `feature/referral-email-invite`，Opus 規劃／審查 | §2.3A E：兩端點、簽章（專用 secret）、五窗限流（先查後扣、失敗退還）、`find_auth_user_by_email`＋purge 兩支 migration（登記前綴）；後台欄交 A1a | `referral-invite-token.unit.test.ts`、`referral-invite.test.ts`、`referral-invite-purge.test.ts`、`check-spec-drift` 十二條 | 見 §2.3A I |
-| R2-2 | Email 邀請前端＋文件 | 同分支，Sonnet | §2.3A D／F：`EmailInviteForm`、AuthPage invite 模式（hook）、`routeAfterVerifiedSession` 抽取、`App.tsx` 豁免一行、CompleteProfile 後備預填、模板檔、規格書與準則 | 元件／hook／AuthPage vitest、模板 vitest、e2e 十條、溢版巡檢 | 見 §2.3A I |
+| R2-0 | Email 邀請 spike | 待開工，develop 分支拋棄式 | §2.3A I 十一點 | — | 十一點各有結論回報監工 session、進 R2 子 progress |
+| R2-1 | Email 邀請後端 | 三段式 `feature/referral-email-invite`，Opus 規劃／審查 | §2.3A E：兩端點、簽章（專用 secret）、六組限流常數（invites 五把先查後扣、失敗退還＋accept per-IP）、purge migration（登記 `20261025000011_purge_stale_referral_invites.sql`）；`find_auth_user_by_email` 由 check-email 修正先進、R2 不另建；後台欄交 A1a | `referral-invite-token.unit.test.ts`、`referral-invite.test.ts`、`referral-invite-purge.test.ts`、`check-spec-drift` 十二條 | 見 §2.3A I |
+| R2-2 | Email 邀請前端＋文件 | 同分支，Sonnet | §2.3A D／F：`InviteCard`、AuthPage invite 模式（hook）、`routeAfterVerifiedSession` 抽取、`App.tsx` 豁免一行、CompleteProfile 後備預填、模板檔、規格書與準則 | 元件／hook／AuthPage vitest、模板 vitest、e2e 十條、溢版巡檢 | 見 §2.3A I |
 | R2-3 | 上線與驗收 | 業主貼模板、開 env；journey 一條 | §2.3A J | journey、真機清單 | 見 §2.3A J |
 | R1b | 邀請物件 | **作廢**（範圍由 R2 以不同設計承接，§2.3A B） | — | — | — |
 
@@ -663,7 +664,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   `referral_program_joined` 判準——動金流，獨立 Opus 工項，另需處理既有「未簽約但已有下線」的存量（A2 第 12 項先盤點）。
   `/auth/register` 的停權檢查不等這題（§2.5 小 PR）。
 - 作廢：Q2-1、Q2-2、Q2-6、Q2-7、Q2-8、Q2-9（隨 R1b）；Q2-3 改「第二期 issue」；Q2-4 關死（§2.3）。
-- [ ] Q2-12～Q2-23（R2，2026-10-21 新增，建議值見 §2.3A K）：只有 Q2-12（律師五句）擋 R2 的 `/tdd-implement`，其餘用建議值或預設值開規劃。
+- [x] Q2-12～Q2-23（R2）：**全部裁決**（業主 2026-10-22／23，逐題見 §2.3A K 與 §13）；無擋開工或擋實作的項目。
 
 ## 3. 刊登照片：上傳、裁切、呈現（工項 P1a、P1b）
 
@@ -1162,7 +1163,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 1 | **R1a-1** 入口三顆元件＋分享順位 | ✅ #381（2026-10-19） | §2.1 | Plan Mode `fix/referral-entry-points` | Sonnet | 真機驗收回填 | 會員中心 1 下到分享面板 |
 | 1 | **check-email 修正** | 待開工，**立即**（prompt 已給：`dispatch-prompts.md` A，2026-10-25） | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（檔名登記 `20261025000001_find_auth_user_by_email.sql`，rebase 時若 develop 已有更大版本號則改號）；RPC 失敗改 503 fail-closed | `/fix-bug` `fix/auth-check-email-lookup` | Sonnet | — | 既有會員登入不再被判「不存在」 |
 | 0 | **R2-0** Email 邀請 spike | 待開工（prompt 已給：`dispatch-prompts.md` D） | §2.3A I 十一點 | develop 分支、拋棄式 `claude/r2-0-invite-spike`，不開 PR | Sonnet | 本機段只要 `supabase start`；develop 段要 service key 與 Dashboard（實寄由業主收信） | 無可見變化；結論回報監工 session，進 R2 子 progress |
-| 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 前綴：開工時登記（purge；`find_auth_user_by_email` 若隨 check-email 修正先進則不重複） | 三段式 `feature/referral-email-invite`（規劃 prompt 已給：`dispatch-prompts.md` C；業主另開 session） | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
+| 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 登記 `20261025000011_purge_stale_referral_invites.sql`（同日第二工項用 000011 起；rebase 時若 develop 已有更大版本號則改號）；`find_auth_user_by_email` 由 check-email 修正先進、R2 不另建 | 三段式 `feature/referral-email-invite`（規劃 prompt 已給：`dispatch-prompts.md` C；業主另開 session） | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
 | 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |
 | 2 | **T1** 登入狀態（縮） | 待開工 | §1 | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
 | 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段在 S7a（最小完成點＝會員區三頁資訊層次）合併後或先合併者定 | Sheet 內五區核對 |
@@ -1261,7 +1262,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 6 | 規格書 §14 #1、#8 | #1 隨選配索引刪；#8 改寫為剩餘子項 | A1b 選配；T1 |
 | 7 | 條款十二 | **不改**（已定案）；稽核紀錄保存照「終止後一年」、位置資料不儲存 | §14 第 5 題；A1b-2 的 `purge` |
 | 8 | ui-ux §7、§12.11、§13 第 5 條 | 定位段改「有狀態行與出口、座標不離開前端」；改身分證確認鈕的例外；揭露句規則 | L1-1；Q6-8；Q2-5 |
-| 9 | `referralInvite.ts`／`inviteCardImage.ts` 文案常數 | 揭露句「本邀請由 Uknow 推薦人 {名} 發送」與禁用字樣（R2 模板引用同一常數） | Q2-5；用語 2026-10-23；R1a-3（先出） |
+| 9 | `supabase/functions/_shared/recruitment-copy.ts`（新；`referralInvite.ts`／`inviteCardImage.ts` 引用） | 揭露句函式「本邀請由 Uknow 推薦人 {名} 發送」與禁用字樣陣列（R2 後端姓名檢查與模板測試引用同一份） | Q2-5；用語 2026-10-23；R1a-3（先出） |
 | 10 | 規格書 §4.1 四步表、§4.2、§7.1 | §4.1 加「邀請信入口」列（點連結 → 設定密碼 → Step 2，Step 0／1 由連結承擔）與 Step 0 註記「邀請建立的未驗證帳號亦視為已存在」；§7.1 閘門句加「寄送邀請信」、新段「Email 邀請」寫五把限流的上限與窗口、簽章 7 天、清除 7 天（十二條 `check-spec-drift`） | R2 |
 | 11 | ui-ux §12.13、§13 第 5 條 | §13 第 5 條：「邀請好友」三處改開同一張邀請卡（快速分享／用 Email 邀請；同意聲明只在填了 email 時出現、不宣稱已送達）；§12.13 用語條補「一律推薦人、不出現傳銷商／直銷」與四份律師文件例外（規則隨 R1a-3 先寫，R2 只改第 5 條的入口描述） | R2；用語 2026-10-23（規則本身隨 R1a-3 出） |
 | 12 | `docs/supabase-setup-checklist.md`、`supabase/README.md` | Invite user 模板貼法（含 `{{ if }}` 分支、不含 `{{ .Token }}`、正式站不得手動 Invite）、`REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED` 與建置旗標；develop 的 `rate_limit_email_sent` 與兩環境密碼強度設定記錄；客服應個資刪除請求的 purge SOP | R2 |
@@ -1280,7 +1281,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | R0 ✅ | deno：無 token 401、限流 429、短窗不扣日額、503 | — |
 | R1a-1 ✅ | 元件 vitest、`dashboard_smoke`、溢版巡檢 | **待回填**：LINE iOS／Android、FB、IG 內建瀏覽器按「邀請好友」出現面板／選擇器／複製提示三者之一；記點擊數；貼上確認 |
 | R1a-2 | vitest 讀 `index.html` | LINE 貼連結有預覽 |
-| R2 | deno：eligibility／四窗限流／已驗證不寄／accept 分流／purge；vitest：模板、AuthPage invite 模式、`EmailInviteForm`；e2e 七條 | Gmail 網頁／iOS 郵件／Outlook 收信不進垃圾匣；LINE 內與系統瀏覽器點連結落到設定密碼；設完直接到完善資料頁且推薦碼已驗證；重點連結 → 登入；竄改連結 → 失效文案且推薦碼仍在；後台「已邀請未註冊」 |
+| R2 | deno：eligibility／六組限流／已驗證不寄／accept 分流／purge；vitest：模板、AuthPage invite 模式、`InviteCard`；e2e 十條 | Gmail 網頁／iOS 郵件／Outlook 收信不進垃圾匣；LINE 內與系統瀏覽器點連結落到設定密碼；設完直接到完善資料頁且推薦碼已驗證；重點連結 → 登入；竄改連結 → 失效文案且推薦碼仍在；後台「已邀請未註冊」 |
 | P1a／P1b | 2×2 色塊驗裁切；無 EXIF；一張失敗其餘保留；兩支既有探針仍綠 | iPhone HEIC／48MP／方向 6；LINE iOS／Android 裁切手勢 |
 | A1a／A2 | 遮罩投影；注入查詢錯誤回 5xx 不回空；合法特例矩陣不報；重複發獎與「預設推薦人首購 3c 中斷」人造例外會報 | 桌機對帳走一輪；手機 Sheet 首屏四事實 |
 | A1b | 列舉測試每寫入一筆 audit；在途提領拒改；直打 signup 帶 national_id 不落地；三環境 GRANT 一致 | 代改一筆、會員端看到提示 |
@@ -1321,7 +1322,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | A1 建在未人工驗收的 S3／S4／S5 上 | 驗收站 2、3 延到 S7 後是業主既定；A1a 面板段排 S7 後 | — |
 | 邀請分享放大註冊量撞 Email 寄信配額 | 正式站 300 封／小時；寄信失敗告警（小 PR） | — |
 | 區中心點資料來源的授權或精度 | PR 寫明來源；vitest 釘鍵集合 | 退回縣市中心點 |
-| 邀請信進垃圾匣或損及寄件信譽（Gmail SMTP 寄給非會員） | 固定主旨、純文字連結、官方寄出、同意聲明、限流四鍵與全站上限；觀察 `system_alerts` 與退信 | 關 env；惡化改走 Send Email Hook＋Resend（第二期） |
+| 邀請信進垃圾匣或損及寄件信譽（Gmail SMTP 寄給非會員） | 固定主旨、純文字連結、官方寄出、同意聲明、限流五把（含全站上限）；觀察 `system_alerts` 與退信 | 關 env；惡化改走 Send Email Hook＋Resend（第二期） |
 | 空殼帳號污染後台列表與對帳 | 7 天 purge（含 audit 列）；「已邀請未註冊」徽章與統計排除交 A1a；對帳母體排除 | purge 可手動呼叫（含指定 email） |
 | 「電子勾選＝書面同意」的法律風險（業主 2026-10-23 裁決不問律師、自行承擔） | 聲明鏡射三要件、留存於 `app_metadata`、7 天清除；方案 B 留作備案 | 不開 env、不貼模板 |
 | 邀請連結被企業信箱預掃、或兩位推薦人邀請同一人 | 連結只到 SPA 頁、按鈕才 accept；24 小時內先到者生效，之後重寄 metadata 更新為後者、最後點的碼生效 | — |
