@@ -1160,9 +1160,9 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 1 | **R0** 推薦碼端點關洞 | ✅ #380（2026-10-18） | §2.1；後續 P2 在 #383 | Plan Mode `fix/referral-validate-hardening` | Sonnet | — | 無可見變化；枚舉面降到需登入＋限流 |
 | 1 | **A1b-1** 已付款守衛＋撤銷直改 | ✅ #382（2026-10-18） | §6.1 | `/fix-bug` `claude/auth-register-completion-guard` | Opus | — | 已付款會員改資料得到「請聯繫客服」 |
 | 1 | **R1a-1** 入口三顆元件＋分享順位 | ✅ #381（2026-10-19） | §2.1 | Plan Mode `fix/referral-entry-points` | Sonnet | 真機驗收回填 | 會員中心 1 下到分享面板 |
-| 1 | **check-email 修正** | 待開工，**立即** | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（前綴：開工時登記） | `/fix-bug` `fix/*` | Sonnet | — | 既有會員登入不再被判「不存在」 |
-| 0 | **R2-0** Email 邀請 spike | 待開工 | §2.3A I 十一點 | develop 分支、拋棄式 | Sonnet | Dashboard 暫貼模板到 develop | 無可見變化；結論寫 progress |
-| 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 前綴：開工時登記（purge；`find_auth_user_by_email` 若隨 check-email 修正先進則不重複） | 三段式 `feature/referral-email-invite` | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
+| 1 | **check-email 修正** | 待開工，**立即**（prompt 已給：`dispatch-prompts.md` A，2026-10-25） | §2.3A C：`/auth/check-email` 只比對最新 50 位（GoTrue 忽略 `search=`）；改用 `find_auth_user_by_email` migration（檔名 `<開工日>000001_find_auth_user_by_email.sql`，合併後回填此列）；RPC 失敗改 503 fail-closed | `/fix-bug` `fix/auth-check-email-lookup` | Sonnet | — | 既有會員登入不再被判「不存在」 |
+| 0 | **R2-0** Email 邀請 spike | 待開工（prompt 已給：`dispatch-prompts.md` D） | §2.3A I 十一點 | develop 分支、拋棄式 `claude/r2-0-invite-spike`，不開 PR | Sonnet | 本機段只要 `supabase start`；develop 段要 service key 與 Dashboard（實寄由業主收信） | 無可見變化；結論回報監工 session，進 R2 子 progress |
+| 2 | **R2** Email 邀請 | 待開工（2026-10-23 裁決全部落檔，無擋開工項） | §2.3A；migration 前綴：開工時登記（purge；`find_auth_user_by_email` 若隨 check-email 修正先進則不重複） | 三段式 `feature/referral-email-invite`（規劃 prompt 已給：`dispatch-prompts.md` C；業主另開 session） | Opus 規劃／審查，Sonnet 實作 | R2-0 結論；check-email 修正；R1a-3 | 三處「邀請好友」開邀請卡；填 email 寄邀請，對方點連結設密碼後直接填資料、推薦碼已帶入 |
 | 0 | S7 prompt 重寫 | ✅ 2026-10-19（PR #378） | 拆 S7a／S7b、補 P3′、承接三顆元件；S8 補 persona 閘門與遺留處置；`upline-pairing-lines/rules.md` 由 issue #384 追蹤（建議升級進規格書後刪） | 規劃分支 | — | — | — |
 | 2 | **T1** 登入狀態（縮） | 待開工 | §1 | 三段式 `feature/auth-state-trust` | Opus 規劃／階段 2，Sonnet 實作 | Q1-1、Q1-2 | 重新整理不閃；斷網不被登出 |
 | 2 | **A1a** 會員核對面板（純讀） | 待開工 | §4.2(1)；migration 前綴：開工時登記 | 三段式 `feature/admin-member-review` | Opus 規劃／階段 1 | Q4-3、Q4-5、Q4-9；面板段在 S7a（最小完成點＝會員區三頁資訊層次）合併後或先合併者定 | Sheet 內五區核對 |
@@ -1173,7 +1173,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | Plan Mode | **L1-1** GPS 吸附到區＋中心點排序 | 待開工 | §5.2 | `fix/*` | Sonnet | 已裁；政府開放資料座標 | 「離我最近」有狀態行與出口 |
 | Plan Mode | **P1b** 顯示容器 1:1＋滑動 | 待開工 | §3.2D | `fix/*` | Sonnet | 已裁；S6 ✅；P1a 先合併較順 | 卡片與詳情正方形、手機滑動切圖 |
 | Plan Mode | **R1a-2** og＋`lang` | 待開工 | §2.2 | `fix/*` | Sonnet | — | LINE 貼連結有預覽 |
-| Plan Mode | **R1a-3** 揭露文案＋用語 | 待開工，**立即**（與 check-email 修正同批） | §2.2（常數一處；R2 模板引用同一常數）；`listingPlans.ts:38` | `fix/*` | Sonnet | 已裁（§14 第 1 題；用語 2026-10-23） | 邀請訊息與邀請卡含「本邀請由 Uknow 推薦人 {名} 發送」；刊登方案頁不再出現「下線」 |
+| Plan Mode | **R1a-3** 揭露文案＋用語 | 待開工，**立即**（與 check-email 修正同批） | §2.2（常數一處；R2 模板引用同一常數）；`listingPlans.ts:38`；ui-ux §12.13 用語條與 §13 第 5 條揭露句規則 | `fix/referral-disclosure-wording`（prompt 已給：`dispatch-prompts.md` B） | Sonnet | 已裁（§14 第 1 題；用語 2026-10-23） | 邀請訊息與邀請卡含「本邀請由 Uknow 推薦人 {名} 發送」；刊登方案頁不再出現「下線」 |
 | Plan Mode | 寄信失敗告警 | 待開工 | §2.1 | `fix/*` | Sonnet | T1 後 | 無可見變化 |
 | Plan Mode | `/auth/register` 停權檢查 | 待開工 | §2.1、§2.5 | `fix/*` | Sonnet | — | 無可見變化 |
 | `/fix-bug` | repair 閘門對預設推薦人首購恆假 | 待開工 | §6.1 (d′)、§4.2 第 2 項 | `fix/*`，動發獎相鄰函式 | Opus | — | 無可見變化；孤兒獎勵可被修補 |
@@ -1263,10 +1263,10 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 8 | ui-ux §7、§12.11、§13 第 5 條 | 定位段改「有狀態行與出口、座標不離開前端」；改身分證確認鈕的例外；揭露句規則 | L1-1；Q6-8；Q2-5 |
 | 9 | `referralInvite.ts`／`inviteCardImage.ts` 文案常數 | 揭露句「本邀請由 Uknow 推薦人 {名} 發送」與禁用字樣（R2 模板引用同一常數） | Q2-5；用語 2026-10-23；R1a-3（先出） |
 | 10 | 規格書 §4.1 四步表、§4.2、§7.1 | §4.1 加「邀請信入口」列（點連結 → 設定密碼 → Step 2，Step 0／1 由連結承擔）與 Step 0 註記「邀請建立的未驗證帳號亦視為已存在」；§7.1 閘門句加「寄送邀請信」、新段「Email 邀請」寫五把限流的上限與窗口、簽章 7 天、清除 7 天（十二條 `check-spec-drift`） | R2 |
-| 11 | ui-ux §13 第 5 條 | 「邀請好友」三處改開同一張邀請卡（快速分享／用 Email 邀請；同意聲明只在填了 email 時出現、不宣稱已送達）；補用語規則「一律推薦人」 | R2；用語 2026-10-23 |
+| 11 | ui-ux §12.13、§13 第 5 條 | §13 第 5 條：「邀請好友」三處改開同一張邀請卡（快速分享／用 Email 邀請；同意聲明只在填了 email 時出現、不宣稱已送達）；§12.13 用語條補「一律推薦人、不出現傳銷商／直銷」與四份律師文件例外（規則隨 R1a-3 先寫，R2 只改第 5 條的入口描述） | R2；用語 2026-10-23（規則本身隨 R1a-3 出） |
 | 12 | `docs/supabase-setup-checklist.md`、`supabase/README.md` | Invite user 模板貼法（含 `{{ if }}` 分支、不含 `{{ .Token }}`、正式站不得手動 Invite）、`REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED` 與建置旗標；develop 的 `rate_limit_email_sent` 與兩環境密碼強度設定記錄；客服應個資刪除請求的 purge SOP | R2 |
 | 13 | `docs/multi-step-flow-recovery.md` | 加一句「從外部連結進入流程中段」的契約適用（簽章＝身分證明、無自助重寄） | R2 |
-| 14 | 規格書 §13 會員管理、§14 | 「已邀請未註冊」標示與統計排除（A1a）；check-email 修正合併前 §14 加一列 | A1a；check-email 修正 |
+| 14 | 規格書 §13 會員管理、§14 | 「已邀請未註冊」標示與統計排除（A1a）；check-email 修正若未隨本波合併才在 §14 加一列（立即修則不加，`document-writing.md`） | A1a；check-email 修正 |
 | 15 | `src/content/listingPlans.ts:38` | 「只要您的下線（或下線的下線）成功加入」改「只要您推薦的會員（及他們再推薦的會員）成功加入」 | 用語 2026-10-23；隨 R1a-3 小 PR |
 
 ## 9. 驗收與真機責任
@@ -1403,6 +1403,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 2026-10-22／23 | R2 逐題互動裁決（AskUserQuestion 四輪） | Q2-12 不問律師（文件已律師確認且不可改，新設計直接做）；Q2-13 已加入且未停權；Q2-21 三處「邀請好友」改開同一張邀請卡、一顆主鈕依有無 email 切換「快速分享」／「用 Email 邀請」；Q2-22 24 小時先到者生效、重寄＝再送表單；Q2-23 第一版不做拒收名單；Q2-16／17 7 天；Q2-14 每人 5／小時 20／天、信箱 1／24 小時、全站 100／小時 1,000／天；Q2-15 固定主旨、Supabase 模板與驗證碼信同版型；Q2-18 揭露句獨立先出；Q2-19 不自動重試；Q2-20 R2 先 T1 後 | §2.3A D／E／F／K、§8.1、§8.3、§11 同步；主 session 更正前一題的錯誤前提：失效會員進不了會員中心與推薦管理（只有獎勵頁 allowExpired） |
 | 2026-10-23 | 用語稽核：全站不出現「傳銷商」，一律「推薦人」 | 業主：「不要出現『傳銷商』、一律使用『推薦人』…請全部列出來審核，這很嚴重」。掃描結果：律師定案四份內容頁（條款、契約、手冊、推廣獎勵規章）231 處不改；服務類別「傳銷」是職業類別、保留；刊登方案頁 `listingPlans.ts:38`「下線」句改「您推薦的會員（及他們再推薦的會員）」；程式註解、規格書業務術語、e2e 腳本不改（規格書 §7 已有術語對照） | 揭露句改「本邀請由 Uknow 推薦人 {名} 發送」；§0 原則 4 補用語規則；主 session 已向業主指出與手冊 4-1-2(2) 字面「傳銷商」的落差，由業主承擔 |
 | 2026-10-21 | R2 六視角審查（系統／架構／UI-UX／需求／法遵對照／事實核對；P0／P1 各兩位反駁者） | P0×0；P1 40 條：23 條完成雙人驗證（17 條成立、6 條設計面推翻或分歧），17 條因模型額度用盡未驗證；主 session 逐條裁定後**全部 P1 與多數 P2 回填** §2.3A，處置表見 §16 | 審查順帶發現既有 bug：`/auth/check-email` 只比對最新 50 位使用者（GoTrue 忽略 `search=`），立即 `/fix-bug`；`App.tsx` recovery 後不豁免 `/auth/reset-password` 也是既有缺口，隨 R2-2 一行修 |
+| 2026-10-25 | 第 1 波開工方式（AskUserQuestion 兩題） | check-email 修正、R1a-3 小 PR、R2 規劃三件都**另開 session**，由監工 session 給完整 prompt；本 session 不建也不推其他分支 | 四段 prompt 落檔 `dispatch-prompts.md`（A check-email `/fix-bug`、B R1a-3 Plan Mode、C `/plan-feature referral-email-invite`、D R2-0 spike），§8.1 四列回填分支名與 prompt 位置；`find_auth_user_by_email` 的完整簽名（含 R2 要的欄位）由 check-email 修正一次做足，R2 不重複建 |
 
 ## 14. 法務文件對齊（文件已律師定案、不可改；本節是產品與規格書怎麼對齊，2026-10-19 業主裁決）
 
