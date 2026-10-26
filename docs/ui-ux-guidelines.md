@@ -793,8 +793,8 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
      表明身分；用語依 §12.13）。句子與招募禁用字樣只定義在
      `supabase/functions/_shared/recruitment-copy.ts`（`referralDisclosureSentence`、
      `RECRUITMENT_FORBIDDEN_WORDS`）；訊息、邀請卡與三顆入口的固定文案不得出現禁用字樣。
-     邀請卡上的說明行與揭露句放不下就換行，不縮字級、不截尾；只有連結行可截尾（QR 已
-     承載連結）。
+     邀請卡上的抬頭名字、說明行與揭露句放不下就換行，不縮字級、不截尾；只有連結行可
+     截尾（QR 已承載連結）。
    - 理由：業主 2026-10-17 裁決「分享少點幾層、重複的設計共用同一份程式」，且使用者
      不一定透過 LINE 分享。
 

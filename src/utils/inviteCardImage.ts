@@ -4,9 +4,8 @@
 // 已經是 canvas 的 QR），自己畫零依賴、輸出穩定，且不會把畫面上的按鈕一起
 // 截進去——業主要的正是「整張卡，但不要複製鈕與那三顆動作鈕」。
 //
-// 說明行與揭露句是法遵文字（手冊 4-1-2(2)），放不下就換行，不縮字級也不截尾：卡片在
-// 手機上約縮成 0.6 倍看，18px 已是可讀的下限（2026-10-25 裁決）。抬頭的名字同一套
-// 規則。只有連結行截尾——QR 已經承載連結。
+// 抬頭名字、說明行與揭露句放不下就換行、不縮字級也不截尾，只有連結行截尾——規則見
+// docs/ui-ux-guidelines.md §13 第 5 條。
 //
 // 先排版（量字寬、算出每行位置與畫布高度）、再設畫布尺寸、最後一次畫完：設定 canvas
 // 的寬高會把 context 的狀態（字型、顏色、對齊、平滑）全部重置。
@@ -29,6 +28,12 @@ const PAD = 40;
 const QR = 360;
 /** 每一行字可用的寬度：左右各留 PAD。 */
 const CONTENT_W = W - PAD * 2;
+
+/**
+ * 揭露句字級：卡片在手機上約縮成 0.6 倍看，22px ≈ 13px，比連結（18px）大一級
+ * （2026-10-26 裁決）。
+ */
+const DISCLOSURE_PX = 22;
 
 const SANS = 'system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
 const MONO = 'ui-monospace, "SF Mono", Menlo, monospace';
@@ -174,7 +179,7 @@ function layoutInviteCard(name: string, code: string, link: string, measure: Mea
     y = 24;
   }
   const qrY = y;
-  y += QR + 16;
+  y += QR + 22;
 
   // 說明行＋推薦碼（碼是粗體等寬墨字，其餘灰字）
   place(
@@ -186,20 +191,21 @@ function layoutInviteCard(name: string, code: string, link: string, measure: Mea
       measure,
     ),
   );
-  y += 10;
+  y += 12;
 
   const linkStyle: TextStyle = { size: 18 };
   place([[{ text: truncateLink(link, linkStyle, measure), ...linkStyle, color: PIXEL_INK_MUTED }]]);
-  y += 4;
+  // 揭露句與連結分成兩組：這段距離要明顯大於揭露句自己換行的行距。
+  y += 10;
 
   place(
     layoutRows(
-      [{ text: referralDisclosureSentence(name), size: 18, color: PIXEL_INK_MUTED }],
+      [{ text: referralDisclosureSentence(name), size: DISCLOSURE_PX, color: PIXEL_INK_MUTED }],
       measure,
     ),
   );
 
-  return { height: y + 24, qrY, texts };
+  return { height: y + 32, qrY, texts };
 }
 
 /** 依卡片內容畫出一張直式邀請卡；回傳新的 canvas（呼叫端負責轉 PNG/Blob）。 */

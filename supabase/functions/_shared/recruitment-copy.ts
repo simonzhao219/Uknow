@@ -5,7 +5,8 @@
 // 與 @contract 同一個模式:檔案物理放在 Deno 側,前端經 vite/tsconfig 的
 // `@recruitment-copy` alias 讀入,正式程式與測試都 import。R2 Email 邀請的
 // 後端姓名檢查與信件模板測試也引用這一份——揭露句與禁用字樣只有一個來源,
-// 規則見 docs/ui-ux-guidelines.md §13 第 5 條。
+// 規則見 docs/ui-ux-guidelines.md §13 第 5 條。測試在 src/utils/referralInvite.test.ts
+// (經 alias 引入,本檔不另開測試檔)。
 // ============================================================
 
 /**
@@ -22,9 +23,9 @@ export function referralDisclosureSentence(name?: string | null): string {
 
 /**
  * 招募曝光面的固定文案不得出現的字樣。前八個對應手冊 4-1-1(4)(受僱機會)、
- * 4-1-2(5)(獎金/收入)、(6)(賦稅優惠)、(7)(投資)、(8)(僱傭關係)的禁止事項,
- * 是總綱選定的展開詞——手冊字面只有受僱、獎金、收入、投資;後三個出自業主
- * 2026-10-23 用語裁決。
+ * 4-1-2(5)(獎金/收入)、(6)(賦稅優惠)、(7)(投資)、(8)(僱傭關係)的禁止事項:
+ * 手冊字面只有受僱、獎金、收入、投資,賺、工作、兼職、節稅是依條文意旨補的
+ * 同義詞。後三個出自業主 2026-10-23 用語裁決。
  */
 export const RECRUITMENT_FORBIDDEN_WORDS = [
   '賺',
