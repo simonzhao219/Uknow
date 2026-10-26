@@ -100,6 +100,23 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
      `Record<ReferralInviteErrorCode, string>`,不讀 `err.message`。
    - accept「`generateLink` 回的 id 不符」分支原本另清稽核列;v3 一步驗證後整段移除,不再適用。
 
+## 過夜施工規則(業主 2026-10-27 授權,台北 02:50 起約 8 小時)
+
+前端 session(Sonnet)在業主睡覺期間接手循環 6–11,照這節做,不要停下來等人:
+
+1. **開局分支**:#399(後端)還沒合併,前端疊在它上面——
+   `git fetch origin claude/referral-email-invite-vygu7r && git checkout -B <本 session 的分支> origin/claude/referral-email-invite-vygu7r`。
+   PR 開 **draft**、base `develop`(CI 只跑 base=develop 的 PR),描述第一行寫「疊在 #399 上,先合 #399」。
+2. **需要裁決時**:可逆的 UI／實作細節(版面、元件拆法、測試寫法、文案以外的互動細節)→ 採推薦選項,記進下方
+   「待業主確認」並在 PR 描述列出,繼續做。動到**金流、會籍、法務／告知文案的字句、後端契約**→ 不自己決定:記進
+   「待業主確認」,跳去做不受影響的循環。
+3. **紅綠證據**:前端 vitest、e2e(mocked)都能在本機跑,紅燈 commit 照常本機取證;push 後看 CI。
+4. **不做**:不 merge、不 push develop／main、不動 #399 的分支。規劃檔清理留到整個功能(含 #399)都合併後的收尾。
+
+### 待業主確認(過夜期間採推薦選項的決定)
+
+(前端 session 寫入)
+
 ## 前端 session 交接(後端段審查後)
 
 1. **alias**:`@password-policy` 已在本 PR 接好(vite、tsconfig paths、include);`@referral-invite-payload` 還沒接——前端循環 7
