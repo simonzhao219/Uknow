@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
 // 邀請卡圖片的組成契約：下載/分享要的是「整張卡」（抬頭＋QR＋說明行與推薦碼＋連結＋
-// 推薦人揭露句），而不是只有 QR，也不含畫面上的按鈕。揭露句與說明行是法遵文字，
-// 放不下就換行、不縮字級也不截尾；只有連結行可截尾（QR 已承載連結）。
+// 推薦人揭露句），而不是只有 QR，也不含畫面上的按鈕。換行與截尾規則見
+// docs/ui-ux-guidelines.md §13 第 5 條。
 //
 // jsdom 沒有真正的 canvas 2D context：版面案例換成記錄 fillText 當下狀態的假 context，
 // 字寬用「全形 1em、半形 0.6em」近似真字型，斷言「畫了什麼、畫在哪」，不驗像素。
@@ -21,6 +21,8 @@ function fakeQrCanvas(size = 200): HTMLCanvasElement {
 
 /** 卡片左右留白（inviteCardImage.ts 的 PAD）：每一行字都要落在這之內。 */
 const PAD = 40;
+/** 揭露句字級（inviteCardImage.ts）：卡片在手機上約縮成 0.6 倍看，22px ≈ 13px。 */
+const DISCLOSURE_PX = 22;
 const LINK = 'https://example.com/register?ref=abc123';
 const TEN_ZH = '司馬相如諸葛孔明歐陽';
 // 50 字外文名（姓名上限）：揭露句與抬頭都放不下一行。
@@ -65,9 +67,12 @@ const DEFAULT_STATE = {
 /**
  * 換上記錄用的假 context。寬高被設定時照規格重置狀態——真瀏覽器就是這樣，
  * 不模擬的話「先設字型、再改尺寸」的回歸在這裡全綠、只有真機才看得到。
+ * 先還原再裝：同一個案例畫兩張卡時，prototype 上不會疊兩層 spy。
  */
 function installFakeContext() {
+  vi.restoreAllMocks();
   const texts: DrawnText[] = [];
+  const measuredFonts = new Set<string>();
   const images: { y: number; h: number; smoothing: boolean }[] = [];
   const ctx = {
     ...DEFAULT_STATE,
@@ -78,7 +83,10 @@ function installFakeContext() {
     drawImage(_image: unknown, _x: number, y: number, _w: number, h: number) {
       images.push({ y, h, smoothing: ctx.imageSmoothingEnabled });
     },
-    measureText: (text: string) => ({ width: fakeWidth(text, ctx.font) }),
+    measureText(text: string) {
+      measuredFonts.add(ctx.font);
+      return { width: fakeWidth(text, ctx.font) };
+    },
   };
   for (const prop of ['width', 'height'] as const) {
     const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, prop);
@@ -93,18 +101,21 @@ function installFakeContext() {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
     ctx as unknown as CanvasRenderingContext2D,
   );
-  return { texts, images };
+  return { texts, images, measuredFonts };
 }
 
 function drawWithFakeContext(memberName: string | null, link = LINK) {
-  const { texts, images } = installFakeContext();
+  const { texts, images, measuredFonts } = installFakeContext();
   const card = drawInviteCard({ qrCanvas: fakeQrCanvas(), memberName, code: 'abc123', link });
   const qr = images[0];
-  const linkY = texts.find((t) => t.text.startsWith('https://'))?.y ?? Number.NaN;
+  const linkText = texts.find((t) => t.text.startsWith('https://'));
+  const linkY = linkText?.y ?? Number.NaN;
   return {
     card,
     texts,
     qr,
+    link: linkText,
+    measuredFonts,
     header: texts.filter((t) => t.y < qr.y),
     disclosure: texts.filter((t) => t.y > linkY),
   };
@@ -137,6 +148,12 @@ describe('drawInviteCard', () => {
     });
     expect(card.width).toBeGreaterThan(0);
     expect(card.height).toBeGreaterThan(0);
+  });
+
+  it('沒有 2D context 時仍依估計字寬換行，長名字的卡片比較高', () => {
+    const draw = (memberName: string) =>
+      drawInviteCard({ qrCanvas: fakeQrCanvas(), memberName, code: 'abc123', link: LINK });
+    expect(draw(LONG_FOREIGN).height).toBeGreaterThan(draw('小明').height);
   });
 });
 
@@ -171,12 +188,19 @@ describe('drawInviteCard 版面', () => {
     expect(label.x + fakeWidth(label.text, label.font)).toBeLessThanOrEqual(code.x);
   });
 
-  it('連結下方以灰字 18px 畫出揭露句全文', () => {
-    const { disclosure } = drawWithFakeContext('小明');
+  it('連結下方以比連結大一級的灰字畫出揭露句全文', () => {
+    const { disclosure, link } = drawWithFakeContext('小明');
     expect(disclosure).toHaveLength(1);
     expect(disclosure[0].text).toBe('本邀請由 Uknow 推薦人 小明 發送');
     expect(disclosure[0].fill).toBe(PIXEL_INK_MUTED);
-    expect(fontSize(disclosure[0].font)).toBe(18);
+    expect(fontSize(disclosure[0].font)).toBe(DISCLOSURE_PX);
+    expect(fontSize(disclosure[0].font)).toBeGreaterThan(fontSize(link?.font ?? ''));
+  });
+
+  it('揭露句與連結之間的距離大於揭露句自己的行距，兩者分成兩組', () => {
+    const { disclosure, link } = drawWithFakeContext(LONG_FOREIGN);
+    expect(disclosure.length).toBeGreaterThan(1);
+    expect(disclosure[0].y - (link?.y ?? 0)).toBeGreaterThan(disclosure[1].y - disclosure[0].y);
   });
 
   it('十字中文名的揭露句一行畫完', () => {
@@ -197,18 +221,18 @@ describe('drawInviteCard 版面', () => {
       `本邀請由 Uknow 推薦人 ${LONG_FOREIGN} 發送`,
     );
     for (const row of disclosure) {
-      expect(fontSize(row.font)).toBe(18);
+      expect(fontSize(row.font)).toBe(DISCLOSURE_PX);
       expect(row.text).not.toContain('…');
     }
   });
 
   it('換行時「發送」不單獨掉成最後一行，帶著前一個詞一起換', () => {
-    // 假字寬下「本邀請由 Uknow 推薦人 Alexander Montgomery Wellington」剛好塞滿第一行，
+    // 假字寬下「本邀請由 Uknow 推薦人 Alexander Montgomery」剛好塞滿第一行，
     // 逐詞填滿會只剩「發送」落單。
-    const { disclosure } = drawWithFakeContext('Alexander Montgomery Wellington');
+    const { disclosure } = drawWithFakeContext('Alexander Montgomery');
     expect(disclosure.map((t) => t.text)).toEqual([
-      '本邀請由 Uknow 推薦人 Alexander Montgomery',
-      'Wellington 發送',
+      '本邀請由 Uknow 推薦人 Alexander',
+      'Montgomery 發送',
     ]);
   });
 
@@ -221,7 +245,6 @@ describe('drawInviteCard 版面', () => {
 
   it('抬頭名字過長時換行，名字完整且 QR 隨之下移', () => {
     const short = drawWithFakeContext('小明');
-    vi.restoreAllMocks();
     const long = drawWithFakeContext(LONG_FOREIGN);
     const rows = long.header.map((t) => t.text);
     expect(rows.length).toBeGreaterThan(2);
@@ -253,6 +276,30 @@ describe('drawInviteCard 版面', () => {
     for (let i = 1; i < ys.length; i++) {
       expect(ys[i] - ys[i - 1]).toBeGreaterThanOrEqual(rowSizes.get(ys[i]) ?? 0);
     }
+  });
+
+  it.each([
+    ['兩字中文名', '小明'],
+    ['50 字外文名', LONG_FOREIGN],
+  ])('%s：每一行字左右置中', (_label, name) => {
+    const { card, texts } = drawWithFakeContext(name);
+    const rows = new Map<number, { left: number; right: number }>();
+    for (const t of texts) {
+      const row = rows.get(t.y) ?? { left: Number.POSITIVE_INFINITY, right: 0 };
+      row.left = Math.min(row.left, t.x);
+      row.right = Math.max(row.right, t.x + fakeWidth(t.text, t.font));
+      rows.set(t.y, row);
+    }
+    for (const { left, right } of rows.values()) {
+      expect(Math.abs(left - (card.width - right))).toBeLessThan(0.5);
+    }
+  });
+
+  it('量字寬用的字型就是畫字的字型（粗體、等寬都算進去）', () => {
+    // 量的時候漏了粗體，真機的字會比排版時寬，超出右邊留白——假字寬不分粗細抓不到，
+    // 所以直接比對字型字串。
+    const { texts, measuredFonts } = drawWithFakeContext(LONG_FOREIGN);
+    for (const t of texts) expect([...measuredFonts]).toContain(t.font);
   });
 
   it('連結過長時只有連結行截尾加「…」，且不超出卡片寬度', () => {
