@@ -29,9 +29,10 @@
 --   select public.purge_stale_referral_invites(p_email => '<email>');
 -- p_email 模式不套天數，只刪該信箱且符合其餘條件的空殼；回刪除筆數，0 表示
 -- 查無空殼（不存在、已驗證或已登入過——那些走一般會員刪除流程）。
+--
+-- pg_cron 由 20261017000001 建立；這裡不再 create extension——重跑會再觸發
+-- Supabase 的 pg_cron 授權 event trigger，撞上既有授權而失敗（2BP01）。
 -- ============================================================
-
-create extension if not exists pg_cron with schema pg_catalog;
 
 -- issued_at → timestamptz；不是字串或 cast 失敗回 null（呼叫端視為「不刪」）。
 create or replace function public.referral_invite_issued_at(p_referral_invite jsonb)
