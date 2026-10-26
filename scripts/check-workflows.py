@@ -150,7 +150,9 @@ CANCEL_IN_PROGRESS_FALSE = re.compile(r"^\s*cancel-in-progress\s*:\s*false\s*$",
 #         部署在上傳之前就整支失敗。部署冪等,重試只有好處。
 #         判準是「同一個 step 內有 for 迴圈且有 sleep」:沒有 sleep 的迴圈是
 #         連環硬打限流,等於沒有重試。
-FUNCTIONS_DEPLOY = re.compile(r"supabase\s+functions\s+deploy\b")
+#         2026-10-26 擴及 `supabase start`(api-tests 一天四次死在拉映像:ECR
+#         `Data limit exceeded`、ghcr `toomanyrequests`,都在任何測試跑之前)。
+FUNCTIONS_DEPLOY = re.compile(r"supabase\s+(?:functions\s+deploy|start)\b")
 RETRY_LOOP = re.compile(r"^\s*for\s+\w+\s+in\b", re.M)
 SLEEP_CALL = re.compile(r"\bsleep\s+\S")
 
@@ -270,17 +272,18 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             "語意上也才真的是「最新的那個贏」。"
         )
 
-    # 規則 12:`supabase functions deploy` 的 step 必須有退避重試
+    # 規則 12:`supabase functions deploy`／`supabase start` 的 step 必須有退避重試
     #         只看 step 內的非註解行——step 之前的說明註解會被 _steps() 歸給
     #         上一個 step,若提到指令名稱就會誤判。
     for bl in _steps(text):
         code = "\n".join(l for l in bl.splitlines() if not l.lstrip().startswith("#"))
         if FUNCTIONS_DEPLOY.search(code) and not (RETRY_LOOP.search(code) and SLEEP_CALL.search(code)):
             found.append(
-                "有 step 執行 supabase functions deploy 但沒有退避重試——CLI 打包時"
-                "要從 public.ecr.aws 匿名拉 edge-runtime 映像,共用 runner 的 IP "
-                "常撞上 `toomanyrequests: Rate exceeded`,部署在上傳前就整支失敗"
-                "(2026-10-03~05 連續 7 次,含正式站一次)。部署冪等,重試無害。"
+                "有 step 執行 supabase functions deploy 或 supabase start 但沒有退避重試——"
+                "兩者都要從 registry 匿名拉映像,共用 runner 的 IP 常撞上限流"
+                "(`toomanyrequests`、ECR `Data limit exceeded`),在真正的工作開始前就整支"
+                "失敗(deploy:2026-10-03~05 連續 7 次,含正式站一次;start:2026-10-26 "
+                "api-tests 一天四次)。兩者都冪等,重試無害。"
                 "修法:同一個 step 內用 for 迴圈包住指令,失敗時 sleep 後重試"
                 "(迴圈沒有 sleep 等於連環硬打限流)。"
             )
@@ -673,6 +676,31 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         ),
         "x.yml",
         1,
+    ),
+    (
+        "supabase start 沒有重試 → 違規(api-tests 拉映像限流的事故形態)",
+        (
+            "name: CI\njobs:\n"
+            "  api-tests:\n    timeout-minutes: 20\n    steps:\n"
+            "      - name: 啟動本地 Supabase\n        run: supabase start -x studio\n"
+        ),
+        "x.yml",
+        1,
+    ),
+    (
+        "supabase start 包在 for 迴圈且失敗時 sleep → 通過",
+        (
+            "name: CI\njobs:\n"
+            "  api-tests:\n    timeout-minutes: 20\n    steps:\n"
+            "      - name: 啟動本地 Supabase\n        run: |\n"
+            "          for attempt in 1 2 3 4; do\n"
+            "            supabase start -x studio && exit 0\n"
+            "            sleep 30\n"
+            "          done\n"
+            "          exit 1\n"
+        ),
+        "x.yml",
+        0,
     ),
     (
         "step 之前的註解提到指令名稱,不可誤判給上一個 step → 通過",
