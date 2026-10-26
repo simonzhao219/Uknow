@@ -648,7 +648,10 @@ app.post('/auth/check-email', async (c) => {
   // 列表：它不認 `search`，只會回最新 50 位，較早的會員被判不存在。
   const { data, error } = await sb().rpc('find_auth_user_by_email', { p_email: email });
   // fail-closed：回 { exists:false } 會把暫時性故障變成「既有會員被送去設定密碼」。
-  if (error) return c.json({ error: '暫時無法檢查 Email，請稍後再試' }, 503);
+  if (error) {
+    console.error('[auth/check-email] find_auth_user_by_email failed:', error);
+    return c.json({ error: '暫時無法檢查 Email，請稍後再試' }, 503);
+  }
   // 只回傳 exists。刻意「不」回傳 email 是否已驗證：一來避免多洩漏一個
   // 「這個 email 註冊到一半」的枚舉位元，二來未驗證帳號的復原改走「密碼優先」
   // （見 AuthPage.handleLogin），前端不需要在步驟 1 就知道驗證狀態。
