@@ -95,3 +95,14 @@
 條款與理由見
 [`../.claude/rules/document-writing.md`](../.claude/rules/document-writing.md)
 （path-scoped，動 `docs/`／`e2e/**/*.md` 時自動載入）。
+
+**每一波更新三種 session。**（業主 2026-10-27）一波＝一次晉升 develop→main
+的內容。波開始起**新的主 session**：讀 `docs/plans/<wave>/plan.md`、派工、
+審每個 PR、用互動問題收業主裁決並留言在 PR、rebase 與解衝突（業主授權它
+push 執行分支）、開晉升 PR、清理鷹架；它不寫產品碼、不跨波。每個工項各開
+**執行 session**，只動自己的分支、PR 回 develop、不裁決。波結束另開**審查
+session**，審該波合進 main 的全部變動（四視角＋事實核對＋上線後現場），
+報告寫 `docs/plans/<wave>/review.md`，P0 回主 session 開 hotfix。理由：
+單一長壽 session 的 context 會被歷史吃掉、裁決與事實混在對話裡，新 session
+只看得到 repo——所以交接物一律落檔（plan.md 的裁決表與進度表、
+dispatch-prompts.md 的開局 prompt、PR 留言），不靠記憶。
