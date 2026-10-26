@@ -3128,16 +3128,14 @@ R2 規劃審查（2026-10-21）讀碼發現，不是任何閘門攔到的。
 2. **舊修法沒有測試**：被取代的舊版 `checkEmail` 是分頁掃到最後一頁，註解寫「Phase 10.2: 修復分頁問題」——這個 bug
    修過一次，修正只活在程式碼裡，重寫時一起消失，沒有任何紅燈。
 3. **就算有測試也會綠**：沒有任何測試對真 GoTrue 斷言過 `exists:true`（`check-email-rate-limit.test.ts` 只看狀態碼、
-   e2e 全 mock）；而「剛建的帳號 → exists:true」修前修後都綠，因為 fixture 永遠是最新建立的，天生落在第一頁。
+   e2e 主套件全 mock；journey 打真後端，但主樹 30 人（`orgchart.yaml`）＋續約 saga 7 人（`orgchart-saga.yaml`），
+   規模到不了「目標之後再建滿 50 位」）；而「剛建的帳號 → exists:true」修前修後都綠，因為 fixture 永遠是最新
+   建立的，天生落在第一頁。
 
 處置：`fix/auth-check-email-lookup` 改用 service_role 專用的 `find_auth_user_by_email`（DB 內精確比對），RPC 失敗
-503 fail-closed；`check-email-lookup.test.ts` 的紅燈刻意在目標之後再建 50 位，才造得出 bug 的前提。
+503 fail-closed 並 `console.error`；`check-email-lookup.test.ts` 的紅燈刻意在目標之後再建 50 位，才造得出 bug 的前提。
 
-同類掃描記債（金流，不在該 PR 範圍）：`queryPayUniTradeStatus` 的查詢層回應只要 `Status !== 'SUCCESS'` 就回
-`stillProcessing`，不記錄、不告警。payload 欄位名若不對，每一輪都拿到 PayUni 的錯誤狀態，卡單永遠「處理中」、端點
-照樣回成功——同一個「錯誤長得像正常」的形狀。欄位名當時無法對 PayUni 文件驗證（`index.ts` 註解寫「以官方文件為準、
-上線前 sandbox 驗一輪」，`docs/`、`.github/` 內找不到驗過的紀錄）。償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的
-`Message`，讓「查無此單」與「參數錯」分得開；再以 sandbox 實打一輪確認欄位名。
+同類掃描找到的同形態存量債另立一條，見下方 `queryPayUniTradeStatus` 條目（issue #395）。
 
 推論（待整併時裁決）：
 
@@ -3147,3 +3145,23 @@ R2 規劃審查（2026-10-21）讀碼發現，不是任何閘門攔到的。
 - 「把單頁當全集」這一類 bug，紅燈要刻意造出前提（目標之後再建滿一頁），只用新建 fixture 的測試永遠綠。
 - 框架修訂候選：離線守衛限制 `supabase/functions/api/index.ts` 的原生 `fetch(` 只能打 PayUni（目前只剩那一處），
   新增對 GoTrue／PostgREST 的手寫 HTTP 呼叫就紅，逼它走 SDK 或 DB 函式。
+
+## 2026-10-25｜存量債｜`queryPayUniTradeStatus` 查詢層非 SUCCESS 一律當「處理中」、不記錄不告警——滿 4 天的卡單被對帳靜默標 expired
+
+check-email 修正（上一條）的同類掃描發現。`queryPayUniTradeStatus` 對 PayUni 查詢 API 的回應只要
+`raw.Status !== 'SUCCESS' || !raw.EncryptInfo` 就回 `{ stillProcessing: true }`，不記錄、不告警。
+`reconcilePendingOrders` 對 `stillProcessing` 的處理：建單 4 天內計 `stillPending`，超過 `expireAfterDays`（預設 4，
+PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
+
+後果：payload 欄位名若不對（或 PayUni 查詢層持續回錯），每一輪都拿到錯誤狀態——webhook 沒送達、其實付了錢的
+卡單永遠撿不回來，4 天後被靜默標成 `expired`，端點照樣回成功。與 check-email 同一個「錯誤長得像正常」的形狀。
+欄位名當時無法對 PayUni 文件驗證（`index.ts` 註解寫「以官方文件為準、上線前 sandbox 驗一輪」，`docs/`、
+`.github/` 內找不到驗過的紀錄）。
+
+`reconcile-payments.yml` 檔頭寫明開排程時選的是「讓假綠不可能」（`curl -f`、回應形狀斷言、失敗自動開 issue），
+而不是「再驗一次才敢開」——那是有意識的取捨。但那三道看的是端點層：查詢層的非 SUCCESS 在端點眼中是正常的
+`stillPending`／`expired` 計數，穿得過去。
+
+處置：業主裁決（2026-10-26）開 issue #395、排總綱 Plan Mode 小 PR（Opus），不在 check-email 修正 PR 內修。
+償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的 `Message`，讓「查無此單」與「參數錯」分得開；
+再以 sandbox 實打一輪確認欄位名。

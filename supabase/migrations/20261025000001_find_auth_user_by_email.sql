@@ -1,7 +1,6 @@
 -- ============================================================
 -- find_auth_user_by_email：以 email 精確查 auth.users，只給 service_role
--- （見 check-email-lookup.test.ts）。/auth/check-email 與之後的 Email 邀請
--- 端點共用。
+-- （見 check-email-lookup.test.ts）。目前由 /auth/check-email 呼叫。
 --
 -- 為什麼不再用 GoTrue admin API：
 -- 1. /auth/check-email 原本打 `admin/users?page=1&per_page=50&search=<email>`，
@@ -12,9 +11,10 @@
 -- 2. GoTrue 讀的是 `filter`，那是子字串比對＋分頁（實測 `filter=probe-` 回滿
 --    一頁 50 筆），沒有「以 email 精確查一位」的 admin 端點——要查對就得自己
 --    翻頁，每次請求的成本隨會員數成長。
--- 3. Email 邀請要判斷帳號狀態（設過密碼沒有、邀請／驗證信寄過沒有）。admin API
---    的使用者物件不帶任何「是否設過密碼」的資訊，invited_at 等欄位為空時直接
---    省略，而且要先找到人才查得到（又回到第 2 點）。直接讀 auth.users 一次命中。
+-- 3. 一次回 7 欄是預留給 Email 邀請（規劃中，尚未實作）：它要判斷帳號狀態（設過
+--    密碼沒有、邀請／驗證信寄過沒有）。admin API 的使用者物件不帶任何「是否設過
+--    密碼」的資訊，invited_at 等欄位為空時直接省略，而且要先找到人才查得到（又回
+--    到第 2 點）。直接讀 auth.users 一次命中。
 --
 -- 只回下列欄位，不回其他個資。只給 service_role：對 anon／authenticated 開放，
 -- 等於在 PostgREST 上開一個無限流的帳號枚舉入口。

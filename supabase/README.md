@@ -68,7 +68,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
 | `referral_tree` | 三代推薦樹（只往下爬 3 層，限自己/admin） |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
-| `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；`/auth/check-email` 與 Email 邀請端點共用） |
+| `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；目前由 `/auth/check-email` 呼叫） |
 | `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
 | `effective_registration_step` | 註冊進度即時推導 |
