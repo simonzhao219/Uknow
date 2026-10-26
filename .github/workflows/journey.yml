@@ -387,26 +387,27 @@ jobs:
 
       # 分支是從 main 的 migrations 長出來的,但 Edge Function 不會自動
       # 跟上——不部署就是拿舊版函式測新版程式碼,測了也不算數。
-      # 與 deploy-supabase.yml 同一個失敗模式：CLI 打包時從 public.ecr.aws
-      # 匿名拉 edge-runtime 映像，共用 runner IP 會撞上 ECR 限流
-      # （`toomanyrequests: Rate exceeded`）。這一步掛掉，晉升 PR 的
-      # journey-full 就整軌紅；部署冪等，所以用退避重試（規則 12 把關）。
+      # 與 deploy-supabase.yml 同一個做法：`--use-api` 由 Management API 在
+      # 雲端打包，runner 不起 Docker、不從 public.ecr.aws 匿名拉映像——共用
+      # runner IP 撞 ECR 限流曾讓這一步連續失敗（2026-10-03～05、10-24～26），
+      # 這一步掛掉，晉升 PR 的 journey-full 就整軌紅。部署冪等，退避重試
+      # 保留給 API 端的暫時性失敗（規則 12 把關）。
       - name: 部署 Edge Function 到該分支
         run: |
           set -uo pipefail
           max_attempts=4
           for attempt in $(seq 1 "$max_attempts"); do
-            if supabase functions deploy api \
+            if supabase functions deploy api --use-api \
               --project-ref "${{ steps.branch.outputs.ref }}" --no-verify-jwt; then
               exit 0
             fi
             if [ "$attempt" -lt "$max_attempts" ]; then
               wait_s=$((attempt * 30))
-              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（多半是拉 edge-runtime 映像被限流）"
+              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（API 端打包或上傳的暫時性失敗）"
               sleep "$wait_s"
             fi
           done
-          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是映像限流還是函式本身有問題"
+          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是 API 端打包失敗還是函式本身有問題"
           exit 1
 
       # GUI 註冊掛掉時只看得到「30 秒沒等到 OTP 框」——toast 早就消失，

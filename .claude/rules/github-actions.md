@@ -189,6 +189,12 @@ CLI 打包函式時要在 runner 上起 Docker、從 `public.ecr.aws` **匿名**
 `deploy-supabase.yml`(4 次,退避 30／60／90 秒),`journey.yml` 的部署步驟
 同款。
 
+2026-10-24～26 再連續 6 次(#387 #389 #392 #396 #397 #400),這次是資料量
+上限(`Data limit exceeded`),退避重試完全無效,develop 線上後端因此停在
+10/21 版。2026-10-27 起兩支 workflow 改 `supabase functions deploy --use-api`:
+由 Supabase 的 Management API 在雲端打包,runner 不起 Docker、不拉映像,根因
+整個移除;重試保留給 API 端的暫時性失敗,規則判準不變。
+
 ⚠️ 規則只管 `supabase functions deploy`。同樣會拉映像的 `supabase start`
 (ci.yml 的 api-tests)目前沒有失敗紀錄,記在 friction-log 觀察、不預先改——
 那是 CI 主閘門,沒有證據就不動。
