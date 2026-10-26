@@ -13,17 +13,21 @@ import postgres from 'npm:postgres@3';
 import {
   assertShape,
   ReferralInviteAcceptedSchema,
+  ReferralInviteAcceptErrorResponseSchema,
+  ReferralInviteAcceptResponseSchema,
   ReferralInviteErrorResponseSchema,
 } from '../_shared/api-contract.ts';
 import {
   decodeReferralInvitePayload,
   REFERRAL_INVITE_CONSENT_VERSION,
+  REFERRAL_INVITE_TOKEN_TTL_SECONDS,
 } from '../_shared/referral-invite-payload.ts';
 import {
   checkInviteEligibility,
   createReferralInviteHandlers,
   type ReferralInviteDeps,
 } from './referral-invite.ts';
+import { signReferralInviteToken } from './referral-invite-token.ts';
 import {
   adminClient,
   createTestUser,
@@ -46,6 +50,7 @@ Deno.env.set('REFERRAL_INVITE_SECRET', 'test-referral-invite-secret-0123456789')
 
 const {
   app,
+  INVITE_ACCEPT_RATE_MAX,
   REFERRAL_INVITE_DAILY_MAX,
   REFERRAL_INVITE_GLOBAL_HOUR_MAX,
   REFERRAL_INVITE_RATE_MAX,
@@ -918,5 +923,385 @@ Deno.test('referrals/invites：空殼重寄失敗 → 以舊 referral_invite 回
     assertEquals(await rateCount(client, (await inviteKeys(second.id, email)).target), 0);
   } finally {
     await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+// ------------------------------------------------------------
+// POST /auth/invite/accept（公開）：持有簽章＝收到信的人
+//
+// 硬順序：先 updateUserById({ password })、再 generateLink({ type: 'invite' })——沒密碼的
+// 被邀請者在 verify 時會被 GoTrue 塞隨機密碼；設密碼又會清掉既有 confirmation_token，
+// 反過來會讓剛產生的 hash 失效（最後一個測試是這件事的 GoTrue 升級 canary）。
+// ------------------------------------------------------------
+
+const ACCEPT_SECRET_READ = (k: string) => Deno.env.get(k);
+
+function acceptRequest(body: unknown, ip = uniqueAcceptIp()): Promise<Response> {
+  return Promise.resolve(app.request('/api/auth/invite/accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': ip },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  }));
+}
+
+function acceptApp(client: SupabaseClient, extra: Partial<ReferralInviteDeps> = {}) {
+  const handlers = createReferralInviteHandlers({
+    ...referralInviteDeps(),
+    sb: () => client,
+    ...extra,
+  });
+  const testApp = new Hono().basePath('/api');
+  testApp.post('/auth/invite/accept', handlers.accept);
+  return (body: unknown) =>
+    Promise.resolve(testApp.request('/api/auth/invite/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': uniqueAcceptIp() },
+      body: JSON.stringify(body),
+    }));
+}
+
+function uniqueAcceptIp(): string {
+  const b = new Uint8Array(2);
+  crypto.getRandomValues(b);
+  return `198.51.${b[0]}.${b[1]}`;
+}
+
+async function expectAcceptError(res: Response, status: number, code: string): Promise<string> {
+  const body = await res.json();
+  assertEquals(res.status, status, JSON.stringify(body));
+  const parsed = assertShape(ReferralInviteAcceptErrorResponseSchema, body, `accept ${status}`);
+  assertEquals(parsed.error.code, code);
+  return parsed.error.message;
+}
+
+async function expectTokenHash(res: Response): Promise<string> {
+  const body = await res.json();
+  assertEquals(res.status, 200, JSON.stringify(body));
+  return assertShape(ReferralInviteAcceptResponseSchema, body, 'accept 200').tokenHash;
+}
+
+/** 推薦人寄出一封真的邀請，回傳被邀請人 email 與信中連結的 token。 */
+async function invitedShell(
+  client: SupabaseClient,
+): Promise<
+  { referrer: Awaited<ReturnType<typeof referrerWithToken>>; email: string; token: string }
+> {
+  const referrer = await referrerWithToken(client);
+  const email = inviteeEmail('accept');
+  await expectAccepted(await inviteRequest(referrer.token, { email, consent: true }));
+  const url = new URL((await authUser(email)).raw_user_meta_data.referral_invite_url);
+  return { referrer, email, token: url.searchParams.get('invite')! };
+}
+
+/** 丟棄式 client 做被邀請人那一側的 verifyOtp／登入，不污染 admin client。 */
+async function verifyInvite(tokenHash: string) {
+  return await adminClient().auth.verifyOtp({ token_hash: tokenHash, type: 'invite' });
+}
+
+async function canSignIn(email: string, password: string): Promise<boolean> {
+  const { data, error } = await adminClient().auth.signInWithPassword({ email, password });
+  return !error && Boolean(data.session);
+}
+
+Deno.test('auth/invite/accept：設密碼並回 tokenHash，verifyOtp 後以該密碼可登入', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const tokenHash = await expectTokenHash(
+      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+    );
+    const { data, error } = await verifyInvite(tokenHash);
+    assertEquals(error, null);
+    assert(data.session, 'verifyOtp 應回 session');
+    const u = await authUser(email);
+    assert(u.email_confirmed_at, '應已驗證');
+    // 連結用過即從 user_metadata 拿掉（模板只在重寄時才需要它）
+    assertEquals(u.raw_user_meta_data.referral_invite_url, undefined);
+    assert(await canSignIn(email, 'Invite-Pass-123'), '以 accept 設的密碼應能登入');
+  } finally {
+    const u = await authUser(email);
+    if (u) await client.auth.admin.deleteUser(u.id);
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：同一 token 再打一次 → 重設同一密碼、換新 hash（可重入）', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const first = await expectTokenHash(
+      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+    );
+    const second = await expectTokenHash(
+      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+    );
+    assert(first !== second, '每次換新 hash');
+    const { error } = await verifyInvite(second);
+    assertEquals(error, null);
+    assert(await canSignIn(email, 'Invite-Pass-123'));
+  } finally {
+    const u = await authUser(email);
+    if (u) await client.auth.admin.deleteUser(u.id);
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：簽章不符或格式壞 → 400 invalid_token；過期 → 400 expired', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const [payload, sig] = token.split('.');
+    const forgedSig = `${sig.startsWith('A') ? 'B' : 'A'}${sig.slice(1)}`;
+    for (const bad of [`${payload}.${forgedSig}`, 'garbage', '', 123]) {
+      await expectAcceptError(
+        await acceptRequest({ token: bad, password: 'Invite-Pass-123' }),
+        400,
+        'invalid_token',
+      );
+    }
+    const expired = await signReferralInviteToken(
+      email,
+      referrer.code,
+      Date.now() - (REFERRAL_INVITE_TOKEN_TTL_SECONDS + 60) * 1000,
+      ACCEPT_SECRET_READ,
+    );
+    await expectAcceptError(
+      await acceptRequest({ token: expired, password: 'Invite-Pass-123' }),
+      400,
+      'expired',
+    );
+    assertEquals((await authUser(email)).email_confirmed_at, null, '失敗的 accept 不動帳號');
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：帳號不存在或不是 R2 空殼 → 410 gone', async () => {
+  const client = adminClient();
+  const selfEmail = inviteeEmail('accept-self');
+  const goneEmail = inviteeEmail('accept-gone');
+  const { data: selfSignup } = await client.auth.admin.createUser({
+    email: selfEmail,
+    password: crypto.randomUUID(),
+    email_confirm: false,
+  });
+  try {
+    for (const email of [goneEmail, selfEmail]) {
+      const token = await signReferralInviteToken(email, '8048876', Date.now(), ACCEPT_SECRET_READ);
+      await expectAcceptError(
+        await acceptRequest({ token, password: 'Invite-Pass-123' }),
+        410,
+        'gone',
+      );
+    }
+  } finally {
+    await deleteTestUsers(client, [selfSignup.user!.id]);
+  }
+});
+
+Deno.test('auth/invite/accept：帳號已驗證 → 409 already_accepted', async () => {
+  const client = adminClient();
+  const member = await createTestUser(client, { name: '已驗證會員' });
+  try {
+    const token = await signReferralInviteToken(
+      member.email,
+      '8048876',
+      Date.now(),
+      ACCEPT_SECRET_READ,
+    );
+    await expectAcceptError(
+      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+      409,
+      'already_accepted',
+    );
+  } finally {
+    await deleteTestUsers(client, [member.id]);
+  }
+});
+
+Deno.test('auth/invite/accept：密碼少於 8 字或超過 72 位元組 → 400 weak_password，不呼叫 GoTrue', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const { client: spied, calls } = goTrueSpy();
+    const send = acceptApp(spied);
+    for (const password of ['short', '密'.repeat(25), 12345678, undefined]) {
+      await expectAcceptError(await send({ token, password }), 400, 'weak_password');
+    }
+    assertEquals(calls.updateUserById.length, 0);
+    assertEquals(calls.generateLink.length, 0);
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：GoTrue 回 weak_password → 400 weak_password 並透傳訊息', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const { client: spied } = goTrueSpy({
+      updateUserById: () =>
+        Promise.resolve({
+          data: { user: null },
+          error: {
+            name: 'AuthWeakPasswordError',
+            message: 'Password is known to be weak',
+            status: 422,
+            code: 'weak_password',
+          },
+        }),
+    });
+    const message = await expectAcceptError(
+      await acceptApp(spied)({ token, password: 'password123' }),
+      400,
+      'weak_password',
+    );
+    assertEquals(message, 'Password is known to be weak');
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：設密碼時帳號已被清除（user_not_found）→ 410 gone', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const { client: spied } = goTrueSpy({
+      updateUserById: () => Promise.resolve(goTrueError(404, 'user_not_found')),
+    });
+    await expectAcceptError(
+      await acceptApp(spied)({ token, password: 'Invite-Pass-123' }),
+      410,
+      'gone',
+    );
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：generateLink 回 email_exists（並行 accept 已驗證）→ 409', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const { client: spied } = goTrueSpy({
+      generateLink: () => Promise.resolve(goTrueError(422, 'email_exists')),
+    });
+    await expectAcceptError(
+      await acceptApp(spied)({ token, password: 'Invite-Pass-123' }),
+      409,
+      'already_accepted',
+    );
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：generateLink 回的帳號不是原空殼 → 刪掉新帳號、410 gone', async () => {
+  // 兩次呼叫之間空殼被 purge，GoTrue 的 generateLink(invite) 會自己建一個空白帳號
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const { client: spied, calls } = goTrueSpy({
+      generateLink: () =>
+        Promise.resolve({
+          data: {
+            user: { id: '00000000-0000-0000-0000-00000000dead' },
+            properties: { hashed_token: 'x' },
+          },
+          error: null,
+        }),
+      deleteUser: () => Promise.resolve({ data: {}, error: null }),
+    });
+    await expectAcceptError(
+      await acceptApp(spied)({ token, password: 'Invite-Pass-123' }),
+      410,
+      'gone',
+    );
+    assertEquals(calls.deleteUser.map((args) => args[0]), ['00000000-0000-0000-0000-00000000dead']);
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：只看 secret——kill switch 關著仍可 accept，缺 secret → 503', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  const savedSecret = Deno.env.get('REFERRAL_INVITE_SECRET')!;
+  try {
+    Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'false');
+    await expectTokenHash(await acceptRequest({ token, password: 'Invite-Pass-123' }));
+    Deno.env.set('REFERRAL_INVITE_SECRET', '');
+    await expectAcceptError(
+      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+      503,
+      'disabled',
+    );
+  } finally {
+    Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'true');
+    Deno.env.set('REFERRAL_INVITE_SECRET', savedSecret);
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('auth/invite/accept：同一 IP 超過上限 → 429 rate_limited', async () => {
+  const ip = uniqueAcceptIp();
+  try {
+    for (let i = 1; i <= INVITE_ACCEPT_RATE_MAX; i++) {
+      const res = await acceptRequest({ token: 'garbage', password: 'x' }, ip);
+      assertEquals(res.status, 400, `第 ${i} 次應進到驗簽`);
+      await res.body?.cancel();
+    }
+    await expectAcceptError(
+      await acceptRequest({ token: 'garbage', password: 'x' }, ip),
+      429,
+      'rate_limited',
+    );
+  } finally {
+    await adminClient().from('rate_limits').delete().eq('key', `invite-accept:${ip}`);
+  }
+});
+
+Deno.test('auth/invite/accept：兩個分頁並行 accept 後，恰好一個密碼能登入', async () => {
+  const client = adminClient();
+  const { referrer, email, token } = await invitedShell(client);
+  try {
+    const results = await Promise.all([
+      acceptRequest({ token, password: 'Tab-One-Pass-1' }),
+      acceptRequest({ token, password: 'Tab-Two-Pass-2' }),
+    ]);
+    const hashes: string[] = [];
+    for (const res of results) {
+      const body = await res.json();
+      if (res.status === 200) hashes.push(body.tokenHash);
+    }
+    // 前端 verifyOtp 失敗時以同一 token 重打一次 accept；這裡只要有一個 hash 能換到 session
+    let verified = false;
+    for (const h of hashes) verified = verified || !(await verifyInvite(h)).error;
+    assert(verified, '至少一個分頁能完成驗證');
+    const ok = [
+      await canSignIn(email, 'Tab-One-Pass-1'),
+      await canSignIn(email, 'Tab-Two-Pass-2'),
+    ];
+    assertEquals(ok.filter(Boolean).length, 1, JSON.stringify(ok));
+  } finally {
+    const u = await authUser(email);
+    if (u) await client.auth.admin.deleteUser(u.id);
+    await cleanupInvites(client, [referrer], [email]);
+  }
+});
+
+Deno.test('GoTrue canary：先 generateLink 再設密碼 → 該 hash 失效（accept 必須先設密碼）', async () => {
+  const client = adminClient();
+  const { referrer, email } = await invitedShell(client);
+  try {
+    const u = await authUser(email);
+    const { data: link } = await client.auth.admin.generateLink({ type: 'invite', email });
+    const hashedToken = link.properties?.hashed_token;
+    assert(hashedToken, 'generateLink 應回 hashed_token');
+    await client.auth.admin.updateUserById(u.id, { password: 'Reverse-Order-1' });
+    const { error } = await verifyInvite(hashedToken);
+    assert(error, 'GoTrue 若改成設密碼不清 token，accept 的硬順序理由要重審');
+  } finally {
+    await cleanupInvites(client, [referrer], [email]);
   }
 });

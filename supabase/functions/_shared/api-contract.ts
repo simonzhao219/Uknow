@@ -851,3 +851,31 @@ export const ReferralInviteErrorResponseSchema = obj({
   error: obj({ code: literals(...REFERRAL_INVITE_ERROR_CODES), message: str() }),
 });
 export type ReferralInviteErrorResponse = Infer<typeof ReferralInviteErrorResponseSchema>;
+
+// ------------------------------------------------------------
+// Email 邀請（R2）——POST /auth/invite/accept（公開）
+// 成功回 GoTrue 的 invite token_hash，前端以 verifyOtp({ token_hash, type: 'invite' }) 換 session。
+// ------------------------------------------------------------
+
+export const REFERRAL_INVITE_ACCEPT_ERROR_CODES = [
+  'invalid_token',
+  'expired',
+  'weak_password',
+  'already_accepted',
+  'gone',
+  'rate_limited',
+  'unavailable',
+  'disabled',
+] as const;
+export type ReferralInviteAcceptErrorCode = (typeof REFERRAL_INVITE_ACCEPT_ERROR_CODES)[number];
+
+export const ReferralInviteAcceptResponseSchema = obj({ tokenHash: str() });
+export type ReferralInviteAcceptResponse = Infer<typeof ReferralInviteAcceptResponseSchema>;
+
+export const ReferralInviteAcceptErrorResponseSchema = obj({
+  success: bool(),
+  error: obj({ code: literals(...REFERRAL_INVITE_ACCEPT_ERROR_CODES), message: str() }),
+});
+export type ReferralInviteAcceptErrorResponse = Infer<
+  typeof ReferralInviteAcceptErrorResponseSchema
+>;

@@ -40,11 +40,14 @@ export interface ReferralInviteLimits {
   /** 全站兩窗（strict；超額 503，一律不退）。 */
   globalHour: RateWindow;
   globalDay: RateWindow;
+  /** accept 的 per-IP 窗（fail-open）。 */
+  accept: RateWindow;
 }
 
 export interface ReferralInviteDeps {
   sb: () => SupabaseClient;
   requireAuth: (c: Context) => Promise<{ id: string; email?: string } | null>;
+  clientIp: (c: Context) => string;
   rateLimit: (key: string, max: number, windowSeconds: number) => Promise<boolean>;
   logSystemAlertOnce: (
     source: string,
@@ -475,5 +478,9 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
     return respondToFailure(outcome, resent);
   };
 
-  return { invites };
+  // 紅燈 stub（循環 5）：只求型別過
+  const accept = (c: Context): Promise<Response> =>
+    Promise.resolve(c.json({ error: 'not implemented' }, 501));
+
+  return { invites, accept };
 }

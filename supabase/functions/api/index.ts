@@ -286,6 +286,10 @@ export const REFERRAL_INVITE_GLOBAL_HOUR_MAX = 100;
 export const REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS = 1 * 60 * 60;
 export const REFERRAL_INVITE_GLOBAL_DAY_MAX = 1000;
 export const REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS = 24 * 60 * 60;
+// /auth/invite/accept：公開端點、per-IP（與 check-email 同類；猜簽章本來就不可行，
+// 這道防的是對 GoTrue 的設密碼／generateLink 洪泛）。
+export const INVITE_ACCEPT_RATE_MAX = 20;
+export const INVITE_ACCEPT_RATE_WINDOW_SECONDS = 5 * 60;
 
 // 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
 // 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
@@ -673,6 +677,12 @@ app.post('/auth/check-email', async (c) => {
   return c.json({ exists: Array.isArray(data) && data.length > 0 });
 });
 
+// ============================================================
+// POST /auth/invite/accept（Email 邀請，公開）——處理函式在 referral-invite.ts。
+// 包一層延遲取用：handlers 在 /referrals/join-program 之後才組（與 invites 同一份 deps）。
+// ============================================================
+app.post('/auth/invite/accept', (c) => referralInviteHandlers.accept(c));
+
 // register_profile 的回傳值（見 migration 20261017000004）。
 type RegisterProfileOutcome = 'ok' | 'completed' | 'not_found';
 
@@ -1049,7 +1059,7 @@ app.post('/referrals/join-program', async (c) => {
 });
 
 // ============================================================
-// POST /referrals/invites（Email 邀請）——處理函式在 referral-invite.ts；
+// POST /referrals/invites、/auth/invite/accept（Email 邀請）——處理函式在 referral-invite.ts；
 // 依賴（含限流常數）在這裡組一次注入，該模組不反向 import 本檔。
 // ============================================================
 // export 給測試換掉 sb（造 GoTrue 失敗），其餘依賴與正式路由同一份。
@@ -1057,6 +1067,7 @@ export function referralInviteDeps(): ReferralInviteDeps {
   return {
     sb,
     requireAuth,
+    clientIp,
     rateLimit,
     logSystemAlertOnce,
     read: (key) => Deno.env.get(key),
@@ -1082,6 +1093,10 @@ export function referralInviteDeps(): ReferralInviteDeps {
       globalDay: {
         max: REFERRAL_INVITE_GLOBAL_DAY_MAX,
         windowSeconds: REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS,
+      },
+      accept: {
+        max: INVITE_ACCEPT_RATE_MAX,
+        windowSeconds: INVITE_ACCEPT_RATE_WINDOW_SECONDS,
       },
     },
   };
