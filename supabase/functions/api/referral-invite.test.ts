@@ -8,12 +8,22 @@
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { Hono } from 'npm:hono@4';
+import postgres from 'npm:postgres@3';
 import {
   assertShape,
   ReferralInviteAcceptedSchema,
   ReferralInviteErrorResponseSchema,
 } from '../_shared/api-contract.ts';
-import { checkInviteEligibility } from './referral-invite.ts';
+import {
+  decodeReferralInvitePayload,
+  REFERRAL_INVITE_CONSENT_VERSION,
+} from '../_shared/referral-invite-payload.ts';
+import {
+  checkInviteEligibility,
+  createReferralInviteHandlers,
+  type ReferralInviteDeps,
+} from './referral-invite.ts';
 import {
   adminClient,
   createTestUser,
@@ -34,7 +44,16 @@ Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'true');
 Deno.env.set('REFERRAL_INVITE_SECRET', 'test-referral-invite-secret-0123456789');
 
-const { app, REFERRAL_INVITE_RATE_MAX, REFERRAL_INVITE_DAILY_MAX } = await import('./index.ts');
+const {
+  app,
+  REFERRAL_INVITE_DAILY_MAX,
+  REFERRAL_INVITE_GLOBAL_HOUR_MAX,
+  REFERRAL_INVITE_RATE_MAX,
+  referralInviteDeps,
+} = await import('./index.ts');
+
+const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
+  'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 /** 已付款（有 active 碼）、已加入推薦計畫的推薦人。 */
 async function createReferrer(
@@ -167,12 +186,15 @@ async function expectAccepted(res: Response): Promise<void> {
 async function referrerWithToken(
   client: SupabaseClient,
   opts: { name?: string; joined?: boolean } = {},
-): Promise<{ id: string; email: string; token: string; bystander: string; cleanup: string[] }> {
+): Promise<
+  { id: string; email: string; code: string; token: string; bystander: string; cleanup: string[] }
+> {
   const referrer = await createReferrer(client, opts);
   const bystander = await createTestUser(client, { name: '已驗證會員' });
   return {
     id: referrer.id,
     email: referrer.email,
+    code: referrer.code,
     token: await getUserAccessToken(client, referrer.email),
     bystander: bystander.email,
     cleanup: [referrer.id, bystander.id],
@@ -406,4 +428,495 @@ Deno.test('referrals/invites：日窗已滿 → 429 rate_limited_day，並退回
 Deno.test('referral-invite.ts：不 import ./index.ts（依賴只經 deps 注入）', async () => {
   const source = await Deno.readTextFile(new URL('./referral-invite.ts', import.meta.url));
   assert(!/from\s+['"]\.\/index\.ts['"]/.test(source), '反向匯入會把整個 Hono app 拖進來');
+});
+
+// ------------------------------------------------------------
+// POST /referrals/invites（後半：lookup、target／全站窗、寄送、GoTrue 對映、對帳、
+// 補償、退額度矩陣）
+//
+// GoTrue 的失敗以 deps 注入的 client 造（withRestTableFailure 只攔 /rest/v1/）：
+// 測試自己組 handlers、掛在只有這條路由的 Hono app 上，auth.admin 的指定方法被換掉，
+// 其餘（PostgREST、RPC、真 GoTrue）照常。
+// ------------------------------------------------------------
+
+type AdminMethod = 'inviteUserByEmail' | 'updateUserById' | 'deleteUser' | 'generateLink';
+// deno-lint-ignore no-explicit-any
+type AdminCall = (...args: any[]) => Promise<any>;
+type AdminOverride = (args: unknown[], original: AdminCall) => Promise<unknown>;
+
+/** 真 client，可攔 auth.admin 的指定方法；calls 記下每次呼叫的參數。 */
+function goTrueSpy(overrides: Partial<Record<AdminMethod, AdminOverride>> = {}) {
+  const client = adminClient();
+  const admin = client.auth.admin as unknown as Record<AdminMethod, AdminCall>;
+  const calls: Record<AdminMethod, unknown[][]> = {
+    inviteUserByEmail: [],
+    updateUserById: [],
+    deleteUser: [],
+    generateLink: [],
+  };
+  for (const name of Object.keys(calls) as AdminMethod[]) {
+    const original = admin[name].bind(admin);
+    admin[name] = (...args: unknown[]) => {
+      calls[name].push(args);
+      const override = overrides[name];
+      return override ? override(args, original) : original(...args);
+    };
+  }
+  return { client, calls };
+}
+
+function goTrueError(status: number, code?: string) {
+  return {
+    data: { user: null },
+    error: { name: 'AuthApiError', message: `stub ${code ?? status}`, status, code },
+  };
+}
+
+function invitesApp(client: SupabaseClient, extra: Partial<ReferralInviteDeps> = {}) {
+  const handlers = createReferralInviteHandlers({
+    ...referralInviteDeps(),
+    sb: () => client,
+    ...extra,
+  });
+  const testApp = new Hono().basePath('/api');
+  testApp.post('/referrals/invites', handlers.invites);
+  return (token: string, body: unknown) =>
+    Promise.resolve(testApp.request('/api/referrals/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    }));
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function inviteeEmail(tag: string): string {
+  return `invitee-${tag}-${crypto.randomUUID()}@example.invalid`;
+}
+
+// deno-lint-ignore no-explicit-any
+async function authUser(email: string): Promise<any | null> {
+  const sql = postgres(DB_URL);
+  try {
+    const rows = await sql`
+      select id, invited_at, confirmation_token, confirmation_sent_at, email_confirmed_at,
+             raw_app_meta_data, raw_user_meta_data
+      from auth.users where lower(email) = lower(${email})
+    `;
+    return rows[0] ?? null;
+  } finally {
+    await sql.end();
+  }
+}
+
+async function auditRowsMentioning(email: string): Promise<number> {
+  const sql = postgres(DB_URL);
+  try {
+    const [row] = await sql<{ n: number }[]>`
+      select count(*)::int as n from auth.audit_log_entries
+      where strpos(lower(payload::text), lower(${email})) > 0
+    `;
+    return row.n;
+  } finally {
+    await sql.end();
+  }
+}
+
+async function inviteKeys(referrerId: string, email: string) {
+  return {
+    hour: `referral-invite:${referrerId}`,
+    day: `referral-invite-day:${referrerId}`,
+    target: `referral-invite-target:${await sha256Hex(email)}`,
+  };
+}
+
+async function referralAlerts(
+  client: SupabaseClient,
+): Promise<{ context: Record<string, string> }[]> {
+  const { data } = await client.from('system_alerts').select('context')
+    .eq('source', 'referral-invite');
+  return data ?? [];
+}
+
+/** 清掉這次測試建的空殼（purge 的 p_email）、限流鍵、告警與推薦人。 */
+async function cleanupInvites(
+  client: SupabaseClient,
+  referrers: { id: string; cleanup: string[] }[],
+  emails: string[],
+): Promise<void> {
+  for (const email of emails) {
+    await client.rpc('purge_stale_referral_invites', { p_email: email });
+    await client.from('rate_limits').delete()
+      .eq('key', `referral-invite-target:${await sha256Hex(email)}`);
+  }
+  for (const r of referrers) {
+    await client.from('rate_limits').delete().in('key', [
+      `referral-invite:${r.id}`,
+      `referral-invite-day:${r.id}`,
+    ]);
+    await deleteTestUsers(client, r.cleanup);
+  }
+  await client.from('system_alerts').delete().eq('source', 'referral-invite');
+}
+
+Deno.test('referrals/invites：信箱不存在 → 新建空殼並寄出，metadata 照規格蓋章', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('new');
+  try {
+    await expectAccepted(await inviteRequest(r.token, { email, consent: true }));
+    const u = await authUser(email);
+    assert(u, '應建立帳號');
+    assert(u.invited_at, '應已寄出（invited_at 有值）');
+    assertEquals(u.email_confirmed_at, null);
+
+    const stamp = u.raw_app_meta_data.referral_invite;
+    assertEquals(Object.keys(stamp).sort(), ['code', 'consent_at', 'consent_version', 'issued_at']);
+    assertEquals(stamp.code, r.code);
+    assertEquals(stamp.consent_version, REFERRAL_INVITE_CONSENT_VERSION);
+    assert(!Number.isNaN(Date.parse(stamp.issued_at)));
+    assertEquals(stamp.consent_at, stamp.issued_at);
+
+    // 推薦人 uuid 不進被邀請人可讀之處（兩種 metadata 都進對方 JWT，裁決 H）
+    assert(!JSON.stringify(u.raw_app_meta_data).includes(r.id));
+    assert(!JSON.stringify(u.raw_user_meta_data).includes(r.id));
+    // 不寫 referred_by_code：推薦綁定只走落地 pending code → /auth/register
+    assertEquals(u.raw_user_meta_data.referred_by_code, undefined);
+    assertEquals(u.raw_user_meta_data.referral_invite_name, '王小明');
+    const url = new URL(u.raw_user_meta_data.referral_invite_url);
+    assertEquals(`${url.origin}${url.pathname}`, 'https://frontend.test/register');
+    const payload = decodeReferralInvitePayload(url.searchParams.get('invite')!);
+    assertEquals([payload?.e, payload?.c], [email, r.code]);
+
+    const { data: profile } = await client.from('profiles')
+      .select('referred_by_user_id, referred_by_code').eq('id', u.id).single();
+    assertEquals(profile, { referred_by_user_id: null, referred_by_code: null });
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：已驗證、自助註冊中、非 R2 待驗證 → 202 且不動對方帳號', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const sql = postgres(DB_URL);
+  const selfEmail = inviteeEmail('self');
+  const dashEmail = inviteeEmail('dashboard');
+  const ids: string[] = [];
+  try {
+    // 自助註冊進行中：未驗證、沒有 referral_invite；confirmation_token 是對方自己的驗證碼
+    const { data: selfSignup } = await client.auth.admin.createUser({
+      email: selfEmail,
+      password: crypto.randomUUID(),
+      email_confirm: false,
+    });
+    ids.push(selfSignup.user!.id);
+    await sql`
+      update auth.users set confirmation_token = 'self-signup-token',
+        confirmation_sent_at = now() - interval '1 minute'
+      where id = ${selfSignup.user!.id}
+    `;
+    // Dashboard 手動 Invite：有 invited_at、沒有 referral_invite
+    const { data: dash } = await client.auth.admin.inviteUserByEmail(dashEmail);
+    ids.push(dash.user!.id);
+
+    const globalBefore = await rateCount(client, 'referral-invite-global-hour');
+    const { client: spied, calls } = goTrueSpy();
+    const send = invitesApp(spied);
+    for (const email of [r.bystander, selfEmail, dashEmail]) {
+      const before = await authUser(email);
+      await expectAccepted(await send(r.token, { email, consent: true }));
+      assertEquals(await authUser(email), before, `${email} 的帳號不得被動到`);
+      assertEquals(await rateCount(client, (await inviteKeys(r.id, email)).target), null);
+    }
+    assertEquals(calls.inviteUserByEmail.length, 0);
+    assertEquals(calls.updateUserById.length, 0);
+    assertEquals(await rateCount(client, 'referral-invite-global-hour'), globalBefore);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+    await cleanupInvites(client, [r], []);
+  }
+});
+
+Deno.test('referrals/invites：同一信箱 24 小時內第二位推薦人 → 202 不寄、target 鍵不退', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('target');
+  try {
+    await expectAccepted(await inviteRequest(first.token, { email, consent: true }));
+    const stampBefore = (await authUser(email)).raw_app_meta_data.referral_invite;
+
+    const { client: spied, calls } = goTrueSpy();
+    await expectAccepted(await invitesApp(spied)(second.token, { email, consent: true }));
+    assertEquals(calls.inviteUserByEmail.length, 0, '先到者生效，第二位靜默略過');
+    assertEquals((await authUser(email)).raw_app_meta_data.referral_invite, stampBefore);
+    // limited 的 target 鍵不退：退了會清掉先到者佔住的名額
+    assertEquals(await rateCount(client, (await inviteKeys(second.id, email)).target), 2);
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+Deno.test('referrals/invites：同一信箱並行兩封 → GoTrue 只被呼叫一次、兩者皆 202', async () => {
+  const client = adminClient();
+  const a = await referrerWithToken(client);
+  const b = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('race');
+  try {
+    const { client: spied, calls } = goTrueSpy();
+    const send = invitesApp(spied);
+    const [ra, rb] = await Promise.all([
+      send(a.token, { email, consent: true }),
+      send(b.token, { email, consent: true }),
+    ]);
+    await expectAccepted(ra);
+    await expectAccepted(rb);
+    assertEquals(calls.inviteUserByEmail.length, 1);
+  } finally {
+    await cleanupInvites(client, [a, b], [email]);
+  }
+});
+
+Deno.test('referrals/invites：全站小時窗已滿 → 503，退 target 與 per-user、全站不退', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('global');
+  const { data: saved } = await client.from('rate_limits').select('*')
+    .eq('key', 'referral-invite-global-hour');
+  try {
+    await client.from('rate_limits').upsert({
+      key: 'referral-invite-global-hour',
+      count: REFERRAL_INVITE_GLOBAL_HOUR_MAX,
+      window_start: new Date().toISOString(),
+    });
+    const { client: spied, calls } = goTrueSpy();
+    await expectError(
+      await invitesApp(spied)(r.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    assertEquals(calls.inviteUserByEmail.length, 0);
+    const keys = await inviteKeys(r.id, email);
+    assertEquals(await rateCount(client, keys.target), 0);
+    assertEquals(await rateCount(client, keys.hour), 0);
+    assertEquals(await rateCount(client, keys.day), 0);
+    assertEquals(
+      await rateCount(client, 'referral-invite-global-hour'),
+      REFERRAL_INVITE_GLOBAL_HOUR_MAX + 1,
+    );
+  } finally {
+    await client.from('rate_limits').delete().eq('key', 'referral-invite-global-hour');
+    if (saved?.length) await client.from('rate_limits').insert(saved);
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：target 限流 RPC 失敗 → 503 unavailable、不寄（不可 fail-open）', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('strict-error');
+  try {
+    // per-user 兩窗 fail-open（放行）；target 是 strict，RPC 出錯 → 503
+    const res = await withRestTableFailure(
+      ['rpc/bump_rate_limit'],
+      () => invitesApp(goTrueSpy().client)(r.token, { email, consent: true }),
+    );
+    await expectError(res, 503, 'unavailable');
+    assertEquals(await authUser(email), null);
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：GoTrue 錯誤依 error_code 對映回應、退額度與告警', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const emails: string[] = [];
+  // [GoTrue 狀態, error_code, 預期狀態, 預期 code（null＝202）, 退額度, 告警]
+  const table: [number, string | undefined, number, string | null, boolean, boolean][] = [
+    [422, 'email_exists', 202, null, true, false],
+    [429, 'over_email_send_rate_limit', 503, 'unavailable', true, true],
+    [400, 'email_address_invalid', 400, 'invalid_email', true, false],
+    [422, 'validation_failed', 400, 'invalid_email', true, false],
+    [400, 'email_address_not_authorized', 503, 'unavailable', false, true],
+    [403, undefined, 503, 'unavailable', false, true],
+  ];
+  try {
+    for (const [gtStatus, gtCode, status, code, refunded, alerted] of table) {
+      const label = `${gtStatus} ${gtCode ?? ''}`;
+      const email = inviteeEmail('map');
+      emails.push(email);
+      await client.from('system_alerts').delete().eq('source', 'referral-invite');
+      await client.from('rate_limits').delete().in('key', [
+        `referral-invite:${r.id}`,
+        `referral-invite-day:${r.id}`,
+      ]);
+      const { client: spied } = goTrueSpy({
+        inviteUserByEmail: () => Promise.resolve(goTrueError(gtStatus, gtCode)),
+      });
+      const res = await invitesApp(spied)(r.token, { email, consent: true });
+      if (code === null) await expectAccepted(res);
+      else await expectError(res, status, code);
+
+      const keys = await inviteKeys(r.id, email);
+      const expected = refunded ? 0 : 1;
+      assertEquals(await rateCount(client, keys.target), expected, `${label} target`);
+      assertEquals(await rateCount(client, keys.hour), expected, `${label} 短窗`);
+      assertEquals(await rateCount(client, keys.day), expected, `${label} 日窗`);
+      const alerts = await referralAlerts(client);
+      assertEquals(alerts.length > 0, alerted, `${label} 告警`);
+      assert(!JSON.stringify(alerts).includes(email), `${label} 告警不得含 email`);
+    }
+  } finally {
+    await cleanupInvites(client, [r], emails);
+  }
+});
+
+Deno.test('referrals/invites：GoTrue 5xx 但其實已建帳寄出 → 對帳後補蓋章、202、不退', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('uncertain-sent');
+  try {
+    const { client: spied } = goTrueSpy({
+      // 交易已提交、信已寄，回應卻在路上丟了
+      inviteUserByEmail: async (args, original) => {
+        await original(...args);
+        return goTrueError(502);
+      },
+    });
+    await expectAccepted(await invitesApp(spied)(r.token, { email, consent: true }));
+    assertEquals((await authUser(email)).raw_app_meta_data.referral_invite?.code, r.code);
+    assertEquals(await rateCount(client, (await inviteKeys(r.id, email)).target), 1);
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：GoTrue 逾時且查無帳號 → 判定未寄，503、退額度、告警', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('uncertain-none');
+  try {
+    const { client: spied } = goTrueSpy({ inviteUserByEmail: () => new Promise(() => {}) });
+    await expectError(
+      await invitesApp(spied, { gotrueTimeoutMs: 50 })(r.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    const keys = await inviteKeys(r.id, email);
+    assertEquals(await rateCount(client, keys.target), 0);
+    assertEquals(await rateCount(client, keys.hour), 0);
+    assert((await referralAlerts(client)).length > 0);
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：新建後蓋章失敗 → 刪帳號與稽核列、退 target、503', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('compensate');
+  try {
+    const { client: spied, calls } = goTrueSpy({
+      updateUserById: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
+    });
+    await expectError(
+      await invitesApp(spied)(r.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    assertEquals(calls.deleteUser.length, 1);
+    assertEquals(await authUser(email), null, '沒蓋章的帳號不是 R2 空殼，要刪掉');
+    assertEquals(await auditRowsMentioning(email), 0, '補償也要清 GoTrue 稽核列');
+    const keys = await inviteKeys(r.id, email);
+    assertEquals(await rateCount(client, keys.target), 0, '補償退 target');
+    assertEquals(await rateCount(client, keys.hour), 1, '信多半已寄出，per-user 不退');
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：補償的 deleteUser 也失敗 → 另寫一筆告警', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('compensate-fail');
+  try {
+    const { client: spied } = goTrueSpy({
+      updateUserById: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
+      deleteUser: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
+    });
+    await expectError(
+      await invitesApp(spied)(r.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+    assert(kinds.includes('stamp_failed'), JSON.stringify(kinds));
+    assert(kinds.includes('compensate_delete_failed'), JSON.stringify(kinds));
+  } finally {
+    // 帳號沒刪成：清掉（GoTrue 沒蓋章，purge 的 p_email 認不得它）
+    const u = await authUser(email);
+    if (u) await client.auth.admin.deleteUser(u.id);
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：空殼重寄 → 更新 metadata 與 issued_at 後再寄', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('resend');
+  try {
+    await expectAccepted(await inviteRequest(first.token, { email, consent: true }));
+    const before = await authUser(email);
+    // 24 小時後：target 窗已過
+    await client.from('rate_limits').delete().eq('key', (await inviteKeys(first.id, email)).target);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await expectAccepted(await inviteRequest(second.token, { email, consent: true }));
+    const after = await authUser(email);
+    assertEquals(after.id, before.id, '同一個空殼，不新建');
+    assertEquals(after.raw_app_meta_data.referral_invite.code, second.code);
+    assert(
+      after.raw_app_meta_data.referral_invite.issued_at >
+        before.raw_app_meta_data.referral_invite.issued_at,
+      '重寄＝新邀請，issued_at 更新',
+    );
+    assertEquals(after.raw_user_meta_data.referral_invite_name, '李小華');
+    assert(after.confirmation_sent_at > before.confirmation_sent_at, '應重寄');
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+Deno.test('referrals/invites：空殼重寄失敗 → 以舊 referral_invite 回寫、退額度', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('resend-fail');
+  try {
+    await expectAccepted(await inviteRequest(first.token, { email, consent: true }));
+    const before = await authUser(email);
+    await client.from('rate_limits').delete().eq('key', (await inviteKeys(first.id, email)).target);
+
+    const { client: spied } = goTrueSpy({
+      inviteUserByEmail: () => Promise.resolve(goTrueError(429, 'over_email_send_rate_limit')),
+    });
+    await expectError(
+      await invitesApp(spied)(second.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    const after = await authUser(email);
+    // 歸屬與完善資料頁的後備預填不能指向一封沒送達的信
+    assertEquals(after.raw_app_meta_data.referral_invite, before.raw_app_meta_data.referral_invite);
+    assertEquals(await rateCount(client, (await inviteKeys(second.id, email)).target), 0);
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
 });

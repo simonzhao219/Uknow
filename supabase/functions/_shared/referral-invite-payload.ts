@@ -45,6 +45,9 @@ export function normalizeReferralInviteEmail(raw: unknown): string | null {
   return REFERRAL_INVITE_EMAIL_RE.test(email) ? email : null;
 }
 
+/** 紅燈 stub（循環 4b）：同意聲明版號。 */
+export const REFERRAL_INVITE_CONSENT_VERSION = '';
+
 /** base64url（無填充）→ 位元組；字元不合法時 atob 會拋。 */
 export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');

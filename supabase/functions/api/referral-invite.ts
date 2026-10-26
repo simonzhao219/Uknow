@@ -30,6 +30,11 @@ export interface ReferralInviteLimits {
   perUserHour: RateWindow;
   /** 同一推薦人日窗（fail-open；短窗擋下不扣）。 */
   perUserDay: RateWindow;
+  /** 同一信箱（strict；超額 202 不寄）。 */
+  target: RateWindow;
+  /** 全站兩窗（strict；超額 503，一律不退）。 */
+  globalHour: RateWindow;
+  globalDay: RateWindow;
 }
 
 export interface ReferralInviteDeps {
@@ -45,6 +50,8 @@ export interface ReferralInviteDeps {
   ) => Promise<void>;
   read: (key: string) => string | undefined;
   now: () => number;
+  /** GoTrue 單次呼叫的逾時；逾時視為「不確定結果」，先對帳再決定。 */
+  gotrueTimeoutMs: number;
   limits: ReferralInviteLimits;
 }
 

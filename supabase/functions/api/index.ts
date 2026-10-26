@@ -19,7 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
-import { createReferralInviteHandlers } from './referral-invite.ts';
+import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -278,6 +278,14 @@ export const REFERRAL_INVITE_RATE_MAX = 5;
 export const REFERRAL_INVITE_RATE_WINDOW_SECONDS = 1 * 60 * 60;
 export const REFERRAL_INVITE_DAILY_MAX = 20;
 export const REFERRAL_INVITE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+// 同一信箱 24 小時一封（先到者生效，超額照樣 202、不寄）與全站兩窗（GoTrue 寄信上限，
+// 超額 503）：決定要寄之後才扣，strict 三態——RPC 出錯不寄（rate-limit-strict.ts）。
+export const REFERRAL_INVITE_TARGET_MAX = 1;
+export const REFERRAL_INVITE_TARGET_WINDOW_SECONDS = 24 * 60 * 60;
+export const REFERRAL_INVITE_GLOBAL_HOUR_MAX = 100;
+export const REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS = 1 * 60 * 60;
+export const REFERRAL_INVITE_GLOBAL_DAY_MAX = 1000;
+export const REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS = 24 * 60 * 60;
 
 // 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
 // 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
@@ -1044,24 +1052,41 @@ app.post('/referrals/join-program', async (c) => {
 // POST /referrals/invites（Email 邀請）——處理函式在 referral-invite.ts；
 // 依賴（含限流常數）在這裡組一次注入，該模組不反向 import 本檔。
 // ============================================================
-const referralInviteHandlers = createReferralInviteHandlers({
-  sb,
-  requireAuth,
-  rateLimit,
-  logSystemAlertOnce,
-  read: (key) => Deno.env.get(key),
-  now: () => Date.now(),
-  limits: {
-    perUserHour: {
-      max: REFERRAL_INVITE_RATE_MAX,
-      windowSeconds: REFERRAL_INVITE_RATE_WINDOW_SECONDS,
+// export 給測試換掉 sb（造 GoTrue 失敗），其餘依賴與正式路由同一份。
+export function referralInviteDeps(): ReferralInviteDeps {
+  return {
+    sb,
+    requireAuth,
+    rateLimit,
+    logSystemAlertOnce,
+    read: (key) => Deno.env.get(key),
+    now: () => Date.now(),
+    gotrueTimeoutMs: 10_000,
+    limits: {
+      perUserHour: {
+        max: REFERRAL_INVITE_RATE_MAX,
+        windowSeconds: REFERRAL_INVITE_RATE_WINDOW_SECONDS,
+      },
+      perUserDay: {
+        max: REFERRAL_INVITE_DAILY_MAX,
+        windowSeconds: REFERRAL_INVITE_DAILY_WINDOW_SECONDS,
+      },
+      target: {
+        max: REFERRAL_INVITE_TARGET_MAX,
+        windowSeconds: REFERRAL_INVITE_TARGET_WINDOW_SECONDS,
+      },
+      globalHour: {
+        max: REFERRAL_INVITE_GLOBAL_HOUR_MAX,
+        windowSeconds: REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS,
+      },
+      globalDay: {
+        max: REFERRAL_INVITE_GLOBAL_DAY_MAX,
+        windowSeconds: REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS,
+      },
     },
-    perUserDay: {
-      max: REFERRAL_INVITE_DAILY_MAX,
-      windowSeconds: REFERRAL_INVITE_DAILY_WINDOW_SECONDS,
-    },
-  },
-});
+  };
+}
+const referralInviteHandlers = createReferralInviteHandlers(referralInviteDeps());
 app.post('/referrals/invites', referralInviteHandlers.invites);
 
 // ============================================================
