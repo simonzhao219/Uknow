@@ -19,9 +19,9 @@
 
 | 項目 | 狀態 | 對本規劃的效果 |
 |---|---|---|
-| develop HEAD | `e8c6080`（#391 合併）；`dc4a615`→`e8c6080` 只動 `docs/plans/` 與 `.claude/metrics/`，總綱 C／E 引用的程式行號仍有效 | 上游引用填 `e8c6080` |
-| 前置 A：check-email 修正 | **PR #390，draft、未合併**（head `91d47c7`）。分支上的 `20261025000001_find_auth_user_by_email.sql` 與 dispatch-prompts A 段逐欄一致 | 欄名權威：未合併期間＝A 段 SQL；合併後改指向 `supabase/migrations/20261025000001_find_auth_user_by_email.sql`。擋循環 4a、4b、5（裁決 F） |
-| 前置 B：R1a-3 | **PR #394，draft、未合併**（分支 `claude/gallant-hamilton-k7ivl6`）。實際產出：`supabase/functions/_shared/recruitment-copy.ts` 匯出 `referralDisclosureSentence(name?)`、`RECRUITMENT_FORBIDDEN_WORDS`（十五詞，業主 2026-10-26 加「僱傭、合夥、獨家、特許」）、`findForbiddenWord(text): string \| undefined`；alias `@recruitment-copy`（vite alias＋`tsconfig` paths＋include 三處齊）；`shareReferralInvite(code, showToast, memberName?)`；ui-ux §13 第 5 條新增揭露句子項 | 擋循環 4a、4b、9、11（裁決 F）。R2 不另建陣列、姓名檢查直接用 `findForbiddenWord` |
+| develop HEAD | `5363fde`（#394 合併；其前 `1f35f72`＝#390、`e8c6080`＝#391）。`e8c6080` 之後總綱未再變動；#390 讓 `index.ts` `/auth/check-email` 之後的行號整體 −3（本檔引用已重標；總綱 C／E 的 `index.ts` 行號在 `:625` 之後要減 3），推薦入口元件行號未漂 | 上游引用維持 `e8c6080` |
+| 前置 A：check-email 修正 | ✅ **#390 已合併**（2026-10-26，merge `1f35f72`）。`supabase/migrations/20261025000001_find_auth_user_by_email.sql` 回 `id`、`email_confirmed_at`、`invited_at`、`confirmation_sent_at`、`last_sign_in_at`、`has_password`、`referral_invite` | 欄名權威＝該 migration 檔。不再擋任何循環 |
+| 前置 B：R1a-3 | ✅ **#394 已合併**（2026-10-26，merge `5363fde`）。產出：`supabase/functions/_shared/recruitment-copy.ts` 匯出 `referralDisclosureSentence(name?)`、`RECRUITMENT_FORBIDDEN_WORDS`（十五詞，業主 2026-10-26 加「僱傭、合夥、獨家、特許」）、`findForbiddenWord(text): string \| undefined`；alias `@recruitment-copy`（vite alias＋`tsconfig` paths＋include 三處齊）；`shareReferralInvite(code, showToast, memberName?)`；ui-ux §13 第 5 條新增揭露句子項 | 不再擋任何循環。R2 不另建陣列、姓名檢查直接用 `findForbiddenWord` |
 | R2-0 spike | 無結論 | **不擋開工**（裁決 E）；押 hosted 行為的循環先以原始碼核對結果實作，§5 逐循環標「待 R2-0 第 N 點」；結論與規劃矛盾時由監工更新本檔再續 |
 | migration 登記 | 總綱 §8.1 R2 列已登記兩支 | `20261025000011_purge_stale_referral_invites.sql`、`20261025000012_refund_rate_limit.sql`；開工時 `origin/develop` 已有更大版本號就改號，rebase 後跑 `python3 scripts/check-migration-versions.py` |
 
@@ -46,7 +46,7 @@
 
 ### 2.1 `POST /referrals/invites`（需登入）
 
-流程照上游 E 第 1～8 點；錯誤形狀照 `index.ts:2964` 的 `{ success: false, error: { code, message } }`（`:901` 的 `/referrals/validate`
+流程照上游 E 第 1～8 點；錯誤形狀照 `index.ts:2961` 的 `{ success: false, error: { code, message } }`（`:898` 的 `/referrals/validate`
 是 `{ valid: false, … }`，只證明 `error.code` 的位置）。
 
 | 狀態 | 回應 | 何時 |
@@ -55,7 +55,7 @@
 | 400 | `invalid_email` | 正規化後不合文法或 > 254（文法見下）；GoTrue `email_address_invalid`／email 的 `validation_failed`（Q2-19 的明示例外：輸入錯不是寄送失敗，裁決 B） |
 | 400 | `self_invite`／`consent_required` | 等於本人 `user.email`（同樣正規化後比對）／`consent !== true` |
 | 400 | `restricted` | 推薦人姓名 `findForbiddenWord(name)` 命中；同時 `logSystemAlertOnce` |
-| 401 | `{ error: '未授權' }` | 無效 token（既有慣例，`index.ts:894`） |
+| 401 | `{ error: '未授權' }` | 無效 token（既有慣例，`index.ts:891`） |
 | 403 | `not_joined`／`restricted` | 未加入推薦計畫／停權或碼非 `active` |
 | 429 | `rate_limited_hour`／`rate_limited_day` | per-user 短窗／日窗（裁決 G：拆兩個 code，不帶 `scope`） |
 | 503 | `unavailable` | 資格讀取失敗、`find_auth_user_by_email` 失敗、`rateLimitStrict` 回 `error`、全站兩窗超額、GoTrue 對映表的 503 列、新建後蓋章失敗的補償 |
@@ -64,7 +64,7 @@
 - **email 文法**（補足，審查 P2-31）：trim＋小寫後須符合 `^[^\s@",<>()\[\]\\;:]+@[^\s@",<>()\[\]\\;:]+\.[^\s@",<>()\[\]\\;:]+$`，
   拒顯示名稱、引號、角括號、逗號、空白；正規式放 `_shared/referral-invite-payload.ts` 前後端共用。GoTrue `validateEmail` 只做小寫＋
   `checkmail`，我們送出的字串就是它存入的字串，lookup 與 target 鍵的 `sha256` 才對得上。
-- `FRONTEND_URL` 去結尾斜線再組連結（先例 `index.ts:87`、`:2724`）。
+- `FRONTEND_URL` 去結尾斜線再組連結（先例 `index.ts:87`、`:2721`）。
 - `consent_version` 由伺服器蓋自己的常數（client 只送 `consent: true`）；部署時差見 §2.5。
 
 **GoTrue 錯誤對映**（裁決 B；以 GoTrue 回應的 `error_code` 判斷，不靠狀態碼）：
@@ -237,8 +237,8 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | `.env.development` | `VITE_REFERRAL_EMAIL_INVITE=true`（§2.4 差異 6） |
 | `e2e/features/referral_email_invite.feature` | 情境照上游 I，「回顯遮罩地址」改「回顯完整地址」（裁決 T） |
 
-`index.ts` 只加：兩條路由註冊（`/referrals/invites` 在 `/referrals/join-program` `:946` 之後、`/auth/invite/accept` 在 `/auth/check-email`
-`:625-662` 之後）、§2.3 的常數、組 `deps` 的幾行。`_shared` 只被 Deno 用到的匯出不會被 knip 報（`knip.json` 的 `project` 只有 `src/**`）。
+`index.ts` 只加：兩條路由註冊（`/referrals/invites` 在 `/referrals/join-program` `:943` 之後、`/auth/invite/accept` 在 `/auth/check-email`
+`:625-659` 之後）、§2.3 的常數、組 `deps` 的幾行。`_shared` 只被 Deno 用到的匯出不會被 knip 報（`knip.json` 的 `project` 只有 `src/**`）。
 
 **既有檔**：
 
@@ -301,7 +301,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 
 ### 3.4 撞檔與順序
 
-照上游 §8.2：T1 排 R2 之後；admin 檔不動（交 A1a）；S7a 已合併、S7b 未開工。與 B（#394）的重疊（審查 P2-37）：`vite.config.ts` alias 與
+照上游 §8.2：T1 排 R2 之後；admin 檔不動（交 A1a）；S7a 已合併、S7b 未開工。B（#394）與 #390 已合併，下列與它們共檔處照 develop 現況接續（審查 P2-37）：`vite.config.ts` alias 與
 `tsconfig.json` paths／include（同一插入點，接在 `@recruitment-copy` 之後）、ui-ux §13 第 5 條（改寫時保留 B 的揭露句子項）、
 `InviteFriendButton.tsx`／`InviteFriendPanelContent.tsx`（B 改 `shareReferralInvite` 簽名）、`src/utils/referralInvite.ts`。與 #390：
 `supabase/README.md` 函數表各加列。與 A1a：`api-contract.ts` 不同區段。都是先合併者定；R2 rebase 後跑 `check-migration-versions.py`。
@@ -361,7 +361,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 ## 5. 階段切分（給 TDD 用）
 
 每個循環一個 `test(red)` → 綠燈 commit；後端測試名照 `.claude/rules/test-naming.md`。每個綠燈 commit 帶該循環自己的規格書句子與 spec-drift 規則
-（`constant_violations` 抽不到句子會紅）。開工條件照裁決 F。
+（`constant_violations` 抽不到句子會紅）。開工條件照裁決 F；#390、#394 已於 2026-10-26 合併，前置不再擋任何循環，下表「開工條件」欄只剩循環間的依賴。
 
 | # | 循環 | 測試落點與驗證標準 | 開工條件 | 待 R2-0 |
 |---|---|---|---|---|
@@ -369,15 +369,15 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | 1 | token 模組＋`_shared/referral-invite-payload.ts`＋spec-drift TTL 規則與 §7.1 TTL 句 | `api/referral-invite-token.unit.test.ts`：簽→驗、過期、竄改 payload 段／簽章段、secret 缺失拋錯、驗章走 `crypto.subtle.verify`、簽出的 token 經 `_shared` 解碼得回 `{e,c,x}`；`check-spec-drift.py --self-test` | 無 | — |
 | 2 | 兩支 migration（purge＋audit 清理函式、refund）＋spec-drift purge 規則與句子 | `api/referral-invite-purge.test.ts`：**對本機 GoTrue 真做** invite、`updateUserById`、`generateLink`、`deleteUser` 後 purge，斷言 `auth.audit_log_entries` 沒有任何 `payload::text` 含該 email；各刪除條件各自不誤刪；以 `issued_at` 計齡且 **accept 後不延壽**；**新建空殼立刻 `p_email` 即刪**、已驗證帳號不被刪、有 `payment_orders` 者不刪；回傳筆數；grants 三角色＋service_role 為真；`cron.job` 有列；`TTL 天數 ≤ purge 預設`。`api/refund-rate-limit.test.ts`：退一、`count > 0` 守衛、grants | 無 | 第 6 點（audit 謂詞形狀、hosted postgres 權限） |
 | 3 | `api/rate-limit-strict.ts`＋資格 helper | `api/rate-limit-strict.test.ts`：三態（以 `withRestTableFailure(['rpc/bump_rate_limit'], …)` 造 `error`；先例 `referral-validate.test.ts:234`）、`refundRateLimit` 走 RPC、失敗不拋；`api/referral-invite.test.ts` 資格三項含停權、碼非 active、讀取失敗 503 | 無 | — |
-| 4a | invites 前半：disabled、資格、body 與文法、姓名 `findForbiddenWord`、per-user 兩窗（含日窗 limited 退短窗）、401＋invites 契約段＋spec-drift per-user 4 條 | 同檔；`assertShape`；`referral-invite.ts` 不 import `./index.ts` 的原文斷言 | #390、B | — |
-| 4b | invites 後半：lookup 四分支、target／global、新建與重寄、GoTrue 對映表、5xx 對帳、補償（含 audit 清理、`deleteUser` 失敗另告警）、重寄失敗回寫 metadata、退額度矩陣＋spec-drift target／global 6 條 | 同檔。GoTrue 失敗以 **deps 注入的 stub `sb`** 造（`withRestTableFailure` 只攔 `/rest/v1/`，審查 P2-27）。補：target `limited` 不動 target 鍵；**同信箱並行**（`Promise.all`）GoTrue 只被呼叫一次、兩者皆 202；**所有不寄分支無副作用**（GoTrue 未呼叫、`confirmation_token`／`invited_at`／metadata 不變、無新 target／global 列）；`raw_user_meta_data` 無 `referred_by_code`、`profiles.referred_by_*` 為 null；回應同形 table-driven | #390、B | 第 1、2、7、9 點 |
-| 5 | `POST /auth/invite/accept`＋accept 契約段 | 同檔：上游 I 的 accept 案例＋§2.2 補足（密碼上限、`user_not_found` → 410、`generateLink` 422 → 409、`generateLink` 回的 id 不符 → 清新帳號＋410、非 R2 待驗證 410、`disabled` 只看 secret）；以 accept 設的密碼 `verifyOtp` 後 `signInWithPassword` 成功（釘硬順序的正向案例）；並行兩次 accept 後只有最後成功那次的密碼能登入；反向順序案例保留作 GoTrue 升級的 canary | #390 | 第 3、4、5 點 |
+| 4a | invites 前半：disabled、資格、body 與文法、姓名 `findForbiddenWord`、per-user 兩窗（含日窗 limited 退短窗）、401＋invites 契約段＋spec-drift per-user 4 條 | 同檔；`assertShape`；`referral-invite.ts` 不 import `./index.ts` 的原文斷言 | — | — |
+| 4b | invites 後半：lookup 四分支、target／global、新建與重寄、GoTrue 對映表、5xx 對帳、補償（含 audit 清理、`deleteUser` 失敗另告警）、重寄失敗回寫 metadata、退額度矩陣＋spec-drift target／global 6 條 | 同檔。GoTrue 失敗以 **deps 注入的 stub `sb`** 造（`withRestTableFailure` 只攔 `/rest/v1/`，審查 P2-27）。補：target `limited` 不動 target 鍵；**同信箱並行**（`Promise.all`）GoTrue 只被呼叫一次、兩者皆 202；**所有不寄分支無副作用**（GoTrue 未呼叫、`confirmation_token`／`invited_at`／metadata 不變、無新 target／global 列）；`raw_user_meta_data` 無 `referred_by_code`、`profiles.referred_by_*` 為 null；回應同形 table-driven | — | 第 1、2、7、9 點 |
+| 5 | `POST /auth/invite/accept`＋accept 契約段 | 同檔：上游 I 的 accept 案例＋§2.2 補足（密碼上限、`user_not_found` → 410、`generateLink` 422 → 409、`generateLink` 回的 id 不符 → 清新帳號＋410、非 R2 待驗證 410、`disabled` 只看 secret）；以 accept 設的密碼 `verifyOtp` 後 `signInWithPassword` 成功（釘硬順序的正向案例）；並行兩次 accept 後只有最後成功那次的密碼能登入；反向順序案例保留作 GoTrue 升級的 canary | — | 第 3、4、5 點 |
 | 6 | `routeAfterVerifiedSession` 抽取（行為不變） | `src/utils/routeAfterVerifiedSession.test.ts` 五分支；`otp_verification.feature` 不改且綠 | 無 | — |
 | 7 | `registrationFlow.ts` 三個純函式 | `src/utils/registrationFlow.test.ts` table-driven：`resolveInviteEntry`（壞 base64、壞 JSON、缺欄、`v` 不是 1、有效；**不看 `x`**）、`classifyInviteAcceptError`（每個 code＋無 code）、`shouldRedirectToCompleteProfile`（`/auth/complete-profile`、`/auth/reset-password`、其他） | 循環 1 | — |
 | 8 | AuthPage invite 模式＋`useInviteAccept`＋`App.tsx`＋2A 提示＋`sessionStorage` | `src/hooks/useInviteAccept.test.ts`（`renderHook`）、AuthPage 元件測試（上游 I 的案例＋`signed_in`／`signed_out`／逾時三入口、骨架、`sessionStorage` 還原與五個清除時機、**簽章被改 → `invalid_token` → 2A**、`rate_limited`／`unavailable`／`disabled` 留在 2B、提示換步驟即清、靜態提示在持久提示出現時隱藏）；e2e `auth_signup.feature` 四條、`registration_recovery.feature` 一條；mock `mock_invite_accept`、`spy_verify` | 循環 5（契約）、6、7 | — |
-| 9 | InviteCard＋三處入口＋旗標＋`ui/dialog` 關閉鈕＋`backendConstants.ts` | `InviteCard.test.tsx`：表格每一列、live region 常駐與重播、關閉重置、長姓名與長網域、禁用字樣、數字綁常數；`InviteFriendButton.test.tsx`／`InviteFriendPanelContent.test.tsx`：**閘門**（未加入者仍是引導鈕、不開卡，審查 P1-22）與旗標開關各案；`dialog` 關閉鈕名稱與 class；`backendConstants` 負向測試；e2e `referral_email_invite.feature`、`dashboard_smoke.feature` 兩條、溢版巡檢兩條 | 循環 4a（契約）、**B** | — |
+| 9 | InviteCard＋三處入口＋旗標＋`ui/dialog` 關閉鈕＋`backendConstants.ts` | `InviteCard.test.tsx`：表格每一列、live region 常駐與重播、關閉重置、長姓名與長網域、禁用字樣、數字綁常數；`InviteFriendButton.test.tsx`／`InviteFriendPanelContent.test.tsx`：**閘門**（未加入者仍是引導鈕、不開卡，審查 P1-22）與旗標開關各案；`dialog` 關閉鈕名稱與 class；`backendConstants` 負向測試；e2e `referral_email_invite.feature`、`dashboard_smoke.feature` 兩條、溢版巡檢兩條 | 循環 4a（契約） | — |
 | 10 | CompleteProfile `app_metadata` 後備預填 | 元件測試：pending 有值時不讀 session；pending 空且 `app_metadata` 有碼 → 預填並驗證；使用者已開始輸入時不覆蓋；兩者皆空 → 不填 | 無 | — |
-| 11 | 模板檔＋模板測試＋文件 | `src/utils/referralInviteTemplate.test.ts`（上游 F 的斷言＋§4 信件補充）；`check-spec-drift`、`check-document-naming` 綠 | **B** | 第 1、11 點（渲染與手機可讀） |
+| 11 | 模板檔＋模板測試＋文件 | `src/utils/referralInviteTemplate.test.ts`（上游 F 的斷言＋§4 信件補充）；`check-spec-drift`、`check-document-naming` 綠 | — | 第 1、11 點（渲染與手機可讀） |
 | R2-3a | **非 TDD，分支內**：journey 情境＋`journey.yml` secret 注入 | `cd e2e/journey && pytest --collect-only -q`、`python3 scripts/check-workflows.py` 驗形；**實跑在晉升 PR** | 循環 4b、5 | — |
 | R2-3b | **非 TDD，合併後的業主操作**：見下表 | 晉升 PR 的 `journey-full` 綠；上游 J 的真機與送達核對 | 本分支合併 | 第 5、10 點（兩環境設定值） |
 
@@ -405,7 +405,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 - [x] 3. log 管線殘留 → 已裁 N：告知段加句、客服 SOP 註明。
 - [x] 4. 前置未合併時先做哪些循環 → 已裁 F（§5 開工條件欄）。
 - [ ] 5. **既有 `cancel-signup` 與後台刪帳號留下的 audit email**（審查 P1-6 建議列入）：GoTrue 刪使用者會寫 `user_deleted` 事件（含 email），R2 的 purge
-      與補償路徑會清自己刪的 id，但既有 `cancel-signup`（`index.ts:795`）與其他刪帳號路徑不在 R2 範圍。**建議**另開 issue，用本工項新增的
+      與補償路徑會清自己刪的 id，但既有 `cancel-signup`（`index.ts:792`）與其他刪帳號路徑不在 R2 範圍。**建議**另開 issue，用本工項新增的
       `delete_auth_audit_for_users` 接上，不在 R2 內處理。
 
 ## 7. 風險與回滾
