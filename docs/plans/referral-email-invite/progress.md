@@ -28,8 +28,8 @@
 | 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ✅ 綠(CI 為證) | 第 6 點 | `42f29fe`(CI 12 條斷言紅) | `e847f89`+修正 `eb0ac40`(CI 全過) |
 | 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ✅ 綠(CI 為證) | — | `7cf06aa`(CI 7 條斷言紅) | `8e1fdfd`(CI 全過) |
 | 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `4fc4d0b`(CI 12 條斷言紅) | `2aefdbc`(CI 全過) |
-| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `2b84cc7`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | (本 commit) |
-| 5 | `POST /auth/invite/accept`+accept 契約段 | ⬜ 未開始 | 第 3、4、5 點 | | |
+| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `2b84cc7`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | `9b9328e`(CI 全過) |
+| 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(待 CI 確認) | 第 3、4、5 點 | `7a1e309`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | (本 commit) |
 | 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ⬜ 未開始 | — | | |
 | 7 | `registrationFlow.ts` 三個純函式 | ⬜ 未開始 | — | | |
 | 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ⬜ 未開始 | — | | |
@@ -56,7 +56,11 @@ Sonnet session 打 `/tdd-implement referral-email-invite`,從本表接著做前�
 Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests 軌為證:紅燈 commit 單獨推一次、
 看 api-tests 是斷言紅;實作完推綠燈 commit、看轉綠。`*.unit.test.ts` 與 `deno task check` 照常本機跑。
 
-目前:循環 4b 綠燈與循環 5 紅燈同批推;下一步循環 5 綠燈,然後 R2-3a 與後端段收尾。
+目前:循環 5 綠燈與 R2-3a(API 版 journey)同批推;下一步後端段收尾(check:full、/review-implementation、PR 轉 ready)。
+
+**R2-3a 範圍(業主 2026-10-26 裁決)**:本 PR 只做 `journey.yml` 的 secret／旗標注入與一條**純 API** 的 journey 情境
+(寄邀請 → service key 讀信中連結 → accept → verifyOtp → 已驗證;purge 的 `p_email`)。開連結 → 設密碼畫面 → 完善資料頁 →
+結帳頁這段 UI 步驟,交給前端 session 在循環 8 之後補進同一個 feature 檔——後端先合併時,晉升 PR 的 journey 不會因缺前端而紅。
 
 新建路徑用的是上游 E.6(`inviteUserByEmail` → `updateUserById(app_metadata)`＋補償),不是 plan §2.3 條件式裡的「先 `createUser` 蓋章」版:
 R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證實第 2 點後若要改,只動 `referral-invite.ts` 的 8a 段與對應測試。

@@ -13,6 +13,9 @@ import type { Context } from 'npm:hono@4';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type {
   ReferralInviteAccepted,
+  ReferralInviteAcceptErrorCode,
+  ReferralInviteAcceptErrorResponse,
+  ReferralInviteAcceptResponse,
   ReferralInviteErrorCode,
   ReferralInviteErrorResponse,
 } from '../_shared/api-contract.ts';
@@ -23,7 +26,7 @@ import {
   type ReferralInviteStamp,
 } from '../_shared/referral-invite-payload.ts';
 import { rateLimitStrict, refundRateLimit } from './rate-limit-strict.ts';
-import { signReferralInviteToken } from './referral-invite-token.ts';
+import { signReferralInviteToken, verifyReferralInviteToken } from './referral-invite-token.ts';
 
 export interface RateWindow {
   max: number;
@@ -141,6 +144,7 @@ function isShell(u: AuthUserLookup): boolean {
 interface GoTrueError {
   status?: number;
   code?: string;
+  message?: string;
 }
 type GoTrueResult<R extends { error: GoTrueError | null }> = R | 'timeout';
 
@@ -228,6 +232,36 @@ function inviteError(c: Context, status: 400 | 403 | 429 | 503, code: ReferralIn
       success: false,
       error: { code, message: INVITE_MESSAGES[code] },
     } satisfies ReferralInviteErrorResponse,
+    status,
+  );
+}
+
+// accept 的密碼長度前置檢查（下限同 src/utils/passwordPolicy.ts；上限是 bcrypt 的位元組數）
+const ACCEPT_PASSWORD_MIN_LENGTH = 8;
+const ACCEPT_PASSWORD_MAX_BYTES = 72;
+
+const ACCEPT_MESSAGES: Record<ReferralInviteAcceptErrorCode, string> = {
+  invalid_token: '邀請連結已失效，請推薦人再寄一次',
+  expired: '邀請連結已失效，請推薦人再寄一次',
+  weak_password: '密碼強度不足',
+  already_accepted: '此邀請已完成設定，請用先前設定的密碼登入',
+  gone: '邀請連結已失效，請推薦人再寄一次',
+  rate_limited: '請求過於頻繁，請稍後再試',
+  unavailable: '服務暫時無法使用，請稍後再試',
+  disabled: '服務暫時無法使用，請稍後再試',
+};
+
+function acceptError(
+  c: Context,
+  status: 400 | 409 | 410 | 429 | 503,
+  code: ReferralInviteAcceptErrorCode,
+  message?: string,
+) {
+  return c.json(
+    {
+      success: false,
+      error: { code, message: message || ACCEPT_MESSAGES[code] },
+    } satisfies ReferralInviteAcceptErrorResponse,
     status,
   );
 }
@@ -478,9 +512,98 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
     return respondToFailure(outcome, resent);
   };
 
-  // 紅燈 stub（循環 5）：只求型別過
-  const accept = (c: Context): Promise<Response> =>
-    Promise.resolve(c.json({ error: 'not implemented' }, 501));
+  // ------------------------------------------------------------
+  // POST /auth/invite/accept（公開）：持有簽章＝收到信的人。零寄信、不回 session。
+  // ------------------------------------------------------------
+  const accept = async (c: Context): Promise<Response> => {
+    // 只看 secret（裁決 O）：kill switch 關的是寄信，不打死已寄出的合法連結
+    if (!deps.read('REFERRAL_INVITE_SECRET')) return acceptError(c, 503, 'disabled');
+    const perIp = deps.limits.accept;
+    const ipKey = `invite-accept:${deps.clientIp(c)}`;
+    if (!(await deps.rateLimit(ipKey, perIp.max, perIp.windowSeconds))) {
+      return acceptError(c, 429, 'rate_limited');
+    }
+
+    let body: { token?: unknown; password?: unknown } | null;
+    try {
+      body = await c.req.json();
+    } catch {
+      body = null;
+    }
+    const token = typeof body?.token === 'string' ? body.token : '';
+    const verified = await verifyReferralInviteToken(token, deps.now(), deps.read);
+    if (!verified.ok) {
+      return acceptError(c, 400, verified.reason === 'expired' ? 'expired' : 'invalid_token');
+    }
+    const email = verified.payload.e;
+
+    // 長度前置檢查：下限同前端 passwordPolicy；上限是 bcrypt 的 72 位元組（超過時 GoTrue
+    // 回 500，前端會當成可重試而原地打轉）。其餘規則交給 GoTrue 的密碼強度設定。
+    const password = body?.password;
+    if (typeof password !== 'string' || [...password].length < ACCEPT_PASSWORD_MIN_LENGTH) {
+      return acceptError(
+        c,
+        400,
+        'weak_password',
+        `密碼至少需要 ${ACCEPT_PASSWORD_MIN_LENGTH} 個字元`,
+      );
+    }
+    if (new TextEncoder().encode(password).length > ACCEPT_PASSWORD_MAX_BYTES) {
+      return acceptError(c, 400, 'weak_password', '密碼太長，請縮短後再試');
+    }
+
+    const client = deps.sb();
+    const lookup = await findAuthUser(client, email);
+    if (lookup === 'error') return acceptError(c, 503, 'unavailable');
+    if (!lookup) return acceptError(c, 410, 'gone');
+    if (lookup.email_confirmed_at) return acceptError(c, 409, 'already_accepted');
+    if (!isShell(lookup)) return acceptError(c, 410, 'gone'); // 自助註冊中、Dashboard Invite
+
+    const admin = client.auth.admin;
+    // 硬順序 1：先設密碼（沒密碼的被邀請者 verify 時會被塞隨機密碼）；同時拿掉信中連結
+    const updated = await callGoTrue(
+      () =>
+        admin.updateUserById(lookup.id, {
+          password,
+          user_metadata: { referral_invite_url: null },
+        }),
+      deps.gotrueTimeoutMs,
+    );
+    if (updated === 'timeout') return acceptError(c, 503, 'unavailable');
+    if (updated.error) {
+      if (updated.error.code === 'weak_password') {
+        return acceptError(c, 400, 'weak_password', updated.error.message);
+      }
+      if (updated.error.code === 'user_not_found' || updated.error.status === 404) {
+        return acceptError(c, 410, 'gone'); // 與 purge 競態
+      }
+      return acceptError(c, 503, 'unavailable');
+    }
+
+    // 硬順序 2：再產生 invite 的 token_hash（設密碼會清掉既有的 confirmation_token）
+    const link = await callGoTrue(
+      () => admin.generateLink({ type: 'invite', email }),
+      deps.gotrueTimeoutMs,
+    );
+    if (link === 'timeout') return acceptError(c, 503, 'unavailable');
+    if (link.error) {
+      return link.error.code === 'email_exists'
+        ? acceptError(c, 409, 'already_accepted') // 另一個分頁剛完成驗證
+        : acceptError(c, 503, 'unavailable');
+    }
+    const linkedId = link.data.user?.id;
+    if (linkedId && linkedId !== lookup.id) {
+      // 兩次呼叫之間空殼被清掉，generateLink(invite) 自己建了一個空白帳號：刪掉它
+      const deleted = await callGoTrue(() => admin.deleteUser(linkedId), deps.gotrueTimeoutMs);
+      if (!goTrueFailed(deleted)) {
+        await client.rpc('delete_auth_audit_for_users', { p_user_ids: [linkedId] });
+      }
+      return acceptError(c, 410, 'gone');
+    }
+    const tokenHash = link.data.properties?.hashed_token;
+    if (!tokenHash) return acceptError(c, 503, 'unavailable');
+    return c.json({ tokenHash } satisfies ReferralInviteAcceptResponse, 200);
+  };
 
   return { invites, accept };
 }

@@ -285,7 +285,12 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
   一律相同：對方已是會員、自助註冊進行中、或 24 小時內已收過邀請時都不寄，也不透露是哪一種。
   寄送失敗時退回推薦人自己的額度（同一信箱與每人兩窗），全站額度不退。
   信中「接受邀請」連結帶後端簽章的 token（HMAC-SHA256，專用 secret
-  `REFERRAL_INVITE_SECRET`，內容只有對方 email、推薦碼與到期時間，不含推薦人 id）。邀請連結 7 天內有效，過期與否只由伺服器判斷。
+  `REFERRAL_INVITE_SECRET`，內容只有對方 email、推薦碼與到期時間，不含推薦人 id）。
+  邀請連結 7 天內有效，過期與否只由伺服器判斷。
+  對方點連結回到註冊頁設定密碼（`POST /auth/invite/accept`，公開、per-IP 限流）：後端驗簽後
+  先設密碼、再向 GoTrue 換一次性驗證憑證，前端以它換到 session 即完成 email 驗證；同一連結
+  在效期內可重送。寄信的總開關 `REFERRAL_EMAIL_INVITE_ENABLED` 只管寄信，關掉不影響已寄出
+  的連結（accept 只看 secret 在不在）。
   邀請建立的帳號在完成 email 驗證前是「空殼」（`auth.users` 一列＋`profiles` 空列，
   `app_metadata.referral_invite` 蓋章）：7 天內未透過連結設定密碼即刪除該次邀請建立的帳號
   （每日排程 `purge-stale-referral-invites`；計齡以寄出時的 `issued_at` 為準，點過連結不延長；
