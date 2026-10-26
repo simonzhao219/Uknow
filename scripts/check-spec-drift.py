@@ -181,6 +181,31 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/_shared/referral-invite-payload.ts",
         r"REFERRAL_INVITE_TOKEN_TTL_SECONDS = (\d+) \* 24 \* 60 \* 60;",
     ),
+    # 每人兩窗（Email 邀請）：規格句以「同一推薦人」錨定，與推薦碼驗證的「最多查」不相撞。
+    ConstantRule(
+        "邀請每人短窗（小時）",
+        r"同一推薦人 (\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_RATE_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請每人短窗上限",
+        r"同一推薦人 \d+ 小時內最多寄 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_RATE_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請每人日窗（小時）",
+        r"同一推薦人 \d+ 小時內最多寄 \d+ 封、(\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_DAILY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請每人日窗上限",
+        r"同一推薦人 \d+ 小時內最多寄 \d+ 封、\d+ 小時內最多寄 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_DAILY_MAX = (\d+);",
+    ),
     ConstantRule(
         "邀請空殼清除天數",
         r"(\d+) 天內未透過連結設定密碼即刪除",

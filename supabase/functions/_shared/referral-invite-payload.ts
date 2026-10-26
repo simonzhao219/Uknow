@@ -25,6 +25,26 @@ export interface ReferralInvitePayload {
 /** 邀請連結效期。命名刻意避開 `_WINDOW_SECONDS`（那是限流窗口的守衛抓取式）。 */
 export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * 邀請 email 的文法：一個 @、網域至少一個點；拒顯示名稱、引號、角括號、括號、
+ * 逗號、分號、冒號、反斜線與空白。前端送出前與後端受理時用同一條。
+ */
+export const REFERRAL_INVITE_EMAIL_RE =
+  /^[^\s@",<>()[\]\\;:]+@[^\s@",<>()[\]\\;:]+\.[^\s@",<>()[\]\\;:]+$/;
+export const REFERRAL_INVITE_EMAIL_MAX_LENGTH = 254;
+
+/**
+ * trim＋小寫後合文法就回正規化結果，否則 null。GoTrue 存入的就是小寫後的字串，
+ * 所以正規化結果同時是 find_auth_user_by_email 與 target 限流鍵（雜湊）的輸入。
+ * 不做 +tag／Gmail 點號的別名正規化（會讓 lookup 與 GoTrue 存入值不一致）。
+ */
+export function normalizeReferralInviteEmail(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const email = raw.trim().toLowerCase();
+  if (!email || email.length > REFERRAL_INVITE_EMAIL_MAX_LENGTH) return null;
+  return REFERRAL_INVITE_EMAIL_RE.test(email) ? email : null;
+}
+
 /** base64url（無填充）→ 位元組；字元不合法時 atob 會拋。 */
 export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
