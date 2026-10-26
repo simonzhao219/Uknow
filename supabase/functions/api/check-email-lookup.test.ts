@@ -124,3 +124,73 @@ Deno.test('check-email：RPC 失敗 → 503，不偽裝成不存在', async () =
   assertEquals(body.error, '暫時無法檢查 Email，請稍後再試');
   assert(!('exists' in body), JSON.stringify(body));
 });
+
+// ============================================================
+// 直接測 find_auth_user_by_email 本身。上面幾條隔著 handler、只用到
+// data.length：拿掉 SQL 任一側的 lower()（handler 先把輸入轉小寫）或把比對
+// 改成 LIKE，它們照樣綠。7 欄的形狀與內容只能在這裡釘。
+// ============================================================
+
+const LOOKUP_COLUMNS = [
+  'confirmation_sent_at',
+  'email_confirmed_at',
+  'has_password',
+  'id',
+  'invited_at',
+  'last_sign_in_at',
+  'referral_invite',
+];
+
+Deno.test('find_auth_user_by_email：已驗證、有密碼的帳號 → 1 列 7 欄，has_password 為真', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client);
+  try {
+    const { data, error } = await client.rpc('find_auth_user_by_email', { p_email: user.email });
+    assertEquals(error, null);
+    assertEquals(data?.length, 1);
+    const row = data![0];
+    assertEquals(Object.keys(row).sort(), LOOKUP_COLUMNS);
+    assertEquals(row.id, user.id);
+    assertEquals(row.has_password, true);
+    assert(row.email_confirmed_at !== null, 'createTestUser 帶 email_confirm，應已驗證');
+    assertEquals(row.referral_invite, null);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('find_auth_user_by_email：app_metadata 寫入 referral_invite → 回傳該物件', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client);
+  try {
+    const invite = { referrer_code: '1000001', sent_at: '2026-10-26T00:00:00Z' };
+    const { error: updateErr } = await client.auth.admin.updateUserById(user.id, {
+      app_metadata: { referral_invite: invite },
+    });
+    assertEquals(updateErr, null);
+
+    const { data, error } = await client.rpc('find_auth_user_by_email', { p_email: user.email });
+    assertEquals(error, null);
+    assertEquals(data?.[0]?.referral_invite, invite);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('find_auth_user_by_email：大寫 email → 1 列；email 子字串 → 0 列', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client);
+  try {
+    const upper = await client.rpc('find_auth_user_by_email', {
+      p_email: user.email.toUpperCase(),
+    });
+    assertEquals(upper.error, null);
+    assertEquals(upper.data?.length, 1, '比對要不分大小寫');
+
+    const partial = await client.rpc('find_auth_user_by_email', { p_email: user.email.slice(1) });
+    assertEquals(partial.error, null);
+    assertEquals(partial.data?.length, 0, '只接受完整 email，不做子字串比對');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
