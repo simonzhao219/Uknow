@@ -4348,6 +4348,10 @@ app.get('/health', async (c) => {
     // digest。回一個布林值（絕不回傳任何憑證內容）讓「設好了沒」一個 curl 就能回答，
     // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
     memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
+    // Email 邀請（R2）同一個理由：secret 或 FRONTEND_URL 缺了只表現為 503 disabled；
+    // kill switch 另外回報，分得出「沒設好」與「刻意關著」。
+    referralInviteConfigured: !!read('REFERRAL_INVITE_SECRET') && !!read('FRONTEND_URL'),
+    referralInviteEnabled: read('REFERRAL_EMAIL_INVITE_ENABLED') === 'true',
     defaultReferrer,
   });
 });

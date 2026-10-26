@@ -1,8 +1,8 @@
 Feature: Email 邀請——寄送、接受與清除的後端旅程
   推薦人在站內填對方 email，由 Uknow 代寄邀請信；對方點信中連結回註冊頁設定
-  密碼，設完即完成 email 驗證。本檔目前只走 API（POST /referrals/invites、
-  POST /auth/invite/accept、GoTrue verify），驗的是 hosted 才測得到的部分：
-  GoTrue 的 invite／generateLink／verify 真實互動、send-email hook 底下的寄送、
+  密碼，設完即完成 email 驗證（同一次呼叫）。本檔目前只走 API（POST
+  /referrals/invites、POST /auth/invite/accept、密碼登入），驗的是 hosted 才測得到
+  的部分：GoTrue 的 invite 與「設密碼＋驗證」真實互動、send-email hook 底下的寄送、
   service role 呼叫 purge。設定密碼畫面與完善資料頁的 UI 步驟由前端工項補進本檔。
 
   信中連結以 service key 從被邀請人的 user_metadata 讀出，不在 Python 重算簽章。
@@ -21,7 +21,6 @@ Feature: Email 邀請——寄送、接受與清除的後端旅程
     Then 邀請已受理
     And 被邀請人的帳號已建立、尚未驗證，並蓋有 "D5" 的推薦碼
     When 被邀請人以信中連結設定密碼
-    And 被邀請人以取得的憑證完成驗證
     Then 被邀請人的 email 已驗證
     And 被邀請人能以剛設定的密碼登入
     When 被邀請人再以同一連結設定一次密碼

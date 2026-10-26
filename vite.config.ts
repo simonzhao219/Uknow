@@ -57,6 +57,11 @@ export default defineConfig({
         __dirname,
         './supabase/functions/_shared/recruitment-copy.ts',
       ),
+      // 密碼政策。註冊、重設密碼與 Email 邀請的後端設定密碼共用同一份規則。
+      '@password-policy': path.resolve(
+        __dirname,
+        './supabase/functions/_shared/password-policy.ts',
+      ),
     },
   },
   build: {

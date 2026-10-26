@@ -29,7 +29,8 @@
 | 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ✅ 綠(CI 為證) | — | `869504a`(CI 7 條斷言紅) | `2d825fe`(CI 全過) |
 | 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `63ff52c`(CI 12 條斷言紅) | `b7b5d79`(CI 全過) |
 | 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `e4c18dd`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | `78e3b37`(CI 全過) |
-| 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(待 CI 確認) | 第 3、4、5 點 | `ddedcce`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | `cfce665` |
+| 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(CI 為證:`0d44758` 映像限流重跑後全過;v3 改一步驗證見下列) | 第 3、4、5 點 | `ddedcce`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | `cfce665` |
+| 審 | 實作審查處置(業主 2026-10-26 裁決,plan.md v3 增補):accept 一步驗證、共用密碼規則、無效信箱只退 target、無碼 429 退額度、告警以帳號去重、蓋章對帳、`/health` 兩欄、補測 | ✅ 綠(待 CI) | — | `e625d0b`(CI 證據在其上的移植 commit `8fa6c2a`:404 過、10 條斷言紅,正是預期的 10 條;`e625d0b` 本身兩次死在拉映像) | (本批) |
 | 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ⬜ 未開始 | — | | |
 | 7 | `registrationFlow.ts` 三個純函式 | ⬜ 未開始 | — | | |
 | 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ⬜ 未開始 | — | | |
@@ -62,10 +63,11 @@ Sonnet session 打 `/tdd-implement referral-email-invite`,從本表接著做前�
 Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests 軌為證:紅燈 commit 單獨推一次、
 看 api-tests 是斷言紅;實作完推綠燈 commit、看轉綠。`*.unit.test.ts` 與 `deno task check` 照常本機跑。
 
-目前:循環 5 綠燈與 R2-3a(API 版 journey)同批推;下一步後端段收尾(check:full、/review-implementation、PR 轉 ready)。
+目前:後端段收尾中——`/review-implementation` 已跑(`implementation-review.md`,P0 0),業主 2026-10-26 對 6 項需人工裁決的
+處置已落地(紅 `e625d0b`、綠本批;規劃面的改動寫在 plan.md 檔頭「v3 增補」)。下一步:CI 綠 → PR #399 轉 ready、等人審合併。
 
 **R2-3a 範圍(業主 2026-10-26 裁決)**:本 PR 只做 `journey.yml` 的 secret／旗標注入與一條**純 API** 的 journey 情境
-(寄邀請 → service key 讀信中連結 → accept → verifyOtp → 已驗證;purge 的 `p_email`)。開連結 → 設密碼畫面 → 完善資料頁 →
+(寄邀請 → service key 讀信中連結 → accept(設密碼同時驗證)→ 以該密碼登入;purge 的 `p_email`)。開連結 → 設密碼畫面 → 完善資料頁 →
 結帳頁這段 UI 步驟,交給前端 session 在循環 8 之後補進同一個 feature 檔——後端先合併時,晉升 PR 的 journey 不會因缺前端而紅。
 
 新建路徑用的是上游 E.6(`inviteUserByEmail` → `updateUserById(app_metadata)`＋補償),不是 plan §2.3 條件式裡的「先 `createUser` 蓋章」版:
@@ -90,6 +92,30 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
    退額度＋告警＋503;對帳時查詢失敗 → 告警＋503、不退不回寫(不知道寄了沒,保守不退)。
 6. **accept 的錯誤句**是後端後備文案;前端依 code 分流,實際字句以 plan §4／上游 D 為準(前端 session 實作)。
 7. **R2-3a 只做 API 版**(業主裁決,見「目前位置」),UI 步驟交前端。
+8. **實作審查補記**(`implementation-review.md` P1-2、P1-6):
+   - GoTrue 逾時用 `Promise.race`+`setTimeout`(plan 寫 `AbortSignal.timeout`):supabase-js 的 admin 方法不收 signal,逾時後
+     請求仍在飛。晚到提交的殘餘已列入 plan §2.5(業主裁決接受)。
+   - `validation_failed` 不分成因一律映成 `invalid_email`(plan 寫「email 的」):invite 只送 email 與兩個信件字串,業主裁決維持。
+   - invites 的錯誤句也是後備文案(`rate_limited_hour` 句與 plan §4 字面不同):前端一律依 code 用自己的
+     `Record<ReferralInviteErrorCode, string>`,不讀 `err.message`。
+   - accept「`generateLink` 回的 id 不符」分支原本另清稽核列;v3 一步驗證後整段移除,不再適用。
+
+## 前端 session 交接(後端段審查後)
+
+1. **alias**:`@password-policy` 已在本 PR 接好(vite、tsconfig paths、include);`@referral-invite-payload` 還沒接——前端循環 7
+   開工時照 `@recruitment-copy` 先例補三處。
+2. **accept 流程(v3)**:`POST /auth/invite/accept` → 200 `{ accepted: true }`(密碼已設、email 已驗證)→
+   `signInWithPassword({ email: payload.e, password })` → `routeAfterVerifiedSession`。登入失敗或回 409 → 2A、保留 email、
+   用剛設的密碼登入。沒有 `verifyOtp`、沒有「重打 accept」的回路;e2e mock 也照 plan §3 v3 的列改。
+3. **密碼**:invite 模式的 2B 用 `validatePasswordPolicy`(已改走共用規則)並加 `exceedsPasswordMaxBytes` 前置檢查;後端再回
+   `weak_password` 就只剩外洩密碼,沿用 `translateSignUpError`。
+4. **錯誤文案**:兩支端點一律依 code 映射,不顯示 `err.message`(`apiClient` 會把後端後備句或 GoTrue 英文原文塞進去)。
+5. **在途上限**:invites 最壞約 30 秒(寄送、蓋章、補償刪除各 10 秒),`apiRequest` 沒有 timeout——在途態加約 25 秒 abort,
+   行為同「無 code 失敗 → `unavailable`」。
+6. **數字綁常數**:卡片「每小時最多寄 5 封」的 `backendConstants` 測試,除 `REFERRAL_INVITE_RATE_MAX` 外也斷言
+   `REFERRAL_INVITE_RATE_WINDOW_SECONDS === 3600`(窗口改了「每小時」會靜默過期)。
+7. **journey**:`80_` 的 Background 需要建好的 30 人樹。R2-3b 第 1 步(合併 develop)之後,先在 develop 手動 dispatch
+   `pytest_expr="orgbuild or invite"` 跑一次,別讓 hosted 行為的第一次實測落在晉升 PR 的 `journey-full`(紅了會擋整個晉升)。
 
 ## Blockers(逃生口紀錄)
 
@@ -115,3 +141,9 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
 - 2026-10-26 TDD 證據 × 自動 rebase:pre-push hook 把分支 rebase 到新 develop,紅綠燈 hash 全換;CI 證據留在舊 hash 上,
   只能靠對照表把兩者接起來(見「階段狀態」下方)。DB 測試以 CI 為證時,這個落差特別明顯。
 - 2026-10-26 `tdd-test-guard` 擋所有 `*.test.ts` 路徑(含 scratchpad 草稿),紅燈期間草擬下一循環的測試要先存成別的副檔名。
+- 2026-10-26 CI api-tests 的 `supabase start` 一天內三次死在拉映像(`762bbf3`、`0d44758`、`e625d0b`;ECR `Data limit exceeded`、
+  ghcr `toomanyrequests`、Docker Hub 無該映像),都在任何測試跑之前。github-actions.md 規則 12 原本只要求
+  `supabase functions deploy` 有退避重試、`supabase start`「沒有失敗紀錄、記在 friction-log 觀察」——現在有了。建議另開
+  `fix/*` PR 讓 api-tests 的 `supabase start` 比照規則 12 加退避重試(並把規則 12 的範圍擴到 `supabase start`)。
+- 2026-10-26 bash-guard 同一判準再誤擋一次:`pip install -r journey/requirements.txt; python3 -c "import pytest_bdd, pytest"`
+  只是裝離線套件、驗安裝,因為同一串指令裡有 `pytest` 字樣與 journey 路徑就被當成本機跑 journey;改從 scratchpad 複本安裝。

@@ -69,4 +69,22 @@
 
 <!-- P0 的處置規則:必須改 plan 並重跑 /review-plan,或由人在此明文豁免。 -->
 
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
+業主 2026-10-26 裁決（需人工裁決 6 項）與處置。紅燈 `e625d0b`、綠燈隨後一批；規劃面的改動寫在 `plan.md` 檔頭「v3 增補」。
+
+| # | 裁決 | 處置 |
+|---|---|---|
+| 1 逾時孤兒 | 接受殘餘並記錄 | `plan.md` §2.5 補三條殘餘（晚到提交、對帳時對方自助註冊、並行退額度燒 target）；R2-0 第 2 點成立後再評估「先 `createUser` 蓋章」 |
+| 2 全站額度耗盡 | 信箱無效只退 target、per-user 照扣 | `classifySend` 對映表測試改為分列 target／per-user；規格書 §7.1 退額度句改精確 |
+| 3 purge 與「設定密碼」措辭 | accept 一步完成驗證（後端一次設密碼＋驗證、前端以密碼登入） | 「有密碼、未驗證」的中間狀態不再存在，purge 判準與信中字面一致；契約改 `{ accepted: true }`、移除 `generateLink` 與 canary；journey 少一步 |
+| 4 `weak_password` 三因一碼 | 前後端共用同一份密碼規則（現行註冊規則不變） | `_shared/password-policy.ts`＋`@password-policy` alias；accept 照擋並守 72 位元組 |
+| 5 `validation_failed` | 維持並記錄 | progress 偏離第 8 條 |
+| 6 總綱空殼判準 | 回修成物件判準 | 總綱 E.4、accept 段、purge 謂詞改「`referral_invite` 是 JSON 物件」 |
+| 另：無碼 429（P2-11） | 視同寄件限流、退額度 | `classifySend` 以狀態 429 判定 |
+
+不需裁決、直接處置：P1-1 補測（重寄 5xx 兩案、重寄先更新失敗、查帳號失敗、對帳查詢失敗、全站日窗）；P1-4 兩種告警以帳號去重；
+P1-5 規格書；P1-6 progress 偏離第 8 條；P2-1（v3 改為「完成後再點同一連結 → 409、密碼不變」與並行案例）；P2-2 停權案例；P2-3 purge
+JSON null／字串章；P2-4 規格書補句；P2-5 同意文案雜湊綁版號；P2-6、P2-18 文件；P2-7 已於 `0d44758` 移除；P2-8 蓋章不確定先查章；
+P2-15 `referral-invite-deps.unit.test.ts`；P2-16 `/health` 兩欄＋checklist；P2-17 cleanup 重置全站鍵；P2-18 journey steps 改走
+`tools/supa.py` 的 `api_post_public`／`rpc`。P2-13、P2-14 與 alias 交接寫進 progress「前端 session 交接」。P2-9、P2-10 列 §2.5 殘餘。
+
+- [x] 人審完成,裁決:□ 通過 ☑ 修訂後通過(業主 2026-10-26 逐項裁決,見上表) □ 退回重規劃

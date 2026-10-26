@@ -406,12 +406,19 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 | `payuniMode` | `sandbox` | `production`（**正式站開放後**；開放前是 `sandbox`） |
 | `payuniConfigured` | `true` | `true` |
 | `memberTokenConfigured` | `true` | `true` |
+| `referralInviteConfigured` | `true` | `true`（Email 邀請上線前可為 `false`） |
+| `referralInviteEnabled` | 依 kill switch | 依 kill switch |
 
 `memberTokenConfigured` 是同一個道理的延伸：`MEMBER_TOKEN_SECRET` 設了沒也
 **沒有外顯訊號**——Secrets 頁只看得到 digest，而缺了要等到有人真的掃一次驗證碼、
 吃到 500 才會發現。它同樣只回布林值、不回傳金鑰內容。**Secrets 逐分支獨立、
 不從母專案繼承**，所以 develop 與正式站要各自 curl 確認一次，別假設設了一邊
 另一邊就有。
+
+`referralInviteConfigured`／`referralInviteEnabled` 同理：Email 邀請缺
+`REFERRAL_INVITE_SECRET` 或 `FRONTEND_URL` 時兩支端點只回 503 `disabled`，與 kill switch
+（`REFERRAL_EMAIL_INVITE_ENABLED`）刻意關著時看起來一樣。前者回「設好了沒」，後者回
+「開關開了沒」，兩者都只回布林值。
 
 `payuniMode` 存在的理由：這個設定**沒有任何外顯訊號**。憑證與端點一致時
 PayUni 不會回「(模擬)」浮水印、程式不報錯、儀表板只看得到 secrets 的

@@ -2,7 +2,7 @@
 // Email 邀請（R2）：POST /referrals/invites 與 POST /auth/invite/accept 的處理函式。
 //
 // 依賴方向：本檔**不得 import ./index.ts**（反向匯入會把整個 Hono app 拖進測試，
-// 也是循環匯入；referral-invite.test.ts 讀原文把關）。限流常數留在 index.ts（兩支
+// 也是循環匯入；referral-invite-deps.unit.test.ts 讀原文把關）。限流常數留在 index.ts（兩支
 // regex 守衛讀那裡），由路由註冊處組一次 deps 傳進 createReferralInviteHandlers。
 //
 // 錯誤形狀 `{ success: false, error: { code, message } }`：前端依 code 分流
@@ -19,6 +19,7 @@ import type {
   ReferralInviteErrorCode,
   ReferralInviteErrorResponse,
 } from '../_shared/api-contract.ts';
+import { exceedsPasswordMaxBytes, passwordPolicyMessage } from '../_shared/password-policy.ts';
 import { findForbiddenWord } from '../_shared/recruitment-copy.ts';
 import {
   normalizeReferralInviteEmail,
@@ -175,10 +176,13 @@ function goTrueFailed(result: AnyGoTrueResult): boolean {
 }
 
 /**
- * GoTrue 寄送結果依 error_code 分類（業主裁決 B；不靠狀態碼猜）：
+ * GoTrue 寄送結果依 error_code 分類（業主裁決 B；不靠狀態碼猜，唯一例外是沒帶 code 的 429）：
  * - email_exists：lookup 之後被驗證的競態 → 202＋退
- * - over_email_send_rate_limit → 503＋退＋告警
- * - email_address_invalid／validation_failed：輸入錯不是寄送失敗（Q2-19 的明示例外）→ 400＋退
+ * - over_email_send_rate_limit，或沒帶 error_code 的 429（gateway 的暫時限流）→ 503＋退＋告警
+ * - email_address_invalid／validation_failed：輸入錯不是寄送失敗（Q2-19 的明示例外）→ 400＋只退
+ *   target（per-user 照扣：通過我方正規式卻被 GoTrue 拒收的信箱可無限重送，退了就繞過每人
+ *   上限、把全站窗吃滿——業主 2026-10-26 裁決）。invite 只送 email 與兩個信件字串，
+ *   validation_failed 實際只會是 email；不比對英文訊息收窄（GoTrue 改字就靜默失效）
  * - 其餘 4xx（寄件授權、金鑰）→ 503＋告警、不退
  * - 5xx、逾時、網路例外 → 不確定，先對帳
  */
@@ -195,7 +199,7 @@ function classifySend(result: AnyGoTrueResult): SendOutcome {
   const err = result.error;
   if (!err) return 'sent';
   if (err.code === 'email_exists') return 'email_exists';
-  if (err.code === 'over_email_send_rate_limit') return 'send_rate_limited';
+  if (err.code === 'over_email_send_rate_limit' || err.status === 429) return 'send_rate_limited';
   if (err.code === 'email_address_invalid' || err.code === 'validation_failed') {
     return 'invalid_email';
   }
@@ -235,10 +239,6 @@ function inviteError(c: Context, status: 400 | 403 | 429 | 503, code: ReferralIn
     status,
   );
 }
-
-// accept 的密碼長度前置檢查（下限同 src/utils/passwordPolicy.ts；上限是 bcrypt 的位元組數）
-const ACCEPT_PASSWORD_MIN_LENGTH = 8;
-const ACCEPT_PASSWORD_MAX_BYTES = 72;
 
 const ACCEPT_MESSAGES: Record<ReferralInviteAcceptErrorCode, string> = {
   invalid_token: '邀請連結已失效，請推薦人再寄一次',
@@ -338,12 +338,13 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
     const refund = async (...keys: string[]) => {
       for (const key of keys) await refundRateLimit(client, key);
     };
-    // 告警只放 email 雜湊前 8 碼（system_alerts 不存個資），以 kind 去重
-    const alert = (kind: string, context: Record<string, unknown> = {}) =>
+    // 告警只放 email 雜湊前 8 碼（system_alerts 不存個資）。事故類以 kind 去重（持續失敗本身
+    // 就是訊號）；留下殘留帳號、每筆都要有人去清的以帳號去重（index.ts 去重鍵慣例）
+    const alert = (kind: string, dedupe: Record<string, string> = {}) =>
       deps.logSystemAlertOnce(
         'referral-invite',
-        { kind },
-        { email_hash: emailHash.slice(0, 8), ...context },
+        { kind, ...dedupe },
+        { email_hash: emailHash.slice(0, 8) },
         `Email 邀請寄送失敗：${kind}`,
         'error',
       );
@@ -409,11 +410,11 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
       }
       if (outcome === 'send_rate_limited') {
         await refundAll();
-        await alert('over_email_send_rate_limit');
+        await alert(rejectedKind(result));
         return inviteError(c, 503, 'unavailable');
       }
       if (outcome === 'invalid_email') {
-        await refundAll();
+        await refund(targetKey);
         return inviteError(c, 400, 'invalid_email');
       }
       await alert(rejectedKind(result));
@@ -427,6 +428,14 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
         timeoutMs,
       );
       if (!goTrueFailed(stamped)) return accepted(c);
+      // 逾時或 5xx 可能已提交：先查章，這次的章已經蓋上就是成功（刪掉會讓對方拿到死連結）
+      const check = await findAuthUser(client, email);
+      if (
+        check && check !== 'error' && check.id === userId && isShell(check) &&
+        (check.referral_invite as ReferralInviteStamp).issued_at === stamp.issued_at
+      ) {
+        return accepted(c);
+      }
       // 補償：沒蓋章的帳號不是 R2 空殼（purge 清不到、重寄也不認），刪掉並清它的稽核列
       // （GoTrue 的 deleteUser 自己會再寫一筆含 email 的事件，所以在它之後清）
       const deleted = await callGoTrue(() => admin.deleteUser(userId), timeoutMs);
@@ -503,7 +512,7 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
       () => admin.updateUserById(lookup.id, { app_metadata: { referral_invite: previous } }),
       timeoutMs,
     );
-    if (goTrueFailed(restored)) await alert('resend_restore_failed');
+    if (goTrueFailed(restored)) await alert('resend_restore_failed', { user_id: lookup.id });
     if (outcome === 'uncertain') {
       await refundAll();
       await alert('send_failed');
@@ -537,18 +546,13 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
     }
     const email = verified.payload.e;
 
-    // 長度前置檢查：下限同前端 passwordPolicy；上限是 bcrypt 的 72 位元組（超過時 GoTrue
-    // 回 500，前端會當成可重試而原地打轉）。其餘規則交給 GoTrue 的密碼強度設定。
-    const password = body?.password;
-    if (typeof password !== 'string' || [...password].length < ACCEPT_PASSWORD_MIN_LENGTH) {
-      return acceptError(
-        c,
-        400,
-        'weak_password',
-        `密碼至少需要 ${ACCEPT_PASSWORD_MIN_LENGTH} 個字元`,
-      );
-    }
-    if (new TextEncoder().encode(password).length > ACCEPT_PASSWORD_MAX_BYTES) {
+    // 密碼規則與註冊同一份（_shared/password-policy.ts，訊息也同一句）；上限是 bcrypt 的
+    // 72 位元組（超過時 GoTrue 的拒絕會落到 503，前端當成可重試而原地打轉）。外洩與強度
+    // 交給 Supabase Auth 的密碼設定。
+    const password = typeof body?.password === 'string' ? body.password : '';
+    const policyError = passwordPolicyMessage(password);
+    if (policyError) return acceptError(c, 400, 'weak_password', policyError);
+    if (exceedsPasswordMaxBytes(password)) {
       return acceptError(c, 400, 'weak_password', '密碼太長，請縮短後再試');
     }
 
@@ -559,12 +563,14 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
     if (lookup.email_confirmed_at) return acceptError(c, 409, 'already_accepted');
     if (!isShell(lookup)) return acceptError(c, 410, 'gone'); // 自助註冊中、Dashboard Invite
 
-    const admin = client.auth.admin;
-    // 硬順序 1：先設密碼（沒密碼的被邀請者 verify 時會被塞隨機密碼）；同時拿掉信中連結
+    // 一步完成：設密碼的同時驗證 email——從邀請連結設好密碼就是已驗證，不留「有密碼、
+    // 未驗證」的中間狀態（業主 2026-10-26 裁決）；同時拿掉信中連結。推薦章留著給完善資料頁
+    // 的後備預填。前端再以剛設的密碼登入取得 session；回應丟了或另一分頁重點 → 409 → 登入。
     const updated = await callGoTrue(
       () =>
-        admin.updateUserById(lookup.id, {
+        client.auth.admin.updateUserById(lookup.id, {
           password,
+          email_confirm: true,
           user_metadata: { referral_invite_url: null },
         }),
       deps.gotrueTimeoutMs,
@@ -579,30 +585,7 @@ export function createReferralInviteHandlers(deps: ReferralInviteDeps) {
       }
       return acceptError(c, 503, 'unavailable');
     }
-
-    // 硬順序 2：再產生 invite 的 token_hash（設密碼會清掉既有的 confirmation_token）
-    const link = await callGoTrue(
-      () => admin.generateLink({ type: 'invite', email }),
-      deps.gotrueTimeoutMs,
-    );
-    if (link === 'timeout') return acceptError(c, 503, 'unavailable');
-    if (link.error) {
-      return link.error.code === 'email_exists'
-        ? acceptError(c, 409, 'already_accepted') // 另一個分頁剛完成驗證
-        : acceptError(c, 503, 'unavailable');
-    }
-    const linkedId = link.data.user?.id;
-    if (linkedId && linkedId !== lookup.id) {
-      // 兩次呼叫之間空殼被清掉，generateLink(invite) 自己建了一個空白帳號：刪掉它
-      const deleted = await callGoTrue(() => admin.deleteUser(linkedId), deps.gotrueTimeoutMs);
-      if (!goTrueFailed(deleted)) {
-        await client.rpc('delete_auth_audit_for_users', { p_user_ids: [linkedId] });
-      }
-      return acceptError(c, 410, 'gone');
-    }
-    const tokenHash = link.data.properties?.hashed_token;
-    if (!tokenHash) return acceptError(c, 503, 'unavailable');
-    return c.json({ tokenHash } satisfies ReferralInviteAcceptResponse, 200);
+    return c.json({ accepted: true } satisfies ReferralInviteAcceptResponse, 200);
   };
 
   return { invites, accept };

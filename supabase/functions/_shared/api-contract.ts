@@ -854,7 +854,9 @@ export type ReferralInviteErrorResponse = Infer<typeof ReferralInviteErrorRespon
 
 // ------------------------------------------------------------
 // Email 邀請（R2）——POST /auth/invite/accept（公開）
-// 成功回 GoTrue 的 invite token_hash，前端以 verifyOtp({ token_hash, type: 'invite' }) 換 session。
+// 成功時密碼已設、email 已驗證（同一次呼叫完成），前端再以剛設的密碼 signInWithPassword
+// 換 session（email 取自連結 token 的 payload）。weak_password 的 message 只是後備：
+// 前端送出前已以 @password-policy 擋過規則與 72 位元組上限，到這裡多半是外洩密碼。
 // ------------------------------------------------------------
 
 export const REFERRAL_INVITE_ACCEPT_ERROR_CODES = [
@@ -869,7 +871,7 @@ export const REFERRAL_INVITE_ACCEPT_ERROR_CODES = [
 ] as const;
 export type ReferralInviteAcceptErrorCode = (typeof REFERRAL_INVITE_ACCEPT_ERROR_CODES)[number];
 
-export const ReferralInviteAcceptResponseSchema = obj({ tokenHash: str() });
+export const ReferralInviteAcceptResponseSchema = obj({ accepted: bool() });
 export type ReferralInviteAcceptResponse = Infer<typeof ReferralInviteAcceptResponseSchema>;
 
 export const ReferralInviteAcceptErrorResponseSchema = obj({

@@ -1,7 +1,7 @@
 """80_referral_email_invite.feature 的步驟定義——Email 邀請的後端旅程。
 
 目前刻意**不走 GUI**：寄送（POST /referrals/invites）、接受（POST
-/auth/invite/accept）、GoTrue verify 都直打 API，驗 hosted 才測得到的部分
+/auth/invite/accept——設密碼同時驗證 email）都直打 API，驗 hosted 才測得到的部分
 （GoTrue 真實互動、send-email hook 底下的寄送、service role 呼叫 purge）。
 設定密碼畫面與完善資料頁的 UI 步驟，由前端工項在 AuthPage 的 invite 模式上線後
 補進同一個 feature。
@@ -62,16 +62,7 @@ def _invite(supabase_admin, run_state, node: str, email: str):
 
 
 def _accept(supabase_admin, token: str, password: str):
-    # 公開端點：不帶使用者 token，只帶 anon key 過 gateway
-    return supabase_admin.session.post(
-        f"{supabase_admin.base_url}/functions/v1/api/auth/invite/accept",
-        headers={
-            "apikey": supabase_admin.anon_key,
-            "Authorization": f"Bearer {supabase_admin.anon_key}",
-        },
-        json={"token": token, "password": password},
-        timeout=supabase_admin.timeout,
-    )
+    return supabase_admin.api_post_public("/auth/invite/accept", {"token": token, "password": password})
 
 
 # --- 推薦人側 ---------------------------------------------------------------
@@ -132,22 +123,8 @@ def sent_once(supabase_admin, scenario_memo):
 def accept_invite(supabase_admin, scenario_memo):
     resp = _accept(supabase_admin, scenario_memo["token"], INVITEE_PASSWORD)
     assert resp.status_code == 200, f"{resp.status_code} {resp.text[:300]}"
-    token_hash = resp.json().get("tokenHash")
-    assert token_hash, resp.text[:300]
-    scenario_memo["token_hash"] = token_hash
-
-
-@when("被邀請人以取得的憑證完成驗證")
-def verify_invite(supabase_admin, scenario_memo):
-    # 前端的 supabase.auth.verifyOtp({ token_hash, type: 'invite' }) 打的就是這支
-    resp = supabase_admin.session.post(
-        f"{supabase_admin.base_url}/auth/v1/verify",
-        headers={"apikey": supabase_admin.anon_key},
-        json={"type": "invite", "token_hash": scenario_memo["token_hash"]},
-        timeout=supabase_admin.timeout,
-    )
-    assert resp.status_code == 200, f"{resp.status_code} {resp.text[:300]}"
-    assert resp.json().get("access_token"), "verify 應回 session"
+    # 不回 session：前端接著以剛設的密碼登入（下一步「能以剛設定的密碼登入」驗的就是這件事）
+    assert resp.json() == {"accepted": True}, resp.text[:300]
 
 
 @then("被邀請人的 email 已驗證")
@@ -180,17 +157,9 @@ def already_accepted(scenario_memo):
 
 @when("客服以 service role 依信箱刪除邀請中的帳號")
 def purge_by_email(supabase_admin, scenario_memo):
-    resp = supabase_admin.session.post(
-        f"{supabase_admin.base_url}/rest/v1/rpc/purge_stale_referral_invites",
-        headers={
-            "apikey": supabase_admin.service_role_key,
-            "Authorization": f"Bearer {supabase_admin.service_role_key}",
-        },
-        json={"p_email": scenario_memo["email"]},
-        timeout=supabase_admin.timeout,
+    scenario_memo["purged"] = supabase_admin.rpc(
+        "purge_stale_referral_invites", {"p_email": scenario_memo["email"]}
     )
-    assert resp.status_code == 200, f"{resp.status_code} {resp.text[:300]}"
-    scenario_memo["purged"] = resp.json()
 
 
 @then(parsers.parse("刪除筆數為 {count:d}"))
