@@ -45,8 +45,31 @@ export function normalizeReferralInviteEmail(raw: unknown): string | null {
   return REFERRAL_INVITE_EMAIL_RE.test(email) ? email : null;
 }
 
-/** 紅燈 stub（循環 4b）：同意聲明版號。 */
-export const REFERRAL_INVITE_CONSENT_VERSION = '';
+/**
+ * `auth.users.raw_app_meta_data.referral_invite`：寄出邀請時由後端蓋章（只有 service role
+ * 寫得了 app_metadata，本人不可改寫）。時間一律 ISO-8601 UTC。不存推薦人 uuid——推薦人由
+ * `code` 經 referral_codes 解回（app_metadata 會進被邀請人的 JWT）。寫入端是 invites，
+ * 讀取端是 purge（以 issued_at 計齡）與完善資料頁的推薦碼後備預填。
+ */
+export interface ReferralInviteStamp {
+  code: string;
+  consent_at: string;
+  consent_version: string;
+  issued_at: string;
+}
+
+/**
+ * 同意聲明（鏡射參加契約第 22 條三要件；`{名}` 換成推薦人姓名）。只在填了 email 時出現、
+ * 必勾；伺服器蓋的是 REFERRAL_INVITE_CONSENT_VERSION，client 只送 `consent: true`。
+ * **文案一改就升版號**（裁決 P）。
+ */
+export const REFERRAL_INVITE_CONSENT_TEMPLATE =
+  '我已取得對方同意，由優識生活有限公司蒐集其電子郵件信箱以寄送本邀請，並於其註冊後用於推薦關係歸戶；此信箱為對方本人所有且正確。信中會顯示我的姓名「{名}」';
+export const REFERRAL_INVITE_CONSENT_VERSION = '2026-10-26';
+
+export function referralInviteConsentText(name: string): string {
+  return REFERRAL_INVITE_CONSENT_TEMPLATE.replace('{名}', name.trim());
+}
 
 /** base64url（無填充）→ 位元組；字元不合法時 atob 會拋。 */
 export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {

@@ -27,8 +27,8 @@
 | 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `52890f3` | `b19cf57` |
 | 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ✅ 綠(CI 為證) | 第 6 點 | `42f29fe`(CI 12 條斷言紅) | `e847f89`+修正 `eb0ac40`(CI 全過) |
 | 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ✅ 綠(CI 為證) | — | `7cf06aa`(CI 7 條斷言紅) | `8e1fdfd`(CI 全過) |
-| 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `4fc4d0b`(CI 12 條斷言紅) | (本 commit) |
-| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ⬜ 未開始 | 第 1、2、7、9 點 | | |
+| 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `4fc4d0b`(CI 12 條斷言紅) | `2aefdbc`(CI 全過) |
+| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `2b84cc7`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | (本 commit) |
 | 5 | `POST /auth/invite/accept`+accept 契約段 | ⬜ 未開始 | 第 3、4、5 點 | | |
 | 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ⬜ 未開始 | — | | |
 | 7 | `registrationFlow.ts` 三個純函式 | ⬜ 未開始 | — | | |
@@ -56,7 +56,10 @@ Sonnet session 打 `/tdd-implement referral-email-invite`,從本表接著做前�
 Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests 軌為證:紅燈 commit 單獨推一次、
 看 api-tests 是斷言紅;實作完推綠燈 commit、看轉綠。`*.unit.test.ts` 與 `deno task check` 照常本機跑。
 
-目前:循環 4a 綠燈與 4b 紅燈同批推(一次 CI 同時證明前者綠、後者斷言紅);下一步循環 4b 綠燈。
+目前:循環 4b 綠燈與循環 5 紅燈同批推;下一步循環 5 綠燈,然後 R2-3a 與後端段收尾。
+
+新建路徑用的是上游 E.6(`inviteUserByEmail` → `updateUserById(app_metadata)`＋補償),不是 plan §2.3 條件式裡的「先 `createUser` 蓋章」版:
+R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證實第 2 點後若要改,只動 `referral-invite.ts` 的 8a 段與對應測試。
 
 ## Blockers(逃生口紀錄)
 

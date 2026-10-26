@@ -206,6 +206,43 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/api/index.ts",
         r"REFERRAL_INVITE_DAILY_MAX = (\d+);",
     ),
+    # 同一信箱與全站窗：規格句以「同一信箱」「全站」錨定；全站上限寫成 1,000（千分位）。
+    ConstantRule(
+        "邀請同信箱窗（小時）",
+        r"同一信箱 (\d+) 小時內最多收到",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_TARGET_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請同信箱上限",
+        r"同一信箱 \d+ 小時內最多收到 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_TARGET_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請全站短窗（小時）",
+        r"全站 (\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請全站短窗上限",
+        r"全站 \d+ 小時內最多寄 ([\d,]+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_HOUR_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請全站日窗（小時）",
+        r"全站 \d+ 小時內最多寄 [\d,]+ 封、(\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請全站日窗上限",
+        r"全站 \d+ 小時內最多寄 [\d,]+ 封、\d+ 小時內最多寄 ([\d,]+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_DAY_MAX = (\d+);",
+    ),
     ConstantRule(
         "邀請空殼清除天數",
         r"(\d+) 天內未透過連結設定密碼即刪除",
