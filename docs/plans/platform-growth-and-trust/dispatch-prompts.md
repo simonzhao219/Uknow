@@ -114,6 +114,8 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
 
 ## B. Plan Mode 小 PR：R1a-3 揭露句與用語
 
+> **已開工（PR #394，session B）。業主施工中另裁取代下列細節**：揭露句 22px（非 18px）；說明行、揭露句與抬頭名字一律換行、不縮字級（非「先縮到 12px」）；揭露句前空一行；無名退化句已裁採用；禁用字樣加僱傭、合夥、獨家、特許共十五詞，出處註解為 4-1-1(4)、4-1-2(5)–(8)；多匯出 `findForbiddenWord`；分支沿用 session 分支。本段其餘仍是規劃依據，合併後刪本段。
+
 ```text
 Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀請訊息與邀請卡加「本邀請由 Uknow 推薦人 {名} 發送」、刊登方案頁「下線」改寫、禁用字樣常數與測試
 
@@ -131,7 +133,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      `name` 空白時回 `本邀請由 Uknow 推薦人發送`——**這是防禦性退化句、不是業主裁決**（能分享的人都已完成會員資料，實務上到不了），PR 描述列為「請業主確認的一處新句式」。
    - `export const RECRUITMENT_FORBIDDEN_WORDS = ['賺', '獎金', '收入', '投資', '受僱', '工作', '兼職', '節稅', '傳銷', '直銷', '下線'] as const`，
      常數上方註解標明前八個出自手冊 4-1-2(5)（總綱 §2.3A F 的同一陣列）、後三個出自業主 2026-10-23 用語裁決。
-   - 接線照 `@backfill-cases` 的既有做法：`vite.config.ts` alias `@recruitment-copy`、`tsconfig.json` 的 `paths` 與 `include` 各加一列（檔頭已寫明兩處必須同步）。
+   - 接線照 `@name-cases` 的既有做法（它是 alias＋`paths`＋`include` 三處齊；`@backfill-cases` 不在 `include`）：`vite.config.ts` alias `@recruitment-copy`、`tsconfig.json` 的 `paths` 與 `include` 各加一列。
 2. `src/utils/referralInvite.ts`
    - `buildInviteMessage(code: string, memberName?: string | null)`：既有三段（邀請句／連結／推薦碼）逐字不動，其後換行接揭露句。`memberName` 可選，
      既有 5 處單引數呼叫（`referralInvite.test.ts`）才不會被 tsc 擋。
@@ -218,7 +220,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      `app_metadata.referral_invite` 四鍵；`user_metadata` 兩鍵；`find_auth_user_by_email` 的欄名以前置狀態寫的權威為準。
   3. 架構影響：
      - 新檔：`api/referral-invite.ts`、`api/referral-invite-token.ts`、`_shared/referral-invite-payload.ts`（零依賴；前端經 vite alias `@referral-invite-payload` 讀，
-       接線照 `@backfill-cases`：`vite.config.ts` alias、`tsconfig.json` paths 與 include）、`src/components/referral/InviteCard.tsx`（三處「邀請好友」改開同一張卡片、
+       接線照 `@name-cases`：`vite.config.ts` alias、`tsconfig.json` paths 與 include 三處）、`src/components/referral/InviteCard.tsx`（三處「邀請好友」改開同一張卡片、
        一顆主鈕依有無 email 切換「快速分享」／「用 Email 邀請」）、`src/hooks/useInviteAccept.ts`、`supabase/email-templates/referral-invite.html`。
        vitest 只跑 `src/**`（`vitest.config.ts` exclude supabase）：模板測試與 payload 純解碼測試都放 `src/`。
      - 既有檔：`AuthPage.tsx` invite 模式、`OTPVerificationPage.tsx` 抽 `routeAfterVerifiedSession`、`App.tsx` 豁免 `/auth/reset-password` 一行、`CompleteProfile.tsx` 後備預填、
@@ -227,7 +229,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      - 旗標與 secret 的環境落點（plan.md 逐一定案）：e2e 的 dev server（`ci.yml` 與 `e2e/conftest.py` 裡起 `npm run dev` 的地方）怎麼帶 `VITE_REFERRAL_EMAIL_INVITE`，
        或旗標缺省時表單是否仍渲染；journey 的 `supabase secrets set` 段加 `REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED=true`，`e2e/journey/conftest.py` 的前端 env 加旗標；
        hosted 環境（Cloudflare Pages 建置變數、Supabase secrets）由誰在 R2-3 設。沒定這段，R2-2 的 e2e 會看不到表單、R2-3 的 journey 會拿到 503 `disabled`。
-     - `_shared/recruitment-copy.ts` 的三個消費點：`POST /referrals/invites` 對推薦人姓名的檢查；模板測試以 `referralDisclosureSentence('{{ .Data.referral_invite_name }}')` 比對並斷言
+     - `_shared/recruitment-copy.ts` 的三個消費點：`POST /referrals/invites` 對推薦人姓名的檢查（直接用 #394 匯出的 `findForbiddenWord`）；模板測試以 `referralDisclosureSentence('{{ .Data.referral_invite_name }}')` 比對並斷言
        整份模板不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一詞；InviteCard 與受理／錯誤文案的 render 測試。
      - 讀 `docs/multi-step-flow-recovery.md`，逐條寫四契約怎麼滿足（尤其契約 2 可重入入口、契約 4 零寄信），並決定 invite 狀態推導與 `routeAfterVerifiedSession`
        放進 `src/utils/registrationFlow.ts` 還是獨立檔，附理由。
