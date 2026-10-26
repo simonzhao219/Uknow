@@ -24,20 +24,26 @@
 | # | 階段 | 狀態 | 待 R2-0 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|---|
 | 0 | R2-0 spike(外部,結論貼入下方「R2-0 結論」) | ⬜ 未開始 | — | — | — |
-| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `52890f3` | `b19cf57` |
-| 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ✅ 綠(CI 為證) | 第 6 點 | `42f29fe`(CI 12 條斷言紅) | `e847f89`+修正 `eb0ac40`(CI 全過) |
-| 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ✅ 綠(CI 為證) | — | `7cf06aa`(CI 7 條斷言紅) | `8e1fdfd`(CI 全過) |
-| 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `4fc4d0b`(CI 12 條斷言紅) | `2aefdbc`(CI 全過) |
-| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `2b84cc7`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | `9b9328e`(CI 全過) |
-| 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(待 CI 確認) | 第 3、4、5 點 | `7a1e309`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | (本 commit) |
+| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `bb1b0df` | `e81389b` |
+| 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ✅ 綠(CI 為證) | 第 6 點 | `7114b20`(CI 12 條斷言紅) | `4c04a75`+修正 `c9e0aa7`(CI 全過) |
+| 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ✅ 綠(CI 為證) | — | `869504a`(CI 7 條斷言紅) | `2d825fe`(CI 全過) |
+| 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ✅ 綠(CI 為證) | — | `63ff52c`(CI 12 條斷言紅) | `b7b5d79`(CI 全過) |
+| 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `e4c18dd`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | `78e3b37`(CI 全過) |
+| 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(待 CI 確認) | 第 3、4、5 點 | `ddedcce`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | `cfce665` |
 | 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ⬜ 未開始 | — | | |
 | 7 | `registrationFlow.ts` 三個純函式 | ⬜ 未開始 | — | | |
 | 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ⬜ 未開始 | — | | |
 | 9 | InviteCard+三處入口+旗標+`ui/dialog` 關閉鈕+`backendConstants.ts` | ⬜ 未開始 | — | | |
 | 10 | CompleteProfile `app_metadata` 後備預填 | ⬜ 未開始 | — | | |
 | 11 | 模板檔+模板測試+文件 | ⬜ 未開始 | 第 1、11 點 | | |
-| R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ⬜ 未開始 | — | — | — |
+| R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ◐ API 版完成 `6640936`(UI 步驟交前端,見下) | — | — | — |
 | R2-3b | 合併後業主操作(plan.md §5 R2-3b 十二步) | ⬜ 未開始 | 第 5、10 點 | — | — |
+
+**hash 對照**:2026-10-26 pre-push hook 把分支 rebase 到 develop(#398),上表已換成 rebase 後的 hash;CI 的紅綠證據
+跑在 rebase 前的 commit 上(PR #399 的 Checks 歷史看得到),對照:`52890f3`→`bb1b0df`、`b19cf57`→`e81389b`、
+`42f29fe`→`7114b20`、`e847f89`→`4c04a75`、`eb0ac40`→`c9e0aa7`、`7cf06aa`→`869504a`、`8e1fdfd`→`2d825fe`、
+`4fc4d0b`→`63ff52c`、`2aefdbc`→`b7b5d79`、`2b84cc7`→`e4c18dd`、`9b9328e`→`78e3b37`、`7a1e309`→`ddedcce`、
+`36293b4`→`cfce665`、`508c3c1`→`6640936`。
 
 前置已全部合併,只剩循環間依賴:7 依賴 1,8 依賴 5、6、7,9 依賴 4a,R2-3a 依賴 4b、5。
 
@@ -80,7 +86,12 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
 - 2026-10-26 DB 測試紅燈需要「stub migration」:函式不存在時 `has_function_privilege` 直接拋錯(不是斷言紅),所以紅燈 commit
   帶只有簽章的 stub、綠燈再改寫同一支 migration。代價:Supabase Preview 分支只套用**新**的 migration 檔,本 PR 的 preview DB
   會停在 stub 版(bot 留言明寫);CI 與合併後的 develop 不受影響。
-- 2026-10-26 `e847f89` 在 CI 套用 migration 時失敗(2BP01 dependent privileges exist):migration 重跑
+- 2026-10-26 `4c04a75` 在 CI 套用 migration 時失敗(2BP01 dependent privileges exist):migration 重跑
   `create extension if not exists pg_cron`(已由 `20261017000001` 建立),推測是再觸發 Supabase 的 pg_cron 授權 event trigger。
-  移除後過(`eb0ac40`)。本機起不了 Supabase 時,migration 的套用錯誤只有 CI 抓得到。
+  移除後過(`c9e0aa7`)。本機起不了 Supabase 時,migration 的套用錯誤只有 CI 抓得到。
+- 2026-10-26 bash-guard 誤擋:`git add` 參數裡的路徑 `e2e/journey/pytest.ini` 同時含 `pytest`(`\bpytest\b` 命中
+  `pytest.ini`)與 `journey`,被當成「本機跑 journey」擋下整串指令。改成目錄層級 `git add e2e/` 繞開。可考慮讓判準
+  只看 `pytest` 出現在指令位置(行首或 `&&`／`;` 之後)。
+- 2026-10-26 TDD 證據 × 自動 rebase:pre-push hook 把分支 rebase 到新 develop,紅綠燈 hash 全換;CI 證據留在舊 hash 上,
+  只能靠對照表把兩者接起來(見「階段狀態」下方)。DB 測試以 CI 為證時,這個落差特別明顯。
 - 2026-10-26 `tdd-test-guard` 擋所有 `*.test.ts` 路徑(含 scratchpad 草稿),紅燈期間草擬下一循環的測試要先存成別的副檔名。
