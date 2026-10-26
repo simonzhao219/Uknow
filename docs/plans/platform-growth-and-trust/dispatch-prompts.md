@@ -131,7 +131,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      `name` 空白時回 `本邀請由 Uknow 推薦人發送`——**這是防禦性退化句、不是業主裁決**（能分享的人都已完成會員資料，實務上到不了），PR 描述列為「請業主確認的一處新句式」。
    - `export const RECRUITMENT_FORBIDDEN_WORDS = ['賺', '獎金', '收入', '投資', '受僱', '工作', '兼職', '節稅', '傳銷', '直銷', '下線'] as const`，
      常數上方註解標明前八個出自手冊 4-1-2(5)（總綱 §2.3A F 的同一陣列）、後三個出自業主 2026-10-23 用語裁決。
-   - 接線照 `@backfill-cases` 的既有做法：`vite.config.ts` alias `@recruitment-copy`、`tsconfig.json` 的 `paths` 與 `include` 各加一列（檔頭已寫明兩處必須同步）。
+   - 接線照 `@name-cases` 的既有做法（它是 alias＋`paths`＋`include` 三處齊；`@backfill-cases` 不在 `include`）：`vite.config.ts` alias `@recruitment-copy`、`tsconfig.json` 的 `paths` 與 `include` 各加一列。
 2. `src/utils/referralInvite.ts`
    - `buildInviteMessage(code: string, memberName?: string | null)`：既有三段（邀請句／連結／推薦碼）逐字不動，其後換行接揭露句。`memberName` 可選，
      既有 5 處單引數呼叫（`referralInvite.test.ts`）才不會被 tsc 擋。
@@ -218,7 +218,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      `app_metadata.referral_invite` 四鍵；`user_metadata` 兩鍵；`find_auth_user_by_email` 的欄名以前置狀態寫的權威為準。
   3. 架構影響：
      - 新檔：`api/referral-invite.ts`、`api/referral-invite-token.ts`、`_shared/referral-invite-payload.ts`（零依賴；前端經 vite alias `@referral-invite-payload` 讀，
-       接線照 `@backfill-cases`：`vite.config.ts` alias、`tsconfig.json` paths 與 include）、`src/components/referral/InviteCard.tsx`（三處「邀請好友」改開同一張卡片、
+       接線照 `@name-cases`：`vite.config.ts` alias、`tsconfig.json` paths 與 include 三處）、`src/components/referral/InviteCard.tsx`（三處「邀請好友」改開同一張卡片、
        一顆主鈕依有無 email 切換「快速分享」／「用 Email 邀請」）、`src/hooks/useInviteAccept.ts`、`supabase/email-templates/referral-invite.html`。
        vitest 只跑 `src/**`（`vitest.config.ts` exclude supabase）：模板測試與 payload 純解碼測試都放 `src/`。
      - 既有檔：`AuthPage.tsx` invite 模式、`OTPVerificationPage.tsx` 抽 `routeAfterVerifiedSession`、`App.tsx` 豁免 `/auth/reset-password` 一行、`CompleteProfile.tsx` 後備預填、
