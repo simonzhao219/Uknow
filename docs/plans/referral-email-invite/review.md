@@ -3,7 +3,8 @@
 <!-- 由 /review-plan 彙整四個 reviewer subagent＋事實核對兩條 lane 而成。輸出契約見 docs/_templates/review.md。
      聚合規則：只彙整、去重、排序，不改判；重複發現合併時取各 lane 的最高嚴重度並標出所有來源。 -->
 
-審查對象：`docs/plans/referral-email-invite/plan.md`（commit `2ccb51a`；審後只套用了事實核對 lane 的三處引用更正，見文末「事實核對」）。
+審查對象：`docs/plans/referral-email-invite/plan.md` v1（rebase 後為 commit `ebba574`；審後只套用了事實核對 lane 的三處引用更正，見文末「事實核對」）。
+本檔的條目編號（P1-1～26、P2-27～63）被 plan.md v2 以「審查 P1-N／P2-N」引用。
 上游：總綱 §2.3A（`1b9e709`）。四個 reviewer 都拿到總綱的段落行段與 GoTrue 原始碼副本（supabase/auth master `c3348e8`）。
 
 ## 審查結論
@@ -150,6 +151,11 @@
 <!-- P0 的處置規則:必須改 plan 並重跑 /review-plan,或由人在此明文豁免。
      tdd-implement 開工前會檢查:存在未處置 P0 → 拒絕開工。 -->
 
-本輪 P0 為 0，無需豁免。P1／P2 原樣保留、未改判；上表 A～T 待業主裁決後修訂 plan.md。
+本輪 P0 為 0，無需豁免。P1／P2 原樣保留、未改判。
 
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
+業主 2026-10-26 裁決 A～T（[PR #393 留言 6410017491](https://github.com/simonzhao219/Uknow/pull/393#issuecomment-6410017491)，
+監工補充 [6411556654](https://github.com/simonzhao219/Uknow/pull/393#issuecomment-6411556654)）：業主直裁 E、F、S、H、I、J、K、M、T、N、D，
+監工代裁 A、B、C、G、L、O、P、Q、R；其餘 P1（第 3、4、6、9、10、12、15、17、18、19、21～25 條）與全部 P2 照各條「→」修訂，不再裁。
+plan.md 已修訂為 v2（落點見其附錄 C）；P0 為 0，不重跑 `/review-plan`。
+
+- [x] 人審完成,裁決:□ 通過 ■ 修訂後通過(業主 2026-10-26,見上方留言連結) □ 退回重規劃
