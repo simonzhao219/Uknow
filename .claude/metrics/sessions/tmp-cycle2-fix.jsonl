@@ -1,1 +1,0 @@
-{"branch": "claude/referral-email-invite-vygu7r", "ended": "2026-10-26T14:54:14+00:00", "fired": {"tdd-test-guard/red-phase": 1}, "passed": {"bash-guard": 58, "check-output-filter": 58, "deletion-residue-check": 3, "feature-plan-guard": 31, "model-effort-advisor": 4, "tdd-test-guard": 30}, "session": "5d53293f5ae1", "started": "2026-10-26T14:23:39+00:00"}

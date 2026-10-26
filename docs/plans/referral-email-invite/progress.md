@@ -71,6 +71,26 @@ Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests
 新建路徑用的是上游 E.6(`inviteUserByEmail` → `updateUserById(app_metadata)`＋補償),不是 plan §2.3 條件式裡的「先 `createUser` 蓋章」版:
 R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證實第 2 點後若要改,只動 `referral-invite.ts` 的 8a 段與對應測試。
 
+## 實作與規劃字面不同之處(後端段,2026-10-26)
+
+都不改變對外行為或裁決,只是規劃沒寫到的實作細節,列給審查與前端 session:
+
+1. **deps 多三個成員**:plan §2.3 寫 `{ sb, rateLimit, logSystemAlertOnce, read, now, limits }`;實作另加 `requireAuth`(invites
+   需登入)、`clientIp`(accept 的 per-IP 鍵,原本在 index.ts)、`gotrueTimeoutMs`(測試要能把 10 秒逾時調短)。`limits` 多
+   `accept` 一組。index.ts 匯出 `referralInviteDeps()` 給測試換掉 `sb`(造 GoTrue 失敗),正式路由用同一份。
+2. **purge 的 `issued_at` 壞值處理**:plan 寫「cast 前以 `~ '^\d{4}-\d{2}-\d{2}T'` 守住格式」;但 `2026-02-30T…` 過得了
+   regex、cast 仍會拋,整批中斷。改成內部函式 `referral_invite_issued_at(jsonb)`(regex＋`exception when others → null`),
+   壞值一律跳過——達成 plan 寫的「壞值跳過，不讓單列壞值中斷整批」。測試釘了 `garbage` 與 `2026-02-30` 兩案。
+3. **空殼判準用 `jsonb_typeof(...) = 'object'`**:plan 寫 `referral_invite is not null`;`raw_app_meta_data ? 'referral_invite'`
+   對 JSON `null` 也成立,所以三處(invites／accept／purge)都要求「是物件」。
+4. **新建路徑維持上游 E.6**(`inviteUserByEmail` → `updateUserById` 蓋章＋補償),不是 plan §2.3 條件式裡的「先 `createUser`」
+   版——R2-0 第 2 點尚無結論,條件未成立。
+5. **plan 沒寫到、實作補上的出口**:`find_auth_user_by_email` 查詢失敗 → 退 per-user 兩鍵＋503;全站窗 `limited` 另寫一筆告警
+   (kind `referral-invite-global-hour-limited`／`-day-limited`,讓營運看得到撞上限);重寄時 `updateUserById` 先失敗 →
+   退額度＋告警＋503;對帳時查詢失敗 → 告警＋503、不退不回寫(不知道寄了沒,保守不退)。
+6. **accept 的錯誤句**是後端後備文案;前端依 code 分流,實際字句以 plan §4／上游 D 為準(前端 session 實作)。
+7. **R2-3a 只做 API 版**(業主裁決,見「目前位置」),UI 步驟交前端。
+
 ## Blockers(逃生口紀錄)
 
 <!-- 三種合法分支的紀錄處:
