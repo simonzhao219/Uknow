@@ -35,9 +35,9 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 
 ## 1. 時間事實與關鍵路徑
 
-- 核對時刻：2026-10-27 02:00 台北（UTC 18:00 10/26）。業主所在時區 UTC+2（commit 時區），台北 12:00 ＝ 巴黎 06:00。
+- 核對時刻：2026-10-27 02:00 台北（UTC 18:00 10/26）。時程一律以台北時間寫。
 - main `67a27ec6`（2026-10-06）→ develop `b861133`（#398；PR #402 head `ea777f0` 待合併，本檔隨 #402 進 develop）：20 個 PR、204 commits、**5 支 migration**（`20261017000001` pg_cron＋prune_rate_limits、`000002` validate_referral_code 收權、`000003` profiles 自改收權、`000004` register_profile 列鎖、`20261025000001` find_auth_user_by_email）。R2 後端（PR #399）再加兩支（`20261025000011` purge、`000012` refund）。
-- 晉升 PR 的 journey-full 是 30–90 分鐘（最近一次 sandbox full 成功 23 分鐘，2026-10-17）；正式站部署需業主在 GitHub `production` 環境核准；migration 由 Supabase GitHub 整合在 push main 時自動套用（部署前先確認整合仍連著——repo 無紀錄）。
+- 晉升 PR 的 journey-full 是 30–90 分鐘（最近一次 sandbox full 成功 23 分鐘，2026-10-17）；正式站部署需業主在 GitHub `production` 環境核准；migration 由 Supabase GitHub 整合在 push main 時自動套用（整合是否連著：用 Supabase MCP `list_branches` 看最新 PR 有沒有自動長出 preview branch，有就是連著；2026-10-26 的 PR 有）。
 
 **關鍵路徑（串行，全部順利的估計）**
 
@@ -103,7 +103,7 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 
 **前提（業主）**：Dashboard → Project Settings → Database → Backups 確認今天有可還原的備份（或 PITR 開著），截圖回報。沒有備份不執行。
 
-**演練**：**不在 develop 上演練**（develop 的管理員、預設推薦人與測試帳號還要給窗口工項的真機驗收用）。用 Supabase MCP `create_branch` 從正式專案開一條拋棄式分支，對它跑乾跑與刪除段，確認每句 SQL 都能執行、零殘留查詢正確，然後 `delete_branch`。分支沒有資料，演練驗的是語法與權限，不是計數。
+**演練**：**不在 develop 上演練**（develop 的管理員、預設推薦人與測試帳號還要給窗口工項的真機驗收用）。用 Supabase MCP `create_branch` 從正式專案開一條拋棄式分支，對它跑乾跑與刪除段，確認每句 SQL 都能執行、零殘留查詢正確，然後 `delete_branch`。分支沒有資料，演練驗的是語法與權限，不是計數；**用同一個 `execute_sql` 呼叫跑含 `begin;`／`commit;` 的整段**，被拒或要求確認時改成單一多語句呼叫，再不行就由業主在 Dashboard SQL Editor 貼同一段。
 
 **乾跑（唯讀）**：
 
@@ -163,7 +163,7 @@ commit;
 | 環節 | 上限 | 100–500 人、部分現場的判斷 |
 |---|---|---|
 | 驗證碼信 | Supabase Auth 寄信 300 封／小時（文件值，Dashboard 現值待業主讀）；Google Workspace 2,000 封／日 | 尖峰小時 100 人註冊約 150 封（含重寄）：300／小時夠但緊，**業主在 Dashboard 調到 600／小時**；2,000／日夠（單日最多約 750 封）。relay 不必先換，備案在 checklist:330-334 |
-| `/auth/check-email` | 每 IP 10 次／5 分鐘，IP 取 `cf-connecting-ip`→`x-forwarded-for`→`unknown` 共用桶 | 現場同一 Wi-Fi 第 11 人起被 429 → **窗口 hotfix 改 60／5 分**；主 session 先在 develop 驗 Supabase edge 到底給不給 `cf-connecting-ip`（打一次 check-email、看 log），若兩個 header 都沒有就是全站共用 `unknown` 桶，必須改 |
+| `/auth/check-email` | 每 IP 10 次／5 分鐘，IP 取 `cf-connecting-ip`→`x-forwarded-for`→`unknown` 共用桶 | 現場同一 Wi-Fi 第 11 人起被 429 → **窗口 hotfix 改 60／5 分**。真實 IP 有到（develop 的 `rate_limits` 已有 `check-email:49.216.167.190` 這類列，不是 `unknown` 桶）；主 session 可用 Supabase MCP `execute_sql` 對 develop 查 `select key, count, window_start from public.rate_limits where key like 'check-email:%'` 再確認一次，不必打端點 |
 | 推薦碼驗證 | 每人 10 次／5 分、50 次／日 | 夠 |
 | 結帳頁輪詢 `/profile` | 每 5 秒一次、不收斂 | 50 人同時停在結帳頁 ＝ 10 req/s 的 6 查詢端點；可接受，不改（T1 會收斂） |
 | PayUni | 正式端點是否擋海外來源未確認；NotifyURL 必須打得到 `*.supabase.co` | 台灣真付款驗證（裁決 4）同時驗這兩點 |
@@ -177,11 +177,11 @@ commit;
 4. 訂單：`payment_orders` 每小時各狀態數；`pending` 且無 `payuni_response` 超過 20 分鐘的數；`pending` 且 `payuni_response->>'Status'='SUCCESS'` 的數（目標 0）。
 5. `system_alerts` 未解決數依 source／severity。
 6. 限流壓力：`rate_limits` 中 `key like 'check-email:%'` 且 `count >= 上限` 的列數、`check-email:unknown` 的 count。
-7. `/health` 每次都看：`ok`、`sha`、`payuniMode=production`、`defaultReferrer=ok`。
+7. `/health` 每次都看：`ok`、`sha`、`payuniMode=production`、`defaultReferrer=ok`（主 session 的容器打不到 `*.supabase.co`：由業主貼，或請執行 session 從它的容器 curl）。
 8. 客服回報分類計數：沒收到驗證碼／付了未開通／推薦碼無效／請求過於頻繁。
 9. R2 邀請：`auth.users` 中 `raw_app_meta_data ? 'referral_invite'` 的數、其中 `email_confirmed_at is null` 且 `issued_at` 超過 8 天的數（應為 0，purge 失效的訊號）、`system_alerts` 的 R2 來源（接手 R2 規劃書 R2-3b 第 12 點，該規劃書在前端合併後會刪）。
 
-**監看分工**：告警送到人（窗口工項）上去前，業主每 2 小時看 `/admin` 的系統告警與 GitHub issues；上去後由 LINE 推播。
+**監看分工**：告警送到人（窗口工項）上去前，業主每 2 小時看 `/admin` 的系統告警與 GitHub issues；上去後由 LINE 推播。主 session 在凍結期沒有 PR 事件就不會醒：10/29–31 的每 2 小時量測需要一個排程任務（Claude Code Remote `create_trigger`，cron 每 2 小時、只到 10/31）——業主醒來後裁決是否允許（列在 §8 待辦），未允許前由業主手動喚醒主 session。
 
 ## 6. 第 2 波起：維運與資安（目標 3）
 
@@ -206,7 +206,7 @@ commit;
 
 1. 回答 R2 session 卡住的問題（建議「不改」）。
 2. PR #402 轉 ready → 合併（merge commit；內含本檔、三種 session 的 prompt、CLAUDE.md／README 修訂）。
-3. 開新的主 session（Opus），貼 `dispatch-prompts.md` §A；它會自己開 R2 前端與窗口工項的執行 session。
+3. 開新的主 session（Opus），貼 `dispatch-prompts.md` §A；它會自己開 R2 前端與窗口工項的執行 session。你醒著時它每問一次裁決都會停在互動問題等你核准，上線日請保持可即時回覆。
 4. 睡。夜裡不會有任何互動問題等你；主 session 把要你決定的事列在本檔 §8 的「醒來後待辦」。
 
 **醒來後（約 10:15 起，順序照做；先看本檔 §8 最後幾列與「醒來後待辦」表）**
@@ -235,4 +235,5 @@ commit;
 | 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
 | 2 | §7 第 6–8 步（備份確認、寄信上限、模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket） | ⬜ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
-| 4 | GitHub Secrets 放 LINE token（告警送到人 PR 需要） | ⬜ |
+| 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
+| 5 | 是否允許主 session 建 10/29–31 每 2 小時的排程任務跑 §5 量測 | ⬜ |
