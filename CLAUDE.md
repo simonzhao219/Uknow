@@ -161,13 +161,8 @@ CI 會紅。**改規格書措辭導致抽取式失配也會紅**——閘門不�
   先看同一份文件其他段落、姊妹文件裡是不是還有同一個毛病(參考
   `/fix-bug` 的「同類掃描」);若因此浮現一條可複用的原則,順手寫進
   `docs/README.md` 或 friction-log,不要只留在 commit message 裡。
-- **波次與三種 session**(業主 2026-10-27):每一波更新起一個**新的主 session**
-  做規劃與監工(派工、審 PR、收裁決、rebase 解衝突、開晉升 PR),工項各開
-  **執行 session**,波結束另開**審查 session**審該波合進 main 的全部變動。
-  主 session 不跨波、不寫產品碼;當前波的事實來源在 `docs/plans/<wave>/plan.md`
-  (鷹架,審查結案後清)。細則見 `docs/README.md`〈慣例〉。
-- 記憶紀律:專案決策一律寫進 `docs/plans/`(git 是單一事實來源);
-  auto-memory 只放個人操作性學習,不放專案決策。
+- **每波三種 session**(業主 2026-10-27):新主 session 規劃監工、執行 session 施工、審查 session 審該波;主 session 不跨波、不寫產品碼;事實來源 `docs/plans/<wave>/plan.md`;細則見 `docs/README.md`〈慣例〉。
+- 記憶紀律:專案決策一律寫進 `docs/plans/`(git 是單一事實來源);auto-memory 只放個人操作性學習,不放專案決策。
 - 框架自身的摩擦(誤擋/漏網/重複糾正)記入 `docs/plans/friction-log.md`,
   每 2 個 feature 或雙週整併成框架修訂 PR。
 
