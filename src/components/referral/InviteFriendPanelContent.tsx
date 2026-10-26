@@ -54,7 +54,7 @@ export function InviteFriendPanelContent() {
     field.setSelectionRange(0, field.value.length);
   };
 
-  /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結，不含任何按鈕）。 */
+  /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結/揭露句，不含任何按鈕）。 */
   const buildCardCanvas = (): HTMLCanvasElement | null => {
     const qrCanvas = qrRef.current?.querySelector('canvas');
     if (!qrCanvas) return null;
@@ -184,7 +184,7 @@ export function InviteFriendPanelContent() {
         <Button
           tone="secondary"
           size="sm"
-          onClick={() => shareReferralInvite(code, showToast)}
+          onClick={() => shareReferralInvite(code, showToast, memberName)}
           data-testid="share-referral-button"
         >
           <Share2 className="mr-1 h-4 w-4" />

@@ -18,6 +18,7 @@ vi.mock('../../App', () => ({ UserContext: UserCtx }));
 vi.mock('../notifications/NotificationContext', () => ({ useNotification: () => ({ showToast }) }));
 vi.mock('../../utils/clipboard', () => ({ copyToClipboard: vi.fn(() => true) }));
 
+import { findForbiddenWord } from '@recruitment-copy';
 import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
 import { copyToClipboard } from '../../utils/clipboard';
 import type { MyQrTabUser } from '../../utils/myQrTabPreference';
@@ -88,5 +89,16 @@ describe('ReferralCodeWithCopy', () => {
 
     const { container } = renderCode({ referralProgramJoined: false }, 'centered');
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('ReferralCodeWithCopy 文案', () => {
+  it.each([
+    ['已加入', JOINED],
+    ['未加入', { referralProgramJoined: false, referralCode: '8048877' }],
+  ])('%s時推薦碼欄的文字與屬性都不含招募禁用字樣', (_label, user) => {
+    renderCode(user);
+    // innerHTML 連 aria-label、title 一起看：讀屏念得到的也是使用者看得到的文案。
+    expect(findForbiddenWord(document.body.innerHTML)).toBeUndefined();
   });
 });

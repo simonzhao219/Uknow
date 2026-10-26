@@ -44,6 +44,7 @@ vi.mock('./JoinReferralProgramDialog', () => ({
     ) : null,
 }));
 
+import { findForbiddenWord } from '@recruitment-copy';
 import { InviteFriendButton } from './InviteFriendButton';
 import { shareReferralInvite } from '../../utils/referralInvite';
 import type { MyQrTabUser } from '../../utils/myQrTabPreference';
@@ -164,11 +165,23 @@ describe('InviteFriendButton 已加入推薦計畫', () => {
     expect(screen.queryByTestId('join-referral-button')).toBeNull();
   });
 
-  it('按下走與我的 QR 頁同一支分享，帶自己的推薦碼', () => {
+  it('按下走與我的 QR 頁同一支分享，帶自己的推薦碼與姓名', () => {
     renderButton(JOINED);
     fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
-    expect(shareReferralInvite).toHaveBeenCalledWith('8048877', showToast);
+    // 姓名給揭露句「本邀請由 Uknow 推薦人 {名} 發送」用（手冊 4-1-2(2)）。
+    expect(shareReferralInvite).toHaveBeenCalledWith('8048877', showToast, '王小明');
     // 開了分享面板或 LINE 不等於送出了：元件自己不給任何成功提示。
     expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('InviteFriendButton 文案', () => {
+  it.each([
+    ['已加入', JOINED],
+    ['未加入', { referralProgramJoined: false, referralCode: '8048877' }],
+  ])('%s時按鈕的文字與屬性都不含招募禁用字樣', (_label, user) => {
+    renderButton(user);
+    // innerHTML 連 aria-label、title 一起看：讀屏念得到的也是使用者看得到的文案。
+    expect(findForbiddenWord(document.body.innerHTML)).toBeUndefined();
   });
 });

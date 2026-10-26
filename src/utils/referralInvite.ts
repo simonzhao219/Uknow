@@ -1,7 +1,7 @@
 // 邀請分享 + 推薦碼跨步驟帶入。
 //
 // 兩件事收斂在這裡，讓「分享」與「自動帶入」只有一份實作、行為一致：
-//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息，先叫系統分享面板，用不了時
+//   1. 分享：產生一段含連結、推薦碼與推薦人揭露句的邀請訊息，先叫系統分享面板，用不了時
 //      交給所在 App（LINE 好友選擇器），再不行才複製整段訊息到剪貼簿。
 //   2. 帶入：把邀請連結上的推薦碼（?ref=）存進 localStorage，撐過
 //      註冊漏斗（/register → OTP → 完善資料頁）後在完善資料頁自動帶入並驗證。
@@ -9,6 +9,7 @@
 // 推薦碼不是機敏資料；真正的信任邊界仍在後端（/referrals/validate/:code 與
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
+import { referralDisclosureSentence } from '@recruitment-copy';
 import { detectInAppBrowser, type InAppBrowserPlatform } from './browserDetection';
 import { copyWithToast, type ShowToast } from './copyWithToast';
 import { openExternalLink } from './externalLink';
@@ -33,12 +34,13 @@ export function buildReferralLink(code: string): string {
 }
 
 /**
- * 產生分享用的邀請訊息 —— 無論原生分享或複製 fallback，內容一律同時含
- * 「連結」與「推薦碼」。連結只出現一次（分享時不再另外帶 url 欄位，避免部分
- * App 把 url 再接到訊息尾端造成重複）。
+ * 產生分享用的邀請訊息 —— 無論原生分享或複製 fallback，內容一律是「連結」、
+ * 「推薦碼」與推薦人揭露句（手冊 4-1-2(2)；句子定義在 @recruitment-copy）。揭露句
+ * 空一行自成一段，不黏成推薦碼的附註。連結只出現一次（分享時不再另外帶 url 欄位，
+ * 避免部分 App 把 url 再接到訊息尾端造成重複）。
  */
-export function buildInviteMessage(code: string): string {
-  return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
+export function buildInviteMessage(code: string, memberName?: string | null): string {
+  return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}\n\n${referralDisclosureSentence(memberName)}`;
 }
 
 /**
@@ -103,19 +105,24 @@ function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
  * 「邀請好友」——會員中心、推薦管理、我的 QR 頁都是這一支。使用者不一定透過 LINE
  * 分享（業主 2026-10-17），順位是：
  *   1. 系統分享面板（Web Share），讓使用者自己選 App 與對象——LINE 內建瀏覽器有面板時
- *      也一樣。text 帶完整邀請訊息（含連結＋推薦碼），不另外帶 url，避免部分 App 把
+ *      也一樣。text 帶完整邀請訊息（含連結、推薦碼與揭露句），不另外帶 url，避免部分 App 把
  *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消（或連點）就停在那裡，不替他
  *      改走別條路。
  *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
  *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
+ * memberName 給揭露句用，三條路送出的是同一段訊息。
  */
-export function shareReferralInvite(code: string, showToast: ShowToast): void {
+export function shareReferralInvite(
+  code: string,
+  showToast: ShowToast,
+  memberName?: string | null,
+): void {
   if (!code) {
     showToast('推薦碼不存在', 'error');
     return;
   }
 
-  const message = buildInviteMessage(code);
+  const message = buildInviteMessage(code, memberName);
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch((error: unknown) => {
       if (isShareStoppedByUser(error)) return;

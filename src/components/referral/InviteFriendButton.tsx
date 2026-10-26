@@ -76,7 +76,7 @@ export function InviteFriendButton({
         tone="secondary"
         size="sm"
         className={className}
-        onClick={() => shareReferralInvite(user.referralCode, showToast)}
+        onClick={() => shareReferralInvite(user.referralCode, showToast, user.name)}
         data-testid="invite-friend-button"
       >
         <Share2 className="h-4 w-4" aria-hidden="true" />

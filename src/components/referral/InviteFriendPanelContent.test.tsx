@@ -8,6 +8,7 @@
 //     ReferralCodeWithCopy 讀同一份，不再由呼叫端另傳一份碼。
 //   - 沒加入或沒有碼時整塊不渲染（gating 由呼叫端的分頁負責，內容自身也防守一次）。
 //   - 「分享 QR Code」與「邀請好友」同一套取消語意：分享面板按取消就停。
+//   - 「邀請好友」送出的訊息以推薦人揭露句收尾，名字取自同一份 UserContext。
 // QR 元件替身成帶顏色屬性的 canvas：不斷言像素，只斷言畫什麼、用什麼色。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -175,5 +176,49 @@ describe('InviteFriendPanelContent 分享 QR Code', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
+  });
+
+  it('不支援檔案分享而改下載時，邀請卡上畫出帶會員名的揭露句', async () => {
+    // 卡片這條路的名字由面板交給 drawInviteCard；版面另有 inviteCardImage.test.ts 管，
+    // 這裡只釘「面板有把名字交過去」。jsdom 沒有 2D context，換成只記錄字串的假 context。
+    const drawn: string[] = [];
+    const ctx = {
+      font: '',
+      fillStyle: '',
+      textAlign: 'left',
+      imageSmoothingEnabled: true,
+      fillRect: () => {},
+      drawImage: () => {},
+      fillText: (text: string) => drawn.push(text),
+      measureText: (text: string) => ({ width: text.length * 10 }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      ctx as unknown as CanvasRenderingContext2D,
+    );
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubCanvasAndShare(share);
+    Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
+    expect(share).not.toHaveBeenCalled();
+    expect(drawn).toContain('本邀請由 Uknow 推薦人 小明 發送');
+  });
+});
+
+describe('InviteFriendPanelContent 邀請好友', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'share');
+  });
+
+  it('送出的邀請訊息以「本邀請由 Uknow 推薦人 小明 發送」收尾', () => {
+    // 只在真的 navigator 上補 share（jsdom 沒有）；shareReferralInvite 立刻接 .catch，
+    // 所以替身要回 Promise。
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    renderPanel();
+    fireEvent.click(screen.getByTestId('share-referral-button'));
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(share.mock.calls[0][0].text).toMatch(/本邀請由 Uknow 推薦人 小明 發送$/);
   });
 });

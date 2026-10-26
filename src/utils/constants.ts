@@ -48,6 +48,7 @@ export const PROFILE_LOCKED_CONFIRM_TEXT = '我知道了';
 // ============================================
 
 // 服務類別清單
+// 「傳銷」是職業類別（業主 2026-10-23），不受「使用者文案一律推薦人」的用語規則約束。
 export const SERVICE_CATEGORIES = [
   '美髮',
   '美容',

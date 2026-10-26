@@ -10,6 +10,11 @@ import {
 } from './referralInvite';
 import { openExternalLink } from './externalLink';
 import { copyToClipboard } from './clipboard';
+import {
+  findForbiddenWord,
+  RECRUITMENT_FORBIDDEN_WORDS,
+  referralDisclosureSentence,
+} from '@recruitment-copy';
 
 // 分享路由的三個外部依賴替身掉：導頁（openExternalLink）、複製（copyToClipboard）、
 // 瀏覽器辨識（detectInAppBrowser）。只有「分享到哪裡」那幾條用得到。
@@ -49,7 +54,7 @@ describe('buildReferralLink', () => {
   });
 });
 
-describe('buildInviteMessage — 一律同時含「連結」與「推薦碼」', () => {
+describe('buildInviteMessage — 連結、推薦碼與推薦人揭露句', () => {
   beforeEach(() => {
     vi.stubGlobal('window', { location: { origin: 'https://test.example' } });
   });
@@ -58,21 +63,83 @@ describe('buildInviteMessage — 一律同時含「連結」與「推薦碼」',
   });
 
   it('包含邀請連結（含 ?ref）', () => {
-    expect(buildInviteMessage('abc123')).toContain('register?ref=abc123');
+    expect(buildInviteMessage('abc123', '小明')).toContain('register?ref=abc123');
   });
 
   it('包含推薦碼文字', () => {
-    expect(buildInviteMessage('abc123')).toContain('推薦碼 abc123');
+    expect(buildInviteMessage('abc123', '小明')).toContain('推薦碼 abc123');
   });
 
   it('是可閱讀的多行邀請訊息', () => {
-    expect(buildInviteMessage('abc123')).toContain('邀請你一起加入');
+    expect(buildInviteMessage('abc123', '小明')).toContain('邀請你一起加入');
   });
 
   it('連結只出現一次（避免重複）', () => {
-    const message = buildInviteMessage('abc123');
+    const message = buildInviteMessage('abc123', '小明');
     const occurrences = message.split('register?ref=abc123').length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it('既有三段逐字不變，揭露句空一行自成一段收尾', () => {
+    // 手冊 4-1-2(2)：推薦人要表明身分。揭露句接在推薦碼之後、空一行，不黏成碼的附註。
+    expect(buildInviteMessage('abc123', '小明')).toBe(
+      '邀請你一起加入 Uknow：\nhttps://test.example/register?ref=abc123\n\n推薦碼 abc123' +
+        '\n\n本邀請由 Uknow 推薦人 小明 發送',
+    );
+  });
+
+  it('沒給名字時以不帶名字的揭露句收尾，不留空白破句', () => {
+    expect(buildInviteMessage('abc123')).toMatch(/\n\n本邀請由 Uknow 推薦人發送$/);
+  });
+
+  it.each(RECRUITMENT_FORBIDDEN_WORDS)('邀請訊息不含招募禁用字樣「%s」', (word) => {
+    expect(buildInviteMessage('abc123', '小明')).not.toContain(word);
+  });
+});
+
+describe('referralDisclosureSentence', () => {
+  it('帶名字時逐字為「本邀請由 Uknow 推薦人 {名} 發送」', () => {
+    expect(referralDisclosureSentence('小明')).toBe('本邀請由 Uknow 推薦人 小明 發送');
+  });
+
+  it('名字前後的空白不帶進句子', () => {
+    expect(referralDisclosureSentence('  小明 ')).toBe('本邀請由 Uknow 推薦人 小明 發送');
+  });
+
+  it.each(['', '   ', null, undefined])('名字為 %j 時退回不帶名字的句子', (name) => {
+    expect(referralDisclosureSentence(name)).toBe('本邀請由 Uknow 推薦人發送');
+  });
+});
+
+describe('RECRUITMENT_FORBIDDEN_WORDS', () => {
+  it('恰為手冊對應詞十二個加用語裁決三個，共十五個字樣', () => {
+    expect([...RECRUITMENT_FORBIDDEN_WORDS]).toEqual([
+      '賺',
+      '獎金',
+      '收入',
+      '投資',
+      '受僱',
+      '工作',
+      '兼職',
+      '節稅',
+      '僱傭',
+      '合夥',
+      '獨家',
+      '特許',
+      '傳銷',
+      '直銷',
+      '下線',
+    ]);
+  });
+});
+
+describe('findForbiddenWord', () => {
+  it('文字含禁用字樣時回傳命中的那一個', () => {
+    expect(findForbiddenWord('邀請你一起來兼職')).toBe('兼職');
+  });
+
+  it('沒有命中時回傳 undefined', () => {
+    expect(findForbiddenWord('本邀請由 Uknow 推薦人 小明 發送')).toBeUndefined();
   });
 });
 
@@ -146,7 +213,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
   function stubEnv(share?: (data: ShareData) => Promise<void>) {
     vi.stubGlobal('window', { location: { origin: 'https://test.example' } });
     vi.stubGlobal('navigator', share ? { share } : {});
-    message = buildInviteMessage('abc123');
+    message = buildInviteMessage('abc123', '小明');
     lineUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
   }
 
@@ -168,10 +235,17 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
   it('有系統分享面板就先叫面板，訊息含連結與推薦碼', () => {
     const share = vi.fn().mockResolvedValue(undefined);
     stubEnv(share);
-    shareReferralInvite('abc123', vi.fn());
+    shareReferralInvite('abc123', vi.fn(), '小明');
     expect(share).toHaveBeenCalledWith({ title: 'Uknow 專業服務平台', text: message });
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).not.toHaveBeenCalled();
+  });
+
+  it('系統分享面板收到的訊息以推薦人揭露句收尾', () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubEnv(share);
+    shareReferralInvite('abc123', vi.fn(), '小明');
+    expect(share.mock.calls[0][0].text).toMatch(/\n\n本邀請由 Uknow 推薦人 小明 發送$/);
   });
 
   it('在 LINE 內建瀏覽器裡也先叫系統分享面板，讓使用者自己選 App', () => {
@@ -179,7 +253,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     stubEnv(share);
     browser.isInAppBrowser = true;
     browser.platform = 'line';
-    shareReferralInvite('abc123', vi.fn());
+    shareReferralInvite('abc123', vi.fn(), '小明');
     expect(share).toHaveBeenCalledTimes(1);
     expect(openExternalLink).not.toHaveBeenCalled();
   });
@@ -189,7 +263,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     browser.isInAppBrowser = true;
     browser.platform = 'line';
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).not.toHaveBeenCalled();
@@ -203,7 +277,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     browser.isInAppBrowser = true;
     browser.platform = 'line';
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).not.toHaveBeenCalled();
@@ -214,7 +288,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     // 上一條在 LINE 內：那裡本來就不走複製，只有「不導頁」咬得到。這條守複製那一側。
     stubEnv(rejectWith('InvalidStateError'));
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(copyToClipboard).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
@@ -225,7 +299,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     browser.isInAppBrowser = true;
     browser.platform = 'line';
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
     // 開了 LINE 不等於送出了：不給任何成功提示。
@@ -236,7 +310,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     stubEnv();
     browser.isInAppBrowser = true;
     browser.platform = 'line';
-    shareReferralInvite('abc123', vi.fn());
+    shareReferralInvite('abc123', vi.fn(), '小明');
     expect(openExternalLink).toHaveBeenCalledWith(lineUrl);
     expect(copyToClipboard).not.toHaveBeenCalled();
   });
@@ -246,7 +320,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     browser.isInAppBrowser = true;
     browser.platform = 'facebook';
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).toHaveBeenCalledWith(message);
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
@@ -255,7 +329,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
   it('分享面板出錯且不在可直接分享的 App 裡時，退回複製', async () => {
     stubEnv(rejectWith('NotAllowedError'));
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(openExternalLink).not.toHaveBeenCalled();
     expect(copyToClipboard).toHaveBeenCalledWith(message);
@@ -271,7 +345,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
       throw new Error('navigation blocked');
     });
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     expect(copyToClipboard).toHaveBeenCalledWith(message);
     expect(showToast).toHaveBeenCalledWith('邀請訊息已複製到剪貼簿！', 'success');
   });
@@ -282,7 +356,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     stubEnv();
     vi.mocked(copyToClipboard).mockReturnValueOnce(false);
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     expect(showToast).toHaveBeenCalledWith(
       '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
       'error',
@@ -293,7 +367,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     stubEnv(rejectWith('NotAllowedError'));
     vi.mocked(copyToClipboard).mockReturnValueOnce(false);
     const showToast = vi.fn();
-    shareReferralInvite('abc123', showToast);
+    shareReferralInvite('abc123', showToast, '小明');
     await settle();
     expect(showToast).toHaveBeenCalledWith(
       '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
@@ -305,7 +379,7 @@ describe('shareReferralInvite — 先系統分享面板，再所在 App，最後
     const share = vi.fn().mockResolvedValue(undefined);
     stubEnv(share);
     const showToast = vi.fn();
-    shareReferralInvite('', showToast);
+    shareReferralInvite('', showToast, '小明');
     expect(share).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith('推薦碼不存在', 'error');
   });
