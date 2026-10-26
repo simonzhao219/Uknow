@@ -534,8 +534,8 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   與聯絡＝客服信箱 `OFFICIAL_EMAIL`，LEG-04）→ 頁尾連結服務條款與事業手冊頁（既有公開路由）。
 - 排版：側邊 padding ≤ 24px（375px 正文 ≥ 327px）、揭露句與告知段 ≥ 14px、對比 ≥ 4.5:1、長段靠左；不用現有模板的 #c0c0c8 類淡灰
   頁尾（UX-11）。
-- 禁用字樣常數陣列 `RECRUITMENT_FORBIDDEN_WORDS`（賺、獎金、收入、投資、受僱、工作、兼職、節稅＋用語裁決的傳銷、直銷、下線；由 R1a-3 建在
-  `supabase/functions/_shared/recruitment-copy.ts`，前端經 vite alias 讀、Deno 直接 import，與 ui-ux §13 第 5 條同源）：模板全文不得出現；`POST /referrals/invites`
+- 禁用字樣常數陣列 `RECRUITMENT_FORBIDDEN_WORDS`（賺、獎金、收入、投資、受僱、工作、兼職、節稅＋用語裁決的傳銷、直銷、下線＋手冊 4-1-2(8) 的僱傭、合夥、獨家、特許，共十五詞（業主 2026-10-26）；由 R1a-3（#394）建在
+  `supabase/functions/_shared/recruitment-copy.ts`，前端經 vite alias 讀、Deno 直接 import，與 ui-ux §13 第 5 條同源；同檔匯出 `findForbiddenWord(text)`，後端姓名檢查直接用）：模板全文不得出現；`POST /referrals/invites`
   送出前以同一陣列檢查推薦人姓名，命中 400 `restricted` 並寫 `logSystemAlertOnce`（LEG-06）。
 - **不用** `{{ .ConfirmationURL }}`／`{{ .TokenHash }}`／`{{ .RedirectTo }}`／`{{ .SiteURL }}`（R2 分支）：連結由後端以 `FRONTEND_URL`
   組好放進 metadata，避開 Site URL 與允許清單設定、避開「退回 Site URL 丟 query」、避開預掃消耗 token；GoTrue 自己產的一次性
@@ -1202,6 +1202,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | Plan Mode | 寄信失敗告警 | 待開工 | §2.1 | `fix/*` | Sonnet | T1 後 | 無可見變化 |
 | Plan Mode | `/auth/register` 停權檢查 | 待開工 | §2.1、§2.5 | `fix/*` | Sonnet | — | 無可見變化 |
 | `/fix-bug` | repair 閘門對預設推薦人首購恆假 | 待開工 | §6.1 (d′)、§4.2 第 2 項 | `fix/*`，動發獎相鄰函式 | Opus | — | 無可見變化；孤兒獎勵可被修補 |
+| Plan Mode | PayUni 查詢層非 SUCCESS 不記錄不告警、4 天後靜默 expired（issue #395） | 待開工，排 R2 之後 | 查詢層非 SUCCESS 時 `logSystemAlertOnce` 帶回 PayUni `Status`／`Message`；標 `expired` 前先告警；sandbox 實打一輪確認欄位名（#390 同類掃描發現，業主 2026-10-26 裁決） | `fix/*`，動金流相鄰 | Opus | — | 無可見變化；卡單不再靜默過期 |
 | 第二期（issue） | 簡訊通道、LINE Login、個別化 og、地圖、對帳排程、admin 漏斗檢視、手動調整（若 Q4-2 不納入）、Email 可改、服務據點（L1 第三步）、`ErrorBoundary`、5c 文案 sweep | — | — | — | — | — | — |
 
 **在途工項上限 3**。建議起手（2026-10-21）：check-email 修正與 R1a-3 兩個小 PR 立即出 → S7a ∥ R2（先 R2-0 spike，規劃與律師確認
@@ -1430,6 +1431,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 2026-10-21 | R2 六視角審查（系統／架構／UI-UX／需求／法遵對照／事實核對；P0／P1 各兩位反駁者） | P0×0；P1 40 條：23 條完成雙人驗證（17 條成立、6 條設計面推翻或分歧），17 條因模型額度用盡未驗證；主 session 逐條裁定後**全部 P1 與多數 P2 回填** §2.3A，處置表見 §16 | 審查順帶發現既有 bug：`/auth/check-email` 只比對最新 50 位使用者（GoTrue 忽略 `search=`），立即 `/fix-bug`；`App.tsx` recovery 後不豁免 `/auth/reset-password` 也是既有缺口，隨 R2-2 一行修 |
 | 2026-10-25 | 第 1 波開工方式（AskUserQuestion 兩題） | check-email 修正、R1a-3 小 PR、R2 規劃三件都**另開 session**，由監工 session 給完整 prompt；本 session 不建也不推其他分支 | 四段 prompt 落檔 `dispatch-prompts.md`（A check-email `/fix-bug`、B R1a-3 Plan Mode、C `/plan-feature referral-email-invite`、D R2-0 spike），§8.1 四列回填分支名與 prompt 位置；`find_auth_user_by_email` 的完整簽名（含 R2 要的欄位）由 check-email 修正一次做足，R2 不重複建 |
 | 2026-10-26 | R2 子規劃（PR #393）審查後 A～T 二十題裁決（AskUserQuestion 三輪＋監工代裁九題） | 見 §2.3A K 末條；裁決全文在 PR #393 留言 | 總綱 E／D／F／G／H／J／§8.1／§8.2／§16 回填；規劃書附錄 B 13 條總綱修正同批（E.7 先例行號、E.5 三態、E.6 uuid、契約 4 引用 `:138`、空殼判準、audit 謂詞、H 常數全環境、D `dashboard_smoke` 兩條、§8.2 `MyQrPage`、E.1 `FRONTEND_URL`、§16 殘留註記；dispatch-prompts B／C 的 `@backfill-cases` 改 `@name-cases`） |
+| 2026-10-26 | check-email 修正（#390）與 R1a-3（#394）監工獨立審查後裁決（AskUserQuestion 四題）＋ R1a-3 施工中另裁 | #394：裸連結與長按 QR 不附揭露句**接受**（完善資料頁推薦人姓名承擔）；禁用字樣加僱傭、合夥、獨家、特許；施工中另裁無名句「本邀請由 Uknow 推薦人發送」、揭露句 22px、不縮字級直接換行、揭露句前空一行、刊登方案頁第 9／29 行不改、分支沿用 session 分支。#390：PayUni 查詢層債開 issue #395、排 Plan Mode 小 PR（Opus）於 R2 之後。兩 PR 真機項合併後在 develop 一次驗 | §8.1 加 PayUni 列；§2.3A F 陣列改十五詞；#390 P1（503 無 log）與 #394 P2 留言在各 PR；dispatch-prompts B 標已取代 |
 
 ## 14. 法務文件對齊（文件已律師定案、不可改；本節是產品與規格書怎麼對齊，2026-10-19 業主裁決）
 

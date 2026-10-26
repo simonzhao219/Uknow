@@ -114,6 +114,8 @@ A、B 立即並行，C 隨後，D 可與 C 並行。
 
 ## B. Plan Mode 小 PR：R1a-3 揭露句與用語
 
+> **已開工（PR #394，session B）。業主施工中另裁取代下列細節**：揭露句 22px（非 18px）；說明行、揭露句與抬頭名字一律換行、不縮字級（非「先縮到 12px」）；揭露句前空一行；無名退化句已裁採用；禁用字樣加僱傭、合夥、獨家、特許共十五詞，出處註解為 4-1-1(4)、4-1-2(5)–(8)；多匯出 `findForbiddenWord`；分支沿用 session 分支。本段其餘仍是規劃依據，合併後刪本段。
+
 ```text
 Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀請訊息與邀請卡加「本邀請由 Uknow 推薦人 {名} 發送」、刊登方案頁「下線」改寫、禁用字樣常數與測試
 
@@ -227,7 +229,7 @@ Plan Mode 小 PR：推薦邀請的揭露句與用語（總綱 R1a-3）——邀�
      - 旗標與 secret 的環境落點（plan.md 逐一定案）：e2e 的 dev server（`ci.yml` 與 `e2e/conftest.py` 裡起 `npm run dev` 的地方）怎麼帶 `VITE_REFERRAL_EMAIL_INVITE`，
        或旗標缺省時表單是否仍渲染；journey 的 `supabase secrets set` 段加 `REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED=true`，`e2e/journey/conftest.py` 的前端 env 加旗標；
        hosted 環境（Cloudflare Pages 建置變數、Supabase secrets）由誰在 R2-3 設。沒定這段，R2-2 的 e2e 會看不到表單、R2-3 的 journey 會拿到 503 `disabled`。
-     - `_shared/recruitment-copy.ts` 的三個消費點：`POST /referrals/invites` 對推薦人姓名的檢查；模板測試以 `referralDisclosureSentence('{{ .Data.referral_invite_name }}')` 比對並斷言
+     - `_shared/recruitment-copy.ts` 的三個消費點：`POST /referrals/invites` 對推薦人姓名的檢查（直接用 #394 匯出的 `findForbiddenWord`）；模板測試以 `referralDisclosureSentence('{{ .Data.referral_invite_name }}')` 比對並斷言
        整份模板不含 `RECRUITMENT_FORBIDDEN_WORDS` 任一詞；InviteCard 與受理／錯誤文案的 render 測試。
      - 讀 `docs/multi-step-flow-recovery.md`，逐條寫四契約怎麼滿足（尤其契約 2 可重入入口、契約 4 零寄信），並決定 invite 狀態推導與 `routeAfterVerifiedSession`
        放進 `src/utils/registrationFlow.ts` 還是獨立檔，附理由。
