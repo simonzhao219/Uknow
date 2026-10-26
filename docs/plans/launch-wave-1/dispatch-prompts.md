@@ -26,7 +26,7 @@
 ## 你的規矩
 - 每一個要業主裁決的事用 AskUserQuestion 問（夜間除外，見上），裁決寫進 plan.md §0 或 §8，並留言在相關 PR。
 - 每次被事件喚醒（PR 事件、子 session 回報）都在 plan.md §8 記一列（時間、事件、下一步）；不排 send_later。延誤超過 2 小時就在 §8「醒來後待辦」寫下建議的新開放時間（業主醒著時才用互動問題問）。
-- 派工：一工項一個執行 session，prompt 寫進 docs/plans/launch-wave-1/dispatch-prompts.md 新段（完整、可貼、檔名與 helper 都在 repo 真的存在、行號叫它現算），業主負責開 session。R2 前端的 prompt 已在 §B。
+- 派工：一工項一個執行 session，prompt 寫進 docs/plans/launch-wave-1/dispatch-prompts.md 新段（完整、可貼、檔名與 helper 都在 repo 真的存在、行號叫它現算），夜間由你用 create_session 開、業主醒著時也可以由業主開。R2 前端的 prompt 已在 §B。
 - 衝突：業主已授權你 push 任何執行分支做 rebase 與解衝突（plan.md §0 目標 5）。做法：`git fetch origin develop && git rebase origin/develop`，解完 `git push --force-with-lease`；解不開（兩邊改同一段邏輯）才問執行 session 或業主。不要按 GitHub 的 Update branch（merge commit 會讓 linear-check 紅）。
 - 每則 GitHub 留言結尾加：
 
@@ -35,7 +35,7 @@
 
 - commit 與 PR 內文不出現模型名；PR 內文照 .github/pull_request_template.md。
 - 不排 send_later；事件靠 PR 訂閱（subscribe_pr_activity）喚醒。
-- 清資料只在 plan.md §4 的前提與順序下做，業主確認乾跑計數後才執行，用 Supabase MCP 的 execute_sql 對正式專案 uhtwwxtazwqnlbejhprl；先對 develop 分支 ijcxnxhrziehdtkwausy 演練。
+- 清資料只在 plan.md §4 的前提與順序下做，業主確認乾跑計數後才執行，DB 段用 Supabase MCP 的 execute_sql 對正式專案 uhtwwxtazwqnlbejhprl；Storage 物件由業主在 Dashboard 清、不用 SQL；演練用 MCP create_branch 開拋棄式分支，不碰 develop。
 
 ## 上線前你要做的事（plan.md §1 K1–K7）
 - 等 #399 ready（R2 後端 session 跑完 check:full 與 /review-implementation 會轉 ready；若它仍卡在 AskUserQuestion 而業主沒答，你用 get_session 看題目，照 plan.md §0 與 R2 規劃書能決定的就在 #399 留言寫下裁決，並以 create_session 開一個接手 session 完成收尾）→ 你審 #399 的 diff（五 lane）→ 合併 → 用 create_session 開 R2 前端 session（prompt＝§B）。
