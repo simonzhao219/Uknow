@@ -6,6 +6,7 @@
 // 註冊處組 deps 傳進來。
 // ============================================================
 
+import type { Context } from 'npm:hono@4';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export type InviteEligibility =
@@ -45,4 +46,38 @@ export async function checkInviteEligibility(
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
+}
+
+// ---- 紅燈 stub（循環 4a）：只求型別過 ----
+
+export interface RateWindow {
+  max: number;
+  windowSeconds: number;
+}
+
+export interface ReferralInviteLimits {
+  perUserHour: RateWindow;
+  perUserDay: RateWindow;
+}
+
+export interface ReferralInviteDeps {
+  sb: () => SupabaseClient;
+  requireAuth: (c: Context) => Promise<{ id: string; email?: string } | null>;
+  rateLimit: (key: string, max: number, windowSeconds: number) => Promise<boolean>;
+  logSystemAlertOnce: (
+    source: string,
+    dedupe: Record<string, string>,
+    context: Record<string, unknown>,
+    message?: string,
+    severity?: 'info' | 'warning' | 'error',
+  ) => Promise<void>;
+  read: (key: string) => string | undefined;
+  now: () => number;
+  limits: ReferralInviteLimits;
+}
+
+export function createReferralInviteHandlers(_deps: ReferralInviteDeps) {
+  const invites = (c: Context): Promise<Response> =>
+    Promise.resolve(c.json({ error: 'not implemented' }, 501));
+  return { invites };
 }

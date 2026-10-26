@@ -823,3 +823,31 @@ export const API_PATHS = {
   tasksCurrentMonthTop: '/tasks/current-month-top',
   tasksClaimReward: (id: string) => `/tasks/claim-reward/${id}`,
 } as const;
+
+// ------------------------------------------------------------
+// Email 邀請（R2）——POST /referrals/invites
+// 受理（含設計上不寄的分支）一律 202 同形；錯誤依 code 分流（前端 extractApiErrorCode）。
+// rate_limited 拆成 hour／day 兩個 code（ApiError 只帶 code，帶不到 scope，裁決 G）。
+// ------------------------------------------------------------
+
+export const REFERRAL_INVITE_ERROR_CODES = [
+  'invalid_email',
+  'self_invite',
+  'consent_required',
+  'not_joined',
+  'restricted',
+  'rate_limited_hour',
+  'rate_limited_day',
+  'unavailable',
+  'disabled',
+] as const;
+export type ReferralInviteErrorCode = (typeof REFERRAL_INVITE_ERROR_CODES)[number];
+
+export const ReferralInviteAcceptedSchema = obj({ accepted: bool() });
+export type ReferralInviteAccepted = Infer<typeof ReferralInviteAcceptedSchema>;
+
+export const ReferralInviteErrorResponseSchema = obj({
+  success: bool(),
+  error: obj({ code: literals(...REFERRAL_INVITE_ERROR_CODES), message: str() }),
+});
+export type ReferralInviteErrorResponse = Infer<typeof ReferralInviteErrorResponseSchema>;

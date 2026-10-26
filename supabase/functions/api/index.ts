@@ -19,6 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
+import { createReferralInviteHandlers } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -271,6 +272,12 @@ export const REFERRAL_VALIDATE_RATE_MAX = 10;
 export const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 5 * 60;
 export const REFERRAL_VALIDATE_DAILY_MAX = 50;
 export const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+// /referrals/invites（Email 邀請）：per 推薦人雙窗，依序計數——短窗擋下不扣日窗、
+// 日窗擋下退回短窗那一格（業主 Q2-14／裁決 A）。fail-open 同上。
+export const REFERRAL_INVITE_RATE_MAX = 5;
+export const REFERRAL_INVITE_RATE_WINDOW_SECONDS = 1 * 60 * 60;
+export const REFERRAL_INVITE_DAILY_MAX = 20;
+export const REFERRAL_INVITE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
 
 // 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
 // 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
@@ -1032,6 +1039,30 @@ app.post('/referrals/join-program', async (c) => {
     data: { referralCode: code?.code ?? '', joinedAt, message: '成功加入推薦計畫！' },
   });
 });
+
+// ============================================================
+// POST /referrals/invites（Email 邀請）——處理函式在 referral-invite.ts；
+// 依賴（含限流常數）在這裡組一次注入，該模組不反向 import 本檔。
+// ============================================================
+const referralInviteHandlers = createReferralInviteHandlers({
+  sb,
+  requireAuth,
+  rateLimit,
+  logSystemAlertOnce,
+  read: (key) => Deno.env.get(key),
+  now: () => Date.now(),
+  limits: {
+    perUserHour: {
+      max: REFERRAL_INVITE_RATE_MAX,
+      windowSeconds: REFERRAL_INVITE_RATE_WINDOW_SECONDS,
+    },
+    perUserDay: {
+      max: REFERRAL_INVITE_DAILY_MAX,
+      windowSeconds: REFERRAL_INVITE_DAILY_WINDOW_SECONDS,
+    },
+  },
+});
+app.post('/referrals/invites', referralInviteHandlers.invites);
 
 // ============================================================
 // /admin/** 統一守門 middleware：requireAuth + profiles.is_admin。
