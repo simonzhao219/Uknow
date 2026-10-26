@@ -174,6 +174,13 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/api/index.ts",
         r"MEMBER_VERIFY_RATE_MAX = (\d+);",
     ),
+    # Email 邀請（R2）：效期在 _shared（前端也讀），寫成「天 * 24 * 60 * 60」乘式。
+    ConstantRule(
+        "邀請連結效期（天）",
+        r"邀請連結 (\d+) 天內有效",
+        "supabase/functions/_shared/referral-invite-payload.ts",
+        r"REFERRAL_INVITE_TOKEN_TTL_SECONDS = (\d+) \* 24 \* 60 \* 60;",
+    ),
 )
 
 
@@ -464,6 +471,15 @@ def _only(rules: tuple[ConstantRule, ...], spec: str, sources: dict[str, str]) -
     return constant_violations(spec, sources, rules)
 
 
+def _rule(label: str) -> ConstantRule:
+    """取 CONSTANTS 裡的實際規則——案例驗的是正式抽取式，不是另寫一份。"""
+    return next(r for r in CONSTANTS if r.label == label)
+
+
+_INVITE_TTL_SPEC = "邀請連結 7 天內有效，過期與否只由伺服器判斷。\n"
+_INVITE_PAYLOAD = "supabase/functions/_shared/referral-invite-payload.ts"
+
+
 CASES: list[tuple[str, object, int]] = [
     # --- 常數 ---
     ("常數一致 → 通過", lambda: _only((_MIN_RULE,), _SPEC_OK, _SOURCES_OK), 0),
@@ -492,6 +508,24 @@ CASES: list[tuple[str, object, int]] = [
         "規格書內同一常數自相矛盾 → 違規",
         lambda: _only(
             (_MIN_RULE,), _SPEC_OK + "\n又一次：金額 ≥ **2,000**\n", _SOURCES_OK
+        ),
+        1,
+    ),
+    (
+        "效期常數在 _shared 以天的乘式寫 → 與規格書的天數對上",
+        lambda: _only(
+            (_rule("邀請連結效期（天）"),),
+            _INVITE_TTL_SPEC,
+            {_INVITE_PAYLOAD: "export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;\n"},
+        ),
+        0,
+    ),
+    (
+        "效期常數改寫成秒數 → 抽不到即違規（不可靜默略過）",
+        lambda: _only(
+            (_rule("邀請連結效期（天）"),),
+            _INVITE_TTL_SPEC,
+            {_INVITE_PAYLOAD: "export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 604800;\n"},
         ),
         1,
     ),
@@ -591,6 +625,7 @@ def _load_sources() -> dict[str, str]:
     for pattern in ("supabase/migrations/*.sql", "src/utils/constants.ts",
                     "src/utils/serviceCategories.ts",
                     "supabase/functions/_shared/api-contract.ts",
+                    "supabase/functions/_shared/referral-invite-payload.ts",
                     "supabase/functions/api/index.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")

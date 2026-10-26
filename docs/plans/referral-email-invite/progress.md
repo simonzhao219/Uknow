@@ -6,7 +6,7 @@
      ——寫給「完全沒有對話記憶的下一個 session」看,不要寫只有當下
      session 才懂的簡稱。 -->
 
-分支:`feature/referral-email-invite`
+分支:`claude/referral-email-invite-vygu7r`(後端段;2026-10-26 業主選定:web session 平台指定分支,不另切 `feature/*`)
 規劃書:`./plan.md`(v2,2026-10-26 依業主裁決 A～T 修訂)|審查:`./review.md`(P0 0;處置:修訂後通過)
 上游:總綱 `docs/plans/platform-growth-and-trust/plan.md` §2.3A(commit `e8c6080`)
 
@@ -24,7 +24,7 @@
 | # | 階段 | 狀態 | 待 R2-0 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|---|
 | 0 | R2-0 spike(外部,結論貼入下方「R2-0 結論」) | ⬜ 未開始 | — | — | — |
-| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ⬜ 未開始 | — | | |
+| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `52890f3` | (本 commit) |
 | 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ⬜ 未開始 | 第 6 點 | | |
 | 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ⬜ 未開始 | — | | |
 | 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ⬜ 未開始 | — | | |
@@ -49,8 +49,14 @@
 
 ## 目前位置與下一步
 
-規劃 v2 已依業主裁決修訂並推上 PR #393,等業主合併後親自打 `/tdd-implement referral-email-invite`。
-開工從循環 1 起,依 §5 順序推進(6、10 可插空;7 等 1)。
+**分工(業主 2026-10-26 裁決)**:本 session(Opus)做後端循環 1–5+R2-3a,開 PR 到 develop;合併後另開
+Sonnet session 打 `/tdd-implement referral-email-invite`,從本表接著做前端循環 6–11 與收尾(含清理規劃檔)。
+
+**DB 測試的紅綠證據(業主 2026-10-26 裁決)**:web 容器起不了本機 Supabase(ghcr／ECR 映像 blob 被網路政策擋、
+Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests 軌為證:紅燈 commit 單獨推一次、
+看 api-tests 是斷言紅;實作完推綠燈 commit、看轉綠。`*.unit.test.ts` 與 `deno task check` 照常本機跑。
+
+目前:循環 1 綠,下一步循環 2(兩支 migration)。
 
 ## Blockers(逃生口紀錄)
 
