@@ -181,6 +181,12 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/_shared/referral-invite-payload.ts",
         r"REFERRAL_INVITE_TOKEN_TTL_SECONDS = (\d+) \* 24 \* 60 \* 60;",
     ),
+    ConstantRule(
+        "邀請空殼清除天數",
+        r"(\d+) 天內未透過連結設定密碼即刪除",
+        "supabase/migrations/*.sql",
+        r"purge_stale_referral_invites\(\s*p_older_than_days int default (\d+)",
+    ),
 )
 
 

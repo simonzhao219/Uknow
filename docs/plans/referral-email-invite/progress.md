@@ -24,8 +24,8 @@
 | # | 階段 | 狀態 | 待 R2-0 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|---|
 | 0 | R2-0 spike(外部,結論貼入下方「R2-0 結論」) | ⬜ 未開始 | — | — | — |
-| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `52890f3` | (本 commit) |
-| 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ⬜ 未開始 | 第 6 點 | | |
+| 1 | token 模組+`_shared/referral-invite-payload.ts`+spec-drift TTL 規則 | ✅ 綠 | — | `52890f3` | `b19cf57` |
+| 2 | 兩支 migration(`20261025000011` purge+audit 清理、`20261025000012` refund)+spec-drift purge 規則 | ✅ 綠(以 CI 為證) | 第 6 點 | `42f29fe`(CI api-tests 12 條斷言紅) | (本 commit) |
 | 3 | `api/rate-limit-strict.ts`(三態、refund)+資格 helper | ⬜ 未開始 | — | | |
 | 4a | invites 前半(disabled、資格、body、姓名、per-user 兩窗、401)+invites 契約段+spec-drift 4 條 | ⬜ 未開始 | — | | |
 | 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ⬜ 未開始 | 第 1、2、7、9 點 | | |
@@ -56,7 +56,7 @@ Sonnet session 打 `/tdd-implement referral-email-invite`,從本表接著做前�
 Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests 軌為證:紅燈 commit 單獨推一次、
 看 api-tests 是斷言紅;實作完推綠燈 commit、看轉綠。`*.unit.test.ts` 與 `deno task check` 照常本機跑。
 
-目前:循環 1 綠,下一步循環 2(兩支 migration)。
+目前:循環 2 綠燈 commit 已推,等 CI 確認;下一步循環 3(`rate-limit-strict`+資格 helper)。
 
 ## Blockers(逃生口紀錄)
 
@@ -69,3 +69,8 @@ Docker Hub 429),所以 `api/*.test.ts`(需 DB／GoTrue)的紅綠以 CI api-tests
 
 <!-- 被 hook 誤擋?規則互相矛盾?同一糾正重複兩次?
      一句話記這裡,整併時搬去 docs/plans/friction-log.md。 -->
+
+- 2026-10-26 DB 測試紅燈需要「stub migration」:函式不存在時 `has_function_privilege` 直接拋錯(不是斷言紅),所以紅燈 commit
+  帶只有簽章的 stub、綠燈再改寫同一支 migration。代價:Supabase Preview 分支只套用**新**的 migration 檔,本 PR 的 preview DB
+  會停在 stub 版(bot 留言明寫);CI 與合併後的 develop 不受影響。
+- 2026-10-26 `tdd-test-guard` 擋所有 `*.test.ts` 路徑(含 scratchpad 草稿),紅燈期間草擬下一循環的測試要先存成別的副檔名。

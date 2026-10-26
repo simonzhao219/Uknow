@@ -70,6 +70,9 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
 | `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；目前由 `/auth/check-email` 呼叫） |
 | `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
+| `refund_rate_limit` | 把 bump 過的計數原子退一格（`count > 0` 守衛；Email 邀請沒寄出時退推薦人額度；只給 service_role） |
+| `purge_stale_referral_invites` | 刪除 Email 邀請建立、逾期未驗證的空殼帳號（pg_cron 排程 `purge-stale-referral-invites`；帶 `p_email` 給客服立即刪除；只給 service_role） |
+| `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
 | `effective_registration_step` | 註冊進度即時推導 |
 | `tw_day` / `tw_start_of_day` / `tw_end_of_day` | 台灣時區日界（月份 key、單日限額都靠它） |

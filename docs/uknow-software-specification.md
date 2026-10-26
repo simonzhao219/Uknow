@@ -280,6 +280,10 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 - **Email 邀請**：信中「接受邀請」連結帶後端簽章的 token（HMAC-SHA256，專用
   secret `REFERRAL_INVITE_SECRET`，內容只有對方 email、推薦碼與到期時間，不含
   推薦人 id）。邀請連結 7 天內有效，過期與否只由伺服器判斷。
+  邀請建立的帳號在完成 email 驗證前是「空殼」（`auth.users` 一列＋`profiles` 空列，
+  `app_metadata.referral_invite` 蓋章）：7 天內未透過連結設定密碼即刪除該次邀請建立的帳號
+  （每日排程 `purge-stale-referral-invites`；計齡以寄出時的 `issued_at` 為準，點過連結不延長；
+  GoTrue 稽核列同交易刪除）。客服收到個資刪除請求時，以 service role 帶 `p_email` 立即刪除。
 - 第一個發出的碼 `8048876` 同時是 §7.4 預設推薦人的指定碼。
 - **比對規則**：碼不分全形半形、不分大小寫——`８０４８８７６` 與 `8048876` 是
   同一個碼（舊格式碼的全形英文同理）。所有輸入點一律先正規化
@@ -290,7 +294,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 〔實作〕`20260914000001_referral_code_numeric_sequence.sql`、`generate_referral_code()`、
 `src/utils/referralCode.ts` 的 `normalizeReferralCode()`、`src/utils/myQrTabPreference.ts` 的
 `myQrTabsForUser()`（出示與分享的閘門）；Email 邀請：`supabase/functions/api/referral-invite-token.ts`（簽／驗）、
-`supabase/functions/_shared/referral-invite-payload.ts`（payload 形狀、前端解碼、效期常數）
+`supabase/functions/_shared/referral-invite-payload.ts`（payload 形狀、前端解碼、效期常數）、
+`20261025000011_purge_stale_referral_invites.sql`（空殼清除與稽核列清理）
 
 ### 7.2 組織圖
 
