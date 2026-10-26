@@ -325,8 +325,26 @@ jobs:
 
       # 排除只有 GUI/可觀測性用途的服務，省下約 30s 的映像拉取與啟動。
       # 測試需要的是 db / auth / rest / storage。
+      # 映像從 registry 匿名拉取，共用 runner 的 IP 會撞上限流（ECR `Data limit
+      # exceeded`、ghcr `toomanyrequests`）——2026-10-26 一天四次（PR #399），每次都
+      # 在任何測試跑之前整步失敗。啟動冪等，比照規則 12 退避重試。
       - name: 啟動本地 Supabase
-        run: supabase start -x studio,logflare,vector,supavisor
+        run: |
+          set -uo pipefail
+          max_attempts=4
+          for attempt in $(seq 1 "$max_attempts"); do
+            if supabase start -x studio,logflare,vector,supavisor; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              wait_s=$((attempt * 30))
+              echo "::warning::第 ${attempt} 次啟動失敗，${wait_s} 秒後重試（多半是拉映像被限流）"
+              supabase stop --no-backup || true
+              sleep "$wait_s"
+            fi
+          done
+          echo "::error::本地 Supabase 連續 ${max_attempts} 次啟動失敗——看上面每一次的輸出，判斷是映像限流還是 migration 本身有問題"
+          exit 1
 
       - name: 匯出本地 Supabase 連線資訊
         run: |

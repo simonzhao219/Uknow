@@ -1,0 +1,1 @@
+{"branch": "claude/referral-email-invite-vygu7r", "ended": "2026-10-26T17:47:54+00:00", "fired": {"bash-guard/local-journey": 2}, "passed": {"bash-guard": 109, "check-output-filter": 111, "feature-plan-guard": 12, "model-effort-advisor": 6, "tdd-test-guard": 12}, "session": "2986b1d53aa9", "started": "2026-10-26T17:14:22+00:00"}
