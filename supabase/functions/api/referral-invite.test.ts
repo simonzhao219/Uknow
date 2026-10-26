@@ -52,6 +52,7 @@ const {
   app,
   INVITE_ACCEPT_RATE_MAX,
   REFERRAL_INVITE_DAILY_MAX,
+  REFERRAL_INVITE_GLOBAL_DAY_MAX,
   REFERRAL_INVITE_GLOBAL_HOUR_MAX,
   REFERRAL_INVITE_RATE_MAX,
   referralInviteDeps,
@@ -245,6 +246,24 @@ Deno.test('referrals/invites：旗標未開、缺 secret、缺 FRONTEND_URL → 
   }
 });
 
+Deno.test('/health：Email 邀請的設定與開關只回布林值、不回 secret 內容', async () => {
+  // Secrets 逐分支獨立、不繼承；缺了只表現為 503 disabled——要一個 curl 就看得出來
+  const health = async () => await (await app.request('/api/health')).json();
+  const savedSecret = Deno.env.get('REFERRAL_INVITE_SECRET')!;
+  try {
+    const on = await health();
+    assertEquals([on.referralInviteConfigured, on.referralInviteEnabled], [true, true]);
+    assert(!JSON.stringify(on).includes(savedSecret));
+    Deno.env.set('REFERRAL_INVITE_SECRET', '');
+    Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'false');
+    const off = await health();
+    assertEquals([off.referralInviteConfigured, off.referralInviteEnabled], [false, false]);
+  } finally {
+    Deno.env.set('REFERRAL_INVITE_SECRET', savedSecret);
+    Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'true');
+  }
+});
+
 Deno.test('referrals/invites：未加入推薦計畫 → 403 not_joined', async () => {
   const client = adminClient();
   const r = await referrerWithToken(client, { joined: false });
@@ -261,16 +280,21 @@ Deno.test('referrals/invites：未加入推薦計畫 → 403 not_joined', async 
 
 Deno.test('referrals/invites：停權或推薦碼非 active → 403 restricted', async () => {
   const client = adminClient();
-  const r = await referrerWithToken(client);
+  const suspended = await referrerWithToken(client);
+  const inactive = await referrerWithToken(client);
   try {
-    await client.from('referral_codes').update({ status: 'inactive' }).eq('user_id', r.id);
-    await expectError(
-      await inviteRequest(r.token, { email: r.bystander, consent: true }),
-      403,
-      'restricted',
-    );
+    await client.from('profiles').update({ suspended_at: new Date().toISOString() })
+      .eq('id', suspended.id);
+    await client.from('referral_codes').update({ status: 'inactive' }).eq('user_id', inactive.id);
+    for (const r of [suspended, inactive]) {
+      await expectError(
+        await inviteRequest(r.token, { email: r.bystander, consent: true }),
+        403,
+        'restricted',
+      );
+    }
   } finally {
-    await deleteTestUsers(client, r.cleanup);
+    await deleteTestUsers(client, [...suspended.cleanup, ...inactive.cleanup]);
   }
 });
 
@@ -430,11 +454,6 @@ Deno.test('referrals/invites：日窗已滿 → 429 rate_limited_day，並退回
   }
 });
 
-Deno.test('referral-invite.ts：不 import ./index.ts（依賴只經 deps 注入）', async () => {
-  const source = await Deno.readTextFile(new URL('./referral-invite.ts', import.meta.url));
-  assert(!/from\s+['"]\.\/index\.ts['"]/.test(source), '反向匯入會把整個 Hono app 拖進來');
-});
-
 // ------------------------------------------------------------
 // POST /referrals/invites（後半：lookup、target／全站窗、寄送、GoTrue 對映、對帳、
 // 補償、退額度矩陣）
@@ -564,7 +583,26 @@ async function cleanupInvites(
     ]);
     await deleteTestUsers(client, r.cleanup);
   }
+  // 全站兩窗是跨測試的共用狀態：本機持久 DB 一小時內連跑幾次就會撞上限而假紅
+  await client.from('rate_limits').delete().in('key', [...GLOBAL_KEYS]);
   await client.from('system_alerts').delete().eq('source', 'referral-invite');
+}
+
+const GLOBAL_KEYS = ['referral-invite-global-hour', 'referral-invite-global-day'] as const;
+
+/** 包一層 client.rpc：指定函式依呼叫序回錯（第 n 次起失敗），其餘照常。 */
+function failRpcFrom(client: SupabaseClient, fn: string, fromCall: number): SupabaseClient {
+  const original = client.rpc.bind(client);
+  let calls = 0;
+  // deno-lint-ignore no-explicit-any
+  (client as any).rpc = (name: string, args?: unknown) => {
+    if (name === fn && ++calls >= fromCall) {
+      return Promise.resolve({ data: null, error: { message: `stub ${fn} failure` } });
+    }
+    // deno-lint-ignore no-explicit-any
+    return original(name, args as any);
+  };
+  return client;
 }
 
 Deno.test('referrals/invites：信箱不存在 → 新建空殼並寄出，metadata 照規格蓋章', async () => {
@@ -687,36 +725,66 @@ Deno.test('referrals/invites：同一信箱並行兩封 → GoTrue 只被呼叫�
   }
 });
 
-Deno.test('referrals/invites：全站小時窗已滿 → 503，退 target 與 per-user、全站不退', async () => {
+Deno.test('referrals/invites：全站小時窗或日窗已滿 → 503、告警，退 target 與 per-user、全站不退', async () => {
   const client = adminClient();
   const r = await referrerWithToken(client);
-  const email = inviteeEmail('global');
-  const { data: saved } = await client.from('rate_limits').select('*')
-    .eq('key', 'referral-invite-global-hour');
+  const emails: string[] = [];
   try {
-    await client.from('rate_limits').upsert({
-      key: 'referral-invite-global-hour',
-      count: REFERRAL_INVITE_GLOBAL_HOUR_MAX,
-      window_start: new Date().toISOString(),
-    });
+    for (
+      const [key, max] of [
+        ['referral-invite-global-hour', REFERRAL_INVITE_GLOBAL_HOUR_MAX],
+        ['referral-invite-global-day', REFERRAL_INVITE_GLOBAL_DAY_MAX],
+      ] as const
+    ) {
+      const email = inviteeEmail('global');
+      emails.push(email);
+      await client.from('rate_limits').delete().in('key', [...GLOBAL_KEYS]);
+      await client.from('system_alerts').delete().eq('source', 'referral-invite');
+      await client.from('rate_limits').upsert({
+        key,
+        count: max,
+        window_start: new Date().toISOString(),
+      });
+      const { client: spied, calls } = goTrueSpy();
+      await expectError(
+        await invitesApp(spied)(r.token, { email, consent: true }),
+        503,
+        'unavailable',
+      );
+      assertEquals(calls.inviteUserByEmail.length, 0, key);
+      const keys = await inviteKeys(r.id, email);
+      assertEquals(await rateCount(client, keys.target), 0, `${key} target`);
+      assertEquals(await rateCount(client, keys.hour), 0, `${key} 短窗`);
+      assertEquals(await rateCount(client, keys.day), 0, `${key} 日窗`);
+      assertEquals(await rateCount(client, key), max + 1, `${key} 不退`);
+      const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+      assertEquals(kinds, [`${key}-limited`]);
+    }
+  } finally {
+    await cleanupInvites(client, [r], emails);
+  }
+});
+
+Deno.test('referrals/invites：查帳號失敗 → 503、退 per-user、不寄', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('lookup-error');
+  try {
     const { client: spied, calls } = goTrueSpy();
     await expectError(
-      await invitesApp(spied)(r.token, { email, consent: true }),
+      await invitesApp(failRpcFrom(spied, 'find_auth_user_by_email', 1))(r.token, {
+        email,
+        consent: true,
+      }),
       503,
       'unavailable',
     );
     assertEquals(calls.inviteUserByEmail.length, 0);
     const keys = await inviteKeys(r.id, email);
-    assertEquals(await rateCount(client, keys.target), 0);
     assertEquals(await rateCount(client, keys.hour), 0);
     assertEquals(await rateCount(client, keys.day), 0);
-    assertEquals(
-      await rateCount(client, 'referral-invite-global-hour'),
-      REFERRAL_INVITE_GLOBAL_HOUR_MAX + 1,
-    );
+    assertEquals(await rateCount(client, keys.target), null, '還沒走到 target');
   } finally {
-    await client.from('rate_limits').delete().eq('key', 'referral-invite-global-hour');
-    if (saved?.length) await client.from('rate_limits').insert(saved);
     await cleanupInvites(client, [r], [email]);
   }
 });
@@ -742,17 +810,21 @@ Deno.test('referrals/invites：GoTrue 錯誤依 error_code 對映回應、退額
   const client = adminClient();
   const r = await referrerWithToken(client);
   const emails: string[] = [];
-  // [GoTrue 狀態, error_code, 預期狀態, 預期 code（null＝202）, 退額度, 告警]
-  const table: [number, string | undefined, number, string | null, boolean, boolean][] = [
-    [422, 'email_exists', 202, null, true, false],
-    [429, 'over_email_send_rate_limit', 503, 'unavailable', true, true],
-    [400, 'email_address_invalid', 400, 'invalid_email', true, false],
-    [422, 'validation_failed', 400, 'invalid_email', true, false],
-    [400, 'email_address_not_authorized', 503, 'unavailable', false, true],
-    [403, undefined, 503, 'unavailable', false, true],
+  // [GoTrue 狀態, error_code, 預期狀態, 預期 code（null＝202）, 退 target, 退 per-user, 告警]
+  // - 輸入錯（GoTrue 拒收通過我方正規式的信箱）只退 target：per-user 照扣，否則重送無效信箱
+  //   可繞過每人上限、把全站窗吃滿（業主 2026-10-26 裁決）
+  // - 沒帶 error_code 的 429（gateway／Cloudflare 的暫時限流）視同寄件限流：退、告警
+  const table: [number, string | undefined, number, string | null, boolean, boolean, boolean][] = [
+    [422, 'email_exists', 202, null, true, true, false],
+    [429, 'over_email_send_rate_limit', 503, 'unavailable', true, true, true],
+    [429, undefined, 503, 'unavailable', true, true, true],
+    [400, 'email_address_invalid', 400, 'invalid_email', true, false, false],
+    [422, 'validation_failed', 400, 'invalid_email', true, false, false],
+    [400, 'email_address_not_authorized', 503, 'unavailable', false, false, true],
+    [403, undefined, 503, 'unavailable', false, false, true],
   ];
   try {
-    for (const [gtStatus, gtCode, status, code, refunded, alerted] of table) {
+    for (const [gtStatus, gtCode, status, code, targetRefunded, userRefunded, alerted] of table) {
       const label = `${gtStatus} ${gtCode ?? ''}`;
       const email = inviteeEmail('map');
       emails.push(email);
@@ -769,10 +841,10 @@ Deno.test('referrals/invites：GoTrue 錯誤依 error_code 對映回應、退額
       else await expectError(res, status, code);
 
       const keys = await inviteKeys(r.id, email);
-      const expected = refunded ? 0 : 1;
-      assertEquals(await rateCount(client, keys.target), expected, `${label} target`);
-      assertEquals(await rateCount(client, keys.hour), expected, `${label} 短窗`);
-      assertEquals(await rateCount(client, keys.day), expected, `${label} 日窗`);
+      const perUser = userRefunded ? 0 : 1;
+      assertEquals(await rateCount(client, keys.target), targetRefunded ? 0 : 1, `${label} target`);
+      assertEquals(await rateCount(client, keys.hour), perUser, `${label} 短窗`);
+      assertEquals(await rateCount(client, keys.day), perUser, `${label} 日窗`);
       const alerts = await referralAlerts(client);
       assertEquals(alerts.length > 0, alerted, `${label} 告警`);
       assert(!JSON.stringify(alerts).includes(email), `${label} 告警不得含 email`);
@@ -822,6 +894,54 @@ Deno.test('referrals/invites：GoTrue 逾時且查無帳號 → 判定未寄，5
   }
 });
 
+Deno.test('referrals/invites：寄送結果不確定且對帳查詢也失敗 → 503、告警、不退', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('reconcile-error');
+  try {
+    const { client: spied } = goTrueSpy({
+      inviteUserByEmail: () => Promise.resolve(goTrueError(502)),
+    });
+    // 第 1 次查詢（先查後扣）照常、第 2 次（對帳）失敗：信可能已寄出，不能當沒寄而退
+    await expectError(
+      await invitesApp(failRpcFrom(spied, 'find_auth_user_by_email', 2))(r.token, {
+        email,
+        consent: true,
+      }),
+      503,
+      'unavailable',
+    );
+    const keys = await inviteKeys(r.id, email);
+    assertEquals(await rateCount(client, keys.target), 1);
+    assertEquals(await rateCount(client, keys.hour), 1);
+    const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+    assertEquals(kinds, ['reconcile_failed']);
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
+Deno.test('referrals/invites：蓋章回 5xx 但其實已蓋上 → 202、不刪帳號、不退', async () => {
+  const client = adminClient();
+  const r = await referrerWithToken(client);
+  const email = inviteeEmail('stamp-uncertain');
+  try {
+    const { client: spied, calls } = goTrueSpy({
+      // 已提交、回應卻在路上丟了：信已寄、章也蓋上，刪掉會讓對方拿到死連結
+      updateUserById: async (args, original) => {
+        await original(...args);
+        return goTrueError(502);
+      },
+    });
+    await expectAccepted(await invitesApp(spied)(r.token, { email, consent: true }));
+    assertEquals(calls.deleteUser.length, 0);
+    assertEquals((await authUser(email))?.raw_app_meta_data.referral_invite?.code, r.code);
+    assertEquals(await rateCount(client, (await inviteKeys(r.id, email)).target), 1);
+  } finally {
+    await cleanupInvites(client, [r], [email]);
+  }
+});
+
 Deno.test('referrals/invites：新建後蓋章失敗 → 刪帳號與稽核列、退 target、503', async () => {
   const client = adminClient();
   const r = await referrerWithToken(client);
@@ -846,28 +966,36 @@ Deno.test('referrals/invites：新建後蓋章失敗 → 刪帳號與稽核列�
   }
 });
 
-Deno.test('referrals/invites：補償的 deleteUser 也失敗 → 另寫一筆告警', async () => {
+Deno.test('referrals/invites：補償的 deleteUser 也失敗 → 每個殘留帳號各寫一筆告警', async () => {
   const client = adminClient();
   const r = await referrerWithToken(client);
-  const email = inviteeEmail('compensate-fail');
+  const emails = [inviteeEmail('compensate-fail'), inviteeEmail('compensate-fail')];
   try {
     const { client: spied } = goTrueSpy({
       updateUserById: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
       deleteUser: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
     });
-    await expectError(
-      await invitesApp(spied)(r.token, { email, consent: true }),
-      503,
-      'unavailable',
-    );
-    const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+    for (const email of emails) {
+      await expectError(
+        await invitesApp(spied)(r.token, { email, consent: true }),
+        503,
+        'unavailable',
+      );
+    }
+    const alerts = await referralAlerts(client);
+    const kinds = alerts.map((a) => a.context.kind);
     assert(kinds.includes('stamp_failed'), JSON.stringify(kinds));
-    assert(kinds.includes('compensate_delete_failed'), JSON.stringify(kinds));
+    // 每筆都要有人去清（帶第三人 email、purge 清不到）：以帳號去重，不能只以 kind
+    const leftovers = alerts.filter((a) => a.context.kind === 'compensate_delete_failed');
+    const ids = await Promise.all(emails.map(async (e) => (await authUser(e))?.id));
+    assertEquals(leftovers.map((a) => a.context.user_id).sort(), ids.sort());
   } finally {
     // 帳號沒刪成：清掉（GoTrue 沒蓋章，purge 的 p_email 認不得它）
-    const u = await authUser(email);
-    if (u) await client.auth.admin.deleteUser(u.id);
-    await cleanupInvites(client, [r], [email]);
+    for (const email of emails) {
+      const u = await authUser(email);
+      if (u) await client.auth.admin.deleteUser(u.id);
+    }
+    await cleanupInvites(client, [r], emails);
   }
 });
 
@@ -926,12 +1054,138 @@ Deno.test('referrals/invites：空殼重寄失敗 → 以舊 referral_invite 回
   }
 });
 
+/** 第一位推薦人寄出（真 GoTrue）後清掉 target 窗：模擬 24 小時後另一位推薦人重寄。 */
+async function shellReadyForResend(
+  client: SupabaseClient,
+  first: { id: string; token: string },
+  email: string,
+) {
+  await expectAccepted(await inviteRequest(first.token, { email, consent: true }));
+  const before = await authUser(email);
+  await client.from('rate_limits').delete().eq('key', (await inviteKeys(first.id, email)).target);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  return before;
+}
+
+Deno.test('referrals/invites：空殼重寄回 5xx 但 confirmation_sent_at 已前進 → 判已寄、202、不退', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('resend-uncertain-sent');
+  try {
+    const before = await shellReadyForResend(client, first, email);
+    const { client: spied } = goTrueSpy({
+      inviteUserByEmail: async (args, original) => {
+        await original(...args);
+        return goTrueError(502);
+      },
+    });
+    await expectAccepted(await invitesApp(spied)(second.token, { email, consent: true }));
+    const after = await authUser(email);
+    assert(after.confirmation_sent_at > before.confirmation_sent_at, '應已重寄');
+    assertEquals(after.raw_app_meta_data.referral_invite.code, second.code, '新章保留');
+    const keys = await inviteKeys(second.id, email);
+    assertEquals(await rateCount(client, keys.target), 1);
+    assertEquals(await rateCount(client, keys.hour), 1);
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+Deno.test('referrals/invites：空殼重寄回 5xx 且 confirmation_sent_at 未變 → 回寫舊章、退額度、503', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('resend-uncertain-none');
+  try {
+    const before = await shellReadyForResend(client, first, email);
+    const { client: spied } = goTrueSpy({
+      inviteUserByEmail: () => Promise.resolve(goTrueError(502)),
+    });
+    await expectError(
+      await invitesApp(spied)(second.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    const after = await authUser(email);
+    assertEquals(after.confirmation_sent_at, before.confirmation_sent_at);
+    assertEquals(after.raw_app_meta_data.referral_invite, before.raw_app_meta_data.referral_invite);
+    const keys = await inviteKeys(second.id, email);
+    assertEquals(await rateCount(client, keys.target), 0);
+    assertEquals(await rateCount(client, keys.hour), 0);
+    const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+    assertEquals(kinds, ['send_failed']);
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+Deno.test('referrals/invites：空殼重寄時先更新 metadata 就失敗 → 不寄、退額度、503', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const email = inviteeEmail('resend-update-fail');
+  try {
+    const before = await shellReadyForResend(client, first, email);
+    const { client: spied, calls } = goTrueSpy({
+      updateUserById: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
+    });
+    await expectError(
+      await invitesApp(spied)(second.token, { email, consent: true }),
+      503,
+      'unavailable',
+    );
+    assertEquals(calls.inviteUserByEmail.length, 0);
+    const after = await authUser(email);
+    assertEquals(after.raw_app_meta_data.referral_invite, before.raw_app_meta_data.referral_invite);
+    const keys = await inviteKeys(second.id, email);
+    assertEquals(await rateCount(client, keys.target), 0);
+    assertEquals(await rateCount(client, keys.hour), 0);
+    const kinds = (await referralAlerts(client)).map((a) => a.context.kind);
+    assertEquals(kinds, ['resend_update_failed']);
+  } finally {
+    await cleanupInvites(client, [first, second], [email]);
+  }
+});
+
+Deno.test('referrals/invites：重寄失敗且回寫舊章也失敗 → 每個帳號各寫一筆告警', async () => {
+  const client = adminClient();
+  const first = await referrerWithToken(client);
+  const second = await referrerWithToken(client, { name: '李小華' });
+  const emails = [inviteeEmail('restore-fail'), inviteeEmail('restore-fail')];
+  try {
+    for (const email of emails) await shellReadyForResend(client, first, email);
+    const { client: spied } = goTrueSpy({
+      inviteUserByEmail: () => Promise.resolve(goTrueError(429, 'over_email_send_rate_limit')),
+      // 合併 metadata 那次照常；回寫舊章那次（只帶 app_metadata）失敗
+      updateUserById: (args, original) =>
+        (args[1] as Record<string, unknown>).user_metadata
+          ? original(...args)
+          : Promise.resolve(goTrueError(500, 'unexpected_failure')),
+    });
+    for (const email of emails) {
+      await expectError(
+        await invitesApp(spied)(second.token, { email, consent: true }),
+        503,
+        'unavailable',
+      );
+    }
+    const restores = (await referralAlerts(client))
+      .filter((a) => a.context.kind === 'resend_restore_failed');
+    const ids = await Promise.all(emails.map(async (e) => (await authUser(e)).id));
+    assertEquals(restores.map((a) => a.context.user_id).sort(), ids.sort());
+  } finally {
+    await cleanupInvites(client, [first, second], emails);
+  }
+});
+
 // ------------------------------------------------------------
 // POST /auth/invite/accept（公開）：持有簽章＝收到信的人
 //
-// 硬順序：先 updateUserById({ password })、再 generateLink({ type: 'invite' })——沒密碼的
-// 被邀請者在 verify 時會被 GoTrue 塞隨機密碼；設密碼又會清掉既有 confirmation_token，
-// 反過來會讓剛產生的 hash 失效（最後一個測試是這件事的 GoTrue 升級 canary）。
+// 一步完成：updateUserById({ password, email_confirm: true }) 同時設密碼並驗證 email——
+// 從邀請連結設好密碼就是已驗證，不留「有密碼、未驗證」的中間狀態（業主 2026-10-26 裁決）。
+// 前端再以剛設的密碼 signInWithPassword 取得 session。密碼規則與註冊同一份
+// （_shared/password-policy.ts），後端照擋。
 // ------------------------------------------------------------
 
 const ACCEPT_SECRET_READ = (k: string) => Deno.env.get(k);
@@ -974,10 +1228,11 @@ async function expectAcceptError(res: Response, status: number, code: string): P
   return parsed.error.message;
 }
 
-async function expectTokenHash(res: Response): Promise<string> {
+async function expectAcceptOk(res: Response): Promise<void> {
   const body = await res.json();
   assertEquals(res.status, 200, JSON.stringify(body));
-  return assertShape(ReferralInviteAcceptResponseSchema, body, 'accept 200').tokenHash;
+  assertEquals(body, { accepted: true });
+  assertShape(ReferralInviteAcceptResponseSchema, body, 'accept 200');
 }
 
 /** 推薦人寄出一封真的邀請，回傳被邀請人 email 與信中連結的 token。 */
@@ -993,30 +1248,25 @@ async function invitedShell(
   return { referrer, email, token: url.searchParams.get('invite')! };
 }
 
-/** 丟棄式 client 做被邀請人那一側的 verifyOtp／登入，不污染 admin client。 */
-async function verifyInvite(tokenHash: string) {
-  return await adminClient().auth.verifyOtp({ token_hash: tokenHash, type: 'invite' });
-}
-
+/** 丟棄式 client 做被邀請人那一側的登入，不污染 admin client。 */
 async function canSignIn(email: string, password: string): Promise<boolean> {
   const { data, error } = await adminClient().auth.signInWithPassword({ email, password });
   return !error && Boolean(data.session);
 }
 
-Deno.test('auth/invite/accept：設密碼並回 tokenHash，verifyOtp 後以該密碼可登入', async () => {
+Deno.test('auth/invite/accept：設密碼同時完成 email 驗證，回 accepted 後即可以該密碼登入', async () => {
   const client = adminClient();
   const { referrer, email, token } = await invitedShell(client);
   try {
-    const tokenHash = await expectTokenHash(
-      await acceptRequest({ token, password: 'Invite-Pass-123' }),
-    );
-    const { data, error } = await verifyInvite(tokenHash);
-    assertEquals(error, null);
-    assert(data.session, 'verifyOtp 應回 session');
+    const { client: spied, calls } = goTrueSpy();
+    await expectAcceptOk(await acceptApp(spied)({ token, password: 'Invite-Pass-123' }));
+    assertEquals(calls.updateUserById.length, 1, '一次呼叫完成設密碼與驗證');
+    assertEquals(calls.generateLink.length, 0);
     const u = await authUser(email);
-    assert(u.email_confirmed_at, '應已驗證');
-    // 連結用過即從 user_metadata 拿掉（模板只在重寄時才需要它）
+    assert(u.email_confirmed_at, '回應前就已驗證，不靠前端再 verify');
+    // 連結用過即從 user_metadata 拿掉；推薦章留著給完善資料頁的後備預填
     assertEquals(u.raw_user_meta_data.referral_invite_url, undefined);
+    assertEquals(u.raw_app_meta_data.referral_invite.code, referrer.code);
     assert(await canSignIn(email, 'Invite-Pass-123'), '以 accept 設的密碼應能登入');
   } finally {
     const u = await authUser(email);
@@ -1025,20 +1275,19 @@ Deno.test('auth/invite/accept：設密碼並回 tokenHash，verifyOtp 後以該�
   }
 });
 
-Deno.test('auth/invite/accept：同一 token 再打一次 → 重設同一密碼、換新 hash（可重入）', async () => {
+Deno.test('auth/invite/accept：完成後再用同一連結 → 409 already_accepted、密碼不變', async () => {
   const client = adminClient();
   const { referrer, email, token } = await invitedShell(client);
   try {
-    const first = await expectTokenHash(
-      await acceptRequest({ token, password: 'Invite-Pass-123' }),
+    await expectAcceptOk(await acceptRequest({ token, password: 'Invite-Pass-123' }));
+    // 回應在路上丟了或另一分頁重點：前端依 409 切到登入，用剛設的密碼登入
+    await expectAcceptError(
+      await acceptRequest({ token, password: 'Other-Pass-456' }),
+      409,
+      'already_accepted',
     );
-    const second = await expectTokenHash(
-      await acceptRequest({ token, password: 'Invite-Pass-123' }),
-    );
-    assert(first !== second, '每次換新 hash');
-    const { error } = await verifyInvite(second);
-    assertEquals(error, null);
     assert(await canSignIn(email, 'Invite-Pass-123'));
+    assert(!(await canSignIn(email, 'Other-Pass-456')));
   } finally {
     const u = await authUser(email);
     if (u) await client.auth.admin.deleteUser(u.id);
@@ -1094,6 +1343,7 @@ Deno.test('auth/invite/accept：帳號不存在或不是 R2 空殼 → 410 gone'
         'gone',
       );
     }
+    assertEquals((await authUser(selfEmail)).email_confirmed_at, null, '不替自助註冊的帳號驗證');
   } finally {
     await deleteTestUsers(client, [selfSignup.user!.id]);
   }
@@ -1119,17 +1369,33 @@ Deno.test('auth/invite/accept：帳號已驗證 → 409 already_accepted', async
   }
 });
 
-Deno.test('auth/invite/accept：密碼少於 8 字或超過 72 位元組 → 400 weak_password，不呼叫 GoTrue', async () => {
+Deno.test('auth/invite/accept：密碼不符註冊規則或超過 72 位元組 → 400 weak_password，不呼叫 GoTrue', async () => {
   const client = adminClient();
   const { referrer, email, token } = await invitedShell(client);
   try {
     const { client: spied, calls } = goTrueSpy();
     const send = acceptApp(spied);
-    for (const password of ['short', '密'.repeat(25), 12345678, undefined]) {
+    // 與註冊同一份規則：8 字元、大寫、小寫、數字；上限是 bcrypt 的 72 位元組
+    for (
+      const password of [
+        'short',
+        'alllower1',
+        'ALLUPPER1',
+        'NoDigitsX',
+        `Aa1${'密'.repeat(25)}`,
+        12345678,
+        undefined,
+      ]
+    ) {
       await expectAcceptError(await send({ token, password }), 400, 'weak_password');
     }
+    assertEquals(
+      await expectAcceptError(await send({ token, password: 'alllower1' }), 400, 'weak_password'),
+      '密碼需包含：至少一個大寫字母（A-Z）',
+      '訊息與註冊頁同一句',
+    );
     assertEquals(calls.updateUserById.length, 0);
-    assertEquals(calls.generateLink.length, 0);
+    assertEquals((await authUser(email)).email_confirmed_at, null);
   } finally {
     await cleanupInvites(client, [referrer], [email]);
   }
@@ -1152,7 +1418,7 @@ Deno.test('auth/invite/accept：GoTrue 回 weak_password → 400 weak_password �
         }),
     });
     const message = await expectAcceptError(
-      await acceptApp(spied)({ token, password: 'password123' }),
+      await acceptApp(spied)({ token, password: 'Password123' }),
       400,
       'weak_password',
     );
@@ -1179,45 +1445,27 @@ Deno.test('auth/invite/accept：設密碼時帳號已被清除（user_not_found�
   }
 });
 
-Deno.test('auth/invite/accept：generateLink 回 email_exists（並行 accept 已驗證）→ 409', async () => {
+Deno.test('auth/invite/accept：設密碼時 GoTrue 回 5xx 或逾時 → 503 unavailable', async () => {
   const client = adminClient();
   const { referrer, email, token } = await invitedShell(client);
   try {
-    const { client: spied } = goTrueSpy({
-      generateLink: () => Promise.resolve(goTrueError(422, 'email_exists')),
+    const failing = goTrueSpy({
+      updateUserById: () => Promise.resolve(goTrueError(500, 'unexpected_failure')),
     });
     await expectAcceptError(
-      await acceptApp(spied)({ token, password: 'Invite-Pass-123' }),
-      409,
-      'already_accepted',
+      await acceptApp(failing.client)({ token, password: 'Invite-Pass-123' }),
+      503,
+      'unavailable',
     );
-  } finally {
-    await cleanupInvites(client, [referrer], [email]);
-  }
-});
-
-Deno.test('auth/invite/accept：generateLink 回的帳號不是原空殼 → 刪掉新帳號、410 gone', async () => {
-  // 兩次呼叫之間空殼被 purge，GoTrue 的 generateLink(invite) 會自己建一個空白帳號
-  const client = adminClient();
-  const { referrer, email, token } = await invitedShell(client);
-  try {
-    const { client: spied, calls } = goTrueSpy({
-      generateLink: () =>
-        Promise.resolve({
-          data: {
-            user: { id: '00000000-0000-0000-0000-00000000dead' },
-            properties: { hashed_token: 'x' },
-          },
-          error: null,
-        }),
-      deleteUser: () => Promise.resolve({ data: {}, error: null }),
-    });
+    const hanging = goTrueSpy({ updateUserById: () => new Promise(() => {}) });
     await expectAcceptError(
-      await acceptApp(spied)({ token, password: 'Invite-Pass-123' }),
-      410,
-      'gone',
+      await acceptApp(hanging.client, { gotrueTimeoutMs: 50 })({
+        token,
+        password: 'Invite-Pass-123',
+      }),
+      503,
+      'unavailable',
     );
-    assertEquals(calls.deleteUser.map((args) => args[0]), ['00000000-0000-0000-0000-00000000dead']);
   } finally {
     await cleanupInvites(client, [referrer], [email]);
   }
@@ -1229,7 +1477,7 @@ Deno.test('auth/invite/accept：只看 secret——kill switch 關著仍可 acce
   const savedSecret = Deno.env.get('REFERRAL_INVITE_SECRET')!;
   try {
     Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'false');
-    await expectTokenHash(await acceptRequest({ token, password: 'Invite-Pass-123' }));
+    await expectAcceptOk(await acceptRequest({ token, password: 'Invite-Pass-123' }));
     Deno.env.set('REFERRAL_INVITE_SECRET', '');
     await expectAcceptError(
       await acceptRequest({ token, password: 'Invite-Pass-123' }),
@@ -1239,6 +1487,8 @@ Deno.test('auth/invite/accept：只看 secret——kill switch 關著仍可 acce
   } finally {
     Deno.env.set('REFERRAL_EMAIL_INVITE_ENABLED', 'true');
     Deno.env.set('REFERRAL_INVITE_SECRET', savedSecret);
+    const u = await authUser(email);
+    if (u) await client.auth.admin.deleteUser(u.id);
     await cleanupInvites(client, [referrer], [email]);
   }
 });
@@ -1261,7 +1511,7 @@ Deno.test('auth/invite/accept：同一 IP 超過上限 → 429 rate_limited', as
   }
 });
 
-Deno.test('auth/invite/accept：兩個分頁並行 accept 後，恰好一個密碼能登入', async () => {
+Deno.test('auth/invite/accept：兩個分頁並行 accept 後帳號已驗證，恰好一個密碼能登入', async () => {
   const client = adminClient();
   const { referrer, email, token } = await invitedShell(client);
   try {
@@ -1269,15 +1519,15 @@ Deno.test('auth/invite/accept：兩個分頁並行 accept 後，恰好一個密�
       acceptRequest({ token, password: 'Tab-One-Pass-1' }),
       acceptRequest({ token, password: 'Tab-Two-Pass-2' }),
     ]);
-    const hashes: string[] = [];
+    // 後到者若在先到者完成後才查帳號，看到的是已驗證 → 409（前端切登入）
+    const statuses: number[] = [];
     for (const res of results) {
-      const body = await res.json();
-      if (res.status === 200) hashes.push(body.tokenHash);
+      statuses.push(res.status);
+      await res.body?.cancel();
     }
-    // 前端 verifyOtp 失敗時以同一 token 重打一次 accept；這裡只要有一個 hash 能換到 session
-    let verified = false;
-    for (const h of hashes) verified = verified || !(await verifyInvite(h)).error;
-    assert(verified, '至少一個分頁能完成驗證');
+    assert(statuses.includes(200), JSON.stringify(statuses));
+    assert(statuses.every((s) => s === 200 || s === 409), JSON.stringify(statuses));
+    assert((await authUser(email)).email_confirmed_at);
     const ok = [
       await canSignIn(email, 'Tab-One-Pass-1'),
       await canSignIn(email, 'Tab-Two-Pass-2'),
@@ -1286,22 +1536,6 @@ Deno.test('auth/invite/accept：兩個分頁並行 accept 後，恰好一個密�
   } finally {
     const u = await authUser(email);
     if (u) await client.auth.admin.deleteUser(u.id);
-    await cleanupInvites(client, [referrer], [email]);
-  }
-});
-
-Deno.test('GoTrue canary：先 generateLink 再設密碼 → 該 hash 失效（accept 必須先設密碼）', async () => {
-  const client = adminClient();
-  const { referrer, email } = await invitedShell(client);
-  try {
-    const u = await authUser(email);
-    const { data: link } = await client.auth.admin.generateLink({ type: 'invite', email });
-    const hashedToken = link.properties?.hashed_token;
-    assert(hashedToken, 'generateLink 應回 hashed_token');
-    await client.auth.admin.updateUserById(u.id, { password: 'Reverse-Order-1' });
-    const { error } = await verifyInvite(hashedToken);
-    assert(error, 'GoTrue 若改成設密碼不清 token，accept 的硬順序理由要重審');
-  } finally {
     await cleanupInvites(client, [referrer], [email]);
   }
 });

@@ -5,11 +5,12 @@
 // 邀請信建立的 auth.users 列（＋ handle_new_user 建的 profiles 空列）是「代
 // 第三人建立的帳號」，信裡承諾 7 天內未透過連結設定密碼即刪除——這支測試釘
 // 住承諾真的兌現、而且只刪該刪的：
-//   * 計齡看 app_metadata.referral_invite.issued_at（accept 的 generateLink 會
-//     覆寫 invited_at，以它計齡等於每點一次連結就延壽）
+//   * 計齡看 app_metadata.referral_invite.issued_at（GoTrue 每次 invite 都覆寫
+//     invited_at；重寄＝新邀請，issued_at 也一起更新）
 //   * GoTrue 每筆帳號事件把 email 寫進 auth.audit_log_entries，刪帳號不連帶
 //     刪它——所以對本機 GoTrue 真做一輪 invite／設密碼／generateLink 再
 //     purge，斷言 audit 不留任何含該 email 的列，不手造 payload
+//   * accept 設密碼的同時驗證 email——從連結設好密碼的人永遠不會被清掉
 //   * 已驗證、登入過、付過款、不是 R2 建的、還沒滿 7 天的都不刪
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
@@ -85,26 +86,56 @@ Deno.test('purge_stale_referral_invites：issued_at 超過 7 天的空殼被刪�
   }
 });
 
-Deno.test('purge_stale_referral_invites：accept（設密碼＋generateLink）後仍以 issued_at 計齡', async () => {
+Deno.test('purge_stale_referral_invites：accept 設密碼即驗證，超過 7 天也不刪', async () => {
   const client = adminClient();
   const shell = await inviteShell(client, { issuedAt: daysAgo(8) });
+  const control = await inviteShell(client, { issuedAt: daysAgo(8) });
   try {
-    // accept 的硬順序：先設密碼、再 generateLink（後者會把 invited_at 覆寫成現在）
-    const { error: pwErr } = await client.auth.admin.updateUserById(shell.id, {
+    // accept 一步完成：同一次 updateUserById 設密碼並驗證 email
+    const { error: acceptErr } = await client.auth.admin.updateUserById(shell.id, {
       password: 'Accepted-Pass-123',
+      email_confirm: true,
     });
-    assertEquals(pwErr, null);
-    const { error: linkErr } = await client.auth.admin.generateLink({
-      type: 'invite',
-      email: shell.email,
-    });
-    assertEquals(linkErr, null);
+    assertEquals(acceptErr, null);
 
     const { error } = await client.rpc('purge_stale_referral_invites');
     assertEquals(error, null);
-    assertEquals(await userExists(client, shell.id), false, 'accept 未完成驗證者不因點連結而延壽');
+    assertEquals(await userExists(client, control.id), false, '對照組（沒點連結）應被刪');
+    assertEquals(await userExists(client, shell.id), true, '從連結設好密碼＝已驗證，不刪');
   } finally {
-    await deleteTestUsers(client, [shell.id]);
+    await deleteTestUsers(client, [shell.id, control.id]);
+  }
+});
+
+Deno.test('purge_stale_referral_invites：referral_invite 是 JSON null 或字串 → 不當空殼、不刪', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL);
+  const ids: string[] = [];
+  try {
+    const asNull = await inviteShell(client, { issuedAt: daysAgo(8) });
+    const asString = await inviteShell(client, { issuedAt: daysAgo(8) });
+    const control = await inviteShell(client, { issuedAt: daysAgo(8) });
+    ids.push(asNull.id, asString.id, control.id);
+    // `? 'referral_invite'` 對這兩種也成立；只有 service role 寫得出物件章，才算 R2 建的
+    await sql`
+      update auth.users
+      set raw_app_meta_data = jsonb_set(raw_app_meta_data, '{referral_invite}', 'null'::jsonb)
+      where id = ${asNull.id}
+    `;
+    await sql`
+      update auth.users
+      set raw_app_meta_data = jsonb_set(raw_app_meta_data, '{referral_invite}', '"8048876"'::jsonb)
+      where id = ${asString.id}
+    `;
+
+    const { error } = await client.rpc('purge_stale_referral_invites');
+    assertEquals(error, null);
+    assertEquals(await userExists(client, control.id), false);
+    assertEquals(await userExists(client, asNull.id), true, 'JSON null 不刪');
+    assertEquals(await userExists(client, asString.id), true, '字串不刪');
+  } finally {
+    await deleteTestUsers(client, ids);
+    await sql.end();
   }
 });
 

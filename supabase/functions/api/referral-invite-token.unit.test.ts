@@ -6,6 +6,8 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import {
   decodeReferralInvitePayload,
+  REFERRAL_INVITE_CONSENT_TEMPLATE,
+  REFERRAL_INVITE_CONSENT_VERSION,
   REFERRAL_INVITE_TOKEN_TTL_SECONDS,
 } from '../_shared/referral-invite-payload.ts';
 import { signReferralInviteToken, verifyReferralInviteToken } from './referral-invite-token.ts';
@@ -164,4 +166,23 @@ Deno.test('decodeReferralInvitePayload：壞 base64、壞 JSON、缺欄、版本
 Deno.test('decodeReferralInvitePayload：x 已過也照樣解出（前端不以裝置時鐘判過期）', () => {
   const token = `${b64url(JSON.stringify({ v: 1, e: EMAIL, c: CODE, x: 1 }))}.c2ln`;
   assertEquals(decodeReferralInvitePayload(token), { v: 1, e: EMAIL, c: CODE, x: 1 });
+});
+
+// 同意證據（app_metadata.referral_invite.consent_version）指向「當時那一版文案」：
+// 文案改了版號沒升，舊證據就會被讀成新文案（裁決 P）。新增版號時在下表補一列。
+const CONSENT_TEMPLATE_SHA256: Record<string, string> = {
+  '2026-10-26': 'b4e0993b61b34423407c1825e1f21807954d540b8807f7dd6b3b68ccfeaab564',
+};
+
+Deno.test('同意聲明：文案的雜湊對得上當前版號（改文案必須升版）', async () => {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(REFERRAL_INVITE_CONSENT_TEMPLATE),
+  );
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  assertEquals(
+    hex,
+    CONSENT_TEMPLATE_SHA256[REFERRAL_INVITE_CONSENT_VERSION],
+    `文案已變：把 REFERRAL_INVITE_CONSENT_VERSION 升到新日期，並在上表補 '${hex}'`,
+  );
 });
