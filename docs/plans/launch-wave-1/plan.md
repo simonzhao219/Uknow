@@ -3,7 +3,7 @@
 <!-- plans-keep: 跨 session 鷹架（主／執行／審查三種 session 的共同事實來源）；退場條件＝第 1 波審查 session 結案（10/31 凍結期結束、審查報告回填 §8）後，值得長留的升級進 docs/operations.md／規格書／friction-log，其餘隨 commit 刪除 -->
 
 寫給**全新的主 session**看：它開局只有 repo 與這份檔，沒有對話記憶。所有裁決都在 §0，
-所有事實都附來源；行號一律現算（引用的行號是 2026-10-27 develop `ea777f0` 之前的）。
+所有事實都附來源；行號一律現算（引用的行號是 2026-10-27 develop `b861133`（#398）時的）。
 
 ## 0. 業主目標與裁決（2026-10-27 00:30–02:00 台北，監工 session 核對）
 
@@ -20,7 +20,7 @@
 
 | # | 題 | 裁決 |
 |---|---|---|
-| 1 | 12:00 與 R2 的關係 | **12:00 必須含 R2（Email 邀請）開啟**；R2 沒好就把開放時間往後延。被推翻的建議：分段上線（12:00 先用現有推薦方式）。 |
+| 1 | 12:00 與 R2 的關係 | **12:00 必須含 R2（Email 邀請）開啟**；R2 沒好就把開放時間往後延。被推翻的建議：分段上線（12:00 先用現有推薦方式）。R2 規劃書 R2-3b 的順序仍有效（裁決 S：正式站後端先開、curl 收信核對通過才開前端旗標），只是全部壓縮到開放前；R2-3b 第 2–5 步（develop 側演練）略過，develop 的旗標與 secret 由窗口期補。 |
 | 2 | 部署通道壞掉（ECR 匿名拉映像限流） | **改 workflow 不經 Docker**（`--use-api`）——PR #402，本波第一個要合的 PR。 |
 | 3 | 清資料範圍 | **全清含管理員**：全部會員、訂單、上傳照片、刊登、管理員與平台預設推薦人帳號都刪；之後業主重新註冊、以正式金流付 NT$1,200 成為第一個付款帳號拿到 8048876、設 `default_referrer_code`、`set-self-admin`。 |
 | 4 | PayUni 正式金流 | **晉升後切換**（`PAYUNI_SANDBOX=false`＋正式三把憑證＋重部署），**從台灣網路真付款一次**驗通；同時出小 PR 把 `EXPECT_PRODUCTION_PAYUNI` 改 `'true'`（順序：secrets 先翻，PR 後合）。 |
@@ -28,6 +28,7 @@
 | 6 | 誰清資料 | **新主 session 用 Supabase MCP 執行**：先在 develop 分支 DB 演練，再對正式站乾跑列計數、互動問題給業主確認後才刪。前提：業主先在 Dashboard 確認有備份（Backups／PITR）。 |
 | 7 | 10/29–31 預估量 | **100–500 人，部分在活動現場**（同一 Wi-Fi 共用 IP）→ 放寬 check-email 每 IP 限流、確認寄信上限、排現場尖峰小時的監看。 |
 | 8 | 凍結規則 | **10/29–10/31 凍結，只許 hotfix**：不上新功能、不上 migration、不動註冊／付款／登入主幹；hotfix 走晉升＋業主核准。每週晉升從 11/3 起。 |
+| 9 | 夜間授權（業主 10/27 02:15–10:15 睡眠，無法回覆） | **主 session 可以**：審過後合併 PR 進 develop（#399、R2 前端、窗口小項）；開晉升 PR，journey-full 綠後以 merge commit 合進 main（migration 會自動套到正式站 DB；函式部署停在等業主核准，舊函式不呼叫新函式、視窗安全）；用 Claude Code Remote 的 `create_session` 自己開執行 session（繼承環境與 auto 權限模式）。**主 session 不做**：正式站部署核准、Dashboard secrets、PayUni 切換、清資料、付款——全部等業主醒來，§7 已拆成「睡前」與「醒來後」。 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -35,7 +36,7 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 ## 1. 時間事實與關鍵路徑
 
 - 核對時刻：2026-10-27 02:00 台北（UTC 18:00 10/26）。業主所在時區 UTC+2（commit 時區），台北 12:00 ＝ 巴黎 06:00。
-- main `67a27ec6`（2026-10-06）→ develop `ea777f0`：20 個 PR、204 commits、**5 支 migration**（`20261017000001` pg_cron＋prune_rate_limits、`000002` validate_referral_code 收權、`000003` profiles 自改收權、`000004` register_profile 列鎖、`20261025000001` find_auth_user_by_email）。R2 後端（PR #399）再加兩支（`20261025000011` purge、`000012` refund）。
+- main `67a27ec6`（2026-10-06）→ develop `b861133`（#398；PR #402 head `ea777f0` 待合併，本檔隨 #402 進 develop）：20 個 PR、204 commits、**5 支 migration**（`20261017000001` pg_cron＋prune_rate_limits、`000002` validate_referral_code 收權、`000003` profiles 自改收權、`000004` register_profile 列鎖、`20261025000001` find_auth_user_by_email）。R2 後端（PR #399）再加兩支（`20261025000011` purge、`000012` refund）。
 - 晉升 PR 的 journey-full 是 30–90 分鐘（最近一次 sandbox full 成功 23 分鐘，2026-10-17）；正式站部署需業主在 GitHub `production` 環境核准；migration 由 Supabase GitHub 整合在 push main 時自動套用（部署前先確認整合仍連著——repo 無紀錄）。
 
 **關鍵路徑（串行，全部順利的估計）**
@@ -46,12 +47,12 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 | K2 | R2 後端 session | 1 小時 | `npm run check:full` → `/review-implementation` → #399 轉 ready → 業主合併 |
 | K3 | 執行 session（R2 前端） | 3–4 小時 | 循環 6–11（見 `docs/plans/referral-email-invite/progress.md`）＋ R2-3a UI 步驟 → PR → 審查 → 合併 |
 | K4 | 主 session | 0.5 小時＋journey 0.5–1.5 小時 | 開晉升 PR（develop→main）；journey-full 綠；業主以 merge commit 合併 |
-| K5 | 業主 | 0.5 小時 | 核准 production 部署；`/health` 的 `sha` 對上；Dashboard 翻 PayUni 正式＋R2 的兩把 secret＋貼 Invite 模板＋Cloudflare 旗標；重部署 |
+| K5 | 業主 | 0.5 小時 | 核准 production 部署；`/health` 的 `sha` 對上；Dashboard 翻 PayUni 正式＋R2 的兩把 secret＋貼 Invite 模板；重部署；清三個 bucket（Cloudflare 旗標留到 K7 實寄核對後，裁決 S） |
 | K6 | 主 session＋業主 | 0.5 小時 | 清資料：乾跑 → 業主確認 → 執行 → 零殘留檢查 |
-| K7 | 業主（台灣網路） | 0.5 小時 | 註冊第一個帳號、真付款 NT$1,200、拿到 8048876、`set-self-admin`、用自己第二個信箱測 Email 邀請全程 |
+| K7 | 業主（台灣網路） | 1 小時 | 註冊第一個帳號＋完善資料、`set-self-admin`、真付款 NT$1,200、拿到 8048876、加入推薦計畫、curl 實寄核對、開 Cloudflare 旗標並重建、UI 走一次邀請卡 |
 | K8 | 業主 | — | 宣布開放 |
 
-**誠實的估計**：K1 起算 7–9 小時，對應台北 09:00–11:00 是最早的可開放時間，**沒有緩衝**；任何一步紅（journey-full 第一次在 hosted 跑 #390／#394 的後端、`--use-api` 對 `_shared` import 的相容性、R2 正式站實寄）都會讓 12:00 往後。業主裁決 1 已接受「R2 沒好就延」。主 session 每小時在本檔 §8 記一列進度，延誤超過 2 小時就用互動問題給業主新的開放時間。
+**誠實的估計**：K1 起算 7–9 小時；業主 02:15 睡到 10:15（裁決 9），夜裡主 session 把 K2–K4 做到「main 已合併、等核准」，業主醒來後做 K5–K7 約 1.5–2 小時，**最早台北 12:00 前後可開放**、沒有緩衝；任何一步紅（journey-full 第一次在 hosted 跑 #390／#394 的後端、`--use-api` 對 `_shared` import 的相容性、R2 正式站實寄）都會讓 12:00 往後。業主裁決 1 已接受「R2 沒好就延」。主 session 每小時在本檔 §8 記一列進度，延誤超過 2 小時就用互動問題給業主新的開放時間。
 
 ## 2. 三種 session（目標 6 的落地）
 
@@ -84,8 +85,8 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 | **R1a-2** og 預覽＋`lang` | Plan Mode `fix/*`，Sonnet | `index.html` 一檔＋vitest 讀檔 | 零撞檔，**最先開** | none |
 | **寄信失敗告警** | Plan Mode `fix/*`，Sonnet | `index.ts` system_alerts 來源 | 與 #395 同檔不同區段；排在 #395 後或同一 PR | low |
 | **issue #395** PayUni 查詢層非 SUCCESS 告警、expired 前先告警 | Plan Mode `fix/*`，**Opus**（金流相鄰） | `index.ts` `queryPayUniTradeStatus`、reconcile 迴圈；`reconcile-payments.yml` | 等 #399 合併後切（同檔） | medium |
-| **告警送到人** | 輕量 Plan Mode，Sonnet；重用 PR #379 的 `.github/actions/notify` 設計（LINE push＋Gmail SMTP） | `deploy-supabase.yml`、`reconcile-payments.yml`、`deploy-smoke.yml`、新 composite action | 與 #402 同檔但 #402 先合 | low |
-| **容量 hotfix** | Plan Mode `fix/*`，Sonnet | `index.ts` `CHECK_EMAIL_RATE_MAX` 10→**60**／5 分（現場共用 IP）；`check-spec-drift` 常數；規格書 §4.1 | 同檔 index.ts，小段 | low |
+| **告警送到人** | 輕量 Plan Mode，Sonnet；**新建** `.github/actions/notify`（composite；設計見 PR #379 分支的 `docs/plans/launch-readiness/plan.md` C 列：LINE push＋Gmail SMTP，Secrets `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_*`，目前 repo 沒有這個 action） | `deploy-supabase.yml`、`reconcile-payments.yml`、`deploy-smoke.yml`、新 composite action | 與 #402 同檔但 #402 先合 | low |
+| **容量 hotfix** | Plan Mode `fix/*`，Sonnet | `index.ts` `CHECK_EMAIL_RATE_MAX` 10→**60**／5 分（現場共用 IP）＋ log 一行記下解析到的 IP 來源 header；**新增** `check-spec-drift` 規則與規格書 §4.1 一句（目前兩者都沒有這個限流值） | 同檔 index.ts，小段 | low |
 | **P1a** 照片裁切管線 | 三段式 `feature/listing-photo-pipeline`，Sonnet（規劃在總綱 §3.2A／C） | `EditServiceProvider`、新 `imagePipeline.ts`、`index.ts` DELETE /listings/photos | 與其他項不撞；最大的一項，**10/27 開放後立刻開** | low |
 | **T1** 登入狀態信任（不閃、暫時故障不登出） | 三段式 `feature/auth-state-trust`，**Opus 規劃**（總綱 §1） | `App.tsx`、`AuthPage.tsx`、`apiClient.ts`、`Navbar`、`BottomNav` | **R2 前端合併後才切分支**；與 P1a 不撞 | high：若 10/28 24:00 前沒綠，**不上**，留到 11/3 |
 
@@ -98,11 +99,11 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 
 ## 4. 清資料 SOP（裁決 3、6）
 
-**原則**：先乾跑列計數、業主確認後才刪；刪的順序照 `e2e/journey/tools/cleanup.py`（先 Storage 物件，再 `auth.users` 讓業務表 cascade）；全程用 Supabase MCP `execute_sql` 對正式專案 `uhtwwxtazwqnlbejhprl`（Storage 物件走 `storage.objects` 的 SQL 刪除；物件實體由 Storage 的 GC 回收，若 MCP 無法刪實體則請業主在 Dashboard 清 bucket）。
+**原則**：先乾跑列計數、業主確認後才刪；刪的順序照 `e2e/journey/tools/cleanup.py`（先 Storage 物件，再 `auth.users` 讓業務表 cascade）；DB 部分用 Supabase MCP `execute_sql` 對正式專案 `uhtwwxtazwqnlbejhprl`。**Storage 物件不能用 SQL 刪**（直接刪 `storage.objects` 列只會留下孤兒實體，之後也無法再從 Dashboard 清）：由業主在 Dashboard → Storage 的三個 bucket（`id-cards`、`referral-signatures`、`make-5c6718b9-listings-photos`）全選刪除，乾跑看到 `storage.objects` 各 bucket 為 0 才進 SQL 段。
 
 **前提（業主）**：Dashboard → Project Settings → Database → Backups 確認今天有可還原的備份（或 PITR 開著），截圖回報。沒有備份不執行。
 
-**演練**：先對 develop 分支 `ijcxnxhrziehdtkwausy` 跑一次同樣的腳本（develop 的測試資料可清；R2-0 spike 若仍在用 develop，先問 session D 狀態）。
+**演練**：**不在 develop 上演練**（develop 的管理員、預設推薦人與測試帳號還要給窗口工項的真機驗收用）。用 Supabase MCP `create_branch` 從正式專案開一條拋棄式分支，對它跑乾跑與刪除段，確認每句 SQL 都能執行、零殘留查詢正確，然後 `delete_branch`。分支沒有資料，演練驗的是語法與權限，不是計數。
 
 **乾跑（唯讀）**：
 
@@ -119,6 +120,8 @@ union all select 'withdrawal_events.bank_ref', count(*) from public.withdrawal_e
 union all select 'reward_transactions', count(*) from public.reward_transactions
 union all select 'referral_codes', count(*) from public.referral_codes
 union all select 'referral_edges', count(*) from public.referral_edges
+union all select 'task_progress', count(*) from public.task_progress
+union all select 'referral_king_rewards', count(*) from public.referral_king_rewards
 union all select 'system_alerts', count(*) from public.system_alerts
 union all select 'announcements', count(*) from public.announcements
 union all select 'rate_limits', count(*) from public.rate_limits
@@ -127,26 +130,27 @@ union all select 'auth.audit_log_entries', count(*) from auth.audit_log_entries
 union all select 'storage.objects:'||bucket_id, count(*) from storage.objects group by bucket_id;
 select last_value, is_called from public.referral_code_seq;
 select default_referrer_code from public.reward_config;
+select to_regclass('public.kv_store_5c6718b9');   -- 舊 KV 表若仍存在（checklist 附錄），一併列計數並刪
 ```
 
 把結果整段貼進互動問題給業主確認（特別標出：`withdrawal_events.bank_ref` 非 0 代表曾有真匯款；`payment_orders.completed` 若有 `PAYUNI_SANDBOX=false` 期間的單代表真錢——目前證據是正式站一直 sandbox，PR #372）。
 
-**執行（業主確認後，一個交易一段，避開每小時 :00 的 reconcile 與 :17 的 prune）**：
+**執行（業主確認後，整段在單一交易內；執行前看 `reconcile-payments.yml` 沒有 in_progress 的 run 即可，排程看不到半刪狀態）**：
 
 ```sql
 begin;
-delete from storage.objects where bucket_id in ('id-cards','referral-signatures','make-5c6718b9-listings-photos');
+-- storage.objects 已由業主在 Dashboard 清空（乾跑各 bucket 為 0），這裡不碰
 delete from auth.users;                      -- profiles 與全部業務表 cascade（20260620000001:20 起）
 delete from auth.audit_log_entries;          -- 含 email，無 cascade，個資清理
 delete from public.system_alerts;
 delete from public.rate_limits;
 delete from public.member_verify_logs;
 delete from public.announcements;            -- 業主若有上線公告要留，先問
-alter sequence public.referral_code_seq restart with 8048876;   -- 只有整批清空才允許（checklist:487-493）
+alter sequence public.referral_code_seq restart with 8048876;   -- 裁決 3 全清＝checklist「整批測試資料一起清掉」的例外（checklist:486-494）；乾跑的 referral_codes 必為 0
 commit;
 ```
 
-不碰：`public.reward_config`（單列；`default_referrer_code` 維持 `'8048876'`，業主付款後自動對上）、`storage.buckets` 列、`cron.job`、`supabase_migrations.schema_migrations`。
+不碰：`public.reward_config`（單列）。乾跑若看到 `default_referrer_code = '8048876'` 就維持，業主付款拿到 8048876 後自動對上；若是 null 或別的值，業主付款後執行 `update public.reward_config set default_referrer_code = '8048876';`（checklist 步驟 6 的順序：先付款、後設定）、`storage.buckets` 列、`cron.job`、`supabase_migrations.schema_migrations`。
 
 **零殘留檢查**：再跑一次乾跑，除 `reward_config` 外全部為 0；`select last_value, is_called from public.referral_code_seq` 應為 `8048876, false`。
 
@@ -169,18 +173,19 @@ commit;
 
 1. 每小時註冊漏斗：`auth.users` 依 `date_trunc('hour', created_at)` 的 建立數／`email_confirmed_at` 非空數（完成率 <80% 或整點斷崖 ＝ 寄信額度）。
 2. 重寄比：`confirmation_sent_at` 更新次數無法直讀，改看 Auth logs 的 send 事件數／註冊數，>1.3 代表送達問題。
-3. 步驟分布：`profiles` 依 `effective_registration_step`（1 填資料前／2 未付款／3 已付款）。
+3. 步驟分布：`select public.effective_registration_step(id) as step, count(*) from public.profiles group by 1`（函式，0 基本資料未填／1 無訂單／2 有 pending 訂單／3 有 completed 訂單；`profiles.registration_step` 欄已棄用、不要讀）。
 4. 訂單：`payment_orders` 每小時各狀態數；`pending` 且無 `payuni_response` 超過 20 分鐘的數；`pending` 且 `payuni_response->>'Status'='SUCCESS'` 的數（目標 0）。
 5. `system_alerts` 未解決數依 source／severity。
 6. 限流壓力：`rate_limits` 中 `key like 'check-email:%'` 且 `count >= 上限` 的列數、`check-email:unknown` 的 count。
 7. `/health` 每次都看：`ok`、`sha`、`payuniMode=production`、`defaultReferrer=ok`。
 8. 客服回報分類計數：沒收到驗證碼／付了未開通／推薦碼無效／請求過於頻繁。
+9. R2 邀請：`auth.users` 中 `raw_app_meta_data ? 'referral_invite'` 的數、其中 `email_confirmed_at is null` 且 `issued_at` 超過 8 天的數（應為 0，purge 失效的訊號）、`system_alerts` 的 R2 來源（接手 R2 規劃書 R2-3b 第 12 點，該規劃書在前端合併後會刪）。
 
 **監看分工**：告警送到人（窗口工項）上去前，業主每 2 小時看 `/admin` 的系統告警與 GitHub issues；上去後由 LINE 推播。
 
 ## 6. 第 2 波起：維運與資安（目標 3）
 
-每週晉升：週一台北 10:00 開晉升 PR、journey-full 綠、業主核准（11/3 起）。第 2 波主 session 從這張表挑（大小是掃描估計）：
+每週晉升：第一次 11/3（週二）台北 10:00 開晉升 PR、journey-full 綠、業主核准；之後每週同一天。第 2 波主 session 從這張表挑（大小是掃描估計）：
 
 | 項 | 大小 | 內容 |
 |---|---|---|
@@ -192,25 +197,42 @@ commit;
 | 私有 bucket 釘測試 | XS | Deno DB 測試斷言 `storage.buckets.public=false`、`storage.objects` 零 policy |
 | Deno 相依掃描 | XS | security.yml 加一步 |
 | 後台稽核軌跡 | M | A1b-2/3（總綱 §6） |
-| 既有 issue 收斂 | XS | 14 張同標題部署失敗 issue、#288、#280、#279 一次清 |
+| 既有 issue 收斂 | XS | 全部同標題「Edge Function 部署失敗」issue（2026-10-26 時點 13 張，#337–#400）、#288、#280、#279 一次清；順手把 checklist 的號源重設句改成「已開始發碼後絕不執行」 |
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
 
+**睡前（10/27 02:15 前）**
+
 1. 回答 R2 session 卡住的問題（建議「不改」）。
-2. 合併 PR #402（merge commit）；看之後第一個 develop deploy run 的「部署 Edge Function」綠。
-3. 開新的主 session，貼 `dispatch-prompts.md` §A。
-4. #399 轉 ready 後合併。
-5. Supabase Dashboard（正式專案）：確認備份存在；Authentication → Rate Limits 的寄信上限調到 600／小時並記下現值；Authentication → Email Templates 貼 R2 的 Invite user 模板與主旨（`supabase/email-templates/referral-invite.html`，由 R2 前端 PR 產出）；Edge Function Secrets 加 `REFERRAL_INVITE_SECRET`（`openssl rand -hex 32`）、`REFERRAL_EMAIL_INVITE_ENABLED=true`。
-6. Cloudflare Pages → uknow → Settings → Variables（**Production** 作用域）：`VITE_REFERRAL_EMAIL_INVITE=true`（晉升合併後的建置才會帶到）。
-7. 晉升 PR 綠後以 merge commit 合併；到 Actions 核准 `production` 部署；`curl https://uhtwwxtazwqnlbejhprl.supabase.co/functions/v1/api/health` 看 `sha` 對上。
-8. Secrets 翻 PayUni 正式：`PAYUNI_SANDBOX=false`、`PAYUNI_MER_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認 `FRONTEND_URL=https://uknow.com.tw`；Dashboard 重部署 `api`（或等主 session 的 `EXPECT_PRODUCTION_PAYUNI` PR 合進 develop 後再部署一次）；`/health` 的 `payuniMode=production`。PayUni 商店後台確認 NotifyURL／ReturnURL 網域。
-9. 回答主 session 的清資料乾跑確認。
-10. 清完後：從台灣網路註冊第一個帳號、真付款 NT$1,200、`/health` 的 `defaultReferrer=ok`、`POST /admin-setup/set-self-admin`（checklist 步驟 7）、用第二個信箱走一次 Email 邀請（收信、點連結、設密碼、完善資料頁帶推薦碼）。
-11. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線。
+2. PR #402 轉 ready → 合併（merge commit；內含本檔、三種 session 的 prompt、CLAUDE.md／README 修訂）。
+3. 開新的主 session（Opus），貼 `dispatch-prompts.md` §A；它會自己開 R2 前端與窗口工項的執行 session。
+4. 睡。夜裡不會有任何互動問題等你；主 session 把要你決定的事列在本檔 §8 的「醒來後待辦」。
+
+**醒來後（約 10:15 起，順序照做；先看本檔 §8 最後幾列與「醒來後待辦」表）**
+
+5. 若晉升 PR 已合進 main：到 Actions 核准 `production` 部署；`curl https://uhtwwxtazwqnlbejhprl.supabase.co/functions/v1/api/health` 看 `sha` 對上 main 的 merge commit。若還沒合進 main：看 §8 的原因，先做主 session 列出的那件事。
+6. Supabase Dashboard（正式專案）：確認備份存在（Project Settings → Database → Backups，截圖回主 session）；Authentication → Rate Limits 的寄信上限調到 600／小時並記下現值；Authentication → Email Templates 貼 R2 的 Invite user 模板與主旨（`supabase/email-templates/referral-invite.html`，R2 前端 PR 合併後才有這個檔，PR 內文有貼法）；Edge Function Secrets 加 `REFERRAL_INVITE_SECRET`（`openssl rand -hex 32`）、`REFERRAL_EMAIL_INVITE_ENABLED=true`。
+7. Secrets 翻 PayUni 正式：`PAYUNI_SANDBOX=false`、`PAYUNI_MER_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認 `FRONTEND_URL=https://uknow.com.tw`；Dashboard 重部署 `api`；`/health` 的 `payuniMode=production`、`payuniConfigured=true`。PayUni 商店後台確認 NotifyURL／ReturnURL 網域。告訴主 session「已翻」，它才合 `EXPECT_PRODUCTION_PAYUNI` 的 PR。
+8. Storage：Dashboard → Storage → `id-cards`、`referral-signatures`、`make-5c6718b9-listings-photos` 三個 bucket 各自全選刪除物件（bucket 本身留著）。
+9. 回答主 session 的清資料乾跑確認（它會貼 §4 的計數；`storage.objects` 各 bucket 必須已是 0）。
+10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
+11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。
+12. Cloudflare Pages → uknow → Settings → Variables（**Production** 作用域）：`VITE_REFERRAL_EMAIL_INVITE=true` → Deployments 對最新 production 部署按 Retry deployment（環境變數要重建才生效）→ 開 https://uknow.com.tw 按「邀請好友」確認邀請卡有 Email 欄。
+13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
 ## 8. 進度與異動紀錄（主 session 每小時一列）
 
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
-| 10/27 02:00 | 監工 session 完成目標核對（§0）、掃描、PR #402；本檔與 `dispatch-prompts.md` 落檔 | 業主做 §7 第 1–3 步 |
+| 10/27 02:00 | 監工 session 完成目標核對（§0）、掃描、PR #402；本檔與 `dispatch-prompts.md` 落檔 | 業主做 §7 睡前 1–3 步 |
+| 10/27 02:15 | 業主裁決 9（夜間授權）後入睡到 10:15 | 主 session 接手；夜裡的紀錄一律寫在本表 |
+
+**醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
+
+| # | 事 | 狀態 |
+|---|---|---|
+| 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
+| 2 | §7 第 6–8 步（備份確認、寄信上限、模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket） | ⬜ |
+| 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
+| 4 | GitHub Secrets 放 LINE token（告警送到人 PR 需要） | ⬜ |

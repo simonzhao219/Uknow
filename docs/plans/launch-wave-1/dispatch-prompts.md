@@ -12,14 +12,20 @@
 你是 Uknow 第 1 波（2026-10-27 正式上線）的主 session：規劃與監工，不寫產品程式碼（例外：≤10 行的 CI／文件修補）。業主在另一個 session 做了目標核對與八題裁決，全部在 docs/plans/launch-wave-1/plan.md §0；你開局不需要再問一次。
 
 ## 開局（照順序）
-1. `git fetch origin develop && git checkout -B <你的 session 分支> origin/develop`（web session 的分支由平台綁定；你只在這條分支上改文件）。
+1. `git fetch origin develop && git checkout -B <你的 session 分支> origin/develop`（web session 的分支由平台綁定；你只在這條分支上改文件）。若 develop 上還沒有 docs/plans/launch-wave-1/（PR #402 尚未合併），先 `git fetch origin claude/platform-uiux-redesign-plan-oowvbe` 並從那條分支讀，且你可以直接合併 #402（它的 CI 已綠）。
 2. 讀：docs/plans/launch-wave-1/plan.md（全文）、CLAUDE.md、docs/plans/platform-growth-and-trust/plan.md §0 與 §8（§8.2 撞檔矩陣）、docs/plans/referral-email-invite/plan.md §5 與 progress.md、docs/supabase-setup-checklist.md 步驟 5–7 與 §快速檢查表。
 3. 用 GitHub MCP 查現況：PR #402（部署改 --use-api）合併了沒、它之後 develop 的 deploy-supabase run「部署 Edge Function」step 綠了沒；PR #399（R2 後端）狀態；open issues。把現況寫成 plan.md §8 的第一列。
 4. 用 Claude Code Remote 的 get_session 看 session_015dFtMVsyqYU5gijDBa6yCp（R2 後端）是否仍卡在 AskUserQuestion；卡著就提醒業主回答（建議「不改」）。
 
+## 夜間授權（plan.md §0 第 9 題；業主 02:15–10:15 睡眠，不會回覆）
+- 你**可以**：審過後合併 PR 進 develop（GitHub MCP merge_pull_request，merge method = merge）；開晉升 PR，journey-full 綠後以 merge commit 合進 main；用 Claude Code Remote 的 create_session 自己開執行 session（prompt 就是你寫進 dispatch-prompts.md 的那段；title 寫工項名；不帶 environment_id 即繼承；不要用 plan 權限模式，沒人會核准）。
+- 你**不做**：正式站部署核准、Dashboard secrets、PayUni 切換、清資料、付款。這些列進 plan.md §8「醒來後待辦」。
+- 夜裡不要對業主發 AskUserQuestion（會卡到早上）：能用既有裁決決定的就決定並記 §8；真的要業主裁的，記進「醒來後待辦」、先做不依賴它的事。
+- 晉升 PR 開了之後，develop 再合任何 PR 都會讓 journey-full 失效（strict required check）：R2 前端合併後先開晉升 PR、等它合進 main，窗口小項才合進 develop（可以先開 PR、先審，不要合）。
+
 ## 你的規矩
-- 每一個要業主裁決的事用 AskUserQuestion 問，裁決寫進 plan.md §0 或 §8，並留言在相關 PR。
-- 每小時在 plan.md §8 記一列（時間、事件、下一步）。延誤超過 2 小時就用互動問題給業主新的開放時間。
+- 每一個要業主裁決的事用 AskUserQuestion 問（夜間除外，見上），裁決寫進 plan.md §0 或 §8，並留言在相關 PR。
+- 每次被事件喚醒（PR 事件、子 session 回報）都在 plan.md §8 記一列（時間、事件、下一步）；不排 send_later。延誤超過 2 小時就在 §8「醒來後待辦」寫下建議的新開放時間（業主醒著時才用互動問題問）。
 - 派工：一工項一個執行 session，prompt 寫進 docs/plans/launch-wave-1/dispatch-prompts.md 新段（完整、可貼、檔名與 helper 都在 repo 真的存在、行號叫它現算），業主負責開 session。R2 前端的 prompt 已在 §B。
 - 衝突：業主已授權你 push 任何執行分支做 rebase 與解衝突（plan.md §0 目標 5）。做法：`git fetch origin develop && git rebase origin/develop`，解完 `git push --force-with-lease`；解不開（兩邊改同一段邏輯）才問執行 session 或業主。不要按 GitHub 的 Update branch（merge commit 會讓 linear-check 紅）。
 - 每則 GitHub 留言結尾加：
@@ -32,16 +38,16 @@
 - 清資料只在 plan.md §4 的前提與順序下做，業主確認乾跑計數後才執行，用 Supabase MCP 的 execute_sql 對正式專案 uhtwwxtazwqnlbejhprl；先對 develop 分支 ijcxnxhrziehdtkwausy 演練。
 
 ## 上線前你要做的事（plan.md §1 K1–K7）
-- 等 #399 ready → 提醒業主合併 → 寫 §B 的開局條件達成，請業主開 R2 前端 session。
-- R2 前端 PR 開出後：訂閱它、審它（五 lane：系統／架構／UI-UX／需求／事實核對，各自獨立 agent，P1 逐條反駁後才回報）、裁決題問業主、留言在 PR。合併後開晉升 PR：develop→main，標題 `chore(release): 晉升 develop → main——<主要內容>`，內文列本次全部 PR（#368 起）、明寫「後端有變動、前端與後端都會部署」與「有 N 支 migration（列檔名）」，流程證據段寫不適用（各 PR 已審）。開了就訂閱；journey-full 紅就在同 session 修到綠（第一次在 hosted 跑 #390／#394 的後端）。
+- 等 #399 ready（R2 後端 session 跑完 check:full 與 /review-implementation 會轉 ready；若它仍卡在 AskUserQuestion 而業主沒答，你用 get_session 看題目，照 plan.md §0 與 R2 規劃書能決定的就在 #399 留言寫下裁決，並以 create_session 開一個接手 session 完成收尾）→ 你審 #399 的 diff（五 lane）→ 合併 → 用 create_session 開 R2 前端 session（prompt＝§B）。
+- R2 前端 PR 開出後：訂閱它、審它（五 lane：系統／架構／UI-UX／需求／事實核對，各自獨立 agent，P1 逐條反駁後才回報）、裁決題問業主、留言在 PR。合併後開晉升 PR：develop→main，標題 `chore(release): 晉升 develop → main——<主要內容>`，內文列本次全部 PR（#368 起）、明寫「後端有變動、前端與後端都會部署」與「有 N 支 migration（列檔名）」，流程證據段寫不適用（各 PR 已審）。開了就訂閱；journey-full 紅就先判因（第一次在 hosted 跑 #390／#394 的後端、--use-api 打包）：要改碼的用 create_session 開 fix/* 執行 session 回 develop，合併後晉升 PR 自動跟上再跑；你自己不推碼。
 - 晉升合併後：請業主核准 production 部署、做 plan.md §7 第 5–8 步；你驗 /health（業主貼結果，容器打不到 *.supabase.co）。
 - 業主翻 PAYUNI_SANDBOX=false 之後（不是之前）：開小 PR 把 .github/workflows/deploy-supabase.yml 的 EXPECT_PRODUCTION_PAYUNI 改 'true'，合進 develop 即生效。
 - 清資料（§4）→ 業主 §7 第 10 步 → 宣布開放。
 
 ## 窗口（開放後到 10/28 24:00，plan.md §3.2）
 - 立刻派：R1a-2（index.html，零撞檔）、P1a（三段式，最大）。
-- #399 合併後派：#395（Opus）、寄信失敗告警、容量 hotfix（CHECK_EMAIL_RATE_MAX 10→60，先在 develop 打一次 /auth/check-email 看 log 有沒有 cf-connecting-ip 或 x-forwarded-for，結果記 §5）。
-- #402 合併後派：告警送到人（重用 PR #379 的 .github/actions/notify 設計，最小版：deploy 失敗、reconcile 失敗、system_alerts 新 error 各一條 LINE push）。
+- #399 合併後派：#395（Opus）、寄信失敗告警、容量 hotfix（CHECK_EMAIL_RATE_MAX 10→60，並在 handler 記一行 log 說明解析到哪個 IP header；執行 session 從它的容器對 develop 打一次 /auth/check-email，你用 Supabase MCP query_logs 看 develop 分支的函式 log 判斷 cf-connecting-ip／x-forwarded-for 有沒有來，結果記 plan.md §5；本容器打不到 *.supabase.co）。
+- #402 合併後派：告警送到人（新建 .github/actions/notify，設計照 PR #379 分支 docs/plans/launch-readiness/plan.md 的 C 列；repo 目前沒有這個 action；最小版：deploy 失敗、reconcile 失敗、system_alerts 新 error 各一條 LINE push；需要業主在 GitHub Secrets 放 LINE token，列進醒來後待辦）。
 - R2 前端合併後派：T1（Opus 規劃；10/28 24:00 前沒綠就不上，留 11/3）。
 - 10/28 準備 §5 的量測 SQL 檔；10/29–31 每 2 小時跑一次、結果記 §8。
 
@@ -64,14 +70,14 @@
 
 ## 開局
 - `git fetch origin develop && git checkout -B feature/referral-email-invite origin/develop`（若平台綁定了 claude/* 分支，就用那條；PR 一律回 develop）。
-- 讀 docs/plans/referral-email-invite/plan.md（v2，業主 A～T 裁決已落入；附錄 C 是裁決落點）與 progress.md（階段狀態表：循環 6–11 未開始；「待 R2-0」欄的點以原始碼核對結果實作，R2-0 結論未貼入時不等）。
+- 讀 docs/plans/referral-email-invite/plan.md（v2＋檔頭「v3 增補」，#399 合併後生效，衝突以 v3 增補為準；附錄 C 是裁決落點）、progress.md（階段狀態表：循環 6–11 未開始；「待 R2-0」欄的點以原始碼核對結果實作，R2-0 結論未貼入時不等；檔尾有後端段的交接事項）與同目錄的 implementation-review.md 末尾處置表（若存在）。
 - 讀 docs/plans/launch-wave-1/plan.md §0 與 §1：業主裁決 12:00 開放必須含 R2 開啟，時間緊、沒有緩衝；每個循環綠了就 push，不要攢。
 
 ## 施工
 - 照 plan.md §5 的循環 6→7→8→9→10→11 順序（8 依賴 5、6、7；9 依賴 4a；都已滿足）。紅燈先行：`touch .claude/tdd-lock` → commit `test(red)` → 綠 → `scripts/tdd-unlock.sh` → commit `feat:`。紅燈期 hook 禁改 `*.test.*`。
 - 循環 11 產出 supabase/email-templates/referral-invite.html 與主旨：業主要手動貼進正式站 Dashboard，PR 內文把「貼哪裡、貼什麼」寫成可照做的步驟。
 - 文件：ui-ux §13 第 5 條（保留 #394 的揭露句子項）、規格書 §4.1／§7.1、docs/supabase-setup-checklist.md（Invite 模板與主旨、兩支函式、secret 與旗標、客服 purge SOP）、multi-step-flow-recovery.md 一句；改了業務常數就跑 python3 scripts/check-spec-drift.py。
-- R2-3a UI 步驟：e2e/journey 的情境補「開連結 → 設密碼 → 完善資料頁顯示推薦人」（journey 不在本機跑，分支內只驗形）。
+- R2-3a UI 步驟（循環 8 之後做）：在既有 e2e/journey/features/80_referral_email_invite.feature（#399 的 API 版）接上 UI 步驟「開連結 → 設密碼畫面 → 完善資料頁顯示推薦人 → 結帳頁顯示推薦人」，照 progress.md 檔尾的交接；journey 不在本機跑，分支內只驗形。
 - `npm run check:full` 綠才 push；push 後 `gh pr checks <pr> --watch`。
 
 ## 收尾
