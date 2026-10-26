@@ -112,7 +112,7 @@ describe('referralDisclosureSentence', () => {
 });
 
 describe('RECRUITMENT_FORBIDDEN_WORDS', () => {
-  it('恰為手冊展開詞八個加用語裁決三個，共十一個字樣', () => {
+  it('恰為手冊對應詞十二個加用語裁決三個，共十五個字樣', () => {
     expect([...RECRUITMENT_FORBIDDEN_WORDS]).toEqual([
       '賺',
       '獎金',
@@ -122,6 +122,10 @@ describe('RECRUITMENT_FORBIDDEN_WORDS', () => {
       '工作',
       '兼職',
       '節稅',
+      '僱傭',
+      '合夥',
+      '獨家',
+      '特許',
       '傳銷',
       '直銷',
       '下線',

@@ -177,6 +177,33 @@ describe('InviteFriendPanelContent 分享 QR Code', () => {
     fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
   });
+
+  it('不支援檔案分享而改下載時，邀請卡上畫出帶會員名的揭露句', async () => {
+    // 卡片這條路的名字由面板交給 drawInviteCard；版面另有 inviteCardImage.test.ts 管，
+    // 這裡只釘「面板有把名字交過去」。jsdom 沒有 2D context，換成只記錄字串的假 context。
+    const drawn: string[] = [];
+    const ctx = {
+      font: '',
+      fillStyle: '',
+      textAlign: 'left',
+      imageSmoothingEnabled: true,
+      fillRect: () => {},
+      drawImage: () => {},
+      fillText: (text: string) => drawn.push(text),
+      measureText: (text: string) => ({ width: text.length * 10 }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      ctx as unknown as CanvasRenderingContext2D,
+    );
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubCanvasAndShare(share);
+    Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /分享 QR Code/ }));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('邀請卡已下載！', 'success'));
+    expect(share).not.toHaveBeenCalled();
+    expect(drawn).toContain('本邀請由 Uknow 推薦人 小明 發送');
+  });
 });
 
 describe('InviteFriendPanelContent 邀請好友', () => {
