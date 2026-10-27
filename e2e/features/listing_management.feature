@@ -78,6 +78,37 @@ Feature: Listing management
   Scenario: Deleting a listing returns the member to the empty state
     Given I am logged in as an active member
     And I have an active listing named "要刪除的刊登"
+    And the listing deletion API succeeds
+    When I visit "/service-providers"
+    And I delete the listing
+    Then I should see a toast containing "刊登已成功刪除"
+    And I should see the text "尚未刊登服務者"
+
+  @listing
+  Scenario: A failed deletion keeps the listing and reports the failure
+    Given I am logged in as an active member
+    And I have an active listing named "要刪除的刊登"
+    And the listing deletion API fails with a server error
+    When I visit "/service-providers"
+    And I delete the listing
+    Then I should see the text "刪除失敗"
+    And I should see the text "要刪除的刊登"
+
+  @listing
+  Scenario: A missing deletion route is not treated as an already deleted listing
+    Given I am logged in as an active member
+    And I have an active listing named "要刪除的刊登"
+    And the listing deletion route is not deployed yet
+    When I visit "/service-providers"
+    And I delete the listing
+    Then I should see the text "刪除失敗"
+    And I should see the text "要刪除的刊登"
+
+  @listing
+  Scenario: Deleting a listing that is already gone on the server counts as deleted
+    Given I am logged in as an active member
+    And I have an active listing named "要刪除的刊登"
+    And the listing was already deleted on the server
     When I visit "/service-providers"
     And I delete the listing
     Then I should see a toast containing "刊登已成功刪除"

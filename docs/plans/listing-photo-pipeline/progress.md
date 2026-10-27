@@ -10,7 +10,8 @@
 | 1 後端清理 | 1-1 | listing-photos.ts 純函式 | ✅ 綠 | 48e766f1 | （見 git log） |
 | 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ✅ 綠（整合測試 `listing-photos.test.ts` 本機無 supabase CLI 未跑，交 CI api-tests） | 091f879c | （見 git log） |
 | 1 | 1-3 | listingPhotosApi＋Edit diff 刪＋管理頁改走後端 | ✅ 綠 | 29f773bf | （見 git log） |
-| 1 | 1-4 | 文件（規格書 §11、ui-ux §7） | ⬜ 未開始 | | |
+| 1 | 1-4 | e2e 同步（刪刊登走後端 mock，4 情境） | ✅ 綠（本機 Playwright 跑過 listing_management 14 情境）；journey 刪刊登步驟走 UI，無需改 | （e2e 補測，無獨立紅燈） | （見 git log） |
+| 1 | 1-5 | 文件（規格書 §11／§14、ui-ux §7、supabase-functions.md） | ⬜ 未開始 | | |
 | 2 前端管線 | 2-1 | apiRequest 支援 FormData | ⬜ 未開始 | | |
 | 2 | 2-2 | imageGeometry／imagePipeline | ⬜ 未開始 | | |
 | 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ⬜ 未開始 | | |
@@ -20,7 +21,7 @@
 
 ## 目前位置與下一步
 
-PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1～1-3 綠；下一步 1-4 e2e 同步（刪刊登路徑 mock），再 1-5 文件。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1～1-3 綠；1-4 e2e 綠；下一步 1-5 文件，再 `npm run check:full`、`/review-implementation`、PR。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
 
 ## 偏離規劃（記入 PR 描述）
 
