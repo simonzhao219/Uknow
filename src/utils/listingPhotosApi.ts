@@ -77,19 +77,35 @@ export async function deleteListing(id: string): Promise<'deleted' | 'already-de
   throw apiErrorFromBody(body, res.status);
 }
 
-/** 上傳一張已處理好的 JPEG（走 apiClient：附 token、401 refresh）；回傳 public URL。 */
+/** 單張上傳的逾時（弱網／LINE 內建瀏覽器掛起時，讓該格進 failed 以便重試或移除）。 */
+export const UPLOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * 上傳一張已處理好的 JPEG（走 apiClient：附 token、401 refresh）；回傳 public URL。
+ * 逾時後伺服器端可能其實已成功（重試會多一個檔成孤兒，見規格書 §14）。
+ */
 export async function uploadListingPhoto(blob: Blob): Promise<string> {
   const form = new FormData();
   form.append('file', new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
-  const res = await apiRequest(buildApiUrl('/listings/upload-photo'), {
-    method: 'POST',
-    body: form,
-  });
-  const body = await readJson(res);
-  if (!res.ok) throw apiErrorFromBody(body, res.status);
-  const photoUrl = (body as { photoUrl?: unknown } | null)?.photoUrl;
-  if (typeof photoUrl !== 'string' || !photoUrl) {
-    throw new ApiError('上傳失敗：伺服器沒有回傳照片網址', res.status);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  try {
+    const res = await apiRequest(buildApiUrl('/listings/upload-photo'), {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+    });
+    const body = await readJson(res);
+    if (!res.ok) throw apiErrorFromBody(body, res.status);
+    const photoUrl = (body as { photoUrl?: unknown } | null)?.photoUrl;
+    if (typeof photoUrl !== 'string' || !photoUrl) {
+      throw new ApiError('上傳失敗：伺服器沒有回傳照片網址', res.status);
+    }
+    return photoUrl;
+  } catch (error) {
+    if (controller.signal.aborted) throw new ApiError('上傳逾時，請重試', undefined, 'TIMEOUT');
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return photoUrl;
 }

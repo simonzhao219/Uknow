@@ -3,7 +3,9 @@
  * 規劃：docs/plans/listing-photo-pipeline/plan.md §4。
  *
  * 取景對話框以 React.lazy 動態載入（react-easy-crop 留在 lazy chunk 內）；載入失敗＝顯示
- * 「重新載入裁切工具」，該張維持等待取景而不可送出——**不會**偷偷改用自動置中裁。
+ * 「請重新整理頁面」，該張維持等待取景而不可送出——**不會**偷偷改用自動置中裁。
+ * 失敗的動態 import 會被瀏覽器依規格快取（同 URL 再 import 立刻失敗），所以不原地重試，
+ * 也不自動重載（會丟掉已填表單）：由使用者按鈕主動整頁重新整理。
  */
 import {
   Component,
@@ -14,7 +16,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import type { PhotoSlot, UseListingPhotosResult } from '../../hooks/useListingPhotos';
 import { Button } from '../ui/button';
@@ -32,7 +33,7 @@ export interface PhotoPickerProps {
 }
 
 const defaultLoader: DialogLoader = () => import('./PhotoCropDialog');
-const RELOAD_MIN_PENDING_MS = 400;
+const defaultReload = () => window.location.reload();
 
 const STATUS_TEXT: Partial<Record<PhotoSlot['state'], string>> = {
   preparing: '處理中…',
@@ -40,7 +41,7 @@ const STATUS_TEXT: Partial<Record<PhotoSlot['state'], string>> = {
   uploading: '上傳中…',
 };
 
-/** 載入中（含重新載入進行中）：按鈕 aria-disabled 並用文字說明，防連點。 */
+/** 首次載入中：按鈕 aria-disabled 並用文字說明，防連點。 */
 function CropToolPending() {
   return (
     <div className="rounded-md border p-3 text-sm" role="status">
@@ -67,14 +68,15 @@ class CropBoundary extends Component<
         className="rounded-md border border-warning-border bg-warning-subtle p-3 text-sm"
         role="alert"
       >
-        <p>裁切工具載入失敗，載入完成前無法送出。請重新載入，或移除這張照片。</p>
+        <p>裁切工具載入失敗，請重新整理頁面後再試。也可以先移除這張照片。</p>
         <Button
           type="button"
           tone="secondary"
           className="mt-2 min-h-11"
           onClick={this.props.onReload}
+          aria-label="重新整理頁面"
         >
-          重新載入裁切工具
+          重新整理頁面
         </Button>
       </div>
     );
@@ -152,26 +154,15 @@ export function PhotoPicker({
   photos,
   maxCount,
   loadCropDialog = defaultLoader,
-  reloadPage: _reloadPage,
+  reloadPage = defaultReload,
 }: PhotoPickerProps) {
   const { slots, pendingCrop } = photos;
   const listRef = useRef<HTMLUListElement>(null);
   const focusAfterRemove = useRef<number | null>(null);
   const loaderRef = useRef(loadCropDialog);
   loaderRef.current = loadCropDialog;
-  const [attempt, setAttempt] = useState(0);
-  // 按下「重新載入」後至少顯示一下「載入中…」，否則失敗得太快會讓人以為按鈕沒反應。
-  const [holding, setHolding] = useState(false);
-  const reload = () => {
-    setHolding(true);
-    setAttempt((a) => a + 1);
-    setTimeout(() => setHolding(false), RELOAD_MIN_PENDING_MS);
-  };
-  // attempt 變動＝重新建立 lazy 元件（React.lazy 會快取 rejected promise，不重建的話重試永遠失敗）。
-  const CropDialog = useMemo(() => {
-    void attempt;
-    return lazy(() => loaderRef.current());
-  }, [attempt]);
+  const CropDialog = useMemo(() => lazy(() => loaderRef.current()), []);
+  const prevCropId = useRef<string | null>(null);
 
   // 移除後的焦點後備：下一格 → 上一格 → 列表容器（§9：焦點元素消失不可掉到 body）。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只在 slots 變動後處理待落焦點
@@ -186,6 +177,23 @@ export function PhotoPicker({
     }
     listRef.current?.focus();
   }, [slots]);
+
+  // 取景對話框整個佇列期間常駐；真的關閉（pendingCrop 清空）時，Radix 沒有觸發元件可還焦點，
+  // 這裡把焦點交回剛處理完那一格的按鈕（沒有就列表容器），不掉到 body。
+  const cropId = pendingCrop?.slotId ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在 pendingCrop 清空時處理
+  useEffect(() => {
+    const closed = prevCropId.current;
+    prevCropId.current = cropId;
+    if (closed === null || cropId !== null) return;
+    const index = Math.max(
+      0,
+      slots.findIndex((s) => s.id === closed),
+    );
+    const items = Array.from(listRef.current?.querySelectorAll('li') ?? []);
+    const target = items[Math.min(index, items.length - 1)]?.querySelector<HTMLElement>('button');
+    (target ?? listRef.current)?.focus();
+  }, [cropId]);
 
   const full = slots.length >= maxCount;
   const waiting = slots.some((s) => s.state === 'awaiting_crop' || s.state === 'preparing');
@@ -261,22 +269,18 @@ export function PhotoPicker({
       <p className="text-sm text-muted-foreground">{hint}</p>
       {photos.notice && <p className="text-sm text-warning">{photos.notice}</p>}
 
-      {pendingCrop &&
-        (holding ? (
-          <CropToolPending />
-        ) : (
-          <CropBoundary key={attempt} onReload={reload}>
-            <Suspense fallback={<CropToolPending />}>
-              <CropDialog
-                key={pendingCrop.slotId}
-                ordinal={slots.findIndex((s) => s.id === pendingCrop.slotId) + 1}
-                previewUrl={pendingCrop.previewUrl}
-                onConfirm={(crop, natural) => photos.confirmCrop(pendingCrop.slotId, crop, natural)}
-                onCancel={() => photos.cancelCrop(pendingCrop.slotId)}
-              />
-            </Suspense>
-          </CropBoundary>
-        ))}
+      {pendingCrop && (
+        <CropBoundary onReload={reloadPage}>
+          <Suspense fallback={<CropToolPending />}>
+            <CropDialog
+              ordinal={slots.findIndex((s) => s.id === pendingCrop.slotId) + 1}
+              previewUrl={pendingCrop.previewUrl}
+              onConfirm={(crop, natural) => photos.confirmCrop(pendingCrop.slotId, crop, natural)}
+              onCancel={() => photos.cancelCrop(pendingCrop.slotId)}
+            />
+          </Suspense>
+        </CropBoundary>
+      )}
     </div>
   );
 }

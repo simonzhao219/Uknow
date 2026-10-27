@@ -3,7 +3,7 @@
  * 規劃：docs/plans/listing-photo-pipeline/plan.md §2.3／§4。
  * 瀏覽器相依（解碼、上傳、預覽 URL）都經注入，方便測試。
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PixelCrop, Size } from '../utils/imageGeometry';
 import {
   exportPhoto,
@@ -114,6 +114,26 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
   const data = useRef(new Map<string, SlotData>());
   const counter = useRef(0);
 
+  // 釋放某張照片解碼後的 bitmap（沒有 release 能力的 ImageIO 就只丟參考）。
+  const releaseLoaded = useCallback(
+    (entry: SlotData | undefined) => {
+      if (!entry?.loaded) return;
+      io.release?.(entry.loaded.image);
+      entry.loaded = undefined;
+    },
+    [io],
+  );
+
+  // 離開頁面時，還沒用掉的預覽網址與 bitmap 一併釋放。
+  const cleanupRef = useRef<() => void>(() => {});
+  cleanupRef.current = () => {
+    for (const slot of slotsRef.current) {
+      if (slot.previewUrl) revokePreviewUrl(slot.previewUrl);
+      releaseLoaded(data.current.get(slot.id));
+    }
+  };
+  useEffect(() => () => cleanupRef.current(), []);
+
   const update = useCallback((fn: (prev: PhotoSlot[]) => PhotoSlot[]) => {
     slotsRef.current = fn(slotsRef.current);
     setSlotsState(slotsRef.current);
@@ -190,10 +210,25 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         counter.current += 1;
         const id = `photo-${counter.current}`;
         data.current.set(id, { file });
-        update((prev) => [
-          ...prev,
-          { id, kind: 'new', state: 'preparing', previewUrl: createPreviewUrl(file) },
-        ]);
+        let previewUrl: string;
+        try {
+          previewUrl = createPreviewUrl(file);
+        } catch {
+          // 瀏覽器缺 URL.createObjectURL 之類：這張無法處理，其餘照常。
+          update((prev) => [
+            ...prev,
+            {
+              id,
+              kind: 'new',
+              state: 'unprocessable',
+              errorCode: 'unsupported',
+              message: ERROR_MESSAGES.unsupported,
+            },
+          ]);
+          setAnnouncement(`第 ${ordinal(id)} 張照片無法處理：${ERROR_MESSAGES.unsupported}`);
+          continue;
+        }
+        update((prev) => [...prev, { id, kind: 'new', state: 'preparing', previewUrl }]);
         loadPhoto(io, file).then((result) => {
           if (!exists(id)) return;
           if ('error' in result) return markUnprocessable(id, result.error);
@@ -202,7 +237,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         });
       }
     },
-    [createPreviewUrl, io, markUnprocessable, maxCount, patch, update, exists],
+    [createPreviewUrl, io, markUnprocessable, maxCount, patch, update, exists, ordinal],
   );
 
   const confirmCrop = useCallback(
@@ -212,15 +247,15 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       if (!entry?.loaded || slot?.state !== 'awaiting_crop') return;
       patch(id, { state: 'preparing' });
       exportPhoto(io, entry.loaded, crop, naturalSize).then((result) => {
+        releaseLoaded(entry); // 不論成敗都釋放解碼後的 bitmap；File 引用留到移除
         if (!exists(id)) return;
         if ('error' in result) return markUnprocessable(id, result.error);
         entry.blob = result.value.blob;
-        entry.loaded = undefined; // 釋放解碼後的 bitmap；File 引用留到移除
         patch(id, { downscaled: result.value.downscaled });
         runUpload(id, result.value.blob);
       });
     },
-    [io, markUnprocessable, patch, runUpload, exists],
+    [io, markUnprocessable, patch, runUpload, exists, releaseLoaded],
   );
 
   const remove = useCallback(
@@ -233,10 +268,13 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         if (slot.state === 'done' && slot.url) onDiscardUploaded?.(slot.url);
         if (entry?.adjustFrom) onDiscardUploaded?.(entry.adjustFrom);
       }
+      releaseLoaded(entry);
       data.current.delete(id);
+      const wasCover = slotsRef.current[0]?.id === id && slotsRef.current.length > 1;
       update((prev) => prev.filter((s) => s.id !== id));
+      if (wasCover) setAnnouncement('第 1 張已移除，封面已改為原第 2 張照片');
     },
-    [onDiscardUploaded, release, update],
+    [onDiscardUploaded, release, releaseLoaded, update],
   );
 
   /** 取消取景：調整中的照片還原成原本完成的那張；否則視同移除。 */
@@ -246,10 +284,10 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       if (!entry?.adjustFrom) return remove(id);
       release(id);
       entry.adjustFrom = undefined;
-      entry.loaded = undefined;
+      releaseLoaded(entry);
       patch(id, { state: 'done', previewUrl: undefined });
     },
-    [patch, release, remove],
+    [patch, release, releaseLoaded, remove],
   );
 
   const adjust = useCallback(
@@ -306,6 +344,16 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       : null;
   }, [slots]);
 
+  const isBusy = slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state));
+  const canSubmit = slots.length === maxCount && slots.every((s) => s.state === 'done');
+  const submitHint = canSubmit
+    ? ''
+    : slots.some((s) => s.state === 'failed' || s.state === 'unprocessable')
+      ? '有照片上傳失敗或無法處理，請重試或移除後才能送出'
+      : isBusy
+        ? '照片處理中，完成後才能送出'
+        : `還需要 ${maxCount - slots.length} 張照片才能送出`;
+
   return {
     slots,
     pendingCrop,
@@ -318,9 +366,9 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     adjust,
     loadExisting,
     photoUrls: slots.filter((s) => s.state === 'done' && s.url).map((s) => s.url as string),
-    isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
-    canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),
+    isBusy,
+    canSubmit,
     announcement,
-    submitHint: '',
+    submitHint,
   };
 }
