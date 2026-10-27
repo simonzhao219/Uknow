@@ -8,7 +8,7 @@
 | PR | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|---|
 | 1 後端清理 | 1-1 | listing-photos.ts 純函式 | ✅ 綠 | 48e766f1 | （見 git log） |
-| 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ⬜ 未開始 | | |
+| 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ✅ 綠（整合測試 `listing-photos.test.ts` 本機無 supabase CLI 未跑，交 CI api-tests） | 091f879c | （見 git log） |
 | 1 | 1-3 | listingPhotosApi＋Edit diff 刪＋管理頁改走後端 | ⬜ 未開始 | | |
 | 1 | 1-4 | 文件（規格書 §11、ui-ux §7） | ⬜ 未開始 | | |
 | 2 前端管線 | 2-1 | apiRequest 支援 FormData | ⬜ 未開始 | | |
@@ -20,7 +20,13 @@
 
 ## 目前位置與下一步
 
-PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1 綠，下一步 1-2 路由與 handlers。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1、1-2 綠；下一步 1-3 前端接線。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+
+## 偏離規劃（記入 PR 描述）
+
+- 404 標記改用物件信封 `{success:false,error:{code:'not_found'}}`：前端 `extractApiErrorCode` 只讀 `error.code`，plan 寫的頂層 `code` 讀不到。
+- 新端點錯誤信封一律 `{success:false,error:{code,message}}`（同 referral-invite），與 upload-photo 的字串信封不同；前端 `extractApiErrorMessage` 兩種都吃。
+- 規劃檔留到 PR 2 收尾再清（PR 2 依賴 plan.md；plans-keep 已宣告退場條件）。
 
 ## Blockers(逃生口紀錄)
 

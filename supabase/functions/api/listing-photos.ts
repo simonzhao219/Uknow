@@ -6,6 +6,8 @@
 // 資料庫與 Storage 都以注入式 deps 傳入，純邏輯可在 *.unit.test.ts 秒級驗證。
 // ============================================================
 
+import type { Context } from 'npm:hono@4';
+
 /** 刊登照片 bucket 的單一事實來源（upload-photo 與清理共用，勿再複製字串）。 */
 export const LISTING_PHOTOS_BUCKET = 'make-5c6718b9-listings-photos';
 
@@ -106,8 +108,6 @@ export async function removeUnreferencedPhotos(
 // ============================================================
 // 路由處理函式（依賴注入；index.ts 組一次 deps 並註冊路由）
 // ============================================================
-import type { Context } from 'npm:hono@4';
-
 /** 兩個端點各自的限流（fail-open；放大風險由單次 10 筆與前綴約束托底）。 */
 export const LISTING_PHOTOS_DELETE_RATE = { max: 20, windowSeconds: 60 };
 export const LISTING_DELETE_RATE = { max: 20, windowSeconds: 60 };
@@ -121,9 +121,79 @@ export interface ListingPhotoHandlerDeps {
   warn: (message: string, ...detail: unknown[]) => void;
 }
 
-export function createListingPhotoHandlers(_deps: ListingPhotoHandlerDeps) {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 錯誤形狀 `{ success:false, error:{ code, message } }`：前端依 code 分流
+// （extractApiErrorCode；`not_found` 才被視為「已刪除」，裸 404 不是）。
+function fail(
+  c: Context,
+  status: 400 | 401 | 403 | 404 | 429 | 500,
+  code: string,
+  message: string,
+) {
+  return c.json({ success: false, error: { code, message } }, status);
+}
+
+export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
+  /** 逐一把 photos URL 解析成刊登者自己的 path，不符者忽略並 warn，再走引用檢查清理。 */
+  async function cleanupListingPhotos(userId: string, photoUrls: string[]): Promise<void> {
+    const base = deps.cleanup.publicUrlOf('');
+    const paths: string[] = [];
+    for (const url of photoUrls) {
+      const path = photoUrlToOwnedPath(url, base, userId);
+      if (path) paths.push(path);
+      else deps.warn('[listing-photos] 忽略非本人／非本 bucket 的照片 URL', url);
+    }
+    await removeUnreferencedPhotos(deps.cleanup, [...new Set(paths)]);
+  }
+
   return {
-    deletePhotos: (c: Context) => c.json({ success: false }, 500),
-    deleteListing: (c: Context) => c.json({ success: false }, 500),
+    deletePhotos: async (c: Context) => {
+      const user = await deps.requireAuth(c);
+      if (!user) return fail(c, 401, 'unauthorized', '未授權');
+      const { max, windowSeconds } = LISTING_PHOTOS_DELETE_RATE;
+      if (!(await deps.rateLimit(`listing-photos-del:${user.id}`, max, windowSeconds))) {
+        return fail(c, 429, 'rate_limited', '操作太頻繁，請稍後再試');
+      }
+      const body = await c.req.json().catch(() => null);
+      const v = validateDeletePathsBody(body, user.id);
+      if (!v.ok) {
+        return fail(c, v.status, v.status === 403 ? 'forbidden' : 'invalid_request', v.message);
+      }
+      try {
+        const result = await removeUnreferencedPhotos(deps.cleanup, v.paths);
+        return c.json({ success: true, ...result });
+      } catch (err) {
+        console.error('[listing-photos] 清理失敗', err);
+        return fail(c, 500, 'cleanup_failed', '照片清理失敗');
+      }
+    },
+
+    deleteListing: async (c: Context) => {
+      const user = await deps.requireAuth(c);
+      if (!user) return fail(c, 401, 'unauthorized', '未授權');
+      const { max, windowSeconds } = LISTING_DELETE_RATE;
+      if (!(await deps.rateLimit(`listing-del:${user.id}`, max, windowSeconds))) {
+        return fail(c, 429, 'rate_limited', '操作太頻繁，請稍後再試');
+      }
+      const id = c.req.param('id') ?? '';
+      // 非 UUID 回「無標記」的 404：前端只把帶 not_found 的 404 當作已刪除。
+      if (!UUID_PATTERN.test(id)) return fail(c, 404, 'invalid_id', '無效的刊登編號');
+      let row: { photos: string[] } | null;
+      try {
+        row = await deps.deleteListingRow(id, user.id);
+      } catch (err) {
+        console.error('[listing-photos] 刪除刊登失敗', err);
+        return fail(c, 500, 'delete_failed', '刪除失敗');
+      }
+      if (!row) return fail(c, 404, 'not_found', '刊登不存在');
+      // 列已刪：Storage 清理失敗只 warn，不可使刪除回報失敗。
+      try {
+        await cleanupListingPhotos(user.id, row.photos ?? []);
+      } catch (err) {
+        deps.warn('[listing-photos] 刪刊登後 Storage 清理失敗（列已刪）', err);
+      }
+      return c.json({ success: true });
+    },
   };
 }

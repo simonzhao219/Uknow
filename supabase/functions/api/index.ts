@@ -19,6 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
+import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
@@ -4279,7 +4280,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
 
 // ============================================================
 // POST /listings/upload-photo
-// 上傳刊登照片至 Supabase Storage (bucket: listings)
+// 上傳刊登照片至 Supabase Storage (bucket: make-5c6718b9-listings-photos，常數見 listing-photos.ts)
 // ============================================================
 app.post('/listings/upload-photo', async (c) => {
   const user = await requireAuth(c);
@@ -4308,7 +4309,7 @@ app.post('/listings/upload-photo', async (c) => {
 
   const client = sb();
   const { data: upload, error: uploadErr } = await client.storage
-    .from('make-5c6718b9-listings-photos')
+    .from(LISTING_PHOTOS_BUCKET)
     .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: false });
 
   if (uploadErr) {
@@ -4316,12 +4317,56 @@ app.post('/listings/upload-photo', async (c) => {
     return c.json({ error: uploadErr.message || '上傳失敗' }, 500);
   }
 
-  const { data: urlData } = client.storage.from('make-5c6718b9-listings-photos').getPublicUrl(
+  const { data: urlData } = client.storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(
     upload.path,
   );
 
   return c.json({ success: true, photoUrl: urlData.publicUrl });
 });
+
+// ============================================================
+// DELETE /listings/photos、DELETE /listings/:id
+// 刊登照片的 Storage 清理（條款十之一撤除後下架）——處理函式在 listing-photos.ts，
+// 依賴在這裡組一次注入。**註冊順序不可顛倒**：/listings/photos 必須先於 /listings/:id，
+// 否則 "photos" 會被當成 :id（listing-photos.unit.test.ts 讀原文把關）。
+// ============================================================
+export function listingPhotoDeps() {
+  return {
+    requireAuth,
+    rateLimit,
+    cleanup: {
+      publicUrlOf: (path: string) =>
+        sb().storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl,
+      // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
+      findReferencedUrls: async (urls: string[]) => {
+        const { data, error } = await sb().from('listings').select('photos').overlaps(
+          'photos',
+          urls,
+        );
+        if (error) throw new Error(error.message);
+        const wanted = new Set(urls);
+        return (data ?? []).flatMap((row: { photos: string[] | null }) => row.photos ?? [])
+          .filter((u: string) => wanted.has(u));
+      },
+      removeObjects: async (paths: string[]) => {
+        const { data, error } = await sb().storage.from(LISTING_PHOTOS_BUCKET).remove(paths);
+        if (error) throw new Error(error.message);
+        return (data ?? []).map((o: { name: string }) => o.name);
+      },
+    },
+    deleteListingRow: async (id: string, userId: string) => {
+      const { data, error } = await sb().from('listings').delete().eq('id', id)
+        .eq('user_id', userId).select('photos');
+      if (error) throw new Error(error.message);
+      const row = data?.[0];
+      return row ? { photos: (row.photos as string[] | null) ?? [] } : null;
+    },
+    warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+  };
+}
+const listingPhotoHandlers = createListingPhotoHandlers(listingPhotoDeps());
+app.delete('/listings/photos', listingPhotoHandlers.deletePhotos);
+app.delete('/listings/:id', listingPhotoHandlers.deleteListing);
 
 // ============================================================
 // GET /referrals/debug/:userId  (admin only)
