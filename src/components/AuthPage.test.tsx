@@ -225,7 +225,7 @@ describe('AuthPage 邀請送出分流', () => {
       json(409, { success: false, error: { code: 'already_accepted', message: '' } });
     await landOnSetPassword();
     await submitPassword();
-    expect((await screen.findByRole('alert')).textContent).toBe(
+    expect((await screen.findByRole('status')).textContent).toBe(
       '此邀請已完成設定，請用先前設定的密碼登入',
     );
     expect((screen.getByLabelText('密碼') as HTMLInputElement).value).toBe('');
@@ -235,7 +235,8 @@ describe('AuthPage 邀請送出分流', () => {
     signInWithPassword.mockResolvedValueOnce({ data: { session: null }, error: { message: 'x' } });
     await landOnSetPassword();
     await submitPassword();
-    expect((await screen.findByRole('alert')).textContent).toContain('剛設定的密碼');
+    expect((await screen.findByRole('status')).textContent).toContain('剛設定的密碼');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByTestId('auth-login-button')).toBeTruthy();
   });
 
@@ -334,5 +335,35 @@ describe('AuthPage 主 session 預審補測', () => {
     renderAt('/register?ref=abc123');
     expect(await screen.findByLabelText('Email')).toBeTruthy();
     expect(screen.queryByLabelText('設定密碼')).toBeNull();
+  });
+});
+
+describe('AuthPage 五 lane 審查補測', () => {
+  it('expired 提示不再指向忘記密碼（第 8 天帳號多半已被清除）', async () => {
+    acceptResponse = async () => errorBody('expired');
+    await landOnSetPassword();
+    await submitPassword();
+    const text = (await screen.findByRole('alert')).textContent ?? '';
+    expect(text).toContain('邀請連結已過期');
+    expect(text).not.toContain('忘記密碼');
+  });
+
+  it('already_accepted 是中性訊息：以 status 呈現、不用錯誤樣式', async () => {
+    acceptResponse = async () =>
+      json(409, { success: false, error: { code: 'already_accepted', message: '' } });
+    await landOnSetPassword();
+    await submitPassword();
+    const notice = await screen.findByRole('status');
+    expect(notice.className).not.toContain('text-destructive');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('/auth/profile 回 5xx 時視為未登入：保留 token、進設定密碼', async () => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'tok' } } });
+    fetchMock.mockImplementationOnce(async () => json(503, {}));
+    renderAt(`/register?invite=${VALID}`);
+    expect(await screen.findByLabelText('設定密碼')).toBeTruthy();
+    expect(sessionStorage.getItem('pending_invite_token')).toBe(VALID);
+    expect(showToast).not.toHaveBeenCalledWith('你已登入', 'info');
   });
 });

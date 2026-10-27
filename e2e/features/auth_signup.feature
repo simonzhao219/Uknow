@@ -82,7 +82,7 @@ Feature: Signup
     And I set password "Passw0rd!" and confirm "Passw0rd!"
     And I submit signup
     Then I should be on the login step
-    And I should see the alert "邀請連結已過期（7 天內有效）。請推薦人再寄一次；若你已設定過密碼請直接登入，還沒有請點「忘記密碼」設定"
+    And I should see the alert "邀請連結已過期（7 天內有效），請推薦人再寄一次；若你已設定過密碼請直接登入"
     And I should not see the text "English fallback"
 
   Scenario: An already accepted invite link switches to login with an empty password
@@ -91,7 +91,7 @@ Feature: Signup
     And I set password "Passw0rd!" and confirm "Passw0rd!"
     And I submit signup
     Then I should be on the login step
-    And I should see the alert "此邀請已完成設定，請用先前設定的密碼登入"
+    And I should see the notice "此邀請已完成設定，請用先前設定的密碼登入"
     And the login password field should be empty
 
   Scenario: An invitee arriving without the link sees how to set a password on the login step
@@ -105,4 +105,4 @@ Feature: Signup
     And I set password "Passw0rd!" and confirm "Passw0rd!"
     And I submit signup
     Then I should be on the login step
-    And I should see the alert "密碼已設定完成，請用剛設定的密碼登入"
+    And I should see the notice "密碼已設定完成，請用剛設定的密碼登入"
