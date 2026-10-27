@@ -242,6 +242,7 @@ commit;
 | 10/27 14:20 | 派工 prompt D～I 落檔；開 R1a-2、P1a（規劃）、告警送到人三個執行 session | #399／#401 CI 綠 → 合併 → 開 R2 前端（§B＋§I）、G、H |
 | 10/27 14:05 | 首批三個 session 用 create_session 不帶 source_url 開出 → 容器沒有 repo、add_repo 被分類器擋，三個都卡住（已改帶 `source_url` 重開；舊的 `session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx` 封存被權限擋，請業主手動封存）。**教訓：create_session 一律帶 source_url＋source_revision=develop** | — |
 | 10/27 14:06 | **#399 合併**（`5364205`，head `58b38c1` CI 綠）；#401 內容已逐字隨 #399 進 develop → 留言後關閉。建 10/29–31 量測排程 `trig_01KmMD7RYZFDjNiLWHrNDhx3` | 等各執行 session 回報 |
+| 10/27 14:15 | 開 #403（本分支的文件 PR，晉升前合）。六個執行 session 全部在跑（名冊見下）。清資料演練（§4）：Supabase MCP `create_branch` 需要業主確認分支費用，MCP 等不到回答逾時——**待業主在互動視窗核准後重試**。`measure.sql` 落檔（§5 的 SQL 項） | 等執行 session 回報；業主核准分支費用 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -264,5 +265,6 @@ commit;
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
+| 8 | 核准 Supabase MCP 建拋棄式分支 `wave1-cleanup-rehearsal` 的費用確認（清資料演練用，演練完即刪） | ⬜ |
 | 7 | 手動封存兩個卡住的空 session：`session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx`（另一個已封存） | ⬜ |
 | 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
