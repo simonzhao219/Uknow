@@ -59,13 +59,13 @@ PR 2（前端管線）
 - 路徑格式：`^<user.id>/\d+_[a-z0-9]+\.(jpg|png|webp)$`（用 `user.id` 組 regex，不信 client）。格式不合 → 400；格式合法但屬他人前綴 → 403；任一筆不合整個請求拒絕，不部分刪。
 - **引用檢查（跨使用者全表）**：對每個 path 以 `client.storage.from(BUCKET).getPublicUrl(path)` 重組 URL，一次批次查 `listings` 的 `photos && ARRAY[...]`（overlaps），命中者列 `skipped` 不刪。RLS 允許使用者把 `photos` 寫成任意字串，故必須查全表；代價是惡意者可在自己刊登放他人照片 URL 使對方清理被 `skipped`——屬已知可規避缺口，不危及資料，接受（`photos` 無索引，一人一筆刊登，量級小）。
 - **fail-closed**：引用查詢出錯 → 5xx，一檔不刪。
-- 回 `{success:true, removed:n, skipped:[...]}`；`removed` 取 Storage `remove` **實際回傳的物件數**，不是輸入長度；不存在的檔視為已刪（冪等）。
+- 回 `{success:true, removed:n, skipped:[...]}`；`removed` 取 Storage `remove` **實際回傳的物件數**，不是輸入長度；不存在的檔視為已刪（冪等）。Storage `remove` 回 error：整批失敗 → 5xx 且不報 `removed`；部分成功 → 200 並依實際回傳數列出未刪項（1-1 加測試）。
 
 **`DELETE /listings/:id`（刪刊登改走後端，Q-A）**
 - `requireAuth`；以 `eq('id', id).eq('user_id', user.id)` 讀取該列（取得 `photos`），不存在或非本人 → 404。
 - 刪列成功後，對該列 `photos` 解析出 path，走**同一個**內部清理函式（同樣引用檢查）刪 Storage；清理失敗只 `console.warn`，回應仍 `{success:true}`（列已刪，不可回報刪除失敗）。
 - 一步取回被刪列：`delete().eq('id',id).eq('user_id',user.id).select('photos')`（省一次查詢並避免讀與刪之間不一致）；`:id` 先驗 UUID 格式，不合 → 404。
-- **冪等／重送**：第二次因列已不存在回 404（維持不洩漏）；前端 `deleteListing` 將 404 視為「已刪除」，直接 `refetchListing()`，不顯示失敗 toast。
+- **冪等／重送**：第二次因列已不存在回 404（維持不洩漏）；後端「列不存在或非本人」回帶標記的 JSON（`{error:'刊登不存在', code:'not_found'}`）；前端 `deleteListing` **只在帶此標記的 404** 視為「已刪除」並 `refetchListing()`；裸 404（Edge 尚未部署新路由、非 UUID id）與其他錯誤一律走失敗 toast——前端（Cloudflare）可能先於 Edge 上線，不可把「路由不存在」當成已刪。
 - **內部清理函式本體**（`listing-photos.ts`，兩個端點共用）必須自行驗證，不依賴路由層：只接受以本 bucket publicUrl base 開頭的 URL 才解析為 path；解析後 path 必須符合「刊登者 `user.id` 前綴」regex，否則**忽略並 `console.warn`**——防止攻擊者在自己的 `photos` 塞入受害者 URL 再呼叫刪刊登，借 service_role 刪掉受害者尚未存檔的檔。1-1 單元測試加：photos 含他人前綴 URL、外部網址、path traversal 字樣。
 - **路由註冊順序**：`DELETE /listings/photos` 必須**先於** `DELETE /listings/:id`（Hono 依註冊順序比對，否則 `photos` 被當成 id）；1-2 整合測試加「`/listings/photos` 不被 `:id` 吞掉」；`.claude/rules/supabase-functions.md` 區段表第 12 列補新路由。
 - **限流**：沿用 `rateLimit()`（`index.ts:309`；注意其 fail-open），兩端點各自 key（`listing-photos-del:<uid>`、`listing-del:<uid>`）與額度（建議 20 次／60 秒）；fail-open 時放大風險由 10 筆上限與前綴約束托底。
@@ -98,7 +98,7 @@ PR 2（前端管線）
 
 - 新檔：`src/utils/imageGeometry.ts`（純數學）、`src/utils/imagePipeline.ts`（注入 `ImageIO`：decode／crop／encode）、`src/utils/listingPhotosApi.ts`（PR 1 建立，PR 2 加 `uploadListingPhoto`）、`src/hooks/useListingPhotos.ts`（每張狀態機與佇列）、`src/components/listing/PhotoPicker.tsx`、`PhotoCropDialog.tsx`；後端 `supabase/functions/api/listing-photos.ts`。
 - **撞檔**：PR 2 改 `apiClient.ts` 共用核心，而 `launch-wave-1/plan.md` §3.2 把它列為 T1（登入狀態信任）的觸及檔；T1 在 R2 前端合併後才開、且 10/28 24:00 前沒綠就不上，**合併順序：先合者定，後者由主 session rebase**；PR 2 的改動僅限 FormData 分支，衝突面小。
-- 改檔：PR 1＝`index.ts`（路由註冊）、`EditServiceProvider.tsx`、`ServiceProviderManagement.tsx`（與 S7a 同檔，先合併者定；目前為單檔）、規格書 §11、`ui-ux-guidelines.md`；PR 2＝`apiClient.ts`＋測試、`CreateServiceProvider.tsx`、`EditServiceProvider.tsx`、`constants.ts`（壓縮常數）、`package.json`（`react-easy-crop`）。
+- 改檔：PR 1＝`index.ts`（路由註冊）、`.claude/rules/supabase-functions.md`（區段表）、e2e（`listing_management.feature`、journey `40_listing.feature`、step 檔，1-4）、`EditServiceProvider.tsx`、`ServiceProviderManagement.tsx`（與 S7a 同檔，先合併者定；目前為單檔）、規格書 §11、`ui-ux-guidelines.md`；PR 2＝e2e／journey（page object、fixture、step 檔，2-5）、`check-spec-drift.py`＋規格書（2-6）、`apiClient.ts`＋測試、`CreateServiceProvider.tsx`、`EditServiceProvider.tsx`、`constants.ts`（壓縮常數）、`package.json`（`react-easy-crop`）。
 - **knip**：每階段內就接上使用處，不留懸空匯出（主 session 裁決）；PR 2 的 2-2、2-3 匯出在 2-4a 才被消費，**先標 `@public`，2-4a 移除**；2-4a 驗證標準含「無殘留 `@public`」。
 - **bundle 預算**：`scripts/check-bundle-budget.mjs` 只看首屏，抓不到 lazy chunk。PR 2 前以 `npm run build` 比對 Create／Edit chunk 前後 gzip 大小，**判準：增量 ≤ 40 kB gzip**，超過即改自刻簡化拖曳（縮放滑桿＋平移）；數字記入 PR 描述。
 - 多步驟契約（`docs/multi-step-flow-recovery.md`）：裁切對話框是疊層，`listing_management.feature:74-81`「上傳中輸入不被倒回」必須仍綠；Create 更新用 functional `setFormData`（現況 `:207-214`）。
@@ -114,6 +114,8 @@ PR 2（前端管線）
 - 單一常駐 `aria-live=polite` 節點播報各張狀態（不另放隱藏播報節點）。「已自動縮小」為**格內常駐文字**，不用會消失的 toast。
 - **忙碌／防重入**：「完成」按下後對話框立即關閉、該格進「準備中」（編碼中不可再次點擊同一張）；解碼與 lazy chunk 載入期間，佇列層級顯示載入指示；佇列中連續開關 Dialog 時，焦點不得閃回觸發鈕、返回鍵不得多退一層離頁（測試列入 2-4a 並入真機矩陣）。
 - 移除第一張且仍有其他照片時，live region 播報「封面已改為原第 N 張」；因此 Edit 補「第一張為封面照」說明不再列可砍項。
+- **「重新載入裁切工具」鈕三態**：按下後 pending（`aria-disabled`＋文字，防連點）；再失敗時格內常駐文字並由常駐 live region 播報；`React.lazy` 會快取 rejected promise，重試必須重建 lazy 元件／重新 import（2-4a 測試：連續兩次失敗再成功，驗收 14）。
+- **入口按鈕邊界**：0 張顯示空態提示；滿 3 張（含處理中與載入失敗格）入口 `aria-disabled` 並以文字說明；佇列處理中不可再選。
 - 佇列：選多張依序進裁切；中途取消／返回鍵只影響當張，其餘接續；超量提示後忽略超出部分（驗收 13）。
 - **載入失敗（Q-D 裁決＝保守）**：裁切工具 chunk 載入失敗時，該張顯示「重新載入裁切工具」與「移除」，不可送出（送出鈕 `aria-disabled` 並以 `aria-describedby` 說明）；重新載入成功即回到待裁切。不提供自動置中裁的降級路徑。LINE 內建瀏覽器網路不穩時，使用者靠重新載入或移除恢復。
 - 送出鈕：上傳中或不足 3 張 `aria-disabled`，原因文字以 `aria-describedby` 連結。Create 標籤維持「必須上傳 3 張，第一張為封面照」；Edit 補同句（見上，已升為必做）。
@@ -129,9 +131,9 @@ PR 2（前端管線）
 |---|---|---|---|
 | 1-1 | `listing-photos.ts` 純函式：路徑 regex／輸入驗證／diff／URL 重組／清理函式（注入 storage 與 db 替身） | `supabase/functions/api/listing-photos.unit.test.ts`（deno，風格同其他 `*.unit.test.ts`） | 驗收 3、4（含 fail-closed）、5 的純邏輯；`removed` 取實際回傳數 |
 | 1-2 | 路由 `DELETE /listings/photos`、`DELETE /listings/:id` 接進 `index.ts`（`rateLimit`、`requireAuth`、404/403/400 碼） | `supabase/functions/api/listing-photos.test.ts`（整合，風格同 `listings.test.ts`） | 驗收 2、3、4、6；upload-photo 回傳 URL 必被命中（驗收 5） |
-| 1-3 | `listingPhotosApi.ts`＋Edit 存檔 diff 刪＋管理頁改走 `deleteListing` | vitest jsdom（`ServiceProviderManagement.test.tsx`、Edit 測試） | 驗收 1、2：存檔失敗不呼叫刪除；清理失敗不顯示「刪除失敗」；先存後刪 |
-| 1-4 | **e2e 同步**：`listing_management.feature:80-83`（「刊登已成功刪除」toast）與 journey `40_listing.feature:27` 的刪除路徑改 mock／打 `DELETE /listings/:id`；驗成功 toast、404 視為已刪、後端失敗錯誤 toast | e2e（CI 驗證） | 既有刪除情境仍綠 |
-| 1-5 | 文件：規格書 §11（寫行為不寫數字；明定 5 MB 約束的是壓縮後上傳檔、原檔另有上限，見 Q-F）、**§14 已知落差新增一列（條款十之一殘留缺口，Q-G；依 `.claude/rules/document-writing.md` 只寫最小事實）**、`ui-ux-guidelines.md` §7 補清理行為 | `check-spec-drift.py` | 全綠；`npm run check:full` |
+| 1-3 | `listingPhotosApi.ts`（含「裸 404 顯示失敗、帶 `not_found` 標記才視為已刪」測試）＋Edit 存檔 diff 刪＋管理頁改走 `deleteListing` | vitest jsdom（`ServiceProviderManagement.test.tsx`、Edit 測試） | 驗收 1、2：存檔失敗不呼叫刪除；清理失敗不顯示「刪除失敗」；先存後刪 |
+| 1-4 | **e2e 同步**：`listing_management.feature:80-83`（「刊登已成功刪除」toast）與 journey `40_listing.feature:27` 的刪除路徑改 mock／打 `DELETE /listings/:id`；驗成功 toast、`not_found` 標記視為已刪、後端失敗與裸 404 的錯誤 toast | e2e（CI 驗證） | 既有刪除情境仍綠 |
+| 1-5 | 文件：規格書 §11（**保留「單張 ≤ 5 MB」「最多 3 張」字樣使 `check-spec-drift.py:124-135` 的 regex 仍匹配**，僅加註「（壓縮後實際上傳的檔）」；原檔 20 MB 的列與常數留 PR 2 的 2-6，見 Q-F）、**§14 已知落差新增一列：條款十之一殘留缺口，須涵蓋三條路徑（清理失敗補償、帳號刪除與 `/auth/cancel-signup`、歷史孤兒），註明由第 2 波在 30 日窗口內補齊、補齊後刪列（Q-G；依 `.claude/rules/document-writing.md` 只寫最小事實）**、`ui-ux-guidelines.md` §7 補清理行為；另更新 `.claude/rules/supabase-functions.md` 區段表 | `check-spec-drift.py` | 全綠；§14 新列涵蓋三條路徑；`npm run check:full` |
 
 ### PR 2：前端管線（依賴 PR 1 已合併）
 
@@ -141,9 +143,9 @@ PR 2（前端管線）
 | 2-2 | `imageGeometry.ts`＋`imagePipeline.ts`：解碼限邊、方向、裁切矩形、品質階梯編碼、白底、能力偵測、原檔 >20 MB 拒絕、錯誤分類（OOM／格式／編碼失敗） | vitest node（`ImageIO` 替身） | 驗收 7、11、16 的純邏輯；編碼失敗回 `unprocessable` 而非原檔 |
 | 2-3 | `useListingPhotos` 狀態機＋佇列＋`uploadListingPhoto`＋錯誤信封 | vitest jsdom | 驗收 9、10、13；一張失敗其餘保留、可重試 |
 | 2-4a | `PhotoPicker`＋`PhotoCropDialog` 元件：lazy＋錯誤邊界、Radix Dialog、微調按鈕、焦點後備、佇列焦點／返回鍵、忙碌防重入、載入失敗＝重新載入且不可送出（Q-D 保守版）、舊圖僅移除；移除 `@public` | vitest jsdom | 驗收 8、12、13、14；無殘留 `@public` |
-| 2-4b | Create／Edit 接線＋暫存檔移除呼叫 `deleteListingPhotos`；Edit 存檔 diff 刪由 hook 承接並保留 PR 1 測試 | vitest jsdom | 驗收 7（單元層）、15；PR 1 的 Edit 存檔測試仍綠 |
-| 2-5 | **e2e／journey 同步**（強制裁切使 2-4b 結束時 e2e 必紅，故 e2e 驗收放在本階段；建議 2-4b 與 2-5 同一 push 批次）：page object 新增動作「選檔→裁切→完成」（`create_service_provider_page.py:15` 的 22-byte 假 JPEG 換真小 JPEG fixture；`listing_management.feature:98,105-113`、`f40_listing_steps.py`、`f60_time_scenarios_steps.py`；「photo uploads are captured until released」改為按「完成」後才進入捕捉）；375px 下對話框按鈕可見；mock 補上傳失敗與降級路徑 | e2e（CI 驗證）、`cd e2e/journey && pytest tools/` | 驗收 7（2×2 色塊驗輸出主色與無 EXIF，真瀏覽器）；`listing_management.feature:74-81` 仍綠；既有情境在新流程下仍綠 |
-| 2-6 | 文件與閘門：規格書 §11／`ui-ux-guidelines.md` §7 補「照片裁切」；bundle 增量量測（判準 §3）；`npm run check:full` | check-spec-drift、build | 增量 ≤40 kB gzip；全綠 |
+| 2-4b | Create／Edit 接線；**移除 `CreateServiceProvider.tsx:156` 的原檔 5 MB 擋檢，改用原檔上限常數 `MAX_PHOTO_SOURCE_SIZE`（20 MB，新增於 `constants.ts`）**；暫存檔移除呼叫 `deleteListingPhotos`；Edit 存檔 diff 刪由 hook 承接並保留 PR 1 測試 | vitest jsdom | 驗收 7（單元層）、15、16（原檔 5–20 MB 不被擋）；`constants.test.ts` 斷言仍成立；PR 1 的 Edit 存檔測試仍綠 |
+| 2-5 | **e2e／journey 同步**（強制裁切使 2-4b 結束時 e2e 必紅，故 e2e 驗收放在本階段；建議 2-4b 與 2-5 同一 push 批次）：page object 新增動作「選檔→裁切→完成」（`create_service_provider_page.py:15` 的 22-byte 假 JPEG 換真小 JPEG fixture；`listing_management.feature:98,105-113`、`f40_listing_steps.py`、`f60_time_scenarios_steps.py`；「photo uploads are captured until released」改為按「完成」後才進入捕捉）；375px 下對話框按鈕可見；mock 補上傳失敗，以及裁切 chunk 載入失敗（動態 import reject）→ 重新載入 → 成功後可繼續 | e2e（CI 驗證）、`cd e2e/journey && pytest tools/` | 驗收 7（2×2 色塊驗輸出主色與無 EXIF，真瀏覽器）；`listing_management.feature:74-81` 仍綠；既有情境在新流程下仍綠 |
+| 2-6 | 文件與閘門：規格書 §11 補「原檔 ≤ 20 MB」列並在 `check-spec-drift.py` 新增對應 `MAX_PHOTO_SOURCE_SIZE` 的 ConstantRule（或明寫不納入閘門）、`ui-ux-guidelines.md` §7 補「照片裁切」；bundle 增量量測（判準 §3）；`npm run check:full` | check-spec-drift、build | 增量 ≤40 kB gzip；全綠 |
 
 ## 6. 開放問題
 
@@ -169,7 +171,7 @@ PR 2（前端管線）
 - **誤刪**：三道防線（uid 前綴 regex、全表引用檢查且 fail-closed、先存後刪）＋限流。最壞情況是刪到「剛上傳、尚未存檔」的檔：client 只對「已確認移除且不在當前表單 photos 內」的 path 呼叫，且引用檢查不認未存檔者——使用者重傳即可。
 - **雙分頁過期表單（接受）**：分頁 A 存檔移除 X 並刪檔，分頁 B 的舊表單仍持有 X 再存檔，把 X 寫回 `listings.photos`，公開頁破圖。引用檢查只管刪除當下。發生條件極窄（同一使用者、同一刊登、兩個分頁、其一刪檔後另一個存檔），不加 `updated_at` 樂觀鎖；使用者重新編輯重傳即可復原。
 - **Storage 清理只覆蓋本端點**：RLS 直刪政策仍在，舊前端快取或其他刪除入口（含 admin）直刪列不會清 Storage；歸 Q-B／Q-G（第 2 波必做）。Edit 存檔與刪刊登同時發生時，後端讀到舊 photos、新存的檔成孤兒（不會誤刪），同歸 Q-B。
-- **孤兒累積**（Create 離頁／關頁、刪除後清理失敗、帳號刪除 cascade、歷史檔）：不阻擋功能，`DELETE /listings/photos` 可由維運手動補清；janitor 與回溯清理第 2 波（Q-B）。
+- **孤兒累積**（Create 離頁／關頁、刪除後清理失敗、帳號刪除 cascade、歷史檔、上傳逾時後重試——伺服器端其實成功而 client 判失敗，重試產生第二個檔，無冪等鍵）：不阻擋功能，`DELETE /listings/photos` 可由維運手動補清；janitor 與回溯清理第 2 波（Q-B）。
 - **管線在某機型失敗**：能力偵測＋專屬文案；裁切工具載入失敗可重新載入或移除；上傳端點未變。
 - **bundle**：`react-easy-crop` 增量超判準即改自刻拖曳。
 - **時程**：全案 10/28 24:00 前沒合進 develop 的部分順延 11/3；PR 1 是底線。
