@@ -275,6 +275,17 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     [createPreviewUrl, exists, io, patch, release],
   );
 
+  const loadExisting = useCallback(
+    (urls: string[]) =>
+      update((prev) => [
+        ...urls.map(
+          (url, i): PhotoSlot => ({ id: `existing-${i}`, kind: 'existing', state: 'done', url }),
+        ),
+        ...prev.filter((s) => s.kind === 'new'),
+      ]),
+    [update],
+  );
+
   const retry = useCallback(
     (id: string) => {
       const blob = data.current.get(id)?.blob;
@@ -303,7 +314,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     retry,
     remove,
     adjust,
-    loadExisting: () => {},
+    loadExisting,
     photoUrls: slots.filter((s) => s.state === 'done' && s.url).map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),

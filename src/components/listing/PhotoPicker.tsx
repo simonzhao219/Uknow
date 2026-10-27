@@ -191,7 +191,7 @@ export function PhotoPicker({
     : waiting
       ? '請稍候，正在準備照片'
       : slots.length === 0
-        ? `尚未選擇照片（需要 ${maxCount} 張，第一張為封面）`
+        ? `尚未選擇照片（需要 ${maxCount} 張）`
         : `還可以再選 ${maxCount - slots.length} 張`;
 
   return (
