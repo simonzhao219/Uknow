@@ -384,8 +384,9 @@ Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 - Dashboard 的 OTP 效期、Site URL、Redirect URLs、SMTP 不因本模板而改；密碼強度設定維持現值（前端與
   後端的密碼規則是 8 字元＋大小寫＋數字，Supabase 端另擋外洩密碼）。
 - 必要的 Secrets：`REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED=true`、`FRONTEND_URL`（步驟 1）。
-  前端另需建置旗標 `VITE_REFERRAL_EMAIL_INVITE=true`（Cloudflare Pages：正式站設 **Production** 作用域、
-  develop 與 PR 預覽設 **Preview** 作用域，設完要重新部署）。**正式站順序：後端先開、收信核對通過才開前端旗標**。
+  前端另需建置旗標 `VITE_REFERRAL_EMAIL_INVITE=true`，寫在 git 的 `.env.production`（`vite build` 自動讀，
+  各環境一體適用；不要設在 Cloudflare Pages 儀表板——repo 有 `wrangler.toml`，儀表板變數不會進建置）。
+  **正式站順序：後端先開、收信核對通過才合進 main**。
 - 兩支相關函式（service role 才能呼叫）：`purge_stale_referral_invites(p_older_than_days, p_email)` 每日排程
   `purge-stale-referral-invites` 刪除 7 天內未透過連結設定密碼的邀請空殼（回刪除筆數）；`refund_rate_limit(p_key)`
   是寄送失敗時退回限流額度。
