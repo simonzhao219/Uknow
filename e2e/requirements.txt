@@ -5,4 +5,7 @@ pytest-playwright>=0.5
 # pre-provisioned browser). An open `>=` range silently floats to a newer
 # Chromium build than the one installed, failing with "Executable doesn't
 # exist" at launch. 1.56.0 bundles chromium build 1194.
+# CI runs e2e-tests inside mcr.microsoft.com/playwright/python:v<this>-noble
+# (ci.yml); bump the image tag together with this pin —
+# scripts/check-playwright-image.py fails framework-check otherwise.
 playwright==1.56.0
