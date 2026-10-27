@@ -299,6 +299,20 @@ describe('PhotoPicker 佇列與對話框焦點', () => {
   });
 });
 
+describe('PhotoPicker 裁切工具載入中', () => {
+  it('載入中不新增 live region（常駐的一個以外不再有 status／alert）', async () => {
+    render(
+      <PhotoPicker
+        photos={makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:p' })])}
+        maxCount={3}
+        loadCropDialog={() => new Promise(() => {})}
+      />,
+    );
+    expect(await screen.findByText('載入中…')).toBeTruthy();
+    expect(document.querySelectorAll('[aria-live],[role=status],[role=alert]')).toHaveLength(1);
+  });
+});
+
 describe('PhotoPicker 裁切工具載入失敗', () => {
   const awaiting = () =>
     makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:p' })]);
