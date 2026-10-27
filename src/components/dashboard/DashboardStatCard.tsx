@@ -17,9 +17,9 @@ interface DashboardStatCardProps {
   ariaLabel: string;
   loading?: boolean;
   /**
-   * 卡內「現在就能做、且不是導去同一頁」的真按鈕（推薦格的邀請好友／加入推薦計畫）。
+   * 卡內「現在就能做、且不是導去同一頁」的真按鈕（推薦格的邀請好友／加入推薦計畫、刊登格的立即刊登／類別徽章）。
    * 有給時卡片改成「標題＋數字區是連結、按鈕在連結外」——<a> 裡不能巢狀互動元素。
-   * 不給時整張卡是一個連結（其餘三張卡，含立即刊登）。
+   * 不給時整張卡是一個連結（任務、獎勵兩張卡）。
    */
   action?: React.ReactNode;
   children: React.ReactNode;
@@ -27,7 +27,7 @@ interface DashboardStatCardProps {
 
 /**
  * 會員中心的狀態卡外殼（ui-ux-guidelines §13）：卡片可點、右側 chevron，不另放重複
- * 標題的按鈕。卡內的行動提示若目的地與卡片相同（申請提領、立即刊登），用 StatCardAction
+ * 標題的按鈕。卡內的行動提示若目的地與卡片相同（申請提領），用 StatCardAction
  * 畫成按鈕樣式的 span，點擊落在整張卡的連結上；要做別的事的真按鈕走 action。
  */
 export function DashboardStatCard({
@@ -95,7 +95,7 @@ export function StatCardError({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * 卡內的行動提示：點擊落在整張卡的連結上（目的地相同）。申請提領、立即刊登都是
+ * 卡內的行動提示：點擊落在整張卡的連結上（目的地相同）。申請提領是
  * 流程的起點，按鈕三分法歸次要（白底框線，ui-ux-guidelines §12.11）——進了流程才有
  * 墨黑的流程鈕。卡片區唯一可能的實心鈕是推薦格 action 的「加入推薦計畫」引導鈕。
  */
