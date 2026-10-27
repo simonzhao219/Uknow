@@ -14,7 +14,11 @@ export const DESCRIPTION_MAX_LENGTH = 200; // 服務介紹的最大長度
 export const YEARLY_PRICE = 1200; // 年繳方案價格（唯一方案）
 
 // 照片上傳常數
-export const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB：壓縮後實際上傳的檔
+export const MAX_PHOTO_SOURCE_SIZE = 20 * 1024 * 1024; // 20MB：使用者選取的原檔（壓縮前）
+export const PHOTO_MAX_EDGE = 1600; // 輸出正方形的邊長上限（px）
+export const PHOTO_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.5]; // JPEG 品質階梯：由高到低重編
+export const PHOTO_TARGET_BYTES = 600 * 1024; // 目標大小；階梯走完仍超過也照傳（只要 ≤ MAX_PHOTO_SIZE）
 export const MAX_PHOTO_COUNT = 3; // 最多3張照片
 export const ALLOWED_PHOTO_FORMATS = ['image/jpeg', 'image/png', 'image/webp']; // 允許的照片格式
 
