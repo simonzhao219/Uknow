@@ -44,7 +44,7 @@ const STATUS_TEXT: Partial<Record<PhotoSlot['state'], string>> = {
 /** 首次載入中：按鈕 aria-disabled 並用文字說明，防連點。 */
 function CropToolPending() {
   return (
-    <div className="rounded-md border p-3 text-sm" role="status">
+    <div className="rounded-md border p-3 text-sm">
       <p>正在載入裁切工具…</p>
       <Button type="button" tone="secondary" className="mt-2 min-h-11" aria-disabled="true">
         載入中…

@@ -494,6 +494,11 @@ export function EditServiceProvider() {
               <FieldError error={errors.contacts} />
             </div>
 
+            {photos.submitHint && (
+              <p id="photos-submit-hint" className="text-sm text-muted-foreground">
+                {photos.submitHint}
+              </p>
+            )}
             <div className="flex gap-4">
               <Button
                 type="button"
@@ -506,6 +511,7 @@ export function EditServiceProvider() {
               <Button
                 type="submit"
                 className="flex-1"
+                aria-describedby={photos.submitHint ? 'photos-submit-hint' : undefined}
                 disabled={
                   !formData.name.trim() ||
                   !formData.category ||
