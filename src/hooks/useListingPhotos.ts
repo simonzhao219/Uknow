@@ -89,6 +89,8 @@ interface SlotData {
   file?: File;
   loaded?: LoadedPhoto;
   blob?: Blob;
+  /** 調整中：被取代的舊檔 URL（新檔上傳成功後清掉；取消則還原）。 */
+  adjustFrom?: string;
 }
 
 export function useListingPhotos(options: UseListingPhotosOptions): UseListingPhotosResult {
@@ -155,6 +157,11 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         (url) => {
           if (!exists(id)) return;
           release(id);
+          const entry = data.current.get(id);
+          if (entry?.adjustFrom) {
+            onDiscardUploaded?.(entry.adjustFrom);
+            entry.adjustFrom = undefined;
+          }
           patch(id, { state: 'done', url, previewUrl: undefined, message: undefined });
           setAnnouncement(`第 ${ordinal(id)} 張照片上傳完成`);
         },
@@ -166,7 +173,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         },
       );
     },
-    [patch, release, upload, ordinal, exists],
+    [patch, release, upload, ordinal, exists, onDiscardUploaded],
   );
 
   const addFiles = useCallback(
@@ -217,11 +224,53 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       const slot = slotsRef.current.find((s) => s.id === id);
       if (!slot) return;
       release(id);
-      if (slot.kind === 'new' && slot.state === 'done' && slot.url) onDiscardUploaded?.(slot.url);
+      const entry = data.current.get(id);
+      if (slot.kind === 'new') {
+        if (slot.state === 'done' && slot.url) onDiscardUploaded?.(slot.url);
+        if (entry?.adjustFrom) onDiscardUploaded?.(entry.adjustFrom);
+      }
       data.current.delete(id);
       update((prev) => prev.filter((s) => s.id !== id));
     },
     [onDiscardUploaded, release, update],
+  );
+
+  /** 取消取景：調整中的照片還原成原本完成的那張；否則視同移除。 */
+  const cancelCrop = useCallback(
+    (id: string) => {
+      const entry = data.current.get(id);
+      if (!entry?.adjustFrom) return remove(id);
+      release(id);
+      entry.adjustFrom = undefined;
+      entry.loaded = undefined;
+      patch(id, { state: 'done', previewUrl: undefined });
+    },
+    [patch, release, remove],
+  );
+
+  const adjust = useCallback(
+    (id: string) => {
+      const entry = data.current.get(id);
+      const slot = slotsRef.current.find((s) => s.id === id);
+      if (!entry?.file || slot?.kind !== 'new' || slot.state !== 'done' || !slot.url) return;
+      const file = entry.file;
+      entry.adjustFrom = slot.url;
+      patch(id, { state: 'preparing', previewUrl: createPreviewUrl(file) });
+      loadPhoto(io, file).then((result) => {
+        if (!exists(id)) return;
+        if ('error' in result) {
+          // 重新解碼失敗：還原成原本完成的那張，並提示原因。
+          release(id);
+          entry.adjustFrom = undefined;
+          patch(id, { state: 'done', previewUrl: undefined });
+          setNotice(ERROR_MESSAGES[result.error]);
+          return;
+        }
+        entry.loaded = result.value;
+        patch(id, { state: 'awaiting_crop' });
+      });
+    },
+    [createPreviewUrl, exists, io, patch, release],
   );
 
   const retry = useCallback(
@@ -248,10 +297,10 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     notice,
     addFiles,
     confirmCrop,
-    cancelCrop: remove,
+    cancelCrop,
     retry,
     remove,
-    adjust: () => {},
+    adjust,
     photoUrls: slots.filter((s) => s.state === 'done' && s.url).map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),
