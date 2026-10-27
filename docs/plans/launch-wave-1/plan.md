@@ -42,7 +42,7 @@
 | 15 | P1a Q-A 刪刊登清理 | **走後端**（總綱 §3.2C 原案） |
 | 16 | 寄信失敗告警（盤點：後端無寄信路徑，攔 429 需新公開端點＋改 AuthPage 等三檔，與 R2／T1 共檔） | **本波不做程式**，靠 Dashboard 寄信上限 600＋§5 每小時漏斗監看；端點留第 2 波 |
 | 17 | 清資料演練的刪除段（MCP 破壞性語句確認視窗到不了業主，兩次 cancelled） | **業主在 Dashboard SQL Editor 貼**（演練分支與今晚正式站都這樣做；主 session 負責乾跑與零殘留檢查） |
-| 18 | P1a Q-D 裁切元件載入失敗 | **保守：顯示重試、不可送出**；Q3-3 無例外 |
+| 18 | P1a Q-D 裁切元件載入失敗 | **保守：不可送出、不降級**；Q3-3 無例外。按鈕語意 10/28 01:30 由主 session 改為「重新整理頁面」（瀏覽器把失敗的 module fetch 記成 null，原地重試永遠失敗，見 §8） |
 | 19 | P1a Q-F 原檔上限 | **原檔 ≤20 MB、上傳檔 ≤5 MB**；規格書 §11 界定 5 MB 是上傳檔 |
 | 20 | P1a Q-G 條款十之一 | **記入規格書已知落差，第 2 波在 30 日窗口內補齊**（帳號刪除 cascade、`/auth/cancel-signup`、歷史孤兒），列第 2 波必做 |
 | 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
@@ -230,6 +230,7 @@ commit;
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
 | 框架修訂（第 1 波 friction-log 2026-10-26～27 兩節） | S | `tdd-test-guard` 擴到 Bash 寫 `*.test.*`（bash-guard 新類）；bash-guard 的 journey 判準只看 `pytest` 在指令位置；ci.yml e2e 的 apt 步驟獨立＋規則 12 退避、api-tests `supabase start` 加退避並把規則 12 擴到它；`/tdd-implement` 紅燈步驟加「逐條讀失敗原因」；dispatch-prompts 逃生口 2 改成「業主親自到執行 session 貼授權句」；e2e/requirements 釘 `playwright==1.63.0` |
 | `lazyWithRetry` 重試一次無效＋表單草稿保存 | S | 失敗的 module fetch 被瀏覽器記成 null（HTML 規格），同 URL 再 import() 立刻失敗，`importWithRetry` 的第一段重試形同虛設，第 2 波驗證後簡化為直接重載；Create／Edit 表單加草稿保存（`docs/multi-step-flow-recovery.md` 四契約），重新整理不掉已填文字 |
+| PR 2 審查記債（#421 第 2 波） | S–M | 送出中 picker 未凍結、preparing／chunk 載入無逾時、5xx 固定文案、Edit 取消孤兒入 §14、預覽縮圖用原檔、滑桿 aria-valuetext 與微調鈕命名、封面徽章、窄格溢出（真機）、內建瀏覽器 unsupported 分流、spinner、驗收 8 e2e、驗收 14 e2e 斷言、§11 格式欄、e2e 上傳 mock 歸位 BackendApiMock、常數命名與 UPLOAD_TIMEOUT_MS 歸位、`useBrowserListingPhotos` 收斂 Create／Edit 重複、`initialUrls` 二選一、微調／重設／滑桿行為測試與 PhotoCropDialog 同名測試檔、401 不登出、「重設」鈕與 60 秒逾時待業主確認 |
 | 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
@@ -304,6 +305,7 @@ commit;
 | 10/28 01:25–01:35 | e2e session 本機綠（page object 新流程、真 JPEG fixture、375px、上傳失敗重試），journey 共用 page object 免改；發現驗收 14 做不到：失敗的 module fetch 依 HTML 規格被記成 null，同 URL 原地重試永遠失敗。主 session 裁決：失敗面板改「請重新整理頁面」＋按鈕「重新整理頁面」→ `location.reload()`，不自動重載、不套 `importWithRetry`（會無預警清掉表單）；P1a 走小紅綠循環改，e2e 情境 14 改為重載後重走流程。遺留第 2 波：`lazyWithRetry` 的重試一次同因無效、Create／Edit 無草稿保存 | P1a 改完傳 head 給 e2e；e2e 開 draft PR |
 | 10/28 01:35–01:50 | P1a 自跑四視角實作審查：0 P0、約 8 P1（返回鍵時序、送出鈕原因、封面播報、對話框焦點、單一 live region、手機摺線、上傳逾時、bitmap 釋放）＋2 測試缺口＋jsdom `createObjectURL` 防呆；主 session 核准返回鍵改「對話框佇列期間常駐」並改寫兩個紅燈（概括授權）。P1a 推新 head 8831f9d。e2e session 開 **#420**（base P1a 分支，head f9ad041）：18 情境本機綠、tools/ 89 綠；偏離：fixture 改 192×64 三色帶、情境 14 照裁決 | #420 CI 綠 → P1a fast-forward；P1a 修完 P1 開 PR 2 → 主 session 審 |
 | 10/28 01:50–01:55 | 發現 ci.yml 只對 base main／develop 觸發，#420（base feature 分支）不會有 CI → 改流程：P1a 直接 ff 併入 e2e commit，e2e 由 PR 2 的 CI 驗；已通知兩個 session | P1a 併入後開 PR 2 |
+| 10/28 02:05–02:40 | **PR 2 = #421**（head 由 b3c12932 → ef49434 → 050b8fa5：守門修正——file input I2 啟發式、canvas 白底色值列掃描排除）。主 session 四視角審查（Sonnet 四 lane，worktree wt-421）：0 P0；必修 ≈16 條已核實後分三批轉給 P1a——系統：decode 回 bitmap 實際尺寸、adjust 重解失敗偏離補記＋播報、晚到 bitmap 釋放；UI/UX：**返回鍵在佇列第二張起失效會離頁**（常駐改法的新問題，走紅綠）、載入失敗文案死路、NETWORK_ERROR 英文原文、重試後焦點、重複失敗不播報；需求：規格書 §14 第 14 列過時、PR 內文綠燈 hash、兩個空轉測試；架構：Edit diff 刪偏離補記、懸空 plan 連結、死碼、60 秒只寫一份。約 20 條 P2 記第 2 波。#415 api-tests 再中映像限流，重跑一次 | P1a 修完推 → CI 綠 → 主 session 抽查 U1 → 轉 ready → 合 develop → 開第三次晉升 |
 
 **執行 session 名冊**（主 session 維護）
 
