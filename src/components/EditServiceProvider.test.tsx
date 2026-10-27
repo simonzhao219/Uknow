@@ -24,11 +24,25 @@ const PHOTOS = [
 
 const h = vi.hoisted(() => ({
   updateResult: { error: null as null | { message: string } },
+  updatePayloads: [] as Record<string, unknown>[],
   calls: [] as string[],
   cleanup: vi.fn(),
   showToast: vi.fn(),
   invalidate: vi.fn(),
+  lastOptions: null as null | { onDiscardUploaded?: (url: string) => void },
 }));
+
+// 只為了取得元件傳給 hook 的選項（驗接線）；行為仍走真的 hook。
+vi.mock('../hooks/useListingPhotos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/useListingPhotos')>();
+  return {
+    ...actual,
+    useListingPhotos: (options: Parameters<typeof actual.useListingPhotos>[0]) => {
+      h.lastOptions = options;
+      return actual.useListingPhotos(options);
+    },
+  };
+});
 
 vi.mock('../contexts/DataCacheContext', () => ({
   useDataCache: () => ({ invalidate: h.invalidate }),
@@ -45,6 +59,7 @@ vi.mock('../utils/listingPhotosApi', () => ({
     h.calls.push('cleanup');
     return h.cleanup(...args);
   },
+  uploadListingPhoto: vi.fn(),
 }));
 vi.mock('../utils/supabase/client', () => ({
   createClient: () => ({
@@ -69,14 +84,17 @@ vi.mock('../utils/supabase/client', () => ({
             }),
         }),
       }),
-      update: () => ({
-        eq: () => ({
-          eq: () => {
-            h.calls.push('update');
-            return Promise.resolve(h.updateResult);
-          },
-        }),
-      }),
+      update: (payload: Record<string, unknown>) => {
+        h.updatePayloads.push(payload);
+        return {
+          eq: () => ({
+            eq: () => {
+              h.calls.push('update');
+              return Promise.resolve(h.updateResult);
+            },
+          }),
+        };
+      },
     }),
   }),
 }));
@@ -97,6 +115,7 @@ function renderEdit() {
 beforeEach(() => {
   h.updateResult = { error: null };
   h.calls = [];
+  h.updatePayloads = [];
   h.cleanup.mockReset().mockResolvedValue(undefined);
   h.showToast.mockReset();
   h.invalidate.mockReset();
@@ -132,5 +151,51 @@ describe('EditServiceProvider 存檔後清理 Storage', () => {
     renderEdit();
     await submit();
     await waitFor(() => expect(h.showToast).toHaveBeenCalledWith('服務者資訊已更新！', 'success'));
+  });
+});
+
+describe('EditServiceProvider 照片區', () => {
+  it('顯示共用的照片列表，既有照片只有移除；標籤說明三張且第一張為封面', async () => {
+    renderEdit();
+    const list = await screen.findByRole('list', { name: '已選擇的照片' });
+    expect(list.querySelectorAll('li')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: /調整第/ })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /移除第/ })).toHaveLength(3);
+    expect(screen.getByText(/第一張為封面/)).toBeTruthy();
+  });
+
+  it('存檔送出的 photos 是目前照片列表的 URL（依序）', async () => {
+    renderEdit();
+    await submit();
+    await waitFor(() => expect(h.updatePayloads).toHaveLength(1));
+    expect(h.updatePayloads[0].photos).toEqual(PHOTOS);
+  });
+
+  it('移除一張後不足三張，儲存鈕停用、不送出', async () => {
+    renderEdit();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    fireEvent.click(screen.getByRole('button', { name: '移除第 2 張' }));
+    const save = await screen.findByRole('button', { name: /儲存變更/ });
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(true));
+    expect(h.updatePayloads).toHaveLength(0);
+  });
+
+  it('移除到不足三張時，儲存鈕旁用文字說明還缺幾張，並以 aria-describedby 關聯', async () => {
+    renderEdit();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    fireEvent.click(screen.getByRole('button', { name: '移除第 2 張' }));
+    const save = await screen.findByRole('button', { name: /儲存變更/ });
+    const hint = await screen.findByText('還需要 1 張照片才能送出');
+    expect(hint.id).not.toBe('');
+    expect(save.getAttribute('aria-describedby')).toContain(hint.id);
+  });
+
+  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 以該網址呼叫清理，之後仍可存檔', async () => {
+    renderEdit();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    h.lastOptions?.onDiscardUploaded?.('https://p.supabase.co/new.jpg');
+    expect(h.cleanup).toHaveBeenCalledWith(['https://p.supabase.co/new.jpg'], []);
+    await submit();
+    await waitFor(() => expect(h.updatePayloads).toHaveLength(1));
   });
 });

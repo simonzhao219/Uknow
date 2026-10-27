@@ -1,6 +1,6 @@
 // ============================================================
 // 刊登照片的 Storage 清理（DELETE /listings/photos、DELETE /listings/:id）。
-// 規劃：docs/plans/listing-photo-pipeline/plan.md §2.1。
+// 規格：規格書 §11、§14。
 //
 // 依賴方向：本檔**不得 import ./index.ts**（同 referral-invite.ts 的理由）；
 // 資料庫與 Storage 都以注入式 deps 傳入，純邏輯可在 *.unit.test.ts 秒級驗證。

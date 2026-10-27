@@ -133,6 +133,12 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "src/utils/constants.ts",
         r"MAX_PHOTO_SIZE = (\d+) \* 1024 \* 1024",
     ),
+    ConstantRule(
+        "刊登照片原檔大小上限（MB，壓縮前）",
+        r"原檔 ≤ ([\d,]+) MB",
+        "src/utils/constants.ts",
+        r"MAX_PHOTO_SOURCE_SIZE = (\d+) \* 1024 \* 1024",
+    ),
     # 這條是回填的防線:這個常數不在 constants.ts,原本不在監看範圍內,
     # 於是「改了數字、規格書沒同步」不會被任何閘門攔到——2026-09-01 把它
     # 從 10 調到 6 時才發現。§11 那一列與這裡是同一個事實的兩個副本。
