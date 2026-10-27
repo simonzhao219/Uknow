@@ -2565,32 +2565,36 @@ export async function reconcilePendingOrders(
       if (result.stillProcessing) {
         const failure = result.queryFailure;
         if (failure) {
-          // 去重鍵用 PayUni 錯誤碼而非訂單號：參數錯這類系統層故障會讓整批
-          // 卡單撞同一個碼，只該留一筆；各訂單的後果由下方 expire 紀錄按
-          // 訂單號記。Message 原樣帶回，讓「查無此單」與「參數錯」分得開。
+          // 去重鍵用 PayUni 的 Status＋Message 而非訂單號：參數錯這類系統層
+          // 故障會讓整批卡單撞同一組，只該留一筆；各訂單的後果由下方 expire
+          // 紀錄按訂單號記。Message 也進鍵：碼表未經 sandbox 驗證，同一
+          // Status 可能配不同 Message，「查無此單」與「參數錯」必須分得開。
+          // error 級：每組最多一筆，不會因棄付單數量而洗版。
           await logSystemAlertOnce(
             'payuni-query',
-            { reason: 'query_not_success', payuniStatus: failure.status },
-            { payuniMessage: failure.message, sampleTradeNo: order.transaction_id },
+            {
+              reason: 'query_not_success',
+              payuniStatus: failure.status,
+              payuniMessage: failure.message,
+            },
+            { sampleTradeNo: order.transaction_id },
             'PayUni 交易查詢層未回 SUCCESS，對帳無法判定訂單狀態',
+            'error',
           );
         }
         if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
-          // 標 expired 前先留紀錄（轉移條件不變）：查詢層失敗下標的是「沒
-          // 驗證過」的終態，可能是實付但 webhook 漏接的單 → warning；查詢
-          // 成功且確認未付款是正常的棄付收尾 → info，只求事後可查。
-          await logSystemAlertOnce(
-            'reconcile-pending-payments',
-            {
-              reason: failure ? 'expired_query_failed' : 'expired_unpaid',
-              tradeNo: order.transaction_id!,
-            },
-            failure ? { payuniStatus: failure.status, payuniMessage: failure.message } : {},
-            failure
-              ? '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付'
-              : '訂單逾期未付款、將標 expired',
-            failure ? 'warning' : 'info',
-          );
+          // 查詢層失敗下標的是「沒驗證過」的終態，可能是實付但 webhook 漏接
+          // 的單 → 標之前先告警（轉移條件不變）。查詢成功且確認未付款是常態
+          // 的棄付收尾，不告警：status='expired' 本身就是可查紀錄，每張留一
+          // 筆會把真告警擠出 admin 告警頁（預設只列未解決的前 100 筆）。
+          if (failure) {
+            await logSystemAlertOnce(
+              'reconcile-pending-payments',
+              { reason: 'expired_query_failed', tradeNo: order.transaction_id! },
+              { payuniStatus: failure.status, payuniMessage: failure.message },
+              '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付',
+            );
+          }
           const { error: expireErr } = await client
             .from('payment_orders')
             .update({ status: 'expired' })
@@ -2678,7 +2682,7 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
       stillProcessing: true,
       queryFailure: {
         status: String(raw.Status ?? ''),
-        message: String(raw.Message ?? (raw.EncryptInfo ? '' : '回應缺少 EncryptInfo')),
+        message: String(raw.Message ?? (raw.Status === 'SUCCESS' ? '回應缺少 EncryptInfo' : '')),
       },
     };
   }

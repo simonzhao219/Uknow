@@ -3168,9 +3168,10 @@ PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
 
 償還進度（2026-10-27，`fix/payuni-query-alert`）：方向 1、2 已做——`QueryResult` 加可選 `queryFailure` 把 PayUni
 原文 Status／Message 帶過型別邊界（根因是兩態型別沒有位置放「這輪沒問到」，查詢函式只能折進「處理中」）；
-對帳迴圈依錯誤碼 `logSystemAlertOnce('payuni-query')`，標 expired 前依訂單號留紀錄（查詢層失敗 warning、
-確認未付款 info）。轉移條件未改。仍欠：方向 3 sandbox 實打（需 sandbox 憑證與人工）；「查詢層失敗下是否還該
-標 expired」待業主裁決。為什麼當時沒攔到：可注入 `queryFn` 的測試只餵過乾淨的 `{ stillProcessing: true }`，
+對帳迴圈依 Status＋Message `logSystemAlertOnce('payuni-query')`（error 級，每組最多一筆）；查詢層失敗下標
+expired 前依訂單號寫 warning，確認未付款不告警（`status='expired'` 本身即紀錄，info 會把真告警擠出 admin 頁）。
+轉移條件未改——主 session 裁決（#407）：暫停 expire 會讓壞掉的查詢層餓死掃描視窗，要等方向 3 的 sandbox 碼表
+才能做「未知碼不標、已知良性碼才標」（第 2 波）。仍欠：方向 3 sandbox 實打（需 sandbox 憑證與人工）。為什麼當時沒攔到：可注入 `queryFn` 的測試只餵過乾淨的 `{ stillProcessing: true }`，
 從沒有「查詢層出錯」的輸入形狀——**注入點的測試要至少餵一次上游的錯誤形狀**。
 
 同類掃描順帶記債：對帳迴圈 `resolveFn` 回 `ok:false` 時用無去重的 `logSystemAlert`，同一張卡單每輪（每小時）
