@@ -280,6 +280,7 @@ commit;
 | 10/27 21:05 | 停車 PR 依序合進 develop：#405（0c5c11b）→ #410（140fecb）→ #406（0786b61），每支 rebase＋ci-ok 綠後 merge commit。#404 五項 P1 修完（60a411d）CI 全綠含新整合測試，最後再 rebase 合。#407 rebase 時 friction-log 衝突（#395 條目的償還段 vs R2 施工摩擦節）兩邊都留、推 4b92157 等 CI。業主尚未回覆 production 核准 | #407 綠 → 合 → #412 → #414 → #404 |
 | 10/27 22:00 | #407（69b1520）、#412（a4960f0）合進 develop。CI 誤紅三次（#407、#415、#412）同一根因：Azure apt 鏡像站 44 kB/s，`playwright install --with-deps` 裝字型 10 分鐘，e2e job 15 分鐘上限取消；各重跑一次即綠。再發生就開小 PR 把 e2e `timeout-minutes` 15→25，波末記 friction-log。#414 rebase（重複的 #405 commit 自動去掉，本機 check 綠，3594ff9）與 #404 rebase（5629ff8，守衛三綠）同時推上去跑 CI，先綠先合、另一支再 rebase 一次 | #414／#404 CI → 轉 ready → 合；業主 production 核准仍未回 |
 | 10/27 22:20 | **停車 PR 全部合進 develop**：#404（8266e11，轉 ready 後合）→ #414 再 rebase 一次（228902a）綠 → 合（ae61955）。develop 現含 10/28 第二次晉升全部內容：og+lang、容量 hotfix、告警 LINE、PayUni 查詢告警、邀請 follow-up、P1a 後端清理、品牌 icon+SEO 基礎。業主 19:10 問 develop 預覽與 Email 邀請：裁決照原規劃（正式站實寄核對後才開旗標，develop 不另設） | 業主核准 production → /health；第二次晉升 PR 待業主 §7 第 5–12 步完成後開 |
+| 10/27 19:18 | **業主核准 production 部署，`/health` sha=b4f9bb3 對上**（payuniMode=sandbox、referralInviteConfigured=false 為預期：第 6、7 步未做；defaultReferrer=ok）。§7 第 5 步 ✅。已給第 6–8 步逐步指示（模板 raw 連結、兩把 secret、PayUni 三把＋SANDBOX=false、清三 bucket） | 業主回報第 6 步 → curl 看 referralInvite 兩旗標 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -297,7 +298,7 @@ commit;
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
+| 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
 | 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認~~ ✅；剩模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
