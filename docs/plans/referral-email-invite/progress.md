@@ -35,7 +35,7 @@
 | 7 | `registrationFlow.ts` 三個純函式 | ✅ 綠 | — | `c1303e9` | `6ce0b63` |
 | 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ✅ 綠 | — | `5d2d32c`(字面修正見 Blockers) | (本 commit) |
 | 9 | InviteCard+三處入口+旗標+`ui/dialog` 關閉鈕+`backendConstants.ts` | ✅ 綠 | — | `0120945` | (本 commit) |
-| 10 | CompleteProfile `app_metadata` 後備預填 | ⬜ 未開始 | — | | |
+| 10 | CompleteProfile `app_metadata` 後備預填 | ✅ 綠 | — | `075c9145` | (本 commit) |
 | 11 | 模板檔+模板測試+文件 | ⬜ 未開始 | 第 1、11 點 | | |
 | R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ✅ API 版 `6640936`＋UI 情境 `8af990f`(collect-only 驗形) | — | — | — |
 | R2-3b | 合併後業主操作(plan.md §5 R2-3b 十二步) | ⬜ 未開始 | 第 5、10 點 | — | — |

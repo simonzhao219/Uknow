@@ -110,6 +110,9 @@ export function CompleteProfile() {
       nameMode: draft.nameMode ?? inferNameMode(draft.name ?? ''),
     };
   });
+  // 推薦碼欄的最新值，給非同步回來的後備預填判斷「使用者是否已開始輸入」。
+  const referralCodeRef = useRef(formData.referralCode);
+  referralCodeRef.current = formData.referralCode;
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   // 間隔號被自動轉成半形空格時的可見提示。刻意不靜默代換——沒有提示會讓
   // 使用者以為系統認不得他的名字。
@@ -253,7 +256,31 @@ export function CompleteProfile() {
     if (pending && !formData.referralCode) {
       setFormData((prev) => ({ ...prev, referralCode: pending }));
       verifyReferralCode(pending);
+      return;
     }
+    if (pending) return;
+    // 後備：Email 邀請建立的帳號在 app_metadata 蓋了邀請章（只有 service role 寫得了）。
+    // 換瀏覽器續填時 localStorage 的 pending code 不在，改從 session 讀；只作預填、照樣走
+    // validate，使用者已開始輸入（非同步回來時欄位不再是空的）就不覆蓋。
+    let cancelled = false;
+    supabase.auth
+      .getSession()
+      .then(({ data }: { data: { session: { user?: { app_metadata?: unknown } } | null } }) => {
+        const stamp = (
+          data.session?.user?.app_metadata as { referral_invite?: unknown } | undefined
+        )?.referral_invite as { code?: unknown } | undefined;
+        const code = typeof stamp?.code === 'string' ? stamp.code : '';
+        if (cancelled || !code || referralCodeRef.current) return;
+        referralCodeRef.current = code;
+        setFormData((prev) => (prev.referralCode ? prev : { ...prev, referralCode: code }));
+        verifyReferralCode(code);
+      })
+      .catch(() => {
+        // 讀不到 session 就不預填；checkSession 會處理未登入。
+      });
+    return () => {
+      cancelled = true;
+    };
     // 僅在掛載時執行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
