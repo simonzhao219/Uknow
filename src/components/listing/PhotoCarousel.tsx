@@ -133,11 +133,11 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
       </div>
 
       {multiple && (
-        // 固定 h-6：骨架在同位置放一塊同高的空白，資料到位時版面不跳。
-        <div className="flex h-6 items-center justify-center">
+        // 固定 h-6（觸控 h-11）：骨架在同位置放一塊同高的空白，資料到位時版面不跳。
+        <div className="flex h-6 pointer-coarse:h-11 items-center justify-center">
           {photos.map((photo, i) => (
             // 名稱寫在按鈕上，不取自圖片：圖片載入失敗時 ImageWithFallback 會把 alt 換成
-            // 「Error loading image」，圓點就全變成同一個名字。滑鼠下按鈕 24×24（WCAG 2.5.8），觸控下熱區 44×44，圓點本身是裡面的 6px。
+            // 「Error loading image」，圓點就全變成同一個名字。滑鼠下按鈕 24×24（WCAG 2.5.8），觸控下 44×44，圓點本身是裡面的 6px。
             <button
               // biome-ignore lint/suspicious/noArrayIndexKey: 同上
               key={i}
@@ -146,9 +146,10 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
               aria-current={i === index ? 'true' : undefined}
               onClick={() => goTo(i)}
               className={cn(
-                'relative flex h-6 w-6 items-center justify-center rounded-full',
-                // 觸控裝置熱區 ≥44px（§1）：寬度撐開、高度用偽元素往上下延伸，視覺列高仍是 h-6
-                'pointer-coarse:w-11 before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[""]',
+                'flex h-6 w-6 items-center justify-center rounded-full',
+                // 觸控裝置熱區 ≥44px（§1）：整列撐到 h-11（骨架空白同步），不用偽元素往外延伸
+                // ——溢出掃描會把它當成 10px 垂直溢出。
+                'pointer-coarse:h-11 pointer-coarse:w-11',
                 FOCUS_RING_GAP,
               )}
             >

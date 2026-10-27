@@ -309,7 +309,7 @@ const CONTACT_KEYS = ['c1', 'c2', 'c3'];
 /**
  * 詳情頁骨架：沿用實際內容的同一組 grid（手機單欄、lg 起兩欄），資料到位時版面不跳
  * （ui-ux-guidelines §5；位置由 e2e `test_public_skeleton_layout.py` 實測把關）。第一欄
- * 是「正方形＋一列與圓點列同高（h-6）的空白」：刊登表單要求剛好 MAX_PHOTO_COUNT 張，所以一般
+ * 是「正方形＋一列與圓點列同高（h-6，觸控 h-11）的空白」：刊登表單要求剛好 MAX_PHOTO_COUNT 張，所以一般
  * 刊登載入後都有圓點列（資料層 `photos` 沒有數量約束，只有一張的刊登沒有圓點列、會上移 24px）。
  *
  * 外層是 `<output>`（隱含 role="status"）＋名稱＋`aria-busy`，比照後台的
@@ -328,7 +328,7 @@ function DetailSkeleton({ outputRef }: { outputRef: Ref<HTMLOutputElement> }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
           <Skeleton className="aspect-square w-full rounded-lg" />
-          <div className="h-6" />
+          <div className="h-6 pointer-coarse:h-11" />
         </div>
 
         <div className="space-y-6">
