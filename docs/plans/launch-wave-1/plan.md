@@ -52,6 +52,7 @@
 | 25 | 邀請信改版（業主 19:35） | 版型照 `confirm-signup.html`（黑底 UKNOW、卡片、小標＋大標＋一句＋按鈕、頁尾、卡片外 ©）；主體只表達邀請，保留推薦人揭露句；**拿掉**年費句、服務條款／事業手冊連結、複製網址段；**個資告知九要素保留但縮成卡片外灰色小字**（個資法第九條間接蒐集告知必須在第一次接觸）。派 R2 前端 session 開小 PR，業主等新版合進 main 再貼模板 |
 | 26 | PayUni 切換時點（業主 20:15） | `PAYUNI_SANDBOX=false` 留到其他都確認沒問題再改；§7 順序改為清 bucket → 清資料 → 註冊＋admin → R2 實寄 → Cloudflare 旗標 → 最後切 PayUni → 真付款 → 宣布 |
 | 27 | 第二次晉升提前（業主 20:20） | 原定 10/28 的第二次晉升改今晚開（PR #417）：開放時 favicon／SEO 在線上、邀請信新版只貼一次。PR 開後 develop 凍結到合進 main |
+| 28 | CI e2e 上限（業主 22:00） | 慢鏡像站連續弄紅 e2e 五次、#417 的 run 卡死不給重跑 → 破例在晉升 PR 開著時合一支 CI-only PR（#418，e2e timeout 15→25）進 develop；#417 改指新 head、journey 重跑 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -287,6 +288,7 @@ commit;
 | 10/27 19:35 | 業主看了邀請信模板：要簡化、版型對齊驗證碼信、問「兩個按鈕」（Dashboard 預覽不處理 `{{ if }}/{{ else }}` 兩分支都顯示，實寄只一個）。裁決 25（告知段縮小字、不刪）。派 R2 前端 session 開 `fix/referral-invite-email-restyle`。§7 第 6 步的貼模板改為等新版合進 main 後做；兩把 secret 與第 7、8 步不受影響 | 業主做第 6 步 secret、第 7、8 步；模板 PR 回報 |
 | 10/27 20:05 | 邀請信改版 PR #416（c9c8ff6）CI 綠 → 轉 ready → 合進 develop。四條小偏離（告知小字 #6b6b75、© 不帶年份、拿掉 24 小時一封句、拿掉純文字網址段）接受。新版模板隨第二次晉升上 main 後業主再貼（正式站與 develop 各一次） | 業主第 6 步 secret、第 7、8 步 |
 | 10/27 20:10 | 業主第 6 步兩把 secret 完成，`/health` referralInviteConfigured／Enabled 皆 true。裁決 26（PayUni 最後切）、27（第二次晉升今晚）。**開晉升 PR #417**（develop 3392d05 → main，無 migration，9 支 PR）；journey-full 約 25 分鐘。#415 等 #417 合進 main 後才合 | #417 綠 → 合 → 業主核准 production → 貼新版模板；業主同時做第 8 步清 bucket |
+| 10/27 21:40–22:05 | #417 journey-full（真後端 18 分鐘）**綠**；e2e-tests 第 5 次被慢 apt 鏡像站拖過 15 分鐘上限取消；run 40510447867 卡在 in_progress，rerun／cancel 皆 403／409。另發現 develop push 3392d05 的 CI 同因紅 → develop 的 Edge Function 停在 ae61955（#416 無後端變動，無影響）。裁決 28 → 開 #418（ci.yml e2e timeout 25，check-workflows OK） | #418 綠 → 合 → #417 新 head CI（journey 重跑）→ 合 → 核准 production |
 
 **執行 session 名冊**（主 session 維護）
 
