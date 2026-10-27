@@ -496,7 +496,10 @@ jobs:
     uses: ./.github/workflows/journey.yml
     with:
       scope: full
-      payment_mode: sandbox
+      # PayUni sandbox 刷卡頁 2026-10-27 起拒收 harness 輸入（卡號欄只剩末四碼、送出無反應；journey-scheduled
+      # run 40472945048），改走簽章注入備援；正式站以真付款驗 PayUni 邊界（第 1 波 plan.md §0 裁決 4）。
+      # 暫時至 2026-11-03：第 2 波修 harness 或等 PayUni 回覆後改回 sandbox
+      payment_mode: webhook
     secrets: inherit
 
   # 唯一該列入 required status checks 的項目(來源:ruleset
