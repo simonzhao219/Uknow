@@ -61,6 +61,7 @@
 | 34 | 取景框等於整個方框（業主 10/28 04:10，正式站實測） | react-easy-crop 預設把 crop area 算成媒體 contain 後的尺寸，直式照片左右留灰、上下溢出；改量容器邊長傳 `cropSize`＋`objectFit=cover`。P1a 小 PR |
 | 35 | 照片格改版（業主 10/28 04:20） | 格內不再有「調整範圍」「移除」文字鈕：移除＝縮圖右上角叉叉（aria 不變）、點縮圖進入調整（僅本次新增且完成的格；舊圖標示不能重新取景）、失敗格留「重試」；微調步距 10→4px。併同 34 一個 PR（#425） |
 | 36 | 刊登詳情頁照片改版（業主 10/28 06:05，正式站實測） | 「既然已經都強制裁剪成正方形了，顯示就用正方形。不要外面長方、裡面正方，照片不用有縮圖，用跟 Instagram 一樣的滑動設計。」追問定案：正方形全寬、CSS scroll-snap 左右滑、底部圓點＋右上角「1/3」計數、桌機另加左右箭頭；跟第 1 波，第五次晉升。`fix/listing-photo-carousel`，Sonnet 執行 session |
+| 37 | 邀請好友卡手機版難搆到輸入框（業主 10/28 06:20） | 現在：拿掉釘頂端、改垂直置中＋`index.html` viewport 加 `interactive-widget=resizes-content`（鍵盤升起視窗縮小、對話框重新置中）；跟第五次晉升。第 2 波：依 Instagram／Threads 的設計哲學整體重調邀請相關體驗（底部面板等），記 §6 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -236,6 +237,7 @@ commit;
 | 框架修訂（第 1 波 friction-log 2026-10-26～27 兩節） | S | `tdd-test-guard` 擴到 Bash 寫 `*.test.*`（bash-guard 新類）；bash-guard 的 journey 判準只看 `pytest` 在指令位置；ci.yml e2e 的 apt 步驟獨立＋規則 12 退避、api-tests `supabase start` 加退避並把規則 12 擴到它；`/tdd-implement` 紅燈步驟加「逐條讀失敗原因」；dispatch-prompts 逃生口 2 改成「業主親自到執行 session 貼授權句」；e2e/requirements 釘 `playwright==1.63.0` |
 | `lazyWithRetry` 重試一次無效＋表單草稿保存 | S | 失敗的 module fetch 被瀏覽器記成 null（HTML 規格），同 URL 再 import() 立刻失敗，`importWithRetry` 的第一段重試形同虛設，第 2 波驗證後簡化為直接重載；Create／Edit 表單加草稿保存（`docs/multi-step-flow-recovery.md` 四契約），重新整理不掉已填文字 |
 | PR 2 審查記債（#421 第 2 波） | S–M | 送出中 picker 未凍結、preparing／chunk 載入無逾時、5xx 固定文案、Edit 取消孤兒入 §14、預覽縮圖用原檔、滑桿 aria-valuetext 與微調鈕命名、封面徽章、窄格溢出（真機）、內建瀏覽器 unsupported 分流、spinner、驗收 8 e2e、驗收 14 e2e 斷言、§11 格式欄、e2e 上傳 mock 歸位 BackendApiMock、常數命名與 UPLOAD_TIMEOUT_MS 歸位、`useBrowserListingPhotos` 收斂 Create／Edit 重複、`initialUrls` 二選一、微調／重設／滑桿行為測試與 PhotoCropDialog 同名測試檔、401 不登出、「重設」鈕與 60 秒逾時待業主確認 |
+| 邀請體驗整體重調（裁決 37 第二段） | M | 依 Instagram／Threads 的設計哲學重看「邀請好友」整段：底部面板（visualViewport 跟鍵盤墊高）、Email 與快速分享的層次、結果回饋；第 1 波只做置中＋viewport |
 | 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
@@ -320,6 +322,7 @@ commit;
 | 10/28 04:05–05:10 | 業主醒來在正式站實測，提出裁決 34、35（取景框填滿、縮圖叉叉／點縮圖調整／微調 4px）→ P1a 開 **#425**（紅 bcd4b7a7、f29aa302）→ 主 session 審 diff → CI 綠 → **合進 develop（98b9d95）**。業主另一 session 合入 **#424**（e2e 改跑官方 Playwright image，develop CI 綠 11 分鐘）。#415 的 api-tests 兩度映像限流＋job 20 分鐘上限（supabase start 17 分鐘），改 rebase 到新 develop 重跑。開**第四次晉升 PR**（develop 98b9d95 → main，含 #424、#425） | 第四次晉升 journey-full 綠 → 合 main → 業主核准 production（核准最新那筆）；#415 晉升後再合 |
 | 10/28 05:10–05:40 | **#426 journey-full 綠（26 分鐘）＋全軌綠 → 合進 main（8b1b8abf）**；正式站 Edge Function 部署 run 40588572586 停在 `production` 等核准（workflow_run 觸發的 run 在 API 上顯示的 head 是預設分支 develop，不是 main——找 run 看建立時間緊跟 main 的 CI push run）。#415 合進 develop（21707dc），session 分支重切自 develop。發現 be05672f 把 worktree 的 `node_modules` 符號連結 commit 進 develop（已隨晉升進 main，無害但是垃圾）：本 PR `git rm` 並把 `.gitignore` 改成 `node_modules`（去斜線），friction-log 記了。第 2 波 friction 補兩條：api-tests job 20 分鐘上限（`supabase start` 拉映像 17 分鐘）、#424 後 e2e 11 分鐘 | 業主核准 production → `/health` sha 開頭 8b1b8ab → §7 第 13 步手動測 → 清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 |
 | 10/28 05:40–06:10 | #428（docs）e2e 紅：**pytest 9.2.0 於 05:30 發布改名 `_arg2fixturedefs`，pytest-bdd 9.0.0 整套炸掉**，develop 自己的 push run 同時紅 → 開 **#429**（`pytest>=8.0,<9.2`），同 commit 搬進 #428。業主實測詳情頁提出**裁決 36**（正方形＋Instagram 式滑動、無縮圖）→ 開 Sonnet 執行 session `session_01MQovbCBPJ46qTpVQvhbuA5`（`fix/listing-photo-carousel`） | #429 綠 → 合 develop；#428 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升（含 #429 pin） |
+| 10/28 06:10–06:40 | #428、#429 CI 綠 → **#428 合進 develop（9b4694b，含 pytest pin）**，#429 重複關閉。業主裁決 37（邀請卡置中＋viewport）→ 主 session 依 ≤10 行例外自己改（`fix/invite-card-center`：1 個 class、1 個 meta）。詳情輪播 session 施工中 | 置中 PR CI 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升 |
 
 **執行 session 名冊**（主 session 維護）
 
