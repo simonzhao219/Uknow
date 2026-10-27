@@ -450,9 +450,15 @@ export function CreateServiceProvider() {
             <FieldError error={errors.contacts} />
           </div>
 
+          {photos.submitHint && (
+            <p id="photos-submit-hint" className="text-sm text-muted-foreground">
+              {photos.submitHint}
+            </p>
+          )}
           <Button
             onClick={handleSubmit}
             className="w-full"
+            aria-describedby={photos.submitHint ? 'photos-submit-hint' : undefined}
             disabled={
               isSubmitting ||
               !formData.name.trim() ||
