@@ -30,6 +30,15 @@
 | 8 | 凍結規則 | **10/29–10/31 凍結，只許 hotfix**：不上新功能、不上 migration、不動註冊／付款／登入主幹；hotfix 走晉升＋業主核准。每週晉升從 11/3 起。 |
 | 9 | 夜間授權（業主 10/27 02:15–10:15 睡眠，無法回覆） | **主 session 可以**：審過後合併 PR 進 develop（#399、R2 前端、窗口小項）；開晉升 PR，journey-full 綠後以 merge commit 合進 main（migration 會自動套到正式站 DB；函式部署停在等業主核准，舊函式不呼叫新函式、視窗安全）；用 Claude Code Remote 的 `create_session` 自己開執行 session（繼承環境與 auto 權限模式）。**主 session 不做**：正式站部署核准、Dashboard secrets、PayUni 切換、清資料、付款——全部等業主醒來，§7 已拆成「睡前」與「醒來後」。 |
 
+**主 session 追加裁決（AskUserQuestion，2026-10-27 14:15）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| 10 | 12:00 錯過後的開放時間 | **今晚 23:00 前後**（被推翻的建議：10/28 12:00）。任何一步紅就自動順延到 10/28，主 session 在 §8 記並給新時間 |
+| 11 | R2 前端模型 | **Opus** |
+| 12 | 窗口工項派工時機 | **現在全派**：R1a-2、P1a（只規劃）、告警送到人先派；#399 合併後派容量 hotfix＋寄信失敗告警（合成一個 session）、#395。晉升 PR 合進 main 前一律不合進 develop |
+| 13 | 10/29–31 量測排程 | **允許**主 session 建排程任務（每 2 小時、只在 10/29–31） |
+
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
 
@@ -217,7 +226,7 @@ commit;
 8. Storage：Dashboard → Storage → `id-cards`、`referral-signatures`、`make-5c6718b9-listings-photos` 三個 bucket 各自全選刪除物件（bucket 本身留著）。
 9. 回答主 session 的清資料乾跑確認（它會貼 §4 的計數；`storage.objects` 各 bucket 必須已是 0）。
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
-11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。
+11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
 12. Cloudflare Pages → uknow → Settings → Variables（**Production** 作用域）：`VITE_REFERRAL_EMAIL_INVITE=true` → Deployments 對最新 production 部署按 Retry deployment（環境變數要重建才生效）→ 開 https://uknow.com.tw 按「邀請好友」確認邀請卡有 Email 欄。
 13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
@@ -229,6 +238,8 @@ commit;
 | 10/27 02:15 | 業主裁決 9（夜間授權）後入睡到 10:15 | 主 session 接手；夜裡的紀錄一律寫在本表 |
 | 10/27 13:45 | **主 session 開局**（夜間沒有主 session 運作，夜間授權未使用）。現況：#402 於 13:43 由業主合併，develop CI run 40456919943 進行中，「部署 Edge Function」step（`--use-api` 首次）待它綠後的 deploy run 判定；#399 已轉 ready，R2 後端 session 閒置在等審查，**沒有卡在 AskUserQuestion**（K1 的「回答問題」已不需要）；#399、#401 因 #402 改了 `.claude/rules/github-actions.md` 規則 12 而 conflict、CI 未跑。open issues 未變（部署失敗 issue 群待 §6 收斂）。**12:00 開放已錯過** | rebase #399／#401、五 lane 審 #399、問業主新開放時間 |
 | 10/27 13:55 | 依目標 5 授權 rebase＋force-push：#401 → `f6a0d4b`、#399 → `c3be852`（規則 12 段落解成兩邊都留；#399 的移植段與 #401 逐字相同，#401 合併後 no-op）。本機 check／check-workflows／spec-drift／migration-versions 綠。已 send_message 通知 R2 後端 session 先 reset 再動 | #399 五 lane 審查進行中；CI 綠後合 #401 → #399 |
+| 10/27 14:10 | develop deploy run 40457604933（`--use-api` 首次）**綠**——K1 完成。#399 五 lane 審查完成：無擋合併的 P0／P1（需求 lane 的「沒有前端」是既定分工），追蹤項留言在 #399、轉進 dispatch §I 與 §7 第 11 步 | 業主裁決 10–13（見 §0）|
+| 10/27 14:20 | 派工 prompt D～I 落檔；開 R1a-2、P1a（規劃）、告警送到人三個執行 session | #399／#401 CI 綠 → 合併 → 開 R2 前端（§B＋§I）、G、H |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
 
@@ -238,4 +249,5 @@ commit;
 | 2 | §7 第 6–8 步（備份確認、寄信上限、模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket） | ⬜ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
-| 5 | 是否允許主 session 建 10/29–31 每 2 小時的排程任務跑 §5 量測 | ⬜ |
+| 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
+| 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
