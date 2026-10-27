@@ -254,12 +254,13 @@ commit;
 | 10/27 14:30 | 演練分支 `wave1-cleanup-rehearsal`（`ykaxvdxtswhtqohwhlss`，業主在 Dashboard 開的；MCP create_branch 的費用確認視窗兩次都到不了業主）：乾跑 SQL 全部可執行、權限 OK（第一次因分支 migration 尚未套完而找不到 `referral_code_seq`，數秒後即存在——**今晚對正式站不會有這個問題**）。刪除段透過 MCP 兩次 `cancelled` → 裁決 17。business decisions 14–17 落 §0 | 業主在 SQL Editor 貼刪除段 → 主 session 跑零殘留檢查 → 刪分支 |
 | 10/27 14:40 | #405 審過可合併（等晉升）；og 圖開 issue #408。#406／#407 第一輪審查 agent 無 shell 取不到 diff → 以有 shell 的 agent 重審中。容量 hotfix session 連 `npm install -g deno` 也被分類器擋 → 交棒：它把 patch 以 send_message 傳給 #395 session（唯一有 deno＋本機 Supabase 的執行 session），由後者在 #407 ready 後另開 `fix/peak-capacity-hotfix` PR | 等 #406／#407 審查結果、R2 前端 PR、業主貼演練刪除段 |
 | 10/27 14:55 | #407 審過：P0 無、5 點需修（去重鍵加 payuniMessage、未付款不寫 info、payuni-query 升 error、fallback 條件、零告警斷言）；開放問題裁決「本 PR 不動轉移條件，#395 留 open 等 sandbox 碼表」。#406 審過：P0 無、1 P1 必修（`actions: read` 缺 → 窗口靜默退化 70 分）＋4 P2。P1a 第二版 #404 剩 Q-D／Q-F／Q-G → 業主裁決 18–20，執行 session 跑第三輪 /review-plan。容量 hotfix patch 已交 #395 session | 等 #406／#407 修完、R2 前端 PR、業主貼演練刪除段 |
+| 10/27 15:45 | R2 前端開 draft PR #409（循環 6–8＋文件＋R2-3a UI 驗形；本機 check:full 綠、mocked e2e 290 passed）；已訂閱、預審 6–8 | 循環 9–11 推完後五 lane 完整審查 → 合併 → 開晉升 PR |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | — | 施工中，目標 18:30 開 PR |
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | #409（draft） | 循環 6–8 綠已推、文件已推；9–11 約 15:45–16:15 推完；主 session 預審 6–8 中 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 第二版已出（兩階段）；裁決 18–20 落檔後跑第三輪 /review-plan；之後業主審 #404、親打 /tdd-implement |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、補 `actions: read` 中；晉升後合 |
