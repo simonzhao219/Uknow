@@ -255,6 +255,7 @@ commit;
 | 10/27 14:40 | #405 審過可合併（等晉升）；og 圖開 issue #408。#406／#407 第一輪審查 agent 無 shell 取不到 diff → 以有 shell 的 agent 重審中。容量 hotfix session 連 `npm install -g deno` 也被分類器擋 → 交棒：它把 patch 以 send_message 傳給 #395 session（唯一有 deno＋本機 Supabase 的執行 session），由後者在 #407 ready 後另開 `fix/peak-capacity-hotfix` PR | 等 #406／#407 審查結果、R2 前端 PR、業主貼演練刪除段 |
 | 10/27 14:55 | #407 審過：P0 無、5 點需修（去重鍵加 payuniMessage、未付款不寫 info、payuni-query 升 error、fallback 條件、零告警斷言）；開放問題裁決「本 PR 不動轉移條件，#395 留 open 等 sandbox 碼表」。#406 審過：P0 無、1 P1 必修（`actions: read` 缺 → 窗口靜默退化 70 分）＋4 P2。P1a 第二版 #404 剩 Q-D／Q-F／Q-G → 業主裁決 18–20，執行 session 跑第三輪 /review-plan。容量 hotfix patch 已交 #395 session | 等 #406／#407 修完、R2 前端 PR、業主貼演練刪除段 |
 | 10/27 15:45 | R2 前端開 draft PR #409（循環 6–8＋文件＋R2-3a UI 驗形；本機 check:full 綠、mocked e2e 290 passed）；已訂閱、預審 6–8 | 循環 9–11 推完後五 lane 完整審查 → 合併 → 開晉升 PR |
+| 10/27 15:47 | 容量 hotfix 交棒成功 → PR #410（#395 session 本機 supabase 實跑紅燈證據；另順手改 journey docstring 與 index.ts 註解的舊數字）| 審 #410 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -264,7 +265,7 @@ commit;
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 第二版已出（兩階段）；裁決 18–20 落檔後跑第三輪 /review-plan；之後業主審 #404、親打 /tdd-implement |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、補 `actions: read` 中；晉升後合 |
-| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix`（patch 交棒） | — | 原 session 容器裝不了 deno；patch 交 #395 session 在 #407 ready 後開 PR |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 本機 supabase 實跑紅→綠（4 紅→22 綠）；等 CI、主 session 審查中；晉升後合 |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 審過、5 點修改中；修完再接容量 hotfix patch |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
