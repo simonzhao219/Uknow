@@ -19,7 +19,7 @@ Deno.env.set('PAYUNI_HASH_IV', '0123456789ab');
 Deno.env.set('PAYUNI_SANDBOX', 'false');
 Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 
-const { clientIp } = await import('./index.ts');
+const { clientIp, clientIpSource, CHECK_EMAIL_RATE_MAX } = await import('./index.ts');
 
 /** 最小的 Hono context 替身：clientIp 只讀 c.req.header(name)。 */
 function ctx(headers: Record<string, string>) {
@@ -87,4 +87,23 @@ Deno.test('限流窗口：index.ts 每個 *_WINDOW_SECONDS 都不長於 prune �
       `${w.name}=${w.seconds}s 長於 prune 保留期 ${retentionSeconds}s——先調高 migration 的保留期`,
     );
   }
+});
+
+// ------------------------------------------------------------
+// (C) clientIpSource / check-email 限流值（現場共用 Wi-Fi 的容量裁決）
+// ------------------------------------------------------------
+
+Deno.test('clientIpSource：回報解析到的標頭名稱，不含 IP 本身', () => {
+  assertEquals(
+    clientIpSource(ctx({ 'cf-connecting-ip': '203.0.113.7', 'x-forwarded-for': '198.51.100.1' })),
+    'cf-connecting-ip',
+  );
+  assertEquals(clientIpSource(ctx({ 'x-forwarded-for': '198.51.100.1' })), 'x-forwarded-for');
+  assertEquals(clientIpSource(ctx({})), 'unknown');
+  // 與 clientIp 一致：格式不合就是 unknown，不報來源標頭
+  assertEquals(clientIpSource(ctx({ 'cf-connecting-ip': 'not an ip!' })), 'unknown');
+});
+
+Deno.test('CHECK_EMAIL_RATE_MAX：現場尖峰（同 Wi-Fi 共用 IP）上限為 60／5 分鐘', () => {
+  assertEquals(CHECK_EMAIL_RATE_MAX, 60);
 });

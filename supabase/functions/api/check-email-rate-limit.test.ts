@@ -69,8 +69,8 @@ Deno.test('check-email：同一 IP 連打超過上限回 429，其他 IP 不受�
   const ip = uniqueIp();
   const otherIp = uniqueIp();
 
-  // 上限 10 次（見 index.ts CHECK_EMAIL_RATE_MAX）：前 10 次正常
-  for (let i = 1; i <= 10; i++) {
+  // 上限 60 次（見 index.ts CHECK_EMAIL_RATE_MAX）：前 60 次正常
+  for (let i = 1; i <= 60; i++) {
     const res = await app.request('/api/auth/check-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip },
@@ -82,7 +82,7 @@ Deno.test('check-email：同一 IP 連打超過上限回 429，其他 IP 不受�
   const blocked = await app.request('/api/auth/check-email', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip },
-    body: JSON.stringify({ email: 'probe-11@example.invalid' }),
+    body: JSON.stringify({ email: 'probe-61@example.invalid' }),
   });
   assertEquals(blocked.status, 429, await blocked.clone().text());
   const body = await blocked.json();
@@ -101,7 +101,7 @@ Deno.test('check-email：cf-connecting-ip 優先於 x-forwarded-for 作為限流
   // x-forwarded-for 的第一段由用戶端自己填：每次換一個值就能繞過 per-IP 限流。
   // cf-connecting-ip 由 Cloudflare 覆寫、用戶端改不動，所以有它就以它為準。
   const ip = uniqueIp();
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 60; i++) {
     const res = await app.request('/api/auth/check-email', {
       method: 'POST',
       headers: {
@@ -122,7 +122,7 @@ Deno.test('check-email：cf-connecting-ip 優先於 x-forwarded-for 作為限流
       'cf-connecting-ip': ip,
       'x-forwarded-for': uniqueIp(),
     },
-    body: JSON.stringify({ email: 'cf-probe-11@example.invalid' }),
+    body: JSON.stringify({ email: 'cf-probe-61@example.invalid' }),
   });
   assertEquals(blocked.status, 429, '換 x-forwarded-for 不得繞過 cf-connecting-ip 的配額');
   await blocked.body?.cancel();

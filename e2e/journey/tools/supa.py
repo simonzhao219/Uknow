@@ -182,7 +182,7 @@ class SupabaseAdmin:
         return rows[0]
 
     def reset_check_email_rate_limit(self) -> None:
-        """清掉 check-email 的固定窗口計數（10 次/5 分/IP）。
+        """清掉 check-email 的固定窗口計數（60 次/5 分/IP）。
 
         30 人建樹同一 IP 一定撞限流；正式碼不動，改在拋棄式分支上
         於波次之間重置計數器——這正是設計書「測試分支放寬限流參數、
