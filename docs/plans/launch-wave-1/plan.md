@@ -60,6 +60,7 @@
 | 33 | 夜間授權第二段（業主 10/28 02:45，休息 6 小時至約 08:45） | 主 session 不等業主：#421、刊登卡 PR、#415 審完合 develop → 開第三次晉升 PR → journey-full 綠 → **合進 main**。只有 production 部署核准是業主的（GitHub `production` 環境 required reviewer），醒來按核准 → `/health` sha 核對 → 業主手動測一輪 → 才開始清資料與 PayUni 切正式。執行 session 的 tdd-lock 解鎖沿用 P1a 概括授權；分類器擋下的事主 session 記 §8 等業主 |
 | 34 | 取景框等於整個方框（業主 10/28 04:10，正式站實測） | react-easy-crop 預設把 crop area 算成媒體 contain 後的尺寸，直式照片左右留灰、上下溢出；改量容器邊長傳 `cropSize`＋`objectFit=cover`。P1a 小 PR |
 | 35 | 照片格改版（業主 10/28 04:20） | 格內不再有「調整範圍」「移除」文字鈕：移除＝縮圖右上角叉叉（aria 不變）、點縮圖進入調整（僅本次新增且完成的格；舊圖標示不能重新取景）、失敗格留「重試」；微調步距 10→4px。併同 34 一個 PR（#425） |
+| 36 | 刊登詳情頁照片改版（業主 10/28 06:05，正式站實測） | 「既然已經都強制裁剪成正方形了，顯示就用正方形。不要外面長方、裡面正方，照片不用有縮圖，用跟 Instagram 一樣的滑動設計。」追問定案：正方形全寬、CSS scroll-snap 左右滑、底部圓點＋右上角「1/3」計數、桌機另加左右箭頭；跟第 1 波，第五次晉升。`fix/listing-photo-carousel`，Sonnet 執行 session |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -318,6 +319,7 @@ commit;
 | 10/28 03:35–04:05 | **#423 journey-full（真後端 26 分鐘）＋全軌綠 → 轉 ready → 合進 main（66c2cf0）**。正式站 Edge Function 部署在 GitHub `production` 環境等業主核准；Cloudflare 會自動建 main 的前端。#415 已 rebase（333dff6，CI 綠）等這則紀錄推上後再合。業主醒來清單見 §7 第 13 步 | 業主核准 production → `/health` sha=66c2cf0 → 手動測 → 清 bucket／清資料 → PayUni |
 | 10/28 04:05–05:10 | 業主醒來在正式站實測，提出裁決 34、35（取景框填滿、縮圖叉叉／點縮圖調整／微調 4px）→ P1a 開 **#425**（紅 bcd4b7a7、f29aa302）→ 主 session 審 diff → CI 綠 → **合進 develop（98b9d95）**。業主另一 session 合入 **#424**（e2e 改跑官方 Playwright image，develop CI 綠 11 分鐘）。#415 的 api-tests 兩度映像限流＋job 20 分鐘上限（supabase start 17 分鐘），改 rebase 到新 develop 重跑。開**第四次晉升 PR**（develop 98b9d95 → main，含 #424、#425） | 第四次晉升 journey-full 綠 → 合 main → 業主核准 production（核准最新那筆）；#415 晉升後再合 |
 | 10/28 05:10–05:40 | **#426 journey-full 綠（26 分鐘）＋全軌綠 → 合進 main（8b1b8abf）**；正式站 Edge Function 部署 run 40588572586 停在 `production` 等核准（workflow_run 觸發的 run 在 API 上顯示的 head 是預設分支 develop，不是 main——找 run 看建立時間緊跟 main 的 CI push run）。#415 合進 develop（21707dc），session 分支重切自 develop。發現 be05672f 把 worktree 的 `node_modules` 符號連結 commit 進 develop（已隨晉升進 main，無害但是垃圾）：本 PR `git rm` 並把 `.gitignore` 改成 `node_modules`（去斜線），friction-log 記了。第 2 波 friction 補兩條：api-tests job 20 分鐘上限（`supabase start` 拉映像 17 分鐘）、#424 後 e2e 11 分鐘 | 業主核准 production → `/health` sha 開頭 8b1b8ab → §7 第 13 步手動測 → 清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 |
+| 10/28 05:40–06:10 | #428（docs）e2e 紅：**pytest 9.2.0 於 05:30 發布改名 `_arg2fixturedefs`，pytest-bdd 9.0.0 整套炸掉**，develop 自己的 push run 同時紅 → 開 **#429**（`pytest>=8.0,<9.2`），同 commit 搬進 #428。業主實測詳情頁提出**裁決 36**（正方形＋Instagram 式滑動、無縮圖）→ 開 Sonnet 執行 session `session_01MQovbCBPJ46qTpVQvhbuA5`（`fix/listing-photo-carousel`） | #429 綠 → 合 develop；#428 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升（含 #429 pin） |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -328,6 +330,7 @@ commit;
 | P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅（PR 1）；**#421 ✅ 03:30 合進 develop（PR 2）**，收工：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 收工；#425（裁決 34、35）亦由此 session 完成，留著不封存以接照片管線回饋 |
 | P1a-e2e | `session_01MQovbErnhEXgHjQQjw9XvG`（首開 `…EJErP6…` 未帶 repo，已封存） | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
 | 刊登卡 | `session_01MQovbBaaYSmpxZoDwfmXj2` | Sonnet | `fix/member-center-listing-card` | 裁決 32；#422 ✅ 03:10 合進 develop，session 已封存 | — |
+| 詳情輪播 | `session_01MQovbCBPJ46qTpVQvhbuA5` | Sonnet | `fix/listing-photo-carousel` | 裁決 36；06:05 開工 | 紅燈 → 綠燈 → PR → 自審 → 回報主 session |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
 | 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410 ✅ 已合併 | 收工 |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 ✅ 已合併 | 收工（#395 方向 3 sandbox 實打留 issue） |
