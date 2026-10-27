@@ -16,7 +16,7 @@ import { createClient } from '../utils/supabase/client';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import { Badge } from './ui/badge';
 import type { AdminWithdrawalSummaryResponse } from '@contract';
-import logoImage from '@/assets/uknow-logo-horizontal.png';
+import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
 
 // 走專用的輕量端點（規劃書 §2.2）。用列表端點也拿得到這個數字，但那條會
 // 順便替該筆記錄的會員產身分證簽名 URL——每次 admin 載入頁面都替某個人的
@@ -94,7 +94,7 @@ export function Navbar() {
     <nav className="border-b bg-card sticky top-0 z-40">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center space-x-2">
-          <img src={logoImage} alt="Uknow" className="h-10 object-contain" />
+          <img src={logoImage} alt="Uknow Logo" className="h-10 object-contain" />
         </Link>
 
         <div className="flex items-center space-x-4">

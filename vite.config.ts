@@ -21,6 +21,10 @@ export default defineConfig({
     alias: {
       'lucide-react@0.487.0': 'lucide-react',
       'input-otp@1.4.2': 'input-otp',
+      'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png': path.resolve(
+        __dirname,
+        './src/assets/1f99716ab54515df4eecc150e3746c995a4a44b8.png',
+      ),
       'class-variance-authority@0.7.1': 'class-variance-authority',
       '@supabase/supabase-js@2': '@supabase/supabase-js',
       '@radix-ui/react-tabs@1.1.3': '@radix-ui/react-tabs',
