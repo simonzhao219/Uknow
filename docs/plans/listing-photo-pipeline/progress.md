@@ -5,18 +5,22 @@
 
 ## 階段狀態
 
-| # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
-|---|---|---|---|---|
-| 1 | imageGeometry／imagePipeline | ⬜ 未開始 | | |
-| 2 | useListingPhotos＋uploadListingPhoto | ⬜ 未開始 | | |
-| 3 | PhotoPicker／PhotoCropDialog 接進 Create／Edit | ⬜ 未開始 | | |
-| 4 | DELETE /listings/photos | ⬜ 未開始 | | |
-| 5 | 清理接線 | ⬜ 未開始 | | |
-| 6 | 文件與閘門 | ⬜ 未開始 | | |
+| PR | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
+|---|---|---|---|---|---|
+| 1 後端清理 | 1-1 | listing-photos.ts 純函式 | ⬜ 未開始 | | |
+| 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ⬜ 未開始 | | |
+| 1 | 1-3 | listingPhotosApi＋Edit diff 刪＋管理頁改走後端 | ⬜ 未開始 | | |
+| 1 | 1-4 | 文件（規格書 §11、ui-ux §7） | ⬜ 未開始 | | |
+| 2 前端管線 | 2-1 | apiRequest 支援 FormData | ⬜ 未開始 | | |
+| 2 | 2-2 | imageGeometry／imagePipeline | ⬜ 未開始 | | |
+| 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ⬜ 未開始 | | |
+| 2 | 2-4 | PhotoPicker／PhotoCropDialog 接 Create／Edit | ⬜ 未開始 | | |
+| 2 | 2-5 | e2e／journey page object 同步 | ⬜ 未開始 | | |
+| 2 | 2-6 | 文件與 bundle 閘門 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃已寫、待 `/review-plan` 與業主審；業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+規劃第二版（兩 PR）已依業主裁決改寫，待重跑 `/review-plan` 與業主審；業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
 
 ## Blockers(逃生口紀錄)
 
