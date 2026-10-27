@@ -295,6 +295,7 @@ commit;
 | 10/27 22:16 | 卡住的 run 14:08Z 自己收尾 → 重跑 e2e（這次鏡像站正常，7 分鐘綠）→ ci-ok 綠 → **#417 合進 main（f076866）**，journey 不必重跑；#418 同時綠 → 合進 develop（77efb63）。第二次晉升完成，等業主核准 production 部署 | 業主核准 → /health sha=f076866 → 貼新版 Invite 模板 → 第 8 步 |
 | 10/27 22:45–23:20 | 業主核准 production，`/health` sha=f076866 對上（referralInvite 兩旗標 true、PayUni sandbox）；新版 Invite 模板已貼。裁決 29、30。通知 P1a session 準備 PR 2 循環清單、等業主 /tdd-implement。今晚收工；10/28 順序：PR 2 → 第三次晉升 → 清 bucket／清資料 → 註冊＋admin → R2 實寄 → 旗標 → PayUni 切正式 → 真付款 → 宣布 | 業主 10/28 早上到 P1a session 打 /tdd-implement |
 | 10/27 23:30–10/28 00:25 | 業主在 Cloudflare 設 Production 變數並 Retry 兩次，正式站仍是分享選單；pages.dev 預覽網址登不進（Auth 回跳綁 uknow.com.tw，不追）。以主檔 hash 核對：正式站 `index-CWyrVOvQ.js` ＝ 本機**無旗標**建置 → 儀表板變數沒進建置。裁決 31 → 主 session 開 `fix/email-invite-flag-in-git`（`.env.production` ＋ checklist 措辭）。#415 api-tests 重跑綠。P1a 於 2-2 卡住：分類器拒絕「轉述的核准」移除 tdd-lock，業主已親自在該 session 貼授權句 | fix PR CI 綠 → 合進 develop；P1a 續 2-2 綠燈→2-3；第三次晉升等 PR 2 |
+| 10/28 00:30–00:45 | #419 CI 綠 → 轉 ready → **合進 develop（53dd585）**；旗標隨第三次晉升上 main。P1a 經業主親貼授權後解鎖：紅燈修正 `e04a0824`、實作還原 29 測試綠，續 2-2 綠燈 commit。波末 8 條摩擦寫進 friction-log（95557df）。§4 乾跑唯讀計數先跑一次做基準（見 todo #3：無真匯款、completed 13 單皆 sandbox 金額） | P1a 2-3…2-6；10/28 下午審 PR 2；業主清 bucket 後重跑乾跑 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -314,7 +315,7 @@ commit;
 |---|---|---|
 | 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
 | 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret、新版模板與主旨~~ ✅；清三個 bucket 與 PayUni 正式依裁決 29 於 10/28 晚 PR 2 上線後做 | ◐ |
-| 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
+| 3 | 清資料乾跑確認——**10/28 00:40 唯讀計數（清 bucket 前的基準，清完再跑一次）**：auth.users 18、profiles 18（is_admin 0）、listings 6、payment_orders 26（completed 13／expired 8／failed 5，10/08–10/27，completed 合計 15,600＝13×1,200，正式站一直 sandbox 故無真錢）、subscriptions 13、withdrawals 0、**withdrawal_events.bank_ref 0（無真匯款）**、reward_transactions 19、referral_codes 13、referral_edges 12、task_progress 5、referral_king_rewards 0、system_alerts 5、announcements 0、rate_limits 3、member_verify_logs 2、auth.audit_log_entries 0；storage.objects：listings-photos 27、referral-signatures 13、id-cards 0；referral_code_seq last_value 8048888（is_called true）；reward_config.default_referrer_code 已是 8048876（維持）；舊 KV 表不存在。業主清完三個 bucket 後主 session 重跑乾跑，各 bucket 為 0 才進 SQL 段 | ◐ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
