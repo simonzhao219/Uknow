@@ -264,6 +264,7 @@ commit;
 | 10/27 17:05 | 業主完成：寄信上限調 600／小時（Rate Limits 頁；原值待業主補）；自訂 SMTP 確認（`admin@uknow.com.tw` 經 `smtp.gmail.com:587`，Dashboard 的「personal provider」黃色警告是制式提醒，§5 已算入 2,000 封／日）；LINE Messaging API 綁在既有官方帳號「Simon」（@693hcfug，輕用量 200 則／月）、Provider「Uknow」，兩把 Secret `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO` 已放 GitHub；其他 Auth 限流（sign-up 300／5 分／IP、OTP 300／5 分／IP）對現場共用 IP 足夠，不動 | 推播實測（curl 或 #406 合併後 workflow_dispatch） |
 | 10/27 17:12–17:40 | R2 前端 #409 完成（循環 6–11、R2-3a UI、實作審查與預審處置、規劃目錄已刪；head `eae1213` CI 綠）。五 lane 審查：P0 無；P1 兩條經反駁只剩 `expired` 文案一條成立（第 8 天才踩到、首批邀請 11/3 到期）→ follow-up `fix/invite-expired-notice`（R2 session，目標 10/28 第二次晉升）；模板保存期限句為裁決 N，維持。事實核對全綠。**#409 合併（`1471912`）** | 開晉升 PR |
 | 10/27 17:45 | **晉升 PR #411 開出**（develop→main，23 個 PR、7 支 migration；#403 主 session 文件 PR 因 ready 後 ci-ok 要重跑、不值得佔關鍵路徑，排除在本次晉升外、晉升後再合）。dispatch `journey-scheduled.yml`（develop，`pytest_expr=orgbuild or invite`）先驗 R2 的 hosted 行為，與 #411 的 journey-full 平行 | 等 journey 子集（~10–20 分）與 journey-full（30–90 分）；綠就以 merge commit 合進 main → 業主核准 production 部署 |
+| 10/27 18:26–18:45 | **journey 子集（sandbox）紅**：拋棄式分支、migration、`--use-api` 部署、signup 探測全綠；pytest 在 PayUni sandbox 刷卡頁「確認送出」後 45 秒表單仍在、卡號欄只剩末四碼（run 40472945048）。史料：10/17 sandbox full 綠（run 39063973420）、10/24 排程紅在拉映像（未到 pytest）→ 今天是 10/17 後第一次碰 PayUni sandbox 頁，判定 PayUni 測試站改版，非本波程式問題。#411 的 journey-full（sandbox）必同樣紅。處置：(a) 重 dispatch 子集改 `payment_mode=webhook`（run 40473648265）驗 R2 hosted 行為；(b) 主 session 依 ≤10 行 CI 例外開 **PR #413**：ci.yml journey-full 暫改 webhook、規則 13 標「暫時至 2026-11-03」；PayUni 邊界由今晚真付款驗（裁決 4）。#413 合進 develop 後 #411 自動跟上重跑 journey-full（webhook，約 30–60 分） | 等 webhook 子集結果 → 合 #413 → 等 #411 journey-full |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -290,4 +291,5 @@ commit;
 | 8 | ~~核准建拋棄式分支~~ 業主自己在 Dashboard 開了、演練完成 | ✅ |
 | 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
 | 7 | ~~手動封存兩個空 session~~ | ✅ |
-| 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
+| 6 | ~~寄信上限與 SMTP 確認~~ 17:05 完成 | ✅ |
+| 11 | 第 2 波：修 journey harness `payuni_sandbox_page.py` 配合 PayUni sandbox 新表單（或向 PayUni 確認改版），11/03 前把 ci.yml journey-full 改回 `sandbox`（規則 13 到期會自動紅） | ⬜ |
