@@ -21,7 +21,7 @@
 
 ## 目前位置與下一步
 
-PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-3 綠；下一步 2-4a PhotoPicker／PhotoCropDialog（需 npm i react-easy-crop）。
+PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4a 綠；下一步 2-4b Create／Edit 接線。
 
 ## 偏離規劃（記入 PR 描述）
 
