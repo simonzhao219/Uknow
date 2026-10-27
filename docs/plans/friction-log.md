@@ -3236,3 +3236,6 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   git 裡。核對手法可複用：本機建置一次拿主檔檔名，到正式站開 `/assets/<檔名>` 看是不是 404。
 - **主 session 的 worker 重啟吃掉業主訊息**（平台）：兩次 worker restart 後，業主兩則真實訊息被回成「No response requested」，
   事後靠重新釐清補救。無修法；主 session 每次醒來先掃最近幾則業主訊息有沒有沒回的。
+- **`create_session` 不帶 `source_url` 的 session 沒有 repo**（平台）：主 session 開 2-5 e2e session 時沒帶 `source_url`，容器 `/home/user` 是空的，
+  執行 session 的 `add_repo` 又被分類器擋（Access Added As A Means），只能封存重開。規則：主 session 開執行 session 一律帶
+  `source_url=https://github.com/simonzhao219/Uknow` 與 `source_revision=<要切的 base 分支>`；dispatch-prompts 的共用開頭補這一句。
