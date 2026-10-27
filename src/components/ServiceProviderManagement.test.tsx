@@ -238,6 +238,16 @@ describe('ServiceProviderManagement 刪除刊登', () => {
     expect(state.showError).not.toHaveBeenCalled();
   });
 
+  it('刪除進行中按鈕顯示刪除中並標示忙碌，不可再點', async () => {
+    state.deleteListing.mockReturnValue(new Promise(() => {}));
+    render(tree());
+    await confirmDelete();
+    const busy = screen.getByRole('button', { name: '刪除中…' }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.textContent).toContain('刪除中…');
+  });
+
   it('後端回已刪除（重送冪等）時照樣 refetch，不顯示失敗', async () => {
     state.deleteListing.mockResolvedValue('already-deleted');
     render(tree());

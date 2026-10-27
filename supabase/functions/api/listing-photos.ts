@@ -137,7 +137,8 @@ function fail(
 export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
   /** 逐一把 photos URL 解析成刊登者自己的 path，不符者忽略並 warn，再走引用檢查清理。 */
   async function cleanupListingPhotos(userId: string, photoUrls: string[]): Promise<void> {
-    const base = deps.cleanup.publicUrlOf('');
+    // 由非空 path 推導 base（不靠 storage-js 對空 path 的未定義行為）。
+    const base = deps.cleanup.publicUrlOf('x').slice(0, -1);
     const paths: string[] = [];
     for (const url of photoUrls) {
       const path = photoUrlToOwnedPath(url, base, userId);

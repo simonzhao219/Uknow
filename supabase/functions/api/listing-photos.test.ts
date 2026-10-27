@@ -4,7 +4,7 @@
 // 路由註冊順序、跨使用者擁有權（不洩漏他人刊登）、刪列後真的消失。
 // Storage 實際移除需要 bucket，不在此層測（同 listings.test.ts 對 upload-photo 的處理）。
 // ============================================================
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
@@ -98,14 +98,6 @@ Deno.test('DELETE /listings/:id：刪自己的刊登成功、再刪一次 404 �
   }
 });
 
-Deno.test('index.ts 註冊順序：/listings/photos 先於 /listings/:id', async () => {
-  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url));
-  const photos = src.indexOf("app.delete('/listings/photos'");
-  const byId = src.indexOf("app.delete('/listings/:id'");
-  assert(photos >= 0 && byId >= 0, '兩條路由都要註冊');
-  assert(photos < byId, '/listings/photos 必須先註冊，否則 "photos" 會被當成 :id');
-});
-
 Deno.test('upload-photo 回傳的 URL 格式必能被清理的引用檢查命中（同一函式產生）', () => {
   const path = '11111111-2222-3333-4444-555555555555/1700000000000_abc123.jpg';
   const url = listingPhotoPublicUrl(path);
@@ -116,4 +108,43 @@ Deno.test('upload-photo 回傳的 URL 格式必能被清理的引用檢查命中
     }/storage/v1/object/public/make-5c6718b9-listings-photos/${path}`,
   );
   assertEquals(listingPhotoDeps().cleanup.publicUrlOf(path), url);
+});
+
+Deno.test('DELETE /listings/photos：真 Storage＋真 overlaps——被他人刊登引用的檔不刪、沒人引用的檔被刪', async () => {
+  const client = adminClient();
+  const owner = await createTestUser(client, { name: '照片擁有者' });
+  const other = await createTestUser(client, { name: '另一位刊登者' });
+  const bucket = client.storage.from('make-5c6718b9-listings-photos');
+  const kept = `${owner.id}/1700000000001_keep01.jpg`;
+  const gone = `${owner.id}/1700000000002_gone02.jpg`;
+  try {
+    for (const path of [kept, gone]) {
+      const { error } = await bucket.upload(path, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+        contentType: 'image/jpeg',
+      });
+      assertEquals(error, null, `上傳 ${path} 失敗`);
+    }
+    // 另一位刊登者的 photos 引用了 owner 的 kept——跨使用者引用，owner 自己的刊登並不引用它。
+    const keptUrl = listingPhotoPublicUrl(kept);
+    const { error: insertErr } = await client.from('listings').insert({
+      ...listingRow(other.id),
+      photos: [keptUrl],
+    });
+    assertEquals(insertErr, null);
+
+    const token = await getUserAccessToken(client, owner.email);
+    const res = await app.request('/api/listings/photos', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: [kept, gone] }),
+    });
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { success: true, removed: 1, skipped: [kept] });
+
+    const { data: remaining } = await bucket.list(owner.id);
+    assertEquals((remaining ?? []).map((o) => o.name).sort(), ['1700000000001_keep01.jpg']);
+  } finally {
+    await bucket.remove([kept, gone]);
+    await deleteTestUsers(client, [owner.id, other.id]);
+  }
 });

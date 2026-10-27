@@ -2,7 +2,8 @@ Feature: Listing management
   刊登管理 (ServiceProviderManagement.tsx + Create/Edit/Detail) lets a member
   publish a single service listing. CRUD talks to Supabase PostgREST directly
   (`/rest/v1/listings`, `/rest/v1/public_listings`) under RLS, so these
-  scenarios mock the REST layer via `rest_mock`. Management/create/edit sit
+  scenarios mock the REST layer via `rest_mock`; deleting a listing goes through
+  the backend (`DELETE /listings/:id`), mocked via `api_mock.set_delete_listing`. Management/create/edit sit
   behind RequireMembershipRoute (active only); the public detail page has
   no guard.
 

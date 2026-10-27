@@ -339,3 +339,29 @@ Deno.test('DELETE /listings/:id：刪列 DB 錯誤 → 500，不清 Storage', as
   assertEquals((await del(app, `/listings/${LISTING_ID}`)).status, 500);
   assertEquals(log.removed, []);
 });
+
+Deno.test('DELETE /listings/:id：base 由 publicUrlOf("x") 推導，不依賴空 path 的函式庫行為', async () => {
+  const removed: string[][] = [];
+  const { app } = harness({
+    cleanup: {
+      // 模擬 storage-js 對空 path 的處理不可靠：只有非空 path 才給正確 URL
+      publicUrlOf: (path) => (path === '' ? 'https://broken.invalid/' : urlOf(path)),
+      findReferencedUrls: () => Promise.resolve([]),
+      removeObjects: (paths) => {
+        removed.push(paths);
+        return Promise.resolve(paths);
+      },
+    },
+  });
+  const res = await del(app, `/listings/${LISTING_ID}`);
+  assertEquals(res.status, 200);
+  assertEquals(removed, [[mine('1_a'), mine('2_b')]]);
+});
+
+Deno.test('index.ts 註冊順序：/listings/photos 先於 /listings/:id', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url));
+  const photos = src.indexOf("app.delete('/listings/photos'");
+  const byId = src.indexOf("app.delete('/listings/:id'");
+  assert(photos >= 0 && byId >= 0, '兩條路由都要註冊');
+  assert(photos < byId, '/listings/photos 必須先註冊，否則 "photos" 會被當成 :id');
+});

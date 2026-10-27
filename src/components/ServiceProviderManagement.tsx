@@ -263,10 +263,11 @@ export function ServiceProviderManagement() {
                       size="sm"
                       onClick={() => setShowDeleteConfirm(true)}
                       disabled={isDeleting}
-                      aria-label="刪除刊登"
+                      aria-busy={isDeleting}
+                      aria-label={isDeleting ? '刪除中…' : '刪除刊登'}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      刪除
+                      {isDeleting ? '刪除中…' : '刪除'}
                     </Button>
                   </div>
                 </div>

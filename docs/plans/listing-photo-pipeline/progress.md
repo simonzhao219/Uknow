@@ -25,6 +25,8 @@ PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通�
 
 ## 偏離規劃（記入 PR 描述）
 
+- 主 session 五 lane 審查後的 P1 修補：整合測試補真 Storage＋真 overlaps、清理 base 由 `publicUrlOf('x')` 推導、§14 第 14 列補孤兒來源、刪除鈕「刪除中…」＋aria-busy、PR 內文更正。未做：listingPhotosApi 的 401 未像 apiRequestJson 登出＋emitSessionExpired（P2，session 過期時只 toast「刪除失敗」）。
+
 - 2.1「Storage remove 部分成功時列出未刪項」**未實作**：`remove` 只回傳實際刪到的物件，不存在的檔與刪失敗無法分辨，列出未刪項會把冪等的「已不存在」誤報成失敗；改為只回 `removed`（實際刪除數）與 `skipped`（仍被引用者）。整批 `remove` 出錯仍回 5xx。
 - upload-photo 與清理的 URL 改由同一函式 `listingPhotoPublicUrl` 產生（實作審查建議，補整合測試釘住格式）。
 
