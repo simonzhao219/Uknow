@@ -33,7 +33,7 @@ import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { importWithRetry } from './utils/lazyWithRetry';
-import { isProfileComplete } from './utils/registrationFlow';
+import { isProfileComplete, shouldRedirectToCompleteProfile } from './utils/registrationFlow';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { dedupe } from './utils/requestDedup';
 
@@ -159,7 +159,7 @@ function AppContent() {
 
         const hasCompleteProfile = isProfileComplete(profile);
         if (!hasCompleteProfile) {
-          if (window.location.pathname !== '/auth/complete-profile') {
+          if (shouldRedirectToCompleteProfile(window.location.pathname)) {
             navigate('/auth/complete-profile', { replace: true });
           }
         } else {

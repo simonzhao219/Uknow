@@ -1,3 +1,5 @@
+import { decodeReferralInvitePayload } from '@referral-invite-payload';
+
 // 註冊/登入這條「連續流程」的單一決策來源。
 //
 // 背景：註冊是一條多步驟流程——
@@ -233,8 +235,10 @@ export type InviteEntry = { kind: 'undecodable' } | { kind: 'valid'; email: stri
  * 邀請連結 token → 入口狀態。只解碼、不驗簽、不看到期時間 `x`：
  * 過期與否由 accept 的回應決定（伺服器時鐘是唯一判準，不以裝置時鐘分流）。
  */
-export function resolveInviteEntry(_token: string): InviteEntry {
-  return { kind: 'undecodable' };
+export function resolveInviteEntry(token: string): InviteEntry {
+  const payload = decodeReferralInvitePayload(token);
+  if (!payload) return { kind: 'undecodable' };
+  return { kind: 'valid', email: payload.e, code: payload.c };
 }
 
 export interface InviteAcceptErrorAction {
@@ -246,16 +250,27 @@ export interface InviteAcceptErrorAction {
 
 /** accept 失敗的 error code → 下一步。無 code（網路失敗、非 JSON）視為暫時性、留在原步驟。 */
 export function classifyInviteAcceptError(
-  _code: string | undefined,
-  _hasEmail: boolean,
+  code: string | undefined,
+  hasEmail: boolean,
 ): InviteAcceptErrorAction {
-  return { target: 'stay2B', clearPassword: false };
+  switch (code) {
+    case 'expired':
+    case 'invalid_token':
+    case 'gone':
+      return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: false };
+    case 'already_accepted':
+      return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: true };
+    default:
+      // weak_password、rate_limited、unavailable、disabled、無 code、未知 code：
+      // 帳號沒被動到，留在設定密碼步驟可重試。
+      return { target: 'stay2B', clearPassword: false };
+  }
 }
 
 /**
  * 已登入但基本資料未完成時，是否該被拉去完善資料頁。
  * 完善資料頁本身與重設密碼頁（忘記密碼 → recovery 後要先把密碼設好）豁免。
  */
-export function shouldRedirectToCompleteProfile(_pathname: string): boolean {
-  return false;
+export function shouldRedirectToCompleteProfile(pathname: string): boolean {
+  return pathname !== '/auth/complete-profile' && pathname !== '/auth/reset-password';
 }
