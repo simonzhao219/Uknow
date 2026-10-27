@@ -3,8 +3,6 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { FOCUS_RING_GAP } from './ui/focusRing';
-import { cn } from './ui/utils';
 import { CategoryBadge } from './common/CategoryBadge';
 import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
@@ -16,13 +14,12 @@ import {
   ExternalLink,
   Copy,
 } from 'lucide-react';
-import { ImageWithFallback } from './figma/ImageWithFallback';
+import { PhotoCarousel } from './listing/PhotoCarousel';
 import { GenderBadge } from './common/GenderBadge';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { openExternalLink } from '../utils/externalLink';
 import { resolveDocBackTarget } from '../utils/backNavigation';
-import { MAX_PHOTO_COUNT } from '../utils/constants';
 import { useLatestRequest } from '../hooks/useLatestRequest';
 import type { PublicListingRow } from '../types/listing';
 
@@ -38,7 +35,6 @@ export function ServiceProviderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
   // 只認最後一次請求：id 在途切換時，前一筆的晚到回應不得蓋掉後一筆。
@@ -201,46 +197,8 @@ export function ServiceProviderDetail() {
       {backButton}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 圖片區域 */}
-        <div className="space-y-4">
-          {/* bg-muted：骨架退場時照片可能還在下載，沒有底色會是「灰骨架→白框→照片」 */}
-          <div className="aspect-video rounded-lg overflow-hidden bg-muted">
-            <ImageWithFallback
-              src={serviceProvider.photos[currentImageIndex]}
-              alt={`${serviceProvider.name} - 圖片 ${currentImageIndex + 1}`}
-              className="w-full h-full object-contain"
-            />
-          </div>
-
-          {serviceProvider.photos.length > 1 && (
-            // 不捲動、改換行：刊登一律三張照片（3×80px＋間距＝256px，最窄 343px 也放得下），
-            // 捲動容器只會把縮圖的焦點環裁掉。
-            <div className="flex flex-wrap gap-2 pb-2">
-              {serviceProvider.photos.map((photo, index) => (
-                // 名稱寫在按鈕上，不取自圖片：圖片載入失敗時 ImageWithFallback 會把 alt 換成
-                // 「Error loading image」，三顆縮圖就變成同一個名字。
-                <button
-                  key={index}
-                  type="button"
-                  aria-label={`縮圖 ${index + 1}`}
-                  aria-pressed={currentImageIndex === index}
-                  onClick={() => setCurrentImageIndex(index)}
-                  className={cn(
-                    'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 bg-muted transition-colors',
-                    FOCUS_RING_GAP,
-                    currentImageIndex === index ? 'border-sel' : 'border-transparent',
-                  )}
-                >
-                  <ImageWithFallback
-                    src={photo}
-                    alt={`縮圖 ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
+        <PhotoCarousel photos={serviceProvider.photos} name={serviceProvider.name} />
 
         {/* 詳細資訊區域 */}
         <div className="space-y-6">
@@ -346,14 +304,13 @@ export function ServiceProviderDetail() {
   );
 }
 
-const THUMB_KEYS = Array.from({ length: MAX_PHOTO_COUNT }, (_, i) => `t${i + 1}`);
 const CONTACT_KEYS = ['c1', 'c2', 'c3'];
 
 /**
  * 詳情頁骨架：沿用實際內容的同一組 grid（手機單欄、lg 起兩欄），資料到位時版面不跳
- * （ui-ux-guidelines §5；位置由 e2e `test_public_skeleton_layout.py` 實測把關）。縮圖
- * 格數＝MAX_PHOTO_COUNT：刊登表單要求剛好這麼多張，所以一般刊登載入後也是這一列
- * （資料層 `photos` 沒有數量約束，表單外寫入的刊登不受此保證）。
+ * （ui-ux-guidelines §5；位置由 e2e `test_public_skeleton_layout.py` 實測把關）。第一欄
+ * 是「正方形＋一列與圓點列同高（h-6）的空白」：刊登表單要求剛好 MAX_PHOTO_COUNT 張，所以一般
+ * 刊登載入後都有圓點列（資料層 `photos` 沒有數量約束，只有一張的刊登沒有圓點列、會上移 24px）。
  *
  * 外層是 `<output>`（隱含 role="status"）＋名稱＋`aria-busy`，比照後台的
  * `AdminListSkeleton`；裡面只用 div，不放 heading，免得報讀器把骨架當成已載入的內容。
@@ -369,13 +326,9 @@ function DetailSkeleton({ outputRef }: { outputRef: Ref<HTMLOutputElement> }) {
       className="block scroll-mt-20 outline-none"
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <Skeleton className="aspect-video w-full rounded-lg" />
-          <div className="flex gap-2 pb-2">
-            {THUMB_KEYS.map((key) => (
-              <Skeleton key={key} className="h-20 w-20 shrink-0 rounded-lg" />
-            ))}
-          </div>
+        <div>
+          <Skeleton className="aspect-square w-full rounded-lg" />
+          <div className="h-6" />
         </div>
 
         <div className="space-y-6">
