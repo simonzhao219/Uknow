@@ -45,6 +45,7 @@
 | 18 | P1a Q-D 裁切元件載入失敗 | **保守：顯示重試、不可送出**；Q3-3 無例外 |
 | 19 | P1a Q-F 原檔上限 | **原檔 ≤20 MB、上傳檔 ≤5 MB**；規格書 §11 界定 5 MB 是上傳檔 |
 | 20 | P1a Q-G 條款十之一 | **記入規格書已知落差，第 2 波在 30 日窗口內補齊**（帳號刪除 cascade、`/auth/cancel-signup`、歷史孤兒），列第 2 波必做 |
+| 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -259,6 +260,7 @@ commit;
 | 10/27 15:52 | #410 審過可合併（P0／P1 無，3 條 P2 記債）。P1a #404 第三輪 0 P0／3 P1（已處置）／7 P2，裁決 18–20 已落 plan；**待業主審 #404 後親打 /tdd-implement**（PR 1 後端清理先做） | 業主審 #404；等 #409 循環 9–11 |
 | 10/27 16:00 | #409 預審（循環 6–8）：P0 無、2 P1（SIGNED_OUT 清掉使用中 token；T1 撞檔面要記交接）已交 R2 session 在循環 11 前修。#406 P1 已修（`9da630f`）複核通過、ready；#410 CI 綠、ready；#407 五點已修（`4978574`）複核中 | 等 #409 循環 9–11；窗口 PR #405／#406／#410（#407 待複核）全部等晉升後合 |
 | 10/27 16:40 | 業主在演練分支 SQL Editor 跑完 §4 刪除段（`8048876, false`）；主 session 跑零殘留檢查後刪分支。業主審過 #404、已在 P1a session 打 /tdd-implement（PR 1 後端清理先做）；兩個空 session 已封存。**今晚正式站清資料的實際路徑確定：乾跑與零殘留由主 session 用 MCP 跑，刪除段由業主在 SQL Editor 貼** | 等 #409 循環 9–11 |
+| 10/27 16:50 | 零殘留檢查全 0、`reward_config` 1 列、序列 `8048876,false` → 演練分支已刪。業主確認正式站每日 PHYSICAL 備份（最新 10/26 22:44 UTC＝10/27 06:44 台北），Storage 物件不在備份內（§4 已知）；裁決 21 PITR 不開。手把手步驟（寄信上限 600、SMTP 確認、LINE channel 與兩把 Secret）已交業主 | 等業主回 4b／4c／5；等 #409 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -277,7 +279,7 @@ commit;
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
-| 2 | §7 第 6–8 步（備份確認、寄信上限、模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket） | ⬜ |
+| 2 | §7 第 6–8 步：~~備份確認~~ ✅ 16:50；寄信上限 600、SMTP 確認（進行中）；模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
