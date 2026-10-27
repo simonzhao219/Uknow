@@ -227,6 +227,8 @@ commit;
 |---|---|---|
 | 10/27 02:00 | 監工 session 完成目標核對（§0）、掃描、PR #402；本檔與 `dispatch-prompts.md` 落檔 | 業主做 §7 睡前 1–3 步 |
 | 10/27 02:15 | 業主裁決 9（夜間授權）後入睡到 10:15 | 主 session 接手；夜裡的紀錄一律寫在本表 |
+| 10/27 13:45 | **主 session 開局**（夜間沒有主 session 運作，夜間授權未使用）。現況：#402 於 13:43 由業主合併，develop CI run 40456919943 進行中，「部署 Edge Function」step（`--use-api` 首次）待它綠後的 deploy run 判定；#399 已轉 ready，R2 後端 session 閒置在等審查，**沒有卡在 AskUserQuestion**（K1 的「回答問題」已不需要）；#399、#401 因 #402 改了 `.claude/rules/github-actions.md` 規則 12 而 conflict、CI 未跑。open issues 未變（部署失敗 issue 群待 §6 收斂）。**12:00 開放已錯過** | rebase #399／#401、五 lane 審 #399、問業主新開放時間 |
+| 10/27 13:55 | 依目標 5 授權 rebase＋force-push：#401 → `f6a0d4b`、#399 → `c3be852`（規則 12 段落解成兩邊都留；#399 的移植段與 #401 逐字相同，#401 合併後 no-op）。本機 check／check-workflows／spec-drift／migration-versions 綠。已 send_message 通知 R2 後端 session 先 reset 再動 | #399 五 lane 審查進行中；CI 綠後合 #401 → #399 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
 
