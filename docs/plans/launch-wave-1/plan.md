@@ -274,6 +274,7 @@ commit;
 | 10/27 19:00 | 業主 LINE 推播實測通（curl 回 `{}`、手機收到）；Secret 已更正為長效 Channel access token。#412 審過可合併（P2 順手刪 useRef）。#413 只剩 e2e-tests | #413 綠 → 合併 → #411 journey-full（webhook）|
 | 10/27 19:47 | **#413 合併**（`5779d16`）：develop 的 journey-full 閘門暫走 webhook 至 11/03。#411 head 隨之更新、CI 含 journey-full（webhook、full 30 節點）重跑 | journey-full 綠 → merge commit 合進 main → 叫業主核准 production 部署 |
 | 10/27 19:55 | 業主提出官方 icon（黑底白字 Uk）、搜尋引擎可見、SEO／AEO／GEO 準備 → 裁決 23／24。原檔已放 `fix/brand-icons-seo` 分支 `public/brand/`（54d06bc）；派工 prompt §J；開 Sonnet 執行 session | 等 #411 journey-full |
+| 10/27 20:13 | **#411 journey-full（webhook，full 30 節點）綠，24.7 分鐘**（run 40475965034）；ci-ok 綠 → 以 merge commit 合進 main。brand/SEO 執行 session 開出 PR #414（審查中；Navbar 改動要還原） | 業主核准 production 部署（§7 第 5 步）→ /health sha 比對 |
 
 **執行 session 名冊**（主 session 維護）
 
