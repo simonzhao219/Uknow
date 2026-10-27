@@ -156,3 +156,15 @@ describe('browserImageIO.render／encode', () => {
     expect(await browserImageIO.encode(failing, 0.5)).toBeNull();
   });
 });
+
+describe('browserImageIO.release', () => {
+  it('關閉解碼後的 ImageBitmap 以釋放記憶體', () => {
+    const close = vi.fn();
+    browserImageIO.release?.({ width: 1, height: 1, handle: { close } });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('把手沒有 close（非 ImageBitmap）時不會拋錯', () => {
+    expect(() => browserImageIO.release?.({ width: 1, height: 1, handle: 'x' })).not.toThrow();
+  });
+});

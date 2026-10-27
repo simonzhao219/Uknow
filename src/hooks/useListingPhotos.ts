@@ -74,6 +74,8 @@ export interface UseListingPhotosResult {
   isBusy: boolean;
   /** 恰好 maxCount 張且全部 done。 */
   canSubmit: boolean;
+  /** 送出鈕為何不能按的原因文字（可按時為空字串）；給 aria-describedby 用。 */
+  submitHint: string;
   /** 常駐 live region 的播報文字。 */
   announcement: string;
 }
@@ -319,5 +321,6 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),
     announcement,
+    submitHint: '',
   };
 }
