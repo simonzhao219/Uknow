@@ -461,3 +461,67 @@ describe('useListingPhotos 送出提示', () => {
     expect(h.result.current.submitHint).toContain('重試或移除');
   });
 });
+
+describe('useListingPhotos 調整失敗與晚到的非同步結果', () => {
+  it('調整時重新解碼失敗 → 還原成原本完成的那張，並同時更新常駐 live region', async () => {
+    let fail = false;
+    const h = setup(
+      {},
+      {
+        decode: () =>
+          fail
+            ? Promise.reject(new Error('cannot decode'))
+            : Promise.resolve({ width: 320, height: 240, handle: 'bitmap' }),
+      },
+    );
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[0].state).toBe('done'));
+    fail = true;
+    await act(async () => {
+      h.result.current.adjust(h.result.current.slots[0].id);
+    });
+    expect(h.result.current.slots[0].state).toBe('done');
+    expect(h.result.current.announcement).toContain('第 1 張');
+    expect(h.result.current.announcement).toContain(h.result.current.notice as string);
+  });
+
+  it('解碼回來時該張已被移除 → 仍釋放晚到的 bitmap', async () => {
+    const release = vi.fn();
+    let resolveDecode: (v: { width: number; height: number; handle: string }) => void = () => {};
+    const h = setup(
+      {},
+      {
+        release,
+        decode: () =>
+          new Promise((resolve) => {
+            resolveDecode = resolve;
+          }),
+      },
+    );
+    await add(h, [fileOf('1.jpg')]);
+    act(() => h.result.current.remove(h.result.current.slots[0].id));
+    await act(async () => {
+      resolveDecode({ width: 320, height: 240, handle: 'late' });
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release.mock.calls[0][0]).toMatchObject({ handle: 'late' });
+  });
+
+  it('上傳完成時該張已被移除 → 晚到的檔案交給 onDiscardUploaded 清掉', async () => {
+    let resolveUpload: (url: string) => void = () => {};
+    const h = setup({
+      upload: () =>
+        new Promise<string>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    });
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    act(() => h.result.current.remove(h.result.current.slots[0].id));
+    await act(async () => {
+      resolveUpload('https://cdn.test/u/late.jpg');
+    });
+    expect(h.discarded).toEqual(['https://cdn.test/u/late.jpg']);
+  });
+});

@@ -18,7 +18,16 @@ class FakeImage {
 }
 
 beforeEach(() => {
-  createImageBitmapMock.mockReset().mockResolvedValue({ width: 1, height: 1, close: vi.fn() });
+  // 預設模擬「瀏覽器有照 resizeWidth/Height 縮小」；沒給 resize 就回原尺寸（4000×3000）。
+  createImageBitmapMock
+    .mockReset()
+    .mockImplementation((_f: unknown, o?: { resizeWidth?: number; resizeHeight?: number }) =>
+      Promise.resolve({
+        width: o?.resizeWidth ?? FakeImage.prototype.naturalWidth,
+        height: o?.resizeHeight ?? FakeImage.prototype.naturalHeight,
+        close: vi.fn(),
+      }),
+    );
   vi.stubGlobal('createImageBitmap', createImageBitmapMock);
   vi.stubGlobal('Image', FakeImage);
   vi.stubGlobal('URL', {
@@ -80,11 +89,33 @@ describe('browserImageIO.decode', () => {
       naturalHeight = 600;
     };
     vi.stubGlobal('Image', small);
+    createImageBitmapMock.mockResolvedValue({ width: 800, height: 600, close: vi.fn() });
     const r = await browserImageIO.decode(file, 3200);
     expect(r).toMatchObject({ width: 800, height: 600 });
     const [, options] = createImageBitmapMock.mock.calls[0];
     expect(options.resizeWidth).toBeUndefined();
     expect(options.imageOrientation).toBe('from-image');
+  });
+
+  it('宣稱的尺寸取自實際 bitmap，不是預期的縮小目標', async () => {
+    createImageBitmapMock.mockResolvedValue({ width: 3000, height: 2250, close: vi.fn() });
+    const r = await browserImageIO.decode(file, 3200);
+    expect(r).toMatchObject({ width: 3000, height: 2250 });
+  });
+
+  it('瀏覽器忽略 resize、回原尺寸 → 再縮到上限內，宣稱尺寸與實際一致並關閉大 bitmap', async () => {
+    const close = vi.fn();
+    createImageBitmapMock.mockResolvedValue({ width: 4000, height: 3000, close });
+    const drawn: unknown[][] = [];
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: (...a: unknown[]) => drawn.push(a),
+    } as unknown as CanvasRenderingContext2D);
+    const r = await browserImageIO.decode(file, 3200);
+    expect(r).toMatchObject({ width: 3200, height: 2400 });
+    expect((r.handle as HTMLCanvasElement).width).toBe(3200);
+    expect((r.handle as HTMLCanvasElement).height).toBe(2400);
+    expect(drawn).toHaveLength(1);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('createImageBitmap 失敗 → 往上拋（由 pipeline 分類）', async () => {
