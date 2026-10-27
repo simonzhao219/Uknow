@@ -49,6 +49,7 @@
 | 22 | journey sandbox 紅（PayUni 測試站改版）後的開放時間 | **今晚繼續，開放改 00:00 前後**；晉升閘門暫走 webhook 備援（#413，規則 13 到期 11/03）；journey-full webhook 仍紅或真付款失敗就改明天 |
 | 23 | 官方 icon 與 SEO／AEO／GEO（業主 19:55 提出） | **兩段**：基礎進窗口（favicon 全套、manifest、og-image 1200×630、品牌名統一「Uknow」、description／canonical、robots.txt＋sitemap.xml、私密頁 noindex、JSON-LD Organization／WebSite）目標 10/28 第二次晉升；進階（AEO：FAQ／服務者頁 JSON-LD；GEO：llms.txt、公開頁預渲染、服務者動態 sitemap）第 2 波三段式 |
 | 24 | 站內 logo（業主 20:05 修正） | **需要正方形的地方用黑底白字 Uk**（favicon、手機捷徑、manifest、正方形縮圖）；**顯示全名的地方照舊**——業主確認目前網頁與手機頁的 logo 顯示正確，不動 |
+| 25 | 邀請信改版（業主 19:35） | 版型照 `confirm-signup.html`（黑底 UKNOW、卡片、小標＋大標＋一句＋按鈕、頁尾、卡片外 ©）；主體只表達邀請，保留推薦人揭露句；**拿掉**年費句、服務條款／事業手冊連結、複製網址段；**個資告知九要素保留但縮成卡片外灰色小字**（個資法第九條間接蒐集告知必須在第一次接觸）。派 R2 前端 session 開小 PR，業主等新版合進 main 再貼模板 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -281,6 +282,7 @@ commit;
 | 10/27 22:00 | #407（69b1520）、#412（a4960f0）合進 develop。CI 誤紅三次（#407、#415、#412）同一根因：Azure apt 鏡像站 44 kB/s，`playwright install --with-deps` 裝字型 10 分鐘，e2e job 15 分鐘上限取消；各重跑一次即綠。再發生就開小 PR 把 e2e `timeout-minutes` 15→25，波末記 friction-log。#414 rebase（重複的 #405 commit 自動去掉，本機 check 綠，3594ff9）與 #404 rebase（5629ff8，守衛三綠）同時推上去跑 CI，先綠先合、另一支再 rebase 一次 | #414／#404 CI → 轉 ready → 合；業主 production 核准仍未回 |
 | 10/27 22:20 | **停車 PR 全部合進 develop**：#404（8266e11，轉 ready 後合）→ #414 再 rebase 一次（228902a）綠 → 合（ae61955）。develop 現含 10/28 第二次晉升全部內容：og+lang、容量 hotfix、告警 LINE、PayUni 查詢告警、邀請 follow-up、P1a 後端清理、品牌 icon+SEO 基礎。業主 19:10 問 develop 預覽與 Email 邀請：裁決照原規劃（正式站實寄核對後才開旗標，develop 不另設） | 業主核准 production → /health；第二次晉升 PR 待業主 §7 第 5–12 步完成後開 |
 | 10/27 19:18 | **業主核准 production 部署，`/health` sha=b4f9bb3 對上**（payuniMode=sandbox、referralInviteConfigured=false 為預期：第 6、7 步未做；defaultReferrer=ok）。§7 第 5 步 ✅。已給第 6–8 步逐步指示（模板 raw 連結、兩把 secret、PayUni 三把＋SANDBOX=false、清三 bucket） | 業主回報第 6 步 → curl 看 referralInvite 兩旗標 |
+| 10/27 19:35 | 業主看了邀請信模板：要簡化、版型對齊驗證碼信、問「兩個按鈕」（Dashboard 預覽不處理 `{{ if }}/{{ else }}` 兩分支都顯示，實寄只一個）。裁決 25（告知段縮小字、不刪）。派 R2 前端 session 開 `fix/referral-invite-email-restyle`。§7 第 6 步的貼模板改為等新版合進 main 後做；兩把 secret 與第 7、8 步不受影響 | 業主做第 6 步 secret、第 7、8 步；模板 PR 回報 |
 
 **執行 session 名冊**（主 session 維護）
 
