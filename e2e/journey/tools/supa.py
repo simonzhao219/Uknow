@@ -161,6 +161,18 @@ class SupabaseAdmin:
         )
         resp.raise_for_status()
 
+    def rpc(self, fn: str, args: dict | None = None):
+        """以 service role 呼叫 PostgREST RPC，回傳解析後的 JSON（失敗即拋）。僅供
+        客服／排程才會做的操作（如 purge 依信箱立即刪除），不是受測旅程本身。"""
+        resp = self.session.post(
+            f"{self.base_url}/rest/v1/rpc/{fn}",
+            headers=self._service_headers,
+            json=args or {},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def reward_config(self) -> dict:
         """讀 reward_config 單列（單代獎金、推薦王門檻）——預期值斷言
         用實際設定計算，不寫死。"""
@@ -208,6 +220,15 @@ class SupabaseAdmin:
         return self.session.post(
             f"{self.base_url}/functions/v1/api{path}",
             headers={"apikey": self.anon_key, "Authorization": f"Bearer {access_token}"},
+            json=payload or {},
+            timeout=self.timeout,
+        )
+
+    def api_post_public(self, path: str, payload: dict | None = None) -> requests.Response:
+        """公開端點（例如 /auth/invite/accept）：不帶使用者 token，只帶 anon key 過 gateway。"""
+        return self.session.post(
+            f"{self.base_url}/functions/v1/api{path}",
+            headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"},
             json=payload or {},
             timeout=self.timeout,
         )

@@ -330,7 +330,8 @@ jobs:
           done
 
       # ------------------------------------------------------------------
-      # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
+      # 2. 分支環境設定：Edge Function secrets（sandbox 金流；Email 邀請的
+      #    簽章金鑰每個分支隨機產生、寄信總開關打開，80_ 才測得到）＋
       #    GoTrue 寄信改走 no-op send-email hook。
       #
       #    為什麼需要 hook（2026-08-02 run 30762264071 實測）：hosted
@@ -350,7 +351,9 @@ jobs:
             PAYUNI_TEST_MER_ID="${{ secrets.PAYUNI_TEST_MER_ID }}" \
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
-            FRONTEND_URL="http://localhost:3100"
+            FRONTEND_URL="http://localhost:3100" \
+            REFERRAL_INVITE_SECRET="$(openssl rand -hex 32)" \
+            REFERRAL_EMAIL_INVITE_ENABLED=true
 
           psql "$JOURNEY_BRANCH_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
           create or replace function public.journey_email_sink(event jsonb)

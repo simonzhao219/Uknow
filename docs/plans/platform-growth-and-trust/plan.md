@@ -422,8 +422,8 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
     同密碼規則），Email 顯示框照舊顯示該 email、唯讀；2B 的「上一步」在 invite 模式換成連結「改用其他 Email 註冊」＝清 invite 狀態、
     email、密碼欄後回步驟 1（pending code 保留，推薦意向不因換信箱失效）。
   - 送出走 `handleAcceptInvite`（邏輯收進 hook `useInviteAccept`，注入 supabase／fetch，可 `renderHook` 測）：
-    `POST /auth/invite/accept { token, password }` → `{ tokenHash }` → `supabase.auth.verifyOtp({ token_hash, type: 'invite' })`
-    → `routeAfterVerifiedSession(session)`（從 `OTPVerificationPage.tsx:110-140` 抽到 `src/utils/routeAfterVerifiedSession.ts`，
+    `POST /auth/invite/accept { token, password }` → `{ accepted: true }`（密碼已設、email 已驗證，同一次呼叫）→
+    `supabase.auth.signInWithPassword({ email: e, password })` → `routeAfterVerifiedSession(session)`（從 `OTPVerificationPage.tsx:110-140` 抽到 `src/utils/routeAfterVerifiedSession.ts`，
     依賴注入 `{ fetchProfile, navigate, showToast }`，vitest 釘五條分支；recovery 分支留在 OTP 頁）→ `/auth/complete-profile`：
     既有預填與自動驗證（`CompleteProfile.tsx:247-259`）接手，欄位仍可改、由本人送出（手冊 8-1「主動填寫」與 `?ref=` 同語意，
     LEG-08）；R2-2 另加一個後備：pending code 為空時改讀 `session.user.app_metadata.referral_invite.code`（只作預填、仍走
@@ -432,8 +432,8 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   `translateSignUpError`）→ 留在 2B、`FieldError` 掛密碼欄、pending code 不清；`invalid_token`／`expired`／`gone`（簽章無效、過期、
   帳號已被清除）→ 2A（有 email）或步驟 1（無 email），行內提示同上「邀請連結已失效…」；`already_accepted` → 2A、清密碼欄、
   行內說明「此邀請已完成設定，請用先前設定的密碼登入」；`rate_limited` → 留在 2B、行內「請稍後再試」；`unavailable`／網路失敗 →
-  留在 2B、行內可重試；`verifyOtp` 失敗（例如推薦人恰在此刻重寄、或另一分頁已 accept）→ 以同一 token 再打一次 accept（端點可重入）
-  後重試 `verifyOtp`，仍失敗才行內提示「請重新點信中連結」。
+  留在 2B、行內可重試；accept 成功後登入失敗（帳號此時已驗證）→ 切 2A、保留 email，行內提示用剛設定的密碼登入
+  （2026-10-26 業主裁決 accept 一步完成驗證後，原「`verifyOtp` 失敗重打 accept」的回路不再存在）。
 - **被推薦人不經連結直接來註冊**（空殼帳號存在期間）：`/auth/check-email` 回 `exists` → **2A 登入步驟**（不是 2B）→ 不知道密碼 →
   「忘記密碼」→ recovery OTP → `/auth/reset-password` 設密碼 → 登入 → 完善資料頁（推薦碼不會自動帶入，與一般註冊相同；要有碼就得
   用信中連結或自己輸入）。兩個小修讓這條路真的走得通：2A 的「忘記密碼」連結旁加靜態提示「透過邀請信加入的話，請用信中連結；
@@ -458,9 +458,9 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
   4. **先查後扣**：per-user 兩窗先扣（`referral-invite:${uid}` 5／3600、`referral-invite-day:${uid}` 20／86400，短窗擋下不扣日窗，
      fail-open 同既有；超額 429 `rate_limited_hour`／`rate_limited_day`，裁決 G），再 `find_auth_user_by_email`：
      - 已驗證 → 不寄、回 202；
-     - 已存在未驗證且 `referral_invite is null`（自助註冊進行中或棄置；Dashboard 手動 Invite 的帳號同此）→ **不寄、回 202**（不覆寫對方的驗證碼、
+     - 已存在未驗證且 `referral_invite` 不是 JSON 物件（缺欄或 null；自助註冊進行中或棄置；Dashboard 手動 Invite 的帳號同此）→ **不寄、回 202**（不覆寫對方的驗證碼、
        不把自助帳號變成空殼，SYS-12／FACT-06）；
-     - 已存在未驗證且 **`referral_invite is not null`**（我們建的空殼；判準只看這一欄、不看 `invited_at`——裁決 B 的條件式新建路徑在寄信成功前
+     - 已存在未驗證且 **`referral_invite` 是 JSON 物件**（`jsonb_typeof = 'object'`，我們建的空殼；判準只看這一欄、不看 `invited_at`——裁決 B 的條件式新建路徑在寄信成功前
        沒有 `invited_at`，`app_metadata` 只有 service role 能寫，子規劃 §2.4 差異 2；invites 重寄、accept、purge 三處一致）→ 可重寄；
      - 不存在 → 可新建。
   5. 決定要寄之後才扣 target／global（**新 helper `rateLimitStrict` 回三態 `allowed | limited | error`**——target 超額要 202、RPC 錯誤要 503，
@@ -492,20 +492,22 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 - `POST /auth/invite/accept`（公開；路由註冊在 `/auth/check-email` 之後）：per-IP `invite-accept:${clientIp}` 20／300（429
   `rate_limited`）；只檢查 `REFERRAL_INVITE_SECRET`（缺 → 503 `disabled`）、**不讀 `REFERRAL_EMAIL_INVITE_ENABLED`**——kill switch 關寄信、不打死已寄出的合法
   連結（裁決 O）；body `{ token, password }`；驗簽或過期失敗 → 400 `invalid_token`／`expired`
-  （文案同一句，code 分流）；密碼只做長度 ≥ 8 的前置檢查，規則由 GoTrue 的密碼強度設定把關（`checkPasswordStrength`，Dashboard
-  值在 R2-0 記錄進 checklist、與前端 `passwordPolicy.ts` 一致；不搬移、不複製規則）；`find_auth_user_by_email`：不存在 → 410 `gone`；
-  已驗證 → 409 `already_accepted`；未驗證但 `referral_invite is null`（自助註冊帳號）→ 410 `gone`；空殼 →
-  `updateUserById(id, { password, user_metadata: { referral_invite_url: null } })`（GoTrue `weak_password` → 400 `weak_password`
-  原訊息透傳）→ `generateLink({ type: 'invite', email })` → 200 `{ tokenHash }`。**硬順序：先設密碼、再 generateLink**（否則
-  `signupVerify` 塞隨機密碼）。可重入：同一 token 再打一次只會重設同一密碼並換新 hash。不寄信、不回 session。契約 4：本端點零寄信，
+  （文案同一句，code 分流）；密碼規則與註冊、重設密碼共用 `_shared/password-policy.ts`（前端經 `@password-policy` alias），
+  後端照擋並另守 bcrypt 72 位元組上限，外洩與強度由 GoTrue 的密碼設定把關（2026-10-26 業主裁決「與現行規則一致」，取代原
+  「只做長度前置檢查、不搬移規則」）；`find_auth_user_by_email`：不存在 → 410 `gone`；已驗證 → 409 `already_accepted`；
+  未驗證但 `referral_invite` 不是物件（自助註冊帳號）→ 410 `gone`；空殼 →
+  `updateUserById(id, { password, email_confirm: true, user_metadata: { referral_invite_url: null } })`（GoTrue `weak_password` →
+  400 `weak_password` 原訊息透傳）→ 200 `{ accepted: true }`。**一步完成**（2026-10-26 業主裁決：從邀請連結設好密碼＝已驗證，
+  不留「有密碼、未驗證」的中間狀態；取代原「先設密碼、再 `generateLink`、前端 `verifyOtp`」）。完成後再用同一連結 → 409。
+  不寄信、不回 session（前端以剛設的密碼登入）。契約 4：本端點零寄信，
   身分證明＝持有簽章；被推薦人**沒有**自助重寄入口（`multi-step-flow-recovery.md:138` 契約 4）。token 另存 `sessionStorage`（分頁關閉即清；
   accept 成功、`already_accepted`、「改用其他 Email 註冊」、解碼失敗、登出時清），2B 重新整理不落回步驟 1（裁決 L）；前端不以裝置時鐘判過期、
   也不另寫「可能已過期」提示句，以伺服器 `expired` 為唯一判準（裁決 Q；子規劃 §2.4 差異 3）；invite 入口的判斷等 AuthPage 既有 session 驗證 effect 的結果，不另打裸 `getSession()`（裁決 R）。
 - **空殼帳號清除** migration `purge_stale_referral_invites(p_older_than_days int default 7, p_email text default null)`（計齡以
-  `app_metadata.referral_invite.issued_at`，不以 `invited_at`——accept 的 `generateLink` 會覆寫 `invited_at` 而延壽，裁決 C；`p_email` 模式不套天數、
+  `app_metadata.referral_invite.issued_at`，不以 `invited_at`——GoTrue 每次 invite 都覆寫 `invited_at`，裁決 C；`p_email` 模式不套天數、
   回刪除筆數）
-  SECURITY DEFINER：刪 `auth.users` where `email_confirmed_at is null and last_sign_in_at is null and raw_app_meta_data ? 'referral_invite'
-  and (raw_app_meta_data->'referral_invite'->>'issued_at')::timestamptz < now() - make_interval(days => p_older_than_days)`（不要求
+  SECURITY DEFINER：刪 `auth.users` where `email_confirmed_at is null and last_sign_in_at is null and
+  jsonb_typeof(raw_app_meta_data -> 'referral_invite') = 'object' and (raw_app_meta_data->'referral_invite'->>'issued_at')::timestamptz < now() - make_interval(days => p_older_than_days)`（不要求
   `invited_at is not null`；cast 前守 ISO 格式、壞值跳過不中斷整批，子規劃 §2.3；指定 `p_email` 時只刪該
   未驗證空殼，給客服應個資刪除請求用，LEG-10），且該 id 不存在於 `payment_orders`（防禦）；同交易刪 `auth.audit_log_entries`
   where 該列指向該 id（實際謂詞由 R2-0 第 6 點先 select payload 形狀再定——`payload->>'user_id'` 只是初稿，LEG-05）；cascade 清 `profiles`；`cron.schedule

@@ -823,3 +823,61 @@ export const API_PATHS = {
   tasksCurrentMonthTop: '/tasks/current-month-top',
   tasksClaimReward: (id: string) => `/tasks/claim-reward/${id}`,
 } as const;
+
+// ------------------------------------------------------------
+// Email 邀請（R2）——POST /referrals/invites
+// 受理（含設計上不寄的分支）一律 202 同形；錯誤依 code 分流（前端 extractApiErrorCode）。
+// rate_limited 拆成 hour／day 兩個 code（ApiError 只帶 code，帶不到 scope，裁決 G）。
+// ------------------------------------------------------------
+
+export const REFERRAL_INVITE_ERROR_CODES = [
+  'invalid_email',
+  'self_invite',
+  'consent_required',
+  'not_joined',
+  'restricted',
+  'rate_limited_hour',
+  'rate_limited_day',
+  'unavailable',
+  'disabled',
+] as const;
+export type ReferralInviteErrorCode = (typeof REFERRAL_INVITE_ERROR_CODES)[number];
+
+export const ReferralInviteAcceptedSchema = obj({ accepted: bool() });
+export type ReferralInviteAccepted = Infer<typeof ReferralInviteAcceptedSchema>;
+
+export const ReferralInviteErrorResponseSchema = obj({
+  success: bool(),
+  error: obj({ code: literals(...REFERRAL_INVITE_ERROR_CODES), message: str() }),
+});
+export type ReferralInviteErrorResponse = Infer<typeof ReferralInviteErrorResponseSchema>;
+
+// ------------------------------------------------------------
+// Email 邀請（R2）——POST /auth/invite/accept（公開）
+// 成功時密碼已設、email 已驗證（同一次呼叫完成），前端再以剛設的密碼 signInWithPassword
+// 換 session（email 取自連結 token 的 payload）。weak_password 的 message 只是後備：
+// 前端送出前已以 @password-policy 擋過規則與 72 位元組上限，到這裡多半是外洩密碼。
+// ------------------------------------------------------------
+
+export const REFERRAL_INVITE_ACCEPT_ERROR_CODES = [
+  'invalid_token',
+  'expired',
+  'weak_password',
+  'already_accepted',
+  'gone',
+  'rate_limited',
+  'unavailable',
+  'disabled',
+] as const;
+export type ReferralInviteAcceptErrorCode = (typeof REFERRAL_INVITE_ACCEPT_ERROR_CODES)[number];
+
+export const ReferralInviteAcceptResponseSchema = obj({ accepted: bool() });
+export type ReferralInviteAcceptResponse = Infer<typeof ReferralInviteAcceptResponseSchema>;
+
+export const ReferralInviteAcceptErrorResponseSchema = obj({
+  success: bool(),
+  error: obj({ code: literals(...REFERRAL_INVITE_ACCEPT_ERROR_CODES), message: str() }),
+});
+export type ReferralInviteAcceptErrorResponse = Infer<
+  typeof ReferralInviteAcceptErrorResponseSchema
+>;

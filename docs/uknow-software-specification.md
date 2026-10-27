@@ -276,7 +276,30 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 - **發碼時機**：首次付款成功時產生。同時僅一個 `active` 碼；續約／補償沿用
   既有碼，完全沒有時才產生新碼——序號只消耗在真正付費的會員身上。
 - **出示與分享**：碼雖在首購時發出，會員需完成「加入推薦計畫」（簽參加契約書）
-  後才可出示、複製或分享。
+  後才可出示、複製、分享或寄送邀請信。
+- **Email 邀請**：會員填寫對方 email 並勾選同意聲明後，由 Uknow 代寄邀請信
+  （`POST /referrals/invites`，需登入；除上一條的閘門外，停權或沒有 active 推薦碼者
+  也不能寄；推薦人姓名含招募禁用字樣時也不寄，因為姓名會出現在信裡）。同意的時間與
+  聲明版號由伺服器記在對方帳號上，作為代寄的同意證據。同一推薦人 1 小時內最多寄 5 封、24 小時內最多寄 20 封（固定窗口，依序
+  計數：被 1 小時窗口擋下的不計入 24 小時額度）；同一信箱 24 小時內最多收到 1 封（先到者
+  生效）；全站 1 小時內最多寄 100 封、24 小時內最多寄 1,000 封（超過回 503）。受理的回應
+  一律相同：對方已是會員、自助註冊進行中、或 24 小時內已收過邀請時都不寄，也不透露是哪一種
+  ——這些「受理但不寄」的請求照樣計入推薦人的每人額度（它是枚舉與濫用的上限）。
+  確定沒寄出時（寄件額度超限、對方剛好在這時完成註冊、寄送結果對帳後確認未寄）退回推薦人
+  的同一信箱與每人兩窗；對方信箱被郵件服務判為無效時只退同一信箱、每人額度照扣（否則重送
+  無效信箱可以繞過每人上限、把全站額度吃滿）；寄件設定錯誤（授權、金鑰）不退；全站額度一律不退。
+  信中「接受邀請」連結帶後端簽章的 token（HMAC-SHA256，專用 secret
+  `REFERRAL_INVITE_SECRET`，內容只有對方 email、推薦碼與到期時間，不含推薦人 id）。
+  邀請連結 7 天內有效，過期與否只由伺服器判斷。
+  對方點連結回到註冊頁設定密碼（`POST /auth/invite/accept`，公開、per-IP 限流）：後端驗簽後
+  以同一次呼叫設密碼並完成 email 驗證——從邀請連結設好密碼就是已驗證，不需要再收驗證碼；
+  前端接著以剛設的密碼登入。密碼規則與註冊、重設密碼共用同一份，後端照擋。完成後再點同一連結回「已完成設定」，
+  引導改用密碼登入。寄信的總開關 `REFERRAL_EMAIL_INVITE_ENABLED` 只管寄信，關掉不影響已寄出
+  的連結（accept 只看 secret 在不在）。
+  邀請建立的帳號在完成 email 驗證前是「空殼」（`auth.users` 一列＋`profiles` 空列，
+  `app_metadata.referral_invite` 蓋章）：7 天內未透過連結設定密碼即刪除該次邀請建立的帳號
+  （每日排程 `purge-stale-referral-invites`；計齡以寄出時的 `issued_at` 為準，點過連結不延長；
+  GoTrue 稽核列同交易刪除）。客服收到個資刪除請求時，以 service role 帶 `p_email` 立即刪除。
 - 第一個發出的碼 `8048876` 同時是 §7.4 預設推薦人的指定碼。
 - **比對規則**：碼不分全形半形、不分大小寫——`８０４８８７６` 與 `8048876` 是
   同一個碼（舊格式碼的全形英文同理）。所有輸入點一律先正規化
@@ -286,7 +309,11 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 
 〔實作〕`20260914000001_referral_code_numeric_sequence.sql`、`generate_referral_code()`、
 `src/utils/referralCode.ts` 的 `normalizeReferralCode()`、`src/utils/myQrTabPreference.ts` 的
-`myQrTabsForUser()`（出示與分享的閘門）
+`myQrTabsForUser()`（出示與分享的閘門）；Email 邀請：`supabase/functions/api/referral-invite.ts`（兩支端點）、
+`supabase/functions/api/referral-invite-token.ts`（簽／驗）、`supabase/functions/api/rate-limit-strict.ts`
+（出錯不寄的限流與退額度）、`supabase/functions/_shared/referral-invite-payload.ts`（payload 形狀、前端解碼、
+效期常數）、`supabase/functions/_shared/password-policy.ts`（與註冊共用的密碼規則）、
+`20261025000011_purge_stale_referral_invites.sql`（空殼清除與稽核列清理）、`20261025000012_refund_rate_limit.sql`
 
 ### 7.2 組織圖
 

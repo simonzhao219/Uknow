@@ -15,6 +15,25 @@
 與監工補充（[留言 6411556654](https://github.com/simonzhao219/Uknow/pull/393#issuecomment-6411556654)）修訂；`review.md` 的 P1 第 3、4、6、9、10、12、15、17、18、19、21～25 條與全部 P2 照各條「→」落實。
 裁決與審查條目落在本檔哪一節，見附錄 C。
 
+**v3 增補（2026-10-26，後端段實作審查後的業主裁決；與下文衝突時以本段為準）**——審查報告見 `implementation-review.md`：
+
+1. **accept 一步完成驗證**：`updateUserById({ password, email_confirm: true, user_metadata: { referral_invite_url: null } })` 同一次呼叫
+   設密碼並驗證 email，回 200 `{ accepted: true }`；不再 `generateLink`、前端不再 `verifyOtp`，改以剛設的密碼
+   `signInWithPassword({ email: payload.e, password })` 取得 session。完成後再用同一連結 → 409 `already_accepted`（前端切 2A 登入）。
+   理由：「從邀請連結設好密碼＝已驗證」要在系統裡永遠成立，不留「有密碼、未驗證」的中間狀態——purge 的判準（未驗證）因此與信中
+   「7 天內未透過連結設定密碼即刪除」字面一致。§2.2、§3 的 `useInviteAccept`／e2e mock、§4.3 可恢復性第 2 條、§5 循環 5／8 已同步改寫。
+2. **密碼規則與註冊共用**：規則本體搬到 `supabase/functions/_shared/password-policy.ts`（前端經 `@password-policy` alias，
+   `src/utils/passwordPolicy.ts` 改為入口）；accept 後端照擋（8 字元＋大寫＋小寫＋數字，訊息同註冊頁），另守 bcrypt 72 位元組上限。
+   前端 invite 模式送出前以 `passwordPolicyMessage`＋`exceedsPasswordMaxBytes` 先擋，後端再回 `weak_password` 就只剩外洩密碼。
+3. **GoTrue 判信箱無效**（`email_address_invalid`／`validation_failed`）**只退 target、per-user 照扣**——否則重送無效信箱可繞過每人
+   上限、把全站窗吃滿。`validation_failed` 不收窄（invite 只送 email 與兩個信件字串；比對英文訊息會在 GoTrue 改字時靜默失效）。
+4. **沒帶 `error_code` 的 429**（gateway／Cloudflare 的暫時限流）視同寄件限流：退 target＋per-user、告警。
+5. **逾時孤兒列為已接受殘餘**：supabase-js 的 admin 方法不收 `AbortSignal`，實作以 `Promise.race` 逾時；GoTrue 若在逾時後才提交，
+   會留下已寄信、沒蓋章的帳號（§2.5 補列）。R2-0 第 2 點實測成立後再評估改走「先 `createUser` 蓋章」。
+6. 審查小修（不改設計）：留下殘留帳號的告警（`compensate_delete_failed`、`resend_restore_failed`）以帳號去重；蓋章回 5xx／逾時先
+   查章、已蓋上就當成功；`/health` 加 `referralInviteConfigured`／`referralInviteEnabled`；總綱的空殼判準回修為「`referral_invite`
+   是 JSON 物件」。
+
 ## 0. 現況（2026-10-26 核對）
 
 | 項目 | 狀態 | 對本規劃的效果 |
@@ -96,23 +115,24 @@
 
 ### 2.2 `POST /auth/invite/accept`（公開）
 
-流程照上游 E accept 段。**硬順序：先 `updateUserById({ password })`、再 `generateLink({ type: 'invite' })`**——兩個理由：沒密碼的被邀請者
-在 verify 時會被塞隨機密碼（G11）；設密碼會清掉既有 `confirmation_token`（G8），反過來會讓剛產生的 hash 失效。
+流程照上游 E accept 段，**v3 改為一步完成**（見檔頭 v3 增補第 1 條）：`updateUserById({ password, email_confirm: true,
+user_metadata: { referral_invite_url: null } })` 一次設密碼並驗證 email。原「先設密碼、再 `generateLink`、前端 `verifyOtp`」的硬順序
+與其 GoTrue canary 一併移除。
 
 | 狀態 | 回應 | 何時 |
 |---|---|---|
-| 200 | `{ tokenHash }` | 成功；同一 token 再打一次只重設同一密碼並換新 hash（單線可重入） |
+| 200 | `{ accepted: true }` | 成功：密碼已設、email 已驗證；前端以剛設的密碼登入 |
 | 400 | `invalid_token`／`expired` | 簽章不符、格式壞、body 缺欄／`x` 已過（伺服器時鐘） |
-| 400 | `weak_password` | 長度 < 8 字元或 > 72 UTF-8 位元組的前置檢查（bcrypt 上限，數字待 R2-0 第 5 點實測）；GoTrue `weak_password`（訊息透傳 `translateSignUpError`） |
-| 409 | `already_accepted` | 帳號已驗證；`generateLink` 回 422 `email_exists`（並行 accept 已讓帳號驗證） |
-| 410 | `gone` | 帳號不存在、不是 R2 空殼（`referral_invite is null`）、`updateUserById` 回 404 `user_not_found`（與 purge 競態）、`generateLink` 回的 `user.id` 不等於 lookup 的 id（帳號在兩呼叫之間被刪、GoTrue 自建了新帳號——以 `deleteUser(新 id)` 清掉，審查 P1-3） |
+| 400 | `weak_password` | 不符 `_shared/password-policy.ts`（與註冊同一份規則與訊息）或 > 72 UTF-8 位元組（bcrypt 上限）；GoTrue `weak_password`（外洩密碼；訊息透傳，前端仍以 `translateSignUpError` 顯示） |
+| 409 | `already_accepted` | 帳號已驗證（含同一連結已完成設定、另一分頁先完成） |
+| 410 | `gone` | 帳號不存在、不是 R2 空殼（`referral_invite` 不是物件）、`updateUserById` 回 404 `user_not_found`（與 purge 競態） |
 | 429 | `rate_limited` | per-IP |
 | 503 | `unavailable` | 查詢失敗、GoTrue 5xx／逾時 |
 | 503 | `disabled` | **只看 `REFERRAL_INVITE_SECRET` 缺失**，不讀 `REFERRAL_EMAIL_INVITE_ENABLED`（裁決 O：kill switch 關寄信、不打死已寄出的合法連結） |
 
 並行 accept（兩個分頁）：`UpdatePassword` 會登出該使用者全部 session（系統審查引 `internal/models/user.go:435-464`），後到者的密碼生效、
-先到者剛建的 session 失效；前端 `verifyOtp` 失敗時照上游 D 以同一 token 重打一次 accept。列為已接受殘餘（§2.5），測試釘「並行兩次後只有最後成功
-那次的密碼能登入」。
+先到者剛建的 session 失效；後到者若在先到者完成後才查帳號則回 409、前端切 2A 登入。列為已接受殘餘（§2.5），測試釘「並行兩次後帳號已驗證、
+恰好一個密碼能登入」。
 
 ### 2.3 常數、模組、資料
 
@@ -208,6 +228,13 @@ code 聯集）隨循環 5；handler 以 `satisfies` 把關，測試以 `assertSh
 - **並行 accept**：後到者密碼生效、先到者 session 失效（§2.2）。
 - **`consent_version` 部署時差**：前端（Cloudflare）與後端（Supabase）分別部署，改聲明文案的 PR 合併後到兩邊都上線前，伺服器可能蓋新版號而畫面是舊文案；窗口以分鐘計，接受。
 - **GoTrue log 管線**：每筆 auth 事件另寫一份到 Supabase log，purge 刪不到；信內告知段已加「系統紀錄依雲端服務商保存期限保存」、客服 SOP 同註（裁決 N）。
+- **逾時後晚到的提交**（v3 增補第 5 條）：GoTrue 呼叫以 `Promise.race` 逾時、請求本身不中止；新建路徑判「未寄」並退額度後若 GoTrue 才提交，
+  留下已寄信、沒蓋章的帳號（purge 清不到、對方點連結 410、之後邀請同信箱 202 不寄），只剩 `send_failed` 告警的 email 雜湊可追；重寄路徑則可能
+  回寫舊章後信才寄出。要 GoTrue 超過 10 秒才成功才會發生。R2-0 第 2 點成立後改走「先 `createUser` 蓋章」可從設計上消除。
+- **對帳時對方恰好自助註冊**：新建路徑不確定結果的對帳若查到「未驗證、沒蓋章」的帳號會替它蓋章（它多半是 GoTrue 晚到的提交）；查詢與寄送之間
+  對方剛好自助註冊同一信箱時，那個帳號會被當成空殼，7 天後被 purge。窗口以毫秒計，接受。
+- **同信箱並行時退額度燒掉 target**：A 取得名額、B 被擋（202 不寄）、A 隨後失敗退回一格，計數仍在上限，該信箱 24 小時內寄不出。需兩位推薦人
+  同時邀同一信箱又遇上寄送失敗，接受。
 
 ### 2.6 總綱段內殘留（讀到的新舊句並存，以裁決句為準；列給監工，本分支不改總綱）
 
@@ -230,7 +257,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | `supabase/functions/api/referral-invite.ts` | `createReferralInviteHandlers(deps)`、資格 helper、GoTrue 對映、對帳、退額度矩陣、補償 |
 | `supabase/migrations/20261025000011_purge_stale_referral_invites.sql`、`…000012_refund_rate_limit.sql` | §2.3 |
 | `src/components/referral/InviteCard.tsx` | 邀請卡片（§4） |
-| `src/hooks/useInviteAccept.ts` | accept → `verifyOtp` → `routeAfterVerifiedSession`；依賴 `routeAfterVerifiedSession`、`@contract`、`buildApiUrl`（公開端點沿用 `fetch(buildApiUrl(...))`，先例 `AuthPage.tsx:146`）、`classifyInviteAcceptError`；注入 supabase 與 fetch |
+| `src/hooks/useInviteAccept.ts` | accept → `signInWithPassword({ email: payload.e, password })` → `routeAfterVerifiedSession`（v3；送出前以 `@password-policy` 先擋）；依賴 `routeAfterVerifiedSession`、`@contract`、`buildApiUrl`（公開端點沿用 `fetch(buildApiUrl(...))`，先例 `AuthPage.tsx:146`）、`classifyInviteAcceptError`；注入 supabase 與 fetch |
 | `src/utils/routeAfterVerifiedSession.ts` | 從 `OTPVerificationPage.tsx:110-140` 抽出的五條分支；注入 `{ fetchProfile, navigate, showToast }` |
 | `src/test-utils/backendConstants.ts`（＋同層測試） | 以 `node:fs` 讀 `index.ts`／migration 原文取常數；**抽不到即拋錯**（負向測試釘住，審查 P2-34）；給模板與卡片文案測試共用 |
 | `supabase/email-templates/referral-invite.html` | 模板單一事實來源 |
@@ -254,8 +281,8 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | `src/components/ui/dialog.tsx` | 關閉鈕對齊 `ui/sheet.tsx:77-80`：`pointer-coarse` 44px、名稱「關閉」（審查 P2-47；LegalDialog 一併受益） |
 | `supabase/functions/_shared/api-contract.ts` | §2.3 兩段 |
 | `scripts/check-spec-drift.py` | `_load_sources` 加一檔；`CONSTANTS` 加 12 條；self-test 加一案 |
-| `e2e/mocks/backend_api_mock.py` | `mock_invite_accept(status, token_hash)`、`spy_invites()`、`set_invites_response(status, code)` |
-| `e2e/mocks/supabase_auth_mock.py` | `spy_verify()`：斷言 `type=invite` 且帶 `token_hash` |
+| `e2e/mocks/backend_api_mock.py` | `mock_invite_accept(status)`（200 回 `{ accepted: true }`）、`spy_invites()`、`set_invites_response(status, code)` |
+| `e2e/mocks/supabase_auth_mock.py` | accept 後的密碼登入斷言（email 取自連結 payload、密碼為剛設的；v3 不再有 `verifyOtp`） |
 | `e2e/features/dashboard_smoke.feature` | `:13-19` 與 `:21-26` 兩條都多一步「在邀請卡按快速分享」 |
 | `e2e/features/auth_signup.feature`、`registration_recovery.feature` | 情境照上游 I＋§5 循環 8 |
 | `e2e/test_overflow_sweep.py` | 兩條 `SweepRoute`（審查 P1-19）：`/register?invite=<假 token>`（前端不驗簽，Python 不必算 HMAC）與開卡（`after_load`，先例 `_open_id_card_dialog` `:539`），資料帶長 email 與長姓名 |
@@ -283,7 +310,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | 契約 | 怎麼滿足 |
 |---|---|
 | 1 狀態可被查詢 | 帳號狀態在 GoTrue，accept 每次現查；推薦碼在 pending code（localStorage）與 `app_metadata` 後備兩處；**invite token 存 `sessionStorage`**（裁決 L）：只在網址沒有 `?invite`、路由是 `/register` 時還原，還原後照常走 `resolveInviteEntry` 與 session 判斷；accept 成功、`already_accepted`、「改用其他 Email 註冊」、解碼失敗、登出時清 |
-| 2 每一步可重入 | 信中連結 7 天內可重點；accept 可重入；`verifyOtp` 失敗以同 token 重打一次 accept；已有 session → 既有導向；過期 → 2A＋忘記密碼。第二條回路（accept 設了密碼但沒 verify → `/register` → 2A 用該密碼登入 → `email_not_confirmed` → 既有 `resumeUnverifiedSignup` 重寄註冊驗證碼）原始碼成立（附錄 A G12、G17）；**由監工通知 R2-0 在第 8 點順測**，驗不到時只有全 mock e2e 覆蓋、列為未實測（審查 P2-59） |
+| 2 每一步可重入 | 信中連結 7 天內可重點；accept 成功前可重送（失敗不動帳號）；accept 成功後帳號已驗證，登入失敗或再點同一連結（409）→ 2A 以剛設的密碼登入；已有 session → 既有導向；過期 → 2A＋忘記密碼。v3 一步完成驗證後，「設了密碼但沒 verify」的中間狀態不再存在，原第二條回路一併移除 |
 | 3 錯誤分可復原與否 | `classifyInviteAcceptError(code)` → `stay2B`（`weak_password`、`rate_limited`、`unavailable`、`disabled`、無 code）／`to2A`（`expired`、`invalid_token`、`gone` 且有 email；`already_accepted` 另清密碼）／`toStep1`（無 email）（審查 P2-36） |
 | 4 有副作用的動作需身分證明 | accept 零寄信，身分證明＝持有簽章；被推薦人沒有自助重寄入口（`multi-step-flow-recovery.md:138`）；寄信只在需登入的 invites 與需正確密碼的 `resumeUnverifiedSignup` |
 
@@ -343,7 +370,7 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 
 **被推薦人側**（流程照上游 D，以 §2.4 差異 3、4、5 為準）：
 - 提示一律同一個元件、同一位置（步驟上方）、`role="alert"`：持久提示（無法辨識、已失效、已完成設定）與 2B 的暫時性錯誤（`rate_limited`、
-  `unavailable`、`disabled`、兩次 `verifyOtp` 失敗後的「請重新點信中連結」）共用；**換步驟或再次送出即清除**（審查 P2-48）。帶提示落地時
+  `unavailable`、`disabled`）共用；**換步驟或再次送出即清除**（審查 P2-48）。帶提示落地時
   不 `autoFocus` 欄位（`AuthPage.tsx:372`、`:415`），焦點先給提示（`tabIndex={-1}`）。accept 的 `disabled` 與 `unavailable` 同句、留在 2B。
 - 2A 靜態提示「透過邀請信加入的話，請用信中連結；還沒設定密碼請用忘記密碼」：小字放在「忘記密碼？」那列**下方**（不放 `text-right` 內）、
   以 `aria-describedby` 掛在忘記密碼鈕；有持久提示時隱藏，避免兩條指令相反（審查 P2-49）。
@@ -371,10 +398,10 @@ E.4 仍寫「超額 429 `rate_limited` 帶 `scope`」（D 末句與裁決 G 已�
 | 3 | `api/rate-limit-strict.ts`＋資格 helper | `api/rate-limit-strict.test.ts`：三態（以 `withRestTableFailure(['rpc/bump_rate_limit'], …)` 造 `error`；先例 `referral-validate.test.ts:234`）、`refundRateLimit` 走 RPC、失敗不拋；`api/referral-invite.test.ts` 資格三項含停權、碼非 active、讀取失敗 503 | 無 | — |
 | 4a | invites 前半：disabled、資格、body 與文法、姓名 `findForbiddenWord`、per-user 兩窗（含日窗 limited 退短窗）、401＋invites 契約段＋spec-drift per-user 4 條 | 同檔；`assertShape`；`referral-invite.ts` 不 import `./index.ts` 的原文斷言 | — | — |
 | 4b | invites 後半：lookup 四分支、target／global、新建與重寄、GoTrue 對映表、5xx 對帳、補償（含 audit 清理、`deleteUser` 失敗另告警）、重寄失敗回寫 metadata、退額度矩陣＋spec-drift target／global 6 條 | 同檔。GoTrue 失敗以 **deps 注入的 stub `sb`** 造（`withRestTableFailure` 只攔 `/rest/v1/`，審查 P2-27）。補：target `limited` 不動 target 鍵；**同信箱並行**（`Promise.all`）GoTrue 只被呼叫一次、兩者皆 202；**所有不寄分支無副作用**（GoTrue 未呼叫、`confirmation_token`／`invited_at`／metadata 不變、無新 target／global 列）；`raw_user_meta_data` 無 `referred_by_code`、`profiles.referred_by_*` 為 null；回應同形 table-driven | — | 第 1、2、7、9 點 |
-| 5 | `POST /auth/invite/accept`＋accept 契約段 | 同檔：上游 I 的 accept 案例＋§2.2 補足（密碼上限、`user_not_found` → 410、`generateLink` 422 → 409、`generateLink` 回的 id 不符 → 清新帳號＋410、非 R2 待驗證 410、`disabled` 只看 secret）；以 accept 設的密碼 `verifyOtp` 後 `signInWithPassword` 成功（釘硬順序的正向案例）；並行兩次 accept 後只有最後成功那次的密碼能登入；反向順序案例保留作 GoTrue 升級的 canary | — | 第 3、4、5 點 |
+| 5 | `POST /auth/invite/accept`＋accept 契約段 | **（已完成；v3 改為一步完成驗證，下列 `generateLink`／`verifyOtp` 相關案例已改寫或移除，見檔頭 v3 增補）** 同檔：上游 I 的 accept 案例＋§2.2 補足（密碼上限、`user_not_found` → 410、`generateLink` 422 → 409、`generateLink` 回的 id 不符 → 清新帳號＋410、非 R2 待驗證 410、`disabled` 只看 secret）；以 accept 設的密碼 `verifyOtp` 後 `signInWithPassword` 成功（釘硬順序的正向案例）；並行兩次 accept 後只有最後成功那次的密碼能登入；反向順序案例保留作 GoTrue 升級的 canary | — | 第 3、4、5 點 |
 | 6 | `routeAfterVerifiedSession` 抽取（行為不變） | `src/utils/routeAfterVerifiedSession.test.ts` 五分支；`otp_verification.feature` 不改且綠 | 無 | — |
 | 7 | `registrationFlow.ts` 三個純函式 | `src/utils/registrationFlow.test.ts` table-driven：`resolveInviteEntry`（壞 base64、壞 JSON、缺欄、`v` 不是 1、有效；**不看 `x`**）、`classifyInviteAcceptError`（每個 code＋無 code）、`shouldRedirectToCompleteProfile`（`/auth/complete-profile`、`/auth/reset-password`、其他） | 循環 1 | — |
-| 8 | AuthPage invite 模式＋`useInviteAccept`＋`App.tsx`＋2A 提示＋`sessionStorage` | `src/hooks/useInviteAccept.test.ts`（`renderHook`）、AuthPage 元件測試（上游 I 的案例＋`signed_in`／`signed_out`／逾時三入口、骨架、`sessionStorage` 還原與五個清除時機、**簽章被改 → `invalid_token` → 2A**、`rate_limited`／`unavailable`／`disabled` 留在 2B、提示換步驟即清、靜態提示在持久提示出現時隱藏）；e2e `auth_signup.feature` 四條、`registration_recovery.feature` 一條；mock `mock_invite_accept`、`spy_verify` | 循環 5（契約）、6、7 | — |
+| 8 | AuthPage invite 模式＋`useInviteAccept`＋`App.tsx`＋2A 提示＋`sessionStorage` | `src/hooks/useInviteAccept.test.ts`（`renderHook`）、AuthPage 元件測試（上游 I 的案例＋`signed_in`／`signed_out`／逾時三入口、骨架、`sessionStorage` 還原與五個清除時機、**簽章被改 → `invalid_token` → 2A**、`rate_limited`／`unavailable`／`disabled` 留在 2B、提示換步驟即清、靜態提示在持久提示出現時隱藏）；e2e `auth_signup.feature` 四條（v3：`registration_recovery.feature` 那條「accept 設完密碼但 verifyOtp 未完成」已無對應狀態，改為「accept 成功後登入失敗 → 2A 以剛設的密碼登入」）；mock `mock_invite_accept` 與密碼登入斷言 | 循環 5（契約）、6、7 | — |
 | 9 | InviteCard＋三處入口＋旗標＋`ui/dialog` 關閉鈕＋`backendConstants.ts` | `InviteCard.test.tsx`：表格每一列、live region 常駐與重播、關閉重置、長姓名與長網域、禁用字樣、數字綁常數；`InviteFriendButton.test.tsx`／`InviteFriendPanelContent.test.tsx`：**閘門**（未加入者仍是引導鈕、不開卡，審查 P1-22）與旗標開關各案；`dialog` 關閉鈕名稱與 class；`backendConstants` 負向測試；e2e `referral_email_invite.feature`、`dashboard_smoke.feature` 兩條、溢版巡檢兩條 | 循環 4a（契約） | — |
 | 10 | CompleteProfile `app_metadata` 後備預填 | 元件測試：pending 有值時不讀 session；pending 空且 `app_metadata` 有碼 → 預填並驗證；使用者已開始輸入時不覆蓋；兩者皆空 → 不填 | 無 | — |
 | 11 | 模板檔＋模板測試＋文件 | `src/utils/referralInviteTemplate.test.ts`（上游 F 的斷言＋§4 信件補充）；`check-spec-drift`、`check-document-naming` 綠 | — | 第 1、11 點（渲染與手機可讀） |
