@@ -323,7 +323,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 `supabase/functions/api/referral-invite-token.ts`（簽／驗）、`supabase/functions/api/rate-limit-strict.ts`
 （出錯不寄的限流與退額度）、`supabase/functions/_shared/referral-invite-payload.ts`（payload 形狀、前端解碼、
 效期常數）、`supabase/functions/_shared/password-policy.ts`（與註冊共用的密碼規則）、
-`20261025000011_purge_stale_referral_invites.sql`（空殼清除與稽核列清理）、`20261025000012_refund_rate_limit.sql`
+`20261025000011_purge_stale_referral_invites.sql`（空殼清除與稽核列清理）、`20261025000012_refund_rate_limit.sql`、
+`src/components/referral/InviteCard.tsx`（邀請卡）、`supabase/email-templates/referral-invite.html`（信件模板）
 
 ### 7.2 組織圖
 
