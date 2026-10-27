@@ -316,3 +316,23 @@ describe('AuthPage 實作審查補測', () => {
     expect(screen.queryByText('請輸入您的 Email')).toBeNull();
   });
 });
+
+describe('AuthPage 主 session 預審補測', () => {
+  it('密碼超過 72 位元組時以與後端同一句擋下、不打 accept', async () => {
+    await landOnSetPassword();
+    await submitPassword(`Aa1${'密'.repeat(30)}`);
+    expect(await screen.findByText('密碼太長，請縮短後再試')).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/invite\/accept$/),
+      expect.anything(),
+    );
+  });
+
+  it('同分頁改開帶推薦碼的註冊連結時不還原舊的邀請 token', async () => {
+    sessionStorage.setItem('pending_invite_token', VALID);
+    signedOut();
+    renderAt('/register?ref=abc123');
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    expect(screen.queryByLabelText('設定密碼')).toBeNull();
+  });
+});
