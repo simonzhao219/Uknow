@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { apiErrorFromBody, buildApiUrl, extractApiErrorMessage } from './apiClient';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { apiErrorFromBody, apiRequest, buildApiUrl, extractApiErrorMessage } from './apiClient';
 import { projectId } from './supabase/info';
+
+const refreshSession = vi.fn();
+vi.mock('./auth', () => ({ getAccessToken: () => Promise.resolve('tok') }));
+vi.mock('./supabase/client', () => ({
+  createClient: () => ({ auth: { refreshSession: () => refreshSession() } }),
+}));
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/api`;
 
@@ -81,5 +87,66 @@ describe('apiErrorFromBody', () => {
 
   it('code 不是字串時當作沒有 code', () => {
     expect(apiErrorFromBody({ error: { code: 42, message: 'x' } }, 400).code).toBeUndefined();
+  });
+});
+
+// multipart 上傳（刊登照片）必須讓瀏覽器自己帶 boundary：若 apiRequest 預設的
+// `Content-Type: application/json` 跟著 FormData 送出，後端 formData() 會解析失敗。
+// 改這裡牽動共用核心——FormData 不設 Content-Type（T1 日後 rebase 請保留此分支）。
+describe('apiRequest 送 FormData', () => {
+  const fetchMock = vi.fn();
+  const headersOf = (callIndex = 0) =>
+    new Headers(fetchMock.mock.calls[callIndex][1].headers as HeadersInit);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+    refreshSession.mockReset();
+  });
+
+  it('body 是 FormData 時不設 Content-Type，但仍附 Authorization', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const form = new FormData();
+    form.append('file', new File(['x'], 'a.jpg', { type: 'image/jpeg' }));
+    await apiRequest(buildApiUrl('/listings/upload-photo'), { method: 'POST', body: form });
+    expect(headersOf().has('Content-Type')).toBe(false);
+    expect(headersOf().get('Authorization')).toBe('Bearer tok');
+  });
+
+  it('JSON body 仍預設 application/json', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await apiRequest(buildApiUrl('/x'), { method: 'POST', body: JSON.stringify({ a: 1 }) });
+    expect(headersOf().get('Content-Type')).toBe('application/json');
+  });
+
+  it('呼叫端傳入的 headers 仍可覆寫預設值', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await apiRequest(buildApiUrl('/x'), {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    expect(headersOf().get('Content-Type')).toBe('text/plain');
+  });
+
+  it('401 refresh 成功後重送同一份 FormData，仍不帶 Content-Type', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    refreshSession.mockResolvedValue({ data: { session: { access_token: 'new' } }, error: null });
+    const form = new FormData();
+    form.append('file', new File(['x'], 'a.jpg', { type: 'image/jpeg' }));
+    const res = await apiRequest(buildApiUrl('/listings/upload-photo'), {
+      method: 'POST',
+      body: form,
+    });
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(headersOf(1).has('Content-Type')).toBe(false);
+    expect(fetchMock.mock.calls[1][1].body).toBe(form);
   });
 });

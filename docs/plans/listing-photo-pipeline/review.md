@@ -46,4 +46,5 @@
 <!-- P0 的處置規則：必須改 plan 並重跑 /review-plan，或由人在此明文豁免。第三輪無 P0。 -->
 
 - [x] 人審完成，裁決：☑ 通過 □ 修訂後通過（豁免理由：） □ 退回重規劃
-  - 依據：業主 2026-10-27 於 #404 的 14:50 裁決留言（Q-D／Q-F／Q-G），及業主親打 `/tdd-implement listing-photo-pipeline` 並於互動問題選「勾通過並開工 PR 1」。第三輪 0 P0。本次僅授權 PR 1；PR 2 的 2-4a 以下另待 PR 1 合併後開工。
+  - 依據：業主 2026-10-27 於 #404 的 14:50 裁決留言（Q-D／Q-F／Q-G），及業主親打 `/tdd-implement listing-photo-pipeline` 並於互動問題選「勾通過並開工 PR 1」。第三輪 0 P0。PR 1 已於 #404 合併（8266e11）。
+  - PR 2 授權：業主 2026-10-27 23:15 裁決 PR 2 提前到第 1 波（經主 session 轉達），並於 2026-10-28 再次親打 `/tdd-implement listing-photo-pipeline`；Q-D 保守版、Q-F、Q-G 已裁決，PR 2 無未處置 P0。
