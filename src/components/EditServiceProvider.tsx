@@ -24,6 +24,7 @@ import { useNotification } from './notifications/NotificationContext';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
 import { buildApiUrl } from '../utils/apiClient';
+import { cleanupRemovedPhotos } from '../utils/listingPhotosApi';
 import type { ListingRow } from '../types/listing';
 
 export function EditServiceProvider() {
@@ -284,6 +285,9 @@ export function EditServiceProvider() {
       // 同 CreateServiceProvider:管理頁的 useUserListing 在 SOFT_TTL 內
       // 沿用快取,不清的話剛改完的內容在管理頁上還是舊的。
       invalidate('listingChange');
+
+      // 先存後刪：存檔成功才清掉被移除的照片檔；best-effort，不等結果也不影響成功訊息。
+      void cleanupRemovedPhotos(serviceProvider?.photos ?? [], formData.photos).catch(() => {});
 
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
