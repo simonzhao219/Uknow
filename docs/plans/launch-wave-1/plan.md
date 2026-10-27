@@ -50,6 +50,8 @@
 | 23 | 官方 icon 與 SEO／AEO／GEO（業主 19:55 提出） | **兩段**：基礎進窗口（favicon 全套、manifest、og-image 1200×630、品牌名統一「Uknow」、description／canonical、robots.txt＋sitemap.xml、私密頁 noindex、JSON-LD Organization／WebSite）目標 10/28 第二次晉升；進階（AEO：FAQ／服務者頁 JSON-LD；GEO：llms.txt、公開頁預渲染、服務者動態 sitemap）第 2 波三段式 |
 | 24 | 站內 logo（業主 20:05 修正） | **需要正方形的地方用黑底白字 Uk**（favicon、手機捷徑、manifest、正方形縮圖）；**顯示全名的地方照舊**——業主確認目前網頁與手機頁的 logo 顯示正確，不動 |
 | 25 | 邀請信改版（業主 19:35） | 版型照 `confirm-signup.html`（黑底 UKNOW、卡片、小標＋大標＋一句＋按鈕、頁尾、卡片外 ©）；主體只表達邀請，保留推薦人揭露句；**拿掉**年費句、服務條款／事業手冊連結、複製網址段；**個資告知九要素保留但縮成卡片外灰色小字**（個資法第九條間接蒐集告知必須在第一次接觸）。派 R2 前端 session 開小 PR，業主等新版合進 main 再貼模板 |
+| 26 | PayUni 切換時點（業主 20:15） | `PAYUNI_SANDBOX=false` 留到其他都確認沒問題再改；§7 順序改為清 bucket → 清資料 → 註冊＋admin → R2 實寄 → Cloudflare 旗標 → 最後切 PayUni → 真付款 → 宣布 |
+| 27 | 第二次晉升提前（業主 20:20） | 原定 10/28 的第二次晉升改今晚開（PR #417）：開放時 favicon／SEO 在線上、邀請信新版只貼一次。PR 開後 develop 凍結到合進 main |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -284,6 +286,7 @@ commit;
 | 10/27 19:18 | **業主核准 production 部署，`/health` sha=b4f9bb3 對上**（payuniMode=sandbox、referralInviteConfigured=false 為預期：第 6、7 步未做；defaultReferrer=ok）。§7 第 5 步 ✅。已給第 6–8 步逐步指示（模板 raw 連結、兩把 secret、PayUni 三把＋SANDBOX=false、清三 bucket） | 業主回報第 6 步 → curl 看 referralInvite 兩旗標 |
 | 10/27 19:35 | 業主看了邀請信模板：要簡化、版型對齊驗證碼信、問「兩個按鈕」（Dashboard 預覽不處理 `{{ if }}/{{ else }}` 兩分支都顯示，實寄只一個）。裁決 25（告知段縮小字、不刪）。派 R2 前端 session 開 `fix/referral-invite-email-restyle`。§7 第 6 步的貼模板改為等新版合進 main 後做；兩把 secret 與第 7、8 步不受影響 | 業主做第 6 步 secret、第 7、8 步；模板 PR 回報 |
 | 10/27 20:05 | 邀請信改版 PR #416（c9c8ff6）CI 綠 → 轉 ready → 合進 develop。四條小偏離（告知小字 #6b6b75、© 不帶年份、拿掉 24 小時一封句、拿掉純文字網址段）接受。新版模板隨第二次晉升上 main 後業主再貼（正式站與 develop 各一次） | 業主第 6 步 secret、第 7、8 步 |
+| 10/27 20:10 | 業主第 6 步兩把 secret 完成，`/health` referralInviteConfigured／Enabled 皆 true。裁決 26（PayUni 最後切）、27（第二次晉升今晚）。**開晉升 PR #417**（develop 3392d05 → main，無 migration，9 支 PR）；journey-full 約 25 分鐘。#415 等 #417 合進 main 後才合 | #417 綠 → 合 → 業主核准 production → 貼新版模板；業主同時做第 8 步清 bucket |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -302,7 +305,7 @@ commit;
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
-| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認~~ ✅；剩模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
+| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret~~ ✅；剩新版模板與主旨（等 #417 上 main）、清三個 bucket；PayUni 正式依裁決 26 最後做 | ◐ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
