@@ -21,7 +21,7 @@
 
 ## 目前位置與下一步
 
-PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4a 綠；下一步 2-4b Create／Edit 接線。
+PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4b 綠；2-5 e2e 由 session_01MQovbEJErP6iSDwsEdTfn3 在 feature/listing-photo-pipeline-e2e 進行；下一步 2-6 文件與閘門。
 
 ## 偏離規劃（記入 PR 描述）
 
