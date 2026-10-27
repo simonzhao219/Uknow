@@ -24,6 +24,34 @@ def active_listing(rest_mock, name):
     rest_mock.set_user_listing(build_listing(name=name))
 
 
+@given("the listing deletion API succeeds")
+def listing_deletion_succeeds(api_mock, rest_mock):
+    api_mock.set_delete_listing(on_call=lambda: rest_mock.set_user_listing(None))
+
+
+@given("the listing deletion API fails with a server error")
+def listing_deletion_fails(api_mock):
+    api_mock.set_delete_listing(
+        status=500,
+        body={"success": False, "error": {"code": "delete_failed", "message": "刪除失敗"}},
+    )
+
+
+@given("the listing deletion route is not deployed yet")
+def listing_deletion_route_missing(api_mock):
+    # 前端（Cloudflare）可能先於 Edge 上線：裸 404（沒有 not_found 標記）不是「已刪除」。
+    api_mock.set_delete_listing(status=404, body={"error": "Not Found"})
+
+
+@given("the listing was already deleted on the server")
+def listing_already_deleted(api_mock, rest_mock):
+    api_mock.set_delete_listing(
+        status=404,
+        body={"success": False, "error": {"code": "not_found", "message": "刊登不存在"}},
+        on_call=lambda: rest_mock.set_user_listing(None),
+    )
+
+
 @given(parsers.parse('my membership runs until "{date}"'))
 def membership_runs_until(api_mock, date):
     api_mock.set_subscription_status(

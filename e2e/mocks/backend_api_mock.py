@@ -511,6 +511,23 @@ class BackendApiMock:
             _fulfill_json(route, {"photoUrl": self._deferred_upload_url})
         self._deferred_uploads = []
 
+    def set_delete_listing(self, status: int = 200, body: dict | None = None, on_call=None):
+        """DELETE /listings/<id>（刪刊登走後端，由後端刪列並清 Storage）。
+
+        `on_call` 在回應前呼叫，讓測試把 REST mock 的「自己的刊登」同步清掉
+        （元件刪除成功後會 refetch，要落在空態）。非 DELETE 的請求（例如
+        POST /listings/upload-photo）交還給先前註冊的 handler。"""
+        payload = body if body is not None else {"success": True}
+
+        def handler(route):
+            if route.request.method != "DELETE":
+                return route.fallback()
+            if on_call:
+                on_call()
+            return _fulfill_json(route, payload, status=status)
+
+        self._route("/listings/*", handler)
+
     def set_verify_id_success(self):
         # ThreeStepDialog 第三步（IdNumberInput）在啟用確認按鈕前，會先
         # POST /rewards/verify-id 驗證身分證字號與註冊資料一致。

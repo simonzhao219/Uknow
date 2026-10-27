@@ -54,7 +54,7 @@ paths:
 | 9 | 獎勵/提領 | `/rewards`、`/rewards/points-preview`、`/rewards/withdrawals`、`/rewards/verify-id`、`/rewards/id-photos`、`/rewards/upload-id-photos`、`/rewards/withdraw`、`/rewards/withdrawals/:id/confirm`、`/rewards/history` |
 | 10 | 推薦網絡 | `/referrals/network/overview`、`/children`、`/search`、`/attention` |
 | 11 | 任務 | `/tasks`、`/tasks/pending-rewards`、`/tasks/current-month-top`、`/tasks/claim-reward/:id` |
-| 12 | 其他 | `/listings/upload-photo`、`/referrals/debug/:userId`、`/health` |
+| 12 | 其他 | `/listings/upload-photo`、`DELETE /listings/photos`、`DELETE /listings/:id`（**photos 必須先於 :id 註冊**；處理函式在 `listing-photos.ts`）、`/referrals/debug/:userId`、`/health` |
 
 改動前也先看 `_shared/api-contract.ts`(前後端共用契約,≈5,000 tok)——
 契約變更要同步兩側,只改一邊會在 CI 的型別檢查才炸。

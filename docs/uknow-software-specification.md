@@ -642,6 +642,10 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 - **一個付款帳號對應一個刊登內容**（1:1）。
 - **可見性**由 `has_active_subscription` 即時決定——會籍失效即隱藏，
   不存 `isActive` 欄位。訪客走 `public_listings` View。
+- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`：編輯存檔成功後，被移除的照片
+  由前端呼叫 `DELETE /listings/photos` 清掉；刪除刊登走 `DELETE /listings/:id`，由後端刪列並清掉
+  該刊登的照片。兩者都只刪「刊登者自己的檔」，且**仍被任何刊登引用的檔不刪**；引用檢查失敗時一檔
+  不刪（fail-closed）。清理失敗不影響存檔或刪除本身（已知落差見 §14）。
 - 欄位限制〔實作〕`src/utils/constants.ts`：
 
 | 項目 | 限制 |
@@ -817,6 +821,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 11 | 提領管理讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts` 的 `/admin/withdrawals`：統計查詢的錯誤被忽略（件數與待匯款總額回 0）；附屬查詢（姓名、證件簽名網址、事件歷史）也不檢查錯誤，回空姓名、「未設定」身分證、空歷史，證件顯示未上傳 |
 | 12 | 公告與證件審核讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts`：`/admin/announcements` 不檢查查詢錯誤（回空清單）；`/admin/id-reviews` 的證件簽名網址不檢查錯誤（證件顯示未上傳，審核者可能因此誤退件） |
 | 13 | 提領 CSV 匯出的補償式變動（§13） | 匯出以 offset 逐頁收集，前端核對每頁的總數、收完的筆數與重複 id；收集途中一筆新進最前、另一筆同時離開篩選時，核對全數通過但檔案錯一筆。根治要 `/admin/withdrawals` 支援 keyset 分頁或快照讀取 |
+| 14 | 刊登照片檔清理的覆蓋範圍（§11、條款十之一撤除後三十日內下架） | 只涵蓋「編輯存檔移除照片」與「刪除刊登」兩條成功路徑；清理失敗只記 warn、無重試，帳號刪除（`profiles` cascade 刪 `listings`）與 `/auth/cancel-signup` 不清 Storage，歷史孤兒檔尚未清理。另有同屬第 2 波補齊範圍的孤兒來源：上傳後未存檔即離頁、編輯中移除本次新上傳但未存檔的照片、上傳逾時後重試產生的第二個檔、存檔與刪刊登並發、RLS 的 `listings_delete_own` 直刪入口不清 Storage、他人把你的公開照片 URL 寫進自己的 `photos` 可擋住清理。第 2 波須在撤除後三十日窗口內補齊這三條路徑與上述來源，補齊後刪本列 |
 
 ---
 
