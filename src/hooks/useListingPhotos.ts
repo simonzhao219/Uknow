@@ -64,6 +64,8 @@ export interface UseListingPhotosResult {
   cancelCrop: (slotId: string) => void;
   retry: (slotId: string) => void;
   remove: (slotId: string) => void;
+  /** 編輯頁載入刊登後，把既有照片換成這份清單（本次新選的照片保留）。 */
+  loadExisting: (urls: string[]) => void;
   /** 重新取景一張本次新增、已上傳完成的照片（重新解碼原檔；完成後換上新檔並清掉舊檔）。 */
   adjust: (slotId: string) => void;
   /** 已完成照片的 URL（依 slots 順序）。 */
@@ -301,6 +303,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     retry,
     remove,
     adjust,
+    loadExisting: () => {},
     photoUrls: slots.filter((s) => s.state === 'done' && s.url).map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),

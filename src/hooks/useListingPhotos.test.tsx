@@ -313,3 +313,40 @@ describe('useListingPhotos 調整已完成的照片', () => {
     expect(h.result.current.pendingCrop).toBeNull();
   });
 });
+
+describe('useListingPhotos 載入既有照片', () => {
+  it('loadExisting 把既有照片載入為 existing／done', () => {
+    const h = setup();
+    act(() =>
+      h.result.current.loadExisting(['https://cdn.test/u/a.jpg', 'https://cdn.test/u/b.jpg']),
+    );
+    expect(h.result.current.slots.map((s) => [s.kind, s.state, s.url])).toEqual([
+      ['existing', 'done', 'https://cdn.test/u/a.jpg'],
+      ['existing', 'done', 'https://cdn.test/u/b.jpg'],
+    ]);
+    expect(h.result.current.photoUrls).toHaveLength(2);
+  });
+
+  it('再次載入時換掉舊的既有照片，但保留本次新選的', async () => {
+    const h = setup();
+    act(() => h.result.current.loadExisting(['https://cdn.test/u/a.jpg']));
+    await add(h, [fileOf('1.jpg')]);
+    act(() =>
+      h.result.current.loadExisting(['https://cdn.test/u/x.jpg', 'https://cdn.test/u/y.jpg']),
+    );
+    const slots = h.result.current.slots;
+    expect(slots.filter((s) => s.kind === 'existing').map((s) => s.url)).toEqual([
+      'https://cdn.test/u/x.jpg',
+      'https://cdn.test/u/y.jpg',
+    ]);
+    expect(slots.filter((s) => s.kind === 'new')).toHaveLength(1);
+  });
+
+  it('載入既有照片後可移除，且不呼叫 onDiscardUploaded', () => {
+    const h = setup();
+    act(() => h.result.current.loadExisting(['https://cdn.test/u/a.jpg']));
+    act(() => h.result.current.remove(h.result.current.slots[0].id));
+    expect(h.result.current.slots).toHaveLength(0);
+    expect(h.discarded).toEqual([]);
+  });
+});

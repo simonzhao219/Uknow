@@ -179,3 +179,31 @@ describe('CreateServiceProvider', () => {
     expect(nameInput().value).toBe(tooLong);
   });
 });
+
+describe('CreateServiceProvider 照片區', () => {
+  it('使用共用的照片列表與選取入口，標籤說明三張且第一張為封面', async () => {
+    renderForm();
+    expect(await screen.findByRole('list', { name: '已選擇的照片' })).toBeTruthy();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.accept).toBe('image/*');
+    expect(input.multiple).toBe(true);
+    expect(screen.getByText(/第一張為封面/)).toBeTruthy();
+    expect(screen.getByText(/尚未選擇照片/)).toBeTruthy();
+  });
+
+  it('還沒有三張完成的照片時，建立刊登鈕停用', async () => {
+    renderForm();
+    const submit = await screen.findByRole('button', { name: /建立刊登/ });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('選了照片會進入取景流程，而不是直接上傳（原檔 5–20MB 也不被前端 5MB 擋下）', async () => {
+    renderForm();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const big = new File([new Uint8Array(6 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [big] } });
+    // 6MB 原檔不應出現「不能超過 5MB」的前端錯誤提示
+    await waitFor(() => expect(screen.queryByText(/不能超過 5MB/)).toBeNull());
+  });
+});
