@@ -303,6 +303,7 @@ commit;
 | 10/28 01:15–01:20 | 業主在 P1a 貼概括授權，P1a 2-4b 綠燈 head 18a83944。首開的 e2e session 容器沒有 repo（create_session 未帶 source_url，add_repo 被分類器擋）→ 封存，重開 session_01MQovbErnhEXgHjQQjw9XvG 帶 `source_url`＋`source_revision=feature/listing-photo-pipeline`。教訓記 friction-log：create_session 一律帶 source_url | P1a 2-6；e2e PR |
 | 10/28 01:25–01:35 | e2e session 本機綠（page object 新流程、真 JPEG fixture、375px、上傳失敗重試），journey 共用 page object 免改；發現驗收 14 做不到：失敗的 module fetch 依 HTML 規格被記成 null，同 URL 原地重試永遠失敗。主 session 裁決：失敗面板改「請重新整理頁面」＋按鈕「重新整理頁面」→ `location.reload()`，不自動重載、不套 `importWithRetry`（會無預警清掉表單）；P1a 走小紅綠循環改，e2e 情境 14 改為重載後重走流程。遺留第 2 波：`lazyWithRetry` 的重試一次同因無效、Create／Edit 無草稿保存 | P1a 改完傳 head 給 e2e；e2e 開 draft PR |
 | 10/28 01:35–01:50 | P1a 自跑四視角實作審查：0 P0、約 8 P1（返回鍵時序、送出鈕原因、封面播報、對話框焦點、單一 live region、手機摺線、上傳逾時、bitmap 釋放）＋2 測試缺口＋jsdom `createObjectURL` 防呆；主 session 核准返回鍵改「對話框佇列期間常駐」並改寫兩個紅燈（概括授權）。P1a 推新 head 8831f9d。e2e session 開 **#420**（base P1a 分支，head f9ad041）：18 情境本機綠、tools/ 89 綠；偏離：fixture 改 192×64 三色帶、情境 14 照裁決 | #420 CI 綠 → P1a fast-forward；P1a 修完 P1 開 PR 2 → 主 session 審 |
+| 10/28 01:50–01:55 | 發現 ci.yml 只對 base main／develop 觸發，#420（base feature 分支）不會有 CI → 改流程：P1a 直接 ff 併入 e2e commit，e2e 由 PR 2 的 CI 驗；已通知兩個 session | P1a 併入後開 PR 2 |
 
 **執行 session 名冊**（主 session 維護）
 
