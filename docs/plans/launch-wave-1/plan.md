@@ -48,7 +48,7 @@
 | 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
 | 22 | journey sandbox 紅（PayUni 測試站改版）後的開放時間 | **今晚繼續，開放改 00:00 前後**；晉升閘門暫走 webhook 備援（#413，規則 13 到期 11/03）；journey-full webhook 仍紅或真付款失敗就改明天 |
 | 23 | 官方 icon 與 SEO／AEO／GEO（業主 19:55 提出） | **兩段**：基礎進窗口（favicon 全套、manifest、og-image 1200×630、品牌名統一「Uknow」、description／canonical、robots.txt＋sitemap.xml、私密頁 noindex、JSON-LD Organization／WebSite）目標 10/28 第二次晉升；進階（AEO：FAQ／服務者頁 JSON-LD；GEO：llms.txt、公開頁預渲染、服務者動態 sitemap）第 2 波三段式 |
-| 24 | 站內 logo | **一併換成官方版**（導覽列用黑底白字 Uk icon＋「Uknow」字標、登入／註冊頁用橫式 logo）；Navbar 與 T1 共檔但 T1 已排第 2 波，不撞 |
+| 24 | 站內 logo（業主 20:05 修正） | **需要正方形的地方用黑底白字 Uk**（favicon、手機捷徑、manifest、正方形縮圖）；**顯示全名的地方照舊**——業主確認目前網頁與手機頁的 logo 顯示正確，不動 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
