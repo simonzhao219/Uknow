@@ -56,6 +56,7 @@
 | 29 | 清資料與 PayUni 切正式延後（業主 23:00） | 兩者都等 P1a PR 2 上線後再做（10/28 晚）；活動前要完成。主 session 已提醒：PayUni 留 sandbox 期間無人能真付款、測試資料留在站上 |
 | 30 | P1a PR 2 提前（業主 23:15） | 照片裁切＋定位（前端管線）提前到第 1 波：10/28 下午合 develop、傍晚第三次晉升；10/28 不凍結。SEO 進階與 journey harness 仍 11/3 第 2 波。PR 2 由原 P1a session 做，業主親打 /tdd-implement 才開工 |
 | 31 | Email 邀請前端旗標寫進 git（業主 10/28 00:20） | Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` Retry 兩次仍未進建置（正式站主檔 `index-CWyrVOvQ.js` ＝ 本機無旗標建置；repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它為唯一設定來源）。改加 `.env.production`（與 `.env.development` 對稱），主 session 自己做（設定一行＋文件）、fix PR 合進 develop；**等 P1a PR 2 一起第三次晉升**，不另開晉升。Email 實寄核對順延到該次核准後 |
+| 32 | 會員中心刊登卡對齊推薦卡版式（業主 10/28 02:30） | 刊登卡改四行：標題／小標「我的刊登」／主字（「尚未刊登」或主題，單行截斷）／第四行走 `action` 插槽（未刊登＝「立即刊登」鈕，已刊登＝`CategoryBadge` 類別徽章）；拿掉「會籍至」（我的訂閱卡已有週期）；注意溢字。新開 Sonnet session、Plan Mode、`fix/member-center-listing-card`，**跟 PR 2 與旗標一起第三次晉升** |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -306,6 +307,7 @@ commit;
 | 10/28 01:35–01:50 | P1a 自跑四視角實作審查：0 P0、約 8 P1（返回鍵時序、送出鈕原因、封面播報、對話框焦點、單一 live region、手機摺線、上傳逾時、bitmap 釋放）＋2 測試缺口＋jsdom `createObjectURL` 防呆；主 session 核准返回鍵改「對話框佇列期間常駐」並改寫兩個紅燈（概括授權）。P1a 推新 head 8831f9d。e2e session 開 **#420**（base P1a 分支，head f9ad041）：18 情境本機綠、tools/ 89 綠；偏離：fixture 改 192×64 三色帶、情境 14 照裁決 | #420 CI 綠 → P1a fast-forward；P1a 修完 P1 開 PR 2 → 主 session 審 |
 | 10/28 01:50–01:55 | 發現 ci.yml 只對 base main／develop 觸發，#420（base feature 分支）不會有 CI → 改流程：P1a 直接 ff 併入 e2e commit，e2e 由 PR 2 的 CI 驗；已通知兩個 session | P1a 併入後開 PR 2 |
 | 10/28 02:05–02:40 | **PR 2 = #421**（head 由 b3c12932 → ef49434 → 050b8fa5：守門修正——file input I2 啟發式、canvas 白底色值列掃描排除）。主 session 四視角審查（Sonnet 四 lane，worktree wt-421）：0 P0；必修 ≈16 條已核實後分三批轉給 P1a——系統：decode 回 bitmap 實際尺寸、adjust 重解失敗偏離補記＋播報、晚到 bitmap 釋放；UI/UX：**返回鍵在佇列第二張起失效會離頁**（常駐改法的新問題，走紅綠）、載入失敗文案死路、NETWORK_ERROR 英文原文、重試後焦點、重複失敗不播報；需求：規格書 §14 第 14 列過時、PR 內文綠燈 hash、兩個空轉測試；架構：Edit diff 刪偏離補記、懸空 plan 連結、死碼、60 秒只寫一份。約 20 條 P2 記第 2 波。#415 api-tests 再中映像限流，重跑一次 | P1a 修完推 → CI 綠 → 主 session 抽查 U1 → 轉 ready → 合 develop → 開第三次晉升 |
+| 10/28 02:40 | 業主補裁決 32（刊登卡版式對齊推薦卡、拿掉會籍至、跟第三次晉升）。P1a 推 36f946a（守門＋系統視角三項）。開刊登卡 Sonnet session | P1a 其餘三批；刊登卡 PR；#415 CI |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -315,6 +317,7 @@ commit;
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
 | P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅ 已合併（PR 1）；PR 2 施工中（裁決 30）：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
 | P1a-e2e | `session_01MQovbErnhEXgHjQQjw9XvG`（首開 `…EJErP6…` 未帶 repo，已封存） | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
+| 刊登卡 | `session_01MQovbBaaYSmpxZoDwfmXj2` | Sonnet | `fix/member-center-listing-card` | 裁決 32，10/28 02:40 開 | PR 綠 → 主 session 審 → 合 develop |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
 | 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410 ✅ 已合併 | 收工 |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 ✅ 已合併 | 收工（#395 方向 3 sandbox 實打留 issue） |
