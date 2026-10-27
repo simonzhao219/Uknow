@@ -158,7 +158,10 @@ describe('_headers 重複宣告契約', () => {
     const declared = headers
       .split('\n')
       .filter((line) => /^\s+\S/.test(line) && !line.trimStart().startsWith('#'))
-      .map((line) => line.trim().split(':')[0].trim().toLowerCase());
+      .map((line) => line.trim().split(':')[0].trim().toLowerCase())
+      // X-Robots-Tag 每條規則各管一組互不重疊的私密路徑（下一個 it 驗不重疊），
+      // 沒有「同一請求命中多條」，不會被逗號合併。
+      .filter((name) => name !== 'x-robots-tag');
     const seen = new Set<string>();
     const duplicated = declared.filter((name) => {
       if (seen.has(name)) return true;
@@ -166,6 +169,29 @@ describe('_headers 重複宣告契約', () => {
       return false;
     });
     expect(duplicated).toEqual([]);
+  });
+
+  it('X-Robots-Tag 各規則的路徑互不重疊，也不與 /assets/* 重疊', () => {
+    const lines = headers.split('\n');
+    const patterns: string[] = [];
+    lines.forEach((line, i) => {
+      if (/^\s+x-robots-tag:/i.test(line)) {
+        for (let j = i - 1; j >= 0; j--) {
+          if (/^\S/.test(lines[j]) && !lines[j].startsWith('#')) {
+            patterns.push(lines[j].trim());
+            break;
+          }
+        }
+      }
+    });
+    expect(patterns.length).toBeGreaterThan(0);
+    const stem = (p: string) => p.replace(/\*$/, '');
+    for (const a of patterns) {
+      expect(stem('/assets/*').startsWith(stem(a)) || stem(a).startsWith('/assets/')).toBe(false);
+      for (const b of patterns) {
+        if (a !== b) expect(stem(b).startsWith(stem(a)), `${a} 與 ${b}`).toBe(false);
+      }
+    }
   });
 });
 
