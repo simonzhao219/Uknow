@@ -1,5 +1,6 @@
 # 刊登照片上傳管線（P1a）規劃書
 
+<!-- plans-keep: 施工鷹架，規劃待業主審；退場條件＝/tdd-implement 收尾（PR 前）刪除本目錄，值得保留的決策升級進規格書 §11／ui-ux-guidelines／friction-log；若波次順延 11/3 則隨順延 -->
 <!-- 落檔理由：階段數 ≥3、跨 session（第 1 波執行 session 只規劃，實作由業主親打 /tdd-implement）。
      上位規劃：docs/plans/platform-growth-and-trust/plan.md §3.1／§3.2A／§3.2C／§3.4（未改動前以其為準）；
      第 1 波排程：docs/plans/launch-wave-1/plan.md §3.2。PR 前依 CLAUDE.md 收尾刪除。 -->
