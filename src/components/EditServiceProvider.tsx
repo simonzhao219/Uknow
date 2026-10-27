@@ -13,7 +13,7 @@ import { UserContext } from '../App';
 import { TAIWAN_CITIES, TAIWAN_REGIONS } from '../utils/constants';
 import { CategorySelectField } from './listing/CategorySelectField';
 import { useCustomCategories } from '../hooks/useCustomCategories';
-import { ArrowLeft, Upload, X, Save, Info } from 'lucide-react';
+import { ArrowLeft, X, Save, Info } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
 import { getGenderDisplay } from '../utils/gender';
@@ -23,8 +23,11 @@ import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
-import { buildApiUrl } from '../utils/apiClient';
-import { cleanupRemovedPhotos } from '../utils/listingPhotosApi';
+import { browserImageIO } from '../utils/browserImageIO';
+import { cleanupRemovedPhotos, uploadListingPhoto } from '../utils/listingPhotosApi';
+import { MAX_PHOTO_COUNT } from '../utils/constants';
+import { useListingPhotos } from '../hooks/useListingPhotos';
+import { PhotoPicker } from './listing/PhotoPicker';
 import type { ListingRow } from '../types/listing';
 
 export function EditServiceProvider() {
@@ -42,7 +45,6 @@ export function EditServiceProvider() {
     city: '',
     districts: [] as string[],
     description: '',
-    photos: [] as string[],
     contacts: {
       instagram: '',
       line: '',
@@ -53,7 +55,15 @@ export function EditServiceProvider() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
   const [serviceProvider, setServiceProvider] = useState<ListingRow | null>(null);
-  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photos = useListingPhotos({
+    maxCount: MAX_PHOTO_COUNT,
+    io: browserImageIO,
+    upload: uploadListingPhoto,
+    createPreviewUrl: (f) => URL.createObjectURL(f),
+    revokePreviewUrl: (u) => URL.revokeObjectURL(u),
+    // 本次新上傳、尚未存檔就被移除的照片：best-effort 清掉 Storage。
+    onDiscardUploaded: (url) => void cleanupRemovedPhotos([url], []),
+  });
   const { customCategories } = useCustomCategories();
 
   // ✅ 从后端 API 获取刊登数据
@@ -78,6 +88,7 @@ export function EditServiceProvider() {
         }
 
         setServiceProvider(listing);
+        photos.loadExisting(listing.photos || []);
         setFormData({
           name: listing.name,
           category: listing.category,
@@ -85,7 +96,6 @@ export function EditServiceProvider() {
           city: listing.city,
           districts: listing.districts || [],
           description: listing.description || '',
-          photos: listing.photos || [],
           contacts: listing.contacts || { instagram: '', line: '', facebook: '' },
         });
       } catch (error) {
@@ -108,7 +118,7 @@ export function EditServiceProvider() {
     if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
-    if (formData.photos.length !== 3) newErrors.photos = '必須上傳3張照片';
+    if (!photos.canSubmit) newErrors.photos = `必須上傳 ${MAX_PHOTO_COUNT} 張照片`;
 
     // 驗證聯絡方式
     const contactErrors = validateContacts(formData.contacts);
@@ -160,91 +170,6 @@ export function EditServiceProvider() {
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-
-    if (formData.photos.length + files.length > 3) {
-      showToast('最多只能上傳3張照片', 'error');
-      return;
-    }
-
-    // 验证格式
-    const ALLOWED_FORMATS = ['image/jpeg', 'image/png', 'image/webp'];
-    const invalidFiles = files.filter((file) => !ALLOWED_FORMATS.includes(file.type));
-    if (invalidFiles.length > 0) {
-      showToast('只支援 JPG、PNG、WEBP 格式', 'error');
-      return;
-    }
-
-    // 真正上传照片
-    uploadPhotosToServer(files);
-  };
-
-  const uploadPhotosToServer = async (files: File[]) => {
-    setUploadingPhotos(true);
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        showToast('請先登入', 'error');
-        navigate('/login');
-        return;
-      }
-
-      const uploadPromises = files.map(async (file) => {
-        const formDataToSend = new FormData();
-        formDataToSend.append('file', file);
-        formDataToSend.append('listingTempId', serviceProvider.id); // 使用刊登 ID
-
-        const response = await fetch(buildApiUrl('/listings/upload-photo'), {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: formDataToSend,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error?.message || '上傳失敗');
-        }
-
-        const data = await response.json();
-        return data.photoUrl;
-      });
-
-      const photoUrls = await Promise.all(uploadPromises);
-
-      // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
-      // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（與
-      // CreateServiceProvider 同一個 stale closure bug）。
-      setFormData((prev) => ({
-        ...prev,
-        photos: [...prev.photos, ...photoUrls],
-      }));
-
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.photos;
-        return next;
-      });
-
-      showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
-    } catch (error: any) {
-      console.error('❌ 照片上傳失敗:', error);
-      showToast(error.message || '照片上傳失敗，請稍後再試', 'error');
-    } finally {
-      setUploadingPhotos(false);
-    }
-  };
-
-  const removePhoto = (index: number) => {
-    const newPhotos = formData.photos.filter((_, i) => i !== index);
-    setFormData({ ...formData, photos: newPhotos });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -265,7 +190,7 @@ export function EditServiceProvider() {
           city: formData.city,
           districts: formData.districts,
           description: formData.description,
-          photos: formData.photos,
+          photos: photos.photoUrls,
           contacts: formData.contacts,
         })
         .eq('id', serviceProvider.id)
@@ -287,7 +212,7 @@ export function EditServiceProvider() {
       invalidate('listingChange');
 
       // 先存後刪：存檔成功才清掉被移除的照片檔；best-effort，不等結果也不影響成功訊息。
-      void cleanupRemovedPhotos(serviceProvider?.photos ?? [], formData.photos).catch(() => {});
+      void cleanupRemovedPhotos(serviceProvider?.photos ?? [], photos.photoUrls).catch(() => {});
 
       showToast('服務者資訊已更新！', 'success');
       navigate('/service-providers');
@@ -498,50 +423,8 @@ export function EditServiceProvider() {
             </div>
 
             <div className="space-y-2">
-              <Label>上傳照片 * (必須上傳3張照片)</Label>
-              <div className="grid grid-cols-3 gap-4">
-                {formData.photos.map((photo, index) => (
-                  <div
-                    key={index}
-                    className="relative aspect-video rounded-lg overflow-hidden border"
-                  >
-                    <img
-                      src={photo}
-                      alt={`照片 ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="absolute top-1 right-1 h-6 w-6 p-0"
-                      onClick={() => removePhoto(index)}
-                      disabled={uploadingPhotos}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-
-                {formData.photos.length < 3 && (
-                  <label
-                    className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center ${uploadingPhotos ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-muted-foreground/50'} transition-colors`}
-                  >
-                    <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground text-center px-2">
-                      {uploadingPhotos ? '上傳中...' : '上傳照片'}
-                    </span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handlePhotoUpload}
-                      className="hidden"
-                      disabled={uploadingPhotos}
-                    />
-                  </label>
-                )}
-              </div>
+              <Label>上傳照片 * (必須上傳 {MAX_PHOTO_COUNT} 張，第一張為封面照)</Label>
+              <PhotoPicker photos={photos} maxCount={MAX_PHOTO_COUNT} />
               <FieldError error={errors.photos} />
             </div>
 
@@ -629,7 +512,7 @@ export function EditServiceProvider() {
                   !formData.gender ||
                   !formData.city ||
                   formData.districts.length === 0 ||
-                  !(formData.photos.length === 3) ||
+                  !photos.canSubmit ||
                   (!formData.contacts.instagram &&
                     !formData.contacts.line &&
                     !formData.contacts.facebook)
