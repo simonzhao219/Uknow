@@ -14,7 +14,7 @@ import {
 } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
-const { app } = await import('./index.ts');
+const { app, listingPhotoPublicUrl, listingPhotoDeps } = await import('./index.ts');
 
 function listingRow(userId: string) {
   return {
@@ -104,4 +104,16 @@ Deno.test('index.ts 註冊順序：/listings/photos 先於 /listings/:id', async
   const byId = src.indexOf("app.delete('/listings/:id'");
   assert(photos >= 0 && byId >= 0, '兩條路由都要註冊');
   assert(photos < byId, '/listings/photos 必須先註冊，否則 "photos" 會被當成 :id');
+});
+
+Deno.test('upload-photo 回傳的 URL 格式必能被清理的引用檢查命中（同一函式產生）', () => {
+  const path = '11111111-2222-3333-4444-555555555555/1700000000000_abc123.jpg';
+  const url = listingPhotoPublicUrl(path);
+  assertEquals(
+    url,
+    `${
+      Deno.env.get('SUPABASE_URL')
+    }/storage/v1/object/public/make-5c6718b9-listings-photos/${path}`,
+  );
+  assertEquals(listingPhotoDeps().cleanup.publicUrlOf(path), url);
 });

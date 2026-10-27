@@ -4317,11 +4317,7 @@ app.post('/listings/upload-photo', async (c) => {
     return c.json({ error: uploadErr.message || '上傳失敗' }, 500);
   }
 
-  const { data: urlData } = client.storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(
-    upload.path,
-  );
-
-  return c.json({ success: true, photoUrl: urlData.publicUrl });
+  return c.json({ success: true, photoUrl: listingPhotoPublicUrl(upload.path) });
 });
 
 // ============================================================
@@ -4330,13 +4326,17 @@ app.post('/listings/upload-photo', async (c) => {
 // 依賴在這裡組一次注入。**註冊順序不可顛倒**：/listings/photos 必須先於 /listings/:id，
 // 否則 "photos" 會被當成 :id（listing-photos.unit.test.ts 讀原文把關）。
 // ============================================================
+// upload-photo 回傳的 URL 與清理的引用檢查必須同一個函式產生——兩邊各組各的，
+// 格式差一點引用檢查就靜默失效而誤刪（listing-photos.test.ts 釘住格式）。
+export function listingPhotoPublicUrl(path: string): string {
+  return sb().storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl;
+}
 export function listingPhotoDeps() {
   return {
     requireAuth,
     rateLimit,
     cleanup: {
-      publicUrlOf: (path: string) =>
-        sb().storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl,
+      publicUrlOf: listingPhotoPublicUrl,
       // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
       findReferencedUrls: async (urls: string[]) => {
         const { data, error } = await sb().from('listings').select('photos').overlaps(
