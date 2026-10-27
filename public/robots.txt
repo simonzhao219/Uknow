@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /auth/
+Disallow: /payment/
+Disallow: /rewards
+Disallow: /tasks
+Disallow: /referrals
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /service-providers$
+Disallow: /service-providers/create
+Disallow: /service-providers/edit/
+
+Sitemap: https://uknow.com.tw/sitemap.xml
