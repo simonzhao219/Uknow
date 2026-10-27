@@ -188,6 +188,7 @@ describe('PhotoPicker 播報與焦點後備', () => {
     view.rerender(<PhotoPicker photos={makePhotos(three.slice(0, 2))} maxCount={3} />);
     const items = screen.getAllByRole('listitem');
     expect(items[1].contains(document.activeElement)).toBe(true);
+    view.unmount();
 
     const one = render(<PhotoPicker photos={makePhotos([slot({ id: 'z' })])} maxCount={3} />);
     const buttons = screen.getAllByRole('button', { name: '移除第 1 張' });
