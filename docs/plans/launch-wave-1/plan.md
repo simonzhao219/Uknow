@@ -257,6 +257,7 @@ commit;
 | 10/27 15:45 | R2 前端開 draft PR #409（循環 6–8＋文件＋R2-3a UI 驗形；本機 check:full 綠、mocked e2e 290 passed）；已訂閱、預審 6–8 | 循環 9–11 推完後五 lane 完整審查 → 合併 → 開晉升 PR |
 | 10/27 15:47 | 容量 hotfix 交棒成功 → PR #410（#395 session 本機 supabase 實跑紅燈證據；另順手改 journey docstring 與 index.ts 註解的舊數字）| 審 #410 |
 | 10/27 15:52 | #410 審過可合併（P0／P1 無，3 條 P2 記債）。P1a #404 第三輪 0 P0／3 P1（已處置）／7 P2，裁決 18–20 已落 plan；**待業主審 #404 後親打 /tdd-implement**（PR 1 後端清理先做） | 業主審 #404；等 #409 循環 9–11 |
+| 10/27 16:00 | #409 預審（循環 6–8）：P0 無、2 P1（SIGNED_OUT 清掉使用中 token；T1 撞檔面要記交接）已交 R2 session 在循環 11 前修。#406 P1 已修（`9da630f`）複核通過、ready；#410 CI 綠、ready；#407 五點已修（`4978574`）複核中 | 等 #409 循環 9–11；窗口 PR #405／#406／#410（#407 待複核）全部等晉升後合 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -265,9 +266,9 @@ commit;
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | #409（draft） | 循環 6–8 綠已推、文件已推；9–11 約 15:45–16:15 推完；主 session 預審 6–8 中 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 第三輪 0 P0（`f7522e1`）；**待業主審 #404、親打 /tdd-implement** |
-| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、補 `actions: read` 中；晉升後合 |
-| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 審過可合併；等 CI 綠轉 ready；晉升後合 |
-| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 審過、5 點修改中；修完再接容量 hotfix patch |
+| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 審過可合併、CI 綠、ready；晉升後合 |
+| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 5 點已修（`4978574`）複核中；容量 hotfix 已另開 #410 |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
