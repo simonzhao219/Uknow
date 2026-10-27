@@ -40,7 +40,24 @@ export const browserImageIO: ImageIO = {
       imageOrientation: 'from-image',
       ...(shrink ? { resizeWidth: target.width, resizeHeight: target.height } : {}),
     });
-    return { width: target.width, height: target.height, handle: bitmap };
+    // 宣稱的尺寸一律取實際 bitmap：舊 WebKit／部分 WebView 會忽略 resizeWidth/Height，
+    // 若仍照預期尺寸宣稱，後面的裁切換算會取到左上角那一塊。
+    if (bitmap.width <= maxEdge && bitmap.height <= maxEdge) {
+      return { width: bitmap.width, height: bitmap.height, handle: bitmap };
+    }
+    const fitted = fitWithin({ width: bitmap.width, height: bitmap.height }, maxEdge);
+    const canvas = document.createElement('canvas');
+    canvas.width = fitted.width;
+    canvas.height = fitted.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close?.();
+      throw new Error('無法取得繪圖環境');
+    }
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, fitted.width, fitted.height);
+    bitmap.close?.();
+    return { width: fitted.width, height: fitted.height, handle: canvas };
   },
 
   async render(image: DecodedImage, crop: PixelCrop, edge: number): Promise<unknown> {

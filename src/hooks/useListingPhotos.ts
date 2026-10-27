@@ -179,7 +179,10 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       patch(id, { state: 'uploading', message: undefined });
       upload(blob).then(
         (url) => {
-          if (!exists(id)) return;
+          if (!exists(id)) {
+            onDiscardUploaded?.(url);
+            return;
+          }
           release(id);
           const entry = data.current.get(id);
           if (entry?.adjustFrom) {
@@ -230,7 +233,10 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
         }
         update((prev) => [...prev, { id, kind: 'new', state: 'preparing', previewUrl }]);
         loadPhoto(io, file).then((result) => {
-          if (!exists(id)) return;
+          if (!exists(id)) {
+            if (!('error' in result)) io.release?.(result.value.image);
+            return;
+          }
           if ('error' in result) return markUnprocessable(id, result.error);
           data.current.set(id, { file, loaded: result.value });
           patch(id, { state: 'awaiting_crop' });
@@ -299,20 +305,24 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       entry.adjustFrom = slot.url;
       patch(id, { state: 'preparing', previewUrl: createPreviewUrl(file) });
       loadPhoto(io, file).then((result) => {
-        if (!exists(id)) return;
+        if (!exists(id)) {
+          if (!('error' in result)) io.release?.(result.value.image);
+          return;
+        }
         if ('error' in result) {
           // 重新解碼失敗：還原成原本完成的那張，並提示原因。
           release(id);
           entry.adjustFrom = undefined;
           patch(id, { state: 'done', previewUrl: undefined });
           setNotice(ERROR_MESSAGES[result.error]);
+          setAnnouncement(`第 ${ordinal(id)} 張照片重新取景失敗：${ERROR_MESSAGES[result.error]}`);
           return;
         }
         entry.loaded = result.value;
         patch(id, { state: 'awaiting_crop' });
       });
     },
-    [createPreviewUrl, exists, io, patch, release],
+    [createPreviewUrl, exists, io, ordinal, patch, release],
   );
 
   const loadExisting = useCallback(
