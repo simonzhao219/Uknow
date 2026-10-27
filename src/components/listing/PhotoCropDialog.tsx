@@ -39,7 +39,10 @@ export default function PhotoCropDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-h-[100dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent
+        className="max-h-[100dvh] overflow-y-auto sm:max-w-md"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>調整第 {ordinal} 張照片範圍</DialogTitle>
           <DialogDescription>
