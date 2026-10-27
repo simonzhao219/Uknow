@@ -258,6 +258,7 @@ commit;
 | 10/27 15:47 | 容量 hotfix 交棒成功 → PR #410（#395 session 本機 supabase 實跑紅燈證據；另順手改 journey docstring 與 index.ts 註解的舊數字）| 審 #410 |
 | 10/27 15:52 | #410 審過可合併（P0／P1 無，3 條 P2 記債）。P1a #404 第三輪 0 P0／3 P1（已處置）／7 P2，裁決 18–20 已落 plan；**待業主審 #404 後親打 /tdd-implement**（PR 1 後端清理先做） | 業主審 #404；等 #409 循環 9–11 |
 | 10/27 16:00 | #409 預審（循環 6–8）：P0 無、2 P1（SIGNED_OUT 清掉使用中 token；T1 撞檔面要記交接）已交 R2 session 在循環 11 前修。#406 P1 已修（`9da630f`）複核通過、ready；#410 CI 綠、ready；#407 五點已修（`4978574`）複核中 | 等 #409 循環 9–11；窗口 PR #405／#406／#410（#407 待複核）全部等晉升後合 |
+| 10/27 16:40 | 業主在演練分支 SQL Editor 跑完 §4 刪除段（`8048876, false`）；主 session 跑零殘留檢查後刪分支。業主審過 #404、已在 P1a session 打 /tdd-implement（PR 1 後端清理先做）；兩個空 session 已封存。**今晚正式站清資料的實際路徑確定：乾跑與零殘留由主 session 用 MCP 跑，刪除段由業主在 SQL Editor 貼** | 等 #409 循環 9–11 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -265,7 +266,7 @@ commit;
 |---|---|---|---|---|---|
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | #409（draft） | 循環 6–8 綠已推、文件已推；9–11 約 15:45–16:15 推完；主 session 預審 6–8 中 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
-| P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 第三輪 0 P0（`f7522e1`）；**待業主審 #404、親打 /tdd-implement** |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404（規劃）| 業主 16:40 打 /tdd-implement，PR 1 後端清理施工中；PR 1 目標 10/28 第二次晉升，PR 2 趕不上留 11/3 |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
 | 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 審過可合併、CI 綠、ready；晉升後合 |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 5 點已修（`4978574`）複核中；容量 hotfix 已另開 #410 |
@@ -278,10 +279,10 @@ commit;
 | 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
 | 2 | §7 第 6–8 步（備份確認、寄信上限、模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket） | ⬜ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
-| 10 | 審 P1a 規劃 PR #404（第三輪 0 P0），通過後在 P1a session `session_01MQovbCmtDUFsDFhE3Ei39S` 親打 `/tdd-implement listing-photo-pipeline`（PR 1 後端清理先做） | ⬜ |
+| 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
-| 8 | 核准 Supabase MCP 建拋棄式分支 `wave1-cleanup-rehearsal` 的費用確認（清資料演練用，演練完即刪） | ⬜ |
+| 8 | ~~核准建拋棄式分支~~ 業主自己在 Dashboard 開了、演練完成 | ✅ |
 | 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
-| 7 | 手動封存兩個卡住的空 session：`session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx`（另一個已封存） | ⬜ |
+| 7 | ~~手動封存兩個空 session~~ | ✅ |
 | 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
