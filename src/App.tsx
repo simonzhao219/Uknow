@@ -33,7 +33,8 @@ import { createClient } from './utils/supabase/client';
 import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { importWithRetry } from './utils/lazyWithRetry';
-import { isProfileComplete } from './utils/registrationFlow';
+import { isProfileComplete, shouldRedirectToCompleteProfile } from './utils/registrationFlow';
+import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { dedupe } from './utils/requestDedup';
 
@@ -159,7 +160,7 @@ function AppContent() {
 
         const hasCompleteProfile = isProfileComplete(profile);
         if (!hasCompleteProfile) {
-          if (window.location.pathname !== '/auth/complete-profile') {
+          if (shouldRedirectToCompleteProfile(window.location.pathname)) {
             navigate('/auth/complete-profile', { replace: true });
           }
         } else {
@@ -200,6 +201,7 @@ function AppContent() {
         loadUserProfile(session.access_token);
       } else if (event === 'SIGNED_OUT') {
         clearCache();
+        clearPendingInviteToken();
         loadedUserIdRef.current = null;
         if (isMounted) {
           setUser(null);

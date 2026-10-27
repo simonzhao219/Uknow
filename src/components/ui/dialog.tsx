@@ -44,9 +44,10 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+      {/* 觸控裝置把關閉鈕撐到 44px（對齊 ui/sheet；§9），名稱用中文「關閉」。 */}
+      <DialogPrimitive.Close className="focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 inline-flex items-center justify-center rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-[3px] focus-visible:outline-hidden disabled:pointer-events-none pointer-coarse:top-2 pointer-coarse:right-2 pointer-coarse:size-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
         <XIcon />
-        <span className="sr-only">Close</span>
+        <span className="sr-only">關閉</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

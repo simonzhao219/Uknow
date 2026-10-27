@@ -227,6 +227,30 @@ class BackendApiMock:
     def set_reset_registration_success(self):
         self._route("/auth/reset-registration", lambda route: _fulfill_json(route, {"success": True}))
 
+    def mock_invite_accept(self, status: int = 200, code: Optional[str] = None):
+        """`POST /auth/invite/accept`（公開）。200 時密碼已設、email 已驗證，前端接著以
+        剛設的密碼登入；錯誤一律 `{ success: false, error: { code, message } }`，message 是
+        英文後備句——前端只依 code 出文案，看到它出現在畫面上就是 bug。"""
+        if status == 200:
+            body = {"accepted": True}
+        else:
+            body = {"success": False, "error": {"code": code, "message": "English fallback"}}
+        self._route_exact("/auth/invite/accept", lambda route: _fulfill_json(route, body, status=status))
+
+    def spy_invites(self, status: int = 202, code: Optional[str] = None) -> list:
+        """`POST /referrals/invites`：記下每次請求的 body，回 202 受理或指定的錯誤 code。"""
+        calls: list = []
+
+        def handler(route):
+            calls.append(route.request.post_data_json)
+            if status == 202:
+                _fulfill_json(route, {"accepted": True}, status=202)
+            else:
+                _fulfill_json(route, {"success": False, "error": {"code": code, "message": "fallback"}}, status=status)
+
+        self._route_exact("/referrals/invites", handler)
+        return calls
+
     # GET /referrals/validate/<code> is the only referral-code check (the anonymous
     # POST /listings/verify-referral-code alias was removed). Response shape mirrors
     # the backend exactly: no referrer id of any kind.

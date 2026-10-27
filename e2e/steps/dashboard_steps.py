@@ -47,3 +47,12 @@ def referral_card_badge(dashboard_page, text):
 def no_attention_area(dashboard_page):
     expect(dashboard_page.heading()).to_be_visible()
     expect(dashboard_page.attention_area()).to_have_count(0)
+
+
+@when("I press quick share on the invite card")
+def press_quick_share(page):
+    # 建置旗標開啟（.env.development）時「邀請好友」先開邀請卡；email 留空時主鈕是快速分享。
+    card = page.get_by_role("dialog", name="邀請好友")
+    expect(card).to_be_visible(timeout=5_000)
+    card.get_by_test_id("invite-card-submit").click()
+    expect(card).to_be_hidden(timeout=5_000)

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>你收到一封 Uknow 的邀請</title>
+</head>
+<!--
+  Supabase Dashboard → Authentication → Emails →「Invite user」模板。repo 這份是單一事實來源；
+  主旨是 Dashboard 的獨立欄位（不在本檔）：你收到一封 Uknow 的邀請
+  R2 分支只讀 user_metadata 的 referral_invite_name 與 referral_invite_url（.Data 底下），
+  連結由後端以 FRONTEND_URL 組好；不用 GoTrue 自己的一次性連結與驗證碼。
+  數字（7 天、24 小時、NT$1,200）與客服信箱由 src/utils/referralInviteTemplate.test.ts 綁程式常數。
+-->
+<body style="margin:0;padding:0;background-color:#f2f2f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+    style="background-color:#f2f2f2;padding:32px 8px;">
+    <tr>
+      <td align="center">
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+          style="max-width:560px;background-color:#ffffff;border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,0.08);">
+
+          <tr>
+            <td style="background-color:#030213;padding:20px 16px;text-align:center;">
+              <span style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;">
+                UKNOW
+              </span>
+            </td>
+          </tr>
+
+{{ if .Data.referral_invite_url }}
+          <tr>
+            <td style="padding:28px 16px 8px;text-align:left;">
+              <p style="margin:0 0 12px;font-size:16px;color:#030213;line-height:1.7;">
+                {{ .Data.referral_invite_name }} 邀請你加入 Uknow 專業服務資訊刊登平台。本邀請由 Uknow 推薦人 {{ .Data.referral_invite_name }} 發送。
+              </p>
+              <p style="margin:0 0 24px;font-size:15px;color:#3f3f4a;line-height:1.7;">
+                Uknow 是年費 NT$1,200 的專業服務資訊刊登服務，詳見服務條款。
+              </p>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+                <tr>
+                  <td align="center" bgcolor="#030213" style="border-radius:8px;">
+                    <a href="{{ .Data.referral_invite_url }}"
+                      style="display:inline-block;min-height:44px;line-height:44px;padding:4px 32px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                      接受邀請
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 24px;font-size:14px;color:#3f3f4a;line-height:1.6;">
+                按鈕無法使用時，請複製以下網址到瀏覽器開啟：<br />
+                <a href="{{ .Data.referral_invite_url }}" style="color:#030213;word-break:break-all;overflow-wrap:anywhere;">{{ .Data.referral_invite_url }}</a>
+              </p>
+
+              <p style="margin:0 0 24px;font-size:14px;color:#3f3f4a;line-height:1.7;">
+                連結 7 天內有效。若你不認識這位推薦人或不想加入，請忽略此信；7 天內未透過連結設定密碼即刪除這次邀請建立的帳號資料；同一信箱 24 小時內最多收到一封邀請。
+              </p>
+
+              <div style="height:1px;background-color:rgba(0,0,0,0.08);margin:0 0 16px;"></div>
+
+              <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#030213;">個人資料蒐集告知</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#3f3f4a;line-height:1.6;">
+                <tr><td style="padding:0 0 6px;">資料來源：由上述推薦人提供</td></tr>
+                <tr><td style="padding:0 0 6px;">蒐集者：優識生活有限公司</td></tr>
+                <tr><td style="padding:0 0 6px;">蒐集目的：寄送本邀請，並於你註冊後用於推薦關係歸戶</td></tr>
+                <tr><td style="padding:0 0 6px;">資料類別：電子郵件信箱</td></tr>
+                <tr><td style="padding:0 0 6px;">利用期間：7 天內未透過連結設定密碼即刪除本平台帳號資料；設定後依《服務條款》第十二條保存至終止服務後一年。電子郵件系統之寄件紀錄依郵件服務商保存期限保存，系統紀錄依雲端服務商保存期限保存</td></tr>
+                <tr><td style="padding:0 0 6px;">利用地區：中華民國境內</td></tr>
+                <tr><td style="padding:0 0 6px;">利用對象：優識生活有限公司</td></tr>
+                <tr><td style="padding:0 0 6px;">利用方式：自動化電子郵件寄送</td></tr>
+                <tr><td style="padding:0 0 6px;">當事人權利：你可依個人資料保護法第三條行使查詢、更正、刪除等權利，請來信 <a href="mailto:admin@uknow.com.tw" style="color:#030213;">admin@uknow.com.tw</a></td></tr>
+              </table>
+            </td>
+          </tr>
+{{ else }}
+          <tr>
+            <td style="padding:28px 16px 8px;text-align:left;">
+              <p style="margin:0 0 24px;font-size:16px;color:#030213;line-height:1.7;">
+                你受邀加入 Uknow。請點下方按鈕接受邀請並設定帳號。
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+                <tr>
+                  <td align="center" bgcolor="#030213" style="border-radius:8px;">
+                    <a href="{{ .ConfirmationURL }}"
+                      style="display:inline-block;min-height:44px;line-height:44px;padding:4px 32px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                      接受邀請
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+{{ end }}
+
+          <tr>
+            <td style="padding:16px 16px 28px;text-align:left;">
+              <p style="margin:0 0 8px;font-size:14px;color:#3f3f4a;line-height:1.6;">
+                <a href="https://uknow.com.tw/terms-of-service" style="color:#030213;">服務條款</a>
+                ・
+                <a href="https://uknow.com.tw/business-manual" style="color:#030213;">事業手冊</a>
+              </p>
+              <p style="margin:0;font-size:14px;color:#3f3f4a;line-height:1.6;">
+                此信件由系統自動發送，請勿直接回覆。Uknow 團隊
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

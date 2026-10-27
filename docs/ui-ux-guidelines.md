@@ -785,10 +785,13 @@ class（`gray-N` / `slate-N` / `zinc-N` / `neutral-N` / `stone-N`）——
    （推薦碼＋複製）引用同一份。
    - **未完成加入推薦計畫前不出示、不複製、不分享推薦碼**（碼在首購時就已發出）；
      判斷一律 `myQrTabsForUser`，不另寫 `joined && referralCode`。
-   - 「邀請好友」三處都呼叫 `shareReferralInvite`（會員中心推薦格與推薦管理是
-     `InviteFriendButton`，我的 QR 頁是面板內自己的鈕）：先系統分享面板，用不了時交給
-     所在 App，最後複製並提示——順位與「所在 App」清單以 `referralInvite.ts` 為準。
-     面板上按取消就停；任何一條路都不宣稱「已送出」。
+   - 「邀請好友」三處（會員中心推薦格與推薦管理是 `InviteFriendButton`，我的 QR 頁是
+     面板內自己的鈕）：建置旗標 `VITE_REFERRAL_EMAIL_INVITE` 開啟時都開同一張邀請卡
+     （`InviteCard`），卡片的「快速分享」呼叫 `shareReferralInvite` 並關卡；旗標關閉時直接
+     呼叫 `shareReferralInvite`。`shareReferralInvite` 先系統分享面板，用不了時交給所在 App，
+     最後複製並提示——順位與「所在 App」清單以 `referralInvite.ts` 為準。面板上按取消就停。
+     卡片的同意聲明只在填了 email 時出現、必勾；結果只寫進卡片內常駐的 live region（不用
+     toast），文案依後端 error code。任何一條路都不宣稱「已送出」（Email 邀請只說「已受理」）。
    - 邀請訊息與邀請卡固定帶揭露句「本邀請由 Uknow 推薦人 {名} 發送」（手冊 4-1-2(2)
      表明身分；用語依 §12.13）。句子與招募禁用字樣只定義在
      `supabase/functions/_shared/recruitment-copy.ts`（`referralDisclosureSentence`、

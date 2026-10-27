@@ -1,3 +1,6 @@
+import type { ReferralInviteAcceptErrorCode } from '@contract';
+import { decodeReferralInvitePayload } from '@referral-invite-payload';
+
 // 註冊/登入這條「連續流程」的單一決策來源。
 //
 // 背景：註冊是一條多步驟流程——
@@ -221,4 +224,69 @@ export function classifyLoginError(
   }
 
   return 'unknown';
+}
+
+// ------------------------------------------------------------
+// Email 邀請（R2）：從信中連結進入註冊頁中段
+// ------------------------------------------------------------
+
+export type InviteEntry = { kind: 'undecodable' } | { kind: 'valid'; email: string; code: string };
+
+/**
+ * 邀請連結 token → 入口狀態。只解碼、不驗簽、不看到期時間 `x`：
+ * 過期與否由 accept 的回應決定（伺服器時鐘是唯一判準，不以裝置時鐘分流）。
+ */
+export function resolveInviteEntry(token: string): InviteEntry {
+  const payload = decodeReferralInvitePayload(token);
+  if (!payload) return { kind: 'undecodable' };
+  return { kind: 'valid', email: payload.e, code: payload.c };
+}
+
+export interface InviteAcceptErrorAction {
+  /** stay2B：留在設定密碼步驟；to2A：轉登入步驟（email 帶入）；toStep1：回輸入 email 步驟。 */
+  target: 'stay2B' | 'to2A' | 'toStep1';
+  /** 轉登入步驟時是否清空密碼欄（already_accepted：要用先前設定的密碼登入）。 */
+  clearPassword: boolean;
+}
+
+/**
+ * accept 的每個 error code 是否轉登入步驟、是否清密碼。以 Record 綁契約的 code 聯集：
+ * 後端新增 code 時這裡 typecheck 就紅，不會靜默落到預設分支。
+ */
+const INVITE_ACCEPT_ERROR_ROUTES: Record<
+  ReferralInviteAcceptErrorCode,
+  { leave: boolean; clearPassword: boolean }
+> = {
+  // 連結本身不能用了：轉登入步驟（email 帶入），已設過密碼的人可直接登入、沒設過的走忘記密碼。
+  expired: { leave: true, clearPassword: false },
+  invalid_token: { leave: true, clearPassword: false },
+  gone: { leave: true, clearPassword: false },
+  // 已完成設定：要用先前設定的密碼登入，剛打的這組清掉。
+  already_accepted: { leave: true, clearPassword: true },
+  // 帳號沒被動到，留在設定密碼步驟可重試。
+  weak_password: { leave: false, clearPassword: false },
+  rate_limited: { leave: false, clearPassword: false },
+  unavailable: { leave: false, clearPassword: false },
+  disabled: { leave: false, clearPassword: false },
+};
+
+/** accept 失敗的 error code → 下一步。無 code（網路失敗、非 JSON）與未知 code 視為暫時性、留在原步驟。 */
+export function classifyInviteAcceptError(
+  code: string | undefined,
+  hasEmail: boolean,
+): InviteAcceptErrorAction {
+  const route =
+    code && code in INVITE_ACCEPT_ERROR_ROUTES
+      ? INVITE_ACCEPT_ERROR_ROUTES[code as ReferralInviteAcceptErrorCode]
+      : undefined;
+  if (!route?.leave) return { target: 'stay2B', clearPassword: false };
+  return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: route.clearPassword };
+}
+
+/**
+ * 已登入但基本資料未完成時，是否該被拉去完善資料頁。
+ * 完善資料頁本身與重設密碼頁（忘記密碼 → recovery 後要先把密碼設好）豁免。
+ */
+export function shouldRedirectToCompleteProfile(pathname: string): boolean {
+  return pathname !== '/auth/complete-profile' && pathname !== '/auth/reset-password';
 }

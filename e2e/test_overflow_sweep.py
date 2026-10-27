@@ -21,6 +21,7 @@
 都會量出假的乾淨而把一條路由誤標成上鎖。上鎖前的自檢清單見 `README.md`。
 """
 
+import base64
 import json
 import os
 import re
@@ -627,6 +628,22 @@ def _open_custom_category_input(page):
     page.get_by_label("自訂類別名稱").fill(LONGEST_CATEGORY_INPUT)
 
 
+def _invite_token(email: str) -> str:
+    """前端只解碼、不驗簽，巡檢不必算 HMAC。"""
+    payload = json.dumps({"v": 1, "e": email, "c": "8048876", "x": 4102444800})
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=") + ".sweep"
+
+
+def _open_invite_card_with_long_email(page):
+    """邀請卡在填了 email 後才出現同意聲明（含推薦人姓名）——最寬的狀態。"""
+    page.get_by_test_id("invite-friend-button").click()
+    card = page.get_by_role("dialog", name="邀請好友")
+    expect(card).to_be_visible()
+    card.get_by_label("對方的 Email（選填）").fill(LONG_EMAIL)
+    expect(card.get_by_role("checkbox")).to_be_visible()
+    settle(page)
+
+
 def _setup_complete_profile(context, api_mock, rest_mock):
     _seed_member(context, registration_step=1, accountStatus="expired", name=None)
 
@@ -673,6 +690,15 @@ ROUTES = [
     ),
     SweepRoute("/login", "登入", None, "/login"),
     SweepRoute("/register", "註冊", None, "/register"),
+    # 邀請信連結直接落在設定密碼步驟（Email 唯讀框＋「改用其他 Email 註冊」）。
+    SweepRoute(
+        f"/register?invite={_invite_token(LONG_EMAIL)}",
+        "註冊 · 邀請連結設定密碼",
+        None,
+        "/register",
+        tags=["invite"],
+        after_load=lambda page: expect(page.get_by_test_id("auth-signup-button")).to_be_visible(),
+    ),
     SweepRoute("/forgot-password", "忘記密碼", None, "/forgot-password"),
     SweepRoute("/terms-of-service", "服務條款", None, "/terms-of-service"),
     SweepRoute("/listing-plans", "刊登方案", None, "/listing-plans"),
@@ -681,6 +707,14 @@ ROUTES = [
     SweepRoute("/participation-contract", "參加契約書", None, "/participation-contract"),
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),
+    SweepRoute(
+        "/dashboard",
+        "會員中心 · 邀請卡（長 email 與長姓名）",
+        _setup_dashboard,
+        "/dashboard",
+        tags=["invite-card"],
+        after_load=_open_invite_card_with_long_email,
+    ),
     # 標題列多了「我的 QR」、推薦格多了一顆真按鈕：已加入（邀請好友）與未加入
     # （加入推薦計畫）的鈕寬不同，兩種都要量。
     SweepRoute(

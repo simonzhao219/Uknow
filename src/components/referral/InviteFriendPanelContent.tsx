@@ -1,4 +1,4 @@
-import { useContext, useRef } from 'react';
+import { useContext, useRef, useState } from 'react';
 import type React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
@@ -11,9 +11,11 @@ import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
 import { myQrTabsForUser } from '../../utils/myQrTabPreference';
 import {
   buildReferralLink,
+  isEmailInviteEnabled,
   isShareStoppedByUser,
   shareReferralInvite,
 } from '../../utils/referralInvite';
+import { InviteCardDialog } from './InviteCard';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
 import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
@@ -41,6 +43,8 @@ export function InviteFriendPanelContent() {
   // 沒簽參加契約書之前不出示、不分享推薦碼（碼在付款成功時就已產生）。
   const code: string = myQrTabsForUser(user).invite ? user.referralCode : '';
   const memberName: string | null | undefined = user?.name;
+  const emailInvite = isEmailInviteEnabled();
+  const [cardOpen, setCardOpen] = useState(false);
   const referralLink = code ? buildReferralLink(code) : '';
   // 下載在 LINE 等 in-app 瀏覽器對 <a download> 支援不一（常靜默開新分頁而非下載），
   // 偵測到 in-app 瀏覽器時給長按另存的提示。
@@ -184,13 +188,24 @@ export function InviteFriendPanelContent() {
         <Button
           tone="secondary"
           size="sm"
-          onClick={() => shareReferralInvite(code, showToast, memberName)}
+          onClick={() =>
+            emailInvite ? setCardOpen(true) : shareReferralInvite(code, showToast, memberName)
+          }
           data-testid="share-referral-button"
         >
           <Share2 className="mr-1 h-4 w-4" />
           邀請好友
         </Button>
       </div>
+
+      {emailInvite && (
+        <InviteCardDialog
+          open={cardOpen}
+          onOpenChange={setCardOpen}
+          code={code}
+          memberName={memberName}
+        />
+      )}
 
       {isInAppBrowser ? (
         <p className="text-center text-xs text-muted-foreground">

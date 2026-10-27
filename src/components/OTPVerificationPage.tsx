@@ -7,7 +7,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
-import { nextRouteForStep } from '../utils/registrationFlow';
+import { routeAfterVerifiedSession } from '../utils/routeAfterVerifiedSession';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
 import { BreakableEmail } from './common/BreakableEmail';
 
@@ -103,41 +103,17 @@ export function OTPVerificationPage() {
         return;
       }
 
-      // Signup: 直接用 verifyOtp 當場回傳的 session 決定下一步——不再 setTimeout
-      // 等待、也不走會「401 就自我登出」的 apiRequestJson。session 本身已透過
-      // supabase-js 的 onAuthStateChange('SIGNED_IN') 讓 App.tsx 全域生效，
-      // 這裡只需要讀一次 registrationStep 決定漏斗去向。
-      const session = data.session;
-      if (!session) {
-        // signup 的 verifyOtp 照理一定回 session；真的沒有就保守帶去完善資料頁，
-        // 絕不因此把使用者踢回登入（session 沒建立才需要重登，這裡不是）。
-        navigate('/auth/complete-profile', { replace: true });
-        return;
-      }
-
-      try {
-        const response = await fetch(buildApiUrl('/auth/profile'), {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (response.ok) {
-          const profile = await response.json();
-          // 與 AuthPage 共用同一份「下一步去哪」的決策，避免兩處走針。
-          navigate(nextRouteForStep(profile.registrationStep), { replace: true });
-        } else if (response.status === 401) {
-          // 剛建立的 session 卻被後端拒絕：這是「session 真的不可用」，
-          // 才需要重新登入。注意這與舊版的假性 401 不同——舊版是靠
-          // getAccessToken()/setTimeout 等 session 傳播，時機沒到就誤判 401；
-          // 現在直接用 verifyOtp 當場回傳的 token，不會再有那種假象。
-          showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
-          navigate('/login', { replace: true });
-        } else {
-          // 其他非 200（例如 404：profile 列還沒建好）——session 是有效的，
-          // 就近帶去完善資料頁繼續註冊流程，而不是把人踢回登入頁。
-          navigate('/auth/complete-profile', { replace: true });
-        }
-      } catch {
-        navigate('/auth/complete-profile', { replace: true });
-      }
+      // Signup: 直接用 verifyOtp 當場回傳的 session 決定下一步（見
+      // routeAfterVerifiedSession：不 setTimeout、不走 401 就自我登出的
+      // apiRequestJson）。session 已經由 onAuthStateChange 讓 App.tsx 全域生效。
+      await routeAfterVerifiedSession(data.session, {
+        fetchProfile: (accessToken) =>
+          fetch(buildApiUrl('/auth/profile'), {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        navigate,
+        showToast,
+      });
     } catch {
       showToast('驗證失敗，請稍後再試', 'error');
       setOtp('');

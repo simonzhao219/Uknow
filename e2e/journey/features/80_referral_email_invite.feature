@@ -3,7 +3,8 @@ Feature: Email 邀請——寄送、接受與清除的後端旅程
   密碼，設完即完成 email 驗證（同一次呼叫）。本檔目前只走 API（POST
   /referrals/invites、POST /auth/invite/accept、密碼登入），驗的是 hosted 才測得到
   的部分：GoTrue 的 invite 與「設密碼＋驗證」真實互動、send-email hook 底下的寄送、
-  service role 呼叫 purge。設定密碼畫面與完善資料頁的 UI 步驟由前端工項補進本檔。
+  service role 呼叫 purge。最後一個情境走 GUI：開信中連結 → 設定密碼畫面 → 完善資料頁
+  顯示推薦人 → 結帳頁顯示推薦人。
 
   信中連結以 service key 從被邀請人的 user_metadata 讀出，不在 Python 重算簽章。
 
@@ -39,3 +40,15 @@ Feature: Email 邀請——寄送、接受與清除的後端旅程
     And 客服以 service role 依信箱刪除邀請中的帳號
     Then 刪除筆數為 1
     And 被邀請人的帳號已不存在
+
+  @journey @invite
+  Scenario: 被邀請人開信中連結設定密碼後，完善資料頁與結帳頁都顯示推薦人
+    When "D5" 以 Email 邀請新的被邀請人 "INVUI"
+    Then 邀請已受理
+    And 被邀請人的帳號已建立、尚未驗證，並蓋有 "D5" 的推薦碼
+    When 被邀請人在瀏覽器開啟信中連結
+    Then 畫面是設定密碼步驟且帶入被邀請人的 Email
+    When 被邀請人在設定密碼畫面設定密碼並送出
+    Then 完善資料頁已帶入 "D5" 的推薦碼並顯示其真實姓名
+    When 被邀請人填寫基本資料並送出
+    Then 結帳頁顯示 "D5" 為推薦人

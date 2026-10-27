@@ -165,3 +165,45 @@ export function clearPendingReferral(): void {
     // 忽略
   }
 }
+
+// --- Email 邀請連結的 token（撐過 2B 重新整理）---
+
+const PENDING_INVITE_TOKEN_KEY = 'pending_invite_token';
+
+/** 記住邀請連結的 token（sessionStorage：只活在這個分頁，關掉即清）。 */
+export function savePendingInviteToken(token: string): void {
+  try {
+    sessionStorage.setItem(PENDING_INVITE_TOKEN_KEY, token);
+  } catch {
+    // 忽略 storage 不可用
+  }
+}
+
+/** 讀取這個分頁記住的邀請 token；沒有時回 null。 */
+export function getPendingInviteToken(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_INVITE_TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** accept 成功、已完成設定、改用其他 Email、解碼失敗、登出時清除。 */
+export function clearPendingInviteToken(): void {
+  try {
+    sessionStorage.removeItem(PENDING_INVITE_TOKEN_KEY);
+  } catch {
+    // 忽略
+  }
+}
+
+// --- Email 邀請的建置旗標 ---
+
+/**
+ * Email 邀請卡是否開放（建置旗標 VITE_REFERRAL_EMAIL_INVITE，讀旗標的單一出處）。
+ * 關閉時三處「邀請好友」維持直接 shareReferralInvite。dev 由 .env.development 開啟；
+ * 正式站在 Cloudflare Pages Production 作用域設定（後端收信核對通過後才開）。
+ */
+export function isEmailInviteEnabled(): boolean {
+  return import.meta.env?.VITE_REFERRAL_EMAIL_INVITE === 'true';
+}

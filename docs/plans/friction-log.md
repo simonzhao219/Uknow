@@ -3165,3 +3165,26 @@ PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
 處置：業主裁決（2026-10-26）開 issue #395、排總綱 Plan Mode 小 PR（Opus），不在 check-email 修正 PR 內修。
 償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的 `Message`，讓「查無此單」與「參數錯」分得開；
 再以 sandbox 實打一輪確認欄位名。
+
+## 2026-10-26～27｜誤擋／漏網（環境、流程）｜R2 Email 邀請（#399 後端、前端 PR）施工期間的摩擦，從 progress.md 整併
+
+- **DB 測試紅燈需要「stub migration」**：函式不存在時 `has_function_privilege` 直接拋錯（不是斷言紅），紅燈 commit 只好帶只有
+  簽章的 stub、綠燈改寫同一支 migration。代價：Supabase Preview 分支只套用**新**的 migration 檔，PR 的 preview DB 停在 stub 版。
+- **migration 重跑 `create extension if not exists pg_cron` 在 CI 失敗**（2BP01 dependent privileges exist）；移除後過。本機起不了
+  Supabase 時，migration 的套用錯誤只有 CI 抓得到。
+- **bash-guard 誤擋兩次**：`git add e2e/journey/pytest.ini` 與 `pip install -r journey/requirements.txt; python3 -c "import pytest_bdd"`
+  都因同一串指令裡有 `pytest` 字樣與 journey 路徑被當成本機跑 journey。建議判準只看 `pytest` 出現在指令位置（行首或 `&&`／`;` 之後）。
+- **TDD 證據 × 自動 rebase**：pre-push hook 把分支 rebase 到新 develop，紅綠燈 hash 全換；DB 測試以 CI 為證時，證據留在舊 hash，
+  只能靠對照表接起來。
+- **`tdd-test-guard` 擋所有 `*.test.ts` 路徑（含 scratchpad 草稿）**：紅燈期草擬下一循環的測試要先存成別的副檔名。
+- **CI api-tests 的 `supabase start` 一天內三次死在拉映像**（ECR `Data limit exceeded`、ghcr `toomanyrequests`、Docker Hub 無該映像），
+  都在任何測試跑之前。建議 api-tests 的 `supabase start` 比照 github-actions.md 規則 12 加退避重試，並把規則 12 擴到 `supabase start`。
+- **紅燈測試自身寫錯兩次（前端段）**：循環 8 斷言字面錯（找不存在的密碼訊息）→ 走逃生口 2 求裁決，主 session 卡在等業主回覆，
+  施工停約 40 分鐘；循環 9 測試替身 `{ ...navigator, share }` 丟了原型上的 `userAgent` → 改以實作側 `?? ''` 容錯。兩次都是
+  「紅燈只確認了『紅』，沒確認『為對的理由紅』」：commit 紅燈前應逐條看失敗訊息是斷言值不符，而不是找不到元素／例外。
+  與 2026-10-21 S7a 同一形狀，這次走了合法逃生口但代價是牆鐘。處置建議：`/tdd-implement` 的紅燈步驟加一句「逐條讀失敗原因」。
+- **web 容器的 Playwright 版本**：`pip install -r e2e/requirements.txt` 會裝到與預裝 Chromium 不合的 playwright（1.56 對 1243 版瀏覽器），
+  e2e 起不來；改裝與 node 側相同的 `playwright==1.63.0` 才行。
+- **交接給 T1（登入狀態信任）**：R2 前端重寫了 `AuthPage.tsx` 的既有 session 檢查 effect——產出 `sessionState` 三態
+  （`checking`／`signed_in`／`signed_out`）、4 秒逾時視為未登入、清理過期 session 的 `signOut` 之後寫回邀請 token（否則
+  App.tsx 的 SIGNED_OUT 會清掉、重新整理掉回 Step 1）。T1 規劃與 rebase 時以這版為準，三件事都要保留；effect 上方有同句註解。

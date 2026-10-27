@@ -1,10 +1,10 @@
 """80_referral_email_invite.feature 的步驟定義——Email 邀請的後端旅程。
 
-目前刻意**不走 GUI**：寄送（POST /referrals/invites）、接受（POST
+前三個情境**不走 GUI**：寄送（POST /referrals/invites）、接受（POST
 /auth/invite/accept——設密碼同時驗證 email）都直打 API，驗 hosted 才測得到的部分
 （GoTrue 真實互動、send-email hook 底下的寄送、service role 呼叫 purge）。
-設定密碼畫面與完善資料頁的 UI 步驟，由前端工項在 AuthPage 的 invite 模式上線後
-補進同一個 feature。
+最後一個情境走 GUI：AuthPage 的 invite 模式 → 完善資料頁（推薦碼自動帶入並驗證）→
+結帳頁顯示推薦人。
 
 信中連結一律以 service key 從被邀請人的 user_metadata 讀出——不在 Python 重算
 簽章（那等於在測試裡複製一份產品的簽章邏輯）。
@@ -12,11 +12,18 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from builders.registration import BIRTH_DATE
+from pages.auth_page import AuthPage
+from pages.complete_profile_page import CompleteProfilePage
+from tools import twid
 
 scenarios("80_referral_email_invite.feature")
 
@@ -170,3 +177,64 @@ def purged_count(scenario_memo, count):
 @then("被邀請人的帳號已不存在")
 def invitee_gone(supabase_admin, scenario_memo):
     assert _auth_user(supabase_admin, scenario_memo["email"]) is None
+
+
+# --- GUI：信中連結 → 設定密碼 → 完善資料 → 結帳 ------------------------------
+
+
+@when(parsers.parse('"{node}" 以 Email 邀請新的被邀請人 "{invitee}"'))
+def invite_new_journey_user(supabase_admin, run_state, scenario_memo, node, invitee):
+    """被邀請人建成 JourneyUser（email 走 run 前綴、cleanup 掃得到），後面的完善資料
+    要用到它的姓名、身分證字號與手機。"""
+    user = run_state.new_user(invitee, twid.generate_for_node(run_state.run_id, invitee))
+    user.password = INVITEE_PASSWORD
+    scenario_memo["email"] = user.email
+    scenario_memo["invitee"] = user
+    scenario_memo["response"] = _invite(supabase_admin, run_state, node, user.email)
+
+
+@when("被邀請人在瀏覽器開啟信中連結")
+def open_invite_link(guarded_page, scenario_memo):
+    guarded_page.goto(f"/register?invite={scenario_memo['token']}")
+
+
+@then("畫面是設定密碼步驟且帶入被邀請人的 Email")
+def on_set_password_step(guarded_page, scenario_memo):
+    expect(guarded_page.get_by_test_id("auth-signup-button")).to_be_visible(timeout=30_000)
+    expect(guarded_page.get_by_text(scenario_memo["email"].split("@")[0], exact=False)).to_be_visible()
+    # 網址上的 token 落地即清（改存 sessionStorage）
+    expect(guarded_page).not_to_have_url(re.compile(r"invite="))
+
+
+@when("被邀請人在設定密碼畫面設定密碼並送出")
+def set_password_in_gui(guarded_page):
+    auth = AuthPage(guarded_page)
+    auth.fill_signup_passwords(INVITEE_PASSWORD, INVITEE_PASSWORD)
+    auth.submit_signup()
+
+
+@then(parsers.parse('完善資料頁已帶入 "{node}" 的推薦碼並顯示其真實姓名'))
+def complete_profile_shows_referrer(guarded_page, run_state, node):
+    referrer = run_state.users[node]
+    expect(guarded_page.locator("#name")).to_be_visible(timeout=30_000)
+    expect(guarded_page.locator("#referralCode")).to_have_value(referrer.referral_code)
+    status = CompleteProfilePage(guarded_page).referral_code_status()
+    expect(status).to_contain_text(referrer.name, timeout=15_000)
+
+
+@when("被邀請人填寫基本資料並送出")
+def submit_invitee_profile(guarded_page, scenario_memo):
+    user = scenario_memo["invitee"]
+    profile = CompleteProfilePage(guarded_page)
+    profile.fill_form(user.name, user.national_id, BIRTH_DATE, user.phone)
+    profile.check_terms()
+    profile.submit()
+    profile.confirm_referral_warning()
+    expect(guarded_page.get_by_test_id("payuni-pay-button")).to_be_visible(timeout=30_000)
+
+
+@then(parsers.parse('結帳頁顯示 "{node}" 為推薦人'))
+def checkout_shows_referrer(guarded_page, run_state, node):
+    expect(guarded_page.get_by_text(f"推薦人：{run_state.users[node].name}")).to_be_visible(
+        timeout=15_000
+    )
