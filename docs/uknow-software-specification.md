@@ -127,6 +127,14 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 
 完成註冊當下即時更新：推薦關係、組織圖、任務計數、獎勵入帳、訂閱效期。
 
+**邀請信入口**：從 Email 邀請信的連結（`/register?invite=<token>`，§7.1）進來的人跳過 Step 0，
+直接到 Step 1 的設定密碼畫面（Email 帶入、唯讀；畫面不顯示推薦人或推薦碼）；設好密碼即完成
+Step 1（同一次呼叫完成 email 驗證，不寄驗證碼），登入後到 Step 2，推薦碼已帶入並驗證、仍可修改。
+已登入者點連結只提示「你已登入」、不帶入推薦碼。邀請建立的帳號在設定密碼前是空殼（§7.1）：
+這段期間以同一 Email 走 Step 0 會被導向登入，要用信中連結或「忘記密碼」設定密碼。
+〔實作〕`src/components/AuthPage.tsx` 的邀請模式、`src/hooks/useInviteAccept.ts`、`src/utils/registrationFlow.ts` 的
+`resolveInviteEntry`／`classifyInviteAcceptError`
+
 **註冊完成後的資料鎖定**：`effective_registration_step` = 3（存在已完成付款的訂單）後，
 Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦人不可自助修改——
 `POST /auth/register` 回 403「註冊已完成，資料變更請聯繫客服」，資料不變。變更由客服辦理：
@@ -300,6 +308,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
   `app_metadata.referral_invite` 蓋章）：7 天內未透過連結設定密碼即刪除該次邀請建立的帳號
   （每日排程 `purge-stale-referral-invites`；計齡以寄出時的 `issued_at` 為準，點過連結不延長；
   GoTrue 稽核列同交易刪除）。客服收到個資刪除請求時，以 service role 帶 `p_email` 立即刪除。
+  前端入口是三處「邀請好友」共用的邀請卡（建置旗標 `VITE_REFERRAL_EMAIL_INVITE` 開啟時才出現；
+  關閉時三處維持直接分享）。推薦碼仍由本人在 Step 2 送出（§4.1），邀請只負責預填。
 - 第一個發出的碼 `8048876` 同時是 §7.4 預設推薦人的指定碼。
 - **比對規則**：碼不分全形半形、不分大小寫——`８０４８８７６` 與 `8048876` 是
   同一個碼（舊格式碼的全形英文同理）。所有輸入點一律先正規化
