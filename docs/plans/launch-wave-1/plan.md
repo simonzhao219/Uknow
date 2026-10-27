@@ -283,6 +283,7 @@ commit;
 | 10/27 22:20 | **停車 PR 全部合進 develop**：#404（8266e11，轉 ready 後合）→ #414 再 rebase 一次（228902a）綠 → 合（ae61955）。develop 現含 10/28 第二次晉升全部內容：og+lang、容量 hotfix、告警 LINE、PayUni 查詢告警、邀請 follow-up、P1a 後端清理、品牌 icon+SEO 基礎。業主 19:10 問 develop 預覽與 Email 邀請：裁決照原規劃（正式站實寄核對後才開旗標，develop 不另設） | 業主核准 production → /health；第二次晉升 PR 待業主 §7 第 5–12 步完成後開 |
 | 10/27 19:18 | **業主核准 production 部署，`/health` sha=b4f9bb3 對上**（payuniMode=sandbox、referralInviteConfigured=false 為預期：第 6、7 步未做；defaultReferrer=ok）。§7 第 5 步 ✅。已給第 6–8 步逐步指示（模板 raw 連結、兩把 secret、PayUni 三把＋SANDBOX=false、清三 bucket） | 業主回報第 6 步 → curl 看 referralInvite 兩旗標 |
 | 10/27 19:35 | 業主看了邀請信模板：要簡化、版型對齊驗證碼信、問「兩個按鈕」（Dashboard 預覽不處理 `{{ if }}/{{ else }}` 兩分支都顯示，實寄只一個）。裁決 25（告知段縮小字、不刪）。派 R2 前端 session 開 `fix/referral-invite-email-restyle`。§7 第 6 步的貼模板改為等新版合進 main 後做；兩把 secret 與第 7、8 步不受影響 | 業主做第 6 步 secret、第 7、8 步；模板 PR 回報 |
+| 10/27 20:05 | 邀請信改版 PR #416（c9c8ff6）CI 綠 → 轉 ready → 合進 develop。四條小偏離（告知小字 #6b6b75、© 不帶年份、拿掉 24 小時一封句、拿掉純文字網址段）接受。新版模板隨第二次晉升上 main 後業主再貼（正式站與 develop 各一次） | 業主第 6 步 secret、第 7、8 步 |
 
 **執行 session 名冊**（主 session 維護）
 
