@@ -1,6 +1,8 @@
 import { useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
+import { Button, buttonVariants } from './ui/button';
+import { cn } from './ui/utils';
+import { Link } from 'react-router-dom';
 import { Badge } from './ui/badge';
 import { StatCardGrid } from './ui/stat-card-grid';
 import { UserContext } from '../App';
@@ -23,7 +25,6 @@ import {
   PROFILE_LOCKED_DETAILS,
   PROFILE_LOCKED_MESSAGE,
 } from '../utils/constants';
-import { formatTwDate } from '../utils/twDate';
 import { listingVisibility } from '../utils/listingVisibility';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
 import { computeKingRounds } from '../utils/kingProgress';
@@ -34,6 +35,7 @@ import {
   StatValue,
 } from './dashboard/DashboardStatCard';
 import { countAwaitingCollection, countExpiring } from './dashboard/dashboardSummary';
+import { CategoryBadge } from './common/CategoryBadge';
 import { BreakableEmail } from './common/BreakableEmail';
 
 /**
@@ -96,9 +98,6 @@ export function MemberDashboard() {
   // 頁面開著時剛好到期的邊界。停權也會讓刊登下架（public_listings），但停權帳號
   // 被 RequireMembershipRoute 擋在會員區外，進不到這頁，所以不另判。
   const listingHidden = listingVisibility(subscriptionData) === 'hidden';
-  const memberUntil = subscriptionData?.activeUntil
-    ? formatTwDate(subscriptionData.activeUntil)
-    : null;
 
   // 後端 /tasks 目前只有推薦王；以 type 取而不是取第一個，日後多了任務不會換錯卡。
   const currentTask = task.tasks.find((t) => t.type === 'monthly_king');
@@ -119,11 +118,11 @@ export function MemberDashboard() {
   const listingLabel = () => {
     if (listingLoading) return '刊登管理：讀取中';
     if (listingError) return '刊登管理：暫時無法取得刊登狀態';
-    if (!listing) return '刊登管理：尚未建立刊登，立即刊登';
+    if (!listing) return '刊登管理：我的刊登 尚未刊登，立即刊登';
     return [
-      `刊登管理：${listing.name}`,
-      memberUntil && `會籍至 ${memberUntil}`,
-      listingHidden && '已隱藏',
+      `刊登管理：我的刊登 ${listing.name}`,
+      listing.category,
+      !isLoading && listingHidden && '已隱藏',
     ]
       .filter(Boolean)
       .join('，');
@@ -187,25 +186,32 @@ export function MemberDashboard() {
             icon={Settings}
             ariaLabel={listingLabel()}
             loading={listingLoading}
+            // 與推薦格同版式：第四行走 action 貼底，兩張相鄰卡的鈕／徽章同高。
+            // 未刊登＝立即刊登（真連結，連結外）；已刊登＝已隱藏＋類別徽章。
+            action={
+              listingLoading || listingError ? undefined : listing ? (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {!isLoading && listingHidden && <Badge variant="warning-subtle">已隱藏</Badge>}
+                  <CategoryBadge category={listing.category} className="min-w-0 shrink" />
+                </div>
+              ) : (
+                <Link
+                  to="/service-providers/create"
+                  className={cn(buttonVariants({ tone: 'secondary', size: 'sm' }), 'w-full')}
+                >
+                  立即刊登
+                </Link>
+              )
+            }
           >
             {listingError ? (
               <StatCardError>暫時無法取得刊登狀態</StatCardError>
-            ) : listing ? (
-              <>
-                <p className="truncate text-lg font-semibold text-foreground">{listing.name}</p>
-                {isLoading ? null : (
-                  <>
-                    {memberUntil && (
-                      <p className="text-xs text-muted-foreground">會籍至 {memberUntil}</p>
-                    )}
-                    {listingHidden && <Badge variant="warning-subtle">已隱藏</Badge>}
-                  </>
-                )}
-              </>
             ) : (
               <>
-                <p className="text-base font-semibold text-foreground">尚未建立刊登</p>
-                <StatCardAction>立即刊登</StatCardAction>
+                <p className="text-xs text-muted-foreground">我的刊登</p>
+                <p className="truncate text-lg font-semibold text-foreground">
+                  {listing ? listing.name : '尚未刊登'}
+                </p>
               </>
             )}
           </DashboardStatCard>
