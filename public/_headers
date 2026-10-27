@@ -25,3 +25,32 @@
 # 資產檔名帶內容 hash，改動必換名，因此可以放心長快取。
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# 私密／功能頁不該進搜尋結果（robots.txt 只擋爬取，noindex 才擋索引）。
+# 這些路徑不與上面的 /assets/* 重疊，不會觸發「同標頭重複宣告」。
+/admin*
+  X-Robots-Tag: noindex
+/dashboard*
+  X-Robots-Tag: noindex
+/auth/*
+  X-Robots-Tag: noindex
+/payment/*
+  X-Robots-Tag: noindex
+/rewards*
+  X-Robots-Tag: noindex
+/tasks*
+  X-Robots-Tag: noindex
+/referrals*
+  X-Robots-Tag: noindex
+/login
+  X-Robots-Tag: noindex
+/register
+  X-Robots-Tag: noindex
+/forgot-password
+  X-Robots-Tag: noindex
+/service-providers
+  X-Robots-Tag: noindex
+/service-providers/create
+  X-Robots-Tag: noindex
+/service-providers/edit/*
+  X-Robots-Tag: noindex

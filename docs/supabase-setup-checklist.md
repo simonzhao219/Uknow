@@ -379,6 +379,7 @@ Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 - 本模板**不含 `{{ .Token }}`**、R2 分支也不用 `{{ .ConfirmationURL }}`：連結由後端以 `FRONTEND_URL`
   組好放進 `user_metadata.referral_invite_url`，模板以 `{{ .Data.referral_invite_url }}` 讀；推薦人姓名是
   `{{ .Data.referral_invite_name }}`。`{{ if }}`／`{{ else }}` 的另一支是一般邀請文案，給非 R2 來源的邀請。
+  Dashboard 的預覽不處理 `{{ if }}`／`{{ else }}`，會同時顯示兩個分支（兩個「接受邀請」按鈕）；實際寄出只會有一個。
 - **正式站不要在 Dashboard 手動 Invite 使用者**：手動邀請的帳號沒有推薦章，點連結會走一般邀請分支。
 - Dashboard 的 OTP 效期、Site URL、Redirect URLs、SMTP 不因本模板而改；密碼強度設定維持現值（前端與
   後端的密碼規則是 8 字元＋大小寫＋數字，Supabase 端另擋外洩密碼）。

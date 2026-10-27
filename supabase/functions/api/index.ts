@@ -19,6 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
+import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
@@ -257,7 +258,9 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 // 窗口寫成乘式，規格書用分鐘／小時對照（check-spec-drift）。
 // ============================================================
 // /auth/check-email：無驗證端點、{ exists } 本身是帳號枚舉位元 → per-IP。
-const CHECK_EMAIL_RATE_MAX = 10;
+// 60／5 分鐘：現場活動 100–500 人共用同一 Wi-Fi（同一出口 IP），原 10 次會
+// 在人群湧入時誤擋真人；枚舉防線仍在（固定窗口，單 IP 5 分鐘內最多 60 次，可一次打滿）。
+export const CHECK_EMAIL_RATE_MAX = 60;
 const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
 // /members/verify：per 掃描者，每分鐘 30 次。猜 token 本來就不可行（HMAC 簽章、
 // 90 秒到期），這道防的是開放互掃後「側錄一批他人正在顯示的 QR 再批次驗證」的
@@ -302,6 +305,15 @@ export function clientIp(c: any): string {
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
     '';
   return IP_LIKE.test(ip) ? ip : 'unknown';
+}
+
+// IP 是從哪個標頭解析到的（只回標頭名稱，不回 IP 本身）。供現場尖峰時
+// 判斷限流鍵是否退化成 'unknown'（所有人共用一格）或誤用可偽造的 x-forwarded-for。
+export function clientIpSource(c: any): 'cf-connecting-ip' | 'x-forwarded-for' | 'unknown' {
+  const cf = c.req.header('cf-connecting-ip');
+  if (cf) return IP_LIKE.test(cf) ? 'cf-connecting-ip' : 'unknown';
+  const xff = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  return xff && IP_LIKE.test(xff) ? 'x-forwarded-for' : 'unknown';
 }
 
 // 回傳是否放行。限流器自身故障（RPC 錯誤）一律放行（fail-open）——
@@ -644,6 +656,7 @@ app.get('/auth/profile', profileHandler);
 app.post('/auth/check-email', async (c) => {
   // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流。
   // 鍵的前綴 `check-email:` 是 journey 重置配額的依據（e2e/journey/tools/supa.py）。
+  console.log(`[auth/check-email] ip_source=${clientIpSource(c)}`);
   const allowed = await rateLimit(
     `check-email:${clientIp(c)}`,
     CHECK_EMAIL_RATE_MAX,
@@ -2501,8 +2514,11 @@ async function resolveOrderFromPayUni(
 // 核心迴圈抽成獨立、可注入依賴的函數，方便測試（也方便之後真的接上
 // PayUni 查詢 API 時只換掉 queryFn 這個參數，不用動迴圈本身）。
 // ============================================================
+// queryFailure：PayUni 查詢層本身沒回 SUCCESS（這輪根本沒問到）。沒有這個
+// 欄位時，「沒問到」與「問到了、交易未付款」同形，迴圈無從告警——滿天數
+// 的卡單會被靜默標 expired（issue #395）。
 type QueryResult =
-  | { stillProcessing: true }
+  | { stillProcessing: true; queryFailure?: { status: string; message: string } }
   | { stillProcessing: false; data: Record<string, string> };
 
 export async function reconcilePendingOrders(
@@ -2548,7 +2564,38 @@ export async function reconcilePendingOrders(
     try {
       const result = await queryFn(order.transaction_id!);
       if (result.stillProcessing) {
+        const failure = result.queryFailure;
+        if (failure) {
+          // 去重鍵用 PayUni 的 Status＋Message 而非訂單號：參數錯這類系統層
+          // 故障會讓整批卡單撞同一組，只該留一筆；各訂單的後果由下方 expire
+          // 紀錄按訂單號記。Message 也進鍵：碼表未經 sandbox 驗證，同一
+          // Status 可能配不同 Message，「查無此單」與「參數錯」必須分得開。
+          // error 級：每組最多一筆，不會因棄付單數量而洗版。
+          await logSystemAlertOnce(
+            'payuni-query',
+            {
+              reason: 'query_not_success',
+              payuniStatus: failure.status,
+              payuniMessage: failure.message,
+            },
+            { sampleTradeNo: order.transaction_id },
+            'PayUni 交易查詢層未回 SUCCESS，對帳無法判定訂單狀態',
+            'error',
+          );
+        }
         if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+          // 查詢層失敗下標的是「沒驗證過」的終態，可能是實付但 webhook 漏接
+          // 的單 → 標之前先告警（轉移條件不變）。查詢成功且確認未付款是常態
+          // 的棄付收尾，不告警：status='expired' 本身就是可查紀錄，每張留一
+          // 筆會把真告警擠出 admin 告警頁（預設只列未解決的前 100 筆）。
+          if (failure) {
+            await logSystemAlertOnce(
+              'reconcile-pending-payments',
+              { reason: 'expired_query_failed', tradeNo: order.transaction_id! },
+              { payuniStatus: failure.status, payuniMessage: failure.message },
+              '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付',
+            );
+          }
           const { error: expireErr } = await client
             .from('payment_orders')
             .update({ status: 'expired' })
@@ -2600,7 +2647,7 @@ export async function reconcilePendingOrders(
 //     絕不拿來標記訂單，寧可下一輪再查。
 // ⚠️ 欄位名稱以 PayUni 官方文件為準；上線前先在 sandbox 用
 // workflow_dispatch 手動驗證一輪，確認無誤再打開 cron。
-async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
+export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
   const config = payuniConfig();
 
   const encryptInfo = await encryptPayUni(
@@ -2629,9 +2676,16 @@ async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> 
   const raw = await res.json().catch(() => null) as Record<string, string> | null;
   if (!raw) throw new Error('PayUni 查詢回應不是 JSON');
 
-  // 查詢層失敗（例如查無交易）：不代表付款失敗，只代表這輪還無法判定。
+  // 查詢層失敗（例如查無交易、參數錯）：不代表付款失敗，只代表這輪還無法
+  // 判定——但要把 PayUni 的原文帶出去，由對帳迴圈告警（issue #395）。
   if (raw.Status !== 'SUCCESS' || !raw.EncryptInfo) {
-    return { stillProcessing: true };
+    return {
+      stillProcessing: true,
+      queryFailure: {
+        status: String(raw.Status ?? ''),
+        message: String(raw.Message ?? (raw.Status === 'SUCCESS' ? '回應缺少 EncryptInfo' : '')),
+      },
+    };
   }
 
   const decrypted = Object.fromEntries(
@@ -2702,6 +2756,42 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);
   }
+});
+
+// ============================================================
+// GET /internal/system-alerts/recent?minutes=N
+// 給 reconcile-payments.yml 每小時呼叫，把「過去 N 分鐘內新增的 error 告警」
+// 推到 LINE（見 .github/actions/notify）。用時間窗代替 notified_at 欄：
+// 10/29 起凍結 migration，且 at-least-once（寧可重複推也不漏）。
+// 驗證沿用 RECONCILE_SECRET；只回 id／source／message／created_at，
+// 不回 context（可能含訂單／使用者識別）。
+// ============================================================
+const RECENT_ALERTS_MAX_MINUTES = 1440;
+const RECENT_ALERTS_LIMIT = 20;
+
+app.get('/internal/system-alerts/recent', async (c) => {
+  const secret = Deno.env.get('RECONCILE_SECRET');
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const minutes = Number(c.req.query('minutes'));
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > RECENT_ALERTS_MAX_MINUTES) {
+    return c.json({ error: `minutes 必須是 1–${RECENT_ALERTS_MAX_MINUTES} 的整數` }, 400);
+  }
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+  const { data, count, error } = await sb().from('system_alerts')
+    .select('id, source, message, created_at', { count: 'exact' })
+    .eq('severity', 'error')
+    .gte('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(RECENT_ALERTS_LIMIT);
+  if (error) {
+    console.error('[internal/system-alerts/recent] 查詢失敗:', error);
+    return c.json({ error: { message: '查詢告警失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { alerts: data ?? [], total: count ?? 0, since } });
 });
 
 // ============================================================
@@ -4190,7 +4280,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
 
 // ============================================================
 // POST /listings/upload-photo
-// 上傳刊登照片至 Supabase Storage (bucket: listings)
+// 上傳刊登照片至 Supabase Storage (bucket: make-5c6718b9-listings-photos，常數見 listing-photos.ts)
 // ============================================================
 app.post('/listings/upload-photo', async (c) => {
   const user = await requireAuth(c);
@@ -4219,7 +4309,7 @@ app.post('/listings/upload-photo', async (c) => {
 
   const client = sb();
   const { data: upload, error: uploadErr } = await client.storage
-    .from('make-5c6718b9-listings-photos')
+    .from(LISTING_PHOTOS_BUCKET)
     .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: false });
 
   if (uploadErr) {
@@ -4227,12 +4317,56 @@ app.post('/listings/upload-photo', async (c) => {
     return c.json({ error: uploadErr.message || '上傳失敗' }, 500);
   }
 
-  const { data: urlData } = client.storage.from('make-5c6718b9-listings-photos').getPublicUrl(
-    upload.path,
-  );
-
-  return c.json({ success: true, photoUrl: urlData.publicUrl });
+  return c.json({ success: true, photoUrl: listingPhotoPublicUrl(upload.path) });
 });
+
+// ============================================================
+// DELETE /listings/photos、DELETE /listings/:id
+// 刊登照片的 Storage 清理（條款十之一撤除後下架）——處理函式在 listing-photos.ts，
+// 依賴在這裡組一次注入。**註冊順序不可顛倒**：/listings/photos 必須先於 /listings/:id，
+// 否則 "photos" 會被當成 :id（listing-photos.unit.test.ts 讀原文把關）。
+// ============================================================
+// upload-photo 回傳的 URL 與清理的引用檢查必須同一個函式產生——兩邊各組各的，
+// 格式差一點引用檢查就靜默失效而誤刪（listing-photos.test.ts 釘住格式）。
+export function listingPhotoPublicUrl(path: string): string {
+  return sb().storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+export function listingPhotoDeps() {
+  return {
+    requireAuth,
+    rateLimit,
+    cleanup: {
+      publicUrlOf: listingPhotoPublicUrl,
+      // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
+      findReferencedUrls: async (urls: string[]) => {
+        const { data, error } = await sb().from('listings').select('photos').overlaps(
+          'photos',
+          urls,
+        );
+        if (error) throw new Error(error.message);
+        const wanted = new Set(urls);
+        return (data ?? []).flatMap((row: { photos: string[] | null }) => row.photos ?? [])
+          .filter((u: string) => wanted.has(u));
+      },
+      removeObjects: async (paths: string[]) => {
+        const { data, error } = await sb().storage.from(LISTING_PHOTOS_BUCKET).remove(paths);
+        if (error) throw new Error(error.message);
+        return (data ?? []).map((o: { name: string }) => o.name);
+      },
+    },
+    deleteListingRow: async (id: string, userId: string) => {
+      const { data, error } = await sb().from('listings').delete().eq('id', id)
+        .eq('user_id', userId).select('photos');
+      if (error) throw new Error(error.message);
+      const row = data?.[0];
+      return row ? { photos: (row.photos as string[] | null) ?? [] } : null;
+    },
+    warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+  };
+}
+const listingPhotoHandlers = createListingPhotoHandlers(listingPhotoDeps());
+app.delete('/listings/photos', listingPhotoHandlers.deletePhotos);
+app.delete('/listings/:id', listingPhotoHandlers.deleteListing);
 
 // ============================================================
 // GET /referrals/debug/:userId  (admin only)

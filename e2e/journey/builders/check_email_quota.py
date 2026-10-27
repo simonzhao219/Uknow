@@ -1,9 +1,9 @@
-"""check-email 每 IP 限流(10 次 / 5 分)的測試側配額管理。
+"""check-email 每 IP 限流(60 次 / 5 分)的測試側配額管理。
 
 **正式碼的限流不動。** 它是帳號枚舉防線(`POST /auth/check-email` 回的
 `{exists}` 本身就是一個位元),把它調鬆等於在測試裡驗一個線上不存在的
 系統。要處理的是測試環境的前提:整套 journey 從 runner 的**同一個 IP**
-出發,那 10 次配額是**全 session 共用**的。
+出發,那 60 次配額是**全 session 共用**的。
 
 既有的重置有三處——`steps/conftest.py` 的 per-scenario autouse、
 `org_builder` 的建樹波次之間、`f70` 的 `_ensure_actor`。它們保證的都是

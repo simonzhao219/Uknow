@@ -24,7 +24,7 @@ import { useBackNavigation } from '../hooks/useBackNavigation';
 import { useRetryFocus } from '../hooks/useRetryFocus';
 import { useSubscription } from '../hooks/useSubscription';
 import { useUserListing } from '../hooks/useUserListing';
-import { createClient } from '../utils/supabase/client';
+import { deleteListing } from '../utils/listingPhotosApi';
 import { formatTwDate } from '../utils/twDate';
 import { listingVisibility } from '../utils/listingVisibility';
 
@@ -44,7 +44,6 @@ export function ServiceProviderManagement() {
   // ✅ 新規格：單一刊登模式。取得／快取／revalidate 全部收斂在 useUserListing，
   // 與會員中心的刊登卡片共用同一份邏輯與同一個快取鍵。
   const { listing, loading, error: listingError, refetch: refetchListing } = useUserListing();
-  const supabase = createClient();
   const { subscriptionData } = useSubscription();
   const visibility = listingVisibility(subscriptionData);
   const memberUntil = subscriptionData?.activeUntil
@@ -67,20 +66,10 @@ export function ServiceProviderManagement() {
     try {
       console.log(`[刪除刊登] 開始刪除: ${listing.id}`);
 
-      const { error: deleteError } = await supabase
-        .from('listings')
-        .delete()
-        .eq('id', listing.id)
-        .eq('user_id', user.id);
-
-      if (deleteError) throw new Error(deleteError.message || '刪除失敗');
+      // 刪列與 Storage 清理都由後端做（DELETE /listings/:id）；已刪除（重送）視同成功。
+      await deleteListing(listing.id);
       console.log(`[刪除刊登] ✅ 成功`);
 
-      // 0 列不是 error——被 RLS 的 USING 過濾掉時 PostgREST 回 200/204 而非
-      // 403，所以下面這句成功訊息在「沒刪到任何列」時也會顯示。
-      // 目前安全，因為 listing.id 恆為 useUserListing()（.eq('user_id', userId)）
-      // 自我限定查詢的結果，本頁路由也沒有 :id 參數可供指定他人刊登；
-      // **若未來改成接受外部傳入的 id，必須重新檢查這個假設**。
       showToast('刊登已成功刪除', 'success');
 
       // ✅ 重新獲取（應該會變成 null）——refetch 成功時會覆寫快取，
@@ -274,10 +263,11 @@ export function ServiceProviderManagement() {
                       size="sm"
                       onClick={() => setShowDeleteConfirm(true)}
                       disabled={isDeleting}
-                      aria-label="刪除刊登"
+                      aria-busy={isDeleting}
+                      aria-label={isDeleting ? '刪除中…' : '刪除刊登'}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      刪除
+                      {isDeleting ? '刪除中…' : '刪除'}
                     </Button>
                   </div>
                 </div>

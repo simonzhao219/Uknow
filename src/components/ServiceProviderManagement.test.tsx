@@ -12,7 +12,13 @@ const { UserCtx, state } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return {
     UserCtx: createContext<any>(null),
-    state: { listing: {} as any, subscription: {} as any },
+    state: {
+      listing: {} as any,
+      subscription: {} as any,
+      showToast: vi.fn(),
+      showError: vi.fn(),
+      deleteListing: vi.fn(),
+    },
   };
 });
 
@@ -21,7 +27,10 @@ vi.mock('../hooks/useBackNavigation', () => ({ useBackNavigation: () => vi.fn() 
 vi.mock('../hooks/useUserListing', () => ({ useUserListing: () => state.listing }));
 vi.mock('../hooks/useSubscription', () => ({ useSubscription: () => state.subscription }));
 vi.mock('./notifications/NotificationContext', () => ({
-  useNotification: () => ({ showToast: vi.fn(), showError: vi.fn() }),
+  useNotification: () => ({ showToast: state.showToast, showError: state.showError }),
+}));
+vi.mock('../utils/listingPhotosApi', () => ({
+  deleteListing: (...args: unknown[]) => state.deleteListing(...args),
 }));
 vi.mock('../utils/supabase/client', () => ({ createClient: () => ({}) }));
 
@@ -64,7 +73,12 @@ function tree() {
   );
 }
 
-beforeEach(setLoaded);
+beforeEach(() => {
+  setLoaded();
+  state.showToast.mockReset();
+  state.showError.mockReset();
+  state.deleteListing.mockReset();
+});
 afterEach(cleanup);
 
 describe('ServiceProviderManagement 刊登狀態', () => {
@@ -202,5 +216,52 @@ describe('ServiceProviderManagement 讀取失敗', () => {
     state.listing = { listing: null, loading: true, error: null, refetch: vi.fn() };
     render(tree());
     expect(screen.getByText('載入中...')).toBeTruthy();
+  });
+});
+
+describe('ServiceProviderManagement 刪除刊登', () => {
+  const confirmDelete = async () => {
+    fireEvent.click(screen.getByRole('button', { name: '刪除刊登' }));
+    const dialog = screen.getByRole('alertdialog');
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: '確認刪除' }));
+    });
+  };
+
+  it('確認後走後端 deleteListing，成功才 refetch 並顯示成功訊息', async () => {
+    state.deleteListing.mockResolvedValue('deleted');
+    render(tree());
+    await confirmDelete();
+    expect(state.deleteListing).toHaveBeenCalledWith('l1');
+    expect(state.listing.refetch).toHaveBeenCalledTimes(1);
+    expect(state.showToast).toHaveBeenCalledWith('刊登已成功刪除', 'success');
+    expect(state.showError).not.toHaveBeenCalled();
+  });
+
+  it('刪除進行中按鈕顯示刪除中並標示忙碌，不可再點', async () => {
+    state.deleteListing.mockReturnValue(new Promise(() => {}));
+    render(tree());
+    await confirmDelete();
+    const busy = screen.getByRole('button', { name: '刪除中…' }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.textContent).toContain('刪除中…');
+  });
+
+  it('後端回已刪除（重送冪等）時照樣 refetch，不顯示失敗', async () => {
+    state.deleteListing.mockResolvedValue('already-deleted');
+    render(tree());
+    await confirmDelete();
+    expect(state.listing.refetch).toHaveBeenCalledTimes(1);
+    expect(state.showError).not.toHaveBeenCalled();
+  });
+
+  it('後端失敗時顯示刪除失敗與原因，不 refetch', async () => {
+    state.deleteListing.mockRejectedValue(new Error('刪除失敗'));
+    render(tree());
+    await confirmDelete();
+    expect(state.showError).toHaveBeenCalledWith('刪除失敗', '刪除失敗');
+    expect(state.listing.refetch).not.toHaveBeenCalled();
+    expect(state.showToast).not.toHaveBeenCalledWith('刊登已成功刪除', 'success');
   });
 });

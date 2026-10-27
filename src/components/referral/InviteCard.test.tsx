@@ -173,7 +173,8 @@ describe('InviteCard 送出', () => {
     await waitFor(() => expect(liveRegion().textContent).toBe(text));
     expect(mainButton().textContent).toBe('快速分享');
     expect(emailInput().value).toBe('Friend@Example.com ');
-    expect((consentBox() as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
+    // 主鈕換成快速分享時沒有對應的寄送動作，同意聲明一併收起（勾選狀態保留）。
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
   it.each([
@@ -236,7 +237,8 @@ describe('InviteCard 送出', () => {
     fireEvent.click(mainButton());
     await waitFor(() => expect(mainButton().textContent).toBe('快速分享'));
     fireEvent.change(emailInput(), { target: { value: ' A@B.CO' } });
-    expect(consentBox().getAttribute('aria-checked')).toBe('true');
+    expect(mainButton().textContent).toBe('快速分享');
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });
 
