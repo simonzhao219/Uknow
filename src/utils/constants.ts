@@ -552,4 +552,4 @@ export const TAIWAN_BANKS = [
 ];
 
 /** 取景對話框微調鈕一次移動幾 px。 */
-export const PHOTO_NUDGE_STEP_PX = 10;
+export const PHOTO_NUDGE_STEP_PX = 4;

@@ -12,6 +12,7 @@ import Cropper from 'react-easy-crop';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useOverlayBackClose } from '../../hooks/useOverlayBackClose';
 import type { PixelCrop, Size } from '../../utils/imageGeometry';
+import { PHOTO_NUDGE_STEP_PX } from '../../utils/constants';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -24,7 +25,7 @@ export interface PhotoCropDialogProps {
 }
 
 /** 微調一次移動幾 px（react-easy-crop 的 crop 是媒體相對取景框的位移）。 */
-const NUDGE_STEP = 10;
+const NUDGE_STEP = PHOTO_NUDGE_STEP_PX;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 
