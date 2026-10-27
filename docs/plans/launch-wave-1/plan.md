@@ -261,6 +261,7 @@ commit;
 | 10/27 16:00 | #409 預審（循環 6–8）：P0 無、2 P1（SIGNED_OUT 清掉使用中 token；T1 撞檔面要記交接）已交 R2 session 在循環 11 前修。#406 P1 已修（`9da630f`）複核通過、ready；#410 CI 綠、ready；#407 五點已修（`4978574`）複核中 | 等 #409 循環 9–11；窗口 PR #405／#406／#410（#407 待複核）全部等晉升後合 |
 | 10/27 16:40 | 業主在演練分支 SQL Editor 跑完 §4 刪除段（`8048876, false`）；主 session 跑零殘留檢查後刪分支。業主審過 #404、已在 P1a session 打 /tdd-implement（PR 1 後端清理先做）；兩個空 session 已封存。**今晚正式站清資料的實際路徑確定：乾跑與零殘留由主 session 用 MCP 跑，刪除段由業主在 SQL Editor 貼** | 等 #409 循環 9–11 |
 | 10/27 16:50 | 零殘留檢查全 0、`reward_config` 1 列、序列 `8048876,false` → 演練分支已刪。業主確認正式站每日 PHYSICAL 備份（最新 10/26 22:44 UTC＝10/27 06:44 台北），Storage 物件不在備份內（§4 已知）；裁決 21 PITR 不開。手把手步驟（寄信上限 600、SMTP 確認、LINE channel 與兩把 Secret）已交業主 | 等業主回 4b／4c／5；等 #409 |
+| 10/27 17:05 | 業主完成：寄信上限調 600／小時（Rate Limits 頁；原值待業主補）；自訂 SMTP 確認（`admin@uknow.com.tw` 經 `smtp.gmail.com:587`，Dashboard 的「personal provider」黃色警告是制式提醒，§5 已算入 2,000 封／日）；LINE Messaging API 綁在既有官方帳號「Simon」（@693hcfug，輕用量 200 則／月）、Provider「Uknow」，兩把 Secret `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO` 已放 GitHub；其他 Auth 限流（sign-up 300／5 分／IP、OTP 300／5 分／IP）對現場共用 IP 足夠，不動 | 推播實測（curl 或 #406 合併後 workflow_dispatch） |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -279,10 +280,10 @@ commit;
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
-| 2 | §7 第 6–8 步：~~備份確認~~ ✅ 16:50；寄信上限 600、SMTP 確認（進行中）；模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
+| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認~~ ✅；剩模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
-| 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
+| 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
 | 8 | ~~核准建拋棄式分支~~ 業主自己在 Dashboard 開了、演練完成 | ✅ |
 | 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
