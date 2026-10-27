@@ -41,7 +41,8 @@ const INVITE_NOTICES = {
   undecodable: '邀請連結無法辨識，請推薦人再寄一次，或直接註冊',
   invalid_token:
     '邀請連結無效：請回到信件重新點一次連結並確認連結完整（可能被 LINE 或郵件截斷），或請推薦人再寄一次；若你已設定過密碼請直接登入',
-  expired: `邀請連結已過期（${REFERRAL_INVITE_TOKEN_TTL_SECONDS / (24 * 60 * 60)} 天內有效）。請推薦人再寄一次；若你已設定過密碼請直接登入，還沒有請點「忘記密碼」設定`,
+  // 不指向「忘記密碼」：後端在查帳號前就判 expired，而第 8 天的空殼多半已被 purge，忘記密碼是靜默死路。
+  expired: `邀請連結已過期（${REFERRAL_INVITE_TOKEN_TTL_SECONDS / (24 * 60 * 60)} 天內有效），請推薦人再寄一次；若你已設定過密碼請直接登入`,
   gone: '這份邀請已失效，請推薦人再寄一次；若你已設定過密碼請直接登入',
   already_accepted: '此邀請已完成設定，請用先前設定的密碼登入',
   login_failed: '密碼已設定完成，請用剛設定的密碼登入',
@@ -92,7 +93,6 @@ export function AuthPage() {
   const [notice, setNotice] = useState<string | null>(() =>
     inviteEntry?.kind === 'undecodable' ? INVITE_NOTICES.undecodable : null,
   );
-  const noticeRef = useRef<HTMLParagraphElement>(null);
   // 邀請入口已依 session 結果分流過（只做一次）；用 state 讓骨架與步驟在同一次 render 切換。
   const [inviteEntryResolved, setInviteEntryResolved] = useState(false);
   const inviteAccept = useInviteAccept({ supabase, navigate, showToast });
@@ -131,10 +131,11 @@ export function AuthPage() {
     setStep(2);
   }, [inviteEntry, sessionState, showToast, inviteEntryResolved]);
 
-  // 帶提示落地時焦點給提示（不 autoFocus 欄位）。
-  useEffect(() => {
-    if (notice) noticeRef.current?.focus();
-  }, [notice]);
+  // 已完成設定／密碼已設好這兩句是中性訊息（不是錯誤）：中性樣式、以 status 宣告。
+  // 錯誤用 alert。兩者都靠 live role 宣告、不再搬焦點（role 加聚焦會讓讀報器念兩次）；
+  // 帶提示落地時欄位也不 autoFocus，提示在欄位上方、先被讀到。
+  const noticeIsNeutral =
+    notice === INVITE_NOTICES.already_accepted || notice === INVITE_NOTICES.login_failed;
 
   const goToStep = (next: number) => {
     setNotice(null);
@@ -156,6 +157,7 @@ export function AuthPage() {
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
   // Email 邀請入口依這個 effect 的結果分流（sessionState 三態＋4 秒逾時＋清理後寫回邀請 token）。
   // T1（登入狀態信任）改這段時必須保留這三件事——見 friction-log 2026-10-27 R2 交接。
+  // `/auth/profile` 5xx 等暫時性故障歸 signed_out（不登出、保留邀請 token）。
   useEffect(() => {
     let settled = false;
     const settle = (state: 'signed_in' | 'signed_out') => {
@@ -200,8 +202,12 @@ export function AuthPage() {
             localStorage.removeItem('pendingSession');
             setUser(null);
             settle('signed_out');
+          } else if (response.status >= 500) {
+            // 暫時性故障：照既有慣例保留 session（不登出），但邀請入口歸 signed_out——
+            // 判成 signed_in 會清掉 token、顯示「你已登入」，而 App 其實沒拿到 user。
+            settle('signed_out');
           } else {
-            // ✅ Session 有效（或非認證性錯誤，照既有慣例保留 session），不主動重定向
+            // ✅ Session 有效（或其他非認證性回應，照既有慣例保留 session），不主動重定向
             // 讓 App.tsx 的全局邏輯處理重定向
             console.log('AuthPage: Valid session found, letting App.tsx handle redirection');
             settle('signed_in');
@@ -552,10 +558,12 @@ export function AuthPage() {
         <CardContent className="space-y-4">
           {notice && (
             <p
-              ref={noticeRef}
-              role="alert"
-              tabIndex={-1}
-              className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive outline-none"
+              role={noticeIsNeutral ? 'status' : 'alert'}
+              className={
+                noticeIsNeutral
+                  ? 'rounded bg-muted p-3 text-sm'
+                  : 'rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive'
+              }
             >
               {notice}
             </p>
