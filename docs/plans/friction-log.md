@@ -3199,3 +3199,7 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **交接給 T1（登入狀態信任）**：R2 前端重寫了 `AuthPage.tsx` 的既有 session 檢查 effect——產出 `sessionState` 三態
   （`checking`／`signed_in`／`signed_out`）、4 秒逾時視為未登入、清理過期 session 的 `signOut` 之後寫回邀請 token（否則
   App.tsx 的 SIGNED_OUT 會清掉、重新整理掉回 Step 1）。T1 規劃與 rebase 時以這版為準，三件事都要保留；effect 上方有同句註解。
+- **背景 commit × 同時改檔（listing-photo-pipeline PR 2）**：紅燈 commit 以背景執行（pre-commit 約 2 分鐘）時，`git add -A src` 已把當下工作樹的半成品實作一起暫存；
+  幸好 typecheck 擋下才沒把實作混進紅燈。紅燈 commit 前先把實作移出工作樹（或等 commit 完再動 src）。
+- **失敗的動態 import 會被瀏覽器快取**：同 URL 再 `import()` 立刻失敗，原地「重新載入」永遠不會成功（e2e 實測）；`lazyWithRetry` 的「重試一次」對路由 chunk 同樣無效，第 2 波驗證後簡化。
+- **審查與紅燈的順序**：返回鍵時序用全域計數器解會把測試間狀態洩漏出去；改變結構（對話框常駐）讓問題不存在，比在 hook 裡賭 popstate 延遲可靠。
