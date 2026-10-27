@@ -253,3 +253,18 @@ jobs:
                 '重跑：Actions → Deploy Supabase Edge Functions → Re-run failed jobs',
               ].join('\n'),
             });
+
+      # 告警送到人：issue 只有「看 GitHub 的人」才會看到。main 失敗＝正式站
+      # 可能停在舊版（P1）；develop 失敗＝晉升前必須修（P2，最小版同樣推 LINE）。
+      # continue-on-error：通知本身壞了不得讓這個 job 多一個紅燈。
+      - name: 失敗時推送 LINE 告警
+        if: failure()
+        continue-on-error: true
+        uses: ./.github/actions/notify
+        with:
+          level: ${{ github.event.workflow_run.head_branch == 'main' && 'P1' || 'P2' }}
+          title: ${{ github.event.workflow_run.head_branch == 'main' && '正式站' || 'develop' }} Edge Function 部署失敗
+          body: 分支 ${{ github.event.workflow_run.head_branch }} @ ${{ github.event.workflow_run.head_sha }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}

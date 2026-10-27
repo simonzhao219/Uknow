@@ -2717,6 +2717,42 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
 });
 
 // ============================================================
+// GET /internal/system-alerts/recent?minutes=N
+// 給 reconcile-payments.yml 每小時呼叫，把「過去 N 分鐘內新增的 error 告警」
+// 推到 LINE（見 .github/actions/notify）。用時間窗代替 notified_at 欄：
+// 10/29 起凍結 migration，且 at-least-once（寧可重複推也不漏）。
+// 驗證沿用 RECONCILE_SECRET；只回 id／source／message／created_at，
+// 不回 context（可能含訂單／使用者識別）。
+// ============================================================
+const RECENT_ALERTS_MAX_MINUTES = 1440;
+const RECENT_ALERTS_LIMIT = 20;
+
+app.get('/internal/system-alerts/recent', async (c) => {
+  const secret = Deno.env.get('RECONCILE_SECRET');
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const minutes = Number(c.req.query('minutes'));
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > RECENT_ALERTS_MAX_MINUTES) {
+    return c.json({ error: `minutes 必須是 1–${RECENT_ALERTS_MAX_MINUTES} 的整數` }, 400);
+  }
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+  const { data, count, error } = await sb().from('system_alerts')
+    .select('id, source, message, created_at', { count: 'exact' })
+    .eq('severity', 'error')
+    .gte('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(RECENT_ALERTS_LIMIT);
+  if (error) {
+    console.error('[internal/system-alerts/recent] 查詢失敗:', error);
+    return c.json({ error: { message: '查詢告警失敗' } }, 500);
+  }
+  return c.json({ success: true, data: { alerts: data ?? [], total: count ?? 0, since } });
+});
+
+// ============================================================
 // 解密並驗證 PayUni form-data（notify webhook 與 return 導回共用）
 // ============================================================
 async function decryptPayUniFormBody(

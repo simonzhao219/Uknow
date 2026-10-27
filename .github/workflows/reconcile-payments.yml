@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: read   # 告警掃描要查上一次成功 run 的時間(workflow runs API)
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4
@@ -106,6 +107,74 @@ jobs:
               data["checked"], data["resolved"], data["stillPending"], data.get("expired", 0)))
           ' >> "$GITHUB_STEP_SUMMARY"
 
+      # system_alerts 新 error → LINE。用時間窗代替 notified_at 欄（10/29 起凍結
+      # migration）：窗口＝上一次成功 run 的建立時間至今（排程會被 GitHub 丟棄，
+      # 固定 N 分鐘會在間隔拉長時漏掉），上限 24 小時，找不到上一次就看 70 分鐘。
+      # at-least-once：寧可偶爾重複推，也不漏。對帳本身紅了也要掃（always）。
+      - name: 查詢近期 error 告警
+        id: recent-alerts
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_BASE: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+        run: |
+          set -uo pipefail
+          prev="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/reconcile-payments.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].created_at // empty' 2>/tmp/gh-err.txt || true)"
+          minutes=70
+          if [ -z "$prev" ]; then
+            echo "::warning::查不到上一次成功 run 的時間（$(head -c 200 /tmp/gh-err.txt 2>/dev/null)），窗口退回固定 ${minutes} 分鐘；排程被丟棄時可能漏告警。"
+          else
+            minutes="$(python3 -c "
+          import datetime, math, sys
+          p = datetime.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
+          m = math.ceil((datetime.datetime.now(datetime.timezone.utc) - p).total_seconds() / 60) + 1
+          print(min(max(m, 1), 1440))  # 上限同端點 RECENT_ALERTS_MAX_MINUTES
+          " "$prev")"
+          fi
+          code="$(curl -sS -o /tmp/alerts.json -w '%{http_code}' --max-time 30 \
+            "$API_BASE/internal/system-alerts/recent?minutes=$minutes" \
+            -H "x-internal-secret: $RECONCILE_SECRET" || echo 000)"
+          if [ "$code" = "404" ]; then
+            # 端點隨後端部署才存在；晉升後、正式站部署核准前會有一段空窗。
+            echo "::warning::告警查詢端點尚未部署（404），本輪略過。"
+            echo "has_alerts=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$code" != "200" ]; then
+            if [ "$code" = "401" ]; then
+              echo "::error::告警查詢被拒（401）：RECONCILE_SECRET 與後端不一致"
+            else
+              echo "::error::告警查詢失敗（HTTP $code，000＝連線失敗）：$(head -c 300 /tmp/alerts.json)"
+            fi
+            exit 1
+          fi
+          python3 - "$minutes" >> "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          d = json.load(open('/tmp/alerts.json'))
+          if not d.get('success'):
+              sys.exit('::error::告警查詢回報失敗：' + json.dumps(d, ensure_ascii=False)[:300])
+          alerts = d['data']['alerts']
+          total = d['data']['total']
+          print('has_alerts=%s' % ('true' if alerts else 'false'))
+          # 只放來源與數量，不放 id 以外的內容；message 可能是自由文字，截短。
+          lines = ['%s：%s' % (a['source'], str(a['message'])[:60]) for a in alerts[:5]]
+          body = '過去 %s 分鐘共 %s 筆 error。\n%s' % (sys.argv[1], total, '\n'.join(lines))
+          print('body<<EOF\n%s\nEOF' % body)
+          PY
+
+      - name: 有新 error 告警時推送 LINE
+        if: ${{ !cancelled() && steps.recent-alerts.outputs.has_alerts == 'true' }}
+        continue-on-error: true
+        uses: ./.github/actions/notify
+        with:
+          level: P1
+          title: 正式站 system_alerts 有新的 error
+          body: ${{ steps.recent-alerts.outputs.body }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}
+
       - name: 失敗時開 issue
         if: failure()
         uses: actions/github-script@v7
@@ -137,3 +206,15 @@ jobs:
                 '排除後關閉此 issue，排程會在下個整點自動恢復。',
               ].join('\n'),
             });
+
+      - name: 失敗時推送 LINE 告警
+        if: failure()
+        continue-on-error: true
+        uses: ./.github/actions/notify
+        with:
+          level: P1
+          title: 正式站付款對帳排程失敗
+          body: 卡在 pending 的訂單不會被自動撿回
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}
