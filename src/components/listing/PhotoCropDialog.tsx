@@ -7,7 +7,7 @@
  * 佇列有多張時對話框**常駐**（返回鍵歷史項只在整個佇列開始／結束時各一次），
  * 換張只重置內部取景區（CropBody 以 previewUrl 為 key），避免卸載重掛造成的 history.back 時序問題。
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Cropper from 'react-easy-crop';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useOverlayBackClose } from '../../hooks/useOverlayBackClose';
@@ -71,6 +71,21 @@ function CropBody({
   const area = useRef<PixelCrop | null>(null);
   const natural = useRef<Size | null>(null);
   const confirmed = useRef(false);
+  const frame = useRef<HTMLDivElement>(null);
+  // 取景框＝整個方框：量容器邊長交給 Cropper，不讓它依「媒體 contain 後的尺寸」自己算
+  // （直式照片會變成左右留灰邊、上下溢出框外）。
+  const [side, setSide] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.round(entry.contentRect.width);
+      if (width > 0) setSide(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const nudge = (dx: number, dy: number) => setCrop((c) => ({ x: c.x + dx, y: c.y + dy }));
 
@@ -82,7 +97,10 @@ function CropBody({
 
   return (
     <>
-      <div className="relative mx-auto aspect-square w-[min(100%,45dvh)] overflow-hidden rounded-md bg-muted">
+      <div
+        ref={frame}
+        className="relative mx-auto aspect-square w-[min(100%,45dvh)] overflow-hidden rounded-md bg-muted"
+      >
         <Cropper
           image={previewUrl}
           crop={crop}
@@ -90,6 +108,8 @@ function CropBody({
           minZoom={MIN_ZOOM}
           maxZoom={MAX_ZOOM}
           aspect={1}
+          objectFit="cover"
+          cropSize={side ? { width: side, height: side } : undefined}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onMediaLoaded={(m) => {
