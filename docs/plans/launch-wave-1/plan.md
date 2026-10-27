@@ -262,12 +262,14 @@ commit;
 | 10/27 16:40 | 業主在演練分支 SQL Editor 跑完 §4 刪除段（`8048876, false`）；主 session 跑零殘留檢查後刪分支。業主審過 #404、已在 P1a session 打 /tdd-implement（PR 1 後端清理先做）；兩個空 session 已封存。**今晚正式站清資料的實際路徑確定：乾跑與零殘留由主 session 用 MCP 跑，刪除段由業主在 SQL Editor 貼** | 等 #409 循環 9–11 |
 | 10/27 16:50 | 零殘留檢查全 0、`reward_config` 1 列、序列 `8048876,false` → 演練分支已刪。業主確認正式站每日 PHYSICAL 備份（最新 10/26 22:44 UTC＝10/27 06:44 台北），Storage 物件不在備份內（§4 已知）；裁決 21 PITR 不開。手把手步驟（寄信上限 600、SMTP 確認、LINE channel 與兩把 Secret）已交業主 | 等業主回 4b／4c／5；等 #409 |
 | 10/27 17:05 | 業主完成：寄信上限調 600／小時（Rate Limits 頁；原值待業主補）；自訂 SMTP 確認（`admin@uknow.com.tw` 經 `smtp.gmail.com:587`，Dashboard 的「personal provider」黃色警告是制式提醒，§5 已算入 2,000 封／日）；LINE Messaging API 綁在既有官方帳號「Simon」（@693hcfug，輕用量 200 則／月）、Provider「Uknow」，兩把 Secret `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO` 已放 GitHub；其他 Auth 限流（sign-up 300／5 分／IP、OTP 300／5 分／IP）對現場共用 IP 足夠，不動 | 推播實測（curl 或 #406 合併後 workflow_dispatch） |
+| 10/27 17:12–17:40 | R2 前端 #409 完成（循環 6–11、R2-3a UI、實作審查與預審處置、規劃目錄已刪；head `eae1213` CI 綠）。五 lane 審查：P0 無；P1 兩條經反駁只剩 `expired` 文案一條成立（第 8 天才踩到、首批邀請 11/3 到期）→ follow-up `fix/invite-expired-notice`（R2 session，目標 10/28 第二次晉升）；模板保存期限句為裁決 N，維持。事實核對全綠。**#409 合併（`1471912`）** | 開晉升 PR |
+| 10/27 17:45 | **晉升 PR #411 開出**（develop→main，23 個 PR、7 支 migration；#403 主 session 文件 PR 因 ready 後 ci-ok 要重跑、不值得佔關鍵路徑，排除在本次晉升外、晉升後再合）。dispatch `journey-scheduled.yml`（develop，`pytest_expr=orgbuild or invite`）先驗 R2 的 hosted 行為，與 #411 的 journey-full 平行 | 等 journey 子集（~10–20 分）與 journey-full（30–90 分）；綠就以 merge commit 合進 main → 業主核准 production 部署 |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | #409（draft） | 循環 6–8 綠已推、文件已推；9–11 約 15:45–16:15 推完；主 session 預審 6–8 中 |
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅ 已合併 | follow-up（expired 文案、同意區收合、中性 notice、5xx 視同 signed_out）施工中，目標 10/28 晉升 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404（規劃）| 業主 16:40 打 /tdd-implement，PR 1 後端清理施工中；PR 1 目標 10/28 第二次晉升，PR 2 趕不上留 11/3 |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
