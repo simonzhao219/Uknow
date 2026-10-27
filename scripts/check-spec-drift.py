@@ -168,6 +168,19 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/api/index.ts",
         r"REFERRAL_VALIDATE_DAILY_MAX = (\d+);",
     ),
+    # check-email 是無驗證端點的 per-IP 限流；規格句以「同一 IP 在」錨定（§4.1 Step 0）。
+    ConstantRule(
+        "check-email 每 IP 窗口（分鐘）",
+        r"同一 IP 在 (\d+) 分鐘內最多",
+        "supabase/functions/api/index.ts",
+        r"CHECK_EMAIL_RATE_WINDOW_SECONDS = (\d+) \* 60;",
+    ),
+    ConstantRule(
+        "check-email 每 IP 上限",
+        r"同一 IP 在 \d+ 分鐘內最多 (\d+) 次",
+        "supabase/functions/api/index.ts",
+        r"CHECK_EMAIL_RATE_MAX = (\d+);",
+    ),
     ConstantRule(
         "掃描驗證每分鐘上限",
         r"同一掃描者每分鐘上限 (\d+) 次",

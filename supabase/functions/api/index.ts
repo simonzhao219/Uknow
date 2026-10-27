@@ -257,7 +257,9 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 // 窗口寫成乘式，規格書用分鐘／小時對照（check-spec-drift）。
 // ============================================================
 // /auth/check-email：無驗證端點、{ exists } 本身是帳號枚舉位元 → per-IP。
-const CHECK_EMAIL_RATE_MAX = 10;
+// 60／5 分鐘：現場活動 100–500 人共用同一 Wi-Fi（同一出口 IP），原 10 次會
+// 在人群湧入時誤擋真人；枚舉防線仍在（固定窗口，單 IP 5 分鐘內最多 60 次，可一次打滿）。
+export const CHECK_EMAIL_RATE_MAX = 60;
 const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
 // /members/verify：per 掃描者，每分鐘 30 次。猜 token 本來就不可行（HMAC 簽章、
 // 90 秒到期），這道防的是開放互掃後「側錄一批他人正在顯示的 QR 再批次驗證」的
@@ -302,6 +304,15 @@ export function clientIp(c: any): string {
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
     '';
   return IP_LIKE.test(ip) ? ip : 'unknown';
+}
+
+// IP 是從哪個標頭解析到的（只回標頭名稱，不回 IP 本身）。供現場尖峰時
+// 判斷限流鍵是否退化成 'unknown'（所有人共用一格）或誤用可偽造的 x-forwarded-for。
+export function clientIpSource(c: any): 'cf-connecting-ip' | 'x-forwarded-for' | 'unknown' {
+  const cf = c.req.header('cf-connecting-ip');
+  if (cf) return IP_LIKE.test(cf) ? 'cf-connecting-ip' : 'unknown';
+  const xff = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  return xff && IP_LIKE.test(xff) ? 'x-forwarded-for' : 'unknown';
 }
 
 // 回傳是否放行。限流器自身故障（RPC 錯誤）一律放行（fail-open）——
@@ -644,6 +655,7 @@ app.get('/auth/profile', profileHandler);
 app.post('/auth/check-email', async (c) => {
   // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流。
   // 鍵的前綴 `check-email:` 是 journey 重置配額的依據（e2e/journey/tools/supa.py）。
+  console.log(`[auth/check-email] ip_source=${clientIpSource(c)}`);
   const allowed = await rateLimit(
     `check-email:${clientIp(c)}`,
     CHECK_EMAIL_RATE_MAX,
