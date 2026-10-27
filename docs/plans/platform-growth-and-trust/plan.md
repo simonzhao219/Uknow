@@ -30,6 +30,8 @@
 **一個被漏掉的產品狀態**：首購者付完年費 100% 是「已付費、未加入推薦計畫」——碼已產生但不可出示、不可分享、不能提領。
 #381 的入口元件已處理（未加入者看到的是「加入推薦計畫」引導鈕），本總綱 §7 影響表與 S7／S8 的 persona 也補上這個狀態。
 
+**2026-10-27 起改由波次計畫接管**：第 1 波（正式上線 10/27、窗口 10/27–10/28、凍結 10/29–10/31）的順序、分工與裁決在 `docs/plans/launch-wave-1/plan.md`，本節只保留長期順序；第 2 波起每週晉升一次。
+
 **施工順序**（§8，2026-10-21 更新）：S7a ∥ R2（Email 邀請，先 R2-0 spike）∥ A1a（純讀後端）→ T1（排 R2 後，兩者都動 `AuthPage.tsx`）
 → P1a → A2 → A1b（稽核＋代改＋手動調整）→ L1、P1b、R1a-2、R1a-3 各一個 Plan Mode PR（R1a-3 與 check-email 修正先於 R2 出貨）。
 在途工項上限 3。R2 已無擋開工項（2026-10-23 業主裁決）。
@@ -1436,6 +1438,7 @@ Supabase Auth 原生能力，自製的只有一個無狀態簽章；(4) 不動 `
 | 2026-10-26 | R2 子規劃（PR #393）審查後 A～T 二十題裁決（AskUserQuestion 三輪＋監工代裁九題） | 見 §2.3A K 末條；裁決全文在 PR #393 留言 | 總綱 E／D／F／G／H／J／§8.1／§8.2／§16 回填；規劃書附錄 B 13 條總綱修正同批（E.7 先例行號、E.5 三態、E.6 uuid、契約 4 引用 `:138`、空殼判準、audit 謂詞、H 常數全環境、D `dashboard_smoke` 兩條、§8.2 `MyQrPage`、E.1 `FRONTEND_URL`、§16 殘留註記；dispatch-prompts B／C 的 `@backfill-cases` 改 `@name-cases`） |
 | 2026-10-26 | check-email 修正（#390）與 R1a-3（#394）監工獨立審查後裁決（AskUserQuestion 四題）＋ R1a-3 施工中另裁 | #394：裸連結與長按 QR 不附揭露句**接受**（完善資料頁推薦人姓名承擔）；禁用字樣加僱傭、合夥、獨家、特許；施工中另裁無名句「本邀請由 Uknow 推薦人發送」、揭露句 22px、不縮字級直接換行、揭露句前空一行、刊登方案頁第 9／29 行不改、分支沿用 session 分支。#390：PayUni 查詢層債開 issue #395、排 Plan Mode 小 PR（Opus）於 R2 之後。兩 PR 真機項合併後在 develop 一次驗 | §8.1 加 PayUni 列；§2.3A F 陣列改十五詞；#390 P1（503 無 log）與 #394 P2 留言在各 PR；dispatch-prompts B 標已取代 |
 | 2026-10-26 | 第 1 波三個 PR 合併、R2 進實作 | #390（`1f35f72`）、#394（`5363fde`）、#393（`8c7aedb`）同日合併；業主在新 session 親自開 `/tdd-implement referral-email-invite`（https://claude.ai/code/session_015dFtMVsyqYU5gijDBa6yCp ）；R2-0 spike（session D）仍在進行、不擋 | §8.1 三列改完成／施工中；`dispatch-prompts.md` A／B／C 段依退場條件刪除、只剩 D；§2.3A E 欄名權威改指向 `20261025000001` migration；子規劃 §2.6 列的六處總綱新舊句並存（E.4 `scope`、purge 謂詞、migration 登記、F「逾期未完成註冊」、D 被推薦人側 `x`／`getSession()`、D 推薦人側三句）與 §2.4 差異 2 的空殼判準一併清掉，全部以裁決句為準、無新裁決；真機驗收三項（#390 一項、#394 兩項）待業主在 develop 預覽站驗 |
+| 2026-10-27 | 業主宣布正式上線時程（10/27 12:00 開放收費、10/29–31 活動註冊潮）與六個目標；監工 session 核對目標、五 lane 掃描、八題裁決（AskUserQuestion 兩輪） | 12:00 必須含 R2 開啟（沒好就延）；部署改 `--use-api`（PR #402，ECR 匿名拉映像限流自 10/24 連擋 6 次）；清資料全清含管理員；晉升後翻 PayUni 正式並從台灣真付款驗證；窗口功能照建議（T1、P1a、R1a-2、#395、寄信告警、告警到人）；清資料由新主 session 以 Supabase MCP 執行；預估 100–500 人部分在現場；10/29–31 凍結只許 hotfix | 新增 `docs/plans/launch-wave-1/{plan,dispatch-prompts}.md`；§8 施工順序改由波次計畫接管；CLAUDE.md 與 docs/README.md 落「每波三種 session」規矩；本監工 session 退場，不跨波 |
 
 ## 14. 法務文件對齊（文件已律師定案、不可改；本節是產品與規格書怎麼對齊，2026-10-19 業主裁決）
 
