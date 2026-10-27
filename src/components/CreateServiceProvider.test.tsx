@@ -32,6 +32,26 @@ HTMLElement.prototype.scrollIntoView ??= () => {};
 const invalidate = vi.fn();
 const insert = vi.fn(() => Promise.resolve({ error: null }));
 
+// 「建立成功後清快取」這類測試驗的是送出流程，不是照片流程（照片流程由 hook 與 PhotoPicker
+// 自己的測試負責，jsdom 也補不滿三張真照片）。這裡讓 hook 可被覆寫成「三張已完成」，
+// 沒覆寫時走真的 hook（照片區的測試用）。
+const THREE_PHOTOS = [
+  'https://cdn.test/u/1.jpg',
+  'https://cdn.test/u/2.jpg',
+  'https://cdn.test/u/3.jpg',
+];
+const photoOverride = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }));
+vi.mock('../hooks/useListingPhotos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/useListingPhotos')>();
+  return {
+    ...actual,
+    useListingPhotos: (options: Parameters<typeof actual.useListingPhotos>[0]) => {
+      const real = actual.useListingPhotos(options);
+      return photoOverride.value ? { ...real, ...photoOverride.value } : real;
+    },
+  };
+});
+
 vi.mock('../contexts/DataCacheContext', () => ({
   useDataCache: () => ({ invalidate }),
 }));
@@ -103,16 +123,11 @@ async function fillCompleteForm() {
   selectOption(/性別/, '女');
   selectOption(/服務城市/, '台北市'); // 連帶自動勾選全區
 
-  const files = [0, 1, 2].map(
-    (i) => new File([new Uint8Array([0xff, 0xd8, 0xff])], `p${i}.jpg`, { type: 'image/jpeg' }),
-  );
-  fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
-    target: { files },
-  });
+  // 三張照片已完成（hook 被覆寫，見檔頭）；照片流程本身不在這個測試的範圍。
+  photoOverride.value = { canSubmit: true, photoUrls: THREE_PHOTOS };
   fireEvent.change(screen.getByLabelText(/Instagram/i), { target: { value: 'valid_ig' } });
 
-  // 送出鈕要等三張照片都**上傳完**(photos.length === 3)才會 enabled,
-  // 且至少要有一個聯絡方式——所以這個等待必須排在聯絡方式填完之後。
+  // 送出鈕要等照片全部完成(canSubmit)才會 enabled,且至少要有一個聯絡方式。
   await waitFor(() =>
     expect((screen.getByRole('button', { name: '建立刊登' }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -121,18 +136,14 @@ async function fillCompleteForm() {
 }
 
 describe('CreateServiceProvider', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    photoOverride.value = null;
+  });
 
   beforeEach(() => {
     invalidate.mockClear();
     insert.mockClear();
-    // 照片上傳走 fetch(buildApiUrl('/listings/upload-photo'))
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ photoUrl: 'https://example.test/p.jpg' }),
-      }),
-    ) as unknown as typeof fetch;
   });
 
   it('服務者名稱欄位的 maxLength 取自 NAME_MAX_LENGTH，不是字面量', () => {
@@ -165,6 +176,7 @@ describe('CreateServiceProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: '建立刊登' }));
 
     await waitFor(() => expect(insert).toHaveBeenCalled());
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ photos: THREE_PHOTOS }));
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith('listingChange'));
   });
 
@@ -181,6 +193,8 @@ describe('CreateServiceProvider', () => {
 });
 
 describe('CreateServiceProvider 照片區', () => {
+  afterEach(cleanup);
+
   it('使用共用的照片列表與選取入口，標籤說明三張且第一張為封面', async () => {
     renderForm();
     expect(await screen.findByRole('list', { name: '已選擇的照片' })).toBeTruthy();

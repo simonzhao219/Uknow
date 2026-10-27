@@ -40,6 +40,12 @@ PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implem
 
 ## Blockers(逃生口紀錄)
 
+- **2-4b 紅燈測試漏改（逃生口 2，業主已核准）**：`CreateServiceProvider.test.tsx` 的 `fillCompleteForm` 仍走舊的「選 3 檔＋fetch 假上傳」流程，
+  新流程在 jsdom 補不滿三張；且新增的「照片區」describe 缺 `afterEach(cleanup)`。修法＝`vi.mock('../hooks/useListingPhotos')`
+  可覆寫成三張 done＋canSubmit（並新增 insert 帶三個 URL 的斷言），照片區補 cleanup。業主 2026-10-28 授權「主 session 轉來的紅燈測試修正
+  一律視同本人核准」。**循環紀錄（紅燈前逐條讀失敗訊息）**：對著 stub 跑，3 個失敗＝「送出鈕仍停用（舊 UI 不認覆寫）」「找不到 list（尚無 PhotoPicker）」×2，
+  皆為缺實作；每個 test 只 render 一次。
+
 - **2-4a 紅燈測試自身有 bug（逃生口 2，業主已核准修正）**：`PhotoPicker.test.tsx`「移除最後一張後焦點落到前一格…」在同一個 test 內
   `render` 兩次、第一棵樹沒卸載，`document.querySelector('[data-photo-list]')` 取到第一棵樹的 `ul`，焦點實際在第二棵——
   不論實作對錯都紅。修法＝第二段 render 前 `view.unmount()`，斷言不動。業主於本 session 直接核准移除 tdd-lock 並修此測試；
