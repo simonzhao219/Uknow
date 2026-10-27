@@ -27,6 +27,8 @@ export interface PhotoPickerProps {
   maxCount: number;
   /** 載入裁切對話框的函式（測試注入失敗用）；預設動態 import。 */
   loadCropDialog?: DialogLoader;
+  /** 整頁重新整理（測試注入用）；預設 window.location.reload。 */
+  reloadPage?: () => void;
 }
 
 const defaultLoader: DialogLoader = () => import('./PhotoCropDialog');
@@ -150,6 +152,7 @@ export function PhotoPicker({
   photos,
   maxCount,
   loadCropDialog = defaultLoader,
+  reloadPage: _reloadPage,
 }: PhotoPickerProps) {
   const { slots, pendingCrop } = photos;
   const listRef = useRef<HTMLUListElement>(null);

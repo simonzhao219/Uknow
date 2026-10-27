@@ -3,8 +3,7 @@
 // 照片選取列表與取景對話框的行為契約：各狀態該有的按鈕、入口邊界、焦點後備、
 // 單一常駐 live region、取景確認／取消／Esc／返回鍵，以及裁切工具載入失敗＝重新載入且不可送出。
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ComponentType } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PhotoSlot, UseListingPhotosResult } from '../../hooks/useListingPhotos';
 
 // 單純的 Cropper 替身：掛上時回報原圖尺寸與一個裁切結果，其餘互動由本檔以按鈕驗證。
@@ -33,7 +32,6 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
-import type { PhotoCropDialogProps } from './PhotoCropDialog';
 import { PhotoPicker } from './PhotoPicker';
 
 const slot = (over: Partial<PhotoSlot> & { id: string }): PhotoSlot => ({
@@ -268,16 +266,44 @@ describe('PhotoPicker 取景對話框', () => {
   });
 });
 
-describe('PhotoPicker 裁切工具載入失敗', () => {
-  let dialogModule: { default: ComponentType<PhotoCropDialogProps> };
-  beforeEach(async () => {
-    dialogModule = await import('./PhotoCropDialog');
+describe('PhotoPicker 佇列與對話框焦點', () => {
+  const two = (firstState: PhotoSlot['state']) =>
+    makePhotos([
+      slot({ id: 'a', state: firstState, previewUrl: 'blob:a' }),
+      slot({ id: 'b', state: 'awaiting_crop', previewUrl: 'blob:b' }),
+    ]);
+
+  it('佇列兩張：確認第一張後對話框不關閉重開、不呼叫 history.back，標題換成第 2 張', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const view = render(<PhotoPicker photos={two('awaiting_crop')} maxCount={3} />);
+    const dialog = await screen.findByRole('dialog', { name: /第 1 張/ });
+    view.rerender(<PhotoPicker photos={two('uploading')} maxCount={3} />);
+    const after = await screen.findByRole('dialog', { name: /第 2 張/ });
+    expect(after).toBe(dialog);
+    expect(back).not.toHaveBeenCalled();
+    back.mockRestore();
   });
 
+  it('對話框關閉後焦點回到列表內，不掉到 body', async () => {
+    const view = render(
+      <PhotoPicker
+        photos={makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:a' })])}
+        maxCount={3}
+      />,
+    );
+    await screen.findByRole('dialog');
+    view.rerender(<PhotoPicker photos={makePhotos([slot({ id: 'a' })])} maxCount={3} />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const list = document.querySelector('[data-photo-list]') as HTMLElement;
+    expect(list.contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe('PhotoPicker 裁切工具載入失敗', () => {
   const awaiting = () =>
     makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:p' })]);
 
-  it('顯示重新載入裁切工具，並保留移除；不會偷偷改用自動置中裁', async () => {
+  it('顯示請重新整理頁面的警示與移除鈕；不會偷偷改用自動置中裁', async () => {
     const photos = awaiting();
     render(
       <PhotoPicker
@@ -286,29 +312,28 @@ describe('PhotoPicker 裁切工具載入失敗', () => {
         loadCropDialog={() => Promise.reject(new Error('chunk failed'))}
       />,
     );
-    expect(await screen.findByText(/裁切工具載入失敗/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重新載入裁切工具' })).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('裁切工具載入失敗，請重新整理頁面後再試');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(photos.confirmCrop).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '移除第 1 張' })).toBeTruthy();
   });
 
-  it('連續兩次重新載入失敗再成功：按下時 pending 且停用，成功後開出對話框', async () => {
-    const loader = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('1'))
-      .mockRejectedValueOnce(new Error('2'))
-      .mockResolvedValueOnce(dialogModule);
-    render(<PhotoPicker photos={awaiting()} maxCount={3} loadCropDialog={loader} />);
-    await screen.findByText(/裁切工具載入失敗/);
-
-    fireEvent.click(screen.getByRole('button', { name: '重新載入裁切工具' }));
-    const pending = await screen.findByRole('button', { name: /載入中/ });
-    expect(pending.getAttribute('aria-disabled')).toBe('true');
-    await screen.findByText(/裁切工具載入失敗/);
-
-    fireEvent.click(screen.getByRole('button', { name: '重新載入裁切工具' }));
-    expect(await screen.findByRole('dialog')).toBeTruthy();
-    expect(loader).toHaveBeenCalledTimes(3);
+  it('按「重新整理頁面」呼叫注入的 reloadPage 一次，不原地重試載入', async () => {
+    const reloadPage = vi.fn();
+    const loader = vi.fn(() => Promise.reject(new Error('chunk failed')));
+    render(
+      <PhotoPicker
+        photos={awaiting()}
+        maxCount={3}
+        loadCropDialog={loader}
+        reloadPage={reloadPage}
+      />,
+    );
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: '重新整理頁面' }));
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '重新載入裁切工具' })).toBeNull();
   });
 });

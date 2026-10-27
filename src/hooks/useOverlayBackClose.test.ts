@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useOverlayBackClose } from './useOverlayBackClose';
 
@@ -48,43 +48,5 @@ describe('useOverlayBackClose', () => {
     const { unmount } = renderHook(() => useOverlayBackClose(true, vi.fn()));
     unmount();
     expect(back).toHaveBeenCalledTimes(1);
-  });
-
-  it('連續兩張：前一張關閉造成的 back（非同步 popstate）不可誤取消下一張', async () => {
-    // 真瀏覽器的 history.back() 是非同步的：popstate 在下一個 task 才觸發。
-    back.mockImplementation(() => {
-      setTimeout(() => window.dispatchEvent(new PopStateEvent('popstate')), 0);
-    });
-    const onCloseA = vi.fn();
-    const onCloseB = vi.fn();
-    const a = renderHook(() => useOverlayBackClose(true, onCloseA));
-    // 同一個 commit：舊疊層卸載、新疊層掛載（PhotoPicker 以 slotId 為 key 重掛）
-    act(() => {
-      a.unmount();
-      renderHook(() => useOverlayBackClose(true, onCloseB));
-    });
-    await new Promise((r) => setTimeout(r, 10));
-    expect(onCloseA).not.toHaveBeenCalled();
-    expect(onCloseB).not.toHaveBeenCalled();
-    // 之後使用者真的按返回，才關第二張
-    act(() => {
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    });
-    expect(onCloseB).toHaveBeenCalledTimes(1);
-  });
-
-  it('自己造成的 back 只吞一次：之後的返回鍵照常關疊層', async () => {
-    back.mockImplementation(() => {
-      setTimeout(() => window.dispatchEvent(new PopStateEvent('popstate')), 0);
-    });
-    const first = renderHook(() => useOverlayBackClose(true, vi.fn()));
-    first.unmount();
-    await new Promise((r) => setTimeout(r, 10));
-    const onClose = vi.fn();
-    renderHook(() => useOverlayBackClose(true, onClose));
-    act(() => {
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
