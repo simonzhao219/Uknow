@@ -17,6 +17,7 @@ import {
   useMemo,
   useRef,
 } from 'react';
+import { X } from 'lucide-react';
 import type { PhotoSlot, UseListingPhotosResult } from '../../hooks/useListingPhotos';
 import { Button } from '../ui/button';
 import type { PhotoCropDialogProps } from './PhotoCropDialog';
@@ -86,73 +87,37 @@ class CropBoundary extends Component<
   }
 }
 
-function SlotButtons({
-  slot,
-  n,
-  photos,
-  onRemove,
-  onRetry,
-}: {
-  slot: PhotoSlot;
-  n: number;
-  photos: UseListingPhotosResult;
-  onRemove: () => void;
-  onRetry: () => void;
-}) {
-  const btn = 'min-h-11';
-  const remove = (
+/** 縮圖右上角的叉叉：視覺小圓鈕，觸控面積靠 padding 擴到 44px。 */
+function RemoveButton({ n, onRemove }: { n: number; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={`移除第 ${n} 張`}
+      className="absolute top-0 right-0 flex size-11 items-start justify-end p-1.5 outline-none focus-visible:ring-[3px]"
+    >
+      <span className="flex size-6 items-center justify-center rounded-full bg-background/90 shadow">
+        <X className="size-4" aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
+/** 失敗格才有文字鈕「重試」；其餘動作都在縮圖上（點縮圖＝調整、叉叉＝移除）。 */
+function RetryButton({ slot, n, onRetry }: { slot: PhotoSlot; n: number; onRetry: () => void }) {
+  if (slot.state !== 'failed') return null;
+  return (
     <Button
       type="button"
       tone="secondary"
       size="sm"
-      className={btn}
-      onClick={onRemove}
-      aria-label={`移除第 ${n} 張`}
+      className="min-h-11"
+      onClick={onRetry}
+      aria-label={`重試第 ${n} 張`}
     >
-      移除
+      重試
     </Button>
   );
-  switch (slot.state) {
-    case 'failed':
-      return (
-        <>
-          <Button
-            type="button"
-            tone="secondary"
-            size="sm"
-            className={btn}
-            onClick={onRetry}
-            aria-label={`重試第 ${n} 張`}
-          >
-            重試
-          </Button>
-          {remove}
-        </>
-      );
-    case 'done':
-      return (
-        <>
-          {slot.kind === 'new' && (
-            <Button
-              type="button"
-              tone="secondary"
-              size="sm"
-              className={btn}
-              onClick={() => photos.adjust(slot.id)}
-              aria-label={`調整第 ${n} 張範圍`}
-            >
-              調整範圍
-            </Button>
-          )}
-          {remove}
-        </>
-      );
-    case 'unprocessable':
-    case 'awaiting_crop':
-      return remove;
-    default:
-      return null;
-  }
 }
 
 export function PhotoPicker({
@@ -247,31 +212,52 @@ export function PhotoPicker({
               tabIndex={-1}
               className="space-y-2 outline-none"
             >
-              <div className="aspect-square overflow-hidden rounded-md bg-muted">
-                {src && (
-                  <img src={src} alt={`第 ${n} 張照片`} className="h-full w-full object-cover" />
+              <div data-photo-thumb className="relative aspect-square">
+                {slot.state === 'done' && slot.kind === 'new' ? (
+                  <button
+                    type="button"
+                    onClick={() => photos.adjust(slot.id)}
+                    aria-label={`調整第 ${n} 張範圍`}
+                    className="block size-full overflow-hidden rounded-md bg-muted outline-none focus-visible:ring-[3px]"
+                  >
+                    {src && <img src={src} alt="" className="h-full w-full object-cover" />}
+                  </button>
+                ) : (
+                  <div className="size-full overflow-hidden rounded-md bg-muted">
+                    {src && (
+                      <img
+                        src={src}
+                        alt={`第 ${n} 張照片`}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </div>
+                )}
+                {['failed', 'unprocessable', 'awaiting_crop', 'done'].includes(slot.state) && (
+                  <RemoveButton
+                    n={n}
+                    onRemove={() => {
+                      focusAfterRemove.current = i;
+                      photos.remove(slot.id);
+                    }}
+                  />
                 )}
               </div>
               <p className="min-h-5 break-words text-xs text-muted-foreground">
                 {slot.state === 'failed' || slot.state === 'unprocessable'
                   ? slot.message
-                  : (STATUS_TEXT[slot.state] ?? (slot.downscaled ? '已自動縮小' : ''))}
+                  : slot.state === 'done' && slot.kind === 'existing'
+                    ? '既有照片不能重新取景'
+                    : (STATUS_TEXT[slot.state] ?? (slot.downscaled ? '已自動縮小' : ''))}
               </p>
-              <div className="flex flex-wrap gap-1">
-                <SlotButtons
-                  slot={slot}
-                  n={n}
-                  photos={photos}
-                  onRetry={() => {
-                    focusAfterRetry.current = slot.id;
-                    photos.retry(slot.id);
-                  }}
-                  onRemove={() => {
-                    focusAfterRemove.current = i;
-                    photos.remove(slot.id);
-                  }}
-                />
-              </div>
+              <RetryButton
+                slot={slot}
+                n={n}
+                onRetry={() => {
+                  focusAfterRetry.current = slot.id;
+                  photos.retry(slot.id);
+                }}
+              />
             </li>
           );
         })}
