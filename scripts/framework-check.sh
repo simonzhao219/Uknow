@@ -183,6 +183,22 @@ if [ -f scripts/check-e2e-mustkeep.py ]; then
   fi
 fi
 
+# 10d. Playwright image 版本與 pip pin 同步。e2e-tests 自 2026-10-27 跑在官方
+#      playwright/python image 裡（省掉每次 9 分多鐘的 apt），代價是 image tag
+#      與 e2e/requirements.txt 的 `playwright==` 變成兩處必須相等的版本號。
+#      不等時只在 CI 出現 "Executable doesn't exist"（本機沒有 image，永遠自洽），
+#      升級時改一處忘一處是最自然的失誤——所以是閘門不是註解。
+if [ -f scripts/check-playwright-image.py ]; then
+  if ! python3 scripts/check-playwright-image.py --self-test; then
+    echo "FAIL: Playwright image 版本檢查器自身的表格案例未過（scripts/check-playwright-image.py）"
+    fail=1
+  fi
+  if ! python3 scripts/check-playwright-image.py; then
+    echo "FAIL: Playwright image tag 與 e2e/requirements.txt 的 pin 不一致（scripts/check-playwright-image.py）"
+    fail=1
+  fi
+fi
+
 # 11. Context 預算與讀取成本。其餘各軌驗「設定寫對了沒」，這一軌驗「這個
 #     repo 對 agent 來說貴不貴」——啟動固定成本、單檔讀取成本（軟警戒）、
 #     以及 rule 的 paths 是否真的匹配得到檔案（匹配不到＝宣告了但永遠不

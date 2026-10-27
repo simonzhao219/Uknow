@@ -550,3 +550,6 @@ export const TAIWAN_BANKS = [
   { code: '826', name: '瑞士銀行台北分行' },
   { code: '700', name: '中華郵政' },
 ];
+
+/** 取景對話框微調鈕一次移動幾 px。 */
+export const PHOTO_NUDGE_STEP_PX = 4;

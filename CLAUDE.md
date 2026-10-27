@@ -42,7 +42,7 @@
 | `npm run check:full` | check + **覆蓋率棘輪** + build + Deno 型別檢查(送 PR 前跑) |
 | `bash scripts/framework-check.sh` | 框架健康檢查(含 hook 行為測試、命名檢查、規格書漂移) |
 | `python3 scripts/test-hooks.py` | 只跑 hook 行為測試(改 hook 後必跑) |
-| `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑) |
+| `python3 scripts/check-workflows.py` | workflow 設定與命名(改 `.github/workflows/` 後必跑);`check-playwright-image.py` 驗 e2e image tag 與 `playwright==` pin 同步(升級 playwright 後必跑) |
 | `python3 scripts/check-test-names.py` | 測試命名(新增測試後必跑) |
 | `python3 scripts/check-spec-drift.py` | 規格書漂移(改業務常數/路由/狀態機後必跑) |
 | `python3 scripts/check-migration-versions.py` | migration 版本號唯一(**rebase 後必跑**——撞號 git 不標成衝突、CI 也抓不到,只在正式站部署時靜默跳過一支) |
