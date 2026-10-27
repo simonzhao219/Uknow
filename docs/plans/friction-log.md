@@ -3203,3 +3203,10 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   幸好 typecheck 擋下才沒把實作混進紅燈。紅燈 commit 前先把實作移出工作樹（或等 commit 完再動 src）。
 - **失敗的動態 import 會被瀏覽器快取**：同 URL 再 `import()` 立刻失敗，原地「重新載入」永遠不會成功（e2e 實測）；`lazyWithRetry` 的「重試一次」對路由 chunk 同樣無效，第 2 波驗證後簡化。
 - **審查與紅燈的順序**：返回鍵時序用全域計數器解會把測試間狀態洩漏出去；改變結構（對話框常駐）讓問題不存在，比在 hook 裡賭 popstate 延遲可靠。
+- **第 1 波 PR 2（刊登照片管線）遺留，第 2 波處理**：
+  `lazyWithRetry` 重試一次對路由 chunk 同樣無效（失敗的動態 import 被瀏覽器快取），驗證後簡化；Create／Edit 無草稿保存，重新整理會掉已填文字；
+  `uploadListingPhoto` 的 401 不像 `apiRequestJson` 登出；送出進行中 picker 未凍結（insert 與 DELETE 競態窗口極窄）；`preparing`／chunk 載入無逾時出口；
+  後端 5xx 原文直接顯示（應固定文案）；預覽縮圖仍用原檔 blob URL（48MP 真機待辦）；「重設」鈕與 60 秒逾時待業主確認；
+  滑桿 `aria-valuetext`、微調鈕命名與 group、第 1 格「封面」徽章、窄格錯誤字溢出（真機）、內建瀏覽器 unsupported 文案分流、格內 spinner；
+  e2e：驗收 8 補「取消不上傳」、驗收 14 的 disabled 斷言先填其他欄位、上傳 mock 分居 `fixtures.py` 與 `BackendApiMock` 靠註冊順序蓋 route；
+  結構：常數命名前綴反序與 `UPLOAD_TIMEOUT_MS` 不在 constants、Create／Edit 重複的 hook 注入與 submitHint 可包 `useBrowserListingPhotos`、`initialUrls` 與 `loadExisting` 二選一、微調鈕／重設／滑桿缺行為測試且 PhotoCropDialog 無同名測試檔。
