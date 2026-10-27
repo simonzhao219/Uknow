@@ -279,17 +279,18 @@ commit;
 | 10/27 20:50 | #405 rebase 到 develop（e02e3a2）CI 中；#414 兩項修正（fa861dd Navbar 還原、88d7c67 sitemap）CI 綠，疊在 #405 上等它合後 rebase；#412 ready 綠等 rebase。**#404（P1a PR 1）四 lane 審查**：無 P0；P1 ×5（整合測試補真 overlaps＋Storage 移除案例、public URL base 不靠 `publicUrlOf('')`、§14 第 14 列補齊孤兒來源、刪除中回饋、PR 內文失準兩處＋部署順序）已交執行 session；URL 新舊形狀一致（不誤刪）與撞檔（merge-tree 全乾淨）皆核對通過。PR 2 裁示留 11/3 第 2 波同 session 接手。架構 lane 另查出 #407 對 develop 的 friction-log 會衝突，輪到它時 rebase 處理 | #405 綠 → 合；#404 修完 → 複核 |
 | 10/27 21:05 | 停車 PR 依序合進 develop：#405（0c5c11b）→ #410（140fecb）→ #406（0786b61），每支 rebase＋ci-ok 綠後 merge commit。#404 五項 P1 修完（60a411d）CI 全綠含新整合測試，最後再 rebase 合。#407 rebase 時 friction-log 衝突（#395 條目的償還段 vs R2 施工摩擦節）兩邊都留、推 4b92157 等 CI。業主尚未回覆 production 核准 | #407 綠 → 合 → #412 → #414 → #404 |
 | 10/27 22:00 | #407（69b1520）、#412（a4960f0）合進 develop。CI 誤紅三次（#407、#415、#412）同一根因：Azure apt 鏡像站 44 kB/s，`playwright install --with-deps` 裝字型 10 分鐘，e2e job 15 分鐘上限取消；各重跑一次即綠。再發生就開小 PR 把 e2e `timeout-minutes` 15→25，波末記 friction-log。#414 rebase（重複的 #405 commit 自動去掉，本機 check 綠，3594ff9）與 #404 rebase（5629ff8，守衛三綠）同時推上去跑 CI，先綠先合、另一支再 rebase 一次 | #414／#404 CI → 轉 ready → 合；業主 production 核准仍未回 |
+| 10/27 22:20 | **停車 PR 全部合進 develop**：#404（8266e11，轉 ready 後合）→ #414 再 rebase 一次（228902a）綠 → 合（ae61955）。develop 現含 10/28 第二次晉升全部內容：og+lang、容量 hotfix、告警 LINE、PayUni 查詢告警、邀請 follow-up、P1a 後端清理、品牌 icon+SEO 基礎。業主 19:10 問 develop 預覽與 Email 邀請：裁決照原規劃（正式站實寄核對後才開旗標，develop 不另設） | 業主核准 production → /health；第二次晉升 PR 待業主 §7 第 5–12 步完成後開 |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅ 已合併 | follow-up PR #412（draft，4 項完成，紅 1e4fe53→綠 fed29e5）；等 CI、主 session 審；目標 10/28 晉升 |
-| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
-| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404（規劃）| 業主 16:40 打 /tdd-implement，PR 1 後端清理施工中；PR 1 目標 10/28 第二次晉升，PR 2 趕不上留 11/3 |
-| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
-| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 審過可合併、CI 綠、ready；晉升後合 |
-| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 5 點已修（`4978574`）複核中；容量 hotfix 已另開 #410 |
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅、#412 ✅ 已合併 | 收工 |
+| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅ 已合併（PR 1） | PR 2 留 11/3 第 2 波同 session 接手 |
+| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410 ✅ 已合併 | 收工 |
+| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 ✅ 已合併 | 收工（#395 方向 3 sandbox 實打留 issue） |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
