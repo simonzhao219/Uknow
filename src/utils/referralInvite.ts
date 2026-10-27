@@ -196,3 +196,9 @@ export function clearPendingInviteToken(): void {
     // 忽略
   }
 }
+
+// --- Email 邀請的建置旗標 ---
+
+export function isEmailInviteEnabled(): boolean {
+  return false;
+}

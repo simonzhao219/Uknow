@@ -24,6 +24,10 @@ const { UserCtx, showToast } = await vi.hoisted(async () => {
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 vi.mock('../notifications/NotificationContext', () => ({ useNotification: () => ({ showToast }) }));
 vi.mock('../../utils/clipboard', () => ({ copyToClipboard: vi.fn(() => true) }));
+vi.mock('./InviteCard', () => ({
+  InviteCardDialog: ({ open, code }: { open: boolean; code: string }) =>
+    open ? <div role="dialog" aria-label="邀請好友" data-code={code} /> : null,
+}));
 vi.mock('qrcode.react', () => ({
   QRCodeCanvas: ({ fgColor, bgColor }: { fgColor?: string; bgColor?: string }) => (
     <canvas data-testid="qr-canvas" data-fg={fgColor} data-bg={bgColor} />
@@ -44,6 +48,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -220,5 +225,30 @@ describe('InviteFriendPanelContent 邀請好友', () => {
     fireEvent.click(screen.getByTestId('share-referral-button'));
     expect(share).toHaveBeenCalledTimes(1);
     expect(share.mock.calls[0][0].text).toMatch(/本邀請由 Uknow 推薦人 小明 發送$/);
+  });
+});
+
+describe('InviteFriendPanelContent Email 邀請旗標', () => {
+  it('旗標開啟時邀請好友開邀請卡、不叫系統分享', () => {
+    vi.stubEnv('VITE_REFERRAL_EMAIL_INVITE', 'true');
+    const share = vi.fn();
+    vi.stubGlobal('navigator', { ...navigator, share });
+    renderPanel();
+    fireEvent.click(screen.getByTestId('share-referral-button'));
+    expect(screen.getByRole('dialog', { name: '邀請好友' }).getAttribute('data-code')).toBe(
+      'abc123',
+    );
+    expect(share).not.toHaveBeenCalled();
+  });
+
+  it('旗標關閉時邀請好友不開卡', () => {
+    vi.stubEnv('VITE_REFERRAL_EMAIL_INVITE', 'false');
+    const share = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    renderPanel();
+    fireEvent.click(screen.getByTestId('share-referral-button'));
+    expect(screen.queryByRole('dialog', { name: '邀請好友' })).toBeNull();
+    expect(share).toHaveBeenCalled();
+    Reflect.deleteProperty(navigator, 'share');
   });
 });

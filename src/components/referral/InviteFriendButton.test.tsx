@@ -24,7 +24,14 @@ const { UserCtx, showToast } = await vi.hoisted(async () => {
 
 vi.mock('../../App', () => ({ UserContext: UserCtx }));
 vi.mock('../notifications/NotificationContext', () => ({ useNotification: () => ({ showToast }) }));
-vi.mock('../../utils/referralInvite', () => ({ shareReferralInvite: vi.fn() }));
+vi.mock('../../utils/referralInvite', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/referralInvite')>()),
+  shareReferralInvite: vi.fn(),
+}));
+vi.mock('./InviteCard', () => ({
+  InviteCardDialog: ({ open, code }: { open: boolean; code: string }) =>
+    open ? <div role="dialog" aria-label="邀請好友" data-code={code} /> : null,
+}));
 vi.mock('./JoinReferralProgramDialog', () => ({
   JoinReferralProgramDialog: ({
     open,
@@ -54,6 +61,7 @@ const JOINED = { name: '王小明', referralProgramJoined: true, referralCode: '
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
 function renderButton(
@@ -183,5 +191,32 @@ describe('InviteFriendButton 文案', () => {
     renderButton(user);
     // innerHTML 連 aria-label、title 一起看：讀屏念得到的也是使用者看得到的文案。
     expect(findForbiddenWord(document.body.innerHTML)).toBeUndefined();
+  });
+});
+
+describe('InviteFriendButton Email 邀請旗標', () => {
+  it('旗標開啟時按邀請好友開邀請卡、不直接分享', () => {
+    vi.stubEnv('VITE_REFERRAL_EMAIL_INVITE', 'true');
+    renderButton(JOINED);
+    fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
+    expect(screen.getByRole('dialog', { name: '邀請好友' }).getAttribute('data-code')).toBe(
+      '8048877',
+    );
+    expect(shareReferralInvite).not.toHaveBeenCalled();
+  });
+
+  it('旗標關閉時維持直接分享、不開卡', () => {
+    vi.stubEnv('VITE_REFERRAL_EMAIL_INVITE', 'false');
+    renderButton(JOINED);
+    fireEvent.click(screen.getByRole('button', { name: /邀請好友/ }));
+    expect(shareReferralInvite).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '邀請好友' })).toBeNull();
+  });
+
+  it('旗標開啟時未加入者仍是加入推薦計畫引導鈕、不開卡', () => {
+    vi.stubEnv('VITE_REFERRAL_EMAIL_INVITE', 'true');
+    renderButton({ referralProgramJoined: false, referralCode: '8048877' });
+    fireEvent.click(screen.getByTestId('join-referral-button'));
+    expect(screen.queryByRole('dialog', { name: '邀請好友' })).toBeNull();
   });
 });
