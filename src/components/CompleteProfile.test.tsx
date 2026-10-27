@@ -21,7 +21,7 @@
 //   9. 推薦碼驗證打 `GET /referrals/validate/<碼>`(需登入、有限流的那一支);
 //      匿名別名 `POST /listings/verify-referral-code` 已移除。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { createContext } from 'react';
 import { ApiError } from '../utils/apiClient';
@@ -563,5 +563,68 @@ describe('推薦碼驗證', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('請求過於頻繁'));
     // 剛驗好的推薦人不能因為「暫時不能查」就消失、逼使用者等窗口過後重驗。
     expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦');
+  });
+});
+
+// Email 邀請（R2）建立的帳號：換瀏覽器續填時 localStorage 的 pending code 不在，
+// 改讀 session 的 app_metadata.referral_invite.code 當後備——只作預填、仍走 validate，
+// 使用者已開始輸入就不覆蓋。
+describe('邀請帳號的推薦碼後備預填', () => {
+  const referralField = () => document.querySelector('#referralCode') as HTMLInputElement;
+  const sessionWith = (code?: string) => ({
+    data: {
+      session: {
+        access_token: 'token',
+        user: { app_metadata: code ? { referral_invite: { code } } : { provider: 'email' } },
+      },
+    },
+  });
+  const validateCalls = () =>
+    apiRequestJson.mock.calls.filter(([url]) => String(url).includes('/referrals/validate/'));
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 404 })),
+    );
+    apiRequestJson.mockResolvedValue({ valid: true, referrer: { userName: '推薦人測試' } });
+  });
+
+  it('pending 為空且 app_metadata 有碼時預填並驗證', async () => {
+    getSession.mockResolvedValue(sessionWith('8048876'));
+    renderForm();
+    await waitFor(() => expect(referralField().value).toBe('8048876'));
+    await waitFor(() => expect(validateCalls()).toHaveLength(1));
+    expect(String(validateCalls()[0][0])).toMatch(/\/referrals\/validate\/8048876$/);
+  });
+
+  it('pending 有值時用 pending，不被 app_metadata 的碼蓋掉', async () => {
+    localStorage.setItem('pending_referral_code', 'abc123');
+    getSession.mockResolvedValue(sessionWith('8048876'));
+    renderForm();
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(referralField().value).toBe('abc123');
+    expect(validateCalls().every(([url]) => !String(url).includes('8048876'))).toBe(true);
+  });
+
+  it('使用者已開始輸入推薦碼時不覆蓋', async () => {
+    let release: (v: unknown) => void = () => {};
+    getSession.mockImplementation(() => new Promise((r) => (release = r)));
+    renderForm();
+    fireEvent.change(referralField(), { target: { value: '777' } });
+    await act(async () => release(sessionWith('8048876')));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(referralField().value).toBe('777');
+    expect(validateCalls().every(([url]) => !String(url).includes('8048876'))).toBe(true);
+  });
+
+  it('pending 與 app_metadata 都沒有碼時不預填', async () => {
+    getSession.mockResolvedValue(sessionWith());
+    renderForm();
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(referralField().value).toBe('');
+    expect(validateCalls()).toHaveLength(0);
   });
 });
