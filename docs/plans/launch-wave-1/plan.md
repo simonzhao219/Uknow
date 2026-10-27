@@ -240,6 +240,20 @@ commit;
 | 10/27 13:55 | 依目標 5 授權 rebase＋force-push：#401 → `f6a0d4b`、#399 → `c3be852`（規則 12 段落解成兩邊都留；#399 的移植段與 #401 逐字相同，#401 合併後 no-op）。本機 check／check-workflows／spec-drift／migration-versions 綠。已 send_message 通知 R2 後端 session 先 reset 再動 | #399 五 lane 審查進行中；CI 綠後合 #401 → #399 |
 | 10/27 14:10 | develop deploy run 40457604933（`--use-api` 首次）**綠**——K1 完成。#399 五 lane 審查完成：無擋合併的 P0／P1（需求 lane 的「沒有前端」是既定分工），追蹤項留言在 #399、轉進 dispatch §I 與 §7 第 11 步 | 業主裁決 10–13（見 §0）|
 | 10/27 14:20 | 派工 prompt D～I 落檔；開 R1a-2、P1a（規劃）、告警送到人三個執行 session | #399／#401 CI 綠 → 合併 → 開 R2 前端（§B＋§I）、G、H |
+| 10/27 14:05 | 首批三個 session 用 create_session 不帶 source_url 開出 → 容器沒有 repo、add_repo 被分類器擋，三個都卡住（已改帶 `source_url` 重開；舊的 `session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx` 封存被權限擋，請業主手動封存）。**教訓：create_session 一律帶 source_url＋source_revision=develop** | — |
+| 10/27 14:06 | **#399 合併**（`5364205`，head `58b38c1` CI 綠）；#401 內容已逐字隨 #399 進 develop → 留言後關閉。建 10/29–31 量測排程 `trig_01KmMD7RYZFDjNiLWHrNDhx3` | 等各執行 session 回報 |
+
+**執行 session 名冊**（主 session 維護）
+
+| 工項 | session | 模型 | 分支 | PR | 狀態 |
+|---|---|---|---|---|---|
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | — | 施工中，目標 18:30 開 PR |
+| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | — | 施工中 |
+| P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | — | 規劃中，完成後待業主審、業主親打 /tdd-implement |
+| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | — | 施工中 |
+| 容量＋寄信告警 | `session_01MQovbDWjfcnq21M6T5cDBf` | Sonnet | `fix/peak-capacity-email-alerts` | — | 施工中 |
+| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | — | 施工中 |
+| R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
 
@@ -250,4 +264,5 @@ commit;
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
+| 7 | 手動封存兩個卡住的空 session：`session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx`（另一個已封存） | ⬜ |
 | 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
