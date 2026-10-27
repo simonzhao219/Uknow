@@ -1,3 +1,4 @@
+import type { ReferralInviteAcceptErrorCode } from '@contract';
 import { decodeReferralInvitePayload } from '@referral-invite-payload';
 
 // 註冊/登入這條「連續流程」的單一決策來源。
@@ -248,23 +249,38 @@ export interface InviteAcceptErrorAction {
   clearPassword: boolean;
 }
 
-/** accept 失敗的 error code → 下一步。無 code（網路失敗、非 JSON）視為暫時性、留在原步驟。 */
+/**
+ * accept 的每個 error code 是否轉登入步驟、是否清密碼。以 Record 綁契約的 code 聯集：
+ * 後端新增 code 時這裡 typecheck 就紅，不會靜默落到預設分支。
+ */
+const INVITE_ACCEPT_ERROR_ROUTES: Record<
+  ReferralInviteAcceptErrorCode,
+  { leave: boolean; clearPassword: boolean }
+> = {
+  // 連結本身不能用了：轉登入步驟（email 帶入），已設過密碼的人可直接登入、沒設過的走忘記密碼。
+  expired: { leave: true, clearPassword: false },
+  invalid_token: { leave: true, clearPassword: false },
+  gone: { leave: true, clearPassword: false },
+  // 已完成設定：要用先前設定的密碼登入，剛打的這組清掉。
+  already_accepted: { leave: true, clearPassword: true },
+  // 帳號沒被動到，留在設定密碼步驟可重試。
+  weak_password: { leave: false, clearPassword: false },
+  rate_limited: { leave: false, clearPassword: false },
+  unavailable: { leave: false, clearPassword: false },
+  disabled: { leave: false, clearPassword: false },
+};
+
+/** accept 失敗的 error code → 下一步。無 code（網路失敗、非 JSON）與未知 code 視為暫時性、留在原步驟。 */
 export function classifyInviteAcceptError(
   code: string | undefined,
   hasEmail: boolean,
 ): InviteAcceptErrorAction {
-  switch (code) {
-    case 'expired':
-    case 'invalid_token':
-    case 'gone':
-      return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: false };
-    case 'already_accepted':
-      return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: true };
-    default:
-      // weak_password、rate_limited、unavailable、disabled、無 code、未知 code：
-      // 帳號沒被動到，留在設定密碼步驟可重試。
-      return { target: 'stay2B', clearPassword: false };
-  }
+  const route =
+    code && code in INVITE_ACCEPT_ERROR_ROUTES
+      ? INVITE_ACCEPT_ERROR_ROUTES[code as ReferralInviteAcceptErrorCode]
+      : undefined;
+  if (!route?.leave) return { target: 'stay2B', clearPassword: false };
+  return { target: hasEmail ? 'to2A' : 'toStep1', clearPassword: route.clearPassword };
 }
 
 /**

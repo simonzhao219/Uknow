@@ -53,6 +53,8 @@ const INVITE_NOTICES = {
 function initialInviteToken(search: URLSearchParams, pathname: string): string | null {
   const fromUrl = search.get('invite');
   if (fromUrl) return fromUrl;
+  // 帶 ?ref= 的是另一條（一般推薦連結）入口：不把同分頁殘留的邀請 token 撿回來。
+  if (search.has('ref')) return null;
   return pathname === '/register' ? getPendingInviteToken() : null;
 }
 
@@ -91,11 +93,11 @@ export function AuthPage() {
     inviteEntry?.kind === 'undecodable' ? INVITE_NOTICES.undecodable : null,
   );
   const noticeRef = useRef<HTMLParagraphElement>(null);
-  const inviteModeReady = useRef(false);
+  // 邀請入口已依 session 結果分流過（只做一次）；用 state 讓骨架與步驟在同一次 render 切換。
+  const [inviteEntryResolved, setInviteEntryResolved] = useState(false);
   const inviteAccept = useInviteAccept({ supabase, navigate, showToast });
   const isInviteMode = inviteToken !== null && inviteEntry?.kind === 'valid';
-  const isAwaitingInviteEntry =
-    inviteEntry?.kind === 'valid' && sessionState === 'checking' && !inviteModeReady.current;
+  const isAwaitingInviteEntry = inviteEntry?.kind === 'valid' && !inviteEntryResolved;
 
   useEffect(() => {
     if (searchParams.has('invite')) {
@@ -113,10 +115,10 @@ export function AuthPage() {
 
   // 驗證結果出來後才決定邀請入口：沒登入 → 設定密碼步驟；已登入 → 只提示、交給既有導向。
   useEffect(() => {
-    if (inviteEntry?.kind !== 'valid' || sessionState === 'checking' || inviteModeReady.current) {
+    if (inviteEntry?.kind !== 'valid' || sessionState === 'checking' || inviteEntryResolved) {
       return;
     }
-    inviteModeReady.current = true;
+    setInviteEntryResolved(true);
     if (sessionState === 'signed_in') {
       clearPendingInviteToken();
       setInviteToken(null);
@@ -127,7 +129,7 @@ export function AuthPage() {
     setEmail(inviteEntry.email);
     setIsExistingUser(false);
     setStep(2);
-  }, [inviteEntry, sessionState, showToast]);
+  }, [inviteEntry, sessionState, showToast, inviteEntryResolved]);
 
   // 帶提示落地時焦點給提示（不 autoFocus 欄位）。
   useEffect(() => {
@@ -152,6 +154,8 @@ export function AuthPage() {
   }, [searchParams]);
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
+  // Email 邀請入口依這個 effect 的結果分流（sessionState 三態＋4 秒逾時＋清理後寫回邀請 token）。
+  // T1（登入狀態信任）改這段時必須保留這三件事——見 friction-log 2026-10-27 R2 交接。
   useEffect(() => {
     let settled = false;
     const settle = (state: 'signed_in' | 'signed_out') => {
@@ -468,7 +472,8 @@ export function AuthPage() {
 
     const passwordErrors = validatePasswordPolicy(password, confirmPassword);
     if (!passwordErrors.password && exceedsPasswordMaxBytes(password)) {
-      passwordErrors.password = '密碼過長，請改用較短的密碼';
+      // 與後端 accept 同一句（bcrypt 72 位元組上限）。
+      passwordErrors.password = '密碼太長，請縮短後再試';
     }
     if (Object.keys(passwordErrors).length > 0) {
       setErrors(passwordErrors);
