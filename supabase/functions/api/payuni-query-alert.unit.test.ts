@@ -58,6 +58,17 @@ Deno.test('queryPayUniTradeStatus：Status 為 SUCCESS 但缺 EncryptInfo → �
   });
 });
 
+Deno.test('queryPayUniTradeStatus：非 SUCCESS 且無 Message → 不誤報成缺 EncryptInfo', async () => {
+  const result = await withFetch(
+    { Status: 'ERROR' },
+    () => queryPayUniTradeStatus('Q395-NOMESSAGE'),
+  );
+  assertEquals<unknown>(result, {
+    stillProcessing: true,
+    queryFailure: { status: 'ERROR', message: '' },
+  });
+});
+
 Deno.test('queryPayUniTradeStatus：查詢成功但交易未付款 → 不帶 queryFailure', async () => {
   const encryptInfo = await encryptPayUni(
     { MerTradeNo: 'Q395-UNPAID', TradeStatus: '0' },

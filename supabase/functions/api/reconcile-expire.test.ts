@@ -129,23 +129,27 @@ async function deleteAlerts(client: ReturnType<typeof adminClient>, key: string,
   await client.from('system_alerts').delete().eq(`context->>${key}`, value);
 }
 
-Deno.test('reconcile：查詢層非 SUCCESS → 依 PayUni Status 去重告警一筆並帶回 Message', async () => {
+Deno.test('reconcile：查詢層非 SUCCESS → 依 Status＋Message 去重、error 級告警', async () => {
   const client = adminClient();
   const a = await createTestUser(client, { name: 'Query Fail A' });
   const b = await createTestUser(client, { name: 'Query Fail B' });
   const payuniStatus = `Q395-${Date.now()}`;
 
   try {
-    await seedPendingOrder(client, a.id, 60);
+    const tradeNoA = await seedPendingOrder(client, a.id, 60);
     await seedPendingOrder(client, b.id, 60);
-    const queryFn = () =>
+    // 同一個 Status 配兩種 Message（碼表未經 sandbox 驗證，不能假設一碼一義）
+    const queryFn = (tradeNo: string) =>
       Promise.resolve({
         stillProcessing: true as const,
-        queryFailure: { status: payuniStatus, message: '參數錯誤' },
+        queryFailure: {
+          status: payuniStatus,
+          message: tradeNo === tradeNoA ? '參數錯誤' : '查無此單',
+        },
       });
     const resolveFn = () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const });
 
-    // 兩筆訂單、兩輪對帳：同一個查詢層錯誤碼只留一筆未解決告警
+    // 兩筆訂單、兩輪對帳：每組 Status＋Message 只留一筆未解決告警
     for (let round = 0; round < 2; round++) {
       await reconcilePendingOrders(client, queryFn, resolveFn, {
         thresholdMinutes: 20,
@@ -155,9 +159,12 @@ Deno.test('reconcile：查詢層非 SUCCESS → 依 PayUni Status 去重告警�
     }
 
     const alerts = await alertsWhere(client, 'payuni-query', 'payuniStatus', payuniStatus);
-    assertEquals(alerts.length, 1, `應去重成一筆，實得 ${JSON.stringify(alerts)}`);
-    assertEquals(alerts[0].severity, 'warning');
-    assertEquals((alerts[0].context as Record<string, unknown>).payuniMessage, '參數錯誤');
+    assertEquals(alerts.length, 2, `應每組 Message 各一筆，實得 ${JSON.stringify(alerts)}`);
+    assertEquals(alerts.map((x) => x.severity), ['error', 'error']);
+    assertEquals(
+      alerts.map((x) => (x.context as Record<string, unknown>).payuniMessage).sort(),
+      ['參數錯誤', '查無此單'].sort(),
+    );
 
     const { data: orders } = await client
       .from('payment_orders').select('status').in('user_id', [a.id, b.id]);
@@ -203,7 +210,7 @@ Deno.test('reconcile：查詢層失敗中標 expired → 先寫 warning 告警�
   }
 });
 
-Deno.test('reconcile：查詢確認未付款而標 expired → 留一筆 info 紀錄可查', async () => {
+Deno.test('reconcile：查詢確認未付款而標 expired → 不寫告警（終態本身即紀錄）', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Expire Unpaid' });
 
@@ -216,10 +223,40 @@ Deno.test('reconcile：查詢確認未付款而標 expired → 留一筆 info �
       { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
     );
 
+    // 棄付單到期是常態：每張留一筆會把 warning／error 擠出 admin 告警頁的前 100 筆
     const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
-    assertEquals(alerts.length, 1, `應有一筆 expire 紀錄，實得 ${JSON.stringify(alerts)}`);
-    assertEquals(alerts[0].severity, 'info');
-    assertEquals((alerts[0].context as Record<string, unknown>).reason, 'expired_unpaid');
+    assertEquals(alerts.length, 0, `確認未付款不該寫告警，實得 ${JSON.stringify(alerts)}`);
+
+    const { data: order } = await client
+      .from('payment_orders').select('status').eq('user_id', user.id).single();
+    assertEquals(order?.status, 'expired');
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：查詢到 SUCCESS 而收斂 → 不寫任何告警', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Query Success' });
+
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    const summary = await reconcilePendingOrders(
+      client,
+      (merTradeNo) =>
+        Promise.resolve({
+          stillProcessing: false as const,
+          data: { MerTradeNo: merTradeNo, Status: 'SUCCESS' },
+        }),
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(summary.resolved >= 1, true, `summary=${JSON.stringify(summary)}`);
+
+    const byTradeNo = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    const bySample = await alertsWhere(client, 'payuni-query', 'sampleTradeNo', tradeNo);
+    assertEquals([...byTradeNo, ...bySample], [], '正常收斂路徑不得留下告警');
   } finally {
     await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
     await deleteTestUsers(client, [user.id]);
