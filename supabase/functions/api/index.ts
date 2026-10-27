@@ -2513,8 +2513,11 @@ async function resolveOrderFromPayUni(
 // 核心迴圈抽成獨立、可注入依賴的函數，方便測試（也方便之後真的接上
 // PayUni 查詢 API 時只換掉 queryFn 這個參數，不用動迴圈本身）。
 // ============================================================
+// queryFailure：PayUni 查詢層本身沒回 SUCCESS（這輪根本沒問到）。沒有這個
+// 欄位時，「沒問到」與「問到了、交易未付款」同形，迴圈無從告警——滿天數
+// 的卡單會被靜默標 expired（issue #395）。
 type QueryResult =
-  | { stillProcessing: true }
+  | { stillProcessing: true; queryFailure?: { status: string; message: string } }
   | { stillProcessing: false; data: Record<string, string> };
 
 export async function reconcilePendingOrders(
@@ -2560,7 +2563,34 @@ export async function reconcilePendingOrders(
     try {
       const result = await queryFn(order.transaction_id!);
       if (result.stillProcessing) {
+        const failure = result.queryFailure;
+        if (failure) {
+          // 去重鍵用 PayUni 錯誤碼而非訂單號：參數錯這類系統層故障會讓整批
+          // 卡單撞同一個碼，只該留一筆；各訂單的後果由下方 expire 紀錄按
+          // 訂單號記。Message 原樣帶回，讓「查無此單」與「參數錯」分得開。
+          await logSystemAlertOnce(
+            'payuni-query',
+            { reason: 'query_not_success', payuniStatus: failure.status },
+            { payuniMessage: failure.message, sampleTradeNo: order.transaction_id },
+            'PayUni 交易查詢層未回 SUCCESS，對帳無法判定訂單狀態',
+          );
+        }
         if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+          // 標 expired 前先留紀錄（轉移條件不變）：查詢層失敗下標的是「沒
+          // 驗證過」的終態，可能是實付但 webhook 漏接的單 → warning；查詢
+          // 成功且確認未付款是正常的棄付收尾 → info，只求事後可查。
+          await logSystemAlertOnce(
+            'reconcile-pending-payments',
+            {
+              reason: failure ? 'expired_query_failed' : 'expired_unpaid',
+              tradeNo: order.transaction_id!,
+            },
+            failure ? { payuniStatus: failure.status, payuniMessage: failure.message } : {},
+            failure
+              ? '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付'
+              : '訂單逾期未付款、將標 expired',
+            failure ? 'warning' : 'info',
+          );
           const { error: expireErr } = await client
             .from('payment_orders')
             .update({ status: 'expired' })
@@ -2641,9 +2671,16 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   const raw = await res.json().catch(() => null) as Record<string, string> | null;
   if (!raw) throw new Error('PayUni 查詢回應不是 JSON');
 
-  // 查詢層失敗（例如查無交易）：不代表付款失敗，只代表這輪還無法判定。
+  // 查詢層失敗（例如查無交易、參數錯）：不代表付款失敗，只代表這輪還無法
+  // 判定——但要把 PayUni 的原文帶出去，由對帳迴圈告警（issue #395）。
   if (raw.Status !== 'SUCCESS' || !raw.EncryptInfo) {
-    return { stillProcessing: true };
+    return {
+      stillProcessing: true,
+      queryFailure: {
+        status: String(raw.Status ?? ''),
+        message: String(raw.Message ?? (raw.EncryptInfo ? '' : '回應缺少 EncryptInfo')),
+      },
+    };
   }
 
   const decrypted = Object.fromEntries(
