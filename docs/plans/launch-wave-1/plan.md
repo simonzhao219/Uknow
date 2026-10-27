@@ -249,6 +249,7 @@ commit;
 | 10/27 14:15 | 開 #403（本分支的文件 PR，晉升前合）。六個執行 session 全部在跑（名冊見下）。清資料演練（§4）：Supabase MCP `create_branch` 需要業主確認分支費用，MCP 等不到回答逾時——**待業主在互動視窗核准後重試**。`measure.sql` 落檔（§5 的 SQL 項） | 等執行 session 回報；業主核准分支費用 |
 | 10/27 14:20–14:30 | 執行 session 回報：R1a-2 → PR #405（CI 綠、ready）；告警送到人 → PR #406（CI 綠、draft）；#395 → PR #407（draft，等 CI）；P1a 規劃 → PR #404（1 P0／15 P1，待裁決）；容量 hotfix 工作樹完成但 pre-commit 要 deno、容器裝不了 curl\|sh → 指示改試 `npm install -g deno`；R2 前端循環 6、7 綠、8 施工中，核准其一條紅燈測試字面修正（斷言改以「密碼需包含：」開頭） | 審 #405／#406／#407（三個 agent 進行中） |
 | 10/27 14:30 | 演練分支 `wave1-cleanup-rehearsal`（`ykaxvdxtswhtqohwhlss`，業主在 Dashboard 開的；MCP create_branch 的費用確認視窗兩次都到不了業主）：乾跑 SQL 全部可執行、權限 OK（第一次因分支 migration 尚未套完而找不到 `referral_code_seq`，數秒後即存在——**今晚對正式站不會有這個問題**）。刪除段透過 MCP 兩次 `cancelled` → 裁決 17。business decisions 14–17 落 §0 | 業主在 SQL Editor 貼刪除段 → 主 session 跑零殘留檢查 → 刪分支 |
+| 10/27 14:40 | #405 審過可合併（等晉升）；og 圖開 issue #408。#406／#407 第一輪審查 agent 無 shell 取不到 diff → 以有 shell 的 agent 重審中。容量 hotfix session 連 `npm install -g deno` 也被分類器擋 → 交棒：它把 patch 以 send_message 傳給 #395 session（唯一有 deno＋本機 Supabase 的執行 session），由後者在 #407 ready 後另開 `fix/peak-capacity-hotfix` PR | 等 #406／#407 審查結果、R2 前端 PR、業主貼演練刪除段 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -258,7 +259,7 @@ commit;
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 依裁決 14／15 改成兩階段、重跑 /review-plan 中；之後業主審、業主親打 /tdd-implement |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | CI 綠、draft，主 session 審查中；晉升後合 |
-| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` | Sonnet | `claude/peak-capacity-email-alerts` | — | 工作樹完成，卡 deno 安裝（試 npm 路徑） |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix`（patch 交棒） | — | 原 session 容器裝不了 deno；patch 交 #395 session 在 #407 ready 後開 PR |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | draft、等 CI，主 session 審查中；開放問題「查詢層失敗要不要暫不標 expired」待裁 |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
@@ -272,5 +273,6 @@ commit;
 | 4 | 告警送到人的前置：建 LINE Messaging API channel、取自己的 userId，GitHub Secrets 設 `LINE_CHANNEL_TOKEN`／`LINE_ALERT_TO`／`ALERT_SMTP_USER`／`ALERT_SMTP_PASS`（設計見 `git show origin/ccr-a8db57d0-cb2mgs:docs/plans/launch-readiness/plan.md` 的 B／C 列） | ⬜ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
 | 8 | 核准 Supabase MCP 建拋棄式分支 `wave1-cleanup-rehearsal` 的費用確認（清資料演練用，演練完即刪） | ⬜ |
+| 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
 | 7 | 手動封存兩個卡住的空 session：`session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx`（另一個已封存） | ⬜ |
 | 6 | 寄信上限：§7 第 6 步調 600／小時時，也確認 Authentication → SMTP Settings 是自訂 SMTP（Google Workspace）——R2 邀請與註冊驗證信共用同一個 GoTrue 寄信額度（#399 審查） | ⬜ |
