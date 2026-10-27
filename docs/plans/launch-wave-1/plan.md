@@ -298,6 +298,7 @@ commit;
 | 10/27 22:45–23:20 | 業主核准 production，`/health` sha=f076866 對上（referralInvite 兩旗標 true、PayUni sandbox）；新版 Invite 模板已貼。裁決 29、30。通知 P1a session 準備 PR 2 循環清單、等業主 /tdd-implement。今晚收工；10/28 順序：PR 2 → 第三次晉升 → 清 bucket／清資料 → 註冊＋admin → R2 實寄 → 旗標 → PayUni 切正式 → 真付款 → 宣布 | 業主 10/28 早上到 P1a session 打 /tdd-implement |
 | 10/27 23:30–10/28 00:25 | 業主在 Cloudflare 設 Production 變數並 Retry 兩次，正式站仍是分享選單；pages.dev 預覽網址登不進（Auth 回跳綁 uknow.com.tw，不追）。以主檔 hash 核對：正式站 `index-CWyrVOvQ.js` ＝ 本機**無旗標**建置 → 儀表板變數沒進建置。裁決 31 → 主 session 開 `fix/email-invite-flag-in-git`（`.env.production` ＋ checklist 措辭）。#415 api-tests 重跑綠。P1a 於 2-2 卡住：分類器拒絕「轉述的核准」移除 tdd-lock，業主已親自在該 session 貼授權句 | fix PR CI 綠 → 合進 develop；P1a 續 2-2 綠燈→2-3；第三次晉升等 PR 2 |
 | 10/28 00:30–00:45 | #419 CI 綠 → 轉 ready → **合進 develop（53dd585）**；旗標隨第三次晉升上 main。P1a 經業主親貼授權後解鎖：紅燈修正 `e04a0824`、實作還原 29 測試綠，續 2-2 綠燈 commit。波末 8 條摩擦寫進 friction-log（95557df）。§4 乾跑唯讀計數先跑一次做基準（見 todo #3：無真匯款、completed 13 單皆 sandbox 金額） | P1a 2-3…2-6；10/28 下午審 PR 2；業主清 bucket 後重跑乾跑 |
+| 10/28 00:45–01:10 | P1a 回報 2-1～2-4a 全綠、2-4b 實作完（wip 94dd83c7）卡 3 個測試（既有 `fillCompleteForm` 走舊流程、新 describe 缺 cleanup）；主 session 審過核准修法（mock `useListingPhotos` 三張 done＋`afterEach(cleanup)`）。業主問「為何 P1a 常要我回應」：TDD 守衛要人裁決紅燈測試修正（裁決已由主 session 代行）＋分類器只認業主親打的解鎖授權；業主選擇在 P1a 貼一次**概括授權**（PR 2 剩餘循環，主 session 轉來的核准視同本人）。用 P1a 的介面摘要開 2-5 e2e session（Sonnet） | P1a 2-4b 綠 → 2-6；e2e PR 綠 → P1a fast-forward；10/28 下午審 PR 2 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -305,7 +306,8 @@ commit;
 |---|---|---|---|---|---|
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅、#412 ✅ 已合併 | 收工 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
-| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅ 已合併（PR 1） | PR 2 留 11/3 第 2 波同 session 接手 |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅ 已合併（PR 1）；PR 2 施工中（裁決 30）：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
+| P1a-e2e | `session_01MQovbEJErP6iSDwsEdTfn3` | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
 | 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410 ✅ 已合併 | 收工 |
 | #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 ✅ 已合併 | 收工（#395 方向 3 sandbox 實打留 issue） |
