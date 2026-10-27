@@ -7,7 +7,7 @@
 
 | PR | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|---|
-| 1 後端清理 | 1-1 | listing-photos.ts 純函式 | ⬜ 未開始 | | |
+| 1 後端清理 | 1-1 | listing-photos.ts 純函式 | ✅ 綠 | 48e766f1 | （見 git log） |
 | 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ⬜ 未開始 | | |
 | 1 | 1-3 | listingPhotosApi＋Edit diff 刪＋管理頁改走後端 | ⬜ 未開始 | | |
 | 1 | 1-4 | 文件（規格書 §11、ui-ux §7） | ⬜ 未開始 | | |
@@ -20,7 +20,7 @@
 
 ## 目前位置與下一步
 
-規劃第二版（兩 PR）已依業主裁決改寫，待重跑 `/review-plan` 與業主審；業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1 綠，下一步 1-2 路由與 handlers。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
 
 ## Blockers(逃生口紀錄)
 
