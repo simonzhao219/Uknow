@@ -60,8 +60,11 @@ export async function apiRequest(
   }
 
   // 2. 合併 headers
+  // FormData（multipart）不可預設 JSON Content-Type：要讓瀏覽器自己帶 boundary，
+  // 否則後端 formData() 解析失敗。呼叫端傳入的 headers 仍可覆寫。
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     Authorization: `Bearer ${token}`,
     ...options.headers,
   };
