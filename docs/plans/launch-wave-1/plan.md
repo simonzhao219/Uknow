@@ -268,6 +268,7 @@ commit;
 | 10/27 18:26–18:45 | **journey 子集（sandbox）紅**：拋棄式分支、migration、`--use-api` 部署、signup 探測全綠；pytest 在 PayUni sandbox 刷卡頁「確認送出」後 45 秒表單仍在、卡號欄只剩末四碼（run 40472945048）。史料：10/17 sandbox full 綠（run 39063973420）、10/24 排程紅在拉映像（未到 pytest）→ 今天是 10/17 後第一次碰 PayUni sandbox 頁，判定 PayUni 測試站改版，非本波程式問題。#411 的 journey-full（sandbox）必同樣紅。處置：(a) 重 dispatch 子集改 `payment_mode=webhook`（run 40473648265）驗 R2 hosted 行為；(b) 主 session 依 ≤10 行 CI 例外開 **PR #413**：ci.yml journey-full 暫改 webhook、規則 13 標「暫時至 2026-11-03」；PayUni 邊界由今晚真付款驗（裁決 4）。#413 合進 develop 後 #411 自動跟上重跑 journey-full（webhook，約 30–60 分） | 等 webhook 子集結果 → 合 #413 → 等 #411 journey-full |
 | 10/27 18:50 | **webhook 子集綠**（run 40473648265：30 節點建樹＋Email 邀請 GUI 情境在 hosted 分支通過＝R2 hosted 行為已驗）。#413 CI 只剩 e2e-tests。R2 follow-up PR #412 開出（draft，4 項都做，目標 10/28 晉升）。業主：LINE token 貼成 Channel secret，已指正；裁決 22 | #413 綠 → 合併 → #411 journey-full（webhook）重跑 |
 | 10/27 19:00 | 業主 LINE 推播實測通（curl 回 `{}`、手機收到）；Secret 已更正為長效 Channel access token。#412 審過可合併（P2 順手刪 useRef）。#413 只剩 e2e-tests | #413 綠 → 合併 → #411 journey-full（webhook）|
+| 10/27 19:47 | **#413 合併**（`5779d16`）：develop 的 journey-full 閘門暫走 webhook 至 11/03。#411 head 隨之更新、CI 含 journey-full（webhook、full 30 節點）重跑 | journey-full 綠 → merge commit 合進 main → 叫業主核准 production 部署 |
 
 **執行 session 名冊**（主 session 維護）
 
