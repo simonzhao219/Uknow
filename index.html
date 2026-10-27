@@ -2,7 +2,10 @@
   <html lang="zh-Hant">
     <head>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <!-- interactive-widget=resizes-content：Android Chrome 108+ 預設軟鍵盤不再縮小版面視窗，
+           置中對話框會被鍵盤蓋住一半；設了就回到「鍵盤升起＝視窗縮小」，fixed 元素與置中
+           對話框都會自動讓開。iOS Safari 不認這個參數（它本來就會把聚焦欄位捲進視野）。 -->
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
       <title>Uknow</title>
       <meta
         name="description"
