@@ -17,11 +17,11 @@
 | 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ✅ 綠 | d03a605f | （見 git log） |
 | 2 | 2-4 | PhotoPicker／PhotoCropDialog 接 Create／Edit | ⬜ 未開始 | | |
 | 2 | 2-5 | e2e／journey page object 同步 | ⬜ 未開始 | | |
-| 2 | 2-6 | 文件與 bundle 閘門 | ⬜ 未開始 | | |
+| 2 | 2-6 | 文件與 bundle 閘門 | ✅（規格書 §11 照片原檔列＋上傳流程、spec-drift 新規則、ui-ux §4 照片選取與取景；bundle：gzip 總量 +12.1 kB，其中 PhotoCropDialog＋react-easy-crop 8.9 kB 為按需載入、PhotoPicker 5.9 kB 為 Create／Edit 共用；Create／Edit 頁面 chunk 本身反而縮小，遠低於 40 kB 判準） | （文件／量測，無紅燈） | （見 git log） |
 
 ## 目前位置與下一步
 
-PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4b 綠；2-5 e2e 由 session_01MQovbEJErP6iSDwsEdTfn3 在 feature/listing-photo-pipeline-e2e 進行；下一步 2-6 文件與閘門。
+PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4b、2-6 綠；2-5 e2e 由 session_01MQovbEJErP6iSDwsEdTfn3 在 feature/listing-photo-pipeline-e2e 進行；下一步 check:full、/review-implementation、等 2-5 fast-forward、清理規劃檔、開 PR。
 
 ## 偏離規劃（記入 PR 描述）
 

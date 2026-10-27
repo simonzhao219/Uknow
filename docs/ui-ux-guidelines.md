@@ -84,6 +84,16 @@
 來源存草稿（`src/utils/formDraft.ts`）。完整理由見
 [`multi-step-flow-recovery.md`](multi-step-flow-recovery.md)。
 
+**照片選取與取景**（`PhotoPicker`＋`PhotoCropDialog`，刊登的 Create／Edit 共用）：
+
+- 每張照片先進 1:1 取景對話框（Radix Dialog：焦點陷阱、Esc 等同取消當張），一次選多張時依序逐張進入；取消只影響當張。
+- 對話框內縮放用滑桿、微調用「上下左右」四顆 44px 按鈕（觸控與鍵盤都能操作），Android 返回鍵只關對話框、不離頁
+  （`useOverlayBackClose`）。
+- 每格是一個 `li`，狀態用文字標示（處理中／上傳中／失敗原因），不只靠顏色；按鈕名稱帶序號
+  （「重試第 N 張」「移除第 N 張」「調整第 N 張範圍」）。整頁只有一個常駐的 `aria-live` 播報節點。
+- 按鈕移除後焦點依序落到下一格、上一格、列表容器（§9 的焦點後備）。
+- 裁切工具以動態 import 載入；載入失敗顯示「重新載入裁切工具」（按下後至少顯示一下載入中），載入完成前不可送出。
+
 ## 5. 列表與感知效能
 
 - **列表載入用骨架屏**（與卡片同形 + `aria-busy`），不要單一置中 spinner
