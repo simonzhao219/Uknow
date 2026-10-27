@@ -147,4 +147,11 @@ describe('PhotoCarousel', () => {
     expect(screen.getByRole('button', { name: '第 1 張' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Error loading image' })).toBeNull();
   });
+
+  it('沒有照片時仍渲染一格 fallback 圖，不渲染圓點與計數', () => {
+    render(<PhotoCarousel photos={[]} name="Cara" />);
+
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

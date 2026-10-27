@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
-import { FOCUS_RING, FOCUS_RING_GAP } from '../ui/focusRing';
+import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
 
 interface PhotoCarouselProps {
@@ -29,6 +29,8 @@ function prefersReducedMotion() {
  */
 export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
   const total = photos.length;
+  // 0 張：沿用 ImageWithFallback 原本對空 src 的行為（舊版也是 src={undefined}），不另發明空狀態。
+  const slides: (string | undefined)[] = total === 0 ? [undefined] : photos;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const frame = useRef(0);
   const [index, setIndex] = useState(0);
@@ -82,7 +84,7 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
             'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring',
           )}
         >
-          {photos.map((photo, i) => (
+          {slides.map((photo, i) => (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 照片網址可能重複，順序即身分
               key={i}
@@ -135,7 +137,7 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
         <div className="flex h-6 items-center justify-center">
           {photos.map((photo, i) => (
             // 名稱寫在按鈕上，不取自圖片：圖片載入失敗時 ImageWithFallback 會把 alt 換成
-            // 「Error loading image」，圓點就全變成同一個名字。按鈕 24×24 是點擊範圍（WCAG 2.5.8），圓點本身是裡面的 6px。
+            // 「Error loading image」，圓點就全變成同一個名字。滑鼠下按鈕 24×24（WCAG 2.5.8），觸控下熱區 44×44，圓點本身是裡面的 6px。
             <button
               // biome-ignore lint/suspicious/noArrayIndexKey: 同上
               key={i}
@@ -144,7 +146,9 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
               aria-current={i === index ? 'true' : undefined}
               onClick={() => goTo(i)}
               className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full',
+                'relative flex h-6 w-6 items-center justify-center rounded-full',
+                // 觸控裝置熱區 ≥44px（§1）：寬度撐開、高度用偽元素往上下延伸，視覺列高仍是 h-6
+                'pointer-coarse:w-11 before:absolute before:inset-x-0 before:-inset-y-2.5 before:content-[""]',
                 FOCUS_RING_GAP,
               )}
             >

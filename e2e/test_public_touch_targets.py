@@ -147,3 +147,11 @@ def test_detail_carousel_dot_focus_ring_is_3px_opaque_with_a_gap_and_unclipped(p
         }"""
     )
     assert clipping is None, f"圓點外 4px（環＋間隙）被這個會裁切的祖先擋住：{clipping}"
+
+
+def test_detail_carousel_dot_hit_area_reaches_44px_on_touch(page, rest_mock):
+    """詳情頁輪播圓點在觸控裝置上可點區 ≥44px（視覺仍是 6px 圓點）。"""
+    rest_mock.set_public_listing(DETAIL)
+    page.goto(f"/service-providers/{DETAIL['id']}")
+    expect(page.get_by_role("button", name="第 2 張")).to_be_visible()
+    _assert_reaches_44px(page, 'button[aria-label="第 2 張"]')
