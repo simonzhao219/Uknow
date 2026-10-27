@@ -119,3 +119,34 @@ describe('useInviteAccept', () => {
     expect(hook.result.current.isSubmitting).toBe(false);
   });
 });
+
+describe('useInviteAccept 逾時', () => {
+  it('accept 請求超過 25 秒沒有回應時中止並回沒有 code 的失敗', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, fetchImpl } = setup(() => new Promise<Response>(() => {}));
+      fetchImpl.mockImplementation(
+        (_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          }),
+      );
+      let result: unknown;
+      let pending: Promise<unknown> = Promise.resolve();
+      act(() => {
+        pending = hook.result.current.submit(input).then((r) => {
+          result = r;
+        });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25_000);
+        await pending;
+      });
+      expect(result).toEqual({ kind: 'failed', code: undefined });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

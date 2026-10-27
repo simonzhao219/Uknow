@@ -272,3 +272,62 @@ describe('InviteCard 數字與用語', () => {
     expect(label.className).toContain('min-w-0');
   });
 });
+
+describe('InviteCard 實作審查補測', () => {
+  it('重試送出時先清掉上一次的錯誤句', async () => {
+    apiRequestJson.mockRejectedValueOnce(apiError(503, 'unavailable'));
+    renderCard();
+    fillAndConsent();
+    fireEvent.click(mainButton());
+    await waitFor(() => expect(mainButton().textContent).toBe('快速分享'));
+    fireEvent.change(emailInput(), { target: { value: 'b@example.com' } });
+    fireEvent.click(consentBox());
+    apiRequestJson.mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(mainButton());
+    expect(liveRegion().textContent).toBe('');
+  });
+
+  it('未勾同意聲明的提示與其他錯誤句同樣以錯誤樣式呈現', () => {
+    renderCard();
+    fireEvent.change(emailInput(), { target: { value: 'a@b.co' } });
+    fireEvent.click(mainButton());
+    expect(liveRegion().className).toContain('text-destructive');
+  });
+
+  it('受理後開始輸入下一個 email 時清掉上一筆受理訊息', async () => {
+    apiRequestJson.mockResolvedValue({ accepted: true });
+    renderCard();
+    fillAndConsent();
+    fireEvent.click(mainButton());
+    await waitFor(() => expect(liveRegion().querySelectorAll('p')).toHaveLength(3));
+    fireEvent.change(emailInput(), { target: { value: 'n' } });
+    expect(liveRegion().textContent).toBe('');
+  });
+
+  it('沒有推薦人姓名時不提供 Email 邀請、只剩快速分享', () => {
+    renderCard('   ');
+    expect(screen.queryByLabelText('對方的 Email（選填）')).toBeNull();
+    expect(mainButton().textContent).toBe('快速分享');
+  });
+
+  it('關卡再開時 email、勾選與收合狀態都歸零', async () => {
+    apiRequestJson.mockRejectedValue(apiError(403, 'disabled'));
+    const { rerender } = renderCard();
+    fillAndConsent();
+    fireEvent.click(mainButton());
+    await waitFor(() => expect(screen.queryByLabelText('對方的 Email（選填）')).toBeNull());
+    rerender(
+      <InviteCardDialog
+        open={false}
+        onOpenChange={onOpenChange}
+        code="8048877"
+        memberName="王小明"
+      />,
+    );
+    rerender(
+      <InviteCardDialog open onOpenChange={onOpenChange} code="8048877" memberName="王小明" />,
+    );
+    expect(emailInput().value).toBe('');
+    expect(liveRegion().textContent).toBe('');
+  });
+});

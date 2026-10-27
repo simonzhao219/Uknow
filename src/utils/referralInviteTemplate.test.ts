@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findForbiddenWord } from '@recruitment-copy';
+import { findForbiddenWord, referralDisclosureSentence } from '@recruitment-copy';
 import { REFERRAL_INVITE_TOKEN_TTL_SECONDS } from '@referral-invite-payload';
 import { OFFICIAL_EMAIL, YEARLY_PRICE } from './constants';
 import { readBackendConstant, readPurgeDefaultDays } from '../test-utils/backendConstants';
@@ -47,8 +47,8 @@ describe('referral-invite.html 結構', () => {
 });
 
 describe('referral-invite.html 文案', () => {
-  it('含推薦人揭露句（姓名為模板變數）', () => {
-    expect(r2Branch).toContain(`本邀請由 Uknow 推薦人 ${NAME} 發送`);
+  it('含推薦人揭露句（與 R1a-3 同一常數，姓名為模板變數）', () => {
+    expect(r2Branch).toContain(referralDisclosureSentence(NAME));
   });
 
   it('用語一律推薦人，不出現上線或上層', () => {

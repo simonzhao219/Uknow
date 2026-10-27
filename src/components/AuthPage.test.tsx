@@ -29,6 +29,7 @@ vi.mock('./notifications/NotificationContext', () => ({
 
 const { AuthPage } = await import('./AuthPage');
 const { getPendingReferral } = await import('../utils/referralInvite');
+const { REFERRAL_INVITE_TOKEN_TTL_SECONDS } = await import('@referral-invite-payload');
 
 const b64url = (s: string) =>
   btoa(String.fromCharCode(...new TextEncoder().encode(s)))
@@ -277,5 +278,41 @@ describe('AuthPage 登入步驟的邀請信提示', () => {
     await submitPassword();
     await screen.findByRole('alert');
     expect(screen.queryByText(HINT)).toBeNull();
+  });
+});
+
+describe('AuthPage 實作審查補測', () => {
+  it('清理過期 session 觸發登出時仍保住邀請 token，重新整理回得到設定密碼', async () => {
+    // App.tsx 的 SIGNED_OUT 會清 token；這裡讓 signOut 模擬那個副作用。
+    signOut.mockImplementation(async () => {
+      sessionStorage.removeItem('pending_invite_token');
+      return { error: null };
+    });
+    getSession.mockResolvedValue({ data: { session: { access_token: 'stale' } } });
+    fetchMock.mockImplementationOnce(async () => json(401, {}));
+    renderAt(`/register?invite=${VALID}`);
+    await screen.findByLabelText('設定密碼');
+    await waitFor(() => expect(sessionStorage.getItem('pending_invite_token')).toBe(VALID));
+  });
+
+  it('過期提示的天數綁連結效期常數', async () => {
+    acceptResponse = async () => errorBody('expired');
+    await landOnSetPassword();
+    await submitPassword();
+    const days = REFERRAL_INVITE_TOKEN_TTL_SECONDS / 86400;
+    expect((await screen.findByRole('alert')).textContent).toContain(`${days} 天內有效`);
+  });
+
+  it('invalid_token 提示請回到信件重新點連結', async () => {
+    acceptResponse = async () => errorBody('invalid_token');
+    await landOnSetPassword();
+    await submitPassword();
+    expect((await screen.findByRole('alert')).textContent).toContain('回到信件重新點');
+  });
+
+  it('骨架期間不先顯示 Email 步驟的標題', () => {
+    getSession.mockReturnValue(new Promise(() => {}));
+    renderAt(`/register?invite=${VALID}`);
+    expect(screen.queryByText('請輸入您的 Email')).toBeNull();
   });
 });
