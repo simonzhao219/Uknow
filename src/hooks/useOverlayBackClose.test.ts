@@ -25,13 +25,25 @@ describe('useOverlayBackClose', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('按返回（popstate）→ 呼叫 onClose 一次，且不再 history.back()', () => {
+  it('按返回（popstate）→ 呼叫 onClose 一次，並同步重新武裝（再推一個歷史項）', () => {
+    const onClose = vi.fn();
+    renderHook(() => useOverlayBackClose(true, onClose));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledTimes(2);
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('疊層常駐期間連按兩次返回 → 各呼叫 onClose 一次，整段 history.back 只在卸載時呼叫一次', () => {
     const onClose = vi.fn();
     const { unmount } = renderHook(() => useOverlayBackClose(true, onClose));
     window.dispatchEvent(new PopStateEvent('popstate'));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    unmount();
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(push).toHaveBeenCalledTimes(3);
     expect(back).not.toHaveBeenCalled();
+    unmount();
+    expect(back).toHaveBeenCalledTimes(1);
   });
 
   it('疊層由 UI 自己關掉（open 變 false）→ 吃掉多推的歷史項，不呼叫 onClose', () => {

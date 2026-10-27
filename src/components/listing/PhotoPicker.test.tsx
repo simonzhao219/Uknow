@@ -60,6 +60,8 @@ function makePhotos(
     adjust: vi.fn(),
     loadExisting: vi.fn(),
     submitHint: '',
+    cropToolFailed: false,
+    reportCropToolFailed: vi.fn(),
     photoUrls: slots.filter((s) => s.state === 'done').map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: false,
@@ -313,6 +315,38 @@ describe('PhotoPicker 裁切工具載入中', () => {
   });
 });
 
+describe('PhotoPicker 裁切工具失敗時的提示一致', () => {
+  it('cropToolFailed 時下方提示改說需要重新整理，不再說「請稍候，正在準備照片」', () => {
+    const photos = makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:p' })], {
+      cropToolFailed: true,
+    });
+    render(
+      <PhotoPicker photos={photos} maxCount={3} loadCropDialog={() => new Promise(() => {})} />,
+    );
+    expect(screen.queryByText('請稍候，正在準備照片')).toBeNull();
+    expect(screen.getByText('裁切工具載入失敗，需要重新整理頁面才能繼續')).toBeTruthy();
+  });
+});
+
+describe('PhotoPicker 重試後的焦點', () => {
+  it('按重試後該格按鈕卸載，焦點落在該格（不掉到 body）', () => {
+    const failed = [slot({ id: 'a', state: 'failed', message: 'x' }), slot({ id: 'b' })];
+    const view = render(<PhotoPicker photos={makePhotos(failed)} maxCount={3} />);
+    fireEvent.click(screen.getByRole('button', { name: '重試第 1 張' }));
+    view.rerender(
+      <PhotoPicker
+        photos={makePhotos([
+          slot({ id: 'a', state: 'uploading', previewUrl: 'blob:a' }),
+          failed[1],
+        ])}
+        maxCount={3}
+      />,
+    );
+    const items = screen.getAllByRole('listitem');
+    expect(items[0].contains(document.activeElement)).toBe(true);
+  });
+});
+
 describe('PhotoPicker 裁切工具載入失敗', () => {
   const awaiting = () =>
     makePhotos([slot({ id: 'a', state: 'awaiting_crop', previewUrl: 'blob:p' })]);
@@ -327,7 +361,11 @@ describe('PhotoPicker 裁切工具載入失敗', () => {
       />,
     );
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('裁切工具載入失敗，請重新整理頁面後再試');
+    expect(alert.textContent).toContain(
+      '裁切工具載入失敗，需要重新整理頁面才能繼續；重新整理後已填寫的內容會清空',
+    );
+    expect(alert.textContent).not.toContain('先移除');
+    expect(photos.reportCropToolFailed).toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(photos.confirmCrop).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '移除第 1 張' })).toBeTruthy();

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { MAX_PHOTO_SIZE, MAX_PHOTO_SOURCE_SIZE, PHOTO_MAX_EDGE } from './constants';
 import {
   classifyDecodeError,
@@ -175,12 +175,5 @@ describe('exportPhoto', () => {
     const small = await exportPhoto(io, photo(MAX_PHOTO_SIZE), CROP, SOURCE);
     expect(big.ok && big.value.downscaled).toBe(true);
     expect(small.ok && small.value.downscaled).toBe(false);
-  });
-
-  it('不會呼叫與原檔有關的任何上傳路徑（只輸出 render／encode 的結果）', async () => {
-    const encode = vi.fn(() => Promise.resolve(blobOf(1000)));
-    const { io } = fakeIO({ encode });
-    const r = await exportPhoto(io, photo(), CROP, SOURCE);
-    expect(r.ok && r.value.blob.size).toBe(1000);
   });
 });

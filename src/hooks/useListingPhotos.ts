@@ -76,6 +76,9 @@ export interface UseListingPhotosResult {
   canSubmit: boolean;
   /** 送出鈕為何不能按的原因文字（可按時為空字串）；給 aria-describedby 用。 */
   submitHint: string;
+  /** 裁切工具（動態 chunk）載入失敗：只能整頁重新整理才能恢復。 */
+  cropToolFailed: boolean;
+  reportCropToolFailed: () => void;
   /** 常駐 live region 的播報文字。 */
   announcement: string;
 }
@@ -380,5 +383,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     canSubmit,
     announcement,
     submitHint,
+    cropToolFailed: false,
+    reportCropToolFailed: () => {},
   };
 }

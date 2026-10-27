@@ -162,6 +162,13 @@ describe('deleteListing', () => {
 describe('uploadListingPhoto', () => {
   const blob = () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' });
 
+  it('網路層例外（Failed to fetch 之類的英文原文）→ 換成固定的中文文案', async () => {
+    apiRequest.mockRejectedValue(new ApiError('Failed to fetch', undefined, 'NETWORK_ERROR'));
+    await expect(uploadListingPhoto(new Blob(['x']))).rejects.toThrow(
+      '網路不穩，上傳沒有成功，請重試',
+    );
+  });
+
   it('以 multipart POST /listings/upload-photo，欄位 file 為 JPEG，回傳 photoUrl', async () => {
     apiRequest.mockResolvedValue(
       json(200, { success: true, photoUrl: 'https://cdn.test/u/1.jpg' }),

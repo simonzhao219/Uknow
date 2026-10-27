@@ -458,7 +458,7 @@ describe('useListingPhotos 送出提示', () => {
     await add(h, [fileOf('1.jpg')]);
     await confirm(h);
     await waitFor(() => expect(h.result.current.slots[2].state).toBe('failed'));
-    expect(h.result.current.submitHint).toContain('重試或移除');
+    expect(h.result.current.submitHint).toContain('重試或移除有問題的照片');
   });
 });
 
@@ -523,5 +523,50 @@ describe('useListingPhotos 調整失敗與晚到的非同步結果', () => {
       resolveUpload('https://cdn.test/u/late.jpg');
     });
     expect(h.discarded).toEqual(['https://cdn.test/u/late.jpg']);
+  });
+});
+
+describe('useListingPhotos 上傳回饋與裁切工具失敗', () => {
+  it('按重試的當下播報「重新上傳中」', async () => {
+    let resolveUpload: (u: string) => void = () => {};
+    let first = true;
+    const h = setup({
+      upload: () => {
+        if (first) {
+          first = false;
+          return Promise.reject(new Error('x'));
+        }
+        return new Promise<string>((r) => {
+          resolveUpload = r;
+        });
+      },
+    });
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[0].state).toBe('failed'));
+    await act(async () => {
+      h.result.current.retry(h.result.current.slots[0].id);
+    });
+    expect(h.result.current.announcement).toBe('第 1 張照片重新上傳中');
+    await act(async () => {
+      resolveUpload('https://cdn.test/u/ok.jpg');
+    });
+  });
+
+  it('確認取景後開始上傳的當下播報上傳中', async () => {
+    const h = setup({ upload: () => new Promise<string>(() => {}) });
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    expect(h.result.current.announcement).toBe('第 1 張照片上傳中');
+  });
+
+  it('回報裁切工具載入失敗後，送出提示改成同一句失敗說明（不再說處理中）', async () => {
+    const h = setup();
+    await add(h, [fileOf('1.jpg')]);
+    expect(h.result.current.submitHint).toContain('處理中');
+    act(() => h.result.current.reportCropToolFailed());
+    expect(h.result.current.cropToolFailed).toBe(true);
+    expect(h.result.current.submitHint).toContain('重新整理頁面');
+    expect(h.result.current.submitHint).not.toContain('處理中');
   });
 });
