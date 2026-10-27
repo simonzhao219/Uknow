@@ -102,3 +102,28 @@ export async function removeUnreferencedPhotos(
   const removedPaths = await deps.removeObjects(toRemove);
   return { removed: removedPaths.length, skipped };
 }
+
+// ============================================================
+// 路由處理函式（依賴注入；index.ts 組一次 deps 並註冊路由）
+// ============================================================
+import type { Context } from 'npm:hono@4';
+
+/** 兩個端點各自的限流（fail-open；放大風險由單次 10 筆與前綴約束托底）。 */
+export const LISTING_PHOTOS_DELETE_RATE = { max: 20, windowSeconds: 60 };
+export const LISTING_DELETE_RATE = { max: 20, windowSeconds: 60 };
+
+export interface ListingPhotoHandlerDeps {
+  requireAuth: (c: Context) => Promise<{ id: string } | null>;
+  rateLimit: (key: string, max: number, windowSeconds: number) => Promise<boolean>;
+  cleanup: PhotoCleanupDeps;
+  /** 刪除該使用者的該筆刊登並回傳被刪列的 photos；不存在或非本人回 null；DB 錯誤必須 throw。 */
+  deleteListingRow: (id: string, userId: string) => Promise<{ photos: string[] } | null>;
+  warn: (message: string, ...detail: unknown[]) => void;
+}
+
+export function createListingPhotoHandlers(_deps: ListingPhotoHandlerDeps) {
+  return {
+    deletePhotos: (c: Context) => c.json({ success: false }, 500),
+    deleteListing: (c: Context) => c.json({ success: false }, 500),
+  };
+}
