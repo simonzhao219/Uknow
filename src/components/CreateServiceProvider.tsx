@@ -102,7 +102,6 @@ export function CreateServiceProvider() {
     if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
-    if (!photos.canSubmit) newErrors.photos = `請上傳 ${MAX_PHOTO_COUNT} 張照片`;
 
     // 验证联络方式
     const contactErrors = validateContacts(formData.contacts);
@@ -392,7 +391,6 @@ export function CreateServiceProvider() {
           <div className="space-y-2">
             <Label>上傳照片 * (必須上傳 {MAX_PHOTO_COUNT} 張，第一張為封面照)</Label>
             <PhotoPicker photos={photos} maxCount={MAX_PHOTO_COUNT} />
-            <FieldError error={errors.photos} />
           </div>
 
           <div className="space-y-4">

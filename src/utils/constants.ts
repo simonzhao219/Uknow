@@ -20,7 +20,6 @@ export const PHOTO_MAX_EDGE = 1600; // 輸出正方形的邊長上限（px）
 export const PHOTO_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.5]; // JPEG 品質階梯：由高到低重編
 export const PHOTO_TARGET_BYTES = 600 * 1024; // 目標大小；階梯走完仍超過也照傳（只要 ≤ MAX_PHOTO_SIZE）
 export const MAX_PHOTO_COUNT = 3; // 最多3張照片
-export const ALLOWED_PHOTO_FORMATS = ['image/jpeg', 'image/png', 'image/webp']; // 允許的照片格式
 
 // ============================================
 // 客服聯絡常數

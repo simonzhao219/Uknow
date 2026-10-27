@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centeredSquare, clampCrop, fitWithin, outputEdge, scaleCrop } from './imageGeometry';
+import { clampCrop, fitWithin, outputEdge, scaleCrop } from './imageGeometry';
 
 describe('fitWithin', () => {
   it('最長邊超過上限時等比縮到上限', () => {
@@ -15,26 +15,6 @@ describe('fitWithin', () => {
     const r = fitWithin({ width: 10000, height: 3 }, 1600);
     expect(r.width).toBe(1600);
     expect(r.height).toBe(1);
-  });
-});
-
-describe('centeredSquare', () => {
-  it('橫圖取置中的最大正方形', () => {
-    expect(centeredSquare({ width: 4000, height: 3000 })).toEqual({
-      x: 500,
-      y: 0,
-      width: 3000,
-      height: 3000,
-    });
-  });
-
-  it('直圖取置中的最大正方形', () => {
-    expect(centeredSquare({ width: 3000, height: 4001 })).toEqual({
-      x: 0,
-      y: 500,
-      width: 3000,
-      height: 3000,
-    });
   });
 });
 

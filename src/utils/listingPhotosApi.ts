@@ -8,7 +8,7 @@ import {
 
 /**
  * 刊登照片的 Storage 清理（對應後端 DELETE /listings/photos、DELETE /listings/:id）。
- * 規劃：docs/plans/listing-photo-pipeline/plan.md §2.2。
+ * 規格：規格書 §11、§14。
  */
 
 /** 刊登照片 bucket——與後端 listing-photos.ts 的 LISTING_PHOTOS_BUCKET 同一個字串。 */
@@ -104,6 +104,10 @@ export async function uploadListingPhoto(blob: Blob): Promise<string> {
     return photoUrl;
   } catch (error) {
     if (controller.signal.aborted) throw new ApiError('上傳逾時，請重試', undefined, 'TIMEOUT');
+    // fetch 例外的原文是瀏覽器的英文（Failed to fetch／Load failed），不直接顯示給使用者。
+    if (error instanceof ApiError && error.code === 'NETWORK_ERROR') {
+      throw new ApiError('網路不穩，上傳沒有成功，請重試', undefined, 'NETWORK_ERROR');
+    }
     throw error;
   } finally {
     clearTimeout(timer);

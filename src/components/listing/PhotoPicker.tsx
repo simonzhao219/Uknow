@@ -1,6 +1,6 @@
 /**
  * 刊登照片選取／狀態列表（Create／Edit 共用）。狀態機在 useListingPhotos，這裡只負責呈現與焦點。
- * 規劃：docs/plans/listing-photo-pipeline/plan.md §4。
+ * 規格：規格書 §11；UI 準則見 ui-ux-guidelines §4。
  *
  * 取景對話框以 React.lazy 動態載入（react-easy-crop 留在 lazy chunk 內）；載入失敗＝顯示
  * 「請重新整理頁面」，該張維持等待取景而不可送出——**不會**偷偷改用自動置中裁。
@@ -54,12 +54,15 @@ function CropToolPending() {
 }
 
 class CropBoundary extends Component<
-  { onReload: () => void; children: ReactNode },
+  { onReload: () => void; onFailed: () => void; children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onFailed();
   }
   render() {
     if (!this.state.failed) return this.props.children;
@@ -68,7 +71,7 @@ class CropBoundary extends Component<
         className="rounded-md border border-warning-border bg-warning-subtle p-3 text-sm"
         role="alert"
       >
-        <p>裁切工具載入失敗，請重新整理頁面後再試。也可以先移除這張照片。</p>
+        <p>裁切工具載入失敗，需要重新整理頁面才能繼續；重新整理後已填寫的內容會清空。</p>
         <Button
           type="button"
           tone="secondary"
@@ -88,11 +91,13 @@ function SlotButtons({
   n,
   photos,
   onRemove,
+  onRetry,
 }: {
   slot: PhotoSlot;
   n: number;
   photos: UseListingPhotosResult;
   onRemove: () => void;
+  onRetry: () => void;
 }) {
   const btn = 'min-h-11';
   const remove = (
@@ -116,7 +121,7 @@ function SlotButtons({
             tone="secondary"
             size="sm"
             className={btn}
-            onClick={() => photos.retry(slot.id)}
+            onClick={onRetry}
             aria-label={`重試第 ${n} 張`}
           >
             重試
@@ -159,6 +164,7 @@ export function PhotoPicker({
   const { slots, pendingCrop } = photos;
   const listRef = useRef<HTMLUListElement>(null);
   const focusAfterRemove = useRef<number | null>(null);
+  const focusAfterRetry = useRef<string | null>(null);
   const loaderRef = useRef(loadCropDialog);
   loaderRef.current = loadCropDialog;
   const CropDialog = useMemo(() => lazy(() => loaderRef.current()), []);
@@ -176,6 +182,17 @@ export function PhotoPicker({
       if (target) return target.focus();
     }
     listRef.current?.focus();
+  }, [slots]);
+
+  // 按「重試」後該格按鈕會卸載（failed → uploading），焦點交給該格的 li（tabIndex=-1）。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在 slots 變動後處理待落焦點
+  useEffect(() => {
+    const id = focusAfterRetry.current;
+    if (id === null) return;
+    const slot = slots.find((s) => s.id === id);
+    if (slot?.state === 'failed') return;
+    focusAfterRetry.current = null;
+    listRef.current?.querySelector<HTMLElement>(`li[data-slot-id="${id}"]`)?.focus();
   }, [slots]);
 
   // 取景對話框整個佇列期間常駐；真的關閉（pendingCrop 清空）時，Radix 沒有觸發元件可還焦點，
@@ -197,13 +214,15 @@ export function PhotoPicker({
 
   const full = slots.length >= maxCount;
   const waiting = slots.some((s) => s.state === 'awaiting_crop' || s.state === 'preparing');
-  const hint = full
-    ? `已選滿 ${maxCount} 張；要換照片請先移除一張`
-    : waiting
-      ? '請稍候，正在準備照片'
-      : slots.length === 0
-        ? `尚未選擇照片（需要 ${maxCount} 張）`
-        : `還可以再選 ${maxCount - slots.length} 張`;
+  const hint = photos.cropToolFailed
+    ? '裁切工具載入失敗，需要重新整理頁面才能繼續'
+    : full
+      ? `已選滿 ${maxCount} 張；要換照片請先移除一張`
+      : waiting
+        ? '請稍候，正在準備照片'
+        : slots.length === 0
+          ? `尚未選擇照片（需要 ${maxCount} 張）`
+          : `還可以再選 ${maxCount - slots.length} 張`;
 
   return (
     <div className="space-y-3">
@@ -222,7 +241,12 @@ export function PhotoPicker({
           const n = i + 1;
           const src = slot.previewUrl ?? slot.url;
           return (
-            <li key={slot.id} className="space-y-2">
+            <li
+              key={slot.id}
+              data-slot-id={slot.id}
+              tabIndex={-1}
+              className="space-y-2 outline-none"
+            >
               <div className="aspect-square overflow-hidden rounded-md bg-muted">
                 {src && (
                   <img src={src} alt={`第 ${n} 張照片`} className="h-full w-full object-cover" />
@@ -238,6 +262,10 @@ export function PhotoPicker({
                   slot={slot}
                   n={n}
                   photos={photos}
+                  onRetry={() => {
+                    focusAfterRetry.current = slot.id;
+                    photos.retry(slot.id);
+                  }}
                   onRemove={() => {
                     focusAfterRemove.current = i;
                     photos.remove(slot.id);
@@ -269,7 +297,7 @@ export function PhotoPicker({
       {photos.notice && <p className="text-sm text-warning">{photos.notice}</p>}
 
       {pendingCrop && (
-        <CropBoundary onReload={reloadPage}>
+        <CropBoundary onReload={reloadPage} onFailed={photos.reportCropToolFailed}>
           <Suspense fallback={<CropToolPending />}>
             <CropDialog
               ordinal={slots.findIndex((s) => s.id === pendingCrop.slotId) + 1}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook } from '@testing-library/react';
+import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useOverlayBackClose } from './useOverlayBackClose';
 
@@ -11,7 +11,10 @@ describe('useOverlayBackClose', () => {
     push = vi.spyOn(window.history, 'pushState');
     back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    cleanup(); // 先卸載前面測試留下的 hook（否則它們的 popstate 監聽會一起回應）
+    vi.restoreAllMocks();
+  });
 
   it('開啟時推一個歷史項，沿用目前的 history.state（路由器不當成換頁）', () => {
     window.history.replaceState({ idx: 4, key: 'k' }, '');

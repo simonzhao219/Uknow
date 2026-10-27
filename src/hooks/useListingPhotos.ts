@@ -1,6 +1,6 @@
 /**
  * 刊登照片的每張狀態機與選圖佇列（Create／Edit 共用）。
- * 規劃：docs/plans/listing-photo-pipeline/plan.md §2.3／§4。
+ * 規格：規格書 §11 照片上傳流程；UI 準則見 ui-ux-guidelines §4。
  * 瀏覽器相依（解碼、上傳、預覽 URL）都經注入，方便測試。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -112,6 +112,8 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [cropToolFailed, setCropToolFailed] = useState(false);
+  const reportCropToolFailed = useCallback(() => setCropToolFailed(true), []);
   // slotsRef 與 state 同步更新，讓連續的非同步回呼讀到的是最新的清單。
   const slotsRef = useRef(slots);
   const data = useRef(new Map<string, SlotData>());
@@ -180,6 +182,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
   const runUpload = useCallback(
     (id: string, blob: Blob) => {
       patch(id, { state: 'uploading', message: undefined });
+      setAnnouncement(`第 ${ordinal(id)} 張照片上傳中`);
       upload(blob).then(
         (url) => {
           if (!exists(id)) {
@@ -345,8 +348,9 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
       const slot = slotsRef.current.find((s) => s.id === id);
       if (!blob || slot?.state !== 'failed') return;
       runUpload(id, blob);
+      setAnnouncement(`第 ${ordinal(id)} 張照片重新上傳中`);
     },
-    [runUpload],
+    [runUpload, ordinal],
   );
 
   const pendingCrop = useMemo<PendingCrop | null>(() => {
@@ -361,11 +365,13 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
   const canSubmit = slots.length === maxCount && slots.every((s) => s.state === 'done');
   const submitHint = canSubmit
     ? ''
-    : slots.some((s) => s.state === 'failed' || s.state === 'unprocessable')
-      ? '有照片上傳失敗或無法處理，請重試或移除後才能送出'
-      : isBusy
-        ? '照片處理中，完成後才能送出'
-        : `還需要 ${maxCount - slots.length} 張照片才能送出`;
+    : cropToolFailed
+      ? '裁切工具載入失敗，需要重新整理頁面才能繼續'
+      : slots.some((s) => s.state === 'failed' || s.state === 'unprocessable')
+        ? '有照片上傳失敗或無法處理，請重試或移除有問題的照片'
+        : isBusy
+          ? '照片處理中，完成後才能送出'
+          : `還需要 ${maxCount - slots.length} 張照片才能送出`;
 
   return {
     slots,
@@ -383,7 +389,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     canSubmit,
     announcement,
     submitHint,
-    cropToolFailed: false,
-    reportCropToolFailed: () => {},
+    cropToolFailed,
+    reportCropToolFailed,
   };
 }

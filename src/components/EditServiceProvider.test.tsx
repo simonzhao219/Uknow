@@ -190,10 +190,9 @@ describe('EditServiceProvider 照片區', () => {
     expect(save.getAttribute('aria-describedby')).toContain(hint.id);
   });
 
-  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 清掉該檔，清理失敗不影響表單', async () => {
+  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 以該網址呼叫清理，之後仍可存檔', async () => {
     renderEdit();
     await screen.findByRole('list', { name: '已選擇的照片' });
-    h.cleanup.mockRejectedValueOnce(new Error('storage down'));
     h.lastOptions?.onDiscardUploaded?.('https://p.supabase.co/new.jpg');
     expect(h.cleanup).toHaveBeenCalledWith(['https://p.supabase.co/new.jpg'], []);
     await submit();

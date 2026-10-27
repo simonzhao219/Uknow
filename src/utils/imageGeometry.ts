@@ -1,6 +1,6 @@
 /**
  * 照片裁切／縮放的純數學（不碰 DOM）。座標一律是像素；裁切框是 `PixelCrop`
- * （與 react-easy-crop 的 croppedAreaPixels 同形）。規劃：docs/plans/listing-photo-pipeline/plan.md §2.3。
+ * （與 react-easy-crop 的 croppedAreaPixels 同形）。
  */
 
 export interface Size {
@@ -21,17 +21,6 @@ export function fitWithin(size: Size, maxEdge: number): Size {
   return {
     width: Math.max(1, Math.round(size.width * scale)),
     height: Math.max(1, Math.round(size.height * scale)),
-  };
-}
-
-/** 預設取景框：置中的最大正方形。 */
-export function centeredSquare(source: Size): PixelCrop {
-  const edge = Math.min(source.width, source.height);
-  return {
-    x: Math.floor((source.width - edge) / 2),
-    y: Math.floor((source.height - edge) / 2),
-    width: edge,
-    height: edge,
   };
 }
 

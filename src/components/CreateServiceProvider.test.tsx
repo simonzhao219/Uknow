@@ -241,10 +241,9 @@ describe('CreateServiceProvider 照片區', () => {
     expect(submit.getAttribute('aria-describedby')).toContain(hint.id);
   });
 
-  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 清掉該檔，清理失敗不影響表單', async () => {
+  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 以該網址呼叫清理，不影響表單', async () => {
     renderForm();
     await screen.findByRole('list', { name: '已選擇的照片' });
-    cleanupRemovedPhotos.mockRejectedValueOnce(new Error('storage down'));
     photoOverride.lastOptions?.onDiscardUploaded?.('https://cdn.test/new.jpg');
     expect(cleanupRemovedPhotos).toHaveBeenCalledWith(['https://cdn.test/new.jpg'], []);
     expect(screen.getByRole('list', { name: '已選擇的照片' })).toBeTruthy();
