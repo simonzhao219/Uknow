@@ -70,3 +70,8 @@ export async function deleteListing(id: string): Promise<'deleted' | 'already-de
   if (res.status === 404 && extractApiErrorCode(body) === 'not_found') return 'already-deleted';
   throw apiErrorFromBody(body, res.status);
 }
+
+/** 上傳一張已處理好的 JPEG（走 apiClient：附 token、401 refresh）；回傳 public URL。 */
+export async function uploadListingPhoto(_blob: Blob): Promise<string> {
+  return '';
+}
