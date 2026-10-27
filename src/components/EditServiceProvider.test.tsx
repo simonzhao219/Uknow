@@ -29,7 +29,20 @@ const h = vi.hoisted(() => ({
   cleanup: vi.fn(),
   showToast: vi.fn(),
   invalidate: vi.fn(),
+  lastOptions: null as null | { onDiscardUploaded?: (url: string) => void },
 }));
+
+// 只為了取得元件傳給 hook 的選項（驗接線）；行為仍走真的 hook。
+vi.mock('../hooks/useListingPhotos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/useListingPhotos')>();
+  return {
+    ...actual,
+    useListingPhotos: (options: Parameters<typeof actual.useListingPhotos>[0]) => {
+      h.lastOptions = options;
+      return actual.useListingPhotos(options);
+    },
+  };
+});
 
 vi.mock('../contexts/DataCacheContext', () => ({
   useDataCache: () => ({ invalidate: h.invalidate }),
@@ -165,5 +178,25 @@ describe('EditServiceProvider 照片區', () => {
     const save = await screen.findByRole('button', { name: /儲存變更/ });
     await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(true));
     expect(h.updatePayloads).toHaveLength(0);
+  });
+
+  it('移除到不足三張時，儲存鈕旁用文字說明還缺幾張，並以 aria-describedby 關聯', async () => {
+    renderEdit();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    fireEvent.click(screen.getByRole('button', { name: '移除第 2 張' }));
+    const save = await screen.findByRole('button', { name: /儲存變更/ });
+    const hint = await screen.findByText('還需要 1 張照片才能送出');
+    expect(hint.id).not.toBe('');
+    expect(save.getAttribute('aria-describedby')).toContain(hint.id);
+  });
+
+  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 清掉該檔，清理失敗不影響表單', async () => {
+    renderEdit();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    h.cleanup.mockRejectedValueOnce(new Error('storage down'));
+    h.lastOptions?.onDiscardUploaded?.('https://p.supabase.co/new.jpg');
+    expect(h.cleanup).toHaveBeenCalledWith(['https://p.supabase.co/new.jpg'], []);
+    await submit();
+    await waitFor(() => expect(h.updatePayloads).toHaveLength(1));
   });
 });

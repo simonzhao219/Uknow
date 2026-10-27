@@ -40,12 +40,21 @@ const THREE_PHOTOS = [
   'https://cdn.test/u/2.jpg',
   'https://cdn.test/u/3.jpg',
 ];
-const photoOverride = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }));
+const photoOverride = vi.hoisted(() => ({
+  value: null as Record<string, unknown> | null,
+  lastOptions: null as null | { onDiscardUploaded?: (url: string) => void },
+}));
+const cleanupRemovedPhotos = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock('../utils/listingPhotosApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/listingPhotosApi')>()),
+  cleanupRemovedPhotos,
+}));
 vi.mock('../hooks/useListingPhotos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../hooks/useListingPhotos')>();
   return {
     ...actual,
     useListingPhotos: (options: Parameters<typeof actual.useListingPhotos>[0]) => {
+      photoOverride.lastOptions = options;
       const real = actual.useListingPhotos(options);
       return photoOverride.value ? { ...real, ...photoOverride.value } : real;
     },
@@ -211,13 +220,33 @@ describe('CreateServiceProvider 照片區', () => {
     expect((submit as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('選了照片會進入取景流程，而不是直接上傳（原檔 5–20MB 也不被前端 5MB 擋下）', async () => {
+  it('選了照片會把檔案交給 addFiles（原檔 5–20MB 不在前端被 5MB 擋下）', async () => {
+    const addFiles = vi.fn();
+    photoOverride.value = { addFiles };
     renderForm();
     await screen.findByRole('list', { name: '已選擇的照片' });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const big = new File([new Uint8Array(6 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [big] } });
-    // 6MB 原檔不應出現「不能超過 5MB」的前端錯誤提示
-    await waitFor(() => expect(screen.queryByText(/不能超過 5MB/)).toBeNull());
+    expect(addFiles).toHaveBeenCalledWith([big]);
+    expect(screen.queryByText(/不能超過 5MB/)).toBeNull();
+  });
+
+  it('照片未滿時，建立鈕旁用文字說明原因，並以 aria-describedby 關聯', async () => {
+    photoOverride.value = { canSubmit: false, submitHint: '還需要 2 張照片才能送出' };
+    renderForm();
+    const submit = await screen.findByRole('button', { name: /建立刊登/ });
+    const hint = screen.getByText('還需要 2 張照片才能送出');
+    expect(hint.id).not.toBe('');
+    expect(submit.getAttribute('aria-describedby')).toContain(hint.id);
+  });
+
+  it('本次新上傳的照片被丟棄（onDiscardUploaded）→ 清掉該檔，清理失敗不影響表單', async () => {
+    renderForm();
+    await screen.findByRole('list', { name: '已選擇的照片' });
+    cleanupRemovedPhotos.mockRejectedValueOnce(new Error('storage down'));
+    photoOverride.lastOptions?.onDiscardUploaded?.('https://cdn.test/new.jpg');
+    expect(cleanupRemovedPhotos).toHaveBeenCalledWith(['https://cdn.test/new.jpg'], []);
+    expect(screen.getByRole('list', { name: '已選擇的照片' })).toBeTruthy();
   });
 });
