@@ -58,6 +58,8 @@
 | 31 | Email 邀請前端旗標寫進 git（業主 10/28 00:20） | Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` Retry 兩次仍未進建置（正式站主檔 `index-CWyrVOvQ.js` ＝ 本機無旗標建置；repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它為唯一設定來源）。改加 `.env.production`（與 `.env.development` 對稱），主 session 自己做（設定一行＋文件）、fix PR 合進 develop；**等 P1a PR 2 一起第三次晉升**，不另開晉升。Email 實寄核對順延到該次核准後 |
 | 32 | 會員中心刊登卡對齊推薦卡版式（業主 10/28 02:30） | 刊登卡改四行：標題／小標「我的刊登」／主字（「尚未刊登」或主題，單行截斷）／第四行走 `action` 插槽（未刊登＝「立即刊登」鈕，已刊登＝`CategoryBadge` 類別徽章）；拿掉「會籍至」（我的訂閱卡已有週期）；注意溢字。新開 Sonnet session、Plan Mode、`fix/member-center-listing-card`，**跟 PR 2 與旗標一起第三次晉升** |
 | 33 | 夜間授權第二段（業主 10/28 02:45，休息 6 小時至約 08:45） | 主 session 不等業主：#421、刊登卡 PR、#415 審完合 develop → 開第三次晉升 PR → journey-full 綠 → **合進 main**。只有 production 部署核准是業主的（GitHub `production` 環境 required reviewer），醒來按核准 → `/health` sha 核對 → 業主手動測一輪 → 才開始清資料與 PayUni 切正式。執行 session 的 tdd-lock 解鎖沿用 P1a 概括授權；分類器擋下的事主 session 記 §8 等業主 |
+| 34 | 取景框等於整個方框（業主 10/28 04:10，正式站實測） | react-easy-crop 預設把 crop area 算成媒體 contain 後的尺寸，直式照片左右留灰、上下溢出；改量容器邊長傳 `cropSize`＋`objectFit=cover`。P1a 小 PR |
+| 35 | 照片格改版（業主 10/28 04:20） | 格內不再有「調整範圍」「移除」文字鈕：移除＝縮圖右上角叉叉（aria 不變）、點縮圖進入調整（僅本次新增且完成的格；舊圖標示不能重新取景）、失敗格留「重試」；微調步距 10→4px。併同 34 一個 PR（#425） |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -314,6 +316,7 @@ commit;
 | 10/28 02:45–03:15 | P1a 三批修補完成（head a584f0d：U1 返回鍵紅 dfd0c4c8→綠 85749d4、U2–U6、R1–R3、A1–A4），主 session 抽查返回鍵 hook 正確；a584f0d CI 全綠（含 e2e 新情境）。刊登卡 **#422**（紅 87f5bb2→綠 f4fa795）主 session 審過、CI 綠 → **合進 develop（0146f8a）**，session 封存。#421 由主 session rebase 到 0146f8a → head ab2d09a，等 CI。#421 36f946a 那輪 api-tests 映像限流（今晚第三次）已留 PR 說明 | #421 CI 綠 → 合；#415 rebase → 合；開第三次晉升 PR |
 | 10/28 03:15–03:35 | #421 rebase 後 head ab2d09a CI 全綠 → 轉 ready → **合進 develop（e0b286f）**，P1a 收工。develop 現含 #419 旗標、#422 刊登卡、#421 照片管線。主 session 開**第三次晉升 PR**（develop e0b286f → main）；#415 改為晉升後再合（docs，不擋上線） | 晉升 PR journey-full 綠 → 合進 main → 業主醒來核准 production |
 | 10/28 03:35–04:05 | **#423 journey-full（真後端 26 分鐘）＋全軌綠 → 轉 ready → 合進 main（66c2cf0）**。正式站 Edge Function 部署在 GitHub `production` 環境等業主核准；Cloudflare 會自動建 main 的前端。#415 已 rebase（333dff6，CI 綠）等這則紀錄推上後再合。業主醒來清單見 §7 第 13 步 | 業主核准 production → `/health` sha=66c2cf0 → 手動測 → 清 bucket／清資料 → PayUni |
+| 10/28 04:05–05:10 | 業主醒來在正式站實測，提出裁決 34、35（取景框填滿、縮圖叉叉／點縮圖調整／微調 4px）→ P1a 開 **#425**（紅 bcd4b7a7、f29aa302）→ 主 session 審 diff → CI 綠 → **合進 develop（98b9d95）**。業主另一 session 合入 **#424**（e2e 改跑官方 Playwright image，develop CI 綠 11 分鐘）。#415 的 api-tests 兩度映像限流＋job 20 分鐘上限（supabase start 17 分鐘），改 rebase 到新 develop 重跑。開**第四次晉升 PR**（develop 98b9d95 → main，含 #424、#425） | 第四次晉升 journey-full 綠 → 合 main → 業主核准 production（核准最新那筆）；#415 晉升後再合 |
 
 **執行 session 名冊**（主 session 維護）
 
