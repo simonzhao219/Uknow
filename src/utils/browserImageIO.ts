@@ -22,6 +22,9 @@ function readNaturalSize(file: File): Promise<Size> {
   });
 }
 
+/** 透明圖轉 JPEG 時鋪的底色（canvas 像素色，不是 UI 色）。 */
+export const JPEG_FLATTEN_BACKGROUND = '#ffffff';
+
 export const browserImageIO: ImageIO = {
   supported: () =>
     typeof createImageBitmap === 'function' &&
@@ -47,7 +50,7 @@ export const browserImageIO: ImageIO = {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('無法取得繪圖環境');
     // 透明 PNG 轉 JPEG 預設會變黑底，先鋪白底。
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = JPEG_FLATTEN_BACKGROUND;
     ctx.fillRect(0, 0, edge, edge);
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(

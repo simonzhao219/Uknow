@@ -257,9 +257,8 @@ export function PhotoPicker({
           disabled={full || waiting}
           className="peer sr-only"
           onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
+            photos.addFiles(Array.from(e.target.files ?? []));
             e.target.value = '';
-            if (files.length > 0) photos.addFiles(files);
           }}
         />
         <span className="inline-flex min-h-11 cursor-pointer items-center rounded-md border px-4 text-sm peer-focus-visible:ring-[3px] peer-disabled:cursor-not-allowed peer-disabled:opacity-50">

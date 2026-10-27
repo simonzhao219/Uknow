@@ -3,7 +3,7 @@
 // ImageIO 的瀏覽器實作：缺 API 時 supported() 為 false；解碼只在最長邊超過上限時才縮小（不放大）；
 // 繪製時先鋪白底（透明 PNG 轉 JPEG 不變黑）再畫裁切範圍；編碼走 canvas.toBlob 的 JPEG。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { browserImageIO } from './browserImageIO';
+import { browserImageIO, JPEG_FLATTEN_BACKGROUND } from './browserImageIO';
 
 const createImageBitmapMock = vi.fn();
 
@@ -122,7 +122,7 @@ describe('browserImageIO.render／encode', () => {
     )) as HTMLCanvasElement;
     expect(canvas.width).toBe(1600);
     expect(canvas.height).toBe(1600);
-    expect(ctx.fillStyle).toBe('#ffffff');
+    expect(ctx.fillStyle).toBe(JPEG_FLATTEN_BACKGROUND);
     expect(calls[0]).toEqual(['fillRect', 0, 0, 1600, 1600]);
     expect(calls[1]).toEqual(['drawImage', 'bitmap', 400, 0, 2400, 2400, 0, 0, 1600, 1600]);
   });
