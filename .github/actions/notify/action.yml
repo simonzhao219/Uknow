@@ -1,0 +1,82 @@
+name: Notify
+description: 把告警推到 LINE（最小版；Email 留第 2 波）。缺 Secrets 或推送失敗都不讓呼叫端變紅。
+
+# ============================================================================
+# 為什麼「永遠不失敗」：通知是安全網的安全網。呼叫端本來就是因為出事才走到
+# 這裡（失敗路徑），通知再把 workflow 弄出第二個紅燈，只會蓋掉原本的故障訊號。
+# 缺 Secrets 時 no-op 並寫進 step summary，讓「沒設定」看得見而不是靜默。
+#
+# composite action 讀不到 secrets 上下文，所以憑證由呼叫端以 input 傳入。
+# 訊息不得含個資：呼叫端只傳環境／來源／run 連結／告警 id 這類識別資訊，
+# 不傳 email、姓名、訂單金額；本 action 另把 body 截到 200 字元。
+# ============================================================================
+inputs:
+  level:
+    description: 'P1（正式站／錢）或 P2（develop／可延後）'
+    required: true
+  title:
+    description: '一行標題，必須標明環境'
+    required: true
+  body:
+    description: '補充說明（不得含個資）'
+    required: false
+    default: ''
+  run_url:
+    description: '出事的 workflow run 連結'
+    required: false
+    default: ''
+  line_channel_token:
+    description: 'LINE Messaging API channel access token（secrets.LINE_CHANNEL_TOKEN）'
+    required: false
+    default: ''
+  line_to:
+    description: '收件人 LINE userId（secrets.LINE_ALERT_TO）'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: 推送 LINE 告警
+      shell: bash
+      env:
+        N_LEVEL: ${{ inputs.level }}
+        N_TITLE: ${{ inputs.title }}
+        N_BODY: ${{ inputs.body }}
+        N_RUN_URL: ${{ inputs.run_url }}
+        N_TOKEN: ${{ inputs.line_channel_token }}
+        N_TO: ${{ inputs.line_to }}
+      run: |
+        set -uo pipefail
+        if [ -z "$N_TOKEN" ] || [ -z "$N_TO" ]; then
+          echo "::warning::LINE_CHANNEL_TOKEN／LINE_ALERT_TO 未設定，告警沒有送出：[$N_LEVEL] $N_TITLE"
+          {
+            echo "### ⚠️ 告警未送出"
+            echo ""
+            echo "repository secrets \`LINE_CHANNEL_TOKEN\` 與 \`LINE_ALERT_TO\` 未設定，notify 為 no-op。"
+            echo "- [$N_LEVEL] $N_TITLE"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        payload="$(python3 -c '
+        import json, os
+        e = os.environ
+        lines = ["[%s] %s" % (e["N_LEVEL"], e["N_TITLE"])]
+        if e["N_BODY"]:
+            lines.append(e["N_BODY"][:200])
+        if e["N_RUN_URL"]:
+            lines.append(e["N_RUN_URL"])
+        print(json.dumps({"to": e["N_TO"], "messages": [{"type": "text", "text": "\n".join(lines)[:1000]}]}))
+        ')"
+        code="$(curl -sS -o /tmp/line-resp.txt -w '%{http_code}' --max-time 20 \
+          -X POST https://api.line.me/v2/bot/message/push \
+          -H "Authorization: Bearer $N_TOKEN" \
+          -H 'Content-Type: application/json' \
+          -d "$payload" || echo 000)"
+        if [ "$code" = "200" ]; then
+          echo "LINE 告警已送出：[$N_LEVEL] $N_TITLE" | tee -a "$GITHUB_STEP_SUMMARY"
+        else
+          echo "::warning::LINE 推送失敗（HTTP $code）：$(head -c 300 /tmp/line-resp.txt 2>/dev/null)"
+          echo "### ⚠️ LINE 推送失敗（HTTP $code）" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit 0
