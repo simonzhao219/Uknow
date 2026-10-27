@@ -2,7 +2,8 @@
 //
 // 取景框要等於整個方框：量測容器邊長，把它當 cropSize 交給 Cropper，
 // 且媒體用 cover 蓋滿（直式照片 zoom 1 時不會左右留灰邊、也不會上下溢出框外）。
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { PHOTO_NUDGE_STEP_PX } from '../../utils/constants';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const cropperProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
@@ -47,5 +48,20 @@ describe('PhotoCropDialog 取景框', () => {
     expect(cropperProps.last?.objectFit).toBe('cover');
     expect(cropperProps.last?.minZoom).toBe(1);
     expect(cropperProps.last?.aspect).toBe(1);
+  });
+
+  it('微調鈕一次移動 PHOTO_NUDGE_STEP_PX（4px），四個方向各依其向', async () => {
+    render(
+      <PhotoCropDialog ordinal={1} previewUrl="blob:p" onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
+    await screen.findByTestId('cropper');
+    expect(PHOTO_NUDGE_STEP_PX).toBe(4);
+    fireEvent.click(screen.getByRole('button', { name: '向右移動' }));
+    expect(cropperProps.last?.crop).toEqual({ x: 4, y: 0 });
+    fireEvent.click(screen.getByRole('button', { name: '向下移動' }));
+    expect(cropperProps.last?.crop).toEqual({ x: 4, y: 4 });
+    fireEvent.click(screen.getByRole('button', { name: '向左移動' }));
+    fireEvent.click(screen.getByRole('button', { name: '向上移動' }));
+    expect(cropperProps.last?.crop).toEqual({ x: 0, y: 0 });
   });
 });

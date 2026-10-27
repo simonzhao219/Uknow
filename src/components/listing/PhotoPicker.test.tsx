@@ -120,8 +120,9 @@ describe('PhotoPicker 各狀態的按鈕與文字', () => {
       .queryAllByRole('button')
       .map((b) => b.getAttribute('aria-label') ?? b.textContent);
 
+  // 縮圖上的叉叉（移除）與縮圖本身（調整）排在前面，失敗格的「重試」在文字區。
   it.each([
-    ['failed', { state: 'failed', message: '網絡請求失敗' }, ['重試第 1 張', '移除第 1 張']],
+    ['failed', { state: 'failed', message: '網絡請求失敗' }, ['移除第 1 張', '重試第 1 張']],
     ['unprocessable', { state: 'unprocessable', message: '無法處理' }, ['移除第 1 張']],
     ['done（本次新增）', { state: 'done' }, ['調整第 1 張範圍', '移除第 1 張']],
     ['done（既有舊圖）', { state: 'done', kind: 'existing' }, ['移除第 1 張']],
@@ -134,6 +135,28 @@ describe('PhotoPicker 各狀態的按鈕與文字', () => {
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(1);
     expect(buttonsOf(items[0])).toEqual(expected);
+  });
+
+  it('格內不再有「調整範圍」「移除」兩顆文字鈕，移除是縮圖右上角的叉叉', () => {
+    render(<PhotoPicker photos={makePhotos([slot({ id: 'a' })])} maxCount={3} />);
+    expect(screen.queryByText('調整範圍')).toBeNull();
+    expect(screen.queryByText('移除')).toBeNull();
+    const thumb = document.querySelector('[data-photo-thumb]') as HTMLElement;
+    expect(within(thumb).getByRole('button', { name: '移除第 1 張' })).toBeTruthy();
+  });
+
+  it('點縮圖本身進入調整（本次新增且已完成的格）', () => {
+    const photos = makePhotos([slot({ id: 'a' })]);
+    render(<PhotoPicker photos={photos} maxCount={3} />);
+    const thumb = document.querySelector('[data-photo-thumb]') as HTMLElement;
+    fireEvent.click(within(thumb).getByRole('button', { name: '調整第 1 張範圍' }));
+    expect(photos.adjust).toHaveBeenCalledWith('a');
+  });
+
+  it('既有舊圖的縮圖不是按鈕，並說明不能重新取景', () => {
+    render(<PhotoPicker photos={makePhotos([slot({ id: 'a', kind: 'existing' })])} maxCount={3} />);
+    expect(screen.queryByRole('button', { name: /調整第/ })).toBeNull();
+    expect(screen.getByText('既有照片不能重新取景')).toBeTruthy();
   });
 
   it('失敗與無法處理顯示原因文字；縮小過的照片顯示「已自動縮小」', () => {
