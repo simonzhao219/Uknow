@@ -53,6 +53,8 @@
 | 26 | PayUni 切換時點（業主 20:15） | `PAYUNI_SANDBOX=false` 留到其他都確認沒問題再改；§7 順序改為清 bucket → 清資料 → 註冊＋admin → R2 實寄 → Cloudflare 旗標 → 最後切 PayUni → 真付款 → 宣布 |
 | 27 | 第二次晉升提前（業主 20:20） | 原定 10/28 的第二次晉升改今晚開（PR #417）：開放時 favicon／SEO 在線上、邀請信新版只貼一次。PR 開後 develop 凍結到合進 main |
 | 28 | CI e2e 上限（業主 22:00） | 慢鏡像站連續弄紅 e2e 五次、#417 的 run 卡死不給重跑 → 破例在晉升 PR 開著時合一支 CI-only PR（#418，e2e timeout 15→25）進 develop；#417 改指新 head、journey 重跑 |
+| 29 | 清資料與 PayUni 切正式延後（業主 23:00） | 兩者都等 P1a PR 2 上線後再做（10/28 晚）；活動前要完成。主 session 已提醒：PayUni 留 sandbox 期間無人能真付款、測試資料留在站上 |
+| 30 | P1a PR 2 提前（業主 23:15） | 照片裁切＋定位（前端管線）提前到第 1 波：10/28 下午合 develop、傍晚第三次晉升；10/28 不凍結。SEO 進階與 journey harness 仍 11/3 第 2 波。PR 2 由原 P1a session 做，業主親打 /tdd-implement 才開工 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -290,6 +292,7 @@ commit;
 | 10/27 20:10 | 業主第 6 步兩把 secret 完成，`/health` referralInviteConfigured／Enabled 皆 true。裁決 26（PayUni 最後切）、27（第二次晉升今晚）。**開晉升 PR #417**（develop 3392d05 → main，無 migration，9 支 PR）；journey-full 約 25 分鐘。#415 等 #417 合進 main 後才合 | #417 綠 → 合 → 業主核准 production → 貼新版模板；業主同時做第 8 步清 bucket |
 | 10/27 21:40–22:05 | #417 journey-full（真後端 18 分鐘）**綠**；e2e-tests 第 5 次被慢 apt 鏡像站拖過 15 分鐘上限取消；run 40510447867 卡在 in_progress，rerun／cancel 皆 403／409。另發現 develop push 3392d05 的 CI 同因紅 → develop 的 Edge Function 停在 ae61955（#416 無後端變動，無影響）。裁決 28 → 開 #418（ci.yml e2e timeout 25，check-workflows OK） | #418 綠 → 合 → #417 新 head CI（journey 重跑）→ 合 → 核准 production |
 | 10/27 22:16 | 卡住的 run 14:08Z 自己收尾 → 重跑 e2e（這次鏡像站正常，7 分鐘綠）→ ci-ok 綠 → **#417 合進 main（f076866）**，journey 不必重跑；#418 同時綠 → 合進 develop（77efb63）。第二次晉升完成，等業主核准 production 部署 | 業主核准 → /health sha=f076866 → 貼新版 Invite 模板 → 第 8 步 |
+| 10/27 22:45–23:20 | 業主核准 production，`/health` sha=f076866 對上（referralInvite 兩旗標 true、PayUni sandbox）；新版 Invite 模板已貼。裁決 29、30。通知 P1a session 準備 PR 2 循環清單、等業主 /tdd-implement。今晚收工；10/28 順序：PR 2 → 第三次晉升 → 清 bucket／清資料 → 註冊＋admin → R2 實寄 → 旗標 → PayUni 切正式 → 真付款 → 宣布 | 業主 10/28 早上到 P1a session 打 /tdd-implement |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -308,7 +311,7 @@ commit;
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
-| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret~~ ✅；剩新版模板與主旨（等 #417 上 main）、清三個 bucket；PayUni 正式依裁決 26 最後做 | ◐ |
+| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret、新版模板與主旨~~ ✅；清三個 bucket 與 PayUni 正式依裁決 29 於 10/28 晚 PR 2 上線後做 | ◐ |
 | 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
