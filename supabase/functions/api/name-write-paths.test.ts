@@ -10,8 +10,8 @@
 //   * **防漏抄**:`create or replace function` 是整段覆蓋,所以要釘住「推薦碼
 //     解析邏輯還在」——漏抄會靜默清空日後所有新註冊使用者的
 //     `referred_by_user_id`,而且不會有任何錯誤訊息。
-//   * 其餘自助欄位(phone 等)的 GRANT 本次刻意不動,characterization 釘住,
-//     以免日後有人以為這個 migration 把整張表都收乾淨了。
+//   * 其餘自助欄位(phone 等)的 GRANT 由後續 migration 收回,斷言在
+//     registration-completion-guard.test.ts。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
@@ -33,9 +33,13 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 // GRANT 的效果直接問 Postgres,不透過 PostgREST。
 //
 // 為什麼不用「以使用者 token 打 PATCH /rest/v1/profiles」來測:
-// `authenticated` 對 `profiles` **沒有 table-level SELECT**(migrations 裡從來
-// 沒有 `grant select ... on profiles`——前端讀 profile 一律走 Edge Function 的
-// service_role)。PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
+// 本機重播(CI 釘的 supabase CLI 2.109.1;較新版 CLI 的預設授權不同)與正式站的
+// `authenticated` 對 `profiles` **沒有 table-level SELECT**(migrations 裡從來沒有
+// `grant select ... on profiles`——前端讀 profile 一律走 Edge Function 的
+// service_role);持久的 develop 分支**有**(平台 default privileges,2026-10-17
+// 唯讀查詢),依權限推得 develop 上帶過濾條件的直連寫入可行(未實送 PATCH),
+// 這是 20261017000003 用表級 REVOKE UPDATE 收掉的原因。在沒有 SELECT 的環境裡,
+// PostgREST 的 `?id=eq.<uuid>` 過濾條件本身就要讀 `id`,所以
 // **任何**欄位的 PATCH 都會回 403 `42501 permission denied for table profiles`。
 // 那個 403 來自 SELECT 而非 UPDATE,會讓斷言完全失去辨別力:即使 REVOKE 根本
 // 沒生效也照樣「被拒」。CI 連續兩輪紅燈才逼出這個事實(第一輪誤判成
@@ -43,31 +47,29 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 //
 // `has_column_privilege` 問的正是 migration 唯一改動的那件事,中間不隔任何一層。
 // ============================================================
-Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限,其餘自助欄位保留', async () => {
+Deno.test('GRANT：authenticated 失去 name 的 UPDATE 權限', async () => {
   const sql = postgres(DB_URL);
   try {
     const [row] = await sql`
       select
         has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE') as name_update,
-        has_column_privilege('authenticated', 'public.profiles', 'phone', 'UPDATE') as phone_update,
-        has_column_privilege(
-          'authenticated', 'public.profiles', 'national_id', 'UPDATE'
-        ) as national_id_update,
         has_table_privilege('authenticated', 'public.profiles', 'SELECT') as table_select
     `;
 
     // 這是 20260726000002 的核心:姓名不再能被自助寫入。
     assertEquals(row.name_update, false, 'name 的 UPDATE 權限應已撤銷');
 
-    // 本次刻意只收 name 一欄。其餘同類繞過面仍在,留待另案——這兩條
-    // characterization 存在是為了讓下一個讀者不會誤以為整張表都收乾淨了。
-    assertEquals(row.phone_update, true, 'phone 的自助 UPDATE 本次不動');
-    assertEquals(row.national_id_update, true, 'national_id 的自助 UPDATE 本次不動');
-
-    // 記錄「沒有 table-level SELECT」這個事實:它是上面那段註解的依據,也讓
-    // 日後若有人為了某個讀取功能補上 grant select,這條會紅、迫使重新評估
-    // ——因為那會讓帶過濾條件的直寫路徑重新變得可表達。
-    assertEquals(row.table_select, false, 'authenticated 不應有 profiles 的 table-level SELECT');
+    // 記錄本機重播「沒有 table-level SELECT」這個事實:它是上面那段註解的依據。
+    // 寫入面已由 20261017000003 的表級 REVOKE UPDATE 收掉,補 SELECT 不會再讓
+    // 直寫可表達;這條守的是讀取面——profiles_select_own 讓 token 持有者讀得到
+    // 自己那列,日後若有人為了某個讀取功能補上 grant select,完整的身分證字號與
+    // 銀行帳號就能繞過 Edge Function 的 maskNationalId / maskBankAccount 直接讀出
+    // (見 index.ts 敏感欄位遮罩的註解)。這條會紅、迫使重新評估。
+    assertEquals(
+      row.table_select,
+      false,
+      'authenticated 不應有 profiles 的 table-level SELECT(會繞過敏感欄位遮罩)',
+    );
   } finally {
     await sql.end();
   }

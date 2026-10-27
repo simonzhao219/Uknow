@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { StatusCallout } from '../ui/status-callout';
@@ -10,40 +10,26 @@ import { CollectionPreviewDialog } from './CollectionPreviewDialog';
 import { CollectionVerifyDialog } from './CollectionVerifyDialog';
 import { apiRequestJson, buildApiUrl, ApiError } from '../../utils/apiClient';
 import { formatTimestamp } from '../../utils/referralFormatter';
-import {
-  MIN_WITHDRAWAL,
-  WITHDRAWAL_FEE,
-  MIN_REQUIRED_BALANCE,
-  canRequestWithdrawal,
-} from '../../utils/withdrawalValidation';
 // 型別走契約，不在元件裡手抄一份（plan §2.4）：抄本不會跟著契約長欄位，
 // 而多出來的欄位對元件只是「沒讀」，tsc 不會叫——那正是契約要防的靜默漂移。
 import type { WithdrawalRecord } from '@contract';
 
 interface WithdrawalSectionProps {
-  availableRewards: number;
   pendingRewards: number;
   withdrawnRewards: number;
-  hasWithdrawnToday: boolean;
   withdrawals: WithdrawalRecord[];
-  onStartWithdrawal: () => void;
   onRefresh: () => void;
-  subscriptionStatus?: string | null; // ✅ 新增：訂閱狀態
-  referralProgramJoined?: boolean; // ✅ 新增：是否加入推薦計畫
+  subscriptionStatus?: string | null; // 會籍失效時「確認收款」讓位給橫幅的續訂
 }
 
 type CollectionStep = null | 'confirm' | 'preview' | 'verify';
 
 export function WithdrawalSection({
-  availableRewards,
   pendingRewards,
   withdrawnRewards,
-  hasWithdrawnToday,
   withdrawals,
-  onStartWithdrawal,
   onRefresh,
   subscriptionStatus,
-  referralProgramJoined, // ✅ 新增
 }: WithdrawalSectionProps) {
   const { showSuccess, showError } = useNotification();
 
@@ -51,44 +37,8 @@ export function WithdrawalSection({
   const [collectionStep, setCollectionStep] = useState<CollectionStep>(null);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRecord | null>(null);
 
-  // ✅ 提領規則（收斂於 utils/withdrawalValidation，避免與 WithdrawalProcess 漂移）
-  const MIN_REQUIRED = MIN_REQUIRED_BALANCE; // 1015P
-
-  // ✅ 判斷是否可以提領
-  const isInsufficientBalance = availableRewards < MIN_REQUIRED;
-  const hasReachedDailyLimit = hasWithdrawnToday;
+  // 申請提領鈕與它的停用原因在獎勵頁的「可提領」主區（WithdrawalAction）；這裡只剩提領申請。
   const isSubscriptionInvalid = subscriptionStatus === 'expired';
-  const hasNotJoinedReferral = !referralProgramJoined; // ✅ 新增：未加入推薦計畫
-
-  // 判斷式與會員中心的「申請提領」共用（utils/withdrawalValidation），上面四個
-  // 旗標只用來挑選停用原因的文案。
-  const canWithdraw = canRequestWithdrawal({
-    availableRewards,
-    hasWithdrawnToday,
-    subscriptionStatus,
-    referralProgramJoined,
-  });
-
-  // ✅ 生成提示訊息
-  const getDisabledReason = () => {
-    // ✅ 最優先檢查是否加入推薦計畫
-    if (hasNotJoinedReferral) {
-      return '尚未加入推薦計畫，無法申請提領';
-    }
-
-    // ✅ 檢查訂閱狀態
-    if (isSubscriptionInvalid) {
-      return '訂閱已失效，無法申請提領。請續訂以恢復服務。';
-    }
-
-    if (isInsufficientBalance) {
-      return `可提領Point不足${MIN_REQUIRED.toLocaleString()}P（最低提領${MIN_WITHDRAWAL.toLocaleString()}P + 手續費${WITHDRAWAL_FEE}P）`;
-    }
-    if (hasReachedDailyLimit) {
-      return '今日已提領過一次，請明天再試';
-    }
-    return '';
-  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -110,7 +60,8 @@ export function WithdrawalSection({
       case 'pending':
         return <Badge variant="secondary">處理中</Badge>;
       case 'awaiting_collection':
-        return <Badge variant="secondary">待查收</Badge>;
+        // 與後台 WithdrawalStatusBadge 同色（warning）：同一狀態、同一注意力層級
+        return <Badge variant="warning">待查收</Badge>;
       case 'completed':
         return <Badge variant="success-subtle">已完成</Badge>;
       case 'rejected':
@@ -219,35 +170,13 @@ export function WithdrawalSection({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5" />
-            Point提領與申請記錄
+            <CreditCard className="h-5 w-5" aria-hidden="true" />
+            提領申請
           </CardTitle>
-          <CardDescription>管理您的Point提領申請</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* 提領按鈕區域 */}
-          <div className="border-b pb-4">
-            <Button
-              tone="secondary"
-              onClick={onStartWithdrawal}
-              className="w-full"
-              size="lg"
-              disabled={!canWithdraw}
-            >
-              申請Point提領
-            </Button>
-
-            {!canWithdraw && (
-              <p className="text-sm text-muted-foreground mt-2 text-center">
-                {getDisabledReason()}
-              </p>
-            )}
-          </div>
-
-          {/* 申請記錄 */}
+          {/* 申請記錄：未完成的在前（待查收、處理中），已完成只留最近幾筆 */}
           <div>
-            <h3 className="font-medium mb-4">申請記錄</h3>
-
             {activeWithdrawals.length === 0 ? (
               <div className="text-center py-8">
                 <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

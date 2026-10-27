@@ -2,7 +2,7 @@
 //
 // 選取與聚焦一條規則（ui-ux-guidelines §12.12）：分頁格是無框元件，選中＝底色灰字 --sel、
 // 文字反白，不靠品牌色字或粗體。只換顏色、不動盒模型——admin 分頁列的 ink-overflow
-// 量測（AdminDashboard.tsx 註解、e2e/test_admin_mobile_layout.py）吃的就是 px-2＋border
+// 量測（admin/AdminConsole.tsx 註解、e2e/test_admin_mobile_layout.py）吃的就是 px-2＋border
 // 的寬度預算。class 用 classList.contains 比：toContain 比整串會被較長的 class 誤判通過。
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';

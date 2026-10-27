@@ -121,12 +121,13 @@ jobs:
           supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
             DEPLOY_SHA="$DEPLOY_SHA"
 
-      # CLI 打包函式時要在 runner 上起 Docker、從 public.ecr.aws 匿名拉
-      # edge-runtime 映像。runner 是共用 IP，撞上 ECR 的匿名速率限制
-      # （`toomanyrequests: Rate exceeded`）時，部署會在上傳之前整支失敗——
-      # 2026-10-03～05 連續 7 次，其中一次是正式站（#357），而 main 沒有
-      # 「下一次 push」可以自癒。部署冪等（同一包推到同一個 project），所以
-      # 重試只有好處；用退避，不要連環硬打限流。
+      # `--use-api`：由 Supabase 的 Management API 在雲端打包，runner 上
+      # 不起 Docker、不從 public.ecr.aws 匿名拉 edge-runtime 映像。改用的
+      # 理由：runner 是共用 IP，ECR 的匿名限流讓部署在上傳之前整支失敗——
+      # 2026-10-03～05 連續 7 次（`toomanyrequests: Rate exceeded`，其中一次
+      # 是正式站 #357），2026-10-24～26 又連續 6 次（`Data limit exceeded`，
+      # 退避重試完全無效，develop 線上後端因此停在 10/21）。部署冪等
+      # （同一包推到同一個 project），退避重試保留給 API 端的暫時性失敗。
       # 規則 12 機械把關：執行 supabase functions deploy 的 step 必須有
       # 「for 迴圈＋sleep」。重試在同一個 job 內，不會再要一次 production 核准。
       - name: 部署 Edge Function
@@ -134,17 +135,17 @@ jobs:
           set -uo pipefail
           max_attempts=4
           for attempt in $(seq 1 "$max_attempts"); do
-            if supabase functions deploy api \
+            if supabase functions deploy api --use-api \
               --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt; then
               exit 0
             fi
             if [ "$attempt" -lt "$max_attempts" ]; then
               wait_s=$((attempt * 30))
-              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（多半是拉 edge-runtime 映像被限流）"
+              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（API 端打包或上傳的暫時性失敗）"
               sleep "$wait_s"
             fi
           done
-          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是映像限流還是函式本身有問題"
+          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是 API 端打包失敗還是函式本身有問題"
           exit 1
 
       # 部署「成功」不等於線上是對的：secrets 沒生效、cold start 就炸、
@@ -213,6 +214,18 @@ jobs:
               exit 1
             fi
             echo "::warning::正式站目前的 PayUni 模式是 ${mode}（尚未開放,屬預期）。開放前記得把 PAYUNI_SANDBOX 設為 false,並把本檔的 EXPECT_PRODUCTION_PAYUNI 改成 true。"
+          fi
+
+          # 預設推薦人可用性（規格 §7.4）:reward_config.default_referrer_code 只能
+          # 人工 SQL 設定、逐環境各做一次、漏做時機制靜默停用且不告警。
+          # 2026-10-07 正式站就是這樣漏了——develop 設過、正式站沒有,首購都沒綁定。
+          # /health 早就回報三態,這裡印出來才算「部署 SOP 一併看見」。
+          # unset 在新環境做步驟 6 之前是合法狀態,所以只 warning 不紅燈。
+          default_referrer="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("defaultReferrer","unknown"))' 2>/dev/null || echo unknown)"
+          echo "- 預設推薦人：\`${default_referrer}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "預設推薦人：${default_referrer}"
+          if [ "$default_referrer" != "ok" ]; then
+            echo "::warning::${DEPLOY_BRANCH} 的預設推薦人狀態是 ${default_referrer}——未填推薦碼的首購不會自動綁定。處置見 docs/supabase-setup-checklist.md 步驟 6。"
           fi
 
       - name: 失敗時開 issue

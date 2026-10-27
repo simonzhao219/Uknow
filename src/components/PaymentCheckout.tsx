@@ -20,10 +20,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { resolveCheckoutPageRedirect, isProfileComplete } from '../utils/registrationFlow';
+import {
+  resolveCheckoutPageRedirect,
+  isProfileComplete,
+  isRegistrationLocked,
+} from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
 import { StatusCallout } from './ui/status-callout';
 import { BreakableEmail } from './common/BreakableEmail';
+import { LINE_OFFICIAL_ACCOUNT_HANDLE, PROFILE_LOCKED_FIELDS } from '../utils/constants';
 
 export function PaymentCheckout() {
   console.log('PaymentCheckout: Component rendering');
@@ -40,10 +45,13 @@ export function PaymentCheckout() {
   //    fresh=新約從付款日起算、可換新推薦人。null 表示尚未選擇。
   const [renewalMode, setRenewalMode] = useState<'extend' | 'fresh' | null>(null);
   const [newReferralCode, setNewReferralCode] = useState('');
-  const [newCodeStatus, setNewCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>(
-    'idle',
-  );
+  // invalid＝後端明確說查無此碼；unavailable＝暫時查不到（限流、5xx、網路），
+  // 碼本身可能是對的——兩者分開說（ui-ux §6），免得使用者改掉正確的碼。
+  const [newCodeStatus, setNewCodeStatus] = useState<
+    'idle' | 'checking' | 'valid' | 'invalid' | 'unavailable'
+  >('idle');
   const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
+  const [newCodeUnavailableMessage, setNewCodeUnavailableMessage] = useState<string | null>(null);
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
@@ -311,6 +319,9 @@ export function PaymentCheckout() {
   // ✅ 續費身分判斷：曾有訂閱（subscriptionEndDate 存在）且此刻不是有效
   //    會員（有效會員在進入本頁時已被彈去 dashboard）→ 這是過期續費。
   const isRenewal = !!pendingUser?.subscriptionEndDate;
+  // 註冊已完成 → 身分資料與推薦人已鎖定（判準見 isRegistrationLocked）。不顯示
+  // 「編輯」，免得邀請使用者做一件必定失敗的事。
+  const isProfileLocked = !!pendingUser && isRegistrationLocked(pendingUser);
   // 補繳制（A1）：續約永遠可選，不因過期多久而消失——canExtend 已拆除。
   // 日期與補繳數字一律吃契約 renewal 值（AC-2）：pendingUser 走 localStorage
   // 快取，補繳中途不會更新，用它自算會把付款前的舊效期顯示出來。
@@ -344,34 +355,48 @@ export function PaymentCheckout() {
   // 實際寫入值仍出自 process_successful_payment。
   const freshLastDay = subscriptionLastDay(twDayOf(new Date()));
 
-  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。
-  const handleValidateNewCode = async (code: string) => {
+  // ✅ 新約換推薦人：即時驗證新推薦碼並顯示推薦人姓名。回傳這次的結果，
+  //    讓付款鈕在「暫時無法驗證」時拿來當重試用（state 要到下次 render 才更新）。
+  type NewCodeResult = 'idle' | 'valid' | 'invalid' | 'unavailable';
+  const handleValidateNewCode = async (code: string): Promise<NewCodeResult> => {
     const trimmed = code.trim();
     if (!trimmed) {
       setNewCodeStatus('idle');
       setNewReferrerName(null);
-      return;
+      return 'idle';
     }
     setNewCodeStatus('checking');
+    // 只有 429（限流）採用後端訊息；5xx、網路錯誤的技術字眼（例「服務暫時無法
+    // 使用」）不外露，一律顯示預設的「暫時無法驗證，請稍後再試」。
+    const markUnavailable = (message: unknown): NewCodeResult => {
+      setNewCodeStatus('unavailable');
+      setNewCodeUnavailableMessage(typeof message === 'string' && message ? message : null);
+      setNewReferrerName(null);
+      return 'unavailable';
+    };
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) return markUnavailable(null);
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      const result = await response.json();
-      if (response.ok && result.valid && result.referrer) {
+      const result = await response.json().catch(() => null);
+      if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
-      } else {
+        return 'valid';
+      }
+      if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
+        return 'invalid';
       }
+      // 429、401、5xx：暫時查不到，不是碼無效。
+      return markUnavailable(response.status === 429 ? result?.error?.message : null);
     } catch {
-      setNewCodeStatus('invalid');
-      setNewReferrerName(null);
+      return markUnavailable(null);
     }
   };
 
@@ -414,6 +439,22 @@ export function PaymentCheckout() {
       newReferralCode.trim() &&
       newCodeStatus !== 'valid'
     ) {
+      if (newCodeStatus === 'unavailable') {
+        // 暫時查不到時，按付款就是重試（不必再點進輸入框）。重驗通過也**不在這次
+        // 點擊送單**：submitPayment 讀的是這次 render 的 newCodeStatus（仍是
+        // unavailable），會漏帶新推薦碼、新約變成沒有推薦人。先亮出推薦人，
+        // 請使用者確認後再按一次。
+        const retried = await handleValidateNewCode(newReferralCode);
+        showToast(
+          retried === 'valid'
+            ? '推薦碼已驗證，請確認推薦人後再按付款'
+            : retried === 'unavailable'
+              ? '推薦碼暫時無法驗證，請稍後再試'
+              : '推薦碼尚未驗證通過，請確認後再送出',
+          retried === 'valid' ? 'info' : 'warning',
+        );
+        return;
+      }
       showToast('推薦碼尚未驗證通過，請確認後再送出', 'warning');
       return;
     }
@@ -654,16 +695,18 @@ export function PaymentCheckout() {
               ) : (
                 <h3 className="text-sm font-medium">註冊資訊確認</h3>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleEdit}
-                className="h-8 px-2"
-                data-testid="edit-profile-button"
-              >
-                <Edit className="h-4 w-4 mr-1" />
-                編輯
-              </Button>
+              {!isProfileLocked && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleEdit}
+                  className="h-8 px-2"
+                  data-testid="edit-profile-button"
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  編輯
+                </Button>
+              )}
             </div>
             {(!isRenewal || profileExpanded) && (
               <div className="space-y-1 text-sm text-muted-foreground">
@@ -687,6 +730,12 @@ export function PaymentCheckout() {
                       </p>
                     )}
                   </>
+                )}
+                {isProfileLocked && (
+                  <p className="pt-1" data-testid="profile-locked-note">
+                    {PROFILE_LOCKED_FIELDS}如需變更，請透過 LINE 聯繫客服（
+                    {LINE_OFFICIAL_ACCOUNT_HANDLE}）；續約選新約可更換推薦人
+                  </p>
                 )}
               </div>
             )}
@@ -947,6 +996,11 @@ export function PaymentCheckout() {
                           推薦碼不存在或已失效
                         </p>
                       )}
+                      {newCodeStatus === 'unavailable' && (
+                        <p className="text-xs text-warning-subtle-foreground">
+                          {newCodeUnavailableMessage ?? '暫時無法驗證，請稍後再試'}
+                        </p>
+                      )}
                       {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道
                           「這會改變既有推薦關係」；不解釋預設推薦碼機制。 */}
                       <p className="text-xs text-muted-foreground">
@@ -999,8 +1053,13 @@ export function PaymentCheckout() {
             </Button>
 
             {/* 資料未填齊時，說明付款鈕為何反灰，並給一個回填資料的明確入口，
-                避免使用者面對一顆「按不動」的按鈕不知所措。 */}
-            {!isProfileComplete(pendingUser) && (
+                避免使用者面對一顆「按不動」的按鈕不知所措。資料已鎖定者這個
+                入口必定失敗，同上方「編輯」一併不顯示。
+                防禦性分支：目前的載入流程走不到這裡——pendingUser 只在通過
+                isProfileComplete 後才寫入（API 分支經 resolveCheckoutPageRedirect、
+                localStorage 分支經本檔的完整度檢查），寫入後不再變動。所以沒有
+                元件測試：導頁後畫面停在載入態，任何斷言都會恆真。 */}
+            {!isProfileComplete(pendingUser) && !isProfileLocked && (
               <p
                 className="text-sm text-center text-muted-foreground"
                 data-testid="incomplete-profile-hint"

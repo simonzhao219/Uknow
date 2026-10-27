@@ -17,10 +17,10 @@ def click_document_back(page):
 
 @when("I open the join referral program dialog")
 def open_join_dialog(page):
-    # The join CTA sits in the referral-code field itself: members who have not
-    # joined see it in place of their code. It is the single join entry — the
-    # 「我的 QR」panel shows only the member-verify tab until they join, so there
-    # is no in-panel guidance to route through.
+    # The join CTA sits on the dashboard's referral stat card, in the spot that
+    # becomes「邀請好友」once the member has joined (InviteFriendButton). It is
+    # the single join entry on the page — the「我的 QR」page shows only the
+    # member-verify tab until they join, so there is no in-panel guidance.
     page.get_by_test_id("join-referral-button").click()
     expect(page.get_by_text("完成以下步驟即可開始使用推薦碼邀請好友")).to_be_visible(timeout=5_000)
 

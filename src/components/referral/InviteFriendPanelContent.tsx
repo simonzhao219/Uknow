@@ -1,48 +1,64 @@
-import { useRef } from 'react';
+import { useContext, useRef, useState } from 'react';
+import type React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { Download, Share2, Copy } from 'lucide-react';
+import { UserContext } from '../../App';
 import { useNotification } from '../notifications/NotificationContext';
-import { buildReferralLink, shareReferralInvite } from '../../utils/referralInvite';
+import { ReferralCodeWithCopy } from './ReferralCodeWithCopy';
+import { myQrTabsForUser } from '../../utils/myQrTabPreference';
+import {
+  buildReferralLink,
+  isEmailInviteEnabled,
+  isShareStoppedByUser,
+  shareReferralInvite,
+} from '../../utils/referralInvite';
+import { InviteCardDialog } from './InviteCard';
 import { detectInAppBrowser } from '../../utils/browserDetection';
 import { drawInviteCard, inviteCardFileName } from '../../utils/inviteCardImage';
-import { copyToClipboard } from '../../utils/clipboard';
-
-interface InviteFriendPanelContentProps {
-  /** 會員專屬推薦碼；QR/連結都由它推導。空值時不渲染（呼叫端的按鈕會擋在加入計畫前）。 */
-  referralCode?: string | null;
-  /** 會員名稱，用於面板抬頭與下載檔名；可選，缺時退化成純推薦碼。 */
-  memberName?: string | null;
-}
+import { PIXEL_INK, PIXEL_PAPER } from '../../utils/pixelColors';
+import { useCopyToast } from '../../hooks/useCopyToast';
 
 /**
  * 邀請好友面板的「內容」——刻意與 Dialog 外殼分離：
- *   1. 內容是純呈現、不依賴 Radix Dialog，能在 jsdom 直接單元測試（Dialog 外殼
- *      需要的 focus-trap／portal 在 node 測試環境不穩）。
+ *   1. 內容不依賴 Radix Dialog，能在 jsdom 直接單元測試（Dialog 外殼需要的
+ *      focus-trap／portal 在 node 測試環境不穩）。
  *   2. 同一份內容未來若要換外殼（Sheet／獨立頁）也不必重寫。
+ *
+ * 推薦碼、會員名與閘門只有一個來源：UserContext（myQrTabsForUser）。QR、連結、邀請卡、
+ * 分享鈕與其中的 ReferralCodeWithCopy 讀同一份，呼叫端不另傳碼——兩份碼只靠註解
+ * 保證同源，就是已退場的 MyQrEntry 記下的那個教訓（註解不會編譯失敗）。
  *
  * QR 內容即 buildReferralLink(code)=`${base}/register?ref=<code>`，與既有分享連結
  * 完全同源；掃碼落地由 AuthPage 讀 ?ref → savePendingReferral 撐過註冊漏斗，零後端。
  */
-export function InviteFriendPanelContent({
-  referralCode,
-  memberName,
-}: InviteFriendPanelContentProps) {
+export function InviteFriendPanelContent() {
+  const { user } = useContext(UserContext);
   const { showToast } = useNotification();
+  const copy = useCopyToast();
   const qrRef = useRef<HTMLDivElement>(null);
 
-  const code = referralCode || '';
+  // 沒簽參加契約書之前不出示、不分享推薦碼（碼在付款成功時就已產生）。
+  const code: string = myQrTabsForUser(user).invite ? user.referralCode : '';
+  const memberName: string | null | undefined = user?.name;
+  const emailInvite = isEmailInviteEnabled();
+  const [cardOpen, setCardOpen] = useState(false);
   const referralLink = code ? buildReferralLink(code) : '';
   // 下載在 LINE 等 in-app 瀏覽器對 <a download> 支援不一（常靜默開新分頁而非下載），
-  // 與 shareReferralInvite 一致地偵測後給長按另存的提示。
+  // 偵測到 in-app 瀏覽器時給長按另存的提示。
   const { isInAppBrowser } = detectInAppBrowser();
 
-  const copyText = (text: string, successMsg: string) => {
-    if (copyToClipboard(text)) showToast(successMsg, 'success');
-    else showToast('複製失敗，請手動複製', 'error');
+  // 點進欄位就整段反白，長按「拷貝」一次到位。iOS Safari 的 select() 不一定選得到
+  // 唯讀欄位，所以再補一次 setSelectionRange。
+  const selectAll = (event: React.SyntheticEvent<HTMLInputElement>) => {
+    const field = event.currentTarget;
+    field.select();
+    field.setSelectionRange(0, field.value.length);
   };
 
-  /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結，不含任何按鈕）。 */
+  /** 把畫面上的 QR 重新組成一張「邀請卡」圖（含會員名/推薦碼/連結/揭露句，不含任何按鈕）。 */
   const buildCardCanvas = (): HTMLCanvasElement | null => {
     const qrCanvas = qrRef.current?.querySelector('canvas');
     if (!qrCanvas) return null;
@@ -72,7 +88,8 @@ export function InviteFriendPanelContent({
    * 而 navigator.canShare() 只驗證「檔案類型可分享」，**無法**告訴你文字會不會活著。
    * 混送等於賭運氣，賭輸的代價是推薦連結與推薦碼整個消失（推薦就斷了）。
    * 所以拆成兩顆按鈕：這顆專送圖（圖裡本來就有 QR 與推薦碼），文字交給「邀請好友」。
-   * 不支援檔案分享的環境（多數桌機瀏覽器）退回下載，使用者仍拿得到圖。
+   * 不支援檔案分享的環境（多數桌機瀏覽器）或分享失敗時退回下載，使用者仍拿得到圖；
+   * 使用者在面板上按取消（或連點）就停，與「邀請好友」同一套語意。
    */
   const shareQrCode = async () => {
     const card = buildCardCanvas();
@@ -94,8 +111,9 @@ export function InviteFriendPanelContent({
             return;
           }
         }
-      } catch {
-        // 使用者取消或分享失敗 → 落回下載，圖片仍到得了手上。
+      } catch (error) {
+        if (isShareStoppedByUser(error)) return;
+        // 分享失敗 → 落回下載，圖片仍到得了手上。
       }
     }
     downloadCard(card);
@@ -123,30 +141,41 @@ export function InviteFriendPanelContent({
           size={200}
           level="M"
           marginSize={2}
-          bgColor="#ffffff"
-          fgColor="#111111"
+          bgColor={PIXEL_PAPER}
+          fgColor={PIXEL_INK}
         />
       </div>
 
-      {/* 推薦碼 + 複製鈕（icon-only：文字標籤在這裡是多餘的，碼就在左邊。
-          icon-only 必須有可存取名稱，否則螢幕閱讀器只會念出「按鈕」）。 */}
-      <div className="flex items-center justify-center gap-1">
-        <span className="font-mono text-lg tracking-wider text-primary">{code}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => copyText(code, '推薦碼已複製！')}
-          aria-label="複製推薦碼"
-          title="複製推薦碼"
-        >
-          <Copy className="h-4 w-4" />
-        </Button>
-      </div>
+      {/* 推薦碼＋複製：與會員資訊卡、推薦管理共用同一顆。 */}
+      <ReferralCodeWithCopy layout="centered" />
 
-      <p className="max-w-full break-all text-center text-xs text-muted-foreground">
-        {referralLink}
-      </p>
+      {/* 邀請連結：唯讀欄位（不跳鍵盤、改不到；不換行，長了在框內橫捲），點進去整段
+          反白；右側一顆複製鈕給不想手動複製的人。 */}
+      <div className="space-y-1.5">
+        <Label htmlFor="invite-link-field" className="text-muted-foreground">
+          邀請連結
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="invite-link-field"
+            readOnly
+            value={referralLink}
+            onFocus={selectAll}
+            onClick={selectAll}
+            className="bg-muted font-mono"
+          />
+          <Button
+            tone="secondary"
+            size="icon"
+            className="shrink-0"
+            onClick={() => copy(referralLink, '邀請連結已複製！')}
+            aria-label="複製邀請連結"
+            title="複製邀請連結"
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
 
       {/* 兩顆按鈕各司其職，刻意不合併：文字與圖片一起送時，文字會被多數
           Android 分享目標丟掉（見 shareQrCode 的說明）。「邀請好友」永遠只送
@@ -159,13 +188,24 @@ export function InviteFriendPanelContent({
         <Button
           tone="secondary"
           size="sm"
-          onClick={() => shareReferralInvite(code, showToast)}
+          onClick={() =>
+            emailInvite ? setCardOpen(true) : shareReferralInvite(code, showToast, memberName)
+          }
           data-testid="share-referral-button"
         >
           <Share2 className="mr-1 h-4 w-4" />
           邀請好友
         </Button>
       </div>
+
+      {emailInvite && (
+        <InviteCardDialog
+          open={cardOpen}
+          onOpenChange={setCardOpen}
+          code={code}
+          memberName={memberName}
+        />
+      )}
 
       {isInAppBrowser ? (
         <p className="text-center text-xs text-muted-foreground">

@@ -53,7 +53,7 @@ class CompleteProfilePage(BasePage):
 
     def confirm_referral_warning(self) -> "CompleteProfilePage":
         """The blocking confirm dialog shown on every submit, reminding the
-        user the referral code is permanent once set."""
+        user the profile and referrer lock once payment completes."""
         self.confirmation_dialog_button("確認無誤，繼續").click()
         return self
 

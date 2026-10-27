@@ -14,10 +14,17 @@ import { useReferralData } from '../hooks/useReferralData';
 import { useTaskData } from '../hooks/useTaskData';
 import { useRewardData } from '../hooks/useRewardData';
 import { SubscriptionStatusCard } from './subscription/SubscriptionStatusCard';
-import { MyQrEntry } from './referral/MyQrEntry';
+import { InviteFriendButton } from './referral/InviteFriendButton';
+import { MyQrButton } from './referral/MyQrButton';
+import { ReferralCodeWithCopy } from './referral/ReferralCodeWithCopy';
 import { showsRenewalCta } from '../utils/subscriptionNotice';
-import { LINE_OFFICIAL_ACCOUNT_HANDLE } from '../utils/constants';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 import { formatTwDate } from '../utils/twDate';
+import { listingVisibility } from '../utils/listingVisibility';
 import { canRequestWithdrawal } from '../utils/withdrawalValidation';
 import { computeKingRounds } from '../utils/kingProgress';
 import {
@@ -26,24 +33,26 @@ import {
   StatCardError,
   StatValue,
 } from './dashboard/DashboardStatCard';
-import { AttentionCallout, type AttentionItem } from './dashboard/AttentionCallout';
 import { countAwaitingCollection, countExpiring } from './dashboard/dashboardSummary';
 import { BreakableEmail } from './common/BreakableEmail';
 
 /**
  * 會員中心＝狀態總覽，不是導覽選單（ui-ux-guidelines §13；任務／推薦／獎勵的
- * 入口在 BottomNav）。由上到下：需要注意（有事才出現）→ 四張狀態卡 → 我的訂閱
- * → 會員資訊。
+ * 入口在 BottomNav）。由上到下：四張狀態卡 → 我的訂閱 → 會員資訊。卡片標題是
+ * 目的頁名（刊登管理／推薦管理／任務中心／獎勵回饋），要注意的事（即將到期、待查收）
+ * 以卡片自己的徽章承擔，不另設集中的提示區（§13 第 3 條在會員中心不適用）。
+ * 推薦入口是三顆共用元件（src/components/referral/，推薦管理頁也用）：
+ * 標題列右端「我的 QR」、推薦格的「邀請好友／加入推薦計畫」、會員資訊卡的推薦碼＋複製。
  *
- * 資料 hook 一律在這裡各掛一次、以 props 往下傳：「需要注意」與卡片讀同一份
- * 資料，各自掛會變成同頁兩個實例共用一個 dedupe 請求（見 utils/requestDedup.ts）。
+ * 資料 hook 一律在這裡各掛一次、以 props 往下傳：同頁各處讀同一份資料，各自掛會變成
+ * 同頁兩個實例共用一個 dedupe 請求（見 utils/requestDedup.ts）。
  * 全部是既有 API，不新增後端欄位。
  */
 export function MemberDashboard() {
   const { user } = useContext(UserContext);
   const handleBack = useBackNavigation();
   const { isFeatureEnabled } = useFeatures();
-  const { showInfo } = useNotification();
+  const { showNotification } = useNotification();
 
   const listingEnabled = isFeatureEnabled('serviceProviderManagement');
   const referralEnabled = isFeatureEnabled('referralManagement');
@@ -82,27 +91,11 @@ export function MemberDashboard() {
       referralProgramJoined: user?.referralProgramJoined,
     });
 
-  const attentionItems: AttentionItem[] = [];
-  if (referralEnabled && expiring > 0) {
-    attentionItems.push({
-      key: 'expiring',
-      to: '/referrals',
-      label: `推薦網絡 ${expiring} 位即將到期`,
-    });
-  }
-  if (rewardEnabled && awaitingCount > 0) {
-    attentionItems.push({
-      key: 'awaiting',
-      to: '/rewards',
-      label: `${awaitingCount} 筆提領待查收`,
-    });
-  }
-
   // 刊登可見性只有後端真有的兩種（規格書 §11）：會籍有效＝上架中（正常態不加徽章）、
-  // 會籍失效＝已隱藏。失效會員多半被 RequireMembershipRoute 導去續約，這裡是
+  // 會籍失效＝已隱藏（warning 族：失效不是錯誤，ui-ux-guidelines §12.13）。失效會員多半被 RequireMembershipRoute 導去續約，這裡是
   // 頁面開著時剛好到期的邊界。停權也會讓刊登下架（public_listings），但停權帳號
   // 被 RequireMembershipRoute 擋在會員區外，進不到這頁，所以不另判。
-  const listingHidden = subscriptionData?.status === 'expired';
+  const listingHidden = listingVisibility(subscriptionData) === 'hidden';
   const memberUntil = subscriptionData?.activeUntil
     ? formatTwDate(subscriptionData.activeUntil)
     : null;
@@ -114,18 +107,21 @@ export function MemberDashboard() {
   const rounds = currentTask ? computeKingRounds(currentTask.current, currentTask.target) : null;
 
   const handleShowProfileInfo = () => {
-    showInfo('修改會員資料', '會員資料一經註冊後無法自行修改。', [
-      '如需更改基本資料，請透過 LINE 聯繫客服：',
-      `📱 LINE 官方帳號：${LINE_OFFICIAL_ACCOUNT_HANDLE}`,
-    ]);
+    showNotification({
+      type: 'info',
+      title: '修改會員資料',
+      message: PROFILE_LOCKED_MESSAGE,
+      details: PROFILE_LOCKED_DETAILS,
+      confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+    });
   };
 
   const listingLabel = () => {
-    if (listingLoading) return '刊登：讀取中';
-    if (listingError) return '刊登：暫時無法取得刊登狀態';
-    if (!listing) return '刊登：尚未建立刊登，立即刊登';
+    if (listingLoading) return '刊登管理：讀取中';
+    if (listingError) return '刊登管理：暫時無法取得刊登狀態';
+    if (!listing) return '刊登管理：尚未建立刊登，立即刊登';
     return [
-      `刊登：${listing.name}`,
+      `刊登管理：${listing.name}`,
       memberUntil && `會籍至 ${memberUntil}`,
       listingHidden && '已隱藏',
     ]
@@ -134,19 +130,19 @@ export function MemberDashboard() {
   };
 
   const referralLabel = () => {
-    if (referral.loading) return '推薦網絡：讀取中';
-    if (referral.error || !referral.overview) return '推薦網絡：暫時無法取得推薦資料';
-    const parts = [`推薦網絡：${referral.overview.summary.totalReferrals} 位`];
-    if (expiring > 0) parts.push(`${expiring} 位即將到期`);
+    if (referral.loading) return '推薦管理：讀取中';
+    if (referral.error || !referral.overview) return '推薦管理：暫時無法取得推薦資料';
+    const parts = [`推薦管理：推薦總人數 ${referral.overview.summary.totalReferrals} 位`];
+    if (expiring > 0) parts.push(`${expiring} 位一代即將到期`);
     return parts.join('，');
   };
 
   const taskLabel = () => {
-    if (task.isLoading) return '本月任務：讀取中';
-    if (task.error) return '本月任務：暫時無法取得任務進度';
-    if (!currentTask || !rounds) return '本月任務：目前沒有任務';
+    if (task.isLoading) return '任務中心：讀取中';
+    if (task.error) return '任務中心：暫時無法取得任務進度';
+    if (!currentTask || !rounds) return '任務中心：目前沒有任務';
     const parts = [
-      `本月任務：${currentTask.title}本輪推薦 ${rounds.currentRoundCount} / ${currentTask.target} 位`,
+      `任務中心：${currentTask.title}本輪推薦 ${rounds.currentRoundCount} / ${currentTask.target} 位`,
     ];
     if (rounds.roundsThisMonth > 0) parts.push(`本月已完成 ${rounds.roundsThisMonth} 次`);
     if (currentTask.completed) parts.push('本月已達標');
@@ -154,9 +150,9 @@ export function MemberDashboard() {
   };
 
   const rewardLabel = () => {
-    if (reward.isLoading) return '可提領點數：讀取中';
-    if (reward.error || !rewardsData) return '可提領點數：暫時無法取得點數';
-    const parts = [`可提領點數：${rewardsData.availableRewards.toLocaleString()} P`];
+    if (reward.isLoading) return '獎勵回饋：讀取中';
+    if (reward.error || !rewardsData) return '獎勵回饋：暫時無法取得點數';
+    const parts = [`獎勵回饋：可提領 ${rewardsData.availableRewards.toLocaleString()} P`];
     if (awaitingCount > 0) parts.push(`待查收 ${awaitingCount} 筆`);
     if (canWithdraw) parts.push('申請提領');
     return parts.join('，');
@@ -174,21 +170,20 @@ export function MemberDashboard() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold">會員中心</h1>
           <p className="text-muted-foreground">歡迎回來，{user?.name}</p>
         </div>
+        <MyQrButton className="ml-auto shrink-0" />
       </div>
 
-      <AttentionCallout items={attentionItems} />
-
-      {/* 四張狀態卡：每張一個主數字或主狀態，數字一律 --foreground（§12.5），
-          語義由徽章承擔；手機 2×2、桌機一列（StatCardGrid 依張數自動排）。 */}
+      {/* 四張狀態卡：標題＝目的頁名，每張一個主數字或主狀態，數字一律 --foreground
+          （§12.5），語義由徽章承擔；手機 2×2、桌機一列（StatCardGrid 依張數自動排）。 */}
       <StatCardGrid>
         {listingEnabled && (
           <DashboardStatCard
             to={hasNoListing ? '/service-providers/create' : '/service-providers'}
-            title="刊登"
+            title="刊登管理"
             icon={Settings}
             ariaLabel={listingLabel()}
             loading={listingLoading}
@@ -203,7 +198,7 @@ export function MemberDashboard() {
                     {memberUntil && (
                       <p className="text-xs text-muted-foreground">會籍至 {memberUntil}</p>
                     )}
-                    {listingHidden && <Badge variant="secondary">已隱藏</Badge>}
+                    {listingHidden && <Badge variant="warning-subtle">已隱藏</Badge>}
                   </>
                 )}
               </>
@@ -219,18 +214,31 @@ export function MemberDashboard() {
         {referralEnabled && (
           <DashboardStatCard
             to="/referrals"
-            title="推薦網絡"
+            title="推薦管理"
             icon={Users}
             ariaLabel={referralLabel()}
             loading={referral.loading}
+            // 卡內唯一的真按鈕：只看 UserContext（是否已加入），推薦資料讀取中或失敗都照常顯示。
+            // 這也是會員中心唯一的加入推薦計畫入口——推薦格跟著 referralManagement 旗標走，
+            // 旗標若有一天能關，會員資訊卡的「尚未加入推薦計畫」要一起處理。
+            // 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。
+            action={
+              <InviteFriendButton
+                className="w-full"
+                yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)}
+              />
+            }
           >
             {referral.error || !referral.overview ? (
               <StatCardError>暫時無法取得推薦資料</StatCardError>
             ) : (
               <>
-                <StatValue>{referral.overview.summary.totalReferrals}</StatValue>
-                <p className="text-xs text-muted-foreground">位</p>
-                {expiring > 0 && <Badge variant="warning-subtle">{expiring} 位即將到期</Badge>}
+                <p className="text-xs text-muted-foreground">推薦總人數</p>
+                <StatValue>
+                  {referral.overview.summary.totalReferrals}
+                  <span className="ml-1 text-base font-medium text-muted-foreground">位</span>
+                </StatValue>
+                {expiring > 0 && <Badge variant="warning-subtle">{expiring} 位一代即將到期</Badge>}
               </>
             )}
           </DashboardStatCard>
@@ -239,7 +247,7 @@ export function MemberDashboard() {
         {taskEnabled && (
           <DashboardStatCard
             to="/tasks"
-            title="本月任務"
+            title="任務中心"
             icon={CheckSquare}
             ariaLabel={taskLabel()}
             loading={task.isLoading}
@@ -277,7 +285,7 @@ export function MemberDashboard() {
         {rewardEnabled && (
           <DashboardStatCard
             to="/rewards"
-            title="可提領點數"
+            title="獎勵回饋"
             icon={Gift}
             ariaLabel={rewardLabel()}
             loading={reward.isLoading}
@@ -286,6 +294,7 @@ export function MemberDashboard() {
               <StatCardError>暫時無法取得點數</StatCardError>
             ) : (
               <>
+                <p className="text-xs text-muted-foreground">可提領</p>
                 <StatValue>
                   {rewardsData.availableRewards.toLocaleString()}
                   <span className="ml-1 text-base font-medium text-muted-foreground">P</span>
@@ -341,11 +350,8 @@ export function MemberDashboard() {
               <BreakableEmail email={user?.email} />
             </p>
           </div>
-          {/* 推薦碼與「我的 QR」的唯一入口——與推薦管理頁共用同一顆，狀態/邏輯/
-              呈現由元件本身保證一致。這裡是四欄資訊卡的一格，外框交給 grid，
-              所以不給 className（推薦管理頁在那邊自己加一層 bordered row）。 */}
-          {/* 引導鈕一頁一顆（§12.11）：我的訂閱卡出現續訂時，加入推薦計畫讓位成次要。 */}
-          <MyQrEntry yieldsGuide={!isLoading && showsRenewalCta(subscriptionData)} />
+          {/* 推薦碼＋複製：與推薦管理、我的 QR 頁共用同一顆，閘門由元件本身保證一致。 */}
+          <ReferralCodeWithCopy />
         </CardContent>
       </Card>
     </div>

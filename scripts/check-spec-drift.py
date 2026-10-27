@@ -142,6 +142,113 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "src/utils/serviceCategories.ts",
         r"CUSTOM_CATEGORY_MAX_LENGTH = (\d+)",
     ),
+    # 限流值是安全宣稱（§4.2 推薦碼、§13 掃描驗證），寫在 Edge Function 的常數
+    # 區。窗口常數寫成乘式（5 * 60、24 * 60 * 60），規格書才能用分鐘／小時對照。
+    ConstantRule(
+        "推薦碼驗證短窗（分鐘）",
+        r"同一使用者在 (\d+) 分鐘內最多查",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = (\d+) \* 60;",
+    ),
+    ConstantRule(
+        "推薦碼驗證短窗上限",
+        r"分鐘內最多查 (\d+) 次、",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_RATE_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "推薦碼驗證長窗（小時）",
+        r"、(\d+) 小時內最多查",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "推薦碼驗證長窗上限",
+        r"小時內最多查 (\d+) 次",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_VALIDATE_DAILY_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "掃描驗證每分鐘上限",
+        r"同一掃描者每分鐘上限 (\d+) 次",
+        "supabase/functions/api/index.ts",
+        r"MEMBER_VERIFY_RATE_MAX = (\d+);",
+    ),
+    # Email 邀請（R2）：效期在 _shared（前端也讀），寫成「天 * 24 * 60 * 60」乘式。
+    ConstantRule(
+        "邀請連結效期（天）",
+        r"邀請連結 (\d+) 天內有效",
+        "supabase/functions/_shared/referral-invite-payload.ts",
+        r"REFERRAL_INVITE_TOKEN_TTL_SECONDS = (\d+) \* 24 \* 60 \* 60;",
+    ),
+    # 每人兩窗（Email 邀請）：規格句以「同一推薦人」錨定，與推薦碼驗證的「最多查」不相撞。
+    ConstantRule(
+        "邀請每人短窗（小時）",
+        r"同一推薦人 (\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_RATE_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請每人短窗上限",
+        r"同一推薦人 \d+ 小時內最多寄 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_RATE_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請每人日窗（小時）",
+        r"同一推薦人 \d+ 小時內最多寄 \d+ 封、(\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_DAILY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請每人日窗上限",
+        r"同一推薦人 \d+ 小時內最多寄 \d+ 封、\d+ 小時內最多寄 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_DAILY_MAX = (\d+);",
+    ),
+    # 同一信箱與全站窗：規格句以「同一信箱」「全站」錨定；全站上限寫成 1,000（千分位）。
+    ConstantRule(
+        "邀請同信箱窗（小時）",
+        r"同一信箱 (\d+) 小時內最多收到",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_TARGET_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請同信箱上限",
+        r"同一信箱 \d+ 小時內最多收到 (\d+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_TARGET_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請全站短窗（小時）",
+        r"全站 (\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請全站短窗上限",
+        r"全站 \d+ 小時內最多寄 ([\d,]+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_HOUR_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請全站日窗（小時）",
+        r"全站 \d+ 小時內最多寄 [\d,]+ 封、(\d+) 小時內最多寄",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS = (\d+) \* 60 \* 60;",
+    ),
+    ConstantRule(
+        "邀請全站日窗上限",
+        r"全站 \d+ 小時內最多寄 [\d,]+ 封、\d+ 小時內最多寄 ([\d,]+) 封",
+        "supabase/functions/api/index.ts",
+        r"REFERRAL_INVITE_GLOBAL_DAY_MAX = (\d+);",
+    ),
+    ConstantRule(
+        "邀請空殼清除天數",
+        r"(\d+) 天內未透過連結設定密碼即刪除",
+        "supabase/migrations/*.sql",
+        r"purge_stale_referral_invites\(\s*p_older_than_days int default (\d+)",
+    ),
 )
 
 
@@ -432,6 +539,15 @@ def _only(rules: tuple[ConstantRule, ...], spec: str, sources: dict[str, str]) -
     return constant_violations(spec, sources, rules)
 
 
+def _rule(label: str) -> ConstantRule:
+    """取 CONSTANTS 裡的實際規則——案例驗的是正式抽取式，不是另寫一份。"""
+    return next(r for r in CONSTANTS if r.label == label)
+
+
+_INVITE_TTL_SPEC = "邀請連結 7 天內有效，過期與否只由伺服器判斷。\n"
+_INVITE_PAYLOAD = "supabase/functions/_shared/referral-invite-payload.ts"
+
+
 CASES: list[tuple[str, object, int]] = [
     # --- 常數 ---
     ("常數一致 → 通過", lambda: _only((_MIN_RULE,), _SPEC_OK, _SOURCES_OK), 0),
@@ -460,6 +576,24 @@ CASES: list[tuple[str, object, int]] = [
         "規格書內同一常數自相矛盾 → 違規",
         lambda: _only(
             (_MIN_RULE,), _SPEC_OK + "\n又一次：金額 ≥ **2,000**\n", _SOURCES_OK
+        ),
+        1,
+    ),
+    (
+        "效期常數在 _shared 以天的乘式寫 → 與規格書的天數對上",
+        lambda: _only(
+            (_rule("邀請連結效期（天）"),),
+            _INVITE_TTL_SPEC,
+            {_INVITE_PAYLOAD: "export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;\n"},
+        ),
+        0,
+    ),
+    (
+        "效期常數改寫成秒數 → 抽不到即違規（不可靜默略過）",
+        lambda: _only(
+            (_rule("邀請連結效期（天）"),),
+            _INVITE_TTL_SPEC,
+            {_INVITE_PAYLOAD: "export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 604800;\n"},
         ),
         1,
     ),
@@ -558,7 +692,9 @@ def _load_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for pattern in ("supabase/migrations/*.sql", "src/utils/constants.ts",
                     "src/utils/serviceCategories.ts",
-                    "supabase/functions/_shared/api-contract.ts"):
+                    "supabase/functions/_shared/api-contract.ts",
+                    "supabase/functions/_shared/referral-invite-payload.ts",
+                    "supabase/functions/api/index.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
     return sources

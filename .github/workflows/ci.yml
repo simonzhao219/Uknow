@@ -325,8 +325,26 @@ jobs:
 
       # 排除只有 GUI/可觀測性用途的服務，省下約 30s 的映像拉取與啟動。
       # 測試需要的是 db / auth / rest / storage。
+      # 映像從 registry 匿名拉取，共用 runner 的 IP 會撞上限流（ECR `Data limit
+      # exceeded`、ghcr `toomanyrequests`）——2026-10-26 一天四次（PR #399），每次都
+      # 在任何測試跑之前整步失敗。啟動冪等，比照規則 12 退避重試。
       - name: 啟動本地 Supabase
-        run: supabase start -x studio,logflare,vector,supavisor
+        run: |
+          set -uo pipefail
+          max_attempts=4
+          for attempt in $(seq 1 "$max_attempts"); do
+            if supabase start -x studio,logflare,vector,supavisor; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              wait_s=$((attempt * 30))
+              echo "::warning::第 ${attempt} 次啟動失敗，${wait_s} 秒後重試（多半是拉映像被限流）"
+              supabase stop --no-backup || true
+              sleep "$wait_s"
+            fi
+          done
+          echo "::error::本地 Supabase 連續 ${max_attempts} 次啟動失敗——看上面每一次的輸出，判斷是映像限流還是 migration 本身有問題"
+          exit 1
 
       - name: 匯出本地 Supabase 連線資訊
         run: |
@@ -478,14 +496,9 @@ jobs:
     uses: ./.github/workflows/journey.yml
     with:
       scope: full
-      # ⚠️ 暫時改用 webhook（原為 sandbox）：PayUni sandbox 商店額度
-      # 2026-08-08~09 連續三次真跑（含跨日）在第一筆交易就回「商店信用卡
-      # 收款額度已達上限」，webhook 模式當天已驗證過能跑出全 119 情境
-      # 皆綠（run 31283424267），含原本存疑的退件路徑。webhook 模式走的是
-      # 真的 /payuni/prepare → 簽章 /webhooks/payuni/notify → 真的
-      # process_successful_payment，只略過 PayUni 自家頁面渲染，本次晉升
-      # 未動這段。詳見 PR #275 討論。sandbox 額度恢復（有真跑成功證據）後
-      # 應改回 sandbox——見 friction-log 待辦，不要讓這行暫時的變成永久的。
+      # PayUni sandbox 刷卡頁 2026-10-27 起拒收 harness 輸入（卡號欄只剩末四碼、送出無反應；journey-scheduled
+      # run 40472945048），改走簽章注入備援；正式站以真付款驗 PayUni 邊界（第 1 波 plan.md §0 裁決 4）。
+      # 暫時至 2026-11-03：第 2 波修 harness 或等 PayUni 回覆後改回 sandbox
       payment_mode: webhook
     secrets: inherit
 
@@ -522,6 +535,9 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
     steps:
       - name: 匯總各軌結果
         env:
@@ -536,6 +552,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
           JOURNEY_RESULT: ${{ needs['journey-full'].result }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           echo "各軌結果:$RESULTS"
           failed=0
@@ -556,4 +574,17 @@ jobs:
               exit 1
             fi
             echo "晉升 PR:journey-full 已確認 success"
+
+            # 排程 journey 連紅警告(只警告不擋):排程是唯一真打 PayUni sandbox
+            # 的線,連紅四週(2026-09~10)無人接,晉升時至少要在眼前再喊一次。
+            # 查詢失敗不得影響閘門,所以整段 || true。
+            warn=$(gh issue list --repo "$REPO" --state open --limit 50 \
+              --json number,title,url \
+              --jq '.[] | select(.title | startswith("journey 排程失敗")) | "\(.title) \(.url)"' \
+              2>/dev/null || true)
+            if [ -n "$warn" ]; then
+              while IFS= read -r l; do
+                echo "::warning::排程 journey 仍有未結案的失敗 issue:$l——排程是唯一真打 PayUni sandbox 的線,請確認再上線"
+              done <<< "$warn"
+            fi
           fi

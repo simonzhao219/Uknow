@@ -1,6 +1,7 @@
 // ============================================================
 // 刊登（listings）測試：
-//   (A) 兩支 HTTP 路由 —— /listings/verify-referral-code、/listings/upload-photo
+//   (A) HTTP 路由 /listings/upload-photo（原本同區的 /listings/verify-referral-code
+//       是匿名別名，已移除；推薦碼驗證見 referral-validate.test.ts）
 //   (B) public_listings 檢視表能見度 —— 以 has_active_subscription() gating：
 //       只有「有效訂閱且未停權」的擁有者，其刊登才對外可見。
 //
@@ -23,7 +24,6 @@ import {
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
-  getActiveReferralCode,
   getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
@@ -53,55 +53,7 @@ function listingRow(userId: string, overrides: Record<string, unknown> = {}) {
 }
 
 // ============================================================
-// (A1) POST /listings/verify-referral-code
-// ============================================================
-
-Deno.test('verify-referral-code：空推薦碼被拒', async () => {
-  const res = await app.request('/api/listings/verify-referral-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: '' }),
-  });
-  assertEquals(res.status, 200);
-  const body = await res.json();
-  assertEquals(body.valid, false);
-  assertEquals(body.error?.message, '推薦碼不能為空');
-});
-
-Deno.test('verify-referral-code：不存在的推薦碼判為無效', async () => {
-  const res = await app.request('/api/listings/verify-referral-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: 'definitely-not-a-real-code' }),
-  });
-  assertEquals(res.status, 200);
-  const body = await res.json();
-  assertEquals(body.valid, false);
-});
-
-Deno.test('verify-referral-code：有效會員的推薦碼通過驗證', async () => {
-  const client = adminClient();
-  const referrer = await createTestUser(client, { name: '推薦人' });
-  try {
-    await payForUser(client, referrer.id); // 產生 active 訂閱 + referral code
-    const code = await getActiveReferralCode(client, referrer.id);
-
-    const res = await app.request('/api/listings/verify-referral-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-    assertEquals(res.status, 200);
-    const body = await res.json();
-    assertEquals(body.valid, true);
-    assertEquals(body.referrer?.userId, referrer.id);
-  } finally {
-    await deleteTestUsers(client, [referrer.id]);
-  }
-});
-
-// ============================================================
-// (A2) POST /listings/upload-photo — 驗證分支（成功路徑需要 storage bucket，
+// (A) POST /listings/upload-photo — 驗證分支（成功路徑需要 storage bucket，
 //      不在此層測試）
 // ============================================================
 

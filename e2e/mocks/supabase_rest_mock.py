@@ -106,9 +106,15 @@ class SupabaseRestMock:
         self._user_listing = None      # maybeSingle GET /listings  (Management, Create existing-check)
         self._listing_by_id = None     # single GET /listings by id  (Edit read)
         self._public_listing = None    # single GET /public_listings (Detail)
+        self._public_listing_error = None  # (status, body) to fail Detail's single read
+        self._public_listing_hold = False  # hold Detail's single read until released
+        self._held_public_listing = []     # routes held by `hold_public_listing`
         self._public_listings = []     # select() list GET /public_listings (HomePage)
         self._public_listings_error = None  # (status, body) to fail HomePage's list read
+        self._public_listings_hold = False  # hold HomePage's list read until released
+        self._held_public_listings = []     # routes held by `hold_public_listings`
         self._write_error = None       # (status, body) to fail insert/update/delete
+        self._user_listing_error = None  # [status, body, remaining] to fail Management's maybeSingle read
         self._routed = False
 
     # --- setup -------------------------------------------------------------
@@ -127,6 +133,19 @@ class SupabaseRestMock:
         self._ensure_routes()
         return listing
 
+    def fail_user_listing(self, times=None, status: int = 500, message: str = "internal error"):
+        """Make Management's own-listing read (`.maybeSingle()`) fail with a transient
+        error: the page must show its retryable load-error callout, NOT the empty
+        state (which would invite a second listing). `times=N` fails only the first N
+        reads and then serves `set_user_listing(...)` again — the "fails, user presses
+        retry, it works" case; without `times` it always fails.
+
+        Default 500, not 503: postgrest-js retries 503/520 GETs with backoff before
+        surfacing the error."""
+        body = {"message": message, "code": str(status), "details": "", "hint": ""}
+        self._user_listing_error = [status, body, times]
+        self._ensure_routes()
+
     def set_listing_by_id(self, listing):
         """The row returned by Edit's `.single()` read (ownership is then
         checked client-side against the logged-in user)."""
@@ -136,10 +155,36 @@ class SupabaseRestMock:
 
     def set_public_listing(self, listing):
         """The row returned by Detail's `.single()` on `public_listings`; None
-        models "not found" (406)."""
+        models "not found" (406). Also clears any pending `fail_public_listing`
+        failure, so the retry flow can recover."""
         self._public_listing = listing
+        self._public_listing_error = None
         self._ensure_routes()
         return listing
+
+    def fail_public_listing(self, status: int = 500, message: str = "internal error"):
+        """Make Detail's `.single()` read fail with a transient error (not the
+        406/PGRST116 "no row" answer): the page must show its load-error state
+        with retry, NOT "找不到此服務者". Call `set_public_listing(...)` to recover.
+
+        Default 500, not 503: postgrest-js retries GETs that fail with 503/520
+        (and network errors) with backoff before surfacing the error, which
+        would only make the scenario slow."""
+        self._public_listing_error = (status, {"message": message, "code": str(status), "details": "", "hint": ""})
+        self._ensure_routes()
+
+    def hold_public_listing(self):
+        """Hold Detail's `.single()` reads until `release_public_listing()` —
+        the skeleton is only on screen while the read is in flight, so measuring
+        it needs the response held, not a sleep."""
+        self._public_listing_hold = True
+        self._ensure_routes()
+
+    def release_public_listing(self):
+        held, self._held_public_listing = self._held_public_listing, []
+        self._public_listing_hold = False
+        for route in held:
+            self._serve_public_listing(route)
 
     def set_public_listings(self, listings):
         """The array returned by HomePage's `.select().order()` list read on
@@ -158,6 +203,19 @@ class SupabaseRestMock:
         self._public_listings_error = (status, {"message": message, "code": str(status), "details": "", "hint": ""})
         self._ensure_routes()
 
+    def hold_public_listings(self):
+        """Hold HomePage's list reads until `release_public_listings()` — the
+        card skeleton and the results-row placeholder only exist while the
+        read is in flight."""
+        self._public_listings_hold = True
+        self._ensure_routes()
+
+    def release_public_listings(self):
+        held, self._held_public_listings = self._held_public_listings, []
+        self._public_listings_hold = False
+        for route in held:
+            self._serve_public_listings(route)
+
     def fail_writes(self, message: str = "操作失敗", status: int = 400):
         self._write_error = (status, {"message": message, "code": "", "details": "", "hint": ""})
         self._ensure_routes()
@@ -174,6 +232,12 @@ class SupabaseRestMock:
                     return _not_found_406(route)
                 return _fulfill_json(route, self._listing_by_id)
             # `.maybeSingle()` — Management / Create existing-check.
+            if self._user_listing_error:
+                status, body, remaining = self._user_listing_error
+                if remaining is None or remaining > 0:
+                    if remaining is not None:
+                        self._user_listing_error[2] = remaining - 1
+                    return _fulfill_json(route, body, status=status)
             return _fulfill_json(route, [self._user_listing] if self._user_listing else [])
 
         if method in ("POST", "PATCH", "DELETE"):
@@ -192,12 +256,27 @@ class SupabaseRestMock:
             accept = (route.request.headers.get("accept") or "").lower()
             if _OBJECT_ACCEPT in accept:
                 # `.single()` by id — Detail read.
-                if self._public_listing is None:
-                    return _not_found_406(route)
-                return _fulfill_json(route, self._public_listing)
+                if self._public_listing_hold:
+                    self._held_public_listing.append(route)
+                    return None
+                return self._serve_public_listing(route)
             # `.select().order()` list — HomePage read.
-            if self._public_listings_error:
-                status, body = self._public_listings_error
-                return _fulfill_json(route, body, status=status)
-            return _fulfill_json(route, self._public_listings)
+            if self._public_listings_hold:
+                self._held_public_listings.append(route)
+                return None
+            return self._serve_public_listings(route)
         return _fulfill_empty(route, status=204)
+
+    def _serve_public_listings(self, route):
+        if self._public_listings_error:
+            status, body = self._public_listings_error
+            return _fulfill_json(route, body, status=status)
+        return _fulfill_json(route, self._public_listings)
+
+    def _serve_public_listing(self, route):
+        if self._public_listing_error:
+            status, body = self._public_listing_error
+            return _fulfill_json(route, body, status=status)
+        if self._public_listing is None:
+            return _not_found_406(route)
+        return _fulfill_json(route, self._public_listing)

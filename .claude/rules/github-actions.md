@@ -173,7 +173,7 @@ JOURNEY_RESULT: ${{ needs['journey-full'].result }}   # job id 帶連字號,須�
 另一半防線是 `deployment-queue-audit.yml`:規則 11 治的是「被擋住」,那支治的是
 「沒有下一次 push 時,沒人核准的部署會無聲等下去」——超過 6 小時未推進就開 issue。
 
-**規則 12 — `supabase functions deploy` 的 step 必須有退避重試**
+**規則 12 — `supabase functions deploy` 與 `supabase start` 的 step 必須有退避重試**
 CLI 打包函式時要在 runner 上起 Docker、從 `public.ecr.aws` **匿名**拉
 `edge-runtime` 映像。runner 是共用 IP,撞上 ECR 的匿名速率限制
 (`docker: toomanyrequests: Rate exceeded`)時,部署會在**上傳之前**整支失敗。
@@ -189,9 +189,19 @@ CLI 打包函式時要在 runner 上起 Docker、從 `public.ecr.aws` **匿名**
 `deploy-supabase.yml`(4 次,退避 30／60／90 秒),`journey.yml` 的部署步驟
 同款。
 
-⚠️ 規則只管 `supabase functions deploy`。同樣會拉映像的 `supabase start`
-(ci.yml 的 api-tests)目前沒有失敗紀錄,記在 friction-log 觀察、不預先改——
-那是 CI 主閘門,沒有證據就不動。
+2026-10-24～26 再連續 6 次(#387 #389 #392 #396 #397 #400),這次是資料量
+上限(`Data limit exceeded`),退避重試完全無效,develop 線上後端因此停在
+10/21 版。2026-10-27 起兩支 workflow 改 `supabase functions deploy --use-api`:
+由 Supabase 的 Management API 在雲端打包,runner 不起 Docker、不拉映像,根因
+整個移除;重試保留給 API 端的暫時性失敗,規則判準不變。
+
+⚠️ 規則原本只管 `supabase functions deploy`。同樣會拉映像的 `supabase start`
+(ci.yml 的 api-tests)原本只記在 friction-log 觀察、不預先改——
+那是 CI 主閘門,沒有證據就不動。2026-10-26 證據來了:PR #399 一天四次死在拉映像
+(ECR `Data limit exceeded`、ghcr `toomanyrequests`、Docker Hub 沒有該映像),
+每次都在任何測試跑之前,重跑一次也照樣失敗——紅綠燈證據整個拿不到。改成同款
+退避重試(4 次,30／60／90 秒,失敗後先 `supabase stop --no-backup` 再起),
+檢查器的判準一併擴到 `supabase start`。
 
 ## 不可改名的識別字
 
@@ -223,6 +233,13 @@ check 可能都已經 success,UI 卻仍卡住)。
 gh api repos/:owner/:repo/rules/branches/develop   # 生效中的規則(來自 rulesets)
 gh api repos/:owner/:repo/branches/develop --jq .protection   # classic 側
 ```
+
+**規則 13 — `payment_mode: webhook` 必須帶未過期的「暫時至 YYYY-MM-DD」**
+webhook 模式攔下往 PayUni 的跳轉、自己簽章注入 notify,**從不打 PayUni**。
+PR #275(2026-08-09)為躲 sandbox 額度上限把晉升閘門改成 webhook,註解寫
+「應改回」,但沒有任何東西提醒——暫時了兩個月,2026-10-07 正式站被 PayUni
+測試站 403 才發現上線前沒有任何一條線碰過 PayUni。同一行或上一行要有
+`暫時至 YYYY-MM-DD:理由`,過期即紅;修法是改回 sandbox,或延期並寫理由。
 
 ## reusable workflow 的兩個地雷
 

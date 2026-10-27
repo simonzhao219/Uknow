@@ -42,7 +42,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `reward_config` | 業務常數單列表（獎金額度、推薦王門檻） | 1（全域） |
 | `announcements` | 系統公告 | N |
 | `system_alerts` | 背景失敗告警（warning-only 隔離的落點） | N |
-| `rate_limits` | 端點限流計數 | N |
+| `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
 
 ## 衍生 View / 函數（即時計算）
 
@@ -62,11 +62,18 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `pay_referral_generations` | **三代發獎的單一真相**（付款與任務續約共用） |
 | `reconcile_king_credits` | 推薦王 credit 對帳補發（自癒） |
 | `claim_referral_king_reward` | 領取免費續約 credit（延展效期 + 連動發獎） |
+| `register_profile` | Step 2 資料寫入：與付款完成共用 profiles 列鎖，註冊完成後拒寫（只給 service_role） |
 | `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
 | `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
 | `referral_tree` | 三代推薦樹（只往下爬 3 層，限自己/admin） |
-| `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人） |
+| `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
+| `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；由 `/auth/check-email` 與 Email 邀請的 `/referrals/invites`、`/auth/invite/accept` 呼叫） |
+| `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
+| `refund_rate_limit` | 把 bump 過的計數原子退一格（`count > 0` 守衛；Email 邀請沒寄出時退推薦人額度；只給 service_role） |
+| `purge_stale_referral_invites` | 刪除 Email 邀請建立、逾期未驗證的空殼帳號（pg_cron 排程 `purge-stale-referral-invites`；帶 `p_email` 給客服立即刪除；只給 service_role） |
+| `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
+| `referral_invite_issued_at` | 從 `app_metadata.referral_invite` 取出寄出時間；壞值回 null 讓 purge 跳過該列而不中斷整批（purge 內部用；不開放任何角色） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
 | `effective_registration_step` | 註冊進度即時推導 |
 | `tw_day` / `tw_start_of_day` / `tw_end_of_day` | 台灣時區日界（月份 key、單日限額都靠它） |
@@ -91,7 +98,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## Migrations
 
-47 個 migration，檔名即時序（`YYYYMMDDNNNNNN_描述.sql`）。**每個檔頭都寫了
+migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
+`scripts/check-migration-versions.py` 把關）。**每個檔頭都寫了
 「為什麼這樣改」**——改動金流函數前請先讀對應檔頭，那裡記錄了歷次踩過的坑。
 
 幾個影響全域的轉折點：
@@ -109,6 +117,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `20260725000002_reward_source_lifecycle` | 獎勵來源分類改「拉新／續約」軸 |
 | `20260726000001_scope_own_policies_to_authenticated` | 「自己的資料」policy 收斂到 authenticated——訪客查詢路徑不再碰 `is_admin()` |
 | `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
+| `20261017000003_revoke_profile_self_update_grants` | authenticated 對 `profiles` 的 UPDATE 全數撤銷——個人資料只能經 Edge Function 寫入 |
+| `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。

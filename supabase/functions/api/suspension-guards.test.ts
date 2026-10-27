@@ -7,13 +7,14 @@
 // 提領與推薦完全沒有停權檢查——對推薦獎勵平台，停權卻擋不住
 // 資金流出是權限模型的洞。
 // ============================================================
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   adminClient,
   createTestUser,
   deleteTestUsers,
   ensureEdgeFunctionEnv,
   getActiveReferralCode,
+  getUserAccessToken,
   payForUser,
 } from './test-helpers.ts';
 
@@ -92,14 +93,17 @@ Deno.test('request_withdrawal：解除停權後恢復可提領（characterizatio
 Deno.test('validate_referral_code：停權推薦人的推薦碼不得通過驗證', async () => {
   const client = adminClient();
   const referrer = await createTestUser(client, { name: 'Suspended Referrer' });
+  // 端點需登入：呼叫者是註冊中的一般使用者。
+  const caller = await createTestUser(client, { name: '註冊中會員' });
 
   try {
     const { error } = await payForUser(client, referrer.id);
     assertEquals(error, null);
     const code = await getActiveReferralCode(client, referrer.id);
+    const headers = { Authorization: `Bearer ${await getUserAccessToken(client, caller.email)}` };
 
     // 停權前：碼有效（characterization）
-    const okRes = await app.request(`/api/referrals/validate/${code}`);
+    const okRes = await app.request(`/api/referrals/validate/${code}`, { headers });
     assertEquals(okRes.status, 200);
     assertEquals((await okRes.json()).valid, true);
 
@@ -108,11 +112,20 @@ Deno.test('validate_referral_code：停權推薦人的推薦碼不得通過驗�
       .update({ suspended_at: new Date().toISOString() })
       .eq('id', referrer.id);
 
-    const res = await app.request(`/api/referrals/validate/${code}`);
+    const res = await app.request(`/api/referrals/validate/${code}`, { headers });
     const body = await res.json();
     assertEquals(body.valid, false, JSON.stringify(body));
-    assert(!body.referrerName, '不得洩漏停權會員資訊');
+
+    // 不洩漏＝與「查無此碼」同形：狀態碼與整份 body 都一樣，呼叫者分不出
+    // 「這個碼存在但主人被停權」與「這個碼根本不存在」。
+    const missing = await app.request('/api/referrals/validate/definitely-not-a-real-code', {
+      headers,
+    });
+    assertEquals(res.status, missing.status);
+    assertEquals(body, await missing.json());
   } finally {
-    await deleteTestUsers(client, [referrer.id]);
+    await client.from('rate_limits').delete()
+      .in('key', [`referral-validate:${caller.id}`, `referral-validate-day:${caller.id}`]);
+    await deleteTestUsers(client, [referrer.id, caller.id]);
   }
 });

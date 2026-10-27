@@ -1,4 +1,5 @@
 import { Grid3x3, LayoutGrid } from 'lucide-react';
+import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
 import type { HomeViewMode } from '../../utils/homeViewMode';
 
@@ -44,8 +45,11 @@ export function HomeViewToggle({ value, onChange, className }: HomeViewTogglePro
             aria-pressed={active}
             onClick={() => onChange(mode)}
             className={cn(
-              // 44px 拇指熱區；未選態透明、選中態底色灰字文字反白（§12.12 無框元件）
-              'flex h-9 w-11 items-center justify-center rounded-md transition-colors',
+              // 寬 44px；高度滑鼠 36px、觸控 44px（§1）。未選態透明、選中態底色灰字文字
+              // 反白（§12.12 無框元件）。
+              'flex h-9 pointer-coarse:h-11 w-11 items-center justify-center rounded-md transition-colors',
+              // 鍵盤焦點環 3px 全不透明；選中態也是 --sel 實心，環外留 1px 間隙才分得開。
+              FOCUS_RING_GAP,
               active ? 'bg-sel text-sel-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >

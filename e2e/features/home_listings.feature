@@ -23,6 +23,7 @@ Feature: Public service-provider directory (home page)
     When I visit "/"
     Then I should see the text "載入失敗"
     And I should not see the text "目前沒有可用的服務者"
+    And I should not see the text "找到 0 位服務者"
     When the public directory recovers with providers "Alice 美髮師"
     And I retry loading the directory
     Then I should see the listing card for "Alice 美髮師"

@@ -10,7 +10,7 @@ import { Badge } from '../ui/badge';
 // 完成的回報句（`WithdrawalManagement` 的 `ACTION_DONE`，如「已代為結案」）是另一種
 // 文案、不是狀態名，不從這裡取。會員端
 // `reward/WithdrawalSection.tsx` 依受眾另有一份（標籤用「處理中／已拒絕」），
-// 不併進來；待查收在兩端的顏色統一另案處理。
+// 不併進來；待查收在兩端同為 warning（S7a 拉平）。
 type BadgeVariant = 'secondary' | 'warning' | 'outline' | 'destructive';
 
 const WITHDRAWAL_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {

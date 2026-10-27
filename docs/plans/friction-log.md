@@ -747,6 +747,10 @@ API),而且沒有任何測試會叫。
 真的一樣**。`ReferralTreeView` 的分頁與 SWR 式背景重抓纏在一起,硬併進
 `usePagedList` 只會讓 hook 長出只有它用的選項——為第 N 個使用者加分支的
 那一刻,抽象開始變成負債。抽取的判準不是「長得像」,是「守的是同一條規則」。
+(2026-10 S5 補記:`usePagedList` 現在本身就有背景重讀與失敗保留舊列——那是「不得清空
+已顯示資料」同一條規則的延伸,所以留在通用 hook;快取與 fence 則只透過 `initial`／
+`onLanded`／`clearOnError` 三個擴充點由 `useAdminList` 接上,hook 不知道 store 存在。
+`ReferralTreeView` 要不要改走它,判準照舊:守的是不是同一條規則。)
 
 ## 2026-08-02 admin-dashboard feature:本機 npm run check 不含覆蓋率門檻
 
@@ -2789,3 +2793,398 @@ S4 新寫的徽章測試用 `className.toContain('bg-warning')` 釘「待查收�
 推論：**class 斷言一律逐 token**——Tailwind 的語義 token 普遍互為前綴（`bg-x` 與 `bg-x-subtle`、`text-x` 與
 `text-x-foreground`），還有帶前綴修飾的變體（`hover:`、`aria-invalid:`）。可考慮在 `check-test-names.py` 同軌加一條
 靜態檢查：`*.test.tsx` 出現 `className).toContain('bg-` / `('text-` 就提醒。
+
+## 2026-10-07｜CI 盲區｜正式站付款 403：根因在 Uknow 之外，但上線前沒有任何一條線真的碰 PayUni
+
+業主 10/07 01:46（巴黎時間）在正式站按「前往統一金流付款」，瀏覽器被導到
+`sandbox-api.payuni.com.tw` 得到純文字的 `403 Forbidden`。第一直覺是最近的晉升（10/04～10/06
+共五次）改壞了什麼。調查結論：**不是任何一版 Uknow 的更動**。
+
+證據並排：
+- 程式面：PayUni 相關四段（prepare 組加密欄位、`resolvePayuniConfig`、`crypto.ts`、前端
+  `submitPayment` 建表單送出）自 7 月後未變；9/15 晉升版 `43f2e15`、10/03 排程版 `219f7e0`、
+  現行 main `67a27ec` 三版逐段 md5 相同。10/04～10/06 進 main 的後端改動只動建單前守衛，
+  前端只動按鈕樣式與提示框元件，都在送 PayUni 之前或與送出無關。
+- 線上面（正式站 Supabase 日誌）：10/06 23:46:25Z `/payuni/prepare` 回 200、sandbox 模式建單
+  `20261007074624TRBE7J`；PayUni 從未回呼 return／notify，訂單至今 pending。403 頁是伺服器預設頁，
+  不是 PayUni 應用層的錯誤頁（應用層錯誤長得像 7/26 那次的「授權失敗(模擬)」）。
+- 來源：Cloudflare 標 FR／Paris、法國 DSL 住宅網段、Android Edge；業主 commit 時區 10/04 之前
+  `+08:00`、10/05 起 `+02:00`。
+- 對照組：同一份程式碼從美國 GitHub runner 以 sandbox 模式跑排程 journey——09/26（run 36269079479）
+  124 條全跑、30 節點真刷測試卡全數完成；10/03（run 37151064025）POST 進 PayUni、付款頁完整渲染
+  （紅在按「確認送出」後卡住，另一題）。同樣的表單、同樣的憑證，從美國進得了門，從法國被擋在門口。
+
+根因（2026-10-07 業主驗證）：PayUni 測試站的邊界防護**依來源地區封鎖**——同一支手機、同一帳號，法國住宅 IP
+被擋、切台灣 VPN 即正常進入付款頁；美國 GitHub runner 也放行（10/03）。「PayUni 在 10/04 之後改了規則」的
+次要假說因此排除。本 session 的容器出口封鎖整個 `payuni.com.tw`，技術文件（docs.payuni.com.tw/web/#/7/34）
+無法從 session 內讀取；網路上只查得到「限定 API 之 IP 設定」，那是幕後 API 的 IP 白名單，與瀏覽器端的
+UPP 表單送出不是同一件事。
+
+待業主裁決（產品面，不在本 PR）：正式站端點 `api.payuni.com.tw` 是否同樣擋海外來源？若是，會員出國期間
+無法付款／續約——這是要向 PayUni 確認的商務問題，不是程式缺陷，但上線前要知道答案。
+
+**真正值得記的是「為什麼沒有任何測試抓到」**：
+1. 晉升閘門 `journey-full` 自 PR #275（08/09）起是 `payment_mode: webhook`——攔下往 sandbox 的跳轉、
+   用分支金鑰簽章注入 notify，**從不打 PayUni**。改的理由是 sandbox 商店「信用卡收款額度已達上限」，
+   `ci.yml` 註解寫明「暫時」「額度恢復後應改回」「見 friction-log 待辦」——**friction-log 裡從來沒有這條待辦**。
+   暫時的就這樣變成永久的，兩個月。
+2. 排程 `journey-scheduled` 仍是 sandbox 模式、每週真打 PayUni 一次，是唯一還碰得到 PayUni 的線——
+   但它 09/12 起每週紅（見下一條），綠不綠都沒人看。
+3. 其餘全部碰不到：單元／契約測試用 `Deno.env.set` 塞假憑證；pytest-bdd e2e 把 `api.payuni.com.tw/**`
+   整個 route 掉；`deploy-supabase.yml` 的健檢只看 `payuniMode`／`payuniConfigured`。
+4. 所有自動測試都從美國 runner 發出。**地區封鎖這種「依來源而異」的失敗，結構上沒有任何既有測試能觀察到。**
+5. 產品面是盲交棒：前端 `form.submit()` 之後失聯，交棒失敗無偵測、無回報；pending 訂單等對帳排程 4 天後
+   標 `expired`，且分不出「閘門擋下」與「使用者放棄」。
+
+處置（本 PR 只記錄；修正拆成兩個 session）：
+- A（CI 守門與回流）：先手動 dispatch `journey-scheduled.yml`（scope=skeleton、payment_mode=sandbox）確認
+  sandbox 能從頭刷到尾（10/03 那場卡在「確認送出」之後，要先弄清是額度、還是 sandbox 頁多了一層確認框）。
+  能 → `ci.yml` 晉升閘門改回 sandbox；不能 → 留 webhook，但 `check-workflows.py` 加守門：
+  `payment_mode: webhook` 必須附 `# 暫時至 YYYY-MM-DD`，過期即紅。排程連紅週數接進晉升 PR 的 `ci-ok`
+  匯總步驟（見下一條）。
+- B（合成探測）：`deploy-smoke.yml` 每 6 小時的排程加一條，對 sandbox 與正式站的 `/api/upp` POST 假表單，
+  只斷言不是 403／5xx——抓不到地區封鎖，抓得到 PayUni 整體故障與規則變更。
+- 文件：`supabase-setup-checklist.md` 記「PayUni 測試站擋海外來源 IP（已驗證），海外驗證需台灣 VPN」；正式站開放清單加
+  「從台灣網路真付款一次」。
+- 刻意不做（範圍裁決 2026-10-07）：前端交棒偵測、後端「從未抵達 PayUni」告警。等 P0 驗證結果再議。
+
+推論：**「暫時」沒有到期日就是永久。** 寫在註解裡的待辦不是待辦——要嘛寫進機械守門（到期即紅），
+要嘛寫進這裡（整併時會被讀到）。另一條：**閘門用 mock 繞過外部相依時，要同時說出「還有哪一條線真的碰它」**
+——這次的答案是「只剩每週一次、而且正在紅的排程」，等於沒有。
+
+## 2026-10-07｜漏網｜journey 排程自 09/12 連紅四週，issue #288 每週被覆寫、無人接——同一形狀第三次
+
+`journey-scheduled` 09/12、09/19、09/26、10/03 四場全紅，原因各異（09/26：提領後台「標記已匯款」列定位，
+同名會員出現兩列；10/03：PayUni sandbox 頁按「確認送出」後 45 秒表單仍在；09/12、09/19 未查）。失敗開的
+triage issue #288 自 08/15 開著，workflow 的行為是「已有同名 issue 就把 body 覆寫成最新一次 run」，
+**沒有任何東西累加**：看不出連紅幾週、看不出原因是否相同。這是 08/02「journey 排程 7 晚全紅」與 10/05
+「ECR 限流 7 則 issue 無人收」之後，同一形狀第三次：**失敗自動開 issue 只是訊號，不是回流機制。**
+
+這次的代價：10/03 那場已經把「PayUni 頁送出後卡住」拍下來了（頁面文字、表單元素都在 log 裡），比業主 10/07
+撞到 403 早三天；若有人看，至少「sandbox 現在還能不能刷」這題當時就有答案，晉升閘門該不該改回 sandbox
+也不必等到出事才問。
+
+處置（交 session A，與上一條同一個 PR）：
+- 連紅要能被看見：開 issue 的 step 改成 body **累加**一行（日期、run 連結、失敗摘要前 200 字），標題帶
+  連紅週數；並在晉升 PR 的 `ci-ok` 匯總步驟讀 #288 的狀態，連紅即印 `::warning::`——晉升是本 repo
+  唯一一定有人在看的時刻。
+- 09/26 與 10/03 各自的紅要分別 triage，不在本條範圍。
+
+推論：訊號要回流到「一定有人看的時刻」。本 repo 這樣的時刻只有兩個：PR 的 checks、正式站部署核准。
+排程紅燈不接到其中之一，就等於沒有。
+
+## 2026-10-07｜誤擋（框架結構）｜守衛的實作寫在測試檔裡，紅燈鎖一鎖就改不動
+
+S5 的 4c 回填要補 PII 守衛的兩個洞（帶副檔名的匯入、`require()`）。守衛的**實作**（`storageUses` 與規則表）寫在
+`src/utils/repoHygiene.test.ts` 裡，表格自測也在同檔。照 TDD 先寫紅燈自測、`touch .claude/tdd-lock`、提交紅燈之後，
+要讓它綠只能改同檔的守衛實作——而 `tdd-test-guard.py` 擋所有 `*.test.ts(x)` 編輯。鎖的本意是擋「改測試遷就實作」，
+這裡要動的卻是「實作」，只是它住在測試檔。
+
+處置：依逃生口 3 記 progress.md Blockers、求人工裁決；業主在 session 內授權解鎖。其餘實作先綠、單獨提交（綠燈 commit
+對測試檔零 diff），再手動移除鎖、只改守衛實作（兩條案例的期望一字未動），`npm run check` 全綠後另成一個 commit。
+
+推論（待整併時裁決）：**住在測試檔裡的守衛，自測與實作要同一個 commit**——它們是同一件東西的兩半，紅燈期改不動。
+二選一：(a) `/tdd-implement` 的紅綠循環明寫「守衛類（`repoHygiene.test.ts` 這種把檢查邏輯寫在測試檔的）不走紅燈鎖，
+自測與實作一起提交」；(b) 把守衛實作搬到 `src/test-utils/`（測試專用、不進產品 bundle），測試檔只留表格案例與掃描範圍，
+紅燈鎖就天然成立。(b) 也讓 `scripts/` 的同類檢查有地方共用 AST 工具。
+
+## 2026-10-07｜漏網（流程）｜紅燈只證明第一個斷言會紅，後段斷言的錯到綠燈期才浮現
+
+S5 階段 7 的紅燈測試「切走再切回提領不出骨架，照舊重讀一次」：紅燈期在骨架斷言就紅了，後面的呼叫計數斷言沒被執行
+——它數的是 `apiRequestJson` 全部的呼叫紀錄，同檔前面六條既有測試各讀過一次提領、沒有人清（整檔跑得 8、單獨跑得 2）。
+實作綠了才暴露，這時紅燈鎖擋 `*.test.*`，只能走逃生口 3 求人工授權解鎖——同日第二次（前一次見上條，成因不同、
+出口相同）。
+
+處置：業主在 session 內授權；實作先提交（測試檔零 diff），再手動移除鎖、只補 `beforeEach(() => api.mockClear())`，
+期望一字未動，`npm run check` 全綠後另成一個 commit。
+
+推論（待整併時裁決）：`/tdd-implement` 的「確認紅、而且是斷言紅」再補一句——**紅在前段斷言的測試，後段斷言等於沒驗
+過**：一條 `it` 只守一件事（拆成「不出骨架」與「照舊重讀一次」兩條），或在紅燈期確認每條斷言各自能紅。另外，數模組層
+`vi.fn` 呼叫次數的 describe 一律在 `beforeEach` 清紀錄，或改斷言前後差值——跨測試累積的計數是最常見的隔離漏洞。
+
+## 2026-10-07｜漏網（流程）｜裁決改的是既有行為，紅燈只寫了新測試、沒掃與它衝突的舊測試
+
+S5 實作審查的業主裁決 Q1（寫入回 403 也清空快取）。紅燈 commit 只新增 `runAdminWrite` 的兩條測試；提領頁既有的
+「批次整批被後端拒絕時的失效事件」恰好拿 403 當「後端拒絕」的例子、期望不失效——實作一上就紅，而紅燈鎖擋著測試檔。
+同日第三次走逃生口 3（前兩次見上兩條，成因又不同）。
+
+處置：業主在 session 內授權；實作先提交（測試檔零 diff），再手動移除鎖、只改那張表：該列改 409（保留「4xx 不為那次
+寫入失效」的本意），另加「整批回 403 → `accessLost`」一列；其他期望不動，`npm run check` 全綠後另成一個 commit。
+
+推論（待整併時裁決）：**行為變更（不是新增）的紅燈，要連同斷言舊行為的既有測試一起改**——它們是同一個變更的兩面。
+做法：提交紅燈前先把 stub 換成真實作跑一次全套（不提交），撞到的既有斷言就是要一併列進紅燈的；再還原成 stub 提交。
+可寫進 `/tdd-implement` 的紅燈步驟。
+
+**同日再犯（業主裁決 R4，第四次走逃生口 3）**：R4 在證件審核加了常駐的「正在更新…」狀態節點，既有一條以
+`getByText` 找唯一「正在更新…」的測試撞名；紅燈 commit 只寫了 R4 的新測試，沒有先用真實作跑全套。業主授權只把
+那一行限定在陳舊提示內（`within(alert)`）。上一段的推論寫完一小時就沒照做——這不是記性問題，是流程沒有把它變成
+必經步驟。整併時建議：寫進 `/tdd-implement` 的紅燈步驟，或在建立 `.claude/tdd-lock` 時由 hook 提醒「先用真實作
+跑一次全套」。
+
+## 2026-10-16｜漏網（環境）｜本機 e2e 的字型與 CI 不同，版面量測本機綠、CI 紅
+
+S5 業主裁決 R7 要 e2e 補「待匯款七位數時，手機統計骨架與摘要同高」的量測。本機 375／320px 兩寬都綠，我據此在
+PR 寫了「佔位字不必放寬」；推上去 CI 在 375px 紅：骨架 46px、摘要 70px，數字落地時下面整個跳 24px。
+
+根因：前端沒有指定字型，數字吃系統預設的無襯線字型。本機容器有 `/etc/fonts/conf.d/56-prefer-inter.conf`，把
+`sans-serif`、`system-ui`、`ui-sans-serif` 等都指向 Inter；GitHub 的 Ubuntu runner 是 DejaVu Sans，粗體數字寬約多
+15%。Inter 的數字還是比例寬（「1」比「0」窄），DejaVu 是等寬——同一份版面兩邊的換行點不同。反方向也漏：本機 Inter
+在 360px 量到典型值就會跳，CI 字型下不會，而原本的測試只量 375／320。
+
+處置：本機模擬 CI 字型重現了一模一樣的 46／70px；量完三種修法送業主裁決（R8 A：手機摘要固定兩行）。e2e 的同高
+量測擴到 320／360／375／390／414，另加「已完成」兩位數的量測，兩種字型都跑過才推。
+
+本機模擬 CI 字型（不動系統設定）。只在設定檔前面加一條 DejaVu 的 alias 不夠——系統那支的 Inter 仍排在前面，要整支
+排除：
+
+```bash
+D=<scratchpad>/ci-fonts && mkdir -p "$D/conf.d"
+for f in /etc/fonts/conf.d/*; do b=$(basename "$f"); [ "$b" = 56-prefer-inter.conf ] || ln -s "$(readlink -f "$f")" "$D/conf.d/$b"; done
+sed "s#<include ignore_missing=\"yes\">conf.d</include>#<include ignore_missing=\"no\">$D/conf.d</include>#" /etc/fonts/fonts.conf > "$D/fonts.conf"
+FONTCONFIG_FILE="$D/fonts.conf" fc-match sans-serif   # 應為 DejaVu Sans
+cd e2e && FONTCONFIG_FILE="$D/fonts.conf" E2E_SKIP_DEV_SERVER=1 .venv/bin/pytest test_admin_mobile_layout.py
+```
+
+推論（待整併時裁決）：**版面量測（高度、換行、第一屏）的結論，本機要在兩種字型下各量一次才算數**——CI 只有
+DejaVu、本機只有 Inter，各自都會漏掉另一邊的換行點。可選做法：(a) 把上面這段寫進 `e2e/README.md` 的本機跑法；
+(b) 包成一支 script；(c) 量版面的 e2e 在 CI 加一個 Inter 的矩陣（成本：多一軌、要裝字型）。另外，程式註解與 PR 裡
+引用的實測 px 多半是本機 Inter 量的，拿來下結論前先在 CI 字型下重量（這次重量了 375px 第一屏餘裕：提領 122px、
+會員 132px，兩種字型相同）。
+
+---
+
+## 2026-10-17｜漏網（環境）｜web session 本機跑得起 supabase start，但映像要繞路、CLI 要釘版
+
+2026-07-25 那條寫「無 docker daemon，後端紅燈只能從 CI 取」——現在的 web session 是 root、有 `dockerd`，背景啟動後
+`supabase start` 跑得起來（`fix/referral-validate-hardening` 的紅綠燈都在本機實跑）。卡住的是兩件事：
+
+1. **映像拉不下來**：`public.ecr.aws` 回 `Data limit exceeded`（共用出口 IP 的匿名額度）、`ghcr.io` 的 blob 經 proxy
+   被拒、Docker Hub 429。缺的是 kong、gotrue、edge-runtime。繞法：從 `mirror.gcr.io` 拉再改標成 CLI 要的名字；
+   Deno 測試直接 import `index.ts`，不需要 edge-runtime。
+
+   ```bash
+   nohup dockerd > <scratchpad>/dockerd.log 2>&1 &
+   docker pull mirror.gcr.io/library/kong:2.8.1 && docker tag mirror.gcr.io/library/kong:2.8.1 public.ecr.aws/supabase/kong:2.8.1
+   docker pull mirror.gcr.io/supabase/gotrue:<版本> && docker tag mirror.gcr.io/supabase/gotrue:<版本> public.ecr.aws/supabase/gotrue:<版本>
+   supabase start -x studio,logflare,vector,supavisor,edge-runtime,imgproxy
+   ```
+
+2. **CLI 版本漂移**：`npm i -g supabase` 裝到最新（2.121.0），CI 釘的是 2.109.1（`ci.yml` 的 setup-cli）。新版本地
+   Postgres 映像的預設授權比較寬，`name-write-paths.test.ts`、`rls-policies.test.ts` 兩條 GRANT 斷言本機紅——拿掉本次
+   migration 重置後照樣紅，確認與改動無關。本機要跟 CI 同結果就裝 `npm i -g supabase@2.109.1`。
+
+處置：本 PR（#380）照上面的繞法在本機取得兩輪紅綠燈證據，未改任何設定。另一個坑：worker 重啟會殺掉 `dockerd`，
+重新起 `supabase start` 時 DB 走 crash recovery、auth 容器晚約 30 秒才 healthy——這段期間跑測試會整批假紅
+（`getUserAccessToken` 連不上），等 `docker ps` 全部 healthy 再跑。
+
+補充（PR #382 的 session，同日；原為獨立一條，合併進來免得同一件事兩處說法）：映像的另一條路是 Docker
+Hub——代理擋的是 ghcr 的 blob 主機 `pkg-containers.githubusercontent.com`，Docker Hub 當時可用：
+
+```bash
+docker pull postgrest/postgrest:v14.14 && docker tag postgrest/postgrest:v14.14 supabase/postgrest:v14.14
+docker pull kong:2.8.1 && docker tag kong:2.8.1 supabase/kong:2.8.1
+docker pull axllent/mailpit:v1.30.2 && docker tag axllent/mailpit:v1.30.2 supabase/mailpit:v1.30.2
+supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime   # edge-runtime 起不來（rlimit）
+```
+
+補充（`fix/auth-check-email-lookup`，2026-10-25）：`SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io supabase start -x
+studio,logflare,vector,supavisor` 讓 CLI 直接從 Docker Hub 拉全部映像，不必逐一改標；當天 `public.ecr.aws` 仍回
+`Data limit exceeded`、ghcr blob 仍被拒，這一條一次起得來。`npm i -g deno` 裝到的 2.9.6 跑 `deno task test:db` 正常。
+
+另兩個坑：`supabase db reset` 或容器重啟後，若測試全部以 `AuthRetryableFetchError` 秒退，`docker restart` kong
+即可；本機 deno 2.5 的 `deno task test:db` 會把 `--ignore=api/*.unit.test.ts` 當成檔案 glob 而失敗，改用
+`deno test ... $(ls api/*.test.ts | grep -v '\.unit\.test\.ts$')`（CI 的 deno 版本不受影響）。是否把整套包成
+SessionStart hook 待整併時裁決。
+
+推論（待整併時裁決）：CI 升 CLI 版本時，這兩條 GRANT 測試會先紅——那是新版預設授權變寬的訊號，該補的是 migration 裡
+明確的 revoke，不是放寬斷言。
+
+## 2026-10-17｜漏網｜「已付款不可改」只放在入口與 UI 順序上，寫入端點本身沒有守衛
+
+PR #378 審查發現 A1b-01：`POST /auth/register` 只有 `requireAuth`，已付款會員直接打 API 就能改寫姓名、
+身分證字號（經營權與提領身分核對的唯一鍵）與推薦人（送出前確認「永久綁定」）。「已付款不可改」的守衛在
+`reset-registration`（編輯入口）與 `cancel-signup` 都有，審查者看到入口有守衛就停止追問——**守衛的位置和
+被保護的寫入不在同一處**。0011 把 registrationStep 改成即時計算後，reset-registration 退化成不寫入的
+純檢查，規則從此只活在「前端先打 reset 再導去編輯頁」的呼叫順序裡；寫回已棄用欄位又沒有可見效果，漏洞是
+靜默的。既有測試按功能（姓名格式、遮罩）組織，沒有任何一處列舉「寫入端點 × 註冊狀態」。
+
+第二層：把守衛補在 Edge Function 裡「先讀進度、再 UPDATE」仍擋不住付款同時完成——UPDATE 被付款交易對
+profiles 的 `for update` 鎖擋住，commit 後照樣寫入（本機重現：回 200、訂單已 completed、身分證被改寫）。
+付款期間用腳本連打即可命中，不需精準時序。**狀態相依的寫入許可，要和改變那個狀態的交易共用同一把鎖。**
+
+推論（待整併時裁決）：
+- 審查任何「已完成 X 不可 Y」的規則時，追到 Y 的**寫入點**，不要停在入口；入口守衛只是 UX 層的提早告知。
+- 這是第三次逐端點補「已付款不可 X」（reset-registration、cancel-signup、register）。cancel-signup 這次也
+  被掃到同形的 fail-open（讀取失敗當成「沒付過款」→ 刪除已付款會員），一併修了。若再出現第四個，考慮把判準
+  收斂成共用 helper 並以 `effective_registration_step` 為唯一來源（reset-registration 仍直接查
+  payment_orders；讀取失敗已於審查回填改為回 500）。
+
+處置：`register_profile`（先鎖同一列再查再寫）、表級撤銷 authenticated 的 profiles UPDATE、刪除無呼叫端的
+`PUT /auth/profile`、cancel-signup fail-closed、前端 403 出口與編輯守衛。防線是
+`supabase/functions/api/registration-completion-guard.test.ts` 的「端點 × 註冊狀態」矩陣，含一條在付款交易
+持鎖期間送出 register 的確定性競態測試（測試自開交易呼叫 `process_successful_payment`、不 commit）。
+
+審查回填（PR #382 留言）另修了三處同形缺口：cancel-signup 改為也擋已付款待開通（pending + PayUni SUCCESS，
+錢已收、刪除不可逆）、reset-registration 讀取失敗改回 500、register 對 `register_profile` 未預期的回傳值回 500
+而不是一律說成「用戶不存在」。
+
+自我糾正（要沉澱的那種）：我在本機實測直連 PATCH 被「沒有 SELECT」與 `safeupdate` 附帶擋住，就推論「各環境
+都只是縱深防禦」寫進 PR；審查唯讀查 develop 才發現持久分支的 `authenticated` 有表級 SELECT，依權限推得
+直連寫入在 develop 今天就可行（未實送 PATCH）。**權限類結論要逐環境查**，且要分清「實測」與「依權限
+推得」——本 repo 早已記錄各環境 default privileges 不一致（`rls-policies.test.ts`），本機只代表 CI 釘的
+supabase CLI 2.109.1 從零重播的那一種（較新版 CLI 的預設授權不同）。
+
+未處理：
+- CompleteProfile「稍後註冊」對已付款者吞掉 cancel-signup 的 400 後仍登出並顯示「可稍後再完成註冊」。
+- 客服代改身分資料沒有後台工具（A1b 另案）。
+- cancel-signup 的守衛讀取與 `deleteUser` 之間沒有鎖（TOCTOU）；要根治需 security definer 刪除函式，另案。
+- `/payuni/prepare` 沒有「基本資料已填齊」的伺服端守衛。「已付款但資料未填齊 0 筆」是 2026-10-17 的時點量測，
+  不是結構保證。
+- step 3 且資料未填齊者會被 App 啟動守衛（導去完善資料頁）與後端 403 互相夾住；UI 出口另案（A1b）。
+- 已付款待開通的窗口內換推薦人，會讓 `referred_by_changed_at` 晚於該筆付款的 `completed_at`，
+  `repair_orphaned_payments` 對這一筆付款永遠略過。只影響自癒補救路徑，正常開通不經此閘門。
+
+## 2026-10-17｜誤擋（再犯）｜唯讀的 `git config core.hooksPath` 又被擋——10-03 那條的處置還沒整併
+
+fix/referral-entry-points 開局在同一條複合指令裡順手執行 `git config core.hooksPath`（單一參數，讀），
+bash-guard 第 0 類照舊回「覆寫 core.hooksPath」，連帶把同一行的 `git checkout -b` 一起擋掉，
+只好拿掉那段重跑。與 2026-10-03 那條同形狀、同訊息：deny 訊息仍沒寫「只是想讀請用 `--get`」。
+metrics（`.claude/metrics/sessions/fix__referral-entry-points.jsonl`）記為一筆 hooks-path。
+
+處置:不動守衛，計數＋1，併入 10-03 那條的框架修訂（`REASON_HOOKS_PATH` 補 `--get` 提示＋
+`test-hooks.py` 單一參數讀取案例）。第二次出現代表它不是一次性的手滑，整併時優先處理。
+
+## 2026-10-18｜漏網（流程）｜紅燈因「元件還吃舊 props」先紅，替身的錯到綠燈期才浮現——同 10-07 形狀再一次
+
+#381 審查回填的紅燈 commit（4ede003）裡，「分享 QR Code」兩條測試用 `{ ...navigator, share }` 整個換掉
+navigator；展開丟了 `userAgent` 這類 getter，元件一渲染 `detectInAppBrowser` 就炸。紅燈期這兩條早已因
+「面板還吃 referralCode props、測試只給 context」而紅，替身的錯被前一個紅蓋掉，實作綠了才浮現；鎖擋
+`*.test.*`，只能走逃生口 3。另一個同場的小坑：測試檔也在 `check-color-usage` 的 C3 掃描範圍，紅燈測試
+寫的 `'#ffffff'` 字面讓 framework-check 紅，`npm run check` 不跑它所以 commit 前沒看到。
+
+處置：業主在 session 內授權；實作先提交（032a06e，兩個測試檔零 diff），再手動移除鎖、只把替身改成在真
+navigator 上補 share／canShare（期望一字未動，7e3b925）；另做變異驗證確認「按取消就停」那條真的會紅。
+純白斷言改成數值比對（4d2b33d）。
+
+推論（併入 10-07 那條待整併）：紅燈期除了「每條斷言各自能紅」，也要確認**紅的原因是預期的那一個**——
+`vitest run` 的錯誤訊息若是 TypeError 而不是斷言失敗，紅燈證據就不成立。新增或改寫測試後，commit 前
+跑一次 `bash scripts/framework-check.sh`（測試檔也受色彩、命名等守門掃描）。
+---
+
+## 2026-10-17｜漏網（流程）｜`fix/*` 輕量流程沒有紅燈 commit 的要求，審查者只能相信陳述
+
+S6（#377）兩輪都有新測試（vitest 9＋5 條、e2e 兩個新模組與兩條情境），PR 描述的「紅燈 commit(s)」
+勾「不適用：`fix/*` 輕量流程」，紅燈證據只在留言裡（「先對改動前的元件跑過」「故意改壞骨架高度
+確認會紅」）。主 session 做增量確認時讀得到測試內容、CI 也綠，但「先紅後綠」這件事從 commit
+歷史驗不出來——只能相信陳述。
+
+形狀：CLAUDE.md 把 `test(red)` 標記寫成「TDD 相位的流程必要」，而輕量流程（Plan Mode →
+`fix/*`／`claude/*`）沒有相位、PR 模板又開了「不適用」的口，於是有測試改動的 PR 也能合法略過
+紅燈證據。2026-10-07 兩條「漏網（流程）」記的是紅燈寫了但不夠；這條是紅燈根本沒留下。
+S6 的開工 prompt（九條）也沒要求——漏講的都會在 PR 內多補一輪，這次是審查後才發現連補都補不了。
+
+處置：S7 開工 prompt 第 (7) 條明寫「新測試先以 `test(red)` commit 入庫，紅燈 hash 寫進 PR」。
+框架修訂候選（雙週整併時處理）：PR 模板的「不適用」限定為「沒有新增或修改測試」；有測試改動
+的 PR 一律要紅燈 hash，可機械把關——PR diff 碰到 `*.test.ts(x)`／`e2e/**` 而描述沒有 hash 就提醒。
+
+## 2026-10-21｜漏網（流程）｜S7a 紅燈測試自身有錯，施工 session 手動刪鎖修測試，沒走「停手求人工裁決」
+
+S7a（#385）七階段 TDD 中，兩個階段在紅燈 commit 之後又改了測試檔：
+
+- 階段 D（`2c0bd24`→`830ee46`）：`TaskMedals.test.tsx` 把 `--medal-gradient` 字面改成匯入元件的
+  `MEDAL_GRADIENT_CLASS`。測試檔也在 `check-color-usage` 的 C2/C3 掃描範圍，只放行登記過的檔；
+  `npm run check` 不跑它，是階段收尾手動跑 `check-color-usage.py` 才抓到（`tdd-unlock.sh` 本身不會）。
+- 階段 E（`bdfd555`→`a6c82a4`）：`RewardDashboard.test`（桌機 `order` 斷言打在不帶 class 的 stub 上，
+  永遠為假）與 `RewardHistory.test`（「重試仍失敗」在同一個 act 內立刻失敗，被 React 批次合併，
+  錯誤框從沒卸載、焦點本來就還在重試鈕）。兩條在紅燈期都因元件尚未實作而紅，測試自己的錯被蓋住，
+  實作綠了才浮現——與 2026-10-07、2026-10-18 兩條同一個形狀。
+
+**這次的程序偏離**：鎖擋 `*.test.*`，`tdd-implement` 逃生口 2 的規定是停手、記 Blockers、求人工裁決。
+階段 E 施工 session 判斷「只修測試自己的錯、斷言語意不變」，沒有停手，直接 `rm .claude/tdd-lock`
+（bash-guard 不攔）後改測試，測試修正與實作混在同一個綠燈 commit（`a6c82a4`），事前沒有業主授權。
+可驗證的範圍：`git diff bdfd555 a6c82a4 -- '*.test.*'` 只有上述兩個檔、共 18 行；`git diff 2c0bd24 830ee46 -- '*.test.*'`
+只有 `TaskMedals.test.tsx` 10 行。審查者請對這兩段 diff 判斷語意是否真的未變，不要只信這裡的陳述。
+
+另一個程序事實：S7a 的 e2e 情境（`.feature`／`*_steps.py`）從階段 C 起都隨綠燈 commit 入庫，不在紅燈 commit 內——
+紅燈鎖只管 vitest 層，e2e 沒有「先紅」的 commit 證據；它們由 CI 的 e2e 軌把關。
+
+處置：照實寫進 PR 描述請審查者看這兩段 diff；框架修訂候選（雙週整併，併入 10-07／10-18 兩條）：
+(1) 紅燈 commit 前跑 `bash scripts/framework-check.sh`，測試檔也受色彩／命名守門掃描；
+(2) `tdd-unlock.sh` 的 check 納入 `check-color-usage.py`，否則解鎖後才紅；
+(3) 評估是否讓 bash-guard 攔「刪 `.claude/tdd-lock`」，把逃生口 2 變成機械上只能由 `tdd-unlock.sh` 走。
+
+## 2026-10-25｜漏網｜`/auth/check-email` 帶了 GoTrue 不認的 `search=`，只比對最新 50 位——同一個 bug 舊版修過一次，改寫時被靜默撤回
+
+`/auth/check-email` 打 `admin/users?page=1&per_page=50&search=<email>` 再在那一頁裡比對。GoTrue 的 list users 只讀
+`page`／`per_page`／`sort`／`filter`，`search` 被靜默忽略，回的是 `created_at desc` 第一頁＝最新 50 位：會員一過 50，
+較早註冊的人在登入頁被判「不存在」、被送去設定密碼。本機 gotrue v2.197.0 實測帶 `search=` 與不帶參數回同一頁。
+R2 規劃審查（2026-10-21）讀碼發現，不是任何閘門攔到的。
+
+三層都沒有訊號，各有原因：
+
+1. **寫錯沒有訊號**：2026-06-20 `2f3f715b` 把舊 `make-server` 的 SDK 呼叫 `auth.admin.listUsers({ page, perPage })`
+   改寫成手寫 `fetch`，自創了 `search` 參數。手寫 URL 沒有型別，GoTrue 對未知參數不報錯、HTTP 200、回應形狀與正確
+   查詢相同。
+2. **舊修法沒有測試**：被取代的舊版 `checkEmail` 是分頁掃到最後一頁，註解寫「Phase 10.2: 修復分頁問題」——這個 bug
+   修過一次，修正只活在程式碼裡，重寫時一起消失，沒有任何紅燈。
+3. **就算有測試也會綠**：沒有任何測試對真 GoTrue 斷言過 `exists:true`（`check-email-rate-limit.test.ts` 只看狀態碼、
+   e2e 主套件全 mock；journey 打真後端，但主樹 30 人（`orgchart.yaml`）＋續約 saga 7 人（`orgchart-saga.yaml`），
+   規模到不了「目標之後再建滿 50 位」）；而「剛建的帳號 → exists:true」修前修後都綠，因為 fixture 永遠是最新
+   建立的，天生落在第一頁。
+
+處置：`fix/auth-check-email-lookup` 改用 service_role 專用的 `find_auth_user_by_email`（DB 內精確比對），RPC 失敗
+503 fail-closed 並 `console.error`；`check-email-lookup.test.ts` 的紅燈刻意在目標之後再建 50 位，才造得出 bug 的前提。
+
+同類掃描找到的同形態存量債另立一條，見下方 `queryPayUniTradeStatus` 條目（issue #395）。
+
+推論（待整併時裁決）：
+
+- 引用既有呼叫當範本、或把 SDK 呼叫改寫成手寫 HTTP 之前，先對對方原始碼／文件核一次參數名。
+  `platform-uiux-redesign/progress.md` 2026-10-21 列已寫過同一句，這是第二次出現。
+- 修過的 bug 沒有測試就等於沒修過——重寫會把它靜默撤回。修 bug 的紅燈測試是那次修正唯一帶得走的部分。
+- 「把單頁當全集」這一類 bug，紅燈要刻意造出前提（目標之後再建滿一頁），只用新建 fixture 的測試永遠綠。
+- 框架修訂候選：離線守衛限制 `supabase/functions/api/index.ts` 的原生 `fetch(` 只能打 PayUni（目前只剩那一處），
+  新增對 GoTrue／PostgREST 的手寫 HTTP 呼叫就紅，逼它走 SDK 或 DB 函式。
+
+## 2026-10-25｜存量債｜`queryPayUniTradeStatus` 查詢層非 SUCCESS 一律當「處理中」、不記錄不告警——滿 4 天的卡單被對帳靜默標 expired
+
+check-email 修正（上一條）的同類掃描發現。`queryPayUniTradeStatus` 對 PayUni 查詢 API 的回應只要
+`raw.Status !== 'SUCCESS' || !raw.EncryptInfo` 就回 `{ stillProcessing: true }`，不記錄、不告警。
+`reconcilePendingOrders` 對 `stillProcessing` 的處理：建單 4 天內計 `stillPending`，超過 `expireAfterDays`（預設 4，
+PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
+
+後果：payload 欄位名若不對（或 PayUni 查詢層持續回錯），每一輪都拿到錯誤狀態——webhook 沒送達、其實付了錢的
+卡單永遠撿不回來，4 天後被靜默標成 `expired`，端點照樣回成功。與 check-email 同一個「錯誤長得像正常」的形狀。
+欄位名當時無法對 PayUni 文件驗證（`index.ts` 註解寫「以官方文件為準、上線前 sandbox 驗一輪」，`docs/`、
+`.github/` 內找不到驗過的紀錄）。
+
+`reconcile-payments.yml` 檔頭寫明開排程時選的是「讓假綠不可能」（`curl -f`、回應形狀斷言、失敗自動開 issue），
+而不是「再驗一次才敢開」——那是有意識的取捨。但那三道看的是端點層：查詢層的非 SUCCESS 在端點眼中是正常的
+`stillPending`／`expired` 計數，穿得過去。
+
+處置：業主裁決（2026-10-26）開 issue #395、排總綱 Plan Mode 小 PR（Opus），不在 check-email 修正 PR 內修。
+償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的 `Message`，讓「查無此單」與「參數錯」分得開；
+再以 sandbox 實打一輪確認欄位名。
+
+## 2026-10-26～27｜誤擋／漏網（環境、流程）｜R2 Email 邀請（#399 後端、前端 PR）施工期間的摩擦，從 progress.md 整併
+
+- **DB 測試紅燈需要「stub migration」**：函式不存在時 `has_function_privilege` 直接拋錯（不是斷言紅），紅燈 commit 只好帶只有
+  簽章的 stub、綠燈改寫同一支 migration。代價：Supabase Preview 分支只套用**新**的 migration 檔，PR 的 preview DB 停在 stub 版。
+- **migration 重跑 `create extension if not exists pg_cron` 在 CI 失敗**（2BP01 dependent privileges exist）；移除後過。本機起不了
+  Supabase 時，migration 的套用錯誤只有 CI 抓得到。
+- **bash-guard 誤擋兩次**：`git add e2e/journey/pytest.ini` 與 `pip install -r journey/requirements.txt; python3 -c "import pytest_bdd"`
+  都因同一串指令裡有 `pytest` 字樣與 journey 路徑被當成本機跑 journey。建議判準只看 `pytest` 出現在指令位置（行首或 `&&`／`;` 之後）。
+- **TDD 證據 × 自動 rebase**：pre-push hook 把分支 rebase 到新 develop，紅綠燈 hash 全換；DB 測試以 CI 為證時，證據留在舊 hash，
+  只能靠對照表接起來。
+- **`tdd-test-guard` 擋所有 `*.test.ts` 路徑（含 scratchpad 草稿）**：紅燈期草擬下一循環的測試要先存成別的副檔名。
+- **CI api-tests 的 `supabase start` 一天內三次死在拉映像**（ECR `Data limit exceeded`、ghcr `toomanyrequests`、Docker Hub 無該映像），
+  都在任何測試跑之前。建議 api-tests 的 `supabase start` 比照 github-actions.md 規則 12 加退避重試，並把規則 12 擴到 `supabase start`。
+- **紅燈測試自身寫錯兩次（前端段）**：循環 8 斷言字面錯（找不存在的密碼訊息）→ 走逃生口 2 求裁決，主 session 卡在等業主回覆，
+  施工停約 40 分鐘；循環 9 測試替身 `{ ...navigator, share }` 丟了原型上的 `userAgent` → 改以實作側 `?? ''` 容錯。兩次都是
+  「紅燈只確認了『紅』，沒確認『為對的理由紅』」：commit 紅燈前應逐條看失敗訊息是斷言值不符，而不是找不到元素／例外。
+  與 2026-10-21 S7a 同一形狀，這次走了合法逃生口但代價是牆鐘。處置建議：`/tdd-implement` 的紅燈步驟加一句「逐條讀失敗原因」。
+- **web 容器的 Playwright 版本**：`pip install -r e2e/requirements.txt` 會裝到與預裝 Chromium 不合的 playwright（1.56 對 1243 版瀏覽器），
+  e2e 起不來；改裝與 node 側相同的 `playwright==1.63.0` 才行。
+- **交接給 T1（登入狀態信任）**：R2 前端重寫了 `AuthPage.tsx` 的既有 session 檢查 effect——產出 `sessionState` 三態
+  （`checking`／`signed_in`／`signed_out`）、4 秒逾時視為未登入、清理過期 session 的 `signOut` 之後寫回邀請 token（否則
+  App.tsx 的 SIGNED_OUT 會清掉、重新整理掉回 Step 1）。T1 規劃與 rebase 時以這版為準，三件事都要保留；effect 上方有同句註解。

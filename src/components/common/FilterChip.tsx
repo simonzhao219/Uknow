@@ -1,13 +1,14 @@
+import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
 
 // 篩選用的切換式 chip（膠囊按鈕），手機底部篩選面板與桌面篩選區共用，
-// 讓兩個平台的「選取」視覺語言一致：實心 = 已選、外框 = 未選。
+// 讓兩個平台的「選取」視覺語言一致：灰字實心 = 已選、灰底無框 = 未選。
 //
 // 為什麼用 chip 而不是 radio / checkbox 直列：
 //   - 選項本身就是完整的點擊目標（整顆 chip 可點），不必精準點中小圓圈；
 //   - flex-wrap 讓選項依內容寬度自動排滿整行，30 個類別在手機上約 10 列內
 //     即可看完，取代原本一欄一項、右側大片留白、要滑很久的直列。
-// 觸控目標高度由 py-2（約 40px）保證，符合行動裝置最小可點面積。
+// 觸控目標：滑鼠 40px（min-h-10），觸控裝置 44px（pointer-coarse，ui-ux-guidelines §1）。
 
 interface FilterChipProps {
   label: string;
@@ -24,18 +25,20 @@ export function FilterChip({ label, selected, onToggle, className }: FilterChipP
       onClick={onToggle}
       title={label}
       className={cn(
-        'inline-flex min-h-10 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
+        'inline-flex min-h-10 pointer-coarse:min-h-11 items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors',
         // max-w-full：自訂服務類別上線後，chip 的文字長度不再由開發者決定。
         // 自訂上限已對齊內建最長值（皆 6 字，見 CUSTOM_CATEGORY_MAX_LENGTH），
         // 但調降前建立的類別最長仍有 10 字、資料層的濫用上界是 20 字，所以
         // 界限不能靠「上限夠小」——沒有 max-w 時，長標籤會把 flex-wrap 容器
         // 撐得比篩選面板還寬。
         'max-w-full',
-        'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-        // 選中＝無框元件的選取態（ui-ux-guidelines §12.12）：底色灰字 --sel、文字反白。
+        FOCUS_RING_GAP,
+        // chip 是無框元件（ui-ux-guidelines §12.12）。選中＝底色灰字 --sel、文字反白；
+        // 未選＝灰底（--secondary）灰字，沒有框線（畫面稿）。邊框保留為透明，讓兩態盒子
+        // 尺寸一致、切換時不位移。
         selected
           ? 'border-sel bg-sel text-sel-foreground'
-          : 'border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
+          : 'border-transparent bg-secondary text-muted-foreground hover:bg-accent hover:text-accent-foreground',
         className,
       )}
     >

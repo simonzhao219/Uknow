@@ -584,8 +584,8 @@ def claim_blocked_when_expired(guarded_page, supabase_admin, run_state, node):
     guarded_page.goto("/tasks")
     # A8 的 GUI 真相:RequireMembershipRoute 把過期會員一律導回
     # /payment/checkout——過期時到不了任務中心,claim 從入口就被擋
-    # (run 31156146124 實測;TaskDashboard 的「暫無法領取」文案只有
-    # 非過期的封鎖態才看得到)。
+    # (run 31156146124 實測;TaskDashboard 的領取鈕收起、改顯示黃框「會籍已失效」
+    # 只有頁面開著時剛好到期的邊界看得到)。
     guarded_page.wait_for_url("**/payment/checkout**", timeout=30_000)
     rows = supabase_admin.rest_select(
         "referral_king_rewards",

@@ -13,6 +13,7 @@ PaymentResult screen without ever resolving api.payuni.com.tw.
 
 import json
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext
 
@@ -192,19 +193,81 @@ class BackendApiMock:
     def set_register_error(self, message: str, status: int = 400):
         self._route("/auth/register", lambda route: _fulfill_json(route, {"error": message}, status=status))
 
+    def set_register_completed_elsewhere(self) -> None:
+        """Payment completed in another tab while this profile form stayed open.
+
+        `/auth/register` refuses the write with 403 (the backend's
+        registration-completed guard), and from that moment on the profile
+        endpoints report the completed member (step 3) — the page's
+        refreshUser() must see the new state before it leaves the form.
+        Before the register call, the profile stays at step 0 so the form
+        renders normally."""
+        before = build_profile(0)
+        after = build_profile(3)
+        state = {"completed": False}
+
+        def register(route):
+            state["completed"] = True
+            _fulfill_json(route, {"error": "註冊已完成，資料變更請聯繫客服"}, status=403)
+
+        def profile(route):
+            _fulfill_json(route, after if state["completed"] else before)
+
+        self._route("/auth/register", register)
+        self._route("/profile", profile)
+        self._route("/auth/profile", profile)
+        self.set_subscription_status(
+            has_subscription=True,
+            status="active",
+            active_until=after["subscriptionEndDate"],
+            renewal=None,
+            hasPendingWithdrawal=False,
+        )
+
     def set_reset_registration_success(self):
         self._route("/auth/reset-registration", lambda route: _fulfill_json(route, {"success": True}))
 
+    def mock_invite_accept(self, status: int = 200, code: Optional[str] = None):
+        """`POST /auth/invite/accept`（公開）。200 時密碼已設、email 已驗證，前端接著以
+        剛設的密碼登入；錯誤一律 `{ success: false, error: { code, message } }`，message 是
+        英文後備句——前端只依 code 出文案，看到它出現在畫面上就是 bug。"""
+        if status == 200:
+            body = {"accepted": True}
+        else:
+            body = {"success": False, "error": {"code": code, "message": "English fallback"}}
+        self._route_exact("/auth/invite/accept", lambda route: _fulfill_json(route, body, status=status))
+
+    def spy_invites(self, status: int = 202, code: Optional[str] = None) -> list:
+        """`POST /referrals/invites`：記下每次請求的 body，回 202 受理或指定的錯誤 code。"""
+        calls: list = []
+
+        def handler(route):
+            calls.append(route.request.post_data_json)
+            if status == 202:
+                _fulfill_json(route, {"accepted": True}, status=202)
+            else:
+                _fulfill_json(route, {"success": False, "error": {"code": code, "message": "fallback"}}, status=status)
+
+        self._route_exact("/referrals/invites", handler)
+        return calls
+
+    # GET /referrals/validate/<code> is the only referral-code check (the anonymous
+    # POST /listings/verify-referral-code alias was removed). Response shape mirrors
+    # the backend exactly: no referrer id of any kind.
     def set_referral_code_valid(self, referrer_name: str = "推薦人測試"):
-        body = {"valid": True, "referrerName": referrer_name}
-        self._route("/listings/verify-referral-code", lambda route: _fulfill_json(route, body))
+        body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))
 
     def set_referral_code_invalid(self, message: str = "推薦碼無效"):
         body = {"valid": False, "error": {"message": message}}
-        self._route("/listings/verify-referral-code", lambda route: _fulfill_json(route, body))
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))
+
+    def rate_limit_referral_validate(self):
+        body = {"valid": False, "error": {"code": "rate_limited", "message": "請求過於頻繁，請稍後再試"}}
+        self._route("/referrals/validate/", lambda route: _fulfill_json(route, body, status=429))
 
     def set_referral_validate(self, code: str, referrer_name: str):
-        body = {"valid": True, "referrer": {"userName": referrer_name}}
+        body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
         self._route(f"/referrals/validate/{code}", lambda route: _fulfill_json(route, body))
 
     def set_payuni_result(
@@ -309,11 +372,14 @@ class BackendApiMock:
         third_generation: Optional[list] = None,
         user_referral_code: str = "MYCODE",
         attention: Optional[dict] = None,
+        attention_all: Optional[list] = None,
     ):
         # Tier B：前端改打 /referrals/network/overview（懶載入入口）。
         # 一代以扁平 roots 呈現；children/search 預設回空，個別情境可再覆蓋。
         # attention：需要關注＝一代且即將到期（{total, items}；items 最多 6 筆、
         # total 是精確人數），會員中心與推薦頁橫幅都讀它；不給 = 沒有人。
+        # attention_all：「全部 N 位 ›」的完整清單（GET /referrals/network/attention 分頁讀它）；
+        # 不給 = 用 attention["items"]。
         body = {
             "success": True,
             "data": build_network_overview(
@@ -325,6 +391,28 @@ class BackendApiMock:
             ),
         }
         self._route("/referrals/network/overview", lambda route: _fulfill_json(route, body))
+
+        attention_items = attention_all if attention_all is not None else (attention or {}).get("items", [])
+        attention_total = (attention or {}).get("total", len(attention_items))
+
+        def attention_page(route):
+            query = parse_qs(urlparse(route.request.url).query)
+            limit = int(query.get("limit", ["50"])[0])
+            offset = int(query.get("offset", ["0"])[0])
+            _fulfill_json(
+                route,
+                {
+                    "success": True,
+                    "data": {
+                        "total": attention_total,
+                        "limit": limit,
+                        "offset": offset,
+                        "items": attention_items[offset : offset + limit],
+                    },
+                },
+            )
+
+        self._route("/referrals/network/attention", attention_page)
         self._route(
             "/referrals/network/children",
             lambda route: _fulfill_json(
@@ -348,6 +436,36 @@ class BackendApiMock:
                 },
             ),
         )
+
+    def set_route_error(
+        self,
+        path: str,
+        status: int = 500,
+        message: str = "伺服器暫時無法使用",
+        times: Optional[int] = None,
+        exact: bool = False,
+    ):
+        """Make an API path answer with an error. Playwright runs the most recently
+        registered matching route first, so call this *after* the success mock.
+
+        `times=N` fails only the first N requests and then falls through
+        (`route.fallback()`) to the success mock registered earlier — the
+        "fails, user presses retry, it works" case. Without `times` it always
+        fails. Default 500, not 503: only the Supabase REST client retries 5xx.
+        `exact=True` matches the URL with no trailing wildcard (see `_route_exact`).
+        """
+        remaining = {"n": times}
+        body = {"success": False, "error": message}
+
+        def handler(route):
+            if remaining["n"] is None or remaining["n"] > 0:
+                if remaining["n"] is not None:
+                    remaining["n"] -= 1
+                _fulfill_json(route, body, status=status)
+            else:
+                route.fallback()
+
+        (self._route_exact if exact else self._route)(path, handler)
 
     def set_member_area_defaults(self):
         """會員中心（狀態總覽）同時讀推薦網絡、任務、獎勵三組資料。預設回空資料，
@@ -584,81 +702,144 @@ class BackendApiMock:
 
     def set_admin_withdrawals(self, withdrawals=None):
         records = withdrawals or []
+        list_path = urlparse(f"{API_BASE}/admin/withdrawals").path
+        # 列表讀取的開關（hold／fail，見下方）。換一份測資＝回到照常回應。
+        self._withdrawal_list = {"mode": "serve", "from_offset": 0, "held": [], "error": None}
+        self._withdrawal_writes = {"hold": False, "held": []}
 
-        def handler(route):
-            if route.request.method == "GET":
-                # Mirror the real contract: the console reads `total` for the
-                # "已顯示 X / Y 筆" counter and `stats` for the summary cards.
-                # Returning only `withdrawals` here is what let a shape drift
-                # slip past this layer once already.
-                pending = [r for r in records if r.get("status") == "pending"]
-                return _fulfill_json(
-                    route,
-                    {
-                        "success": True,
-                        "data": {
-                            "withdrawals": records,
-                            "total": len(records),
-                            "limit": 50,
-                            "offset": 0,
-                            "stats": {
-                                "pendingAmount": sum(r.get("amount", 0) for r in pending),
-                                "byStatus": {
-                                    status: len(
-                                        [r for r in records if r.get("status") == status]
-                                    )
-                                    for status in (
-                                        "pending",
-                                        "awaiting_collection",
-                                        "completed",
-                                        "rejected",
-                                    )
-                                },
-                            },
+        def list_body(url):
+            # Mirror the real contract: the console reads `total` for the
+            # "已顯示 X / Y 筆" counter and `stats` for the summary cards, and
+            # pages with limit/offset (匯出逐頁收集靠它).
+            # Returning only `withdrawals` here is what let a shape drift
+            # slip past this layer once already.
+            query = parse_qs(urlparse(url).query)
+            limit = int(query.get("limit", ["50"])[0])
+            offset = int(query.get("offset", ["0"])[0])
+            pending = [r for r in records if r.get("status") == "pending"]
+            return {
+                "success": True,
+                "data": {
+                    "withdrawals": records[offset : offset + limit],
+                    "total": len(records),
+                    "limit": limit,
+                    "offset": offset,
+                    "stats": {
+                        "pendingAmount": sum(r.get("amount", 0) for r in pending),
+                        "byStatus": {
+                            status: len([r for r in records if r.get("status") == status])
+                            for status in ("pending", "awaiting_collection", "completed", "rejected")
                         },
                     },
-                )
+                },
+            }
+
+        def handler(route):
+            request = route.request
+            url = urlparse(request.url)
+            if request.method == "GET" and url.path.rstrip("/") == list_path:
+                # 只有列表本身（路徑完全相符、query 不限）受開關控制；/summary 與寫入照常。
+                gate = self._withdrawal_list
+                offset = int(parse_qs(url.query).get("offset", ["0"])[0])
+                if gate["mode"] == "hold" and offset >= gate["from_offset"]:
+                    gate["held"].append(route)
+                    return None
+                if gate["mode"] == "fail":
+                    status, message = gate["error"]
+                    return _fulfill_json(route, {"error": {"message": message}}, status=status)
+                return _fulfill_json(route, list_body(request.url))
+            if request.method == "GET":
+                return _fulfill_json(route, list_body(request.url))
+            if self._withdrawal_writes["hold"]:
+                self._withdrawal_writes["held"].append(route)
+                return None
             return _fulfill_json(route, {"success": True})
 
+        self._withdrawal_list_body = list_body
         self._route("/admin/withdrawals", handler)
+
+    # 背景更新與寫入在途的畫面要「扣住回應」才看得到。比照 set_upload_photo_deferred：
+    # 扣住的請求在 release 時才回，不用 sleep 賭時序。
+
+    def hold_admin_withdrawal_list(self, from_offset: int = 0):
+        """之後的 GET /admin/withdrawals（offset ≥ from_offset）都扣住，直到 release。
+        from_offset 讓匯出的逐頁收集先收幾頁、再卡在某一頁。"""
+        self._withdrawal_list.update(mode="hold", from_offset=from_offset)
+
+    def release_admin_withdrawal_list(self):
+        held = self._withdrawal_list["held"]
+        self._withdrawal_list.update(mode="serve", from_offset=0, held=[])
+        for route in held:
+            _fulfill_json(route, self._withdrawal_list_body(route.request.url))
+
+    def fail_admin_withdrawal_list(self, status: int = 500, message: str = "查詢提領申請失敗"):
+        """之後的 GET /admin/withdrawals 都回錯誤（保留舊列的失敗態）。"""
+        self._withdrawal_list.update(mode="fail", error=(status, message))
+
+    def hold_admin_withdrawal_writes(self):
+        """之後的提領寫入（狀態變更、批次）都扣住——寫入在途鎖分頁的說明行。"""
+        self._withdrawal_writes["hold"] = True
+
+    def release_admin_withdrawal_writes(self):
+        held = self._withdrawal_writes["held"]
+        self._withdrawal_writes.update(hold=False, held=[])
+        for route in held:
+            _fulfill_json(route, {"success": True})
 
     def set_admin_members(self, members=None):
         records = members or []
+        list_path = urlparse(f"{API_BASE}/admin/members").path
+        self._member_list = {"hold": False, "held": []}
+
+        def list_body():
+            # Mirror the real contract: `stats` is computed server-side over
+            # the whole filtered set, so the console can show site-wide
+            # numbers rather than a per-page tally.
+            def count(pred):
+                return len([r for r in records if pred(r)])
+
+            return {
+                "success": True,
+                "data": {
+                    "members": records,
+                    "total": len(records),
+                    "stats": {
+                        "total": len(records),
+                        "active": count(
+                            lambda r: not r.get("suspended") and r.get("accountStatus") == "active"
+                        ),
+                        "expired": count(
+                            lambda r: not r.get("suspended") and r.get("accountStatus") != "active"
+                        ),
+                        "suspended": count(lambda r: r.get("suspended")),
+                        "admins": count(lambda r: r.get("isAdmin")),
+                    },
+                },
+            }
 
         def handler(route):
-            if route.request.method == "GET":
-                # Mirror the real contract: `stats` is computed server-side over
-                # the whole filtered set, so the console can show site-wide
-                # numbers rather than a per-page tally.
-                def count(pred):
-                    return len([r for r in records if pred(r)])
-
-                return _fulfill_json(
-                    route,
-                    {
-                        "success": True,
-                        "data": {
-                            "members": records,
-                            "total": len(records),
-                            "stats": {
-                                "total": len(records),
-                                "active": count(
-                                    lambda r: not r.get("suspended")
-                                    and r.get("accountStatus") == "active"
-                                ),
-                                "expired": count(
-                                    lambda r: not r.get("suspended")
-                                    and r.get("accountStatus") != "active"
-                                ),
-                                "suspended": count(lambda r: r.get("suspended")),
-                                "admins": count(lambda r: r.get("isAdmin")),
-                            },
-                        },
-                    },
-                )
+            request = route.request
+            if request.method == "GET":
+                # 只有列表本身（路徑完全相符、query 不限）受開關控制；會員詳情照常。
+                is_list = urlparse(request.url).path.rstrip("/") == list_path
+                if is_list and self._member_list["hold"]:
+                    self._member_list["held"].append(route)
+                    return None
+                return _fulfill_json(route, list_body())
             return _fulfill_json(route, {"success": True})
 
+        self._member_list_body = list_body
         self._route("/admin/members", handler)
+
+    def hold_admin_member_list(self):
+        """之後的 GET /admin/members（列表本身）都扣住，直到 release——量首次載入的骨架。"""
+        self._member_list["hold"] = True
+
+    def release_admin_member_list(self):
+        held = self._member_list["held"]
+        self._member_list.update(hold=False, held=[])
+        for route in held:
+            _fulfill_json(route, self._member_list_body())
 
     def set_admin_announcements(self, announcements=None):
         records = announcements or []

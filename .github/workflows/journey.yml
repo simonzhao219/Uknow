@@ -330,7 +330,8 @@ jobs:
           done
 
       # ------------------------------------------------------------------
-      # 2. 分支環境設定：Edge Function secrets（sandbox 金流）＋
+      # 2. 分支環境設定：Edge Function secrets（sandbox 金流；Email 邀請的
+      #    簽章金鑰每個分支隨機產生、寄信總開關打開，80_ 才測得到）＋
       #    GoTrue 寄信改走 no-op send-email hook。
       #
       #    為什麼需要 hook（2026-08-02 run 30762264071 實測）：hosted
@@ -350,7 +351,9 @@ jobs:
             PAYUNI_TEST_MER_ID="${{ secrets.PAYUNI_TEST_MER_ID }}" \
             PAYUNI_TEST_HASH_KEY="${{ secrets.PAYUNI_TEST_HASH_KEY }}" \
             PAYUNI_TEST_HASH_IV="${{ secrets.PAYUNI_TEST_HASH_IV }}" \
-            FRONTEND_URL="http://localhost:3100"
+            FRONTEND_URL="http://localhost:3100" \
+            REFERRAL_INVITE_SECRET="$(openssl rand -hex 32)" \
+            REFERRAL_EMAIL_INVITE_ENABLED=true
 
           psql "$JOURNEY_BRANCH_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
           create or replace function public.journey_email_sink(event jsonb)
@@ -387,26 +390,27 @@ jobs:
 
       # 分支是從 main 的 migrations 長出來的,但 Edge Function 不會自動
       # 跟上——不部署就是拿舊版函式測新版程式碼,測了也不算數。
-      # 與 deploy-supabase.yml 同一個失敗模式：CLI 打包時從 public.ecr.aws
-      # 匿名拉 edge-runtime 映像，共用 runner IP 會撞上 ECR 限流
-      # （`toomanyrequests: Rate exceeded`）。這一步掛掉，晉升 PR 的
-      # journey-full 就整軌紅；部署冪等，所以用退避重試（規則 12 把關）。
+      # 與 deploy-supabase.yml 同一個做法：`--use-api` 由 Management API 在
+      # 雲端打包，runner 不起 Docker、不從 public.ecr.aws 匿名拉映像——共用
+      # runner IP 撞 ECR 限流曾讓這一步連續失敗（2026-10-03～05、10-24～26），
+      # 這一步掛掉，晉升 PR 的 journey-full 就整軌紅。部署冪等，退避重試
+      # 保留給 API 端的暫時性失敗（規則 12 把關）。
       - name: 部署 Edge Function 到該分支
         run: |
           set -uo pipefail
           max_attempts=4
           for attempt in $(seq 1 "$max_attempts"); do
-            if supabase functions deploy api \
+            if supabase functions deploy api --use-api \
               --project-ref "${{ steps.branch.outputs.ref }}" --no-verify-jwt; then
               exit 0
             fi
             if [ "$attempt" -lt "$max_attempts" ]; then
               wait_s=$((attempt * 30))
-              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（多半是拉 edge-runtime 映像被限流）"
+              echo "::warning::第 ${attempt} 次部署失敗，${wait_s} 秒後重試（API 端打包或上傳的暫時性失敗）"
               sleep "$wait_s"
             fi
           done
-          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是映像限流還是函式本身有問題"
+          echo "::error::部署連續 ${max_attempts} 次失敗——看上面每一次的輸出，判斷是 API 端打包失敗還是函式本身有問題"
           exit 1
 
       # GUI 註冊掛掉時只看得到「30 秒沒等到 OTP 框」——toast 早就消失，
@@ -611,12 +615,26 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const title = 'journey 排程失敗';
-            const body = [
-              '## Journey 排程失敗',
-              '',
-              `- 最新一次 Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              '',
+            const { owner, repo } = context.repo;
+            const baseTitle = 'journey 排程失敗';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // 失敗摘要：本次 run 內失敗的 job／step 名稱，截前 200 字
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner, repo, run_id: context.runId, per_page: 100,
+            });
+            const summary = jobs.data.jobs
+              .filter((j) => j.conclusion === 'failure')
+              .map((j) => {
+                const steps = (j.steps || []).filter((st) => st.conclusion === 'failure').map((st) => st.name);
+                return `${j.name}${steps.length ? '：' + steps.join('、') : ''}`;
+              })
+              .join('；')
+              .slice(0, 200) || '（無法取得失敗 step）';
+            const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+            const logLine = `- ${today} ${runUrl} ${summary}`;
+
+            const sop = [
               'Triage SOP：',
               '1. 下載 run artifacts（screenshots / tracing）判讀失敗情境',
               '2. 真缺陷 → `/fix-bug`（根因＋同類掃描）；環境雜訊 → 註記後關閉',
@@ -625,19 +643,28 @@ jobs:
               '   （每場都會開一個付費的 Supabase preview branch，紅著跑不是免費的）',
               '',
               '排除後關閉此 issue；下次排程失敗會重新開一張。',
-            ].join('\n');
+            ];
+            const header = '## Journey 排程失敗（連紅紀錄，新的在下）';
+            const marker = /^- \d{4}-\d{2}-\d{2} /;
+            const weeksTitle = (n) => (n > 1 ? `${baseTitle}（連紅 ${n} 週）` : baseTitle);
+
             const open = await github.rest.issues.listForRepo({
-              owner: context.repo.owner, repo: context.repo.repo, state: 'open',
+              owner, repo, state: 'open', per_page: 100,
             });
-            const dup = open.data.find((i) => i.title === title);
+            // 標題帶連紅次數會變，查重改用前綴比對
+            const dup = open.data.find((i) => !i.pull_request && i.title.startsWith(baseTitle));
             if (dup) {
+              const prior = (dup.body || '').split('\n').filter((l) => marker.test(l));
+              const lines = [...prior, logLine];
+              const body = [header, '', ...lines, '', ...sop].join('\n');
               await github.rest.issues.update({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: dup.number, body,
+                owner, repo, issue_number: dup.number,
+                title: weeksTitle(lines.length), body,
               });
-              core.info(`已有未關閉的同名 issue #${dup.number}，更新為最新一次 run`);
+              core.info(`已有未關閉的 issue #${dup.number}，累加為連紅 ${lines.length} 次`);
               return;
             }
             await github.rest.issues.create({
-              owner: context.repo.owner, repo: context.repo.repo, title, body,
+              owner, repo, title: weeksTitle(1),
+              body: [header, '', logLine, '', ...sop].join('\n'),
             });

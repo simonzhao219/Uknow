@@ -20,7 +20,17 @@ import {
   SEPARATOR_LIKE_GLOBAL,
   type NameMode,
 } from '../utils/profileValidation';
-import { resolveProfilePageRedirect } from '../utils/registrationFlow';
+import {
+  isRegistrationLocked,
+  nextRouteForStep,
+  resolveProfilePageRedirect,
+} from '../utils/registrationFlow';
+import {
+  PROFILE_LOCKED_CONFIRM_TEXT,
+  PROFILE_LOCKED_DETAILS,
+  PROFILE_LOCKED_FIELDS,
+  PROFILE_LOCKED_MESSAGE,
+} from '../utils/constants';
 import { useImeComposition } from '../hooks/useImeComposition';
 import {
   loadProfileDraft,
@@ -30,6 +40,29 @@ import {
 } from '../utils/formDraft';
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
+
+// GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
+// 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
+interface ReferralValidateResult {
+  valid: boolean;
+  referrer?: { userName: string; listingName: string | null };
+  error?: { message: string };
+}
+
+// 端點需登入且有限流(429 的訊息會被 apiErrorFromBody 帶進 err.message)。
+function requestReferralValidation(code: string) {
+  return apiRequestJson<ReferralValidateResult>(
+    buildApiUrl(`/referrals/validate/${encodeURIComponent(normalizeReferralCode(code))}`),
+  );
+}
+
+// 驗證請求丟出的錯誤都是「暫時查不到」。只有限流(429)與登入過期(401)用
+// apiClient 帶來的訊息;5xx 的「服務暫時無法使用」、網路錯誤的英文原文不外露。
+function referralCheckErrorMessage(err: unknown): string {
+  return err instanceof ApiError && (err.status === 429 || err.status === 401) && err.message
+    ? err.message
+    : '推薦碼暫時無法驗證，請稍後再試';
+}
 
 const EMPTY_FORM = {
   name: '',
@@ -42,6 +75,24 @@ const EMPTY_FORM = {
   referralCode: '',
   agreedToTerms: false,
 };
+
+// 資料鎖定說明：送出時撞到 403 與編輯模式載入時發現已是 step 3，是同一群人，
+// 說法要一致（文案與會員中心「修改會員資料」共用 PROFILE_LOCKED_*）。
+// 送出後才發現的，先講清楚剛才的修改沒有儲存。
+function showProfileLockedNotice(
+  showNotification: ReturnType<typeof useNotification>['showNotification'],
+  afterSubmit: boolean,
+) {
+  showNotification({
+    type: 'info',
+    title: '資料已鎖定',
+    message: afterSubmit
+      ? `您剛才送出的修改沒有儲存。${PROFILE_LOCKED_MESSAGE}`
+      : PROFILE_LOCKED_MESSAGE,
+    details: PROFILE_LOCKED_DETAILS,
+    confirmText: PROFILE_LOCKED_CONFIRM_TEXT,
+  });
+}
 
 export function CompleteProfile() {
   // 用 lazy initializer 從 sessionStorage 的草稿還原「填到一半」的內容。
@@ -59,6 +110,9 @@ export function CompleteProfile() {
       nameMode: draft.nameMode ?? inferNameMode(draft.name ?? ''),
     };
   });
+  // 推薦碼欄的最新值，給非同步回來的後備預填判斷「使用者是否已開始輸入」。
+  const referralCodeRef = useRef(formData.referralCode);
+  referralCodeRef.current = formData.referralCode;
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   // 間隔號被自動轉成半形空格時的可見提示。刻意不靜默代換——沒有提示會讓
   // 使用者以為系統認不得他的名字。
@@ -71,7 +125,7 @@ export function CompleteProfile() {
   const [referrerName, setReferrerName] = useState('');
   const hasConfirmedSubmission = useRef(false);
 
-  const { setUser } = useContext(UserContext);
+  const { setUser, refreshUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast, showNotification } = useNotification();
@@ -150,8 +204,21 @@ export function CompleteProfile() {
           console.log('CompleteProfile: Loaded profile:', profile);
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
-          // 各寫一份 if/else。editing=true 時一律留在本頁讓使用者改資料。
+          // 各寫一份 if/else。editing=true 時留在本頁讓使用者改資料——註冊已
+          // 完成者除外（資料已鎖定，守衛回 nextRouteForStep(3)）。
           const redirect = resolveProfilePageRedirect(profile, { editing: isEditing });
+          const lockedRoute = nextRouteForStep(3);
+
+          if (redirect === lockedRoute && isEditing) {
+            // 編輯中但註冊已完成（停在本頁時另一個分頁付完款，或重新整理沿用
+            // 舊 history state）：資料已鎖定。與送出時的 403 同一則說明，立即
+            // 帶走、不留一段看得到表單的空窗。先 refreshUser，否則會員中心的
+            // 守衛拿舊的會籍狀態又把人彈回結帳頁。
+            await refreshUser();
+            navigate(lockedRoute, { replace: true });
+            showProfileLockedNotice(showNotification, false);
+            return;
+          }
 
           if (redirect === '/dashboard') {
             // 已完成註冊：保留原本的友善提示與短暫延遲。
@@ -178,7 +245,7 @@ export function CompleteProfile() {
       }
     };
     checkSession();
-  }, [supabase, navigate, showToast, isEditing]);
+  }, [supabase, navigate, showToast, showNotification, refreshUser, isEditing]);
 
   // 邀請連結帶進來的推薦碼：掛載時自動填入並驗證（顯示推薦人姓名），欄位仍可修改。
   // 只在欄位為空時帶入，避免覆蓋使用者手動輸入的值。
@@ -189,7 +256,31 @@ export function CompleteProfile() {
     if (pending && !formData.referralCode) {
       setFormData((prev) => ({ ...prev, referralCode: pending }));
       verifyReferralCode(pending);
+      return;
     }
+    if (pending) return;
+    // 後備：Email 邀請建立的帳號在 app_metadata 蓋了邀請章（只有 service role 寫得了）。
+    // 換瀏覽器續填時 localStorage 的 pending code 不在，改從 session 讀；只作預填、照樣走
+    // validate，使用者已開始輸入（非同步回來時欄位不再是空的）就不覆蓋。
+    let cancelled = false;
+    supabase.auth
+      .getSession()
+      .then(({ data }: { data: { session: { user?: { app_metadata?: unknown } } | null } }) => {
+        const stamp = (
+          data.session?.user?.app_metadata as { referral_invite?: unknown } | undefined
+        )?.referral_invite as { code?: unknown } | undefined;
+        const code = typeof stamp?.code === 'string' ? stamp.code : '';
+        if (cancelled || !code || referralCodeRef.current) return;
+        referralCodeRef.current = code;
+        setFormData((prev) => (prev.referralCode ? prev : { ...prev, referralCode: code }));
+        verifyReferralCode(code);
+      })
+      .catch(() => {
+        // 讀不到 session 就不預填；checkSession 會處理未登入。
+      });
+    return () => {
+      cancelled = true;
+    };
     // 僅在掛載時執行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -348,14 +439,14 @@ export function CompleteProfile() {
         details.push('您未填寫推薦碼');
       }
 
-      // 顯示警告卡片。訊息拆兩句：推薦碼那句維持原意（它確實永久綁定），
-      // 姓名另補一句——姓名是**可以改的**（規格書 §4.2 明載「修改時連動
-      // 所有顯示介面」），沿用「永久綁定，無法修改」涵蓋姓名會是錯誤陳述。
+      // 顯示警告卡片。付款完成後身分資料與推薦人即鎖定（規格書 §4.1），付款前
+      // 的這個確認點要先揭露。不說推薦碼「永久綁定」：註冊完成後唯一的自助換線
+      // 入口是續費時選新約（§6.2），「永久」是錯誤陳述。姓名另補提領核對身分
+      // 的用途。
       showNotification({
         type: 'warning',
         title: '重要提醒',
-        message:
-          '推薦碼註冊後將永久綁定，無法修改。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。',
+        message: `付款完成後，${PROFILE_LOCKED_FIELDS}即鎖定，變更須聯繫客服。姓名將用於日後提領時核對身分，請確認與身分證一致。請再次確認以下資訊是否正確。`,
         details,
         confirmText: '確認無誤，繼續',
         cancelText: '返回檢查',
@@ -387,18 +478,7 @@ export function CompleteProfile() {
       // ✅ 即使已驗證，點擊下一步時再驗證一次（確保推薦碼仍然有效）
       setIsLoading(true);
       try {
-        const result = await apiRequestJson<{
-          valid: boolean;
-          referrerName?: string;
-          referrerUserId?: string;
-          error?: { message: string };
-        }>(buildApiUrl('/listings/verify-referral-code'), {
-          method: 'POST',
-          body: JSON.stringify({
-            referralCode: normalizeReferralCode(formData.referralCode),
-            currentUserId: null,
-          }),
-        });
+        const result = await requestReferralValidation(formData.referralCode);
 
         if (!result.valid) {
           showToast(result.error?.message || '推薦碼無效，請重新驗證', 'error');
@@ -410,17 +490,18 @@ export function CompleteProfile() {
           return;
         }
 
-        // 驗證成功，更新推薦人姓名（可能已變更）
-        if (result.referrerName) {
-          setReferrerName(result.referrerName);
+        // 驗證成功，更新推薦人姓名（可能已變更）；清掉上一輪暫時錯誤留下的訊息
+        setCodeError('');
+        if (result.referrer?.userName) {
+          setReferrerName(result.referrer.userName);
         }
       } catch (err: any) {
+        // 丟出來的都是「暫時查不到」（限流 429、5xx、網路）——後端明確說碼無效
+        // 走的是上面 valid=false 那條。剛驗好的推薦人不清掉，只擋下這次送出，
+        // 免得使用者以為碼錯了、或要等窗口過後從頭重驗。
         console.error('CompleteProfile: Re-verification error:', err);
-        showToast(err.message || '推薦碼驗證失敗，請稍後再試', 'error');
-        setCodeError(err.message || '推薦碼驗證失敗');
-        setCodeVerified(false);
-        setVerifiedReferralCode('');
-        setReferrerName('');
+        showToast(referralCheckErrorMessage(err), 'warning');
+        setCodeError(referralCheckErrorMessage(err));
         setIsLoading(false);
         return;
       }
@@ -464,8 +545,28 @@ export function CompleteProfile() {
       console.log('CompleteProfile: API response status:', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json();
+        // body 不是 JSON（閘道層的純文字錯誤頁）時不能在這裡就丟出——那會跳過
+        // 下面的 403 分支，連確認最新狀態的機會都沒有。
+        const errorData = await response.json().catch(() => ({}));
         console.error('CompleteProfile: API error:', errorData);
+        // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
+        // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
+        // 會員中心再說明。但要先確認最新狀態真的已鎖定才動手：閘道層的
+        // 403 也長這樣，對 step 0 的人清草稿、導去會員中心等於丟掉整張表單
+        // （refresh 失敗會被送去登入頁，成功則被彈回空白的本頁）。確認不了
+        // 就照一般錯誤處理：留在本頁、草稿不動、顯示伺服器訊息。判準與編輯守衛、
+        // 結帳頁共用 isRegistrationLocked。refreshUser 一律把讀回的 profile（可能是
+        // step 0）同步進 UserContext 與 localStorage——既有副作用，留在本頁時無害：
+        // 本頁的去向不讀 context。
+        if (response.status === 403) {
+          const fresh = await refreshUser();
+          if (fresh && isRegistrationLocked(fresh)) {
+            clearProfileDraft();
+            navigate(nextRouteForStep(3), { replace: true });
+            showProfileLockedNotice(showNotification, true);
+            return;
+          }
+        }
         throw new Error(errorData.error || '註冊失敗');
       }
 
@@ -576,27 +677,15 @@ export function CompleteProfile() {
     setCodeError('');
 
     try {
-      // ✅ 使用統一的 API 請求工具
-      const result = await apiRequestJson<{
-        valid: boolean;
-        referrerName?: string;
-        referrerUserId?: string;
-        error?: { message: string };
-      }>(buildApiUrl('/listings/verify-referral-code'), {
-        method: 'POST',
-        body: JSON.stringify({
-          referralCode: normalizeReferralCode(code),
-          currentUserId: null, // ✅ 註冊流程中用戶還沒有完整的 profile，傳 null
-        }),
-      });
+      const result = await requestReferralValidation(code);
 
-      if (result.valid && result.referrerName) {
+      if (result.valid && result.referrer?.userName) {
         setCodeVerified(true);
         setCodeError('');
         // 存正規化值:與 formData.referralCode 同基準,
         // 「驗證後有沒有被改過」的比對才成立。
         setVerifiedReferralCode(normalizeReferralCode(code));
-        setReferrerName(result.referrerName); // ✅ 儲存推薦人姓名
+        setReferrerName(result.referrer.userName); // ✅ 儲存推薦人姓名
         showToast('推薦碼驗證成功', 'success'); // ✅ 只顯示簡單訊息
       } else {
         setCodeError(result.error?.message || '推薦碼無效');
@@ -612,8 +701,8 @@ export function CompleteProfile() {
         setCodeError('登入已過期，請重新登入');
         showToast('登入已過期，請重新登入', 'error');
       } else {
-        setCodeError(err.message || '推薦碼驗證失敗，請稍後再試');
-        showToast(err.message || '推薦碼驗證失敗', 'error');
+        setCodeError(referralCheckErrorMessage(err));
+        showToast(referralCheckErrorMessage(err), 'error');
       }
       setCodeVerified(false);
       setVerifiedReferralCode('');

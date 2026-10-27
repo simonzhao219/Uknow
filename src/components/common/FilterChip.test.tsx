@@ -16,6 +16,12 @@ function chipOf(label: string) {
 }
 
 describe('FilterChip', () => {
+  it('觸控裝置上 chip 高度達 44px（滑鼠維持精簡）', () => {
+    const chip = chipOf('美髮');
+    expect(chip.classList.contains('pointer-coarse:min-h-11')).toBe(true);
+    expect(chip.classList.contains('min-h-10')).toBe(true);
+  });
+
   it('渲染標籤文字', () => {
     expect(chipOf('美髮').textContent).toBe('美髮');
   });
@@ -50,6 +56,17 @@ describe('FilterChip', () => {
       expect(chip.classList.contains(c), c).toBe(true);
     }
     expect(chip.classList.contains('bg-primary')).toBe(false);
+  });
+
+  // 畫面稿：未選態是灰底無框（--secondary 底、灰字），不是白底框線。邊框保留為透明，
+  // 讓選中（border-sel）與未選的盒子尺寸一致、切換時不位移。
+  it('未選時灰底無框、灰字，不是白底框線', () => {
+    const chip = chipOf('美髮');
+    for (const c of ['bg-secondary', 'text-muted-foreground', 'border-transparent']) {
+      expect(chip.classList.contains(c), c).toBe(true);
+    }
+    expect(chip.classList.contains('bg-background')).toBe(false);
+    expect(chip.classList.contains('border-border')).toBe(false);
   });
 
   it('鍵盤焦點環與按鈕同為 3px，並與選中底色隔 1px', () => {

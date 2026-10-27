@@ -21,13 +21,16 @@
 都會量出假的乾淨而把一條路由誤標成上鎖。上鎖前的自檢清單見 `README.md`。
 """
 
+import base64
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
 import pytest
+from playwright.sync_api import expect
 
 from mocks.admin_console_mock import build_worst_case_member_detail, route_admin_member_detail
 from mocks.backend_api_mock import (
@@ -152,6 +155,10 @@ class SweepRoute:
     # 只放「切換到另一個持久畫面」這種互動；一次性彈出物（對話框、toast）
     # 仍在盲區，見報告文末。
     after_load: Optional[Callable] = None
+    # 導頁後要操縱後端回應的互動（page, api_mock → None）：扣住或打壞讀取、扣住寫入。
+    # 背景更新、失敗保留舊列、寫入與匯出在途的鎖分頁說明行都要「等網路」才畫得出來，
+    # 被動載入與 after_load 都到不了（S5）。在 after_load 之後執行。
+    drive: Optional[Callable] = None
     # 已知未清的溢出：值是「為什麼還沒清」。**非空 = 這條路由暫時不硬失敗**。
     #
     # 這是逐路由棘輪，取代原本「全域 STRICT 一翻全翻」的全有全無：沒有這個
@@ -180,10 +187,55 @@ def _setup_detail(context, api_mock, rest_mock):
     rest_mock.set_public_listing(_hostile_public_listing())
 
 
-def _setup_dashboard(context, api_mock, rest_mock):
-    # 狀態總覽的最壞情境：四張卡全是最長的值、「需要注意」兩條都在、徽章與
-    # 「申請提領」按鈕都出現（手機 2×2 每張卡只有約 160px 寬）。
-    _seed_member(context)
+def _setup_detail_loading(context, api_mock, rest_mock):
+    # 骨架只在讀取在途時出現：扣住 .single()，量的是骨架本身（S6）。
+    rest_mock.set_public_listing(_hostile_public_listing())
+    rest_mock.hold_public_listing()
+
+
+def _setup_detail_error(context, api_mock, rest_mock):
+    # 暫時讀不到（非 406）：讀取失敗提示框＋重試，不是「找不到」（S6）。
+    rest_mock.fail_public_listing()
+
+
+def _setup_home_loading(context, api_mock, rest_mock):
+    # 結果列佔位與卡片骨架只在讀取在途時出現：扣住列表讀取（S6）。
+    _setup_home(context, api_mock, rest_mock)
+    rest_mock.hold_public_listings()
+
+
+def _setup_home_error(context, api_mock, rest_mock):
+    # 列表讀取失敗：黃框＋重新載入，結果列不寫「找到 0 位」（S6）。
+    rest_mock.fail_public_listings()
+
+
+# 扣住或打壞回應的路由只靠 setup：hold／fail 一旦失效，量到的是載入完成的頁，照樣綠
+# （e2e/README.md 巡檢一節的「能掃不等於掃了」）。以 after_load 確認畫面真的在那一態。
+def _expect_status(name):
+    def check(page):
+        expect(page.get_by_role("status", name=name)).to_be_visible()
+
+    return check
+
+
+def _expect_heading(name):
+    def check(page):
+        expect(page.get_by_role("heading", name=name)).to_be_visible()
+
+    return check
+
+
+def _expect_text(text):
+    def check(page):
+        expect(page.get_by_text(text, exact=True)).to_be_visible()
+
+    return check
+
+
+def _setup_dashboard(context, api_mock, rest_mock, **profile):
+    # 狀態總覽的最壞情境：四張卡全是最長的值、「N 位一代即將到期」與「待查收」徽章
+    # 都在、「申請提領」按鈕也出現（手機 2×2 每張卡只有約 160px 寬）。
+    _seed_member(context, **profile)
     rest_mock.set_user_listing(_hostile_listing())
     expiring = [
         build_referral_member(NAME_CJK_10, status="expiring", daysToExpiry=3)
@@ -194,7 +246,7 @@ def _setup_dashboard(context, api_mock, rest_mock):
         second_generation=[build_referral_member("李小華")] * 300,
         third_generation=[build_referral_member("張美玲")] * 700,
         user_referral_code="UK8K3M9Q2X",
-        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是徽章與注意列的最寬情境
+        # 精確人數（B1 起 total 即一代即將到期人數）；三位數是「N 位一代即將到期」徽章的最寬情境
         attention={"total": 999, "items": expiring},
     )
     api_mock.set_task_center(tasks=[build_monthly_king_task(current=8)])
@@ -202,6 +254,12 @@ def _setup_dashboard(context, api_mock, rest_mock):
     api_mock.set_reward_withdrawals(
         [build_withdrawal_record(status="awaiting_collection", amount=1000)] * 12
     )
+
+
+def _setup_dashboard_unjoined(context, api_mock, rest_mock):
+    """會員中心 · 未加入推薦計畫：推薦格的鈕是「加入推薦計畫」（比「邀請好友」寬兩個字），
+    會員資訊卡的推薦碼欄是「尚未加入推薦計畫」。首購者付完款都是這個樣子。"""
+    _setup_dashboard(context, api_mock, rest_mock, referralProgramJoined=False)
 
 
 def _setup_my_qr(context, api_mock, rest_mock):
@@ -215,6 +273,15 @@ def _setup_listing_mgmt(context, api_mock, rest_mock):
     rest_mock.set_user_listing(_hostile_listing())
 
 
+def _setup_listing_mgmt_hidden(context, api_mock, rest_mock):
+    """刊登管理 · 會籍剛到期：黃框＋續訂、「已隱藏」徽章與「會籍至」（頁面開著時到期的邊界：
+    守衛讀 profile、本頁讀訂閱狀態，所以 profile 仍有效、訂閱已到期）。"""
+    _setup_listing_mgmt(context, api_mock, rest_mock)
+    api_mock.set_subscription_status(
+        has_subscription=True, status="expired", active_until="2026-01-01T00:00:00.000Z"
+    )
+
+
 def _setup_listing_create(context, api_mock, rest_mock):
     _seed_member(context)
     rest_mock.set_user_listing(None)
@@ -226,8 +293,12 @@ def _setup_listing_edit(context, api_mock, rest_mock):
     rest_mock.set_listing_by_id(_hostile_listing())
 
 
-def _setup_referrals(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_referrals(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
+    # 橫幅最壞情境：六顆姓名最長的 chip（每顆帶倒數）＋「全部 999 位 ›」。
+    expiring = [
+        build_referral_member(NAME_CJK_10, status="expiring", daysToExpiry=3) for _ in range(6)
+    ]
     api_mock.set_referral_tree(
         first_generation=[
             build_referral_member(NAME_CJK_10),
@@ -236,11 +307,17 @@ def _setup_referrals(context, api_mock, rest_mock):
         second_generation=[build_referral_member("李小華")] * 3,
         third_generation=[build_referral_member("張美玲")] * 2,
         user_referral_code="UK8K3M9Q2X",
+        attention={"total": 999, "items": expiring},
     )
 
 
-def _setup_tasks(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_referrals_unjoined(context, api_mock, rest_mock):
+    """推薦管理 · 未加入推薦計畫：推薦碼列是「尚未加入推薦計畫」＋「加入推薦計畫」。"""
+    _setup_referrals(context, api_mock, rest_mock, referralProgramJoined=False)
+
+
+def _setup_tasks(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
     api_mock.set_task_center(
         tasks=[build_monthly_king_task(current=8, hasUnclaimedReward=True, unclaimedRewardCount=1)],
         pending_rewards=[
@@ -251,8 +328,13 @@ def _setup_tasks(context, api_mock, rest_mock):
     )
 
 
-def _setup_rewards(context, api_mock, rest_mock):
-    _seed_member(context)
+def _setup_tasks_unjoined(context, api_mock, rest_mock):
+    """任務中心 · 未加入推薦計畫：淡底卡內多一段說明與連結，待領取綠框照常。"""
+    _setup_tasks(context, api_mock, rest_mock, referralProgramJoined=False)
+
+
+def _setup_rewards(context, api_mock, rest_mock, **profile):
+    _seed_member(context, **profile)
     api_mock.set_reward_dashboard(
         available=BIG_POINTS,
         pending=BIG_POINTS // 3,
@@ -274,6 +356,17 @@ def _setup_rewards(context, api_mock, rest_mock):
             ),
         ],
     )
+
+
+def _setup_rewards_unjoined(context, api_mock, rest_mock):
+    """獎勵回饋 · 未加入推薦計畫：可提領卡內停用的申請鈕＋原因＋連結。"""
+    _setup_rewards(context, api_mock, rest_mock, referralProgramJoined=False)
+
+
+def _setup_rewards_expired(context, api_mock, rest_mock):
+    """獎勵回饋 · 會籍失效：/rewards 是唯一失效會員進得去的會員頁——黃框橫幅＋續訂、
+    停用的申請鈕與原因、待查收列的確認收款降成次要。"""
+    _setup_rewards(context, api_mock, rest_mock, accountStatus="expired")
 
 
 def _setup_checkout(context, api_mock, rest_mock):
@@ -454,6 +547,62 @@ def _open_history_dialog(page):
     page.get_by_role("menuitem", name="查看歷史").click()
 
 
+def _setup_admin_many_withdrawals(context, api_mock, rest_mock):
+    """超過一頁（50 筆）的提領：匯出要逐頁收集，說明行才有「已收集 N / M 筆」。"""
+    _setup_admin(context, api_mock, rest_mock)
+    api_mock.set_admin_withdrawals(
+        [
+            build_admin_withdrawal(
+                status="pending",
+                id=f"wd-admin-{i:03d}",
+                userName=NAME_CJK_10 if i == 0 else f"會員{i:03d}",
+                amount=BIG_POINTS if i == 0 else 1000,
+            )
+            for i in range(120)
+        ]
+    )
+
+
+def _return_to_withdrawals_while_refreshing(page, api_mock):
+    """切到會員再切回提領、扣住重讀：快取的舊列＋更新中的狀態行與閘門外觀。"""
+    page.get_by_role("tab", name="會員管理").click()
+    settle(page)
+    api_mock.hold_admin_withdrawal_list()
+    page.get_by_role("tab", name="獎金提領管理").click()
+    expect(page.get_by_role("region", name="提領申請列表")).to_have_attribute("aria-busy", "true")
+
+
+def _refresh_withdrawals_and_fail(page, api_mock):
+    """重新整理失敗：保留舊列、收款資訊遮住、陳舊提示寫原因與「重試後顯示」。"""
+    api_mock.fail_admin_withdrawal_list()
+    page.get_by_role("button", name="重新整理").click()
+    expect(page.get_by_text(re.compile(r"^更新失敗，以下是"))).to_be_visible()
+
+
+def _reject_with_write_held(page, api_mock):
+    """寫入在途：其他分頁停用，分頁列下方的說明行（0.3 秒後出現）。"""
+    api_mock.hold_admin_withdrawal_writes()
+    page.get_by_role("button", name="退件", exact=True).first.click()
+    page.get_by_label("退件理由").fill("收款帳號與身分證姓名不符")
+    page.get_by_role("button", name="確認退件").click()
+    expect(page.get_by_text("處理中，完成前無法切換分頁")).to_be_visible()
+
+
+def _export_with_collection_held(page, api_mock):
+    """匯出逐頁收集到一半：說明行寫已收集的筆數，是這一列最長的字串。"""
+    api_mock.hold_admin_withdrawal_list(from_offset=100)
+    page.get_by_role("button", name="下載 CSV（含身分證與帳號）").click()
+    expect(page.get_by_text(re.compile(r"^匯出中（已收集 \d+ / \d+ 筆）"))).to_be_visible()
+
+
+def _refresh_system_alerts(page):
+    """告警的新工具列（沒有篩選、鈕靠右）按過重新整理：狀態文字「已更新 HH:mm」。"""
+    _open_system_alerts_tab(page)
+    settle(page)
+    page.get_by_role("button", name="重新整理").click()
+    expect(page.get_by_text(re.compile(r"^已更新 \d\d:\d\d$"))).to_be_visible()
+
+
 def _open_member_detail_sheet(page):
     page.get_by_role("tab", name="會員管理").click()
     # 這一步的 settle 不能省：列表要先畫出來，才點得到「查看」。
@@ -479,6 +628,22 @@ def _open_custom_category_input(page):
     page.get_by_label("自訂類別名稱").fill(LONGEST_CATEGORY_INPUT)
 
 
+def _invite_token(email: str) -> str:
+    """前端只解碼、不驗簽，巡檢不必算 HMAC。"""
+    payload = json.dumps({"v": 1, "e": email, "c": "8048876", "x": 4102444800})
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=") + ".sweep"
+
+
+def _open_invite_card_with_long_email(page):
+    """邀請卡在填了 email 後才出現同意聲明（含推薦人姓名）——最寬的狀態。"""
+    page.get_by_test_id("invite-friend-button").click()
+    card = page.get_by_role("dialog", name="邀請好友")
+    expect(card).to_be_visible()
+    card.get_by_label("對方的 Email（選填）").fill(LONG_EMAIL)
+    expect(card.get_by_role("checkbox")).to_be_visible()
+    settle(page)
+
+
 def _setup_complete_profile(context, api_mock, rest_mock):
     _seed_member(context, registration_step=1, accountStatus="expired", name=None)
 
@@ -486,13 +651,54 @@ def _setup_complete_profile(context, api_mock, rest_mock):
 ROUTES = [
     SweepRoute("/", "首頁（服務者列表）", _setup_home, "/"),
     SweepRoute(
+        "/",
+        "首頁 · 載入中骨架",
+        _setup_home_loading,
+        "/",
+        tags=["loading"],
+        after_load=_expect_status("載入服務者資料中"),
+    ),
+    SweepRoute(
+        "/",
+        "首頁 · 讀取失敗",
+        _setup_home_error,
+        "/",
+        tags=["load-error"],
+        after_load=_expect_text("載入失敗"),
+    ),
+    SweepRoute(
         "/service-providers/11111111-1111-1111-1111-111111111111",
         "服務者詳情",
         _setup_detail,
         "/service-providers/",
     ),
+    SweepRoute(
+        "/service-providers/11111111-1111-1111-1111-111111111111",
+        "服務者詳情 · 載入中骨架",
+        _setup_detail_loading,
+        "/service-providers/",
+        tags=["loading"],
+        after_load=_expect_status("載入服務者詳情中"),
+    ),
+    SweepRoute(
+        "/service-providers/11111111-1111-1111-1111-111111111111",
+        "服務者詳情 · 讀取失敗",
+        _setup_detail_error,
+        "/service-providers/",
+        tags=["load-error"],
+        after_load=_expect_heading("暫時無法載入服務者資料"),
+    ),
     SweepRoute("/login", "登入", None, "/login"),
     SweepRoute("/register", "註冊", None, "/register"),
+    # 邀請信連結直接落在設定密碼步驟（Email 唯讀框＋「改用其他 Email 註冊」）。
+    SweepRoute(
+        f"/register?invite={_invite_token(LONG_EMAIL)}",
+        "註冊 · 邀請連結設定密碼",
+        None,
+        "/register",
+        tags=["invite"],
+        after_load=lambda page: expect(page.get_by_test_id("auth-signup-button")).to_be_visible(),
+    ),
     SweepRoute("/forgot-password", "忘記密碼", None, "/forgot-password"),
     SweepRoute("/terms-of-service", "服務條款", None, "/terms-of-service"),
     SweepRoute("/listing-plans", "刊登方案", None, "/listing-plans"),
@@ -501,6 +707,23 @@ ROUTES = [
     SweepRoute("/participation-contract", "參加契約書", None, "/participation-contract"),
     SweepRoute("/auth/complete-profile", "完成會員資料", _setup_complete_profile, None),
     SweepRoute("/dashboard", "會員中心", _setup_dashboard, "/dashboard"),
+    SweepRoute(
+        "/dashboard",
+        "會員中心 · 邀請卡（長 email 與長姓名）",
+        _setup_dashboard,
+        "/dashboard",
+        tags=["invite-card"],
+        after_load=_open_invite_card_with_long_email,
+    ),
+    # 標題列多了「我的 QR」、推薦格多了一顆真按鈕：已加入（邀請好友）與未加入
+    # （加入推薦計畫）的鈕寬不同，兩種都要量。
+    SweepRoute(
+        "/dashboard",
+        "會員中心 · 未加入推薦計畫",
+        _setup_dashboard_unjoined,
+        "/dashboard",
+        tags=["unjoined"],
+    ),
     # 三條而不是一條：預設停在「邀請好友」，那一頁有不斷行的推薦連結與長姓名，
     # 是本次真正從對話框盲區變成可直達路由的畫面；另外兩個分頁不切過去就從來
     # 沒被畫出來過（Radix 只掛載 active 面板）。
@@ -520,6 +743,13 @@ ROUTES = [
     ),
     SweepRoute("/service-providers", "刊登管理", _setup_listing_mgmt, "/service-providers"),
     SweepRoute(
+        "/service-providers",
+        "刊登管理 · 會籍剛到期",
+        _setup_listing_mgmt_hidden,
+        "/service-providers",
+        tags=["hidden"],
+    ),
+    SweepRoute(
         "/service-providers/create",
         "建立刊登",
         _setup_listing_create,
@@ -534,12 +764,40 @@ ROUTES = [
         after_load=_open_custom_category_input,
     ),
     SweepRoute("/referrals", "推薦管理", _setup_referrals, "/referrals"),
+    SweepRoute(
+        "/referrals",
+        "推薦管理 · 未加入推薦計畫",
+        _setup_referrals_unjoined,
+        "/referrals",
+        tags=["unjoined"],
+    ),
     SweepRoute("/tasks", "任務中心", _setup_tasks, "/tasks"),
+    SweepRoute(
+        "/tasks",
+        "任務中心 · 未加入推薦計畫",
+        _setup_tasks_unjoined,
+        "/tasks",
+        tags=["unjoined"],
+    ),
     SweepRoute(
         "/rewards",
         "獎勵回饋",
         _setup_rewards,
         "/rewards",
+    ),
+    SweepRoute(
+        "/rewards",
+        "獎勵回饋 · 未加入推薦計畫",
+        _setup_rewards_unjoined,
+        "/rewards",
+        tags=["unjoined"],
+    ),
+    SweepRoute(
+        "/rewards",
+        "獎勵回饋 · 會籍失效",
+        _setup_rewards_expired,
+        "/rewards",
+        tags=["expired"],
     ),
     SweepRoute(
         "/payment/checkout",
@@ -628,6 +886,47 @@ ROUTES = [
         tags=["member-sheet"],
         after_load=_open_member_detail_sheet,
     ),
+    # S5：要等網路的狀態（背景更新、失敗保留舊列、寫入與匯出在途），以 drive 扣住或打壞回應。
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領切回（背景更新中）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawals-refreshing"],
+        drive=_return_to_withdrawals_while_refreshing,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 提領更新失敗（保留舊列）",
+        _setup_admin,
+        "/admin",
+        tags=["withdrawals-stale"],
+        drive=_refresh_withdrawals_and_fail,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 寫入在途（分頁說明行）",
+        _setup_admin,
+        "/admin",
+        tags=["write-in-flight"],
+        drive=_reject_with_write_held,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 匯出中（分頁說明行）",
+        _setup_admin_many_withdrawals,
+        "/admin",
+        tags=["export-in-flight"],
+        drive=_export_with_collection_held,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 系統告警（重新整理後）",
+        _setup_admin_alerts,
+        "/admin",
+        tags=["system-alerts-refreshed"],
+        after_load=_refresh_system_alerts,
+    ),
 ]
 
 # 沒掃到的路由要寫出來，不能靜默略過——「報告沒提到」和「掃過沒問題」
@@ -710,6 +1009,10 @@ def _write_report(results):
         "  納入巡檢（/admin 的四個非預設 tab、身分證對話框、轉換歷史、會員詳情",
         "  Sheet 都已接上），但沒有明確加進 `ROUTES` 的仍然掃不到——**能掃不等於掃了**。",
         "  Select/DropdownMenu 的 popover 目前沒有任何 ROUTES 覆蓋。",
+        "- **要等網路才出現的狀態**：背景更新中、更新失敗保留舊列、寫入／匯出在途的",
+        "  鎖分頁說明行，要扣住或打壞回應才畫得出來，靠 `drive` 接上。目前只有提領頁",
+        "  接了（`withdrawals-refreshing`、`withdrawals-stale`、`write-in-flight`、",
+        "  `export-in-flight`）；會員、證件審核、公告、告警的這些狀態仍在盲區。",
         "- **admin 的證件審核次分頁**：需要 `/admin/id-reviews` 的 mock，尚未建。",
         "- **表格的橫向捲動不算溢出**：`Table` 原語自帶 `overflow-x-auto`，明示要捲動",
         "  ＝有意為之。「要橫向捲才讀得完一列」是可用性問題，這支測不出來。但單一",
@@ -756,6 +1059,10 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
         route.after_load(page)
         settle(page)
 
+    if route.drive:
+        route.drive(page, api_mock)
+        settle(page)
+
     # 地基檢查:全站文案是中文，所有溢出數字都建立在中文字寬上。字沒有以
     # 全形畫出來，量到的就不是這個 app 在真實裝置上的樣子。這條是硬失敗、
     # 不受 report-only 影響——量測工具本身壞掉時,報告不該還裝作有效。
@@ -789,6 +1096,15 @@ def test_no_text_overflow_at_375px(page, context, api_mock, rest_mock, overflow_
             f"路由守衛把 {route.path} 導到 {landed}，這條巡檢沒掃到目標頁面。"
             "請修正 setup 的登入/會籍狀態，否則報告會漏掉這一頁。"
         )
+
+    # 推薦碼被省略號截掉不算溢版（truncate 是刻意的保底），scan_overflow 量不到——但碼看
+    # 不全等於邀請不出去。凡畫面上有推薦碼就要完整顯示，不受 known_overflow 放行
+    # （推薦管理推薦碼列在 375px 曾把 10 碼舊格式碼截成「UK8K3M9Q…」）。
+    clipped_codes = page.evaluate(
+        "() => [...document.querySelectorAll('[data-testid=\"my-referral-code\"]')]"
+        ".filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent)"
+    )
+    assert not clipped_codes, f"{route.label}（{route.path}）的推薦碼被截斷：{clipped_codes}"
 
     if route.hard_fails():
         assert not result["findings"], (

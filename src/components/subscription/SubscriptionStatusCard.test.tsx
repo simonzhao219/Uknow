@@ -45,6 +45,53 @@ describe('SubscriptionStatusCard', () => {
     );
   });
 
+  // 失效是 warning 黃，不是紅（ui-ux-guidelines §12.13：紅留給失敗與破壞性）。徽章原本是
+  // destructive-subtle 紅，與同卡的黃色失效框不一致（S2e 遺留，S7a 定調 warning 同族）。
+  it('已失效時徽章與失效框同為 warning 族，不用紅', () => {
+    renderCard({
+      hasSubscription: false,
+      status: 'expired',
+      activeUntil: '2026-09-01T04:00:00.000Z',
+    });
+    const badge = screen.getByText('已失效');
+    expect(badge.classList.contains('bg-warning-subtle')).toBe(true);
+    expect(badge.classList.contains('bg-destructive-subtle')).toBe(false);
+    const frame = screen.getByText('會籍已失效').closest('[data-slot="status-callout"]');
+    expect(frame?.classList.contains('bg-warning-subtle')).toBe(true);
+  });
+
+  it('已失效的續訂鈕是引導鈕（品牌色實心）', () => {
+    renderCard({
+      hasSubscription: false,
+      status: 'expired',
+      activeUntil: '2026-09-01T04:00:00.000Z',
+    });
+    const renew = screen.getByRole('link', { name: '續訂' });
+    expect(renew.classList.contains('bg-brand')).toBe(true);
+    expect(renew.classList.contains('bg-primary')).toBe(false);
+  });
+
+  it('已失效時失效框說明處置，並列出原到期日', () => {
+    renderCard({
+      hasSubscription: false,
+      status: 'expired',
+      activeUntil: '2026-09-01T04:00:00.000Z',
+    });
+    expect(screen.getByText(/請續訂以恢復服務/)).toBeTruthy();
+    expect(screen.getByText('2026/09/01')).toBeTruthy();
+  });
+
+  it('訂閱中顯示綠色徽章，沒有失效框也沒有續訂鈕', () => {
+    renderCard({
+      hasSubscription: true,
+      status: 'active',
+      activeUntil: new Date(Date.now() + 200 * DAY).toISOString(),
+    });
+    expect(screen.getByText('訂閱中').classList.contains('bg-success-subtle')).toBe(true);
+    expect(screen.queryByText('會籍已失效')).toBeNull();
+    expect(screen.queryByRole('link', { name: '續訂' })).toBeNull();
+  });
+
   it('讀取失敗且沒有資料時顯示中性錯誤與重新載入，不說尚未訂閱', () => {
     const onRetry = vi.fn();
     render(

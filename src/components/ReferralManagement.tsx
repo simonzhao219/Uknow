@@ -3,10 +3,14 @@ import { Button } from './ui/button';
 import { ArrowLeft, Users, Loader2 } from 'lucide-react';
 import { ReferralStats } from './referral/ReferralStats';
 import { ReferralTreeView } from './referral/ReferralTreeView';
-import { MyQrEntry } from './referral/MyQrEntry';
+import { InviteFriendButton } from './referral/InviteFriendButton';
+import { MyQrButton } from './referral/MyQrButton';
+import { ReferralCodeWithCopy } from './referral/ReferralCodeWithCopy';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import { useBackNavigation } from '../hooks/useBackNavigation';
 import { usePageRestoration } from '../hooks/usePageRestoration';
 import { useReferralData } from '../hooks/useReferralData';
+import { useRetryFocus } from '../hooks/useRetryFocus';
 
 export function ReferralManagement() {
   const handleBack = useBackNavigation();
@@ -22,25 +26,36 @@ export function ReferralManagement() {
     setSort,
     loadChildren,
     searchNetwork,
+    loadAttention,
   } = useReferralData();
+  // 重試後的焦點落點（§9）：失敗回錯誤框、成功到標題。
+  const { errorRef, headingRef, retry } = useRetryFocus({ loading, failed: Boolean(error) });
+
+  // 標題列三態共用一份：載入中、錯誤態也找得到「我的 QR」（出示驗證碼不必等推薦網絡）。
+  const header = (
+    <div className="flex items-center gap-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleBack}
+        className="shrink-0"
+        aria-label="返回上一頁"
+      >
+        <ArrowLeft className="h-5 w-5" />
+      </Button>
+      <div className="min-w-0">
+        <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold outline-none">
+          推薦管理
+        </h1>
+      </div>
+      <MyQrButton className="ml-auto shrink-0" />
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="shrink-0"
-            aria-label="返回上一頁"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">推薦管理</h1>
-          </div>
-        </div>
+        {header}
         <Card>
           <CardContent className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -56,48 +71,20 @@ export function ReferralManagement() {
   if (error) {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="shrink-0"
-            aria-label="返回上一頁"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">推薦管理</h1>
-          </div>
-        </div>
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <p className="text-destructive-subtle-foreground mb-4">{error}</p>
-              <Button onClick={refetch}>重試</Button>
-            </div>
-          </CardContent>
-        </Card>
+        {header}
+        <LoadErrorCallout
+          ref={errorRef}
+          title="暫時無法取得推薦資料"
+          description={error}
+          onRetry={() => retry(refetch)}
+        />
       </div>
     );
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleBack}
-          className="shrink-0"
-          aria-label="返回上一頁"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">推薦管理</h1>
-        </div>
-      </div>
+      {header}
 
       <ReferralStats
         firstLevelCount={overview?.summary.firstGenCount || 0}
@@ -113,10 +100,14 @@ export function ReferralManagement() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 推薦碼與「我的 QR」的唯一入口——與會員中心共用同一顆（同一個元件、
-              同一份狀態來源），這裡只多給一層 bordered row 的外框。
-              加入成功後 refetch：會員狀態由元件自己重抓，推薦網絡是本頁的事。 */}
-          <MyQrEntry className="rounded-lg border bg-muted/40 px-3 py-2.5" onJoined={refetch} />
+          {/* 推薦碼列：推薦碼＋複製、邀請好友／加入推薦計畫——與會員中心共用同兩顆
+              （同一個元件、同一份狀態來源），這裡只給 bordered row 的外框。
+              加入成功後 refetch：會員狀態由元件自己重抓，推薦網絡是本頁的事。
+              flex-wrap：舊格式長碼在手機放不下時讓按鈕換行，不把碼截斷。 */}
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
+            <ReferralCodeWithCopy />
+            <InviteFriendButton className="ml-auto shrink-0" onJoined={refetch} />
+          </div>
 
           <ReferralTreeView
             overview={overview}
@@ -124,6 +115,7 @@ export function ReferralManagement() {
             onSortChange={setSort}
             loadChildren={loadChildren}
             searchNetwork={searchNetwork}
+            loadAttention={loadAttention}
             isValidating={isValidating}
           />
         </CardContent>

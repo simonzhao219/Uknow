@@ -11,11 +11,14 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Button } from '../ui/button';
+import { FOCUS_RING } from '../ui/focusRing';
 import { Skeleton } from '../ui/skeleton';
 import { StatusCallout } from '../ui/status-callout';
 import { cn } from '../ui/utils';
+import { GenerationChip, GenerationDot, generationLabel } from '../common/GenerationChip';
 import { formatTwDate } from '../../utils/twDate';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { usePagedList } from '../../hooks/usePagedList';
 import {
   DEFAULT_NETWORK_SORT,
   SORT_OPTIONS,
@@ -38,14 +41,8 @@ import {
 // - 顏色語意：頭像底色＝世代、右下角圓點＝訂閱狀態，兩者各自單一職責
 // ============================================================
 
-const GEN_LABEL: Record<number, string> = { 1: '一代', 2: '二代', 3: '三代' };
-// 徽章字色隨世代（與各自的淺底同色相）：一個 foreground token 無法同時配三個色相。
-const GEN_BADGE: Record<number, string> = {
-  1: 'bg-[var(--tree-gen-badge-1)] text-[var(--tree-gen-badge-foreground-1)]',
-  2: 'bg-[var(--tree-gen-badge-2)] text-[var(--tree-gen-badge-foreground-2)]',
-  3: 'bg-[var(--tree-gen-badge-3)] text-[var(--tree-gen-badge-foreground-3)]',
-};
-// 分支連接線依「子代」上色。**不可**重用 GEN_BADGE 的淺底 token 當邊框——
+// 世代 chip／小圓點與「一代／二代／三代」文字由 common/GenerationChip 提供（獎勵明細共用）。
+// 分支連接線依「子代」上色。**不可**重用世代 chip（common/GenerationChip）的淺底 token 當邊框——
 // 那組值是為了配文字設計的極淺色，畫在 --card/--background 上對比只有
 // ~1:1，線幾乎看不見（review 抓到的實測值）。改重用 GEN_AVATAR 的色，
 // 對比淺色 5.7:1 以上、深色 6.6:1 以上，遠超非文字元素的 3:1 門檻（世代線索綁在
@@ -77,7 +74,22 @@ const STATUS: Record<NetworkNodeStatus, { dot: string; label: string; badge: str
 /** 失效 / 停權者的刊登已被 has_active_subscription 隱藏，不提供「查看刊登」連結。 */
 const listingHidden = (s: NetworkNodeStatus) => s === 'expired' || s === 'suspended';
 
-// 頭像底色綁世代（與 GEN_BADGE / GEN_LINE 同色相：一代 teal、二代 violet、三代 pink；
+/**
+ * 列的可及名稱。aria-label 會蓋掉列內文字，而狀態原本只靠色點（aria-hidden）、列淡化與
+ * 右側倒數表達——報讀器只聽得到「{名} 詳情」（WCAG 1.4.1：不只靠顏色）。保留「{名} 詳情」
+ * 連續子字串：journey 的 Playwright 定位器（e2e/journey/builders/referral_tree.py）以它比對。
+ */
+function nodeAriaLabel(node: NetworkNode): string {
+  const daysLeft = node.status === 'expiring' ? nodeDaysLeft(node) : null;
+  const parts = [
+    generationLabel(node.generation),
+    STATUS[node.status].label + (daysLeft != null ? `（剩 ${daysLeft} 天）` : ''),
+  ];
+  if (node.generation < 3 && node.childCount > 0) parts.push(`直接推薦 ${node.childCount} 位`);
+  return `${node.name} 詳情，${parts.join('、')}`;
+}
+
+// 頭像底色綁世代（與世代 chip／GEN_LINE 同色相：一代 teal、二代 violet、三代 pink；
 // ui-ux-guidelines.md §12.5 (c) 核准的世代色例外，不得擴散到其他頁面）。
 // 先前是 userId 雜湊色，調色盤與狀態色／世代色撞色，容易被誤讀成分類。
 const GEN_AVATAR: Record<number, string> = {
@@ -170,7 +182,7 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
         aria-selected={selectedId === node.userId}
         aria-expanded={expandable ? isOpen : undefined}
         aria-owns={expandable && isOpen ? groupId : undefined}
-        aria-label={`${node.name} 詳情`}
+        aria-label={nodeAriaLabel(node)}
         className={cn(
           'group flex items-center gap-2 rounded-lg py-2 pl-1 pr-2 cursor-pointer transition-colors hover:bg-muted/60',
           INTERACTIVE_ROW,
@@ -244,21 +256,25 @@ function NodeRow({ node, childrenMap, expanded, onToggle, selectedId, onSelect }
 }
 
 // ---------- 需要關注橫幅（伺服器算好：一代且即將到期，依剩餘天數排序 + 上限） ----------
+// chip 只有姓名與倒數，不帶狀態小圓點（橫幅裡的人全是同一種狀態，圓點沒有資訊）。
+// 超出上限的人數以「全部 N 位 ›」展開完整清單（就地取代樹），展開後同一顆鈕變成「返回推薦樹」。
 function AttentionBanner({
   attention,
   onSelect,
+  showingAll,
+  onToggleAll,
 }: {
   attention: { total: number; items: NetworkNode[] };
   onSelect: (n: NetworkNode) => void;
+  showingAll: boolean;
+  onToggleAll: () => void;
 }) {
   if (attention.total === 0 || attention.items.length === 0) return null;
 
-  const reason = (n: NetworkNode) =>
-    n.status === 'expiring'
-      ? `剩 ${nodeDaysLeft(n)} 天到期`
-      : n.status === 'suspended'
-        ? '已停權'
-        : '已失效';
+  const reason = (n: NetworkNode) => {
+    const days = nodeDaysLeft(n);
+    return days != null ? `剩 ${days} 天到期` : '即將到期';
+  };
   const overflow = attention.total - attention.items.length;
 
   return (
@@ -274,15 +290,141 @@ function AttentionBanner({
               onClick={() => onSelect(n)}
               className="flex items-center gap-2 rounded-full border border-warning-border bg-card px-2.5 py-1 text-xs transition-colors hover:bg-muted"
             >
-              <span className={cn('h-2 w-2 rounded-full', STATUS[n.status].dot)} aria-hidden />
               <span className="font-medium">{n.name}</span>
               <span className="text-muted-foreground">· {reason(n)}</span>
             </button>
           ))}
-          {overflow > 0 && <span className="text-xs">還有 {overflow} 位</span>}
+          {/* 清單開著時即使 overflow 變 0（背景重驗後有人續訂）也要留著出口，不然使用者被困在過期的清單裡 */}
+          {(overflow > 0 || showingAll) && (
+            <button
+              type="button"
+              onClick={onToggleAll}
+              className={cn(
+                'inline-flex items-center rounded-sm text-xs font-medium text-foreground underline underline-offset-2 pointer-coarse:min-h-11',
+                FOCUS_RING,
+              )}
+            >
+              {showingAll ? '返回推薦樹' : `全部 ${attention.total} 位 ›`}
+            </button>
+          )}
         </div>
       }
     />
+  );
+}
+
+// ---------- 一代即將到期的完整清單（就地取代樹；分頁形狀同搜尋） ----------
+const ATTENTION_PAGE_SIZE = 20;
+
+type LoadAttention = (page: {
+  limit: number;
+  offset: number;
+}) => Promise<{ items: NetworkNode[]; total: number }>;
+
+// 只在展開時掛載：usePagedList 一掛載就發第一頁，收合後再展開重新取。
+function AttentionList({
+  loadAttention,
+  onSelect,
+  selectedId,
+}: {
+  loadAttention: LoadAttention;
+  onSelect: (n: NetworkNode) => void;
+  selectedId: string | null;
+}) {
+  const list = usePagedList<NetworkNode>({
+    load: loadAttention,
+    pageSize: ATTENTION_PAGE_SIZE,
+    deps: [],
+  });
+
+  if (list.isLoading) {
+    return (
+      <div className="space-y-2 py-2">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+    );
+  }
+
+  if (list.error && list.items.length === 0) {
+    return (
+      <div className="py-6 text-center">
+        <p className="mb-3 text-sm text-muted-foreground">載入失敗，請稍後再試</p>
+        <Button tone="secondary" size="sm" onClick={() => void list.reload()}>
+          重試
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      {list.items.map((node) => (
+        <NodeResultRow
+          key={node.userId}
+          node={node}
+          selected={selectedId === node.userId}
+          onSelect={onSelect}
+        />
+      ))}
+      {/* 命中總數與續接——「不得靜默截斷」（ui-ux-guidelines §5），文案同搜尋與 RewardHistory */}
+      <div className="pt-2 text-center text-sm text-muted-foreground">
+        已顯示 {Math.min(list.items.length, list.total)} / {list.total} 筆記錄
+      </div>
+      {list.loadMoreError && (
+        <p className="text-center text-sm text-muted-foreground">載入更多失敗，請再試一次</p>
+      )}
+      {list.hasMore && (
+        <div className="text-center">
+          <Button
+            onClick={() => void list.loadMore()}
+            tone="secondary"
+            size="sm"
+            disabled={!list.canLoadMore}
+          >
+            {list.isLoadingMore ? '加載中...' : '加載更多'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 搜尋結果與完整清單共用的平面列（沒有展開鈕；世代文字在姓名下方）。
+function NodeResultRow({
+  node,
+  selected,
+  onSelect,
+}: {
+  node: NetworkNode;
+  selected: boolean;
+  onSelect: (n: NetworkNode) => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={nodeAriaLabel(node)}
+      onClick={() => onSelect(node)}
+      onKeyDown={rowKeyActivate(() => onSelect(node))}
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-lg py-2 pl-1 pr-2 transition-colors hover:bg-muted/60',
+        INTERACTIVE_ROW,
+        selected && 'bg-muted',
+      )}
+    >
+      <Avatar node={node} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{node.name}</span>
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <GenerationDot generation={node.generation} />
+          {generationLabel(node.generation)}
+        </span>
+      </span>
+      <RowAside node={node} />
+    </div>
   );
 }
 
@@ -296,14 +438,7 @@ function NodeDetail({ node }: { node: NetworkNode }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
-        <span
-          className={cn(
-            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
-            GEN_BADGE[node.generation],
-          )}
-        >
-          {GEN_LABEL[node.generation]}
-        </span>
+        <GenerationChip generation={node.generation} />
         <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', s.badge)}>
           ● {s.label}
         </span>
@@ -368,6 +503,8 @@ interface ReferralTreeViewProps {
   ) => Promise<{ matches: NetworkSearchMatch[]; total: number }>;
   /** 背景重新請求中（切排序、focus revalidate）——清單仍是舊資料，需回饋 */
   isValidating?: boolean;
+  /** 「全部 N 位 ›」的分頁清單（GET /referrals/network/attention）。 */
+  loadAttention: LoadAttention;
 }
 
 type SearchState =
@@ -384,6 +521,7 @@ export function ReferralTreeView({
   onSortChange,
   loadChildren,
   searchNetwork,
+  loadAttention,
   isValidating = false,
 }: ReferralTreeViewProps) {
   const [selected, setSelected] = useState<NetworkNode | null>(null);
@@ -391,6 +529,8 @@ export function ReferralTreeView({
   const [childrenMap, setChildrenMap] = useState<Record<string, NetworkNode[] | 'loading'>>({});
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<SearchState>({ status: 'idle' });
+  // 「全部 N 位 ›」展開的完整清單：就地取代樹；開始打字搜尋就離開。
+  const [showAllAttention, setShowAllAttention] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   // 切排序：伺服器是排序權威，已展開的分支順序作廢 → 收合重來
@@ -487,10 +627,22 @@ export function ReferralTreeView({
   }
 
   const searching = query.trim().length > 0;
+  // 橫幅消失（沒有人即將到期）時清單也沒有意義。
+  const showingAll = showAllAttention && (overview?.attention.total ?? 0) > 0;
 
   const treeColumn = (
     <div className="space-y-3">
-      {overview && <AttentionBanner attention={overview.attention} onSelect={onSelect} />}
+      {overview && (
+        <AttentionBanner
+          attention={overview.attention}
+          onSelect={onSelect}
+          showingAll={showingAll}
+          onToggleAll={() => {
+            setQuery('');
+            setShowAllAttention((open) => !open);
+          }}
+        />
+      )}
 
       {/* 搜尋 + 排序 */}
       <div className="flex items-center gap-2">
@@ -498,7 +650,10 @@ export function ReferralTreeView({
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowAllAttention(false);
+            }}
             placeholder="搜尋姓名"
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
@@ -577,28 +732,12 @@ export function ReferralTreeView({
         ) : search.status === 'done' ? (
           <div className="space-y-0.5">
             {search.matches.map(({ node }) => (
-              <div
+              <NodeResultRow
                 key={node.userId}
-                role="button"
-                tabIndex={0}
-                aria-label={`${node.name} 詳情`}
-                onClick={() => onSelect(node)}
-                onKeyDown={rowKeyActivate(() => onSelect(node))}
-                className={cn(
-                  'flex cursor-pointer items-center gap-2 rounded-lg py-2 pl-1 pr-2 transition-colors hover:bg-muted/60',
-                  INTERACTIVE_ROW,
-                  selected?.userId === node.userId && 'bg-muted',
-                )}
-              >
-                <Avatar node={node} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{node.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {GEN_LABEL[node.generation]}
-                  </span>
-                </span>
-                <RowAside node={node} />
-              </div>
+                node={node}
+                selected={selected?.userId === node.userId}
+                onSelect={onSelect}
+              />
             ))}
 
             {/* 命中總數與續接——版位與文案照 RewardHistory 的既有慣例。
@@ -621,6 +760,12 @@ export function ReferralTreeView({
             )}
           </div>
         ) : null
+      ) : showingAll ? (
+        <AttentionList
+          loadAttention={loadAttention}
+          onSelect={onSelect}
+          selectedId={selected?.userId ?? null}
+        />
       ) : (
         // 背景重新請求中：清單仍是舊排序的資料，降透明度 + aria-busy 讓
         // 「還沒重排完」看得見也聽得見。切排序時 setSort 走的是

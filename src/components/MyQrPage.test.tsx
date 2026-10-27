@@ -13,7 +13,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { MY_QR_TAB_KEY } from '../utils/myQrTabPreference';
 
 // vi.hoisted 的內容會被提到所有 import 之前執行，所以 React 要在區塊內自己
-// import——用檔案頂端那個 binding 會踩到 TDZ（同 MyQrEntry.test.tsx）。
+// import——用檔案頂端那個 binding 會踩到 TDZ（同 BottomNav.test.tsx）。
 const { UserCtx } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
   return { UserCtx: createContext<any>({ user: null }) };

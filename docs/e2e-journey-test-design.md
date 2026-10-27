@@ -232,6 +232,14 @@ U2/K0/W1/W2/X1）獨立於 30 人主樹（`orgchart-saga.yaml`，不走 `load_no
 
 ---
 
+### `80_referral_email_invite.feature` — Email 邀請（寄送、接受、清除）
+
+推薦人以 Email 邀請新信箱 → 被邀請人以信中連結設定密碼（同一次呼叫完成 email 驗證）→
+以該密碼可登入、同一連結再送回 409；同一信箱 24 小時內第二封受理但不重寄；客服以
+purge 的 `p_email` 立即刪除邀請中的帳號。目前只走 API（驗 hosted 的 GoTrue 互動與
+send-email hook 底下的寄送）；信中連結以 service key 從 `user_metadata` 讀出、不在
+Python 重算簽章。設定密碼畫面與完善資料頁的 UI 步驟待前端 invite 模式上線後補進同檔。
+
 ## 7. 跨時間情境：service-role 時光機
 
 無法真實等待的規則，以 `tools/seed_time_machine.py`（service role 直連分支 DB）回填，
@@ -318,7 +326,7 @@ e2e/
     │   └── admin_bootstrap.py
     ├── pages/
     │   └── payuni_sandbox_page.py   # 外部頁面選擇器，獨立封裝
-    ├── features/                # §6 的 10_ ~ 70_ feature files
+    ├── features/                # §6 的 10_ ~ 80_ feature files
     ├── steps/
     └── tools/
         ├── cleanup.py           # --run-id，獨立可執行
@@ -427,6 +435,7 @@ Journey 全套要 40 分鐘上下，**絕不能放進 PR 關鍵路徑**——會
 | M4 | 時光機＋`60_`、cleanup.py＋零殘留斷言、nightly workflow | 全套 nightly 上線 |
 | M5 | `70_` 阿凱的七年（§6）＋時光機五原語（§7）＋`pytest_expr` 窄選（§11.5） | 十章 dispatch 綠燈、併入 nightly |
 | M6 | `45_listing_rls`（§14）——直打 PostgREST 的 RLS 授權邊界 | listings 五條 policy 行為綠燈 |
+| R2 | `80_referral_email_invite`（§6）——Email 邀請的 API 版（寄送、接受、清除）；GUI 步驟隨前端工項補進 | 晉升 PR 的 `journey-full` 綠燈 |
 
 ---
 

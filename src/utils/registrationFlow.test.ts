@@ -4,10 +4,14 @@ import {
   nextRouteForStep,
   classifyLoginError,
   isProfileComplete,
+  isRegistrationLocked,
   resolveProfilePageRedirect,
   resolveCheckoutPageRedirect,
   type FunnelProfile,
   type RegistrationStep,
+  classifyInviteAcceptError,
+  resolveInviteEntry,
+  shouldRedirectToCompleteProfile,
 } from './registrationFlow';
 
 describe('resolvePostLoginAction — registrationStep 是唯一的導向來源', () => {
@@ -103,6 +107,23 @@ describe('isProfileComplete — 基本資料是否已填齊', () => {
   });
 });
 
+// 鎖定判準的唯一定義：CompleteProfile 的編輯守衛與 PaymentCheckout 的編輯入口
+// 共用。後端以「有 completed 訂單」拒寫（/auth/register 403），前端看得到的
+// 對應訊號是 step 3；曾有訂閱（subscriptionEndDate）必然有過完成的付款。
+describe('isRegistrationLocked — 註冊完成後身分資料鎖定', () => {
+  it('step 3 → 鎖定', () => {
+    expect(isRegistrationLocked({ registrationStep: 3 })).toBe(true);
+  });
+
+  it('曾有訂閱（續約者）→ 鎖定，即使快取沒帶到 registrationStep', () => {
+    expect(isRegistrationLocked({ subscriptionEndDate: '2026-01-01T00:00:00Z' })).toBe(true);
+  });
+
+  it.each([0, 1, 2, null, undefined])('step %p 且無訂閱 → 未鎖定（付款前可重填）', (step) => {
+    expect(isRegistrationLocked({ registrationStep: step })).toBe(false);
+  });
+});
+
 describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一決策來源）', () => {
   // 一個「資料已填齊」的 profile 骨架，測試只覆寫 registrationStep。
   const filled = (registrationStep: RegistrationStep): FunnelProfile => ({
@@ -123,8 +144,25 @@ describe('resolveProfilePageRedirect — CompleteProfile 頁的守衛（單一�
       expect(resolveProfilePageRedirect(filled(2), { editing: true })).toBeNull();
     });
 
-    it('即便 step 3，editing=true 也不會硬把人推走（交由頁面自行處理，不做彈跳）', () => {
-      expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBeNull();
+    // 註冊完成後後端拒絕寫入（/auth/register 403），編輯意圖失效：停在編輯頁
+    // 時另一個分頁付完款、或重新整理沿用舊 history state 的人，要被帶回會員中心。
+    it('step 3、資料已填、editing=true → 導向 dashboard（註冊完成後不可改）', () => {
+      expect(resolveProfilePageRedirect(filled(3), { editing: true })).toBe('/dashboard');
+    });
+
+    it('續約者（有訂閱、快取缺 step）、editing=true → 導向 dashboard', () => {
+      expect(
+        resolveProfilePageRedirect(
+          { ...filled(undefined), subscriptionEndDate: '2026-01-01T00:00:00Z' },
+          { editing: true },
+        ),
+      ).toBe('/dashboard');
+    });
+
+    it('step 3 但資料未填齊、editing=true → 仍留在本頁（不破壞未填齊不變式）', () => {
+      expect(
+        resolveProfilePageRedirect({ registrationStep: 3, name: '王小明' }, { editing: true }),
+      ).toBeNull();
     });
   });
 
@@ -313,5 +351,77 @@ describe('兩頁守衛互不彈跳（ping-pong 不變式）', () => {
 
   it('填資料頁不會再把同一位使用者用 step 彈回結帳頁（無 ping-pong）', () => {
     expect(resolveProfilePageRedirect(unfilledUser)).toBeNull();
+  });
+});
+
+// --- Email 邀請（R2）：從信中連結進入註冊頁中段 ---
+
+const b64url = (s: string) =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+const tokenOf = (payload: unknown) => `${b64url(JSON.stringify(payload))}.sig`;
+
+describe('resolveInviteEntry', () => {
+  it.each([
+    ['壞 base64', '***.sig'],
+    ['壞 JSON', `${b64url('{not json')}.sig`],
+    ['缺 c 欄', tokenOf({ v: 1, e: 'a@b.co', x: 1 })],
+    ['v 不是 1', tokenOf({ v: 2, e: 'a@b.co', c: '8048876', x: 1 })],
+    ['沒有簽章段', b64url(JSON.stringify({ v: 1, e: 'a@b.co', c: '8048876', x: 1 }))],
+  ])('%s時回 undecodable', (_label, token) => {
+    expect(resolveInviteEntry(token)).toEqual({ kind: 'undecodable' });
+  });
+
+  it('有效 payload 時回 email 與推薦碼', () => {
+    expect(resolveInviteEntry(tokenOf({ v: 1, e: 'a@b.co', c: '8048876', x: 4102444800 }))).toEqual(
+      {
+        kind: 'valid',
+        email: 'a@b.co',
+        code: '8048876',
+      },
+    );
+  });
+
+  it('到期時間已過仍回 valid（過期由伺服器判）', () => {
+    expect(resolveInviteEntry(tokenOf({ v: 1, e: 'a@b.co', c: '8048876', x: 1 })).kind).toBe(
+      'valid',
+    );
+  });
+});
+
+describe('classifyInviteAcceptError', () => {
+  it.each([
+    ['weak_password', 'stay2B', false],
+    ['rate_limited', 'stay2B', false],
+    ['unavailable', 'stay2B', false],
+    ['disabled', 'stay2B', false],
+    [undefined, 'stay2B', false],
+    ['some_future_code', 'stay2B', false],
+    ['expired', 'to2A', false],
+    ['invalid_token', 'to2A', false],
+    ['gone', 'to2A', false],
+    ['already_accepted', 'to2A', true],
+  ] as const)('code %s 有 email 時 → %s', (code, target, clearPassword) => {
+    expect(classifyInviteAcceptError(code, true)).toEqual({ target, clearPassword });
+  });
+
+  it.each(['expired', 'invalid_token', 'gone', 'already_accepted'])(
+    '沒有 email 時 %s 回步驟 1',
+    (code) => {
+      expect(classifyInviteAcceptError(code, false).target).toBe('toStep1');
+    },
+  );
+});
+
+describe('shouldRedirectToCompleteProfile', () => {
+  it.each([
+    ['/auth/complete-profile', false],
+    ['/auth/reset-password', false],
+    ['/dashboard', true],
+    ['/register', true],
+  ])('%s → %s', (pathname, expected) => {
+    expect(shouldRedirectToCompleteProfile(pathname)).toBe(expected);
   });
 });

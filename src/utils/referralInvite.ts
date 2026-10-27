@@ -1,18 +1,19 @@
 // 邀請分享 + 推薦碼跨步驟帶入。
 //
 // 兩件事收斂在這裡，讓「分享」與「自動帶入」只有一份實作、行為一致：
-//   1. 分享：產生一段「同時含連結與推薦碼」的邀請訊息，優先叫系統原生分享面板，
-//      不支援（或在會壞掉的 in-app 瀏覽器）時退回複製整段訊息到剪貼簿。
+//   1. 分享：產生一段含連結、推薦碼與推薦人揭露句的邀請訊息，先叫系統分享面板，用不了時
+//      交給所在 App（LINE 好友選擇器），再不行才複製整段訊息到剪貼簿。
 //   2. 帶入：把邀請連結上的推薦碼（?ref=）存進 localStorage，撐過
 //      註冊漏斗（/register → OTP → 完善資料頁）後在完善資料頁自動帶入並驗證。
 //
-// 推薦碼不是機敏資料；真正的信任邊界仍在後端（verify-referral-code 與
+// 推薦碼不是機敏資料；真正的信任邊界仍在後端（/referrals/validate/:code 與
 // /auth/register 照常驗證與綁定），這裡只是 UX 便利。
 
-import { detectInAppBrowser } from './browserDetection';
+import { referralDisclosureSentence } from '@recruitment-copy';
+import { detectInAppBrowser, type InAppBrowserPlatform } from './browserDetection';
+import { copyWithToast, type ShowToast } from './copyWithToast';
+import { openExternalLink } from './externalLink';
 import { normalizeReferralCode } from './referralCode';
-
-type ShowToast = (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
 const PENDING_KEY = 'pending_referral_code';
 
@@ -33,70 +34,103 @@ export function buildReferralLink(code: string): string {
 }
 
 /**
- * 產生分享用的邀請訊息 —— 無論原生分享或複製 fallback，內容一律同時含
- * 「連結」與「推薦碼」。連結只出現一次（分享時不再另外帶 url 欄位，避免部分
- * App 把 url 再接到訊息尾端造成重複）。
+ * 產生分享用的邀請訊息 —— 無論原生分享或複製 fallback，內容一律是「連結」、
+ * 「推薦碼」與推薦人揭露句（手冊 4-1-2(2)；句子定義在 @recruitment-copy）。揭露句
+ * 空一行自成一段，不黏成推薦碼的附註。連結只出現一次（分享時不再另外帶 url 欄位，
+ * 避免部分 App 把 url 再接到訊息尾端造成重複）。
  */
-export function buildInviteMessage(code: string): string {
-  return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}`;
-}
-
-/** 用隱藏 textarea + execCommand 複製文字（不受 Clipboard API 權限限制，相容性佳）。 */
-function copyTextFallback(text: string): boolean {
-  try {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    textArea.style.top = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    return ok;
-  } catch (err) {
-    console.error('複製邀請訊息失敗:', err);
-    return false;
-  }
+export function buildInviteMessage(code: string, memberName?: string | null): string {
+  return `邀請你一起加入 Uknow：\n${buildReferralLink(code)}\n\n推薦碼 ${code}\n\n${referralDisclosureSentence(memberName)}`;
 }
 
 /**
- * 分享我的推薦邀請。
- * - 支援 Web Share API 且非會壞掉的 in-app 瀏覽器：叫系統原生分享面板，
- *   text 帶完整邀請訊息（含連結＋推薦碼），另帶 url 讓部分 App 直接吃連結預覽。
- * - 否則：複製整段邀請訊息到剪貼簿並提示。
+ * 複製整段邀請訊息並提示——分享的最後一順位。失敗時指向「我的 QR」頁的邀請連結欄位：
+ * 會員中心與推薦管理沒有可手動複製的邀請文字（只露推薦碼）。面板被拒之後的複製發生在
+ * .catch 裡、已脫離使用者手勢，WebKit 的 execCommand('copy') 在那裡可能更容易回 false
+ * （推論，待真機驗證）。
  */
-export function shareReferralInvite(code: string, showToast: ShowToast): void {
+function copyInviteMessage(message: string, showToast: ShowToast): void {
+  copyWithToast(
+    message,
+    '邀請訊息已複製到剪貼簿！',
+    showToast,
+    '複製失敗，請到「我的 QR」頁的邀請連結欄位複製',
+  );
+}
+
+/**
+ * 分享面板被拒時，哪些是使用者自己停手：AbortError＝在面板上按取消；InvalidStateError＝
+ * 前一次 share() 還沒結束又按了一下（Web Share 規格，連點的第二下）。這兩種都不替使用者
+ * 改走別條路。「邀請好友」與「分享 QR Code」共用這一條判斷。
+ */
+export function isShareStoppedByUser(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === 'AbortError' || name === 'InvalidStateError';
+}
+
+/** LINE 好友選擇器的分享網址。整段訊息編碼進 text：換行與連結裡的 `?ref=` 都要活著。 */
+export function buildLineShareUrl(message: string): string {
+  return `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+}
+
+/**
+ * 所在 App 自己的分享入口（第二順位），以 detectInAppBrowser 的 platform 為鍵。只收官方、
+ * 不必註冊 App ID、按下就開好友選擇器的網址——目前只有 LINE 符合（Messenger 的傳送對話框
+ * 要 Facebook App ID，IG 與微信沒有網頁分享入口）。要加一個 App 就在這裡加一列。
+ */
+const IN_APP_SHARE_URL: Partial<
+  Record<NonNullable<InAppBrowserPlatform>, (message: string) => string>
+> = {
+  line: buildLineShareUrl,
+};
+
+/** 第二、三順位：所在 App 能直接分享就交給它，否則複製整段訊息並提示。 */
+function shareViaHostAppOrCopy(message: string, showToast: ShowToast): void {
+  const { platform } = detectInAppBrowser();
+  const hostAppShareUrl = platform ? IN_APP_SHARE_URL[platform] : undefined;
+  if (hostAppShareUrl) {
+    // 只接得住導頁當下的同步例外（沙箱 iframe 禁止導頁之類）。開了 App 不等於送出了，
+    // 所以不給任何成功提示。
+    try {
+      openExternalLink(hostAppShareUrl(message));
+      return;
+    } catch {
+      /* 落到複製 */
+    }
+  }
+  copyInviteMessage(message, showToast);
+}
+
+/**
+ * 「邀請好友」——會員中心、推薦管理、我的 QR 頁都是這一支。使用者不一定透過 LINE
+ * 分享（業主 2026-10-17），順位是：
+ *   1. 系統分享面板（Web Share），讓使用者自己選 App 與對象——LINE 內建瀏覽器有面板時
+ *      也一樣。text 帶完整邀請訊息（含連結、推薦碼與揭露句），不另外帶 url，避免部分 App 把
+ *      url 再接到訊息尾端，導致連結出現兩次。使用者按取消（或連點）就停在那裡，不替他
+ *      改走別條路。
+ *   2. 面板確定用不了（不支援或出錯）時，所在 App 能直接分享就交給它（LINE → 好友選擇器）。
+ *   3. 最後複製整段邀請訊息並提示，讓使用者自己貼。
+ * memberName 給揭露句用，三條路送出的是同一段訊息。
+ */
+export function shareReferralInvite(
+  code: string,
+  showToast: ShowToast,
+  memberName?: string | null,
+): void {
   if (!code) {
     showToast('推薦碼不存在', 'error');
     return;
   }
 
-  const message = buildInviteMessage(code);
-  const { isInAppBrowser } = detectInAppBrowser();
-
-  if (
-    !isInAppBrowser &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.share === 'function'
-  ) {
-    // 只帶 text（訊息本身已含連結）；不另外帶 url，避免部分 App 把 url 再接到
-    // 訊息尾端，導致連結出現兩次。
-    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch(() => {
-      // 使用者取消分享，或分享失敗——安靜退回複製，讓邀請仍可完成。
-      if (copyTextFallback(message)) {
-        showToast('邀請訊息已複製到剪貼簿！', 'success');
-      }
+  const message = buildInviteMessage(code, memberName);
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    navigator.share({ title: 'Uknow 專業服務平台', text: message }).catch((error: unknown) => {
+      if (isShareStoppedByUser(error)) return;
+      shareViaHostAppOrCopy(message, showToast);
     });
     return;
   }
-
-  if (copyTextFallback(message)) {
-    showToast('邀請訊息已複製到剪貼簿！', 'success');
-  } else {
-    showToast('複製失敗，請手動複製', 'error');
-  }
+  shareViaHostAppOrCopy(message, showToast);
 }
 
 // --- 推薦碼跨步驟帶入（撐過註冊漏斗）---
@@ -117,7 +151,7 @@ export function savePendingReferral(code: string): void {
 export function getPendingReferral(): string | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
-    return raw && raw.trim() ? raw : null;
+    return raw?.trim() ? raw : null;
   } catch {
     return null;
   }
@@ -130,4 +164,46 @@ export function clearPendingReferral(): void {
   } catch {
     // 忽略
   }
+}
+
+// --- Email 邀請連結的 token（撐過 2B 重新整理）---
+
+const PENDING_INVITE_TOKEN_KEY = 'pending_invite_token';
+
+/** 記住邀請連結的 token（sessionStorage：只活在這個分頁，關掉即清）。 */
+export function savePendingInviteToken(token: string): void {
+  try {
+    sessionStorage.setItem(PENDING_INVITE_TOKEN_KEY, token);
+  } catch {
+    // 忽略 storage 不可用
+  }
+}
+
+/** 讀取這個分頁記住的邀請 token；沒有時回 null。 */
+export function getPendingInviteToken(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_INVITE_TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** accept 成功、已完成設定、改用其他 Email、解碼失敗、登出時清除。 */
+export function clearPendingInviteToken(): void {
+  try {
+    sessionStorage.removeItem(PENDING_INVITE_TOKEN_KEY);
+  } catch {
+    // 忽略
+  }
+}
+
+// --- Email 邀請的建置旗標 ---
+
+/**
+ * Email 邀請卡是否開放（建置旗標 VITE_REFERRAL_EMAIL_INVITE，讀旗標的單一出處）。
+ * 關閉時三處「邀請好友」維持直接 shareReferralInvite。dev 由 .env.development 開啟；
+ * 正式站在 Cloudflare Pages Production 作用域設定（後端收信核對通過後才開）。
+ */
+export function isEmailInviteEnabled(): boolean {
+  return import.meta.env?.VITE_REFERRAL_EMAIL_INVITE === 'true';
 }

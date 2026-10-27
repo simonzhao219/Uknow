@@ -19,6 +19,7 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
+import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -247,6 +248,74 @@ async function requireAuth(c: any): Promise<{ id: string; email?: string } | nul
 }
 
 // ============================================================
+// 工具：限流（DB 計數表 bump_rate_limit，Edge Function 無內建限流）
+//
+// 限流值集中在這裡。固定窗口（自該窗口第一次請求起算，期滿重置）；
+// rate_limits 由 pg_cron 每小時清掉 window_start 超過 2 天的列
+// （prune_rate_limits），所以**任何窗口都不得長於 2 天**——長於保留期的窗口
+// 會在窗內被清掉，等於提早重置（rate-limit.unit.test.ts 讀兩邊原始碼把關）。
+// 窗口寫成乘式，規格書用分鐘／小時對照（check-spec-drift）。
+// ============================================================
+// /auth/check-email：無驗證端點、{ exists } 本身是帳號枚舉位元 → per-IP。
+const CHECK_EMAIL_RATE_MAX = 10;
+const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
+// /members/verify：per 掃描者，每分鐘 30 次。猜 token 本來就不可行（HMAC 簽章、
+// 90 秒到期），這道防的是開放互掃後「側錄一批他人正在顯示的 QR 再批次驗證」的
+// 個資收集。人工掃描一次至少兩三秒，30 次／分鐘碰不到；換 IP 沒有意義。
+const MEMBER_VERIFY_RATE_MAX = 30;
+const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
+// /referrals/validate/:code：per 使用者、雙窗，依序計數。短窗容得下合法的連續
+// 重試（驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗只計
+// 「短窗放行的實際查詢」，讓單一帳號 24 小時內最多查 50 個碼——推薦碼是流水號、
+// 回推薦人真名，這是單帳號枚舉的上限（多開帳號線性放大，受註冊速率限制）。
+export const REFERRAL_VALIDATE_RATE_MAX = 10;
+export const REFERRAL_VALIDATE_RATE_WINDOW_SECONDS = 5 * 60;
+export const REFERRAL_VALIDATE_DAILY_MAX = 50;
+export const REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+// /referrals/invites（Email 邀請）：per 推薦人雙窗，依序計數——短窗擋下不扣日窗、
+// 日窗擋下退回短窗那一格（業主 Q2-14／裁決 A）。fail-open 同上。
+export const REFERRAL_INVITE_RATE_MAX = 5;
+export const REFERRAL_INVITE_RATE_WINDOW_SECONDS = 1 * 60 * 60;
+export const REFERRAL_INVITE_DAILY_MAX = 20;
+export const REFERRAL_INVITE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+// 同一信箱 24 小時一封（先到者生效，超額照樣 202、不寄）與全站兩窗（GoTrue 寄信上限，
+// 超額 503）：決定要寄之後才扣，strict 三態——RPC 出錯不寄（rate-limit-strict.ts）。
+export const REFERRAL_INVITE_TARGET_MAX = 1;
+export const REFERRAL_INVITE_TARGET_WINDOW_SECONDS = 24 * 60 * 60;
+export const REFERRAL_INVITE_GLOBAL_HOUR_MAX = 100;
+export const REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS = 1 * 60 * 60;
+export const REFERRAL_INVITE_GLOBAL_DAY_MAX = 1000;
+export const REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS = 24 * 60 * 60;
+// /auth/invite/accept：公開端點、per-IP（與 check-email 同類；猜簽章本來就不可行，
+// 這道防的是對 GoTrue 的設密碼／generateLink 洪泛）。
+export const INVITE_ACCEPT_RATE_MAX = 20;
+export const INVITE_ACCEPT_RATE_WINDOW_SECONDS = 5 * 60;
+
+// 用戶端 IP。cf-connecting-ip 在請求經過 Cloudflare 時由它覆寫、用戶端改不動，
+// 優先採用；x-forwarded-for 的第一段是用戶端自填的，只當後備（沒有 cf 標頭時
+// 用戶端仍可換值繞過 per-IP 限流，屬既有殘餘風險）。
+// 格式不像 IPv4／IPv6 的一律歸 'unknown'：超長字串當鍵會讓 bump_rate_limit 的
+// 寫入出錯、被它的 exception 分支吞成 fail-open，任意字串也不該成為計數表的一列。
+const IP_LIKE = /^[0-9a-fA-F:.]{2,45}$/;
+export function clientIp(c: any): string {
+  const ip = c.req.header('cf-connecting-ip') ||
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+    '';
+  return IP_LIKE.test(ip) ? ip : 'unknown';
+}
+
+// 回傳是否放行。限流器自身故障（RPC 錯誤）一律放行（fail-open）——
+// 限流是防濫用的第二道防線，不能反過來擋掉正常流量。
+async function rateLimit(key: string, max: number, windowSeconds: number): Promise<boolean> {
+  const { data: allowed } = await sb().rpc('bump_rate_limit', {
+    p_key: key,
+    p_max: max,
+    p_window_seconds: windowSeconds,
+  });
+  return allowed !== false;
+}
+
+// ============================================================
 // 工具：管理員判斷（所有 /admin/** 路由的統一守門）
 // ============================================================
 async function isAdminUser(userId: string): Promise<boolean> {
@@ -322,9 +391,9 @@ const SEPARATOR_LIKE = new RegExp('(?=[\\p{P}\\p{Z}])[^ ]', 'u');
 const NAME_MAX_LENGTH = 50;
 
 export function validateNameFormat(name: unknown): string | undefined {
-  // 型別防禦:`PUT /auth/profile` 的觸發條件是 `'name' in body`,只檢查鍵存在、
-  // 不檢查型別,所以這裡可能收到 null/數字/物件。一律回「格式不符」而**不拋錯**
-  // ——HAN_RANGE 上方註解記載的正是「未防禦邊界輸入把端點打成 500」的事故。
+  // 型別防禦:呼叫端的 `!name` 只擋 falsy 值,所以這裡可能收到數字/物件/陣列。
+  // 一律回「格式不符」而**不拋錯**——HAN_RANGE 上方註解記載的正是「未防禦
+  // 邊界輸入把端點打成 500」的事故。
   if (typeof name !== 'string') return '姓名格式不正確';
   if (!name.trim()) return '請填寫姓名';
 
@@ -573,17 +642,14 @@ app.get('/auth/profile', profileHandler);
 // 檢查 email 是否已存在（AuthPage 步驟 1 使用）
 // ============================================================
 app.post('/auth/check-email', async (c) => {
-  // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流
-  // （bump_rate_limit，fail-open：限流器故障不擋正常註冊）。
-  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    c.req.header('cf-connecting-ip') ||
-    'unknown';
-  const { data: allowed } = await sb().rpc('bump_rate_limit', {
-    p_key: `check-email:${ip}`,
-    p_max: 10,
-    p_window_seconds: 300,
-  });
-  if (allowed === false) {
+  // 無驗證端點 + { exists } 本身就是帳號枚舉位元 → per-IP 限流。
+  // 鍵的前綴 `check-email:` 是 journey 重置配額的依據（e2e/journey/tools/supa.py）。
+  const allowed = await rateLimit(
+    `check-email:${clientIp(c)}`,
+    CHECK_EMAIL_RATE_MAX,
+    CHECK_EMAIL_RATE_WINDOW_SECONDS,
+  );
+  if (!allowed) {
     return c.json({ error: '請求過於頻繁，請稍後再試' }, 429);
   }
 
@@ -597,26 +663,37 @@ app.post('/auth/check-email', async (c) => {
   const email = body?.email?.trim()?.toLowerCase();
   if (!email) return c.json({ exists: false });
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-  const res = await fetch(
-    `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=50&search=${encodeURIComponent(email)}`,
-    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
-  );
-
-  if (!res.ok) return c.json({ exists: false });
-  const data = await res.json();
+  // 精確查 auth.users（migration 20261025000001）。不用 GoTrue admin users
+  // 列表：它不認 `search`，只會回最新 50 位，較早的會員被判不存在。
+  const { data, error } = await sb().rpc('find_auth_user_by_email', { p_email: email });
+  // fail-closed：回 { exists:false } 會把暫時性故障變成「既有會員被送去設定密碼」。
+  if (error) {
+    console.error('[auth/check-email] find_auth_user_by_email failed:', error);
+    return c.json({ error: '暫時無法檢查 Email，請稍後再試' }, 503);
+  }
   // 只回傳 exists。刻意「不」回傳 email 是否已驗證：一來避免多洩漏一個
   // 「這個 email 註冊到一半」的枚舉位元，二來未驗證帳號的復原改走「密碼優先」
   // （見 AuthPage.handleLogin），前端不需要在步驟 1 就知道驗證狀態。
-  const exists = (data.users || []).some((u: any) => u.email?.toLowerCase() === email);
-  return c.json({ exists });
+  return c.json({ exists: Array.isArray(data) && data.length > 0 });
 });
 
 // ============================================================
+// POST /auth/invite/accept（Email 邀請，公開）——處理函式在 referral-invite.ts。
+// 包一層延遲取用：handlers 在 /referrals/join-program 之後才組（與 invites 同一份 deps）。
+// ============================================================
+app.post('/auth/invite/accept', (c) => referralInviteHandlers.accept(c));
+
+// register_profile 的回傳值（見 migration 20261017000004）。
+type RegisterProfileOutcome = 'ok' | 'completed' | 'not_found';
+
+// ============================================================
 // POST /auth/register
-// CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1
+// CompleteProfile：填完基本資料後呼叫，寫入 profiles + registration_step=1。
+// 付款前（step 0/1/2）可重送——編輯模式與推薦碼回填都靠它；註冊完成
+// （step 3）後一律 403：身分證字號是經營權與提領身分核對的唯一鍵、推薦人
+// 付款完成後鎖定（之後唯一的自助換線入口是續費選新約，§6.2）、姓名是提領
+// 人工核對的依據。守衛必須在寫入端點本身——/auth/reset-registration 只是
+// 編輯入口的提早告知，直接打本端點就繞過它。
 // ============================================================
 app.post('/auth/register', async (c) => {
   const user = await requireAuth(c);
@@ -640,6 +717,12 @@ app.post('/auth/register', async (c) => {
   const nameError = validateNameFormat(name);
   if (nameError) return c.json({ error: nameError }, 400);
 
+  // 遮罩值防呆：本端點的回應與 GET /profile 回的是遮罩值（A12****789），
+  // 編輯模式又以它回填表單——誤送回來會把 DB 的完整字號蓋成星號。
+  if (typeof nationalId === 'string' && nationalId.includes('*')) {
+    return c.json({ error: '身分證字號含遮罩字元，請輸入完整內容' }, 400);
+  }
+
   const client = sb();
 
   // 若有填推薦碼，先查出推薦人 user_id
@@ -657,82 +740,32 @@ app.post('/auth/register', async (c) => {
     referrerUserId = rc?.user_id ?? null;
   }
 
-  // 透過 service_role 更新 profile（包含 registration_step = 1）
-  const updates: Record<string, any> = {
-    name,
-    phone,
-    birth_date: birthDate,
-    national_id: nationalId || null,
-    registration_step: 1,
-    referred_by_code: cleanCode,
-    referred_by_user_id: referrerUserId,
-  };
-
-  const { error } = await client.from('profiles').update(updates).eq('id', user.id);
+  // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
+  // （register_profile，見 migration 20261017000004）。在這裡先讀進度再
+  // UPDATE 擋不住付款同時完成：讀到 step 2 之後，UPDATE 會被付款交易的列鎖
+  // 擋住、commit 後照樣寫進去。
+  const { data: outcome, error } = await client.rpc('register_profile', {
+    p_user_id: user.id,
+    p_name: name,
+    p_phone: phone,
+    p_birth_date: birthDate,
+    p_national_id: nationalId || null,
+    p_referred_by_code: cleanCode,
+    p_referred_by_user_id: referrerUserId,
+  });
   if (error) {
-    console.error('[register] update 失敗:', error);
+    console.error('[register] register_profile 失敗:', error);
     return c.json({ error: '更新失敗' }, 500);
   }
-
-  const data = await buildProfileResponse(client, user.id, user.email);
-  if (!data) return c.json({ error: '用戶不存在' }, 404);
-  return c.json(data);
-});
-
-// ============================================================
-// PUT /auth/profile
-// 更新可編輯的基本資料欄位。registrationStep 不接受前端寫入 ——
-// 由 payment_orders 即時算出（見 buildProfileResponse / migration 0011），
-// 避免任何登入用戶自行 PUT 跳過付款流程。
-// ============================================================
-app.put('/auth/profile', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  let body: any;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: '請求格式錯誤' }, 400);
+  // 只認函式定義的三個值；其餘（null、改壞後的新字串）一律 500——不能把
+  // 「函式回了沒預期的東西」說成「用戶不存在」或當成寫入成功。
+  const result = outcome as RegisterProfileOutcome | null;
+  if (result === 'completed') {
+    return c.json({ error: '註冊已完成，資料變更請聯繫客服' }, 403);
   }
-
-  // 遮罩值防呆：GET /profile 回的是遮罩值（A12****789 / *****0123），
-  // 前端若誤把它回填送出，會把 DB 的完整值蓋成星號——一律拒絕。
-  for (const key of ['nationalId', 'bankCode', 'bankAccount']) {
-    if (typeof body?.[key] === 'string' && body[key].includes('*')) {
-      return c.json({ error: '欄位含遮罩字元，請輸入完整內容' }, 400);
-    }
-  }
-
-  const client = sb();
-  const allowedFields: Record<string, string> = {
-    name: 'name',
-    phone: 'phone',
-    birthDate: 'birth_date',
-    nationalId: 'national_id',
-    bankCode: 'bank_code',
-    bankAccount: 'bank_account',
-  };
-
-  // 姓名格式只在 body 帶 name 時檢查——本端點是逐欄位局部更新,無條件檢查會
-  // 誤擋「只改手機/銀行帳號」的請求,也會對 undefined 呼叫字串方法而回 500。
-  if ('name' in body) {
-    const nameError = validateNameFormat(body.name);
-    if (nameError) return c.json({ error: nameError }, 400);
-  }
-
-  const updates: Record<string, any> = {};
-  for (const [jsKey, dbKey] of Object.entries(allowedFields)) {
-    if (jsKey in body) updates[dbKey] = body[jsKey];
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return c.json({ error: '沒有可更新的欄位' }, 400);
-  }
-
-  const { error } = await client.from('profiles').update(updates).eq('id', user.id);
-  if (error) {
-    console.error('[put /auth/profile] 更新失敗:', error);
+  if (result === 'not_found') return c.json({ error: '用戶不存在' }, 404);
+  if (result !== 'ok') {
+    console.error('[register] register_profile 回傳未預期的值:', outcome);
     return c.json({ error: '更新失敗' }, 500);
   }
 
@@ -744,23 +777,40 @@ app.put('/auth/profile', async (c) => {
 // ============================================================
 // DELETE /auth/cancel-signup
 // CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
-// 守衛：已完成付款或有提領紀錄的會員不得自助刪除——schema 全面
-// on delete cascade，刪 auth user 會連鎖抹除 payment_orders /
-// withdrawals / referral_edges，金流稽核紀錄與推薦樹對帳從此消失
-// （與 /auth/reset-registration 的「已完成付款無法重置」同一原則）。
+// 守衛：已完成付款、已付款待開通（pending 且 PayUni SUCCESS）或有提領紀錄
+// 的會員不得自助刪除——schema 全面 on delete cascade，刪 auth user 會連鎖
+// 抹除 payment_orders / withdrawals / referral_edges，金流稽核紀錄與推薦樹
+// 對帳從此消失（與 /auth/reset-registration 的「已完成付款無法重置」同一
+// 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
 // ============================================================
 app.delete('/auth/cancel-signup', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const client = sb();
-  const [{ data: completedOrder }, { data: withdrawal }] = await Promise.all([
+  const [
+    { data: completedOrder, error: orderErr },
+    { data: paidPendingOrder, error: paidPendingErr },
+    { data: withdrawal, error: withdrawalErr },
+  ] = await Promise.all([
     client.from('payment_orders').select('id')
       .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
+    // 已付款待開通：PayUni 已回 SUCCESS、訂單還在 pending（金額不符時維持
+    // pending 交人工）。錢已收，刪帳號會連訂單與 PayUni 回應一起抹掉。
+    client.from('payment_orders').select('id')
+      .eq('user_id', user.id).eq('status', 'pending')
+      .eq('payuni_response->>Status', 'SUCCESS').limit(1).maybeSingle(),
     client.from('withdrawals').select('id')
       .eq('user_id', user.id).limit(1).maybeSingle(),
   ]);
-  if (completedOrder || withdrawal) {
+  // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
+  // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
+  const guardErr = orderErr ?? paidPendingErr ?? withdrawalErr;
+  if (guardErr) {
+    console.error('[cancel-signup] 守衛讀取失敗:', guardErr);
+    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
+  }
+  if (completedOrder || paidPendingOrder || withdrawal) {
     return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
   }
 
@@ -824,13 +874,15 @@ app.post('/auth/complete-registration', async (c) => {
 // PaymentCheckout「編輯」：讓用戶回到 CompleteProfile 修改基本資料。
 // registrationStep 已改為即時算出（見 buildProfileResponse），這裡不需要
 // 寫任何「step 0」旗標 —— 只要擋掉已付款會員誤觸重置即可；使用者重新
-// 送出 /auth/register 時 registration_step 會自然設回 1。
+// 送出 /auth/register 時 registration_step 會自然設回 1。本端點不寫入任何
+// 資料，這道擋只是讓已付款者在進編輯頁前就得到說明；真正的防線是
+// /auth/register 自己的註冊完成守衛。
 // ============================================================
 app.post('/auth/reset-registration', async (c) => {
   const user = await requireAuth(c);
   if (!user) return c.json({ error: '未授權' }, 401);
 
-  const { data: completedOrder } = await sb()
+  const { data: completedOrder, error } = await sb()
     .from('payment_orders')
     .select('id')
     .eq('user_id', user.id)
@@ -838,6 +890,11 @@ app.post('/auth/reset-registration', async (c) => {
     .limit(1)
     .maybeSingle();
 
+  // 讀不到就不放行（規格書 §5.3：守衛讀不到資料時 fail-closed 回 5xx）。
+  if (error) {
+    console.error('[reset-registration] 守衛讀取失敗:', error);
+    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
+  }
   if (completedOrder) {
     return c.json({ error: '已完成付款，無法重置註冊資料' }, 400);
   }
@@ -847,15 +904,49 @@ app.post('/auth/reset-registration', async (c) => {
 
 // ============================================================
 // GET /referrals/validate/:code
-// CompleteProfile / PaymentCheckout 驗證推薦碼
+// CompleteProfile（註冊第 2 步）/ PaymentCheckout 驗證推薦碼——唯一的入口。
+//
+// 推薦碼是流水號、回應又帶推薦人真名（規格書 §4.2 要求顯示，不遮罩），
+// 所以：需登入（合法呼叫者都在登入後）＋ per 使用者雙窗限流 ＋ 回應不帶推薦人
+// id。枚舉面從匿名降到需登入＋限流，不是關閉：免費帳號仍可慢速查。
+// 停權推薦人由 validate_referral_code 排除，回應與查無此碼同形，不洩漏。
 // ============================================================
 app.get('/referrals/validate/:code', async (c) => {
+  const user = await requireAuth(c);
+  if (!user) return c.json({ error: '未授權' }, 401);
+
+  // 依序計數：被短窗擋下的請求不扣日窗——否則撞牆後連點幾十下就把一整天
+  // 鎖死，懲罰的是手忙腳亂的真人。日窗計的是實際查詢次數。
+  const rateLimited = () =>
+    c.json({
+      valid: false,
+      error: { code: 'rate_limited', message: '請求過於頻繁，請稍後再試' },
+    }, 429);
+  const withinShort = await rateLimit(
+    `referral-validate:${user.id}`,
+    REFERRAL_VALIDATE_RATE_MAX,
+    REFERRAL_VALIDATE_RATE_WINDOW_SECONDS,
+  );
+  if (!withinShort) return rateLimited();
+  const withinDaily = await rateLimit(
+    `referral-validate-day:${user.id}`,
+    REFERRAL_VALIDATE_DAILY_MAX,
+    REFERRAL_VALIDATE_DAILY_WINDOW_SECONDS,
+  );
+  if (!withinDaily) return rateLimited();
+
   const code = c.req.param('code')?.normalize('NFKC').toLowerCase().trim();
   if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
 
   const { data, error } = await sb().rpc('validate_referral_code', { p_code: code });
 
-  if (error || !data || data.length === 0) {
+  // 查詢失敗與查無此碼分開：授權退步或資料庫暫時故障時回 200「不存在」，
+  // 會讓所有碼靜默變無效、使用者改掉正確的碼。
+  if (error) {
+    console.error('[referrals/validate] validate_referral_code failed:', error);
+    return c.json({ valid: false, error: { message: '服務暫時無法使用' } }, 503);
+  }
+  if (!data || data.length === 0) {
     return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
   }
 
@@ -863,13 +954,9 @@ app.get('/referrals/validate/:code', async (c) => {
   return c.json({
     valid: true,
     referrer: {
-      userId: row.referrer_user_id,
       userName: row.referrer_name,
       listingName: row.listing_name ?? null,
     },
-    // 舊欄位名稱（向下相容）
-    referrerName: row.referrer_name,
-    referrerUserId: row.referrer_user_id,
   });
 });
 
@@ -972,34 +1059,50 @@ app.post('/referrals/join-program', async (c) => {
 });
 
 // ============================================================
-// POST /listings/verify-referral-code
-// （向下相容別名，供 CompleteProfile 的 apiRequestJson 呼叫）
+// POST /referrals/invites、/auth/invite/accept（Email 邀請）——處理函式在 referral-invite.ts；
+// 依賴（含限流常數）在這裡組一次注入，該模組不反向 import 本檔。
 // ============================================================
-app.post('/listings/verify-referral-code', async (c) => {
-  let body: any;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ valid: false });
-  }
-  const code = (body?.referralCode || body?.code || '').normalize('NFKC').toLowerCase().trim();
-  if (!code) return c.json({ valid: false, error: { message: '推薦碼不能為空' } });
-
-  const { data, error } = await sb().rpc('validate_referral_code', { p_code: code });
-  if (error || !data || data.length === 0) {
-    return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
-  }
-  const row = data[0];
-  return c.json({
-    valid: true,
-    referrerName: row.referrer_name,
-    referrer: {
-      userId: row.referrer_user_id,
-      userName: row.referrer_name,
-      listingName: row.listing_name ?? null,
+// export 給測試換掉 sb（造 GoTrue 失敗），其餘依賴與正式路由同一份。
+export function referralInviteDeps(): ReferralInviteDeps {
+  return {
+    sb,
+    requireAuth,
+    clientIp,
+    rateLimit,
+    logSystemAlertOnce,
+    read: (key) => Deno.env.get(key),
+    now: () => Date.now(),
+    gotrueTimeoutMs: 10_000,
+    limits: {
+      perUserHour: {
+        max: REFERRAL_INVITE_RATE_MAX,
+        windowSeconds: REFERRAL_INVITE_RATE_WINDOW_SECONDS,
+      },
+      perUserDay: {
+        max: REFERRAL_INVITE_DAILY_MAX,
+        windowSeconds: REFERRAL_INVITE_DAILY_WINDOW_SECONDS,
+      },
+      target: {
+        max: REFERRAL_INVITE_TARGET_MAX,
+        windowSeconds: REFERRAL_INVITE_TARGET_WINDOW_SECONDS,
+      },
+      globalHour: {
+        max: REFERRAL_INVITE_GLOBAL_HOUR_MAX,
+        windowSeconds: REFERRAL_INVITE_GLOBAL_HOUR_WINDOW_SECONDS,
+      },
+      globalDay: {
+        max: REFERRAL_INVITE_GLOBAL_DAY_MAX,
+        windowSeconds: REFERRAL_INVITE_GLOBAL_DAY_WINDOW_SECONDS,
+      },
+      accept: {
+        max: INVITE_ACCEPT_RATE_MAX,
+        windowSeconds: INVITE_ACCEPT_RATE_WINDOW_SECONDS,
+      },
     },
-  });
-});
+  };
+}
+const referralInviteHandlers = createReferralInviteHandlers(referralInviteDeps());
+app.post('/referrals/invites', referralInviteHandlers.invites);
 
 // ============================================================
 // /admin/** 統一守門 middleware：requireAuth + profiles.is_admin。
@@ -2862,17 +2965,6 @@ app.get('/subscriptions/status', async (c) => {
 const MEMBER_VERIFY_TTL_SECONDS = 90;
 
 /**
- * 掃描節流：同一掃描者每分鐘 30 次。
- *
- * 猜 token 本來就不可行（HMAC 簽章、90 秒到期），這道防的是另一件事：開放互掃
- * 之後，任何會籍有效的會員都能呼叫這支端點，「側錄一批他人正在顯示的 QR 再批次
- * 驗證」變成可行的個資收集手段。人工掃描一次至少兩三秒，30 次／分鐘碰不到；
- * 批次濫用則會撞牆。fail-open 與 /auth/check-email 一致：限流器故障不擋正常使用。
- */
-const MEMBER_VERIFY_RATE_MAX = 30;
-const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
-
-/**
  * 一般會員掃到的姓名一律走推薦網絡「二代以上」的那一種遮罩樣式。
  *
  * 具名而不是直接寫 2：`maskNameByGen` 的 gen 參數語意是推薦網絡的「第幾代」，
@@ -2929,12 +3021,12 @@ app.post('/members/verify', async (c) => {
   }
 
   // 2) 節流（per 掃描者，非 per IP：要擋的是「一個人驗一堆碼」，換 IP 沒有意義）。
-  const { data: rateAllowed } = await sb().rpc('bump_rate_limit', {
-    p_key: `verify:${user.id}`,
-    p_max: MEMBER_VERIFY_RATE_MAX,
-    p_window_seconds: MEMBER_VERIFY_RATE_WINDOW_SECONDS,
-  });
-  if (rateAllowed === false) {
+  const rateAllowed = await rateLimit(
+    `verify:${user.id}`,
+    MEMBER_VERIFY_RATE_MAX,
+    MEMBER_VERIFY_RATE_WINDOW_SECONDS,
+  );
+  if (!rateAllowed) {
     return c.json({
       success: false,
       error: { code: 'rate_limited', message: '掃描過於頻繁，請稍後再試' },
@@ -4256,6 +4348,10 @@ app.get('/health', async (c) => {
     // digest。回一個布林值（絕不回傳任何憑證內容）讓「設好了沒」一個 curl 就能回答，
     // 且 Secrets 是逐分支獨立、不從母專案繼承——每個環境都要各自確認。
     memberTokenConfigured: !!read('MEMBER_TOKEN_SECRET'),
+    // Email 邀請（R2）同一個理由：secret 或 FRONTEND_URL 缺了只表現為 503 disabled；
+    // kill switch 另外回報，分得出「沒設好」與「刻意關著」。
+    referralInviteConfigured: !!read('REFERRAL_INVITE_SECRET') && !!read('FRONTEND_URL'),
+    referralInviteEnabled: read('REFERRAL_EMAIL_INVITE_ENABLED') === 'true',
     defaultReferrer,
   });
 });

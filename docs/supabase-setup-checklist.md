@@ -116,6 +116,8 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `PAYUNI_SANDBOX` | **你** | 決定用哪一套憑證與端點 |
 | `PAYUNI_(TEST_)MER_ID` / `_HASH_KEY` / `_HASH_IV` | **你** | 依 mode 擇一套，成套或整組失敗 |
 | `MEMBER_TOKEN_SECRET` | **你** | 會員驗證碼（§13.1）的簽章密鑰；缺了驗證端點一律 500 |
+| `REFERRAL_INVITE_SECRET` | **你** | Email 邀請連結的簽章密鑰（`openssl rand -hex 32`，每個環境各一把、值不同）；缺了寄邀請與接受邀請都回 503 `disabled` |
+| `REFERRAL_EMAIL_INVITE_ENABLED` | **你** | Email 邀請的寄信總開關，`true` 才寄（kill switch）；關掉不影響已寄出的連結 |
 | `RECONCILE_SECRET` | **你（僅正式站）** | 對帳排程的門票；排程只打正式站 |
 | `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
 | `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
@@ -362,6 +364,41 @@ Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 > （見 `.github/workflows/journey.yml`）。OTP 由 Admin `generate_link` 取得，
 > 信件內容無所謂，所以拋棄式分支不需要設 SMTP。
 
+### 2-3 Email 邀請模板（Invite user）
+
+推薦人在站內寄的邀請信（規格書 §7.1）走 GoTrue 的「Invite user」模板。**正式站與 develop 各貼一次**
+（journey 拋棄式分支不需要）。
+
+**導覽**：Dashboard → **Authentication** → **Emails** →「**Invite user**」
+
+| 欄位 | 填什麼 |
+|---|---|
+| **Subject（主旨）** | `你收到一封 Uknow 的邀請`（主旨是 Dashboard 的獨立欄位，不在 html 檔內；不含人名） |
+| **Body（內文）** | `supabase/email-templates/referral-invite.html` 全文（改動請改 repo 這份再貼） |
+
+- 本模板**不含 `{{ .Token }}`**、R2 分支也不用 `{{ .ConfirmationURL }}`：連結由後端以 `FRONTEND_URL`
+  組好放進 `user_metadata.referral_invite_url`，模板以 `{{ .Data.referral_invite_url }}` 讀；推薦人姓名是
+  `{{ .Data.referral_invite_name }}`。`{{ if }}`／`{{ else }}` 的另一支是一般邀請文案，給非 R2 來源的邀請。
+- **正式站不要在 Dashboard 手動 Invite 使用者**：手動邀請的帳號沒有推薦章，點連結會走一般邀請分支。
+- Dashboard 的 OTP 效期、Site URL、Redirect URLs、SMTP 不因本模板而改；密碼強度設定維持現值（前端與
+  後端的密碼規則是 8 字元＋大小寫＋數字，Supabase 端另擋外洩密碼）。
+- 必要的 Secrets：`REFERRAL_INVITE_SECRET`、`REFERRAL_EMAIL_INVITE_ENABLED=true`、`FRONTEND_URL`（步驟 1）。
+  前端另需建置旗標 `VITE_REFERRAL_EMAIL_INVITE=true`（Cloudflare Pages：正式站設 **Production** 作用域、
+  develop 與 PR 預覽設 **Preview** 作用域，設完要重新部署）。**正式站順序：後端先開、收信核對通過才開前端旗標**。
+- 兩支相關函式（service role 才能呼叫）：`purge_stale_referral_invites(p_older_than_days, p_email)` 每日排程
+  `purge-stale-referral-invites` 刪除 7 天內未透過連結設定密碼的邀請空殼（回刪除筆數）；`refund_rate_limit(p_key)`
+  是寄送失敗時退回限流額度。
+
+**客服 SOP：被邀請人要求刪除個資**（未設定密碼前）——Dashboard → SQL Editor 以 service role 執行：
+
+```sql
+select public.purge_stale_referral_invites(p_email => 'someone@example.com');  -- 回刪除筆數；0 表示不是未接受的邀請空殼
+```
+
+只刪「未驗證、沒登入過、帶邀請章、沒有任何訂單」的那一個帳號，GoTrue 稽核列同交易刪除。Supabase 的
+log 管線另存一份 auth 事件（含 email），purge 刪不到，依雲端服務商保存期限保存——回覆當事人時照實說明。
+已設定密碼（已驗證）的帳號不在此範圍，依一般會員刪除流程辦理。
+
 ---
 
 ## ☑️ 步驟 3：確認 PayUni 後台設定
@@ -371,6 +408,10 @@ Supabase 出口 IP 非固定，**不要**用 IP 允許清單。
 | **NotifyURL（背景通知）** | `https://<PROJECT_REF>.supabase.co/functions/v1/api/webhooks/payuni/notify` | 付款成功的伺服器回調；程式已在加密參數帶入，後台若需白名單請填此網址 |
 | **ReturnURL（前景導回）** | `{FRONTEND_URL}/payment/result?tradeNo=...` | 程式自動帶入；PayUni 後台若限制網域請加入你的前端網域 |
 | 金額 | `1200` | 年費固定金額（後端會驗，不符即拒） |
+
+⚠️ **PayUni 測試站依來源地區封鎖**（2026-10-07 已驗證）：法國住宅 IP 回 403、
+台灣 VPN 與美國 GitHub runner 放行。海外手動驗證 sandbox 付款需先連台灣 VPN；
+遇到 403 先查來源 IP，不要先懷疑程式。
 
 ---
 
@@ -402,12 +443,20 @@ curl https://<PROJECT_REF>.supabase.co/functions/v1/api/health
 | `payuniMode` | `sandbox` | `production`（**正式站開放後**；開放前是 `sandbox`） |
 | `payuniConfigured` | `true` | `true` |
 | `memberTokenConfigured` | `true` | `true` |
+| `referralInviteConfigured` | `true` | `true`（Email 邀請上線前可為 `false`） |
+| `referralInviteEnabled` | 依 kill switch | 依 kill switch |
 
 `memberTokenConfigured` 是同一個道理的延伸：`MEMBER_TOKEN_SECRET` 設了沒也
 **沒有外顯訊號**——Secrets 頁只看得到 digest，而缺了要等到有人真的掃一次驗證碼、
 吃到 500 才會發現。它同樣只回布林值、不回傳金鑰內容。**Secrets 逐分支獨立、
 不從母專案繼承**，所以 develop 與正式站要各自 curl 確認一次，別假設設了一邊
 另一邊就有。
+
+`referralInviteConfigured`／`referralInviteEnabled` 同理：缺 `REFERRAL_INVITE_SECRET` 時寄邀請
+（`/referrals/invites`）與接受邀請（`/auth/invite/accept`）都回 503 `disabled`；缺 `FRONTEND_URL`
+只影響寄邀請（組不出連結），接受邀請不讀它。這與 kill switch
+（`REFERRAL_EMAIL_INVITE_ENABLED`）刻意關著時看起來一樣。前者回「設好了沒」，後者回
+「開關開了沒」，兩者都只回布林值。
 
 `payuniMode` 存在的理由：這個設定**沒有任何外顯訊號**。憑證與端點一致時
 PayUni 不會回「(模擬)」浮水印、程式不報錯、儀表板只看得到 secrets 的
@@ -422,6 +471,9 @@ NT$24,000，實際入帳 0 元——是靠人工反推 digest 才看出來的，
 > `deploy-supabase.yml` 裡的 `EXPECT_PRODUCTION_PAYUNI` 改成 `true`。
 > 之後任何 main 部署若偵測到 `payuniMode != production` 會直接紅燈，
 > 不再只是警告。
+>
+> **開放前必做**:從**台灣網路**對正式站真付款一次(PayUni 依來源地區擋人,
+> 見步驟 3 的警告;CI 的 journey 不碰正式站金流)。
 
 ### 5-2 PayUni 變數是否載入
 
@@ -557,9 +609,12 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 - [ ] 步驟 2-1（全網域一次）：SPF / DKIM / DMARC / MX 四筆齊全，且
       mail-tester 上 SPF、DKIM、DMARC **三個都 pass**（不是「Supabase 存檔成功」）
 - [ ] 步驟 2-2：Magic Link / Confirm signup / Reset Password 模板已含 `{{ .Token }}`
+- [ ] 步驟 2-3：Invite user 模板已貼 `referral-invite.html`，**主旨欄＝你收到一封 Uknow 的邀請**；
+      `REFERRAL_INVITE_SECRET`（各環境不同值）與 `REFERRAL_EMAIL_INVITE_ENABLED=true` 已設，
+      health 的 `referralInviteConfigured`／`referralInviteEnabled` 皆為 `true`
 - [ ] 步驟 3：PayUni 後台 NotifyURL / ReturnURL 已確認，且環境與 `PAYUNI_SANDBOX` 一致
 - [ ] 步驟 4：`api` 的 `verify_jwt = false`
-- [ ] 步驟 5：health 的 `sha` 相符、sandbox 付款成功、收到 OTP 驗證碼信
+- [ ] 步驟 5：health 的 `sha` 相符、`defaultReferrer` 為 `ok`（已啟用機制的環境）、sandbox 付款成功、收到 OTP 驗證碼信
 - [ ] 步驟 6（僅啟用預設推薦人時）：**平台帳號是該環境第一個付款成功的**，
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
 - [ ] 步驟 7（僅全新資料庫）：宣告前 `check` 確認是預定的帳號且 `userName` 非空；

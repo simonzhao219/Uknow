@@ -47,7 +47,7 @@ export function useRewardData(): UseRewardDataResult {
     try {
       // 訂閱狀態不在這裡打——收斂到 useSubscription 作為唯一來源，避免
       // 兩份獨立快取在到期/續訂邊界互相矛盾（提領資格由 RewardDashboard
-      // 直接讀 useSubscription 的 status 傳入 WithdrawalSection）。
+      // 直接讀 useSubscription 的 status 傳入 WithdrawalAction）。
       const [rewardsResult, withdrawalsResult] = await Promise.all([
         apiRequestJson<{ success: boolean; data: RewardsData }>(buildApiUrl('/rewards')),
         apiRequestJson<{ success: boolean; data: { withdrawals: WithdrawalRecord[] } }>(

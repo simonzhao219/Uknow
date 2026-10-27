@@ -39,6 +39,7 @@ pytest                      # 全套：骨架 → 30 人建樹 → 樹/帳本斷
 pytest -m orgbuild          # 只跑 30 人建樹（A0 未建置時會由 builder 一併補建）
 pytest -m rewards           # 只跑樹/帳本斷言（樹未建置時整批 skip 並提示）
 pytest -m renewal_saga      # 只跑 70_ 阿凱的七年（獨立 cast，不需 30 人樹）
+pytest -m invite            # 只跑 80_ Email 邀請（API 版；需已建好的 30 人樹，否則整批 skip）
 pytest tools/               # 離線單元測試（twid、orgchart、time_shift——不需環境與瀏覽器）
 ```
 
@@ -92,7 +93,7 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
 
 執行期憑證對照存在 `.run/<run_id>.json`（gitignored）。
 
-## 目前進度與範圍界線（M5 止）
+## 目前進度與範圍界線（M5 止，另加 80_）
 
 已落地：
 - **M1**：單人 walking skeleton（`00_skeleton.feature`）。
@@ -138,6 +139,11 @@ python tools/cleanup.py --run-id j07211030 [--dry-run]
     種 credit、預設碼接線（見 `tools/seed_time_machine.py`）；
   - CI 窄選：`pytest_expr` dispatch 輸入（自動補 `and not seed`、
     `MIN_FILTERED` 三態 floor），供逐章 TDD 迭代取證。
+
+- **Email 邀請（R2，API 版）**：`80_referral_email_invite`——D5 寄邀請 → service
+  key 讀信中連結 → accept（設密碼同時驗證 email）→ 以該密碼登入；同信箱 24 小時內
+  再邀不重寄；客服以 `p_email` 立即刪除。設定密碼畫面與完善資料頁的 GUI 步驟由
+  前端工項補進同一個 feature。
 
 **已知產品落差**：測試設計過程發現的規格／實作落差已於 2026-07 全部
 回填規格書——現存落差集中列在**規格書 §14**（身分證字號唯一性、到期前

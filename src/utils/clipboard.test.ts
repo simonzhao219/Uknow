@@ -16,6 +16,7 @@ function stubExecCommand(behavior: 'ok' | 'refused' | 'throws') {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  vi.restoreAllMocks();
 });
 
 describe('copyToClipboard', () => {
@@ -46,9 +47,57 @@ describe('copyToClipboard', () => {
     expect(document.querySelectorAll('textarea')).toHaveLength(0);
   });
 
+  it('複製完把焦點還給原本的元素，鍵盤使用者不會掉到頁首', () => {
+    stubExecCommand('ok');
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    copyToClipboard('UK1234');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('暫存 textarea 唯讀且 16px：iOS 聚焦時不跳鍵盤、不放大整頁', () => {
+    let seen: { readOnly: boolean; fontSize: string } | null = null;
+    document.execCommand = vi.fn(() => {
+      const active = document.activeElement as HTMLTextAreaElement;
+      seen = { readOnly: active.readOnly, fontSize: active.style.fontSize };
+      return true;
+    });
+    copyToClipboard('UK1234');
+    expect(seen).toEqual({ readOnly: true, fontSize: '16px' });
+  });
+
   it('execCommand 擲錯時仍移除暫存 textarea', () => {
     stubExecCommand('throws');
     copyToClipboard('UK1234');
     expect(document.querySelectorAll('textarea')).toHaveLength(0);
+  });
+
+  it('execCommand 擲錯時也把焦點還給原本的元素', () => {
+    stubExecCommand('throws');
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    copyToClipboard('UK1234');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('明確選取整段文字：iOS Safari 的 select() 不一定選得到唯讀欄位', () => {
+    // jsdom 的 select() 本來就會選全段，只看 selectionStart/End 分不出有沒有這一步。
+    const setSelectionRange = vi.spyOn(HTMLTextAreaElement.prototype, 'setSelectionRange');
+    stubExecCommand('ok');
+    copyToClipboard('012-3456789');
+    expect(setSelectionRange).toHaveBeenCalledWith(0, '012-3456789'.length);
+  });
+
+  it('暫存 textarea 固定在畫面外，聚焦時不把頁面捲走', () => {
+    let seen: { position: string; left: string; top: string } | null = null;
+    document.execCommand = vi.fn(() => {
+      const { position, left, top } = (document.activeElement as HTMLTextAreaElement).style;
+      seen = { position, left, top };
+      return true;
+    });
+    copyToClipboard('UK1234');
+    expect(seen).toEqual({ position: 'fixed', left: '-999999px', top: '-999999px' });
   });
 });

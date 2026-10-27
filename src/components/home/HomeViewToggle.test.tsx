@@ -58,4 +58,27 @@ describe('HomeViewToggle', () => {
     }
     expect(current.classList.contains('bg-primary')).toBe(false);
   });
+
+  // S2e 審查遺留：分段切換原本沒有自帶焦點樣式，只靠 base 層外框（瀏覽器預設寬度）。
+  // 選中態是 --sel 實心，環與底色同色會融成一塊，所以環外要有 1px 間隙（§12.12）。
+  it('分段鈕自帶 3px 全不透明焦點環，與選中底色之間留 1px 間隙', () => {
+    render(<HomeViewToggle value="photo" onChange={() => {}} />);
+    for (const name of ['照片檢視', '詳細檢視']) {
+      const button = screen.getByRole('button', { name });
+      for (const c of [
+        'focus-visible:ring-[3px]',
+        'focus-visible:ring-ring',
+        'focus-visible:ring-offset-1',
+      ]) {
+        expect(button.classList.contains(c), `${name} ${c}`).toBe(true);
+      }
+    }
+  });
+
+  it('觸控裝置上分段鈕高度達 44px', () => {
+    render(<HomeViewToggle value="photo" onChange={() => {}} />);
+    expect(
+      screen.getByRole('button', { name: '照片檢視' }).classList.contains('pointer-coarse:h-11'),
+    ).toBe(true);
+  });
 });

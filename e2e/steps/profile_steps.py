@@ -20,9 +20,24 @@ def referral_code_invalid(api_mock, code, message):
     api_mock.set_referral_code_invalid(message=message)
 
 
+@given("checking referral codes is rate limited")
+def referral_validate_rate_limited(api_mock):
+    api_mock.rate_limit_referral_validate()
+
+
 @given(parsers.parse("saving the profile succeeds with registration step {step:d}"))
 def save_profile_succeeds(api_mock, step):
     api_mock.set_register_success(step)
+
+
+@given("registration completes in another tab before the profile is saved")
+def registration_completed_elsewhere(api_mock):
+    api_mock.set_register_completed_elsewhere()
+
+
+@then("I should see the profile locked notice")
+def profile_locked_notice(page):
+    expect(page.get_by_role("dialog", name="資料已鎖定")).to_be_visible(timeout=5_000)
 
 
 @when(
@@ -92,7 +107,7 @@ def terms_dialog_fits_and_scrolls(page, complete_profile_page):
     )
 
     # 2) The close button stays reachable (fixed header, not scrolled away).
-    expect(page.get_by_role("button", name="Close")).to_be_visible()
+    expect(page.get_by_role("button", name="關閉")).to_be_visible()
 
     # 3) The long terms text must actually be scrollable inside the body,
     #    i.e. content is taller than the clipped, bounded body.

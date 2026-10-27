@@ -51,11 +51,12 @@ export function normalizeMyQrTab(raw: unknown): MyQrTab {
 }
 
 /**
- * 推導當下有哪些分頁。**這是「哪些分頁存在」的單一事實來源**——會員中心的
- * 推薦碼欄位（MyQrEntry）與「我的 QR」頁都吃它。
+ * 推導當下有哪些分頁。**這是「哪些分頁存在」的單一事實來源**——元件一律經
+ * myQrTabsForUser 取用（「我的 QR」頁與其邀請面板、「邀請好友」鈕、推薦碼欄；
+ * 「我的 QR」入口鈕不讀它——驗證碼分頁對所有人都在）。
  *
  * 為什麼不各自寫 `joined && !!referralCode`：那個判斷式在本專案已經被複製過
- * 兩份（MyQrEntry 的 canShowCode、MyQrDialog 的 canShareInvite），而 3967f69
+ * 兩份（當年的 MyQrEntry canShowCode、MyQrDialog canShareInvite），而 3967f69
  * 的事故正是兩份幾乎相同的邏輯只改了一邊——推薦管理頁因此把推薦碼提前印給
  * 尚未加入推薦計畫的人看。第三份只會讓同一個形狀再發生一次。
  */
@@ -131,4 +132,45 @@ export function resolveMyQrTab(
   if (requestedTab && available[requestedTab]) return requestedTab;
   if (available[preferred]) return preferred;
   return 'verify';
+}
+
+/** 推導分頁所需的會員欄位——全部取自 UserContext（`/profile`），同一份快照。 */
+export interface MyQrTabUser {
+  referralProgramJoined?: boolean | null;
+  referralCode?: string | null;
+  isAdmin?: boolean | null;
+  accountStatus?: string | null;
+}
+
+/**
+ * 從會員資料推導分頁。「我的 QR」頁、邀請好友面板與推薦入口（InviteFriendButton、
+ * ReferralCodeWithCopy）都吃這一支，canScan 的判斷因此只有這一份。
+ */
+export function myQrTabsForUser(user: MyQrTabUser | null | undefined): MyQrTabAvailability {
+  return availableMyQrTabs({
+    joined: user?.referralProgramJoined,
+    referralCode: user?.referralCode,
+    // 與後端 POST /members/verify 的授權同一把尺：管理員（可能沒有訂閱）或會籍
+    // 有效的會員。前端這份只是門面——真正的邊界在那支 handler 裡。
+    canScan: user?.isAdmin === true || user?.accountStatus === 'active',
+  });
+}
+
+export type ReferralJoinState = 'joined' | 'not-joined' | 'unknown';
+
+/**
+ * 「加入推薦計畫了沒」——「已付費、未加入推薦計畫」是正式狀態（總綱 §0 原則 5：首購者
+ * 100% 從這裡開始）。**還不知道**（會員資料尚未取得）是第三態，不能被畫成「未加入」
+ * （原則 1：沒確認的狀態不畫成已知狀態）。任務中心與獎勵頁的說明文字吃這一支，
+ * 不各寫 `=== false`。
+ *
+ * 只回答「加入了沒」。能不能出示、複製、分享推薦碼仍然只由 myQrTabsForUser 決定
+ * （invite = joined && referralCode，碼在首購時就已發出）——不要用這支另寫那個閘門。
+ */
+export function referralJoinState(
+  user: { referralProgramJoined?: boolean | null } | null | undefined,
+): ReferralJoinState {
+  if (user?.referralProgramJoined === true) return 'joined';
+  if (user?.referralProgramJoined === false) return 'not-joined';
+  return 'unknown';
 }
