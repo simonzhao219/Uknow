@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: read   # 告警掃描要查上一次成功 run 的時間(workflow runs API)
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4
@@ -119,14 +120,16 @@ jobs:
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
         run: |
           set -uo pipefail
-          prev="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/reconcile-payments.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].created_at // empty' 2>/dev/null || true)"
+          prev="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/reconcile-payments.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].created_at // empty' 2>/tmp/gh-err.txt || true)"
           minutes=70
-          if [ -n "$prev" ]; then
+          if [ -z "$prev" ]; then
+            echo "::warning::查不到上一次成功 run 的時間（$(head -c 200 /tmp/gh-err.txt 2>/dev/null)），窗口退回固定 ${minutes} 分鐘；排程被丟棄時可能漏告警。"
+          else
             minutes="$(python3 -c "
           import datetime, math, sys
           p = datetime.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
           m = math.ceil((datetime.datetime.now(datetime.timezone.utc) - p).total_seconds() / 60) + 1
-          print(min(max(m, 1), 1440))
+          print(min(max(m, 1), 1440))  # 上限同端點 RECENT_ALERTS_MAX_MINUTES
           " "$prev")"
           fi
           code="$(curl -sS -o /tmp/alerts.json -w '%{http_code}' --max-time 30 \
@@ -139,7 +142,11 @@ jobs:
             exit 0
           fi
           if [ "$code" != "200" ]; then
-            echo "::error::告警查詢失敗（HTTP $code）：$(head -c 300 /tmp/alerts.json)"
+            if [ "$code" = "401" ]; then
+              echo "::error::告警查詢被拒（401）：RECONCILE_SECRET 與後端不一致"
+            else
+              echo "::error::告警查詢失敗（HTTP $code，000＝連線失敗）：$(head -c 300 /tmp/alerts.json)"
+            fi
             exit 1
           fi
           python3 - "$minutes" >> "$GITHUB_OUTPUT" <<'PY'
