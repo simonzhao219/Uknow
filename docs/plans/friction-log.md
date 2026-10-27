@@ -3166,6 +3166,17 @@ PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
 償還方向：查詢層非 SUCCESS 至少 `logSystemAlertOnce` 帶回 PayUni 的 `Message`，讓「查無此單」與「參數錯」分得開；
 再以 sandbox 實打一輪確認欄位名。
 
+償還進度（2026-10-27，`fix/payuni-query-alert`）：方向 1、2 已做——`QueryResult` 加可選 `queryFailure` 把 PayUni
+原文 Status／Message 帶過型別邊界（根因是兩態型別沒有位置放「這輪沒問到」，查詢函式只能折進「處理中」）；
+對帳迴圈依 Status＋Message `logSystemAlertOnce('payuni-query')`（error 級，每組最多一筆）；查詢層失敗下標
+expired 前依訂單號寫 warning，確認未付款不告警（`status='expired'` 本身即紀錄，info 會把真告警擠出 admin 頁）。
+轉移條件未改——主 session 裁決（#407）：暫停 expire 會讓壞掉的查詢層餓死掃描視窗，要等方向 3 的 sandbox 碼表
+才能做「未知碼不標、已知良性碼才標」（第 2 波）。仍欠：方向 3 sandbox 實打（需 sandbox 憑證與人工）。為什麼當時沒攔到：可注入 `queryFn` 的測試只餵過乾淨的 `{ stillProcessing: true }`，
+從沒有「查詢層出錯」的輸入形狀——**注入點的測試要至少餵一次上游的錯誤形狀**。
+
+同類掃描順帶記債：對帳迴圈 `resolveFn` 回 `ok:false` 時用無去重的 `logSystemAlert`，同一張卡單每輪（每小時）
+重寫一筆——不是靜默而是洗版，去重鍵要另判（`tradeNo`＋`message`），不在 #395 範圍。
+
 ## 2026-10-26～27｜誤擋／漏網（環境、流程）｜R2 Email 邀請（#399 後端、前端 PR）施工期間的摩擦，從 progress.md 整併
 
 - **DB 測試紅燈需要「stub migration」**：函式不存在時 `has_function_privilege` 直接拋錯（不是斷言紅），紅燈 commit 只好帶只有
