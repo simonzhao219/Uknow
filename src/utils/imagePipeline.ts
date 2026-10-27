@@ -3,7 +3,17 @@
  * 重新編碼即剝除 EXIF 是需求：所以**編碼失敗不退回原檔上傳**。
  * 瀏覽器 API 都經注入的 ImageIO，純邏輯可在 node 測試。
  */
-import type { PixelCrop, Size } from './imageGeometry';
+import {
+  MAX_PHOTO_SIZE,
+  MAX_PHOTO_SOURCE_SIZE,
+  PHOTO_MAX_EDGE,
+  PHOTO_QUALITY_STEPS,
+  PHOTO_TARGET_BYTES,
+} from './constants';
+import { clampCrop, outputEdge, type PixelCrop, scaleCrop, type Size } from './imageGeometry';
+
+/** 解碼時的限邊：留 2 倍輸出邊長的餘裕讓取景精度夠，又不至於把 48MP 全幅解進記憶體。 */
+const DECODE_MAX_EDGE = PHOTO_MAX_EDGE * 2;
 
 export interface DecodedImage extends Size {
   /** ImageIO 自己的不透明把手（例如 ImageBitmap）。 */
@@ -31,8 +41,10 @@ export type PhotoErrorCode =
 export type PhotoResult<T> = { ok: true; value: T } | { ok: false; error: PhotoErrorCode };
 
 /** 解碼階段的錯誤分流：記憶體不足與格式無法讀取要給不同的出路。 */
-export function classifyDecodeError(_err: unknown): 'out_of_memory' | 'unreadable' {
-  return 'unreadable';
+export function classifyDecodeError(err: unknown): 'out_of_memory' | 'unreadable' {
+  if (err instanceof RangeError) return 'out_of_memory';
+  const message = err instanceof Error ? err.message : '';
+  return /memory|allocation/i.test(message) ? 'out_of_memory' : 'unreadable';
 }
 
 export interface LoadedPhoto {
@@ -41,8 +53,15 @@ export interface LoadedPhoto {
   file: File;
 }
 
-export async function loadPhoto(_io: ImageIO, _file: File): Promise<PhotoResult<LoadedPhoto>> {
-  return { ok: false, error: 'unreadable' };
+export async function loadPhoto(io: ImageIO, file: File): Promise<PhotoResult<LoadedPhoto>> {
+  if (!io.supported()) return { ok: false, error: 'unsupported' };
+  if (file.size > MAX_PHOTO_SOURCE_SIZE) return { ok: false, error: 'source_too_large' };
+  try {
+    const image = await io.decode(file, DECODE_MAX_EDGE);
+    return { ok: true, value: { image, file } };
+  } catch (err) {
+    return { ok: false, error: classifyDecodeError(err) };
+  }
 }
 
 export interface ExportedPhoto {
@@ -57,10 +76,27 @@ export interface ExportedPhoto {
  * 品質階梯由高到低重編，第一個 ≤ 目標大小的就收；走完仍超標但 ≤ 5MB 照收；>5MB 或任何失敗 → unprocessable。
  */
 export async function exportPhoto(
-  _io: ImageIO,
-  _photo: LoadedPhoto,
-  _crop: PixelCrop,
-  _sourceSize: Size,
+  io: ImageIO,
+  photo: LoadedPhoto,
+  crop: PixelCrop,
+  sourceSize: Size,
 ): Promise<PhotoResult<ExportedPhoto>> {
-  return { ok: false, error: 'unprocessable' };
+  try {
+    const scaled = clampCrop(scaleCrop(crop, sourceSize, photo.image), photo.image);
+    const canvas = await io.render(photo.image, scaled, outputEdge(scaled, PHOTO_MAX_EDGE));
+    let last: { blob: Blob; quality: number } | null = null;
+    for (const quality of PHOTO_QUALITY_STEPS) {
+      const blob = await io.encode(canvas, quality);
+      if (!blob) return { ok: false, error: 'unprocessable' };
+      last = { blob, quality };
+      if (blob.size <= PHOTO_TARGET_BYTES) break;
+    }
+    if (!last || last.blob.size > MAX_PHOTO_SIZE) return { ok: false, error: 'unprocessable' };
+    return {
+      ok: true,
+      value: { ...last, downscaled: photo.file.size > MAX_PHOTO_SIZE },
+    };
+  } catch {
+    return { ok: false, error: 'unprocessable' };
+  }
 }
