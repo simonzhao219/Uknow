@@ -1,4 +1,10 @@
-import { apiErrorFromBody, apiRequest, buildApiUrl, extractApiErrorCode } from './apiClient';
+import {
+  ApiError,
+  apiErrorFromBody,
+  apiRequest,
+  buildApiUrl,
+  extractApiErrorCode,
+} from './apiClient';
 
 /**
  * 刊登照片的 Storage 清理（對應後端 DELETE /listings/photos、DELETE /listings/:id）。
@@ -72,6 +78,18 @@ export async function deleteListing(id: string): Promise<'deleted' | 'already-de
 }
 
 /** 上傳一張已處理好的 JPEG（走 apiClient：附 token、401 refresh）；回傳 public URL。 */
-export async function uploadListingPhoto(_blob: Blob): Promise<string> {
-  return '';
+export async function uploadListingPhoto(blob: Blob): Promise<string> {
+  const form = new FormData();
+  form.append('file', new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+  const res = await apiRequest(buildApiUrl('/listings/upload-photo'), {
+    method: 'POST',
+    body: form,
+  });
+  const body = await readJson(res);
+  if (!res.ok) throw apiErrorFromBody(body, res.status);
+  const photoUrl = (body as { photoUrl?: unknown } | null)?.photoUrl;
+  if (typeof photoUrl !== 'string' || !photoUrl) {
+    throw new ApiError('上傳失敗：伺服器沒有回傳照片網址', res.status);
+  }
+  return photoUrl;
 }

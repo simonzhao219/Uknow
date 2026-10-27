@@ -14,14 +14,14 @@
 | 1 | 1-5 | 文件（規格書 §11 清理行為＋§14 新列、supabase-functions.md 區段表） | ✅ | （文件，無紅燈） | （見 git log） |
 | 2 前端管線 | 2-1 | apiRequest 支援 FormData | ✅ 綠 | d904dea0 | （見 git log） |
 | 2 | 2-2 | imageGeometry／imagePipeline | ✅ 綠（實作在 wip commit，測試修正 e04a0824 後綠） | 4ce78c37（修正 e04a0824） | （見 git log） |
-| 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ⬜ 未開始 | | |
+| 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ✅ 綠 | d03a605f | （見 git log） |
 | 2 | 2-4 | PhotoPicker／PhotoCropDialog 接 Create／Edit | ⬜ 未開始 | | |
 | 2 | 2-5 | e2e／journey page object 同步 | ⬜ 未開始 | | |
 | 2 | 2-6 | 文件與 bundle 閘門 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1、2-2 綠；下一步 2-3 useListingPhotos 狀態機＋uploadListingPhoto。
+PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-3 綠；下一步 2-4a PhotoPicker／PhotoCropDialog（需 npm i react-easy-crop）。
 
 ## 偏離規劃（記入 PR 描述）
 
