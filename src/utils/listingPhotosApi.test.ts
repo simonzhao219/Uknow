@@ -18,6 +18,7 @@ import {
   LISTING_PHOTOS_BUCKET,
   photoUrlToPath,
   removedPaths,
+  uploadListingPhoto,
 } from './listingPhotosApi';
 
 const UID = '11111111-2222-3333-4444-555555555555';
@@ -155,5 +156,36 @@ describe('deleteListing', () => {
       json(500, { success: false, error: { code: 'delete_failed', message: '刪除失敗' } }),
     );
     await expect(deleteListing('abc')).rejects.toMatchObject({ status: 500, message: '刪除失敗' });
+  });
+});
+
+describe('uploadListingPhoto', () => {
+  const blob = () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' });
+
+  it('以 multipart POST /listings/upload-photo，欄位 file 為 JPEG，回傳 photoUrl', async () => {
+    apiRequest.mockResolvedValue(
+      json(200, { success: true, photoUrl: 'https://cdn.test/u/1.jpg' }),
+    );
+    await expect(uploadListingPhoto(blob())).resolves.toBe('https://cdn.test/u/1.jpg');
+    const [url, init] = apiRequest.mock.calls[0];
+    expect(url).toBe('https://api.test/listings/upload-photo');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    const file = (init.body as FormData).get('file') as File;
+    expect(file.type).toBe('image/jpeg');
+    expect(file.name).toMatch(/\.jpg$/);
+  });
+
+  it('後端字串信封的錯誤訊息被讀出來（不是通用 fallback）', async () => {
+    apiRequest.mockResolvedValue(json(400, { error: '檔案不得超過 5MB' }));
+    const err = await uploadListingPhoto(blob()).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe('檔案不得超過 5MB');
+    expect(err.status).toBe(400);
+  });
+
+  it('成功但沒有 photoUrl → throw（不回傳空字串）', async () => {
+    apiRequest.mockResolvedValue(json(200, { success: true }));
+    await expect(uploadListingPhoto(blob())).rejects.toBeInstanceOf(ApiError);
   });
 });
