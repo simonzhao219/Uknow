@@ -3185,3 +3185,6 @@ PayUni ExpireDate 3 天＋1 天緩衝）就把訂單標 `expired`。
   與 2026-10-21 S7a 同一形狀，這次走了合法逃生口但代價是牆鐘。處置建議：`/tdd-implement` 的紅燈步驟加一句「逐條讀失敗原因」。
 - **web 容器的 Playwright 版本**：`pip install -r e2e/requirements.txt` 會裝到與預裝 Chromium 不合的 playwright（1.56 對 1243 版瀏覽器），
   e2e 起不來；改裝與 node 側相同的 `playwright==1.63.0` 才行。
+- **交接給 T1（登入狀態信任）**：R2 前端重寫了 `AuthPage.tsx` 的既有 session 檢查 effect——產出 `sessionState` 三態
+  （`checking`／`signed_in`／`signed_out`）、4 秒逾時視為未登入、清理過期 session 的 `signOut` 之後寫回邀請 token（否則
+  App.tsx 的 SIGNED_OUT 會清掉、重新整理掉回 Step 1）。T1 規劃與 rebase 時以這版為準，三件事都要保留；effect 上方有同句註解。
