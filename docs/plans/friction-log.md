@@ -3239,3 +3239,10 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **`create_session` 不帶 `source_url` 的 session 沒有 repo**（平台）：主 session 開 2-5 e2e session 時沒帶 `source_url`，容器 `/home/user` 是空的，
   執行 session 的 `add_repo` 又被分類器擋（Access Added As A Means），只能封存重開。規則：主 session 開執行 session 一律帶
   `source_url=https://github.com/simonzhao219/Uknow` 與 `source_revision=<要切的 base 分支>`；dispatch-prompts 的共用開頭補這一句。
+- **worktree 裡的 `node_modules` 符號連結被 commit 進 develop、再隨晉升進 main**（漏網，be05672f）：主 session 在 scratchpad
+  worktree 用符號連結指向主 repo 的 `node_modules` 省一次 `npm ci`，`git add -A` 把連結當檔案收進 docs commit——`.gitignore` 的
+  `node_modules/`（結尾斜線）只匹配目錄，不匹配符號連結；pre-commit 與 CI 都沒有一層在管「被追蹤的路徑裡有沒有不該存在的東西」。
+  修法：`git rm --cached node_modules`、`.gitignore` 改成 `node_modules`（去斜線，目錄與連結都吃）；規則：worktree 一律 `npm ci`，不連結。
+- **`workflow_run` 觸發的部署 run 在 API 上顯示的 head 是預設分支**（平台語意，差點誤判）：`deploy-supabase` 對 main 的部署 run，
+  `head_branch`／`head_sha` 顯示 develop 當下 HEAD，不是 main；要找正式站那筆得看「建立時間緊跟 main 的 CI push run」或 run 內
+  `github.event.workflow_run.head_branch`。寫進 §7 核准步驟，免得業主按錯筆。

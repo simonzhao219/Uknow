@@ -256,7 +256,7 @@ commit;
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
 11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
 12. ~~Cloudflare Pages 儀表板設 `VITE_REFERRAL_EMAIL_INVITE=true` 後 Retry~~ 實測無效（裁決 31）：旗標改寫進 git 的 `.env.production`（fix PR → develop → 隨第三次晉升上 main）。上 main 後開 https://uknow.com.tw，用已加入推薦計畫的帳號按「邀請好友」確認邀請卡有 Email 欄。儀表板那個變數可刪可留（git 的值優先且相同）。
-13. **（10/28 醒來，裁決 33）** GitHub → Actions → `deploy-supabase` 最新一筆（main 66c2cf0）→ Review deployments → 核准 `production` → 等綠 → 開 https://uknow.com.tw/api/health 確認 `sha` 為 `66c2cf0`（開頭）。接著手動測：(a) 刊登管理建立／編輯頁選 3 張照片 → 每張取景 → 完成 → 上傳 → 送出，手機上試返回鍵只關取景；(b) 會員中心刊登卡與推薦卡同高、未刊登時「立即刊登」與「邀請好友」同一排；(c) 已加入推薦計畫的帳號按「邀請好友」出現 Email 邀請卡（旗標已在 git），寄到第二信箱、連結落在設定密碼頁、再寄一次連結不同。測完回主 session 一句，再進清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 → 真付款 → 宣布。
+13. **（10/28 醒來，裁決 33）** GitHub → Actions → `deploy-supabase` 最新一筆（main 8b1b8abf，run 40588572586；66c2cf0 那筆已於 04:05 核准並部署綠）→ Review deployments → 核准 `production` → 等綠 → 開 https://uknow.com.tw/api/health 確認 `sha` 為 `8b1b8ab`（開頭）。接著手動測：(a) 刊登管理建立／編輯頁選 3 張照片 → 每張取景 → 完成 → 上傳 → 送出，手機上試返回鍵只關取景；(b) 會員中心刊登卡與推薦卡同高、未刊登時「立即刊登」與「邀請好友」同一排；(c) 已加入推薦計畫的帳號按「邀請好友」出現 Email 邀請卡（旗標已在 git），寄到第二信箱、連結落在設定密碼頁、再寄一次連結不同。測完回主 session 一句，再進清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 → 真付款 → 宣布。
 13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
 ## 8. 進度與異動紀錄（主 session 每小時一列）
@@ -317,6 +317,7 @@ commit;
 | 10/28 03:15–03:35 | #421 rebase 後 head ab2d09a CI 全綠 → 轉 ready → **合進 develop（e0b286f）**，P1a 收工。develop 現含 #419 旗標、#422 刊登卡、#421 照片管線。主 session 開**第三次晉升 PR**（develop e0b286f → main）；#415 改為晉升後再合（docs，不擋上線） | 晉升 PR journey-full 綠 → 合進 main → 業主醒來核准 production |
 | 10/28 03:35–04:05 | **#423 journey-full（真後端 26 分鐘）＋全軌綠 → 轉 ready → 合進 main（66c2cf0）**。正式站 Edge Function 部署在 GitHub `production` 環境等業主核准；Cloudflare 會自動建 main 的前端。#415 已 rebase（333dff6，CI 綠）等這則紀錄推上後再合。業主醒來清單見 §7 第 13 步 | 業主核准 production → `/health` sha=66c2cf0 → 手動測 → 清 bucket／清資料 → PayUni |
 | 10/28 04:05–05:10 | 業主醒來在正式站實測，提出裁決 34、35（取景框填滿、縮圖叉叉／點縮圖調整／微調 4px）→ P1a 開 **#425**（紅 bcd4b7a7、f29aa302）→ 主 session 審 diff → CI 綠 → **合進 develop（98b9d95）**。業主另一 session 合入 **#424**（e2e 改跑官方 Playwright image，develop CI 綠 11 分鐘）。#415 的 api-tests 兩度映像限流＋job 20 分鐘上限（supabase start 17 分鐘），改 rebase 到新 develop 重跑。開**第四次晉升 PR**（develop 98b9d95 → main，含 #424、#425） | 第四次晉升 journey-full 綠 → 合 main → 業主核准 production（核准最新那筆）；#415 晉升後再合 |
+| 10/28 05:10–05:40 | **#426 journey-full 綠（26 分鐘）＋全軌綠 → 合進 main（8b1b8abf）**；正式站 Edge Function 部署 run 40588572586 停在 `production` 等核准（workflow_run 觸發的 run 在 API 上顯示的 head 是預設分支 develop，不是 main——找 run 看建立時間緊跟 main 的 CI push run）。#415 合進 develop（21707dc），session 分支重切自 develop。發現 be05672f 把 worktree 的 `node_modules` 符號連結 commit 進 develop（已隨晉升進 main，無害但是垃圾）：本 PR `git rm` 並把 `.gitignore` 改成 `node_modules`（去斜線），friction-log 記了。第 2 波 friction 補兩條：api-tests job 20 分鐘上限（`supabase start` 拉映像 17 分鐘）、#424 後 e2e 11 分鐘 | 業主核准 production → `/health` sha 開頭 8b1b8ab → §7 第 13 步手動測 → 清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -324,7 +325,7 @@ commit;
 |---|---|---|---|---|---|
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅、#412 ✅ 已合併 | 收工 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
-| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅（PR 1）；**#421 ✅ 03:30 合進 develop（PR 2）**，收工：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅（PR 1）；**#421 ✅ 03:30 合進 develop（PR 2）**，收工：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 收工；#425（裁決 34、35）亦由此 session 完成，留著不封存以接照片管線回饋 |
 | P1a-e2e | `session_01MQovbErnhEXgHjQQjw9XvG`（首開 `…EJErP6…` 未帶 repo，已封存） | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
 | 刊登卡 | `session_01MQovbBaaYSmpxZoDwfmXj2` | Sonnet | `fix/member-center-listing-card` | 裁決 32；#422 ✅ 03:10 合進 develop，session 已封存 | — |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
@@ -343,6 +344,7 @@ commit;
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
 | 8 | ~~核准建拋棄式分支~~ 業主自己在 Dashboard 開了、演練完成 | ✅ |
+| 12 | 核准 production 部署（main 8b1b8abf，Actions `deploy-supabase` run 40588572586 → Review deployments）→ `/health` 的 `sha` 開頭 `8b1b8ab` → §7 第 13 步手動測 | ⬜ |
 | 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
 | 7 | ~~手動封存兩個空 session~~ | ✅ |
 | 6 | ~~寄信上限與 SMTP 確認~~ 17:05 完成 | ✅ |
