@@ -228,6 +228,8 @@ commit;
 | SEO 進階（AEO／GEO） | M | FAQ 與服務者頁 JSON-LD、llms.txt、公開頁預渲染（建置流程變更，三段式）、服務者動態 sitemap（後端產生）；基礎版在窗口 PR `fix/brand-icons-seo` |
 | journey harness 配合 PayUni sandbox 新表單 | S | `payuni_sandbox_page.py` 重新定位卡號欄與送出鍵；11/03 前把 ci.yml journey-full 改回 sandbox（規則 13 到期自動紅） |
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
+| 框架修訂（第 1 波 friction-log 2026-10-26～27 兩節） | S | `tdd-test-guard` 擴到 Bash 寫 `*.test.*`（bash-guard 新類）；bash-guard 的 journey 判準只看 `pytest` 在指令位置；ci.yml e2e 的 apt 步驟獨立＋規則 12 退避、api-tests `supabase start` 加退避並把規則 12 擴到它；`/tdd-implement` 紅燈步驟加「逐條讀失敗原因」；dispatch-prompts 逃生口 2 改成「業主親自到執行 session 貼授權句」；e2e/requirements 釘 `playwright==1.63.0` |
+| 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
 
