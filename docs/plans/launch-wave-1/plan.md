@@ -254,6 +254,7 @@ commit;
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
 11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
 12. ~~Cloudflare Pages 儀表板設 `VITE_REFERRAL_EMAIL_INVITE=true` 後 Retry~~ 實測無效（裁決 31）：旗標改寫進 git 的 `.env.production`（fix PR → develop → 隨第三次晉升上 main）。上 main 後開 https://uknow.com.tw，用已加入推薦計畫的帳號按「邀請好友」確認邀請卡有 Email 欄。儀表板那個變數可刪可留（git 的值優先且相同）。
+13. **（10/28 醒來，裁決 33）** GitHub → Actions → `deploy-supabase` 最新一筆（main 66c2cf0）→ Review deployments → 核准 `production` → 等綠 → 開 https://uknow.com.tw/api/health 確認 `sha` 為 `66c2cf0`（開頭）。接著手動測：(a) 刊登管理建立／編輯頁選 3 張照片 → 每張取景 → 完成 → 上傳 → 送出，手機上試返回鍵只關取景；(b) 會員中心刊登卡與推薦卡同高、未刊登時「立即刊登」與「邀請好友」同一排；(c) 已加入推薦計畫的帳號按「邀請好友」出現 Email 邀請卡（旗標已在 git），寄到第二信箱、連結落在設定密碼頁、再寄一次連結不同。測完回主 session 一句，再進清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 → 真付款 → 宣布。
 13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
 ## 8. 進度與異動紀錄（主 session 每小時一列）
@@ -312,6 +313,7 @@ commit;
 | 10/28 02:45 | 業主休息 6 小時，裁決 33：主 session 自主推進到合進 main，production 核准留給業主醒來按；之後業主手動測一輪再清資料、切 PayUni | #421 三批修補 → 審 → 合；刊登卡 PR → 審 → 合；#415 合；開第三次晉升 PR → 合 main |
 | 10/28 02:45–03:15 | P1a 三批修補完成（head a584f0d：U1 返回鍵紅 dfd0c4c8→綠 85749d4、U2–U6、R1–R3、A1–A4），主 session 抽查返回鍵 hook 正確；a584f0d CI 全綠（含 e2e 新情境）。刊登卡 **#422**（紅 87f5bb2→綠 f4fa795）主 session 審過、CI 綠 → **合進 develop（0146f8a）**，session 封存。#421 由主 session rebase 到 0146f8a → head ab2d09a，等 CI。#421 36f946a 那輪 api-tests 映像限流（今晚第三次）已留 PR 說明 | #421 CI 綠 → 合；#415 rebase → 合；開第三次晉升 PR |
 | 10/28 03:15–03:35 | #421 rebase 後 head ab2d09a CI 全綠 → 轉 ready → **合進 develop（e0b286f）**，P1a 收工。develop 現含 #419 旗標、#422 刊登卡、#421 照片管線。主 session 開**第三次晉升 PR**（develop e0b286f → main）；#415 改為晉升後再合（docs，不擋上線） | 晉升 PR journey-full 綠 → 合進 main → 業主醒來核准 production |
+| 10/28 03:35–04:05 | **#423 journey-full（真後端 26 分鐘）＋全軌綠 → 轉 ready → 合進 main（66c2cf0）**。正式站 Edge Function 部署在 GitHub `production` 環境等業主核准；Cloudflare 會自動建 main 的前端。#415 已 rebase（333dff6，CI 綠）等這則紀錄推上後再合。業主醒來清單見 §7 第 13 步 | 業主核准 production → `/health` sha=66c2cf0 → 手動測 → 清 bucket／清資料 → PayUni |
 
 **執行 session 名冊**（主 session 維護）
 
