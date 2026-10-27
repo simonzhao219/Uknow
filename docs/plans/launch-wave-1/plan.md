@@ -46,6 +46,7 @@
 | 19 | P1a Q-F 原檔上限 | **原檔 ≤20 MB、上傳檔 ≤5 MB**；規格書 §11 界定 5 MB 是上傳檔 |
 | 20 | P1a Q-G 條款十之一 | **記入規格書已知落差，第 2 波在 30 日窗口內補齊**（帳號刪除 cascade、`/auth/cancel-signup`、歷史孤兒），列第 2 波必做 |
 | 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
+| 22 | journey sandbox 紅（PayUni 測試站改版）後的開放時間 | **今晚繼續，開放改 00:00 前後**；晉升閘門暫走 webhook 備援（#413，規則 13 到期 11/03）；journey-full webhook 仍紅或真付款失敗就改明天 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -265,12 +266,13 @@ commit;
 | 10/27 17:12–17:40 | R2 前端 #409 完成（循環 6–11、R2-3a UI、實作審查與預審處置、規劃目錄已刪；head `eae1213` CI 綠）。五 lane 審查：P0 無；P1 兩條經反駁只剩 `expired` 文案一條成立（第 8 天才踩到、首批邀請 11/3 到期）→ follow-up `fix/invite-expired-notice`（R2 session，目標 10/28 第二次晉升）；模板保存期限句為裁決 N，維持。事實核對全綠。**#409 合併（`1471912`）** | 開晉升 PR |
 | 10/27 17:45 | **晉升 PR #411 開出**（develop→main，23 個 PR、7 支 migration；#403 主 session 文件 PR 因 ready 後 ci-ok 要重跑、不值得佔關鍵路徑，排除在本次晉升外、晉升後再合）。dispatch `journey-scheduled.yml`（develop，`pytest_expr=orgbuild or invite`）先驗 R2 的 hosted 行為，與 #411 的 journey-full 平行 | 等 journey 子集（~10–20 分）與 journey-full（30–90 分）；綠就以 merge commit 合進 main → 業主核准 production 部署 |
 | 10/27 18:26–18:45 | **journey 子集（sandbox）紅**：拋棄式分支、migration、`--use-api` 部署、signup 探測全綠；pytest 在 PayUni sandbox 刷卡頁「確認送出」後 45 秒表單仍在、卡號欄只剩末四碼（run 40472945048）。史料：10/17 sandbox full 綠（run 39063973420）、10/24 排程紅在拉映像（未到 pytest）→ 今天是 10/17 後第一次碰 PayUni sandbox 頁，判定 PayUni 測試站改版，非本波程式問題。#411 的 journey-full（sandbox）必同樣紅。處置：(a) 重 dispatch 子集改 `payment_mode=webhook`（run 40473648265）驗 R2 hosted 行為；(b) 主 session 依 ≤10 行 CI 例外開 **PR #413**：ci.yml journey-full 暫改 webhook、規則 13 標「暫時至 2026-11-03」；PayUni 邊界由今晚真付款驗（裁決 4）。#413 合進 develop 後 #411 自動跟上重跑 journey-full（webhook，約 30–60 分） | 等 webhook 子集結果 → 合 #413 → 等 #411 journey-full |
+| 10/27 18:50 | **webhook 子集綠**（run 40473648265：30 節點建樹＋Email 邀請 GUI 情境在 hosted 分支通過＝R2 hosted 行為已驗）。#413 CI 只剩 e2e-tests。R2 follow-up PR #412 開出（draft，4 項都做，目標 10/28 晉升）。業主：LINE token 貼成 Channel secret，已指正；裁決 22 | #413 綠 → 合併 → #411 journey-full（webhook）重跑 |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅ 已合併 | follow-up（expired 文案、同意區收合、中性 notice、5xx 視同 signed_out）施工中，目標 10/28 晉升 |
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅ 已合併 | follow-up PR #412（draft，4 項完成，紅 1e4fe53→綠 fed29e5）；等 CI、主 session 審；目標 10/28 晉升 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
 | P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404（規劃）| 業主 16:40 打 /tdd-implement，PR 1 後端清理施工中；PR 1 目標 10/28 第二次晉升，PR 2 趕不上留 11/3 |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
