@@ -229,6 +229,7 @@ commit;
 | journey harness 配合 PayUni sandbox 新表單 | S | `payuni_sandbox_page.py` 重新定位卡號欄與送出鍵；11/03 前把 ci.yml journey-full 改回 sandbox（規則 13 到期自動紅） |
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
 | 框架修訂（第 1 波 friction-log 2026-10-26～27 兩節） | S | `tdd-test-guard` 擴到 Bash 寫 `*.test.*`（bash-guard 新類）；bash-guard 的 journey 判準只看 `pytest` 在指令位置；ci.yml e2e 的 apt 步驟獨立＋規則 12 退避、api-tests `supabase start` 加退避並把規則 12 擴到它；`/tdd-implement` 紅燈步驟加「逐條讀失敗原因」；dispatch-prompts 逃生口 2 改成「業主親自到執行 session 貼授權句」；e2e/requirements 釘 `playwright==1.63.0` |
+| `lazyWithRetry` 重試一次無效＋表單草稿保存 | S | 失敗的 module fetch 被瀏覽器記成 null（HTML 規格），同 URL 再 import() 立刻失敗，`importWithRetry` 的第一段重試形同虛設，第 2 波驗證後簡化為直接重載；Create／Edit 表單加草稿保存（`docs/multi-step-flow-recovery.md` 四契約），重新整理不掉已填文字 |
 | 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
@@ -300,6 +301,7 @@ commit;
 | 10/28 00:30–00:45 | #419 CI 綠 → 轉 ready → **合進 develop（53dd585）**；旗標隨第三次晉升上 main。P1a 經業主親貼授權後解鎖：紅燈修正 `e04a0824`、實作還原 29 測試綠，續 2-2 綠燈 commit。波末 8 條摩擦寫進 friction-log（95557df）。§4 乾跑唯讀計數先跑一次做基準（見 todo #3：無真匯款、completed 13 單皆 sandbox 金額） | P1a 2-3…2-6；10/28 下午審 PR 2；業主清 bucket 後重跑乾跑 |
 | 10/28 00:45–01:10 | P1a 回報 2-1～2-4a 全綠、2-4b 實作完（wip 94dd83c7）卡 3 個測試（既有 `fillCompleteForm` 走舊流程、新 describe 缺 cleanup）；主 session 審過核准修法（mock `useListingPhotos` 三張 done＋`afterEach(cleanup)`）。業主問「為何 P1a 常要我回應」：TDD 守衛要人裁決紅燈測試修正（裁決已由主 session 代行）＋分類器只認業主親打的解鎖授權；業主選擇在 P1a 貼一次**概括授權**（PR 2 剩餘循環，主 session 轉來的核准視同本人）。用 P1a 的介面摘要開 2-5 e2e session（Sonnet） | P1a 2-4b 綠 → 2-6；e2e PR 綠 → P1a fast-forward；10/28 下午審 PR 2 |
 | 10/28 01:15–01:20 | 業主在 P1a 貼概括授權，P1a 2-4b 綠燈 head 18a83944。首開的 e2e session 容器沒有 repo（create_session 未帶 source_url，add_repo 被分類器擋）→ 封存，重開 session_01MQovbErnhEXgHjQQjw9XvG 帶 `source_url`＋`source_revision=feature/listing-photo-pipeline`。教訓記 friction-log：create_session 一律帶 source_url | P1a 2-6；e2e PR |
+| 10/28 01:25–01:35 | e2e session 本機綠（page object 新流程、真 JPEG fixture、375px、上傳失敗重試），journey 共用 page object 免改；發現驗收 14 做不到：失敗的 module fetch 依 HTML 規格被記成 null，同 URL 原地重試永遠失敗。主 session 裁決：失敗面板改「請重新整理頁面」＋按鈕「重新整理頁面」→ `location.reload()`，不自動重載、不套 `importWithRetry`（會無預警清掉表單）；P1a 走小紅綠循環改，e2e 情境 14 改為重載後重走流程。遺留第 2 波：`lazyWithRetry` 的重試一次同因無效、Create／Edit 無草稿保存 | P1a 改完傳 head 給 e2e；e2e 開 draft PR |
 
 **執行 session 名冊**（主 session 維護）
 
