@@ -203,6 +203,11 @@ CLI 打包函式時要在 runner 上起 Docker、從 `public.ecr.aws` **匿名**
 退避重試(4 次,30／60／90 秒,失敗後先 `supabase stop --no-backup` 再起),
 檢查器的判準一併擴到 `supabase start`。
 
+2026-10-27 起 `supabase start` 的排除清單與重試迴圈收進 `scripts/supabase-local-start.sh`
+(CI 與本機共用),ci.yml 的 step 只剩呼叫它。檢查器因此改成:step 呼叫該腳本時,
+去查**腳本本身**有 `supabase start`、for 迴圈與 sleep——否則 step 文字裡不再出現
+`supabase start`,規則會靜默失效。改這支腳本的重試,等於改規則 12 的防線。
+
 ## 不可改名的識別字
 
 | 名稱 | 改了會怎樣 |

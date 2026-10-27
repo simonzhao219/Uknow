@@ -156,6 +156,26 @@ FUNCTIONS_DEPLOY = re.compile(r"supabase\s+(?:functions\s+deploy|start)\b")
 RETRY_LOOP = re.compile(r"^\s*for\s+\w+\s+in\b", re.M)
 SLEEP_CALL = re.compile(r"\bsleep\s+\S")
 
+# 2026-10-27:`supabase start` 的排除清單與退避重試收進共用腳本(CI 與本機同一份)。
+#         step 只剩 `bash scripts/supabase-local-start.sh`,文字裡不再有
+#         `supabase start`,上面那條比對會對不上、把關靜默失效。所以呼叫該腳本的
+#         step 改查腳本本身:要有 supabase start、for 迴圈與 sleep。
+START_SCRIPT_PATH = "scripts/supabase-local-start.sh"
+START_SCRIPT = re.compile(re.escape(START_SCRIPT_PATH))
+
+
+def _code_lines(text: str) -> str:
+    """去掉註解行——說明文字提到指令名稱不算數。"""
+    return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+
+
+def _start_script_retries(script: str | None) -> bool:
+    """共用啟動腳本是否真的起 supabase 且有「迴圈加 sleep」的退避重試。"""
+    if script is None:
+        return False
+    code = _code_lines(script)
+    return bool(FUNCTIONS_DEPLOY.search(code) and RETRY_LOOP.search(code) and SLEEP_CALL.search(code))
+
 # 規則 13:`payment_mode: webhook` 必須帶到期日(2026-10-07 事故)
 #         webhook 模式攔下往 PayUni 的跳轉、自己簽章注入 notify,從不打 PayUni。
 #         PR #275(2026-08-09)為了躲 sandbox 額度上限把晉升閘門「暫時」改成
@@ -193,8 +213,13 @@ def _jobs(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
-    """workflow 的命名與結構規則。純函式,無 I/O。"""
+def naming_violations(
+    text: str, filename: str = "<inline>", start_script: str | None = None
+) -> list[str]:
+    """workflow 的命名與結構規則。純函式,無 I/O。
+
+    start_script:共用啟動腳本的內容(由 scan() 讀檔傳入);None 表示讀不到。
+    """
     found: list[str] = []
 
     # 規則 2:workflow name 是識別字(workflow_run 以名稱引用、也是 badge URL)
@@ -276,8 +301,16 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
     #         只看 step 內的非註解行——step 之前的說明註解會被 _steps() 歸給
     #         上一個 step,若提到指令名稱就會誤判。
     for bl in _steps(text):
-        code = "\n".join(l for l in bl.splitlines() if not l.lstrip().startswith("#"))
-        if FUNCTIONS_DEPLOY.search(code) and not (RETRY_LOOP.search(code) and SLEEP_CALL.search(code)):
+        code = _code_lines(bl)
+        if START_SCRIPT.search(code):
+            if not _start_script_retries(start_script):
+                found.append(
+                    f"有 step 呼叫 {START_SCRIPT_PATH},但該腳本讀不到、或沒有"
+                    "「supabase start 加 for 迴圈加 sleep」的退避重試——"
+                    "規則 12 的把關在這個腳本裡,拿掉重試等於拿掉防線"
+                    "(2026-10-26 api-tests 一天四次死在拉映像)。"
+                )
+        elif FUNCTIONS_DEPLOY.search(code) and not (RETRY_LOOP.search(code) and SLEEP_CALL.search(code)):
             found.append(
                 "有 step 執行 supabase functions deploy 或 supabase start 但沒有退避重試——"
                 "兩者都要從 registry 匿名拉映像,共用 runner 的 IP 常撞上限流"
@@ -463,11 +496,16 @@ def self_test() -> int:
         if got != want:
             failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
 
+    for label, snippet, script, want in START_SCRIPT_CASES:
+        got = len(naming_violations(snippet, "x.yml", script))
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
+
     if failures:
         print("check-workflows 表格案例未過:")
         print("\n".join(failures))
         return 1
-    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES)} 條案例）")
+    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES) + len(START_SCRIPT_CASES)} 條案例）")
     return 0
 
 
@@ -475,10 +513,13 @@ def scan() -> int:
     if not WORKFLOW_DIR.is_dir():
         return 0  # 沒有 workflow 目錄視為通過
 
+    script_path = ROOT / START_SCRIPT_PATH
+    start_script = script_path.read_text(encoding="utf-8") if script_path.is_file() else None
+
     fail = 0
     for path in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml")):
         text = path.read_text(encoding="utf-8")
-        for msg in list(violations(text)) + naming_violations(text, path.name):
+        for msg in list(violations(text)) + naming_violations(text, path.name, start_script):
             print(f"FAIL: {path.relative_to(ROOT)}: {msg}")
             fail = 1
 
@@ -487,6 +528,50 @@ def scan() -> int:
     return fail
 
 
+
+# --- 共用啟動腳本的表格案例:每筆是 (標籤, workflow 片段, 腳本內容或 None, 預期違規數) ---
+_START_STEP = (
+    "name: CI\njobs:\n"
+    "  api-tests:\n    timeout-minutes: 20\n    steps:\n"
+    "      - name: 啟動本地 Supabase\n        run: bash scripts/supabase-local-start.sh\n"
+)
+START_SCRIPT_CASES: list[tuple[str, str, str | None, int]] = [
+    (
+        "step 呼叫啟動腳本且腳本有 supabase start、迴圈與 sleep → 通過",
+        _START_STEP,
+        (
+            "for attempt in 1 2 3 4; do\n"
+            "  supabase start -x studio && exit 0\n"
+            "  sleep 30\n"
+            "done\n"
+        ),
+        0,
+    ),
+    (
+        "step 呼叫啟動腳本但腳本沒有重試 → 違規(拿掉重試等於拿掉防線)",
+        _START_STEP,
+        "supabase start -x studio\n",
+        1,
+    ),
+    (
+        "step 呼叫啟動腳本但腳本有迴圈沒有 sleep → 違規(連環硬打限流)",
+        _START_STEP,
+        "for attempt in 1 2 3 4; do\n  supabase start -x studio && exit 0\ndone\n",
+        1,
+    ),
+    (
+        "step 呼叫啟動腳本但腳本不存在 → 違規",
+        _START_STEP,
+        None,
+        1,
+    ),
+    (
+        "腳本裡只有註解提到 supabase start 與 sleep → 違規(註解不算數)",
+        _START_STEP,
+        "# for attempt in 1 2; do supabase start; sleep 30; done\necho hi\n",
+        1,
+    ),
+]
 
 # --- 命名規則的表格案例:每筆是 (標籤, workflow 片段, 檔名, 預期違規數) ---
 NAMING_CASES: list[tuple[str, str, str, int]] = [

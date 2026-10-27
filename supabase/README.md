@@ -238,7 +238,7 @@ Dashboard 端的手動設定（Secrets、Email OTP 模板、PayUni 後台）
 supabase login
 supabase link --project-ref <目標 project ref>
 
-supabase start            # 啟動本地 Postgres
+bash scripts/supabase-local-start.sh   # 啟動本地 Supabase（排除清單與重試與 CI 同一份）
 supabase db reset         # 套用所有 migrations 到本地
 
 cd supabase/functions

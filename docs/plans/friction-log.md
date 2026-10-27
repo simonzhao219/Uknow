@@ -3246,3 +3246,22 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **`workflow_run` 觸發的部署 run 在 API 上顯示的 head 是預設分支**（平台語意，差點誤判）：`deploy-supabase` 對 main 的部署 run，
   `head_branch`／`head_sha` 顯示 develop 當下 HEAD，不是 main；要找正式站那筆得看「建立時間緊跟 main 的 CI push run」或 run 內
   `github.event.workflow_run.head_branch`。寫進 §7 核准步驟，免得業主按錯筆。
+
+
+## 2026-10-27｜待裁決｜本地 Supabase 啟動慢：量測結果與已做的第一刀
+
+量測（三次 CI run 與 web session 冷啟動）：api-tests 的 `supabase start` 為 90、100、759 秒，之後的整合測試約 155 秒，
+安裝 deno 與 CLI 不到 5 秒。慢且不穩的是拉映像，759 秒那次疑似限流重試（日誌未取）。
+
+已做（`scripts/supabase-local-start.sh`，CI 與本機共用）：排除 edge-runtime、imgproxy、postgres-meta、realtime。
+本機驗證：整合測試 426 條全過；映像約少 1.9 GB（edge-runtime 1.12、postgres-meta 0.5、imgproxy 0.25）。
+
+三個教訓：
+- **`-x` 要用容器名，不是 help 列的簡稱**：`-x meta` 無效，postgres-meta 照拉照跑，要寫 `postgres-meta`。靠看實際拉到哪些映像才抓到。
+- **inbucket（Mailpit）不能排除**：`referral-invite*.test.ts` 真呼叫 `inviteUserByEmail`，GoTrue 要有 SMTP。
+- **realtime 排除後映像仍會被拉**（容器不起），所以下載量只省約三成，不是原估的四成。
+
+規則 12 的檢查器同步改查腳本本身（step 只剩呼叫腳本，文字比對會靜默失效），含反向驗證：拿掉腳本的 sleep 檢查器即紅。
+
+未做、待看新數字再裁決：映像快取或推自家 GHCR、web 環境預裝（setup script／SessionStart hook）、Postgres 單容器分層。
+web session 的 shellcheck 無法下載（代理 403），腳本的 shellcheck 只靠 CI guards 軌驗證。
