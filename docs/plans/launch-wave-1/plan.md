@@ -311,6 +311,7 @@ commit;
 | 10/28 02:40 | 業主補裁決 32（刊登卡版式對齊推薦卡、拿掉會籍至、跟第三次晉升）。P1a 推 36f946a（守門＋系統視角三項）。開刊登卡 Sonnet session | P1a 其餘三批；刊登卡 PR；#415 CI |
 | 10/28 02:45 | 業主休息 6 小時，裁決 33：主 session 自主推進到合進 main，production 核准留給業主醒來按；之後業主手動測一輪再清資料、切 PayUni | #421 三批修補 → 審 → 合；刊登卡 PR → 審 → 合；#415 合；開第三次晉升 PR → 合 main |
 | 10/28 02:45–03:15 | P1a 三批修補完成（head a584f0d：U1 返回鍵紅 dfd0c4c8→綠 85749d4、U2–U6、R1–R3、A1–A4），主 session 抽查返回鍵 hook 正確；a584f0d CI 全綠（含 e2e 新情境）。刊登卡 **#422**（紅 87f5bb2→綠 f4fa795）主 session 審過、CI 綠 → **合進 develop（0146f8a）**，session 封存。#421 由主 session rebase 到 0146f8a → head ab2d09a，等 CI。#421 36f946a 那輪 api-tests 映像限流（今晚第三次）已留 PR 說明 | #421 CI 綠 → 合；#415 rebase → 合；開第三次晉升 PR |
+| 10/28 03:15–03:35 | #421 rebase 後 head ab2d09a CI 全綠 → 轉 ready → **合進 develop（e0b286f）**，P1a 收工。develop 現含 #419 旗標、#422 刊登卡、#421 照片管線。主 session 開**第三次晉升 PR**（develop e0b286f → main）；#415 改為晉升後再合（docs，不擋上線） | 晉升 PR journey-full 綠 → 合進 main → 業主醒來核准 production |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -318,7 +319,7 @@ commit;
 |---|---|---|---|---|---|
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅、#412 ✅ 已合併 | 收工 |
 | R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
-| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅ 已合併（PR 1）；**PR 2 = #421**（審查修補完、rebase 後 head ab2d09a 等 CI）：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅（PR 1）；**#421 ✅ 03:30 合進 develop（PR 2）**，收工：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
 | P1a-e2e | `session_01MQovbErnhEXgHjQQjw9XvG`（首開 `…EJErP6…` 未帶 repo，已封存） | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
 | 刊登卡 | `session_01MQovbBaaYSmpxZoDwfmXj2` | Sonnet | `fix/member-center-listing-card` | 裁決 32；#422 ✅ 03:10 合進 develop，session 已封存 | — |
 | 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
