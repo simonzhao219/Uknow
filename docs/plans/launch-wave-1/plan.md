@@ -277,6 +277,7 @@ commit;
 | 10/27 20:13 | **#411 journey-full（webhook，full 30 節點）綠，24.7 分鐘**（run 40475965034）；ci-ok 綠 → 以 merge commit 合進 main。brand/SEO 執行 session 開出 PR #414（審查中；Navbar 改動要還原） | 業主核准 production 部署（§7 第 5 步）→ /health sha 比對 |
 | 10/27 20:35 | main CI 綠（b4f9bb3，push 軌只跑 guards）→ deploy-supabase run 283（40479159452）停在 `waiting`＝等 production 核准（REST 顯示 head_branch=develop 是 workflow_run 以預設分支為上下文的已知顯示法，環境判定用 payload 的 main）。#403 ci-ok 綠 → 合進 develop（91d4a1e，develop 解凍後第一支）；本分支改從 develop 重切，後續 §8 另開 PR。給業主 §7 第 5 步核准＋sha 比對說明 | 業主核准 → 貼 /health 輸出；接著 #405 rebase |
 | 10/27 20:50 | #405 rebase 到 develop（e02e3a2）CI 中；#414 兩項修正（fa861dd Navbar 還原、88d7c67 sitemap）CI 綠，疊在 #405 上等它合後 rebase；#412 ready 綠等 rebase。**#404（P1a PR 1）四 lane 審查**：無 P0；P1 ×5（整合測試補真 overlaps＋Storage 移除案例、public URL base 不靠 `publicUrlOf('')`、§14 第 14 列補齊孤兒來源、刪除中回饋、PR 內文失準兩處＋部署順序）已交執行 session；URL 新舊形狀一致（不誤刪）與撞檔（merge-tree 全乾淨）皆核對通過。PR 2 裁示留 11/3 第 2 波同 session 接手。架構 lane 另查出 #407 對 develop 的 friction-log 會衝突，輪到它時 rebase 處理 | #405 綠 → 合；#404 修完 → 複核 |
+| 10/27 21:05 | 停車 PR 依序合進 develop：#405（0c5c11b）→ #410（140fecb）→ #406（0786b61），每支 rebase＋ci-ok 綠後 merge commit。#404 五項 P1 修完（60a411d）CI 全綠含新整合測試，最後再 rebase 合。#407 rebase 時 friction-log 衝突（#395 條目的償還段 vs R2 施工摩擦節）兩邊都留、推 4b92157 等 CI。業主尚未回覆 production 核准 | #407 綠 → 合 → #412 → #414 → #404 |
 
 **執行 session 名冊**（主 session 維護）
 
