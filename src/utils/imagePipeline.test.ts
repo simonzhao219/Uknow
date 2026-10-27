@@ -115,18 +115,28 @@ describe('exportPhoto', () => {
       0.62: 500 * 1024,
       0.5: 300 * 1024,
     };
-    const { io, calls } = fakeIO({
-      encode: (_c, q) => Promise.resolve(blobOf(sizes[q])),
+    const asked: number[] = [];
+    const { io } = fakeIO({
+      encode: (_c, q) => {
+        asked.push(q);
+        return Promise.resolve(blobOf(sizes[q]));
+      },
     });
     const r = await exportPhoto(io, photo(), CROP, SOURCE);
-    expect(calls.encode).toEqual([0.82, 0.72, 0.62]);
+    expect(asked).toEqual([0.82, 0.72, 0.62]);
     expect(r.ok && r.value.quality).toBe(0.62);
   });
 
   it('階梯走完仍 > 600KB 但 ≤ 5MB → 取最低品質那份照收', async () => {
-    const { io, calls } = fakeIO({ encode: () => Promise.resolve(blobOf(2 * 1024 * 1024)) });
+    const asked: number[] = [];
+    const { io } = fakeIO({
+      encode: (_c, q) => {
+        asked.push(q);
+        return Promise.resolve(blobOf(2 * 1024 * 1024));
+      },
+    });
     const r = await exportPhoto(io, photo(), CROP, SOURCE);
-    expect(calls.encode).toEqual([0.82, 0.72, 0.62, 0.5]);
+    expect(asked).toEqual([0.82, 0.72, 0.62, 0.5]);
     expect(r.ok && r.value.quality).toBe(0.5);
   });
 
