@@ -121,11 +121,11 @@ def test_floating_search_button_focus_ring_is_3px_opaque(home):
     assert RING_3PX in shadow, f"焦點環不是 3px 全不透明 --sel：{shadow}"
 
 
-def test_detail_thumbnail_focus_ring_is_3px_opaque_with_a_gap_and_unclipped(page, rest_mock):
-    """詳情頁縮圖（FOCUS_RING_GAP）：3px＋1px 間隙，且沒有祖先把環裁掉。"""
+def test_detail_carousel_dot_focus_ring_is_3px_opaque_with_a_gap_and_unclipped(page, rest_mock):
+    """詳情頁輪播圓點（FOCUS_RING_GAP）：3px＋1px 間隙，且沒有祖先把環裁掉。"""
     rest_mock.set_public_listing(DETAIL)
     page.goto(f"/service-providers/{DETAIL['id']}")
-    thumb = page.get_by_role("button", name="縮圖 1")
+    thumb = page.get_by_role("button", name="第 1 張")
     expect(thumb).to_be_visible()
 
     shadow = _keyboard_focus_shadow(page, thumb, RING_3PX_WITH_GAP)
@@ -146,4 +146,12 @@ def test_detail_thumbnail_focus_ring_is_3px_opaque_with_a_gap_and_unclipped(page
           return null;
         }"""
     )
-    assert clipping is None, f"縮圖外 4px（環＋間隙）被這個會裁切的祖先擋住：{clipping}"
+    assert clipping is None, f"圓點外 4px（環＋間隙）被這個會裁切的祖先擋住：{clipping}"
+
+
+def test_detail_carousel_dot_hit_area_reaches_44px_on_touch(page, rest_mock):
+    """詳情頁輪播圓點在觸控裝置上可點區 ≥44px（視覺仍是 6px 圓點）。"""
+    rest_mock.set_public_listing(DETAIL)
+    page.goto(f"/service-providers/{DETAIL['id']}")
+    expect(page.get_by_role("button", name="第 2 張")).to_be_visible()
+    _assert_reaches_44px(page, 'button[aria-label="第 2 張"]')

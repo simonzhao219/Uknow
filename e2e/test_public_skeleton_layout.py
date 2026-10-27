@@ -36,7 +36,7 @@ DETAIL_LISTING = build_public_listing(
     description="專業剪髮染髮，十年經驗。\n歡迎預約，週一公休。\n地點近捷運站，停車方便。",
 )
 
-# 詳情頁的結構探針：骨架與內容的第二欄都是 [名稱列, 類別, 地區]，第一欄是 [大圖, 縮圖列]。
+# 詳情頁的結構探針：骨架與內容的第二欄都是 [名稱列, 類別, 地區]，第一欄是 [正方形, 圓點列]。
 _DETAIL_BLOCKS_JS = """
 () => {
   const grid = [...document.querySelectorAll('div.grid')]
@@ -47,7 +47,7 @@ _DETAIL_BLOCKS_JS = """
   const top = (el) => Math.round(el.getBoundingClientRect().top);
   return {
     image: top(media.children[0]),
-    thumbnails: top(media.children[1]),
+    dots: top(media.children[1]),
     nameRow: top(head.children[0]),
     categoryRow: top(head.children[1]),
     locationRow: top(head.children[2]),
@@ -59,7 +59,7 @@ _DETAIL_BLOCKS_JS = """
 @pytest.mark.compatibility
 @pytest.mark.parametrize("width", [375, 1280])
 def test_detail_skeleton_matches_the_loaded_layout(page, rest_mock, service_provider_detail_page, width):
-    """詳情頁：骨架的大圖、縮圖列、名稱列、類別、地區與載入後同一個位置。"""
+    """詳情頁：骨架的正方形照片、圓點列、名稱列、類別、地區與載入後同一個位置。"""
     page.set_viewport_size({"width": width, "height": 900})
     rest_mock.set_public_listing(DETAIL_LISTING)
     rest_mock.hold_public_listing()
