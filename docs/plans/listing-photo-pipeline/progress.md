@@ -15,7 +15,7 @@
 | 2 前端管線 | 2-1 | apiRequest 支援 FormData | ✅ 綠 | d904dea0 | （見 git log） |
 | 2 | 2-2 | imageGeometry／imagePipeline | ✅ 綠（實作在 wip commit，測試修正 e04a0824 後綠） | 4ce78c37（修正 e04a0824） | （見 git log） |
 | 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ✅ 綠 | d03a605f | （見 git log） |
-| 2 | 2-4 | PhotoPicker／PhotoCropDialog 接 Create／Edit | ⬜ 未開始 | | |
+| 2 | 2-4 | PhotoPicker／PhotoCropDialog 接 Create／Edit | ✅ 綠（2-4a 紅 aae5adce／綠 37870890；2-4b 紅 db928aae／綠 18a83944；審查修補 R1 紅 895b8be4、R1b 紅 37c0d72e／綠 365ca48f、R2 紅 2dfcb5d2／綠 a3f10246） | aae5adce、db928aae | （見 git log） |
 | 2 | 2-5 | e2e／journey page object 同步 | ⬜ 未開始 | | |
 | 2 | 2-6 | 文件與 bundle 閘門 | ✅（規格書 §11 照片原檔列＋上傳流程、spec-drift 新規則、ui-ux §4 照片選取與取景；bundle：gzip 總量 +12.1 kB，其中 PhotoCropDialog＋react-easy-crop 8.9 kB 為按需載入、PhotoPicker 5.9 kB 為 Create／Edit 共用；Create／Edit 頁面 chunk 本身反而縮小，遠低於 40 kB 判準） | （文件／量測，無紅燈） | （見 git log） |
 
@@ -24,6 +24,15 @@
 PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implement）：2-1～2-4b、2-6 綠；2-5 e2e 由 session_01MQovbEJErP6iSDwsEdTfn3 在 feature/listing-photo-pipeline-e2e 進行；下一步 check:full、/review-implementation、等 2-5 fast-forward、清理規劃檔、開 PR。
 
 ## 偏離規劃（記入 PR 描述）
+
+PR 2 實作期間的偏離：
+- 返回鍵用既有 `useOverlayBackClose`，不另做 `useBackNavigation`；取景對話框整個佇列期間常駐（換張只重置 CropBody），避免卸載重掛造成 `history.back()` 非同步時序問題，不用全域計數器。
+- ui-ux 準則寫在 §4「照片選取與取景」，不是原規劃的 §7（§7 是響應式版面）。
+- 驗收 14 變更（主 session 裁決）：Chromium 等瀏覽器依規格快取失敗的動態 import，原地重試永遠失敗；失敗面板改為「請重新整理頁面」＋按鈕呼叫 `window.location.reload()`（`reloadPage` 可注入），拿掉「重新載入中至少 400 ms」。不自動重載、不套 `importWithRetry`（會丟已填表單）。
+- 新增：`loadCropDialog` 注入（測試用）、取景對話框「重設」鈕、`addFiles` 時預先解碼並於確認／取消／移除／卸載時 `release` bitmap、`readNaturalSize` 以 `Image` 取原圖尺寸、`submitHint` 送出提示文字（Create／Edit 以 aria-describedby 關聯；送出鈕維持原生 `disabled`）、失敗面板放在列表外、上傳逾時 60 秒（`UPLOAD_TIMEOUT_MS`，逾時視同失敗可重試）、移除第一張時播報封面更換。
+- `uploadListingPhoto` 的 401 不像 `apiRequestJson` 登出（沿用 PR 1 的 P2 遺留）。
+- 未做：取景對話框 `onInteractOutside` 防誤觸（無法在 jsdom 可靠測試，列第 2 波）。
+- 遺留（不在本 PR）：`lazyWithRetry` 的「重試一次」因同一條規格對路由 chunk 也無效，第 2 波驗證後簡化；Create／Edit 表單未做草稿保存，重新整理會掉已填文字。
 
 - 主 session 五 lane 審查後的 P1 修補：整合測試補真 Storage＋真 overlaps、清理 base 由 `publicUrlOf('x')` 推導、§14 第 14 列補孤兒來源、刪除鈕「刪除中…」＋aria-busy、PR 內文更正。未做：listingPhotosApi 的 401 未像 apiRequestJson 登出＋emitSessionExpired（P2，session 過期時只 toast「刪除失敗」）。
 

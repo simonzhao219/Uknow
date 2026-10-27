@@ -79,7 +79,7 @@ function CropBody({
 
   return (
     <>
-      <div className="relative aspect-square w-full overflow-hidden rounded-md bg-muted">
+      <div className="relative mx-auto aspect-square w-[min(100%,45dvh)] overflow-hidden rounded-md bg-muted">
         <Cropper
           image={previewUrl}
           crop={crop}
@@ -154,7 +154,7 @@ function CropBody({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 pb-[env(safe-area-inset-bottom)]">
+      <div className="sticky bottom-0 -mx-1 flex flex-wrap gap-2 bg-background px-1 pt-2 pb-[env(safe-area-inset-bottom)]">
         <Button
           type="button"
           tone="secondary"
