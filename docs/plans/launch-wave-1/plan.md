@@ -55,6 +55,7 @@
 | 28 | CI e2e 上限（業主 22:00） | 慢鏡像站連續弄紅 e2e 五次、#417 的 run 卡死不給重跑 → 破例在晉升 PR 開著時合一支 CI-only PR（#418，e2e timeout 15→25）進 develop；#417 改指新 head、journey 重跑 |
 | 29 | 清資料與 PayUni 切正式延後（業主 23:00） | 兩者都等 P1a PR 2 上線後再做（10/28 晚）；活動前要完成。主 session 已提醒：PayUni 留 sandbox 期間無人能真付款、測試資料留在站上 |
 | 30 | P1a PR 2 提前（業主 23:15） | 照片裁切＋定位（前端管線）提前到第 1 波：10/28 下午合 develop、傍晚第三次晉升；10/28 不凍結。SEO 進階與 journey harness 仍 11/3 第 2 波。PR 2 由原 P1a session 做，業主親打 /tdd-implement 才開工 |
+| 31 | Email 邀請前端旗標寫進 git（業主 10/28 00:20） | Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` Retry 兩次仍未進建置（正式站主檔 `index-CWyrVOvQ.js` ＝ 本機無旗標建置；repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它為唯一設定來源）。改加 `.env.production`（與 `.env.development` 對稱），主 session 自己做（設定一行＋文件）、fix PR 合進 develop；**等 P1a PR 2 一起第三次晉升**，不另開晉升。Email 實寄核對順延到該次核准後 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -246,7 +247,7 @@ commit;
 9. 回答主 session 的清資料乾跑確認（它會貼 §4 的計數；`storage.objects` 各 bucket 必須已是 0）。
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
 11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
-12. Cloudflare Pages → uknow → Settings → Variables（**Production** 作用域）：`VITE_REFERRAL_EMAIL_INVITE=true` → Deployments 對最新 production 部署按 Retry deployment（環境變數要重建才生效）→ 開 https://uknow.com.tw 按「邀請好友」確認邀請卡有 Email 欄。
+12. ~~Cloudflare Pages 儀表板設 `VITE_REFERRAL_EMAIL_INVITE=true` 後 Retry~~ 實測無效（裁決 31）：旗標改寫進 git 的 `.env.production`（fix PR → develop → 隨第三次晉升上 main）。上 main 後開 https://uknow.com.tw，用已加入推薦計畫的帳號按「邀請好友」確認邀請卡有 Email 欄。儀表板那個變數可刪可留（git 的值優先且相同）。
 13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
 ## 8. 進度與異動紀錄（主 session 每小時一列）
@@ -293,6 +294,7 @@ commit;
 | 10/27 21:40–22:05 | #417 journey-full（真後端 18 分鐘）**綠**；e2e-tests 第 5 次被慢 apt 鏡像站拖過 15 分鐘上限取消；run 40510447867 卡在 in_progress，rerun／cancel 皆 403／409。另發現 develop push 3392d05 的 CI 同因紅 → develop 的 Edge Function 停在 ae61955（#416 無後端變動，無影響）。裁決 28 → 開 #418（ci.yml e2e timeout 25，check-workflows OK） | #418 綠 → 合 → #417 新 head CI（journey 重跑）→ 合 → 核准 production |
 | 10/27 22:16 | 卡住的 run 14:08Z 自己收尾 → 重跑 e2e（這次鏡像站正常，7 分鐘綠）→ ci-ok 綠 → **#417 合進 main（f076866）**，journey 不必重跑；#418 同時綠 → 合進 develop（77efb63）。第二次晉升完成，等業主核准 production 部署 | 業主核准 → /health sha=f076866 → 貼新版 Invite 模板 → 第 8 步 |
 | 10/27 22:45–23:20 | 業主核准 production，`/health` sha=f076866 對上（referralInvite 兩旗標 true、PayUni sandbox）；新版 Invite 模板已貼。裁決 29、30。通知 P1a session 準備 PR 2 循環清單、等業主 /tdd-implement。今晚收工；10/28 順序：PR 2 → 第三次晉升 → 清 bucket／清資料 → 註冊＋admin → R2 實寄 → 旗標 → PayUni 切正式 → 真付款 → 宣布 | 業主 10/28 早上到 P1a session 打 /tdd-implement |
+| 10/27 23:30–10/28 00:25 | 業主在 Cloudflare 設 Production 變數並 Retry 兩次，正式站仍是分享選單；pages.dev 預覽網址登不進（Auth 回跳綁 uknow.com.tw，不追）。以主檔 hash 核對：正式站 `index-CWyrVOvQ.js` ＝ 本機**無旗標**建置 → 儀表板變數沒進建置。裁決 31 → 主 session 開 `fix/email-invite-flag-in-git`（`.env.production` ＋ checklist 措辭）。#415 api-tests 重跑綠。P1a 於 2-2 卡住：分類器拒絕「轉述的核准」移除 tdd-lock，業主已親自在該 session 貼授權句 | fix PR CI 綠 → 合進 develop；P1a 續 2-2 綠燈→2-3；第三次晉升等 PR 2 |
 
 **執行 session 名冊**（主 session 維護）
 
