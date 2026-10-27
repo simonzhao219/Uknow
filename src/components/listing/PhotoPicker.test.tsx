@@ -60,6 +60,7 @@ function makePhotos(
     retry: vi.fn(),
     remove: vi.fn(),
     adjust: vi.fn(),
+    loadExisting: vi.fn(),
     photoUrls: slots.filter((s) => s.state === 'done').map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: false,
