@@ -57,6 +57,7 @@
 | 30 | P1a PR 2 提前（業主 23:15） | 照片裁切＋定位（前端管線）提前到第 1 波：10/28 下午合 develop、傍晚第三次晉升；10/28 不凍結。SEO 進階與 journey harness 仍 11/3 第 2 波。PR 2 由原 P1a session 做，業主親打 /tdd-implement 才開工 |
 | 31 | Email 邀請前端旗標寫進 git（業主 10/28 00:20） | Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` Retry 兩次仍未進建置（正式站主檔 `index-CWyrVOvQ.js` ＝ 本機無旗標建置；repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它為唯一設定來源）。改加 `.env.production`（與 `.env.development` 對稱），主 session 自己做（設定一行＋文件）、fix PR 合進 develop；**等 P1a PR 2 一起第三次晉升**，不另開晉升。Email 實寄核對順延到該次核准後 |
 | 32 | 會員中心刊登卡對齊推薦卡版式（業主 10/28 02:30） | 刊登卡改四行：標題／小標「我的刊登」／主字（「尚未刊登」或主題，單行截斷）／第四行走 `action` 插槽（未刊登＝「立即刊登」鈕，已刊登＝`CategoryBadge` 類別徽章）；拿掉「會籍至」（我的訂閱卡已有週期）；注意溢字。新開 Sonnet session、Plan Mode、`fix/member-center-listing-card`，**跟 PR 2 與旗標一起第三次晉升** |
+| 33 | 夜間授權第二段（業主 10/28 02:45，休息 6 小時至約 08:45） | 主 session 不等業主：#421、刊登卡 PR、#415 審完合 develop → 開第三次晉升 PR → journey-full 綠 → **合進 main**。只有 production 部署核准是業主的（GitHub `production` 環境 required reviewer），醒來按核准 → `/health` sha 核對 → 業主手動測一輪 → 才開始清資料與 PayUni 切正式。執行 session 的 tdd-lock 解鎖沿用 P1a 概括授權；分類器擋下的事主 session 記 §8 等業主 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -308,6 +309,7 @@ commit;
 | 10/28 01:50–01:55 | 發現 ci.yml 只對 base main／develop 觸發，#420（base feature 分支）不會有 CI → 改流程：P1a 直接 ff 併入 e2e commit，e2e 由 PR 2 的 CI 驗；已通知兩個 session | P1a 併入後開 PR 2 |
 | 10/28 02:05–02:40 | **PR 2 = #421**（head 由 b3c12932 → ef49434 → 050b8fa5：守門修正——file input I2 啟發式、canvas 白底色值列掃描排除）。主 session 四視角審查（Sonnet 四 lane，worktree wt-421）：0 P0；必修 ≈16 條已核實後分三批轉給 P1a——系統：decode 回 bitmap 實際尺寸、adjust 重解失敗偏離補記＋播報、晚到 bitmap 釋放；UI/UX：**返回鍵在佇列第二張起失效會離頁**（常駐改法的新問題，走紅綠）、載入失敗文案死路、NETWORK_ERROR 英文原文、重試後焦點、重複失敗不播報；需求：規格書 §14 第 14 列過時、PR 內文綠燈 hash、兩個空轉測試；架構：Edit diff 刪偏離補記、懸空 plan 連結、死碼、60 秒只寫一份。約 20 條 P2 記第 2 波。#415 api-tests 再中映像限流，重跑一次 | P1a 修完推 → CI 綠 → 主 session 抽查 U1 → 轉 ready → 合 develop → 開第三次晉升 |
 | 10/28 02:40 | 業主補裁決 32（刊登卡版式對齊推薦卡、拿掉會籍至、跟第三次晉升）。P1a 推 36f946a（守門＋系統視角三項）。開刊登卡 Sonnet session | P1a 其餘三批；刊登卡 PR；#415 CI |
+| 10/28 02:45 | 業主休息 6 小時，裁決 33：主 session 自主推進到合進 main，production 核准留給業主醒來按；之後業主手動測一輪再清資料、切 PayUni | #421 三批修補 → 審 → 合；刊登卡 PR → 審 → 合；#415 合；開第三次晉升 PR → 合 main |
 
 **執行 session 名冊**（主 session 維護）
 
