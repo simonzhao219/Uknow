@@ -258,3 +258,58 @@ describe('useListingPhotos 播報', () => {
     expect(h.result.current.announcement).toContain('完成');
   });
 });
+
+describe('useListingPhotos 調整已完成的照片', () => {
+  const doneNew = async (h: ReturnType<typeof setup>) => {
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[0].state).toBe('done'));
+  };
+
+  it('調整 → 回到等待取景（重新解碼原檔），輪到它取景', async () => {
+    const decode = vi.fn(() => Promise.resolve({ width: 320, height: 240, handle: 'bitmap' }));
+    const h = setup({}, { decode });
+    await doneNew(h);
+    expect(decode).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      h.result.current.adjust(h.result.current.slots[0].id);
+    });
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(h.result.current.slots[0].state).toBe('awaiting_crop');
+    expect(h.result.current.pendingCrop?.slotId).toBe(h.result.current.slots[0].id);
+  });
+
+  it('調整後確認 → 換上新檔，舊檔被清掉（onDiscardUploaded），張數不變', async () => {
+    const h = setup();
+    await doneNew(h);
+    const oldUrl = h.result.current.slots[0].url;
+    await act(async () => {
+      h.result.current.adjust(h.result.current.slots[0].id);
+    });
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[0].state).toBe('done'));
+    expect(h.result.current.slots).toHaveLength(1);
+    expect(h.result.current.slots[0].url).not.toBe(oldUrl);
+    expect(h.discarded).toEqual([oldUrl]);
+  });
+
+  it('調整中途取消 → 還原成原本完成的那張，不是被移除', async () => {
+    const h = setup();
+    await doneNew(h);
+    const { id, url } = h.result.current.slots[0];
+    await act(async () => {
+      h.result.current.adjust(id);
+    });
+    act(() => h.result.current.cancelCrop(id));
+    expect(h.result.current.slots).toHaveLength(1);
+    expect(h.result.current.slots[0]).toMatchObject({ id, state: 'done', url });
+    expect(h.discarded).toEqual([]);
+  });
+
+  it('既有舊圖不能調整（不重裁）', () => {
+    const h = setup({ initialUrls: ['https://cdn.test/u/a.jpg'] });
+    act(() => h.result.current.adjust(h.result.current.slots[0].id));
+    expect(h.result.current.slots[0].state).toBe('done');
+    expect(h.result.current.pendingCrop).toBeNull();
+  });
+});

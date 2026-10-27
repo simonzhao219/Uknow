@@ -64,6 +64,8 @@ export interface UseListingPhotosResult {
   cancelCrop: (slotId: string) => void;
   retry: (slotId: string) => void;
   remove: (slotId: string) => void;
+  /** 重新取景一張本次新增、已上傳完成的照片（重新解碼原檔；完成後換上新檔並清掉舊檔）。 */
+  adjust: (slotId: string) => void;
   /** 已完成照片的 URL（依 slots 順序）。 */
   photoUrls: string[];
   /** 處理中（解碼／等取景／編碼／上傳）——送出鈕要 aria-disabled。 */
@@ -249,6 +251,7 @@ export function useListingPhotos(options: UseListingPhotosOptions): UseListingPh
     cancelCrop: remove,
     retry,
     remove,
+    adjust: () => {},
     photoUrls: slots.filter((s) => s.state === 'done' && s.url).map((s) => s.url as string),
     isBusy: slots.some((s) => ['preparing', 'awaiting_crop', 'uploading'].includes(s.state)),
     canSubmit: slots.length === maxCount && slots.every((s) => s.state === 'done'),
