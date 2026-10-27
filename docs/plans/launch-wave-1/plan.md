@@ -38,6 +38,10 @@
 | 11 | R2 前端模型 | **Opus** |
 | 12 | 窗口工項派工時機 | **現在全派**：R1a-2、P1a（只規劃）、告警送到人先派；#399 合併後派容量 hotfix＋寄信失敗告警（合成一個 session）、#395。晉升 PR 合進 main 前一律不合進 develop |
 | 13 | 10/29–31 量測排程 | **允許**主 session 建排程任務（每 2 小時、只在 10/29–31） |
+| 14 | P1a 範圍（PR #404 規劃審出 P0：apiRequest 寫死 JSON Content-Type） | **拆兩個 PR，後端清理先上**：PR 1＝`DELETE /listings/photos`＋刪刊登走 Edge 清理；PR 2＝前端裁切管線（P0 選 a：apiRequest 遇 FormData 不設 header），趕不上 10/28 就留 11/3 |
+| 15 | P1a Q-A 刪刊登清理 | **走後端**（總綱 §3.2C 原案） |
+| 16 | 寄信失敗告警（盤點：後端無寄信路徑，攔 429 需新公開端點＋改 AuthPage 等三檔，與 R2／T1 共檔） | **本波不做程式**，靠 Dashboard 寄信上限 600＋§5 每小時漏斗監看；端點留第 2 波 |
+| 17 | 清資料演練的刪除段（MCP 破壞性語句確認視窗到不了業主，兩次 cancelled） | **業主在 Dashboard SQL Editor 貼**（演練分支與今晚正式站都這樣做；主 session 負責乾跑與零殘留檢查） |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -243,17 +247,19 @@ commit;
 | 10/27 14:05 | 首批三個 session 用 create_session 不帶 source_url 開出 → 容器沒有 repo、add_repo 被分類器擋，三個都卡住（已改帶 `source_url` 重開；舊的 `session_01MQovbDCdjDsSfdjR573frP`、`session_01MQovbEWLNfqLFHrSzGLdsx` 封存被權限擋，請業主手動封存）。**教訓：create_session 一律帶 source_url＋source_revision=develop** | — |
 | 10/27 14:06 | **#399 合併**（`5364205`，head `58b38c1` CI 綠）；#401 內容已逐字隨 #399 進 develop → 留言後關閉。建 10/29–31 量測排程 `trig_01KmMD7RYZFDjNiLWHrNDhx3` | 等各執行 session 回報 |
 | 10/27 14:15 | 開 #403（本分支的文件 PR，晉升前合）。六個執行 session 全部在跑（名冊見下）。清資料演練（§4）：Supabase MCP `create_branch` 需要業主確認分支費用，MCP 等不到回答逾時——**待業主在互動視窗核准後重試**。`measure.sql` 落檔（§5 的 SQL 項） | 等執行 session 回報；業主核准分支費用 |
+| 10/27 14:20–14:30 | 執行 session 回報：R1a-2 → PR #405（CI 綠、ready）；告警送到人 → PR #406（CI 綠、draft）；#395 → PR #407（draft，等 CI）；P1a 規劃 → PR #404（1 P0／15 P1，待裁決）；容量 hotfix 工作樹完成但 pre-commit 要 deno、容器裝不了 curl\|sh → 指示改試 `npm install -g deno`；R2 前端循環 6、7 綠、8 施工中，核准其一條紅燈測試字面修正（斷言改以「密碼需包含：」開頭） | 審 #405／#406／#407（三個 agent 進行中） |
+| 10/27 14:30 | 演練分支 `wave1-cleanup-rehearsal`（`ykaxvdxtswhtqohwhlss`，業主在 Dashboard 開的；MCP create_branch 的費用確認視窗兩次都到不了業主）：乾跑 SQL 全部可執行、權限 OK（第一次因分支 migration 尚未套完而找不到 `referral_code_seq`，數秒後即存在——**今晚對正式站不會有這個問題**）。刪除段透過 MCP 兩次 `cancelled` → 裁決 17。business decisions 14–17 落 §0 | 業主在 SQL Editor 貼刪除段 → 主 session 跑零殘留檢查 → 刪分支 |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` | — | 施工中，目標 18:30 開 PR |
-| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | — | 施工中 |
-| P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | — | 規劃中，完成後待業主審、業主親打 /tdd-implement |
-| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | — | 施工中 |
-| 容量＋寄信告警 | `session_01MQovbDWjfcnq21M6T5cDBf` | Sonnet | `fix/peak-capacity-email-alerts` | — | 施工中 |
-| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | — | 施工中 |
+| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
+| P1a（只規劃） | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 | 依裁決 14／15 改成兩階段、重跑 /review-plan 中；之後業主審、業主親打 /tdd-implement |
+| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | CI 綠、draft，主 session 審查中；晉升後合 |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` | Sonnet | `claude/peak-capacity-email-alerts` | — | 工作樹完成，卡 deno 安裝（試 npm 路徑） |
+| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | draft、等 CI，主 session 審查中；開放問題「查詢層失敗要不要暫不標 expired」待裁 |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
