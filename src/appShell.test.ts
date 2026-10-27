@@ -189,7 +189,9 @@ describe('_headers 重複宣告契約', () => {
     for (const a of patterns) {
       expect(stem('/assets/*').startsWith(stem(a)) || stem(a).startsWith('/assets/')).toBe(false);
       for (const b of patterns) {
-        if (a !== b) expect(stem(b).startsWith(stem(a)), `${a} 與 ${b}`).toBe(false);
+        // 不帶 * 的規則只命中精確路徑，只有帶 * 的規則才會涵蓋別條的前綴
+        if (a !== b && a.endsWith('*'))
+          expect(stem(b).startsWith(stem(a)), `${a} 與 ${b}`).toBe(false);
       }
     }
   });

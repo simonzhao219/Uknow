@@ -70,11 +70,12 @@ describe('public 搜尋與安裝檔案', () => {
     expect(robots).toMatch(/^Disallow: \/admin$/m);
   });
 
-  it('sitemap.xml 結構完整且含 /service-providers', () => {
+  it('sitemap.xml 結構完整，不含需登入的 /service-providers 管理頁', () => {
     const xml = pub('sitemap.xml');
     expect(xml).toMatch(/^<\?xml[^>]*\?>\s*<urlset [^>]*>[\s\S]*<\/urlset>\s*$/);
     expect(xml.match(/<url>/g)?.length).toBe(xml.match(/<\/url>/g)?.length);
-    expect(xml).toContain('<loc>https://uknow.com.tw/service-providers</loc>');
+    expect(xml).toContain('<loc>https://uknow.com.tw/listing-plans</loc>');
+    expect(xml).not.toContain('<loc>https://uknow.com.tw/service-providers</loc>');
   });
 
   it('site.webmanifest 可解析且帶兩張 icon', () => {

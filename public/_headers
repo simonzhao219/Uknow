@@ -48,6 +48,8 @@
   X-Robots-Tag: noindex
 /forgot-password
   X-Robots-Tag: noindex
+/service-providers
+  X-Robots-Tag: noindex
 /service-providers/create
   X-Robots-Tag: noindex
 /service-providers/edit/*

@@ -10,6 +10,7 @@ Disallow: /referrals
 Disallow: /login
 Disallow: /register
 Disallow: /forgot-password
+Disallow: /service-providers$
 Disallow: /service-providers/create
 Disallow: /service-providers/edit/
 
