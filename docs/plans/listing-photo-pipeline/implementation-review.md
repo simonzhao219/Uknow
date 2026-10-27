@@ -47,3 +47,41 @@
 ## 處置（人審後填寫）
 
 - [ ] 人審完成，裁決：□ 通過 □ 修訂後通過（豁免理由：） □ 退回
+
+---
+
+# PR 2（前端照片管線）實作審查報告
+
+四視角（需求／架構／UI-UX／系統）對 PR 2 diff 的第三方審查，已去重彙整；彙整者不重新判斷嚴重度。
+
+## 審查結論
+
+| 視角 | P0 | P1 | P2 |
+|---|---|---|---|
+| 需求 | 0 | 3 | 3 |
+| 架構 | 0 | 3 | 3 |
+| UI/UX | 0 | 6 | 6 |
+| 系統 | 0 | 3 | 4 |
+
+去重後無 P0；P1 依主題歸併為 9 組（返回鍵時序、送出鈕原因、封面播報、對話框焦點、live region、手機版面、上傳逾時、bitmap 釋放、測試缺口）。
+
+## 處置紀錄（彙整者註記，非改判）
+
+| P1 主題 | 處置 | commit |
+|---|---|---|
+| 連續開關取景對話框的 `history.back()` 非同步時序（三視角） | 改為對話框整個佇列期間常駐，內部取景區以 key 重置；不用全域計數器 | R1b 紅 37c0d72e／綠 365ca48f |
+| 送出鈕只有 disabled、沒有原因（三視角） | `submitHint` 文字＋`aria-describedby`，原生 disabled 保留 | R1 紅 895b8be4、R2 紅 2dfcb5d2／綠 a3f10246 |
+| 移除第一張未播報封面更換（三視角） | hook 播報「封面已改為原第 N 張」 | R1 |
+| 對話框關閉後焦點掉到 body | 焦點交回該格按鈕／列表容器 | R1b |
+| live region 不只一個 | 載入中面板拿掉 role=status；保留常駐的一個與必要的 role=alert | R2 |
+| 手機上「完成」落在摺線下 | 方框 `w-[min(100%,45dvh)]`＋底部按鈕列 sticky | 37eef922（版面，無單元測試） |
+| 上傳無逾時 | `UPLOAD_TIMEOUT_MS`＝60 秒，逾時視同失敗可重試 | R1 |
+| bitmap 未釋放、`createObjectURL` 例外與卸載未 revoke | `ImageIO.release`、預覽防呆、卸載清理 | R1 |
+| Create 的 5–20MB 測試空轉；缺 `onDiscardUploaded` 接線測試 | 改以 `addFiles` spy 斷言；補 Create／Edit 接線測試 | R2 |
+
+另併入主 session 對驗收 14 的裁決：裁切工具 chunk 載入失敗改為「請重新整理頁面」（見 progress.md 偏離）。
+
+## 需人工裁決
+
+- 取景對話框 `onInteractOutside` 防誤觸未做（jsdom 無法可靠測試），建議列第 2 波。
+- P2 項目（含 `uploadListingPhoto` 401 不登出）維持 P2，未在本 PR 處理。
