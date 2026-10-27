@@ -31,13 +31,13 @@
 | 4b | invites 後半(lookup、target／global、寄送、GoTrue 對映、對帳、補償、退額度矩陣)+spec-drift 6 條 | ✅ 綠(CI 為證) | 第 1、2、7、9 點 | `e4c18dd`(CI 12 條紅,其中 3 條是 stub 不建帳號致前置讀取 null 的 TypeError,其餘斷言紅) | `78e3b37`(CI 全過) |
 | 5 | `POST /auth/invite/accept`+accept 契約段 | ✅ 綠(CI 為證:`0d44758` 映像限流重跑後全過;v3 改一步驗證見下列) | 第 3、4、5 點 | `ddedcce`(CI 13 條斷言紅;反向順序 canary 直接打 GoTrue、本就綠) | `cfce665` |
 | 審 | 實作審查處置(業主 2026-10-26 裁決,plan.md v3 增補):accept 一步驗證、共用密碼規則、無效信箱只退 target、無碼 429 退額度、告警以帳號去重、蓋章對帳、`/health` 兩欄、補測 | ✅ 綠(待 CI) | — | `e625d0b`(CI 證據在其上的移植 commit `8fa6c2a`:404 過、10 條斷言紅,正是預期的 10 條;`e625d0b` 本身兩次死在拉映像) | (本批) |
-| 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ⬜ 未開始 | — | | |
-| 7 | `registrationFlow.ts` 三個純函式 | ⬜ 未開始 | — | | |
-| 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ⬜ 未開始 | — | | |
+| 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ✅ 綠 | — | `9bf6d07` | `340042c` |
+| 7 | `registrationFlow.ts` 三個純函式 | ✅ 綠 | — | `c1303e9` | `6ce0b63` |
+| 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ✅ 綠 | — | `5d2d32c`(字面修正見 Blockers) | (本 commit) |
 | 9 | InviteCard+三處入口+旗標+`ui/dialog` 關閉鈕+`backendConstants.ts` | ⬜ 未開始 | — | | |
 | 10 | CompleteProfile `app_metadata` 後備預填 | ⬜ 未開始 | — | | |
 | 11 | 模板檔+模板測試+文件 | ⬜ 未開始 | 第 1、11 點 | | |
-| R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ◐ API 版完成 `6640936`(UI 步驟交前端,見下) | — | — | — |
+| R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ✅ API 版 `6640936`＋UI 情境 `8af990f`(collect-only 驗形) | — | — | — |
 | R2-3b | 合併後業主操作(plan.md §5 R2-3b 十二步) | ⬜ 未開始 | 第 5、10 點 | — | — |
 
 **hash 對照**:2026-10-26 pre-push hook 把分支 rebase 到 develop(#398),上表已換成 rebase 後的 hash;CI 的紅綠證據
@@ -125,6 +125,10 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
      1. 紅燈測試一寫就綠(功能已存在)→ 記錄後跳過該階段,人審知悉
      2. 實作中發現 plan 該階段有誤 → 停手記錄,求人工裁決,禁止私改 plan
      3. 綠不了 → 記錄嘗試過什麼,求人工裁決,禁止改測試遷就實作 -->
+
+- 2026-10-27 循環 8（逃生口 2）：紅燈 commit `5d2d32c` 的 `AuthPage.test.tsx`「密碼不符規則時前端先擋、不打 accept」
+  斷言字面寫錯（找「密碼長度至少需要 8 個字元」，共用規則 `@password-policy` 的實際訊息是「密碼需包含：…」）。
+  紅燈期修正測試字面，主 session（`session_01MQovbC6NReqJqXrbwwk29c`）核准；只改這一個字串，其餘斷言不動。
 
 ## 框架摩擦
 

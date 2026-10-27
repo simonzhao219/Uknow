@@ -176,7 +176,7 @@ describe('AuthPage 邀請送出分流', () => {
   it('密碼不符規則時前端先擋、不打 accept', async () => {
     await landOnSetPassword();
     await submitPassword('short');
-    await screen.findByText('密碼長度至少需要 8 個字元', { exact: false });
+    await screen.findByText('密碼需包含：', { exact: false });
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringMatching(/invite\/accept$/),
       expect.anything(),

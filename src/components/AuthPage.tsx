@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -11,11 +11,50 @@ import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
-import { resolvePostLoginAction, classifyLoginError } from '../utils/registrationFlow';
+import {
+  resolvePostLoginAction,
+  classifyLoginError,
+  classifyInviteAcceptError,
+  resolveInviteEntry,
+  type InviteEntry,
+} from '../utils/registrationFlow';
 import { isWeakPasswordError, translateSignUpError } from '../utils/authErrors';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
-import { savePendingReferral } from '../utils/referralInvite';
+import { exceedsPasswordMaxBytes } from '@password-policy';
+import {
+  clearPendingInviteToken,
+  getPendingInviteToken,
+  savePendingInviteToken,
+  savePendingReferral,
+} from '../utils/referralInvite';
+import { useInviteAccept } from '../hooks/useInviteAccept';
 import { BreakableEmail } from './common/BreakableEmail';
+
+/** 既有 session 驗證最多等這麼久；逾時視為未登入（邀請入口不能卡在骨架）。 */
+const SESSION_CHECK_TIMEOUT_MS = 4_000;
+
+const INVITE_HINT_ID = 'invite-login-hint';
+
+/** 邀請 accept 失敗與入口的提示文案——一律依 code，不顯示後端或 GoTrue 的原文。 */
+const INVITE_NOTICES = {
+  undecodable: '邀請連結無法辨識，請推薦人再寄一次，或直接註冊',
+  invalid_token:
+    '邀請連結無效，請確認連結完整（可能被 LINE 或郵件截斷），或請推薦人再寄一次；若你已設定過密碼請直接登入',
+  expired:
+    '邀請連結已過期（7 天內有效）。請推薦人再寄一次；若你已設定過密碼請直接登入，還沒有請點「忘記密碼」設定',
+  gone: '這份邀請已失效，請推薦人再寄一次；若你已設定過密碼請直接登入',
+  already_accepted: '此邀請已完成設定，請用先前設定的密碼登入',
+  login_failed: '密碼已設定完成，請用剛設定的密碼登入',
+  rate_limited: '嘗試次數過多，請稍後再試',
+  temporary: '系統暫時無法完成設定，請稍後再試',
+} as const;
+
+/** 邀請 token 的來源：網址的 ?invite，或（只在 /register）同分頁重新整理前記住的那一份。 */
+function initialInviteToken(search: URLSearchParams, pathname: string): string | null {
+  const fromUrl = search.get('invite');
+  if (fromUrl) return fromUrl;
+  return pathname === '/register' ? getPendingInviteToken() : null;
+}
 
 export function AuthPage() {
   const [step, setStep] = useState(1); // 1: Email, 2: Password/SetPassword
@@ -33,6 +72,78 @@ export function AuthPage() {
   const { showToast } = useNotification();
   const supabase = createClient();
 
+  // --- Email 邀請模式（/register?invite=<token>）---
+  // 惰性初始值只做純讀取＋解碼；清網址與寫 sessionStorage 放 mount 時的 effect
+  // （用 useEffect：react-router 會忽略首次 render 的 layout effect 裡呼叫的 navigate；
+  // 用 router 而非裸 replaceState，useSearchParams 才不會繼續讀到 invite）。
+  const [inviteToken, setInviteToken] = useState<string | null>(() =>
+    initialInviteToken(searchParams, location.pathname),
+  );
+  const [inviteEntry] = useState<InviteEntry | null>(() =>
+    inviteToken ? resolveInviteEntry(inviteToken) : null,
+  );
+  // 既有 session 驗證的結果；邀請入口要等它（沒登入才帶入 email 與推薦碼）。
+  const [sessionState, setSessionState] = useState<'checking' | 'signed_in' | 'signed_out'>(
+    'checking',
+  );
+  // 步驟上方的提示（持久提示與暫時性錯誤共用同一個位置）；換步驟或再次送出即清。
+  const [notice, setNotice] = useState<string | null>(() =>
+    inviteEntry?.kind === 'undecodable' ? INVITE_NOTICES.undecodable : null,
+  );
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const inviteModeReady = useRef(false);
+  const inviteAccept = useInviteAccept({ supabase, navigate, showToast });
+  const isInviteMode = inviteToken !== null && inviteEntry?.kind === 'valid';
+  const isAwaitingInviteEntry =
+    inviteEntry?.kind === 'valid' && sessionState === 'checking' && !inviteModeReady.current;
+
+  useEffect(() => {
+    if (searchParams.has('invite')) {
+      navigate({ pathname: location.pathname, search: '' }, { replace: true });
+    }
+    if (inviteToken && inviteEntry?.kind === 'valid') {
+      savePendingInviteToken(inviteToken);
+    } else if (inviteEntry?.kind === 'undecodable') {
+      clearPendingInviteToken();
+      setInviteToken(null);
+    }
+    // 只在 mount 時處理一次入口。
+    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
+  }, []);
+
+  // 驗證結果出來後才決定邀請入口：沒登入 → 設定密碼步驟；已登入 → 只提示、交給既有導向。
+  useEffect(() => {
+    if (inviteEntry?.kind !== 'valid' || sessionState === 'checking' || inviteModeReady.current) {
+      return;
+    }
+    inviteModeReady.current = true;
+    if (sessionState === 'signed_in') {
+      clearPendingInviteToken();
+      setInviteToken(null);
+      showToast('你已登入', 'info');
+      return;
+    }
+    savePendingReferral(inviteEntry.code);
+    setEmail(inviteEntry.email);
+    setIsExistingUser(false);
+    setStep(2);
+  }, [inviteEntry, sessionState, showToast]);
+
+  // 帶提示落地時焦點給提示（不 autoFocus 欄位）。
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
+
+  const goToStep = (next: number) => {
+    setNotice(null);
+    setStep(next);
+  };
+
+  const leaveInviteMode = () => {
+    clearPendingInviteToken();
+    setInviteToken(null);
+  };
+
   // 邀請連結（/register?ref=CODE）落地時，先把推薦碼記進 localStorage，讓它撐過
   // 註冊漏斗（signup → OTP → 完善資料頁），最後在完善資料頁自動帶入並驗證。
   useEffect(() => {
@@ -42,6 +153,14 @@ export function AuthPage() {
 
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
   useEffect(() => {
+    let settled = false;
+    const settle = (state: 'signed_in' | 'signed_out') => {
+      if (settled) return;
+      settled = true;
+      setSessionState(state);
+    };
+    const timeout = setTimeout(() => settle('signed_out'), SESSION_CHECK_TIMEOUT_MS);
+
     const cleanupInvalidSessions = async () => {
       try {
         // 檢查當前 session 狀態
@@ -49,7 +168,9 @@ export function AuthPage() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (session) {
+        if (!session) {
+          settle('signed_out');
+        } else {
           console.log('AuthPage: Found existing session, checking validity...');
 
           // 驗證 session 是否有效
@@ -68,14 +189,17 @@ export function AuthPage() {
             localStorage.removeItem('user');
             localStorage.removeItem('pendingSession');
             setUser(null);
-          } else if (response.ok) {
-            // ✅ Session 有效，但不主動重定向
+            settle('signed_out');
+          } else {
+            // ✅ Session 有效（或非認證性錯誤，照既有慣例保留 session），不主動重定向
             // 讓 App.tsx 的全局邏輯處理重定向
             console.log('AuthPage: Valid session found, letting App.tsx handle redirection');
+            settle('signed_in');
           }
         }
       } catch (error) {
         console.error('AuthPage: Error checking session validity:', error);
+        settle('signed_out');
         // 發生錯誤時，保守清除
         await supabase.auth.signOut();
         localStorage.removeItem('user');
@@ -84,6 +208,7 @@ export function AuthPage() {
     };
 
     cleanupInvalidSessions();
+    return () => clearTimeout(timeout);
   }, []); // 只在組件掛載時執行一次
 
   // 如果已登入，導向 dashboard
@@ -125,6 +250,7 @@ export function AuthPage() {
   // 步驟 1：檢查 Email 是否存在
   const handleCheckEmail = async () => {
     setErrors({});
+    setNotice(null);
 
     // 前後空白是最常見的貼上失誤，會讓「檢查存在 / 登入 / 註冊」用到不同的字串。
     // 先正規化一次，之後每一步（含步驟 2 的登入 / 註冊）都用同一份乾淨的 email。
@@ -168,7 +294,7 @@ export function AuthPage() {
       // 驗證（見下方 handleLogin）。GoTrue 是先驗密碼、密碼正確才回報未驗證，
       // 因此寄信永遠需要正確密碼。
       setIsExistingUser(data.exists);
-      setStep(2);
+      goToStep(2);
     } catch (error) {
       console.error('Error checking email:', error);
       showToast(
@@ -183,6 +309,7 @@ export function AuthPage() {
   // 步驟 2A：登入（已存在的用戶）
   const handleLogin = async () => {
     setErrors({});
+    setNotice(null);
 
     if (!password) {
       setErrors({ password: '請輸入密碼' });
@@ -242,7 +369,7 @@ export function AuthPage() {
           await supabase.auth.signOut();
 
           showToast('帳號不存在或已被刪除，請重新註冊', 'error');
-          setStep(1);
+          goToStep(1);
           setEmail('');
           setPassword('');
           setIsLoading(false);
@@ -325,6 +452,68 @@ export function AuthPage() {
     }
   };
 
+  // 步驟 2B（邀請模式）：從邀請連結設定密碼。帳號已由推薦人的邀請建立，
+  // accept 一次完成設密碼與 email 驗證，再以剛設的密碼登入。
+  const handleAcceptInvite = async () => {
+    if (!inviteToken) return;
+    setErrors({});
+    setNotice(null);
+
+    const passwordErrors = validatePasswordPolicy(password, confirmPassword);
+    if (!passwordErrors.password && exceedsPasswordMaxBytes(password)) {
+      passwordErrors.password = '密碼過長，請改用較短的密碼';
+    }
+    if (Object.keys(passwordErrors).length > 0) {
+      setErrors(passwordErrors);
+      return;
+    }
+
+    const result = await inviteAccept.submit({ token: inviteToken, email, password });
+    if (result.kind === 'signed_in') return;
+
+    if (result.kind === 'accepted_login_failed') {
+      leaveInviteMode();
+      setIsExistingUser(true);
+      setConfirmPassword('');
+      goToStep(2);
+      setNotice(INVITE_NOTICES.login_failed);
+      return;
+    }
+
+    const action = classifyInviteAcceptError(result.code, Boolean(email));
+    if (action.target === 'stay2B') {
+      if (result.code === 'weak_password') {
+        setErrors({ password: translateSignUpError({ code: 'weak_password' }) });
+      } else {
+        setNotice(
+          result.code === 'rate_limited' ? INVITE_NOTICES.rate_limited : INVITE_NOTICES.temporary,
+        );
+      }
+      return;
+    }
+
+    leaveInviteMode();
+    setConfirmPassword('');
+    if (action.clearPassword) setPassword('');
+    const message =
+      result.code === 'already_accepted'
+        ? INVITE_NOTICES.already_accepted
+        : result.code === 'invalid_token'
+          ? INVITE_NOTICES.invalid_token
+          : result.code === 'gone'
+            ? INVITE_NOTICES.gone
+            : INVITE_NOTICES.expired;
+    if (action.target === 'to2A') {
+      setIsExistingUser(true);
+      goToStep(2);
+    } else {
+      setEmail('');
+      setPassword('');
+      goToStep(1);
+    }
+    setNotice(message);
+  };
+
   // 忘記密碼 → 導向 OTP 密碼重設流程
   const handleForgotPassword = () => {
     navigate('/forgot-password', { state: { email } });
@@ -346,8 +535,28 @@ export function AuthPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {notice && (
+            <p
+              ref={noticeRef}
+              role="alert"
+              tabIndex={-1}
+              className="rounded border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive outline-none"
+            >
+              {notice}
+            </p>
+          )}
+
+          {/* 邀請入口：等既有 session 驗證結果，期間畫與設定密碼同形的骨架 */}
+          {isAwaitingInviteEntry && (
+            <output aria-busy="true" aria-label="載入中" className="block space-y-4">
+              <div className="h-14 rounded bg-muted animate-pulse" />
+              <div className="h-10 rounded bg-muted animate-pulse" />
+              <div className="h-10 rounded bg-muted animate-pulse" />
+            </output>
+          )}
+
           {/* 步驟 1：輸入 Email */}
-          {step === 1 && (
+          {step === 1 && !isAwaitingInviteEntry && (
             <form
               className="space-y-4"
               noValidate
@@ -369,7 +578,7 @@ export function AuthPage() {
                   aria-required="true"
                   aria-invalid={!!errors.email || undefined}
                   aria-describedby={errors.email ? 'email-error' : undefined}
-                  autoFocus
+                  autoFocus={!notice}
                 />
                 <FieldError id="email-error" error={errors.email} />
               </div>
@@ -412,7 +621,7 @@ export function AuthPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="請輸入密碼"
                   className={getInputErrorClass(!!errors.password)}
-                  autoFocus
+                  autoFocus={!notice}
                 />
                 <FieldError error={errors.password} />
 
@@ -423,10 +632,17 @@ export function AuthPage() {
                     onClick={handleForgotPassword}
                     className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
                     data-testid="forgot-password-link"
+                    aria-describedby={notice ? undefined : INVITE_HINT_ID}
                   >
                     忘記密碼？
                   </button>
                 </div>
+                {/* 邀請信建立的帳號還沒有密碼：提示改走信中連結或忘記密碼。有持久提示時隱藏，避免兩條指令相反。 */}
+                {!notice && (
+                  <p id={INVITE_HINT_ID} className="text-xs text-muted-foreground">
+                    透過邀請信加入的話，請用信中連結；還沒設定密碼請用忘記密碼
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -434,7 +650,7 @@ export function AuthPage() {
                   type="button"
                   tone="secondary"
                   onClick={() => {
-                    setStep(1);
+                    goToStep(1);
                     setPassword('');
                     setErrors({});
                   }}
@@ -462,7 +678,11 @@ export function AuthPage() {
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                handleSignUp();
+                if (isInviteMode) {
+                  handleAcceptInvite();
+                } else {
+                  handleSignUp();
+                }
               }}
             >
               {/* 顯示 Email */}
@@ -482,7 +702,7 @@ export function AuthPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="請輸入密碼"
                   className={getInputErrorClass(!!errors.password)}
-                  autoFocus
+                  autoFocus={!notice}
                 />
                 <FieldError error={errors.password} />
                 <div className="bg-muted p-3 rounded text-sm space-y-1">
@@ -509,31 +729,63 @@ export function AuthPage() {
                 <FieldError error={errors.confirmPassword} />
               </div>
 
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  tone="secondary"
-                  onClick={() => {
-                    setStep(1);
-                    setPassword('');
-                    setConfirmPassword('');
-                    setErrors({});
-                  }}
-                  className="flex-1"
-                  data-testid="auth-back-button"
-                >
-                  上一步
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={!password || !confirmPassword}
-                  loading={isLoading}
-                  className="flex-1"
-                  data-testid="auth-signup-button"
-                >
-                  {isLoading ? '註冊中...' : '註冊'}
-                </Button>
-              </div>
+              {isInviteMode ? (
+                <div className="space-y-2">
+                  <Button
+                    type="submit"
+                    disabled={!password || !confirmPassword}
+                    loading={inviteAccept.isSubmitting}
+                    className="w-full"
+                    data-testid="auth-signup-button"
+                  >
+                    {inviteAccept.isSubmitting ? '註冊中...' : '註冊'}
+                  </Button>
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 推薦意向不因換信箱失效：pending code 保留。
+                        leaveInviteMode();
+                        setEmail('');
+                        setPassword('');
+                        setConfirmPassword('');
+                        setErrors({});
+                        goToStep(1);
+                      }}
+                      className="inline-flex items-center text-sm text-primary underline underline-offset-4 pointer-coarse:min-h-[44px]"
+                      data-testid="invite-use-other-email"
+                    >
+                      改用其他 Email 註冊
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    tone="secondary"
+                    onClick={() => {
+                      goToStep(1);
+                      setPassword('');
+                      setConfirmPassword('');
+                      setErrors({});
+                    }}
+                    className="flex-1"
+                    data-testid="auth-back-button"
+                  >
+                    上一步
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!password || !confirmPassword}
+                    loading={isLoading}
+                    className="flex-1"
+                    data-testid="auth-signup-button"
+                  >
+                    {isLoading ? '註冊中...' : '註冊'}
+                  </Button>
+                </div>
+              )}
             </form>
           )}
         </CardContent>

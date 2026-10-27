@@ -171,13 +171,28 @@ export function clearPendingReferral(): void {
 const PENDING_INVITE_TOKEN_KEY = 'pending_invite_token';
 
 /** 記住邀請連結的 token（sessionStorage：只活在這個分頁，關掉即清）。 */
-export function savePendingInviteToken(_token: string): void {}
+export function savePendingInviteToken(token: string): void {
+  try {
+    sessionStorage.setItem(PENDING_INVITE_TOKEN_KEY, token);
+  } catch {
+    // 忽略 storage 不可用
+  }
+}
 
 /** 讀取這個分頁記住的邀請 token；沒有時回 null。 */
 export function getPendingInviteToken(): string | null {
-  void PENDING_INVITE_TOKEN_KEY;
-  return null;
+  try {
+    return sessionStorage.getItem(PENDING_INVITE_TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
 }
 
 /** accept 成功、已完成設定、改用其他 Email、解碼失敗、登出時清除。 */
-export function clearPendingInviteToken(): void {}
+export function clearPendingInviteToken(): void {
+  try {
+    sessionStorage.removeItem(PENDING_INVITE_TOKEN_KEY);
+  } catch {
+    // 忽略
+  }
+}

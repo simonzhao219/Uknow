@@ -47,6 +47,19 @@ class SupabaseAuthMock:
         self._context.route(f"{SUPABASE_AUTH_BASE}/token**", lambda route: _fulfill_json(route, session))
         return session
 
+    def spy_password_login(self, email: str, user_id: str = DEFAULT_USER_ID) -> list:
+        """密碼登入成功，並記下每次送出的 `{email, password}`——邀請連結設好密碼後，
+        前端以連結 payload 的 email 與剛設的密碼登入（v3：沒有 verifyOtp）。"""
+        session = build_session(email, user_id)
+        calls: list = []
+
+        def handler(route):
+            calls.append(route.request.post_data_json)
+            _fulfill_json(route, session)
+
+        self._context.route(f"{SUPABASE_AUTH_BASE}/token**", handler)
+        return calls
+
     def mock_login_invalid_credentials(self):
         body = {"error": "invalid_grant", "error_description": "Invalid login credentials"}
         self._context.route(f"{SUPABASE_AUTH_BASE}/token**", lambda route: _fulfill_json(route, body, status=400))
