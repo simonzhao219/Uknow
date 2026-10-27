@@ -80,8 +80,12 @@ export function InviteCardDialog({ open, onOpenChange, code, memberName }: Invit
   const titleRef = useRef<HTMLHeadingElement>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* 手機版不再釘頂端（裁決 37）：釘頂端是為了避開鍵盤，代價是輸入框落在螢幕上
+          1/4、單手搆不到。改回置中，鍵盤由 index.html 的 interactive-widget=
+          resizes-content 處理——鍵盤升起時視窗縮小、對話框在剩餘空間重新置中。
+          第 2 波再依 Instagram／Threads 的做法整體重調（底部面板）。 */}
       <DialogContent
-        className="max-h-[90dvh] overflow-y-auto max-sm:top-4 max-sm:translate-y-0"
+        className="max-h-[90dvh] overflow-y-auto"
         onOpenAutoFocus={(e) => {
           // 聚焦標題而非 email 欄：不一開卡就彈鍵盤（多數人是要快速分享）。
           e.preventDefault();

@@ -1,4 +1,8 @@
-pytest>=8.0
+# Capped: pytest 9.2.0 (2026-10-27) renamed FixtureManager._arg2fixturedefs to
+# _arg2node2fixturedefs; pytest-bdd 9.0.0 still reads the old name, so every
+# scenario dies with AttributeError at collection. Lift the cap only together
+# with a pytest-bdd release that supports it (check its changelog first).
+pytest>=8.0,<9.2
 pytest-bdd>=7.2
 pytest-playwright>=0.5
 # Pinned: the bundled browser build must match `playwright install` (or a

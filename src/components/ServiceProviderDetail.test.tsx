@@ -229,32 +229,16 @@ describe('ServiceProviderDetail', () => {
     expect(document.activeElement).toBe(heading);
   });
 
-  it('縮圖以 aria-pressed 標示目前顯示的照片，點選後切換', async () => {
+  it('渲染三張照片的輪播，第一張為 current，沒有縮圖列', async () => {
     single.mockResolvedValueOnce({ data: listing, error: null });
     renderAt([detailPath]);
 
-    const first = await screen.findByRole('button', { name: '縮圖 1' });
-    const second = screen.getByRole('button', { name: '縮圖 2' });
-    expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(second.getAttribute('aria-pressed')).toBe('false');
-
-    fireEvent.click(second);
-    expect(second.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('img', { name: 'Cara 美容師 - 圖片 2' })).toBeTruthy();
-  });
-
-  // 圖片載入失敗時 ImageWithFallback 把 alt 換成「Error loading image」：名稱若取自圖片，
-  // 三顆縮圖都會變成同一個名字（CI 的 e2e 擋掉外部圖片時就是這樣抓到的）。
-  it('縮圖載入失敗時按鈕名稱仍是「縮圖 N」', async () => {
-    single.mockResolvedValueOnce({ data: listing, error: null });
-    renderAt([detailPath]);
-
-    const first = await screen.findByRole('button', { name: '縮圖 1' });
-    const img = first.querySelector('img');
-    if (img) fireEvent.error(img);
-
-    expect(screen.getByRole('button', { name: '縮圖 1' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Error loading image' })).toBeNull();
+    expect(await screen.findByRole('region', { name: 'Cara 美容師 的照片' })).toBeTruthy();
+    expect(screen.getAllByRole('group', { name: /^第 \d 張，共 3 張$/ })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: '第 1 張' }).getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.queryByRole('button', { name: /縮圖/ })).toBeNull();
   });
 
   it('類別徽章是灰色分類標記，不是墨黑實心', async () => {

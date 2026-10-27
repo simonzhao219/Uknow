@@ -1,5 +1,6 @@
 # Dependencies
-node_modules/
+# 不帶結尾斜線：目錄與符號連結都要忽略（friction-log 2026-10-27：worktree 的連結曾被 commit 進 develop）
+node_modules
 
 # Build output
 build/
