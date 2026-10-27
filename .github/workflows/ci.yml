@@ -19,7 +19,7 @@ name: CI
 #   L2 unit        ~45s   vitest(+coverage) / deno unit（不需要 DB）
 #   L2 build       ~20s   vite build + bundle 預算
 #   L3 api-tests   ~3 分  deno DB 測試（本地 supabase）
-#   L3 e2e-tests   ~4 分  pytest-bdd + Playwright（全 mock），156 個測試
+#   L3 e2e-tests   ~10 分 pytest-bdd + Playwright（全 mock），官方 image 內跑；pytest 本身 ~8 分（2026-10 實測）
 #   L3 journey-offline ~15s
 #   L4 journey     30-90 分  真後端全鏈路——只在 develop→main 晉升 PR 跑
 #   ci-ok          ~5s    匯總（branch protection 的唯一 required check）
@@ -364,8 +364,24 @@ jobs:
     needs: guards
     if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # 2026-10-27 15→25：Azure apt 鏡像站偶發掉到 ~44 kB/s，`playwright install --with-deps`
-    # 裝字型就吃掉 10–13 分鐘，測試本身約 7 分鐘；當晚五次 e2e 被 15 分鐘上限取消、重跑才綠。
+    # 跑在官方 Playwright Python image 裡：Chromium、系統函式庫、字型（含
+    # 中文 wqy-zenhei）都烤在 image 內，不再每次 `playwright install --with-deps`
+    # 走 apt。2026-10-27 實測那一步 9 分 19 秒（Azure apt 鏡像站偶發掉到
+    # ~44 kB/s 時更久，當晚五次 e2e 被 15 分鐘上限取消），而 actions/cache
+    # 只能省瀏覽器二進位檔的下載，省不掉 apt——image 拉取約 1 分鐘換掉它。
+    #
+    # ⚠️ image tag 的版本必須等於 e2e/requirements.txt 的 `playwright==`
+    # pin：pip 裝的 playwright 會去 /ms-playwright 找**它那一版**綁定的
+    # Chromium build，版本不同就是 "Executable doesn't exist"。這條由
+    # scripts/check-playwright-image.py 機械把關（framework-check 軌）。
+    #
+    # image 內建 Python 3.12 + pip（已解除 EXTERNALLY-MANAGED），所以不用
+    # setup-python；Node 由 setup-node 照常裝進 container。--ipc=host 是
+    # Playwright 對 Docker 內 Chromium 的建議（避免 /dev/shm 不足崩潰）。
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.56.0-noble
+      options: --ipc=host
+    # 測試本身約 8 分鐘，runner 快慢變異可達 42%（見檔頭），25 分鐘留足餘裕。
     timeout-minutes: 25
     steps:
       - name: 取出程式碼
@@ -380,26 +396,18 @@ jobs:
       - name: 安裝前端相依
         run: npm ci
 
-      - name: 安裝 Python 3.12
-        uses: actions/setup-python@v5
+      # setup-python 的 cache: pip 隨 setup-python 一起拿掉，這裡自己快取
+      # pip 的下載目錄；key 綁 requirements.txt，與原本 setup-python 的行為等價。
+      - name: 快取 pip 下載
+        uses: actions/cache@v4
         with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: e2e/requirements.txt
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-e2e-${{ hashFiles('e2e/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-e2e-
 
       - name: 安裝 e2e 相依
         run: pip install -r e2e/requirements.txt
-
-      - name: 快取 Playwright 瀏覽器
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: 安裝 Playwright 瀏覽器
-        run: playwright install chromium --with-deps
 
       # dev server 由 workflow 顯式起：conftest 的 Popen(shell=True) 殺的是
       # shell wrapper，node 子程序會留下來（CI log 的 "Terminate orphan
