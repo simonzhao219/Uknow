@@ -64,6 +64,10 @@ export const browserImageIO: ImageIO = {
     return canvas;
   },
 
+  release(image: DecodedImage): void {
+    (image.handle as { close?: () => void } | null)?.close?.();
+  },
+
   encode(canvas: unknown, quality: number): Promise<Blob | null> {
     return new Promise((resolve) => {
       (canvas as HTMLCanvasElement).toBlob((blob) => resolve(blob), 'image/jpeg', quality);
