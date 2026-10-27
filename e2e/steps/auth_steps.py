@@ -181,6 +181,11 @@ def see_alert(page, text):
     expect(page.get_by_role("alert").filter(has_text=text)).to_be_visible(timeout=5_000)
 
 
+@then(parsers.parse('I should see the notice "{text}"'))
+def see_notice(page, text):
+    expect(page.get_by_role("status").filter(has_text=text)).to_be_visible(timeout=5_000)
+
+
 @then("the login password field should be empty")
 def login_password_empty(page):
     expect(page.get_by_label("密碼", exact=True)).to_have_value("", timeout=5_000)

@@ -277,7 +277,8 @@ function InviteCard({
         </div>
       )}
 
-      {hasEmail && (
+      {/* 主鈕換成快速分享時沒有對應的寄送動作：同意聲明收起（勾選狀態保留，email 一改即重置）。 */}
+      {hasEmail && !swapToShare && (
         <div className="flex items-start gap-2">
           <Checkbox
             ref={consentRef}
