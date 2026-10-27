@@ -165,3 +165,19 @@ export function clearPendingReferral(): void {
     // 忽略
   }
 }
+
+// --- Email 邀請連結的 token（撐過 2B 重新整理）---
+
+const PENDING_INVITE_TOKEN_KEY = 'pending_invite_token';
+
+/** 記住邀請連結的 token（sessionStorage：只活在這個分頁，關掉即清）。 */
+export function savePendingInviteToken(_token: string): void {}
+
+/** 讀取這個分頁記住的邀請 token；沒有時回 null。 */
+export function getPendingInviteToken(): string | null {
+  void PENDING_INVITE_TOKEN_KEY;
+  return null;
+}
+
+/** accept 成功、已完成設定、改用其他 Email、解碼失敗、登出時清除。 */
+export function clearPendingInviteToken(): void {}
