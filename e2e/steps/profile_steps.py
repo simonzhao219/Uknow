@@ -107,7 +107,7 @@ def terms_dialog_fits_and_scrolls(page, complete_profile_page):
     )
 
     # 2) The close button stays reachable (fixed header, not scrolled away).
-    expect(page.get_by_role("button", name="Close")).to_be_visible()
+    expect(page.get_by_role("button", name="關閉")).to_be_visible()
 
     # 3) The long terms text must actually be scrollable inside the body,
     #    i.e. content is taller than the clipped, bounded body.

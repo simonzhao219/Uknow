@@ -16,6 +16,7 @@ Feature: Dashboard smoke test
     When I visit "/dashboard"
     And I open the my QR page
     And I click the share referral button
+    And I press quick share on the invite card
     Then I should see a toast containing "邀請訊息已複製到剪貼簿"
 
   Scenario: A member invites from the dashboard referral card (copy fallback)
@@ -23,6 +24,7 @@ Feature: Dashboard smoke test
     And the browser has no native share sheet
     When I visit "/dashboard"
     And I click the invite friend button
+    And I press quick share on the invite card
     Then I should see a toast containing "邀請訊息已複製到剪貼簿"
 
   Scenario: The four status cards are titled after their destination pages

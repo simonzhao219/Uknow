@@ -199,6 +199,11 @@ export function clearPendingInviteToken(): void {
 
 // --- Email 邀請的建置旗標 ---
 
+/**
+ * Email 邀請卡是否開放（建置旗標 VITE_REFERRAL_EMAIL_INVITE，讀旗標的單一出處）。
+ * 關閉時三處「邀請好友」維持直接 shareReferralInvite。dev 由 .env.development 開啟；
+ * 正式站在 Cloudflare Pages Production 作用域設定（後端收信核對通過後才開）。
+ */
 export function isEmailInviteEnabled(): boolean {
-  return false;
+  return import.meta.env?.VITE_REFERRAL_EMAIL_INVITE === 'true';
 }

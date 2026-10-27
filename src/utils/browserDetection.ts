@@ -33,7 +33,8 @@ export function detectInAppBrowser(): BrowserDetectionResult {
     };
   }
 
-  const ua = navigator.userAgent.toLowerCase();
+  // 有些內嵌環境（與測試替身）沒有 userAgent：當成一般瀏覽器，不讓整個元件炸掉。
+  const ua = (navigator.userAgent ?? '').toLowerCase();
 
   // 排除搜尋引擎爬蟲
   if (

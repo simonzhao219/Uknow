@@ -34,7 +34,7 @@
 | 6 | `routeAfterVerifiedSession` 抽取(行為不變) | ✅ 綠 | — | `9bf6d07` | `340042c` |
 | 7 | `registrationFlow.ts` 三個純函式 | ✅ 綠 | — | `c1303e9` | `6ce0b63` |
 | 8 | AuthPage invite 模式+`useInviteAccept`+`App.tsx`+2A 提示+`sessionStorage` | ✅ 綠 | — | `5d2d32c`(字面修正見 Blockers) | (本 commit) |
-| 9 | InviteCard+三處入口+旗標+`ui/dialog` 關閉鈕+`backendConstants.ts` | ⬜ 未開始 | — | | |
+| 9 | InviteCard+三處入口+旗標+`ui/dialog` 關閉鈕+`backendConstants.ts` | ✅ 綠 | — | `0120945` | (本 commit) |
 | 10 | CompleteProfile `app_metadata` 後備預填 | ⬜ 未開始 | — | | |
 | 11 | 模板檔+模板測試+文件 | ⬜ 未開始 | 第 1、11 點 | | |
 | R2-3a | journey 情境+`journey.yml` secret 注入(非 TDD,分支內驗形) | ✅ API 版 `6640936`＋UI 情境 `8af990f`(collect-only 驗形) | — | — | — |
@@ -129,6 +129,10 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
 - 2026-10-27 循環 8（逃生口 2）：紅燈 commit `5d2d32c` 的 `AuthPage.test.tsx`「密碼不符規則時前端先擋、不打 accept」
   斷言字面寫錯（找「密碼長度至少需要 8 個字元」，共用規則 `@password-policy` 的實際訊息是「密碼需包含：…」）。
   紅燈期修正測試字面，主 session（`session_01MQovbC6NReqJqXrbwwk29c`）核准；只改這一個字串，其餘斷言不動。
+- 2026-10-27 循環 9：紅燈 `0120945` 的 `InviteFriendPanelContent.test.tsx`「旗標開啟時…不叫系統分享」以
+  `{ ...navigator, share }` 換掉 navigator，展開丟了原型上的 `userAgent`，`detectInAppBrowser` 讀 `undefined.toLowerCase()`
+  炸掉。測試不動；實作側讓 `detectInAppBrowser` 在沒有 userAgent 時當一般瀏覽器（`?? ''`）——內嵌環境同樣受益，
+  不改任何既有判斷。
 
 ## 框架摩擦
 

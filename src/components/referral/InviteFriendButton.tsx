@@ -5,7 +5,8 @@ import { UserContext } from '../../App';
 import { useNotification } from '../notifications/NotificationContext';
 import { JoinReferralProgramDialog } from './JoinReferralProgramDialog';
 import { myQrTabsForUser } from '../../utils/myQrTabPreference';
-import { shareReferralInvite } from '../../utils/referralInvite';
+import { isEmailInviteEnabled, shareReferralInvite } from '../../utils/referralInvite';
+import { InviteCardDialog } from './InviteCard';
 
 interface InviteFriendButtonProps {
   /** 外框與寬度依版面脈絡給（推薦格整寬、推薦碼列靠右）。 */
@@ -42,6 +43,7 @@ export function InviteFriendButton({
   const { user, refreshUser } = useContext(UserContext);
   const { showToast } = useNotification();
   const [joinOpen, setJoinOpen] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const inviteRef = useRef<HTMLButtonElement>(null);
   const justJoined = useRef(false);
 
@@ -70,18 +72,34 @@ export function InviteFriendButton({
   };
 
   if (canInvite) {
+    // 旗標開啟時先開邀請卡（快速分享在卡內）；關閉時維持直接分享。
+    const emailInvite = isEmailInviteEnabled();
     return (
-      <Button
-        ref={inviteRef}
-        tone="secondary"
-        size="sm"
-        className={className}
-        onClick={() => shareReferralInvite(user.referralCode, showToast, user.name)}
-        data-testid="invite-friend-button"
-      >
-        <Share2 className="h-4 w-4" aria-hidden="true" />
-        邀請好友
-      </Button>
+      <>
+        <Button
+          ref={inviteRef}
+          tone="secondary"
+          size="sm"
+          className={className}
+          onClick={() =>
+            emailInvite
+              ? setCardOpen(true)
+              : shareReferralInvite(user.referralCode, showToast, user.name)
+          }
+          data-testid="invite-friend-button"
+        >
+          <Share2 className="h-4 w-4" aria-hidden="true" />
+          邀請好友
+        </Button>
+        {emailInvite && (
+          <InviteCardDialog
+            open={cardOpen}
+            onOpenChange={setCardOpen}
+            code={user.referralCode}
+            memberName={user.name}
+          />
+        )}
+      </>
     );
   }
 
