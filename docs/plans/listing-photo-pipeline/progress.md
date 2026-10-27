@@ -11,7 +11,7 @@
 | 1 | 1-2 | DELETE /listings/photos、/listings/:id 路由 | ✅ 綠（整合測試 `listing-photos.test.ts` 本機無 supabase CLI 未跑，交 CI api-tests） | 091f879c | （見 git log） |
 | 1 | 1-3 | listingPhotosApi＋Edit diff 刪＋管理頁改走後端 | ✅ 綠 | 29f773bf | （見 git log） |
 | 1 | 1-4 | e2e 同步（刪刊登走後端 mock，4 情境） | ✅ 綠（本機 Playwright 跑過 listing_management 14 情境）；journey 刪刊登步驟走 UI，無需改 | （e2e 補測，無獨立紅燈） | （見 git log） |
-| 1 | 1-5 | 文件（規格書 §11／§14、ui-ux §7、supabase-functions.md） | ⬜ 未開始 | | |
+| 1 | 1-5 | 文件（規格書 §11 清理行為＋§14 新列、supabase-functions.md 區段表） | ✅ | （文件，無紅燈） | （見 git log） |
 | 2 前端管線 | 2-1 | apiRequest 支援 FormData | ⬜ 未開始 | | |
 | 2 | 2-2 | imageGeometry／imagePipeline | ⬜ 未開始 | | |
 | 2 | 2-3 | useListingPhotos＋uploadListingPhoto | ⬜ 未開始 | | |
@@ -21,9 +21,13 @@
 
 ## 目前位置與下一步
 
-PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1～1-3 綠；1-4 e2e 綠；下一步 1-5 文件，再 `npm run check:full`、`/review-implementation`、PR。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
+PR 1 實作中（業主 2026-10-27 親打 /tdd-implement，review.md 已勾通過，僅授權 PR 1）；1-1～1-3 綠；1-1～1-5 全綠；下一步 `npm run check:full`、`/review-implementation`、push、更新 #404 為 PR 1。業主親打 `/tdd-implement listing-photo-pipeline` 才開始實作。
 
 ## 偏離規劃（記入 PR 描述）
+
+- 1-5：「5 MB 約束的是壓縮後上傳檔」的規格書加註與 ui-ux §7 補充**移到 PR 2**——PR 1 沒有壓縮管線，現在寫會與行為不符；ui-ux §7 是響應式版面，清理行為不屬 UI 準則。
+- 1-4：journey 的刪刊登情境走 UI，不需改 step；只補 mocked e2e 的 4 個情境。
+- 規劃檔不在 PR 1 收尾清理（PR 2 依賴），改以 plans-keep 宣告退場條件。
 
 - 404 標記改用物件信封 `{success:false,error:{code:'not_found'}}`：前端 `extractApiErrorCode` 只讀 `error.code`，plan 寫的頂層 `code` 讀不到。
 - 新端點錯誤信封一律 `{success:false,error:{code,message}}`（同 referral-invite），與 upload-photo 的字串信封不同；前端 `extractApiErrorMessage` 兩種都吃。
