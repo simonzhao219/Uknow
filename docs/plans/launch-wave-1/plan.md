@@ -47,6 +47,8 @@
 | 20 | P1a Q-G 條款十之一 | **記入規格書已知落差，第 2 波在 30 日窗口內補齊**（帳號刪除 cascade、`/auth/cancel-signup`、歷史孤兒），列第 2 波必做 |
 | 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
 | 22 | journey sandbox 紅（PayUni 測試站改版）後的開放時間 | **今晚繼續，開放改 00:00 前後**；晉升閘門暫走 webhook 備援（#413，規則 13 到期 11/03）；journey-full webhook 仍紅或真付款失敗就改明天 |
+| 23 | 官方 icon 與 SEO／AEO／GEO（業主 19:55 提出） | **兩段**：基礎進窗口（favicon 全套、manifest、og-image 1200×630、品牌名統一「Uknow」、description／canonical、robots.txt＋sitemap.xml、私密頁 noindex、JSON-LD Organization／WebSite）目標 10/28 第二次晉升；進階（AEO：FAQ／服務者頁 JSON-LD；GEO：llms.txt、公開頁預渲染、服務者動態 sitemap）第 2 波三段式 |
+| 24 | 站內 logo | **一併換成官方版**（導覽列用黑底白字 Uk icon＋「Uknow」字標、登入／註冊頁用橫式 logo）；Navbar 與 T1 共檔但 T1 已排第 2 波，不撞 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -216,6 +218,8 @@ commit;
 | Deno 相依掃描 | XS | security.yml 加一步 |
 | 後台稽核軌跡 | M | A1b-2/3（總綱 §6） |
 | 既有 issue 收斂 | XS | 全部同標題「Edge Function 部署失敗」issue（2026-10-26 時點 13 張，#337–#400）、#288、#280、#279 一次清；順手把 checklist 的號源重設句改成「已開始發碼後絕不執行」 |
+| SEO 進階（AEO／GEO） | M | FAQ 與服務者頁 JSON-LD、llms.txt、公開頁預渲染（建置流程變更，三段式）、服務者動態 sitemap（後端產生）；基礎版在窗口 PR `fix/brand-icons-seo` |
+| journey harness 配合 PayUni sandbox 新表單 | S | `payuni_sandbox_page.py` 重新定位卡號欄與送出鍵；11/03 前把 ci.yml journey-full 改回 sandbox（規則 13 到期自動紅） |
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
@@ -269,6 +273,7 @@ commit;
 | 10/27 18:50 | **webhook 子集綠**（run 40473648265：30 節點建樹＋Email 邀請 GUI 情境在 hosted 分支通過＝R2 hosted 行為已驗）。#413 CI 只剩 e2e-tests。R2 follow-up PR #412 開出（draft，4 項都做，目標 10/28 晉升）。業主：LINE token 貼成 Channel secret，已指正；裁決 22 | #413 綠 → 合併 → #411 journey-full（webhook）重跑 |
 | 10/27 19:00 | 業主 LINE 推播實測通（curl 回 `{}`、手機收到）；Secret 已更正為長效 Channel access token。#412 審過可合併（P2 順手刪 useRef）。#413 只剩 e2e-tests | #413 綠 → 合併 → #411 journey-full（webhook）|
 | 10/27 19:47 | **#413 合併**（`5779d16`）：develop 的 journey-full 閘門暫走 webhook 至 11/03。#411 head 隨之更新、CI 含 journey-full（webhook、full 30 節點）重跑 | journey-full 綠 → merge commit 合進 main → 叫業主核准 production 部署 |
+| 10/27 19:55 | 業主提出官方 icon（黑底白字 Uk）、搜尋引擎可見、SEO／AEO／GEO 準備 → 裁決 23／24。原檔已放 `fix/brand-icons-seo` 分支 `public/brand/`（54d06bc）；派工 prompt §J；開 Sonnet 執行 session | 等 #411 journey-full |
 
 **執行 session 名冊**（主 session 維護）
 

@@ -191,3 +191,21 @@
   5. 邀請信模板（循環 11）全文用「推薦人」，不得出現上線／上層；並確認模板讀的是 `user_metadata.referral_invite_url`。
 - 正式站實寄核對（業主 §7 第 11 步）同時驗兩件 R2-0 沒驗過的 hosted 行為：重寄是否套用新 metadata、purge 後 `delete_auth_audit_for_users` 真的刪掉該帳號的 audit 列。PR 內文「業主操作」把這兩項寫進核對步驟，主 session 會用 SQL 查 audit 殘留。
 ```
+
+## J. 官方 icon＋SEO 基礎（Sonnet，Plan Mode，分支 `fix/brand-icons-seo`；裁決 23／24）
+
+```text
+工項：官方品牌 icon 全站套用＋搜尋引擎基礎（SEO 基礎版；AEO／GEO 進階留第 2 波）。Plan Mode 規劃後直接做，不落檔。目標 10/28 下午第二次晉升。
+- 分支 `fix/brand-icons-seo` 已存在（從 develop 切，只有一個 commit 放原檔）：`git fetch origin fix/brand-icons-seo fix/og-preview-lang && git checkout fix/brand-icons-seo`。原檔在 public/brand/：uknow-logo-horizontal.jpg（1962×956 白底橫式「Uk」icon＋Uknow 字標）、uknow-icon-rounded-417.png（圓角黑底白字 Uk）、uknow-icon-square-340.png（方形黑底白字 Uk）。
+- **先 `git rebase origin/fix/og-preview-lang`**：PR #405（R1a-2）已審過、等晉升後合進 develop，它改了 index.html（og 標籤、lang=zh-Hant）並加 public/og-image.png 與 src/indexHtml.test.ts；你的改動疊在它上面，等它合進 develop 後主 session 會把你 rebase 回 develop。
+範圍（每項小、可各自驗）：
+1. favicon 全套：從方形 icon 產 favicon.ico（16/32/48）、favicon-16／32.png、apple-touch-icon.png（180，用方形，iOS 自己加圓角）、icon-192／512.png、site.webmanifest（name/short_name「Uknow」、theme_color #000000、background_color #ffffff、display standalone、icons 含 purpose any maskable 用圓角版）；index.html 加對應 link／meta theme-color。產圖用 node 的 sharp（若 devDependencies 沒有，`npx -y sharp-cli` 或 Python Pillow 都可，不要把產圖工具加進 package.json）。
+2. og-image：用橫式 logo 產 1200×630（白底置中、四周留白），覆蓋 #405 的 public/og-image.png；index.html 的 og:site_name／og:title 品牌名統一寫「Uknow」（#405 寫成大寫 UKNOW 要改），補 og:image:width／height、twitter:card=summary_large_image。PR 內文寫「Closes #408」。
+3. 搜尋基礎：index.html 加 meta description（繁中一句，不出現法務文件沒有的承諾，用語照 docs/ui-ux-guidelines.md）、`<link rel="canonical" href="https://uknow.com.tw/">`；public/robots.txt（Allow all；Disallow /admin、/dashboard、/auth/、/payment/、/rewards、/tasks、/referrals、/login、/register、/forgot-password；Sitemap: https://uknow.com.tw/sitemap.xml）；public/sitemap.xml 列靜態公開頁（/、/service-providers、/listing-plans、/terms-of-service、/participation-contract、/business-manual、/referral-reward-contract、/referral-reward-rules；lastmod 用當天）；私密路徑的 noindex 用 public/_headers 加 `X-Robots-Tag: noindex` 規則（Cloudflare Pages 語法，看既有 _headers 寫法），不改 React。
+4. JSON-LD：index.html 內一段 Organization（name Uknow、url、logo 指向 og-image 或 icon-512）＋ WebSite（name、url）。不要編造 sameAs／電話／地址——沒有確定來源就不寫。
+5. 站內 logo（裁決 24）：grep src/ 找舊 logo 圖（src/assets 下那張）與所有使用處（Navbar、AuthPage、BottomNav、頁尾等），換成官方版：導覽列用方形 icon＋「Uknow」字標（尺寸與現在一致、alt="Uknow"），登入／註冊／OTP 等頁的大 logo 用橫式版；舊圖檔若沒有其他用途就刪（knip 會抓）。Navbar 與 T1 共檔，T1 排第 2 波，不衝突。
+6. 測試：擴充 src/indexHtml.test.ts（favicon／manifest／canonical／description／JSON-LD 可解析且 name=Uknow、og:site_name=Uknow）；新增測試讀 public/robots.txt（含 Sitemap 行、Disallow /admin）、public/sitemap.xml（well-formed、含 /service-providers）、site.webmanifest（JSON 可解析、icons 兩個）；命名照 .claude/rules/test-naming.md，跑 python3 scripts/check-test-names.py。
+7. 文件：docs/ui-ux-guidelines.md 品牌段加一句「官方原檔在 public/brand/，favicon／og 圖由它產生」；不要在多處重複。
+- 第 2 波（不做，PR「偏離規劃說明」列出）：FAQ／服務者頁 JSON-LD（AEO）、llms.txt、公開頁預渲染、服務者 `/service-providers/:id` 動態 sitemap。
+- `npm run check:full` 綠才 push；用 GitHub MCP 開 draft PR（內文照模板），CI 綠後轉 ready、send_message 回報主 session（session_01MQovbC6NReqJqXrbwwk29c）：PR 號、偏離、未驗項（真機看 favicon／分享預覽要業主部署後驗）。合併等主 session；不要自己合。
+```
