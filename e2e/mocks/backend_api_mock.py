@@ -227,9 +227,6 @@ class BackendApiMock:
     def set_reset_registration_success(self):
         self._route("/auth/reset-registration", lambda route: _fulfill_json(route, {"success": True}))
 
-    # GET /referrals/validate/<code> is the only referral-code check (the anonymous
-    # POST /listings/verify-referral-code alias was removed). Response shape mirrors
-    # the backend exactly: no referrer id of any kind.
     def mock_invite_accept(self, status: int = 200, code: Optional[str] = None):
         """`POST /auth/invite/accept`（公開）。200 時密碼已設、email 已驗證，前端接著以
         剛設的密碼登入；錯誤一律 `{ success: false, error: { code, message } }`，message 是
@@ -254,6 +251,9 @@ class BackendApiMock:
         self._route_exact("/referrals/invites", handler)
         return calls
 
+    # GET /referrals/validate/<code> is the only referral-code check (the anonymous
+    # POST /listings/verify-referral-code alias was removed). Response shape mirrors
+    # the backend exactly: no referrer id of any kind.
     def set_referral_code_valid(self, referrer_name: str = "推薦人測試"):
         body = {"valid": True, "referrer": {"userName": referrer_name, "listingName": None}}
         self._route("/referrals/validate/", lambda route: _fulfill_json(route, body))

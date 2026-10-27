@@ -21,6 +21,7 @@ import {
 import { isWeakPasswordError, translateSignUpError } from '../utils/authErrors';
 import { validatePasswordPolicy } from '../utils/passwordPolicy';
 import { exceedsPasswordMaxBytes } from '@password-policy';
+import { REFERRAL_INVITE_TOKEN_TTL_SECONDS } from '@referral-invite-payload';
 import {
   clearPendingInviteToken,
   getPendingInviteToken,
@@ -39,9 +40,8 @@ const INVITE_HINT_ID = 'invite-login-hint';
 const INVITE_NOTICES = {
   undecodable: '邀請連結無法辨識，請推薦人再寄一次，或直接註冊',
   invalid_token:
-    '邀請連結無效，請確認連結完整（可能被 LINE 或郵件截斷），或請推薦人再寄一次；若你已設定過密碼請直接登入',
-  expired:
-    '邀請連結已過期（7 天內有效）。請推薦人再寄一次；若你已設定過密碼請直接登入，還沒有請點「忘記密碼」設定',
+    '邀請連結無效：請回到信件重新點一次連結並確認連結完整（可能被 LINE 或郵件截斷），或請推薦人再寄一次；若你已設定過密碼請直接登入',
+  expired: `邀請連結已過期（${REFERRAL_INVITE_TOKEN_TTL_SECONDS / (24 * 60 * 60)} 天內有效）。請推薦人再寄一次；若你已設定過密碼請直接登入，還沒有請點「忘記密碼」設定`,
   gone: '這份邀請已失效，請推薦人再寄一次；若你已設定過密碼請直接登入',
   already_accepted: '此邀請已完成設定，請用先前設定的密碼登入',
   login_failed: '密碼已設定完成，請用剛設定的密碼登入',
@@ -160,6 +160,11 @@ export function AuthPage() {
       setSessionState(state);
     };
     const timeout = setTimeout(() => settle('signed_out'), SESSION_CHECK_TIMEOUT_MS);
+    // 清掉過期 session 會觸發 SIGNED_OUT，App.tsx 在那裡清邀請 token（登出要清）；
+    // 但這裡的登出只是清理殘留，邀請流程還要撐過重新整理（契約 1），清完再寫回。
+    const keepInviteToken = () => {
+      if (inviteToken && inviteEntry?.kind === 'valid') savePendingInviteToken(inviteToken);
+    };
 
     const cleanupInvalidSessions = async () => {
       try {
@@ -186,6 +191,7 @@ export function AuthPage() {
               'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
             );
             await supabase.auth.signOut();
+            keepInviteToken();
             localStorage.removeItem('user');
             localStorage.removeItem('pendingSession');
             setUser(null);
@@ -202,6 +208,7 @@ export function AuthPage() {
         settle('signed_out');
         // 發生錯誤時，保守清除
         await supabase.auth.signOut();
+        keepInviteToken();
         localStorage.removeItem('user');
         setUser(null);
       }
@@ -522,18 +529,21 @@ export function AuthPage() {
   return (
     <div className="max-w-md mx-auto mt-12">
       <Card>
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">
-            {step === 1 && '歡迎使用 Uknow'}
-            {step === 2 && isExistingUser && '登入帳號'}
-            {step === 2 && !isExistingUser && '設定密碼'}
-          </CardTitle>
-          <CardDescription>
-            {step === 1 && '請輸入您的 Email'}
-            {step === 2 && isExistingUser && '歡迎回來'}
-            {step === 2 && !isExistingUser && '建立您的新帳號'}
-          </CardDescription>
-        </CardHeader>
+        {/* 邀請入口等 session 驗證時不先閃 Email 步驟的標題（骨架本身有「載入中」名稱）。 */}
+        {!isAwaitingInviteEntry && (
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">
+              {step === 1 && '歡迎使用 Uknow'}
+              {step === 2 && isExistingUser && '登入帳號'}
+              {step === 2 && !isExistingUser && '設定密碼'}
+            </CardTitle>
+            <CardDescription>
+              {step === 1 && '請輸入您的 Email'}
+              {step === 2 && isExistingUser && '歡迎回來'}
+              {step === 2 && !isExistingUser && '建立您的新帳號'}
+            </CardDescription>
+          </CardHeader>
+        )}
         <CardContent className="space-y-4">
           {notice && (
             <p

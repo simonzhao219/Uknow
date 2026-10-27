@@ -16,6 +16,9 @@ import {
   routeAfterVerifiedSession,
 } from '../utils/routeAfterVerifiedSession';
 
+/** 後端設密碼最壞約 10 秒（GoTrue 逾時）；再留網路餘裕。 */
+const ACCEPT_TIMEOUT_MS = 25_000;
+
 export type InviteAcceptResult =
   /** 密碼已設、已登入並導向下一步。 */
   | { kind: 'signed_in' }
@@ -53,14 +56,20 @@ export function useInviteAccept({ supabase, fetchImpl, navigate, showToast }: Us
       setIsSubmitting(true);
       try {
         let response: Response;
+        // 網路掛住時不讓按鈕永遠轉圈：逾時即中止，當成無 code 的暫時性失敗（留在原步驟可重試）。
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), ACCEPT_TIMEOUT_MS);
         try {
           response = await doFetch(buildApiUrl('/auth/invite/accept'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token, password }),
+            signal: controller.signal,
           });
         } catch {
           return { kind: 'failed', code: undefined };
+        } finally {
+          clearTimeout(timer);
         }
 
         if (!response.ok) {

@@ -63,7 +63,7 @@ function toErrorCode(error: unknown): ReferralInviteErrorCode {
 
 type Live = (
   | { kind: 'none' }
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; error: boolean }
   | { kind: 'accepted'; email: string }
 ) & {
   seq?: number;
@@ -128,9 +128,16 @@ function InviteCard({
   const liveRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
+  const unmountedRef = useRef(false);
 
-  // 關卡（卸載）時中止在途請求。
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // 關卡（卸載）時中止在途請求；中止後的失敗不再寫回已卸載的卡片。
+  useEffect(
+    () => () => {
+      unmountedRef.current = true;
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   // 結果出現時捲到看得見（手機鍵盤開著時主鈕下方容易被蓋住）。
   useEffect(() => {
@@ -138,11 +145,13 @@ function InviteCard({
   }, [live]);
 
   const trimmed = email.trim();
-  const hasEmail = !locked && trimmed !== '';
+  const name = memberName?.trim() || '';
+  // 同意聲明要寫出信中會顯示的推薦人姓名；沒有姓名就不提供 Email 邀請，只剩快速分享。
+  const canEmail = !locked && name !== '';
+  const hasEmail = canEmail && trimmed !== '';
   const swapToShare = errorCode !== null && SWAP_TO_SHARE.has(errorCode);
   const fieldError = errorCode !== null && FIELD_ERRORS.has(errorCode);
   const showShare = !hasEmail || swapToShare;
-  const name = memberName?.trim() || '';
 
   /** 每次寫入換一個 key，讓 live region 的內容節點重建：同一句也會重播。 */
   const seqRef = useRef(0);
@@ -159,8 +168,9 @@ function InviteCard({
     setConsentInvalid(false);
     if (consent) {
       setConsent(false);
-      announce({ kind: 'text', text: 'Email 已變更，請重新勾選同意聲明' });
-    } else if (live.kind === 'text') {
+      announce({ kind: 'text', text: 'Email 已變更，請重新勾選同意聲明', error: false });
+    } else if (live.kind !== 'none') {
+      // 錯誤句與上一筆的受理訊息都屬於舊的輸入。
       setLive({ kind: 'none' });
     }
   };
@@ -173,7 +183,7 @@ function InviteCard({
   const fail = (code: ReferralInviteErrorCode) => {
     setErrorCode(code);
     if (LOCKED.has(code)) setLocked(true);
-    announce({ kind: 'text', text: ERROR_TEXT[code] });
+    announce({ kind: 'text', text: ERROR_TEXT[code], error: true });
     if (FIELD_ERRORS.has(code)) emailRef.current?.focus();
   };
 
@@ -182,7 +192,7 @@ function InviteCard({
     if (!consent) {
       setConsentInvalid(true);
       consentRef.current?.focus();
-      announce({ kind: 'text', text: ERROR_TEXT.consent_required });
+      announce({ kind: 'text', text: ERROR_TEXT.consent_required, error: true });
       return;
     }
     const normalized = normalizeReferralInviteEmail(email);
@@ -193,6 +203,8 @@ function InviteCard({
 
     sendingRef.current = true;
     setSending(true);
+    // 上一次的錯誤句屬於上一次送出，在途期間不留著。
+    setLive({ kind: 'none' });
     const controller = new AbortController();
     abortRef.current = controller;
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -207,7 +219,7 @@ function InviteCard({
       setErrorCode(null);
       announce({ kind: 'accepted', email: normalized });
     } catch (error) {
-      if (controller.signal.aborted && abortRef.current !== controller) return;
+      if (unmountedRef.current) return;
       fail(toErrorCode(error));
     } finally {
       clearTimeout(timer);
@@ -243,7 +255,7 @@ function InviteCard({
         </DialogDescription>
       </DialogHeader>
 
-      {!locked && (
+      {canEmail && (
         <div className="space-y-2">
           <Label htmlFor={emailId}>對方的 Email（選填）</Label>
           <Input
@@ -304,7 +316,10 @@ function InviteCard({
         id={liveId}
         aria-live="polite"
         data-testid="invite-card-live"
-        className={cn('space-y-1 text-sm', live.kind === 'text' && errorCode && 'text-destructive')}
+        className={cn(
+          'space-y-1 text-sm',
+          live.kind === 'text' && live.error && 'text-destructive',
+        )}
       >
         {live.kind === 'text' && <span key={live.seq}>{live.text}</span>}
         {live.kind === 'accepted' && (

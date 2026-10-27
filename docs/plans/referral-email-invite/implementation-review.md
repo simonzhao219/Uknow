@@ -88,3 +88,45 @@ P2-15 `referral-invite-deps.unit.test.ts`；P2-16 `/health` 兩欄＋checklist�
 `tools/supa.py` 的 `api_post_public`／`rpc`。P2-13、P2-14 與 alias 交接寫進 progress「前端 session 交接」。P2-9、P2-10 列 §2.5 殘餘。
 
 - [x] 人審完成,裁決:□ 通過 ☑ 修訂後通過(業主 2026-10-26 逐項裁決,見上表) □ 退回重規劃
+
+---
+
+# 前端段實作審查（循環 6–11、R2-3a UI、文件；2026-10-27）
+
+審查對象：`feature/referral-email-invite` 相對 `origin/develop` 的 diff（排除 docs/plans）。四視角平行派工，只彙整不改判。
+
+| 視角 | P0 | P1 | P2 |
+|---|---|---|---|
+| 系統 | 0 | 2（＋1 需人工裁決） | 4 |
+| 架構 | 0 | 1 | 5 |
+| UI/UX | 0 | 3 | 5（＋2 需人工裁決） |
+| 需求 | 0 | 5 | 6 |
+
+**共通結論**：P0 無。核心流程（accept 一步驗證→密碼登入→導向、錯誤只依 code、409 轉登入清密碼、三處入口閘門不變、
+旗標單一出處、模板讀 `user_metadata.referral_invite_url`、全文「推薦人」）四視角都核對無缺口。P1 多為「偏離未記錄」。
+
+## 處置
+
+| 發現 | 處置 |
+|---|---|
+| 系統 P1：清過期 session 的 `signOut` 觸發 App 的 SIGNED_OUT 清掉邀請 token，重新整理回不到設定密碼 | 修：AuthPage 清理登出後寫回 token；補測 |
+| 架構／系統／需求 P1：清 query 用 `useEffect`、`type="text"`、測試檔與 e2e 落點、live region 重播、`profile_steps` 連動等偏離未記錄 | 補記 progress「實作與規劃字面不同之處（前端段）」1–10 條；PR 偏離說明同步 |
+| UI P1：送出時未先清空 live region | 修：送出即清；補測 |
+| UI P1／需求 P1：失效文案與上游 D 字面不同 | 記為偏離（主 session 在 #399 要求三 code 分開）；`expired` 天數綁常數並補測 |
+| UI P1：`invalid_token` 清了 token 卻沒說怎麼重試 | 修：文案加「請回到信件重新點一次連結」；補測 |
+| UI P1／需求 P2：「你已登入」用 toast 非 `location.state.message` | 記為偏離（理由見 progress 第 7 條） |
+| 需求 P1：缺「關閉重置」測試 | 補測（必敗收合後關卡再開歸零） |
+| 需求 P1：忘記密碼路徑只有純函式測試 | 不自動化（需 hosted GoTrue recovery，R2-0 第 8 點）；列入 PR 業主真機驗收 |
+| 需求 P1：checklist 不足以做正式站送達核對 | PR「業主操作」逐步寫出 curl、alias、核對標準、purge、渲染失敗處置 |
+| UI P2：未勾同意的提示沒有錯誤樣式；受理訊息在輸入下一筆時殘留；無姓名時同意聲明空引號；骨架期間標題閃 Email 步驟 | 修；各補測 |
+| 系統 P2：卸載 abort 守衛是死碼；accept 無逾時 | 修（卸載旗標；accept 25 秒逾時、補測） |
+| 需求 P2：模板測試揭露句用字面 | 修：改用 `referralDisclosureSentence` |
+| 架構 P2：mock 新方法插在 validate 註解與函式之間 | 修：搬回 |
+| 系統 P2：4 秒逾時可能把慢速已登入者當未登入 | 不修（plan 審查 P1-18 定案）；殘餘 |
+| 系統 P2：偽造連結的推薦碼先寫進 pending | 不修（與 `?ref=` 同風險，碼仍經本人確認與 validate） |
+| UI P2：模板 `referral_invite_name` 空值 | 不修、列殘餘：後端未另擋空姓名（`referral-invite.ts` 資格段 `profile.name ?? ''`），但能寄的人都已完成 Step 2（姓名必填）、付款並加入推薦計畫，實務上到不了；前端邀請卡在無姓名時已不提供 Email 邀請 |
+| 架構 P2：AuthPage 邀請狀態偏多；`browserDetection` 為測試替身放寬 | 不修；記為長期成本（再加入口模式時抽 `useInviteEntry`） |
+| 〔需人工裁決〕邀請卡是否也帶揭露句 | 維持不加：ui-ux §13 第 5 條的「邀請卡」指 QR 邀請卡圖（`inviteCardImage`），本卡的同意聲明已寫明信中會顯示推薦人姓名、信件本身帶揭露句 |
+| 〔需人工裁決〕`type="text"` vs `type="email"` | 維持 `text`＋`inputMode="email"`（理由見 progress 第 2 條） |
+
+- [x] 處置完成（P0 無；P1 全數修或記錄），由主 session 審查 PR 時確認。

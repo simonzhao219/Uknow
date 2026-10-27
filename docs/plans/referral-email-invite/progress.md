@@ -102,6 +102,26 @@ R2-0 第 2 點尚無結論,條件未成立就維持 E.6(plan 原文)。R2-0 證�
      `Record<ReferralInviteErrorCode, string>`,不讀 `err.message`。
    - accept「`generateLink` 回的 id 不符」分支原本另清稽核列;v3 一步驗證後整段移除,不再適用。
 
+## 實作與規劃字面不同之處(前端段,2026-10-27)
+
+都已在實作審查(`implementation-review.md` 前端段)列出,理由如下:
+
+1. **清 query 用 `useEffect`**(plan §3.3 寫 `useLayoutEffect`):react-router 會忽略首次 render 時 layout effect 裡呼叫的
+   `navigate`(實測網址不變),plan 對 router 行為的前提有誤。token 在網址上多留一個 paint,`useSearchParams` 的問題(差異 5)
+   仍由 router 清除解掉。
+2. **邀請卡 email 欄 `type="text"`＋`inputMode="email"`**:`type="email"` 會把前後空白 sanitize 掉,「只改大小寫或前後空白不算變更」
+   與「保留輸入」的判斷讀不到原值;表單 `noValidate`、送出前以 `_shared` 文法檢查,行動鍵盤靠 `inputMode` 仍有 @ 鍵。
+3. **循環 7 的測試檔**放 `registrationFlow.invite.test.ts`(既有 `registrationFlow.test.ts` 已 300+ 行,分檔不撞);`check-test-names` 綠。
+4. **「accept 成功後登入失敗 → 2A」的 e2e** 放 `auth_signup.feature`(同檔已有邀請情境與步驟),`registration_recovery.feature` 不動。
+5. **live region 重播**以 `key` 重建內容節點(同步、可測);送出時另先清空(審查 UI P1)。
+6. **`ui/dialog` 關閉鈕改名「關閉」**連帶改 `e2e/steps/profile_steps.py` 的 `name="Close"`。
+7. **已登入點連結的「你已登入」用 toast**(上游 D 寫 `location.state.message`):既有導向會把人帶離註冊頁,toast 由全域
+   NotificationContext 呈現、換頁仍在;`location.state.message` 只在留在 AuthPage 時才會顯示。
+8. **被推薦人側失敗文案**:主 session 在 #399 要求 `invalid_token`／`expired`／`gone` 分開(上游 D 只有一句「已失效」),
+   另加暫時性失敗(`rate_limited`、`unavailable`／`disabled`／無 code)與「登入失敗」三句——都是前端擬稿,`expired` 的天數綁常數。
+9. **沒有推薦人姓名時邀請卡不提供 Email 邀請**(只剩快速分享):同意聲明要寫出信中會顯示的姓名,空引號的聲明不完整(審查 UI P2)。
+10. **accept 請求 25 秒逾時**(交接第 5 點只要求 invites):網路掛住時按鈕不再永遠轉圈。
+
 ## 前端 session 交接(後端段審查後)
 
 1. **alias**:`@password-policy` 已在本 PR 接好(vite、tsconfig paths、include);`@referral-invite-payload` 還沒接——前端循環 7
