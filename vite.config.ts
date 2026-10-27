@@ -62,6 +62,11 @@ export default defineConfig({
         __dirname,
         './supabase/functions/_shared/password-policy.ts',
       ),
+      // Email 邀請（R2）的 token payload 解碼、效期、同意聲明與 email 文法。
+      '@referral-invite-payload': path.resolve(
+        __dirname,
+        './supabase/functions/_shared/referral-invite-payload.ts',
+      ),
     },
   },
   build: {
