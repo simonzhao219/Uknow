@@ -1,7 +1,7 @@
 // 刊登照片清理的前端契約：URL→path 解析（非本 bucket 一律忽略）、存檔前後 diff、
 // 分批呼叫、best-effort 清理，以及「只有帶 not_found 標記的 404 才算已刪除」——
 // 前端（Cloudflare）可能先於 Edge 上線，裸 404 是路由不存在，不能當成已刪。
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiRequest = vi.fn();
 vi.mock('./apiClient', async (orig) => ({
@@ -187,5 +187,39 @@ describe('uploadListingPhoto', () => {
   it('成功但沒有 photoUrl → throw（不回傳空字串）', async () => {
     apiRequest.mockResolvedValue(json(200, { success: true }));
     await expect(uploadListingPhoto(blob())).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('uploadListingPhoto 逾時', () => {
+  const blob = () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' });
+  afterEach(() => vi.useRealTimers());
+
+  it('帶 AbortSignal 發請求；請求卡住超過 60 秒 → 逾時失敗，可重試', async () => {
+    vi.useFakeTimers();
+    apiRequest.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(new ApiError('網絡請求失敗', undefined, 'NETWORK_ERROR')),
+          );
+        }),
+    );
+    const pending = uploadListingPhoto(blob()).catch((e) => e);
+    expect(apiRequest.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(apiRequest.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const err = await pending;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toContain('逾時');
+  });
+
+  it('正常完成後不留下計時器', async () => {
+    vi.useFakeTimers();
+    apiRequest.mockResolvedValue(
+      json(200, { success: true, photoUrl: 'https://cdn.test/u/1.jpg' }),
+    );
+    await uploadListingPhoto(blob());
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

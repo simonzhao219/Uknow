@@ -40,6 +40,10 @@ PR 1 已合併（#404）。PR 2 實作中（業主 2026-10-28 親打 /tdd-implem
 
 ## Blockers(逃生口紀錄)
 
+- **審查後修補循環 R1（hook／返回鍵／上傳逾時／bitmap 釋放）紅燈檢查**：對著 stub 跑，11 個失敗訊息逐條確認皆為缺實作
+  （release 未被呼叫、popstate 誤取消、createObjectURL 例外外洩、unmount 未 revoke、封面未播報、submitHint 為空字串、signal 未帶），
+  無「替身沒記錄」「抓到另一棵樹」類測試自身問題；每個 test 只 render 一次。
+
 - **2-4b 紅燈測試漏改（逃生口 2，業主已核准）**：`CreateServiceProvider.test.tsx` 的 `fillCompleteForm` 仍走舊的「選 3 檔＋fetch 假上傳」流程，
   新流程在 jsdom 補不滿三張；且新增的「照片區」describe 缺 `afterEach(cleanup)`。修法＝`vi.mock('../hooks/useListingPhotos')`
   可覆寫成三張 done＋canSubmit（並新增 insert 帶三個 URL 的斷言），照片區補 cleanup。業主 2026-10-28 授權「主 session 轉來的紅燈測試修正

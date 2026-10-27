@@ -350,3 +350,114 @@ describe('useListingPhotos 載入既有照片', () => {
     expect(h.discarded).toEqual([]);
   });
 });
+
+describe('useListingPhotos 防呆與釋放', () => {
+  it('建立預覽網址丟例外（瀏覽器缺 URL.createObjectURL）→ 該張 unsupported，不往外拋', async () => {
+    const h = setup({
+      createPreviewUrl: () => {
+        throw new TypeError('URL.createObjectURL is not a function');
+      },
+    });
+    await add(h, [fileOf('1.jpg')]);
+    expect(h.result.current.slots).toHaveLength(1);
+    expect(h.result.current.slots[0]).toMatchObject({
+      state: 'unprocessable',
+      errorCode: 'unsupported',
+    });
+    expect(h.result.current.slots[0].message).toContain('瀏覽器');
+  });
+
+  it('確認取景後釋放解碼後的 bitmap', async () => {
+    const release = vi.fn();
+    const h = setup({}, { release });
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[0].state).toBe('done'));
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release.mock.calls[0][0]).toMatchObject({ handle: 'bitmap' });
+  });
+
+  it('取消取景與移除等待取景的照片也釋放 bitmap；編碼失敗同樣釋放', async () => {
+    const release = vi.fn();
+    const h = setup({}, { release });
+    await add(h, [fileOf('1.jpg'), fileOf('2.jpg')]);
+    act(() => h.result.current.cancelCrop(h.result.current.slots[0].id));
+    expect(release).toHaveBeenCalledTimes(1);
+    act(() => h.result.current.remove(h.result.current.slots[0].id));
+    expect(release).toHaveBeenCalledTimes(2);
+
+    const fail = setup({}, { release, encode: () => Promise.resolve(null) });
+    await add(fail, [fileOf('3.jpg')]);
+    await confirm(fail);
+    await waitFor(() => expect(fail.result.current.slots[0].state).toBe('unprocessable'));
+    expect(release).toHaveBeenCalledTimes(3);
+  });
+
+  it('離開頁面（卸載）時釋放尚未用掉的預覽網址', async () => {
+    const h = setup();
+    await add(h, [fileOf('1.jpg')]);
+    h.unmount();
+    expect(h.revoked).toContain('blob:preview-1.jpg');
+  });
+});
+
+describe('useListingPhotos 封面播報', () => {
+  const EXISTING = [
+    'https://cdn.test/u/a.jpg',
+    'https://cdn.test/u/b.jpg',
+    'https://cdn.test/u/c.jpg',
+  ];
+
+  it('移除第一張且還有其他照片 → 播報封面改為原第 2 張', () => {
+    const h = setup({ initialUrls: EXISTING });
+    act(() => h.result.current.remove(h.result.current.slots[0].id));
+    expect(h.result.current.announcement).toContain('封面已改為原第 2 張');
+  });
+
+  it('移除非第一張，或移除後沒有照片 → 不播報封面變更', () => {
+    const h = setup({ initialUrls: EXISTING });
+    act(() => h.result.current.remove(h.result.current.slots[1].id));
+    expect(h.result.current.announcement).not.toContain('封面');
+
+    const one = setup({ initialUrls: [EXISTING[0]] });
+    act(() => one.result.current.remove(one.result.current.slots[0].id));
+    expect(one.result.current.announcement).not.toContain('封面');
+  });
+});
+
+describe('useListingPhotos 送出提示', () => {
+  const EXISTING = [
+    'https://cdn.test/u/a.jpg',
+    'https://cdn.test/u/b.jpg',
+    'https://cdn.test/u/c.jpg',
+  ];
+
+  it('可送出時為空字串', () => {
+    const h = setup({ initialUrls: EXISTING });
+    expect(h.result.current.canSubmit).toBe(true);
+    expect(h.result.current.submitHint).toBe('');
+  });
+
+  it('張數不足時說還需要幾張', () => {
+    expect(setup().result.current.submitHint).toContain('還需要 3 張');
+    const two = setup({ initialUrls: EXISTING.slice(0, 2) });
+    expect(two.result.current.submitHint).toContain('還需要 1 張');
+  });
+
+  it('有照片處理中或等取景時，說明稍候', async () => {
+    const h = setup({ initialUrls: EXISTING.slice(0, 2) });
+    await add(h, [fileOf('1.jpg')]);
+    expect(h.result.current.submitHint).toContain('處理中');
+  });
+
+  it('有照片失敗或無法處理時，說明重試或移除', async () => {
+    const h = setup({
+      initialUrls: EXISTING.slice(0, 2),
+      upload: () => Promise.reject(new Error('x')),
+    });
+    await add(h, [fileOf('1.jpg')]);
+    await confirm(h);
+    await waitFor(() => expect(h.result.current.slots[2].state).toBe('failed'));
+    expect(h.result.current.submitHint).toContain('重試或移除');
+  });
+});

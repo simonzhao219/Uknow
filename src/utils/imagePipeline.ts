@@ -27,6 +27,8 @@ export interface ImageIO {
   decode: (file: File, maxEdge: number) => Promise<DecodedImage>;
   /** 把 crop（以 decoded 的尺寸計）畫成 edge×edge 的正方形；透明處鋪白底。 */
   render: (image: DecodedImage, crop: PixelCrop, edge: number) => Promise<unknown>;
+  /** 釋放解碼後的 bitmap（沒有此能力的實作可省略）。 */
+  release?: (image: DecodedImage) => void;
   /** 編成 JPEG；失敗回 null。 */
   encode: (canvas: unknown, quality: number) => Promise<Blob | null>;
 }
