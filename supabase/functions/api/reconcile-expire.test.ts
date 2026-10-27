@@ -75,6 +75,7 @@ Deno.test('reconcile：超過門檻天數且查無結果的殭屍單標成 expir
     });
     assertEquals(step, 1);
   } finally {
+    await client.from('system_alerts').delete().eq('context->>tradeNo', `EXPIRE-${zombieUser.id}`);
     await deleteTestUsers(client, [zombieUser.id, recentUser.id]);
   }
 });
@@ -100,5 +101,127 @@ Deno.test('reconcile：已存 SUCCESS 存檔的老卡單不在掃描範圍、絕
     assertEquals(order?.status, 'pending', '已付款存檔的卡單必須留給自癒流程，不得被標 expired');
   } finally {
     await deleteTestUsers(client, [storedUser.id]);
+  }
+});
+
+// ============================================================
+// issue #395：查詢層非 SUCCESS 不能長得跟「交易未付款」一樣。
+// 轉移條件不變（滿天數仍 stillProcessing 照樣標 expired），本段只釘
+// 「標之前／查詢層失敗時有沒有留下 system_alerts」。
+// ============================================================
+async function alertsWhere(
+  client: ReturnType<typeof adminClient>,
+  source: string,
+  key: string,
+  value: string,
+) {
+  const { data, error } = await client
+    .from('system_alerts')
+    .select('severity, context')
+    .eq('source', source)
+    .eq(`context->>${key}`, value)
+    .is('resolved_at', null);
+  if (error) throw new Error(`query system_alerts failed: ${error.message}`);
+  return data ?? [];
+}
+
+async function deleteAlerts(client: ReturnType<typeof adminClient>, key: string, value: string) {
+  await client.from('system_alerts').delete().eq(`context->>${key}`, value);
+}
+
+Deno.test('reconcile：查詢層非 SUCCESS → 依 PayUni Status 去重告警一筆並帶回 Message', async () => {
+  const client = adminClient();
+  const a = await createTestUser(client, { name: 'Query Fail A' });
+  const b = await createTestUser(client, { name: 'Query Fail B' });
+  const payuniStatus = `Q395-${Date.now()}`;
+
+  try {
+    await seedPendingOrder(client, a.id, 60);
+    await seedPendingOrder(client, b.id, 60);
+    const queryFn = () =>
+      Promise.resolve({
+        stillProcessing: true as const,
+        queryFailure: { status: payuniStatus, message: '參數錯誤' },
+      });
+    const resolveFn = () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const });
+
+    // 兩筆訂單、兩輪對帳：同一個查詢層錯誤碼只留一筆未解決告警
+    for (let round = 0; round < 2; round++) {
+      await reconcilePendingOrders(client, queryFn, resolveFn, {
+        thresholdMinutes: 20,
+        limit: 50,
+        expireAfterDays: 4,
+      });
+    }
+
+    const alerts = await alertsWhere(client, 'payuni-query', 'payuniStatus', payuniStatus);
+    assertEquals(alerts.length, 1, `應去重成一筆，實得 ${JSON.stringify(alerts)}`);
+    assertEquals(alerts[0].severity, 'warning');
+    assertEquals((alerts[0].context as Record<string, unknown>).payuniMessage, '參數錯誤');
+
+    const { data: orders } = await client
+      .from('payment_orders').select('status').in('user_id', [a.id, b.id]);
+    assertEquals(orders?.map((o) => o.status), ['pending', 'pending'], '未滿天數不動狀態');
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', payuniStatus);
+    await deleteTestUsers(client, [a.id, b.id]);
+  }
+});
+
+Deno.test('reconcile：查詢層失敗中標 expired → 先寫 warning 告警，終態照舊', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Expire Unverified' });
+  const payuniStatus = `Q395E-${Date.now()}`;
+
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    const summary = await reconcilePendingOrders(
+      client,
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: payuniStatus, message: '參數錯誤' },
+        }),
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(summary.expired >= 1, true);
+
+    const { data: order } = await client
+      .from('payment_orders').select('status').eq('user_id', user.id).single();
+    assertEquals(order?.status, 'expired', '轉移條件不變');
+
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1, `應有一筆 expire 告警，實得 ${JSON.stringify(alerts)}`);
+    assertEquals(alerts[0].severity, 'warning');
+    const ctx = alerts[0].context as Record<string, unknown>;
+    assertEquals(ctx.reason, 'expired_query_failed');
+    assertEquals(ctx.payuniStatus, payuniStatus);
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', payuniStatus);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：查詢確認未付款而標 expired → 留一筆 info 紀錄可查', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Expire Unpaid' });
+
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    await reconcilePendingOrders(
+      client,
+      () => Promise.resolve({ stillProcessing: true as const }),
+      () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const }),
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1, `應有一筆 expire 紀錄，實得 ${JSON.stringify(alerts)}`);
+    assertEquals(alerts[0].severity, 'info');
+    assertEquals((alerts[0].context as Record<string, unknown>).reason, 'expired_unpaid');
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
   }
 });

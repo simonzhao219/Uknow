@@ -2612,7 +2612,7 @@ export async function reconcilePendingOrders(
 //     絕不拿來標記訂單，寧可下一輪再查。
 // ⚠️ 欄位名稱以 PayUni 官方文件為準；上線前先在 sandbox 用
 // workflow_dispatch 手動驗證一輪，確認無誤再打開 cron。
-async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
+export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
   const config = payuniConfig();
 
   const encryptInfo = await encryptPayUni(
