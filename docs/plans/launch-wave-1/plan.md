@@ -289,6 +289,7 @@ commit;
 | 10/27 20:05 | 邀請信改版 PR #416（c9c8ff6）CI 綠 → 轉 ready → 合進 develop。四條小偏離（告知小字 #6b6b75、© 不帶年份、拿掉 24 小時一封句、拿掉純文字網址段）接受。新版模板隨第二次晉升上 main 後業主再貼（正式站與 develop 各一次） | 業主第 6 步 secret、第 7、8 步 |
 | 10/27 20:10 | 業主第 6 步兩把 secret 完成，`/health` referralInviteConfigured／Enabled 皆 true。裁決 26（PayUni 最後切）、27（第二次晉升今晚）。**開晉升 PR #417**（develop 3392d05 → main，無 migration，9 支 PR）；journey-full 約 25 分鐘。#415 等 #417 合進 main 後才合 | #417 綠 → 合 → 業主核准 production → 貼新版模板；業主同時做第 8 步清 bucket |
 | 10/27 21:40–22:05 | #417 journey-full（真後端 18 分鐘）**綠**；e2e-tests 第 5 次被慢 apt 鏡像站拖過 15 分鐘上限取消；run 40510447867 卡在 in_progress，rerun／cancel 皆 403／409。另發現 develop push 3392d05 的 CI 同因紅 → develop 的 Edge Function 停在 ae61955（#416 無後端變動，無影響）。裁決 28 → 開 #418（ci.yml e2e timeout 25，check-workflows OK） | #418 綠 → 合 → #417 新 head CI（journey 重跑）→ 合 → 核准 production |
+| 10/27 22:16 | 卡住的 run 14:08Z 自己收尾 → 重跑 e2e（這次鏡像站正常，7 分鐘綠）→ ci-ok 綠 → **#417 合進 main（f076866）**，journey 不必重跑；#418 同時綠 → 合進 develop（77efb63）。第二次晉升完成，等業主核准 production 部署 | 業主核准 → /health sha=f076866 → 貼新版 Invite 模板 → 第 8 步 |
 
 **執行 session 名冊**（主 session 維護）
 
