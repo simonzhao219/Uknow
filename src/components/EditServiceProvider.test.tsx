@@ -17,9 +17,9 @@ HTMLElement.prototype.releasePointerCapture ??= () => {};
 HTMLElement.prototype.scrollIntoView ??= () => {};
 
 const PHOTOS = [
-  'https://p.supabase.co/storage/v1/object/public/make-5c6718b9-listings-photos/u1/1_a.jpg',
-  'https://p.supabase.co/storage/v1/object/public/make-5c6718b9-listings-photos/u1/2_b.jpg',
-  'https://p.supabase.co/storage/v1/object/public/make-5c6718b9-listings-photos/u1/3_c.jpg',
+  'https://p.supabase.co/storage/v1/object/public/listings-photos/u1/1_a.jpg',
+  'https://p.supabase.co/storage/v1/object/public/listings-photos/u1/2_b.jpg',
+  'https://p.supabase.co/storage/v1/object/public/listings-photos/u1/3_c.jpg',
 ];
 
 const h = vi.hoisted(() => ({

@@ -12,7 +12,7 @@ import {
  */
 
 /** 刊登照片 bucket——與後端 listing-photos.ts 的 LISTING_PHOTOS_BUCKET 同一個字串。 */
-export const LISTING_PHOTOS_BUCKET = 'make-5c6718b9-listings-photos';
+export const LISTING_PHOTOS_BUCKET = 'listings-photos';
 
 /** 後端單次最多接受幾個 path（MAX_DELETE_PATHS）。 */
 export const MAX_DELETE_PATHS = 10;

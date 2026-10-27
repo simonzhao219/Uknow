@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.supa import SupabaseAdmin
 
-STORAGE_BUCKETS = ["id-cards", "referral-signatures", "make-5c6718b9-listings-photos"]
+STORAGE_BUCKETS = ["id-cards", "referral-signatures", "listings-photos"]
 
 # (table, user-id 欄位) — 零殘留斷言掃的表。新增含會員 FK 的表時要同步
 # 補這裡（M4 會改成 schema 巡檢動態產生，漏列直接紅燈）。
