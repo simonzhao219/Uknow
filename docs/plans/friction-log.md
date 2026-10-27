@@ -3263,5 +3263,11 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 規則 12 的檢查器同步改查腳本本身（step 只剩呼叫腳本，文字比對會靜默失效），含反向驗證：拿掉腳本的 sleep 檢查器即紅。
 
-未做、待看新數字再裁決：映像快取或推自家 GHCR、web 環境預裝（setup script／SessionStart hook）、Postgres 單容器分層。
-web session 的 shellcheck 無法下載（代理 403），腳本的 shellcheck 只靠 CI guards 軌驗證。
+CI 實測（#427 第一次 run，2026-10-27）：全綠，shellcheck 與 426 條整合測試都過，但 api-tests 的啟動 step 仍花 749 秒。
+日誌顯示根因是匿名拉 `public.ecr.aws/supabase/*` 撞上 `toomanyrequests: Data limit exceeded`，不是映像太大：
+第 1、2 次啟動各花約 4 分鐘後失敗，30、60 秒退避後第 3 次才成功；第 3 次真正起服務只要 11 秒。精簡後只拉 6 個映像，
+照樣被限流。四個樣本裡兩次被限流（759、749 秒），兩次沒有（90、100 秒），所以「砍服務」降低下載量但擋不住限流，
+唯一穩的做法是避開匿名 registry。已決定下一步用 actions/cache 快取映像，另開 PR。
+
+未做、待裁決：映像快取（已決定另開 PR）、web 環境預裝（setup script／SessionStart hook）、Postgres 單容器分層。
+web session 的 shellcheck 無法下載（代理 403）；CI guards 軌的 shellcheck 已通過。
