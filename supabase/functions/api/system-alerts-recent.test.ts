@@ -37,12 +37,27 @@ Deno.test('system-alerts/recent：minutes 缺漏、非整數、超界回 400', a
 Deno.test('system-alerts/recent：只回時間窗內的 error 列，且不含 context', async () => {
   const client = adminClient();
   const marker = `recent-alerts-test-${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
   const old = new Date(Date.now() - 3 * 3600_000).toISOString();
   try {
     const { error } = await client.from('system_alerts').insert([
-      { source: marker, severity: 'error', message: 'fresh error', context: { secret: 'pii' } },
-      { source: marker, severity: 'warning', message: 'fresh warning' },
-      { source: marker, severity: 'error', message: 'old error', created_at: old },
+      // 批次 insert 各列鍵集合不同時 PostgREST 會把缺的欄位送成 null，
+      // 繞過欄位 default——created_at 每列都明確給。
+      {
+        source: marker,
+        severity: 'error',
+        message: 'fresh error',
+        context: { secret: 'pii' },
+        created_at: now,
+      },
+      {
+        source: marker,
+        severity: 'warning',
+        message: 'fresh warning',
+        context: {},
+        created_at: now,
+      },
+      { source: marker, severity: 'error', message: 'old error', context: {}, created_at: old },
     ]);
     assert(!error, error?.message);
 
