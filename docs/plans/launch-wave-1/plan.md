@@ -42,13 +42,24 @@
 | 15 | P1a Q-A 刪刊登清理 | **走後端**（總綱 §3.2C 原案） |
 | 16 | 寄信失敗告警（盤點：後端無寄信路徑，攔 429 需新公開端點＋改 AuthPage 等三檔，與 R2／T1 共檔） | **本波不做程式**，靠 Dashboard 寄信上限 600＋§5 每小時漏斗監看；端點留第 2 波 |
 | 17 | 清資料演練的刪除段（MCP 破壞性語句確認視窗到不了業主，兩次 cancelled） | **業主在 Dashboard SQL Editor 貼**（演練分支與今晚正式站都這樣做；主 session 負責乾跑與零殘留檢查） |
-| 18 | P1a Q-D 裁切元件載入失敗 | **保守：顯示重試、不可送出**；Q3-3 無例外 |
+| 18 | P1a Q-D 裁切元件載入失敗 | **保守：不可送出、不降級**；Q3-3 無例外。按鈕語意 10/28 01:30 由主 session 改為「重新整理頁面」（瀏覽器把失敗的 module fetch 記成 null，原地重試永遠失敗，見 §8） |
 | 19 | P1a Q-F 原檔上限 | **原檔 ≤20 MB、上傳檔 ≤5 MB**；規格書 §11 界定 5 MB 是上傳檔 |
 | 20 | P1a Q-G 條款十之一 | **記入規格書已知落差，第 2 波在 30 日窗口內補齊**（帳號刪除 cascade、`/auth/cancel-signup`、歷史孤兒），列第 2 波必做 |
 | 21 | PITR add-on | **先不開，第 2 波再評估**；每日 PHYSICAL 備份（UTC 22:44）已確認存在 |
 | 22 | journey sandbox 紅（PayUni 測試站改版）後的開放時間 | **今晚繼續，開放改 00:00 前後**；晉升閘門暫走 webhook 備援（#413，規則 13 到期 11/03）；journey-full webhook 仍紅或真付款失敗就改明天 |
 | 23 | 官方 icon 與 SEO／AEO／GEO（業主 19:55 提出） | **兩段**：基礎進窗口（favicon 全套、manifest、og-image 1200×630、品牌名統一「Uknow」、description／canonical、robots.txt＋sitemap.xml、私密頁 noindex、JSON-LD Organization／WebSite）目標 10/28 第二次晉升；進階（AEO：FAQ／服務者頁 JSON-LD；GEO：llms.txt、公開頁預渲染、服務者動態 sitemap）第 2 波三段式 |
 | 24 | 站內 logo（業主 20:05 修正） | **需要正方形的地方用黑底白字 Uk**（favicon、手機捷徑、manifest、正方形縮圖）；**顯示全名的地方照舊**——業主確認目前網頁與手機頁的 logo 顯示正確，不動 |
+| 25 | 邀請信改版（業主 19:35） | 版型照 `confirm-signup.html`（黑底 UKNOW、卡片、小標＋大標＋一句＋按鈕、頁尾、卡片外 ©）；主體只表達邀請，保留推薦人揭露句；**拿掉**年費句、服務條款／事業手冊連結、複製網址段；**個資告知九要素保留但縮成卡片外灰色小字**（個資法第九條間接蒐集告知必須在第一次接觸）。派 R2 前端 session 開小 PR，業主等新版合進 main 再貼模板 |
+| 26 | PayUni 切換時點（業主 20:15） | `PAYUNI_SANDBOX=false` 留到其他都確認沒問題再改；§7 順序改為清 bucket → 清資料 → 註冊＋admin → R2 實寄 → Cloudflare 旗標 → 最後切 PayUni → 真付款 → 宣布 |
+| 27 | 第二次晉升提前（業主 20:20） | 原定 10/28 的第二次晉升改今晚開（PR #417）：開放時 favicon／SEO 在線上、邀請信新版只貼一次。PR 開後 develop 凍結到合進 main |
+| 28 | CI e2e 上限（業主 22:00） | 慢鏡像站連續弄紅 e2e 五次、#417 的 run 卡死不給重跑 → 破例在晉升 PR 開著時合一支 CI-only PR（#418，e2e timeout 15→25）進 develop；#417 改指新 head、journey 重跑 |
+| 29 | 清資料與 PayUni 切正式延後（業主 23:00） | 兩者都等 P1a PR 2 上線後再做（10/28 晚）；活動前要完成。主 session 已提醒：PayUni 留 sandbox 期間無人能真付款、測試資料留在站上 |
+| 30 | P1a PR 2 提前（業主 23:15） | 照片裁切＋定位（前端管線）提前到第 1 波：10/28 下午合 develop、傍晚第三次晉升；10/28 不凍結。SEO 進階與 journey harness 仍 11/3 第 2 波。PR 2 由原 P1a session 做，業主親打 /tdd-implement 才開工 |
+| 31 | Email 邀請前端旗標寫進 git（業主 10/28 00:20） | Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` Retry 兩次仍未進建置（正式站主檔 `index-CWyrVOvQ.js` ＝ 本機無旗標建置；repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它為唯一設定來源）。改加 `.env.production`（與 `.env.development` 對稱），主 session 自己做（設定一行＋文件）、fix PR 合進 develop；**等 P1a PR 2 一起第三次晉升**，不另開晉升。Email 實寄核對順延到該次核准後 |
+| 32 | 會員中心刊登卡對齊推薦卡版式（業主 10/28 02:30） | 刊登卡改四行：標題／小標「我的刊登」／主字（「尚未刊登」或主題，單行截斷）／第四行走 `action` 插槽（未刊登＝「立即刊登」鈕，已刊登＝`CategoryBadge` 類別徽章）；拿掉「會籍至」（我的訂閱卡已有週期）；注意溢字。新開 Sonnet session、Plan Mode、`fix/member-center-listing-card`，**跟 PR 2 與旗標一起第三次晉升** |
+| 33 | 夜間授權第二段（業主 10/28 02:45，休息 6 小時至約 08:45） | 主 session 不等業主：#421、刊登卡 PR、#415 審完合 develop → 開第三次晉升 PR → journey-full 綠 → **合進 main**。只有 production 部署核准是業主的（GitHub `production` 環境 required reviewer），醒來按核准 → `/health` sha 核對 → 業主手動測一輪 → 才開始清資料與 PayUni 切正式。執行 session 的 tdd-lock 解鎖沿用 P1a 概括授權；分類器擋下的事主 session 記 §8 等業主 |
+| 34 | 取景框等於整個方框（業主 10/28 04:10，正式站實測） | react-easy-crop 預設把 crop area 算成媒體 contain 後的尺寸，直式照片左右留灰、上下溢出；改量容器邊長傳 `cropSize`＋`objectFit=cover`。P1a 小 PR |
+| 35 | 照片格改版（業主 10/28 04:20） | 格內不再有「調整範圍」「移除」文字鈕：移除＝縮圖右上角叉叉（aria 不變）、點縮圖進入調整（僅本次新增且完成的格；舊圖標示不能重新取景）、失敗格留「重試」；微調步距 10→4px。併同 34 一個 PR（#425） |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -221,6 +232,10 @@ commit;
 | SEO 進階（AEO／GEO） | M | FAQ 與服務者頁 JSON-LD、llms.txt、公開頁預渲染（建置流程變更，三段式）、服務者動態 sitemap（後端產生）；基礎版在窗口 PR `fix/brand-icons-seo` |
 | journey harness 配合 PayUni sandbox 新表單 | S | `payuni_sandbox_page.py` 重新定位卡號欄與送出鍵；11/03 前把 ci.yml journey-full 改回 sandbox（規則 13 到期自動紅） |
 | 窗口沒做完的 | — | T1、S7b、L1-1、P1b、A1a、A2 照總綱 §8 順序 |
+| 框架修訂（第 1 波 friction-log 2026-10-26～27 兩節） | S | `tdd-test-guard` 擴到 Bash 寫 `*.test.*`（bash-guard 新類）；bash-guard 的 journey 判準只看 `pytest` 在指令位置；ci.yml e2e 的 apt 步驟獨立＋規則 12 退避、api-tests `supabase start` 加退避並把規則 12 擴到它；`/tdd-implement` 紅燈步驟加「逐條讀失敗原因」；dispatch-prompts 逃生口 2 改成「業主親自到執行 session 貼授權句」；e2e/requirements 釘 `playwright==1.63.0` |
+| `lazyWithRetry` 重試一次無效＋表單草稿保存 | S | 失敗的 module fetch 被瀏覽器記成 null（HTML 規格），同 URL 再 import() 立刻失敗，`importWithRetry` 的第一段重試形同虛設，第 2 波驗證後簡化為直接重載；Create／Edit 表單加草稿保存（`docs/multi-step-flow-recovery.md` 四契約），重新整理不掉已填文字 |
+| PR 2 審查記債（#421 第 2 波） | S–M | 送出中 picker 未凍結、preparing／chunk 載入無逾時、5xx 固定文案、Edit 取消孤兒入 §14、預覽縮圖用原檔、滑桿 aria-valuetext 與微調鈕命名、封面徽章、窄格溢出（真機）、內建瀏覽器 unsupported 分流、spinner、驗收 8 e2e、驗收 14 e2e 斷言、§11 格式欄、e2e 上傳 mock 歸位 BackendApiMock、常數命名與 UPLOAD_TIMEOUT_MS 歸位、`useBrowserListingPhotos` 收斂 Create／Edit 重複、`initialUrls` 二選一、微調／重設／滑桿行為測試與 PhotoCropDialog 同名測試檔、401 不登出、「重設」鈕與 60 秒逾時待業主確認 |
+| 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
 ## 7. 業主操作清單（按順序；每步做完回主 session 一句）
 
@@ -240,7 +255,8 @@ commit;
 9. 回答主 session 的清資料乾跑確認（它會貼 §4 的計數；`storage.objects` 各 bucket 必須已是 0）。
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
 11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
-12. Cloudflare Pages → uknow → Settings → Variables（**Production** 作用域）：`VITE_REFERRAL_EMAIL_INVITE=true` → Deployments 對最新 production 部署按 Retry deployment（環境變數要重建才生效）→ 開 https://uknow.com.tw 按「邀請好友」確認邀請卡有 Email 欄。
+12. ~~Cloudflare Pages 儀表板設 `VITE_REFERRAL_EMAIL_INVITE=true` 後 Retry~~ 實測無效（裁決 31）：旗標改寫進 git 的 `.env.production`（fix PR → develop → 隨第三次晉升上 main）。上 main 後開 https://uknow.com.tw，用已加入推薦計畫的帳號按「邀請好友」確認邀請卡有 Email 欄。儀表板那個變數可刪可留（git 的值優先且相同）。
+13. **（10/28 醒來，裁決 33）** GitHub → Actions → `deploy-supabase` 最新一筆（main 66c2cf0）→ Review deployments → 核准 `production` → 等綠 → 開 https://uknow.com.tw/api/health 確認 `sha` 為 `66c2cf0`（開頭）。接著手動測：(a) 刊登管理建立／編輯頁選 3 張照片 → 每張取景 → 完成 → 上傳 → 送出，手機上試返回鍵只關取景；(b) 會員中心刊登卡與推薦卡同高、未刊登時「立即刊登」與「邀請好友」同一排；(c) 已加入推薦計畫的帳號按「邀請好友」出現 Email 邀請卡（旗標已在 git），寄到第二信箱、連結落在設定密碼頁、再寄一次連結不同。測完回主 session 一句，再進清 bucket／清資料（§4）→ 註冊＋set-self-admin → PayUni 切正式 → 真付款 → 宣布。
 13. 宣布開放。之後每 2 小時看一次 `/admin` 系統告警與 GitHub issues，直到告警送到人上線（它需要你在 GitHub Secrets 放 LINE token，主 session 會列在待辦）。
 
 ## 8. 進度與異動紀錄（主 session 每小時一列）
@@ -275,26 +291,54 @@ commit;
 | 10/27 19:47 | **#413 合併**（`5779d16`）：develop 的 journey-full 閘門暫走 webhook 至 11/03。#411 head 隨之更新、CI 含 journey-full（webhook、full 30 節點）重跑 | journey-full 綠 → merge commit 合進 main → 叫業主核准 production 部署 |
 | 10/27 19:55 | 業主提出官方 icon（黑底白字 Uk）、搜尋引擎可見、SEO／AEO／GEO 準備 → 裁決 23／24。原檔已放 `fix/brand-icons-seo` 分支 `public/brand/`（54d06bc）；派工 prompt §J；開 Sonnet 執行 session | 等 #411 journey-full |
 | 10/27 20:13 | **#411 journey-full（webhook，full 30 節點）綠，24.7 分鐘**（run 40475965034）；ci-ok 綠 → 以 merge commit 合進 main。brand/SEO 執行 session 開出 PR #414（審查中；Navbar 改動要還原） | 業主核准 production 部署（§7 第 5 步）→ /health sha 比對 |
+| 10/27 20:35 | main CI 綠（b4f9bb3，push 軌只跑 guards）→ deploy-supabase run 283（40479159452）停在 `waiting`＝等 production 核准（REST 顯示 head_branch=develop 是 workflow_run 以預設分支為上下文的已知顯示法，環境判定用 payload 的 main）。#403 ci-ok 綠 → 合進 develop（91d4a1e，develop 解凍後第一支）；本分支改從 develop 重切，後續 §8 另開 PR。給業主 §7 第 5 步核准＋sha 比對說明 | 業主核准 → 貼 /health 輸出；接著 #405 rebase |
+| 10/27 20:50 | #405 rebase 到 develop（e02e3a2）CI 中；#414 兩項修正（fa861dd Navbar 還原、88d7c67 sitemap）CI 綠，疊在 #405 上等它合後 rebase；#412 ready 綠等 rebase。**#404（P1a PR 1）四 lane 審查**：無 P0；P1 ×5（整合測試補真 overlaps＋Storage 移除案例、public URL base 不靠 `publicUrlOf('')`、§14 第 14 列補齊孤兒來源、刪除中回饋、PR 內文失準兩處＋部署順序）已交執行 session；URL 新舊形狀一致（不誤刪）與撞檔（merge-tree 全乾淨）皆核對通過。PR 2 裁示留 11/3 第 2 波同 session 接手。架構 lane 另查出 #407 對 develop 的 friction-log 會衝突，輪到它時 rebase 處理 | #405 綠 → 合；#404 修完 → 複核 |
+| 10/27 21:05 | 停車 PR 依序合進 develop：#405（0c5c11b）→ #410（140fecb）→ #406（0786b61），每支 rebase＋ci-ok 綠後 merge commit。#404 五項 P1 修完（60a411d）CI 全綠含新整合測試，最後再 rebase 合。#407 rebase 時 friction-log 衝突（#395 條目的償還段 vs R2 施工摩擦節）兩邊都留、推 4b92157 等 CI。業主尚未回覆 production 核准 | #407 綠 → 合 → #412 → #414 → #404 |
+| 10/27 22:00 | #407（69b1520）、#412（a4960f0）合進 develop。CI 誤紅三次（#407、#415、#412）同一根因：Azure apt 鏡像站 44 kB/s，`playwright install --with-deps` 裝字型 10 分鐘，e2e job 15 分鐘上限取消；各重跑一次即綠。再發生就開小 PR 把 e2e `timeout-minutes` 15→25，波末記 friction-log。#414 rebase（重複的 #405 commit 自動去掉，本機 check 綠，3594ff9）與 #404 rebase（5629ff8，守衛三綠）同時推上去跑 CI，先綠先合、另一支再 rebase 一次 | #414／#404 CI → 轉 ready → 合；業主 production 核准仍未回 |
+| 10/27 22:20 | **停車 PR 全部合進 develop**：#404（8266e11，轉 ready 後合）→ #414 再 rebase 一次（228902a）綠 → 合（ae61955）。develop 現含 10/28 第二次晉升全部內容：og+lang、容量 hotfix、告警 LINE、PayUni 查詢告警、邀請 follow-up、P1a 後端清理、品牌 icon+SEO 基礎。業主 19:10 問 develop 預覽與 Email 邀請：裁決照原規劃（正式站實寄核對後才開旗標，develop 不另設） | 業主核准 production → /health；第二次晉升 PR 待業主 §7 第 5–12 步完成後開 |
+| 10/27 19:18 | **業主核准 production 部署，`/health` sha=b4f9bb3 對上**（payuniMode=sandbox、referralInviteConfigured=false 為預期：第 6、7 步未做；defaultReferrer=ok）。§7 第 5 步 ✅。已給第 6–8 步逐步指示（模板 raw 連結、兩把 secret、PayUni 三把＋SANDBOX=false、清三 bucket） | 業主回報第 6 步 → curl 看 referralInvite 兩旗標 |
+| 10/27 19:35 | 業主看了邀請信模板：要簡化、版型對齊驗證碼信、問「兩個按鈕」（Dashboard 預覽不處理 `{{ if }}/{{ else }}` 兩分支都顯示，實寄只一個）。裁決 25（告知段縮小字、不刪）。派 R2 前端 session 開 `fix/referral-invite-email-restyle`。§7 第 6 步的貼模板改為等新版合進 main 後做；兩把 secret 與第 7、8 步不受影響 | 業主做第 6 步 secret、第 7、8 步；模板 PR 回報 |
+| 10/27 20:05 | 邀請信改版 PR #416（c9c8ff6）CI 綠 → 轉 ready → 合進 develop。四條小偏離（告知小字 #6b6b75、© 不帶年份、拿掉 24 小時一封句、拿掉純文字網址段）接受。新版模板隨第二次晉升上 main 後業主再貼（正式站與 develop 各一次） | 業主第 6 步 secret、第 7、8 步 |
+| 10/27 20:10 | 業主第 6 步兩把 secret 完成，`/health` referralInviteConfigured／Enabled 皆 true。裁決 26（PayUni 最後切）、27（第二次晉升今晚）。**開晉升 PR #417**（develop 3392d05 → main，無 migration，9 支 PR）；journey-full 約 25 分鐘。#415 等 #417 合進 main 後才合 | #417 綠 → 合 → 業主核准 production → 貼新版模板；業主同時做第 8 步清 bucket |
+| 10/27 21:40–22:05 | #417 journey-full（真後端 18 分鐘）**綠**；e2e-tests 第 5 次被慢 apt 鏡像站拖過 15 分鐘上限取消；run 40510447867 卡在 in_progress，rerun／cancel 皆 403／409。另發現 develop push 3392d05 的 CI 同因紅 → develop 的 Edge Function 停在 ae61955（#416 無後端變動，無影響）。裁決 28 → 開 #418（ci.yml e2e timeout 25，check-workflows OK） | #418 綠 → 合 → #417 新 head CI（journey 重跑）→ 合 → 核准 production |
+| 10/27 22:16 | 卡住的 run 14:08Z 自己收尾 → 重跑 e2e（這次鏡像站正常，7 分鐘綠）→ ci-ok 綠 → **#417 合進 main（f076866）**，journey 不必重跑；#418 同時綠 → 合進 develop（77efb63）。第二次晉升完成，等業主核准 production 部署 | 業主核准 → /health sha=f076866 → 貼新版 Invite 模板 → 第 8 步 |
+| 10/27 22:45–23:20 | 業主核准 production，`/health` sha=f076866 對上（referralInvite 兩旗標 true、PayUni sandbox）；新版 Invite 模板已貼。裁決 29、30。通知 P1a session 準備 PR 2 循環清單、等業主 /tdd-implement。今晚收工；10/28 順序：PR 2 → 第三次晉升 → 清 bucket／清資料 → 註冊＋admin → R2 實寄 → 旗標 → PayUni 切正式 → 真付款 → 宣布 | 業主 10/28 早上到 P1a session 打 /tdd-implement |
+| 10/27 23:30–10/28 00:25 | 業主在 Cloudflare 設 Production 變數並 Retry 兩次，正式站仍是分享選單；pages.dev 預覽網址登不進（Auth 回跳綁 uknow.com.tw，不追）。以主檔 hash 核對：正式站 `index-CWyrVOvQ.js` ＝ 本機**無旗標**建置 → 儀表板變數沒進建置。裁決 31 → 主 session 開 `fix/email-invite-flag-in-git`（`.env.production` ＋ checklist 措辭）。#415 api-tests 重跑綠。P1a 於 2-2 卡住：分類器拒絕「轉述的核准」移除 tdd-lock，業主已親自在該 session 貼授權句 | fix PR CI 綠 → 合進 develop；P1a 續 2-2 綠燈→2-3；第三次晉升等 PR 2 |
+| 10/28 00:30–00:45 | #419 CI 綠 → 轉 ready → **合進 develop（53dd585）**；旗標隨第三次晉升上 main。P1a 經業主親貼授權後解鎖：紅燈修正 `e04a0824`、實作還原 29 測試綠，續 2-2 綠燈 commit。波末 8 條摩擦寫進 friction-log（95557df）。§4 乾跑唯讀計數先跑一次做基準（見 todo #3：無真匯款、completed 13 單皆 sandbox 金額） | P1a 2-3…2-6；10/28 下午審 PR 2；業主清 bucket 後重跑乾跑 |
+| 10/28 00:45–01:10 | P1a 回報 2-1～2-4a 全綠、2-4b 實作完（wip 94dd83c7）卡 3 個測試（既有 `fillCompleteForm` 走舊流程、新 describe 缺 cleanup）；主 session 審過核准修法（mock `useListingPhotos` 三張 done＋`afterEach(cleanup)`）。業主問「為何 P1a 常要我回應」：TDD 守衛要人裁決紅燈測試修正（裁決已由主 session 代行）＋分類器只認業主親打的解鎖授權；業主選擇在 P1a 貼一次**概括授權**（PR 2 剩餘循環，主 session 轉來的核准視同本人）。用 P1a 的介面摘要開 2-5 e2e session（Sonnet） | P1a 2-4b 綠 → 2-6；e2e PR 綠 → P1a fast-forward；10/28 下午審 PR 2 |
+| 10/28 01:15–01:20 | 業主在 P1a 貼概括授權，P1a 2-4b 綠燈 head 18a83944。首開的 e2e session 容器沒有 repo（create_session 未帶 source_url，add_repo 被分類器擋）→ 封存，重開 session_01MQovbErnhEXgHjQQjw9XvG 帶 `source_url`＋`source_revision=feature/listing-photo-pipeline`。教訓記 friction-log：create_session 一律帶 source_url | P1a 2-6；e2e PR |
+| 10/28 01:25–01:35 | e2e session 本機綠（page object 新流程、真 JPEG fixture、375px、上傳失敗重試），journey 共用 page object 免改；發現驗收 14 做不到：失敗的 module fetch 依 HTML 規格被記成 null，同 URL 原地重試永遠失敗。主 session 裁決：失敗面板改「請重新整理頁面」＋按鈕「重新整理頁面」→ `location.reload()`，不自動重載、不套 `importWithRetry`（會無預警清掉表單）；P1a 走小紅綠循環改，e2e 情境 14 改為重載後重走流程。遺留第 2 波：`lazyWithRetry` 的重試一次同因無效、Create／Edit 無草稿保存 | P1a 改完傳 head 給 e2e；e2e 開 draft PR |
+| 10/28 01:35–01:50 | P1a 自跑四視角實作審查：0 P0、約 8 P1（返回鍵時序、送出鈕原因、封面播報、對話框焦點、單一 live region、手機摺線、上傳逾時、bitmap 釋放）＋2 測試缺口＋jsdom `createObjectURL` 防呆；主 session 核准返回鍵改「對話框佇列期間常駐」並改寫兩個紅燈（概括授權）。P1a 推新 head 8831f9d。e2e session 開 **#420**（base P1a 分支，head f9ad041）：18 情境本機綠、tools/ 89 綠；偏離：fixture 改 192×64 三色帶、情境 14 照裁決 | #420 CI 綠 → P1a fast-forward；P1a 修完 P1 開 PR 2 → 主 session 審 |
+| 10/28 01:50–01:55 | 發現 ci.yml 只對 base main／develop 觸發，#420（base feature 分支）不會有 CI → 改流程：P1a 直接 ff 併入 e2e commit，e2e 由 PR 2 的 CI 驗；已通知兩個 session | P1a 併入後開 PR 2 |
+| 10/28 02:05–02:40 | **PR 2 = #421**（head 由 b3c12932 → ef49434 → 050b8fa5：守門修正——file input I2 啟發式、canvas 白底色值列掃描排除）。主 session 四視角審查（Sonnet 四 lane，worktree wt-421）：0 P0；必修 ≈16 條已核實後分三批轉給 P1a——系統：decode 回 bitmap 實際尺寸、adjust 重解失敗偏離補記＋播報、晚到 bitmap 釋放；UI/UX：**返回鍵在佇列第二張起失效會離頁**（常駐改法的新問題，走紅綠）、載入失敗文案死路、NETWORK_ERROR 英文原文、重試後焦點、重複失敗不播報；需求：規格書 §14 第 14 列過時、PR 內文綠燈 hash、兩個空轉測試；架構：Edit diff 刪偏離補記、懸空 plan 連結、死碼、60 秒只寫一份。約 20 條 P2 記第 2 波。#415 api-tests 再中映像限流，重跑一次 | P1a 修完推 → CI 綠 → 主 session 抽查 U1 → 轉 ready → 合 develop → 開第三次晉升 |
+| 10/28 02:40 | 業主補裁決 32（刊登卡版式對齊推薦卡、拿掉會籍至、跟第三次晉升）。P1a 推 36f946a（守門＋系統視角三項）。開刊登卡 Sonnet session | P1a 其餘三批；刊登卡 PR；#415 CI |
+| 10/28 02:45 | 業主休息 6 小時，裁決 33：主 session 自主推進到合進 main，production 核准留給業主醒來按；之後業主手動測一輪再清資料、切 PayUni | #421 三批修補 → 審 → 合；刊登卡 PR → 審 → 合；#415 合；開第三次晉升 PR → 合 main |
+| 10/28 02:45–03:15 | P1a 三批修補完成（head a584f0d：U1 返回鍵紅 dfd0c4c8→綠 85749d4、U2–U6、R1–R3、A1–A4），主 session 抽查返回鍵 hook 正確；a584f0d CI 全綠（含 e2e 新情境）。刊登卡 **#422**（紅 87f5bb2→綠 f4fa795）主 session 審過、CI 綠 → **合進 develop（0146f8a）**，session 封存。#421 由主 session rebase 到 0146f8a → head ab2d09a，等 CI。#421 36f946a 那輪 api-tests 映像限流（今晚第三次）已留 PR 說明 | #421 CI 綠 → 合；#415 rebase → 合；開第三次晉升 PR |
+| 10/28 03:15–03:35 | #421 rebase 後 head ab2d09a CI 全綠 → 轉 ready → **合進 develop（e0b286f）**，P1a 收工。develop 現含 #419 旗標、#422 刊登卡、#421 照片管線。主 session 開**第三次晉升 PR**（develop e0b286f → main）；#415 改為晉升後再合（docs，不擋上線） | 晉升 PR journey-full 綠 → 合進 main → 業主醒來核准 production |
+| 10/28 03:35–04:05 | **#423 journey-full（真後端 26 分鐘）＋全軌綠 → 轉 ready → 合進 main（66c2cf0）**。正式站 Edge Function 部署在 GitHub `production` 環境等業主核准；Cloudflare 會自動建 main 的前端。#415 已 rebase（333dff6，CI 綠）等這則紀錄推上後再合。業主醒來清單見 §7 第 13 步 | 業主核准 production → `/health` sha=66c2cf0 → 手動測 → 清 bucket／清資料 → PayUni |
+| 10/28 04:05–05:10 | 業主醒來在正式站實測，提出裁決 34、35（取景框填滿、縮圖叉叉／點縮圖調整／微調 4px）→ P1a 開 **#425**（紅 bcd4b7a7、f29aa302）→ 主 session 審 diff → CI 綠 → **合進 develop（98b9d95）**。業主另一 session 合入 **#424**（e2e 改跑官方 Playwright image，develop CI 綠 11 分鐘）。#415 的 api-tests 兩度映像限流＋job 20 分鐘上限（supabase start 17 分鐘），改 rebase 到新 develop 重跑。開**第四次晉升 PR**（develop 98b9d95 → main，含 #424、#425） | 第四次晉升 journey-full 綠 → 合 main → 業主核准 production（核准最新那筆）；#415 晉升後再合 |
 
 **執行 session 名冊**（主 session 維護）
 
 | 工項 | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅ 已合併 | follow-up PR #412（draft，4 項完成，紅 1e4fe53→綠 fed29e5）；等 CI、主 session 審；目標 10/28 晉升 |
-| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 | CI 綠、ready，主 session 審查中；晉升後合 |
-| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404（規劃）| 業主 16:40 打 /tdd-implement，PR 1 後端清理施工中；PR 1 目標 10/28 第二次晉升，PR 2 趕不上留 11/3 |
-| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 | 審過、P1 已修複核通過、ready；晉升後合 |
-| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410（draft） | 審過可合併、CI 綠、ready；晉升後合 |
-| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 | 5 點已修（`4978574`）複核中；容量 hotfix 已另開 #410 |
+| R2 前端 | `session_01MQovbDDZ3ai3vEKXRrHPEe` | Opus | `feature/referral-email-invite` → `fix/invite-expired-notice` | #409 ✅、#412 ✅ 已合併 | 收工 |
+| R1a-2 og＋lang | `session_01MQovbEo7gaDGV4zL74C89U` | Sonnet | `fix/og-preview-lang` | #405 ✅ 已合併 | 收工 |
+| P1a | `session_01MQovbCmtDUFsDFhE3Ei39S` | Sonnet | `feature/listing-photo-pipeline` | #404 ✅（PR 1）；**#421 ✅ 03:30 合進 develop（PR 2）**，收工：2-1 95fbf626→3e224b45、2-2 50d840fc→65bf76c4（替身修正 e13bda5d）、2-3 8813f249→c37483c1、2-4a aae5adce→37870890（測試修正 b68da1b0）、2-4b 紅 db928aae、wip 94dd83c7 | 2-4b 綠燈 → 2-6 → PR；10/28 下午主 session 審 |
+| P1a-e2e | `session_01MQovbErnhEXgHjQQjw9XvG`（首開 `…EJErP6…` 未帶 repo，已封存） | Sonnet | `feature/listing-photo-pipeline-e2e`（PR base 是 P1a 分支） | 2-5 e2e／journey 同步，10/28 00:50 開 | PR 綠 → P1a fast-forward 進自己分支 |
+| 刊登卡 | `session_01MQovbBaaYSmpxZoDwfmXj2` | Sonnet | `fix/member-center-listing-card` | 裁決 32；#422 ✅ 03:10 合進 develop，session 已封存 | — |
+| 告警送到人 | `session_01MQovbAiZV42jJLPRAqLhY5` | Sonnet | `fix/ops-alert-routing` | #406 ✅ 已合併 | 收工 |
+| 容量 hotfix（寄信告警依裁決 16 不做） | `session_01MQovbDWjfcnq21M6T5cDBf` → 交棒 `session_01MQovbEHzitj2bAVNdriREc` | Sonnet → Opus | `fix/peak-capacity-hotfix` | #410 ✅ 已合併 | 收工 |
+| #395 | `session_01MQovbEHzitj2bAVNdriREc` | Opus | `fix/payuni-query-alert` | #407 ✅ 已合併 | 收工（#395 方向 3 sandbox 實打留 issue） |
 | R2 後端（收工） | `session_015dFtMVsyqYU5gijDBa6yCp` | Opus | — | #399 ✅ | 已合併，可封存 |
 
 **醒來後待辦**（主 session 維護；業主 10:15 起照順序做，做完刪該列）
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | 核准 production 部署（若晉升已合進 main） | ⬜ |
-| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認~~ ✅；剩模板與主旨、R2 兩把 secret、PayUni 正式、清三個 bucket（等晉升後） | ◐ |
-| 3 | 清資料乾跑確認（主 session 會把計數貼在這裡） | ⬜ |
+| 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
+| 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret、新版模板與主旨~~ ✅；清三個 bucket 與 PayUni 正式依裁決 29 於 10/28 晚 PR 2 上線後做 | ◐ |
+| 3 | 清資料乾跑確認——**10/28 00:40 唯讀計數（清 bucket 前的基準，清完再跑一次）**：auth.users 18、profiles 18（is_admin 0）、listings 6、payment_orders 26（completed 13／expired 8／failed 5，10/08–10/27，completed 合計 15,600＝13×1,200，正式站一直 sandbox 故無真錢）、subscriptions 13、withdrawals 0、**withdrawal_events.bank_ref 0（無真匯款）**、reward_transactions 19、referral_codes 13、referral_edges 12、task_progress 5、referral_king_rewards 0、system_alerts 5、announcements 0、rate_limits 3、member_verify_logs 2、auth.audit_log_entries 0；storage.objects：listings-photos 27、referral-signatures 13、id-cards 0；referral_code_seq last_value 8048888（is_called true）；reward_config.default_referrer_code 已是 8048876（維持）；舊 KV 表不存在。業主清完三個 bucket 後主 session 重跑乾跑，各 bucket 為 0 才進 SQL 段 | ◐ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |

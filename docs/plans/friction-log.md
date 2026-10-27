@@ -3210,3 +3210,32 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   滑桿 `aria-valuetext`、微調鈕命名與 group、第 1 格「封面」徽章、窄格錯誤字溢出（真機）、內建瀏覽器 unsupported 文案分流、格內 spinner；
   e2e：驗收 8 補「取消不上傳」、驗收 14 的 disabled 斷言先填其他欄位、上傳 mock 分居 `fixtures.py` 與 `BackendApiMock` 靠註冊順序蓋 route；
   結構：常數命名前綴反序與 `UPLOAD_TIMEOUT_MS` 不在 constants、Create／Edit 重複的 hook 注入與 submitHint 可包 `useBrowserListingPhotos`、`initialUrls` 與 `loadExisting` 二選一、微調鈕／重設／滑桿缺行為測試且 PhotoCropDialog 無同名測試檔。
+
+## 2026-10-27｜誤擋／漏網（環境、CI、流程）｜第 1 波上線日主 session 監工期間的摩擦
+
+- **環境層級 hook 擋 `origin/develop`**（誤擋）：#395 執行 session 在已合併的分支上，Bash 指令只要含 `git fetch origin`／
+  `origin/develop` 就被 claude.ai 環境層級的 PreToolUse hook（不在 repo `.claude/`）擋下，訊息是「Rebase onto origin/develop
+  failed with conflicts」——它先自動 rebase、失敗後擋整條指令。繞法：用 commit hash 取代 ref。repo 端無法修，記下以免下次
+  誤當成 bash-guard。
+- **e2e-tests 被 15 分鐘上限取消 5 次**（CI）：Azure apt 鏡像站 44 kB/s，`playwright install --with-deps` 裝字型 10–13 分鐘，
+  測試本體從未開始；重跑即綠。已以 #418 把上限提到 25 分鐘（晉升 PR 開著時的 CI-only 破例，plan 裁決 28）。候選的根治是把
+  apt 步驟獨立並套規則 12 的退避重試。
+- **api-tests `supabase start` 拉映像被限流**（CI，同 10/26 條）：#415 再中一次（ECR `Data limit exceeded`），workflow 自帶
+  4 次重試仍失敗，手動重跑綠。規則 12 擴到 `supabase start` 的建議維持。
+- **GitHub run 卡 in_progress**（CI）：可重用 workflow（journey.yml）收尾後，母 run 停在 in_progress 約 25 分鐘，
+  rerun 回 403「already running」、cancel 回 409「not in progress」，只能等它自己收尾（14:08Z）。無修法，知道就不會白等。
+- **`tdd-test-guard` 只攔 Edit／Write，不攔 Bash 寫檔**（漏網）：P1a session 在紅燈期用 Python 腳本改了被鎖的測試檔
+  （隨即自行還原並揭露）。守衛的意圖是「紅燈期不改測試」，Bash 的 `>`／`sed -i`／`python -c` 寫 `*.test.*` 應一併攔；
+  修法在 bash-guard 加一類：鎖存在時，指令含 `*.test.*` 路徑且有寫入形態即擋。
+- **自動模式分類器拒絕「轉述的核准」**（流程）：紅燈測試寫錯走逃生口 2，主 session 把業主核准轉給執行 session，執行 session
+  的 `rm .claude/tdd-lock` 仍被分類器以 Security Weaken 拒絕——分類器只認業主**直接在該 session** 打的授權。代價：業主深夜
+  要多開一個分頁貼授權句。處置：dispatch-prompts 的逃生口 2 寫明「裁決由業主親自到執行 session 貼一句授權，主 session 只擬句子」。
+- **Cloudflare 儀表板的建置變數進不了建置**（環境）：正式站設 `VITE_REFERRAL_EMAIL_INVITE=true`（Production）並 Retry 兩次，
+  bundle 仍是無旗標那份（主檔 hash 與本機無旗標建置相同）。repo 有 `wrangler.toml` 含 `pages_build_output_dir`，Pages 以它
+  為唯一設定來源。處置：旗標改進 git 的 `.env.production`（#419），與 `config/supabaseTarget.ts` 同一原則——建置設定一律在
+  git 裡。核對手法可複用：本機建置一次拿主檔檔名，到正式站開 `/assets/<檔名>` 看是不是 404。
+- **主 session 的 worker 重啟吃掉業主訊息**（平台）：兩次 worker restart 後，業主兩則真實訊息被回成「No response requested」，
+  事後靠重新釐清補救。無修法；主 session 每次醒來先掃最近幾則業主訊息有沒有沒回的。
+- **`create_session` 不帶 `source_url` 的 session 沒有 repo**（平台）：主 session 開 2-5 e2e session 時沒帶 `source_url`，容器 `/home/user` 是空的，
+  執行 session 的 `add_repo` 又被分類器擋（Access Added As A Means），只能封存重開。規則：主 session 開執行 session 一律帶
+  `source_url=https://github.com/simonzhao219/Uknow` 與 `source_revision=<要切的 base 分支>`；dispatch-prompts 的共用開頭補這一句。
