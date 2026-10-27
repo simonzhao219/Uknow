@@ -144,3 +144,55 @@ Feature: Listing management
     And I fill the listing form while photos are still uploading
     And the photo uploads complete
     Then the create submit button should become enabled
+
+  # 驗收 7：真瀏覽器裡「選檔→取景→完成」後，離開瀏覽器的是 1:1、≤1600px、
+  # 不帶 EXIF 的 JPEG，且內容就是取景框框住的那一段（fixture 中間的藍帶）。
+  Scenario: A cropped photo leaves the browser square, dominantly the framed color and without EXIF
+    Given I am logged in as an active member
+    And I have no listing yet
+    And photo uploads are recorded
+    When I visit "/service-providers/create"
+    And I fill in a valid listing and submit
+    Then I should see a toast containing "刊登建立成功"
+    And every uploaded photo is a square JPEG within 1600px without EXIF
+    And every uploaded photo is dominantly the framed blue stripe
+
+  @compatibility
+  Scenario: On a phone, the crop dialog keeps Cancel and Done reachable
+    Given I am on a 375px-wide phone screen
+    And I am logged in as an active member
+    And I have no listing yet
+    And photo uploads succeed
+    When I visit "/service-providers/create"
+    And I pick the first listing photo
+    Then the crop dialog Cancel and Done buttons are fully inside the viewport
+
+  @listing
+  Scenario: A failed photo upload can be retried without losing the other photos
+    Given I am logged in as an active member
+    And I have no listing yet
+    And the first photo upload fails
+    When I visit "/service-providers/create"
+    And I fill the listing form while photos are still uploading
+    Then I should see the retry action for photo 1
+    When I retry photo 1
+    Then all three photos finish uploading
+
+  # 驗收 14：裁切元件 chunk 載入失敗 → 顯示重新載入、該張維持等待取景（不可
+  # 送出、不會偷偷改用自動置中裁）。Chromium 會快取失敗的動態 import，同頁面內
+  # 重試不會重抓，所以出路是整頁重新整理（業主／主 session 裁決）。
+  @listing
+  Scenario: A crop tool that fails to load blocks the photo until the page is refreshed
+    Given I am logged in as an active member
+    And I have no listing yet
+    And photo uploads succeed
+    And the crop tool chunk fails to load
+    When I visit "/service-providers/create"
+    And I pick the first listing photo
+    Then I should see an alert containing "裁切工具載入失敗"
+    And the create submit button should be disabled
+    And I should see the refresh page action
+    When the crop tool chunk loads again
+    And I refresh the page from the alert
+    And I pick the first listing photo
+    Then I can finish framing photo 1

@@ -1,7 +1,7 @@
 // 刊登照片清理的前端契約：URL→path 解析（非本 bucket 一律忽略）、存檔前後 diff、
 // 分批呼叫、best-effort 清理，以及「只有帶 not_found 標記的 404 才算已刪除」——
 // 前端（Cloudflare）可能先於 Edge 上線，裸 404 是路由不存在，不能當成已刪。
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiRequest = vi.fn();
 vi.mock('./apiClient', async (orig) => ({
@@ -18,6 +18,7 @@ import {
   LISTING_PHOTOS_BUCKET,
   photoUrlToPath,
   removedPaths,
+  uploadListingPhoto,
 } from './listingPhotosApi';
 
 const UID = '11111111-2222-3333-4444-555555555555';
@@ -155,5 +156,77 @@ describe('deleteListing', () => {
       json(500, { success: false, error: { code: 'delete_failed', message: '刪除失敗' } }),
     );
     await expect(deleteListing('abc')).rejects.toMatchObject({ status: 500, message: '刪除失敗' });
+  });
+});
+
+describe('uploadListingPhoto', () => {
+  const blob = () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' });
+
+  it('網路層例外（Failed to fetch 之類的英文原文）→ 換成固定的中文文案', async () => {
+    apiRequest.mockRejectedValue(new ApiError('Failed to fetch', undefined, 'NETWORK_ERROR'));
+    await expect(uploadListingPhoto(new Blob(['x']))).rejects.toThrow(
+      '網路不穩，上傳沒有成功，請重試',
+    );
+  });
+
+  it('以 multipart POST /listings/upload-photo，欄位 file 為 JPEG，回傳 photoUrl', async () => {
+    apiRequest.mockResolvedValue(
+      json(200, { success: true, photoUrl: 'https://cdn.test/u/1.jpg' }),
+    );
+    await expect(uploadListingPhoto(blob())).resolves.toBe('https://cdn.test/u/1.jpg');
+    const [url, init] = apiRequest.mock.calls[0];
+    expect(url).toBe('https://api.test/listings/upload-photo');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    const file = (init.body as FormData).get('file') as File;
+    expect(file.type).toBe('image/jpeg');
+    expect(file.name).toMatch(/\.jpg$/);
+  });
+
+  it('後端字串信封的錯誤訊息被讀出來（不是通用 fallback）', async () => {
+    apiRequest.mockResolvedValue(json(400, { error: '檔案不得超過 5MB' }));
+    const err = await uploadListingPhoto(blob()).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe('檔案不得超過 5MB');
+    expect(err.status).toBe(400);
+  });
+
+  it('成功但沒有 photoUrl → throw（不回傳空字串）', async () => {
+    apiRequest.mockResolvedValue(json(200, { success: true }));
+    await expect(uploadListingPhoto(blob())).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('uploadListingPhoto 逾時', () => {
+  const blob = () => new Blob([new Uint8Array(10)], { type: 'image/jpeg' });
+  afterEach(() => vi.useRealTimers());
+
+  it('帶 AbortSignal 發請求；請求卡住超過 60 秒 → 逾時失敗，可重試', async () => {
+    vi.useFakeTimers();
+    apiRequest.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(new ApiError('網絡請求失敗', undefined, 'NETWORK_ERROR')),
+          );
+        }),
+    );
+    const pending = uploadListingPhoto(blob()).catch((e) => e);
+    expect(apiRequest.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(apiRequest.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const err = await pending;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toContain('逾時');
+  });
+
+  it('正常完成後不留下計時器', async () => {
+    vi.useFakeTimers();
+    apiRequest.mockResolvedValue(
+      json(200, { success: true, photoUrl: 'https://cdn.test/u/1.jpg' }),
+    );
+    await uploadListingPhoto(blob());
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

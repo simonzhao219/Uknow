@@ -78,7 +78,11 @@ function setLoaded() {
     },
     isLoading: false,
   };
-  state.listing = { listing: { name: '台北好店' }, loading: false, error: null };
+  state.listing = {
+    listing: { name: '台北好店', category: '寵物美容' },
+    loading: false,
+    error: null,
+  };
   state.referral = {
     overview: {
       summary: { totalReferrals: 12 },
@@ -142,23 +146,52 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(card(/^獎勵回饋/)).getByText('500')).toBeTruthy();
   });
 
-  it('沒有刊登時刊登卡連到建立頁並出現立即刊登', () => {
+  it('沒有刊登時刊登卡是小標、尚未刊登、立即刊登鈕三層，鈕在連結外貼底', () => {
     state.listing = { listing: null, loading: false, error: null };
     renderPage();
 
-    const listing = card(/^刊登管理：尚未建立刊登/);
+    const listing = card(/^刊登管理：我的刊登 尚未刊登/);
     expect(listing.getAttribute('href')).toBe('/service-providers/create');
-    expect(within(listing).getByText('立即刊登')).toBeTruthy();
+    expect(listing.getAttribute('aria-label')).toBe('刊登管理：我的刊登 尚未刊登，立即刊登');
+    const small = within(listing).getByText('我的刊登');
+    expect(small.className).toContain('text-xs');
+    expect(small.className).toContain('text-muted-foreground');
+    expect(within(listing).getByText('尚未刊登')).toBeTruthy();
+    const cta = within(cardBox(/^刊登管理：/)).getByRole('link', { name: '立即刊登' });
+    expect(cta.getAttribute('href')).toBe('/service-providers/create');
+    expect(cta.classList.contains('w-full')).toBe(true);
+    expect(listing.contains(cta)).toBe(false);
   });
 
-  it('會籍有效時刊登卡顯示名稱與會籍到期日且沒有狀態徽章', () => {
+  it('會籍有效時刊登卡顯示主題與類別徽章，沒有會籍至也沒有已隱藏', () => {
     renderPage();
 
-    const listing = card(/^刊登管理：台北好店/);
+    const listing = card(/^刊登管理：我的刊登 台北好店/);
     expect(listing.getAttribute('href')).toBe('/service-providers');
-    expect(listing.getAttribute('aria-label')).toBe('刊登管理：台北好店，會籍至 2027/01/01');
-    expect(within(listing).getByText('會籍至 2027/01/01')).toBeTruthy();
-    expect(within(listing).queryByText('已隱藏')).toBeNull();
+    expect(listing.getAttribute('aria-label')).toBe('刊登管理：我的刊登 台北好店，寵物美容');
+    expect(within(listing).getByText('我的刊登')).toBeTruthy();
+    expect(within(listing).getByText('台北好店')).toBeTruthy();
+    const box = cardBox(/^刊登管理：/);
+    expect(within(box).getByText('寵物美容')).toBeTruthy();
+    expect(within(box).queryByText(/會籍至/)).toBeNull();
+    expect(within(box).queryByText('已隱藏')).toBeNull();
+    expect(within(box).queryByRole('link', { name: '立即刊登' })).toBeNull();
+  });
+
+  it('長主題與長類別在窄卡內截斷而不撐破', () => {
+    state.listing = {
+      listing: { name: '一二三四五六七八九十'.repeat(3), category: '自訂的超長服務類別名稱' },
+      loading: false,
+      error: null,
+    };
+    renderPage();
+
+    const box = cardBox(/^刊登管理：/);
+    const title = within(box).getByText('一二三四五六七八九十'.repeat(3));
+    expect(title.classList.contains('truncate')).toBe(true);
+    const badge = within(box).getByText('自訂的超長服務類別名稱');
+    expect(badge.classList.contains('truncate')).toBe(true);
+    expect(badge.classList.contains('max-w-full')).toBe(true);
   });
 
   it('會籍失效時刊登卡標示已隱藏', () => {
@@ -172,7 +205,12 @@ describe('MemberDashboard 狀態卡', () => {
     };
     renderPage();
 
-    const badge = within(card(/^刊登管理：台北好店/)).getByText('已隱藏');
+    const box = cardBox(/^刊登管理：我的刊登 台北好店/);
+    const badge = within(box).getByText('已隱藏');
+    expect(within(box).getByText('寵物美容')).toBeTruthy();
+    expect(card(/^刊登管理：我的刊登 台北好店/).getAttribute('aria-label')).toBe(
+      '刊登管理：我的刊登 台北好店，寵物美容，已隱藏',
+    );
     // 已隱藏是會籍失效的結果，與失效框同為 warning 族（plan.md §4 第 10 點：失效用黃不用紅）
     expect(badge.classList.contains('bg-warning-subtle')).toBe(true);
   });
@@ -183,7 +221,7 @@ describe('MemberDashboard 狀態卡', () => {
 
     const listing = card(/^刊登管理/);
     expect(within(listing).getByText('暫時無法取得刊登狀態')).toBeTruthy();
-    expect(within(listing).queryByText('立即刊登')).toBeNull();
+    expect(screen.queryByText('立即刊登')).toBeNull();
   });
 
   it('推薦管理卡的徽章顯示一代即將到期的人數', () => {
@@ -230,10 +268,9 @@ describe('MemberDashboard 狀態卡', () => {
     expect(within(box).getByTestId('invite-friend-entry')).toBeTruthy();
   });
 
-  it('其他三張卡仍是整卡一個連結，名稱照舊', () => {
+  it('任務與獎勵兩張卡仍是整卡一個連結，名稱照舊', () => {
     renderPage();
     for (const [name, label] of [
-      [/^刊登管理：/, '刊登管理：台北好店，會籍至 2027/01/01'],
       [/^任務中心：/, '任務中心：推薦王本輪推薦 3 / 8 位'],
       [/^獎勵回饋：/, '獎勵回饋：可提領 500 P'],
     ] as const) {
@@ -498,14 +535,15 @@ describe('MemberDashboard 卡片區按鈕', () => {
   const cardActions = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-testid="stat-card-action"]'));
 
-  it('可提領且尚未刊登時兩顆都是次要外框鈕，卡片區沒有實心鈕', () => {
+  it('可提領且尚未刊登時申請提領是次要外框鈕，立即刊登也是外框鈕，卡片區沒有實心鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
     state.reward.rewardsData = { availableRewards: 5000, hasWithdrawnToday: false };
     const { container } = renderPage();
 
     const actions = cardActions(container);
-    expect(actions.map((a) => a.textContent)).toEqual(['立即刊登', '申請提領']);
-    for (const action of actions) {
+    expect(actions.map((a) => a.textContent)).toEqual(['申請提領']);
+    const cta = within(cardBox(/^刊登管理：/)).getByRole('link', { name: '立即刊登' });
+    for (const action of [...actions, cta]) {
       expect(action.classList.contains('bg-card')).toBe(true);
       expect(action.classList.contains('bg-primary')).toBe(false);
     }
@@ -513,8 +551,9 @@ describe('MemberDashboard 卡片區按鈕', () => {
 
   it('只有尚未刊登時卡片區只有立即刊登一顆行動鈕', () => {
     state.listing = { listing: null, loading: false, error: null };
-    const { container } = renderPage();
-    expect(cardActions(container).map((a) => a.textContent)).toEqual(['立即刊登']);
+    renderPage();
+    expect(screen.getAllByRole('link', { name: '立即刊登' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '申請提領' })).toBeNull();
   });
 
   it('有刊登且不能提領時卡片區沒有行動鈕', () => {

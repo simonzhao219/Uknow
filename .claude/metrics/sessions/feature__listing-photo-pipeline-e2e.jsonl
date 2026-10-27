@@ -1,0 +1,2 @@
+{"branch": "feature/listing-photo-pipeline", "ended": "2026-10-27T17:34:28+00:00", "fired": {"bash-guard/local-journey": 1}, "passed": {"bash-guard": 29, "check-output-filter": 30, "deletion-residue-check": 6, "model-effort-advisor": 3}, "session": "7df74437a3d2", "started": "2026-10-27T17:18:38+00:00"}
+{"branch": "feature/listing-photo-pipeline-e2e", "ended": "2026-10-27T17:46:12+00:00", "fired": {}, "passed": {"bash-guard": 3, "check-output-filter": 3, "model-effort-advisor": 1}, "session": "b8b7ca0dd3bd", "started": "2026-10-27T17:43:23+00:00"}

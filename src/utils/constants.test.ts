@@ -4,7 +4,10 @@ import {
   DESCRIPTION_MAX_LENGTH,
   MAX_PHOTO_SIZE,
   MAX_PHOTO_COUNT,
-  ALLOWED_PHOTO_FORMATS,
+  MAX_PHOTO_SOURCE_SIZE,
+  PHOTO_MAX_EDGE,
+  PHOTO_QUALITY_STEPS,
+  PHOTO_TARGET_BYTES,
   SERVICE_CATEGORIES,
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
@@ -18,11 +21,18 @@ describe('listing numeric / photo constants', () => {
     expect(DESCRIPTION_MAX_LENGTH).toBe(200);
   });
 
-  it('照片上限為 3 張、每張 5MB、限 jpg/png/webp', () => {
+  it('照片上限為 3 張、每張 5MB', () => {
     expect(MAX_PHOTO_SIZE).toBe(5 * 1024 * 1024);
     expect(MAX_PHOTO_SIZE).toBe(5242880);
     expect(MAX_PHOTO_COUNT).toBe(3);
-    expect(ALLOWED_PHOTO_FORMATS).toEqual(['image/jpeg', 'image/png', 'image/webp']);
+  });
+
+  it('原檔上限 20MB 大於上傳檔上限 5MB；壓縮參數合理', () => {
+    expect(MAX_PHOTO_SOURCE_SIZE).toBe(20 * 1024 * 1024);
+    expect(MAX_PHOTO_SOURCE_SIZE).toBeGreaterThan(MAX_PHOTO_SIZE);
+    expect(PHOTO_MAX_EDGE).toBe(1600);
+    expect(PHOTO_TARGET_BYTES).toBeLessThan(MAX_PHOTO_SIZE);
+    expect([...PHOTO_QUALITY_STEPS].sort((a, b) => b - a)).toEqual(PHOTO_QUALITY_STEPS);
   });
 });
 

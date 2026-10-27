@@ -364,7 +364,9 @@ jobs:
     needs: guards
     if: needs.guards.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 2026-10-27 15→25：Azure apt 鏡像站偶發掉到 ~44 kB/s，`playwright install --with-deps`
+    # 裝字型就吃掉 10–13 分鐘，測試本身約 7 分鐘；當晚五次 e2e 被 15 分鐘上限取消、重跑才綠。
+    timeout-minutes: 25
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4

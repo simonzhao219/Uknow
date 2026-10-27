@@ -2,17 +2,19 @@
 `/service-providers/create`). One-step form: name, category, gender, city
 (auto-selects every district), exactly 3 photos, and ≥1 contact."""
 
-from playwright.sync_api import Page
+from pathlib import Path
+
+from playwright.sync_api import Page, expect
 
 from pages.base_page import BasePage
 
-# A tiny but validly-typed JPEG payload. Only File.type (image/jpeg) and size
-# (<5MB) are checked before the bytes leave the browser, and nothing downstream
-# decodes them — so a 20-byte stub is enough for both suites. Note this page
-# object is shared: e2e/ mocks the upload, but e2e/journey/ posts these bytes to
-# a real Supabase Storage bucket, so it must stay a genuinely valid payload.
+# 真的小 JPEG（192×64、三塊縱向色帶，帶 EXIF APP1）。照片管線會在真瀏覽器裡
+# createImageBitmap 解碼＋canvas 重編，假檔解不出來。置中 1:1 裁切框正好框住
+# 中間的藍帶，所以輸出主色可驗；原檔的 APP1 讓「輸出無 EXIF」的斷言有意義。
+# 本頁物件被 e2e/（mock 上傳）與 e2e/journey/（真 Storage）共用。
+PHOTO_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "photo_stripes.jpg"
 
-_FAKE_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+PHOTO_COUNT = 3
 
 
 class CreateServiceProviderPage(BasePage):
@@ -57,16 +59,41 @@ class CreateServiceProviderPage(BasePage):
         self._select("服務類別", category)
         self._select("性別", gender)
         self._select("服務城市", city)
-        self._upload_three_photos()
+        self._upload_three_photos(wait_done=False)
         self.page.locator("#instagram").fill(instagram)
         return self
 
-    def _upload_three_photos(self) -> None:
-        files = [
-            {"name": f"photo{i}.jpg", "mimeType": "image/jpeg", "buffer": _FAKE_JPEG}
-            for i in range(3)
-        ]
-        self.page.locator('input[type="file"]').set_input_files(files)
+    def photo_input(self):
+        return self.page.locator('input[type="file"]')
+
+    def crop_dialog(self, n: int):
+        return self.page.get_by_role("dialog", name=f"調整第 {n} 張照片範圍")
+
+    def choose_photo(self, n: int) -> None:
+        """選第 n 張 → 等取景對話框 → 按「完成」。不等上傳完成（deferred 情境要能在
+        上傳在途時繼續操作）；完成後對話框關閉即回傳。"""
+        file_input = self.photo_input()
+        expect(file_input).to_be_enabled(timeout=10_000)
+        file_input.set_input_files(PHOTO_FIXTURE)
+        dialog = self.crop_dialog(n)
+        expect(dialog).to_be_visible(timeout=15_000)
+        done = dialog.get_by_role("button", name="完成")
+        expect(done).to_be_enabled(timeout=15_000)  # Cropper 回報裁切範圍後才可按
+        done.click()
+        expect(dialog).to_be_hidden(timeout=10_000)
+
+    def wait_photos_uploaded(self) -> None:
+        """三張都上傳完成：每格出現「調整第 N 張範圍」（本次新增且 done 才有）。"""
+        for n in range(1, PHOTO_COUNT + 1):
+            expect(self.page.get_by_role("button", name=f"調整第 {n} 張範圍")).to_be_visible(
+                timeout=15_000
+            )
+
+    def _upload_three_photos(self, wait_done: bool = True) -> None:
+        for n in range(1, PHOTO_COUNT + 1):
+            self.choose_photo(n)
+        if wait_done:
+            self.wait_photos_uploaded()
 
     def submit_button(self):
         return self.page.get_by_role("button", name="建立刊登")

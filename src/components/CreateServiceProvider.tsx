@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
@@ -13,14 +12,12 @@ import { UserContext } from '../App';
 import {
   TAIWAN_CITIES,
   TAIWAN_REGIONS,
-  MAX_PHOTO_SIZE,
   MAX_PHOTO_COUNT,
-  ALLOWED_PHOTO_FORMATS,
   NAME_MAX_LENGTH,
 } from '../utils/constants';
 import { CategorySelectField } from './listing/CategorySelectField';
 import { useCustomCategories } from '../hooks/useCustomCategories';
-import { ArrowLeft, Upload, X } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { handleDistrictSelection } from '../utils/districtSelection';
 import { validateContacts } from '../utils/contactValidation';
@@ -28,7 +25,10 @@ import { FieldError, getInputErrorClass } from '../utils/formHelpers';
 import { useNotification } from './notifications/NotificationContext';
 import { useDataCache } from '../contexts/DataCacheContext';
 import { createClient } from '../utils/supabase/client';
-import { buildApiUrl } from '../utils/apiClient';
+import { browserImageIO } from '../utils/browserImageIO';
+import { cleanupRemovedPhotos, uploadListingPhoto } from '../utils/listingPhotosApi';
+import { useListingPhotos } from '../hooks/useListingPhotos';
+import { PhotoPicker } from './listing/PhotoPicker';
 
 interface ContactInfo {
   instagram: string;
@@ -50,7 +50,6 @@ export function CreateServiceProvider() {
     city: '',
     districts: [] as string[],
     description: '',
-    photos: [] as string[],
     contacts: {
       instagram: '',
       line: '',
@@ -60,8 +59,15 @@ export function CreateServiceProvider() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isDistrictSectionOpen, setIsDistrictSectionOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadingPhotos, setUploadingPhotos] = useState(false);
-  const [listingTempId] = useState(`temp_${Date.now()}`);
+  const photos = useListingPhotos({
+    maxCount: MAX_PHOTO_COUNT,
+    io: browserImageIO,
+    upload: uploadListingPhoto,
+    createPreviewUrl: (f) => URL.createObjectURL(f),
+    revokePreviewUrl: (u) => URL.revokeObjectURL(u),
+    // 本次新上傳、尚未存檔就被移除的照片：best-effort 清掉 Storage。
+    onDiscardUploaded: (url) => void cleanupRemovedPhotos([url], []),
+  });
   const { customCategories } = useCustomCategories();
   const supabase = createClient();
 
@@ -96,7 +102,6 @@ export function CreateServiceProvider() {
     if (!formData.gender) newErrors.gender = '請選擇性別';
     if (!formData.city) newErrors.city = '請選擇服務城市';
     if (formData.districts.length === 0) newErrors.districts = '請選擇至少一個服務區域';
-    if (formData.photos.length < 3) newErrors.photos = '請至少上傳3張照片';
 
     // 验证联络方式
     const contactErrors = validateContacts(formData.contacts);
@@ -145,94 +150,6 @@ export function CreateServiceProvider() {
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-
-    if (formData.photos.length + files.length > MAX_PHOTO_COUNT) {
-      showToast(`最多只能上傳${MAX_PHOTO_COUNT}張照片`, 'error');
-      return;
-    }
-
-    const oversizedFiles = files.filter((file) => file.size > MAX_PHOTO_SIZE);
-    if (oversizedFiles.length > 0) {
-      showToast('照片大小不能超過 5MB', 'error');
-      return;
-    }
-
-    const invalidFiles = files.filter((file) => !ALLOWED_PHOTO_FORMATS.includes(file.type));
-    if (invalidFiles.length > 0) {
-      showToast('只支援 JPG、PNG、WEBP 格式', 'error');
-      return;
-    }
-
-    uploadPhotosToServer(files);
-  };
-
-  const uploadPhotosToServer = async (files: File[]) => {
-    setUploadingPhotos(true);
-
-    try {
-      console.log(`[Upload Photos] 開始上傳 ${files.length} 張照片...`);
-
-      const uploadPromises = files.map(async (file) => {
-        console.log(`[Upload Photos] 上傳照片: ${file.name}, 大小: ${file.size} bytes`);
-
-        const formDataToSend = new FormData();
-        formDataToSend.append('file', file);
-        formDataToSend.append('listingTempId', listingTempId);
-
-        const {
-          data: { session: s },
-        } = await supabase.auth.getSession();
-        const response = await fetch(buildApiUrl('/listings/upload-photo'), {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${s?.access_token}` },
-          body: formDataToSend,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error?.message || '上傳失敗');
-        }
-
-        const data = await response.json();
-        return data.photoUrl;
-      });
-
-      const photoUrls = await Promise.all(uploadPromises);
-
-      console.log(`[Upload Photos] ✅ 所有照片上傳完成，共 ${photoUrls.length} 張`);
-      console.log(`[Upload Photos] 照片 URLs:`, photoUrls);
-
-      // functional update：上傳是非同步完成的，期間使用者可能已輸入其他
-      // 欄位；用閉包快照覆寫整份 formData 會把那些輸入倒回（曾造成聯絡
-      // 方式被清空、送出鈕永遠 disabled 的間歇性 bug，見 e2e「Input typed
-      // while photos are uploading survives」情境）。
-      setFormData((prev) => ({
-        ...prev,
-        photos: [...prev.photos, ...photoUrls],
-      }));
-
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.photos;
-        return next;
-      });
-
-      showToast(`成功上傳 ${photoUrls.length} 張照片`, 'success');
-    } catch (error) {
-      console.error('[Upload Photos] 照片上傳錯誤:', error);
-      showToast(error instanceof Error ? error.message : '照片上傳失敗，請重試', 'error');
-    } finally {
-      setUploadingPhotos(false);
-    }
-  };
-
-  const removePhoto = (index: number) => {
-    const newPhotos = formData.photos.filter((_, i) => i !== index);
-    setFormData({ ...formData, photos: newPhotos });
-  };
-
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
 
@@ -247,7 +164,7 @@ export function CreateServiceProvider() {
         city: formData.city,
         districts: formData.districts,
         description: formData.description,
-        photos: formData.photos,
+        photos: photos.photoUrls,
         contacts: formData.contacts,
       });
 
@@ -472,56 +389,8 @@ export function CreateServiceProvider() {
           </div>
 
           <div className="space-y-2">
-            <Label>上傳照片 * (必須上傳3張，第一張為封面照)</Label>
-            <div className="grid grid-cols-3 gap-4">
-              {formData.photos.map((photo, index) => (
-                <div
-                  key={index}
-                  className="relative aspect-video rounded-lg overflow-hidden border"
-                >
-                  <img
-                    src={photo}
-                    alt={`照片 ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="absolute top-1 right-1 h-6 w-6 p-0"
-                    onClick={() => removePhoto(index)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-
-              {formData.photos.length < 3 && (
-                <label
-                  className={`aspect-video border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${uploadingPhotos ? 'opacity-50 pointer-events-none' : ''}`}
-                >
-                  {uploadingPhotos ? (
-                    <>
-                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent mb-2"></div>
-                      <span className="text-sm text-muted-foreground">上傳中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                      <span className="text-sm text-muted-foreground">上傳照片</span>
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                    disabled={uploadingPhotos}
-                  />
-                </label>
-              )}
-            </div>
-            <FieldError error={errors.photos} />
+            <Label>上傳照片 * (必須上傳 {MAX_PHOTO_COUNT} 張，第一張為封面照)</Label>
+            <PhotoPicker photos={photos} maxCount={MAX_PHOTO_COUNT} />
           </div>
 
           <div className="space-y-4">
@@ -579,9 +448,15 @@ export function CreateServiceProvider() {
             <FieldError error={errors.contacts} />
           </div>
 
+          {photos.submitHint && (
+            <p id="photos-submit-hint" className="text-sm text-muted-foreground">
+              {photos.submitHint}
+            </p>
+          )}
           <Button
             onClick={handleSubmit}
             className="w-full"
+            aria-describedby={photos.submitHint ? 'photos-submit-hint' : undefined}
             disabled={
               isSubmitting ||
               !formData.name.trim() ||
@@ -589,7 +464,7 @@ export function CreateServiceProvider() {
               !formData.gender ||
               !formData.city ||
               formData.districts.length === 0 ||
-              formData.photos.length !== 3 ||
+              !photos.canSubmit ||
               (!formData.contacts.instagram &&
                 !formData.contacts.line &&
                 !formData.contacts.facebook)
