@@ -103,9 +103,7 @@ Deno.test('upload-photo 回傳的 URL 格式必能被清理的引用檢查命中
   const url = listingPhotoPublicUrl(path);
   assertEquals(
     url,
-    `${
-      Deno.env.get('SUPABASE_URL')
-    }/storage/v1/object/public/make-5c6718b9-listings-photos/${path}`,
+    `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/listings-photos/${path}`,
   );
   assertEquals(listingPhotoDeps().cleanup.publicUrlOf(path), url);
 });
@@ -114,7 +112,7 @@ Deno.test('DELETE /listings/photos：真 Storage＋真 overlaps——被他人�
   const client = adminClient();
   const owner = await createTestUser(client, { name: '照片擁有者' });
   const other = await createTestUser(client, { name: '另一位刊登者' });
-  const bucket = client.storage.from('make-5c6718b9-listings-photos');
+  const bucket = client.storage.from('listings-photos');
   const kept = `${owner.id}/1700000000001_keep01.jpg`;
   const gone = `${owner.id}/1700000000002_gone02.jpg`;
   try {

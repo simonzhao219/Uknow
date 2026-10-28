@@ -12,7 +12,7 @@ import {
 
 const ME = '11111111-2222-3333-4444-555555555555';
 const OTHER = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const BASE = 'https://proj.supabase.co/storage/v1/object/public/make-5c6718b9-listings-photos/';
+const BASE = 'https://proj.supabase.co/storage/v1/object/public/listings-photos/';
 const mine = (n = '1700000000000_abc123', ext = 'jpg') => `${ME}/${n}.${ext}`;
 const urlOf = (path: string) => `${BASE}${path}`;
 

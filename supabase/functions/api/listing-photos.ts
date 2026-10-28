@@ -9,7 +9,7 @@
 import type { Context } from 'npm:hono@4';
 
 /** 刊登照片 bucket 的單一事實來源（upload-photo 與清理共用，勿再複製字串）。 */
-export const LISTING_PHOTOS_BUCKET = 'make-5c6718b9-listings-photos';
+export const LISTING_PHOTOS_BUCKET = 'listings-photos';
 
 /** DELETE /listings/photos 單次最多幾個 path。 */
 export const MAX_DELETE_PATHS = 10;

@@ -4280,7 +4280,7 @@ app.post('/tasks/claim-reward/:id', async (c) => {
 
 // ============================================================
 // POST /listings/upload-photo
-// 上傳刊登照片至 Supabase Storage (bucket: make-5c6718b9-listings-photos，常數見 listing-photos.ts)
+// 上傳刊登照片至 Supabase Storage (bucket: listings-photos，常數見 listing-photos.ts)
 // ============================================================
 app.post('/listings/upload-photo', async (c) => {
   const user = await requireAuth(c);
