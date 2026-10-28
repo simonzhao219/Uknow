@@ -242,6 +242,7 @@ commit;
 | 詳情頁輪播 P2（#430 自審遺留） | S | 箭頭首尾 disabled 時鍵盤焦點掉回 body；計數 `aria-live` 只唸「2/3」缺語境；未選中圓點對比未量測；捲動容器 `tabIndex=0` 無名稱；箭頭桌機顯示／手機隱藏沒有 e2e；單張刊登時 e2e 探針因沒有圓點列會丟例外 |
 | PayUni 商店級錯誤要進告警 | S | 非 SUCCESS 回應若狀態碼屬商店／設定類（`DEF01006` 等）或同一小時內多個不同使用者連續非 SUCCESS，用 `logSystemAlertOnce` 寫 error 告警（去重），建單階段被拒也納入；10/28 商店停用讓每個人都付不了卻零告警 |
 | 成功頁是否顯示發卡行 | XS | PayUni 只給 `CardBank` 代碼不給名稱；要顯示得維護一張銀行代碼表，評估值不值得；裁決 39 第 1 波只拿掉收單行列 |
+| 會員管理顯示推薦碼與是否加入推薦計畫（業主 10/28 20:20） | S | `admin_list_members`／`admin_member_detail` 目前都不回推薦碼與 `referral_program_joined`，後台看不出誰有碼、誰簽了規章；列表加「推薦碼」「推薦計畫」兩欄（可篩選），詳情加加入時間與簽名檔連結 |
 | 邀請體驗整體重調（裁決 37 第二段） | M | 依 Instagram／Threads 的設計哲學重看「邀請好友」整段：底部面板（visualViewport 跟鍵盤墊高）、Email 與快速分享的層次、結果回饋；第 1 波只做置中＋viewport |
 | 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
