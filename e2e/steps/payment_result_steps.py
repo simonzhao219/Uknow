@@ -97,3 +97,13 @@ def click_retry_payment(payment_result_page):
 @then(parsers.parse('I should see the payment result "{state}"'))
 def should_see_payment_result(payment_result_page, state):
     expect(payment_result_page.state_container(state)).to_be_visible(timeout=6_000)
+
+
+@then("the success screen should not name the acquiring bank")
+def success_screen_hides_acquirer_bank(payment_result_page):
+    # backend_api_mock 的 AuthBankName 是「測試銀行」——PayUni 的收單行名稱，
+    # 不是持卡人的銀行，成功頁不得顯示（也不得有「信用卡銀行」列）。
+    container = payment_result_page.state_container("success")
+    expect(container).not_to_contain_text("測試銀行")
+    expect(container).not_to_contain_text("信用卡銀行")
+    expect(container).to_contain_text("123456 ****** 7890")
