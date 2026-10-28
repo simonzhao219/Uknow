@@ -195,7 +195,7 @@ jobs:
           # 這個開關刻意放在 git 裡而不是儀表板變數:同 ref 解析的理由,
           # 儀表板改動沒人 review、也查不到誰改的。
           # ----------------------------------------------------------------
-          EXPECT_PRODUCTION_PAYUNI='false'   # ← 正式站開放時改成 'true'
+          EXPECT_PRODUCTION_PAYUNI='true'    # 2026-10-28 正式站開放，PayUni 已切正式（裁決 26）
 
           mode="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniMode","unknown"))' 2>/dev/null || echo unknown)"
           configured="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("payuniConfigured","unknown"))' 2>/dev/null || echo unknown)"
