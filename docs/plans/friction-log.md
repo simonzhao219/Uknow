@@ -3246,3 +3246,8 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **`workflow_run` 觸發的部署 run 在 API 上顯示的 head 是預設分支**（平台語意，差點誤判）：`deploy-supabase` 對 main 的部署 run，
   `head_branch`／`head_sha` 顯示 develop 當下 HEAD，不是 main；要找正式站那筆得看「建立時間緊跟 main 的 CI push run」或 run 內
   `github.event.workflow_run.head_branch`。寫進 §7 核准步驟，免得業主按錯筆。
+- **Supabase API 端打包（`functions deploy --use-api`）抓 jsr.io 逾時，晉升 PR 的 journey-full 整場沒跑**（環境，10/28 17:50–18:10）：
+  `JSR package manifest for '@supabase/supabase-js' failed to load ... timed out after 10s`，workflow 的 4 次退避重試與一次 rerun 全同一句；
+  jsr.io 從外部探是 200，故障在 Supabase 打包服務的對外連線。`--use-api` 是 #402 為了擋晉升硬傷改的，代價就是打包不在我們手上。
+  當天靠業主管理員 bypass 合併純前端修正。候選修法：journey／deploy 在 `--use-api` 連敗後退回本機打包（需 Docker），或把
+  `@supabase/supabase-js` 改從 npm: specifier 載入繞開 jsr.io；先記著，第 2 波評估。

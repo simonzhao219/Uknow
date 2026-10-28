@@ -63,6 +63,7 @@
 | 36 | 刊登詳情頁照片改版（業主 10/28 06:05，正式站實測） | 「既然已經都強制裁剪成正方形了，顯示就用正方形。不要外面長方、裡面正方，照片不用有縮圖，用跟 Instagram 一樣的滑動設計。」追問定案：正方形全寬、CSS scroll-snap 左右滑、底部圓點＋右上角「1/3」計數、桌機另加左右箭頭；跟第 1 波，第五次晉升。`fix/listing-photo-carousel`，Sonnet 執行 session |
 | 37 | 邀請好友卡手機版難搆到輸入框（業主 10/28 06:20） | 現在：拿掉釘頂端、改垂直置中＋`index.html` viewport 加 `interactive-widget=resizes-content`（鍵盤升起視窗縮小、對話框重新置中）；跟第五次晉升。第 2 波：依 Instagram／Threads 的設計哲學整體重調邀請相關體驗（底部面板等），記 §6 |
 | 38 | 刊登照片 bucket 改名（業主 10/28 07:45） | `make-5c6718b9-listings-photos` → `listings-photos`。bucket id 不可改名：新 migration 建新 bucket＋前後端常數換名，不搬舊照片（清資料後舊 URL 不存在），舊 bucket 由業主在 Dashboard 刪。跟第 1 波，第六次晉升；清資料不等它（資料列與 bucket 無關） |
+| 39 | 付款成功頁「信用卡銀行」顯示的是收單行（業主 10/28 16:50 真付款後發現） | PayUni 的 `AuthBankName` 是收單行，`CardBank` 才是發卡行代碼且無名稱。拿掉「信用卡銀行」列，只留遮罩卡號與到期日；不引進銀行代碼表（第 2 波評估）。#438，隨第七次晉升 |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -239,6 +240,8 @@ commit;
 | `lazyWithRetry` 重試一次無效＋表單草稿保存 | S | 失敗的 module fetch 被瀏覽器記成 null（HTML 規格），同 URL 再 import() 立刻失敗，`importWithRetry` 的第一段重試形同虛設，第 2 波驗證後簡化為直接重載；Create／Edit 表單加草稿保存（`docs/multi-step-flow-recovery.md` 四契約），重新整理不掉已填文字 |
 | PR 2 審查記債（#421 第 2 波） | S–M | 送出中 picker 未凍結、preparing／chunk 載入無逾時、5xx 固定文案、Edit 取消孤兒入 §14、預覽縮圖用原檔、滑桿 aria-valuetext 與微調鈕命名、封面徽章、窄格溢出（真機）、內建瀏覽器 unsupported 分流、spinner、驗收 8 e2e、驗收 14 e2e 斷言、§11 格式欄、e2e 上傳 mock 歸位 BackendApiMock、常數命名與 UPLOAD_TIMEOUT_MS 歸位、`useBrowserListingPhotos` 收斂 Create／Edit 重複、`initialUrls` 二選一、微調／重設／滑桿行為測試與 PhotoCropDialog 同名測試檔、401 不登出、「重設」鈕與 60 秒逾時待業主確認 |
 | 詳情頁輪播 P2（#430 自審遺留） | S | 箭頭首尾 disabled 時鍵盤焦點掉回 body；計數 `aria-live` 只唸「2/3」缺語境；未選中圓點對比未量測；捲動容器 `tabIndex=0` 無名稱；箭頭桌機顯示／手機隱藏沒有 e2e；單張刊登時 e2e 探針因沒有圓點列會丟例外 |
+| PayUni 商店級錯誤要進告警 | S | 非 SUCCESS 回應若狀態碼屬商店／設定類（`DEF01006` 等）或同一小時內多個不同使用者連續非 SUCCESS，用 `logSystemAlertOnce` 寫 error 告警（去重），建單階段被拒也納入；10/28 商店停用讓每個人都付不了卻零告警 |
+| 成功頁是否顯示發卡行 | XS | PayUni 只給 `CardBank` 代碼不給名稱；要顯示得維護一張銀行代碼表，評估值不值得；裁決 39 第 1 波只拿掉收單行列 |
 | 邀請體驗整體重調（裁決 37 第二段） | M | 依 Instagram／Threads 的設計哲學重看「邀請好友」整段：底部面板（visualViewport 跟鍵盤墊高）、Email 與快速分享的層次、結果回饋；第 1 波只做置中＋viewport |
 | 第 1 波收尾（主 session 交接） | XS | `docs/plans/launch-wave-1/` 鷹架在 §5 評估（10/31）結束後清掉，值得留的升級進規格書／checklist／friction-log；#415 併入 develop；Cloudflare 儀表板的 `VITE_REFERRAL_EMAIL_INVITE` 變數可刪（旗標已在 git）|
 
@@ -327,6 +330,7 @@ commit;
 | 10/28 06:10–06:40 | #428、#429 CI 綠 → **#428 合進 develop（9b4694b，含 pytest pin）**，#429 重複關閉。業主裁決 37（邀請卡置中＋viewport）→ 主 session 依 ≤10 行例外自己改（`fix/invite-card-center`：1 個 class、1 個 meta）。詳情輪播 session 施工中 | 置中 PR CI 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升 |
 | 10/28 06:40–07:40 | #431 置中合進 develop（0610210）。輪播 session 回報 **#430**（紅燈 0899732，自審 P1 兩項已修：圓點 44px 熱區、0 張 fallback）→ 主 session 審 diff 無 P0／P1 → 合進 develop（c1b462f）。開**第五次晉升 PR #432**（develop c1b462f → main）→ journey-full 20 分鐘綠＋全軌綠 → **合進 main（d21f6ca）**。正式站 Edge Function 部署等業主核准（找建立時間緊跟 main CI push run 的那筆） | 業主核准 production → `/health` sha 開頭 d21f6ca → 正式站看輪播、邀請卡置中 → 清 bucket／清資料 → PayUni |
 | 10/28 07:40–08:45 | 業主手測 OK；確認簽名存 `referral-signatures`、身分證存 `id-cards`（提領時才有）；業主清空三個 bucket 並刪兩個舊遺留 bucket。裁決 38 → Sonnet session `session_01MQovbBMcgZg4iWLZEghRDN` 開 **#434**（migration `20261028000001` 建 `listings-photos`＋常數換名）。**08:10 清資料**：乾跑（帳號 20、刊登 7、訂單 28／完成 14 全 sandbox、真匯款 0、Storage 0、reconcile 無進行中 run）→ 業主確認 → 單一交易執行 §4 刪除段 → 零殘留全 0、`referral_code_seq` 8048876／is_called false、`reward_config` 8048876 未動。#434 審過合 develop（62dcf8c）→ **第六次晉升 #435 journey-full 綠 → 合進 main（88a677d）** | 業主核准 production → `/health` → 刪舊 bucket → 註冊＋set-self-admin → PayUni 切正式 → 真付款 |
+| 10/28 08:45–18:50 | 業主核准 88a677d 部署、刪舊 bucket。PayUni 第一次真付款失敗：原商店「網路商店停用」回 `DEF01006 商店狀態不符合`（兩筆 failed）；業主換成啟用中的新商店並重設 Secrets、後台 Notify／Return URL 指向後端。**16:48 第一筆真付款成功**（1,200，訂閱至 2027-10-27，推薦碼 8048876＝預設推薦人）。成功頁顯示收單行 → 裁決 39 → Sonnet session `session_01MQovbAfjpYTNuVLdi9WDs9` 走 `/fix-bug` 開 **#438**（紅 cc8ec42）→ 審過合 develop（eb2eafe）→ 第七次晉升 **#439**。#437（`EXPECT_PRODUCTION_PAYUNI=true`）合 develop。期間依業主指示刪掉一個測試帳號（pending 單一併）。**#439 journey-full 兩次（含唯一一次重跑）都在部署拋棄式分支時被 Supabase API 打包服務撞 jsr.io 逾時擋住**，pytest 沒跑；Supabase Preview 整合同樣 `failed to bundle`。業主裁決：管理員繞過 ruleset 合併（純前端修正、後端與線上相同）。PayUni 商店級錯誤沒有 LINE 告警 → 記 §6 | 業主在 GitHub 以 bypass 合併 #439 → Cloudflare 上前端 → Supabase 恢復後補部署 main 讓 `/health` sha 對上 → 宣布開放；管理員宣告（is_admin 仍 0）|
 
 **執行 session 名冊**（主 session 維護）
 
