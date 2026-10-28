@@ -62,6 +62,7 @@
 | 35 | 照片格改版（業主 10/28 04:20） | 格內不再有「調整範圍」「移除」文字鈕：移除＝縮圖右上角叉叉（aria 不變）、點縮圖進入調整（僅本次新增且完成的格；舊圖標示不能重新取景）、失敗格留「重試」；微調步距 10→4px。併同 34 一個 PR（#425） |
 | 36 | 刊登詳情頁照片改版（業主 10/28 06:05，正式站實測） | 「既然已經都強制裁剪成正方形了，顯示就用正方形。不要外面長方、裡面正方，照片不用有縮圖，用跟 Instagram 一樣的滑動設計。」追問定案：正方形全寬、CSS scroll-snap 左右滑、底部圓點＋右上角「1/3」計數、桌機另加左右箭頭；跟第 1 波，第五次晉升。`fix/listing-photo-carousel`，Sonnet 執行 session |
 | 37 | 邀請好友卡手機版難搆到輸入框（業主 10/28 06:20） | 現在：拿掉釘頂端、改垂直置中＋`index.html` viewport 加 `interactive-widget=resizes-content`（鍵盤升起視窗縮小、對話框重新置中）；跟第五次晉升。第 2 波：依 Instagram／Threads 的設計哲學整體重調邀請相關體驗（底部面板等），記 §6 |
+| 38 | 刊登照片 bucket 改名（業主 10/28 07:45） | `make-5c6718b9-listings-photos` → `listings-photos`。bucket id 不可改名：新 migration 建新 bucket＋前後端常數換名，不搬舊照片（清資料後舊 URL 不存在），舊 bucket 由業主在 Dashboard 刪。跟第 1 波，第六次晉升；清資料不等它（資料列與 bucket 無關） |
 
 較早的裁決仍有效：服務條款／參加契約／事業手冊／推廣獎勵規章已律師定案不可改；使用者可見文案一律「推薦人」；
 admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持久化；R2 的 A～T 裁決見 `docs/plans/referral-email-invite/plan.md` 附錄 C。
@@ -132,7 +133,7 @@ admin 提領資料含未遮罩身分證與銀行帳號，任何快取不得持�
 
 ## 4. 清資料 SOP（裁決 3、6）
 
-**原則**：先乾跑列計數、業主確認後才刪；刪的順序照 `e2e/journey/tools/cleanup.py`（先 Storage 物件，再 `auth.users` 讓業務表 cascade）；DB 部分用 Supabase MCP `execute_sql` 對正式專案 `uhtwwxtazwqnlbejhprl`。**Storage 物件不能用 SQL 刪**（直接刪 `storage.objects` 列只會留下孤兒實體，之後也無法再從 Dashboard 清）：由業主在 Dashboard → Storage 的三個 bucket（`id-cards`、`referral-signatures`、`make-5c6718b9-listings-photos`）全選刪除，乾跑看到 `storage.objects` 各 bucket 為 0 才進 SQL 段。
+**原則**：先乾跑列計數、業主確認後才刪；刪的順序照 `e2e/journey/tools/cleanup.py`（先 Storage 物件，再 `auth.users` 讓業務表 cascade）；DB 部分用 Supabase MCP `execute_sql` 對正式專案 `uhtwwxtazwqnlbejhprl`。**Storage 物件不能用 SQL 刪**（直接刪 `storage.objects` 列只會留下孤兒實體，之後也無法再從 Dashboard 清）：由業主在 Dashboard → Storage 的三個 bucket（`id-cards`、`referral-signatures`、`listings-photos`；裁決 38 改名前叫 `make-5c6718b9-listings-photos`）全選刪除，乾跑看到 `storage.objects` 各 bucket 為 0 才進 SQL 段。
 
 **前提（業主）**：Dashboard → Project Settings → Database → Backups 確認今天有可還原的備份（或 PITR 開著），截圖回報。沒有備份不執行。
 
@@ -255,7 +256,7 @@ commit;
 5. 若晉升 PR 已合進 main：到 Actions 核准 `production` 部署；`curl https://uhtwwxtazwqnlbejhprl.supabase.co/functions/v1/api/health` 看 `sha` 對上 main 的 merge commit。若還沒合進 main：看 §8 的原因，先做主 session 列出的那件事。
 6. Supabase Dashboard（正式專案）：確認備份存在（Project Settings → Database → Backups，截圖回主 session）；Authentication → Rate Limits 的寄信上限調到 600／小時並記下現值；Authentication → Email Templates 貼 R2 的 Invite user 模板與主旨（`supabase/email-templates/referral-invite.html`，R2 前端 PR 合併後才有這個檔，PR 內文有貼法）；Edge Function Secrets 加 `REFERRAL_INVITE_SECRET`（`openssl rand -hex 32`）、`REFERRAL_EMAIL_INVITE_ENABLED=true`。
 7. Secrets 翻 PayUni 正式：`PAYUNI_SANDBOX=false`、`PAYUNI_MER_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認 `FRONTEND_URL=https://uknow.com.tw`；Dashboard 重部署 `api`；`/health` 的 `payuniMode=production`、`payuniConfigured=true`。PayUni 商店後台確認 NotifyURL／ReturnURL 網域。告訴主 session「已翻」，它才合 `EXPECT_PRODUCTION_PAYUNI` 的 PR。
-8. Storage：Dashboard → Storage → `id-cards`、`referral-signatures`、`make-5c6718b9-listings-photos` 三個 bucket 各自全選刪除物件（bucket 本身留著）。
+8. ~~Storage：Dashboard → Storage → `id-cards`、`referral-signatures`、`listings-photos`（舊名 `make-5c6718b9-listings-photos`）三個 bucket~~ 10/28 08:00 已清、兩個舊遺留 bucket 已刪；第六次晉升後再刪舊 `make-5c6718b9-listings-photos` bucket 各自全選刪除物件（bucket 本身留著）。
 9. 回答主 session 的清資料乾跑確認（它會貼 §4 的計數；`storage.objects` 各 bucket 必須已是 0）。
 10. 清完後，從台灣網路：註冊第一個帳號＋完善資料 → `GET /admin-setup/check`（`hasExistingAdmin=false`）→ `POST /admin-setup/set-self-admin`（checklist 步驟 7；**先做這步再付款**，端點對第一個完成資料的人開放、不要留空窗）→ 真付款 NT$1,200 → `/health` 的 `defaultReferrer=ok`（`reward_config` 不是 `'8048876'` 時先 `update`，見 §4）→ 加入推薦計畫（簽規章）。
 11. R2 實寄核對（R2 規劃書 R2-3b 第 8–10 步，裁決 S 的順序：後端先開、收信核對通過才開前端旗標）：用自己的 token `curl -X POST …/api/referrals/invites` 寄到第二個信箱 → 收到信、主旨、揭露句、連結正確 → 點連結設密碼 → 完善資料頁帶推薦碼 → 回報主 session；主 session 跑 `purge_stale_referral_invites(p_email := '<第二個信箱>')` 清掉測試空殼（或你再註冊完它）。同一步順便驗 R2-0 沒做過的兩件 hosted 行為：同信箱第二次寄（重寄）信內連結是新的；purge 後主 session 用 SQL 確認該帳號的 `auth.audit_log_entries` 列已被刪（`delete_auth_audit_for_users` 對 hosted payload 形狀有效）。兩件都過才做第 12 步。
@@ -325,6 +326,7 @@ commit;
 | 10/28 05:40–06:10 | #428（docs）e2e 紅：**pytest 9.2.0 於 05:30 發布改名 `_arg2fixturedefs`，pytest-bdd 9.0.0 整套炸掉**，develop 自己的 push run 同時紅 → 開 **#429**（`pytest>=8.0,<9.2`），同 commit 搬進 #428。業主實測詳情頁提出**裁決 36**（正方形＋Instagram 式滑動、無縮圖）→ 開 Sonnet 執行 session `session_01MQovbCBPJ46qTpVQvhbuA5`（`fix/listing-photo-carousel`） | #429 綠 → 合 develop；#428 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升（含 #429 pin） |
 | 10/28 06:10–06:40 | #428、#429 CI 綠 → **#428 合進 develop（9b4694b，含 pytest pin）**，#429 重複關閉。業主裁決 37（邀請卡置中＋viewport）→ 主 session 依 ≤10 行例外自己改（`fix/invite-card-center`：1 個 class、1 個 meta）。詳情輪播 session 施工中 | 置中 PR CI 綠 → 合；輪播 PR → 審 → 合 → 第五次晉升 |
 | 10/28 06:40–07:40 | #431 置中合進 develop（0610210）。輪播 session 回報 **#430**（紅燈 0899732，自審 P1 兩項已修：圓點 44px 熱區、0 張 fallback）→ 主 session 審 diff 無 P0／P1 → 合進 develop（c1b462f）。開**第五次晉升 PR #432**（develop c1b462f → main）→ journey-full 20 分鐘綠＋全軌綠 → **合進 main（d21f6ca）**。正式站 Edge Function 部署等業主核准（找建立時間緊跟 main CI push run 的那筆） | 業主核准 production → `/health` sha 開頭 d21f6ca → 正式站看輪播、邀請卡置中 → 清 bucket／清資料 → PayUni |
+| 10/28 07:40–08:45 | 業主手測 OK；確認簽名存 `referral-signatures`、身分證存 `id-cards`（提領時才有）；業主清空三個 bucket 並刪兩個舊遺留 bucket。裁決 38 → Sonnet session `session_01MQovbBMcgZg4iWLZEghRDN` 開 **#434**（migration `20261028000001` 建 `listings-photos`＋常數換名）。**08:10 清資料**：乾跑（帳號 20、刊登 7、訂單 28／完成 14 全 sandbox、真匯款 0、Storage 0、reconcile 無進行中 run）→ 業主確認 → 單一交易執行 §4 刪除段 → 零殘留全 0、`referral_code_seq` 8048876／is_called false、`reward_config` 8048876 未動。#434 審過合 develop（62dcf8c）→ **第六次晉升 #435 journey-full 綠 → 合進 main（88a677d）** | 業主核准 production → `/health` → 刪舊 bucket → 註冊＋set-self-admin → PayUni 切正式 → 真付款 |
 
 **執行 session 名冊**（主 session 維護）
 
@@ -347,12 +349,12 @@ commit;
 |---|---|---|
 | 1 | ~~核准 production 部署~~ 19:18 完成，sha 對上 | ✅ |
 | 2 | §7 第 6–8 步：~~備份確認、寄信上限 600、SMTP 確認、R2 兩把 secret、新版模板與主旨~~ ✅；清三個 bucket 與 PayUni 正式依裁決 29 於 10/28 晚 PR 2 上線後做 | ◐ |
-| 3 | 清資料乾跑確認——**10/28 00:40 唯讀計數（清 bucket 前的基準，清完再跑一次）**：auth.users 18、profiles 18（is_admin 0）、listings 6、payment_orders 26（completed 13／expired 8／failed 5，10/08–10/27，completed 合計 15,600＝13×1,200，正式站一直 sandbox 故無真錢）、subscriptions 13、withdrawals 0、**withdrawal_events.bank_ref 0（無真匯款）**、reward_transactions 19、referral_codes 13、referral_edges 12、task_progress 5、referral_king_rewards 0、system_alerts 5、announcements 0、rate_limits 3、member_verify_logs 2、auth.audit_log_entries 0；storage.objects：listings-photos 27、referral-signatures 13、id-cards 0；referral_code_seq last_value 8048888（is_called true）；reward_config.default_referrer_code 已是 8048876（維持）；舊 KV 表不存在。業主清完三個 bucket 後主 session 重跑乾跑，各 bucket 為 0 才進 SQL 段 | ◐ |
+| 3 | ~~清資料乾跑確認~~ 10/28 08:10 已執行，零殘留全 0（§8） | ✅ |
 | 10 | ~~審 #404、親打 /tdd-implement~~ 16:40 已做 | ✅ |
 | 4 | ~~LINE channel 與兩把 Secret~~ 17:05 完成（Email 通道的 `ALERT_SMTP_*` 依 #406 最小版不做，留第 2 波） | ✅ |
 | 5 | ~~是否允許排程任務~~ 已裁決允許（§0 第 13 題） | ✅ |
 | 8 | ~~核准建拋棄式分支~~ 業主自己在 Dashboard 開了、演練完成 | ✅ |
-| 12 | ~~核准 8b1b8abf~~ 05:47 已核准部署綠；**再核准一次：main d21f6ca（第五次晉升）** → `/health` 的 `sha` 開頭 `d21f6ca` → 正式站看詳情頁輪播、邀請卡置中 | ◐ |
+| 12 | ~~8b1b8abf、d21f6ca~~ 已核准；**再核准一次：main 88a677d（第六次晉升，含 listings-photos migration）** → `/health` 綠 → Dashboard 刪舊 bucket `make-5c6718b9-listings-photos` → 再建刊登 | ◐ |
 | 9 | 雲端環境 setup script 預裝 deno 與 supabase CLI：session 標題列的雲端環境選單 → Edit → Setup script，加 `curl -fsSL https://deno.land/install.sh \| sh && export PATH=$HOME/.deno/bin:$PATH` 與 `npm install -g supabase`（setup script 不受 auto-mode 分類器限制；今天三個執行 session 都因容器無 deno 而被 pre-commit 擋下或得交棒）。新 session 才會生效 | ⬜ |
 | 7 | ~~手動封存兩個空 session~~ | ✅ |
 | 6 | ~~寄信上限與 SMTP 確認~~ 17:05 完成 | ✅ |
