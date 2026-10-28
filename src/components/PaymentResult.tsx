@@ -29,7 +29,7 @@ interface PayUniResponse {
   Card6No?: string; // 卡號前 6 碼
   Card4No?: string; // 卡號後 4 碼
   CardExpired?: string; // 卡片到期日 (MMYY)
-  AuthBankName?: string; // 銀行名稱
+  AuthBankName?: string; // 收單銀行名稱（PayUni 商店的收單行，不是持卡人的銀行），不要拿來顯示給使用者
   Message?: string; // 訊息
   ResCode?: string; // 回應代碼
   ResCodeMsg?: string; // 回應代碼訊息
@@ -588,24 +588,14 @@ export function PaymentResult() {
                   </div>
                 )}
 
-                {(paymentData.AuthBankName || paymentData.Card6No) && (
+                {paymentData.Card6No && (
                   <div className="border-b border-success-border p-3 space-y-2">
-                    {paymentData.AuthBankName && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">信用卡銀行</span>
-                        <span className="text-sm text-foreground font-medium">
-                          {paymentData.AuthBankName}
-                        </span>
-                      </div>
-                    )}
-                    {paymentData.Card6No && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">信用卡號</span>
-                        <span className="text-sm text-foreground font-mono">
-                          {paymentData.Card6No} ****** {paymentData.Card4No}
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">信用卡號</span>
+                      <span className="text-sm text-foreground font-mono">
+                        {paymentData.Card6No} ****** {paymentData.Card4No}
+                      </span>
+                    </div>
                     {paymentData.CardExpired && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">到期日</span>
