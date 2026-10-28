@@ -16,6 +16,7 @@ Feature: Payment result
     Given trade "PU00000010" enriches with a successful PayUni payment
     When I visit "/payment/result?tradeNo=PU00000010&status=SUCCESS"
     Then I should see the payment result "success"
+    And the success screen should not name the acquiring bank
 
   Scenario: A failed status in the URL renders the failure reason
     Given trade "PU00000011" enriches with a failed PayUni payment reason "卡片額度不足" code "51"

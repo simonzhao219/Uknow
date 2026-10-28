@@ -383,7 +383,6 @@ def _setup_payment_result(context, api_mock, rest_mock):
         build_payuni_response(
             "SUCCESS",
             TradeNo=LONG_TRADE_NO,
-            AuthBankName="台北富邦商業銀行股份有限公司",
             AuthAmt="1,200",
         ),
     )

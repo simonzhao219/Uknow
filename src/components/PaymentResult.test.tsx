@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   showToast: vi.fn(),
   refreshUser: vi.fn(),
   searchParams: new URLSearchParams(),
+  user: { accountStatus: 'expired' },
 }));
 
 vi.mock('../utils/apiClient', () => ({
@@ -29,7 +30,7 @@ vi.mock('../App', async () => {
   return {
     // 補繳中間筆的核心情境：付款成功但會籍仍 expired。
     UserContext: createContext<any>({
-      user: { accountStatus: 'expired' },
+      user: h.user,
       refreshUser: h.refreshUser,
     }),
   };
@@ -71,6 +72,7 @@ const BACKFILL_2 = {
 };
 
 beforeEach(() => {
+  h.user.accountStatus = 'expired';
   h.searchParams = new URLSearchParams({ tradeNo: 'UK20260502TEST', status: 'SUCCESS' });
   h.refreshUser.mockResolvedValue({ accountStatus: 'expired' });
 });
@@ -199,5 +201,36 @@ describe('PaymentResult 補繳中間筆', () => {
 
     fireEvent.click(screen.getByTestId('retry-renewal-button'));
     expect(await screen.findByTestId('payment-result-backfill-progress')).toBeTruthy();
+  });
+});
+
+describe('PaymentResult 付款資訊', () => {
+  it('成功頁不顯示收單銀行（AuthBankName），只顯示遮罩卡號', async () => {
+    // PayUni 的 AuthBank/AuthBankName 是商店的收單行（永遠同一家），不是持卡人的
+    // 發卡行；曾把它標成「信用卡銀行」，永豐卡的客人看到台新。
+    h.user.accountStatus = 'active';
+    h.apiRequestJson.mockResolvedValue({
+      success: true,
+      data: {
+        orderStatus: 'completed',
+        completedAt: '2026-10-28T04:00:00Z',
+        payuni: {
+          Status: 'SUCCESS',
+          AuthBank: '812',
+          AuthBankName: '台新國際商業銀行',
+          CardBank: '807',
+          Card6No: '432865',
+          Card4No: '6095',
+        },
+        paidAwaitingActivation: false,
+        renewal: null,
+      },
+    });
+    render(<PaymentResult />);
+
+    const view = await screen.findByTestId('payment-result-success');
+    expect(view.textContent).toContain('432865 ****** 6095');
+    expect(view.textContent).not.toContain('信用卡銀行');
+    expect(view.textContent).not.toContain('台新國際商業銀行');
   });
 });
