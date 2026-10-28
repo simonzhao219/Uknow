@@ -408,7 +408,7 @@ log 管線另存一份 auth 事件（含 email），purge 刪不到，依雲端�
 | 項目 | 應為 | 說明 |
 |------|------|------|
 | **NotifyURL（背景通知）** | `https://<PROJECT_REF>.supabase.co/functions/v1/api/webhooks/payuni/notify` | 付款成功的伺服器回調；程式已在加密參數帶入，後台若需白名單請填此網址 |
-| **ReturnURL（前景導回）** | `{FRONTEND_URL}/payment/result?tradeNo=...` | 程式自動帶入；PayUni 後台若限制網域請加入你的前端網域 |
+| **ReturnURL（前景導回）** | `https://<PROJECT_REF>.supabase.co/functions/v1/api/payuni/return` | 程式自動帶入，指向**後端**（收到交易結果後再 302 導回 `{FRONTEND_URL}/payment/result`）；後台這兩欄當白名單與備援，兩個都填後端網址 |
 | 金額 | `1200` | 年費固定金額（後端會驗，不符即拒） |
 
 ⚠️ **PayUni 測試站依來源地區封鎖**（2026-10-07 已驗證）：法國住宅 IP 回 403、
