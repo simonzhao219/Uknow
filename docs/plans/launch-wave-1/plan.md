@@ -242,6 +242,7 @@ commit;
 | 詳情頁輪播 P2（#430 自審遺留） | S | 箭頭首尾 disabled 時鍵盤焦點掉回 body；計數 `aria-live` 只唸「2/3」缺語境；未選中圓點對比未量測；捲動容器 `tabIndex=0` 無名稱；箭頭桌機顯示／手機隱藏沒有 e2e；單張刊登時 e2e 探針因沒有圓點列會丟例外 |
 | PayUni 商店級錯誤要進告警 | S | 非 SUCCESS 回應若狀態碼屬商店／設定類（`DEF01006` 等）或同一小時內多個不同使用者連續非 SUCCESS，用 `logSystemAlertOnce` 寫 error 告警（去重），建單階段被拒也納入；10/28 商店停用讓每個人都付不了卻零告警 |
 | 成功頁是否顯示發卡行 | XS | PayUni 只給 `CardBank` 代碼不給名稱；要顯示得維護一張銀行代碼表，評估值不值得；裁決 39 第 1 波只拿掉收單行列 |
+| **刊登首頁返回時閃骨架、順序跳動（業主 10/30 00:50，第 2 波優先）** | M | 兩個根因都在 `HomePage.tsx`：(1) 清單只存在元件 state，`useEffect` 每次掛載都重打 `public_listings`，從詳情頁「返回」等於重新載入，先閃 6–9 格灰骨架再出現；業主可接受重新整理閃，不接受返回閃。(2) 初始依 `created_at` 倒序，`getCurrentPosition` 回來後才改依距離重排，所以返回時先看到一個順序、一兩秒後又跳成另一個。修法：清單與定位結果提到 route 之外的快取（Context 或 module 級 store，含 sessionStorage 備援），返回時先用快取即時渲染、背景靜默重驗（`useRevalidateOnFocus` 已有同型做法）；定位結果用 `maximumAge` 既有的快取且首次排序就等它（或先用上次座標），避免二次重排；連帶記住捲動位置。詳情頁 `/service-providers/:id` 同理 |
 | 正式站前端部署失敗零訊號（10/29 事故） | S | Cloudflare Pages 的 main 建置失敗沒有任何通知，正式站停在舊版 18 小時才被人眼發現。候選：(a) 建置時把 commit sha 埋進 index.html（`<meta name="build-sha">`），`scripts/check-deployed-assets.py` 對正式站比對 main HEAD，deploy-smoke 每 6 小時自然會叫；(b) Cloudflare 通知（Notifications → Pages build failure）送 email／webhook。(a) 治本且與現有 smoke 同軌，優先 |
 | 會員管理顯示推薦碼與是否加入推薦計畫（業主 10/28 20:20） | S | `admin_list_members`／`admin_member_detail` 目前都不回推薦碼與 `referral_program_joined`，後台看不出誰有碼、誰簽了規章；列表加「推薦碼」「推薦計畫」兩欄（可篩選），詳情加加入時間與簽名檔連結 |
 | 邀請體驗整體重調（裁決 37 第二段） | M | 依 Instagram／Threads 的設計哲學重看「邀請好友」整段：底部面板（visualViewport 跟鍵盤墊高）、Email 與快速分享的層次、結果回饋；第 1 波只做置中＋viewport |
