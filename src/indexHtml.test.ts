@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { LINE_OFFICIAL_ACCOUNT_URL } from './utils/constants';
 
 const ROOT = resolve(__dirname, '..');
 const html = readFileSync(resolve(ROOT, 'index.html'), 'utf8');
@@ -58,6 +59,32 @@ describe('index.html', () => {
     for (const type of ['Organization', 'WebSite']) {
       expect(graph.find((n) => n['@type'] === type)?.name, type).toBe('Uknow');
     }
+  });
+
+  // 搜尋「優識」「優識生活」時要能連回官網：title 與結構化資料都帶中文品牌名，
+  // 但 og:title／name 維持 Uknow（見上方測試），分享預覽與站名判定不受影響。
+  it('首頁 title 同時含 Uknow 與中文品牌名優識', () => {
+    const title = html.match(/<title>([^<]*)<\/title>/)?.[1] ?? '';
+    expect(title).toBe('Uknow 優識｜專業服務媒合平台');
+  });
+
+  it('JSON-LD 的 Organization 與 WebSite 都帶優識、優識生活、UKNOW 三個別名', () => {
+    const raw = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1] ?? '';
+    const graph = JSON.parse(raw)['@graph'] as { '@type': string; alternateName?: string[] }[];
+    for (const type of ['Organization', 'WebSite']) {
+      expect(graph.find((n) => n['@type'] === type)?.alternateName, type).toEqual([
+        '優識',
+        '優識生活',
+        'UKNOW',
+      ]);
+    }
+  });
+
+  it('Organization 的 sameAs 含官方 LINE 網址且與 constants 一致', () => {
+    const raw = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1] ?? '';
+    const graph = JSON.parse(raw)['@graph'] as { '@type': string; sameAs?: string[] }[];
+    const org = graph.find((n) => n['@type'] === 'Organization');
+    expect(org?.sameAs).toContain(LINE_OFFICIAL_ACCOUNT_URL);
   });
 });
 
