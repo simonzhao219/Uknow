@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
-from builders.page_diagnostics import dump_page
+from builders.page_diagnostics import _TEST_RESULTS, dump_page
 
 SANDBOX_URL_GLOB = "https://sandbox-api.payuni.com.tw/**"
 
@@ -123,6 +123,9 @@ class PayuniSandboxPage:
         """
         field.click()
         field.press_sequentially(text, delay=50)
+        # 2026-10 新表單：欄位離開焦點時才把值寫進表單模型並套遮罩（卡號
+        # 顯示成末四碼、CVV 顯示 ***）。不 blur 就直接送出，驗證讀到的是舊值。
+        field.blur()
 
     def complete_payment(
         self, card_number: str, expiry: str, cvv: str, payer_email: str = ""
@@ -204,6 +207,35 @@ class PayuniSandboxPage:
                 continue
         return False
 
+    def _modal_text(self, button) -> str:
+        """彈框本身的文字——從「確定」鍵往上找，直到祖先的文字比按鈕多。
+
+        body 全文會被表單本體淹沒（前 300 字全是表單），彈框訊息在 DOM 尾端
+        根本讀不到。2026-10-27 的失敗就卡在這：知道有彈框，不知道它說什麼。
+        同時把當下的畫面存成截圖。
+        """
+        text = ""
+        try:
+            text = button.evaluate(
+                """el => {
+                    let node = el.parentElement;
+                    for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+                        const t = (node.innerText || '').trim();
+                        if (t.length > (el.innerText || '').trim().length + 4) return t;
+                    }
+                    return '';
+                }"""
+            )
+        except Exception as exc:
+            text = f"（讀取彈框失敗：{exc}）"
+        try:
+            self.page.screenshot(
+                path=str(_TEST_RESULTS / "page-payuni-dialog.png"), full_page=True, timeout=5_000
+            )
+        except Exception:
+            pass
+        return " ".join(text.split())[:400]
+
     def _dismiss_optional_confirm(self, skip: bool = False) -> str:
         """有**新跳出來的**確認框就記下當下頁面文字再按掉，沒有就回空字串。
 
@@ -219,11 +251,7 @@ class PayuniSandboxPage:
                 locator.wait_for(state="visible", timeout=3_000)
             except Exception:
                 continue
-            text = ""
-            try:
-                text = " ".join(self.page.inner_text("body").split())[:300]
-            except Exception:
-                pass
+            text = self._modal_text(locator)
             locator.click()
             return text
         return ""
