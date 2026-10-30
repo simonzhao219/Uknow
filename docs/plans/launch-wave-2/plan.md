@@ -76,7 +76,7 @@
 1. 11/02 22:00 後 develop 凍結；確認 H 已把 ci.yml `journey-full` 改回 `payment_mode: sandbox`（H 沒成功就用互動問題問業主：延長規則 13 的「暫時至」日期 vs 晉升延後）。
 2. 開晉升 PR：標題 `chore(release): 晉升 develop → main——第 2 波`；內文列 52039ca 之後的全部 PR、是否有後端變動、migration 檔名。訂閱它。
 3. journey-full 綠 → merge commit 合進 main → 請業主核准 `production` 部署（找建立時間緊跟 main CI push run 的那筆）→ `/health` sha 對上。
-4. D 上線後，第一次 deploy-smoke 要能看到正式站 build-sha＝main HEAD。
+4. D 上線後，第一次 deploy-smoke 要能看到正式站 build-sha＝main HEAD；確認後開小 PR 把 `check-deployed-assets.py` 的「線上無 build-sha／unknown」由 warn 收緊為 fail（#454 導入期刻意寬鬆，不收緊就是永久寬鬆）。
 
 ## 5. 第 3 波候選（第 1 波 §6 未納入本波的，一行一項；細節取第 1 波 plan.md §6）
 
@@ -100,7 +100,7 @@
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` | — | 施工中 |
-| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | — | 施工中 |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 | 審過，等 ci-ok |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
 | P | — | Opus | `fix/payuni-merchant-alert` | — | 批 2 |
 | S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
@@ -114,3 +114,4 @@
 | 10/30 23:50 | 五個 session 已用 create_session 開（帶 source_url、tag `uknow-wave-2`；名冊見 §7）。本機 `npm ci` 才讓 pre-commit 綠（node_modules 過期缺 react-easy-crop）→ 共用開頭補「開局先 npm ci」 | 等 PR／回報；查證後整批關舊 issue |
 | 10/30 23:55 | 開本檔 PR #452（draft，已訂閱）。查證後關 issue：13 張「Edge Function 部署失敗」（#337–#400；develop deploy 自 `--use-api` 起連 8 次綠）、#280（reconcile 排程連續綠）、#279（Security Audit 連 5 週綠）。#288（journey 排程紅）留給 H 的 PR 關 | 等各 session PR |
 | 10/31 00:20 | C 回報 #453：四視角 P0 0、P1 12、P2 12，8 題裁決。主 session 讀過規劃（每日 janitor＋斷路器＋dry-run，方向合理）；業主裁決 W2-5～8，主 session 定 W2-9。C 提醒 S 的 public=false 斷言要排除 `listings-photos`——S 的 prompt 已寫明 | C 修訂規劃 → 主 session 複核 → 業主審 → 第 3 波親打 `/tdd-implement` |
+| 10/31 00:30 | D 開 #454（build-sha meta、smoke 版本比對＋寬限 30 分、失敗推 LINE）。主 session 直讀全 diff 審：無 P0／P1；P2 兩項（無 meta 只 warn 須於晉升後收緊→記 §4；寬限以 commit 時間計，merge commit 下成立）。預覽站本容器連不到（proxy 403），線上 meta 待合併後 workflow_dispatch 實跑驗 | ci-ok 綠 → 轉 ready → 合 develop → 手動觸發 deploy-smoke |
