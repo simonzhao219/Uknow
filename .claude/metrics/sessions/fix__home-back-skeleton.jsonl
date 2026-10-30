@@ -1,0 +1,1 @@
+{"branch": "HEAD", "ended": "2026-10-30T16:13:22+00:00", "fired": {}, "passed": {"bash-guard": 31, "check-output-filter": 31, "deletion-residue-check": 2, "model-effort-advisor": 4}, "session": "2db562cebca2", "started": "2026-10-30T15:51:04+00:00"}

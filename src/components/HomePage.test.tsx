@@ -28,6 +28,7 @@ vi.mock('../utils/supabase/client', () => ({
 }));
 
 import { HomePage } from './HomePage';
+import { resetHomeListingsCache } from '../utils/homeListingsCache';
 
 const listing: PublicListingRow = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -63,6 +64,7 @@ function renderHome() {
 const failure: ListResult = { data: null, error: { code: '500', message: 'boom' } };
 
 beforeEach(() => {
+  resetHomeListingsCache(); // 模組層快取不得跨測試外洩
   order.mockReset();
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });

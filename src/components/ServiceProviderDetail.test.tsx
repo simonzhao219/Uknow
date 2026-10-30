@@ -28,6 +28,7 @@ vi.mock('./notifications/NotificationContext', () => ({
 }));
 
 import { ServiceProviderDetail } from './ServiceProviderDetail';
+import { resetHomeListingsCache, setCachedListings } from '../utils/homeListingsCache';
 
 const LISTING_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -82,6 +83,7 @@ function silenceExpectedError() {
 }
 
 beforeEach(() => {
+  resetHomeListingsCache();
   single.mockReset();
 });
 afterEach(() => {
@@ -90,6 +92,21 @@ afterEach(() => {
 });
 
 describe('ServiceProviderDetail', () => {
+  it('首頁快取已有這一筆時不出現骨架，背景重驗後換成最新內容', async () => {
+    setCachedListings([listing]);
+    const pending = deferred();
+    single.mockReturnValueOnce(pending.promise);
+    renderAt([detailPath]);
+
+    expect(screen.queryByRole('status', { name: '載入服務者詳情中' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Cara 美容師' })).toBeTruthy();
+
+    await act(async () =>
+      pending.resolve({ data: { ...listing, name: 'Cara 新名字' }, error: null }),
+    );
+    expect(screen.getByRole('heading', { name: 'Cara 新名字' })).toBeTruthy();
+  });
+
   it('載入中顯示詳情骨架，資料到位後換成刊登內容', async () => {
     const pending = deferred();
     single.mockReturnValueOnce(pending.promise);
