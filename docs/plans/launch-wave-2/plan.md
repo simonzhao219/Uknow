@@ -28,6 +28,7 @@
 | W2-7 | C-Q5：孤兒寬限期（照片裁切完即上傳、送出才寫進刊登，中間的檔沒有引用） | **7 日、不加存檔前驗證**（被推翻的建議：48h＋存檔前驗證，範圍太大） |
 | W2-8 | C-Q7：正式站上線閘門 | **預設 dry-run**，業主在第 3 波晉升後 3 日內核對候選清單，再設 repo variable 開實刪 |
 | W2-9 | C-Q3／Q4／Q8（主 session 照建議定，低風險工程預設） | 密鑰沿用 `RECONCILE_SECRET`；`/auth/cancel-signup` 不加即時清理；develop 只做 workflow_dispatch。C-Q6 由事實回答：舊 bucket 已於 10/28 由業主刪除（第 1 波 §8） |
+| W2-10 | 首頁搜尋／篩選條件返回後被清空（B 回報） | **另開小工項趕 11/03**：B 接做 `fix/home-filter-restore`（#455 合併後切），篩選 state 放進同一快取 |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -99,10 +100,10 @@
 |---|---|---|---|---|---|
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
-| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` | — | 施工中 |
-| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 | 審過，等 ci-ok |
+| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 | 修一行後合；接 W2-10 |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
-| P | — | Opus | `fix/payuni-merchant-alert` | — | 批 2 |
+| P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
 | S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
 
@@ -115,3 +116,4 @@
 | 10/30 23:55 | 開本檔 PR #452（draft，已訂閱）。查證後關 issue：13 張「Edge Function 部署失敗」（#337–#400；develop deploy 自 `--use-api` 起連 8 次綠）、#280（reconcile 排程連續綠）、#279（Security Audit 連 5 週綠）。#288（journey 排程紅）留給 H 的 PR 關 | 等各 session PR |
 | 10/31 00:20 | C 回報 #453：四視角 P0 0、P1 12、P2 12，8 題裁決。主 session 讀過規劃（每日 janitor＋斷路器＋dry-run，方向合理）；業主裁決 W2-5～8，主 session 定 W2-9。C 提醒 S 的 public=false 斷言要排除 `listings-photos`——S 的 prompt 已寫明 | C 修訂規劃 → 主 session 複核 → 業主審 → 第 3 波親打 `/tdd-implement` |
 | 10/31 00:30 | D 開 #454（build-sha meta、smoke 版本比對＋寬限 30 分、失敗推 LINE）。主 session 直讀全 diff 審：無 P0／P1；P2 兩項（無 meta 只 warn 須於晉升後收緊→記 §4；寬限以 commit 時間計，merge commit 下成立）。預覽站本容器連不到（proxy 403），線上 meta 待合併後 workflow_dispatch 實跑驗 | ci-ok 綠 → 轉 ready → 合 develop → 手動觸發 deploy-smoke |
+| 10/31 00:40 | **#454 合進 develop（f110586）**；手動觸發 deploy-smoke（develop，兩站）驗線上 build-sha。批 2 第一個 **P 開工** `session_01MQovbCNPqBHZoyuZsvmxiJ`（Opus）。B 開 #455（紅 28e835d→綠 5c635fc；模組層快取＋靜默重驗＋捲動還原，詳情頁共用快取）：主 session 審無 P0／P1，請 B 修檔頭裁決歸屬一行；業主裁決 W2-10 | #455 修完合；B 接 W2-10；看 deploy-smoke 結果 |
