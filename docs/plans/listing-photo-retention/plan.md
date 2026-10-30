@@ -3,7 +3,7 @@
 <!-- 由 /plan-feature 實例化。第 2 波工項 C（只規劃）；實作第 3 波，業主親打 /tdd-implement。行號一律現算。 -->
 <!-- plans-keep: 跨波鷹架（第 2 波規劃審查、第 3 波實作，跨 session）；退場條件＝第 3 波 /tdd-implement 收尾時決策升級進規格書 §11、刪 §14 第 14 列，本目錄隨該 PR 刪除 -->
 
-**v2.2（2026-10-31）**：回填 W2-11／W2-12。v2 依業主裁決 W2-5～9（`docs/plans/launch-wave-2/plan.md` §0）與第一輪工程類 P1 修訂；
+**v2.3（2026-10-31）**：補第三輪工程類 P1（比例閘用截斷前總數、`notRemoved` 有消費者、deps 介面、離線檢查落點）；v2.2 回填 W2-11／W2-12。v2 依業主裁決 W2-5～9（`docs/plans/launch-wave-2/plan.md` §0）與第一輪工程類 P1 修訂；
 v2.1 再補第二輪的工程類 P1（log 隱私、批次、階段 5 可行性），SOP 類併入 §6 Q9。
 v1 與第一輪報告可用 `git show 5ae44cba:docs/plans/listing-photo-retention/review.md` 取回。
 
@@ -21,9 +21,20 @@ v1 與第一輪報告可用 `git show 5ae44cba:docs/plans/listing-photo-retentio
   知道 URL 的人仍拿得到檔。CDN 快取殘留屬條款但書，這個解讀與 W2-5 一起送律師確認。
 - **「本服務終止」的範圍（W2-5）**：會籍到期不算，等律師確認。若律師判定「算」，在 RPC 加一個條件即可（§2）。
   依條款六「隨時通知終止」、條款十二「請求刪除視同終止」提出的終止，**由業主人工處理**，作法見下一點。
-- **終止／刪除請求的 SOP（W2-11）**：期限從**業主收件日**起算。已付款會員：停權並刪 `listings` 列；未付款會員：可以直接刪帳號；兩者都要回信留痕。
-  照片要再等「寬限期 7 日＋1 輪」才會清掉，所以業主的人工動作必須在收件後 **20 日內**完成。規則寫在規格書 §11
-  「照片檔清理」段，只寫這一處。帳號與其他個資依條款十二保存，不在本案範圍，規格書留一個指標說明。
+- **終止／刪除請求的 SOP（W2-11；停權這一步待 §6 Q11）**：期限從**業主收件日**起算，規則寫在規格書 §11「照片檔清理」段，只寫這一處。
+  - 人工期限＝三十日－寬限期（`ORPHAN_GRACE_HOURS`）－1 輪－2 日緩衝＝**20 日**。規格書照這個公式寫，並註明引用
+    `ORPHAN_GRACE_HOURS`，寬限期改了 SOP 才會跟著改。
+  - 已付款會員：經 **Supabase Dashboard SQL Editor** 執行 `delete from public.listings where user_id = '<uid>'`。撤
+    `listings_delete_own` 之後，應用內已沒有刪刊登的入口，所以必須走 SQL Editor。是否同時停權，見 Q11。
+  - 未付款會員（cancel-signup 守衛會放行的那群）：可以直接在 Dashboard 刪帳號。
+  - **留痕**：
+    - 載體：該請求的信件串，放在業主信箱。
+    - 必記：收件日、完成日、處置類型（刪刊登或刪帳號），寫在回覆使用者的完成信裡。
+  - **完成後核對**（收件後第 28 日前）：在 Supabase Dashboard → Storage → `listings-photos` 確認 `<uid>/` 資料夾已空。
+    不空就用本機 curl 跑一次 dry-run（`include_names`），查原因。
+  - **升級**：收件時在行事曆設第 15 日提醒；第 15 日還沒做完，就當天處理。
+  - 條款六的按比例退費走另一條流程（不在本案範圍），規格書 SOP 旁留一行指標，避免只刪刊登就當作結案。帳號與其他個資
+    依條款十二保存，也不在本案範圍。
 - **規格書所說的三條路徑**：①帳號刪除（`profiles` cascade 刪 `listings`，包含業主在 Dashboard 刪除）；②`/auth/cancel-signup`；
   ③歷史孤兒。另外還有九種孤兒來源：Create 離頁、Edit 取消與清理失敗、逾時重試的第二個檔、存檔與刪刊登並發、
   RLS 直刪、他人引用。
@@ -67,6 +78,8 @@ v1 與第一輪報告可用 `git show 5ae44cba:docs/plans/listing-photo-retentio
   - `revoke execute … from public, anon, authenticated`；`grant execute … to service_role`（同 `purge_stale_referral_invites`）。
 - 回傳一列 jsonb：
   - `candidates`：`name` 陣列，依 `order by created_at, name limit p_limit`，分輪處理有決定性。
+  - `orphan_total`：**截斷前**的孤兒總數。比例閘用的是它，不是被 `limit` 截斷後的 `candidates` 長度：bucket 超過 1000 個
+    物件時，500 筆的上限會讓比值永遠到不了 0.5，比例閘就失效了。
   - `total_objects`：bucket 內物件總數。
   - `referenced_urls`：`listings.photos` 中以 `p_public_base` 開頭的 URL 數。
   - `matched_urls`：上述 URL 中對得到物件的數量。
@@ -75,6 +88,13 @@ v1 與第一輪報告可用 `git show 5ae44cba:docs/plans/listing-photo-retentio
   - `created_at < now() - p_grace`。
   - `name ~ '^[0-9a-f]{8}-…-[0-9a-f]{12}/\d+_[a-z0-9]+\.(jpg|png|webp)$'`。
   - `not exists (select 1 from public.listings l where l.user_id::text = split_part(name,'/',1) and p_public_base || name = any(l.photos))`。
+- 判準只認 `p_public_base || name` 的**精確字串**。帶 query、transform 路徑（`render/image`）或尾斜線的 URL 一律視為
+  「未引用」。前端只存 `upload-photo` 回傳的 `getPublicUrl` 原樣輸出（`listingPhotosApi.ts` 的 `PHOTO_URL_PATTERN` 也只認
+  這個格式），所以變體只可能是手寫進 `photos` 的 URL。這種情況由比例閘兜底，另在 DB 測試加一個「變體 URL」案例，把行為釘住。
+- **共用判準函式**：`public._listing_photo_is_orphan(p_public_base text, p_name text) returns boolean`，`language sql stable`，
+  可內聯，判斷單一物件是否為孤兒。兩支 RPC 都呼叫它。它只負責判準，`referenced_urls`／`matched_urls` 等統計不放在這裡。
+  權限與兩支 RPC 相同：`revoke execute … from public, anon, authenticated`，否則 `public` schema 的函式會被 PostgREST
+  暴露成 `/rpc`。
 - `p_public_base` 由 Edge 以 `listingPhotoPublicUrl('x')` 去掉尾字推導，URL 格式只有一個來源，SQL 不寫死網域。
 - 律師若判定會籍到期也算終止：在 `not exists` 的子查詢加上「且該使用者會籍有效或失效未滿 30 日」，其餘不動。
 - **同一支 migration 撤 `listings_delete_own`**（W2-6，含 admin 分支）。
@@ -89,8 +109,9 @@ v1 與第一輪報告可用 `git show 5ae44cba:docs/plans/listing-photo-retentio
 
 ```ts
 interface OrphanSweepDeps {
-  listOrphans: (publicBase: string, graceHours: number, limit: number) => Promise<OrphanReport>; // RPC；出錯 throw
-  cleanup: PhotoCleanupDeps; // 既有：publicUrlOf / findReferencedUrls(urls, ownerId) / removeObjects
+  listOrphans: (publicBase: string, graceHours: number, limit: number) => Promise<OrphanReport>; // 第一支 RPC；出錯 throw
+  filterUnreferenced: (publicBase: string, names: string[]) => Promise<string[]>; // 第二支 RPC；出錯 throw（fail-closed）
+  removeObjects: PhotoCleanupDeps['removeObjects']; // 只沿用 Storage remove；sweep 不用 findReferencedUrls
   warn: (message: string, ...detail: unknown[]) => void;
 }
 interface SweepOptions { publicBase: string; graceHours: number; limit: number; dryRun: boolean }
@@ -99,18 +120,19 @@ interface SweepOptions { publicBase: string; graceHours: number; limit: number; 
 1. 呼叫 `listOrphans`，出錯就 throw，一檔不刪（fail-closed）。
 2. **斷路器**（任一條成立就 throw `circuit_open`，不刪）：
    - 錨點失效：`matched_urls = 0`，而 `referenced_urls > 0` 且 `total_objects > 0`。代表 base 推導錯誤，所有活照片都會被當成孤兒。
-   - 比例閘：`candidates / total_objects > 0.5` 且 `total_objects > 20`。用來擋部分誤判（例如前綴比對失效）。
+   - 比例閘：`orphan_total / total_objects > 0.5` 且 `total_objects > 20`。用來擋部分誤判（例如前綴比對失效）。
    - 誤中止時的處置：業主先用 dry-run 看清單，確認無誤後以 `workflow_dispatch`，帶 `force_ratio=true` 放行**單輪**。
      只放行比例閘，錨點失效的那一條不可放行。
 3. **刪前二次引用檢查（一次批次）**：RPC 判定與刪除之間，同帳號的另一個分頁可能把檔重新存回 `photos`（TOCTOU），
    所以刪除前要再確認一次。作法是在同一支 migration 加第二支 RPC
-   `public.filter_unreferenced_listing_photos(p_public_base text, p_names text[]) returns text[]`，權限同 2.1，
-   判準與 2.1 的 `not exists` 共用同一段 SQL（抽成 `language sql` 的內部函式，避免兩份判準漂移）。
+   `public.filter_unreferenced_listing_photos(p_public_base text, p_names text[]) returns text[]`，權限同 2.1。
+   它把 `p_names` 和 `storage.objects` 做 join，**重新驗證** bucket、name 正則、寬限期，再呼叫共用判準函式。這是不可逆刪除前的
+   最後一道閘，所以不依賴「name 是第一支 RPC 給的」這個前提。
    - 這支 RPC 對全部候選只呼叫一次，走 POST body，沒有 `.overlaps` 在 GET query string 上的 URL 長度問題。
    - 不逐 owner 呼叫 `removeUnreferencedPhotos`：候選分散在數百個 owner 時，序列往返會逼近 Edge 執行時限（第二輪系統與架構同報）。
 4. 把第二支 RPC 回傳的清單以 Storage `remove` 一次 ≤100 個切批刪除。sweep 層累計 `removedSoFar`；中途失敗就 throw，
    錯誤帶 `removedSoFar`；冪等，重跑安全。若某批的實刪數少於送出數，差額記為 `notRemoved`，避免刪不掉的物件每輪霸佔額度
-   卻沒有人發現。
+   卻沒有人發現。端點照常回 200，但 workflow 讀到 `notRemoved > 0` 就判失敗並開 issue（內文只放數字），交由人工處理。
 5. `dryRun` 時只回候選與統計，不呼叫 `removeObjects`。
 
 ### 2.3 端點 `POST /internal/purge-orphan-listing-photos`
@@ -161,6 +183,13 @@ interface SweepOptions { publicBase: string; graceHours: number; limit: number; 
   - production 讀 `src/utils/supabase/info.tsx` 並比對 `vars.SUPABASE_PROJECT_REF`。
   - develop 讀 `config/supabaseTarget.ts`（`deploy-supabase.yml` 的寫法）。
 - `concurrency: group: purge-listing-photos-<target>`，`cancel-in-progress: false`，避免排程與 dispatch 同時實刪。
+- **失敗路徑的 log 同樣只印狀態碼與 `code`**：不用 `set -x`、`curl -v`，也不印 `message`。Storage 錯誤字串可能含 uid。
+- workflow `name: Purge Listing Photos`；job id `purge-orphan-photos`（規則 2、4）。
+- **body 組裝與回應判讀抽成 `scripts/purge-listing-photos-request.py`**：
+  - workflow 呼叫它產生 body，並用它判讀回應。判讀依據是形狀、`notRemoved`、404 與 LIVE 的組合。
+  - 腳本附 `--self-test` 表格案例，照 `scripts/check-*.py` 的慣例寫，在 `framework-check.sh` 新增一段呼叫，CI 每次都會跑。
+  - 這是新做法：`reconcile-payments.yml` 的組裝與判讀都內聯在 workflow 裡。理由是本案的組合有 LIVE、dispatch 輸入、404、
+    `notRemoved` 四個維度，內聯就沒有測試落點。
 - 回應處理：
   - 404 照 reconcile 告警段落降為 `::warning::` 略過，處理晉升前到部署核准前的空窗。**但 `PHOTO_PURGE_LIVE=true` 時，
     404 改為失敗**：開了實刪就不該再有空窗，否則路由漏註冊會讓排程永遠靜默。
@@ -217,10 +246,10 @@ interface SweepOptions { publicBase: string; graceHours: number; limit: number; 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
 | 1 | 即時路徑引用語意收窄（`findReferencedUrls(urls, ownerId)`） | `api/listing-photos.unit.test.ts`（既有 `removeUnreferencedPhotos`、`DELETE /listings/*` 案例改簽章）＋`api/listing-photos.test.ts`（DB；`removeObjects` 覆寫為 spy） | B 的刊登引用 A 的 URL，A 刪刊登或移除照片時，spy 收到 A 的 path；A 自己仍在引用的檔不在 spy 裡 |
-| 2 | 判準 RPC 兩支（列孤兒、刪前複查）＋撤 `listings_delete_own` | 新 `api/listing-photo-orphans.test.ts`（DB：種 `storage.objects` 列照 `referral-invite-purge.test.ts` 的 `postgres` 直連；**呼叫 RPC 以 service_role 經 `adminClient.rpc`**）＋`api/rls-policies.test.ts` 改斷言 | 孤兒、寬限期內、本人引用、他人引用、非法 name、無刊登（帳號已刪）六種情境；`order by` 加 `limit` 結果穩定；統計欄位正確；anon／authenticated 呼叫被拒；authenticated 刪 `listings` 被 RLS 擋 |
-| 3 | `sweepOrphanPhotos` 純函式 | `api/listing-photos.unit.test.ts` | RPC 出錯不刪；錨點失效與比例閘各自中止；`force_ratio` 只放行比例閘；dry-run 不呼叫 remove；複查剔除新引用；250 個候選切成 3 批；中途失敗帶 `removedSoFar`；實刪數不足時記 `notRemoved` |
-| 4 | 端點 handler | `api/listing-photos.unit.test.ts`（注入 `verifyInternalSecret`／`sweep`／`publicBase`）＋讀 `index.ts` 原文斷言路由有註冊 | 無密鑰或錯密鑰 401；`dry_run` 缺漏、`"false"`、非 boolean 都當 dry-run；只有 `false` 才實刪；`include_names` 非 `true` 時回應不含 name；500 形狀與 `removedSoFar` |
-| 5 | 排程 workflow | `python3 scripts/check-workflows.py`＋離線檢查 body 組裝（把 jq 組 body 的那段抽成腳本，對 `PHOTO_PURGE_LIVE` 未設／`true`、dispatch 輸入 true／false 四種情況斷言輸出） | check 綠；四種情況的 `dry_run` 都是預期的 JSON boolean。**真環境驗證（RPC 權限、密鑰、形狀斷言）不算本階段的完成條件**：workflow 要先合進 develop 才能 dispatch，端點也要等 develop CI 綠後才部署，所以改列為 §7 上線程序第 1 步 |
+| 2 | 判準 RPC 兩支（列孤兒、刪前複查）＋共用判準函式＋撤 `listings_delete_own` | 新 `api/listing-photo-orphans.test.ts`（DB：種 `storage.objects` 列照 `referral-invite-purge.test.ts` 的 `postgres` 直連；**呼叫 RPC 以 service_role 經 `adminClient.rpc`**）＋`api/rls-policies.test.ts` 改斷言 | 孤兒、寬限期內、本人引用、他人引用、非法 name、無刊登（帳號已刪）六種情境，加上「變體 URL 視為未引用」；`order by` 加 `limit` 結果穩定；`orphan_total` 是截斷前的總數；第二支 RPC 對寬限期內或非法 name 的輸入一律剔除；三個函式對 anon／authenticated 呼叫都被拒；authenticated 對 `listings` 送 DELETE 之後「列仍在」（撤 policy 後 PostgREST 回 0 列、不報錯） |
+| 3 | `sweepOrphanPhotos` 純函式 | `api/listing-photos.unit.test.ts` | RPC 出錯不刪；錨點失效與比例閘各自中止（含 `total_objects` > 1000、`orphan_total` 過半、`candidates` 被截斷的案例）；`force_ratio` 只放行比例閘；dry-run 不呼叫 remove；複查剔除新引用；250 個候選切成 3 批；中途失敗帶 `removedSoFar`；實刪數不足時記 `notRemoved` |
+| 4 | 端點 handler | `api/listing-photos.unit.test.ts`（注入 `verifyInternalSecret`／`sweep`／`publicBase`）＋讀 `index.ts` 原文斷言路由有註冊（Deno 側以 `Deno.readTextFile` 讀，不放 vitest） | 無密鑰或錯密鑰 401；`dry_run` 缺漏、`"false"`、非 boolean 都當 dry-run；只有 `false` 才實刪；`include_names` 非 `true` 時回應不含 name；500 形狀與 `removedSoFar` |
+| 5 | 排程 workflow | `python3 scripts/check-workflows.py`＋`python3 scripts/purge-listing-photos-request.py --self-test`（接進 `framework-check.sh`） | check 綠；self-test 涵蓋三類案例：body（LIVE 未設或為 true × dispatch 輸入 true／false）、判讀（LIVE 前後的 404、`notRemoved > 0`、形狀不符）、失敗輸出不含 name／message。**真環境驗證（RPC 權限、密鑰、形狀斷言）不算本階段的完成條件**：workflow 要先合進 develop 才能 dispatch，端點也要等 develop CI 綠後才部署，所以改列為 §7 上線程序第 1 步 |
 | 6 | 規格書 §11 改寫清理段（含終止請求 SOP）、刪 §14 第 14 列、`supabase/README.md` RLS 表 | `python3 scripts/check-spec-drift.py`（先跑一次，看措辭是否觸發抽取失配，必要時新增規則） | 綠；沒有「沒有 X」之類的旁白（document-writing.md） |
 
 ## 6. 開放問題
@@ -238,6 +267,14 @@ interface SweepOptions { publicBase: string; graceHours: number; limit: number; 
   - 未付款會員：可以直接刪帳號。
   - SOP 寫在規格書 §11「照片檔清理」段，只寫這一處，不寫進 `supabase-setup-checklist.md`（那份是環境設定清單）。
   - 論證見 git 歷史 `cd6d996b` 的本節。
+- [ ] **Q11 終止請求要不要「停權」？**（第三輪需求審查 P1，〔需人工裁決〕）W2-11 的 (a) 包含停權，但規格書 §5.2 的停權有
+  一整組後果：會員區硬鎖（含獎勵頁）、提領守衛先擋停權（§5.3）、停權者的推薦碼不得通過驗證、刊登從 `public_listings`
+  排除。結果是請求終止的已付款會員**領不到、也提領不了既有獎勵**。條款十二要求保留紀錄，並不代表可以凍結點數。
+  - (a) **只刪刊登、不停權**：會員仍可登入、領取和提領既有獎勵。日後若自己重新刊登，視為新的同意。
+  - (b) 照 W2-11，停權加刪刊登，接受獎勵凍結；SOP 另寫「停權前先結清獎勵或提領」。
+  - (c) 停權，但規格書 §5.2 新增「終止」狀態，與違規停權分開，獎勵照常——這要改程式，是另案。
+  - **建議 (a)**：條款十之一只要求內容下架；停權是違規處置，拿來處理終止請求會牽動獎勵與推薦，代價不對稱。
+    撤掉 `listings_delete_own` 後，會員已不能自己刪刊登，但重新刊登是他自己的新行為，不構成違約。
 - [x] Q10 照片失效通知、`PhotoPicker` 掛 `onError` → **W2-12 選 (a)**：本案不做，列為第 3 波之後的候選（見 §1「不做」）。
 
 ## 7. 風險與回滾
@@ -245,16 +282,17 @@ interface SweepOptions { publicBase: string; graceHours: number; limit: number; 
 - **最壞情況是誤刪活照片**，而且 Storage 沒有備份可以還原。防線如下：
   1. 判準用 SQL 一次算完，有六種情境的 DB 測試。
   2. 雙斷路器：錨點失效、比例閘。
-  3. 刪前逐 owner 二次引用檢查。
+  3. 刪前批次複查：第二支 RPC 重新驗證 bucket、正則、寬限期與引用。
   4. 預設 dry-run：`dry_run` 只認 boolean `false`，排程另需 `PHOTO_PURGE_LIVE`。
   5. **上線程序**：
      1. **上線驗收**：第 3 波合進 develop、develop 的 Edge 部署完成後，對 develop dispatch 一次 dry-run，確認 RPC 權限、
         密鑰與形狀斷言都通過，再 dispatch 實刪一次。401 代表兩邊的 `RECONCILE_SECRET` 不同值，請業主同步。
      2. 11/10 晉升、正式站部署核准後，排程每日跑 dry-run，log 只有統計數字。
      3. **業主在 11/13 前**在本機 curl 取回候選清單核對（抽查幾個 path，確認對應的帳號已刪或刊登已改），再設
-        `PHOTO_PURGE_LIVE=true`。首輪含歷史孤兒，**預期會觸發比例閘**：業主核對後先以 dispatch 帶 `force_ratio=true`、
-        `dry_run=false` 實刪一輪，之後的每日排程比例就會正常。
-     4. 若 11/13 前業主無法核對，主 session 要在 11/20 前升級處理：直接問業主「開實刪」還是「延後」，並附上剩餘天數。
+        `PHOTO_PURGE_LIVE=true`。首輪若 `orphan_total` 過半（歷史孤兒多時），**比例閘會擋下**。這時業主先核對，再以
+        dispatch 帶 `force_ratio=true`、`dry_run=false` 實刪。單輪上限 500，`orphan_total` 超過 500 時要分多輪：
+        業主依 `orphan_total` 決定 dispatch 幾次，每次都先 dry-run 看清單。
+     4. 若 11/13 前業主無法核對，主 session 在 **11/17** 升級處理：直接問業主「開實刪」還是「延後」，並附上剩餘天數。
         最早的期限是 11/27。
 - 量級：`not exists … = any(l.photos)` 對每個物件掃一次 `listings`，沒有 GIN 索引。現在只有數千物件，可以接受；
   超過數萬時再補索引。

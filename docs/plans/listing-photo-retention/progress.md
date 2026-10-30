@@ -18,7 +18,7 @@
 
 ## 目前位置與下一步
 
-第 2 波只做規劃：plan v2.1、review 兩輪（P0 0；第二輪 P1 6 條，工程類 3 條已在 v2.1 處理，SOP 類 3 條等 Q9）。等業主裁決 Q9（與 Q10），之後第 3 波由業主親打
+第 2 波只做規劃：plan v2.3、review 三輪（三輪皆 P0 0；第三輪 P1 7 條，6 條已在 v2.3 處理，停權 1 條列為 Q11）。等業主裁決 Q11，之後第 3 波由業主親打
 `/tdd-implement listing-photo-retention` 開工；開工前先 rebase 到最新 develop，再跑 `check-migration-versions.py`。
 
 ## Blockers(逃生口紀錄)
