@@ -102,7 +102,7 @@
 |---|---|---|---|---|---|
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
-| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 | 修一行後合；接 W2-10 |
+| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b | 施工 W2-10 |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
@@ -120,3 +120,4 @@
 | 10/31 00:30 | D 開 #454（build-sha meta、smoke 版本比對＋寬限 30 分、失敗推 LINE）。主 session 直讀全 diff 審：無 P0／P1；P2 兩項（無 meta 只 warn 須於晉升後收緊→記 §4；寬限以 commit 時間計，merge commit 下成立）。預覽站本容器連不到（proxy 403），線上 meta 待合併後 workflow_dispatch 實跑驗 | ci-ok 綠 → 轉 ready → 合 develop → 手動觸發 deploy-smoke |
 | 10/31 00:40 | **#454 合進 develop（f110586）**；手動觸發 deploy-smoke（develop，兩站）驗線上 build-sha。批 2 第一個 **P 開工** `session_01MQovbCNPqBHZoyuZsvmxiJ`（Opus）。B 開 #455（紅 28e835d→綠 5c635fc；模組層快取＋靜默重驗＋捲動還原，詳情頁共用快取）：主 session 審無 P0／P1，請 B 修檔頭裁決歸屬一行；業主裁決 W2-10 | #455 修完合；B 接 W2-10；看 deploy-smoke 結果 |
 | 10/31 00:50 | C 推 v2.1（#453 cd6d996b）：第二輪 P0 0、P1 6（工程三條已改：log 不印 uid、第二支批次複查 RPC、階段 5 改離線）＋Q9／Q10 → 業主裁決 W2-11、W2-12。主 session 要求回填後跑第三輪 /review-plan（設計有變、刪除不可逆）。#455 ci-ok 紅是 B 推新 head 時 concurrency 取消舊 run，非實際失敗 | C 第三輪 → 交業主審；#455 新 head CI |
+| 10/31 01:00 | deploy-smoke 手動 run 41088363862：**develop「✓ 線上版本 f110586 與預期 f110586 相符」**、正式站「⚠ 無 build-sha」（預期，11/03 晉升後才有）——D 端到端驗證通過。#455 檔頭修正 fb48a48 → CI 綠 → **合進 develop（ee6613b）**；B 開工 W2-10。在途程式工項＝H、P、B（篩選）已達 3，S、A 等其一合併再開 | 業主真機驗返回；等 H／P／B 回報 |
