@@ -1,0 +1,108 @@
+# 第 2 波：上線後第一次每週晉升（2026-11-03）
+
+<!-- plans-keep: 跨 session 鷹架（主／執行／審查三種 session 的共同事實來源）；退場條件＝第 2 波審查 session 結案、review.md 回填 §8 後，值得長留的升級進規格書／friction-log，其餘隨 commit 刪除 -->
+
+寫給**全新的主 session**看：它開局只有 repo 與這份檔，沒有對話記憶。上游是第 1 波
+`docs/plans/launch-wave-1/plan.md`（§0 裁決 1–39、§6 待辦、§8 進度）；那個目錄在第 1 波審查結案後會刪，
+屆時用 `git show <hash>:docs/plans/launch-wave-1/plan.md` 取回。行號一律現算。
+
+## 0. 業主目標與裁決
+
+**目標**（業主 2026-10-30 22:42 宣布進第 2 波；主 session `session_01MQovbCaoDN21bovw6C2Y5w` 核對）
+
+1. 11/03（週二）10:00 第一次每週晉升；之後每週同一天（第 1 波裁決 8）。
+2. 先清有期限的：journey-full 暫走 webhook 的規則 13 於 **2026-11-03 到期**（ci.yml `journey-full` 的 `payment_mode: webhook` 註記），到期 CI 自動紅；
+   條款十之一照片清理（第 1 波裁決 20，規格書 §14 第 14 列）須在撤除後三十日窗口內補齊。
+3. 業主點名的優先：刊登首頁從詳情頁返回時閃骨架、順序跳動；正式站前端部署失敗零訊號（10/29 事故）。
+
+**裁決（AskUserQuestion，2026-10-30 23:00 台北）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W2-1 | 波範圍 | **11/03 晉升＋大項先規劃**：本波晉升只收必做三項＋小項；條款十之一本波只做規劃與審查，實作進第 3 波（11/10）。T1 不在本波 |
+| W2-2 | 納入工項（必做三項以外） | 條款十之一（規劃）、PayUni 商店級錯誤告警、小型維運資安包、後台會員列表顯示推薦碼 |
+| W2-3 | 第 1 波審查 session | **現在開，與第 2 波平行**（main 在凍結期內不再變）；P0 回主 session 開 hotfix；結案後主 session 讓 `launch-wave-1/` 退場 |
+| W2-4 | 派工 | 主 session 用 `create_session` 自動開執行 session；業主只回答裁決題 |
+
+沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
+銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
+
+## 1. 時程
+
+| 時點（台北） | 事 |
+|---|---|
+| 10/30 23:00 | 本檔落檔；開第 1 波審查 session 與第一批執行 session |
+| 11/01 | 第一批 PR 審完合 develop；開第二批 |
+| **11/02 22:00** | 本波收件截止：沒合進 develop 的順延第 3 波 |
+| 11/03 10:00 | 主 session 開晉升 PR（develop→main）；journey-full（**此時應已改回 sandbox**）綠 → merge commit 合進 main → 業主核准 `production` 部署 → `/health` sha 對上 |
+| 11/03 之後 | 開第 2 波審查 session；本波收尾 |
+
+## 2. 工作分解
+
+在途上限：**程式碼工項同時最多 3 個**（主 session 審查是瓶頸），規劃與審查 session 不計。
+
+| ID | 工項 | 批 | 流程／分支 | 模型 | 主要動到 | 撞檔 |
+|---|---|---|---|---|---|---|
+| H | journey harness 配合 PayUni sandbox 新表單＋`journey-full` 改回 sandbox（11/03 期限） | 1 | `/fix-bug`，`fix/journey-payuni-sandbox-form` | Sonnet | `e2e/journey/builders/payuni_sandbox_page.py`、`.github/workflows/ci.yml`（`journey-full` 的 `payment_mode`） | 無 |
+| B | 首頁／詳情頁返回時閃骨架、順序跳動 | 1 | `/fix-bug`，`fix/home-back-skeleton` | Sonnet | `src/components/HomePage.tsx`（清單只在元件 state、`getCurrentPosition` 後重排）、詳情頁 `/service-providers/:id`、新的清單快取 | 無 |
+| D | 正式站前端部署失敗零訊號 | 1 | Plan Mode，`fix/prod-build-sha` | Sonnet | 建置時把 commit sha 埋進 `index.html`（`<meta name="build-sha">`）、`scripts/check-deployed-assets.py` 比對 main HEAD、`deploy-smoke.yml` | 與 S 同為 workflow，不同檔 |
+| C | 條款十之一照片清理——**只做規劃** | 1 | `/plan-feature listing-photo-retention` → `/review-plan` → 停等業主審；分支 `feature/listing-photo-retention` | Opus | 規劃書 `docs/plans/listing-photo-retention/`；實作第 3 波由業主親打 `/tdd-implement` | 規劃期無 |
+| P | PayUni 商店級錯誤進告警 | 2 | `/fix-bug`，`fix/payuni-merchant-alert` | Opus | `supabase/functions/api/index.ts`（建單與查詢層的非 SUCCESS 出口、`logSystemAlertOnce`） | 與 A 同檔 index.ts（不同區段） |
+| S | 小型維運資安包 | 2 | Plan Mode，`fix/ops-security-hardening` | Sonnet | `public/_headers`（HSTS、X-Content-Type-Options、Referrer-Policy、frame-ancestors；CSP 另案）、Deno DB 測試斷言 `storage.buckets.public=false` 與 `storage.objects` 零 policy、`security.yml` 加 Deno 相依掃描 | 與 D 同為 workflow，不同檔 |
+| A | 後台會員列表顯示推薦碼與是否加入推薦計畫 | 2 | Plan Mode，`fix/admin-member-referral-cols` | Sonnet | migration（`admin_list_members`／`admin_member_detail` 回傳推薦碼、`referral_program_joined`；**版本號登記 `20261101000001` 起**）、`api-contract.ts`、`MemberManagement.tsx`、會員詳情 | migration；index.ts 若要動與 P 不同區段 |
+| R1 | 第 1 波審查 | — | 審查 session，唯讀；報告 `docs/plans/launch-wave-1/review.md`（docs PR 回 develop） | Opus | — | — |
+
+主 session 自己做（≤10 行或非程式碼）：整批關閉同標題「Edge Function 部署失敗」舊 issue（#337–#400，`--use-api` 後已修）與 #288、#280、#279 先查證再關；
+第 1 波 §6「第 1 波收尾」列（`launch-wave-1/` 退場，等 R1 結案）；本檔 §8。
+
+**批 2 的開工條件**：批 1 任一程式碼工項合進 develop 就補一個（P → S → A 的順序；P 是金流相鄰，先開）。
+
+## 3. 執行環境須知（第 1 波的教訓，寫進每個派工 prompt）
+
+- `create_session` 一律帶 `source_url=https://github.com/simonzhao219/Uknow`、`source_revision=develop`（第 1 波首開的 e2e session 沒帶 repo 只能封存）。
+- 容器沒有 deno；**`npm install -g deno` 可裝**（deno.land 被網路政策擋，npm registry 與 jsr.io 是通的；2026-10-30 主 session 實測 deno 2.9.6、`deno task check` 綠）。
+  動 `supabase/functions/` 的 session 開局先裝，否則 pre-commit 會擋。supabase CLI 不必裝（`deno task test` 留給 CI 的 api-tests 軌）。
+- `gh pr checks` 在雲端被擋：看 CI 用 GitHub MCP（`pull_request_read` 的 status／check runs、`actions_list`）。
+- journey 絕不在本機跑；要驗 harness 用 GitHub MCP `actions_run_trigger` 對 `journey-scheduled.yml` 發 workflow_dispatch（ref＝自己的分支、`scope=skeleton`、`payment_mode=sandbox`）。
+- 分類器只認業主親打的 tdd-lock 解鎖授權；主 session 轉述的不算（第 1 波 P1a 卡過兩次）。三段式工項的 `/tdd-implement` 由業主親打。
+
+## 4. 11/03 晉升清單（主 session）
+
+1. 11/02 22:00 後 develop 凍結；確認 H 已把 ci.yml `journey-full` 改回 `payment_mode: sandbox`（H 沒成功就用互動問題問業主：延長規則 13 的「暫時至」日期 vs 晉升延後）。
+2. 開晉升 PR：標題 `chore(release): 晉升 develop → main——第 2 波`；內文列 52039ca 之後的全部 PR、是否有後端變動、migration 檔名。訂閱它。
+3. journey-full 綠 → merge commit 合進 main → 請業主核准 `production` 部署（找建立時間緊跟 main CI push run 的那筆）→ `/health` sha 對上。
+4. D 上線後，第一次 deploy-smoke 要能看到正式站 build-sha＝main HEAD。
+
+## 5. 第 3 波候選（第 1 波 §6 未納入本波的，一行一項；細節取第 1 波 plan.md §6）
+
+條款十之一實作（C 規劃審過後）；T1 登入狀態信任；PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估（第 1 波裁決 21）；伺服器端密碼規則；
+`handle_new_user` 不讀 metadata＋`national_id` 唯一（A1b-1b）；後台稽核軌跡 A1b-2/3；SEO 進階（AEO／GEO）；框架修訂（第 1 波 friction-log 2026-10-26～27）；
+`lazyWithRetry` 簡化＋表單草稿保存；PR 2 審查記債（#421）；詳情頁輪播 P2（#430）；成功頁發卡行評估；邀請體驗整體重調；A1a、A2、L1-1、S7b。
+
+## 6. 業主待辦
+
+| # | 事 | 狀態 |
+|---|---|---|
+| 1 | 第 1 波醒來後待辦 #9（setup script 預裝 deno）改為**選做**：執行 session 會自己 `npm install -g deno`。要做的話 setup script 加 `npm install -g deno` 一行（不要用 deno.land 的 install.sh，被網路政策擋） | 選做 |
+| 2 | 手動刪 GitHub 分支 `claude/diag-prod-bundle`（第 1 波遺留） | ⬜ |
+| 3 | C 的規劃審查報告出來後審閱，通過才在第 3 波親打 `/tdd-implement listing-photo-retention` | 等 C |
+| 4 | 11/03 晉升合進 main 後核准 `production` 部署 | 等 11/03 |
+
+## 7. 執行 session 名冊（主 session 維護）
+
+| ID | session | 模型 | 分支 | PR | 狀態 |
+|---|---|---|---|---|---|
+| R1 | — | Opus | — | — | 待開 |
+| H | — | Sonnet | `fix/journey-payuni-sandbox-form` | — | 待開 |
+| B | — | Sonnet | `fix/home-back-skeleton` | — | 待開 |
+| D | — | Sonnet | `fix/prod-build-sha` | — | 待開 |
+| C | — | Opus | `feature/listing-photo-retention` | — | 待開 |
+| P | — | Opus | `fix/payuni-merchant-alert` | — | 批 2 |
+| S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
+| A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
+
+## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
+
+| 時間（台北） | 事件 | 下一步 |
+|---|---|---|
+| 10/30 23:00 | 主 session 開局：讀第 1 波交接（無開著的 PR；量測 #4 全項正常）；業主裁決 W2-1～4；實測 `npm install -g deno` 可在容器裝 deno；落檔本檔與 `dispatch-prompts.md` | 開 R1、H、B、D、C 五個 session |
