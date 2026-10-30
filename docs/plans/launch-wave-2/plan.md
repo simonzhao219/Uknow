@@ -107,3 +107,4 @@
 |---|---|---|
 | 10/30 23:00 | 主 session 開局：讀第 1 波交接（無開著的 PR；量測 #4 全項正常）；業主裁決 W2-1～4；實測 `npm install -g deno` 可在容器裝 deno；落檔本檔與 `dispatch-prompts.md` | 開 R1、H、B、D、C 五個 session |
 | 10/30 23:50 | 五個 session 已用 create_session 開（帶 source_url、tag `uknow-wave-2`；名冊見 §7）。本機 `npm ci` 才讓 pre-commit 綠（node_modules 過期缺 react-easy-crop）→ 共用開頭補「開局先 npm ci」 | 等 PR／回報；查證後整批關舊 issue |
+| 10/30 23:55 | 開本檔 PR #452（draft，已訂閱）。查證後關 issue：13 張「Edge Function 部署失敗」（#337–#400；develop deploy 自 `--use-api` 起連 8 次綠）、#280（reconcile 排程連續綠）、#279（Security Audit 連 5 週綠）。#288（journey 排程紅）留給 H 的 PR 關 | 等各 session PR |
