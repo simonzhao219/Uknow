@@ -92,11 +92,11 @@
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R1 | — | Opus | — | — | 待開 |
-| H | — | Sonnet | `fix/journey-payuni-sandbox-form` | — | 待開 |
-| B | — | Sonnet | `fix/home-back-skeleton` | — | 待開 |
-| D | — | Sonnet | `fix/prod-build-sha` | — | 待開 |
-| C | — | Opus | `feature/listing-photo-retention` | — | 待開 |
+| R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
+| H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
+| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` | — | 施工中 |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | — | 施工中 |
+| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | — | 規劃中 |
 | P | — | Opus | `fix/payuni-merchant-alert` | — | 批 2 |
 | S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
@@ -106,3 +106,4 @@
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 10/30 23:00 | 主 session 開局：讀第 1 波交接（無開著的 PR；量測 #4 全項正常）；業主裁決 W2-1～4；實測 `npm install -g deno` 可在容器裝 deno；落檔本檔與 `dispatch-prompts.md` | 開 R1、H、B、D、C 五個 session |
+| 10/30 23:50 | 五個 session 已用 create_session 開（帶 source_url、tag `uknow-wave-2`；名冊見 §7）。本機 `npm ci` 才讓 pre-commit 綠（node_modules 過期缺 react-easy-crop）→ 共用開頭補「開局先 npm ci」 | 等 PR／回報；查證後整批關舊 issue |
