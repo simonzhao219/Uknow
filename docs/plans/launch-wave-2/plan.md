@@ -29,6 +29,8 @@
 | W2-8 | C-Q7：正式站上線閘門 | **預設 dry-run**，業主在第 3 波晉升後 3 日內核對候選清單，再設 repo variable 開實刪 |
 | W2-9 | C-Q3／Q4／Q8（主 session 照建議定，低風險工程預設） | 密鑰沿用 `RECONCILE_SECRET`；`/auth/cancel-signup` 不加即時清理；develop 只做 workflow_dispatch。C-Q6 由事實回答：舊 bucket 已於 10/28 由業主刪除（第 1 波 §8） |
 | W2-10 | 首頁搜尋／篩選條件返回後被清空（B 回報） | **另開小工項趕 11/03**：B 接做 `fix/home-filter-restore`（#455 合併後切），篩選 state 放進同一快取 |
+| W2-11 | C-Q9：終止／刪除請求 SOP（**修正 W2-5 的 SOP 部分**） | **已付款：收件後 20 日內停權＋刪刊登列**，照片由排程清，金流與推薦紀錄依條款十二保留，回信留痕；未付款可直接刪帳號。理由：刪帳號會 cascade 抹掉金流紀錄；照片尚需 7 日寬限＋1 輪，20 日才能落在 30 日內 |
+| W2-12 | C-Q10：寬限期失效破圖通知／Edit onError | 本案不做，列第 3 波後候選 |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -117,3 +119,4 @@
 | 10/31 00:20 | C 回報 #453：四視角 P0 0、P1 12、P2 12，8 題裁決。主 session 讀過規劃（每日 janitor＋斷路器＋dry-run，方向合理）；業主裁決 W2-5～8，主 session 定 W2-9。C 提醒 S 的 public=false 斷言要排除 `listings-photos`——S 的 prompt 已寫明 | C 修訂規劃 → 主 session 複核 → 業主審 → 第 3 波親打 `/tdd-implement` |
 | 10/31 00:30 | D 開 #454（build-sha meta、smoke 版本比對＋寬限 30 分、失敗推 LINE）。主 session 直讀全 diff 審：無 P0／P1；P2 兩項（無 meta 只 warn 須於晉升後收緊→記 §4；寬限以 commit 時間計，merge commit 下成立）。預覽站本容器連不到（proxy 403），線上 meta 待合併後 workflow_dispatch 實跑驗 | ci-ok 綠 → 轉 ready → 合 develop → 手動觸發 deploy-smoke |
 | 10/31 00:40 | **#454 合進 develop（f110586）**；手動觸發 deploy-smoke（develop，兩站）驗線上 build-sha。批 2 第一個 **P 開工** `session_01MQovbCNPqBHZoyuZsvmxiJ`（Opus）。B 開 #455（紅 28e835d→綠 5c635fc；模組層快取＋靜默重驗＋捲動還原，詳情頁共用快取）：主 session 審無 P0／P1，請 B 修檔頭裁決歸屬一行；業主裁決 W2-10 | #455 修完合；B 接 W2-10；看 deploy-smoke 結果 |
+| 10/31 00:50 | C 推 v2.1（#453 cd6d996b）：第二輪 P0 0、P1 6（工程三條已改：log 不印 uid、第二支批次複查 RPC、階段 5 改離線）＋Q9／Q10 → 業主裁決 W2-11、W2-12。主 session 要求回填後跑第三輪 /review-plan（設計有變、刪除不可逆）。#455 ci-ok 紅是 B 推新 head 時 concurrency 取消舊 run，非實際失敗 | C 第三輪 → 交業主審；#455 新 head CI |
