@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
-from builders.page_diagnostics import _TEST_RESULTS, dump_page
+from builders.page_diagnostics import _TEST_RESULTS, captured_return_form, dump_page
+from tools import payuni_crypto
 
 SANDBOX_URL_GLOB = "https://sandbox-api.payuni.com.tw/**"
 
@@ -77,7 +78,12 @@ class PayuniSandboxPage:
         self.page = page
 
     def wait_loaded(self, timeout: float = 60_000) -> None:
-        self.page.wait_for_url(SANDBOX_URL_GLOB, timeout=timeout)
+        # 拒單時 sandbox 頁一閃而過，可能在這裡輪詢到之前就已導回——兩種落點都放行，
+        # 由 _wait_form 分辨並帶出 PayUni 的原話。
+        self.page.wait_for_url(
+            lambda url: url.startswith("https://sandbox-api.payuni.com.tw/") or "/payment/result" in url,
+            timeout=timeout,
+        )
         self.page.wait_for_load_state("domcontentloaded")
 
     def _optional(self, candidates: list[str]):
@@ -127,11 +133,53 @@ class PayuniSandboxPage:
         # 顯示成末四碼、CVV 顯示 ***）。不 blur 就直接送出，驗證讀到的是舊值。
         field.blur()
 
+    def _explain_rejected_order(self, hash_key: str, hash_iv: str) -> str:
+        """PayUni 沒顯示刷卡表單、直接把瀏覽器導回我們時，解出它回的 Status/Message。
+
+        2026-10-30 起的新症狀：/api/upp 一閃而過就 302 回 /payment/result?
+        status=FAILED——那是商店級拒單（憑證、額度、商店狀態…），不是表單欄位
+        問題，改選擇器救不了。加密酬載在 POST /payuni/return 裡。
+        """
+        form = captured_return_form(self.page)
+        if not form:
+            return "（沒捕捉到 /payuni/return 的 POST）"
+        if not (hash_key and hash_iv):
+            return f"（無 hash key/iv，無法解密；表單長度 {len(form)}）"
+        try:
+            from urllib.parse import parse_qs
+
+            enc = parse_qs(form).get("EncryptInfo", [""])[0]
+            data = payuni_crypto.decrypt_info(enc, hash_key, hash_iv)
+            keep = {k: v for k, v in data.items() if k in ("Status", "Message", "MerID", "MerTradeNo")}
+            return f"PayUni 回傳：{keep}"
+        except Exception as exc:
+            return f"（解密失敗：{exc}）"
+
+    def _wait_form(self, hash_key: str, hash_iv: str) -> None:
+        """等刷卡表單出現；若頁面先被導回我們（拒單），帶著 PayUni 的原話失敗。"""
+        deadline = 30
+        for _ in range(deadline * 4):
+            if "/payment/result" in self.page.url:
+                raise RuntimeError(
+                    "PayUni sandbox 沒有顯示刷卡表單，直接把瀏覽器導回 "
+                    f"{self.page.url}——商店級拒單。\n{self._explain_rejected_order(hash_key, hash_iv)}"
+                )
+            if self._optional(_CARD_NUMBER_CANDIDATES) is not None:
+                return
+            self.page.wait_for_timeout(250)
+
     def complete_payment(
-        self, card_number: str, expiry: str, cvv: str, payer_email: str = ""
+        self,
+        card_number: str,
+        expiry: str,
+        cvv: str,
+        payer_email: str = "",
+        hash_key: str = "",
+        hash_iv: str = "",
     ) -> None:
         """填測試卡並送出；成功後 PayUni 會 302 回我們的 /payuni/return。"""
         self.wait_loaded()
+        self._wait_form(hash_key, hash_iv)
 
         credit_radio = self._optional(_CREDIT_RADIO_CANDIDATES)
         if credit_radio is not None and not credit_radio.is_checked():

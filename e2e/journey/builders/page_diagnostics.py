@@ -33,6 +33,9 @@ _SLOW_REQUEST_S = 5.0
 # 情境的事件紀錄,或被誤判成「已經掛過」而沒掛上。
 _events: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _live_writer = None
+# PayUni 瀏覽器導回我們後端（POST /payuni/return）的表單本體。表單頁一閃而過就
+# 被 302 走時（商店級拒單），這份加密酬載是「PayUni 到底說了什麼」的唯一證據。
+_return_forms: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 # value 一起帶回來：不少「畫面看起來填好了、送出卻沒反應」的失敗，唯一
 # 的分界就在欄位到底有沒有值（遮罩輸入、React 還沒掛上 handler…）。密碼
@@ -78,6 +81,11 @@ def attach_event_log(page: Page) -> None:
 
     def on_request(request) -> None:
         started[request] = time.monotonic()
+        if request.method == "POST" and "/payuni/return" in request.url:
+            try:
+                _return_forms[page] = request.post_data or ""
+            except Exception:
+                pass
 
     def on_finished(request) -> None:
         t0 = started.pop(request, None)
@@ -107,6 +115,11 @@ def attach_event_log(page: Page) -> None:
     page.on("framenavigated", on_nav)
     page.on("console", on_console)
     page.on("pageerror", lambda exc: add("頁面例外", str(exc)))
+
+
+def captured_return_form(page: Page) -> str:
+    """最近一次捕捉到的 /payuni/return POST 表單（urlencoded 字串），沒有回空字串。"""
+    return _return_forms.get(page, "")
 
 
 def dump_page(page: Page, label: str) -> str:
