@@ -196,6 +196,11 @@ def directory_has_no_skeleton(page):
     assert page.get_by_role("status", name="載入服務者資料中").count() == 0
 
 
+@then(parsers.parse('the directory search box should contain "{text}"'))
+def search_box_contains(home_page, text):
+    expect(home_page.search_box()).to_have_value(text, timeout=5_000)
+
+
 @then(parsers.parse('the first listing should be "{name}"'))
 def first_listing_should_be(home_page, name):
     expect(home_page.cards().first).to_contain_text(name, timeout=5_000)

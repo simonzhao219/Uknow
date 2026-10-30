@@ -80,6 +80,19 @@ Feature: Public service-provider directory (home page)
     Then the directory should not show the loading skeleton
     And the first listing should be "高雄服務者"
 
+  @listing
+  Scenario: Coming back from a detail page keeps the search term and its results
+    Given the public directory has a listing "台北服務者" in "台北市"
+    And the public directory has a listing "高雄服務者" in "高雄市"
+    And the directory listing "高雄服務者" has a detail page
+    When I visit "/"
+    And I search the directory for "高雄"
+    And I open the listing card for "高雄服務者"
+    And I press the detail page's back button labelled "返回上一頁"
+    Then the directory search box should contain "高雄"
+    And I should see the listing card for "高雄服務者"
+    And I should not see the listing card for "台北服務者"
+
   @listing @compatibility
   Scenario: The directory renders mobile cards on a small screen
     Given I am on a mobile-sized screen

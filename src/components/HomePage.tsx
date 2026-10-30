@@ -44,10 +44,12 @@ import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
 import type { PublicListingRow } from '../types/listing';
 import {
   getCachedCoords,
+  getCachedFilters,
   getCachedListings,
   getSavedScrollY,
   saveScrollY,
   setCachedCoords,
+  setCachedFilters,
   setCachedListings,
 } from '../utils/homeListingsCache';
 
@@ -111,18 +113,33 @@ export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
   // 需要上移避開。
   const { isLoggedIn } = useContext(UserContext);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  // 搜尋／篩選初值取快取：從詳情頁返回時條件與結果原樣還原（重整則回預設）。
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    () => getCachedFilters().category,
+  );
   // 篩選器的自訂類別與刊登表單走同一條路徑（public_listing_categories view）。
   // 不從已載入的 serviceProviders 就地推導：那支查詢沒有 limit，撞到 PostgREST
   // 列數上限時它拿到的不是全部刊登，於是表單列得出某個自訂類別、這裡卻篩不到
   // 任何一筆。全站對「哪些類別存在」只該有一個答案。
   const { customCategories } = useCustomCategories();
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>(() => getCachedFilters().searchQuery);
   // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
   // 每個縣市的「全區」與區選擇互相獨立，同名區不再跨縣市誤配。
-  const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>({});
+  const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>(
+    () => getCachedFilters().districtsByCity,
+  );
   const selectedCities = Object.keys(districtsByCity);
-  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+  const [selectedGenders, setSelectedGenders] = useState<string[]>(
+    () => getCachedFilters().genders,
+  );
+  useEffect(() => {
+    setCachedFilters({
+      searchQuery,
+      category: selectedCategory,
+      genders: selectedGenders,
+      districtsByCity,
+    });
+  }, [searchQuery, selectedCategory, selectedGenders, districtsByCity]);
 
   // 手機首頁的檢視密度：預設 3 欄照片牆，回訪者沿用上次選擇（見 homeViewMode.ts）。
   // 以 lazy initializer 在首個 render 就讀回偏好，避免先閃一下預設再跳成偏好。
