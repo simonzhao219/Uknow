@@ -18,7 +18,7 @@
 
 ## 目前位置與下一步
 
-第 2 波只做規劃：plan.md 與 review.md 已落檔（P0 0、P1 12）。等業主裁決 plan §6 Q1–Q6 與 review「需人工裁決」，之後修訂規劃、重跑 /review-plan。第 3 波由業主親打
+第 2 波只做規劃：plan v2.1、review 兩輪（P0 0；第二輪 P1 6 條，工程類 3 條已在 v2.1 處理，SOP 類 3 條等 Q9）。等業主裁決 Q9（與 Q10），之後第 3 波由業主親打
 `/tdd-implement listing-photo-retention` 開工；開工前先 rebase 到最新 develop，再跑 `check-migration-versions.py`。
 
 ## Blockers(逃生口紀錄)
