@@ -2105,6 +2105,9 @@ app.post('/payuni/prepare', async (c) => {
     ApplePay: 1, // Apple Pay
     GooglePay: 1, // Google Pay
     SamsungPay: 1, // Samsung Pay
+    // 電子發票由 PayUni 代開：買方在支付頁填載具/統編等資料，我們不收也不存。
+    // 前提是商店後台已開通電子發票（正式與測試商店各自設定）。
+    TradeInvoice: 1,
     Lang: 'zh-tw',
   };
 
