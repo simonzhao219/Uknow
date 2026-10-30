@@ -3251,3 +3251,13 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   jsr.io 從外部探是 200，故障在 Supabase 打包服務的對外連線。`--use-api` 是 #402 為了擋晉升硬傷改的，代價就是打包不在我們手上。
   當天靠業主管理員 bypass 合併純前端修正。候選修法：journey／deploy 在 `--use-api` 連敗後退回本機打包（需 Docker），或把
   `@supabase/supabase-js` 改從 npm: specifier 載入繞開 jsr.io；先記著，第 2 波評估。
+- **Cloudflare Pages 的 main 建置失敗零訊號，正式站停舊版 18 小時**（環境，10/28 19:28–10/29 12:46）：
+  clone repo 階段 `RPC failed; curl 16 Error in the HTTP2 framing layer`／`early EOF`，Cloudflare 端暫時性網路故障，Retry 即過。
+  問題不在失敗本身而在**沒人知道**：deploy-smoke 驗「資產完整、SPA、快取標頭」但不驗「是哪一版」，GitHub 收不到 Cloudflare
+  的 deployment 事件，8/7 後端那次的形狀（CI 綠、合併成功、線上是舊版、零紅燈）在前端重演。主 session 的容器打不到
+  uknow.com.tw，靠一次性 workflow 從 runner 抓 bundle 才定案。修法記 plan §6（埋 build sha 進 index.html 讓 smoke 比對 main）。
+- **Claude Code Remote 排程任務打進長 session 時常被 worker 重啟打斷，量測 10 次只跑成 2 次**（工具，10/29）：
+  每 2 小時的量測排程（裁決 13）綁在主 session 上，觸發後主 session 讀到提示、載入工具的瞬間就收到「worker process was
+  restarted」，下一輪才真的跑 SQL；兩次成功都是碰巧連續兩個觸發落在同一個 worker 生命週期內。長 session 的 context 太大
+  是最可能的原因。候選修法：量測排程改成 `create_new_session_on_fire`（每次全新 session，提示自帶 SQL 檔路徑與門檻），
+  主 session 只收結果；或在 CI 加一支 workflow 用 service-role 跑 `measure.sql` 並把摘要 commit 進 §8。第 2 波評估。
