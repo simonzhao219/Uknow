@@ -32,6 +32,8 @@
 | W2-11 | C-Q9：終止／刪除請求 SOP（**修正 W2-5 的 SOP 部分**） | **已付款：收件後 20 日內停權＋刪刊登列**，照片由排程清，金流與推薦紀錄依條款十二保留，回信留痕；未付款可直接刪帳號。理由：刪帳號會 cascade 抹掉金流紀錄；照片尚需 7 日寬限＋1 輪，20 日才能落在 30 日內 |
 | W2-12 | C-Q10：寬限期失效破圖通知／Edit onError | 本案不做，列第 3 波後候選 |
 | W2-13 | C-Q11：終止請求要不要停權（**修正 W2-11 的停權部分**） | **只刪刊登、不停權**：停權會鎖會員區、擋提領、廢推薦碼，使已賺獎勵領不到；停權留給違規處置 |
+| W2-14 | 正式商店電子發票（#449 起建單帶 `TradeInvoice: 1`，已隨 #450 上正式站約 10/30 18:20；之後尚無真付款） | 業主確認**正式商店已開通**；主 session 建議找時間用未付款帳號走到刷卡頁實測（不付款） |
+| W2-15 | 測試商店電子發票（H 實證 sandbox 拒單 `UPP02085 商店尚未啟用電子發票`，journey 與 develop 付款全擋） | **業主開通測試商店**，開好通知主 session；H 再驗 skeleton/sandbox，綠了在 #456 改回 sandbox。11/02 18:00 前未開通則延長規則 13 期限 |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -102,8 +104,8 @@
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
-| H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
-| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b | 施工 W2-10 |
+| H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456（draft） | 待業主開通測試商店發票 |
+| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 | #457 審過等 CI |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
@@ -123,3 +125,4 @@
 | 10/31 00:50 | C 推 v2.1（#453 cd6d996b）：第二輪 P0 0、P1 6（工程三條已改：log 不印 uid、第二支批次複查 RPC、階段 5 改離線）＋Q9／Q10 → 業主裁決 W2-11、W2-12。主 session 要求回填後跑第三輪 /review-plan（設計有變、刪除不可逆）。#455 ci-ok 紅是 B 推新 head 時 concurrency 取消舊 run，非實際失敗 | C 第三輪 → 交業主審；#455 新 head CI |
 | 10/31 01:00 | deploy-smoke 手動 run 41088363862：**develop「✓ 線上版本 f110586 與預期 f110586 相符」**、正式站「⚠ 無 build-sha」（預期，11/03 晉升後才有）——D 端到端驗證通過。#455 檔頭修正 fb48a48 → CI 綠 → **合進 develop（ee6613b）**；B 開工 W2-10。在途程式工項＝H、P、B（篩選）已達 3，S、A 等其一合併再開 | 業主真機驗返回；等 H／P／B 回報 |
 | 10/31 01:10 | C 第三輪（#453 9c1317b5，審 v2.2）：P0 0、P1 7、P2 11；v2.3 自修 6 條（含真 bug：比例閘用截斷後候選數，bucket >1000 物件永不觸發 → 改用 RPC 回傳的 orphan_total）＋Q11 → 業主裁決 W2-13。不跑第四輪，主 session 親自核對 v2.3 六條自修 | C 回填 → 主 session 核對 → 交業主審 |
+| 10/31 01:40 | **H 查出 journey sandbox 紅的現行根因不是表單，是 PayUni 測試商店拒單 `UPP02085`**（#449 的 TradeInvoice=1，PR 前提「兩商店皆已開通」對 sandbox 不成立）；H 開 #456（harness 拒單時解密 return 印出 Status／Message，診斷用）。主 session 查證 #449 已隨 #450 上 main、正式站部署後零付款（最後成功 10/30 09:48 UTC）→ 業主確認正式商店已開通（W2-14）、會開通測試商店（W2-15）。UPP02085 轉給 P 納入商店級告警（且走 /payuni/return 路徑）。B 開 #457（W2-10，紅 c67f4e25→綠 95aee4d3）：主 session 審無 P0／P1。教訓：webhook 模式的晉升閘門不碰 PayUni 建單，#449 這類商店設定前提在晉升時完全不會被驗到——記 friction-log 候選 | 等業主開通測試商店 → H 驗；#457 CI 綠合 |
