@@ -49,8 +49,11 @@ Deno.test('prepare：組 EncryptInfo → 帶 TradeInvoice=1 啟用電子發票',
     const body = await res.json();
     assertEquals(body.success, true, JSON.stringify(body));
 
-    const payload = JSON.parse(await decryptPayUni(body.data.EncryptInfo, HASH_KEY, HASH_IV));
-    assertEquals(payload.TradeInvoice, 1);
+    // EncryptInfo 解開是 query string（MerID=...&TradeAmt=...），不是 JSON
+    const payload = new URLSearchParams(
+      await decryptPayUni(body.data.EncryptInfo, HASH_KEY, HASH_IV),
+    );
+    assertEquals(payload.get('TradeInvoice'), '1');
   } finally {
     await deleteTestUsers(client, [user.id]);
   }
