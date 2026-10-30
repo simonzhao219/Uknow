@@ -23,6 +23,11 @@
 | W2-2 | 納入工項（必做三項以外） | 條款十之一（規劃）、PayUni 商店級錯誤告警、小型維運資安包、後台會員列表顯示推薦碼 |
 | W2-3 | 第 1 波審查 session | **現在開，與第 2 波平行**（main 在凍結期內不再變）；P0 回主 session 開 hotfix；結案後主 session 讓 `launch-wave-1/` 退場 |
 | W2-4 | 派工 | 主 session 用 `create_session` 自動開執行 session；業主只回答裁決題 |
+| W2-5 | 條款十之一 C-Q1：會籍到期算不算「本服務終止」 | **先不算、請律師確認**：只清帳號刪除與主動撤除；收到終止或刪除請求者，30 日內刪帳號（寫進 SOP）；律師若判「算」，在 RPC 加一個條件 |
+| W2-6 | C-Q2：撤 RLS `listings_delete_own` | **撤**（含 admin 分支），刪刊登只剩 Edge 一個入口 |
+| W2-7 | C-Q5：孤兒寬限期（照片裁切完即上傳、送出才寫進刊登，中間的檔沒有引用） | **7 日、不加存檔前驗證**（被推翻的建議：48h＋存檔前驗證，範圍太大） |
+| W2-8 | C-Q7：正式站上線閘門 | **預設 dry-run**，業主在第 3 波晉升後 3 日內核對候選清單，再設 repo variable 開實刪 |
+| W2-9 | C-Q3／Q4／Q8（主 session 照建議定，低風險工程預設） | 密鑰沿用 `RECONCILE_SECRET`；`/auth/cancel-signup` 不加即時清理；develop 只做 workflow_dispatch。C-Q6 由事實回答：舊 bucket 已於 10/28 由業主刪除（第 1 波 §8） |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -96,7 +101,7 @@
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | — | 施工中 |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` | — | 施工中 |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | — | 施工中 |
-| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | — | 規劃中 |
+| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
 | P | — | Opus | `fix/payuni-merchant-alert` | — | 批 2 |
 | S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
@@ -108,3 +113,4 @@
 | 10/30 23:00 | 主 session 開局：讀第 1 波交接（無開著的 PR；量測 #4 全項正常）；業主裁決 W2-1～4；實測 `npm install -g deno` 可在容器裝 deno；落檔本檔與 `dispatch-prompts.md` | 開 R1、H、B、D、C 五個 session |
 | 10/30 23:50 | 五個 session 已用 create_session 開（帶 source_url、tag `uknow-wave-2`；名冊見 §7）。本機 `npm ci` 才讓 pre-commit 綠（node_modules 過期缺 react-easy-crop）→ 共用開頭補「開局先 npm ci」 | 等 PR／回報；查證後整批關舊 issue |
 | 10/30 23:55 | 開本檔 PR #452（draft，已訂閱）。查證後關 issue：13 張「Edge Function 部署失敗」（#337–#400；develop deploy 自 `--use-api` 起連 8 次綠）、#280（reconcile 排程連續綠）、#279（Security Audit 連 5 週綠）。#288（journey 排程紅）留給 H 的 PR 關 | 等各 session PR |
+| 10/31 00:20 | C 回報 #453：四視角 P0 0、P1 12、P2 12，8 題裁決。主 session 讀過規劃（每日 janitor＋斷路器＋dry-run，方向合理）；業主裁決 W2-5～8，主 session 定 W2-9。C 提醒 S 的 public=false 斷言要排除 `listings-photos`——S 的 prompt 已寫明 | C 修訂規劃 → 主 session 複核 → 業主審 → 第 3 波親打 `/tdd-implement` |
