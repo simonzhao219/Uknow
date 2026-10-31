@@ -1,66 +1,61 @@
-# 登入狀態信任（T1）規劃書審查報告——v2 重審
+# 登入狀態信任（T1）規劃書審查報告——v3 重審
 
 <!-- /review-plan 彙整四個 fresh-context reviewer 的發現。只彙整、去重、排序，不改判。
-     輸出契約見 docs/_templates/review.md。審查對象：./plan.md v2（業主 D1–D6 後修訂）。
-     v1 報告（P0 1／P1 18／P2 15）：git show ddb591bf:docs/plans/auth-state-trust/review.md
-     本輪 reviewer 拿到總綱 §1／§8.2 全文（scratchpad 摘出）；系統 reviewer 自述未讀該檔，總綱沿用部分依 plan 轉述採信。 -->
+     輸出契約見 docs/_templates/review.md。審查對象：./plan.md v3（業主 D1–D6、E1–E5 後修訂）。
+     歷次：v1（P0 1／P1 18／P2 15）git show ddb591bf:docs/plans/auth-state-trust/review.md；
+           v2（P0 0／P1 12／P2 16）git show 193fec78:docs/plans/auth-state-trust/review.md。
+     本輪四位 reviewer 都讀了總綱 §1／§8.2 全文與 v2 報告，逐項確認 v2 處置。 -->
 
 ## 審查結論
 
 | 視角 | P0 | P1 | P2 | 無缺口面向 |
 |---|---|---|---|---|
-| 系統 | 0 | 4 | 5 | migration／RLS、金流冪等（不碰 PayUni、`force` 輪詢不被延遲）、F1／F2 與 gate 共用、context 形狀與 appShell regex、回滾 |
-| 架構 | 0 | 3 | 4 | gate 共用與決策表一致、appShell regex、e2e 基線移 A2、22 支 mock 回落、import 邊界、migration、PR-B 疊加性 |
-| UI/UX | 0 | 3 | 4 | BottomNav 五格契約、CLS 與 320px、模式一致性（button／Link、aria-disabled、ghost 位階） |
-| 需求 | 0 | 3 | 3 | 範圍與排除清單、11/10 時程切分、不涉 `reward_config`、S1–S9 可證偽、D1–D6 皆有落點 |
+| 系統 | 0 | 2 | 3 | 查證 SQL 表名欄位對得上 schema、誤判模型與 `/profile` 現況一致、金流冪等、多分頁競態、無 migration／RLS、PR-B 讀取對照表、PR-A 無逾時自洽 |
+| 架構 | 0 | 3 | 5 | 22 支 mock 回落、memo deps 與 appShell regex、可測性、A0 非 TDD 前置合理、與 lazy／apiClient／單一 Edge Function 慣例相容 |
+| UI/UX | 0 | 2 | 4 | BottomNav 五格契約、a11y 基本語意、CLS 量法、取消註冊並存語意、E5 toast 分流 |
+| 需求 | 0 | 2 | 4 | 範圍與排除、裁決落點、溯源（新增需求明標）、不涉 `reward_config`、金流會籍規則未改、S1–S11 可證偽、無腦補 |
 
-去重後 P1 12 項（系統與架構的 hint deps 合併為一項）。**v1 處置**：v1 唯一 P0（funnel 範圍）由 D1＝A 定案並落 §2.1，四位 reviewer 均確認已處理；v1 P1 多數已處理，殘餘轉為下列 v2 發現。
+去重後 P1 8 項（系統 P1-1 與架構 P1-1 同一矛盾，合併）。**v2 處置**：四位 reviewer 逐項確認 v2 的 P1 全數已處理或部分處理，殘餘轉為下列 v3 發現。
 
 ## 發現清單（依嚴重度排序）
 
 ### P1
 
-- **[P1]〔§2.2、§2.5、§2.1〕（系統＋架構，去重）** hint 寫入 effect 的 deps `[authState, user?.id, user?.name, funnelProfile?.id]` 抓不到 F2 開通轉換（只有 `accountStatus`／`paidAwaitingActivation` 變），提示停在 `funnel`，S5 後重新整理會員只剩登出；且 §2.1 把 `funnel` 列成 authState 值、§2.5 又另設 `isFunnel`，前後不一 → authState 只留 `unknown/anonymous/authenticated/degraded`，funnel 一律是衍生布林 `isFunnel`；deps 改用衍生的 `hintKind`＋`initial`；A2 明列「user 只變 accountStatus、id 不變」與反向（member→funnel）案例。
-- **[P1]〔§5、§2.2、§7〕（架構）** 8 秒逾時放 PR-A、重試與 degraded 在 PR-B：現況 `/profile` 無逾時、慢但會成功；PR-A 8 秒 abort→transient→導 `/login`，弱網下新增踢出登入，與 §7「未變差」矛盾 → (a) PR-A 的 `fetchProfile` 不設逾時、PR-B 才啟用；或 (b) 逾時＋一次重試＋transient 不導 `/login` 整組搬進 PR-A。D4 只有 (a) 自洽。
-- **[P1]〔§2.2、§1.1 S1、§7〕（系統）** PR-A 的 transient 路徑：有 `member` 提示時先畫頭像占位，`/profile` 5xx／逾時後變訪客版並導 `/login`——等於新增一種閃爍，打破 S1 → 寫成 PR-A 已知限制，〔需人工裁決〕PR-B 晚一波時是否可接受。（與上一項同根，處置連動）
-- **[P1]〔§4.1、§2.2、§7〕（UI/UX）** 無提示冷啟動在漏斗路由先畫 `placeholder`，最長 8 秒右上角空白、主體無載入指示、逾時後靜默導 `/login`，違 ui-ux §6 三態 → `placeholder` 約 3 秒後頁首槽或主體出載入指示；逾時導 `/login` 帶 info toast；若留給 PR-B，§6 明列已知缺口。
-- **[P1]〔§2.2〕（系統）** `uid8` 比對只在 bootstrap 拿到 session 時做；同瀏覽器換帳號登入時，`ingestProfile` 前舊提示仍在，會短暫畫出前一人首字 → `SIGNED_IN` 時 `uid8` 不符同步清提示；補「A 提示殘留、B 登入，零次出現 A 首字」測試。
-- **[P1]〔§2.4、A2〕（系統）** single-flight key＝access token：冷啟動窗口內 `TOKEN_REFRESHED` 換 token 就不再合併，與「冷啟動恰一次」衝突、也讓兩個 `/profile` 並行 → 寫明 `TOKEN_REFRESHED` 是否觸發 `/profile`（現況 App 註解：不觸發）；合併鍵改 user id（token 次要）或明說接受。
-- **[P1]〔§2.5〕（架構）** `useAuthBootstrap` 注入／回傳面沒涵蓋現有 effect 的副作用：`navigate('/auth/complete-profile')`、`clearCache()`、`clearPendingInviteToken()`、`localStorage` 清理、`loadedUserIdRef` 去重 SIGNED_IN → §2.5 補副作用歸屬表（注入 `onSignedOut`／`onIncompleteProfile` 或留 App）；A2 加「SIGNED_OUT 清快取與邀請 token」「同 uid SIGNED_IN 重播被忽略」。
-- **[P1]〔§4.2、§4.1、S5〕（UI/UX）** 共用登出 toast「繼續完成註冊」也會出現在 `/payment/result`（已付款待開通）——已付款者以為沒付成功、可能重複付款；登出時輪詢 `refreshUser` 未停 → toast 依 gate 分文案（`activating`：「付款已收到，登入後會自動開通」）；登出同時停輪詢，補 vitest。
-- **[P1]〔§4.1、S3〕（UI/UX）** OTP 頁驗證**前**沒有 session，bootstrap 判 `anonymous` 畫 `guest`（「登入／立即刊登」）——業主影片現象之一未被覆蓋；「登出」對無 session 者也無意義 → 明定 OTP 驗證前頁首；S3／S4 的 OTP 案例拆驗證前／後兩格。〔需人工裁決〕驗證前只放 logo 還是保留「登入」。
-- **[P1]〔§0、§1.1 S6〕（需求）** §0「從第一個畫面起」承諾大於驗收：S6 允許無提示的已登入會員在非漏斗路由閃一次（升版後首次、換裝置、storage 被清、LINE 內建瀏覽器、Email 連結落在 `/`），正是業主成因 (1) 的子集 → §0 改成實際涵蓋範圍；殘留列開放問題請業主確認，不只放 S6 與規格書註記。〔需人工裁決〕
-- **[P1]〔§1、§2.1、A4〕（需求）** 規格書 §2.1 沒有「註冊中」角色；plan 引用 §2.1／§4.1 不支撐 W2-22 斷言 → §1 溯源明寫「W2-22／D1＝A 為新增需求，規格書依 A4 補列」；A4 新列寫成與 §2.1 同層級角色語句，含「已付款待開通屬此角色」。
-- **[P1]〔§2.1 資料查證、§7〕（需求）** 誤判的最壞後果只剩一條「開工前資料查證」防線：SQL 只查無 subscriptions 有 completed 訂單，沒查贈送／手動開通；誰跑、何時、結果落哪未定 → 列為 A1 開工前置、結果落 progress.md；判定表預留「曾有會籍證據」一格。
+- **[P1]〔§2.2 hintKind 映射 vs PR-A transient〕（系統＋架構，去重）** `authState==='anonymous' ? null`（清提示）與「PR-A 5xx 不清提示、頁首依 anonymous 畫訪客版」互相矛盾——一次 5xx 就清掉 `member` 提示；且 reducer 把 `unknown ⇔ isLoadingUser` 釘死時，transient 的終態未定義 → transient 在 reducer 有可區分的內部狀態（`sessionPresent`／`lastOutcome:'transient'` 或 `bootstrapError`），`hintKind` 遇之為「保持」；只有 `getSession()` null、`SIGNED_OUT`、401／404／410 才清；A2 加「5xx 後提示仍在」。
+- **[P1]〔§2.3、B2〕（系統）** `X-Uknow-Retry` 自訂 header 不在 CORS `allowHeaders`（`index.ts` 只允許 `Content-Type`、`Authorization`、`If-None-Match`），preflight 失敗、重試永遠被當 transient，全 mock e2e 也測不出 → B1 明列 `allowHeaders` 加入並以 deno 測試斷言 preflight，或改 query 參數（`?retry=1`）。
+- **[P1]〔§2.5、§2.2〕（架構）** 換帳號時「首繪 `hint` state 設為 null」無歸屬：hint state 在 App，hook 注入／回傳面都沒有它，S11 無法只靠 hook 落地 → 注入 `onAccountSwitched()`，或讓 hook 擁有 hint state 並回傳；import 邊界寫明擁有者。
+- **[P1]〔§5 A0／A1 vs §3〕（架構）** A0 查證 ＞0 時「`/profile` 加布林欄位屬 A1」會讓 PR-A 動到 `index.ts`／`api-contract.ts`（§3 規定 PR-B 才動），破壞 D4「PR-B 可晚一波」與「PR-A 單獨上線」→ A0 明寫分支：全 0 → PR-A 純前端；＞0 → 拆成 PR-A 內獨立後端階段（A1b）並調整撞檔與 deno 測試。〔需人工裁決〕是否預留該階段。
+- **[P1]〔§2.1 A0、§7〕（需求）** A0 結果 ＞0 時沒有決策路徑：該格怎麼寫進 `classifyMembershipGate` 與守衛、守衛輸出是否變（與 §1.2「不改導向決策」衝突）；是否回主 session 重審 → 寫明（reviewer 建議：只影響 `isFirstTimeFunnel`、不動 `resolveMembershipRedirect`）；非 0 時回主 session 而非 A1 自行加欄位。（與上一項同根，處置連動）
+- **[P1]〔§0、E3、S4／S6〕（需求）** 業主成因 (1) 仍有兩個殘留：(a) Email 連結落在首頁且無提示時仍閃「登入」——業主三個入口之一；(b) PR-A 5xx 時有提示者看到「頭像占位→訪客版→導 `/login`」。業主已接受（E1、E3），但 §0「從第一個畫面起」措辭偏滿 → A4 規格書註記與 PR 描述明白寫出「仍會看到的三種情形」。〔需人工裁決〕Email 連結落首頁是否仍算「修好」，請業主再確認一次。
+- **[P1]〔§4.1 funnel、S8、§4.3〕（UI/UX）** 320px 同列放 logo＋「繼續完成註冊」（primary、不縮寫）＋「登出」（ghost、icon＋文字）空間不夠：Navbar `container px-4` 內寬約 288px，logo 約 100px 後右側約 170px → 預定窄寬降級規則（登出窄寬只留 icon＋`aria-label="登出"`，或「繼續完成註冊」窄寬短標籤），S8 對 funnel＋E4 量寬度。〔需人工裁決〕icon-only 或短標籤。
+- **[P1]〔§4.1、E4、S10〕（UI/UX）** 已付款待開通者的 E4 鈕導向 `/payment/result?tradeNo=…`，文字仍是「繼續完成註冊」——與 E5 為已付款者分開文案的原則矛盾，可能誘發再次付款或困惑 → 〔需人工裁決〕gate＝`activating` 時改「查看開通進度」，或維持原文案並在 S10 說明理由。
 
 ### P2
 
-- **[P2]〔§2.1 查證 SQL〕（系統）** SQL 用 `subscriptions`／`payment_orders`，但 `subscriptionEndDate` 來源是 `user_account_status` view → 改成直接模擬判定條件（`status != 'active'` 且 `end_date is null` 且曾有會籍）。
-- **[P2]〔§2.3〕（系統）** `repair_orphaned_payments` 多版改寫（`20260716000006`、`20260724000006`、`20260802000002`…）冪等性未確認 → `X-Uknow-Retry: 1` 跳過 repair 改為預設，讀定義降為優化。〔需人工裁決：reviewer 未逐版讀〕
-- **[P2]〔§2.2〕（系統）** `apiClient.ts`（session 過期）與 `CompleteProfile.tsx`（刪帳號）各自清 `localStorage.user`、靠 SIGNED_OUT 間接清提示，`signOut` 網路失敗時不一定觸發 → A4 清查所有 `removeItem('user')` 是否同步清提示，或守衛允許它們呼叫 `clearAuthHint()`。
-- **[P2]〔§4.1〕（系統）** `placeholder` 無逾時出口（`getSession()` 永不 resolve 時頁首永遠空白）→ `unknown` 上限後改畫 `guest`，加測試。
-- **[P2]〔§2.3〕（系統）** `profileHandler` try/catch 要涵蓋自癒遞迴 → B1 加「遞迴重入時查詢失敗 → 503」。
-- **[P2]〔§2.5、§4.1〕（架構）** `isLoadingUser` 與 `authState` 兩套旗標可能不同批更新，F1 時一幀「守衛導 /login、頁首仍 unknown」→ bootstrap 單一 reducer 同批更新（或 `isLoadingUser` 由 `authState` 衍生），加 `unknown ⇔ isLoadingUser` 測試。
-- **[P2]〔§5 A3／A4〕（架構）** `isLoggedIn` 視覺切換清查排在 A4，A3 的 S3 依賴它 → 清查提前到 A1 或 A3 開頭。
-- **[P2]〔§4.2、§2.5〕（架構）** 共用登出 handler 落點未定（utils 下會有 React 依賴）→ 定為 `src/hooks/useFunnelLogout.ts`，守衛清單寫檔名；註明與 Navbar 會員登出不合併的理由。
-- **[P2]〔§2.5〕（架構）** 漏斗路由清單與 App 路由表、`shouldRedirectToCompleteProfile` 各一份會漂移 → 共用常數或 vitest 比對路由表。
-- **[P2]〔§4.1〕（UI/UX）** funnel 使用者離開漏斗路由（點 logo 回首頁）後頁首只剩登出、無路回結帳／完善資料。〔需人工裁決〕非漏斗路由是否放「繼續完成註冊」，或 funnel 時 logo 導向下一步。
-- **[P2]〔§4.2〕（UI/UX）** 取消註冊既有確認框可加一句「只是想離開請用右上角登出」→ 小改文案。
-- **[P2]〔§4.3 第 5 點〕（UI/UX）** 失敗語意與現況相反（現況失敗停原頁並提示錯誤）→ PR 偏離說明明寫、A3 補失敗路徑案例；保留 global scope 會連帶登出其他裝置。〔需人工裁決：§1.2 已列維持現況，確認接受即可〕
-- **[P2]〔§4.1〕（UI/UX）** `member` 提示過期（實為 funnel／停權）時選單靜態連結會被守衛彈回 → `aria-busy` 期間選單項目 `aria-disabled` 或只留登出。
-- **[P2]〔§6 Q6〕（需求）** 開放問題品質足夠 → 無需改動。
-- **[P2]〔§4.2〕（需求）** 登出 toast 是新增文案 → 列待業主確認字串，或寫入 ui-ux 文案處。
-- **[P2]〔§5〕（需求）** PR-B 晚一波時 §14 #8 維持現況 → PR-B 說明補一句，避免 A4 誤改。
+- **[P2]〔§2.4、§2.5〕（系統）** single-flight 只以 user id 為鍵：登出（global 撤銷）後立刻同帳號重登，新 caller 合併到以已撤銷 token 在飛的舊請求，回 401 把新 session 登出 → `SIGNED_OUT`／換 session 時清空 in-flight map，或鍵加 generation。
+- **[P2]〔§4.1 10 秒安全出口〕（系統）** 沒說是否涵蓋 `/profile` 卡住（PR-A 無逾時）：涵蓋則 10 秒後畫 guest、之後翻 funnel，違 S4；不涵蓋則頁首永遠空白 → 明寫計時只管 `getSession()`，接受 `/profile` 掛住時頁首空白為已知限制；或漏斗路由 fallback 維持 placeholder。〔需人工裁決〕
+- **[P2]〔§2.3〕（系統）** `buildProfileResponse` 另有 `/auth/register`、`/auth/complete-registration` 呼叫者，讀取失敗的信號形式（throw／特殊值）未定 → B1 定義失敗信號與兩呼叫者的行為。
+- **[P2]〔§2.5 載入旗標〕（架構）** reducer 衍生 `isLoadingUser` 後，`refreshUser`／focus 重驗不得轉入 `unknown`（現況刻意不碰，避免全頁 spinner）；新 uid 的 SIGNED_IN 轉 unknown、同 uid 重播不轉 → 寫進 reducer 動作表，A2 加測試。
+- **[P2]〔§2.5 漏斗路由清單〕（架構）** `FUNNEL_ROUTE_PREFIXES`（正向）與 `shouldRedirectToCompleteProfile`（負向豁免）語意不同、無法共用；`/payment/` 前綴會誤收未來非漏斗的 `/payment/xxx` → 改列完整路徑（`/payment/checkout`、`/payment/result`），「共用」改為「各自獨立、由測試互相鎖定」。
+- **[P2]〔§2.5、§2.2〕（架構）** `localStorage.user` 寫入端（`refreshUser` `App.tsx:257`）與 `pendingSession` 清除未進副作用表；`ingestProfile` 是否繼續寫未定 → A0 清查加 `localStorage.user` 讀寫全表；若不再寫，確認零讀者。
+- **[P2]〔§5 A2〕（架構）** A2 一階段 12 項驗證標準過大 → 拆 A2a（hook＋reducer＋副作用表）與 A2b（9 處收斂＋AuthPage 合併＋hint 接線），中間態 `npm run check` 保持綠。
+- **[P2]〔§2.5 import 邊界〕（架構）** `hooks/useAuthBootstrap.ts` 被 App import，必須禁止 import `'../App'`（否則循環），清單漏列；守衛要以解析後路徑比對涵蓋 `../App` 與 `../../App` → 補入清單。
+- **[P2]〔§4.1 placeholder、§4.3 第 6 點〕（UI/UX）** 槽 `aria-hidden`、主體只靠各頁既有 spinner，未要求可讀文字 → A3 驗收加「漏斗路由主體載入指示須有可讀文字或 `role="status"`」。
+- **[P2]〔§4.1 member-pending〕（UI/UX）** 選單一排灰色項目無說明 → 選單頂端加「載入中…」或只顯示「登出」。
+- **[P2]〔§4.1 funnel→member、S5、S9〕（UI/UX）** PaymentResult 停留期間 BottomNav 突然彈出可能遮內容 → 導 `/dashboard` 前不顯示 BottomNav，或列 A3 手機實測項。
+- **[P2]〔§4.1 登出位階、Q6〕（UI/UX）** 漏斗路由內只有單顆 ghost 登出時可能太不顯眼 → Q6 截圖也要涵蓋「漏斗路由單顆登出」。
+- **[P2]〔§1.1 S1／S9〕（需求）** S1 觀察器只掛 `nav`，沒涵蓋 BottomNav 與 `main` padding 首繪 → S1 補「首繪起 BottomNav 有無與最終一致」，或 S9 範圍含 `main`。
+- **[P2]〔§1.1 S3／S5〕（需求）** S3 的「已付款待開通」fixture 與 S5 起點應為同一份 → 測試設計細節，不擋開工。
+- **[P2]〔§5 A3、時程〕（需求）** PR-A 份量（A2、A3 各 8–10 條標準、S 案例 11 個）距 11/10 約 10 天，A2 延誤會卡 A3 → 預寫 A3 可降級項（`startTransition` 修正、逐頁補 spinner 可拆到 PR-A 之後）。
+- **[P2]〔§6〕（需求）** 「PR-A 已知限制」是已接受事實、非待裁決 → 移到 §0 或 §7。
 
 ## 需人工裁決
 
-- 〔業主〕無提示、非漏斗路由的已登入會員閃一次（S6）是否接受（需求 P1）。
-- 〔業主〕PR-A 的逾時處置：不設逾時（PR-B 才啟用）或把重試＋不導 `/login` 搬進 PR-A（架構 P1／系統 P1／UI/UX P1 同根）。
-- 〔業主〕OTP 驗證前頁首：只放 logo 或保留「登入」（UI/UX P1）。
-- 〔業主〕funnel 使用者在非漏斗路由是否放「繼續完成註冊」（UI/UX P2）。
-- 〔業主〕登出 toast 文案兩句（一般／已付款待開通）。
-- 〔確認〕使用者主動登出維持 global scope、失敗仍清本機並導頁（UI/UX P2）。
-- 〔技術〕`repair_orphaned_payments` 冪等性未逐版確認（系統 P2）。
+- 〔業主〕320px 窄寬降級：登出 icon-only，或「繼續完成註冊」短標籤（UI/UX P1）。
+- 〔業主〕已付款待開通者的 E4 鈕文案：「查看開通進度」或維持「繼續完成註冊」（UI/UX P1）。
+- 〔業主〕Email 連結落首頁且無提示仍閃一次——E3 已接受，是否再確認（需求 P1）。
+- 〔業主／主 session〕A0 查證 ＞0 時的路徑：預留 PR-A 內後端階段 A1b，或回主 session 重審（架構 P1、需求 P1 同根）。
+- 〔業主〕漏斗路由在 `/profile` 卡住時頁首保持空白（不畫 guest）是否接受（系統 P2）。
 - 本彙整未改判任何一項。
 
 ## 處置（人審後填寫）
