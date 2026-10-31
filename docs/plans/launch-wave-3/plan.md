@@ -105,7 +105,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 |---|---|---|
 | 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ⬜ |
 | 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ⬜ |
-| 3 | C 合 develop 後若 dry-run 回 401：到 Supabase develop branch 的 Secrets 設 `RECONCILE_SECRET`（與正式站同值） | 等 C |
+| 3 | **develop dry-run 已回 401**（run 41250155677）：到 Supabase develop branch 的 Secrets 設 `RECONCILE_SECRET`，與 GitHub secret／正式站同值；設好告訴主 session 重跑。不擋晉升 | ⬜ |
 | 4 | T1 A3 實機截圖時回答 Q6（登出鈕樣式）、Q7（取消註冊確認框文案）、Q8（「稍後付款」鈕文字） | 等 T1 A3 |
 | 5 | 11/10 晉升合進 main 後核准 `production` 部署 | 11/10 |
 | 6 | 11/13 前核對正式站照片候選清單，再設 `PHOTO_PURGE_LIVE=true` | 11/10–13 |
@@ -119,7 +119,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-restore-pop-only` | #473 ✅ cd33515 | 收工 |
 | L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | #474 ✅ 1253e00 | 收工 |
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
-| K | `session_01MQovbDHyiASTQXhQNxSsU7` | Sonnet | `fix/alert-pipeline-gaps` | — | 施工中 |
+| K | `session_01MQovbDHyiASTQXhQNxSsU7` | Sonnet | `fix/alert-pipeline-gaps` | #475 ✅ 8912099 | 收工 |
 | R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -135,3 +135,5 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 05:50 | 業主在 T1 實作 session 親打 `/tdd-implement`，人審通過。A0 由主 session 代跑：正式站 21:32 UTC 0／0／0／0、develop 21:52 UTC 1／0／0／0（第 2 波主 session 21:16 UTC 那次結果相同）→ 可進 A1。T1 規劃 session 已退訂 #466，改由 T1 實作 session 訂閱。業主裁決 **W3-10**（T1 由同一 session 做完 PR-A） | T1 A1–A4；完成後開 T1 審查 session |
 | 11/01 06:00 | 業主裁決 **W3-11**：全部完成就晉升（可早於 11/10）。#471 兩版 CI 綠 | C 轉 ready；T1 施工；C 合併後開 K；三項都合併即開晉升 PR |
 | 11/01 06:27 | C 自行 rebase 成 `b5353e0`，CI 綠但沒有轉 ready（session 閒置）。主 session 逐位元組比對，rebase 後的 diff 與審過的 `59735dc` 完全相同 → 主 session 轉 ready → **#453 合進 develop（d6be666）**。開 **K** `session_01MQovbDHyiASTQXhQNxSsU7`（Sonnet）。設 send_later，develop 部署完成後 dispatch dry-run（target=develop、force_ratio） | develop dry-run；K；T1 |
+| 11/01 06:42 | **#475（K）合進 develop（8912099）**：主 session 審，無 P0／P1。P2-4 的偏離（不改窗口、改在內文註明「另有 N 筆」）經核實成立：端點以 `count:'exact'` 回傳完整 total | develop 部署後驗證 |
+| 11/01 06:53 | develop 已部署 8912099（deploy-supabase run 41249918243）。主 session dispatch 驗證：**purge-listing-photos（target=develop、dry_run、force_ratio）回 `unauthorized`**（run 41250155677）→ develop 的 Supabase `RECONCILE_SECRET` 與 GitHub secret 不同值，workflow 照設計自動開了失敗 issue；**reconcile（run 41250157710）綠**，「呼叫對帳端點」帶重試成功，這輪沒有新 error 告警，所以「確認 LINE 推送設定存在」照設計跳過（只能等真有告警時實證）。本波只剩 T1 | 業主設 develop secret 後重跑 dry-run；T1 完成即晉升（W3-11） |
