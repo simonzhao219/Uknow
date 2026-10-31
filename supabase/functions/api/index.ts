@@ -2404,8 +2404,8 @@ async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean
 // PayUni 拒單的告警（10/28 DEF01006 事故：商店停用讓每個人都付不了卻零告警）。
 // 分類判準與實證來源見 payuni-rejection.ts。兩種訊號都是 error 級——
 // 會被 /internal/system-alerts/recent 推到 LINE：
-//   * 商店／設定類：一人遇到就告警。去重鍵用 Status＋Message 而非訂單號——
-//     商店停用時每一筆都會撞同一組，只該留一筆；notify 與 return 是同一份
+//   * 商店／設定類：一人遇到就告警。去重鍵用 Status＋Message＋日期而非訂單號——
+//     商店停用時每一筆都會撞同一組，同一天只該留一筆（隔天持續故障會再推一次）；notify 與 return 是同一份
 //     結果的兩條路，也靠這把鍵收斂。
 //   * 持卡人層：單筆不告警（使用者看得到、會換卡），一小時內 3 位不同使用者
 //     連續失敗才告警。去重鍵含小時，事故跨小時持續會每小時一筆。
@@ -2419,6 +2419,9 @@ async function alertOnPayUniRejection(data: Record<string, string>) {
         reason: 'merchant_rejected',
         payuniStatus: data.Status ?? '',
         payuniMessage: data.Message ?? '',
+        // 日期桶（UTC）：沒人 resolve 時，同一商店故障隔天會再推一次。
+        // 比照 burst 的小時鍵；不動 logSystemAlertOnce 的去重語意。
+        day: new Date().toISOString().slice(0, 10),
       },
       sample,
       'PayUni 以商店／設定類錯誤拒單（無授權碼）——很可能所有人都付不了，請檢查商店狀態與後台設定',
