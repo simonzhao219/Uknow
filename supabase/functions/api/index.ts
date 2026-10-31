@@ -2643,6 +2643,8 @@ export async function reconcilePendingOrders(
               { reason: 'expired_query_failed', tradeNo: order.transaction_id! },
               { payuniStatus: failure.status, payuniMessage: failure.message },
               '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付',
+              // error：推播端點只撈 error，warning 永遠到不了 LINE（#460 P1-3）。
+              'error',
             );
           }
           const { error: expireErr } = await client
@@ -2668,12 +2670,21 @@ export async function reconcilePendingOrders(
       if (outcome.ok) {
         summary.resolved++;
       } else {
-        await logSystemAlert('reconcile-pending-payments', {
-          tradeNo: order.transaction_id,
-          message: outcome.message,
-        });
+        // PayUni 說已付、我方收斂失敗：錢已收、會籍沒開。error 才推得到 LINE
+        // （#460 P1-3）；同一單每輪對帳都會再撞，所以按訂單號去重。
+        await logSystemAlertOnce(
+          'reconcile-pending-payments',
+          { reason: 'resolve_failed', tradeNo: order.transaction_id! },
+          { message: outcome.message },
+          'PayUni 回報已付款但對帳收斂失敗——請人工確認會籍',
+          'error',
+        );
       }
     } catch (e) {
+      // 刻意維持 warning（#460 P1-3 評估過）：例外多半是查詢端 HTTP／網路故障，
+      // 一次會讓整批（最多 50 張）同時命中，升 error 會把 LINE 推播的 20 筆額度
+      // 洗掉、擠掉真告警。這裡也不會造成靜默後果——例外直接 continue，訂單
+      // 留在 pending 下輪再查，不會被標 expired。
       summary.queryErrors++;
       await logSystemAlert('reconcile-pending-payments', {
         tradeNo: order.transaction_id,
