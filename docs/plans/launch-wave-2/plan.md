@@ -107,13 +107,14 @@
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | #460 | 交報告，等 CI 合 |
+| R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | #460 ✅ 82b0f02 | 收工 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456（draft） | 待業主開通測試商店發票 |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
-| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` → `fix/notify-exit-code` | #454 ✅ f110586 | 施工 #460 P1-4；晉升後收緊 build-sha |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
+| N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | — | 施工中（#460 P1-4） |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃 v2.4，draft） | 規劃定稿，等業主審 |
-| P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
-| S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | — | 施工中 |
+| P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | #461 | 審過，等 CI 合 |
+| S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 | 修 HSTS 一行後合 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -133,3 +134,4 @@
 | 10/31 08:55 | 主 session worker 兩度重啟。安全網自查發現 **R1（自 10/30 15:52）與 P（自 16:13）卡在 Supabase MCP execute_sql 權限核准**→主 session 代跑唯讀查詢（訂單 16 筆、measure.sql 等價：users 13 全 step 3、completed 13／failed 3、卡單 0、告警 0、刊登 10）並以 priority now 送達、請其改由主 session 代查；共用開頭與 §3 補此規則。**#457 合進 develop（707d0b0）**，B 收工。C 交 v2.4（#453 f5d47ddc，未處置 P0／P1 皆 0），主 session 已核對 v2.3 自修 → 交業主審。批 2 開 S | 業主審 #453；等 P、S、R1、H |
 | 10/31 09:20 | 業主開通測試商店即時電子發票（W2-16）→ 通知 H rebase 後重發 dispatch。S 開工 `session_01MQovbBGBW1DseerZ2P4p64`（Sonnet）；在途程式工項＝P、S（H 只等驗證） | H 驗證結果；P／S PR |
 | 10/31 09:30 | **R1 交第 1 波審查 #460**：P0 0、P1 4、P2 13、現場無異常。P1-1 電子發票前提→W2-18；P1-2 凍結例外→W2-17／第 1 波裁決 40；P1-3 對帳告警 warning 級推不到 LINE（index.ts 約 :2595／:2625，推播只撈 error :2789）→併入 P；P1-4 notify 非 200 仍 exit 0、該輪告警永久遺失→派 D 開 `fix/notify-exit-code`。另記：reconcile 排程實際 4–7 小時一跑；規則 13 到期後所有 PR 的 framework-check 都會紅（H 未綠前須先延期）；#458 為 runner DNS 暫時失敗，下次 run 綠可關 | 業主刷卡頁實測；#460 CI 綠合；P／D／S／H |
+| 10/31 09:40 | **#460 合進 develop（82b0f02）**。D 以「一工項一個 session」為由不接 P1-4（正確）→ 新開 **N** `session_01MQovbAdbpZorMkp8trfxwx`（Sonnet，`fix/notify-exit-code`）。S 開 **#459**：主 session 審，無 P0，必修一條——HSTS 拿掉 `includeSubDomains`（子網域未盤點，一年快取收不回）。P 開 **#461**（紅 2486b6c、a95ae73 → 綠 f29c638、0559ea8；含 #460 P1-3）：主 session 審，無 P0／P1 | #459 修完合；#461 CI 綠合；N、H |
