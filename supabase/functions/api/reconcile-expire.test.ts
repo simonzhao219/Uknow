@@ -175,7 +175,7 @@ Deno.test('reconcile：查詢層非 SUCCESS → 依 Status＋Message 去重、er
   }
 });
 
-Deno.test('reconcile：查詢層失敗中標 expired → 先寫 warning 告警，終態照舊', async () => {
+Deno.test('reconcile：查詢層失敗中標 expired → 先寫 error 告警（推得到 LINE），終態照舊', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Expire Unverified' });
   const payuniStatus = `Q395E-${Date.now()}`;
@@ -200,7 +200,9 @@ Deno.test('reconcile：查詢層失敗中標 expired → 先寫 warning 告警�
 
     const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
     assertEquals(alerts.length, 1, `應有一筆 expire 告警，實得 ${JSON.stringify(alerts)}`);
-    assertEquals(alerts[0].severity, 'warning');
+    // #460 P1-3：推播端點只撈 error，warning 永遠到不了 LINE——可能實付的單
+    // 被標終態，必須送到人。
+    assertEquals(alerts[0].severity, 'error');
     const ctx = alerts[0].context as Record<string, unknown>;
     assertEquals(ctx.reason, 'expired_query_failed');
     assertEquals(ctx.payuniStatus, payuniStatus);
@@ -230,6 +232,35 @@ Deno.test('reconcile：查詢確認未付款而標 expired → 不寫告警（�
     const { data: order } = await client
       .from('payment_orders').select('status').eq('user_id', user.id).single();
     assertEquals(order?.status, 'expired');
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：PayUni 說已付但 resolve 失敗 → error 告警，同單重跑不重寫', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Resolve Failed' });
+
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    for (let i = 0; i < 2; i++) {
+      await reconcilePendingOrders(
+        client,
+        (merTradeNo) =>
+          Promise.resolve({
+            stillProcessing: false as const,
+            data: { MerTradeNo: merTradeNo, Status: 'SUCCESS' },
+          }),
+        () => Promise.resolve({ ok: false as const, message: 'rpc exploded' }),
+        { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+      );
+    }
+
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1, `每輪對帳都撞同一單，只該留一筆：${JSON.stringify(alerts)}`);
+    assertEquals(alerts[0].severity, 'error', '#460 P1-3：錢已收、會籍沒開，必須推得到 LINE');
+    assertEquals((alerts[0].context as Record<string, unknown>).reason, 'resolve_failed');
   } finally {
     await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
     await deleteTestUsers(client, [user.id]);
