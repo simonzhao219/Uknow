@@ -3293,3 +3293,16 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   index.ts 判準註解補一句：「使用者看得到」只在失敗是**那個人自己**的時候才成立。
 - **未處理（同類掃描記債）**：`/payuni/prepare` 與 notify 在 `payuniConfig()` 擲錯（Secrets 缺件）時沒有告警——
   `/health` 的 `payuniConfigured` 有外顯但沒人主動看；本次不動，第 3 波評估是否由 deploy 後的 health 檢查擋。
+
+## 2026-10-31｜漏網（告警、流程）｜第 2 波審查（`docs/plans/launch-wave-2/review.md`）
+
+- **補「零訊號」時沒掃同一個 job 的其他 step**（漏網）：#454 為前端部署失敗加了 LINE 告警（`deploy-smoke.yml` 的 `if: failure()`），
+  但它排在既有的 PayUni 閘門探測之前，所以閘門紅（2026-10-07 那種 403）仍然只有 job 變紅、無人看。規則：補某種故障的告警時，
+  同一個 workflow 的其他失敗路徑一起確認有沒有訊號。
+- **route 外快取沒在登出時清**（漏網）：#455／#457 的 `homeListingsCache` 存了搜尋字、篩選與座標，`App.tsx` 的 `SIGNED_OUT`
+  只清 `adminCache`。SPA 登出不重整，共用裝置的下一位使用者會帶出前一人的條件。規則：新增任何模組層快取，都要在 `SIGNED_OUT`
+  清一次；候選機械把關：`src/utils/*Cache.ts` 的 reset 必須被 App.tsx 引用。
+- **「靠排程驗」的未驗項要在合併後立刻 dispatch**（流程）：#459 的 `deno audit` 自述等排程驗，下一次排程在晉升後兩天。
+  審查 session dispatch 一次就驗完，同時發現 npm audit 從 10/26 的 0 跳到 12 個 high／critical（#467）。
+- **runner 端暫時故障連續出現**（環境）：10/30–31 有 DNS 解析失敗（#458，第二次）與「安裝 Node 24」10 分鐘逾時。
+  對帳 curl 重試已列第 3 波候選；`setup-node` 的逾時只能重跑，尚無處置。
