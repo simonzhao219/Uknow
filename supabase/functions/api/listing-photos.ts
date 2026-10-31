@@ -168,7 +168,7 @@ export class SweepError extends Error {
 
 /**
  * 寬限期（W2-7）：物件上傳後多久才可能被當成孤兒。寫死、改動要發 PR（維運參數，
- * 不是 reward_config 那類業務參數）。migration 20261102000001 的刪前複查寫死同一個值，
+ * 不是 reward_config 那類業務參數）。migration 20261110000001 的刪前複查寫死同一個值，
  * 兩邊必須相等，由 listing-photos.unit.test.ts 讀原文比對。
  */
 export const ORPHAN_GRACE_HOURS = 168;

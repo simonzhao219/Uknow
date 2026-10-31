@@ -91,7 +91,7 @@ async function listingsPolicies(sql: ReturnType<typeof postgres>): Promise<Polic
 const OWN_EXPR = '((user_id = auth.uid()) OR is_admin())';
 
 // golden 值取自 develop 分支(hosted,從 migration 乾淨重播)實測。
-// listings_delete_own 由 20261102000001 撤除:刪刊登一律走 DELETE /listings/:id
+// listings_delete_own 由 20261110000001 撤除:刪刊登一律走 DELETE /listings/:id
 // (Edge Function 會連帶清 Storage),RLS 直刪會留下孤兒照片。
 const EXPECTED: Record<string, Omit<PolicyRow, 'polname'>> = {
   listings_insert_own: {

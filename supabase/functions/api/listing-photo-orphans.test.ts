@@ -1,5 +1,5 @@
 // ============================================================
-// 刊登照片孤兒判準（migration 20261102000001）：list_orphan_listing_photos、
+// 刊登照片孤兒判準（migration 20261110000001）：list_orphan_listing_photos、
 // filter_unreferenced_listing_photos、_listing_photo_is_orphan，以及撤
 // listings_delete_own。
 //

@@ -746,7 +746,7 @@ Deno.test('index.ts：註冊 POST /internal/purge-orphan-listing-photos', async 
 
 Deno.test('ORPHAN_GRACE_HOURS 與 migration 刪前複查寫死的寬限期一致', async () => {
   const sql = await Deno.readTextFile(
-    new URL('../../migrations/20261102000001_listing_photo_orphans.sql', import.meta.url),
+    new URL('../../migrations/20261110000001_listing_photo_orphans.sql', import.meta.url),
   );
   const hours = [...sql.matchAll(/interval '(\d+) hours'/g)].map((m) => Number(m[1]));
   assertEquals(hours, [ORPHAN_GRACE_HOURS]);
