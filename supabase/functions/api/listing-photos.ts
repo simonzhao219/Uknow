@@ -110,6 +110,76 @@ export async function removeUnreferencedPhotos(
 }
 
 // ============================================================
+// 孤兒排程清理（POST /internal/purge-orphan-listing-photos；條款十之一）
+// ============================================================
+/** list_orphan_listing_photos 的回傳（camelCase；index.ts 由 RPC 的 jsonb 轉換）。 */
+export interface OrphanReport {
+  candidates: string[];
+  orphanTotal: number;
+  totalObjects: number;
+  referencedUrls: number;
+  matchedUrls: number;
+}
+
+export interface OrphanSweepDeps {
+  /** 第一支 RPC；出錯必須 throw。 */
+  listOrphans: (publicBase: string, graceHours: number, limit: number) => Promise<OrphanReport>;
+  /** 第二支 RPC（刪前複查）；出錯必須 throw（fail-closed）。 */
+  filterUnreferenced: (publicBase: string, names: string[]) => Promise<string[]>;
+  removeObjects: PhotoCleanupDeps['removeObjects'];
+  warn: (message: string, ...detail: unknown[]) => void;
+}
+
+export interface SweepOptions {
+  publicBase: string;
+  graceHours: number;
+  limit: number;
+  dryRun: boolean;
+  /** 只放行比例閘；錨點失效不可放行。 */
+  forceRatio: boolean;
+}
+
+export interface SweepResult {
+  dryRun: boolean;
+  candidates: string[];
+  removed: number;
+  notRemoved: number;
+  totalObjects: number;
+  referencedUrls: number;
+  matchedUrls: number;
+}
+
+export type SweepErrorCode = 'circuit_open' | 'sweep_failed';
+
+export class SweepError extends Error {
+  constructor(
+    readonly code: SweepErrorCode,
+    message: string,
+    readonly removedSoFar: number,
+  ) {
+    super(message);
+  }
+}
+
+/** Storage remove 單批上限。 */
+export const SWEEP_REMOVE_BATCH = 100;
+
+export function sweepOrphanPhotos(
+  _deps: OrphanSweepDeps,
+  opts: SweepOptions,
+): Promise<SweepResult> {
+  return Promise.resolve({
+    dryRun: opts.dryRun,
+    candidates: [],
+    removed: 0,
+    notRemoved: 0,
+    totalObjects: 0,
+    referencedUrls: 0,
+    matchedUrls: 0,
+  });
+}
+
+// ============================================================
 // 路由處理函式（依賴注入；index.ts 組一次 deps 並註冊路由）
 // ============================================================
 /** 兩個端點各自的限流（fail-open；放大風險由單次 10 筆與前綴約束托底）。 */
