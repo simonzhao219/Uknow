@@ -103,6 +103,7 @@
 | 2 | 手動刪 GitHub 分支 `claude/diag-prod-bundle`（第 1 波遺留） | ⬜ |
 | 3 | C 的規劃審查報告出來後審閱，通過才在第 3 波親打 `/tdd-implement listing-photo-retention` | 等 C |
 | 4 | 11/03 晉升合進 main 後核准 `production` 部署 | 等 11/03 |
+| 5 | 條款十之一上線（第 3 波 #453 合併、11/10 晉升後；規格書 §11）：(a) 晉升後主 session 先對 develop dispatch dry-run 驗權限——401 表示 develop 的 `RECONCILE_SECRET` 須與正式站同值，業主到 Supabase Secrets 設；(b) **11/13 前**業主在本機 curl 核對正式站候選清單，再設 repo variable `PHOTO_PURGE_LIVE=true` 開實刪；(c) 被比例閘擋下時用 `force_ratio` dispatch，orphanTotal 超過 500 分多輪 | 第 3 波 |
 
 ## 7. 執行 session 名冊（主 session 維護）
 
@@ -113,7 +114,7 @@
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | #462 ✅ 8d81c7a | 收工 |
-| C | `session_01MQovbCdFo86t9DX6d66Afq`（規劃）→ `session_01MQovbCF5454fAYfqy9NXaJ`（實作） | Opus | `feature/listing-photo-retention` | #453 | 規劃審過；實作 session 等業主親打 /tdd-implement（第 3 波） |
+| C | `session_01MQovbCdFo86t9DX6d66Afq`（規劃）→ `session_01MQovbCF5454fAYfqy9NXaJ`（實作） | Opus | `feature/listing-photo-retention` | #453（draft） | 實作完成，待第 3 波審與合併 |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | #461 ✅ 3b5b7c9 | 收工 |
 | S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 ✅ 9ac1231 | 收工 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
@@ -140,3 +141,4 @@
 | 10/31 10:00 | 01:42–01:52 UTC 一批 CI 的 unit-tests／static-checks 卡「安裝 Node 24」10 分鐘被取消（runner 端），#459、#462 各重跑失敗 job 一次。#461 與 develop 衝突（friction-log 檔尾）→ 主 session rebase 解衝突（紅燈 hash 改為 e5d876bd、99162571）→ CI 綠 → **#461 合進 develop（3b5b7c9）**。**H 完成 #456**：根因兩層——(1) 測試商店未開電子發票 UPP02085（W2-16 已開通）；(2) 開通後刷卡頁多了必填「買方名稱」，harness 固定填值；skeleton/sandbox dispatch run 41155657844 綠；ci.yml journey-full 改回 sandbox、刪「暫時至」、Closes #288。主 session 審無 P0／P1，rebase 到新 develop（6a1a31ff）。合併後主 session 對 develop 發 full/sandbox dispatch，晉升前先驗全套 | #456 CI 綠合 → full dispatch；#459／#462 重跑結果 |
 | 10/31 10:00 | 業主 W2-19：刷卡頁實測通過、首頁返回真機通過、#453 審過。開 **C 實作 session** `session_01MQovbCF5454fAYfqy9NXaJ`（Opus，分支 feature/listing-photo-retention，先備環境、等業主親打 `/tdd-implement listing-photo-retention`；屬第 3 波，11/03 晉升前不轉 ready） | 業主在該 session 打指令 |
 | 10/31 11:20 | **#456 合進 develop（dcb676d）**→ 主 session 對 develop 發 full/sandbox：run 41158578126 **綠**（25 分鐘，30 人、並行 8 人買方名稱共用無礙）。**#459（9ac1231）、#462（8d81c7a）依序 rebase 後合進 develop**——第 2 波程式工項全部合併。業主轉來 LINE P1「正式站付款對帳排程失敗」（run 41141064038）：查為 runner DNS 暫時失敗（curl exit 6，未送到正式站），下一輪 41157903717 已綠 → 留言並關 #458；第二次發生，對帳 curl 加重試列第 3 波候選。C 實作 session 已在跑（#453 TDD 紅燈期 CI 紅屬預期） | 11/02 22:00 收件；11/03 晉升 |
+| 10/31 11:30 | **C 實作完成**（#453 head fc8aab4b，draft）：六階段 TDD 全綠、/review-implementation P0 0／P1 4 全修／P2 15（僅 progress 過時一條未修，鷹架已刪）、決策升級進規格書 §11／workflow 檔頭／checklist。程序偏離：審查修正紅燈 commit 漏改一條斷言，C 自行 tdd-unlock 補 1 行（已記 friction-log；主 session 接受，要求下次先報）。照指示 11/03 前不轉 ready；第 3 波主 session 合併前須再審（實刪資料） | 第 3 波接手 |
