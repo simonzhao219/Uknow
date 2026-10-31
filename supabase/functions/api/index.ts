@@ -19,6 +19,11 @@ import {
   twDayPlusDays,
   twMonthKey,
 } from './tw-dates.ts';
+import {
+  classifyPayUniRejection,
+  isFailureBurst,
+  recentConsecutiveFailureUsers,
+} from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
@@ -2244,6 +2249,9 @@ async function persistRawResponseBestEffort(merTradeNo: string, data: Record<str
 //
 //   1. 沒有使用者在看 —— server-to-server、webhook、排程。使用者看得到
 //      錯誤且能重試時,使用者本身就是回饋管道,再寫告警只是噪音。
+//      ⚠️ 只在失敗是**那個人自己的**時候成立:同一個原因讓所有人都失敗
+//      (10/28 商店停用 DEF01006)時,每個人只看得到「我付款失敗」,沒有人
+//      能把它回報成系統事故——見 alertOnPayUniRejection。
 //   2. 有持久後果 —— 錢、會籍、資料完整性。單一請求失敗而狀態沒變的不算。
 //   3. 既有機制不會回報 —— 不會退信、不會重試到成功、不會有人抱怨。
 //
@@ -2389,6 +2397,43 @@ async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean
   }
 }
 
+// PayUni 拒單的告警（10/28 DEF01006 事故：商店停用讓每個人都付不了卻零告警）。
+// 分類判準與實證來源見 payuni-rejection.ts。兩種訊號都是 error 級——
+// 會被 /internal/system-alerts/recent 推到 LINE：
+//   * 商店／設定類：一人遇到就告警。去重鍵用 Status＋Message 而非訂單號——
+//     商店停用時每一筆都會撞同一組，只該留一筆；notify 與 return 是同一份
+//     結果的兩條路，也靠這把鍵收斂。
+//   * 持卡人層：單筆不告警（使用者看得到、會換卡），一小時內 3 位不同使用者
+//     連續失敗才告警。去重鍵含小時，事故跨小時持續會每小時一筆。
+// best-effort：logSystemAlertOnce 自己吞錯；查詢失敗只略過連續失敗判定。
+async function alertOnPayUniRejection(data: Record<string, string>) {
+  const sample = { sampleTradeNo: data.MerTradeNo ?? null };
+  if (classifyPayUniRejection(data) === 'merchant') {
+    await logSystemAlertOnce(
+      'payuni-merchant',
+      {
+        reason: 'merchant_rejected',
+        payuniStatus: data.Status ?? '',
+        payuniMessage: data.Message ?? '',
+      },
+      sample,
+      'PayUni 以商店／設定類錯誤拒單（無授權碼）——很可能所有人都付不了，請檢查商店狀態與後台設定',
+      'error',
+    );
+    return;
+  }
+  const users = await recentConsecutiveFailureUsers(sb());
+  if (users && isFailureBurst(users)) {
+    await logSystemAlertOnce(
+      'payuni-failure-burst',
+      { reason: 'consecutive_failures', hour: new Date().toISOString().slice(0, 13) },
+      { ...sample, distinctUsers: new Set(users).size, lastStatus: data.Status ?? '' },
+      '一小時內多位不同使用者連續付款失敗、期間無人付款成功——請檢查 PayUni 通道',
+      'error',
+    );
+  }
+}
+
 async function resolveOrderFromPayUni(
   data: Record<string, string>,
 ): Promise<{ ok: true; status: 'SUCCESS' | 'FAILED' } | { ok: false; message: string }> {
@@ -2429,6 +2474,7 @@ async function resolveOrderFromPayUni(
       .eq('transaction_id', MerTradeNo)
       .eq('status', 'pending')
       .or('payuni_response.is.null,payuni_response->>Status.neq.SUCCESS');
+    await alertOnPayUniRejection(data);
     return { ok: true, status: 'FAILED' };
   }
 
@@ -2597,6 +2643,8 @@ export async function reconcilePendingOrders(
               { reason: 'expired_query_failed', tradeNo: order.transaction_id! },
               { payuniStatus: failure.status, payuniMessage: failure.message },
               '查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付',
+              // error：推播端點只撈 error，warning 永遠到不了 LINE（#460 P1-3）。
+              'error',
             );
           }
           const { error: expireErr } = await client
@@ -2622,12 +2670,21 @@ export async function reconcilePendingOrders(
       if (outcome.ok) {
         summary.resolved++;
       } else {
-        await logSystemAlert('reconcile-pending-payments', {
-          tradeNo: order.transaction_id,
-          message: outcome.message,
-        });
+        // PayUni 說已付、我方收斂失敗：錢已收、會籍沒開。error 才推得到 LINE
+        // （#460 P1-3）；同一單每輪對帳都會再撞，所以按訂單號去重。
+        await logSystemAlertOnce(
+          'reconcile-pending-payments',
+          { reason: 'resolve_failed', tradeNo: order.transaction_id! },
+          { message: outcome.message },
+          'PayUni 回報已付款但對帳收斂失敗——請人工確認會籍',
+          'error',
+        );
       }
     } catch (e) {
+      // 刻意維持 warning（#460 P1-3 評估過）：例外多半是查詢端 HTTP／網路故障，
+      // 一次會讓整批（最多 50 張）同時命中，升 error 會把 LINE 推播的 20 筆額度
+      // 洗掉、擠掉真告警。這裡也不會造成靜默後果——例外直接 continue，訂單
+      // 留在 pending 下輪再查，不會被標 expired。
       summary.queryErrors++;
       await logSystemAlert('reconcile-pending-payments', {
         tradeNo: order.transaction_id,
@@ -2904,6 +2961,16 @@ app.post('/payuni/return', async (c) => {
   const decrypted = await decryptPayUniFormBody(body, config);
   if (!decrypted.ok) {
     console.error('[return]', decrypted.message);
+    // 與 notify 的 decrypt_failed 同理（金鑰設錯／輪替時每一筆都死在這裡），
+    // 且建單層被拒時 PayUni 不一定會打 notify——return 可能是唯一入口。
+    // 公開端點，必須去重；拿不到 MerTradeNo，鍵只有 reason。
+    await logSystemAlertOnce(
+      'payuni-return',
+      { reason: 'decrypt_failed' },
+      { detail: decrypted.message },
+      'return 驗章或解密失敗;若持續發生請檢查 PayUni HashKey/IV 設定',
+      'error',
+    );
     // 解密/驗簽失敗時（此時還不知道 tradeNo）不帶 status，
     // 讓前端 fallback 讀 DB——NotifyURL webhook 仍會是這筆訂單最終的真相來源。
     return fallbackRedirect();
