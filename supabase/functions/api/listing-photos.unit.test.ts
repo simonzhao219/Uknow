@@ -194,6 +194,8 @@ function report(over: Partial<OrphanReport> = {}): OrphanReport {
     totalObjects: 100,
     referencedUrls: 50,
     matchedUrls: 50,
+    referencedOwners: 20,
+    matchedOwners: 20,
     ...over,
   };
 }
@@ -205,7 +207,7 @@ function sweepHarness(over: Partial<OrphanSweepDeps> = {}, rep: OrphanReport = r
       log.list.push(args);
       return Promise.resolve(rep);
     },
-    filterUnreferenced: (_base, names) => {
+    filterUnreferenced: (names) => {
       log.filter.push(names);
       return Promise.resolve(names);
     },
@@ -220,7 +222,6 @@ function sweepHarness(over: Partial<OrphanSweepDeps> = {}, rep: OrphanReport = r
 }
 
 const LIVE: SweepOptions = {
-  publicBase: BASE,
   graceHours: 168,
   limit: 500,
   dryRun: false,
@@ -237,7 +238,7 @@ Deno.test('sweepOrphanPhotos：實刪 → 以 base／寬限期／上限查候選
   const rep = report();
   const { deps, log } = sweepHarness({}, rep);
   const result = await sweepOrphanPhotos(deps, LIVE);
-  assertEquals(log.list, [[BASE, 168, 500]]);
+  assertEquals(log.list, [[168, 500]]);
   assertEquals(log.filter, [rep.candidates]);
   assertEquals(log.remove, [rep.candidates]);
   assertEquals(result, {
@@ -249,6 +250,8 @@ Deno.test('sweepOrphanPhotos：實刪 → 以 base／寬限期／上限查候選
     totalObjects: 100,
     referencedUrls: 50,
     matchedUrls: 50,
+    referencedOwners: 20,
+    matchedOwners: 20,
   });
 });
 
@@ -260,7 +263,8 @@ Deno.test('sweepOrphanPhotos：列孤兒 RPC 出錯 → sweep_failed，不複查
 });
 
 Deno.test('sweepOrphanPhotos：RPC 統計欄位非有限數字 → sweep_failed，斷路器不得靜默放行', async () => {
-  for (const key of ['orphanTotal', 'totalObjects', 'referencedUrls', 'matchedUrls'] as const) {
+  const keys = ['orphanTotal', 'totalObjects', 'referencedOwners', 'matchedOwners'] as const;
+  for (const key of keys) {
     const { deps, log } = sweepHarness({}, report({ [key]: Number.NaN }));
     const err = await sweepFails(sweepOrphanPhotos(deps, LIVE));
     assertEquals(err.code, 'sweep_failed', key);
@@ -268,17 +272,32 @@ Deno.test('sweepOrphanPhotos：RPC 統計欄位非有限數字 → sweep_failed�
   }
 });
 
-Deno.test('sweepOrphanPhotos：錨點失效（有引用卻一個都對不到物件）→ circuit_open，force_ratio 也不放行', async () => {
+Deno.test('sweepOrphanPhotos：錨點失效（沒有刊登者對得到物件）→ circuit_open，force_ratio 也不放行', async () => {
   for (const forceRatio of [false, true]) {
-    const { deps, log } = sweepHarness({}, report({ matchedUrls: 0 }));
+    const { deps, log } = sweepHarness({}, report({ matchedUrls: 0, matchedOwners: 0 }));
     const err = await sweepFails(sweepOrphanPhotos(deps, { ...LIVE, forceRatio }));
     assertEquals(err.code, 'circuit_open');
     assertEquals(log.remove, []);
   }
 });
 
+Deno.test('sweepOrphanPhotos：錨點看刊登者比例——對得到物件的不到一半就中止（部分漂移）', async () => {
+  for (const [matchedOwners, blocked] of [[9, true], [10, false]] as const) {
+    const { deps, log } = sweepHarness({}, report({ referencedOwners: 20, matchedOwners }));
+    const run = sweepOrphanPhotos(deps, { ...LIVE, forceRatio: true });
+    if (blocked) {
+      const err = await sweepFails(run);
+      assertEquals([err.code, err.reason], ['circuit_open', 'anchor']);
+      assertEquals(log.remove, []);
+    } else {
+      assertEquals((await run).removed, 3);
+    }
+  }
+});
+
 Deno.test('sweepOrphanPhotos：沒有任何引用或 bucket 為空時錨點不判失效', async () => {
-  for (const over of [{ referencedUrls: 0, matchedUrls: 0 }, { totalObjects: 0, matchedUrls: 0 }]) {
+  const none = { referencedOwners: 0, matchedOwners: 0, referencedUrls: 0, matchedUrls: 0 };
+  for (const over of [none, { totalObjects: 0, matchedOwners: 0 }]) {
     const { deps } = sweepHarness({}, report({ ...over, candidates: [], orphanTotal: 0 }));
     assertEquals((await sweepOrphanPhotos(deps, LIVE)).removed, 0);
   }
@@ -292,15 +311,19 @@ Deno.test('sweepOrphanPhotos：比例閘看截斷前 orphan_total（物件逾千
   assertEquals([log.filter, log.remove], [[], []]);
 });
 
-Deno.test('sweepOrphanPhotos：比例恰為一半或物件數 ≤ 20 時比例閘不開', async () => {
-  const cases = [
-    report({ candidates: orphanNames(50), totalObjects: 100 }),
-    report({ candidates: orphanNames(20), totalObjects: 20, referencedUrls: 0, matchedUrls: 0 }),
-  ];
-  for (const rep of cases) {
-    const { deps } = sweepHarness({}, rep);
-    assertEquals((await sweepOrphanPhotos(deps, LIVE)).removed, rep.candidates.length);
-  }
+Deno.test('sweepOrphanPhotos：比例恰為一半時比例閘不開', async () => {
+  const rep = report({ candidates: orphanNames(50), totalObjects: 100 });
+  const { deps } = sweepHarness({}, rep);
+  assertEquals((await sweepOrphanPhotos(deps, LIVE)).removed, 50);
+});
+
+Deno.test('sweepOrphanPhotos：小 bucket 孤兒過半也觸發比例閘（無物件數豁免）', async () => {
+  const none = { referencedOwners: 0, matchedOwners: 0, referencedUrls: 0, matchedUrls: 0 };
+  const rep = report({ candidates: orphanNames(20), totalObjects: 20, ...none });
+  const { deps, log } = sweepHarness({}, rep);
+  const err = await sweepFails(sweepOrphanPhotos(deps, LIVE));
+  assertEquals([err.code, err.reason], ['circuit_open', 'ratio']);
+  assertEquals(log.remove, []);
 });
 
 Deno.test('sweepOrphanPhotos：force_ratio 放行比例閘，照常複查與刪除', async () => {
@@ -322,7 +345,7 @@ Deno.test('sweepOrphanPhotos：dry-run 回候選與統計，不呼叫 remove', a
 });
 
 Deno.test('sweepOrphanPhotos：dry-run 照樣受斷路器約束', async () => {
-  const { deps } = sweepHarness({}, report({ matchedUrls: 0 }));
+  const { deps } = sweepHarness({}, report({ matchedOwners: 0 }));
   const err = await sweepFails(sweepOrphanPhotos(deps, { ...LIVE, dryRun: true }));
   assertEquals(err.code, 'circuit_open');
 });
@@ -330,7 +353,7 @@ Deno.test('sweepOrphanPhotos：dry-run 照樣受斷路器約束', async () => {
 Deno.test('sweepOrphanPhotos：複查剔除的檔（期間被重新引用）不送去刪', async () => {
   const rep = report();
   const { deps, log } = sweepHarness({
-    filterUnreferenced: (_b, names) => Promise.resolve(names.slice(1)),
+    filterUnreferenced: (names) => Promise.resolve(names.slice(1)),
   }, rep);
   const result = await sweepOrphanPhotos(deps, LIVE);
   assertEquals(log.remove, [rep.candidates.slice(1)]);
@@ -428,7 +451,6 @@ function harness(over: Partial<ListingPhotoHandlerDeps> = {}) {
     },
     verifyInternalSecret: () => Promise.resolve(true),
     sweep: sweepHarness().deps,
-    publicBase: () => BASE,
     warn: (m) => log.warns.push(m),
     ...over,
   };
@@ -660,15 +682,17 @@ Deno.test('purge-orphan-listing-photos：只有 dry_run === false 才實刪，�
       totalObjects: 100,
       referencedUrls: 50,
       matchedUrls: 50,
+      referencedOwners: 20,
+      matchedOwners: 20,
     },
   });
   assertEquals(log.remove, [rep.candidates]);
 });
 
-Deno.test('purge-orphan-listing-photos：以 publicBase、寬限期常數與單輪上限查候選', async () => {
+Deno.test('purge-orphan-listing-photos：以寬限期常數與單輪上限查候選', async () => {
   const { app, log } = purgeHarness();
   await (await purge(app, {})).body?.cancel();
-  assertEquals(log.list, [[BASE, ORPHAN_GRACE_HOURS, ORPHAN_SWEEP_LIMIT]]);
+  assertEquals(log.list, [[ORPHAN_GRACE_HOURS, ORPHAN_SWEEP_LIMIT]]);
 });
 
 Deno.test('purge-orphan-listing-photos：include_names === true 才附候選 name', async () => {
@@ -695,7 +719,9 @@ Deno.test('purge-orphan-listing-photos：force_ratio === true 才放行比例閘
 });
 
 Deno.test('purge-orphan-listing-photos：錨點失效 → 500 circuit_open 帶 reason anchor', async () => {
-  const res = await purge(purgeHarness({}, report({ matchedUrls: 0 })).app, { force_ratio: true });
+  const res = await purge(purgeHarness({}, report({ matchedOwners: 0 })).app, {
+    force_ratio: true,
+  });
   assertEquals(res.status, 500);
   assertEquals((await res.json()).error.reason, 'anchor');
 });

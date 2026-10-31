@@ -119,19 +119,22 @@ export interface OrphanReport {
   totalObjects: number;
   referencedUrls: number;
   matchedUrls: number;
+  /** 有照片 URL 的刊登者數（錨點分母）。 */
+  referencedOwners: number;
+  /** 其中至少一條 URL 對得到物件的刊登者數（錨點分子）。 */
+  matchedOwners: number;
 }
 
 export interface OrphanSweepDeps {
   /** 第一支 RPC；出錯必須 throw。 */
-  listOrphans: (publicBase: string, graceHours: number, limit: number) => Promise<OrphanReport>;
+  listOrphans: (graceHours: number, limit: number) => Promise<OrphanReport>;
   /** 第二支 RPC（刪前複查）；出錯必須 throw（fail-closed）。 */
-  filterUnreferenced: (publicBase: string, names: string[]) => Promise<string[]>;
+  filterUnreferenced: (names: string[]) => Promise<string[]>;
   removeObjects: PhotoCleanupDeps['removeObjects'];
   warn: (message: string, ...detail: unknown[]) => void;
 }
 
 export interface SweepOptions {
-  publicBase: string;
   graceHours: number;
   limit: number;
   dryRun: boolean;
@@ -149,6 +152,8 @@ export interface SweepResult {
   totalObjects: number;
   referencedUrls: number;
   matchedUrls: number;
+  referencedOwners: number;
+  matchedOwners: number;
 }
 
 export type SweepErrorCode = 'circuit_open' | 'sweep_failed';
@@ -196,7 +201,7 @@ export async function sweepOrphanPhotos(
 ): Promise<SweepResult> {
   let rep: OrphanReport;
   try {
-    rep = await deps.listOrphans(opts.publicBase, opts.graceHours, opts.limit);
+    rep = await deps.listOrphans(opts.graceHours, opts.limit);
   } catch (err) {
     throw new SweepError('sweep_failed', `列孤兒失敗：${errorMessage(err)}`, 0);
   }
@@ -223,12 +228,14 @@ export async function sweepOrphanPhotos(
     totalObjects: rep.totalObjects,
     referencedUrls: rep.referencedUrls,
     matchedUrls: rep.matchedUrls,
+    referencedOwners: rep.referencedOwners,
+    matchedOwners: rep.matchedOwners,
   };
   if (opts.dryRun || rep.candidates.length === 0) return result;
 
   let toRemove: string[];
   try {
-    toRemove = await deps.filterUnreferenced(opts.publicBase, rep.candidates);
+    toRemove = await deps.filterUnreferenced(rep.candidates);
   } catch (err) {
     throw new SweepError('sweep_failed', `刪前複查失敗：${errorMessage(err)}`, 0);
   }
@@ -273,8 +280,6 @@ export interface ListingPhotoHandlerDeps {
   /** x-internal-secret 與 RECONCILE_SECRET 的常數時間比對（同兩個既有 /internal/* 端點）。 */
   verifyInternalSecret: (c: Context) => Promise<boolean>;
   sweep: OrphanSweepDeps;
-  /** 本 bucket 的 public URL 前綴（由 publicUrlOf('x') 去尾推導）。 */
-  publicBase: () => string;
   warn: (message: string, ...detail: unknown[]) => void;
 }
 
@@ -336,7 +341,6 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
       const dryRun = body?.dry_run !== false;
       try {
         const r = await sweepOrphanPhotos(deps.sweep, {
-          publicBase: deps.publicBase(),
           graceHours: ORPHAN_GRACE_HOURS,
           limit: ORPHAN_SWEEP_LIMIT,
           dryRun,
@@ -353,6 +357,8 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
             totalObjects: r.totalObjects,
             referencedUrls: r.referencedUrls,
             matchedUrls: r.matchedUrls,
+            referencedOwners: r.referencedOwners,
+            matchedOwners: r.matchedOwners,
             ...(body?.include_names === true ? { names: r.candidates } : {}),
           },
         });

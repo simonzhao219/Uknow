@@ -28,31 +28,29 @@
 -- 刪除路徑不變。回滾以新 migration 補回 create policy。
 -- ============================================================
 
--- 單一物件的引用判準（不含寬限期與格式，兩支 RPC 各自先篩）。
--- 刻意不加 set search_path／security definer：那會讓 planner 無法內聯，
--- 每個物件都變成一次函式呼叫；內部一律 schema-qualified。
-create or replace function public._listing_photo_is_orphan(p_public_base text, p_name text)
+-- 紅燈期 stub：新簽章就位、行為未改（仍以完整字串比對，取不到 base 時一律當未引用）。
+drop function if exists public.filter_unreferenced_listing_photos(text, text[]);
+drop function if exists public.list_orphan_listing_photos(text, interval, int);
+drop function if exists public._listing_photo_is_orphan(text, text);
+
+create or replace function public._listing_photo_name_from_url(p_url text)
+returns text
+language sql
+immutable
+as $$ select null::text $$;
+
+create or replace function public._listing_photo_is_orphan(p_name text)
 returns boolean
 language sql
 stable
 as $$
   select not exists (
-    select 1
-    from public.listings l
-    where l.user_id::text = split_part(p_name, '/', 1)
-      and p_public_base || p_name = any(l.photos)
+    select 1 from public.listings l
+    where l.user_id::text = split_part(p_name, '/', 1) and p_name = any(l.photos)
   )
 $$;
 
-revoke execute on function public._listing_photo_is_orphan(text, text)
-  from anon, authenticated, public;
-grant execute on function public._listing_photo_is_orphan(text, text) to service_role;
-
-create or replace function public.list_orphan_listing_photos(
-  p_public_base text,
-  p_grace interval,
-  p_limit int
-)
+create or replace function public.list_orphan_listing_photos(p_grace interval, p_limit int)
 returns jsonb
 language sql
 stable
@@ -60,21 +58,13 @@ security definer
 set search_path = ''
 as $$
   with objs as (
-    select o.name, o.created_at
-    from storage.objects o
-    where o.bucket_id = 'listings-photos'
+    select o.name, o.created_at from storage.objects o where o.bucket_id = 'listings-photos'
   ),
   orphans as (
-    select name, created_at
-    from objs
+    select name, created_at from objs
     where created_at < now() - p_grace
       and name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(jpg|png|webp)$'
-      and public._listing_photo_is_orphan(p_public_base, name)
-  ),
-  refs as (
-    select u
-    from public.listings l, unnest(l.photos) u
-    where left(u, length(p_public_base)) = p_public_base
+      and public._listing_photo_is_orphan(name)
   )
   select jsonb_build_object(
     'candidates', coalesce(
@@ -82,30 +72,13 @@ as $$
        from (select name, created_at from orphans order by created_at, name limit p_limit) c),
       '[]'::jsonb
     ),
-    -- 截斷前的總數：Edge 的比例閘用它，不用被 limit 截斷的 candidates 長度。
     'orphan_total', (select count(*) from orphans),
     'total_objects', (select count(*) from objs),
-    'referenced_urls', (select count(*) from refs),
-    'matched_urls', (
-      select count(*)
-      from refs r
-      where exists (
-        select 1 from storage.objects o
-        where o.bucket_id = 'listings-photos'
-          and o.name = substr(r.u, length(p_public_base) + 1)
-      )
-    )
+    'referenced_urls', 0, 'matched_urls', 0, 'referenced_owners', 0, 'matched_owners', 0
   )
 $$;
 
-revoke execute on function public.list_orphan_listing_photos(text, interval, int)
-  from anon, authenticated, public;
-grant execute on function public.list_orphan_listing_photos(text, interval, int) to service_role;
-
-create or replace function public.filter_unreferenced_listing_photos(
-  p_public_base text,
-  p_names text[]
-)
+create or replace function public.filter_unreferenced_listing_photos(p_names text[])
 returns text[]
 language sql
 stable
@@ -116,14 +89,18 @@ as $$
   from storage.objects o
   where o.bucket_id = 'listings-photos'
     and o.name = any(p_names)
-    -- c_min_grace：與 ORPHAN_GRACE_HOURS 相等（見檔頭）
     and o.created_at < now() - interval '168 hours'
     and o.name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(jpg|png|webp)$'
-    and public._listing_photo_is_orphan(p_public_base, o.name)
+    and public._listing_photo_is_orphan(o.name)
 $$;
 
-revoke execute on function public.filter_unreferenced_listing_photos(text, text[])
-  from anon, authenticated, public;
-grant execute on function public.filter_unreferenced_listing_photos(text, text[]) to service_role;
+revoke execute on function public._listing_photo_name_from_url(text) from anon, authenticated, public;
+revoke execute on function public._listing_photo_is_orphan(text) from anon, authenticated, public;
+revoke execute on function public.list_orphan_listing_photos(interval, int) from anon, authenticated, public;
+revoke execute on function public.filter_unreferenced_listing_photos(text[]) from anon, authenticated, public;
+grant execute on function public._listing_photo_name_from_url(text) to service_role;
+grant execute on function public._listing_photo_is_orphan(text) to service_role;
+grant execute on function public.list_orphan_listing_photos(interval, int) to service_role;
+grant execute on function public.filter_unreferenced_listing_photos(text[]) to service_role;
 
 drop policy if exists listings_delete_own on public.listings;

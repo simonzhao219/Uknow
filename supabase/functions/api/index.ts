@@ -4440,9 +4440,8 @@ export function listingPhotoDeps() {
       return !!secret && await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret);
     },
     sweep: {
-      listOrphans: async (publicBase: string, graceHours: number, limit: number) => {
+      listOrphans: async (graceHours: number, limit: number) => {
         const { data, error } = await sb().rpc('list_orphan_listing_photos', {
-          p_public_base: publicBase,
           p_grace: `${graceHours} hours`,
           p_limit: limit,
         });
@@ -4453,11 +4452,12 @@ export function listingPhotoDeps() {
           totalObjects: Number(data.total_objects),
           referencedUrls: Number(data.referenced_urls),
           matchedUrls: Number(data.matched_urls),
+          referencedOwners: Number(data.referenced_owners),
+          matchedOwners: Number(data.matched_owners),
         };
       },
-      filterUnreferenced: async (publicBase: string, names: string[]) => {
+      filterUnreferenced: async (names: string[]) => {
         const { data, error } = await sb().rpc('filter_unreferenced_listing_photos', {
-          p_public_base: publicBase,
           p_names: names,
         });
         if (error) throw new Error(error.message);
@@ -4466,8 +4466,6 @@ export function listingPhotoDeps() {
       removeObjects: listingPhotoRemoveObjects,
       warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
     },
-    // 由非空 path 推導 base（同 cleanupListingPhotos，不靠 storage-js 對空 path 的行為）。
-    publicBase: () => listingPhotoPublicUrl('x').slice(0, -1),
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
   };
 }

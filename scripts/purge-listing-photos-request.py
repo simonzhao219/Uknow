@@ -185,6 +185,8 @@ def _ok_body(**over) -> str:
         "totalObjects": 100,
         "referencedUrls": 50,
         "matchedUrls": 50,
+        "referencedOwners": 20,
+        "matchedOwners": 20,
     }
     data.update(over)
     return json.dumps({"success": True, "data": data})
@@ -214,6 +216,7 @@ JUDGE_CASES: list[tuple[str, tuple, bool, str]] = [
         False,
         "not_deployed",
     ),
+    ("200 但缺 matchedOwners → 失敗", ("200", json.dumps({"success": True, "data": {**json.loads(_ok_body())["data"], "matchedOwners": None}}), ""), False, "bad_shape"),
     ("200 但缺 orphanTotal → 失敗", ("200", json.dumps({"success": True, "data": {**json.loads(_ok_body())["data"], "orphanTotal": None}}), ""), False, "bad_shape"),
     ("狀態碼重複輸出（curl 失敗時 000 兩次）→ 正規化為 000", ("000\n000", "", ""), False, "http_000"),
     ("狀態碼帶空白換行 → 正規化", (" 200\n", _ok_body(), ""), True, ""),
@@ -248,6 +251,8 @@ def self_test() -> int:
     ok = judge("200", _ok_body(orphanTotal=900), "")
     if "orphanTotal=900" not in ok.stats:
         failures.append("  FAIL: [judge] stats 應含 orphanTotal")
+    if "matchedOwners=20" not in ok.stats or "referencedOwners=20" not in ok.stats:
+        failures.append("  FAIL: [judge] stats 應含 referencedOwners／matchedOwners（錨點依據）")
     # 回應帶 names(例如有人誤送 include_names)時,輸出也不能印出來
     leaked = judge("200", _ok_body(names=[f"{UID}/1_a.jpg"]), "")
     if UID in "\n".join(leaked.lines):
