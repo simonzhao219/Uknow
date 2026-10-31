@@ -106,3 +106,15 @@ session**，審該波合進 main 的全部變動（四視角＋事實核對＋�
 單一長壽 session 的 context 會被歷史吃掉、裁決與事實混在對話裡，新 session
 只看得到 repo——所以交接物一律落檔（plan.md 的裁決表與進度表、
 dispatch-prompts.md 的開局 prompt、PR 留言），不靠記憶。
+
+| 角色 | 做 | 不做 | 交接物 |
+|---|---|---|---|
+| 主 session（每波一個） | 讀 plan、派工（`create_session` 帶 `source_url`）、審每支 PR、收業主裁決、rebase／解衝突、開晉升 PR、代跑要人核准的 MCP 查詢、波末開審查 session、刪鷹架 | 寫產品碼（例外：≤10 行的 CI／文件修補，記進 plan §8）；跨波 | plan.md（裁決表、名冊、進度表）、dispatch-prompts.md、PR 留言 |
+| 執行 session（一工項一個） | 照 prompt 施工、自己的 PR 推到 CI 綠、回報 PR 號／偏離／未驗項 | 改別人分支；裁決；接第二個工項 | PR（內文照 `.github/pull_request_template.md`） |
+| 審查 session（每波一個） | 審該波合進 main 的全部變動：四視角＋未驗項核對＋上線後現場；寫 `review.md` 與「升級進長期文件」表 | 改產品碼；直接用要人核准的 MCP（現場 SQL 交主 session 代跑） | `review.md`、friction-log 條目 |
+
+**凍結期只許 hotfix。**（第 1 波裁決 8）晉升後的凍結窗口內，main 只收「營運中發現、
+定義明確、不動註冊／付款／登入主幹、無 migration」的修正，而且照樣走晉升 PR＋業主核准
+`production`；develop 照常合併。凍結期開的晉升 PR，內文要**逐支標類別**（hotfix／docs／其他），
+「其他」要附業主授權的原話與日期，並記進該波 plan 的裁決表——第 1 波唯一一次凍結期晉升（#450）
+就帶上了動付款主幹的 #449，核准只剩 PR 內文一句轉述。

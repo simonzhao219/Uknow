@@ -13,6 +13,10 @@
 | develop | 正式專案底下的 **persistent branch**（名稱 `develop`） | `config/supabaseTarget.ts` | 可安全驗證的真後端 |
 | main（正式站） | **正式專案**本身 | `src/utils/supabase/info.tsx` | 正式站，部署需人工核准 |
 
+> **核准 production 部署時找對那一筆**：`deploy-supabase.yml` 由 `workflow_run` 觸發，Actions 列表上它的分支欄
+> 顯示的是**預設分支（develop）**，不是 main。晉升合併後要核准的，是建立時間**緊跟 main 那次 CI push run 完成**
+> 的那筆「Waiting」run；核准後看 `/api/health` 的 `sha` 等於 main HEAD 才算完成。
+
 > **develop 是「分支」不是「另一個專案」。** 它由 Supabase 的 GitHub 整合
 > （Branching）從正式專案長出來，有自己的 DB／API 金鑰／Edge Function／
 > Secrets，但**掛在正式專案底下**——同一個組織、同一份帳單，在儀表板上要從
@@ -414,6 +418,21 @@ log 管線另存一份 auth 事件（含 email），purge 刪不到，依雲端�
 ⚠️ **PayUni 測試站依來源地區封鎖**（2026-10-07 已驗證）：法國住宅 IP 回 403、
 台灣 VPN 與美國 GitHub runner 放行。海外手動驗證 sandbox 付款需先連台灣 VPN；
 遇到 403 先查來源 IP，不要先懷疑程式。
+
+**電子發票前提**：建單固定帶 `TradeInvoice: 1`（`supabase/functions/api/index.ts` 的 `/payuni/prepare`），
+發票由 PayUni 代開。**正式與測試商店都要各自在 PayUni 後台開通電子發票**，沒開通時 PayUni 不是忽略參數，
+而是整張支付頁拒收：導回 `UPP02085 商店尚未啟用電子發票`、每筆付款都失敗（2026-10-30 測試商店實證）。
+開通後刷卡頁多一個必填「買方名稱」。換商店或新開環境時，先確認這一項再開放付款。
+
+**換商店 SOP**：PayUni 在建單層回 `DEF01006 商店狀態不符合`（回應只有 5 鍵、無 `ResCode`）代表**商店本身被停用**，
+不是程式錯（2026-10-28 正式站實際發生）。換到新商店時：
+1. 依步驟 1 重設該環境的三把 Secret（`PAYUNI_(TEST_)MER_ID`／`HASH_KEY`／`HASH_IV`）並重新部署；
+2. 新商店後台的 NotifyURL／ReturnURL 依上表填**後端**網址；
+3. 確認電子發票已開通（上一段）；
+4. `/health` 的 `payuniMode` 與環境相符後，從台灣網路走到刷卡頁（不必付款）確認支付頁出得來。
+
+商店級拒絕（`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`）會寫 error 級 `payuni-merchant` 告警並推 LINE
+（`supabase/functions/api/payuni-rejection.ts`），延遲最多一輪對帳排程。
 
 ---
 
