@@ -340,6 +340,7 @@ commit;
 | 10/29 22:45 量測 #2 | 14:17／16:17／18:17／20:17 四次觸發又被 worker 重啟打斷，22:17 這次延遲 28 分才跑到。§5 第 1 項：24 小時內註冊 7、驗證 7（100%）；第 3 項：profiles 10 人全在 step 3；第 4 項：24 小時訂單 completed 7、無 failed，累計 13 筆／completed 10，卡住 pending 0、pending 但 SUCCESS 0；第 5 項：未解決告警 0；第 6 項：check-email 近 15 分鐘 0 桶；第 9 項：R2 邀請 0。另看：is_admin 2、加入推薦計畫 9／10、active 推薦碼 10、刊登 7（業主已建）。第 2、7、8 項同 #1 | 無異常，不打擾業主。排程觸發被 worker 重啟吃掉的比率太高（10 次只跑成 2 次），記 friction-log |
 | 10/30 00:26 量測 #3 | 與 #2 相同：近 2 小時無新註冊、無新訂單；累計使用者 10（全 step 3）、訂單 13（completed 10／failed 3，皆為 10/28 商店停用那批）、卡住 pending 0、pending 但 SUCCESS 0、未解決告警 0、限流桶 0、R2 邀請 0；刊登 7、加入推薦計畫 9 | 無異常，不打擾業主 |
 | 10/30 22:42 量測 #4、第 1 波主 session 收尾 | 量測 #4：使用者 13（24 小時新增 3、全數驗證）、訂單 16（completed 13／failed 3，failed 仍是 10/28 商店停用那批）、卡住 pending 0、pending 但 SUCCESS 0、未解決告警 0、限流桶打滿 0、刊登 10、加入推薦計畫 12。業主宣布進第 2 波，主 session 收尾：量測排程 `trig_01KmMD7RYZFDjNiLWHrNDhx3` 已停用（10/29–31 原排 18 次，實跑 4 次，原因見 friction-log）；無開著的 PR、無其他排程。留給第 2 波主 session：(1) §6 待辦（優先：刊登首頁返回閃骨架與順序跳動、正式站前端部署失敗零訊號）；(2) 本目錄退場——值得長期保存的裁決升級進規格書／friction-log 後整個 `launch-wave-1/` 刪除；(3) 業主手動刪 GitHub 分支 `claude/diag-prod-bundle` | 第 1 波結束 |
+| 10/31 審查 | 第 1 波審查 session 完成（報告 `review.md`）：P0 0、P1 4（#449 商店前提未實證、凍結期非 hotfix 上 main、錢相關告警 warning 到不了 LINE、notify 吞推送失敗）、P2 13；未驗項與升級清單見該檔 §2、§6 | 第 2 波主 session 依 review.md §5、§6 處置後刪除本目錄 |
 
 **執行 session 名冊**（主 session 維護）
 
