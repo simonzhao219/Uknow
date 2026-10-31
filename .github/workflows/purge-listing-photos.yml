@@ -8,7 +8,9 @@ name: Purge Listing Photos
 #
 # 刪的是**沒有備份**的 Storage 物件，所以：
 #   - 預設 dry-run：排程只有 repo variable PHOTO_PURGE_LIVE == 'true' 才實刪
-#     （W2-8：業主核對候選清單後才開）；dispatch 依輸入，預設 dry-run
+#     （W2-8：業主核對候選清單後才開）。dispatch 預設 dry-run；正式站的 dispatch
+#     帶 dry_run=false 也要 PHOTO_PURGE_LIVE == 'true' 才實刪，否則強制改為
+#     dry-run 並在 step summary 警告（W3-8）；develop 的 dispatch 照輸入
 #   - 端點自帶斷路器（錨點失效、比例閘）；比例閘誤擋時 dispatch 帶
 #     force_ratio=true 放行單輪
 #   - body 組裝與回應判讀在 scripts/purge-listing-photos-request.py，
@@ -98,14 +100,19 @@ jobs:
           ENDPOINT: https://${{ steps.target.outputs.ref }}.supabase.co/functions/v1/api/internal/purge-orphan-listing-photos
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
           EVENT: ${{ github.event_name }}
-          # 實刪開關只管正式站；develop 只走 dispatch，依輸入決定。
+          # 實刪開關只管正式站（排程與 dispatch 都要它）；develop 只走 dispatch，依輸入決定。
           LIVE: ${{ (inputs.target || 'production') == 'production' && vars.PHOTO_PURGE_LIVE || '' }}
           DRY_INPUT: ${{ inputs.dry_run }}
           FORCE_INPUT: ${{ inputs.force_ratio }}
         run: |
           set -uo pipefail
           python3 scripts/purge-listing-photos-request.py body --event "$EVENT" --live "$LIVE" \
-            --dry-input "$DRY_INPUT" --force-input "$FORCE_INPUT" > /tmp/purge-body.json
+            --dry-input "$DRY_INPUT" --force-input "$FORCE_INPUT" --target "$TARGET" \
+            > /tmp/purge-body.json 2> /tmp/purge-body-warn.txt
+          if [ -s /tmp/purge-body-warn.txt ]; then
+            cat /tmp/purge-body-warn.txt
+            cat /tmp/purge-body-warn.txt >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "送出參數：$(cat /tmp/purge-body.json)"
           code="$(curl -sS -o /tmp/purge-resp.json -w '%{http_code}' --max-time 150 -X POST "$ENDPOINT" \
             -H 'Content-Type: application/json' -H "x-internal-secret: $RECONCILE_SECRET" \

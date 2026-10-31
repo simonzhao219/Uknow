@@ -662,8 +662,9 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     - 寬限期以上傳時間起算：上傳後超過 7 日才存檔的照片，存檔前可能已被清掉，刊登會破圖（不做存檔前檢查的代價）。
     - 檔案前綴是上傳者的 uid；日後若做「管理者代他人上傳或改刊登」，代傳的檔前綴是管理者 uid，寬限期後會被清掉，
       屆時要改成以刊登者 uid 上傳。
-  - **安全閘**：預設 dry-run，排程只有 repo variable `PHOTO_PURGE_LIVE` 為 `true` 才實刪；未開時只列候選、不刪任何
-    檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
+  - **安全閘**：預設 dry-run。正式站不論排程或 `workflow_dispatch`，都要 repo variable `PHOTO_PURGE_LIVE` 為 `true`
+    才實刪；dispatch 帶 `dry_run=false` 而開關未開時，會強制改為 dry-run 並在 step summary 警告。develop 的 dispatch
+    照輸入。開關未開時只列候選、不刪任何檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
     斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有照片 URL 的刊登者中，對得到物件的
     不到一半）不可放行；比例閘（`ratio`，孤兒超過 bucket 物件數一半，不分 bucket 大小，develop 因此常需放行）可用
     `workflow_dispatch` 帶 `force_ratio=true` 放行單輪。孤兒超過單輪上限時，依 `orphanTotal` 分多輪 dispatch，每輪先 dry-run 看清單。刪除前再以 RPC 複查一次引用。失敗時開 issue

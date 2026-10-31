@@ -15,6 +15,9 @@ framework-check 每次 CI 跑。
      dispatch 時只有輸入字面量 `false` 才實刪。其餘(含空字串、大小寫
      不同的 `False`)一律 dry-run。
   B2 `force_ratio` 只有 dispatch 輸入字面量 `true` 才送 true;排程永不放行。
+  B4 正式站的 dispatch 要求實刪(`dry_run=false`)時,`PHOTO_PURGE_LIVE` 也必須是
+     `'true'`;否則強制送 `dry_run: true`,並印一行警告說明原因(W3-8)。develop 的
+     dispatch 照輸入走;`force_ratio` 不受影響。
   B3 workflow 永遠不送 `include_names`——repo 是 public,回應裡不能有含
      會員 uid 的 name。
 
@@ -32,7 +35,8 @@ framework-check 每次 CI 跑。
 
 跑法:
   python3 scripts/purge-listing-photos-request.py body --event schedule --live "$LIVE" \\
-      --dry-input "$DRY" --force-input "$FORCE"         印出 request body(JSON)
+      --dry-input "$DRY" --force-input "$FORCE" --target "$TARGET"   印出 request body(JSON;
+      B4 降級時警告印到 stderr)
   python3 scripts/purge-listing-photos-request.py judge --status 200 \\
       --body-file resp.json --live "$LIVE" --sent-file body.json   判讀回應;失敗 exit 1
       (有 $GITHUB_OUTPUT 時寫入 code= 與 stats=,給失敗 issue 用)
@@ -52,14 +56,23 @@ STAT_KEYS = (
 )
 
 
+def _dispatch_live_blocked(event: str, live: str, dry_input: str, target: str) -> bool:
+    """B4:正式站 dispatch 要求實刪、但 PHOTO_PURGE_LIVE 未開。"""
+    return event == "workflow_dispatch" and target == "production" and dry_input == "false" and live != "true"
+
+
 def build_body(event: str, live: str, dry_input: str, force_input: str, target: str = "production") -> dict:
-    """B1–B3:只回 dry_run 與 force_ratio 兩個 JSON boolean。"""
+    """B1–B4:只回 dry_run 與 force_ratio 兩個 JSON boolean。"""
     if event == "workflow_dispatch":
-        return {"dry_run": dry_input != "false", "force_ratio": force_input == "true"}
+        dry = dry_input != "false" or _dispatch_live_blocked(event, live, dry_input, target)
+        return {"dry_run": dry, "force_ratio": force_input == "true"}
     return {"dry_run": live != "true", "force_ratio": False}
 
 
 def body_warning(event: str, live: str, dry_input: str, target: str) -> str | None:
+    """B4 降級時給 step summary 的一行警告;其餘情況回 None。"""
+    if _dispatch_live_blocked(event, live, dry_input, target):
+        return "::warning::已改為 dry-run：正式站的實刪需要 repo variable PHOTO_PURGE_LIVE 為 true（目前未開）"
     return None
 
 
@@ -121,9 +134,12 @@ def _arg(argv: list[str], name: str) -> str:
 
 def main(argv: list[str]) -> int:
     if argv[:1] == ["body"]:
-        print(json.dumps(build_body(
-            _arg(argv, "--event"), _arg(argv, "--live"), _arg(argv, "--dry-input"), _arg(argv, "--force-input"),
-        )))
+        event, live = _arg(argv, "--event"), _arg(argv, "--live")
+        dry_input, target = _arg(argv, "--dry-input"), _arg(argv, "--target") or "production"
+        warning = body_warning(event, live, dry_input, target)
+        if warning:
+            print(warning, file=sys.stderr)
+        print(json.dumps(build_body(event, live, dry_input, _arg(argv, "--force-input"), target)))
         return 0
     if argv[:1] == ["judge"]:
         path = _arg(argv, "--body-file")
