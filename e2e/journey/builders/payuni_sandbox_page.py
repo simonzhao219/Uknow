@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
-from builders.page_diagnostics import dump_page
+from builders.page_diagnostics import _TEST_RESULTS, captured_return_form, dump_page
+from tools import payuni_crypto
 
 SANDBOX_URL_GLOB = "https://sandbox-api.payuni.com.tw/**"
 
@@ -48,6 +49,13 @@ _EMAIL_CANDIDATES = [
     "input[autocomplete='email']",
     "input[name='payerEmail']",
 ]
+# 電子發票「買方名稱」：2026-10-31 商店開通電子發票後，刷卡頁多出這個**必填**欄位
+# （沒有 name／id／placeholder，只有旁邊的標籤文字）。空著送出會跳「格式不正確
+# 請重新輸入」，表單原地不動。標籤相鄰優先，其次是唯一一個沒 placeholder 的文字欄。
+_BUYER_NAME_CANDIDATES = [
+    "xpath=(//*[contains(normalize-space(text()),'買方名稱')]/following::input[@type='text'])[1]",
+    "input[type='text']:not([placeholder])",
+]
 # 付款方式的 radio。卡片欄位預設就看得到，但不確定 radio 是否已選——
 # 明確選一次比較保險（已選就不動）。
 _CREDIT_RADIO_CANDIDATES = [
@@ -77,7 +85,12 @@ class PayuniSandboxPage:
         self.page = page
 
     def wait_loaded(self, timeout: float = 60_000) -> None:
-        self.page.wait_for_url(SANDBOX_URL_GLOB, timeout=timeout)
+        # 拒單時 sandbox 頁一閃而過，可能在這裡輪詢到之前就已導回——兩種落點都放行，
+        # 由 _wait_form 分辨並帶出 PayUni 的原話。
+        self.page.wait_for_url(
+            lambda url: url.startswith("https://sandbox-api.payuni.com.tw/") or "/payment/result" in url,
+            timeout=timeout,
+        )
         self.page.wait_for_load_state("domcontentloaded")
 
     def _optional(self, candidates: list[str]):
@@ -123,12 +136,58 @@ class PayuniSandboxPage:
         """
         field.click()
         field.press_sequentially(text, delay=50)
+        # 2026-10 新表單：欄位離開焦點時才把值寫進表單模型並套遮罩（卡號
+        # 顯示成末四碼、CVV 顯示 ***）。不 blur 就直接送出，驗證讀到的是舊值。
+        field.blur()
+
+    def _explain_rejected_order(self, hash_key: str, hash_iv: str) -> str:
+        """PayUni 沒顯示刷卡表單、直接把瀏覽器導回我們時，解出它回的 Status/Message。
+
+        2026-10-30 起的新症狀：/api/upp 一閃而過就 302 回 /payment/result?
+        status=FAILED——那是商店級拒單（憑證、額度、商店狀態…），不是表單欄位
+        問題，改選擇器救不了。加密酬載在 POST /payuni/return 裡。
+        """
+        form = captured_return_form(self.page)
+        if not form:
+            return "（沒捕捉到 /payuni/return 的 POST）"
+        if not (hash_key and hash_iv):
+            return f"（無 hash key/iv，無法解密；表單長度 {len(form)}）"
+        try:
+            from urllib.parse import parse_qs
+
+            enc = parse_qs(form).get("EncryptInfo", [""])[0]
+            data = payuni_crypto.decrypt_info(enc, hash_key, hash_iv)
+            keep = {k: v for k, v in data.items() if k in ("Status", "Message", "MerID", "MerTradeNo")}
+            return f"PayUni 回傳：{keep}"
+        except Exception as exc:
+            return f"（解密失敗：{exc}）"
+
+    def _wait_form(self, hash_key: str, hash_iv: str) -> None:
+        """等刷卡表單出現；若頁面先被導回我們（拒單），帶著 PayUni 的原話失敗。"""
+        deadline = 30
+        for _ in range(deadline * 4):
+            if "/payment/result" in self.page.url:
+                raise RuntimeError(
+                    "PayUni sandbox 沒有顯示刷卡表單，直接把瀏覽器導回 "
+                    f"{self.page.url}——商店級拒單。\n{self._explain_rejected_order(hash_key, hash_iv)}"
+                )
+            if self._optional(_CARD_NUMBER_CANDIDATES) is not None:
+                return
+            self.page.wait_for_timeout(250)
 
     def complete_payment(
-        self, card_number: str, expiry: str, cvv: str, payer_email: str = ""
+        self,
+        card_number: str,
+        expiry: str,
+        cvv: str,
+        payer_email: str = "",
+        hash_key: str = "",
+        hash_iv: str = "",
+        buyer_name: str = "Journey 測試買方",
     ) -> None:
         """填測試卡並送出；成功後 PayUni 會 302 回我們的 /payuni/return。"""
         self.wait_loaded()
+        self._wait_form(hash_key, hash_iv)
 
         credit_radio = self._optional(_CREDIT_RADIO_CANDIDATES)
         if credit_radio is not None and not credit_radio.is_checked():
@@ -150,9 +209,16 @@ class PayuniSandboxPage:
         if email_field is not None and payer_email:
             email_field.fill(payer_email)
 
+        # 電子發票買方名稱（商店有開通發票才會出現；沒有這欄就跳過）。
+        buyer_field = self._optional(_BUYER_NAME_CANDIDATES)
+        if buyer_field is not None and not buyer_field.input_value():
+            self._type_into(buyer_field, buyer_name)
+
         # 送出前先記下各欄位的實際值——失敗時這是「到底填進去了沒」的
         # 唯一證據，而遮罩造成的空值正是最難從畫面看出來的那種。
         filled = self._read_back(card_field, expiry_field, cvv_field, email_field)
+        if buyer_field is not None:
+            filled += f" 買方名稱={buyer_field.input_value() or '（空）'}"
 
         # 確定鍵在表單階段就已經在 DOM 裡，所以「送出前它可不可見」要先量，
         # 送出後才有辦法分辨那是新跳出來的框、還是它本來就在那。
@@ -204,6 +270,35 @@ class PayuniSandboxPage:
                 continue
         return False
 
+    def _modal_text(self, button) -> str:
+        """彈框本身的文字——從「確定」鍵往上找，直到祖先的文字比按鈕多。
+
+        body 全文會被表單本體淹沒（前 300 字全是表單），彈框訊息在 DOM 尾端
+        根本讀不到。2026-10-27 的失敗就卡在這：知道有彈框，不知道它說什麼。
+        同時把當下的畫面存成截圖。
+        """
+        text = ""
+        try:
+            text = button.evaluate(
+                """el => {
+                    let node = el.parentElement;
+                    for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+                        const t = (node.innerText || '').trim();
+                        if (t.length > (el.innerText || '').trim().length + 4) return t;
+                    }
+                    return '';
+                }"""
+            )
+        except Exception as exc:
+            text = f"（讀取彈框失敗：{exc}）"
+        try:
+            self.page.screenshot(
+                path=str(_TEST_RESULTS / "page-payuni-dialog.png"), full_page=True, timeout=5_000
+            )
+        except Exception:
+            pass
+        return " ".join(text.split())[:400]
+
     def _dismiss_optional_confirm(self, skip: bool = False) -> str:
         """有**新跳出來的**確認框就記下當下頁面文字再按掉，沒有就回空字串。
 
@@ -219,11 +314,7 @@ class PayuniSandboxPage:
                 locator.wait_for(state="visible", timeout=3_000)
             except Exception:
                 continue
-            text = ""
-            try:
-                text = " ".join(self.page.inner_text("body").split())[:300]
-            except Exception:
-                pass
+            text = self._modal_text(locator)
             locator.click()
             return text
         return ""
