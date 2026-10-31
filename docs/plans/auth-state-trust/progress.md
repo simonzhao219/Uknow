@@ -11,15 +11,18 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 純函式：authHint（kind）、isFirstTimeFunnel、resolveAuthView、fetchProfile | ⬜ 未開始 | | |
-| 2 | 後端 authenticate／五讀取 fail-closed／onError／契約 unknown | ⬜ 未開始 | | |
-| 3 | useAuthBootstrap＋endInvalidSession＋9 處 /profile 收斂 | ⬜ 未開始 | | |
-| 4 | Navbar 四 view、BottomNav／padding／hasBottomNav、守衛 degraded、漏斗登出 | ⬜ 未開始 | | |
-| 5 | 規格書 §2.1／§5.3／§14 #8、ui-ux §3 | ⬜ 未開始 | | |
+| A0 | 開工前置：資料查證 SQL（plan §2.1）、`isLoggedIn` 清查 | ⬜ 未開始 | — | — |
+| A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ⬜ 未開始 | | |
+| A2 | useAuthBootstrap（reducer、hint effect、uid8、副作用注入）＋9 處收斂＋e2e 基線 | ⬜ 未開始 | | |
+| A3 | Navbar 五 view＋繼續完成註冊、useFunnelLogout、BottomNav／padding、e2e S1–S11 | ⬜ 未開始 | | |
+| A4 | 規格書 §2.1 註冊中角色＋已知限制、ui-ux §3 | ⬜ 未開始 | | |
+| B1 | 後端 authenticate／讀取對照表／try-catch 503／X-Uknow-Retry | ⬜ 未開始（可晚一波） | | |
+| B2 | 前端 8 秒逾時＋重試＋degraded＋endInvalidSession | ⬜ 未開始（可晚一波） | | |
+| B3 | 規格書 §5.3、§14 #8 | ⬜ 未開始（可晚一波） | | |
 
 ## 目前位置與下一步
 
-plan v2（D1–D6 後）重審完成：P0 0／P1 12／P2 16，等業主裁決 review.md〈需人工裁決〉五題後修 plan v3；`/profile` P95 改上線後量測（D6）。
+plan v3（D1–D6、E1–E5 後）重審完成：P0 0／P1 8／P2 16，等業主裁決 review.md〈需人工裁決〉五題後修 v4；A0 的資料查證 SQL（plan §2.1）待主 session 代跑，結果貼這裡。
 
 ## Blockers(逃生口紀錄)
 
