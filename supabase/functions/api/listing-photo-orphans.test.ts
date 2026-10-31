@@ -248,8 +248,10 @@ Deno.test('listings：撤 listings_delete_own 後本人直刪影響零列、列�
   }
 });
 
-Deno.test('POST /internal/purge-orphan-listing-photos：真路由＋真 RPC 的 dry-run 回候選，錯密鑰 401', async () => {
+Deno.test('purge-orphan-listing-photos：真路由＋真 RPC 的 dry-run 回候選，錯密鑰 401', async () => {
   ensureEdgeFunctionEnv();
+  // 同一個 deno test 行程的其他檔（system-alerts-recent）在載入時設了自己的值，用完要還原。
+  const prevSecret = Deno.env.get('RECONCILE_SECRET');
   Deno.env.set('RECONCILE_SECRET', 'test-reconcile-secret');
   const { app, listingPhotoPublicUrl } = await import('./index.ts');
   const sql = postgres(DB_URL);
@@ -278,5 +280,7 @@ Deno.test('POST /internal/purge-orphan-listing-photos：真路由＋真 RPC 的 
   } finally {
     await removeObjects(sql, [orphan]);
     await sql.end();
+    if (prevSecret === undefined) Deno.env.delete('RECONCILE_SECRET');
+    else Deno.env.set('RECONCILE_SECRET', prevSecret);
   }
 });

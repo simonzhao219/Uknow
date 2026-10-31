@@ -624,7 +624,7 @@ Deno.test('purge-orphan-listing-photos：密鑰不符 → 401，不查候選', a
   assertEquals(log.list, []);
 });
 
-Deno.test('purge-orphan-listing-photos：dry_run 缺漏、字串 "false"、非 boolean、body 壞掉都當 dry-run', async () => {
+Deno.test('purge-orphan-listing-photos：dry_run 缺漏、非 boolean、body 壞掉都當 dry-run', async () => {
   for (const body of [{}, { dry_run: 'false' }, { dry_run: 0 }, { dry_run: null }, 'not json']) {
     const { app, log } = purgeHarness();
     const res = await purge(app, body);
@@ -679,7 +679,7 @@ Deno.test('purge-orphan-listing-photos：force_ratio === true 才放行比例閘
   assertEquals((await passed.json()).data.removed, 80);
 });
 
-Deno.test('purge-orphan-listing-photos：中途失敗 → 500 帶 code 與 removedSoFar，message 不含內部錯誤', async () => {
+Deno.test('purge-orphan-listing-photos：中途失敗 → 500 帶 removedSoFar，不洩漏內部錯誤', async () => {
   let batch = 0;
   const { app } = purgeHarness(
     {
