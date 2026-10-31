@@ -470,7 +470,7 @@ anon key 又隨前端 bundle 公開出貨。**RLS 是那條路徑上唯一的列
 | L2 行為 | `e2e/journey/features/45_listing_rls.feature` | 真 hosted 上 anon/authenticated/admin 真的被允許或拒絕 | 每週＋晉升 PR |
 
 L1 抓不到「policy 寫得對不對」，但抓得到「被刪掉、角色被放寬、條件被改寬、
-多出第 6 條 permissive、整張表 RLS 被關掉」——那才是實際會發生的迴歸。
+多出第 5 條 permissive、整張表 RLS 被關掉」——那才是實際會發生的迴歸。
 L1 的設計原則與 golden 值取法見 `supabase/README.md` 的〈RLS 結構守衛〉。
 
 ### 14.3 寫這類情境時最容易踩的三個坑

@@ -13,8 +13,8 @@
 | 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | `8948cd1b` |
 | 3 | `sweepOrphanPhotos` 純函式 | ✅ 完成 | `e494f0f5` | `61a799a0` |
 | 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ✅ 完成 | `e0603b0c` | `b9f0642d`（測試修正 `17767bf7`） |
-| 5 | 排程 workflow `purge-listing-photos.yml` | ✅ 完成 | `74611cb9` | （本 commit） |
-| 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ⬜ 未開始 | | |
+| 5 | 排程 workflow `purge-listing-photos.yml` | ✅ 完成 | `74611cb9` | `601ed20b` |
+| 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ✅ 完成 | `2c6e7fd2` | （本 commit） |
 
 ## 目前位置與下一步
 
@@ -36,6 +36,10 @@
 - 階段 5：body 改由 `purge-listing-photos-request.py body` 產生（plan §2.5 前段寫 `jq -n --argjson`，後段把組裝抽進腳本，取後者）。
   vars 的 ref 檢查兩個環境同款：ref 取自 git，vars 有設才要求一致（`reconcile-payments.yml` 對正式站要求 vars 必設，因為它的
   URL 用 vars；本 workflow 的 URL 用 git 的 ref）。排程時間台北 03:17（`17 19 * * *` UTC）。
+
+- 階段 6：`check-spec-drift.py` 新增「刊登照片孤兒寬限期（小時）」常數規則（規格書「寬限期 168 小時」↔
+  `ORPHAN_GRACE_HOURS`），綠燈時順手把 `listing-photos.ts` 加進來源清單（紅燈 commit 漏了，規則抽不到程式碼那側）。
+  突變驗證：規格書改 169 → 紅。README 突變表那列改以 `listings_update_own` 改 restrictive 在本機重驗（被「四條全是 permissive」抓到）。
 
 ## 本機環境備註
 

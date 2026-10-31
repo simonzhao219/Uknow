@@ -720,7 +720,8 @@ def _load_sources() -> dict[str, str]:
                     "src/utils/serviceCategories.ts",
                     "supabase/functions/_shared/api-contract.ts",
                     "supabase/functions/_shared/referral-invite-payload.ts",
-                    "supabase/functions/api/index.ts"):
+                    "supabase/functions/api/index.ts",
+                    "supabase/functions/api/listing-photos.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
     return sources

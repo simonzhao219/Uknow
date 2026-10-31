@@ -645,10 +645,40 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 - **照片上傳流程**〔實作〕`src/hooks/useListingPhotos.ts`、`src/utils/imagePipeline.ts`：選取後每一張都先進入 1:1 取景
   （拖曳定位、縮放）由使用者確認，確認後在瀏覽器內重新編碼成 JPEG（剝除 EXIF）再逐張上傳，單張上傳逾時 60 秒視同失敗；
   一張失敗不影響其他張，可單張重試。裁切工具載入失敗時顯示「請重新整理頁面」，失敗期間不能送出。前端一律把照片重編為 JPEG。恰好 3 張都完成才能送出刊登。
-- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`：編輯存檔成功後，被移除的照片
-  由前端呼叫 `DELETE /listings/photos` 清掉；刪除刊登走 `DELETE /listings/:id`，由後端刪列並清掉
-  該刊登的照片。兩者都只刪「刊登者自己的檔」，且**仍被任何刊登引用的檔不刪**；引用檢查失敗時一檔
-  不刪（fail-closed）。清理失敗不影響存檔或刪除本身（已知落差見 §14）。
+- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`、`.github/workflows/purge-listing-photos.yml`：
+  服務條款十之一要求撤除內容或本服務終止後三十日內完成下架。刊登照片的 bucket 是公開的，「下架」＝刪除
+  Storage 物件；CDN 快取殘留屬條款但書。
+  - **即時清理**：編輯存檔成功後，被移除的照片由前端呼叫 `DELETE /listings/photos` 清掉；刪除刊登一律走
+    `DELETE /listings/:id`，由後端刪列並清掉該刊登的照片（`listings` 的 RLS 不開放直刪）。兩者都只刪刊登者
+    自己的檔，**本人刊登仍引用的檔不刪**，他人刊登引用你的 URL 不擋清理；引用檢查失敗時一檔不刪（fail-closed）。
+    清理失敗不影響存檔或刪除本身，殘檔由排程清理兜底。
+  - **排程清理**：每日一次呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）。孤兒＝上傳
+    超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且沒有被檔案前綴本人的刊登以原樣 URL 引用的檔，涵蓋帳號
+    刪除（`profiles` cascade 刪 `listings`）、`/auth/cancel-signup`、離頁、逾時重試、並發等所有來源。最長下架延遲＝
+    寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`）。會籍到期不清照片（W2-5，待律師確認）。
+  - **安全閘**：預設 dry-run，排程只有 repo variable `PHOTO_PURGE_LIVE` 為 `true` 才實刪。斷路器中止時一檔不刪：
+    錨點失效（有引用卻都對不到物件）不可放行；比例閘（孤兒超過 bucket 物件數一半，且物件數超過 20）可用
+    `workflow_dispatch` 帶 `force_ratio=true` 放行單輪。刪除前再以 RPC 複查一次引用。失敗時開 issue
+    「[環境] 刊登照片孤兒清理失敗」，同標題已開則改留言。
+  - **查看候選清單**（業主本機；清單含會員 uid，不可貼到 issue 或 Actions）：
+
+    ```bash
+    curl -sS -X POST "https://<project-ref>.supabase.co/functions/v1/api/internal/purge-orphan-listing-photos" \
+      -H "x-internal-secret: $RECONCILE_SECRET" -H 'Content-Type: application/json' \
+      -d '{"dry_run": true, "include_names": true}'
+    ```
+
+    被比例閘擋下時，body 加 `"force_ratio": true` 才看得到清單。
+  - **終止／刪除請求 SOP**（條款六「隨時通知終止」、條款十二「請求刪除視同終止」）：期限自**業主收件日**起算。
+    人工期限＝三十日－寬限期（7 日）－1 輪（1 日）－2 日緩衝＝**20 日**；寬限期改了，這個期限要跟著重算。
+    - 已付款會員：收件後 20 日內在 Supabase Dashboard SQL Editor 執行
+      `delete from public.listings where user_id = '<uid>';`，照片由排程清除。不停權：會員仍可登入、領取與提領
+      獎勵，停權只用於違規處置；金流與推薦紀錄依條款十二保存。會員日後自行重新刊登，視為新的同意。
+    - 未付款會員：可直接在 Dashboard 刪除帳號。
+    - 收件時在行事曆設第 15 日提醒；第 15 日仍未完成就當天處理。
+    - 收件後第 28 日前，在 Dashboard → Storage → `listings-photos` 確認 `<uid>/` 已空；不空就用上方 dry-run 查原因。
+    - 留痕：回覆使用者的完成信寫明收件日、完成日、處置類型（刪刊登或刪帳號），信件串留在業主信箱。
+    - 條款六的按比例退費另循退費流程處理，刪完刊登不代表結案。
 - 欄位限制〔實作〕`src/utils/constants.ts`：
 
 | 項目 | 限制 |
@@ -825,7 +855,6 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 11 | 提領管理讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts` 的 `/admin/withdrawals`：統計查詢的錯誤被忽略（件數與待匯款總額回 0）；附屬查詢（姓名、證件簽名網址、事件歷史）也不檢查錯誤，回空姓名、「未設定」身分證、空歷史，證件顯示未上傳 |
 | 12 | 公告與證件審核讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts`：`/admin/announcements` 不檢查查詢錯誤（回空清單）；`/admin/id-reviews` 的證件簽名網址不檢查錯誤（證件顯示未上傳，審核者可能因此誤退件） |
 | 13 | 提領 CSV 匯出的補償式變動（§13） | 匯出以 offset 逐頁收集，前端核對每頁的總數、收完的筆數與重複 id；收集途中一筆新進最前、另一筆同時離開篩選時，核對全數通過但檔案錯一筆。根治要 `/admin/withdrawals` 支援 keyset 分頁或快照讀取 |
-| 14 | 刊登照片檔清理的覆蓋範圍（§11、條款十之一撤除後三十日內下架） | 只涵蓋「編輯存檔移除照片」與「刪除刊登」兩條成功路徑；清理失敗只記 warn、無重試，帳號刪除（`profiles` cascade 刪 `listings`）與 `/auth/cancel-signup` 不清 Storage，歷史孤兒檔尚未清理。另有同屬第 2 波補齊範圍的孤兒來源：Create 離頁／關頁、Edit 取消與清理失敗殘留（本次新上傳而未存檔的檔、「調整」換檔的舊檔都會 best-effort 清掉）、上傳逾時後重試產生的第二個檔、存檔與刪刊登並發、RLS 的 `listings_delete_own` 直刪入口不清 Storage、他人把你的公開照片 URL 寫進自己的 `photos` 可擋住清理。第 2 波須在撤除後三十日窗口內補齊這三條路徑與上述來源，補齊後刪本列 |
 
 ---
 
