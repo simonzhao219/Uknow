@@ -37,6 +37,7 @@
 | W2-16 | 測試商店電子發票 | **業主 10/31 09:20 回報已開通即時電子發票**；H 重跑 skeleton/sandbox |
 | W2-17 | 第 1 波審查 #460 P1-2：#448／#449 凍結期上 main 無裁決紀錄 | 業主確認授權 → 補記為第 1 波 plan §0 裁決 40 |
 | W2-18 | 第 1 波審查 #460 P1-1：電子發票上正式站後零付款、前提未實證 | 業主以未付款帳號走到 PayUni 刷卡頁（不付款）實證；被導回付款失敗即升 P0、立刻 hotfix 撤 TradeInvoice |
+| W2-19 | W2-18 實測結果、首頁返回真機驗收、#453 規劃審閱 | 業主 10/31 10:00 回報：**正式站刷卡頁正常出現（電子發票前提成立，#460 P1-1 結案）**；**develop 首頁返回真機驗收通過**（#455／#457）；**#453 規劃審閱通過** → 主 session 開實作 session（Opus）待業主親打 `/tdd-implement`，11/03 晉升前不轉 ready |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -112,7 +113,7 @@
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | #462 | 審過，等 CI 合 |
-| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃 v2.4，draft） | 規劃定稿，等業主審 |
+| C | `session_01MQovbCdFo86t9DX6d66Afq`（規劃）→ `session_01MQovbCF5454fAYfqy9NXaJ`（實作） | Opus | `feature/listing-photo-retention` | #453 | 規劃審過；實作 session 等業主親打 /tdd-implement（第 3 波） |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | #461 ✅ 3b5b7c9 | 收工 |
 | S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 | 修 HSTS 一行後合 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
@@ -137,3 +138,4 @@
 | 10/31 09:40 | **#460 合進 develop（82b0f02）**。D 以「一工項一個 session」為由不接 P1-4（正確）→ 新開 **N** `session_01MQovbAdbpZorMkp8trfxwx`（Sonnet，`fix/notify-exit-code`）。S 開 **#459**：主 session 審，無 P0，必修一條——HSTS 拿掉 `includeSubDomains`（子網域未盤點，一年快取收不回）。P 開 **#461**（紅 2486b6c、a95ae73 → 綠 f29c638、0559ea8；含 #460 P1-3）：主 session 審，無 P0／P1 | #459 修完合；#461 CI 綠合；N、H |
 | 10/31 09:45 | N 開 **#462**：notify 非 200 改 exit 1；reconcile 的 system_alerts 推送去掉 continue-on-error 並移最後一步（失敗→run 紅→窗口不前移→重送）；deploy-smoke／deploy-supabase／對帳失敗通知三處保留 continue-on-error。主 session 審：無 P0／P1。記第 3 波候選：缺 Secrets 仍 exit 0 致窗口前移 | #462 CI 綠合 |
 | 10/31 10:00 | 01:42–01:52 UTC 一批 CI 的 unit-tests／static-checks 卡「安裝 Node 24」10 分鐘被取消（runner 端），#459、#462 各重跑失敗 job 一次。#461 與 develop 衝突（friction-log 檔尾）→ 主 session rebase 解衝突（紅燈 hash 改為 e5d876bd、99162571）→ CI 綠 → **#461 合進 develop（3b5b7c9）**。**H 完成 #456**：根因兩層——(1) 測試商店未開電子發票 UPP02085（W2-16 已開通）；(2) 開通後刷卡頁多了必填「買方名稱」，harness 固定填值；skeleton/sandbox dispatch run 41155657844 綠；ci.yml journey-full 改回 sandbox、刪「暫時至」、Closes #288。主 session 審無 P0／P1，rebase 到新 develop（6a1a31ff）。合併後主 session 對 develop 發 full/sandbox dispatch，晉升前先驗全套 | #456 CI 綠合 → full dispatch；#459／#462 重跑結果 |
+| 10/31 10:00 | 業主 W2-19：刷卡頁實測通過、首頁返回真機通過、#453 審過。開 **C 實作 session** `session_01MQovbCF5454fAYfqy9NXaJ`（Opus，分支 feature/listing-photo-retention，先備環境、等業主親打 `/tdd-implement listing-photo-retention`；屬第 3 波，11/03 晉升前不轉 ready） | 業主在該 session 打指令 |
