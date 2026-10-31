@@ -9,8 +9,8 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `08e616ac` | （本 commit） |
-| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ⬜ 未開始 | | |
+| 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `e7101e1f` | `7e7ab18b` |
+| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | （本 commit） |
 | 3 | `sweepOrphanPhotos` 純函式 | ⬜ 未開始 | | |
 | 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ⬜ 未開始 | | |
 | 5 | 排程 workflow `purge-listing-photos.yml` | ⬜ 未開始 | | |
@@ -20,6 +20,17 @@
 
 第 2 波只做規劃：plan v2.4、review 三輪（P0 0；P1 全數處置，Q1–Q11 都已裁決）。等主 session 核對與業主人審，之後第 3 波由業主親打
 `/tdd-implement listing-photo-retention` 開工；開工前先 rebase 到最新 develop，再跑 `check-migration-versions.py`。
+
+## 實作決策（給 /review-implementation 對照）
+
+- 第二支 RPC `filter_unreferenced_listing_photos(p_public_base, p_names)` 依 plan 簽章不帶寬限期參數，所以寬限期寫死在 SQL（`168 hours`），
+  定位為 `ORPHAN_GRACE_HOURS` 的**下限**；階段 4 定義常數時加一條 unit 測試讀 migration 原文比對，防兩邊漂移。
+- `_listing_photo_is_orphan` 不加 `set search_path`／`security definer`，planner 才能內聯（plan 寫「可內聯」）；內部全 schema-qualified。
+
+## 本機環境備註
+
+- 本機 `supabase start`（CLI 2.122）的預設權限比 CI 寬：`rls-policies.test.ts` 的「anon 沒有寫入權」與
+  `name-write-paths.test.ts` 的「authenticated 無 profiles table-level SELECT」兩條在本機紅，階段 1 之前（未動 migration）就紅，與本案無關。
 
 ## Blockers(逃生口紀錄)
 
