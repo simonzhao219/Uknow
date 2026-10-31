@@ -25,7 +25,12 @@ import { MemberCardList } from './MemberCardList';
 import { findMemberDetailTrigger, memberDetailTriggerProps } from './memberDetailTrigger';
 import { MemberDetailSheet } from './MemberDetailSheet';
 import { memberLabel, memberName } from './memberName';
-import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
+import {
+  AccountStatusBadge,
+  AdminBadge,
+  ReferralProgramBadge,
+  SuspendedBadge,
+} from './MemberStatusBadges';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
@@ -797,6 +802,8 @@ export function MemberManagement({
                       <TableHead>電話</TableHead>
                       <TableHead>會籍</TableHead>
                       <TableHead>刊登數</TableHead>
+                      <TableHead>推薦碼</TableHead>
+                      <TableHead>推薦計畫</TableHead>
                       <TableHead>角色</TableHead>
                       <TableHead>狀態</TableHead>
                       <TableHead>操作</TableHead>
@@ -813,6 +820,12 @@ export function MemberManagement({
                             <AccountStatusBadge status={member.accountStatus} />
                           </TableCell>
                           <TableCell>{member.listingCount}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {member.referralCode ?? '—'}
+                          </TableCell>
+                          <TableCell>
+                            <ReferralProgramBadge joined={member.referralProgramJoined} />
+                          </TableCell>
                           <TableCell>
                             {member.isAdmin ? (
                               <AdminBadge />

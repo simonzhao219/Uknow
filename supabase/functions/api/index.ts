@@ -1465,6 +1465,8 @@ app.get('/admin/members', async (c) => {
     accountStatus: m.account_status,
     endDate: m.end_date ?? null,
     idVerificationStatus: m.id_verification_status ?? 'none',
+    referralCode: m.referral_code ?? null,
+    referralProgramJoined: m.referral_program_joined === true,
     listingCount: m.listing_count,
     createdAt: m.created_at,
   }));
@@ -1567,6 +1569,8 @@ app.get('/admin/members/:id', async (c) => {
         bankCode: data.bank_code ?? null,
         bankAccount: maskBankAccount(data.bank_account),
         referrerName: data.referrer_name ?? null,
+        referralCode: data.referral_code ?? null,
+        referralProgramJoined: data.referral_program_joined === true,
         directChildCount: data.direct_child_count ?? 0,
         listingCount: data.listing_count ?? 0,
         availablePoints: points.available ?? 0,

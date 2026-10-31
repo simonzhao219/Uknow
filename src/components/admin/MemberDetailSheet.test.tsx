@@ -36,6 +36,8 @@ function detail(over: Partial<AdminMemberDetail> = {}): AdminMemberDetail {
     bankCode: '822',
     bankAccount: '*********0123',
     referrerName: '王小明',
+    referralCode: '8048876',
+    referralProgramJoined: true,
     directChildCount: 2,
     listingCount: 1,
     availablePoints: 3000,
@@ -111,6 +113,22 @@ describe('MemberDetailSheet 分區結構', () => {
     renderSheet();
     expect(screen.getAllByText('推薦人', { exact: true })).toHaveLength(1);
     expect(screen.getByText('王小明', { exact: true })).toBeTruthy();
+  });
+});
+
+describe('MemberDetailSheet 推薦碼與推薦計畫', () => {
+  it('推薦關係分區顯示推薦碼與「已加入」', () => {
+    const { panel } = renderSheet();
+    const sec = section(panel, '推薦關係') as HTMLElement;
+    expect(within(sec).getByText('8048876')).toBeTruthy();
+    expect(within(sec).getByText('已加入')).toBeTruthy();
+  });
+
+  it('沒有推薦碼且未加入計畫時顯示破折號與「未加入」', () => {
+    const { panel } = renderSheet(detail({ referralCode: null, referralProgramJoined: false }));
+    const sec = section(panel, '推薦關係') as HTMLElement;
+    expect(within(sec).queryByText('8048876')).toBeNull();
+    expect(within(sec).getByText('未加入')).toBeTruthy();
   });
 });
 

@@ -22,6 +22,13 @@ export function SuspendedBadge() {
   return <Badge variant="destructive">已暫停</Badge>;
 }
 
+/** 是否已加入推薦計畫（`referralProgramJoined`）：列表表格、手機卡片、詳情共用。 */
+export function ReferralProgramBadge({ joined }: { joined: boolean }) {
+  return (
+    <Badge variant={joined ? 'success-subtle' : 'secondary'}>{joined ? '已加入' : '未加入'}</Badge>
+  );
+}
+
 export function AdminBadge() {
   return <Badge variant="default">管理員</Badge>;
 }

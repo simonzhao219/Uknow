@@ -371,6 +371,43 @@ Deno.test('admin_list_members：回應帶 endDate 與 idVerificationStatus', asy
   }
 });
 
+Deno.test('admin_list_members：回應帶 referralCode 與 referralProgramJoined', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'Ref Admin' });
+  const paid = await createTestUser(client, { name: 'RefCol Paid' });
+  const unpaid = await createTestUser(client, { name: 'RefCol Unpaid' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, paid.id);
+    await client.from('profiles').update({ referral_program_joined: true }).eq('id', paid.id);
+
+    const { data: code } = await client
+      .from('referral_codes')
+      .select('code')
+      .eq('user_id', paid.id)
+      .eq('status', 'active')
+      .single();
+    assert(code?.code, '付費會員應有 active 推薦碼');
+
+    const token = await getUserAccessToken(client, admin.email);
+    const res = await app.request('/api/admin/members?search=RefCol', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    const rows = body.data.members as any[];
+    const paidRow = rows.find((r) => r.id === paid.id);
+    const unpaidRow = rows.find((r) => r.id === unpaid.id);
+
+    assertEquals(paidRow.referralCode, code.code);
+    assertEquals(paidRow.referralProgramJoined, true);
+    assertEquals(unpaidRow.referralCode, null);
+    assertEquals(unpaidRow.referralProgramJoined, false);
+  } finally {
+    await deleteTestUsers(client, [admin.id, paid.id, unpaid.id]);
+  }
+});
+
 Deno.test('GRANT：authenticated 不得 EXECUTE 改寫後的 admin_list_members', async () => {
   const sql = postgres(DB_URL);
   try {
@@ -433,6 +470,45 @@ Deno.test('admin_member_detail：回得到會籍、餘額、推薦人、下線�
     assertEquals(typeof d.availablePoints, 'number');
   } finally {
     await deleteTestUsers(client, [admin.id, referrer.id, member.id, child.id]);
+  }
+});
+
+Deno.test('admin_member_detail：回得到 referralCode 與 referralProgramJoined', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: 'RefDetail Admin' });
+  const paid = await createTestUser(client, { name: 'RefDetail Paid' });
+  const unpaid = await createTestUser(client, { name: 'RefDetail Unpaid' });
+
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await payForUser(client, paid.id);
+    await client.from('profiles').update({ referral_program_joined: true }).eq('id', paid.id);
+    const { data: code } = await client
+      .from('referral_codes')
+      .select('code')
+      .eq('user_id', paid.id)
+      .eq('status', 'active')
+      .single();
+    assert(code?.code, '付費會員應有 active 推薦碼');
+
+    const token = await getUserAccessToken(client, admin.email);
+    const get = async (id: string) =>
+      (
+        await (
+          await app.request(`/api/admin/members/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        ).json()
+      ).data.member;
+
+    const p = await get(paid.id);
+    assertEquals(p.referralCode, code.code);
+    assertEquals(p.referralProgramJoined, true);
+    const u = await get(unpaid.id);
+    assertEquals(u.referralCode, null);
+    assertEquals(u.referralProgramJoined, false);
+  } finally {
+    await deleteTestUsers(client, [admin.id, paid.id, unpaid.id]);
   }
 });
 

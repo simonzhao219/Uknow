@@ -695,6 +695,10 @@ export const AdminMemberSchema = obj({
   /** 會籍到期日；從未付費者為 null。 */
   endDate: nullable(str()),
   idVerificationStatus: IdVerificationStatusSchema,
+  /** 目前 active 的推薦碼；從未付費者為 null。 */
+  referralCode: nullable(str()),
+  /** 是否已加入推薦計畫（`profiles.referral_program_joined`）。 */
+  referralProgramJoined: bool(),
   listingCount: num(),
   createdAt: str(),
 });
@@ -769,6 +773,8 @@ export const AdminMemberDetailSchema = obj({
   /** 遮罩值（末四碼可見）。 */
   bankAccount: nullable(str()),
   referrerName: nullable(str()),
+  referralCode: nullable(str()),
+  referralProgramJoined: bool(),
   directChildCount: num(),
   listingCount: num(),
   availablePoints: num(),
