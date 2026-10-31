@@ -67,7 +67,7 @@ def _stats_line(data: dict) -> str:
     return f"{mode}：" + " ".join(f"{k}={data[k]}" for k in STAT_KEYS)
 
 
-def judge(status: str, body_text: str, live: str) -> Verdict:
+def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> Verdict:
     """J1–J4。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
     if status == "404":
         if live == "true":
@@ -164,6 +164,7 @@ def _ok_body(**over) -> str:
     data = {
         "dryRun": True,
         "candidateCount": 3,
+        "orphanTotal": 3,
         "removed": 0,
         "notRemoved": 0,
         "totalObjects": 100,
@@ -174,14 +175,15 @@ def _ok_body(**over) -> str:
     return json.dumps({"success": True, "data": data})
 
 
-def _fail_body(code: str) -> str:
-    return json.dumps(
-        {"success": False, "error": {"code": code, "message": f"storage down {UID}/1_a.jpg"}, "removedSoFar": 7}
-    )
+def _fail_body(code: str, reason: str | None = None) -> str:
+    error = {"code": code, "message": f"storage down {UID}/1_a.jpg"}
+    if reason:
+        error["reason"] = reason
+    return json.dumps({"success": False, "error": error, "removedSoFar": 7})
 
 
-# (說明, (status, body, live), 預期 ok, 預期 code)
-JUDGE_CASES: list[tuple[str, tuple[str, str, str], bool, str]] = [
+# (說明, (status, body, live[, 本輪送出的 dry_run]), 預期 ok, 預期 code)
+JUDGE_CASES: list[tuple[str, tuple, bool, str]] = [
     ("200 dry-run 統計齊全 → 通過", ("200", _ok_body(), ""), True, ""),
     ("200 實刪全數刪除 → 通過", ("200", _ok_body(dryRun=False, removed=3), "true"), True, ""),
     ("200 但 notRemoved > 0 → 失敗", ("200", _ok_body(dryRun=False, removed=2, notRemoved=1), "true"), False, "not_removed"),
@@ -191,6 +193,15 @@ JUDGE_CASES: list[tuple[str, tuple[str, str, str], bool, str]] = [
     ("200 但不是 JSON → 失敗", ("200", "<html>", ""), False, "bad_shape"),
     ("404 未開實刪 → warning 略過", ("404", "", ""), True, "not_deployed"),
     ("404 已開實刪 → 失敗（路由漏註冊不可靜默）", ("404", "", "true"), False, "not_deployed"),
+    (
+        "404 dispatch 實刪（LIVE 未設）→ 失敗（不可讓手動實刪看似成功）",
+        ("404", "", "", False),
+        False,
+        "not_deployed",
+    ),
+    ("200 但缺 orphanTotal → 失敗", ("200", json.dumps({"success": True, "data": {**json.loads(_ok_body())["data"], "orphanTotal": None}}), ""), False, "bad_shape"),
+    ("狀態碼重複輸出（curl 失敗時 000 兩次）→ 正規化為 000", ("000\n000", "", ""), False, "http_000"),
+    ("狀態碼帶空白換行 → 正規化", (" 200\n", _ok_body(), ""), True, ""),
     ("401 → 失敗（密鑰不一致）", ("401", '{"success": false}', ""), False, "unauthorized"),
     ("500 circuit_open → 失敗並帶 code", ("500", _fail_body("circuit_open"), ""), False, "circuit_open"),
     ("500 sweep_failed → 失敗並帶 code", ("500", _fail_body("sweep_failed"), "true"), False, "sweep_failed"),
@@ -214,6 +225,14 @@ def self_test() -> int:
         out = "\n".join(v.lines)
         if UID in out or "storage down" in out:
             failures.append(f"  FAIL: [judge] {label} — 輸出含 message／uid(J4):{out[:120]}")
+    # 斷路器的 reason 要出現在輸出與 stats,業主才分得出能不能 force_ratio
+    for reason in ("anchor", "ratio"):
+        v = judge("500", _fail_body("circuit_open", reason), "")
+        if f"reason={reason}" not in "\n".join(v.lines) or f"reason={reason}" not in v.stats:
+            failures.append(f"  FAIL: [judge] circuit_open 的 reason={reason} 未出現在輸出或 stats")
+    ok = judge("200", _ok_body(orphanTotal=900), "")
+    if "orphanTotal=900" not in ok.stats:
+        failures.append("  FAIL: [judge] stats 應含 orphanTotal")
     # 回應帶 names(例如有人誤送 include_names)時,輸出也不能印出來
     leaked = judge("200", _ok_body(names=[f"{UID}/1_a.jpg"]), "")
     if UID in "\n".join(leaked.lines):

@@ -258,6 +258,15 @@ Deno.test('sweepOrphanPhotos：列孤兒 RPC 出錯 → sweep_failed，不複查
   assertEquals([log.filter, log.remove], [[], []]);
 });
 
+Deno.test('sweepOrphanPhotos：RPC 統計欄位非有限數字 → sweep_failed，斷路器不得靜默放行', async () => {
+  for (const key of ['orphanTotal', 'totalObjects', 'referencedUrls', 'matchedUrls'] as const) {
+    const { deps, log } = sweepHarness({}, report({ [key]: Number.NaN }));
+    const err = await sweepFails(sweepOrphanPhotos(deps, LIVE));
+    assertEquals(err.code, 'sweep_failed', key);
+    assertEquals(log.remove, [], key);
+  }
+});
+
 Deno.test('sweepOrphanPhotos：錨點失效（有引用卻一個都對不到物件）→ circuit_open，force_ratio 也不放行', async () => {
   for (const forceRatio of [false, true]) {
     const { deps, log } = sweepHarness({}, report({ matchedUrls: 0 }));
@@ -644,6 +653,7 @@ Deno.test('purge-orphan-listing-photos：只有 dry_run === false 才實刪，�
     data: {
       dryRun: false,
       candidateCount: 3,
+      orphanTotal: 3,
       removed: 3,
       notRemoved: 0,
       totalObjects: 100,
@@ -673,10 +683,26 @@ Deno.test('purge-orphan-listing-photos：force_ratio === true 才放行比例閘
   const rep = report({ candidates: orphanNames(80), totalObjects: 100 });
   const blocked = await purge(purgeHarness({}, rep).app, { dry_run: false, force_ratio: 'true' });
   assertEquals(blocked.status, 500);
-  assertEquals((await blocked.json()).error.code, 'circuit_open');
+  assertEquals((await blocked.json()).error, {
+    code: 'circuit_open',
+    reason: 'ratio',
+    message: '斷路器中止，未刪除',
+  });
   const passed = await purge(purgeHarness({}, rep).app, { dry_run: false, force_ratio: true });
   assertEquals(passed.status, 200);
   assertEquals((await passed.json()).data.removed, 80);
+});
+
+Deno.test('purge-orphan-listing-photos：錨點失效 → 500 circuit_open 帶 reason anchor', async () => {
+  const res = await purge(purgeHarness({}, report({ matchedUrls: 0 })).app, { force_ratio: true });
+  assertEquals(res.status, 500);
+  assertEquals((await res.json()).error.reason, 'anchor');
+});
+
+Deno.test('purge-orphan-listing-photos：回應帶截斷前的 orphanTotal 供分輪判斷', async () => {
+  const rep = report({ candidates: orphanNames(5), orphanTotal: 9, totalObjects: 100 });
+  const data = (await (await purge(purgeHarness({}, rep).app, {})).json()).data;
+  assertEquals([data.candidateCount, data.orphanTotal], [5, 9]);
 });
 
 Deno.test('purge-orphan-listing-photos：中途失敗 → 500 帶 removedSoFar，不洩漏內部錯誤', async () => {
