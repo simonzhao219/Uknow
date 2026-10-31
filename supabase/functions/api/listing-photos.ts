@@ -81,28 +81,194 @@ export function photoUrlToOwnedPath(
 export interface PhotoCleanupDeps {
   /** storage getPublicUrl(path) 的結果（與 upload-photo 回傳同一格式）。 */
   publicUrlOf: (path: string) => string;
-  /** 回傳 listings.photos（全表、跨使用者）仍含有的 URL；查詢出錯必須 throw。 */
-  findReferencedUrls: (urls: string[]) => Promise<string[]>;
+  /**
+   * 回傳 ownerId 本人刊登的 photos 仍含有的 URL；查詢出錯必須 throw。
+   * 只認本人：他人把你的 URL 寫進自己的 photos 不得擋住清理（條款十之一）。
+   */
+  findReferencedUrls: (urls: string[], ownerId: string) => Promise<string[]>;
   /** Storage remove；回傳實際被刪的 path；出錯必須 throw。 */
   removeObjects: (paths: string[]) => Promise<string[]>;
 }
 
 /**
- * 刪掉「沒有任何刊登仍引用」的照片。引用檢查跨使用者全表（以 deps.publicUrlOf 重組 URL，
- * 與 upload-photo 回傳同一格式）、一次批次查詢；查詢出錯 throw 且一檔不刪（fail-closed）。
+ * 刪掉「檔案前綴本人的刊登沒有引用」的照片。引用檢查只看 ownerId 的刊登（以 deps.publicUrlOf
+ * 重組 URL，與 upload-photo 回傳同一格式）、一次批次查詢；查詢出錯 throw 且一檔不刪（fail-closed）。
  * `removed` 取 Storage 實際回傳數（不存在的檔不算、重送冪等）。
  */
 export async function removeUnreferencedPhotos(
   deps: PhotoCleanupDeps,
   paths: string[],
+  ownerId: string,
 ): Promise<{ removed: number; skipped: string[] }> {
   if (paths.length === 0) return { removed: 0, skipped: [] };
-  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf)));
+  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf), ownerId));
   const skipped = paths.filter((p) => referenced.has(deps.publicUrlOf(p)));
   const toRemove = paths.filter((p) => !referenced.has(deps.publicUrlOf(p)));
   if (toRemove.length === 0) return { removed: 0, skipped };
   const removedPaths = await deps.removeObjects(toRemove);
   return { removed: removedPaths.length, skipped };
+}
+
+// ============================================================
+// 孤兒排程清理（POST /internal/purge-orphan-listing-photos；條款十之一）
+// ============================================================
+/** list_orphan_listing_photos 的回傳（camelCase；index.ts 由 RPC 的 jsonb 轉換）。 */
+export interface OrphanReport {
+  candidates: string[];
+  orphanTotal: number;
+  totalObjects: number;
+  referencedUrls: number;
+  matchedUrls: number;
+  /** 有照片 URL 的刊登者數（錨點分母）。 */
+  referencedOwners: number;
+  /** 其中至少一條 URL 對得到物件的刊登者數（錨點分子）。 */
+  matchedOwners: number;
+}
+
+export interface OrphanSweepDeps {
+  /** 第一支 RPC；出錯必須 throw。 */
+  listOrphans: (graceHours: number, limit: number) => Promise<OrphanReport>;
+  /** 第二支 RPC（刪前複查）；出錯必須 throw（fail-closed）。 */
+  filterUnreferenced: (names: string[]) => Promise<string[]>;
+  removeObjects: PhotoCleanupDeps['removeObjects'];
+  warn: (message: string, ...detail: unknown[]) => void;
+}
+
+export interface SweepOptions {
+  graceHours: number;
+  limit: number;
+  dryRun: boolean;
+  /** 只放行比例閘；錨點失效不可放行。 */
+  forceRatio: boolean;
+}
+
+export interface SweepResult {
+  dryRun: boolean;
+  candidates: string[];
+  /** 截斷前的孤兒總數；大於 candidates 長度時代表還要再跑幾輪。 */
+  orphanTotal: number;
+  removed: number;
+  notRemoved: number;
+  totalObjects: number;
+  referencedUrls: number;
+  matchedUrls: number;
+  referencedOwners: number;
+  matchedOwners: number;
+}
+
+export type SweepErrorCode = 'circuit_open' | 'sweep_failed';
+/** 斷路器是哪一道：anchor 不可放行，ratio 可用 forceRatio 放行。 */
+export type CircuitReason = 'anchor' | 'ratio';
+
+export class SweepError extends Error {
+  constructor(
+    readonly code: SweepErrorCode,
+    message: string,
+    readonly removedSoFar: number,
+    readonly reason?: CircuitReason,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * 寬限期（W2-7）：物件上傳後多久才可能被當成孤兒。寫死、改動要發 PR（維運參數，
+ * 不是 reward_config 那類業務參數）。migration 20261110000001 的刪前複查寫死同一個值，
+ * 兩邊必須相等，由 listing-photos.unit.test.ts 讀原文比對。
+ */
+export const ORPHAN_GRACE_HOURS = 168;
+/** 單輪最多處理幾個候選。 */
+export const ORPHAN_SWEEP_LIMIT = 500;
+
+/** Storage remove 單批上限。 */
+export const SWEEP_REMOVE_BATCH = 100;
+
+/** 錨點：對得到物件的刊登者占有照片 URL 的刊登者不到此比例就中止。 */
+const ANCHOR_MIN_MATCHED_OWNER_RATIO = 0.5;
+/** 比例閘：截斷前的孤兒總數占 bucket 物件數超過此比例就中止（不分 bucket 大小）。 */
+const RATIO_GATE_MAX_ORPHAN_RATIO = 0.5;
+
+/**
+ * 判準 RPC → 斷路器 → 刪前複查 → 分批 remove。任何一步出錯都 throw SweepError，
+ * 已刪的數量帶在 removedSoFar；刪除冪等，重跑安全。
+ *
+ * 斷路器（dry-run 也適用，讓每日 dry-run 先暴露問題）：
+ *   - 錨點失效：有照片 URL 的刊登者中，對得到物件的不到一半——判準取 name 的方式
+ *     與實際存的 URL 對不上了，活照片會被當成孤兒。以刊登者計數，單一帳號塞怪 URL
+ *     卡不死它。不可放行。
+ *   - 比例閘：截斷前的孤兒總數占 bucket 過半，小 bucket 也一樣（develop 因此常需
+ *     forceRatio）。forceRatio 只放行這一條。
+ */
+export async function sweepOrphanPhotos(
+  deps: OrphanSweepDeps,
+  opts: SweepOptions,
+): Promise<SweepResult> {
+  let rep: OrphanReport;
+  try {
+    rep = await deps.listOrphans(opts.graceHours, opts.limit);
+  } catch (err) {
+    throw new SweepError('sweep_failed', `列孤兒失敗：${errorMessage(err)}`, 0);
+  }
+  // 統計欄位若成 NaN，下面兩道斷路器的比較全為 false、會靜默放行——寧可整輪失敗。
+  const stats = [rep.orphanTotal, rep.totalObjects, rep.referencedOwners, rep.matchedOwners];
+  if (!stats.every(Number.isFinite)) {
+    throw new SweepError('sweep_failed', '列孤兒回傳的統計欄位不是有限數字', 0);
+  }
+  if (
+    rep.referencedOwners > 0 && rep.totalObjects > 0 &&
+    rep.matchedOwners / rep.referencedOwners < ANCHOR_MIN_MATCHED_OWNER_RATIO
+  ) {
+    throw new SweepError('circuit_open', '錨點失效：多數刊登者的照片 URL 對不到物件', 0, 'anchor');
+  }
+  if (
+    !opts.forceRatio && rep.totalObjects > 0 &&
+    rep.orphanTotal / rep.totalObjects > RATIO_GATE_MAX_ORPHAN_RATIO
+  ) {
+    throw new SweepError('circuit_open', '比例閘：孤兒超過 bucket 物件數的一半', 0, 'ratio');
+  }
+  const result: SweepResult = {
+    dryRun: opts.dryRun,
+    candidates: rep.candidates,
+    orphanTotal: rep.orphanTotal,
+    removed: 0,
+    notRemoved: 0,
+    totalObjects: rep.totalObjects,
+    referencedUrls: rep.referencedUrls,
+    matchedUrls: rep.matchedUrls,
+    referencedOwners: rep.referencedOwners,
+    matchedOwners: rep.matchedOwners,
+  };
+  if (opts.dryRun || rep.candidates.length === 0) return result;
+
+  let toRemove: string[];
+  try {
+    toRemove = await deps.filterUnreferenced(rep.candidates);
+  } catch (err) {
+    throw new SweepError('sweep_failed', `刪前複查失敗：${errorMessage(err)}`, 0);
+  }
+  for (let i = 0; i < toRemove.length; i += SWEEP_REMOVE_BATCH) {
+    const batch = toRemove.slice(i, i + SWEEP_REMOVE_BATCH);
+    let removed: string[];
+    try {
+      removed = await deps.removeObjects(batch);
+    } catch (err) {
+      throw new SweepError(
+        'sweep_failed',
+        `Storage 刪除失敗：${errorMessage(err)}`,
+        result.removed,
+      );
+    }
+    result.removed += removed.length;
+    result.notRemoved += batch.length - removed.length;
+  }
+  if (result.notRemoved > 0) {
+    deps.warn('[listing-photos] 孤兒清理有物件未被 Storage 刪除', result.notRemoved);
+  }
+  return result;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 // ============================================================
@@ -118,6 +284,9 @@ export interface ListingPhotoHandlerDeps {
   cleanup: PhotoCleanupDeps;
   /** 刪除該使用者的該筆刊登並回傳被刪列的 photos；不存在或非本人回 null；DB 錯誤必須 throw。 */
   deleteListingRow: (id: string, userId: string) => Promise<{ photos: string[] } | null>;
+  /** x-internal-secret 與 RECONCILE_SECRET 的常數時間比對（同兩個既有 /internal/* 端點）。 */
+  verifyInternalSecret: (c: Context) => Promise<boolean>;
+  sweep: OrphanSweepDeps;
   warn: (message: string, ...detail: unknown[]) => void;
 }
 
@@ -145,7 +314,7 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
       if (path) paths.push(path);
       else deps.warn('[listing-photos] 忽略非本人／非本 bucket 的照片 URL', url);
     }
-    await removeUnreferencedPhotos(deps.cleanup, [...new Set(paths)]);
+    await removeUnreferencedPhotos(deps.cleanup, [...new Set(paths)], userId);
   }
 
   return {
@@ -162,11 +331,53 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
         return fail(c, v.status, v.status === 403 ? 'forbidden' : 'invalid_request', v.message);
       }
       try {
-        const result = await removeUnreferencedPhotos(deps.cleanup, v.paths);
+        const result = await removeUnreferencedPhotos(deps.cleanup, v.paths, user.id);
         return c.json({ success: true, ...result });
       } catch (err) {
         console.error('[listing-photos] 清理失敗', err);
         return fail(c, 500, 'cleanup_failed', '照片清理失敗');
+      }
+    },
+
+    // 內部維運端點（排程 workflow 呼叫）。repo 是 public，Actions log 公開：回應預設
+    // 不含 name（含會員 uid），失敗 message 也不帶 Storage 錯誤字串。
+    purgeOrphans: async (c: Context) => {
+      if (!(await deps.verifyInternalSecret(c))) return fail(c, 401, 'unauthorized', '未授權');
+      const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+      // 只有 JSON boolean false 才實刪；缺漏、解析失敗、字串 "false" 一律 dry-run。
+      const dryRun = body?.dry_run !== false;
+      try {
+        const r = await sweepOrphanPhotos(deps.sweep, {
+          graceHours: ORPHAN_GRACE_HOURS,
+          limit: ORPHAN_SWEEP_LIMIT,
+          dryRun,
+          forceRatio: body?.force_ratio === true,
+        });
+        return c.json({
+          success: true,
+          data: {
+            dryRun: r.dryRun,
+            candidateCount: r.candidates.length,
+            orphanTotal: r.orphanTotal,
+            removed: r.removed,
+            notRemoved: r.notRemoved,
+            totalObjects: r.totalObjects,
+            referencedUrls: r.referencedUrls,
+            matchedUrls: r.matchedUrls,
+            referencedOwners: r.referencedOwners,
+            matchedOwners: r.matchedOwners,
+            ...(body?.include_names === true ? { names: r.candidates } : {}),
+          },
+        });
+      } catch (err) {
+        const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
+        // 只記 code 與 reason：SweepError.message 帶 Storage／DB 錯誤字串，可能含 object name（uid）。
+        console.error('[listing-photos] 孤兒清理失敗', e.code, e.reason ?? '', e.removedSoFar);
+        const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
+        const error = e.reason
+          ? { code: e.code, reason: e.reason, message }
+          : { code: e.code, message };
+        return c.json({ success: false, error, removedSoFar: e.removedSoFar }, 500);
       }
     },
 

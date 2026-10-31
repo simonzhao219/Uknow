@@ -122,7 +122,7 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `MEMBER_TOKEN_SECRET` | **你** | 會員驗證碼（§13.1）的簽章密鑰；缺了驗證端點一律 500 |
 | `REFERRAL_INVITE_SECRET` | **你** | Email 邀請連結的簽章密鑰（`openssl rand -hex 32`，每個環境各一把、值不同）；缺了寄邀請與接受邀請都回 503 `disabled` |
 | `REFERRAL_EMAIL_INVITE_ENABLED` | **你** | Email 邀請的寄信總開關，`true` 才寄（kill switch）；關掉不影響已寄出的連結 |
-| `RECONCILE_SECRET` | **你（僅正式站）** | 對帳排程的門票；排程只打正式站 |
+| `RECONCILE_SECRET` | **你** | 內部排程端點的門票（對帳、告警查詢、刊登照片孤兒清理）。正式站必設；develop 要對刊登照片清理 dispatch 時也要設，且**須與正式站同值**（GitHub 只有一份 `secrets.RECONCILE_SECRET`） |
 | `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
 | `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
 

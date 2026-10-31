@@ -207,6 +207,16 @@ if [ -f scripts/check-playwright-image.py ]; then
   fi
 fi
 
+# 10e. 刊登照片孤兒清理排程的 body 組裝與回應判讀。這支排程刪的是沒有備份的
+#      Storage 物件，送出的參數是 LIVE 開關 × 觸發方式 × dispatch 輸入的組合，
+#      判讀又牽涉 404 與 notRemoved——內聯在 workflow 裡就沒有測試落點。
+if [ -f scripts/purge-listing-photos-request.py ]; then
+  if ! python3 scripts/purge-listing-photos-request.py --self-test; then
+    echo "FAIL: 刊登照片清理排程的 body／判讀表格案例未過（scripts/purge-listing-photos-request.py）"
+    fail=1
+  fi
+fi
+
 # 11. Context 預算與讀取成本。其餘各軌驗「設定寫對了沒」，這一軌驗「這個
 #     repo 對 agent 來說貴不貴」——啟動固定成本、單檔讀取成本（軟警戒）、
 #     以及 rule 的 paths 是否真的匹配得到檔案（匹配不到＝宣告了但永遠不

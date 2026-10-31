@@ -2,7 +2,7 @@
 // Uknow API Edge Function
 // 取代舊 make-server-5c6718b9，使用新的正規化 schema
 // ============================================================
-import { Hono } from 'npm:hono@4';
+import { type Context, Hono } from 'npm:hono@4';
 import { cors } from 'npm:hono@4/cors';
 import { etag, RETAINED_304_HEADERS } from 'npm:hono@4/etag';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -4405,28 +4405,27 @@ app.post('/listings/upload-photo', async (c) => {
 export function listingPhotoPublicUrl(path: string): string {
   return sb().storage.from(LISTING_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl;
 }
+async function listingPhotoRemoveObjects(paths: string[]): Promise<string[]> {
+  const { data, error } = await sb().storage.from(LISTING_PHOTOS_BUCKET).remove(paths);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((o: { name: string }) => o.name);
+}
 export function listingPhotoDeps() {
   return {
     requireAuth,
     rateLimit,
     cleanup: {
       publicUrlOf: listingPhotoPublicUrl,
-      // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
-      findReferencedUrls: async (urls: string[]) => {
-        const { data, error } = await sb().from('listings').select('photos').overlaps(
-          'photos',
-          urls,
-        );
+      // 只認本人刊登：他人把你的 URL 寫進自己的 photos 不得擋住清理（條款十之一）。
+      findReferencedUrls: async (urls: string[], ownerId: string) => {
+        const { data, error } = await sb().from('listings').select('photos')
+          .eq('user_id', ownerId).overlaps('photos', urls);
         if (error) throw new Error(error.message);
         const wanted = new Set(urls);
         return (data ?? []).flatMap((row: { photos: string[] | null }) => row.photos ?? [])
           .filter((u: string) => wanted.has(u));
       },
-      removeObjects: async (paths: string[]) => {
-        const { data, error } = await sb().storage.from(LISTING_PHOTOS_BUCKET).remove(paths);
-        if (error) throw new Error(error.message);
-        return (data ?? []).map((o: { name: string }) => o.name);
-      },
+      removeObjects: listingPhotoRemoveObjects,
     },
     deleteListingRow: async (id: string, userId: string) => {
       const { data, error } = await sb().from('listings').delete().eq('id', id)
@@ -4435,12 +4434,47 @@ export function listingPhotoDeps() {
       const row = data?.[0];
       return row ? { photos: (row.photos as string[] | null) ?? [] } : null;
     },
+    // 沿用 RECONCILE_SECRET 與 x-internal-secret（W2-9），同兩個既有 /internal/* 端點。
+    verifyInternalSecret: async (c: Context) => {
+      const secret = Deno.env.get('RECONCILE_SECRET');
+      return !!secret && await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret);
+    },
+    sweep: {
+      listOrphans: async (graceHours: number, limit: number) => {
+        const { data, error } = await sb().rpc('list_orphan_listing_photos', {
+          p_grace: `${graceHours} hours`,
+          p_limit: limit,
+        });
+        if (error) throw new Error(error.message);
+        return {
+          candidates: data.candidates as string[],
+          orphanTotal: Number(data.orphan_total),
+          totalObjects: Number(data.total_objects),
+          referencedUrls: Number(data.referenced_urls),
+          matchedUrls: Number(data.matched_urls),
+          referencedOwners: Number(data.referenced_owners),
+          matchedOwners: Number(data.matched_owners),
+        };
+      },
+      filterUnreferenced: async (names: string[]) => {
+        const { data, error } = await sb().rpc('filter_unreferenced_listing_photos', {
+          p_names: names,
+        });
+        if (error) throw new Error(error.message);
+        return (data ?? []) as string[];
+      },
+      removeObjects: listingPhotoRemoveObjects,
+      warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+    },
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
   };
 }
 const listingPhotoHandlers = createListingPhotoHandlers(listingPhotoDeps());
 app.delete('/listings/photos', listingPhotoHandlers.deletePhotos);
 app.delete('/listings/:id', listingPhotoHandlers.deleteListing);
+// 條款十之一的孤兒排程清理（.github/workflows/purge-listing-photos.yml 每日呼叫）。
+// 內部維運端點多在第 7 區段；放這裡是為了避開第 2 波金流改動的撞檔，之後可併回。
+app.post('/internal/purge-orphan-listing-photos', listingPhotoHandlers.purgeOrphans);
 
 // ============================================================
 // GET /referrals/debug/:userId  (admin only)

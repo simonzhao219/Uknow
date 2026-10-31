@@ -268,6 +268,13 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/migrations/*.sql",
         r"purge_stale_referral_invites\(\s*p_older_than_days int default (\d+)",
     ),
+    # 終止／刪除請求的人工期限（§11 SOP）由寬限期推得，寬限期改了 SOP 要跟著改。
+    ConstantRule(
+        "刊登照片孤兒寬限期（小時）",
+        r"寬限期 (\d+) 小時",
+        "supabase/functions/api/listing-photos.ts",
+        r"ORPHAN_GRACE_HOURS = (\d+);",
+    ),
 )
 
 
@@ -713,7 +720,8 @@ def _load_sources() -> dict[str, str]:
                     "src/utils/serviceCategories.ts",
                     "supabase/functions/_shared/api-contract.ts",
                     "supabase/functions/_shared/referral-invite-payload.ts",
-                    "supabase/functions/api/index.ts"):
+                    "supabase/functions/api/index.ts",
+                    "supabase/functions/api/listing-photos.ts"):
         for path in ROOT.glob(pattern):
             sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
     return sources
