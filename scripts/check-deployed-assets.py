@@ -240,15 +240,16 @@ def judge_build_sha(
 ) -> tuple[str, str]:
     """回傳 (結果, 說明);結果是 ok / warn / fail。純函式,方便表格測試。
 
-    - live 缺或 unknown:線上是尚未帶 build-sha 的舊版(或建置環境取不到 sha),
-      無法比對——warn。這是導入期的刻意選擇:第一次帶這個欄位的建置上線前,
-      正式站必然沒有它,直接紅會讓晉升前每 6 小時叫一次。
+    - live 缺或 unknown:線上沒有可比對的版本——fail。導入期寬鬆已結束
+      (10/31 第 2 波晉升後,正式站與 develop 都帶 build-sha,正式站實測
+      相符);此後缺 meta 代表建置沒帶到或建置環境取不到 sha,版本比對
+      等於失效,不得靜默放行。
     - sha 前綴相符即 ok(CF 給完整 40 碼,人傳短碼也行)。
     - 不符:預期 commit 在寬限期內 → warn(建置中);超過 → fail(停在舊版)。
       不知道 commit 時間(committed_at 為 None)時保守判 fail。
     """
     if live is None or live == "unknown":
-        return "warn", "線上頁面沒有可用的 build-sha(舊版建置或建置環境取不到 sha),無法比對版本"
+        return "fail", "線上頁面沒有可用的 build-sha(建置沒帶到 meta 或建置環境取不到 sha),無法比對版本"
     expected = expected.lower()
     if live.startswith(expected) or expected.startswith(live):
         return "ok", f"線上版本 {live[:7]} 與預期 {expected[:7]} 相符"
@@ -295,8 +296,8 @@ def self_test() -> int:
         ("a" * 40, full, now - 31 * 60, "fail", "超過 30 分鐘:停在舊版"),
         ("a" * 40, full, now - 18 * 3600, "fail", "2026-10-28 事故形狀:停了 18 小時"),
         ("a" * 40, full, None, "fail", "不知道 commit 時間:保守判紅"),
-        (None, full, now - 7200, "warn", "線上無 build-sha(導入前舊版):無法比對"),
-        ("unknown", full, now - 7200, "warn", "建置環境取不到 sha:無法比對"),
+        (None, full, now - 7200, "fail", "線上無 build-sha:版本比對失效，不得放行"),
+        ("unknown", full, now - 7200, "fail", "建置環境取不到 sha:版本比對失效，不得放行"),
     ]
     failures = 0
     for live, expected, committed_at, want, label in cases:
