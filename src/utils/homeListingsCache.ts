@@ -9,12 +9,28 @@
 // 派工限制只放公開刊登資料——使用者座標屬個資，只留記憶體，重整即消失。
 
 import type { PublicListingRow } from '../types/listing';
+import type { DistrictSelectionByCity } from './districtSelection';
 
 export type Coords = { lat: number; lng: number };
 
 let listings: PublicListingRow[] | null = null;
 let coords: Coords | null = null;
 let scrollY = 0;
+
+// 搜尋字詞與篩選條件（業主 2026-10-30 W2-10）：返回時條件與結果都要還原。
+export type HomeFilters = {
+  searchQuery: string;
+  category: string;
+  genders: string[];
+  districtsByCity: DistrictSelectionByCity;
+};
+export const DEFAULT_HOME_FILTERS: HomeFilters = {
+  searchQuery: '',
+  category: '',
+  genders: [],
+  districtsByCity: {},
+};
+let filters: HomeFilters = DEFAULT_HOME_FILTERS;
 
 export const getCachedListings = () => listings;
 export const setCachedListings = (rows: PublicListingRow[]) => {
@@ -28,6 +44,11 @@ export const setCachedCoords = (next: Coords) => {
   coords = next;
 };
 
+export const getCachedFilters = () => filters;
+export const setCachedFilters = (next: HomeFilters) => {
+  filters = next;
+};
+
 export const getSavedScrollY = () => scrollY;
 export const saveScrollY = (y: number) => {
   scrollY = y;
@@ -38,4 +59,5 @@ export function resetHomeListingsCache() {
   listings = null;
   coords = null;
   scrollY = 0;
+  filters = DEFAULT_HOME_FILTERS;
 }
