@@ -42,6 +42,16 @@ import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
 import type { PublicListingRow } from '../types/listing';
+import {
+  getCachedCoords,
+  getCachedFilters,
+  getCachedListings,
+  getSavedScrollY,
+  saveScrollY,
+  setCachedCoords,
+  setCachedFilters,
+  setCachedListings,
+} from '../utils/homeListingsCache';
 
 // 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -103,18 +113,33 @@ export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
   // 需要上移避開。
   const { isLoggedIn } = useContext(UserContext);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  // 搜尋／篩選初值取快取：從詳情頁返回時條件與結果原樣還原（重整則回預設）。
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    () => getCachedFilters().category,
+  );
   // 篩選器的自訂類別與刊登表單走同一條路徑（public_listing_categories view）。
   // 不從已載入的 serviceProviders 就地推導：那支查詢沒有 limit，撞到 PostgREST
   // 列數上限時它拿到的不是全部刊登，於是表單列得出某個自訂類別、這裡卻篩不到
   // 任何一筆。全站對「哪些類別存在」只該有一個答案。
   const { customCategories } = useCustomCategories();
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>(() => getCachedFilters().searchQuery);
   // 以縣市為 scope 的選區狀態（見 districtSelection.ts 的說明）：
   // 每個縣市的「全區」與區選擇互相獨立，同名區不再跨縣市誤配。
-  const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>({});
+  const [districtsByCity, setDistrictsByCity] = useState<DistrictSelectionByCity>(
+    () => getCachedFilters().districtsByCity,
+  );
   const selectedCities = Object.keys(districtsByCity);
-  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+  const [selectedGenders, setSelectedGenders] = useState<string[]>(
+    () => getCachedFilters().genders,
+  );
+  useEffect(() => {
+    setCachedFilters({
+      searchQuery,
+      category: selectedCategory,
+      genders: selectedGenders,
+      districtsByCity,
+    });
+  }, [searchQuery, selectedCategory, selectedGenders, districtsByCity]);
 
   // 手機首頁的檢視密度：預設 3 欄照片牆，回訪者沿用上次選擇（見 homeViewMode.ts）。
   // 以 lazy initializer 在首個 render 就讀回偏好，避免先閃一下預設再跳成偏好。
@@ -124,8 +149,11 @@ export function HomePage() {
   }, [viewMode]);
 
   // ✅ 数据状态管理
-  const [serviceProviders, setServiceProviders] = useState<PublicListingRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // 從詳情頁返回時先用 route 外的快取即時渲染（不閃骨架），背景再靜默重驗。
+  const [serviceProviders, setServiceProviders] = useState<PublicListingRow[]>(
+    () => getCachedListings() ?? [],
+  );
+  const [loading, setLoading] = useState(() => getCachedListings() === null);
   // 載入失敗與「真的沒有刊登」是兩回事：失敗要顯示錯誤與重試，
   // 不能偽裝成「目前沒有可用的服務者」空狀態。
   const [loadError, setLoadError] = useState(false);
@@ -133,26 +161,44 @@ export function HomePage() {
   // 使用者真實座標（取得授權後才用來做「由近到遠」排序）。
   // 原本寫死台北市政府座標，對非台北使用者的距離排序具誤導性；
   // 未授權 / 不支援時保留後端的最新排序（created_at desc），不假裝依距離。
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // 初值取快取座標：返回時首次渲染就是由近到遠，不會先 created_at 再跳成距離排序。
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(() =>
+    getCachedCoords(),
+  );
 
   // ✅ 获取所有活跃刊登
   useEffect(() => {
-    fetchAllListings();
+    fetchAllListings({ silent: getCachedListings() !== null });
   }, []);
 
   // 嘗試取得使用者定位（失敗則沿用最新排序）
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setUserCoords(null),
+      (pos) => {
+        const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setCachedCoords(next);
+        setUserCoords(next);
+      },
+      // 失敗不清掉既有座標：排序沿用已經顯示的那一個，不為一次逾時就跳回最新排序
+      () => {},
       { timeout: 8000, maximumAge: 300000 },
     );
   }, []);
 
-  const fetchAllListings = async () => {
-    setLoading(true);
-    setLoadError(false);
+  // 離開首頁時記下捲動位置，返回時還原（清單由快取即時渲染，版面高度已就位）。
+  useEffect(() => {
+    const restore = getSavedScrollY();
+    if (restore > 0 && getCachedListings() !== null) window.scrollTo(0, restore);
+    return () => saveScrollY(window.scrollY);
+  }, []);
+
+  // silent：已有快取內容時的背景重驗——不切回骨架；失敗就沿用快取，不把畫面換成錯誤框。
+  const fetchAllListings = async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setLoadError(false);
+    }
     try {
       const supabase = createClient();
       const { data: listings, error } = await supabase
@@ -161,11 +207,15 @@ export function HomePage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      setCachedListings(listings || []);
       setServiceProviders(listings || []);
+      setLoadError(false);
     } catch (error) {
       console.error('獲取刊登列表失敗:', error);
-      setServiceProviders([]);
-      setLoadError(true);
+      if (!silent) {
+        setServiceProviders([]);
+        setLoadError(true);
+      }
     } finally {
       setLoading(false);
     }

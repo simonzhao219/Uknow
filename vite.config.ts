@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 
+import { resolveBuildSha } from './config/buildSha';
 import { resolveSupabaseTarget } from './config/supabaseTarget';
 
 // 分支感知的 Supabase 目標：只有 main 打正式站，其餘分支（develop 與各種
@@ -14,8 +16,27 @@ if (supabaseTarget) {
   process.env.VITE_SUPABASE_ANON_KEY = supabaseTarget.anonKey;
 }
 
+// 把 commit sha 埋進 index.html，讓部署後 smoke 能驗「線上跑的是不是這個 commit」。
+// 理由與來源優先序見 config/buildSha.ts。
+const buildSha = resolveBuildSha(process.env, () => {
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+  } catch {
+    return null;
+  }
+});
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'uknow-build-sha',
+      transformIndexHtml: () => [
+        { tag: 'meta', attrs: { name: 'build-sha', content: buildSha }, injectTo: 'head' },
+      ],
+    },
+  ],
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     alias: {

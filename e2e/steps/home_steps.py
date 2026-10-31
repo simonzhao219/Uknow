@@ -189,6 +189,18 @@ def on_detail_page(page, directory, name):
     page.wait_for_url(f"**/service-providers/{directory[name]['id']}", timeout=10_000)
 
 
+@then("the directory should not show the loading skeleton")
+def directory_has_no_skeleton(page):
+    # Right after returning from a detail page the cached list renders at once;
+    # the skeleton is only for a cold load (refresh), never for back.
+    assert page.get_by_role("status", name="載入服務者資料中").count() == 0
+
+
+@then(parsers.parse('the directory search box should contain "{text}"'))
+def search_box_contains(home_page, text):
+    expect(home_page.search_box()).to_have_value(text, timeout=5_000)
+
+
 @then(parsers.parse('the first listing should be "{name}"'))
 def first_listing_should_be(home_page, name):
     expect(home_page.cards().first).to_contain_text(name, timeout=5_000)

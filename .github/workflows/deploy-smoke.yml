@@ -27,6 +27,13 @@ name: Deploy Smoke
 # 免費、單次十幾秒、只打自家網域幾個 HEAD):使用者可見的故障最慢 6 小時內
 # 會叫,再密只會讓紅燈變成背景雜訊。
 #
+# 第 4 項是版本比對(2026-10-28 事故):Pages 的 main 建置在 clone 階段失敗,
+# 正式站停在舊版 18 小時、全程無訊號。建置時 index.html 帶 <meta name="build-sha">
+# (config/buildSha.ts),這裡與預期 sha 比對:排程對 develop／main 各自的 HEAD,
+# deployment_status 對該次部署的 sha。剛 push 的 30 分鐘內不一致視為建置中
+# (只警告),超過才紅——避免每次 push 後必紅。紅燈走下面的 LINE 告警(正式站 P1)。
+# 細節與寬限判定見 scripts/check-deployed-assets.py。
+#
 # deployment_status 是額外的快路徑:Cloudflare Pages 的 GitHub 整合部署完成
 # 時會發這個事件,於是部署後幾秒內就驗得完。**2026-09-01 實測確認會送達**
 # (36 場由它觸發的 run;非 success 的部署狀態被下面的 `if` 濾成 skipped,
@@ -60,6 +67,9 @@ jobs:
     steps:
       - name: 取出程式碼
         uses: actions/checkout@v4
+        with:
+          # 版本比對要 main／develop 的 HEAD 與 commit 時間
+          fetch-depth: 0
 
       - name: 安裝 Python 3.12
         uses: actions/setup-python@v5
@@ -92,21 +102,63 @@ jobs:
           echo "本次目標：${targets:-（無）}"
 
       - name: 驗證線上部署完整且可用
+        id: smoke
         if: steps.targets.outputs.targets != ''
         # ⚠️ 目標網址一律經由 env 傳入,不用 ${{ }} 直接內插進 run:。
         # deployment_status 的 environment_url 來自事件酬載(非本 repo 控制),
         # 內插等於把它當 shell 原始碼執行。
         env:
           TARGETS: ${{ steps.targets.outputs.targets }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
         run: |
           set -uo pipefail
           failed=0
+          failed_targets=""
           for url in $TARGETS; do
             echo "::group::$url"
-            python3 scripts/check-deployed-assets.py "$url" || failed=1
+            # 預期 sha:deployment_status 用該次部署的 sha;排程／手動依網址對應
+            # 分支 HEAD(正式站=main、develop 預覽=develop);其他網址不驗版本。
+            expect=()
+            if [ "$EVENT_NAME" = deployment_status ]; then
+              [ -n "$DEPLOYMENT_SHA" ] && expect=(--expect-sha "$DEPLOYMENT_SHA")
+            else
+              case "$url" in
+                https://uknow.com.tw*) ref=main ;;
+                https://develop.uknow.pages.dev*) ref=develop ;;
+                *) ref="" ;;
+              esac
+              if [ -n "$ref" ]; then
+                git fetch --quiet origin "$ref"
+                expect=(--expect-sha "$(git rev-parse FETCH_HEAD)" \
+                  --expect-committed-at "$(git log -1 --format=%ct FETCH_HEAD)")
+              fi
+            fi
+            python3 scripts/check-deployed-assets.py "$url" "${expect[@]}" || {
+              failed=1
+              failed_targets="$failed_targets $url"
+            }
             echo "::endgroup::"
           done
+          echo "failed_targets=${failed_targets# }" >> "$GITHUB_OUTPUT"
           exit "$failed"
+
+      # 告警送到人:job 紅燈只有「看 GitHub 的人」才會看到,而 2026-10-28 的
+      # 18 小時零訊號正是這個形狀。正式站(uknow.com.tw)紅 P1、僅預覽站紅 P2;
+      # 手動觸發不推(人正在看)。排程每 6 小時重跑,持續紅燈就持續提醒。
+      # 標題寫明環境、body 只放網址與 run 連結,不含個資。
+      # continue-on-error:通知本身壞了不得讓這個 job 多一個紅燈。
+      - name: 失敗時推送 LINE 告警
+        if: failure() && github.event_name != 'workflow_dispatch'
+        continue-on-error: true
+        uses: ./.github/actions/notify
+        with:
+          level: ${{ contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && 'P1' || 'P2' }}
+          title: ${{ contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && '正式站' || 'develop 預覽站' }}前端部署驗證失敗
+          body: ${{ steps.smoke.outputs.failed_targets }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}
 
       - name: PayUni 閘門探測
         # 存在理由(2026-10-07 事故):正式站付款被 PayUni 回 403,根因在 PayUni

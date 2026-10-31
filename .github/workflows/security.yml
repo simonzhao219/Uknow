@@ -61,26 +61,57 @@ jobs:
             fs.writeFileSync("findings.md", names || "（無 high/critical）");
           '
 
+      # Deno 相依（Edge Function）：選 deno 原生 `deno audit` 而非 osv-scanner——
+      # 它直接讀 supabase/functions/deno.lock、不必引入第三方 action 或下載
+      # 二進位，同樣查 GitHub advisory 資料庫。⚠️ 涵蓋範圍只有 lock 內的 npm
+      # 套件；jsr 套件（@std/*、hono 若走 jsr）沒有 advisory 來源，掃不到。
+      - name: 安裝 Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: 掃描 Deno 相依漏洞（deno audit）
+        id: deno_audit
+        working-directory: supabase/functions
+        run: |
+          set -uo pipefail
+          status=0
+          deno audit --level=high --ignore-registry-errors > ../../deno-audit.txt 2>&1 || status=$?
+          cat ../../deno-audit.txt
+          {
+            echo '### deno audit'
+            echo
+            echo '```'
+            cat ../../deno-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "failed=$status" >> "$GITHUB_OUTPUT"
+
       - name: 發現 high/critical 時開 issue
-        if: steps.audit.outputs.count != '0'
+        if: steps.audit.outputs.count != '0' || steps.deno_audit.outputs.failed != '0'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('node:fs');
-            const findings = fs.readFileSync('findings.md', 'utf8');
-            const title = `相依安全掃描：${{ steps.audit.outputs.count }} 個 high/critical`;
+            const npmCount = Number('${{ steps.audit.outputs.count }}');
+            const denoFailed = '${{ steps.deno_audit.outputs.failed }}' !== '0';
+            const findings = [
+              npmCount > 0 ? fs.readFileSync('findings.md', 'utf8') : '',
+              denoFailed ? '### deno audit\n\n```\n' + fs.readFileSync('deno-audit.txt', 'utf8') + '\n```' : '',
+            ].filter(Boolean).join('\n\n');
+            const title = `相依安全掃描：npm ${npmCount} 個 high/critical${denoFailed ? '、Deno 有發現' : ''}`;
             const open = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo, state: 'open',
             });
             const dup = open.data.find((i) => i.title.startsWith('相依安全掃描：'));
             const body = [
-              '## npm audit 發現 high/critical 漏洞',
+              '## 相依掃描發現 high/critical 漏洞',
               '',
               findings,
               '',
               `Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               '',
-              '處理方式：`npm audit fix`，或等 Dependabot 的週一批次。',
+              '處理方式：npm 用 `npm audit fix`、Deno 用 `deno audit --fix`（在 supabase/functions），或等 Dependabot 的週一批次。',
               '若是無修補版本的 transitive 相依，在此 issue 註記評估結果後關閉。',
             ].join('\n');
             if (dup) {

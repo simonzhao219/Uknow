@@ -3261,3 +3261,35 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   restarted」，下一輪才真的跑 SQL；兩次成功都是碰巧連續兩個觸發落在同一個 worker 生命週期內。長 session 的 context 太大
   是最可能的原因。候選修法：量測排程改成 `create_new_session_on_fire`（每次全新 session，提示自帶 SQL 檔路徑與門檻），
   主 session 只收結果；或在 CI 加一支 workflow 用 service-role 跑 `measure.sql` 並把摘要 commit 進 §8。第 2 波評估。
+
+## 2026-10-31｜漏網（流程、告警）｜第 1 波審查（`docs/plans/launch-wave-1/review.md`）
+
+- **凍結期的守門只寫在 plan 裡**（流程）：裁決 8「凍結期只許 hotfix、不動付款主幹」沒有任何機械層。#448（SEO）與
+  #449（`TradeInvoice=1`，動 `/payuni/prepare`）由名冊外的 session 合進 develop，再被 10/30 的晉升 #450 帶上 main；
+  核准只有 PR 內文一句轉述。候選：凍結期的晉升 PR 內文必須逐支標類別（hotfix／docs／其他），非 hotfix 要附業主原話。
+- **晉升閘門驗不到 PayUni 的商店設定前提**（漏網）：journey-full 走 webhook（#413）時不碰 PayUni 建單；#449 的前提
+  「商店已開通電子發票」在 sandbox 不成立（`UPP02085`），單元測試只驗參數有帶。規則：改 `/payuni/prepare` 送出的參數，
+  PR 必須附 sandbox 實打或正式站真付款的結果；webhook 例外期間不改建單參數。
+- **錢相關告警是 warning 級，推播只看 error**（漏網）：`logSystemAlert` 預設 `'warning'`，`/internal/system-alerts/recent`
+  只撈 error。「PayUni 說已付、開通失敗」與「查詢失敗下標 expired」在設計上就到不了 LINE。規則：訊息含「人工確認是否
+  實付」或 resolve 失敗的，一律 error，並擴 `payuni-notify-alerts.test.ts` 的防規退到對帳迴圈。
+- **notify 吞掉推送失敗**（漏網）：LINE 非 200 時 `exit 0`，下一輪窗口從上一次成功 run 起算 → 該輪告警永久遺失。
+  10/27 token 貼錯的那段時間就是這個形狀。告警通道自身的失敗要讓 run 變紅。
+- **子 session 用不了要人核准的 MCP**（工具）：審查 session 的 `execute_sql` 停在權限核准視窗約一小時（業主不在該畫面），
+  改由主 session 代跑。dispatch prompt 寫明「現場 SQL 由主 session 代跑」。
+- **GitHub 排程實際間隔 4–7 小時**（環境）：`reconcile-payments.yml` 名義每小時，10/29–30 實測 4–7 小時一次；
+  卡單撿回的最壞延遲要用實測值估。
+
+## 2026-10-31｜漏網｜PayUni 建單層拒絕（`DEF01006` 商店停用）標 failed 就結束——每個人都付不了卻零告警
+
+- **事故**：10/28 正式站原商店「網路商店停用」，PayUni 在建單層回 `DEF01006 商店狀態不符合`（5 鍵短回應、無 ResCode），
+  經 ReturnURL／NotifyURL 進 `resolveOrderFromPayUni` 的非 SUCCESS 分支，只把訂單標 failed。使用者看得到失敗頁，但每個人
+  看到的都是「我付款失敗」，沒有人知道是全站性的。業主自己付款才發現。
+- **為什麼漏**：08-17 的告警三判準第 1 條「使用者看得到錯誤就是回饋管道」把這條出口判成不必告警——判準沒有區分
+  「單一使用者的失敗」與「同一個原因讓所有人失敗」。後者使用者雖然看得到，卻沒有人能把它回報成系統事故，
+  實際上落在第 3 條「既有機制不會回報」。#407 只補了對帳查詢層，建單／return 這一側沒掃到。
+- **處置**：`fix/payuni-merchant-alert`——商店／設定類（無 ResCode 或實證碼表）一人即 error 告警、持卡人層一小時內
+  3 位不同使用者連續失敗才告警、`/payuni/return` 驗章失敗比照 notify 告警（`api/payuni-rejection.ts`）。
+  index.ts 判準註解補一句：「使用者看得到」只在失敗是**那個人自己**的時候才成立。
+- **未處理（同類掃描記債）**：`/payuni/prepare` 與 notify 在 `payuniConfig()` 擲錯（Secrets 缺件）時沒有告警——
+  `/health` 的 `payuniConfigured` 有外顯但沒人主動看；本次不動，第 3 波評估是否由 deploy 後的 health 檢查擋。

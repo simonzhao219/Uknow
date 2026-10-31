@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
+import { getCachedListing } from '../utils/homeListingsCache';
 import { CategoryBadge } from './common/CategoryBadge';
 import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
@@ -35,8 +36,13 @@ export function ServiceProviderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(null);
-  const [status, setStatus] = useState<LoadStatus>('loading');
+  // 從首頁點進來時，首頁快取已有同一筆公開刊登：先用它渲染（不閃骨架），背景再重驗。
+  const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(() =>
+    getCachedListing(id),
+  );
+  const [status, setStatus] = useState<LoadStatus>(() =>
+    getCachedListing(id) ? 'ready' : 'loading',
+  );
   // 只認最後一次請求：id 在途切換時，前一筆的晚到回應不得蓋掉後一筆。
   const request = useLatestRequest();
 
@@ -44,7 +50,9 @@ export function ServiceProviderDetail() {
   const fetchListing = useCallback(async () => {
     if (!id) return;
     const ticket = request.begin();
-    setStatus('loading');
+    // 已有內容（快取或上一次成功）時背景重驗，不切回骨架
+    const silent = getCachedListing(id) !== null;
+    if (!silent) setStatus('loading');
     try {
       const supabase = createClient();
       const { data: listing, error: queryError } = await supabase
@@ -65,7 +73,7 @@ export function ServiceProviderDetail() {
     } catch (error) {
       if (!request.isLatest(ticket)) return;
       console.error('❌ 獲取刊登詳情失敗:', error);
-      setStatus('error');
+      if (!silent) setStatus('error');
     }
   }, [id, request]);
 

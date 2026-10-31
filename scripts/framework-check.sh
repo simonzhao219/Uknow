@@ -92,6 +92,14 @@ if [ -f scripts/check-workflows.py ]; then
   fi
 fi
 
+# 7b. 部署後 smoke 的版本比對判定（寬限期、舊版無 build-sha）表格案例。
+if [ -f scripts/check-deployed-assets.py ]; then
+  if ! python3 scripts/check-deployed-assets.py --self-test; then
+    echo "FAIL: 部署 smoke 判定的表格案例未過（scripts/check-deployed-assets.py）"
+    fail=1
+  fi
+fi
+
 # 8. 測試命名的機械檢查——命名慣例只寫在文件裡一定會漂（見
 #    .claude/rules/test-naming.md）。同樣先驗檢查器自己再驗 repo。
 if [ -f scripts/check-test-names.py ]; then

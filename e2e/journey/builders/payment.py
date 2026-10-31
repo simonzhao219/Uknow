@@ -32,7 +32,8 @@ def pay_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> Non
     if cfg.payment_mode == "sandbox":
         checkout.click_pay()
         PayuniSandboxPage(page).complete_payment(
-            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email
+            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email,
+            hash_key=cfg.payuni_hash_key, hash_iv=cfg.payuni_hash_iv,
         )
     elif cfg.payment_mode == "webhook":
         _arm_webhook_gateway(page, cfg, admin, user)
@@ -119,7 +120,8 @@ def _drive_payment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> 
     """把「表單已可送出」之後的 sandbox 刷卡 / webhook 注入跑完到 result。"""
     if cfg.payment_mode == "sandbox":
         PayuniSandboxPage(page).complete_payment(
-            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email
+            cfg.card_number, cfg.card_expiry, cfg.card_cvv, payer_email=user.email,
+            hash_key=cfg.payuni_hash_key, hash_iv=cfg.payuni_hash_iv,
         )
     try:
         page.wait_for_url("**/payment/result**", timeout=180_000)

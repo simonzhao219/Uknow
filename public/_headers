@@ -22,6 +22,19 @@
 # 就死了。所以改由部署後 smoke 對**真實回應標頭**驗證，見
 # scripts/check-deployed-assets.py。
 
+# 全站安全標頭。**只放 Cache-Control 以外的標頭**：`/*` 與下面的 /assets/*
+# 會同時命中同一個請求，同名標頭會被逗號合併（見檔頭），所以這個區塊絕不
+# 宣告 Cache-Control。每個標頭名在整檔只出現一次（src/appShell.test.ts 把關）。
+# - HSTS：先不加 preload、不加 includeSubDomains（瀏覽器記一年收不回；
+#   子網域尚未盤點，includeSubDomains 待盤點後另案）。
+# - frame-ancestors 'none'：禁止被嵌進 iframe（點擊劫持）。只放這一條指令，
+#   完整 CSP 另案——現在加 script-src 等會連帶擋掉金流跳轉與第三方腳本。
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: frame-ancestors 'none'
+
 # 資產檔名帶內容 hash，改動必換名，因此可以放心長快取。
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
