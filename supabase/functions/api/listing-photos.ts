@@ -316,7 +316,44 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
       }
     },
 
-    purgeOrphans: (c: Context) => Promise.resolve(c.json({ success: true, data: {} })),
+    // 內部維運端點（排程 workflow 呼叫）。repo 是 public，Actions log 公開：回應預設
+    // 不含 name（含會員 uid），失敗 message 也不帶 Storage 錯誤字串。
+    purgeOrphans: async (c: Context) => {
+      if (!(await deps.verifyInternalSecret(c))) return fail(c, 401, 'unauthorized', '未授權');
+      const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+      // 只有 JSON boolean false 才實刪；缺漏、解析失敗、字串 "false" 一律 dry-run。
+      const dryRun = body?.dry_run !== false;
+      try {
+        const r = await sweepOrphanPhotos(deps.sweep, {
+          publicBase: deps.publicBase(),
+          graceHours: ORPHAN_GRACE_HOURS,
+          limit: ORPHAN_SWEEP_LIMIT,
+          dryRun,
+          forceRatio: body?.force_ratio === true,
+        });
+        return c.json({
+          success: true,
+          data: {
+            dryRun: r.dryRun,
+            candidateCount: r.candidates.length,
+            removed: r.removed,
+            notRemoved: r.notRemoved,
+            totalObjects: r.totalObjects,
+            referencedUrls: r.referencedUrls,
+            matchedUrls: r.matchedUrls,
+            ...(body?.include_names === true ? { names: r.candidates } : {}),
+          },
+        });
+      } catch (err) {
+        console.error('[listing-photos] 孤兒清理失敗', err);
+        const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
+        const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
+        return c.json(
+          { success: false, error: { code: e.code, message }, removedSoFar: e.removedSoFar },
+          500,
+        );
+      }
+    },
 
     deleteListing: async (c: Context) => {
       const user = await deps.requireAuth(c);
