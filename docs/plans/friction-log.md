@@ -3311,17 +3311,19 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 與 2026-10-21（S7a）同一個形狀。第 3 波 `listing-photo-retention` 施工中，紅燈 commit 之後改過兩次測試檔：
 
-- 階段 4（紅燈 `a8873420`）：①兩個測試名超過 72 字——`check-test-names.py | tail -n` 吃掉失敗碼，紅燈前的命名檢查
+- 階段 4（紅燈 `deac36c7`）：①兩個測試名超過 72 字——`check-test-names.py | tail -n` 吃掉失敗碼，紅燈前的命名檢查
   沒擋下；②真路由 dry-run 測試以 `Deno.env.set` 覆寫 `RECONCILE_SECRET` 沒還原。等綠燈 commit 正常解鎖後，用獨立
-  commit `fc0400f1` 修正（`git diff a8873420 fc0400f1 -- '*.test.*'`：2 檔、7 增 3 刪，只動名稱與 env 還原）。
-- 審查修正（紅燈 `6d3dbbcc`）：既有一條 `sweepOrphanPhotos` 測試精確比對 `SweepResult`，加 `orphanTotal` 欄位後期望物件
+  commit `84eae8ce` 修正（`git diff deac36c7 84eae8ce -- '*.test.*'`：2 檔、7 增 3 刪，只動名稱與 env 還原）。
+- 審查修正（紅燈 `7a23fe6e`）：既有一條 `sweepOrphanPhotos` 測試精確比對 `SweepResult`，加 `orphanTotal` 欄位後期望物件
   少一欄而型別錯——紅燈時漏改。**程序偏離**：沒有停手求裁決，直接跑 `tdd-unlock.sh`（`npm run check` 綠屬實，但它不跑
-  Deno 測試，這把鎖對後端測試本來就不起作用）後補欄位，與實作同一個 `fix` commit（`1b57d088`）。
-  `git diff 6d3dbbcc 1b57d088 -- '*.test.*'` 只有 1 行（期望物件補 `orphanTotal: 3`）。審查者請對這兩段 diff 判斷語意
+  Deno 測試，這把鎖對後端測試本來就不起作用）後補欄位，與實作同一個 `fix` commit（`5d7e474f`）。
+  `git diff 7a23fe6e 5d7e474f -- '*.test.*'` 只有 1 行（期望物件補 `orphanTotal: 3`）。審查者請對這兩段 diff 判斷語意
   是否未變，不要只信這裡的陳述。
 
 另外兩個框架事實：(a) `tdd-unlock.sh` 只跑 `npm run check`，後端階段「Deno 測試仍紅就解鎖」機械上擋不住；
 (b) 收尾的 `git fetch origin develop` 觸發 hook 自動 rebase，所有紅燈 hash 改寫，progress.md 要依 commit 標題重新對應。
+本條的 hash 是 2026-10-31 rebase 到 develop 之後的值；之後若再 rebase，以 commit 標題（`test(red): 實作審查修正…`、
+`test(listing-photos): 縮短超長測試名…`）對應。
 
 處置：照實寫進 PR #453 描述；框架修訂候選併入 10-21 那條：(1) `tdd-unlock.sh` 在有 `supabase/functions/**` 改動時納入
 `deno task test:unit`；(2) 文件化「紅燈前的閘門指令不得接 `| tail`」或讓檢查器輸出夠短；(3) 自動 rebase 後提示 hash 已變。
