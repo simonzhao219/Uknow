@@ -243,6 +243,7 @@ Deno.test('sweepOrphanPhotos：實刪 → 以 base／寬限期／上限查候選
   assertEquals(result, {
     dryRun: false,
     candidates: rep.candidates,
+    orphanTotal: 3,
     removed: 3,
     notRemoved: 0,
     totalObjects: 100,

@@ -142,6 +142,8 @@ export interface SweepOptions {
 export interface SweepResult {
   dryRun: boolean;
   candidates: string[];
+  /** 截斷前的孤兒總數；大於 candidates 長度時代表還要再跑幾輪。 */
+  orphanTotal: number;
   removed: number;
   notRemoved: number;
   totalObjects: number;
@@ -150,12 +152,15 @@ export interface SweepResult {
 }
 
 export type SweepErrorCode = 'circuit_open' | 'sweep_failed';
+/** 斷路器是哪一道：anchor 不可放行，ratio 可用 forceRatio 放行。 */
+export type CircuitReason = 'anchor' | 'ratio';
 
 export class SweepError extends Error {
   constructor(
     readonly code: SweepErrorCode,
     message: string,
     readonly removedSoFar: number,
+    readonly reason?: CircuitReason,
   ) {
     super(message);
   }
@@ -163,8 +168,8 @@ export class SweepError extends Error {
 
 /**
  * 寬限期（W2-7）：物件上傳後多久才可能被當成孤兒。寫死、改動要發 PR（維運參數，
- * 不是 reward_config 那類業務參數）。migration 20261102000001 的刪前複查寫死同一個值
- * 作下限，兩邊由 listing-photos.unit.test.ts 讀原文比對。
+ * 不是 reward_config 那類業務參數）。migration 20261102000001 的刪前複查寫死同一個值，
+ * 兩邊必須相等，由 listing-photos.unit.test.ts 讀原文比對。
  */
 export const ORPHAN_GRACE_HOURS = 168;
 /** 單輪最多處理幾個候選。 */
@@ -195,18 +200,24 @@ export async function sweepOrphanPhotos(
   } catch (err) {
     throw new SweepError('sweep_failed', `列孤兒失敗：${errorMessage(err)}`, 0);
   }
+  // 統計欄位若成 NaN，下面兩道斷路器的比較全為 false、會靜默放行——寧可整輪失敗。
+  const stats = [rep.orphanTotal, rep.totalObjects, rep.referencedUrls, rep.matchedUrls];
+  if (!stats.every(Number.isFinite)) {
+    throw new SweepError('sweep_failed', '列孤兒回傳的統計欄位不是有限數字', 0);
+  }
   if (rep.matchedUrls === 0 && rep.referencedUrls > 0 && rep.totalObjects > 0) {
-    throw new SweepError('circuit_open', '錨點失效：沒有任何引用對得到物件', 0);
+    throw new SweepError('circuit_open', '錨點失效：沒有任何引用對得到物件', 0, 'anchor');
   }
   if (
     !opts.forceRatio && rep.totalObjects > RATIO_GATE_MIN_OBJECTS &&
     rep.orphanTotal / rep.totalObjects > 0.5
   ) {
-    throw new SweepError('circuit_open', '比例閘：孤兒超過 bucket 物件數的一半', 0);
+    throw new SweepError('circuit_open', '比例閘：孤兒超過 bucket 物件數的一半', 0, 'ratio');
   }
   const result: SweepResult = {
     dryRun: opts.dryRun,
     candidates: rep.candidates,
+    orphanTotal: rep.orphanTotal,
     removed: 0,
     notRemoved: 0,
     totalObjects: rep.totalObjects,
@@ -336,6 +347,7 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
           data: {
             dryRun: r.dryRun,
             candidateCount: r.candidates.length,
+            orphanTotal: r.orphanTotal,
             removed: r.removed,
             notRemoved: r.notRemoved,
             totalObjects: r.totalObjects,
@@ -348,10 +360,10 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
         console.error('[listing-photos] 孤兒清理失敗', err);
         const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
         const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
-        return c.json(
-          { success: false, error: { code: e.code, message }, removedSoFar: e.removedSoFar },
-          500,
-        );
+        const error = e.reason
+          ? { code: e.code, reason: e.reason, message }
+          : { code: e.code, message };
+        return c.json({ success: false, error, removedSoFar: e.removedSoFar }, 500);
       }
     },
 

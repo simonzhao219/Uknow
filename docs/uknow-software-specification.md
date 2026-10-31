@@ -655,12 +655,16 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
   - **排程清理**：每日一次呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）。孤兒＝上傳
     超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且沒有被檔案前綴本人的刊登以原樣 URL 引用的檔，涵蓋帳號
     刪除（`profiles` cascade 刪 `listings`）、`/auth/cancel-signup`、離頁、逾時重試、並發等所有來源。最長下架延遲＝
-    寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`）。會籍到期不清照片（W2-5，待律師確認）。
-  - **安全閘**：預設 dry-run，排程只有 repo variable `PHOTO_PURGE_LIVE` 為 `true` 才實刪。斷路器中止時一檔不刪：
-    錨點失效（有引用卻都對不到物件）不可放行；比例閘（孤兒超過 bucket 物件數一半，且物件數超過 20）可用
-    `workflow_dispatch` 帶 `force_ratio=true` 放行單輪。刪除前再以 RPC 複查一次引用。失敗時開 issue
+    寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 `orphanTotal` 是截斷前的總數。終止的範圍是帳號
+    刪除與業主處理的終止請求；會籍到期是否算終止，待律師確認。
+  - **安全閘**：預設 dry-run，排程只有 repo variable `PHOTO_PURGE_LIVE` 為 `true` 才實刪；未開時只列候選、不刪任何
+    檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
+    斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有引用卻都對不到物件）不可放行；
+    比例閘（`ratio`，孤兒超過 bucket 物件數一半，且物件數超過 20）可用 `workflow_dispatch` 帶 `force_ratio=true`
+    放行單輪。孤兒超過單輪上限時，依 `orphanTotal` 分多輪 dispatch，每輪先 dry-run 看清單。刪除前再以 RPC 複查一次引用。失敗時開 issue
     「[環境] 刊登照片孤兒清理失敗」，同標題已開則改留言。
-  - **查看候選清單**（業主本機；清單含會員 uid，不可貼到 issue 或 Actions）：
+  - **查看候選清單**（業主本機；清單含會員 uid，不可貼到 issue 或 Actions）：`<project-ref>` 正式站見
+    `src/utils/supabase/info.tsx`、develop 見 `config/supabaseTarget.ts`；先 `export RECONCILE_SECRET=…`。
 
     ```bash
     curl -sS -X POST "https://<project-ref>.supabase.co/functions/v1/api/internal/purge-orphan-listing-photos" \
@@ -668,11 +672,12 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
       -d '{"dry_run": true, "include_names": true}'
     ```
 
-    被比例閘擋下時，body 加 `"force_ratio": true` 才看得到清單。
+    被比例閘擋下時，body 加 `"force_ratio": true` 才看得到清單；一次最多列最早的 500 個。
   - **終止／刪除請求 SOP**（條款六「隨時通知終止」、條款十二「請求刪除視同終止」）：期限自**業主收件日**起算。
     人工期限＝三十日－寬限期（7 日）－1 輪（1 日）－2 日緩衝＝**20 日**；寬限期改了，這個期限要跟著重算。
+    - 收件時先確認 `PHOTO_PURGE_LIVE` 為 `true`；沒開的話刪了刊登照片也不會消失，先處理開關。
     - 已付款會員：收件後 20 日內在 Supabase Dashboard SQL Editor 執行
-      `delete from public.listings where user_id = '<uid>';`，照片由排程清除。不停權：會員仍可登入、領取與提領
+      `delete from public.listings where user_id = '<uid>' returning id;`（回傳列可對照留痕），照片由排程清除。不停權：會員仍可登入、領取與提領
       獎勵，停權只用於違規處置；金流與推薦紀錄依條款十二保存。會員日後自行重新刊登，視為新的同意。
     - 未付款會員：可直接在 Dashboard 刪除帳號。
     - 收件時在行事曆設第 15 日提醒；第 15 日仍未完成就當天處理。

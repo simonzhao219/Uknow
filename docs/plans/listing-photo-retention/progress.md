@@ -9,17 +9,18 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `e7101e1f` | `7e7ab18b` |
-| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | `8948cd1b` |
-| 3 | `sweepOrphanPhotos` 純函式 | ✅ 完成 | `e494f0f5` | `61a799a0` |
-| 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ✅ 完成 | `e0603b0c` | `b9f0642d`（測試修正 `17767bf7`） |
-| 5 | 排程 workflow `purge-listing-photos.yml` | ✅ 完成 | `74611cb9` | `601ed20b` |
-| 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ✅ 完成 | `2c6e7fd2` | （本 commit） |
+| 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `ea0eae74` | `31c9d9e1` |
+| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `619cf029` | `1ff4c355` |
+| 3 | `sweepOrphanPhotos` 純函式 | ✅ 完成 | `b0324884` | `cf0e5fe5` |
+| 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ✅ 完成 | `a8873420` | `d5f1d5f8`（測試修正 `fc0400f1`） |
+| 5 | 排程 workflow `purge-listing-photos.yml` | ✅ 完成 | `2cc3ab03` | `3b89bca1` |
+| 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ✅ 完成 | `83a17091` | `eb4dea37` |
+| 審 | `/review-implementation` 修正（`implementation-review.md`） | ✅ 完成 | `6d3dbbcc` | （本 commit） |
 
 ## 目前位置與下一步
 
-第 2 波只做規劃：plan v2.4、review 三輪（P0 0；P1 全數處置，Q1–Q11 都已裁決）。等主 session 核對與業主人審，之後第 3 波由業主親打
-`/tdd-implement listing-photo-retention` 開工；開工前先 rebase 到最新 develop，再跑 `check-migration-versions.py`。
+六階段與實作審查修正全數完成。下一步：決策升級進正式文件後清理本目錄、更新 PR #453。PR 在 11/03 晉升 PR 合進 main
+之前不轉 ready、不合併。
 
 ## 實作決策（給 /review-implementation 對照）
 
@@ -41,6 +42,17 @@
   `ORPHAN_GRACE_HOURS`），綠燈時順手把 `listing-photos.ts` 加進來源清單（紅燈 commit 漏了，規則抽不到程式碼那側）。
   突變驗證：規格書改 169 → 紅。README 突變表那列改以 `listings_update_own` 改 restrictive 在本機重驗（被「四條全是 permissive」抓到）。
 
+- hash 註記：收尾 `git fetch` 時 hook 自動 rebase 到最新 develop，表內 hash 已依 commit 標題重新對應為 rebase 後的值。
+- 審查修正（P1×4 全修、P2 除「progress 目前位置」外全修）：斷路器 500 回應加 `error.reason`（`anchor`／`ratio`）；回應與
+  workflow 摘要加 `orphanTotal`；`sweepOrphanPhotos` 對 NaN 統計 fail-closed；`judge` 加 `--sent-file`，本輪送
+  `dry_run: false` 遇 404 也判失敗；狀態碼正規化（curl 失敗不再輸出兩次 000）；issue 內文補齊各 code 處置；規格書 §11
+  補「未開實刪＝不刪檔、開前由業主核對」、分輪依 `orphanTotal`、curl 的 ref 來源與 export、SOP 先確認開關、
+  `returning id`，去掉鷹架編號 W2-5；develop 的 `RECONCILE_SECRET` 須與正式站同值寫進 workflow 檔頭與
+  `supabase-setup-checklist.md`；SQL 與 `ORPHAN_GRACE_HOURS` 的關係改述為「必須相等」（與測試一致）。
+- 未列在 plan 的連動（審查指出、補記）：`docs/e2e-journey-test-design.md` 兩處 policy 數改為四條；階段 1 的 DB 測試以真
+  Storage 上傳＋`bucket.list` 驗證取代 plan 寫的 `removeObjects` spy（驗證力更強）；第二支 RPC join `storage.objects`，
+  不存在的 name 會被剔除（比 plan 更保守）。
+
 ## 本機環境備註
 
 - 本機 `supabase start`（CLI 2.122）的預設權限比 CI 寬：`rls-policies.test.ts` 的「anon 沒有寫入權」與
@@ -52,4 +64,12 @@
   ① 兩個測試名超過 72 字（`check-test-names.py` 經 `| tail` 吃掉失敗碼，沒擋下 commit）；
   ② 真路由 dry-run 測試以 `Deno.env.set` 覆寫 `RECONCILE_SECRET` 沒還原，害同行程的 `system-alerts-recent.test.ts` 401。
 
+- 審查修正紅燈 `6d3dbbcc` 漏改一條既有斷言：`sweepOrphanPhotos` 實刪測試精確比對 `SweepResult`，加 `orphanTotal` 後
+  期望物件少一欄而型別錯。經 `tdd-unlock`（`npm run check` 綠屬實；它不含 Deno）解鎖後，只在該期望物件補
+  `orphanTotal: 3`，其餘斷言不動。
+
 ## 框架摩擦
+
+- `tdd-unlock.sh` 只跑 `npm run check`，不含 Deno 測試；後端階段的紅燈期鎖不住「Deno 測試還紅就解鎖」。本案每階段另跑
+  `deno task test` 確認，但腳本本身不擋。
+- `python3 scripts/check-test-names.py | tail -n` 會吃掉失敗碼，紅燈 commit 前的命名檢查因此沒擋下超長名稱。

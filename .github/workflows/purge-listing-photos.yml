@@ -23,6 +23,10 @@ name: Purge Listing Photos
 # 還能容許約兩週連續失敗，失敗會開 issue。成本只有牆鐘（public repo 的標準
 # runner 免費）與一次 Edge Function 呼叫。排程只打正式站（W2-9）；develop
 # 只走 dispatch。時間選台北凌晨 03:17，避開整點高峰。
+#
+# 前提：GitHub 只有一份 RECONCILE_SECRET，而 Supabase Secrets 逐分支獨立、
+# 不繼承——develop 的 Supabase RECONCILE_SECRET 必須與正式站同值，dispatch
+# 到 develop 才打得通（401 就是兩邊不同值）。
 # ============================================================================
 on:
   schedule:
@@ -105,9 +109,10 @@ jobs:
           echo "送出參數：$(cat /tmp/purge-body.json)"
           code="$(curl -sS -o /tmp/purge-resp.json -w '%{http_code}' --max-time 150 -X POST "$ENDPOINT" \
             -H 'Content-Type: application/json' -H "x-internal-secret: $RECONCILE_SECRET" \
-            --data @/tmp/purge-body.json 2>/dev/null || echo 000)"
+            --data @/tmp/purge-body.json 2>/dev/null || true)"
           python3 scripts/purge-listing-photos-request.py judge --status "$code" \
-            --body-file /tmp/purge-resp.json --live "$LIVE" | tee -a "$GITHUB_STEP_SUMMARY"
+            --body-file /tmp/purge-resp.json --live "$LIVE" --sent-file /tmp/purge-body.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 失敗時開 issue
         if: failure()
@@ -150,10 +155,14 @@ jobs:
                 '**影響**：條款十之一要求撤除後三十日內下架，排程停擺會讓孤兒照片留在公開 bucket。',
                 '三十日扣掉 7 日寬限期，約有兩週處理時間。',
                 '',
-                '- `circuit_open`：斷路器中止、一檔未刪。依規格書 §11 SOP 在本機 dry-run 看清單，',
-                '  確認無誤再 dispatch（`force_ratio=true` 只放行比例閘）',
-                '- `not_removed`：有物件 Storage 刪不掉，會每輪霸佔額度，需人工查',
+                '- `circuit_open`＋`reason=ratio`：孤兒過半，一檔未刪。依規格書 §11「查看候選清單」在本機',
+                '  dry-run（加 `force_ratio: true`）核對，確認無誤再 dispatch `force_ratio=true`、`dry_run=false`',
+                '- `circuit_open`＋`reason=anchor`：引用對不到任何物件（public URL base 推導錯或刊登都是死連結），',
+                '  **不可放行**，先查 Edge 的 publicBase 與 `listings.photos`',
+                '- `not_removed`：有物件 Storage 刪不掉、每輪霸佔額度。用 §11 的 dry-run 指令找出是哪些檔，再到 Dashboard 查',
                 '- `unauthorized`：RECONCILE_SECRET 與該環境 Supabase Secrets 不一致',
+                '- `not_deployed`：開了實刪或手動實刪卻 404，確認該環境 Edge Function 已部署且路由有註冊',
+                '- 其他（`sweep_failed`、`bad_shape`、`http_*`）：看 run log 的 HTTP 狀態，`sweep_failed` 再看 Edge Function log',
                 '',
                 '排除後關閉此 issue。',
               ].join('\n'),

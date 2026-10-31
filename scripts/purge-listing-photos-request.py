@@ -19,11 +19,12 @@ framework-check 每次 CI 跑。
      會員 uid 的 name。
 
   J1 404:未開實刪時降為 warning 略過(晉升後到正式站部署核准前,端點還
-     不存在);開了實刪(`PHOTO_PURGE_LIVE == 'true'`)還 404 就是路由漏註冊,
-     判失敗——否則排程會永遠靜默。
+     不存在);開了實刪(`PHOTO_PURGE_LIVE == 'true'`)或本輪送出 `dry_run: false`
+     (手動 dispatch 實刪)還 404 就判失敗——否則排程會永遠靜默,手動實刪也會
+     看似成功。
   J2 其餘非 200、`success` 不為 true、統計欄位缺漏或型別不符 → 失敗。
   J3 `notRemoved > 0` → 失敗(端點照常回 200,但有物件刪不掉、每輪霸佔額度)。
-  J4 輸出只放 HTTP 狀態、`error.code` 與統計數字。**絕不印 `message`、
+  J4 輸出只放 HTTP 狀態、`error.code`、斷路器 `reason`(anchor／ratio)與統計數字。**絕不印 `message`、
      `names` 或原始回應**:Storage 錯誤字串可能含 uid,Actions log 公開。
 
 決策邏輯放在純函式裡,好讓表格案例直接驗行為(同 check-migration-versions.py
@@ -33,7 +34,7 @@ framework-check 每次 CI 跑。
   python3 scripts/purge-listing-photos-request.py body --event schedule --live "$LIVE" \\
       --dry-input "$DRY" --force-input "$FORCE"         印出 request body(JSON)
   python3 scripts/purge-listing-photos-request.py judge --status 200 \\
-      --body-file resp.json --live "$LIVE"              判讀回應;失敗 exit 1
+      --body-file resp.json --live "$LIVE" --sent-file body.json   判讀回應;失敗 exit 1
       (有 $GITHUB_OUTPUT 時寫入 code= 與 stats=,給失敗 issue 用)
   python3 scripts/purge-listing-photos-request.py --self-test
 """
@@ -41,10 +42,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 
-STAT_KEYS = ("candidateCount", "removed", "notRemoved", "totalObjects", "referencedUrls", "matchedUrls")
+STAT_KEYS = ("candidateCount", "orphanTotal", "removed", "notRemoved", "totalObjects", "referencedUrls", "matchedUrls")
 
 
 def build_body(event: str, live: str, dry_input: str, force_input: str) -> dict:
@@ -69,9 +71,12 @@ def _stats_line(data: dict) -> str:
 
 def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> Verdict:
     """J1–J4。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
+    # curl 失敗時 -w 已印 000,呼叫端若再補一次會變兩行;只取最後一個三位數。
+    codes = re.findall(r"\d{3}", status)
+    status = codes[-1] if codes else "000"
     if status == "404":
-        if live == "true":
-            return Verdict(False, "not_deployed", ["::error::清理端點 404，但已開實刪（PHOTO_PURGE_LIVE=true）：路由可能漏註冊"])
+        if live == "true" or not sent_dry_run:
+            return Verdict(False, "not_deployed", ["::error::清理端點 404，但本輪要求實刪或已開 PHOTO_PURGE_LIVE：路由可能漏註冊"])
         return Verdict(True, "not_deployed", ["::warning::清理端點尚未部署（404），本輪略過。"])
     try:
         body = json.loads(body_text)
@@ -85,6 +90,10 @@ def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> 
         removed = body.get("removedSoFar") if isinstance(body, dict) else None
         removed = removed if isinstance(removed, int) and not isinstance(removed, bool) else "?"
         stats = f"removedSoFar={removed}"
+        # 斷路器是哪一道(固定枚舉,不含 uid):anchor 不可放行,ratio 可 force_ratio。
+        reason = err.get("reason") if isinstance(err, dict) else None
+        if reason in ("anchor", "ratio"):
+            stats += f" reason={reason}"
         return Verdict(False, code, [f"::error::清理失敗（HTTP {status}，code={code}，{stats}）"], stats)
     data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
     if (
@@ -116,7 +125,13 @@ def main(argv: list[str]) -> int:
                 text = f.read()
         except OSError:
             text = ""
-        v = judge(_arg(argv, "--status"), text, _arg(argv, "--live"))
+        sent_dry_run = True
+        try:
+            with open(_arg(argv, "--sent-file"), encoding="utf-8") as f:
+                sent_dry_run = json.load(f).get("dry_run") is not False
+        except (OSError, ValueError, AttributeError):
+            pass
+        v = judge(_arg(argv, "--status"), text, _arg(argv, "--live"), sent_dry_run)
         print("\n".join(v.lines))
         out = os.environ.get("GITHUB_OUTPUT")
         if out:

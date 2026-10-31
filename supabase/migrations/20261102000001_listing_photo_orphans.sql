@@ -17,8 +17,8 @@
 -- 寬限期起算點是物件的 created_at（上傳時間）：刊登存檔前上傳的檔在寬限期內
 -- 不會被清。filter_unreferenced_listing_photos 是刪除前的最後一道閘，不信任
 -- 輸入，重新驗證 bucket／name／寬限期／引用；它的寬限期寫在下方
--- c_min_grace，是 Edge ORPHAN_GRACE_HOURS（listing-photos.ts）的下限，
--- 兩者不一致時以較長者為準（listing-photos.unit.test.ts 讀本檔把關）。
+-- c_min_grace，與 Edge ORPHAN_GRACE_HOURS（listing-photos.ts）必須相等
+-- （listing-photos.unit.test.ts 讀本檔把關；改寬限期要新 migration 覆寫本函式）。
 --
 -- 只授 service_role。三個函式都在 public schema，不 revoke 的話 PostgREST
 -- 會把它們暴露成 /rpc 給 anon key 呼叫。
@@ -116,7 +116,7 @@ as $$
   from storage.objects o
   where o.bucket_id = 'listings-photos'
     and o.name = any(p_names)
-    -- c_min_grace：ORPHAN_GRACE_HOURS 的下限（見檔頭）
+    -- c_min_grace：與 ORPHAN_GRACE_HOURS 相等（見檔頭）
     and o.created_at < now() - interval '168 hours'
     and o.name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(jpg|png|webp)$'
     and public._listing_photo_is_orphan(p_public_base, o.name)
