@@ -1,0 +1,2 @@
+{"branch": "HEAD", "ended": "2026-10-30T15:51:59+00:00", "fired": {}, "passed": {"bash-guard": 8, "check-output-filter": 8, "model-effort-advisor": 1}, "session": "6e9f2cff5d63", "started": "2026-10-30T15:51:08+00:00"}
+{"branch": "docs/wave1-review", "ended": "2026-10-31T01:25:41+00:00", "fired": {"model-effort-advisor/opus-tier": 6}, "passed": {"bash-guard": 28, "check-output-filter": 28, "deletion-residue-check": 3, "feature-plan-guard": 5, "tdd-test-guard": 5}, "session": "e39438913b03", "started": "2026-10-31T01:19:18+00:00"}
