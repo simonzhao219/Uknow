@@ -12,4 +12,4 @@
 {"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T21:25:16+00:00", "fired": {}, "passed": {"model-effort-advisor": 1}, "session": "f47a13ba5a5d", "started": "2026-10-31T21:25:16+00:00"}
 {"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T21:38:28+00:00", "fired": {}, "passed": {"model-effort-advisor": 1}, "session": "5f219296fd13", "started": "2026-10-31T21:38:28+00:00"}
 {"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T22:04:24+00:00", "fired": {}, "passed": {"bash-guard": 4, "check-output-filter": 4, "deletion-residue-check": 5, "model-effort-advisor": 6}, "session": "208ef829698b", "started": "2026-10-31T21:47:37+00:00"}
-{"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T22:23:17+00:00", "fired": {}, "passed": {"bash-guard": 2, "check-output-filter": 2}, "session": "e0f2022dbc1f", "started": "2026-10-31T22:23:00+00:00"}
+{"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T22:26:25+00:00", "fired": {}, "passed": {"bash-guard": 6, "check-output-filter": 6, "deletion-residue-check": 1, "model-effort-advisor": 1}, "session": "e0f2022dbc1f", "started": "2026-10-31T22:23:00+00:00"}
