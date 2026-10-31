@@ -81,24 +81,27 @@ export function photoUrlToOwnedPath(
 export interface PhotoCleanupDeps {
   /** storage getPublicUrl(path) 的結果（與 upload-photo 回傳同一格式）。 */
   publicUrlOf: (path: string) => string;
-  /** 回傳 listings.photos 仍含有的 URL；查詢出錯必須 throw。 */
+  /**
+   * 回傳 ownerId 本人刊登的 photos 仍含有的 URL；查詢出錯必須 throw。
+   * 只認本人：他人把你的 URL 寫進自己的 photos 不得擋住清理（條款十之一）。
+   */
   findReferencedUrls: (urls: string[], ownerId: string) => Promise<string[]>;
   /** Storage remove；回傳實際被刪的 path；出錯必須 throw。 */
   removeObjects: (paths: string[]) => Promise<string[]>;
 }
 
 /**
- * 刪掉「沒有任何刊登仍引用」的照片。引用檢查跨使用者全表（以 deps.publicUrlOf 重組 URL，
- * 與 upload-photo 回傳同一格式）、一次批次查詢；查詢出錯 throw 且一檔不刪（fail-closed）。
+ * 刪掉「檔案前綴本人的刊登沒有引用」的照片。引用檢查只看 ownerId 的刊登（以 deps.publicUrlOf
+ * 重組 URL，與 upload-photo 回傳同一格式）、一次批次查詢；查詢出錯 throw 且一檔不刪（fail-closed）。
  * `removed` 取 Storage 實際回傳數（不存在的檔不算、重送冪等）。
  */
 export async function removeUnreferencedPhotos(
   deps: PhotoCleanupDeps,
   paths: string[],
-  _ownerId: string,
+  ownerId: string,
 ): Promise<{ removed: number; skipped: string[] }> {
   if (paths.length === 0) return { removed: 0, skipped: [] };
-  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf), ''));
+  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf), ownerId));
   const skipped = paths.filter((p) => referenced.has(deps.publicUrlOf(p)));
   const toRemove = paths.filter((p) => !referenced.has(deps.publicUrlOf(p)));
   if (toRemove.length === 0) return { removed: 0, skipped };

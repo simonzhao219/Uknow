@@ -4411,12 +4411,10 @@ export function listingPhotoDeps() {
     rateLimit,
     cleanup: {
       publicUrlOf: listingPhotoPublicUrl,
-      // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
-      findReferencedUrls: async (urls: string[], _ownerId: string) => {
-        const { data, error } = await sb().from('listings').select('photos').overlaps(
-          'photos',
-          urls,
-        );
+      // 只認本人刊登：他人把你的 URL 寫進自己的 photos 不得擋住清理（條款十之一）。
+      findReferencedUrls: async (urls: string[], ownerId: string) => {
+        const { data, error } = await sb().from('listings').select('photos')
+          .eq('user_id', ownerId).overlaps('photos', urls);
         if (error) throw new Error(error.message);
         const wanted = new Set(urls);
         return (data ?? []).flatMap((row: { photos: string[] | null }) => row.photos ?? [])

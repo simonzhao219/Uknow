@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 即時路徑引用語意改成「僅本人刊登」 | ⬜ 未開始 | | |
+| 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `08e616ac` | （本 commit） |
 | 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ⬜ 未開始 | | |
 | 3 | `sweepOrphanPhotos` 純函式 | ⬜ 未開始 | | |
 | 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ⬜ 未開始 | | |
