@@ -23,7 +23,7 @@
 
 ## 目前位置與下一步
 
-**規劃定稿（plan v4.1，2026-10-31）**：v4 重審 P0 0、P1 4 已依 reviewer 建議落地（全為技術修正、無業主裁決）。下一步：第 3 波由人親自下 `/tdd-implement auth-state-trust`，從 A0 重跑查證開始。
+**人審通過（2026-10-31，業主）**：規劃 v4.1 定稿、review.md〈處置〉已勾。實作由新開的執行 session 跑 `/tdd-implement auth-state-trust`（A2a／A2b 用 Opus，A1／A3／A4 用 Sonnet；收尾另開審查 session 跑 `/review-implementation`）。第一步 A0：主 session 代跑 plan §2.1 查證 SQL（正式站＋develop），結果加一列到下表後才進 A1。
 
 ## A0 資料查證紀錄
 
