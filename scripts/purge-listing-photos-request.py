@@ -39,12 +39,19 @@ framework-check 每次 CI 跑。
 """
 from __future__ import annotations
 
+import json
+import os
 import sys
 from dataclasses import dataclass, field
 
+STAT_KEYS = ("candidateCount", "removed", "notRemoved", "totalObjects", "referencedUrls", "matchedUrls")
+
 
 def build_body(event: str, live: str, dry_input: str, force_input: str) -> dict:
-    return {}
+    """B1–B3:只回 dry_run 與 force_ratio 兩個 JSON boolean。"""
+    if event == "workflow_dispatch":
+        return {"dry_run": dry_input != "false", "force_ratio": force_input == "true"}
+    return {"dry_run": live != "true", "force_ratio": False}
 
 
 @dataclass
@@ -52,10 +59,72 @@ class Verdict:
     ok: bool
     code: str
     lines: list[str] = field(default_factory=list)
+    stats: str = ""
+
+
+def _stats_line(data: dict) -> str:
+    mode = "dry-run" if data.get("dryRun") else "實刪"
+    return f"{mode}：" + " ".join(f"{k}={data[k]}" for k in STAT_KEYS)
 
 
 def judge(status: str, body_text: str, live: str) -> Verdict:
-    return Verdict(ok=True, code="")
+    """J1–J4。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
+    if status == "404":
+        if live == "true":
+            return Verdict(False, "not_deployed", ["::error::清理端點 404，但已開實刪（PHOTO_PURGE_LIVE=true）：路由可能漏註冊"])
+        return Verdict(True, "not_deployed", ["::warning::清理端點尚未部署（404），本輪略過。"])
+    try:
+        body = json.loads(body_text)
+    except ValueError:
+        body = None
+    if status != "200":
+        if status == "401":
+            return Verdict(False, "unauthorized", ["::error::清理端點拒絕（401）：RECONCILE_SECRET 與後端不一致"])
+        err = body.get("error") if isinstance(body, dict) else None
+        code = err.get("code") if isinstance(err, dict) and isinstance(err.get("code"), str) else f"http_{status}"
+        removed = body.get("removedSoFar") if isinstance(body, dict) else None
+        removed = removed if isinstance(removed, int) and not isinstance(removed, bool) else "?"
+        stats = f"removedSoFar={removed}"
+        return Verdict(False, code, [f"::error::清理失敗（HTTP {status}，code={code}，{stats}）"], stats)
+    data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("dryRun"), bool)
+        or any(not isinstance(data.get(k), int) or isinstance(data.get(k), bool) for k in STAT_KEYS)
+    ):
+        return Verdict(False, "bad_shape", ["::error::清理回應形狀不符（HTTP 200 但缺 success／統計欄位）"])
+    stats = _stats_line(data)
+    if data["notRemoved"] > 0:
+        return Verdict(False, "not_removed", [f"::error::有 {data['notRemoved']} 個物件未被 Storage 刪除；{stats}"], stats)
+    return Verdict(True, "", [f"清理完成；{stats}"], stats)
+
+
+def _arg(argv: list[str], name: str) -> str:
+    return argv[argv.index(name) + 1] if name in argv else ""
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] == ["body"]:
+        print(json.dumps(build_body(
+            _arg(argv, "--event"), _arg(argv, "--live"), _arg(argv, "--dry-input"), _arg(argv, "--force-input"),
+        )))
+        return 0
+    if argv[:1] == ["judge"]:
+        path = _arg(argv, "--body-file")
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            text = ""
+        v = judge(_arg(argv, "--status"), text, _arg(argv, "--live"))
+        print("\n".join(v.lines))
+        out = os.environ.get("GITHUB_OUTPUT")
+        if out:
+            with open(out, "a", encoding="utf-8") as f:
+                f.write(f"code={v.code}\nstats={v.stats}\n")
+        return 0 if v.ok else 1
+    print(__doc__)
+    return 2
 
 
 # ---------------------------------------------------------------------------
@@ -92,8 +161,6 @@ BODY_CASES: list[tuple[str, tuple[str, str, str, str], dict]] = [
 
 
 def _ok_body(**over) -> str:
-    import json
-
     data = {
         "dryRun": True,
         "candidateCount": 3,
@@ -108,8 +175,6 @@ def _ok_body(**over) -> str:
 
 
 def _fail_body(code: str) -> str:
-    import json
-
     return json.dumps(
         {"success": False, "error": {"code": code, "message": f"storage down {UID}/1_a.jpg"}, "removedSoFar": 7}
     )
@@ -163,4 +228,4 @@ def self_test() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(self_test() if "--self-test" in sys.argv[1:] else 0)
+    sys.exit(self_test() if "--self-test" in sys.argv[1:] else main(sys.argv[1:]))

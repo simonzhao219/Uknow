@@ -12,8 +12,8 @@
 | 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `e7101e1f` | `7e7ab18b` |
 | 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | `8948cd1b` |
 | 3 | `sweepOrphanPhotos` 純函式 | ✅ 完成 | `e494f0f5` | `61a799a0` |
-| 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ✅ 完成 | `e0603b0c` | （本 commit） |
-| 5 | 排程 workflow `purge-listing-photos.yml` | ⬜ 未開始 | | |
+| 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ✅ 完成 | `e0603b0c` | `b9f0642d`（測試修正 `17767bf7`） |
+| 5 | 排程 workflow `purge-listing-photos.yml` | ✅ 完成 | `74611cb9` | （本 commit） |
 | 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
@@ -32,6 +32,10 @@
 - 階段 4 在 plan 的 unit 落點之外，加了一條 DB 測試（`listing-photo-orphans.test.ts`）走真路由＋真 RPC 的 dry-run：
   index.ts 的 wiring（RPC jsonb 轉 camelCase、`` `${ORPHAN_GRACE_HOURS} hours` ``）在 unit 層驗不到。
 - 失敗回應的 `message` 是依 `code` 給的固定文案，不帶 Storage 錯誤字串（可能含 uid）；細節只進 Edge log。
+
+- 階段 5：body 改由 `purge-listing-photos-request.py body` 產生（plan §2.5 前段寫 `jq -n --argjson`，後段把組裝抽進腳本，取後者）。
+  vars 的 ref 檢查兩個環境同款：ref 取自 git，vars 有設才要求一致（`reconcile-payments.yml` 對正式站要求 vars 必設，因為它的
+  URL 用 vars；本 workflow 的 URL 用 git 的 ref）。排程時間台北 03:17（`17 19 * * *` UTC）。
 
 ## 本機環境備註
 

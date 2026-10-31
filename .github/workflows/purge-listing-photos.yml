@@ -1,0 +1,160 @@
+name: Purge Listing Photos
+
+# ============================================================================
+# 條款十之一：使用者撤除的照片、帳號已刪除的會員留下的照片，三十日內要從公開
+# bucket listings-photos 消失。即時路徑只涵蓋編輯存檔與刪刊登，帳號 cascade
+# 刪除、離頁、逾時重試、並發等來源都會留下孤兒——這支排程呼叫
+# POST /internal/purge-orphan-listing-photos 兜住全部（規格書 §11「照片檔清理」）。
+#
+# 刪的是**沒有備份**的 Storage 物件，所以：
+#   - 預設 dry-run：排程只有 repo variable PHOTO_PURGE_LIVE == 'true' 才實刪
+#     （W2-8：業主核對候選清單後才開）；dispatch 依輸入，預設 dry-run
+#   - 端點自帶斷路器（錨點失效、比例閘）；比例閘誤擋時 dispatch 帶
+#     force_ratio=true 放行單輪
+#   - body 組裝與回應判讀在 scripts/purge-listing-photos-request.py，
+#     表格案例由 framework-check 每次 CI 跑
+#
+# ⚠️ repo 是 public，log／step summary／issue 全部公開。候選 name 含會員 uid：
+# workflow 不送 include_names，log 只印狀態碼、code 與統計數字，不用 set -x、
+# curl -v，也不印回應 body。要看清單時業主在本機 curl（規格書 §11 的 SOP）。
+#
+# 頻率依據：每日一次。條款窗口三十日、寬限期 7 日（ORPHAN_GRACE_HOURS），
+# 最長下架延遲＝寬限期＋1 輪；GitHub 排程漂移數小時不影響。三十日扣掉寬限期
+# 還能容許約兩週連續失敗，失敗會開 issue。成本只有牆鐘（public repo 的標準
+# runner 免費）與一次 Edge Function 呼叫。排程只打正式站（W2-9）；develop
+# 只走 dispatch。時間選台北凌晨 03:17，避開整點高峰。
+# ============================================================================
+on:
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 清理目標
+        type: choice
+        options: [production, develop]
+        default: production
+      dry_run:
+        description: 只列候選、不刪除
+        type: boolean
+        default: true
+      force_ratio:
+        description: 放行比例閘（僅本輪；錨點失效不可放行）
+        type: boolean
+        default: false
+
+concurrency:
+  group: purge-listing-photos-${{ inputs.target || 'production' }}
+  cancel-in-progress: false
+
+# ⚠️ 刻意不設 workflow 層 permissions：底下的 job 需要 issues: write
+# （失敗時開 issue）。權限一律逐 job 宣告。
+
+jobs:
+  purge-orphan-photos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      TARGET: ${{ inputs.target || 'production' }}
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      # ref 的單一真相在 git（同 reconcile-payments.yml／deploy-supabase.yml），
+      # vars 只是可選覆蓋；兩者不一致就中止，避免清錯環境。
+      - name: 確認清理目標
+        id: target
+        env:
+          REF_PROD_VARS: ${{ vars.SUPABASE_PROJECT_REF }}
+          REF_DEV_VARS: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "production" ]; then
+            ref_from_git="$(python3 -c "import re; print(re.search(r'projectId\s*=\s*[\'\"]([a-z0-9]+)[\'\"]', open('src/utils/supabase/info.tsx').read()).group(1))")"
+            ref_from_vars="$REF_PROD_VARS"
+          else
+            ref_from_git="$(python3 -c "import re; print(re.search(r'projectId:\s*[\'\"]([a-z0-9]+)[\'\"]', open('config/supabaseTarget.ts').read()).group(1))")"
+            ref_from_vars="$REF_DEV_VARS"
+          fi
+          if [ -n "$ref_from_vars" ] && [ "$ref_from_vars" != "$ref_from_git" ]; then
+            echo "::error::清理目標（$TARGET）的 vars 與 git 記載的 ref 不符——中止，不刪任何檔。"
+            echo "::error::  vars = $ref_from_vars"
+            echo "::error::  git  = $ref_from_git"
+            exit 1
+          fi
+          echo "ref=$ref_from_git" >> "$GITHUB_OUTPUT"
+          echo "清理目標：$TARGET（$ref_from_git）"
+
+      - name: 呼叫孤兒清理端點
+        id: call
+        env:
+          ENDPOINT: https://${{ steps.target.outputs.ref }}.supabase.co/functions/v1/api/internal/purge-orphan-listing-photos
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          EVENT: ${{ github.event_name }}
+          # 實刪開關只管正式站；develop 只走 dispatch，依輸入決定。
+          LIVE: ${{ (inputs.target || 'production') == 'production' && vars.PHOTO_PURGE_LIVE || '' }}
+          DRY_INPUT: ${{ inputs.dry_run }}
+          FORCE_INPUT: ${{ inputs.force_ratio }}
+        run: |
+          set -uo pipefail
+          python3 scripts/purge-listing-photos-request.py body --event "$EVENT" --live "$LIVE" \
+            --dry-input "$DRY_INPUT" --force-input "$FORCE_INPUT" > /tmp/purge-body.json
+          echo "送出參數：$(cat /tmp/purge-body.json)"
+          code="$(curl -sS -o /tmp/purge-resp.json -w '%{http_code}' --max-time 150 -X POST "$ENDPOINT" \
+            -H 'Content-Type: application/json' -H "x-internal-secret: $RECONCILE_SECRET" \
+            --data @/tmp/purge-body.json 2>/dev/null || echo 000)"
+          python3 scripts/purge-listing-photos-request.py judge --status "$code" \
+            --body-file /tmp/purge-resp.json --live "$LIVE" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 失敗時開 issue
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          FAIL_CODE: ${{ steps.call.outputs.code }}
+          FAIL_STATS: ${{ steps.call.outputs.stats }}
+        with:
+          script: |
+            const target = process.env.TARGET;
+            const title = `[${target}] 刊登照片孤兒清理失敗`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // 只放 run 連結、code、統計數字——repo 是 public，不放 name 與錯誤訊息。
+            const detail = [
+              `- Run：${runUrl}`,
+              `- code：${process.env.FAIL_CODE || '（未取得，見 run log）'}`,
+              `- 統計：${process.env.FAIL_STATS || '（無）'}`,
+            ].join('\n');
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100,
+            });
+            const existing = open.find((i) => i.title === title);
+            if (existing) {
+              // 比例閘連日中止時不每天洗版：同標題已開就改留言。
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body: `再次失敗：\n${detail}`,
+              });
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                `## ${target} 刊登照片孤兒清理失敗`,
+                '',
+                detail,
+                '',
+                '**影響**：條款十之一要求撤除後三十日內下架，排程停擺會讓孤兒照片留在公開 bucket。',
+                '三十日扣掉 7 日寬限期，約有兩週處理時間。',
+                '',
+                '- `circuit_open`：斷路器中止、一檔未刪。依規格書 §11 SOP 在本機 dry-run 看清單，',
+                '  確認無誤再 dispatch（`force_ratio=true` 只放行比例閘）',
+                '- `not_removed`：有物件 Storage 刪不掉，會每輪霸佔額度，需人工查',
+                '- `unauthorized`：RECONCILE_SECRET 與該環境 Supabase Secrets 不一致',
+                '',
+                '排除後關閉此 issue。',
+              ].join('\n'),
+            });
