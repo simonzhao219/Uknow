@@ -1,0 +1,1 @@
+{"branch": "claude/uknow-wave-3-lead-qg5mpa", "ended": "2026-10-31T12:10:57+00:00", "fired": {}, "passed": {"bash-guard": 12, "check-output-filter": 12, "feature-plan-guard": 2, "model-effort-advisor": 1, "tdd-test-guard": 2}, "session": "da2ece1ee74a", "started": "2026-10-31T12:05:55+00:00"}
