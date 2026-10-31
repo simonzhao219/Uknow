@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""purge-listing-photos.yml 的 request body 組裝與回應判讀。
+
+存在理由:這支排程要刪的是**沒有備份**的 Storage 物件,而送出去的參數由
+四個維度組合而成——觸發方式(schedule／dispatch)、repo variable
+`PHOTO_PURGE_LIVE`、dispatch 的 `dry_run`／`force_ratio` 輸入、以及回應的
+HTTP 狀態與 `notRemoved`。`reconcile-payments.yml` 把組裝與判讀內聯在
+workflow 裡,那樣這些組合就沒有測試落點;抽到這裡,`--self-test` 由
+framework-check 每次 CI 跑。
+
+規則:
+
+  B1 實刪只能是 JSON boolean false —— 排程觸發時,只有
+     `PHOTO_PURGE_LIVE == 'true'` 才送 `dry_run: false`(W2-8 上線閘門);
+     dispatch 時只有輸入字面量 `false` 才實刪。其餘(含空字串、大小寫
+     不同的 `False`)一律 dry-run。
+  B2 `force_ratio` 只有 dispatch 輸入字面量 `true` 才送 true;排程永不放行。
+  B3 workflow 永遠不送 `include_names`——repo 是 public,回應裡不能有含
+     會員 uid 的 name。
+
+  J1 404:未開實刪時降為 warning 略過(晉升後到正式站部署核准前,端點還
+     不存在);開了實刪(`PHOTO_PURGE_LIVE == 'true'`)還 404 就是路由漏註冊,
+     判失敗——否則排程會永遠靜默。
+  J2 其餘非 200、`success` 不為 true、統計欄位缺漏或型別不符 → 失敗。
+  J3 `notRemoved > 0` → 失敗(端點照常回 200,但有物件刪不掉、每輪霸佔額度)。
+  J4 輸出只放 HTTP 狀態、`error.code` 與統計數字。**絕不印 `message`、
+     `names` 或原始回應**:Storage 錯誤字串可能含 uid,Actions log 公開。
+
+決策邏輯放在純函式裡,好讓表格案例直接驗行為(同 check-migration-versions.py
+等的慣例)。不 import 第三方套件——framework-check 的契約是免依賴安裝。
+
+跑法:
+  python3 scripts/purge-listing-photos-request.py body --event schedule --live "$LIVE" \\
+      --dry-input "$DRY" --force-input "$FORCE"         印出 request body(JSON)
+  python3 scripts/purge-listing-photos-request.py judge --status 200 \\
+      --body-file resp.json --live "$LIVE"              判讀回應;失敗 exit 1
+      (有 $GITHUB_OUTPUT 時寫入 code= 與 stats=,給失敗 issue 用)
+  python3 scripts/purge-listing-photos-request.py --self-test
+"""
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass, field
+
+
+def build_body(event: str, live: str, dry_input: str, force_input: str) -> dict:
+    return {}
+
+
+@dataclass
+class Verdict:
+    ok: bool
+    code: str
+    lines: list[str] = field(default_factory=list)
+
+
+def judge(status: str, body_text: str, live: str) -> Verdict:
+    return Verdict(ok=True, code="")
+
+
+# ---------------------------------------------------------------------------
+# 表格案例
+# ---------------------------------------------------------------------------
+UID = "11111111-2222-3333-4444-555555555555"
+
+BODY_CASES: list[tuple[str, tuple[str, str, str, str], dict]] = [
+    ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False}),
+    ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False}),
+    ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False}),
+    (
+        "排程不吃 dispatch 輸入（即使殘留 false／true）",
+        ("schedule", "", "false", "true"),
+        {"dry_run": True, "force_ratio": False},
+    ),
+    (
+        "dispatch dry_run=true → dry-run（LIVE=true 也不影響）",
+        ("workflow_dispatch", "true", "true", "false"),
+        {"dry_run": True, "force_ratio": False},
+    ),
+    (
+        "dispatch dry_run=false → 實刪（LIVE 未設也照輸入）",
+        ("workflow_dispatch", "", "false", "false"),
+        {"dry_run": False, "force_ratio": False},
+    ),
+    ("dispatch dry_run 空字串 → dry-run", ("workflow_dispatch", "", "", ""), {"dry_run": True, "force_ratio": False}),
+    (
+        "dispatch force_ratio=true → 放行比例閘",
+        ("workflow_dispatch", "", "false", "true"),
+        {"dry_run": False, "force_ratio": True},
+    ),
+]
+
+
+def _ok_body(**over) -> str:
+    import json
+
+    data = {
+        "dryRun": True,
+        "candidateCount": 3,
+        "removed": 0,
+        "notRemoved": 0,
+        "totalObjects": 100,
+        "referencedUrls": 50,
+        "matchedUrls": 50,
+    }
+    data.update(over)
+    return json.dumps({"success": True, "data": data})
+
+
+def _fail_body(code: str) -> str:
+    import json
+
+    return json.dumps(
+        {"success": False, "error": {"code": code, "message": f"storage down {UID}/1_a.jpg"}, "removedSoFar": 7}
+    )
+
+
+# (說明, (status, body, live), 預期 ok, 預期 code)
+JUDGE_CASES: list[tuple[str, tuple[str, str, str], bool, str]] = [
+    ("200 dry-run 統計齊全 → 通過", ("200", _ok_body(), ""), True, ""),
+    ("200 實刪全數刪除 → 通過", ("200", _ok_body(dryRun=False, removed=3), "true"), True, ""),
+    ("200 但 notRemoved > 0 → 失敗", ("200", _ok_body(dryRun=False, removed=2, notRemoved=1), "true"), False, "not_removed"),
+    ("200 但缺統計欄位 → 失敗", ("200", '{"success": true, "data": {"dryRun": true}}', ""), False, "bad_shape"),
+    ("200 但統計欄位型別不符 → 失敗", ("200", _ok_body(removed="3"), ""), False, "bad_shape"),
+    ("200 但 success 不為 true → 失敗", ("200", '{"success": false}', ""), False, "bad_shape"),
+    ("200 但不是 JSON → 失敗", ("200", "<html>", ""), False, "bad_shape"),
+    ("404 未開實刪 → warning 略過", ("404", "", ""), True, "not_deployed"),
+    ("404 已開實刪 → 失敗（路由漏註冊不可靜默）", ("404", "", "true"), False, "not_deployed"),
+    ("401 → 失敗（密鑰不一致）", ("401", '{"success": false}', ""), False, "unauthorized"),
+    ("500 circuit_open → 失敗並帶 code", ("500", _fail_body("circuit_open"), ""), False, "circuit_open"),
+    ("500 sweep_failed → 失敗並帶 code", ("500", _fail_body("sweep_failed"), "true"), False, "sweep_failed"),
+    ("000 連線失敗 → 失敗", ("000", "", ""), False, "http_000"),
+    ("502 非 JSON → 失敗", ("502", "Bad Gateway", ""), False, "http_502"),
+]
+
+
+def self_test() -> int:
+    failures: list[str] = []
+    for label, args, want in BODY_CASES:
+        got = build_body(*args)
+        if got != want:
+            failures.append(f"  FAIL: [body] {label} — 預期 {want},實得 {got}")
+        if "include_names" in got:
+            failures.append(f"  FAIL: [body] {label} — 不得送 include_names(B3)")
+    for label, args, want_ok, want_code in JUDGE_CASES:
+        v = judge(*args)
+        if (v.ok, v.code) != (want_ok, want_code):
+            failures.append(f"  FAIL: [judge] {label} — 預期 ok={want_ok} code={want_code!r},實得 ok={v.ok} code={v.code!r}")
+        out = "\n".join(v.lines)
+        if UID in out or "storage down" in out:
+            failures.append(f"  FAIL: [judge] {label} — 輸出含 message／uid(J4):{out[:120]}")
+    # 回應帶 names(例如有人誤送 include_names)時,輸出也不能印出來
+    leaked = judge("200", _ok_body(names=[f"{UID}/1_a.jpg"]), "")
+    if UID in "\n".join(leaked.lines):
+        failures.append("  FAIL: [judge] 回應含 names 時輸出不得印出 name(J4)")
+
+    if failures:
+        print("purge-listing-photos-request 表格案例未過:")
+        print("\n".join(failures))
+        return 1
+    print(f"purge-listing-photos-request self-test: OK（{len(BODY_CASES) + len(JUDGE_CASES) + 1} 條案例）")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(self_test() if "--self-test" in sys.argv[1:] else 0)
