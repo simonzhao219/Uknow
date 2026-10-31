@@ -35,6 +35,8 @@
 | W2-14 | 正式商店電子發票（#449 起建單帶 `TradeInvoice: 1`，已隨 #450 上正式站約 10/30 18:20；之後尚無真付款） | 業主確認**正式商店已開通**；主 session 建議找時間用未付款帳號走到刷卡頁實測（不付款） |
 | W2-15 | 測試商店電子發票（H 實證 sandbox 拒單 `UPP02085 商店尚未啟用電子發票`，journey 與 develop 付款全擋） | **業主開通測試商店**，開好通知主 session；H 再驗 skeleton/sandbox，綠了在 #456 改回 sandbox。11/02 18:00 前未開通則延長規則 13 期限 |
 | W2-16 | 測試商店電子發票 | **業主 10/31 09:20 回報已開通即時電子發票**；H 重跑 skeleton/sandbox |
+| W2-17 | 第 1 波審查 #460 P1-2：#448／#449 凍結期上 main 無裁決紀錄 | 業主確認授權 → 補記為第 1 波 plan §0 裁決 40 |
+| W2-18 | 第 1 波審查 #460 P1-1：電子發票上正式站後零付款、前提未實證 | 業主以未付款帳號走到 PayUni 刷卡頁（不付款）實證；被導回付款失敗即升 P0、立刻 hotfix 撤 TradeInvoice |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -105,10 +107,10 @@
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
+| R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | #460 | 交報告，等 CI 合 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456（draft） | 待業主開通測試商店發票 |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
-| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` → `fix/notify-exit-code` | #454 ✅ f110586 | 施工 #460 P1-4；晉升後收緊 build-sha |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃 v2.4，draft） | 規劃定稿，等業主審 |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
 | S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | — | 施工中 |
@@ -130,3 +132,4 @@
 | 10/31 01:40 | **H 查出 journey sandbox 紅的現行根因不是表單，是 PayUni 測試商店拒單 `UPP02085`**（#449 的 TradeInvoice=1，PR 前提「兩商店皆已開通」對 sandbox 不成立）；H 開 #456（harness 拒單時解密 return 印出 Status／Message，診斷用）。主 session 查證 #449 已隨 #450 上 main、正式站部署後零付款（最後成功 10/30 09:48 UTC）→ 業主確認正式商店已開通（W2-14）、會開通測試商店（W2-15）。UPP02085 轉給 P 納入商店級告警（且走 /payuni/return 路徑）。B 開 #457（W2-10，紅 c67f4e25→綠 95aee4d3）：主 session 審無 P0／P1。教訓：webhook 模式的晉升閘門不碰 PayUni 建單，#449 這類商店設定前提在晉升時完全不會被驗到——記 friction-log 候選 | 等業主開通測試商店 → H 驗；#457 CI 綠合 |
 | 10/31 08:55 | 主 session worker 兩度重啟。安全網自查發現 **R1（自 10/30 15:52）與 P（自 16:13）卡在 Supabase MCP execute_sql 權限核准**→主 session 代跑唯讀查詢（訂單 16 筆、measure.sql 等價：users 13 全 step 3、completed 13／failed 3、卡單 0、告警 0、刊登 10）並以 priority now 送達、請其改由主 session 代查；共用開頭與 §3 補此規則。**#457 合進 develop（707d0b0）**，B 收工。C 交 v2.4（#453 f5d47ddc，未處置 P0／P1 皆 0），主 session 已核對 v2.3 自修 → 交業主審。批 2 開 S | 業主審 #453；等 P、S、R1、H |
 | 10/31 09:20 | 業主開通測試商店即時電子發票（W2-16）→ 通知 H rebase 後重發 dispatch。S 開工 `session_01MQovbBGBW1DseerZ2P4p64`（Sonnet）；在途程式工項＝P、S（H 只等驗證） | H 驗證結果；P／S PR |
+| 10/31 09:30 | **R1 交第 1 波審查 #460**：P0 0、P1 4、P2 13、現場無異常。P1-1 電子發票前提→W2-18；P1-2 凍結例外→W2-17／第 1 波裁決 40；P1-3 對帳告警 warning 級推不到 LINE（index.ts 約 :2595／:2625，推播只撈 error :2789）→併入 P；P1-4 notify 非 200 仍 exit 0、該輪告警永久遺失→派 D 開 `fix/notify-exit-code`。另記：reconcile 排程實際 4–7 小時一跑；規則 13 到期後所有 PR 的 framework-check 都會紅（H 未綠前須先延期）；#458 為 runner DNS 暫時失敗，下次 run 綠可關 | 業主刷卡頁實測；#460 CI 綠合；P／D／S／H |
