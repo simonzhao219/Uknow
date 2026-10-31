@@ -41,6 +41,7 @@
 | W3-8 | C 獨立審查 P1-1：正式站手動 dispatch 取消 dry_run 時，沒設 `PHOTO_PURGE_LIVE` 也會實刪，Edge 端也沒有開關 | **workflow 加閘**：production dispatch 實刪也必須 `PHOTO_PURGE_LIVE=='true'`，否則強制 dry-run 並警告（被推翻的選項：Edge 端另加 secret 雙鎖；維持現狀） |
 | W3-9 | L 已知未涵蓋：人已在首頁時再點 logo，篩選與捲動不變 | **清篩選＋回頂端**，本波開 Sonnet 小工項 L2（`fix/home-logo-reset`） |
 | W3-10 | T1 分工（業主已在 T1 實作 session 親打 `/tdd-implement`；第 2 波主 session 轉述的「分階段另開 session」） | **同一 session 做完 PR-A（A1–A4）**，收尾另開審查 session 跑 `/review-implementation`（被推翻：分階段另開，每個新 session 都要業主再打一次指令） |
+| W3-11 | 晉升時點（業主「如果都跑完就晉升」） | **全部完成就晉升**：C、T1 PR-A、K 都合進 develop 後，主 session 立刻開晉升 PR，不等 11/10；11/09 22:00 收件截止不變，截止前沒合的順延第 4 波。合進 main 後仍由業主核准 `production`（被推翻：現在先晉升已合的 L／A／L2、之後再晉升一次；照原計畫 11/10） |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -132,3 +133,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 04:50 | 業主裁決 **W3-8**（workflow 加閘）、**W3-9**（首頁再點 logo＝清篩選＋回頂端）。W3-8 交給 C，授權 CI 綠後自行轉 ready；開 **L2** `session_01MQovbCMjPvgMSqmXghhPQj`（Sonnet）。T1 仍等業主親打 `/tdd-implement` | C 轉 ready → 主 session 審最後一段 diff 後合 → develop dry-run → 開 K |
 | 11/01 05:05 | **#474（L2）合進 develop（1253e00）**：改監聽 `location.key`，非 POP 的新 key 就重設篩選並捲回頂端；首頁本身不改 URL，不會自我重設。沒有獨立紅燈 commit（只在本機驗紅），以 19 行的規模接受。C 推 W3-8：紅燈 `b120b512`→綠燈 `59735dcf`，主 session 審過；之後 C 自行 rebase 成 `b5353e0` | C 轉 ready |
 | 11/01 05:50 | 業主在 T1 實作 session 親打 `/tdd-implement`，人審通過。A0 由主 session 代跑：正式站 21:32 UTC 0／0／0／0、develop 21:52 UTC 1／0／0／0（第 2 波主 session 21:16 UTC 那次結果相同）→ 可進 A1。T1 規劃 session 已退訂 #466，改由 T1 實作 session 訂閱。業主裁決 **W3-10**（T1 由同一 session 做完 PR-A） | T1 A1–A4；完成後開 T1 審查 session |
+| 11/01 06:00 | 業主裁決 **W3-11**：全部完成就晉升（可早於 11/10）。#471 兩版 CI 綠 | C 轉 ready；T1 施工；C 合併後開 K；三項都合併即開晉升 PR |
