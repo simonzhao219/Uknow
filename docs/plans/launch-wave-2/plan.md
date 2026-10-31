@@ -38,6 +38,7 @@
 | W2-17 | 第 1 波審查 #460 P1-2：#448／#449 凍結期上 main 無裁決紀錄 | 業主確認授權 → 補記為第 1 波 plan §0 裁決 40 |
 | W2-18 | 第 1 波審查 #460 P1-1：電子發票上正式站後零付款、前提未實證 | 業主以未付款帳號走到 PayUni 刷卡頁（不付款）實證；被導回付款失敗即升 P0、立刻 hotfix 撤 TradeInvoice |
 | W2-19 | W2-18 實測結果、首頁返回真機驗收、#453 規劃審閱 | 業主 10/31 10:00 回報：**正式站刷卡頁正常出現（電子發票前提成立，#460 P1-1 結案）**；**develop 首頁返回真機驗收通過**（#455／#457）；**#453 規劃審閱通過** → 主 session 開實作 session（Opus）待業主親打 `/tdd-implement`，11/03 晉升前不轉 ready |
+| W2-20 | 晉升時點與範圍（業主 10/31 11:35：「既然已經準備好，就先動作」） | **10/31 立即晉升**（被推翻的原計畫：11/03 週二；屬業主授權的凍結期例外——內容為告警／維運／首頁體驗，無 migration、未動金額與狀態機）；**#453 條款十之一不隨本次上**，留第 3 波主 session 審後再上 |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -142,3 +143,4 @@
 | 10/31 10:00 | 業主 W2-19：刷卡頁實測通過、首頁返回真機通過、#453 審過。開 **C 實作 session** `session_01MQovbCF5454fAYfqy9NXaJ`（Opus，分支 feature/listing-photo-retention，先備環境、等業主親打 `/tdd-implement listing-photo-retention`；屬第 3 波，11/03 晉升前不轉 ready） | 業主在該 session 打指令 |
 | 10/31 11:20 | **#456 合進 develop（dcb676d）**→ 主 session 對 develop 發 full/sandbox：run 41158578126 **綠**（25 分鐘，30 人、並行 8 人買方名稱共用無礙）。**#459（9ac1231）、#462（8d81c7a）依序 rebase 後合進 develop**——第 2 波程式工項全部合併。業主轉來 LINE P1「正式站付款對帳排程失敗」（run 41141064038）：查為 runner DNS 暫時失敗（curl exit 6，未送到正式站），下一輪 41157903717 已綠 → 留言並關 #458；第二次發生，對帳 curl 加重試列第 3 波候選。C 實作 session 已在跑（#453 TDD 紅燈期 CI 紅屬預期） | 11/02 22:00 收件；11/03 晉升 |
 | 10/31 11:30 | **C 實作完成**（#453 head fc8aab4b，draft）：六階段 TDD 全綠、/review-implementation P0 0／P1 4 全修／P2 15（僅 progress 過時一條未修，鷹架已刪）、決策升級進規格書 §11／workflow 檔頭／checklist。程序偏離：審查修正紅燈 commit 漏改一條斷言，C 自行 tdd-unlock 補 1 行（已記 friction-log；主 session 接受，要求下次先報）。照指示 11/03 前不轉 ready；第 3 波主 session 合併前須再審（實刪資料） | 第 3 波接手 |
+| 10/31 11:40 | 業主 W2-20：立即晉升、#453 不上。主 session 合 #452（本檔）進 develop → 開晉升 PR（develop→main，含 #451 #454 #455 #456 #457 #459 #460 #461 #462；無 migration；後端僅 #461 告警）；journey-full 已改 sandbox | journey-full 綠 → 合 main → 業主核准 production |
