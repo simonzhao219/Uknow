@@ -58,6 +58,8 @@ function member(over: Partial<AdminMember> = {}): AdminMember {
     accountStatus: 'active',
     endDate: '2027-01-01T00:00:00Z',
     idVerificationStatus: 'none',
+    referralCode: '8048876',
+    referralProgramJoined: false,
     listingCount: 0,
     createdAt: '2026-07-01T00:00:00Z',
     ...over,
@@ -91,6 +93,8 @@ function detail(over: Partial<AdminMemberDetail> = {}): AdminMemberDetail {
     bankCode: '822',
     bankAccount: '*********0123',
     referrerName: '王小明',
+    referralCode: '8048876',
+    referralProgramJoined: true,
     directChildCount: 2,
     listingCount: 1,
     availablePoints: 3000,
@@ -210,6 +214,27 @@ describe('MemberManagement', () => {
 
     expect(within(panel).getByText('A12****789')).toBeTruthy();
     expect(within(panel).queryByText('A123456789')).toBeNull();
+  });
+
+  it('桌機表格顯示推薦碼，已加入計畫者標「已加入」、未加入者標「未加入」', async () => {
+    const load = vi.fn(async () =>
+      page({
+        members: [
+          member({
+            id: 'j',
+            name: '已加入者',
+            referralCode: '8048876',
+            referralProgramJoined: true,
+          }),
+          member({ id: 'n', name: '未加入者', referralCode: null, referralProgramJoined: false }),
+        ],
+      }),
+    );
+    renderConsole({ loadMembers: load });
+    await screen.findByText('已加入者');
+    expect(screen.getByText('8048876')).toBeTruthy();
+    expect(screen.getByText('已加入')).toBeTruthy();
+    expect(screen.getByText('未加入')).toBeTruthy();
   });
 
   it('停權確認後重抓列表', async () => {
@@ -549,6 +574,22 @@ describe('MemberManagement', () => {
 describe('MemberManagement 手機版', () => {
   beforeEach(() => {
     stubMediaQuery(false);
+  });
+
+  it('卡片顯示推薦碼與推薦計畫狀態，沒有碼時顯示破折號', async () => {
+    const load = vi.fn(async () =>
+      page({
+        members: [
+          member({ id: 'j', name: '甲', referralCode: '8048876', referralProgramJoined: true }),
+          member({ id: 'n', name: '乙', referralCode: null, referralProgramJoined: false }),
+        ],
+      }),
+    );
+    renderConsole({ loadMembers: load });
+    await screen.findByText('甲');
+    expect(screen.getByText('8048876')).toBeTruthy();
+    expect(screen.getByText('已加入')).toBeTruthy();
+    expect(screen.getByText('未加入')).toBeTruthy();
   });
 
   it('不渲染 table，改以每位會員一張卡呈現', async () => {

@@ -3,7 +3,12 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { memberDetailTriggerProps } from './memberDetailTrigger';
 import { memberLabel, memberName } from './memberName';
-import { AccountStatusBadge, AdminBadge, SuspendedBadge } from './MemberStatusBadges';
+import {
+  AccountStatusBadge,
+  AdminBadge,
+  ReferralProgramBadge,
+  SuspendedBadge,
+} from './MemberStatusBadges';
 
 /**
  * 會員管理的**手機版**列表：一位會員一張卡。
@@ -64,6 +69,12 @@ export function MemberCardList({ members, onOpenDetail, openingIds }: MemberCard
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <AccountStatusBadge status={member.accountStatus} />
                   <span className="text-xs text-muted-foreground">刊登 {member.listingCount}</span>
+                  {/* 推薦碼是流水號（8 位數字），不長；與推薦計畫徽章放同一個 wrap 列，
+                      窄螢幕自然換行，不新增固定列高。 */}
+                  <span className="text-xs text-muted-foreground">
+                    推薦碼 <span className="font-mono">{member.referralCode ?? '—'}</span>
+                  </span>
+                  <ReferralProgramBadge joined={member.referralProgramJoined} />
                 </div>
                 {/* **卡上只有「查看」一顆**（ui-ux-guidelines §11.1）:
                     停權改的是**一個人的狀態**，不是一筆資料——這類動作一律
