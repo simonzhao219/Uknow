@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useMemo, useEffect, useContext, useRef } from 'react';
-import { Link, useNavigationType } from 'react-router-dom';
+import { Link, useLocation, useNavigationType } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -140,6 +140,23 @@ export function HomePage() {
   const [selectedGenders, setSelectedGenders] = useState<string[]>(
     () => getCachedFilters().genders,
   );
+  // 已在首頁時再點 logo／導覽列「首頁」：PUSH 到同一路徑不會重新掛載，上面的初始化
+  // 重設不會跑。改看 location.key——每次導航都換新 key；掛載當下那把已由初始化處理，
+  // 其後出現新 key 且非 POP 才是「重新開始」：清空搜尋與全部篩選、捲回頂端。
+  // 清單快取不動（不閃骨架）。
+  const { key: locationKey } = useLocation();
+  const handledKey = useRef(locationKey);
+  useEffect(() => {
+    if (handledKey.current === locationKey) return;
+    handledKey.current = locationKey;
+    if (navigationType === 'POP') return;
+    resetHomeView();
+    setSelectedCategory('');
+    setSelectedGenders([]);
+    setDistrictsByCity({});
+    setSearchQuery('');
+    window.scrollTo(0, 0);
+  }, [locationKey, navigationType]);
   useEffect(() => {
     setCachedFilters({
       searchQuery,
