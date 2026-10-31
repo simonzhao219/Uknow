@@ -4412,7 +4412,7 @@ export function listingPhotoDeps() {
     cleanup: {
       publicUrlOf: listingPhotoPublicUrl,
       // 跨使用者全表：RLS 允許把 photos 寫成任意字串，只查自己會漏判他人的引用。
-      findReferencedUrls: async (urls: string[]) => {
+      findReferencedUrls: async (urls: string[], _ownerId: string) => {
         const { data, error } = await sb().from('listings').select('photos').overlaps(
           'photos',
           urls,

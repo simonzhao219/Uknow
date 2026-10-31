@@ -81,8 +81,8 @@ export function photoUrlToOwnedPath(
 export interface PhotoCleanupDeps {
   /** storage getPublicUrl(path) 的結果（與 upload-photo 回傳同一格式）。 */
   publicUrlOf: (path: string) => string;
-  /** 回傳 listings.photos（全表、跨使用者）仍含有的 URL；查詢出錯必須 throw。 */
-  findReferencedUrls: (urls: string[]) => Promise<string[]>;
+  /** 回傳 listings.photos 仍含有的 URL；查詢出錯必須 throw。 */
+  findReferencedUrls: (urls: string[], ownerId: string) => Promise<string[]>;
   /** Storage remove；回傳實際被刪的 path；出錯必須 throw。 */
   removeObjects: (paths: string[]) => Promise<string[]>;
 }
@@ -95,9 +95,10 @@ export interface PhotoCleanupDeps {
 export async function removeUnreferencedPhotos(
   deps: PhotoCleanupDeps,
   paths: string[],
+  _ownerId: string,
 ): Promise<{ removed: number; skipped: string[] }> {
   if (paths.length === 0) return { removed: 0, skipped: [] };
-  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf)));
+  const referenced = new Set(await deps.findReferencedUrls(paths.map(deps.publicUrlOf), ''));
   const skipped = paths.filter((p) => referenced.has(deps.publicUrlOf(p)));
   const toRemove = paths.filter((p) => !referenced.has(deps.publicUrlOf(p)));
   if (toRemove.length === 0) return { removed: 0, skipped };
@@ -145,7 +146,7 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
       if (path) paths.push(path);
       else deps.warn('[listing-photos] 忽略非本人／非本 bucket 的照片 URL', url);
     }
-    await removeUnreferencedPhotos(deps.cleanup, [...new Set(paths)]);
+    await removeUnreferencedPhotos(deps.cleanup, [...new Set(paths)], userId);
   }
 
   return {
@@ -162,7 +163,7 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
         return fail(c, v.status, v.status === 403 ? 'forbidden' : 'invalid_request', v.message);
       }
       try {
-        const result = await removeUnreferencedPhotos(deps.cleanup, v.paths);
+        const result = await removeUnreferencedPhotos(deps.cleanup, v.paths, user.id);
         return c.json({ success: true, ...result });
       } catch (err) {
         console.error('[listing-photos] 清理失敗', err);

@@ -99,11 +99,12 @@ Deno.test('photoUrlToOwnedPath：他人前綴／外部網址／穿越／非字�
 });
 
 function fakeDeps(over: Partial<PhotoCleanupDeps> = {}) {
-  const calls = { find: [] as string[][], remove: [] as string[][] };
+  const calls = { find: [] as string[][], owners: [] as string[], remove: [] as string[][] };
   const deps: PhotoCleanupDeps = {
     publicUrlOf: urlOf,
-    findReferencedUrls: (urls) => {
+    findReferencedUrls: (urls, ownerId) => {
       calls.find.push(urls);
+      calls.owners.push(ownerId);
       return Promise.resolve([]);
     },
     removeObjects: (paths) => {
@@ -119,9 +120,15 @@ Deno.test('removeUnreferencedPhotos：無人引用 → 全刪，removed 取實�
   const a = mine('1_a');
   const b = mine('2_b');
   const { deps, calls } = fakeDeps();
-  assertEquals(await removeUnreferencedPhotos(deps, [a, b]), { removed: 2, skipped: [] });
+  assertEquals(await removeUnreferencedPhotos(deps, [a, b], ME), { removed: 2, skipped: [] });
   assertEquals(calls.find, [[urlOf(a), urlOf(b)]]); // 一次批次查詢，不是逐檔
   assertEquals(calls.remove, [[a, b]]);
+});
+
+Deno.test('removeUnreferencedPhotos：引用檢查只問檔案前綴本人的刊登 → 帶 ownerId 查詢', async () => {
+  const { deps, calls } = fakeDeps();
+  await removeUnreferencedPhotos(deps, [mine('1_a')], ME);
+  assertEquals(calls.owners, [ME]);
 });
 
 Deno.test('removeUnreferencedPhotos：仍被引用者列 skipped 且不送去刪', async () => {
@@ -130,14 +137,14 @@ Deno.test('removeUnreferencedPhotos：仍被引用者列 skipped 且不送去刪
   const { deps, calls } = fakeDeps({
     findReferencedUrls: () => Promise.resolve([urlOf(b)]),
   });
-  assertEquals(await removeUnreferencedPhotos(deps, [a, b]), { removed: 1, skipped: [b] });
+  assertEquals(await removeUnreferencedPhotos(deps, [a, b], ME), { removed: 1, skipped: [b] });
   assertEquals(calls.remove, [[a]]);
 });
 
 Deno.test('removeUnreferencedPhotos：全部被引用 → 不呼叫 remove', async () => {
   const a = mine('1_a');
   const { deps, calls } = fakeDeps({ findReferencedUrls: () => Promise.resolve([urlOf(a)]) });
-  assertEquals(await removeUnreferencedPhotos(deps, [a]), { removed: 0, skipped: [a] });
+  assertEquals(await removeUnreferencedPhotos(deps, [a], ME), { removed: 0, skipped: [a] });
   assertEquals(calls.remove, []);
 });
 
@@ -145,26 +152,26 @@ Deno.test('removeUnreferencedPhotos：removed 取 Storage 實際回傳（不存�
   const a = mine('1_a');
   const b = mine('2_b');
   const { deps } = fakeDeps({ removeObjects: () => Promise.resolve([a]) });
-  assertEquals((await removeUnreferencedPhotos(deps, [a, b])).removed, 1);
+  assertEquals((await removeUnreferencedPhotos(deps, [a, b], ME)).removed, 1);
 });
 
 Deno.test('removeUnreferencedPhotos：引用查詢出錯 → throw 且一檔不刪（fail-closed）', async () => {
   const { deps, calls } = fakeDeps({
     findReferencedUrls: () => Promise.reject(new Error('db down')),
   });
-  await assertRejects(() => removeUnreferencedPhotos(deps, [mine()]), Error, 'db down');
+  await assertRejects(() => removeUnreferencedPhotos(deps, [mine()], ME), Error, 'db down');
   assertEquals(calls.remove, []);
 });
 
 Deno.test('removeUnreferencedPhotos：Storage remove 出錯 → throw（不回報 removed）', async () => {
   const { deps } = fakeDeps({ removeObjects: () => Promise.reject(new Error('storage down')) });
-  await assertRejects(() => removeUnreferencedPhotos(deps, [mine()]), Error, 'storage down');
+  await assertRejects(() => removeUnreferencedPhotos(deps, [mine()], ME), Error, 'storage down');
 });
 
 Deno.test('removeUnreferencedPhotos：空清單不碰 DB 與 Storage', async () => {
   const { deps, calls } = fakeDeps();
-  assertEquals(await removeUnreferencedPhotos(deps, []), { removed: 0, skipped: [] });
-  assertEquals(calls, { find: [], remove: [] });
+  assertEquals(await removeUnreferencedPhotos(deps, [], ME), { removed: 0, skipped: [] });
+  assertEquals(calls, { find: [], owners: [], remove: [] });
 });
 
 // ---------- 路由處理函式 ----------
@@ -179,8 +186,13 @@ function harness(over: Partial<ListingPhotoHandlerDeps> = {}) {
     removed: [] as string[][],
     deletedRows: [] as string[],
     warns: [] as string[],
+    owners: [] as string[],
   };
   const { deps: cleanup } = fakeDeps({
+    findReferencedUrls: (_urls, ownerId) => {
+      log.owners.push(ownerId);
+      return Promise.resolve([]);
+    },
     removeObjects: (paths) => {
       log.removed.push(paths);
       return Promise.resolve(paths);
@@ -246,6 +258,13 @@ Deno.test('DELETE /listings/photos：合法 → 200 回 removed／skipped；路�
   assertEquals(await res.json(), { success: true, removed: 1, skipped: [] });
   assertEquals(log.deletedRows, []); // 沒有誤走到刪刊登
   assertEquals(log.rate, [`listing-photos-del:${ME}`]);
+});
+
+Deno.test('DELETE /listings/photos 與 /listings/:id：引用檢查以 token 本人為 ownerId', async () => {
+  const { app, log } = harness();
+  assertEquals((await del(app, '/listings/photos', { paths: [mine('1_a')] })).status, 200);
+  assertEquals((await del(app, `/listings/${LISTING_ID}`)).status, 200);
+  assertEquals(log.owners, [ME, ME]);
 });
 
 Deno.test('DELETE /listings/photos：引用查詢出錯 → 500 且一檔不刪（fail-closed）', async () => {
