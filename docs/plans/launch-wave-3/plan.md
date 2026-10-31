@@ -40,6 +40,7 @@
 |---|---|---|
 | W3-8 | C 獨立審查 P1-1：正式站手動 dispatch 取消 dry_run 時，沒設 `PHOTO_PURGE_LIVE` 也會實刪，Edge 端也沒有開關 | **workflow 加閘**：production dispatch 實刪也必須 `PHOTO_PURGE_LIVE=='true'`，否則強制 dry-run 並警告（被推翻的選項：Edge 端另加 secret 雙鎖；維持現狀） |
 | W3-9 | L 已知未涵蓋：人已在首頁時再點 logo，篩選與捲動不變 | **清篩選＋回頂端**，本波開 Sonnet 小工項 L2（`fix/home-logo-reset`） |
+| W3-10 | T1 分工（業主已在 T1 實作 session 親打 `/tdd-implement`；第 2 波主 session 轉述的「分階段另開 session」） | **同一 session 做完 PR-A（A1–A4）**，收尾另開審查 session 跑 `/review-implementation`（被推翻：分階段另開，每個新 session 都要業主再打一次指令） |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -113,9 +114,9 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（沿用，rebase 由它負責） | Opus | `feature/listing-photo-retention` | #453（head `e4f6c038`） | P0-1／P2 已修、CI 綠；做 W3-8 後轉 ready |
-| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft） | 備環境，等業主親打 `/tdd-implement` |
+| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft，規劃＋實作同一支） | A0 完成（兩站後三欄 0），施工中 |
 | L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-restore-pop-only` | #473 ✅ cd33515 | 收工 |
-| L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | — | 施工中 |
+| L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | #474 ✅ 1253e00 | 收工 |
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
 | K | — | Sonnet | `fix/alert-pipeline-gaps` | — | 等 C 合併（同碰 index.ts／workflow） |
 | R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
@@ -129,3 +130,5 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 10/31 20:40 | **#473（L）合進 develop（cd33515）**：主 session 審，無 P0／P1（POP 才還原，非 POP 只清篩選與捲動、清單快取保留）。主 session 把 A rebase 後推 `758f44e4` → CI 綠 → **#472（A）合進 develop（b44606d）**：兩支 RPC 對前版只增欄位、權限照舊。獨立審查交回 #453：**P0-1**（錨點只看同 base 的 URL，base 漂移時放行；物件數 ≤20 不設比例閘）、**P1-1**（production dispatch 沒設 LIVE 也能實刪）、P2 五條。主 session 代跑正式站唯讀 SQL：32 物件、超過 7 日 0 個、30 個 URL 皆同一個 base → 現在不會觸發，但要修 | C 修 P0-1／P2 |
 | 10/31 21:30 | 第 2 波 C session 自行把 migration 改名 `20261110000001`（A 先合，避免版本倒序），並要求 rebase 只由一方負責 → 定為由 C 負責，主 session 不再推 #453。C 修 P0-1（引用判準與 base 脫鉤、錨點改以「有照片的刊登者」為分母、拿掉 ≤20 豁免）＋P2（log 不印 err、advisor 預期、admin 代傳約束、晚存檔破圖寫進規格書）：紅燈 `16647896`→綠燈 `e4f6c038`，紅燈後沒改測試，CI 綠。主 session 審 migration 修正版：無 P0／P1 | 業主 W3-8／W3-9 |
 | 11/01 04:50 | 業主裁決 **W3-8**（workflow 加閘）、**W3-9**（首頁再點 logo＝清篩選＋回頂端）。W3-8 交給 C，授權 CI 綠後自行轉 ready；開 **L2** `session_01MQovbCMjPvgMSqmXghhPQj`（Sonnet）。T1 仍等業主親打 `/tdd-implement` | C 轉 ready → 主 session 審最後一段 diff 後合 → develop dry-run → 開 K |
+| 11/01 05:05 | **#474（L2）合進 develop（1253e00）**：改監聽 `location.key`，非 POP 的新 key 就重設篩選並捲回頂端；首頁本身不改 URL，不會自我重設。沒有獨立紅燈 commit（只在本機驗紅），以 19 行的規模接受。C 推 W3-8：紅燈 `b120b512`→綠燈 `59735dcf`，主 session 審過；之後 C 自行 rebase 成 `b5353e0` | C 轉 ready |
+| 11/01 05:50 | 業主在 T1 實作 session 親打 `/tdd-implement`，人審通過。A0 由主 session 代跑：正式站 21:32 UTC 0／0／0／0、develop 21:52 UTC 1／0／0／0（第 2 波主 session 21:16 UTC 那次結果相同）→ 可進 A1。T1 規劃 session 已退訂 #466，改由 T1 實作 session 訂閱。業主裁決 **W3-10**（T1 由同一 session 做完 PR-A） | T1 A1–A4；完成後開 T1 審查 session |
