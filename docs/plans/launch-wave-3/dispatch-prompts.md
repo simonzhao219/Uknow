@@ -61,6 +61,7 @@ Q6–Q8（plan §6）在 A3 實機截圖時，把截圖與選項 send_message �
 3. 測試：Deno DB 測試斷言新欄位（容器無 supabase CLI，deno task test 交 CI 的 api-tests 軌；紅燈證據以 CI run 為準）；前端元件測試斷言欄位出現與「未加入」的呈現。
 4. 動到業務欄位或路由時跑 python3 scripts/check-spec-drift.py；規格書若有後台會員列表的欄位描述，同 PR 同步。
 5. 不擴範圍：不加篩選、排序、匯出。
+注意：Plan Mode 會停下等人核准——本 session 沒有人在看，請不要進 Plan Mode 工具，改成在對話內寫出規劃、自審一輪後直接施工，並把規劃摘要寫進 PR 內文「規劃與審查結論摘要」。
 ```
 
 ## K. 告警管線四縫＋reconcile curl 重試（Sonnet，Plan Mode，`fix/alert-pipeline-gaps`）——C 合併後才開
@@ -72,5 +73,6 @@ Q6–Q8（plan §6）在 A3 實機截圖時，把截圖與選項 send_message �
 3. P2-3：reconcile-payments.yml 的 system_alerts 推送 step 前先檢查 LINE secret 非空，空的就 fail（讓窗口不前移）；不要改 .github/actions/notify 對其他呼叫端的 no-op 行為，除非你確認所有呼叫端都該 fail。
 4. P2-4：/internal/system-alerts/recent 超過 20 筆時，回傳總數並讓推播內文註明，窗口只推進到已推的最後一筆（讀 reconcile workflow 如何計算窗口再決定在哪一端改）。
 5. reconcile 的 curl 加重試（--retry 與 --retry-all-errors 或等價，注意不要對已送達的 POST 重放造成重複處理——確認端點是否冪等）。
+注意：不要進 Plan Mode 工具（無人核准會卡住），在對話內寫規劃、自審後施工，摘要寫進 PR 內文。
 6. 改 .github/workflows/ 後跑 python3 scripts/check-workflows.py；動 index.ts 前 npm install -g deno。合併後主 session 會 dispatch 一次 reconcile 與 deploy-smoke 驗證，PR 內文寫清楚要看哪個 step 的哪行輸出。
 ```
