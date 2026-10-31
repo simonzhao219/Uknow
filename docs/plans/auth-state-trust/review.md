@@ -48,4 +48,4 @@
      tdd-implement 開工前會檢查:存在未處置 P0 → 拒絕開工。 -->
 
 - [x] 規劃收斂：v4 無 P0；P1 4 項已依建議落地為 plan v4.1（2026-10-31，主 session 授權「P0 0 且剩餘 P1 皆技術修正即定稿」）。
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃——由業主於第 3 波親自下 `/tdd-implement auth-state-trust` 前勾選。
+- [x] 人審完成,裁決:■ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃——業主 2026-10-31 於規劃 session 親自下 `/tdd-implement auth-state-trust` 時裁決通過；實作交新開的執行 session（A2a／A2b 用 Opus，其餘 Sonnet），A0 查證交主 session 代跑。
