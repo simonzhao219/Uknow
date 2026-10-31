@@ -32,7 +32,14 @@
 |---|---|---|
 | W3-5 | K 的 P2-1 修法 | 商店級告警去重鍵加**日期桶**（比照 burst 的小時鍵），不改 `logSystemAlertOnce` 的既有語意 |
 | W3-6 | L 的範圍 | W2-24（只有 POP 還原）＋審查 P2-15（`homeListingsCache.test.ts`）；P2-7（`searchQuery` 計入 `totalFilters`）不做，屬 UI 取捨、未裁決 |
-| W3-7 | migration 版本號登記 | C＝`20261102000001`（已在分支）；A 從 `20261104000001` 起；其他工項無 migration。rebase 後一律跑 `check-migration-versions.py` |
+| W3-7 | migration 版本號登記 | A＝`20261104000001`（已合）；C 因 A 先合，改名為 `20261110000001`（C session 處理）；之後新 migration 一律晚於 develop 最大值。rebase 後一律跑 `check-migration-versions.py` |
+
+**裁決（AskUserQuestion，業主 2026-10-31）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W3-8 | C 獨立審查 P1-1：正式站手動 dispatch 取消 dry_run 時，沒設 `PHOTO_PURGE_LIVE` 也會實刪，Edge 端也沒有開關 | **workflow 加閘**：production dispatch 實刪也必須 `PHOTO_PURGE_LIVE=='true'`，否則強制 dry-run 並警告（被推翻的選項：Edge 端另加 secret 雙鎖；維持現狀） |
+| W3-9 | L 已知未涵蓋：人已在首頁時再點 logo，篩選與捲動不變 | **清篩選＋回頂端**，本波開 Sonnet 小工項 L2（`fix/home-logo-reset`） |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -56,8 +63,9 @@
 |---|---|---|---|---|---|
 | C | 條款十之一照片清理（#453，實作完成） | 主 session 審 → rebase → 合；分支 `feature/listing-photo-retention` | 主 session（Opus）＋獨立審查 agent | `supabase/functions/api/index.ts`、migration `20261102000001_listing_photo_orphans.sql`、排程 workflow、RLS 測試 | 與 K 同為 index.ts／workflow → K 在 C 合併後開 |
 | T1 | 登入狀態信任 PR-A（A0–A4）；PR-B（B1–B3）有餘力才做 | `/tdd-implement auth-state-trust`（業主親打），分支 `feature/auth-state-trust`，PR #466 | Opus | `src/App.tsx`、新 `useAuthBootstrap`、`Navbar`、`BottomNav`、`apiClient`、AuthPage、CompleteProfile、e2e `route_guards.feature`；順手併審查 P2-5（`SIGNED_OUT` 呼叫 `resetHomeListingsCache`） | 與 L 都碰 `homeListingsCache.ts`（T1 只改註解＋reset 呼叫）——後合的 rebase |
-| L | 點 logo／導覽列回首頁回到乾淨首頁，只有返回（POP）還原篩選與捲動（W2-24）＋`homeListingsCache.test.ts`（P2-15） | `/fix-bug`，`fix/home-push-no-restore` | Sonnet | `src/components/HomePage.tsx`、`src/utils/homeListingsCache.ts`、測試 | 見 T1 |
+| L | 點 logo／導覽列回首頁回到乾淨首頁，只有返回（POP）還原篩選與捲動（W2-24）＋`homeListingsCache.test.ts`（P2-15） | `/fix-bug`，`fix/home-restore-pop-only` | Sonnet | `src/components/HomePage.tsx`、`src/utils/homeListingsCache.ts`、測試 | 見 T1 |
 | A | 後台會員列表與詳情顯示推薦碼、是否加入推薦計畫（W2-2／W2-26） | Plan Mode，`fix/admin-member-referral-cols` | Sonnet | migration（`admin_list_members`／`admin_member_detail`，版本號 `20261104000001` 起）、`index.ts` `/admin/members` 兩支、`api-contract.ts`、`MemberManagement.tsx`、會員詳情 | index.ts 只動 admin 區段 |
+| L2 | 已在首頁時點 logo／導覽列首頁＝清篩選＋捲回頂端（W3-9） | `/fix-bug`，`fix/home-logo-reset` | Sonnet | `HomePage.tsx`、Navbar／BottomNav 首頁連結、測試 | 與 T1 同碰 Navbar——後合的 rebase |
 | K | 告警管線四縫（審查 P2-1～4）＋reconcile curl DNS 失敗重試 | Plan Mode，`fix/alert-pipeline-gaps` | Sonnet | `index.ts`（`payuni-merchant` 去重鍵、`/internal/system-alerts/recent`）、`.github/actions/notify/action.yml`、`deploy-smoke.yml`、`reconcile-payments.yml` | C 合併後開 |
 | R3 | 第 3 波審查（晉升後） | 審查 session，唯讀；報告 `docs/plans/launch-wave-3/review.md`；兼做 `launch-wave-2/` 退場 | Opus | — | — |
 
@@ -104,11 +112,12 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（實作，已完成） | 主 session 審 | `feature/listing-photo-retention` | #453（draft，rebase 後 head `28dfaf73`） | 主 session 審查中 |
+| C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（沿用，rebase 由它負責） | Opus | `feature/listing-photo-retention` | #453（head `e4f6c038`） | P0-1／P2 已修、CI 綠；做 W3-8 後轉 ready |
 | T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft） | 備環境，等業主親打 `/tdd-implement` |
-| L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-push-no-restore` | — | 施工中 |
-| A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | — | 施工中 |
-| K | — | Sonnet | `fix/alert-pipeline-gaps` | — | 等 L 或 A 合併 |
+| L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-restore-pop-only` | #473 ✅ cd33515 | 收工 |
+| L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | — | 施工中 |
+| A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
+| K | — | Sonnet | `fix/alert-pipeline-gaps` | — | 等 C 合併（同碰 index.ts／workflow） |
 | R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -117,3 +126,6 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 |---|---|---|
 | 10/31 20:10 | 主 session 開局：讀交接與第 2 波 plan／review；#453 head `96a7e874`、#466 head `1ea013c`，皆落後 develop `2b1284a`。業主裁決 W3-1～4，主 session 定 W3-5～7；本檔擴寫、落 `dispatch-prompts.md` | 開 T1、L、A；審 C |
 | 10/31 20:15 | 開 #471（本檔，draft，已訂閱）。開 T1 `session_01MQovbCdCKc51kHwtEqiV9o`（Opus）、L `session_01MQovbEyD9mbV4raoxQDrtU`、A `session_01MQovbEgBxiL2rkNdo1BWQL`（Sonnet），tag `uknow-wave-3`；A 與 K 的 prompt 補「不要進 Plan Mode 工具（無人核准會卡住）」。C 在 worktree rebase 到 develop（friction-log 檔尾衝突，兩條都保留）→ force-with-lease 推 `28dfaf73`、已訂閱；派獨立 Opus agent 審刪除路徑（W3-4），主 session 同時讀全 diff | 等 C 的 CI 與獨立審查；T1 備妥後通知業主親打 |
+| 10/31 20:40 | **#473（L）合進 develop（cd33515）**：主 session 審，無 P0／P1（POP 才還原，非 POP 只清篩選與捲動、清單快取保留）。主 session 把 A rebase 後推 `758f44e4` → CI 綠 → **#472（A）合進 develop（b44606d）**：兩支 RPC 對前版只增欄位、權限照舊。獨立審查交回 #453：**P0-1**（錨點只看同 base 的 URL，base 漂移時放行；物件數 ≤20 不設比例閘）、**P1-1**（production dispatch 沒設 LIVE 也能實刪）、P2 五條。主 session 代跑正式站唯讀 SQL：32 物件、超過 7 日 0 個、30 個 URL 皆同一個 base → 現在不會觸發，但要修 | C 修 P0-1／P2 |
+| 10/31 21:30 | 第 2 波 C session 自行把 migration 改名 `20261110000001`（A 先合，避免版本倒序），並要求 rebase 只由一方負責 → 定為由 C 負責，主 session 不再推 #453。C 修 P0-1（引用判準與 base 脫鉤、錨點改以「有照片的刊登者」為分母、拿掉 ≤20 豁免）＋P2（log 不印 err、advisor 預期、admin 代傳約束、晚存檔破圖寫進規格書）：紅燈 `16647896`→綠燈 `e4f6c038`，紅燈後沒改測試，CI 綠。主 session 審 migration 修正版：無 P0／P1 | 業主 W3-8／W3-9 |
+| 11/01 04:50 | 業主裁決 **W3-8**（workflow 加閘）、**W3-9**（首頁再點 logo＝清篩選＋回頂端）。W3-8 交給 C，授權 CI 綠後自行轉 ready；開 **L2** `session_01MQovbCMjPvgMSqmXghhPQj`（Sonnet）。T1 仍等業主親打 `/tdd-implement` | C 轉 ready → 主 session 審最後一段 diff 後合 → develop dry-run → 開 K |
