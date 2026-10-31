@@ -15,7 +15,12 @@
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
-import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  ensureEdgeFunctionEnv,
+} from './test-helpers.ts';
 
 const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
   'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
@@ -239,6 +244,39 @@ Deno.test('listings：撤 listings_delete_own 後本人直刪影響零列、列�
     assertEquals(still?.length, 1);
   } finally {
     await deleteTestUsers(client, [owner.id]);
+    await sql.end();
+  }
+});
+
+Deno.test('POST /internal/purge-orphan-listing-photos：真路由＋真 RPC 的 dry-run 回候選，錯密鑰 401', async () => {
+  ensureEdgeFunctionEnv();
+  Deno.env.set('RECONCILE_SECRET', 'test-reconcile-secret');
+  const { app, listingPhotoPublicUrl } = await import('./index.ts');
+  const sql = postgres(DB_URL);
+  const orphan = `${crypto.randomUUID()}/946684800021_orph21.jpg`;
+  try {
+    await seedObjects(sql, [{ name: orphan, createdAt: OLD }]);
+    const call = (secret: string) =>
+      app.request('/api/internal/purge-orphan-listing-photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-internal-secret': secret },
+        body: JSON.stringify({ dry_run: true, include_names: true, force_ratio: true }),
+      });
+    const denied = await call('wrong');
+    assertEquals(denied.status, 401);
+    await denied.body?.cancel();
+
+    const res = await call('test-reconcile-secret');
+    assertEquals(res.status, 200);
+    const { data } = await res.json();
+    assertEquals(data.dryRun, true);
+    assertEquals(data.removed, 0);
+    assert(data.names.includes(orphan), '種下的孤兒應在候選內');
+    assert(data.totalObjects >= 1);
+    // publicBase 與 upload-photo 的 URL 同源：本 bucket 的 URL 去掉 path 就是 base。
+    assert(listingPhotoPublicUrl(orphan).endsWith(orphan));
+  } finally {
+    await removeObjects(sql, [orphan]);
     await sql.end();
   }
 });

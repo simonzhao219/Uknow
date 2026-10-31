@@ -4433,6 +4433,14 @@ export function listingPhotoDeps() {
       const row = data?.[0];
       return row ? { photos: (row.photos as string[] | null) ?? [] } : null;
     },
+    verifyInternalSecret: () => Promise.resolve(false),
+    sweep: {
+      listOrphans: () => Promise.reject(new Error('未實作')),
+      filterUnreferenced: () => Promise.reject(new Error('未實作')),
+      removeObjects: () => Promise.reject(new Error('未實作')),
+      warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+    },
+    publicBase: () => '',
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
   };
 }

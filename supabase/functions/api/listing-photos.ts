@@ -161,6 +161,15 @@ export class SweepError extends Error {
   }
 }
 
+/**
+ * 寬限期（W2-7）：物件上傳後多久才可能被當成孤兒。寫死、改動要發 PR（維運參數，
+ * 不是 reward_config 那類業務參數）。migration 20261102000001 的刪前複查寫死同一個值
+ * 作下限，兩邊由 listing-photos.unit.test.ts 讀原文比對。
+ */
+export const ORPHAN_GRACE_HOURS = 168;
+/** 單輪最多處理幾個候選。 */
+export const ORPHAN_SWEEP_LIMIT = 500;
+
 /** Storage remove 單批上限。 */
 export const SWEEP_REMOVE_BATCH = 100;
 
@@ -250,6 +259,11 @@ export interface ListingPhotoHandlerDeps {
   cleanup: PhotoCleanupDeps;
   /** 刪除該使用者的該筆刊登並回傳被刪列的 photos；不存在或非本人回 null；DB 錯誤必須 throw。 */
   deleteListingRow: (id: string, userId: string) => Promise<{ photos: string[] } | null>;
+  /** x-internal-secret 與 RECONCILE_SECRET 的常數時間比對（同兩個既有 /internal/* 端點）。 */
+  verifyInternalSecret: (c: Context) => Promise<boolean>;
+  sweep: OrphanSweepDeps;
+  /** 本 bucket 的 public URL 前綴（由 publicUrlOf('x') 去尾推導）。 */
+  publicBase: () => string;
   warn: (message: string, ...detail: unknown[]) => void;
 }
 
@@ -301,6 +315,8 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
         return fail(c, 500, 'cleanup_failed', '照片清理失敗');
       }
     },
+
+    purgeOrphans: (c: Context) => Promise.resolve(c.json({ success: true, data: {} })),
 
     deleteListing: async (c: Context) => {
       const user = await deps.requireAuth(c);

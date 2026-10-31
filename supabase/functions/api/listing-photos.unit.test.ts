@@ -378,7 +378,12 @@ Deno.test('sweepOrphanPhotos：Storage 實刪數少於送出數 → 差額記為
 
 // ---------- 路由處理函式 ----------
 import { Hono } from 'npm:hono@4';
-import { createListingPhotoHandlers, type ListingPhotoHandlerDeps } from './listing-photos.ts';
+import {
+  createListingPhotoHandlers,
+  type ListingPhotoHandlerDeps,
+  ORPHAN_GRACE_HOURS,
+  ORPHAN_SWEEP_LIMIT,
+} from './listing-photos.ts';
 
 const LISTING_ID = '99999999-8888-7777-6666-555555555555';
 
@@ -411,6 +416,9 @@ function harness(over: Partial<ListingPhotoHandlerDeps> = {}) {
       log.deletedRows.push(`${id}:${userId}`);
       return Promise.resolve({ photos: [urlOf(mine('1_a')), urlOf(mine('2_b'))] });
     },
+    verifyInternalSecret: () => Promise.resolve(true),
+    sweep: sweepHarness().deps,
+    publicBase: () => BASE,
     warn: (m) => log.warns.push(m),
     ...over,
   };
@@ -419,6 +427,7 @@ function harness(over: Partial<ListingPhotoHandlerDeps> = {}) {
   const app = new Hono();
   app.delete('/listings/photos', h.deletePhotos);
   app.delete('/listings/:id', h.deleteListing);
+  app.post('/internal/purge-orphan-listing-photos', h.purgeOrphans);
   return { app, log };
 }
 const del = (app: Hono, path: string, body?: unknown) =>
@@ -585,4 +594,133 @@ Deno.test('index.ts 註冊順序：/listings/photos 先於 /listings/:id', async
   const byId = src.indexOf("app.delete('/listings/:id'");
   assert(photos >= 0 && byId >= 0, '兩條路由都要註冊');
   assert(photos < byId, '/listings/photos 必須先註冊，否則 "photos" 會被當成 :id');
+});
+
+// ---------- POST /internal/purge-orphan-listing-photos ----------
+const PURGE = '/internal/purge-orphan-listing-photos';
+
+function purgeHarness(
+  sweepOver: Partial<OrphanSweepDeps> = {},
+  rep: OrphanReport = report(),
+  over: Partial<ListingPhotoHandlerDeps> = {},
+) {
+  const sweep = sweepHarness(sweepOver, rep);
+  const { app } = harness({ sweep: sweep.deps, ...over });
+  return { app, log: sweep.log };
+}
+const purge = (app: Hono, body?: unknown) =>
+  app.request(PURGE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+  });
+
+Deno.test('purge-orphan-listing-photos：密鑰不符 → 401，不查候選', async () => {
+  const { app, log } = purgeHarness({}, report(), {
+    verifyInternalSecret: () => Promise.resolve(false),
+  });
+  const res = await purge(app, { dry_run: false });
+  assertEquals(res.status, 401);
+  assertEquals(log.list, []);
+});
+
+Deno.test('purge-orphan-listing-photos：dry_run 缺漏、字串 "false"、非 boolean、body 壞掉都當 dry-run', async () => {
+  for (const body of [{}, { dry_run: 'false' }, { dry_run: 0 }, { dry_run: null }, 'not json']) {
+    const { app, log } = purgeHarness();
+    const res = await purge(app, body);
+    assertEquals(res.status, 200, JSON.stringify(body));
+    assertEquals((await res.json()).data.dryRun, true, JSON.stringify(body));
+    assertEquals(log.remove, [], JSON.stringify(body));
+  }
+});
+
+Deno.test('purge-orphan-listing-photos：只有 dry_run === false 才實刪，回統計不回 name', async () => {
+  const rep = report();
+  const { app, log } = purgeHarness({}, rep);
+  const res = await purge(app, { dry_run: false });
+  assertEquals(res.status, 200);
+  assertEquals(await res.json(), {
+    success: true,
+    data: {
+      dryRun: false,
+      candidateCount: 3,
+      removed: 3,
+      notRemoved: 0,
+      totalObjects: 100,
+      referencedUrls: 50,
+      matchedUrls: 50,
+    },
+  });
+  assertEquals(log.remove, [rep.candidates]);
+});
+
+Deno.test('purge-orphan-listing-photos：以 publicBase、寬限期常數與單輪上限查候選', async () => {
+  const { app, log } = purgeHarness();
+  await (await purge(app, {})).body?.cancel();
+  assertEquals(log.list, [[BASE, ORPHAN_GRACE_HOURS, ORPHAN_SWEEP_LIMIT]]);
+});
+
+Deno.test('purge-orphan-listing-photos：include_names === true 才附候選 name', async () => {
+  const rep = report();
+  for (const [include, expected] of [[true, rep.candidates], ['true', undefined], [1, undefined]]) {
+    const { app } = purgeHarness({}, rep);
+    const data = (await (await purge(app, { include_names: include })).json()).data;
+    assertEquals(data.names, expected, String(include));
+  }
+});
+
+Deno.test('purge-orphan-listing-photos：force_ratio === true 才放行比例閘', async () => {
+  const rep = report({ candidates: orphanNames(80), totalObjects: 100 });
+  const blocked = await purge(purgeHarness({}, rep).app, { dry_run: false, force_ratio: 'true' });
+  assertEquals(blocked.status, 500);
+  assertEquals((await blocked.json()).error.code, 'circuit_open');
+  const passed = await purge(purgeHarness({}, rep).app, { dry_run: false, force_ratio: true });
+  assertEquals(passed.status, 200);
+  assertEquals((await passed.json()).data.removed, 80);
+});
+
+Deno.test('purge-orphan-listing-photos：中途失敗 → 500 帶 code 與 removedSoFar，message 不含內部錯誤', async () => {
+  let batch = 0;
+  const { app } = purgeHarness(
+    {
+      removeObjects: (paths) =>
+        ++batch === 2
+          ? Promise.reject(new Error(`storage down ${OTHER}/x.jpg`))
+          : Promise.resolve(paths),
+    },
+    report({ candidates: orphanNames(250), totalObjects: 1000 }),
+  );
+  const res = await purge(app, { dry_run: false });
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(body.success, false);
+  assertEquals(body.error.code, 'sweep_failed');
+  assertEquals(body.removedSoFar, 100);
+  assert(!JSON.stringify(body).includes(OTHER), '回應不可帶 Storage 錯誤字串（可能含 uid）');
+});
+
+Deno.test('purge-orphan-listing-photos：列孤兒出錯 → 500 sweep_failed、removedSoFar 0', async () => {
+  const { app } = purgeHarness({ listOrphans: () => Promise.reject(new Error('db down')) });
+  const res = await purge(app, { dry_run: false });
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals([body.error.code, body.removedSoFar], ['sweep_failed', 0]);
+});
+
+Deno.test('index.ts：註冊 POST /internal/purge-orphan-listing-photos', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url));
+  assert(
+    src.includes(
+      "app.post('/internal/purge-orphan-listing-photos', listingPhotoHandlers.purgeOrphans)",
+    ),
+    '路由未註冊',
+  );
+});
+
+Deno.test('ORPHAN_GRACE_HOURS 與 migration 刪前複查寫死的寬限期一致', async () => {
+  const sql = await Deno.readTextFile(
+    new URL('../../migrations/20261102000001_listing_photo_orphans.sql', import.meta.url),
+  );
+  const hours = [...sql.matchAll(/interval '(\d+) hours'/g)].map((m) => Number(m[1]));
+  assertEquals(hours, [ORPHAN_GRACE_HOURS]);
 });
