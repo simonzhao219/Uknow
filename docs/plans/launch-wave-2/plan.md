@@ -34,6 +34,7 @@
 | W2-13 | C-Q11：終止請求要不要停權（**修正 W2-11 的停權部分**） | **只刪刊登、不停權**：停權會鎖會員區、擋提領、廢推薦碼，使已賺獎勵領不到；停權留給違規處置 |
 | W2-14 | 正式商店電子發票（#449 起建單帶 `TradeInvoice: 1`，已隨 #450 上正式站約 10/30 18:20；之後尚無真付款） | 業主確認**正式商店已開通**；主 session 建議找時間用未付款帳號走到刷卡頁實測（不付款） |
 | W2-15 | 測試商店電子發票（H 實證 sandbox 拒單 `UPP02085 商店尚未啟用電子發票`，journey 與 develop 付款全擋） | **業主開通測試商店**，開好通知主 session；H 再驗 skeleton/sandbox，綠了在 #456 改回 sandbox。11/02 18:00 前未開通則延長規則 13 期限 |
+| W2-16 | 測試商店電子發票 | **業主 10/31 09:20 回報已開通即時電子發票**；H 重跑 skeleton/sandbox |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -110,7 +111,7 @@
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
 | C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃 v2.4，draft） | 規劃定稿，等業主審 |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
-| S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
+| S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | — | 施工中 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -128,3 +129,4 @@
 | 10/31 01:10 | C 第三輪（#453 9c1317b5，審 v2.2）：P0 0、P1 7、P2 11；v2.3 自修 6 條（含真 bug：比例閘用截斷後候選數，bucket >1000 物件永不觸發 → 改用 RPC 回傳的 orphan_total）＋Q11 → 業主裁決 W2-13。不跑第四輪，主 session 親自核對 v2.3 六條自修 | C 回填 → 主 session 核對 → 交業主審 |
 | 10/31 01:40 | **H 查出 journey sandbox 紅的現行根因不是表單，是 PayUni 測試商店拒單 `UPP02085`**（#449 的 TradeInvoice=1，PR 前提「兩商店皆已開通」對 sandbox 不成立）；H 開 #456（harness 拒單時解密 return 印出 Status／Message，診斷用）。主 session 查證 #449 已隨 #450 上 main、正式站部署後零付款（最後成功 10/30 09:48 UTC）→ 業主確認正式商店已開通（W2-14）、會開通測試商店（W2-15）。UPP02085 轉給 P 納入商店級告警（且走 /payuni/return 路徑）。B 開 #457（W2-10，紅 c67f4e25→綠 95aee4d3）：主 session 審無 P0／P1。教訓：webhook 模式的晉升閘門不碰 PayUni 建單，#449 這類商店設定前提在晉升時完全不會被驗到——記 friction-log 候選 | 等業主開通測試商店 → H 驗；#457 CI 綠合 |
 | 10/31 08:55 | 主 session worker 兩度重啟。安全網自查發現 **R1（自 10/30 15:52）與 P（自 16:13）卡在 Supabase MCP execute_sql 權限核准**→主 session 代跑唯讀查詢（訂單 16 筆、measure.sql 等價：users 13 全 step 3、completed 13／failed 3、卡單 0、告警 0、刊登 10）並以 priority now 送達、請其改由主 session 代查；共用開頭與 §3 補此規則。**#457 合進 develop（707d0b0）**，B 收工。C 交 v2.4（#453 f5d47ddc，未處置 P0／P1 皆 0），主 session 已核對 v2.3 自修 → 交業主審。批 2 開 S | 業主審 #453；等 P、S、R1、H |
+| 10/31 09:20 | 業主開通測試商店即時電子發票（W2-16）→ 通知 H rebase 後重發 dispatch。S 開工 `session_01MQovbBGBW1DseerZ2P4p64`（Sonnet）；在途程式工項＝P、S（H 只等驗證） | H 驗證結果；P／S PR |
