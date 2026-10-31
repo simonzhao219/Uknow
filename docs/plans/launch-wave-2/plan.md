@@ -109,13 +109,13 @@
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | #460 ✅ 82b0f02 | 收工 |
-| H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456 | 審過，等 CI 合；之後待命看 full dispatch |
+| H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456 ✅ dcb676d | 收工（full sandbox 綠） |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
-| N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | #462 | 審過，等 CI 合 |
+| N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | #462 ✅ 8d81c7a | 收工 |
 | C | `session_01MQovbCdFo86t9DX6d66Afq`（規劃）→ `session_01MQovbCF5454fAYfqy9NXaJ`（實作） | Opus | `feature/listing-photo-retention` | #453 | 規劃審過；實作 session 等業主親打 /tdd-implement（第 3 波） |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | #461 ✅ 3b5b7c9 | 收工 |
-| S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 | 修 HSTS 一行後合 |
+| S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 ✅ 9ac1231 | 收工 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -139,3 +139,4 @@
 | 10/31 09:45 | N 開 **#462**：notify 非 200 改 exit 1；reconcile 的 system_alerts 推送去掉 continue-on-error 並移最後一步（失敗→run 紅→窗口不前移→重送）；deploy-smoke／deploy-supabase／對帳失敗通知三處保留 continue-on-error。主 session 審：無 P0／P1。記第 3 波候選：缺 Secrets 仍 exit 0 致窗口前移 | #462 CI 綠合 |
 | 10/31 10:00 | 01:42–01:52 UTC 一批 CI 的 unit-tests／static-checks 卡「安裝 Node 24」10 分鐘被取消（runner 端），#459、#462 各重跑失敗 job 一次。#461 與 develop 衝突（friction-log 檔尾）→ 主 session rebase 解衝突（紅燈 hash 改為 e5d876bd、99162571）→ CI 綠 → **#461 合進 develop（3b5b7c9）**。**H 完成 #456**：根因兩層——(1) 測試商店未開電子發票 UPP02085（W2-16 已開通）；(2) 開通後刷卡頁多了必填「買方名稱」，harness 固定填值；skeleton/sandbox dispatch run 41155657844 綠；ci.yml journey-full 改回 sandbox、刪「暫時至」、Closes #288。主 session 審無 P0／P1，rebase 到新 develop（6a1a31ff）。合併後主 session 對 develop 發 full/sandbox dispatch，晉升前先驗全套 | #456 CI 綠合 → full dispatch；#459／#462 重跑結果 |
 | 10/31 10:00 | 業主 W2-19：刷卡頁實測通過、首頁返回真機通過、#453 審過。開 **C 實作 session** `session_01MQovbCF5454fAYfqy9NXaJ`（Opus，分支 feature/listing-photo-retention，先備環境、等業主親打 `/tdd-implement listing-photo-retention`；屬第 3 波，11/03 晉升前不轉 ready） | 業主在該 session 打指令 |
+| 10/31 11:20 | **#456 合進 develop（dcb676d）**→ 主 session 對 develop 發 full/sandbox：run 41158578126 **綠**（25 分鐘，30 人、並行 8 人買方名稱共用無礙）。**#459（9ac1231）、#462（8d81c7a）依序 rebase 後合進 develop**——第 2 波程式工項全部合併。業主轉來 LINE P1「正式站付款對帳排程失敗」（run 41141064038）：查為 runner DNS 暫時失敗（curl exit 6，未送到正式站），下一輪 41157903717 已綠 → 留言並關 #458；第二次發生，對帳 curl 加重試列第 3 波候選。C 實作 session 已在跑（#453 TDD 紅燈期 CI 紅屬預期） | 11/02 22:00 收件；11/03 晉升 |
