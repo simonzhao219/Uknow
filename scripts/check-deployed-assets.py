@@ -26,6 +26,9 @@
    舊版」:預期 commit 距今未滿寬限期(預設 30 分鐘)視為建置中,只警告;
    超過仍不一致才失敗。
 
+5. **安全標頭生效**:`_headers` 的 `/*` 區塊(HSTS、nosniff、Referrer-Policy、
+   frame-ancestors)只驗存在與關鍵值。
+
 另外 Pages 的資產保存本身就有下限:官方 Serving Pages 文件寫「Assets have
 a time-to-live (TTL) of one week but **can also disappear at any time**」——
 所以這支不只在部署後跑,也排程定期跑。
@@ -189,6 +192,38 @@ def check_cache_headers(base: str, shell_html: str) -> None:
         )
 
 
+# 全站安全標頭(public/_headers 的 `/*` 區塊)。只驗「存在」與關鍵值,
+# 不驗完整字串——max-age 等數值之後調整不該讓 smoke 變紅。
+SECURITY_HEADERS: dict[str, str] = {
+    "strict-transport-security": "max-age=",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "content-security-policy": "frame-ancestors 'none'",
+}
+
+
+def missing_security_headers(shell_headers: dict[str, str]) -> list[str]:
+    """回傳缺少或值不符的安全標頭描述;純函式,方便表格測試。"""
+    problems: list[str] = []
+    for name, needle in SECURITY_HEADERS.items():
+        value = shell_headers.get(name)
+        if value is None:
+            problems.append(f"  {name}:缺少")
+        elif needle not in value.lower():
+            problems.append(f"  {name}:值為 {value!r},預期含 {needle!r}")
+    return problems
+
+
+def check_security_headers(base: str) -> None:
+    _, shell_headers, _ = fetch(base)
+    problems = missing_security_headers(shell_headers)
+    if problems:
+        raise SmokeFailure(
+            "全站安全標頭沒有生效(public/_headers 的 `/*` 區塊被改掉,或 Pages 沒套用):\n"
+            + "\n".join(problems)
+        )
+
+
 def extract_build_sha(shell_html: str) -> str | None:
     match = BUILD_SHA_META.search(shell_html)
     if not match:
@@ -283,9 +318,30 @@ def self_test() -> int:
             failures += 1
             print(f"✗ 解析 {html!r}:預期 {want!r},得到 {got!r}", file=sys.stderr)
 
+    good = {
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "content-security-policy": "frame-ancestors 'none'",
+    }
+    header_cases = [
+        (good, 0, "四個標頭齊全"),
+        ({k: v for k, v in good.items() if k != "x-content-type-options"}, 1, "缺 nosniff"),
+        ({**good, "content-security-policy": "default-src 'self'"}, 1, "CSP 沒有 frame-ancestors"),
+        ({}, 4, "全缺"),
+    ]
+    for hdrs, want_count, label in header_cases:
+        got_count = len(missing_security_headers(hdrs))
+        if got_count != want_count:
+            failures += 1
+            print(f"✗ 安全標頭 {label}:預期 {want_count} 項問題,得到 {got_count}", file=sys.stderr)
+
     if failures:
         return 1
-    print(f"[deploy-smoke] self-test 通過({len(cases)} 判定 + {len(html_cases)} 解析)")
+    print(
+        f"[deploy-smoke] self-test 通過({len(cases)} 判定 + {len(html_cases)} 解析"
+        f" + {len(header_cases)} 安全標頭)"
+    )
     return 0
 
 
@@ -338,6 +394,9 @@ def main() -> int:
 
         check_cache_headers(base, shell_html)
         print("[deploy-smoke] ✓ 快取標頭正確(HTML 重新驗證、資產長快取未被汙染)")
+
+        check_security_headers(base)
+        print("[deploy-smoke] ✓ 安全標頭齊全(HSTS、nosniff、Referrer-Policy、frame-ancestors)")
 
         if args.expect_sha:
             print(
