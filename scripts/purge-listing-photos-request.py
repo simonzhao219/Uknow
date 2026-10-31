@@ -52,11 +52,15 @@ STAT_KEYS = (
 )
 
 
-def build_body(event: str, live: str, dry_input: str, force_input: str) -> dict:
+def build_body(event: str, live: str, dry_input: str, force_input: str, target: str = "production") -> dict:
     """B1–B3:只回 dry_run 與 force_ratio 兩個 JSON boolean。"""
     if event == "workflow_dispatch":
         return {"dry_run": dry_input != "false", "force_ratio": force_input == "true"}
     return {"dry_run": live != "true", "force_ratio": False}
+
+
+def body_warning(event: str, live: str, dry_input: str, target: str) -> str | None:
+    return None
 
 
 @dataclass
@@ -150,7 +154,8 @@ def main(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 UID = "11111111-2222-3333-4444-555555555555"
 
-BODY_CASES: list[tuple[str, tuple[str, str, str, str], dict]] = [
+# (說明, (event, live, dry_input, force_input[, target]), 預期 body)
+BODY_CASES: list[tuple[str, tuple, dict]] = [
     ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False}),
     ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False}),
     ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False}),
@@ -165,16 +170,40 @@ BODY_CASES: list[tuple[str, tuple[str, str, str, str], dict]] = [
         {"dry_run": True, "force_ratio": False},
     ),
     (
-        "dispatch dry_run=false → 實刪（LIVE 未設也照輸入）",
-        ("workflow_dispatch", "", "false", "false"),
+        "develop dispatch dry_run=false → 實刪（LIVE 只管正式站）",
+        ("workflow_dispatch", "", "false", "false", "develop"),
+        {"dry_run": False, "force_ratio": False},
+    ),
+    (
+        "production dispatch dry_run=false、LIVE 未設 → 強制 dry-run（W3-8）",
+        ("workflow_dispatch", "", "false", "false", "production"),
+        {"dry_run": True, "force_ratio": False},
+    ),
+    (
+        "production dispatch dry_run=false、LIVE=true → 實刪",
+        ("workflow_dispatch", "true", "false", "false", "production"),
         {"dry_run": False, "force_ratio": False},
     ),
     ("dispatch dry_run 空字串 → dry-run", ("workflow_dispatch", "", "", ""), {"dry_run": True, "force_ratio": False}),
     (
-        "dispatch force_ratio=true → 放行比例閘",
-        ("workflow_dispatch", "", "false", "true"),
+        "develop dispatch force_ratio=true → 放行比例閘",
+        ("workflow_dispatch", "", "false", "true", "develop"),
         {"dry_run": False, "force_ratio": True},
     ),
+    (
+        "production dispatch 被降為 dry-run 時 force_ratio 照輸入（只影響看清單）",
+        ("workflow_dispatch", "", "false", "true", "production"),
+        {"dry_run": True, "force_ratio": True},
+    ),
+]
+
+# (說明, (event, live, dry_input, target), 是否要印降級警告)
+WARNING_CASES: list[tuple[str, tuple[str, str, str, str], bool]] = [
+    ("production dispatch 要求實刪但 LIVE 未設 → 警告", ("workflow_dispatch", "", "false", "production"), True),
+    ("production dispatch 要求實刪且 LIVE=true → 不警告", ("workflow_dispatch", "true", "false", "production"), False),
+    ("production dispatch 本來就 dry-run → 不警告", ("workflow_dispatch", "", "true", "production"), False),
+    ("develop dispatch 實刪 → 不警告", ("workflow_dispatch", "", "false", "develop"), False),
+    ("排程 → 不警告", ("schedule", "", "", "production"), False),
 ]
 
 
@@ -239,6 +268,12 @@ def self_test() -> int:
             failures.append(f"  FAIL: [body] {label} — 預期 {want},實得 {got}")
         if "include_names" in got:
             failures.append(f"  FAIL: [body] {label} — 不得送 include_names(B3)")
+    for label, args, want_warn in WARNING_CASES:
+        w = body_warning(*args)
+        if bool(w) != want_warn:
+            failures.append(f"  FAIL: [warning] {label} — 預期{'有' if want_warn else '無'}警告,實得 {w!r}")
+        elif w and "PHOTO_PURGE_LIVE" not in w:
+            failures.append(f"  FAIL: [warning] {label} — 警告要寫明原因是 PHOTO_PURGE_LIVE 未開")
     for label, args, want_ok, want_code in JUDGE_CASES:
         v = judge(*args)
         if (v.ok, v.code) != (want_ok, want_code):
@@ -265,7 +300,7 @@ def self_test() -> int:
         print("purge-listing-photos-request 表格案例未過:")
         print("\n".join(failures))
         return 1
-    print(f"purge-listing-photos-request self-test: OK（{len(BODY_CASES) + len(JUDGE_CASES) + 1} 條案例）")
+    print(f"purge-listing-photos-request self-test: OK（{len(BODY_CASES) + len(WARNING_CASES) + len(JUDGE_CASES) + 1} 條案例）")
     return 0
 
 
