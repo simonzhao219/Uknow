@@ -6,7 +6,7 @@
 import { createContext } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import type { PublicListingRow } from '../types/listing';
 
 type ListResult = { data: PublicListingRow[] | null; error: null };
@@ -260,6 +260,32 @@ describe('HomePage 返回', () => {
       expect(screen.queryByRole('status', SKELETON)).toBeNull();
       expect(window.scrollTo).not.toHaveBeenCalled();
     });
+  });
+
+  it('已在首頁時再點首頁連結：搜尋字詞清空、捲回頂端、清單不重抓骨架', async () => {
+    order.mockResolvedValueOnce({ data: [taipei, kaohsiung], error: null });
+    const { HomePage } = await import('./HomePage');
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Link to="/">logo</Link>
+        <HomePage />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/找到 2 位服務者/);
+    fireEvent.change(document.getElementById('service-search') as HTMLInputElement, {
+      target: { value: '高雄' },
+    });
+    expect(await screen.findByText(/找到 1 位服務者/)).toBeTruthy();
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 });
+    (window.scrollTo as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    fireEvent.click(screen.getByRole('link', { name: 'logo' }));
+
+    expect((document.getElementById('service-search') as HTMLInputElement).value).toBe('');
+    expect(await screen.findByText(/找到 2 位服務者/)).toBeTruthy();
+    expect(screen.queryByRole('status', SKELETON)).toBeNull();
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(order).toHaveBeenCalledTimes(1);
   });
 
   it('以 POP 返回時還原搜尋字詞與捲動', async () => {
