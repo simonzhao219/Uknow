@@ -104,10 +104,10 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（實作，已完成） | 主 session 審 | `feature/listing-photo-retention` | #453（draft） | 主 session 審查中 |
-| T1 | — | Opus | `feature/auth-state-trust` | #466（draft） | 待開 |
-| L | — | Sonnet | `fix/home-push-no-restore` | — | 待開 |
-| A | — | Sonnet | `fix/admin-member-referral-cols` | — | 待開 |
+| C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（實作，已完成） | 主 session 審 | `feature/listing-photo-retention` | #453（draft，rebase 後 head `28dfaf73`） | 主 session 審查中 |
+| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft） | 備環境，等業主親打 `/tdd-implement` |
+| L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-push-no-restore` | — | 施工中 |
+| A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | — | 施工中 |
 | K | — | Sonnet | `fix/alert-pipeline-gaps` | — | 等 L 或 A 合併 |
 | R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
 
@@ -116,3 +116,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 10/31 20:10 | 主 session 開局：讀交接與第 2 波 plan／review；#453 head `96a7e874`、#466 head `1ea013c`，皆落後 develop `2b1284a`。業主裁決 W3-1～4，主 session 定 W3-5～7；本檔擴寫、落 `dispatch-prompts.md` | 開 T1、L、A；審 C |
+| 10/31 20:15 | 開 #471（本檔，draft，已訂閱）。開 T1 `session_01MQovbCdCKc51kHwtEqiV9o`（Opus）、L `session_01MQovbEyD9mbV4raoxQDrtU`、A `session_01MQovbEgBxiL2rkNdo1BWQL`（Sonnet），tag `uknow-wave-3`；A 與 K 的 prompt 補「不要進 Plan Mode 工具（無人核准會卡住）」。C 在 worktree rebase 到 develop（friction-log 檔尾衝突，兩條都保留）→ force-with-lease 推 `28dfaf73`、已訂閱；派獨立 Opus agent 審刪除路徑（W3-4），主 session 同時讀全 diff | 等 C 的 CI 與獨立審查；T1 備妥後通知業主親打 |
