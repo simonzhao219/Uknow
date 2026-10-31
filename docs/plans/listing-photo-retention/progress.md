@@ -10,8 +10,8 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | 即時路徑引用語意改成「僅本人刊登」 | ✅ 完成 | `e7101e1f` | `7e7ab18b` |
-| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | （本 commit） |
-| 3 | `sweepOrphanPhotos` 純函式 | ⬜ 未開始 | | |
+| 2 | 判準 RPC `list_orphan_listing_photos`（＋Q2 撤 `listings_delete_own`） | ✅ 完成 | `109b1afc` | `8948cd1b` |
+| 3 | `sweepOrphanPhotos` 純函式 | ✅ 完成 | `e494f0f5` | （本 commit） |
 | 4 | 端點 `POST /internal/purge-orphan-listing-photos` | ⬜ 未開始 | | |
 | 5 | 排程 workflow `purge-listing-photos.yml` | ⬜ 未開始 | | |
 | 6 | 規格書 §11 改寫、刪 §14 第 14 列 | ⬜ 未開始 | | |
@@ -25,6 +25,8 @@
 
 - 第二支 RPC `filter_unreferenced_listing_photos(p_public_base, p_names)` 依 plan 簽章不帶寬限期參數，所以寬限期寫死在 SQL（`168 hours`），
   定位為 `ORPHAN_GRACE_HOURS` 的**下限**；階段 4 定義常數時加一條 unit 測試讀 migration 原文比對，防兩邊漂移。
+- 斷路器在 dry-run 也生效（每日 dry-run 先暴露問題）；業主要看被比例閘擋下的清單時，curl 帶 `force_ratio: true, dry_run: true`
+  （階段 6 寫進 SOP）。`SweepOptions` 因此多一個 `forceRatio` 欄位（plan 的介面沒列，但 §2.2 第 2 點需要它）。
 - `_listing_photo_is_orphan` 不加 `set search_path`／`security definer`，planner 才能內聯（plan 寫「可內聯」）；內部全 schema-qualified。
 
 ## 本機環境備註

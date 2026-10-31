@@ -164,19 +164,77 @@ export class SweepError extends Error {
 /** Storage remove 單批上限。 */
 export const SWEEP_REMOVE_BATCH = 100;
 
-export function sweepOrphanPhotos(
-  _deps: OrphanSweepDeps,
+/** 比例閘：孤兒占 bucket 過半且物件數超過此值才中止（小 bucket 的比例沒有意義）。 */
+const RATIO_GATE_MIN_OBJECTS = 20;
+
+/**
+ * 判準 RPC → 斷路器 → 刪前複查 → 分批 remove。任何一步出錯都 throw SweepError，
+ * 已刪的數量帶在 removedSoFar；刪除冪等，重跑安全。
+ *
+ * 斷路器（dry-run 也適用，讓每日 dry-run 先暴露問題）：
+ *   - 錨點失效：有引用、有物件，卻一個引用都對不到物件——base 推導錯了，
+ *     所有活照片都會被當成孤兒。不可放行。
+ *   - 比例閘：截斷前的孤兒總數占 bucket 過半。forceRatio 只放行這一條。
+ */
+export async function sweepOrphanPhotos(
+  deps: OrphanSweepDeps,
   opts: SweepOptions,
 ): Promise<SweepResult> {
-  return Promise.resolve({
+  let rep: OrphanReport;
+  try {
+    rep = await deps.listOrphans(opts.publicBase, opts.graceHours, opts.limit);
+  } catch (err) {
+    throw new SweepError('sweep_failed', `列孤兒失敗：${errorMessage(err)}`, 0);
+  }
+  if (rep.matchedUrls === 0 && rep.referencedUrls > 0 && rep.totalObjects > 0) {
+    throw new SweepError('circuit_open', '錨點失效：沒有任何引用對得到物件', 0);
+  }
+  if (
+    !opts.forceRatio && rep.totalObjects > RATIO_GATE_MIN_OBJECTS &&
+    rep.orphanTotal / rep.totalObjects > 0.5
+  ) {
+    throw new SweepError('circuit_open', '比例閘：孤兒超過 bucket 物件數的一半', 0);
+  }
+  const result: SweepResult = {
     dryRun: opts.dryRun,
-    candidates: [],
+    candidates: rep.candidates,
     removed: 0,
     notRemoved: 0,
-    totalObjects: 0,
-    referencedUrls: 0,
-    matchedUrls: 0,
-  });
+    totalObjects: rep.totalObjects,
+    referencedUrls: rep.referencedUrls,
+    matchedUrls: rep.matchedUrls,
+  };
+  if (opts.dryRun || rep.candidates.length === 0) return result;
+
+  let toRemove: string[];
+  try {
+    toRemove = await deps.filterUnreferenced(opts.publicBase, rep.candidates);
+  } catch (err) {
+    throw new SweepError('sweep_failed', `刪前複查失敗：${errorMessage(err)}`, 0);
+  }
+  for (let i = 0; i < toRemove.length; i += SWEEP_REMOVE_BATCH) {
+    const batch = toRemove.slice(i, i + SWEEP_REMOVE_BATCH);
+    let removed: string[];
+    try {
+      removed = await deps.removeObjects(batch);
+    } catch (err) {
+      throw new SweepError(
+        'sweep_failed',
+        `Storage 刪除失敗：${errorMessage(err)}`,
+        result.removed,
+      );
+    }
+    result.removed += removed.length;
+    result.notRemoved += batch.length - removed.length;
+  }
+  if (result.notRemoved > 0) {
+    deps.warn('[listing-photos] 孤兒清理有物件未被 Storage 刪除', result.notRemoved);
+  }
+  return result;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 // ============================================================
