@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useMemo, useEffect, useContext, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigationType } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -47,6 +47,7 @@ import {
   getCachedFilters,
   getCachedListings,
   getSavedScrollY,
+  resetHomeView,
   saveScrollY,
   setCachedCoords,
   setCachedFilters,
@@ -113,6 +114,13 @@ export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
   // 需要上移避開。
   const { isLoggedIn } = useContext(UserContext);
+  // 只有返回（POP）才還原搜尋／篩選與捲動；其他進入方式（點 logo、導覽列、REPLACE）
+  // 一律乾淨首頁。重設放在 lazy initializer：先於下方各 state 的快取讀取、每次掛載一次，
+  // 且冪等（StrictMode 重跑無害）。清單與座標快取刻意保留，避免又閃骨架。
+  const navigationType = useNavigationType();
+  useState(() => {
+    if (navigationType !== 'POP') resetHomeView();
+  });
   // 搜尋／篩選初值取快取：從詳情頁返回時條件與結果原樣還原（重整則回預設）。
   const [selectedCategory, setSelectedCategory] = useState<string>(
     () => getCachedFilters().category,
