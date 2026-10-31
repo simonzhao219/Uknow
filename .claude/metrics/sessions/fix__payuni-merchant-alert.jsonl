@@ -1,0 +1,3 @@
+{"branch": "HEAD", "ended": "2026-10-30T16:13:02+00:00", "fired": {"model-effort-advisor/opus-tier": 1}, "passed": {"bash-guard": 7, "check-output-filter": 7}, "session": "7d91d0587311", "started": "2026-10-30T16:12:27+00:00"}
+{"branch": "fix/payuni-merchant-alert", "ended": "2026-10-30T16:54:38+00:00", "fired": {}, "passed": {"model-effort-advisor": 1}, "session": "70f337d95467", "started": "2026-10-30T16:54:38+00:00"}
+{"branch": "fix/payuni-merchant-alert", "ended": "2026-10-31T01:21:40+00:00", "fired": {"model-effort-advisor/opus-tier": 1}, "passed": {"bash-guard": 8, "check-output-filter": 8, "feature-plan-guard": 2, "tdd-test-guard": 2}, "session": "3577b654e225", "started": "2026-10-31T01:19:18+00:00"}
