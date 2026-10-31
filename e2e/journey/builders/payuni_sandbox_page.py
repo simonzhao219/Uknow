@@ -49,6 +49,13 @@ _EMAIL_CANDIDATES = [
     "input[autocomplete='email']",
     "input[name='payerEmail']",
 ]
+# 電子發票「買方名稱」：2026-10-31 商店開通電子發票後，刷卡頁多出這個**必填**欄位
+# （沒有 name／id／placeholder，只有旁邊的標籤文字）。空著送出會跳「格式不正確
+# 請重新輸入」，表單原地不動。標籤相鄰優先，其次是唯一一個沒 placeholder 的文字欄。
+_BUYER_NAME_CANDIDATES = [
+    "xpath=(//*[contains(normalize-space(text()),'買方名稱')]/following::input[@type='text'])[1]",
+    "input[type='text']:not([placeholder])",
+]
 # 付款方式的 radio。卡片欄位預設就看得到，但不確定 radio 是否已選——
 # 明確選一次比較保險（已選就不動）。
 _CREDIT_RADIO_CANDIDATES = [
@@ -176,6 +183,7 @@ class PayuniSandboxPage:
         payer_email: str = "",
         hash_key: str = "",
         hash_iv: str = "",
+        buyer_name: str = "Journey 測試買方",
     ) -> None:
         """填測試卡並送出；成功後 PayUni 會 302 回我們的 /payuni/return。"""
         self.wait_loaded()
@@ -201,9 +209,16 @@ class PayuniSandboxPage:
         if email_field is not None and payer_email:
             email_field.fill(payer_email)
 
+        # 電子發票買方名稱（商店有開通發票才會出現；沒有這欄就跳過）。
+        buyer_field = self._optional(_BUYER_NAME_CANDIDATES)
+        if buyer_field is not None and not buyer_field.input_value():
+            self._type_into(buyer_field, buyer_name)
+
         # 送出前先記下各欄位的實際值——失敗時這是「到底填進去了沒」的
         # 唯一證據，而遮罩造成的空值正是最難從畫面看出來的那種。
         filled = self._read_back(card_field, expiry_field, cvv_field, email_field)
+        if buyer_field is not None:
+            filled += f" 買方名稱={buyer_field.input_value() or '（空）'}"
 
         # 確定鍵在表單階段就已經在 DOM 裡，所以「送出前它可不可見」要先量，
         # 送出後才有辦法分辨那是新跳出來的框、還是它本來就在那。
