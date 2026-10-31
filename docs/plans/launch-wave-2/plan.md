@@ -73,6 +73,7 @@
 - `create_session` 一律帶 `source_url=https://github.com/simonzhao219/Uknow`、`source_revision=develop`（第 1 波首開的 e2e session 沒帶 repo 只能封存）。
 - 容器沒有 deno；**`npm install -g deno` 可裝**（deno.land 被網路政策擋，npm registry 與 jsr.io 是通的；2026-10-30 主 session 實測 deno 2.9.6、`deno task check` 綠）。
   動 `supabase/functions/` 的 session 開局先裝，否則 pre-commit 會擋。supabase CLI 不必裝（`deno task test` 留給 CI 的 api-tests 軌）。
+- 子 session **不要直接用 Supabase MCP**：MCP 政策會跳權限核准，業主不在子 session 畫面上就永久卡住（R1 卡 1 小時、P 卡 40 分）。資料查詢一律由主 session 代跑。
 - `gh pr checks` 在雲端被擋：看 CI 用 GitHub MCP（`pull_request_read` 的 status／check runs、`actions_list`）。
 - journey 絕不在本機跑；要驗 harness 用 GitHub MCP `actions_run_trigger` 對 `journey-scheduled.yml` 發 workflow_dispatch（ref＝自己的分支、`scope=skeleton`、`payment_mode=sandbox`）。
 - 分類器只認業主親打的 tdd-lock 解鎖授權；主 session 轉述的不算（第 1 波 P1a 卡過兩次）。三段式工項的 `/tdd-implement` 由業主親打。
@@ -105,9 +106,9 @@
 |---|---|---|---|---|---|
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | — | 施工中 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456（draft） | 待業主開通測試商店發票 |
-| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 | #457 審過等 CI |
+| B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
 | D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
-| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃，draft） | 依 W2-5～9 修訂規劃、重跑 /review-plan |
+| C | `session_01MQovbCdFo86t9DX6d66Afq` | Opus | `feature/listing-photo-retention` | #453（規劃 v2.4，draft） | 規劃定稿，等業主審 |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | — | 施工中 |
 | S | — | Sonnet | `fix/ops-security-hardening` | — | 批 2 |
 | A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
@@ -126,3 +127,4 @@
 | 10/31 01:00 | deploy-smoke 手動 run 41088363862：**develop「✓ 線上版本 f110586 與預期 f110586 相符」**、正式站「⚠ 無 build-sha」（預期，11/03 晉升後才有）——D 端到端驗證通過。#455 檔頭修正 fb48a48 → CI 綠 → **合進 develop（ee6613b）**；B 開工 W2-10。在途程式工項＝H、P、B（篩選）已達 3，S、A 等其一合併再開 | 業主真機驗返回；等 H／P／B 回報 |
 | 10/31 01:10 | C 第三輪（#453 9c1317b5，審 v2.2）：P0 0、P1 7、P2 11；v2.3 自修 6 條（含真 bug：比例閘用截斷後候選數，bucket >1000 物件永不觸發 → 改用 RPC 回傳的 orphan_total）＋Q11 → 業主裁決 W2-13。不跑第四輪，主 session 親自核對 v2.3 六條自修 | C 回填 → 主 session 核對 → 交業主審 |
 | 10/31 01:40 | **H 查出 journey sandbox 紅的現行根因不是表單，是 PayUni 測試商店拒單 `UPP02085`**（#449 的 TradeInvoice=1，PR 前提「兩商店皆已開通」對 sandbox 不成立）；H 開 #456（harness 拒單時解密 return 印出 Status／Message，診斷用）。主 session 查證 #449 已隨 #450 上 main、正式站部署後零付款（最後成功 10/30 09:48 UTC）→ 業主確認正式商店已開通（W2-14）、會開通測試商店（W2-15）。UPP02085 轉給 P 納入商店級告警（且走 /payuni/return 路徑）。B 開 #457（W2-10，紅 c67f4e25→綠 95aee4d3）：主 session 審無 P0／P1。教訓：webhook 模式的晉升閘門不碰 PayUni 建單，#449 這類商店設定前提在晉升時完全不會被驗到——記 friction-log 候選 | 等業主開通測試商店 → H 驗；#457 CI 綠合 |
+| 10/31 08:55 | 主 session worker 兩度重啟。安全網自查發現 **R1（自 10/30 15:52）與 P（自 16:13）卡在 Supabase MCP execute_sql 權限核准**→主 session 代跑唯讀查詢（訂單 16 筆、measure.sql 等價：users 13 全 step 3、completed 13／failed 3、卡單 0、告警 0、刊登 10）並以 priority now 送達、請其改由主 session 代查；共用開頭與 §3 補此規則。**#457 合進 develop（707d0b0）**，B 收工。C 交 v2.4（#453 f5d47ddc，未處置 P0／P1 皆 0），主 session 已核對 v2.3 自修 → 交業主審。批 2 開 S | 業主審 #453；等 P、S、R1、H |

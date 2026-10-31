@@ -14,6 +14,7 @@
 - 分支從 origin/develop 切：`git checkout -B <工項分支> origin/develop`（平台綁的 claude/* 分支不用）。PR 回 develop，用 GitHub MCP create_pull_request 開 draft，內文照 .github/pull_request_template.md；CI 綠後轉 ready，**不要自己合併**——主 session 審完合。
 - 本波 11/02 22:00 收件截止、11/03 10:00 晉升。主 session 可能 rebase／force-push 你的分支：每次 push 前 `git fetch origin && git status -sb`，origin 被改寫就先 `git rebase origin/<分支>`。落後 develop 時你自己 rebase（不要按 Update branch）。
 - 動 supabase/functions/ 的話開局先 `npm install -g deno`（deno.land 被網路政策擋，npm 可裝；不裝 pre-commit 會擋）。容器的 node_modules 可能過期，開局先 `npm ci`。
+- **不要直接用 Supabase MCP**（子 session 的 MCP 政策會跳權限核准，沒人按就永久卡住——第 2 波 R1 與 P 都卡過）：需要正式站或 develop 的資料，send_message 把唯讀 SQL 給主 session，由主 session 代跑回傳。
 - `npm run check` 綠才 commit／push；送審前 `npm run check:full`。看 CI 用 GitHub MCP（pull_request_read 的 check runs、actions_list）；`gh pr checks` 在雲端被擋。
 - 不寫模型名進 commit／PR。行號一律現算。完成或卡住時用 Claude Code Remote 的 send_message 回報主 session（PR 號、紅燈 hash、偏離、未驗項、需要業主做的事）；需要裁決問主 session，不要停在 AskUserQuestion 等人。
 - 每則 GitHub 留言結尾加：
