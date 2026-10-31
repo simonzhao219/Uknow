@@ -19,7 +19,7 @@
 
 ## 目前位置與下一步
 
-規劃與審查完成，等業主裁決 review.md 的 P0／P1 與 plan.md §6 開放問題；`/profile` P95 量測（plan §2.4）結果待填。
+plan v2（D1–D6 後）重審完成：P0 0／P1 12／P2 16，等業主裁決 review.md〈需人工裁決〉五題後修 plan v3；`/profile` P95 改上線後量測（D6）。
 
 ## Blockers(逃生口紀錄)
 
