@@ -11,7 +11,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| A0 | 開工前置：資料查證 SQL 重跑（plan §2.1）、`isLoggedIn` 清查、`localStorage.user` 讀寫全表 | 🟡 清查兩項完成；SQL 重跑待主 session 回傳 | — | — |
+| A0 | 開工前置：資料查證 SQL 重跑（plan §2.1）、`isLoggedIn` 清查、`localStorage.user` 讀寫全表 | ✅ 三項完成；重跑後三欄兩站皆 0，F3 不觸發 | — | — |
 | A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ⬜ 未開始 | | |
 | A2a | useAuthBootstrap 本體（reducer／outcome、hint 擁有與寫入、uid8、副作用注入、generation counter） | ⬜ 未開始 | | |
 | A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ⬜ 未開始 | | |
@@ -31,6 +31,9 @@
 |---|---|---|---|---|---|---|
 | 2026-10-31 09:40 UTC | 正式站 uhtwwxtazwqnlbejhprl | 0 | 0 | 0 | 0 | 主 session（唯讀） |
 | 2026-10-31 09:40 UTC | develop ijcxnxhrziehdtkwausy | 1 | 0 | 0 | 0 | 主 session（唯讀） |
+| 2026-10-31 21:16 UTC | 兩站 | 同上（正式站 0／0／0／0；develop 1／0／0／0） | | | | 第 2 波主 session（唯讀） |
+| 2026-10-31 21:32 UTC | 正式站 uhtwwxtazwqnlbejhprl | 0 | 0 | 0 | 0 | 第 3 波主 session（唯讀，A1 開工前重跑） |
+| 2026-10-31 21:52 UTC | develop ijcxnxhrziehdtkwausy | 1 | 0 | 0 | 0 | 第 3 波主 session（唯讀，A1 開工前重跑） |
 
 → 後三欄兩站皆 0，判定表維持原樣。**A1 開工前必須重跑一次**（SQL 見 plan §2.1）並加一列；任一後三欄 ＞0 → 停下回報主 session 重審（F3）。
 

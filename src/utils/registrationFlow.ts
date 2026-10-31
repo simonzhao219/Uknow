@@ -290,3 +290,54 @@ export function classifyInviteAcceptError(
 export function shouldRedirectToCompleteProfile(pathname: string): boolean {
   return pathname !== '/auth/complete-profile' && pathname !== '/auth/reset-password';
 }
+
+// ------------------------------------------------------------
+// 會籍分類與註冊漏斗（T1 auth-state-trust）
+// ------------------------------------------------------------
+
+/** `resolveMembershipRedirect`、`isFirstTimeFunnel` 共用的 profile 欄位子集。 */
+export interface GateProfile extends FunnelProfile {
+  isAdmin?: boolean | null;
+  suspended?: boolean | null;
+}
+
+export type MembershipGate = 'admin' | 'active' | 'activating' | 'renew' | 'profile' | 'checkout';
+
+export function classifyMembershipGate(_p: GateProfile): MembershipGate {
+  return 'checkout';
+}
+
+export function redirectForGate(
+  _p: GateProfile,
+  _opts?: { allowExpired?: boolean },
+): string | null {
+  return null;
+}
+
+export function isFirstTimeFunnel(_p: GateProfile): boolean {
+  return false;
+}
+
+export function nextFunnelRoute(_p: GateProfile): string | null {
+  return null;
+}
+
+export type FunnelNextKind = 'profile' | 'checkout' | 'result';
+
+export function funnelNextKind(_route: string | null): FunnelNextKind | null {
+  return null;
+}
+
+export function routeForFunnelNext(_next: FunnelNextKind | null): string | null {
+  return null;
+}
+
+export function funnelCtaLabel(_route: string | null): string {
+  return '';
+}
+
+export const FUNNEL_ROUTES: readonly string[] = [];
+
+export function isFunnelRoute(_pathname: string): boolean {
+  return false;
+}
