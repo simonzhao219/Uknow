@@ -653,15 +653,20 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     自己的檔，**本人刊登仍引用的檔不刪**，他人刊登引用你的 URL 不擋清理；引用檢查失敗時一檔不刪（fail-closed）。
     清理失敗不影響存檔或刪除本身，殘檔由排程清理兜底。
   - **排程清理**：每日一次呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）。孤兒＝上傳
-    超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且沒有被檔案前綴本人的刊登以原樣 URL 引用的檔，涵蓋帳號
+    超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且檔案前綴本人的刊登沒有引用的檔，涵蓋帳號
     刪除（`profiles` cascade 刪 `listings`）、`/auth/cancel-signup`、離頁、逾時重試、並發等所有來源。最長下架延遲＝
     寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 `orphanTotal` 是截斷前的總數。終止的範圍是帳號
     刪除與業主處理的終止請求；會籍到期是否算終止，待律師確認。
+    - 引用以 URL 裡 `/listings-photos/<uid>/<檔名>` 取出的物件名判斷，與網域、query、`/render/image/` 等前段無關；
+      本人刊登裡有任何一條取不出物件名的 URL，就保留該刊登者全部的檔。
+    - 寬限期以上傳時間起算：上傳後超過 7 日才存檔的照片，存檔前可能已被清掉，刊登會破圖（不做存檔前檢查的代價）。
+    - 檔案前綴是上傳者的 uid；日後若做「管理者代他人上傳或改刊登」，代傳的檔前綴是管理者 uid，寬限期後會被清掉，
+      屆時要改成以刊登者 uid 上傳。
   - **安全閘**：預設 dry-run，排程只有 repo variable `PHOTO_PURGE_LIVE` 為 `true` 才實刪；未開時只列候選、不刪任何
     檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
-    斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有引用卻都對不到物件）不可放行；
-    比例閘（`ratio`，孤兒超過 bucket 物件數一半，且物件數超過 20）可用 `workflow_dispatch` 帶 `force_ratio=true`
-    放行單輪。孤兒超過單輪上限時，依 `orphanTotal` 分多輪 dispatch，每輪先 dry-run 看清單。刪除前再以 RPC 複查一次引用。失敗時開 issue
+    斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有照片 URL 的刊登者中，對得到物件的
+    不到一半）不可放行；比例閘（`ratio`，孤兒超過 bucket 物件數一半，不分 bucket 大小，develop 因此常需放行）可用
+    `workflow_dispatch` 帶 `force_ratio=true` 放行單輪。孤兒超過單輪上限時，依 `orphanTotal` 分多輪 dispatch，每輪先 dry-run 看清單。刪除前再以 RPC 複查一次引用。失敗時開 issue
     「[環境] 刊登照片孤兒清理失敗」，同標題已開則改留言。
   - **查看候選清單**（業主本機；清單含會員 uid，不可貼到 issue 或 Actions）：`<project-ref>` 正式站見
     `src/utils/supabase/info.tsx`、develop 見 `config/supabaseTarget.ts`；先 `export RECONCILE_SECRET=…`。

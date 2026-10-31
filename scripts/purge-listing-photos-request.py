@@ -46,7 +46,10 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-STAT_KEYS = ("candidateCount", "orphanTotal", "removed", "notRemoved", "totalObjects", "referencedUrls", "matchedUrls")
+STAT_KEYS = (
+    "candidateCount", "orphanTotal", "removed", "notRemoved", "totalObjects",
+    "referencedUrls", "matchedUrls", "referencedOwners", "matchedOwners",
+)
 
 
 def build_body(event: str, live: str, dry_input: str, force_input: str) -> dict:

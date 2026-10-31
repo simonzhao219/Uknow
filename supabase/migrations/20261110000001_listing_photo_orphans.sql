@@ -6,13 +6,23 @@
 -- Storage 物件。SQL 刪不了實體檔（20261028000001 檔頭），實際刪除由 Edge
 -- POST /internal/purge-orphan-listing-photos 走 Storage API；本檔只提供判準。
 --
--- 孤兒＝bucket 內、超過寬限期、name 符合 upload-photo 產生的格式，且沒有被
--- **檔案前綴本人**的刊登以 `p_public_base || name` 精確字串引用：
+-- 孤兒＝bucket 內、超過寬限期、name 符合 upload-photo 產生的格式，且**檔案前綴
+-- 本人**的刊登沒有引用它：
+--   * 引用以 _listing_photo_name_from_url 從 photos URL 取出的 object name 判斷，
+--     忽略 host、query 與 `/listings-photos/` 之前的路徑。public base 漂移（網域、
+--     SUPABASE_URL、storage-js 格式、/render/image/、?v=）不會讓活照片變孤兒——
+--     判準不依賴任何由 Edge 推導的前綴
+--   * 本人刊登裡只要有一條取不出 name 的 URL，就視為引用該刊登者**全部**的檔
+--     （偏保留：寧可少清，也不誤刪）
 --   * 他人把你的 URL 寫進自己的 photos 不擋清理
---   * 帶 query、transform 路徑或尾斜線的變體 URL 視為未引用（前端只存
---     upload-photo 回傳的原樣 URL；手寫變體由 Edge 的比例閘兜底）
 --   * 帳號已刪（profiles cascade 刪 listings）的檔自然沒有引用
--- p_public_base 由 Edge 以 listingPhotoPublicUrl 推導，SQL 不寫死網域。
+--   * 約束：前綴是上傳者的 uid。日後若做「管理者代他人上傳／改刊登」，代傳的檔
+--     前綴是 admin uid，會在寬限期後被清掉——那時要改成以刊登者 uid 上傳
+--
+-- 錨點統計（Edge 斷路器用）以「刊登者」為單位：referenced_owners＝photos 至少
+-- 一條 URL 的刊登者數，matched_owners＝其中至少一條 URL 對得到物件的刊登者數。
+-- 以刊登者而非 URL 計數，單一帳號塞再多怪 URL（photos 無長度上限）也只算一位，
+-- 卡不死排程。
 --
 -- 寬限期起算點是物件的 created_at（上傳時間）：刊登存檔前上傳的檔在寬限期內
 -- 不會被清。filter_unreferenced_listing_photos 是刪除前的最後一道閘，不信任
@@ -20,33 +30,41 @@
 -- c_min_grace，與 Edge ORPHAN_GRACE_HOURS（listing-photos.ts）必須相等
 -- （listing-photos.unit.test.ts 讀本檔把關；改寬限期要新 migration 覆寫本函式）。
 --
--- 只授 service_role。三個函式都在 public schema，不 revoke 的話 PostgREST
+-- 只授 service_role。四個函式都在 public schema，不 revoke 的話 PostgREST
 -- 會把它們暴露成 /rpc 給 anon key 呼叫。
+--
+-- 兩個 helper 不加 set search_path／security definer：那會讓 planner 無法內聯，
+-- 每個物件都變成一次函式呼叫；內部一律 schema-qualified。Supabase advisor 會對
+-- 它們報 function_search_path_mutable，屬預期。
 --
 -- 撤 listings_delete_own（含 admin 分支）：前後端都沒有呼叫者，刪刊登一律走
 -- DELETE /listings/:id（會連帶清 Storage）。FK cascade 不受 RLS 影響，帳號
 -- 刪除路徑不變。回滾以新 migration 補回 create policy。
 -- ============================================================
 
--- 紅燈期 stub：新簽章就位、行為未改（仍以完整字串比對，取不到 base 時一律當未引用）。
-drop function if exists public.filter_unreferenced_listing_photos(text, text[]);
-drop function if exists public.list_orphan_listing_photos(text, interval, int);
-drop function if exists public._listing_photo_is_orphan(text, text);
-
+-- photos URL → object name（`<uuid>/<時間戳>_<英數>.<副檔名>`）；取不出回 null。
 create or replace function public._listing_photo_name_from_url(p_url text)
 returns text
 language sql
 immutable
-as $$ select null::text $$;
+as $$
+  select substring(
+    p_url
+    from '/listings-photos/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(?:jpg|png|webp))(?:[?#/]|$)'
+  )
+$$;
 
+-- 單一物件的引用判準（不含寬限期與格式，兩支 RPC 各自先篩）。
 create or replace function public._listing_photo_is_orphan(p_name text)
 returns boolean
 language sql
 stable
 as $$
   select not exists (
-    select 1 from public.listings l
-    where l.user_id::text = split_part(p_name, '/', 1) and p_name = any(l.photos)
+    select 1
+    from public.listings l, unnest(l.photos) u
+    where l.user_id::text = split_part(p_name, '/', 1)
+      and coalesce(public._listing_photo_name_from_url(u), p_name) = p_name
   )
 $$;
 
@@ -58,13 +76,28 @@ security definer
 set search_path = ''
 as $$
   with objs as (
-    select o.name, o.created_at from storage.objects o where o.bucket_id = 'listings-photos'
+    select o.name, o.created_at
+    from storage.objects o
+    where o.bucket_id = 'listings-photos'
   ),
   orphans as (
-    select name, created_at from objs
+    select name, created_at
+    from objs
     where created_at < now() - p_grace
       and name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(jpg|png|webp)$'
       and public._listing_photo_is_orphan(name)
+  ),
+  refs as (
+    select l.user_id, public._listing_photo_name_from_url(u) as name
+    from public.listings l, unnest(l.photos) u
+  ),
+  matched as (
+    select r.user_id
+    from refs r
+    where exists (
+      select 1 from storage.objects o
+      where o.bucket_id = 'listings-photos' and o.name = r.name
+    )
   )
   select jsonb_build_object(
     'candidates', coalesce(
@@ -72,9 +105,13 @@ as $$
        from (select name, created_at from orphans order by created_at, name limit p_limit) c),
       '[]'::jsonb
     ),
+    -- 截斷前的總數：Edge 的比例閘用它，不用被 limit 截斷的 candidates 長度。
     'orphan_total', (select count(*) from orphans),
     'total_objects', (select count(*) from objs),
-    'referenced_urls', 0, 'matched_urls', 0, 'referenced_owners', 0, 'matched_owners', 0
+    'referenced_urls', (select count(*) from refs),
+    'matched_urls', (select count(*) from matched),
+    'referenced_owners', (select count(distinct user_id) from refs),
+    'matched_owners', (select count(distinct user_id) from matched)
   )
 $$;
 
@@ -89,6 +126,7 @@ as $$
   from storage.objects o
   where o.bucket_id = 'listings-photos'
     and o.name = any(p_names)
+    -- c_min_grace：與 ORPHAN_GRACE_HOURS 相等（見檔頭）
     and o.created_at < now() - interval '168 hours'
     and o.name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]+_[a-z0-9]+\.(jpg|png|webp)$'
     and public._listing_photo_is_orphan(o.name)
@@ -96,8 +134,10 @@ $$;
 
 revoke execute on function public._listing_photo_name_from_url(text) from anon, authenticated, public;
 revoke execute on function public._listing_photo_is_orphan(text) from anon, authenticated, public;
-revoke execute on function public.list_orphan_listing_photos(interval, int) from anon, authenticated, public;
-revoke execute on function public.filter_unreferenced_listing_photos(text[]) from anon, authenticated, public;
+revoke execute on function public.list_orphan_listing_photos(interval, int)
+  from anon, authenticated, public;
+revoke execute on function public.filter_unreferenced_listing_photos(text[])
+  from anon, authenticated, public;
 grant execute on function public._listing_photo_name_from_url(text) to service_role;
 grant execute on function public._listing_photo_is_orphan(text) to service_role;
 grant execute on function public.list_orphan_listing_photos(interval, int) to service_role;

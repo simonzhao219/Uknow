@@ -183,17 +183,21 @@ export const ORPHAN_SWEEP_LIMIT = 500;
 /** Storage remove 單批上限。 */
 export const SWEEP_REMOVE_BATCH = 100;
 
-/** 比例閘：孤兒占 bucket 過半且物件數超過此值才中止（小 bucket 的比例沒有意義）。 */
-const RATIO_GATE_MIN_OBJECTS = 20;
+/** 錨點：對得到物件的刊登者占有照片 URL 的刊登者不到此比例就中止。 */
+const ANCHOR_MIN_MATCHED_OWNER_RATIO = 0.5;
+/** 比例閘：截斷前的孤兒總數占 bucket 物件數超過此比例就中止（不分 bucket 大小）。 */
+const RATIO_GATE_MAX_ORPHAN_RATIO = 0.5;
 
 /**
  * 判準 RPC → 斷路器 → 刪前複查 → 分批 remove。任何一步出錯都 throw SweepError，
  * 已刪的數量帶在 removedSoFar；刪除冪等，重跑安全。
  *
  * 斷路器（dry-run 也適用，讓每日 dry-run 先暴露問題）：
- *   - 錨點失效：有引用、有物件，卻一個引用都對不到物件——base 推導錯了，
- *     所有活照片都會被當成孤兒。不可放行。
- *   - 比例閘：截斷前的孤兒總數占 bucket 過半。forceRatio 只放行這一條。
+ *   - 錨點失效：有照片 URL 的刊登者中，對得到物件的不到一半——判準取 name 的方式
+ *     與實際存的 URL 對不上了，活照片會被當成孤兒。以刊登者計數，單一帳號塞怪 URL
+ *     卡不死它。不可放行。
+ *   - 比例閘：截斷前的孤兒總數占 bucket 過半，小 bucket 也一樣（develop 因此常需
+ *     forceRatio）。forceRatio 只放行這一條。
  */
 export async function sweepOrphanPhotos(
   deps: OrphanSweepDeps,
@@ -206,16 +210,19 @@ export async function sweepOrphanPhotos(
     throw new SweepError('sweep_failed', `列孤兒失敗：${errorMessage(err)}`, 0);
   }
   // 統計欄位若成 NaN，下面兩道斷路器的比較全為 false、會靜默放行——寧可整輪失敗。
-  const stats = [rep.orphanTotal, rep.totalObjects, rep.referencedUrls, rep.matchedUrls];
+  const stats = [rep.orphanTotal, rep.totalObjects, rep.referencedOwners, rep.matchedOwners];
   if (!stats.every(Number.isFinite)) {
     throw new SweepError('sweep_failed', '列孤兒回傳的統計欄位不是有限數字', 0);
   }
-  if (rep.matchedUrls === 0 && rep.referencedUrls > 0 && rep.totalObjects > 0) {
-    throw new SweepError('circuit_open', '錨點失效：沒有任何引用對得到物件', 0, 'anchor');
+  if (
+    rep.referencedOwners > 0 && rep.totalObjects > 0 &&
+    rep.matchedOwners / rep.referencedOwners < ANCHOR_MIN_MATCHED_OWNER_RATIO
+  ) {
+    throw new SweepError('circuit_open', '錨點失效：多數刊登者的照片 URL 對不到物件', 0, 'anchor');
   }
   if (
-    !opts.forceRatio && rep.totalObjects > RATIO_GATE_MIN_OBJECTS &&
-    rep.orphanTotal / rep.totalObjects > 0.5
+    !opts.forceRatio && rep.totalObjects > 0 &&
+    rep.orphanTotal / rep.totalObjects > RATIO_GATE_MAX_ORPHAN_RATIO
   ) {
     throw new SweepError('circuit_open', '比例閘：孤兒超過 bucket 物件數的一半', 0, 'ratio');
   }
@@ -363,8 +370,9 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
           },
         });
       } catch (err) {
-        console.error('[listing-photos] 孤兒清理失敗', err);
         const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
+        // 只記 code 與 reason：SweepError.message 帶 Storage／DB 錯誤字串，可能含 object name（uid）。
+        console.error('[listing-photos] 孤兒清理失敗', e.code, e.reason ?? '', e.removedSoFar);
         const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
         const error = e.reason
           ? { code: e.code, reason: e.reason, message }
