@@ -111,7 +111,7 @@ Deno.test('authenticate：getUser 回使用者 → 回該使用者', async () =>
   assertEquals(r, { user });
 });
 
-Deno.test('authenticate：AuthRetryableFetchError → transient', async () => {
+Deno.test('authenticate：網路層錯誤（AuthRetryableFetchError）→ 判暫時性 transient', async () => {
   const error = { name: 'AuthRetryableFetchError', status: 0, message: 'fetch failed' };
   const r = await authenticate(
     authWith(() => Promise.resolve({ data: { user: null }, error })),
@@ -136,7 +136,7 @@ Deno.test('authenticate：getUser 拋例外 → transient（不冒成 500）', a
   assertEquals(r, { error: 'transient' });
 });
 
-Deno.test('authenticate：AuthApiError 400／401／403 → unauthorized', async () => {
+Deno.test('authenticate：Auth 回 400／401／403 → 判無效 unauthorized', async () => {
   for (const status of [400, 401, 403]) {
     const error = { name: 'AuthApiError', status, code: 'user_not_found', message: 'x' };
     const r = await authenticate(
