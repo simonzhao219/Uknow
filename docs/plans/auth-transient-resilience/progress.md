@@ -16,7 +16,7 @@
 | B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | ✅ 綠（實作 4e29e176、W4-20 期望 eea0e29a） | de4d58cf | eea0e29a |
 | B5 | 呈現：AuthDegradedNotice／Frame、守衛、RouteAuthLoading、authView、useMemberLogout | ✅ 綠 | a5bb2975 | 15cd222e |
 | B6a | 入口與漏斗頁：routeAfterVerifiedSession、OTP／邀請逾時、PaymentCheckout、CompleteProfile post-write | ✅ 綠 | 49fd1b63 | 28a9430c |
-| B6b | AuthPage（掛載 effect、登入表單、異常 callout）；e2e | ⏸ 等裁決（邀請入口 transient，見 Blockers） | | |
+| B6b | AuthPage（掛載 effect、登入表單、異常 callout）；e2e | 🔨 施工中（W4-22） | | |
 | B7 | apiClient 兩層確認（可降級） | ✅ 綠（實作 1a96c18f、W4-21 測試隔離 c6529816） | c832f550 | c6529816 |
 | B8 | 規格書 §5.3、§14 #8、§2.1 已知限制 | ⬜ 未開始 | | |
 
@@ -69,7 +69,8 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
 
 - **B6b（11/01，已送主 session）**：plan §2.4「AuthPage 掛載 effect 遇 transient／catch → navigate('/dashboard')」與 R2 交接衝突——帶邀請連結進
   /login 且有 session 時，現況 transient → signed_out、保留 token、進設定密碼（`AuthPage.test.tsx` 約 :384 釘住）。選項 A（建議）有有效邀請入口時維持
-  R2 現況、否則導 /dashboard，catch 一律不登出；B 一律導 /dashboard；C 一律維持 signed_out。未裁決前不動 AuthPage。
+  R2 現況、否則導 /dashboard，catch 一律不登出；B 一律導 /dashboard；C 一律維持 signed_out。
+  **裁決 W4-22＝A**（業主 11/02 02:20，主 session 轉達）；已寫進 plan §2.4。getSession 本身擲例外時留 /login（理由見 plan），PR 偏離說明列出。
 - **B7（W4-21，11/01）**：紅燈 c832f550 後實作完成，1 條紅是測試隔離錯誤（上一個 describe 的 `signOut` mock 呼叫殘留）。業主以互動選項授權「代修」：
   Claude 代刪 `.claude/tdd-lock`，只在新 describe 加 `beforeEach` 清 mock、不改任何斷言；全閘門 2781/2781 綠（c6529816）。PR 偏離說明列出。
 - B6a 小決定：`routeAfterVerifiedSession` 的 410 與 401 同處置（提示重新登入→/login；原本落 else→完善資料頁）。/profile 實際不回 410。PR 偏離說明列出。

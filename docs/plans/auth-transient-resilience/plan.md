@@ -192,6 +192,9 @@
     callout：`StatusCallout variant="destructive"`（`data-testid="auth-anomaly"`）「帳號資料異常，請聯絡客服」＋說明「為保護您的資料，系統暫停此帳號的登入流程。」
     ＋次要動作「LINE 客服」（既有常數 `LINE_OFFICIAL_ACCOUNT_URL`，`utils/constants.ts:31`，與 Footer／結帳頁同一入口）＋「登出」鈕（global）；
     **不呼叫 signOut、不導頁**。標題文案為 W4-11 原文；說明句、LINE 連結、登出鈕與隱藏表單是 W4-11 的衍生設計（session 保留時沒有它們使用者無法行動）。
+  - 〔W4-22〕業主 11/02 02:20 裁決 A 分流：掛載 effect 遇 transient／catch——**有有效邀請入口**（`inviteEntry.kind==='valid'`）時維持 R2 現況
+    （`settle('signed_out')`、保留邀請 token、進設定密碼、不導頁）；**沒有邀請入口**時導 `/dashboard`（守衛 degraded 接手）。兩種情況 catch 都不再登出。
+    實作細節：catch 若發生在 `getSession()` 本身（尚不知是否有 session），不導 `/dashboard`（守衛會停在判定中），留在 `/login` 照 signed_out 處理。
   - AuthPage 掛載 effect 的其他結果〔v2審〕：`transient`、`catch` → **不登出**、`navigate('/dashboard')`（守衛 degraded 接手）；401／410 → `endInvalidSession`
     ＋`keepInviteToken()`。檢查期間（`sessionState==='checking'` 且有 session）不畫可輸入的登入表單，畫既有 spinner。
   - 登入表單送出〔v2審〕：`missing` → 異常 callout；401／410 → `endInvalidSession`＋現有「帳號不存在」處置；`transient` → 維持現況錯誤 toast、不登出。

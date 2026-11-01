@@ -29,6 +29,7 @@ vi.mock('./notifications/NotificationContext', () => ({
 }));
 
 const { AuthPage } = await import('./AuthPage');
+const { UserContext } = await import('../App');
 const { getPendingReferral } = await import('../utils/referralInvite');
 const { REFERRAL_INVITE_TOKEN_TTL_SECONDS } = await import('@referral-invite-payload');
 
@@ -299,12 +300,13 @@ describe('AuthPage 實作審查補測', () => {
     await waitFor(() => expect(sessionStorage.getItem('pending_invite_token')).toBe(VALID));
   });
 
-  it('清理過期 session 時 global 登出擲例外仍補本機登出', async () => {
-    signOut.mockRejectedValueOnce(new Error('network'));
+  // W4-13：無效 session 的系統清理只做本機登出（endInvalidSession），不撤銷其他裝置。
+  it('清理過期 session 時只做本機登出', async () => {
     getSession.mockResolvedValue({ data: { session: { access_token: 'stale' } } });
     fetchMock.mockImplementationOnce(async () => json(401, {}));
     renderAt(`/register?invite=${VALID}`);
     await screen.findByLabelText('設定密碼');
+    expect(signOut).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
@@ -388,5 +390,112 @@ describe('AuthPage 五 lane 審查補測', () => {
     expect(await screen.findByLabelText('設定密碼')).toBeTruthy();
     expect(sessionStorage.getItem('pending_invite_token')).toBe(VALID);
     expect(showToast).not.toHaveBeenCalledWith('你已登入', 'info');
+  });
+});
+
+// T1-B §2.4、W4-22：已有 session 的人進 /login 時，暫時性故障不登出；沒有邀請入口就交給會員中心
+// 守衛的重試外框，有邀請入口維持 R2 現況（上一個 describe 的 5xx 案例）。404＝帳號資料異常（W4-11）。
+describe('AuthPage 暫時性故障與帳號資料異常（T1-B）', () => {
+  const profileReturns = (status: number) =>
+    fetchMock.mockImplementation(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (/\/(auth\/)?profile(\?|$)/.test(href)) return json(status, { registrationStep: 3 });
+      if (href.endsWith('/auth/check-email')) return json(200, { exists: true });
+      throw new Error(`unexpected ${href}`);
+    });
+
+  afterEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.endsWith('/auth/invite/accept')) return acceptResponse();
+      if (/\/(auth\/)?profile$/.test(href)) return json(200, { registrationStep: 0 });
+      if (href.endsWith('/auth/check-email')) return json(200, { exists: true });
+      throw new Error(`unexpected ${href}`);
+    });
+  });
+
+  it('沒有邀請入口、/profile 5xx 時不登出，導去會員中心交給守衛重試', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(503);
+    renderAt('/login');
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/dashboard'));
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('getSession 擲例外時不登出、留在登入頁', async () => {
+    getSession.mockRejectedValue(new Error('storage locked'));
+    renderAt('/login');
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
+    expect(screen.getByTestId('location').textContent).toBe('/login');
+  });
+
+  it('有邀請入口時 getSession 擲例外也不登出、照常進設定密碼', async () => {
+    getSession.mockRejectedValue(new Error('storage locked'));
+    renderAt(`/register?invite=${VALID}`);
+    expect(await screen.findByLabelText('設定密碼')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('掛載時 /profile 404 顯示帳號資料異常（alert）、不登出、不導頁、不顯示登入表單', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(404);
+    renderAt('/login');
+    const callout = await screen.findByTestId('auth-anomaly');
+    expect(callout.getAttribute('role')).toBe('alert');
+    expect(callout.textContent).toContain('帳號資料異常，請聯絡客服');
+    expect(screen.queryByLabelText('Email')).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+    expect(screen.getByTestId('location').textContent).toBe('/login');
+  });
+
+  it('異常說明提供 LINE 客服連結與登出鈕', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(404);
+    renderAt('/login');
+    await screen.findByTestId('auth-anomaly');
+    const line = screen.getByRole('link', { name: /LINE 客服/ });
+    expect(line.getAttribute('href')).toMatch(/^https:\/\/line\.me\//);
+    fireEvent.click(screen.getByRole('button', { name: '登出' }));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it('context 已判定帳號異常時直接顯示說明，不再打 /profile', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(404);
+    render(
+      <UserContext.Provider value={{ user: null, setUser: () => {}, authAnomaly: true } as never}>
+        <MemoryRouter initialEntries={['/login']}>
+          <AuthPage />
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+    expect(await screen.findByTestId('auth-anomaly')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 20));
+    const profileCalls = fetchMock.mock.calls.filter(([u]) => /\/profile/.test(String(u)));
+    expect(profileCalls).toHaveLength(0);
+  });
+
+  it('登入表單送出後 /profile 404 時顯示帳號資料異常、不登出', async () => {
+    signedOut();
+    profileReturns(404);
+    renderAt('/login');
+    fireEvent.change(await screen.findByLabelText('Email'), {
+      target: { value: 'member@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('auth-continue-button'));
+    fireEvent.change(await screen.findByLabelText('密碼'), { target: { value: 'Passw0rdX' } });
+    fireEvent.click(screen.getByTestId('auth-login-button'));
+    expect(await screen.findByTestId('auth-anomaly')).toBeTruthy();
+    expect(signOut).not.toHaveBeenCalled();
   });
 });
