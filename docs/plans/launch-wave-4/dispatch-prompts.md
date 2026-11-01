@@ -91,3 +91,18 @@ PR 內文附 P2-1～5 對照表（改了什麼、測試名、紅燈 hash）與 l
 5. 需要正式站或 develop 的量測（例如 /profile 延遲、5xx 比例）時，把唯讀查詢 send_message 給主 session 代跑。
 6. 收尾照 /tdd-implement：刪 docs/plans/auth-transient-resilience/（值得長留的升級進規格書，規格書 §14 #8 依實作更新），跑 python3 scripts/check-spec-drift.py；PR 內文附紅燈 hash。11/15 22:00 前沒合就順延第 5 波。
 ```
+
+## P. Pages 根網址導向正式站（Sonnet，`/fix-bug`，`fix/pages-root-redirect`）
+
+```text
+工項 P（plan.md §2，裁決 W4-21）。
+現象：https://uknow.pages.dev（Cloudflare Pages 專案根網址＝main 的建置）連的是正式站 Supabase（config/supabaseTarget.ts：只有 main 打正式站），首頁刊登直接讀 PostgREST 所以看得到正式站資料；但登入第一步 /auth/check-email 走 Edge Function，正式站 CORS 只放行 FRONTEND_URL=https://uknow.com.tw（supabase/functions/api/index.ts 的 resolveCorsOrigin，2026-07 刻意收緊、cors-origin.unit.test.ts 釘住），於是瀏覽器報「檢查 Email 時發生錯誤：Failed to fetch」。業主誤用了這個網址。
+要的行為：hostname **精確等於** uknow.pages.dev 時，一進站就 location.replace 到 https://uknow.com.tw，保留 pathname＋search＋hash；develop.uknow.pages.dev 與任何 *.uknow.pages.dev 預覽別名、localhost、uknow.com.tw 一律不動。
+做法：走 /fix-bug。
+1. 寫成純函式（例如 src/utils/canonicalHost.ts：輸入 location 欄位、回傳要導去的 URL 或 null），在 src/main.tsx render 之前呼叫；導向時不 render（避免閃一下再跳）。vitest node 表格測試：根網址各種 path/query/hash、develop、預覽別名、uknow.pages.dev.attacker.com、evil-uknow.pages.dev、localhost、正式網域。
+2. **不要動** public/_redirects、public/_headers，**不要新增** public/404.html（_redirects 檔頭寫了 2026-08-07 的事故：加規則與 404.html 會讓深層路徑全掛）。**不要用 Pages Functions middleware**（每個請求含靜態資源都計次）。
+3. 不改 CORS：正式站拒絕 pages.dev 是刻意的安全設計，維持。
+4. 確認 index.html 或 _headers 的 CSP（若有）不擋這段邏輯（它在 bundle 內，不是 inline script）。
+5. 新增測試前看 .claude/rules/test-naming.md，跑 python3 scripts/check-test-names.py；PR 內文附「host × 是否導向」表。
+6. 未驗：Cloudflare 上的實際導向只能合進 main（晉升）後在 uknow.pages.dev 實測；PR 寫明由主 session 晉升後驗證。
+```

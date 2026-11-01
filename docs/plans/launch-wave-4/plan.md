@@ -16,7 +16,7 @@
   沒有開著的 PR；open issue：#467（npm audit）、#395（PayUni 查詢層，欠 sandbox 實打）、#384、#383。
   照片清理 `PHOTO_PURGE_LIVE=true`，首輪實刪排程在台北 11/02 03:17，開局時尚未執行（見 §8）。
 
-**目標**：必上 F1、E、D、K2 四項全部合進 develop 就晉升；T1-B 有完成才上。11/15（日）22:00 收件截止。
+**目標**：必上 F1、E、D、K2、P 五項全部合進 develop 就晉升；T1-B 有完成才上。11/15（日）22:00 收件截止。
 
 **裁決（AskUserQuestion，業主 2026-11-01 20:20 台北）**
 
@@ -41,6 +41,7 @@
 | W4-17 | T1-B Q7：首頁 degraded 且無提示時頁首空槽 | **接受為已知取捨**，列規格書已知限制（被推翻：補斷線 icon） |
 | W4-18 | T1-B 異常 callout「聯絡客服」入口（22:00） | **既有 `LINE_OFFICIAL_ACCOUNT_URL`**（與 Footer、結帳頁同一入口；被推翻：LINE＋Email 並列） |
 | W4-20 | T1-B B4 紅燈期：舊測試「SIGNED_IN 為另一個 uid…載入新帳號」釘死 `fetchProfile` 參數 `{ userId }`，與 plan §2.2 的 8 秒逾時衝突（11/02 00:25） | **授權只改參數期望為 `{ userId, timeoutMs: 8_000 }`**，測試語意不變；業主在 T1-B session 親打才生效（被推翻：改實作不帶逾時） |
+| W4-21 | `uknow.pages.dev`（Pages 根網址＝main 建置）顯示正式站資料但登入「Failed to fetch」（正式站 CORS 只放行 uknow.com.tw，刻意設計），易誤用（11/02 00:50） | **本波加小工項 P**：前端偵測 host 精確等於 `uknow.pages.dev` 就導向 `https://uknow.com.tw`（保留路徑）；CORS 不放寬（被推翻：列第 5 波候選；不處理） |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -78,6 +79,7 @@
 | K2 | R3 P2-10（spec-drift 補 `ORPHAN_SWEEP_LIMIT` 規則）、P2-12（deploy-smoke `failure()` fallback 標題）、P2-13（notify 其他呼叫端缺 secret 至少在 summary 標紅）、P2-22（日期桶註明 UTC） | 小 PR，`fix/ci-alert-p2` | Sonnet | `scripts/check-spec-drift.py`、`deploy-smoke.yml`、`.github/actions/notify/action.yml`、`index.ts` 一行註解 | 無 |
 | D | issue #467 npm audit（critical 2、high 10）：先吃 Dependabot 週一批次，剩下的補；`vitest`／`vite` 大版本另開 PR | 小 PR，`fix/npm-audit-467` | Sonnet | `package.json`、`package-lock.json` | 與 Dependabot PR 互斥——先看批次 |
 | T1-B | 暫時性故障不登出：degraded 狀態、`/profile` 8 秒逾時＋重試、後端 503、`endInvalidSession()`；併 R3 P2-6、P2-15 | 三段式：`/plan-feature auth-transient-resilience` → `/review-plan` → **停等業主** → 業主親打 `/tdd-implement`；分支 `feature/auth-transient-resilience` | Opus | `useAuthBootstrap.ts`、`fetchProfile.ts`、`apiClient.ts`、`routeAfterVerifiedSession.ts`、`index.ts`（503）、`api-contract.ts`、e2e `route_guards.feature`、規格書 §14 #8 | 見 F1 |
+| P | `uknow.pages.dev` 根網址導向正式網域（W4-21） | `/fix-bug`，`fix/pages-root-redirect` | Sonnet | `src/main.tsx`、新純函式＋測試；**不動** `_redirects`／`_headers`／不加 `404.html`／不用 Pages Functions | 無 |
 | R4 | 第 4 波審查（晉升後）；兼做 `launch-wave-3/` 退場（依 R3 §6）與規格書補記 P2-18 | 審查 session；報告 `docs/plans/launch-wave-4/review.md` | Opus | — | — |
 
 主 session 自己做：本檔 §7／§8；審每支 PR；合併後 dispatch 驗證（K2 合併後 dispatch deploy-smoke）；照片清理首輪核對；
@@ -129,6 +131,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
 | T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 實作中（B0 起；業主已親打 `/tdd-implement`） |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
+| P | （待開） | Sonnet | `fix/pages-root-redirect` | — | 開工中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -145,3 +148,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/01 23:20 | 業主 23:06 在 F1 session 親打授權（W4-10 生效）。F1 開 #486（紅燈 `6bc120c`，rebase 前為 `b4e44f1`）：紅燈後只改了 `button.test.tsx` 那一條（反向斷言），`tdd-unlock.sh` 與該紅燈測試互鎖，依授權直接移除鎖檔。主 session 審：無 P0／P1——基底契約寫進 `button.tsx`、Navbar 兩鈕自補；`onAccountSwitched`（可選 dep，`begin()` 換 uid 分支）；新 `clearAccountLocalState`（`withdrawalBankData`、`pendingUser`、舊鍵、完善資料草稿）；Q7 `isCancelling`＋401 收尾；401／AuthPage 走 `signOutWithFallback`。P2：`multi-step-flow-recovery.md` 完善資料與提領兩列補「登出／換帳號時清除」→ 交 F1 本 PR 補 | F1 補文件、CI 綠 → 合 → 通知 T1-B |
 | 11/01 23:35 | F1 補 `multi-step-flow-recovery.md` 兩列（`dd9fb45`），CI 全綠、主 session 審過 → **#486 合進 develop（2b99700）**。已通知 T1-B 開工 B0（F1 帶進的 `onAccountSwitched`、`clearAccountLocalState`、Button 基底契約）。必上四項剩 D | 11/02 核對照片清理首輪 run、Dependabot 批次後開 D；T1-B 施工 |
 | 11/02 00:25 | T1-B 回報 B0–B3 綠（B1 紅 `537a368`→綠 `d754e36`；B2 `8f54277`→`be18910`；B3 `dd87963`→`2a69c8c`），B4 實作完成、hooks 181 測試 180 綠；卡逃生口 2：舊測試釘死 `fetchProfile` 參數，與 plan §2.2 逾時衝突。業主裁決 **W4-20**（只改參數期望）；已請 T1-B 同類掃描，若還有同形期望一次列齊 | 業主到 T1-B session 親打授權；B4 綠後續 B5 |
+| 11/02 00:50 | 業主回報 `uknow.pages.dev` 顯示正式站資料、登入「檢查 Email 時發生錯誤：Failed to fetch」。主 session 讀碼判定：根網址＝main 建置→正式站 Supabase；刊登走 PostgREST 不受 CORS 限制，`/auth/check-email` 走 Edge Function，正式站 CORS 只放行 `uknow.com.tw`（刻意設計）→ 非本波回歸、無資料錯誤。業主裁決 **W4-21**：本波加小工項 P | 開 P（Sonnet） |
