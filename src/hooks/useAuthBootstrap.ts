@@ -180,16 +180,24 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
       const result = await depsRef.current.fetchProfile(token, { userId: uid });
       if (!mountedRef.current || gen !== genRef.current) return;
 
-      if (result.kind === 'ok') {
-        ingest(result.profile, true);
-      } else if (result.kind === 'unauthorized') {
-        endSession();
-        // 網路失敗不留未處理例外、補本機登出（PR-B 會改成兩層確認的 endInvalidSession）。
-        await signOutWithFallback(supabase.auth);
-      } else {
-        // 冷啟動的暫時性錯誤：放掉 uid，之後同 uid 的 SIGNED_IN 可以再試。
-        uidRef.current = null;
-        dispatch({ type: 'transient' });
+      switch (result.kind) {
+        case 'ok':
+          ingest(result.profile, true);
+          break;
+        // missing（404）暫與 unauthorized 同處置；T1-B B4 改成 anomaly（W4-11）。
+        case 'unauthorized':
+        case 'missing':
+          endSession();
+          // 網路失敗不留未處理例外、補本機登出（PR-B 會改成兩層確認的 endInvalidSession）。
+          await signOutWithFallback(supabase.auth);
+          break;
+        case 'transient':
+          // 冷啟動的暫時性錯誤：放掉 uid，之後同 uid 的 SIGNED_IN 可以再試。
+          uidRef.current = null;
+          dispatch({ type: 'transient' });
+          break;
+        default:
+          result satisfies never;
       }
     };
 

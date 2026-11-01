@@ -5,7 +5,6 @@
  */
 
 import { getAccessToken } from './auth';
-import { projectId } from './supabase/projectConfig';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
 import { clearAuthHint } from './authHint';
@@ -219,19 +218,5 @@ export async function apiRequestJson<T = any>(url: string, options: RequestInit 
   }
 }
 
-/**
- * 構建後端 API URL
- *
- * @param path - API 路徑（例如：'/rewards', '/tasks'）
- * @returns 完整的 API URL
- *
- * @example
- * ```typescript
- * const url = buildApiUrl('/rewards');
- * // 返回: https://{projectId}.supabase.co/functions/v1/api/rewards
- * ```
- */
-export function buildApiUrl(path: string): string {
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `https://${projectId}.supabase.co/functions/v1/api${cleanPath}`;
-}
+// 網址組裝已搬到零依賴的 apiUrl.ts（T1-B）；這裡轉出，既有 import 不變。
+export { buildApiUrl } from './apiUrl';

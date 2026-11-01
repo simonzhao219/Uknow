@@ -37,7 +37,7 @@ export async function routeAfterVerifiedSession(
       showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
       navigate('/login', { replace: true });
     } else {
-      // 例如 404：profile 列還沒建好——session 有效，繼續註冊流程。
+      // missing（404）與 transient：暫維持帶去完善資料頁；T1-B B6 分流（W4-11）。
       navigate('/auth/complete-profile', { replace: true });
     }
   } catch {

@@ -191,7 +191,8 @@ export function AuthPage() {
           const result = await fetchProfileForSession(session);
 
           // ✅ 只處理無效 session，不主動重定向
-          if (result.kind === 'unauthorized') {
+          // missing（404）暫與 unauthorized 同處置；T1-B B6 改成帳號資料異常（W4-11）。
+          if (result.kind === 'unauthorized' || result.kind === 'missing') {
             console.log(
               'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
             );
@@ -372,7 +373,10 @@ export function AuthPage() {
         console.error('AuthPage: Failed to fetch profile:', result);
 
         // 特殊處理：帳號已被刪除（410）或不存在（404）
-        if (result.kind === 'unauthorized' && (result.status === 410 || result.status === 404)) {
+        if (
+          result.kind === 'missing' ||
+          (result.kind === 'unauthorized' && result.status === 410)
+        ) {
           console.log('AuthPage: User account deleted or not found, cleaning up...');
 
           // 清除 session（連同首繪提示：帳號已不存在）
