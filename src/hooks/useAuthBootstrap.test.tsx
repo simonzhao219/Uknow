@@ -408,3 +408,40 @@ describe('useAuthBootstrap 背景重驗與外部更新', () => {
     expect(after.ingestProfile).toBe(first.ingestProfile);
   });
 });
+
+describe('useAuthBootstrap getSession 安全出口', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('getSession 10 秒內沒有回應時 sessionStalled 為 true', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    expect(t.hook.result.current.sessionStalled).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(9_999);
+    });
+    expect(t.hook.result.current.sessionStalled).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(t.hook.result.current.sessionStalled).toBe(true);
+  });
+
+  it('卡住之後 getSession 回來時解除並照常判定', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await t.resolveSession();
+    expect(t.hook.result.current.sessionStalled).toBe(false);
+    expect(t.deps.fetchProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('getSession 擲例外時 sessionStalled 為 true', async () => {
+    const t = setup();
+    t.deps.supabase.auth.getSession.mockImplementation(() => Promise.reject(new Error('boom')));
+    t.hook.unmount();
+    const hook = renderHook(() => useAuthBootstrap(t.deps as unknown as AuthBootstrapDeps));
+    await waitFor(() => expect(hook.result.current.sessionStalled).toBe(true));
+  });
+});

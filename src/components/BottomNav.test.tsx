@@ -40,6 +40,16 @@ vi.mock('../contexts/FeatureContext', () => ({
 
 import { BottomNav } from './BottomNav';
 
+function renderView(ctx: Record<string, unknown>) {
+  return render(
+    <MemoryRouter>
+      <UserCtx.Provider value={ctx}>
+        <BottomNav />
+      </UserCtx.Provider>
+    </MemoryRouter>,
+  );
+}
+
 function renderNav(isLoggedIn = true) {
   return render(
     <MemoryRouter>
@@ -119,5 +129,25 @@ describe('BottomNav', () => {
     flags.serviceProviderManagement = false;
     renderNav();
     expect(labels()).toEqual(['首頁', '任務', '推薦', '獎勵', '會員']);
+  });
+});
+
+describe('BottomNav 與頁首版本', () => {
+  it('頭像占位（有 member 提示、判定中）時首繪即呈現', () => {
+    renderView({ isLoggedIn: false, authView: 'member-pending' });
+    expect(screen.getByRole('navigation', { name: '主要導覽' })).toBeTruthy();
+  });
+
+  it('註冊中（funnel）時不呈現，即使 user 已存在', () => {
+    renderView({ isLoggedIn: true, authView: 'funnel' });
+    expect(screen.queryByRole('navigation', { name: '主要導覽' })).toBeNull();
+  });
+
+  it('訪客與占位時不呈現', () => {
+    for (const authView of ['guest', 'placeholder']) {
+      renderView({ isLoggedIn: false, authView });
+      expect(screen.queryByRole('navigation', { name: '主要導覽' }), authView).toBeNull();
+      cleanup();
+    }
   });
 });

@@ -186,6 +186,13 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
     }
   });
 
+  // A3：BottomNav、main 底部留白、首頁 hasBottomNav 同一個判準（member／member-pending）。
+  it('main 底部留白與首頁 hasBottomNav 跟著頁首版本走', () => {
+    expect(app).toMatch(/showsMemberChrome\(authView\)[\s\S]{0,80}pb-24/);
+    const home = readFileSync(join(SRC, 'components', 'HomePage.tsx'), 'utf8');
+    expect(home).toMatch(/hasBottomNav=\{showsMemberChrome\(/);
+  });
+
   it('提示的寫入與清除只出現在白名單檔案', () => {
     const allowed = new Set(
       [

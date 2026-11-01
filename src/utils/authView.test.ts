@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveAuthView, type AuthViewInput } from './authView';
+import { resolveAuthView, showsMemberChrome, type AuthViewInput } from './authView';
 
 const base: AuthViewInput = {
   authState: 'unknown',
@@ -81,5 +81,31 @@ describe('resolveAuthView', () => {
         'guest',
       );
     });
+  });
+});
+
+describe('resolveAuthView 安全出口（getSession 卡住）', () => {
+  it('判定中且 getSession 卡住時改畫訪客版（含漏斗路由與提示）', () => {
+    expect(view({ sessionStalled: true })).toBe('guest');
+    expect(view({ sessionStalled: true, pathname: '/payment/checkout' })).toBe('guest');
+    expect(view({ sessionStalled: true, hint: { kind: 'member' } })).toBe('guest');
+  });
+
+  it('已確認登入時不受影響', () => {
+    expect(view({ authState: 'authenticated', sessionStalled: true })).toBe('member');
+  });
+});
+
+describe('showsMemberChrome', () => {
+  it('會員與頭像占位顯示會員外框', () => {
+    expect(showsMemberChrome('member')).toBe(true);
+    expect(showsMemberChrome('member-pending')).toBe(true);
+  });
+
+  it('訪客、占位、註冊中不顯示', () => {
+    for (const v of ['guest', 'placeholder', 'funnel'] as const) {
+      expect(showsMemberChrome(v), v).toBe(false);
+    }
+    expect(showsMemberChrome(undefined)).toBe(false);
   });
 });

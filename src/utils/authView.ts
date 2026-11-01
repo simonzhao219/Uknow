@@ -16,6 +16,8 @@ export interface AuthViewInput {
   isLoggedIn?: boolean;
   hint: Pick<AuthHint, 'kind'> | null | undefined;
   pathname: string;
+  /** getSession() 例外或 10 秒未 resolve（安全出口，F4）。 */
+  sessionStalled?: boolean;
 }
 
 export function resolveAuthView({
@@ -38,4 +40,9 @@ export function resolveAuthView({
   if (hint?.kind === 'member') return 'member-pending';
   if (hint?.kind === 'funnel') return 'funnel';
   return isFunnelRoute(pathname) ? 'placeholder' : 'guest';
+}
+
+/** 會員外框（BottomNav、main 底部留白、首頁 hasBottomNav）是否出現。 */
+export function showsMemberChrome(_view: AuthView | undefined): boolean {
+  return false;
 }

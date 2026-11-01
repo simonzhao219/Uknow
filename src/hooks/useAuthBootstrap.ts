@@ -70,6 +70,8 @@ export interface AuthBootstrap {
   nextFunnelRoute: string | null;
   hint: AuthHint | null;
   isLoadingUser: boolean;
+  /** getSession() 例外或 10 秒內未 resolve（頁首改畫訪客版的安全出口，F4）。 */
+  sessionStalled: boolean;
   refreshUser: () => Promise<any | null>;
   ingestProfile: (profile: any) => void;
 }
@@ -298,6 +300,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     nextFunnelRoute,
     hint,
     isLoadingUser: state.authState === 'unknown',
+    sessionStalled: false,
     refreshUser,
     ingestProfile,
   };
