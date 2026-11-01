@@ -60,11 +60,11 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | **註冊中（尚未成為會員）** | 有帳號、從未訂閱過，資料未齊或首購未完成（含已付款待開通）。不可用會員區；頁首只有「登出」，離開註冊頁面時多一顆「繼續完成註冊」（已付款待開通為「查看開通進度」）。頁首登出不刪帳號、不清草稿，下次登入接回原步驟；完善資料頁的「稍後註冊」則會刪除帳號資料，先跳確認框說明後果並指向頁首登出，刪除失敗時停在原頁說明原因 |
 | **管理員** | 會員管理、提領審核、系統公告 |
 
-頁首從第一個畫面起就依本機記住的登入狀態畫對應版本，不先閃「登入／立即刊登」。仍會看到一次訪客版頁首的三種情形：
+頁首從第一個畫面起就依本機記住的登入狀態畫對應版本，不先閃「登入／立即刊登」。仍會看到一次訪客版頁首的情形：
+本機沒有記住登入狀態（第一次在這台裝置／瀏覽器登入、清過瀏覽資料、LINE 內建瀏覽器、Email 連結第一次開在首頁），又不在註冊頁面上。
 
-1. 本機沒有記住登入狀態（第一次在這台裝置／瀏覽器登入、清過瀏覽資料、LINE 內建瀏覽器、Email 連結第一次開在首頁），又不在註冊頁面上；
-2. 讀取會員資料時伺服器暫時錯誤或斷線：先畫頭像，之後轉訪客版並導去登入頁；
-3. 在註冊頁面上讀取會員資料一直沒有回應時，頁首右側保持空白直到回應。
+讀取會員資料暫時失敗（伺服器錯誤、斷線、逾時）時不會被登出（§5.3）：會員頁面停在原處顯示「網路不穩，正在重新連線」與「重試」「登出」，頁首依本機記住的登入狀態畫；
+本機沒有記住登入狀態時頁首右側保持空白，直到重新連上（首頁等公開頁面也是如此，不另外提示）。
 
 〔實作〕`src/utils/authView.ts`（頁首版本決策）、`src/hooks/useAuthBootstrap.ts`（本機提示的讀寫）、`src/utils/registrationFlow.ts` 的 `isFirstTimeFunnel`。
 
@@ -234,6 +234,15 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 
 **讀取失敗不是「尚未確認」**：守衛與狀態端點讀不到資料時一律 fail-closed
 回 5xx，不放行，也不退化成預設值（「非 active」「沒有提領」「0 點」）。
+
+**登入狀態讀不到不是登出**：帳號資料（`GET /profile`，以及 `/auth/register`、
+`/auth/complete-registration` 回傳的同一份資料）的任一讀取失敗——會員資料、會籍、
+推薦碼、待付款訂單、註冊進度——回 503 `PROFILE_UNAVAILABLE`，不退化成「不存在」
+「已過期」「未付款」；Auth 服務暫時回不來也回 503，只有 Auth 明確判定 token 無效才回 401。
+`/auth/register` 回 503 代表資料已寫入、只是讀不回，前端接續而不重送。前端遇 503、逾時
+或斷線時停在原頁讓人重試，不導登入頁、不登出；會員資料零列（404）視為帳號資料異常，
+在登入頁說明並提供客服聯絡，不自動登出。系統判定 session 無效時只清除本機登入狀態，
+不撤銷其他裝置；其他端點回 401 時先換發 token、再以 `/profile` 確認，確認無效才登出。
 
 ---
 
@@ -869,7 +878,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 5 | 姓名格式規則的兩項未結清查證（§4.2） | ①`HAN_RANGE`（`㐀-鿿`＋`豈-﫿`）不含擴充 B 區以上與造字區，即戶政「缺字」問題——該正則原本只決定遮罩樣式，改當註冊關卡後同一落差的後果變成「完全無法註冊」。目前僅以「罕用字請聯繫客服」的錯誤訊息當逃生口，**未以既有 `profiles.name` 樣本查證實際族群規模**。②純羅馬拼音登記姓名（依《姓名條例》部分原住民族可單獨以羅馬拼音登記法定姓名）的分隔慣例未查證；外文模式目前只允許英文字母與單一半形空格，若官方轉寫慣例另有分隔符號則會誤擋 |
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 | 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
-| 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/profile` 的 `accountStatus`（`buildProfileResponse` 讀 `user_account_status` 不看 error，暫時性錯誤時路由守衛把有效會員導去續訂；失敗策略應是「未知態」或保留舊 profile，不是 5xx 當未登入）②`buildProfileResponse` 的 `profiles` 讀取失敗回 null → 404 → 前端 `signOut`，暫時性錯誤會登出有效會員 ③`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）④`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status` 與 `/payuni/prepare` 已改 fail-closed（#360） |
+| 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）②`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status`、`/payuni/prepare`（#360）與 `/profile`（T1-B）已改 fail-closed |
 | 9 | 會員列表的狀態篩選／排序（§13） | 後端 `GET /admin/members` 已收 `status`／`sort` 參數，`MemberManagement` 只接了搜尋（`search`），畫面上沒有篩選與排序 |
 | 10 | 提領狀態更新與批次不透傳冪等旗標（§10、§13） | `supabase/functions/api/index.ts`：`admin_update_withdrawal_status` 對「已是該狀態」回成功並帶 `idempotent`，但 `/admin/withdrawals/:id/status` 與 `/admin/withdrawals/batch-mark-paid` 不透傳，前端分辨不出重複標記已匯款 |
 | 11 | 提領管理讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts` 的 `/admin/withdrawals`：統計查詢的錯誤被忽略（件數與待匯款總額回 0）；附屬查詢（姓名、證件簽名網址、事件歷史）也不檢查錯誤，回空姓名、「未設定」身分證、空歷史，證件顯示未上傳 |
