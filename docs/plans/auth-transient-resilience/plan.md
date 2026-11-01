@@ -4,7 +4,7 @@
      `git show b4b5bdcb:docs/plans/auth-state-trust/plan.md`（§2.3、§2.4、§2.5、§5 B1–B3、§7）
      與總綱 `git show 55268e03:docs/plans/platform-growth-and-trust/plan.md` §1.2B。
      本檔只寫「PR-A（#466）上線後的現況差異」與併入的 R3 P2-6、P2-15。
-     v1 審查：`git show 040cfac:docs/plans/auth-transient-resilience/review.md`；v2 審查＝同目錄 review.md（P1 已落地處標〔v2審〕）。
+     v1 審查：`git show 65fb23c:docs/plans/auth-transient-resilience/review.md`；v2 審查＝同目錄 review.md（P1 已落地處標〔v2審〕）。
      讀碼基準：develop 27b09a0（2026-11-01）；F1（fix/signout-cleanup）會先動 useAuthBootstrap／apiClient／AuthPage，
      實作前 rebase 後行號一律現算。 -->
 

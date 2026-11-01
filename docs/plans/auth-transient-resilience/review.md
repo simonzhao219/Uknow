@@ -1,7 +1,7 @@
 # 暫時性故障不登出（T1-B）規劃書審查報告（v2）
 
 <!-- 由 /review-plan 彙整四個 reviewer subagent（fresh context）的發現。輸出契約見 docs/_templates/review.md。
-     審查對象：plan.md v2（業主裁決 W4-11～17＋v1 審查 P1 修訂後）。v1 報告：`git show 040cfac:docs/plans/auth-transient-resilience/review.md`
+     審查對象：plan.md v2（業主裁決 W4-11～17＋v1 審查 P1 修訂後）。v1 報告：`git show 65fb23c:docs/plans/auth-transient-resilience/review.md`
      （P0 0、P1 17〔去重 15〕＋1 未標級；v1 各 P1 已在 v2 處置，四視角皆確認解掉或解一半，見下）。
      只彙整、去重、排序，不改判。v2 的 P1 已由主規劃者落地成 plan v2.1（標〔v2審〕），**未再重跑審查**——是否需要第三輪由人決定。 -->
 
