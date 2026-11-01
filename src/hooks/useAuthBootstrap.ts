@@ -156,6 +156,11 @@ function reducer(state: State, action: Action): State {
     case 'transient':
       // 已有資料時的暫時性錯誤不改狀態（stale-while-revalidate，總綱 §1.2B）。
       if (state.user || state.funnelProfile) return state;
+      // 已有定論（登出、帳號異常、確認）時晚到的暫時性錯誤不翻案——例：auth-js 遇 refresh 429
+      // 自己移除 session 並廣播 SIGNED_OUT，之後 getSession 回 null＋429（#488 審查）。
+      if (state.outcome === 'signedOut' || state.outcome === 'anomaly' || state.outcome === 'ok') {
+        return state;
+      }
       if (state.outcome === 'none') return { ...state, authState: 'unknown', outcome: 'retrying' };
       return {
         ...state,
@@ -243,6 +248,10 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     [attempt],
   );
 
+  // 最近一次 render 的 outcome（onTransient 判斷是否已有定論、不再排重試）。
+  const outcomeRef = useRef(state.outcome);
+  outcomeRef.current = state.outcome;
+
   // 重試入口（自動、手動、事件共用）。宣告在 load／begin 之前，以 ref 互相引用。
   const retryEnteringRef = useRef(false);
   const retryRef = useRef<(kind: 'auto' | 'manual') => Promise<void>>(async () => {});
@@ -251,6 +260,8 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   const onTransient = useCallback(
     (kind: AttemptKind) => {
       dispatch({ type: 'transient' });
+      const settled = outcomeRef.current;
+      if (settled === 'signedOut' || settled === 'anomaly' || settled === 'ok') return;
       if (kind === 'initial') {
         attempt.schedule(() => void retryRef.current('auto'), AUTO_RETRY_DELAY_MS);
       }
@@ -351,10 +362,23 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     attempt.cancel();
     if (kind === 'manual') dispatch({ type: 'retry' });
     const gen = genRef.current;
-    let res: { data: { session: Session }; error?: unknown };
+    let res: { data: { session: Session }; error?: unknown } | 'timeout';
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      res = await depsRef.current.supabase.auth.getSession();
+      // auth-js 的 refresh 卡住時 getSession 不會回來——設上限，否則重試永遠停在進行中（#488 審查）。
+      res = await Promise.race([
+        depsRef.current.supabase.auth.getSession(),
+        new Promise<'timeout'>((resolve) => {
+          timer = setTimeout(() => resolve('timeout'), PROFILE_RETRY_TIMEOUT_MS);
+        }),
+      ]);
     } catch {
+      if (mountedRef.current && gen === genRef.current) onTransient(kind);
+      return;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (res === 'timeout') {
       if (mountedRef.current && gen === genRef.current) onTransient(kind);
       return;
     }

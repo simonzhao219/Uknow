@@ -74,7 +74,11 @@ export function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const { user, setUser, ingestProfile, authAnomaly } = useContext(UserContext);
+  const { user, setUser, ingestProfile, authAnomaly, authState, nextFunnelRoute } =
+    useContext(UserContext);
+  // 掛載 effect 只跑一次，暫時性故障時要看的是當下的 bootstrap 判定（#488 審查 P1）。
+  const bootstrapRef = useRef({ authState, nextFunnelRoute });
+  bootstrapRef.current = { authState, nextFunnelRoute };
   const memberLogout = useMemberLogout();
   // 帳號異常說明的登出：進行中 aria-disabled＋ref 防連點（useMemberLogout 內有短暫等待）。
   const [anomalySigningOut, setAnomalySigningOut] = useState(false);
@@ -264,6 +268,14 @@ export function AuthPage() {
         return;
       }
       settle('signed_out');
+      const { authState: known, nextFunnelRoute: next } = bootstrapRef.current;
+      // bootstrap 已確認是註冊中（user 仍為 null）：導 /dashboard 會被守衛彈回 /login，離線時形成循環——
+      // 改導註冊下一步；已確認未登入則留在登入頁。只有 bootstrap 還沒定論時才交給會員中心守衛。
+      if (known === 'authenticated') {
+        if (next) navigate(next, { replace: true });
+        return;
+      }
+      if (known === 'anonymous') return;
       navigate('/dashboard', { replace: true });
     };
 

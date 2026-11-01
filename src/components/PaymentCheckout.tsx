@@ -192,6 +192,9 @@ export function PaymentCheckout() {
             return;
           } else {
             console.error('PaymentCheckout: Failed to load profile:', result.kind);
+            // 先清 context 的 user：否則 AuthPage 的「已登入自動導向」立刻把人導回會員中心，
+            // 帳號資料異常（404）的說明永遠看不到（#488 審查）。
+            setUser(null);
             navigate('/login', { replace: true });
             return;
           }
