@@ -30,6 +30,10 @@ plan v2.1（1985a0b）主 session 親審通過；業主 11/01 親打 `/tdd-imple
 1. **B4**：§2.3 `retry()` 偽碼漏了 dispatch `retry` action——手動／事件重試進入時先設 `isRetrying=true`（callout 不卸載、鈕 `aria-disabled`）；
    `profile`／`transient`／`missing`／`signedOut`／`unauthorized` 每個出口都清 `isRetrying`。B4 補一案「重試後再 transient → `isRetrying` 回 false、`failedAgain` 為真」。
 2. **B1 前**：把 Logs Explorer 唯讀查詢（24 小時 `/profile` 5xx 與 `effective_registration_step` 等 rpc 錯誤）send_message 給主 session 代跑兩站，結果記這裡。
+   **結果（主 session 代跑，11/01 15:10 UTC 往前 24 小時，ClickHouse 統一 logs 表改寫）**：
+   - 正式站：`/profile` 0 筆（整個 Edge Function 41 筆：200×26、401×15）；5xx 0、404 0；postgres ERROR／FATAL 0。
+   - develop：GET `/profile` 200×2；5xx 0、404 0；execution_time_ms p50 2,280、p95 3,488、max 3,622（2 筆、含冷啟動）；postgres ERROR／FATAL 0。
+   - 判讀：不必停；p95 遠低於 8 秒。**已知限制**：樣本量極小，正式站真實分布要等上線後依子 plan §2.4 量測 SQL 再看、必要時調逾時。
 
 ## Blockers（逃生口紀錄）
 
