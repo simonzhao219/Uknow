@@ -14,9 +14,9 @@
 | A0 | 開工前置：資料查證 SQL 重跑（plan §2.1）、`isLoggedIn` 清查、`localStorage.user` 讀寫全表 | ✅ 三項完成；重跑後三欄兩站皆 0，F3 不觸發 | — | — |
 | A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ✅ 綠（逃生口 2 一格，見 Blockers） | `24325327` | `55493dc6` |
 | A2a | useAuthBootstrap 本體（reducer／outcome、hint 擁有與寫入、uid8、副作用注入、generation counter） | ✅ 綠（既有 e2e 308/308） | `9db61256` | `a2379904` |
-| A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ✅ 綠（e2e 全套驗證中） | `7ca2ff28` | `0f22801c` |
-| A3 | Navbar 五 view＋繼續完成註冊、useFunnelLogout、BottomNav／padding、e2e S1–S11 | ⬜ 未開始 | | |
-| A4 | 規格書 §2.1 註冊中角色＋已知限制、ui-ux §3 | ⬜ 未開始 | | |
+| A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ✅ 綠（既有 e2e 308/308；計次基線不需改，見下） | `7ca2ff28` | `0f22801c` |
+| A3 | Navbar 五 view＋繼續完成註冊、useFunnelLogout、BottomNav／padding、e2e S1–S11 | ✅ 綠（e2e 全套 326/326＋頁首 30 情境）；Q6–Q8 待業主 | `356417f1`、`dda2d4f1`；e2e 紅燈證據見下 | `cfb9a648`、`966956a3`、`95a8bed3`、`3d129cbd`；e2e `9a6e6dfc` |
+| A4 | 規格書 §2.1 註冊中角色＋已知限制、ui-ux §3 | ✅ | — | `1c637c3d` |
 | B1 | 後端 authenticate／讀取對照表／ProfileReadError 503／?retry=1 | ⬜ 未開始（可晚一波） | | |
 | B2 | 前端 8 秒逾時＋重試＋degraded＋endInvalidSession | ⬜ 未開始（可晚一波） | | |
 | B3 | 規格書 §5.3、§14 #8 | ⬜ 未開始（可晚一波） | | |
@@ -69,6 +69,14 @@ e2e：無任何 `localStorage` 的 `user`／`pendingSession`／`uknow:auth-hint`
 ## 本機 e2e 跑法（執行 session 備忘）
 
 容器的 Chromium 是 build 1243、`playwright==1.56.0` 要 1194：在 scratchpad 建 `pwb/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向 `/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`，以 `PLAYWRIGHT_BROWSERS_PATH` 指過去。conftest 自起的 dev server 會在跑到約 20% 時死掉（ERR_CONNECTION_REFUSED 洗版）——改在獨立 worktree 起 `npx vite --port 3000` 並設 `E2E_SKIP_DEV_SERVER=1`（同 CI 做法），也避免邊改碼邊 HMR。
+
+## A2b／A3 補記
+
+- **A2b 計次基線**：`set_profile_sequence` 依呼叫次數前進；收斂成 single-flight 後既有 e2e 308/308 照綠，不需要重算。
+- **A3 e2e 紅燈證據**：新頁首情境在 A2b（`0f22801c`）跑 15 failed／15 passed（通過的 15 個是舊頁首本來就不會出現那些字樣的反向斷言）；在 `966956a3` 起 30 passed。
+- **A3 中 e2e 抓到的三個實作缺陷**（皆已修、各有回歸斷言）：換帳號冷啟動首繪在 getSession 回來前畫出前一人首字（→ `hintVerified`，S11）；占位換登出鈕時右側容器位移、logo 晚到時容器位移（→ 容器固定高度＋logo 寬高屬性，S9）；320px「繼續完成註冊」壓到 logo 7px（→ 窄寬間距，S8 加量 logo 重疊）。
+- **偏離 plan**：Q7 的「取消註冊既有確認框」不存在——「稍後註冊」直接刪帳號、無確認框；已送主 session 請業主裁決，本 PR 未動。Q8 核對：鈕文字現況已是「登出，稍後再付款」。
+- **時程降級（plan §5 A3 允許）**：Navbar 會員登出的 `startTransition` 順序修正未做；`clearAuthHint()` 與失敗補 local 登出（不可降級項）已做。漏斗路由主體載入態：四頁現況都有各自 spinner／表單，未另補文字。
 
 ## Blockers(逃生口紀錄)
 
