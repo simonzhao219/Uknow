@@ -17,7 +17,8 @@ import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import type { AdminWithdrawalSummaryResponse } from '@contract';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
 import { clearAuthHint } from '../utils/authHint';
-import type { AuthView } from '../utils/authView';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
+import { type AuthView, authViewOrFallback } from '../utils/authView';
 import { funnelCtaLabel, isFunnelRoute, routeForFunnelNext } from '../utils/registrationFlow';
 import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
 
@@ -34,8 +35,7 @@ async function loadPendingWithdrawalCount(): Promise<number> {
 export function Navbar() {
   const { user, setUser, isLoggedIn, isAdmin, authView, nextFunnelRoute, hintInitial, hintNext } =
     useContext(UserContext);
-  // 舊的 context mock 沒有 authView：依 isLoggedIn 回落（同 resolveAuthView）。
-  const view: AuthView = authView ?? (isLoggedIn ? 'member' : 'guest');
+  const view: AuthView = authViewOrFallback(authView, isLoggedIn);
   const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,20 +70,9 @@ export function Navbar() {
       // 提示會讓下一個在這台裝置登入的人先看到前一人的首字（S11）。
       clearAuthHint();
 
-      // ✅ 2. 登出 Supabase Auth（等待完成）
-      let signOutError: unknown = null;
-      try {
-        ({ error: signOutError } = await supabase.auth.signOut());
-      } catch (e) {
-        signOutError = e;
-      }
-      if (signOutError) {
-        console.error('Navbar: Error signing out from Supabase:', signOutError);
-        // supabase-js 在網路錯誤時不清本機 session：補一次 local 登出。
-        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-      } else {
-        console.log('Navbar: Successfully signed out from Supabase');
-      }
+      // ✅ 2. 登出 Supabase Auth：網路錯誤或卡住超過逾時都補本機登出（signOutWithFallback）。
+      const { localOnly } = await signOutWithFallback(supabase.auth);
+      if (localOnly) console.error('Navbar: Global sign-out failed, signed out this device only');
 
       // ✅ 3. 強制清除所有 Supabase auth storage
       const storageKeys = Object.keys(localStorage);

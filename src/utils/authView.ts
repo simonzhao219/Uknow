@@ -51,9 +51,10 @@ export function showsMemberChrome(view: AuthView | undefined): boolean {
   return view === 'member' || view === 'member-pending';
 }
 
+/** 讀 context 的 authView；舊的 context mock 沒有這個欄位時依 isLoggedIn 回落（同 resolveAuthView）。 */
 export function authViewOrFallback(
-  _view: AuthView | undefined,
-  _isLoggedIn: boolean | undefined,
+  view: AuthView | undefined,
+  isLoggedIn: boolean | undefined,
 ): AuthView {
-  return 'guest';
+  return view ?? (isLoggedIn ? 'member' : 'guest');
 }

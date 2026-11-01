@@ -29,7 +29,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { cn } from './ui/utils';
 import { TAIWAN_CITIES, TAIWAN_REGIONS, GENDER_OPTIONS } from '../utils/constants';
-import { showsMemberChrome } from '../utils/authView';
+import { authViewOrFallback, showsMemberChrome } from '../utils/authView';
 import { createClient } from '../utils/supabase/client';
 import {
   toggleCity,
@@ -462,7 +462,7 @@ export function HomePage() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         totalFilters={totalFilters}
-        hasBottomNav={showsMemberChrome(authView ?? (isLoggedIn ? 'member' : 'guest'))}
+        hasBottomNav={showsMemberChrome(authViewOrFallback(authView, isLoggedIn))}
         resultCount={resultCount}
         onResetFilters={() => {
           setSelectedGenders([]);

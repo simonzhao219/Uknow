@@ -135,6 +135,7 @@ Feature: Route guards enforce membership entitlement
     Then the header shows only a logout button
     And the header never showed "登入"
     And the header never showed "開啟會員選單"
+    And the header layout never shifted
 
   Scenario: Before the email code is verified the header shows only the logo
     Given I have a pending email verification for "pending@example.com"
@@ -142,6 +143,7 @@ Feature: Route guards enforce membership entitlement
     When I visit "/auth/verify-otp"
     Then the header right side is empty
     And the header never showed "登入"
+    And the header layout never shifted
 
   Scenario: Arriving on a funnel page with no hint keeps the header empty until the profile answers
     Given I am logged in with registration step 1 and last trade number ""
@@ -152,6 +154,7 @@ Feature: Route guards enforce membership entitlement
     When the profile request is released
     Then the header shows only a logout button
     And the header never showed "登入"
+    And the header layout never shifted
 
   Scenario: Activation swaps the logout button for the member menu, and a reload starts as a member
     Given I am logged in as an active member

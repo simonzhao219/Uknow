@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { Home, Target, Share2, Award, User, type LucideIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { useFeatures } from '../contexts/FeatureContext';
-import { showsMemberChrome } from '../utils/authView';
+import { authViewOrFallback, showsMemberChrome } from '../utils/authView';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
 
@@ -33,7 +33,7 @@ export function BottomNav() {
   // 會員與「有 member 提示、判定中」都畫——五格不依賴 user，首繪即可出現（S1）。
   // 註冊中（funnel）不畫：那些入口對未付款者全是死路（W2-22）。舊 mock 沒有
   // authView 時依 isLoggedIn 回落。
-  if (!showsMemberChrome(authView ?? (isLoggedIn ? 'member' : 'guest'))) return null;
+  if (!showsMemberChrome(authViewOrFallback(authView, isLoggedIn))) return null;
 
   const items: NavItem[] = [
     { to: '/', label: '首頁', icon: Home, end: true },

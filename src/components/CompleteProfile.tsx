@@ -11,9 +11,10 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError, getInputAriaProps } from '../utils/formHelpers';
-import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import { apiRequestJson, buildApiUrl, ApiError, extractApiErrorMessage } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
 import { clearAuthHint } from '../utils/authHint';
 import { fetchProfileForSession } from '../utils/fetchProfile';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { normalizeReferralCode } from '../utils/referralCode';
 import {
@@ -612,67 +613,50 @@ export function CompleteProfile() {
     }
   };
 
+  // 確認框按「確定刪除」後才進來（業主裁決 W3-12）。刪除沒成功就不清本機、不登出、停在
+  // 原頁並說原因——帳號還在卻讓人以為已刪，是最難察覺的不一致。
   const handleLaterSignup = async () => {
+    const failed = (message: string) => showToast(message, 'error');
     try {
-      console.log('CompleteProfile: User chose to sign up later, cleaning up...');
-
-      // 1. 取得當前 session，用於呼叫後端刪除帳號
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
-      if (session) {
-        // 2. 呼叫後端刪除未完成的用戶帳號
-        try {
-          console.log('CompleteProfile: Calling cancel-signup API...');
-          const response = await fetch(buildApiUrl('/auth/cancel-signup'), {
-            method: 'DELETE',
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          });
-
-          if (response.ok) {
-            console.log('CompleteProfile: Account deleted successfully');
-          } else {
-            console.error('CompleteProfile: Failed to delete account, status:', response.status);
-          }
-        } catch (error) {
-          console.error('CompleteProfile: Error calling cancel-signup API:', error);
-        }
+      if (!session) {
+        failed('登入狀態已失效，請重新登入後再試');
+        return;
       }
 
-      // 3. 清除本地狀態（在登出前先清除，避免競態條件）
+      let response: Response;
+      try {
+        response = await fetch(buildApiUrl('/auth/cancel-signup'), {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } catch {
+        failed('暫時無法刪除帳號資料，請稍後再試');
+        return;
+      }
+      if (!response.ok) {
+        // 後端兩種拒絕都有中文原因（已付款不可自助刪除、暫時無法處理）。
+        const body = await response.json().catch(() => null);
+        failed(extractApiErrorMessage(body, '暫時無法刪除帳號資料，請稍後再試'));
+        return;
+      }
+
+      // 已刪除：清本機狀態（在登出前先清，避免競態），再登出。
       setUser(null);
       localStorage.removeItem('user');
       // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
       clearAuthHint();
       clearPendingReferral();
-      // 使用者主動選擇稍後再註冊，等同放棄這次草稿，一併清除。
       clearProfileDraft();
+      await signOutWithFallback(supabase.auth);
 
-      // 4. 登出 Supabase session（確保完全登出）
-      console.log('CompleteProfile: Signing out from Supabase...');
-      await supabase.auth.signOut();
-
-      // 5. 顯示提示訊息
-      showToast('您可以稍後再完成註冊', 'info');
-
-      // 6. 等待一小段時間確保 session 清除完成，然後導向首頁
-      setTimeout(() => {
-        console.log('CompleteProfile: Navigating to home page...');
-        navigate('/', { replace: true });
-      }, 100);
-    } catch (error: any) {
-      console.error('CompleteProfile: Error during cancellation:', error);
-
-      // 即使發生錯誤，也要嘗試清除狀態並導航
-      setUser(null);
-      localStorage.removeItem('user');
-      clearAuthHint();
-      await supabase.auth.signOut();
-      showToast('已取消註冊', 'info');
+      showToast('已刪除帳號資料，之後可以用同一個 Email 重新註冊', 'info');
       navigate('/', { replace: true });
+    } catch (error) {
+      console.error('CompleteProfile: Error during cancellation:', error);
+      failed('暫時無法刪除帳號資料，請稍後再試');
     }
   };
 

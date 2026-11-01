@@ -20,6 +20,7 @@ import {
 } from '../utils/authHint';
 import type { AuthState } from '../utils/authView';
 import type { FetchProfileOptions, ProfileFetchResult } from '../utils/fetchProfile';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
 import {
   funnelNextKind,
   isFirstTimeFunnel,
@@ -36,7 +37,7 @@ export interface AuthBootstrapSupabase {
     onAuthStateChange(cb: (event: string, session: Session) => void): {
       data: { subscription: { unsubscribe(): void } };
     };
-    signOut(): Promise<unknown>;
+    signOut(opts?: { scope?: 'global' | 'local' | 'others' }): Promise<unknown>;
   };
 }
 
@@ -111,6 +112,8 @@ function reducer(state: State, action: Action): State {
     case 'signedOut':
       return { authState: 'anonymous', outcome: 'signedOut', user: null, funnelProfile: null };
     // 頁面直接 setUser（CompleteProfile、PaymentCheckout／Result、refreshUser）。
+    // 與 'profile' 不對稱、刻意不分流資料完整度：資料未齊者經 isFirstTimeFunnel 的
+    // profile gate 一樣算註冊中，頁首結果一致。
     // setUser(null) 只出現在登出路徑；提示由登出流程自己清。
     case 'setUser':
       return action.user
@@ -176,7 +179,8 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
         ingest(result.profile, true);
       } else if (result.kind === 'unauthorized') {
         endSession();
-        await supabase.auth.signOut();
+        // 網路失敗不留未處理例外、補本機登出（PR-B 會改成兩層確認的 endInvalidSession）。
+        await signOutWithFallback(supabase.auth);
       } else {
         // 冷啟動的暫時性錯誤：放掉 uid，之後同 uid 的 SIGNED_IN 可以再試。
         uidRef.current = null;

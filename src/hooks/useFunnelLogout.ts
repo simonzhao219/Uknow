@@ -10,6 +10,7 @@ import { UserContext } from '../App';
 import { useNotification } from '../components/notifications/NotificationContext';
 import { clearAuthHint } from '../utils/authHint';
 import { classifyMembershipGate } from '../utils/registrationFlow';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { createClient } from '../utils/supabase/client';
 
 export interface FunnelLogout {
@@ -36,21 +37,7 @@ export function useFunnelLogout(): FunnelLogout {
     // 已付款待開通：/profile 回來前只有提示時，看提示記的目的地（結果頁）。
     const activating = user ? classifyMembershipGate(user) === 'activating' : hintNext === 'result';
 
-    const supabase = createClient();
-    let localOnly = false;
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch {
-      // supabase-js 在網路錯誤時不清本機 session；不補 local 的話導 /login 後
-      // AuthPage 偵測到殘留 session 又把人拉回漏斗頁。
-      localOnly = true;
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch {
-        // 本機清除不會走網路；真的失敗也照樣清狀態、導頁。
-      }
-    }
+    const { localOnly } = await signOutWithFallback(createClient().auth);
 
     setUser(null);
     localStorage.removeItem('pendingUser');
