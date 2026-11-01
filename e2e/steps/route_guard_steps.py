@@ -322,7 +322,12 @@ def header_fits_one_row(page):
           const kids = [...row.querySelectorAll(':scope > *, :scope > * > *')]
             .filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
           const visible = kids.filter((el) => el.matches('a, button, [data-testid="auth-slot-placeholder"]'));
+          const logo = row.querySelector('a[href="/"] img').getBoundingClientRect();
           return {
+            logoOverlap: visible
+              .filter((el) => !el.contains(row.querySelector('a[href="/"] img')))
+              .map((el) => logo.right - el.getBoundingClientRect().left)
+              .filter((d) => d > 0.5),
             height: nav.getBoundingClientRect().height,
             tops: visible.map((el) => Math.round(el.getBoundingClientRect().top)),
             overflow: visible.map((el) => el.getBoundingClientRect().right - right).filter((d) => d > 0.5),
@@ -332,3 +337,4 @@ def header_fits_one_row(page):
     assert round(m["height"]) in (64, 65), f"header height {m['height']}"  # 64 + 1px border-b
     assert len(set(m["tops"])) <= 1 or max(m["tops"]) - min(m["tops"]) <= 12, f"wrapped: tops={m['tops']}"
     assert m["overflow"] == [], f"overflowing the row: {m['overflow']}"
+    assert m["logoOverlap"] == [], f"controls overlap the logo by {m['logoOverlap']}px"

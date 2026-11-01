@@ -121,8 +121,8 @@ export function Navbar() {
           />
         </Link>
 
-        {/* 右側容器固定高度、吃滿剩餘寬度：換版時只換子節點，容器本身不位移（S9 CLS=0）。 */}
-        <div className="flex h-11 min-w-0 flex-1 items-center justify-end space-x-4">
+        {/* 右側容器固定高度、吃滿剩餘寬度：換版時只換子節點，容器本身不位移（S9 CLS=0）；窄寬間距收小。 */}
+        <div className="flex h-11 min-w-0 flex-1 items-center justify-end space-x-2 sm:space-x-4">
           {view === 'guest' && (
             <>
               <Button variant="ghost" asChild>
@@ -150,7 +150,8 @@ export function Navbar() {
               return (
                 <>
                   {!onFunnelRoute && ctaHref && (
-                    <Button asChild>
+                    // 320px 時 logo＋全文鈕＋icon 鈕要同列（F1）：窄寬收一點左右留白。
+                    <Button asChild className="px-3 sm:px-4">
                       <Link
                         to={ctaHref}
                         aria-disabled={ctaPending ? 'true' : undefined}
