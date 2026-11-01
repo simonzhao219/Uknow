@@ -56,6 +56,10 @@
 1. 每日照片清理排程失敗時會自動開 issue，標題是「[production] 刊登照片孤兒清理失敗」。
 2. 第一筆正式站真付款完成後，確認發票有開立，`system_alerts` 也沒有誤報。
 
+**給第 4 波主 session（開局即做）**：核對 `purge-listing-photos.yml` 首輪實刪排程（台北 11/02 03:17＝UTC 11/01 19:17）那個 run 的
+step summary：確認綠燈，`candidateCount`／`removed` 數合理（基線預期 0，見第 3 波 review §3.2）；紅了照自動開的 issue 處理。
+結果記進本檔進度表，並補進第 3 波 review §2 未驗項的結論。
+
 ## 4. 第 3 波目錄退場
 
 由**第 4 波審查 session** 依 `launch-wave-3/review.md` §6 升級後，`git rm -r docs/plans/launch-wave-3/`。

@@ -3349,3 +3349,21 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：第一條列入下次框架整併；其餘為紀錄。
 
+
+## 2026-11-01｜漏網（流程、權限）｜第 3 波審查（`docs/plans/launch-wave-3/review.md`）
+
+- **改共用元件基底沒掃全部消費者**（漏網）：T1 為了給頁首兩顆鈕停用外觀，在共用 `Button` 基底加 `aria-disabled:pointer-events-none
+  aria-disabled:opacity-50`。後台十幾處刻意「0.3 秒後才灰化、仍可點擊」的 aria-disabled 鈕一起被改（業主裁決 K5），重新整理鈕滑鼠點不到。
+  jsdom 不載 Tailwind，vitest 全綠；T1 實作審查與主 session 都只看了 Navbar 兩顆鈕。規則：改 `src/components/ui/*` 的基底 class，
+  先 grep 全部消費者並在 PR 列影響面；樣式契約（例如「aria-disabled 仍收得到點擊」）寫進基底註解。
+- **晉升 journey 紅，重跑一次綠就判偶發**（流程）：#477 第一輪 2 failed（E3 完善資料頁、U1 任務卡），重跑綠即合 main，
+  沒人看過失敗當下的截圖或 trace（artifact 在 Azure blob，雲端 session 的 proxy 拿不到）。審查推論方向成立，但「沒有產品 bug」無法證實。
+  規則：判偶發前至少看一次現場（截圖、trace 或 `dump_page`）；拿不到時在留言寫明「未看現場」，並把缺的診斷補成下一波工項。
+- **「登出清快取」的規則範圍太窄**（漏網）：第 2 波只要求 `*Cache.ts` 在 `SIGNED_OUT` 清。本波發現範圍外還有兩處：
+  localStorage 的 `withdrawalBankData`（共用裝置會預填前一人的銀行帳號），以及換 uid 的 SIGNED_IN 不清快取。
+  規則改成「登出與換帳號要清所有**本機狀態**（模組層、sessionStorage、localStorage）」，盤點清單寫在 `onSignedOut` 註解。
+- **審查 session 代跑現場 SQL 的路徑被分類器擋**（誤擋／權限）：〈慣例〉寫「現場 SQL 交主 session 代跑」，
+  審查 session 以 send_message 送出含正式站唯讀 SQL 的請求，被 auto mode 分類器判為 Production Reads 擋下；改在中間回報說明需求後，主 session 主動代跑才拿到實數。
+  候選處置：業主允許該類 send_message，或改成主 session 在晉升後主動跑固定的現場 SQL、結果寫進 plan §8，審查 session 只讀 plan。
+
+處置：第一、三條列入下次框架整併；第二條建議寫進晉升 SOP；第四條待業主決定。
