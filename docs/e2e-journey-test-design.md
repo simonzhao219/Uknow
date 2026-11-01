@@ -179,6 +179,9 @@ notify」。CI 預設 sandbox 模式，連續失敗自動降級 webhook 模式�
 4. **Step 3** — 付款 $1,200（§4）；
 5. 付款完成斷言：儀表板顯示訂閱中、推薦碼已產生（`3 碼小寫英文 + 6 碼數字` 格式）。
 
+同一個 context 換人登入前，login builder 的 `localStorage.clear()` 也會清掉頁首的首繪提示
+`uknow:auth-hint`（形狀見 `e2e/conftest.py` 的 `seed_auth_hint`），下一位不會先看到前一位的頭像。
+
 **建置順序**：以「代」為序 BFS——家長必須先完成付款成為訂閱中，其推薦碼才能給下一代用。
 同一代內可用多個 Playwright context 平行（見 §11.2 的 rate limit 節流）。每人完成後把
 `email / password / user_id / referral_code` 寫入 `run_state.json`，供後續模組與 cleanup 使用。

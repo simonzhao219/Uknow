@@ -9,6 +9,7 @@
   definitions never construct these directly.
 """
 
+import json
 import os
 import socket
 import subprocess
@@ -17,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from config import BASE_URL, SUPABASE_PROJECT_REF
+from config import BASE_URL, DEFAULT_USER_ID, SUPABASE_PROJECT_REF
 from mocks.backend_api_mock import BackendApiMock
 from mocks.supabase_auth_mock import SupabaseAuthMock
 from mocks.supabase_rest_mock import SupabaseRestMock
@@ -275,3 +276,39 @@ def service_provider_detail_page(page):
 @pytest.fixture
 def create_service_provider_page(page):
     return CreateServiceProviderPage(page)
+
+
+@pytest.fixture
+def seed_auth_hint(context):
+    """Pre-write the app's first-paint auth hint (T1 auth-state-trust).
+
+    Contract — localStorage key ``uknow:auth-hint``, JSON::
+
+        {"v": 1, "kind": "member" | "funnel", "initial": "王", "uid8": "<user id[:8]>",
+         "next": "profile" | "checkout" | "result" | null, "at": <epoch ms>}
+
+    ``kind`` decides which header the very first render draws before /profile
+    answers (member avatar vs. the registration-in-progress logout); ``uid8`` lets
+    the app drop a hint that belongs to another account; ``next`` (funnel only)
+    picks the provisional "繼續完成註冊"/"查看開通進度" link. The app owns this key
+    (src/hooks/useAuthBootstrap.ts) — this fixture only seeds it.
+
+    Seeded once per tab (sessionStorage flag) so a later reload sees whatever
+    the app wrote, not this seed again."""
+
+    def seed(kind: str, initial: str = "王", uid: str = DEFAULT_USER_ID, next_kind=None):
+        hint = {
+            "v": 1,
+            "kind": kind,
+            "initial": initial,
+            "uid8": uid[:8],
+            "next": next_kind if kind == "funnel" else None,
+            "at": 1730000000000,
+        }
+        context.add_init_script(
+            "if (!sessionStorage.getItem('__e2e_hint_seeded')) {"
+            f" localStorage.setItem('uknow:auth-hint', {json.dumps(json.dumps(hint))});"
+            " sessionStorage.setItem('__e2e_hint_seeded', '1'); }"
+        )
+
+    return seed

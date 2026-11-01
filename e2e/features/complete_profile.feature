@@ -105,3 +105,13 @@ Feature: Complete profile
     And I confirm the referral code warning
     Then I should be redirected to "/dashboard"
     And I should see the profile locked notice
+
+  # 「稍後註冊」會刪掉帳號；頁首另有不刪帳號的「登出」。兩顆並存容易誤按，所以先跳
+  # 確認框說出後果並指向登出——返回（或 Esc）什麼都不刪、人也還在這頁（業主裁決 W3-12）。
+  Scenario: Choosing to register later asks first, and going back keeps the account
+    Given account deletions are recorded
+    When I click register later
+    Then I should see the text "稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。"
+    When I go back from the delete confirmation
+    Then no account deletion was requested
+    And I am still on the profile form with the logout button in the header

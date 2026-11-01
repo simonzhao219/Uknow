@@ -290,3 +290,116 @@ export function classifyInviteAcceptError(
 export function shouldRedirectToCompleteProfile(pathname: string): boolean {
   return pathname !== '/auth/complete-profile' && pathname !== '/auth/reset-password';
 }
+
+// ------------------------------------------------------------
+// 會籍分類與註冊漏斗（T1 auth-state-trust）
+// ------------------------------------------------------------
+
+/** `resolveMembershipRedirect`、`isFirstTimeFunnel` 共用的 profile 欄位子集。 */
+export interface GateProfile extends FunnelProfile {
+  isAdmin?: boolean | null;
+  suspended?: boolean | null;
+}
+
+export type MembershipGate = 'admin' | 'active' | 'activating' | 'renew' | 'profile' | 'checkout';
+
+/**
+ * 會籍守衛的短路決策表（由上而下，見 RequireMembershipRoute 的決策表註解）。
+ * 守衛導向（redirectForGate）與「首購漏斗」判定（isFirstTimeFunnel）共用這一份，
+ * 兩者不會各自走針。
+ */
+export function classifyMembershipGate(p: GateProfile): MembershipGate {
+  if (p.isAdmin) return 'admin';
+  if (p.accountStatus === 'active') return 'active';
+  if (p.paidAwaitingActivation) return 'activating';
+  if (p.subscriptionEndDate) return 'renew';
+  if ((p.registrationStep ?? 0) === 0 || !isProfileComplete(p)) return 'profile';
+  return 'checkout';
+}
+
+/**
+ * gate → 守衛導向路徑；null = 放行。`resolveMembershipRedirect` 是它的薄包裝——
+ * 放在這裡而非守衛元件檔，因為守衛元件 import App，本模組不能反向依賴它。
+ */
+export function redirectForGate(p: GateProfile, opts?: { allowExpired?: boolean }): string | null {
+  switch (classifyMembershipGate(p)) {
+    case 'admin':
+    case 'active':
+      return null;
+    // 已付款、後端收斂中 → 開通中頁面輪詢；絕不能把已付款的人送回結帳頁造成重複付款。
+    case 'activating':
+      return p.lastTradeNo ? `/payment/result?tradeNo=${p.lastTradeNo}` : '/payment/checkout';
+    // 曾是會員、已過期 → 直接續約，不重走註冊漏斗。
+    case 'renew':
+      return opts?.allowExpired ? null : '/payment/checkout';
+    case 'profile':
+      return '/auth/complete-profile';
+    // step 1（資料已填未付款）、或 step 2 但付款失敗 → 去結帳。
+    case 'checkout':
+      return '/payment/checkout';
+  }
+}
+
+/**
+ * 「註冊中（尚未成為會員）」：從未訂閱過、非 admin、未停權，且還在首購漏斗裡
+ * （資料未齊、未付款，或已付款待開通）。頁首只給登出（W2-22、D1＝A）。
+ * 曾是會員者（有 subscriptionEndDate）即使正在續約付款也維持頭像。
+ */
+export function isFirstTimeFunnel(p: GateProfile): boolean {
+  if (p.suspended || p.subscriptionEndDate) return false;
+  if (p.accountStatus === 'unknown') return false;
+  const gate = classifyMembershipGate(p);
+  return gate === 'activating' || gate === 'profile' || gate === 'checkout';
+}
+
+/** 註冊中的人「下一步」去哪（E4 鈕）；與守衛同一來源。非漏斗者回 null。 */
+export function nextFunnelRoute(p: GateProfile): string | null {
+  if (!isFirstTimeFunnel(p)) return null;
+  if (!isProfileComplete(p)) return '/auth/complete-profile';
+  return redirectForGate(p);
+}
+
+export type FunnelNextKind = 'profile' | 'checkout' | 'result';
+
+const FUNNEL_NEXT_ROUTES: Record<FunnelNextKind, string> = {
+  profile: '/auth/complete-profile',
+  checkout: '/payment/checkout',
+  result: '/payment/result',
+};
+
+/** 下一步路徑 → 目的地種類（存進本機提示，不存 tradeNo）。 */
+export function funnelNextKind(route: string | null): FunnelNextKind | null {
+  if (!route) return null;
+  const path = route.split('?')[0];
+  for (const [kind, target] of Object.entries(FUNNEL_NEXT_ROUTES)) {
+    if (path === target) return kind as FunnelNextKind;
+  }
+  return null;
+}
+
+/** 提示的目的地種類 → 首繪暫用連結（結果頁不帶 tradeNo，/profile 回來後補上）。 */
+export function routeForFunnelNext(next: FunnelNextKind | null): string | null {
+  return next ? FUNNEL_NEXT_ROUTES[next] : null;
+}
+
+/** E4 鈕文案依**目的地**決定：去結果頁是「查看開通進度」（F2），其餘「繼續完成註冊」。 */
+export function funnelCtaLabel(route: string | null): string {
+  return funnelNextKind(route) === 'result' ? '查看開通進度' : '繼續完成註冊';
+}
+
+/**
+ * 漏斗路由：判定前畫中性占位（D5）、漏斗頁首不多放「繼續完成註冊」。完整路徑精確
+ * 比對（去結尾斜線），不用前綴。與 shouldRedirectToCompleteProfile 的豁免清單語意
+ * 不同，各自獨立。
+ */
+export const FUNNEL_ROUTES: readonly string[] = [
+  '/auth/complete-profile',
+  '/auth/verify-otp',
+  '/payment/checkout',
+  '/payment/result',
+];
+
+export function isFunnelRoute(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return FUNNEL_ROUTES.includes(path);
+}

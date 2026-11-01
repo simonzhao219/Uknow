@@ -136,4 +136,14 @@ describe('buttonVariants', () => {
       expect(cls).not.toContain('bg-primary');
     }
   });
+
+  // ui-ux §9 進行中用 aria-disabled（不用原生 disabled，保留焦點與可及名稱）：外觀要和
+  // disabled 一樣看得出不能按，且點不到（Link 也不導頁）。
+  it('aria-disabled 與 disabled 同樣呈現停用外觀並擋住指標', () => {
+    for (const variant of ['default', 'ghost'] as const) {
+      const cls = classesOf(buttonVariants({ variant }));
+      expect(cls, variant).toContain('aria-disabled:opacity-50');
+      expect(cls, variant).toContain('aria-disabled:pointer-events-none');
+    }
+  });
 });

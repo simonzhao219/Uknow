@@ -1,52 +1,77 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ProfileFetchResult } from './fetchProfile';
 import { routeAfterVerifiedSession } from './routeAfterVerifiedSession';
 
-function makeDeps(fetchProfile: (token: string) => Promise<Response>) {
+function makeDeps(fetchProfile: () => Promise<ProfileFetchResult>) {
   return {
     fetchProfile: vi.fn(fetchProfile),
+    ingestProfile: vi.fn(),
     navigate: vi.fn(),
     showToast: vi.fn(),
   };
 }
 
-const jsonResponse = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const SESSION = { access_token: 'tok', user: { id: 'u1' } };
 
 describe('routeAfterVerifiedSession', () => {
   it('沒有 session 時保守帶去完善資料頁，不讀 profile', async () => {
-    const deps = makeDeps(async () => jsonResponse(200));
+    const deps = makeDeps(async () => ({ kind: 'ok', profile: {} }));
     await routeAfterVerifiedSession(null, deps);
     expect(deps.fetchProfile).not.toHaveBeenCalled();
     expect(deps.navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
   });
 
-  it('profile 回 200 時依 registrationStep 導向並帶上 access token', async () => {
-    const deps = makeDeps(async () => jsonResponse(200, { registrationStep: 1 }));
-    await routeAfterVerifiedSession({ access_token: 'tok' }, deps);
-    expect(deps.fetchProfile).toHaveBeenCalledWith('tok');
+  it('profile ok 時依 registrationStep 導向並以當場的 session 讀取', async () => {
+    const deps = makeDeps(async () => ({ kind: 'ok', profile: { registrationStep: 1 } }));
+    await routeAfterVerifiedSession(SESSION, deps);
+    expect(deps.fetchProfile).toHaveBeenCalledWith(SESSION);
     expect(deps.navigate).toHaveBeenCalledWith('/payment/checkout', { replace: true });
     expect(deps.showToast).not.toHaveBeenCalled();
   });
 
-  it('profile 回 401 時提示重新登入並導去登入頁', async () => {
-    const deps = makeDeps(async () => jsonResponse(401));
-    await routeAfterVerifiedSession({ access_token: 'tok' }, deps);
-    expect(deps.showToast).toHaveBeenCalledWith('驗證成功，但登入狀態異常，請重新登入', 'error');
-    expect(deps.navigate).toHaveBeenCalledWith('/login', { replace: true });
+  it('profile ok 時先回灌登入狀態再導頁（之後重新整理首繪即為漏斗頁首）', async () => {
+    const order: string[] = [];
+    const profile = { id: 'u1', registrationStep: 0 };
+    const deps = makeDeps(async () => ({ kind: 'ok', profile }));
+    deps.ingestProfile.mockImplementation(() => order.push('ingest'));
+    deps.navigate.mockImplementation(() => order.push('navigate'));
+    await routeAfterVerifiedSession(SESSION, deps);
+    expect(deps.ingestProfile).toHaveBeenCalledWith(profile);
+    expect(order).toEqual(['ingest', 'navigate']);
   });
 
-  it('profile 回其他非 2xx 時帶去完善資料頁，不登出', async () => {
-    const deps = makeDeps(async () => jsonResponse(404));
-    await routeAfterVerifiedSession({ access_token: 'tok' }, deps);
+  it('profile 回 401 時提示重新登入並導去登入頁、不回灌', async () => {
+    const deps = makeDeps(async () => ({ kind: 'unauthorized', status: 401 }));
+    await routeAfterVerifiedSession(SESSION, deps);
+    expect(deps.showToast).toHaveBeenCalledWith('驗證成功，但登入狀態異常，請重新登入', 'error');
+    expect(deps.navigate).toHaveBeenCalledWith('/login', { replace: true });
+    expect(deps.ingestProfile).not.toHaveBeenCalled();
+  });
+
+  it('profile 回 404 時帶去完善資料頁，不登出', async () => {
+    const deps = makeDeps(async () => ({ kind: 'unauthorized', status: 404 }));
+    await routeAfterVerifiedSession(SESSION, deps);
     expect(deps.navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
     expect(deps.showToast).not.toHaveBeenCalled();
+  });
+
+  it('暫時性錯誤時帶去完善資料頁', async () => {
+    const deps = makeDeps(async () => ({ kind: 'transient' }));
+    await routeAfterVerifiedSession(SESSION, deps);
+    expect(deps.navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
   });
 
   it('讀 profile 拋例外時帶去完善資料頁', async () => {
     const deps = makeDeps(async () => {
       throw new Error('network');
     });
-    await routeAfterVerifiedSession({ access_token: 'tok' }, deps);
+    await routeAfterVerifiedSession(SESSION, deps);
     expect(deps.navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
+  });
+
+  it('未提供 ingestProfile 時照常導向', async () => {
+    const deps = makeDeps(async () => ({ kind: 'ok', profile: { registrationStep: 3 } }));
+    await routeAfterVerifiedSession(SESSION, { ...deps, ingestProfile: undefined });
+    expect(deps.navigate).toHaveBeenCalledWith('/dashboard', { replace: true });
   });
 });

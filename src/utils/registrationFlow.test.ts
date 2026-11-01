@@ -12,7 +12,20 @@ import {
   classifyInviteAcceptError,
   resolveInviteEntry,
   shouldRedirectToCompleteProfile,
+  classifyMembershipGate,
+  redirectForGate,
+  isFirstTimeFunnel,
+  nextFunnelRoute,
+  funnelNextKind,
+  routeForFunnelNext,
+  funnelCtaLabel,
+  FUNNEL_ROUTES,
+  isFunnelRoute,
+  type GateProfile,
 } from './registrationFlow';
+import { resolveMembershipRedirect } from '../components/RequireMembershipRoute';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('resolvePostLoginAction — registrationStep 是唯一的導向來源', () => {
   it('step 3（完成）→ dashboard 並設定 user', () => {
@@ -423,5 +436,239 @@ describe('shouldRedirectToCompleteProfile', () => {
     ['/register', true],
   ])('%s → %s', (pathname, expected) => {
     expect(shouldRedirectToCompleteProfile(pathname)).toBe(expected);
+  });
+});
+
+// ------------------------------------------------------------
+// T1 auth-state-trust：會籍分類、首購漏斗判定、漏斗路由
+// ------------------------------------------------------------
+
+const COMPLETE = { name: '王小明', phone: '0912345678', birthDate: '1990-01-01' };
+
+/** 判定表八格（plan §2.1、§5 A1）。 */
+const CELLS: Record<string, GateProfile> = {
+  未齊: { registrationStep: 0, name: null, phone: null, birthDate: null, accountStatus: 'expired' },
+  step1: { ...COMPLETE, registrationStep: 1, accountStatus: 'expired' },
+  step2付款失敗: { ...COMPLETE, registrationStep: 2, accountStatus: 'expired' },
+  待開通: {
+    ...COMPLETE,
+    registrationStep: 2,
+    accountStatus: 'expired',
+    paidAwaitingActivation: true,
+    lastTradeNo: 'T123',
+  },
+  續約待開通: {
+    ...COMPLETE,
+    registrationStep: 3,
+    accountStatus: 'expired',
+    paidAwaitingActivation: true,
+    lastTradeNo: 'T456',
+    subscriptionEndDate: '2026-01-01',
+  },
+  續約: {
+    ...COMPLETE,
+    registrationStep: 3,
+    accountStatus: 'expired',
+    subscriptionEndDate: '2026-01-01',
+  },
+  admin: { registrationStep: 0, accountStatus: 'expired', isAdmin: true },
+  停權: { ...COMPLETE, registrationStep: 1, accountStatus: 'expired', suspended: true },
+  會員: {
+    ...COMPLETE,
+    registrationStep: 3,
+    accountStatus: 'active',
+    subscriptionEndDate: '2027-01-01',
+  },
+};
+
+describe('classifyMembershipGate', () => {
+  it.each([
+    ['未齊', 'profile'],
+    ['step1', 'checkout'],
+    ['step2付款失敗', 'checkout'],
+    ['待開通', 'activating'],
+    ['續約待開通', 'activating'],
+    ['續約', 'renew'],
+    ['admin', 'admin'],
+    ['會員', 'active'],
+  ])('%s 歸為 %s', (cell, gate) => {
+    expect(classifyMembershipGate(CELLS[cell])).toBe(gate);
+  });
+
+  it('step 1 但缺生日時歸為 profile', () => {
+    expect(classifyMembershipGate({ ...CELLS.step1, birthDate: null })).toBe('profile');
+  });
+});
+
+describe('redirectForGate', () => {
+  it('與 resolveMembershipRedirect 在判定表每格輸出相同', () => {
+    for (const p of Object.values(CELLS)) {
+      expect(redirectForGate(p)).toBe(resolveMembershipRedirect(p));
+      expect(redirectForGate(p, { allowExpired: true })).toBe(
+        resolveMembershipRedirect(p, { allowExpired: true }),
+      );
+    }
+  });
+
+  it('待開通有 lastTradeNo 時導結果頁並帶 tradeNo', () => {
+    expect(redirectForGate(CELLS.待開通)).toBe('/payment/result?tradeNo=T123');
+  });
+
+  it('待開通無 lastTradeNo 時導結帳頁', () => {
+    expect(redirectForGate({ ...CELLS.待開通, lastTradeNo: null })).toBe('/payment/checkout');
+  });
+
+  it('續約格在 allowExpired 時放行', () => {
+    expect(redirectForGate(CELLS.續約, { allowExpired: true })).toBeNull();
+    expect(redirectForGate(CELLS.續約)).toBe('/payment/checkout');
+  });
+});
+
+describe('isFirstTimeFunnel', () => {
+  it.each([
+    ['未齊', true],
+    ['step1', true],
+    ['step2付款失敗', true],
+    ['待開通', true],
+    ['續約待開通', false],
+    ['續約', false],
+    ['admin', false],
+    ['停權', false],
+    ['會員', false],
+  ])('%s → %s', (cell, expected) => {
+    expect(isFirstTimeFunnel(CELLS[cell])).toBe(expected);
+  });
+
+  it('accountStatus 為 unknown 時不算漏斗', () => {
+    expect(isFirstTimeFunnel({ ...CELLS.step1, accountStatus: 'unknown' })).toBe(false);
+  });
+
+  // 性質測試：組合所有影響判定的欄位，對照守衛的導向決策。
+  const grid: GateProfile[] = [];
+  for (const isAdmin of [false, true])
+    for (const accountStatus of ['active', 'expired'])
+      for (const paidAwaitingActivation of [false, true])
+        for (const lastTradeNo of [null, 'T1'])
+          for (const subscriptionEndDate of [null, '2026-01-01'])
+            for (const registrationStep of [0, 1, 2, 3])
+              for (const complete of [false, true])
+                for (const suspended of [false, true])
+                  grid.push({
+                    isAdmin,
+                    accountStatus,
+                    paidAwaitingActivation,
+                    lastTradeNo,
+                    subscriptionEndDate,
+                    registrationStep,
+                    suspended,
+                    ...(complete ? COMPLETE : { name: null, phone: null, birthDate: null }),
+                  });
+
+  it('每格與守衛導向一致（redirect 非 null 且非續約、未停權）', () => {
+    for (const p of grid) {
+      const expected =
+        resolveMembershipRedirect(p) !== null &&
+        classifyMembershipGate(p) !== 'renew' &&
+        !p.subscriptionEndDate &&
+        !p.suspended;
+      expect(isFirstTimeFunnel(p), JSON.stringify(p)).toBe(expected);
+    }
+  });
+
+  it('守衛放行者必定不是漏斗', () => {
+    for (const p of grid) {
+      if (resolveMembershipRedirect(p) === null) expect(isFirstTimeFunnel(p)).toBe(false);
+    }
+  });
+});
+
+describe('nextFunnelRoute', () => {
+  it('資料未齊導完善資料頁', () => {
+    expect(nextFunnelRoute(CELLS.未齊)).toBe('/auth/complete-profile');
+  });
+
+  it('首購未付款導結帳頁', () => {
+    expect(nextFunnelRoute(CELLS.step1)).toBe('/payment/checkout');
+    expect(nextFunnelRoute(CELLS.step2付款失敗)).toBe('/payment/checkout');
+  });
+
+  it('已付款待開通導結果頁並帶 tradeNo', () => {
+    expect(nextFunnelRoute(CELLS.待開通)).toBe('/payment/result?tradeNo=T123');
+  });
+
+  it('非漏斗者回 null', () => {
+    for (const cell of ['續約', '續約待開通', 'admin', '停權', '會員']) {
+      expect(nextFunnelRoute(CELLS[cell]), cell).toBeNull();
+    }
+  });
+});
+
+describe('funnelNextKind／routeForFunnelNext', () => {
+  it.each([
+    ['/auth/complete-profile', 'profile'],
+    ['/payment/checkout', 'checkout'],
+    ['/payment/result?tradeNo=T1', 'result'],
+    ['/payment/result', 'result'],
+  ] as const)('%s 歸為 %s', (route, kind) => {
+    expect(funnelNextKind(route)).toBe(kind);
+  });
+
+  it('null 或未知路徑回 null', () => {
+    expect(funnelNextKind(null)).toBeNull();
+    expect(funnelNextKind('/dashboard')).toBeNull();
+  });
+
+  it('提示的 next 對回暫用連結（結果頁不帶 tradeNo）', () => {
+    expect(routeForFunnelNext('profile')).toBe('/auth/complete-profile');
+    expect(routeForFunnelNext('checkout')).toBe('/payment/checkout');
+    expect(routeForFunnelNext('result')).toBe('/payment/result');
+    expect(routeForFunnelNext(null)).toBeNull();
+  });
+});
+
+describe('funnelCtaLabel', () => {
+  it('目的地為結果頁時顯示查看開通進度', () => {
+    expect(funnelCtaLabel('/payment/result?tradeNo=T1')).toBe('查看開通進度');
+    expect(funnelCtaLabel('/payment/result')).toBe('查看開通進度');
+  });
+
+  it('其餘目的地顯示繼續完成註冊', () => {
+    expect(funnelCtaLabel('/payment/checkout')).toBe('繼續完成註冊');
+    expect(funnelCtaLabel('/auth/complete-profile')).toBe('繼續完成註冊');
+  });
+
+  it('待開通但無 lastTradeNo 時文案依結帳頁目的地為繼續完成註冊', () => {
+    expect(funnelCtaLabel(nextFunnelRoute({ ...CELLS.待開通, lastTradeNo: null }))).toBe(
+      '繼續完成註冊',
+    );
+  });
+});
+
+describe('FUNNEL_ROUTES／isFunnelRoute', () => {
+  it('包含四條漏斗路由', () => {
+    expect([...FUNNEL_ROUTES].sort()).toEqual(
+      ['/auth/complete-profile', '/auth/verify-otp', '/payment/checkout', '/payment/result'].sort(),
+    );
+  });
+
+  it('每條漏斗路由在 App.tsx 都有對應的 Route', () => {
+    const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
+    for (const route of FUNNEL_ROUTES) {
+      // JSX 可能多行（`<Route` 換行後才接 `path=`），容許中間有空白。
+      expect(app, route).toMatch(new RegExp(`<Route\\s+path="${route}"`));
+    }
+  });
+
+  it('精確比對並容許結尾斜線', () => {
+    expect(isFunnelRoute('/payment/result')).toBe(true);
+    expect(isFunnelRoute('/payment/result/')).toBe(true);
+    expect(isFunnelRoute('/auth/verify-otp')).toBe(true);
+  });
+
+  it('非漏斗路由與前綴相似路徑回 false', () => {
+    expect(isFunnelRoute('/')).toBe(false);
+    expect(isFunnelRoute('/payment')).toBe(false);
+    expect(isFunnelRoute('/payment/result-x')).toBe(false);
+    expect(isFunnelRoute('/dashboard')).toBe(false);
   });
 });

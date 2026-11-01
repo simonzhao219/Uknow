@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useContext } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from './ui/input-otp';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
-import { buildApiUrl } from '../utils/apiClient';
+import { UserContext } from '../App';
+import { fetchProfileForSession } from '../utils/fetchProfile';
 import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
 import { routeAfterVerifiedSession } from '../utils/routeAfterVerifiedSession';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
@@ -14,6 +15,8 @@ import { BreakableEmail } from './common/BreakableEmail';
 export function OTPVerificationPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  // OTP 驗證後拿到的 /profile 回灌 App 的登入狀態：導去下一步前提示已寫好，之後重新整理首繪即正確。
+  const { ingestProfile } = useContext(UserContext);
   const { showToast } = useNotification();
   const supabase = createClient();
 
@@ -107,10 +110,8 @@ export function OTPVerificationPage() {
       // routeAfterVerifiedSession：不 setTimeout、不走 401 就自我登出的
       // apiRequestJson）。session 已經由 onAuthStateChange 讓 App.tsx 全域生效。
       await routeAfterVerifiedSession(data.session, {
-        fetchProfile: (accessToken) =>
-          fetch(buildApiUrl('/auth/profile'), {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }),
+        fetchProfile: (session) => fetchProfileForSession(session),
+        ingestProfile,
         navigate,
         showToast,
       });

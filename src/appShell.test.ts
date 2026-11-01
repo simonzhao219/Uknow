@@ -97,6 +97,149 @@ describe('會籍守衛新鮮度契約', () => {
   });
 });
 
+describe('登入狀態（T1 auth-state-trust）契約', () => {
+  // 函式欄位是穩定 identity 不列；狀態欄位漏列會讓消費者在該值變動時靜默不重繪。
+  it('UserContext 的 memo deps 涵蓋所有狀態欄位', () => {
+    const m = app.match(/const contextValue = useMemo\([\s\S]*?\[([^\]]*)\],\s*\);/);
+    expect(m, 'contextValue useMemo').not.toBeNull();
+    const deps = (m?.[1] ?? '').split(',').map((d) => d.trim());
+    for (const field of [
+      'user',
+      'isLoadingUser',
+      'authState',
+      'isFunnel',
+      'authView',
+      'nextFunnelRoute',
+      'hintInitial',
+      'hintNext',
+    ]) {
+      expect(deps, field).toContain(field);
+    }
+  });
+
+  it('App 的啟動流程走 useAuthBootstrap，不再自己 fetch /profile', () => {
+    expect(app).toMatch(/useAuthBootstrap\(/);
+    expect(app).not.toMatch(/buildApiUrl\('\/profile'\)/);
+  });
+
+  it('App 不再寫入 localStorage.user', () => {
+    expect(app).not.toMatch(/setItem\('user'/);
+  });
+
+  // 第 2 波審查 P2-5：首頁清單快取存活到分頁重整，換帳號不該沿用前一人的檢視狀態。
+  it('登出時重置首頁清單快取', () => {
+    // 以區段錨點比對（onSignedOut 到下一個注入鍵 onIncompleteProfile），不依賴縮排。
+    const m = app.match(/onSignedOut:[\s\S]*?onIncompleteProfile:/);
+    expect(m?.[0] ?? '').toMatch(/resetHomeListingsCache\(\)/);
+  });
+
+  // 解析後路徑比對（同 admin/ 組裝邊界的理由）：這些模組被 App import，反向 import 會循環。
+  it('auth 純函式模組與 useAuthBootstrap 不得 import App', () => {
+    const appPath = join(SRC, 'App');
+    const offenders: string[] = [];
+    for (const rel of [
+      'utils/authView.ts',
+      'utils/authHint.ts',
+      'utils/fetchProfile.ts',
+      'utils/registrationFlow.ts',
+      'hooks/useAuthBootstrap.ts',
+    ]) {
+      const full = join(SRC, rel);
+      // static 與動態 import 都算（單雙引號皆可）。
+      const specs = readFileSync(full, 'utf8').matchAll(
+        /(?:from\s+|import\(\s*)['"](\.[^'"]+)['"]/g,
+      );
+      for (const [, spec] of specs) {
+        if (resolve(dirname(full), spec) === appPath) offenders.push(`${rel} → ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  // A2b：/profile 只有一個 fetch 入口（模組單例，同 user id 合併），localStorage.user 零寫入。
+  const productFiles = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(full);
+      }
+    };
+    walk(SRC);
+    return out;
+  };
+
+  it('/profile 的 fetch 只出現在 utils/fetchProfile.ts', () => {
+    const offenders = productFiles()
+      .filter((f) => /buildApiUrl\('\/(auth\/)?profile'\)/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1));
+    expect(offenders).toEqual(['utils/fetchProfile.ts']);
+  });
+
+  it('產品碼不再寫入 localStorage.user', () => {
+    const offenders = productFiles()
+      .filter((f) => /setItem\('user'/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1));
+    expect(offenders).toEqual([]);
+  });
+
+  // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
+  it('apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session 都會清提示', () => {
+    for (const rel of [
+      'utils/apiClient.ts',
+      'components/CompleteProfile.tsx',
+      'components/AuthPage.tsx',
+    ]) {
+      expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(/clearAuthHint\(\)/);
+    }
+  });
+
+  // A3：BottomNav、main 底部留白、首頁 hasBottomNav 同一個判準（member／member-pending）。
+  it('main 底部留白與首頁 hasBottomNav 跟著頁首版本走', () => {
+    expect(app).toMatch(/showsMemberChrome\(authView\)[\s\S]{0,80}pb-24/);
+    const home = readFileSync(join(SRC, 'components', 'HomePage.tsx'), 'utf8');
+    expect(home).toMatch(/hasBottomNav=\{showsMemberChrome\(/);
+  });
+
+  // S11：提示的首字要等 session 的 uid 對上才給頁首，否則換帳號時首繪會閃前一人的首字。
+  it('頭像首字只在提示經 session 確認後才外露', () => {
+    expect(app).toMatch(/hintInitial = hintVerified \? /);
+  });
+
+  it('提示的寫入與清除只出現在白名單檔案', () => {
+    const allowed = new Set(
+      [
+        'App.tsx',
+        'hooks/useAuthBootstrap.ts',
+        'hooks/useFunnelLogout.ts',
+        'utils/apiClient.ts',
+        'utils/authHint.ts',
+        'components/CompleteProfile.tsx',
+        'components/Navbar.tsx',
+        'components/AuthPage.tsx',
+      ].map((r) => join(SRC, r)),
+    );
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+        if (allowed.has(full)) continue;
+        if (/\b(writeAuthHint|clearAuthHint)\b/.test(readFileSync(full, 'utf8'))) {
+          offenders.push(full.slice(SRC.length + 1));
+        }
+      }
+    };
+    walk(SRC);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('錯誤防線契約', () => {
   it('App 必須掛 ErrorBoundary', () => {
     expect(app).toMatch(/<ErrorBoundary[\s>]/);
