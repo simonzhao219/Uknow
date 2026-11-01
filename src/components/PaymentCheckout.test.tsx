@@ -10,7 +10,7 @@
 //      抑制不得誤傷使用者自己選的推薦人。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { createContext } from 'react';
 import { formatTwDate, subscriptionLastDay, twDayOf } from '../utils/twDate';
 
@@ -766,5 +766,58 @@ describe('PaymentCheckout 換推薦人驗證', () => {
       renewalMode: 'fresh',
       referredByCode: '8048901',
     });
+  });
+});
+
+// T1-B §2.6（R11）：沒有 pendingUser 時結帳頁自己讀 /profile；暫時性故障不再踢去登入頁，
+// 停在結帳頁顯示重試外框。只有 401／404 才導 /login。
+describe('結帳頁冷載入的暫時性故障', () => {
+  function stubProfile(...statuses: number[]) {
+    const seq = [...statuses];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (/\/profile(\?|$)/.test(String(url))) {
+          const status = seq.length > 1 ? (seq.shift() as number) : seq[0];
+          const body = status === 200 ? { registrationStep: 1, name: '王小明' } : {};
+          return new Response(JSON.stringify(body), { status });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+  }
+
+  function renderAtCheckout() {
+    return render(
+      <MemoryRouter initialEntries={['/payment/checkout']}>
+        <Routes>
+          <Route path="/payment/checkout" element={<PaymentCheckout />} />
+          <Route path="/login" element={<p>登入頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  beforeEach(() => localStorage.removeItem('pendingUser'));
+
+  it('/profile 5xx 時停在結帳頁顯示重試外框，不導登入頁', async () => {
+    stubProfile(503);
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it('按重試後 /profile 恢復時外框消失', async () => {
+    stubProfile(503, 200);
+    renderAtCheckout();
+    fireEvent.click(await screen.findByRole('button', { name: '重試' }));
+    await waitFor(() => expect(screen.queryByTestId('auth-degraded')).toBeNull());
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it.each([401, 404])('/profile %i 時照舊導登入頁', async (status) => {
+    stubProfile(status);
+    renderAtCheckout();
+    expect(await screen.findByText('登入頁')).toBeTruthy();
   });
 });

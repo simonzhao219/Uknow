@@ -328,6 +328,79 @@ describe('送出前確認對話框', () => {
   });
 });
 
+// T1-B §2.6（R8b）：/auth/register 回 503 PROFILE_UNAVAILABLE＝已寫入、讀不到。不說「註冊失敗」、
+// 不重送；refreshUser 接續成功路徑，拿不到就留本頁、持久提示＋重新載入、送出鈕停用（防重送遇 403）。
+describe('送出後資料已寫入但讀不回（503 PROFILE_UNAVAILABLE）', () => {
+  function stubRegister503() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response(
+              JSON.stringify({ error: { code: 'PROFILE_UNAVAILABLE', message: '暫時無法讀取' } }),
+              { status: 503 },
+            )
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+  }
+
+  function renderWithCheckout() {
+    render(
+      <MemoryRouter initialEntries={['/auth/complete-profile']}>
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/payment/checkout" element={<p>結帳頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  function submitConfirmed() {
+    fillValidForm();
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    showNotification.mock.calls[0][0].onConfirm();
+  }
+
+  beforeEach(() => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+    stubRegister503();
+  });
+
+  it('refreshUser 拿到資料時照成功路徑進結帳頁，不顯示註冊失敗', async () => {
+    refreshUser.mockResolvedValue({ registrationStep: 1, name: '王小明' });
+    renderWithCheckout();
+    submitConfirmed();
+    expect(await screen.findByText('結帳頁')).toBeTruthy();
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+
+  it('refreshUser 也拿不到時留本頁、持久提示可重新載入、送出鈕停用、草稿保留', async () => {
+    refreshUser.mockResolvedValue(null);
+    renderWithCheckout();
+    submitConfirmed();
+    expect(await screen.findByTestId('profile-saved-unconfirmed')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新載入資料' })).toBeTruthy();
+    expect(screen.getByTestId('profile-submit-button').getAttribute('aria-disabled')).toBe('true');
+    expect(loadProfileDraft().name).toBe('王小明');
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    const registerCalls = () =>
+      (fetch as unknown as { mock: { calls: [string][] } }).mock.calls.filter(([u]) =>
+        String(u).includes('/auth/register'),
+      );
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    expect(registerCalls()).toHaveLength(1);
+  });
+
+  it('按重新載入資料拿到資料時進結帳頁', async () => {
+    refreshUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ registrationStep: 1 });
+    renderWithCheckout();
+    submitConfirmed();
+    fireEvent.click(await screen.findByRole('button', { name: '重新載入資料' }));
+    expect(await screen.findByText('結帳頁')).toBeTruthy();
+  });
+});
+
 describe('送出時註冊已完成（403）', () => {
   // 掛載時的 profile 讀取讓它失敗 → 留在本頁(與本案無關,只為了不被導走)
   function stubRegister403() {
