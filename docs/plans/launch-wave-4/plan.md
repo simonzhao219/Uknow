@@ -131,7 +131,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
 | T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 實作中（B0 起；業主已親打 `/tdd-implement`） |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
-| P | （待開） | Sonnet | `fix/pages-root-redirect` | — | 開工中 |
+| P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | — | 施工中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
