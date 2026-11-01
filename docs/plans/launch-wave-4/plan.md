@@ -114,7 +114,7 @@ R3 P2-8（錨點在 listings 回 0 列時的 SOP）、P2-9（孤兒判準索引�
 第 3 波 §5 其餘：PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
 A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；
-子網域盤點＋完整 CSP；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
+子網域盤點＋完整 CSP；GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 評估以 Supabase pg_cron 或外部排程觸發關鍵 job；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
 
 ## 6. 業主待辦
 
@@ -131,8 +131,8 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | #486 ✅ 2b99700 | 收工 |
 | E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | #484 ✅ 266ad42 | 收工 |
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
-| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 實作中（B0 起；業主已親打 `/tdd-implement`） |
-| D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
+| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | #488（draft） | 修審查 P1／P2 |
+| D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | — | 施工中 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -154,3 +154,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 01:15 | P 交 #487（紅燈 `3969979`→綠燈 `16da520`）：純函式 `canonicalHost.ts`＋`main.tsx` render 前 `location.replace`，host 表格測試涵蓋前後綴繞過、預覽別名、大小寫與結尾點；未動 `_redirects`／`_headers`／CORS。主 session 審無 P0／P1 → **#487 合進 develop（efa1d06）**。未驗：Cloudflare 上實際導向待晉升後實測（§4 第 3 點）。必上剩 D | 11/02 開 D；T1-B 等業主親打 W4-20 授權 |
 | 11/02 02:05 | 業主在 T1-B session 親打 W4-20 授權；雲端 session 無法由人執行 `rm .claude/tdd-lock`，業主再以互動選項授權 T1-B 代為解鎖 → 只改那一條期望。**B4 綠**，全閘門 2747/2747；已 rebase 到含 #487 的 develop（HEAD `28a1a33`），紅綠 hash 全部改寫：B1 `e4fb277`→`c823fc9`、B2 `062cd3a`→`e04ebca`、B3 `2691b4e`→`c9d3bd1`、B4 `de4d58c`→`eea0e29`（實作 `4e29e17`）。T1-B 記兩條框架摩擦：雲端沒有人工解鎖通道；push 前自動 rebase 讓 progress 記的 hash 失效（交 R4 整併進 friction-log） | T1-B 續 B5 |
 | 11/02 02:20 | T1-B：**B5 綠**（`15cd222`，HEAD `772cebd`，全閘門 2767/2767）。進 B6 前回報 plan §2.4 與 R2 邀請交接衝突，業主裁決 **W4-22**（A 分流）；T1-B 先做不受影響的 B6a，B6b（AuthPage、e2e）依 W4-22 施工 | T1-B B6 |
+| 11/02 04:50 | ① 照片清理首輪實刪排程（UTC 19:17）**沒有觸發**：workflow 為 active，但 GitHub 排程大量跳過（每小時的 reconcile 過去 10 小時只跑 2 次）。業主同意手動 dispatch 正式站 dry-run → run 41348580533 綠：candidateCount 0、removed 0、物件 32、URL 30/30、刊登者 10/10；實刪模式仍待真實排程（已補第 3 波 review §2）。② Dependabot 週一批次（台北 02:00）未開任何 PR → 照計畫直接開 **D** `session_01MQovbCLxWoPdK9FnooQMgb`（Sonnet）。③ T1-B 交 **#488**（B1–B8 全綠，B7 未降級；規劃檔已清，`git show 5f5af22d:docs/plans/auth-transient-resilience/…`）。主 session＋獨立 Opus 審查員（專審登出／會話判定）：P0 0；**P1** AuthPage transient 導 `/dashboard` 對已 authenticated 的漏斗使用者造成 `/login`↔`/dashboard` 循環（主 session 讀碼核實）；P2 五條，三條本 PR 修（reducer transient 轉移條件、retryOnce 的 getSession 逾時、PaymentCheckout missing 未清 user），兩條列第 5 波 | T1-B 修 P1／P2 → 主 session 審最後 diff；D 施工；11/03 03:17 再看排程 |
