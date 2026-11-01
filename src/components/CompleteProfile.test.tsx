@@ -744,6 +744,37 @@ describe('稍後註冊的刪除確認', () => {
     expect(screen.getByRole('button', { name: '稍後註冊' })).toBeTruthy();
   });
 
+  it('刪除請求進行中兩顆鈕停用並顯示處理中，不會重複送出', async () => {
+    let finish!: () => void;
+    const urls = wireSession(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = () => resolve(new Response('{}', { status: 200 }));
+        }),
+    );
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    const busy = await screen.findByRole('button', { name: '處理中…' });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(busy);
+    expect(urls.filter((u) => u.endsWith('/auth/cancel-signup'))).toHaveLength(1);
+    finish();
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it('刪除回 401（帳號已不存在）時清本機並登出，不顯示失敗', async () => {
+    wireSession(async () => new Response('{}', { status: 401 }));
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+
   it('刪除請求斷線時提示稍後再試、不登出', async () => {
     wireSession(async () => {
       throw new TypeError('Failed to fetch');

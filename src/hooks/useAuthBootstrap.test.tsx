@@ -77,6 +77,7 @@ function setup(opts: { session?: ReturnType<typeof session> | null; pathname?: s
     ),
     clearInflight: vi.fn(),
     onSignedOut: vi.fn(),
+    onAccountSwitched: vi.fn(),
     onIncompleteProfile: vi.fn(),
     getPathname: () => opts.pathname ?? '/',
     storage: window.localStorage,
@@ -282,6 +283,24 @@ describe('useAuthBootstrap 換帳號（S11）', () => {
     expect(t.deps.fetchProfile).toHaveBeenLastCalledWith('tok-' + UID_B, { userId: UID_B });
     await t.respond(ok({ ...MEMBER, id: UID_B, name: '乙' }));
     expect(readAuthHint(window.localStorage)).toMatchObject({ initial: '乙', uid8: 'bbbbbbbb' });
+  });
+
+  it('SIGNED_IN 為另一個 uid 時呼叫 onAccountSwitched，不呼叫 onSignedOut', async () => {
+    const t = setup();
+    await t.resolveSession();
+    await t.respond(ok(MEMBER));
+    expect(t.deps.onAccountSwitched).not.toHaveBeenCalled();
+    await t.emit('SIGNED_IN', session(UID_B));
+    expect(t.deps.onAccountSwitched).toHaveBeenCalledTimes(1);
+    expect(t.deps.onSignedOut).not.toHaveBeenCalled();
+  });
+
+  it('首次登入與同 uid 重播都不呼叫 onAccountSwitched', async () => {
+    const t = setup();
+    await t.resolveSession();
+    await t.respond(ok(MEMBER));
+    await t.emit('SIGNED_IN', session(UID_A));
+    expect(t.deps.onAccountSwitched).not.toHaveBeenCalled();
   });
 
   it('同 uid 的 SIGNED_IN 重播不打 /profile、狀態不變', async () => {

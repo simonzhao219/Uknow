@@ -9,6 +9,15 @@ import { buttonVariants } from './button';
 const classesOf = (cls: string) => cls.split(/\s+/);
 
 describe('buttonVariants', () => {
+  // 契約：aria-disabled 的鈕仍收得到點擊（後台刻意如此，業主裁決 D、K5）。基底不得替所有消費者
+  // 加 pointer-events-none／opacity-50；需要停用外觀的鈕自己在 className 補。
+  it('基底不含 aria-disabled 的 pointer-events-none 與 opacity-50', () => {
+    const cls = classesOf(buttonVariants({}));
+    expect(cls).not.toContain('aria-disabled:pointer-events-none');
+    expect(cls).not.toContain('aria-disabled:opacity-50');
+    expect(cls).toContain('disabled:pointer-events-none');
+  });
+
   it('不給 tone 時是流程主要動作：primary 墨黑實心', () => {
     const cls = classesOf(buttonVariants({}));
     expect(cls).toContain('bg-primary');

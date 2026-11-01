@@ -299,6 +299,15 @@ describe('AuthPage 實作審查補測', () => {
     await waitFor(() => expect(sessionStorage.getItem('pending_invite_token')).toBe(VALID));
   });
 
+  it('清理過期 session 時 global 登出擲例外仍補本機登出', async () => {
+    signOut.mockRejectedValueOnce(new Error('network'));
+    getSession.mockResolvedValue({ data: { session: { access_token: 'stale' } } });
+    fetchMock.mockImplementationOnce(async () => json(401, {}));
+    renderAt(`/register?invite=${VALID}`);
+    await screen.findByLabelText('設定密碼');
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
   it('過期提示的天數綁連結效期常數', async () => {
     acceptResponse = async () => errorBody('expired');
     await landOnSetPassword();
