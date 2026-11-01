@@ -275,6 +275,12 @@ CONSTANTS: tuple[ConstantRule, ...] = (
         "supabase/functions/api/listing-photos.ts",
         r"ORPHAN_GRACE_HOURS = (\d+);",
     ),
+    ConstantRule(
+        "刊登照片孤兒單輪上限（個）",
+        r"單輪最多處理 ([\d,]+) 個（`ORPHAN_SWEEP_LIMIT`）",
+        "supabase/functions/api/listing-photos.ts",
+        r"ORPHAN_SWEEP_LIMIT = (\d+);",
+    ),
 )
 
 
@@ -572,6 +578,9 @@ def _rule(label: str) -> ConstantRule:
 
 _INVITE_TTL_SPEC = "邀請連結 7 天內有效，過期與否只由伺服器判斷。\n"
 _INVITE_PAYLOAD = "supabase/functions/_shared/referral-invite-payload.ts"
+_ORPHAN_LIMIT_FILE = "supabase/functions/api/listing-photos.ts"
+_ORPHAN_LIMIT_SPEC = "單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 orphanTotal 是截斷前的總數。\n"
+_ORPHAN_LIMIT_SRC = {_ORPHAN_LIMIT_FILE: "export const ORPHAN_SWEEP_LIMIT = 500;\n"}
 
 
 CASES: list[tuple[str, object, int]] = [
@@ -620,6 +629,29 @@ CASES: list[tuple[str, object, int]] = [
             (_rule("邀請連結效期（天）"),),
             _INVITE_TTL_SPEC,
             {_INVITE_PAYLOAD: "export const REFERRAL_INVITE_TOKEN_TTL_SECONDS = 604800;\n"},
+        ),
+        1,
+    ),
+    (
+        "孤兒單輪上限與規格書一致 → 通過",
+        lambda: _only((_rule("刊登照片孤兒單輪上限（個）"),), _ORPHAN_LIMIT_SPEC, _ORPHAN_LIMIT_SRC),
+        0,
+    ),
+    (
+        "孤兒單輪上限改了常數沒改規格書 → 違規",
+        lambda: _only(
+            (_rule("刊登照片孤兒單輪上限（個）"),),
+            _ORPHAN_LIMIT_SPEC,
+            {_ORPHAN_LIMIT_FILE: "export const ORPHAN_SWEEP_LIMIT = 1000;\n"},
+        ),
+        1,
+    ),
+    (
+        "孤兒單輪上限規格書措辭改動 → 抽不到即違規",
+        lambda: _only(
+            (_rule("刊登照片孤兒單輪上限（個）"),),
+            "每輪最多處理 500 個。\n",
+            _ORPHAN_LIMIT_SRC,
         ),
         1,
     ),

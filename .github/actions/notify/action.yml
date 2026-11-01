@@ -3,7 +3,9 @@ description: 把告警推到 LINE（最小版；Email 留第 2 波）。缺 Secr
 
 # ============================================================================
 # 失敗語意：
-# - 缺 Secrets：no-op＋step summary（exit 0）。「沒設定」是組態狀態，不是推送失敗。
+# - 缺 Secrets：no-op（exit 0），但以 ::error:: 註記與 step summary 標紅「LINE 推送未設定，
+#   本則告警沒有送出」。不 fail：「沒設定」是組態狀態，不是推送失敗；需要因此中止的
+#   呼叫端（reconcile）自己在呼叫前檢查。標紅是為了讓失敗路徑上的告警不再靜默消失。
 # - LINE 回非 200／連線失敗：印出狀態碼與回應前 200 字（不印 token）並 exit 1。
 #   以前這裡 exit 0，於是「以上次成功 run 為窗口」的呼叫端（reconcile-payments
 #   的 system_alerts 掃描）會把窗口前移、該輪告警永久遺失（2026-10-27 LINE token
@@ -55,9 +57,9 @@ runs:
       run: |
         set -uo pipefail
         if [ -z "$N_TOKEN" ] || [ -z "$N_TO" ]; then
-          echo "::warning::LINE_CHANNEL_TOKEN／LINE_ALERT_TO 未設定，告警沒有送出：[$N_LEVEL] $N_TITLE"
+          echo "::error title=LINE 推送未設定::LINE 推送未設定，本則告警沒有送出：[$N_LEVEL] $N_TITLE"
           {
-            echo "### ⚠️ 告警未送出"
+            echo "### ❌ LINE 推送未設定，本則告警沒有送出"
             echo ""
             echo "repository secrets \`LINE_CHANNEL_TOKEN\` 與 \`LINE_ALERT_TO\` 未設定，notify 為 no-op。"
             echo "- [$N_LEVEL] $N_TITLE"

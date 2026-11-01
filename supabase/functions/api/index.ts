@@ -2420,6 +2420,8 @@ async function alertOnPayUniRejection(data: Record<string, string>) {
         payuniStatus: data.Status ?? '',
         payuniMessage: data.Message ?? '',
         // 日期桶（UTC）：沒人 resolve 時，同一商店故障隔天會再推一次。
+        // toISOString() 是 UTC，所以換日點在台北 08:00（不是台北午夜）；營運以台北計時，
+        // 讀 system_alerts 時別把「隔天再推」誤認成台北日換日。刻意不改行為。
         // 比照 burst 的小時鍵；不動 logSystemAlertOnce 的去重語意。
         day: new Date().toISOString().slice(0, 10),
       },
