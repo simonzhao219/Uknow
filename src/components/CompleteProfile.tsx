@@ -1014,9 +1014,9 @@ export function CompleteProfile() {
             {/* 提交按鈕 */}
             <Button
               type="submit"
-              className="w-full"
               disabled={isLoading || isCancelling}
               aria-disabled={savedUnconfirmed || undefined}
+              className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={handleSubmit}
               data-testid="profile-submit-button"
             >

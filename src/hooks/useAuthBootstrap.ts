@@ -18,6 +18,7 @@ import {
   toUid8,
   writeAuthHint,
 } from '../utils/authHint';
+import { isRetryableAuthError } from '../utils/authErrors';
 import type { AuthState } from '../utils/authView';
 import { endInvalidSession as defaultEndInvalidSession } from '../utils/endInvalidSession';
 import {
@@ -186,14 +187,6 @@ const AUTO_RETRY_DELAY_MS = 1_000;
 
 const defaultPathname = () => (typeof window !== 'undefined' ? window.location.pathname : '/');
 
-/** getSession 回的錯誤是否屬暫時性（網路層、Auth 5xx／429）——這時 session:null 不代表沒登入。 */
-function isRetryableSessionError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const { name, status } = error as { name?: string; status?: number };
-  if (name === 'AuthRetryableFetchError') return true;
-  return status === 0 || (typeof status === 'number' && (status >= 500 || status === 429));
-}
-
 /** initial：冷啟動／新 uid；auto：首次失敗後的自動重試；manual：手動或事件重試。 */
 type AttemptKind = 'initial' | 'auto' | 'manual';
 
@@ -251,6 +244,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   );
 
   // 重試入口（自動、手動、事件共用）。宣告在 load／begin 之前，以 ref 互相引用。
+  const retryEnteringRef = useRef(false);
   const retryRef = useRef<(kind: 'auto' | 'manual') => Promise<void>>(async () => {});
 
   /** 暫時性失敗：冷啟動首次才排一次自動重試，其餘交給 reducer 進 degraded。 */
@@ -343,7 +337,17 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   );
 
   retryRef.current = async (kind: 'auto' | 'manual') => {
-    if (attempt.inFlight) return;
+    // 進入即擋（不等 load 內的 attempt.begin）：同一瞬間的 online＋visibilitychange 只發一個請求。
+    if (attempt.inFlight || retryEnteringRef.current) return;
+    retryEnteringRef.current = true;
+    try {
+      await retryOnce(kind);
+    } finally {
+      retryEnteringRef.current = false;
+    }
+  };
+
+  const retryOnce = async (kind: 'auto' | 'manual') => {
     attempt.cancel();
     if (kind === 'manual') dispatch({ type: 'retry' });
     const gen = genRef.current;
@@ -359,7 +363,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     const token = session?.access_token;
     const uid = session?.user?.id;
     if (!token || !uid) {
-      if (isRetryableSessionError(res.error)) onTransient(kind);
+      if (isRetryableAuthError(res.error)) onTransient(kind);
       else endSession();
       return;
     }
@@ -385,7 +389,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
         if (session?.access_token) {
           sessionCheckRef.current = 'clean';
           begin(session);
-        } else if (isRetryableSessionError(error)) {
+        } else if (isRetryableAuthError(error)) {
           // 初始化 refresh 暫時失敗：不是「沒登入」，不清提示，走同一條重試／degraded。
           sessionCheckRef.current = 'error';
           if (uidRef.current === null) onTransient('initial');
@@ -397,7 +401,12 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
       })
       .catch(() => {
         clearTimeout(stallTimer);
-        if (mountedRef.current) setSessionStalled(true);
+        if (!mountedRef.current) return;
+        setSessionStalled(true);
+        // 連 session 都讀不到：不知道有沒有登入，不能停在判定中（守衛會一直轉圈）——
+        // 走同一條自動重試／degraded（頁首由 sessionStalled 安全出口畫訪客版）。
+        sessionCheckRef.current = 'error';
+        if (uidRef.current === null) onTransient('initial');
       });
 
     const {

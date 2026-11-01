@@ -294,7 +294,7 @@ function AppContent() {
             {/* tabIndex=-1：degraded 外框的重試成功後，焦點交給 main（AuthDegradedFrame）。 */}
             <main
               tabIndex={-1}
-              className={`container mx-auto px-4 py-6 flex-1 outline-none ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
+              className={`container mx-auto px-4 py-6 flex-1 outline-none scroll-mt-20 ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
             >
               {/* resetKey=路由路徑：一頁壞掉不該讓整個 session 的內容區
                   都停在後備畫面（見 ErrorBoundary 的 resetKey 說明）。 */}

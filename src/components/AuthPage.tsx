@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -13,6 +13,7 @@ import { endInvalidSession } from '../utils/endInvalidSession';
 import { useMemberLogout } from '../hooks/useMemberLogout';
 import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
 import { StatusCallout } from './ui/status-callout';
+import { RouteAuthLoading } from './RouteAuthLoading';
 import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
@@ -75,6 +76,15 @@ export function AuthPage() {
 
   const { user, setUser, ingestProfile, authAnomaly } = useContext(UserContext);
   const memberLogout = useMemberLogout();
+  // 帳號異常說明的登出：進行中 aria-disabled＋ref 防連點（useMemberLogout 內有短暫等待）。
+  const [anomalySigningOut, setAnomalySigningOut] = useState(false);
+  const anomalySigningOutRef = useRef(false);
+  const handleAnomalySignOut = () => {
+    if (anomalySigningOutRef.current) return;
+    anomalySigningOutRef.current = true;
+    setAnomalySigningOut(true);
+    void memberLogout();
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -585,7 +595,9 @@ export function AuthPage() {
                 type="button"
                 tone="secondary"
                 container="destructive"
-                onClick={() => void memberLogout()}
+                aria-disabled={anomalySigningOut || undefined}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                onClick={handleAnomalySignOut}
               >
                 登出
               </Button>
@@ -601,13 +613,7 @@ export function AuthPage() {
 
   // 已確認有 session、正在驗證（非邀請入口）：不畫可輸入的登入表單。
   if (checkingExistingSession && inviteEntry?.kind !== 'valid') {
-    return (
-      <div className="max-w-md mx-auto mt-12 flex justify-center">
-        <output aria-busy="true" className="text-sm text-muted-foreground">
-          載入中…
-        </output>
-      </div>
-    );
+    return <RouteAuthLoading />;
   }
 
   return (

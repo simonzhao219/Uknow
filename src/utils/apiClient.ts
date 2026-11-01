@@ -7,6 +7,7 @@
 import { getAccessToken } from './auth';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
+import { isRetryableAuthError } from './authErrors';
 import { endInvalidSession } from './endInvalidSession';
 import { fetchProfileForSession, PROFILE_RETRY_TIMEOUT_MS } from './fetchProfile';
 
@@ -31,14 +32,6 @@ const RETRY_STILL_401 = 'RETRY_STILL_401';
 
 const authUnavailable = () => new ApiError('連線不穩，請稍後再試', 503, 'AUTH_UNAVAILABLE');
 const sessionInvalid = () => new ApiError('登入已過期，請重新登入', 401, SESSION_INVALID);
-
-/** refresh 錯誤是否屬暫時性：網路層（AuthRetryableFetchError）、Auth 5xx、429。 */
-function isRetryableAuthError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const { name, status } = error as { name?: string; status?: number };
-  if (name === 'AuthRetryableFetchError') return true;
-  return status === 0 || (typeof status === 'number' && (status >= 500 || status === 429));
-}
 
 /** 第二層：refresh 成功卻仍 401，用 /profile 分辨是 session 無效還是端點自己的 401。 */
 async function confirmSession(session: {
