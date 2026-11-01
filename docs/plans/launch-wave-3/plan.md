@@ -123,7 +123,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
 | K | `session_01MQovbDHyiASTQXhQNxSsU7` | Sonnet | `fix/alert-pipeline-gaps` | #475 ✅ 8912099 | 收工 |
 | T1 審查 | `session_01MQovbDpor2j3PV7r33VfUP` | Opus | 唯讀（報告交 T1 寫入） | #466 | 收工（P0 0／P1 3／P2 14） |
-| R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
+| R3 | `session_01MQovbDJ5ew5zqogskJvNLu` | Opus | `docs/wave3-review`（＋第 2 波退場 PR） | — | 審查中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -147,3 +147,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 12:46 | 開晉升 PR **#477**（develop→main，`04b869e`）。journey-full 第一輪紅：2 failed／42 skipped，失敗點是 E3 完善資料頁 `#name` 逾時、U1 任務卡「1 / 8」。T1 對照程式路徑，找不到與 #466 的因果。重跑一次後 146 passed／0 skipped，判定為偶發；第 4 波候選：在這兩個步驟補 `dump_page` | 合 main |
 | 11/01 13:38 | **#477 合進 main（1f61e68）**。main CI push 綠 → deploy-supabase run 41277716004 等待核准 | 業主核准 production |
 | 11/01 15:37 | 業主核准 `production`，deploy-supabase 成功，`/health` sha 煙霧測試通過。主 session 唯讀 SQL：兩支 migration 已套用、孤兒判準 4 個函式在、`listings_delete_own` 已撤、`admin_list_members` 有新欄位。deploy-smoke 手動 run 41285941139 綠（正式站 build-sha 相符、PayUni 閘門正常）。**第 3 波晉升完成** | 業主 11/04 前核對照片候選清單；開 R3 審查 session；develop `RECONCILE_SECRET` 仍待設 |
+| 11/01 16:05 | 業主：現在開 R3。開 **R3** `session_01MQovbDJ5ew5zqogskJvNLu`（Opus）：範圍 `5b6a790..1f61e68`，四視角加反駁，上線後現場（照片清理首次排程在台北 11/02 03:17），兼做 `launch-wave-2/` 退場；現場 SQL 由主 session 代跑 | 等 R3 報告；業主 11/04 前核對照片清單 |
