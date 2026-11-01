@@ -143,6 +143,9 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
       'utils/fetchProfile.ts',
       'utils/registrationFlow.ts',
       'hooks/useAuthBootstrap.ts',
+      // T1-B：零依賴網址模組與無效 session 清理，被 apiClient／bootstrap import。
+      'utils/apiUrl.ts',
+      'utils/endInvalidSession.ts',
     ]) {
       const full = join(SRC, rel);
       // static 與動態 import 都算（單雙引號皆可）。
@@ -185,13 +188,20 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
   });
 
   // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
+  // T1-B：無效 session 的清理收斂到 endInvalidSession（內含 clearAuthHint），呼叫它等價於
+  // 直接清提示——守的行為不變（無效 session 一定清提示），只是多認一個收斂後的入口。
   it('apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session 都會清提示', () => {
+    expect(readFileSync(join(SRC, 'utils/endInvalidSession.ts'), 'utf8')).toMatch(
+      /clearAuthHint\(/,
+    );
     for (const rel of [
       'utils/apiClient.ts',
       'components/CompleteProfile.tsx',
       'components/AuthPage.tsx',
     ]) {
-      expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(/clearAuthHint\(\)/);
+      expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(
+        /clearAuthHint\(\)|endInvalidSession\(/,
+      );
     }
   });
 
@@ -215,6 +225,7 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
         'hooks/useFunnelLogout.ts',
         'utils/apiClient.ts',
         'utils/authHint.ts',
+        'utils/endInvalidSession.ts',
         'components/CompleteProfile.tsx',
         'components/Navbar.tsx',
         'components/AuthPage.tsx',
