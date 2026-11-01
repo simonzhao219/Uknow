@@ -815,6 +815,25 @@ describe('結帳頁冷載入的暫時性故障', () => {
     expect(screen.queryByText('登入頁')).toBeNull();
   });
 
+  // #488 審查 P2-3：context 的 user 還在時 AuthPage 會立刻把人導回會員中心，異常說明看不到——先清 user。
+  it('/profile 404 時先清 context 的 user 再導登入頁', async () => {
+    stubProfile(404);
+    const setUser = vi.fn();
+    const { UserContext } = await import('../App');
+    render(
+      <UserContext.Provider value={{ user: { id: 'u1' }, setUser } as never}>
+        <MemoryRouter initialEntries={['/payment/checkout']}>
+          <Routes>
+            <Route path="/payment/checkout" element={<PaymentCheckout />} />
+            <Route path="/login" element={<p>登入頁</p>} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+    expect(await screen.findByText('登入頁')).toBeTruthy();
+    expect(setUser).toHaveBeenCalledWith(null);
+  });
+
   it.each([401, 404])('/profile %i 時照舊導登入頁', async (status) => {
     stubProfile(status);
     renderAtCheckout();

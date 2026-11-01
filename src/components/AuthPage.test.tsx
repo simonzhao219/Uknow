@@ -425,6 +425,55 @@ describe('AuthPage 暫時性故障與帳號資料異常（T1-B）', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
+  // #488 審查 P1：bootstrap 已確認是註冊中（authenticated、user=null）時導 /dashboard 會被守衛彈回 /login，
+  // 離線時形成導頁循環——改導註冊下一步。
+  it('註冊中的人在登入頁遇 /profile 5xx 時導去註冊下一步，不導會員中心', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(503);
+    render(
+      <UserContext.Provider
+        value={
+          {
+            user: null,
+            setUser: () => {},
+            authState: 'authenticated',
+            nextFunnelRoute: '/auth/complete-profile',
+          } as never
+        }
+      >
+        <MemoryRouter initialEntries={['/login']}>
+          <AuthPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/auth/complete-profile'),
+    );
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('已確認未登入（anonymous）時遇 /profile 5xx 留在登入頁', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(503);
+    render(
+      <UserContext.Provider
+        value={{ user: null, setUser: () => {}, authState: 'anonymous' } as never}
+      >
+        <MemoryRouter initialEntries={['/login']}>
+          <AuthPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    expect(screen.getByTestId('location').textContent).toBe('/login');
+  });
+
   it('getSession 擲例外時不登出、留在登入頁', async () => {
     getSession.mockRejectedValue(new Error('storage locked'));
     renderAt('/login');

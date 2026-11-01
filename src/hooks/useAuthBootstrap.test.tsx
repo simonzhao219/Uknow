@@ -792,6 +792,47 @@ describe('useAuthBootstrap 暫時性故障（T1-B degraded）', () => {
     expect(readAuthHint(window.localStorage)).toMatchObject({ kind: 'member' });
   });
 
+  // #488 審查 P2-1：auth-js 遇 refresh 429 會自己移除 session 並廣播 SIGNED_OUT；之後 getSession 回
+  // null＋429 不得把已登出翻成 degraded（閃一下重試框）。
+  it('已收到 SIGNED_OUT 後 getSession 回可重試錯誤時維持 signedOut、不排重試', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    await t.emit('SIGNED_OUT', null);
+    await t.resolveSessionWith({
+      data: { session: null },
+      error: { name: 'AuthApiError', status: 429, message: 'rate limited' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(t.hook.result.current.outcome).toBe('signedOut');
+    expect(t.hook.result.current.authState).toBe('anonymous');
+    expect(t.deps.supabase.auth.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  // #488 審查 P2-2：重試時 getSession 卡住（auth-js refresh 不回）不能讓重試永遠卡在進行中。
+  it('重試時 getSession 卡住超過逾時就算這次失敗，之後還能再重試', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    await toDegraded(t);
+    t.deps.supabase.auth.getSession.mockImplementation(() => new Promise(() => {}));
+    await act(async () => {
+      void t.hook.result.current.retryAuth();
+    });
+    expect(t.hook.result.current.isRetrying).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(t.hook.result.current.isRetrying).toBe(false);
+    expect(t.hook.result.current.failedAgain).toBe(true);
+    t.setSession(session(UID_A));
+    await act(async () => {
+      void t.hook.result.current.retryAuth();
+    });
+    await flush();
+    expect(t.deps.fetchProfile).toHaveBeenCalledTimes(3);
+  });
+
   it('已付款待開通者的重試回應（未自癒的 step 2）照收', async () => {
     vi.useFakeTimers();
     const PAID_PENDING = {
