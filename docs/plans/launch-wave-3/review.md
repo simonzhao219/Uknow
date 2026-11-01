@@ -78,7 +78,7 @@
 
 | # | 檔案:行 | 內容 | 建議 |
 |---|---|---|---|
-| 1 | `src/components/ui/button.tsx:24` | **T1 改了共用 Button 基底**：加 `aria-disabled:pointer-events-none aria-disabled:opacity-50`，本意只是給 Navbar 兩顆鈕停用外觀（`6038efe5`）。<br>後台的 aria-disabled 鈕刻意「停用外觀延遲 0.3 秒」（業主裁決 D、K5；`remittanceGate.ts:4-5`、`adminBusy.ts` 的 `PAUSED_LOOK`）。改動後，提領頁每次背景重讀，標記已匯款、查看、批次、CSV、載入更多都會立刻閃灰；同列的勾選框不是 Button，不閃，外觀也不一致。<br>`pointer-events-none` 讓重新整理鈕在自動更新途中點不到：它設計上可以按，按了會接上「仍在更新」（`useRefreshAnnouncer.ts:7`）。現在只剩鍵盤能觸發；CSV 鈕的 `title` 提示也不再出現。<br>jsdom 不載 Tailwind，所以 vitest 綠。`AdminToolbar.tsx:95` 的註解「Button 基底只有 disabled: 的灰化」已失真 | **建議第 4 波優先**。從基底拿掉這兩個 class，改在 Navbar 兩顆鈕的 className 補；同 PR 修 `AdminToolbar.tsx:95` 註解，並寫明「aria-disabled 的鈕仍收得到點擊」的契約 |
+| 1 | `src/components/ui/button.tsx:24` | **T1 改了共用 Button 基底**：加 `aria-disabled:pointer-events-none aria-disabled:opacity-50`，本意只是給 Navbar 兩顆鈕停用外觀（`6038efe5`）。<br>後台的 aria-disabled 鈕刻意「停用外觀延遲 0.3 秒」（業主裁決 D、K5；`remittanceGate.ts:4-5`、`adminBusy.ts` 的 `PAUSED_LOOK`）。改動後，提領頁每次背景重讀，標記已匯款、查看、批次、CSV、載入更多都會立刻閃灰；同列的勾選框不是 Button，不閃，外觀也不一致。<br>`pointer-events-none` 讓重新整理鈕在自動更新途中點不到：它設計上可以按，按了會接上「仍在更新」（`useRefreshAnnouncer.ts:7`）。現在只剩鍵盤能觸發；CSV 鈕的 `title` 提示也不再出現。<br>jsdom 不載 Tailwind，所以 vitest 綠。`AdminToolbar.tsx:95` 的註解「Button 基底只有 disabled: 的灰化」已失真 | **第 4 波第一個工項（W3-15）**。從基底拿掉這兩個 class，改在 Navbar 兩顆鈕的 className 補；同 PR 修 `AdminToolbar.tsx:95` 註解，並寫明「aria-disabled 的鈕仍收得到點擊」的契約 |
 | 2 | `src/hooks/useAuthBootstrap.ts:192-212` | 偵測到**不同 uid 的 SIGNED_IN** 時只丟 hint、gen+1，不做 `SIGNED_OUT` 那組清理（`clearCache`、`resetHomeListingsCache`）。<br>auth-js 跨分頁會廣播 SIGNED_OUT，所以一般的「另一分頁先登出再登入」不受影響。會走到的只有兩條：A 已登入時 B 從 `/forgot-password` 的重設信連結進站；分頁凍結漏收廣播。<br>殘留只是本分頁原本畫給 A 的任務、獎勵、推薦網路，直到下次 revalidate。這是既有行為（`5b6a790:src/App.tsx:193-212` 相同），T1 原樣搬入，`adminCache.ts:12` 註解自己點名過 | 換 uid 分支補呼叫同一組快取清理（不清邀請 token）；併 P2-1 的小 PR |
 | 3 | `src/components/reward/WithdrawalProcess.tsx:137`、`:421` | **範圍外、既有**：提領成功後把銀行代碼與帳號存進 localStorage `withdrawalBankData`，鍵不含 uid，登出也不清（`App.tsx` 的 `SIGNED_OUT` 與 Navbar 只清 `sb-*`、`user`、`pendingSession`）。共用裝置上，下一位會員開提領流程會被預填前一人的帳號；沒注意就送出，錢會匯進前一人的帳戶 | 第 4 波：鍵加 uid，或 `SIGNED_OUT` 時清。加進「登出清所有本機狀態」的盤點（§4.2-2） |
 | 4 | `src/components/CompleteProfile.tsx:618-661`、`:961-991` | Q7「確定刪除」後確認框立刻關、沒有 busy 狀態：弱網下畫面無回饋，紅框鈕可以再點一次。反駁後降級：重送要兩次刻意操作，第二次只會多一則「未授權」或「刪除失敗」toast，不會多刪任何東西。<br>同一處的裸 `fetch`（`:629-644`）：刪除成功但回應遺失時，前端顯示失敗、停在原頁；重試得到 401「未授權」，沒有 401 處理，只能重整 | 加 `isCancelling` 停用兩顆鈕並顯示「處理中」；401 視為帳號已不存在，走清本機＋`signOutWithFallback` |
@@ -98,7 +98,7 @@
 | 18 | `docs/uknow-software-specification.md`（§3 `/` 列、§2.1） | 規格書失真與缺漏：<br>首頁行為（返回還原篩選與捲動、點 logo 清篩選並回頂端；W2-24、W3-9）只存在程式與測試。<br>§2.1「註冊中＝從未訂閱過」與 F1 實作（資料未齊一律走註冊中頁首）不符。<br>§2.1 第 1 點寫「LINE 內建瀏覽器」會閃訪客版，易被讀成「每次」；實際只有第一次登入（hint 與 session 同在 localStorage） | 第 4 波主 session 回頭修規格書（§6） |
 | 19 | `docs/plans/launch-wave-3/plan.md` §5 | 有幾項既沒做，§5 也沒列，又沒寫「接受」，等於靜默擱置：<br>第 2 波 P2-8（捲動還原落點）、P2-9（deploy-smoke 寬限以 committer 時間計）、P2-11（`payuni-merchant` 去重鍵含 Message 原文）。<br>T1 的降級與記債：Navbar 會員登出的 startTransition、載入態可讀文字、S5／S8 測試強度、請求恰一次 | 第 4 波 plan §5 補上，各附觸發條件 |
 | 20 | `e2e/steps/route_guard_steps.py:263-266` | T1 驗收 S1 的 BottomNav 子句只斷言「最終存在」（`to_have_count(1, timeout=5000)`），證不出 PR 摘要寫的「`/profile` 回來前就已出現」。需求視角提 P1，本 session 降級：這是測試強度，不是行為錯誤；業主 A3 實機截圖驗過首繪 | 記債已在 #466；第 4 波以 observer 記錄首現時點 |
-| 21 | `docs/supabase-setup-checklist.md`「附錄：正式站清空測試資料 SOP」 | 長期文件裡留著可直接執行的 `delete from auth.users;`。#468 依第 1 波 §6 升級進來，已有「不得再整批全清」警語 | **需業主裁決**：維持（演練價值）或只留原則、SQL 本體改以 `git show` 取回 |
+| 21 | `docs/supabase-setup-checklist.md`「附錄：正式站清空測試資料 SOP」 | 長期文件裡留著可直接執行的 `delete from auth.users;`。#468 依第 1 波 §6 升級進來，已有「不得再整批全清」警語 | **已處置（W3-14，業主 11/01）**：只留原則，SQL 本體改以 `git show 3461f2bf:docs/supabase-setup-checklist.md` 取回；本 PR 改寫該附錄 |
 | 22 | `supabase/functions/api/index.ts:2419-2425` 一帶 | W3-5 的日期桶用 UTC（`toISOString().slice(0,10)`），換日點在台北 08:00；營運以台北計時，沒有註明 | 在註解寫明 UTC，或改台北日；低 |
 
 ### 1.4 被反駁推翻或降級的
@@ -206,8 +206,8 @@
 
 1. **業主**：照片清理 `PHOTO_PURGE_LIVE` 在 11/13 前核對候選清單後再開（plan §6-6）；develop 的 `RECONCILE_SECRET`（issue #476，plan §6-3）。
 2. **主 session**：第一筆正式站真付款後確認發票與 `system_alerts`（§3.3 部署後仍 0 筆）。
-3. **業主裁決**：P2-21（checklist 的清空 SQL 留不留）。
-4. **第 4 波**：P2-1＋P2-2＋P2-4＋P2-5 可併一支小 PR（共用 Button、登出與換帳號清理、cancel-signup busy 與 401）；P2-3（提領帳號預填）建議同批。
+3. ~~業主裁決 P2-21~~：W3-14 只留原則，本 PR 已改。
+4. **第 4 波第一個工項（W3-15，業主 11/01）**：P2-1＋P2-2＋P2-3＋P2-4＋P2-5 併一支小 PR（共用 Button 的 aria-disabled 樣式、換帳號清理、提領銀行帳號 localStorage 登出不清、cancel-signup busy 與 401、401／AuthPage 改走 `signOutWithFallback`）。本 PR 不動程式碼。
 5. **第 4 波 plan §5**：補 P2-19 列的靜默擱置項，並收 P2-6、P2-7、P2-12、P2-13、P2-15。
 6. 失敗 run 的 artifact `journey-results-41274370205`（90 日保留）若要確認 §3.1，下載看 E3／U1 的截圖。
 
