@@ -12,8 +12,8 @@
 | B0 | 開工前置（F1 合併、rebase、結構快照、deno） | ✅ 完成 | — | — |
 | B1 | 後端 authenticate／ProfileReadError 503／register post-write／?retry=1 | ✅ 綠（DB 整合測試待 CI） | 537a368d | d754e360 |
 | B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ✅ 綠 | 8f542770 | be189101 |
-| B3 | endInvalidSession＋appShell 等價改寫 | ⬜ 未開始 | | |
-| B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | ⬜ 未開始 | | |
+| B3 | endInvalidSession＋appShell 等價改寫 | ✅ 綠 | dd87963a | 2a69c8ca |
+| B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | 🔴 紅燈中（等裁決，見 Blockers） | 2108ce3c | |
 | B5 | 入口與漏斗頁：routeAfterVerifiedSession、AuthPage、PaymentCheckout、CompleteProfile | ⬜ 未開始 | | |
 | B6 | 呈現：AuthDegradedNotice、守衛、authView、e2e | ⬜ 未開始 | | |
 | B7 | apiClient 兩層確認（可降級） | ⬜ 未開始 | | |
@@ -22,7 +22,7 @@
 ## 目前位置與下一步
 
 B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
-**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2 綠。下一步 B3。
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 實作完成、181 測試中 180 綠，**卡逃生口 2**（見 Blockers）。
 
 ### B0 結構快照（F1 後）
 
@@ -54,6 +54,12 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
    - 判讀：不必停；p95 遠低於 8 秒。**已知限制**：樣本量極小，正式站真實分布要等上線後依子 plan §2.4 量測 SQL 再看、必要時調逾時。
 
 ## Blockers（逃生口紀錄）
+
+- **B4（逃生口 2，11/01）**：既有測試 `SIGNED_IN 為另一個 uid 時清提示、轉 unknown 並載入新帳號`（`useAuthBootstrap.test.tsx` 約 :323）
+  以 `toHaveBeenLastCalledWith('tok-'+UID_B, { userId: UID_B })` 釘死 fetchProfile 參數。plan §2.2／§2.3 規定冷啟動與新 uid 的請求帶
+  `timeoutMs: PROFILE_FETCH_TIMEOUT_MS`，實際參數為 `{ userId: UID_B, timeoutMs: 8_000 }`。紅燈 commit 2108ce3c 已把**同形的另一條**
+  （`會員 /profile ok 後…`）改成帶 `timeoutMs: 8_000`，這條漏改。實作未偏離 plan；需裁決是否允許把該期望改成
+  `{ userId: UID_B, timeoutMs: 8_000 }`（只改參數期望，不改測試語意）。紅燈期鎖住 `*.test.*`，未自行修改。
 
 ## 框架摩擦
 
