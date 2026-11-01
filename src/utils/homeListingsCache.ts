@@ -64,7 +64,7 @@ export function resetHomeView() {
   scrollY = 0;
 }
 
-/** 測試用：回到冷啟動狀態。 */
+/** 回到冷啟動狀態：登出時由 App 呼叫（換帳號不沿用前一人的檢視狀態），測試也用它重置。 */
 export function resetHomeListingsCache() {
   listings = null;
   coords = null;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useEffect, useMemo, lazy, Suspense } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
@@ -30,12 +30,15 @@ import { NotificationProvider } from './components/notifications/NotificationCon
 import { FeatureProvider } from './contexts/FeatureContext';
 import { DataCacheProvider, useDataCache } from './contexts/DataCacheContext'; // ✅ 新增：資料快取
 import { createClient } from './utils/supabase/client';
-import { buildApiUrl } from './utils/apiClient';
 import { onSessionExpired } from './utils/authEvents';
 import { importWithRetry } from './utils/lazyWithRetry';
-import { isProfileComplete, shouldRedirectToCompleteProfile } from './utils/registrationFlow';
 import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
+import { useAuthBootstrap } from './hooks/useAuthBootstrap';
+import { clearInflight, fetchProfile } from './utils/fetchProfile';
+import { resetHomeListingsCache } from './utils/homeListingsCache';
+import { type AuthState, type AuthView, resolveAuthView } from './utils/authView';
+import type { FunnelNextKind } from './utils/registrationFlow';
 import { dedupe } from './utils/requestDedup';
 
 // Code splitting（見 appShell.test.ts 的架構契約）：
@@ -107,6 +110,21 @@ export const UserContext = React.createContext<{
   isLoadingUser: boolean; // ✅ P1: 全局 loading state
   /** 靜默重抓 /profile 並更新 context；回傳最新 profile（失敗回 null）。 */
   refreshUser: () => Promise<any | null>;
+  // ---- 登入狀態（T1 auth-state-trust）。舊 mock 沒有這些欄位時，
+  // resolveAuthView 依 isLoggedIn 回落（見 utils/authView.ts）。----
+  authState?: AuthState;
+  /** 註冊中（從未訂閱、資料未齊或首購未完成）——頁首只給登出。 */
+  isFunnel?: boolean;
+  /** 頁首版本（resolveAuthView 的結果）。 */
+  authView?: AuthView;
+  /** 註冊中的人下一步去哪（E4「繼續完成註冊」）；非註冊中為 null。 */
+  nextFunnelRoute?: string | null;
+  /** 本機提示的頭像首字（member-pending 首繪用）。 */
+  hintInitial?: string;
+  /** 本機提示的漏斗目的地種類（funnel 首繪的暫用連結與文案）。 */
+  hintNext?: FunnelNextKind | null;
+  /** OTP／邀請入口拿到 /profile 後回灌（穩定 identity）。 */
+  ingestProfile?: (profile: any) => void;
 }>({
   user: null,
   setUser: () => {},
@@ -117,106 +135,51 @@ export const UserContext = React.createContext<{
 });
 
 function AppContent() {
-  const [user, setUser] = useState(null);
-  const [isLoadingUser, setIsLoadingUser] = useState(true); // ✅ P1: 全局 loading state
   const navigate = useNavigate();
   const location = useLocation();
-  const supabase = createClient();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
-  // 記錄目前已載入 profile 的使用者 id，用來分辨「真的登入」與分頁重新可見時
-  // Supabase 重複廣播的 SIGNED_IN（同一個使用者、token 沒換發也會發一次）。
-  const loadedUserIdRef = useRef<string | null>(null);
+
+  // 啟動判定、事件、背景重驗與首繪提示全在 useAuthBootstrap（plan §2.5）；
+  // 這裡只注入會碰到路由與快取的副作用。注入值只在掛載時讀一次。
+  const {
+    user,
+    setUser,
+    authState,
+    isFunnel,
+    nextFunnelRoute,
+    hint,
+    isLoadingUser,
+    refreshUser,
+    ingestProfile,
+  } = useAuthBootstrap({
+    supabase: createClient(),
+    fetchProfile,
+    clearInflight,
+    onSignedOut: () => {
+      clearCache();
+      clearPendingInviteToken();
+      // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
+      resetHomeListingsCache();
+      // 升版前的殘留鍵（write-only、零讀者）。
+      localStorage.removeItem('user');
+      localStorage.removeItem('pendingSession');
+    },
+    onIncompleteProfile: () => navigate('/auth/complete-profile', { replace: true }),
+  });
 
   // Check if user is admin
   const isAdmin = user?.isAdmin === true;
   const isLoggedIn = !!user;
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadUserProfile = async (accessToken: string) => {
-      if (!isMounted) return;
-      try {
-        setIsLoadingUser(true);
-        const response = await fetch(buildApiUrl('/profile'), {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        if (!response.ok) {
-          if (response.status === 404 || response.status === 410 || response.status === 401) {
-            await supabase.auth.signOut();
-            localStorage.removeItem('user');
-            localStorage.removeItem('pendingSession');
-            loadedUserIdRef.current = null;
-            if (isMounted) setUser(null);
-          }
-          // 其他非認證性錯誤（例如短暫的網路/伺服器問題）保留現有已登入的 user，
-          // 避免分頁重新可見時的背景重新驗證，因暫時性錯誤被誤判成登出。
-          return;
-        }
-
-        const profile = await response.json();
-        if (!isMounted) return;
-
-        const hasCompleteProfile = isProfileComplete(profile);
-        if (!hasCompleteProfile) {
-          if (shouldRedirectToCompleteProfile(window.location.pathname)) {
-            navigate('/auth/complete-profile', { replace: true });
-          }
-        } else {
-          setUser(profile);
-          loadedUserIdRef.current = profile.id;
-        }
-      } catch (error) {
-        console.error('App: Error loading user profile:', error);
-        // 同上：非認證性錯誤不清空已登入的 user。
-      } finally {
-        if (isMounted) setIsLoadingUser(false);
-      }
-    };
-
-    // 初始載入
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.access_token) {
-        loadUserProfile(session.access_token);
-      } else {
-        if (isMounted) {
-          setUser(null);
-          setIsLoadingUser(false);
-        }
-      }
-    });
-
-    // 監聽 auth 狀態變化
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.access_token) {
-        // Supabase 在分頁從背景切回可見時，即使 token 沒有換發也會重新廣播一次
-        // SIGNED_IN。若是同一個已登入使用者，直接忽略，避免整頁被 spinner 取代
-        // 造成「自動重新整理」的錯覺；不同使用者登入時 id 會不同，仍會正常載入。
-        if (session.user?.id && session.user.id === loadedUserIdRef.current) {
-          return;
-        }
-        loadUserProfile(session.access_token);
-      } else if (event === 'SIGNED_OUT') {
-        clearCache();
-        clearPendingInviteToken();
-        loadedUserIdRef.current = null;
-        if (isMounted) {
-          setUser(null);
-          setIsLoadingUser(false);
-        }
-        localStorage.removeItem('user');
-      }
-      // TOKEN_REFRESHED：僅換發 token，不需要任何 UI 狀態變化。
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+  const authView = resolveAuthView({
+    authState,
+    isFunnel,
+    isAdmin,
+    isLoggedIn,
+    hint,
+    pathname: location.pathname,
+  });
+  const hintInitial = hint?.initial ?? '';
+  const hintNext = hint?.next ?? null;
 
   // 當 API 請求判定 session 真的過期時（apiClient.ts），以 SPA 導頁的方式跳轉
   // 到登入頁，避免整頁重新載入（window.location.href）造成的閃爍與狀態重置。
@@ -230,38 +193,6 @@ function AppContent() {
       }
     });
   }, [navigate]);
-
-  // 靜默重抓 /profile：付款開通輪詢、任務領獎後讓路由守衛讀到最新的
-  // accountStatus，不用整頁 reload（window.location.href）。
-  // 刻意「不碰 isLoadingUser」——ProtectedRoute 的全頁 spinner 條件是
-  // isLoadingUser && !user，這裡維持 stale-while-revalidate，避免重現
-  // 當初 SIGNED_IN 重複廣播造成整頁被 spinner 取代的問題（見
-  // loadedUserIdRef 的註解）。暫時性錯誤一律回 null、不清空 user，
-  // 也不在這裡 signOut——真正的 session 過期由 apiClient 的
-  // onSessionExpired 處理。
-  const refreshUser = useCallback(async (): Promise<any | null> => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) return null;
-      const response = await fetch(buildApiUrl('/profile'), {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!response.ok) return null;
-      const profile = await response.json();
-      setUser(profile);
-      // 一併落 localStorage：只更新 context 的話，下一次整頁載入會從 localStorage
-      // 讀回舊 profile，剛剛重抓到的變動（會籍到期、加入推薦計畫）當場被復活。
-      // 這也讓呼叫端不必各自手刻一份 setUser + setItem——那正是本次重構移除的重複。
-      localStorage.setItem('user', JSON.stringify(profile));
-      loadedUserIdRef.current = profile.id; // 同一使用者時是 no-op，僅保持一致
-      return profile;
-    } catch {
-      return null;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // 分頁切回可見時，靜默重抓 /profile，讓路由守衛（讀 accountStatus）在
   // 會員於 session 中途跨過到期時能同步把人導去續約——與 useSubscription
@@ -277,13 +208,28 @@ function AppContent() {
     },
   );
 
-  // value 必須 memo：這個 context 有 17 個消費者，未 memo 的物件字面量
+  // value 必須 memo：這個 context 有二十多個消費者，未 memo 的物件字面量
   // 會讓 AppContent 每次 render（含每次背景 revalidate）都逼全部消費者
-  // 重渲染。setUser 與 refreshUser 皆為穩定 identity，deps 只需狀態本身。
+  // 重渲染。函式欄位（setUser、refreshUser、ingestProfile）皆為穩定
+  // identity，deps 只列狀態——漏列會靜默不重繪（appShell.test 釘住）。
   const contextValue = useMemo(
-    () => ({ user, setUser, isLoggedIn, isAdmin, isLoadingUser, refreshUser }),
+    () => ({
+      user,
+      setUser,
+      isLoggedIn,
+      isAdmin,
+      isLoadingUser,
+      refreshUser,
+      authState,
+      isFunnel,
+      authView,
+      nextFunnelRoute,
+      hintInitial,
+      hintNext,
+      ingestProfile,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, isLoadingUser],
+    [user, isLoadingUser, authState, isFunnel, authView, nextFunnelRoute, hintInitial, hintNext],
   );
 
   return (
