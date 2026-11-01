@@ -123,10 +123,10 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | — | 紅燈 `b4e44f1`；等業主親打解鎖授權（W4-10） |
+| F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | #486 ✅ 2b99700 | 收工 |
 | E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | #484 ✅ 266ad42 | 收工 |
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
-| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | plan v2.1 `1985a0b` 主 session 審過；等業主親打 `/tdd-implement`＋F1 合併 |
+| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 實作中（B0 起；業主已親打 `/tdd-implement`） |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -142,3 +142,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/01 22:00 | T1-B 回報 v2：`/review-plan` 第二輪 P0 0、P1 9，已自行落地成 v2.1（`1985a0b`，已 rebase 到含 #485 的 develop）。業主裁決 **W4-18、W4-19**。主 session 審 v2.1：9 條 P1 都有落點、無偏離 W4-11～17 → **通過**；兩條 P2 交實作（retry() 要 dispatch `retry` 並在各出口清 `isRetrying`；B1 前主 session 代跑 Logs Explorer） | 業主在 T1-B session 親打 `/tdd-implement auth-transient-resilience`；實作等 F1 合併 |
 | 11/01 23:10 | 業主已在 T1-B session 親打 `/tdd-implement`，review.md 處置填「通過」（`2ad511f`）。主 session 代跑 B1 前置 Logs 查詢（query_logs，24 小時）：正式站 `/profile` 0 筆（Edge 全部 41 筆：200×26、401×15），postgres ERROR／FATAL 0；develop `/profile` GET 200×2（execution p95 3,488 ms）、ERROR／FATAL 0 → 無 5xx／404、逾時 8 秒不需調整；樣本小，上線後再量 | T1-B 等 F1 合併；F1 等業主親打解鎖授權 |
 | 11/01 23:20 | 業主 23:06 在 F1 session 親打授權（W4-10 生效）。F1 開 #486（紅燈 `6bc120c`，rebase 前為 `b4e44f1`）：紅燈後只改了 `button.test.tsx` 那一條（反向斷言），`tdd-unlock.sh` 與該紅燈測試互鎖，依授權直接移除鎖檔。主 session 審：無 P0／P1——基底契約寫進 `button.tsx`、Navbar 兩鈕自補；`onAccountSwitched`（可選 dep，`begin()` 換 uid 分支）；新 `clearAccountLocalState`（`withdrawalBankData`、`pendingUser`、舊鍵、完善資料草稿）；Q7 `isCancelling`＋401 收尾；401／AuthPage 走 `signOutWithFallback`。P2：`multi-step-flow-recovery.md` 完善資料與提領兩列補「登出／換帳號時清除」→ 交 F1 本 PR 補 | F1 補文件、CI 綠 → 合 → 通知 T1-B |
+| 11/01 23:35 | F1 補 `multi-step-flow-recovery.md` 兩列（`dd9fb45`），CI 全綠、主 session 審過 → **#486 合進 develop（2b99700）**。已通知 T1-B 開工 B0（F1 帶進的 `onAccountSwitched`、`clearAccountLocalState`、Button 基底契約）。必上四項剩 D | 11/02 核對照片清理首輪 run、Dependabot 批次後開 D；T1-B 施工 |
