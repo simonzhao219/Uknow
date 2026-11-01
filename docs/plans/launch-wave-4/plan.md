@@ -42,6 +42,7 @@
 | W4-18 | T1-B 異常 callout「聯絡客服」入口（22:00） | **既有 `LINE_OFFICIAL_ACCOUNT_URL`**（與 Footer、結帳頁同一入口；被推翻：LINE＋Email 並列） |
 | W4-20 | T1-B B4 紅燈期：舊測試「SIGNED_IN 為另一個 uid…載入新帳號」釘死 `fetchProfile` 參數 `{ userId }`，與 plan §2.2 的 8 秒逾時衝突（11/02 00:25） | **授權只改參數期望為 `{ userId, timeoutMs: 8_000 }`**，測試語意不變；業主在 T1-B session 親打才生效（被推翻：改實作不帶逾時） |
 | W4-21 | `uknow.pages.dev`（Pages 根網址＝main 建置）顯示正式站資料但登入「Failed to fetch」（正式站 CORS 只放行 uknow.com.tw，刻意設計），易誤用（11/02 00:50） | **本波加小工項 P**：前端偵測 host 精確等於 `uknow.pages.dev` 就導向 `https://uknow.com.tw`（保留路徑）；CORS 不放寬（被推翻：列第 5 波候選；不處理） |
+| W4-22 | T1-B B6：plan §2.4「AuthPage 掛載遇 transient／catch 一律導 `/dashboard`」與 R2 邀請交接（帶邀請入口遇 transient → 留在設定密碼、保留 token，`AuthPage.test.tsx` 釘住）衝突（11/02 02:20） | **A 分流**：有有效邀請入口維持 R2 現況；沒有才導 `/dashboard` 交守衛 degraded；兩者 catch 都不再登出（被推翻：一律導 `/dashboard`；一律維持現況） |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -152,3 +153,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 00:50 | 業主回報 `uknow.pages.dev` 顯示正式站資料、登入「檢查 Email 時發生錯誤：Failed to fetch」。主 session 讀碼判定：根網址＝main 建置→正式站 Supabase；刊登走 PostgREST 不受 CORS 限制，`/auth/check-email` 走 Edge Function，正式站 CORS 只放行 `uknow.com.tw`（刻意設計）→ 非本波回歸、無資料錯誤。業主裁決 **W4-21**：本波加小工項 P | 開 P（Sonnet） |
 | 11/02 01:15 | P 交 #487（紅燈 `3969979`→綠燈 `16da520`）：純函式 `canonicalHost.ts`＋`main.tsx` render 前 `location.replace`，host 表格測試涵蓋前後綴繞過、預覽別名、大小寫與結尾點；未動 `_redirects`／`_headers`／CORS。主 session 審無 P0／P1 → **#487 合進 develop（efa1d06）**。未驗：Cloudflare 上實際導向待晉升後實測（§4 第 3 點）。必上剩 D | 11/02 開 D；T1-B 等業主親打 W4-20 授權 |
 | 11/02 02:05 | 業主在 T1-B session 親打 W4-20 授權；雲端 session 無法由人執行 `rm .claude/tdd-lock`，業主再以互動選項授權 T1-B 代為解鎖 → 只改那一條期望。**B4 綠**，全閘門 2747/2747；已 rebase 到含 #487 的 develop（HEAD `28a1a33`），紅綠 hash 全部改寫：B1 `e4fb277`→`c823fc9`、B2 `062cd3a`→`e04ebca`、B3 `2691b4e`→`c9d3bd1`、B4 `de4d58c`→`eea0e29`（實作 `4e29e17`）。T1-B 記兩條框架摩擦：雲端沒有人工解鎖通道；push 前自動 rebase 讓 progress 記的 hash 失效（交 R4 整併進 friction-log） | T1-B 續 B5 |
+| 11/02 02:20 | T1-B：**B5 綠**（`15cd222`，HEAD `772cebd`，全閘門 2767/2767）。進 B6 前回報 plan §2.4 與 R2 邀請交接衝突，業主裁決 **W4-22**（A 分流）；T1-B 先做不受影響的 B6a，B6b（AuthPage、e2e）依 W4-22 施工 | T1-B B6 |
