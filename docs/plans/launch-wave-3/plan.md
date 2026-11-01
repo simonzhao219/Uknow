@@ -109,8 +109,8 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ⬜ |
 | 3 | **develop dry-run 已回 401**（run 41250155677）：到 Supabase develop branch 的 Secrets 設 `RECONCILE_SECRET`，與 GitHub secret／正式站同值；設好告訴主 session 重跑。不擋晉升 | ⬜ |
 | 4 | T1 A3 實機截圖時回答 Q6（登出鈕樣式）、Q7（取消註冊確認框文案）、Q8（「稍後付款」鈕文字） | 等 T1 A3 |
-| 5 | 11/10 晉升合進 main 後核准 `production` 部署 | 11/10 |
-| 6 | 11/13 前核對正式站照片候選清單，再設 `PHOTO_PURGE_LIVE=true` | 11/10–13 |
+| 5 | 晉升合進 main 後核准 `production` 部署 | ✅ 11/01 |
+| 6 | **11/04 前**核對正式站照片候選清單（規格書 §11 的本機 curl），再設 `PHOTO_PURGE_LIVE=true`（W2-8：晉升後 3 日內；晉升提早到 11/01） | ⬜ |
 
 ## 7. 執行 session 名冊（主 session 維護）
 
@@ -144,3 +144,6 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 11:13 | T1 回報 PR-A（A0–A4）完成：本機 `check:full` 全綠，e2e 326/326（頁首情境新增 30 個）；A3 紅 `356417f1`＋`dda2d4f1`、A4 `1c637c3d`；e2e 抓到並已修三項（換帳號冷啟動會閃前一人的首字、頁首 CLS、320px 時 CTA 壓到 logo）。降級未做：Navbar 會員登出的 startTransition。開 **T1 審查 session** `session_01MQovbDpor2j3PV7r33VfUP`（Opus）。業主裁決 **W3-12**（Q6–Q8） | T1 補 Q7＋清審查 P0 → 收尾轉 ready → 合 develop → 立刻晉升（W3-11） |
 | 11/01 11:20 | T1 審查：**P0 0／P1 3／P2 14**。P1：S9 頁首不位移只在 S1、S3 有斷言；`aria-disabled` 沒有停用外觀、signOut 沒有逾時；Q7 確認框（已裁決）。五個重點中，`isFirstTimeFunnel` 不會誤判有效會員，登出都有清提示鍵，context 改動沒有漏網的 consumer。主 session 把 P1 交給 T1，並要求 cancel-signup 失敗不可吞錯、toast 照實寫 | T1 修 P1 |
 | 11/01 11:55 | T1：Q7 紅燈 `d76df44f`→綠燈 `927b6854`；審查 P1 紅燈 `cb402eff`→綠燈 `6038efe5`（S9 補三情境、`signOutWithFallback` 5 秒逾時、停用外觀、cancel-signup 失敗時停在原頁）；收尾已清 `docs/plans/auth-state-trust/`（`git show b4b5bdcb:` 取回），e2e 327/327。業主裁決 **W3-13**。主 session 審最後一段 diff，確認刪除成功仍會導回首頁 → **#466 合進 develop（d8933eb）**。**本波六項全部合併** | 依 W3-11 晉升：合 #471 → 開晉升 PR |
+| 11/01 12:46 | 開晉升 PR **#477**（develop→main，`04b869e`）。journey-full 第一輪紅：2 failed／42 skipped，失敗點是 E3 完善資料頁 `#name` 逾時、U1 任務卡「1 / 8」。T1 對照程式路徑，找不到與 #466 的因果。重跑一次後 146 passed／0 skipped，判定為偶發；第 4 波候選：在這兩個步驟補 `dump_page` | 合 main |
+| 11/01 13:38 | **#477 合進 main（1f61e68）**。main CI push 綠 → deploy-supabase run 41277716004 等待核准 | 業主核准 production |
+| 11/01 15:37 | 業主核准 `production`，deploy-supabase 成功，`/health` sha 煙霧測試通過。主 session 唯讀 SQL：兩支 migration 已套用、孤兒判準 4 個函式在、`listings_delete_own` 已撤、`admin_list_members` 有新欄位。deploy-smoke 手動 run 41285941139 綠（正式站 build-sha 相符、PayUni 閘門正常）。**第 3 波晉升完成** | 業主 11/04 前核對照片候選清單；開 R3 審查 session；develop `RECONCILE_SECRET` 仍待設 |
