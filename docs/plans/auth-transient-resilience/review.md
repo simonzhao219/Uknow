@@ -56,4 +56,6 @@
 
 <!-- P0 的處置規則：必須改 plan 並重跑 /review-plan，或由人在此明文豁免。 -->
 
-- [ ] 人審完成，裁決：□ 通過 □ 修訂後通過（豁免理由：） □ 退回重規劃
+- [x] 人審完成，裁決：☑ 通過（2026-11-01，業主經主 session 轉達）——無 P0；v2 P1 已落地於 plan v2.1。
+  W4-18：客服入口＝`LINE_OFFICIAL_ACCOUNT_URL`（需人工裁決 1 結案）。W4-19：不跑第三輪 /review-plan，以主 session 親審 v2.1（1985a0b，結論無 P0／P1）代替
+  （需人工裁決 2 結案）。knip（需人工裁決 3）開工實跑確認。主 session 兩條 P2 記 progress.md「實作時處理」。業主於本 session 親打 `/tdd-implement`。

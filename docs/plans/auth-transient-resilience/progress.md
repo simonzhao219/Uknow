@@ -21,9 +21,9 @@
 
 ## 目前位置與下一步
 
-plan v2.1（1985a0b）主 session 親審通過（W4-18 客服入口＝`LINE_OFFICIAL_ACCOUNT_URL`；W4-19 第三輪 /review-plan 以主 session 審查代替）。
-等業主在本 session 親打 `/tdd-implement auth-transient-resilience`；打了之後先填 review.md「處置」＝通過（W4-18、W4-19），再照 B0 等 F1（`fix/signout-cleanup`）
-合併通知、rebase 開工。
+plan v2.1（1985a0b）主 session 親審通過；業主 11/01 親打 `/tdd-implement`，review.md 處置已填。
+**卡在 B0**：F1（`fix/signout-cleanup`）尚未合進 develop（11/01 develop＝1525913，#485）。B1 的 Logs Explorer 查詢已先送主 session。
+等主 session 通知 F1 合併 → rebase → B0 結構快照 → B1。
 
 ### 實作時處理（主 session 審查 P2，不改 plan）
 
