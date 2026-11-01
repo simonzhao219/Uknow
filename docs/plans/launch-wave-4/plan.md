@@ -103,7 +103,8 @@
 
 1. 必上四項合併後 develop 凍結；列出 `1f61e68` 之後合進 develop 的全部 PR、後端變動、migration 檔名。
 2. 開晉升 PR、訂閱；journey-full（sandbox）綠 → merge commit 合 main → 請業主核准 `production` → `/health` sha、deploy-smoke build-sha 對上。
-3. 開 R4。
+3. P 實測：`https://uknow.pages.dev` 根網址、深層路徑、帶 query＋hash 都跳到 `uknow.com.tw`；`develop.uknow.pages.dev` 不跳。
+4. 開 R4。
 
 ## 5. 第 5 波候選（未納入本波，一行一項）
 
@@ -131,7 +132,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
 | T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 實作中（B0 起；業主已親打 `/tdd-implement`） |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
-| P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | — | 施工中 |
+| P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -149,3 +150,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/01 23:35 | F1 補 `multi-step-flow-recovery.md` 兩列（`dd9fb45`），CI 全綠、主 session 審過 → **#486 合進 develop（2b99700）**。已通知 T1-B 開工 B0（F1 帶進的 `onAccountSwitched`、`clearAccountLocalState`、Button 基底契約）。必上四項剩 D | 11/02 核對照片清理首輪 run、Dependabot 批次後開 D；T1-B 施工 |
 | 11/02 00:25 | T1-B 回報 B0–B3 綠（B1 紅 `537a368`→綠 `d754e36`；B2 `8f54277`→`be18910`；B3 `dd87963`→`2a69c8c`），B4 實作完成、hooks 181 測試 180 綠；卡逃生口 2：舊測試釘死 `fetchProfile` 參數，與 plan §2.2 逾時衝突。業主裁決 **W4-20**（只改參數期望）；已請 T1-B 同類掃描，若還有同形期望一次列齊 | 業主到 T1-B session 親打授權；B4 綠後續 B5 |
 | 11/02 00:50 | 業主回報 `uknow.pages.dev` 顯示正式站資料、登入「檢查 Email 時發生錯誤：Failed to fetch」。主 session 讀碼判定：根網址＝main 建置→正式站 Supabase；刊登走 PostgREST 不受 CORS 限制，`/auth/check-email` 走 Edge Function，正式站 CORS 只放行 `uknow.com.tw`（刻意設計）→ 非本波回歸、無資料錯誤。業主裁決 **W4-21**：本波加小工項 P | 開 P（Sonnet） |
+| 11/02 01:15 | P 交 #487（紅燈 `3969979`→綠燈 `16da520`）：純函式 `canonicalHost.ts`＋`main.tsx` render 前 `location.replace`，host 表格測試涵蓋前後綴繞過、預覽別名、大小寫與結尾點；未動 `_redirects`／`_headers`／CORS。主 session 審無 P0／P1 → **#487 合進 develop（efa1d06）**。未驗：Cloudflare 上實際導向待晉升後實測（§4 第 3 點）。必上剩 D | 11/02 開 D；T1-B 等業主親打 W4-20 授權 |
