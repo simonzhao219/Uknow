@@ -146,8 +146,6 @@ function AppContent() {
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   const clearAccountState = () => {
     clearCache();
-    // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
-    resetHomeListingsCache();
     clearAccountLocalState();
   };
 
@@ -179,8 +177,13 @@ function AppContent() {
     onSignedOut: () => {
       clearAccountState();
       clearPendingInviteToken();
+      // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
+      resetHomeListingsCache();
     },
-    onAccountSwitched: clearAccountState,
+    onAccountSwitched: () => {
+      clearAccountState();
+      resetHomeListingsCache();
+    },
     onIncompleteProfile: () => navigate('/auth/complete-profile', { replace: true }),
   });
 

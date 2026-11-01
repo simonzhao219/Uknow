@@ -146,13 +146,14 @@ describe('buttonVariants', () => {
     }
   });
 
-  // ui-ux §9 進行中用 aria-disabled（不用原生 disabled，保留焦點與可及名稱）：外觀要和
-  // disabled 一樣看得出不能按，且點不到（Link 也不導頁）。
-  it('aria-disabled 與 disabled 同樣呈現停用外觀並擋住指標', () => {
+  // ui-ux §9 進行中用 aria-disabled（不用原生 disabled，保留焦點與可及名稱）。舊版在基底
+  // 斷言「外觀與 disabled 相同且擋指標」，那正是 R3 P2-1：後台 aria-disabled 鈕被波及。
+  // 契約改為：基底不給（見檔首同名斷言），要的鈕自己補。業主授權改寫（W3-15）。
+  it('任何 variant 的基底都不含 aria-disabled 的停用外觀', () => {
     for (const variant of ['default', 'ghost'] as const) {
       const cls = classesOf(buttonVariants({ variant }));
-      expect(cls, variant).toContain('aria-disabled:opacity-50');
-      expect(cls, variant).toContain('aria-disabled:pointer-events-none');
+      expect(cls, variant).not.toContain('aria-disabled:opacity-50');
+      expect(cls, variant).not.toContain('aria-disabled:pointer-events-none');
     }
   });
 });
