@@ -75,6 +75,17 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
   Claude 代刪 `.claude/tdd-lock`，只在新 describe 加 `beforeEach` 清 mock、不改任何斷言；全閘門 2781/2781 綠（c6529816）。PR 偏離說明列出。
 - B6a 小決定：`routeAfterVerifiedSession` 的 410 與 401 同處置（提示重新登入→/login；原本落 else→完善資料頁）。/profile 實際不回 410。PR 偏離說明列出。
 
+## 實作審查處置（implementation-review.md，P0 0、P1 3）
+
+- P1-1 e2e 範圍：補齊（38216589）——R1 不登出計次＋R3 `?retry=1`、R4 逾時（held）、R10 不登出＋重整不循環、R11 結帳頁、R13 首頁；route_guards＋otp 43/43。
+- P1-2 authHint 白名單：移除 `utils/apiClient.ts`（45cfafe1）。
+- P1-3 異常說明登出防連點：aria-disabled＋ref（紅 45cfafe1 → 綠 8cd93494）。
+- P2 已修：重試入口同步擋、getSession reject 走 degraded、`isRetryableAuthError` 收斂到 authErrors.ts、送出鈕灰化、main `scroll-mt-20`、
+  AuthPage 驗證中改用 RouteAuthLoading、規格書 §14 #8 末句還原。
+- P2 未修（PR 偏離說明列出）：`useAuthBootstrap.ts` 約 540 行（排程已抽出，再拆屬重構）；`/auth/register` 讀回擲非 ProfileReadError 仍 500
+  （契約單向、重送 403 已處理）；`AuthDegradedFrame` 成功焦點以 setTimeout＋DOM 判斷（需人工裁決，維持）；R12／R14／R16 可追溯性（測試已在
+  CompleteProfile／AuthDegradedNotice＋useMemberLogout／endInvalidSession）。
+
 ## 框架摩擦
 
 - 2026-11-01 B1：`python3 scripts/check-test-names.py | tail -2 && …` 的 pipe 吞掉 exit code，紅燈 commit 帶著兩個命名違規進去（鎖住期間無法改測試，解鎖後另 commit 修）。
