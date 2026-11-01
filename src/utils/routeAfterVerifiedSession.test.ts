@@ -49,7 +49,7 @@ describe('routeAfterVerifiedSession', () => {
   });
 
   it('profile 回 404 時帶去完善資料頁，不登出', async () => {
-    const deps = makeDeps(async () => ({ kind: 'unauthorized', status: 404 }));
+    const deps = makeDeps(async () => ({ kind: 'missing' }));
     await routeAfterVerifiedSession(SESSION, deps);
     expect(deps.navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
     expect(deps.showToast).not.toHaveBeenCalled();

@@ -190,6 +190,16 @@ describe('useAuthBootstrap 冷啟動', () => {
     expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
   });
 
+  // B2 中間態：404 改成獨立分類 missing，處置暫維持現況（登出）；B4 改成 anomaly（W4-11）。
+  it('/profile 回 missing 時暫維持登出並清提示', async () => {
+    writeAuthHint({ kind: 'member', initial: '王', uid8: 'aaaaaaaa', next: null });
+    const t = setup();
+    await t.resolveSession();
+    await t.respond({ kind: 'missing' });
+    expect(t.deps.supabase.auth.signOut).toHaveBeenCalledTimes(1);
+    expect(t.hook.result.current.outcome).toBe('signedOut');
+  });
+
   it('/profile 401 後 global 登出失敗時補 local 登出、不留未處理例外', async () => {
     const t = setup();
     t.deps.supabase.auth.signOut.mockImplementation(async (opts?: { scope?: string }) => {

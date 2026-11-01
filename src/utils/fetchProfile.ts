@@ -10,7 +10,12 @@ import { buildApiUrl } from './apiClient';
 export type ProfileFetchResult =
   | { kind: 'ok'; profile: any }
   | { kind: 'unauthorized'; status: number }
-  | { kind: 'transient' };
+  | { kind: 'transient' }
+  | { kind: 'missing' };
+
+/** T1-B stub */
+export const PROFILE_FETCH_TIMEOUT_MS = 0;
+export const PROFILE_RETRY_TIMEOUT_MS = 0;
 
 export interface FetchProfileOptions {
   userId: string;
@@ -18,6 +23,8 @@ export interface FetchProfileOptions {
   force?: boolean;
   /** PR-A 一律不傳（E1）；PR-B 以 PROFILE_FETCH_TIMEOUT_MS 啟用。 */
   timeoutMs?: number;
+  /** T1-B stub */
+  retry?: boolean;
 }
 
 /** 這三個狀態代表 session／帳號真的無效；其餘非 2xx 一律視為暫時性。 */
