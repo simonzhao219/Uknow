@@ -42,6 +42,16 @@ import {
 } from '../utils/formDraft';
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 
 // GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
 // 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
@@ -120,6 +130,8 @@ export function CompleteProfile() {
   // 使用者以為系統認不得他的名字。
   const [nameNotice, setNameNotice] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // 「稍後註冊」會刪帳號：先確認（業主裁決 W3-12）。
+  const [laterConfirmOpen, setLaterConfirmOpen] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
   const [codeError, setCodeError] = useState('');
@@ -960,15 +972,39 @@ export function CompleteProfile() {
               )}
             </Button>
 
-            {/* 稍後註冊按鈕 */}
+            {/* 稍後註冊：會刪除帳號（cancel-signup），破壞性紅框字＋確認框（ui-ux §11.3、§12.11）。
+                頁首另有不刪帳號的「登出」，確認框把只想先離開的人指過去。 */}
             <Button
               type="button"
-              tone="secondary"
+              tone="destructive"
               className="w-full mt-2"
-              onClick={handleLaterSignup}
+              onClick={() => setLaterConfirmOpen(true)}
             >
               稍後註冊
             </Button>
+            <AlertDialog open={laterConfirmOpen} onOpenChange={setLaterConfirmOpen}>
+              <AlertDialogContent data-testid="later-signup-confirm-dialog">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>刪除目前的帳號資料？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  {/* Radix AlertDialog 開啟時預設聚焦取消鈕：返回是預設焦點。 */}
+                  <AlertDialogCancel>返回</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setLaterConfirmOpen(false);
+                      void handleLaterSignup();
+                    }}
+                  >
+                    確定刪除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </form>
         </CardContent>
       </Card>
