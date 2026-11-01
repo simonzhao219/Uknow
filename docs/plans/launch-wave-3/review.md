@@ -131,7 +131,7 @@
 | #475（K） | 「確認 LINE 推送設定存在」只在有告警時跑 | reconcile run 41250157710 綠，step 照設計跳過 | **未驗：待真實觸發**。缺 secret 分支、deploy-smoke 閘門紅的推送、「另有 N 筆」文案都沒實觸發 |
 | #477 | journey-full 第一輪 2 failed／102 passed／42 skipped（run 41274370205） | 重跑 146/146（job 124757166029）；T1 session 判定無因果 | 見 §3.1：偶發的判定方向成立，但「沒有產品 bug」只是沒找到，無法證實 |
 | #477 | 正式站部署 | `production` 15:37 台北核准，`/health` sha＝`1f61e68`、PayUni production 憑證齊全、預設推薦人 ok（deploy-supabase run 41277716004）；deploy-smoke run 41285941139 綠 | 已驗 |
-| W2 遺留 | 正式站第一筆真付款→發票開立、`system_alerts` 無誤報（第 2 波 §5-5） | 本 session 無法查正式站 DB（§3.3） | **未驗**，沿用 |
+| W2 遺留 | 正式站第一筆真付款→發票開立、`system_alerts` 無誤報（第 2 波 §5-5） | 部署後訂單 0 筆、告警 0 列（§3.3） | **未驗：現場未觸發**，沿用 |
 
 ## 3. 上線後現場
 
@@ -152,27 +152,16 @@
 
 ### 3.3 正式站 DB
 
-本 session 依派工把唯讀 SQL 以 send_message 交主 session 代跑，**被本 session 的權限分類器擋下**（Production Reads），所以本節沒有 DB 實數。
-待主 session 代跑的 SQL（皆唯讀，context 只取 key 名、不取值）：
+本 session 依派工把唯讀 SQL 以 send_message 交主 session 代跑，**第一次送出被本 session 的權限分類器擋下**（Production Reads）；
+之後在中間回報裡說明，主 session 主動代跑（2026-11-01 08:24 UTC，唯讀）：
 
-```sql
--- 1. #477 部署後的告警（有無誤報）
-select created_at, source, severity, left(message,120) msg,
-       (select array_agg(k) from jsonb_object_keys(context) k) ctx_keys, resolved_at
-from public.system_alerts where created_at > '2026-11-01 07:30+00' order by created_at;
--- 2. 未 resolve 的告警總覽（W3-5 日期桶上線前的舊列）
-select source, severity, count(*), min(created_at), max(created_at)
-from public.system_alerts where resolved_at is null group by 1,2 order by 1;
--- 3. 部署後訂單
-select status, count(*), min(created_at), max(created_at)
-from public.payment_orders where created_at > '2026-11-01 07:30+00' group by 1;
--- 4. 兩支 migration 是否套上
-select version from supabase_migrations.schema_migrations
-where version in ('20261104000001','20261110000001');
--- 5. 照片 bucket 基線
-select count(*) total, count(*) filter (where created_at < now() - interval '168 hours') over_grace
-from storage.objects where bucket_id = 'listings-photos';
-```
+| 項 | 值 | 判讀 |
+|---|---|---|
+| #477 部署（07:37 UTC）之後的 `system_alerts` | 0 列 | 沒有誤報；同期也沒有觸發機會（下一列） |
+| 未 resolve 的告警 | 0 列 | W3-5 日期桶上線前沒有殘留的同鍵列擋著去重 |
+| 部署後 `payment_orders` | 0 筆 | 晉升後零訂單：#461 告警路徑、電子發票開立在正式站仍未走過（第 2 波 §5-5 沿用） |
+| `20261104000001`、`20261110000001` | 兩支都已套用 | — |
+| `listings-photos` bucket | 32 個物件，超過 168 小時的 0 個 | 首輪排程的候選預期為 0；錨點與比例閘的分母照常計算 |
 
 **GitHub 側**（本 session 以 GitHub MCP 查）：
 
@@ -216,7 +205,7 @@ from storage.objects where bucket_id = 'listings-photos';
 ## 5. 給主 session／業主的待辦
 
 1. **業主**：照片清理 `PHOTO_PURGE_LIVE` 在 11/13 前核對候選清單後再開（plan §6-6）；develop 的 `RECONCILE_SECRET`（issue #476，plan §6-3）。
-2. **主 session**：代跑 §3.3 的唯讀 SQL，結果記進 plan §8；第一筆正式站真付款後確認發票與 `system_alerts`。
+2. **主 session**：第一筆正式站真付款後確認發票與 `system_alerts`（§3.3 部署後仍 0 筆）。
 3. **業主裁決**：P2-21（checklist 的清空 SQL 留不留）。
 4. **第 4 波**：P2-1＋P2-2＋P2-4＋P2-5 可併一支小 PR（共用 Button、登出與換帳號清理、cancel-signup busy 與 401）；P2-3（提領帳號預填）建議同批。
 5. **第 4 波 plan §5**：補 P2-19 列的靜默擱置項，並收 P2-6、P2-7、P2-12、P2-13、P2-15。

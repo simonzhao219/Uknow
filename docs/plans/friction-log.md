@@ -3363,7 +3363,7 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   localStorage 的 `withdrawalBankData`（共用裝置會預填前一人的銀行帳號），以及換 uid 的 SIGNED_IN 不清快取。
   規則改成「登出與換帳號要清所有**本機狀態**（模組層、sessionStorage、localStorage）」，盤點清單寫在 `onSignedOut` 註解。
 - **審查 session 代跑現場 SQL 的路徑被分類器擋**（誤擋／權限）：〈慣例〉寫「現場 SQL 交主 session 代跑」，
-  審查 session 以 send_message 送出含正式站唯讀 SQL 的請求，被 auto mode 分類器判為 Production Reads 擋下，所以本波審查沒有 DB 實數。
+  審查 session 以 send_message 送出含正式站唯讀 SQL 的請求，被 auto mode 分類器判為 Production Reads 擋下；改在中間回報說明需求後，主 session 主動代跑才拿到實數。
   候選處置：業主允許該類 send_message，或改成主 session 在晉升後主動跑固定的現場 SQL、結果寫進 plan §8，審查 session 只讀 plan。
 
 處置：第一、三條列入下次框架整併；第二條建議寫進晉升 SOP；第四條待業主決定。
