@@ -193,6 +193,11 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
     expect(home).toMatch(/hasBottomNav=\{showsMemberChrome\(/);
   });
 
+  // S11：提示的首字要等 session 的 uid 對上才給頁首，否則換帳號時首繪會閃前一人的首字。
+  it('頭像首字只在提示經 session 確認後才外露', () => {
+    expect(app).toMatch(/hintInitial = hintVerified \? /);
+  });
+
   it('提示的寫入與清除只出現在白名單檔案', () => {
     const allowed = new Set(
       [

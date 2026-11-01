@@ -240,6 +240,22 @@ describe('useAuthBootstrap 換帳號（S11）', () => {
     expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
   });
 
+  it('session 確認 uid 之前提示不算數（hintVerified 為 false），相符後為 true', async () => {
+    writeAuthHint({ kind: 'member', initial: '王', uid8: 'aaaaaaaa', next: null });
+    const t = setup();
+    expect(t.hook.result.current.hint).not.toBeNull();
+    expect(t.hook.result.current.hintVerified).toBe(false);
+    await t.resolveSession();
+    expect(t.hook.result.current.hintVerified).toBe(true);
+  });
+
+  it('uid 不符時 hintVerified 維持 false', async () => {
+    writeAuthHint({ kind: 'member', initial: '甲', uid8: 'aaaaaaaa', next: null });
+    const t = setup({ session: session(UID_B) });
+    await t.resolveSession();
+    expect(t.hook.result.current.hintVerified).toBe(false);
+  });
+
   it('SIGNED_IN 為另一個 uid 時清提示、轉 unknown 並載入新帳號', async () => {
     const t = setup();
     await t.resolveSession();

@@ -69,6 +69,8 @@ export interface AuthBootstrap {
   isFunnel: boolean;
   nextFunnelRoute: string | null;
   hint: AuthHint | null;
+  /** 提示的 uid 已與 session 比對相符（之前不外露首字：換帳號時首繪不閃前一人）。 */
+  hintVerified: boolean;
   isLoadingUser: boolean;
   /** getSession() 例外或 10 秒內未 resolve（頁首改畫訪客版的安全出口，F4）。 */
   sessionStalled: boolean;
@@ -314,6 +316,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     isFunnel,
     nextFunnelRoute,
     hint,
+    hintVerified: false,
     isLoadingUser: state.authState === 'unknown',
     sessionStalled,
     refreshUser,
