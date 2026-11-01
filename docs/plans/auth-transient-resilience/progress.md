@@ -60,6 +60,9 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
   `timeoutMs: PROFILE_FETCH_TIMEOUT_MS`，實際參數為 `{ userId: UID_B, timeoutMs: 8_000 }`。紅燈 commit 2108ce3c 已把**同形的另一條**
   （`會員 /profile ok 後…`）改成帶 `timeoutMs: 8_000`，這條漏改。實作未偏離 plan；需裁決是否允許把該期望改成
   `{ userId: UID_B, timeoutMs: 8_000 }`（只改參數期望，不改測試語意）。紅燈期鎖住 `*.test.*`，未自行修改。
+  **裁決 W4-20**：業主先在主 session 同意，再於本 session 親打「同意 W4-20，改那條測試期望」（2026-11-01）。
+  PreToolUse 守衛要求由人解鎖（`.claude/tdd-lock`）後才能改測試——等業主在本 session 以 `! rm .claude/tdd-lock` 解鎖。
+  PR「偏離規劃說明」需列此條（業主原話與時間）。
 
 ## 框架摩擦
 
