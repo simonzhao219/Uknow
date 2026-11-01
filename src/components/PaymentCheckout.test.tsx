@@ -27,6 +27,10 @@ vi.mock('../hooks/useSubscription', () => ({
   useSubscription: () => sub.value,
 }));
 
+// 首購者的「登出，稍後再付款」與頁首「登出」共用同一支（D2）。
+const funnelLogout = vi.hoisted(() => ({ logout: vi.fn(async () => {}), isLoggingOut: false }));
+vi.mock('../hooks/useFunnelLogout', () => ({ useFunnelLogout: () => funnelLogout }));
+
 vi.mock('../App', () => ({
   UserContext: createContext<any>({ user: null, setUser: () => {} }),
 }));
@@ -168,6 +172,27 @@ describe('PaymentCheckout', () => {
 
     await waitFor(() => expect(screen.getByText(/推薦碼：8048901/)).toBeTruthy());
     expect(screen.getByText(/推薦人：王小明/)).toBeTruthy();
+  });
+
+  it('首購者按登出稍後再付款時走與頁首相同的 useFunnelLogout', async () => {
+    spyFetch();
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const btn = await screen.findByTestId('cancel-payment-button');
+    expect(btn.textContent).toBe('登出，稍後再付款');
+    await waitFor(() => expect(btn.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(btn);
+    await waitFor(() => expect(funnelLogout.logout).toHaveBeenCalledTimes(1));
+  });
+
+  it('續約者按稍後再說時不登出、不走 useFunnelLogout', async () => {
+    spyFetch();
+    seedPendingUser({ registrationStep: 3, subscriptionEndDate: recentEnd });
+    renderPage();
+    const btn = await screen.findByTestId('cancel-payment-button');
+    await waitFor(() => expect(btn.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(btn);
+    expect(funnelLogout.logout).not.toHaveBeenCalled();
   });
 
   it('首購者（付款前）保有編輯鈕，不顯示資料已鎖定的說明', async () => {

@@ -8,7 +8,7 @@ import { BreakableEmail } from '../common/BreakableEmail';
 import type { AdminMemberDetail, AdminMemberWithdrawal } from '@contract';
 import type { MemberAction } from './MemberManagement';
 import { memberName } from './memberName';
-import { MemberStatusBadges } from './MemberStatusBadges';
+import { MemberStatusBadges, ReferralProgramBadge } from './MemberStatusBadges';
 import { WithdrawalStatusBadge } from './WithdrawalStatusBadge';
 
 /**
@@ -285,6 +285,12 @@ export function MemberDetailSheet({
               {/* 「推薦人」這三個字是 journey f70 的定位器（get_by_text exact），整個面板
                   只能有這一處完整等於它。 */}
               <Field label="推薦人">{detail.referrerName ?? '—'}</Field>
+              <Field label="推薦碼">
+                <span className="font-mono">{detail.referralCode ?? '—'}</span>
+              </Field>
+              <Field label="推薦計畫">
+                <ReferralProgramBadge joined={detail.referralProgramJoined} />
+              </Field>
               <Field label="直接推薦">{detail.directChildCount} 位</Field>
             </dl>
           </Section>

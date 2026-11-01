@@ -3,6 +3,7 @@ import { useContext, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
 import { StatusCallout } from './ui/status-callout';
+import { redirectForGate } from '../utils/registrationFlow';
 
 interface RequireMembershipRouteProps {
   children: React.ReactNode;
@@ -38,30 +39,9 @@ export function resolveMembershipRedirect(
   user: any,
   opts?: { allowExpired?: boolean },
 ): string | null {
-  if (user.isAdmin) return null;
-  if (user.accountStatus === 'active') return null;
-
-  // 已付款、後端收斂中（PayUni 已回 SUCCESS 但訂閱還沒建好）→ 開通中
-  // 頁面會輪詢並在轉 active 時自動進會員中心；絕不能把已付款的人送回
-  // 結帳頁造成重複付款。
-  if (user.paidAwaitingActivation) {
-    return user.lastTradeNo ? `/payment/result?tradeNo=${user.lastTradeNo}` : '/payment/checkout';
-  }
-
-  // 曾是會員、已過期 → 直接續約，不重走註冊漏斗。
-  // allowExpired 的頁面(獎勵頁)在這一格放行,讓失效會員看得到被保留的點數;
-  // 提領本身仍由 reward/WithdrawalAction（canRequestWithdrawal）擋住。
-  if (user.subscriptionEndDate) return opts?.allowExpired ? null : '/payment/checkout';
-
-  const profileComplete = !!(user.name && user.phone && user.birthDate);
-  if ((user.registrationStep ?? 0) === 0 || !profileComplete) {
-    return '/auth/complete-profile';
-  }
-
-  // step 1（資料已填未付款）、或 step 2 但付款失敗（paidAwaitingActivation
-  // 為 false）→ 去結帳。舊版把 step 2 一律送去 /payment/result，付款失敗
-  // 的人會被困在結果頁。
-  return '/payment/checkout';
+  // 決策表本體在 registrationFlow（classifyMembershipGate／redirectForGate），
+  // 與頁首的「註冊中」判定共用同一份分類。
+  return redirectForGate(user, opts);
 }
 
 export function RequireMembershipRoute({ children, allowExpired }: RequireMembershipRouteProps) {

@@ -11,9 +11,11 @@ import { useCallback, useState } from 'react';
 import type { ReferralInviteAcceptErrorCode } from '@contract';
 import { buildApiUrl, extractApiErrorCode } from '../utils/apiClient';
 import { clearPendingInviteToken } from '../utils/referralInvite';
+import { fetchProfileForSession } from '../utils/fetchProfile';
 import {
   type RouteAfterVerifiedSessionDeps,
   routeAfterVerifiedSession,
+  type VerifiedSession,
 } from '../utils/routeAfterVerifiedSession';
 
 /** 後端設密碼最壞約 10 秒（GoTrue 逾時）；再留網路餘裕。 */
@@ -31,12 +33,16 @@ export interface UseInviteAcceptDeps {
   supabase: {
     auth: {
       signInWithPassword: (credentials: { email: string; password: string }) => Promise<{
-        data: { session: { access_token: string } | null };
+        data: { session: VerifiedSession | null };
         error: unknown;
       }>;
     };
   };
   fetchImpl?: typeof fetch;
+  /** 測試注入；預設走共用的 fetchProfile（與 App 啟動判定同 user id 合併）。 */
+  fetchProfile?: RouteAfterVerifiedSessionDeps['fetchProfile'];
+  /** 拿到 /profile 後回灌 App 的登入狀態（UserContext.ingestProfile）。 */
+  ingestProfile?: RouteAfterVerifiedSessionDeps['ingestProfile'];
   navigate: RouteAfterVerifiedSessionDeps['navigate'];
   showToast: RouteAfterVerifiedSessionDeps['showToast'];
 }
@@ -47,7 +53,14 @@ export interface InviteAcceptInput {
   password: string;
 }
 
-export function useInviteAccept({ supabase, fetchImpl, navigate, showToast }: UseInviteAcceptDeps) {
+export function useInviteAccept({
+  supabase,
+  fetchImpl,
+  fetchProfile: fetchProfileImpl,
+  ingestProfile,
+  navigate,
+  showToast,
+}: UseInviteAcceptDeps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submit = useCallback(
@@ -89,10 +102,8 @@ export function useInviteAccept({ supabase, fetchImpl, navigate, showToast }: Us
         if (error || !data.session) return { kind: 'accepted_login_failed' };
 
         await routeAfterVerifiedSession(data.session, {
-          fetchProfile: (accessToken) =>
-            doFetch(buildApiUrl('/auth/profile'), {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }),
+          fetchProfile: fetchProfileImpl ?? ((session) => fetchProfileForSession(session)),
+          ingestProfile,
           navigate,
           showToast,
         });
@@ -103,7 +114,7 @@ export function useInviteAccept({ supabase, fetchImpl, navigate, showToast }: Us
         setIsSubmitting(false);
       }
     },
-    [supabase, fetchImpl, navigate, showToast],
+    [supabase, fetchImpl, fetchProfileImpl, ingestProfile, navigate, showToast],
   );
 
   return { submit, isSubmitting };

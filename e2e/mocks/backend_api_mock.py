@@ -958,6 +958,8 @@ def build_admin_member(name: str = "陳大文", **overrides) -> dict:
         "accountStatus": "active",
         "endDate": "2027-01-01T00:00:00.000Z",
         "idVerificationStatus": "none",
+        "referralCode": None,
+        "referralProgramJoined": False,
         "listingCount": 0,
         "isAdmin": False,
         "suspended": False,

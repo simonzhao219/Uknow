@@ -54,7 +54,17 @@ export const saveScrollY = (y: number) => {
   scrollY = y;
 };
 
-/** 測試用：回到冷啟動狀態。 */
+/**
+ * 清掉「這一次造訪的檢視狀態」（搜尋／篩選、捲動位置），保留清單與座標。
+ * 非返回（PUSH／REPLACE）進首頁時呼叫：要乾淨首頁，但清單快取留著——
+ * 詳情頁共用它（getCachedListing），也避免又閃骨架。
+ */
+export function resetHomeView() {
+  filters = DEFAULT_HOME_FILTERS;
+  scrollY = 0;
+}
+
+/** 回到冷啟動狀態：登出時由 App 呼叫（換帳號不沿用前一人的檢視狀態），測試也用它重置。 */
 export function resetHomeListingsCache() {
   listings = null;
   coords = null;

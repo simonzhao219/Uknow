@@ -6,7 +6,7 @@
 import { createContext } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import type { PublicListingRow } from '../types/listing';
 
 type ListResult = { data: PublicListingRow[] | null; error: null };
@@ -54,6 +54,52 @@ async function mountHome() {
   return render(
     <MemoryRouter>
       <HomePage />
+    </MemoryRouter>,
+  );
+}
+
+// 從別頁回首頁：按鈕觸發 PUSH／REPLACE／POP（react-router 的 navigationType）。
+function Elsewhere() {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <button type="button" onClick={() => navigate('/')}>
+        PUSH
+      </button>
+      <button type="button" onClick={() => navigate('/', { replace: true })}>
+        REPLACE
+      </button>
+      <button type="button" onClick={() => navigate(-1)}>
+        POP
+      </button>
+    </div>
+  );
+}
+function GoElsewhere() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate('/elsewhere')}>
+      離開
+    </button>
+  );
+}
+
+async function mountWithNav() {
+  const { HomePage } = await import('./HomePage');
+  return render(
+    <MemoryRouter initialEntries={['/']}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <GoElsewhere />
+              <HomePage />
+            </>
+          }
+        />
+        <Route path="/elsewhere" element={<Elsewhere />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -192,5 +238,71 @@ describe('HomePage 返回', () => {
     await mountHome();
     expect(await screen.findByText(/找到 2 位服務者/)).toBeTruthy();
     expect((document.getElementById('service-search') as HTMLInputElement).value).toBe('');
+  });
+
+  describe.each([['PUSH'], ['REPLACE']])('以 %s 進入首頁', (kind) => {
+    it('搜尋字詞、類別與捲動不還原，清單資料仍即時渲染', async () => {
+      order.mockResolvedValueOnce({ data: [taipei, kaohsiung], error: null });
+      await mountWithNav();
+      await screen.findByText(/找到 2 位服務者/);
+      fireEvent.change(document.getElementById('service-search') as HTMLInputElement, {
+        target: { value: '高雄' },
+      });
+      expect(await screen.findByText(/找到 1 位服務者/)).toBeTruthy();
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 });
+      fireEvent.click(screen.getByRole('button', { name: '離開' }));
+
+      order.mockReturnValueOnce(new Promise(() => {}));
+      fireEvent.click(await screen.findByRole('button', { name: kind }));
+
+      expect((document.getElementById('service-search') as HTMLInputElement).value).toBe('');
+      expect(screen.getByText(/找到 2 位服務者/)).toBeTruthy();
+      expect(screen.queryByRole('status', SKELETON)).toBeNull();
+      expect(window.scrollTo).not.toHaveBeenCalled();
+    });
+  });
+
+  it('已在首頁時再點首頁連結：搜尋字詞清空、捲回頂端、清單不重抓骨架', async () => {
+    order.mockResolvedValueOnce({ data: [taipei, kaohsiung], error: null });
+    const { HomePage } = await import('./HomePage');
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Link to="/">logo</Link>
+        <HomePage />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/找到 2 位服務者/);
+    fireEvent.change(document.getElementById('service-search') as HTMLInputElement, {
+      target: { value: '高雄' },
+    });
+    expect(await screen.findByText(/找到 1 位服務者/)).toBeTruthy();
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 });
+    (window.scrollTo as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    fireEvent.click(screen.getByRole('link', { name: 'logo' }));
+
+    expect((document.getElementById('service-search') as HTMLInputElement).value).toBe('');
+    expect(await screen.findByText(/找到 2 位服務者/)).toBeTruthy();
+    expect(screen.queryByRole('status', SKELETON)).toBeNull();
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(order).toHaveBeenCalledTimes(1);
+  });
+
+  it('以 POP 返回時還原搜尋字詞與捲動', async () => {
+    order.mockResolvedValueOnce({ data: [taipei, kaohsiung], error: null });
+    await mountWithNav();
+    await screen.findByText(/找到 2 位服務者/);
+    fireEvent.change(document.getElementById('service-search') as HTMLInputElement, {
+      target: { value: '高雄' },
+    });
+    expect(await screen.findByText(/找到 1 位服務者/)).toBeTruthy();
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 });
+    fireEvent.click(screen.getByRole('button', { name: '離開' }));
+
+    order.mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(await screen.findByRole('button', { name: 'POP' }));
+
+    expect((document.getElementById('service-search') as HTMLInputElement).value).toBe('高雄');
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 640);
   });
 });

@@ -3,11 +3,12 @@ import { NavLink } from 'react-router-dom';
 import { Home, Target, Share2, Award, User, type LucideIcon } from 'lucide-react';
 import { UserContext } from '../App';
 import { useFeatures } from '../contexts/FeatureContext';
+import { authViewOrFallback, showsMemberChrome } from '../utils/authView';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
 
 /**
- * 手機底部導覽（拇指區）。僅登入會員可見、僅手機顯示（md:hidden）。
+ * 手機底部導覽（拇指區）。僅會員可見（含首繪的頭像占位）、僅手機顯示（md:hidden）。
  * 用語意化 <nav>/<ul>/NavLink，active 時 NavLink 自動加上 aria-current="page"，
  * 對無障礙與 Playwright get_by_role 測試友善。項目依 feature flag 動態顯示。
  *
@@ -26,10 +27,13 @@ type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
  * 且分享推薦碼正是這頁的主要動作。
  */
 export function BottomNav() {
-  const { isLoggedIn } = useContext(UserContext);
+  const { isLoggedIn, authView } = useContext(UserContext);
   const { isFeatureEnabled } = useFeatures();
 
-  if (!isLoggedIn) return null;
+  // 會員與「有 member 提示、判定中」都畫——五格不依賴 user，首繪即可出現（S1）。
+  // 註冊中（funnel）不畫：那些入口對未付款者全是死路（W2-22）。舊 mock 沒有
+  // authView 時依 isLoggedIn 回落。
+  if (!showsMemberChrome(authViewOrFallback(authView, isLoggedIn))) return null;
 
   const items: NavItem[] = [
     { to: '/', label: '首頁', icon: Home, end: true },

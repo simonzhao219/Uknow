@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useMemo, useEffect, useContext, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigationType } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -29,6 +29,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { cn } from './ui/utils';
 import { TAIWAN_CITIES, TAIWAN_REGIONS, GENDER_OPTIONS } from '../utils/constants';
+import { authViewOrFallback, showsMemberChrome } from '../utils/authView';
 import { createClient } from '../utils/supabase/client';
 import {
   toggleCity,
@@ -47,6 +48,7 @@ import {
   getCachedFilters,
   getCachedListings,
   getSavedScrollY,
+  resetHomeView,
   saveScrollY,
   setCachedCoords,
   setCachedFilters,
@@ -112,7 +114,14 @@ const formatDistrict = (serviceProvider: PublicListingRow): string => {
 export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
   // 需要上移避開。
-  const { isLoggedIn } = useContext(UserContext);
+  const { isLoggedIn, authView } = useContext(UserContext);
+  // 只有返回（POP）才還原搜尋／篩選與捲動；其他進入方式（點 logo、導覽列、REPLACE）
+  // 一律乾淨首頁。重設放在 lazy initializer：先於下方各 state 的快取讀取、每次掛載一次，
+  // 且冪等（StrictMode 重跑無害）。清單與座標快取刻意保留，避免又閃骨架。
+  const navigationType = useNavigationType();
+  useState(() => {
+    if (navigationType !== 'POP') resetHomeView();
+  });
   // 搜尋／篩選初值取快取：從詳情頁返回時條件與結果原樣還原（重整則回預設）。
   const [selectedCategory, setSelectedCategory] = useState<string>(
     () => getCachedFilters().category,
@@ -132,6 +141,23 @@ export function HomePage() {
   const [selectedGenders, setSelectedGenders] = useState<string[]>(
     () => getCachedFilters().genders,
   );
+  // 已在首頁時再點 logo／導覽列「首頁」：PUSH 到同一路徑不會重新掛載，上面的初始化
+  // 重設不會跑。改看 location.key——每次導航都換新 key；掛載當下那把已由初始化處理，
+  // 其後出現新 key 且非 POP 才是「重新開始」：清空搜尋與全部篩選、捲回頂端。
+  // 清單快取不動（不閃骨架）。
+  const { key: locationKey } = useLocation();
+  const handledKey = useRef(locationKey);
+  useEffect(() => {
+    if (handledKey.current === locationKey) return;
+    handledKey.current = locationKey;
+    if (navigationType === 'POP') return;
+    resetHomeView();
+    setSelectedCategory('');
+    setSelectedGenders([]);
+    setDistrictsByCity({});
+    setSearchQuery('');
+    window.scrollTo(0, 0);
+  }, [locationKey, navigationType]);
   useEffect(() => {
     setCachedFilters({
       searchQuery,
@@ -436,7 +462,7 @@ export function HomePage() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         totalFilters={totalFilters}
-        hasBottomNav={isLoggedIn}
+        hasBottomNav={showsMemberChrome(authViewOrFallback(authView, isLoggedIn))}
         resultCount={resultCount}
         onResetFilters={() => {
           setSelectedGenders([]);

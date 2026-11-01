@@ -20,7 +20,7 @@
 // migration 宣告的那組因此成為環境無關的**下限**,第 7 節釘的就是它。
 //
 // 這個檔案是另一道防線:**釘住 policy 的結構**。它抓不到「policy 寫錯」,
-// 但抓得到「被刪掉、角色被放寬、條件被改寬、多出第 6 條 permissive、
+// 但抓得到「被刪掉、角色被放寬、條件被改寬、多出第 5 條 permissive、
 // 或整張表的 RLS 被關掉」——那才是實際會發生的迴歸,而且每個 PR 都跑得到。
 //
 // ⚠️ 只斷言**環境無關**的事實。policy 的存在/角色/表達式/欄位集合全部來自
@@ -32,7 +32,7 @@
 //
 // 註:規劃書列的是 6 條驗證標準,這裡拆成 7 支 Deno.test（第 8、9 支是
 // 2026-09-14 補的 GRANT 守衛,不在原規劃內）——「逐條角色範圍」
-// 拆成「三條 own policy 限 authenticated」與「insert_own/select_public 維持
+// 拆成「own policy 限 authenticated」與「insert_own/select_public 維持
 // PUBLIC」兩支,因為它們的期望值方向相反,混在一支裡失敗訊息會看不出是哪半邊。
 // 內容無增減。
 // ============================================================
@@ -91,18 +91,13 @@ async function listingsPolicies(sql: ReturnType<typeof postgres>): Promise<Polic
 const OWN_EXPR = '((user_id = auth.uid()) OR is_admin())';
 
 // golden 值取自 develop 分支(hosted,從 migration 乾淨重播)實測。
+// listings_delete_own 由 20261110000001 撤除:刪刊登一律走 DELETE /listings/:id
+// (Edge Function 會連帶清 Storage),RLS 直刪會留下孤兒照片。
 const EXPECTED: Record<string, Omit<PolicyRow, 'polname'>> = {
-  listings_delete_own: {
-    cmd: 'DELETE',
-    permissive: true,
-    roles: 'authenticated',
-    using_expr: OWN_EXPR,
-    check_expr: null,
-  },
   listings_insert_own: {
     cmd: 'INSERT',
     permissive: true,
-    // 五條裡唯一沒被 20260726000001 收斂到 authenticated 的——它不呼叫
+    // 四條裡唯一沒被 20260726000001 收斂到 authenticated 的——它不呼叫
     // is_admin(),所以當時沒有 anon 42501 的症狀。現況釘成 characterization:
     // anon 的 auth.uid() 為 null,比不中 with check,本來就過不了。
     roles: 'PUBLIC',
@@ -147,7 +142,7 @@ Deno.test('listings RLS：資料表已啟用 row level security', async () => {
       from pg_class where oid = 'public.listings'::regclass
     `;
     // ALTER TABLE ... DISABLE ROW LEVEL SECURITY **不會刪除任何一條 policy**:
-    // 下面 2-6 條全部讀 pg_policy / information_schema,會照樣回報「5 條齊全、
+    // 下面 2-6 條全部讀 pg_policy / information_schema,會照樣回報「4 條齊全、
     // 角色與表達式完全正確」,但 RLS 一點都沒生效。而 anon/authenticated 對
     // listings 有 table GRANT(20260914000002:anon 讀、authenticated 增刪改查),
     // 所以那等於任何人都能讀寫任意會員的刊登。這條是唯一抓得到該退化的斷言。
@@ -161,12 +156,12 @@ Deno.test('listings RLS：資料表已啟用 row level security', async () => {
 // 2-5. policy 集合、角色範圍、permissive、條件表達式
 // ============================================================
 
-Deno.test('listings RLS：policy 集合恰好是這五條,不多不少', async () => {
+Deno.test('listings RLS：policy 集合恰好是這四條,不多不少', async () => {
   const sql = postgres(DB_URL);
   try {
     const rows = await listingsPolicies(sql);
     // 「多一條 permissive」是 RLS 最典型的破口:permissive policy 之間是 OR,
-    // 任何人新增一條 using (true) 就整張表對外開放,而既有五條完全不受影響。
+    // 任何人新增一條 using (true) 就整張表對外開放,而既有四條完全不受影響。
     assertEquals(
       rows.map((r) => r.polname),
       Object.keys(EXPECTED).sort(),
@@ -177,14 +172,12 @@ Deno.test('listings RLS：policy 集合恰好是這五條,不多不少', async (
   }
 });
 
-Deno.test('listings RLS：三條 own policy 只適用 authenticated', async () => {
+Deno.test('listings RLS：兩條 own policy 只適用 authenticated', async () => {
   const sql = postgres(DB_URL);
   try {
     const rows = await listingsPolicies(sql);
     const scoped = rows
-      .filter((r) =>
-        ['listings_select_own', 'listings_update_own', 'listings_delete_own'].includes(r.polname)
-      )
+      .filter((r) => ['listings_select_own', 'listings_update_own'].includes(r.polname))
       .map((r) => `${r.polname}=${r.roles}`);
     // 放寬回 PUBLIC 會讓未登入者的查詢也踩到 own-policy 裡的 is_admin(),
     // 而 anon 沒有該函式的 EXECUTE —— 訪客瀏覽首頁直接 42501
@@ -194,7 +187,6 @@ Deno.test('listings RLS：三條 own policy 只適用 authenticated', async () =
       [
         'listings_select_own=authenticated',
         'listings_update_own=authenticated',
-        'listings_delete_own=authenticated',
       ].sort(),
     );
   } finally {
@@ -213,7 +205,7 @@ Deno.test('listings RLS：insert_own 與 select_public 維持 PUBLIC 範圍', as
   }
 });
 
-Deno.test('listings RLS：五條全是 permissive,沒有 restrictive', async () => {
+Deno.test('listings RLS：四條全是 permissive,沒有 restrictive', async () => {
   const sql = postgres(DB_URL);
   try {
     const rows = await listingsPolicies(sql);
@@ -352,7 +344,7 @@ Deno.test('listings GRANT：authenticated 具備增刪改查四項', async () =>
 // 8. is_admin() 的執行權：own policy 能不能被求值
 // ============================================================
 
-// 三條 own policy 的 USING 是 ((user_id = auth.uid()) OR is_admin())，所以
+// 兩條 own policy 的 USING 是 ((user_id = auth.uid()) OR is_admin())，所以
 // authenticated 少了 EXECUTE 就會在 RLS 評估中途 42501——症狀與「policy 寫錯」
 // 同形（PR #317 第四輪 17 條紅燈，詳見 20260914000003）。
 // anon 反過來必須**沒有**：0726 事故的修法是把 own policy 收斂到 authenticated，

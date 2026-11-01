@@ -78,7 +78,11 @@ jobs:
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
         run: |
           set -uo pipefail
-          body="$(curl -fsS -X POST "$ENDPOINT" -H "x-internal-secret: $RECONCILE_SECRET")"
+          # 重試只為了暫時性網路故障（#458：runner DNS 解析失敗已發生兩次）。
+          # 端點冪等（對 pending 訂單做查詢＋收斂，已收斂的訂單離開 pending，
+          # 重放不會重複處理），所以 --retry-all-errors 對已送達的 POST 也安全。
+          body="$(curl -fsS --retry 3 --retry-delay 10 --retry-all-errors --max-time 120 \
+            -X POST "$ENDPOINT" -H "x-internal-secret: $RECONCILE_SECRET")"
           rc=$?
           if [ $rc -ne 0 ]; then
             echo "::error::對帳端點呼叫失敗（curl exit $rc）"
@@ -133,6 +137,7 @@ jobs:
           " "$prev")"
           fi
           code="$(curl -sS -o /tmp/alerts.json -w '%{http_code}' --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-all-errors \
             "$API_BASE/internal/system-alerts/recent?minutes=$minutes" \
             -H "x-internal-secret: $RECONCILE_SECRET" || echo 000)"
           if [ "$code" = "404" ]; then
@@ -158,8 +163,13 @@ jobs:
           total = d['data']['total']
           print('has_alerts=%s' % ('true' if alerts else 'false'))
           # 只放來源與數量，不放 id 以外的內容；message 可能是自由文字，截短。
-          lines = ['%s：%s' % (a['source'], str(a['message'])[:60]) for a in alerts[:5]]
+          shown = alerts[:5]
+          lines = ['%s：%s' % (a['source'], str(a['message'])[:60]) for a in shown]
           body = '過去 %s 分鐘共 %s 筆 error。\n%s' % (sys.argv[1], total, '\n'.join(lines))
+          # 端點最多回 20 筆、本文只列前 5 筆：超過的明細不在推播裡，註明總數
+          # 讓人知道要去後台 system_alerts 看全部（總數本身一筆不少）。
+          if total > len(shown):
+              body += '\n（另有 %s 筆未列出，請至後台 system_alerts 查看）' % (total - len(shown))
           print('body<<EOF\n%s\nEOF' % body)
           PY
 
@@ -213,6 +223,19 @@ jobs:
       # 「失敗時開 issue／推送」誤報「對帳排程失敗」。代價：LINE 持續壞掉時
       # 每輪都紅、每輪重送同一批（LINE 恢復前送不出去，恢復後單輪補送一次，
       # 窗口上限 24 小時）。
+      # 缺 LINE secret 時 notify 會 no-op 並 exit 0——run 綠、窗口前移、告警遺失。
+      # 這裡先擋：空的就 fail，窗口不前移（不改 notify 對其他呼叫端的 no-op 行為）。
+      - name: 確認 LINE 推送設定存在
+        if: ${{ !cancelled() && steps.recent-alerts.outputs.has_alerts == 'true' }}
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_ALERT_TO: ${{ secrets.LINE_ALERT_TO }}
+        run: |
+          if [ -z "$LINE_CHANNEL_TOKEN" ] || [ -z "$LINE_ALERT_TO" ]; then
+            echo "::error::LINE_CHANNEL_TOKEN／LINE_ALERT_TO 未設定，有新 error 告警卻無法推送；讓本輪失敗以免窗口前移、告警遺失。"
+            exit 1
+          fi
+
       - name: 有新 error 告警時推送 LINE
         if: ${{ !cancelled() && steps.recent-alerts.outputs.has_alerts == 'true' }}
         uses: ./.github/actions/notify

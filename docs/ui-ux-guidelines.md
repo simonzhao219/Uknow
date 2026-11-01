@@ -66,6 +66,12 @@
 〔實作〕`src/components/admin/AdminConsole.tsx`（分頁區）、
 `src/components/admin/AdminToolbar.tsx`。
 
+**頁首（`Navbar`）依登入狀態有五個版本**——訪客、判定前的空白占位、記住的會員
+（頭像占位）、註冊中（只有登出，離開註冊頁面時多「繼續完成註冊」）、會員。換版時
+是同一組節點換內容、右側容器高度固定，頁首不位移；手機底部導覽與 `main` 底部留白
+只跟會員與頭像占位走。〔實作/契約〕`src/utils/authView.ts`（`resolveAuthView`、
+`showsMemberChrome`）、`src/components/Navbar.test.tsx` 的「頁首五版本」。
+
 其他：`Navbar` 為 `sticky`；`Footer` 保留快速連結與聯絡方式（LINE 帳號代稱、
 信箱皆為純文字，不提供可點連結）；已登入的功能入口不應只藏在右上頭像
 下拉裡。

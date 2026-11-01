@@ -125,8 +125,8 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 
 ## RLS 結構守衛（`api/rls-policies.test.ts`）
 
-`public.listings` 的五條 policy 由這支測試每個 PR 釘住。它抓不到「policy 寫得
-對不對」，但抓得到**被刪掉、角色被放寬、條件被改寬、多出第 6 條 permissive、
+`public.listings` 的四條 policy 由這支測試每個 PR 釘住。它抓不到「policy 寫得
+對不對」，但抓得到**被刪掉、角色被放寬、條件被改寬、多出第 5 條 permissive、
 或整張表的 RLS 被關掉**——那才是實際會發生的迴歸。行為驗證在 journey 的
 hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-design.md` §14）。
 
@@ -153,12 +153,12 @@ hosted 分支（`45_listing_rls.feature`，理由見 `docs/e2e-journey-test-desi
 | `drop policy listings_select_own` | policy 集合、own policy 角色 |
 | `alter policy listings_select_own to public` | own policy 角色、PUBLIC 範圍 |
 | 新增一條 `for select to public using (true)` | policy 集合、PUBLIC 範圍、條件 golden |
-| 把 `listings_delete_own` 改成 restrictive | 五條全是 permissive |
+| 把 `listings_update_own` 改成 restrictive（2026-10-31 重驗） | 四條全是 permissive |
 | `listings_select_public` 條件加 `or true` | 條件 golden |
 | `listings` 加欄位但沒同步 view | 欄位集合與 `public_listings` 相同 |
 
 一個值得記住的分工:**「條件 golden」那支抓不到 policy 被刪掉**——它只走訪
-現存的列，被刪的那條根本不會被迭代。擋刪除的是「policy 集合恰好是這五條」。
+現存的列，被刪的那條根本不會被迭代。擋刪除的是「policy 集合恰好是這四條」。
 兩支都在，才是完整的。
 
 跑法（`supabase start` 起不來的環境也可用）:只起一顆 `supabase/postgres`

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { createContext } from 'react';
+import { clearInflight } from '../utils/fetchProfile';
 
 const showToast = vi.fn();
 const getSession = vi.fn();
@@ -45,7 +46,7 @@ let acceptResponse: () => Promise<Response>;
 const fetchMock = vi.fn(async (url: string | URL | Request) => {
   const href = String(url);
   if (href.endsWith('/auth/invite/accept')) return acceptResponse();
-  if (href.endsWith('/auth/profile')) return json(200, { registrationStep: 0 });
+  if (/\/(auth\/)?profile$/.test(href)) return json(200, { registrationStep: 0 });
   if (href.endsWith('/auth/check-email')) return json(200, { exists: true });
   throw new Error(`unexpected ${href}`);
 });
@@ -95,6 +96,8 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   vi.stubGlobal('fetch', fetchMock);
+  // fetchProfile 是模組單例：前一案在飛的請求不得合併進下一案。
+  clearInflight();
   acceptResponse = async () => json(200, { accepted: true });
   signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'tok' } }, error: null });
 });
@@ -358,7 +361,18 @@ describe('AuthPage 五 lane 審查補測', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('/auth/profile 回 5xx 時視為未登入：保留 token、進設定密碼', async () => {
+  it('掛載時的 session 檢查走共用的 /profile（與啟動判定同一入口）', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    renderAt('/login');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => /\/api\/profile$/.test(u))).toBe(true);
+    expect(urls.some((u) => /\/auth\/profile$/.test(u))).toBe(false);
+  });
+
+  it('/profile 回 5xx 時視為未登入：保留 token、進設定密碼', async () => {
     getSession.mockResolvedValue({ data: { session: { access_token: 'tok' } } });
     fetchMock.mockImplementationOnce(async () => json(503, {}));
     renderAt(`/register?invite=${VALID}`);

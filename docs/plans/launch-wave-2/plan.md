@@ -4,7 +4,7 @@
 
 寫給**全新的主 session**看：它開局只有 repo 與這份檔，沒有對話記憶。上游是第 1 波
 `docs/plans/launch-wave-1/plan.md`（§0 裁決 1–39、§6 待辦、§8 進度）；那個目錄在第 1 波審查結案後會刪，
-屆時用 `git show <hash>:docs/plans/launch-wave-1/plan.md` 取回。行號一律現算。
+已於 #468 刪除，用 `git show bee6d610:docs/plans/launch-wave-1/plan.md` 取回。行號一律現算。
 
 ## 0. 業主目標與裁決
 
@@ -39,6 +39,12 @@
 | W2-18 | 第 1 波審查 #460 P1-1：電子發票上正式站後零付款、前提未實證 | 業主以未付款帳號走到 PayUni 刷卡頁（不付款）實證；被導回付款失敗即升 P0、立刻 hotfix 撤 TradeInvoice |
 | W2-19 | W2-18 實測結果、首頁返回真機驗收、#453 規劃審閱 | 業主 10/31 10:00 回報：**正式站刷卡頁正常出現（電子發票前提成立，#460 P1-1 結案）**；**develop 首頁返回真機驗收通過**（#455／#457）；**#453 規劃審閱通過** → 主 session 開實作 session（Opus）待業主親打 `/tdd-implement`，11/03 晉升前不轉 ready |
 | W2-20 | 晉升時點與範圍（業主 10/31 11:35：「既然已經準備好，就先動作」） | **10/31 立即晉升**（被推翻的原計畫：11/03 週二；屬業主授權的凍結期例外——內容為告警／維運／首頁體驗，無 migration、未動金額與狀態機）；**#453 條款十之一不隨本次上**，留第 3 波主 session 審後再上 |
+| W2-21 | 頁首「先登入、再轉已登入」（業主 10/31 錄影） | 主 session 讀碼：(1) Navbar 只看 `!!user`、不看 `isLoadingUser`，冷啟動先畫訪客；(2) 註冊中途（有 session、profile 未齊）`user=null`，頁首全程顯示「登入／立即刊登」。**開 T1 正式做（Opus 三段式），第 3 波上** |
+| W2-22 | 註冊中途頁首呈現 | **只顯示「登出」**（不顯示登入／立即刊登）；併入 T1 |
+| W2-23 | T1 規劃裁決（三輪，10/31） | D1–D6、E1–E5、F1–F5 全照規劃 session 建議；登出維持 global scope。細節在 `docs/plans/auth-state-trust/plan.md`（PR #466 定稿 v4.1） |
+| W2-24 | 第 2 波審查 P2-6：點 logo／導覽列回首頁 | **回到乾淨首頁**，只有「返回」（POP）才還原篩選與捲動；第 3 波做 |
+| W2-25 | 第 2 波審查 P2-12：`TradeInvoice` 改由 secret 控制 | **不做**：兩商店皆已開通，`UPP02085` 有商店級告警、換商店 SOP 已進 checklist；開關反而可能誤關發票 |
+| W2-26 | 第 2 波審查 P2-13：工項 A（後台會員推薦碼欄位） | **順延第 3 波**（本波未排上，非放棄） |
 
 沿用第 1 波仍有效的：服務條款／參加契約／事業手冊／推廣獎勵規章律師定案不可改；使用者可見文案一律「推薦人」；admin 提領資料含未遮罩身分證與
 銀行帳號，任何快取不得持久化；10/29–10/31 凍結只針對 main（只許 hotfix），develop 照常合併；晉升 PR 開著時 develop 不合任何 PR（strict required check）。
@@ -95,6 +101,8 @@
 條款十之一實作（C 規劃審過後）；T1 登入狀態信任；PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估（第 1 波裁決 21）；伺服器端密碼規則；
 `handle_new_user` 不讀 metadata＋`national_id` 唯一（A1b-1b）；後台稽核軌跡 A1b-2/3；SEO 進階（AEO／GEO）；框架修訂（第 1 波 friction-log 2026-10-26～27）；
 `lazyWithRetry` 簡化＋表單草稿保存；PR 2 審查記債（#421）；詳情頁輪播 P2（#430）；成功頁發卡行評估；邀請體驗整體重調；A1a、A2、L1-1、S7b。
+第 2 波新增：工項 A（W2-26）；首頁 logo 不還原（W2-24）；登出清 `homeListingsCache`（審查 P2-5，併入 T1）；告警管線四縫（審查 P2-1～4：去重無時間窗、deploy-smoke PayUni 閘門不推 LINE、缺 LINE secret 仍前移窗口、推播 20 筆上限）；
+reconcile curl DNS 失敗重試；issue #467 npm audit（Dependabot 後複查，vitest／vite 大版本另開）；`homeListingsCache` 單元測試（P2-15）；子網域盤點＋完整 CSP。
 
 ## 6. 業主待辦
 
@@ -113,12 +121,14 @@
 | R1 | `session_01MQovbDaQBDh27Eb8zoKDev` | Opus | `docs/wave1-review` | #460 ✅ 82b0f02 | 收工 |
 | H | `session_01MQovbDk9KPWWoD8sZFrAvw` | Sonnet | `fix/journey-payuni-sandbox-form` | #456 ✅ dcb676d | 收工（full sandbox 綠） |
 | B | `session_01MQovbBg7R2p1PUxhKZb3DK` | Sonnet | `fix/home-back-skeleton` → `fix/home-filter-restore` | #455 ✅ ee6613b、#457 ✅ 707d0b0 | 收工（待業主真機驗返回） |
-| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` | #454 ✅ f110586 | 待命（晉升後收緊 build-sha） |
+| D | `session_01MQovbBDFtCbNxf1AjTosRA` | Sonnet | `fix/prod-build-sha` → `fix/build-sha-strict` | #454 ✅ f110586、#464 ✅ 80bbaba | 收工 |
 | N | `session_01MQovbAdbpZorMkp8trfxwx` | Sonnet | `fix/notify-exit-code` | #462 ✅ 8d81c7a | 收工 |
 | C | `session_01MQovbCdFo86t9DX6d66Afq`（規劃）→ `session_01MQovbCF5454fAYfqy9NXaJ`（實作） | Opus | `feature/listing-photo-retention` | #453（draft） | 實作完成，待第 3 波審與合併 |
 | P | `session_01MQovbCNPqBHZoyuZsvmxiJ` | Opus | `fix/payuni-merchant-alert` | #461 ✅ 3b5b7c9 | 收工 |
 | S | `session_01MQovbBGBW1DseerZ2P4p64` | Sonnet | `fix/ops-security-hardening` | #459 ✅ 9ac1231 | 收工 |
-| A | — | Sonnet | `fix/admin-member-referral-cols` | — | 批 2 |
+| A | — | Sonnet | `fix/admin-member-referral-cols` | — | 順延第 3 波（W2-26） |
+| T1 | `session_01MQovbFCufZij3JrT9nnFM2` | Opus | `feature/auth-state-trust` | #466（draft，規劃定稿 v4.1） | 待第 3 波業主親打 `/tdd-implement auth-state-trust` |
+| R2 | `session_01MQovbAr6u4Fk41MuZ4m8mS` | Opus | `docs/wave2-review`、`docs/retire-wave1` | #469 ✅ e097922、#468 ✅ 50d63ce | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -144,3 +154,7 @@
 | 10/31 11:20 | **#456 合進 develop（dcb676d）**→ 主 session 對 develop 發 full/sandbox：run 41158578126 **綠**（25 分鐘，30 人、並行 8 人買方名稱共用無礙）。**#459（9ac1231）、#462（8d81c7a）依序 rebase 後合進 develop**——第 2 波程式工項全部合併。業主轉來 LINE P1「正式站付款對帳排程失敗」（run 41141064038）：查為 runner DNS 暫時失敗（curl exit 6，未送到正式站），下一輪 41157903717 已綠 → 留言並關 #458；第二次發生，對帳 curl 加重試列第 3 波候選。C 實作 session 已在跑（#453 TDD 紅燈期 CI 紅屬預期） | 11/02 22:00 收件；11/03 晉升 |
 | 10/31 11:30 | **C 實作完成**（#453 head fc8aab4b，draft）：六階段 TDD 全綠、/review-implementation P0 0／P1 4 全修／P2 15（僅 progress 過時一條未修，鷹架已刪）、決策升級進規格書 §11／workflow 檔頭／checklist。程序偏離：審查修正紅燈 commit 漏改一條斷言，C 自行 tdd-unlock 補 1 行（已記 friction-log；主 session 接受，要求下次先報）。照指示 11/03 前不轉 ready；第 3 波主 session 合併前須再審（實刪資料） | 第 3 波接手 |
 | 10/31 11:40 | 業主 W2-20：立即晉升、#453 不上。主 session 合 #452（本檔）進 develop → 開晉升 PR（develop→main，含 #451 #454 #455 #456 #457 #459 #460 #461 #462；無 migration；後端僅 #461 告警）；journey-full 已改 sandbox | journey-full 綠 → 合 main → 業主核准 production |
+| 10/31 13:30 | **晉升 #463 合進 main（5b6a790）**：journey-full sandbox 24 分鐘綠。業主 13:30 核准 production，deploy-supabase run 41169598265 成功。deploy-smoke run 41172352231：**正式站「✓ 線上版本 5b6a790 與預期相符」、安全標頭齊全**、PayUni 閘門 200。派 D 開 `fix/build-sha-strict`（無 meta 由 warn 改 fail）。業主錄影問頁首閃動 → W2-21／22，開 T1 規劃 session（Opus，`feature/auth-state-trust`，第 3 波） | 第 2 波收尾：開第 2 波審查 session |
+| 10/31 14:00 | **#464 合進 develop（80bbaba）**：線上無 build-sha／unknown 改 fail，§4 第 4 點完成。#465（本檔晉升紀錄）合進 develop | T1 規劃；開第 2 波審查 |
+| 10/31 15:00–19:00 | T1 三輪裁決（W2-23）；A0 查證主 session 代跑（正式站後三欄 0、develop 0）。T1 定稿 v4.1：推送守衛擋 force push → 主 session 以快轉 commit 1ea013c 疊上（不改寫歷史），PR #466 維持 draft。開 **R2** 審第 2 波＋第 1 波退場 | 等 R2 |
+| 10/31 19:30 | **R2 交 #469（P0 0／P1 0／P2 15）、#468（launch-wave-1/ 退場）**，主 session 審後依序合進 develop。代跑現場 SQL：#463 部署後 system_alerts 0、新訂單 0，#461 現場未觸發（列未驗）。業主裁決 W2-24～26。暫存分支 `claude/auth-state-trust-v41`、`-v41b` 待業主手動刪 | 寫第 3 波交接 `docs/plans/launch-wave-3/plan.md`；本目錄由第 3 波審查 session 依 review.md §6 退場 |

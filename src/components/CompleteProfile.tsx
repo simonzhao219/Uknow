@@ -11,7 +11,10 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError, getInputAriaProps } from '../utils/formHelpers';
-import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import { apiRequestJson, buildApiUrl, ApiError, extractApiErrorMessage } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import { clearAuthHint } from '../utils/authHint';
+import { fetchProfileForSession } from '../utils/fetchProfile';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { normalizeReferralCode } from '../utils/referralCode';
 import {
@@ -40,6 +43,16 @@ import {
 } from '../utils/formDraft';
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 
 // GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
 // 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
@@ -118,6 +131,8 @@ export function CompleteProfile() {
   // 使用者以為系統認不得他的名字。
   const [nameNotice, setNameNotice] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // 「稍後註冊」會刪帳號：先確認（業主裁決 W3-12）。
+  const [laterConfirmOpen, setLaterConfirmOpen] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
   const [codeError, setCodeError] = useState('');
@@ -192,15 +207,11 @@ export function CompleteProfile() {
           return;
         }
 
-        // 嘗試加載現有的 profile
-        const response = await fetch(buildApiUrl('/auth/profile'), {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
+        // 嘗試加載現有的 profile（共用 fetchProfile：與 App 啟動判定同 user id 合併）
+        const result = await fetchProfileForSession(session);
 
-        if (response.ok) {
-          const profile = await response.json();
+        if (result.kind === 'ok') {
+          const profile = result.profile;
           console.log('CompleteProfile: Loaded profile:', profile);
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
@@ -583,7 +594,6 @@ export function CompleteProfile() {
 
       // ✅ 2. 設置 user 到 UserContext（讓 ProtectedRoute 通過）
       setUser(profile);
-      localStorage.setItem('user', JSON.stringify(profile));
 
       // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
       clearPendingReferral();
@@ -603,64 +613,50 @@ export function CompleteProfile() {
     }
   };
 
+  // 確認框按「確定刪除」後才進來（業主裁決 W3-12）。刪除沒成功就不清本機、不登出、停在
+  // 原頁並說原因——帳號還在卻讓人以為已刪，是最難察覺的不一致。
   const handleLaterSignup = async () => {
+    const failed = (message: string) => showToast(message, 'error');
     try {
-      console.log('CompleteProfile: User chose to sign up later, cleaning up...');
-
-      // 1. 取得當前 session，用於呼叫後端刪除帳號
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
-      if (session) {
-        // 2. 呼叫後端刪除未完成的用戶帳號
-        try {
-          console.log('CompleteProfile: Calling cancel-signup API...');
-          const response = await fetch(buildApiUrl('/auth/cancel-signup'), {
-            method: 'DELETE',
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          });
-
-          if (response.ok) {
-            console.log('CompleteProfile: Account deleted successfully');
-          } else {
-            console.error('CompleteProfile: Failed to delete account, status:', response.status);
-          }
-        } catch (error) {
-          console.error('CompleteProfile: Error calling cancel-signup API:', error);
-        }
+      if (!session) {
+        failed('登入狀態已失效，請重新登入後再試');
+        return;
       }
 
-      // 3. 清除本地狀態（在登出前先清除，避免競態條件）
+      let response: Response;
+      try {
+        response = await fetch(buildApiUrl('/auth/cancel-signup'), {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } catch {
+        failed('暫時無法刪除帳號資料，請稍後再試');
+        return;
+      }
+      if (!response.ok) {
+        // 後端兩種拒絕都有中文原因（已付款不可自助刪除、暫時無法處理）。
+        const body = await response.json().catch(() => null);
+        failed(extractApiErrorMessage(body, '暫時無法刪除帳號資料，請稍後再試'));
+        return;
+      }
+
+      // 已刪除：清本機狀態（在登出前先清，避免競態），再登出。
       setUser(null);
       localStorage.removeItem('user');
+      // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
+      clearAuthHint();
       clearPendingReferral();
-      // 使用者主動選擇稍後再註冊，等同放棄這次草稿，一併清除。
       clearProfileDraft();
+      await signOutWithFallback(supabase.auth);
 
-      // 4. 登出 Supabase session（確保完全登出）
-      console.log('CompleteProfile: Signing out from Supabase...');
-      await supabase.auth.signOut();
-
-      // 5. 顯示提示訊息
-      showToast('您可以稍後再完成註冊', 'info');
-
-      // 6. 等待一小段時間確保 session 清除完成，然後導向首頁
-      setTimeout(() => {
-        console.log('CompleteProfile: Navigating to home page...');
-        navigate('/', { replace: true });
-      }, 100);
-    } catch (error: any) {
-      console.error('CompleteProfile: Error during cancellation:', error);
-
-      // 即使發生錯誤，也要嘗試清除狀態並導航
-      setUser(null);
-      localStorage.removeItem('user');
-      await supabase.auth.signOut();
-      showToast('已取消註冊', 'info');
+      showToast('已刪除帳號資料，之後可以用同一個 Email 重新註冊', 'info');
       navigate('/', { replace: true });
+    } catch (error) {
+      console.error('CompleteProfile: Error during cancellation:', error);
+      failed('暫時無法刪除帳號資料，請稍後再試');
     }
   };
 
@@ -960,15 +956,39 @@ export function CompleteProfile() {
               )}
             </Button>
 
-            {/* 稍後註冊按鈕 */}
+            {/* 稍後註冊：會刪除帳號（cancel-signup），破壞性紅框字＋確認框（ui-ux §11.3、§12.11）。
+                頁首另有不刪帳號的「登出」，確認框把只想先離開的人指過去。 */}
             <Button
               type="button"
-              tone="secondary"
+              tone="destructive"
               className="w-full mt-2"
-              onClick={handleLaterSignup}
+              onClick={() => setLaterConfirmOpen(true)}
             >
               稍後註冊
             </Button>
+            <AlertDialog open={laterConfirmOpen} onOpenChange={setLaterConfirmOpen}>
+              <AlertDialogContent data-testid="later-signup-confirm-dialog">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>刪除目前的帳號資料？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  {/* Radix AlertDialog 開啟時預設聚焦取消鈕：返回是預設焦點。 */}
+                  <AlertDialogCancel>返回</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setLaterConfirmOpen(false);
+                      void handleLaterSignup();
+                    }}
+                  >
+                    確定刪除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </form>
         </CardContent>
       </Card>

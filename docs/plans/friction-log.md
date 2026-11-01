@@ -3293,3 +3293,59 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   index.ts 判準註解補一句：「使用者看得到」只在失敗是**那個人自己**的時候才成立。
 - **未處理（同類掃描記債）**：`/payuni/prepare` 與 notify 在 `payuniConfig()` 擲錯（Secrets 缺件）時沒有告警——
   `/health` 的 `payuniConfigured` 有外顯但沒人主動看；本次不動，第 3 波評估是否由 deploy 後的 health 檢查擋。
+
+## 2026-10-31｜漏網（告警、流程）｜第 2 波審查（`docs/plans/launch-wave-2/review.md`）
+
+- **補「零訊號」時沒掃同一個 job 的其他 step**（漏網）：#454 為前端部署失敗加了 LINE 告警（`deploy-smoke.yml` 的 `if: failure()`），
+  但它排在既有的 PayUni 閘門探測之前，所以閘門紅（2026-10-07 那種 403）仍然只有 job 變紅、無人看。規則：補某種故障的告警時，
+  同一個 workflow 的其他失敗路徑一起確認有沒有訊號。
+- **route 外快取沒在登出時清**（漏網）：#455／#457 的 `homeListingsCache` 存了搜尋字、篩選與座標，`App.tsx` 的 `SIGNED_OUT`
+  只清 `adminCache`。SPA 登出不重整，共用裝置的下一位使用者會帶出前一人的條件。規則：新增任何模組層快取，都要在 `SIGNED_OUT`
+  清一次；候選機械把關：`src/utils/*Cache.ts` 的 reset 必須被 App.tsx 引用。
+- **「靠排程驗」的未驗項要在合併後立刻 dispatch**（流程）：#459 的 `deno audit` 自述等排程驗，下一次排程在晉升後兩天。
+  審查 session dispatch 一次就驗完，同時發現 npm audit 從 10/26 的 0 跳到 12 個 high／critical（#467）。
+- **runner 端暫時故障連續出現**（環境）：10/30–31 有 DNS 解析失敗（#458，第二次）與「安裝 Node 24」10 分鐘逾時。
+  對帳 curl 重試已列第 3 波候選；`setup-node` 的逾時只能重跑，尚無處置。
+
+## 2026-10-31｜漏網（流程）｜listing-photo-retention：紅燈後兩度改測試，其中一次經 `tdd-unlock` 解鎖、沒停手求裁決
+
+與 2026-10-21（S7a）同一個形狀。第 3 波 `listing-photo-retention` 施工中，紅燈 commit 之後改過兩次測試檔：
+
+- 階段 4（紅燈 `deac36c7`）：①兩個測試名超過 72 字——`check-test-names.py | tail -n` 吃掉失敗碼，紅燈前的命名檢查
+  沒擋下；②真路由 dry-run 測試以 `Deno.env.set` 覆寫 `RECONCILE_SECRET` 沒還原。等綠燈 commit 正常解鎖後，用獨立
+  commit `84eae8ce` 修正（`git diff deac36c7 84eae8ce -- '*.test.*'`：2 檔、7 增 3 刪，只動名稱與 env 還原）。
+- 審查修正（紅燈 `7a23fe6e`）：既有一條 `sweepOrphanPhotos` 測試精確比對 `SweepResult`，加 `orphanTotal` 欄位後期望物件
+  少一欄而型別錯——紅燈時漏改。**程序偏離**：沒有停手求裁決，直接跑 `tdd-unlock.sh`（`npm run check` 綠屬實，但它不跑
+  Deno 測試，這把鎖對後端測試本來就不起作用）後補欄位，與實作同一個 `fix` commit（`5d7e474f`）。
+  `git diff 7a23fe6e 5d7e474f -- '*.test.*'` 只有 1 行（期望物件補 `orphanTotal: 3`）。審查者請對這兩段 diff 判斷語意
+  是否未變，不要只信這裡的陳述。
+
+另外兩個框架事實：(a) `tdd-unlock.sh` 只跑 `npm run check`，後端階段「Deno 測試仍紅就解鎖」機械上擋不住；
+(b) 收尾的 `git fetch origin develop` 觸發 hook 自動 rebase，所有紅燈 hash 改寫，progress.md 要依 commit 標題重新對應。
+本條的 hash 是 2026-10-31 rebase 到 develop 之後的值；之後若再 rebase，以 commit 標題（`test(red): 實作審查修正…`、
+`test(listing-photos): 縮短超長測試名…`）對應。
+
+處置：照實寫進 PR #453 描述；框架修訂候選併入 10-21 那條：(1) `tdd-unlock.sh` 在有 `supabase/functions/**` 改動時納入
+`deno task test:unit`；(2) 文件化「紅燈前的閘門指令不得接 `| tail`」或讓檢查器輸出夠短；(3) 自動 rebase 後提示 hash 已變。
+
+## 2026-11-01｜漏網／誤擋（流程、環境）｜T1 auth-state-trust（PR #466）施工摩擦
+
+- **規劃描述了不存在的 UI**：plan §4.2 寫「complete-profile 頁『取消註冊』既有確認框加一句」，實際「稍後註冊」直接刪帳號、
+  沒有確認框也不是破壞性樣式；四輪規劃審查都沒抓到（審查讀 plan，不讀被描述的元件）。A3 截圖時才發現，送業主裁決後
+  本 PR 補了確認框（W3-12）。框架修訂候選：`/plan-feature` 對「既有 UI 的現況描述」要求附 `檔案:行號`，reviewer 抽查。
+- **e2e 比 vitest 多抓到四個實作缺陷**：換帳號冷啟動首繪閃前一人首字（提示 uid 要等 `getSession` 才比得到）、
+  占位換登出鈕時頁首容器位移、logo 晚到時容器位移、320px CTA 壓到 logo 7px。前三個只有在真瀏覽器量 layout shift／
+  首繪時序才看得到；第四個連 e2e 的「一列放得下」都量漏（只量右緣），是實機截圖發現後才把 logo 重疊加進斷言。
+  教訓：版面斷言要量「與鄰居的關係」，不只量「在容器內」。
+- **本機 e2e 跑法**（容器環境，給下一個執行 session）：容器 Chromium 是 build 1243、`playwright==1.56.0` 要 1194——在
+  scratchpad 建 `pwb/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向
+  `/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`，以
+  `PLAYWRIGHT_BROWSERS_PATH` 指過去；conftest 自起的 dev server 跑到約 20% 會死（ERR_CONNECTION_REFUSED 洗版、看起來
+  像全面紅燈）——改在獨立 git worktree 起 `npx vite --port 3000` 並設 `E2E_SKIP_DEV_SERVER=1`（同 CI），也避免邊改碼邊 HMR。
+  `npm run check:full` 需要 deno：`npm i -g deno`。
+- **逃生口 2 的解鎖**：紅燈測試以單行字串比對 App.tsx 的 `<Route path=`，碰上多行 JSX 必紅。照 skill 停手求裁決，業主
+  裁決放寬並授權執行 session 刪鎖修該格——流程如設計運作，記一筆供「逃生口實際用量」統計。
+- **規劃→實作偏離的去處**：實作審查（P0 0／P1 3／P2 14）的 P1 全修；未修的 P2 記在 PR #466「偏離規劃說明」。
+
+處置：第一條列入下次框架整併；其餘為紀錄。
+

@@ -112,6 +112,41 @@ Deno.test('notify DEF01006 商店狀態不符合：一人遇到就留 error 告�
   }
 });
 
+Deno.test('notify DEF01006：昨天留下未 resolve 的同鍵告警不得壓住今天的新告警（日期桶）', async () => {
+  const client = adminClient();
+  await client.from('system_alerts').delete().eq('source', 'payuni-merchant');
+  const user = await createTestUser(client, { name: 'Merchant Day' });
+  try {
+    // 模擬昨天已推過、沒人 resolve 的商店告警（鍵與今天相同，只差 day）。
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const { error } = await client.from('system_alerts').insert({
+      source: 'payuni-merchant',
+      severity: 'error',
+      message: 'seeded yesterday',
+      context: {
+        reason: 'merchant_rejected',
+        payuniStatus: 'DEF01006',
+        payuniMessage: '商店狀態不符合',
+        day: yesterday,
+      },
+    });
+    if (error) throw new Error(`seed failed: ${error.message}`);
+
+    const tradeNo = uniqueTradeNo('DAY');
+    await seedPendingOrder(client, user.id, tradeNo);
+    await postNotify(shortRejection(tradeNo, 'DEF01006', '商店狀態不符合'));
+
+    const alerts = (await openAlerts(client, 'payuni-merchant'))
+      .filter((a) => a.context.payuniStatus === 'DEF01006');
+    assertEquals(alerts.length, 2, '隔天同一原因要再推一次（鍵含日期）');
+    const today = new Date().toISOString().slice(0, 10);
+    assertEquals(alerts.some((a) => a.context.day === today), true, '新告警帶今天的 day');
+  } finally {
+    await client.from('system_alerts').delete().eq('source', 'payuni-merchant');
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
 Deno.test('return UPP02085 商店尚未啟用電子發票：ReturnURL 這一側也要告警，導回照舊', async () => {
   const client = adminClient();
   await client.from('system_alerts').delete().eq('source', 'payuni-merchant');

@@ -63,6 +63,8 @@ def build_admin_member_detail(**overrides) -> dict:
         "bankCode": "004",
         "bankAccount": "****901234",
         "referrerName": None,
+        "referralCode": "8048876",
+        "referralProgramJoined": True,
         "directChildCount": 2,
         "listingCount": 1,
         "availablePoints": 12000,
