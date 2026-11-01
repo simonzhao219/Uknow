@@ -39,6 +39,8 @@
 | W4-15 | T1-B Q5：degraded 文案 | 「網路不穩，正在重新連線」＋「重試」，說明改「請稍後按重試」，**不加輪詢** |
 | W4-16 | T1-B Q6：degraded callout 的「登出」鈕 | **加，必做，走主動登出 global**（`signOutWithFallback`；被推翻：用 local；不加） |
 | W4-17 | T1-B Q7：首頁 degraded 且無提示時頁首空槽 | **接受為已知取捨**，列規格書已知限制（被推翻：補斷線 icon） |
+| W4-18 | T1-B 異常 callout「聯絡客服」入口（22:00） | **既有 `LINE_OFFICIAL_ACCOUNT_URL`**（與 Footer、結帳頁同一入口；被推翻：LINE＋Email 並列） |
+| W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
 
@@ -124,7 +126,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | — | 紅燈 `b4e44f1`；等業主親打解鎖授權（W4-10） |
 | E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | #484 ✅ 266ad42 | 收工 |
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
-| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 規劃 `040cfac`；依 W4-11～17 修訂後重跑 `/review-plan` |
+| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | plan v2.1 `1985a0b` 主 session 審過；等業主親打 `/tdd-implement`＋F1 合併 |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -136,3 +138,5 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/01 20:38 | E 交 #484：只動 journey harness（`#name` 逾時 `dump_page`；f70 改等 `round-progress` 並以 `to_have_text` 斷言），journey dispatch run 41306410552 綠。主 session 審，無 P0／P1 → **#484 合進 develop（266ad42）**。同類掃描列出的 `expect_or_dump` 統一包裝、`open_task_center` 只等標題 → 第 5 波候選 | — |
 | 11/01 20:52 | K2 交 #485：P2-10／12／13／22，無偏離。主 session 審：deploy-smoke fallback 在其他 step 失敗、兩個 outcome 為 skipped 時成立；notify 缺 secret 改 `::error::`＋summary 標紅、不 fail。K2 自行 rebase 成 `bfa79d1`，diff 與審過的 `72f7ffd` 逐位元組相同 → **#485 合進 develop（1525913）**。未驗：fallback 與缺 secret 分支待真實觸發（dispatch 不跑告警 step） | develop 部署後 dispatch deploy-smoke |
 | 11/01 21:00 | F1 回報紅燈 `b4e44f1`，卡在舊測試與 W3-15 矛盾、守衛禁改測試的死結。T1-B 回報規劃 `040cfac`、`/review-plan` P0 0、P1 約 15、需裁決 Q1–Q7。業主裁決 **W4-10～17**（全照建議）；已轉達兩個 session，F1 等業主親打授權 | F1 解鎖後施工；T1-B 修訂重審 |
+| 11/01 21:46 | K2 合併後 develop：CI push 41308547578 綠 → deploy-supabase 41309330236 綠 → deploy-smoke 41309365066（deployment_status 觸發，跑的已是 K2 版 workflow）綠，不另 dispatch | — |
+| 11/01 22:00 | T1-B 回報 v2：`/review-plan` 第二輪 P0 0、P1 9，已自行落地成 v2.1（`1985a0b`，已 rebase 到含 #485 的 develop）。業主裁決 **W4-18、W4-19**。主 session 審 v2.1：9 條 P1 都有落點、無偏離 W4-11～17 → **通過**；兩條 P2 交實作（retry() 要 dispatch `retry` 並在各出口清 `isRetrying`；B1 前主 session 代跑 Logs Explorer） | 業主在 T1-B session 親打 `/tdd-implement auth-transient-resilience`；實作等 F1 合併 |
