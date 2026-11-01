@@ -83,7 +83,18 @@ CI（75506d59）：guards、static-checks、unit-tests、api-tests、build-bundl
 
 <!-- P0 的處置規則：必須修掉再 push，或由人在此明文豁免。 -->
 
-- [ ] P0：無。
-- [ ] P1 三項處置：S9 CLS 補斷言 □ 修 □ 寫進 PR「偏離規劃說明」；`aria-disabled` 停用外觀 □ 修 □ 列後續；Q7 □ 依業主裁決
-- [ ] P2：能小修就修，其餘寫進 PR「偏離規劃說明」或 friction-log
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回
+- [x] P0：無。
+- [x] P1 三項處置（主 session 2026-11-01 指示全修，紅 `cb402eff`／綠 `6038efe5`；Q7 紅 `d76df44f`／綠 `927b6854`）：
+  - S9 CLS：■ 修——無提示進漏斗頁、OTP 驗證前、記住的註冊中三情境補 `the header layout never shifted`。
+  - `aria-disabled` 停用外觀：■ 修——`button.tsx` 加 `aria-disabled:opacity-50`／`pointer-events-none`；另 `signOutWithFallback`
+    給 global 登出 5 秒逾時，逾時走 `scope:'local'`（`useFunnelLogout`、Navbar 會員登出、bootstrap 401 共用）。
+  - Q7：■ 依業主裁決 W3-12——AlertDialog 確認框；觸發鈕改破壞性紅框字；cancel-signup 失敗／斷線時顯示原因、停在原頁、
+    不清本機不登出；成功 toast 改「已刪除帳號資料，之後可以用同一個 Email 重新註冊」；規格書 §2.1 區分兩個出口。
+- [x] P2：已修——AuthPage 三處 `clearAuthHint()`、bootstrap 401 後 signOut 失敗補 local（不再未處理例外）、
+  `authViewOrFallback` 取代三份手抄回落、appShell 守衛涵蓋動態 import 與區段錨點、reducer `setUser` 註解不對稱。
+  記債（寫進 PR #466「偏離規劃說明」）：「恰一次」只合併 in-flight；hook 回傳欄位與 `clearInflight` 注入；BottomNav 首現
+  時點未與 `/profile` 放行比較；S5 時限 10 秒（PaymentResult 3 秒輪詢＋開通回應，5 秒會在慢 runner 抖）；S8 容差與
+  icon 觸控尺寸未斷言；member-pending 的 `role=status` 位置；`nextFunnelRoute` 先判資料未齊；從 PayUni 返回由 reload
+  情境涵蓋；OTP 驗證後由 `authView.test` 純函式涵蓋；載入態逐頁只確認有 spinner／表單。
+- [ ] 〈需人工裁決〉1（F1 資料未齊的 admin／active 舊帳號頁首只剩登出）：主 session 詢問業主中，本 PR 未動。
+- [x] 人審完成,裁決:■ 修訂後通過（主 session 2026-11-01：P1 全修、P2 小修＋記債後收尾轉 ready）

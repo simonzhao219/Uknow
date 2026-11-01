@@ -3327,3 +3327,25 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：照實寫進 PR #453 描述；框架修訂候選併入 10-21 那條：(1) `tdd-unlock.sh` 在有 `supabase/functions/**` 改動時納入
 `deno task test:unit`；(2) 文件化「紅燈前的閘門指令不得接 `| tail`」或讓檢查器輸出夠短；(3) 自動 rebase 後提示 hash 已變。
+
+## 2026-11-01｜漏網／誤擋（流程、環境）｜T1 auth-state-trust（PR #466）施工摩擦
+
+- **規劃描述了不存在的 UI**：plan §4.2 寫「complete-profile 頁『取消註冊』既有確認框加一句」，實際「稍後註冊」直接刪帳號、
+  沒有確認框也不是破壞性樣式；四輪規劃審查都沒抓到（審查讀 plan，不讀被描述的元件）。A3 截圖時才發現，送業主裁決後
+  本 PR 補了確認框（W3-12）。框架修訂候選：`/plan-feature` 對「既有 UI 的現況描述」要求附 `檔案:行號`，reviewer 抽查。
+- **e2e 比 vitest 多抓到四個實作缺陷**：換帳號冷啟動首繪閃前一人首字（提示 uid 要等 `getSession` 才比得到）、
+  占位換登出鈕時頁首容器位移、logo 晚到時容器位移、320px CTA 壓到 logo 7px。前三個只有在真瀏覽器量 layout shift／
+  首繪時序才看得到；第四個連 e2e 的「一列放得下」都量漏（只量右緣），是實機截圖發現後才把 logo 重疊加進斷言。
+  教訓：版面斷言要量「與鄰居的關係」，不只量「在容器內」。
+- **本機 e2e 跑法**（容器環境，給下一個執行 session）：容器 Chromium 是 build 1243、`playwright==1.56.0` 要 1194——在
+  scratchpad 建 `pwb/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向
+  `/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`，以
+  `PLAYWRIGHT_BROWSERS_PATH` 指過去；conftest 自起的 dev server 跑到約 20% 會死（ERR_CONNECTION_REFUSED 洗版、看起來
+  像全面紅燈）——改在獨立 git worktree 起 `npx vite --port 3000` 並設 `E2E_SKIP_DEV_SERVER=1`（同 CI），也避免邊改碼邊 HMR。
+  `npm run check:full` 需要 deno：`npm i -g deno`。
+- **逃生口 2 的解鎖**：紅燈測試以單行字串比對 App.tsx 的 `<Route path=`，碰上多行 JSX 必紅。照 skill 停手求裁決，業主
+  裁決放寬並授權執行 session 刪鎖修該格——流程如設計運作，記一筆供「逃生口實際用量」統計。
+- **規劃→實作偏離的去處**：實作審查（P0 0／P1 3／P2 14）的 P1 全修；未修的 P2 記在 PR #466「偏離規劃說明」。
+
+處置：第一條列入下次框架整併；其餘為紀錄。
+
