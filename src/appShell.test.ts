@@ -112,9 +112,17 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
       'nextFunnelRoute',
       'hintInitial',
       'hintNext',
+      'isRetrying',
+      'failedAgain',
+      'authAnomaly',
     ]) {
       expect(deps, field).toContain(field);
     }
+  });
+
+  // T1-B：degraded 重試成功後守衛把焦點交給 main（使用者按下重試時），main 必須可程式聚焦。
+  it('main 可程式聚焦（tabIndex=-1）', () => {
+    expect(app).toMatch(/<main[\s\S]{0,40}tabIndex=\{-1\}/);
   });
 
   it('App 的啟動流程走 useAuthBootstrap，不再自己 fetch /profile', () => {
@@ -146,6 +154,7 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
       // T1-B：零依賴網址模組與無效 session 清理，被 apiClient／bootstrap import。
       'utils/apiUrl.ts',
       'utils/endInvalidSession.ts',
+      'hooks/authRetryScheduler.ts',
     ]) {
       const full = join(SRC, rel);
       // static 與動態 import 都算（單雙引號皆可）。
@@ -223,6 +232,7 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
         'App.tsx',
         'hooks/useAuthBootstrap.ts',
         'hooks/useFunnelLogout.ts',
+        'hooks/useMemberLogout.ts',
         'utils/apiClient.ts',
         'utils/authHint.ts',
         'utils/endInvalidSession.ts',
