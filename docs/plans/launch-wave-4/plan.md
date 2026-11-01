@@ -132,7 +132,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | #484 ✅ 266ad42 | 收工 |
 | K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
 | T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | #488（draft） | 修審查 P1／P2 |
-| D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | — | 施工中 |
+| D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | #489 ✅ af62783 | 收工 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -155,3 +155,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 02:05 | 業主在 T1-B session 親打 W4-20 授權；雲端 session 無法由人執行 `rm .claude/tdd-lock`，業主再以互動選項授權 T1-B 代為解鎖 → 只改那一條期望。**B4 綠**，全閘門 2747/2747；已 rebase 到含 #487 的 develop（HEAD `28a1a33`），紅綠 hash 全部改寫：B1 `e4fb277`→`c823fc9`、B2 `062cd3a`→`e04ebca`、B3 `2691b4e`→`c9d3bd1`、B4 `de4d58c`→`eea0e29`（實作 `4e29e17`）。T1-B 記兩條框架摩擦：雲端沒有人工解鎖通道；push 前自動 rebase 讓 progress 記的 hash 失效（交 R4 整併進 friction-log） | T1-B 續 B5 |
 | 11/02 02:20 | T1-B：**B5 綠**（`15cd222`，HEAD `772cebd`，全閘門 2767/2767）。進 B6 前回報 plan §2.4 與 R2 邀請交接衝突，業主裁決 **W4-22**（A 分流）；T1-B 先做不受影響的 B6a，B6b（AuthPage、e2e）依 W4-22 施工 | T1-B B6 |
 | 11/02 04:50 | ① 照片清理首輪實刪排程（UTC 19:17）**沒有觸發**：workflow 為 active，但 GitHub 排程大量跳過（每小時的 reconcile 過去 10 小時只跑 2 次）。業主同意手動 dispatch 正式站 dry-run → run 41348580533 綠：candidateCount 0、removed 0、物件 32、URL 30/30、刊登者 10/10；實刪模式仍待真實排程（已補第 3 波 review §2）。② Dependabot 週一批次（台北 02:00）未開任何 PR → 照計畫直接開 **D** `session_01MQovbCLxWoPdK9FnooQMgb`（Sonnet）。③ T1-B 交 **#488**（B1–B8 全綠，B7 未降級；規劃檔已清，`git show 5f5af22d:docs/plans/auth-transient-resilience/…`）。主 session＋獨立 Opus 審查員（專審登出／會話判定）：P0 0；**P1** AuthPage transient 導 `/dashboard` 對已 authenticated 的漏斗使用者造成 `/login`↔`/dashboard` 循環（主 session 讀碼核實）；P2 五條，三條本 PR 修（reducer transient 轉移條件、retryOnce 的 getSession 逾時、PaymentCheckout missing 未清 user），兩條列第 5 波 | T1-B 修 P1／P2 → 主 session 審最後 diff；D 施工；11/03 03:17 再看排程 |
+| 11/02 05:00 | D 交 #489：`npm audit fix`（只動 lockfile）＋vite 釘 6.3.5→6.4.5，無 overrides；audit 17→7、high 清零，剩 2 critical＋5 moderate 全在 vitest 3／tinypool 鏈（devDependency，需 vitest 大版本，列第 5 波）；#467 維持 Refs。主 session 比對 lockfile：全為 patch／minor，正式產物只有 react-router(-dom) 7.18.0→7.18.5、set-cookie-parser patch。CI 全綠（含 e2e）→ **#489 合進 develop（af62783）**。**必上五項全部合併** | 依 W4-9 問業主：等 T1-B 或先晉升 |
