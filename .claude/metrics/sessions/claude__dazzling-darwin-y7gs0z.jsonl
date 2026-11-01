@@ -1,0 +1,1 @@
+{"branch": "claude/dazzling-darwin-y7gs0z", "ended": "2026-11-01T12:18:50+00:00", "fired": {}, "passed": {"bash-guard": 13, "check-output-filter": 13, "feature-plan-guard": 2, "model-effort-advisor": 1, "tdd-test-guard": 2}, "session": "3f2296f68450", "started": "2026-11-01T12:13:29+00:00"}
