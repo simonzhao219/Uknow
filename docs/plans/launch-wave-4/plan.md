@@ -27,6 +27,19 @@
 | W4-3 | 派工順序 | **F1＋E 先開，D 等週一**：11/01 晚開 F1、E（Sonnet）與 T1-B 規劃（Opus，規劃期不佔名額）；D 等 11/02 Dependabot 週一批次後再開；T1-B 實作等 F1 合併（被推翻：全部同時開；一項一項來） |
 | W4-4 | 晉升時點 | **全完成就晉升＋11/15 截止**：必上四項都合進 develop 即開晉升 PR；11/15 22:00 收件，沒合的順延第 5 波（被推翻：固定 11/17；小項先晉升、T1-B 再晉升一次） |
 
+**裁決（AskUserQuestion，業主 2026-11-01 21:00 台北）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W4-10 | F1 紅燈期死結：舊測試 `button.test.tsx`〈aria-disabled 與 disabled 同樣呈現停用外觀並擋住指標〉斷言的正是 W3-15 要拿掉的行為 | **授權改寫成反向斷言並解鎖**；依〈慣例〉由業主在 F1 session 親打授權才生效（被推翻：先不改） |
+| W4-11 | T1-B Q1：`/profile` 404（P2-6） | **不登出、停在 `/login` 顯示「帳號資料異常，請聯絡客服」、不自動導頁**，bootstrap 與 OTP 兩條路徑統一（被推翻：本機登出＋toast→`/login`，有重登循環） |
+| W4-12 | T1-B Q2：`accountStatus:'unknown'` | **不加**，五讀取任一失敗一律 503 |
+| W4-13 | T1-B Q3：無效 session 的系統清理 scope | **local**（保留邀請 token；被推翻：維持 global） |
+| W4-14 | T1-B Q4：apiClient 401 兩層確認 | **本 PR 做，排最後階段，11/15 前來不及可降級拆第 5 波** |
+| W4-15 | T1-B Q5：degraded 文案 | 「網路不穩，正在重新連線」＋「重試」，說明改「請稍後按重試」，**不加輪詢** |
+| W4-16 | T1-B Q6：degraded callout 的「登出」鈕 | **加，必做，走主動登出 global**（`signOutWithFallback`；被推翻：用 local；不加） |
+| W4-17 | T1-B Q7：首頁 degraded 且無提示時頁首空槽 | **接受為已知取捨**，列規格書已知限制（被推翻：補斷線 icon） |
+
 主 session 依工程預設定的（低風險，不另問）：
 
 | # | 事 | 定案 |
@@ -108,10 +121,10 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | — | 施工中 |
-| E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | — | 施工中 |
-| K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | — | 施工中 |
-| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 規劃中 |
+| F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | — | 紅燈 `b4e44f1`；等業主親打解鎖授權（W4-10） |
+| E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | #484 ✅ 266ad42 | 收工 |
+| K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | #485 ✅ 1525913 | 收工；待 develop deploy-smoke dispatch |
+| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 規劃 `040cfac`；依 W4-11～17 修訂後重跑 `/review-plan` |
 | D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -120,3 +133,6 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 |---|---|---|
 | 11/01 20:13 | 主 session 開局：讀交接、第 3 波 plan／review、〈慣例〉。develop＝`27b09a0`＝origin；無開著的 PR。照片清理首輪實刪排程（台北 11/02 03:17）**尚未執行**，最近一次是 11/01 09:53 UTC 的 develop dry-run 41295068483（綠）。業主裁決 W4-1～4，主 session 定 W4-5～9；本檔擴寫、落 `dispatch-prompts.md` | 開 F1、E、K2、T1-B 規劃；設提醒於 11/02 03:30 核對首輪 run |
 | 11/01 20:22 | 開 #483（本檔，draft，已訂閱）。開 F1、E、K2（Sonnet）與 T1-B（Opus），tag `uknow-wave-4`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md`。設 send_later 於 11/02 03:35 核對照片清理首輪 run | 等各 session 回報；11/02 核對首輪 run、開 D |
+| 11/01 20:38 | E 交 #484：只動 journey harness（`#name` 逾時 `dump_page`；f70 改等 `round-progress` 並以 `to_have_text` 斷言），journey dispatch run 41306410552 綠。主 session 審，無 P0／P1 → **#484 合進 develop（266ad42）**。同類掃描列出的 `expect_or_dump` 統一包裝、`open_task_center` 只等標題 → 第 5 波候選 | — |
+| 11/01 20:52 | K2 交 #485：P2-10／12／13／22，無偏離。主 session 審：deploy-smoke fallback 在其他 step 失敗、兩個 outcome 為 skipped 時成立；notify 缺 secret 改 `::error::`＋summary 標紅、不 fail。K2 自行 rebase 成 `bfa79d1`，diff 與審過的 `72f7ffd` 逐位元組相同 → **#485 合進 develop（1525913）**。未驗：fallback 與缺 secret 分支待真實觸發（dispatch 不跑告警 step） | develop 部署後 dispatch deploy-smoke |
+| 11/01 21:00 | F1 回報紅燈 `b4e44f1`，卡在舊測試與 W3-15 矛盾、守衛禁改測試的死結。T1-B 回報規劃 `040cfac`、`/review-plan` P0 0、P1 約 15、需裁決 Q1–Q7。業主裁決 **W4-10～17**（全照建議）；已轉達兩個 session，F1 等業主親打授權 | F1 解鎖後施工；T1-B 修訂重審 |
