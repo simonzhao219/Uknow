@@ -110,7 +110,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ⬜ |
+| 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ✅ 11/01 |
 | 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ✅ |
 | 3 | develop `RECONCILE_SECRET`：11/01 改為輪換密鑰，三處（GitHub、正式站、develop）同值 | ✅ 11/01 |
 | 4 | T1 A3 實機截圖時回答 Q6（登出鈕樣式）、Q7（取消註冊確認框文案）、Q8（「稍後付款」鈕文字） | 等 T1 A3 |
