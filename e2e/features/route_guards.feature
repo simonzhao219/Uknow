@@ -214,3 +214,28 @@ Feature: Route guards enforce membership entitlement
       | I am logged in with registration step 1 and last trade number "" | /payment/checkout | logout-only         |
       | I am logged in with registration step 1 and last trade number "" | /                 | continue-and-logout |
       | I am logged in as an admin with pending withdrawals              | /                 | member              |
+
+  # T1-B (auth-transient-resilience): a temporary profile outage is not a
+  # sign-out. The guard keeps the page and offers a retry; a missing profile row
+  # (404) is an account anomaly shown on the login page, never a logout loop.
+  Scenario: A temporary profile outage keeps a signed-in member on the page with a retry
+    Given I am logged in as an active member
+    And the profile service keeps failing with status 503
+    When I visit "/dashboard"
+    Then I stay on "/dashboard" with the reconnect notice
+
+  Scenario: Retrying after the outage clears shows the member page
+    Given I am logged in as an active member
+    And the profile service fails 2 times with status 503 and then recovers
+    When I visit "/dashboard"
+    And I wait for the reconnect notice
+    And I press the "重試" button
+    Then I should see the dashboard
+
+  Scenario: A missing profile row shows the account anomaly notice on the login page
+    Given I am logged in as an active member
+    And the profile row is missing
+    When I visit "/dashboard"
+    Then I should be redirected to "/login"
+    And I should see the text "帳號資料異常，請聯絡客服"
+

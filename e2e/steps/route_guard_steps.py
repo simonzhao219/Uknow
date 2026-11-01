@@ -338,3 +338,40 @@ def header_fits_one_row(page):
     assert len(set(m["tops"])) <= 1 or max(m["tops"]) - min(m["tops"]) <= 12, f"wrapped: tops={m['tops']}"
     assert m["overflow"] == [], f"overflowing the row: {m['overflow']}"
     assert m["logoOverlap"] == [], f"controls overlap the logo by {m['logoOverlap']}px"
+
+
+# ---- T1-B: temporary outage and account anomaly -------------------------------
+
+
+@given(parsers.parse("the profile service keeps failing with status {status:d}"))
+def profile_keeps_failing(api_mock, status):
+    api_mock.set_profile_error(status)
+
+
+@given(parsers.parse("the profile service fails {times:d} times with status {status:d} and then recovers"))
+def profile_fails_then_recovers(api_mock, times, status):
+    profile = build_profile(3, accountStatus="active", subscriptionEndDate="2099-01-01T00:00:00Z")
+    api_mock.set_profile_status_sequence([status] * times + [200], profile)
+
+
+@given("the profile row is missing")
+def profile_row_missing(api_mock):
+    api_mock.set_profile_error(404)
+
+
+@when("I wait for the reconnect notice")
+def wait_reconnect_notice(page):
+    # Cold start (8 s timeout not hit: the 503 answers at once) + 1 s automatic retry.
+    expect(page.get_by_test_id("auth-degraded")).to_be_visible(timeout=15_000)
+
+
+@when(parsers.parse('I press the "{name}" button'))
+def press_button(page, name):
+    page.get_by_role("button", name=name).click()
+
+
+@then(parsers.parse('I stay on "{path}" with the reconnect notice'))
+def stay_with_reconnect_notice(page, path):
+    expect(page.get_by_test_id("auth-degraded")).to_be_visible(timeout=15_000)
+    assert page.url.endswith(path), f"expected to stay on {path}, got {page.url}"
+
