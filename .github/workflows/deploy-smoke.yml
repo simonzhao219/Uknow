@@ -214,15 +214,17 @@ jobs:
       # 手動觸發不推(人正在看)。排程每 6 小時重跑,持續紅燈就持續提醒。
       # 標題寫明環境、body 只放網址與 run 連結,不含個資。
       # continue-on-error:通知本身壞了不得讓這個 job 多一個紅燈。
+      # failure() 也會被 checkout 等其他 step 觸發；此時 smoke 與閘門 outcome 都不是 failure，
+      # 標題改「部署驗證 job 失敗，詳見 run」、body 帶 run 連結、level 維持 P1（不確定影響範圍，不降級）。
       # 放在最後一步：涵蓋前端版本比對（smoke）與 PayUni 閘門兩個 step，閘門紅也要推。
       - name: 失敗時推送 LINE 告警
         if: failure() && github.event_name != 'workflow_dispatch'
         continue-on-error: true
         uses: ./.github/actions/notify
         with:
-          level: ${{ (steps.payuni-gate.outcome == 'failure' || contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw')) && 'P1' || 'P2' }}
-          title: ${{ steps.payuni-gate.outcome == 'failure' && 'PayUni 閘門探測失敗' || (contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && '正式站' || 'develop 預覽站') }}${{ steps.smoke.outcome == 'failure' && ' 前端部署驗證失敗' || '' }}
-          body: ${{ steps.smoke.outputs.failed_targets }}${{ steps.payuni-gate.outcome == 'failure' && ' PayUni 閘門（UPP 端點被擋或故障，詳見 run 摘要）' || '' }}
+          level: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && 'P1' || ((steps.payuni-gate.outcome == 'failure' || contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw')) && 'P1' || 'P2') }}
+          title: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && '部署驗證 job 失敗，詳見 run' || (steps.payuni-gate.outcome == 'failure' && 'PayUni 閘門探測失敗' || (contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && '正式站' || 'develop 預覽站')) }}${{ steps.smoke.outcome == 'failure' && ' 前端部署驗證失敗' || '' }}
+          body: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && 'smoke 與 PayUni 閘門都不是失敗來源（可能是 checkout 等其他 step 失敗），run 連結見下行' || '' }}${{ steps.smoke.outputs.failed_targets }}${{ steps.payuni-gate.outcome == 'failure' && ' PayUni 閘門（UPP 端點被擋或故障，詳見 run 摘要）' || '' }}
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
           line_to: ${{ secrets.LINE_ALERT_TO }}
