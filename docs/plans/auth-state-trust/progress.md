@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | A0 | 開工前置：資料查證 SQL 重跑（plan §2.1）、`isLoggedIn` 清查、`localStorage.user` 讀寫全表 | ✅ 三項完成；重跑後三欄兩站皆 0，F3 不觸發 | — | — |
 | A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ✅ 綠（逃生口 2 一格，見 Blockers） | `24325327` | `55493dc6` |
-| A2a | useAuthBootstrap 本體（reducer／outcome、hint 擁有與寫入、uid8、副作用注入、generation counter） | ✅ 綠（e2e 全套驗證中） | `9db61256` | `a2379904` |
-| A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ⬜ 未開始 | | |
+| A2a | useAuthBootstrap 本體（reducer／outcome、hint 擁有與寫入、uid8、副作用注入、generation counter） | ✅ 綠（既有 e2e 308/308） | `9db61256` | `a2379904` |
+| A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ✅ 綠（e2e 全套驗證中） | `7ca2ff28` | `0f22801c` |
 | A3 | Navbar 五 view＋繼續完成註冊、useFunnelLogout、BottomNav／padding、e2e S1–S11 | ⬜ 未開始 | | |
 | A4 | 規格書 §2.1 註冊中角色＋已知限制、ui-ux §3 | ⬜ 未開始 | | |
 | B1 | 後端 authenticate／讀取對照表／ProfileReadError 503／?retry=1 | ⬜ 未開始（可晚一波） | | |
@@ -65,6 +65,10 @@
 | `utils/apiClient.ts` | — | session 過期 | session 過期 |
 
 e2e：無任何 `localStorage` 的 `user`／`pendingSession`／`uknow:auth-hint` 依賴（只用 `pending_referral_code`、`uknow:pref:home-view-mode`、journey 的 `clear()`）。
+
+## 本機 e2e 跑法（執行 session 備忘）
+
+容器的 Chromium 是 build 1243、`playwright==1.56.0` 要 1194：在 scratchpad 建 `pwb/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向 `/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`，以 `PLAYWRIGHT_BROWSERS_PATH` 指過去。conftest 自起的 dev server 會在跑到約 20% 時死掉（ERR_CONNECTION_REFUSED 洗版）——改在獨立 worktree 起 `npx vite --port 3000` 並設 `E2E_SKIP_DEV_SERVER=1`（同 CI 做法），也避免邊改碼邊 HMR。
 
 ## Blockers(逃生口紀錄)
 
