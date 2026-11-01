@@ -9,6 +9,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
 import { fetchProfileForSession } from '../utils/fetchProfile';
+import { useFunnelLogout } from '../hooks/useFunnelLogout';
 import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
@@ -57,6 +58,7 @@ export function PaymentCheckout() {
   const [profileExpanded, setProfileExpanded] = useState(false);
 
   const { setUser } = useContext(UserContext);
+  const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
   const supabase = createClient();
@@ -551,26 +553,8 @@ export function PaymentCheckout() {
       navigate('/', { replace: true });
       return;
     }
-
-    try {
-      // 1. 登出 Supabase
-      await supabase.auth.signOut();
-
-      // 2. 清除本機儲存
-      localStorage.removeItem('user');
-      localStorage.removeItem('pendingUser');
-
-      // 3. 清除 UserContext
-      setUser(null);
-
-      showToast('您已登出，可以稍後再完成付款', 'info');
-
-      // 4. 導向登入頁面
-      navigate('/login', { replace: true });
-    } catch (error) {
-      console.error('PaymentCheckout: Error during cancel/logout:', error);
-      showToast('登出時發生錯誤', 'error');
-    }
+    // 首購者：與頁首「登出」同一支（D2）——同一導向、同一 toast、同樣不清草稿。
+    await funnelLogout.logout();
   };
 
   const handleEdit = async () => {

@@ -37,7 +37,12 @@ import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
-import { type AuthState, type AuthView, resolveAuthView } from './utils/authView';
+import {
+  type AuthState,
+  type AuthView,
+  resolveAuthView,
+  showsMemberChrome,
+} from './utils/authView';
 import type { FunnelNextKind } from './utils/registrationFlow';
 import { dedupe } from './utils/requestDedup';
 
@@ -149,6 +154,7 @@ function AppContent() {
     nextFunnelRoute,
     hint,
     isLoadingUser,
+    sessionStalled,
     refreshUser,
     ingestProfile,
   } = useAuthBootstrap({
@@ -177,6 +183,7 @@ function AppContent() {
     isLoggedIn,
     hint,
     pathname: location.pathname,
+    sessionStalled,
   });
   const hintInitial = hint?.initial ?? '';
   const hintNext = hint?.next ?? null;
@@ -239,9 +246,9 @@ function AppContent() {
           <div className="min-h-screen bg-background flex flex-col">
             <Navbar />
             <MaintenanceBanner />
-            {/* 登入後手機有底部導覽，main 補下方留白避免內容被遮住 */}
+            {/* 會員（含首繪頭像占位）手機有底部導覽，main 補下方留白避免內容被遮住 */}
             <main
-              className={`container mx-auto px-4 py-6 flex-1 ${isLoggedIn ? 'pb-24 md:pb-6' : ''}`}
+              className={`container mx-auto px-4 py-6 flex-1 ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
             >
               {/* resetKey=路由路徑：一頁壞掉不該讓整個 session 的內容區
                   都停在後備畫面（見 ErrorBoundary 的 resetKey 說明）。 */}

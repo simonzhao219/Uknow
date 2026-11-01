@@ -14,8 +14,11 @@ import { User, Settings, Award, Users, LogOut, Shield, Target } from 'lucide-rea
 import { useFeatures } from '../contexts/FeatureContext';
 import { createClient } from '../utils/supabase/client';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
-import { Badge } from './ui/badge';
 import type { AdminWithdrawalSummaryResponse } from '@contract';
+import { useFunnelLogout } from '../hooks/useFunnelLogout';
+import { clearAuthHint } from '../utils/authHint';
+import type { AuthView } from '../utils/authView';
+import { funnelCtaLabel, isFunnelRoute, routeForFunnelNext } from '../utils/registrationFlow';
 import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
 
 // 走專用的輕量端點（規劃書 §2.2）。用列表端點也拿得到這個數字，但那條會
@@ -29,7 +32,11 @@ async function loadPendingWithdrawalCount(): Promise<number> {
 }
 
 export function Navbar() {
-  const { user, setUser, isLoggedIn, isAdmin } = useContext(UserContext);
+  const { user, setUser, isLoggedIn, isAdmin, authView, nextFunnelRoute, hintInitial, hintNext } =
+    useContext(UserContext);
+  // 舊的 context mock 沒有 authView：依 isLoggedIn 回落（同 resolveAuthView）。
+  const view: AuthView = authView ?? (isLoggedIn ? 'member' : 'guest');
+  const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
   const location = useLocation();
   const { isFeatureEnabled } = useFeatures();
@@ -59,11 +66,21 @@ export function Navbar() {
       localStorage.removeItem('user');
       console.log('Navbar: Cleared local user state');
 
+      // 首繪提示一併清：signOut 網路失敗時 SIGNED_OUT 不一定觸發，殘留 member
+      // 提示會讓下一個在這台裝置登入的人先看到前一人的首字（S11）。
+      clearAuthHint();
+
       // ✅ 2. 登出 Supabase Auth（等待完成）
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Navbar: Error signing out from Supabase:', error);
-        // ✅ 即使出錯也要清除所有相關資料
+      let signOutError: unknown = null;
+      try {
+        ({ error: signOutError } = await supabase.auth.signOut());
+      } catch (e) {
+        signOutError = e;
+      }
+      if (signOutError) {
+        console.error('Navbar: Error signing out from Supabase:', signOutError);
+        // supabase-js 在網路錯誤時不清本機 session：補一次 local 登出。
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       } else {
         console.log('Navbar: Successfully signed out from Supabase');
       }
@@ -98,7 +115,7 @@ export function Navbar() {
         </Link>
 
         <div className="flex items-center space-x-4">
-          {!isLoggedIn ? (
+          {view === 'guest' && (
             <>
               <Button variant="ghost" asChild>
                 <Link to="/login">登入</Link>
@@ -107,20 +124,75 @@ export function Navbar() {
                 <Link to="/register">立即刊登</Link>
               </Button>
             </>
-          ) : (
+          )}
+
+          {/* 判定前的中性占位（D5、E2）：保留與頭像同高的槽，換版不位移。 */}
+          {view === 'placeholder' && (
+            <div aria-hidden="true" data-testid="auth-slot-placeholder" className="h-10 w-10" />
+          )}
+
+          {view === 'funnel' &&
+            (() => {
+              // 漏斗頁上只給登出（W2-22）；離開漏斗頁時多一顆下一步（E4）。首繪只有提示時
+              // 用提示記的目的地當暫用連結，/profile 回來後同一節點只換 href。
+              const onFunnelRoute = isFunnelRoute(location.pathname);
+              const ctaHref = nextFunnelRoute ?? routeForFunnelNext(hintNext ?? null);
+              // 結果頁沒有 tradeNo 只會顯示「缺少訂單編號」：補上前不可點。
+              const ctaPending = ctaHref === '/payment/result';
+              return (
+                <>
+                  {!onFunnelRoute && ctaHref && (
+                    <Button asChild>
+                      <Link
+                        to={ctaHref}
+                        aria-disabled={ctaPending ? 'true' : undefined}
+                        onClick={(e) => ctaPending && e.preventDefault()}
+                      >
+                        {funnelCtaLabel(ctaHref)}
+                      </Link>
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      if (!funnelLogout.isLoggingOut) void funnelLogout.logout();
+                    }}
+                    aria-disabled={funnelLogout.isLoggingOut ? 'true' : undefined}
+                    // 窄寬（F1）且旁邊有下一步時只留 icon；漏斗頁單顆時保留文字。
+                    aria-label={!onFunnelRoute && ctaHref ? '登出' : undefined}
+                    className="min-h-11 min-w-11"
+                  >
+                    <LogOut className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                    <span className={!onFunnelRoute && ctaHref ? 'hidden sm:inline' : ''}>
+                      登出
+                    </span>
+                  </Button>
+                </>
+              );
+            })()}
+
+          {(view === 'member' || view === 'member-pending') && (
             <>
               {/* ui-ux-guidelines §3：主要入口不藏在下拉裡。admin 每天要處理
-                  提領，多兩下點擊乘上每天的次數不是小事。badge 只在真的有
-                  待處理時出現——常駐一個 0 會訓練人忽略它。 */}
-              {isAdmin && (
+                  提領，多兩下點擊乘上每天的次數不是小事。待處理以小圓點標示
+                  （絕對定位：晚到的筆數不撐寬按鈕），筆數放在可及名稱裡；
+                  只在真的有待處理時出現——常駐一個 0 會訓練人忽略它。 */}
+              {view === 'member' && isAdmin && (
                 <Button variant="ghost" size="sm" asChild className="relative">
-                  <Link to="/admin">
+                  <Link
+                    to="/admin"
+                    aria-label={
+                      pendingCount > 0 ? `平台管理（待處理 ${pendingCount} 筆）` : undefined
+                    }
+                  >
                     <Shield className="mr-1 h-4 w-4" />
                     平台管理
                     {pendingCount > 0 && (
-                      <Badge variant="destructive" className="ml-1 px-1.5">
-                        {pendingCount}
-                      </Badge>
+                      <span
+                        aria-hidden="true"
+                        data-testid="admin-pending-dot"
+                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-destructive"
+                      />
                     )}
                   </Link>
                 </Button>
@@ -131,61 +203,72 @@ export function Navbar() {
                     variant="ghost"
                     size="icon"
                     aria-label="開啟會員選單"
+                    aria-busy={view === 'member-pending' ? 'true' : undefined}
                     className="relative h-10 w-10 rounded-full"
                   >
                     <Avatar className="h-10 w-10">
-                      <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
+                      <AvatarFallback>
+                        {(view === 'member' ? user?.name?.charAt(0) : hintInitial) || 'U'}
+                      </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <div className="flex items-center justify-start gap-2 p-2">
-                    <div className="flex flex-col space-y-1 leading-none">
-                      <p className="font-medium">{user?.name}</p>
-                    </div>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to="/dashboard" className="w-full cursor-pointer">
-                      <User className="mr-2 h-4 w-4" />
-                      會員中心
-                    </Link>
-                  </DropdownMenuItem>
-                  {isFeatureEnabled('serviceProviderManagement') && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/service-providers" className="w-full cursor-pointer">
-                        <Settings className="mr-2 h-4 w-4" />
-                        刊登管理
-                      </Link>
-                    </DropdownMenuItem>
+                  {view === 'member-pending' ? (
+                    // /profile 回來前只列登出（不列一排灰色項目）。
+                    <p className="p-2 text-sm text-muted-foreground" role="status">
+                      載入中…
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-start gap-2 p-2">
+                        <div className="flex flex-col space-y-1 leading-none">
+                          <p className="font-medium">{user?.name}</p>
+                        </div>
+                      </div>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to="/dashboard" className="w-full cursor-pointer">
+                          <User className="mr-2 h-4 w-4" />
+                          會員中心
+                        </Link>
+                      </DropdownMenuItem>
+                      {isFeatureEnabled('serviceProviderManagement') && (
+                        <DropdownMenuItem asChild>
+                          <Link to="/service-providers" className="w-full cursor-pointer">
+                            <Settings className="mr-2 h-4 w-4" />
+                            刊登管理
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {isFeatureEnabled('referralManagement') && (
+                        <DropdownMenuItem asChild>
+                          <Link to="/referrals" className="w-full cursor-pointer">
+                            <Users className="mr-2 h-4 w-4" />
+                            推薦管理
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {isFeatureEnabled('taskCenter') && (
+                        <DropdownMenuItem asChild>
+                          <Link to="/tasks" className="w-full cursor-pointer">
+                            <Target className="mr-2 h-4 w-4" />
+                            任務中心
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {isFeatureEnabled('rewardSystem') && (
+                        <DropdownMenuItem asChild>
+                          <Link to="/rewards" className="w-full cursor-pointer">
+                            <Award className="mr-2 h-4 w-4" />
+                            獎勵回饋
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {/* 平台管理已移到導覽列本身（見上），不再重複列在下拉裡
+                        ——同一個入口出現兩次會讓人以為是兩個不同的地方。 */}
+                    </>
                   )}
-                  {isFeatureEnabled('referralManagement') && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/referrals" className="w-full cursor-pointer">
-                        <Users className="mr-2 h-4 w-4" />
-                        推薦管理
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {isFeatureEnabled('taskCenter') && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/tasks" className="w-full cursor-pointer">
-                        <Target className="mr-2 h-4 w-4" />
-                        任務中心
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {isFeatureEnabled('rewardSystem') && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/rewards" className="w-full cursor-pointer">
-                        <Award className="mr-2 h-4 w-4" />
-                        獎勵回饋
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {/* 移除訂閱管理連結 - 訂閱功能已整合到會員中心 */}
-                  {/* 平台管理已移到導覽列本身（見上），不再重複列在下拉裡
-                    ——同一個入口出現兩次會讓人以為是兩個不同的地方。 */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
                     <LogOut className="mr-2 h-4 w-4" />

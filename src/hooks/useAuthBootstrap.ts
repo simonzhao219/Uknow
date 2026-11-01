@@ -117,11 +117,14 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+const SESSION_STALL_MS = 10_000;
+
 const defaultPathname = () => (typeof window !== 'undefined' ? window.location.pathname : '/');
 
 export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   const [state, dispatch] = useReducer(reducer, INITIAL);
   const [hint, setHint] = useState<AuthHint | null>(() => loadAuthHint(deps.storage));
+  const [sessionStalled, setSessionStalled] = useState(false);
 
   // 注入值只在掛載時取一次（App 每次 render 傳新物件，不能讓 effect 重跑）。
   const depsRef = useRef(deps);
@@ -196,12 +199,23 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
       void load(token, uid);
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mountedRef.current) return;
-      if (session?.access_token) begin(session);
-      // 沒有 session 不呼叫 onSignedOut：那會清掉訪客剛帶進來的邀請 token。
-      else if (uidRef.current === null) dispatch({ type: 'signedOut' });
-    });
+    // 安全出口（F4）：getSession() 例外或 10 秒內未 resolve → 頁首改畫訪客版。
+    // 只管 session 這一步；/profile 卡住不在此列（PR-A 無逾時，見 plan §7 已知限制 3）。
+    const stallTimer = setTimeout(() => setSessionStalled(true), SESSION_STALL_MS);
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        clearTimeout(stallTimer);
+        if (!mountedRef.current) return;
+        setSessionStalled(false);
+        if (session?.access_token) begin(session);
+        // 沒有 session 不呼叫 onSignedOut：那會清掉訪客剛帶進來的邀請 token。
+        else if (uidRef.current === null) dispatch({ type: 'signedOut' });
+      })
+      .catch(() => {
+        clearTimeout(stallTimer);
+        if (mountedRef.current) setSessionStalled(true);
+      });
 
     const {
       data: { subscription },
@@ -219,6 +233,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
 
     return () => {
       mountedRef.current = false;
+      clearTimeout(stallTimer);
       subscription.unsubscribe();
     };
   }, [dropHint, endSession, ingest]);
@@ -300,7 +315,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     nextFunnelRoute,
     hint,
     isLoadingUser: state.authState === 'unknown',
-    sessionStalled: false,
+    sessionStalled,
     refreshUser,
     ingestProfile,
   };
