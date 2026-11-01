@@ -47,8 +47,9 @@ vi.mock('../App', () => ({
   UserContext: createContext<any>({ setUser: () => {}, refreshUser }),
 }));
 
+const signOut = vi.fn(async () => ({ error: null }));
 vi.mock('../utils/supabase/client', () => ({
-  createClient: () => ({ auth: { getSession } }),
+  createClient: () => ({ auth: { getSession, signOut } }),
 }));
 
 vi.mock('./notifications/NotificationContext', () => ({
@@ -103,6 +104,7 @@ beforeEach(() => {
   refreshUser.mockReset();
   refreshUser.mockResolvedValue(null);
   getSession.mockImplementation(() => new Promise<unknown>(() => {}));
+  signOut.mockClear();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
@@ -626,5 +628,89 @@ describe('邀請帳號的推薦碼後備預填', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(referralField().value).toBe('');
     expect(validateCalls()).toHaveLength(0);
+  });
+});
+
+// 「稍後註冊」會刪掉帳號（cancel-signup）。頁首另有不刪帳號的「登出」，兩顆並存容易誤按：
+// 先跳確認框說出後果並指向登出（業主裁決 W3-12，Q7）。只有「確定刪除」才刪；返回、Esc 都不刪。
+describe('稍後註冊的刪除確認', () => {
+  /** session 可用、/profile 回 404（新註冊者）、其餘請求記下 URL 並回 200。 */
+  function wireSession() {
+    const urls: string[] = [];
+    getSession.mockImplementation(() =>
+      Promise.resolve({ data: { session: { access_token: 'tok', user: { id: 'u1' } } } }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        if (/\/profile$/.test(String(url))) return new Response('{}', { status: 404 });
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    return urls;
+  }
+  const deleted = (urls: string[]) => urls.some((u) => u.endsWith('/auth/cancel-signup'));
+
+  it('按稍後註冊先跳確認框說明會刪除帳號並指向右上角登出，尚未刪除', async () => {
+    const urls = wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(
+      '稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。',
+    );
+    expect(deleted(urls)).toBe(false);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('預設焦點在返回', async () => {
+    wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    await screen.findByRole('alertdialog');
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: '返回' })),
+    );
+  });
+
+  it('按返回時關閉確認框、不刪帳號也不登出', async () => {
+    const urls = wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '返回' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(deleted(urls)).toBe(false);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('按 Esc 時關閉確認框、不刪帳號', async () => {
+    const urls = wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(deleted(urls)).toBe(false);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('按確定刪除才刪帳號並登出', async () => {
+    const urls = wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() => expect(deleted(urls)).toBe(true));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it('觸發鈕是破壞性的紅框字，確認鈕是紅實心', async () => {
+    wireSession();
+    renderForm();
+    const trigger = screen.getByRole('button', { name: '稍後註冊' });
+    expect(trigger.className).toMatch(/text-destructive/);
+    fireEvent.click(trigger);
+    const confirm = await screen.findByRole('button', { name: '確定刪除' });
+    expect(confirm.className).toMatch(/bg-destructive/);
   });
 });
