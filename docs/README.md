@@ -113,6 +113,24 @@ dispatch-prompts.md 的開局 prompt、PR 留言），不靠記憶。
 | 執行 session（一工項一個） | 照 prompt 施工、自己的 PR 推到 CI 綠、回報 PR 號／偏離／未驗項 | 改別人分支；裁決；接第二個工項 | PR（內文照 `.github/pull_request_template.md`） |
 | 審查 session（每波一個） | 審該波合進 main 的全部變動：四視角＋未驗項核對＋上線後現場；寫 `review.md` 與「升級進長期文件」表 | 改產品碼；直接用要人核准的 MCP（現場 SQL 交主 session 代跑） | `review.md`、friction-log 條目 |
 
+**主 session 合併後的驗證**：PR 自述「靠排程驗」的（週掃描、每日排程、只在真告警時才跑的 step），主 session 在合併、
+部署後立刻 `workflow_dispatch` 一次，不等排程——第 2 波的 `deno audit` 若等到排程，npm 從 0 跳到 12 個
+high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到的（例如只在有告警時才執行的 step），在 plan 的
+未驗項明寫「待真實觸發」。
+
+**雲端 session 的執行環境須知**（寫進每個派工 prompt 的共用開頭；第 1–3 波累積）：
+- `create_session` 一律帶 `source_url`（本 repo）與 `source_revision=develop`；沒帶的 session 沒有 repo，只能封存。
+- 容器沒有 deno：`npm install -g deno` 可裝（deno.land 被網路政策擋，npm registry 與 jsr.io 通）。動
+  `supabase/functions/` 的 session 開局先裝，否則 pre-commit 會擋；`deno task test` 留給 CI 的 api-tests 軌。
+- 子 session **不直接用 Supabase MCP**：會跳權限核准，沒人按就永久卡住。資料查詢交主 session 代跑。
+- `gh pr checks` 在雲端被擋：看 CI 用 GitHub MCP（`pull_request_read` 的 check runs、`actions_list`）。
+- journey 絕不在本機跑；要驗 harness 用 GitHub MCP `actions_run_trigger` 對 `journey-scheduled.yml` 發
+  workflow_dispatch（ref＝自己的分支）。
+- tdd-lock 解鎖只認業主**親打**的授權，主 session 轉述的不算；三段式工項的 `/tdd-implement` 由業主親打。
+- 推送守衛（`.claude/hooks/pre-push-rebase.sh`）會自動 rebase 到最新 develop，之後要 `--force-with-lease`，而
+  auto mode 分類器可能擋改寫遠端分支的 force push：被擋時不硬繞，改在遠端分支頂端疊快轉 commit，或交主 session rebase。
+- 新的 `docs/plans/<slug>/` 若要隨 PR 先合併，開 PR 前就加 `plans-keep` 註解，否則 `check-plans-scaffold` 紅。
+
 **凍結期只許 hotfix。**（第 1 波裁決 8）晉升後的凍結窗口內，main 只收「營運中發現、
 定義明確、不動註冊／付款／登入主幹、無 migration」的修正，而且照樣走晉升 PR＋業主核准
 `production`；develop 照常合併。凍結期開的晉升 PR，內文要**逐支標類別**（hotfix／docs／其他），

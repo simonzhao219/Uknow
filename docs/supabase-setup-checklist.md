@@ -17,6 +17,11 @@
 > 顯示的是**預設分支（develop）**，不是 main。晉升合併後要核准的，是建立時間**緊跟 main 那次 CI push run 完成**
 > 的那筆「Waiting」run；核准後看 `/api/health` 的 `sha` 等於 main HEAD 才算完成。
 
+> **前端版本比對的 LINE 告警**：`deploy-smoke.yml` 每 6 小時（另在 Pages 部署完成時）比對線上 `index.html` 的
+> `<meta name="build-sha">` 與分支 HEAD。剛 push 的 30 分鐘內不符只警告，超過就紅並推 LINE（正式站標 P1）。
+> 收到它代表 **Cloudflare Pages 沒部署到最新 commit**（2026-10-28 事故：main 建置在 clone 階段失敗，正式站停在舊版
+> 18 小時），先看 Pages 的建置紀錄、必要時重新部署；細節見該 workflow 檔頭與 `scripts/check-deployed-assets.py`。
+
 > **develop 是「分支」不是「另一個專案」。** 它由 Supabase 的 GitHub 整合
 > （Branching）從正式專案長出來，有自己的 DB／API 金鑰／Edge Function／
 > Secrets，但**掛在正式專案底下**——同一個組織、同一份帳單，在儀表板上要從
@@ -663,66 +668,28 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 
 ## 附錄：正式站清空測試資料 SOP
 
-> ⚠️ **破壞性操作，只在「正式站開放前全清」或演練時用。** 2026-10-27 第 1 波上線前演練一次、
-> 正式執行一次，程序已驗證。下面的 SQL 由**業主**在 Dashboard SQL Editor 貼上執行，
-> AI session 只跑乾跑段（唯讀）並把結果整理給業主確認。
+> ⚠️ **破壞性操作。正式站 2026-10-27 開放收費後已有真付款與推薦紀錄，不得再整批全清**——金流與推薦紀錄依服務條款須保留；
+> 單一帳號的終止／刪除請求不走這份 SOP（見規格書 §11「終止／刪除請求 SOP」）。本附錄只留原則；2026-10-27 實際用過的
+> 乾跑、刪除與零殘留 SQL 原文用 `git show 3461f2bf:docs/supabase-setup-checklist.md` 取回（W3-14：長期文件不留可直接執行的清空 SQL）。
 
-**原則**：先乾跑列計數、業主確認後才刪；刪的順序照 `e2e/journey/tools/cleanup.py`（先 Storage 物件，再 `auth.users` 讓業務表 cascade）。**Storage 物件不能用 SQL 刪**（直接刪 `storage.objects` 列只會留下孤兒實體，之後也無法再從 Dashboard 清）：由業主在 Dashboard → Storage 的三個 bucket（`id-cards`、`referral-signatures`、`listings-photos`）全選刪除，乾跑看到 `storage.objects` 各 bucket 為 0 才進 SQL 段。
+**何時可用**：只在「正式站開放前全清」或演練時。2026-10-27 第 1 波上線前演練一次、正式執行一次，程序已驗證。
 
-**前提（業主）**：Dashboard → Project Settings → Database → Backups 確認今天有可還原的備份（或 PITR 開著），截圖回報。沒有備份不執行。
+**角色**：SQL 由**業主**在 Dashboard SQL Editor 執行；AI session 只跑乾跑（唯讀）並整理給業主確認。
 
-**演練**：**不在 develop 上演練**（develop 的管理員、預設推薦人與測試帳號要留給真機驗收）。由業主在 Dashboard 從正式專案開一條拋棄式分支，對它跑乾跑與刪除段（含 `begin;`／`commit;` 的整段一次貼），確認每句 SQL 都能執行、零殘留查詢正確，再刪分支。分支沒有資料，演練驗的是語法與權限，不是計數。
-
-**乾跑（唯讀）**：
-
-```sql
-select 'auth.users' t, count(*) from auth.users
-union all select 'profiles', count(*) from public.profiles
-union all select 'profiles.is_admin', count(*) from public.profiles where is_admin
-union all select 'listings', count(*) from public.listings
-union all select 'payment_orders', count(*) from public.payment_orders
-union all select 'payment_orders.completed', count(*) from public.payment_orders where status='completed'
-union all select 'subscriptions', count(*) from public.subscriptions
-union all select 'withdrawals', count(*) from public.withdrawals
-union all select 'withdrawal_events.bank_ref', count(*) from public.withdrawal_events where bank_ref is not null
-union all select 'reward_transactions', count(*) from public.reward_transactions
-union all select 'referral_codes', count(*) from public.referral_codes
-union all select 'referral_edges', count(*) from public.referral_edges
-union all select 'task_progress', count(*) from public.task_progress
-union all select 'referral_king_rewards', count(*) from public.referral_king_rewards
-union all select 'system_alerts', count(*) from public.system_alerts
-union all select 'announcements', count(*) from public.announcements
-union all select 'rate_limits', count(*) from public.rate_limits
-union all select 'member_verify_logs', count(*) from public.member_verify_logs
-union all select 'auth.audit_log_entries', count(*) from auth.audit_log_entries
-union all select 'storage.objects:'||bucket_id, count(*) from storage.objects group by bucket_id;
-select last_value, is_called from public.referral_code_seq;
-select default_referrer_code from public.reward_config;
-select to_regclass('public.kv_store_5c6718b9');   -- 舊 KV 表若仍存在（checklist 附錄），一併列計數並刪
-```
-
-把結果整段貼進互動問題給業主確認（特別標出：`withdrawal_events.bank_ref` 非 0 代表曾有真匯款；`payment_orders.completed` 若有 `PAYUNI_SANDBOX=false` 期間的單代表真錢）。**正式站 2026-10-27 開放收費後已有真付款與推薦紀錄，不得再整批全清**——金流與推薦紀錄依服務條款須保留；單一帳號的終止／刪除請求不走這份 SOP。
-
-**執行（業主確認後，整段在單一交易內；執行前看 `reconcile-payments.yml` 沒有 in_progress 的 run 即可，排程看不到半刪狀態）**：
-
-```sql
-begin;
--- storage.objects 已由業主在 Dashboard 清空（乾跑各 bucket 為 0），這裡不碰
-delete from auth.users;                      -- profiles 與全部業務表 cascade（20260620000001:20 起）
-delete from auth.audit_log_entries;          -- 含 email，無 cascade，個資清理
-delete from public.system_alerts;
-delete from public.rate_limits;
-delete from public.member_verify_logs;
-delete from public.announcements;            -- 業主若有上線公告要留，先問
-alter sequence public.referral_code_seq restart with 8048876;   -- 全清時才重設（步驟 6「整批測試資料一起清掉」的例外）；乾跑的 referral_codes 必為 0
-commit;
-```
-
-不碰：`public.reward_config`（單列）、`storage.buckets` 列、`cron.job`、`supabase_migrations.schema_migrations`。乾跑若看到 `default_referrer_code = '8048876'` 就維持，業主付款拿到 8048876 後自動對上；若是 null 或別的值，業主付款後執行 `update public.reward_config set default_referrer_code = '8048876';`（步驟 6 的順序：先付款、後設定）。
-
-**零殘留檢查**：再跑一次乾跑，除 `reward_config` 外全部為 0；`select last_value, is_called from public.referral_code_seq` 應為 `8048876, false`。
-
-**之後（業主）**：註冊 → 真付款 → `/health` 的 `defaultReferrer` 應為 `ok`（第一個付款帳號拿到 8048876 且與 `reward_config` 相符）→ `POST /admin-setup/set-self-admin`。
+**原則與順序**：
+1. **前提**：Dashboard → Project Settings → Database → Backups 確認今天有可還原的備份（或 PITR 開著）。沒有備份不執行。
+2. **演練不在 develop 上做**（develop 的管理員、預設推薦人與測試帳號要留給真機驗收）：從正式專案開一條拋棄式分支，
+   整段（含 `begin;`／`commit;`）跑一次，驗的是語法與權限，不是計數；演練完刪分支。
+3. **乾跑**：列 `auth.users`、各業務表、`storage.objects` 各 bucket 的計數，以及 `referral_code_seq`、`reward_config.default_referrer_code`。
+   特別標出 `withdrawal_events.bank_ref` 非 0（曾有真匯款）與 `PAYUNI_SANDBOX=false` 期間的 completed 單（真錢），業主確認後才往下。
+4. **先清 Storage、再清資料**：Storage 物件**不能用 SQL 刪**（只刪 `storage.objects` 列會留下孤兒實體，之後也無法再從 Dashboard 清），
+   由業主在 Dashboard 把三個 bucket（`id-cards`、`referral-signatures`、`listings-photos`）全選刪除，乾跑看到各 bucket 為 0 才進 SQL 段。
+5. **SQL 段在單一交易內**：刪 `auth.users` 讓業務表 cascade，另清沒有 cascade 的 `auth.audit_log_entries`（含 email）、`system_alerts`、
+   `rate_limits`、`member_verify_logs`、`announcements`（業主要留的公告先問）；推薦碼序號只在全清時重設。執行前確認
+   `reconcile-payments.yml` 沒有 in_progress 的 run。順序照 `e2e/journey/tools/cleanup.py`。
+6. **不碰**：`reward_config`（單列）、`storage.buckets` 列、`cron.job`、`supabase_migrations.schema_migrations`。
+7. **之後**：再跑一次乾跑確認零殘留；業主註冊 → 真付款 → `/health` 的 `defaultReferrer` 為 `ok` → `POST /admin-setup/set-self-admin`
+   （預設推薦碼的設定順序見步驟 6：先付款、後設定）。
 
 ## 附錄：舊資源清理
 

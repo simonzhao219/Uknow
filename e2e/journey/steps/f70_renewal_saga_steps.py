@@ -10,6 +10,7 @@ reward_config.default_referrer_code(僅拋棄式分支的 seed 調整,人審
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -214,11 +215,12 @@ def task_card_shows_progress(guarded_page, supabase_admin, run_state, node, coun
     assert threshold == 8, f"推薦王門檻是 {threshold},與 feature 寫死的 8 不符"
     _fresh_gui_login(guarded_page, run_state.users[node])
     guarded_page.goto("/tasks")
-    expect(guarded_page.get_by_role("heading", name="任務中心")).to_be_visible(
-        timeout=15_000
-    )
-    expect(guarded_page.get_by_text(f"{count} / {threshold}").first).to_be_visible(
-        timeout=15_000
+    # 只等標題證明不了資料已載入：TaskDashboard 在載入中與錯誤時也畫標題
+    # （run 41274370205 的 U1 因此在舊值「1 / 8」上斷言失敗）。直接等主數字
+    # 元素並以 to_have_text 斷言——它會輪詢到資料載入完成或逾時。
+    # 文字為「{n} / {target}位」，滿輪時尾巴多「已滿一輪」，故只釘開頭。
+    expect(guarded_page.get_by_test_id("round-progress")).to_have_text(
+        re.compile(rf"^{count} / {threshold}(?!\d)"), timeout=15_000
     )
 
 

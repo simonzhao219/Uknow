@@ -9,6 +9,15 @@ import { buttonVariants } from './button';
 const classesOf = (cls: string) => cls.split(/\s+/);
 
 describe('buttonVariants', () => {
+  // 契約：aria-disabled 的鈕仍收得到點擊（後台刻意如此，業主裁決 D、K5）。基底不得替所有消費者
+  // 加 pointer-events-none／opacity-50；需要停用外觀的鈕自己在 className 補。
+  it('基底不含 aria-disabled 的 pointer-events-none 與 opacity-50', () => {
+    const cls = classesOf(buttonVariants({}));
+    expect(cls).not.toContain('aria-disabled:pointer-events-none');
+    expect(cls).not.toContain('aria-disabled:opacity-50');
+    expect(cls).toContain('disabled:pointer-events-none');
+  });
+
   it('不給 tone 時是流程主要動作：primary 墨黑實心', () => {
     const cls = classesOf(buttonVariants({}));
     expect(cls).toContain('bg-primary');
@@ -137,13 +146,14 @@ describe('buttonVariants', () => {
     }
   });
 
-  // ui-ux §9 進行中用 aria-disabled（不用原生 disabled，保留焦點與可及名稱）：外觀要和
-  // disabled 一樣看得出不能按，且點不到（Link 也不導頁）。
-  it('aria-disabled 與 disabled 同樣呈現停用外觀並擋住指標', () => {
+  // ui-ux §9 進行中用 aria-disabled（不用原生 disabled，保留焦點與可及名稱）。舊版在基底
+  // 斷言「外觀與 disabled 相同且擋指標」，那正是 R3 P2-1：後台 aria-disabled 鈕被波及。
+  // 契約改為：基底不給（見檔首同名斷言），要的鈕自己補。業主授權改寫（W3-15）。
+  it('任何 variant 的基底都不含 aria-disabled 的停用外觀', () => {
     for (const variant of ['default', 'ghost'] as const) {
       const cls = classesOf(buttonVariants({ variant }));
-      expect(cls, variant).toContain('aria-disabled:opacity-50');
-      expect(cls, variant).toContain('aria-disabled:pointer-events-none');
+      expect(cls, variant).not.toContain('aria-disabled:opacity-50');
+      expect(cls, variant).not.toContain('aria-disabled:pointer-events-none');
     }
   });
 });

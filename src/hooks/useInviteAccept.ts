@@ -11,7 +11,7 @@ import { useCallback, useState } from 'react';
 import type { ReferralInviteAcceptErrorCode } from '@contract';
 import { buildApiUrl, extractApiErrorCode } from '../utils/apiClient';
 import { clearPendingInviteToken } from '../utils/referralInvite';
-import { fetchProfileForSession } from '../utils/fetchProfile';
+import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import {
   type RouteAfterVerifiedSessionDeps,
   routeAfterVerifiedSession,
@@ -102,7 +102,9 @@ export function useInviteAccept({
         if (error || !data.session) return { kind: 'accepted_login_failed' };
 
         await routeAfterVerifiedSession(data.session, {
-          fetchProfile: fetchProfileImpl ?? ((session) => fetchProfileForSession(session)),
+          fetchProfile:
+            fetchProfileImpl ??
+            ((session) => fetchProfileForSession(session, { timeoutMs: PROFILE_FETCH_TIMEOUT_MS })),
           ingestProfile,
           navigate,
           showToast,

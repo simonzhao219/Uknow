@@ -16,7 +16,8 @@ export interface RouteAfterVerifiedSessionDeps {
  *
  * 直接用當場拿到的 access token 讀 profile——不走會「401 就自我登出」的
  * apiRequestJson，也不 setTimeout 等 session 傳播。只有後端真的回 401 才
- * 要求重新登入；其他失敗一律就近帶去完善資料頁，絕不把剛驗證好的人踢回登入。
+ * 要求重新登入；404（帳號資料異常）帶去 /login 顯示說明；暫時性錯誤帶去會員中心，
+ * 由守衛的重試外框接手（T1-B）——不再一律送去完善資料頁（老會員會被送進註冊流程）。
  */
 export async function routeAfterVerifiedSession(
   session: VerifiedSession | null | undefined,
@@ -29,18 +30,29 @@ export async function routeAfterVerifiedSession(
 
   try {
     const result = await fetchProfile(session);
-    if (result.kind === 'ok') {
-      // 先回灌 App 的登入狀態（首繪提示在導頁前寫好），再導向下一步。
-      ingestProfile?.(result.profile);
-      navigate(nextRouteForStep(result.profile.registrationStep), { replace: true });
-    } else if (result.kind === 'unauthorized' && result.status === 401) {
-      showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
-      navigate('/login', { replace: true });
-    } else {
-      // 例如 404：profile 列還沒建好——session 有效，繼續註冊流程。
-      navigate('/auth/complete-profile', { replace: true });
+    switch (result.kind) {
+      case 'ok':
+        // 先回灌 App 的登入狀態（首繪提示在導頁前寫好），再導向下一步。
+        ingestProfile?.(result.profile);
+        navigate(nextRouteForStep(result.profile.registrationStep), { replace: true });
+        break;
+      // 401／410（410 /profile 實際不會回，與 fetchProfile 分類一致）：要求重新登入。
+      case 'unauthorized':
+        showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
+        navigate('/login', { replace: true });
+        break;
+      // 404＝帳號資料異常（W4-11）：不回灌、不登出；/login 顯示異常說明（AuthPage）。
+      case 'missing':
+        navigate('/login', { replace: true });
+        break;
+      // 暫時性錯誤：不能把已完成註冊的人送進註冊頁——交給會員中心守衛的重試外框（T1-B §2.4）。
+      case 'transient':
+        navigate('/dashboard', { replace: true });
+        break;
+      default:
+        result satisfies never;
     }
   } catch {
-    navigate('/auth/complete-profile', { replace: true });
+    navigate('/dashboard', { replace: true });
   }
 }

@@ -12,12 +12,10 @@ import {
 import { UserContext } from '../App';
 import { User, Settings, Award, Users, LogOut, Shield, Target } from 'lucide-react';
 import { useFeatures } from '../contexts/FeatureContext';
-import { createClient } from '../utils/supabase/client';
 import { apiRequestJson, buildApiUrl } from '../utils/apiClient';
 import type { AdminWithdrawalSummaryResponse } from '@contract';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
-import { clearAuthHint } from '../utils/authHint';
-import { signOutWithFallback } from '../utils/signOutWithFallback';
+import { useMemberLogout } from '../hooks/useMemberLogout';
 import { type AuthView, authViewOrFallback } from '../utils/authView';
 import { funnelCtaLabel, isFunnelRoute, routeForFunnelNext } from '../utils/registrationFlow';
 import logoImage from 'figma:asset/1f99716ab54515df4eecc150e3746c995a4a44b8.png';
@@ -40,7 +38,6 @@ export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isFeatureEnabled } = useFeatures();
-  const supabase = createClient();
   const [pendingCount, setPendingCount] = useState(0);
 
   // 非 admin 一律不打這支——他們只會拿到 403，白費一次往返，還在後端
@@ -57,44 +54,8 @@ export function Navbar() {
     };
   }, [isAdmin]);
 
-  const handleLogout = async () => {
-    console.log('Navbar: Logging out user...');
-
-    try {
-      // ✅ 1. 先清除本地狀態（避免 UI 閃爍）
-      setUser(null);
-      localStorage.removeItem('user');
-      console.log('Navbar: Cleared local user state');
-
-      // 首繪提示一併清：signOut 網路失敗時 SIGNED_OUT 不一定觸發，殘留 member
-      // 提示會讓下一個在這台裝置登入的人先看到前一人的首字（S11）。
-      clearAuthHint();
-
-      // ✅ 2. 登出 Supabase Auth：網路錯誤或卡住超過逾時都補本機登出（signOutWithFallback）。
-      const { localOnly } = await signOutWithFallback(supabase.auth);
-      if (localOnly) console.error('Navbar: Global sign-out failed, signed out this device only');
-
-      // ✅ 3. 強制清除所有 Supabase auth storage
-      const storageKeys = Object.keys(localStorage);
-      storageKeys.forEach((key) => {
-        if (key.startsWith('sb-') || key.includes('supabase')) {
-          localStorage.removeItem(key);
-          console.log('Navbar: Cleared storage key:', key);
-        }
-      });
-
-      // ✅ 4. 短暫延遲確保 session 清除完成，然後導航
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      console.log('Navbar: Navigating to home page...');
-      // ✅ 使用 replace: true 避免返回歷史
-      navigate('/', { replace: true });
-    } catch (error) {
-      console.error('Navbar: Unexpected error during logout:', error);
-      // ✅ 即使發生異常，也要確保導航
-      navigate('/', { replace: true });
-    }
-  };
+  // 會員主動登出（與 degraded 外框、帳號異常說明共用，T1-B）。
+  const handleLogout = useMemberLogout();
 
   return (
     <nav className="border-b bg-card sticky top-0 z-40">
@@ -140,7 +101,10 @@ export function Navbar() {
                 <>
                   {!onFunnelRoute && ctaHref && (
                     // 320px 時 logo＋全文鈕＋icon 鈕要同列（F1）：窄寬收一點左右留白。
-                    <Button asChild className="px-3 sm:px-4">
+                    <Button
+                      asChild
+                      className="px-3 sm:px-4 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                    >
                       <Link
                         to={ctaHref}
                         aria-disabled={ctaPending ? 'true' : undefined}
@@ -158,7 +122,7 @@ export function Navbar() {
                     aria-disabled={funnelLogout.isLoggingOut ? 'true' : undefined}
                     // 窄寬（F1）且旁邊有下一步時只留 icon；漏斗頁單顆時保留文字。
                     aria-label={!onFunnelRoute && ctaHref ? '登出' : undefined}
-                    className="min-h-11 min-w-11"
+                    className="min-h-11 min-w-11 aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   >
                     <LogOut className="h-4 w-4 sm:mr-1" aria-hidden="true" />
                     <span className={!onFunnelRoute && ctaHref ? 'hidden sm:inline' : ''}>

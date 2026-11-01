@@ -44,6 +44,8 @@
 | W3-11 | 晉升時點（業主「如果都跑完就晉升」） | **全部完成就晉升**：C、T1 PR-A、K 都合進 develop 後，主 session 立刻開晉升 PR，不等 11/10；11/09 22:00 收件截止不變，截止前沒合的順延第 4 波。合進 main 後仍由業主核准 `production`（被推翻：現在先晉升已合的 L／A／L2、之後再晉升一次；照原計畫 11/10） |
 | W3-12 | T1 A3 截圖帶回的 Q6–Q8 | Q6 登出鈕維持 ghost；**Q7 本 PR 補確認框**（完善資料頁「稍後註冊」會直接刪帳號且沒有確認框，plan 原以為已有；改成先跳 AlertDialog，提醒想離開請用「登出」，按「確定刪除」才刪）；Q8 維持「登出，稍後再付款」（被推翻：Q7 改成只登出不刪帳號；Q7 另開工項） |
 | W3-13 | T1 審查「需人工裁決」：資料未齊的 admin／有效會員舊帳號，頁首只剩登出（plan §2.1 F1）；Q7 確認框標題與觸發鈕樣式 | **F1 維持規劃**（現況本來就會導去完善資料頁，A0 正式站候選 0）；Q7 標題「刪除目前的帳號資料？」、「稍後註冊」紅框紅字**通過** |
+| W3-14 | R3 P2-21：checklist 附錄留著可直接執行的 `delete from auth.users;` | **只留原則**，SQL 本體改以 `git show` 取回（R3 在 #480 處理；被推翻：維持現狀） |
+| W3-15 | R3 P2-1：共用 Button 的 aria-disabled 樣式讓後台重新整理鈕在自動更新時變灰、點不到（違反 K5） | **第 4 波優先**，和登出類 P2（含提領銀行帳號 localStorage 登出不清）併一支小 PR（被推翻：現在修並小晉升） |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -96,6 +98,9 @@ SQL 交主 session 代跑；`gh pr checks` 被擋改用 GitHub MCP；journey 只
 
 ## 5. 第 4 波候選（未納入本波，一行一項；細節見第 2 波 plan §5）
 
+**第 4 波第一項（W3-15）**：R3 審查 P2-1（Button aria-disabled 樣式違反 K5）＋P2-2／P2-4／P2-5（登出、換帳號、cancel-signup）＋P2-3（提領銀行帳號 `withdrawalBankData` 登出不清），併一支小 PR。其餘見 R3 `review.md` §5。
+另新增：e2e 偶發補 `dump_page`（`registration.py` OTP→完善資料頁、`task_card_shows_progress`）；develop `RECONCILE_SECRET`（issue #476）。
+
 T1 PR-B（若本波沒上）；PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
 A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`（審查 P2-7）；`setup-node` 逾時（審查 §4.2-4）；
@@ -105,12 +110,12 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ⬜ |
-| 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ⬜ |
-| 3 | **develop dry-run 已回 401**（run 41250155677）：到 Supabase develop branch 的 Secrets 設 `RECONCILE_SECRET`，與 GitHub secret／正式站同值；設好告訴主 session 重跑。不擋晉升 | ⬜ |
+| 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ✅ 11/01 |
+| 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ✅ |
+| 3 | develop `RECONCILE_SECRET`：11/01 改為輪換密鑰，三處（GitHub、正式站、develop）同值 | ✅ 11/01 |
 | 4 | T1 A3 實機截圖時回答 Q6（登出鈕樣式）、Q7（取消註冊確認框文案）、Q8（「稍後付款」鈕文字） | 等 T1 A3 |
-| 5 | 11/10 晉升合進 main 後核准 `production` 部署 | 11/10 |
-| 6 | 11/13 前核對正式站照片候選清單，再設 `PHOTO_PURGE_LIVE=true` | 11/10–13 |
+| 5 | 晉升合進 main 後核准 `production` 部署 | ✅ 11/01 |
+| 6 | 核對正式站照片候選清單，再設 `PHOTO_PURGE_LIVE=true` | ✅ 11/01（候選 0，已開實刪） |
 
 ## 7. 執行 session 名冊（主 session 維護）
 
@@ -123,7 +128,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
 | K | `session_01MQovbDHyiASTQXhQNxSsU7` | Sonnet | `fix/alert-pipeline-gaps` | #475 ✅ 8912099 | 收工 |
 | T1 審查 | `session_01MQovbDpor2j3PV7r33VfUP` | Opus | 唯讀（報告交 T1 寫入） | #466 | 收工（P0 0／P1 3／P2 14） |
-| R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
+| R3 | `session_01MQovbDJ5ew5zqogskJvNLu` | Opus | `docs/wave3-review`（＋第 2 波退場 PR） | — | 審查中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -144,3 +149,10 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 11:13 | T1 回報 PR-A（A0–A4）完成：本機 `check:full` 全綠，e2e 326/326（頁首情境新增 30 個）；A3 紅 `356417f1`＋`dda2d4f1`、A4 `1c637c3d`；e2e 抓到並已修三項（換帳號冷啟動會閃前一人的首字、頁首 CLS、320px 時 CTA 壓到 logo）。降級未做：Navbar 會員登出的 startTransition。開 **T1 審查 session** `session_01MQovbDpor2j3PV7r33VfUP`（Opus）。業主裁決 **W3-12**（Q6–Q8） | T1 補 Q7＋清審查 P0 → 收尾轉 ready → 合 develop → 立刻晉升（W3-11） |
 | 11/01 11:20 | T1 審查：**P0 0／P1 3／P2 14**。P1：S9 頁首不位移只在 S1、S3 有斷言；`aria-disabled` 沒有停用外觀、signOut 沒有逾時；Q7 確認框（已裁決）。五個重點中，`isFirstTimeFunnel` 不會誤判有效會員，登出都有清提示鍵，context 改動沒有漏網的 consumer。主 session 把 P1 交給 T1，並要求 cancel-signup 失敗不可吞錯、toast 照實寫 | T1 修 P1 |
 | 11/01 11:55 | T1：Q7 紅燈 `d76df44f`→綠燈 `927b6854`；審查 P1 紅燈 `cb402eff`→綠燈 `6038efe5`（S9 補三情境、`signOutWithFallback` 5 秒逾時、停用外觀、cancel-signup 失敗時停在原頁）；收尾已清 `docs/plans/auth-state-trust/`（`git show b4b5bdcb:` 取回），e2e 327/327。業主裁決 **W3-13**。主 session 審最後一段 diff，確認刪除成功仍會導回首頁 → **#466 合進 develop（d8933eb）**。**本波六項全部合併** | 依 W3-11 晉升：合 #471 → 開晉升 PR |
+| 11/01 12:46 | 開晉升 PR **#477**（develop→main，`04b869e`）。journey-full 第一輪紅：2 failed／42 skipped，失敗點是 E3 完善資料頁 `#name` 逾時、U1 任務卡「1 / 8」。T1 對照程式路徑，找不到與 #466 的因果。重跑一次後 146 passed／0 skipped，判定為偶發；第 4 波候選：在這兩個步驟補 `dump_page` | 合 main |
+| 11/01 13:38 | **#477 合進 main（1f61e68）**。main CI push 綠 → deploy-supabase run 41277716004 等待核准 | 業主核准 production |
+| 11/01 15:37 | 業主核准 `production`，deploy-supabase 成功，`/health` sha 煙霧測試通過。主 session 唯讀 SQL：兩支 migration 已套用、孤兒判準 4 個函式在、`listings_delete_own` 已撤、`admin_list_members` 有新欄位。deploy-smoke 手動 run 41285941139 綠（正式站 build-sha 相符、PayUni 閘門正常）。**第 3 波晉升完成** | 業主 11/04 前核對照片候選清單；開 R3 審查 session；develop `RECONCILE_SECRET` 仍待設 |
+| 11/01 16:05 | 業主：現在開 R3。開 **R3** `session_01MQovbDJ5ew5zqogskJvNLu`（Opus）：範圍 `5b6a790..1f61e68`，四視角加反駁，上線後現場（照片清理首次排程在台北 11/02 03:17），兼做 `launch-wave-2/` 退場；現場 SQL 由主 session 代跑 | 等 R3 報告；業主 11/04 前核對照片清單 |
+| 11/01 17:30 | R3 中間回報：**P0 0／P1 0／P2 22**。主 session 代跑 §3.3 正式站唯讀 SQL（08:24 UTC）：部署後告警 0、未 resolve 0、訂單 0、兩支 migration 在、bucket 32 個物件、超過寬限期 0。審過並合併 **#479**（第 2 波目錄退場，3461f2b）。業主裁決 **W3-14**、**W3-15** | R3 補首輪照片清理結果 → #480；業主 11/04 前核對照片清單 |
+| 11/01 17:55 | 業主本機 curl 正式站回 `unauthorized`（沒有舊密鑰原值）→ 業主選擇**輪換 `RECONCILE_SECRET`**。換新後本機 dry-run：候選 0、錨點 10/10、32 個物件。主 session 驗證時第一輪三個 run 全紅（GitHub secret 還是舊值，正式站對帳推了一則 P1 LINE、自動開了 #481／#482），業主重設 GitHub secret 後：production dry-run 41294916617、develop dry-run 41295068483、正式站對帳 41295070551 全綠 → 關 #476／#481／#482。業主已設 `PHOTO_PURGE_LIVE=true`，首輪實刪排程在台北 11/02 03:17（候選 0） | R3 補首輪結果 → #480；第 3 波收尾 |
+| 11/01 18:10 | 業主刪除暫存分支（待辦 1 ✅）。業主問是否開下一波 → 選「現在寫交接、明天開」：主 session 落檔 `docs/plans/launch-wave-4/plan.md`（交接：上游、現況、建議工項 F1／T1-B／E／D、第 3 波新增的環境須知），隨 #478 合進 develop | R3 補首輪照片清理結果 → 合 #480 → 業主開第 4 波主 session |

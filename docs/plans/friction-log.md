@@ -3349,3 +3349,37 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：第一條列入下次框架整併；其餘為紀錄。
 
+
+## 2026-11-01｜漏網（流程、權限）｜第 3 波審查（`docs/plans/launch-wave-3/review.md`）
+
+- **改共用元件基底沒掃全部消費者**（漏網）：T1 為了給頁首兩顆鈕停用外觀，在共用 `Button` 基底加 `aria-disabled:pointer-events-none
+  aria-disabled:opacity-50`。後台十幾處刻意「0.3 秒後才灰化、仍可點擊」的 aria-disabled 鈕一起被改（業主裁決 K5），重新整理鈕滑鼠點不到。
+  jsdom 不載 Tailwind，vitest 全綠；T1 實作審查與主 session 都只看了 Navbar 兩顆鈕。規則：改 `src/components/ui/*` 的基底 class，
+  先 grep 全部消費者並在 PR 列影響面；樣式契約（例如「aria-disabled 仍收得到點擊」）寫進基底註解。
+- **晉升 journey 紅，重跑一次綠就判偶發**（流程）：#477 第一輪 2 failed（E3 完善資料頁、U1 任務卡），重跑綠即合 main，
+  沒人看過失敗當下的截圖或 trace（artifact 在 Azure blob，雲端 session 的 proxy 拿不到）。審查推論方向成立，但「沒有產品 bug」無法證實。
+  規則：判偶發前至少看一次現場（截圖、trace 或 `dump_page`）；拿不到時在留言寫明「未看現場」，並把缺的診斷補成下一波工項。
+- **「登出清快取」的規則範圍太窄**（漏網）：第 2 波只要求 `*Cache.ts` 在 `SIGNED_OUT` 清。本波發現範圍外還有兩處：
+  localStorage 的 `withdrawalBankData`（共用裝置會預填前一人的銀行帳號），以及換 uid 的 SIGNED_IN 不清快取。
+  規則改成「登出與換帳號要清所有**本機狀態**（模組層、sessionStorage、localStorage）」，盤點清單寫在 `onSignedOut` 註解。
+- **審查 session 代跑現場 SQL 的路徑被分類器擋**（誤擋／權限）：〈慣例〉寫「現場 SQL 交主 session 代跑」，
+  審查 session 以 send_message 送出含正式站唯讀 SQL 的請求，被 auto mode 分類器判為 Production Reads 擋下；改在中間回報說明需求後，主 session 主動代跑才拿到實數。
+  候選處置：業主允許該類 send_message，或改成主 session 在晉升後主動跑固定的現場 SQL、結果寫進 plan §8，審查 session 只讀 plan。
+
+處置：第一、三條列入下次框架整併；第二條建議寫進晉升 SOP；第四條待業主決定。
+
+## 2026-11-01｜誤擋／漏網（流程、環境）｜T1-B auth-transient-resilience 施工摩擦（從 progress.md 整併）
+
+- **誤擋（待裁決）**：`tdd-test-guard` 的「再由人解鎖修測試」假設人能在本機執行 shell；claude.ai/code 雲端 session 的使用者打
+  `! rm .claude/tdd-lock` 會被拒（「shell 指令僅可在本機工作階段中使用」）。本工項兩次（W4-20 漏改的參數期望、W4-21 mock 隔離）
+  改以業主互動選項授權、Claude 代刪鎖處理，皆只改測試的非語意部分、全閘門綠後 commit。處置候選：給雲端 session 一條人工解鎖通道
+  （業主授權語句寫進 progress.md 後由 script 驗證再刪鎖），並在 DENY_REASON 指路。
+- **漏網**：`python3 scripts/check-test-names.py | tail -2 && git commit …` 的 pipe 吞掉 exit code，紅燈 commit 帶著命名違規進去
+  （鎖住期間無法改測試，解鎖後另 commit 修）。教訓：檢查指令不要接 `| tail` 再串 `&&`。
+- **誤擋（環境）**：push 前守衛自動 rebase 會改寫整條分支的 hash，progress.md 記的紅燈／綠燈 hash 隨之失效，需手動重對；
+  commit message 內引用的舊紅燈 hash 也跟著失效（PR 內文以 rebase 後的值為準）。
+- **環境**：雲端容器的 python playwright 版本 pin 期待 chromium build 1194，容器預裝的是 1243（`/opt/pw-browsers`）；本機跑全 mock e2e
+  以符號連結對上（不入 repo）。e2e harness 自起的 dev server 曾在長跑中途死掉（15 條 `ERR_CONNECTION_REFUSED`），改先手動 `npm run dev`
+  再 `E2E_SKIP_DEV_SERVER=1`。
+- **流程（一次學到）**：紅燈期改「既有測試期望」時要一次改齊同形斷言（漏一條就要走逃生口）；主 session 的同類掃描建議有效，後續階段
+  在上鎖前一次改好、未再卡關。

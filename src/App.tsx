@@ -36,6 +36,7 @@ import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
+import { clearAccountLocalState } from './utils/clearAccountLocalState';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
 import {
   type AuthState,
@@ -130,6 +131,15 @@ export const UserContext = React.createContext<{
   hintNext?: FunnelNextKind | null;
   /** OTP／邀請入口拿到 /profile 後回灌（穩定 identity）。 */
   ingestProfile?: (profile: any) => void;
+  // ---- 暫時性故障不登出（T1-B）----
+  /** degraded 外框的「重試」（穩定 identity；在飛時不重複發）。 */
+  retryAuth?: () => Promise<void>;
+  /** degraded 中的重試在飛。 */
+  isRetrying?: boolean;
+  /** degraded 後的重試又失敗。 */
+  failedAgain?: boolean;
+  /** /profile 404：帳號資料異常（W4-11），/login 顯示說明。 */
+  authAnomaly?: boolean;
 }>({
   user: null,
   setUser: () => {},
@@ -143,6 +153,10 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
+  const clearAccountState = () => {
+    clearCache();
+    clearAccountLocalState();
+  };
 
   // 啟動判定、事件、背景重驗與首繪提示全在 useAuthBootstrap（plan §2.5）；
   // 這裡只注入會碰到路由與快取的副作用。注入值只在掛載時讀一次。
@@ -158,18 +172,30 @@ function AppContent() {
     sessionStalled,
     refreshUser,
     ingestProfile,
+    retryAuth,
+    isRetrying,
+    failedAgain,
+    authAnomaly,
   } = useAuthBootstrap({
     supabase: createClient(),
     fetchProfile,
     clearInflight,
+    // 「登出清所有本機狀態」盤點（R3 §6，2026-11）。已清：DataCache（含 sessionStorage）、
+    // 首頁清單快取、localStorage 的 withdrawalBankData／pendingUser／user／pendingSession、
+    // 完善資料草稿（sessionStorage）、首繪提示（hook 自己清）、邀請 token（僅 SIGNED_OUT）。
+    // 刻意保留：待用推薦碼與邀請 token（訪客帶進來的）、首頁檢視／推薦網路排序／QR 分頁／
+    // 公告已讀（與帳號無關的偏好）、OTP 續填情境與到期時間（只有 email，且屬登入前流程）。
+    // adminCache 只在記憶體、隨 AdminConsole 卸載。新增帳號相關的 storage 鍵時加進
+    // clearAccountLocalState，不要另寫一處。
     onSignedOut: () => {
-      clearCache();
+      clearAccountState();
       clearPendingInviteToken();
       // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
       resetHomeListingsCache();
-      // 升版前的殘留鍵（write-only、零讀者）。
-      localStorage.removeItem('user');
-      localStorage.removeItem('pendingSession');
+    },
+    onAccountSwitched: () => {
+      clearAccountState();
+      resetHomeListingsCache();
     },
     onIncompleteProfile: () => navigate('/auth/complete-profile', { replace: true }),
   });
@@ -236,9 +262,25 @@ function AppContent() {
       hintInitial,
       hintNext,
       ingestProfile,
+      retryAuth,
+      isRetrying,
+      failedAgain,
+      authAnomaly,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, isLoadingUser, authState, isFunnel, authView, nextFunnelRoute, hintInitial, hintNext],
+    [
+      user,
+      isLoadingUser,
+      authState,
+      isFunnel,
+      authView,
+      nextFunnelRoute,
+      hintInitial,
+      hintNext,
+      isRetrying,
+      failedAgain,
+      authAnomaly,
+    ],
   );
 
   return (
@@ -249,8 +291,10 @@ function AppContent() {
             <Navbar />
             <MaintenanceBanner />
             {/* 會員（含首繪頭像占位）手機有底部導覽，main 補下方留白避免內容被遮住 */}
+            {/* tabIndex=-1：degraded 外框的重試成功後，焦點交給 main（AuthDegradedFrame）。 */}
             <main
-              className={`container mx-auto px-4 py-6 flex-1 ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
+              tabIndex={-1}
+              className={`container mx-auto px-4 py-6 flex-1 outline-none scroll-mt-20 ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
             >
               {/* resetKey=路由路徑：一頁壞掉不該讓整個 session 的內容區
                   都停在後備畫面（見 ErrorBoundary 的 resetKey 說明）。 */}
