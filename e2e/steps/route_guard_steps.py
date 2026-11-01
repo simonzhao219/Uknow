@@ -12,7 +12,7 @@ import json
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from config import API_BASE
+from config import API_BASE, SUPABASE_AUTH_BASE
 from mocks.backend_api_mock import build_profile
 from mocks.fixtures import seed_authenticated_session
 from steps.common_steps import *  # noqa: F401,F403
@@ -372,6 +372,55 @@ def press_button(page, name):
 
 @then(parsers.parse('I stay on "{path}" with the reconnect notice'))
 def stay_with_reconnect_notice(page, path):
-    expect(page.get_by_test_id("auth-degraded")).to_be_visible(timeout=15_000)
+    # Worst case: 8 s first timeout + 1 s pause + 5 s retry timeout.
+    expect(page.get_by_test_id("auth-degraded")).to_be_visible(timeout=20_000)
     assert page.url.endswith(path), f"expected to stay on {path}, got {page.url}"
+
+
+@given(parsers.parse("the profile service fails after the first answer with status {status:d}"))
+def profile_fails_after_first(api_mock, status):
+    # The app's bootstrap read succeeds (the guard lets the page render), then
+    # the page's own read fails — e.g. checkout re-reading the profile.
+    profile = build_profile(1)
+    api_mock.set_profile_status_sequence([200, status], profile)
+
+
+@given("sign-out requests are counted", target_fixture="signout_calls")
+def count_signout_calls(context):
+    calls = []
+
+    def handler(route):
+        calls.append(route.request.url)
+        route.fulfill(status=204, content_type="application/json", body="")
+
+    context.route(f"{SUPABASE_AUTH_BASE}/logout**", handler)
+    return calls
+
+
+@when("the automatic retry has also failed")
+def automatic_retry_failed(page, profile_calls):
+    # Cold start + one automatic retry (about 1 s later) = two profile requests.
+    for _ in range(60):
+        if len(profile_calls) >= 2:
+            break
+        page.wait_for_timeout(250)
+    assert len(profile_calls) >= 2, f"expected the automatic retry, saw {profile_calls}"
+    page.wait_for_timeout(500)
+
+
+@then("no sign-out request was made")
+def no_signout(signout_calls):
+    assert signout_calls == [], f"unexpected sign-out requests: {signout_calls}"
+
+
+@then("the automatic retry asked the backend to skip repairs")
+def retry_skips_repairs(profile_calls):
+    assert len(profile_calls) >= 2, f"expected a retry, saw {profile_calls}"
+    assert "retry=1" not in profile_calls[0], profile_calls
+    assert any("retry=1" in u for u in profile_calls[1:]), profile_calls
+
+
+@then("there is no reconnect notice")
+def no_reconnect_notice(page):
+    expect(page.get_by_test_id("auth-degraded")).to_have_count(0)
 

@@ -878,7 +878,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 5 | 姓名格式規則的兩項未結清查證（§4.2） | ①`HAN_RANGE`（`㐀-鿿`＋`豈-﫿`）不含擴充 B 區以上與造字區，即戶政「缺字」問題——該正則原本只決定遮罩樣式，改當註冊關卡後同一落差的後果變成「完全無法註冊」。目前僅以「罕用字請聯繫客服」的錯誤訊息當逃生口，**未以既有 `profiles.name` 樣本查證實際族群規模**。②純羅馬拼音登記姓名（依《姓名條例》部分原住民族可單獨以羅馬拼音登記法定姓名）的分隔慣例未查證；外文模式目前只允許英文字母與單一半形空格，若官方轉寫慣例另有分隔符號則會誤擋 |
 | 6 | 端點命名 `/tasks/current-month-top`（§9.1） | 語意是個人當月推薦進度，命名待改為 `/tasks/current-month-progress`；牽動前端呼叫點與 `supabase/functions/_shared/api-contract.ts` 常數，尚未執行 |
 | 7 | 到期前提前續訂（§6.1 續約提醒） | 會籍有效的會員進不了結帳頁：`resolveCheckoutPageRedirect`（`src/utils/registrationFlow.ts`）對 `accountStatus === 'active'` 一律回 `/dashboard`，只能等失效後再續。因此我的訂閱卡在 30 天內只倒數、不放續訂鈕（`showsRenewalCta`）；修好時把鈕放回 |
-| 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）②`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status`、`/payuni/prepare`（#360）與 `/profile`（T1-B）已改 fail-closed |
+| 8 | 讀取失敗被當成「已失效／不存在」的其餘端點（§5.3） | `supabase/functions/api/index.ts`：①`/members/verify`：掃描者自身會籍讀取失敗誤擋、被掃者 `profiles.suspended_at` 讀取失敗當未停權（停權者通過掃描）②`/referrals/debug/:userId`（admin、無前端呼叫者）。`/subscriptions/status` 與 `/payuni/prepare` 已改 fail-closed（#360） |
 | 9 | 會員列表的狀態篩選／排序（§13） | 後端 `GET /admin/members` 已收 `status`／`sort` 參數，`MemberManagement` 只接了搜尋（`search`），畫面上沒有篩選與排序 |
 | 10 | 提領狀態更新與批次不透傳冪等旗標（§10、§13） | `supabase/functions/api/index.ts`：`admin_update_withdrawal_status` 對「已是該狀態」回成功並帶 `idempotent`，但 `/admin/withdrawals/:id/status` 與 `/admin/withdrawals/batch-mark-paid` 不透傳，前端分辨不出重複標記已匯款 |
 | 11 | 提領管理讀取失敗被讀成 200（§13） | `supabase/functions/api/index.ts` 的 `/admin/withdrawals`：統計查詢的錯誤被忽略（件數與待匯款總額回 0）；附屬查詢（姓名、證件簽名網址、事件歷史）也不檢查錯誤，回空姓名、「未設定」身分證、空歷史，證件顯示未上傳 |
