@@ -635,7 +635,9 @@ describe('邀請帳號的推薦碼後備預填', () => {
 // 先跳確認框說出後果並指向登出（業主裁決 W3-12，Q7）。只有「確定刪除」才刪；返回、Esc 都不刪。
 describe('稍後註冊的刪除確認', () => {
   /** session 可用、/profile 回 404（新註冊者）、其餘請求記下 URL 並回 200。 */
-  function wireSession() {
+  function wireSession(
+    cancel: () => Promise<Response> = async () => new Response('{}', { status: 200 }),
+  ) {
     const urls: string[] = [];
     getSession.mockImplementation(() =>
       Promise.resolve({ data: { session: { access_token: 'tok', user: { id: 'u1' } } } }),
@@ -645,6 +647,7 @@ describe('稍後註冊的刪除確認', () => {
       vi.fn(async (url: string) => {
         urls.push(String(url));
         if (/\/profile$/.test(String(url))) return new Response('{}', { status: 404 });
+        if (String(url).endsWith('/auth/cancel-signup')) return cancel();
         return new Response('{}', { status: 200 });
       }),
     );
@@ -702,6 +705,56 @@ describe('稍後註冊的刪除確認', () => {
     fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
     await waitFor(() => expect(deleted(urls)).toBe(true));
     await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  it('刪除成功時如實告知已刪除、可用同一個 Email 重新註冊', async () => {
+    wireSession();
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        '已刪除帳號資料，之後可以用同一個 Email 重新註冊',
+        'info',
+      ),
+    );
+  });
+
+  it('刪除失敗時顯示後端原因、停在原頁、不登出', async () => {
+    const urls = wireSession(
+      async () =>
+        new Response(
+          JSON.stringify({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }),
+          {
+            status: 400,
+          },
+        ),
+    );
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服',
+        'error',
+      ),
+    );
+    expect(deleted(urls)).toBe(true);
+    expect(signOut).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '稍後註冊' })).toBeTruthy();
+  });
+
+  it('刪除請求斷線時提示稍後再試、不登出', async () => {
+    wireSession(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('暫時無法刪除帳號資料，請稍後再試', 'error'),
+    );
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it('觸發鈕是破壞性的紅框字，確認鈕是紅實心', async () => {

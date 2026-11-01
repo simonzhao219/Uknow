@@ -50,3 +50,10 @@ export function resolveAuthView({
 export function showsMemberChrome(view: AuthView | undefined): boolean {
   return view === 'member' || view === 'member-pending';
 }
+
+export function authViewOrFallback(
+  _view: AuthView | undefined,
+  _isLoggedIn: boolean | undefined,
+): AuthView {
+  return 'guest';
+}

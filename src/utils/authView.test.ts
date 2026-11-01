@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { resolveAuthView, showsMemberChrome, type AuthViewInput } from './authView';
+import {
+  authViewOrFallback,
+  resolveAuthView,
+  showsMemberChrome,
+  type AuthViewInput,
+} from './authView';
 
 const base: AuthViewInput = {
   authState: 'unknown',
@@ -107,5 +112,16 @@ describe('showsMemberChrome', () => {
       expect(showsMemberChrome(v), v).toBe(false);
     }
     expect(showsMemberChrome(undefined)).toBe(false);
+  });
+});
+
+describe('authViewOrFallback', () => {
+  it('有 authView 時原樣回傳', () => {
+    expect(authViewOrFallback('funnel', true)).toBe('funnel');
+  });
+
+  it('舊 context 沒有 authView 時依 isLoggedIn 回落', () => {
+    expect(authViewOrFallback(undefined, true)).toBe('member');
+    expect(authViewOrFallback(undefined, false)).toBe('guest');
   });
 });

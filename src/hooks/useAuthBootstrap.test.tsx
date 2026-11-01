@@ -189,6 +189,20 @@ describe('useAuthBootstrap 冷啟動', () => {
     expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
   });
 
+  it('/profile 401 後 global 登出失敗時補 local 登出、不留未處理例外', async () => {
+    const t = setup();
+    t.deps.supabase.auth.signOut.mockImplementation(async (opts?: { scope?: string }) => {
+      if (opts?.scope === 'local') return { error: null };
+      throw new TypeError('Failed to fetch');
+    });
+    await t.resolveSession();
+    await t.respond({ kind: 'unauthorized', status: 401 });
+    await waitFor(() =>
+      expect(t.deps.supabase.auth.signOut).toHaveBeenCalledWith({ scope: 'local' }),
+    );
+    expect(t.hook.result.current.authState).toBe('anonymous');
+  });
+
   it('資料未齊（F1）時 isFunnel、user 維持 null、提示寫成 funnel 並導完善資料頁', async () => {
     const t = setup({ pathname: '/' });
     await t.resolveSession();

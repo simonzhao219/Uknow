@@ -130,6 +130,29 @@ describe('useFunnelLogout', () => {
     },
   );
 
+  it('global 登出卡住時逾時後補 local 登出並導頁，不讓畫面凍結', async () => {
+    vi.useFakeTimers();
+    try {
+      auth.signOut.mockImplementation(async (opts?: { scope?: string }) =>
+        opts?.scope === 'local' ? { error: null } : new Promise(() => {}),
+      );
+      const { hook } = setup({ user: UNPAID });
+      let done!: Promise<void>;
+      await act(async () => {
+        done = hook.result.current.logout();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+        await done;
+      });
+      expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+      expect(showToast).toHaveBeenCalledWith('已登出此裝置', 'info');
+      expect(navigate).toHaveBeenCalledWith('/login', { replace: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('連點只觸發一次登出，進行中 isLoggingOut 為 true', async () => {
     let release!: () => void;
     auth.signOut.mockImplementation(

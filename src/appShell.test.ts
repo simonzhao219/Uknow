@@ -128,7 +128,8 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
 
   // 第 2 波審查 P2-5：首頁清單快取存活到分頁重整，換帳號不該沿用前一人的檢視狀態。
   it('登出時重置首頁清單快取', () => {
-    const m = app.match(/onSignedOut[\s\S]*?\n {4}\}/);
+    // 以區段錨點比對（onSignedOut 到下一個注入鍵 onIncompleteProfile），不依賴縮排。
+    const m = app.match(/onSignedOut:[\s\S]*?onIncompleteProfile:/);
     expect(m?.[0] ?? '').toMatch(/resetHomeListingsCache\(\)/);
   });
 
@@ -144,7 +145,11 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
       'hooks/useAuthBootstrap.ts',
     ]) {
       const full = join(SRC, rel);
-      for (const [, spec] of readFileSync(full, 'utf8').matchAll(/from\s+'(\.[^']+)'/g)) {
+      // static 與動態 import 都算（單雙引號皆可）。
+      const specs = readFileSync(full, 'utf8').matchAll(
+        /(?:from\s+|import\(\s*)['"](\.[^'"]+)['"]/g,
+      );
+      for (const [, spec] of specs) {
         if (resolve(dirname(full), spec) === appPath) offenders.push(`${rel} → ${spec}`);
       }
     }
@@ -180,8 +185,12 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
   });
 
   // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
-  it('apiClient 的 session 過期與取消註冊都會清提示', () => {
-    for (const rel of ['utils/apiClient.ts', 'components/CompleteProfile.tsx']) {
+  it('apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session 都會清提示', () => {
+    for (const rel of [
+      'utils/apiClient.ts',
+      'components/CompleteProfile.tsx',
+      'components/AuthPage.tsx',
+    ]) {
       expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(/clearAuthHint\(\)/);
     }
   });
@@ -208,6 +217,7 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
         'utils/authHint.ts',
         'components/CompleteProfile.tsx',
         'components/Navbar.tsx',
+        'components/AuthPage.tsx',
       ].map((r) => join(SRC, r)),
     );
     const offenders: string[] = [];
