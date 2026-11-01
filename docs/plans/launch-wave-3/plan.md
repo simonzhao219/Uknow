@@ -111,11 +111,11 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | 手動刪 GitHub 暫存分支 `claude/auth-state-trust-v41`、`claude/auth-state-trust-v41b` | ⬜ |
-| 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ⬜ |
-| 3 | **develop dry-run 已回 401**（run 41250155677）：到 Supabase develop branch 的 Secrets 設 `RECONCILE_SECRET`，與 GitHub secret／正式站同值；設好告訴主 session 重跑。不擋晉升 | ⬜ |
+| 2 | 在 T1 新 session 親打 `/tdd-implement auth-state-trust`（主 session 開好後給連結） | ✅ |
+| 3 | develop `RECONCILE_SECRET`：11/01 改為輪換密鑰，三處（GitHub、正式站、develop）同值 | ✅ 11/01 |
 | 4 | T1 A3 實機截圖時回答 Q6（登出鈕樣式）、Q7（取消註冊確認框文案）、Q8（「稍後付款」鈕文字） | 等 T1 A3 |
 | 5 | 晉升合進 main 後核准 `production` 部署 | ✅ 11/01 |
-| 6 | **11/04 前**核對正式站照片候選清單（規格書 §11 的本機 curl），再設 `PHOTO_PURGE_LIVE=true`（W2-8：晉升後 3 日內；晉升提早到 11/01） | ⬜ |
+| 6 | 核對正式站照片候選清單，再設 `PHOTO_PURGE_LIVE=true` | ✅ 11/01（候選 0，已開實刪） |
 
 ## 7. 執行 session 名冊（主 session 維護）
 
@@ -154,3 +154,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 15:37 | 業主核准 `production`，deploy-supabase 成功，`/health` sha 煙霧測試通過。主 session 唯讀 SQL：兩支 migration 已套用、孤兒判準 4 個函式在、`listings_delete_own` 已撤、`admin_list_members` 有新欄位。deploy-smoke 手動 run 41285941139 綠（正式站 build-sha 相符、PayUni 閘門正常）。**第 3 波晉升完成** | 業主 11/04 前核對照片候選清單；開 R3 審查 session；develop `RECONCILE_SECRET` 仍待設 |
 | 11/01 16:05 | 業主：現在開 R3。開 **R3** `session_01MQovbDJ5ew5zqogskJvNLu`（Opus）：範圍 `5b6a790..1f61e68`，四視角加反駁，上線後現場（照片清理首次排程在台北 11/02 03:17），兼做 `launch-wave-2/` 退場；現場 SQL 由主 session 代跑 | 等 R3 報告；業主 11/04 前核對照片清單 |
 | 11/01 17:30 | R3 中間回報：**P0 0／P1 0／P2 22**。主 session 代跑 §3.3 正式站唯讀 SQL（08:24 UTC）：部署後告警 0、未 resolve 0、訂單 0、兩支 migration 在、bucket 32 個物件、超過寬限期 0。審過並合併 **#479**（第 2 波目錄退場，3461f2b）。業主裁決 **W3-14**、**W3-15** | R3 補首輪照片清理結果 → #480；業主 11/04 前核對照片清單 |
+| 11/01 17:55 | 業主本機 curl 正式站回 `unauthorized`（沒有舊密鑰原值）→ 業主選擇**輪換 `RECONCILE_SECRET`**。換新後本機 dry-run：候選 0、錨點 10/10、32 個物件。主 session 驗證時第一輪三個 run 全紅（GitHub secret 還是舊值，正式站對帳推了一則 P1 LINE、自動開了 #481／#482），業主重設 GitHub secret 後：production dry-run 41294916617、develop dry-run 41295068483、正式站對帳 41295070551 全綠 → 關 #476／#481／#482。業主已設 `PHOTO_PURGE_LIVE=true`，首輪實刪排程在台北 11/02 03:17（候選 0） | R3 補首輪結果 → #480；第 3 波收尾 |
