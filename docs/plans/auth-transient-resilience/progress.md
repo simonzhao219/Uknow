@@ -16,14 +16,14 @@
 | B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | ✅ 綠（實作 4e29e176、W4-20 期望 eea0e29a） | de4d58cf | eea0e29a |
 | B5 | 呈現：AuthDegradedNotice／Frame、守衛、RouteAuthLoading、authView、useMemberLogout | ✅ 綠 | a5bb2975 | 15cd222e |
 | B6a | 入口與漏斗頁：routeAfterVerifiedSession、OTP／邀請逾時、PaymentCheckout、CompleteProfile post-write | ✅ 綠 | 49fd1b63 | 28a9430c |
-| B6b | AuthPage（掛載 effect、登入表單、異常 callout）；e2e | 🔨 施工中（W4-22） | | |
+| B6b | AuthPage（掛載 effect、登入表單、異常 callout）；e2e | ✅ 綠（e2e fc7f8ee9） | 50c2436a | 28587ae8 |
 | B7 | apiClient 兩層確認（可降級） | ✅ 綠（實作 1a96c18f、W4-21 測試隔離 c6529816） | c832f550 | c6529816 |
-| B8 | 規格書 §5.3、§14 #8、§2.1 已知限制 | ⬜ 未開始 | | |
+| B8 | 規格書 §5.3、§14 #8、§2.1 已知限制 | ✅（docs commit，非 TDD） | — | — |
 
 ## 目前位置與下一步
 
 B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
-**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 綠（W4-20 裁決後；全閘門 2732/2732）。B5 綠（2767/2767）。B6 拆 B6a／B6b：B6a 綠；B6b 等裁決。B7 綠（2781/2781；未降級）。剩 B6b（等裁決）與 B8。
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 綠（W4-20 裁決後；全閘門 2732/2732）。B5 綠（2767/2767）。B6 拆 B6a／B6b：B6a 綠；B6b 等裁決。B7 綠（2781/2781；未降級）。B6b 綠（W4-22）、B8 完成。全 mock e2e 330/330（本機以 /opt/pw-browsers 符號連結對上 1194 build，不入 repo）；`npm run check:full` 綠。下一步：/review-implementation → 清規劃檔 → PR。
 11/01 再 rebase 到 develop（#487，efa1d06a）：本表 hash 已換成 rebase 後的值（commit message 內引用的舊紅燈 hash 以本表為準）。
 
 ### B0 結構快照（F1 後）
