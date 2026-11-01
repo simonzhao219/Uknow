@@ -742,6 +742,33 @@ describe('useAuthBootstrap 暫時性故障（T1-B degraded）', () => {
     expect(t.deps.fetchProfile).toHaveBeenCalledTimes(2);
   });
 
+  // 實作審查 P2（系統）：重試入口在 getSession 之前就要擋，同時到的 online＋visibilitychange 只發一個請求。
+  it('degraded 時同一瞬間的 online 與分頁切回只發一個重試請求', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    await toDegraded(t);
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await flush();
+    expect(t.deps.fetchProfile).toHaveBeenCalledTimes(3);
+  });
+
+  // 實作審查 P2（系統）：getSession 本身 reject 時不能讓守衛永遠停在判定中——走同一條重試／degraded。
+  it('getSession 擲例外時排自動重試，仍失敗則進 degraded', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    t.deps.supabase.auth.getSession.mockImplementation(() => Promise.reject(new Error('boom')));
+    t.hook.unmount();
+    const hook = renderHook(() => useAuthBootstrap(t.deps as unknown as AuthBootstrapDeps));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(hook.result.current.authState).toBe('degraded');
+    expect(hook.result.current.isLoadingUser).toBe(false);
+  });
+
   it('getSession 回 null＋可重試錯誤時不清提示、排自動重試', async () => {
     vi.useFakeTimers();
     writeAuthHint({ kind: 'member', initial: '王', uid8: 'aaaaaaaa', next: null });

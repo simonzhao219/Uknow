@@ -467,6 +467,21 @@ describe('AuthPage 暫時性故障與帳號資料異常（T1-B）', () => {
     await waitFor(() => expect(signOut).toHaveBeenCalled());
   });
 
+  it('異常說明的登出鈕連點只登出一次、進行中為 aria-disabled', async () => {
+    getSession.mockResolvedValue({
+      data: { session: { access_token: 'tok', user: { id: 'u1' } } },
+    });
+    profileReturns(404);
+    renderAt('/login');
+    await screen.findByTestId('auth-anomaly');
+    const btn = screen.getByRole('button', { name: '登出' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
   it('context 已判定帳號異常時直接顯示說明，不再打 /profile', async () => {
     getSession.mockResolvedValue({
       data: { session: { access_token: 'tok', user: { id: 'u1' } } },

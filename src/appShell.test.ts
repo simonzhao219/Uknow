@@ -233,7 +233,7 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
         'hooks/useAuthBootstrap.ts',
         'hooks/useFunnelLogout.ts',
         'hooks/useMemberLogout.ts',
-        'utils/apiClient.ts',
+        // apiClient 的無效 session 清理收斂到 endInvalidSession（T1-B），不再直接寫提示——移出白名單。
         'utils/authHint.ts',
         'utils/endInvalidSession.ts',
         'components/CompleteProfile.tsx',
