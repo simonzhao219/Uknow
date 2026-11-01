@@ -33,7 +33,7 @@ type Session = { access_token?: string; user?: { id?: string } } | null;
 
 export interface AuthBootstrapSupabase {
   auth: {
-    getSession(): Promise<{ data: { session: Session } }>;
+    getSession(): Promise<{ data: { session: Session }; error?: unknown }>;
     onAuthStateChange(cb: (event: string, session: Session) => void): {
       data: { subscription: { unsubscribe(): void } };
     };
@@ -55,6 +55,11 @@ export interface AuthBootstrapDeps {
   onAccountSwitched?: () => void;
   /** 資料未齊且不在豁免路由時呼叫（App 實作為導去完善資料頁）。 */
   onIncompleteProfile: () => void;
+  /** T1-B stub */
+  endInvalidSession?: (opts: {
+    auth: AuthBootstrapSupabase['auth'];
+    storage?: Storage | null;
+  }) => Promise<void>;
   getPathname?: () => string;
   storage?: Storage | null;
 }
@@ -63,7 +68,14 @@ export interface AuthBootstrapDeps {
  * none：冷啟動中；ok：/profile 確認；transient：有 session 但 /profile 5xx／斷網
  * （提示保留）；signedOut：確認沒有有效 session（提示清除）。
  */
-export type AuthOutcome = 'none' | 'ok' | 'transient' | 'signedOut';
+export type AuthOutcome =
+  | 'none'
+  | 'ok'
+  | 'transient'
+  | 'signedOut'
+  | 'retrying'
+  | 'degraded'
+  | 'anomaly';
 
 export interface AuthBootstrap {
   user: any;
@@ -82,6 +94,11 @@ export interface AuthBootstrap {
   sessionStalled: boolean;
   refreshUser: () => Promise<any | null>;
   ingestProfile: (profile: any) => void;
+  /** T1-B stub */
+  isRetrying: boolean;
+  failedAgain: boolean;
+  authAnomaly: boolean;
+  retryAuth: () => Promise<void>;
 }
 
 interface State {
@@ -347,5 +364,11 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     sessionStalled,
     refreshUser,
     ingestProfile,
+    isRetrying: false,
+    failedAgain: false,
+    authAnomaly: false,
+    retryAuth: stubRetry,
   };
 }
+
+const stubRetry = async () => {};
