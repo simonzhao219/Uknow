@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | B0 | 開工前置（F1 合併、rebase、結構快照、deno） | ✅ 完成 | — | — |
 | B1 | 後端 authenticate／ProfileReadError 503／register post-write／?retry=1 | ✅ 綠（DB 整合測試待 CI） | 537a368d | d754e360 |
-| B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ⬜ 未開始 | | |
+| B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ✅ 綠 | 8f542770 | be189101 |
 | B3 | endInvalidSession＋appShell 等價改寫 | ⬜ 未開始 | | |
 | B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | ⬜ 未開始 | | |
 | B5 | 入口與漏斗頁：routeAfterVerifiedSession、AuthPage、PaymentCheckout、CompleteProfile | ⬜ 未開始 | | |
@@ -22,7 +22,7 @@
 ## 目前位置與下一步
 
 B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
-**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。下一步 B2。
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2 綠。下一步 B3。
 
 ### B0 結構快照（F1 後）
 
