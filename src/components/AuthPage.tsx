@@ -9,6 +9,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
+import { fetchProfileForSession } from '../utils/fetchProfile';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
 import {
@@ -68,7 +69,7 @@ export function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const { user, setUser } = useContext(UserContext);
+  const { user, setUser, ingestProfile } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -95,7 +96,7 @@ export function AuthPage() {
   );
   // 邀請入口已依 session 結果分流過（只做一次）；用 state 讓骨架與步驟在同一次 render 切換。
   const [inviteEntryResolved, setInviteEntryResolved] = useState(false);
-  const inviteAccept = useInviteAccept({ supabase, navigate, showToast });
+  const inviteAccept = useInviteAccept({ supabase, navigate, showToast, ingestProfile });
   const isInviteMode = inviteToken !== null && inviteEntry?.kind === 'valid';
   const isAwaitingInviteEntry = inviteEntry?.kind === 'valid' && !inviteEntryResolved;
 
@@ -184,15 +185,11 @@ export function AuthPage() {
         } else {
           console.log('AuthPage: Found existing session, checking validity...');
 
-          // 驗證 session 是否有效
-          const response = await fetch(buildApiUrl('/auth/profile'), {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          });
+          // 驗證 session 是否有效（共用 fetchProfile：與 App 啟動判定同 user id 合併成一次請求）
+          const result = await fetchProfileForSession(session);
 
           // ✅ 只處理無效 session，不主動重定向
-          if (response.status === 410 || response.status === 404 || response.status === 401) {
+          if (result.kind === 'unauthorized') {
             console.log(
               'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
             );
@@ -202,13 +199,12 @@ export function AuthPage() {
             localStorage.removeItem('pendingSession');
             setUser(null);
             settle('signed_out');
-          } else if (response.status >= 500) {
+          } else if (result.kind === 'transient') {
             // 暫時性故障：照既有慣例保留 session（不登出），但邀請入口歸 signed_out——
             // 判成 signed_in 會清掉 token、顯示「你已登入」，而 App 其實沒拿到 user。
             settle('signed_out');
           } else {
-            // ✅ Session 有效（或其他非認證性回應，照既有慣例保留 session），不主動重定向
-            // 讓 App.tsx 的全局邏輯處理重定向
+            // ✅ Session 有效，不主動重定向——讓 App.tsx 的全局邏輯處理重定向
             console.log('AuthPage: Valid session found, letting App.tsx handle redirection');
             settle('signed_in');
           }
@@ -364,22 +360,14 @@ export function AuthPage() {
       console.log('Login successful, session:', data.session ? 'exists' : 'missing');
       console.log('Access token length:', data.session?.access_token?.length || 0);
 
-      // 取得用戶資料
-      const response = await fetch(buildApiUrl('/auth/profile'), {
-        headers: {
-          Authorization: `Bearer ${data.session.access_token}`,
-        },
-      });
+      // 取得用戶資料（共用 fetchProfile：與 SIGNED_IN 觸發的啟動判定合併成一次請求）
+      const result = await fetchProfileForSession(data.session);
 
-      console.log('Profile fetch response status:', response.status);
-
-      if (!response.ok) {
-        console.error('AuthPage: Failed to fetch profile, status:', response.status);
-        const errorText = await response.text();
-        console.error('AuthPage: Error response body:', errorText);
+      if (result.kind !== 'ok') {
+        console.error('AuthPage: Failed to fetch profile:', result);
 
         // 特殊處理：帳號已被刪除（410）或不存在（404）
-        if (response.status === 410 || response.status === 404) {
+        if (result.kind === 'unauthorized' && (result.status === 410 || result.status === 404)) {
           console.log('AuthPage: User account deleted or not found, cleaning up...');
 
           // 清除 session
@@ -393,10 +381,10 @@ export function AuthPage() {
           return;
         }
 
-        throw new Error(`Failed to fetch user profile (status: ${response.status})`);
+        throw new Error(`Failed to fetch user profile (${result.kind})`);
       }
 
-      const profile = await response.json();
+      const profile = result.profile;
       console.log('User profile:', profile);
       console.log('User registrationStep:', profile.registrationStep);
 
@@ -405,7 +393,6 @@ export function AuthPage() {
       const action = resolvePostLoginAction(profile.registrationStep);
       if (action.authenticate) {
         setUser(profile);
-        localStorage.setItem('user', JSON.stringify(profile));
       }
       if (action.toast) {
         showToast(action.toast.message, action.toast.type);

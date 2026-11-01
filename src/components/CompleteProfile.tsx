@@ -12,6 +12,8 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError, getInputAriaProps } from '../utils/formHelpers';
 import { apiRequestJson, buildApiUrl, ApiError } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import { clearAuthHint } from '../utils/authHint';
+import { fetchProfileForSession } from '../utils/fetchProfile';
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { normalizeReferralCode } from '../utils/referralCode';
 import {
@@ -192,15 +194,11 @@ export function CompleteProfile() {
           return;
         }
 
-        // 嘗試加載現有的 profile
-        const response = await fetch(buildApiUrl('/auth/profile'), {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
+        // 嘗試加載現有的 profile（共用 fetchProfile：與 App 啟動判定同 user id 合併）
+        const result = await fetchProfileForSession(session);
 
-        if (response.ok) {
-          const profile = await response.json();
+        if (result.kind === 'ok') {
+          const profile = result.profile;
           console.log('CompleteProfile: Loaded profile:', profile);
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts），不再在頁面內
@@ -583,7 +581,6 @@ export function CompleteProfile() {
 
       // ✅ 2. 設置 user 到 UserContext（讓 ProtectedRoute 通過）
       setUser(profile);
-      localStorage.setItem('user', JSON.stringify(profile));
 
       // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
       clearPendingReferral();
@@ -636,6 +633,8 @@ export function CompleteProfile() {
       // 3. 清除本地狀態（在登出前先清除，避免競態條件）
       setUser(null);
       localStorage.removeItem('user');
+      // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
+      clearAuthHint();
       clearPendingReferral();
       // 使用者主動選擇稍後再註冊，等同放棄這次草稿，一併清除。
       clearProfileDraft();
@@ -658,6 +657,7 @@ export function CompleteProfile() {
       // 即使發生錯誤，也要嘗試清除狀態並導航
       setUser(null);
       localStorage.removeItem('user');
+      clearAuthHint();
       await supabase.auth.signOut();
       showToast('已取消註冊', 'info');
       navigate('/', { replace: true });

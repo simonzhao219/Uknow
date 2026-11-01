@@ -68,9 +68,16 @@ async function request(token: string, timeoutMs: number | undefined): Promise<Pr
   }
 }
 
-export async function fetchProfileForSession(
-  _session: { access_token: string; user?: { id?: string } | null },
-  _opts?: { force?: boolean; timeoutMs?: number },
+/**
+ * 拿 session 直接讀 /profile（頁面、OTP／邀請入口用）。合併鍵是 session 的 user id，
+ * 與 App 啟動判定的同一請求合併；session 沒帶 user id 時退回以 token 為鍵（不會誤併到別人）。
+ */
+export function fetchProfileForSession(
+  session: { access_token: string; user?: { id?: string } | null },
+  opts?: { force?: boolean; timeoutMs?: number },
 ): Promise<ProfileFetchResult> {
-  return { kind: 'transient' };
+  return fetchProfile(session.access_token, {
+    userId: session.user?.id || `token:${session.access_token}`,
+    ...opts,
+  });
 }

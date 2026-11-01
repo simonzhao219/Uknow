@@ -19,8 +19,28 @@ export interface RouteAfterVerifiedSessionDeps {
  * 要求重新登入；其他失敗一律就近帶去完善資料頁，絕不把剛驗證好的人踢回登入。
  */
 export async function routeAfterVerifiedSession(
-  _session: VerifiedSession | null | undefined,
-  { navigate }: RouteAfterVerifiedSessionDeps,
+  session: VerifiedSession | null | undefined,
+  { fetchProfile, ingestProfile, navigate, showToast }: RouteAfterVerifiedSessionDeps,
 ): Promise<void> {
-  navigate('/auth/complete-profile', { replace: true });
+  if (!session) {
+    navigate('/auth/complete-profile', { replace: true });
+    return;
+  }
+
+  try {
+    const result = await fetchProfile(session);
+    if (result.kind === 'ok') {
+      // 先回灌 App 的登入狀態（首繪提示在導頁前寫好），再導向下一步。
+      ingestProfile?.(result.profile);
+      navigate(nextRouteForStep(result.profile.registrationStep), { replace: true });
+    } else if (result.kind === 'unauthorized' && result.status === 401) {
+      showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
+      navigate('/login', { replace: true });
+    } else {
+      // 例如 404：profile 列還沒建好——session 有效，繼續註冊流程。
+      navigate('/auth/complete-profile', { replace: true });
+    }
+  } catch {
+    navigate('/auth/complete-profile', { replace: true });
+  }
 }

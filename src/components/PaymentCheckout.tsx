@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
+import { fetchProfileForSession } from '../utils/fetchProfile';
 import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
@@ -90,14 +91,11 @@ export function PaymentCheckout() {
         } = await supabase.auth.getSession();
         if (!session) return;
 
-        const response = await fetch(buildApiUrl('/auth/profile'), {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
+        // 輪詢要的是「此刻」的資料：force 不合併到進行中的請求。
+        const result = await fetchProfileForSession(session, { force: true });
 
-        if (response.ok) {
-          const profile = await response.json();
+        if (result.kind === 'ok') {
+          const profile = result.profile;
 
           // 導向決策收斂到單一純函式（見 registrationFlow.ts）。輪詢時只在乎
           // 兩件事：會籍轉為 active（→ dashboard）、付款開通中（→ 結果頁）；
@@ -148,14 +146,10 @@ export function PaymentCheckout() {
         }
 
         try {
-          const response = await fetch(buildApiUrl('/auth/profile'), {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          });
+          const result = await fetchProfileForSession(session);
 
-          if (response.ok) {
-            const profile = await response.json();
+          if (result.kind === 'ok') {
+            const profile = result.profile;
             console.log('PaymentCheckout: Profile loaded from API:', profile);
 
             // 導向決策收斂到單一純函式（見 registrationFlow.ts）：
@@ -179,7 +173,7 @@ export function PaymentCheckout() {
             setIsCheckingUser(false);
             return;
           } else {
-            console.error('PaymentCheckout: Failed to load profile, status:', response.status);
+            console.error('PaymentCheckout: Failed to load profile:', result.kind);
             navigate('/login', { replace: true });
             return;
           }
