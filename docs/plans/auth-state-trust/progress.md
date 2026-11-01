@@ -12,7 +12,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | A0 | 開工前置：資料查證 SQL 重跑（plan §2.1）、`isLoggedIn` 清查、`localStorage.user` 讀寫全表 | ✅ 三項完成；重跑後三欄兩站皆 0，F3 不觸發 | — | — |
-| A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ✅ 綠（逃生口 2 一格，見 Blockers） | `c2b02bbf` | 見下一個 feat commit |
+| A1 | 純函式：authHint、classifyMembershipGate／isFirstTimeFunnel／nextFunnelRoute、resolveAuthView、fetchProfile | ✅ 綠（逃生口 2 一格，見 Blockers） | `24325327` | `55493dc6` |
 | A2a | useAuthBootstrap 本體（reducer／outcome、hint 擁有與寫入、uid8、副作用注入、generation counter） | ⬜ 未開始 | | |
 | A2b | 其餘 8 處 /profile 收斂、clearAuthHint 補點、刪 localStorage.user 寫入、e2e 基線 | ⬜ 未開始 | | |
 | A3 | Navbar 五 view＋繼續完成註冊、useFunnelLogout、BottomNav／padding、e2e S1–S11 | ⬜ 未開始 | | |
@@ -68,7 +68,7 @@ e2e：無任何 `localStorage` 的 `user`／`pendingSession`／`uknow:auth-hint`
 
 ## Blockers(逃生口紀錄)
 
-- **A1 逃生口 2（2026-11-01，業主裁決「放寬比對」）**：紅燈 `c2b02bbf` 的「每條漏斗路由在 App.tsx 都有對應的 Route」以單行字串 `<Route path="…"` 比對，但 `/payment/checkout`、`/payment/result` 在 App.tsx 是多行 JSX（`<Route` 換行後才接 `path=`），實作無論如何都綠不了——測試比對寫法過窄，非實作錯。裁決：只把該格改成容許 `<Route` 與 `path=` 之間有空白／換行的正則，斷言語意不變；其餘 A1 測試已全綠（198/199）。業主同時授權由執行 session 刪 `.claude/tdd-lock` 後修該格。
+- **A1 逃生口 2（2026-11-01，業主裁決「放寬比對」）**：紅燈 `24325327` 的「每條漏斗路由在 App.tsx 都有對應的 Route」以單行字串 `<Route path="…"` 比對，但 `/payment/checkout`、`/payment/result` 在 App.tsx 是多行 JSX（`<Route` 換行後才接 `path=`），實作無論如何都綠不了——測試比對寫法過窄，非實作錯。裁決：只把該格改成容許 `<Route` 與 `path=` 之間有空白／換行的正則，斷言語意不變；其餘 A1 測試已全綠（198/199）。業主同時授權由執行 session 刪 `.claude/tdd-lock` 後修該格。
 
 ## 框架摩擦
 
