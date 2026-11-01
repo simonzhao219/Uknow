@@ -43,6 +43,7 @@
 | W3-10 | T1 分工（業主已在 T1 實作 session 親打 `/tdd-implement`；第 2 波主 session 轉述的「分階段另開 session」） | **同一 session 做完 PR-A（A1–A4）**，收尾另開審查 session 跑 `/review-implementation`（被推翻：分階段另開，每個新 session 都要業主再打一次指令） |
 | W3-11 | 晉升時點（業主「如果都跑完就晉升」） | **全部完成就晉升**：C、T1 PR-A、K 都合進 develop 後，主 session 立刻開晉升 PR，不等 11/10；11/09 22:00 收件截止不變，截止前沒合的順延第 4 波。合進 main 後仍由業主核准 `production`（被推翻：現在先晉升已合的 L／A／L2、之後再晉升一次；照原計畫 11/10） |
 | W3-12 | T1 A3 截圖帶回的 Q6–Q8 | Q6 登出鈕維持 ghost；**Q7 本 PR 補確認框**（完善資料頁「稍後註冊」會直接刪帳號且沒有確認框，plan 原以為已有；改成先跳 AlertDialog，提醒想離開請用「登出」，按「確定刪除」才刪）；Q8 維持「登出，稍後再付款」（被推翻：Q7 改成只登出不刪帳號；Q7 另開工項） |
+| W3-13 | T1 審查「需人工裁決」：資料未齊的 admin／有效會員舊帳號，頁首只剩登出（plan §2.1 F1）；Q7 確認框標題與觸發鈕樣式 | **F1 維持規劃**（現況本來就會導去完善資料頁，A0 正式站候選 0）；Q7 標題「刪除目前的帳號資料？」、「稍後註冊」紅框紅字**通過** |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -116,12 +117,12 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（沿用，rebase 由它負責） | Opus | `feature/listing-photo-retention` | #453 ✅ d6be666 | 收工；待 develop dry-run |
-| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft，規劃＋實作同一支） | PR-A 實作完成（HEAD `75506d59`），補 Q7 確認框中，審查中 |
+| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft，規劃＋實作同一支） | #466 ✅ d8933eb | 收工；PR-B 順延第 4 波 |
 | L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-restore-pop-only` | #473 ✅ cd33515 | 收工 |
 | L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | #474 ✅ 1253e00 | 收工 |
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
 | K | `session_01MQovbDHyiASTQXhQNxSsU7` | Sonnet | `fix/alert-pipeline-gaps` | #475 ✅ 8912099 | 收工 |
-| T1 審查 | `session_01MQovbDpor2j3PV7r33VfUP` | Opus | 唯讀（報告交 T1 寫入） | #466 | `/review-implementation auth-state-trust` |
+| T1 審查 | `session_01MQovbDpor2j3PV7r33VfUP` | Opus | 唯讀（報告交 T1 寫入） | #466 | 收工（P0 0／P1 3／P2 14） |
 | R3 | — | Opus | `docs/wave3-review` | — | 晉升後 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
@@ -141,3 +142,5 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 06:53 | develop 已部署 8912099（deploy-supabase run 41249918243）。主 session dispatch 驗證：**purge-listing-photos（target=develop、dry_run、force_ratio）回 `unauthorized`**（run 41250155677）→ develop 的 Supabase `RECONCILE_SECRET` 與 GitHub secret 不同值，workflow 照設計自動開了失敗 issue；**reconcile（run 41250157710）綠**，「呼叫對帳端點」帶重試成功，這輪沒有新 error 告警，所以「確認 LINE 推送設定存在」照設計跳過（只能等真有告警時實證）。本波只剩 T1 | 業主設 develop secret 後重跑 dry-run；T1 完成即晉升（W3-11） |
 | 11/01 10:17 | T1 回報 A1 紅 `24325327`／綠 `55493dc6`、A2a 紅 `9db61256`／綠 `a2379904`、A2b 紅 `7ca2ff28`／綠 `0f22801c`；A2a 本機 e2e 308/308 綠。偏離：A1 逃生口 2（「漏斗路由在 App.tsx 有 Route」的測試用單行字串比對，碰到多行 JSX 必紅），業主在 T1 session 裁決放寬比對、授權解鎖，已記進 progress Blockers。P2-5（登出清 `homeListingsCache`）已併入 | T1 A3（帶 Q6–Q8 截圖）→ A4 |
 | 11/01 11:13 | T1 回報 PR-A（A0–A4）完成：本機 `check:full` 全綠，e2e 326/326（頁首情境新增 30 個）；A3 紅 `356417f1`＋`dda2d4f1`、A4 `1c637c3d`；e2e 抓到並已修三項（換帳號冷啟動會閃前一人的首字、頁首 CLS、320px 時 CTA 壓到 logo）。降級未做：Navbar 會員登出的 startTransition。開 **T1 審查 session** `session_01MQovbDpor2j3PV7r33VfUP`（Opus）。業主裁決 **W3-12**（Q6–Q8） | T1 補 Q7＋清審查 P0 → 收尾轉 ready → 合 develop → 立刻晉升（W3-11） |
+| 11/01 11:20 | T1 審查：**P0 0／P1 3／P2 14**。P1：S9 頁首不位移只在 S1、S3 有斷言；`aria-disabled` 沒有停用外觀、signOut 沒有逾時；Q7 確認框（已裁決）。五個重點中，`isFirstTimeFunnel` 不會誤判有效會員，登出都有清提示鍵，context 改動沒有漏網的 consumer。主 session 把 P1 交給 T1，並要求 cancel-signup 失敗不可吞錯、toast 照實寫 | T1 修 P1 |
+| 11/01 11:55 | T1：Q7 紅燈 `d76df44f`→綠燈 `927b6854`；審查 P1 紅燈 `cb402eff`→綠燈 `6038efe5`（S9 補三情境、`signOutWithFallback` 5 秒逾時、停用外觀、cancel-signup 失敗時停在原頁）；收尾已清 `docs/plans/auth-state-trust/`（`git show b4b5bdcb:` 取回），e2e 327/327。業主裁決 **W3-13**。主 session 審最後一段 diff，確認刪除成功仍會導回首頁 → **#466 合進 develop（d8933eb）**。**本波六項全部合併** | 依 W3-11 晉升：合 #471 → 開晉升 PR |
