@@ -44,6 +44,8 @@
 | W3-11 | 晉升時點（業主「如果都跑完就晉升」） | **全部完成就晉升**：C、T1 PR-A、K 都合進 develop 後，主 session 立刻開晉升 PR，不等 11/10；11/09 22:00 收件截止不變，截止前沒合的順延第 4 波。合進 main 後仍由業主核准 `production`（被推翻：現在先晉升已合的 L／A／L2、之後再晉升一次；照原計畫 11/10） |
 | W3-12 | T1 A3 截圖帶回的 Q6–Q8 | Q6 登出鈕維持 ghost；**Q7 本 PR 補確認框**（完善資料頁「稍後註冊」會直接刪帳號且沒有確認框，plan 原以為已有；改成先跳 AlertDialog，提醒想離開請用「登出」，按「確定刪除」才刪）；Q8 維持「登出，稍後再付款」（被推翻：Q7 改成只登出不刪帳號；Q7 另開工項） |
 | W3-13 | T1 審查「需人工裁決」：資料未齊的 admin／有效會員舊帳號，頁首只剩登出（plan §2.1 F1）；Q7 確認框標題與觸發鈕樣式 | **F1 維持規劃**（現況本來就會導去完善資料頁，A0 正式站候選 0）；Q7 標題「刪除目前的帳號資料？」、「稍後註冊」紅框紅字**通過** |
+| W3-14 | R3 P2-21：checklist 附錄留著可直接執行的 `delete from auth.users;` | **只留原則**，SQL 本體改以 `git show` 取回（R3 在 #480 處理；被推翻：維持現狀） |
+| W3-15 | R3 P2-1：共用 Button 的 aria-disabled 樣式讓後台重新整理鈕在自動更新時變灰、點不到（違反 K5） | **第 4 波優先**，和登出類 P2（含提領銀行帳號 localStorage 登出不清）併一支小 PR（被推翻：現在修並小晉升） |
 
 沿用的硬規則：服務條款等四份律師定案文件不可改；使用者可見文案一律「推薦人」；admin 提領資料不得持久化；晉升 PR 開著時 develop 不合任何 PR。
 
@@ -95,6 +97,9 @@ SQL 交主 session 代跑；`gh pr checks` 被擋改用 GitHub MCP；journey 只
 4. 開 R3。
 
 ## 5. 第 4 波候選（未納入本波，一行一項；細節見第 2 波 plan §5）
+
+**第 4 波第一項（W3-15）**：R3 審查 P2-1（Button aria-disabled 樣式違反 K5）＋P2-2／P2-4／P2-5（登出、換帳號、cancel-signup）＋P2-3（提領銀行帳號 `withdrawalBankData` 登出不清），併一支小 PR。其餘見 R3 `review.md` §5。
+另新增：e2e 偶發補 `dump_page`（`registration.py` OTP→完善資料頁、`task_card_shows_progress`）；develop `RECONCILE_SECRET`（issue #476）。
 
 T1 PR-B（若本波沒上）；PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
@@ -148,3 +153,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 13:38 | **#477 合進 main（1f61e68）**。main CI push 綠 → deploy-supabase run 41277716004 等待核准 | 業主核准 production |
 | 11/01 15:37 | 業主核准 `production`，deploy-supabase 成功，`/health` sha 煙霧測試通過。主 session 唯讀 SQL：兩支 migration 已套用、孤兒判準 4 個函式在、`listings_delete_own` 已撤、`admin_list_members` 有新欄位。deploy-smoke 手動 run 41285941139 綠（正式站 build-sha 相符、PayUni 閘門正常）。**第 3 波晉升完成** | 業主 11/04 前核對照片候選清單；開 R3 審查 session；develop `RECONCILE_SECRET` 仍待設 |
 | 11/01 16:05 | 業主：現在開 R3。開 **R3** `session_01MQovbDJ5ew5zqogskJvNLu`（Opus）：範圍 `5b6a790..1f61e68`，四視角加反駁，上線後現場（照片清理首次排程在台北 11/02 03:17），兼做 `launch-wave-2/` 退場；現場 SQL 由主 session 代跑 | 等 R3 報告；業主 11/04 前核對照片清單 |
+| 11/01 17:30 | R3 中間回報：**P0 0／P1 0／P2 22**。主 session 代跑 §3.3 正式站唯讀 SQL（08:24 UTC）：部署後告警 0、未 resolve 0、訂單 0、兩支 migration 在、bucket 32 個物件、超過寬限期 0。審過並合併 **#479**（第 2 波目錄退場，3461f2b）。業主裁決 **W3-14**、**W3-15** | R3 補首輪照片清理結果 → #480；業主 11/04 前核對照片清單 |
