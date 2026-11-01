@@ -112,7 +112,7 @@
 | LINE 內建瀏覽器每次先畫訪客頁首（UI/UX P1 候選） | **推翻**：hint 與 Supabase session 同在 localStorage，清了 storage 本來就是未登入。「有 session 沒 hint」只會在第一次登入時發生一次；比 T1 前（每次都閃）更好；plan E3／S6 已列為裁決過的限制 → 只剩規格書措辭（P2-18） |
 | T1 驗收 S1 的 BottomNav 子句偏弱（需求 P1 候選） | 是測試強度不是行為錯誤，已記債 → P2-20 |
 | Q7 成功 toast「之後可以用同一個 Email 重新註冊」未經業主過目，可能不實（需求 P1 候選） | **推翻**：後端 `deleteUser`（`index.ts:835`）刪 auth user，Email 隨之釋出，承諾屬實。文案是主 session「toast 照實寫」要求下的實作，非新功能 |
-| C 的 live dry-run 從未成功（需求 P1 候選） | develop 401 是 develop 的 secret 不同值；正式站排程 dry-run 在台北 11/02 03:17 第一次跑（§3.2），開關未開前不會刪任何檔 → 併入 §2 未驗與 §5 業主待辦 |
+| C 的 live dry-run 從未成功（需求 P1 候選） | develop 401 是 secret 不同值，11/01 輪換後兩站 dry-run 都通過；業主開開關前本機核對過候選（0）與錨點（10/10）→ 不成立，首輪實況見 §3.2 |
 
 ## 2. 未驗項清單
 
@@ -120,9 +120,9 @@
 
 | PR | 自述未驗 | 之後 | 結論 |
 |---|---|---|---|
-| #453（C） | 端點的 live 行為（RPC、斷路器、比例閘只有 CI 的 DB／單元測試） | develop dispatch 回 401（run 41250155677，issue #476，develop secret 不同值）；正式站第一次排程在台北 11/02 03:17 | 見 §3.2 |
+| #453（C） | 端點的 live 行為（RPC、斷路器、比例閘只有 CI 的 DB／單元測試） | develop dispatch 回 401（run 41250155677，issue #476）→ 11/01 業主輪換 `RECONCILE_SECRET` 後，正式站 dry-run 41294916617、develop dry-run 41295068483 皆通過（§3.2） | 已驗（dry-run）；實刪首輪見 §3.2 |
 | #453 | W3-8 workflow 閘門 | `purge-listing-photos-request.py --self-test` 表格案例涵蓋；沒有 live 的 production dispatch | 部分驗（表格測試＋本審查逐條推演） |
-| #453 | `PHOTO_PURGE_LIVE` 未開 → 三十日下架尚不成立 | 業主待辦（plan §6-6） | **未驗**：最早期限約 11/27（第一筆撤除算起） |
+| #453 | `PHOTO_PURGE_LIVE` 未開 → 三十日下架尚不成立 | 11/01 業主本機核對（候選 0、錨點 10/10）後開啟（#478） | 開關已開；實刪首輪見 §3.2 |
 | #466（T1） | 已知限制 1–3（訪客版頁首閃一次的三種情形） | 規格書 §2.1 已註記 | 已驗（已落文件；措辭見 P2-18） |
 | #466 | 記債 7 條（恰一次、BottomNav 首現時點、S5 10 秒、S8 容差與觸控、`role=status` 位置、OTP 驗證後只靠純函式、載入態無文字） | 無後續 | **未驗**，未列候選（P2-19、P2-20） |
 | #466 | e2e 327/327 | CI e2e 軌綠；晉升 journey-full 重跑 146/146 | 已驗 |
@@ -148,7 +148,13 @@
 
 ### 3.2 照片清理第一次排程
 
-（台北 11/02 03:17＝UTC 11/01 19:17；待 run 結束後補）
+**前置（#478，11/01）**：
+- develop 回 401 的根因是 GitHub 的 `RECONCILE_SECRET` 與 develop 的 Supabase Secret 不同值。業主改為**輪換**密鑰，GitHub、正式站、develop 三處同值。
+  驗證 run：正式站 dry-run 41294916617、develop dry-run 41295068483、對帳 41295070551。issue #476、#481、#482 已關。
+- `PHOTO_PURGE_LIVE` 於 11/01 開啟（業主本機核對時候選 0、錨點 10/10），在 W2-8「晉升後 3 日內」的期限內，比 plan 原排的 11/10–13 早。
+  所以台北 11/02 03:17（UTC 11/01 19:17）那輪是**實刪模式的首輪**。
+
+**首輪結果**：（待 run 結束後補）
 
 ### 3.3 正式站 DB
 
@@ -204,7 +210,7 @@
 
 ## 5. 給主 session／業主的待辦
 
-1. **業主**：照片清理 `PHOTO_PURGE_LIVE` 在 11/13 前核對候選清單後再開（plan §6-6）；develop 的 `RECONCILE_SECRET`（issue #476，plan §6-3）。
+1. ~~業主：`PHOTO_PURGE_LIVE`、develop 的 `RECONCILE_SECRET`~~：11/01 已完成（#478，§3.2）。
 2. **主 session**：第一筆正式站真付款後確認發票與 `system_alerts`（§3.3 部署後仍 0 筆）。
 3. ~~業主裁決 P2-21~~：W3-14 只留原則，本 PR 已改。
 4. **第 4 波第一個工項（W3-15，業主 11/01）**：P2-1＋P2-2＋P2-3＋P2-4＋P2-5 併一支小 PR（共用 Button 的 aria-disabled 樣式、換帳號清理、提領銀行帳號 localStorage 登出不清、cancel-signup busy 與 401、401／AuthPage 改走 `signOutWithFallback`）。本 PR 不動程式碼。
@@ -213,7 +219,7 @@
 
 ## 6. 升級進長期文件（launch-wave-3/ 退場依據）
 
-第 2 波目錄已由本 session 另開 #479 退場（第 2 波 review §6 逐條處置，明細見該 PR）。第 3 波的：
+第 2 波目錄已由本 session 另開 #479 退場（第 2 波 review §6 逐條處置，明細見該 PR）。第 3 波的由第 4 波主 session 處置，交接檔是 `docs/plans/launch-wave-4/plan.md`：
 
 | 內容 | 去處 | 理由 |
 |---|---|---|
