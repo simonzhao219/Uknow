@@ -111,7 +111,14 @@ export function Navbar() {
     <nav className="border-b bg-card sticky top-0 z-40">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center space-x-2">
-          <img src={logoImage} alt="Uknow Logo" className="h-10 object-contain" />
+          {/* 寬高屬性讓瀏覽器在圖載入前就保留比例（約 119×40），右側容器不因 logo 晚到而位移。 */}
+          <img
+            src={logoImage}
+            alt="Uknow Logo"
+            width={1246}
+            height={418}
+            className="h-10 w-auto object-contain"
+          />
         </Link>
 
         {/* 右側容器固定高度、吃滿剩餘寬度：換版時只換子節點，容器本身不位移（S9 CLS=0）。 */}
