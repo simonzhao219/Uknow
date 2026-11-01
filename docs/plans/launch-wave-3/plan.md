@@ -115,7 +115,7 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | C | 第 2 波 `session_01MQovbCF5454fAYfqy9NXaJ`（沿用，rebase 由它負責） | Opus | `feature/listing-photo-retention` | #453 ✅ d6be666 | 收工；待 develop dry-run |
-| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft，規劃＋實作同一支） | A0 完成（兩站後三欄 0），施工中 |
+| T1 | `session_01MQovbCdCKc51kHwtEqiV9o` | Opus | `feature/auth-state-trust` | #466（draft，規劃＋實作同一支） | A0–A2b 綠（HEAD `a0074cb7`），下一步 A3 |
 | L | `session_01MQovbEyD9mbV4raoxQDrtU` | Sonnet | `fix/home-restore-pop-only` | #473 ✅ cd33515 | 收工 |
 | L2 | `session_01MQovbCMjPvgMSqmXghhPQj` | Sonnet | `fix/home-logo-reset` | #474 ✅ 1253e00 | 收工 |
 | A | `session_01MQovbEgBxiL2rkNdo1BWQL` | Sonnet | `fix/admin-member-referral-cols` | #472 ✅ b44606d | 收工 |
@@ -137,3 +137,4 @@ notify／return 的 `payuniConfig()` 擲錯告警（審查 P2-10）；子網域�
 | 11/01 06:27 | C 自行 rebase 成 `b5353e0`，CI 綠但沒有轉 ready（session 閒置）。主 session 逐位元組比對，rebase 後的 diff 與審過的 `59735dc` 完全相同 → 主 session 轉 ready → **#453 合進 develop（d6be666）**。開 **K** `session_01MQovbDHyiASTQXhQNxSsU7`（Sonnet）。設 send_later，develop 部署完成後 dispatch dry-run（target=develop、force_ratio） | develop dry-run；K；T1 |
 | 11/01 06:42 | **#475（K）合進 develop（8912099）**：主 session 審，無 P0／P1。P2-4 的偏離（不改窗口、改在內文註明「另有 N 筆」）經核實成立：端點以 `count:'exact'` 回傳完整 total | develop 部署後驗證 |
 | 11/01 06:53 | develop 已部署 8912099（deploy-supabase run 41249918243）。主 session dispatch 驗證：**purge-listing-photos（target=develop、dry_run、force_ratio）回 `unauthorized`**（run 41250155677）→ develop 的 Supabase `RECONCILE_SECRET` 與 GitHub secret 不同值，workflow 照設計自動開了失敗 issue；**reconcile（run 41250157710）綠**，「呼叫對帳端點」帶重試成功，這輪沒有新 error 告警，所以「確認 LINE 推送設定存在」照設計跳過（只能等真有告警時實證）。本波只剩 T1 | 業主設 develop secret 後重跑 dry-run；T1 完成即晉升（W3-11） |
+| 11/01 10:17 | T1 回報 A1 紅 `24325327`／綠 `55493dc6`、A2a 紅 `9db61256`／綠 `a2379904`、A2b 紅 `7ca2ff28`／綠 `0f22801c`；A2a 本機 e2e 308/308 綠。偏離：A1 逃生口 2（「漏斗路由在 App.tsx 有 Route」的測試用單行字串比對，碰到多行 JSX 必紅），業主在 T1 session 裁決放寬比對、授權解鎖，已記進 progress Blockers。P2-5（登出清 `homeListingsCache`）已併入 | T1 A3（帶 Q6–Q8 截圖）→ A4 |
