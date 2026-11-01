@@ -131,6 +131,15 @@ export const UserContext = React.createContext<{
   hintNext?: FunnelNextKind | null;
   /** OTP／邀請入口拿到 /profile 後回灌（穩定 identity）。 */
   ingestProfile?: (profile: any) => void;
+  // ---- 暫時性故障不登出（T1-B）----
+  /** degraded 外框的「重試」（穩定 identity；在飛時不重複發）。 */
+  retryAuth?: () => Promise<void>;
+  /** degraded 中的重試在飛。 */
+  isRetrying?: boolean;
+  /** degraded 後的重試又失敗。 */
+  failedAgain?: boolean;
+  /** /profile 404：帳號資料異常（W4-11），/login 顯示說明。 */
+  authAnomaly?: boolean;
 }>({
   user: null,
   setUser: () => {},
@@ -163,6 +172,10 @@ function AppContent() {
     sessionStalled,
     refreshUser,
     ingestProfile,
+    retryAuth,
+    isRetrying,
+    failedAgain,
+    authAnomaly,
   } = useAuthBootstrap({
     supabase: createClient(),
     fetchProfile,
@@ -249,9 +262,25 @@ function AppContent() {
       hintInitial,
       hintNext,
       ingestProfile,
+      retryAuth,
+      isRetrying,
+      failedAgain,
+      authAnomaly,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, isLoadingUser, authState, isFunnel, authView, nextFunnelRoute, hintInitial, hintNext],
+    [
+      user,
+      isLoadingUser,
+      authState,
+      isFunnel,
+      authView,
+      nextFunnelRoute,
+      hintInitial,
+      hintNext,
+      isRetrying,
+      failedAgain,
+      authAnomaly,
+    ],
   );
 
   return (
@@ -262,8 +291,10 @@ function AppContent() {
             <Navbar />
             <MaintenanceBanner />
             {/* 會員（含首繪頭像占位）手機有底部導覽，main 補下方留白避免內容被遮住 */}
+            {/* tabIndex=-1：degraded 外框的重試成功後，焦點交給 main（AuthDegradedFrame）。 */}
             <main
-              className={`container mx-auto px-4 py-6 flex-1 ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
+              tabIndex={-1}
+              className={`container mx-auto px-4 py-6 flex-1 outline-none ${showsMemberChrome(authView) ? 'pb-24 md:pb-6' : ''}`}
             >
               {/* resetKey=路由路徑：一頁壞掉不該讓整個 session 的內容區
                   都停在後備畫面（見 ErrorBoundary 的 resetKey 說明）。 */}

@@ -3,7 +3,7 @@
 import type { AuthHint } from './authHint';
 import { isFunnelRoute } from './registrationFlow';
 
-/** `degraded` 只在 PR-B（暫時性故障不登出）產生；PR-A 期間與 `unknown` 同畫法。 */
+/** `degraded`：有 session 但 /profile 暫時讀不到（T1-B）；頁首依提示，無提示畫占位。 */
 export type AuthState = 'unknown' | 'anonymous' | 'authenticated' | 'degraded';
 
 export type AuthView = 'guest' | 'placeholder' | 'member-pending' | 'funnel' | 'member';
@@ -40,9 +40,11 @@ export function resolveAuthView({
   // （OTP 驗證前）只放 logo（E2）。
   if (authState === 'anonymous') return isFunnelRoute(pathname) ? 'placeholder' : 'guest';
 
-  // unknown（與 PR-A 期間的 degraded）：判定前依提示猜。
+  // unknown 與 degraded：依提示猜。
   if (hint?.kind === 'member') return 'member-pending';
   if (hint?.kind === 'funnel') return 'funnel';
+  // degraded＝已知有 session、只是 /profile 讀不到（T1-B）：不畫「登入」以免誘導重登。
+  if (authState === 'degraded') return 'placeholder';
   return isFunnelRoute(pathname) ? 'placeholder' : 'guest';
 }
 
