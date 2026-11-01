@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| B0 | 開工前置（F1 合併、rebase、結構快照、deno） | ⬜ 未開始 | — | — |
+| B0 | 開工前置（F1 合併、rebase、結構快照、deno） | ✅ 完成 | — | — |
 | B1 | 後端 authenticate／ProfileReadError 503／register post-write／?retry=1 | ⬜ 未開始 | | |
 | B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ⬜ 未開始 | | |
 | B3 | endInvalidSession＋appShell 等價改寫 | ⬜ 未開始 | | |
@@ -21,9 +21,27 @@
 
 ## 目前位置與下一步
 
-plan v2.1（1985a0b）主 session 親審通過；業主 11/01 親打 `/tdd-implement`，review.md 處置已填。
-**卡在 B0**：F1（`fix/signout-cleanup`）尚未合進 develop（11/01 develop＝1525913，#485）。B1 的 Logs Explorer 查詢已先送主 session。
-等主 session 通知 F1 合併 → rebase → B0 結構快照 → B1。
+B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。下一步 B1。
+
+### B0 結構快照（F1 後）
+
+- `useAuthBootstrap.ts`：`AuthBootstrapDeps` 新增可選 `onAccountSwitched`；`begin()` 換 uid 分支（`uidRef!==null`）依序 `genRef+=1`、`clearInflight()`、
+  `onAccountSwitched?.()`，之後 `uidRef=uid`、`start`、`load`。`load()`／`endSession()`／transient 分支（`uidRef=null`）與 F1 前相同。
+  → B4 的 `attemptRef` 取消要放在換 uid 分支內、`onAccountSwitched` 之前或之後皆可（無相依），統一放在 `genRef+=1` 旁。
+- 新模組 `utils/clearAccountLocalState.ts`：清 `withdrawalBankData`／`pendingUser`／`user`／`pendingSession`＋完善資料草稿；App 的 `onSignedOut`／`onAccountSwitched`
+  與 apiClient 401 都呼叫。→ **B3 的 `endInvalidSession` 改呼叫 `clearAccountLocalState(storage)`**，取代 plan §2.5 寫的「移除 user／pendingSession 舊鍵」
+  （同一目的、F1 已收斂成單一入口；屬依 F1 現況的等價調整，PR 偏離說明列出）。
+- apiClient 401（`apiRequestJson` catch）：`signOutWithFallback` → `clearAccountLocalState()` → `clearAuthHint()` → `emitSessionExpired()`。
+- AuthPage 三處裸 `signOut` → `signOutWithFallback`（掛載 effect unauthorized、catch、登入表單 404／410）。
+- Navbar 會員登出 `handleLogout`（`Navbar.tsx:60-95`）是元件內函式、不可直接重用 → B5 依 plan §4.1 抽 `hooks/useMemberLogout.ts`。
+- Button 基底不再給 `aria-disabled` 停用外觀：`AuthDegradedNotice` 的「重新連線中…」鈕自己補灰化 class。
+
+### 後端測試落點調整（B1）
+
+plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為 **`profile-transient.unit.test.ts`（純單元、注入假 client）**：`buildProfileResponse` 本來就收
+`client` 參數，第 4 參數改為 options（`alreadyHealed`、`retry`、可注入 `heal`／`repair`），`authenticate` 抽成可注入 auth client 的純函式；R9 以讀原始碼列舉。
+落點仍是 deno test（同層），只是不需 DB——本機可跑紅綠，CI 的 `test:unit` 也會跑。
 
 ### 實作時處理（主 session 審查 P2，不改 plan）
 
