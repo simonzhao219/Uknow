@@ -40,6 +40,7 @@
 | W4-16 | T1-B Q6：degraded callout 的「登出」鈕 | **加，必做，走主動登出 global**（`signOutWithFallback`；被推翻：用 local；不加） |
 | W4-17 | T1-B Q7：首頁 degraded 且無提示時頁首空槽 | **接受為已知取捨**，列規格書已知限制（被推翻：補斷線 icon） |
 | W4-18 | T1-B 異常 callout「聯絡客服」入口（22:00） | **既有 `LINE_OFFICIAL_ACCOUNT_URL`**（與 Footer、結帳頁同一入口；被推翻：LINE＋Email 並列） |
+| W4-20 | T1-B B4 紅燈期：舊測試「SIGNED_IN 為另一個 uid…載入新帳號」釘死 `fetchProfile` 參數 `{ userId }`，與 plan §2.2 的 8 秒逾時衝突（11/02 00:25） | **授權只改參數期望為 `{ userId, timeoutMs: 8_000 }`**，測試語意不變；業主在 T1-B session 親打才生效（被推翻：改實作不帶逾時） |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -143,3 +144,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/01 23:10 | 業主已在 T1-B session 親打 `/tdd-implement`，review.md 處置填「通過」（`2ad511f`）。主 session 代跑 B1 前置 Logs 查詢（query_logs，24 小時）：正式站 `/profile` 0 筆（Edge 全部 41 筆：200×26、401×15），postgres ERROR／FATAL 0；develop `/profile` GET 200×2（execution p95 3,488 ms）、ERROR／FATAL 0 → 無 5xx／404、逾時 8 秒不需調整；樣本小，上線後再量 | T1-B 等 F1 合併；F1 等業主親打解鎖授權 |
 | 11/01 23:20 | 業主 23:06 在 F1 session 親打授權（W4-10 生效）。F1 開 #486（紅燈 `6bc120c`，rebase 前為 `b4e44f1`）：紅燈後只改了 `button.test.tsx` 那一條（反向斷言），`tdd-unlock.sh` 與該紅燈測試互鎖，依授權直接移除鎖檔。主 session 審：無 P0／P1——基底契約寫進 `button.tsx`、Navbar 兩鈕自補；`onAccountSwitched`（可選 dep，`begin()` 換 uid 分支）；新 `clearAccountLocalState`（`withdrawalBankData`、`pendingUser`、舊鍵、完善資料草稿）；Q7 `isCancelling`＋401 收尾；401／AuthPage 走 `signOutWithFallback`。P2：`multi-step-flow-recovery.md` 完善資料與提領兩列補「登出／換帳號時清除」→ 交 F1 本 PR 補 | F1 補文件、CI 綠 → 合 → 通知 T1-B |
 | 11/01 23:35 | F1 補 `multi-step-flow-recovery.md` 兩列（`dd9fb45`），CI 全綠、主 session 審過 → **#486 合進 develop（2b99700）**。已通知 T1-B 開工 B0（F1 帶進的 `onAccountSwitched`、`clearAccountLocalState`、Button 基底契約）。必上四項剩 D | 11/02 核對照片清理首輪 run、Dependabot 批次後開 D；T1-B 施工 |
+| 11/02 00:25 | T1-B 回報 B0–B3 綠（B1 紅 `537a368`→綠 `d754e36`；B2 `8f54277`→`be18910`；B3 `dd87963`→`2a69c8c`），B4 實作完成、hooks 181 測試 180 綠；卡逃生口 2：舊測試釘死 `fetchProfile` 參數，與 plan §2.2 逾時衝突。業主裁決 **W4-20**（只改參數期望）；已請 T1-B 同類掃描，若還有同形期望一次列齊 | 業主到 T1-B session 親打授權；B4 綠後續 B5 |
