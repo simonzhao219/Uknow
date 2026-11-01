@@ -153,6 +153,7 @@ function AppContent() {
     isFunnel,
     nextFunnelRoute,
     hint,
+    hintVerified,
     isLoadingUser,
     sessionStalled,
     refreshUser,
@@ -185,7 +186,8 @@ function AppContent() {
     pathname: location.pathname,
     sessionStalled,
   });
-  const hintInitial = hint?.initial ?? '';
+  // 首字要等 session 的 uid 對上才給（S11）：之前頭像圓先空白，不閃前一人的首字。
+  const hintInitial = hintVerified ? (hint?.initial ?? '') : '';
   const hintNext = hint?.next ?? null;
 
   // 當 API 請求判定 session 真的過期時（apiClient.ts），以 SPA 導頁的方式跳轉

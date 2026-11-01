@@ -114,7 +114,8 @@ export function Navbar() {
           <img src={logoImage} alt="Uknow Logo" className="h-10 object-contain" />
         </Link>
 
-        <div className="flex items-center space-x-4">
+        {/* 右側容器固定高度、吃滿剩餘寬度：換版時只換子節點，容器本身不位移（S9 CLS=0）。 */}
+        <div className="flex h-11 min-w-0 flex-1 items-center justify-end space-x-4">
           {view === 'guest' && (
             <>
               <Button variant="ghost" asChild>
@@ -208,7 +209,7 @@ export function Navbar() {
                   >
                     <Avatar className="h-10 w-10">
                       <AvatarFallback>
-                        {(view === 'member' ? user?.name?.charAt(0) : hintInitial) || 'U'}
+                        {view === 'member' ? user?.name?.charAt(0) || 'U' : hintInitial}
                       </AvatarFallback>
                     </Avatar>
                   </Button>

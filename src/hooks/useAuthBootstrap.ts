@@ -127,6 +127,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   const [state, dispatch] = useReducer(reducer, INITIAL);
   const [hint, setHint] = useState<AuthHint | null>(() => loadAuthHint(deps.storage));
   const [sessionStalled, setSessionStalled] = useState(false);
+  const [hintVerified, setHintVerified] = useState(false);
 
   // 注入值只在掛載時取一次（App 每次 render 傳新物件，不能讓 effect 重跑）。
   const depsRef = useRef(deps);
@@ -191,7 +192,12 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
       if (uid === uidRef.current) return;
 
       const current = hintRef.current;
-      if (current && current.uid8 !== toUid8(uid)) dropHint();
+      if (current && current.uid8 !== toUid8(uid)) {
+        dropHint();
+        setHintVerified(false);
+      } else if (current) {
+        setHintVerified(true);
+      }
       if (uidRef.current !== null) {
         genRef.current += 1;
         depsRef.current.clearInflight();
@@ -305,6 +311,8 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     const written = readAuthHint(storage);
     hintRef.current = written;
     setHint(written);
+    // 剛由 /profile 確認的資料寫成，必屬於目前的帳號。
+    setHintVerified(written !== null);
   }, [hintKind, hintInitial, hintUid8, hintNext, dropHint]);
 
   return {
@@ -316,7 +324,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
     isFunnel,
     nextFunnelRoute,
     hint,
-    hintVerified: false,
+    hintVerified,
     isLoadingUser: state.authState === 'unknown',
     sessionStalled,
     refreshUser,
