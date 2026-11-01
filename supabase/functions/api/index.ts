@@ -441,12 +441,60 @@ export function validateNameFormat(name: unknown): string | undefined {
 // ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
+export type AuthResult =
+  | { user: { id: string; email?: string } }
+  | { error: 'unauthorized' | 'transient' };
+
+/** T1-B stub：/profile 專用的分類式驗證。 */
+export async function authenticate(
+  _auth: { getUser(token: string): Promise<any> },
+  _token: string | undefined,
+): Promise<AuthResult> {
+  return { error: 'unauthorized' };
+}
+
+/** buildProfileResponse 的讀取失敗（非零列）。 */
+export class ProfileReadError extends Error {
+  constructor(readonly read: string) {
+    super(`profile read failed: ${read}`);
+    this.name = 'ProfileReadError';
+  }
+}
+
+export interface BuildProfileOptions {
+  alreadyHealed?: boolean;
+  retry?: boolean;
+  heal?: (userId: string) => Promise<boolean>;
+  repair?: (userId: string) => Promise<void>;
+}
+
+/** T1-B stub：三個呼叫者共用的 404／503 分流。 */
+export async function loadProfileOrError(
+  build: () => Promise<any>,
+): Promise<{ ok: true; data: any } | { ok: false; status: 404 | 503; body: unknown }> {
+  const data = await build();
+  return data ? { ok: true, data } : { ok: false, status: 404, body: { error: '用戶不存在' } };
+}
+
+/** T1-B stub：GET /profile handler（注入 authenticate 與 build 以便單元測試）。 */
+export function makeProfileHandler(_deps: {
+  authenticate: (token: string | undefined) => Promise<AuthResult>;
+  build: (userId: string, email: string | undefined, opts: BuildProfileOptions) => Promise<any>;
+}) {
+  return (c: any) => c.json({ error: '未授權' }, 401);
+}
+
 export async function buildProfileResponse(
   client: any,
   userId: string,
   email?: string,
-  alreadyHealed = false,
-) {
+  opts: BuildProfileOptions = {},
+): Promise<any> {
+  const {
+    alreadyHealed = false,
+    heal = healPaidPendingOrdersBestEffort,
+    repair = repairOrphanedPaymentsBestEffort,
+  } = opts;
   const [
     { data: profile },
     { data: acct },
@@ -486,8 +534,10 @@ export async function buildProfileResponse(
   // repair 的註解）；補不完（例如金額不符待人工）就維持旗標讓前端顯示
   // 「開通處理中」。
   if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed) {
-    const healed = await healPaidPendingOrdersBestEffort(userId);
-    if (healed) return buildProfileResponse(client, userId, email, true);
+    const healed = await heal(userId);
+    if (healed) {
+      return buildProfileResponse(client, userId, email, { ...opts, alreadyHealed: true });
+    }
   }
 
   // 機會性補跑：已付款完成的使用者每次讀自己 profile 時，順便確認
@@ -498,7 +548,7 @@ export async function buildProfileResponse(
   // 會真的跑完。對已經修復好的使用者，repair 內部的偵測查詢應該找不到
   // 任何候選、開銷很小。
   if (registrationStep === 3) {
-    await repairOrphanedPaymentsBestEffort(userId);
+    await repair(userId);
     paidAwaitingActivation = false;
   }
 

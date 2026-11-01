@@ -836,6 +836,11 @@ export const API_PATHS = {
 // rate_limited 拆成 hour／day 兩個 code（ApiError 只帶 code，帶不到 scope，裁決 G）。
 // ------------------------------------------------------------
 
+// T1-B（暫時性故障不登出）：/profile、/auth/register、/auth/complete-registration 讀不到帳號資料時的
+// 503 錯誤碼（`{ error: { code, message } }`）。**`/auth/register` 回 503＋此碼＝寫入已成功、讀回失敗**：
+// 前端不得重送，改 refreshUser 接續。（單向：500 的語意不保證未寫入。）
+export const PROFILE_UNAVAILABLE = 'PROFILE_UNAVAILABLE';
+
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',
   'self_invite',
