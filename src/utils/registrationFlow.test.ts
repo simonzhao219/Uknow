@@ -654,7 +654,8 @@ describe('FUNNEL_ROUTES／isFunnelRoute', () => {
   it('每條漏斗路由在 App.tsx 都有對應的 Route', () => {
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8');
     for (const route of FUNNEL_ROUTES) {
-      expect(app, route).toContain(`<Route path="${route}"`);
+      // JSX 可能多行（`<Route` 換行後才接 `path=`），容許中間有空白。
+      expect(app, route).toMatch(new RegExp(`<Route\\s+path="${route}"`));
     }
   });
 
