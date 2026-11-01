@@ -108,9 +108,15 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
+| F1 | `session_01MQovbDKkNQ6mDxkBr1nf2f` | Sonnet | `fix/signout-cleanup` | — | 施工中 |
+| E | `session_01MQovbE4KCLkaeC3Mfpg7Xc` | Sonnet | `fix/e2e-flake-diagnostics` | — | 施工中 |
+| K2 | `session_01MQovbF911rZdJNxbFpzmb8` | Sonnet | `fix/ci-alert-p2` | — | 施工中 |
+| T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | — | 規劃中 |
+| D | （11/02 Dependabot 批次後開） | Sonnet | `fix/npm-audit-467` | — | 未開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 11/01 20:13 | 主 session 開局：讀交接、第 3 波 plan／review、〈慣例〉。develop＝`27b09a0`＝origin；無開著的 PR。照片清理首輪實刪排程（台北 11/02 03:17）**尚未執行**，最近一次是 11/01 09:53 UTC 的 develop dry-run 41295068483（綠）。業主裁決 W4-1～4，主 session 定 W4-5～9；本檔擴寫、落 `dispatch-prompts.md` | 開 F1、E、K2、T1-B 規劃；設提醒於 11/02 03:30 核對首輪 run |
+| 11/01 20:22 | 開 #483（本檔，draft，已訂閱）。開 F1、E、K2（Sonnet）與 T1-B（Opus），tag `uknow-wave-4`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md`。設 send_later 於 11/02 03:35 核對照片清理首輪 run | 等各 session 回報；11/02 核對首輪 run、開 D |
