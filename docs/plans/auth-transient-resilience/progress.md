@@ -17,13 +17,13 @@
 | B5 | 呈現：AuthDegradedNotice／Frame、守衛、RouteAuthLoading、authView、useMemberLogout | ✅ 綠 | a5bb2975 | 15cd222e |
 | B6a | 入口與漏斗頁：routeAfterVerifiedSession、OTP／邀請逾時、PaymentCheckout、CompleteProfile post-write | ✅ 綠 | 49fd1b63 | 28a9430c |
 | B6b | AuthPage（掛載 effect、登入表單、異常 callout）；e2e | ⏸ 等裁決（邀請入口 transient，見 Blockers） | | |
-| B7 | apiClient 兩層確認（可降級） | ⬜ 未開始 | | |
+| B7 | apiClient 兩層確認（可降級） | ✅ 綠（實作 1a96c18f、W4-21 測試隔離 c6529816） | c832f550 | c6529816 |
 | B8 | 規格書 §5.3、§14 #8、§2.1 已知限制 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
 B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
-**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 綠（W4-20 裁決後；全閘門 2732/2732）。B5 綠（2767/2767）。B6 拆 B6a／B6b：B6a 綠；B6b 等裁決。
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 綠（W4-20 裁決後；全閘門 2732/2732）。B5 綠（2767/2767）。B6 拆 B6a／B6b：B6a 綠；B6b 等裁決。B7 綠（2781/2781；未降級）。剩 B6b（等裁決）與 B8。
 11/01 再 rebase 到 develop（#487，efa1d06a）：本表 hash 已換成 rebase 後的值（commit message 內引用的舊紅燈 hash 以本表為準）。
 
 ### B0 結構快照（F1 後）
@@ -70,6 +70,8 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
 - **B6b（11/01，已送主 session）**：plan §2.4「AuthPage 掛載 effect 遇 transient／catch → navigate('/dashboard')」與 R2 交接衝突——帶邀請連結進
   /login 且有 session 時，現況 transient → signed_out、保留 token、進設定密碼（`AuthPage.test.tsx` 約 :384 釘住）。選項 A（建議）有有效邀請入口時維持
   R2 現況、否則導 /dashboard，catch 一律不登出；B 一律導 /dashboard；C 一律維持 signed_out。未裁決前不動 AuthPage。
+- **B7（W4-21，11/01）**：紅燈 c832f550 後實作完成，1 條紅是測試隔離錯誤（上一個 describe 的 `signOut` mock 呼叫殘留）。業主以互動選項授權「代修」：
+  Claude 代刪 `.claude/tdd-lock`，只在新 describe 加 `beforeEach` 清 mock、不改任何斷言；全閘門 2781/2781 綠（c6529816）。PR 偏離說明列出。
 - B6a 小決定：`routeAfterVerifiedSession` 的 410 與 401 同處置（提示重新登入→/login；原本落 else→完善資料頁）。/profile 實際不回 410。PR 偏離說明列出。
 
 ## 框架摩擦
