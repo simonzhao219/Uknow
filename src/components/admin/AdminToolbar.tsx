@@ -92,7 +92,7 @@ export function AdminToolbar({
           type="button"
           tone="secondary"
           size="icon"
-          // Button 基底只有 disabled: 的灰化；aria-disabled 的外觀在這裡補，但不擋 pointer。
+          // Button 基底只有 disabled: 的灰化與擋指標；aria-disabled 的鈕仍收得到點擊（見 button.tsx 契約），外觀在這裡補、不擋 pointer。
           className={cn(
             ICON_TO_LABELED,
             'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',

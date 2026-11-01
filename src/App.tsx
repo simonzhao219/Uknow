@@ -36,6 +36,7 @@ import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
+import { clearAccountLocalState } from './utils/clearAccountLocalState';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
 import {
   type AuthState,
@@ -143,6 +144,12 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
+  const clearAccountState = () => {
+    clearCache();
+    // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
+    resetHomeListingsCache();
+    clearAccountLocalState();
+  };
 
   // 啟動判定、事件、背景重驗與首繪提示全在 useAuthBootstrap（plan §2.5）；
   // 這裡只注入會碰到路由與快取的副作用。注入值只在掛載時讀一次。
@@ -162,15 +169,18 @@ function AppContent() {
     supabase: createClient(),
     fetchProfile,
     clearInflight,
+    // 「登出清所有本機狀態」盤點（R3 §6，2026-11）。已清：DataCache（含 sessionStorage）、
+    // 首頁清單快取、localStorage 的 withdrawalBankData／pendingUser／user／pendingSession、
+    // 完善資料草稿（sessionStorage）、首繪提示（hook 自己清）、邀請 token（僅 SIGNED_OUT）。
+    // 刻意保留：待用推薦碼與邀請 token（訪客帶進來的）、首頁檢視／推薦網路排序／QR 分頁／
+    // 公告已讀（與帳號無關的偏好）、OTP 續填情境與到期時間（只有 email，且屬登入前流程）。
+    // adminCache 只在記憶體、隨 AdminConsole 卸載。新增帳號相關的 storage 鍵時加進
+    // clearAccountLocalState，不要另寫一處。
     onSignedOut: () => {
-      clearCache();
+      clearAccountState();
       clearPendingInviteToken();
-      // 首頁清單快取存活到分頁重整；換帳號不沿用前一人的搜尋／篩選與捲動位置。
-      resetHomeListingsCache();
-      // 升版前的殘留鍵（write-only、零讀者）。
-      localStorage.removeItem('user');
-      localStorage.removeItem('pendingSession');
     },
+    onAccountSwitched: clearAccountState,
     onIncompleteProfile: () => navigate('/auth/complete-profile', { replace: true }),
   });
 

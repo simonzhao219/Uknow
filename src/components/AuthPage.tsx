@@ -10,6 +10,7 @@ import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
 import { clearAuthHint } from '../utils/authHint';
+import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { fetchProfileForSession } from '../utils/fetchProfile';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
@@ -194,7 +195,7 @@ export function AuthPage() {
             console.log(
               'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
             );
-            await supabase.auth.signOut();
+            await signOutWithFallback(supabase.auth);
             keepInviteToken();
             // signOut 網路失敗時 SIGNED_OUT 不一定觸發：無效 session 的首繪提示自己清。
             clearAuthHint();
@@ -216,7 +217,7 @@ export function AuthPage() {
         console.error('AuthPage: Error checking session validity:', error);
         settle('signed_out');
         // 發生錯誤時，保守清除
-        await supabase.auth.signOut();
+        await signOutWithFallback(supabase.auth);
         keepInviteToken();
         clearAuthHint();
         localStorage.removeItem('user');
@@ -375,7 +376,7 @@ export function AuthPage() {
           console.log('AuthPage: User account deleted or not found, cleaning up...');
 
           // 清除 session（連同首繪提示：帳號已不存在）
-          await supabase.auth.signOut();
+          await signOutWithFallback(supabase.auth);
           clearAuthHint();
 
           showToast('帳號不存在或已被刪除，請重新註冊', 'error');

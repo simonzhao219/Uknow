@@ -140,7 +140,10 @@ export function Navbar() {
                 <>
                   {!onFunnelRoute && ctaHref && (
                     // 320px 時 logo＋全文鈕＋icon 鈕要同列（F1）：窄寬收一點左右留白。
-                    <Button asChild className="px-3 sm:px-4">
+                    <Button
+                      asChild
+                      className="px-3 sm:px-4 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                    >
                       <Link
                         to={ctaHref}
                         aria-disabled={ctaPending ? 'true' : undefined}
@@ -158,7 +161,7 @@ export function Navbar() {
                     aria-disabled={funnelLogout.isLoggingOut ? 'true' : undefined}
                     // 窄寬（F1）且旁邊有下一步時只留 icon；漏斗頁單顆時保留文字。
                     aria-label={!onFunnelRoute && ctaHref ? '登出' : undefined}
-                    className="min-h-11 min-w-11"
+                    className="min-h-11 min-w-11 aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   >
                     <LogOut className="h-4 w-4 sm:mr-1" aria-hidden="true" />
                     <span className={!onFunnelRoute && ctaHref ? 'hidden sm:inline' : ''}>
