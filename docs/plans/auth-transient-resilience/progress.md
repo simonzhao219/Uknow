@@ -21,7 +21,15 @@
 
 ## 目前位置與下一步
 
-v2 規劃（W4-11～17 裁決＋v1 審查 P1 修訂）完成、重跑 `/review-plan`、等業主人審；實作須等 F1（`fix/signout-cleanup`）合進 develop 後 rebase。
+plan v2.1（1985a0b）主 session 親審通過（W4-18 客服入口＝`LINE_OFFICIAL_ACCOUNT_URL`；W4-19 第三輪 /review-plan 以主 session 審查代替）。
+等業主在本 session 親打 `/tdd-implement auth-transient-resilience`；打了之後先填 review.md「處置」＝通過（W4-18、W4-19），再照 B0 等 F1（`fix/signout-cleanup`）
+合併通知、rebase 開工。
+
+### 實作時處理（主 session 審查 P2，不改 plan）
+
+1. **B4**：§2.3 `retry()` 偽碼漏了 dispatch `retry` action——手動／事件重試進入時先設 `isRetrying=true`（callout 不卸載、鈕 `aria-disabled`）；
+   `profile`／`transient`／`missing`／`signedOut`／`unauthorized` 每個出口都清 `isRetrying`。B4 補一案「重試後再 transient → `isRetrying` 回 false、`failedAgain` 為真」。
+2. **B1 前**：把 Logs Explorer 唯讀查詢（24 小時 `/profile` 5xx 與 `effective_registration_step` 等 rpc 錯誤）send_message 給主 session 代跑兩站，結果記這裡。
 
 ## Blockers（逃生口紀錄）
 
