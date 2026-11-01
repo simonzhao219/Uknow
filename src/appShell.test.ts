@@ -97,6 +97,92 @@ describe('會籍守衛新鮮度契約', () => {
   });
 });
 
+describe('登入狀態（T1 auth-state-trust）契約', () => {
+  // 函式欄位是穩定 identity 不列；狀態欄位漏列會讓消費者在該值變動時靜默不重繪。
+  it('UserContext 的 memo deps 涵蓋所有狀態欄位', () => {
+    const m = app.match(/const contextValue = useMemo\([\s\S]*?\[([^\]]*)\],\s*\);/);
+    expect(m, 'contextValue useMemo').not.toBeNull();
+    const deps = (m?.[1] ?? '').split(',').map((d) => d.trim());
+    for (const field of [
+      'user',
+      'isLoadingUser',
+      'authState',
+      'isFunnel',
+      'authView',
+      'nextFunnelRoute',
+      'hintInitial',
+      'hintNext',
+    ]) {
+      expect(deps, field).toContain(field);
+    }
+  });
+
+  it('App 的啟動流程走 useAuthBootstrap，不再自己 fetch /profile', () => {
+    expect(app).toMatch(/useAuthBootstrap\(/);
+    expect(app).not.toMatch(/buildApiUrl\('\/profile'\)/);
+  });
+
+  it('App 不再寫入 localStorage.user', () => {
+    expect(app).not.toMatch(/setItem\('user'/);
+  });
+
+  // 第 2 波審查 P2-5：首頁清單快取存活到分頁重整，換帳號不該沿用前一人的檢視狀態。
+  it('登出時重置首頁清單快取', () => {
+    const m = app.match(/onSignedOut[\s\S]*?\n {4}\}/);
+    expect(m?.[0] ?? '').toMatch(/resetHomeListingsCache\(\)/);
+  });
+
+  // 解析後路徑比對（同 admin/ 組裝邊界的理由）：這些模組被 App import，反向 import 會循環。
+  it('auth 純函式模組與 useAuthBootstrap 不得 import App', () => {
+    const appPath = join(SRC, 'App');
+    const offenders: string[] = [];
+    for (const rel of [
+      'utils/authView.ts',
+      'utils/authHint.ts',
+      'utils/fetchProfile.ts',
+      'utils/registrationFlow.ts',
+      'hooks/useAuthBootstrap.ts',
+    ]) {
+      const full = join(SRC, rel);
+      for (const [, spec] of readFileSync(full, 'utf8').matchAll(/from\s+'(\.[^']+)'/g)) {
+        if (resolve(dirname(full), spec) === appPath) offenders.push(`${rel} → ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('提示的寫入與清除只出現在白名單檔案', () => {
+    const allowed = new Set(
+      [
+        'App.tsx',
+        'hooks/useAuthBootstrap.ts',
+        'hooks/useFunnelLogout.ts',
+        'utils/apiClient.ts',
+        'utils/authHint.ts',
+        'components/CompleteProfile.tsx',
+        'components/Navbar.tsx',
+      ].map((r) => join(SRC, r)),
+    );
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+        if (allowed.has(full)) continue;
+        if (/\b(writeAuthHint|clearAuthHint)\b/.test(readFileSync(full, 'utf8'))) {
+          offenders.push(full.slice(SRC.length + 1));
+        }
+      }
+    };
+    walk(SRC);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('錯誤防線契約', () => {
   it('App 必須掛 ErrorBoundary', () => {
     expect(app).toMatch(/<ErrorBoundary[\s>]/);
