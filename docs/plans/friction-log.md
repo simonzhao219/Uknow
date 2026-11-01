@@ -3367,3 +3367,19 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   候選處置：業主允許該類 send_message，或改成主 session 在晉升後主動跑固定的現場 SQL、結果寫進 plan §8，審查 session 只讀 plan。
 
 處置：第一、三條列入下次框架整併；第二條建議寫進晉升 SOP；第四條待業主決定。
+
+## 2026-11-01｜誤擋／漏網（流程、環境）｜T1-B auth-transient-resilience 施工摩擦（從 progress.md 整併）
+
+- **誤擋（待裁決）**：`tdd-test-guard` 的「再由人解鎖修測試」假設人能在本機執行 shell；claude.ai/code 雲端 session 的使用者打
+  `! rm .claude/tdd-lock` 會被拒（「shell 指令僅可在本機工作階段中使用」）。本工項兩次（W4-20 漏改的參數期望、W4-21 mock 隔離）
+  改以業主互動選項授權、Claude 代刪鎖處理，皆只改測試的非語意部分、全閘門綠後 commit。處置候選：給雲端 session 一條人工解鎖通道
+  （業主授權語句寫進 progress.md 後由 script 驗證再刪鎖），並在 DENY_REASON 指路。
+- **漏網**：`python3 scripts/check-test-names.py | tail -2 && git commit …` 的 pipe 吞掉 exit code，紅燈 commit 帶著命名違規進去
+  （鎖住期間無法改測試，解鎖後另 commit 修）。教訓：檢查指令不要接 `| tail` 再串 `&&`。
+- **誤擋（環境）**：push 前守衛自動 rebase 會改寫整條分支的 hash，progress.md 記的紅燈／綠燈 hash 隨之失效，需手動重對；
+  commit message 內引用的舊紅燈 hash 也跟著失效（PR 內文以 rebase 後的值為準）。
+- **環境**：雲端容器的 python playwright 版本 pin 期待 chromium build 1194，容器預裝的是 1243（`/opt/pw-browsers`）；本機跑全 mock e2e
+  以符號連結對上（不入 repo）。e2e harness 自起的 dev server 曾在長跑中途死掉（15 條 `ERR_CONNECTION_REFUSED`），改先手動 `npm run dev`
+  再 `E2E_SKIP_DEV_SERVER=1`。
+- **流程（一次學到）**：紅燈期改「既有測試期望」時要一次改齊同形斷言（漏一條就要走逃生口）；主 session 的同類掃描建議有效，後續階段
+  在上鎖前一次改好、未再卡關。

@@ -26,7 +26,11 @@ import {
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
-import { DEFAULT_NETWORK_SORT, RENEWAL_NOTICE_DAYS } from '../_shared/api-contract.ts';
+import {
+  DEFAULT_NETWORK_SORT,
+  PROFILE_UNAVAILABLE,
+  RENEWAL_NOTICE_DAYS,
+} from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
   MemberVerifyResponse,
@@ -441,19 +445,108 @@ export function validateNameFormat(name: unknown): string | undefined {
 // ============================================================
 // 工具：組建 profile 回應（供多個路由共用）
 // ============================================================
+export type AuthResult =
+  | { user: { id: string; email?: string } }
+  | { error: 'unauthorized' | 'transient' };
+
+/**
+ * /profile 專用的分類式驗證（T1-B）。requireAuth 把 Auth 的任何錯誤都當 401——那會讓
+ * 前端在 Auth 抖動時把有效會員登出。這裡分兩類：Auth 回不來（retryable、status 0／
+ * ≥500／429、拋例外）→ transient（503）；AuthApiError 4xx（含 user_not_found）→
+ * unauthorized（401）。其餘端點刻意維持 requireAuth（總綱 T1-02，殘餘由前端兩層確認補償）。
+ */
+export async function authenticate(
+  auth: { getUser(token: string): Promise<any> },
+  token: string | undefined,
+): Promise<AuthResult> {
+  if (!token) return { error: 'unauthorized' };
+  try {
+    const { data, error } = await auth.getUser(token);
+    if (error) return { error: isTransientAuthError(error) ? 'transient' : 'unauthorized' };
+    return data?.user ? { user: data.user } : { error: 'unauthorized' };
+  } catch {
+    return { error: 'transient' };
+  }
+}
+
+function isTransientAuthError(error: { name?: string; status?: number }): boolean {
+  if (error.name === 'AuthRetryableFetchError') return true;
+  const status = error.status ?? 0;
+  return status === 0 || status >= 500 || status === 429;
+}
+
+/** buildProfileResponse 的讀取失敗（非零列）。 */
+export class ProfileReadError extends Error {
+  constructor(readonly read: string) {
+    super(`profile read failed: ${read}`);
+    this.name = 'ProfileReadError';
+  }
+}
+
+export interface BuildProfileOptions {
+  alreadyHealed?: boolean;
+  retry?: boolean;
+  heal?: (userId: string) => Promise<boolean>;
+  repair?: (userId: string) => Promise<void>;
+}
+
+const PROFILE_UNAVAILABLE_BODY = {
+  error: { code: PROFILE_UNAVAILABLE, message: '暫時無法讀取帳號資料，請稍後再試' },
+};
+
+/**
+ * buildProfileResponse 三個呼叫者共用的分流：profiles 零列 → 404（維持），讀取失敗
+ * （ProfileReadError）→ 503 PROFILE_UNAVAILABLE，其餘例外照常拋出。
+ * `/auth/register` 在寫入成功後才呼叫，對它而言 503＝「已寫入、讀不到」（契約見 api-contract）。
+ */
+export async function loadProfileOrError(
+  build: () => Promise<any>,
+): Promise<{ ok: true; data: any } | { ok: false; status: 404 | 503; body: unknown }> {
+  try {
+    const data = await build();
+    return data ? { ok: true, data } : { ok: false, status: 404, body: { error: '用戶不存在' } };
+  } catch (err) {
+    if (err instanceof ProfileReadError) {
+      console.error('[profile] 讀取失敗:', err.read);
+      return { ok: false, status: 503, body: PROFILE_UNAVAILABLE_BODY };
+    }
+    throw err;
+  }
+}
+
+/** GET /profile handler（注入 authenticate 與 build 以便單元測試）。 */
+export function makeProfileHandler(deps: {
+  authenticate: (token: string | undefined) => Promise<AuthResult>;
+  build: (userId: string, email: string | undefined, opts: BuildProfileOptions) => Promise<any>;
+}) {
+  return async (c: any) => {
+    const token = c.req.header('Authorization')?.replace('Bearer ', '');
+    const auth = await deps.authenticate(token);
+    if ('error' in auth) {
+      return auth.error === 'transient'
+        ? c.json(PROFILE_UNAVAILABLE_BODY, 503)
+        : c.json({ error: '未授權' }, 401);
+    }
+    // 前端逾時後的重試帶 ?retry=1：第一個請求可能仍在伺服器端跑，跳過 heal／repair。
+    const retry = c.req.query('retry') === '1';
+    const r = await loadProfileOrError(() => deps.build(auth.user.id, auth.user.email, { retry }));
+    return r.ok ? c.json(r.data) : c.json(r.body, r.status);
+  };
+}
+
 export async function buildProfileResponse(
   client: any,
   userId: string,
   email?: string,
-  alreadyHealed = false,
-) {
-  const [
-    { data: profile },
-    { data: acct },
-    { data: code },
-    { data: pendingOrders },
-    { data: step },
-  ] = await Promise.all([
+  opts: BuildProfileOptions = {},
+): Promise<any> {
+  const {
+    alreadyHealed = false,
+    retry = false,
+    heal = healPaidPendingOrdersBestEffort,
+    repair = repairOrphanedPaymentsBestEffort,
+  } = opts;
+  const [profileRes, acctRes, codeRes, ordersRes, stepRes] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).single(),
     client.from('user_account_status').select('status, end_date').eq('user_id', userId).single(),
     client.from('referral_codes').select('code').eq('user_id', userId).eq('status', 'active')
@@ -467,11 +560,31 @@ export async function buildProfileResponse(
     client.rpc('effective_registration_step', { p_user_id: userId }),
   ]);
 
+  // 讀取失敗不是「不存在」（規格書 §5.3）：零列維持原語意，其餘錯誤擲出 → 呼叫者 503。
+  // 退化成預設值會把有效會員登出（profiles→404）、導去續訂（status→expired）、把已付款者
+  // 當未付款（pending→[]、step→1，重複付款風險）。
+  // user_account_status 是以 profiles 為底的 view（一人一列），PGRST116 只會是零列。
+  // referral_codes 有 uq_referral_codes_one_active（每人最多一筆 active），maybeSingle 不會因多列報錯。
+  const isZeroRows = (error: any) => error?.code === 'PGRST116';
+  if (profileRes.error && !isZeroRows(profileRes.error)) throw new ProfileReadError('profiles');
+  if (acctRes.error && !isZeroRows(acctRes.error)) {
+    throw new ProfileReadError('user_account_status');
+  }
+  if (codeRes.error) throw new ProfileReadError('referral_codes');
+  if (ordersRes.error) throw new ProfileReadError('payment_orders');
+  if (stepRes.error || stepRes.data == null) throw new ProfileReadError('rpc');
+
+  const profile = profileRes.data;
+  const acct = acctRes.data;
+  const code = codeRes.data;
+  const pendingOrders = ordersRes.data;
+  const step = stepRes.data;
+
   if (!profile) return null;
 
   // registrationStep 由 payment_orders 即時算出（見 migration 0011），
   // 不再信任 profiles.registration_step 這個手動維護的欄位。
-  const registrationStep = step ?? 1;
+  const registrationStep = step;
 
   // 已付款待開通：任一 pending 訂單上已存有 PayUni 的 SUCCESS 回應
   // （persistRawResponseBestEffort 在內部處理失敗時寫入的復原資料來源，
@@ -485,9 +598,11 @@ export async function buildProfileResponse(
   // active，不需要再重新整理。特意 await（isolate 終止問題，同下方
   // repair 的註解）；補不完（例如金額不符待人工）就維持旗標讓前端顯示
   // 「開通處理中」。
-  if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed) {
-    const healed = await healPaidPendingOrdersBestEffort(userId);
-    if (healed) return buildProfileResponse(client, userId, email, true);
+  if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed && !retry) {
+    const healed = await heal(userId);
+    if (healed) {
+      return buildProfileResponse(client, userId, email, { ...opts, alreadyHealed: true });
+    }
   }
 
   // 機會性補跑：已付款完成的使用者每次讀自己 profile 時，順便確認
@@ -498,7 +613,7 @@ export async function buildProfileResponse(
   // 會真的跑完。對已經修復好的使用者，repair 內部的偵測查詢應該找不到
   // 任何候選、開銷很小。
   if (registrationStep === 3) {
-    await repairOrphanedPaymentsBestEffort(userId);
+    if (!retry) await repair(userId);
     paidAwaitingActivation = false;
   }
 
@@ -642,17 +757,14 @@ export function generateTradeNo(): string {
 // GET /profile  （供 App.tsx 在啟動時載入用戶狀態）
 // GET /auth/profile  （向下相容別名）
 // ============================================================
-const profileHandler = async (c: any) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  const data = await buildProfileResponse(sb(), user.id, user.email);
-  if (!data) return c.json({ error: '用戶不存在' }, 404);
-  return c.json(data);
+const profileDeps = {
+  authenticate: (token: string | undefined) => authenticate(sb().auth, token),
+  build: (userId: string, email: string | undefined, opts: BuildProfileOptions) =>
+    buildProfileResponse(sb(), userId, email, opts),
 };
 
-app.get('/profile', profileHandler);
-app.get('/auth/profile', profileHandler);
+app.get('/profile', makeProfileHandler(profileDeps));
+app.get('/auth/profile', makeProfileHandler(profileDeps));
 
 // ============================================================
 // POST /auth/check-email
@@ -787,9 +899,8 @@ app.post('/auth/register', async (c) => {
     return c.json({ error: '更新失敗' }, 500);
   }
 
-  const data = await buildProfileResponse(client, user.id, user.email);
-  if (!data) return c.json({ error: '用戶不存在' }, 404);
-  return c.json(data);
+  const r = await loadProfileOrError(() => buildProfileResponse(client, user.id, user.email));
+  return r.ok ? c.json(r.data) : c.json(r.body, r.status);
 });
 
 // ============================================================
@@ -850,8 +961,9 @@ app.post('/auth/complete-registration', async (c) => {
   if (!user) return c.json({ error: '未授權' }, 401);
 
   const client = sb();
-  const data = await buildProfileResponse(client, user.id, user.email);
-  if (!data) return c.json({ error: '用戶不存在' }, 404);
+  const r = await loadProfileOrError(() => buildProfileResponse(client, user.id, user.email));
+  if (!r.ok) return c.json(r.body, r.status);
+  const data = r.data;
 
   if (data.registrationStep === 3 && data.referralCode) {
     return c.json({

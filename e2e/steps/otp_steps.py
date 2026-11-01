@@ -32,8 +32,8 @@ def verify_fails(auth_mock):
 
 @given("verifying the code succeeds but no profile exists yet")
 def verify_ok_no_profile(auth_mock, api_mock):
-    # A brand-new verified user has no profile row yet: the post-verify profile
-    # fetch 404s, and the page must route to complete-profile (not dead-end).
+    # The post-verify profile fetch 404s. The row is created with the auth user,
+    # so this is an account anomaly (T1-B W4-11): the login page explains it.
     auth_mock.mock_verify_otp_success()
     api_mock.set_profile_error(404)
 

@@ -11,7 +11,15 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { getInputErrorClass, FieldError, getInputAriaProps } from '../utils/formHelpers';
-import { apiRequestJson, buildApiUrl, ApiError, extractApiErrorMessage } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import {
+  apiRequestJson,
+  buildApiUrl,
+  ApiError,
+  extractApiErrorCode,
+  extractApiErrorMessage,
+} from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
+import { PROFILE_UNAVAILABLE } from '@contract';
+import { StatusCallout } from './ui/status-callout';
 import { clearAuthHint } from '../utils/authHint';
 import { fetchProfileForSession } from '../utils/fetchProfile';
 import { signOutWithFallback } from '../utils/signOutWithFallback';
@@ -131,6 +139,10 @@ export function CompleteProfile() {
   // 使用者以為系統認不得他的名字。
   const [nameNotice, setNameNotice] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // /auth/register 回 503 PROFILE_UNAVAILABLE＝資料已寫入、讀不回（T1-B §2.6）：不重送，
+  // 以 refreshUser 接續；拿不到時留本頁、持久提示＋重新載入、送出鈕停用（防重送遇 403）。
+  const [savedUnconfirmed, setSavedUnconfirmed] = useState(false);
+  const [isReloadingSaved, setIsReloadingSaved] = useState(false);
   // 「稍後註冊」會刪帳號：先確認（業主裁決 W3-12）。
   const [laterConfirmOpen, setLaterConfirmOpen] = useState(false);
   // 刪除帳號請求進行中：停用「下一步」與「稍後註冊」，擋重複送出。
@@ -406,8 +418,52 @@ export function CompleteProfile() {
     setErrors((prev) => ({ ...prev, [field]: all[field] || '' }));
   };
 
+  // 註冊寫入成功後的收尾（一般成功與 503 post-write 經 refreshUser 接續共用）。
+  const finishRegistered = (profile: any) => {
+    setSavedUnconfirmed(false);
+
+    // ✅ 1. 保存到 localStorage（給 PaymentCheckout 使用）
+    // ✅ 手動加入推薦人姓名（前端已驗證時獲取）
+    const pendingUserData = {
+      ...profile,
+      referrerName: referrerName || null, // 加入推薦人姓名
+    };
+    localStorage.setItem('pendingUser', JSON.stringify(pendingUserData));
+
+    // ✅ 2. 設置 user 到 UserContext（讓 ProtectedRoute 通過）
+    setUser(profile);
+
+    // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
+    clearPendingReferral();
+    // 資料已成功送出後端，草稿完成使命；清掉以免下一位使用者在同分頁看到殘留。
+    clearProfileDraft();
+
+    // 顯示簡單提示（自動消失，不阻塞）
+    showToast('基本資訊已儲存，請完成付款', 'success');
+
+    // 導向付款頁面
+    navigate('/payment/checkout', { replace: true });
+  };
+
+  const continueAfterSaved = async () => {
+    const fresh = await refreshUser();
+    if (fresh) finishRegistered(fresh);
+    else setSavedUnconfirmed(true);
+  };
+
+  const handleReloadSaved = async () => {
+    if (isReloadingSaved) return;
+    setIsReloadingSaved(true);
+    try {
+      await continueAfterSaved();
+    } finally {
+      setIsReloadingSaved(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savedUnconfirmed) return;
 
     // 驗證表單
     const validationErrors = validateForm();
@@ -562,6 +618,11 @@ export function CompleteProfile() {
         // 下面的 403 分支，連確認最新狀態的機會都沒有。
         const errorData = await response.json().catch(() => ({}));
         console.error('CompleteProfile: API error:', errorData);
+        // 503＋PROFILE_UNAVAILABLE：寫入已成功、只是讀不回（api-contract）——不說註冊失敗、不重送。
+        if (response.status === 503 && extractApiErrorCode(errorData) === PROFILE_UNAVAILABLE) {
+          await continueAfterSaved();
+          return;
+        }
         // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
         // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
         // 會員中心再說明。但要先確認最新狀態真的已鎖定才動手：閘道層的
@@ -585,28 +646,7 @@ export function CompleteProfile() {
 
       const profile = await response.json();
       console.log('CompleteProfile: Profile created successfully:', profile);
-
-      // ✅ 1. 保存到 localStorage（給 PaymentCheckout 使用）
-      // ✅ 手動加入推薦人姓名（前端已驗證時獲取）
-      const pendingUserData = {
-        ...profile,
-        referrerName: referrerName || null, // 加入推薦人姓名
-      };
-      localStorage.setItem('pendingUser', JSON.stringify(pendingUserData));
-
-      // ✅ 2. 設置 user 到 UserContext（讓 ProtectedRoute 通過）
-      setUser(profile);
-
-      // 推薦碼已隨註冊送出綁定，清除暫存以免污染下一位使用者
-      clearPendingReferral();
-      // 資料已成功送出後端，草稿完成使命；清掉以免下一位使用者在同分頁看到殘留。
-      clearProfileDraft();
-
-      // 顯示簡單提示（自動消失，不阻塞）
-      showToast('基本資訊已儲存，請完成付款', 'success');
-
-      // 導向付款頁面
-      navigate('/payment/checkout', { replace: true });
+      finishRegistered(profile);
     } catch (error: any) {
       console.error('CompleteProfile: Error completing profile:', error);
       showToast(error.message || '註冊失敗，請稍後再試', 'error');
@@ -735,6 +775,26 @@ export function CompleteProfile() {
           <CardDescription>最後一步，請填寫您的基本資料</CardDescription>
         </CardHeader>
         <CardContent>
+          {savedUnconfirmed && (
+            <StatusCallout
+              variant="warning"
+              className="mb-4"
+              data-testid="profile-saved-unconfirmed"
+              title="資料已送出，連線不穩"
+              description="資料已經儲存，但暫時讀不回來。請按「重新載入資料」繼續，不必重新送出。"
+              action={
+                <Button
+                  type="button"
+                  container="warning"
+                  aria-disabled={isReloadingSaved || undefined}
+                  className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  onClick={() => void handleReloadSaved()}
+                >
+                  重新載入資料
+                </Button>
+              }
+            />
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 姓名 */}
             <div className="space-y-2">
@@ -954,8 +1014,9 @@ export function CompleteProfile() {
             {/* 提交按鈕 */}
             <Button
               type="submit"
-              className="w-full"
               disabled={isLoading || isCancelling}
+              aria-disabled={savedUnconfirmed || undefined}
+              className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={handleSubmit}
               data-testid="profile-submit-button"
             >

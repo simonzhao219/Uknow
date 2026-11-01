@@ -58,3 +58,15 @@ export function translateSignUpError(error: AuthErrorLike | null | undefined): s
 
   return '註冊失敗，請稍後再試。';
 }
+
+/**
+ * Auth 錯誤是否屬暫時性（T1-B）：網路層（AuthRetryableFetchError）、status 0、Auth 5xx、429。
+ * 這時 `session:null`／refresh 失敗不代表 session 無效，不能登出。bootstrap 的 getSession 與
+ * apiClient 的 refreshSession 共用這一份判準。
+ */
+export function isRetryableAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { name, status } = error as { name?: string; status?: number };
+  if (name === 'AuthRetryableFetchError') return true;
+  return status === 0 || (typeof status === 'number' && (status >= 500 || status === 429));
+}
