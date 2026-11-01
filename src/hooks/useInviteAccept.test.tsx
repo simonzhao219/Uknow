@@ -14,11 +14,16 @@ function setup(acceptResponse: () => Promise<Response>, signInError: unknown = n
   const fetchImpl = vi.fn(async (url: string | URL | Request) => {
     const href = String(url);
     if (href.endsWith('/auth/invite/accept')) return acceptResponse();
-    if (href.endsWith('/auth/profile')) return json(200, { registrationStep: 0 });
     throw new Error(`unexpected ${href}`);
   });
+  // /profile 走共用的 fetchProfile（與 App 啟動判定合併），不走 fetchImpl。
+  const fetchProfile = vi.fn(async () => ({
+    kind: 'ok' as const,
+    profile: { id: 'u1', registrationStep: 0 },
+  }));
+  const ingestProfile = vi.fn();
   const signInWithPassword = vi.fn(async () => ({
-    data: { session: signInError ? null : { access_token: 'tok' } },
+    data: { session: signInError ? null : { access_token: 'tok', user: { id: 'u1' } } },
     error: signInError,
   }));
   const navigate = vi.fn();
@@ -27,11 +32,13 @@ function setup(acceptResponse: () => Promise<Response>, signInError: unknown = n
     useInviteAccept({
       supabase: { auth: { signInWithPassword } },
       fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchProfile,
+      ingestProfile,
       navigate,
       showToast,
     }),
   );
-  return { hook, fetchImpl, signInWithPassword, navigate };
+  return { hook, fetchImpl, fetchProfile, ingestProfile, signInWithPassword, navigate };
 }
 
 const input = { token: 'p.s', email: 'a@b.co', password: 'Passw0rd' };
@@ -42,8 +49,8 @@ afterEach(() => vi.clearAllMocks());
 describe('useInviteAccept', () => {
   it('accept 成功時以剛設的密碼登入並導向完善資料頁', async () => {
     savePendingInviteToken('p.s');
-    const { hook, fetchImpl, signInWithPassword, navigate } = setup(async () =>
-      json(200, { accepted: true }),
+    const { hook, fetchImpl, fetchProfile, ingestProfile, signInWithPassword, navigate } = setup(
+      async () => json(200, { accepted: true }),
     );
     let result: unknown;
     await act(async () => {
@@ -56,6 +63,9 @@ describe('useInviteAccept', () => {
     expect(signInWithPassword).toHaveBeenCalledWith({ email: 'a@b.co', password: 'Passw0rd' });
     expect(navigate).toHaveBeenCalledWith('/auth/complete-profile', { replace: true });
     expect(getPendingInviteToken()).toBeNull();
+    expect(fetchProfile).toHaveBeenCalledWith({ access_token: 'tok', user: { id: 'u1' } });
+    expect(ingestProfile).toHaveBeenCalledWith({ id: 'u1', registrationStep: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('accept 成功但登入失敗時回 accepted_login_failed 並清 token', async () => {

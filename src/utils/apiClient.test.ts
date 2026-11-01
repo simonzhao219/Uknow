@@ -1,12 +1,21 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { apiErrorFromBody, apiRequest, buildApiUrl, extractApiErrorMessage } from './apiClient';
+import {
+  apiErrorFromBody,
+  apiRequest,
+  apiRequestJson,
+  buildApiUrl,
+  extractApiErrorMessage,
+} from './apiClient';
 import { projectId } from './supabase/info';
 
 const refreshSession = vi.fn();
 vi.mock('./auth', () => ({ getAccessToken: () => Promise.resolve('tok') }));
+const signOut = vi.fn(async () => ({ error: null }));
 vi.mock('./supabase/client', () => ({
-  createClient: () => ({ auth: { refreshSession: () => refreshSession() } }),
+  createClient: () => ({ auth: { refreshSession: () => refreshSession(), signOut } }),
 }));
+const clearAuthHint = vi.fn();
+vi.mock('./authHint', () => ({ clearAuthHint: () => clearAuthHint() }));
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/api`;
 
@@ -148,5 +157,26 @@ describe('apiRequest 送 FormData', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(headersOf(1).has('Content-Type')).toBe(false);
     expect(fetchMock.mock.calls[1][1].body).toBe(form);
+  });
+});
+
+// session 真的過期（refresh 也失敗）：signOut 網路失敗時 SIGNED_OUT 不一定觸發，
+// 這裡自清本機狀態時要一併清首繪提示，否則下次開站仍畫已登入頭像。
+describe('apiRequestJson 的 session 過期分支', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    refreshSession.mockReset();
+    clearAuthHint.mockReset();
+  });
+
+  it('401 且 refresh 失敗時清首繪提示並拋出登入過期', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 })),
+    );
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    refreshSession.mockResolvedValue({ data: { session: null }, error: new Error('expired') });
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
+    expect(clearAuthHint).toHaveBeenCalledTimes(1);
   });
 });

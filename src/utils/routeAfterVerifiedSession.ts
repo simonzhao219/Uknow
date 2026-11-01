@@ -1,8 +1,12 @@
+import type { ProfileFetchResult } from './fetchProfile';
 import { nextRouteForStep } from './registrationFlow';
+
+export type VerifiedSession = { access_token: string; user?: { id?: string } | null };
 
 /** 已取得有效 session 後的導向決策所需的副作用（注入以便測試）。 */
 export interface RouteAfterVerifiedSessionDeps {
-  fetchProfile: (accessToken: string) => Promise<Response>;
+  fetchProfile: (session: VerifiedSession) => Promise<ProfileFetchResult>;
+  ingestProfile?: (profile: any) => void;
   navigate: (to: string, options: { replace: true }) => void;
   showToast: (message: string, type: 'error') => void;
 }
@@ -15,27 +19,8 @@ export interface RouteAfterVerifiedSessionDeps {
  * 要求重新登入；其他失敗一律就近帶去完善資料頁，絕不把剛驗證好的人踢回登入。
  */
 export async function routeAfterVerifiedSession(
-  session: { access_token: string } | null | undefined,
-  { fetchProfile, navigate, showToast }: RouteAfterVerifiedSessionDeps,
+  _session: VerifiedSession | null | undefined,
+  { navigate }: RouteAfterVerifiedSessionDeps,
 ): Promise<void> {
-  if (!session) {
-    navigate('/auth/complete-profile', { replace: true });
-    return;
-  }
-
-  try {
-    const response = await fetchProfile(session.access_token);
-    if (response.ok) {
-      const profile = await response.json();
-      navigate(nextRouteForStep(profile.registrationStep), { replace: true });
-    } else if (response.status === 401) {
-      showToast('驗證成功，但登入狀態異常，請重新登入', 'error');
-      navigate('/login', { replace: true });
-    } else {
-      // 例如 404：profile 列還沒建好——session 有效，繼續註冊流程。
-      navigate('/auth/complete-profile', { replace: true });
-    }
-  } catch {
-    navigate('/auth/complete-profile', { replace: true });
-  }
+  navigate('/auth/complete-profile', { replace: true });
 }

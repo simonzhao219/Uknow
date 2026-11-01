@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { clearInflight, fetchProfile } from './fetchProfile';
+import { clearInflight, fetchProfile, fetchProfileForSession } from './fetchProfile';
 
 const json = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -149,5 +149,38 @@ describe('fetchProfile', () => {
     const p = fetchProfile('t', { userId: 'u1', timeoutMs: 8_000 });
     await vi.advanceTimersByTimeAsync(8_000);
     await expect(p).resolves.toEqual({ kind: 'transient' });
+  });
+});
+
+describe('fetchProfileForSession', () => {
+  beforeEach(() => clearInflight());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('以 session 的 user id 為合併鍵，與啟動判定的同一請求合併', async () => {
+    const d = deferredFetch();
+    vi.stubGlobal('fetch', d.mock);
+    const boot = fetchProfile('tok', { userId: 'u1' });
+    const page = fetchProfileForSession({ access_token: 'tok2', user: { id: 'u1' } });
+    expect(d.mock).toHaveBeenCalledTimes(1);
+    d.resolveNext(json(200, { id: 'u1' }));
+    await expect(page).resolves.toEqual(await boot);
+  });
+
+  it('session 沒有 user id 時以 token 為鍵，不與其他人的請求合併', async () => {
+    const mock = vi.fn(async () => json(200, {}));
+    vi.stubGlobal('fetch', mock);
+    await Promise.all([
+      fetchProfile('tok', { userId: 'u1' }),
+      fetchProfileForSession({ access_token: 'tok' }),
+    ]);
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it('force 時不合併', async () => {
+    const d = deferredFetch();
+    vi.stubGlobal('fetch', d.mock);
+    void fetchProfile('tok', { userId: 'u1' });
+    void fetchProfileForSession({ access_token: 'tok', user: { id: 'u1' } }, { force: true });
+    expect(d.mock).toHaveBeenCalledTimes(2);
   });
 });

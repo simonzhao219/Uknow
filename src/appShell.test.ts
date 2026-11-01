@@ -151,6 +151,41 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
     expect(offenders).toEqual([]);
   });
 
+  // A2b：/profile 只有一個 fetch 入口（模組單例，同 user id 合併），localStorage.user 零寫入。
+  const productFiles = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(full);
+      }
+    };
+    walk(SRC);
+    return out;
+  };
+
+  it('/profile 的 fetch 只出現在 utils/fetchProfile.ts', () => {
+    const offenders = productFiles()
+      .filter((f) => /buildApiUrl\('\/(auth\/)?profile'\)/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1));
+    expect(offenders).toEqual(['utils/fetchProfile.ts']);
+  });
+
+  it('產品碼不再寫入 localStorage.user', () => {
+    const offenders = productFiles()
+      .filter((f) => /setItem\('user'/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1));
+    expect(offenders).toEqual([]);
+  });
+
+  // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
+  it('apiClient 的 session 過期與取消註冊都會清提示', () => {
+    for (const rel of ['utils/apiClient.ts', 'components/CompleteProfile.tsx']) {
+      expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(/clearAuthHint\(\)/);
+    }
+  });
+
   it('提示的寫入與清除只出現在白名單檔案', () => {
     const allowed = new Set(
       [

@@ -67,3 +67,10 @@ async function request(token: string, timeoutMs: number | undefined): Promise<Pr
     if (timer) clearTimeout(timer);
   }
 }
+
+export async function fetchProfileForSession(
+  _session: { access_token: string; user?: { id?: string } | null },
+  _opts?: { force?: boolean; timeoutMs?: number },
+): Promise<ProfileFetchResult> {
+  return { kind: 'transient' };
+}
