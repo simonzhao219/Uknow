@@ -10,10 +10,10 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | B0 | 開工前置（F1 合併、rebase、結構快照、deno） | ✅ 完成 | — | — |
-| B1 | 後端 authenticate／ProfileReadError 503／register post-write／?retry=1 | ✅ 綠（DB 整合測試待 CI） | 537a368d | d754e360 |
-| B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ✅ 綠 | 8f542770 | be189101 |
-| B3 | endInvalidSession＋appShell 等價改寫 | ✅ 綠 | dd87963a | 2a69c8ca |
-| B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | 🔴 紅燈中（等裁決，見 Blockers） | 2108ce3c | |
+| B1 | 後端 authenticate／ProfileReadError 503／register post-write／?retry=1 | ✅ 綠（DB 整合測試待 CI） | e4fb2775 | c823fc95 |
+| B2 | apiUrl 抽出、fetchProfile missing／retry／逾時常數 | ✅ 綠 | 062cd3a6 | e04ebcac |
+| B3 | endInvalidSession＋appShell 等價改寫 | ✅ 綠 | 2691b4ed | c9d3bd12 |
+| B4 | useAuthBootstrap degraded／重試／getSession 錯誤／anomaly | ✅ 綠（實作 4e29e176、W4-20 期望 eea0e29a） | de4d58cf | eea0e29a |
 | B5 | 入口與漏斗頁：routeAfterVerifiedSession、AuthPage、PaymentCheckout、CompleteProfile | ⬜ 未開始 | | |
 | B6 | 呈現：AuthDegradedNotice、守衛、authView、e2e | ⬜ 未開始 | | |
 | B7 | apiClient 兩層確認（可降級） | ⬜ 未開始 | | |
@@ -22,7 +22,8 @@
 ## 目前位置與下一步
 
 B0 完成（11/01）：F1（#486，merge 2b99700）已合，分支 rebase 到 origin/develop；`check-migration-versions` OK（83 支）；deno 2.9.6（npm）；
-**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 實作完成、181 測試中 180 綠，**卡逃生口 2**（見 Blockers）。
+**容器無 supabase CLI**（無法 `supabase start` 跑 DB 測試）。B1 綠（unit 168/168、deno check）；`profile-self-heal`／`registration-step-contract` 等 DB 測試只能看 CI api-tests 軌。B2、B3 綠（B3 knip 對只有測試消費者的匯出不報錯，不需併入 B4）。B4 綠（W4-20 裁決後；全閘門 2732/2732）。下一步 B5。
+11/01 再 rebase 到 develop（#487，efa1d06a）：本表 hash 已換成 rebase 後的值（commit message 內引用的舊紅燈 hash 以本表為準）。
 
 ### B0 結構快照（F1 後）
 
@@ -57,14 +58,19 @@ plan 寫 deno test `profile-transient.test.ts`。容器無 supabase CLI，改為
 
 - **B4（逃生口 2，11/01）**：既有測試 `SIGNED_IN 為另一個 uid 時清提示、轉 unknown 並載入新帳號`（`useAuthBootstrap.test.tsx` 約 :323）
   以 `toHaveBeenLastCalledWith('tok-'+UID_B, { userId: UID_B })` 釘死 fetchProfile 參數。plan §2.2／§2.3 規定冷啟動與新 uid 的請求帶
-  `timeoutMs: PROFILE_FETCH_TIMEOUT_MS`，實際參數為 `{ userId: UID_B, timeoutMs: 8_000 }`。紅燈 commit 2108ce3c 已把**同形的另一條**
+  `timeoutMs: PROFILE_FETCH_TIMEOUT_MS`，實際參數為 `{ userId: UID_B, timeoutMs: 8_000 }`。紅燈 commit de4d58cf 已把**同形的另一條**
   （`會員 /profile ok 後…`）改成帶 `timeoutMs: 8_000`，這條漏改。實作未偏離 plan；需裁決是否允許把該期望改成
   `{ userId: UID_B, timeoutMs: 8_000 }`（只改參數期望，不改測試語意）。紅燈期鎖住 `*.test.*`，未自行修改。
   **裁決 W4-20**：業主先在主 session 同意，再於本 session 親打「同意 W4-20，改那條測試期望」（2026-11-01）。
-  PreToolUse 守衛要求由人解鎖（`.claude/tdd-lock`）後才能改測試——等業主在本 session 以 `! rm .claude/tdd-lock` 解鎖。
+  PreToolUse 守衛要求由人解鎖（`.claude/tdd-lock`）。雲端 session 不能由人執行 `!` shell（「shell 指令僅可在本機工作階段中使用」），
+  業主改以互動選項授權「代為解鎖」：Claude 刪鎖、只改該條期望、全閘門綠後 commit eea0e29a。**已結案**。
   PR「偏離規劃說明」需列此條（業主原話與時間）。
 
 ## 框架摩擦
 
 - 2026-11-01 B1：`python3 scripts/check-test-names.py | tail -2 && …` 的 pipe 吞掉 exit code，紅燈 commit 帶著兩個命名違規進去（鎖住期間無法改測試，解鎖後另 commit 修）。
   教訓：檢查指令不要接 `| tail` 再串 `&&`。
+- 2026-11-01 B4：`tdd-test-guard` 的「由人解鎖修測試」假設人能在本機執行 shell；claude.ai/code 雲端 session 的使用者打 `!` 會被拒
+  （「shell 指令僅可在本機工作階段中使用」）。這次以業主互動授權＋Claude 代刪鎖處理。框架修訂候選：給雲端 session 一條人工解鎖通道
+  （例如業主授權語句寫進 progress.md 後由 script 驗證再刪鎖），並在 DENY_REASON 指路。
+- 2026-11-01：push 前的守衛自動 rebase 會改寫全部 hash，progress.md 記的紅燈／綠燈 hash 隨之失效，需手動重對。
