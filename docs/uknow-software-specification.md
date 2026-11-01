@@ -778,7 +778,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | **會員管理** | `MemberManagement` | 會員列表（全站統計／搜尋；列上顯示**推薦碼**〔目前 active 碼，無則「—」〕與**推薦計畫**〔`referral_program_joined`：已加入／未加入〕；**列上唯一動作是「查看」**）、會員詳情（`MemberDetailSheet`：固定身分卡＝姓名＋狀態徽章＋會籍到期，下接帳號／點數／近期提領／推薦關係（推薦人、推薦碼、推薦計畫、直接推薦）／敏感資料分區，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統公告** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
-| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）——金流函數的 warning-only 隔離都落在這裡 |
+| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）；error 級另由對帳排程推 LINE，severity 準則見 `supabase/README.md` |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
 

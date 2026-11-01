@@ -17,6 +17,11 @@
 > 顯示的是**預設分支（develop）**，不是 main。晉升合併後要核准的，是建立時間**緊跟 main 那次 CI push run 完成**
 > 的那筆「Waiting」run；核准後看 `/api/health` 的 `sha` 等於 main HEAD 才算完成。
 
+> **前端版本比對的 LINE 告警**：`deploy-smoke.yml` 每 6 小時（另在 Pages 部署完成時）比對線上 `index.html` 的
+> `<meta name="build-sha">` 與分支 HEAD。剛 push 的 30 分鐘內不符只警告，超過就紅並推 LINE（正式站標 P1）。
+> 收到它代表 **Cloudflare Pages 沒部署到最新 commit**（2026-10-28 事故：main 建置在 clone 階段失敗，正式站停在舊版
+> 18 小時），先看 Pages 的建置紀錄、必要時重新部署；細節見該 workflow 檔頭與 `scripts/check-deployed-assets.py`。
+
 > **develop 是「分支」不是「另一個專案」。** 它由 Supabase 的 GitHub 整合
 > （Branching）從正式專案長出來，有自己的 DB／API 金鑰／Edge Function／
 > Secrets，但**掛在正式專案底下**——同一個組織、同一份帳單，在儀表板上要從

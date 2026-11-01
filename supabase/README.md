@@ -41,7 +41,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `referral_king_rewards` | 推薦王「免費續約 1 年」credit（可多張） | N/人 |
 | `reward_config` | 業務常數單列表（獎金額度、推薦王門檻） | 1（全域） |
 | `announcements` | 系統公告 | N |
-| `system_alerts` | 背景失敗告警（warning-only 隔離的落點） | N |
+| `system_alerts` | 背景失敗告警（error 級推 LINE，見下方〈告警 severity〉） | N |
 | `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
 
 ## 衍生 View / 函數（即時計算）
@@ -82,6 +82,17 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 並 `revoke execute ... from anon, authenticated, public`——只由 Edge Function
 以 service_role 呼叫。金流相關函數的每個副作用各包一層 `begin…exception`
 （warning-only），單一步驟失敗只寫 `system_alerts`，不整筆回滾。
+
+**告警 severity**：`system_alerts` 分 info／warning／error，**只有 error 會推 LINE**（`reconcile-payments.yml` 每輪呼叫
+`/internal/system-alerts/recent` 撈 error），warning 只在後台「系統告警」頁看得到。
+- **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、notify／return
+  驗章失敗、SQL 側 `repair_*` 失敗、Email 邀請寄送失敗，以及 PayUni 拒絕中「每個人都付不了」的兩種：商店級
+  （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
+  一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
+- **持卡人級拒絕**（帶 `ResCode` 的 `CREDIT*`）單筆不告警：使用者自己看得到、可以重試。
+- **warning**：對帳的單筆例外（標 expired 失敗、單筆查詢例外）——下一輪排程會自行重試，沒有持久後果。
+- 「該不該寫告警」的三條件判準與去重規則（`logSystemAlertOnce`：鍵要含實體識別碼；商店級加 UTC 日期桶、burst 加小時鍵，
+  沒人 resolve 時隔天／下一小時會再推）寫在 `supabase/functions/api/index.ts` 的 `logSystemAlert` 上方註解，這裡不重複。
 
 ## Edge Function
 
