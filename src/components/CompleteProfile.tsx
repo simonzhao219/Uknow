@@ -133,6 +133,8 @@ export function CompleteProfile() {
   const [isLoading, setIsLoading] = useState(false);
   // 「稍後註冊」會刪帳號：先確認（業主裁決 W3-12）。
   const [laterConfirmOpen, setLaterConfirmOpen] = useState(false);
+  // 刪除帳號請求進行中：停用「下一步」與「稍後註冊」，擋重複送出。
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
   const [codeError, setCodeError] = useState('');
@@ -616,7 +618,21 @@ export function CompleteProfile() {
   // 確認框按「確定刪除」後才進來（業主裁決 W3-12）。刪除沒成功就不清本機、不登出、停在
   // 原頁並說原因——帳號還在卻讓人以為已刪，是最難察覺的不一致。
   const handleLaterSignup = async () => {
+    if (isCancelling) return;
+    setIsCancelling(true);
     const failed = (message: string) => showToast(message, 'error');
+    // 帳號資料已刪（或本來就不存在）：清本機（在登出前先清，避免競態），再登出。
+    const finishLocally = async (message: string) => {
+      setUser(null);
+      localStorage.removeItem('user');
+      // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
+      clearAuthHint();
+      clearPendingReferral();
+      clearProfileDraft();
+      await signOutWithFallback(supabase.auth);
+      showToast(message, 'info');
+      navigate('/', { replace: true });
+    };
     try {
       const {
         data: { session },
@@ -636,6 +652,11 @@ export function CompleteProfile() {
         failed('暫時無法刪除帳號資料，請稍後再試');
         return;
       }
+      // 401：帳號已不存在（上一次刪除成功但回應遺失）。與刪除成功同樣收尾，不留在原頁重試。
+      if (response.status === 401) {
+        await finishLocally('帳號資料已不存在，之後可以用同一個 Email 重新註冊');
+        return;
+      }
       if (!response.ok) {
         // 後端兩種拒絕都有中文原因（已付款不可自助刪除、暫時無法處理）。
         const body = await response.json().catch(() => null);
@@ -643,20 +664,12 @@ export function CompleteProfile() {
         return;
       }
 
-      // 已刪除：清本機狀態（在登出前先清，避免競態），再登出。
-      setUser(null);
-      localStorage.removeItem('user');
-      // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
-      clearAuthHint();
-      clearPendingReferral();
-      clearProfileDraft();
-      await signOutWithFallback(supabase.auth);
-
-      showToast('已刪除帳號資料，之後可以用同一個 Email 重新註冊', 'info');
-      navigate('/', { replace: true });
+      await finishLocally('已刪除帳號資料，之後可以用同一個 Email 重新註冊');
     } catch (error) {
       console.error('CompleteProfile: Error during cancellation:', error);
       failed('暫時無法刪除帳號資料，請稍後再試');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -942,7 +955,7 @@ export function CompleteProfile() {
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading}
+              disabled={isLoading || isCancelling}
               onClick={handleSubmit}
               data-testid="profile-submit-button"
             >
@@ -962,9 +975,10 @@ export function CompleteProfile() {
               type="button"
               tone="destructive"
               className="w-full mt-2"
+              disabled={isCancelling}
               onClick={() => setLaterConfirmOpen(true)}
             >
-              稍後註冊
+              {isCancelling ? '處理中…' : '稍後註冊'}
             </Button>
             <AlertDialog open={laterConfirmOpen} onOpenChange={setLaterConfirmOpen}>
               <AlertDialogContent data-testid="later-signup-confirm-dialog">

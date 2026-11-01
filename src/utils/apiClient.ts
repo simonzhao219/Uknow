@@ -9,6 +9,8 @@ import { projectId } from './supabase/projectConfig';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
 import { clearAuthHint } from './authHint';
+import { clearAccountLocalState } from './clearAccountLocalState';
+import { signOutWithFallback } from './signOutWithFallback';
 
 /**
  * API 請求錯誤
@@ -196,13 +198,12 @@ export async function apiRequestJson<T = any>(url: string, options: RequestInit 
     if (err instanceof ApiError && err.status === 401) {
       console.log('🚫 API 401 Unauthorized - 清除 session 並跳轉登入頁');
 
-      // 清除 Supabase session
+      // 清除 Supabase session：global 登出卡住或失敗時補本機登出，後面的清理與導頁一定會跑。
       const supabase = createClient();
-      await supabase.auth.signOut();
+      await signOutWithFallback(supabase.auth);
 
       // 清除 localStorage（signOut 網路失敗時 SIGNED_OUT 不一定觸發，首繪提示一併清）
-      localStorage.removeItem('user');
-      localStorage.removeItem('pendingSession');
+      clearAccountLocalState();
       clearAuthHint();
 
       // 通知上層（App.tsx）以 SPA 導頁方式跳轉到登入頁，避免 window.location.href

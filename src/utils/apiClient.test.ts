@@ -179,4 +179,17 @@ describe('apiRequestJson 的 session 過期分支', () => {
     await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
     expect(clearAuthHint).toHaveBeenCalledTimes(1);
   });
+
+  it('401 時 global 登出擲例外仍補本機登出並拋出登入過期', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 })),
+    );
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    refreshSession.mockResolvedValue({ data: { session: null }, error: new Error('expired') });
+    signOut.mockRejectedValueOnce(new Error('network'));
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
+    expect(signOut).toHaveBeenLastCalledWith({ scope: 'local' });
+    expect(clearAuthHint).toHaveBeenCalledTimes(1);
+  });
 });

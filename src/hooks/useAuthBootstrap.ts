@@ -48,6 +48,11 @@ export interface AuthBootstrapDeps {
   clearInflight: () => void;
   /** SIGNED_OUT 事件的清理（快取、邀請 token、舊 storage 鍵）。提示由 hook 自己清。 */
   onSignedOut: () => void;
+  /**
+   * 已有帳號在線上時，偵測到另一個 uid 的 SIGNED_IN（重設信連結進站、分頁凍結漏收登出廣播）。
+   * 清掉前一人的快取與本機狀態，但不清邀請 token（那是訪客帶進來的）。
+   */
+  onAccountSwitched?: () => void;
   /** 資料未齊且不在豁免路由時呼叫（App 實作為導去完善資料頁）。 */
   onIncompleteProfile: () => void;
   getPathname?: () => string;
@@ -205,6 +210,7 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
       if (uidRef.current !== null) {
         genRef.current += 1;
         depsRef.current.clearInflight();
+        depsRef.current.onAccountSwitched?.();
       }
       uidRef.current = uid;
       dispatch({ type: 'start' });

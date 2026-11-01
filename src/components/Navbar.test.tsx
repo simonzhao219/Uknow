@@ -238,6 +238,17 @@ describe('Navbar 頁首五版本', () => {
     expect(funnelLogout.logout).toHaveBeenCalledTimes(1);
   });
 
+  it('funnel 登出鈕自帶 aria-disabled 的停用外觀（基底不再提供）', () => {
+    renderView({ authView: 'funnel', isFunnel: true, nextFunnelRoute: '/payment/result' }, '/');
+    const logout = screen.getByRole('button', { name: '登出' }).className.split(/\s+/);
+    expect(logout).toContain('aria-disabled:pointer-events-none');
+    expect(logout).toContain('aria-disabled:opacity-50');
+    // 缺 tradeNo 的結果頁 CTA 同樣自帶停用外觀。
+    const cta = screen.getByRole('link', { name: '查看開通進度' }).className.split(/\s+/);
+    expect(cta).toContain('aria-disabled:pointer-events-none');
+    expect(cta).toContain('aria-disabled:opacity-50');
+  });
+
   it('funnel 登出進行中為 aria-disabled（不用原生 disabled）', () => {
     funnelLogout.isLoggingOut = true;
     try {
