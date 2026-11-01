@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   apiErrorFromBody,
   apiRequest,
@@ -198,6 +198,11 @@ describe('apiRequestJson 的 session 過期分支', () => {
 
 // T1-B §2.7（R15）：401 先兩層確認再登出——Auth 抖動或端點自己的 401 都不能把人登出。
 describe('apiRequestJson 的 401 兩層確認', () => {
+  // W4-21：上一個 describe 的 signOut／clearAuthHint 呼叫紀錄不得帶進來（測試隔離，不改斷言）。
+  beforeEach(() => {
+    signOut.mockClear();
+    clearAuthHint.mockReset();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     refreshSession.mockReset();
