@@ -320,7 +320,11 @@ describe('useAuthBootstrap 換帳號（S11）', () => {
     expect(t.hook.result.current.user).toBeNull();
     expect(t.hook.result.current.hint).toBeNull();
     expect(t.deps.clearInflight).toHaveBeenCalled();
-    expect(t.deps.fetchProfile).toHaveBeenLastCalledWith('tok-' + UID_B, { userId: UID_B });
+    // W4-20（業主 2026-11-01 裁決）：新 uid 的請求依 plan §2.3 帶 8 秒逾時。
+    expect(t.deps.fetchProfile).toHaveBeenLastCalledWith('tok-' + UID_B, {
+      userId: UID_B,
+      timeoutMs: 8_000,
+    });
     await t.respond(ok({ ...MEMBER, id: UID_B, name: '乙' }));
     expect(readAuthHint(window.localStorage)).toMatchObject({ initial: '乙', uid8: 'bbbbbbbb' });
   });
