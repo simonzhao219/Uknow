@@ -45,6 +45,8 @@
 | W4-22 | T1-B B6：plan §2.4「AuthPage 掛載遇 transient／catch 一律導 `/dashboard`」與 R2 邀請交接（帶邀請入口遇 transient → 留在設定密碼、保留 token，`AuthPage.test.tsx` 釘住）衝突（11/02 02:20） | **A 分流**：有有效邀請入口維持 R2 現況；沒有才導 `/dashboard` 交守衛 degraded；兩者 catch 都不再登出（被推翻：一律導 `/dashboard`；一律維持現況） |
 | W4-23 | 晉升 #490 journey-full 在「安裝 Playwright 瀏覽器」即紅（`ubuntu-latest` 換成 26.04，Playwright 1.56.1 不支援），修補要在晉升 PR 開著時合進 develop（11/02 07:00） | **小修後破例合入**：#491 只把 journey-suite 固定 `ubuntu-24.04`，CI 綠即合；Playwright 升級列第 5 波（被推翻：關 #490 修完重開；改升級 Playwright） |
 | W4-24 | R4 審查何時開（11/02 18:10） | **現在開**（被推翻：等 1～2 天累積正式站流量） |
+| W4-25 | GitHub 排程大量跳過（R4 §5-6；reconcile 11 小時只跑 3 次）（11/02 19:20） | **第 5 波必上**：對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警；Opus 三段式 |
+| W4-26 | 上線後現場數字由誰量（R4 §5-5）（11/02 19:20） | **採用並寫進〈慣例〉**：審查 session 部署後即可開（審程式）；現場數字由主 session 在部署後 24～48 小時跑固定查詢、寫該波 plan §8，審查 session 只讀。本波由主 session 於 11/03 10:00 UTC 補跑 |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -116,7 +118,7 @@ R3 P2-8（錨點在 listings 回 0 列時的 SOP）、P2-9（孤兒判準索引�
 第 3 波 §5 其餘：PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
 A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；
-子網域盤點＋完整 CSP；Playwright 升到支援 Ubuntu 26.04 的版本（含 e2e 容器 image），journey-suite 改回 `ubuntu-latest`（W4-23 退場條件）；GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 評估以 Supabase pg_cron 或外部排程觸發關鍵 job；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
+子網域盤點＋完整 CSP；Playwright 升到支援 Ubuntu 26.04 的版本（含 e2e 容器 image），journey-suite 改回 `ubuntu-latest`（W4-23 退場條件）；**必上（W4-25）**：GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警（Opus 三段式）；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
 
 ## 6. 業主待辦
 
