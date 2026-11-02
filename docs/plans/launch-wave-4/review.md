@@ -151,7 +151,7 @@ push 前自動 rebase 讓 hash 失效、GitHub 排程大量跳過、`ubuntu-late
 
 ## 6. 升級進長期文件（launch-wave-4/ 退場依據）
 
-第 3 波目錄已由本 PR 依其 §6 處置後刪除（`git show 4a8035fb^:docs/plans/launch-wave-3/review.md` 取得回）：P2-18 規格書補記
+第 3 波目錄已由本 PR 依其 §6 處置後刪除（`git show 987af622:docs/plans/launch-wave-3/review.md` 取得回）：P2-18 規格書補記
 （§2.1 註冊中定義對齊 F1、首次閃訪客版的措辭；§3 首頁返回還原／點 logo 清空；Q7 確認框原已在 §2.1）、「晉升 journey 紅判偶發前先看現場」
 寫進 `docs/README.md`〈慣例〉；其餘列「免動」或已在 friction-log。
 
