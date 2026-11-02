@@ -136,6 +136,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | T1-B | `session_01MQovbCGZbmeXeqr5PNd75K` | Opus | `feature/auth-transient-resilience` | #488 ✅ 313107c | 收工 |
 | D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | #489 ✅ af62783 | 收工 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
+| R4 | `session_01MQovbEUaxUm8t1wy1B8TQw` | Opus | `docs/wave4-review` | — | 審查中（兼 launch-wave-3/ 退場、P2-18） |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -162,4 +163,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 05:25 | 合 #483（4d396c7）。開晉升 PR **#490**（develop→main，`4d396c7`），已訂閱；內文逐支標類別、引用 W4-4 授權 | journey-full |
 | 11/02 07:00 | #490 journey-full 第一輪（run 41351709141）在「安裝 Playwright 瀏覽器」即紅：`ubuntu-latest` 換成 Ubuntu 26.04，Playwright 1.56.1 不支援（`does not support chromium on ubuntu26.04-x64`），測試未執行；其餘各軌皆綠。與本波改動無關、重跑必紅。業主裁決 **W4-23** → 主 session 開 **#491**（1 行 CI 修補：journey-suite 固定 `ubuntu-24.04`，主 session ≤10 行例外），已在 #490 留言說明。另：照片清理**實刪模式首輪已驗**——11/02 那次排程延遲到 UTC 22:51 才觸發（run 41359203507，schedule、LIVE、dry_run=false）：候選 0、刪除 0、物件 32、URL 30/30、刊登者 10/10；已更新第 3 波 review §2，取消 11/03 的檢查提醒 | #491 CI 綠 → 合 → #490 journey-full 重跑 |
 | 11/02 18:05 | #491 CI 全綠 → 合進 develop（987af62）。#490 自動帶到修正，journey-full 重跑（run 41415959428，ubuntu-24.04）：**146 collected／146 ran／0 skipped**，CI 全綠 → **#490 合進 main（f88bae5）**。main CI push 41419197178 綠。業主核准 `production` → deploy-supabase 41419246465 綠：`/health` sha＝f88bae5（第 1 次探測）、PayUni production 憑證齊全、預設推薦人 ok。主 session 手動 dispatch deploy-smoke 41425474970（ref=main）綠：正式站與 develop 前端版本皆 f88bae5、快取與安全標頭正確、PayUni 兩站閘門 200。部署後正式站 Edge 日誌暫無流量。**第 4 波晉升完成**。未驗：`uknow.pages.dev` 導向與正式站登入（容器連不到 pages.dev，交業主實機確認） | 業主實機確認 P 導向與登入；合 #492；開 R4 |
-
+| 11/02 18:52 | 業主裁決 **W4-24**（R4 現在開）。開 **R4** `session_01MQovbEUaxUm8t1wy1B8TQw`（Opus），派工段落 `dispatch-prompts.md` §R4 | 合 #492；等 R4 報告；業主實機確認 P 導向與登入 |
