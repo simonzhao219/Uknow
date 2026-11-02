@@ -44,6 +44,7 @@
 | W4-21 | `uknow.pages.dev`（Pages 根網址＝main 建置）顯示正式站資料但登入「Failed to fetch」（正式站 CORS 只放行 uknow.com.tw，刻意設計），易誤用（11/02 00:50） | **本波加小工項 P**：前端偵測 host 精確等於 `uknow.pages.dev` 就導向 `https://uknow.com.tw`（保留路徑）；CORS 不放寬（被推翻：列第 5 波候選；不處理） |
 | W4-22 | T1-B B6：plan §2.4「AuthPage 掛載遇 transient／catch 一律導 `/dashboard`」與 R2 邀請交接（帶邀請入口遇 transient → 留在設定密碼、保留 token，`AuthPage.test.tsx` 釘住）衝突（11/02 02:20） | **A 分流**：有有效邀請入口維持 R2 現況；沒有才導 `/dashboard` 交守衛 degraded；兩者 catch 都不再登出（被推翻：一律導 `/dashboard`；一律維持現況） |
 | W4-23 | 晉升 #490 journey-full 在「安裝 Playwright 瀏覽器」即紅（`ubuntu-latest` 換成 26.04，Playwright 1.56.1 不支援），修補要在晉升 PR 開著時合進 develop（11/02 07:00） | **小修後破例合入**：#491 只把 journey-suite 固定 `ubuntu-24.04`，CI 綠即合；Playwright 升級列第 5 波（被推翻：關 #490 修完重開；改升級 Playwright） |
+| W4-24 | R4 審查何時開（11/02 18:10） | **現在開**（被推翻：等 1～2 天累積正式站流量） |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
