@@ -43,6 +43,7 @@
 | W4-20 | T1-B B4 紅燈期：舊測試「SIGNED_IN 為另一個 uid…載入新帳號」釘死 `fetchProfile` 參數 `{ userId }`，與 plan §2.2 的 8 秒逾時衝突（11/02 00:25） | **授權只改參數期望為 `{ userId, timeoutMs: 8_000 }`**，測試語意不變；業主在 T1-B session 親打才生效（被推翻：改實作不帶逾時） |
 | W4-21 | `uknow.pages.dev`（Pages 根網址＝main 建置）顯示正式站資料但登入「Failed to fetch」（正式站 CORS 只放行 uknow.com.tw，刻意設計），易誤用（11/02 00:50） | **本波加小工項 P**：前端偵測 host 精確等於 `uknow.pages.dev` 就導向 `https://uknow.com.tw`（保留路徑）；CORS 不放寬（被推翻：列第 5 波候選；不處理） |
 | W4-22 | T1-B B6：plan §2.4「AuthPage 掛載遇 transient／catch 一律導 `/dashboard`」與 R2 邀請交接（帶邀請入口遇 transient → 留在設定密碼、保留 token，`AuthPage.test.tsx` 釘住）衝突（11/02 02:20） | **A 分流**：有有效邀請入口維持 R2 現況；沒有才導 `/dashboard` 交守衛 degraded；兩者 catch 都不再登出（被推翻：一律導 `/dashboard`；一律維持現況） |
+| W4-23 | 晉升 #490 journey-full 在「安裝 Playwright 瀏覽器」即紅（`ubuntu-latest` 換成 26.04，Playwright 1.56.1 不支援），修補要在晉升 PR 開著時合進 develop（11/02 07:00） | **小修後破例合入**：#491 只把 journey-suite 固定 `ubuntu-24.04`，CI 綠即合；Playwright 升級列第 5 波（被推翻：關 #490 修完重開；改升級 Playwright） |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -114,7 +115,7 @@ R3 P2-8（錨點在 listings 回 0 列時的 SOP）、P2-9（孤兒判準索引�
 第 3 波 §5 其餘：PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
 A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；
-子網域盤點＋完整 CSP；GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 評估以 Supabase pg_cron 或外部排程觸發關鍵 job；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
+子網域盤點＋完整 CSP；Playwright 升到支援 Ubuntu 26.04 的版本（含 e2e 容器 image），journey-suite 改回 `ubuntu-latest`（W4-23 退場條件）；GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 評估以 Supabase pg_cron 或外部排程觸發關鍵 job；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
 
 ## 6. 業主待辦
 
@@ -157,3 +158,5 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 04:50 | ① 照片清理首輪實刪排程（UTC 19:17）**沒有觸發**：workflow 為 active，但 GitHub 排程大量跳過（每小時的 reconcile 過去 10 小時只跑 2 次）。業主同意手動 dispatch 正式站 dry-run → run 41348580533 綠：candidateCount 0、removed 0、物件 32、URL 30/30、刊登者 10/10；實刪模式仍待真實排程（已補第 3 波 review §2）。② Dependabot 週一批次（台北 02:00）未開任何 PR → 照計畫直接開 **D** `session_01MQovbCLxWoPdK9FnooQMgb`（Sonnet）。③ T1-B 交 **#488**（B1–B8 全綠，B7 未降級；規劃檔已清，`git show 5f5af22d:docs/plans/auth-transient-resilience/…`）。主 session＋獨立 Opus 審查員（專審登出／會話判定）：P0 0；**P1** AuthPage transient 導 `/dashboard` 對已 authenticated 的漏斗使用者造成 `/login`↔`/dashboard` 循環（主 session 讀碼核實）；P2 五條，三條本 PR 修（reducer transient 轉移條件、retryOnce 的 getSession 逾時、PaymentCheckout missing 未清 user），兩條列第 5 波 | T1-B 修 P1／P2 → 主 session 審最後 diff；D 施工；11/03 03:17 再看排程 |
 | 11/02 05:00 | D 交 #489：`npm audit fix`（只動 lockfile）＋vite 釘 6.3.5→6.4.5，無 overrides；audit 17→7、high 清零，剩 2 critical＋5 moderate 全在 vitest 3／tinypool 鏈（devDependency，需 vitest 大版本，列第 5 波）；#467 維持 Refs。主 session 比對 lockfile：全為 patch／minor，正式產物只有 react-router(-dom) 7.18.0→7.18.5、set-cookie-parser patch。CI 全綠（含 e2e）→ **#489 合進 develop（af62783）**。**必上五項全部合併** | 依 W4-9 問業主：等 T1-B 或先晉升 |
 | 11/02 05:20 | T1-B 修審查 P1＋P2-1～3：紅燈 `4a799b2`→綠燈 `a26ed2b`（rebase 到含 #489 的 develop；紅燈後未改測試；本機 2796/2796、auth／route_guards／otp／checkout e2e 75/75）。主 session 審最後一段 diff：AuthPage 依 bootstrap 定論分流（authenticated→下一步、anonymous→留 /login、未定論→/dashboard）、reducer 已有定論不翻 degraded、retry 的 getSession 5 秒上限、結帳頁 404 先清 user——無 P0／P1；CI 全綠 → **#488 合進 develop（313107c）**。未處理兩條 P2 列第 5 波。**本波全部工項合併**（W4-9 不需再問） | 合 #483 → 開晉升 PR |
+| 11/02 05:25 | 合 #483（4d396c7）。開晉升 PR **#490**（develop→main，`4d396c7`），已訂閱；內文逐支標類別、引用 W4-4 授權 | journey-full |
+| 11/02 07:00 | #490 journey-full 第一輪（run 41351709141）在「安裝 Playwright 瀏覽器」即紅：`ubuntu-latest` 換成 Ubuntu 26.04，Playwright 1.56.1 不支援（`does not support chromium on ubuntu26.04-x64`），測試未執行；其餘各軌皆綠。與本波改動無關、重跑必紅。業主裁決 **W4-23** → 主 session 開 **#491**（1 行 CI 修補：journey-suite 固定 `ubuntu-24.04`，主 session ≤10 行例外），已在 #490 留言說明。另：照片清理**實刪模式首輪已驗**——11/02 那次排程延遲到 UTC 22:51 才觸發（run 41359203507，schedule、LIVE、dry_run=false）：候選 0、刪除 0、物件 32、URL 30/30、刊登者 10/10；已更新第 3 波 review §2，取消 11/03 的檢查提醒 | #491 CI 綠 → 合 → #490 journey-full 重跑 |
