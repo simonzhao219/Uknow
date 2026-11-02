@@ -118,6 +118,10 @@ dispatch-prompts.md 的開局 prompt、PR 留言），不靠記憶。
 high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到的（例如只在有告警時才執行的 step），在 plan 的
 未驗項明寫「待真實觸發」。
 
+**晉升 journey 紅，判偶發前先看現場**（第 3 波審查）：重跑一次綠不等於沒有產品 bug。主 session 判偶發前至少看一次
+失敗當下的截圖、trace 或 `dump_page`，並對照程式路徑說明與本波改動無關；拿不到現場時在晉升 PR 留言寫明「未看現場」，
+把缺的診斷列成下一波工項。紅在測試開始前（裝環境、裝瀏覽器）的不算偶發，重跑必紅，先修再跑（第 4 波 #491）。
+
 **雲端 session 的執行環境須知**（寫進每個派工 prompt 的共用開頭；第 1–3 波累積）：
 - `create_session` 一律帶 `source_url`（本 repo）與 `source_revision=develop`；沒帶的 session 沒有 repo，只能封存。
 - 容器沒有 deno：`npm install -g deno` 可裝（deno.land 被網路政策擋，npm registry 與 jsr.io 通）。動
@@ -127,6 +131,8 @@ high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到
 - journey 絕不在本機跑；要驗 harness 用 GitHub MCP `actions_run_trigger` 對 `journey-scheduled.yml` 發
   workflow_dispatch（ref＝自己的分支）。
 - tdd-lock 解鎖只認業主**親打**的授權，主 session 轉述的不算；三段式工項的 `/tdd-implement` 由業主親打。
+  雲端 session 的業主打不了 `! rm .claude/tdd-lock`（shell 只在本機可用）：第 4 波的做法是業主在**該** session 以互動選項授權，
+  由 Claude 代刪鎖，授權原話記進 progress 或 plan §8（friction-log 2026-11-02 待框架整併）。
 - 推送守衛（`.claude/hooks/pre-push-rebase.sh`）會自動 rebase 到最新 develop，之後要 `--force-with-lease`，而
   auto mode 分類器可能擋改寫遠端分支的 force push：被擋時不硬繞，改在遠端分支頂端疊快轉 commit，或交主 session rebase。
 - 新的 `docs/plans/<slug>/` 若要隨 PR 先合併，開 PR 前就加 `plans-keep` 註解，否則 `check-plans-scaffold` 紅。
