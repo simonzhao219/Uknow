@@ -123,6 +123,7 @@ docs 4 支：#478、#479、#480、#483。86 檔，+4,119／−940 行，無 migr
   - `system_alerts`：部署後新增 0，全表未 resolve 0。
   - `payment_orders`、`subscriptions` 部署後新增 0 → 第一筆正式站真付款仍未發生。
   - 結論：沒有回歸跡象，但樣本是 0——T1-B 的現場驗證全部留給 §5-3。
+- **24 小時現場數字見 plan §8**（W4-26：主 session 於部署後約 24 小時、11/03 10:00 UTC 補跑固定查詢）。
 
 ## 4. 流程
 
@@ -145,12 +146,12 @@ push 前自動 rebase 讓 hash 失效、GitHub 排程大量跳過、`ubuntu-late
 
 | # | 事 | 給誰 | 建議 |
 |---|---|---|---|
-| 1 | `uknow.pages.dev` 根網址、深層路徑、帶 query＋hash 實機開一次，確認跳到 `uknow.com.tw`；`develop.uknow.pages.dev` 不跳；正式站實際登入一次 | 業主 | 必做（#487 唯一未驗） |
+| 1 | `uknow.pages.dev` 根網址、深層路徑、帶 query＋hash 實機開一次，確認跳到 `uknow.com.tw`；`develop.uknow.pages.dev` 不跳；正式站實際登入一次 | 業主 | 必做（#487 唯一未驗）；主 session 已轉請業主，結果記 plan §8 |
 | 2 | P2-1（cancel-signup 401）、P2-4（CompleteProfile 失去 8 秒逾時）、P2-5（閘道 404 判成帳號異常）列第 5 波**必上**；其餘 P2 進候選 | 主 session／業主 | P2-1 與 T1-B 已知那條「getSession retryable 仍導 /login」同屬「暫時性錯誤被當成定論」，建議併成一個工項；P2-5 一旦 Edge 部署壞掉會讓全體看到「帳號異常」，修法小 |
 | 3 | 部署後 24～48 小時量 `/profile` 狀態碼分布（503、逾時 >8 秒的比例）與 `system_alerts`，寫進 plan §8 | 主 session | 是 T1-B 的唯一現場驗證；503 若高於預期，代表 `buildProfileResponse` 五讀取有不穩的一支 |
 | 4 | T1-B 實作審查未修三條 P2（§2）是否列第 5 波候選 | 主 session | `/auth/register` 讀回擲非 ProfileReadError 仍 500 那條列候選；行數與焦點兩條不列 |
-| 5 | 審查 session 何時開（W4-24 的取捨再來一次） | 業主 | 建議下一波改成「主 session 部署後 24～48 小時跑固定現場查詢、寫 plan §8，審查 session 只讀」，審查可以照常立刻開 |
-| 6 | GitHub 排程跳過：reconcile-payments 11 小時只跑 3 次 | 業主 | 第 5 波候選已收；對帳是金流安全網，建議提為必上，改由 Supabase pg_cron 觸發 |
+| 5 | 審查 session 何時開（W4-24 的取捨再來一次） | 業主 | **已裁決 W4-26（採用）**：已寫進 `docs/README.md`〈慣例〉；本波由主 session 11/03 10:00 UTC 補跑 |
+| 6 | GitHub 排程跳過：reconcile-payments 11 小時只跑 3 次 | 業主 | **已裁決 W4-25：第 5 波必上**——對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警；Opus 三段式 |
 | 7 | 正式站第一筆真付款→發票、`system_alerts` 無誤報（第 2 波 §5-5 起沿用） | 主 session | 沿用 |
 
 ## 6. 升級進長期文件（launch-wave-4/ 退場依據）
