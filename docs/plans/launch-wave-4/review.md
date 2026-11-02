@@ -100,13 +100,13 @@ docs 4 支：#478、#479、#480、#483。86 檔，+4,119／−940 行，無 migr
 | #485（K2） | (a) 其他 step 失敗時 fallback 的標題／level／body；(b) 缺 LINE secret 時的紅色 summary 與 annotation | develop deploy-smoke 41309365066、正式站 41425474970 皆綠，告警 step 照設計跳過 | **未驗：待真實觸發** |
 | #486（F1） | Deno 型別檢查沒跑；本機 e2e 只跑 5 個相關情境 | CI 全綠（含 api-tests、全 mock e2e）；晉升 journey-full 綠 | 已驗（CI） |
 | #487（P） | Cloudflare 上實際導向（根網址、深層路徑、query＋hash、develop 不跳） | 容器連不到 pages.dev（plan §8 11/02 18:05） | **未驗：待業主實機確認** |
-| #488（T1-B） | 正式站 `/profile` 5xx／逾時分布（plan §8 11/01 23:10 的 B1 前置量測樣本小：正式站 0 筆、develop 2 筆） | 部署後 1 小時內正式站 Edge 無流量 | **未驗：待量測**（§3；§5-3） |
+| #488（T1-B） | 正式站 `/profile` 5xx／逾時分布（plan §8 11/01 23:10 的 B1 前置量測樣本小：正式站 0 筆、develop 2 筆） | 部署後約 70 分鐘的 Edge 日誌：正式站與 develop 的 `/profile`、`/auth/register` 皆 0 筆（§3） | **未驗：上線後樣本仍為 0，待真實流量**（§5-3） |
 | #488 | 實作審查 P2 未修三條（`useAuthBootstrap.ts` 約 550 行；`/auth/register` 讀回擲非 ProfileReadError 仍 500；成功後焦點以 setTimeout） | 無後續 | 已記、未列候選 → §5-4 |
 | #489（D） | 無；vitest／tinypool 鏈 2 critical＋5 moderate 延到第 5 波，#467 Refs | Security Audit 排程 41415277633 綠 | 已驗；#467 仍開 |
 | #491 | 要等 #490 journey-full 重跑 | 41415959428（ubuntu-24.04）146 collected／146 ran／0 skipped | 已驗 |
 | #490 | 正式站部署 | deploy-supabase 41419246465：部署、`/health` sha 比對步驟皆綠（等 `production` 核准 45 分鐘）；deploy-smoke 41425474970 兩站前端皆 f88bae5 | 已驗 |
 | 第 3 波遺留 | 照片清理實刪模式首輪 | 11/02 UTC 22:51 延遲觸發的排程 run 41359203507（LIVE、dry_run=false）：候選 0、刪除 0 | 已驗（管線；尚無真實候選） |
-| 第 2 波遺留 | 正式站第一筆真付款→發票、`system_alerts` 無誤報 | 見 §3 | **未驗：現場未觸發**，沿用 |
+| 第 2 波遺留 | 正式站第一筆真付款→發票、`system_alerts` 無誤報 | 部署後訂單 0、訂閱 0、告警 0（§3） | **未驗：現場未觸發**，沿用 |
 
 ## 3. 上線後現場
 
@@ -116,9 +116,13 @@ docs 4 支：#478、#479、#480、#483。86 檔，+4,119／−940 行，無 migr
   不是部署錯分支；實際部署的 sha 以 `/health` 回的 `f88bae5` 為準。）
 - **排程**：部署前後的 reconcile-payments（每小時）實際只在 21:40、01:14、08:51 UTC 跑——11 小時 3 次，與第 3 波觀察一致
   （friction-log 2026-11-02 第 3 條）。deploy-smoke 排程 22:14、06:35 UTC 綠；Security Audit 08:44 UTC 綠。
-- **DB／Logs**：已以 send_message 請主 session 代跑唯讀查詢（部署後 `/profile`、`/auth/register` 狀態碼分布與 p95、postgres ERROR／FATAL、
-  `system_alerts` 新增、訂單新增）。**截至本報告送出前尚未收到結果**；收到後補進本節（同 PR 追加 commit）。
-  部署到審查開局約 1 小時，主 session 18:05 記錄「部署後正式站 Edge 日誌暫無流量」，預期樣本很小。
+- **DB／Logs**（主 session 代跑，正式站，窗口＝部署完成 2026-11-02T10:01:22Z 至約 11:10Z）：
+  - Edge 日誌：部署後 0 筆（含 `/profile`、`/auth/register`）→ 503／404／逾時皆 0，p50／p95 無樣本。develop（08:58Z 部署後）同樣 0 筆。
+    唯一的請求是部署 run 自己的 `/health` 探測，回 `f88bae5`。
+  - postgres：ERROR／FATAL 0；WARNING 186（樣本為 `template1` collation version mismatch，平台層、與本波無關）、LOG 3。
+  - `system_alerts`：部署後新增 0，全表未 resolve 0。
+  - `payment_orders`、`subscriptions` 部署後新增 0 → 第一筆正式站真付款仍未發生。
+  - 結論：沒有回歸跡象，但樣本是 0——T1-B 的現場驗證全部留給 §5-3。
 
 ## 4. 流程
 
@@ -128,7 +132,7 @@ docs 4 支：#478、#479、#480、#483。86 檔，+4,119／−940 行，無 migr
   T1-B 的三段式完整走完（兩輪 `/review-plan`、W4-19 以主 session 親審代第三輪、業主親打 `/tdd-implement`）。
 - **走樣一：執行 session 自發裁決編號**（P2-16）。
 - **走樣二：plan §8 的 hash 成了錯的事實來源**（P2-17）：主 session 照執行 session 回報抄 hash，回報之後執行 session 又 rebase 兩次。
-- **走樣三：審查 session 開得太早**（W4-24）：§3 幾乎只能記「待量測」。不是錯，是取捨；建議見 §5-5。
+- **走樣三：審查 session 開得太早**（W4-24）：§3 的 Edge 日誌樣本是 0。不是錯，是取捨；建議見 §5-5。
 - **審查 session 代跑現場 SQL**：本波以 send_message 送出唯讀查詢請求，未被分類器擋（第 3 波被擋過），但結果要等主 session 有空。
 
 ### 4.2 框架摩擦
