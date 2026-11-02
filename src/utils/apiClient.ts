@@ -5,10 +5,11 @@
  */
 
 import { getAccessToken } from './auth';
-import { projectId } from './supabase/projectConfig';
 import { createClient } from './supabase/client';
 import { emitSessionExpired } from './authEvents';
-import { clearAuthHint } from './authHint';
+import { isRetryableAuthError } from './authErrors';
+import { endInvalidSession } from './endInvalidSession';
+import { fetchProfileForSession, PROFILE_RETRY_TIMEOUT_MS } from './fetchProfile';
 
 /**
  * API 請求錯誤
@@ -22,6 +23,28 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** 兩層確認判定 session 無效（只有這個碼會讓 apiRequestJson 本機登出）。 */
+const SESSION_INVALID = 'SESSION_INVALID';
+/** apiRequest 內部用：重打仍 401（不外流，交給第一層呼叫做 /profile 確認）。 */
+const RETRY_STILL_401 = 'RETRY_STILL_401';
+
+const authUnavailable = () => new ApiError('連線不穩，請稍後再試', 503, 'AUTH_UNAVAILABLE');
+const sessionInvalid = () => new ApiError('登入已過期，請重新登入', 401, SESSION_INVALID);
+
+/** 第二層：refresh 成功卻仍 401，用 /profile 分辨是 session 無效還是端點自己的 401。 */
+async function confirmSession(session: {
+  access_token: string;
+  user?: { id?: string } | null;
+}): Promise<ApiError> {
+  const r = await fetchProfileForSession(session, {
+    force: true,
+    timeoutMs: PROFILE_RETRY_TIMEOUT_MS,
+  });
+  if (r.kind === 'transient') return authUnavailable();
+  if (r.kind === 'unauthorized') return sessionInvalid();
+  return new ApiError('請求未授權', 401, 'UNAUTHORIZED');
 }
 
 /**
@@ -77,17 +100,28 @@ export async function apiRequest(
       headers,
     });
 
-    // 4. 處理認證錯誤：先嘗試 refresh session 一次再重試，避免因 token 剛好
-    // 過期這種暫時性狀況就直接判定登入過期（refresh-and-retry-once）。
+    // 4. 處理認證錯誤（T1-B §2.7 兩層確認）：401 不直接判 session 無效。
+    //   (1) refreshSession：Auth 回不來（網路層、5xx、429）→ AUTH_UNAVAILABLE，不登出；
+    //       Auth 明確拒絕（4xx）或沒有 session → SESSION_INVALID。
+    //   (2) refresh 成功、重打仍 401 → 用新 session 問 /profile（唯一分得出暫時性與無效的端點）：
+    //       暫時讀不到 → AUTH_UNAVAILABLE；401／410 → SESSION_INVALID；正常 → 是端點自己的 401（UNAUTHORIZED）。
+    // 只有 SESSION_INVALID 會讓 apiRequestJson 本機登出。
     if (response.status === 401) {
-      if (!isRetry) {
-        const supabase = createClient();
-        const { data, error: refreshError } = await supabase.auth.refreshSession();
-        if (!refreshError && data.session) {
-          return apiRequest(url, options, true);
-        }
+      if (isRetry) throw new ApiError('請求未授權', 401, RETRY_STILL_401);
+      const supabase = createClient();
+      const { data, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        throw isRetryableAuthError(refreshError) ? authUnavailable() : sessionInvalid();
       }
-      throw new ApiError('登入已過期，請重新登入', 401, 'UNAUTHORIZED');
+      if (!data.session) throw sessionInvalid();
+      try {
+        return await apiRequest(url, options, true);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === RETRY_STILL_401) {
+          throw await confirmSession(data.session);
+        }
+        throw err;
+      }
     }
 
     return response;
@@ -193,17 +227,11 @@ export async function apiRequestJson<T = any>(url: string, options: RequestInit 
     return response.json();
   } catch (err) {
     // ✅ P0 修復：統一處理 401 未授權
-    if (err instanceof ApiError && err.status === 401) {
+    if (err instanceof ApiError && err.code === SESSION_INVALID) {
       console.log('🚫 API 401 Unauthorized - 清除 session 並跳轉登入頁');
 
-      // 清除 Supabase session
-      const supabase = createClient();
-      await supabase.auth.signOut();
-
-      // 清除 localStorage（signOut 網路失敗時 SIGNED_OUT 不一定觸發，首繪提示一併清）
-      localStorage.removeItem('user');
-      localStorage.removeItem('pendingSession');
-      clearAuthHint();
+      // 兩層確認後 session 確實無效：本機登出（W4-13，不撤銷其他裝置）＋清首繪提示與帳號本機鍵。
+      await endInvalidSession({ auth: createClient().auth });
 
       // 通知上層（App.tsx）以 SPA 導頁方式跳轉到登入頁，避免 window.location.href
       // 造成整頁重新載入的閃爍。
@@ -218,19 +246,5 @@ export async function apiRequestJson<T = any>(url: string, options: RequestInit 
   }
 }
 
-/**
- * 構建後端 API URL
- *
- * @param path - API 路徑（例如：'/rewards', '/tasks'）
- * @returns 完整的 API URL
- *
- * @example
- * ```typescript
- * const url = buildApiUrl('/rewards');
- * // 返回: https://{projectId}.supabase.co/functions/v1/api/rewards
- * ```
- */
-export function buildApiUrl(path: string): string {
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `https://${projectId}.supabase.co/functions/v1/api${cleanPath}`;
-}
+// 網址組裝已搬到零依賴的 apiUrl.ts（T1-B）；這裡轉出，既有 import 不變。
+export { buildApiUrl } from './apiUrl';

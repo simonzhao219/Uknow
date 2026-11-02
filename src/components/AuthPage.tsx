@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -9,8 +9,12 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl } from '../utils/apiClient';
-import { clearAuthHint } from '../utils/authHint';
-import { fetchProfileForSession } from '../utils/fetchProfile';
+import { endInvalidSession } from '../utils/endInvalidSession';
+import { useMemberLogout } from '../hooks/useMemberLogout';
+import { LINE_OFFICIAL_ACCOUNT_URL } from '../utils/constants';
+import { StatusCallout } from './ui/status-callout';
+import { RouteAuthLoading } from './RouteAuthLoading';
+import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { getInputErrorClass, FieldError } from '../utils/formHelpers';
 import { startOtpWindow } from '../utils/otpExpiry';
 import {
@@ -70,7 +74,21 @@ export function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const { user, setUser, ingestProfile } = useContext(UserContext);
+  const { user, setUser, ingestProfile, authAnomaly, authState, nextFunnelRoute } =
+    useContext(UserContext);
+  // 掛載 effect 只跑一次，暫時性故障時要看的是當下的 bootstrap 判定（#488 審查 P1）。
+  const bootstrapRef = useRef({ authState, nextFunnelRoute });
+  bootstrapRef.current = { authState, nextFunnelRoute };
+  const memberLogout = useMemberLogout();
+  // 帳號異常說明的登出：進行中 aria-disabled＋ref 防連點（useMemberLogout 內有短暫等待）。
+  const [anomalySigningOut, setAnomalySigningOut] = useState(false);
+  const anomalySigningOutRef = useRef(false);
+  const handleAnomalySignOut = () => {
+    if (anomalySigningOutRef.current) return;
+    anomalySigningOutRef.current = true;
+    setAnomalySigningOut(true);
+    void memberLogout();
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -91,6 +109,10 @@ export function AuthPage() {
   const [sessionState, setSessionState] = useState<'checking' | 'signed_in' | 'signed_out'>(
     'checking',
   );
+  // /profile 404＝帳號資料異常（W4-11）：顯示說明取代登入表單，不登出、不導頁。
+  const [anomaly, setAnomaly] = useState(false);
+  // 已確認有 session、正在驗證：不畫可輸入的登入表單。
+  const [checkingExistingSession, setCheckingExistingSession] = useState(false);
   // 步驟上方的提示（持久提示與暫時性錯誤共用同一個位置）；換步驟或再次送出即清。
   const [notice, setNotice] = useState<string | null>(() =>
     inviteEntry?.kind === 'undecodable' ? INVITE_NOTICES.undecodable : null,
@@ -159,7 +181,7 @@ export function AuthPage() {
   // ✅ 清理無效 session（不主動重定向，讓 App.tsx 統一處理）
   // Email 邀請入口依這個 effect 的結果分流（sessionState 三態＋4 秒逾時＋清理後寫回邀請 token）。
   // T1（登入狀態信任）改這段時必須保留這三件事——見 friction-log 2026-10-27 R2 交接。
-  // `/auth/profile` 5xx 等暫時性故障歸 signed_out（不登出、保留邀請 token）。
+  // T1-B：暫時性故障不登出（W4-22 分流）、404 顯示帳號資料異常（W4-11）、401／410 只做本機清理（W4-13）。
   useEffect(() => {
     let settled = false;
     const settle = (state: 'signed_in' | 'signed_out') => {
@@ -175,53 +197,86 @@ export function AuthPage() {
     };
 
     const cleanupInvalidSessions = async () => {
+      // bootstrap 已判定帳號資料異常（W4-11）：直接顯示說明，不再打 /profile。
+      if (authAnomaly) {
+        setAnomaly(true);
+        settle('signed_out');
+        return;
+      }
+      let session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'];
       try {
-        // 檢查當前 session 狀態
-        const {
+        ({
           data: { session },
-        } = await supabase.auth.getSession();
+        } = await supabase.auth.getSession());
+      } catch (error) {
+        // 連 session 都讀不到：不知道有沒有登入，不導頁、不登出（W4-22 補充；導 /dashboard
+        // 會讓守衛停在判定中），照未登入處理。
+        console.error('AuthPage: getSession failed:', error);
+        settle('signed_out');
+        return;
+      }
 
-        if (!session) {
-          settle('signed_out');
-        } else {
-          console.log('AuthPage: Found existing session, checking validity...');
+      if (!session) {
+        settle('signed_out');
+        return;
+      }
 
-          // 驗證 session 是否有效（共用 fetchProfile：與 App 啟動判定同 user id 合併成一次請求）
-          const result = await fetchProfileForSession(session);
-
-          // ✅ 只處理無效 session，不主動重定向
-          if (result.kind === 'unauthorized') {
-            console.log(
-              'AuthPage: Session is invalid (user deleted or token expired), cleaning up...',
-            );
-            await supabase.auth.signOut();
+      // 已確認有 session：檢查期間不畫可輸入的登入表單。
+      setCheckingExistingSession(true);
+      try {
+        // 驗證 session 是否有效（共用 fetchProfile：與 App 啟動判定同 user id 合併成一次請求）
+        const result = await fetchProfileForSession(session, {
+          timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
+        });
+        switch (result.kind) {
+          case 'ok':
+            // ✅ Session 有效，不主動重定向——讓 App.tsx 的全局邏輯處理重定向
+            settle('signed_in');
+            break;
+          // 401／410：session 真的無效 → 本機清理（W4-13）。邀請流程要撐過重新整理（契約 1），清完寫回 token。
+          case 'unauthorized':
+            await endInvalidSession({ auth: supabase.auth });
             keepInviteToken();
-            // signOut 網路失敗時 SIGNED_OUT 不一定觸發：無效 session 的首繪提示自己清。
-            clearAuthHint();
-            localStorage.removeItem('user');
-            localStorage.removeItem('pendingSession');
             setUser(null);
             settle('signed_out');
-          } else if (result.kind === 'transient') {
-            // 暫時性故障：照既有慣例保留 session（不登出），但邀請入口歸 signed_out——
-            // 判成 signed_in 會清掉 token、顯示「你已登入」，而 App 其實沒拿到 user。
+            break;
+          // 404：帳號資料異常（W4-11）→ 顯示說明，不登出、不導頁。
+          case 'missing':
+            setAnomaly(true);
             settle('signed_out');
-          } else {
-            // ✅ Session 有效，不主動重定向——讓 App.tsx 的全局邏輯處理重定向
-            console.log('AuthPage: Valid session found, letting App.tsx handle redirection');
-            settle('signed_in');
-          }
+            break;
+          case 'transient':
+            handleTransient();
+            break;
+          default:
+            result satisfies never;
         }
       } catch (error) {
         console.error('AuthPage: Error checking session validity:', error);
-        settle('signed_out');
-        // 發生錯誤時，保守清除
-        await supabase.auth.signOut();
-        keepInviteToken();
-        clearAuthHint();
-        localStorage.removeItem('user');
-        setUser(null);
+        handleTransient();
+      } finally {
+        setCheckingExistingSession(false);
       }
+    };
+
+    // 暫時性故障（W4-22 分流）：有邀請入口維持 R2 現況——歸 signed_out、保留 token、進設定密碼
+    // （判成 signed_in 會清掉 token、顯示「你已登入」，而 App 其實沒拿到 user）；沒有邀請入口就
+    // 交給會員中心守衛的重試外框。都不登出。
+    const handleTransient = () => {
+      if (inviteEntry?.kind === 'valid') {
+        settle('signed_out');
+        return;
+      }
+      settle('signed_out');
+      const { authState: known, nextFunnelRoute: next } = bootstrapRef.current;
+      // bootstrap 已確認是註冊中（user 仍為 null）：導 /dashboard 會被守衛彈回 /login，離線時形成循環——
+      // 改導註冊下一步；已確認未登入則留在登入頁。只有 bootstrap 還沒定論時才交給會員中心守衛。
+      if (known === 'authenticated') {
+        if (next) navigate(next, { replace: true });
+        return;
+      }
+      if (known === 'anonymous') return;
+      navigate('/dashboard', { replace: true });
     };
 
     cleanupInvalidSessions();
@@ -371,12 +426,17 @@ export function AuthPage() {
         console.error('AuthPage: Failed to fetch profile:', result);
 
         // 特殊處理：帳號已被刪除（410）或不存在（404）
-        if (result.kind === 'unauthorized' && (result.status === 410 || result.status === 404)) {
-          console.log('AuthPage: User account deleted or not found, cleaning up...');
+        // 404：帳號資料異常（W4-11）——顯示說明，不登出（重登會再 404，登出只會造成循環）。
+        if (result.kind === 'missing') {
+          setAnomaly(true);
+          setIsLoading(false);
+          return;
+        }
 
-          // 清除 session（連同首繪提示：帳號已不存在）
-          await supabase.auth.signOut();
-          clearAuthHint();
+        // 410／401：帳號已不存在或 session 無效 → 本機清理（W4-13）。
+        if (result.kind === 'unauthorized') {
+          console.log('AuthPage: User account deleted or not found, cleaning up...');
+          await endInvalidSession({ auth: supabase.auth });
 
           showToast('帳號不存在或已被刪除，請重新註冊', 'error');
           goToStep(1);
@@ -528,6 +588,45 @@ export function AuthPage() {
   const handleForgotPassword = () => {
     navigate('/forgot-password', { state: { email } });
   };
+
+  // 帳號資料異常（W4-11）：取代登入表單（已有 session，表單沒有意義）。標題為業主裁決原文；
+  // 說明、LINE 客服與登出是讓人能採取行動的衍生設計（見 plan §2.4）。
+  if (anomaly || authAnomaly) {
+    return (
+      <div className="max-w-md mx-auto mt-12">
+        <StatusCallout
+          variant="destructive"
+          role="alert"
+          data-testid="auth-anomaly"
+          titleAs="h1"
+          title="帳號資料異常，請聯絡客服"
+          description="為保護您的資料，系統暫停此帳號的登入流程。"
+          action={
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                tone="secondary"
+                container="destructive"
+                aria-disabled={anomalySigningOut || undefined}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                onClick={handleAnomalySignOut}
+              >
+                登出
+              </Button>
+              <Button asChild container="destructive">
+                <a href={LINE_OFFICIAL_ACCOUNT_URL}>LINE 客服</a>
+              </Button>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
+  // 已確認有 session、正在驗證（非邀請入口）：不畫可輸入的登入表單。
+  if (checkingExistingSession && inviteEntry?.kind !== 'valid') {
+    return <RouteAuthLoading />;
+  }
 
   return (
     <div className="max-w-md mx-auto mt-12">

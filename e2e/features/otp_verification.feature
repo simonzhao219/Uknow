@@ -22,11 +22,15 @@ Feature: OTP verification
     When I click resend
     Then I should see a toast containing "驗證碼已重新寄出，請查看信箱"
 
-  Scenario: A verified brand-new user with no profile yet goes to complete-profile
+  # T1-B (W4-11): the profile row is created with the auth user in one
+  # transaction, so a 404 after verification is an account anomaly — shown on
+  # the login page, never a silent trip into the registration funnel.
+  Scenario: A verified signup whose profile row is missing sees the account anomaly notice
     Given I have just signed up with email "new-user@example.com"
     And verifying the code succeeds but no profile exists yet
     When I enter the OTP code "123456"
-    Then I should be redirected to "/auth/complete-profile"
+    Then I should be redirected to "/login"
+    And I should see the text "帳號資料異常，請聯絡客服"
 
   Scenario: A verified signup whose session is rejected returns to login
     Given I have just signed up with email "new-user@example.com"

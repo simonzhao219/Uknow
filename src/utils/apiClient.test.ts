@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   apiErrorFromBody,
   apiRequest,
@@ -178,5 +178,104 @@ describe('apiRequestJson 的 session 過期分支', () => {
     refreshSession.mockResolvedValue({ data: { session: null }, error: new Error('expired') });
     await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
     expect(clearAuthHint).toHaveBeenCalledTimes(1);
+  });
+
+  // T1-B W4-13：session 確認無效時只做本機登出（endInvalidSession），不撤銷其他裝置。
+  it('401 且 refresh 判無效時只做本機登出並拋出登入過期', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 })),
+    );
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    refreshSession.mockResolvedValue({ data: { session: null }, error: new Error('expired') });
+    signOut.mockClear();
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(clearAuthHint).toHaveBeenCalledTimes(1);
+  });
+});
+
+// T1-B §2.7（R15）：401 先兩層確認再登出——Auth 抖動或端點自己的 401 都不能把人登出。
+describe('apiRequestJson 的 401 兩層確認', () => {
+  // W4-21：上一個 describe 的 signOut／clearAuthHint 呼叫紀錄不得帶進來（測試隔離，不改斷言）。
+  beforeEach(() => {
+    signOut.mockClear();
+    clearAuthHint.mockReset();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    refreshSession.mockReset();
+    clearAuthHint.mockReset();
+    signOut.mockClear();
+  });
+
+  /** 一般端點回 401，/profile 依參數回應。 */
+  function stubFetch(profileStatus: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        /\/profile(\?|$)/.test(String(url))
+          ? new Response(JSON.stringify({ id: 'u1' }), { status: profileStatus })
+          : new Response('{}', { status: 401 }),
+      ),
+    );
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+  }
+
+  it.each([
+    ['網路層錯誤', { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' }],
+    ['Auth 5xx', { name: 'AuthApiError', status: 503, message: 'unavailable' }],
+    ['Auth 429', { name: 'AuthApiError', status: 429, message: 'rate limited' }],
+  ])('refresh 遇%s時不登出，拋 503 AUTH_UNAVAILABLE', async (_label, error) => {
+    stubFetch(200);
+    refreshSession.mockResolvedValue({ data: { session: null }, error });
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({
+      status: 503,
+      code: 'AUTH_UNAVAILABLE',
+    });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(clearAuthHint).not.toHaveBeenCalled();
+  });
+
+  it('refresh 成功、重打仍 401、/profile 暫時讀不到時不登出，拋 AUTH_UNAVAILABLE', async () => {
+    stubFetch(503);
+    refreshSession.mockResolvedValue({ data: { session: { access_token: 'new' } }, error: null });
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({
+      code: 'AUTH_UNAVAILABLE',
+    });
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('refresh 成功、重打仍 401、/profile 也 401 時本機登出並拋登入過期', async () => {
+    stubFetch(401);
+    refreshSession.mockResolvedValue({ data: { session: { access_token: 'new' } }, error: null });
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({ status: 401 });
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(clearAuthHint).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh 成功、重打仍 401、但 /profile 正常時是端點自己的 401：不登出', async () => {
+    stubFetch(200);
+    refreshSession.mockResolvedValue({ data: { session: { access_token: 'new' } }, error: null });
+    await expect(apiRequestJson(buildApiUrl('/x'))).rejects.toMatchObject({
+      status: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(clearAuthHint).not.toHaveBeenCalled();
+  });
+
+  it('直接用 apiRequest 時 refresh 遇網路層錯誤也拋 AUTH_UNAVAILABLE（不登出）', async () => {
+    stubFetch(200);
+    refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: { name: 'AuthRetryableFetchError', status: 0, message: 'x' },
+    });
+    await expect(apiRequest(buildApiUrl('/listings/photos'))).rejects.toMatchObject({
+      status: 503,
+      code: 'AUTH_UNAVAILABLE',
+    });
+    expect(signOut).not.toHaveBeenCalled();
   });
 });

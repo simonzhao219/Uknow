@@ -50,8 +50,16 @@ def register_account_via_gui(page: Page, admin: SupabaseAdmin, user: JourneyUser
     otp_code = admin.fetch_signup_otp(user.email, user.password)
     OtpPage(page).enter_code(otp_code)
 
-    # verifyOtp 成功後導向 CompleteProfile
-    expect(page.locator("#name")).to_be_visible(timeout=30_000)
+    # verifyOtp 成功後導向 CompleteProfile。逾時分不出是「OTP 驗證沒過」「導頁
+    # 沒發生」還是「頁面已到但表單沒渲染」（2026-11 晉升 #477 journey-full run
+    # 41274370205 的 E3 就在這裡紅過一次、重跑綠、現場沒留證據）——補 dump_page。
+    try:
+        expect(page.locator("#name")).to_be_visible(timeout=30_000)
+    except AssertionError as exc:
+        raise RuntimeError(
+            f"OTP 送出後 30 秒沒有出現完善資料頁的 #name（{user.node}）。\n"
+            f"{dump_page(page, f'signup-no-name-{user.node}')}"
+        ) from exc
 
 
 def register_via_gui(

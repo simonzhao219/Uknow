@@ -6,7 +6,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from './ui/input-otp';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { UserContext } from '../App';
-import { fetchProfileForSession } from '../utils/fetchProfile';
+import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { startOtpWindow, getOtpExpiry, getSecondsLeft, clearOtpWindow } from '../utils/otpExpiry';
 import { routeAfterVerifiedSession } from '../utils/routeAfterVerifiedSession';
 import { getPendingOtp, savePendingOtp, clearPendingOtp } from '../utils/otpSession';
@@ -110,7 +110,8 @@ export function OTPVerificationPage() {
       // routeAfterVerifiedSession：不 setTimeout、不走 401 就自我登出的
       // apiRequestJson）。session 已經由 onAuthStateChange 讓 App.tsx 全域生效。
       await routeAfterVerifiedSession(data.session, {
-        fetchProfile: (session) => fetchProfileForSession(session),
+        fetchProfile: (session) =>
+          fetchProfileForSession(session, { timeoutMs: PROFILE_FETCH_TIMEOUT_MS }),
         ingestProfile,
         navigate,
         showToast,

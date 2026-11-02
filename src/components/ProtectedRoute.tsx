@@ -2,6 +2,8 @@ import type React from 'react';
 import { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
 import { UserContext } from '../App';
+import { AuthDegradedFrame } from './AuthDegradedFrame';
+import { RouteAuthLoading } from './RouteAuthLoading';
 import { useFeatures, type Features } from '../contexts/FeatureContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { AlertCircle } from 'lucide-react';
@@ -14,7 +16,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProps) {
-  const { user, isLoggedIn, isLoadingUser } = useContext(UserContext);
+  const { user, isLoggedIn, isLoadingUser, authState } = useContext(UserContext);
   const { isFeatureEnabled } = useFeatures();
   const navigate = useNavigate();
 
@@ -26,11 +28,12 @@ export function ProtectedRoute({ children, featureRequired }: ProtectedRouteProp
   // 但若 user 已經有值（例如分頁重新可見時的背景重新驗證），代表這不是冷啟動，
   // 直接照常渲染子頁面，不要把畫面清空成 spinner（stale-while-revalidate）。
   if (isLoadingUser && !user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <RouteAuthLoading />;
+  }
+
+  // 暫時性故障（T1-B）：登入狀態未確認≠未登入——停在原頁、畫重試外框，不導 /login。
+  if (authState === 'degraded' && !user) {
+    return <AuthDegradedFrame />;
   }
 
   if (!isLoggedIn) {

@@ -214,3 +214,58 @@ Feature: Route guards enforce membership entitlement
       | I am logged in with registration step 1 and last trade number "" | /payment/checkout | logout-only         |
       | I am logged in with registration step 1 and last trade number "" | /                 | continue-and-logout |
       | I am logged in as an admin with pending withdrawals              | /                 | member              |
+
+  # T1-B (auth-transient-resilience): a temporary profile outage is not a
+  # sign-out. The guard keeps the page and offers a retry; a missing profile row
+  # (404) is an account anomaly shown on the login page, never a logout loop.
+  Scenario: A temporary profile outage keeps a signed-in member on the page with a retry
+    Given I am logged in as an active member
+    And the profile service keeps failing with status 503
+    And profile requests are counted
+    And sign-out requests are counted
+    When I visit "/dashboard"
+    Then I stay on "/dashboard" with the reconnect notice
+    And no sign-out request was made
+    And the automatic retry asked the backend to skip repairs
+
+  Scenario: A profile request that never answers ends in the reconnect notice, not the login page
+    Given I am logged in as an active member
+    And the profile request is held
+    When I visit "/dashboard"
+    Then I stay on "/dashboard" with the reconnect notice
+
+  Scenario: A checkout page whose own profile read fails stays put with a retry
+    Given I am logged in with registration step 1
+    And the profile service fails after the first answer with status 503
+    When I visit "/payment/checkout"
+    Then I stay on "/payment/checkout" with the reconnect notice
+
+  Scenario: A temporary outage on the home page shows no notice and no login links
+    Given I am logged in as an active member
+    And the profile service keeps failing with status 503
+    And profile requests are counted
+    When I visit "/"
+    And the automatic retry has also failed
+    Then there is no reconnect notice
+    And the header right side is empty
+
+  Scenario: Retrying after the outage clears shows the member page
+    Given I am logged in as an active member
+    And the profile service fails 2 times with status 503 and then recovers
+    When I visit "/dashboard"
+    And I wait for the reconnect notice
+    And I press the "重試" button
+    Then I should see the dashboard
+
+  Scenario: A missing profile row shows the account anomaly notice on the login page
+    Given I am logged in as an active member
+    And the profile row is missing
+    And sign-out requests are counted
+    When I visit "/dashboard"
+    Then I should be redirected to "/login"
+    And I should see the text "帳號資料異常，請聯絡客服"
+    And no sign-out request was made
+    When I reload the page
+    Then I should see the text "帳號資料異常，請聯絡客服"
+    And no sign-out request was made
+

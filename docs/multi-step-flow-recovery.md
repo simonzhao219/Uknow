@@ -67,10 +67,10 @@
 | 流程 | 中間狀態存在哪 | 中斷後可否恢復 | 依據 |
 |------|--------------|--------------|------|
 | 註冊 → **OTP 驗證** → 完善資料 → 付款 | 後端 `registrationStep` + 本次修復的「未驗證」前置狀態 | ✅（修復後） | `AuthPage` / `OTPVerificationPage` / `registrationFlow` |
-| 完善資料（CompleteProfile） | **步驟**存後端 `registrationStep`（`hasCompleteProfile`）；**填到一半的表單內容**存 `sessionStorage` 草稿（`formDraft`） | ✅ | 步驟：登入/開機時依 step 重導；草稿：`formDraft` 於卸載後 rehydrate |
+| 完善資料（CompleteProfile） | **步驟**存後端 `registrationStep`（`hasCompleteProfile`）；**填到一半的表單內容**存 `sessionStorage` 草稿（`formDraft`；登出／換帳號時清除，共用裝置個資） | ✅ | 步驟：登入/開機時依 step 重導；草稿：`formDraft` 於卸載後 rehydrate |
 | 付款（PaymentCheckout / PayUni 回跳） | 後端 `registrationStep=1/2` + 訂單自癒 migration | ✅ | 路由守衛 + `process_successful_payment` 自癒 |
 | 忘記密碼 → OTP → 重設 | 後端 recovery session + `otpSession` 持久化的待驗證情境 | ✅ | `ForgotPasswordPage` / `OTPVerificationPage` / `otpSession` |
-| 提領（WithdrawalProcess 多步 dialog） | 前端 component state（銀行帳號存 localStorage、身分證照片存後端） | ⚠️ 沒有死巷（餘額即時重算、照片可由 `/rewards/id-photos` 復原、送出後「查收」是後端狀態），但關閉 dialog 會遺失當次草稿（金額/步驟）；身分證字號**刻意不儲存**（隱私） | `WithdrawalProcess` |
+| 提領（WithdrawalProcess 多步 dialog） | 前端 component state（銀行帳號存 localStorage，登出／換帳號時清除；身分證照片存後端） | ⚠️ 沒有死巷（餘額即時重算、照片可由 `/rewards/id-photos` 復原、送出後「查收」是後端狀態），但關閉 dialog 會遺失當次草稿（金額/步驟）；身分證字號**刻意不儲存**（隱私） | `WithdrawalProcess` |
 
 **規律**：靠**後端可查詢的狀態**驅動的步驟都能恢復；靠**前端記憶體 / 一次性導頁 /
 router state** 驅動的步驟則容易死巷。OTP 驗證的前置「未驗證」狀態正是後者，

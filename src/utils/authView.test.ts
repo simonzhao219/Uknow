@@ -89,6 +89,18 @@ describe('resolveAuthView', () => {
   });
 });
 
+describe('resolveAuthView degraded（T1-B 暫時性故障）', () => {
+  it('無提示時一律畫中性占位（已知有 session，不畫登入）', () => {
+    expect(view({ authState: 'degraded' })).toBe('placeholder');
+    expect(view({ authState: 'degraded', pathname: '/dashboard' })).toBe('placeholder');
+  });
+
+  it('有提示時依提示畫頭像占位或漏斗頁首', () => {
+    expect(view({ authState: 'degraded', hint: { kind: 'member' } })).toBe('member-pending');
+    expect(view({ authState: 'degraded', hint: { kind: 'funnel' } })).toBe('funnel');
+  });
+});
+
 describe('resolveAuthView 安全出口（getSession 卡住）', () => {
   it('判定中且 getSession 卡住時改畫訪客版（含漏斗路由與提示）', () => {
     expect(view({ sessionStalled: true })).toBe('guest');

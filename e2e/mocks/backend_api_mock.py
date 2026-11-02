@@ -124,6 +124,27 @@ class BackendApiMock:
         self._route("/profile", handler)
         self._route("/auth/profile", handler)
 
+    def set_profile_status_sequence(self, statuses: list, profile: dict):
+        """T1-B: successive profile requests answer with these HTTP statuses
+        (staying on the last); a 200 answers with `profile`, anything else with
+        an error body. Models a transient outage that recovers (e.g. [503, 503,
+        200]: cold start fails, the automatic retry fails, the manual retry
+        succeeds)."""
+        state = {"call_count": 0}
+
+        def handler(route):
+            index = min(state["call_count"], len(statuses) - 1)
+            state["call_count"] += 1
+            status = statuses[index]
+            if status == 200:
+                _fulfill_json(route, profile)
+            else:
+                body = {"error": {"code": "PROFILE_UNAVAILABLE", "message": "unavailable"}}
+                _fulfill_json(route, body, status=status)
+
+        self._route("/profile", handler)
+        self._route("/auth/profile", handler)
+
     def set_check_email(self, exists: bool):
         # Mirrors the real endpoint, which returns only `exists`. Verification
         # status is deliberately not exposed (recovery is password-first — see

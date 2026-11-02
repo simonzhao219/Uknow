@@ -21,7 +21,13 @@ const DESTRUCTIVE_OUTLINE = `${CONTAINER_SECONDARY} border-destructive-border te
 const buttonVariants = cva(
   // 焦點只有鍵盤焦點環（focus-visible 的 3px ring-ring，§12.12），不再同時改框線色——
   // 選取與聚焦一個訊號，不疊加。
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-ring focus-visible:ring-[3px] aria-invalid:ring-destructive-border aria-invalid:border-destructive-border",
+  //
+  // 契約：`aria-disabled` 的鈕**仍收得到點擊**，基底不給它任何停用外觀。後台刻意如此——停用外觀
+  // 延遲 0.3 秒、重新整理鈕更新途中仍可按（remittanceGate.ts、adminBusy.ts 的 PAUSED_LOOK、
+  // useRefreshAnnouncer.ts）。需要灰化的鈕自己在 className 補 `aria-disabled:opacity-50`
+  // （要擋指標再加 `aria-disabled:pointer-events-none`，例：Navbar 兩顆鈕）。
+  // jsdom 不載 Tailwind，這條只能靠 button.test.tsx 斷言 class 字串。
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-ring focus-visible:ring-[3px] aria-invalid:ring-destructive-border aria-invalid:border-destructive-border",
   {
     variants: {
       // 結構形狀。default 形狀的顏色交給 tone × container（見 compoundVariants）。

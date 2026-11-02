@@ -8,8 +8,9 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
-import { fetchProfileForSession } from '../utils/fetchProfile';
+import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
+import { AuthDegradedNotice } from './AuthDegradedNotice';
 import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
@@ -37,6 +38,10 @@ export function PaymentCheckout() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingUser, setIsCheckingUser] = useState(true);
+  // 冷載入 /profile 暫時讀不到（T1-B §2.6）：停在本頁顯示重試外框，不踢去登入頁。
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [profileFailedAgain, setProfileFailedAgain] = useState(false);
+  const [profileReloadKey, setProfileReloadKey] = useState(0);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
@@ -148,9 +153,20 @@ export function PaymentCheckout() {
         }
 
         try {
-          const result = await fetchProfileForSession(session);
+          const result = await fetchProfileForSession(session, {
+            timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
+          });
+
+          if (result.kind === 'transient') {
+            // 暫時性故障不是「未登入」：停在本頁讓人重試（401／404 才導登入頁）。
+            setProfileFailedAgain(profileReloadKey > 0);
+            setProfileUnavailable(true);
+            setIsCheckingUser(false);
+            return;
+          }
 
           if (result.kind === 'ok') {
+            setProfileUnavailable(false);
             const profile = result.profile;
             console.log('PaymentCheckout: Profile loaded from API:', profile);
 
@@ -176,12 +192,17 @@ export function PaymentCheckout() {
             return;
           } else {
             console.error('PaymentCheckout: Failed to load profile:', result.kind);
+            // 先清 context 的 user：否則 AuthPage 的「已登入自動導向」立刻把人導回會員中心，
+            // 帳號資料異常（404）的說明永遠看不到（#488 審查）。
+            setUser(null);
             navigate('/login', { replace: true });
             return;
           }
         } catch (error) {
           console.error('PaymentCheckout: Error loading profile:', error);
-          navigate('/login', { replace: true });
+          setProfileFailedAgain(profileReloadKey > 0);
+          setProfileUnavailable(true);
+          setIsCheckingUser(false);
           return;
         }
       }
@@ -226,7 +247,9 @@ export function PaymentCheckout() {
     };
 
     checkPendingUser();
-  }, []); // ✅ 移除依賴，只在首次加載時執行
+    // 首次加載執行；degraded 外框按「重試」時以 profileReloadKey 重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileReloadKey]);
 
   // ✅ 獲取推薦人資訊
   useEffect(() => {
@@ -602,6 +625,20 @@ export function PaymentCheckout() {
       showToast(error.message || '編輯失敗，請稍後再試', 'error');
     }
   };
+
+  // 放在載入態之前：重試中外框不卸載（鈕換字、aria-disabled）。
+  if (profileUnavailable) {
+    return (
+      <div className="max-w-md mx-auto mt-12">
+        <AuthDegradedNotice
+          onRetry={() => setProfileReloadKey((k) => k + 1)}
+          onSignOut={funnelLogout.logout}
+          isRetrying={isCheckingUser}
+          failedAgain={profileFailedAgain}
+        />
+      </div>
+    );
+  }
 
   if (isCheckingUser) {
     return (

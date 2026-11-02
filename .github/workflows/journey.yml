@@ -59,7 +59,10 @@ on:
 
 jobs:
   journey-suite:
-    runs-on: ubuntu-latest
+    # 固定 24.04：ubuntu-latest 在 2026-11-01 換成 26.04，Playwright 1.56.1 的 `install --with-deps`
+    # 不支援 26.04（「does not support chromium on ubuntu26.04-x64」），晉升 #490 的 journey-full 因此在裝瀏覽器就紅。
+    # 退場條件：Playwright 升到支援 26.04 的版本（連同 e2e 容器 image，見 check-playwright-image.py）後改回 ubuntu-latest。
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
