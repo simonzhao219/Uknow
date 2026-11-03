@@ -19,7 +19,7 @@ Supabase（PostgreSQL + Auth + Storage）+ 單一 Edge Function。
 | 會員是否有效 | `account_status` + `subscription.status` + `listing.isActive` | `user_account_status` View（用訂閱日期算） |
 | 刊登能否被看到 | `listing.isActive` | `public_listings` View（用訂閱算） |
 | 點數餘額 | `rewards` 快取欄位 | `reward_balances` View（用流水帳加總） |
-| 三代推薦樹 | `referral_tree` 快取 | `referral_tree()` 函數（爬 `referral_edges`） |
+| 三代推薦樹 | `referral_tree` 快取 | Edge Function 查 `referral_edges`（RPC 已移除） |
 | 註冊進度 | 前端 state | `effective_registration_step()`（用實際資料推導） |
 
 同一條鐵律延伸出第二條：**會變的業務數字收斂到 `reward_config` 單列表**，
@@ -66,7 +66,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
 | `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
-| `referral_tree` | 三代推薦樹（只往下爬 3 層，限自己/admin） |
+| ~~`referral_tree`~~ | 已於 20261110000002 移除(無呼叫者,且曾以真名暴露三代下線;三代樹由 Edge Function 組出並遮罩) |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
 | `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；由 `/auth/check-email` 與 Email 邀請的 `/referrals/invites`、`/auth/invite/accept` 呼叫） |
 | `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
@@ -75,7 +75,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
 | `referral_invite_issued_at` | 從 `app_metadata.referral_invite` 取出寄出時間；壞值回 null 讓 purge 跳過該列而不中斷整批（purge 內部用；不開放任何角色） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
-| `effective_registration_step` | 註冊進度即時推導 |
+| `effective_registration_step` | 註冊進度即時推導(只給 service_role) |
 | `tw_day` / `tw_start_of_day` / `tw_end_of_day` | 台灣時區日界（月份 key、單日限額都靠它） |
 
 **慣例**：業務函數一律 `security definer` + `set search_path = public`，
