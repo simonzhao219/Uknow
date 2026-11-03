@@ -47,6 +47,13 @@
 | W4-24 | R4 審查何時開（11/02 18:10） | **現在開**（被推翻：等 1～2 天累積正式站流量） |
 | W4-25 | GitHub 排程大量跳過（R4 §5-6；reconcile 11 小時只跑 3 次）（11/02 19:20） | **第 5 波必上**：對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警；Opus 三段式 |
 | W4-26 | 上線後現場數字由誰量（R4 §5-5）（11/02 19:20） | **採用並寫進〈慣例〉**：審查 session 部署後即可開（審程式）；現場數字由主 session 在部署後 24～48 小時跑固定查詢、寫該波 plan §8，審查 session 只讀。本波由主 session 於 11/03 10:00 UTC 補跑 |
+| W4-28 | 業主回報 P0：使用者沒填推薦碼，結帳頁卻顯示推薦人（11/03 18:40）。根因：`pending_referral_code` 存 localStorage、無期限、登出不清，曾開過邀請連結的瀏覽器之後任何人註冊都被自動帶入 | **立刻修、走 hotfix 晉升；不加特別提示**：暫存加 7 天期限＋舊格式失效；主動登出與已註冊者登入時清除（不掛 SIGNED_OUT，避免誤刪訪客邀請碼）。工項 H1 |
+| W4-29 | 該會員（11/02 註冊、已付款、推薦人 8048878）推薦關係是否更正 | 業主答「綁訂正卻」，主 session 解讀為**綁定正確、維持現狀**（若解讀有誤待業主更正） |
+| W4-30 | 業主：「從各方面確認有沒有 bug，測試有沒有涵蓋到」（11/03 18:50） | **依風險分 4 組平行稽核**（Opus、唯讀）：pay 金流與會籍、ref 推薦獎勵任務提領、auth 註冊登入與本機狀態、ops 後台排程與資料安全；各出 `audit-<組>.md`（發現＋規格→實作→測試覆蓋對照），主 session 彙整給業主排序（被推翻：只查金流＋推薦；只產覆蓋報告） |
+| W4-31 | 監控與自動錄影（session replay） | **P0 修好後立刻討論**：主 session 整理 Sentry／PostHog／Clarity／LogRocket 比較（功能、價格、個資遮蔽、條款告知），業主選定後列第 5 波 |
+| W4-32 | 稽核 P0-3：`referral_tree` RPC 對會員回二、三代未遮罩真名（現役） | **H2 hotfix 立刻修**：revoke／drop＋security definer 授權盤點測試，走 hotfix 晉升 |
+| W4-33 | 稽核現役低機率兩條：同人兩分頁重複付款（pay P1-2）、register 查推薦碼錯誤被吞→付款時蓋成預設推薦人（auth P0-1） | **第 5 波第一優先**（Opus、先規劃）；主 session 在交接前以唯讀 SQL 監看 |
+| W4-34 | 稽核需業主裁決的 4 條規格缺口（停權者能否續費、網絡搜尋比對真名、新約二次確認、新約清空對推薦王 credit／當月下線紀錄） | **第 5 波主 session 規劃時逐條問**，附程式證據與建議 |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -139,6 +146,11 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | #489 ✅ af62783 | 收工 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 | R4 | `session_01MQovbEUaxUm8t1wy1B8TQw` | Opus | `docs/wave4-review` | — | 審查中（兼 launch-wave-3/ 退場、P2-18） |
+| H1 | `session_01MQovbE86uQA5coUEfKX5ka` | Sonnet | `fix/pending-referral-stale` | #494 ✅ 777eca7 | 收工；hotfix 晉升 #496 |
+| AU-pay | `session_01MQovbFQWfDSj4gCFxtvJHj` | Opus | `docs/audit-pay` | — | 稽核中（W4-30） |
+| AU-ref | `session_01MQovbCaVMsu3xMgUt39Lc4` | Opus | `docs/audit-ref` | — | 稽核中 |
+| AU-auth | `session_01MQovbAePTLz4rybfKvmkJQ` | Opus | `docs/audit-auth` | — | 稽核中 |
+| AU-ops | `session_01MQovbBPivuGf9DbQbim5mY` | Opus | `docs/audit-ops` | — | 稽核中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -166,3 +178,8 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 07:00 | #490 journey-full 第一輪（run 41351709141）在「安裝 Playwright 瀏覽器」即紅：`ubuntu-latest` 換成 Ubuntu 26.04，Playwright 1.56.1 不支援（`does not support chromium on ubuntu26.04-x64`），測試未執行；其餘各軌皆綠。與本波改動無關、重跑必紅。業主裁決 **W4-23** → 主 session 開 **#491**（1 行 CI 修補：journey-suite 固定 `ubuntu-24.04`，主 session ≤10 行例外），已在 #490 留言說明。另：照片清理**實刪模式首輪已驗**——11/02 那次排程延遲到 UTC 22:51 才觸發（run 41359203507，schedule、LIVE、dry_run=false）：候選 0、刪除 0、物件 32、URL 30/30、刊登者 10/10；已更新第 3 波 review §2，取消 11/03 的檢查提醒 | #491 CI 綠 → 合 → #490 journey-full 重跑 |
 | 11/02 18:05 | #491 CI 全綠 → 合進 develop（987af62）。#490 自動帶到修正，journey-full 重跑（run 41415959428，ubuntu-24.04）：**146 collected／146 ran／0 skipped**，CI 全綠 → **#490 合進 main（f88bae5）**。main CI push 41419197178 綠。業主核准 `production` → deploy-supabase 41419246465 綠：`/health` sha＝f88bae5（第 1 次探測）、PayUni production 憑證齊全、預設推薦人 ok。主 session 手動 dispatch deploy-smoke 41425474970（ref=main）綠：正式站與 develop 前端版本皆 f88bae5、快取與安全標頭正確、PayUni 兩站閘門 200。部署後正式站 Edge 日誌暫無流量。**第 4 波晉升完成**。未驗：`uknow.pages.dev` 導向與正式站登入（容器連不到 pages.dev，交業主實機確認） | 業主實機確認 P 導向與登入；合 #492；開 R4 |
 | 11/02 18:52 | 業主裁決 **W4-24**（R4 現在開）。開 **R4** `session_01MQovbEUaxUm8t1wy1B8TQw`（Opus），派工段落 `dispatch-prompts.md` §R4 | 合 #492；等 R4 報告；業主實機確認 P 導向與登入 |
+| 11/03 18:40 | **24h 現場查詢（W4-26）**：正式站 Edge 24h（10:01Z～10:01Z）`/profile` 200×2（p95 2.1s）、OPTIONS 204×2，無 503／404／逾時；postgres ERROR／FATAL 0（WARNING 4,734 為平台 collation 警告）；system_alerts 新增 0、未 resolve 0。**第一筆正式站真付款**（10:22Z，1,200 元，PayUni SUCCESS／授權成功）→ 訂閱 active（台北 11/03～2027/11/02，非續約、已連結訂單）、預設推薦人依 §7.4 於付款時綁定；PayUni 回應無發票欄位（發票由 PayUni 代開、不存本系統）→ **業主到 PayUni 商店後台確認發票已開立**。排程準時度：reconcile 24h 只跑 3 次（應 24）、purge 延遲 6h20m → 佐證 W4-25 | 業主確認發票；W4-25 第 5 波必上 |
+| 11/03 18:50 | 業主回報 **P0**：使用者沒填推薦碼，結帳頁卻顯示推薦人。主 session 查：11/02 註冊、已付款的會員綁 8048878（非預設、無 Email 邀請章）→ 來源是 `pending_referral_code` localStorage（無期限、登出不清）。業主裁決 **W4-28**（立刻修、hotfix、不加提示）、**W4-29**（推薦關係維持）。開 **H1** hotfix。業主另要全面稽核：**W4-30** 開 4 組 Opus 稽核（pay／ref／auth／ops）；**W4-31** 監控錄影 P0 後討論 | H1 → hotfix 晉升；彙整 4 份稽核 |
+| 11/03 21:52 | H1 交 #494（紅燈 `bcaa5f5`→綠燈 `da063c0`，另 `1fdb1cf` 把 entry gzip 預算 310→312 kB：develop 原已貼 310.0）。主 session 審：期限判斷、清除時機（主動登出、已註冊者 ingest；不掛 SIGNED_OUT）、紅燈後未改測試——無 P0／P1；規格書〔實作〕行尾缺換行黏到下一句 → 主 session 在本 PR（#495）文件小修。**#494 合進 develop（777eca7）** → 開 hotfix 晉升 **#496**（develop→main，含 #492／#493 docs），已訂閱。H1 未處理：`otpSession` 存 email、共用裝置可能預填前一人 email（低風險，列第 5 波候選） | #496 journey-full → 合 main → 業主核准 production |
+| 11/03 22:35 | #496 journey-full 綠（31 分）、CI 全綠 → **#496 合進 main（4f974fc）**，等 main CI → deploy-supabase 待業主核准。4 組稽核交 PR：ref #497、ops #498、pay #499、auth #500（皆 docs-only、ci-ok 綠）。主 session 代跑正式站唯讀 SQL：換線 profiles≠edges 0、fresh 棄單後 extend 0、成環 0、自領獎金 0；`referral_tree` 仍授權 authenticated（**現役**，2 位會員有二代下線）；15 筆訂閱全 active、最早到期 2027-10-27 → 續約路徑的 P0／P1 皆**潛伏**。AU-ops P0（deploy 工作流程信任邊界）→ 主 session 在本 PR 補 job `if:`（只認本 repo 的 push 觸發；≤10 行 CI 例外），合進 develop 即生效（workflow_run 取預設分支定義）；repo 端兩項設定交業主確認 | 業主核准 production；合 #495；彙整稽核給業主排序 |
+| 11/03 22:50 | ref 稽核 #497 合進 develop（35e094c）；ops／pay／auth（#498／#499／#500）因 base 前進需重跑 ci-ok，改由本 PR（#495）逐字帶入、三支 PR 關閉。稽核唯讀查證：withdrawals 0 筆（CSV 帳號前導 0 尚未現役）。業主裁決 **W4-32**（P0-3 開 H2 hotfix）、**W4-33**（兩條現役低機率 → 第 5 波第一優先）、**W4-34**（4 條規格缺口交第 5 波主 session）。hotfix #496 的 production 部署 run 41653896545 待業主核准 | 業主核准 production；開 H2；合 #495 |
