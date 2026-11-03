@@ -83,7 +83,8 @@ def seed_pending_referral(context: BrowserContext, code: str) -> None:
     signup -> OTP -> complete-profile. Seeded via an init script so it's present
     before the app's first script runs on the next navigation."""
     context.add_init_script(
-        f"window.localStorage.setItem('pending_referral_code', {json.dumps(code)});"
+        "window.localStorage.setItem('pending_referral_code', "
+        f"JSON.stringify({{code: {json.dumps(code)}, savedAt: Date.now()}}));"
     )
 
 

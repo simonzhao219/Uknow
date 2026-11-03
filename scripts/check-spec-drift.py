@@ -74,6 +74,12 @@ class ConstantRule:
 
 CONSTANTS: tuple[ConstantRule, ...] = (
     ConstantRule(
+        "邀請連結待帶入推薦碼有效天數",
+        r"待帶入推薦碼（localStorage）有效 \*\*([\d,]+) 天\*\*",
+        "src/utils/referralInvite.ts",
+        r"PENDING_REFERRAL_TTL_DAYS = (\d+)",
+    ),
+    ConstantRule(
         "推薦獎金（每代）",
         r"每代 \*\*([\d,]+) P\*\*",
         "supabase/migrations/*.sql",
@@ -581,9 +587,23 @@ _INVITE_PAYLOAD = "supabase/functions/_shared/referral-invite-payload.ts"
 _ORPHAN_LIMIT_FILE = "supabase/functions/api/listing-photos.ts"
 _ORPHAN_LIMIT_SPEC = "單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 orphanTotal 是截斷前的總數。\n"
 _ORPHAN_LIMIT_SRC = {_ORPHAN_LIMIT_FILE: "export const ORPHAN_SWEEP_LIMIT = 500;\n"}
+_PENDING_SPEC = "待帶入推薦碼（localStorage）有效 **7 天**，逾期作廢。\n"
+_PENDING_FILE = "src/utils/referralInvite.ts"
 
 
 CASES: list[tuple[str, object, int]] = [
+    (
+        "待帶入推薦碼期限一致 → 通過",
+        lambda: _only((_rule("邀請連結待帶入推薦碼有效天數"),), _PENDING_SPEC,
+                      {_PENDING_FILE: "export const PENDING_REFERRAL_TTL_DAYS = 7;\n"}),
+        0,
+    ),
+    (
+        "待帶入推薦碼期限改了規格書沒跟 → 違規",
+        lambda: _only((_rule("邀請連結待帶入推薦碼有效天數"),), _PENDING_SPEC,
+                      {_PENDING_FILE: "export const PENDING_REFERRAL_TTL_DAYS = 30;\n"}),
+        1,
+    ),
     # --- 常數 ---
     ("常數一致 → 通過", lambda: _only((_MIN_RULE,), _SPEC_OK, _SOURCES_OK), 0),
     (
@@ -750,6 +770,7 @@ def _load_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for pattern in ("supabase/migrations/*.sql", "src/utils/constants.ts",
                     "src/utils/serviceCategories.ts",
+                    "src/utils/referralInvite.ts",
                     "supabase/functions/_shared/api-contract.ts",
                     "supabase/functions/_shared/referral-invite-payload.ts",
                     "supabase/functions/api/index.ts",

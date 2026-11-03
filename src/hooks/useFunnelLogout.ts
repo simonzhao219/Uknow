@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
 import { useNotification } from '../components/notifications/NotificationContext';
 import { clearAuthHint } from '../utils/authHint';
+import { clearPendingReferral } from '../utils/referralInvite';
 import { classifyMembershipGate } from '../utils/registrationFlow';
 import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { createClient } from '../utils/supabase/client';
@@ -42,6 +43,8 @@ export function useFunnelLogout(): FunnelLogout {
     setUser(null);
     localStorage.removeItem('pendingUser');
     clearAuthHint();
+    // 主動登出清待帶入推薦碼，避免下一位在此註冊的人被自動帶入（H1）。
+    clearPendingReferral();
     showToast(localOnly ? TOAST_LOCAL_ONLY : activating ? TOAST_ACTIVATING : TOAST_DEFAULT, 'info');
     navigate('/login', { replace: true });
 

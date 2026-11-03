@@ -3,6 +3,7 @@ generic toast/text/redirect assertions. Every other `*_steps.py` module does
 `from steps.common_steps import *` before calling `scenarios(...)` so these
 are available for matching there too."""
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from playwright.sync_api import expect
@@ -162,7 +163,9 @@ def visit(page, path):
 
 @then(parsers.parse('the pending referral code should be "{code}"'))
 def pending_referral_should_be(page, code):
-    stored = page.evaluate("() => window.localStorage.getItem('pending_referral_code')")
+    raw = page.evaluate("() => window.localStorage.getItem('pending_referral_code')")
+    # 存的是 {code, savedAt} JSON（H1：暫存有期限）。
+    stored = json.loads(raw)["code"] if raw else None
     assert stored == code, f"expected pending referral {code!r}, got {stored!r}"
 
 

@@ -5,6 +5,7 @@
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getPendingReferral, savePendingReferral } from '../utils/referralInvite';
 
 const { UserCtx, navigate, showToast, auth, clearAuthHint } = await vi.hoisted(async () => {
   const { createContext } = await import('react');
@@ -94,6 +95,15 @@ describe('useFunnelLogout', () => {
     expect(clearAuthHint).toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith('您已登出，之後用同一帳號登入即可繼續完成註冊', 'info');
     expect(navigate).toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('註冊中登出清掉待帶入的推薦碼，避免下一位使用者被自動帶入', async () => {
+    savePendingReferral('8048878');
+    const { hook } = setup({ user: UNPAID });
+    await act(async () => {
+      await hook.result.current.logout();
+    });
+    expect(getPendingReferral()).toBeNull();
   });
 
   it('已付款待開通者的 toast 說明付款已收到', async () => {
