@@ -16,8 +16,12 @@ import { openExternalLink } from './externalLink';
 import { normalizeReferralCode } from './referralCode';
 
 const PENDING_KEY = 'pending_referral_code';
-/** 待帶入推薦碼的有效天數（stub，綠燈期實作）。 */
-export const PENDING_REFERRAL_TTL_DAYS = 0;
+/**
+ * 待帶入推薦碼的有效天數。localStorage 屬於瀏覽器、不屬於使用者：無期限的話，曾在這台
+ * 裝置開過邀請連結的人，之後任何人在此註冊都會被自動帶入（2026-11-03 H1）。
+ */
+export const PENDING_REFERRAL_TTL_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 邀請連結的網域來源：優先用建置時設定的正式網域（VITE_PUBLIC_APP_URL），
@@ -143,20 +147,41 @@ export function savePendingReferral(code: string): void {
   const normalized = normalizeReferralCode(code);
   if (!normalized) return;
   try {
-    localStorage.setItem(PENDING_KEY, normalized);
+    localStorage.setItem(PENDING_KEY, JSON.stringify({ code: normalized, savedAt: Date.now() }));
   } catch {
     // 忽略 storage 不可用（例如隱私模式）
   }
 }
 
-/** 讀取待帶入的推薦碼；沒有時回傳 null。 */
+/**
+ * 讀取待帶入的推薦碼；沒有時回傳 null。超過期限、舊格式（純字串、無時間戳）與壞資料
+ * 一律視為無效並清除——舊格式沒有存入時間，無從判斷是不是前一位使用者留下的。
+ */
 export function getPendingReferral(): string | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
-    return raw?.trim() ? raw : null;
+    if (raw === null) return null;
+    const parsed = parsePending(raw);
+    if (parsed && Date.now() - parsed.savedAt <= PENDING_REFERRAL_TTL_DAYS * DAY_MS) {
+      return parsed.code;
+    }
+    clearPendingReferral();
+    return null;
   } catch {
     return null;
   }
+}
+
+function parsePending(raw: string): { code: string; savedAt: number } | null {
+  try {
+    const v = JSON.parse(raw) as { code?: unknown; savedAt?: unknown } | null;
+    if (v && typeof v.code === 'string' && v.code.trim() && typeof v.savedAt === 'number') {
+      return { code: v.code, savedAt: v.savedAt };
+    }
+  } catch {
+    // 非 JSON（舊格式純字串）
+  }
+  return null;
 }
 
 /** 註冊完成或放棄流程時清除，避免污染下一位使用者。 */

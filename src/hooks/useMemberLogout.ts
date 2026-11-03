@@ -7,6 +7,7 @@ import { useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
 import { clearAuthHint } from '../utils/authHint';
+import { clearPendingReferral } from '../utils/referralInvite';
 import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { createClient } from '../utils/supabase/client';
 
@@ -22,6 +23,8 @@ export function useMemberLogout(): () => Promise<void> {
       // 首繪提示一併清：signOut 網路失敗時 SIGNED_OUT 不一定觸發，殘留 member
       // 提示會讓下一個在這台裝置登入的人先看到前一人的首字（S11）。
       clearAuthHint();
+      // 邀請碼屬於瀏覽器不屬於人：主動登出時清，下一位使用者不得被自動帶入（H1）。
+      clearPendingReferral();
 
       const { localOnly } = await signOutWithFallback(createClient().auth);
       if (localOnly) console.error('Logout: global sign-out failed, signed out this device only');

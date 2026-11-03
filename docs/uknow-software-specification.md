@@ -142,7 +142,12 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 **邀請信入口**：從 Email 邀請信的連結（`/register?invite=<token>`，§7.1）進來的人跳過 Step 0，
 直接到 Step 1 的設定密碼畫面（Email 帶入、唯讀；畫面不顯示推薦人或推薦碼）；設好密碼即完成
 Step 1（同一次呼叫完成 email 驗證，不寄驗證碼），登入後到 Step 2，推薦碼已帶入並驗證、仍可修改。
-已登入者點連結只提示「你已登入」、不帶入推薦碼。邀請建立的帳號在設定密碼前是空殼（§7.1）：
+已登入者點連結只提示「你已登入」、不帶入推薦碼。
+
+**邀請連結（`?ref=`）／QR 的推薦碼帶入**：碼暫存在瀏覽器，撐過 Step 0 → OTP → Step 2，於完善資料頁自動帶入並驗證。
+待帶入推薦碼（localStorage）有效 **7 天**，逾期或舊格式一律作廢；註冊完成、使用者主動登出、
+已完成註冊者登入確認時清除（不掛 SIGNED_OUT，避免誤刪訪客剛存的碼）。
+〔實作〕`src/utils/referralInvite.ts` 的 `PENDING_REFERRAL_TTL_DAYS`邀請建立的帳號在設定密碼前是空殼（§7.1）：
 這段期間以同一 Email 走 Step 0 會被導向登入，要用信中連結或「忘記密碼」設定密碼。
 〔實作〕`src/components/AuthPage.tsx` 的邀請模式、`src/hooks/useInviteAccept.ts`、`src/utils/registrationFlow.ts` 的
 `resolveInviteEntry`／`classifyInviteAcceptError`
