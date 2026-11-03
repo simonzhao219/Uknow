@@ -145,6 +145,21 @@ PR 內文附 P2-1～5 對照表（改了什麼、測試名、紅燈 hash）與 l
 6. PR 內文附：根因、時機表（哪些事件清、哪些不清、為什麼）、紅燈 hash。這是 hotfix：PR 合進 develop 後主 session 會開 hotfix 晉升 PR。
 ```
 
+## H2. Hotfix：`referral_tree` RPC 回未遮罩真名（Sonnet，`/fix-bug`，`fix/referral-tree-grant`）
+
+```text
+工項 H2（plan.md §0 W4-32；來源 docs/plans/launch-wave-4/audit-ref.md P0-3、audit-ops.md P2-1、audit-pay.md P2-1）。
+現象：任何已登入會員用前端 bundle 內的 anon key＋自己的 JWT 直接打 PostgREST `rpc/referral_tree`，拿到自己三代內所有人的**真實全名**與會籍狀態；/referrals 頁面上二、三代顯示的是遮罩名（§7.2）。正式站唯讀查證（11/03）：has_function_privilege('authenticated','public.referral_tree(uuid)','execute')=true、anon=false；目前 2 位會員有二代下線。
+根因：supabase/migrations/20260620000005_fix_referral_tree_access.sql 末尾 `grant execute ... to authenticated`；之後沒有 migration 收回。Edge Function 與前端都不再呼叫它（grep 只剩註解、e2e/journey 的同名 builder 走 UI 不走 RPC——請自行再確認一次）。
+要做（走 /fix-bug：根因＋同類掃描＋四面向＋防線回填）：
+1. 新 migration：referral_tree 收回 authenticated／anon／public 的 EXECUTE（無呼叫者可直接 drop——擇一，PR 寫理由；drop 前 grep 確認沒有其他 SQL 函式或 view 相依）。
+2. 同類掃描（必做）：盤點 public schema 所有 `security definer` 函式的 EXECUTE 授權。已知一支：`effective_registration_step(uuid)` 從未 revoke anon/public，可查任意 uid 的註冊／付款進度（ops P2-1、pay P2-1）。⚠️ 收回前先確認它**沒有被 RLS policy 或 authenticated 身分直接呼叫的路徑使用**——policy 以呼叫者身分執行，收掉會讓 policy 炸；有的話改成只允許查自己（auth.uid()）而不是 revoke。其餘每一支依「誰在呼叫」決定保留或收回，表列進 PR。
+3. 防線回填：在 supabase/functions/api/rls-policies.test.ts（或同層新檔，照 .claude/rules/test-naming.md）加一條「security definer 函式 EXECUTE 授權白名單」測試：查 pg_proc＋has_function_privilege，對 anon、authenticated 列出可執行的 security definer 函式，與白名單逐字比對——新增函式忘了 revoke 就紅。白名單每列附一句為什麼要開。
+4. 不改 Edge Function 業務邏輯、不改前端、不動推薦資料。migration 版本號跑 python3 scripts/check-migration-versions.py。
+5. 本機：npm run check 綠；Deno 測試需要 supabase start（容器沒有 CLI 就寫明由 CI 的 api-tests 驗，紅燈 commit 仍要在 CI 上看到紅）。
+6. PR 內文附：根因、授權盤點表（函式／原授權／處置／理由）、紅燈 hash。這是 hotfix：合進 develop 後主 session 開 hotfix 晉升。正式站 migration 由 Supabase 原生整合在 main 合併時套用。
+```
+
 ## AU. 全面稽核（W4-30；Opus × 4 組平行，唯讀；先貼「AU 共用」再貼該組段落）
 
 ### AU 共用

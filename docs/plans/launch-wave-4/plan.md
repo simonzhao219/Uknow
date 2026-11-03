@@ -51,6 +51,9 @@
 | W4-29 | 該會員（11/02 註冊、已付款、推薦人 8048878）推薦關係是否更正 | 業主答「綁訂正卻」，主 session 解讀為**綁定正確、維持現狀**（若解讀有誤待業主更正） |
 | W4-30 | 業主：「從各方面確認有沒有 bug，測試有沒有涵蓋到」（11/03 18:50） | **依風險分 4 組平行稽核**（Opus、唯讀）：pay 金流與會籍、ref 推薦獎勵任務提領、auth 註冊登入與本機狀態、ops 後台排程與資料安全；各出 `audit-<組>.md`（發現＋規格→實作→測試覆蓋對照），主 session 彙整給業主排序（被推翻：只查金流＋推薦；只產覆蓋報告） |
 | W4-31 | 監控與自動錄影（session replay） | **P0 修好後立刻討論**：主 session 整理 Sentry／PostHog／Clarity／LogRocket 比較（功能、價格、個資遮蔽、條款告知），業主選定後列第 5 波 |
+| W4-32 | 稽核 P0-3：`referral_tree` RPC 對會員回二、三代未遮罩真名（現役） | **H2 hotfix 立刻修**：revoke／drop＋security definer 授權盤點測試，走 hotfix 晉升 |
+| W4-33 | 稽核現役低機率兩條：同人兩分頁重複付款（pay P1-2）、register 查推薦碼錯誤被吞→付款時蓋成預設推薦人（auth P0-1） | **第 5 波第一優先**（Opus、先規劃）；主 session 在交接前以唯讀 SQL 監看 |
+| W4-34 | 稽核需業主裁決的 4 條規格缺口（停權者能否續費、網絡搜尋比對真名、新約二次確認、新約清空對推薦王 credit／當月下線紀錄） | **第 5 波主 session 規劃時逐條問**，附程式證據與建議 |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -179,3 +182,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/03 18:50 | 業主回報 **P0**：使用者沒填推薦碼，結帳頁卻顯示推薦人。主 session 查：11/02 註冊、已付款的會員綁 8048878（非預設、無 Email 邀請章）→ 來源是 `pending_referral_code` localStorage（無期限、登出不清）。業主裁決 **W4-28**（立刻修、hotfix、不加提示）、**W4-29**（推薦關係維持）。開 **H1** hotfix。業主另要全面稽核：**W4-30** 開 4 組 Opus 稽核（pay／ref／auth／ops）；**W4-31** 監控錄影 P0 後討論 | H1 → hotfix 晉升；彙整 4 份稽核 |
 | 11/03 21:52 | H1 交 #494（紅燈 `bcaa5f5`→綠燈 `da063c0`，另 `1fdb1cf` 把 entry gzip 預算 310→312 kB：develop 原已貼 310.0）。主 session 審：期限判斷、清除時機（主動登出、已註冊者 ingest；不掛 SIGNED_OUT）、紅燈後未改測試——無 P0／P1；規格書〔實作〕行尾缺換行黏到下一句 → 主 session 在本 PR（#495）文件小修。**#494 合進 develop（777eca7）** → 開 hotfix 晉升 **#496**（develop→main，含 #492／#493 docs），已訂閱。H1 未處理：`otpSession` 存 email、共用裝置可能預填前一人 email（低風險，列第 5 波候選） | #496 journey-full → 合 main → 業主核准 production |
 | 11/03 22:35 | #496 journey-full 綠（31 分）、CI 全綠 → **#496 合進 main（4f974fc）**，等 main CI → deploy-supabase 待業主核准。4 組稽核交 PR：ref #497、ops #498、pay #499、auth #500（皆 docs-only、ci-ok 綠）。主 session 代跑正式站唯讀 SQL：換線 profiles≠edges 0、fresh 棄單後 extend 0、成環 0、自領獎金 0；`referral_tree` 仍授權 authenticated（**現役**，2 位會員有二代下線）；15 筆訂閱全 active、最早到期 2027-10-27 → 續約路徑的 P0／P1 皆**潛伏**。AU-ops P0（deploy 工作流程信任邊界）→ 主 session 在本 PR 補 job `if:`（只認本 repo 的 push 觸發；≤10 行 CI 例外），合進 develop 即生效（workflow_run 取預設分支定義）；repo 端兩項設定交業主確認 | 業主核准 production；合 #495；彙整稽核給業主排序 |
+| 11/03 22:50 | ref 稽核 #497 合進 develop（35e094c）；ops／pay／auth（#498／#499／#500）因 base 前進需重跑 ci-ok，改由本 PR（#495）逐字帶入、三支 PR 關閉。稽核唯讀查證：withdrawals 0 筆（CSV 帳號前導 0 尚未現役）。業主裁決 **W4-32**（P0-3 開 H2 hotfix）、**W4-33**（兩條現役低機率 → 第 5 波第一優先）、**W4-34**（4 條規格缺口交第 5 波主 session）。hotfix #496 的 production 部署 run 41653896545 待業主核准 | 業主核准 production；開 H2；合 #495 |
