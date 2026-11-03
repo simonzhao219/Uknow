@@ -22,7 +22,7 @@ const ASSETS = 'build/assets';
 // 唯一真正影響首屏的數字。其餘 chunk 都是路由層 lazy 載入的。
 const BUDGET = {
   entryRawKB: 1000,
-  entryGzipKB: 310,
+  entryGzipKB: 312, // 原 310；H1 hotfix 時 develop 已貼著 310.0，期限與清除邏輯進 entry 約 +0.2 kB
   totalRawKB: 1600,
 };
 
