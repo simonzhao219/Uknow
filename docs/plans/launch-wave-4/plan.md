@@ -54,7 +54,7 @@
 | W4-32 | 稽核 P0-3：`referral_tree` RPC 對會員回二、三代未遮罩真名（現役） | **H2 hotfix 立刻修**：revoke／drop＋security definer 授權盤點測試，走 hotfix 晉升 |
 | W4-33 | 稽核現役低機率兩條：同人兩分頁重複付款（pay P1-2）、register 查推薦碼錯誤被吞→付款時蓋成預設推薦人（auth P0-1） | **第 5 波第一優先**（Opus、先規劃）；主 session 在交接前以唯讀 SQL 監看 |
 | W4-34 | 稽核需業主裁決的 4 條規格缺口（停權者能否續費、網絡搜尋比對真名、新約二次確認、新約清空對推薦王 credit／當月下線紀錄） | **第 5 波主 session 規劃時逐條問**，附程式證據與建議 |
-| W4-35 | 監控／錄影工具（W4-31 比較：Sentry、PostHog、Clarity、LogRocket） | **PostHog EU 單一工具**（錄影＋錯誤追蹤；後端錯誤沿用 Supabase 日誌）；列第 5 波 |
+| W4-35 | 監控／錄影工具（W4-31 比較：Sentry、PostHog、Clarity、LogRocket） | **PostHog EU 單一工具**（錄影＋錯誤追蹤；後端錯誤沿用 Supabase 日誌）；列第 5 波。業主另看過 Umami 比較後維持（Umami 無錯誤追蹤，雲端錄影要 Business 方案） |
 | W4-36 | 錄影範圍 | **現在全錄、規模大了改抽樣**（數百會員後改抽樣＋出錯必錄） |
 | W4-37 | 條款與告知 | **全遮罩＋匿名直接上線，不改條款**（業主接受灰色地帶風險）：預設全文字與輸入遮罩、身分證／手機／生日／銀行欄位整塊 block、不送 email／姓名（只送匿名 id）、付款頁整頁 block、不錄 network payload |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
