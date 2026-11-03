@@ -54,6 +54,9 @@
 | W4-32 | 稽核 P0-3：`referral_tree` RPC 對會員回二、三代未遮罩真名（現役） | **H2 hotfix 立刻修**：revoke／drop＋security definer 授權盤點測試，走 hotfix 晉升 |
 | W4-33 | 稽核現役低機率兩條：同人兩分頁重複付款（pay P1-2）、register 查推薦碼錯誤被吞→付款時蓋成預設推薦人（auth P0-1） | **第 5 波第一優先**（Opus、先規劃）；主 session 在交接前以唯讀 SQL 監看 |
 | W4-34 | 稽核需業主裁決的 4 條規格缺口（停權者能否續費、網絡搜尋比對真名、新約二次確認、新約清空對推薦王 credit／當月下線紀錄） | **第 5 波主 session 規劃時逐條問**，附程式證據與建議 |
+| W4-35 | 監控／錄影工具（W4-31 比較：Sentry、PostHog、Clarity、LogRocket） | **PostHog EU 單一工具**（錄影＋錯誤追蹤；後端錯誤沿用 Supabase 日誌）；列第 5 波 |
+| W4-36 | 錄影範圍 | **現在全錄、規模大了改抽樣**（數百會員後改抽樣＋出錯必錄） |
+| W4-37 | 條款與告知 | **全遮罩＋匿名直接上線，不改條款**（業主接受灰色地帶風險）：預設全文字與輸入遮罩、身分證／手機／生日／銀行欄位整塊 block、不送 email／姓名（只送匿名 id）、付款頁整頁 block、不錄 network payload |
 | W4-19 | T1-B plan v2.1 的 v2 P1 由規劃者自行落地、未經獨立複核（22:00） | **主 session 親審 v2.1 diff 代替第三輪 `/review-plan`**（被推翻：不重跑交實作後審查；重跑完整四視角） |
 
 主 session 依工程預設定的（低風險，不另問）：
@@ -125,7 +128,7 @@ R3 P2-8（錨點在 listings 回 0 列時的 SOP）、P2-9（孤兒判準索引�
 第 3 波 §5 其餘：PR #379 launch-readiness ①–④ 分拆；備份／PITR 評估；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；
 後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；#421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；
 A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；
-子網域盤點＋完整 CSP；Playwright 升到支援 Ubuntu 26.04 的版本（含 e2e 容器 image），journey-suite 改回 `ubuntu-latest`（W4-23 退場條件）；**必上（W4-25）**：GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警（Opus 三段式）；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384。
+子網域盤點＋完整 CSP；Playwright 升到支援 Ubuntu 26.04 的版本（含 e2e 容器 image），journey-suite 改回 `ubuntu-latest`（W4-23 退場條件）；**必上（W4-25）**：GitHub 排程大量跳過（每小時對帳 10 小時只跑 2 次、照片清理首輪整次沒跑）→ 對帳與照片清理改由 Supabase pg_cron 觸發，GitHub workflow 留作手動觸發與告警（Opus 三段式）；T1-B 審查未修 P2（PaymentCheckout／CompleteProfile 的 getSession retryable 仍導 /login、各頁 401 文案「登入已過期」）；E 同類掃描（`expect_or_dump` 統一包裝、`open_task_center` 只等標題）；vitest／vite 大版本（#467 拆出）；登出清所有模組快取的機械把關；#383、#384；**監控與錄影（W4-35～37）**：PostHog EU 接入，照 W4-37 的遮罩清單施工，sensitive 欄位加 block 屬性並有測試釘住；**稽核第一優先（W4-33）**：同人兩分頁重複付款（pay P1-2）、register 查推薦碼錯誤被吞（auth P0-1／P1-2）；續約路徑潛伏組（ref P0-1／P0-2、pay P0-1／P1-1／P1-4、auth P1-1，期限 2027-10-27）；提領 CSV 帳號前導 0（ops P1-1／ref P1-9，第一筆提領前）；稽核其餘 P1／P2 見 `audit-*.md`；W4-34 的 4 條規格裁決。
 
 ## 6. 業主待辦
 
@@ -183,3 +186,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/03 21:52 | H1 交 #494（紅燈 `bcaa5f5`→綠燈 `da063c0`，另 `1fdb1cf` 把 entry gzip 預算 310→312 kB：develop 原已貼 310.0）。主 session 審：期限判斷、清除時機（主動登出、已註冊者 ingest；不掛 SIGNED_OUT）、紅燈後未改測試——無 P0／P1；規格書〔實作〕行尾缺換行黏到下一句 → 主 session 在本 PR（#495）文件小修。**#494 合進 develop（777eca7）** → 開 hotfix 晉升 **#496**（develop→main，含 #492／#493 docs），已訂閱。H1 未處理：`otpSession` 存 email、共用裝置可能預填前一人 email（低風險，列第 5 波候選） | #496 journey-full → 合 main → 業主核准 production |
 | 11/03 22:35 | #496 journey-full 綠（31 分）、CI 全綠 → **#496 合進 main（4f974fc）**，等 main CI → deploy-supabase 待業主核准。4 組稽核交 PR：ref #497、ops #498、pay #499、auth #500（皆 docs-only、ci-ok 綠）。主 session 代跑正式站唯讀 SQL：換線 profiles≠edges 0、fresh 棄單後 extend 0、成環 0、自領獎金 0；`referral_tree` 仍授權 authenticated（**現役**，2 位會員有二代下線）；15 筆訂閱全 active、最早到期 2027-10-27 → 續約路徑的 P0／P1 皆**潛伏**。AU-ops P0（deploy 工作流程信任邊界）→ 主 session 在本 PR 補 job `if:`（只認本 repo 的 push 觸發；≤10 行 CI 例外），合進 develop 即生效（workflow_run 取預設分支定義）；repo 端兩項設定交業主確認 | 業主核准 production；合 #495；彙整稽核給業主排序 |
 | 11/03 22:50 | ref 稽核 #497 合進 develop（35e094c）；ops／pay／auth（#498／#499／#500）因 base 前進需重跑 ci-ok，改由本 PR（#495）逐字帶入、三支 PR 關閉。稽核唯讀查證：withdrawals 0 筆（CSV 帳號前導 0 尚未現役）。業主裁決 **W4-32**（P0-3 開 H2 hotfix）、**W4-33**（兩條現役低機率 → 第 5 波第一優先）、**W4-34**（4 條規格缺口交第 5 波主 session）。hotfix #496 的 production 部署 run 41653896545 待業主核准 | 業主核准 production；開 H2；合 #495 |
+| 11/04 03:25 | 重跑後 #495 綠 → **合進 develop（71bc4df）**（首輪 unit-tests 紅在 PhotoPicker「取消與 Esc 都只取消當張」，本 PR 無 src 變更，重跑一次即綠；已在 PR 留言）；關閉 #498／#499／#500（內容已由 #495 帶入）。hotfix #496 的 deploy-smoke 41695738179 綠。H2 交 #501（紅燈 `a9728459`（rebase 前 `996b25f`）→ 綠燈；drop `referral_tree`、`effective_registration_step` 只留 service_role、security definer 授權白名單測試）。主 session 審：只有 service_role client 呼叫、無 RLS 依賴 → P0／P1 皆無 → **#501 合進 develop（f4fa055）** → 開 hotfix 晉升 **#502**，已訂閱。業主裁決 W4-35～37（PostHog EU、全錄、全遮罩匿名上線不改條款），列第 5 波 | #502 journey-full → 合 main → 業主核准 production → 正式站驗授權 |
