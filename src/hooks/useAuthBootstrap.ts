@@ -29,7 +29,9 @@ import {
 } from '../utils/fetchProfile';
 import { type AttemptScheduler, createAttemptScheduler } from './authRetryScheduler';
 import { useRevalidateOnFocus } from './useRevalidateOnFocus';
+import { clearPendingReferral } from '../utils/referralInvite';
 import {
+  classifyMembershipGate,
   funnelNextKind,
   isFirstTimeFunnel,
   isProfileComplete,
@@ -239,6 +241,11 @@ export function useAuthBootstrap(deps: AuthBootstrapDeps): AuthBootstrap {
   const ingest = useCallback(
     (profile: any, redirectIfIncomplete: boolean) => {
       attempt.cancel();
+      // 已完成註冊（active／renew／admin）的人不會再用到邀請碼，殘留的會被下一位註冊者誤用（H1）。
+      // 不掛 SIGNED_OUT：訪客從邀請連結進 /login 時殘留無效 session 會觸發它，會誤刪剛存的邀請碼。
+      if (['active', 'activating', 'renew', 'admin'].includes(classifyMembershipGate(profile))) {
+        clearPendingReferral();
+      }
       if (redirectIfIncomplete && !isProfileComplete(profile)) {
         const { getPathname = defaultPathname, onIncompleteProfile } = depsRef.current;
         if (shouldRedirectToCompleteProfile(getPathname())) onIncompleteProfile();

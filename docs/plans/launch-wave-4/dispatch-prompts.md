@@ -106,3 +106,22 @@ PR 內文附 P2-1～5 對照表（改了什麼、測試名、紅燈 hash）與 l
 5. 新增測試前看 .claude/rules/test-naming.md，跑 python3 scripts/check-test-names.py；PR 內文附「host × 是否導向」表。
 6. 未驗：Cloudflare 上的實際導向只能合進 main（晉升）後在 uknow.pages.dev 實測；PR 寫明由主 session 晉升後驗證。
 ```
+
+## R4. 第 4 波審查（Opus，審查 session，唯讀；分支 `docs/wave4-review`）
+
+```text
+你是 Uknow 第 4 波的審查 session（每波一個）。主 session 是 session_01MQovbEFdqaJrxqs2p1jZ5D。三種 session 的分工見 docs/README.md〈慣例〉：審查 session 不改產品碼、不直接用要人核准的 MCP（正式站／develop 的現場 SQL 或 Logs 查詢，send_message 交主 session 代跑）。
+先 `git fetch origin develop main` 並讀：docs/plans/launch-wave-4/plan.md（§0 裁決 W4-1～24、§2 工作分解、§5 第 5 波候選、§8 進度）、docs/plans/launch-wave-3/review.md（上一波報告的格式與 §6 升級表）。
+審查範圍：`git log --first-parent 1f61e68..f88bae5`（第 4 波晉升 #490，main=f88bae5）。程式 PR：#484 E、#485 K2、#486 F1、#487 P、#488 T1-B、#489 D、#491（journey runner 固定 24.04）；docs：#478、#479、#480、#483。行號引用 main f88bae5 的樹。
+做法（比照第 3 波 R3）：
+1. 四視角（系統／架構／UIUX／需求）審全部程式變動，T1-B（#488，登入主幹，2,900 行）為重點：暫時性故障分類、無效 session 一定被登出、degraded 不放行受保護頁、重試排程無洩漏、/auth/register post-write 契約、apiClient 兩層確認。每條發現附「具體輸入 → 錯誤結果」，再自己做一輪反駁，推翻或降級的另列。可派子 agent 平行，但結論由你核實。
+2. 未驗項核對：逐支讀 PR 內文「未驗／待真實觸發」，對照 PR 留言、plan §8 與 Actions，寫成 §2 表格。已知：K2 的 deploy-smoke fallback 與缺 secret 標紅待真實觸發；T1-B 正式站 /profile 5xx／逾時分布待量測；P 的 uknow.pages.dev 導向待業主實機確認。
+3. 上線後現場：正式站部署 run 41419246465（/health sha=f88bae5）、deploy-smoke 41425474970；需要 DB／Logs 查詢（例：部署後 /profile 回應狀態分布、system_alerts 新增）就把唯讀查詢 send_message 給主 session。
+4. 流程：本波三種 session 的分工走樣、框架摩擦（至少收：雲端 session 無法由人親打 rm tdd-lock、push 前自動 rebase 讓 progress 記的 hash 失效、GitHub 排程大量跳過、ubuntu-latest 換 26.04 讓 journey 無預警壞掉），寫進 friction-log 新節。
+5. 兼做（plan W4-2 與第 3 波 review §6）：
+   a. 規格書補記 R3 P2-18（首頁返回還原與點 logo 清空、W3-12 Q7 確認框、W3-13 F1「資料未齊一律走註冊中頁首」）——改完跑 python3 scripts/check-spec-drift.py。
+   b. 依 launch-wave-3/review.md §6 升級表逐條處置後 `git rm -r docs/plans/launch-wave-3/`，跑 python3 scripts/check-plans-scaffold.py。
+6. 報告寫 docs/plans/launch-wave-4/review.md：§1 發現（P0／P1／P2，P2 表格附檔案:行與建議）、§2 未驗項、§3 上線後現場、§4 流程、§5 給主 session／業主的待辦、§6 升級進長期文件表（launch-wave-4/ 退場依據）。P0 立刻 send_message 主 session（會開 hotfix），不要等報告寫完。
+7. 分支 docs/wave4-review 從 origin/develop 切；PR 回 develop（draft，內文照 template），開完 subscribe_pr_activity，CI 綠轉 ready、不自己合併。commit 與 push 分兩次 Bash 呼叫。完成後 send_message 主 session：P0／P1／P2 數、需業主裁決的題目與你的建議。
+不寫模型名進 commit／PR。GitHub 留言結尾加 Claude Code 署名 footer。
+```

@@ -3383,3 +3383,29 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   再 `E2E_SKIP_DEV_SERVER=1`。
 - **流程（一次學到）**：紅燈期改「既有測試期望」時要一次改齊同形斷言（漏一條就要走逃生口）；主 session 的同類掃描建議有效，後續階段
   在上鎖前一次改好、未再卡關。
+
+## 2026-11-02｜誤擋／漏網（流程、環境）｜第 4 波審查（`docs/plans/launch-wave-4/review.md`）
+
+- **雲端 session 業主打不了 `! rm .claude/tdd-lock`**（誤擋，第 2 次出現）：T1-B 兩次（W4-20 參數期望；mock 隔離那次 #488 內文自稱「W4-21」，與 plan 的 W4-21〔pages.dev 導向〕撞號，裁決編號只該由主 session 發）、F1 一次（W4-10）
+  都卡在「再由人解鎖」。實際做法收斂成：業主在**該** session 以互動選項授權 → Claude 代刪鎖 → 授權原話寫進 PR「偏離規劃」。
+  F1 那次 `tdd-unlock.sh` 與紅燈測試互鎖（check 不會綠），只能直接刪鎖檔。本波已把做法寫進 `docs/README.md`〈慣例〉；
+  框架修訂候選：`tdd-unlock.sh --owner-authorized "<原話>"` 把授權落進 progress／commit trailer 再刪鎖，DENY_REASON 指路。
+- **push 前自動 rebase 讓記下的 hash 失效**（誤擋／環境）：T1-B 的紅綠 hash 在本波被改寫至少三次——plan §8 11/02 02:05 記的
+  B1 `e4fb277`→`c823fc9`，到 #488 內文已變成 `e2c55e45`→`bc60106f`；commit message 裡引用的舊 hash 全部指向不在分支上的 commit。
+  PR 內文成了唯一正確來源，但 plan §8 沒標「以 PR 內文為準」。候選：progress／plan 只記「階段名＋commit subject」，hash 只在 PR 內文
+  收尾時寫一次；或 rebase 守衛在改寫後印出新舊 hash 對照。
+- **GitHub 排程大量跳過或延遲**（漏網，營運風險）：每小時的 reconcile-payments 在 11/01 21:40～11/02 08:51 UTC 只跑了 3 次
+  （21:40、01:14、08:51）；照片清理實刪首輪排程（UTC 19:17）整次沒跑，次日延遲到 22:51 才觸發。repo 為 public、runner 不缺，
+  原因是 GitHub 排程本身的盡力而為。對帳是金流補償的安全網，跳 3 小時以上就等於沒有。候選：關鍵 job（對帳、照片清理）
+  改由 Supabase pg_cron 觸發 Edge Function，或外部排程打 `workflow_dispatch`；GitHub 排程只留給報表類。已列第 5 波候選。
+- **`ubuntu-latest` 換 26.04 讓 journey 無預警壞掉**（漏網）：晉升 #490 的 journey-full 在「安裝 Playwright 瀏覽器」即紅
+  （Playwright 1.56.1 不支援 ubuntu26.04），測試一條都沒跑。runner image 是外部依賴，沒有任何一層在追。#491 只把 journey-suite
+  固定 `ubuntu-24.04`；其餘 14 個 job 仍是 `ubuntu-latest`（不裝瀏覽器，暫不受影響）。教訓：裝系統相依（`--with-deps`）的 job
+  要釘 runner 版本，升級 Playwright 時一起解釘；晉升 PR 開著時才發現，等於凍結期多一支破例 PR（W4-23）。
+- **紅在測試開始前的 journey 不能套「重跑一次」**（流程）：照規則重跑一次的前提是偶發；環境安裝失敗重跑必紅。已併入
+  `docs/README.md`〈慣例〉「晉升 journey 紅，判偶發前先看現場」。
+- **審查 session 開得太早，現場沒有流量**（流程）：W4-24 業主選「現在開」，R4 開在部署後約 1 小時，`/profile` 5xx／逾時分布、
+  第一筆真付款都還沒有樣本，§3 只能記「待量測」。下一波可把「上線後現場」拆成主 session 在部署後 24～48 小時跑固定查詢、
+  結果寫 plan §8，審查 session 只讀。
+
+處置：第 1、2、4 條列入下次框架整併；第 3 條業主裁決 W4-25 列第 5 波必上（pg_cron）；第 5 條已寫入〈慣例〉；第 6 條業主裁決 W4-26，已寫入〈慣例〉。

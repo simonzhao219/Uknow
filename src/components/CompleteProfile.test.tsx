@@ -25,6 +25,7 @@ import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-libra
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { createContext } from 'react';
 import { ApiError } from '../utils/apiClient';
+import { savePendingReferral } from '../utils/referralInvite';
 
 // radix 的 Checkbox 走 useSize → ResizeObserver,jsdom 沒有這個 API。
 // 只需要「存在且不炸」,不需要真的量測。
@@ -674,7 +675,7 @@ describe('邀請帳號的推薦碼後備預填', () => {
   });
 
   it('pending 有值時用 pending，不被 app_metadata 的碼蓋掉', async () => {
-    localStorage.setItem('pending_referral_code', 'abc123');
+    savePendingReferral('abc123');
     getSession.mockResolvedValue(sessionWith('8048876'));
     renderForm();
     await waitFor(() => expect(getSession).toHaveBeenCalled());
@@ -692,6 +693,16 @@ describe('邀請帳號的推薦碼後備預填', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(referralField().value).toBe('777');
     expect(validateCalls().every(([url]) => !String(url).includes('8048876'))).toBe(true);
+  });
+
+  it('pending 是過期的舊格式殘留碼時不預填、不驗證', async () => {
+    localStorage.setItem('pending_referral_code', '8048878');
+    getSession.mockResolvedValue(sessionWith());
+    renderForm();
+    await act(async () => {});
+    expect(referralField().value).toBe('');
+    expect(validateCalls()).toHaveLength(0);
+    expect(localStorage.getItem('pending_referral_code')).toBeNull();
   });
 
   it('pending 與 app_metadata 都沒有碼時不預填', async () => {
