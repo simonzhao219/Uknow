@@ -125,3 +125,22 @@ PR 內文附 P2-1～5 對照表（改了什麼、測試名、紅燈 hash）與 l
 7. 分支 docs/wave4-review 從 origin/develop 切；PR 回 develop（draft，內文照 template），開完 subscribe_pr_activity，CI 綠轉 ready、不自己合併。commit 與 push 分兩次 Bash 呼叫。完成後 send_message 主 session：P0／P1／P2 數、需業主裁決的題目與你的建議。
 不寫模型名進 commit／PR。GitHub 留言結尾加 Claude Code 署名 footer。
 ```
+
+## H1. Hotfix：邀請推薦碼暫存無期限、跨使用者殘留（Sonnet，`/fix-bug`，`fix/pending-referral-stale`）
+
+```text
+工項 H1（plan.md §0 W4-28，業主 2026-11-03 回報、定為 P0 hotfix）。
+現象：使用者沒填推薦碼，完善資料頁的推薦碼欄卻被自動填好並驗證，下一頁結帳頁就顯示「推薦人：某某」。正式站 11/02 一位新會員（已付款）綁到 8048878，帳號沒有 Email 邀請章 → 來源是 localStorage `pending_referral_code`。
+根因（主 session 讀 main f88bae5 確認）：src/utils/referralInvite.ts 的 savePendingReferral 把 `?ref=` 存進 localStorage（AuthPage.tsx 兩處呼叫），**沒有時間戳、沒有過期**；只有註冊完成或「稍後註冊」才清，登出不清（F1 的 clearAccountLocalState 刻意保留「訪客帶進來的」推薦碼）。所以同一個瀏覽器只要曾開過任何邀請連結／QR，之後任何人在這裡註冊都會被自動帶入，CompleteProfile.tsx 的 getPendingReferral 預填 effect（約 :276-285）會直接填入並 verify。
+業主裁決 W4-28：立刻修、走 hotfix 晉升；**不要**加特別的提示文案或 UI。
+要做（走 /fix-bug：根因＋同類掃描＋四面向＋防線回填）：
+1. 暫存加期限：savePendingReferral 改存 { code, savedAt }（JSON）；getPendingReferral 讀到超過 7 天的、或舊格式（純字串、無時間戳）的值一律視為無效並清除、回 null。期限做成具名常數，寫在規格書推薦碼帶入那段（找規格書 §7 推薦碼／邀請連結的描述；若規格書寫了「帶入」行為就補一句期限），並在 scripts/check-spec-drift.py 補 ConstantRule（照該腳本慣例、加 --self-test 案例）。
+2. 跨使用者清除，但**不得**誤刪正在註冊的訪客的邀請碼：
+   - 不要把它加進 SIGNED_OUT 的 clearAccountLocalState 路徑——AuthPage 掛載時對殘留的無效 session 會 endInvalidSession，觸發 SIGNED_OUT；訪客正是從邀請連結進 /login，若在這裡清就會把剛存的邀請碼刪掉（R2 邀請契約）。
+   - 改在兩個時機清：(a) 使用者主動登出（useMemberLogout 與漏斗登出 useFunnelLogout 的處理函式）；(b) bootstrap 確認登入者**已完成註冊**（非註冊中、已有會員資料）時——已註冊的人不會再用到邀請碼。換帳號（onAccountSwitched）若屬 (b) 也一併清。
+   - 寫測試證明：訪客帶 ?ref= 進 /login 且瀏覽器殘留無效 session 時，邀請碼仍在、完善資料頁仍會帶入（既有邀請 e2e 情境照綠）。
+3. 同類掃描：其他沒有期限、跨使用者的 localStorage 鍵（盤點 src 內 localStorage.setItem），列進 PR「未處理」或一併處理（小的才處理）。
+4. 不改後端、不加 migration、不改推薦綁定規則。既有已綁定的會員資料不動（W4-29）。
+5. 測試：referralInvite 單元測試（過期、舊格式、正常）、CompleteProfile 預填（過期不帶入）、登出清除、已註冊者登入清除、訪客邀請流程不受影響；e2e 相關情境本機全 mock 跑綠。新增測試前看 .claude/rules/test-naming.md，跑 python3 scripts/check-test-names.py。
+6. PR 內文附：根因、時機表（哪些事件清、哪些不清、為什麼）、紅燈 hash。這是 hotfix：PR 合進 develop 後主 session 會開 hotfix 晉升 PR。
+```
