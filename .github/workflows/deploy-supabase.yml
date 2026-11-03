@@ -48,7 +48,12 @@ concurrency:
 jobs:
   deploy-edge-function:
     # CI 沒綠就不部署。這一行是整個檔案存在的理由。
-    if: github.event.workflow_run.conclusion == 'success'
+    # 只認本 repo 的 push：branches 篩的是 head_branch「名稱」，fork PR 的
+    # 分支也能叫 develop/main；PR 觸發的 CI 也不該部署（push 那次才算）。
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
