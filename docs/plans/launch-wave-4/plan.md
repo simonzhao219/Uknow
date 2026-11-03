@@ -143,7 +143,7 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | #489 ✅ af62783 | 收工 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 | R4 | `session_01MQovbEUaxUm8t1wy1B8TQw` | Opus | `docs/wave4-review` | — | 審查中（兼 launch-wave-3/ 退場、P2-18） |
-| H1 | `session_01MQovbE86uQA5coUEfKX5ka` | Sonnet | `fix/pending-referral-stale` | — | P0 hotfix 施工中（W4-28） |
+| H1 | `session_01MQovbE86uQA5coUEfKX5ka` | Sonnet | `fix/pending-referral-stale` | #494 ✅ 777eca7 | 收工；hotfix 晉升 #496 |
 | AU-pay | `session_01MQovbFQWfDSj4gCFxtvJHj` | Opus | `docs/audit-pay` | — | 稽核中（W4-30） |
 | AU-ref | `session_01MQovbCaVMsu3xMgUt39Lc4` | Opus | `docs/audit-ref` | — | 稽核中 |
 | AU-auth | `session_01MQovbAePTLz4rybfKvmkJQ` | Opus | `docs/audit-auth` | — | 稽核中 |
@@ -177,3 +177,4 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 18:52 | 業主裁決 **W4-24**（R4 現在開）。開 **R4** `session_01MQovbEUaxUm8t1wy1B8TQw`（Opus），派工段落 `dispatch-prompts.md` §R4 | 合 #492；等 R4 報告；業主實機確認 P 導向與登入 |
 | 11/03 18:40 | **24h 現場查詢（W4-26）**：正式站 Edge 24h（10:01Z～10:01Z）`/profile` 200×2（p95 2.1s）、OPTIONS 204×2，無 503／404／逾時；postgres ERROR／FATAL 0（WARNING 4,734 為平台 collation 警告）；system_alerts 新增 0、未 resolve 0。**第一筆正式站真付款**（10:22Z，1,200 元，PayUni SUCCESS／授權成功）→ 訂閱 active（台北 11/03～2027/11/02，非續約、已連結訂單）、預設推薦人依 §7.4 於付款時綁定；PayUni 回應無發票欄位（發票由 PayUni 代開、不存本系統）→ **業主到 PayUni 商店後台確認發票已開立**。排程準時度：reconcile 24h 只跑 3 次（應 24）、purge 延遲 6h20m → 佐證 W4-25 | 業主確認發票；W4-25 第 5 波必上 |
 | 11/03 18:50 | 業主回報 **P0**：使用者沒填推薦碼，結帳頁卻顯示推薦人。主 session 查：11/02 註冊、已付款的會員綁 8048878（非預設、無 Email 邀請章）→ 來源是 `pending_referral_code` localStorage（無期限、登出不清）。業主裁決 **W4-28**（立刻修、hotfix、不加提示）、**W4-29**（推薦關係維持）。開 **H1** hotfix。業主另要全面稽核：**W4-30** 開 4 組 Opus 稽核（pay／ref／auth／ops）；**W4-31** 監控錄影 P0 後討論 | H1 → hotfix 晉升；彙整 4 份稽核 |
+| 11/03 21:52 | H1 交 #494（紅燈 `bcaa5f5`→綠燈 `da063c0`，另 `1fdb1cf` 把 entry gzip 預算 310→312 kB：develop 原已貼 310.0）。主 session 審：期限判斷、清除時機（主動登出、已註冊者 ingest；不掛 SIGNED_OUT）、紅燈後未改測試——無 P0／P1；規格書〔實作〕行尾缺換行黏到下一句 → 主 session 在本 PR（#495）文件小修。**#494 合進 develop（777eca7）** → 開 hotfix 晉升 **#496**（develop→main，含 #492／#493 docs），已訂閱。H1 未處理：`otpSession` 存 email、共用裝置可能預填前一人 email（低風險，列第 5 波候選） | #496 journey-full → 合 main → 業主核准 production |
