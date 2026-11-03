@@ -143,6 +143,11 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | D | `session_01MQovbCLxWoPdK9FnooQMgb` | Sonnet | `fix/npm-audit-467` | #489 ✅ af62783 | 收工 |
 | P | `session_01MQovbEsQtrDFGbM41Hz9nC` | Sonnet | `fix/pages-root-redirect` | #487 ✅ efa1d06 | 收工；晉升後實測導向 |
 | R4 | `session_01MQovbEUaxUm8t1wy1B8TQw` | Opus | `docs/wave4-review` | — | 審查中（兼 launch-wave-3/ 退場、P2-18） |
+| H1 | `session_01MQovbE86uQA5coUEfKX5ka` | Sonnet | `fix/pending-referral-stale` | — | P0 hotfix 施工中（W4-28） |
+| AU-pay | `session_01MQovbFQWfDSj4gCFxtvJHj` | Opus | `docs/audit-pay` | — | 稽核中（W4-30） |
+| AU-ref | `session_01MQovbCaVMsu3xMgUt39Lc4` | Opus | `docs/audit-ref` | — | 稽核中 |
+| AU-auth | `session_01MQovbAePTLz4rybfKvmkJQ` | Opus | `docs/audit-auth` | — | 稽核中 |
+| AU-ops | `session_01MQovbBPivuGf9DbQbim5mY` | Opus | `docs/audit-ops` | — | 稽核中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列）
 
@@ -170,3 +175,5 @@ A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQ
 | 11/02 07:00 | #490 journey-full 第一輪（run 41351709141）在「安裝 Playwright 瀏覽器」即紅：`ubuntu-latest` 換成 Ubuntu 26.04，Playwright 1.56.1 不支援（`does not support chromium on ubuntu26.04-x64`），測試未執行；其餘各軌皆綠。與本波改動無關、重跑必紅。業主裁決 **W4-23** → 主 session 開 **#491**（1 行 CI 修補：journey-suite 固定 `ubuntu-24.04`，主 session ≤10 行例外），已在 #490 留言說明。另：照片清理**實刪模式首輪已驗**——11/02 那次排程延遲到 UTC 22:51 才觸發（run 41359203507，schedule、LIVE、dry_run=false）：候選 0、刪除 0、物件 32、URL 30/30、刊登者 10/10；已更新第 3 波 review §2，取消 11/03 的檢查提醒 | #491 CI 綠 → 合 → #490 journey-full 重跑 |
 | 11/02 18:05 | #491 CI 全綠 → 合進 develop（987af62）。#490 自動帶到修正，journey-full 重跑（run 41415959428，ubuntu-24.04）：**146 collected／146 ran／0 skipped**，CI 全綠 → **#490 合進 main（f88bae5）**。main CI push 41419197178 綠。業主核准 `production` → deploy-supabase 41419246465 綠：`/health` sha＝f88bae5（第 1 次探測）、PayUni production 憑證齊全、預設推薦人 ok。主 session 手動 dispatch deploy-smoke 41425474970（ref=main）綠：正式站與 develop 前端版本皆 f88bae5、快取與安全標頭正確、PayUni 兩站閘門 200。部署後正式站 Edge 日誌暫無流量。**第 4 波晉升完成**。未驗：`uknow.pages.dev` 導向與正式站登入（容器連不到 pages.dev，交業主實機確認） | 業主實機確認 P 導向與登入；合 #492；開 R4 |
 | 11/02 18:52 | 業主裁決 **W4-24**（R4 現在開）。開 **R4** `session_01MQovbEUaxUm8t1wy1B8TQw`（Opus），派工段落 `dispatch-prompts.md` §R4 | 合 #492；等 R4 報告；業主實機確認 P 導向與登入 |
+| 11/03 18:40 | **24h 現場查詢（W4-26）**：正式站 Edge 24h（10:01Z～10:01Z）`/profile` 200×2（p95 2.1s）、OPTIONS 204×2，無 503／404／逾時；postgres ERROR／FATAL 0（WARNING 4,734 為平台 collation 警告）；system_alerts 新增 0、未 resolve 0。**第一筆正式站真付款**（10:22Z，1,200 元，PayUni SUCCESS／授權成功）→ 訂閱 active（台北 11/03～2027/11/02，非續約、已連結訂單）、預設推薦人依 §7.4 於付款時綁定；PayUni 回應無發票欄位（發票由 PayUni 代開、不存本系統）→ **業主到 PayUni 商店後台確認發票已開立**。排程準時度：reconcile 24h 只跑 3 次（應 24）、purge 延遲 6h20m → 佐證 W4-25 | 業主確認發票；W4-25 第 5 波必上 |
+| 11/03 18:50 | 業主回報 **P0**：使用者沒填推薦碼，結帳頁卻顯示推薦人。主 session 查：11/02 註冊、已付款的會員綁 8048878（非預設、無 Email 邀請章）→ 來源是 `pending_referral_code` localStorage（無期限、登出不清）。業主裁決 **W4-28**（立刻修、hotfix、不加提示）、**W4-29**（推薦關係維持）。開 **H1** hotfix。業主另要全面稽核：**W4-30** 開 4 組 Opus 稽核（pay／ref／auth／ops）；**W4-31** 監控錄影 P0 後討論 | H1 → hotfix 晉升；彙整 4 份稽核 |
