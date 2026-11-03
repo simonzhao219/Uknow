@@ -1,0 +1,1 @@
+{"branch": "HEAD", "ended": "2026-11-03T13:58:08+00:00", "fired": {"model-effort-advisor/opus-tier": 2}, "passed": {"bash-guard": 154, "check-output-filter": 154, "deletion-residue-check": 1, "feature-plan-guard": 1, "model-effort-advisor": 1, "tdd-test-guard": 1}, "session": "e3017e095f4f", "started": "2026-11-03T13:48:55+00:00"}
