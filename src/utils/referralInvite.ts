@@ -16,6 +16,8 @@ import { openExternalLink } from './externalLink';
 import { normalizeReferralCode } from './referralCode';
 
 const PENDING_KEY = 'pending_referral_code';
+/** 待帶入推薦碼的有效天數（stub，綠燈期實作）。 */
+export const PENDING_REFERRAL_TTL_DAYS = 0;
 
 /**
  * 邀請連結的網域來源：優先用建置時設定的正式網域（VITE_PUBLIC_APP_URL），

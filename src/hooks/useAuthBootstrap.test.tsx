@@ -3,6 +3,7 @@
 // useAuthBootstrap：冷啟動／事件／重驗的狀態機與首繪提示（T1 auth-state-trust，plan §2.2、§2.5）。
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getPendingReferral, savePendingReferral } from '../utils/referralInvite';
 import { AUTH_HINT_KEY, readAuthHint, writeAuthHint } from '../utils/authHint';
 import type { ProfileFetchResult } from '../utils/fetchProfile';
 import { type AuthBootstrapDeps, useAuthBootstrap } from './useAuthBootstrap';
@@ -309,6 +310,41 @@ describe('useAuthBootstrap 換帳號（S11）', () => {
     const t = setup({ session: session(UID_B) });
     await t.resolveSession();
     expect(t.hook.result.current.hintVerified).toBe(false);
+  });
+
+  describe('useAuthBootstrap 邀請推薦碼暫存（H1）', () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it('已完成註冊的會員登入確認後清掉殘留的待帶入推薦碼', async () => {
+      savePendingReferral('8048878');
+      const t = setup();
+      await t.resolveSession();
+      await t.respond(ok(MEMBER));
+      expect(getPendingReferral()).toBeNull();
+    });
+
+    it('註冊中（首購未付款）的登入者保留待帶入推薦碼', async () => {
+      savePendingReferral('8048878');
+      const t = setup();
+      await t.resolveSession();
+      await t.respond(ok(UNPAID));
+      expect(getPendingReferral()).toBe('8048878');
+    });
+
+    it('資料未齊的註冊中登入者保留待帶入推薦碼', async () => {
+      savePendingReferral('8048878');
+      const t = setup();
+      await t.resolveSession();
+      await t.respond(ok(INCOMPLETE));
+      expect(getPendingReferral()).toBe('8048878');
+    });
+
+    it('無 session 的訪客冷啟動不清待帶入推薦碼', async () => {
+      savePendingReferral('8048878');
+      const t = setup({ session: null });
+      await t.resolveSession();
+      expect(getPendingReferral()).toBe('8048878');
+    });
   });
 
   it('SIGNED_IN 為另一個 uid 時清提示、轉 unknown 並載入新帳號', async () => {

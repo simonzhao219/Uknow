@@ -17,6 +17,7 @@ vi.mock('../utils/signOutWithFallback', () => ({
   signOutWithFallback: (...a: unknown[]) => signOut.fn(...a),
 }));
 
+import { getPendingReferral, savePendingReferral } from '../utils/referralInvite';
 import { AUTH_HINT_KEY, writeAuthHint } from '../utils/authHint';
 import { useMemberLogout } from './useMemberLogout';
 
@@ -58,6 +59,16 @@ describe('useMemberLogout', () => {
     expect(t.setUser).toHaveBeenCalledWith(null);
     expect(localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
     expect(t.path()).toBe('/');
+  });
+
+  it('主動登出清掉待帶入的推薦碼，避免下一位使用者被自動帶入', async () => {
+    signOut.fn = vi.fn(async () => ({ localOnly: false }));
+    savePendingReferral('8048878');
+    const t = setup();
+    await act(async () => {
+      await t.hook.result.current();
+    });
+    expect(getPendingReferral()).toBeNull();
   });
 
   it('登出擲例外時照樣導首頁', async () => {

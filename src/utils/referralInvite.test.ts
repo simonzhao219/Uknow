@@ -5,6 +5,7 @@ import {
   savePendingReferral,
   getPendingReferral,
   clearPendingReferral,
+  PENDING_REFERRAL_TTL_DAYS,
   buildLineShareUrl,
   shareReferralInvite,
 } from './referralInvite';
@@ -188,6 +189,48 @@ describe('pending referral — 撐過註冊漏斗（save/get/clear）', () => {
     expect(() => savePendingReferral('abc123')).not.toThrow();
     expect(getPendingReferral()).toBeNull();
     expect(() => clearPendingReferral()).not.toThrow();
+  });
+});
+
+describe('pending referral — 期限與舊格式（H1：殘留碼不得跨使用者）', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  let store: Map<string, string>;
+  beforeEach(() => {
+    store = installMemoryStorage();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-03T00:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('期限常數為 7 天', () => {
+    expect(PENDING_REFERRAL_TTL_DAYS).toBe(7);
+  });
+
+  it('期限內仍可取回', () => {
+    savePendingReferral('abc123');
+    vi.setSystemTime(Date.now() + 6 * DAY);
+    expect(getPendingReferral()).toBe('abc123');
+  });
+
+  it('超過 7 天視為無效、回 null 並清除', () => {
+    savePendingReferral('abc123');
+    vi.setSystemTime(Date.now() + 7 * DAY + 1000);
+    expect(getPendingReferral()).toBeNull();
+    expect(store.has('pending_referral_code')).toBe(false);
+  });
+
+  it('舊格式（純字串、無時間戳）視為無效並清除', () => {
+    store.set('pending_referral_code', '8048878');
+    expect(getPendingReferral()).toBeNull();
+    expect(store.has('pending_referral_code')).toBe(false);
+  });
+
+  it('壞掉的 JSON 或缺欄位視為無效並清除', () => {
+    store.set('pending_referral_code', '{"code":"abc"}');
+    expect(getPendingReferral()).toBeNull();
+    expect(store.has('pending_referral_code')).toBe(false);
   });
 });
 
