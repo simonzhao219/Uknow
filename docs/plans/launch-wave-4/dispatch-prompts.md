@@ -144,3 +144,44 @@ PR 內文附 P2-1～5 對照表（改了什麼、測試名、紅燈 hash）與 l
 5. 測試：referralInvite 單元測試（過期、舊格式、正常）、CompleteProfile 預填（過期不帶入）、登出清除、已註冊者登入清除、訪客邀請流程不受影響；e2e 相關情境本機全 mock 跑綠。新增測試前看 .claude/rules/test-naming.md，跑 python3 scripts/check-test-names.py。
 6. PR 內文附：根因、時機表（哪些事件清、哪些不清、為什麼）、紅燈 hash。這是 hotfix：PR 合進 develop 後主 session 會開 hotfix 晉升 PR。
 ```
+
+## AU. 全面稽核（W4-30；Opus × 4 組平行，唯讀；先貼「AU 共用」再貼該組段落）
+
+### AU 共用
+
+```text
+你是 Uknow 的稽核 session（W4-30，業主 2026-11-03：「從各方面確認有沒有 bug，測試有沒有涵蓋到」）。主 session＝session_01MQovbEFdqaJrxqs2p1jZ5D。
+- 唯讀稽核：**不改產品碼、不修 bug**，只產出報告。審 origin/main（正式站＝f88bae5）；`git fetch origin main develop` 後在 main 的樹上讀。行號以 main 為準。
+- 另一個 hotfix session（H1，fix/pending-referral-stale）正在修「邀請推薦碼 localStorage 暫存無期限、跨使用者殘留」——那條不必再報，但同類問題（其他本機暫存、其他跨使用者殘留）要報。
+- 方法：以 docs/uknow-software-specification.md 對應章節為準（規格與程式衝突時記為發現，不自行判誰對），逐條對照「規格 → 程式實作 → 測試」。每條規則都要回答三件事：實作有沒有照規格？哪些輸入會出錯（具體輸入 → 錯誤結果）？有沒有測試守著（列測試檔與測試名；沒有就寫「無」）？
+- 測試層次：vitest（src/**.test.ts(x)）、Deno（supabase/functions/api/*.test.ts、*.unit.test.ts）、e2e（e2e/features/*.feature＋steps，全 mock）、journey（e2e/journey，真後端）。覆蓋要寫到「哪一層」。
+- 每條發現自己做一輪反駁（真的會發生嗎？既有防線擋不擋得住？），推翻或降級的另列。可派子 agent 平行，但結論由你親自核實。
+- 需要正式站／develop 資料佐證時：把唯讀 SQL 或 Logs 查詢 send_message 給主 session 代跑，不要自己用 Supabase MCP。
+- 嚴重度：P0＝正式站錯錢、錯綁推薦、個資外洩、會員被誤擋或誤放行、資料毀損；P1＝明確 bug、影響有限或有繞道；P2＝小缺口／記債。**發現 P0 立刻 send_message 主 session**，不要等報告寫完。
+- 產出：docs/plans/launch-wave-4/audit-<組別代號>.md（第二行放 `<!-- plans-keep: 第 4 波稽核報告；退場條件＝第 5 波審查 session 依第 5 波 plan 處置後刪除 -->`）。章節：§1 發現（P0／P1／P2 表：檔案:行、失敗情境、建議修法、現有測試）、§2 覆蓋對照表（規格條目 → 實作位置 → 測試層與測試名／無）、§3 建議補的測試（依風險排序）、§4 被反駁推翻的。分支 docs/audit-<組別代號> 從 origin/develop 切，PR 回 develop（draft，內文照 template），開完 subscribe_pr_activity，CI 綠轉 ready、不自己合併。commit 與 push 分兩次 Bash 呼叫。完成後 send_message 主 session：P0／P1／P2 數、最該先修的三條、覆蓋缺口最大的三處。
+- 不寫模型名進 commit／PR。GitHub 留言結尾加 Claude Code 署名 footer。
+```
+
+### AU-pay 金流與會籍（代號 pay）
+
+```text
+範圍：註冊後付款與會籍的全部路徑。規格書 §4（註冊步驟）、§5（會籍、續約新約／續約、寬限期、§5.3 讀取失敗）、§6（付款）、§7.4（預設推薦人在付款時套用）、§11（自癒、對帳）、§14 已知落差。程式：supabase/functions/api/index.ts 的 /payuni/prepare、/payuni/return、/webhooks/payuni/notify、/payuni/result/:tradeNo、/internal/reconcile-pending-payments、/subscriptions/status、buildProfileResponse 的付款相關欄位；migrations 內 process_successful_payment、complete_paid_pending_orders、自癒函式、subscriptions／payment_orders 約束；前端 PaymentCheckout、PaymentResult、registrationFlow、續約 UI。重點：重複付款、金額竄改、回呼重放／順序顛倒、已付款未開通、寬限期與到期邊界（時區）、續約新約的推薦人換線、發票參數、對帳誤標 expired（issue #395）。
+```
+
+### AU-ref 推薦、獎勵、任務、提領（代號 ref）
+
+```text
+範圍：規格書 §7–§10（推薦碼、推薦樹與換線、獎勵點數與帳本、任務與推薦王、提領與身分驗證），以及 reward_config 參數。程式：index.ts 的 /referrals/*、/rewards/*、/tasks/*、/admin/withdrawals*、referral-invite.ts；migrations 內 apply_referral_side_effects、帳本與 ledger_reset、推薦王、提領狀態機；前端 referral／reward／task 元件。重點：獎勵重複發放或漏發、帳本餘額與提領競態、ledger_reset 沖銷、推薦王門檻與每滿 N 發放、換線後獎勵歸屬、自我推薦與循環、停權推薦人、提領金額規則（最低額、倍數）、身分證與銀行帳號遮罩。
+```
+
+### AU-auth 註冊、登入與本機狀態（代號 auth）
+
+```text
+範圍：規格書 §2（角色與頁首）、§3（路由與守衛）、§4 註冊漏斗（/register → OTP → 完善資料 → 付款）、§5.3、邀請連結與 Email 邀請（R2 契約）、忘記密碼。程式：AuthPage、OTPVerificationPage、ForgotPasswordPage、CompleteProfile、useAuthBootstrap、fetchProfile、apiClient、endInvalidSession、signOutWithFallback、clearAccountLocalState、referralInvite、formDraft、otpSession、各 ProtectedRoute／AdminRoute／RequireMembershipRoute、index.ts 的 /auth/* 與 requireAuth／authenticate。重點：所有 localStorage／sessionStorage 鍵的生命週期與跨使用者殘留（同一瀏覽器換人、共用裝置、多分頁）、登出清不乾淨、守衛誤放行或誤擋、OTP 重送與過期、邀請入口、第 4 波 R4 review.md §1 已列的 P2 是否成立（不必重報已列的，除非你判定嚴重度該升）。
+```
+
+### AU-ops 後台、排程與資料安全（代號 ops）
+
+```text
+範圍：規格書 §12–§13（後台、掃碼驗證、公告、功能旗標）、§11 照片清理、告警與排程，以及全站資料安全。程式：index.ts 的 /admin/*、/internal/*、/announcements/*、/listings/*、listing-photos.ts、requireAdmin 類守衛、CORS（resolveCorsOrigin）、限流；supabase/migrations 的 RLS policy、security definer 函式的 search_path 與 grant／revoke、storage bucket policy；.github/workflows 的排程（reconcile、purge、deploy-smoke、security）與 notify。重點：越權（一般會員打得到 admin／internal 端點、讀到別人的資料）、RLS 漏洞、PII（身分證、銀行帳號、手機）在 API 回應或 log 外洩、刊登與照片刪除權限、排程失敗靜默（GitHub 排程跳過已知，W4-25 處理中）、告警漏推。
+```
