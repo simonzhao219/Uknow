@@ -9,9 +9,9 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 座標表＋距離與所在區 | ⬜ 未開始 | | |
-| 2 | 區級排序＋抽 filterAndSortListings | ⬜ 未開始 | | |
-| 3 | 等待＋FLIP 重排 | ⬜ 未開始 | | |
+| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ⬜ 未開始 | | |
+| 2 | 座標表＋區級排序＋動態載入接入＋預算決定 | ⬜ 未開始 | | |
+| 3 | 等待狀態機＋FLIP 重排＋orderMode | ⬜ 未開始 | | |
 | 4 | 凍結脈絡＋lastViewedId＋返回定位 | ⬜ 未開始 | | |
 | 5 | PhotoCarousel onEdgeSwipe＋swipeIntent | ⬜ 未開始 | | |
 | 6 | 詳情頁換篇（key wrapper／控制列／鍵盤／焦點） | ⬜ 未開始 | | |
