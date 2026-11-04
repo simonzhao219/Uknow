@@ -1,5 +1,7 @@
 # 刊登詳情頁左右滑換篇 實作進度
 
+<!-- plans-keep: 施工鷹架；/tdd-implement 收尾刪除 -->
+
 分支:`feature/listing-swipe-nav`
 規劃書:`./plan.md`|審查:`./review.md`
 
