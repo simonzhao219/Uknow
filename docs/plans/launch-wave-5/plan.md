@@ -83,6 +83,8 @@
 | W5-19 | S1 審查 P0 #1「過半失敗也告警」無出處 | 出處是本檔所屬 `dispatch-prompts.md` S1 段原文（需求 reviewer 讀不到派工檔），豁免；`checked>=2` 門檻在 S1 plan 寫明理由 |
 | W5-28 | S7 其餘規劃題 | 照 S7 建議：凍結脈絡存模組層；未換篇返回維持原 scrollY、換過篇才置中最後那張；無首頁脈絡不顯示換篇；輪播聚焦時 ←→ 換照片；審查 P0（換 :id 時元件狀態未重設）必處置 |
 | W5-30 | S7 Q5 座標資料授權、entry 預算 | 授權 S7 在階段 2 開頭於有網路處確認國土測繪中心資料來源與授權，不成立就停下；entry gzip 預算准於階段 2 實測後上調，上限比現行多 3 kB，超過就停下回報 |
+| W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
+| W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 
 ## 1. 時程
 
@@ -178,11 +180,11 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃 v3.1 通過；等業主親打 `/tdd-implement` |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 實作中（階段 1 起；階段 2 等碼表） |
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃 r2 通過；等業主親打 `/tdd-implement` |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
-| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 規劃 v2.1 通過；等業主親打 `/tdd-implement` |
+| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -202,3 +204,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 02:40 | S3 rebase 到 547adb1，diff 與審過的版本除行號外相同，CI 全綠 → **#508 合進 develop（22a03af）**。S2 交規劃 r2：D 段照 W5-12 改成「稍後註冊」走 `useFunnelLogout`、拿掉確認框、`/auth/cancel-signup` 與 8 條守衛測試退場（以 404 測試釘住）；A／E 照 W5-13、W5-14；13 條 P1 都有處置。主 session 親審通過（未重跑整輪 /review-plan）。P2：後台沒有刪帳號工具（W5-12 的「找客服」）→ 第 6 波候選 | 業主到 S2 session 親打 `/tdd-implement payment-concurrency-guard` |
 | 11/05 03:00 | S7 交規劃（#509 draft；P0 1：換 :id 時元件狀態未重設）。業主第二題 UX（首頁排序跳動）：主 session 讀碼說明現況，業主裁決 **W5-24～27**，主 session 定 W5-28；第二題併入 S7。S1 交規劃 v3.1（三輪審查，P0 皆處置）→ 主 session 親審通過，晉升硬性驗收寫進 §4。S2 已 rebase 到 22a03af | 業主到 S1、S2 session 親打 `/tdd-implement`；S7 修 plan 重審 |
 | 11/05 03:20 | S7 交規劃 v2.1（第二輪 /review-plan P0 0、P1 10 皆處置；座標表走動態 chunk、FLIP 手刻 WAAPI）。業主裁決 **W5-29**（座標晚到一律重排）；主 session 定 W5-30（資料授權於階段 2 確認、預算上限 +3 kB）。主 session 親審通過 | 業主到 S7 session 親打 `/tdd-implement listing-swipe-nav` |
+| 11/05 04:00 | 業主已在 S1、S7 親打 `/tdd-implement`。S1 階段 0 spike：①②③⑤ 過，④ 由業主裁 **W5-31**，⑥ 碼表連不到。S7 階段 1 綠（hash 以 #509 內文為準），階段 2 的界線資料連不到。業主裁 **W5-32**：自行放行四個網域 | 業主放行後 S1、S7 重試；S2 等業主親打 `/tdd-implement` |
