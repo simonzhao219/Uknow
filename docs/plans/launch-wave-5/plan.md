@@ -181,11 +181,11 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 實作中（階段 1 起；階段 2 等碼表） |
-| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃 r2 通過；等業主親打 `/tdd-implement` |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 實作中 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
-| S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
+| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | — | 規劃中 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
@@ -205,3 +205,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 03:00 | S7 交規劃（#509 draft；P0 1：換 :id 時元件狀態未重設）。業主第二題 UX（首頁排序跳動）：主 session 讀碼說明現況，業主裁決 **W5-24～27**，主 session 定 W5-28；第二題併入 S7。S1 交規劃 v3.1（三輪審查，P0 皆處置）→ 主 session 親審通過，晉升硬性驗收寫進 §4。S2 已 rebase 到 22a03af | 業主到 S1、S2 session 親打 `/tdd-implement`；S7 修 plan 重審 |
 | 11/05 03:20 | S7 交規劃 v2.1（第二輪 /review-plan P0 0、P1 10 皆處置；座標表走動態 chunk、FLIP 手刻 WAAPI）。業主裁決 **W5-29**（座標晚到一律重排）；主 session 定 W5-30（資料授權於階段 2 確認、預算上限 +3 kB）。主 session 親審通過 | 業主到 S7 session 親打 `/tdd-implement listing-swipe-nav` |
 | 11/05 04:00 | 業主已在 S1、S7 親打 `/tdd-implement`。S1 階段 0 spike：①②③⑤ 過，④ 由業主裁 **W5-31**，⑥ 碼表連不到。S7 階段 1 綠（hash 以 #509 內文為準），階段 2 的界線資料連不到。業主裁 **W5-32**：自行放行四個網域 | 業主放行後 S1、S7 重試；S2 等業主親打 `/tdd-implement` |
+| 11/05 04:10 | 業主已在 S2 親打 `/tdd-implement`，並放行四個網域（W5-32）；主 session 從同一個環境實測四個都通（302／200），已通知 S1、S7 重試。S1、S2 都已進實作 → 照 W5-2 開 **S4**（Sonnet，規劃） | 等各 session 回報 |
