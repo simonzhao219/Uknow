@@ -10,7 +10,7 @@
 | 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | 🟡 ①②③⑤ ✅；④ 依 W5-31 接受平台預設；⑥ 待業主放行 docs.payuni.com.tw（W5-32 (a)），階段 2 等它 | — | — |
 | 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ✅ 綠 | 29a5adec | （本 commit） |
 | 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
-| 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ⬜ 未開始 | | |
+| 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ✅ 綠（先做，見偏離） | 9385e16c | 725b3c8c |
 | 4 | 對帳 handler 接 withScheduledRun | ⬜ 未開始 | | |
 | 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ⬜ 未開始 | | |
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ⬜ 未開始 | | |
@@ -40,6 +40,12 @@
 ## migration 各階段追加的段落（`20261111000001_scheduled_job_runs.sql`）
 
 - 階段 1：`scheduled_job_runs` 表與索引、RLS＋revoke、`begin_scheduled_run`、`finish_scheduled_run`
+
+## 偏離規劃（PR 內文要列）
+
+- **階段 3 早於階段 2**：plan §5 寫 2 → 3。階段 2 在等官方碼表（W5-32），主 session 指示 3～9 先做。階段 3 的全滅判斷本來就不計 `unknownStatus`，所以可以先做。「全部 unknown → 不全滅」那條案例移到階段 2 補。
+- **階段 3 的 handler 層測試放在 `reconcile-outcome.unit.test.ts`**，用注入的假 deps；plan 原寫在 `reconcile-pending-payments.test.ts`（D）。迴圈計數也用假 client，才能做出「標 expired 的 update 失敗」。真 DB 的迴圈測試照舊全綠。
+- **紅燈 commit 9385e16c 的測試名有兩條超過 72 字**：commit 前的命名檢查被 `| tail` 吞掉 exit code，沒擋下來。紅燈期測試檔被鎖，所以綠燈後另開一個 commit 只改名稱、不改斷言。
 
 ## 實作決定（plan 未明定，PR 內文要列）
 

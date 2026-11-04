@@ -105,7 +105,7 @@ Deno.test('handleReconcile：查詢全部擲錯 → 502 query_all_failed、帳�
   assert(alerts[0].message.includes('2/2'), alerts[0].message);
 });
 
-Deno.test('handleReconcile：擲錯過半 → 200、帳本 succeeded＋degraded、一筆 query_majority_failed', async () => {
+Deno.test('handleReconcile：擲錯過半 → 200、succeeded＋degraded、一筆 query_majority_failed', async () => {
   const { deps, alerts } = handlerDeps(summary({ checked: 3, queryErrors: 2, resolved: 1 }));
   const out = await handleReconcile(deps);
   assertEquals(out.status, 'succeeded');
@@ -199,7 +199,7 @@ Deno.test('reconcilePendingOrders：全部查詢層非 SUCCESS → 計入 queryF
   assertEquals(s.queryErrors, 0);
 });
 
-Deno.test('reconcilePendingOrders：標 expired 的 update 失敗 → 計入 expireErrors、不計 queryErrors', async () => {
+Deno.test('reconcilePendingOrders：標 expired 失敗 → 計入 expireErrors 而非 queryErrors', async () => {
   const s = await reconcilePendingOrders(
     fakeClient(orders(2, OLD), { updateError: true }),
     () => Promise.resolve({ stillProcessing: true as const }),
