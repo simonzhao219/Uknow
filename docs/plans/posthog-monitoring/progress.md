@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-規劃完成，待 /review-plan 與人審；業主親打 `/tdd-implement posthog-monitoring` 後從階段 1 開始。
+/review-plan 已完成（P0 1、P1 13、P2 8），待修訂 plan 處理 P0 並重審後，由業主裁決再親打 /tdd-implement。
 
 ## Blockers(逃生口紀錄)
 
