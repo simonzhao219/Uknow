@@ -31,7 +31,7 @@
 - **資料表** `src/utils/districtCentroids.ts`（既有靜態表 `TAIWAN_REGIONS`、`serviceCategories` 都在 utils，不新開 `data/` 目錄）：`Record<'縣市|區', [lat, lng]>`，鍵取自 `constants.ts` `TAIWAN_REGIONS`（目前 22 縣市、368 個區；**同名區跨縣市存在，例：台北市中正區／基隆市中正區，鍵必含縣市**）。座標取小數 3 位（約 110 公尺，遠大於區的排序需求）。
 - **大小**：368 列 × 約 28 B ≈ 10 kB raw、約 4–5 kB gzip。entry gzip 預算現貼線（`check-bundle-budget.mjs` 312 kB，貼 #494 的 310→312），**所以此表走動態 import 成獨立 chunk，不進 entry**；載入完成後存於模組變數，之後（含返回首頁）同步可用。**HomePage 與 ServiceProviderDetail 都在 entry（App.tsx:15、16 靜態 import）**，故表不得從 entry 靜態引用。載入失敗（離線、部署切換後舊 hash chunk 404；機制照 `utils/lazyWithRetry.ts`）＝維持最新排序、不報錯、不重試風暴。**HomePage 掛載時就與清單 fetch、`permissions.query`、`getCurrentPosition` 並行預載該 chunk**（granted 路徑的 1.5 秒窗口不得被表載入吃掉）。
 - **資料來源與授權**：內政部國土測繪中心「鄉鎮市區界線」（政府資料開放平臺），適用政府資料開放授權條款第 1 版（可商用，須標示出處）；以一次性離線腳本（`scripts/` 下，不進 bundle、不進 CI）取各區面積加權質心（內陸點外延區如狹長／離島區改取界內代表點），輸出靜態表並在檔頭註明來源、授權、取得日期、演算法。**授權文字與可下載性在實作階段於網路可達處再確認一次——取不到就停下回報主 session，不自行改用來路不明的座標來源。**（本規劃階段雲端容器未驗；列為開放問題 Q5。）
-- **entry 預算（先決定、不等撞牆）**：HomePage 的排序／等待／Link state、詳情頁控制列與純函式必在 entry，預估 entry gzip 增 **約 1.5–2.5 kB**，必然超過現行 312 kB 貼線。處置：(a) 手勢／鍵盤／滑入動畫邏輯放 `useBrowseNav` hook 檔，由詳情頁**僅在脈絡有效時動態載入**；(b) 其餘增量於階段 2 build 後量實測，**預算上調量與理由寫進該階段 commit 與 PR 內文**（腳本檔頭規定），不留到收尾。
+- **entry 預算（先決定、不等撞牆）**：HomePage 的排序／等待／Link state、詳情頁控制列與純函式必在 entry，預估 entry gzip 增 **約 1.5–2.5 kB**，必然超過現行 312 kB 貼線。處置：(a) 手勢／鍵盤／滑入動畫邏輯放 `useBrowseNav` hook 檔，由詳情頁**僅在脈絡有效時動態載入**；(b) 其餘增量於階段 2 build 後量實測，**預算上調量與理由寫進該階段 commit 與 PR 內文**（腳本檔頭規定），不留到收尾。**上限（W5-30）：entry gzip 預算最多比現行 312 kB 多 3 kB（即 ≤315 kB）；超過就停下回報主 session，不繼續往上調。**
 - **腳本**：座標產生腳本選 python（與 scripts 現有 py 一致）、檔頭註明輸入檔 URL／版本／SHA-256 與執行指令，並註明為**非 CI 工具**（不進 framework-check，避免被誤當守衛）；產出表的可重現性靠檔頭資訊。
 - **測試**：表鍵集合＝`TAIWAN_REGIONS` 全部「縣市|區」（少一個就紅，防日後新增區漏座標）；座標在台灣含離島框內（lat 21.8–26.5、lng 118.0–122.1）；每區中心距該縣市既有 `cityCoordinates` 不超過合理上限（花蓮／南投等大縣需例外表，測試內列明）。
 - **使用者所在區**：`nearestDistrict(coords)`＝對 368 個區中心取 haversine 最小者。邊界誤差（區中心反查在大區邊界會偏）可接受：排序用途，非行政判定；規格書寫明「以最近的區中心近似」。
@@ -48,7 +48,10 @@
 - **有快取清單一律立即顯示**（含「有清單、無座標」：座標逾時失敗未寫快取、PUSH 回首頁 `resetHomeView` 只清檢視狀態保留清單）——否則違反業主 2026-10-30「返回不可閃」並使 POP 的 scrollY 還原失效（HomePage.tsx:216-218 需清單已渲染）；座標晚到再依下列規則重排。
 - **快取座標存在（返回路徑）**：直接用，不等、不動畫。`homeListingsCache` 另存 `orderMode: 'distance' | 'latest'`（該次造訪首次顯示時決定），POP 返回沿用，避免返回時順序變動。
 - **FLIP 規則**：**只有「首次顯示為最新、之後因座標晚到轉為距離排序」的那一次重排做 FLIP**；背景重驗、篩選／搜尋變動引起的順序改變一律直接換、不動畫。新一輪排序開始或卸載（使用者點卡進詳情）時先 `cancel()` 進行中的 animations（量測前取消，避免把動畫中的 transform 當基準 rect）。手刻 FLIP 小工具 `utils/flipReorder.ts`（WAAPI `element.animate`，transform translate，220ms ease-out）：以 `data-listing-id` 量可見卡片 rect（視窗上下各多 1 屏、最多 40 張，其餘直接換），`useLayoutEffect` 套用新順序後算 delta 播放；`prefers-reduced-motion: reduce` 直接換不動畫。**不採用 `motion` 的 `layout` prop**：它要求每張卡長期掛 layout、數百張卡的投影量測成本在手機上不值得，而重排一生一次；`motion` 目前只在通知元件使用，在 entry 內的 HomePage 引入會吃預算。計算（delta、挑要動的元素）抽純函式在 node 測，DOM 播放在 jsdom 驗「有／無 reduced-motion 是否呼叫 animate」「被打斷是否 cancel」。
-- **座標晚到時使用者已在互動（需人工裁決，Q8）**：座標最晚在首次顯示後 8 秒才到，此時使用者可能已捲動或正要點卡，FLIP 會讓卡片在手指下移位。**建議**：只在 `scrollY` ≤ 120px 且無進行中觸控且未改過篩選／搜尋時才重排；否則不重排，座標照常存快取，`orderMode` 維持 `latest`（該次造訪內順序不變、下次非返回進入首頁才是距離排序）。
+- **座標晚到一律重排、有動畫（W5-29，業主 2026-11-05 互動選項裁決；不論捲動、觸控或是否改過篩選）**。座標最晚在首次顯示後 8 秒才到，使用者可能已捲動或正要點卡，故採以下兩條緩解（並用，不改變「一律重排」）：
+  1. **點擊防護**：FLIP 播放期間（約 220ms，以動畫 `finished` 或逾時保險 300ms 結束）忽略卡片點擊（`pointer-events: none` 於清單容器），避免點到移位中的卡。
+  2. **錨點維持**：重排前記錄視窗內第一張可見卡的 id 與其 `getBoundingClientRect().top`；重排後依該卡新位置調整 `scrollY`，使它停在原視覺位置（`scrollY` 為 0 時不調整）；該卡若不在新結果內則不調整。錨點調整與 FLIP 位移合併計算（FLIP 的起點 rect 以調整前量測、終點以調整後量測），不得造成可見跳動。
+- 因此 `orderMode` 在座標晚到重排後轉為 `distance`，POP 返回沿用。
 
 ### 2.3 換篇脈絡（W5-26、W5-28）
 - **凍結（模組層，與 homeListingsCache 同生命週期）**：HomePage 兩張卡的 `<Link>`（HomePage.tsx 1067、1104 附近；三種版型 map 全數覆蓋）加 `onClick={() => freezeBrowseContext(orderedIds, id)}`＋`state={{ browseFrom: 'home', ctx }}`。`freezeBrowseContext` 存 `{ ids, entryId, version }`，`version` 為**模組載入時產生的隨機 nonce（`crypto.randomUUID()`，無則 `Math.random`）加遞增計數**，`ctx` 即該值——避免重整後計數歸零、與 history.state 殘留的舊 ctx 碰撞。中鍵／Ctrl＋點擊開新分頁＝新分頁無模組脈絡＝無脈絡（正確）；原分頁的凍結被後續點擊覆寫時，舊詳情條目 Forward 回來會失效（可接受的退化）。`resetHomeListingsCache`（登出）清除。
@@ -89,7 +92,7 @@
 |---|---|---|---|
 | 1 | 規格書先行＋抽 `filterAndSortListings`／`distance.ts`（`cityCoordinates`、`calculateDistance` 搬 utils，HomePage 呼叫；行為不變）。**第一個 commit 先在規格書 §3 補〈首頁排序規則〉草案**（區級距離、全區展開、無定位＝最新、等待 1.5 秒、重排條件；`check-spec-drift` 綠），階段 9 校對 | vitest node：`distance.test.ts`、`homeListingOrder.test.ts`；HomePage 既有測試為護欄 | 抽離前後篩選與（舊縣市級）排序結果一致；規格書段落存在 |
 | 2 | 座標表＋區級排序＋HomePage 動態載入接入：`utils/districtCentroids.ts`（動態 chunk）、`nearestDistrict`、`sortByDistance`、HomePage 掛載預載表並改用區級排序（取代縣市級）。**使用者同階段落地**，knip 綠；驗證出現獨立 chunk 且 entry 不含該表；量 entry 增量並決定預算上調 | vitest node：`districtCentroids.test.ts`、`listingDistanceOrder.test.ts`；jsdom：`HomePage.test.tsx` | 表鍵＝`TAIWAN_REGIONS` 全集（含縣市台／臺字串一致）；座標範圍；同名區跨縣市區分；`nearestDistrict` 代表座標（台北車站→台北市中正區）；含所在區者最前、全區／空陣列展開、最近服務區距離、同分維持 created_at、無定位維持最新、資料異常排最後；表載入失敗＝最新排序不報錯；`npm run build` 後預算腳本依新預算綠 |
-| 3 | 等待＋FLIP 重排：統一狀態機（掛載並行四件事、截止從掛載起算）、`orderMode` 快取、`flipReorder`（只做座標晚到那一次、被打斷 cancel、互動守衛 Q8） | vitest node（delta 計算）＋jsdom：`HomePage.test.tsx`、`flipReorder.test.ts` | 冷載入＋granted＋≤1.5s 內座標與表皆到＝直接顯示距離排序、無動畫；表晚到或 1.5s 後才到＝先最新再動畫；prompt／denied／`permissions` 缺或失敗＝不等；**有快取清單＋granted＋無快取座標＝不顯示骨架、立即顯示**；有快取座標不重排且 POP 沿用 `orderMode`；背景重驗／篩選變動不做 FLIP；動畫被打斷會 cancel；互動守衛成立時不重排；reduced-motion 不呼叫 animate |
+| 3 | 等待＋FLIP 重排：統一狀態機（掛載並行四件事、截止從掛載起算）、`orderMode` 快取、`flipReorder`（只做座標晚到那一次、被打斷 cancel、點擊防護與錨點維持，W5-29） | vitest node（delta 計算）＋jsdom：`HomePage.test.tsx`、`flipReorder.test.ts` | 冷載入＋granted＋≤1.5s 內座標與表皆到＝直接顯示距離排序、無動畫；表晚到或 1.5s 後才到＝先最新再動畫；prompt／denied／`permissions` 缺或失敗＝不等；**有快取清單＋granted＋無快取座標＝不顯示骨架、立即顯示**；有快取座標不重排且 POP 沿用 `orderMode`；背景重驗／篩選變動不做 FLIP；動畫被打斷會 cancel；座標晚到不論捲動／觸控／篩選一律重排；FLIP 期間卡片點擊被忽略（動畫結束後恢復）；已捲離頂部時重排後第一張可見卡的視覺位置不變（錨點）、scrollY 為 0 時不調整；reduced-motion 不呼叫 animate |
 | 4 | 凍結脈絡＋`lastViewedId`＋Link onClick／state＋`data-listing-id`＋返回定位 | vitest jsdom：`browseContext.test.ts`、`homeListingsCache.test.ts`、`HomePage.backNavigation.test.tsx` | 點卡當下順序＝凍結 ids（含座標點擊後才到仍不變）；三種版型皆帶 state／data；POP：未換篇走 scrollY、換過篇置中；reset 清除；重整／Forward ctx 不符＝null |
 | 5 | `PhotoCarousel.onEdgeSwipe`＋`swipeIntent`（邊緣寬度參數化）＋scroller touch-action | vitest node：`swipeIntent.test.ts`；jsdom：`PhotoCarousel.test.tsx`（既有全綠＋新增） | 最後一張起手左滑→next、第一張右滑→prev；倒數第二→最後不觸發；單張兩向；touchcancel／多指忽略；未傳 prop 行為不變 |
 | 6 | 詳情頁換篇：`ServiceProviderDetailRoute` key wrapper（live 區在 key 之外）、共用 `DetailTopBar`（四態）、`useBrowseNav` 動態載入（僅有脈絡）、鍵盤、照片外手勢、replace、焦點；wrapper 測試新檔 `ServiceProviderDetailRoute.test.tsx` | vitest jsdom：`ServiceProviderDetail.test.tsx`、`App` 路由測試 | **A→B 首個 render 即 B；B 重驗失敗仍 B；B 404 仍有控制**；無脈絡不渲染；骨架期控制可點；live 節點換篇前後為同一元素；頭尾 `aria-disabled` 焦點不掉；輪播／輸入欄／dialog 內 ← 不換篇；鈕觸發保留焦點、手勢觸發移標題 |
@@ -99,11 +102,10 @@
 
 ## 6. 開放問題（已裁決者留存記錄，未決者仍待）
 
-已裁決（業主 2026-11-05，主 session 代收）：Q1 無脈絡不顯示；Q2 不做跟手拖曳；Q3 輪播聚焦時 ←→ 換照片；Q4 手機標題列右側常駐「‹ 3/12 ›」；凍結脈絡存模組層；沒換篇返回維持 scrollY、換過篇才置中；P0 必處置（見 2.3）；距離改區級（W5-24）；等待＋動畫重排（W5-25）；併入 S7 必上（W5-26）；換篇手感（W5-27）。
+已裁決（業主 2026-11-05，主 session 代收）：**Q8＝座標晚到一律重排有動畫（W5-29，緩解見 2.2）**；Q1 無脈絡不顯示；Q2 不做跟手拖曳；Q3 輪播聚焦時 ←→ 換照片；Q4 手機標題列右側常駐「‹ 3/12 ›」；凍結脈絡存模組層；沒換篇返回維持 scrollY、換過篇才置中；P0 必處置（見 2.3）；距離改區級（W5-24）；等待＋動畫重排（W5-25）；併入 S7 必上（W5-26）；換篇手感（W5-27）。
 
-- [ ] **Q5 區中心座標來源與授權**：規劃採內政部國土測繪中心鄉鎮市區界線（政府資料開放授權條款第 1 版，可商用須標示出處）。授權文字與下載可行性實作階段於網路可達處確認；若不成立，退路＝請業主指定替代來源（例如 GeoNames CC-BY）。建議：維持現案。
+- [ ] **Q5 區中心座標來源與授權（W5-30 已授權於階段 2 開頭確認，成立照 plan、不成立停下回報、不改用其他來源）**：規劃採內政部國土測繪中心鄉鎮市區界線（政府資料開放授權條款第 1 版，可商用須標示出處）。授權文字與下載可行性實作階段於網路可達處確認；若不成立，退路＝請業主指定替代來源（例如 GeoNames CC-BY）。建議：維持現案。
 - [ ] **Q6 LINE 內建瀏覽器邊緣返回區寬度**：規劃預設 24px、LINE 下 32px；需手機實測確認。實作階段由業主以手機驗證，數值不阻擋進實作。
-- [ ] **Q8 座標晚到時使用者已捲動／已操作，是否仍重排**（W5-25 只講動畫、未講此情境；產品取捨，需業主裁）：建議＝只在 scrollY≤120px、無觸控、未改篩選時重排，否則不重排（座標存快取，下次非返回進入才生效；該次造訪 `orderMode` 維持最新、返回沿用）。備選＝錨點卡位置維持後重排（實作複雜）。
 - [ ] **Q7 「最近的區中心」反查在大區邊界的誤差**：接受近似，規格書明寫；若業主要求精確行政區判定需另接反地理編碼服務（不建議，個資外送）。建議：接受近似。
 
 ## 7. 風險與回滾
