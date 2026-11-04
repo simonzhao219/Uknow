@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-/review-plan 已完成（P0 1、P1 13、P2 8），待修訂 plan 處理 P0 並重審後，由業主裁決再親打 /tdd-implement。
+plan v2 已納入 W5-35／36 與 v1 審查 P0＋P1，待重跑 /review-plan 與主 session 親審；業主親打 /tdd-implement 後從階段 1 開始。
 
 ## Blockers(逃生口紀錄)
 
