@@ -40,12 +40,26 @@
 | W5-7 | W4-34③ 新約二次確認（pay P2-10） | **改程式，無條件確認**：fresh 一律跳二次確認，確認框依資產列出後果，沒有資產時至少說明推薦人會變（被推翻：改規格成有資產才確認） |
 | W5-8 | W4-34④ 新約清空對推薦王 credit 與當月下線（ref P2-2／P2-3） | **保留已發的、門檻重算、名單不刪**：已發出的 credit（含未領）保留；fresh 後當月從 0 計門檻；當月桶只清計數，配對名單另存，守住 §9.2「R 從未出現在 U 歷史」（被推翻：維持現行並寫進規格；全部清空） |
 
+**裁決（AskUserQuestion，業主 2026-11-04 23:00 台北；S2、S1 規劃審查後的題目）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W5-11 | S2 Q1：重複付款要不要在建單時加 15 分鐘確認框 | **不加**，只靠付款當下的防線＋告警（被推翻：加 409 確認框） |
+| W5-12 | S2 Q2／Q6：「稍後註冊」4 天窗與提示框 → 業主改問「稍後註冊」該不該刪帳號 | **改成不刪、等同登出**：保留資料與草稿，下次登入接回；移除註冊中的自助刪帳號（要刪找客服）。auth P1-4 的並發風險與 4 天窗隨之消失；`/auth/cancel-signup` 由 S2 退場（被推翻：不刪＋次要刪除連結；保留刪除改名；維持現狀＋4 天窗） |
+| W5-13 | S2 Q3＋Q4：重複付款的第二筆 | **接續效期＋三代獎金照發**，error 告警附該筆獎金列；退款由客服個案處理並人工沖銷（提領需人工審核，是第二道防線）（被推翻：獎金暫不發；不開通留 pending） |
+| W5-14 | S2 Q5：付款途中才被停權 | **照開通＋error 告警**（錢已收）（被推翻：不開通交客服） |
+| W5-15 | S1 技術題六條 | **全照 S1 建議**：Vault 存 RECONCILE_SECRET 副本；對帳每小時；未知 TradeStatus 排掃描後段、永不標 expired；health 端點與告警本波做；門檻由 S1 寫依據；兩環境暫不分密鑰 |
+| W5-16 | S1：GitHub 排程的角色 | **看門狗兼後備觸發**：pg_cron 最近一次成功超過 90 分鐘就補跑＋推 LINE；自動接住晉升空窗（被推翻：只留手動＋告警） |
+| W5-17 | S1：照片實刪開關 | **本波並存、不一致推 LINE**；統一成單一開關留第 6 波（被推翻：本波統一） |
+| W5-18 | S1：pay P2-14（heal pass 失敗不告警） | **不收**，留第 6 波 |
+
 **主 session 裁決**（落點與分配，非業主題目）
 
 | # | 題 | 裁決 |
 |---|---|---|
 | W5-9 | W5-5～8 的工項落點 | W5-5 → S2（同碰 prepare，S2 必上）；W5-6 → S5（後端小修，Sonnet）；W5-7、W5-8 → S6（同屬 fresh 路徑；W5-8 碰獎勵規則，Opus） |
 | W5-10 | R4 §6 指定給本波的升級 | 「裁決編號只由主 session 發」、「hash 以 PR 內文為準」→ 主 session 在本檔所屬 PR 寫進 `docs/README.md`〈慣例〉；「F1 草稿在 session 失效時也清」→ 主 session 改 `docs/multi-step-flow-recovery.md`，`src/utils/formDraft.ts` 檔頭的同步交 S3（產品碼不由主 session 改） |
+| W5-19 | S1 審查 P0 #1「過半失敗也告警」無出處 | 出處是本檔所屬 `dispatch-prompts.md` S1 段原文（需求 reviewer 讀不到派工檔），豁免；`checked>=2` 門檻在 S1 plan 寫明理由 |
 
 ## 1. 時程
 
@@ -136,10 +150,10 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃中 |
-| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃中 |
-| S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | — | 施工中 |
-| S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | — | 施工中 |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃修訂中（W5-15～19） |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃修訂中（W5-11～14） |
+| S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 | 審過，等 rebase 後 CI |
+| S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -150,3 +164,8 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 |---|---|---|
 | 11/04 21:30 | 主 session 開局：讀交接、第 4 波 plan／review、〈慣例〉。#502 的正式站部署 run 41706804315 已在 21:14 核准，煙霧測試 `/health` sha＝`26c5ae8`（第 1 次探測）、PayUni production、預設推薦人 ok；dispatch deploy-smoke（ref=main）run 41844045128 綠。#502 收尾完成。業主裁決 W5-1～8（全照建議）；主 session 定 W5-9、W5-10。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S3、S5 |
 | 11/04 22:25 | 開 #506（本檔，draft，已訂閱）。開 S2、S1（Opus，規劃）與 S3、S5（Sonnet），tag `uknow-wave-5`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S1、S2 規劃交業主審 |
+| 11/04 22:35 | S5 交 #507：CSV 銀行欄位 `textCell`（`="…"`）；網絡搜尋二、三代比對遮罩名＋每人 30 次／分限流（429）。主 session 審：無 P0／P1。偏離：紅綠燈同一 commit（已寫進 PR 內文）；`="…"` 前綴不適合直接上傳銀行批次（目前用途是人工核對）。CI 全綠 → **#507 合進 develop（547adb1）** | — |
+| 11/04 22:40 | S2 回報規劃＋/review-plan（P0 0、P1 13、P2 11），Q1～Q6 待裁決。主 session 代跑唯讀 SQL：正式站、develop 的 `reward_transactions` 四組索引候選重複 0 列；4 天內未完成訂單 0 筆 | 收業主裁決 |
+| 11/04 22:40 | S1 回報規劃＋/review-plan（P0 1、P1 17、P2 15）。主 session 代跑：兩環境已裝 pg_cron 1.6.4、supabase_vault 0.3.1，**pg_net 未裝**；cron.job 只有 prune-rate-limits、purge-stale-referral-invites；正式站 48 小時 prune 48/48、啟動延遲最大 0.23 秒（佐證 pg_cron 準點） | 收業主裁決 |
+| 11/04 22:50 | S3 交 #508（紅燈→綠燈，hash 以 PR 內文為準）：cancel-signup 改 `authenticate()`、CompleteProfile 帶 8 秒逾時、`PROFILE_MISSING`、`readSession`、formDraft 檔頭。主 session 審：無 P0／P1；不做「舊後端無 code」相容的判斷同意（空窗只是 404 走 degraded）。base 已前進 → 請 S3 自行 rebase | S3 rebase、CI 綠 → 合 |
+| 11/04 23:00 | 業主裁決 **W5-11～18**；主 session 定 W5-19。W5-12 改變 S2 範圍：「稍後註冊」不刪帳號、`/auth/cancel-signup` 退場。已轉達 S2、S1 | S1、S2 修 plan → 主 session 親審 → 業主親打 `/tdd-implement` |
