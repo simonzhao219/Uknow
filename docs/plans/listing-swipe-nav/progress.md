@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ✅ 綠 | 45975d2 | (待填) |
+| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ✅ 綠 | 45975d2 | 760fa6b |
 | 2 | 座標表＋區級排序＋動態載入接入＋預算決定 | ⬜ 未開始 | | |
 | 3 | 等待狀態機＋FLIP 重排＋orderMode | ⬜ 未開始 | | |
 | 4 | 凍結脈絡＋lastViewedId＋返回定位 | ⬜ 未開始 | | |
