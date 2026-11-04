@@ -561,6 +561,83 @@ describe('編輯模式載入時已是 step 3', () => {
   });
 });
 
+// 第 5 波 S2（auth P0-1、P1-2）：register 改走 validate_referral_code。驗證後、送出前推薦人被停權
+// 或碼失效時，後端回 400——欄位要回到「未驗證」並標錯，不能留著「推薦人：○○」又跳碼無效的 toast。
+// 查碼暫時失敗回 503 REFERRAL_CHECK_UNAVAILABLE＝**未寫入**：停原頁、草稿保留、可重送。
+describe('送出時後端拒絕推薦碼（400）或暫時無法驗證（503）', () => {
+  const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+
+  function stubRegister(status: number, body: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response(JSON.stringify(body), { status })
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+  }
+
+  async function submitWithVerifiedCode() {
+    apiRequestJson.mockResolvedValue({
+      valid: true,
+      referrer: { userName: '陳推薦', listingName: null },
+    });
+    renderForm();
+    fillValidForm();
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦'),
+    );
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    const confirmation = showNotification.mock.calls
+      .map(([arg]) => arg)
+      .find((arg) => arg.details?.includes('推薦人：陳推薦'));
+    confirmation.onConfirm();
+  }
+
+  beforeEach(() => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+  });
+
+  it('400 推薦碼失效時欄位標錯、推薦人消失，不跳錯誤 toast', async () => {
+    stubRegister(400, { error: '推薦碼不存在或已失效' });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('推薦碼不存在或已失效'),
+    );
+    expect(screen.queryByTestId('referral-code-status')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+
+  it('400 填了自己的推薦碼時同樣標在推薦碼欄位', async () => {
+    stubRegister(400, { error: '不能使用自己的推薦碼' });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('不能使用自己的推薦碼'),
+    );
+    expect(screen.queryByTestId('referral-code-status')).toBeNull();
+  });
+
+  it('503 REFERRAL_CHECK_UNAVAILABLE 時提示稍後再試、不顯示 [object Object]、草稿保留', async () => {
+    stubRegister(503, {
+      error: { code: 'REFERRAL_CHECK_UNAVAILABLE', message: '推薦碼暫時無法驗證，請稍後再試' },
+    });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('推薦碼暫時無法驗證，請稍後再試', 'error'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith('[object Object]', expect.anything());
+    expect(screen.queryByTestId('profile-saved-unconfirmed')).toBeNull();
+    expect(screen.getByTestId('profile-submit-button').getAttribute('aria-disabled')).not.toBe(
+      'true',
+    );
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+});
+
 describe('推薦碼驗證', () => {
   const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
 
