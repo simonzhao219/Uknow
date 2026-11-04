@@ -8,7 +8,7 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | 🟡 ①②③⑤ ✅；④ 依 W5-31 接受平台預設；⑥ 待業主放行 docs.payuni.com.tw（W5-32 (a)），階段 2 等它 | — | — |
-| 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ⬜ 未開始 | | |
+| 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ✅ 綠 | 29a5adec | （本 commit） |
 | 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
 | 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ⬜ 未開始 | | |
 | 4 | 對帳 handler 接 withScheduledRun | ⬜ 未開始 | | |
@@ -36,6 +36,22 @@
 | ④ | anon／authenticated 對 net 的權限 | ❌ **與 plan §2.2 假設不符**：裝完後 anon、authenticated 都有 `net` 的 USAGE、`net.http_post` 的 EXECUTE、`net._http_response` 的 SELECT。postgres 角色 revoke 無效（net 的擁有者與授權者都是 supabase_admin）。`supabase/config.toml` 沒有設 `[api] schemas`，PostgREST 預設只開 public、graphql_public，所以**經 REST 碰不到 net**；只有 SQL 層的直連角色才有這些權限 |
 | ⑤ | `net.http_post` 的斷言法 | ✅ 呼叫後回傳 request id，同一 session 內 `net.http_request_queue` 立刻看得到 url；worker 送出後 `net._http_response` 有一列（打不存在的 port → `error_msg='Could not connect to server'`）。測試斷言回傳 id 非 null，並查 queue 或 response 的 url 即可，不必 stub |
 | ⑥ | PayUni 官方 TradeStatus 碼表 | ❌ **查不到**：`docs.payuni.com.tw` 不在本 session 的網路白名單（DNS 解析失敗）。目前只有第三方整理（0／1／2／3／6） |
+
+## migration 各階段追加的段落（`20261111000001_scheduled_job_runs.sql`）
+
+- 階段 1：`scheduled_job_runs` 表與索引、RLS＋revoke、`begin_scheduled_run`、`finish_scheduled_run`
+
+## 實作決定（plan 未明定，PR 內文要列）
+
+- `withScheduledRun`：帳本本身壞掉（begin 或 finish 擲錯）時只記 log，照樣執行 fn、照樣回應，不讓觀測故障停掉金流安全網。這種情況沒有完成列，看門狗會補跑並告警，所以不會靜默。
+
+## 本機全套 Deno 測試的已知環境失敗（與本案無關）
+
+- 本機 `supabase start` 用 CLI 3.0.0，並排除了 mailpit 等服務。全套 631 條中有 33 條失敗：
+  - 邀請信類約 28 條（`inviteUserByEmail`／`unavailable`），因為沒有 mailpit；
+  - `rls-policies` 兩條 GRANT 斷言，CLI 版本的預設權限不同；
+  - 其餘是邀請衍生的錯誤。
+- 本案的測試檔全部綠。以 CI 的 api-tests 軌為準。
 
 ## Blockers（逃生口紀錄）
 
