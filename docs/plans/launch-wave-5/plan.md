@@ -72,6 +72,7 @@
 | W5-25 | 拿到定位後的重排體驗 | **先等一下＋動畫重排**：已授權定位者最多等約 1.5 秒；拿不到才先顯示最新，座標回來後方格以動畫移位重排（被推翻：不等只動畫；等到定位才顯示） |
 | W5-26 | 落點 | **併入 S7，本波必上**（換篇順序＝畫面順序；一併解 S7 審查的「座標晚到漂移」）（被推翻：另開 S8） |
 | W5-27 | S7 換篇手感 | **手機標題列常駐「‹ n/N ›」＋滑入動畫，不跟手拖曳**（被推翻：跟手拖曳；只滑動不顯示箭頭） |
+| W5-29 | S7 Q8：座標晚到時使用者已捲動／在操作，是否仍重排 | **一律重排（有動畫）**（業主 2026-11-05；被推翻：僅頂部且未操作才重排；不重排改提示）。主 session 附技術緩解：動畫期間忽略或延後卡片點擊、捲離頂部時以第一張可見卡為錨維持位置 |
 
 **主 session 裁決**（落點與分配，非業主題目）
 
@@ -81,6 +82,7 @@
 | W5-10 | R4 §6 指定給本波的升級 | 「裁決編號只由主 session 發」、「hash 以 PR 內文為準」→ 主 session 在本檔所屬 PR 寫進 `docs/README.md`〈慣例〉；「F1 草稿在 session 失效時也清」→ 主 session 改 `docs/multi-step-flow-recovery.md`，`src/utils/formDraft.ts` 檔頭的同步交 S3（產品碼不由主 session 改） |
 | W5-19 | S1 審查 P0 #1「過半失敗也告警」無出處 | 出處是本檔所屬 `dispatch-prompts.md` S1 段原文（需求 reviewer 讀不到派工檔），豁免；`checked>=2` 門檻在 S1 plan 寫明理由 |
 | W5-28 | S7 其餘規劃題 | 照 S7 建議：凍結脈絡存模組層；未換篇返回維持原 scrollY、換過篇才置中最後那張；無首頁脈絡不顯示換篇；輪播聚焦時 ←→ 換照片；審查 P0（換 :id 時元件狀態未重設）必處置 |
+| W5-30 | S7 Q5 座標資料授權、entry 預算 | 授權 S7 在階段 2 開頭於有網路處確認國土測繪中心資料來源與授權，不成立就停下；entry gzip 預算准於階段 2 實測後上調，上限比現行多 3 kB，超過就停下回報 |
 
 ## 1. 時程
 
@@ -180,7 +182,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃 r2 通過；等業主親打 `/tdd-implement` |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
-| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft，規劃） | 規劃修訂中（W5-24～28） |
+| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 規劃 v2.1 通過；等業主親打 `/tdd-implement` |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -199,3 +201,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 02:30 | 業主新增 UX 需求（手機錄影：首頁篩選剩 3 篇，逐篇點進、返回、再點下一篇）。裁決 **W5-20～23**：開 S7（刊登詳情頁左右滑換篇，本波必上）；第二題稍後補充 | 開 S7 |
 | 11/05 02:40 | S3 rebase 到 547adb1，diff 與審過的版本除行號外相同，CI 全綠 → **#508 合進 develop（22a03af）**。S2 交規劃 r2：D 段照 W5-12 改成「稍後註冊」走 `useFunnelLogout`、拿掉確認框、`/auth/cancel-signup` 與 8 條守衛測試退場（以 404 測試釘住）；A／E 照 W5-13、W5-14；13 條 P1 都有處置。主 session 親審通過（未重跑整輪 /review-plan）。P2：後台沒有刪帳號工具（W5-12 的「找客服」）→ 第 6 波候選 | 業主到 S2 session 親打 `/tdd-implement payment-concurrency-guard` |
 | 11/05 03:00 | S7 交規劃（#509 draft；P0 1：換 :id 時元件狀態未重設）。業主第二題 UX（首頁排序跳動）：主 session 讀碼說明現況，業主裁決 **W5-24～27**，主 session 定 W5-28；第二題併入 S7。S1 交規劃 v3.1（三輪審查，P0 皆處置）→ 主 session 親審通過，晉升硬性驗收寫進 §4。S2 已 rebase 到 22a03af | 業主到 S1、S2 session 親打 `/tdd-implement`；S7 修 plan 重審 |
+| 11/05 03:20 | S7 交規劃 v2.1（第二輪 /review-plan P0 0、P1 10 皆處置；座標表走動態 chunk、FLIP 手刻 WAAPI）。業主裁決 **W5-29**（座標晚到一律重排）；主 session 定 W5-30（資料授權於階段 2 確認、預算上限 +3 kB）。主 session 親審通過 | 業主到 S7 session 親打 `/tdd-implement listing-swipe-nav` |
