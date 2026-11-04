@@ -17,7 +17,7 @@ v2.1 變更：吸收 v2 審查（review.md）全部 P1／P2，已對 SDK 原始�
   3. 全文字與輸入遮罩；身分證／手機／生日／銀行欄位整塊 block；`/payment/*` 整頁 block 且**不啟動錄影**；`/admin*` **不啟動錄影**（偏離 W4-36，W5-36①）。直接落地於這些路徑同樣不錄。
   4. 事件與人員屬性不含 email、姓名；distinct id 為匿名 id；登出／換帳號／無效 session → `reset(true)`（連 `$device_id` 一併重置；SDK 尚未載入時以「待重置旗標」補上，見 §2.4）。IP／geo：**程式端只能附 `$geoip_disable` 作輔助；是否真的不收，以 PostHog 專案設定「Discard client IP data」為準**（驗收 6 逐項核對）。
   5. 不錄 network payload、不錄 console、不錄 canvas；exception／dead click／heatmap 一律在 client 端**明確設為 false**（不依賴專案設定）。
-  6. **develop 上線後人工驗證清單**（逐欄位，附在 PR 內文）：未通過不得晉升 main。
+  6. **develop 上線後人工驗證清單**（附在 PR 內文）：未通過不得晉升 main。W5-39：不設自動退化門檻；**上線第一天由業主在 PostHog 抽看 5～10 支錄影，涵蓋註冊（`/register`、`/auth/complete-profile`）、付款（`/payment/*`，應完全沒有錄影）、提領（`/rewards` 提領流程）頁**，確認沒有個資（姓名、手機、生日、身分證、銀行帳號、email、邀請 token）再繼續放量；另核對 Q8 專案端設定已完成。
   7. 本機 dev、vitest、一般 e2e、journey 一律 disabled——由建置期 `resolvePosthogTarget` 單元測試（key 為 null）加關閉態零請求斷言涵蓋。
 - 對 W4-36 的偏離：①admin 不錄（W5-36①，已獲准）；②「出錯必錄」本波不做——錯誤追蹤關閉，待日後啟用抽樣時一併設計。
 - 不做：改條款／隱私文案；抽樣實際啟用（只預備開關）；後端錯誤追蹤；identify；A/B／flag／survey／heatmap／dead-click；完整 CSP（另案）。**錯誤追蹤本波關閉**（W5-36②）：`capture_exceptions` 不開，待日後有白名單設計再議。
@@ -91,10 +91,10 @@ v2.1 變更：吸收 v2 審查（review.md）全部 P1／P2，已對 SDK 原始�
 - [x] ~~Q2 admin~~ → W5-36①：不錄。
 - [x] ~~Q4 錯誤追蹤~~ → W5-36②：關閉。
 - [x] ~~IP/geo、in-app、reset~~ → W5-36③④⑤。
-- [ ] **Q7 recorder 載入方式（阻擋階段 2 開工）**：建議 A（外部 recorder，bundle 小；供應鏈風險＝一支不受 lockfile 控制的第三方 JS 可讀整個 DOM，需業主明確承認）；B（自帶 recorder，+232 kB gz 懶載入 chunk）。待業主或主 session 裁決。
-- [ ] **Q8 PostHog 專案端設定（上線前業主操作）**：開「Discard client IP data」；開 Session replay；關閉 exception autocapture、dead clicks、console logs、network payload、canvas、surveys；遮罩設定留空（以 client 設定為準）。列入驗收 6。
-- [ ] **Q9 DOM 屬性遮罩策略**：建議 `maskAttributeFn` 白名單（保真度較佳）；備選 `maskAllElementAttributes:true`（最保守、replay 較差）。待業主或主 session 裁決。
-- [ ] **Q10 放量退化門檻**：以關閉態 INP p75 與 JS 錯誤率為基準，退化超過多少就把 `VITE_ANALYTICS_SAMPLE` 降到 0？數值由業主定；或僅以人工看第一批錄影為準。
+- [x] **Q7 recorder 載入方式** → **W5-37：方案 A，從 PostHog 資產網域外部載入**；業主已明確接受供應鏈風險（第三方 JS 不受 lockfile 控制、可讀 DOM）。PR 內文〈需要業主知道的事〉記一行。
+- [ ] **Q8 PostHog 專案端設定（業主建 project 時操作；PR 內文〈需要業主做的事〉列完整勾選清單）**：開「Discard client IP data」；開 Session replay；關閉 exception autocapture、dead clicks、console logs、network payload、canvas、surveys；遮罩設定留空（以 client 設定為準）。列入驗收 6。
+- [x] **Q9 DOM 屬性遮罩** → **W5-38：`maskAttributeFn` 白名單**（§2.3）。
+- [x] **Q10 放量退化門檻** → **W5-39：不設自動門檻**，以上線第一天人工抽看錄影為準（驗收 6）。
 - [ ] **Q5′ 人工驗證**：develop 上線後由主 session／業主看第一批錄影，確認遮罩與 block；未通過不晉升 main。
 
 ## 7. 風險與回滾

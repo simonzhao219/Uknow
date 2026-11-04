@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-/review-plan 第二輪 P0=0；plan v2.1 已吸收 v2 審查全部 P1/P2（未再審）。待主 session 親審與 Q7/Q9/Q10 裁決，業主親打 /tdd-implement 後從階段 1 開始。
+規劃 v2.1 經主 session 親審通過（W5-37/38/39 已裁），不跑第三輪。等業主在本 session 親打 /tdd-implement posthog-monitoring，從階段 1 開始。
 
 ## Blockers(逃生口紀錄)
 
