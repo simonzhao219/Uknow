@@ -276,6 +276,10 @@ const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
 // 個資收集。人工掃描一次至少兩三秒，30 次／分鐘碰不到；換 IP 沒有意義。
 const MEMBER_VERIFY_RATE_MAX = 30;
 const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
+// /referrals/network/search：per 使用者。前端 debounce 300ms，正常一次查詢 3～5 次；
+// 防的是用單字逐一試探、還原二、三代被遮罩的字元（W5-6 的第二道防線，第一道是只比對遮罩名）。
+const NETWORK_SEARCH_RATE_MAX = 30;
+const NETWORK_SEARCH_RATE_WINDOW_SECONDS = 60;
 // /referrals/validate/:code：per 使用者、雙窗，依序計數。短窗容得下合法的連續
 // 重試（驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗只計
 // 「短窗放行的實際查詢」，讓單一帳號 24 小時內最多查 50 個碼——推薦碼是流水號、
@@ -4002,8 +4006,13 @@ function parseSortMode(raw: string | undefined): NetworkSortMode {
     ? (raw as NetworkSortMode)
     : DEFAULT_NETWORK_SORT;
 }
+// 使用者在畫面上看得到的名字：一代真名、二三代遮罩名。搜尋與 name_* 排序都以此為鍵，
+// 否則比對結果與順序會洩漏被遮掉的字元（W5-6）。
+function visibleName(net: Network, uid: string): string {
+  return maskNameByGen(net.profMap[uid]?.name, net.genOf.get(uid) ?? 0);
+}
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
-  const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
+  const realName = (uid: string) => visibleName(net, uid);
   const joinedMs = (uid: string) => Date.parse(net.joinedAtOf.get(uid) ?? '') || 0;
   // 自身加入時間升冪 → userId 字典序。一律升冪：升冪模式下每個比較鍵方向一致，
   // 降冪就是整體反轉，不會有單一個鍵偷偷反向（同名者的次序曾因此與主鍵相反）。
@@ -4139,9 +4148,9 @@ app.get('/referrals/network/children', async (c) => {
 
 // ============================================================
 // GET /referrals/network/search?q=&sort=
-// 伺服器以「真名」比對（伺服器才有未遮罩名），回傳遮罩後顯示名 +
-// 祖先路徑（一代 → 命中者本身），前端據此自動展開。深代下線因此搜得到，
-// 又不洩漏真名。
+// 一代比對真名；二、三代只比對「遮罩後」使用者看得到的字串（W5-6）——比對真名
+// 會讓人用單字試探還原被遮罩的字元。回傳遮罩後顯示名 + 祖先路徑
+// （一代 → 命中者本身），前端據此自動展開。
 // ============================================================
 app.get('/referrals/network/search', async (c) => {
   const user = await requireAuth(c);
@@ -4150,13 +4159,21 @@ app.get('/referrals/network/search', async (c) => {
   if (!q) return c.json({ error: { message: '缺少搜尋字串' } }, 400);
   const sort = parseSortMode(c.req.query('sort'));
 
+  const withinRate = await rateLimit(
+    `network-search:${user.id}`,
+    NETWORK_SEARCH_RATE_MAX,
+    NETWORK_SEARCH_RATE_WINDOW_SECONDS,
+  );
+  if (!withinRate) {
+    return c.json({ error: { code: 'rate_limited', message: '搜尋過於頻繁，請稍後再試' } }, 429);
+  }
+
   try {
     const net = await loadNetwork(sb(), user.id);
 
     const qLower = q.toLowerCase();
-    const hitIds = net.allIds.filter((uid) =>
-      ((net.profMap[uid]?.name ?? '') as string).toLowerCase().includes(qLower)
-    );
+    // 與畫面上看到的字串一致：maskNameByGen 對一代原樣回傳，所以不必另分支。
+    const hitIds = net.allIds.filter((uid) => visibleName(net, uid).toLowerCase().includes(qLower));
 
     const pathTo = (uid: string): string[] => {
       const path: string[] = [];
