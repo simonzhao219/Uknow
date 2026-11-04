@@ -161,8 +161,8 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃修訂中（W5-15～19） |
-| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃修訂中（W5-11～14） |
-| S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 | 審過，等 rebase 後 CI |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃 r2 通過；等業主親打 `/tdd-implement` |
+| S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | — | 規劃中 |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
@@ -181,3 +181,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/04 22:50 | S3 交 #508（紅燈→綠燈，hash 以 PR 內文為準）：cancel-signup 改 `authenticate()`、CompleteProfile 帶 8 秒逾時、`PROFILE_MISSING`、`readSession`、formDraft 檔頭。主 session 審：無 P0／P1；不做「舊後端無 code」相容的判斷同意（空窗只是 404 走 degraded）。base 已前進 → 請 S3 自行 rebase | S3 rebase、CI 綠 → 合 |
 | 11/04 23:00 | 業主裁決 **W5-11～18**；主 session 定 W5-19。W5-12 改變 S2 範圍：「稍後註冊」不刪帳號、`/auth/cancel-signup` 退場。已轉達 S2、S1 | S1、S2 修 plan → 主 session 親審 → 業主親打 `/tdd-implement` |
 | 11/05 02:30 | 業主新增 UX 需求（手機錄影：首頁篩選剩 3 篇，逐篇點進、返回、再點下一篇）。裁決 **W5-20～23**：開 S7（刊登詳情頁左右滑換篇，本波必上）；第二題稍後補充 | 開 S7 |
+| 11/05 02:40 | S3 rebase 到 547adb1，diff 與審過的版本除行號外相同，CI 全綠 → **#508 合進 develop（22a03af）**。S2 交規劃 r2：D 段照 W5-12 改成「稍後註冊」走 `useFunnelLogout`、拿掉確認框、`/auth/cancel-signup` 與 8 條守衛測試退場（以 404 測試釘住）；A／E 照 W5-13、W5-14；13 條 P1 都有處置。主 session 親審通過（未重跑整輪 /review-plan）。P2：後台沒有刪帳號工具（W5-12 的「找客服」）→ 第 6 波候選 | 業主到 S2 session 親打 `/tdd-implement payment-concurrency-guard` |
