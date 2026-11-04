@@ -1,5 +1,7 @@
 # 金流與推薦的並行防線 規劃書
 
+<!-- plans-keep: S2 施工期鷹架，draft PR 期間需在 CI 中存在；退場條件＝/tdd-implement 收尾以 chore(plans) commit 刪除整個目錄 -->
+
 <!-- 第 5 波工項 S2（docs/plans/launch-wave-5/plan.md §2；裁決 W4-33、W5-4、W5-5、W5-9、W5-11～14）。
      稽核編號引用 docs/plans/launch-wave-4/audit-{pay,auth,ref}.md；行號一律以 develop 現算。
      修訂 r2（11/05）：納入業主裁決 W5-11～14 與 review.md 的 13 條 P1（D 段縮小後作廢的見 §8）。 -->

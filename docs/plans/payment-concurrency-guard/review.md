@@ -1,5 +1,7 @@
 # 金流與推薦的並行防線 規劃書審查報告
 
+<!-- plans-keep: S2 施工期鷹架，draft PR 期間需在 CI 中存在；退場條件＝/tdd-implement 收尾以 chore(plans) commit 刪除整個目錄 -->
+
 <!-- /review-plan 彙整四個 fresh-context reviewer（系統／架構／UIUX／需求）。只去重排序、不改判；
      合併的重複項標出各 reviewer 原判，取最高者排序。輸出契約見 docs/_templates/review.md。 -->
 

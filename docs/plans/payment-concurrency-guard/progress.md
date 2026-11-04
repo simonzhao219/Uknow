@@ -1,5 +1,7 @@
 # 金流與推薦的並行防線 實作進度
 
+<!-- plans-keep: S2 施工期鷹架，draft PR 期間需在 CI 中存在；退場條件＝/tdd-implement 收尾以 chore(plans) commit 刪除整個目錄 -->
+
 分支:`feature/payment-concurrency-guard`
 規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
 第 5 波工項 S2;主 session `session_01MQovbBpvF5cMi5BqUrAH86`。紅綠燈 hash 以 PR 內文為準。
