@@ -345,12 +345,12 @@ Deno.test('原始碼：三個 buildProfileResponse 呼叫者都經 loadProfileOr
   );
 });
 
-Deno.test('原始碼：requireAuth 本體與其餘端點的呼叫數不變（只有 /profile 改用 authenticate）', async () => {
+Deno.test('原始碼：requireAuth 本體與其餘端點的呼叫數不變（只有 /profile、cancel-signup 改用 authenticate）', async () => {
   assert(indexSrc.includes('return error || !user ? null : user;'), 'requireAuth 本體被改動');
   const count = (src: string) => (src.match(/requireAuth\(/g) ?? []).length;
   const read = (f: string) => Deno.readTextFile(new URL(f, import.meta.url));
-  // index.ts：定義 1 ＋ 46 個呼叫點（T1-B 前 47 個，/profile 移出）。
-  assertEquals(count(indexSrc), 47);
+  // index.ts：定義 1 ＋ 45 個呼叫點（T1-B 前 47 個，/profile 與 cancel-signup 移出）。
+  assertEquals(count(indexSrc), 46);
   assertEquals(count(await read('./listing-photos.ts')), 2);
   assertEquals(count(await read('./referral-invite.ts')), 1);
 });

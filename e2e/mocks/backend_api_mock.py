@@ -164,6 +164,9 @@ class BackendApiMock:
         # re-check) fail with this status. Models a deleted account (410/404) or
         # a rejected session (401) after an otherwise-successful auth step.
         body = {"success": False, "error": {"message": message}}
+        if status == 404:
+            # 後端零列 404 帶 PROFILE_MISSING 碼；前端只認帶碼的 404 為帳號資料異常。
+            body["error"]["code"] = "PROFILE_MISSING"
         self._route("/profile", lambda route: _fulfill_json(route, body, status=status))
         self._route("/auth/profile", lambda route: _fulfill_json(route, body, status=status))
 

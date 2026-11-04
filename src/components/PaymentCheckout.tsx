@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
+import { readSession } from '../utils/authErrors';
 import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
 import { AuthDegradedNotice } from './AuthDegradedNotice';
@@ -143,9 +144,14 @@ export function PaymentCheckout() {
       if (!pendingUserData) {
         console.log('PaymentCheckout: No pendingUser in localStorage, fetching from API');
 
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const { session, unavailable } = await readSession(supabase.auth);
+        if (!session && unavailable) {
+          // Auth 暫時讀不到 session 不是「未登入」：停在本頁讓人重試，不導 /login。
+          setProfileFailedAgain(profileReloadKey > 0);
+          setProfileUnavailable(true);
+          setIsCheckingUser(false);
+          return;
+        }
         if (!session) {
           console.log('PaymentCheckout: No session, redirecting to login');
           navigate('/login', { replace: true });
@@ -226,9 +232,13 @@ export function PaymentCheckout() {
         setPendingUser(userData);
 
         // 驗證 session 是否有效
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const { session, unavailable } = await readSession(supabase.auth);
+        if (!session && unavailable) {
+          // 暫時讀不到 session：保留 pendingUser，停在本頁讓人重試。
+          setProfileFailedAgain(profileReloadKey > 0);
+          setProfileUnavailable(true);
+          return;
+        }
         if (!session) {
           showToast('登入狀態已過期，請重新登入', 'error');
           localStorage.removeItem('pendingUser');
@@ -494,9 +504,11 @@ export function PaymentCheckout() {
     try {
       setIsLoading(true);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { session, unavailable } = await readSession(supabase.auth);
+      if (!session && unavailable) {
+        showToast('暫時無法確認登入狀態，請稍後再試', 'error');
+        return;
+      }
       if (!session) {
         showToast('登入已過期，請重新登入', 'error');
         navigate('/login');
@@ -589,10 +601,12 @@ export function PaymentCheckout() {
       console.log('PaymentCheckout: Saved current data to pendingUser');
 
       // 2. 調用後端 API 重置 registrationStep 為 0
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { session, unavailable } = await readSession(supabase.auth);
 
+      if (!session && unavailable) {
+        showToast('暫時無法確認登入狀態，請稍後再試', 'error');
+        return;
+      }
       if (!session) {
         showToast('登入狀態已過期，請重新登入', 'error');
         navigate('/login');

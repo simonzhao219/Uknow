@@ -70,3 +70,20 @@ export function isRetryableAuthError(error: unknown): boolean {
   if (name === 'AuthRetryableFetchError') return true;
   return status === 0 || (typeof status === 'number' && (status >= 500 || status === 429));
 }
+
+/**
+ * 讀 session 並區分「真的沒登入」與「暫時讀不到」（T1-B 未修項）。getSession 因 Auth 暫時性錯誤回
+ * `session:null`＋retryable error、或直接擲例外時，`unavailable` 為 true——呼叫端要停在原頁
+ * 讓使用者重試，不能導 /login（帳號與 session 都還在）。
+ */
+export async function readSession<S>(auth: {
+  getSession(): Promise<{ data: { session: S | null }; error?: unknown }>;
+}): Promise<{ session: S | null; unavailable: boolean }> {
+  try {
+    const { data, error } = await auth.getSession();
+    const session = data?.session ?? null;
+    return { session, unavailable: !session && isRetryableAuthError(error) };
+  } catch {
+    return { session: null, unavailable: true };
+  }
+}

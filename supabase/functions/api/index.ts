@@ -28,6 +28,7 @@ import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-pho
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
   DEFAULT_NETWORK_SORT,
+  PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
@@ -473,9 +474,14 @@ export async function authenticate(
   }
 }
 
-/** 分類式驗證失敗的回應（stub：紅燈期）。 */
-export function authFailureResponse(c: any, _error: 'unauthorized' | 'transient'): any {
-  return c.json({ error: 'stub' }, 500);
+/**
+ * 分類式驗證失敗的回應：Auth 回不來 → 503（帳號狀態未知，呼叫端不得當成「帳號已不存在」），
+ * Auth 判無效 → 401。/profile 以外需要區分兩者的端點（cancel-signup）共用。
+ */
+export function authFailureResponse(c: any, error: 'unauthorized' | 'transient'): any {
+  return error === 'transient'
+    ? c.json({ error: '暫時無法處理，請稍後再試' }, 503)
+    : c.json({ error: '未授權' }, 401);
 }
 
 function isTransientAuthError(error: { name?: string; status?: number }): boolean {
@@ -513,7 +519,11 @@ export async function loadProfileOrError(
 ): Promise<{ ok: true; data: any } | { ok: false; status: 404 | 503; body: unknown }> {
   try {
     const data = await build();
-    return data ? { ok: true, data } : { ok: false, status: 404, body: { error: '用戶不存在' } };
+    return data ? { ok: true, data } : {
+      ok: false,
+      status: 404,
+      body: { error: { code: PROFILE_MISSING, message: '用戶不存在' } },
+    };
   } catch (err) {
     if (err instanceof ProfileReadError) {
       console.error('[profile] 讀取失敗:', err.read);
@@ -534,7 +544,7 @@ export function makeProfileHandler(deps: {
     if ('error' in auth) {
       return auth.error === 'transient'
         ? c.json(PROFILE_UNAVAILABLE_BODY, 503)
-        : c.json({ error: '未授權' }, 401);
+        : authFailureResponse(c, 'unauthorized');
     }
     // 前端逾時後的重試帶 ?retry=1：第一個請求可能仍在伺服器端跑，跳過 heal／repair。
     const retry = c.req.query('retry') === '1';
@@ -922,8 +932,13 @@ app.post('/auth/register', async (c) => {
 // 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
 // ============================================================
 app.delete('/auth/cancel-signup', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
+  // 分類式驗證（R4 P2-1）：Auth 抖動回 503，前端不得當成「帳號已刪」而清本機、登出。
+  const auth = await authenticate(
+    sb().auth,
+    c.req.header('Authorization')?.replace('Bearer ', ''),
+  );
+  if ('error' in auth) return authFailureResponse(c, auth.error);
+  const user = auth.user;
 
   const client = sb();
   const [
