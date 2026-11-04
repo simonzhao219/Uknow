@@ -24,7 +24,7 @@
 - 主 session dispatch 的 deploy-smoke（ref=main，run 41844045128）綠。
 - 沒有開著的 PR；open issue：#467、#395、#384、#383。
 
-**目標**：S1、S2、S3、S5 四項全部合進 develop 就晉升。S6 本波至少把規劃做完並經過審查，實作有完成才上；S4 有完成才上。
+**目標**：S1、S2、S3、S5、S7 五項全部合進 develop 就晉升（S7 由 W5-20 加入）。S6 本波至少把規劃做完並經過審查，實作有完成才上；S4 有完成才上。
 收件截止 11/22（日）22:00。
 
 **裁決（AskUserQuestion，業主 2026-11-04 21:30 台北）**
@@ -52,6 +52,15 @@
 | W5-16 | S1：GitHub 排程的角色 | **看門狗兼後備觸發**：pg_cron 最近一次成功超過 90 分鐘就補跑＋推 LINE；自動接住晉升空窗（被推翻：只留手動＋告警） |
 | W5-17 | S1：照片實刪開關 | **本波並存、不一致推 LINE**；統一成單一開關留第 6 波（被推翻：本波統一） |
 | W5-18 | S1：pay P2-14（heal pass 失敗不告警） | **不收**，留第 6 波 |
+
+**裁決（AskUserQuestion，業主 2026-11-05 02:30 台北；業主新增 UX 需求，附手機錄影）**
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W5-20 | 刊登詳情頁左右滑換上／下一篇（有篩選時只在篩選結果內）怎麼排 | **新工項 S7，本波必上、立即開**（Sonnet 三段式）；必上變 S1、S2、S3、S5、S7，11/22 截止不變（被推翻：有完成才上；hotfix） |
+| W5-21 | 與照片輪播的手勢衝突 | **照片滑到盡頭再滑就換篇**：照片區內滑＝換照片，最後一張再往左＝下一篇、第一張再往右＝上一篇；照片以外的區域左右滑直接換篇（被推翻：照片區外才換篇；整頁一律換篇） |
+| W5-22 | 桌機與邊界 | **桌機加上一篇／下一篇箭頭鈕＋鍵盤 ←→**；**返回一次回到列表原位置**（不逐篇倒退，捲到最後看的那篇）；**顯示「3 / 12」位置**，到頭尾回彈、不循環（未選：循環） |
+| W5-23 | 業主說「有兩題 UX」，第二題 | **稍後補充**；收到後再排 |
 
 **主 session 裁決**（落點與分配，非業主題目）
 
@@ -85,6 +94,7 @@
 | S3 | **暫時性錯誤被當成定論**（R4 §5-2）：R4 P2-1（cancel-signup 401 一律當帳號已刪）、P2-4（CompleteProfile 冷載失去 8 秒逾時）、P2-5（閘道 404 判成帳號異常，改認 `code: 'PROFILE_MISSING'`）；T1-B 未修的 PaymentCheckout／CompleteProfile getSession retryable 仍導 `/login`；`formDraft.ts` 檔頭同步「session 失效也清」（W5-10） | `/fix-bug`，`fix/transient-not-final` | Sonnet | `CompleteProfile.tsx`、`fetchProfile.ts`、`PaymentCheckout.tsx`、`index.ts`（cancel-signup 改用分類式 `authenticate()`、`/profile` 零列 404 帶 code）、`api-contract.ts`、`formDraft.ts` | 見 S2：cancel-signup 後端，S3 只改認證分類（401／503），S2 改鎖 |
 | S4 | **PostHog EU 監控＋錄影**（W4-35～37）：照 W4-37 的遮罩清單施工，敏感欄位 block 要有測試釘住；不改條款 | 三段式，`feature/posthog-monitoring` | Sonnet | `src/main.tsx` 或新 `src/utils/analytics.ts`、CSP（`public/_headers`）、敏感表單元件加 block 屬性、`package.json` | S1、S2 進實作後才開 |
 | S5 | **後端小修組**：ops P1-1＝ref P1-9 提領 CSV 銀行代號與帳號前導 0、15 位以上截斷（第一筆提領前必修）；W5-6 網絡搜尋二、三代只比對可見字元＋限流（ref P1-4） | `/fix-bug`，`fix/csv-and-network-search` | Sonnet | `src/utils/csv.ts`、`WithdrawalManagement.tsx`、`index.ts`（`/referrals/network/search`）、`network-endpoints.test.ts`、規格書 §7.2／§7.3 | 無 |
+| S7 | **刊登詳情頁左右滑換篇**（W5-20～22）：在篩選後的清單內換上／下一篇；照片輪播到盡頭接續換篇；桌機箭頭鈕＋鍵盤；返回回列表原位置；顯示位置「n / N」 | 三段式，`feature/listing-swipe-nav` | Sonnet | `ServiceProviderDetail.tsx`、`listing/PhotoCarousel.tsx`、`HomePage.tsx`、`utils/homeListingsCache.ts`（篩選後清單與捲動位置的來源）、e2e 首頁／詳情 feature、`docs/ui-ux-guidelines.md` | 純前端，與 S1／S2 不撞；與 S4（PostHog）同碰頁面元件，S4 後開 |
 | S6 | **續約路徑潛伏組**（期限 2027-10-27）：ref P0-1＝pay P0-1（fresh 棄單後改付 extend 仍換線／發獎）；ref P0-2（推薦成環）；pay P1-1＝auth P1-1（續費者走首購路徑，prepare 應拒已有訂閱者 `renewalMode=null`）；pay P1-4（續費者卡單被送回結帳頁）；W5-7 新約無條件二次確認；W5-8 新約清空語意 | 三段式，`feature/renewal-path-hardening`；**本波必交規劃＋審查**，實作有完成才上 | Opus | `index.ts`（prepare fresh／extend、`/profile` 卡單旗標）、migration（成環檢查、`reconcile_king_credits`、配對名單）、`PaymentCheckout.tsx`、規格書 §6.2／§9 | S2 合併後才開 |
 | R5 | 第 5 波審查（晉升後）；兼做 `launch-wave-4/` 退場（依 R4 §6；四份 audit 一併） | 審查 session；報告 `docs/plans/launch-wave-5/review.md` | Opus | — | — |
 
@@ -110,7 +120,7 @@ W5-10 的兩條文件升級（本 PR）；上線後現場查詢（W4-26）。
 
 ## 4. 晉升清單（主 session）
 
-1. 必上四項合併後 develop 凍結；列出 `3a7f506` 之後合進 develop 的全部 PR、後端變動、migration 檔名。
+1. 必上五項合併後 develop 凍結；列出 `3a7f506` 之後合進 develop 的全部 PR、後端變動、migration 檔名。
 2. 開晉升 PR、訂閱；journey-full（sandbox）綠 → merge commit 合 main → 請業主核准 `production` → `/health` sha、deploy-smoke build-sha 對上。
 3. S1 的 pg_cron 在正式站由 migration 建立：晉升後確認 `cron.job` 有預期的排程列，首輪 `cron.job_run_details` 成功；GitHub 那兩支 workflow 改手動後，排程不再重複觸發。
 4. 開 R5。
@@ -154,6 +164,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃修訂中（W5-11～14） |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 | 審過，等 rebase 後 CI |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
+| S7 | — | Sonnet | `feature/listing-swipe-nav` | — | 開工中 |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -169,3 +180,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/04 22:40 | S1 回報規劃＋/review-plan（P0 1、P1 17、P2 15）。主 session 代跑：兩環境已裝 pg_cron 1.6.4、supabase_vault 0.3.1，**pg_net 未裝**；cron.job 只有 prune-rate-limits、purge-stale-referral-invites；正式站 48 小時 prune 48/48、啟動延遲最大 0.23 秒（佐證 pg_cron 準點） | 收業主裁決 |
 | 11/04 22:50 | S3 交 #508（紅燈→綠燈，hash 以 PR 內文為準）：cancel-signup 改 `authenticate()`、CompleteProfile 帶 8 秒逾時、`PROFILE_MISSING`、`readSession`、formDraft 檔頭。主 session 審：無 P0／P1；不做「舊後端無 code」相容的判斷同意（空窗只是 404 走 degraded）。base 已前進 → 請 S3 自行 rebase | S3 rebase、CI 綠 → 合 |
 | 11/04 23:00 | 業主裁決 **W5-11～18**；主 session 定 W5-19。W5-12 改變 S2 範圍：「稍後註冊」不刪帳號、`/auth/cancel-signup` 退場。已轉達 S2、S1 | S1、S2 修 plan → 主 session 親審 → 業主親打 `/tdd-implement` |
+| 11/05 02:30 | 業主新增 UX 需求（手機錄影：首頁篩選剩 3 篇，逐篇點進、返回、再點下一篇）。裁決 **W5-20～23**：開 S7（刊登詳情頁左右滑換篇，本波必上）；第二題稍後補充 | 開 S7 |

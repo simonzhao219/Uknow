@@ -97,6 +97,31 @@
 動 supabase/functions/ 前先 npm install -g deno。新增測試前看 .claude/rules/test-naming.md。PR 內文兩條各附對照表。
 ```
 
+## S7. 刊登詳情頁左右滑換篇（Sonnet，三段式，`feature/listing-swipe-nav`）
+
+```text
+工項 S7（plan.md §2，裁決 W5-20～22）。本波必上，業主優先。
+現象（業主手機錄影）：首頁篩選後剩 3 篇，要看下一篇得「點進刊登 → 返回 → 點下一篇」。
+要的行為：
+1. 在刊登詳情頁（/service-providers/:id，ServiceProviderDetail）左右滑可換上一篇／下一篇；順序與範圍＝使用者剛才在首頁看到的清單（含搜尋字詞、類別、性別、地區篩選與排序；目前在 src/utils/homeListingsCache.ts 的模組層快取）。
+2. 手勢（W5-21）：照片區（listing/PhotoCarousel）內左右滑＝換照片；滑到最後一張再往左＝下一篇，第一張再往右＝上一篇；照片以外的區域左右滑直接換篇。垂直捲動不得被誤判成換篇（判斷水平位移與角度門檻寫進 plan）。
+3. 桌機（W5-22）：上一篇／下一篇箭頭鈕＋鍵盤 ←→（焦點在輸入欄時不攔截）。
+4. 顯示位置「n / N」；到第一篇／最後一篇時回彈、不循環。
+5. 返回一次回到首頁列表原位置，並捲到最後看的那篇（換篇用 history replace，不逐篇堆疊；與既有「返回不閃骨架、篩選條件還原」W2-10 相容）。
+規劃必答：
+- 沒有首頁清單脈絡時（直接開分享連結、重新整理、從推薦網絡或後台進來）怎麼辦：建議不顯示換篇（也不顯示 n / N），只有從首頁進來才有；在 plan 比較。
+- 首頁若有分頁或「加載更多」，換到已載入的最後一篇時要不要續載。
+- 換篇時照片與資料的載入：預載鄰近一篇的首張照片？避免換篇閃白。
+- 動畫與無障礙：prefers-reduced-motion、螢幕閱讀器能用按鈕換篇、焦點管理。
+- 與照片輪播既有的觸控／指標事件如何合併，不能讓輪播本身退化；PhotoCarousel 既有測試全綠。
+流程：
+1. `git checkout -B feature/listing-swipe-nav origin/develop`，跑 `/plan-feature listing-swipe-nav`（會自動接 /review-plan）。讀 docs/ui-ux-guidelines.md、docs/multi-step-flow-recovery.md 的返回還原段、規格書 §3（首頁返回還原）。
+2. /review-plan 後**停下**：send_message 回報主 session（摘要、開放問題、需業主裁決的題目＋建議；手勢門檻等技術值自己定、寫依據）。
+3. 業主會在本 session 親打 `/tdd-implement listing-swipe-nav`。
+4. 測試：vitest（純函式：鄰篇計算、手勢判定）＋元件測試（jsdom 模擬 touch／pointer）＋e2e mocked Gherkin（首頁篩選 → 進詳情 → 換篇 → 返回回原位置；英文場景名照 .claude/rules/test-naming.md）。
+5. 收尾照 /tdd-implement：刪規劃檔、規格書 §3 與 ui-ux-guidelines 同步、check-spec-drift.py；PR 內文附手機與桌機的操作說明。
+```
+
 ## S4. PostHog EU 監控＋錄影（Sonnet，三段式，`feature/posthog-monitoring`）——S1、S2 進實作後才開
 
 ```text
