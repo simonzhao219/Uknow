@@ -145,8 +145,9 @@ Deno.test('repair_orphaned_claim_rewards：兩個並行補發 → 每代恰好�
     let second: Promise<unknown> | null = null;
     await sql1.begin(async (tx) => {
       await tx`select repair_orphaned_claim_rewards(${a.id}::uuid)`;
-      // 連線 1 已插入、尚未 commit：連線 2 此時再跑一次。
-      second = sql2`select repair_orphaned_claim_rewards(${a.id}::uuid)`;
+      // 連線 1 已插入、尚未 commit：連線 2 此時再跑一次。postgres.js 的查詢是 lazy
+      // 的（await／then 才送出），用 .execute() 立刻送，才是真的並行。
+      second = sql2`select repair_orphaned_claim_rewards(${a.id}::uuid)`.execute();
       await new Promise((r) => setTimeout(r, 500));
     });
     await second;
