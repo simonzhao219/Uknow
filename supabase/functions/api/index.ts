@@ -30,6 +30,7 @@ import {
   DEFAULT_NETWORK_SORT,
   PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
+  REFERRAL_CHECK_UNAVAILABLE,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
@@ -874,19 +875,33 @@ app.post('/auth/register', async (c) => {
 
   const client = sb();
 
-  // 若有填推薦碼，先查出推薦人 user_id
+  // 推薦碼（auth P0-1、P1-2＝ref P1-1）：與 /referrals/validate、prepare fresh 走同一支
+  // validate_referral_code（排除停權推薦人與失效碼）。查詢失敗回 503 不寫入——吞成
+  // 「沒填碼」會在付款時被預設推薦人覆寫（錯綁、靜默）；查無／停權／失效一律 400 同形。
+  if (referralCode != null && typeof referralCode !== 'string') {
+    return c.json({ error: '推薦碼格式錯誤' }, 400);
+  }
   let referrerUserId: string | null = null;
   // NFKC 先摺全形再轉小寫——全形數字對 toLowerCase() 是 identity，
   // 少了它，全形碼在後端與「查無此碼」同形（前端已同步正規化）。
   const cleanCode = referralCode?.normalize('NFKC').toLowerCase().trim() || null;
   if (cleanCode) {
-    const { data: rc } = await client
-      .from('referral_codes')
-      .select('user_id')
-      .eq('code', cleanCode)
-      .eq('status', 'active')
-      .single();
-    referrerUserId = rc?.user_id ?? null;
+    const { data: codeRows, error: codeErr } = await client
+      .rpc('validate_referral_code', { p_code: cleanCode });
+    if (codeErr) {
+      console.error('[register] validate_referral_code 失敗:', codeErr);
+      return c.json(
+        { error: { code: REFERRAL_CHECK_UNAVAILABLE, message: '推薦碼暫時無法驗證，請稍後再試' } },
+        503,
+      );
+    }
+    if (!codeRows || codeRows.length === 0) {
+      return c.json({ error: '推薦碼不存在或已失效' }, 400);
+    }
+    referrerUserId = codeRows[0].referrer_user_id;
+    if (referrerUserId === user.id) {
+      return c.json({ error: '不能使用自己的推薦碼' }, 400);
+    }
   }
 
   // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
