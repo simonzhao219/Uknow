@@ -14,7 +14,7 @@
 | 4 | 對帳 handler 接 withScheduledRun | ✅ 綠 | e4b39c5f | （本 commit） |
 | 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ✅ 綠 | 840df1d4 | （本 commit） |
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ✅ 綠 | d40c1f73 | （本 commit） |
-| 7 | scripts/scheduler-watchdog.py | ⬜ 未開始 | | |
+| 7 | scripts/scheduler-watchdog.py | ✅ 綠 | a74b0c68 | （本 commit） |
 | 8 | invoke_internal_endpoint＋cron 排程（最後才掛） | ⬜ 未開始 | | |
 | 9 | 兩支 workflow 改寫＋文件同步 | ⬜ 未開始 | | |
 
@@ -62,6 +62,9 @@
 
 - 照片清理在 pg_cron 路徑也忽略 body 的 `include_names`（plan §2.3 只列了 dry_run／force_ratio）：排程不需要 name，回應與帳本都不帶 uid。
 - 清理的 `notRemoved > 0` 告警用 dedupe `{reason:'not_removed', day}`，severity 為 warning（plan §2.4）。
+
+- 看門狗 R2（health 查詢失敗）與 R3（排程不存在）的 6 小時節流沒有 L 可算，改用「上次 run 與現在是否落在不同的 UTC 6 小時格」。plan §2.5 寫的是「以 lastCompletedAt 代替或以距上次 run 計算」，這裡取後者，免得 L 很新時永遠不推。
+- 階段 6 的綠燈 commit 80f79edb 是在鎖仍存在時提交的：tdd-unlock 第一次撞到已知偶發的 `PhotoPicker.test.tsx`〈取消與 Esc 都只取消當張〉（plan §3），我沒看清輸出就 commit。內容不受影響，重跑 unlock 就綠了。
 
 ## Blockers（逃生口紀錄）
 
