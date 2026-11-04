@@ -53,12 +53,29 @@ describe('fetchProfile', () => {
   });
 
   // 404＝session 有效但 profiles 零列（帳號資料異常，T1-B W4-11），與無效 session 分開。
-  it('404 回 missing，不歸 unauthorized', async () => {
+  it('404 帶 PROFILE_MISSING 碼回 missing，不歸 unauthorized', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => json(404)),
+      vi.fn(async () => json(404, { error: { code: 'PROFILE_MISSING', message: '用戶不存在' } })),
     );
     await expect(fetchProfile('tok', { userId: 'u1' })).resolves.toEqual({ kind: 'missing' });
+  });
+
+  // R4 P2-5：Edge 部署壞掉／路由錯時閘道回 404，不能讓全體看到「帳號資料異常」。
+  it('404 沒有 PROFILE_MISSING 碼（閘道層）時歸 transient', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json(404, { error: '用戶不存在' })),
+    );
+    await expect(fetchProfile('tok', { userId: 'u1' })).resolves.toEqual({ kind: 'transient' });
+  });
+
+  it('404 內容不是 JSON 時歸 transient', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Not Found', { status: 404 })),
+    );
+    await expect(fetchProfile('tok', { userId: 'u1' })).resolves.toEqual({ kind: 'transient' });
   });
 
   it.each([500, 502, 503, 403])('%i 回 transient', async (status) => {

@@ -21,7 +21,8 @@ import {
 import { PROFILE_UNAVAILABLE } from '@contract';
 import { StatusCallout } from './ui/status-callout';
 import { clearAuthHint } from '../utils/authHint';
-import { fetchProfileForSession } from '../utils/fetchProfile';
+import { readSession } from '../utils/authErrors';
+import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { normalizeReferralCode } from '../utils/referralCode';
@@ -210,9 +211,10 @@ export function CompleteProfile() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const { session, unavailable } = await readSession(supabase.auth);
+
+        // Auth 暫時讀不到 session 不是「未登入」：留在本頁（表單與草稿都在），不導 /login。
+        if (!session && unavailable) return;
 
         if (!session) {
           console.log('CompleteProfile: No session found, redirecting to login');
@@ -222,7 +224,11 @@ export function CompleteProfile() {
         }
 
         // 嘗試加載現有的 profile（共用 fetchProfile：與 App 啟動判定同 user id 合併）
-        const result = await fetchProfileForSession(session);
+        // 帶逾時：冷載入時 bootstrap 的 8 秒逾時請求會併進這裡的在飛請求，
+        // 這邊不帶逾時就等於 bootstrap 的 8 秒失效（R4 P2-4）。
+        const result = await fetchProfileForSession(session, {
+          timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
+        });
 
         if (result.kind === 'ok') {
           const profile = result.profile;
@@ -582,10 +588,12 @@ export function CompleteProfile() {
       console.log('CompleteProfile: Starting profile submission...');
 
       // 取得當前 session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { session, unavailable } = await readSession(supabase.auth);
 
+      if (!session && unavailable) {
+        showToast('暫時無法確認登入狀態，請稍後再試', 'error');
+        return;
+      }
       if (!session) {
         console.error('CompleteProfile: No session found');
         showToast('登入狀態已過期，請重新登入', 'error');
@@ -674,9 +682,11 @@ export function CompleteProfile() {
       navigate('/', { replace: true });
     };
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { session, unavailable } = await readSession(supabase.auth);
+      if (!session && unavailable) {
+        failed('暫時無法確認登入狀態，請稍後再試');
+        return;
+      }
       if (!session) {
         failed('登入狀態已失效，請重新登入後再試');
         return;
