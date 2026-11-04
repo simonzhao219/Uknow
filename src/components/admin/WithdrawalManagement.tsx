@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { formatTwTimestamp, twDayOf } from '../../utils/twDate';
-import { buildCsvContent } from '../../utils/csv';
+import { buildCsvContent, textCell } from '../../utils/csv';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { type AdminCache, type WithdrawalListParams, adminQuery } from './adminCache';
@@ -678,8 +678,8 @@ export function WithdrawalManagement({
         w.amount + w.fee,
         w.fee,
         w.amount,
-        w.bankCode ?? '未設定',
-        w.bankAccount ?? '未設定',
+        textCell(w.bankCode ?? '未設定'),
+        textCell(w.bankAccount ?? '未設定'),
         w.idNumber ?? '未設定',
         formatTwTimestamp(w.requestedAt),
         withdrawalStatusLabel(w.status),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeCsvField, buildCsvContent } from './csv';
+import { escapeCsvField, buildCsvContent, textCell } from './csv';
 
 describe('escapeCsvField', () => {
   it('不含特殊字元時原樣輸出', () => {
@@ -69,5 +69,26 @@ describe('buildCsvContent', () => {
 
   it('沒有資料列時只輸出標題,不留空行', () => {
     expect(buildCsvContent(['會員'], [])).toBe('﻿會員');
+  });
+});
+
+describe('textCell：銀行代號與帳號保留前導 0 與長度', () => {
+  it('前導 0 的帳號以 =\"…\" 輸出，Excel 不會吃掉 0', () => {
+    expect(escapeCsvField(textCell('0081234567890'))).toBe('"=""0081234567890"""');
+    expect(escapeCsvField(textCell('004'))).toBe('"=""004"""');
+  });
+
+  it('16 位以上帳號不被轉成科學記號', () => {
+    expect(escapeCsvField(textCell('1234567890123456789'))).toBe('"=""1234567890123456789"""');
+  });
+
+  it('非純數字（未設定）與空值照一般欄位處理', () => {
+    expect(escapeCsvField(textCell('未設定'))).toBe('未設定');
+    expect(escapeCsvField(textCell(null))).toBe('');
+  });
+
+  it('整列輸出時文字欄含引號仍不錯位', () => {
+    const csv = buildCsvContent(['代號', '帳號'], [[textCell('004'), textCell('0123')]]);
+    expect(csv.split('\n')[1]).toBe('"=""004""","=""0123"""');
   });
 });

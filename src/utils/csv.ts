@@ -15,14 +15,32 @@ const NEEDS_QUOTING = /[",\n\r]/;
 const BOM = '﻿';
 
 /**
+ * 「必須當文字」的數字字串欄(銀行代號、帳號)。Excel 開 CSV 會把純數字轉成數字:
+ * `004`→`4`、`0081234567890`→`81234567890`、16 位以上變科學記號且末位歸零——
+ * 照清單匯款會打錯帳號。以 `="…"` 輸出,Excel / Numbers / Google Sheets 都會
+ * 保留成文字。非純數字(如「未設定」)不需要包,照一般欄位處理。
+ */
+export interface TextCell {
+  readonly asText: string;
+}
+
+export function textCell(value: string | null | undefined): TextCell | string {
+  if (value === null || value === undefined) return '';
+  return /^\d+$/.test(value) ? { asText: value } : value;
+}
+
+export type CsvCell = string | number | TextCell | null | undefined;
+
+/**
  * 把單一欄位值轉成安全的 CSV 欄位。
  *
  * **數字型別刻意不套公式跳脫**——匯出的金額欄要維持可計算,把 `-15` 變成
  * `'-15` 會讓整欄變文字、加總失效。公式注入的來源是使用者可控的字串
  * (姓名、備註、銀行帳號),不是程式算出來的數字。
  */
-export function escapeCsvField(value: string | number | null | undefined): string {
+export function escapeCsvField(value: CsvCell): string {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return `"=""${value.asText}"""`;
   if (typeof value === 'number') return String(value);
 
   // 順序有意義:先擋公式,再決定要不要包引號——前導單引號本身不觸發
@@ -35,7 +53,7 @@ export function escapeCsvField(value: string | number | null | undefined): strin
 /** 組出完整 CSV 內容(含 BOM)。標題與資料列都會逐欄跳脫。 */
 export function buildCsvContent(
   headers: readonly string[],
-  rows: readonly (readonly (string | number | null | undefined)[])[],
+  rows: readonly (readonly CsvCell[])[],
 ): string {
   const lines = [headers.map((h) => escapeCsvField(h)).join(',')];
   for (const row of rows) {

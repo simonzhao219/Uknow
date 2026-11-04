@@ -33,7 +33,7 @@
 //   * updated 排序：每一代各自依「自身 joinedAt」排序，子樹新血不影響上層
 //   * tie-break：同名 → 時間升冪 → userId 字典序（全序）
 //   * name 混排：英文組在前（A→Z），降冪 = 升冪完全反轉（核定規則）
-//   * 遮罩：一代全顯、深代遮罩；search 用「真名」比對得到被遮字元
+//   * 遮罩：一代全顯、深代遮罩；search 只比對畫面上看得到的字（一代真名、二三代遮罩名），並限流
 //   * children 授權：陌生節點 403、gen3 空、self = 一代
 //   * attention：只收「一代且即將到期」（業主 2026-10-04 定案），依剩餘天數升冪；
 //     overview 取前 6、/referrals/network/attention 分頁走完全部，total 永遠是全部命中數。
@@ -505,15 +505,30 @@ Deno.test('children：self = 一代；gen3 超出可見範圍回空；陌生節�
   assertEquals(missing.status, 400);
 });
 
-Deno.test('search：真名比對命中被遮字元，回遮罩名 + 祖先路徑', async () => {
-  // 「小」是陳小華被遮罩的中間字——命中即證明比對用真名、顯示用遮罩
-  const { body } = await getJson('/referrals/network/search?q=%E5%B0%8F', token);
-  const parsed = assertShape(NetworkSearchResponseSchema, body, 'GET search 小');
+Deno.test('search：二、三代只比對遮罩後可見字元，被遮的字搜不到（W5-6）', async () => {
+  // 「小」是陳小華被遮罩的中間字：比對真名會命中並洩漏該字。W5-6 起不得命中。
+  const hidden = await getJson('/referrals/network/search?q=%E5%B0%8F', token);
+  const hiddenParsed = assertShape(NetworkSearchResponseSchema, hidden.body, 'GET search 小');
+  assertEquals(hiddenParsed.data.total, 0, '被遮罩的字元不可由搜尋還原');
+
+  // 可見的首字「陳」仍搜得到，回遮罩名 + 祖先路徑
+  const { body } = await getJson('/referrals/network/search?q=%E9%99%B3', token);
+  const parsed = assertShape(NetworkSearchResponseSchema, body, 'GET search 陳');
   assertEquals(parsed.data.total, 1);
   const m = parsed.data.matches[0];
   assertEquals(m.node.userId, g2a.id);
   assertEquals(m.node.name, '陳○華');
   assertEquals(m.ancestorPath, [g1a.id, g2a.id], '路徑：一代 → 命中者本身');
+});
+
+Deno.test('search：限流——同一使用者窗內第 31 次回 429', async () => {
+  const url = '/referrals/network/search?q=x';
+  for (let i = 1; i <= 30; i++) {
+    const r = await getJson(url, token2);
+    assertEquals(r.status, 200, `第 ${i} 次應放行`);
+  }
+  const limited = await getJson(url, token2);
+  assertEquals(limited.status, 429);
 });
 
 Deno.test('search：英文大小寫不敏感；空字串 400', async () => {
