@@ -25,7 +25,11 @@
 
 ## Blockers(逃生口紀錄)
 
-- **階段 2 / Q5（2026-11-05）**：W5-30 授權於階段 2 開頭確認區中心座標來源（內政部國土測繪中心／政府資料開放平臺）的授權與可下載性。雲端容器對 data.gov.tw、www.nlsc.gov.tw、api.nlsc.gov.tw 連線失敗（curl http_code 000，疑為網路政策擋下），無法讀授權文字也無法下載界線資料；僅 raw.githubusercontent.com 可達。W5-30 規定「不成立就停下回報，不改用其他來源」，故階段 2 暫停，等主 session／業主決定（放行上述網域、由有網路的環境提供原始資料檔、或指定替代來源）。階段 3 以後不依賴座標表資料本身，但依賴階段 2 的排序接入，順序不調整。
+- **階段 2 / Q5（2026-11-05，已部分解除）**：業主放行 data.gov.tw、www.nlsc.gov.tw、api.nlsc.gov.tw 後重測皆 200。確認結果：
+  - 資料集：政府資料開放平臺「鄉鎮市區界線(TWD97經緯度)」（datasetId 7441，修改日 2025-12-24，SHP，欄位含 TOWNCODE／COUNTYNAME／TOWNNAME）。
+  - **授權成立**：政府資料開放授權條款－第 1 版（https://data.gov.tw/license）：不限目的、時間、地域，免授權金，含衍生物與商用；**須依附件「顯名聲明」標示**（格式：提供機關／單位 [年份] [資料釋出名稱與版本號]＋條款連結）。
+  - **下載被擋**：`resourceDownloadUrl` 在 `https://www.tgos.tw/tgos/VirtualDir/Product/…/鄉(鎮、市、區)界線1140318.zip`，容器經代理回 `CONNECT tunnel failed, response 403`（www.tgos.tw 不在白名單）。`api.nlsc.gov.tw` 可達但只提供縣市／鄉鎮名單與點位反查，沒有中心座標。W5-30 規定不改用其他來源，階段 2 仍暫停，待主 session／業主放行 `www.tgos.tw`（或改由有網路處提供該 zip）。
+  - 待主 session 決定：顯名聲明要放哪裡（座標表檔頭＋？是否需在網站頁面／條款頁可見處標示）。
 
 ## 框架摩擦
 
