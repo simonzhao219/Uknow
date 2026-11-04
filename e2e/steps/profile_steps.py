@@ -186,6 +186,7 @@ def record_account_deletions(context):
         requests.append(route.request.url)
         route.fulfill(status=200, content_type="application/json", body='{"success": true}')
 
+    # 自助刪帳號端點已退場（W5-12）；仍攔下它，證明前端不再呼叫。
     context.route(f"{API_BASE}/auth/cancel-signup**", handler)
     return requests
 
@@ -195,22 +196,8 @@ def click_register_later(page):
     page.get_by_role("button", name="稍後註冊").click()
 
 
-@when("I go back from the delete confirmation")
-def go_back_from_delete_confirmation(page):
-    dialog = page.get_by_role("alertdialog")
-    expect(dialog).to_be_visible(timeout=5_000)
-    dialog.get_by_role("button", name="返回").click()
-    expect(dialog).to_have_count(0)
-
-
 @then("no account deletion was requested")
 def no_account_deletion(page, deletion_requests):
     page.wait_for_timeout(500)
     assert deletion_requests == [], f"cancel-signup was called: {deletion_requests}"
 
-
-@then("I am still on the profile form with the logout button in the header")
-def still_on_profile_form(page):
-    assert page.url.endswith("/auth/complete-profile"), page.url
-    expect(page.get_by_label("姓名 *")).to_be_visible()
-    expect(page.locator("nav:not([aria-label])").get_by_role("button", name="登出")).to_be_visible()
