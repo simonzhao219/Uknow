@@ -171,12 +171,30 @@ function orders(n: number, createdAt: string): FakeOrder[] {
 const resolveNever = () => Promise.resolve({ ok: true }) as never;
 const opts = { thresholdMinutes: 20, limit: 50 };
 
+/**
+ * 單元測試不得碰資料庫（T4）：迴圈內的 logSystemAlert／logSystemAlertOnce 走
+ * index.ts 的 sb()，本機有 SUPABASE_URL 時會真的寫進 system_alerts，污染同一個
+ * DB 上其他測試的時間窗（system-alerts-recent 只回 20 筆）。呼叫期間暫時拿掉
+ * SUPABASE_URL：sb() 建 client 時直接擲錯，兩支告警函式都會吞掉，計數邏輯不受影響。
+ */
+async function offline<T>(fn: () => Promise<T>): Promise<T> {
+  const url = Deno.env.get('SUPABASE_URL');
+  Deno.env.delete('SUPABASE_URL');
+  try {
+    return await fn();
+  } finally {
+    if (url !== undefined) Deno.env.set('SUPABASE_URL', url);
+  }
+}
+
 Deno.test('reconcilePendingOrders：查詢全部擲錯 → queryErrors＝checked', async () => {
-  const s = await reconcilePendingOrders(
-    fakeClient(orders(3, RECENT)),
-    () => Promise.reject(new Error('PayUni 查詢 HTTP 403')),
-    resolveNever,
-    opts,
+  const s = await offline(() =>
+    reconcilePendingOrders(
+      fakeClient(orders(3, RECENT)),
+      () => Promise.reject(new Error('PayUni 查詢 HTTP 403')),
+      resolveNever,
+      opts,
+    )
   );
   assertEquals(s.checked, 3);
   assertEquals(s.queryErrors, 3);
@@ -184,15 +202,17 @@ Deno.test('reconcilePendingOrders：查詢全部擲錯 → queryErrors＝checked
 });
 
 Deno.test('reconcilePendingOrders：全部查詢層非 SUCCESS → 計入 queryFailures、不計 queryErrors', async () => {
-  const s = await reconcilePendingOrders(
-    fakeClient(orders(2, RECENT)),
-    () =>
-      Promise.resolve({
-        stillProcessing: true as const,
-        queryFailure: { status: 'ERROR', message: '查無此單' },
-      }),
-    resolveNever,
-    opts,
+  const s = await offline(() =>
+    reconcilePendingOrders(
+      fakeClient(orders(2, RECENT)),
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: 'ERROR', message: '查無此單' },
+        }),
+      resolveNever,
+      opts,
+    )
   );
   assertEquals(s.checked, 2);
   assertEquals(s.queryFailures, 2);
@@ -200,11 +220,13 @@ Deno.test('reconcilePendingOrders：全部查詢層非 SUCCESS → 計入 queryF
 });
 
 Deno.test('reconcilePendingOrders：標 expired 失敗 → 計入 expireErrors 而非 queryErrors', async () => {
-  const s = await reconcilePendingOrders(
-    fakeClient(orders(2, OLD), { updateError: true }),
-    () => Promise.resolve({ stillProcessing: true as const }),
-    resolveNever,
-    opts,
+  const s = await offline(() =>
+    reconcilePendingOrders(
+      fakeClient(orders(2, OLD), { updateError: true }),
+      () => Promise.resolve({ stillProcessing: true as const }),
+      resolveNever,
+      opts,
+    )
   );
   assertEquals(s.checked, 2);
   assertEquals(s.expireErrors, 2);
