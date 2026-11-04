@@ -62,6 +62,17 @@
 | W5-22 | 桌機與邊界 | **桌機加上一篇／下一篇箭頭鈕＋鍵盤 ←→**；**返回一次回到列表原位置**（不逐篇倒退，捲到最後看的那篇）；**顯示「3 / 12」位置**，到頭尾回彈、不循環（未選：循環） |
 | W5-23 | 業主說「有兩題 UX」，第二題 | **稍後補充**；收到後再排 |
 
+**裁決（AskUserQuestion，業主 2026-11-05 03:00 台北；第二題 UX＋S7 規劃題）**
+
+業主第二題（手機錄影）：首頁先依刊登時間顯示，約 6 秒後拿到定位突然換成遠近排序。主 session 讀碼：距離只用縣市中心點（同縣市距離全相同），定位逾時 8 秒、座標回來直接重排。
+
+| # | 題 | 裁決 |
+|---|---|---|
+| W5-24 | 遠近排序的精度 | **改以「區」為單位**：服務區含使用者所在區者最前，其餘依刊登最近服務區中心距離；「全區」視為該縣市每區都服務；加全台鄉鎮市區中心座標靜態表（被推翻：維持縣市中心） |
+| W5-25 | 拿到定位後的重排體驗 | **先等一下＋動畫重排**：已授權定位者最多等約 1.5 秒；拿不到才先顯示最新，座標回來後方格以動畫移位重排（被推翻：不等只動畫；等到定位才顯示） |
+| W5-26 | 落點 | **併入 S7，本波必上**（換篇順序＝畫面順序；一併解 S7 審查的「座標晚到漂移」）（被推翻：另開 S8） |
+| W5-27 | S7 換篇手感 | **手機標題列常駐「‹ n/N ›」＋滑入動畫，不跟手拖曳**（被推翻：跟手拖曳；只滑動不顯示箭頭） |
+
 **主 session 裁決**（落點與分配，非業主題目）
 
 | # | 題 | 裁決 |
@@ -69,6 +80,7 @@
 | W5-9 | W5-5～8 的工項落點 | W5-5 → S2（同碰 prepare，S2 必上）；W5-6 → S5（後端小修，Sonnet）；W5-7、W5-8 → S6（同屬 fresh 路徑；W5-8 碰獎勵規則，Opus） |
 | W5-10 | R4 §6 指定給本波的升級 | 「裁決編號只由主 session 發」、「hash 以 PR 內文為準」→ 主 session 在本檔所屬 PR 寫進 `docs/README.md`〈慣例〉；「F1 草稿在 session 失效時也清」→ 主 session 改 `docs/multi-step-flow-recovery.md`，`src/utils/formDraft.ts` 檔頭的同步交 S3（產品碼不由主 session 改） |
 | W5-19 | S1 審查 P0 #1「過半失敗也告警」無出處 | 出處是本檔所屬 `dispatch-prompts.md` S1 段原文（需求 reviewer 讀不到派工檔），豁免；`checked>=2` 門檻在 S1 plan 寫明理由 |
+| W5-28 | S7 其餘規劃題 | 照 S7 建議：凍結脈絡存模組層；未換篇返回維持原 scrollY、換過篇才置中最後那張；無首頁脈絡不顯示換篇；輪播聚焦時 ←→ 換照片；審查 P0（換 :id 時元件狀態未重設）必處置 |
 
 ## 1. 時程
 
@@ -94,7 +106,7 @@
 | S3 | **暫時性錯誤被當成定論**（R4 §5-2）：R4 P2-1（cancel-signup 401 一律當帳號已刪）、P2-4（CompleteProfile 冷載失去 8 秒逾時）、P2-5（閘道 404 判成帳號異常，改認 `code: 'PROFILE_MISSING'`）；T1-B 未修的 PaymentCheckout／CompleteProfile getSession retryable 仍導 `/login`；`formDraft.ts` 檔頭同步「session 失效也清」（W5-10） | `/fix-bug`，`fix/transient-not-final` | Sonnet | `CompleteProfile.tsx`、`fetchProfile.ts`、`PaymentCheckout.tsx`、`index.ts`（cancel-signup 改用分類式 `authenticate()`、`/profile` 零列 404 帶 code）、`api-contract.ts`、`formDraft.ts` | 見 S2：cancel-signup 後端，S3 只改認證分類（401／503），S2 改鎖 |
 | S4 | **PostHog EU 監控＋錄影**（W4-35～37）：照 W4-37 的遮罩清單施工，敏感欄位 block 要有測試釘住；不改條款 | 三段式，`feature/posthog-monitoring` | Sonnet | `src/main.tsx` 或新 `src/utils/analytics.ts`、CSP（`public/_headers`）、敏感表單元件加 block 屬性、`package.json` | S1、S2 進實作後才開 |
 | S5 | **後端小修組**：ops P1-1＝ref P1-9 提領 CSV 銀行代號與帳號前導 0、15 位以上截斷（第一筆提領前必修）；W5-6 網絡搜尋二、三代只比對可見字元＋限流（ref P1-4） | `/fix-bug`，`fix/csv-and-network-search` | Sonnet | `src/utils/csv.ts`、`WithdrawalManagement.tsx`、`index.ts`（`/referrals/network/search`）、`network-endpoints.test.ts`、規格書 §7.2／§7.3 | 無 |
-| S7 | **刊登詳情頁左右滑換篇**（W5-20～22）：在篩選後的清單內換上／下一篇；照片輪播到盡頭接續換篇；桌機箭頭鈕＋鍵盤；返回回列表原位置；顯示位置「n / N」 | 三段式，`feature/listing-swipe-nav` | Sonnet | `ServiceProviderDetail.tsx`、`listing/PhotoCarousel.tsx`、`HomePage.tsx`、`utils/homeListingsCache.ts`（篩選後清單與捲動位置的來源）、e2e 首頁／詳情 feature、`docs/ui-ux-guidelines.md` | 純前端，與 S1／S2 不撞；與 S4（PostHog）同碰頁面元件，S4 後開 |
+| S7 | **刊登詳情頁左右滑換篇＋首頁遠近排序**（W5-20～22、W5-24～28）：區級距離、等定位＋動畫重排；在篩選後的清單內換上／下一篇；照片輪播到盡頭接續換篇；桌機箭頭鈕＋鍵盤；返回回列表原位置；顯示位置「n / N」 | 三段式，`feature/listing-swipe-nav` | Sonnet | `ServiceProviderDetail.tsx`、`listing/PhotoCarousel.tsx`、`HomePage.tsx`、`utils/homeListingsCache.ts`（篩選後清單與捲動位置的來源）、e2e 首頁／詳情 feature、`docs/ui-ux-guidelines.md` | 純前端，與 S1／S2 不撞；與 S4（PostHog）同碰頁面元件，S4 後開 |
 | S6 | **續約路徑潛伏組**（期限 2027-10-27）：ref P0-1＝pay P0-1（fresh 棄單後改付 extend 仍換線／發獎）；ref P0-2（推薦成環）；pay P1-1＝auth P1-1（續費者走首購路徑，prepare 應拒已有訂閱者 `renewalMode=null`）；pay P1-4（續費者卡單被送回結帳頁）；W5-7 新約無條件二次確認；W5-8 新約清空語意 | 三段式，`feature/renewal-path-hardening`；**本波必交規劃＋審查**，實作有完成才上 | Opus | `index.ts`（prepare fresh／extend、`/profile` 卡單旗標）、migration（成環檢查、`reconcile_king_credits`、配對名單）、`PaymentCheckout.tsx`、規格書 §6.2／§9 | S2 合併後才開 |
 | R5 | 第 5 波審查（晉升後）；兼做 `launch-wave-4/` 退場（依 R4 §6；四份 audit 一併） | 審查 session；報告 `docs/plans/launch-wave-5/review.md` | Opus | — | — |
 
@@ -123,7 +135,11 @@ W5-10 的兩條文件升級（本 PR）；上線後現場查詢（W4-26）。
 1. 必上五項合併後 develop 凍結；列出 `3a7f506` 之後合進 develop 的全部 PR、後端變動、migration 檔名。
 2. 開晉升 PR、訂閱；journey-full（sandbox）綠 → merge commit 合 main → 請業主核准 `production` → `/health` sha、deploy-smoke build-sha 對上。
 3. S1 的 pg_cron 在正式站由 migration 建立：晉升後確認 `cron.job` 有預期的排程列，首輪 `cron.job_run_details` 成功；GitHub 那兩支 workflow 改手動後，排程不再重複觸發。
-4. 開 R5。
+4. **S1 硬性驗收**（S1 plan §2.9）：
+   - 甲段（migration 套用後、Edge 核准部署前）：正式站 Edge Secrets 有 `RECONCILE_SECRET` 與 `PHOTO_PURGE_LIVE=true`；Vault 建 `uknow_api_base_url`、`uknow_internal_secret`；（若階段 0 結論如此）Dashboard 開 pg_net；`cron.job` 有 5 列。
+   - 乙段（Edge 部署後）：`select public.invoke_internal_endpoint('reconcile')` 回 request id，1 分鐘後帳本最新列 `succeeded`；核准後第一個整點 +7 分，帳本出現 `pg_cron` 完成列。
+   - develop 在 S1 合併、migration 套用後，同樣做甲段（不設 `PHOTO_PURGE_LIVE`）。
+5. 開 R5。
 
 ## 5. 第 6 波候選（未納入本波，一行一項）
 
@@ -160,11 +176,11 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃修訂中（W5-15～19） |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃 v3.1 通過；等業主親打 `/tdd-implement` |
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃 r2 通過；等業主親打 `/tdd-implement` |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
-| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | — | 規劃中 |
+| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft，規劃） | 規劃修訂中（W5-24～28） |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -182,3 +198,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/04 23:00 | 業主裁決 **W5-11～18**；主 session 定 W5-19。W5-12 改變 S2 範圍：「稍後註冊」不刪帳號、`/auth/cancel-signup` 退場。已轉達 S2、S1 | S1、S2 修 plan → 主 session 親審 → 業主親打 `/tdd-implement` |
 | 11/05 02:30 | 業主新增 UX 需求（手機錄影：首頁篩選剩 3 篇，逐篇點進、返回、再點下一篇）。裁決 **W5-20～23**：開 S7（刊登詳情頁左右滑換篇，本波必上）；第二題稍後補充 | 開 S7 |
 | 11/05 02:40 | S3 rebase 到 547adb1，diff 與審過的版本除行號外相同，CI 全綠 → **#508 合進 develop（22a03af）**。S2 交規劃 r2：D 段照 W5-12 改成「稍後註冊」走 `useFunnelLogout`、拿掉確認框、`/auth/cancel-signup` 與 8 條守衛測試退場（以 404 測試釘住）；A／E 照 W5-13、W5-14；13 條 P1 都有處置。主 session 親審通過（未重跑整輪 /review-plan）。P2：後台沒有刪帳號工具（W5-12 的「找客服」）→ 第 6 波候選 | 業主到 S2 session 親打 `/tdd-implement payment-concurrency-guard` |
+| 11/05 03:00 | S7 交規劃（#509 draft；P0 1：換 :id 時元件狀態未重設）。業主第二題 UX（首頁排序跳動）：主 session 讀碼說明現況，業主裁決 **W5-24～27**，主 session 定 W5-28；第二題併入 S7。S1 交規劃 v3.1（三輪審查，P0 皆處置）→ 主 session 親審通過，晉升硬性驗收寫進 §4。S2 已 rebase 到 22a03af | 業主到 S1、S2 session 親打 `/tdd-implement`；S7 修 plan 重審 |
