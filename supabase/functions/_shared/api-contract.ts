@@ -850,6 +850,12 @@ export const PROFILE_MISSING = 'PROFILE_MISSING';
 // **未寫入**——與 PROFILE_UNAVAILABLE（已寫入、讀不回）相反：前端停在原頁、草稿保留，可重送。
 export const REFERRAL_CHECK_UNAVAILABLE = 'REFERRAL_CHECK_UNAVAILABLE';
 
+// /auth/register 拒絕推薦碼的 400 文案（`{ error: string }`，與 /payuni/prepare fresh 同字串）。前端據此
+// 把錯誤標在推薦碼欄位、撤銷「已驗證」狀態，而不是當成一般送出失敗。查無、停權推薦人、失效碼
+// 一律用 NOT_APPLICABLE（同形，不洩漏碼是否存在）。
+export const REFERRAL_CODE_NOT_APPLICABLE_MESSAGE = '推薦碼不存在或已失效';
+export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
+
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',
   'self_invite',

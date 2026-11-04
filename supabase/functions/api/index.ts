@@ -31,6 +31,8 @@ import {
   PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
   REFERRAL_CHECK_UNAVAILABLE,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
@@ -896,11 +898,11 @@ app.post('/auth/register', async (c) => {
       );
     }
     if (!codeRows || codeRows.length === 0) {
-      return c.json({ error: '推薦碼不存在或已失效' }, 400);
+      return c.json({ error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
     }
     referrerUserId = codeRows[0].referrer_user_id;
     if (referrerUserId === user.id) {
-      return c.json({ error: '不能使用自己的推薦碼' }, 400);
+      return c.json({ error: REFERRAL_CODE_SELF_MESSAGE }, 400);
     }
   }
 

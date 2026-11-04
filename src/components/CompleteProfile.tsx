@@ -18,7 +18,12 @@ import {
   extractApiErrorCode,
   extractApiErrorMessage,
 } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
-import { PROFILE_UNAVAILABLE } from '@contract';
+import {
+  PROFILE_UNAVAILABLE,
+  REFERRAL_CHECK_UNAVAILABLE,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
+} from '@contract';
 import { StatusCallout } from './ui/status-callout';
 import { clearAuthHint } from '../utils/authHint';
 import { readSession } from '../utils/authErrors';
@@ -411,7 +416,7 @@ export function CompleteProfile() {
     if (!first) return;
     const el = document.getElementById(FIELD_FOCUS_ID[first]);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
       // 用 requestAnimationFrame 等捲動後再 focus，避免焦點把畫面又拉走
       requestAnimationFrame(() => (el as HTMLElement).focus?.());
     }
@@ -631,6 +636,29 @@ export function CompleteProfile() {
           await continueAfterSaved();
           return;
         }
+        // 503＋REFERRAL_CHECK_UNAVAILABLE：查推薦碼暫時失敗、**未寫入**——停在原頁、草稿保留、可重送。
+        if (
+          response.status === 503 &&
+          extractApiErrorCode(errorData) === REFERRAL_CHECK_UNAVAILABLE
+        ) {
+          showToast(extractApiErrorMessage(errorData, '推薦碼暫時無法驗證，請稍後再試'), 'error');
+          return;
+        }
+        // 400 拒絕推薦碼（驗證後、送出前推薦人被停權或碼失效，或填了自己的碼）：比照即時驗證
+        // 失敗，標在欄位並撤銷「已驗證」——不能留著「推薦人：○○」又說碼無效。
+        const rejected = extractApiErrorMessage(errorData, '');
+        if (
+          response.status === 400 &&
+          (rejected === REFERRAL_CODE_NOT_APPLICABLE_MESSAGE ||
+            rejected === REFERRAL_CODE_SELF_MESSAGE)
+        ) {
+          setCodeError(rejected);
+          setCodeVerified(false);
+          setVerifiedReferralCode('');
+          setReferrerName('');
+          focusFirstError({ referralCode: rejected });
+          return;
+        }
         // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
         // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
         // 會員中心再說明。但要先確認最新狀態真的已鎖定才動手：閘道層的
@@ -649,7 +677,7 @@ export function CompleteProfile() {
             return;
           }
         }
-        throw new Error(errorData.error || '註冊失敗');
+        throw new Error(extractApiErrorMessage(errorData, '註冊失敗'));
       }
 
       const profile = await response.json();
