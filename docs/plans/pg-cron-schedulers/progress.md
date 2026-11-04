@@ -12,7 +12,7 @@
 | 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
 | 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ✅ 綠（先做，見偏離） | 9385e16c | 725b3c8c |
 | 4 | 對帳 handler 接 withScheduledRun | ✅ 綠 | e4b39c5f | （本 commit） |
-| 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ⬜ 未開始 | | |
+| 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ✅ 綠 | 840df1d4 | （本 commit） |
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ⬜ 未開始 | | |
 | 7 | scripts/scheduler-watchdog.py | ⬜ 未開始 | | |
 | 8 | invoke_internal_endpoint＋cron 排程（最後才掛） | ⬜ 未開始 | | |
@@ -58,6 +58,9 @@
   - `rls-policies` 兩條 GRANT 斷言，CLI 版本的預設權限不同；
   - 其餘是邀請衍生的錯誤。
 - 本案的測試檔全部綠。以 CI 的 api-tests 軌為準。
+
+- 照片清理在 pg_cron 路徑也忽略 body 的 `include_names`（plan §2.3 只列了 dry_run／force_ratio）：排程不需要 name，回應與帳本都不帶 uid。
+- 清理的 `notRemoved > 0` 告警用 dedupe `{reason:'not_removed', day}`，severity 為 warning（plan §2.4）。
 
 ## Blockers（逃生口紀錄）
 

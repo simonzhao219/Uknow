@@ -29,6 +29,8 @@ framework-check 每次 CI 跑。
   J3 `notRemoved > 0` → 失敗(端點照常回 200,但有物件刪不掉、每輪霸佔額度)。
   J4 輸出只放 HTTP 狀態、`error.code`、斷路器 `reason`(anchor／ratio)與統計數字。**絕不印 `message`、
      `names` 或原始回應**:Storage 錯誤字串可能含 uid,Actions log 公開。
+  J5 200 且 `data.skipped == "concurrent"`(租約被另一輪拿著:pg_cron 或另一次 dispatch 正在跑)
+     → 中性通過,不判 bad_shape、不開 issue。判斷放在形狀檢查之前,因為 skipped 回應沒有統計欄位。
 
 決策邏輯放在純函式裡,好讓表格案例直接驗行為(同 check-migration-versions.py
 等的慣例)。不 import 第三方套件——framework-check 的契約是免依賴安裝。
@@ -90,7 +92,7 @@ def _stats_line(data: dict) -> str:
 
 
 def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> Verdict:
-    """J1–J4。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
+    """J1–J5。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
     # curl 失敗時 -w 已印 000,呼叫端若再補一次會變兩行;只取最後一個三位數。
     codes = re.findall(r"\d{3}", status)
     status = codes[-1] if codes else "000"
@@ -116,6 +118,9 @@ def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> 
             stats += f" reason={reason}"
         return Verdict(False, code, [f"::error::清理失敗（HTTP {status}，code={code}，{stats}）"], stats)
     data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+    # J5 必須在 bad_shape 之前：skipped 回應本來就沒有 dryRun 與統計欄位。
+    if isinstance(data, dict) and data.get("skipped") == "concurrent":
+        return Verdict(True, "skipped", ["::notice::另一輪清理正在執行（skipped:concurrent），本輪不重複執行。"])
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("dryRun"), bool)

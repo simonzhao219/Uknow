@@ -7,7 +7,12 @@
 // ============================================================
 
 import type { Context } from 'npm:hono@4';
-import type { ScheduledRunDeps } from './scheduled-runs.ts';
+import {
+  parseScheduledTrigger,
+  type ScheduledRunDeps,
+  type ScheduledRunOutcome,
+  withScheduledRun,
+} from './scheduled-runs.ts';
 
 /** 刊登照片 bucket 的單一事實來源（upload-photo 與清理共用，勿再複製字串）。 */
 export const LISTING_PHOTOS_BUCKET = 'listings-photos';
@@ -357,41 +362,98 @@ export function createListingPhotoHandlers(deps: ListingPhotoHandlerDeps) {
     purgeOrphans: async (c: Context) => {
       if (!(await deps.verifyInternalSecret(c))) return fail(c, 401, 'unauthorized', '未授權');
       const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
-      // 只有 JSON boolean false 才實刪；缺漏、解析失敗、字串 "false" 一律 dry-run。
-      const dryRun = body?.dry_run !== false;
-      try {
-        const r = await sweepOrphanPhotos(deps.sweep, {
-          graceHours: ORPHAN_GRACE_HOURS,
-          limit: ORPHAN_SWEEP_LIMIT,
-          dryRun,
-          forceRatio: body?.force_ratio === true,
-        });
-        return c.json({
-          success: true,
-          data: {
-            dryRun: r.dryRun,
-            candidateCount: r.candidates.length,
-            orphanTotal: r.orphanTotal,
-            removed: r.removed,
-            notRemoved: r.notRemoved,
-            totalObjects: r.totalObjects,
-            referencedUrls: r.referencedUrls,
-            matchedUrls: r.matchedUrls,
-            referencedOwners: r.referencedOwners,
-            matchedOwners: r.matchedOwners,
-            ...(body?.include_names === true ? { names: r.candidates } : {}),
-          },
-        });
-      } catch (err) {
-        const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
-        // 只記 code 與 reason：SweepError.message 帶 Storage／DB 錯誤字串，可能含 object name（uid）。
-        console.error('[listing-photos] 孤兒清理失敗', e.code, e.reason ?? '', e.removedSoFar);
-        const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
-        const error = e.reason
-          ? { code: e.code, reason: e.reason, message }
-          : { code: e.code, message };
-        return c.json({ success: false, error, removedSoFar: e.removedSoFar }, 500);
-      }
+      const trigger = parseScheduledTrigger(body);
+      // trigger 分流（pg-cron-schedulers plan §2.3）：
+      //   pg_cron → 只看 Edge secret PHOTO_PURGE_LIVE，body 的 dry_run／force_ratio／
+      //             include_names 一律忽略（排程永不放行比例閘、不回 name）
+      //   其他    → 照現行：只有 JSON boolean false 才實刪；缺漏、解析失敗、字串
+      //             "false" 一律 dry-run（GitHub 路徑的 B1～B4 由 workflow 組 body）
+      const scheduled = trigger === 'pg_cron';
+      const dryRun = scheduled ? deps.env('PHOTO_PURGE_LIVE') !== 'true' : body?.dry_run !== false;
+      const forceRatio = !scheduled && body?.force_ratio === true;
+      const includeNames = !scheduled && body?.include_names === true;
+      const day = deps.now().toISOString().slice(0, 10);
+
+      const response = await withScheduledRun(
+        deps.scheduledRun,
+        'purge-photos',
+        trigger,
+        async (): Promise<ScheduledRunOutcome> => {
+          try {
+            const r = await sweepOrphanPhotos(deps.sweep, {
+              graceHours: ORPHAN_GRACE_HOURS,
+              limit: ORPHAN_SWEEP_LIMIT,
+              dryRun,
+              forceRatio,
+            });
+            const stats = {
+              dryRun: r.dryRun,
+              candidateCount: r.candidates.length,
+              orphanTotal: r.orphanTotal,
+              removed: r.removed,
+              notRemoved: r.notRemoved,
+              totalObjects: r.totalObjects,
+              referencedUrls: r.referencedUrls,
+              matchedUrls: r.matchedUrls,
+              referencedOwners: r.referencedOwners,
+              matchedOwners: r.matchedOwners,
+            };
+            if (scheduled && r.notRemoved > 0) {
+              // 有物件刪不掉：每輪霸佔額度，但這輪其餘照常完成 → warning（plan §2.4）。
+              await deps.alertOnce(
+                'purge-orphan-listing-photos',
+                { reason: 'not_removed', day },
+                { notRemoved: r.notRemoved },
+                `【照片清理】排程清理有 ${r.notRemoved} 個物件未被 Storage 刪除，其餘已處理。` +
+                  '用規格書 §11 的 dry-run 指令找出是哪些檔，再到 Supabase Dashboard 的 Storage 查。',
+                'warning',
+              );
+            }
+            return {
+              status: 'succeeded',
+              summary: stats,
+              response: {
+                httpStatus: 200,
+                body: {
+                  success: true,
+                  data: { ...stats, ...(includeNames ? { names: r.candidates } : {}) },
+                },
+              },
+            };
+          } catch (err) {
+            const e = err instanceof SweepError ? err : new SweepError('sweep_failed', '', 0);
+            // 只記 code 與 reason：SweepError.message 帶 Storage／DB 錯誤字串，可能含 object name（uid）。
+            console.error('[listing-photos] 孤兒清理失敗', e.code, e.reason ?? '', e.removedSoFar);
+            const message = e.code === 'circuit_open' ? '斷路器中止，未刪除' : '孤兒清理失敗';
+            const error = e.reason
+              ? { code: e.code, reason: e.reason, message }
+              : { code: e.code, message };
+            if (scheduled) {
+              // pg_cron 路徑沒有 GitHub issue，失敗要進 system_alerts 才推得到 LINE。
+              await deps.alertOnce(
+                'purge-orphan-listing-photos',
+                { reason: e.code, day },
+                { reason: e.reason ?? null, removedSoFar: e.removedSoFar },
+                `【照片清理】排程清理失敗（${e.code}${e.reason ? `／${e.reason}` : ''}），` +
+                  '本輪中止。到後台「系統告警」與 Supabase 的 scheduled_job_runs 查原因，處理方式見規格書 §11；' +
+                  '三十日下架期限扣掉寬限期約剩兩週。',
+                'error',
+              );
+            }
+            return {
+              status: 'failed',
+              errorCode: e.code,
+              summary: { reason: e.reason ?? null, removedSoFar: e.removedSoFar },
+              response: {
+                httpStatus: 500,
+                body: { success: false, error, removedSoFar: e.removedSoFar },
+              },
+            };
+          }
+        },
+      );
+      // deno-lint-ignore no-explicit-any
+      return c.json(response.body, response.httpStatus as any);
     },
 
     deleteListing: async (c: Context) => {
