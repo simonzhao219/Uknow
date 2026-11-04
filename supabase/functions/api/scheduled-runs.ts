@@ -90,3 +90,13 @@ export async function withScheduledRun(
   await finish(outcome.status, outcome.summary, outcome.errorCode ?? null);
   return outcome.response;
 }
+
+// 階段 4 stub。
+// deno-lint-ignore no-explicit-any
+export function scheduledRunDeps(_client: any): ScheduledRunDeps {
+  return {
+    begin: () => Promise.resolve({ id: 0, acquired: true }),
+    finish: () => Promise.resolve(true),
+    logError: () => {},
+  };
+}
