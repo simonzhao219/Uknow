@@ -25,7 +25,7 @@ import {
   recentConsecutiveFailureUsers,
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
-import { handleReconcile } from './reconcile-handler.ts';
+import { handleReconcile, type ReconcileSummary } from './reconcile-handler.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
   ACCOUNT_SUSPENDED,
@@ -2713,9 +2713,7 @@ export async function reconcilePendingOrders(
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
   opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
-): Promise<
-  { checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }
-> {
+): Promise<ReconcileSummary> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
   // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
   // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
@@ -2745,6 +2743,8 @@ export async function reconcilePendingOrders(
     stillPending: 0,
     expired: 0,
     queryErrors: 0,
+    queryFailures: 0,
+    expireErrors: 0,
   };
 
   for (const order of stuck ?? []) {
@@ -2939,6 +2939,8 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
           resolveOrderFromPayUni,
           { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
         ),
+      alertOnce: logSystemAlertOnce,
+      now: () => new Date(),
       logError: (message, ...detail) => console.error(message, ...detail),
     });
     // deno-lint-ignore no-explicit-any

@@ -16,11 +16,28 @@ export type ReconcileSummary = {
   stillPending: number;
   expired: number;
   queryErrors: number;
+  queryFailures: number;
+  expireErrors: number;
 };
+
+export type ReconcileClassification = 'ok' | 'all_failed' | 'majority_failed';
+
+// 階段 3 stub：行為待綠燈實作。
+export function classifyReconcileOutcome(_s: ReconcileSummary): ReconcileClassification {
+  return 'ok';
+}
 
 export type ReconcileHandlerDeps = {
   heal: () => Promise<{ data: unknown; error: unknown }>;
   reconcile: () => Promise<ReconcileSummary>;
+  alertOnce: (
+    source: string,
+    dedupe: Record<string, string>,
+    context: Record<string, unknown>,
+    message: string,
+    severity: 'info' | 'warning' | 'error',
+  ) => Promise<void>;
+  now: () => Date;
   logError: (message: string, ...detail: unknown[]) => void;
 };
 
