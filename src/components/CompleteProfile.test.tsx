@@ -730,7 +730,11 @@ describe('稍後註冊的刪除確認', () => {
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(String(url));
-        if (/\/profile$/.test(String(url))) return new Response('{}', { status: 404 });
+        if (/\/profile$/.test(String(url))) {
+          return new Response(JSON.stringify({ error: { code: 'PROFILE_MISSING' } }), {
+            status: 404,
+          });
+        }
         if (String(url).endsWith('/auth/cancel-signup')) return cancel();
         return new Response('{}', { status: 200 });
       }),
@@ -802,6 +806,44 @@ describe('稍後註冊的刪除確認', () => {
         'info',
       ),
     );
+  });
+
+  // R4 P2-1：Auth 抖動時後端回 503（不是 401）——帳號還在，不能清本機、不能登出。
+  it('刪除遇到 503（Auth 暫時故障）時提示稍後再試、不清本機、不登出', async () => {
+    wireSession(
+      async () =>
+        new Response(JSON.stringify({ error: '暫時無法處理，請稍後再試' }), {
+          status: 503,
+        }),
+    );
+    localStorage.setItem('user', '{"id":"u1"}');
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('暫時無法處理，請稍後再試', 'error'),
+    );
+    expect(signOut).not.toHaveBeenCalled();
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('刪除遇到 401（帳號已不存在）時照舊收尾登出', async () => {
+    wireSession(async () => new Response('{}', { status: 401 }));
+    renderForm();
+    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  });
+
+  // R4 P2-4：冷載入時 bootstrap 的 8 秒逾時請求不能併進這裡沒逾時的在飛請求。
+  it('冷載入讀 /profile 時帶逾時 signal', async () => {
+    const urls = wireSession();
+    renderForm();
+    await waitFor(() => expect(urls.some((u) => /\/profile$/.test(u))).toBe(true));
+    const calls = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+      .calls;
+    const call = calls.find(([u]) => /\/profile$/.test(String(u)));
+    expect(call?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('刪除失敗時顯示後端原因、停在原頁、不登出', async () => {
@@ -880,5 +922,36 @@ describe('稍後註冊的刪除確認', () => {
     fireEvent.click(trigger);
     const confirm = await screen.findByRole('button', { name: '確定刪除' });
     expect(confirm.className).toMatch(/bg-destructive/);
+  });
+});
+
+// T1-B 未修：getSession 因 Auth 暫時性錯誤回 session:null 不是「未登入」，不能導 /login。
+describe('冷載入 getSession 的暫時性錯誤', () => {
+  function renderWithLogin() {
+    return render(
+      <MemoryRouter initialEntries={['/auth/complete-profile']}>
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/login" element={<p>登入頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('回 session:null 且為暫時性錯誤時留在本頁，不導登入頁', async () => {
+    getSession.mockImplementation(() =>
+      Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError' } }),
+    );
+    renderWithLogin();
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('登入頁')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith('請先登入', 'error');
+  });
+
+  it('乾淨回 null（真的沒登入）時照舊導登入頁', async () => {
+    getSession.mockImplementation(() => Promise.resolve({ data: { session: null }, error: null }));
+    renderWithLogin();
+    expect(await screen.findByText('登入頁')).toBeTruthy();
   });
 });

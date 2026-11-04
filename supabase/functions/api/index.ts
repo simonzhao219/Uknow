@@ -473,6 +473,11 @@ export async function authenticate(
   }
 }
 
+/** 分類式驗證失敗的回應（stub：紅燈期）。 */
+export function authFailureResponse(c: any, _error: 'unauthorized' | 'transient'): any {
+  return c.json({ error: 'stub' }, 500);
+}
+
 function isTransientAuthError(error: { name?: string; status?: number }): boolean {
   if (error.name === 'AuthRetryableFetchError') return true;
   const status = error.status ?? 0;

@@ -13,12 +13,13 @@
 // ============================================================
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { ensureEdgeFunctionEnv } from './test-helpers.ts';
-import { PROFILE_UNAVAILABLE } from '../_shared/api-contract.ts';
+import { PROFILE_MISSING, PROFILE_UNAVAILABLE } from '../_shared/api-contract.ts';
 
 ensureEdgeFunctionEnv();
 
 const {
   authenticate,
+  authFailureResponse,
   buildProfileResponse,
   loadProfileOrError,
   makeProfileHandler,
@@ -257,7 +258,11 @@ Deno.test('loadProfileOrError：讀取失敗（ProfileReadError）→ 回 503 PR
 
 Deno.test('loadProfileOrError：零列 null → 404；其他例外照常拋出', async () => {
   const r = await loadProfileOrError(() => Promise.resolve(null));
-  assertEquals(r, { ok: false, status: 404, body: { error: '用戶不存在' } });
+  assertEquals(r, {
+    ok: false,
+    status: 404,
+    body: { error: { code: PROFILE_MISSING, message: '用戶不存在' } },
+  });
   await assertRejects(
     () => loadProfileOrError(() => Promise.reject(new TypeError('x'))),
     TypeError,
@@ -348,4 +353,12 @@ Deno.test('原始碼：requireAuth 本體與其餘端點的呼叫數不變（只
   assertEquals(count(indexSrc), 47);
   assertEquals(count(await read('./listing-photos.ts')), 2);
   assertEquals(count(await read('./referral-invite.ts')), 1);
+});
+
+Deno.test('authFailureResponse：Auth 暫時性故障 → 503，Auth 判無效 → 401', () => {
+  const c = fakeContext('https://x/auth/cancel-signup', 't');
+  const t: any = authFailureResponse(c, 'transient');
+  assertEquals(t.status, 503);
+  const u: any = authFailureResponse(c, 'unauthorized');
+  assertEquals(u.status, 401);
 });

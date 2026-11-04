@@ -841,6 +841,10 @@ export const API_PATHS = {
 // 前端不得重送，改 refreshUser 接續。（單向：500 的語意不保證未寫入。）
 export const PROFILE_UNAVAILABLE = 'PROFILE_UNAVAILABLE';
 
+// R4 P2-5：/profile 零列 404 的錯誤碼（`{ error: { code, message } }`）。前端只認帶此碼的 404 為
+// 「帳號資料異常」，其餘 404（閘道層、部署壞掉）歸暫時性。
+export const PROFILE_MISSING = 'PROFILE_MISSING';
+
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',
   'self_invite',

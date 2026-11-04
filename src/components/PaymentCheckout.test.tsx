@@ -35,13 +35,18 @@ vi.mock('../App', () => ({
   UserContext: createContext<any>({ user: null, setUser: () => {} }),
 }));
 
+const getSessionMock = vi.hoisted(() => ({
+  impl: (): Promise<unknown> =>
+    Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+}));
+
 vi.mock('../utils/supabase/client', () => ({
   createClient: () => ({
     auth: {
       // 需要可用 session：checkPendingUser 的 localStorage 分支會驗證它，
       // 而 fetchReferrerInfo 的網路層測試正要觀察「拿到 session 之後
       // 還會不會發請求」——永不 resolve 的做法會讓斷言變成假陽性。
-      getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+      getSession: () => getSessionMock.impl(),
     },
   }),
 }));
@@ -779,7 +784,12 @@ describe('結帳頁冷載入的暫時性故障', () => {
       vi.fn(async (url: string) => {
         if (/\/profile(\?|$)/.test(String(url))) {
           const status = seq.length > 1 ? (seq.shift() as number) : seq[0];
-          const body = status === 200 ? { registrationStep: 1, name: '王小明' } : {};
+          const body =
+            status === 200
+              ? { registrationStep: 1, name: '王小明' }
+              : status === 404
+                ? { error: { code: 'PROFILE_MISSING', message: '用戶不存在' } }
+                : {};
           return new Response(JSON.stringify(body), { status });
         }
         return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -798,7 +808,44 @@ describe('結帳頁冷載入的暫時性故障', () => {
     );
   }
 
-  beforeEach(() => localStorage.removeItem('pendingUser'));
+  beforeEach(() => {
+    localStorage.removeItem('pendingUser');
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: { access_token: 'test-token' } } });
+  });
+
+  // R4 P2-5：閘道層 404（無 PROFILE_MISSING 碼）不是帳號異常，是暫時性故障。
+  it('/profile 回不帶碼的 404（閘道層）時停在結帳頁顯示重試外框，不導登入頁', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Not Found', { status: 404 })),
+    );
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  // T1-B 未修：getSession 因 Auth 暫時性錯誤回 session:null，不是「未登入」。
+  it('getSession 因暫時性 Auth 錯誤回 null 時顯示重試外框，不導登入頁', async () => {
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError' } });
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it('getSession 擲例外時顯示重試外框，不導登入頁', async () => {
+    getSessionMock.impl = () => Promise.reject(new Error('storage locked'));
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it('getSession 乾淨回 null（真的沒登入）時照舊導登入頁', async () => {
+    getSessionMock.impl = () => Promise.resolve({ data: { session: null }, error: null });
+    renderAtCheckout();
+    expect(await screen.findByText('登入頁')).toBeTruthy();
+  });
 
   it('/profile 5xx 時停在結帳頁顯示重試外框，不導登入頁', async () => {
     stubProfile(503);
