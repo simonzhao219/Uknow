@@ -12,17 +12,23 @@ name: Reconcile Pending Payments
 #   - curl -f：HTTP 錯誤直接失敗
 #   - 回應形狀斷言：HTTP 200 但 body 是錯誤內容也要紅
 #   - 失敗自動開 issue：排程失敗的通知只寄給最後改檔的人，很容易蒸發
-# 頻率依據：每小時。這是金流安全網，價值在「幾小時內撿回」——撿回越快，
-# 付了錢卻卡在 pending 的使用者等得越短，所以在成本允許時應該盡量密。
-# 沿革：2026-08-07 曾為了省 GitHub 計費分鐘降為每 2 小時；同日 repo 轉為
-# public，標準 runner 不再計費，降頻的唯一理由消失，改回每小時。
-# ⚠️ 名目每小時不等於實際每小時：GitHub 排程器在整點高峰會丟棄觸發，
-# 152 次實測的間隔中位數是 1.7h、最大 6.3h。這是「盡量密」而不是保證，
-# 下游(客服話術、使用者預期)的容忍度仍要按「數小時」設計。
+# pg-cron-schedulers（第 5 波 S1）起，**對帳由 Supabase pg_cron 觸發**（每小時第 7 分，
+# migration 20261111000001）。這支 workflow 改當**看門狗兼後備觸發**：
+#   - 每小時讀 GET /internal/scheduler-health，判斷 pg_cron 是否存活
+#     （決策在 scripts/scheduler-watchdog.py，表格案例由 framework-check 跑）
+#   - pg_cron 停擺、排程不見、人為停用、或 Edge 尚未部署（404）時自己補跑對帳
+#   - 停擺時推 LINE（6 小時節流）；system_alerts 的 error 照舊推 LINE
+#   - workflow_dispatch：一律直接對帳（手動觸發）
+# 頻率依據：每小時。延遲直接影響付了錢的使用者，所以後備觸發要跟 pg_cron 同頻；
+# 成本落在 GitHub 牆鐘（public repo 標準 runner 免費）、補跑時的 PayUni 查詢、
+# 以及 LINE 訊號疲勞（停擺告警 6 小時節流、人為停用每日一則）。排程取第 37 分：
+# 與 pg_cron 的第 7 分相差半小時，看門狗執行時最近一輪 pg_cron 已結束約 30 分鐘。
+# ⚠️ GitHub 排程在整點高峰會丟棄觸發（152 次實測間隔中位數 1.7h、最大 6.3h）——
+# 這正是改用 pg_cron 的原因；看門狗被跳過只會延後告警，不再延後對帳。
 # ============================================================================
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '37 * * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -72,44 +78,68 @@ jobs:
           fi
           echo "對帳目標：$ref_from_git（vars 與 git 一致）"
 
-      - name: 呼叫對帳端點
+      # pg_cron 是否存活：讀 scheduler-health，交給 scheduler-watchdog.py 決定要不要補跑、
+      # 要不要推 LINE（判準 R1～R6 與 6 小時節流見該檔 docstring）。這一步自己不會紅：
+      # 查不到狀態（404、5xx、連線失敗）時，決策就是「補跑」。
+      - name: 看門狗判讀 pg_cron 對帳狀態
+        id: watchdog
+        if: github.event_name == 'schedule'
         env:
-          ENDPOINT: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments
+          GH_TOKEN: ${{ github.token }}
+          API_BASE: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
         run: |
           set -uo pipefail
-          # 重試只為了暫時性網路故障（#458：runner DNS 解析失敗已發生兩次）。
-          # 端點冪等（對 pending 訂單做查詢＋收斂，已收斂的訂單離開 pending，
-          # 重放不會重複處理），所以 --retry-all-errors 對已送達的 POST 也安全。
-          body="$(curl -fsS --retry 3 --retry-delay 10 --retry-all-errors --max-time 120 \
-            -X POST "$ENDPOINT" -H "x-internal-secret: $RECONCILE_SECRET")"
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "::error::對帳端點呼叫失敗（curl exit $rc）"
-            exit 1
-          fi
-          echo "回應：$body"
-          # HTTP 200 不代表對帳成功——端點內部出錯時仍可能回 200。
-          # 契約（index.ts /internal/reconcile-pending-payments）：
-          #   { success: true, data: { checked, resolved, stillPending, ... } }
-          printf '%s' "$body" | python3 -c '
+          prev="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/reconcile-payments.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].created_at // empty' 2>/dev/null || true)"
+          code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 30 \
+            "$API_BASE/internal/scheduler-health" -H "x-internal-secret: $RECONCILE_SECRET" || echo 000)"
+          code="$(printf '%s' "$code" | tail -c 3)"
+          python3 scripts/scheduler-watchdog.py reconcile --status "$code" --health-file /tmp/health.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ${prev:+--prev-run "$prev"} > /tmp/watchdog.json
+          python3 -c "import json; d=json.load(open('/tmp/watchdog.json')); print('看門狗：' + d['rule'] + '；' + '；'.join(d['summary']))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 補跑或手動觸發對帳
+        id: backfill
+        if: github.event_name == 'workflow_dispatch' || steps.watchdog.outputs.backfill == 'true'
+        env:
+          ENDPOINT: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/api/internal/reconcile-pending-payments
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          TRIGGER: ${{ github.event_name == 'schedule' && 'github' || 'manual' }}
+        run: |
+          set -uo pipefail
+          # 只重試連線層失敗（#458：runner DNS 解析失敗）。不用 curl --retry：它也會重打
+          # 5xx，而 502 query_all_failed 是業務結果，重打只會多查 PayUni。
+          for attempt in 1 2 3 4; do
+            code="$(curl -sS -o /tmp/reconcile.json -w '%{http_code}' --max-time 150 -X POST "$ENDPOINT" \
+              -H 'Content-Type: application/json' -H "x-internal-secret: $RECONCILE_SECRET" \
+              --data "{\"trigger\":\"$TRIGGER\"}")"
+            rc=$?
+            case $rc in 6|7|28) echo "連線失敗（curl exit $rc），10 秒後重試（$attempt/4）"; sleep 10 ;; *) break ;; esac
+          done
+          echo "HTTP $code"
+          # 契約（index.ts /internal/reconcile-pending-payments、reconcile-handler.ts）：
+          #   200 { success: true, data: { checked, resolved, stillPending, ... } }
+          #   200 { success: true, data: { skipped: 'concurrent' } }：另一輪正在跑，中性
+          #   502 { success: false, error: { code: 'query_all_failed' } }：PayUni 查詢全滅
+          python3 - "$code" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
+          code = sys.argv[1]
           try:
-              d = json.load(sys.stdin)
+              d = json.load(open('/tmp/reconcile.json'))
           except Exception as e:
-              sys.exit(f"::error::對帳回應不是合法 JSON：{e}")
-          if not d.get("success"):
-              sys.exit(f"::error::對帳回報失敗：{json.dumps(d, ensure_ascii=False)[:400]}")
-          data = d.get("data") or {}
-          missing = [k for k in ("checked", "resolved", "stillPending") if k not in data]
+              sys.exit(f"::error::對帳回應不是合法 JSON（HTTP {code}）：{e}")
+          if code != '200' or not d.get('success'):
+              sys.exit(f"::error::對帳回報失敗（HTTP {code}）：{json.dumps(d, ensure_ascii=False)[:400]}")
+          data = d.get('data') or {}
+          if data.get('skipped') == 'concurrent':
+              print('另一輪對帳正在執行（skipped:concurrent），本輪不重複執行。')
+              sys.exit(0)
+          missing = [k for k in ('checked', 'resolved', 'stillPending') if k not in data]
           if missing:
               sys.exit(f"::error::對帳回應缺少欄位 {missing}：{json.dumps(d, ensure_ascii=False)[:400]}")
-          # 不用 f-string 內嵌雙引號：整段 python 被 bash 單引號包裹，先前的
-          # \" 跳脫寫法對 python 是非法語法（f-string 運算式內不得有反斜線），
-          # 端點明明回報成功、排程卻每小時紅一次。
           print("對帳完成：checked=%s resolved=%s stillPending=%s expired=%s" % (
-              data["checked"], data["resolved"], data["stillPending"], data.get("expired", 0)))
-          ' >> "$GITHUB_STEP_SUMMARY"
+              data['checked'], data['resolved'], data['stillPending'], data.get('expired', 0)))
+          PY
 
       # system_alerts 新 error → LINE。用時間窗代替 notified_at 欄（10/29 起凍結
       # migration）：窗口＝上一次成功 run 的建立時間至今（排程會被 GitHub 丟棄，
@@ -173,8 +203,8 @@ jobs:
           print('body<<EOF\n%s\nEOF' % body)
           PY
 
-      - name: 失敗時開 issue
-        if: failure()
+      - name: 對帳失敗時開 issue
+        if: failure() && steps.backfill.outcome == 'failure'
         uses: actions/github-script@v7
         with:
           script: |
@@ -205,8 +235,8 @@ jobs:
               ].join('\n'),
             });
 
-      - name: 失敗時推送 LINE 告警
-        if: failure()
+      - name: 對帳失敗時推送 LINE 告警
+        if: failure() && steps.backfill.outcome == 'failure'
         continue-on-error: true
         uses: ./.github/actions/notify
         with:
@@ -217,6 +247,35 @@ jobs:
           line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
           line_to: ${{ secrets.LINE_ALERT_TO }}
 
+      # 告警查詢壞了不等於對帳壞了（ops P2-7）：分開開 issue，文案不說「訂單撿不回」。
+      - name: 告警查詢失敗時開 issue
+        if: failure() && steps.recent-alerts.outcome == 'failure' && steps.backfill.outcome != 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '對帳排程的告警查詢失敗';
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100,
+            });
+            if (open.some((i) => i.title === title)) {
+              core.info('已有未關閉的同名 issue，不重複建立');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                '## 對帳排程的告警查詢失敗',
+                '',
+                `- Run：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '對帳本身由 pg_cron 執行，這次失敗的是 `/internal/system-alerts/recent`（system_alerts 推 LINE）。',
+                '影響：新的 error 告警暫時推不到 LINE（窗口不前移，恢復後會補推）。',
+                '401 是 RECONCILE_SECRET 不一致；其他狀態看 run log。排除後關閉此 issue。',
+              ].join('\n'),
+            });
+
       # 放在最後一步、且不加 continue-on-error（刻意）：窗口起點是「上一次成功 run」，
       # 推送失敗必須讓 run 變紅，下一輪窗口才不前移、告警才會重送（at-least-once）。
       # 吞掉失敗＝窗口前移＝告警永久遺失。放最後是為了它紅了不會觸發上面
@@ -226,7 +285,7 @@ jobs:
       # 缺 LINE secret 時 notify 會 no-op 並 exit 0——run 綠、窗口前移、告警遺失。
       # 這裡先擋：空的就 fail，窗口不前移（不改 notify 對其他呼叫端的 no-op 行為）。
       - name: 確認 LINE 推送設定存在
-        if: ${{ !cancelled() && steps.recent-alerts.outputs.has_alerts == 'true' }}
+        if: ${{ !cancelled() && (steps.recent-alerts.outputs.has_alerts == 'true' || steps.watchdog.outputs.notify == 'true') }}
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_ALERT_TO: ${{ secrets.LINE_ALERT_TO }}
@@ -243,6 +302,19 @@ jobs:
           level: P1
           title: 正式站 system_alerts 有新的 error
           body: ${{ steps.recent-alerts.outputs.body }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}
+
+      # 看門狗的停擺／排程不存在／人為停用告警。同樣放最後、不加 continue-on-error：
+      # 推送失敗讓 run 變紅，下一輪的節流以「上一次成功 run」為基準，才會重推。
+      - name: 看門狗告警時推送 LINE
+        if: ${{ !cancelled() && steps.watchdog.outputs.notify == 'true' }}
+        uses: ./.github/actions/notify
+        with:
+          level: ${{ steps.watchdog.outputs.level }}
+          title: ${{ steps.watchdog.outputs.title }}
+          body: ${{ steps.watchdog.outputs.body }}
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
           line_to: ${{ secrets.LINE_ALERT_TO }}

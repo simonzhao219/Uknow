@@ -18,6 +18,9 @@ framework-check 每次 CI 跑。
   B4 正式站的 dispatch 要求實刪(`dry_run=false`)時,`PHOTO_PURGE_LIVE` 也必須是
      `'true'`;否則強制送 `dry_run: true`,並印一行警告說明原因(W3-8)。develop 的
      dispatch 照輸入走;`force_ratio` 不受影響。
+  B5 排程觸發(現為看門狗補跑)多送 `trigger: "github"`,端點據此落帳;dispatch 不送
+     (端點記成 manual)。端點只在 `trigger: "pg_cron"` 時改看 Edge 的 PHOTO_PURGE_LIVE,
+     所以 github／manual 路徑的 B1～B4 語意不變。
   B3 workflow 永遠不送 `include_names`——repo 是 public,回應裡不能有含
      會員 uid 的 name。
 
@@ -68,7 +71,8 @@ def build_body(event: str, live: str, dry_input: str, force_input: str, target: 
     if event == "workflow_dispatch":
         dry = dry_input != "false" or _dispatch_live_blocked(event, live, dry_input, target)
         return {"dry_run": dry, "force_ratio": force_input == "true"}
-    return {"dry_run": live != "true", "force_ratio": False}
+    # 排程觸發＝看門狗補跑：帶 trigger github，帳本才分得出 pg_cron 與 GitHub 補跑（B5）。
+    return {"dry_run": live != "true", "force_ratio": False, "trigger": "github"}
 
 
 def body_warning(event: str, live: str, dry_input: str, target: str) -> str | None:
@@ -177,13 +181,13 @@ UID = "11111111-2222-3333-4444-555555555555"
 
 # (說明, (event, live, dry_input, force_input[, target]), 預期 body)
 BODY_CASES: list[tuple[str, tuple, dict]] = [
-    ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False}),
-    ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False}),
-    ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False}),
+    ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False, "trigger": "github"}),
+    ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False, "trigger": "github"}),
+    ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False, "trigger": "github"}),
     (
         "排程不吃 dispatch 輸入（即使殘留 false／true）",
         ("schedule", "", "false", "true"),
-        {"dry_run": True, "force_ratio": False},
+        {"dry_run": True, "force_ratio": False, "trigger": "github"},
     ),
     (
         "dispatch dry_run=true → dry-run（LIVE=true 也不影響）",
