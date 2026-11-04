@@ -2753,6 +2753,8 @@ export async function reconcilePendingOrders(
       if (result.stillProcessing) {
         const failure = result.queryFailure;
         if (failure) {
+          // 查詢層非 SUCCESS 另計：不算進全滅（classifyReconcileOutcome），棄付單也走這裡。
+          summary.queryFailures++;
           // 去重鍵用 PayUni 的 Status＋Message 而非訂單號：參數錯這類系統層
           // 故障會讓整批卡單撞同一組，只該留一筆；各訂單的後果由下方 expire
           // 紀錄按訂單號記。Message 也進鍵：碼表未經 sandbox 驗證，同一
@@ -2791,7 +2793,8 @@ export async function reconcilePendingOrders(
             .eq('id', order.id)
             .eq('status', 'pending');
           if (expireErr) {
-            summary.queryErrors++;
+            // 寫入失敗不是 PayUni 查詢失敗，另計，不混進全滅判準的 queryErrors。
+            summary.expireErrors++;
             await logSystemAlert('reconcile-pending-payments', {
               tradeNo: order.transaction_id,
               error: `標記 expired 失敗: ${expireErr.message}`,

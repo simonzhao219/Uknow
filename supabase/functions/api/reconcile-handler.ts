@@ -22,10 +22,20 @@ export type ReconcileSummary = {
 
 export type ReconcileClassification = 'ok' | 'all_failed' | 'majority_failed';
 
-// 階段 3 stub：行為待綠燈實作。
-export function classifyReconcileOutcome(_s: ReconcileSummary): ReconcileClassification {
+/**
+ * ops P1-3（W5-19）的判準。只計 queryErrors（擲錯：HTTP／網路／解密失敗）：
+ * 查詢層非 SUCCESS（queryFailures）已有自己的 payuni-query 告警，而且棄付單的
+ * 「查無此單」也走那條，算進來會讓只剩一兩張棄付單時每小時 502。
+ *   * 全滅：checked >= 2。checked=1 是單張單的單次例外——#460 刻意維持 warning
+ *   * 過半：checked >= 3。checked=2 的過半就是 2/2（全滅已涵蓋），1/2 是一半不算
+ */
+export function classifyReconcileOutcome(s: ReconcileSummary): ReconcileClassification {
+  if (s.checked >= 2 && s.queryErrors === s.checked) return 'all_failed';
+  if (s.checked >= 3 && s.queryErrors * 2 > s.checked) return 'majority_failed';
   return 'ok';
 }
+
+const ALERT_SOURCE = 'reconcile-pending-payments';
 
 export type ReconcileHandlerDeps = {
   heal: () => Promise<{ data: unknown; error: unknown }>;
@@ -53,6 +63,60 @@ export async function handleReconcile(deps: ReconcileHandlerDeps): Promise<Sched
   if (healError) deps.logError('[reconcile-pending-payments] heal pass 失敗:', healError);
 
   const summary = await deps.reconcile();
-  const body = { success: true, data: { ...summary, heal: healSummary ?? null } };
-  return { status: 'succeeded', summary: { ...summary }, response: { httpStatus: 200, body } };
+  const heal = healSummary ?? null;
+  const ratio = `${summary.queryErrors}/${summary.checked}`;
+  // UTC 小時桶：沒人 resolve 時，下一小時會再推（同 payuni-failure-burst）。
+  const hour = deps.now().toISOString().slice(0, 13);
+  const context = { checked: summary.checked, queryErrors: summary.queryErrors };
+
+  switch (classifyReconcileOutcome(summary)) {
+    case 'all_failed': {
+      const message =
+        `【對帳】PayUni 查詢本輪全部失敗（${ratio}），付款狀態無法確認，訂單不會被標過期。` +
+        '請確認 PayUni 查詢 API 與正式站 Edge Secrets 的 PAYUNI_* 憑證；恢復後下一輪自動重試。持續中會每小時再告警。';
+      await deps.alertOnce(
+        ALERT_SOURCE,
+        { reason: 'query_all_failed', hour },
+        context,
+        message,
+        'error',
+      );
+      return {
+        status: 'failed',
+        errorCode: 'query_all_failed',
+        summary: { ...summary },
+        response: {
+          httpStatus: 502,
+          body: {
+            success: false,
+            error: { code: 'query_all_failed', message: 'PayUni 查詢本輪全部失敗' },
+            data: { ...summary, heal },
+          },
+        },
+      };
+    }
+    case 'majority_failed': {
+      const message = `【對帳】PayUni 查詢本輪過半失敗（${ratio}），部分付款可能延後開通。` +
+        '請確認 PayUni 狀態；持續中會每小時再告警。';
+      await deps.alertOnce(
+        ALERT_SOURCE,
+        { reason: 'query_majority_failed', hour },
+        context,
+        message,
+        'error',
+      );
+      const degraded = { ...summary, degraded: true };
+      return {
+        status: 'succeeded',
+        summary: degraded,
+        response: { httpStatus: 200, body: { success: true, data: { ...degraded, heal } } },
+      };
+    }
+    default:
+      return {
+        status: 'succeeded',
+        summary: { ...summary },
+        response: { httpStatus: 200, body: { success: true, data: { ...summary, heal } } },
+      };
+  }
 }
