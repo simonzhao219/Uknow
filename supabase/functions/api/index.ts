@@ -25,7 +25,8 @@ import {
   recentConsecutiveFailureUsers,
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
-import { handleReconcile, type ReconcileSummary } from './reconcile-handler.ts';
+import { type ReconcileSummary, runScheduledReconcile } from './reconcile-handler.ts';
+import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
   ACCOUNT_SUSPENDED,
@@ -2932,22 +2933,28 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
+  // body 只用來讀 trigger（pg_cron／github，其餘記 manual）；舊版 workflow 不帶 body。
+  const body = await c.req.json().catch(() => null);
   try {
-    const outcome = await handleReconcile({
-      heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
-      reconcile: () =>
-        reconcilePendingOrders(
-          sb(),
-          queryPayUniTradeStatus,
-          resolveOrderFromPayUni,
-          { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
-        ),
-      alertOnce: logSystemAlertOnce,
-      now: () => new Date(),
-      logError: (message, ...detail) => console.error(message, ...detail),
-    });
+    const response = await runScheduledReconcile(
+      scheduledRunDeps(sb()),
+      parseScheduledTrigger(body),
+      {
+        heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
+        reconcile: () =>
+          reconcilePendingOrders(
+            sb(),
+            queryPayUniTradeStatus,
+            resolveOrderFromPayUni,
+            { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
+          ),
+        alertOnce: logSystemAlertOnce,
+        now: () => new Date(),
+        logError: (message, ...detail) => console.error(message, ...detail),
+      },
+    );
     // deno-lint-ignore no-explicit-any
-    return c.json(outcome.response.body, outcome.response.httpStatus as any);
+    return c.json(response.body, response.httpStatus as any);
   } catch (e) {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);

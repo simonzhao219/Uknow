@@ -8,7 +8,12 @@
 // 回傳 ScheduledRunOutcome（scheduled-runs.ts）：業務結果正常回傳；迴圈擲錯
 // 照樣往上丟，由路由既有的 catch 回 500。
 // ============================================================
-import type { ScheduledRunDeps, ScheduledRunOutcome, ScheduledTrigger } from './scheduled-runs.ts';
+import {
+  type ScheduledRunDeps,
+  type ScheduledRunOutcome,
+  type ScheduledTrigger,
+  withScheduledRun,
+} from './scheduled-runs.ts';
 
 export type ReconcileSummary = {
   checked: number;
@@ -121,11 +126,11 @@ export async function handleReconcile(deps: ReconcileHandlerDeps): Promise<Sched
   }
 }
 
-// 階段 4 stub。
+/** 對帳端點的完整流程：租約＋帳本（withScheduledRun）包住 handleReconcile。 */
 export function runScheduledReconcile(
-  _run: ScheduledRunDeps,
-  _trigger: ScheduledTrigger,
-  _deps: ReconcileHandlerDeps,
+  run: ScheduledRunDeps,
+  trigger: ScheduledTrigger,
+  deps: ReconcileHandlerDeps,
 ): Promise<ScheduledRunOutcome['response']> {
-  return Promise.resolve({ httpStatus: 0, body: {} });
+  return withScheduledRun(run, 'reconcile', trigger, () => handleReconcile(deps));
 }

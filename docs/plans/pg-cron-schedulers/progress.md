@@ -11,7 +11,7 @@
 | 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ✅ 綠 | 29a5adec | （本 commit） |
 | 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
 | 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ✅ 綠（先做，見偏離） | 9385e16c | 725b3c8c |
-| 4 | 對帳 handler 接 withScheduledRun | ⬜ 未開始 | | |
+| 4 | 對帳 handler 接 withScheduledRun | ✅ 綠 | e4b39c5f | （本 commit） |
 | 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ⬜ 未開始 | | |
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ⬜ 未開始 | | |
 | 7 | scripts/scheduler-watchdog.py | ⬜ 未開始 | | |

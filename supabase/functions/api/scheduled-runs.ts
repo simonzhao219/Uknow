@@ -91,12 +91,28 @@ export async function withScheduledRun(
   return outcome.response;
 }
 
-// 階段 4 stub。
+/** 以 service_role client 呼叫 begin／finish_scheduled_run（migration 20261111000001）。 */
 // deno-lint-ignore no-explicit-any
-export function scheduledRunDeps(_client: any): ScheduledRunDeps {
+export function scheduledRunDeps(client: any): ScheduledRunDeps {
   return {
-    begin: () => Promise.resolve({ id: 0, acquired: true }),
-    finish: () => Promise.resolve(true),
-    logError: () => {},
+    begin: async (job, trigger) => {
+      const { data, error } = await client.rpc('begin_scheduled_run', {
+        p_job: job,
+        p_trigger: trigger,
+      });
+      if (error) throw new Error(`begin_scheduled_run: ${error.message}`);
+      return data as { id: number; acquired: boolean };
+    },
+    finish: async (id, status, summary, errorCode) => {
+      const { data, error } = await client.rpc('finish_scheduled_run', {
+        p_id: id,
+        p_status: status,
+        p_summary: summary,
+        p_error_code: errorCode,
+      });
+      if (error) throw new Error(`finish_scheduled_run: ${error.message}`);
+      return data === true;
+    },
+    logError: (message, ...detail) => console.error(message, ...detail),
   };
 }
