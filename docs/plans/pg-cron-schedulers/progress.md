@@ -15,7 +15,7 @@
 | 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ✅ 綠 | 840df1d4 | （本 commit） |
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ✅ 綠 | d40c1f73 | （本 commit） |
 | 7 | scripts/scheduler-watchdog.py | ✅ 綠 | a74b0c68 | （本 commit） |
-| 8 | invoke_internal_endpoint＋cron 排程（最後才掛） | ⬜ 未開始 | | |
+| 8 | invoke_internal_endpoint＋cron 排程（最後才掛） | ✅ 綠 | 5c749608 | （本 commit） |
 | 9 | 兩支 workflow 改寫＋文件同步 | ⬜ 未開始 | | |
 
 （紅綠燈 hash 以 PR 內文為準，rebase 後更新 PR 內文的表。）
@@ -41,6 +41,7 @@
 
 - 階段 1：`scheduled_job_runs` 表與索引、RLS＋revoke、`begin_scheduled_run`、`finish_scheduled_run`
 - 階段 6：`scheduler_health()`（net 表用動態查詢；pg_net 未裝時 pgNet6h 為 0／空陣列）
+- 階段 8：`create extension pg_net with schema extensions`、`invoke_internal_endpoint`、`prune_scheduled_job_runs`、`pause／resume_scheduled_jobs`（`cron.alter_job`）、三個 `cron.schedule`。`supabase db reset` 從頭套用已驗證
 
 ## 偏離規劃（PR 內文要列）
 

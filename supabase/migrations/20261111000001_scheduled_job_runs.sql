@@ -215,3 +215,143 @@ $$;
 
 revoke execute on function public.scheduler_health() from anon, authenticated, public;
 grant execute on function public.scheduler_health() to service_role;
+
+-- ============================================================
+-- pg_cron 觸發：invoke_internal_endpoint ＋ 三個排程（放最後：端點都備妥才掛排程）。
+--
+-- 憑證（W5-15①）：URL 與 x-internal-secret 放 Vault，由人在各環境 SQL Editor 建，
+-- 不進 migration（SOP 見 docs/supabase-setup-checklist.md）：
+--   uknow_api_base_url     https://<ref>.supabase.co/functions/v1/api
+--   uknow_internal_secret  ＝ 該環境 Edge 的 RECONCILE_SECRET
+-- 缺任一 → 寫一列 skipped／vault_missing、不送請求。拋棄式 journey 分支就是這樣
+-- 空轉；正式站漏設時看門狗看得到（沒有完成列 → 補跑並推 LINE）。
+--
+-- pg_net 權限（W5-31，業主 2026-11-05 接受平台預設）：裝好後 anon／authenticated
+-- 在 SQL 層有 net schema 的權限，postgres 角色收不回（擁有者是 supabase_admin）。
+-- PostgREST 不暴露 net，經 REST 碰不到；本案函式另行 revoke，vault 不可讀。
+-- ============================================================
+create extension if not exists pg_net with schema extensions;
+
+create or replace function public.invoke_internal_endpoint(p_job text)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_path text;
+  v_url text;
+  v_secret text;
+  v_id bigint;
+begin
+  -- 白名單：只打這兩支端點，不接受任意 URL。
+  v_path := case p_job
+    when 'reconcile' then '/internal/reconcile-pending-payments'
+    when 'purge-photos' then '/internal/purge-orphan-listing-photos'
+  end;
+  if v_path is null then
+    raise exception 'invoke_internal_endpoint: 未知的 job %', p_job;
+  end if;
+
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'uknow_api_base_url';
+  select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'uknow_internal_secret';
+  if coalesce(v_url, '') = '' or coalesce(v_secret, '') = '' then
+    insert into public.scheduled_job_runs (job, trigger, status, finished_at, error_code)
+    values (p_job, 'pg_cron', 'skipped', now(), 'vault_missing');
+    return null;
+  end if;
+
+  -- pg_net 非同步、不重試；逾時只代表 pg_net 不等了，結果以端點寫的帳本為準。
+  select net.http_post(
+    url := rtrim(v_url, '/') || v_path,
+    body := jsonb_build_object('trigger', 'pg_cron'),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', v_secret),
+    timeout_milliseconds := 150000
+  ) into v_id;
+  return v_id;
+end;
+$$;
+
+-- 帳本 90 天前的列由每日排程清掉（量約每日 25 列）。
+create or replace function public.prune_scheduled_job_runs(p_older_than_days int default 90)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted int;
+begin
+  delete from public.scheduled_job_runs
+   where started_at < now() - make_interval(days => p_older_than_days);
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+-- 一鍵停／恢復：只切 cron.job.active，排程列保留——看門狗以 cronJobActive=false
+-- 判讀「人為停用」，不會誤報「排程不存在」；恢復時也不必再寫一份排程字串。
+create or replace function public.pause_scheduled_jobs()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_job record;
+  v_count int := 0;
+begin
+  for v_job in
+    select jobid from cron.job where jobname in ('reconcile-pending-payments', 'purge-orphan-listing-photos')
+  loop
+    perform cron.alter_job(job_id := v_job.jobid, active := false);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+create or replace function public.resume_scheduled_jobs()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_job record;
+  v_count int := 0;
+begin
+  for v_job in
+    select jobid from cron.job where jobname in ('reconcile-pending-payments', 'purge-orphan-listing-photos')
+  loop
+    perform cron.alter_job(job_id := v_job.jobid, active := true);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+revoke execute on function public.invoke_internal_endpoint(text) from anon, authenticated, public;
+revoke execute on function public.prune_scheduled_job_runs(int) from anon, authenticated, public;
+revoke execute on function public.pause_scheduled_jobs() from anon, authenticated, public;
+revoke execute on function public.resume_scheduled_jobs() from anon, authenticated, public;
+grant execute on function public.prune_scheduled_job_runs(int) to service_role;
+
+-- 以 job 名稱 upsert：重跑 migration 不會產生第二個排程。
+-- 對帳第 7 分：避開整點尖峰，也和 prune-rate-limits（第 17 分）錯開。
+-- 照片清理 UTC 19:17＝台北 03:17（沿用原 GitHub 排程的時間）。
+select cron.schedule(
+  'reconcile-pending-payments',
+  '7 * * * *',
+  $$select public.invoke_internal_endpoint('reconcile')$$
+);
+select cron.schedule(
+  'purge-orphan-listing-photos',
+  '17 19 * * *',
+  $$select public.invoke_internal_endpoint('purge-photos')$$
+);
+select cron.schedule(
+  'prune-scheduled-job-runs',
+  '41 4 * * *',
+  $$select public.prune_scheduled_job_runs()$$
+);
