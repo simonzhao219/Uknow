@@ -4619,6 +4619,10 @@ export function listingPhotoDeps() {
       warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
     },
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+    scheduledRun: scheduledRunDeps(sb()),
+    env: (key: string) => Deno.env.get(key),
+    alertOnce: logSystemAlertOnce,
+    now: () => new Date(),
   };
 }
 const listingPhotoHandlers = createListingPhotoHandlers(listingPhotoDeps());

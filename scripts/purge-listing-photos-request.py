@@ -273,6 +273,18 @@ JUDGE_CASES: list[tuple[str, tuple, bool, str]] = [
     ("500 sweep_failed → 失敗並帶 code", ("500", _fail_body("sweep_failed"), "true"), False, "sweep_failed"),
     ("000 連線失敗 → 失敗", ("000", "", ""), False, "http_000"),
     ("502 非 JSON → 失敗", ("502", "Bad Gateway", ""), False, "http_502"),
+    (
+        "200 skipped:concurrent（另一輪正在跑）→ 中性通過，不判 bad_shape（J5）",
+        ("200", '{"success": true, "data": {"skipped": "concurrent"}}', "true"),
+        True,
+        "skipped",
+    ),
+    (
+        "200 skipped:concurrent 且本輪要求實刪 → 仍中性通過（J5）",
+        ("200", '{"success": true, "data": {"skipped": "concurrent"}}', "", False),
+        True,
+        "skipped",
+    ),
 ]
 
 

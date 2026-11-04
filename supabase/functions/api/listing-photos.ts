@@ -7,6 +7,7 @@
 // ============================================================
 
 import type { Context } from 'npm:hono@4';
+import type { ScheduledRunDeps } from './scheduled-runs.ts';
 
 /** 刊登照片 bucket 的單一事實來源（upload-photo 與清理共用，勿再複製字串）。 */
 export const LISTING_PHOTOS_BUCKET = 'listings-photos';
@@ -288,6 +289,18 @@ export interface ListingPhotoHandlerDeps {
   verifyInternalSecret: (c: Context) => Promise<boolean>;
   sweep: OrphanSweepDeps;
   warn: (message: string, ...detail: unknown[]) => void;
+  /** 排程帳本與租約（scheduled-runs.ts）。 */
+  scheduledRun: ScheduledRunDeps;
+  /** 讀 Edge secret（PHOTO_PURGE_LIVE）。 */
+  env: (key: string) => string | undefined;
+  alertOnce: (
+    source: string,
+    dedupe: Record<string, string>,
+    context: Record<string, unknown>,
+    message: string,
+    severity: 'info' | 'warning' | 'error',
+  ) => Promise<void>;
+  now: () => Date;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
